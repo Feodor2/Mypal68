@@ -127,7 +127,7 @@ BEGIN_TEST(testTracingIncomingCCWs) {
 
   void* thing = wrappee.get();
   CCWTestTracer trc(cx, &thing, JS::TraceKind::Object);
-  JS::TraceIncomingCCWs(&trc, compartments);
+  js::gc::TraceIncomingCCWs(&trc, compartments);
   CHECK(trc.numberOfThingsTraced == 1);
   CHECK(trc.okay);
 

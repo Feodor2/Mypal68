@@ -6,6 +6,7 @@
 #include "WrapperFactory.h"
 #include "AccessCheck.h"
 #include "jsfriendapi.h"
+#include "js/Exception.h"
 #include "js/Proxy.h"
 #include "js/Wrapper.h"
 #include "mozilla/ErrorResult.h"
@@ -17,6 +18,7 @@
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
 #include "nsJSUtils.h"
+#include "js/Object.h"  // JS::GetCompartment
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -235,7 +237,7 @@ static bool CheckSameOriginArg(JSContext* cx, FunctionForwarderOptions& options,
     return true;
   }
   RootedObject obj(cx, &v.toObject());
-  MOZ_ASSERT(js::GetObjectCompartment(obj) != js::GetContextCompartment(cx),
+  MOZ_ASSERT(JS::GetCompartment(obj) != js::GetContextCompartment(cx),
              "This should be invoked after entering the compartment but before "
              "wrapping the values");
 
@@ -245,7 +247,7 @@ static bool CheckSameOriginArg(JSContext* cx, FunctionForwarderOptions& options,
   }
 
   // Wrappers leading back to the scope of the exported function are fine.
-  if (js::GetObjectCompartment(js::UncheckedUnwrap(obj)) ==
+  if (JS::GetCompartment(js::UncheckedUnwrap(obj)) ==
       js::GetContextCompartment(cx)) {
     return true;
   }
@@ -274,34 +276,34 @@ static void MaybeSanitizeException(JSContext* cx,
   // don't end up unnecessarily wrapping exceptions.
   {  // Scope for JSAutoRealm
     JSAutoRealm ar(cx, unwrappedFun);
-    JS::Rooted<JS::Value> exn(cx);
-    // If JS_GetPendingException returns false, this was an uncatchable
+
+    JS::ExceptionStack exnStack(cx);
+    // If JS::GetPendingExceptionStack returns false, this was an uncatchable
     // exception, or we somehow failed to wrap the exception into our
     // compartment.  In either case, treating this as uncatchable exception,
     // by returning without setting any exception on the JSContext,
     // seems fine.
-    if (!JS_GetPendingException(cx, &exn)) {
+    if (!JS::GetPendingExceptionStack(cx, &exnStack)) {
       JS_ClearPendingException(cx);
       return;
     }
 
     // Let through non-objects as-is, because some APIs rely on
     // that and accidental exceptions are never non-objects.
-    if (!exn.isObject() ||
+    if (!exnStack.exception().isObject() ||
         callerPrincipal->Subsumes(nsContentUtils::ObjectPrincipal(
-            js::UncheckedUnwrap(&exn.toObject())))) {
+            js::UncheckedUnwrap(&exnStack.exception().toObject())))) {
       // Just leave exn as-is.
       return;
     }
 
     // Whoever we are throwing the exception to should not have access to
-    // the exception.  Sanitize it.  First report the existing exception.
-    JS::Rooted<JSObject*> exnStack(cx, JS::GetPendingExceptionStack(cx));
+    // the exception.  Sanitize it. First clear the existing exception.
     JS_ClearPendingException(cx);
     {  // Scope for AutoJSAPI
       AutoJSAPI jsapi;
       if (jsapi.Init(unwrappedFun)) {
-        JS::SetPendingExceptionAndStack(cx, exn, exnStack);
+        JS::SetPendingExceptionStack(cx, exnStack);
       }
       // If Init() fails, we can't report the exception, but oh, well.
 
@@ -347,8 +349,8 @@ static bool FunctionForwarder(JSContext* cx, unsigned argc, Value* vp) {
     // here, because certain function wrappers (notably content->nsEP) are
     // not callable.
     JSAutoRealm ar(cx, unwrappedFun);
-    bool crossCompartment = js::GetObjectCompartment(unwrappedFun) !=
-                            js::GetObjectCompartment(&args.callee());
+    bool crossCompartment =
+        JS::GetCompartment(unwrappedFun) != JS::GetCompartment(&args.callee());
     if (crossCompartment) {
       if (!CheckSameOriginArg(cx, options, thisVal) ||
           !JS_WrapValue(cx, &thisVal)) {

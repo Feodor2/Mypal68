@@ -16,6 +16,8 @@
 #include "jit/LIR.h"
 #include "jit/Lowering.h"
 #include "jit/MIRGraph.h"
+#include "jit/WarpBuilder.h"
+#include "jit/WarpOracle.h"
 #include "util/CheckedArithmetic.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
@@ -341,7 +343,7 @@ static void RemoveFromSuccessors(MBasicBlock* block) {
 
 static void ConvertToBailingBlock(TempAllocator& alloc, MBasicBlock* block) {
   // Add a bailout instruction.
-  MBail* bail = MBail::New(alloc, Bailout_FirstExecution);
+  MBail* bail = MBail::New(alloc, BailoutKind::FirstExecution);
   MInstruction* bailPoint = block->safeInsertTop();
   block->insertBefore(block->safeInsertTop(), bail);
 
@@ -3851,10 +3853,14 @@ static bool NeedsKeepAlive(MInstruction* slotsOrElements, MInstruction* use) {
       case MDefinition::Opcode::LoadFixedSlot:
       case MDefinition::Opcode::StoreFixedSlot:
       case MDefinition::Opcode::LoadElement:
+      case MDefinition::Opcode::LoadElementAndUnbox:
       case MDefinition::Opcode::StoreElement:
+      case MDefinition::Opcode::StoreHoleValueElement:
       case MDefinition::Opcode::InitializedLength:
       case MDefinition::Opcode::ArrayLength:
       case MDefinition::Opcode::BoundsCheck:
+      case MDefinition::Opcode::GuardElementNotHole:
+      case MDefinition::Opcode::SpectreMaskIndex:
         iter++;
         break;
       default:
@@ -4586,9 +4592,18 @@ static bool ArgumentsUseCanBeLazy(JSContext* cx, JSScript* script,
   }
 
   // arguments[i] can read fp->unaliasedActual(i) directly.
-  if (ins->isCallGetElement() && index == 0) {
-    *argumentsContentsObserved = true;
-    return true;
+  if (JitOptions.warpBuilder) {
+    if (ins->isGetPropertyCache() && index == 0 &&
+        IsGetElemPC(ins->resumePoint()->pc())) {
+      script->setUninlineable();
+      *argumentsContentsObserved = true;
+      return true;
+    }
+  } else {
+    if (ins->isCallGetElement() && index == 0) {
+      *argumentsContentsObserved = true;
+      return true;
+    }
   }
 
   // MGetArgumentsObjectArg needs to be considered as a use that allows
@@ -4600,11 +4615,29 @@ static bool ArgumentsUseCanBeLazy(JSContext* cx, JSScript* script,
   // arguments.length length can read fp->numActualArgs() directly.
   // arguments.callee can read fp->callee() directly if the arguments object
   // is mapped.
-  if (ins->isCallGetProperty() && index == 0 &&
-      (ins->toCallGetProperty()->name() == cx->names().length ||
-       (script->hasMappedArgsObj() &&
-        ins->toCallGetProperty()->name() == cx->names().callee))) {
-    return true;
+  auto getPropCanBeLazy = [cx, script](JSString* name) {
+    if (name == cx->names().length) {
+      return true;
+    }
+    if (script->hasMappedArgsObj() && name == cx->names().callee) {
+      return true;
+    }
+    return false;
+  };
+
+  if (JitOptions.warpBuilder) {
+    if (ins->isGetPropertyCache() && index == 0) {
+      MDefinition* id = ins->toGetPropertyCache()->idval();
+      if (id->isConstant() && id->type() == MIRType::String &&
+          getPropCanBeLazy(id->toConstant()->toString())) {
+        return true;
+      }
+    }
+  } else {
+    if (ins->isCallGetProperty() && index == 0 &&
+        getPropCanBeLazy(ins->toCallGetProperty()->name())) {
+      return true;
+    }
   }
 
   return false;
@@ -4634,11 +4667,6 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   }
 
   if (!jit::IsIonEnabled(cx)) {
-    return true;
-  }
-
-  if (JitOptions.warpBuilder) {
-    // TODO: support using WarpBuilder for arguments analysis.
     return true;
   }
 
@@ -4687,32 +4715,58 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   const OptimizationInfo* optimizationInfo =
       IonOptimizations.get(OptimizationLevel::Normal);
 
-  CompilerConstraintList* constraints = NewCompilerConstraintList(temp);
-  if (!constraints) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  BaselineInspector inspector(script);
   const JitCompileOptions options(cx);
 
   MIRGenerator mirGen(CompileRealm::get(cx->realm()), options, &temp, &graph,
                       &info, optimizationInfo);
-  IonBuilder builder(nullptr, mirGen, &info, constraints, &inspector,
-                     /* baselineFrame = */ nullptr);
 
-  AbortReasonOr<Ok> buildResult = builder.build();
-  if (buildResult.isErr()) {
-    AbortReason reason = buildResult.unwrapErr();
-    if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
-      return false;
+  if (JitOptions.warpBuilder) {
+    WarpOracle oracle(cx, mirGen, script);
+
+    AbortReasonOr<WarpSnapshot*> result = oracle.createSnapshot();
+    if (result.isErr()) {
+      AbortReason reason = result.unwrapErr();
+      if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
+        return false;
+      }
+      if (reason == AbortReason::Alloc) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+      MOZ_ASSERT(!cx->isExceptionPending());
+      return true;
     }
-    if (reason == AbortReason::Alloc) {
+
+    WarpCompilation comp(temp);
+    WarpBuilder builder(*result.unwrap(), mirGen, &comp);
+    if (!builder.build()) {
       ReportOutOfMemory(cx);
       return false;
     }
-    MOZ_ASSERT(!cx->isExceptionPending());
-    return true;
+  } else {
+    CompilerConstraintList* constraints = NewCompilerConstraintList(temp);
+    if (!constraints) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+
+    BaselineInspector inspector(script);
+    IonBuilder builder(nullptr, mirGen, &info, constraints, &inspector,
+                       /* baselineFrame = */ nullptr);
+
+    AbortReasonOr<Ok> buildResult = builder.build();
+    if (buildResult.isErr()) {
+      AbortReason reason = buildResult.unwrapErr();
+      if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
+        return false;
+      }
+      if (reason == AbortReason::Alloc) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+      MOZ_ASSERT(!cx->isExceptionPending());
+      return true;
+    }
   }
 
   if (!SplitCriticalEdges(graph)) {
@@ -5149,6 +5203,10 @@ void jit::DumpMIRExpressions(MIRGraph& graph, const CompileInfo& info,
     }
   }
 
-  out.printf("===== %s:%u =====\n", info.filename(), info.lineno());
+  if (info.compilingWasm()) {
+    out.printf("===== end wasm MIR dump =====\n");
+  } else {
+    out.printf("===== %s:%u =====\n", info.filename(), info.lineno());
+  }
 #endif
 }

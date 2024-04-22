@@ -5,10 +5,10 @@
 #include "debugger/DebuggerMemory.h"
 
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
 #include "mozilla/Vector.h"
 
 #include <stdlib.h>
+#include <utility>
 
 #include "builtin/MapObject.h"
 #include "debugger/Debugger.h"
@@ -348,13 +348,11 @@ bool DebuggerMemory::CallData::getAllocationsLogOverflowed() {
 }
 
 bool DebuggerMemory::CallData::getOnGarbageCollection() {
-  return Debugger::getHookImpl(cx, args, *memory->getDebugger(),
-                               Debugger::OnGarbageCollection);
+  return Debugger::getGarbageCollectionHook(cx, args, *memory->getDebugger());
 }
 
 bool DebuggerMemory::CallData::setOnGarbageCollection() {
-  return Debugger::setHookImpl(cx, args, *memory->getDebugger(),
-                               Debugger::OnGarbageCollection);
+  return Debugger::setGarbageCollectionHook(cx, args, *memory->getDebugger());
 }
 
 /* Debugger.Memory.prototype.takeCensus */

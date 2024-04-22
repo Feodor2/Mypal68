@@ -6,17 +6,15 @@ import gdb
 
 
 def get_header_ptr(value, ptr_t):
-    # Return the pointer stored in a CellHeader subclass that wraps a pointer.
-    assert value.type.strip_typedefs().tag.startswith('js::gc::CellHeaderWith')
-    return value['header_'].cast(ptr_t)
+    # Return the pointer stored in Cell::header_ for subclasses of
+    # TenuredCellWithNonGCPointer and CellWithTenuredGCPointer.
+    return value['header_']['mValue'].cast(ptr_t)
 
 
-def get_header_length_and_flags(value):
-    # Return the contents of a CellHeaderWithLengthAndFlags.
-    assert value.type.strip_typedefs().tag == \
-        'js::gc::CellHeaderWithLengthAndFlags'
-    header = value['header_']
-    flags = header['header_']
+def get_header_length_and_flags(value, cache):
+    # Return the length and flags values for subclasses of
+    # CellWithLengthAndFlags.
+    flags = value['header_']['mValue'].cast(cache.uintptr_t)
     try:
         length = value['length_']
     except gdb.error:

@@ -339,4 +339,4 @@ def generateCpp(out):
     # Print in a comment the next available phase kind number.
     #
     out.write("// The next available phase kind number is: %d\n" %
-            (MaxBucket + 1))
+              (MaxBucket + 1))

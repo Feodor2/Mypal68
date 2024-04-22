@@ -8,8 +8,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
 #include "mozilla/UniquePtr.h"
+
+#include <utility>
 
 #include "js/AllocPolicy.h"
 #include "js/UbiNode.h"

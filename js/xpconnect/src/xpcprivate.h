@@ -75,7 +75,6 @@
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DefineEnum.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
@@ -93,6 +92,7 @@
 #include "xpcpublic.h"
 #include "js/HashTable.h"
 #include "js/GCHashTable.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetCompartment, JS::GetPrivate
 #include "js/TracingAPI.h"
 #include "js/WeakMapPtr.h"
 #include "PLDHashTable.h"
@@ -185,7 +185,7 @@ static inline bool IS_WN_CLASS(const JSClass* clazz) {
 }
 
 static inline bool IS_WN_REFLECTOR(JSObject* obj) {
-  return IS_WN_CLASS(js::GetObjectClass(obj));
+  return IS_WN_CLASS(JS::GetClass(obj));
 }
 
 /***************************************************************************
@@ -563,10 +563,27 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
-  JSObject* UnprivilegedJunkScope() { return mUnprivilegedJunkScope; }
+  /**
+   * The unprivileged junk scope is an unprivileged sandbox global used for
+   * convenience by certain operations which need an unprivileged global but
+   * don't have one immediately handy. It should generally be avoided when
+   * possible.
+   *
+   * The scope is created lazily when it is needed, and held weakly so that it
+   * is destroyed when there are no longer any remaining external references to
+   * it. This means that under low memory conditions, when the scope does not
+   * already exist, we may not be able to create one. In these circumstances,
+   * the infallible version of this API will abort, and the fallible version
+   * will return null. Callers should therefore prefer the fallible version when
+   * on a codepath which can already return failure, but may use the infallible
+   * one otherwise.
+   */
+  JSObject* UnprivilegedJunkScope();
+  JSObject* UnprivilegedJunkScope(const mozilla::fallible_t&);
+
+  bool IsUnprivilegedJunkScope(JSObject*);
   JSObject* LoaderGlobal();
 
-  void InitSingletonScopes();
   void DeleteSingletonScopes();
 
   void SystemIsBeingShutDown();
@@ -617,7 +634,7 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   nsTArray<xpcGCCallback> extraGCCallbacks;
   JS::GCSliceCallback mPrevGCSliceCallback;
   JS::DoCycleCollectionCallback mPrevDoCycleCollectionCallback;
-  JS::PersistentRootedObject mUnprivilegedJunkScope;
+  mozilla::WeakPtr<SandboxPrivate> mUnprivilegedJunkScope;
   JS::PersistentRootedObject mLoaderGlobal;
   RefPtr<AsyncFreeSnowWhite> mAsyncSnowWhiteFreer;
 
@@ -1411,7 +1428,7 @@ class XPCWrappedNative final : public nsIXPConnectWrappedNative {
 
   static XPCWrappedNative* Get(JSObject* obj) {
     MOZ_ASSERT(IS_WN_REFLECTOR(obj));
-    return (XPCWrappedNative*)js::GetObjectPrivate(obj);
+    return (XPCWrappedNative*)JS::GetPrivate(obj);
   }
 
  private:
@@ -1686,7 +1703,7 @@ class nsXPCWrappedJS final : protected nsAutoXPTCStub,
 
  private:
   JS::Compartment* Compartment() const {
-    return js::GetObjectCompartment(mJSObj.unbarrieredGet());
+    return JS::GetCompartment(mJSObj.unbarrieredGet());
   }
 
   // These methods are defined in XPCWrappedJSClass.cpp to preserve VCS blame.
@@ -1970,10 +1987,8 @@ class MOZ_RAII AutoScriptEvaluate {
    * Saves the JSContext as well as initializing our state
    * @param cx The JSContext, this can be null, we don't do anything then
    */
-  explicit AutoScriptEvaluate(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mJSContext(cx), mEvaluated(false) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AutoScriptEvaluate(JSContext* cx)
+      : mJSContext(cx), mEvaluated(false) {}
 
   /**
    * Does the pre script evaluation.
@@ -1993,7 +2008,6 @@ class MOZ_RAII AutoScriptEvaluate {
   mozilla::Maybe<JS::AutoSaveExceptionState> mState;
   bool mEvaluated;
   mozilla::Maybe<JSAutoRealm> mAutoRealm;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
   // No copying or assignment allowed
   AutoScriptEvaluate(const AutoScriptEvaluate&) = delete;
@@ -2003,8 +2017,7 @@ class MOZ_RAII AutoScriptEvaluate {
 /***************************************************************************/
 class MOZ_RAII AutoResolveName {
  public:
-  AutoResolveName(XPCCallContext& ccx,
-                  JS::HandleId name MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  AutoResolveName(XPCCallContext& ccx, JS::HandleId name)
       : mContext(ccx.GetContext()),
         mOld(ccx, mContext->SetResolveName(name))
 #ifdef DEBUG
@@ -2012,7 +2025,6 @@ class MOZ_RAII AutoResolveName {
         mCheck(ccx, name)
 #endif
   {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~AutoResolveName() {
@@ -2026,7 +2038,6 @@ class MOZ_RAII AutoResolveName {
 #ifdef DEBUG
   JS::RootedId mCheck;
 #endif
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /***************************************************************************/
@@ -2221,9 +2232,7 @@ class XPCTraceableVariant : public XPCVariant, public XPCRootSetElem {
 /***************************************************************************/
 // Utilities
 
-inline void* xpc_GetJSPrivate(JSObject* obj) {
-  return js::GetObjectPrivate(obj);
-}
+inline void* xpc_GetJSPrivate(JSObject* obj) { return JS::GetPrivate(obj); }
 
 inline JSContext* xpc_GetSafeJSContext() {
   return XPCJSContext::Get()->Context();
@@ -2620,7 +2629,7 @@ class CompartmentPrivate {
   }
 
   static CompartmentPrivate* Get(JSObject* object) {
-    JS::Compartment* compartment = js::GetObjectCompartment(object);
+    JS::Compartment* compartment = JS::GetCompartment(object);
     return Get(compartment);
   }
 

@@ -502,65 +502,45 @@ set_config('JS_HAS_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x
 set_define('JS_HAS_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
 
 
-# Support for WebAssembly bulk memory operations.
-# =====================================================
-
-@depends(milestone.is_nightly)
-def default_wasm_bulk_memory(is_nightly):
-    return is_nightly
-
-js_option('--enable-wasm-bulk-memory',
-          default=default_wasm_bulk_memory,
-          help='{Enable|Disable} WebAssembly bulk memory operators')
-
-set_config('ENABLE_WASM_BULKMEM_OPS', depends_if('--enable-wasm-bulk-memory')(lambda x: True))
-set_define('ENABLE_WASM_BULKMEM_OPS', depends_if('--enable-wasm-bulk-memory')(lambda x: True))
-
-
 # Support for WebAssembly reference types.
 # =====================================================
 
-@depends(milestone.is_nightly)
-def default_wasm_reftypes(is_nightly):
-    return is_nightly
+js_option('--disable-wasm-reftypes',
+          help='Disable WebAssembly reference types')
 
-js_option('--enable-wasm-reftypes',
-          default=default_wasm_reftypes,
-          help='{Enable|Disable} WebAssembly reference types')
+@depends('--disable-wasm-reftypes')
+def enable_wasm_reftypes(value):
+    if value:
+        return True
 
-set_config('ENABLE_WASM_REFTYPES', depends_if('--enable-wasm-reftypes')(lambda x: True))
-set_define('ENABLE_WASM_REFTYPES', depends_if('--enable-wasm-reftypes')(lambda x: True))
-
-
-# Support for WebAssembly I64/BigInt conversion
-# ===========================================================================
-
-@depends(milestone.is_nightly)
-def default_wasm_bigint(is_nightly):
-    return is_nightly
-
-js_option('--enable-wasm-bigint',
-          default=default_wasm_bigint,
-          help='{Enable|Disable} WebAssembly I64/BigInt conversion')
-
-set_config('ENABLE_WASM_BIGINT', depends_if('--enable-wasm-bigint')(lambda x: True))
-set_define('ENABLE_WASM_BIGINT', depends_if('--enable-wasm-bigint')(lambda x: True))
+set_config('ENABLE_WASM_REFTYPES', enable_wasm_reftypes)
+set_define('ENABLE_WASM_REFTYPES', enable_wasm_reftypes)
 
 
 # Support for WebAssembly GC.
 # ===========================
 
-@depends(milestone.is_nightly, '--enable-wasm-reftypes')
-def default_wasm_gc(is_nightly, reftypes):
-    if reftypes and is_nightly:
+@depends(milestone.is_nightly, '--enable-wasm-reftypes', '--enable-typed-objects')
+def default_wasm_gc(is_nightly, reftypes, typed_objects):
+    if is_nightly and reftypes and typed_objects:
         return True
 
 js_option('--enable-wasm-gc',
           default=default_wasm_gc,
           help='{Enable|Disable} WebAssembly GC')
 
-set_config('ENABLE_WASM_GC', depends_if('--enable-wasm-gc')(lambda x: True))
-set_define('ENABLE_WASM_GC', depends_if('--enable-wasm-gc')(lambda x: True))
+@depends('--enable-wasm-gc', '--enable-wasm-reftypes', '--enable-typed-objects')
+def wasm_gc(value, reftypes, typed_objects):
+    if not value:
+        return
+
+    if reftypes and typed_objects:
+        return True
+
+    die('--enable-wasm-gc only possible with --enable-wasm-reftypes and --enable-typed-objects')
+
+set_config('ENABLE_WASM_GC', wasm_gc)
+set_define('ENABLE_WASM_GC', wasm_gc)
 
 
 # Support for WebAssembly private ref types.

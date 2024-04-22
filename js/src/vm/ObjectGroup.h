@@ -5,6 +5,8 @@
 #ifndef vm_ObjectGroup_h
 #define vm_ObjectGroup_h
 
+#include "js/shadow/ObjectGroup.h"  // JS::shadow::ObjectGroup
+
 #include "jsfriendapi.h"
 
 #include "ds/IdValuePair.h"
@@ -77,15 +79,14 @@ enum NewObjectKind {
  */
 
 /* Type information about an object accessed by a script. */
-class ObjectGroup : public gc::TenuredCell {
+class ObjectGroup : public gc::TenuredCellWithNonGCPointer<const JSClass> {
  public:
   class Property;
 
- private:
-  /* Class shared by objects in this group stored in header. */
-  using HeaderWithJSClass = gc::CellHeaderWithNonGCPointer<const JSClass>;
-  HeaderWithJSClass headerAndClasp_;
+  /* Class shared by objects in this group, stored in the cell header. */
+  const JSClass* clasp() const { return headerPtr(); }
 
+ private:
   /* Prototype shared by objects in this group. */
   GCPtr<TaggedProto> proto_;  // set by constructor
 
@@ -145,10 +146,7 @@ class ObjectGroup : public gc::TenuredCell {
   // END OF PROPERTIES
 
  private:
-  static inline uint32_t offsetOfClasp() {
-    return offsetof(ObjectGroup, headerAndClasp_) +
-           HeaderWithJSClass::offsetOfPtr();
-  }
+  static inline uint32_t offsetOfClasp() { return offsetOfHeaderPtr(); }
 
   static inline uint32_t offsetOfProto() {
     return offsetof(ObjectGroup, proto_);
@@ -172,8 +170,6 @@ class ObjectGroup : public gc::TenuredCell {
   friend class js::jit::MacroAssembler;
 
  public:
-  const JSClass* clasp() const { return headerAndClasp_.ptr(); }
-
   bool hasDynamicPrototype() const { return proto_.isDynamic(); }
 
   const GCPtr<TaggedProto>& proto() const { return proto_; }
@@ -429,7 +425,6 @@ class ObjectGroup : public gc::TenuredCell {
   void finalize(JSFreeOp* fop);
 
   static const JS::TraceKind TraceKind = JS::TraceKind::ObjectGroup;
-  const gc::CellHeader& cellHeader() const { return headerAndClasp_; }
 
  public:
   const ObjectGroupFlags* addressOfFlags() const { return &flags_; }
@@ -443,7 +438,7 @@ class ObjectGroup : public gc::TenuredCell {
 
   static void staticAsserts() {
     static_assert(offsetof(ObjectGroup, proto_) ==
-                  offsetof(js::shadow::ObjectGroup, proto));
+                  offsetof(JS::shadow::ObjectGroup, proto));
   }
 
  public:

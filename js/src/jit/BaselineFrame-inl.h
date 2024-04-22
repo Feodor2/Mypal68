@@ -7,7 +7,6 @@
 
 #include "jit/BaselineFrame.h"
 
-#include "vm/EnvironmentObject.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 
@@ -85,6 +84,20 @@ inline CallObject& BaselineFrame::callObj() const {
     obj = obj->enclosingEnvironment();
   }
   return obj->as<CallObject>();
+}
+
+inline ICScript* BaselineFrame::icScript() const {
+  if (JitOptions.warpBuilder) {
+    return icScript_;
+  }
+  return script()->jitScript()->icScript();
+}
+
+inline JSScript* BaselineFrame::invalidationScript() const {
+  if (!icScript()->isInlined()) {
+    return script();
+  }
+  return icScript()->inliningRoot()->owningScript();
 }
 
 inline void BaselineFrame::unsetIsDebuggee() {

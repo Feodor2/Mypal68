@@ -20,8 +20,12 @@ struct BytecodeInfo {
   bool initialized : 1;
   bool jumpTarget : 1;
 
-  // If true, this is a JSOp::LoopHead op inside a catch or finally block.
-  bool loopHeadInCatchOrFinally : 1;
+  // If true, this is a JSOp::LoopHead where we can OSR into Ion/Warp code.
+  bool loopHeadCanOsr : 1;
+
+  // See the comment above normallyReachable in BytecodeAnalysis.cpp for how
+  // this works.
+  bool jumpTargetNormallyReachable : 1;
 
   // True if the script has a resume offset for this bytecode op.
   bool hasResumeOffset : 1;
@@ -31,6 +35,13 @@ struct BytecodeInfo {
     MOZ_ASSERT_IF(initialized, stackDepth == depth);
     initialized = true;
     stackDepth = depth;
+  }
+
+  void setJumpTarget(bool normallyReachable) {
+    jumpTarget = true;
+    if (normallyReachable) {
+      jumpTargetNormallyReachable = true;
+    }
   }
 };
 
@@ -60,6 +71,8 @@ class BytecodeAnalysis {
   }
 
   bool hasTryFinally() const { return hasTryFinally_; }
+
+  void checkWarpSupport(JSOp op);
 };
 
 // Bytecode analysis pass necessary for IonBuilder. The result is cached in

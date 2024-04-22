@@ -31,6 +31,7 @@
 
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/Parser.h"
+#include "frontend/ParserAtom.h"
 #include "frontend/ReservedWords.h"
 #include "js/CharacterEncoding.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlags
@@ -123,28 +124,34 @@ MOZ_ALWAYS_INLINE const ReservedWordInfo* FindReservedWord<Utf8Unit>(
   return FindReservedWord(Utf8AsUnsignedChars(units), length);
 }
 
+template <typename CharT>
 static const ReservedWordInfo* FindReservedWord(
-    JSLinearString* str, js::frontend::NameVisibility* visibility) {
-  JS::AutoCheckCannotGC nogc;
-  if (str->hasLatin1Chars()) {
-    const JS::Latin1Char* chars = str->latin1Chars(nogc);
-    size_t length = str->length();
-    if (length > 0 && chars[0] == '#') {
-      *visibility = js::frontend::NameVisibility::Private;
-      return nullptr;
-    }
-    *visibility = js::frontend::NameVisibility::Public;
-    return FindReservedWord(chars, length);
-  }
-
-  const char16_t* chars = str->twoByteChars(nogc);
-  size_t length = str->length();
+    const CharT* chars, size_t length,
+    js::frontend::NameVisibility* visibility) {
   if (length > 0 && chars[0] == '#') {
     *visibility = js::frontend::NameVisibility::Private;
     return nullptr;
   }
   *visibility = js::frontend::NameVisibility::Public;
   return FindReservedWord(chars, length);
+}
+
+static const ReservedWordInfo* FindReservedWord(
+    JSLinearString* str, js::frontend::NameVisibility* visibility) {
+  JS::AutoCheckCannotGC nogc;
+  if (str->hasLatin1Chars()) {
+    return FindReservedWord(str->latin1Chars(nogc), str->length(), visibility);
+  }
+  return FindReservedWord(str->twoByteChars(nogc), str->length(), visibility);
+}
+
+static const ReservedWordInfo* FindReservedWord(
+    const js::frontend::ParserAtomEntry* atom,
+    js::frontend::NameVisibility* visibility) {
+  if (atom->hasLatin1Chars()) {
+    return FindReservedWord(atom->latin1Chars(), atom->length(), visibility);
+  }
+  return FindReservedWord(atom->twoByteChars(), atom->length(), visibility);
 }
 
 static uint32_t GetSingleCodePoint(const char16_t** p, const char16_t* end) {
@@ -198,6 +205,12 @@ bool IsIdentifier(JSLinearString* str) {
   }
   return IsIdentifier(str->twoByteChars(nogc), str->length());
 }
+bool IsIdentifier(const ParserAtom* atom) {
+  MOZ_ASSERT(atom);
+  return atom->hasLatin1Chars()
+             ? IsIdentifier(atom->latin1Chars(), atom->length())
+             : IsIdentifier(atom->twoByteChars(), atom->length());
+}
 
 bool IsIdentifierNameOrPrivateName(JSLinearString* str) {
   JS::AutoCheckCannotGC nogc;
@@ -206,6 +219,12 @@ bool IsIdentifierNameOrPrivateName(JSLinearString* str) {
     return IsIdentifierNameOrPrivateName(str->latin1Chars(nogc), str->length());
   }
   return IsIdentifierNameOrPrivateName(str->twoByteChars(nogc), str->length());
+}
+bool IsIdentifierNameOrPrivateName(const ParserAtom* atom) {
+  if (atom->hasLatin1Chars()) {
+    return IsIdentifierNameOrPrivateName(atom->latin1Chars(), atom->length());
+  }
+  return IsIdentifierNameOrPrivateName(atom->twoByteChars(), atom->length());
 }
 
 bool IsIdentifier(const Latin1Char* chars, size_t length) {
@@ -300,6 +319,14 @@ bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length) {
   return true;
 }
 
+bool IsKeyword(const ParserAtom* atom) {
+  NameVisibility visibility;
+  if (const ReservedWordInfo* rw = FindReservedWord(atom, &visibility)) {
+    return TokenKindIsKeyword(rw->tokentype);
+  }
+
+  return false;
+}
 bool IsKeyword(JSLinearString* str) {
   NameVisibility visibility;
   if (const ReservedWordInfo* rw = FindReservedWord(str, &visibility)) {
@@ -309,9 +336,9 @@ bool IsKeyword(JSLinearString* str) {
   return false;
 }
 
-TokenKind ReservedWordTokenKind(PropertyName* str) {
+TokenKind ReservedWordTokenKind(const ParserName* name) {
   NameVisibility visibility;
-  if (const ReservedWordInfo* rw = FindReservedWord(str, &visibility)) {
+  if (const ReservedWordInfo* rw = FindReservedWord(name, &visibility)) {
     return rw->tokentype;
   }
 
@@ -319,9 +346,9 @@ TokenKind ReservedWordTokenKind(PropertyName* str) {
                                                : TokenKind::Name;
 }
 
-const char* ReservedWordToCharZ(PropertyName* str) {
+const char* ReservedWordToCharZ(const ParserName* name) {
   NameVisibility visibility;
-  if (const ReservedWordInfo* rw = FindReservedWord(str, &visibility)) {
+  if (const ReservedWordInfo* rw = FindReservedWord(name, &visibility)) {
     return ReservedWordToCharZ(rw->tokentype);
   }
 
@@ -342,13 +369,13 @@ const char* ReservedWordToCharZ(TokenKind tt) {
   return nullptr;
 }
 
-PropertyName* TokenStreamAnyChars::reservedWordToPropertyName(
+const ParserName* TokenStreamAnyChars::reservedWordToPropertyName(
     TokenKind tt) const {
   MOZ_ASSERT(tt != TokenKind::Name);
   switch (tt) {
 #define EMIT_CASE(word, name, type) \
   case type:                        \
-    return cx->names().name;
+    return cx->parserNames().name;
     FOR_EACH_JAVASCRIPT_RESERVED_WORD(EMIT_CASE)
 #undef EMIT_CASE
     default:
@@ -1889,6 +1916,7 @@ TokenStreamSpecific<Unit, AnyCharsAccess>::matchIdentifierStart(
     IdentifierEscapes* sawEscape) {
   int32_t unit = getCodeUnit();
   if (unicode::IsIdentifierStart(char16_t(unit))) {
+    ungetCodeUnit(unit);
     *sawEscape = IdentifierEscapes::None;
     return true;
   }
@@ -2221,7 +2249,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
     }
   }
 
-  JSAtom* atom;
+  const ParserAtom* atom = nullptr;
   if (MOZ_UNLIKELY(escaping == IdentifierEscapes::SawUnicodeEscape)) {
     // Identifiers containing Unicode escapes have to be converted into
     // tokenbuf before atomizing.
@@ -2229,7 +2257,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
       return false;
     }
 
-    atom = drainCharBufferIntoAtom(anyCharsAccess().cx);
+    atom = drainCharBufferIntoAtom();
   } else {
     // Escape-free identifiers can be created directly from sourceUnits.
     const Unit* chars = identStart;
@@ -2245,7 +2273,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
       }
     }
 
-    atom = atomizeSourceChars(anyCharsAccess().cx, MakeSpan(chars, length));
+    atom = atomizeSourceChars(MakeSpan(chars, length));
   }
   if (!atom) {
     return false;
@@ -2253,10 +2281,10 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
 
   noteBadToken.release();
   if (visibility == NameVisibility::Private) {
-    newPrivateNameToken(atom->asPropertyName(), start, modifier, out);
+    newPrivateNameToken(atom->asName(), start, modifier, out);
     return true;
   }
-  newNameToken(atom->asPropertyName(), start, modifier, out);
+  newNameToken(atom->asName(), start, modifier, out);
   return true;
 }
 
@@ -2924,6 +2952,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         if (!strictModeError(JSMSG_DEPRECATED_OCTAL)) {
           return badToken();
         }
+        anyCharsAccess().flags.sawDeprecatedOctal = true;
 
         radix = 8;
         isLegacyOctalOrNoctal = true;
@@ -3602,7 +3631,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
             if (!strictModeError(JSMSG_DEPRECATED_OCTAL)) {
               return false;
             }
-            anyChars.flags.sawOctalEscape = true;
+            anyChars.flags.sawDeprecatedOctal = true;
           }
 
           if (IsAsciiOctal(unit)) {
@@ -3666,7 +3695,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
     }
   }
 
-  JSAtom* atom = drainCharBufferIntoAtom(anyCharsAccess().cx);
+  const ParserAtom* atom = drainCharBufferIntoAtom();
   if (!atom) {
     return false;
   }

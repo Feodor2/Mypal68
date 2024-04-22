@@ -1,3 +1,8 @@
+// |jit-test| --no-warp
+
+// Warp lacks Scalar Replacement support (bug 1650233). Re-evaluate after that
+// bug has been fixed.
+
 // Ion eager fails the test below because we have not yet created any
 // template object in baseline before running the content of the top-level
 // function.
@@ -9,6 +14,9 @@ if (getJitCompilerOptions()["ion.warmup.trigger"] <= 100)
 // generation of getelem & setelem instructions.
 if (getJitCompilerOptions()["ion.forceinlineCaches"])
     setJitCompilerOption("ion.forceinlineCaches", 0);
+
+// Prevent the GC from cancelling Ion compilations, when we expect them to succeed
+gczeal(0);
 
 // This function is used to force a bailout when it is inlined, and to recover
 // the frame which is inlining this function.

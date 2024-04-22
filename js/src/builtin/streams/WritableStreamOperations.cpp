@@ -11,7 +11,7 @@
 
 #include <stdint.h>  // uint32_t
 
-#include "jsapi.h"        // JS_ReportErrorASCII, JS_SetPrivate
+#include "jsapi.h"        // JS_ReportErrorASCII
 #include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*
 
 #include "builtin/streams/MiscellaneousOperations.h"  // js::PromiseRejectedWithPendingError
@@ -76,7 +76,7 @@ WritableStream* WritableStream::create(
     return nullptr;
   }
 
-  JS_SetPrivate(stream, nsISupportsObject_alreadyAddreffed);
+  stream->setPrivate(nsISupportsObject_alreadyAddreffed);
 
   stream->initWritableState();
 

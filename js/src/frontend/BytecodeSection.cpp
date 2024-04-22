@@ -7,37 +7,53 @@
 #include "mozilla/Assertions.h"       // MOZ_ASSERT
 #include "mozilla/ReverseIterator.h"  // mozilla::Reversed
 
+#include "frontend/AbstractScopePtr.h"  // ScopeIndex
 #include "frontend/CompilationInfo.h"
 #include "frontend/SharedContext.h"  // FunctionBox
-#include "frontend/Stencil.h"        // ScopeCreationData
 #include "vm/BytecodeUtil.h"         // INDEX_LIMIT, StackUses, StackDefs
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"     // JSContext
 #include "vm/RegExpObject.h"  // RegexpObject
+#include "vm/Scope.h"         // GlobalScope
 
 using namespace js;
 using namespace js::frontend;
 
-bool GCThingList::append(FunctionBox* funbox, uint32_t* index) {
+bool GCThingList::append(FunctionBox* funbox, GCThingIndex* index) {
   // Append the function to the vector and return the index in *index.
-  *index = vector.length();
+  *index = GCThingIndex(vector.length());
 
-  // To avoid circular include issues, funbox can't return a FunctionIndex, so
-  // instead it returns a size_t, which we wrap in FunctionIndex here to
-  // disambiguate the variant.
-  return vector.append(mozilla::AsVariant(FunctionIndex(funbox->index())));
+  if (!vector.append(mozilla::AsVariant(funbox->index()))) {
+    js::ReportOutOfMemory(cx);
+    return false;
+  }
+  return true;
 }
 
 AbstractScopePtr GCThingList::getScope(size_t index) const {
   const ScriptThingVariant& elem = vector[index];
   if (elem.is<EmptyGlobalScopeType>()) {
-    return AbstractScopePtr(&compilationInfo.cx->global()->emptyGlobalScope());
+    // The empty enclosing scope should be stored by
+    // CompilationInput::initForSelfHostingGlobal.
+    MOZ_ASSERT(compilationInfo.input.enclosingScope);
+    MOZ_ASSERT(
+        !compilationInfo.input.enclosingScope->as<GlobalScope>().hasBindings());
+    return AbstractScopePtr(compilationInfo.input.enclosingScope);
   }
   return AbstractScopePtr(compilationInfo, elem.as<ScopeIndex>());
 }
 
+mozilla::Maybe<ScopeIndex> GCThingList::getScopeIndex(size_t index) const {
+  const ScriptThingVariant& elem = vector[index];
+  if (elem.is<EmptyGlobalScopeType>()) {
+    return mozilla::Nothing();
+  }
+  return mozilla::Some(vector[index].as<ScopeIndex>());
+}
+
 bool js::frontend::EmitScriptThingsVector(JSContext* cx,
                                           CompilationInfo& compilationInfo,
+                                          CompilationGCOutput& gcOutput,
                                           const ScriptThingsVector& objects,
                                           mozilla::Span<JS::GCCellPtr> output) {
   MOZ_ASSERT(objects.length() <= INDEX_LIMIT);
@@ -46,12 +62,17 @@ bool js::frontend::EmitScriptThingsVector(JSContext* cx,
   struct Matcher {
     JSContext* cx;
     CompilationInfo& compilationInfo;
+    CompilationGCOutput& gcOutput;
     uint32_t i;
     mozilla::Span<JS::GCCellPtr>& output;
 
     bool operator()(const ScriptAtom& data) {
-      JSAtom* atom = data;
-      output[i] = JS::GCCellPtr(atom);
+      auto maybeAtom = data->toJSAtom(cx, compilationInfo);
+      if (maybeAtom.isErr()) {
+        return false;
+      }
+      MOZ_ASSERT(maybeAtom.unwrap());
+      output[i] = JS::GCCellPtr(maybeAtom.unwrap());
       return true;
     }
 
@@ -61,7 +82,7 @@ bool js::frontend::EmitScriptThingsVector(JSContext* cx,
     }
 
     bool operator()(const BigIntIndex& index) {
-      BigIntCreationData& data = compilationInfo.bigIntData[index];
+      BigIntStencil& data = compilationInfo.stencil.bigIntData[index];
       BigInt* bi = data.createBigInt(cx);
       if (!bi) {
         return false;
@@ -71,7 +92,7 @@ bool js::frontend::EmitScriptThingsVector(JSContext* cx,
     }
 
     bool operator()(const RegExpIndex& rindex) {
-      RegExpCreationData& data = compilationInfo.regExpData[rindex];
+      RegExpStencil& data = compilationInfo.stencil.regExpData[rindex];
       RegExpObject* regexp = data.createRegExp(cx);
       if (!regexp) {
         return false;
@@ -80,8 +101,9 @@ bool js::frontend::EmitScriptThingsVector(JSContext* cx,
       return true;
     }
 
-    bool operator()(const ObjLiteralCreationData& data) {
-      JSObject* obj = data.create(cx);
+    bool operator()(const ObjLiteralIndex& index) {
+      ObjLiteralStencil& data = compilationInfo.stencil.objLiteralData[index];
+      JSObject* obj = data.create(cx, compilationInfo);
       if (!obj) {
         return false;
       }
@@ -90,23 +112,12 @@ bool js::frontend::EmitScriptThingsVector(JSContext* cx,
     }
 
     bool operator()(const ScopeIndex& index) {
-      MutableHandle<ScopeCreationData> data =
-          compilationInfo.scopeCreationData[index];
-      Scope* scope = data.get().createScope(cx);
-      if (!scope) {
-        return false;
-      }
-
-      output[i] = JS::GCCellPtr(scope);
+      output[i] = JS::GCCellPtr(gcOutput.scopes[index].get());
       return true;
     }
 
     bool operator()(const FunctionIndex& index) {
-      // We should have already converted this data to a JSFunction as part
-      // of publishDeferredFunctions, which currently happens before BCE begins.
-      // Once we can do LazyScriptCreationData::create without referencing the
-      // functionbox, then we should be able to do JSFunction allocation here.
-      output[i] = JS::GCCellPtr(compilationInfo.functions[index]);
+      output[i] = JS::GCCellPtr(gcOutput.functions[index]);
       return true;
     }
 
@@ -118,7 +129,7 @@ bool js::frontend::EmitScriptThingsVector(JSContext* cx,
   };
 
   for (uint32_t i = 0; i < objects.length(); i++) {
-    Matcher m{cx, compilationInfo, i, output};
+    Matcher m{cx, compilationInfo, gcOutput, i, output};
     if (!objects[i].match(m)) {
       return false;
     }
@@ -139,7 +150,7 @@ bool CGTryNoteList::append(TryNoteKind kind, uint32_t stackDepth,
   return list.append(note);
 }
 
-bool CGScopeNoteList::append(uint32_t scopeIndex, BytecodeOffset offset,
+bool CGScopeNoteList::append(GCThingIndex scopeIndex, BytecodeOffset offset,
                              uint32_t parent) {
   ScopeNote note;
   note.index = scopeIndex;
@@ -165,8 +176,9 @@ void CGScopeNoteList::recordEndImpl(uint32_t index, uint32_t offset) {
   list[index].length = offset - list[index].start;
 }
 
-JSObject* ObjLiteralCreationData::create(JSContext* cx) const {
-  return InterpretObjLiteral(cx, atoms_, writer_);
+JSObject* ObjLiteralStencil::create(JSContext* cx,
+                                    CompilationInfo& compilationInfo) const {
+  return InterpretObjLiteral(cx, compilationInfo, atoms_, writer_);
 }
 
 BytecodeSection::BytecodeSection(JSContext* cx, uint32_t lineNum)

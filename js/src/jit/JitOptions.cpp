@@ -165,6 +165,21 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(baselineJitWarmUpThreshold, 100);
 
   // How many invocations or loop iterations are needed before functions
+  // are considered for trial inlining.
+  SET_DEFAULT(trialInliningWarmUpThreshold, 500);
+
+  // The initial warm-up count for ICScripts created by trial inlining.
+  //
+  // Note: the difference between trialInliningInitialWarmUpCount and
+  // trialInliningWarmUpThreshold must be:
+  //
+  // * Small enough to allow inlining multiple levels deep before the outer
+  //   script reaches its normalIonWarmUpThreshold.
+  //
+  // * Greater than inliningEntryThreshold or no scripts can be inlined.
+  SET_DEFAULT(trialInliningInitialWarmUpCount, 250);
+
+  // How many invocations or loop iterations are needed before functions
   // are compiled with the Ion compiler at OptimizationLevel::Normal.
   // Duplicated in all.js - ensure both match.
   SET_DEFAULT(normalIonWarmUpThreshold, 1000);
@@ -199,7 +214,10 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(osrPcMismatchesBeforeRecompile, 6000);
 
   // The bytecode length limit for small function.
-  SET_DEFAULT(smallFunctionMaxBytecodeLength_, 130);
+  SET_DEFAULT(smallFunctionMaxBytecodeLength, 130);
+
+  // The minimum entry count for an IC stub before it can be trial-inlined.
+  SET_DEFAULT(inliningEntryThreshold, 100);
 
   // An artificial testing limit for the maximum supported offset of
   // pc-relative jump and call instructions.
@@ -301,7 +319,7 @@ DefaultJitOptions::DefaultJitOptions() {
 }
 
 bool DefaultJitOptions::isSmallFunction(JSScript* script) const {
-  return script->length() <= smallFunctionMaxBytecodeLength_;
+  return script->length() <= smallFunctionMaxBytecodeLength;
 }
 
 void DefaultJitOptions::enableGvn(bool enable) { disableGvn = !enable; }
@@ -316,6 +334,28 @@ void DefaultJitOptions::setEagerIonCompilation() {
   setEagerBaselineCompilation();
   normalIonWarmUpThreshold = 0;
   fullIonWarmUpThreshold = 0;
+}
+
+void DefaultJitOptions::setFastWarmUp() {
+  baselineInterpreterWarmUpThreshold = 4;
+  baselineJitWarmUpThreshold = 10;
+  trialInliningWarmUpThreshold = 14;
+  trialInliningInitialWarmUpCount = 12;
+  normalIonWarmUpThreshold = 30;
+  fullIonWarmUpThreshold = 65;
+
+  inliningEntryThreshold = 2;
+  smallFunctionMaxBytecodeLength = 2000;
+}
+
+void DefaultJitOptions::setWarpEnabled(bool enable) {
+#ifdef NIGHTLY_BUILD
+  // WarpBuilder requires TI to be disabled and doesn't use optimization levels.
+  typeInference = !enable;
+  warpBuilder = enable;
+  disableOptimizationLevels = enable;
+  normalIonWarmUpThreshold = enable ? 1500 : 1000;
+#endif
 }
 
 void DefaultJitOptions::setNormalIonWarmUpThreshold(uint32_t warmUpThreshold) {

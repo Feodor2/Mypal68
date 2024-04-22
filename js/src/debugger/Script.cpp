@@ -165,8 +165,8 @@ DebuggerScript* DebuggerScript::check(JSContext* cx, HandleValue v) {
   DebuggerScript& scriptObj = thisobj->as<DebuggerScript>();
 
   // Check for Debugger.Script.prototype, which is of class
-  // DebuggerScript::class but whose script is null.
-  if (!scriptObj.getReferentCell()) {
+  // DebuggerScript::class.
+  if (!scriptObj.isInstance()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_INCOMPATIBLE_PROTO, "Debugger.Script",
                               "method", "prototype object");
@@ -216,6 +216,7 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
   bool getIsFunction();
   bool getIsModule();
   bool getDisplayName();
+  bool getParameterNames();
   bool getUrl();
   bool getStartLine();
   bool getStartColumn();
@@ -303,7 +304,7 @@ bool DebuggerScript::CallData::getDisplayName() {
     return false;
   }
   JSFunction* func = obj->getReferentScript()->function();
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   JSString* name = func ? func->displayAtom() : nullptr;
   if (!name) {
@@ -316,6 +317,26 @@ bool DebuggerScript::CallData::getDisplayName() {
     return false;
   }
   args.rval().set(namev);
+  return true;
+}
+
+bool DebuggerScript::CallData::getParameterNames() {
+  if (!ensureScriptMaybeLazy()) {
+    return false;
+  }
+
+  RootedFunction fun(cx, referent.as<BaseScript*>()->function());
+  if (!fun) {
+    args.rval().setUndefined();
+    return true;
+  }
+
+  ArrayObject* arr = GetFunctionParameterNamesArray(cx, fun);
+  if (!arr) {
+    return false;
+  }
+
+  args.rval().setObject(*arr);
   return true;
 }
 
@@ -412,7 +433,7 @@ class DebuggerScript::GetSourceMatcher {
 };
 
 bool DebuggerScript::CallData::getSource() {
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   GetSourceMatcher matcher(cx, dbg);
   RootedDebuggerSource sourceObject(cx, referent.match(matcher));
@@ -444,7 +465,7 @@ bool DebuggerScript::CallData::getGlobal() {
   if (!ensureScript()) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   RootedValue v(cx, ObjectValue(script->global()));
   if (!dbg->wrapDebuggeeValue(cx, &v)) {
@@ -503,7 +524,7 @@ bool DebuggerScript::CallData::getChildScripts() {
   if (!ensureScriptMaybeLazy()) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   RootedObject result(cx, NewDenseEmptyArray(cx));
   if (!result) {
@@ -1432,6 +1453,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::NewObjectWithGroup:
     case JSOp::InitElem:
     case JSOp::InitHiddenElem:
+    case JSOp::InitLockedElem:
     case JSOp::InitElemInc:
     case JSOp::InitElemArray:
     case JSOp::InitProp:
@@ -1508,6 +1530,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::EndIter:
     case JSOp::In:
     case JSOp::HasOwn:
+    case JSOp::CheckPrivateField:
     case JSOp::SetRval:
     case JSOp::Instanceof:
     case JSOp::DebugLeaveLexicalEnv:
@@ -1532,7 +1555,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::CheckClassHeritage:
     case JSOp::FunWithProto:
     case JSOp::ObjWithProto:
-    case JSOp::FunctionProto:
+    case JSOp::BuiltinObject:
     case JSOp::DerivedConstructor:
     case JSOp::CheckThis:
     case JSOp::CheckReturn:
@@ -1640,7 +1663,7 @@ bool DebuggerScript::CallData::getAllOffsets() {
         RootedId id(cx);
         RootedValue v(cx, NumberValue(lineno));
         offsets = NewDenseEmptyArray(cx);
-        if (!offsets || !ValueToId<CanGC>(cx, v, &id)) {
+        if (!offsets || !PrimitiveValueToId<CanGC>(cx, v, &id)) {
           return false;
         }
 
@@ -1881,7 +1904,8 @@ struct DebuggerScript::SetBreakpointMatcher {
     }
 
     // If the Debugger's compartment has killed incoming wrappers, we may not
-    // have gotten usable results from the 'wrap' calls. Treat it as a failure.
+    // have gotten usable results from the 'wrap' calls. Treat it as a
+    // failure.
     if (IsDeadProxyObject(handler_) || IsDeadProxyObject(debuggerObject_)) {
       ReportAccessDenied(cx_);
       return false;
@@ -1982,7 +2006,7 @@ bool DebuggerScript::CallData::setBreakpoint() {
   if (!args.requireAtLeast(cx, "Debugger.Script.setBreakpoint", 2)) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   size_t offset;
   if (!ScriptOffset(cx, args[0], &offset)) {
@@ -2006,7 +2030,7 @@ bool DebuggerScript::CallData::getBreakpoints() {
   if (!ensureScript()) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   jsbytecode* pc;
   if (args.length() > 0) {
@@ -2066,9 +2090,9 @@ class DebuggerScript::ClearBreakpointMatcher {
 
     // A Breakpoint belongs logically to its script's compartment, so it holds
     // its handler via a cross-compartment wrapper. But the handler passed to
-    // `clearBreakpoint` is same-compartment with the Debugger. Wrap it here, so
-    // that `DebugScript::clearBreakpointsIn` gets the right value to search
-    // for.
+    // `clearBreakpoint` is same-compartment with the Debugger. Wrap it here,
+    // so that `DebugScript::clearBreakpointsIn` gets the right value to
+    // search for.
     AutoRealm ar(cx_, script);
     if (!cx_->compartment()->wrap(cx_, &handler_)) {
       return false;
@@ -2084,10 +2108,11 @@ class DebuggerScript::ClearBreakpointMatcher {
       return true;
     }
 
-    // A Breakpoint belongs logically to its instance's compartment, so it holds
-    // its handler via a cross-compartment wrapper. But the handler passed to
-    // `clearBreakpoint` is same-compartment with the Debugger. Wrap it here, so
-    // that `DebugState::clearBreakpointsIn` gets the right value to search for.
+    // A Breakpoint belongs logically to its instance's compartment, so it
+    // holds its handler via a cross-compartment wrapper. But the handler
+    // passed to `clearBreakpoint` is same-compartment with the Debugger. Wrap
+    // it here, so that `DebugState::clearBreakpointsIn` gets the right value
+    // to search for.
     AutoRealm ar(cx_, instanceObj);
     if (!cx_->compartment()->wrap(cx_, &handler_)) {
       return false;
@@ -2103,7 +2128,7 @@ bool DebuggerScript::CallData::clearBreakpoint() {
   if (!args.requireAtLeast(cx, "Debugger.Script.clearBreakpoint", 1)) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   JSObject* handler = RequireObject(cx, args[0]);
   if (!handler) {
@@ -2120,7 +2145,7 @@ bool DebuggerScript::CallData::clearBreakpoint() {
 }
 
 bool DebuggerScript::CallData::clearAllBreakpoints() {
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
   ClearBreakpointMatcher matcher(cx, dbg, nullptr);
   if (!referent.match(matcher)) {
     return false;
@@ -2304,6 +2329,7 @@ const JSPropertySpec DebuggerScript::properties_[] = {
     JS_DEBUG_PSG("isFunction", getIsFunction),
     JS_DEBUG_PSG("isModule", getIsModule),
     JS_DEBUG_PSG("displayName", getDisplayName),
+    JS_DEBUG_PSG("parameterNames", getParameterNames),
     JS_DEBUG_PSG("url", getUrl),
     JS_DEBUG_PSG("startLine", getStartLine),
     JS_DEBUG_PSG("startColumn", getStartColumn),

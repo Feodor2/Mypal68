@@ -10,11 +10,14 @@
 #include "builtin/TypedObject.h"
 #include "frontend/BytecodeCompiler.h"
 #include "jit/arm/Simulator-arm.h"
+#include "jit/AtomicOperations.h"
 #include "jit/BaselineIC.h"
 #include "jit/JitFrames.h"
 #include "jit/JitRealm.h"
 #include "jit/mips32/Simulator-mips32.h"
 #include "jit/mips64/Simulator-mips64.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimitWithExtra
+#include "js/friend/WindowProxy.h"  // js::IsWindow
 #include "vm/ArrayObject.h"
 #include "vm/EqualityOperations.h"  // js::StrictlyEqual
 #include "vm/Interpreter.h"
@@ -570,6 +573,18 @@ JSLinearString* StringFromCharCode(JSContext* cx, int32_t code) {
   return NewStringCopyNDontDeflate<CanGC>(cx, &c, 1);
 }
 
+JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code) {
+  AutoUnsafeCallWithABI unsafe;
+
+  char16_t c = char16_t(code);
+
+  if (StaticStrings::hasUnit(c)) {
+    return cx->staticStrings().getUnit(c);
+  }
+
+  return NewStringCopyNDontDeflate<NoGC>(cx, &c, 1);
+}
+
 JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint) {
   RootedValue rval(cx, Int32Value(codePoint));
   if (!str_fromCodePoint_one_arg(cx, rval, &rval)) {
@@ -649,7 +664,7 @@ bool OperatorIn(JSContext* cx, HandleValue key, HandleObject obj, bool* out) {
   return ToPropertyKey(cx, key, &id) && HasProperty(cx, obj, id, out);
 }
 
-bool OperatorInI(JSContext* cx, uint32_t index, HandleObject obj, bool* out) {
+bool OperatorInI(JSContext* cx, int32_t index, HandleObject obj, bool* out) {
   RootedValue key(cx, Int32Value(index));
   return OperatorIn(cx, key, obj, out);
 }
@@ -1462,27 +1477,8 @@ bool BaselineGetFunctionThis(JSContext* cx, BaselineFrame* frame,
   return GetFunctionThis(cx, frame, res);
 }
 
-bool CallNativeGetter(JSContext* cx, HandleFunction callee, HandleObject obj,
-                      MutableHandleValue result) {
-  AutoRealm ar(cx, callee);
-
-  MOZ_ASSERT(callee->isNative());
-  JSNative natfun = callee->native();
-
-  JS::RootedValueArray<2> vp(cx);
-  vp[0].setObject(*callee.get());
-  vp[1].setObject(*obj.get());
-
-  if (!natfun(cx, 0, vp.begin())) {
-    return false;
-  }
-
-  result.set(vp[0]);
-  return true;
-}
-
-bool CallNativeGetterByValue(JSContext* cx, HandleFunction callee,
-                             HandleValue receiver, MutableHandleValue result) {
+bool CallNativeGetter(JSContext* cx, HandleFunction callee,
+                      HandleValue receiver, MutableHandleValue result) {
   AutoRealm ar(cx, callee);
 
   MOZ_ASSERT(callee->isNative());
@@ -1500,6 +1496,24 @@ bool CallNativeGetterByValue(JSContext* cx, HandleFunction callee,
   return true;
 }
 
+bool CallDOMGetter(JSContext* cx, const JSJitInfo* info, HandleObject obj,
+                   MutableHandleValue result) {
+  MOZ_ASSERT(info->type() == JSJitInfo::Getter);
+  MOZ_ASSERT(obj->isNative());
+  MOZ_ASSERT(obj->getClass()->isDOMClass());
+
+#ifdef DEBUG
+  DOMInstanceClassHasProtoAtDepth instanceChecker =
+      cx->runtime()->DOMcallbacks->instanceClassMatchesProto;
+  MOZ_ASSERT(instanceChecker(obj->getClass(), info->protoID, info->depth));
+#endif
+
+  // Loading DOM_OBJECT_SLOT, which must be the first slot.
+  JS::Value val = JS::GetReservedSlot(obj, 0);
+  JSJitGetterOp getter = info->getter;
+  return getter(cx, obj, val.toPrivate(), JSJitGetterCallArgs(result));
+}
+
 bool CallNativeSetter(JSContext* cx, HandleFunction callee, HandleObject obj,
                       HandleValue rhs) {
   AutoRealm ar(cx, callee);
@@ -1513,6 +1527,26 @@ bool CallNativeSetter(JSContext* cx, HandleFunction callee, HandleObject obj,
   vp[2].set(rhs);
 
   return natfun(cx, 1, vp.begin());
+}
+
+bool CallDOMSetter(JSContext* cx, const JSJitInfo* info, HandleObject obj,
+                   HandleValue value) {
+  MOZ_ASSERT(info->type() == JSJitInfo::Setter);
+  MOZ_ASSERT(obj->isNative());
+  MOZ_ASSERT(obj->getClass()->isDOMClass());
+
+#ifdef DEBUG
+  DOMInstanceClassHasProtoAtDepth instanceChecker =
+      cx->runtime()->DOMcallbacks->instanceClassMatchesProto;
+  MOZ_ASSERT(instanceChecker(obj->getClass(), info->protoID, info->depth));
+#endif
+
+  // Loading DOM_OBJECT_SLOT, which must be the first slot.
+  JS::Value val = JS::GetReservedSlot(obj, 0);
+  JSJitSetterOp setter = info->setter;
+
+  RootedValue v(cx, value);
+  return setter(cx, obj, val.toPrivate(), JSJitSetterCallArgs(&v));
 }
 
 bool EqualStringsHelperPure(JSString* str1, JSString* str2) {
@@ -2013,6 +2047,20 @@ BigInt* CreateBigIntFromUint64(JSContext* cx, uint64_t i64) {
 }
 #endif
 
+bool DoStringToInt64(JSContext* cx, HandleString str, uint64_t* res) {
+  BigInt* bi;
+  JS_TRY_VAR_OR_RETURN_FALSE(cx, bi, js::StringToBigInt(cx, str));
+
+  if (!bi) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_BIGINT_INVALID_SYNTAX);
+    return false;
+  }
+
+  *res = js::BigInt::toUint64(bi);
+  return true;
+}
+
 template <EqualityKind Kind>
 bool BigIntEqual(BigInt* x, BigInt* y) {
   AutoUnsafeCallWithABI unsafe;
@@ -2144,6 +2192,225 @@ template bool StringBigIntCompare<ComparisonKind::LessThan>(JSContext* cx,
                                                             bool* res);
 template bool StringBigIntCompare<ComparisonKind::GreaterThanOrEqual>(
     JSContext* cx, HandleString x, HandleBigInt y, bool* res);
+
+template <typename T>
+static int32_t AtomicsCompareExchange(TypedArrayObject* typedArray,
+                                      int32_t index, int32_t expected,
+                                      int32_t replacement) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::compareExchangeSeqCst(addr + index, T(expected),
+                                                      T(replacement));
+}
+
+AtomicsCompareExchangeFn AtomicsCompareExchange(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsCompareExchange<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsCompareExchange<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsCompareExchange<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsCompareExchange<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsCompareExchange<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsCompareExchange<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
+
+template <typename T>
+static int32_t AtomicsExchange(TypedArrayObject* typedArray, int32_t index,
+                               int32_t value) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::exchangeSeqCst(addr + index, T(value));
+}
+
+AtomicsReadWriteModifyFn AtomicsExchange(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsExchange<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsExchange<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsExchange<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsExchange<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsExchange<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsExchange<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
+
+template <typename T>
+static int32_t AtomicsAdd(TypedArrayObject* typedArray, int32_t index,
+                          int32_t value) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::fetchAddSeqCst(addr + index, T(value));
+}
+
+AtomicsReadWriteModifyFn AtomicsAdd(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsAdd<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsAdd<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsAdd<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsAdd<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsAdd<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsAdd<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
+
+template <typename T>
+static int32_t AtomicsSub(TypedArrayObject* typedArray, int32_t index,
+                          int32_t value) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::fetchSubSeqCst(addr + index, T(value));
+}
+
+AtomicsReadWriteModifyFn AtomicsSub(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsSub<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsSub<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsSub<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsSub<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsSub<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsSub<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
+
+template <typename T>
+static int32_t AtomicsAnd(TypedArrayObject* typedArray, int32_t index,
+                          int32_t value) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::fetchAndSeqCst(addr + index, T(value));
+}
+
+AtomicsReadWriteModifyFn AtomicsAnd(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsAnd<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsAnd<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsAnd<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsAnd<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsAnd<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsAnd<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
+
+template <typename T>
+static int32_t AtomicsOr(TypedArrayObject* typedArray, int32_t index,
+                         int32_t value) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::fetchOrSeqCst(addr + index, T(value));
+}
+
+AtomicsReadWriteModifyFn AtomicsOr(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsOr<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsOr<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsOr<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsOr<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsOr<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsOr<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
+
+template <typename T>
+static int32_t AtomicsXor(TypedArrayObject* typedArray, int32_t index,
+                          int32_t value) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+  MOZ_ASSERT(index >= 0 && uint32_t(index) < typedArray->length());
+
+  SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
+  return jit::AtomicOperations::fetchXorSeqCst(addr + index, T(value));
+}
+
+AtomicsReadWriteModifyFn AtomicsXor(Scalar::Type elementType) {
+  switch (elementType) {
+    case Scalar::Int8:
+      return AtomicsXor<int8_t>;
+    case Scalar::Uint8:
+      return AtomicsXor<uint8_t>;
+    case Scalar::Int16:
+      return AtomicsXor<int16_t>;
+    case Scalar::Uint16:
+      return AtomicsXor<uint16_t>;
+    case Scalar::Int32:
+      return AtomicsXor<int32_t>;
+    case Scalar::Uint32:
+      return AtomicsXor<uint32_t>;
+    default:
+      MOZ_CRASH("Unexpected TypedArray type");
+  }
+}
 
 }  // namespace jit
 }  // namespace js

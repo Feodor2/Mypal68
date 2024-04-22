@@ -11,7 +11,6 @@
 #include "mozilla/HashTable.h"         // for HashSet, DefaultHasher (ptr only)
 #include "mozilla/LinkedList.h"        // for LinkedList (ptr only)
 #include "mozilla/Maybe.h"             // for Maybe, Nothing
-#include "mozilla/Move.h"              // for std::move
 #include "mozilla/Range.h"             // for Range
 #include "mozilla/Result.h"            // for Result
 #include "mozilla/TimeStamp.h"         // for TimeStamp
@@ -19,11 +18,12 @@
 
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint32_t, uint64_t, uintptr_t
+#include <utility>   // for std::move
 
-#include "jsapi.h"    // for Handle, UnsafeTraceRoot
-#include "jstypes.h"  // for JS_GC_ZEAL
+#include "jsapi.h"             // for Handle, UnsafeTraceRoot
+#include "jstypes.h"           // for JS_GC_ZEAL
+#include "NamespaceImports.h"  // for Value, HandleObject
 
-#include "NamespaceImports.h"       // for Value, HandleObject
 #include "debugger/DebugAPI.h"      // for DebugAPI
 #include "debugger/Object.h"        // for DebuggerObject
 #include "ds/TraceableFifo.h"       // for TraceableFifo
@@ -393,13 +393,8 @@ class DebuggerWeakMap : private WeakMap<HeapPtr<Referent*>, HeapPtr<Wrapper*>> {
  public:
   void traceCrossCompartmentEdges(JSTracer* tracer) {
     for (Enum e(*this); !e.empty(); e.popFront()) {
+      TraceEdge(tracer, &e.front().mutableKey(), "Debugger WeakMap key");
       e.front().value()->trace(tracer);
-      Key key = e.front().key();
-      TraceEdge(tracer, &key, "Debugger WeakMap key");
-      if (key != e.front().key()) {
-        e.rekeyFront(key);
-      }
-      key.unsafeSet(nullptr);
     }
   }
 
@@ -516,6 +511,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   template <typename>
   friend class DebuggerList;
   friend struct JSRuntime::GlobalObjectWatchersLinkAccess<Debugger>;
+  friend struct JSRuntime::GarbageCollectionWatchersLinkAccess<Debugger>;
   friend class SavedStacks;
   friend class ScriptedOnStepHandler;
   friend class ScriptedOnPopHandler;
@@ -610,15 +606,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
     }
   };
 
-  // Barrier methods so we can have WeakHeapPtr<Debugger*>.
-  static void readBarrier(Debugger* dbg) {
-    InternalBarrierMethods<JSObject*>::readBarrier(dbg->object);
-  }
-  static void writeBarrierPost(Debugger** vp, Debugger* prev, Debugger* next) {}
-#ifdef DEBUG
-  static void assertThingIsNotGray(Debugger* dbg) { return; }
-#endif
-
  private:
   GCPtrNativeObject object; /* The Debugger object. Strong reference. */
   WeakGlobalObjectSet
@@ -702,6 +689,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    * JSRuntime::onNewGlobalObjectWatchers.
    */
   mozilla::DoublyLinkedListElement<Debugger> onNewGlobalObjectWatchersLink;
+
+  /*
+   * If this Debugger has a onGarbageCollection handler, then
+   * this link is inserted into the list headed by
+   * JSRuntime::onGarbageCollectionWatchers.
+   */
+  mozilla::DoublyLinkedListElement<Debugger> onGarbageCollectionWatchersLink;
 
   /*
    * Map from stack frames that are currently on the stack to Debugger.Frame
@@ -883,6 +877,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static MOZ_MUST_USE bool setHookImpl(JSContext* cx, const CallArgs& args,
                                        Debugger& dbg, Hook which);
 
+  static MOZ_MUST_USE bool getGarbageCollectionHook(JSContext* cx,
+                                                    const CallArgs& args,
+                                                    Debugger& dbg);
+  static MOZ_MUST_USE bool setGarbageCollectionHook(JSContext* cx,
+                                                    const CallArgs& args,
+                                                    Debugger& dbg);
+
   static bool isCompilableUnit(JSContext* cx, unsigned argc, Value* vp);
   static bool construct(JSContext* cx, unsigned argc, Value* vp);
 
@@ -892,9 +893,35 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
 
-  static void removeFromFrameMapsAndClearBreakpointsIn(JSContext* cx,
-                                                       AbstractFramePtr frame,
-                                                       bool suspending = false);
+  /**
+   * Suspend the DebuggerFrame, clearing on-stack data but leaving it linked
+   * with the AbstractGeneratorObject so it can be re-used later.
+   */
+  static void suspendGeneratorDebuggerFrames(JSContext* cx,
+                                             AbstractFramePtr frame);
+
+  /**
+   * Terminate the DebuggerFrame, clearing all data associated with the frame
+   * so that it cannot be used to introspect stack frame data.
+   */
+  static void terminateDebuggerFrames(JSContext* cx, AbstractFramePtr frame);
+
+  /**
+   * Terminate a given DebuggerFrame, removing all internal state and all
+   * references to the frame from the Debugger itself. If the frame is being
+   * terminated while 'frames' or 'generatorFrames' are being iterated, pass a
+   * pointer to the iteration Enum to remove the entry and ensure that iteration
+   * behaves properly.
+   *
+   * The AbstractFramePtr may be omited in a call so long as it is either
+   * called again later with the correct 'frame', or the frame itself has never
+   * had on-stack data or a 'frames' entry and has never had an onStep handler.
+   */
+  static void terminateDebuggerFrame(
+      JSFreeOp* fop, Debugger* dbg, DebuggerFrame* dbgFrame,
+      AbstractFramePtr frame, FrameMap::Enum* maybeFramesEnum = nullptr,
+      GeneratorWeakMap::Enum* maybeGeneratorFramesEnum = nullptr);
+
   static bool updateExecutionObservabilityOfFrames(
       JSContext* cx, const DebugAPI::ExecutionObservableSet& obs,
       IsObserving observing);
@@ -905,8 +932,12 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
       JSContext* cx, DebugAPI::ExecutionObservableSet& obs,
       IsObserving observing);
 
-  template <typename FrameFn /* void (DebuggerFrame*) */>
-  static void forEachDebuggerFrame(AbstractFramePtr frame, FrameFn fn);
+  template <typename FrameFn /* void (Debugger*, DebuggerFrame*) */>
+  static void forEachOnStackDebuggerFrame(AbstractFramePtr frame, FrameFn fn);
+  template <typename FrameFn /* void (Debugger*, DebuggerFrame*) */>
+  static void forEachOnStackOrSuspendedDebuggerFrame(JSContext* cx,
+                                                     AbstractFramePtr frame,
+                                                     FrameFn fn);
 
   /*
    * Return a vector containing all Debugger.Frame instances referring to
@@ -1072,7 +1103,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 #ifdef DEBUG
   static bool isChildJSObject(JSObject* obj);
 #endif
-  static Debugger* fromChildJSObject(JSObject* obj);
 
   Zone* zone() const { return toJSObject()->zone(); }
 
@@ -1081,7 +1111,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
   WeakGlobalObjectSet::Range allDebuggees() const { return debuggees.all(); }
 
-  static void detachAllDebuggersFromGlobal(JSFreeOp* fop, GlobalObject* global);
 #ifdef DEBUG
   static bool isDebuggerCrossCompartmentEdge(JSObject* obj,
                                              const js::gc::Cell* cell);
@@ -1222,6 +1251,22 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
  private:
   Debugger(const Debugger&) = delete;
   Debugger& operator=(const Debugger&) = delete;
+};
+
+// Specialize InternalBarrierMethods so we can have WeakHeapPtr<Debugger*>.
+template <>
+struct InternalBarrierMethods<Debugger*> {
+  static bool isMarkable(Debugger* dbg) { return dbg->toJSObject(); }
+
+  static void postBarrier(Debugger** vp, Debugger* prev, Debugger* next) {}
+
+  static void readBarrier(Debugger* dbg) {
+    InternalBarrierMethods<JSObject*>::readBarrier(dbg->toJSObject());
+  }
+
+#ifdef DEBUG
+  static void assertThingIsNotGray(Debugger* dbg) {}
+#endif
 };
 
 /**
@@ -1542,6 +1587,7 @@ MOZ_MUST_USE bool ReportObjectRequired(JSContext* cx);
 JSObject* IdVectorToArray(JSContext* cx, Handle<IdVector> ids);
 bool IsInterpretedNonSelfHostedFunction(JSFunction* fun);
 JSScript* GetOrCreateFunctionScript(JSContext* cx, HandleFunction fun);
+ArrayObject* GetFunctionParameterNamesArray(JSContext* cx, HandleFunction fun);
 bool ValueToIdentifier(JSContext* cx, HandleValue v, MutableHandleId id);
 bool ValueToStableChars(JSContext* cx, const char* fnname, HandleValue value,
                         JS::AutoStableStringChars& stableChars);

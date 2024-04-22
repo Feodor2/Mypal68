@@ -19,6 +19,7 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/CheckedArithmetic.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/TypedArrayObject.h"
@@ -40,7 +41,6 @@ using mozilla::IsNegativeZero;
 using mozilla::NegativeInfinity;
 using mozilla::NumberEqualsInt32;
 using mozilla::PositiveInfinity;
-using mozilla::Swap;
 
 // [SMDOC] IonMonkey Range Analysis
 //
@@ -910,13 +910,13 @@ Range* Range::xor_(TempAllocator& alloc, const Range* lhs, const Range* rhs) {
   if (lhsUpper < 0) {
     lhsLower = ~lhsLower;
     lhsUpper = ~lhsUpper;
-    Swap(lhsLower, lhsUpper);
+    std::swap(lhsLower, lhsUpper);
     invertAfter = !invertAfter;
   }
   if (rhsUpper < 0) {
     rhsLower = ~rhsLower;
     rhsUpper = ~rhsUpper;
-    Swap(rhsLower, rhsUpper);
+    std::swap(rhsLower, rhsUpper);
     invertAfter = !invertAfter;
   }
 
@@ -950,7 +950,7 @@ Range* Range::xor_(TempAllocator& alloc, const Range* lhs, const Range* rhs) {
   if (invertAfter) {
     lower = ~lower;
     upper = ~upper;
-    Swap(lower, upper);
+    std::swap(lower, upper);
   }
 
   return Range::NewInt32Range(alloc, lower, upper);
@@ -1767,10 +1767,12 @@ void MLoadDataViewElement::computeRange(TempAllocator& alloc) {
 }
 
 void MArrayLength::computeRange(TempAllocator& alloc) {
-  // Array lengths can go up to UINT32_MAX, but we only create MArrayLength
+  // Array lengths can go up to UINT32_MAX. IonBuilder only creates MArrayLength
   // nodes when the value is known to be int32 (see the
-  // OBJECT_FLAG_LENGTH_OVERFLOW flag).
-  setRange(Range::NewUInt32Range(alloc, 0, INT32_MAX));
+  // OBJECT_FLAG_LENGTH_OVERFLOW flag). WarpBuilder does a dynamic check and we
+  // have to return the range pre-bailouts, so use UINT32_MAX for Warp.
+  uint32_t max = JitOptions.warpBuilder ? UINT32_MAX : INT32_MAX;
+  setRange(Range::NewUInt32Range(alloc, 0, max));
 }
 
 void MInitializedLength::computeRange(TempAllocator& alloc) {
@@ -2856,6 +2858,9 @@ static bool CloneForDeadBranches(TempAllocator& alloc,
   }
 
   MInstruction* clone = candidate->clone(alloc, operands);
+  if (!clone) {
+    return false;
+  }
   clone->setRange(nullptr);
 
   // Set UseRemoved flag on the cloned instruction in order to chain recover

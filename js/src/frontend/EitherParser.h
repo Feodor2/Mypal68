@@ -11,7 +11,6 @@
 #define frontend_EitherParser_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Move.h"
 #include "mozilla/Tuple.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
@@ -147,6 +146,15 @@ class EitherParser : public BCEParserHandle {
                          uint32_t*, uint32_t*>
         matcher{offset, line, column};
     return parser.match(std::move(matcher));
+  }
+
+  JSAtom* liftParserAtomToJSAtom(const ParserAtom* parserAtom) {
+    ParserSharedBase& base = parser.match(detail::ParserSharedBaseMatcher());
+    return base.liftParserAtomToJSAtom(parserAtom);
+  }
+  const ParserAtom* lowerJSAtomToParserAtom(JSAtom* atom) {
+    ParserSharedBase& base = parser.match(detail::ParserSharedBaseMatcher());
+    return base.lowerJSAtomToParserAtom(atom);
   }
 };
 

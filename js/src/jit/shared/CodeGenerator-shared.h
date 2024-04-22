@@ -6,7 +6,8 @@
 #define jit_shared_CodeGenerator_shared_h
 
 #include "mozilla/Alignment.h"
-#include "mozilla/Move.h"
+
+#include <utility>
 
 #include "jit/JitcodeMap.h"
 #include "jit/JitFrames.h"
@@ -113,15 +114,16 @@ class CodeGeneratorShared : public LElementVisitor {
  protected:
   // The offset of the first instruction of the OSR entry block from the
   // beginning of the code buffer.
-  size_t osrEntryOffset_;
+  mozilla::Maybe<size_t> osrEntryOffset_ = {};
 
   TempAllocator& alloc() const { return graph.mir().alloc(); }
 
-  inline void setOsrEntryOffset(size_t offset) {
-    MOZ_ASSERT(osrEntryOffset_ == 0);
-    osrEntryOffset_ = offset;
+  void setOsrEntryOffset(size_t offset) { osrEntryOffset_.emplace(offset); }
+
+  size_t getOsrEntryOffset() const {
+    MOZ_RELEASE_ASSERT(osrEntryOffset_.isSome());
+    return *osrEntryOffset_;
   }
-  inline size_t getOsrEntryOffset() const { return osrEntryOffset_; }
 
   // The offset of the first instruction of the body.
   // This skips the arguments type checks.
@@ -364,7 +366,8 @@ class CodeGeneratorShared : public LElementVisitor {
   inline void restoreLive(LInstruction* ins);
   inline void restoreLiveIgnore(LInstruction* ins, LiveRegisterSet reg);
 
-  // Save/restore all registers that are both live and volatile.
+  // Get/save/restore all registers that are both live and volatile.
+  inline LiveRegisterSet liveVolatileRegs(LInstruction* ins);
   inline void saveLiveVolatile(LInstruction* ins);
   inline void restoreLiveVolatile(LInstruction* ins);
 
@@ -372,6 +375,13 @@ class CodeGeneratorShared : public LElementVisitor {
   template <typename T>
   void pushArg(const T& t) {
     masm.Push(t);
+#ifdef DEBUG
+    pushedArgs_++;
+#endif
+  }
+
+  void pushArg(jsid id, Register temp) {
+    masm.Push(id, temp);
 #ifdef DEBUG
     pushedArgs_++;
 #endif

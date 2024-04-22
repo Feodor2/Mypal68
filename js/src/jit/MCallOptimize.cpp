@@ -18,7 +18,9 @@
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
+#include "js/experimental/JitInfo.h"  // JSJitInfo
 #include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
+#include "js/ScalarType.h"   // js::Scalar::Type
 #include "vm/ArgumentsObject.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSObject.h"
@@ -322,6 +324,8 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
       return inlineObjectCreate(callInfo);
     case InlinableNative::ObjectIs:
       return inlineObjectIs(callInfo);
+    case InlinableNative::ObjectIsPrototypeOf:
+      return inlineObjectIsPrototypeOf(callInfo);
     case InlinableNative::ObjectToString:
       return inlineObjectToString(callInfo);
 
@@ -362,8 +366,6 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
       return inlineToInteger(callInfo);
     case InlinableNative::IntrinsicToLength:
       return inlineToLength(callInfo);
-    case InlinableNative::IntrinsicToString:
-      return inlineToString(callInfo);
     case InlinableNative::IntrinsicIsConstructing:
       return inlineIsConstructing(callInfo);
     case InlinableNative::IntrinsicSubstringKernel:
@@ -374,6 +376,8 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
     case InlinableNative::IntrinsicGuardToStringIterator:
     case InlinableNative::IntrinsicGuardToRegExpStringIterator:
     case InlinableNative::IntrinsicGuardToWrapForValidIterator:
+    case InlinableNative::IntrinsicGuardToIteratorHelper:
+    case InlinableNative::IntrinsicGuardToAsyncIteratorHelper:
       return inlineGuardToClass(callInfo, inlNative);
     case InlinableNative::IntrinsicObjectHasPrototype:
       return inlineObjectHasPrototype(callInfo);
@@ -426,6 +430,9 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
     case InlinableNative::IntrinsicTypedArrayElementShift:
       return inlineTypedArrayElementShift(callInfo);
 
+    case InlinableNative::NumberToString:
+    case InlinableNative::StringToString:
+    case InlinableNative::StringValueOf:
     case InlinableNative::IntrinsicIsSuspendedGenerator:
       // Not supported in Ion.
       return InliningStatus_NotInlined;
@@ -935,7 +942,9 @@ IonBuilder::InliningResult IonBuilder::inlineArrayPush(CallInfo& callInfo) {
 
     // Restore the stack, such that resume points are created with the stack
     // as it was before the call.
-    MOZ_TRY(callInfo.pushPriorCallStack(&mirGen_, current));
+    if (!callInfo.pushPriorCallStack(&mirGen_, current)) {
+      return abort(AbortReason::Alloc);
+    }
   }
 
   MInstruction* ins = nullptr;
@@ -1877,34 +1886,15 @@ IonBuilder::InliningResult IonBuilder::inlineIsPackedArray(CallInfo& callInfo) {
     return InliningStatus_NotInlined;
   }
 
-  MDefinition* array = callInfo.getArg(0);
+  MDefinition* obj = callInfo.getArg(0);
 
-  if (array->type() != MIRType::Object) {
-    return InliningStatus_NotInlined;
-  }
-
-  TemporaryTypeSet* arrayTypes = array->resultTypeSet();
-  if (!arrayTypes) {
-    return InliningStatus_NotInlined;
-  }
-
-  const JSClass* clasp = arrayTypes->getKnownClass(constraints());
-  if (clasp != &ArrayObject::class_) {
-    return InliningStatus_NotInlined;
-  }
-
-  // Only inline if the array uses dense storage.
-  ObjectGroupFlags unhandledFlags = OBJECT_FLAG_SPARSE_INDEXES |
-                                    OBJECT_FLAG_LENGTH_OVERFLOW |
-                                    OBJECT_FLAG_NON_PACKED;
-
-  if (arrayTypes->hasObjectFlags(constraints(), unhandledFlags)) {
+  if (obj->type() != MIRType::Object) {
     return InliningStatus_NotInlined;
   }
 
   callInfo.setImplicitlyUsedUnchecked();
 
-  auto* ins = MIsPackedArray::New(alloc(), array);
+  auto* ins = MIsPackedArray::New(alloc(), obj);
   current->add(ins);
   current->push(ins);
 
@@ -1950,14 +1940,6 @@ IonBuilder::InliningResult IonBuilder::inlineStrCharCodeAt(CallInfo& callInfo) {
     return InliningStatus_NotInlined;
   }
 
-  // Check for STR.charCodeAt(IDX) where STR is a constant string and IDX is a
-  // constant integer.
-  InliningStatus constInlineStatus;
-  MOZ_TRY_VAR(constInlineStatus, inlineConstantCharCodeAt(callInfo));
-  if (constInlineStatus != InliningStatus_NotInlined) {
-    return constInlineStatus;
-  }
-
   callInfo.setImplicitlyUsedUnchecked();
 
   MInstruction* index = MToIntegerInt32::New(alloc(), callInfo.getArg(0));
@@ -1971,40 +1953,6 @@ IonBuilder::InliningResult IonBuilder::inlineStrCharCodeAt(CallInfo& callInfo) {
   MCharCodeAt* charCode = MCharCodeAt::New(alloc(), callInfo.thisArg(), index);
   current->add(charCode);
   current->push(charCode);
-  return InliningStatus_Inlined;
-}
-
-IonBuilder::InliningResult IonBuilder::inlineConstantCharCodeAt(
-    CallInfo& callInfo) {
-  if (!callInfo.thisArg()->maybeConstantValue() ||
-      !callInfo.getArg(0)->maybeConstantValue()) {
-    return InliningStatus_NotInlined;
-  }
-
-  MConstant* strval = callInfo.thisArg()->maybeConstantValue();
-  MConstant* idxval = callInfo.getArg(0)->maybeConstantValue();
-
-  if (strval->type() != MIRType::String || idxval->type() != MIRType::Int32) {
-    return InliningStatus_NotInlined;
-  }
-
-  JSString* str = strval->toString();
-  if (!str->isLinear()) {
-    return InliningStatus_NotInlined;
-  }
-
-  int32_t idx = idxval->toInt32();
-  if (idx < 0 || (uint32_t(idx) >= str->length())) {
-    return InliningStatus_NotInlined;
-  }
-
-  callInfo.setImplicitlyUsedUnchecked();
-
-  JSLinearString& linstr = str->asLinear();
-  char16_t ch = linstr.latin1OrTwoByteChar(idx);
-  MConstant* result = MConstant::New(alloc(), Int32Value(ch));
-  current->add(result);
-  current->push(result);
   return InliningStatus_Inlined;
 }
 
@@ -2452,9 +2400,7 @@ IonBuilder::InliningResult IonBuilder::inlineStringReplaceString(
   MInstruction* cte = MStringReplace::New(alloc(), strArg, patArg, replArg);
   current->add(cte);
   current->push(cte);
-  if (cte->isEffectful()) {
-    MOZ_TRY(resumeAfter(cte));
-  }
+
   return InliningStatus_Inlined;
 }
 
@@ -2616,6 +2562,32 @@ IonBuilder::InliningResult IonBuilder::inlineObjectIs(CallInfo& callInfo) {
     current->add(ins);
     current->push(ins);
   }
+
+  callInfo.setImplicitlyUsedUnchecked();
+  return InliningStatus_Inlined;
+}
+
+IonBuilder::InliningResult IonBuilder::inlineObjectIsPrototypeOf(
+    CallInfo& callInfo) {
+  if (callInfo.constructing() || callInfo.argc() != 1) {
+    return InliningStatus_NotInlined;
+  }
+
+  if (getInlineReturnType() != MIRType::Boolean) {
+    return InliningStatus_NotInlined;
+  }
+
+  MDefinition* thisArg = callInfo.thisArg();
+  if (thisArg->type() != MIRType::Object) {
+    return InliningStatus_NotInlined;
+  }
+
+  MDefinition* arg = callInfo.getArg(0);
+
+  auto* ins = MInstanceOf::New(alloc(), arg, thisArg);
+  current->add(ins);
+  current->push(ins);
+  MOZ_TRY(resumeAfter(ins));
 
   callInfo.setImplicitlyUsedUnchecked();
   return InliningStatus_Inlined;
@@ -3329,6 +3301,7 @@ IonBuilder::InliningResult IonBuilder::inlineToObject(CallInfo& callInfo) {
     current->add(ins);
     current->push(ins);
 
+    MOZ_TRY(resumeAfter(ins));
     MOZ_TRY(
         pushTypeBarrier(ins, getInlineReturnTypeSet(), BarrierKind::TypeSet));
   }
@@ -3429,25 +3402,6 @@ IonBuilder::InliningResult IonBuilder::inlineToLength(CallInfo& callInfo) {
   current->add(max);
   current->push(max);
 
-  return InliningStatus_Inlined;
-}
-
-IonBuilder::InliningResult IonBuilder::inlineToString(CallInfo& callInfo) {
-  MOZ_ASSERT(!callInfo.constructing());
-  MOZ_ASSERT(callInfo.argc() == 1);
-
-  if (getInlineReturnType() != MIRType::String) {
-    return InliningStatus_NotInlined;
-  }
-
-  callInfo.setImplicitlyUsedUnchecked();
-  MToString* toString = MToString::New(
-      alloc(), callInfo.getArg(0), MToString::SideEffectHandling::Supported);
-  current->add(toString);
-  current->push(toString);
-  if (toString->isEffectful()) {
-    MOZ_TRY(resumeAfter(toString));
-  }
   return InliningStatus_Inlined;
 }
 
@@ -3798,9 +3752,6 @@ bool IonBuilder::atomicsMeetsPreconditions(
       return checkResult == DontCheckAtomicResult ||
              getInlineReturnType() == MIRType::Int32;
     case Scalar::Uint32:
-      // Bug 1077305: it would be attractive to allow inlining even
-      // if the inline return type is Int32, which it will frequently
-      // be.
       return checkResult == DontCheckAtomicResult ||
              getInlineReturnType() == MIRType::Double;
     case Scalar::BigInt64:
@@ -3999,8 +3950,7 @@ IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
   // Check that the function doesn't take or return non-compatible JS
   // argument types before adding nodes to the MIR graph, otherwise they'd be
   // dead code.
-  if (sig.hasI64ArgOrRet() ||
-      sig.temporarilyUnsupportedReftypeForInlineEntry() ||
+  if (sig.temporarilyUnsupportedReftypeForInlineEntry() ||
       !JitOptions.enableWasmIonFastCalls) {
     return InliningStatus_NotInlined;
   }
@@ -4018,6 +3968,26 @@ IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
   // add MWasmStackResults.
   if (sig.results().length() > wasm::MaxResultsForJitInlineCall) {
     return InliningStatus_NotInlined;
+  }
+
+  // Bug 1631656 - Don't try to inline with I64 args on 32-bit platforms because
+  // it is more difficult (because it requires multiple LIR arguments per I64).
+  //
+  // Bug 1631650 - On 64-bit platforms, we also give up inlining for I64 args
+  // spilled to the stack because it causes problems with register allocation.
+#ifdef JS_64BIT
+  const bool inlineWithI64 = true;
+#else
+  const bool inlineWithI64 = false;
+#endif
+  ABIArgGenerator abi;
+  for (const auto& valType : sig.args()) {
+    MIRType mirType = ToMIRType(valType);
+    ABIArg abiArg = abi.next(mirType);
+    if (mirType == MIRType::Int64 &&
+        (!inlineWithI64 || (abiArg.kind() == ABIArg::Stack))) {
+      return InliningStatus_NotInlined;
+    }
   }
 
   auto* call = MIonToWasmCall::New(alloc(), inst.object(), funcExport);
@@ -4046,6 +4016,9 @@ IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
     switch (sig.args()[i].kind()) {
       case wasm::ValType::I32:
         conversion = MTruncateToInt32::New(alloc(), arg);
+        break;
+      case wasm::ValType::I64:
+        conversion = MToInt64::New(alloc(), arg);
         break;
       case wasm::ValType::F32:
         conversion = MToFloat32::New(alloc(), arg);
@@ -4076,18 +4049,37 @@ IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
             MOZ_CRASH("impossible per above check");
         }
         break;
-      case wasm::ValType::I64:
-        MOZ_CRASH("impossible per above check");
     }
 
     current->add(conversion);
     call->initArg(i, conversion);
   }
 
-  current->push(call);
   current->add(call);
 
-  MOZ_TRY(resumeAfter(call));
+  // Add any post-function call conversions that are necessary.
+  MInstruction* postConversion = call;
+  const wasm::ValTypeVector& results = sig.results();
+  MOZ_ASSERT(results.length() <= 1, "Multi-value returns not supported.");
+  if (results.length() == 0) {
+    // No results to convert.
+  } else {
+    switch (results[0].kind()) {
+      case wasm::ValType::I64:
+        // Ion expects a BigInt from I64 types.
+        postConversion = MInt64ToBigInt::New(alloc(), call);
+
+        // Make non-movable so we can attach a resume point.
+        postConversion->setNotMovable();
+
+        current->add(postConversion);
+        break;
+      default:
+        break;
+    }
+  }
+  current->push(postConversion);
+  MOZ_TRY(resumeAfter(postConversion));
 
   callInfo.setImplicitlyUsedUnchecked();
 

@@ -22,6 +22,7 @@
 #include "builtin/TypedObject.h"
 #include "jit/JitOptions.h"
 #include "js/Printf.h"
+#include "js/String.h"  // JS::MaxStringLength
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 #include "wasm/WasmOpIter.h"
@@ -893,12 +894,6 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
           case uint32_t(MiscOp::I64TruncUSatF64):
             CHECK(iter.readConversion(ValType::F64, ValType::I64, &nothing));
           case uint32_t(MiscOp::MemCopy): {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             uint32_t unusedDestMemIndex;
             uint32_t unusedSrcMemIndex;
             CHECK(iter.readMemOrTableCopy(/*isMem=*/true, &unusedDestMemIndex,
@@ -906,30 +901,12 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
                                           &nothing, &nothing));
           }
           case uint32_t(MiscOp::DataDrop): {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             uint32_t unusedSegIndex;
             CHECK(iter.readDataOrElemDrop(/*isData=*/true, &unusedSegIndex));
           }
           case uint32_t(MiscOp::MemFill):
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             CHECK(iter.readMemFill(&nothing, &nothing, &nothing));
           case uint32_t(MiscOp::MemInit): {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             uint32_t unusedSegIndex;
             uint32_t unusedTableIndex;
             CHECK(iter.readMemOrTableInit(/*isMem=*/true, &unusedSegIndex,
@@ -937,12 +914,6 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
                                           &nothing));
           }
           case uint32_t(MiscOp::TableCopy): {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             uint32_t unusedDestTableIndex;
             uint32_t unusedSrcTableIndex;
             CHECK(iter.readMemOrTableCopy(
@@ -950,22 +921,10 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
                 &unusedSrcTableIndex, &nothing, &nothing));
           }
           case uint32_t(MiscOp::ElemDrop): {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             uint32_t unusedSegIndex;
             CHECK(iter.readDataOrElemDrop(/*isData=*/false, &unusedSegIndex));
           }
           case uint32_t(MiscOp::TableInit): {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-            // Bulk memory must be available if shared memory is enabled.
-            if (env.sharedMemoryEnabled == Shareable::False) {
-              return iter.fail("bulk memory ops disabled");
-            }
-#endif
             uint32_t unusedSegIndex;
             uint32_t unusedTableIndex;
             CHECK(iter.readMemOrTableInit(/*isMem=*/false, &unusedSegIndex,
@@ -1024,10 +983,14 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
         if (!env.refTypesEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
-        CHECK(iter.readConversion(RefType::any(), ValType::I32, &nothing));
+        Nothing nothing;
+        CHECK(iter.readRefIsNull(&nothing));
       }
 #endif
       case uint16_t(Op::ThreadPrefix): {
+        if (env.sharedMemoryEnabled == Shareable::False) {
+          return iter.unrecognizedOpcode(&op);
+        }
         switch (op.b1) {
           case uint32_t(ThreadOp::Wake): {
             LinearMemoryAddress<Nothing> addr;
@@ -1409,7 +1372,6 @@ static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
             break;
           case RefType::Func:
           case RefType::Any:
-          case RefType::Null:
             offset = layout.addReference(ReferenceType::TYPE_WASM_ANYREF);
             break;
         }
@@ -1564,9 +1526,11 @@ static bool DecodeLimits(Decoder& d, Limits* limits,
                    uint32_t(flags & ~uint8_t(mask)));
   }
 
-  if (!d.readVarU32(&limits->initial)) {
+  uint32_t initial;
+  if (!d.readVarU32(&initial)) {
     return d.fail("expected initial length");
   }
+  limits->initial = initial;
 
   if (flags & uint8_t(MemoryTableFlags::HasMaximum)) {
     uint32_t maximum;
@@ -1577,11 +1541,11 @@ static bool DecodeLimits(Decoder& d, Limits* limits,
     if (limits->initial > maximum) {
       return d.failf(
           "memory size minimum must not be greater than maximum; "
-          "maximum length %" PRIu32 " is less than initial length %" PRIu32,
+          "maximum length %" PRIu32 " is less than initial length %" PRIu64,
           maximum, limits->initial);
     }
 
-    limits->maximum.emplace(maximum);
+    limits->maximum.emplace(uint64_t(maximum));
   }
 
   limits->shared = Shareable::False;
@@ -1611,16 +1575,11 @@ static bool DecodeTableTypeAndLimits(Decoder& d, bool refTypesEnabled,
   if (elementType == uint8_t(TypeCode::FuncRef)) {
     tableKind = TableKind::FuncRef;
 #ifdef ENABLE_WASM_REFTYPES
-  } else if (elementType == uint8_t(TypeCode::AnyRef) ||
-             elementType == uint8_t(TypeCode::NullRef)) {
+  } else if (elementType == uint8_t(TypeCode::AnyRef)) {
     if (!refTypesEnabled) {
       return d.fail("expected 'funcref' element type");
     }
-    if (elementType == uint8_t(TypeCode::AnyRef)) {
-      tableKind = TableKind::AnyRef;
-    } else {
-      tableKind = TableKind::NullRef;
-    }
+    tableKind = TableKind::AnyRef;
 #endif
   } else {
 #ifdef ENABLE_WASM_REFTYPES
@@ -1638,8 +1597,9 @@ static bool DecodeTableTypeAndLimits(Decoder& d, bool refTypesEnabled,
   // If there's a maximum, check it is in range.  The check to exclude
   // initial > maximum is carried out by the DecodeLimits call above, so
   // we don't repeat it here.
-  if (limits.initial > MaxTableInitialLength ||
-      ((limits.maximum.isSome() && limits.maximum.value() > MaxTableLength))) {
+  if (limits.initial > MaxTableLimitField ||
+      ((limits.maximum.isSome() &&
+        limits.maximum.value() > MaxTableLimitField))) {
     return d.fail("too many table elements");
   }
 
@@ -1647,7 +1607,15 @@ static bool DecodeTableTypeAndLimits(Decoder& d, bool refTypesEnabled,
     return d.fail("too many tables");
   }
 
-  return tables->emplaceBack(tableKind, limits);
+  // The rest of the runtime expects table limits to be within a 32-bit range.
+  static_assert(MaxTableLimitField <= UINT32_MAX, "invariant");
+  uint32_t initialLength = uint32_t(limits.initial);
+  Maybe<uint32_t> maximumLength;
+  if (limits.maximum) {
+    maximumLength = Some(uint32_t(*limits.maximum));
+  }
+
+  return tables->emplaceBack(tableKind, initialLength, maximumLength);
 }
 
 static bool GlobalIsJSCompatible(Decoder& d, ValType type) {
@@ -1661,7 +1629,6 @@ static bool GlobalIsJSCompatible(Decoder& d, ValType type) {
       switch (type.refTypeKind()) {
         case RefType::Func:
         case RefType::Any:
-        case RefType::Null:
           break;
         case RefType::TypeIndex:
 #ifdef WASM_PRIVATE_REFTYPES
@@ -1701,30 +1668,12 @@ static bool DecodeGlobalType(Decoder& d, const TypeDefVector& types,
 }
 
 void wasm::ConvertMemoryPagesToBytes(Limits* memory) {
-  CheckedInt<uint32_t> initialBytes = memory->initial;
-  initialBytes *= PageSize;
-
-  static_assert(MaxMemoryInitialPages < UINT16_MAX,
-                "multiplying by PageSize can't overflow");
-  MOZ_ASSERT(initialBytes.isValid(), "can't overflow by above assertion");
-
-  memory->initial = initialBytes.value();
+  memory->initial *= PageSize;
 
   if (!memory->maximum) {
     return;
   }
-
-  MOZ_ASSERT(*memory->maximum <= MaxMemoryMaximumPages);
-
-  CheckedInt<uint32_t> maximumBytes = *memory->maximum;
-  maximumBytes *= PageSize;
-
-  // Clamp the maximum memory value to UINT32_MAX; it's not semantically
-  // visible since growing will fail for values greater than INT32_MAX.
-  memory->maximum =
-      Some(maximumBytes.isValid() ? maximumBytes.value() : UINT32_MAX);
-
-  MOZ_ASSERT(memory->initial <= *memory->maximum);
+  *memory->maximum *= PageSize;
 }
 
 static bool DecodeMemoryLimits(Decoder& d, ModuleEnvironment* env) {
@@ -1737,11 +1686,11 @@ static bool DecodeMemoryLimits(Decoder& d, ModuleEnvironment* env) {
     return false;
   }
 
-  if (memory.initial > MaxMemoryInitialPages) {
+  if (memory.initial > MaxMemoryLimitField) {
     return d.fail("initial memory size too big");
   }
 
-  if (memory.maximum && *memory.maximum > MaxMemoryMaximumPages) {
+  if (memory.maximum && *memory.maximum > MaxMemoryLimitField) {
     return d.fail("maximum memory size too big");
   }
 
@@ -1997,12 +1946,18 @@ static bool DecodeInitializerExpression(Decoder& d, ModuleEnvironment* env,
       *init = InitExpr::fromConstant(LitVal(f64));
       break;
     }
+#ifdef ENABLE_WASM_REFTYPES
     case uint16_t(Op::RefNull): {
-      if (!expected.isReference()) {
+      MOZ_ASSERT_IF(env->isStructType(expected), env->gcTypesEnabled());
+      RefType initType;
+      if (!d.readRefType(env->types, env->gcTypesEnabled(), &initType)) {
+        return false;
+      }
+      if (!expected.isReference() ||
+          !env->isRefSubtypeOf(ValType(initType), ValType(expected))) {
         return d.fail(
             "type mismatch: initializer type and expected type don't match");
       }
-      MOZ_ASSERT_IF(env->isStructType(expected), env->gcTypesEnabled());
       *init = InitExpr::fromConstant(LitVal(expected, AnyRef::null()));
       break;
     }
@@ -2019,9 +1974,11 @@ static bool DecodeInitializerExpression(Decoder& d, ModuleEnvironment* env,
       if (i >= env->numFuncs()) {
         return d.fail("function index out of range in initializer expression");
       }
+      env->validForRefFunc.setBit(i);
       *init = InitExpr::fromRefFunc(i);
       break;
     }
+#endif
     case uint16_t(Op::GetGlobal): {
       uint32_t i;
       const GlobalDescVector& globals = env->globals;
@@ -2169,6 +2126,7 @@ static bool DecodeExport(Decoder& d, ModuleEnvironment* env,
       }
 #endif
 
+      env->validForRefFunc.setBit(funcIndex);
       return env->exports.emplaceBack(std::move(fieldName), funcIndex,
                                       DefinitionKind::Function);
     }
@@ -2396,9 +2354,6 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
             case uint8_t(TypeCode::AnyRef):
               elemType = RefType::any();
               break;
-            case uint8_t(TypeCode::NullRef):
-              elemType = RefType::null();
-              break;
             default:
               return d.fail(
                   "segments with element expressions can only contain "
@@ -2419,14 +2374,6 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
 
     // Check constraints on the element type.
     switch (kind) {
-      case ElemSegmentKind::Declared: {
-        if (!(elemType.isReference() &&
-              env->isRefSubtypeOf(elemType, RefType::func()))) {
-          return d.fail(
-              "declared segment's element type must be subtype of funcref");
-        }
-        break;
-      }
       case ElemSegmentKind::Active:
       case ElemSegmentKind::ActiveWithTableIndex: {
         ValType tblElemType = ToElemValType(env->tables[seg->tableIndex].kind);
@@ -2438,6 +2385,7 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
         }
         break;
       }
+      case ElemSegmentKind::Declared:
       case ElemSegmentKind::Passive: {
         // By construction, above.
         MOZ_ASSERT(elemType.isReference());
@@ -2451,7 +2399,7 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
       return d.fail("expected segment size");
     }
 
-    if (numElems > MaxTableInitialLength) {
+    if (numElems > MaxElemSegmentLength) {
       return d.fail("too many table elements");
     }
 
@@ -2488,7 +2436,9 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
             initType = RefType::func();
             break;
           case uint16_t(Op::RefNull):
-            initType = RefType::null();
+            if (!d.readRefType(env->types, env->gcTypesEnabled(), &initType)) {
+              return false;
+            }
             needIndex = false;
             break;
           default:
@@ -2542,13 +2492,6 @@ static bool DecodeDataCountSection(Decoder& d, ModuleEnvironment* env) {
   if (!range) {
     return true;
   }
-
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  // Bulk memory must be available if shared memory is enabled.
-  if (env->sharedMemoryEnabled == Shareable::False) {
-    return d.fail("bulk memory ops disabled");
-  }
-#endif
 
   uint32_t dataCount;
   if (!d.readVarU32(&dataCount)) {
@@ -2766,7 +2709,7 @@ static bool DecodeDataSection(Decoder& d, ModuleEnvironment* env) {
       return d.fail("expected segment size");
     }
 
-    if (seg.length > MaxMemoryInitialPages * PageSize) {
+    if (seg.length > MaxDataSegmentLengthPages * PageSize) {
       return d.fail("segment size too big");
     }
 
@@ -2844,7 +2787,8 @@ static bool DecodeFunctionNameSubsection(Decoder& d,
     }
 
     Name funcName;
-    if (!d.readVarU32(&funcName.length) || funcName.length > MaxStringLength) {
+    if (!d.readVarU32(&funcName.length) ||
+        funcName.length > JS::MaxStringLength) {
       return d.fail("unable to read function name length");
     }
 
@@ -2942,12 +2886,11 @@ bool wasm::Validate(JSContext* cx, const ShareableBytes& bytecode,
   bool refTypesConfigured = ReftypesAvailable(cx);
   bool multiValueConfigured = MultiValuesAvailable(cx);
   bool hugeMemory = false;
-  bool bigIntConfigured = I64BigIntConversionAvailable(cx);
 
   CompilerEnvironment compilerEnv(
       CompileMode::Once, Tier::Optimized, OptimizedBackend::Ion,
       DebugEnabled::False, multiValueConfigured, refTypesConfigured,
-      gcTypesConfigured, hugeMemory, bigIntConfigured);
+      gcTypesConfigured, hugeMemory);
   ModuleEnvironment env(
       &compilerEnv,
       cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled()

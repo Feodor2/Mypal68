@@ -321,7 +321,7 @@ typedef enum JSGCParamKey {
   /*
    * The current size of the nursery.
    *
-   * read-only.
+   * This parameter is read-only.
    */
   JSGC_NURSERY_BYTES = 34,
 
@@ -346,6 +346,37 @@ typedef enum JSGCParamKey {
    * Default: IncrementalWeakMarkEnabled
    */
   JSGC_INCREMENTAL_WEAKMAP_ENABLED = 37,
+
+  /**
+   * The chunk size in bytes for this system.
+   *
+   * This parameter is read-only.
+   */
+  JSGC_CHUNK_BYTES = 38,
+
+  /**
+   * The number of background threads to use for parallel GC work for each CPU
+   * core, expressed as an integer percentage.
+   *
+   * Pref: javascript.options.mem.gc_helper_thread_ratio
+   */
+  JSGC_HELPER_THREAD_RATIO = 39,
+
+  /**
+   * The maximum number of background threads to use for parallel GC work.
+   *
+   * Pref: javascript.options.mem.gc_max_helper_threads
+   */
+  JSGC_MAX_HELPER_THREADS = 40,
+
+  /**
+   * The number of background threads to use for parallel GC work.
+   *
+   * This parameter is read-only and is set based on the
+   * JSGC_HELPER_THREAD_RATIO and JSGC_MAX_HELPER_THREADS parameters.
+   */
+  JSGC_HELPER_THREAD_COUNT = 41,
+
 } JSGCParamKey;
 
 /*
@@ -395,14 +426,14 @@ typedef void (*JSWeakPointerCompartmentCallback)(JSContext* cx,
                                                  void* data);
 
 /*
- * This is called to tell the embedding that the FinalizationRegistry object
- * |registry| has cleanup work, and that then engine should be called back at an
- * appropriate later time to perform this cleanup.
+ * This is called to tell the embedding that a FinalizationRegistry object has
+ * cleanup work, and that the engine should be called back at an appropriate
+ * later time to perform this cleanup, by calling the function |doCleanup|.
  *
  * This callback must not do anything that could cause GC.
  */
-using JSHostCleanupFinalizationRegistryCallback = void (*)(JSObject* registry,
-                                                           void* data);
+using JSHostCleanupFinalizationRegistryCallback =
+    void (*)(JSFunction* doCleanup, JSObject* incumbentGlobal, void* data);
 
 /**
  * Each external string has a pointer to JSExternalStringCallbacks. Embedders
@@ -730,8 +761,6 @@ struct JS_PUBLIC_API GCDescription {
   mozilla::TimeStamp endTime(JSContext* cx) const;
   mozilla::TimeStamp lastSliceStart(JSContext* cx) const;
   mozilla::TimeStamp lastSliceEnd(JSContext* cx) const;
-
-  char16_t* formatJSONTelemetry(JSContext* cx, uint64_t timestamp) const;
 
   JS::UniqueChars sliceToJSONProfiler(JSContext* cx) const;
   JS::UniqueChars formatJSONProfiler(JSContext* cx) const;
@@ -1083,12 +1112,6 @@ extern JS_PUBLIC_API JSString* JS_NewExternalString(
 extern JS_PUBLIC_API JSString* JS_NewMaybeExternalString(
     JSContext* cx, const char16_t* chars, size_t length,
     const JSExternalStringCallbacks* callbacks, bool* allocatedExternal);
-
-/**
- * Return whether 'str' was created with JS_NewExternalString or
- * JS_NewExternalStringWithClosure.
- */
-extern JS_PUBLIC_API bool JS_IsExternalString(JSString* str);
 
 /**
  * Return the 'callbacks' arg passed to JS_NewExternalString or

@@ -14,7 +14,8 @@ class WeakRefObject : public NativeObject {
   static const JSClass class_;
   static const JSClass protoClass_;
 
-  JSObject* target();
+  JSObject* target() { return static_cast<JSObject*>(getPrivate()); }
+
   void setTarget(JSObject* target);
 
  private:
@@ -30,6 +31,7 @@ class WeakRefObject : public NativeObject {
   static bool preserveDOMWrapper(JSContext* cx, HandleObject obj);
 
   static bool deref(JSContext* cx, unsigned argc, Value* vp);
+  static void readBarrier(JSContext* cx, Handle<WeakRefObject*> self);
 };
 
 }  // namespace js

@@ -143,7 +143,7 @@ extern bool array_pop(JSContext* cx, unsigned argc, js::Value* vp);
 
 extern bool array_join(JSContext* cx, unsigned argc, js::Value* vp);
 
-extern void ArrayShiftMoveElements(NativeObject* obj);
+extern void ArrayShiftMoveElements(ArrayObject* arr);
 
 extern bool array_shift(JSContext* cx, unsigned argc, js::Value* vp);
 
@@ -162,7 +162,7 @@ extern JSObject* ArraySliceDense(JSContext* cx, HandleObject obj, int32_t begin,
 extern bool NewbornArrayPush(JSContext* cx, HandleObject obj, const Value& v);
 
 extern ArrayObject* ArrayConstructorOneArg(JSContext* cx,
-                                           HandleObjectGroup group,
+                                           HandleArrayObject templateObject,
                                            int32_t lengthInt);
 
 #ifdef DEBUG
@@ -177,7 +177,7 @@ extern bool array_construct(JSContext* cx, unsigned argc, Value* vp);
 
 extern JSString* ArrayToSource(JSContext* cx, HandleObject obj);
 
-extern bool IsCrossRealmArrayConstructor(JSContext* cx, const Value& v,
+extern bool IsCrossRealmArrayConstructor(JSContext* cx, JSObject* obj,
                                          bool* result);
 
 extern bool ObjectMayHaveExtraIndexedProperties(JSObject* obj);

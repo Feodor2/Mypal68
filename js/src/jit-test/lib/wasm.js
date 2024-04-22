@@ -21,7 +21,12 @@ function wasmEvalText(str, imports) {
 }
 
 function wasmValidateText(str) {
-    assertEq(WebAssembly.validate(wasmTextToBinary(str)), true);
+    let binary = wasmTextToBinary(str);
+    let valid = WebAssembly.validate(binary);
+    if (!valid) {
+        new WebAssembly.Module(binary);
+    }
+    assertEq(valid, true);
 }
 
 function wasmFailValidateText(str, pattern) {
@@ -321,4 +326,8 @@ WasmHelpers.assertEqPreciseStacks = (observed, expectedStacks) => {
     throw new Error(`no plausible stacks found, observed: ${observed.join('/')}
 Expected one of:
 ${expectedStacks.map(stacks => stacks.join("/")).join('\n')}`);
+}
+
+function fuzzingSafe() {
+    return typeof getErrorNotes == 'undefined';
 }

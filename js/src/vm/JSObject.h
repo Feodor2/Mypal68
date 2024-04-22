@@ -11,6 +11,7 @@
 #include "js/Conversions.h"
 #include "js/GCVector.h"
 #include "js/HeapAPI.h"
+#include "js/shadow/Zone.h"  // JS::shadow::Zone
 #include "js/Wrapper.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/Printer.h"
@@ -80,11 +81,13 @@ bool SetImmutablePrototype(JSContext* cx, JS::HandleObject obj,
  *       as before.
  *       - JSObject::swap()
  */
-class JSObject : public js::gc::Cell {
+class JSObject
+    : public js::gc::CellWithTenuredGCPointer<js::gc::Cell, js::ObjectGroup> {
+ public:
+  // The ObjectGroup is stored in the cell header.
+  js::ObjectGroup* groupRaw() const { return headerPtr(); }
+
  protected:
-  using HeaderWithObjectGroup =
-      js::gc::CellHeaderWithTenuredGCPointer<js::ObjectGroup>;
-  HeaderWithObjectGroup headerAndGroup_;
   js::GCPtrShape shape_;
 
  private:
@@ -101,7 +104,7 @@ class JSObject : public js::gc::Cell {
   // Make a new group to use for a singleton object.
   static js::ObjectGroup* makeLazyGroup(JSContext* cx, js::HandleObject obj);
 
-  void setGroupRaw(js::ObjectGroup* group) { headerAndGroup_.setPtr(group); }
+  void setGroupRaw(js::ObjectGroup* group) { setHeaderPtr(group); }
 
  public:
   bool isNative() const { return getClass()->isNative(); }
@@ -142,9 +145,7 @@ class JSObject : public js::gc::Cell {
     return groupRaw();
   }
 
-  js::ObjectGroup* groupRaw() const { return headerAndGroup_.ptr(); }
-
-  void initGroup(js::ObjectGroup* group) { headerAndGroup_.initPtr(group); }
+  void initGroup(js::ObjectGroup* group) { initHeaderPtr(group); }
 
   /*
    * Whether this is the only object which has its specified group. This
@@ -268,7 +269,6 @@ class JSObject : public js::gc::Cell {
   void fixupAfterMovingGC();
 
   static const JS::TraceKind TraceKind = JS::TraceKind::Object;
-  const js::gc::CellHeader& cellHeader() const { return headerAndGroup_; }
 
   MOZ_ALWAYS_INLINE JS::Zone* zone() const {
     MOZ_ASSERT_IF(!isTenured(), nurseryZone() == groupRaw()->zone());
@@ -285,10 +285,10 @@ class JSObject : public js::gc::Cell {
   MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZoneFromAnyThread() const {
     return JS::shadow::Zone::from(zoneFromAnyThread());
   }
-  static MOZ_ALWAYS_INLINE void readBarrier(JSObject* obj);
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(JSObject* obj);
-  static MOZ_ALWAYS_INLINE void writeBarrierPost(void* cellp, JSObject* prev,
-                                                 JSObject* next);
+  static MOZ_ALWAYS_INLINE void postWriteBarrier(void* cellp, JSObject* prev,
+                                                 JSObject* next) {
+    js::gc::PostWriteBarrierImpl<JSObject>(cellp, prev, next);
+  }
 
   /* Return the allocKind we would use if we were to tenure this object. */
   js::gc::AllocKind allocKindForTenure(const js::Nursery& nursery) const;
@@ -501,8 +501,8 @@ class JSObject : public js::gc::Cell {
    * triplet (along with any class YObject that derives XObject).
    *
    * Note that X represents a low-level representation and does not query the
-   * [[Class]] property of object defined by the spec (for this, see
-   * js::GetBuiltinClass).
+   * [[Class]] property of object defined by the spec: use |JS::GetBuiltinClass|
+   * for this.
    */
 
   template <class T>
@@ -546,11 +546,19 @@ class JSObject : public js::gc::Cell {
   /*
    * Tries to unwrap and downcast to class T. Returns nullptr if (and only if) a
    * wrapper with a security policy is involved. Crashes in all builds if the
-   * (possibly unwrapped) object is not of class T (for example because it's a
+   * (possibly unwrapped) object is not of class T (for example, because it's a
    * dead wrapper).
    */
   template <class T>
-  T* maybeUnwrapAs();
+  inline T* maybeUnwrapAs();
+
+  /*
+   * Tries to unwrap and downcast to an object with class |clasp|.  Returns
+   * nullptr if (and only if) a wrapper with a security policy is involved.
+   * Crashes in all builds if the (possibly unwrapped) object doesn't have class
+   * |clasp| (for example, because it's a dead wrapper).
+   */
+  inline JSObject* maybeUnwrapAs(const JSClass* clasp);
 
   /*
    * Tries to unwrap and downcast to class T. Returns nullptr if a wrapper with
@@ -579,10 +587,7 @@ class JSObject : public js::gc::Cell {
   friend class js::jit::MacroAssembler;
   friend class js::jit::CacheIRCompiler;
 
-  static constexpr size_t offsetOfGroup() {
-    return offsetof(JSObject, headerAndGroup_) +
-           HeaderWithObjectGroup::offsetOfPtr();
-  }
+  static constexpr size_t offsetOfGroup() { return offsetOfHeaderPtr(); }
   static constexpr size_t offsetOfShape() { return offsetof(JSObject, shape_); }
 
  private:
@@ -647,7 +652,7 @@ T& JSObject::unwrapAs() {
 }
 
 template <class T>
-T* JSObject::maybeUnwrapAs() {
+inline T* JSObject::maybeUnwrapAs() {
   static_assert(!std::is_convertible_v<T*, js::Wrapper*>,
                 "T can't be a Wrapper type; this function discards wrappers");
 
@@ -662,6 +667,23 @@ T* JSObject::maybeUnwrapAs() {
 
   if (MOZ_LIKELY(unwrapped->is<T>())) {
     return &unwrapped->as<T>();
+  }
+
+  MOZ_CRASH("Invalid object. Dead wrapper?");
+}
+
+inline JSObject* JSObject::maybeUnwrapAs(const JSClass* clasp) {
+  if (hasClass(clasp)) {
+    return this;
+  }
+
+  JSObject* unwrapped = js::CheckedUnwrapStatic(this);
+  if (!unwrapped) {
+    return nullptr;
+  }
+
+  if (MOZ_LIKELY(unwrapped->hasClass(clasp))) {
+    return unwrapped;
   }
 
   MOZ_CRASH("Invalid object. Dead wrapper?");
@@ -719,44 +741,6 @@ struct JSObject_Slots16 : JSObject {
   void* data[2];
   js::Value fslots[16];
 };
-
-/* static */ MOZ_ALWAYS_INLINE void JSObject::readBarrier(JSObject* obj) {
-  if (obj && obj->isTenured()) {
-    obj->asTenured().readBarrier(&obj->asTenured());
-  }
-}
-
-/* static */ MOZ_ALWAYS_INLINE void JSObject::writeBarrierPre(JSObject* obj) {
-  if (obj && obj->isTenured()) {
-    obj->asTenured().writeBarrierPre(&obj->asTenured());
-  }
-}
-
-/* static */ MOZ_ALWAYS_INLINE void JSObject::writeBarrierPost(void* cellp,
-                                                               JSObject* prev,
-                                                               JSObject* next) {
-  MOZ_ASSERT(cellp);
-
-  // If the target needs an entry, add it.
-  js::gc::StoreBuffer* buffer;
-  if (next && (buffer = next->storeBuffer())) {
-    // If we know that the prev has already inserted an entry, we can skip
-    // doing the lookup to add the new entry. Note that we cannot safely
-    // assert the presence of the entry because it may have been added
-    // via a different store buffer.
-    if (prev && prev->storeBuffer()) {
-      return;
-    }
-    buffer->putCell(static_cast<JSObject**>(cellp));
-    return;
-  }
-
-  // Remove the prev entry if the new value does not need it. There will only
-  // be a prev entry if the prev value was in the nursery.
-  if (prev && (buffer = prev->storeBuffer())) {
-    buffer->unputCell(static_cast<JSObject**>(cellp));
-  }
-}
 
 namespace js {
 
@@ -979,6 +963,7 @@ extern bool IsPrototypeOf(JSContext* cx, HandleObject protoObj, JSObject* obj,
 
 /* Wrap boolean, number or string as Boolean, Number or String object. */
 extern JSObject* PrimitiveToObject(JSContext* cx, const Value& v);
+extern JSProtoKey PrimitiveToProtoKey(JSContext* cx, const Value& v);
 
 } /* namespace js */
 

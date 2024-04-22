@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "js/shadow/Realm.h"  // JS::shadow::Realm
 #include "vm/Realm-inl.h"
 
 #include "mozilla/MemoryReporting.h"
@@ -309,9 +310,8 @@ void Realm::traceRoots(JSTracer* trc,
     //
     // If a realm is on-stack, we mark its global so that
     // JSContext::global() remains valid.
-    if (shouldTraceGlobal() && global_.unbarrieredGet()) {
-      TraceRoot(trc, global_.unsafeUnbarrieredForTracing(),
-                "on-stack realm global");
+    if (shouldTraceGlobal() && global_) {
+      TraceRoot(trc, global_.unbarrieredAddress(), "on-stack realm global");
     }
   }
 
@@ -450,9 +450,9 @@ void Realm::fixupAfterMovingGC(JSTracer* trc) {
 }
 
 void Realm::fixupGlobal() {
-  GlobalObject* global = *global_.unsafeGet();
+  GlobalObject* global = global_.unbarrieredGet();
   if (global) {
-    global_.set(MaybeForwarded(global));
+    global_.unbarrieredSet(MaybeForwarded(global));
   }
 }
 
@@ -784,11 +784,9 @@ mozilla::HashCodeScrambler Realm::randomHashCodeScrambler() {
                                     randomKeyGenerator_.next());
 }
 
-AutoSetNewObjectMetadata::AutoSetNewObjectMetadata(
-    JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+AutoSetNewObjectMetadata::AutoSetNewObjectMetadata(JSContext* cx)
     : cx_(cx->isHelperThreadContext() ? nullptr : cx),
       prevState_(cx, cx->realm()->objectMetadataState_) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (cx_) {
     cx_->realm()->objectMetadataState_ =
         NewObjectMetadataState(DelayMetadata());
@@ -870,7 +868,7 @@ JS_PUBLIC_API void JS::SetRealmNameCallback(JSContext* cx,
   cx->runtime()->realmNameCallback = callback;
 }
 
-JS_PUBLIC_API JSObject* JS::GetRealmGlobalOrNull(Handle<JS::Realm*> realm) {
+JS_PUBLIC_API JSObject* JS::GetRealmGlobalOrNull(JS::Realm* realm) {
   return realm->maybeGlobal();
 }
 

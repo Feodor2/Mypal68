@@ -65,6 +65,8 @@ class WrapperFactory {
             js::GetProxyHandler(obj) == &CrossOriginObjectWrapper::singleton);
   }
 
+  static bool IsOpaqueWrapper(JSObject* obj);
+
   static bool HasWaiveXrayFlag(JSObject* wrapper) {
     return HasWrapperFlag(wrapper, WAIVE_XRAY_WRAPPER_FLAG);
   }

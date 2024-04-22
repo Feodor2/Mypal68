@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "builtin/Object.h"
+#include "js/Object.h"  // JS::GetBuiltinClass
 
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/Range.h"
@@ -15,6 +16,7 @@
 #include "builtin/SelfHostingDefines.h"
 #include "frontend/BytecodeCompiler.h"
 #include "jit/InlinableNatives.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "js/UniquePtr.h"
 #include "util/StringBuffer.h"
@@ -81,7 +83,8 @@ bool js::obj_propertyIsEnumerable(JSContext* cx, unsigned argc, Value* vp) {
 
   /* Steps 1-2. */
   jsid id;
-  if (args.thisv().isObject() && ValueToId<NoGC>(cx, idValue, &id)) {
+  if (args.thisv().isObject() && idValue.isPrimitive() &&
+      PrimitiveValueToId<NoGC>(cx, idValue, &id)) {
     JSObject* obj = &args.thisv().toObject();
 
     /* Step 3. */
@@ -502,7 +505,7 @@ static bool GetBuiltinTagSlow(JSContext* cx, HandleObject obj,
 
   // Steps 6-13.
   ESClass cls;
-  if (!GetBuiltinClass(cx, obj, &cls)) {
+  if (!JS::GetBuiltinClass(cx, obj, &cls)) {
     return false;
   }
 
@@ -599,26 +602,77 @@ static MOZ_ALWAYS_INLINE JSString* GetBuiltinTagFast(JSObject* obj,
   return nullptr;
 }
 
+// For primitive values we try to avoid allocating the object if we can
+// determine that the prototype it would use does not define Symbol.toStringTag.
+static JSAtom* MaybeObjectToStringPrimitive(JSContext* cx, const Value& v) {
+  JSProtoKey protoKey = js::PrimitiveToProtoKey(cx, v);
+
+  // If prototype doesn't exist yet, just fall through.
+  JSObject* proto = cx->global()->maybeGetPrototype(protoKey);
+  if (!proto) {
+    return nullptr;
+  }
+
+  // If determining this may have side-effects, we must instead create the
+  // object normally since it is the receiver while looking up
+  // Symbol.toStringTag.
+  if (MaybeHasInterestingSymbolProperty(
+          cx, proto, cx->wellKnownSymbols().toStringTag, nullptr)) {
+    return nullptr;
+  }
+
+  // Return the direct result.
+  switch (protoKey) {
+    case JSProto_String:
+      return cx->names().objectString;
+    case JSProto_Number:
+      return cx->names().objectNumber;
+    case JSProto_Boolean:
+      return cx->names().objectBoolean;
+    case JSProto_Symbol:
+      return cx->names().objectSymbol;
+    case JSProto_BigInt:
+      return cx->names().objectBigInt;
+    default:
+      break;
+  }
+
+  return nullptr;
+}
+
 // ES6 19.1.3.6
 bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject obj(cx);
 
-  // Step 1.
-  if (args.thisv().isUndefined()) {
-    args.rval().setString(cx->names().objectUndefined);
-    return true;
-  }
+  if (args.thisv().isPrimitive()) {
+    // Step 1.
+    if (args.thisv().isUndefined()) {
+      args.rval().setString(cx->names().objectUndefined);
+      return true;
+    }
 
-  // Step 2.
-  if (args.thisv().isNull()) {
-    args.rval().setString(cx->names().objectNull);
-    return true;
-  }
+    // Step 2.
+    if (args.thisv().isNull()) {
+      args.rval().setString(cx->names().objectNull);
+      return true;
+    }
 
-  // Step 3.
-  RootedObject obj(cx, ToObject(cx, args.thisv()));
-  if (!obj) {
-    return false;
+    // Try fast-path for primitives. This is unusual but we encounter code like
+    // this in the wild.
+    JSAtom* result = MaybeObjectToStringPrimitive(cx, args.thisv());
+    if (result) {
+      args.rval().setString(result);
+      return true;
+    }
+
+    // Step 3.
+    obj = ToObject(cx, args.thisv());
+    if (!obj) {
+      return false;
+    }
+  } else {
+    obj = &args.thisv().toObject();
   }
 
   RootedString builtinTag(cx);
@@ -646,7 +700,9 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 14.
-  // Currently omitted for non-standard fallback.
+  if (!builtinTag) {
+    builtinTag = cx->names().objectObject;
+  }
 
   // Step 15.
   RootedValue tag(cx);
@@ -657,21 +713,6 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 16.
   if (!tag.isString()) {
-    // Non-standard (bug 1277801): Use ClassName as a fallback in the interim
-    if (!builtinTag) {
-      const char* className = GetObjectClassName(cx, obj);
-      StringBuffer sb(cx);
-      if (!sb.append("[object ") || !sb.append(className, strlen(className)) ||
-          !sb.append(']')) {
-        return false;
-      }
-
-      builtinTag = sb.finishAtom();
-      if (!builtinTag) {
-        return false;
-      }
-    }
-
     args.rval().setString(builtinTag);
     return true;
   }
@@ -1924,7 +1965,8 @@ static const JSFunctionSpec object_methods[] = {
     JS_SELF_HOSTED_FN(js_toLocaleString_str, "Object_toLocaleString", 0, 0),
     JS_SELF_HOSTED_FN(js_valueOf_str, "Object_valueOf", 0, 0),
     JS_SELF_HOSTED_FN(js_hasOwnProperty_str, "Object_hasOwnProperty", 1, 0),
-    JS_FN(js_isPrototypeOf_str, obj_isPrototypeOf, 1, 0),
+    JS_INLINABLE_FN(js_isPrototypeOf_str, obj_isPrototypeOf, 1, 0,
+                    ObjectIsPrototypeOf),
     JS_FN(js_propertyIsEnumerable_str, obj_propertyIsEnumerable, 1, 0),
     JS_SELF_HOSTED_FN(js_defineGetter_str, "ObjectDefineGetter", 2, 0),
     JS_SELF_HOSTED_FN(js_defineSetter_str, "ObjectDefineSetter", 2, 0),

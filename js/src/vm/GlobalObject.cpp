@@ -45,6 +45,7 @@
 #include "builtin/WeakSetObject.h"
 #include "debugger/DebugAPI.h"
 #include "gc/FreeOp.h"
+#include "js/friend/WindowProxy.h"  // js::ToWindowProxyIfWindow
 #include "js/ProtoKey.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
@@ -285,6 +286,23 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
                               IfClassIsDisabled::DoNothing);
   }
 
+  // %IteratorPrototype%.map.[[Prototype]] is %Generator% and
+  // %Generator%.prototype.[[Prototype]] is %IteratorPrototype%.
+  // A workaround in initIteratorProto prevents runaway mutual recursion while
+  // setting these up. Ensure the workaround is triggered already:
+  if (key == JSProto_GeneratorFunction &&
+      !global->getSlotRef(ITERATOR_PROTO).isObject()) {
+    if (!getOrCreateIteratorPrototype(cx, global)) {
+      return false;
+    }
+
+    // If iterator helpers are enabled, populating %IteratorPrototype% will
+    // have recursively gone through here.
+    if (global->isStandardClassResolved(key)) {
+      return true;
+    }
+  }
+
   // We don't always have a prototype (i.e. Math and JSON). If we don't,
   // |createPrototype|, |prototypeFunctions|, and |prototypeProperties|
   // should all be null.
@@ -369,9 +387,28 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
 
     // Fallible operation that modifies the global object.
     if (clasp->specShouldDefineConstructor()) {
-      RootedValue ctorValue(cx, ObjectValue(*ctor));
-      if (!DefineDataProperty(cx, global, id, ctorValue, JSPROP_RESOLVING)) {
-        return false;
+      bool shouldReallyDefine = true;
+
+      // On the web, it isn't presently possible to expose the global
+      // "SharedArrayBuffer" property unless the page is cross-site-isolated.
+      // Only define this constructor if an option on the realm indicates that
+      // it should be defined.
+      if (key == JSProto_SharedArrayBuffer) {
+        const JS::RealmCreationOptions& options =
+            global->realm()->creationOptions();
+
+        MOZ_ASSERT(options.getSharedMemoryAndAtomicsEnabled(),
+                   "shouldn't be defining SharedArrayBuffer if shared memory "
+                   "is disabled");
+
+        shouldReallyDefine = options.defineSharedArrayBufferConstructor();
+      }
+
+      if (shouldReallyDefine) {
+        RootedValue ctorValue(cx, ObjectValue(*ctor));
+        if (!DefineDataProperty(cx, global, id, ctorValue, JSPROP_RESOLVING)) {
+          return false;
+        }
       }
     }
 
@@ -423,6 +460,22 @@ JSObject* GlobalObject::createObject(JSContext* cx,
 
   MOZ_ASSERT(!cx->isHelperThreadContext());
   if (!init(cx, global)) {
+    return nullptr;
+  }
+
+  return &global->getSlot(slot).toObject();
+}
+
+JSObject* GlobalObject::createObject(JSContext* cx,
+                                     Handle<GlobalObject*> global,
+                                     unsigned slot, HandleAtom tag,
+                                     ObjectInitWithTagOp init) {
+  if (global->zone()->createdForHelperThread()) {
+    return createOffThreadObject(cx, global, slot);
+  }
+
+  MOZ_ASSERT(!cx->isHelperThreadContext());
+  if (!init(cx, global, tag)) {
     return nullptr;
   }
 
@@ -782,6 +835,7 @@ bool GlobalObject::initSelfHostingBuiltins(JSContext* cx,
   };
 
   SymbolAndName wellKnownSymbols[] = {
+      {JS::SymbolCode::asyncIterator, "std_asyncIterator"},
       {JS::SymbolCode::isConcatSpreadable, "std_isConcatSpreadable"},
       {JS::SymbolCode::iterator, "std_iterator"},
       {JS::SymbolCode::match, "std_match"},
@@ -1026,8 +1080,7 @@ bool GlobalObject::getSelfHostedFunction(JSContext* cx,
 
   RootedFunction fun(cx);
   if (!cx->runtime()->createLazySelfHostedFunctionClone(
-          cx, selfHostedName, name, nargs,
-          /* proto = */ nullptr, SingletonObject, &fun)) {
+          cx, selfHostedName, name, nargs, SingletonObject, &fun)) {
     return false;
   }
   funVal.setObject(*fun);

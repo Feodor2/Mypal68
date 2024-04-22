@@ -665,8 +665,6 @@ bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
   const FuncExportVector& funcExports = metadata.funcExports;
   uint8_t* moduleSegmentBase = codeTier.segment().base();
 
-  bool bigIntEnabled = codeTier.code().metadata().bigIntEnabled;
-
   CodeRangeVector codeRanges;
   DebugOnly<uint32_t> numExpectedRanges = 0;
   for (uint32_t funcExportIndex : funcExportIndices) {
@@ -674,11 +672,11 @@ bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
     numExpectedRanges +=
         fe.funcType().temporarilyUnsupportedReftypeForEntry() ? 1 : 2;
     void* calleePtr =
-        moduleSegmentBase + metadata.codeRange(fe).funcNormalEntry();
+        moduleSegmentBase + metadata.codeRange(fe).funcUncheckedCallEntry();
     Maybe<ImmPtr> callee;
     callee.emplace(calleePtr, ImmPtr::NoCheckToken());
     if (!GenerateEntryStubs(masm, funcExportIndex, fe, callee,
-                            /* asmjs */ false, bigIntEnabled, &codeRanges)) {
+                            /* asmjs */ false, &codeRanges)) {
       return false;
     }
   }
@@ -896,8 +894,7 @@ size_t Metadata::serializedSize() const {
   return sizeof(pod()) + SerializedVectorSize(funcTypeIds) +
          SerializedPodVectorSize(globals) + SerializedPodVectorSize(tables) +
          sizeof(moduleName) + SerializedPodVectorSize(funcNames) +
-         filename.serializedSize() + sourceMapURL.serializedSize() +
-         sizeof(uint8_t);
+         filename.serializedSize() + sourceMapURL.serializedSize();
 }
 
 uint8_t* Metadata::serialize(uint8_t* cursor) const {
@@ -911,12 +908,10 @@ uint8_t* Metadata::serialize(uint8_t* cursor) const {
   cursor = SerializePodVector(cursor, funcNames);
   cursor = filename.serialize(cursor);
   cursor = sourceMapURL.serialize(cursor);
-  cursor = WriteScalar(cursor, uint8_t(omitsBoundsChecks));
   return cursor;
 }
 
 /* static */ const uint8_t* Metadata::deserialize(const uint8_t* cursor) {
-  uint8_t scalarOmitsBoundsChecks = 0;
   (cursor = ReadBytes(cursor, &pod(), sizeof(pod()))) &&
       (cursor = DeserializeVector(cursor, &funcTypeIds)) &&
       (cursor = DeserializePodVector(cursor, &globals)) &&
@@ -924,12 +919,10 @@ uint8_t* Metadata::serialize(uint8_t* cursor) const {
       (cursor = ReadBytes(cursor, &moduleName, sizeof(moduleName))) &&
       (cursor = DeserializePodVector(cursor, &funcNames)) &&
       (cursor = filename.deserialize(cursor)) &&
-      (cursor = sourceMapURL.deserialize(cursor)) &&
-      (cursor = ReadScalar<uint8_t>(cursor, &scalarOmitsBoundsChecks));
+      (cursor = sourceMapURL.deserialize(cursor));
   debugEnabled = false;
   debugFuncArgTypes.clear();
   debugFuncReturnTypes.clear();
-  omitsBoundsChecks = !!scalarOmitsBoundsChecks;
   return cursor;
 }
 

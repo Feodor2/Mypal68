@@ -159,6 +159,11 @@ static constexpr bool SupportsUint8x16Compares = false;
 static constexpr bool SupportsUint16x8Compares = false;
 static constexpr bool SupportsUint32x4Compares = false;
 
+// The offsets are dynamically asserted during
+// code generation in the prologue/epilogue.
+static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
+static constexpr uint32_t WasmCheckedTailEntryOffset = 16u;
+
 static constexpr Scale ScalePointer = TimesFour;
 
 class Assembler : public AssemblerMIPSShared {

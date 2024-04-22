@@ -7,10 +7,11 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
 #include "mozilla/PlatformMutex.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/Vector.h"
+
+#include <utility>
 
 #include "threading/ThreadId.h"
 
@@ -78,7 +79,7 @@ class Mutex {
  private:
   const MutexId id_;
   Mutex* prev_ = nullptr;
-  mozilla::Maybe<ThreadId> owningThread_;
+  ThreadId owningThread_;
 
   static MOZ_THREAD_LOCAL(Mutex*) HeldMutexStack;
 #endif

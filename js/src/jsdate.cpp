@@ -34,6 +34,7 @@
 #include "js/Conversions.h"
 #include "js/Date.h"
 #include "js/LocaleSensitive.h"
+#include "js/Object.h"  // JS::GetBuiltinClass
 #include "js/PropertySpec.h"
 #include "js/Wrapper.h"
 #include "util/StringBuffer.h"
@@ -64,6 +65,7 @@ using mozilla::Relaxed;
 using JS::AutoCheckCannotGC;
 using JS::ClippedTime;
 using JS::GenericNaN;
+using JS::GetBuiltinClass;
 using JS::TimeClip;
 using JS::ToInteger;
 
@@ -3288,7 +3290,7 @@ const JSClass DateObject::class_ = {js_Date_str,
                                     JS_NULL_CLASS_OPS, &DateObjectClassSpec};
 
 const JSClass DateObject::protoClass_ = {
-    js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_Date), JS_NULL_CLASS_OPS,
+    "Date.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_Date), JS_NULL_CLASS_OPS,
     &DateObjectClassSpec};
 
 JSObject* js::NewDateObjectMsec(JSContext* cx, ClippedTime t,

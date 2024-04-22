@@ -19,6 +19,8 @@
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
+#include "js/friend/JSMEnvironment.h"  // JS::ExecuteInJSMEnvironment, JS::GetJSMEnvironmentOfScriptedCaller, JS::NewJSMEnvironment
+#include "js/Object.h"  // JS::GetCompartment
 #include "js/Printf.h"
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::SourceText
@@ -183,7 +185,6 @@ mozJSComponentLoader::mozJSComponentLoader()
       mInProgressImports(16),
       mLocations(16),
       mInitialized(false),
-      mShareLoaderGlobal(false),
       mLoaderGlobal(dom::RootingCx()) {
   MOZ_ASSERT(!sSelf, "mozJSComponentLoader should be a singleton");
 }
@@ -306,17 +307,6 @@ StaticRefPtr<mozJSComponentLoader> mozJSComponentLoader::sSelf;
 
 nsresult mozJSComponentLoader::ReallyInit() {
   MOZ_ASSERT(!mInitialized);
-
-  const char* shareGlobal = PR_GetEnv("MOZ_LOADER_SHARE_GLOBAL");
-  if (shareGlobal && *shareGlobal) {
-    nsDependentCString val(shareGlobal);
-    mShareLoaderGlobal =
-        !(val.EqualsLiteral("0") || val.LowerCaseEqualsLiteral("no") ||
-          val.LowerCaseEqualsLiteral("false") ||
-          val.LowerCaseEqualsLiteral("off"));
-  } else {
-    mShareLoaderGlobal = Preferences::GetBool("jsloader.shareGlobal");
-  }
 
   mInitialized = true;
 
@@ -502,7 +492,7 @@ const mozilla::Module* mozJSComponentLoader::LoadModule(FileLocation& aFile) {
 
 void mozJSComponentLoader::FindTargetObject(JSContext* aCx,
                                             MutableHandleObject aTargetObject) {
-  aTargetObject.set(js::GetJSMEnvironmentOfScriptedCaller(aCx));
+  aTargetObject.set(JS::GetJSMEnvironmentOfScriptedCaller(aCx));
 
   // The above could fail if the scripted caller is not a component/JSM (it
   // could be a DOM scope, for instance).
@@ -515,8 +505,7 @@ void mozJSComponentLoader::FindTargetObject(JSContext* aCx,
     aTargetObject.set(JS::GetScriptedCallerGlobal(aCx));
 
     // Return nullptr if the scripted caller is in a different compartment.
-    if (js::GetObjectCompartment(aTargetObject) !=
-        js::GetContextCompartment(aCx)) {
+    if (JS::GetCompartment(aTargetObject) != js::GetContextCompartment(aCx)) {
       aTargetObject.set(nullptr);
     }
   }
@@ -598,44 +587,6 @@ void mozJSComponentLoader::CreateLoaderGlobal(JSContext* aCx,
   aGlobal.set(global);
 }
 
-bool mozJSComponentLoader::ReuseGlobal(nsIURI* aURI) {
-  if (!mShareLoaderGlobal) {
-    return false;
-  }
-
-  nsCString spec;
-  NS_ENSURE_SUCCESS(aURI->GetSpec(spec), false);
-
-  // The loader calls Object.freeze on global properties, which
-  // causes problems if the global is shared with other code.
-  if (spec.EqualsASCII("resource://gre/modules/commonjs/toolkit/loader.js")) {
-    return false;
-  }
-
-  // Various tests call addDebuggerToGlobal on the result of
-  // importing this JSM, which would be annoying to fix.
-  if (spec.EqualsASCII("resource://gre/modules/jsdebugger.jsm")) {
-    return false;
-  }
-
-  // BrowserTestUtils.jsm calls Cu.permitCPOWsInScope(this) which sets a
-  // per-compartment flag to permit CPOWs. We don't want to set this flag for
-  // all other JSMs.
-  if (spec.EqualsASCII("resource://testing-common/BrowserTestUtils.jsm")) {
-    return false;
-  }
-
-  // Some SpecialPowers jsms call Cu.forcePermissiveCOWs(),
-  // which sets a per-compartment flag that disables certain
-  // security wrappers, so don't use the shared global for them
-  // to avoid breaking tests.
-  if (FindInReadable(NS_LITERAL_CSTRING("resource://specialpowers/"), spec)) {
-    return false;
-  }
-
-  return true;
-}
-
 JSObject* mozJSComponentLoader::GetSharedGlobal(JSContext* aCx) {
   if (!mLoaderGlobal) {
     JS::RootedObject globalObj(aCx);
@@ -657,23 +608,11 @@ JSObject* mozJSComponentLoader::GetSharedGlobal(JSContext* aCx) {
 }
 
 JSObject* mozJSComponentLoader::PrepareObjectForLocation(
-    JSContext* aCx, nsIFile* aComponentFile, nsIURI* aURI, bool* aReuseGlobal,
-    bool* aRealFile) {
+    JSContext* aCx, nsIFile* aComponentFile, nsIURI* aURI, bool* aRealFile) {
   nsAutoCString nativePath;
   NS_ENSURE_SUCCESS(aURI->GetSpec(nativePath), nullptr);
 
-  bool reuseGlobal = ReuseGlobal(aURI);
-
-  *aReuseGlobal = reuseGlobal;
-
-  bool createdNewGlobal = false;
-  RootedObject globalObj(aCx);
-  if (reuseGlobal) {
-    globalObj = GetSharedGlobal(aCx);
-  } else if (!globalObj) {
-    CreateLoaderGlobal(aCx, nativePath, &globalObj);
-    createdNewGlobal = true;
-  }
+  RootedObject globalObj(aCx, GetSharedGlobal(aCx));
 
   // |thisObj| is the object we set properties on for a particular .jsm.
   RootedObject thisObj(aCx, globalObj);
@@ -681,10 +620,8 @@ JSObject* mozJSComponentLoader::PrepareObjectForLocation(
 
   JSAutoRealm ar(aCx, thisObj);
 
-  if (reuseGlobal) {
-    thisObj = js::NewJSMEnvironment(aCx);
-    NS_ENSURE_TRUE(thisObj, nullptr);
-  }
+  thisObj = JS::NewJSMEnvironment(aCx);
+  NS_ENSURE_TRUE(thisObj, nullptr);
 
   *aRealFile = false;
 
@@ -729,13 +666,6 @@ JSObject* mozJSComponentLoader::PrepareObjectForLocation(
 
   if (!JS_DefineProperty(aCx, thisObj, "__URI__", exposedUri, 0)) {
     return nullptr;
-  }
-
-  if (createdNewGlobal) {
-    // AutoEntryScript required to invoke debugger hook, which is a
-    // Gecko-specific concept at present.
-    dom::AutoEntryScript aes(globalObj, "component loader report global");
-    JS_FireOnNewGlobalObject(aes.cx(), globalObj);
   }
 
   return thisObj;
@@ -786,11 +716,10 @@ nsresult mozJSComponentLoader::ObjectForLocation(
   bool realFile = false;
   nsresult rv = aInfo.EnsureURI();
   NS_ENSURE_SUCCESS(rv, rv);
-  bool reuseGlobal = false;
-  RootedObject obj(cx, PrepareObjectForLocation(cx, aComponentFile, aInfo.URI(),
-                                                &reuseGlobal, &realFile));
+  RootedObject obj(
+      cx, PrepareObjectForLocation(cx, aComponentFile, aInfo.URI(), &realFile));
   NS_ENSURE_TRUE(obj, NS_ERROR_FAILURE);
-  MOZ_ASSERT(JS_IsGlobalObject(obj) == !reuseGlobal);
+  MOZ_ASSERT(!JS_IsGlobalObject(obj));
 
   JSAutoRealm ar(cx, obj);
 
@@ -809,8 +738,7 @@ nsresult mozJSComponentLoader::ObjectForLocation(
 
   aInfo.EnsureResolvedURI();
 
-  nsAutoCString cachePath(reuseGlobal ? JS_CACHE_PREFIX("non-syntactic")
-                                      : JS_CACHE_PREFIX("global"));
+  nsAutoCString cachePath(JS_CACHE_PREFIX("non-syntactic"));
   rv = PathifyURI(aInfo.ResolvedURI(), cachePath);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -844,7 +772,8 @@ nsresult mozJSComponentLoader::ObjectForLocation(
     options.setNoScriptRval(true)
         .setForceStrictMode()
         .setFileAndLine(nativePath.get(), 1)
-        .setSourceIsLazy(cache || ScriptPreloader::GetSingleton().Active());
+        .setSourceIsLazy(cache || ScriptPreloader::GetSingleton().Active())
+        .setNonSyntacticScope(true);
 
     if (realFile) {
       AutoMemMap map;
@@ -857,8 +786,7 @@ nsresult mozJSComponentLoader::ObjectForLocation(
       JS::SourceText<mozilla::Utf8Unit> srcBuf;
       if (srcBuf.init(cx, buf.get(), map.size(),
                       JS::SourceOwnership::Borrowed)) {
-        script = reuseGlobal ? CompileForNonSyntacticScope(cx, options, srcBuf)
-                             : Compile(cx, options, srcBuf);
+        script = Compile(cx, options, srcBuf);
       } else {
         MOZ_ASSERT(!script);
       }
@@ -869,8 +797,7 @@ nsresult mozJSComponentLoader::ObjectForLocation(
       JS::SourceText<mozilla::Utf8Unit> srcBuf;
       if (srcBuf.init(cx, str.get(), str.Length(),
                       JS::SourceOwnership::Borrowed)) {
-        script = reuseGlobal ? CompileForNonSyntacticScope(cx, options, srcBuf)
-                             : Compile(cx, options, srcBuf);
+        script = Compile(cx, options, srcBuf);
       } else {
         MOZ_ASSERT(!script);
       }
@@ -922,7 +849,7 @@ nsresult mozJSComponentLoader::ObjectForLocation(
       JS::RootedValue rval(cx);
       executeOk = JS::CloneAndExecuteScript(aescx, script, &rval);
     } else {
-      executeOk = js::ExecuteInJSMEnvironment(aescx, script, obj);
+      executeOk = JS::ExecuteInJSMEnvironment(aescx, script, obj);
     }
 
     if (!executeOk) {

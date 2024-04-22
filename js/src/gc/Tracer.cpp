@@ -96,14 +96,14 @@ void js::TraceChildren(JSTracer* trc, void* thing, JS::TraceKind kind) {
   MOZ_ASSERT(thing);
   ApplyGCThingTyped(thing, kind, [trc](auto t) {
     MOZ_ASSERT_IF(t->runtimeFromAnyThread() != trc->runtime(),
-                  ThingIsPermanentAtomOrWellKnownSymbol(t) ||
+                  t->isPermanentAndMayBeShared() ||
                       t->zoneFromAnyThread()->isSelfHostingZone());
     t->traceChildren(trc);
   });
 }
 
-JS_PUBLIC_API void JS::TraceIncomingCCWs(
-    JSTracer* trc, const JS::CompartmentSet& compartments) {
+void js::gc::TraceIncomingCCWs(JSTracer* trc,
+                               const JS::CompartmentSet& compartments) {
   for (CompartmentsIter source(trc->runtime()); !source.done(); source.next()) {
     if (compartments.has(source)) {
       continue;
@@ -310,7 +310,7 @@ JS_PUBLIC_API void JS_GetTraceThingInfo(char* buf, size_t bufsize,
       }
 
       case JS::TraceKind::Script: {
-        js::BaseScript* script = static_cast<js::BaseScript*>(thing);
+        auto* script = static_cast<js::BaseScript*>(thing);
         snprintf(buf, bufsize, " %s:%u", script->filename(), script->lineno());
         break;
       }
@@ -339,7 +339,7 @@ JS_PUBLIC_API void JS_GetTraceThingInfo(char* buf, size_t bufsize,
       }
 
       case JS::TraceKind::Symbol: {
-        JS::Symbol* sym = static_cast<JS::Symbol*>(thing);
+        auto* sym = static_cast<JS::Symbol*>(thing);
         if (JSAtom* desc = sym->description()) {
           *buf++ = ' ';
           bufsize--;
@@ -351,7 +351,7 @@ JS_PUBLIC_API void JS_GetTraceThingInfo(char* buf, size_t bufsize,
       }
 
       case JS::TraceKind::Scope: {
-        js::Scope* scope = static_cast<js::Scope*>(thing);
+        auto* scope = static_cast<js::Scope*>(thing);
         snprintf(buf, bufsize, " %s", js::ScopeKindString(scope->kind()));
         break;
       }

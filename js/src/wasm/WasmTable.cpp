@@ -32,8 +32,8 @@ Table::Table(JSContext* cx, const TableDesc& desc,
       observers_(cx->zone()),
       functions_(std::move(functions)),
       kind_(desc.kind),
-      length_(desc.limits.initial),
-      maximum_(desc.limits.maximum) {
+      length_(desc.initialLength),
+      maximum_(desc.maximumLength) {
   MOZ_ASSERT(repr() == TableRepr::Func);
 }
 
@@ -43,8 +43,8 @@ Table::Table(JSContext* cx, const TableDesc& desc,
       observers_(cx->zone()),
       objects_(std::move(objects)),
       kind_(desc.kind),
-      length_(desc.limits.initial),
-      maximum_(desc.limits.maximum) {
+      length_(desc.initialLength),
+      maximum_(desc.maximumLength) {
   MOZ_ASSERT(repr() == TableRepr::Ref);
 }
 
@@ -55,17 +55,16 @@ SharedTable Table::create(JSContext* cx, const TableDesc& desc,
     case TableKind::FuncRef:
     case TableKind::AsmJS: {
       UniqueFuncRefArray functions(
-          cx->pod_calloc<FunctionTableElem>(desc.limits.initial));
+          cx->pod_calloc<FunctionTableElem>(desc.initialLength));
       if (!functions) {
         return nullptr;
       }
       return SharedTable(
           cx->new_<Table>(cx, desc, maybeObject, std::move(functions)));
     }
-    case TableKind::AnyRef:
-    case TableKind::NullRef: {
+    case TableKind::AnyRef: {
       TableAnyRefVector objects;
-      if (!objects.resize(desc.limits.initial)) {
+      if (!objects.resize(desc.initialLength)) {
         return nullptr;
       }
       return SharedTable(
@@ -98,9 +97,6 @@ void Table::tracePrivate(JSTracer* trc) {
     }
     case TableKind::AnyRef: {
       objects_.trace(trc);
-      break;
-    }
-    case TableKind::NullRef: {
       break;
     }
     case TableKind::AsmJS: {
@@ -162,7 +158,7 @@ void Table::setFuncRef(uint32_t index, void* code, const Instance* instance) {
 
   FunctionTableElem& elem = functions_[index];
   if (elem.tls) {
-    JSObject::writeBarrierPre(elem.tls->instance->objectUnbarriered());
+    gc::PreWriteBarrier(elem.tls->instance->objectUnbarriered());
   }
 
   switch (kind_) {
@@ -210,7 +206,7 @@ void Table::fillFuncRef(uint32_t index, uint32_t fillCount, FuncRef ref,
   const MetadataTier& metadata = instance.metadata(tier);
   const CodeRange& codeRange =
       metadata.codeRange(metadata.lookupFuncExport(funcIndex));
-  void* code = instance.codeBase(tier) + codeRange.funcTableEntry();
+  void* code = instance.codeBase(tier) + codeRange.funcCheckedCallEntry();
   for (uint32_t i = index, end = index + fillCount; i != end; i++) {
     setFuncRef(i, code, &instance);
   }
@@ -240,7 +236,7 @@ void Table::setNull(uint32_t index) {
       MOZ_RELEASE_ASSERT(kind() == TableKind::FuncRef);
       FunctionTableElem& elem = functions_[index];
       if (elem.tls) {
-        JSObject::writeBarrierPre(elem.tls->instance->objectUnbarriered());
+        gc::PreWriteBarrier(elem.tls->instance->objectUnbarriered());
       }
 
       elem.code = nullptr;
@@ -262,7 +258,7 @@ bool Table::copy(const Table& srcTable, uint32_t dstIndex, uint32_t srcIndex) {
       if (srcTable.kind() == TableKind::FuncRef) {
         FunctionTableElem& dst = functions_[dstIndex];
         if (dst.tls) {
-          JSObject::writeBarrierPre(dst.tls->instance->objectUnbarriered());
+          gc::PreWriteBarrier(dst.tls->instance->objectUnbarriered());
         }
 
         FunctionTableElem& src = srcTable.functions_[srcIndex];

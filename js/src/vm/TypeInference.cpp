@@ -7,13 +7,13 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
 #include <new>
+#include <utility>
 
 #include "jsapi.h"
 
@@ -25,6 +25,7 @@
 #include "jit/IonAnalysis.h"
 #include "jit/JitRealm.h"
 #include "js/MemoryMetrics.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/UniquePtr.h"
 #include "util/DiagnosticAssertions.h"
 #include "util/Poison.h"
@@ -3600,7 +3601,7 @@ void PreliminaryObjectArrayWithTemplate::trace(JSTracer* trc) {
 }
 
 /* static */
-void PreliminaryObjectArrayWithTemplate::writeBarrierPre(
+void PreliminaryObjectArrayWithTemplate::preWriteBarrier(
     PreliminaryObjectArrayWithTemplate* objects) {
   Shape* shape = objects->shape();
 
@@ -4073,7 +4074,7 @@ bool TypeNewScript::maybeAnalyze(JSContext* cx, ObjectGroup* group,
 
   // prefixShape was read via a weak pointer, so we need a read barrier before
   // we store it into the heap.
-  Shape::readBarrier(prefixShape);
+  gc::ReadBarrier(prefixShape);
 
   initializedShape_ = prefixShape;
   initializedGroup_ = group;
@@ -4200,7 +4201,7 @@ void TypeNewScript::trace(JSTracer* trc) {
 }
 
 /* static */
-void TypeNewScript::writeBarrierPre(TypeNewScript* newScript) {
+void TypeNewScript::preWriteBarrier(TypeNewScript* newScript) {
   if (JS::RuntimeHeapIsCollecting()) {
     return;
   }

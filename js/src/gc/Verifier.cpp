@@ -4,10 +4,10 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Move.h"
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
+#include <utility>
 
 #ifdef MOZ_VALGRIND
 #  include <valgrind/memcheck.h>
@@ -18,6 +18,7 @@
 #include "gc/PublicIterators.h"
 #include "gc/WeakMap.h"
 #include "gc/Zone.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpObject
 #include "js/HashTable.h"
 #include "vm/JSContext.h"
 
@@ -184,7 +185,7 @@ void gc::GCRuntime::startVerifyPreBarriers() {
 
   JSContext* cx = rt->mainContextFromOwnThread();
 
-  if (IsIncrementalGCUnsafe(rt) != AbortReason::None ||
+  if (IsIncrementalGCUnsafe(rt) != GCAbortReason::None ||
       rt->hasHelperThreadZones()) {
     return;
   }
@@ -305,7 +306,7 @@ bool CheckEdgeTracer::onChild(const JS::GCCellPtr& thing) {
   return true;
 }
 
-void js::gc::AssertSafeToSkipBarrier(TenuredCell* thing) {
+void js::gc::AssertSafeToSkipPreWriteBarrier(TenuredCell* thing) {
   mozilla::DebugOnly<Zone*> zone = thing->zoneFromAnyThread();
   MOZ_ASSERT(!zone->needsIncrementalBarrier() || zone->isAtomsZone());
 }
@@ -362,7 +363,7 @@ void gc::GCRuntime::endVerifyPreBarriers() {
   MOZ_ASSERT(incrementalState == State::Mark);
   incrementalState = State::NotActive;
 
-  if (!compartmentCreated && IsIncrementalGCUnsafe(rt) == AbortReason::None &&
+  if (!compartmentCreated && IsIncrementalGCUnsafe(rt) == GCAbortReason::None &&
       !rt->hasHelperThreadZones()) {
     CheckEdgeTracer cetrc(rt);
 
@@ -498,7 +499,7 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
   MOZ_ASSERT(!gcmarker->isWeakMarking());
 
   /* Wait for off-thread parsing which can allocate. */
-  HelperThreadState().waitForAllThreads();
+  WaitForAllHelperThreads();
 
   gc->waitBackgroundAllocEnd();
   gc->waitBackgroundSweepEnd();
@@ -631,8 +632,14 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done();
          chunk.next()) {
       ChunkBitmap* bitmap = &chunk->bitmap;
-      ChunkBitmap* entry = map.lookup(chunk)->value().get();
-      mozilla::Swap(*entry, *bitmap);
+      auto ptr = map.lookup(chunk);
+      MOZ_RELEASE_ASSERT(ptr, "Chunk not found in map");
+      ChunkBitmap* entry = ptr->value().get();
+      for (size_t i = 0; i < ChunkBitmap::WordCount; i++) {
+        uintptr_t v = entry->bitmap[i];
+        entry->bitmap[i] = uintptr_t(bitmap->bitmap[i]);
+        bitmap->bitmap[i] = v;
+      }
     }
   }
 
@@ -698,7 +705,7 @@ void js::gc::MarkingValidator::validate() {
       uintptr_t thing = arena->thingsStart();
       uintptr_t end = arena->thingsEnd();
       while (thing < end) {
-        auto cell = reinterpret_cast<TenuredCell*>(thing);
+        auto* cell = reinterpret_cast<TenuredCell*>(thing);
 
         /*
          * If a non-incremental GC wouldn't have collected a cell, then
@@ -1084,3 +1091,24 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
 }
 
 #endif  // defined(JS_GC_ZEAL) || defined(DEBUG)
+
+#ifdef DEBUG
+// Return whether an arbitrary pointer is within a cell with the given
+// traceKind. Only for assertions.
+bool GCRuntime::isPointerWithinTenuredCell(void* ptr, JS::TraceKind traceKind) {
+  AutoLockGC lock(this);
+  for (auto chunk = allNonEmptyChunks(lock); !chunk.done(); chunk.next()) {
+    MOZ_ASSERT(!chunk->isNurseryChunk());
+    if (ptr >= &chunk->arenas[0] && ptr < &chunk->arenas[ArenasPerChunk]) {
+      auto* arena = reinterpret_cast<Arena*>(uintptr_t(ptr) & ~ArenaMask);
+      if (!arena->allocated()) {
+        return false;
+      }
+
+      return MapAllocToTraceKind(arena->getAllocKind()) == traceKind;
+    }
+  }
+
+  return false;
+}
+#endif  // DEBUG

@@ -84,7 +84,7 @@ bool AtomMarkingRuntime::computeBitmapFromChunkMarkBits(JSRuntime* runtime,
   for (auto thingKind : AllAllocKinds()) {
     for (ArenaIter aiter(atomsZone, thingKind); !aiter.done(); aiter.next()) {
       Arena* arena = aiter.get();
-      uintptr_t* chunkWords = arena->chunk()->bitmap.arenaBits(arena);
+      MarkBitmapWord* chunkWords = arena->chunk()->bitmap.arenaBits(arena);
       bitmap.copyBitsFrom(arena->atomBitmapStart(), ArenaBitmapWords,
                           chunkWords);
     }
@@ -119,7 +119,7 @@ static void BitwiseOrIntoChunkMarkBits(JSRuntime* runtime, Bitmap& bitmap) {
   for (auto thingKind : AllAllocKinds()) {
     for (ArenaIter aiter(atomsZone, thingKind); !aiter.done(); aiter.next()) {
       Arena* arena = aiter.get();
-      uintptr_t* chunkWords = arena->chunk()->bitmap.arenaBits(arena);
+      MarkBitmapWord* chunkWords = arena->chunk()->bitmap.arenaBits(arena);
       bitmap.bitwiseOrRangeInto(arena->atomBitmapStart(), ArenaBitmapWords,
                                 chunkWords);
     }
@@ -209,8 +209,15 @@ bool AtomMarkingRuntime::atomIsMarked(Zone* zone, T* thing) {
     return true;
   }
 
-  if (ThingIsPermanent(thing)) {
+  if (thing->isPermanentAndMayBeShared()) {
     return true;
+  }
+
+  if constexpr (std::is_same_v<T, JSAtom>) {
+    JSRuntime* rt = zone->runtimeFromAnyThread();
+    if (rt->atoms().atomIsPinned(rt, thing)) {
+      return true;
+    }
   }
 
   size_t bit = GetAtomBit(&thing->asTenured());

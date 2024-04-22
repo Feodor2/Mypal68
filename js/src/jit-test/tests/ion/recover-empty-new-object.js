@@ -1,14 +1,16 @@
-// |jit-test| test-join=--no-unboxed-objects
-//
-// Unboxed object optimization might not trigger in all cases, thus we ensure
-// that Sink optimization is working well independently of the
-// object representation.
+// |jit-test| --no-warp
+
+// Warp lacks Scalar Replacement support (bug 1650233). Re-evaluate after that
+// bug has been fixed.
 
 // Ion eager fails the test below because we have not yet created any
 // template object in baseline before running the content of the top-level
 // function.
 if (getJitCompilerOptions()["ion.warmup.trigger"] <= 20)
     setJitCompilerOption("ion.warmup.trigger", 20);
+
+// Prevent the GC from cancelling Ion compilations, when we expect them to succeed
+gczeal(0);
 
 // These arguments have to be computed by baseline, and thus captured in a
 // resume point. The next function checks that we can remove the computation of

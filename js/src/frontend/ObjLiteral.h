@@ -9,6 +9,7 @@
 #include "mozilla/EnumSet.h"
 #include "mozilla/Span.h"
 
+#include "frontend/ParserAtom.h"
 #include "js/AllocPolicy.h"
 #include "js/GCPolicyAPI.h"
 #include "js/Value.h"
@@ -136,6 +137,12 @@
 
 namespace js {
 
+class JSONPrinter;
+
+namespace frontend {
+struct CompilationInfo;
+}
+
 // Object-literal instruction opcodes. An object literal is constructed by a
 // straight-line sequence of these ops, each adding one property to the
 // object.
@@ -250,16 +257,17 @@ struct ObjLiteralWriterBase {
   static const int OP_SHIFT = 24;
 
  protected:
-  Vector<uint8_t, 64> code_;
+  Vector<uint8_t, 64, js::SystemAllocPolicy> code_;
 
  public:
-  explicit ObjLiteralWriterBase(JSContext* cx) : code_(cx) {}
+  ObjLiteralWriterBase() = default;
 
   uint32_t curOffset() const { return code_.length(); }
 
-  MOZ_MUST_USE bool prepareBytes(size_t len, uint8_t** p) {
+  MOZ_MUST_USE bool prepareBytes(JSContext* cx, size_t len, uint8_t** p) {
     size_t offset = code_.length();
     if (!code_.growByUninitialized(len)) {
+      js::ReportOutOfMemory(cx);
       return false;
     }
     *p = &code_[offset];
@@ -267,9 +275,9 @@ struct ObjLiteralWriterBase {
   }
 
   template <typename T>
-  MOZ_MUST_USE bool pushRawData(T data) {
+  MOZ_MUST_USE bool pushRawData(JSContext* cx, T data) {
     uint8_t* p = nullptr;
-    if (!prepareBytes(sizeof(T), &p)) {
+    if (!prepareBytes(cx, sizeof(T), &p)) {
       return false;
     }
     mozilla::NativeEndian::copyAndSwapToLittleEndian(reinterpret_cast<void*>(p),
@@ -277,22 +285,23 @@ struct ObjLiteralWriterBase {
     return true;
   }
 
-  MOZ_MUST_USE bool pushOpAndName(ObjLiteralOpcode op, ObjLiteralKey key) {
+  MOZ_MUST_USE bool pushOpAndName(JSContext* cx, ObjLiteralOpcode op,
+                                  ObjLiteralKey key) {
     uint32_t data = (key.rawIndex() & ATOM_INDEX_MASK) |
                     (key.isArrayIndex() ? INDEXED_PROP : 0) |
                     (static_cast<uint8_t>(op) << OP_SHIFT);
-    return pushRawData(data);
+    return pushRawData(cx, data);
   }
 
-  MOZ_MUST_USE bool pushValueArg(const JS::Value& value) {
+  MOZ_MUST_USE bool pushValueArg(JSContext* cx, const JS::Value& value) {
     MOZ_ASSERT(value.isNumber() || value.isNullOrUndefined() ||
                value.isBoolean());
     uint64_t data = value.asRawBits();
-    return pushRawData(data);
+    return pushRawData(cx, data);
   }
 
-  MOZ_MUST_USE bool pushAtomArg(uint32_t atomIndex) {
-    return pushRawData(atomIndex);
+  MOZ_MUST_USE bool pushAtomArg(JSContext* cx, uint32_t atomIndex) {
+    return pushRawData(cx, atomIndex);
   }
 };
 
@@ -303,8 +312,7 @@ struct ObjLiteralWriterBase {
 // within the writer.
 struct ObjLiteralWriter : private ObjLiteralWriterBase {
  public:
-  explicit ObjLiteralWriter(JSContext* cx)
-      : ObjLiteralWriterBase(cx), flags_() {}
+  ObjLiteralWriter() = default;
 
   void clear() { code_.clear(); }
 
@@ -332,31 +340,38 @@ struct ObjLiteralWriter : private ObjLiteralWriterBase {
     nextKey_ = ObjLiteralKey::none();
   }
 
-  MOZ_MUST_USE bool propWithConstNumericValue(const JS::Value& value) {
+  MOZ_MUST_USE bool propWithConstNumericValue(JSContext* cx,
+                                              const JS::Value& value) {
     MOZ_ASSERT(value.isNumber());
-    return pushOpAndName(ObjLiteralOpcode::ConstValue, nextKey_) &&
-           pushValueArg(value);
+    return pushOpAndName(cx, ObjLiteralOpcode::ConstValue, nextKey_) &&
+           pushValueArg(cx, value);
   }
-  MOZ_MUST_USE bool propWithAtomValue(uint32_t value) {
-    return pushOpAndName(ObjLiteralOpcode::ConstAtom, nextKey_) &&
-           pushAtomArg(value);
+  MOZ_MUST_USE bool propWithAtomValue(JSContext* cx, uint32_t value) {
+    return pushOpAndName(cx, ObjLiteralOpcode::ConstAtom, nextKey_) &&
+           pushAtomArg(cx, value);
   }
-  MOZ_MUST_USE bool propWithNullValue() {
-    return pushOpAndName(ObjLiteralOpcode::Null, nextKey_);
+  MOZ_MUST_USE bool propWithNullValue(JSContext* cx) {
+    return pushOpAndName(cx, ObjLiteralOpcode::Null, nextKey_);
   }
-  MOZ_MUST_USE bool propWithUndefinedValue() {
-    return pushOpAndName(ObjLiteralOpcode::Undefined, nextKey_);
+  MOZ_MUST_USE bool propWithUndefinedValue(JSContext* cx) {
+    return pushOpAndName(cx, ObjLiteralOpcode::Undefined, nextKey_);
   }
-  MOZ_MUST_USE bool propWithTrueValue() {
-    return pushOpAndName(ObjLiteralOpcode::True, nextKey_);
+  MOZ_MUST_USE bool propWithTrueValue(JSContext* cx) {
+    return pushOpAndName(cx, ObjLiteralOpcode::True, nextKey_);
   }
-  MOZ_MUST_USE bool propWithFalseValue() {
-    return pushOpAndName(ObjLiteralOpcode::False, nextKey_);
+  MOZ_MUST_USE bool propWithFalseValue(JSContext* cx) {
+    return pushOpAndName(cx, ObjLiteralOpcode::False, nextKey_);
   }
 
   static bool arrayIndexInRange(int32_t i) {
     return i >= 0 && static_cast<uint32_t>(i) <= ATOM_INDEX_MASK;
   }
+
+#if defined(DEBUG) || defined(JS_JITSPEW)
+  void dump();
+  void dump(JSONPrinter& json);
+  void dumpFields(JSONPrinter& json);
+#endif
 
  private:
   ObjLiteralFlags flags_;
@@ -533,34 +548,50 @@ struct ObjLiteralReader : private ObjLiteralReaderBase {
   }
 };
 
-typedef Vector<JSAtom*, 4> ObjLiteralAtomVector;
+typedef Vector<const frontend::ParserAtom*, 4, js::SystemAllocPolicy>
+    ObjLiteralAtomVector;
 
-JSObject* InterpretObjLiteral(JSContext* cx, const ObjLiteralAtomVector& atoms,
+JSObject* InterpretObjLiteral(JSContext* cx,
+                              frontend::CompilationInfo& compilationInfo,
+                              const ObjLiteralAtomVector& atoms,
                               const mozilla::Span<const uint8_t> insns,
                               ObjLiteralFlags flags);
 
 inline JSObject* InterpretObjLiteral(JSContext* cx,
+                                     frontend::CompilationInfo& compilationInfo,
                                      const ObjLiteralAtomVector& atoms,
                                      const ObjLiteralWriter& writer) {
-  return InterpretObjLiteral(cx, atoms, writer.getCode(), writer.getFlags());
+  return InterpretObjLiteral(cx, compilationInfo, atoms, writer.getCode(),
+                             writer.getFlags());
 }
 
-class ObjLiteralCreationData {
+class ObjLiteralStencil {
  private:
   ObjLiteralWriter writer_;
   ObjLiteralAtomVector atoms_;
 
  public:
-  explicit ObjLiteralCreationData(JSContext* cx) : writer_(cx), atoms_(cx) {}
+  ObjLiteralStencil() = default;
 
   ObjLiteralWriter& writer() { return writer_; }
 
-  bool addAtom(JSAtom* atom, uint32_t* index) {
+  bool addAtom(JSContext* cx, const frontend::ParserAtom* atom,
+               uint32_t* index) {
     *index = atoms_.length();
-    return atoms_.append(atom);
+    if (!atoms_.append(atom)) {
+      js::ReportOutOfMemory(cx);
+      return false;
+    }
+    return true;
   }
 
-  JSObject* create(JSContext* cx) const;
+  JSObject* create(JSContext* cx, frontend::CompilationInfo& info) const;
+
+#if defined(DEBUG) || defined(JS_JITSPEW)
+  void dump();
+  void dump(JSONPrinter& json);
+  void dumpFields(JSONPrinter& json);
+#endif
 };
 
 }  // namespace js

@@ -11,6 +11,7 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     'ExportHelpers.cpp',
+    'JSServices.cpp',
     'nsXPConnect.cpp',
     'Sandbox.cpp',
     'XPCCallContext.cpp',
@@ -51,6 +52,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
+    '!/xpcom/components',
     '../loader',
     '../wrappers',
     '/caps',
@@ -60,6 +62,7 @@ LOCAL_INCLUDES += [
     '/dom/svg',
     '/layout/base',
     '/layout/style',
+    '/xpcom/components',
 ]
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):

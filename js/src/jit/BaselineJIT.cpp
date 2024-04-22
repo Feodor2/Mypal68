@@ -18,6 +18,7 @@
 #include "jit/CompileInfo.h"
 #include "jit/JitCommon.h"
 #include "jit/JitSpewer.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimitWithStackPointer
 #include "util/Memory.h"
 #include "util/StructuredSpewer.h"
 #include "vm/Interpreter.h"
@@ -501,7 +502,7 @@ void BaselineScript::trace(JSTracer* trc) {
 }
 
 /* static */
-void BaselineScript::writeBarrierPre(Zone* zone, BaselineScript* script) {
+void BaselineScript::preWriteBarrier(Zone* zone, BaselineScript* script) {
   if (zone->needsIncrementalBarrier()) {
     script->trace(zone->barrierTracer());
   }
@@ -615,8 +616,7 @@ const RetAddrEntry& BaselineScript::retAddrEntryFromPCOffset(
 
 const RetAddrEntry& BaselineScript::prologueRetAddrEntry(
     RetAddrEntry::Kind kind) {
-  MOZ_ASSERT(kind == RetAddrEntry::Kind::StackCheck ||
-             kind == RetAddrEntry::Kind::WarmupCounter);
+  MOZ_ASSERT(kind == RetAddrEntry::Kind::StackCheck);
 
   // The prologue entries will always be at a very low offset, so just do a
   // linear search from the beginning.

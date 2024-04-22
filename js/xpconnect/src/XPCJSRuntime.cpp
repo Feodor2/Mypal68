@@ -46,8 +46,14 @@
 #include "js/GCAPI.h"
 #include "js/MemoryFunctions.h"
 #include "js/MemoryMetrics.h"
+#include "js/Object.h"  // JS::GetClass
+#include "js/Stream.h"  // JS::AbortSignalIsAborted, JS::InitAbortSignalHandling
 #include "js/UbiNode.h"
 #include "js/UbiNodeUtils.h"
+#include "js/friend/UsageStatistics.h"  // JS_TELEMETRY_*, JS_SetAccumulateTelemetryCallback
+#include "js/friend/WindowProxy.h"  // js::SetWindowProxyClass
+#include "js/friend/XrayJitInfo.h"  // JS::SetXrayJitInfo
+#include "mozilla/dom/AbortSignalBinding.h"
 #include "mozilla/dom/GeneratedAtomList.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Element.h"
@@ -222,7 +228,7 @@ RealmPrivate::RealmPrivate(JS::Realm* realm) : scriptability(realm) {
 /* static */
 void RealmPrivate::Init(HandleObject aGlobal, const SiteIdentifier& aSite) {
   MOZ_ASSERT(aGlobal);
-  DebugOnly<const JSClass*> clasp = js::GetObjectClass(aGlobal);
+  DebugOnly<const JSClass*> clasp = JS::GetClass(aGlobal);
   MOZ_ASSERT(clasp->flags &
                  (JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_HAS_PRIVATE) ||
              dom::IsDOMClass(clasp));
@@ -235,7 +241,7 @@ void RealmPrivate::Init(HandleObject aGlobal, const SiteIdentifier& aSite) {
   SetRealmPrivate(realm, realmPriv);
 
   nsIPrincipal* principal = GetRealmPrincipal(realm);
-  Compartment* c = js::GetObjectCompartment(aGlobal);
+  Compartment* c = JS::GetCompartment(aGlobal);
 
   // Create the compartment private if needed.
   if (CompartmentPrivate* priv = CompartmentPrivate::Get(c)) {
@@ -451,23 +457,21 @@ Scriptability::Scriptability(JS::Realm* realm)
       mDocShellAllowsScript(true),
       mScriptBlockedByPolicy(false) {
   nsIPrincipal* prin = nsJSPrincipals::get(JS::GetRealmPrincipals(realm));
-  mImmuneToScriptPolicy = PrincipalImmuneToScriptPolicy(prin);
 
-  // If we're not immune, we should have a real principal with a codebase URI.
-  // Check the URI against the new-style domain policy.
-  if (!mImmuneToScriptPolicy) {
-    nsCOMPtr<nsIURI> codebase;
-    nsresult rv = prin->GetURI(getter_AddRefs(codebase));
-    bool policyAllows;
-    if (NS_SUCCEEDED(rv) && codebase &&
-        NS_SUCCEEDED(nsXPConnect::SecurityManager()->PolicyAllowsScript(
-            codebase, &policyAllows))) {
-      mScriptBlockedByPolicy = !policyAllows;
-    } else {
-      // Something went wrong - be safe and block script.
-      mScriptBlockedByPolicy = true;
-    }
+  mImmuneToScriptPolicy = PrincipalImmuneToScriptPolicy(prin);
+  if (mImmuneToScriptPolicy) {
+    return;
   }
+  // If we're not immune, we should have a real principal with a codebase URI.
+  // Check the principal against the new-style domain policy.
+  bool policyAllows;
+  nsresult rv = prin->GetIsScriptAllowedByPolicy(&policyAllows);
+  if (NS_SUCCEEDED(rv)) {
+    mScriptBlockedByPolicy = !policyAllows;
+    return;
+  }
+  // Something went wrong - be safe and block script.
+  mScriptBlockedByPolicy = true;
 }
 
 bool Scriptability::Allowed() {
@@ -503,7 +507,7 @@ bool IsContentXBLScope(JS::Realm* realm) {
 }
 
 bool IsInContentXBLScope(JSObject* obj) {
-  return IsContentXBLCompartment(js::GetObjectCompartment(obj));
+  return IsContentXBLCompartment(JS::GetCompartment(obj));
 }
 
 bool IsUAWidgetCompartment(JS::Compartment* compartment) {
@@ -517,7 +521,7 @@ bool IsUAWidgetScope(JS::Realm* realm) {
 }
 
 bool IsInUAWidgetScope(JSObject* obj) {
-  return IsUAWidgetCompartment(js::GetObjectCompartment(obj));
+  return IsUAWidgetCompartment(JS::GetCompartment(obj));
 }
 
 bool CompartmentOriginInfo::MightBeWebContent() const {
@@ -572,6 +576,14 @@ void SetCompartmentChangedDocumentDomain(JS::Compartment* compartment) {
 
 JSObject* UnprivilegedJunkScope() {
   return XPCJSRuntime::Get()->UnprivilegedJunkScope();
+}
+
+JSObject* UnprivilegedJunkScope(const fallible_t&) {
+  return XPCJSRuntime::Get()->UnprivilegedJunkScope(fallible);
+}
+
+bool IsUnprivilegedJunkScope(JSObject* obj) {
+  return XPCJSRuntime::Get()->IsUnprivilegedJunkScope(obj);
 }
 
 JSObject* NACScope(JSObject* global) {
@@ -1064,9 +1076,9 @@ StaticAutoPtr<HelperThreadPool> gHelperThreads;
 
 void InitializeHelperThreadPool() { gHelperThreads = new HelperThreadPool(); }
 
-void DispatchOffThreadTask(js::UniquePtr<RunnableTask> task) {
-  gHelperThreads->Dispatch(
-      MakeAndAddRef<HelperThreadTaskHandler>(std::move(task)));
+bool DispatchOffThreadTask(js::UniquePtr<RunnableTask> task) {
+  return NS_SUCCEEDED(gHelperThreads->Dispatch(
+      MakeAndAddRef<HelperThreadTaskHandler>(std::move(task))));
 }
 
 void XPCJSRuntime::Shutdown(JSContext* cx) {
@@ -2080,7 +2092,8 @@ class JSMainRuntimeRealmsReporter final : public nsIMemoryReporter {
     js::Vector<nsCString, 0, js::SystemAllocPolicy> paths;
   };
 
-  static void RealmCallback(JSContext* cx, void* vdata, Handle<Realm*> realm) {
+  static void RealmCallback(JSContext* cx, void* vdata, Realm* realm,
+                            const JS::AutoRequireNoGC& nogc) {
     // silently ignore OOM errors
     Data* data = static_cast<Data*>(vdata);
     nsCString path;
@@ -2188,16 +2201,15 @@ class XPCJSRuntimeStats : public JS::RuntimeStats {
     }
   }
 
-  virtual void initExtraZoneStats(JS::Zone* zone,
-                                  JS::ZoneStats* zStats) override {
-    AutoSafeJSContext cx;
+  virtual void initExtraZoneStats(JS::Zone* zone, JS::ZoneStats* zStats,
+                                  const JS::AutoRequireNoGC& nogc) override {
     xpc::ZoneStatsExtras* extras = new xpc::ZoneStatsExtras;
     extras->pathPrefix.AssignLiteral("explicit/js-non-window/zones/");
 
     // Get some global in this zone.
-    Rooted<Realm*> realm(cx, js::GetAnyRealmInZone(zone));
+    Rooted<Realm*> realm(dom::RootingCx(), js::GetAnyRealmInZone(zone));
     if (realm) {
-      RootedObject global(cx, JS::GetRealmGlobalOrNull(realm));
+      RootedObject global(dom::RootingCx(), JS::GetRealmGlobalOrNull(realm));
       if (global) {
         RefPtr<nsGlobalWindowInner> window;
         if (NS_SUCCEEDED(UNWRAP_NON_WRAPPER_OBJECT(Window, global, window))) {
@@ -2216,16 +2228,15 @@ class XPCJSRuntimeStats : public JS::RuntimeStats {
     zStats->extra = extras;
   }
 
-  virtual void initExtraRealmStats(Handle<Realm*> realm,
-                                   JS::RealmStats* realmStats) override {
+  virtual void initExtraRealmStats(Realm* realm, JS::RealmStats* realmStats,
+                                   const JS::AutoRequireNoGC& nogc) override {
     xpc::RealmStatsExtras* extras = new xpc::RealmStatsExtras;
     nsCString rName;
     GetRealmName(realm, rName, &mAnonymizeID, /* replaceSlashes = */ true);
 
     // Get the realm's global.
-    AutoSafeJSContext cx;
     bool needZone = true;
-    RootedObject global(cx, JS::GetRealmGlobalOrNull(realm));
+    RootedObject global(dom::RootingCx(), JS::GetRealmGlobalOrNull(realm));
     if (global) {
       RefPtr<nsGlobalWindowInner> window;
       if (NS_SUCCEEDED(UNWRAP_NON_WRAPPER_OBJECT(Window, global, window))) {
@@ -2558,6 +2569,11 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
       NS_LITERAL_CSTRING("explicit/js-non-window/helper-thread/wasm-compile"),
       KIND_HEAP, gStats.helperThread.wasmCompile,
       "The memory used by Wasm compilations waiting in HelperThreadState.");
+
+  REPORT_BYTES(
+      NS_LITERAL_CSTRING("explicit/js-non-window/helper-thread/contexts"),
+      KIND_HEAP, gStats.helperThread.contexts,
+      "The memory used by the JSContexts in HelperThreadState.");
 }
 
 static nsresult JSSizeOfTab(JSObject* objArg, size_t* jsObjectsSize,
@@ -2593,9 +2609,6 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_GC_MS:
       Telemetry::Accumulate(Telemetry::GC_MS, sample);
       break;
-    case JS_TELEMETRY_GC_BUDGET_MS:
-      Telemetry::Accumulate(Telemetry::GC_BUDGET_MS, sample);
-      break;
     case JS_TELEMETRY_GC_BUDGET_OVERRUN:
       Telemetry::Accumulate(Telemetry::GC_BUDGET_OVERRUN, sample);
       break;
@@ -2613,12 +2626,6 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
       break;
     case JS_TELEMETRY_GC_COMPACT_MS:
       Telemetry::Accumulate(Telemetry::GC_COMPACT_MS, sample);
-      break;
-    case JS_TELEMETRY_GC_MARK_ROOTS_MS:
-      Telemetry::Accumulate(Telemetry::GC_MARK_ROOTS_MS, sample);
-      break;
-    case JS_TELEMETRY_GC_MARK_GRAY_MS:
-      Telemetry::Accumulate(Telemetry::GC_MARK_GRAY_MS, sample);
       break;
     case JS_TELEMETRY_GC_SLICE_MS:
       Telemetry::Accumulate(Telemetry::GC_SLICE_MS, sample);
@@ -2656,30 +2663,17 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_GC_NURSERY_BYTES:
       Telemetry::Accumulate(Telemetry::GC_NURSERY_BYTES_2, sample);
       break;
-    case JS_TELEMETRY_GC_PRETENURE_COUNT:
-      Telemetry::Accumulate(Telemetry::GC_PRETENURE_COUNT, sample);
-      break;
-    case JS_TELEMETRY_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS:
-      Telemetry::Accumulate(
-          Telemetry::JS_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS, sample);
-      break;
-    case JS_TELEMETRY_WEB_PARSER_COMPILE_LAZY_AFTER_MS:
-      Telemetry::Accumulate(Telemetry::JS_WEB_PARSER_COMPILE_LAZY_AFTER_MS,
-                            sample);
-      break;
     case JS_TELEMETRY_GC_NURSERY_PROMOTION_RATE:
       Telemetry::Accumulate(Telemetry::GC_NURSERY_PROMOTION_RATE, sample);
-      break;
-    case JS_TELEMETRY_GC_MARK_RATE:
-      Telemetry::Accumulate(Telemetry::GC_MARK_RATE, sample);
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected JS_TELEMETRY id");
   }
 }
 
-static void GetRealmNameCallback(JSContext* cx, Handle<Realm*> realm, char* buf,
-                                 size_t bufsize) {
+static void GetRealmNameCallback(JSContext* cx, Realm* realm, char* buf,
+                                 size_t bufsize,
+                                 const JS::AutoRequireNoGC& nogc) {
   nsCString name;
   // This is called via the JSAPI and isn't involved in memory reporting, so
   // we don't need to anonymize realm names.
@@ -2703,7 +2697,14 @@ static bool PreserveWrapper(JSContext* cx, JS::Handle<JSObject*> obj) {
   MOZ_ASSERT(obj);
   MOZ_ASSERT(mozilla::dom::IsDOMObject(obj));
 
-  return mozilla::dom::TryPreserveWrapper(obj);
+  if (!mozilla::dom::TryPreserveWrapper(obj)) {
+    return false;
+  }
+
+  MOZ_ASSERT(!mozilla::dom::HasReleasedWrapper(obj),
+             "There should be no released wrapper since we just preserved it");
+
+  return true;
 }
 
 static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
@@ -2958,7 +2959,6 @@ HelperThreadPoolShutdownObserver::Observe(nsISupports* aSubject,
 }
 
 void XPCJSRuntime::Initialize(JSContext* cx) {
-  mUnprivilegedJunkScope.init(cx, nullptr);
   mLoaderGlobal.init(cx, nullptr);
 
   // these jsids filled in later when we have a JSContext to work with.
@@ -2985,11 +2985,24 @@ void XPCJSRuntime::Initialize(JSContext* cx) {
   JS_AddWeakPointerCompartmentCallback(cx, WeakPointerCompartmentCallback,
                                        this);
   JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
-  js::SetPreserveWrapperCallback(cx, PreserveWrapper);
+  js::SetPreserveWrapperCallbacks(cx, PreserveWrapper, HasReleasedWrapper);
   JS_InitReadPrincipalsCallback(cx, nsJSPrincipals::ReadPrincipals);
   JS_SetAccumulateTelemetryCallback(cx, AccumulateTelemetryCallback);
+
   js::SetWindowProxyClass(cx, &OuterWindowProxyClass);
-  js::SetXrayJitInfo(&gXrayJitInfo);
+
+  {
+    JS::AbortSignalIsAborted isAborted = [](JSObject* obj) {
+      dom::AbortSignal* domObj = dom::UnwrapDOMObject<dom::AbortSignal>(obj);
+      MOZ_ASSERT(domObj);
+      return domObj->Aborted();
+    };
+
+    JS::InitAbortSignalHandling(dom::AbortSignal_Binding::GetJSClass(),
+                                isAborted, cx);
+  }
+
+  JS::SetXrayJitInfo(&gXrayJitInfo);
   JS::SetProcessLargeAllocationFailureCallback(
       OnLargeAllocationFailureCallback);
   JS::SetProcessBuildIdOp(GetBuildId);
@@ -3227,30 +3240,46 @@ JSObject* XPCJSRuntime::GetUAWidgetScope(JSContext* cx,
   return scope;
 }
 
-void XPCJSRuntime::InitSingletonScopes() {
-  // This all happens very early, so we don't bother with cx pushing.
-  JSContext* cx = XPCJSContext::Get()->Context();
-  RootedValue v(cx);
-  nsresult rv;
+JSObject* XPCJSRuntime::UnprivilegedJunkScope(const mozilla::fallible_t&) {
+  if (!mUnprivilegedJunkScope) {
+    dom::AutoJSAPI jsapi;
+    jsapi.Init();
+    JSContext* cx = jsapi.cx();
 
-  // Create the Unprivileged Junk Scope.
-  SandboxOptions unprivilegedJunkScopeOptions;
-  unprivilegedJunkScopeOptions.sandboxName.AssignLiteral(
-      "XPConnect Junk Compartment");
-  unprivilegedJunkScopeOptions.invisibleToDebugger = true;
-  rv = CreateSandboxObject(cx, &v, nullptr, unprivilegedJunkScopeOptions);
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-  mUnprivilegedJunkScope = js::UncheckedUnwrap(&v.toObject());
+    SandboxOptions options;
+    options.sandboxName.AssignLiteral("XPConnect Junk Compartment");
+    options.invisibleToDebugger = true;
+
+    RootedValue sandbox(cx);
+    nsresult rv = CreateSandboxObject(cx, &sandbox, nullptr, options);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+
+    mUnprivilegedJunkScope =
+        SandboxPrivate::GetPrivate(sandbox.toObjectOrNull());
+  }
+  MOZ_ASSERT(mUnprivilegedJunkScope->GetWrapper(),
+             "Wrapper should have same lifetime as weak reference");
+  return mUnprivilegedJunkScope->GetWrapper();
+}
+
+JSObject* XPCJSRuntime::UnprivilegedJunkScope() {
+  JSObject* scope = UnprivilegedJunkScope(fallible);
+  MOZ_RELEASE_ASSERT(scope);
+  return scope;
+}
+
+bool XPCJSRuntime::IsUnprivilegedJunkScope(JSObject* obj) {
+  return mUnprivilegedJunkScope && obj == mUnprivilegedJunkScope->GetWrapper();
 }
 
 void XPCJSRuntime::DeleteSingletonScopes() {
   // We're pretty late in shutdown, so we call ReleaseWrapper on the scopes.
   // This way the GC can collect them immediately, and we don't rely on the CC
   // to clean up.
-  RefPtr<SandboxPrivate> sandbox =
-      SandboxPrivate::GetPrivate(mUnprivilegedJunkScope);
-  sandbox->ReleaseWrapper(sandbox);
-  mUnprivilegedJunkScope = nullptr;
+  if (RefPtr<SandboxPrivate> sandbox = mUnprivilegedJunkScope.get()) {
+    sandbox->ReleaseWrapper(sandbox);
+    mUnprivilegedJunkScope = nullptr;
+  }
   mLoaderGlobal = nullptr;
 }
 
@@ -3277,8 +3306,7 @@ uint32_t GetAndClampCPUCount() {
 }
 nsresult HelperThreadPool::Dispatch(
     already_AddRefed<HelperThreadTaskHandler> aRunnable) {
-  mPool->Dispatch(std::move(aRunnable), NS_DISPATCH_NORMAL);
-  return NS_OK;
+  return mPool->Dispatch(std::move(aRunnable), NS_DISPATCH_NORMAL);
 }
 
 HelperThreadPool::HelperThreadPool() {

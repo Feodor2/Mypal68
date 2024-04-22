@@ -8,6 +8,7 @@
 #include "frontend/ErrorReporter.h"
 #include "frontend/FullParseHandler.h"
 #include "frontend/Parser.h"
+#include "frontend/ParserAtom.h"
 
 namespace js {
 namespace frontend {

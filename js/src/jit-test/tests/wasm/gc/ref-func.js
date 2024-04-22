@@ -11,7 +11,7 @@ wasmFullPass(`
 		(elem declare $run)
 		(func $run (result i32)
 			ref.func $run
-			ref.is_null
+			ref.is_null func
 		)
 		(export "run" (func $run))
 	)
@@ -88,24 +88,25 @@ function validFuncRefText(forwardDeclare, tbl_type) {
 }
 
 // referenced function must be forward declared somehow
-assertErrorMessage(() => validFuncRefText('', 'funcref'), WebAssembly.CompileError, /function index is not in an element segment/);
+assertErrorMessage(() => validFuncRefText('', 'funcref'), WebAssembly.CompileError, /function index is not declared in a section before the code section/);
 
 // referenced function can be forward declared via segments
 assertEq(validFuncRefText('(elem 0 (i32.const 0) func $referenced)', 'funcref') instanceof WebAssembly.Instance, true);
 assertEq(validFuncRefText('(elem func $referenced)', 'funcref') instanceof WebAssembly.Instance, true);
 assertEq(validFuncRefText('(elem declare $referenced)', 'funcref') instanceof WebAssembly.Instance, true);
 
-// also when the segment is passive or active 'anyref'
-assertEq(validFuncRefText('(elem 0 (i32.const 0) anyref (ref.func $referenced))', 'anyref') instanceof WebAssembly.Instance, true);
-assertEq(validFuncRefText('(elem anyref (ref.func $referenced))', 'anyref') instanceof WebAssembly.Instance, true);
+// also when the segment is passive or active 'funcref'
+assertEq(validFuncRefText('(elem 0 (i32.const 0) funcref (ref.func $referenced))', 'funcref') instanceof WebAssembly.Instance, true);
+assertEq(validFuncRefText('(elem funcref (ref.func $referenced))', 'funcref') instanceof WebAssembly.Instance, true);
 
-// referenced function cannot be forward declared via start section or export
-assertErrorMessage(() => validFuncRefText('(start $referenced)', 'funcref'),
-                   WebAssembly.CompileError,
-                   /function index is not in an element segment/);
-assertErrorMessage(() => validFuncRefText('(export "referenced" (func $referenced))', 'funcref'),
-                   WebAssembly.CompileError,
-                   /function index is not in an element segment/);
+// reference function can be forward declared via globals
+assertEq(validFuncRefText('(global funcref (ref.func $referenced))', 'anyref') instanceof WebAssembly.Instance, true);
+
+// reference function can be forward declared via export
+assertEq(validFuncRefText('(export "referenced" (func $referenced))', 'anyref') instanceof WebAssembly.Instance, true);
+
+// reference function cannot be forward declared via start
+assertErrorMessage(() => validFuncRefText('(start $referenced)', 'anyref'), WebAssembly.CompileError, /function index is not declared in a section before the code section/);
 
 // Tests not expressible in the text format.
 
@@ -118,15 +119,6 @@ assertErrorMessage(() => new WebAssembly.Module(
                                               elems: [] }])])),
                    WebAssembly.CompileError,
                    /segments with element expressions can only contain references/);
-
-// declared element segment with elemexpr can carry type anyref, but this must be rejected.
-
-assertErrorMessage(() => new WebAssembly.Module(
-    moduleWithSections([generalElemSection([{ flag: DeclaredElemExpr,
-                                              typeCode: AnyrefCode,
-                                              elems: [] }])])),
-                   WebAssembly.CompileError,
-                   /declared segment's element type must be subtype of funcref/);
 
 // Test case for bug 1596026: when taking the ref.func of an imported function,
 // the value obtained should not be the JS function.  This would assert (even in
@@ -190,7 +182,7 @@ checkPassiveElemSegment("end", /failed to read end of initializer expression/);
            (elem (i32.const 3) $m)
            (elem (i32.const 6) $m)
            (elem (i32.const 8) $m)
-           (elem funcref (ref.func $f) (ref.null) (ref.func $g) (ref.null) (ref.func $h))
+           (elem funcref (ref.func $f) (ref.null func) (ref.func $g) (ref.null func) (ref.func $h))
            (func $m)
            (func $f)
            (func $g)

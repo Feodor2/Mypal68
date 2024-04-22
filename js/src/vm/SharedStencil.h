@@ -11,6 +11,7 @@
 #include <stdint.h>  // uint32_t
 
 #include "frontend/SourceNotes.h"  // js::SrcNote
+#include "frontend/TypedIndex.h"   // js::frontend::TypedIndex
 #include "js/TypeDecls.h"          // JSContext,jsbytecode
 #include "js/UniquePtr.h"          // js::UniquePtr
 #include "util/TrailingArray.h"    // js::TrailingArray
@@ -21,6 +22,23 @@
 //
 
 namespace js {
+
+// Index into gcthings array.
+class GCThingIndexType;
+class GCThingIndex : public frontend::TypedIndex<GCThingIndexType> {
+  // Delegate constructors;
+  using Base = frontend::TypedIndex<GCThingIndexType>;
+  using Base::Base;
+
+ public:
+  static constexpr GCThingIndex outermostScopeIndex() {
+    return GCThingIndex(0);
+  }
+
+  static constexpr GCThingIndex invalid() { return GCThingIndex(UINT32_MAX); }
+
+  GCThingIndex next() const { return GCThingIndex(index + 1); }
+};
 
 /*
  * Exception handling record.
@@ -70,14 +88,14 @@ struct TryNote {
 //
 struct ScopeNote {
   // Sentinel index for no Scope.
-  static const uint32_t NoScopeIndex = UINT32_MAX;
+  static constexpr GCThingIndex NoScopeIndex = GCThingIndex::invalid();
 
   // Sentinel index for no ScopeNote.
   static const uint32_t NoScopeNoteIndex = UINT32_MAX;
 
   // Index of the js::Scope in the script's gcthings array, or NoScopeIndex if
   // there is no block scope in this range.
-  uint32_t index = 0;
+  GCThingIndex index;
 
   // Bytecode offset at which this scope starts relative to script->code().
   uint32_t start = 0;
@@ -85,8 +103,67 @@ struct ScopeNote {
   // Length of bytecode span this scope covers.
   uint32_t length = 0;
 
-  // Index of parent block scope in notes, or NoScopeNote.
+  // Index of parent block scope in notes, or NoScopeNoteIndex.
   uint32_t parent = 0;
+};
+
+// Range of characters in scriptSource which contains a script's source,
+// that is, the range used by the Parser to produce a script.
+//
+// For most functions the fields point to the following locations.
+//
+//   function * foo(a, b) { return a + b; }
+//   ^             ^                       ^
+//   |             |                       |
+//   |             sourceStart             sourceEnd
+//   |                                     |
+//   toStringStart                         toStringEnd
+//
+// For the special case of class constructors, the spec requires us to use an
+// alternate definition of toStringStart / toStringEnd.
+//
+//   class C { constructor() { this.field = 42; } }
+//   ^                    ^                      ^ ^
+//   |                    |                      | `---------`
+//   |                    sourceStart            sourceEnd   |
+//   |                                                       |
+//   toStringStart                                           toStringEnd
+//
+// NOTE: These are counted in Code Units from the start of the script source.
+//
+// Also included in the SourceExtent is the line and column numbers of the
+// sourceStart position. In most cases this is derived from the source text,
+// however in the case of dynamic functions it may be overriden by the
+// compilation options.
+struct SourceExtent {
+  SourceExtent() = default;
+
+  SourceExtent(uint32_t sourceStart, uint32_t sourceEnd, uint32_t toStringStart,
+               uint32_t toStringEnd, uint32_t lineno, uint32_t column)
+      : sourceStart(sourceStart),
+        sourceEnd(sourceEnd),
+        toStringStart(toStringStart),
+        toStringEnd(toStringEnd),
+        lineno(lineno),
+        column(column) {}
+
+  static SourceExtent makeGlobalExtent(uint32_t len) {
+    return SourceExtent(0, len, 0, len, 1, 0);
+  }
+
+  static SourceExtent makeGlobalExtent(uint32_t len, uint32_t lineno,
+                                       uint32_t column) {
+    return SourceExtent(0, len, 0, len, lineno, column);
+  }
+
+  uint32_t sourceStart = 0;
+  uint32_t sourceEnd = 0;
+  uint32_t toStringStart = 0;
+  uint32_t toStringEnd = 0;
+
+  // Line and column of |sourceStart_| position.
+  uint32_t lineno = 1;  // 1-indexed.
+  uint32_t column = 0;  // Count of Code Points
 };
 
 // These are wrapper types around the flag enums to provide a more appropriate
@@ -213,7 +290,7 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
   uint32_t nslots = 0;
 
   // Index into the gcthings array of the body scope.
-  uint32_t bodyScopeIndex = 0;
+  GCThingIndex bodyScopeIndex;
 
   // Number of IC entries to allocate in JitScript for Baseline ICs.
   uint32_t numICEntries = 0;
@@ -296,7 +373,7 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
  public:
   static js::UniquePtr<ImmutableScriptData> new_(
       JSContext* cx, uint32_t mainOffset, uint32_t nfixed, uint32_t nslots,
-      uint32_t bodyScopeIndex, uint32_t numICEntries,
+      GCThingIndex bodyScopeIndex, uint32_t numICEntries,
       uint32_t numBytecodeTypeSets, bool isFunction, uint16_t funLength,
       mozilla::Span<const jsbytecode> code, mozilla::Span<const SrcNote> notes,
       mozilla::Span<const uint32_t> resumeOffsets,

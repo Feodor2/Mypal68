@@ -28,6 +28,7 @@
 #include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/ForOfIterator.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
@@ -59,11 +60,11 @@
 
 using namespace js;
 
-#define IMPLEMENT_ERROR_PROTO_CLASS(name)                        \
-  {                                                              \
-    js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_##name),     \
-        JS_NULL_CLASS_OPS,                                       \
-        &ErrorObject::classSpecs[JSProto_##name - JSProto_Error] \
+#define IMPLEMENT_ERROR_PROTO_CLASS(name)                         \
+  {                                                               \
+#    name ".prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_##name), \
+        JS_NULL_CLASS_OPS,                                        \
+        &ErrorObject::classSpecs[JSProto_##name - JSProto_Error]  \
   }
 
 const JSClass ErrorObject::protoClasses[JSEXN_ERROR_LIMIT] = {
@@ -150,7 +151,7 @@ const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
 
 #define IMPLEMENT_ERROR_CLASS(name)                                   \
   {                                                                   \
-    js_Error_str, /* yes, really */                                   \
+    js_Error_str, /* yes, really, e.g. devtools depends on this. */   \
         JSCLASS_HAS_CACHED_PROTO(JSProto_##name) |                    \
             JSCLASS_HAS_RESERVED_SLOTS(ErrorObject::RESERVED_SLOTS) | \
             JSCLASS_BACKGROUND_FINALIZE,                              \

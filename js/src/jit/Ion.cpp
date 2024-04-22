@@ -52,7 +52,7 @@
 #include "js/UniquePtr.h"
 #include "util/Memory.h"
 #include "util/Windows.h"
-#include "vm/HelperThreads.h"
+#include "vm/HelperThreadState.h"
 #include "vm/Realm.h"
 #include "vm/TraceLogging.h"
 #ifdef MOZ_VTUNE
@@ -172,8 +172,11 @@ bool JitRuntime::generateTrampolines(JSContext* cx) {
   static_assert(sizeof(JitFrameLayout) == sizeof(WasmToJSJitFrameLayout),
                 "thus a rectifier frame can be used with a wasm frame");
 
-  JitSpew(JitSpew_Codegen, "# Emitting sequential arguments rectifier");
-  generateArgumentsRectifier(masm);
+  JitSpew(JitSpew_Codegen, "# Emitting arguments rectifier");
+  generateArgumentsRectifier(masm, ArgumentsRectifierKind::Normal);
+
+  JitSpew(JitSpew_Codegen, "# Emitting trial inlining arguments rectifier");
+  generateArgumentsRectifier(masm, ArgumentsRectifierKind::TrialInlining);
 
   JitSpew(JitSpew_Codegen, "# Emitting EnterJIT sequence");
   generateEnterJIT(cx, masm);
@@ -321,13 +324,14 @@ void JitRealm::performStubReadBarriers(uint32_t stubsToBarrier) const {
 
 static bool LinkCodeGen(JSContext* cx, CodeGenerator* codegen,
                         HandleScript script,
-                        CompilerConstraintList* constraints) {
+                        CompilerConstraintList* constraints,
+                        const WarpSnapshot* snapshot) {
   TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
   TraceLoggerEvent event(TraceLogger_AnnotateScripts, script);
   AutoTraceLog logScript(logger, event);
   AutoTraceLog logLink(logger, TraceLogger_IonLinking);
 
-  if (!codegen->link(cx, constraints)) {
+  if (!codegen->link(cx, constraints, snapshot)) {
     return false;
   }
 
@@ -342,7 +346,8 @@ static bool LinkBackgroundCodeGen(JSContext* cx, IonCompileTask* task) {
 
   JitContext jctx(cx, &task->alloc());
   RootedScript script(cx, task->script());
-  return LinkCodeGen(cx, codegen, script, task->constraints());
+  return LinkCodeGen(cx, codegen, script, task->constraints(),
+                     task->snapshot());
 }
 
 void jit::LinkIonScript(JSContext* cx, HandleScript calleeScript) {
@@ -577,7 +582,7 @@ void JitCode::finalize(JSFreeOp* fop) {
                                                headerSize_ + bufferSize_))) {
     pool_->addRef();
   }
-  cellHeaderAndCode_.setPtr(nullptr);
+  setHeaderPtr(nullptr);
 
   // Code buffers are stored inside ExecutablePools. Pools are refcounted.
   // Releasing the pool may free it. Horrible hack: if we are using perf
@@ -606,9 +611,9 @@ IonScript* IonScript::New(JSContext* cx, IonCompilationId compilationId,
                           uint32_t frameSize, size_t snapshotsListSize,
                           size_t snapshotsRVATableSize, size_t recoversSize,
                           size_t bailoutEntries, size_t constants,
-                          size_t safepointIndices, size_t osiIndices,
-                          size_t icEntries, size_t runtimeSize,
-                          size_t safepointsSize,
+                          size_t nurseryObjects, size_t safepointIndices,
+                          size_t osiIndices, size_t icEntries,
+                          size_t runtimeSize, size_t safepointsSize,
                           OptimizationLevel optimizationLevel) {
   if (snapshotsListSize >= MAX_BUFFER_SIZE ||
       (bailoutEntries >= MAX_BUFFER_SIZE / sizeof(uint32_t))) {
@@ -627,6 +632,7 @@ IonScript* IonScript::New(JSContext* cx, IonCompilationId compilationId,
   CheckedInt<Offset> allocSize = sizeof(IonScript);
   allocSize += CheckedInt<Offset>(constants) * sizeof(Value);
   allocSize += CheckedInt<Offset>(runtimeSize);
+  allocSize += CheckedInt<Offset>(nurseryObjects) * sizeof(HeapPtrObject);
   allocSize += CheckedInt<Offset>(osiIndices) * sizeof(OsiIndex);
   allocSize += CheckedInt<Offset>(safepointIndices) * sizeof(SafepointIndex);
   allocSize += CheckedInt<Offset>(bailoutEntries) * sizeof(SnapshotOffset);
@@ -658,6 +664,11 @@ IonScript* IonScript::New(JSContext* cx, IonCompilationId compilationId,
   MOZ_ASSERT(offsetCursor % alignof(uint64_t) == 0);
   script->runtimeDataOffset_ = offsetCursor;
   offsetCursor += runtimeSize;
+
+  MOZ_ASSERT(offsetCursor % alignof(HeapPtrObject) == 0);
+  script->initElements<HeapPtrObject>(offsetCursor, nurseryObjects);
+  script->nurseryObjectsOffset_ = offsetCursor;
+  offsetCursor += nurseryObjects * sizeof(HeapPtrObject);
 
   MOZ_ASSERT(offsetCursor % alignof(OsiIndex) == 0);
   script->osiIndexOffset_ = offsetCursor;
@@ -691,6 +702,7 @@ IonScript* IonScript::New(JSContext* cx, IonCompilationId compilationId,
 
   MOZ_ASSERT(script->numConstants() == constants);
   MOZ_ASSERT(script->runtimeSize() == runtimeSize);
+  MOZ_ASSERT(script->numNurseryObjects() == nurseryObjects);
   MOZ_ASSERT(script->numOsiIndices() == osiIndices);
   MOZ_ASSERT(script->numSafepointIndices() == safepointIndices);
   MOZ_ASSERT(script->numBailoutEntries() == bailoutEntries);
@@ -713,6 +725,10 @@ void IonScript::trace(JSTracer* trc) {
     TraceEdge(trc, &getConstant(i), "constant");
   }
 
+  for (size_t i = 0; i < numNurseryObjects(); i++) {
+    TraceEdge(trc, &nurseryObjects()[i], "nursery-object");
+  }
+
   // Trace caches so that the JSScript pointer can be updated if moved.
   for (size_t i = 0; i < numICs(); i++) {
     getICFromIndex(i).trace(trc, this);
@@ -720,7 +736,7 @@ void IonScript::trace(JSTracer* trc) {
 }
 
 /* static */
-void IonScript::writeBarrierPre(Zone* zone, IonScript* ionScript) {
+void IonScript::preWriteBarrier(Zone* zone, IonScript* ionScript) {
   if (zone->needsIncrementalBarrier()) {
     ionScript->trace(zone->barrierTracer());
   }
@@ -855,6 +871,22 @@ const OsiIndex* IonScript::getOsiIndex(uint8_t* retAddr) const {
 }
 
 void IonScript::Destroy(JSFreeOp* fop, IonScript* script) {
+  // Make sure there are no pointers into the IonScript's nursery objects list
+  // in the store buffer. Because this can be called during sweeping when
+  // discarding JIT code, we have to lock the store buffer when we find an
+  // object that's (still) in the nursery.
+  mozilla::Maybe<gc::AutoLockStoreBuffer> lock;
+  for (size_t i = 0, len = script->numNurseryObjects(); i < len; i++) {
+    JSObject* obj = script->nurseryObjects()[i];
+    if (!IsInsideNursery(obj)) {
+      continue;
+    }
+    if (lock.isNothing()) {
+      lock.emplace(&fop->runtime()->gc.storeBuffer());
+    }
+    script->nurseryObjects()[i] = HeapPtrObject();
+  }
+
   // This allocation is tracked by JSScript::setIonScriptImpl.
   fop->deleteUntracked(script);
 }
@@ -1436,7 +1468,8 @@ CodeGenerator* CompileBackEnd(MIRGenerator* mir, WarpSnapshot* snapshot) {
   MOZ_ASSERT(!!snapshot == JitOptions.warpBuilder);
 
   if (snapshot) {
-    WarpBuilder builder(*snapshot, *mir);
+    WarpCompilation comp(mir->alloc());
+    WarpBuilder builder(*snapshot, *mir, &comp);
     if (!builder.build()) {
       return nullptr;
     }
@@ -1658,6 +1691,10 @@ static AbortReason IonCompile(JSContext* cx, HandleScript script,
     script->ionScript()->setRecompiling();
   }
 
+  if (osrPc) {
+    script->jitScript()->setHadIonOSR();
+  }
+
   WarpSnapshot* snapshot = nullptr;
   if (JitOptions.warpBuilder) {
     AbortReasonOr<WarpSnapshot*> result =
@@ -1723,7 +1760,7 @@ static AbortReason IonCompile(JSContext* cx, HandleScript script,
       return AbortReason::Disable;
     }
 
-    succeeded = LinkCodeGen(cx, codegen.get(), script, constraints);
+    succeeded = LinkCodeGen(cx, codegen.get(), script, constraints, snapshot);
   }
 
   if (succeeded) {
@@ -2013,6 +2050,10 @@ MethodStatus jit::CanEnterIon(JSContext* cx, RunState& state) {
     if (status != Method_Compiled) {
       return status;
     }
+    // Bytecode analysis may forbid compilation for a script.
+    if (!script->canIonCompile()) {
+      return Method_CantCompile;
+    }
   }
 
   MOZ_ASSERT(!script->isIonCompilingOffThread());
@@ -2112,7 +2153,8 @@ static MethodStatus BaselineCanEnterAtBranch(JSContext* cx, HandleScript script,
   bool force = false;
   if (script->hasIonScript() && pc != script->ionScript()->osrPc()) {
     uint32_t count = script->ionScript()->incrOsrPcMismatchCounter();
-    if (count <= JitOptions.osrPcMismatchesBeforeRecompile) {
+    if (count <= JitOptions.osrPcMismatchesBeforeRecompile &&
+        !JitOptions.eagerIonCompilation()) {
       return Method_Skipped;
     }
     force = true;

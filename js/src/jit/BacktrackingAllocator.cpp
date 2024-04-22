@@ -673,6 +673,14 @@ bool BacktrackingAllocator::buildLivenessInfo() {
           }
         }
 
+        // * For non-call instructions, temps cover both the input and output,
+        //   so temps never alias uses (even at-start uses) or defs.
+        // * For call instructions, temps only cover the input (the output is
+        //   used for the force-spill ranges added above). This means temps
+        //   still don't alias uses but they can alias the (fixed) defs. For now
+        //   we conservatively require temps to have a fixed register for call
+        //   instructions to prevent a footgun.
+        MOZ_ASSERT_IF(ins->isCall(), temp->policy() == LDefinition::FIXED);
         CodePosition to =
             ins->isCall() ? outputOf(*ins) : outputOf(*ins).next();
 
@@ -696,18 +704,6 @@ bool BacktrackingAllocator::buildLivenessInfo() {
                         use->usedAtStart());
 
 #ifdef DEBUG
-          // Don't allow at-start call uses if there are temps of the same kind,
-          // so that we don't assign the same register. Only allow this when the
-          // use and temp are fixed registers, as they can't alias.
-          if (ins->isCall() && use->usedAtStart()) {
-            for (size_t i = 0; i < ins->numTemps(); i++) {
-              MOZ_ASSERT_IF(
-                  !ins->getTemp(i)->isBogusTemp(),
-                  vreg(ins->getTemp(i)).type() != vreg(use).type() ||
-                      (use->isFixedRegister() && ins->getTemp(i)->isFixed()));
-            }
-          }
-
           // If there are both useRegisterAtStart(x) and useRegister(y)
           // uses, we may assign the same register to both operands
           // (bug 772830). Don't allow this for now.

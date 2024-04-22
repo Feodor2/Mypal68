@@ -25,7 +25,7 @@ typedef uint8_t jsbytecode;
 
 class JS_PUBLIC_API JSAtom;
 struct JS_PUBLIC_API JSContext;
-struct JS_PUBLIC_API JSClass;
+struct JSClass;
 class JS_PUBLIC_API JSFunction;
 class JS_PUBLIC_API JSFreeOp;
 class JS_PUBLIC_API JSObject;

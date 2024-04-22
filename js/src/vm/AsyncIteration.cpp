@@ -122,7 +122,7 @@ static bool AsyncFromSyncIteratorThrow(JSContext* cx, unsigned argc,
 
 // ES2019 draft rev c012f9c70847559a1d9dc0d35d35b27fec42911e
 // 25.5.1.2 AsyncGenerator.prototype.next
-static bool AsyncGeneratorNext(JSContext* cx, unsigned argc, Value* vp) {
+bool js::AsyncGeneratorNext(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-3.
@@ -132,7 +132,7 @@ static bool AsyncGeneratorNext(JSContext* cx, unsigned argc, Value* vp) {
 
 // ES2019 draft rev c012f9c70847559a1d9dc0d35d35b27fec42911e
 // 25.5.1.3 AsyncGenerator.prototype.return
-static bool AsyncGeneratorReturn(JSContext* cx, unsigned argc, Value* vp) {
+bool js::AsyncGeneratorReturn(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-3.
@@ -142,7 +142,7 @@ static bool AsyncGeneratorReturn(JSContext* cx, unsigned argc, Value* vp) {
 
 // ES2019 draft rev c012f9c70847559a1d9dc0d35d35b27fec42911e
 // 25.5.1.4 AsyncGenerator.prototype.throw
-static bool AsyncGeneratorThrow(JSContext* cx, unsigned argc, Value* vp) {
+bool js::AsyncGeneratorThrow(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-3.
@@ -414,15 +414,31 @@ static const JSFunctionSpec async_iterator_proto_methods[] = {
     JS_SELF_HOSTED_SYM_FN(asyncIterator, "AsyncIteratorIdentity", 0, 0),
     JS_FS_END};
 
+static const JSFunctionSpec async_iterator_proto_methods_with_helpers[] = {
+    JS_SELF_HOSTED_FN("map", "AsyncIteratorMap", 1, 0),
+    JS_SELF_HOSTED_FN("filter", "AsyncIteratorFilter", 1, 0),
+    JS_SELF_HOSTED_FN("take", "AsyncIteratorTake", 1, 0),
+    JS_SELF_HOSTED_FN("drop", "AsyncIteratorDrop", 1, 0),
+    JS_SELF_HOSTED_FN("asIndexedPairs", "AsyncIteratorAsIndexedPairs", 0, 0),
+    JS_SELF_HOSTED_FN("flatMap", "AsyncIteratorFlatMap", 1, 0),
+    JS_SELF_HOSTED_FN("reduce", "AsyncIteratorReduce", 1, 0),
+    JS_SELF_HOSTED_FN("toArray", "AsyncIteratorToArray", 0, 0),
+    JS_SELF_HOSTED_FN("forEach", "AsyncIteratorForEach", 1, 0),
+    JS_SELF_HOSTED_FN("some", "AsyncIteratorSome", 1, 0),
+    JS_SELF_HOSTED_FN("every", "AsyncIteratorEvery", 1, 0),
+    JS_SELF_HOSTED_FN("find", "AsyncIteratorFind", 1, 0),
+    JS_SELF_HOSTED_SYM_FN(asyncIterator, "AsyncIteratorIdentity", 0, 0),
+    JS_FS_END};
+
 static const JSFunctionSpec async_from_sync_iter_methods[] = {
     JS_FN("next", AsyncFromSyncIteratorNext, 1, 0),
     JS_FN("throw", AsyncFromSyncIteratorThrow, 1, 0),
     JS_FN("return", AsyncFromSyncIteratorReturn, 1, 0), JS_FS_END};
 
 static const JSFunctionSpec async_generator_methods[] = {
-    JS_FN("next", AsyncGeneratorNext, 1, 0),
-    JS_FN("throw", AsyncGeneratorThrow, 1, 0),
-    JS_FN("return", AsyncGeneratorReturn, 1, 0), JS_FS_END};
+    JS_FN("next", js::AsyncGeneratorNext, 1, 0),
+    JS_FN("throw", js::AsyncGeneratorThrow, 1, 0),
+    JS_FN("return", js::AsyncGeneratorReturn, 1, 0), JS_FS_END};
 
 bool GlobalObject::initAsyncIteratorProto(JSContext* cx,
                                           Handle<GlobalObject*> global) {
@@ -600,7 +616,7 @@ static const ClassSpec AsyncIteratorObjectClassSpec = {
     GenericCreatePrototype<AsyncIteratorObject>,
     nullptr,
     nullptr,
-    async_iterator_proto_methods,
+    async_iterator_proto_methods_with_helpers,
     nullptr,
     nullptr,
 };
@@ -613,8 +629,69 @@ const JSClass AsyncIteratorObject::class_ = {
 };
 
 const JSClass AsyncIteratorObject::protoClass_ = {
-    js_AsyncIterator_str,
+    "AsyncIterator.prototype",
     JSCLASS_HAS_CACHED_PROTO(JSProto_AsyncIterator),
     JS_NULL_CLASS_OPS,
     &AsyncIteratorObjectClassSpec,
 };
+
+// Iterator Helper proposal
+static const JSFunctionSpec async_iterator_helper_methods[] = {
+    JS_SELF_HOSTED_FN("next", "AsyncIteratorHelperNext", 1, 0),
+    JS_SELF_HOSTED_FN("return", "AsyncIteratorHelperReturn", 1, 0),
+    JS_SELF_HOSTED_FN("throw", "AsyncIteratorHelperThrow", 1, 0),
+    JS_FS_END,
+};
+
+static const JSClass AsyncIteratorHelperPrototypeClass = {
+    "Async Iterator Helper", 0};
+
+const JSClass AsyncIteratorHelperObject::class_ = {
+    "Async Iterator Helper",
+    JSCLASS_HAS_RESERVED_SLOTS(AsyncIteratorHelperObject::SlotCount),
+};
+
+/* static */
+NativeObject* GlobalObject::getOrCreateAsyncIteratorHelperPrototype(
+    JSContext* cx, Handle<GlobalObject*> global) {
+  return MaybeNativeObject(getOrCreateObject(
+      cx, global, ASYNC_ITERATOR_HELPER_PROTO, initAsyncIteratorHelperProto));
+}
+
+/* static */
+bool GlobalObject::initAsyncIteratorHelperProto(JSContext* cx,
+                                                Handle<GlobalObject*> global) {
+  if (global->getReservedSlot(ASYNC_ITERATOR_HELPER_PROTO).isObject()) {
+    return true;
+  }
+
+  RootedObject asyncIterProto(
+      cx, GlobalObject::getOrCreateAsyncIteratorPrototype(cx, global));
+  if (!asyncIterProto) {
+    return false;
+  }
+
+  RootedObject asyncIteratorHelperProto(
+      cx, GlobalObject::createBlankPrototypeInheriting(
+              cx, &AsyncIteratorHelperPrototypeClass, asyncIterProto));
+  if (!asyncIteratorHelperProto) {
+    return false;
+  }
+  if (!DefinePropertiesAndFunctions(cx, asyncIteratorHelperProto, nullptr,
+                                    async_iterator_helper_methods)) {
+    return false;
+  }
+
+  global->setReservedSlot(ASYNC_ITERATOR_HELPER_PROTO,
+                          ObjectValue(*asyncIteratorHelperProto));
+  return true;
+}
+
+AsyncIteratorHelperObject* js::NewAsyncIteratorHelper(JSContext* cx) {
+  RootedObject proto(cx, GlobalObject::getOrCreateAsyncIteratorHelperPrototype(
+                             cx, cx->global()));
+  if (!proto) {
+    return nullptr;
+  }
+  return NewObjectWithGivenProto<AsyncIteratorHelperObject>(cx, proto);
+}

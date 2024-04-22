@@ -7,6 +7,8 @@
 #include "jsapi.h"
 
 #include "debugger/DebugAPI.h"
+#include "frontend/CompilationInfo.h"
+#include "js/Object.h"  // JS::GetReservedSlot
 #include "proxy/DeadObjectProxy.h"
 
 #include "vm/JSObject-inl.h"
@@ -28,7 +30,7 @@ enum InstrumentationHolderSlots {
 };
 
 static RealmInstrumentation* GetInstrumentation(JSObject* obj) {
-  Value v = JS_GetReservedSlot(obj, RealmInstrumentationSlot);
+  Value v = JS::GetReservedSlot(obj, RealmInstrumentationSlot);
   return static_cast<RealmInstrumentation*>(v.isUndefined() ? nullptr
                                                             : v.toPrivate());
 }
@@ -90,15 +92,15 @@ static bool StringToInstrumentationKind(JSContext* cx, HandleString str,
 }
 
 /* static */
-JSAtom* RealmInstrumentation::getInstrumentationKindName(
-    JSContext* cx, InstrumentationKind kind) {
+const frontend::ParserAtom* RealmInstrumentation::getInstrumentationKindName(
+    JSContext* cx, frontend::CompilationInfo& compilationInfo,
+    InstrumentationKind kind) {
   for (size_t i = 0; i < mozilla::ArrayLength(instrumentationNames); i++) {
     if (kind == (InstrumentationKind)(1 << i)) {
-      JSString* str = JS_AtomizeString(cx, instrumentationNames[i]);
-      if (!str) {
-        return nullptr;
-      }
-      return &str->asAtom();
+      return compilationInfo.stencil.parserAtoms
+          .internAscii(cx, instrumentationNames[i],
+                       strlen(instrumentationNames[i]))
+          .unwrapOr(nullptr);
     }
   }
   MOZ_CRASH("Unexpected instrumentation kind");

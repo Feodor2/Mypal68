@@ -16,7 +16,7 @@
 #ifndef wasm_op_iter_h
 #define wasm_op_iter_h
 
-#include "mozilla/Pair.h"
+#include "mozilla/CompactPair.h"
 #include "mozilla/Poison.h"
 
 #include <type_traits>
@@ -33,7 +33,7 @@ namespace wasm {
 enum class LabelKind : uint8_t { Body, Block, Loop, Then, Else };
 
 // The type of values on the operand stack during validation.  This is either a
-// ValType or the special type "Bottom".
+// ValType or the special type "TVar".
 
 class StackType {
   PackedTypeCode tc_;
@@ -45,25 +45,25 @@ class StackType {
 
   explicit StackType(const ValType& t) : tc_(t.packed()) {
     MOZ_ASSERT(IsValid(tc_));
-    MOZ_ASSERT(!isBottom());
+    MOZ_ASSERT(!isTVar());
   }
 
-  static StackType bottom() { return StackType(PackTypeCode(TypeCode::Limit)); }
+  static StackType tvar() { return StackType(PackTypeCode(TypeCode::Limit)); }
 
-  bool isBottom() const {
+  bool isTVar() const {
     MOZ_ASSERT(IsValid(tc_));
     return UnpackTypeCodeType(tc_) == TypeCode::Limit;
   }
 
   ValType valType() const {
     MOZ_ASSERT(IsValid(tc_));
-    MOZ_ASSERT(!isBottom());
+    MOZ_ASSERT(!isTVar());
     return ValType(tc_);
   }
 
-  bool isValidForOldSelect() const {
+  bool isValidForUntypedSelect() const {
     MOZ_ASSERT(IsValid(tc_));
-    if (isBottom()) {
+    if (isTVar()) {
       return true;
     }
     switch (valType().kind()) {
@@ -181,7 +181,7 @@ struct LinearMemoryAddress {
 template <typename ControlItem>
 class ControlStackEntry {
   // Use a pair to optimize away empty ControlItem.
-  mozilla::Pair<BlockType, ControlItem> typeAndItem_;
+  mozilla::CompactPair<BlockType, ControlItem> typeAndItem_;
 
   // The "base" of a control stack entry is valueStack_.length() minus
   // type().params().length(), i.e., the size of the value stack "below"
@@ -221,10 +221,10 @@ class ControlStackEntry {
 template <typename Value>
 class TypeAndValueT {
   // Use a Pair to optimize away empty Value.
-  mozilla::Pair<StackType, Value> tv_;
+  mozilla::CompactPair<StackType, Value> tv_;
 
  public:
-  TypeAndValueT() : tv_(StackType::bottom(), Value()) {}
+  TypeAndValueT() : tv_(StackType::tvar(), Value()) {}
   explicit TypeAndValueT(StackType type) : tv_(type, Value()) {}
   explicit TypeAndValueT(ValType type) : tv_(StackType(type), Value()) {}
   TypeAndValueT(StackType type, Value value) : tv_(type, value) {}
@@ -292,7 +292,6 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool popWithType(ValType expected, Value* value);
   MOZ_MUST_USE bool popWithType(ResultType expected, ValueVector* values);
   MOZ_MUST_USE bool popThenPushType(ResultType expected, ValueVector* values);
-  MOZ_MUST_USE bool ensureTopHasType(ResultType expected, ValueVector* values);
 
   MOZ_MUST_USE bool pushControl(LabelKind kind, BlockType type);
   MOZ_MUST_USE bool checkStackAtEndOfBlock(ResultType* type,
@@ -431,6 +430,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readF64Const(double* f64);
   MOZ_MUST_USE bool readRefFunc(uint32_t* funcTypeIndex);
   MOZ_MUST_USE bool readRefNull();
+  MOZ_MUST_USE bool readRefIsNull(Value* input);
   MOZ_MUST_USE bool readCall(uint32_t* calleeIndex, ValueVector* argValues);
   MOZ_MUST_USE bool readCallIndirect(uint32_t* funcTypeIndex,
                                      uint32_t* tableIndex, Value* callee,
@@ -480,6 +480,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readStructNarrow(ValType* inputType, ValType* outputType,
                                      Value* ptr);
   MOZ_MUST_USE bool readValType(ValType* type);
+  MOZ_MUST_USE bool readRefType(RefType* type);
   MOZ_MUST_USE bool readReferenceType(ValType* type, const char* const context);
 
   // At a location where readOp is allowed, peek at the next opcode
@@ -545,9 +546,11 @@ inline bool OpIter<Policy>::checkIsSubtypeOf(ValType actual, ValType expected) {
     return true;
   }
 
+  UniqueChars actualText = ToString(actual);
+  UniqueChars expectedText = ToString(expected);
   UniqueChars error(
       JS_smprintf("type mismatch: expression has type %s but expected %s",
-                  ToCString(actual), ToCString(expected)));
+                  actualText.get(), expectedText.get()));
   if (!error) {
     return false;
   }
@@ -586,9 +589,9 @@ inline bool OpIter<Policy>::failEmptyStack() {
                              : fail("popping value from outside block");
 }
 
-// This function pops exactly one value from the stack, yielding Bottom types in
+// This function pops exactly one value from the stack, yielding TVar types in
 // various cases and therefore making it the caller's responsibility to do the
-// right thing for StackType::Bottom. Prefer (pop|top)WithType.  This is an
+// right thing for StackType::TVar. Prefer (pop|top)WithType.  This is an
 // optimization for the super-common case where the caller is statically
 // expecting the resulttype `[valtype]`.
 template <typename Policy>
@@ -601,7 +604,7 @@ inline bool OpIter<Policy>::popStackType(StackType* type, Value* value) {
     // dummy value of any type; it won't be used since we're in unreachable
     // code.
     if (block.polymorphicBase()) {
-      *type = StackType::bottom();
+      *type = StackType::tvar();
       *value = Value();
 
       // Maintain the invariant that, after a pop, there is always memory
@@ -628,7 +631,7 @@ inline bool OpIter<Policy>::popWithType(ValType expectedType, Value* value) {
     return false;
   }
 
-  return stackType.isBottom() ||
+  return stackType.isTVar() ||
          checkIsSubtypeOf(stackType.valType(), expectedType);
 }
 
@@ -664,7 +667,7 @@ inline bool OpIter<Policy>::popThenPushType(ResultType expected,
   Control& block = controlStack_.back();
 
   size_t expectedLength = expected.length();
-  if (!values->resize(expectedLength)) {
+  if (values && !values->resize(expectedLength)) {
     return false;
   }
 
@@ -675,7 +678,12 @@ inline bool OpIter<Policy>::popThenPushType(ResultType expected,
     // would have been if we were popping it.
     size_t reverseIndex = expectedLength - i - 1;
     ValType expectedType = expected[reverseIndex];
-    Value* value = &(*values)[reverseIndex];
+    auto collectValue = [&](const Value& v) {
+      if (values) {
+        (*values)[reverseIndex] = v;
+      }
+    };
+
     size_t currentValueStackLength = valueStack_.length() - i;
 
     MOZ_ASSERT(currentValueStackLength >= block.valueStackBase());
@@ -693,77 +701,12 @@ inline bool OpIter<Policy>::popThenPushType(ResultType expected,
         return false;
       }
 
-      *value = Value();
-    } else {
-      TypeAndValue& observed = valueStack_[currentValueStackLength - 1];
-
-      if (observed.type().isBottom()) {
-        observed.typeRef() = StackType(expectedType);
-        *value = Value();
-      } else {
-        if (!checkIsSubtypeOf(observed.type().valType(), expectedType)) {
-          return false;
-        }
-
-        *value = observed.value();
-      }
-    }
-  }
-  return true;
-}
-
-// This function checks that the top of the stack is a subtype of expected.
-// Like topWithType, it may insert synthetic StackType::Bottom entries if the
-// block's stack is polymorphic, which happens during unreachable code.  However
-// unlike popThenPushType, it doesn't otherwise modify the value stack to update
-// stack types.  Finally, ensureTopHasType allows passing |nullptr| as |values|
-// to avoid collecting values.
-
-template <typename Policy>
-inline bool OpIter<Policy>::ensureTopHasType(ResultType expected,
-                                             ValueVector* values) {
-  if (expected.empty()) {
-    return true;
-  }
-
-  Control& block = controlStack_.back();
-
-  size_t expectedLength = expected.length();
-  if (values && !values->resize(expectedLength)) {
-    return false;
-  }
-
-  for (size_t i = 0; i != expectedLength; i++) {
-    // We're iterating as-if we were popping each expected/actual type one by
-    // one, which means iterating the array of expected results backwards.
-    // The "current" value stack length refers to what the value stack length
-    // would have been if we were popping it.
-    size_t reverseIndex = expectedLength - i - 1;
-    ValType expectedType = expected[reverseIndex];
-    auto collectValue = [&](const Value& v) {
-      if (values) {
-        (*values)[reverseIndex] = v;
-      }
-    };
-    size_t currentValueStackLength = valueStack_.length() - i;
-
-    MOZ_ASSERT(currentValueStackLength >= block.valueStackBase());
-    if (currentValueStackLength == block.valueStackBase()) {
-      if (!block.polymorphicBase()) {
-        return failEmptyStack();
-      }
-
-      // Fill missing values with StackType::Bottom.
-      if (!valueStack_.insert(valueStack_.begin() + currentValueStackLength,
-                              TypeAndValue(StackType::bottom()))) {
-        return false;
-      }
-
       collectValue(Value());
     } else {
       TypeAndValue& observed = valueStack_[currentValueStackLength - 1];
 
-      if (observed.type().isBottom()) {
+      if (observed.type().isTVar()) {
+        observed.typeRef() = StackType(expectedType);
         collectValue(Value());
       } else {
         if (!checkIsSubtypeOf(observed.type().valType(), expectedType)) {
@@ -774,7 +717,6 @@ inline bool OpIter<Policy>::ensureTopHasType(ResultType expected,
       }
     }
   }
-
   return true;
 }
 
@@ -1123,7 +1065,7 @@ inline bool OpIter<Policy>::checkBrTableEntry(uint32_t* relativeDepth,
     branchValues = nullptr;
   }
 
-  return ensureTopHasType(*type, branchValues);
+  return popThenPushType(*type, branchValues);
 }
 
 template <typename Policy>
@@ -1472,13 +1414,14 @@ inline bool OpIter<Policy>::readSelect(bool typed, StackType* type,
     return false;
   }
 
-  if (!falseType.isValidForOldSelect() || !trueType.isValidForOldSelect()) {
+  if (!falseType.isValidForUntypedSelect() ||
+      !trueType.isValidForUntypedSelect()) {
     return fail("invalid types for old-style 'select'");
   }
 
-  if (falseType.isBottom()) {
+  if (falseType.isTVar()) {
     *type = trueType;
-  } else if (trueType.isBottom() || falseType == trueType) {
+  } else if (trueType.isTVar() || falseType == trueType) {
     *type = falseType;
   } else {
     return fail("select operand types must match");
@@ -1657,7 +1600,8 @@ inline bool OpIter<Policy>::readRefFunc(uint32_t* funcTypeIndex) {
     return fail("function index out of range");
   }
   if (!env_.validForRefFunc.getBit(*funcTypeIndex)) {
-    return fail("function index is not in an element segment");
+    return fail(
+        "function index is not declared in a section before the code section");
   }
   return push(RefType::func());
 }
@@ -1666,13 +1610,36 @@ template <typename Policy>
 inline bool OpIter<Policy>::readRefNull() {
   MOZ_ASSERT(Classify(op_) == OpKind::RefNull);
 
-  return push(RefType::null());
+  RefType type;
+  if (!readRefType(&type)) {
+    return false;
+  }
+  return push(type);
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readRefIsNull(Value* input) {
+  MOZ_ASSERT(Classify(op_) == OpKind::Conversion);
+
+  RefType type;
+  if (!readRefType(&type)) {
+    return false;
+  }
+  if (!popWithType(type, input)) {
+    return false;
+  }
+  return push(ValType::I32);
 }
 
 template <typename Policy>
 inline bool OpIter<Policy>::readValType(ValType* type) {
   return d_.readValType(env_.types, env_.refTypesEnabled(),
                         env_.gcTypesEnabled(), type);
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readRefType(RefType* type) {
+  return d_.readRefType(env_.types, env_.gcTypesEnabled(), type);
 }
 
 template <typename Policy>
@@ -1846,11 +1813,6 @@ inline bool OpIter<Policy>::readWake(LinearMemoryAddress<Value>* addr,
                                      Value* count) {
   MOZ_ASSERT(Classify(op_) == OpKind::Wake);
 
-  if (!env_.usesSharedMemory()) {
-    return fail(
-        "can't touch memory with atomic operations without shared memory");
-  }
-
   if (!popWithType(ValType::I32, count)) {
     return false;
   }
@@ -1870,11 +1832,6 @@ inline bool OpIter<Policy>::readWait(LinearMemoryAddress<Value>* addr,
                                      ValType valueType, uint32_t byteSize,
                                      Value* value, Value* timeout) {
   MOZ_ASSERT(Classify(op_) == OpKind::Wait);
-
-  if (!env_.usesSharedMemory()) {
-    return fail(
-        "can't touch memory with atomic operations without shared memory");
-  }
 
   if (!popWithType(ValType::I64, timeout)) {
     return false;
@@ -1911,11 +1868,6 @@ inline bool OpIter<Policy>::readAtomicLoad(LinearMemoryAddress<Value>* addr,
                                            uint32_t byteSize) {
   MOZ_ASSERT(Classify(op_) == OpKind::AtomicLoad);
 
-  if (!env_.usesSharedMemory()) {
-    return fail(
-        "can't touch memory with atomic operations without shared memory");
-  }
-
   if (!readLinearMemoryAddressAligned(byteSize, addr)) {
     return false;
   }
@@ -1929,11 +1881,6 @@ inline bool OpIter<Policy>::readAtomicStore(LinearMemoryAddress<Value>* addr,
                                             ValType resultType,
                                             uint32_t byteSize, Value* value) {
   MOZ_ASSERT(Classify(op_) == OpKind::AtomicStore);
-
-  if (!env_.usesSharedMemory()) {
-    return fail(
-        "can't touch memory with atomic operations without shared memory");
-  }
 
   if (!popWithType(resultType, value)) {
     return false;
@@ -1951,11 +1898,6 @@ inline bool OpIter<Policy>::readAtomicRMW(LinearMemoryAddress<Value>* addr,
                                           ValType resultType, uint32_t byteSize,
                                           Value* value) {
   MOZ_ASSERT(Classify(op_) == OpKind::AtomicBinOp);
-
-  if (!env_.usesSharedMemory()) {
-    return fail(
-        "can't touch memory with atomic operations without shared memory");
-  }
 
   if (!popWithType(resultType, value)) {
     return false;
@@ -1976,11 +1918,6 @@ inline bool OpIter<Policy>::readAtomicCmpXchg(LinearMemoryAddress<Value>* addr,
                                               Value* oldValue,
                                               Value* newValue) {
   MOZ_ASSERT(Classify(op_) == OpKind::AtomicCompareExchange);
-
-  if (!env_.usesSharedMemory()) {
-    return fail(
-        "can't touch memory with atomic operations without shared memory");
-  }
 
   if (!popWithType(resultType, newValue)) {
     return false;

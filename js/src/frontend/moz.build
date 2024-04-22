@@ -18,6 +18,8 @@ include('../js-cxxflags.mozbuild')
 GeneratedFile('ReservedWordsGenerated.h', script='GenerateReservedWords.py',
               inputs=['ReservedWords.h'])
 
+if CONFIG['JS_ENABLE_SMOOSH']:
+    CbindgenHeader('smoosh_generated.h', inputs=['/js/src/frontend/smoosh'])
 
 UNIFIED_SOURCES += [
     'AbstractScopePtr.cpp',
@@ -49,6 +51,7 @@ UNIFIED_SOURCES += [
     'ParseContext.cpp',
     'ParseNode.cpp',
     'ParseNodeVerify.cpp',
+    'ParserAtom.cpp',
     'PropOpEmitter.cpp',
     'SharedContext.cpp',
     'SourceNotes.cpp',
@@ -60,40 +63,14 @@ UNIFIED_SOURCES += [
     'WhileEmitter.cpp',
 ]
 
+if CONFIG['JS_ENABLE_SMOOSH']:
+    UNIFIED_SOURCES += [
+        'Frontend2.cpp',
+    ]
+
+
 # Parser.cpp cannot be built in unified mode because of explicit
 #   template instantiations.
 SOURCES += [
     'Parser.cpp',
 ]
-
-if CONFIG['JS_BUILD_BINAST']:
-    # Using SOURCES, as UNIFIED_SOURCES causes mysterious bugs on 32-bit
-    # platforms.
-
-    # These parts of BinAST should eventually move to release.
-    SOURCES += [
-        'BinASTParser.cpp',
-        'BinASTParserBase.cpp',
-        'BinASTParserPerTokenizer.cpp',
-        'BinASTRuntimeSupport.cpp',
-        'BinASTToken.cpp',
-        'BinASTTokenReaderBase.cpp',
-        'BinASTTokenReaderContext.cpp',
-        'BinASTTokenReaderMultipart.cpp',
-    ]
-
-    if CONFIG['JS_STANDALONE']:
-        DIRS += [
-            'binast'
-        ]
-
-    # Instrument BinAST files for fuzzing as we have a fuzzing target for BinAST.
-    if CONFIG['FUZZING_INTERFACES'] and CONFIG['LIBFUZZER']:
-        include('/tools/fuzzing/libfuzzer-flags.mozbuild')
-
-        SOURCES['BinASTParser.cpp'].flags += libfuzzer_flags
-        SOURCES['BinASTParserBase.cpp'].flags += libfuzzer_flags
-        SOURCES['BinASTParserPerTokenizer.cpp'].flags += libfuzzer_flags
-        SOURCES['BinASTToken.cpp'].flags += libfuzzer_flags
-        SOURCES['BinASTTokenReaderBase.cpp'].flags += libfuzzer_flags
-        SOURCES['BinASTTokenReaderMultipart.cpp'].flags += libfuzzer_flags

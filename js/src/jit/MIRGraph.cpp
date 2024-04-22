@@ -13,7 +13,6 @@
 
 using namespace js;
 using namespace js::jit;
-using mozilla::Swap;
 
 MIRGenerator::MIRGenerator(CompileRealm* realm,
                            const JitCompileOptions& options,
@@ -1209,7 +1208,7 @@ void MBasicBlock::setLoopHeader(MBasicBlock* newBackedge) {
   }
 
   // Set the loop backedge to be the last element in predecessors_.
-  Swap(predecessors_[oldIndex], predecessors_[lastIndex]);
+  std::swap(predecessors_[oldIndex], predecessors_[lastIndex]);
 
   // If we have phis, reorder their operands accordingly.
   if (!phisEmpty()) {

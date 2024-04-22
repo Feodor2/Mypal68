@@ -320,7 +320,7 @@ void LIRGeneratorARM::lowerDivI(MDiv* div) {
       LDivPowTwoI* lir =
           new (alloc()) LDivPowTwoI(useRegisterAtStart(div->lhs()), shift);
       if (div->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       define(lir, div);
       return;
@@ -331,7 +331,7 @@ void LIRGeneratorARM::lowerDivI(MDiv* div) {
     LDivI* lir = new (alloc())
         LDivI(useRegister(div->lhs()), useRegister(div->rhs()), temp());
     if (div->fallible()) {
-      assignSnapshot(lir, Bailout_DoubleOutput);
+      assignSnapshot(lir, BailoutKind::DoubleOutput);
     }
     define(lir, div);
     return;
@@ -341,7 +341,7 @@ void LIRGeneratorARM::lowerDivI(MDiv* div) {
                                            useFixedAtStart(div->rhs(), r1));
 
   if (div->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
 
   defineReturn(lir, div);
@@ -350,7 +350,7 @@ void LIRGeneratorARM::lowerDivI(MDiv* div) {
 void LIRGeneratorARM::lowerMulI(MMul* mul, MDefinition* lhs, MDefinition* rhs) {
   LMulI* lir = new (alloc()) LMulI;
   if (mul->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
   lowerForALU(lir, mul, lhs, rhs);
 }
@@ -368,7 +368,7 @@ void LIRGeneratorARM::lowerModI(MMod* mod) {
       LModPowTwoI* lir =
           new (alloc()) LModPowTwoI(useRegister(mod->lhs()), shift);
       if (mod->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       define(lir, mod);
       return;
@@ -378,7 +378,7 @@ void LIRGeneratorARM::lowerModI(MMod* mod) {
       LModMaskI* lir = new (alloc())
           LModMaskI(useRegister(mod->lhs()), temp(), temp(), shift + 1);
       if (mod->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       define(lir, mod);
       return;
@@ -389,17 +389,20 @@ void LIRGeneratorARM::lowerModI(MMod* mod) {
     LModI* lir = new (alloc())
         LModI(useRegister(mod->lhs()), useRegister(mod->rhs()), temp());
     if (mod->fallible()) {
-      assignSnapshot(lir, Bailout_DoubleOutput);
+      assignSnapshot(lir, BailoutKind::DoubleOutput);
     }
     define(lir, mod);
     return;
   }
 
-  LSoftModI* lir = new (alloc()) LSoftModI(
-      useFixedAtStart(mod->lhs(), r0), useFixedAtStart(mod->rhs(), r1), temp());
+  // The temp register must be preserved across a call to __aeabi_idivmod
+  MOZ_ASSERT(!GeneralRegisterSet(Registers::VolatileMask).hasRegisterIndex(r4));
+  LSoftModI* lir =
+      new (alloc()) LSoftModI(useFixedAtStart(mod->lhs(), r0),
+                              useFixedAtStart(mod->rhs(), r1), tempFixed(r4));
 
   if (mod->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
 
   defineReturn(lir, mod);
@@ -474,7 +477,7 @@ void LIRGeneratorARM::lowerPowOfTwoI(MPow* mir) {
   MDefinition* power = mir->power();
 
   auto* lir = new (alloc()) LPowOfTwoI(base, useRegister(power));
-  assignSnapshot(lir, Bailout_PrecisionLoss);
+  assignSnapshot(lir, BailoutKind::PrecisionLoss);
   define(lir, mir);
 }
 
@@ -498,7 +501,7 @@ void LIRGeneratorARM::lowerUDiv(MDiv* div) {
     lir->setOperand(0, useRegister(lhs));
     lir->setOperand(1, useRegister(rhs));
     if (div->fallible()) {
-      assignSnapshot(lir, Bailout_DoubleOutput);
+      assignSnapshot(lir, BailoutKind::DoubleOutput);
     }
     define(lir, div);
     return;
@@ -508,7 +511,7 @@ void LIRGeneratorARM::lowerUDiv(MDiv* div) {
       LSoftUDivOrMod(useFixedAtStart(lhs, r0), useFixedAtStart(rhs, r1));
 
   if (div->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
 
   defineReturn(lir, div);
@@ -523,7 +526,7 @@ void LIRGeneratorARM::lowerUMod(MMod* mod) {
     lir->setOperand(0, useRegister(lhs));
     lir->setOperand(1, useRegister(rhs));
     if (mod->fallible()) {
-      assignSnapshot(lir, Bailout_DoubleOutput);
+      assignSnapshot(lir, BailoutKind::DoubleOutput);
     }
     define(lir, mod);
     return;
@@ -533,7 +536,7 @@ void LIRGeneratorARM::lowerUMod(MMod* mod) {
       LSoftUDivOrMod(useFixedAtStart(lhs, r0), useFixedAtStart(rhs, r1));
 
   if (mod->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
 
   defineReturn(lir, mod);

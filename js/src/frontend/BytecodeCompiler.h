@@ -11,9 +11,9 @@
 #include "NamespaceImports.h"
 
 #include "frontend/FunctionSyntaxKind.h"
-#include "js/BinASTFormat.h"  // JS::BinASTFormat
-#include "js/CompileOptions.h"
+#include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "js/SourceText.h"
+#include "js/UniquePtr.h"  // js::UniquePtr
 #include "vm/Scope.h"
 #include "vm/TraceLogging.h"
 
@@ -60,9 +60,9 @@
  *
  * ParseContext.h: class ParseContext: Extremely complex class that serves a lot
  * of purposes, but it's a single class - essentially no derived classes - so
- * it's a little easier to comprehend all at once. (SourceParseContext and
- * BinASTParseContext do derive from ParseContext, but they do nothing except
- * adjust the constructor's arguments).
+ * it's a little easier to comprehend all at once. (SourceParseContext does
+ * derive from ParseContext, but they does nothing except adjust the
+ * constructor's arguments).
  * Note it uses a thing called Nestable, which implements a stack of objects:
  * you can push (and pop) instances to a stack (linked list) as you parse
  * further into the parse tree. You may push to this stack via calling the
@@ -103,22 +103,12 @@ class ScriptSourceObject;
 
 namespace frontend {
 
+struct CompilationInfo;
+struct CompilationGCOutput;
 class ErrorReporter;
 class FunctionBox;
 class ParseNode;
-
-#if defined(JS_BUILD_BINAST)
-
-JSScript* CompileGlobalBinASTScript(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    const uint8_t* src, size_t len, JS::BinASTFormat format,
-    ScriptSourceObject** sourceObjectOut = nullptr);
-
-MOZ_MUST_USE bool CompileLazyBinASTFunction(JSContext* cx,
-                                            Handle<BaseScript*> lazy,
-                                            const uint8_t* buf, size_t length);
-
-#endif  // JS_BUILD_BINAST
+class ParserAtom;
 
 // Compile a module of the given source using the given options.
 ModuleObject* CompileModule(JSContext* cx,
@@ -130,14 +120,17 @@ ModuleObject* CompileModule(JSContext* cx,
 
 // Parse a module of the given source.  This is an internal API; if you want to
 // compile a module as a user, use CompileModule above.
-ModuleObject* ParseModule(JSContext* cx,
-                          const JS::ReadOnlyCompileOptions& options,
-                          JS::SourceText<char16_t>& srcBuf,
-                          ScriptSourceObject** sourceObjectOut);
-ModuleObject* ParseModule(JSContext* cx,
-                          const JS::ReadOnlyCompileOptions& options,
-                          JS::SourceText<mozilla::Utf8Unit>& srcBuf,
-                          ScriptSourceObject** sourceObjectOut);
+bool ParseModuleToStencil(JSContext* cx, CompilationInfo& compilationInfo,
+                          JS::SourceText<char16_t>& srcBuf);
+bool ParseModuleToStencil(JSContext* cx, CompilationInfo& compilationInfo,
+                          JS::SourceText<mozilla::Utf8Unit>& srcBuf);
+
+UniquePtr<CompilationInfo> ParseModuleToStencil(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    JS::SourceText<char16_t>& srcBuf);
+UniquePtr<CompilationInfo> ParseModuleToStencil(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 //
 // Compile a single function. The source in srcBuf must match the ECMA-262
@@ -176,9 +169,6 @@ MOZ_MUST_USE JSFunction* CompileStandaloneAsyncGenerator(
     const mozilla::Maybe<uint32_t>& parameterListEnd,
     frontend::FunctionSyntaxKind syntaxKind);
 
-ScriptSourceObject* CreateScriptSourceObject(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options);
-
 /*
  * True if str consists of an IdentifierStart character, followed by one or
  * more IdentifierPart characters, i.e. it matches the IdentifierName production
@@ -189,8 +179,10 @@ ScriptSourceObject* CreateScriptSourceObject(
  * Defined in TokenStream.cpp.
  */
 bool IsIdentifier(JSLinearString* str);
+bool IsIdentifier(const ParserAtom* atom);
 
 bool IsIdentifierNameOrPrivateName(JSLinearString* str);
+bool IsIdentifierNameOrPrivateName(const ParserAtom* atom);
 
 /*
  * As above, but taking chars + length.
@@ -202,6 +194,7 @@ bool IsIdentifierNameOrPrivateName(const Latin1Char* chars, size_t length);
 bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length);
 
 /* True if str is a keyword. Defined in TokenStream.cpp. */
+bool IsKeyword(const ParserAtom* atom);
 bool IsKeyword(JSLinearString* str);
 
 class MOZ_STACK_CLASS AutoFrontendTraceLog {

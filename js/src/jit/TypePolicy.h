@@ -7,6 +7,7 @@
 
 #include "jit/IonTypes.h"
 #include "jit/JitAllocPolicy.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 
 namespace js {
 namespace jit {
@@ -365,6 +366,19 @@ class ToStringPolicy final : public TypePolicy {
   }
 };
 
+// Box non-Boolean, non-String, non-BigInt as input to a ToInt64 instruction.
+class ToInt64Policy final : public TypePolicy {
+ public:
+  constexpr ToInt64Policy() = default;
+  EMPTY_DATA_;
+  static MOZ_MUST_USE bool staticAdjustInputs(TempAllocator& alloc,
+                                              MInstruction* ins);
+  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
+                                 MInstruction* ins) const override {
+    return staticAdjustInputs(alloc, ins);
+  }
+};
+
 template <unsigned Op>
 class ObjectPolicy final : public TypePolicy {
  public:
@@ -441,16 +455,6 @@ class MixPolicy final : public TypePolicy {
 class CallSetElementPolicy final : public TypePolicy {
  public:
   constexpr CallSetElementPolicy() = default;
-  EMPTY_DATA_;
-  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
-                                 MInstruction* def) const override;
-};
-
-// First operand will be boxed to a Value (except for an object)
-// Second operand (if specified) will forcefully be unboxed to an object
-class InstanceOfPolicy final : public TypePolicy {
- public:
-  constexpr InstanceOfPolicy() = default;
   EMPTY_DATA_;
   MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
                                  MInstruction* def) const override;

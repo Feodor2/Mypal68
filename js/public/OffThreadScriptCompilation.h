@@ -18,7 +18,6 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "js/BinASTFormat.h"    // JS::BinASTFormat
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "js/GCVector.h"        // JS::GCVector
 #include "js/Transcoding.h"     // JS::TranscodeSource
@@ -63,7 +62,7 @@ extern JS_PUBLIC_API bool CanCompileOffThread(
 extern JS_PUBLIC_API bool CompileOffThread(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     SourceText<char16_t>& srcBuf, OffThreadCompileCallback callback,
-    void* callbackData);
+    void* callbackData, OffThreadToken** tokenOut = nullptr);
 
 // NOTE: Unlike for the normal sync compilation functions, this function NEVER
 //       INFLATES TO UTF-16.  Therefore, it is ALWAYS invoking experimental
@@ -72,10 +71,24 @@ extern JS_PUBLIC_API bool CompileOffThread(
 extern JS_PUBLIC_API bool CompileOffThread(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     SourceText<mozilla::Utf8Unit>& srcBuf, OffThreadCompileCallback callback,
-    void* callbackData);
+    void* callbackData, OffThreadToken** tokenOut = nullptr);
 
+// Finish the off-thread parse/decode task and return the script. Return the
+// script on success, or return null on failure (usually with an error reported)
 extern JS_PUBLIC_API JSScript* FinishOffThreadScript(JSContext* cx,
                                                      OffThreadToken* token);
+
+// Finish the off-thread parse/decode task and return the script, and register
+// an encoder on its script source, such that all functions can be encoded as
+// they are parsed. This strategy is used to avoid blocking the main thread in
+// a non-interruptible way.
+//
+// See also JS::FinishIncrementalEncoding.
+//
+// Return the script on success, or return null on failure (usually with an
+// error reported)
+extern JS_PUBLIC_API JSScript* FinishOffThreadScriptAndStartIncrementalEncoding(
+    JSContext* cx, OffThreadToken* token);
 
 extern JS_PUBLIC_API void CancelOffThreadScript(JSContext* cx,
                                                 OffThreadToken* token);
@@ -83,7 +96,7 @@ extern JS_PUBLIC_API void CancelOffThreadScript(JSContext* cx,
 extern JS_PUBLIC_API bool CompileOffThreadModule(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     SourceText<char16_t>& srcBuf, OffThreadCompileCallback callback,
-    void* callbackData);
+    void* callbackData, OffThreadToken** tokenOut = nullptr);
 
 // NOTE: Unlike for the normal sync compilation functions, this function NEVER
 //       INFLATES TO UTF-16.  Therefore, it is ALWAYS invoking experimental
@@ -92,7 +105,7 @@ extern JS_PUBLIC_API bool CompileOffThreadModule(
 extern JS_PUBLIC_API bool CompileOffThreadModule(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     SourceText<mozilla::Utf8Unit>& srcBuf, OffThreadCompileCallback callback,
-    void* callbackData);
+    void* callbackData, OffThreadToken** tokenOut = nullptr);
 
 extern JS_PUBLIC_API JSObject* FinishOffThreadModule(JSContext* cx,
                                                      OffThreadToken* token);
@@ -106,12 +119,14 @@ extern JS_PUBLIC_API bool CanDecodeOffThread(
 extern JS_PUBLIC_API bool DecodeOffThreadScript(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     mozilla::Vector<uint8_t>& buffer /* TranscodeBuffer& */, size_t cursor,
-    OffThreadCompileCallback callback, void* callbackData);
+    OffThreadCompileCallback callback, void* callbackData,
+    OffThreadToken** tokenOut = nullptr);
 
 extern JS_PUBLIC_API bool DecodeOffThreadScript(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     const mozilla::Range<uint8_t>& range /* TranscodeRange& */,
-    OffThreadCompileCallback callback, void* callbackData);
+    OffThreadCompileCallback callback, void* callbackData,
+    OffThreadToken** tokenOut = nullptr);
 
 extern JS_PUBLIC_API JSScript* FinishOffThreadScriptDecoder(
     JSContext* cx, OffThreadToken* token);
@@ -131,20 +146,17 @@ extern JS_PUBLIC_API bool FinishMultiOffThreadScriptsDecoder(
 extern JS_PUBLIC_API void CancelMultiOffThreadScriptsDecoder(
     JSContext* cx, OffThreadToken* token);
 
-// This returns false if built without JS_BUILD_BINAST.
-extern JS_PUBLIC_API bool CanDecodeBinASTOffThread(
-    JSContext* cx, const ReadOnlyCompileOptions& options, size_t length);
-
-// This throws an exception if built without JS_BUILD_BINAST.
-extern JS_PUBLIC_API bool DecodeBinASTOffThread(
-    JSContext* cx, const ReadOnlyCompileOptions& options, const uint8_t* buf,
-    size_t length, JS::BinASTFormat format, OffThreadCompileCallback callback,
-    void* callbackData);
-
-// This throws an exception if built without JS_BUILD_BINAST.
-extern JS_PUBLIC_API JSScript* FinishOffThreadBinASTDecode(
-    JSContext* cx, OffThreadToken* token);
+// Tell off-thread compilation to/not to use the parse global.
+// The default value is true.
+//
+// If set to false, off-thread compilation will compile to stencil, and
+// instantiate the stencil on main-thread.
+extern JS_PUBLIC_API void SetUseOffThreadParseGlobal(bool value);
 
 }  // namespace JS
+
+namespace js {
+extern bool UseOffThreadParseGlobal();
+}  // namespace js
 
 #endif /* js_OffThreadScriptCompilation_h */

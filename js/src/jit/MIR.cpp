@@ -18,9 +18,12 @@
 #include "jit/BaselineInspector.h"
 #include "jit/IonBuilder.h"
 #include "jit/JitSpewer.h"
+#include "jit/KnownClass.h"
 #include "jit/MIRGraph.h"
 #include "jit/RangeAnalysis.h"
 #include "js/Conversions.h"
+#include "js/experimental/JitInfo.h"  // JSJitInfo, JSTypedMethodJitInfo
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/Text.h"
 #include "util/Unicode.h"
 #include "vm/PlainObject.h"  // js::PlainObject
@@ -813,6 +816,9 @@ void MDefinition::justReplaceAllUsesWith(MDefinition* dom) {
   if (isUseRemoved()) {
     dom->setUseRemovedUnchecked();
   }
+  if (isImplicitlyUsed()) {
+    dom->setImplicitlyUsedUnchecked();
+  }
 
   for (MUseIterator i(usesBegin()), e(usesEnd()); i != e; ++i) {
     i->setProducerUnchecked(dom);
@@ -1471,21 +1477,28 @@ bool MParameter::congruentTo(const MDefinition* ins) const {
 }
 
 WrappedFunction::WrappedFunction(JSFunction* fun)
-    : fun_(fun), nargs_(fun->nargs()), flags_(fun->flags()) {}
+    : nativeFun_(fun->isNativeWithoutJitEntry() ? fun : nullptr),
+      nargs_(fun->nargs()),
+      flags_(fun->flags()) {
+  MOZ_ASSERT(!JitOptions.warpBuilder);
+}
 
-WrappedFunction::WrappedFunction(JSFunction* fun, uint16_t nargs,
+WrappedFunction::WrappedFunction(JSFunction* nativeFun, uint16_t nargs,
                                  FunctionFlags flags)
-    : fun_(fun), nargs_(nargs), flags_(flags) {
+    : nativeFun_(nativeFun), nargs_(nargs), flags_(flags) {
+  MOZ_ASSERT_IF(nativeFun, isNativeWithoutJitEntry());
+
 #ifdef DEBUG
   // If we are not running off-main thread we can assert that the
   // metadata is consistent.
-  if (!CanUseExtraThreads()) {
-    MOZ_ASSERT(fun->nargs() == nargs);
+  if (!CanUseExtraThreads() && nativeFun) {
+    MOZ_ASSERT(nativeFun->nargs() == nargs);
 
-    MOZ_ASSERT(fun->isNativeWithoutJitEntry() == isNativeWithoutJitEntry());
-    MOZ_ASSERT(fun->hasJitEntry() == hasJitEntry());
-    MOZ_ASSERT(fun->isConstructor() == isConstructor());
-    MOZ_ASSERT(fun->isClassConstructor() == isClassConstructor());
+    MOZ_ASSERT(nativeFun->isNativeWithoutJitEntry() ==
+               isNativeWithoutJitEntry());
+    MOZ_ASSERT(nativeFun->hasJitEntry() == hasJitEntry());
+    MOZ_ASSERT(nativeFun->isConstructor() == isConstructor());
+    MOZ_ASSERT(nativeFun->isClassConstructor() == isClassConstructor());
   }
 #endif
 }
@@ -1639,6 +1652,30 @@ MDefinition* MConcat::foldsTo(TempAllocator& alloc) {
   }
 
   return this;
+}
+
+MDefinition* MCharCodeAt::foldsTo(TempAllocator& alloc) {
+  MDefinition* string = this->string();
+  if (!string->isConstant()) {
+    return this;
+  }
+
+  MDefinition* index = this->index();
+  if (index->isSpectreMaskIndex()) {
+    index = index->toSpectreMaskIndex()->index();
+  }
+  if (!index->isConstant()) {
+    return this;
+  }
+
+  JSAtom* atom = &string->toConstant()->toString()->asAtom();
+  int32_t idx = index->toConstant()->toInt32();
+  if (idx < 0 || uint32_t(idx) >= atom->length()) {
+    return this;
+  }
+
+  char16_t ch = atom->latin1OrTwoByteChar(idx);
+  return MConstant::New(alloc, Int32Value(ch));
 }
 
 static bool EnsureFloatInputOrConvert(MUnaryInstruction* owner,
@@ -2532,9 +2569,7 @@ static inline bool NeedNegativeZeroCheck(MDefinition* def) {
         MDefinition* first = use_def->toAdd()->lhs();
         MDefinition* second = use_def->toAdd()->rhs();
         if (first->id() > second->id()) {
-          MDefinition* temp = first;
-          first = second;
-          second = temp;
+          std::swap(first, second);
         }
         // Negative zero checks can be removed on the first executed
         // operand only if it is guaranteed the second executed operand
@@ -2581,6 +2616,7 @@ static inline bool NeedNegativeZeroCheck(MDefinition* def) {
         [[fallthrough]];
       }
       case MDefinition::Opcode::StoreElement:
+      case MDefinition::Opcode::StoreHoleValueElement:
       case MDefinition::Opcode::LoadElement:
       case MDefinition::Opcode::LoadElementHole:
       case MDefinition::Opcode::LoadUnboxedScalar:
@@ -3419,9 +3455,10 @@ MCompare::CompareType MCompare::determineCompareType(JSOp op, MDefinition* left,
   MIRType lhs = left->type();
   MIRType rhs = right->type();
 
-  bool looseEq = op == JSOp::Eq || op == JSOp::Ne;
-  bool strictEq = op == JSOp::StrictEq || op == JSOp::StrictNe;
+  bool looseEq = IsLooseEqualityOp(op);
+  bool strictEq = IsStrictEqualityOp(op);
   bool relationalEq = !(looseEq || strictEq);
+  MOZ_ASSERT(IsRelationalOp(op) == relationalEq);
 
   // Comparisons on unsigned integers may be treated as UInt32.
   if (unsignedOperands(left, right)) {
@@ -3529,14 +3566,25 @@ MDefinition* MBitNot::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
+static void AssertKnownClass(TempAllocator& alloc, MInstruction* ins,
+                             MDefinition* obj) {
+#ifdef DEBUG
+  const JSClass* clasp = GetObjectKnownJSClass(obj);
+  MOZ_ASSERT(clasp);
+
+  auto* assert = MAssertClass::New(alloc, obj, clasp);
+  ins->block()->insertBefore(ins, assert);
+#endif
+}
+
 MDefinition* MTypeOf::foldsTo(TempAllocator& alloc) {
-  // Note: we can't use input->type() here, type analysis has
-  // boxed the input.
-  MOZ_ASSERT(input()->type() == MIRType::Value);
+  if (!input()->isBox()) {
+    return this;
+  }
 
+  MDefinition* unboxed = input()->toBox()->input();
   JSType type;
-
-  switch (inputType()) {
+  switch (unboxed->type()) {
     case MIRType::Double:
     case MIRType::Float32:
     case MIRType::Int32:
@@ -3560,7 +3608,19 @@ MDefinition* MTypeOf::foldsTo(TempAllocator& alloc) {
     case MIRType::Boolean:
       type = JSTYPE_BOOLEAN;
       break;
-    case MIRType::Object:
+    case MIRType::Object: {
+      KnownClass known = GetObjectKnownClass(unboxed);
+      if (known != KnownClass::None) {
+        if (known == KnownClass::Function) {
+          type = JSTYPE_FUNCTION;
+        } else {
+          type = JSTYPE_OBJECT;
+        }
+
+        AssertKnownClass(alloc, this, unboxed);
+        break;
+      }
+
       if (!inputMaybeCallableOrEmulatesUndefined()) {
         // Object is not callable and does not emulate undefined, so it's
         // safe to fold to "object".
@@ -3568,6 +3628,7 @@ MDefinition* MTypeOf::foldsTo(TempAllocator& alloc) {
         break;
       }
       [[fallthrough]];
+    }
     default:
       return this;
   }
@@ -3725,6 +3786,57 @@ bool MResumePoint::isObservableOperand(size_t index) const {
 
 bool MResumePoint::isRecoverableOperand(MUse* u) const {
   return block()->info().isRecoverableOperand(indexOf(u));
+}
+
+MDefinition* MTruncateBigIntToInt64::foldsTo(TempAllocator& alloc) {
+  MDefinition* input = getOperand(0);
+
+  if (input->isBox()) {
+    input = input->getOperand(0);
+  }
+
+  // If the operand converts an I64 to BigInt, drop both conversions.
+  if (input->isInt64ToBigInt()) {
+    return input->getOperand(0);
+  }
+
+  // Fold this operation if the input operand is constant.
+  if (input->isConstant()) {
+    return MConstant::NewInt64(
+        alloc, BigInt::toInt64(input->toConstant()->toBigInt()));
+  }
+
+  return this;
+}
+
+MDefinition* MToInt64::foldsTo(TempAllocator& alloc) {
+  MDefinition* input = getOperand(0);
+
+  if (input->isBox()) {
+    input = input->getOperand(0);
+  }
+
+  // Unwrap MInt64ToBigInt: MToInt64(MInt64ToBigInt(int64)) = int64.
+  if (input->isInt64ToBigInt()) {
+    return input->getOperand(0);
+  }
+
+  // When the input is an Int64 already, just return it.
+  if (input->type() == MIRType::Int64) {
+    return input;
+  }
+
+  // Fold this operation if the input operand is constant.
+  if (input->isConstant()) {
+    switch (input->type()) {
+      case MIRType::Boolean:
+        return MConstant::NewInt64(alloc, input->toConstant()->toBoolean());
+      default:
+        break;
+    }
+  }
+
+  return this;
 }
 
 MDefinition* MToNumberInt32::foldsTo(TempAllocator& alloc) {
@@ -3989,6 +4101,12 @@ MDefinition* MToFloat32::foldsTo(TempAllocator& alloc) {
                                  float(input->toConstant()->numberToDouble()));
   }
 
+  // Fold ToFloat32(ToDouble(int32)) to ToFloat32(int32).
+  if (input->isToDouble() &&
+      input->toToDouble()->input()->type() == MIRType::Int32) {
+    return MToFloat32::New(alloc, input->toToDouble()->input());
+  }
+
   return this;
 }
 
@@ -4019,12 +4137,12 @@ bool MCompare::tryFoldEqualOperands(bool* result) {
     return false;
   }
 
-  // Intuitively somebody would think that if lhs == rhs,
+  // Intuitively somebody would think that if lhs === rhs,
   // then we can just return true. (Or false for !==)
   // However NaN !== NaN is true! So we spend some time trying
   // to eliminate this case.
 
-  if (jsop() != JSOp::StrictEq && jsop() != JSOp::StrictNe) {
+  if (!IsStrictEqualityOp(jsop())) {
     return false;
   }
 
@@ -4073,8 +4191,7 @@ bool MCompare::tryFoldTypeOf(bool* result) {
     return false;
   }
 
-  if (jsop() != JSOp::StrictEq && jsop() != JSOp::StrictNe &&
-      jsop() != JSOp::Eq && jsop() != JSOp::Ne) {
+  if (!IsEqualityOp(jsop())) {
     return false;
   }
 
@@ -4141,7 +4258,7 @@ bool MCompare::tryFold(bool* result) {
 
   if (compareType_ == Compare_Null || compareType_ == Compare_Undefined) {
     // The LHS is the value we want to test against null or undefined.
-    if (op == JSOp::StrictEq || op == JSOp::StrictNe) {
+    if (IsStrictEqualityOp(op)) {
       if (lhs()->type() == inputType()) {
         *result = (op == JSOp::StrictEq);
         return true;
@@ -4151,7 +4268,7 @@ bool MCompare::tryFold(bool* result) {
         return true;
       }
     } else {
-      MOZ_ASSERT(op == JSOp::Eq || op == JSOp::Ne);
+      MOZ_ASSERT(IsLooseEqualityOp(op));
       if (IsNullOrUndefined(lhs()->type())) {
         *result = (op == JSOp::Eq);
         return true;
@@ -4168,7 +4285,7 @@ bool MCompare::tryFold(bool* result) {
   }
 
   if (compareType_ == Compare_Boolean) {
-    MOZ_ASSERT(op == JSOp::StrictEq || op == JSOp::StrictNe);
+    MOZ_ASSERT(IsStrictEqualityOp(op));
     MOZ_ASSERT(rhs()->type() == MIRType::Boolean);
     MOZ_ASSERT(lhs()->type() != MIRType::Boolean,
                "Should use Int32 comparison");
@@ -4181,7 +4298,7 @@ bool MCompare::tryFold(bool* result) {
   }
 
   if (compareType_ == Compare_StrictString) {
-    MOZ_ASSERT(op == JSOp::StrictEq || op == JSOp::StrictNe);
+    MOZ_ASSERT(IsStrictEqualityOp(op));
     MOZ_ASSERT(rhs()->type() == MIRType::String);
     MOZ_ASSERT(lhs()->type() != MIRType::String,
                "Should use String comparison");
@@ -4355,6 +4472,69 @@ bool MCompare::evaluateConstantOperands(TempAllocator& alloc, bool* result) {
   return false;
 }
 
+MDefinition* MCompare::tryFoldCharCompare(TempAllocator& alloc) {
+  if (compareType() != Compare_String) {
+    return this;
+  }
+
+  MDefinition* left = lhs();
+  MOZ_ASSERT(left->type() == MIRType::String);
+
+  MDefinition* right = rhs();
+  MOZ_ASSERT(right->type() == MIRType::String);
+
+  // |str[i]| is compiled as |MFromCharCode(MCharCodeAt(str, i))|.
+  auto isCharAccess = [](MDefinition* ins) {
+    return ins->isFromCharCode() &&
+           ins->toFromCharCode()->input()->isCharCodeAt();
+  };
+
+  if (left->isConstant() || right->isConstant()) {
+    // Try to optimize |MConstant(string) <compare> (MFromCharCode MCharCodeAt)|
+    // as |MConstant(charcode) <compare> MCharCodeAt|.
+    MConstant* constant;
+    MDefinition* operand;
+    if (left->isConstant()) {
+      constant = left->toConstant();
+      operand = right;
+    } else {
+      constant = right->toConstant();
+      operand = left;
+    }
+
+    if (constant->toString()->length() != 1 || !isCharAccess(operand)) {
+      return this;
+    }
+
+    char16_t charCode = constant->toString()->asAtom().latin1OrTwoByteChar(0);
+    MConstant* charCodeConst = MConstant::New(alloc, Int32Value(charCode));
+    block()->insertBefore(this, charCodeConst);
+
+    MDefinition* charCodeAt = operand->toFromCharCode()->input();
+
+    if (left->isConstant()) {
+      left = charCodeConst;
+      right = charCodeAt;
+    } else {
+      left = charCodeAt;
+      right = charCodeConst;
+    }
+  } else if (isCharAccess(left) && isCharAccess(right)) {
+    // Try to optimize |(MFromCharCode MCharCodeAt) <compare> (MFromCharCode
+    // MCharCodeAt)| as |MCharCodeAt <compare> MCharCodeAt|.
+
+    left = left->toFromCharCode()->input();
+    right = right->toFromCharCode()->input();
+  } else {
+    return this;
+  }
+
+  MCompare* ins = MCompare::New(alloc, left, right, jsop());
+  ins->setCompareType(MCompare::Compare_Int32);
+
+  return ins;
+}
+
 MDefinition* MCompare::foldsTo(TempAllocator& alloc) {
   bool result;
 
@@ -4365,6 +4545,10 @@ MDefinition* MCompare::foldsTo(TempAllocator& alloc) {
 
     MOZ_ASSERT(type() == MIRType::Boolean);
     return MConstant::New(alloc, BooleanValue(result));
+  }
+
+  if (MDefinition* folded = tryFoldCharCompare(alloc); folded != this) {
+    return folded;
   }
 
   return this;
@@ -4397,8 +4581,7 @@ void MCompare::filtersUndefinedOrNull(bool trueBranch, MDefinition** subject,
     return;
   }
 
-  MOZ_ASSERT(jsop() == JSOp::StrictNe || jsop() == JSOp::Ne ||
-             jsop() == JSOp::StrictEq || jsop() == JSOp::Eq);
+  MOZ_ASSERT(IsEqualityOp(jsop()));
 
   // JSOp::*Ne only removes undefined/null from if/true branch
   if (!trueBranch && (jsop() == JSOp::StrictNe || jsop() == JSOp::Ne)) {
@@ -4410,7 +4593,7 @@ void MCompare::filtersUndefinedOrNull(bool trueBranch, MDefinition** subject,
     return;
   }
 
-  if (jsop() == JSOp::StrictEq || jsop() == JSOp::StrictNe) {
+  if (IsStrictEqualityOp(jsop())) {
     *filtersUndefined = compareType() == Compare_Undefined;
     *filtersNull = compareType() == Compare_Null;
   } else {
@@ -4939,6 +5122,18 @@ void MStoreDynamicSlot::printOpcode(GenericPrinter& out) const {
   getOperand(1)->printName(out);
 }
 #endif
+
+MDefinition* MGuardFunctionScript::foldsTo(TempAllocator& alloc) {
+  if (input()->isLambda() &&
+      input()->toLambda()->info().baseScript == expected()) {
+    return input();
+  }
+  if (input()->isLambdaArrow() &&
+      input()->toLambdaArrow()->info().baseScript == expected()) {
+    return input();
+  }
+  return this;
+}
 
 MDefinition* MFunctionEnvironment::foldsTo(TempAllocator& alloc) {
   if (input()->isLambda()) {
@@ -5525,6 +5720,11 @@ MDefinition* MGetFirstDollarIndex::foldsTo(TempAllocator& alloc) {
 
 MDefinition* MTypedArrayIndexToInt32::foldsTo(TempAllocator& alloc) {
   MDefinition* input = getOperand(0);
+
+  if (input->isToDouble() && input->getOperand(0)->type() == MIRType::Int32) {
+    return input->getOperand(0);
+  }
+
   if (!input->isConstant() || input->type() != MIRType::Double) {
     return this;
   }
@@ -5538,6 +5738,19 @@ MDefinition* MTypedArrayIndexToInt32::foldsTo(TempAllocator& alloc) {
     ival = -1;
   }
   return MConstant::New(alloc, Int32Value(ival));
+}
+
+MDefinition* MIsObject::foldsTo(TempAllocator& alloc) {
+  if (!object()->isBox()) {
+    return this;
+  }
+
+  MDefinition* unboxed = object()->getOperand(0);
+  if (unboxed->type() == MIRType::Object) {
+    return MConstant::New(alloc, BooleanValue(true));
+  }
+
+  return this;
 }
 
 MDefinition* MIsNullOrUndefined::foldsTo(TempAllocator& alloc) {
@@ -5558,11 +5771,129 @@ MDefinition* MIsNullOrUndefined::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
+static MDefinition* SkipObjectGuards(MDefinition* ins) {
+  // These instructions don't modify the object and just guard specific
+  // properties.
+  while (true) {
+    if (ins->isGuardShape()) {
+      ins = ins->toGuardShape()->object();
+      continue;
+    }
+    if (ins->isGuardObjectGroup()) {
+      ins = ins->toGuardObjectGroup()->object();
+      continue;
+    }
+    if (ins->isGuardNullProto()) {
+      ins = ins->toGuardNullProto()->object();
+      continue;
+    }
+    if (ins->isGuardProto()) {
+      ins = ins->toGuardProto()->object();
+      continue;
+    }
+
+    break;
+  }
+
+  return ins;
+}
+
+MDefinition* MGuardShape::foldsTo(TempAllocator& alloc) {
+  MDefinition* ins = dependency();
+  if (!ins) {
+    return this;
+  }
+
+  if (!ins->block()->dominates(block())) {
+    return this;
+  }
+
+  auto AssertShape = [](TempAllocator& alloc, MGuardShape* ins) {
+#ifdef DEBUG
+    auto* assert = MAssertShape::New(alloc, ins->object(),
+                                     const_cast<Shape*>(ins->shape()));
+    ins->block()->insertBefore(ins, assert);
+#endif
+  };
+
+  if (ins->isAddAndStoreSlot()) {
+    auto* add = ins->toAddAndStoreSlot();
+
+    if (SkipObjectGuards(add->object()) != SkipObjectGuards(object()) ||
+        add->shape() != shape()) {
+      return this;
+    }
+
+    AssertShape(alloc, this);
+    return object();
+  }
+
+  if (ins->isAllocateAndStoreSlot()) {
+    auto* allocate = ins->toAllocateAndStoreSlot();
+
+    if (SkipObjectGuards(allocate->object()) != SkipObjectGuards(object()) ||
+        allocate->shape() != shape()) {
+      return this;
+    }
+
+    AssertShape(alloc, this);
+    return object();
+  }
+
+  if (ins->isStart()) {
+    // The guard doesn't depend on any other instruction that is modifying
+    // the object operand, so check it directly.
+    auto* obj = SkipObjectGuards(object());
+    if (!obj->isNewObject()) {
+      return this;
+    }
+
+    JSObject* templateObject = obj->toNewObject()->templateObject();
+    if (!templateObject) {
+      return this;
+    }
+
+    if (templateObject->shape() != shape()) {
+      return this;
+    }
+
+    AssertShape(alloc, this);
+    return object();
+  }
+
+  return this;
+}
+
 MDefinition* MGuardValue::foldsTo(TempAllocator& alloc) {
   if (MConstant* cst = value()->maybeConstantValue()) {
     if (cst->toJSValue() == expected()) {
       return value();
     }
+  }
+
+  return this;
+}
+
+/* static */
+bool MGuardNotOptimizedArguments::maybeIsOptimizedArguments(MDefinition* def) {
+  if (def->isBox()) {
+    def = def->toBox()->input();
+  }
+
+  if (def->type() != MIRType::Value &&
+      def->type() != MIRType::MagicOptimizedArguments) {
+    return false;
+  }
+
+  // Only phis and constants can produce optimized-arguments.
+  MOZ_ASSERT_IF(def->type() == MIRType::MagicOptimizedArguments,
+                def->isConstant());
+  return def->isConstant() || def->isPhi();
+}
+
+MDefinition* MGuardNotOptimizedArguments::foldsTo(TempAllocator& alloc) {
+  if (!maybeIsOptimizedArguments(value())) {
+    return value();
   }
 
   return this;
@@ -5582,18 +5913,25 @@ MDefinition* MGuardNullOrUndefined::foldsTo(TempAllocator& alloc) {
 }
 
 MDefinition* MGuardObjectIdentity::foldsTo(TempAllocator& alloc) {
-  if (!object()->isConstant()) {
-    return this;
+  if (object()->isConstant() && expected()->isConstant()) {
+    JSObject* obj = &object()->toConstant()->toObject();
+    JSObject* other = &expected()->toConstant()->toObject();
+    if (!bailOnEquality()) {
+      if (obj == other) {
+        return object();
+      }
+    } else {
+      if (obj != other) {
+        return object();
+      }
+    }
   }
 
-  JSObject* obj = &object()->toConstant()->toObject();
-  JSObject* other = &expected()->toConstant()->toObject();
-  if (!bailOnEquality()) {
-    if (obj == other) {
-      return object();
-    }
-  } else {
-    if (obj != other) {
+  if (!bailOnEquality() && object()->isNurseryObject() &&
+      expected()->isNurseryObject()) {
+    uint32_t objIndex = object()->toNurseryObject()->nurseryIndex();
+    uint32_t otherIndex = expected()->toNurseryObject()->nurseryIndex();
+    if (objIndex == otherIndex) {
       return object();
     }
   }
@@ -5602,10 +5940,18 @@ MDefinition* MGuardObjectIdentity::foldsTo(TempAllocator& alloc) {
 }
 
 MDefinition* MGuardSpecificFunction::foldsTo(TempAllocator& alloc) {
-  if (function()->isConstant()) {
+  if (function()->isConstant() && expected()->isConstant()) {
     JSObject* fun = &function()->toConstant()->toObject();
     JSObject* other = &expected()->toConstant()->toObject();
     if (fun == other) {
+      return function();
+    }
+  }
+
+  if (function()->isNurseryObject() && expected()->isNurseryObject()) {
+    uint32_t funIndex = function()->toNurseryObject()->nurseryIndex();
+    uint32_t otherIndex = expected()->toNurseryObject()->nurseryIndex();
+    if (funIndex == otherIndex) {
       return function();
     }
   }
@@ -5634,11 +5980,137 @@ MDefinition* MGuardSpecificSymbol::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
+MDefinition* MGuardIsNotProxy::foldsTo(TempAllocator& alloc) {
+  KnownClass known = GetObjectKnownClass(object());
+  if (known == KnownClass::None) {
+    return this;
+  }
+
+  MOZ_ASSERT(!GetObjectKnownJSClass(object())->isProxy());
+  AssertKnownClass(alloc, this, object());
+  return object();
+}
+
+MDefinition* MGuardStringToIndex::foldsTo(TempAllocator& alloc) {
+  if (!string()->isConstant()) {
+    return this;
+  }
+
+  JSAtom* atom = &string()->toConstant()->toString()->asAtom();
+
+  int32_t index = GetIndexFromString(atom);
+  if (index < 0) {
+    return this;
+  }
+
+  return MConstant::New(alloc, Int32Value(index));
+}
+
+MDefinition* MGuardStringToInt32::foldsTo(TempAllocator& alloc) {
+  if (!string()->isConstant()) {
+    return this;
+  }
+
+  JSAtom* atom = &string()->toConstant()->toString()->asAtom();
+  if (!atom->hasIndexValue()) {
+    return this;
+  }
+
+  uint32_t index = atom->getIndexValue();
+  MOZ_ASSERT(index <= INT32_MAX);
+  return MConstant::New(alloc, Int32Value(index));
+}
+
+MDefinition* MGuardStringToDouble::foldsTo(TempAllocator& alloc) {
+  if (!string()->isConstant()) {
+    return this;
+  }
+
+  JSAtom* atom = &string()->toConstant()->toString()->asAtom();
+  if (!atom->hasIndexValue()) {
+    return this;
+  }
+
+  uint32_t index = atom->getIndexValue();
+  MOZ_ASSERT(index <= INT32_MAX);
+  return MConstant::New(alloc, DoubleValue(index));
+}
+
 MDefinition* MGuardToClass::foldsTo(TempAllocator& alloc) {
-  if (getClass() == &ArrayObject::class_) {
-    if (object()->isNewArray() || object()->isNewArrayCopyOnWrite()) {
+  const JSClass* clasp = GetObjectKnownJSClass(object());
+  if (!clasp || getClass() != clasp) {
+    return this;
+  }
+
+  AssertKnownClass(alloc, this, object());
+  return object();
+}
+
+MDefinition* MHasClass::foldsTo(TempAllocator& alloc) {
+  const JSClass* clasp = GetObjectKnownJSClass(object());
+  if (!clasp) {
+    return this;
+  }
+
+  AssertKnownClass(alloc, this, object());
+  return MConstant::New(alloc, BooleanValue(getClass() == clasp));
+}
+
+MDefinition* MIsCallable::foldsTo(TempAllocator& alloc) {
+  if (input()->type() != MIRType::Object) {
+    return this;
+  }
+
+  KnownClass known = GetObjectKnownClass(input());
+  if (known == KnownClass::None) {
+    return this;
+  }
+
+  AssertKnownClass(alloc, this, input());
+  return MConstant::New(alloc, BooleanValue(known == KnownClass::Function));
+}
+
+MDefinition* MIsArray::foldsTo(TempAllocator& alloc) {
+  if (input()->type() != MIRType::Object) {
+    return this;
+  }
+
+  KnownClass known = GetObjectKnownClass(input());
+  if (known == KnownClass::None) {
+    return this;
+  }
+
+  AssertKnownClass(alloc, this, input());
+  return MConstant::New(alloc, BooleanValue(known == KnownClass::Array));
+}
+
+MDefinition* MGuardIsNotArrayBufferMaybeShared::foldsTo(TempAllocator& alloc) {
+  switch (GetObjectKnownClass(object())) {
+    case KnownClass::PlainObject:
+    case KnownClass::Array:
+    case KnownClass::Function:
+    case KnownClass::RegExp:
+    case KnownClass::ArrayIterator:
+    case KnownClass::StringIterator:
+    case KnownClass::RegExpStringIterator: {
+      AssertKnownClass(alloc, this, object());
       return object();
     }
+    case KnownClass::None:
+      break;
+  }
+
+  return this;
+}
+
+MDefinition* MCheckIsObj::foldsTo(TempAllocator& alloc) {
+  if (!input()->isBox()) {
+    return this;
+  }
+
+  MDefinition* unboxed = input()->getOperand(0);
+  if (unboxed->type() == MIRType::Object) {
+    return unboxed;
   }
 
   return this;
@@ -6206,7 +6678,7 @@ static MInstruction* AddGroupGuard(TempAllocator& alloc, MBasicBlock* current,
 
   if (key->isGroup()) {
     guard = MGuardObjectGroup::New(alloc, obj, key->group(), bailOnEquality,
-                                   Bailout_ObjectIdentityOrTypeGuard);
+                                   BailoutKind::ObjectIdentityOrTypeGuard);
   } else {
     MConstant* singletonConst =
         MConstant::NewConstraintlessObject(alloc, key->singleton());

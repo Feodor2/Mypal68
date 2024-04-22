@@ -29,8 +29,6 @@
 #include "jsapi.h"
 #include "jstypes.h"
 
-#include "frontend/BinASTRuntimeSupport.h"  // BinASTSourceMetadata{,Multipart,Context}
-#include "frontend/BinASTTokenReaderContext.h"  // HuffmanDictionaryForMetadata,AutoClearHuffmanDictionaryForMetadata
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/SharedContext.h"
@@ -59,7 +57,7 @@
 #include "vm/BytecodeUtil.h"
 #include "vm/Compression.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
-#include "vm/HelperThreads.h"  // js::RunPendingSourceCompressions
+#include "vm/HelperThreadState.h"  // js::RunPendingSourceCompressions
 #include "vm/JSAtom.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
@@ -249,20 +247,21 @@ template <XDRMode mode>
 XDRResult BaseScript::XDRLazyScriptData(XDRState<mode>* xdr,
                                         HandleScriptSourceObject sourceObject,
                                         Handle<BaseScript*> lazy,
-                                        bool hasFieldInitializers) {
+                                        bool hasMemberInitializers) {
   JSContext* cx = xdr->cx();
 
   RootedAtom atom(cx);
   RootedFunction func(cx);
 
-  if (hasFieldInitializers) {
-    uint32_t numFieldInitializers;
+  if (hasMemberInitializers) {
+    uint32_t numMemberInitializers;
     if (mode == XDR_ENCODE) {
-      numFieldInitializers = lazy->getFieldInitializers().numFieldInitializers;
+      numMemberInitializers =
+          lazy->getMemberInitializers().numMemberInitializers;
     }
-    MOZ_TRY(xdr->codeUint32(&numFieldInitializers));
+    MOZ_TRY(xdr->codeUint32(&numMemberInitializers));
     if (mode == XDR_DECODE) {
-      lazy->setFieldInitializers(FieldInitializers(numFieldInitializers));
+      lazy->setMemberInitializers(MemberInitializers(numMemberInitializers));
     }
   }
 
@@ -488,6 +487,7 @@ static XDRResult XDRScope(XDRState<mode>* xdr, js::PrivateScriptData* data,
     case ScopeKind::NamedLambda:
     case ScopeKind::StrictNamedLambda:
     case ScopeKind::FunctionLexical:
+    case ScopeKind::ClassBody:
       MOZ_TRY(LexicalScope::XDR(xdr, scopeKind, enclosing, scope));
       break;
     case ScopeKind::With:
@@ -714,13 +714,14 @@ XDRResult js::PrivateScriptData::XDR(XDRState<mode>* xdr, HandleScript script,
       funOrMod->as<JSFunction>().isClassConstructor()) {
     MOZ_ASSERT(scriptEnclosingScope);
 
-    uint32_t numFieldInitializers;
+    uint32_t numMemberInitializers;
     if (mode == XDR_ENCODE) {
-      numFieldInitializers = data->getFieldInitializers().numFieldInitializers;
+      numMemberInitializers =
+          data->getMemberInitializers().numMemberInitializers;
     }
-    MOZ_TRY(xdr->codeUint32(&numFieldInitializers));
+    MOZ_TRY(xdr->codeUint32(&numMemberInitializers));
     if (mode == XDR_DECODE) {
-      data->setFieldInitializers(FieldInitializers(numFieldInitializers));
+      data->setMemberInitializers(MemberInitializers(numMemberInitializers));
     }
   }
 
@@ -877,7 +878,7 @@ static XDRResult XDRImmutableScriptData(XDRState<mode>* xdr,
   MOZ_TRY(xdr->codeUint32(&isd->mainOffset));
   MOZ_TRY(xdr->codeUint32(&isd->nfixed));
   MOZ_TRY(xdr->codeUint32(&isd->nslots));
-  MOZ_TRY(xdr->codeUint32(&isd->bodyScopeIndex));
+  MOZ_TRY(xdr->codeUint32(&isd->bodyScopeIndex.index));
   MOZ_TRY(xdr->codeUint32(&isd->numICEntries));
   MOZ_TRY(xdr->codeUint16(&isd->funLength));
   MOZ_TRY(xdr->codeUint16(&isd->numBytecodeTypeSets));
@@ -895,7 +896,7 @@ static XDRResult XDRImmutableScriptData(XDRState<mode>* xdr,
   }
 
   for (ScopeNote& elem : isd->scopeNotes()) {
-    MOZ_TRY(xdr->codeUint32(&elem.index));
+    MOZ_TRY(xdr->codeUint32(&elem.index.index));
     MOZ_TRY(xdr->codeUint32(&elem.start));
     MOZ_TRY(xdr->codeUint32(&elem.length));
     MOZ_TRY(xdr->codeUint32(&elem.parent));
@@ -945,6 +946,18 @@ template
     RuntimeScriptData::XDR(XDRState<XDR_DECODE>* xdr, HandleScript script);
 
 template <XDRMode mode>
+XDRResult js::XDRSourceExtent(XDRState<mode>* xdr, SourceExtent* extent) {
+  MOZ_TRY(xdr->codeUint32(&extent->sourceStart));
+  MOZ_TRY(xdr->codeUint32(&extent->sourceEnd));
+  MOZ_TRY(xdr->codeUint32(&extent->toStringStart));
+  MOZ_TRY(xdr->codeUint32(&extent->toStringEnd));
+  MOZ_TRY(xdr->codeUint32(&extent->lineno));
+  MOZ_TRY(xdr->codeUint32(&extent->column));
+
+  return Ok();
+}
+
+template <XDRMode mode>
 XDRResult js::XDRScript(XDRState<mode>* xdr, HandleScope scriptEnclosingScope,
                         HandleScriptSourceObject sourceObjectArg,
                         HandleObject funOrMod, MutableHandleScript scriptp) {
@@ -959,12 +972,7 @@ XDRResult js::XDRScript(XDRState<mode>* xdr, HandleScope scriptEnclosingScope,
 
   uint8_t xdrFlags = 0;
 
-  uint32_t sourceStart = 0;
-  uint32_t sourceEnd = 0;
-  uint32_t toStringStart = 0;
-  uint32_t toStringEnd = 0;
-  uint32_t lineno = 0;
-  uint32_t column = 0;
+  SourceExtent extent;
   uint32_t immutableFlags = 0;
 
   // NOTE: |mutableFlags| are not preserved by XDR.
@@ -988,19 +996,6 @@ XDRResult js::XDRScript(XDRState<mode>* xdr, HandleScope scriptEnclosingScope,
 
     MOZ_ASSERT_IF(isFunctionScript, script->function() == funOrMod);
 
-    if (!isFunctionScript && script->treatAsRunOnce() && script->hasRunOnce()) {
-      // This is a toplevel or eval script that's runOnce.  We want to
-      // make sure that we're not XDR-saving an object we emitted for
-      // JSOp::Object that then got modified.  So throw if we're not
-      // cloning in JSOp::Object or if we ever didn't clone in it in the
-      // past.
-      Realm* realm = cx->realm();
-      if (!realm->creationOptions().cloneSingletons() ||
-          !realm->behaviors().getSingletonsAsTemplates()) {
-        return xdr->fail(JS::TranscodeResult_Failure_RunOnceNotSupported);
-      }
-    }
-
     if (!sourceObjectArg) {
       xdrFlags |= OwnSource;
     }
@@ -1013,22 +1008,12 @@ XDRResult js::XDRScript(XDRState<mode>* xdr, HandleScope scriptEnclosingScope,
   MOZ_TRY(xdr->codeUint8(&xdrFlags));
 
   if (mode == XDR_ENCODE) {
-    sourceStart = script->sourceStart();
-    sourceEnd = script->sourceEnd();
-    toStringStart = script->toStringStart();
-    toStringEnd = script->toStringEnd();
+    extent = script->extent();
     immutableFlags = script->immutableFlags();
-    lineno = script->lineno();
-    column = script->column();
   }
 
-  MOZ_TRY(xdr->codeUint32(&sourceStart));
-  MOZ_TRY(xdr->codeUint32(&sourceEnd));
-  MOZ_TRY(xdr->codeUint32(&toStringStart));
-  MOZ_TRY(xdr->codeUint32(&toStringEnd));
+  MOZ_TRY(XDRSourceExtent(xdr, &extent));
   MOZ_TRY(xdr->codeUint32(&immutableFlags));
-  MOZ_TRY(xdr->codeUint32(&lineno));
-  MOZ_TRY(xdr->codeUint32(&column));
 
   RootedScriptSourceObject sourceObject(cx, sourceObjectArg);
   Maybe<CompileOptions> options;
@@ -1093,9 +1078,6 @@ XDRResult js::XDRScript(XDRState<mode>* xdr, HandleScope scriptEnclosingScope,
     RootedObject functionOrGlobal(
         cx, isFunctionScript ? static_cast<JSObject*>(funOrMod)
                              : static_cast<JSObject*>(cx->global()));
-
-    SourceExtent extent{sourceStart, sourceEnd, toStringStart,
-                        toStringEnd, lineno,    column};
 
     script = JSScript::Create(cx, functionOrGlobal, sourceObject, extent,
                               ImmutableScriptFlags(immutableFlags));
@@ -1188,13 +1170,7 @@ XDRResult js::XDRLazyScript(XDRState<mode>* xdr, HandleScope enclosingScope,
       ngcthings = lazy->gcthings().size();
     }
 
-    MOZ_TRY(xdr->codeUint32(&extent.sourceStart));
-    MOZ_TRY(xdr->codeUint32(&extent.sourceEnd));
-    MOZ_TRY(xdr->codeUint32(&extent.toStringStart));
-    MOZ_TRY(xdr->codeUint32(&extent.toStringEnd));
-    MOZ_TRY(xdr->codeUint32(&extent.lineno));
-    MOZ_TRY(xdr->codeUint32(&extent.column));
-
+    MOZ_TRY(XDRSourceExtent(xdr, &extent));
     MOZ_TRY(xdr->codeUint32(&immutableFlags));
     MOZ_TRY(xdr->codeUint32(&ngcthings));
 
@@ -1220,10 +1196,10 @@ XDRResult js::XDRLazyScript(XDRState<mode>* xdr, HandleScope enclosingScope,
 
   // FieldInitializer data is defined for class constructors, but only once
   // their enclosing script has been compiled.
-  bool hasFieldInitializers = fun->isClassConstructor() && enclosingScope;
+  bool hasMemberInitializers = fun->isClassConstructor() && enclosingScope;
 
   MOZ_TRY(BaseScript::XDRLazyScriptData(xdr, sourceObject, lazy,
-                                        hasFieldInitializers));
+                                        hasMemberInitializers));
 
   return Ok();
 }
@@ -1585,7 +1561,6 @@ ScriptSourceObject* ScriptSourceObject::createInternal(JSContext* cx,
   // The slots below should either be populated by a call to initFromOptions or,
   // if this is a non-canonical ScriptSourceObject, they are unused. Poison
   // them.
-  obj->initReservedSlot(ELEMENT_SLOT, MagicValue(JS_GENERIC_MAGIC));
   obj->initReservedSlot(ELEMENT_PROPERTY_SLOT, MagicValue(JS_GENERIC_MAGIC));
   obj->initReservedSlot(INTRODUCTION_SCRIPT_SLOT, MagicValue(JS_GENERIC_MAGIC));
 
@@ -1654,7 +1629,6 @@ bool ScriptSourceObject::initFromOptions(
     const ReadOnlyCompileOptions& options) {
   cx->releaseCheck(source);
   MOZ_ASSERT(source->isCanonical());
-  MOZ_ASSERT(source->getReservedSlot(ELEMENT_SLOT).isMagic(JS_GENERIC_MAGIC));
   MOZ_ASSERT(
       source->getReservedSlot(ELEMENT_PROPERTY_SLOT).isMagic(JS_GENERIC_MAGIC));
   MOZ_ASSERT(source->getReservedSlot(INTRODUCTION_SCRIPT_SLOT)
@@ -1664,9 +1638,8 @@ bool ScriptSourceObject::initFromOptions(
     return false;
   }
 
-  RootedObject element(cx, options.element());
   RootedString elementAttributeName(cx, options.elementAttributeName());
-  if (!initElementProperties(cx, source, element, elementAttributeName)) {
+  if (!initElementProperties(cx, source, elementAttributeName)) {
     return false;
   }
 
@@ -1682,11 +1655,18 @@ bool ScriptSourceObject::initFromOptions(
   }
   source->setReservedSlot(INTRODUCTION_SCRIPT_SLOT, introductionScript);
 
-  // Set the private value to that of the script or module that this source is
-  // part of, if any.
-  RootedValue privateValue(cx);
-  if (JSScript* script = options.scriptOrModule()) {
-    privateValue = script->sourceObject()->canonicalPrivate();
+  RootedValue privateValue(cx, UndefinedValue());
+  if (options.privateValue().isUndefined()) {
+    // Set the private value to that of the script or module that this source is
+    // part of, if any.
+    if (JSScript* script = options.scriptOrModule()) {
+      privateValue = script->sourceObject()->canonicalPrivate();
+    }
+  } else {
+    privateValue = options.privateValue();
+  }
+
+  if (!privateValue.isUndefined()) {
     if (!JS_WrapValue(cx, &privateValue)) {
       return false;
     }
@@ -1699,14 +1679,8 @@ bool ScriptSourceObject::initFromOptions(
 /* static */
 bool ScriptSourceObject::initElementProperties(JSContext* cx,
                                                HandleScriptSourceObject source,
-                                               HandleObject element,
                                                HandleString elementAttrName) {
   MOZ_ASSERT(source->isCanonical());
-
-  RootedValue elementValue(cx, ObjectOrNullValue(element));
-  if (!cx->compartment()->wrap(cx, &elementValue)) {
-    return false;
-  }
 
   RootedValue nameValue(cx);
   if (elementAttrName) {
@@ -1716,7 +1690,6 @@ bool ScriptSourceObject::initElementProperties(JSContext* cx,
     return false;
   }
 
-  source->setReservedSlot(ELEMENT_SLOT, elementValue);
   source->setReservedSlot(ELEMENT_PROPERTY_SLOT, nameValue);
 
   return true;
@@ -1731,6 +1704,16 @@ void ScriptSourceObject::setPrivate(JSRuntime* rt, const Value& value) {
   rt->releaseScriptPrivate(prevValue);
   setReservedSlot(PRIVATE_SLOT, value);
   rt->addRefScriptPrivate(value);
+}
+
+JSObject* ScriptSourceObject::unwrappedElement(JSContext* cx) const {
+  JS::RootedValue privateValue(cx, unwrappedCanonical()->canonicalPrivate());
+  if (privateValue.isUndefined()) {
+    return nullptr;
+  }
+
+  MOZ_ASSERT(cx->runtime()->getElementCallback);
+  return (*cx->runtime()->getElementCallback)(cx, privateValue);
 }
 
 class ScriptSource::LoadSourceMatcher {
@@ -1772,11 +1755,6 @@ class ScriptSource::LoadSourceMatcher {
   }
 
   bool operator()(const Missing&) const {
-    *loaded_ = false;
-    return true;
-  }
-
-  bool operator()(const BinAST&) const {
     *loaded_ = false;
     return true;
   }
@@ -2266,39 +2244,20 @@ MOZ_MUST_USE bool ScriptSource::setRetrievedSource(JSContext* cx,
                                      SourceRetrievable::Yes);
 }
 
-#if defined(JS_BUILD_BINAST)
-
-MOZ_MUST_USE bool ScriptSource::setBinASTSourceCopy(JSContext* cx,
-                                                    const uint8_t* buf,
-                                                    size_t len) {
-  MOZ_ASSERT(data.is<Missing>());
-
-  auto& cache = cx->zone()->runtimeFromAnyThread()->sharedImmutableStrings();
-  auto deduped = cache.getOrCreate(reinterpret_cast<const char*>(buf), len);
-  if (!deduped) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  data = SourceType(BinAST(std::move(*deduped), nullptr));
-  return true;
-}
-
-const uint8_t* ScriptSource::binASTSource() {
-  MOZ_ASSERT(hasBinASTSource());
-  return reinterpret_cast<const uint8_t*>(data.as<BinAST>().string.chars());
-}
-
-#endif /* JS_BUILD_BINAST */
-
 bool ScriptSource::tryCompressOffThread(JSContext* cx) {
   // Beware: |js::SynchronouslyCompressSource| assumes that this function is
   // only called once, just after a script has been compiled, and it's never
   // called at some random time after that.  If multiple calls of this can ever
   // occur, that function may require changes.
 
+  // The SourceCompressionTask needs to record the major GC number for
+  // scheduling. This cannot be accessed off-thread and must be handle in
+  // ParseTask::finish instead.
+  MOZ_ASSERT(!cx->isHelperThreadContext());
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(cx->runtime()));
+
   if (!hasUncompressedSource()) {
-    // This excludes compressed, missing, retrievable, and BinAST source.
+    // This excludes compressed, missing, and retrievable source.
     return true;
   }
 
@@ -2315,19 +2274,6 @@ bool ScriptSource::tryCompressOffThread(JSContext* cx) {
                               CanUseExtraThreads();
   if (length() < ScriptSource::MinimumCompressibleLength ||
       !canCompressOffThread) {
-    return true;
-  }
-
-  // The SourceCompressionTask needs to record the major GC number for
-  // scheduling. If we're parsing off thread, this number is not safe to
-  // access.
-  //
-  // When parsing on the main thread, the attempts made to compress off
-  // thread in BytecodeCompiler will succeed.
-  //
-  // When parsing off-thread, the above attempts will fail and the attempt
-  // made in ParseTask::finish will succeed.
-  if (!CurrentThreadCanAccessRuntime(cx->runtime())) {
     return true;
   }
 
@@ -2406,7 +2352,7 @@ bool ScriptSource::assignSource(JSContext* cx,
     return true;
   }
 
-  JSRuntime* runtime = cx->zone()->runtimeFromAnyThread();
+  JSRuntime* runtime = cx->runtime();
   auto& cache = runtime->sharedImmutableStrings();
   auto deduped = cache.getOrCreate(srcBuf.get(), srcBuf.length(), [&srcBuf]() {
     using CharT = typename SourceTypeTraits<Unit>::CharT;
@@ -2433,15 +2379,6 @@ template bool ScriptSource::assignSource(JSContext* cx,
 
 void ScriptSource::trace(JSTracer* trc) {
   // This should be kept in sync with ScriptSource::finalizeGCData below.
-#ifdef JS_BUILD_BINAST
-  if (data.is<BinAST>()) {
-    if (auto& metadata = data.as<BinAST>().metadata) {
-      metadata->trace(trc);
-    }
-  }
-#else
-  MOZ_ASSERT(!data.is<BinAST>());
-#endif  // JS_BUILD_BINAST
   if (xdrEncoder_) {
     xdrEncoder_->trace(trc);
   }
@@ -2458,13 +2395,6 @@ void ScriptSource::finalizeGCData() {
   // offthread later will fail.
   MOZ_ASSERT(TlsContext.get() && TlsContext.get()->isMainThreadContext());
 
-#ifdef JS_BUILD_BINAST
-  if (hasBinASTSource()) {
-    if (auto& metadata = data.as<BinAST>().metadata) {
-      metadata.reset();
-    }
-  }
-#endif  // JS_BUILD_BINAST
   if (xdrEncoder_) {
     xdrEncoder_.reset();
   }
@@ -2476,7 +2406,6 @@ ScriptSource::~ScriptSource() {
   // GC pointers must have been cleared earlier, because this destructor could
   // be called off-thread by SweepCompressionTasks. See above.
   MOZ_ASSERT(!xdrEncoder_);
-  MOZ_ASSERT_IF(hasBinASTSource(), !data.as<BinAST>().metadata);
 }
 
 static MOZ_MUST_USE bool reallocUniquePtr(UniqueChars& unique, size_t size) {
@@ -2578,7 +2507,7 @@ struct SourceCompressionTask::PerformTaskWork {
   void operator()(const T&) {
     MOZ_CRASH(
         "why are we compressing missing, missing-but-retrievable, "
-        "already-compressed, or BinAST source?");
+        "or already-compressed source?");
   }
 };
 
@@ -2592,10 +2521,28 @@ void SourceCompressionTask::runTask() {
     return;
   }
 
+  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
+  AutoTraceLog logCompile(logger, TraceLogger_CompressSource);
+
   ScriptSource* source = sourceHolder_.get();
   MOZ_ASSERT(source->hasUncompressedSource());
 
   source->performTaskWork(this);
+}
+
+void SourceCompressionTask::runHelperThreadTask(
+    AutoLockHelperThreadState& locked) {
+  {
+    AutoUnlockHelperThreadState unlock(locked);
+    this->runTask();
+  }
+
+  {
+    AutoEnterOOMUnsafeRegion oomUnsafe;
+    if (!HelperThreadState().compressionFinishedList(locked).append(this)) {
+      oomUnsafe.crash("SourceCompressionTask::runHelperThreadTask");
+    }
+  }
 }
 
 void ScriptSource::triggerConvertToCompressedSourceFromTask(
@@ -2662,7 +2609,7 @@ bool js::SynchronouslyCompressSource(JSContext* cx,
     // Attempt to compress.  This may not succeed if OOM happens, but (because
     // it ordinarily happens on a helper thread) no error will ever be set here.
     MOZ_ASSERT(!cx->isExceptionPending());
-    task->runTask();
+    ss->performTaskWork(task.get());
     MOZ_ASSERT(!cx->isExceptionPending());
 
     // Convert |ss| from uncompressed to compressed data.
@@ -2932,526 +2879,6 @@ void ScriptSource::codeRetrievable(ScriptSource* const ss) {
   }
 }
 
-template <XDRMode mode>
-/* static */
-XDRResult ScriptSource::codeBinASTData(XDRState<mode>* const xdr,
-                                       ScriptSource* const ss) {
-#if !defined(JS_BUILD_BINAST)
-  return xdr->fail(JS::TranscodeResult_Throw);
-#else
-  if (mode == XDR_ENCODE) {
-    MOZ_ASSERT(ss->data.is<BinAST>());
-  } else {
-    MOZ_ASSERT(ss->data.is<Missing>());
-  }
-
-  // XDR the length of the BinAST data.
-  uint32_t binASTLength;
-  if (mode == XDR_ENCODE) {
-    binASTLength = ss->data.as<BinAST>().string.length();
-  }
-  MOZ_TRY(xdr->codeUint32(&binASTLength));
-
-  // XDR the BinAST data.
-  mozilla::Maybe<SharedImmutableString> binASTData;
-  if (mode == XDR_DECODE) {
-    auto bytes = xdr->cx()->template make_pod_array<char>(
-        std::max<size_t>(binASTLength, 1));
-    if (!bytes) {
-      return xdr->fail(JS::TranscodeResult_Throw);
-    }
-    MOZ_TRY(xdr->codeBytes(bytes.get(), binASTLength));
-
-    auto& cache =
-        xdr->cx()->zone()->runtimeFromAnyThread()->sharedImmutableStrings();
-    binASTData = cache.getOrCreate(std::move(bytes), binASTLength);
-    if (!binASTData) {
-      ReportOutOfMemory(xdr->cx());
-      return xdr->fail(JS::TranscodeResult_Throw);
-    }
-  } else {
-    void* bytes = ss->binASTData();
-    MOZ_TRY(xdr->codeBytes(bytes, binASTLength));
-  }
-
-  // XDR any BinAST metadata.
-  uint8_t hasMetadata;
-  if (mode == XDR_ENCODE) {
-    hasMetadata = ss->data.as<BinAST>().metadata != nullptr;
-  }
-  MOZ_TRY(xdr->codeUint8(&hasMetadata));
-
-  Rooted<UniquePtr<frontend::BinASTSourceMetadata>> freshMetadata(xdr->cx());
-  if (hasMetadata) {
-    // If we're decoding, this is a *mutable borrowed* reference to the
-    // |UniquePtr| stored in the |Rooted| above, and the |UniquePtr| will be
-    // filled with freshly allocated metadata.
-    //
-    // If we're encoding, this is an *immutable borrowed* reference to the
-    // |UniquePtr| stored in |ss|.  (Immutable up to GCs transparently moving
-    // things around, that is.)
-    UniquePtr<frontend::BinASTSourceMetadata>& binASTMetadata =
-        mode == XDR_DECODE ? freshMetadata.get()
-                           : ss->data.as<BinAST>().metadata;
-
-    frontend::BinASTSourceMetadata::Type metadataType;
-    uint8_t metadataTypeAsInt;
-    if (mode == XDR_ENCODE) {
-      metadataType = binASTMetadata->type();
-      metadataTypeAsInt = static_cast<uint8_t>(metadataType);
-    }
-    MOZ_TRY(xdr->codeUint8(&metadataTypeAsInt));
-    if (mode == XDR_DECODE) {
-      metadataType =
-          static_cast<frontend::BinASTSourceMetadata::Type>(metadataTypeAsInt);
-    }
-
-    if (metadataType == frontend::BinASTSourceMetadata::Type::Multipart) {
-      auto metadata = binASTMetadata->asMultipart();
-
-      uint32_t numBinASTKinds;
-      uint32_t numStrings;
-      if (mode == XDR_ENCODE) {
-        numBinASTKinds = metadata->numBinASTKinds();
-        numStrings = metadata->numStrings();
-      }
-      MOZ_TRY(xdr->codeUint32(&numBinASTKinds));
-      MOZ_TRY(xdr->codeUint32(&numStrings));
-
-      if (mode == XDR_DECODE) {
-        metadata = frontend::BinASTSourceMetadataMultipart::create(
-            numBinASTKinds, numStrings);
-        if (!metadata) {
-          return xdr->fail(JS::TranscodeResult_Throw);
-        }
-
-        binASTMetadata.reset(metadata);
-      }
-
-      MOZ_ASSERT(binASTMetadata != nullptr);
-
-      frontend::BinASTKind* binASTKindBase = metadata->binASTKindBase();
-      for (uint32_t i = 0; i < numBinASTKinds; i++) {
-        MOZ_TRY(xdr->codeEnum32(&binASTKindBase[i]));
-      }
-
-      Rooted<JSAtom*> atom(xdr->cx());
-      JSAtom** atomsBase = metadata->atomsBase();
-      auto slices = metadata->sliceBase();
-      const char* sourceBase =
-          (mode == XDR_ENCODE ? ss->data.as<BinAST>().string : *binASTData)
-              .chars();
-
-      for (uint32_t i = 0; i < numStrings; i++) {
-        uint8_t isNull;
-        if (mode == XDR_ENCODE) {
-          atom = metadata->getAtom(i);
-          isNull = !atom;
-        }
-        MOZ_TRY(xdr->codeUint8(&isNull));
-        if (isNull) {
-          atom = nullptr;
-        } else {
-          MOZ_TRY(XDRAtom(xdr, &atom));
-        }
-        if (mode == XDR_DECODE) {
-          atomsBase[i] = atom;
-        }
-
-        uint64_t sliceOffset;
-        uint32_t sliceLen;
-        if (mode == XDR_ENCODE) {
-          auto& slice = metadata->getSlice(i);
-          sliceOffset = slice.begin() - sourceBase;
-          sliceLen = slice.byteLen_;
-        }
-
-        MOZ_TRY(xdr->codeUint64(&sliceOffset));
-        MOZ_TRY(xdr->codeUint32(&sliceLen));
-
-        if (mode == XDR_DECODE) {
-          new (&slices[i]) frontend::BinASTSourceMetadataMultipart::CharSlice(
-              sourceBase + sliceOffset, sliceLen);
-        }
-      }
-    } else {
-      MOZ_ASSERT(metadataType == frontend::BinASTSourceMetadata::Type::Context);
-
-      auto metadata = binASTMetadata->asContext();
-
-      uint32_t numStrings;
-      if (mode == XDR_ENCODE) {
-        numStrings = metadata->numStrings();
-      }
-      MOZ_TRY(xdr->codeUint32(&numStrings));
-
-      if (mode == XDR_DECODE) {
-        metadata = frontend::BinASTSourceMetadataContext::create(numStrings);
-        if (!metadata) {
-          return xdr->fail(JS::TranscodeResult_Throw);
-        }
-
-        binASTMetadata.reset(metadata);
-      }
-
-      MOZ_ASSERT(binASTMetadata != nullptr);
-
-      Rooted<JSAtom*> atom(xdr->cx());
-      JSAtom** atomsBase = metadata->atomsBase();
-
-      for (uint32_t i = 0; i < numStrings; i++) {
-        uint8_t isNull;
-        if (mode == XDR_ENCODE) {
-          atom = metadata->getAtom(i);
-          isNull = !atom;
-        }
-        MOZ_TRY(xdr->codeUint8(&isNull));
-        if (isNull) {
-          atom = nullptr;
-        } else {
-          MOZ_TRY(XDRAtom(xdr, &atom));
-        }
-        if (mode == XDR_DECODE) {
-          atomsBase[i] = atom;
-        }
-      }
-
-      uint32_t numTables;
-      uint32_t numHuffmanEntries;
-      uint32_t numInternalIndices;
-      uint32_t numSingleTables;
-      uint32_t numTwoTables;
-
-      UniquePtr<frontend::HuffmanDictionaryForMetadata> newDictionary;
-      frontend::AutoClearHuffmanDictionaryForMetadata autoClear;
-
-      frontend::HuffmanDictionaryForMetadata* dictionary;
-      if (mode == XDR_ENCODE) {
-        dictionary = metadata->dictionary();
-        MOZ_ASSERT(metadata->dictionary());
-
-        numTables = dictionary->numTables();
-        numHuffmanEntries = dictionary->numHuffmanEntries();
-        numInternalIndices = dictionary->numInternalIndices();
-        numSingleTables = dictionary->numSingleTables();
-        numTwoTables = dictionary->numTwoTables();
-      }
-      MOZ_TRY(xdr->codeUint32(&numTables));
-      MOZ_TRY(xdr->codeUint32(&numHuffmanEntries));
-      MOZ_TRY(xdr->codeUint32(&numInternalIndices));
-      MOZ_TRY(xdr->codeUint32(&numSingleTables));
-      MOZ_TRY(xdr->codeUint32(&numTwoTables));
-      if (mode == XDR_DECODE) {
-        dictionary = frontend::HuffmanDictionaryForMetadata::create(
-            numTables, numHuffmanEntries, numInternalIndices, numSingleTables,
-            numTwoTables);
-        if (!dictionary) {
-          return xdr->fail(JS::TranscodeResult_Throw);
-        }
-        autoClear.set(dictionary);
-
-        newDictionary.reset(dictionary);
-      }
-
-      auto huffmanEntryPtr = dictionary->huffmanEntriesBase();
-      auto internalIndexPtr = dictionary->internalIndicesBase();
-      auto singleTablePtr = dictionary->singleTablesBase();
-      auto twoTablePtr = dictionary->twoTablesBase();
-
-      for (uint32_t i = 0; i < frontend::TableIdentity::Limit; i++) {
-        MOZ_TRY(xdr->codeUint16(&dictionary->tableIndices_[i]));
-      }
-
-      enum TableTag {
-        SingleEntryHuffmanTableTag = 0,
-        TwoEntriesHuffmanTableTag = 1,
-        SingleLookupHuffmanTableTag = 2,
-        TwoLookupsHuffmanTableTag = 3,
-        ThreeLookupsHuffmanTableTag = 4,
-      };
-
-      // Encode/decode tables and the content of those tables.
-      for (uint32_t i = 0; i < numTables; i++) {
-        auto& table = dictionary->tableAtIndex(i);
-
-        uint8_t tag;
-        if (mode == XDR_ENCODE) {
-          if (table.implementation_.is<frontend::SingleEntryHuffmanTable>()) {
-            tag = SingleEntryHuffmanTableTag;
-          } else if (table.implementation_
-                         .is<frontend::TwoEntriesHuffmanTable>()) {
-            tag = TwoEntriesHuffmanTableTag;
-          } else if (table.implementation_
-                         .is<frontend::SingleLookupHuffmanTable>()) {
-            tag = SingleLookupHuffmanTableTag;
-          } else if (table.implementation_
-                         .is<frontend::TwoLookupsHuffmanTable>()) {
-            tag = TwoLookupsHuffmanTableTag;
-          } else {
-            MOZ_ASSERT(
-                table.implementation_.is<frontend::ThreeLookupsHuffmanTable>());
-            tag = ThreeLookupsHuffmanTableTag;
-          }
-        }
-
-        MOZ_TRY(xdr->codeUint8(&tag));
-
-        // Encode/decode HuffmanEntry, without moving `huffmanEntryPtr`.
-        // The caller is responsible to move `huffmanEntryPtr`.
-        auto codeHuffmanEntryWithoutMovePtr =
-            [xdr](frontend::HuffmanEntry* entry) -> XDRResult {
-          uint32_t keyBits;
-          uint8_t keyBitLength;
-          uint64_t bits;
-          if (mode == XDR_ENCODE) {
-            keyBits = entry->key().bits_;
-            keyBitLength = entry->key().bitLength_;
-            bits = entry->value().asBits_;
-          }
-          MOZ_TRY(xdr->codeUint32(&keyBits));
-          MOZ_TRY(xdr->codeUint8(&keyBitLength));
-          MOZ_TRY(xdr->codeUint64(&bits));
-          if (mode == XDR_DECODE) {
-            new (entry) frontend::HuffmanEntry(keyBits, keyBitLength,
-                                               frontend::BinASTSymbol(bits));
-          }
-
-          return Ok();
-        };
-
-        // Encode/decode SingleLookupHuffmanTable and its contents.
-        auto codeSingleTable =
-            [xdr, &huffmanEntryPtr, &internalIndexPtr,
-             codeHuffmanEntryWithoutMovePtr](
-                frontend::SingleLookupHuffmanTable* table) -> XDRResult {
-          uint32_t numValues;
-          if (mode == XDR_ENCODE) {
-            numValues = table->values_.size();
-          }
-          MOZ_TRY(xdr->codeUint32(&numValues));
-          if (mode == XDR_DECODE) {
-            table->values_ =
-                mozilla::MakeSpan(huffmanEntryPtr.get(), numValues);
-            huffmanEntryPtr += numValues;
-          }
-
-          for (size_t i = 0; i < numValues; i++) {
-            MOZ_TRY(codeHuffmanEntryWithoutMovePtr(&table->values_[i]));
-          }
-
-          uint32_t numSaturated;
-          if (mode == XDR_ENCODE) {
-            numSaturated = table->saturated_.size();
-          }
-          MOZ_TRY(xdr->codeUint32(&numSaturated));
-          if (mode == XDR_DECODE) {
-            table->saturated_ =
-                mozilla::MakeSpan(internalIndexPtr.get(), numSaturated);
-            internalIndexPtr += numSaturated;
-          }
-
-          for (size_t i = 0; i < numSaturated; i++) {
-            MOZ_TRY(xdr->codeUint8(&table->saturated_[i]));
-          }
-
-          MOZ_TRY(xdr->codeUint8(&table->largestBitLength_));
-
-          return Ok();
-        };
-
-        // Encode/decode TwoLookupsHuffmanTable and its contents,
-        // including suffixTables_ recursively.
-        auto codeTwoTable =
-            [xdr, &huffmanEntryPtr, &singleTablePtr,
-             codeHuffmanEntryWithoutMovePtr, codeSingleTable](
-                frontend::TwoLookupsHuffmanTable* table) -> XDRResult {
-          MOZ_TRY(codeSingleTable(&table->shortKeys_));
-
-          uint32_t numValues;
-          if (mode == XDR_ENCODE) {
-            numValues = table->values_.size();
-          }
-          MOZ_TRY(xdr->codeUint32(&numValues));
-          if (mode == XDR_DECODE) {
-            table->values_ =
-                mozilla::MakeSpan(huffmanEntryPtr.get(), numValues);
-            huffmanEntryPtr += numValues;
-          }
-
-          for (size_t i = 0; i < numValues; i++) {
-            MOZ_TRY(codeHuffmanEntryWithoutMovePtr(&table->values_[i]));
-          }
-
-          uint32_t numSuffixTables;
-          if (mode == XDR_ENCODE) {
-            numSuffixTables = table->suffixTables_.size();
-          }
-          MOZ_TRY(xdr->codeUint32(&numSuffixTables));
-          if (mode == XDR_DECODE) {
-            table->suffixTables_ =
-                mozilla::MakeSpan(singleTablePtr.get(), numSuffixTables);
-            singleTablePtr += numSuffixTables;
-          }
-
-          for (size_t i = 0; i < numSuffixTables; i++) {
-            auto suffixTable = &table->suffixTables_[i];
-            new (suffixTable) frontend::SingleLookupHuffmanTable();
-            MOZ_TRY(codeSingleTable(suffixTable));
-          }
-
-          MOZ_TRY(xdr->codeUint8(&table->largestBitLength_));
-
-          return Ok();
-        };
-
-        // Encode/decode ThreeLookupsHuffmanTable and its contents,
-        // including suffixTables_ recursively.
-        auto codeThreeTable =
-            [xdr, &huffmanEntryPtr, &twoTablePtr,
-             codeHuffmanEntryWithoutMovePtr, codeSingleTable, codeTwoTable](
-                frontend::ThreeLookupsHuffmanTable* table) -> XDRResult {
-          MOZ_TRY(codeSingleTable(&table->shortKeys_));
-
-          uint32_t numValues;
-          if (mode == XDR_ENCODE) {
-            numValues = table->values_.size();
-          }
-          MOZ_TRY(xdr->codeUint32(&numValues));
-          if (mode == XDR_DECODE) {
-            table->values_ =
-                mozilla::MakeSpan(huffmanEntryPtr.get(), numValues);
-            huffmanEntryPtr += numValues;
-          }
-
-          for (size_t i = 0; i < numValues; i++) {
-            MOZ_TRY(codeHuffmanEntryWithoutMovePtr(&table->values_[i]));
-          }
-
-          uint32_t numSuffixTables;
-          if (mode == XDR_ENCODE) {
-            numSuffixTables = table->suffixTables_.size();
-          }
-          MOZ_TRY(xdr->codeUint32(&numSuffixTables));
-          if (mode == XDR_DECODE) {
-            table->suffixTables_ =
-                mozilla::MakeSpan(twoTablePtr.get(), numSuffixTables);
-            twoTablePtr += numSuffixTables;
-          }
-
-          for (size_t i = 0; i < numSuffixTables; i++) {
-            auto suffixTable = &table->suffixTables_[i];
-            new (suffixTable) frontend::TwoLookupsHuffmanTable();
-            MOZ_TRY(codeTwoTable(suffixTable));
-          }
-
-          MOZ_TRY(xdr->codeUint8(&table->largestBitLength_));
-
-          return Ok();
-        };
-
-        if (tag == SingleEntryHuffmanTableTag) {
-          uint64_t bits;
-          if (mode == XDR_ENCODE) {
-            auto& specialized =
-                table.implementation_.as<frontend::SingleEntryHuffmanTable>();
-            bits = specialized.value_.asBits_;
-          }
-          MOZ_TRY(xdr->codeUint64(&bits));
-          if (mode == XDR_DECODE) {
-            new (&table) frontend::GenericHuffmanTable();
-
-            auto value = frontend::BinASTSymbol(bits);
-            table.implementation_ = {
-                mozilla::VariantType<frontend::SingleEntryHuffmanTable>{},
-                value};
-          }
-        } else if (tag == SingleEntryHuffmanTableTag) {
-          if (mode == XDR_DECODE) {
-            new (&table) frontend::GenericHuffmanTable();
-
-            table.implementation_ = {
-                mozilla::VariantType<frontend::TwoEntriesHuffmanTable>{}};
-          }
-
-          auto& specialized =
-              table.implementation_.as<frontend::TwoEntriesHuffmanTable>();
-
-          for (size_t i = 0; i < 2; i++) {
-            uint64_t bits;
-
-            if (mode == XDR_ENCODE) {
-              bits = specialized.values_[i].asBits_;
-            }
-            MOZ_TRY(xdr->codeUint64(&bits));
-            if (mode == XDR_DECODE) {
-              specialized.values_[i] = frontend::BinASTSymbol(bits);
-            }
-          }
-        } else if (tag == SingleLookupHuffmanTableTag) {
-          if (mode == XDR_DECODE) {
-            new (&table) frontend::GenericHuffmanTable();
-
-            table.implementation_ = {
-                mozilla::VariantType<frontend::SingleLookupHuffmanTable>{}};
-          }
-
-          auto& specialized =
-              table.implementation_.as<frontend::SingleLookupHuffmanTable>();
-
-          MOZ_TRY(codeSingleTable(&specialized));
-        } else if (tag == TwoLookupsHuffmanTableTag) {
-          if (mode == XDR_DECODE) {
-            new (&table) frontend::GenericHuffmanTable();
-
-            table.implementation_ = {
-                mozilla::VariantType<frontend::TwoLookupsHuffmanTable>{}};
-          }
-
-          auto& specialized =
-              table.implementation_.as<frontend::TwoLookupsHuffmanTable>();
-
-          MOZ_TRY(codeTwoTable(&specialized));
-        } else {
-          MOZ_ASSERT(tag == ThreeLookupsHuffmanTableTag);
-
-          if (mode == XDR_DECODE) {
-            new (&table) frontend::GenericHuffmanTable();
-
-            table.implementation_ = {
-                mozilla::VariantType<frontend::ThreeLookupsHuffmanTable>{}};
-          }
-
-          auto& specialized =
-              table.implementation_.as<frontend::ThreeLookupsHuffmanTable>();
-
-          MOZ_TRY(codeThreeTable(&specialized));
-        }
-      }
-
-      autoClear.reset();
-      metadata->setDictionary(newDictionary.release());
-    }
-  }
-
-  if (mode == XDR_DECODE) {
-    MOZ_ASSERT(binASTData.isSome());
-    MOZ_ASSERT(freshMetadata != nullptr);
-
-    MOZ_ASSERT(ss->data.is<Missing>(),
-               "should only be initializing a fresh ScriptSource");
-
-    ss->data = SourceType(
-        BinAST(std::move(*binASTData), std::move(freshMetadata.get())));
-  }
-
-  MOZ_ASSERT(binASTData.isNothing());
-  MOZ_ASSERT(freshMetadata == nullptr);
-  MOZ_ASSERT(ss->data.is<BinAST>());
-
-  return Ok();
-#endif  // !defined(JS_BUILD_BINAST)
-}
-
 template <typename Unit, XDRMode mode>
 /* static */
 void ScriptSource::codeRetrievableData(ScriptSource* ss) {
@@ -3483,7 +2910,6 @@ XDRResult ScriptSource::xdrData(XDRState<mode>* const xdr,
     RetrievableUtf8,
     RetrievableUtf16,
     Missing,
-    BinAST,
   };
 
   DataType tag;
@@ -3530,7 +2956,6 @@ XDRResult ScriptSource::xdrData(XDRState<mode>* const xdr,
         return DataType::RetrievableUtf16;
       }
       DataType operator()(const Missing&) { return DataType::Missing; }
-      DataType operator()(const BinAST&) { return DataType::BinAST; }
     };
 
     uint8_t type;
@@ -3539,7 +2964,7 @@ XDRResult ScriptSource::xdrData(XDRState<mode>* const xdr,
     }
     MOZ_TRY(xdr->codeUint8(&type));
 
-    if (type > static_cast<uint8_t>(DataType::BinAST)) {
+    if (type > static_cast<uint8_t>(DataType::Missing)) {
       // Fail in debug, but only soft-fail in release, if the type is invalid.
       MOZ_ASSERT_UNREACHABLE("bad tag");
       return xdr->fail(JS::TranscodeResult_Failure_BadDecode);
@@ -3593,9 +3018,6 @@ XDRResult ScriptSource::xdrData(XDRState<mode>* const xdr,
     case DataType::RetrievableUtf16:
       ScriptSource::codeRetrievableData<char16_t, mode>(ss);
       return Ok();
-
-    case DataType::BinAST:
-      return codeBinASTData(xdr, ss);
   }
 
   // The range-check on |type| far above ought ensure the above |switch| is
@@ -3772,7 +3194,7 @@ bool ScriptSource::initFromOptions(JSContext* cx,
 template <typename SharedT, typename CharT>
 static Maybe<SharedT> GetOrCreateStringZ(
     JSContext* cx, UniquePtr<CharT[], JS::FreePolicy>&& str) {
-  JSRuntime* rt = cx->zone()->runtimeFromAnyThread();
+  JSRuntime* rt = cx->runtime();
   size_t lengthWithNull = std::char_traits<CharT>::length(str.get()) + 1;
   auto res =
       rt->sharedImmutableStrings().getOrCreate(std::move(str), lengthWithNull);
@@ -4082,8 +3504,9 @@ PrivateScriptData* PrivateScriptData::new_(JSContext* cx, uint32_t ngcthings) {
 bool PrivateScriptData::InitFromStencil(
     JSContext* cx, js::HandleScript script,
     js::frontend::CompilationInfo& compilationInfo,
-    const frontend::ScriptStencil& stencil) {
-  uint32_t ngcthings = stencil.gcThings.length();
+    js::frontend::CompilationGCOutput& gcOutput,
+    const frontend::ScriptStencil& scriptStencil) {
+  uint32_t ngcthings = scriptStencil.gcThings.length();
 
   MOZ_ASSERT(ngcthings <= INDEX_LIMIT);
 
@@ -4094,14 +3517,14 @@ bool PrivateScriptData::InitFromStencil(
 
   js::PrivateScriptData* data = script->data_;
   if (ngcthings) {
-    if (!EmitScriptThingsVector(cx, compilationInfo, stencil.gcThings,
-                                data->gcthings())) {
+    if (!EmitScriptThingsVector(cx, compilationInfo, gcOutput,
+                                scriptStencil.gcThings, data->gcthings())) {
       return false;
     }
   }
 
-  if (stencil.fieldInitializers) {
-    script->setFieldInitializers(*stencil.fieldInitializers);
+  if (scriptStencil.memberInitializers) {
+    script->setMemberInitializers(*scriptStencil.memberInitializers);
   }
 
   return true;
@@ -4176,8 +3599,10 @@ bool JSScript::createPrivateScriptData(JSContext* cx, HandleScript script,
 /* static */
 bool JSScript::fullyInitFromStencil(JSContext* cx,
                                     frontend::CompilationInfo& compilationInfo,
+                                    js::frontend::CompilationGCOutput& gcOutput,
                                     HandleScript script,
-                                    frontend::ScriptStencil& stencil) {
+                                    frontend::ScriptStencil& scriptStencil,
+                                    HandleFunction fun) {
   ImmutableScriptFlags lazyFlags;
   MutableScriptFlags lazyMutableFlags;
   RootedScope lazyEnclosingScope(cx);
@@ -4227,25 +3652,24 @@ bool JSScript::fullyInitFromStencil(JSContext* cx,
   });
 
   /* The counts of indexed things must be checked during code generation. */
-  MOZ_ASSERT(stencil.gcThings.length() <= INDEX_LIMIT);
+  MOZ_ASSERT(scriptStencil.gcThings.length() <= INDEX_LIMIT);
 
   // Note: These flags should already be correct when the BaseScript was
-  // allocated, except that lazy BinAST parsing has incomplete set of flags.
-  MOZ_ASSERT_IF(!script->isBinAST(),
-                script->immutableFlags() == stencil.immutableFlags);
-  script->resetImmutableFlags(stencil.immutableFlags);
+  // allocated.
+  MOZ_ASSERT(script->immutableFlags() == scriptStencil.immutableFlags);
+  script->resetImmutableFlags(scriptStencil.immutableFlags);
 
   // Derive initial mutable flags
   script->resetArgsUsageAnalysis();
 
   // Create and initialize PrivateScriptData
-  if (!PrivateScriptData::InitFromStencil(cx, script, compilationInfo,
-                                          stencil)) {
+  if (!PrivateScriptData::InitFromStencil(cx, script, compilationInfo, gcOutput,
+                                          scriptStencil)) {
     return false;
   }
 
   // Create and initialize RuntimeScriptData/ImmutableScriptData
-  if (!RuntimeScriptData::InitFromStencil(cx, script, stencil)) {
+  if (!RuntimeScriptData::InitFromStencil(cx, script, scriptStencil)) {
     return false;
   }
   if (!script->shareScriptData(cx)) {
@@ -4256,8 +3680,7 @@ bool JSScript::fullyInitFromStencil(JSContext* cx,
   rollbackGuard.release();
 
   // Link JSFunction to this JSScript.
-  if (stencil.functionIndex) {
-    JSFunction* fun = compilationInfo.functions[*stencil.functionIndex];
+  if (fun) {
     if (fun->isIncomplete()) {
       fun->initScript(script);
     } else {
@@ -4265,6 +3688,9 @@ bool JSScript::fullyInitFromStencil(JSContext* cx,
       MOZ_ASSERT(fun->baseScript() == script);
     }
   }
+
+  // NOTE: The caller is responsible for linking ModuleObjects if this is a
+  //       module script.
 
 #ifdef JS_STRUCTURED_SPEW
   // We want this to happen after line number initialization to allow filtering
@@ -4287,24 +3713,26 @@ bool JSScript::fullyInitFromStencil(JSContext* cx,
 
 JSScript* JSScript::fromStencil(JSContext* cx,
                                 frontend::CompilationInfo& compilationInfo,
-                                frontend::ScriptStencil& stencil,
-                                SourceExtent extent) {
-  MOZ_ASSERT(stencil.immutableScriptData,
+                                js::frontend::CompilationGCOutput& gcOutput,
+                                frontend::ScriptStencil& scriptStencil,
+                                HandleFunction fun) {
+  MOZ_ASSERT(scriptStencil.immutableScriptData,
              "Need generated bytecode to use JSScript::fromStencil");
 
   RootedObject functionOrGlobal(cx, cx->global());
-  if (stencil.functionIndex) {
-    functionOrGlobal = compilationInfo.functions[*stencil.functionIndex];
+  if (fun) {
+    functionOrGlobal = fun;
   }
 
   RootedScript script(
-      cx, Create(cx, functionOrGlobal, compilationInfo.sourceObject, extent,
-                 stencil.immutableFlags));
+      cx, Create(cx, functionOrGlobal, gcOutput.sourceObject,
+                 scriptStencil.extent, scriptStencil.immutableFlags));
   if (!script) {
     return nullptr;
   }
 
-  if (!fullyInitFromStencil(cx, compilationInfo, script, stencil)) {
+  if (!fullyInitFromStencil(cx, compilationInfo, gcOutput, script,
+                            scriptStencil, fun)) {
     return nullptr;
   }
 
@@ -4787,7 +4215,7 @@ bool PrivateScriptData::Clone(JSContext* cx, HandleScript src, HandleScript dst,
   }
   PrivateScriptData* dstData = dst->data_;
 
-  dstData->fieldInitializers_ = srcData->fieldInitializers_;
+  dstData->memberInitializers_ = srcData->memberInitializers_;
 
   {
     auto array = dstData->gcthings();
@@ -4851,7 +4279,7 @@ JSScript* js::CloneGlobalScript(JSContext* cx, ScopeKind scopeKind,
     }
   }
 
-  MOZ_ASSERT(src->bodyScopeIndex() == 0);
+  MOZ_ASSERT(src->bodyScopeIndex() == GCThingIndex::outermostScopeIndex());
   Rooted<GCVector<Scope*>> scopes(cx, GCVector<Scope*>(cx));
   Rooted<GlobalScope*> original(cx, &src->bodyScope()->as<GlobalScope>());
   GlobalScope* clone = GlobalScope::clone(cx, original, scopeKind);
@@ -4887,13 +4315,13 @@ JSScript* js::CloneScriptIntoFunction(
   Rooted<GCVector<Scope*>> scopes(cx, GCVector<Scope*>(cx));
   RootedScope original(cx);
   RootedScope enclosingClone(cx);
-  for (uint32_t i = 0; i <= src->bodyScopeIndex(); i++) {
-    original = src->getScope(i);
+  for (uint32_t i = 0; i <= src->bodyScopeIndex().index; i++) {
+    original = src->getScope(GCThingIndex(i));
 
     if (i == 0) {
       enclosingClone = enclosingScope;
     } else {
-      MOZ_ASSERT(src->getScope(i - 1) == original->enclosing());
+      MOZ_ASSERT(src->getScope(GCThingIndex(i - 1)) == original->enclosing());
       enclosingClone = scopes[i - 1];
     }
 
@@ -4945,7 +4373,7 @@ void CopySpan(const SourceSpan& source, TargetSpan target) {
 /* static */
 js::UniquePtr<ImmutableScriptData> ImmutableScriptData::new_(
     JSContext* cx, uint32_t mainOffset, uint32_t nfixed, uint32_t nslots,
-    uint32_t bodyScopeIndex, uint32_t numICEntries,
+    GCThingIndex bodyScopeIndex, uint32_t numICEntries,
     uint32_t numBytecodeTypeSets, bool isFunction, uint16_t funLength,
     mozilla::Span<const jsbytecode> code, mozilla::Span<const SrcNote> notes,
     mozilla::Span<const uint32_t> resumeOffsets,
@@ -4995,14 +4423,15 @@ js::UniquePtr<ImmutableScriptData> ImmutableScriptData::new_(
 }
 
 /* static */
-bool RuntimeScriptData::InitFromStencil(JSContext* cx, js::HandleScript script,
-                                        frontend::ScriptStencil& stencil) {
+bool RuntimeScriptData::InitFromStencil(
+    JSContext* cx, js::HandleScript script,
+    frontend::ScriptStencil& scriptStencil) {
   // Allocate RuntimeScriptData
   if (!script->createScriptData(cx)) {
     return false;
   }
 
-  script->initImmutableScriptData(std::move(stencil.immutableScriptData));
+  script->initImmutableScriptData(std::move(scriptStencil.immutableScriptData));
   return true;
 }
 
@@ -5194,6 +4623,13 @@ void JSScript::argumentsOptimizationFailed(JSContext* cx, HandleScript script) {
 
   script->setFlag(MutableFlags::NeedsArgsObj);
 
+  // Warp code depends on the NeedsArgsObj flag so invalidate the script
+  // (including compilations inlining the script).
+  if (jit::JitOptions.warpBuilder) {
+    AutoEnterAnalysis enter(cx->runtime()->defaultFreeOp(), script->zone());
+    script->zone()->types.addPendingRecompile(cx, script);
+  }
+
   /*
    * By design, the arguments optimization is only made when there are no
    * outstanding cases of MagicValue(JS_OPTIMIZED_ARGUMENTS) at any points
@@ -5351,7 +4787,7 @@ void JSScript::resetWarmUpCounterToDelayIonCompilation() {
     if (warmUpData_.isWarmUpCount()) {
       warmUpData_.resetWarmUpCount(newCount);
     } else {
-      warmUpData_.toJitScript()->warmUpCount_ = newCount;
+      warmUpData_.toJitScript()->resetWarmUpCount(newCount);
     }
   }
 }

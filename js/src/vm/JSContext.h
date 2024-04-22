@@ -38,7 +38,12 @@ class AutoAllocInAtomsZone;
 class AutoMaybeLeaveAtomsZone;
 class AutoRealm;
 
+namespace frontend {
+class WellKnownParserAtoms;
+}  // namespace frontend
+
 namespace jit {
+class ICScript;
 class JitActivation;
 class JitContext;
 class DebugModeOSRVolatileJitFrameIter;
@@ -54,11 +59,8 @@ class MOZ_RAII AutoCycleDetector {
  public:
   using Vector = GCVector<JSObject*, 8>;
 
-  AutoCycleDetector(JSContext* cx,
-                    HandleObject objArg MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : cx(cx), obj(cx, objArg), cyclic(true) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  AutoCycleDetector(JSContext* cx, HandleObject objArg)
+      : cx(cx), obj(cx, objArg), cyclic(true) {}
 
   ~AutoCycleDetector();
 
@@ -70,12 +72,9 @@ class MOZ_RAII AutoCycleDetector {
   JSContext* cx;
   RootedObject obj;
   bool cyclic;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 struct AutoResolving;
-
-struct HelperThread;
 
 struct ParseTask;
 
@@ -126,6 +125,8 @@ void ReportOverRecursed(JSContext* cx, unsigned errorNumber);
 extern MOZ_THREAD_LOCAL(JSContext*) TlsContext;
 
 enum class ContextKind {
+  Uninitialized,
+
   // Context for the main thread of a JSRuntime.
   MainThread,
 
@@ -134,6 +135,7 @@ enum class ContextKind {
 };
 
 #ifdef DEBUG
+JSContext* MaybeGetJSContext();
 bool CurrentThreadIsParseThread();
 #endif
 
@@ -193,8 +195,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // currently operating on.
   void setRuntime(JSRuntime* rt);
 
-  void setHelperThread(js::AutoLockHelperThreadState& locked);
-  void clearHelperThread(js::AutoLockHelperThreadState& locked);
+  void setHelperThread(const js::AutoLockHelperThreadState& locked);
+  void clearHelperThread(const js::AutoLockHelperThreadState& locked);
 
   bool contextAvailable(js::AutoLockHelperThreadState& locked) {
     MOZ_ASSERT(kind_ == js::ContextKind::HelperThread);
@@ -206,6 +208,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   bool shouldFreeUnusedMemory() const {
     return kind_ == js::ContextKind::HelperThread && freeUnusedMemory;
   }
+
+#ifdef DEBUG
+  bool isInitialized() const { return kind_ != js::ContextKind::Uninitialized; }
+#endif
 
   bool isMainThreadContext() const {
     return kind_ == js::ContextKind::MainThread;
@@ -263,6 +269,9 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   // Accessors for immutable runtime data.
   JSAtomState& names() { return *runtime_->commonNames; }
+  js::frontend::WellKnownParserAtoms& parserNames() {
+    return *runtime_->commonParserNames;
+  }
   js::StaticStrings& staticStrings() { return *runtime_->staticStrings; }
   js::SharedImmutableStringsCache& sharedImmutableStrings() {
     return runtime_->sharedImmutableStrings();
@@ -391,10 +400,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   friend class js::jit::DebugModeOSRVolatileJitFrameIter;
   friend void js::ReportOverRecursed(JSContext*, unsigned errorNumber);
 
- private:
-  static JS::Error reportedError;
-  static JS::OOM reportedOOM;
-
  public:
   inline JS::Result<> boolToResult(bool ok);
 
@@ -412,8 +417,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return result.isOk() ? result.unwrap() : nullptr;
   }
 
-  mozilla::GenericErrorResult<JS::OOM&> alreadyReportedOOM();
-  mozilla::GenericErrorResult<JS::Error&> alreadyReportedError();
+  mozilla::GenericErrorResult<JS::OOM> alreadyReportedOOM();
+  mozilla::GenericErrorResult<JS::Error> alreadyReportedError();
 
   /*
    * Points to the most recent JitActivation pushed on the thread.
@@ -456,6 +461,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return offsetof(JSContext, inUnsafeCallWithABI);
   }
 #endif
+
+  static size_t offsetOfInlinedICScript() {
+    return offsetof(JSContext, inlinedICScript_);
+  }
 
  public:
   js::InterpreterStack& interpreterStack() {
@@ -802,6 +811,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   inline bool runningWithTrustedPrincipals();
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
   void trace(JSTracer* trc);
 
@@ -855,6 +865,12 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return interruptBits_ & uint32_t(reason);
   }
 
+  // For JIT use. Points to the inlined ICScript for a baseline script
+  // being invoked as part of a trial inlining.  Contains nullptr at
+  // all times except for the brief moment between being set in the
+  // caller and read in the callee's prologue.
+  js::ContextData<js::jit::ICScript*> inlinedICScript_;
+
  public:
   void* addressOfInterruptBits() { return &interruptBits_; }
   void* addressOfJitStackLimit() { return &jitStackLimit; }
@@ -864,6 +880,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void* addressOfZone() { return &zone_; }
 
   const void* addressOfRealm() const { return &realm_; }
+
+  void* addressOfInlinedICScript() { return &inlinedICScript_; }
 
   // Futex state, used by Atomics.wait() and Atomics.wake() on the Atomics
   // object.
@@ -974,7 +992,7 @@ inline JS::Result<> JSContext::boolToResult(bool ok) {
     MOZ_ASSERT(!isPropagatingForcedReturn());
     return JS::Ok();
   }
-  return JS::Result<>(reportedError);
+  return JS::Result<>(JS::Error());
 }
 
 inline JSContext* JSRuntime::mainContextFromOwnThread() {
@@ -989,9 +1007,8 @@ struct MOZ_RAII AutoResolving {
   enum Kind { LOOKUP, WATCH };
 
   AutoResolving(JSContext* cx, HandleObject obj, HandleId id,
-                Kind kind = LOOKUP MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+                Kind kind = LOOKUP)
       : context(cx), object(obj), id(id), kind(kind), link(cx->resolvingList) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(obj);
     cx->resolvingList = this;
   }
@@ -1011,7 +1028,6 @@ struct MOZ_RAII AutoResolving {
   HandleId id;
   Kind const kind;
   AutoResolving* const link;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /*
@@ -1025,13 +1041,6 @@ extern void DestroyContext(JSContext* cx);
 /* |callee| requires a usage string provided by JS_DefineFunctionsWithHelp. */
 extern void ReportUsageErrorASCII(JSContext* cx, HandleObject callee,
                                   const char* msg);
-
-// Writes a full report to a file descriptor.
-// Does nothing for JSErrorReport which are warnings, unless
-// reportWarnings is set.
-extern void PrintError(JSContext* cx, FILE* file,
-                       JS::ConstUTF8CharsZ toStringResult,
-                       JSErrorReport* report, bool reportWarnings);
 
 extern void ReportIsNotDefined(JSContext* cx, HandlePropertyName name);
 
@@ -1057,12 +1066,6 @@ extern bool ReportValueError(JSContext* cx, const unsigned errorNumber,
 
 JSObject* CreateErrorNotesArray(JSContext* cx, JSErrorReport* report);
 
-} /* namespace js */
-
-extern const JSErrorFormatString js_ErrorFormatString[JSErr_Limit];
-
-namespace js {
-
 /************************************************************************/
 
 /*
@@ -1087,14 +1090,10 @@ class MOZ_STACK_CLASS ExternalValueArray {
 class MOZ_RAII RootedExternalValueArray
     : public JS::Rooted<ExternalValueArray> {
  public:
-  RootedExternalValueArray(JSContext* cx, size_t len,
-                           Value* vec MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::Rooted<ExternalValueArray>(cx, ExternalValueArray(len, vec)) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  RootedExternalValueArray(JSContext* cx, size_t len, Value* vec)
+      : JS::Rooted<ExternalValueArray>(cx, ExternalValueArray(len, vec)) {}
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 class AutoAssertNoPendingException {
@@ -1117,8 +1116,7 @@ class MOZ_RAII AutoLockScriptData {
   JSRuntime* runtime;
 
  public:
-  explicit AutoLockScriptData(JSRuntime* rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoLockScriptData(JSRuntime* rt) {
     MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt) ||
                CurrentThreadIsParseThread());
     runtime = rt;
@@ -1141,8 +1139,6 @@ class MOZ_RAII AutoLockScriptData {
 #endif
     }
   }
-
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // A token used to prove you can safely access the atoms zone. This zone is
@@ -1159,15 +1155,6 @@ class MOZ_STACK_CLASS AutoAccessAtomsZone {
   MOZ_IMPLICIT AutoAccessAtomsZone(const AutoLockAllAtoms& lock) {}
   MOZ_IMPLICIT AutoAccessAtomsZone(
       const gc::AutoCheckCanAccessAtomsDuringGC& canAccess) {}
-};
-
-class MOZ_RAII AutoKeepAtoms {
-  JSContext* cx;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-
- public:
-  explicit AutoKeepAtoms(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
-  ~AutoKeepAtoms();
 };
 
 class MOZ_RAII AutoNoteDebuggerEvaluationWithOnNativeCallHook {

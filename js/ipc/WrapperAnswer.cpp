@@ -7,7 +7,9 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "xpcprivate.h"
+#include "jsfriendapi.h"
 #include "js/Class.h"
+#include "js/Object.h"  // JS::GetBuiltinClass
 #include "js/RegExp.h"
 #include "jsfriendapi.h"
 
@@ -601,7 +603,7 @@ bool WrapperAnswer::RecvGetBuiltinClass(const ObjectId& objId, ReturnStatus* rs,
   LOG("%s.getBuiltinClass()", ReceiverObj(objId));
 
   js::ESClass cls;
-  if (!js::GetBuiltinClass(cx, obj, &cls)) {
+  if (!JS::GetBuiltinClass(cx, obj, &cls)) {
     return fail(jsapi, rs);
   }
 

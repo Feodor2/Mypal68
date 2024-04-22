@@ -8,6 +8,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Variant.h"
 
+#include "builtin/ModuleObject.h"
 #include "gc/Policy.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/JitContext.h"
@@ -21,18 +22,23 @@ class ModuleEnvironmentObject;
 namespace jit {
 
 class CacheIRStubInfo;
+class CompileInfo;
+class WarpScriptSnapshot;
 
 #define WARP_OP_SNAPSHOT_LIST(_) \
   _(WarpArguments)               \
   _(WarpRegExp)                  \
-  _(WarpFunctionProto)           \
+  _(WarpBuiltinObject)           \
   _(WarpGetIntrinsic)            \
   _(WarpGetImport)               \
   _(WarpLambda)                  \
   _(WarpRest)                    \
   _(WarpNewArray)                \
   _(WarpNewObject)               \
-  _(WarpCacheIR)
+  _(WarpBindGName)               \
+  _(WarpBailout)                 \
+  _(WarpCacheIR)                 \
+  _(WarpInlinedCall)
 
 // Wrapper for GC things stored in WarpSnapshot. Asserts the GC pointer is not
 // nursery-allocated. These pointers must be traced using TraceWarpGCPtr.
@@ -80,6 +86,7 @@ class WarpOpSnapshot : public TempObject,
 
  public:
   uint32_t offset() const { return offset_; }
+  Kind kind() const { return kind_; }
 
   template <typename T>
   const T* as() const {
@@ -139,18 +146,18 @@ class WarpRegExp : public WarpOpSnapshot {
 #endif
 };
 
-// The proto for JSOp::FunctionProto if it exists at compile-time.
-class WarpFunctionProto : public WarpOpSnapshot {
-  WarpGCPtr<JSObject*> proto_;
+// The object for JSOp::BuiltinObject if it exists at compile-time.
+class WarpBuiltinObject : public WarpOpSnapshot {
+  WarpGCPtr<JSObject*> builtin_;
 
  public:
-  static constexpr Kind ThisKind = Kind::WarpFunctionProto;
+  static constexpr Kind ThisKind = Kind::WarpBuiltinObject;
 
-  WarpFunctionProto(uint32_t offset, JSObject* proto)
-      : WarpOpSnapshot(ThisKind, offset), proto_(proto) {
-    MOZ_ASSERT(proto);
+  WarpBuiltinObject(uint32_t offset, JSObject* builtin)
+      : WarpOpSnapshot(ThisKind, offset), builtin_(builtin) {
+    MOZ_ASSERT(builtin);
   }
-  JSObject* proto() const { return proto_; }
+  JSObject* builtin() const { return builtin_; }
 
   void traceData(JSTracer* trc);
 
@@ -233,6 +240,20 @@ class WarpLambda : public WarpOpSnapshot {
 #endif
 };
 
+// Informs WarpBuilder that an IC site is cold and execution should bail out.
+class WarpBailout : public WarpOpSnapshot {
+ public:
+  static constexpr Kind ThisKind = Kind::WarpBailout;
+
+  explicit WarpBailout(uint32_t offset) : WarpOpSnapshot(ThisKind, offset) {}
+
+  void traceData(JSTracer* trc);
+
+#ifdef JS_JITSPEW
+  void dumpData(GenericPrinter& out) const;
+#endif
+};
+
 // Information from a Baseline IC stub.
 class WarpCacheIR : public WarpOpSnapshot {
   // Baseline stub code. Stored here to keep the CacheIRStubInfo alive.
@@ -262,17 +283,109 @@ class WarpCacheIR : public WarpOpSnapshot {
 #endif
 };
 
+// [SMDOC] Warp Nursery Object support
+//
+// CacheIR stub data can contain nursery allocated objects. This can happen for
+// example for GuardSpecificObject/GuardSpecificFunction or GuardProto.
+//
+// To support nursery GCs in parallel with off-thread compilation, we use the
+// following mechanism:
+//
+// * When WarpOracle copies stub data, it builds a Vector of nursery objects.
+//   The nursery object pointers in the stub data are replaced with the
+//   corresponding index into this Vector.
+//   See WarpScriptOracle::replaceNurseryPointers.
+//
+// * The Vector is copied to the snapshot and, at the end of compilation, to
+//   the IonScript. The Vector is only accessed on the main thread.
+//
+// * The MIR backend never accesses the raw JSObject*. Instead, it uses
+//   MNurseryObject which will load the object at runtime from the IonScript.
+//
+// WarpObjectField is a helper class to encode/decode a stub data field that
+// either stores an object or a nursery index.
+class WarpObjectField {
+  // This is a nursery index if the low bit is set. Else it's a JSObject*.
+  static constexpr uintptr_t NurseryIndexTag = 0x1;
+  static constexpr uintptr_t NurseryIndexShift = 1;
+
+  uintptr_t data_;
+
+  explicit WarpObjectField(uintptr_t data) : data_(data) {}
+
+ public:
+  static WarpObjectField fromData(uintptr_t data) {
+    return WarpObjectField(data);
+  }
+  static WarpObjectField fromObject(JSObject* obj) {
+    return WarpObjectField(uintptr_t(obj));
+  }
+  static WarpObjectField fromNurseryIndex(uint32_t index) {
+    uintptr_t data = (uintptr_t(index) << NurseryIndexShift) | NurseryIndexTag;
+    return WarpObjectField(data);
+  }
+
+  uintptr_t rawData() const { return data_; }
+
+  bool isNurseryIndex() const { return (data_ & NurseryIndexTag) != 0; }
+
+  uint32_t toNurseryIndex() const {
+    MOZ_ASSERT(isNurseryIndex());
+    return data_ >> NurseryIndexShift;
+  }
+
+  JSObject* toObject() const {
+    MOZ_ASSERT(!isNurseryIndex());
+    return reinterpret_cast<JSObject*>(data_);
+  }
+};
+
+// Information for inlining a scripted call IC.
+class WarpInlinedCall : public WarpOpSnapshot {
+  // Used for generating the correct guards.
+  WarpCacheIR* cacheIRSnapshot_;
+
+  // Used for generating the inlined code.
+  WarpScriptSnapshot* scriptSnapshot_;
+  CompileInfo* info_;
+
+ public:
+  static constexpr Kind ThisKind = Kind::WarpInlinedCall;
+
+  WarpInlinedCall(uint32_t offset, WarpCacheIR* cacheIRSnapshot,
+                  WarpScriptSnapshot* scriptSnapshot, CompileInfo* info)
+      : WarpOpSnapshot(ThisKind, offset),
+        cacheIRSnapshot_(cacheIRSnapshot),
+        scriptSnapshot_(scriptSnapshot),
+        info_(info) {}
+
+  WarpCacheIR* cacheIRSnapshot() const { return cacheIRSnapshot_; }
+  WarpScriptSnapshot* scriptSnapshot() const { return scriptSnapshot_; }
+  CompileInfo* info() const { return info_; }
+
+  void traceData(JSTracer* trc);
+
+#ifdef JS_JITSPEW
+  void dumpData(GenericPrinter& out) const;
+#endif
+};
+
 // Template object for JSOp::Rest.
 class WarpRest : public WarpOpSnapshot {
   WarpGCPtr<ArrayObject*> templateObject_;
+  size_t maxInlineElements_;
 
  public:
   static constexpr Kind ThisKind = Kind::WarpRest;
 
-  WarpRest(uint32_t offset, ArrayObject* templateObject)
-      : WarpOpSnapshot(ThisKind, offset), templateObject_(templateObject) {}
+  WarpRest(uint32_t offset, ArrayObject* templateObject,
+           size_t maxInlineElements)
+      : WarpOpSnapshot(ThisKind, offset),
+        templateObject_(templateObject),
+        maxInlineElements_(maxInlineElements) {}
 
   ArrayObject* templateObject() const { return templateObject_; }
+  size_t maxInlineElements() const { return maxInlineElements_; }
 
   void traceData(JSTracer* trc);
 
@@ -323,6 +436,25 @@ class WarpNewObject : public WarpOpSnapshot {
 #endif
 };
 
+// Global environment for BindGName
+class WarpBindGName : public WarpOpSnapshot {
+  WarpGCPtr<JSObject*> globalEnv_;
+
+ public:
+  static constexpr Kind ThisKind = Kind::WarpBindGName;
+
+  WarpBindGName(uint32_t offset, JSObject* globalEnv)
+      : WarpOpSnapshot(ThisKind, offset), globalEnv_(globalEnv) {}
+
+  JSObject* globalEnv() const { return globalEnv_; }
+
+  void traceData(JSTracer* trc);
+
+#ifdef JS_JITSPEW
+  void dumpData(GenericPrinter& out) const;
+#endif
+};
+
 struct NoEnvironment {};
 using ConstantObjectEnvironment = WarpGCPtr<JSObject*>;
 struct FunctionEnvironment {
@@ -353,7 +485,9 @@ using WarpEnvironment =
                      FunctionEnvironment>;
 
 // Snapshot data for a single JSScript.
-class WarpScriptSnapshot : public TempObject {
+class WarpScriptSnapshot
+    : public TempObject,
+      public mozilla::LinkedListElement<WarpScriptSnapshot> {
   WarpGCPtr<JSScript*> script_;
   WarpEnvironment environment_;
   WarpOpSnapshotList opSnapshots_;
@@ -398,21 +532,55 @@ class WarpScriptSnapshot : public TempObject {
 #endif
 };
 
+// Captures information from previous bailouts to prevent bailout/recompile
+// loops. This mostly exists for compatibility with IonBuilder and the MIR
+// backend.
+// TODO: overhaul bailout tracking once IonBuilder is gone.
+class WarpBailoutInfo {
+  // True if any script in the compilation has the failedBoundsCheck flag. In
+  // this case mark bounds checks as non-movable to prevent hoisting them in
+  // TryEliminateBoundsCheck.
+  bool failedBoundsCheck_ = false;
+
+  // True if any script in the compilation has the failedLexicalCheck flag. In
+  // this case mark lexical checks as non-movable.
+  bool failedLexicalCheck_ = false;
+
+ public:
+  bool failedBoundsCheck() const { return failedBoundsCheck_; }
+  void setFailedBoundsCheck() { failedBoundsCheck_ = true; }
+
+  bool failedLexicalCheck() const { return failedLexicalCheck_; }
+  void setFailedLexicalCheck() { failedLexicalCheck_ = true; }
+};
+
+using WarpScriptSnapshotList = mozilla::LinkedList<WarpScriptSnapshot>;
+
 // Data allocated by WarpOracle on the main thread that's used off-thread by
 // WarpBuilder to build the MIR graph.
 class WarpSnapshot : public TempObject {
-  // The script to compile.
-  WarpScriptSnapshot* script_;
+  // The scripts being compiled.
+  WarpScriptSnapshotList scriptSnapshots_;
 
   // The global lexical environment and its thisObject(). We don't inline
   // cross-realm calls so this can be stored once per snapshot.
   WarpGCPtr<LexicalEnvironmentObject*> globalLexicalEnv_;
   WarpGCPtr<JSObject*> globalLexicalEnvThis_;
 
- public:
-  explicit WarpSnapshot(JSContext* cx, WarpScriptSnapshot* script);
+  const WarpBailoutInfo bailoutInfo_;
 
-  WarpScriptSnapshot* script() const { return script_; }
+  // List of (originally) nursery-allocated objects. Must only be accessed on
+  // the main thread. See also WarpObjectField.
+  using NurseryObjectVector = Vector<JSObject*, 0, JitAllocPolicy>;
+  NurseryObjectVector nurseryObjects_;
+
+ public:
+  explicit WarpSnapshot(JSContext* cx, TempAllocator& alloc,
+                        WarpScriptSnapshotList&& scriptSnapshots,
+                        const WarpBailoutInfo& bailoutInfo);
+
+  WarpScriptSnapshot* rootScript() { return scriptSnapshots_.getFirst(); }
+  const WarpScriptSnapshotList& scripts() const { return scriptSnapshots_; }
 
   LexicalEnvironmentObject* globalLexicalEnv() const {
     return globalLexicalEnv_;
@@ -420,6 +588,11 @@ class WarpSnapshot : public TempObject {
   JSObject* globalLexicalEnvThis() const { return globalLexicalEnvThis_; }
 
   void trace(JSTracer* trc);
+
+  const WarpBailoutInfo& bailoutInfo() const { return bailoutInfo_; }
+
+  NurseryObjectVector& nurseryObjects() { return nurseryObjects_; }
+  const NurseryObjectVector& nurseryObjects() const { return nurseryObjects_; }
 
 #ifdef JS_JITSPEW
   void dump() const;

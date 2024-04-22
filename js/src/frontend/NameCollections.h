@@ -132,7 +132,7 @@ struct RecyclableAtomMapValueWrapper {
   const Wrapped* operator->() const { return &wrapped; }
 };
 
-struct NameMapHasher : public DefaultHasher<JSAtom*> {
+struct NameMapHasher : public DefaultHasher<const ParserAtom*> {
   static inline HashNumber hash(const Lookup& l) {
     // Name maps use the atom's precomputed hash code, which is based on
     // the atom's contents rather than its pointer value. This is necessary
@@ -145,11 +145,12 @@ struct NameMapHasher : public DefaultHasher<JSAtom*> {
 
 template <typename MapValue>
 using RecyclableNameMap =
-    InlineMap<JSAtom*, RecyclableAtomMapValueWrapper<MapValue>, 24,
+    InlineMap<const ParserAtom*, RecyclableAtomMapValueWrapper<MapValue>, 24,
               NameMapHasher, SystemAllocPolicy>;
 
 using DeclaredNameMap = RecyclableNameMap<DeclaredNameInfo>;
 using NameLocationMap = RecyclableNameMap<NameLocation>;
+// Cannot use GCThingIndex here because it's not trivial type.
 using AtomIndexMap = RecyclableNameMap<uint32_t>;
 
 template <typename RepresentativeTable>

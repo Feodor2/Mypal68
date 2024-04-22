@@ -92,9 +92,11 @@ function resolveDateTimeFormatInternals(lazyDateTimeFormatData) {
         formatOpt.hourCycle = r.hc;
 
     // Steps 26-30, more or less - see comment after this function.
+    var skeleton;
     var pattern;
     if (lazyDateTimeFormatData.patternOption !== undefined) {
         pattern = lazyDateTimeFormatData.patternOption;
+        skeleton = intl_skeletonForPattern(pattern);
 
         internalProps.patternOption = lazyDateTimeFormatData.patternOption;
     } else if (lazyDateTimeFormatData.dateStyle !== undefined ||
@@ -105,14 +107,17 @@ function resolveDateTimeFormatInternals(lazyDateTimeFormatData) {
                                        lazyDateTimeFormatData.timeZone,
                                        formatOpt.hour12,
                                        formatOpt.hourCycle);
+        skeleton = intl_skeletonForPattern(pattern);
 
         internalProps.dateStyle = lazyDateTimeFormatData.dateStyle;
         internalProps.timeStyle = lazyDateTimeFormatData.timeStyle;
     } else {
-        pattern = toBestICUPattern(dataLocale, formatOpt);
+        skeleton = toICUSkeleton(formatOpt);
+        pattern = toBestICUPattern(dataLocale, skeleton, formatOpt);
     }
 
     // Step 31.
+    internalProps.skeleton = skeleton;
     internalProps.pattern = pattern;
 
     // The caller is responsible for associating |internalProps| with the right
@@ -533,10 +538,9 @@ function InitializeDateTimeFormat(dateTimeFormat, thisValue, locales, options, m
 
 /* eslint-disable complexity */
 /**
- * Returns an ICU pattern string for the given locale and representing the
- * specified options as closely as possible given available locale data.
+ * Returns an ICU skeleton string representing the specified options.
  */
-function toBestICUPattern(locale, options) {
+function toICUSkeleton(options) {
     // Create an ICU skeleton representing the specified options. See
     // http://unicode.org/reports/tr35/tr35-dates.html#Date_Field_Symbol_Table
     var skeleton = "";
@@ -673,11 +677,18 @@ function toBestICUPattern(locale, options) {
         skeleton += "zzzz";
         break;
     }
+    return skeleton;
+}
+/* eslint-enable complexity */
 
+/**
+ * Returns an ICU pattern string for the given locale and representing the
+ * specified skeleton as closely as possible given available locale data.
+ */
+function toBestICUPattern(locale, skeleton, options) {
     // Let ICU convert the ICU skeleton to an ICU pattern for the given locale.
     return intl_patternForSkeleton(locale, skeleton, options.hourCycle);
 }
-/* eslint-enable complexity */
 
 /**
  * Returns a new options object that includes the provided options (if any)
@@ -884,14 +895,92 @@ function Intl_DateTimeFormat_formatToParts(date) {
                             "Intl_DateTimeFormat_formatToParts");
     }
 
-    // Ensure the DateTimeFormat internals are resolved.
-    getDateTimeFormatInternals(dtf);
-
     // Steps 4-5.
     var x = (date === undefined) ? std_Date_now() : ToNumber(date);
 
+    // Ensure the DateTimeFormat internals are resolved.
+    getDateTimeFormatInternals(dtf);
+
     // Step 6.
     return intl_FormatDateTime(dtf, x, /* formatToParts = */ true);
+}
+
+/**
+ * Intl.DateTimeFormat.prototype.formatRange ( startDate , endDate )
+ *
+ * Spec: Intl.DateTimeFormat.prototype.formatRange proposal
+ */
+function Intl_DateTimeFormat_formatRange(startDate, endDate) {
+    // Step 1.
+    var dtf = this;
+
+    // Steps 2-3.
+    if (!IsObject(dtf) || (dtf = GuardToDateTimeFormat(dtf)) === null) {
+        return callFunction(CallDateTimeFormatMethodIfWrapped, this, startDate, endDate,
+                            "Intl_DateTimeFormat_formatRange");
+    }
+
+    // Step 4.
+    if (startDate === undefined || endDate === undefined) {
+        ThrowTypeError(JSMSG_UNDEFINED_DATE, startDate === undefined ? "start" : "end",
+                       "formatRange");
+    }
+
+    // Step 5.
+    var x = ToNumber(startDate);
+
+    // Step 6.
+    var y = ToNumber(endDate);
+
+    // Step 7.
+    if (x > y) {
+        ThrowRangeError(JSMSG_START_AFTER_END_DATE, "formatRange");
+    }
+
+    // Ensure the DateTimeFormat internals are resolved.
+    getDateTimeFormatInternals(dtf);
+
+    // Step 8.
+    return intl_FormatDateTimeRange(dtf, x, y, /* formatToParts = */ false);
+}
+
+/**
+ * Intl.DateTimeFormat.prototype.formatRangeToParts ( startDate , endDate )
+ *
+ * Spec: Intl.DateTimeFormat.prototype.formatRange proposal
+ */
+function Intl_DateTimeFormat_formatRangeToParts(startDate, endDate) {
+    // Step 1.
+    var dtf = this;
+
+    // Steps 2-3.
+    if (!IsObject(dtf) || (dtf = GuardToDateTimeFormat(dtf)) === null) {
+        return callFunction(CallDateTimeFormatMethodIfWrapped, this, startDate, endDate,
+                            "Intl_DateTimeFormat_formatRangeToParts");
+    }
+
+    // Step 4.
+    if (startDate === undefined || endDate === undefined) {
+        ThrowTypeError(JSMSG_UNDEFINED_DATE, startDate === undefined ? "start" : "end",
+                       "formatRangeToParts");
+    }
+
+    // Step 5.
+    var x = ToNumber(startDate);
+
+    // Step 6.
+    var y = ToNumber(endDate);
+
+    // Step 7.
+    if (x > y) {
+        ThrowRangeError(JSMSG_START_AFTER_END_DATE, "formatRangeToParts");
+    }
+
+    // Ensure the DateTimeFormat internals are resolved.
+    getDateTimeFormatInternals(dtf);
+
+    // Step 8.
+    return intl_FormatDateTimeRange(dtf, x, y, /* formatToParts = */ true);
 }
 
 /**

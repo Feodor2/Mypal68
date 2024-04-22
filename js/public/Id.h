@@ -90,14 +90,21 @@ struct PropertyKey {
     return reinterpret_cast<JS::Symbol*>(asBits ^ JSID_TYPE_SYMBOL);
   }
 
+  js::gc::Cell* toGCThing() const {
+    MOZ_ASSERT(isGCThing());
+    return reinterpret_cast<js::gc::Cell*>(asBits & ~(size_t)JSID_TYPE_MASK);
+  }
+
   GCCellPtr toGCCellPtr() const {
-    void* thing = (void*)(asBits & ~(size_t)JSID_TYPE_MASK);
+    js::gc::Cell* thing = toGCThing();
     if (isString()) {
       return JS::GCCellPtr(thing, JS::TraceKind::String);
     }
     MOZ_ASSERT(isSymbol());
     return JS::GCCellPtr(thing, JS::TraceKind::Symbol);
   }
+
+  bool isPrivateName() const;
 
   bool isWellKnownSymbol(JS::SymbolCode code) const;
 
@@ -222,6 +229,12 @@ struct GCPolicy<jsid> {
     return !id.isGCThing() ||
            js::gc::IsCellPointerValid(id.toGCCellPtr().asCell());
   }
+
+  static bool isTenured(jsid id) {
+    MOZ_ASSERT_IF(id.isGCThing(),
+                  !js::gc::IsInsideNursery(id.toGCCellPtr().asCell()));
+    return true;
+  }
 };
 
 #ifdef DEBUG
@@ -300,6 +313,8 @@ class WrappedPtrOperations<JS::PropertyKey, Wrapper> {
   int32_t toInt() const { return id().toInt(); }
   JSString* toString() const { return id().toString(); }
   JS::Symbol* toSymbol() const { return id().toSymbol(); }
+
+  bool isPrivateName() const { return id().isPrivateName(); }
 
   bool isWellKnownSymbol(JS::SymbolCode code) const {
     return id().isWellKnownSymbol(code);

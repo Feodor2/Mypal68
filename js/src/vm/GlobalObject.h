@@ -25,6 +25,7 @@
 #include "js/ErrorReport.h"
 #include "js/PropertyDescriptor.h"
 #include "js/RootingAPI.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "vm/JSContext.h"
@@ -37,6 +38,7 @@
 #include "vm/StringType.h"
 
 struct JSFunctionSpec;
+class JSJitInfo;
 struct JSPrincipals;
 struct JSPropertySpec;
 
@@ -110,6 +112,8 @@ class GlobalObject : public NativeObject {
     MAP_ITERATOR_PROTO,
     SET_ITERATOR_PROTO,
     WRAP_FOR_VALID_ITERATOR_PROTO,
+    ITERATOR_HELPER_PROTO,
+    ASYNC_ITERATOR_HELPER_PROTO,
     MODULE_PROTO,
     IMPORT_ENTRY_PROTO,
     EXPORT_ENTRY_PROTO,
@@ -194,6 +198,13 @@ class GlobalObject : public NativeObject {
       return nullptr;
     }
     return &global->getPrototype(key).toObject();
+  }
+
+  JSObject* maybeGetConstructor(JSProtoKey protoKey) const {
+    MOZ_ASSERT(JSProto_Null < protoKey);
+    MOZ_ASSERT(protoKey < JSProto_LIMIT);
+    const Value& v = getConstructor(protoKey);
+    return v.isObject() ? &v.toObject() : nullptr;
   }
 
   JSObject* maybeGetPrototype(JSProtoKey protoKey) const {
@@ -548,6 +559,8 @@ class GlobalObject : public NativeObject {
 
  private:
   using ObjectInitOp = bool (*)(JSContext*, Handle<GlobalObject*>);
+  using ObjectInitWithTagOp = bool (*)(JSContext*, Handle<GlobalObject*>,
+                                       HandleAtom);
 
   static JSObject* getOrCreateObject(JSContext* cx,
                                      Handle<GlobalObject*> global,
@@ -560,8 +573,23 @@ class GlobalObject : public NativeObject {
     return createObject(cx, global, slot, init);
   }
 
+  static JSObject* getOrCreateObject(JSContext* cx,
+                                     Handle<GlobalObject*> global,
+                                     unsigned slot, HandleAtom tag,
+                                     ObjectInitWithTagOp init) {
+    Value v = global->getSlotRef(slot);
+    if (v.isObject()) {
+      return &v.toObject();
+    }
+
+    return createObject(cx, global, slot, tag, init);
+  }
+
   static JSObject* createObject(JSContext* cx, Handle<GlobalObject*> global,
                                 unsigned slot, ObjectInitOp init);
+  static JSObject* createObject(JSContext* cx, Handle<GlobalObject*> global,
+                                unsigned slot, HandleAtom tag,
+                                ObjectInitWithTagOp init);
 
   static JSObject* createIteratorPrototype(JSContext* cx,
                                            Handle<GlobalObject*> global);
@@ -576,10 +604,7 @@ class GlobalObject : public NativeObject {
   }
 
   static NativeObject* getOrCreateArrayIteratorPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return MaybeNativeObject(getOrCreateObject(cx, global, ARRAY_ITERATOR_PROTO,
-                                               initArrayIteratorProto));
-  }
+      JSContext* cx, Handle<GlobalObject*> global);
 
   NativeObject* maybeGetArrayIteratorPrototype() {
     Value v = getSlotRef(ARRAY_ITERATOR_PROTO);
@@ -590,16 +615,10 @@ class GlobalObject : public NativeObject {
   }
 
   static JSObject* getOrCreateStringIteratorPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return getOrCreateObject(cx, global, STRING_ITERATOR_PROTO,
-                             initStringIteratorProto);
-  }
+      JSContext* cx, Handle<GlobalObject*> global);
 
   static JSObject* getOrCreateRegExpStringIteratorPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return getOrCreateObject(cx, global, REGEXP_STRING_ITERATOR_PROTO,
-                             initRegExpStringIteratorProto);
-  }
+      JSContext* cx, Handle<GlobalObject*> global);
 
   void setGeneratorObjectPrototype(JSObject* obj) {
     setSlot(GENERATOR_OBJECT_PROTO, ObjectValue(*obj));
@@ -721,11 +740,15 @@ class GlobalObject : public NativeObject {
   }
 
   static NativeObject* getOrCreateWrapForValidIteratorPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return MaybeNativeObject(getOrCreateObject(cx, global,
-                                               WRAP_FOR_VALID_ITERATOR_PROTO,
-                                               initWrapForValidIteratorProto));
-  }
+      JSContext* cx, Handle<GlobalObject*> global);
+
+  static NativeObject* getOrCreateIteratorHelperPrototype(
+      JSContext* cx, Handle<GlobalObject*> global);
+
+  static NativeObject* getOrCreateAsyncIteratorHelperPrototype(
+      JSContext* cx, Handle<GlobalObject*> global);
+  static bool initAsyncIteratorHelperProto(JSContext* cx,
+                                           Handle<GlobalObject*> global);
 
   static NativeObject* getIntrinsicsHolder(JSContext* cx,
                                            Handle<GlobalObject*> global);
@@ -825,14 +848,11 @@ class GlobalObject : public NativeObject {
 
   // Implemented in vm/Iteration.cpp.
   static bool initIteratorProto(JSContext* cx, Handle<GlobalObject*> global);
-  static bool initArrayIteratorProto(JSContext* cx,
-                                     Handle<GlobalObject*> global);
-  static bool initStringIteratorProto(JSContext* cx,
-                                      Handle<GlobalObject*> global);
-  static bool initRegExpStringIteratorProto(JSContext* cx,
-                                            Handle<GlobalObject*> global);
-  static bool initWrapForValidIteratorProto(JSContext*,
-                                            Handle<GlobalObject*> global);
+  template <unsigned Slot, const JSClass* ProtoClass,
+            const JSFunctionSpec* Methods>
+  static bool initObjectIteratorProto(JSContext* cx,
+                                      Handle<GlobalObject*> global,
+                                      HandleAtom tag);
 
   // Implemented in vm/AsyncIteration.cpp.
   static bool initAsyncIteratorProto(JSContext* cx,
@@ -905,7 +925,7 @@ class GlobalObject : public NativeObject {
   }
   void clearSourceURLSHolder() {
     // This is called at the start of shrinking GCs, so avoids barriers.
-    getSlotRef(SOURCE_URLS).unsafeSet(UndefinedValue());
+    getSlotRef(SOURCE_URLS).unbarrieredSet(UndefinedValue());
   }
 
   // A class used in place of a prototype during off-thread parsing.

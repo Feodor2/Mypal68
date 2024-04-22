@@ -11,6 +11,7 @@
 
 #include "jspubtd.h"
 
+#include "vm/BuiltinObjectKind.h"
 #include "vm/CheckIsObjectKind.h"  // CheckIsObjectKind
 #include "vm/Iteration.h"
 #include "vm/Stack.h"
@@ -519,7 +520,7 @@ bool SetObjectElement(JSContext* cx, HandleObject obj, HandleValue index,
                       HandleValue value, HandleValue receiver, bool strict,
                       HandleScript script, jsbytecode* pc);
 
-bool InitElementArray(JSContext* cx, jsbytecode* pc, HandleObject obj,
+bool InitElementArray(JSContext* cx, jsbytecode* pc, HandleArrayObject arr,
                       uint32_t index, HandleValue value);
 
 bool AddValues(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs,
@@ -598,7 +599,7 @@ JSObject* SingletonObjectLiteralOperation(JSContext* cx, HandleScript script,
 
 JSObject* ImportMetaOperation(JSContext* cx, HandleScript script);
 
-JSObject* FunctionProtoOperation(JSContext* cx);
+JSObject* BuiltinObjectOperation(JSContext* cx, BuiltinObjectKind kind);
 
 bool ThrowMsgOperation(JSContext* cx, const unsigned throwMsgKind);
 

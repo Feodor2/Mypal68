@@ -7,6 +7,7 @@
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 
 #include "jit/shared/Lowering-shared-inl.h"
 
@@ -867,6 +868,35 @@ bool ToStringPolicy::staticAdjustInputs(TempAllocator& alloc,
   return true;
 }
 
+bool ToInt64Policy::staticAdjustInputs(TempAllocator& alloc,
+                                       MInstruction* ins) {
+  MOZ_ASSERT(ins->isToInt64());
+
+  MDefinition* input = ins->getOperand(0);
+  MIRType type = input->type();
+
+  switch (type) {
+    case MIRType::BigInt: {
+      auto* replace = MTruncateBigIntToInt64::New(alloc, input);
+      ins->block()->insertBefore(ins, replace);
+      ins->replaceOperand(0, replace);
+      break;
+    }
+    // No need for boxing for these types, because they are handled specially
+    // when this instruction is lowered to LIR.
+    case MIRType::Boolean:
+    case MIRType::String:
+    case MIRType::Int64:
+    case MIRType::Value:
+      break;
+    default:
+      ins->replaceOperand(0, BoxAt(alloc, ins, ins->getOperand(0)));
+      break;
+  }
+
+  return true;
+}
+
 template <unsigned Op>
 bool ObjectPolicy<Op>::staticAdjustInputs(TempAllocator& alloc,
                                           MInstruction* ins) {
@@ -935,18 +965,6 @@ bool CallSetElementPolicy::adjustInputs(TempAllocator& alloc,
     }
     ins->replaceOperand(i, BoxAt(alloc, ins, in));
   }
-  return true;
-}
-
-bool InstanceOfPolicy::adjustInputs(TempAllocator& alloc,
-                                    MInstruction* def) const {
-  // Box first operand if it isn't object
-  if (def->getOperand(0)->type() != MIRType::Object) {
-    if (!BoxPolicy<0>::staticAdjustInputs(alloc, def)) {
-      return false;
-    }
-  }
-
   return true;
 }
 
@@ -1201,7 +1219,6 @@ bool TypedArrayIndexPolicy::adjustInputs(TempAllocator& alloc,
   _(ClampPolicy)                \
   _(ComparePolicy)              \
   _(FilterTypeSetPolicy)        \
-  _(InstanceOfPolicy)           \
   _(PowPolicy)                  \
   _(SameValuePolicy)            \
   _(SignPolicy)                 \
@@ -1213,6 +1230,7 @@ bool TypedArrayIndexPolicy::adjustInputs(TempAllocator& alloc,
   _(ToInt32Policy)              \
   _(ToBigIntPolicy)             \
   _(ToStringPolicy)             \
+  _(ToInt64Policy)              \
   _(TypeBarrierPolicy)          \
   _(TypedArrayIndexPolicy)
 
@@ -1268,6 +1286,7 @@ bool TypedArrayIndexPolicy::adjustInputs(TempAllocator& alloc,
   _(MixPolicy<StringPolicy<0>, StringPolicy<1>>)                              \
   _(MixPolicy<BoxPolicy<0>, BoxPolicy<1>>)                                    \
   _(MixPolicy<ObjectPolicy<0>, BoxPolicy<2>, ObjectPolicy<3>>)                \
+  _(MixPolicy<BoxExceptPolicy<0, MIRType::Object>, ObjectPolicy<1>>)          \
   _(NoFloatPolicy<0>)                                                         \
   _(NoFloatPolicy<1>)                                                         \
   _(NoFloatPolicy<2>)                                                         \

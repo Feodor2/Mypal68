@@ -13,6 +13,7 @@
 #include "gc/ZoneAllocator.h"
 #include "js/HashTable.h"
 #include "js/HeapAPI.h"
+#include "js/shadow/Zone.h"  // JS::shadow::Zone
 
 namespace js {
 
@@ -339,6 +340,7 @@ class WeakMap
   inline void forgetKey(UnbarrieredKey key);
 
   void barrierForInsert(Key k, const Value& v) {
+    assertMapIsSameZoneWithValue(v);
     if (!mapColor) {
       return;
     }
@@ -352,6 +354,8 @@ class WeakMap
     TraceEdge(trc, &tmp, "weakmap inserted value");
     MOZ_ASSERT(tmp == v);
   }
+
+  inline void assertMapIsSameZoneWithValue(const Value& v);
 
   bool markEntries(GCMarker* marker) override;
 

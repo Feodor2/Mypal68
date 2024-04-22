@@ -16,13 +16,13 @@ from collections import namedtuple
 from datetime import datetime
 
 if sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
-    from tasks_unix import run_all_tests
+    from .tasks_unix import run_all_tests
 else:
-    from tasks_win import run_all_tests
+    from .tasks_win import run_all_tests
 
-from progressbar import ProgressBar, NullProgressBar
-from results import TestOutput, escape_cmdline
-from structuredlog import TestLogger
+from .progressbar import ProgressBar, NullProgressBar
+from .results import TestOutput, escape_cmdline
+from .structuredlog import TestLogger
 
 TESTS_LIB_DIR = os.path.dirname(os.path.abspath(__file__))
 JS_DIR = os.path.dirname(os.path.dirname(TESTS_LIB_DIR))
@@ -135,7 +135,8 @@ class JitTest:
         # True means force Pacific time for the test
         self.tz_pacific = False
         # Additional files to include, in addition to prologue.js
-        self.other_includes = []
+        self.other_lib_includes = []
+        self.other_script_includes = []
         # List of other configurations to test with.
         self.test_also = []
         # List of other configurations to test with all existing variants.
@@ -147,7 +148,6 @@ class JitTest:
         # Exit status or error output.
         self.expect_crash = False
         self.is_module = False
-        self.is_binast = False
         # Reflect.stringify implementation to test
         self.test_reflect_stringify = None
 
@@ -168,7 +168,8 @@ class JitTest:
         t.allow_overrecursed = self.allow_overrecursed
         t.valgrind = self.valgrind
         t.tz_pacific = self.tz_pacific
-        t.other_includes = self.other_includes[:]
+        t.other_lib_includes = self.other_lib_includes[:]
+        t.other_script_includes = self.other_script_includes[:]
         t.test_also = self.test_also
         t.test_join = self.test_join
         t.expect_error = self.expect_error
@@ -177,7 +178,6 @@ class JitTest:
         t.test_reflect_stringify = self.test_reflect_stringify
         t.enable = True
         t.is_module = self.is_module
-        t.is_binast = self.is_binast
         t.skip_if_cond = self.skip_if_cond
         t.skip_variant_if_cond = self.skip_variant_if_cond
         return t
@@ -203,7 +203,7 @@ class JitTest:
         # For each list of jit flags, make a copy of the test.
         return [self.copy_and_extend_jitflags(v) for v in variants]
 
-    COOKIE = '|jit-test|'
+    COOKIE = b'|jit-test|'
 
     # We would use 500019 (5k19), but quit() only accepts values up to 127, due to fuzzers
     SKIPPED_EXIT_STATUS = 59
@@ -212,10 +212,10 @@ class JitTest:
     @classmethod
     def find_directives(cls, file_name):
         meta = ''
-        line = open(file_name).readline()
+        line = open(file_name, "rb").readline()
         i = line.find(cls.COOKIE)
         if i != -1:
-            meta = ';' + line[i + len(cls.COOKIE):].strip('\n')
+            meta = ';' + line[i + len(cls.COOKIE):].decode(errors='strict').strip('\n')
         return meta
 
     @classmethod
@@ -239,18 +239,7 @@ class JitTest:
             cls.Directives[dir_name] = dir_meta
 
         filename, file_extension = os.path.splitext(path)
-        if file_extension == '.binjs':
-            # BinAST does not have an inline comment format, so it's hard
-            # to parse file-by-file directives. Allow foo.binjs to use foo.dir
-            # as an adjacent file to specify.
-            meta_file_name = filename + '.dir'
-            if os.path.exists(meta_file_name):
-                meta = cls.find_directives(meta_file_name)
-            else:
-                meta = ''
-            test.is_binast = True
-        else:
-            meta = cls.find_directives(path)
+        meta = cls.find_directives(path)
 
         if meta != '' or dir_meta != '':
             meta = meta + dir_meta
@@ -283,7 +272,9 @@ class JitTest:
                             print("warning: couldn't parse thread-count"
                                   " {}".format(value))
                     elif name == 'include':
-                        test.other_includes.append(value)
+                        test.other_lib_includes.append(value)
+                    elif name == 'local-include':
+                        test.other_script_includes.append(value)
                     elif name == 'skip-if':
                         test.skip_if_cond = extend_condition(test.skip_if_cond, value)
                     elif name == 'skip-variant-if':
@@ -364,17 +355,15 @@ class JitTest:
         cmd += list(set(self.jitflags))
         for expr in exprs:
             cmd += ['-e', expr]
-        for inc in self.other_includes:
+        for inc in self.other_lib_includes:
             cmd += ['-f', libdir + inc]
+        for inc in self.other_script_includes:
+            cmd += ['-f', scriptdir_var + inc]
         if self.skip_if_cond:
             cmd += ['-e', "if ({}) quit({})".format(self.skip_if_cond, self.SKIPPED_EXIT_STATUS)]
         cmd += ['--module-load-path', moduledir]
         if self.is_module:
             cmd += ['--module', path]
-        elif self.is_binast:
-            # In builds with BinAST, this will run the test file. In builds without,
-            # It's a no-op and the tests will silently pass.
-            cmd += ['-B', path]
         elif self.test_reflect_stringify is None:
             cmd += ['-f', path]
         else:
@@ -396,7 +385,7 @@ class JitTest:
         return self.command(prefix, LIB_DIR, MODULE_DIR)
 
 
-def find_tests(substring=None, run_binast=False):
+def find_tests(substring=None):
     ans = []
     for dirpath, dirnames, filenames in os.walk(TEST_DIR):
         dirnames.sort()
@@ -404,16 +393,8 @@ def find_tests(substring=None, run_binast=False):
         if dirpath == '.':
             continue
 
-        if not run_binast:
-            if os.path.join('binast', 'lazy') in dirpath:
-                continue
-            if os.path.join('binast', 'nonlazy') in dirpath:
-                continue
-            if os.path.join('binast', 'invalid') in dirpath:
-                continue
-
         for filename in filenames:
-            if not (filename.endswith('.js') or filename.endswith('.binjs')):
+            if not filename.endswith('.js'):
                 continue
             if filename in ('shell.js', 'browser.js'):
                 continue

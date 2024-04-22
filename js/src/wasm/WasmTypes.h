@@ -121,6 +121,19 @@ typedef Vector<char, 0, SystemAllocPolicy> UTF8Bytes;
 typedef Vector<Instance*, 0, SystemAllocPolicy> InstanceVector;
 typedef Vector<UniqueChars, 0, SystemAllocPolicy> UniqueCharsVector;
 
+// Bit set as the lowest bit of a frame pointer, used in two different mutually
+// exclusive situations:
+// - either it's a low bit tag in a FramePointer value read from the
+// Frame::callerFP of an inner wasm frame. This indicates the previous call
+// frame has been set up by a JIT caller that directly called into a wasm
+// function's body. This is only stored in Frame::callerFP for a wasm frame
+// called from JIT code, and thus it can not appear in a JitActivation's
+// exitFP.
+// - or it's the low big tag set when exiting wasm code in JitActivation's
+// exitFP.
+
+constexpr uintptr_t ExitOrJitEntryFPTag = 0x1;
+
 // To call Vector::shrinkStorageToFit , a type must specialize mozilla::IsPod
 // which is pretty verbose to do within js::wasm, so factor that process out
 // into a macro.
@@ -260,8 +273,8 @@ class Opcode {
 
 // A PackedTypeCode represents a TypeCode paired with a refTypeIndex (valid only
 // for TypeCode::OptRef).  PackedTypeCode is guaranteed to be POD.  The TypeCode
-// spans the full range of type codes including the specialized AnyRef, FuncRef,
-// NullRef.
+// spans the full range of type codes including the specialized AnyRef, and
+// FuncRef.
 //
 // PackedTypeCode is an enum class, as opposed to the more natural
 // struct-with-bitfields, because bitfields would make it non-POD.
@@ -350,7 +363,6 @@ static inline bool IsReferenceType(PackedTypeCode ptc) {
 class RefType {
  public:
   enum Kind {
-    Null = uint8_t(TypeCode::NullRef),
     Any = uint8_t(TypeCode::AnyRef),
     Func = uint8_t(TypeCode::FuncRef),
     TypeIndex = uint8_t(TypeCode::OptRef)
@@ -362,7 +374,6 @@ class RefType {
 #ifdef DEBUG
   bool isValid() const {
     switch (UnpackTypeCodeType(ptc_)) {
-      case TypeCode::NullRef:
       case TypeCode::FuncRef:
       case TypeCode::AnyRef:
         MOZ_ASSERT(UnpackTypeCodeIndexUnchecked(ptc_) == NoRefTypeIndex);
@@ -375,7 +386,6 @@ class RefType {
     }
   }
 #endif
-
   explicit RefType(Kind kind) : ptc_(PackTypeCode(TypeCode(kind))) {
     MOZ_ASSERT(isValid());
   }
@@ -387,6 +397,7 @@ class RefType {
   }
 
  public:
+  RefType() : ptc_(InvalidPackedTypeCode()) {}
   explicit RefType(PackedTypeCode ptc) : ptc_(ptc) { MOZ_ASSERT(isValid()); }
 
   static RefType fromTypeCode(TypeCode tc) {
@@ -406,7 +417,6 @@ class RefType {
 
   static RefType any() { return RefType(Any); }
   static RefType func() { return RefType(Func); }
-  static RefType null() { return RefType(Null); }
 
   bool operator==(const RefType& that) const { return ptc_ == that.ptc_; }
   bool operator!=(const RefType& that) const { return ptc_ != that.ptc_; }
@@ -428,7 +438,6 @@ class ValType {
       case TypeCode::F64:
       case TypeCode::AnyRef:
       case TypeCode::FuncRef:
-      case TypeCode::NullRef:
       case TypeCode::OptRef:
         return true;
       default:
@@ -525,10 +534,6 @@ class ValType {
 
   bool isAnyRef() const { return UnpackTypeCodeType(tc_) == TypeCode::AnyRef; }
 
-  bool isNullRef() const {
-    return UnpackTypeCodeType(tc_) == TypeCode::NullRef;
-  }
-
   bool isFuncRef() const {
     return UnpackTypeCodeType(tc_) == TypeCode::FuncRef;
   }
@@ -571,7 +576,6 @@ class ValType {
     switch (typeCode()) {
       case TypeCode::AnyRef:
       case TypeCode::FuncRef:
-      case TypeCode::NullRef:
         return true;
       default:
         return false;
@@ -645,6 +649,8 @@ static inline jit::MIRType ToMIRType(const Maybe<ValType>& t) {
   return t ? ToMIRType(ValType(t.ref())) : jit::MIRType::None;
 }
 
+extern UniqueChars ToString(ValType type);
+
 static inline const char* ToCString(ValType type) {
   switch (type.kind()) {
     case ValType::I32:
@@ -658,13 +664,11 @@ static inline const char* ToCString(ValType type) {
     case ValType::Ref:
       switch (type.refTypeKind()) {
         case RefType::Any:
-          return "anyref";
+          return "externref";
         case RefType::Func:
           return "funcref";
-        case RefType::Null:
-          return "nullref";
         case RefType::TypeIndex:
-          return "ref";
+          return "optref";
       }
   }
   MOZ_CRASH("bad value type");
@@ -876,27 +880,6 @@ enum class Tier {
   Serialized = Optimized
 };
 
-// Which backend to use in the case of the optimized tier.
-
-enum class OptimizedBackend {
-  Ion,
-  Cranelift,
-};
-
-// The CompileMode controls how compilation of a module is performed (notably,
-// how many times we compile it).
-
-enum class CompileMode { Once, Tier1, Tier2 };
-
-// Typed enum for whether debugging is enabled.
-
-enum class DebugEnabled { False, True };
-
-// A wasm module can either use no memory, a unshared memory (ArrayBuffer) or
-// shared memory (SharedArrayBuffer).
-
-enum class MemoryUsage { None = false, Unshared = 1, Shared = 2 };
-
 // Iterator over tiers present in a tiered data structure.
 
 class Tiers {
@@ -1093,19 +1076,6 @@ class FuncType {
   }
   bool operator!=(const FuncType& rhs) const { return !(*this == rhs); }
 
-  bool hasI64ArgOrRet() const {
-    for (ValType arg : args()) {
-      if (arg == ValType::I64) {
-        return true;
-      }
-    }
-    for (ValType result : results()) {
-      if (result == ValType::I64) {
-        return true;
-      }
-    }
-    return false;
-  }
   // Entry from JS to wasm via the JIT is currently unimplemented for
   // functions that return multiple values.
   bool temporarilyUnsupportedResultCountForJitEntry() const {
@@ -1721,10 +1691,12 @@ struct Import {
 typedef Vector<Import, 0, SystemAllocPolicy> ImportVector;
 
 // Export describes the export of a definition in a Module to a field in the
-// export object. For functions, Export stores an index into the
-// FuncExportVector in Metadata. For memory and table exports, there is
-// at most one (default) memory/table so no index is needed. Note: a single
-// definition can be exported by multiple Exports in the ExportVector.
+// export object. The Export stores the index of the exported item in the
+// appropriate type-specific module data structure (function table, global
+// table, table table, and - eventually - memory table).
+//
+// Note a single definition can be exported by multiple Exports in the
+// ExportVector.
 //
 // ExportVector is built incrementally by ModuleGenerator and then stored
 // immutably by Module.
@@ -2268,14 +2240,14 @@ struct JitExitOffsets : CallableOffsets {
 
 struct FuncOffsets : CallableOffsets {
   MOZ_IMPLICIT FuncOffsets()
-      : CallableOffsets(), normalEntry(0), tierEntry(0) {}
+      : CallableOffsets(), uncheckedCallEntry(0), tierEntry(0) {}
 
-  // Function CodeRanges have a table entry which takes an extra signature
-  // argument which is checked against the callee's signature before falling
-  // through to the normal prologue. The table entry is thus at the beginning
-  // of the CodeRange and the normal entry is at some offset after the table
-  // entry.
-  uint32_t normalEntry;
+  // Function CodeRanges have a checked call entry which takes an extra
+  // signature argument which is checked against the callee's signature before
+  // falling through to the normal prologue. The checked call entry is thus at
+  // the beginning of the CodeRange and the unchecked call entry is at some
+  // offset after the checked call entry.
+  uint32_t uncheckedCallEntry;
 
   // The tierEntry is the point within a function to which the patching code
   // within a Tier-1 function jumps.  It could be the instruction following
@@ -2316,7 +2288,7 @@ class CodeRange {
       union {
         struct {
           uint32_t lineOrBytecode_;
-          uint8_t beginToNormalEntry_;
+          uint8_t beginToUncheckedCallEntry_;
           uint8_t beginToTierEntry_;
         } func;
         struct {
@@ -2403,13 +2375,13 @@ class CodeRange {
   // known signature) and one for table calls (which involves dynamic
   // signature checking).
 
-  uint32_t funcTableEntry() const {
+  uint32_t funcCheckedCallEntry() const {
     MOZ_ASSERT(isFunction());
     return begin_;
   }
-  uint32_t funcNormalEntry() const {
+  uint32_t funcUncheckedCallEntry() const {
     MOZ_ASSERT(isFunction());
-    return begin_ + u.func.beginToNormalEntry_;
+    return begin_ + u.func.beginToUncheckedCallEntry_;
   }
   uint32_t funcTierEntry() const {
     MOZ_ASSERT(isFunction());
@@ -2589,21 +2561,17 @@ enum class SymbolicAddress {
   HandleDebugTrap,
   HandleThrow,
   HandleTrap,
-  ReportInt64JSCall,
   CallImport_Void,
   CallImport_I32,
   CallImport_I64,
   CallImport_F64,
   CallImport_FuncRef,
   CallImport_AnyRef,
-  CallImport_NullRef,
   CoerceInPlace_ToInt32,
   CoerceInPlace_ToNumber,
   CoerceInPlace_JitEntry,
-#ifdef ENABLE_WASM_BIGINT
   CoerceInPlace_ToBigInt,
   AllocateBigInt,
-#endif
   BoxValue_Anyref,
   DivI64,
   UDivI64,
@@ -2708,15 +2676,15 @@ bool IsRoundingFunction(SymbolicAddress callee, jit::RoundingMode* mode);
 // Represents the resizable limits of memories and tables.
 
 struct Limits {
-  uint32_t initial;
-  Maybe<uint32_t> maximum;
+  uint64_t initial;
+  Maybe<uint64_t> maximum;
 
   // `shared` is Shareable::False for tables but may be Shareable::True for
   // memories.
   Shareable shared;
 
   Limits() = default;
-  explicit Limits(uint32_t initial, const Maybe<uint32_t>& maximum = Nothing(),
+  explicit Limits(uint64_t initial, const Maybe<uint64_t>& maximum = Nothing(),
                   Shareable shared = Shareable::False)
       : initial(initial), maximum(maximum), shared(shared) {}
 };
@@ -2726,21 +2694,16 @@ struct Limits {
 //
 // The TableKind determines the representation:
 //  - AnyRef: a wasm anyref word (wasm::AnyRef)
-//  - NullRef: as AnyRef
 //  - FuncRef: a two-word FunctionTableElem (wasm indirect call ABI)
 //  - AsmJS: a two-word FunctionTableElem (asm.js ABI)
 // Eventually there should be a single unified AnyRef representation.
-//
-// TableKind::NullRef is a reasonable default initializer, if one is needed.
 
-enum class TableKind { AnyRef, NullRef, FuncRef, AsmJS };
+enum class TableKind { AnyRef, FuncRef, AsmJS };
 
 static inline ValType ToElemValType(TableKind tk) {
   switch (tk) {
     case TableKind::AnyRef:
       return RefType::any();
-    case TableKind::NullRef:
-      return RefType::null();
     case TableKind::FuncRef:
       return RefType::func();
     case TableKind::AsmJS:
@@ -2753,15 +2716,17 @@ struct TableDesc {
   TableKind kind;
   bool importedOrExported;
   uint32_t globalDataOffset;
-  Limits limits;
+  uint32_t initialLength;
+  Maybe<uint32_t> maximumLength;
 
   TableDesc() = default;
-  TableDesc(TableKind kind, const Limits& limits,
-            bool importedOrExported = false)
+  TableDesc(TableKind kind, uint32_t initialLength,
+            Maybe<uint32_t> maximumLength, bool importedOrExported = false)
       : kind(kind),
         importedOrExported(importedOrExported),
         globalDataOffset(UINT32_MAX),
-        limits(limits) {}
+        initialLength(initialLength),
+        maximumLength(maximumLength) {}
 };
 
 typedef Vector<TableDesc, 0, SystemAllocPolicy> TableDescVector;
@@ -2972,7 +2937,7 @@ class CalleeDesc {
     CalleeDesc c;
     c.which_ = WasmTable;
     c.u.table.globalDataOffset_ = desc.globalDataOffset;
-    c.u.table.minLength_ = desc.limits.initial;
+    c.u.table.minLength_ = desc.initialLength;
     c.u.table.funcTypeId_ = funcTypeId;
     return c;
   }
@@ -3029,9 +2994,11 @@ class CalleeDesc {
 // Because ARM has a fixed-width instruction encoding, ARM can only express a
 // limited subset of immediates (in a single instruction).
 
+static const uint64_t HighestValidARMImmediate = 0xff000000;
+
 extern bool IsValidARMImmediate(uint32_t i);
 
-extern uint32_t RoundUpToNextValidARMImmediate(uint32_t i);
+extern uint64_t RoundUpToNextValidARMImmediate(uint64_t i);
 
 // The WebAssembly spec hard-codes the virtual page size to be 64KiB and
 // requires the size of linear memory to always be a multiple of 64KiB.
@@ -3111,7 +3078,7 @@ extern bool IsValidBoundsCheckImmediate(uint32_t i);
 //   boundsCheckLimit = mappedSize - GuardSize
 //   IsValidBoundsCheckImmediate(boundsCheckLimit)
 
-extern size_t ComputeMappedSize(uint32_t maxSize);
+extern size_t ComputeMappedSize(uint64_t maxSize);
 
 // The following thresholds were derived from a microbenchmark. If we begin to
 // ship this optimization for more platforms, we will need to extend this list.
@@ -3142,14 +3109,16 @@ static_assert(MaxInlineMemoryFillLength < MinOffsetGuardLimit, "precondition");
 // are counted by masm.framePushed. Thus, the stack alignment at any point in
 // time is (sizeof(wasm::Frame) + masm.framePushed) % WasmStackAlignment.
 
-struct Frame {
-  // The caller's Frame*. See GenerateCallableEpilogue for why this must be
+class Frame {
+  // See GenerateCallableEpilogue for why this must be
   // the first field of wasm::Frame (in a downward-growing stack).
-  Frame* callerFP;
+  // It's either the caller's Frame*, for wasm callers, or the JIT caller frame
+  // plus a tag otherwise.
+  uint8_t* callerFP_;
 
   // The saved value of WasmTlsReg on entry to the function. This is
   // effectively the callee's instance.
-  TlsData* tls;
+  TlsData* tls_;
 
 #if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_ARM64)
   // Double word aligned frame ensures:
@@ -3157,20 +3126,74 @@ struct Frame {
   //   stack alignment to be more than word size.
   // - correct stack alignment on architectures that require the SP alignment
   //   to be more than word size.
+ protected:  // suppress -Wunused-private-field
   uintptr_t padding_;
+
+ private:
 #endif
 
   // The return address pushed by the call (in the case of ARM/MIPS the return
   // address is pushed by the first instruction of the prologue).
-  void* returnAddress;
+  void* returnAddress_;
 
-  // Helper functions:
+ public:
+  static constexpr uint32_t tlsOffset() { return offsetof(Frame, tls_); }
+  static constexpr uint32_t callerFPOffset() {
+    return offsetof(Frame, callerFP_);
+  }
+  static constexpr uint32_t returnAddressOffset() {
+    return offsetof(Frame, returnAddress_);
+  }
 
-  Instance* instance() const { return tls->instance; }
+  uint8_t* returnAddress() const {
+    return reinterpret_cast<uint8_t*>(returnAddress_);
+  }
+
+  void** addressOfReturnAddress() {
+    return reinterpret_cast<void**>(&returnAddress_);
+  }
+
+  uint8_t* rawCaller() const { return callerFP_; }
+  TlsData* tls() const { return tls_; }
+  Instance* instance() const { return tls()->instance; }
+
+  Frame* wasmCaller() const {
+    MOZ_ASSERT(!callerIsExitOrJitEntryFP());
+    return reinterpret_cast<Frame*>(callerFP_);
+  }
+
+  bool callerIsExitOrJitEntryFP() const {
+    return isExitOrJitEntryFP(callerFP_);
+  }
+
+  uint8_t* jitEntryCaller() const { return toJitEntryCaller(callerFP_); }
+
+  static const Frame* fromUntaggedWasmExitFP(const void* savedFP) {
+    MOZ_ASSERT(!isExitOrJitEntryFP(savedFP));
+    return reinterpret_cast<const Frame*>(savedFP);
+  }
+
+  static bool isExitOrJitEntryFP(const void* fp) {
+    return reinterpret_cast<uintptr_t>(fp) & ExitOrJitEntryFPTag;
+  }
+
+  static uint8_t* toJitEntryCaller(const void* fp) {
+    MOZ_ASSERT(isExitOrJitEntryFP(fp));
+    return reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(fp) &
+                                      ~ExitOrJitEntryFPTag);
+  }
+
+  static uint8_t* addExitOrJitEntryFPTag(const Frame* fp) {
+    MOZ_ASSERT(!isExitOrJitEntryFP(fp));
+    return reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(fp) |
+                                      ExitOrJitEntryFPTag);
+  }
 };
 
+static_assert(!std::is_polymorphic_v<Frame>, "Frame doesn't need a vtable.");
+
 #if defined(JS_CODEGEN_ARM64)
-static_assert(sizeof(Frame) % 16 == 0, "frame size");
+static_assert(sizeof(Frame) % 16 == 0, "frame is aligned");
 #endif
 
 // A DebugFrame is a Frame with additional fields that are added after the
@@ -3204,7 +3227,6 @@ class DebugFrame {
           switch (type.refTypeKind()) {
             case RefType::Any:
             case RefType::Func:
-            case RefType::Null:
             case RefType::TypeIndex:
               return;
           }

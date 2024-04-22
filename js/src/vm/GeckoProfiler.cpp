@@ -401,10 +401,8 @@ void ProfilingStackFrame::trace(JSTracer* trc) {
 }
 
 GeckoProfilerBaselineOSRMarker::GeckoProfilerBaselineOSRMarker(
-    JSContext* cx,
-    bool hasProfilerFrame MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+    JSContext* cx, bool hasProfilerFrame)
     : profiler(&cx->geckoProfiler()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (!hasProfilerFrame || !cx->runtime()->geckoProfiler().enabled()) {
     profiler = nullptr;
     return;
@@ -502,10 +500,8 @@ JS_FRIEND_API void js::RegisterContextProfilingEventMarker(
   cx->runtime()->geckoProfiler().setEventMarker(fn);
 }
 
-AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(
-    JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(JSContext* cx)
     : cx_(cx), previouslyEnabled_(cx->isProfilerSamplingEnabled()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (previouslyEnabled_) {
     cx_->disableProfilerSampling();
   }

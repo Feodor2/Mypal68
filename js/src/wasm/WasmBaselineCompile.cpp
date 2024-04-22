@@ -14,7 +14,7 @@
  */
 
 /*
- * [SMDOC] WebAssembly baseline compiler (RabaldrMonkey)
+ * [WASMDOC] WebAssembly baseline compiler (RabaldrMonkey)
  *
  * General assumptions for 32-bit vs 64-bit code:
  *
@@ -115,7 +115,6 @@
 #include "jit/IonTypes.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/Label.h"
-#include "jit/MacroAssembler.h"
 #include "jit/MIR.h"
 #include "jit/RegisterAllocator.h"
 #include "jit/Registers.h"
@@ -135,7 +134,7 @@
 #  include "jit/mips-shared/Assembler-mips-shared.h"
 #  include "jit/mips64/Assembler-mips64.h"
 #endif
-
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/Memory.h"
 #include "wasm/WasmGC.h"
 #include "wasm/WasmGenerator.h"
@@ -1006,6 +1005,8 @@ using ScratchI8 = ScratchI32;
 //         |      |    Register stack result ptr?|    |  |             ||
 //         |      |    Non-arg local             |    |  |             ||
 //         |      |    ...                       |    |  |             ||
+//         |      |    (padding)                 |    |  |             ||
+//         |      |    Tls pointer               |    |  |             ||
 //         |      +------------------------------+    |  |             ||
 //         v      |    (padding)                 |    |  v             ||
 // -------------  +==============================+ currentStackHeight  ||
@@ -1345,10 +1346,12 @@ class BaseStackFrameAllocator {
 
 #ifdef RABALDR_CHUNKY_STACK
   void pushChunkyBytes(uint32_t bytes) {
-    MOZ_ASSERT(bytes <= ChunkSize);
     checkChunkyInvariants();
-    if (masm.framePushed() - currentStackHeight_ < bytes) {
-      masm.reserveStack(ChunkSize);
+    uint32_t freeSpace = masm.framePushed() - currentStackHeight_;
+    if (freeSpace < bytes) {
+      uint32_t bytesToReserve = AlignBytes(bytes - freeSpace, ChunkSize);
+      MOZ_ASSERT(bytesToReserve + freeSpace >= bytes);
+      masm.reserveStack(bytesToReserve);
     }
     currentStackHeight_ += bytes;
     checkChunkyInvariants();
@@ -1538,6 +1541,9 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   // Low byte offset of pointer to stack results, if any.
   Maybe<int32_t> stackResultsPtrOffset_;
 
+  // The offset of TLS pointer.
+  uint32_t tlsPointerOffset_;
+
   // Low byte offset of local area for true locals (not parameters).
   uint32_t varLow_;
 
@@ -1553,6 +1559,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
         masm(masm),
         maxFramePushed_(0),
         stackAddOffset_(0),
+        tlsPointerOffset_(UINT32_MAX),
         varLow_(UINT32_MAX),
         varHigh_(UINT32_MAX),
         sp_(masm.getStackPointer()) {}
@@ -1655,7 +1662,12 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     }
     varHigh_ = i.frameSize();
 
-    setLocalSize(AlignBytes(varHigh_, WasmStackAlignment));
+    // Reserve an additional stack slot for the TLS pointer.
+    const uint32_t pointerAlignedVarHigh = AlignBytes(varHigh_, sizeof(void*));
+    const uint32_t localSize = pointerAlignedVarHigh + sizeof(void*);
+    tlsPointerOffset_ = localSize;
+
+    setLocalSize(AlignBytes(localSize, WasmStackAlignment));
 
     if (args.hasSyntheticStackResultPointerArg()) {
       stackResultsPtrOffset_ = Some(i.stackResultPointerOffset());
@@ -1754,6 +1766,14 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
                   Address(sp_, stackOffset(stackResultsPtrOffset_.value())));
   }
 
+  void loadTlsPtr(Register dst) {
+    masm.loadPtr(Address(sp_, stackOffset(tlsPointerOffset_)), dst);
+  }
+
+  void storeTlsPtr(Register tls) {
+    masm.storePtr(tls, Address(sp_, stackOffset(tlsPointerOffset_)));
+  }
+
   // An outgoing stack result area pointer is for stack results of callees of
   // the function being compiled.
   void computeOutgoingStackResultAreaPtr(const StackResultsLoc& results,
@@ -1775,10 +1795,10 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   //
   // Dynamic area
 
-  static const size_t StackSizeOfPtr = ABIResult::StackSizeOfPtr;
-  static const size_t StackSizeOfInt64 = ABIResult::StackSizeOfInt64;
-  static const size_t StackSizeOfFloat = ABIResult::StackSizeOfFloat;
-  static const size_t StackSizeOfDouble = ABIResult::StackSizeOfDouble;
+  static constexpr size_t StackSizeOfPtr = ABIResult::StackSizeOfPtr;
+  static constexpr size_t StackSizeOfInt64 = ABIResult::StackSizeOfInt64;
+  static constexpr size_t StackSizeOfFloat = ABIResult::StackSizeOfFloat;
+  static constexpr size_t StackSizeOfDouble = ABIResult::StackSizeOfDouble;
 
   uint32_t pushPtr(Register r) {
     DebugOnly<uint32_t> stackBefore = currentStackHeight();
@@ -1916,6 +1936,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     popBytes(currentStackHeight() - end);
   }
 
+  // |srcHeight| and |destHeight| are stack heights *including* |bytes|.
   void shuffleStackResultsTowardFP(uint32_t srcHeight, uint32_t destHeight,
                                    uint32_t bytes, Register temp) {
     MOZ_ASSERT(destHeight < srcHeight);
@@ -1938,6 +1959,8 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     }
   }
 
+  // Unlike the overload that operates on raw heights, |srcHeight| and
+  // |destHeight| are stack heights *not including* |bytes|.
   void shuffleStackResultsTowardFP(StackHeight srcHeight,
                                    StackHeight destHeight, uint32_t bytes,
                                    Register temp) {
@@ -1947,9 +1970,10 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     uint32_t dest = computeHeightWithStackResults(destHeight, bytes);
     MOZ_ASSERT(src <= currentStackHeight());
     MOZ_ASSERT(dest <= currentStackHeight());
-    shuffleStackResultsTowardFP(src - bytes, dest - bytes, bytes, temp);
+    shuffleStackResultsTowardFP(src, dest, bytes, temp);
   }
 
+  // |srcHeight| and |destHeight| are stack heights *including* |bytes|.
   void shuffleStackResultsTowardSP(uint32_t srcHeight, uint32_t destHeight,
                                    uint32_t bytes, Register temp) {
     MOZ_ASSERT(destHeight > srcHeight);
@@ -1994,12 +2018,13 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     popBytes(bytesToPop);
   }
 
-  void storeImmediateToStack(int32_t imm, uint32_t destHeight, Register temp) {
+ private:
+  void store32BitsToStack(int32_t imm, uint32_t destHeight, Register temp) {
     masm.move32(Imm32(imm), temp);
     masm.store32(temp, Address(sp_, stackOffset(destHeight)));
   }
 
-  void storeImmediateToStack(int64_t imm, uint32_t destHeight, Register temp) {
+  void store64BitsToStack(int64_t imm, uint32_t destHeight, Register temp) {
 #ifdef JS_PUNBOX64
     masm.move64(Imm64(imm), Register64(temp));
     masm.store64(Register64(temp), Address(sp_, stackOffset(destHeight)));
@@ -2008,9 +2033,51 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
       int64_t i64;
       int32_t i32[2];
     } bits = {.i64 = imm};
-    storeImmediateToStack(bits.i32[0], destHeight, temp);
-    storeImmediateToStack(bits.i32[1], destHeight - sizeof(int32_t), temp);
+    store32BitsToStack(bits.i32[0], destHeight, temp);
+    store32BitsToStack(bits.i32[1], destHeight - sizeof(int32_t), temp);
 #endif
+  }
+
+ public:
+  void storeImmediatePtrToStack(intptr_t imm, uint32_t destHeight,
+                                Register temp) {
+#ifdef JS_PUNBOX64
+    static_assert(StackSizeOfPtr == 8);
+    store64BitsToStack(imm, destHeight, temp);
+#else
+    static_assert(StackSizeOfPtr == 4);
+    store32BitsToStack(int32_t(imm), destHeight, temp);
+#endif
+  }
+
+  void storeImmediateI64ToStack(int64_t imm, uint32_t destHeight,
+                                Register temp) {
+    store64BitsToStack(imm, destHeight, temp);
+  }
+
+  void storeImmediateF32ToStack(float imm, uint32_t destHeight, Register temp) {
+    union {
+      int32_t i32;
+      float f32;
+    } bits = {.f32 = imm};
+    static_assert(sizeof(bits) == 4);
+    // Do not store 4 bytes if StackSizeOfFloat == 8.  It's probably OK to do
+    // so, but it costs little to store something predictable.
+    if (StackSizeOfFloat == 4) {
+      store32BitsToStack(bits.i32, destHeight, temp);
+    } else {
+      store64BitsToStack(uint32_t(bits.i32), destHeight, temp);
+    }
+  }
+
+  void storeImmediateF64ToStack(double imm, uint32_t destHeight,
+                                Register temp) {
+    union {
+      int64_t i64;
+      double f64;
+    } bits = {.f64 = imm};
+    static_assert(sizeof(bits) == 8);
+    store64BitsToStack(bits.i64, destHeight, temp);
   }
 };
 
@@ -4247,22 +4314,19 @@ class BaseCompiler final : public BaseCompilerInterface {
       Stk& v = stk_.back();
       switch (v.kind()) {
         case Stk::ConstI32:
+          fr.storeImmediatePtrToStack(uint32_t(v.i32val_), resultHeight, temp);
+          break;
         case Stk::ConstF32:
-          // Rely on the fact that Stk stores its immediate values in a union,
-          // and that the bits of an f32 will be in the i32.
-          fr.storeImmediateToStack(v.i32val_, resultHeight, temp);
+          fr.storeImmediateF32ToStack(v.f32val_, resultHeight, temp);
           break;
         case Stk::ConstI64:
+          fr.storeImmediateI64ToStack(v.i64val_, resultHeight, temp);
+          break;
         case Stk::ConstF64:
-          // Likewise, rely on f64 bits being punned to i64.
-          fr.storeImmediateToStack(v.i64val_, resultHeight, temp);
+          fr.storeImmediateF64ToStack(v.f64val_, resultHeight, temp);
           break;
         case Stk::ConstRef:
-          if (sizeof(intptr_t) == sizeof(int32_t)) {
-            fr.storeImmediateToStack(int32_t(v.refval_), resultHeight, temp);
-          } else {
-            fr.storeImmediateToStack(int64_t(v.refval_), resultHeight, temp);
-          }
+          fr.storeImmediatePtrToStack(v.refval_, resultHeight, temp);
           break;
         case Stk::MemRef:
           // Update bookkeeping as we pop the Stk entry.
@@ -4361,10 +4425,6 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   void pushBlockResults(ResultType type) {
     pushResults(type, controlItem().stackHeight);
-  }
-
-  void pushCallResults(ResultType type, const StackResultsLoc& loc) {
-    pushResults(type, fr.stackResultsBase(loc.bytes()));
   }
 
   // A combination of popBlockResults + pushBlockResults, used when entering a
@@ -4786,6 +4846,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
 
     fr.zeroLocals(&ra);
+    fr.storeTlsPtr(WasmTlsReg);
 
     if (env_.debugEnabled()) {
       insertBreakablePoint(CallSiteDesc::EnterFrame);
@@ -5027,14 +5088,14 @@ class BaseCompiler final : public BaseCompilerInterface {
     stackMapGenerator_.framePushedExcludingOutboundCallArgs.reset();
 
     if (call.isInterModule) {
-      masm.loadWasmTlsRegFromFrame();
+      fr.loadTlsPtr(WasmTlsReg);
       masm.loadWasmPinnedRegsFromTls();
       masm.switchToWasmTlsRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
     } else if (call.usesSystemAbi) {
       // On x86 there are no pinned registers, so don't waste time
       // reloading the Tls.
 #ifndef JS_CODEGEN_X86
-      masm.loadWasmTlsRegFromFrame();
+      fr.loadTlsPtr(WasmTlsReg);
       masm.loadWasmPinnedRegsFromTls();
 #endif
     }
@@ -5253,11 +5314,24 @@ class BaseCompiler final : public BaseCompilerInterface {
                                        const ABIArg& instanceArg,
                                        const FunctionCall& call) {
     // Builtin method calls assume the TLS register has been set.
-    masm.loadWasmTlsRegFromFrame();
+    fr.loadTlsPtr(WasmTlsReg);
 
     CallSiteDesc desc(call.lineOrBytecode, CallSiteDesc::Symbolic);
     return masm.wasmCallBuiltinInstanceMethod(
         desc, instanceArg, builtin.identity, builtin.failureMode);
+  }
+
+  void pushCallResults(const FunctionCall& call, ResultType type,
+                       const StackResultsLoc& loc) {
+#if defined(JS_CODEGEN_ARM)
+    // pushResults currently bypasses special case code in captureReturnedFxx()
+    // that converts GPR results to FPR results for systemABI+softFP.  If we
+    // ever start using that combination for calls we need more code.  This
+    // assert is stronger than we need - we only care about results in return
+    // registers - but that's OK.
+    MOZ_ASSERT(!call.usesSystemAbi || call.hardFP);
+#endif
+    pushResults(type, fr.stackResultsBase(loc.bytes()));
   }
 
   //////////////////////////////////////////////////////////////////////
@@ -5280,7 +5354,7 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   MOZ_MUST_USE bool addInterruptCheck() {
     ScratchI32 tmp(*this);
-    masm.loadWasmTlsRegFromFrame(tmp);
+    fr.loadTlsPtr(tmp);
     masm.wasmInterruptCheck(tmp, bytecodeOffset());
     return createStackMap("addInterruptCheck");
   }
@@ -5826,7 +5900,7 @@ class BaseCompiler final : public BaseCompilerInterface {
   Address addressOfGlobalVar(const GlobalDesc& global, RegI32 tmp) {
     uint32_t globalToTlsOffset =
         offsetof(TlsData, globalArea) + global.offset();
-    masm.loadWasmTlsRegFromFrame(tmp);
+    fr.loadTlsPtr(tmp);
     if (global.isIndirect()) {
       masm.loadPtr(Address(tmp, globalToTlsOffset), tmp);
       return Address(tmp, 0);
@@ -7070,10 +7144,10 @@ class BaseCompiler final : public BaseCompilerInterface {
     Label skipBarrier;
     ScratchPtr scratch(*this);
 
-    masm.loadWasmTlsRegFromFrame(scratch);
+    fr.loadTlsPtr(scratch);
     EmitWasmPreBarrierGuard(masm, scratch, scratch, valueAddr, &skipBarrier);
 
-    masm.loadWasmTlsRegFromFrame(scratch);
+    fr.loadTlsPtr(scratch);
 #ifdef JS_CODEGEN_ARM64
     // The prebarrier stub assumes the PseudoStackPointer is set up.  It is OK
     // to just move the sp to x28 here because x28 is not being used by the
@@ -7466,7 +7540,7 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   MOZ_MUST_USE bool emitRefFunc();
   MOZ_MUST_USE bool emitRefNull();
-  void emitRefIsNull();
+  MOZ_MUST_USE bool emitRefIsNull();
 
   MOZ_MUST_USE bool emitAtomicCmpXchg(ValType type, Scalar::Type viewType);
   MOZ_MUST_USE bool emitAtomicLoad(ValType type, Scalar::Type viewType);
@@ -7478,7 +7552,6 @@ class BaseCompiler final : public BaseCompilerInterface {
   MOZ_MUST_USE bool emitFence();
   MOZ_MUST_USE bool emitAtomicXchg(ValType type, Scalar::Type viewType);
   void emitAtomicXchg64(MemoryAccessDesc* access, WantResult wantResult);
-  MOZ_MUST_USE bool bulkmemOpsEnabled();
   MOZ_MUST_USE bool emitMemCopy();
   MOZ_MUST_USE bool emitMemCopyCall(uint32_t lineOrBytecode);
   MOZ_MUST_USE bool emitMemCopyInline();
@@ -9260,7 +9333,7 @@ bool BaseCompiler::emitCallArgs(const ValTypeVector& argTypes,
     }
   }
 
-  masm.loadWasmTlsRegFromFrame();
+  fr.loadTlsPtr(WasmTlsReg);
   return true;
 }
 
@@ -9334,11 +9407,7 @@ bool BaseCompiler::pushStackResultsForCall(const ResultType& type, RegPtr temp,
       push(v);
       if (v.kind() == Stk::MemRef) {
         stackMapGenerator_.memRefsOnStk++;
-        if (sizeof(intptr_t) == sizeof(int32_t)) {
-          fr.storeImmediateToStack(int32_t(0), v.offs(), temp);
-        } else {
-          fr.storeImmediateToStack(int64_t(0), v.offs(), temp);
-        }
+        fr.storeImmediatePtrToStack(intptr_t(0), v.offs(), temp);
       }
     }
   }
@@ -9435,7 +9504,7 @@ bool BaseCompiler::emitCall() {
   popValueStackBy(numArgs);
 
   captureResultRegisters(resultType);
-  pushCallResults(resultType, results);
+  pushCallResults(baselineCall, resultType, results);
 
   return true;
 }
@@ -9492,7 +9561,7 @@ bool BaseCompiler::emitCallIndirect() {
   popValueStackBy(numArgs);
 
   captureResultRegisters(resultType);
-  pushCallResults(resultType, results);
+  pushCallResults(baselineCall, resultType, results);
 
   return true;
 }
@@ -10051,7 +10120,7 @@ RegI32 BaseCompiler::popMemoryAccess(MemoryAccessDesc* access,
     uint32_t offsetGuardLimit = GetOffsetGuardLimit(env_.hugeMemoryEnabled());
 
     uint64_t ea = uint64_t(addr) + uint64_t(access->offset());
-    uint64_t limit = uint64_t(env_.minMemoryLength) + offsetGuardLimit;
+    uint64_t limit = env_.minMemoryLength + offsetGuardLimit;
 
     check->omitBoundsCheck = ea < limit;
     check->omitAlignmentCheck = (ea & (access->byteSize() - 1)) == 0;
@@ -10089,7 +10158,7 @@ void BaseCompiler::pushHeapBase() {
   pushI32(heapBase);
 #elif defined(JS_CODEGEN_X86)
   RegI32 heapBase = needI32();
-  masm.loadWasmTlsRegFromFrame(heapBase);
+  fr.loadTlsPtr(heapBase);
   masm.loadPtr(Address(heapBase, offsetof(TlsData, memoryBase)), heapBase);
   pushI32(heapBase);
 #else
@@ -10101,7 +10170,7 @@ RegI32 BaseCompiler::maybeLoadTlsForAccess(const AccessCheck& check) {
   RegI32 tls;
   if (needTlsForAccess(check)) {
     tls = needI32();
-    masm.loadWasmTlsRegFromFrame(tls);
+    fr.loadTlsPtr(tls);
   }
   return tls;
 }
@@ -10109,7 +10178,7 @@ RegI32 BaseCompiler::maybeLoadTlsForAccess(const AccessCheck& check) {
 RegI32 BaseCompiler::maybeLoadTlsForAccess(const AccessCheck& check,
                                            RegI32 specific) {
   if (needTlsForAccess(check)) {
-    masm.loadWasmTlsRegFromFrame(specific);
+    fr.loadTlsPtr(specific);
     return specific;
   }
   return RegI32::Invalid();
@@ -10606,12 +10675,22 @@ bool BaseCompiler::emitRefNull() {
   return true;
 }
 
-void BaseCompiler::emitRefIsNull() {
+bool BaseCompiler::emitRefIsNull() {
+  Nothing nothing;
+  if (!iter_.readRefIsNull(&nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
   RegPtr r = popRef();
   RegI32 rd = narrowPtr(r);
 
   masm.cmpPtrSet(Assembler::Equal, r, ImmWord(NULLREF_VALUE), rd);
   pushI32(rd);
+  return true;
 }
 
 bool BaseCompiler::emitAtomicCmpXchg(ValType type, Scalar::Type viewType) {
@@ -10947,21 +11026,7 @@ bool BaseCompiler::emitFence() {
   return true;
 }
 
-// Bulk memory must be available if shared memory is enabled.
-bool BaseCompiler::bulkmemOpsEnabled() {
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  if (env_.sharedMemoryEnabled == Shareable::False) {
-    return iter_.fail("bulk memory ops disabled");
-  }
-#endif
-  return true;
-}
-
 bool BaseCompiler::emitMemCopy() {
-  if (!bulkmemOpsEnabled()) {
-    return false;
-  }
-
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   uint32_t dstMemOrTableIndex = 0;
@@ -11178,10 +11243,6 @@ bool BaseCompiler::emitMemCopyInline() {
 }
 
 bool BaseCompiler::emitTableCopy() {
-  if (!bulkmemOpsEnabled()) {
-    return false;
-  }
-
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   uint32_t dstMemOrTableIndex = 0;
@@ -11207,10 +11268,6 @@ bool BaseCompiler::emitTableCopy() {
 }
 
 bool BaseCompiler::emitDataOrElemDrop(bool isData) {
-  if (!bulkmemOpsEnabled()) {
-    return false;
-  }
-
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   uint32_t segIndex = 0;
@@ -11231,10 +11288,6 @@ bool BaseCompiler::emitDataOrElemDrop(bool isData) {
 }
 
 bool BaseCompiler::emitMemFill() {
-  if (!bulkmemOpsEnabled()) {
-    return false;
-  }
-
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   Nothing nothing;
@@ -11382,10 +11435,6 @@ bool BaseCompiler::emitMemFillInline() {
 }
 
 bool BaseCompiler::emitMemOrTableInit(bool isMem) {
-  if (!bulkmemOpsEnabled()) {
-    return false;
-  }
-
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   uint32_t segIndex = 0;
@@ -12562,7 +12611,7 @@ bool BaseCompiler::emitBody() {
         CHECK_NEXT(emitRefNull());
         break;
       case uint16_t(Op::RefIsNull):
-        CHECK_NEXT(emitConversion(emitRefIsNull, RefType::any(), ValType::I32));
+        CHECK_NEXT(emitRefIsNull());
         break;
 #endif
 
@@ -12677,6 +12726,9 @@ bool BaseCompiler::emitBody() {
 
       // Thread operations
       case uint16_t(Op::ThreadPrefix): {
+        if (env_.sharedMemoryEnabled == Shareable::False) {
+          return iter_.unrecognizedOpcode(&op);
+        }
         switch (op.b1) {
           case uint32_t(ThreadOp::Wake):
             CHECK_NEXT(emitWake());

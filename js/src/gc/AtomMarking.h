@@ -8,9 +8,11 @@
 #include "NamespaceImports.h"
 #include "ds/Bitmap.h"
 #include "threading/ProtectedData.h"
-#include "vm/SymbolType.h"
 
 namespace js {
+
+class AutoLockGC;
+
 namespace gc {
 
 class Arena;
@@ -21,13 +23,8 @@ class AtomMarkingRuntime {
   // Unused arena atom bitmap indexes. Protected by the GC lock.
   js::GCLockData<Vector<size_t, 0, SystemAllocPolicy>> freeArenaIndexes;
 
-  void markChildren(JSContext* cx, JSAtom*) {}
-
-  void markChildren(JSContext* cx, JS::Symbol* symbol) {
-    if (JSAtom* description = symbol->description()) {
-      markAtom(cx, description);
-    }
-  }
+  inline void markChildren(JSContext* cx, JSAtom*);
+  inline void markChildren(JSContext* cx, JS::Symbol* symbol);
 
  public:
   // The extent of all allocated and free words in atom mark bitmaps.

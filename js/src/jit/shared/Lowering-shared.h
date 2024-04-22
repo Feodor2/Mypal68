@@ -95,14 +95,14 @@ class LIRGeneratorShared {
   // allocation must be different from any Temp or Definition also needed for
   // this LInstruction.
   // - atStart variants relax that restriction and allow the input to be in
-  // the same register as any Temp or output Definition used by the
+  // the same register as any output Definition (but not Temps) used by the
   // LInstruction. Note that it doesn't *imply* this will actually happen,
   // but gives a hint to the register allocator that it can do it.
   //
   // TL;DR: Use non-atStart variants only if you need the input value after
-  // writing to any temp or definitions, during code generation of this
-  // LInstruction. Otherwise, use atStart variants, which will lower register
-  // pressure.
+  // writing to any definitions (excluding temps), during code generation of
+  // this LInstruction. Otherwise, use atStart variants, which will lower
+  // register pressure.
   inline LUse use(MDefinition* mir, LUse policy);
   inline LUse use(MDefinition* mir);
   inline LUse useAtStart(MDefinition* mir);
@@ -310,7 +310,7 @@ class LIRGeneratorShared {
   // function may build a snapshot that captures the result of its own
   // instruction, and as such, should generally be called after define*().
   void assignSafepoint(LInstruction* ins, MInstruction* mir,
-                       BailoutKind kind = Bailout_DuringVMCall);
+                       BailoutKind kind = BailoutKind::DuringVMCall);
 
   // Marks this instruction as needing a wasm safepoint.
   void assignWasmSafepoint(LInstruction* ins, MInstruction* mir);

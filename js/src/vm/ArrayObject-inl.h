@@ -48,7 +48,7 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
   // which allow named properties to be stored in the fixed slots.
   MOZ_ASSERT(shape->numFixedSlots() == 0);
 
-  size_t nDynamicSlots = dynamicSlotsCount(0, shape->slotSpan(), clasp);
+  size_t nDynamicSlots = calculateDynamicSlots(0, shape->slotSpan(), clasp);
   JSObject* obj = js::AllocateObject(cx, kind, nDynamicSlots, heap, clasp);
   if (!obj) {
     return nullptr;
@@ -59,7 +59,7 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
   aobj->initShape(shape);
   // NOTE: Dynamic slots are created internally by Allocate<JSObject>.
   if (!nDynamicSlots) {
-    aobj->initSlots(nullptr);
+    aobj->initEmptyDynamicSlots();
   }
 
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());

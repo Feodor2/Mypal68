@@ -33,10 +33,12 @@
 #include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
+#include "frontend/SharedContext.h"  // TopLevelFunction
 #include "gc/Policy.h"
 #include "js/BuildId.h"  // JS::BuildIdCharVector
 #include "js/MemoryMetrics.h"
 #include "js/Printf.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "js/Wrapper.h"
@@ -92,7 +94,7 @@ using mozilla::Compression::LZ4;
 // ARM greater or equal to MinHeapLength
 static const size_t MinHeapLength = PageSize;
 
-static uint32_t RoundUpToNextValidAsmJSHeapLength(uint32_t length) {
+static uint64_t RoundUpToNextValidAsmJSHeapLength(uint64_t length) {
   if (length <= MinHeapLength) {
     return MinHeapLength;
   }
@@ -534,13 +536,13 @@ static inline ParseNode* ExpressionStatementExpr(ParseNode* pn) {
   return UnaryKid(pn);
 }
 
-static inline PropertyName* LoopControlMaybeLabel(ParseNode* pn) {
+static inline const ParserName* LoopControlMaybeLabel(ParseNode* pn) {
   MOZ_ASSERT(pn->isKind(ParseNodeKind::BreakStmt) ||
              pn->isKind(ParseNodeKind::ContinueStmt));
   return pn->as<LoopControlStatement>().label();
 }
 
-static inline PropertyName* LabeledStatementLabel(ParseNode* pn) {
+static inline const ParserName* LabeledStatementLabel(ParseNode* pn) {
   return pn->as<LabeledStatement>().label();
 }
 
@@ -560,8 +562,8 @@ static ParseNode* DotBase(ParseNode* pn) {
   return &pn->as<PropertyAccess>().expression();
 }
 
-static PropertyName* DotMember(ParseNode* pn) {
-  return &pn->as<PropertyAccess>().name();
+static const ParserName* DotMember(ParseNode* pn) {
+  return pn->as<PropertyAccess>().name();
 }
 
 static ParseNode* ElemBase(ParseNode* pn) {
@@ -572,9 +574,9 @@ static ParseNode* ElemIndex(ParseNode* pn) {
   return &pn->as<PropertyByValue>().key();
 }
 
-static inline PropertyName* FunctionName(FunctionNode* funNode) {
-  if (JSAtom* name = funNode->funbox()->explicitName()) {
-    return name->asPropertyName();
+static inline const ParserName* FunctionName(FunctionNode* funNode) {
+  if (const ParserAtom* name = funNode->funbox()->explicitName()) {
+    return name->asName();
   }
   return nullptr;
 }
@@ -595,10 +597,10 @@ static inline bool IsNormalObjectField(ParseNode* pn) {
          BinaryLeft(pn)->isKind(ParseNodeKind::ObjectPropertyName);
 }
 
-static inline PropertyName* ObjectNormalFieldName(ParseNode* pn) {
+static inline const ParserName* ObjectNormalFieldName(ParseNode* pn) {
   MOZ_ASSERT(IsNormalObjectField(pn));
   MOZ_ASSERT(BinaryLeft(pn)->isKind(ParseNodeKind::ObjectPropertyName));
-  return BinaryLeft(pn)->as<NameNode>().atom()->asPropertyName();
+  return BinaryLeft(pn)->as<NameNode>().atom()->asName();
 }
 
 static inline ParseNode* ObjectNormalFieldInitializer(ParseNode* pn) {
@@ -606,12 +608,13 @@ static inline ParseNode* ObjectNormalFieldInitializer(ParseNode* pn) {
   return BinaryRight(pn);
 }
 
-static inline bool IsUseOfName(ParseNode* pn, PropertyName* name) {
+static inline bool IsUseOfName(ParseNode* pn, const ParserName* name) {
   return pn->isName(name);
 }
 
-static inline bool IsIgnoredDirectiveName(JSContext* cx, JSAtom* atom) {
-  return atom != cx->names().useStrict;
+static inline bool IsIgnoredDirectiveName(JSContext* cx,
+                                          const ParserAtom* atom) {
+  return atom != cx->parserNames().useStrict;
 }
 
 static inline bool IsIgnoredDirective(JSContext* cx, ParseNode* pn) {
@@ -1029,10 +1032,10 @@ class Type {
 
 static const unsigned VALIDATION_LIFO_DEFAULT_CHUNK_SIZE = 4 * 1024;
 
-class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
+class MOZ_STACK_CLASS ModuleValidatorShared {
  public:
   class Func {
-    PropertyName* name_;
+    const ParserName* name_;
     uint32_t sigIndex_;
     uint32_t firstUse_;
     uint32_t funcDefIndex_;
@@ -1047,7 +1050,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     Uint32Vector callSiteLineNums_;
 
    public:
-    Func(PropertyName* name, uint32_t sigIndex, uint32_t firstUse,
+    Func(const ParserName* name, uint32_t sigIndex, uint32_t firstUse,
          uint32_t funcDefIndex)
         : name_(name),
           sigIndex_(sigIndex),
@@ -1058,7 +1061,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
           srcEnd_(0),
           line_(0) {}
 
-    PropertyName* name() const { return name_; }
+    const ParserName* name() const { return name_; }
     uint32_t sigIndex() const { return sigIndex_; }
     uint32_t firstUse() const { return firstUse_; }
     bool defined() const { return defined_; }
@@ -1102,7 +1105,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
 
   class Table {
     uint32_t sigIndex_;
-    PropertyName* name_;
+    const ParserName* name_;
     uint32_t firstUse_;
     uint32_t mask_;
     bool defined_;
@@ -1110,7 +1113,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     Table(Table&& rhs) = delete;
 
    public:
-    Table(uint32_t sigIndex, PropertyName* name, uint32_t firstUse,
+    Table(uint32_t sigIndex, const ParserName* name, uint32_t firstUse,
           uint32_t mask)
         : sigIndex_(sigIndex),
           name_(name),
@@ -1119,7 +1122,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
           defined_(false) {}
 
     uint32_t sigIndex() const { return sigIndex_; }
-    PropertyName* name() const { return name_; }
+    const ParserName* name() const { return name_; }
     uint32_t firstUse() const { return firstUse_; }
     unsigned mask() const { return mask_; }
     bool defined() const { return defined_; }
@@ -1251,9 +1254,10 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   };
 
   struct ArrayView {
-    ArrayView(PropertyName* name, Scalar::Type type) : name(name), type(type) {}
+    ArrayView(const ParserName* name, Scalar::Type type)
+        : name(name), type(type) {}
 
-    PropertyName* name;
+    const ParserName* name;
     Scalar::Type type;
   };
 
@@ -1277,18 +1281,19 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   };
 
   class NamedSig : public HashableSig {
-    PropertyName* name_;
+    const ParserName* name_;
 
    public:
-    NamedSig(PropertyName* name, uint32_t sigIndex, const TypeDefVector& types)
+    NamedSig(const ParserName* name, uint32_t sigIndex,
+             const TypeDefVector& types)
         : HashableSig(sigIndex, types), name_(name) {}
-    PropertyName* name() const { return name_; }
+    const ParserName* name() const { return name_; }
 
     // Implement HashPolicy:
     struct Lookup {
-      PropertyName* name;
+      const ParserName* name;
       const FuncType& funcType;
-      Lookup(PropertyName* name, const FuncType& funcType)
+      Lookup(const ParserName* name, const FuncType& funcType)
           : name(name), funcType(funcType) {}
     };
     static HashNumber hash(Lookup l) {
@@ -1301,17 +1306,18 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
 
   using SigSet = HashSet<HashableSig, HashableSig>;
   using FuncImportMap = HashMap<NamedSig, uint32_t, NamedSig>;
-  using GlobalMap = HashMap<PropertyName*, Global*>;
-  using MathNameMap = HashMap<PropertyName*, MathBuiltin>;
+  using GlobalMap = HashMap<const ParserName*, Global*>;
+  using MathNameMap = HashMap<const ParserName*, MathBuiltin>;
   using ArrayViewVector = Vector<ArrayView>;
 
  protected:
   JSContext* cx_;
+  CompilationInfo& compilationInfo_;
   FunctionNode* moduleFunctionNode_;
-  PropertyName* moduleFunctionName_;
-  PropertyName* globalArgumentName_ = nullptr;
-  PropertyName* importArgumentName_ = nullptr;
-  PropertyName* bufferArgumentName_ = nullptr;
+  const ParserName* moduleFunctionName_;
+  const ParserName* globalArgumentName_ = nullptr;
+  const ParserName* importArgumentName_ = nullptr;
+  const ParserName* bufferArgumentName_ = nullptr;
   MathNameMap standardLibraryMathNames_;
 
   // Validation-internal state:
@@ -1334,8 +1340,10 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   bool errorOverRecursed_ = false;
 
  protected:
-  ModuleValidatorShared(JSContext* cx, FunctionNode* moduleFunctionNode)
+  ModuleValidatorShared(JSContext* cx, CompilationInfo& compilationInfo,
+                        FunctionNode* moduleFunctionNode)
       : cx_(cx),
+        compilationInfo_(compilationInfo),
         moduleFunctionNode_(moduleFunctionNode),
         moduleFunctionName_(FunctionName(moduleFunctionNode)),
         standardLibraryMathNames_(cx),
@@ -1349,7 +1357,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
         compilerEnv_(CompileMode::Once, Tier::Optimized, OptimizedBackend::Ion,
                      DebugEnabled::False, /* multi value */ false,
                      /* ref types */ false, /* gc types */ false,
-                     /* huge memory */ false, /* bigint */ false),
+                     /* huge memory */ false),
         env_(&compilerEnv_, Shareable::False, ModuleKind::AsmJS) {
     compilerEnv_.computeParameters();
     env_.minMemoryLength = RoundUpToNextValidAsmJSHeapLength(0);
@@ -1375,12 +1383,13 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
 
     auto AddMathFunction = [this](const char* name,
                                   AsmJSMathBuiltinFunction func) {
-      JSAtom* atom = Atomize(cx_, name, strlen(name));
-      if (!atom) {
+      auto mbAtom = compilationInfo_.stencil.parserAtoms.internAscii(
+          cx_, name, strlen(name));
+      if (mbAtom.isErr()) {
         return false;
       }
       MathBuiltin builtin(func);
-      return this->standardLibraryMathNames_.putNew(atom->asPropertyName(),
+      return this->standardLibraryMathNames_.putNew(mbAtom.unwrap()->asName(),
                                                     builtin);
     };
 
@@ -1405,12 +1414,13 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     };
 
     auto AddMathConstant = [this](const char* name, double cst) {
-      JSAtom* atom = Atomize(cx_, name, strlen(name));
-      if (!atom) {
+      auto mbAtom = compilationInfo_.stencil.parserAtoms.internAscii(
+          cx_, name, strlen(name));
+      if (mbAtom.isErr()) {
         return false;
       }
       MathBuiltin builtin(cst);
-      return this->standardLibraryMathNames_.putNew(atom->asPropertyName(),
+      return this->standardLibraryMathNames_.putNew(mbAtom.unwrap()->asName(),
                                                     builtin);
     };
 
@@ -1425,52 +1435,49 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
 
  public:
   JSContext* cx() const { return cx_; }
-  PropertyName* moduleFunctionName() const { return moduleFunctionName_; }
-  PropertyName* globalArgumentName() const { return globalArgumentName_; }
-  PropertyName* importArgumentName() const { return importArgumentName_; }
-  PropertyName* bufferArgumentName() const { return bufferArgumentName_; }
+  const ParserName* moduleFunctionName() const { return moduleFunctionName_; }
+  const ParserName* globalArgumentName() const { return globalArgumentName_; }
+  const ParserName* importArgumentName() const { return importArgumentName_; }
+  const ParserName* bufferArgumentName() const { return bufferArgumentName_; }
   const ModuleEnvironment& env() { return env_; }
 
-  uint32_t minMemoryLength() const { return env_.minMemoryLength; }
+  uint64_t minMemoryLength() const { return env_.minMemoryLength; }
 
-  void initModuleFunctionName(PropertyName* name) {
+  void initModuleFunctionName(const ParserName* name) {
     MOZ_ASSERT(!moduleFunctionName_);
     moduleFunctionName_ = name;
   }
-  MOZ_MUST_USE bool initGlobalArgumentName(PropertyName* n) {
+  MOZ_MUST_USE bool initGlobalArgumentName(const ParserName* n) {
     globalArgumentName_ = n;
     if (n) {
-      MOZ_ASSERT(n->isTenured());
-      asmJSMetadata_->globalArgumentName = StringToNewUTF8CharsZ(cx_, *n);
+      asmJSMetadata_->globalArgumentName = ParserAtomToNewUTF8CharsZ(cx_, n);
       if (!asmJSMetadata_->globalArgumentName) {
         return false;
       }
     }
     return true;
   }
-  MOZ_MUST_USE bool initImportArgumentName(PropertyName* n) {
+  MOZ_MUST_USE bool initImportArgumentName(const ParserName* n) {
     importArgumentName_ = n;
     if (n) {
-      MOZ_ASSERT(n->isTenured());
-      asmJSMetadata_->importArgumentName = StringToNewUTF8CharsZ(cx_, *n);
+      asmJSMetadata_->importArgumentName = ParserAtomToNewUTF8CharsZ(cx_, n);
       if (!asmJSMetadata_->importArgumentName) {
         return false;
       }
     }
     return true;
   }
-  MOZ_MUST_USE bool initBufferArgumentName(PropertyName* n) {
+  MOZ_MUST_USE bool initBufferArgumentName(const ParserName* n) {
     bufferArgumentName_ = n;
     if (n) {
-      MOZ_ASSERT(n->isTenured());
-      asmJSMetadata_->bufferArgumentName = StringToNewUTF8CharsZ(cx_, *n);
+      asmJSMetadata_->bufferArgumentName = ParserAtomToNewUTF8CharsZ(cx_, n);
       if (!asmJSMetadata_->bufferArgumentName) {
         return false;
       }
     }
     return true;
   }
-  bool addGlobalVarInit(PropertyName* var, const NumLit& lit, Type type,
+  bool addGlobalVarInit(const ParserName* var, const NumLit& lit, Type type,
                         bool isConst) {
     MOZ_ASSERT(type.isGlobalVarType());
     MOZ_ASSERT(type == Type::canonicalize(Type::lit(lit)));
@@ -1500,11 +1507,11 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.var.u.val_ = lit.value();
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addGlobalVarImport(PropertyName* var, PropertyName* field, Type type,
-                          bool isConst) {
+  bool addGlobalVarImport(const ParserName* var, const ParserName* field,
+                          Type type, bool isConst) {
     MOZ_ASSERT(type.isGlobalVarType());
 
-    UniqueChars fieldChars = StringToNewUTF8CharsZ(cx_, *field);
+    UniqueChars fieldChars = ParserAtomToNewUTF8CharsZ(cx_, field);
     if (!fieldChars) {
       return false;
     }
@@ -1531,11 +1538,11 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.var.u.importValType_ = valType.packed();
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addArrayView(PropertyName* var, Scalar::Type vt,
-                    PropertyName* maybeField) {
+  bool addArrayView(const ParserName* var, Scalar::Type vt,
+                    const ParserName* maybeField) {
     UniqueChars fieldChars;
     if (maybeField) {
-      fieldChars = StringToNewUTF8CharsZ(cx_, *maybeField);
+      fieldChars = ParserAtomToNewUTF8CharsZ(cx_, maybeField);
       if (!fieldChars) {
         return false;
       }
@@ -1558,9 +1565,10 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.viewType_ = vt;
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addMathBuiltinFunction(PropertyName* var, AsmJSMathBuiltinFunction func,
-                              PropertyName* field) {
-    UniqueChars fieldChars = StringToNewUTF8CharsZ(cx_, *field);
+  bool addMathBuiltinFunction(const ParserName* var,
+                              AsmJSMathBuiltinFunction func,
+                              const ParserName* field) {
+    UniqueChars fieldChars = ParserAtomToNewUTF8CharsZ(cx_, field);
     if (!fieldChars) {
       return false;
     }
@@ -1580,7 +1588,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   }
 
  private:
-  bool addGlobalDoubleConstant(PropertyName* var, double constant) {
+  bool addGlobalDoubleConstant(const ParserName* var, double constant) {
     Global* global = validationLifo_.new_<Global>(Global::ConstantLiteral);
     if (!global) {
       return false;
@@ -1590,9 +1598,9 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   }
 
  public:
-  bool addMathBuiltinConstant(PropertyName* var, double constant,
-                              PropertyName* field) {
-    UniqueChars fieldChars = StringToNewUTF8CharsZ(cx_, *field);
+  bool addMathBuiltinConstant(const ParserName* var, double constant,
+                              const ParserName* field) {
+    UniqueChars fieldChars = ParserAtomToNewUTF8CharsZ(cx_, field);
     if (!fieldChars) {
       return false;
     }
@@ -1606,9 +1614,9 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.constant.kind_ = AsmJSGlobal::MathConstant;
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addGlobalConstant(PropertyName* var, double constant,
-                         PropertyName* field) {
-    UniqueChars fieldChars = StringToNewUTF8CharsZ(cx_, *field);
+  bool addGlobalConstant(const ParserName* var, double constant,
+                         const ParserName* field) {
+    UniqueChars fieldChars = ParserAtomToNewUTF8CharsZ(cx_, field);
     if (!fieldChars) {
       return false;
     }
@@ -1622,9 +1630,9 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.constant.kind_ = AsmJSGlobal::GlobalConstant;
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addArrayViewCtor(PropertyName* var, Scalar::Type vt,
-                        PropertyName* field) {
-    UniqueChars fieldChars = StringToNewUTF8CharsZ(cx_, *field);
+  bool addArrayViewCtor(const ParserName* var, Scalar::Type vt,
+                        const ParserName* field) {
+    UniqueChars fieldChars = ParserAtomToNewUTF8CharsZ(cx_, field);
     if (!fieldChars) {
       return false;
     }
@@ -1642,8 +1650,8 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.viewType_ = vt;
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addFFI(PropertyName* var, PropertyName* field) {
-    UniqueChars fieldChars = StringToNewUTF8CharsZ(cx_, *field);
+  bool addFFI(const ParserName* var, const ParserName* field) {
+    UniqueChars fieldChars = ParserAtomToNewUTF8CharsZ(cx_, field);
     if (!fieldChars) {
       return false;
     }
@@ -1666,11 +1674,11 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     g.pod.u.ffiIndex_ = ffiIndex;
     return asmJSMetadata_->asmJSGlobals.append(std::move(g));
   }
-  bool addExportField(const Func& func, PropertyName* maybeField) {
+  bool addExportField(const Func& func, const ParserName* maybeField) {
     // Record the field name of this export.
     CacheableChars fieldChars;
     if (maybeField) {
-      fieldChars = StringToNewUTF8CharsZ(cx_, *maybeField);
+      fieldChars = ParserAtomToNewUTF8CharsZ(cx_, maybeField);
     } else {
       fieldChars = DuplicateString("");
     }
@@ -1771,16 +1779,17 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     return false;
   }
 
-  bool failNameOffset(uint32_t offset, const char* fmt, PropertyName* name) {
+  bool failNameOffset(uint32_t offset, const char* fmt,
+                      const ParserName* name) {
     // This function is invoked without the caller properly rooting its locals.
     gc::AutoSuppressGC suppress(cx_);
-    if (UniqueChars bytes = AtomToPrintableString(cx_, name)) {
+    if (UniqueChars bytes = ParserAtomToPrintableString(cx_, name)) {
       failfOffset(offset, fmt, bytes.get());
     }
     return false;
   }
 
-  bool failName(ParseNode* pn, const char* fmt, PropertyName* name) {
+  bool failName(ParseNode* pn, const char* fmt, const ParserName* name) {
     return failNameOffset(pn->pn_pos.begin, fmt, name);
   }
 
@@ -1796,14 +1805,14 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   unsigned numFuncPtrTables() const { return tables_.length(); }
   Table& table(unsigned i) const { return *tables_[i]; }
 
-  const Global* lookupGlobal(PropertyName* name) const {
+  const Global* lookupGlobal(const ParserName* name) const {
     if (GlobalMap::Ptr p = globalMap_.lookup(name)) {
       return p->value();
     }
     return nullptr;
   }
 
-  Func* lookupFuncDef(PropertyName* name) {
+  Func* lookupFuncDef(const ParserName* name) {
     if (GlobalMap::Ptr p = globalMap_.lookup(name)) {
       Global* value = p->value();
       if (value->which() == Global::Function) {
@@ -1813,7 +1822,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
     return nullptr;
   }
 
-  bool lookupStandardLibraryMathName(PropertyName* name,
+  bool lookupStandardLibraryMathName(const ParserName* name,
                                      MathBuiltin* mathBuiltin) const {
     if (MathNameMap::Ptr p = standardLibraryMathNames_.lookup(name)) {
       *mathBuiltin = p->value();
@@ -1837,25 +1846,16 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
 // module (all the globals), the emission of bytecode for all the functions in
 // the module and the validation of function's pointer tables. It also finishes
 // the compilation of all the module's stubs.
-//
-// Rooting note: ModuleValidator is a stack class that contains unrooted
-// PropertyName (JSAtom) pointers.  This is safe because it cannot be
-// constructed without a TokenStream reference.  TokenStream is itself a stack
-// class that cannot be constructed without an AutoKeepAtoms being live on the
-// stack, which prevents collection of atoms.
-//
-// ModuleValidator is marked as rooted in the rooting analysis.  Don't add
-// non-JSAtom pointers, or this will break!
 template <typename Unit>
-class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
-    : public ModuleValidatorShared {
+class MOZ_STACK_CLASS ModuleValidator : public ModuleValidatorShared {
  private:
   AsmJSParser<Unit>& parser_;
 
  public:
-  ModuleValidator(JSContext* cx, AsmJSParser<Unit>& parser,
-                  FunctionNode* moduleFunctionNode)
-      : ModuleValidatorShared(cx, moduleFunctionNode), parser_(parser) {}
+  ModuleValidator(JSContext* cx, CompilationInfo& compilationInfo,
+                  AsmJSParser<Unit>& parser, FunctionNode* moduleFunctionNode)
+      : ModuleValidatorShared(cx, compilationInfo, moduleFunctionNode),
+        parser_(parser) {}
 
   ~ModuleValidator() {
     if (errorString_) {
@@ -1925,7 +1925,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     }
 
     asmJSMetadata_->toStringStart =
-        moduleFunctionNode_->funbox()->extent.toStringStart;
+        moduleFunctionNode_->funbox()->extent().toStringStart;
     asmJSMetadata_->srcStart = moduleFunctionNode_->body()->pn_pos.begin;
     asmJSMetadata_->strict = parser_.pc_->sc()->strict() &&
                              !parser_.pc_->sc()->hasExplicitUseStrict();
@@ -1943,7 +1943,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
   auto& tokenStream() const { return parser_.tokenStream; }
 
  public:
-  bool addFuncDef(PropertyName* name, uint32_t firstUse, FuncType&& sig,
+  bool addFuncDef(const ParserName* name, uint32_t firstUse, FuncType&& sig,
                   Func** func) {
     uint32_t sigIndex;
     if (!declareSig(std::move(sig), &sigIndex)) {
@@ -1969,10 +1969,10 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     *func = &funcDefs_.back();
     return true;
   }
-  bool declareFuncPtrTable(FuncType&& sig, PropertyName* name,
+  bool declareFuncPtrTable(FuncType&& sig, const ParserName* name,
                            uint32_t firstUse, uint32_t mask,
                            uint32_t* tableIndex) {
-    if (mask > MaxTableInitialLength) {
+    if (mask > MaxTableLength) {
       return failCurrentOffset("function pointer table too big");
     }
 
@@ -1990,7 +1990,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     }
 
     env_.asmJSSigToTableIndex[sigIndex] = env_.tables.length();
-    if (!env_.tables.emplaceBack(TableKind::AsmJS, Limits(mask + 1))) {
+    if (!env_.tables.emplaceBack(TableKind::AsmJS, mask + 1, Nothing())) {
       return false;
     }
 
@@ -2007,7 +2007,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     Table* t = validationLifo_.new_<Table>(sigIndex, name, firstUse, mask);
     return t && tables_.append(t);
   }
-  bool declareImport(PropertyName* name, FuncType&& sig, unsigned ffiIndex,
+  bool declareImport(const ParserName* name, FuncType&& sig, unsigned ffiIndex,
                      uint32_t* importIndex) {
     FuncImportMap::AddPtr p =
         funcImportMap_.lookupForAdd(NamedSig::Lookup(name, sig));
@@ -2069,7 +2069,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
       return nullptr;
     }
     for (const Func& func : funcDefs_) {
-      CacheableChars funcName = StringToNewUTF8CharsZ(cx_, *func.name());
+      CacheableChars funcName = ParserAtomToNewUTF8CharsZ(cx_, func.name());
       if (!funcName ||
           !asmJSMetadata_->asmJSFuncNames.emplaceBack(std::move(funcName))) {
         return nullptr;
@@ -2296,7 +2296,7 @@ static inline bool IsLiteralInt(ModuleValidatorShared& m, ParseNode* pn,
 
 namespace {
 
-typedef Vector<PropertyName*, 4, SystemAllocPolicy> LabelVector;
+typedef Vector<const ParserName*, 4, SystemAllocPolicy> LabelVector;
 
 class MOZ_STACK_CLASS FunctionValidatorShared {
  public:
@@ -2309,8 +2309,8 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   };
 
  protected:
-  using LocalMap = HashMap<PropertyName*, Local>;
-  using LabelMap = HashMap<PropertyName*, uint32_t>;
+  using LocalMap = HashMap<const ParserName*, Local>;
+  using LabelMap = HashMap<const ParserName*, uint32_t>;
 
   // This is also a ModuleValidator<Unit>& after the appropriate static_cast<>.
   ModuleValidatorShared& m_;
@@ -2375,13 +2375,13 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
     return false;
   }
 
-  bool failName(ParseNode* pn, const char* fmt, PropertyName* name) {
+  bool failName(ParseNode* pn, const char* fmt, const ParserName* name) {
     return m_.failName(pn, fmt, name);
   }
 
   /***************************************************** Local scope setup */
 
-  bool addLocal(ParseNode* pn, PropertyName* name, Type type) {
+  bool addLocal(ParseNode* pn, const ParserName* name, Type type) {
     LocalMap::AddPtr p = locals_.lookupForAdd(name);
     if (p) {
       return failName(pn, "duplicate local name '%s' not allowed", name);
@@ -2409,7 +2409,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
     return encoder().writeOp(op) &&
            encoder().writeVarU32(blockDepth_ - 1 - absolute);
   }
-  void removeLabel(PropertyName* label, LabelMap* map) {
+  void removeLabel(const ParserName* label, LabelMap* map) {
     LabelMap::Ptr p = map->lookup(label);
     MOZ_ASSERT(p);
     map->remove(p);
@@ -2428,7 +2428,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
   bool pushUnbreakableBlock(const LabelVector* labels = nullptr) {
     if (labels) {
-      for (PropertyName* label : *labels) {
+      for (const ParserName* label : *labels) {
         if (!breakLabels_.putNew(label, blockDepth_)) {
           return false;
         }
@@ -2440,7 +2440,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   }
   bool popUnbreakableBlock(const LabelVector* labels = nullptr) {
     if (labels) {
-      for (PropertyName* label : *labels) {
+      for (const ParserName* label : *labels) {
         removeLabel(label, &breakLabels_);
       }
     }
@@ -2508,7 +2508,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
   bool addLabels(const LabelVector& labels, uint32_t relativeBreakDepth,
                  uint32_t relativeContinueDepth) {
-    for (PropertyName* label : labels) {
+    for (const ParserName* label : labels) {
       if (!breakLabels_.putNew(label, blockDepth_ + relativeBreakDepth)) {
         return false;
       }
@@ -2519,12 +2519,12 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
     return true;
   }
   void removeLabels(const LabelVector& labels) {
-    for (PropertyName* label : labels) {
+    for (const ParserName* label : labels) {
       removeLabel(label, &breakLabels_);
       removeLabel(label, &continueLabels_);
     }
   }
-  bool writeLabeledBreakOrContinue(PropertyName* label, bool isBreak) {
+  bool writeLabeledBreakOrContinue(const ParserName* label, bool isBreak) {
     LabelMap& map = isBreak ? breakLabels_ : continueLabels_;
     if (LabelMap::Ptr p = map.lookup(label)) {
       return writeBr(p->value());
@@ -2534,14 +2534,15 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
   /*************************************************** Read-only interface */
 
-  const Local* lookupLocal(PropertyName* name) const {
+  const Local* lookupLocal(const ParserName* name) const {
     if (auto p = locals_.lookup(name)) {
       return &p->value();
     }
     return nullptr;
   }
 
-  const ModuleValidatorShared::Global* lookupGlobal(PropertyName* name) const {
+  const ModuleValidatorShared::Global* lookupGlobal(
+      const ParserName* name) const {
     if (locals_.has(name)) {
       return nullptr;
     }
@@ -2626,15 +2627,16 @@ class MOZ_STACK_CLASS FunctionValidator : public FunctionValidatorShared {
 // asm.js type-checking and code-generation algorithm
 
 static bool CheckIdentifier(ModuleValidatorShared& m, ParseNode* usepn,
-                            PropertyName* name) {
-  if (name == m.cx()->names().arguments || name == m.cx()->names().eval) {
+                            const ParserName* name) {
+  if (name == m.cx()->parserNames().arguments ||
+      name == m.cx()->parserNames().eval) {
     return m.failName(usepn, "'%s' is not an allowed identifier", name);
   }
   return true;
 }
 
 static bool CheckModuleLevelName(ModuleValidatorShared& m, ParseNode* usepn,
-                                 PropertyName* name) {
+                                 const ParserName* name) {
   if (!CheckIdentifier(m, usepn, name)) {
     return false;
   }
@@ -2662,15 +2664,14 @@ static bool CheckFunctionHead(ModuleValidatorShared& m, FunctionNode* funNode) {
 }
 
 static bool CheckArgument(ModuleValidatorShared& m, ParseNode* arg,
-                          PropertyName** name) {
+                          const ParserName** name) {
   *name = nullptr;
 
   if (!arg->isKind(ParseNodeKind::Name)) {
     return m.fail(arg, "argument is not a plain name");
   }
 
-  PropertyName* argName = arg->as<NameNode>().name();
-  ;
+  const ParserName* argName = arg->as<NameNode>().name();
   if (!CheckIdentifier(m, arg, argName)) {
     return false;
   }
@@ -2680,7 +2681,7 @@ static bool CheckArgument(ModuleValidatorShared& m, ParseNode* arg,
 }
 
 static bool CheckModuleArgument(ModuleValidatorShared& m, ParseNode* arg,
-                                PropertyName** name) {
+                                const ParserName** name) {
   if (!CheckArgument(m, arg, name)) {
     return false;
   }
@@ -2703,7 +2704,7 @@ static bool CheckModuleArguments(ModuleValidatorShared& m,
     return m.fail(funNode, "asm.js modules takes at most 3 argument");
   }
 
-  PropertyName* arg1Name = nullptr;
+  const ParserName* arg1Name = nullptr;
   if (arg1 && !CheckModuleArgument(m, arg1, &arg1Name)) {
     return false;
   }
@@ -2711,7 +2712,7 @@ static bool CheckModuleArguments(ModuleValidatorShared& m,
     return false;
   }
 
-  PropertyName* arg2Name = nullptr;
+  const ParserName* arg2Name = nullptr;
   if (arg2 && !CheckModuleArgument(m, arg2, &arg2Name)) {
     return false;
   }
@@ -2719,7 +2720,7 @@ static bool CheckModuleArguments(ModuleValidatorShared& m,
     return false;
   }
 
-  PropertyName* arg3Name = nullptr;
+  const ParserName* arg3Name = nullptr;
   if (arg3 && !CheckModuleArgument(m, arg3, &arg3Name)) {
     return false;
   }
@@ -2745,7 +2746,7 @@ static bool CheckPrecedingStatements(ModuleValidatorShared& m,
 }
 
 static bool CheckGlobalVariableInitConstant(ModuleValidatorShared& m,
-                                            PropertyName* varName,
+                                            const ParserName* varName,
                                             ParseNode* initNode, bool isConst) {
   NumLit lit = ExtractNumericLiteral(m, initNode);
   if (!lit.valid()) {
@@ -2797,7 +2798,7 @@ static bool CheckTypeAnnotation(ModuleValidatorShared& m,
 }
 
 static bool CheckGlobalVariableInitImport(ModuleValidatorShared& m,
-                                          PropertyName* varName,
+                                          const ParserName* varName,
                                           ParseNode* initNode, bool isConst) {
   Type coerceTo;
   ParseNode* coercedExpr;
@@ -2815,9 +2816,9 @@ static bool CheckGlobalVariableInitImport(ModuleValidatorShared& m,
   }
 
   ParseNode* base = DotBase(coercedExpr);
-  PropertyName* field = DotMember(coercedExpr);
+  const ParserName* field = DotMember(coercedExpr);
 
-  PropertyName* importName = m.importArgumentName();
+  const ParserName* importName = m.importArgumentName();
   if (!importName) {
     return m.fail(coercedExpr,
                   "cannot import without an asm.js foreign parameter");
@@ -2830,9 +2831,9 @@ static bool CheckGlobalVariableInitImport(ModuleValidatorShared& m,
   return m.addGlobalVarImport(varName, field, coerceTo, isConst);
 }
 
-static bool IsArrayViewCtorName(ModuleValidatorShared& m, PropertyName* name,
-                                Scalar::Type* type) {
-  JSAtomState& names = m.cx()->names();
+static bool IsArrayViewCtorName(ModuleValidatorShared& m,
+                                const ParserName* name, Scalar::Type* type) {
+  js::frontend::WellKnownParserAtoms& names = m.cx()->parserNames();
   if (name == names.Int8Array) {
     *type = Scalar::Int8;
   } else if (name == names.Uint8Array) {
@@ -2856,7 +2857,7 @@ static bool IsArrayViewCtorName(ModuleValidatorShared& m, PropertyName* name,
 }
 
 static bool CheckNewArrayViewArgs(ModuleValidatorShared& m, ParseNode* newExpr,
-                                  PropertyName* bufferName) {
+                                  const ParserName* bufferName) {
   ParseNode* ctorExpr = BinaryLeft(newExpr);
   ParseNode* ctorArgs = BinaryRight(newExpr);
   ParseNode* bufArg = ListHead(ctorArgs);
@@ -2873,15 +2874,15 @@ static bool CheckNewArrayViewArgs(ModuleValidatorShared& m, ParseNode* newExpr,
   return true;
 }
 
-static bool CheckNewArrayView(ModuleValidatorShared& m, PropertyName* varName,
-                              ParseNode* newExpr) {
-  PropertyName* globalName = m.globalArgumentName();
+static bool CheckNewArrayView(ModuleValidatorShared& m,
+                              const ParserName* varName, ParseNode* newExpr) {
+  const ParserName* globalName = m.globalArgumentName();
   if (!globalName) {
     return m.fail(
         newExpr, "cannot create array view without an asm.js global parameter");
   }
 
-  PropertyName* bufferName = m.bufferArgumentName();
+  const ParserName* bufferName = m.bufferArgumentName();
   if (!bufferName) {
     return m.fail(newExpr,
                   "cannot create array view without an asm.js heap parameter");
@@ -2889,7 +2890,7 @@ static bool CheckNewArrayView(ModuleValidatorShared& m, PropertyName* varName,
 
   ParseNode* ctorExpr = BinaryLeft(newExpr);
 
-  PropertyName* field;
+  const ParserName* field;
   Scalar::Type type;
   if (ctorExpr->isKind(ParseNodeKind::DotExpr)) {
     ParseNode* base = DotBase(ctorExpr);
@@ -2908,7 +2909,7 @@ static bool CheckNewArrayView(ModuleValidatorShared& m, PropertyName* varName,
                     "expecting name of imported array view constructor");
     }
 
-    PropertyName* globalName = ctorExpr->as<NameNode>().name();
+    const ParserName* globalName = ctorExpr->as<NameNode>().name();
     const ModuleValidatorShared::Global* global = m.lookupGlobal(globalName);
     if (!global) {
       return m.failName(ctorExpr, "%s not found in module global scope",
@@ -2933,7 +2934,8 @@ static bool CheckNewArrayView(ModuleValidatorShared& m, PropertyName* varName,
 }
 
 static bool CheckGlobalMathImport(ModuleValidatorShared& m, ParseNode* initNode,
-                                  PropertyName* varName, PropertyName* field) {
+                                  const ParserName* varName,
+                                  const ParserName* field) {
   // Math builtin, with the form glob.Math.[[builtin]]
   ModuleValidatorShared::MathBuiltin mathBuiltin;
   if (!m.lookupStandardLibraryMathName(field, &mathBuiltin)) {
@@ -2952,15 +2954,16 @@ static bool CheckGlobalMathImport(ModuleValidatorShared& m, ParseNode* initNode,
 }
 
 static bool CheckGlobalDotImport(ModuleValidatorShared& m,
-                                 PropertyName* varName, ParseNode* initNode) {
+                                 const ParserName* varName,
+                                 ParseNode* initNode) {
   ParseNode* base = DotBase(initNode);
-  PropertyName* field = DotMember(initNode);
+  const ParserName* field = DotMember(initNode);
 
   if (base->isKind(ParseNodeKind::DotExpr)) {
     ParseNode* global = DotBase(base);
-    PropertyName* math = DotMember(base);
+    const ParserName* math = DotMember(base);
 
-    PropertyName* globalName = m.globalArgumentName();
+    const ParserName* globalName = m.globalArgumentName();
     if (!globalName) {
       return m.fail(
           base, "import statement requires the module have a stdlib parameter");
@@ -2976,7 +2979,7 @@ static bool CheckGlobalDotImport(ModuleValidatorShared& m,
       return m.failName(base, "expecting %s.*", globalName);
     }
 
-    if (math == m.cx()->names().Math) {
+    if (math == m.cx()->parserNames().Math) {
       return CheckGlobalMathImport(m, initNode, varName, field);
     }
     return m.failName(base, "expecting %s.Math", globalName);
@@ -2988,10 +2991,10 @@ static bool CheckGlobalDotImport(ModuleValidatorShared& m,
 
   auto baseName = base->as<NameNode>().name();
   if (baseName == m.globalArgumentName()) {
-    if (field == m.cx()->names().NaN) {
+    if (field == m.cx()->parserNames().NaN) {
       return m.addGlobalConstant(varName, GenericNaN(), field);
     }
-    if (field == m.cx()->names().Infinity) {
+    if (field == m.cx()->parserNames().Infinity) {
       return m.addGlobalConstant(varName, PositiveInfinity<double>(), field);
     }
 
@@ -3024,7 +3027,7 @@ static bool CheckModuleGlobal(ModuleValidatorShared& m, ParseNode* decl,
     return m.fail(var, "import variable is not a plain name");
   }
 
-  PropertyName* varName = var->as<NameNode>().name();
+  const ParserName* varName = var->as<NameNode>().name();
   if (!CheckModuleLevelName(m, var, varName)) {
     return false;
   }
@@ -3101,7 +3104,7 @@ static bool CheckModuleGlobals(ModuleValidator<Unit>& m) {
   return true;
 }
 
-static bool ArgFail(FunctionValidatorShared& f, PropertyName* argName,
+static bool ArgFail(FunctionValidatorShared& f, const ParserName* argName,
                     ParseNode* stmt) {
   return f.failName(stmt,
                     "expecting argument type declaration for '%s' of the "
@@ -3110,7 +3113,7 @@ static bool ArgFail(FunctionValidatorShared& f, PropertyName* argName,
 }
 
 static bool CheckArgumentType(FunctionValidatorShared& f, ParseNode* stmt,
-                              PropertyName* name, Type* type) {
+                              const ParserName* name, Type* type) {
   if (!stmt || !IsExpressionStatement(stmt)) {
     return ArgFail(f, name, stmt ? stmt : f.fn());
   }
@@ -3164,7 +3167,7 @@ static bool CheckArguments(FunctionValidatorShared& f, ParseNode** stmtIter,
 
   for (unsigned i = 0; i < numFormals;
        i++, argpn = NextNode(argpn), stmt = NextNode(stmt)) {
-    PropertyName* name;
+    const ParserName* name = nullptr;
     if (!CheckArgument(f.m(), argpn, &name)) {
       return false;
     }
@@ -3244,7 +3247,7 @@ static bool CheckVariable(FunctionValidatorShared& f, ParseNode* decl,
     return f.fail(var, "local variable is not a plain name");
   }
 
-  PropertyName* name = var->as<NameNode>().name();
+  const ParserName* name = var->as<NameNode>().name();
 
   if (!CheckIdentifier(f.m(), var, name)) {
     return false;
@@ -3327,7 +3330,7 @@ static bool CheckNumericLiteral(FunctionValidator<Unit>& f, ParseNode* num,
 
 static bool CheckVarRef(FunctionValidatorShared& f, ParseNode* varRef,
                         Type* type) {
-  PropertyName* name = varRef->as<NameNode>().name();
+  const ParserName* name = varRef->as<NameNode>().name();
 
   if (const FunctionValidatorShared::Local* local = f.lookupLocal(name)) {
     if (!f.encoder().writeOp(Op::GetLocal)) {
@@ -3643,7 +3646,7 @@ static bool CheckStoreArray(FunctionValidator<Unit>& f, ParseNode* lhs,
 template <typename Unit>
 static bool CheckAssignName(FunctionValidator<Unit>& f, ParseNode* lhs,
                             ParseNode* rhs, Type* type) {
-  RootedPropertyName name(f.cx(), lhs->as<NameNode>().name());
+  const ParserName* name = lhs->as<NameNode>().name();
 
   if (const FunctionValidatorShared::Local* lhsVar = f.lookupLocal(name)) {
     Type rhsType;
@@ -3925,7 +3928,7 @@ static bool CheckSignatureAgainstExisting(ModuleValidatorShared& m,
 
 template <typename Unit>
 static bool CheckFunctionSignature(ModuleValidator<Unit>& m, ParseNode* usepn,
-                                   FuncType&& sig, PropertyName* name,
+                                   FuncType&& sig, const ParserName* name,
                                    ModuleValidatorShared::Func** func) {
   if (sig.args().length() > MaxParams) {
     return m.failf(usepn, "too many parameters");
@@ -3961,7 +3964,8 @@ static bool CheckIsArgType(FunctionValidatorShared& f, ParseNode* argNode,
 
 template <typename Unit>
 static bool CheckInternalCall(FunctionValidator<Unit>& f, ParseNode* callNode,
-                              PropertyName* calleeName, Type ret, Type* type) {
+                              const ParserName* calleeName, Type ret,
+                              Type* type) {
   MOZ_ASSERT(ret.isCanonical());
 
   ValTypeVector args;
@@ -3998,8 +4002,8 @@ static bool CheckInternalCall(FunctionValidator<Unit>& f, ParseNode* callNode,
 template <typename Unit>
 static bool CheckFuncPtrTableAgainstExisting(ModuleValidator<Unit>& m,
                                              ParseNode* usepn,
-                                             PropertyName* name, FuncType&& sig,
-                                             unsigned mask,
+                                             const ParserName* name,
+                                             FuncType&& sig, unsigned mask,
                                              uint32_t* tableIndex) {
   if (const ModuleValidatorShared::Global* existing = m.lookupGlobal(name)) {
     if (existing->which() != ModuleValidatorShared::Global::Table) {
@@ -4046,7 +4050,7 @@ static bool CheckFuncPtrCall(FunctionValidator<Unit>& f, ParseNode* callNode,
     return f.fail(tableNode, "expecting name of function-pointer array");
   }
 
-  PropertyName* name = tableNode->as<NameNode>().name();
+  const ParserName* name = tableNode->as<NameNode>().name();
   if (const ModuleValidatorShared::Global* existing = f.lookupGlobal(name)) {
     if (existing->which() != ModuleValidatorShared::Global::Table) {
       return f.failName(
@@ -4125,7 +4129,7 @@ static bool CheckFFICall(FunctionValidator<Unit>& f, ParseNode* callNode,
                          unsigned ffiIndex, Type ret, Type* type) {
   MOZ_ASSERT(ret.isCanonical());
 
-  PropertyName* calleeName = CallCallee(callNode)->as<NameNode>().name();
+  const ParserName* calleeName = CallCallee(callNode)->as<NameNode>().name();
 
   if (ret.isFloat()) {
     return f.fail(callNode, "FFI calls can't return float");
@@ -4492,7 +4496,7 @@ static bool CheckCoercedCall(FunctionValidator<Unit>& f, ParseNode* call,
     return f.fail(callee, "unexpected callee expression type");
   }
 
-  PropertyName* calleeName = callee->as<NameNode>().name();
+  const ParserName* calleeName = callee->as<NameNode>().name();
 
   if (const ModuleValidatorShared::Global* global =
           f.lookupGlobal(calleeName)) {
@@ -5920,7 +5924,7 @@ static bool CheckLexicalScope(FunctionValidator<Unit>& f, ParseNode* node) {
 
 static bool CheckBreakOrContinue(FunctionValidatorShared& f, bool isBreak,
                                  ParseNode* stmt) {
-  if (PropertyName* maybeLabel = LoopControlMaybeLabel(stmt)) {
+  if (const ParserName* maybeLabel = LoopControlMaybeLabel(stmt)) {
     return f.writeLabeledBreakOrContinue(maybeLabel, isBreak);
   }
   return f.writeUnlabeledBreakOrContinue(isBreak);
@@ -5989,7 +5993,7 @@ static bool ParseFunction(ModuleValidator<Unit>& m, FunctionNode** funNodeOut,
                    // m.fail.
   }
 
-  RootedPropertyName name(m.cx(), m.parser().bindingIdentifier(YieldIsName));
+  const ParserName* name = m.parser().bindingIdentifier(YieldIsName);
   if (!name) {
     return false;
   }
@@ -6005,7 +6009,8 @@ static bool ParseFunction(ModuleValidator<Unit>& m, FunctionNode** funNodeOut,
   FunctionFlags flags(FunctionFlags::INTERPRETED_NORMAL);
   FunctionBox* funbox = m.parser().newFunctionBox(
       funNode, name, flags, toStringStart, directives,
-      GeneratorKind::NotGenerator, FunctionAsyncKind::SyncFunction);
+      GeneratorKind::NotGenerator, FunctionAsyncKind::SyncFunction,
+      TopLevelFunction::No);
   if (!funbox) {
     return false;
   }
@@ -6176,7 +6181,7 @@ static bool CheckFuncPtrTable(ModuleValidator<Unit>& m, ParseNode* decl) {
           elem, "function-pointer table's elements must be names of functions");
     }
 
-    PropertyName* funcName = elem->as<NameNode>().name();
+    const ParserName* funcName = elem->as<NameNode>().name();
     const ModuleValidatorShared::Func* func = m.lookupFuncDef(funcName);
     if (!func) {
       return m.fail(
@@ -6244,13 +6249,14 @@ static bool CheckFuncPtrTables(ModuleValidator<Unit>& m) {
   return true;
 }
 
-static bool CheckModuleExportFunction(ModuleValidatorShared& m, ParseNode* pn,
-                                      PropertyName* maybeFieldName = nullptr) {
+static bool CheckModuleExportFunction(
+    ModuleValidatorShared& m, ParseNode* pn,
+    const ParserName* maybeFieldName = nullptr) {
   if (!pn->isKind(ParseNodeKind::Name)) {
     return m.fail(pn, "expected name of exported function");
   }
 
-  PropertyName* funcName = pn->as<NameNode>().name();
+  const ParserName* funcName = pn->as<NameNode>().name();
   const ModuleValidatorShared::Func* func = m.lookupFuncDef(funcName);
   if (!func) {
     return m.failName(pn, "function '%s' not found", funcName);
@@ -6270,7 +6276,7 @@ static bool CheckModuleExportObject(ModuleValidatorShared& m,
                     "object literal");
     }
 
-    PropertyName* fieldName = ObjectNormalFieldName(pn);
+    const ParserName* fieldName = ObjectNormalFieldName(pn);
 
     ParseNode* initNode = ObjectNormalFieldInitializer(pn);
     if (!initNode->isKind(ParseNodeKind::Name)) {
@@ -6342,13 +6348,14 @@ static bool CheckModuleEnd(ModuleValidator<Unit>& m) {
 }
 
 template <typename Unit>
-static SharedModule CheckModule(JSContext* cx, AsmJSParser<Unit>& parser,
-                                ParseNode* stmtList, unsigned* time) {
+static SharedModule CheckModule(JSContext* cx, CompilationInfo& compilationInfo,
+                                AsmJSParser<Unit>& parser, ParseNode* stmtList,
+                                unsigned* time) {
   int64_t before = PRMJ_Now();
 
   FunctionNode* moduleFunctionNode = parser.pc_->functionBox()->functionNode;
 
-  ModuleValidator<Unit> m(cx, parser, moduleFunctionNode);
+  ModuleValidator<Unit> m(cx, compilationInfo, parser, moduleFunctionNode);
   if (!m.init()) {
     return nullptr;
   }
@@ -6457,7 +6464,7 @@ static bool GetDataProperty(JSContext* cx, HandleValue objVal,
 static bool GetDataProperty(JSContext* cx, HandleValue objVal,
                             const ImmutablePropertyNamePtr& field,
                             MutableHandleValue v) {
-  // Help the conversion along for all the cx->names().* users.
+  // Help the conversion along for all the cx->parserNames().* users.
   HandlePropertyName fieldHandle = field;
   return GetDataProperty(cx, objVal, fieldHandle, v);
 }
@@ -6716,12 +6723,13 @@ static bool CheckBuffer(JSContext* cx, const AsmJSMetadata& metadata,
   }
 
   buffer.set(&AsAnyArrayBuffer(bufferVal));
-  uint32_t memoryLength = buffer->byteLength();
+  uint64_t memoryLength = uint64_t(buffer->byteLength());
 
   if (!IsValidAsmJSHeapLength(memoryLength)) {
     UniqueChars msg(JS_smprintf(
-        "ArrayBuffer byteLength 0x%x is not a valid heap length. The next "
-        "valid length is 0x%x",
+        "ArrayBuffer byteLength 0x%" PRIx64
+        " is not a valid heap length. The next "
+        "valid length is 0x%" PRIx64,
         memoryLength, RoundUpToNextValidAsmJSHeapLength(memoryLength)));
     if (!msg) {
       return false;
@@ -6734,10 +6742,11 @@ static bool CheckBuffer(JSContext* cx, const AsmJSMetadata& metadata,
   // byteLength has larger alignment.
   MOZ_ASSERT((metadata.minMemoryLength - 1) <= INT32_MAX);
   if (memoryLength < metadata.minMemoryLength) {
-    UniqueChars msg(JS_smprintf(
-        "ArrayBuffer byteLength of 0x%x is less than 0x%x (the size implied "
-        "by const heap accesses).",
-        memoryLength, metadata.minMemoryLength));
+    UniqueChars msg(JS_smprintf("ArrayBuffer byteLength of 0x%" PRIx64
+                                " is less than 0x%" PRIx64 " (the "
+                                "size implied "
+                                "by const heap accesses).",
+                                memoryLength, metadata.minMemoryLength));
     if (!msg) {
       return false;
     }
@@ -7032,8 +7041,9 @@ static bool EstablishPreconditions(JSContext* cx,
 }
 
 template <typename Unit>
-static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
-                           ParseNode* stmtList, bool* validated) {
+static bool DoCompileAsmJS(JSContext* cx, CompilationInfo& compilationInfo,
+                           AsmJSParser<Unit>& parser, ParseNode* stmtList,
+                           bool* validated) {
   *validated = false;
 
   // Various conditions disable asm.js optimizations.
@@ -7044,7 +7054,8 @@ static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
   // "Checking" parses, validates and compiles, producing a fully compiled
   // WasmModuleObject as result.
   unsigned time;
-  SharedModule module = CheckModule(cx, parser, stmtList, &time);
+  SharedModule module =
+      CheckModule(cx, compilationInfo, parser, stmtList, &time);
   if (!module) {
     return NoExceptionPending(cx);
   }
@@ -7064,14 +7075,16 @@ static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
   return NoExceptionPending(cx);
 }
 
-bool js::CompileAsmJS(JSContext* cx, AsmJSParser<char16_t>& parser,
-                      ParseNode* stmtList, bool* validated) {
-  return DoCompileAsmJS(cx, parser, stmtList, validated);
+bool js::CompileAsmJS(JSContext* cx, CompilationInfo& compilationInfo,
+                      AsmJSParser<char16_t>& parser, ParseNode* stmtList,
+                      bool* validated) {
+  return DoCompileAsmJS(cx, compilationInfo, parser, stmtList, validated);
 }
 
-bool js::CompileAsmJS(JSContext* cx, AsmJSParser<Utf8Unit>& parser,
-                      ParseNode* stmtList, bool* validated) {
-  return DoCompileAsmJS(cx, parser, stmtList, validated);
+bool js::CompileAsmJS(JSContext* cx, CompilationInfo& compilationInfo,
+                      AsmJSParser<Utf8Unit>& parser, ParseNode* stmtList,
+                      bool* validated) {
+  return DoCompileAsmJS(cx, compilationInfo, parser, stmtList, validated);
 }
 
 /*****************************************************************************/

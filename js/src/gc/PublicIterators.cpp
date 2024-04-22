@@ -19,12 +19,12 @@ using namespace js::gc;
 static void IterateRealmsArenasCellsUnbarriered(
     JSContext* cx, Zone* zone, void* data,
     JS::IterateRealmCallback realmCallback, IterateArenaCallback arenaCallback,
-    IterateCellCallback cellCallback) {
+    IterateCellCallback cellCallback, const JS::AutoRequireNoGC& nogc) {
   {
     Rooted<Realm*> realm(cx);
     for (RealmsInZoneIter r(zone); !r.done(); r.next()) {
       realm = r;
-      (*realmCallback)(cx, data, realm);
+      (*realmCallback)(cx, data, realm, nogc);
     }
   }
 
@@ -34,10 +34,11 @@ static void IterateRealmsArenasCellsUnbarriered(
 
     for (ArenaIter aiter(zone, thingKind); !aiter.done(); aiter.next()) {
       Arena* arena = aiter.get();
-      (*arenaCallback)(cx->runtime(), data, arena, traceKind, thingSize);
+      (*arenaCallback)(cx->runtime(), data, arena, traceKind, thingSize, nogc);
       for (ArenaCellIter iter(arena); !iter.done(); iter.next()) {
         (*cellCallback)(cx->runtime(), data,
-                        JS::GCCellPtr(iter.getCell(), traceKind), thingSize);
+                        JS::GCCellPtr(iter.getCell(), traceKind), thingSize,
+                        nogc);
       }
     }
   }
@@ -49,11 +50,12 @@ void js::IterateHeapUnbarriered(JSContext* cx, void* data,
                                 IterateArenaCallback arenaCallback,
                                 IterateCellCallback cellCallback) {
   AutoPrepareForTracing prep(cx);
+  JS::AutoSuppressGCAnalysis nogc(cx);
 
   for (ZonesIter zone(cx->runtime(), WithAtoms); !zone.done(); zone.next()) {
-    (*zoneCallback)(cx->runtime(), data, zone);
+    (*zoneCallback)(cx->runtime(), data, zone, nogc);
     IterateRealmsArenasCellsUnbarriered(cx, zone, data, realmCallback,
-                                        arenaCallback, cellCallback);
+                                        arenaCallback, cellCallback, nogc);
   }
 }
 
@@ -63,20 +65,22 @@ void js::IterateHeapUnbarrieredForZone(JSContext* cx, Zone* zone, void* data,
                                        IterateArenaCallback arenaCallback,
                                        IterateCellCallback cellCallback) {
   AutoPrepareForTracing prep(cx);
+  JS::AutoSuppressGCAnalysis nogc(cx);
 
-  (*zoneCallback)(cx->runtime(), data, zone);
+  (*zoneCallback)(cx->runtime(), data, zone, nogc);
   IterateRealmsArenasCellsUnbarriered(cx, zone, data, realmCallback,
-                                      arenaCallback, cellCallback);
+                                      arenaCallback, cellCallback, nogc);
 }
 
 void js::IterateChunks(JSContext* cx, void* data,
                        IterateChunkCallback chunkCallback) {
   AutoPrepareForTracing prep(cx);
   AutoLockGC lock(cx->runtime());
+  JS::AutoSuppressGCAnalysis nogc(cx);
 
   for (auto chunk = cx->runtime()->gc.allNonEmptyChunks(lock); !chunk.done();
        chunk.next()) {
-    chunkCallback(cx->runtime(), data, chunk);
+    chunkCallback(cx->runtime(), data, chunk, nogc);
   }
 }
 
@@ -174,15 +178,18 @@ void js::IterateLazyScripts(JSContext* cx, Realm* realm, void* data,
   IterateScriptsImpl</*HasBytecode = */ false>(cx, realm, data, scriptCallback);
 }
 
-void js::IterateGrayObjects(Zone* zone, GCThingCallback cellCallback,
+void js::IterateGrayObjects(Zone* zone, IterateGCThingCallback cellCallback,
                             void* data) {
   MOZ_ASSERT(!JS::RuntimeHeapIsBusy());
 
-  AutoPrepareForTracing prep(TlsContext.get());
+  JSContext* cx = TlsContext.get();
+  AutoPrepareForTracing prep(cx);
+  JS::AutoSuppressGCAnalysis nogc(cx);
+
   for (auto kind : ObjectAllocKinds()) {
     for (GrayObjectIter obj(zone, kind); !obj.done(); obj.next()) {
       if (obj->asTenured().isMarkedGray()) {
-        cellCallback(data, JS::GCCellPtr(obj.get()));
+        cellCallback(data, JS::GCCellPtr(obj.get()), nogc);
       }
     }
   }
@@ -217,11 +224,12 @@ JS_PUBLIC_API void JS_IterateCompartmentsInZone(
 JS_PUBLIC_API void JS::IterateRealms(JSContext* cx, void* data,
                                      JS::IterateRealmCallback realmCallback) {
   AutoTraceSession session(cx->runtime());
+  JS::AutoSuppressGCAnalysis nogc(cx);
 
   Rooted<Realm*> realm(cx);
   for (RealmsIter r(cx->runtime()); !r.done(); r.next()) {
     realm = r;
-    (*realmCallback)(cx, data, realm);
+    (*realmCallback)(cx, data, realm, nogc);
   }
 }
 
@@ -231,6 +239,7 @@ JS_PUBLIC_API void JS::IterateRealmsWithPrincipals(
   MOZ_ASSERT(principals);
 
   AutoTraceSession session(cx->runtime());
+  JS::AutoSuppressGCAnalysis nogc(cx);
 
   Rooted<Realm*> realm(cx);
   for (RealmsIter r(cx->runtime()); !r.done(); r.next()) {
@@ -238,7 +247,7 @@ JS_PUBLIC_API void JS::IterateRealmsWithPrincipals(
       continue;
     }
     realm = r;
-    (*realmCallback)(cx, data, realm);
+    (*realmCallback)(cx, data, realm, nogc);
   }
 }
 
@@ -246,10 +255,11 @@ JS_PUBLIC_API void JS::IterateRealmsInCompartment(
     JSContext* cx, JS::Compartment* compartment, void* data,
     JS::IterateRealmCallback realmCallback) {
   AutoTraceSession session(cx->runtime());
+  JS::AutoSuppressGCAnalysis nogc(cx);
 
   Rooted<Realm*> realm(cx);
   for (RealmsInCompartmentIter r(compartment); !r.done(); r.next()) {
     realm = r;
-    (*realmCallback)(cx, data, realm);
+    (*realmCallback)(cx, data, realm, nogc);
   }
 }

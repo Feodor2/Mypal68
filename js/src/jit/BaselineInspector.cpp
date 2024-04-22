@@ -236,16 +236,16 @@ bool BaselineInspector::dimorphicStub(jsbytecode* pc, ICStub** pfirst,
 static void SkipBinaryGuards(CacheIRReader& reader, bool* sawStringOperand) {
   while (true) {
     // Two skip opcodes
-    if (reader.matchOp(CacheOp::GuardToInt32) ||
-        reader.matchOp(CacheOp::GuardNonDoubleType) ||
+    if (reader.matchOp(CacheOp::GuardNonDoubleType) ||
         reader.matchOp(CacheOp::TruncateDoubleToUInt32) ||
-        reader.matchOp(CacheOp::GuardToBoolean)) {
+        reader.matchOp(CacheOp::GuardBooleanToInt32) ||
+        reader.matchOp(CacheOp::LoadInt32Constant)) {
       reader.skip();  // Skip over operandId
       reader.skip();  // Skip over result/type.
       continue;
     }
-    if (reader.matchOp(CacheOp::GuardAndGetNumberFromString) ||
-        reader.matchOp(CacheOp::GuardAndGetInt32FromString)) {
+    if (reader.matchOp(CacheOp::GuardStringToNumber) ||
+        reader.matchOp(CacheOp::GuardStringToInt32)) {
       if (sawStringOperand) {
         *sawStringOperand = true;
       }
@@ -255,10 +255,13 @@ static void SkipBinaryGuards(CacheIRReader& reader, bool* sawStringOperand) {
     }
 
     // One skip
-    if (reader.matchOp(CacheOp::GuardIsNumber) ||
+    if (reader.matchOp(CacheOp::GuardToInt32) ||
+        reader.matchOp(CacheOp::GuardIsNumber) ||
         reader.matchOp(CacheOp::GuardToString) ||
         reader.matchOp(CacheOp::GuardToObject) ||
-        reader.matchOp(CacheOp::GuardToBigInt)) {
+        reader.matchOp(CacheOp::GuardToBigInt) ||
+        reader.matchOp(CacheOp::GuardToBoolean) ||
+        reader.matchOp(CacheOp::GuardIsNullOrUndefined)) {
       reader.skip();  // Skip over operandId
       continue;
     }
@@ -392,6 +395,12 @@ static bool GuardType(CacheIRReader& reader,
     case CacheOp::GuardToBigInt:
       guardType[guardOperand] = MIRType::BigInt;
       break;
+    case CacheOp::GuardToBoolean:
+      guardType[guardOperand] = MIRType::Boolean;
+      break;
+    case CacheOp::GuardToInt32:
+      guardType[guardOperand] = MIRType::Int32;
+      break;
     case CacheOp::GuardIsNumber:
       guardType[guardOperand] = MIRType::Double;
       break;
@@ -399,12 +408,7 @@ static bool GuardType(CacheIRReader& reader,
       guardType[guardOperand] = MIRType::Undefined;
       break;
     // 1 skip
-    case CacheOp::GuardToInt32:
-      guardType[guardOperand] = MIRType::Int32;
-      // Skip over result
-      reader.skip();
-      break;
-    case CacheOp::GuardToBoolean:
+    case CacheOp::GuardBooleanToInt32:
       guardType[guardOperand] = MIRType::Boolean;
       // Skip over result
       reader.skip();
@@ -666,32 +670,14 @@ bool BaselineInspector::hasSeenDoubleResult(jsbytecode* pc) {
   return stub->toBinaryArith_Fallback()->sawDoubleResult();
 }
 
-static const CacheIRStubInfo* GetCacheIRStubInfo(ICStub* stub) {
-  const CacheIRStubInfo* stubInfo = nullptr;
-  switch (stub->kind()) {
-    case ICStub::Kind::CacheIR_Monitored:
-      stubInfo = stub->toCacheIR_Monitored()->stubInfo();
-      break;
-    case ICStub::Kind::CacheIR_Regular:
-      stubInfo = stub->toCacheIR_Regular()->stubInfo();
-      break;
-    case ICStub::Kind::CacheIR_Updated:
-      stubInfo = stub->toCacheIR_Updated()->stubInfo();
-      break;
-    default:
-      MOZ_CRASH("Only cache IR stubs supported");
-  }
-  return stubInfo;
-}
-
 static bool MaybeArgumentReader(ICStub* stub, CacheOp targetOp,
                                 mozilla::Maybe<CacheIRReader>& argReader) {
   MOZ_ASSERT(ICStub::IsCacheIRKind(stub->kind()));
 
-  CacheIRReader stubReader(GetCacheIRStubInfo(stub));
+  CacheIRReader stubReader(stub->cacheIRStubInfo());
   while (stubReader.more()) {
     CacheOp op = stubReader.readOp();
-    uint32_t argLength = CacheIROpArgLengths[size_t(op)];
+    uint32_t argLength = CacheIROpInfos[size_t(op)].argLength;
 
     if (op == targetOp) {
       MOZ_ASSERT(argReader.isNothing(),
@@ -709,7 +695,7 @@ static bool MaybeArgumentReader(ICStub* stub, CacheOp targetOp,
 template <typename Filter>
 JSObject* MaybeTemplateObject(ICStub* stub, MetaTwoByteKind kind,
                               Filter filter) {
-  const CacheIRStubInfo* stubInfo = GetCacheIRStubInfo(stub);
+  const CacheIRStubInfo* stubInfo = stub->cacheIRStubInfo();
   mozilla::Maybe<CacheIRReader> argReader;
   if (!MaybeArgumentReader(stub, CacheOp::MetaTwoByte, argReader) ||
       argReader->metaKind<MetaTwoByteKind>() != kind ||
@@ -779,7 +765,7 @@ JSFunction* BaselineInspector::getSingleCallee(jsbytecode* pc) {
   }
 
   if (ICStub::IsCacheIRKind(stub->kind())) {
-    const CacheIRStubInfo* stubInfo = GetCacheIRStubInfo(stub);
+    const CacheIRStubInfo* stubInfo = stub->cacheIRStubInfo();
     mozilla::Maybe<CacheIRReader> argReader;
     if (!MaybeArgumentReader(stub, CacheOp::MetaTwoByte, argReader) ||
         argReader->metaKind<MetaTwoByteKind>() !=
@@ -1614,7 +1600,7 @@ bool BaselineInspector::instanceOfData(jsbytecode* pc, Shape** shape,
     return false;
   }
 
-  if (!reader.matchOp(CacheOp::GuardFunctionPrototype, rhsId)) {
+  if (!reader.matchOp(CacheOp::GuardDynamicSlotIsSpecificObject, rhsId)) {
     return false;
   }
 

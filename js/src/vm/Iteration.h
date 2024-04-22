@@ -91,13 +91,19 @@ struct NativeIterator {
   static constexpr uint32_t FlagsMask = (1 << FlagsBits) - 1;
   static constexpr uint32_t PropCountLimit = 1 << (32 - FlagsBits);
 
+  // While in compartment->enumerators, these form a doubly linked list.
+  NativeIterator* next_ = nullptr;
+  NativeIterator* prev_ = nullptr;
+
   // Stores Flags bits in the lower bits and the initial property count above
   // them.
   uint32_t flagsAndCount_ = 0;
 
-  /* While in compartment->enumerators, these form a doubly linked list. */
-  NativeIterator* next_ = nullptr;
-  NativeIterator* prev_ = nullptr;
+#ifdef DEBUG
+  // If true, this iterator may contain indexed properties that came from
+  // objects on the prototype chain. This is used by certain debug assertions.
+  bool maybeHasIndexedPropertiesFromProto_ = false;
+#endif
 
   // END OF PROPERTIES
 
@@ -232,6 +238,15 @@ struct NativeIterator {
   bool isInitialized() const { return flags() & Flags::Initialized; }
 
   size_t allocationSize() const;
+
+#ifdef DEBUG
+  void setMaybeHasIndexedPropertiesFromProto() {
+    maybeHasIndexedPropertiesFromProto_ = true;
+  }
+  bool maybeHasIndexedPropertiesFromProto() const {
+    return maybeHasIndexedPropertiesFromProto_;
+  }
+#endif
 
  private:
   uint32_t flags() const { return flagsAndCount_ & FlagsMask; }
@@ -412,6 +427,12 @@ extern bool SuppressDeletedProperty(JSContext* cx, HandleObject obj, jsid id);
 extern bool SuppressDeletedElement(JSContext* cx, HandleObject obj,
                                    uint32_t index);
 
+#ifdef DEBUG
+extern void AssertDenseElementsNotIterated(NativeObject* obj);
+#else
+inline void AssertDenseElementsNotIterated(NativeObject* obj) {}
+#endif
+
 /*
  * IteratorMore() returns the next iteration value. If no value is available,
  * MagicValue(JS_NO_ITER_VALUE) is returned.
@@ -457,6 +478,29 @@ class WrapForValidIteratorObject : public NativeObject {
 };
 
 WrapForValidIteratorObject* NewWrapForValidIterator(JSContext* cx);
+
+/*
+ * Generator-esque object returned by Iterator Helper methods.
+ */
+class IteratorHelperObject : public NativeObject {
+ public:
+  static const JSClass class_;
+
+  enum {
+    // The implementation (an instance of one of the generators in
+    // builtin/Iterator.js).
+    // Never null.
+    GeneratorSlot,
+
+    SlotCount,
+  };
+
+  static_assert(GeneratorSlot == ITERATOR_HELPER_GENERATOR_SLOT,
+                "GeneratorSlot must match self-hosting define for generator "
+                "object slot.");
+};
+
+IteratorHelperObject* NewIteratorHelper(JSContext* cx);
 
 } /* namespace js */
 

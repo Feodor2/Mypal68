@@ -7,8 +7,9 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include "gc/ParallelWork.h"
-#include "vm/HelperThreads.h"
+#include "vm/HelperThreadState.h"
 #include "vm/Runtime.h"
+#include "vm/TraceLogging.h"
 
 using namespace js;
 using namespace js::gc;
@@ -26,13 +27,11 @@ js::GCParallelTask::~GCParallelTask() {
 
 void js::GCParallelTask::startWithLockHeld(AutoLockHelperThreadState& lock) {
   MOZ_ASSERT(CanUseExtraThreads());
-  MOZ_ASSERT(HelperThreadState().threads);
+  MOZ_ASSERT(!HelperThreadState().threads(lock).empty());
   assertIdle();
 
-  HelperThreadState().gcParallelWorklist(lock).insertBack(this);
   setDispatched(lock);
-
-  HelperThreadState().notifyOne(GlobalHelperThreadState::PRODUCER, lock);
+  HelperThreadState().submitTask(this, lock);
 }
 
 void js::GCParallelTask::start() {
@@ -84,7 +83,7 @@ void js::GCParallelTask::joinWithLockHeld(AutoLockHelperThreadState& lock) {
 
 void js::GCParallelTask::joinRunningOrFinishedTask(
     AutoLockHelperThreadState& lock) {
-  MOZ_ASSERT(isRunning(lock) || isFinishing(lock) || isFinished(lock));
+  MOZ_ASSERT(isRunning(lock) || isFinished(lock));
 
   // Wait for the task to run to completion.
   while (!isFinished(lock)) {
@@ -115,25 +114,25 @@ static inline TimeDuration TimeSince(TimeStamp prev) {
 void js::GCParallelTask::runFromMainThread() {
   assertIdle();
   MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(gc->rt));
-  runTask();
+  AutoLockHelperThreadState lock;
+  runTask(lock);
 }
 
-void js::GCParallelTask::runFromHelperThread(AutoLockHelperThreadState& lock) {
+void js::GCParallelTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
+  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
+  AutoTraceLog logCompile(logger, TraceLogger_GC);
+
   setRunning(lock);
 
-  {
-    AutoUnlockHelperThreadState parallelSection(lock);
-    AutoSetHelperThreadContext usesContext;
-    AutoSetContextRuntime ascr(gc->rt);
-    gc::AutoSetThreadIsPerformingGC performingGC;
-    runTask();
-  }
+  AutoSetHelperThreadContext usesContext(lock);
+  AutoSetContextRuntime ascr(gc->rt);
+  gc::AutoSetThreadIsPerformingGC performingGC;
+  runTask(lock);
 
   setFinished(lock);
-  HelperThreadState().notifyAll(GlobalHelperThreadState::CONSUMER, lock);
 }
 
-void GCParallelTask::runTask() {
+void GCParallelTask::runTask(AutoLockHelperThreadState& lock) {
   // Run the task from either the main thread or a helper thread.
 
   // The hazard analysis can't tell what the call to func_ will do but it's not
@@ -141,7 +140,7 @@ void GCParallelTask::runTask() {
   JS::AutoSuppressGCAnalysis nogc;
 
   TimeStamp timeStart = ReallyNow();
-  run();
+  run(lock);
   duration_ = TimeSince(timeStart);
 }
 
@@ -156,11 +155,6 @@ bool js::GCParallelTask::wasStarted() const {
 }
 
 /* static */
-size_t js::gc::ParallelWorkerCount() {
-  if (!CanUseExtraThreads()) {
-    return 1;  // GCRuntime::startTask will run the work on the main thread.
-  }
-
-  size_t targetTaskCount = HelperThreadState().cpuCount / 2;
-  return mozilla::Clamp(targetTaskCount, size_t(1), MaxParallelWorkers);
+size_t js::gc::GCRuntime::parallelWorkerCount() const {
+  return std::min(helperThreadCount.ref(), MaxParallelWorkers);
 }

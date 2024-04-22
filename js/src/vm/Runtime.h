@@ -5,6 +5,7 @@
 #ifndef vm_Runtime_h
 #define vm_Runtime_h
 
+#include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DoublyLinkedList.h"
@@ -25,21 +26,23 @@
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/SharedIntlData.h"
 #endif
-#include "frontend/BinASTRuntimeSupport.h"
 #include "frontend/NameCollections.h"
 #include "gc/GCRuntime.h"
 #include "gc/Tracer.h"
 #include "js/AllocationRecording.h"
 #include "js/BuildId.h"  // JS::BuildIdOp
+#include "js/CompilationAndEvaluation.h"
 #include "js/Debug.h"
 #include "js/experimental/SourceHook.h"  // js::SourceHook
+#include "js/friend/StackLimits.h"       // js::ReportOverRecursed
+#include "js/friend/UsageStatistics.h"   // JSAccumulateTelemetryDataCallback
 #include "js/GCVector.h"
 #include "js/HashTable.h"
 #include "js/Modules.h"  // JS::Module{DynamicImport,Metadata,Resolve}Hook
 #ifdef DEBUG
 #  include "js/Proxy.h"  // For AutoEnterPolicy
 #endif
-#include "js/Stream.h"
+#include "js/Stream.h"  // JS::AbortSignalIsAborted
 #include "js/Symbol.h"
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
@@ -59,10 +62,11 @@
 #include "vm/SymbolType.h"
 #include "wasm/WasmTypes.h"
 
+struct JSClass;
+
 namespace js {
 
 class AutoAssertNoContentJS;
-class AutoKeepAtoms;
 class EnterDebuggeeNoExecute;
 #ifdef JS_TRACE_LOGGING
 class TraceLoggerThread;
@@ -84,12 +88,10 @@ namespace js {
 extern MOZ_COLD void ReportOutOfMemory(JSContext* cx);
 
 /* Different signature because the return type has MOZ_MUST_USE_TYPE. */
-extern MOZ_COLD mozilla::GenericErrorResult<OOM&> ReportOutOfMemoryResult(
+extern MOZ_COLD mozilla::GenericErrorResult<OOM> ReportOutOfMemoryResult(
     JSContext* cx);
 
 extern MOZ_COLD void ReportAllocationOverflow(JSContext* maybecx);
-
-extern MOZ_COLD void ReportOverRecursed(JSContext* cx);
 
 class Activation;
 class ActivationIterator;
@@ -106,6 +108,10 @@ typedef vixl::Simulator Simulator;
 class Simulator;
 #endif
 }  // namespace jit
+
+namespace frontend {
+class WellKnownParserAtoms;
+}  // namespace frontend
 
 // [SMDOC] JS Engine Threading
 //
@@ -319,6 +325,8 @@ struct JSRuntime {
   /* Call this to accumulate telemetry data. */
   js::MainThreadData<JSAccumulateTelemetryDataCallback> telemetryCallback;
 
+  js::MainThreadData<JSGetElementCallback> getElementCallback;
+
  public:
   // Accumulates data for Firefox telemetry. |id| is the ID of a JS_TELEMETRY_*
   // histogram. |key| provides an additional key to identify the histogram.
@@ -328,7 +336,8 @@ struct JSRuntime {
   void setTelemetryCallback(JSRuntime* rt,
                             JSAccumulateTelemetryDataCallback callback);
 
- public:
+  void setElementCallback(JSRuntime* rt, JSGetElementCallback callback);
+
   js::UnprotectedData<js::OffThreadPromiseRuntimeState> offThreadPromiseState;
   js::UnprotectedData<JS::ConsumeStreamCallback> consumeStreamCallback;
   js::UnprotectedData<JS::ReportStreamErrorCallback> reportStreamErrorCallback;
@@ -410,6 +419,7 @@ struct JSRuntime {
 
   js::MainThreadData<const JSWrapObjectCallbacks*> wrapObjectCallbacks;
   js::MainThreadData<js::PreserveWrapperCallback> preserveWrapperCallback;
+  js::MainThreadData<js::HasReleasedWrapperCallback> hasReleasedWrapperCallback;
 
   js::MainThreadData<js::ScriptEnvironmentPreparer*> scriptEnvironmentPreparer;
 
@@ -421,6 +431,30 @@ struct JSRuntime {
  public:
   const JSClass* maybeWindowProxyClass() const { return windowProxyClass_; }
   void setWindowProxyClass(const JSClass* clasp) { windowProxyClass_ = clasp; }
+
+ private:
+  js::WriteOnceData<const JSClass*> abortSignalClass_;
+  js::WriteOnceData<JS::AbortSignalIsAborted> abortSignalIsAborted_;
+
+ public:
+  void initAbortSignalHandling(const JSClass* clasp,
+                               JS::AbortSignalIsAborted isAborted) {
+    MOZ_ASSERT(clasp != nullptr,
+               "doesn't make sense for an embedder to provide a null class "
+               "when specifying AbortSignal handling");
+    MOZ_ASSERT(isAborted != nullptr, "must pass a valid function pointer");
+
+    abortSignalClass_ = clasp;
+    abortSignalIsAborted_ = isAborted;
+  }
+
+  const JSClass* maybeAbortSignalClass() const { return abortSignalClass_; }
+
+  bool abortSignalIsAborted(JSObject* obj) {
+    MOZ_ASSERT(abortSignalIsAborted_ != nullptr,
+               "must call initAbortSignalHandling first");
+    return abortSignalIsAborted_(obj);
+  }
 
  private:
   // List of non-ephemeron weak containers to sweep during
@@ -443,20 +477,40 @@ struct JSRuntime {
     }
   };
 
-  using WatchersList =
+  template <typename T>
+  struct GarbageCollectionWatchersLinkAccess {
+    static mozilla::DoublyLinkedListElement<T>& Get(T* aThis) {
+      return aThis->onGarbageCollectionWatchersLink;
+    }
+  };
+
+  using OnNewGlobalWatchersList =
       mozilla::DoublyLinkedList<js::Debugger,
                                 GlobalObjectWatchersLinkAccess<js::Debugger>>;
+  using OnGarbageCollectionWatchersList = mozilla::DoublyLinkedList<
+      js::Debugger, GarbageCollectionWatchersLinkAccess<js::Debugger>>;
 
  private:
   /*
    * List of all enabled Debuggers that have onNewGlobalObject handler
    * methods established.
    */
-  js::MainThreadData<WatchersList> onNewGlobalObjectWatchers_;
+  js::MainThreadData<OnNewGlobalWatchersList> onNewGlobalObjectWatchers_;
+
+  /*
+   * List of all enabled Debuggers that have onGarbageCollection handler
+   * methods established.
+   */
+  js::MainThreadData<OnGarbageCollectionWatchersList>
+      onGarbageCollectionWatchers_;
 
  public:
-  WatchersList& onNewGlobalObjectWatchers() {
+  OnNewGlobalWatchersList& onNewGlobalObjectWatchers() {
     return onNewGlobalObjectWatchers_.ref();
+  }
+
+  OnGarbageCollectionWatchersList& onGarbageCollectionWatchers() {
+    return onGarbageCollectionWatchers_.ref();
   }
 
  private:
@@ -574,10 +628,8 @@ struct JSRuntime {
   static js::GlobalObject* createSelfHostingGlobal(JSContext* cx);
 
  public:
-  bool getUnclonedSelfHostedValue(JSContext* cx, js::HandlePropertyName name,
-                                  js::MutableHandleValue vp);
-  JSFunction* getUnclonedSelfHostedFunction(JSContext* cx,
-                                            js::HandlePropertyName name);
+  void getUnclonedSelfHostedValue(js::PropertyName* name, JS::Value* vp);
+  JSFunction* getUnclonedSelfHostedFunction(js::PropertyName* name);
 
   MOZ_MUST_USE bool createJitRuntime(JSContext* cx);
   js::jit::JitRuntime* jitRuntime() const { return jitRuntime_.ref(); }
@@ -610,10 +662,10 @@ struct JSRuntime {
   bool isSelfHostingGlobal(JSObject* global) {
     return global == selfHostingGlobal_;
   }
+  js::GeneratorKind getSelfHostedFunctionGeneratorKind(JSAtom* name);
   bool createLazySelfHostedFunctionClone(JSContext* cx,
                                          js::HandlePropertyName selfHostedName,
                                          js::HandleAtom name, unsigned nargs,
-                                         js::HandleObject proto,
                                          js::NewObjectKind newKind,
                                          js::MutableHandleFunction fun);
   bool cloneSelfHostedFunctionScript(JSContext* cx,
@@ -726,7 +778,9 @@ struct JSRuntime {
 
  public:
   bool initializeAtoms(JSContext* cx);
+  bool initializeParserAtoms(JSContext* cx);
   void finishAtoms();
+  void finishParserAtoms();
   bool atomsAreFinished() const {
     return !atoms_ && !permanentAtomsDuringInit_;
   }
@@ -767,6 +821,7 @@ struct JSRuntime {
 
   // Cached pointers to various permanent property names.
   js::WriteOnceData<JSAtomState*> commonNames;
+  js::WriteOnceData<js::frontend::WellKnownParserAtoms*> commonParserNames;
 
   // All permanent atoms in the runtime, other than those in staticStrings.
   // Access to this does not require a lock because it is frozen and thus
@@ -1007,14 +1062,6 @@ struct JSRuntime {
   }
 
  public:
-#if defined(JS_BUILD_BINAST)
-  js::BinaryASTSupport& binast() { return binast_; }
-
- private:
-  js::BinaryASTSupport binast_;
-#endif  // defined(JS_BUILD_BINAST)
-
- public:
 #if defined(NIGHTLY_BUILD)
   // Support for informing the embedding of any error thrown.
   // This mechanism is designed to let the embedding
@@ -1100,7 +1147,8 @@ extern JS::FilenameValidationCallback gFilenameValidationCallback;
 
 // This callback is set by js::SetHelperThreadTaskCallback and may be null.
 // See comment in jsapi.h.
-extern void (*HelperThreadTaskCallback)(js::UniquePtr<js::RunnableTask>);
+// Returns false if the thread pool fails to dispatch.
+extern bool (*HelperThreadTaskCallback)(js::UniquePtr<js::RunnableTask>);
 
 } /* namespace js */
 

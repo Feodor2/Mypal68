@@ -25,6 +25,7 @@
 
 #include "util/Memory.h"
 #include "util/Text.h"
+#include "vm/HelperThreadState.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
 #include "wasm/WasmCraneliftCompile.h"
@@ -72,7 +73,6 @@ ModuleGenerator::ModuleGenerator(const CompileArgs& args,
       env_(env),
       linkData_(nullptr),
       metadataTier_(nullptr),
-      taskState_(mutexid::WasmCompileTaskState),
       lifo_(GENERATOR_LIFO_DEFAULT_CHUNK_SIZE),
       masmAlloc_(&lifo_),
       masm_(masmAlloc_, /* limitedSize= */ false),
@@ -93,37 +93,28 @@ ModuleGenerator::~ModuleGenerator() {
 
   if (parallel_) {
     if (outstanding_) {
+      AutoLockHelperThreadState lock;
+
       // Remove any pending compilation tasks from the worklist.
-      {
-        AutoLockHelperThreadState lock;
-        CompileTaskPtrFifo& worklist =
-            HelperThreadState().wasmWorklist(lock, mode());
-        auto pred = [this](CompileTask* task) {
-          return &task->state == &taskState_;
-        };
-        size_t removed = worklist.eraseIf(pred);
-        MOZ_ASSERT(outstanding_ >= removed);
-        outstanding_ -= removed;
-      }
+      size_t removed = RemovePendingWasmCompileTasks(taskState_, mode(), lock);
+      MOZ_ASSERT(outstanding_ >= removed);
+      outstanding_ -= removed;
 
       // Wait until all active compilation tasks have finished.
-      {
-        auto taskState = taskState_.lock();
-        while (true) {
-          MOZ_ASSERT(outstanding_ >= taskState->finished.length());
-          outstanding_ -= taskState->finished.length();
-          taskState->finished.clear();
+      while (true) {
+        MOZ_ASSERT(outstanding_ >= taskState_.finished().length());
+        outstanding_ -= taskState_.finished().length();
+        taskState_.finished().clear();
 
-          MOZ_ASSERT(outstanding_ >= taskState->numFailed);
-          outstanding_ -= taskState->numFailed;
-          taskState->numFailed = 0;
+        MOZ_ASSERT(outstanding_ >= taskState_.numFailed());
+        outstanding_ -= taskState_.numFailed();
+        taskState_.numFailed() = 0;
 
-          if (!outstanding_) {
-            break;
-          }
-
-          taskState.wait(/* failed or finished */);
+        if (!outstanding_) {
+          break;
         }
+
+        taskState_.condVar().wait(lock); /* failed or finished */
       }
     }
   } else {
@@ -132,7 +123,8 @@ ModuleGenerator::~ModuleGenerator() {
 
   // Propagate error state.
   if (error_ && !*error_) {
-    *error_ = std::move(taskState_.lock()->errorMessage);
+    AutoLockHelperThreadState lock;
+    *error_ = std::move(taskState_.errorMessage());
   }
 }
 
@@ -507,7 +499,7 @@ bool ModuleGenerator::linkCallSites() {
       case CallSiteDesc::Func: {
         if (funcIsCompiled(target.funcIndex())) {
           uint32_t calleeOffset =
-              funcCodeRange(target.funcIndex()).funcNormalEntry();
+              funcCodeRange(target.funcIndex()).funcUncheckedCallEntry();
           if (InRange(callerOffset, calleeOffset)) {
             masm_.patchCall(callerOffset, calleeOffset);
             break;
@@ -548,8 +540,7 @@ bool ModuleGenerator::linkCallSites() {
           // reload the TLS register on this path.
           Offsets offsets;
           offsets.begin = masm_.currentOffset();
-          masm_.loadPtr(Address(FramePointer, offsetof(Frame, tls)),
-                        WasmTlsReg);
+          masm_.loadPtr(Address(FramePointer, Frame::tlsOffset()), WasmTlsReg);
           CodeOffset jumpOffset = masm_.farJumpWithPatch();
           offsets.end = masm_.currentOffset();
           if (masm_.oom()) {
@@ -756,23 +747,29 @@ static bool ExecuteCompileTask(CompileTask* task, UniqueChars* error) {
   return true;
 }
 
-void wasm::ExecuteCompileTaskFromHelperThread(CompileTask* task) {
+void CompileTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
   TraceLoggerThread* logger = TraceLoggerForCurrentThread();
   AutoTraceLog logCompile(logger, TraceLogger_WasmCompilation);
 
   UniqueChars error;
-  bool ok = ExecuteCompileTask(task, &error);
+  bool ok;
 
-  auto taskState = task->state.lock();
+  {
+    AutoUnlockHelperThreadState unlock(lock);
+    ok = ExecuteCompileTask(this, &error);
+  }
 
-  if (!ok || !taskState->finished.append(task)) {
-    taskState->numFailed++;
-    if (!taskState->errorMessage) {
-      taskState->errorMessage = std::move(error);
+  // Don't release the lock between updating our state and returning from this
+  // method.
+
+  if (!ok || !state.finished().append(this)) {
+    state.numFailed()++;
+    if (!state.errorMessage()) {
+      state.errorMessage() = std::move(error);
     }
   }
 
-  taskState.notify_one(/* failed or finished */);
+  state.condVar().notify_one(); /* failed or finished */
 }
 
 bool ModuleGenerator::locallyCompileCurrentTask() {
@@ -828,21 +825,21 @@ bool ModuleGenerator::finishOutstandingTask() {
 
   CompileTask* task = nullptr;
   {
-    auto taskState = taskState_.lock();
+    AutoLockHelperThreadState lock;
     while (true) {
       MOZ_ASSERT(outstanding_ > 0);
 
-      if (taskState->numFailed > 0) {
+      if (taskState_.numFailed() > 0) {
         return false;
       }
 
-      if (!taskState->finished.empty()) {
+      if (!taskState_.finished().empty()) {
         outstanding_--;
-        task = taskState->finished.popCopy();
+        task = taskState_.finished().popCopy();
         break;
       }
 
-      taskState.wait(/* failed or finished */);
+      taskState_.condVar().wait(lock); /* failed or finished */
     }
   }
 
@@ -933,7 +930,7 @@ bool ModuleGenerator::finishCodegen() {
 
   for (CallFarJump far : callFarJumps_) {
     masm_.patchFarJump(far.jump,
-                       funcCodeRange(far.funcIndex).funcNormalEntry());
+                       funcCodeRange(far.funcIndex).funcUncheckedCallEntry());
   }
 
   for (CodeOffset farJump : debugTrapFarJumps_) {
@@ -1089,7 +1086,6 @@ SharedMetadata ModuleGenerator::finishMetadata(const Bytes& bytecode) {
   metadata_->moduleName = env_->moduleName;
   metadata_->funcNames = std::move(env_->funcNames);
   metadata_->omitsBoundsChecks = env_->hugeMemoryEnabled();
-  metadata_->bigIntEnabled = env_->bigIntEnabled();
 
   // Copy over additional debug information.
 
@@ -1276,8 +1272,6 @@ bool ModuleGenerator::finishTier2(const Module& module) {
 
   return module.finishTier2(*linkData_, std::move(codeTier));
 }
-
-void CompileTask::runTask() { ExecuteCompileTaskFromHelperThread(this); }
 
 size_t CompiledCode::sizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) const {

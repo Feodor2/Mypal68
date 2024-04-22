@@ -6,7 +6,6 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Unused.h"
@@ -36,7 +35,6 @@
 
 using namespace js;
 
-using mozilla::AssertedCast;
 using mozilla::CheckedInt;
 
 using js::intl::CallICU;
@@ -56,7 +54,7 @@ const JSClassOps ListFormatObject::classOps_ = {
     nullptr,                     // trace
 };
 const JSClass ListFormatObject::class_ = {
-    js_Object_str,
+    "Intl.ListFormat",
     JSCLASS_HAS_RESERVED_SLOTS(ListFormatObject::SLOT_COUNT) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_ListFormat) |
         JSCLASS_FOREGROUND_FINALIZE,
@@ -331,19 +329,6 @@ static bool FormatList(JSContext* cx, UListFormatter* lf,
   return true;
 }
 
-static JSString* FormattedValueToString(JSContext* cx,
-                                        const UFormattedValue* formattedValue) {
-  UErrorCode status = U_ZERO_ERROR;
-  int32_t strLength;
-  const char16_t* str = ufmtval_getString(formattedValue, &strLength, &status);
-  if (U_FAILURE(status)) {
-    intl::ReportInternalError(cx);
-    return nullptr;
-  }
-
-  return NewStringCopyN<CanGC>(cx, str, AssertedCast<uint32_t>(strLength));
-}
-
 /**
  * FormatListToParts ( listFormat, list )
  */
@@ -377,7 +362,8 @@ static bool FormatListToParts(JSContext* cx, UListFormatter* lf,
     return false;
   }
 
-  RootedString overallResult(cx, FormattedValueToString(cx, formattedValue));
+  RootedString overallResult(cx,
+                             intl::FormattedValueToString(cx, formattedValue));
   if (!overallResult) {
     return false;
   }

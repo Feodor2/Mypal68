@@ -12,13 +12,13 @@
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineJIT.h"
 #include "jit/FixedList.h"
-#include "jit/MacroAssembler.h"
 #include "jit/SharedICRegisters.h"
 
 namespace js {
 namespace jit {
 
 struct BytecodeInfo;
+class MacroAssembler;
 
 // [SMDOC] Baseline FrameInfo overview.
 //
@@ -193,6 +193,9 @@ class FrameInfo {
   Address addressOfEnvironmentChain() const {
     return Address(BaselineFrameReg,
                    BaselineFrame::reverseOffsetOfEnvironmentChain());
+  }
+  Address addressOfICScript() const {
+    return Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfICScript());
   }
   Address addressOfFlags() const {
     return Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfFlags());

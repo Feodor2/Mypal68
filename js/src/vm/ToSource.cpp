@@ -10,14 +10,16 @@
 
 #include <stdint.h>  // uint32_t
 
-#include "jsfriendapi.h"  // CheckRecursionLimit, GetBuiltinClass
+#include "jsfriendapi.h"  // CheckRecursionLimit
 
-#include "builtin/Array.h"    // ArrayToSource
-#include "builtin/Boolean.h"  // BooleanToString
-#include "builtin/Object.h"   // ObjectToSource
-#include "gc/Allocator.h"     // CanGC
-#include "js/Class.h"         // ESClass
-#include "js/Symbol.h"        // SymbolCode, JS::WellKnownSymbolLimit
+#include "builtin/Array.h"          // ArrayToSource
+#include "builtin/Boolean.h"        // BooleanToString
+#include "builtin/Object.h"         // ObjectToSource
+#include "gc/Allocator.h"           // CanGC
+#include "js/Class.h"               // ESClass
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/Object.h"              // JS::GetBuiltinClass
+#include "js/Symbol.h"              // SymbolCode, JS::WellKnownSymbolLimit
 #include "js/TypeDecls.h"  // Rooted{Function, Object, String, Value}, HandleValue, Latin1Char
 #include "js/Utility.h"         // UniqueChars
 #include "js/Value.h"           // JS::Value
@@ -40,6 +42,8 @@
 using namespace js;
 
 using mozilla::IsNegativeZero;
+
+using JS::GetBuiltinClass;
 
 /*
  * Convert a JSString to its source expression; returns null after reporting an

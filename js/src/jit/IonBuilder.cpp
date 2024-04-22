@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "builtin/Eval.h"
+#include "builtin/ModuleObject.h"
 #include "builtin/TypedObject.h"
 #include "frontend/SourceNotes.h"
 #include "jit/BaselineFrame.h"
@@ -20,12 +21,15 @@
 #include "jit/JitSpewer.h"
 #include "jit/Lowering.h"
 #include "jit/MIRGraph.h"
+#include "js/experimental/JitInfo.h"  // JSJitInfo
+#include "js/Object.h"                // JS::GetReservedSlot
+#include "js/ScalarType.h"            // js::Scalar::Type
 #include "util/CheckedArithmetic.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/BuiltinObjectKind.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"
-#include "vm/EnvironmentObject.h"
 #include "vm/Instrumentation.h"
 #include "vm/Opcodes.h"
 #include "vm/PlainObject.h"  // js::PlainObject
@@ -1263,7 +1267,7 @@ AbortReasonOr<Ok> IonBuilder::initEnvironmentChain(MDefinition* callee) {
 
   // Update the environment slot from UndefinedValue only after initial
   // environment is created so that bailout doesn't see a partial env.
-  // See: |InitFromBailout|
+  // See: |BaselineStackBuilder::buildBaselineFrame|
   current->setEnvironmentChain(env);
   return Ok();
 }
@@ -1407,25 +1411,7 @@ AbortReasonOr<Ok> IonBuilder::maybeAddOsrTypeBarriers() {
   // the types in the preheader.
 
   MBasicBlock* osrBlock = graph().osrBlock();
-  if (!osrBlock) {
-    // Because IonBuilder does not compile catch blocks, it's possible to
-    // end up without an OSR block if the OSR pc is only reachable via a
-    // break-statement inside the catch block. For instance:
-    //
-    //   for (;;) {
-    //       try {
-    //           throw 3;
-    //       } catch(e) {
-    //           break;
-    //       }
-    //   }
-    //   while (..) { } // <= OSR here, only reachable via catch block.
-    //
-    // For now we just abort in this case.
-    MOZ_ASSERT(graph().hasTryBlock());
-    return abort(AbortReason::Disable,
-                 "OSR block only reachable through catch block");
-  }
+  MOZ_ASSERT(osrBlock);
 
   MBasicBlock* preheader = osrBlock->getSuccessor(0);
   MBasicBlock* header = preheader->getSuccessor(0);
@@ -2027,6 +2013,7 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op, bool* restarted) {
 
     case JSOp::InitElem:
     case JSOp::InitHiddenElem:
+    case JSOp::InitLockedElem:
       return jsop_initelem();
 
     case JSOp::InitElemInc:
@@ -2291,7 +2278,7 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op, bool* restarted) {
       return jsop_setfunname(GET_UINT8(pc));
 
     case JSOp::PushLexicalEnv:
-      return jsop_pushlexicalenv(GET_UINT32_INDEX(pc));
+      return jsop_pushlexicalenv(GET_GCTHING_INDEX(pc));
 
     case JSOp::PopLexicalEnv:
       current->setEnvironmentChain(walkEnvironmentChain(1));
@@ -2320,6 +2307,9 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op, bool* restarted) {
 
     case JSOp::HasOwn:
       return jsop_hasown();
+
+    case JSOp::CheckPrivateField:
+      return jsop_checkprivatefield();
 
     case JSOp::SetRval:
       MOZ_ASSERT(!script()->noScriptRval());
@@ -2398,8 +2388,8 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op, bool* restarted) {
     case JSOp::ObjWithProto:
       return jsop_objwithproto();
 
-    case JSOp::FunctionProto:
-      return jsop_functionproto();
+    case JSOp::BuiltinObject:
+      return jsop_builtinobject();
 
     case JSOp::CheckReturn:
       return jsop_checkreturn();
@@ -2560,6 +2550,8 @@ AbortReasonOr<Ok> IonBuilder::replaceTypeSet(MDefinition* subject,
     return Ok();
   }
 
+  MOZ_ASSERT(!type->hasType(TypeSet::MagicArgType()));
+
   // Don't emit MFilterTypeSet if it doesn't improve the typeset.
   if (subject->resultTypeSet()) {
     if (subject->resultTypeSet()->equals(type)) {
@@ -2683,7 +2675,7 @@ AbortReasonOr<Ok> IonBuilder::improveTypesAtTypeOfCompare(MCompare* ins,
                 alloc_->lifoAlloc());
   }
 
-  if (inputTypes->unknown()) {
+  if (inputTypes->unknown() || inputTypes->hasType(TypeSet::MagicArgType())) {
     return Ok();
   }
 
@@ -2774,7 +2766,7 @@ AbortReasonOr<Ok> IonBuilder::improveTypesAtNullOrUndefinedCompare(
                 alloc_->lifoAlloc());
   }
 
-  if (inputTypes->unknown()) {
+  if (inputTypes->unknown() || inputTypes->hasType(TypeSet::MagicArgType())) {
     return Ok();
   }
 
@@ -2857,7 +2849,7 @@ AbortReasonOr<Ok> IonBuilder::improveTypesAtTest(MDefinition* ins,
                     alloc_->lifoAlloc());
       }
 
-      if (oldType->unknown()) {
+      if (oldType->unknown() || oldType->hasType(TypeSet::MagicArgType())) {
         return Ok();
       }
 
@@ -2891,7 +2883,7 @@ AbortReasonOr<Ok> IonBuilder::improveTypesAtTest(MDefinition* ins,
       }
 
       // If ins does not have a typeset we return as we cannot optimize.
-      if (oldType->unknown()) {
+      if (oldType->unknown() || oldType->hasType(TypeSet::MagicArgType())) {
         return Ok();
       }
 
@@ -2940,7 +2932,7 @@ AbortReasonOr<Ok> IonBuilder::improveTypesAtTest(MDefinition* ins,
   }
 
   // If ins does not have a typeset we return as we cannot optimize.
-  if (oldType->unknown()) {
+  if (oldType->unknown() || oldType->hasType(TypeSet::MagicArgType())) {
     return Ok();
   }
 
@@ -3043,7 +3035,7 @@ AbortReasonOr<Ok> IonBuilder::visitTest(JSOp op, bool* restarted) {
   current->end(mir);
 
   if (TestTrueTargetIsJoinPoint(op)) {
-    mozilla::Swap(target1, target2);
+    std::swap(target1, target2);
   }
 
   MOZ_TRY(addPendingEdge(PendingEdge::NewTestTrue(current, op), target1));
@@ -3092,39 +3084,12 @@ AbortReasonOr<Ok> IonBuilder::visitTry() {
     return abort(AbortReason::Disable, "Try-catch during analysis");
   }
 
-  // Get the pc of the last instruction in the try block. It's a JSOp::Goto to
-  // jump over the catch block.
-  jsbytecode* endpc = pc + GET_CODE_OFFSET(pc);
-  MOZ_ASSERT(JSOp(*endpc) == JSOp::Goto);
-  MOZ_ASSERT(GET_JUMP_OFFSET(endpc) > 0);
-
-  jsbytecode* afterTry = endpc + GET_JUMP_OFFSET(endpc);
-
-  // The baseline compiler should not attempt to enter the catch block
-  // via OSR.
-  MOZ_ASSERT(info().osrPc() < endpc || info().osrPc() >= afterTry);
-
-  // If controlflow in the try body is terminated (by a return or throw
-  // statement), the code after the try-statement may still be reachable
-  // via the catch block (which we don't compile) and OSR can enter it.
-  // For example:
-  //
-  //     try {
-  //         throw 3;
-  //     } catch(e) { }
-  //
-  //     for (var i=0; i<1000; i++) {}
-  //
-  // To handle this, we create two blocks: one for the try block and one
-  // for the code following the try-catch statement.
-
   graph().setHasTryBlock();
 
   MBasicBlock* tryBlock;
   MOZ_TRY_VAR(tryBlock, newBlock(current, GetNextPc(pc)));
 
-  current->end(MGotoWithFake::New(alloc(), tryBlock, nullptr));
-  MOZ_TRY(addPendingEdge(PendingEdge::NewGotoWithFake(current), afterTry));
+  current->end(MGoto::New(alloc(), tryBlock));
 
   return startTraversingBlock(tryBlock);
 }
@@ -3260,11 +3225,6 @@ AbortReasonOr<Ok> IonBuilder::visitJumpTarget(JSOp op) {
       case PendingEdge::Kind::Goto:
         MOZ_TRY(addEdge(source, 0));
         lastIns->toGoto()->initSuccessor(0, joinBlock);
-        continue;
-
-      case PendingEdge::Kind::GotoWithFake:
-        MOZ_TRY(addEdge(source, 0));
-        lastIns->toGotoWithFake()->initSuccessor(1, joinBlock);
         continue;
     }
     MOZ_CRASH("Invalid kind");
@@ -3977,19 +3937,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_tostring() {
   return Ok();
 }
 
-class AutoAccumulateReturns {
-  MIRGraph& graph_;
-  MIRGraphReturns* prev_;
-
- public:
-  AutoAccumulateReturns(MIRGraph& graph, MIRGraphReturns& returns)
-      : graph_(graph) {
-    prev_ = graph_.returnAccumulator();
-    graph_.setReturnAccumulator(&returns);
-  }
-  ~AutoAccumulateReturns() { graph_.setReturnAccumulator(prev_); }
-};
-
 IonBuilder::InliningResult IonBuilder::inlineScriptedCall(CallInfo& callInfo,
                                                           JSFunction* target) {
   MOZ_ASSERT(target->hasBytecode());
@@ -4011,7 +3958,9 @@ IonBuilder::InliningResult IonBuilder::inlineScriptedCall(CallInfo& callInfo,
   }
 
   // Capture formals in the outer resume point.
-  MOZ_TRY(callInfo.pushCallStack(&mirGen_, current));
+  if (!callInfo.pushCallStack(&mirGen_, current)) {
+    return abort(AbortReason::Alloc);
+  }
 
   MResumePoint* outerResumePoint =
       MResumePoint::New(alloc(), current, pc, MResumePoint::Outer);
@@ -4842,7 +4791,9 @@ AbortReasonOr<Ok> IonBuilder::inlineCalls(CallInfo& callInfo,
 
   MBasicBlock* dispatchBlock = current;
   callInfo.setImplicitlyUsedUnchecked();
-  MOZ_TRY(callInfo.pushCallStack(&mirGen_, dispatchBlock));
+  if (!callInfo.pushCallStack(&mirGen_, dispatchBlock)) {
+    return abort(AbortReason::Alloc);
+  }
 
   // Patch any InlinePropertyTable to only contain functions that are
   // inlineable. The InlinePropertyTable will also be patched at the end to
@@ -5489,7 +5440,9 @@ AbortReasonOr<Ok> IonBuilder::jsop_funcall(uint32_t argc) {
   // Save prior call stack in case we need to resolve during bailout
   // recovery of inner inlined function. This includes the JSFunction and the
   // 'call' native function.
-  MOZ_TRY(callInfo.savePriorCallStack(&mirGen_, current, argc + 2));
+  if (!callInfo.savePriorCallStack(&mirGen_, current, argc + 2)) {
+    return abort(AbortReason::Alloc);
+  }
 
   // Shimmy the slots down to remove the native 'call' function.
   current->shimmySlots(funcDepth - 1);
@@ -5735,8 +5688,6 @@ bool IonBuilder::ensureArrayIteratorPrototypeNextNotModified() {
 AbortReasonOr<Ok> IonBuilder::jsop_optimize_spreadcall() {
   MDefinition* arr = current->peek(-1);
 
-  // Assuming optimization isn't available doesn't affect correctness.
-  // TODO: Investigate dynamic checks.
   bool result = false;
   do {
     // Inline with MIsPackedArray if the conditions described in
@@ -5746,11 +5697,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_optimize_spreadcall() {
     // The argument is an array.
     TemporaryTypeSet* types = arr->resultTypeSet();
     if (!types || types->getKnownClass(constraints()) != &ArrayObject::class_) {
-      break;
-    }
-
-    // The array has no hole.
-    if (types->hasObjectFlags(constraints(), OBJECT_FLAG_NON_PACKED)) {
       break;
     }
 
@@ -5789,11 +5735,13 @@ AbortReasonOr<Ok> IonBuilder::jsop_optimize_spreadcall() {
     auto* ins = MIsPackedArray::New(alloc(), arr);
     current->add(ins);
     current->push(ins);
-  } else {
-    arr->setImplicitlyUsedUnchecked();
-    pushConstant(BooleanValue(false));
+    return Ok();
   }
-  return Ok();
+
+  auto* ins = MOptimizeSpreadCallCache::New(alloc(), arr);
+  current->add(ins);
+  current->push(ins);
+  return resumeAfter(ins);
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_funapplyarray(uint32_t argc) {
@@ -5840,18 +5788,17 @@ AbortReasonOr<Ok> IonBuilder::jsop_funapplyarray(uint32_t argc) {
   return pushTypeBarrier(apply, types, BarrierKind::TypeSet);
 }
 
-AbortReasonOr<Ok> CallInfo::savePriorCallStack(MIRGenerator* mir,
-                                               MBasicBlock* current,
-                                               size_t peekDepth) {
+bool CallInfo::savePriorCallStack(MIRGenerator* mir, MBasicBlock* current,
+                                  size_t peekDepth) {
   MOZ_ASSERT(priorArgs_.empty());
   if (!priorArgs_.reserve(peekDepth)) {
-    return mir->abort(AbortReason::Alloc);
+    return false;
   }
   while (peekDepth) {
     priorArgs_.infallibleAppend(current->peek(0 - int32_t(peekDepth)));
     peekDepth--;
   }
-  return Ok();
+  return true;
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_funapplyarguments(uint32_t argc) {
@@ -5917,7 +5864,9 @@ AbortReasonOr<Ok> IonBuilder::jsop_funapplyarguments(uint32_t argc) {
 
   CallInfo callInfo(alloc(), pc, /* constructing = */ false,
                     /* ignoresReturnValue = */ BytecodeIsPopped(pc));
-  MOZ_TRY(callInfo.savePriorCallStack(&mirGen_, current, 4));
+  if (!callInfo.savePriorCallStack(&mirGen_, current, 4)) {
+    return abort(AbortReason::Alloc);
+  }
 
   // Vp
   MDefinition* vp = current->pop();
@@ -6303,7 +6252,7 @@ AbortReasonOr<Ok> IonBuilder::makeCall(const Maybe<CallTargets>& targets,
 
   if (call->isCallDOMNative()) {
     return pushDOMTypeBarrier(call, types,
-                              call->getSingleTarget()->rawJSFunction());
+                              call->getSingleTarget()->rawNativeJSFunction());
   }
 
   return pushTypeBarrier(call, types, BarrierKind::TypeSet);
@@ -6425,10 +6374,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_compare(JSOp op, MDefinition* left,
   bool emitted = false;
 
   if (!forceInlineCaches()) {
-    MOZ_TRY(compareTryCharacter(&emitted, op, left, right));
-    if (emitted) {
-      return Ok();
-    }
     MOZ_TRY(compareTrySpecialized(&emitted, op, left, right));
     if (emitted) {
       return Ok();
@@ -6459,79 +6404,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_compare(JSOp op, MDefinition* left,
     MOZ_TRY(resumeAfter(ins));
   }
 
-  return Ok();
-}
-
-AbortReasonOr<Ok> IonBuilder::compareTryCharacter(bool* emitted, JSOp op,
-                                                  MDefinition* left,
-                                                  MDefinition* right) {
-  MOZ_ASSERT(*emitted == false);
-
-  // |str[i]| is compiled as |MFromCharCode(MCharCodeAt(str, i))|.
-  auto isCharAccess = [](MDefinition* ins) {
-    return ins->isFromCharCode() &&
-           ins->toFromCharCode()->input()->isCharCodeAt();
-  };
-
-  if (left->isConstant() || right->isConstant()) {
-    // Try to optimize |MConstant(string) <compare> (MFromCharCode MCharCodeAt)|
-    // as |MConstant(charcode) <compare> MCharCodeAt|.
-    MConstant* constant;
-    MDefinition* operand;
-    if (left->isConstant()) {
-      constant = left->toConstant();
-      operand = right;
-    } else {
-      constant = right->toConstant();
-      operand = left;
-    }
-
-    if (constant->type() != MIRType::String ||
-        constant->toString()->length() != 1 || !isCharAccess(operand)) {
-      return Ok();
-    }
-
-    char16_t charCode = constant->toString()->asAtom().latin1OrTwoByteChar(0);
-    constant->setImplicitlyUsedUnchecked();
-
-    MConstant* charCodeConst = MConstant::New(alloc(), Int32Value(charCode));
-    current->add(charCodeConst);
-
-    MDefinition* charCodeAt = operand->toFromCharCode()->input();
-    operand->setImplicitlyUsedUnchecked();
-
-    if (left == constant) {
-      left = charCodeConst;
-      right = charCodeAt;
-    } else {
-      left = charCodeAt;
-      right = charCodeConst;
-    }
-  } else if (isCharAccess(left) && isCharAccess(right)) {
-    // Try to optimize |(MFromCharCode MCharCodeAt) <compare> (MFromCharCode
-    // MCharCodeAt)| as |MCharCodeAt <compare> MCharCodeAt|.
-
-    MDefinition* leftCharCodeAt = left->toFromCharCode()->input();
-    left->setImplicitlyUsedUnchecked();
-
-    MDefinition* rightCharCodeAt = right->toFromCharCode()->input();
-    right->setImplicitlyUsedUnchecked();
-
-    left = leftCharCodeAt;
-    right = rightCharCodeAt;
-  } else {
-    return Ok();
-  }
-
-  MCompare* ins = MCompare::New(alloc(), left, right, op);
-  ins->setCompareType(MCompare::Compare_Int32);
-  ins->cacheOperandMightEmulateUndefined(constraints());
-
-  current->add(ins);
-  current->push(ins);
-
-  MOZ_ASSERT(!ins->isEffectful());
-  *emitted = true;
   return Ok();
 }
 
@@ -6915,7 +6787,8 @@ AbortReasonOr<Ok> IonBuilder::jsop_newobject() {
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_initelem() {
-  MOZ_ASSERT(JSOp(*pc) == JSOp::InitElem || JSOp(*pc) == JSOp::InitHiddenElem);
+  MOZ_ASSERT(JSOp(*pc) == JSOp::InitElem || JSOp(*pc) == JSOp::InitHiddenElem ||
+             JSOp(*pc) == JSOp::InitLockedElem);
 
   MDefinition* value = current->pop();
   MDefinition* id = current->pop();
@@ -7067,9 +6940,15 @@ AbortReasonOr<Ok> IonBuilder::initArrayElementFastPath(
   }
 
   // Store the value.
-  MStoreElement* store = MStoreElement::New(alloc(), elements, id, value,
-                                            /* needsHoleCheck = */ false);
-  current->add(store);
+  if (value->type() == MIRType::MagicHole) {
+    value->setImplicitlyUsedUnchecked();
+    auto* store = MStoreHoleValueElement::New(alloc(), elements, id);
+    current->add(store);
+  } else {
+    auto* store = MStoreElement::New(alloc(), elements, id, value,
+                                     /* needsHoleCheck = */ false);
+    current->add(store);
+  }
 
   if (addResumePointAndIncrementInitializedLength) {
     // Update the initialized length. (The template object for this
@@ -9801,7 +9680,7 @@ AbortReasonOr<Ok> IonBuilder::jsop_checkobjcoercible() {
   MCheckObjCoercible* check = MCheckObjCoercible::New(alloc(), current->pop());
   current->add(check);
   current->push(check);
-  return Ok();
+  return resumeAfter(check);
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_checkclassheritage() {
@@ -10897,7 +10776,7 @@ AbortReasonOr<Ok> IonBuilder::getPropTryCommonGetter(bool* emitted,
         if (singleton && jitinfo->aliasSet() == JSJitInfo::AliasNone) {
           size_t slot = jitinfo->slotIndex;
           *emitted = true;
-          pushConstant(GetReservedSlot(singleton, slot));
+          pushConstant(JS::GetReservedSlot(singleton, slot));
           return Ok();
         }
 
@@ -11767,15 +11646,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_regexp(RegExpObject* reobj) {
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_object(JSObject* obj) {
-  if (mirGen_.options.cloneSingletons()) {
-    MCloneLiteral* clone =
-        MCloneLiteral::New(alloc(), constant(ObjectValue(*obj)));
-    current->add(clone);
-    current->push(clone);
-    return resumeAfter(clone);
-  }
-
-  realm->setSingletonsAsValues();
   pushConstant(ObjectValue(*obj));
   return Ok();
 }
@@ -11866,7 +11736,7 @@ AbortReasonOr<Ok> IonBuilder::jsop_setfunname(uint8_t prefixKind) {
   return resumeAfter(ins);
 }
 
-AbortReasonOr<Ok> IonBuilder::jsop_pushlexicalenv(uint32_t index) {
+AbortReasonOr<Ok> IonBuilder::jsop_pushlexicalenv(GCThingIndex index) {
   MOZ_ASSERT(usesEnvironmentChain());
 
   LexicalScope* scope = &script()->getScope(index)->as<LexicalScope>();
@@ -12077,18 +11947,20 @@ AbortReasonOr<Ok> IonBuilder::jsop_functionthis() {
                  "JSOp::FunctionThis would need non-syntactic global");
   }
 
+  LexicalEnvironmentObject* globalLexical =
+      &script()->global().lexicalEnvironment();
+  JSObject* globalThis = globalLexical->thisObject();
+
   if (IsNullOrUndefined(def->type())) {
-    LexicalEnvironmentObject* globalLexical =
-        &script()->global().lexicalEnvironment();
-    pushConstant(ObjectValue(*globalLexical->thisObject()));
+    pushConstant(ObjectValue(*globalThis));
     return Ok();
   }
 
-  MBoxNonStrictThis* thisObj = MBoxNonStrictThis::New(alloc(), def);
+  MBoxNonStrictThis* thisObj = MBoxNonStrictThis::New(alloc(), def, globalThis);
   current->add(thisObj);
   current->push(thisObj);
 
-  return resumeAfter(thisObj);
+  return Ok();
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_globalthis() {
@@ -12107,7 +11979,7 @@ AbortReasonOr<Ok> IonBuilder::jsop_globalthis() {
 
 AbortReasonOr<Ok> IonBuilder::jsop_typeof() {
   MDefinition* input = current->pop();
-  MTypeOf* ins = MTypeOf::New(alloc(), input, input->type());
+  MTypeOf* ins = MTypeOf::New(alloc(), input);
 
   ins->cacheInputMaybeCallableOrEmulatesUndefined(constraints());
 
@@ -12438,6 +12310,18 @@ AbortReasonOr<Ok> IonBuilder::jsop_hasown() {
   return Ok();
 }
 
+AbortReasonOr<Ok> IonBuilder::jsop_checkprivatefield() {
+  MDefinition* id = current->peek(-1);
+  MDefinition* obj = current->peek(-2);
+
+  MCheckPrivateFieldCache* ins = MCheckPrivateFieldCache::New(alloc(), obj, id);
+  current->add(ins);
+  current->push(ins);
+
+  MOZ_TRY(resumeAfter(ins));
+  return Ok();
+}
+
 AbortReasonOr<bool> IonBuilder::hasOnProtoChain(TypeSet::ObjectKey* key,
                                                 JSObject* protoObject,
                                                 bool* onProto) {
@@ -12599,7 +12483,8 @@ AbortReasonOr<Ok> IonBuilder::jsop_instanceof() {
       return Ok();
     }
 
-    MInstanceOf* ins = MInstanceOf::New(alloc(), obj, protoObject);
+    MConstant* protoConst = constant(ObjectValue(*protoObject));
+    MInstanceOf* ins = MInstanceOf::New(alloc(), obj, protoConst);
 
     current->add(ins);
     current->push(ins);
@@ -12638,7 +12523,7 @@ AbortReasonOr<Ok> IonBuilder::jsop_instanceof() {
       return Ok();
     }
 
-    MInstanceOf* ins = MInstanceOf::New(alloc(), obj, protoObject);
+    MInstanceOf* ins = MInstanceOf::New(alloc(), obj, protoConst);
     current->add(ins);
     current->push(ins);
     return resumeAfter(ins);
@@ -12735,17 +12620,17 @@ AbortReasonOr<Ok> IonBuilder::jsop_objwithproto() {
   return resumeAfter(ins);
 }
 
-AbortReasonOr<Ok> IonBuilder::jsop_functionproto() {
-  JSProtoKey key = JSProto_Function;
+AbortReasonOr<Ok> IonBuilder::jsop_builtinobject() {
+  auto kind = BuiltinObjectKind(GET_UINT8(pc));
 
-  // Bake in the prototype if it exists.
-  if (JSObject* proto = script()->global().maybeGetPrototype(key)) {
-    pushConstant(ObjectValue(*proto));
+  // Bake in the built-in if it exists.
+  if (JSObject* builtin = MaybeGetBuiltinObject(&script()->global(), kind)) {
+    pushConstant(ObjectValue(*builtin));
     return Ok();
   }
 
   // Otherwise emit code to generate it.
-  auto* ins = MFunctionProto::New(alloc());
+  auto* ins = MBuiltinObject::New(alloc(), kind);
   current->add(ins);
   current->push(ins);
   return resumeAfter(ins);

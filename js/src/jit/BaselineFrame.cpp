@@ -108,18 +108,24 @@ bool BaselineFrame::pushVarEnvironment(JSContext* cx, HandleScope scope) {
 
 void BaselineFrame::setInterpreterFields(JSScript* script, jsbytecode* pc) {
   uint32_t pcOffset = script->pcToOffset(pc);
-  JitScript* jitScript = script->jitScript();
   interpreterScript_ = script;
   interpreterPC_ = pc;
-  interpreterICEntry_ = jitScript->interpreterICEntryFromPCOffset(pcOffset);
+  if (JitOptions.warpBuilder) {
+    MOZ_ASSERT(icScript_);
+    interpreterICEntry_ = icScript_->interpreterICEntryFromPCOffset(pcOffset);
+  } else {
+    JitScript* jitScript = script->jitScript();
+    interpreterICEntry_ = jitScript->interpreterICEntryFromPCOffset(pcOffset);
+  }
 }
 
 void BaselineFrame::setInterpreterFieldsForPrologue(JSScript* script) {
-  JitScript* jitScript = script->jitScript();
   interpreterScript_ = script;
   interpreterPC_ = script->code();
-  if (jitScript->numICEntries() > 0) {
-    interpreterICEntry_ = &jitScript->icEntry(0);
+  ICScript* icScript =
+      JitOptions.warpBuilder ? icScript_ : script->jitScript()->icScript();
+  if (icScript->numICEntries() > 0) {
+    interpreterICEntry_ = &icScript->icEntry(0);
   } else {
     // If the script does not have any ICEntries (possible for non-function
     // scripts) the interpreterICEntry_ field won't be used. Just set it to
@@ -144,6 +150,10 @@ bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
 
   if (fp->hasReturnValue()) {
     setReturnValue(fp->returnValue());
+  }
+
+  if (JitOptions.warpBuilder) {
+    icScript_ = fp->script()->jitScript()->icScript();
   }
 
   JSContext* cx =

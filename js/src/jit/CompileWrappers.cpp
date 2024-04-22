@@ -55,6 +55,10 @@ const WellKnownSymbols& CompileRuntime::wellKnownSymbols() {
   return *runtime()->wellKnownSymbols;
 }
 
+const JSClass* CompileRuntime::maybeWindowProxyClass() {
+  return runtime()->maybeWindowProxyClass();
+}
+
 const void* CompileRuntime::mainContextPtr() {
   return runtime()->mainContextFromAnyThread();
 }
@@ -201,24 +205,11 @@ bool CompileRealm::hasAllocationMetadataBuilder() {
   return realm()->hasAllocationMetadataBuilder();
 }
 
-// Note: This function is thread-safe because setSingletonAsValue sets a boolean
-// variable to false, and this boolean variable has no way to be resetted to
-// true. So even if there is a concurrent write, this concurrent write will
-// always have the same value.  If there is a concurrent read, then we will
-// clone a singleton instead of using the value which is baked in the JSScript,
-// and this would be an unfortunate allocation, but this will not change the
-// semantics of the JavaScript code which is executed.
-void CompileRealm::setSingletonsAsValues() {
-  realm()->behaviors().setSingletonsAsValues();
-}
-
 JitCompileOptions::JitCompileOptions()
-    : cloneSingletons_(false),
-      profilerSlowAssertionsEnabled_(false),
+    : profilerSlowAssertionsEnabled_(false),
       offThreadCompilationAvailable_(false) {}
 
 JitCompileOptions::JitCompileOptions(JSContext* cx) {
-  cloneSingletons_ = cx->realm()->creationOptions().cloneSingletons();
   profilerSlowAssertionsEnabled_ =
       cx->runtime()->geckoProfiler().enabled() &&
       cx->runtime()->geckoProfiler().slowAssertionsEnabled();

@@ -58,6 +58,7 @@ class BaselineFrame {
   ICEntry* interpreterICEntry_;
 
   JSObject* envChain_;        // Environment chain (always initialized).
+  ICScript* icScript_;        // IC script (initialized if Warp is enabled).
   ArgumentsObject* argsObj_;  // If HAS_ARGS_OBJ, the arguments object.
 
   // We need to split the Value into 2 fields of 32 bits, otherwise the C++
@@ -79,6 +80,10 @@ class BaselineFrame {
 #endif
   uint32_t loReturnValue_;  // If HAS_RVAL, the frame's return value.
   uint32_t hiReturnValue_;
+#if JS_BITS_PER_WORD == 32
+  // Ensure frame is 8-byte aligned, see static_assert below.
+  uint32_t padding_;
+#endif
 
  public:
   // Distance between the frame pointer and the frame header (return address).
@@ -94,7 +99,6 @@ class BaselineFrame {
 
   JSObject* environmentChain() const { return envChain_; }
   void setEnvironmentChain(JSObject* envChain) { envChain_ = envChain; }
-  inline JSObject** addressOfEnvironmentChain() { return &envChain_; }
 
   template <typename SpecificEnvironment>
   inline void pushOnEnvironmentChain(SpecificEnvironment& env);
@@ -216,7 +220,6 @@ class BaselineFrame {
     flags_ &= ~RUNNING_IN_INTERPRETER;
     interpreterScript_ = nullptr;
     interpreterPC_ = nullptr;
-    interpreterICEntry_ = nullptr;
   }
 
   void initInterpFieldsForGeneratorThrowOrReturn(JSScript* script,
@@ -282,6 +285,14 @@ class BaselineFrame {
   // Initialize interpreter fields for resuming in the prologue (before the
   // argument type check ICs).
   void setInterpreterFieldsForPrologue(JSScript* script);
+
+  ICScript* icScript() const;
+  void setICScript(ICScript* icScript) {
+    MOZ_ASSERT(JitOptions.warpBuilder);
+    icScript_ = icScript;
+  }
+
+  JSScript* invalidationScript() const;
 
   bool hasReturnValue() const { return flags_ & HAS_RVAL; }
   MutableHandleValue returnValue() {
@@ -412,6 +423,9 @@ class BaselineFrame {
   }
   static int reverseOffsetOfInterpreterICEntry() {
     return -int(Size()) + offsetof(BaselineFrame, interpreterICEntry_);
+  }
+  static int reverseOffsetOfICScript() {
+    return -int(Size()) + offsetof(BaselineFrame, icScript_);
   }
   static int reverseOffsetOfLocal(size_t index) {
     return -int(Size()) - (index + 1) * sizeof(Value);

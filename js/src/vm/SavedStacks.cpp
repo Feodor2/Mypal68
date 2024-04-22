@@ -7,10 +7,10 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Move.h"
 
 #include <algorithm>
 #include <math.h>
+#include <utility>
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -374,7 +374,7 @@ const ClassSpec SavedFrame::classSpec_ = {
     &SavedFrameClassOps, &SavedFrame::classSpec_};
 
 const JSClass SavedFrame::protoClass_ = {
-    js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame),
+    "SavedFrame.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame),
     JS_NULL_CLASS_OPS, &SavedFrame::classSpec_};
 
 /* static */ const JSFunctionSpec SavedFrame::staticFunctions[] = {JS_FS_END};
@@ -1874,7 +1874,7 @@ JSObject* SavedStacks::MetadataBuilder::build(
     // callback to get it out of the JS engine.
     recordAllocationCallback(JS::RecordAllocationInfo{
         node.typeName(), node.jsObjectClassName(), node.descriptiveTypeName(),
-        node.scriptFilename(), JS::ubi::CoarseTypeToString(node.coarseType()),
+        JS::ubi::CoarseTypeToString(node.coarseType()),
         node.size(cx->runtime()->debuggerMallocSizeOf),
         gc::IsInsideNursery(obj)});
   }

@@ -6,6 +6,8 @@
 
 #include "builtin/ModuleObject.h"
 #include "gc/Policy.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy
 #include "vm/ArgumentsObject.h"
 #include "vm/AsyncFunction.h"
 #include "vm/GlobalObject.h"
@@ -244,7 +246,7 @@ CallObject* CallObject::createHollowForDebug(JSContext* cx,
 
   RootedScript script(cx, callee->nonLazyScript());
   Rooted<FunctionScope*> scope(cx, &script->bodyScope()->as<FunctionScope>());
-  RootedShape shape(cx, FunctionScope::getEmptyEnvironmentShape(cx));
+  RootedShape shape(cx, EmptyEnvironmentShape<CallObject>(cx));
   if (!shape) {
     return nullptr;
   }
@@ -336,7 +338,7 @@ VarEnvironmentObject* VarEnvironmentObject::createHollowForDebug(
     JSContext* cx, Handle<VarScope*> scope) {
   MOZ_ASSERT(!scope->hasEnvironment());
 
-  RootedShape shape(cx, VarScope::getEmptyEnvironmentShape(cx));
+  RootedShape shape(cx, EmptyEnvironmentShape<VarEnvironmentObject>(cx));
   if (!shape) {
     return nullptr;
   }
@@ -613,7 +615,8 @@ const JSClass WasmInstanceEnvironmentObject::class_ = {
 WasmInstanceEnvironmentObject*
 WasmInstanceEnvironmentObject::createHollowForDebug(
     JSContext* cx, Handle<WasmInstanceScope*> scope) {
-  RootedShape shape(cx, scope->getEmptyEnvironmentShape(cx));
+  RootedShape shape(cx,
+                    EmptyEnvironmentShape<WasmInstanceEnvironmentObject>(cx));
   if (!shape) {
     return nullptr;
   }
@@ -638,7 +641,7 @@ const JSClass WasmFunctionCallObject::class_ = {
 /* static */
 WasmFunctionCallObject* WasmFunctionCallObject::createHollowForDebug(
     JSContext* cx, HandleObject enclosing, Handle<WasmFunctionScope*> scope) {
-  RootedShape shape(cx, scope->getEmptyEnvironmentShape(cx));
+  RootedShape shape(cx, EmptyEnvironmentShape<WasmFunctionCallObject>(cx));
   if (!shape) {
     return nullptr;
   }
@@ -660,8 +663,7 @@ WithEnvironmentObject* WithEnvironmentObject::create(JSContext* cx,
                                                      HandleObject object,
                                                      HandleObject enclosing,
                                                      Handle<WithScope*> scope) {
-  RootedShape shape(cx, EmptyEnvironmentShape(cx, &class_, JSSLOT_FREE(&class_),
-                                              /* baseShapeFlags = */ 0));
+  RootedShape shape(cx, EmptyEnvironmentShape<WithEnvironmentObject>(cx));
   if (!shape) {
     return nullptr;
   }
@@ -701,7 +703,8 @@ static bool IsInternalDotName(JSContext* cx, HandleId id) {
          JSID_IS_ATOM(id, cx->names().dotInitializers) ||
          JSID_IS_ATOM(id, cx->names().dotFieldKeys) ||
          JSID_IS_ATOM(id, cx->names().dotStaticInitializers) ||
-         JSID_IS_ATOM(id, cx->names().dotStaticFieldKeys);
+         JSID_IS_ATOM(id, cx->names().dotStaticFieldKeys) ||
+         JSID_IS_ATOM(id, cx->names().starNamespaceStar);
 }
 #endif
 
@@ -845,8 +848,7 @@ const JSClass WithEnvironmentObject::class_ = {
 /* static */
 NonSyntacticVariablesObject* NonSyntacticVariablesObject::create(
     JSContext* cx) {
-  RootedShape shape(cx, EmptyEnvironmentShape(cx, &class_, JSSLOT_FREE(&class_),
-                                              /* baseShapeFlags = */ 0));
+  RootedShape shape(cx, EmptyEnvironmentShape<NonSyntacticVariablesObject>(cx));
   if (!shape) {
     return nullptr;
   }
@@ -1269,39 +1271,28 @@ const JSClass RuntimeLexicalErrorObject::class_ = {
 
 /*****************************************************************************/
 
-EnvironmentIter::EnvironmentIter(JSContext* cx,
-                                 const EnvironmentIter& ei
-                                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
-    : si_(cx, ei.si_.get()), env_(cx, ei.env_), frame_(ei.frame_) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-}
+EnvironmentIter::EnvironmentIter(JSContext* cx, const EnvironmentIter& ei)
+    : si_(cx, ei.si_.get()), env_(cx, ei.env_), frame_(ei.frame_) {}
 
-EnvironmentIter::EnvironmentIter(JSContext* cx, JSObject* env,
-                                 Scope* scope
-                                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+EnvironmentIter::EnvironmentIter(JSContext* cx, JSObject* env, Scope* scope)
     : si_(cx, ScopeIter(scope)), env_(cx, env), frame_(NullFramePtr()) {
   settle();
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 }
 
 EnvironmentIter::EnvironmentIter(JSContext* cx, AbstractFramePtr frame,
-                                 jsbytecode* pc
-                                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+                                 jsbytecode* pc)
     : si_(cx, frame.script()->innermostScope(pc)),
       env_(cx, frame.environmentChain()),
       frame_(frame) {
   cx->check(frame);
   settle();
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 }
 
 EnvironmentIter::EnvironmentIter(JSContext* cx, JSObject* env, Scope* scope,
-                                 AbstractFramePtr frame
-                                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+                                 AbstractFramePtr frame)
     : si_(cx, ScopeIter(scope)), env_(cx, env), frame_(frame) {
   cx->check(frame);
   settle();
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 }
 
 void EnvironmentIter::incrementScopeIter() {
@@ -4060,5 +4051,32 @@ bool js::AnalyzeEntrainedVariables(JSContext* cx, HandleScript script) {
 
   return true;
 }
-
 #endif
+
+JSObject* js::MaybeOptimizeBindGlobalName(JSContext* cx,
+                                          Handle<GlobalObject*> global,
+                                          HandlePropertyName name) {
+  // We can bind name to the global lexical scope if the binding already
+  // exists, is initialized, and is writable (i.e., an initialized
+  // 'let') at compile time.
+  Rooted<LexicalEnvironmentObject*> env(cx, &global->lexicalEnvironment());
+  if (Shape* shape = env->lookup(cx, name)) {
+    if (shape->writable() &&
+        !env->getSlot(shape->slot()).isMagic(JS_UNINITIALIZED_LEXICAL)) {
+      return env;
+    }
+    return nullptr;
+  }
+
+  if (Shape* shape = global->lookup(cx, name)) {
+    // If the property does not currently exist on the global lexical
+    // scope, we can bind name to the global object if the property
+    // exists on the global and is non-configurable, as then it cannot
+    // be shadowed.
+    if (!shape->configurable()) {
+      return global;
+    }
+  }
+
+  return nullptr;
+}

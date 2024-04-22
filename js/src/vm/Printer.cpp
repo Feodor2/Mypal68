@@ -12,6 +12,7 @@
 #include <stdio.h>
 
 #include "ds/LifoAlloc.h"
+#include "frontend/ParserAtom.h"
 #include "js/CharacterEncoding.h"
 #include "util/Memory.h"
 #include "util/Text.h"
@@ -264,11 +265,9 @@ static const char JSONEscapeMap[] = {
     // clang-format on
 };
 
-enum class QuoteTarget { String, JSON };
-
 template <QuoteTarget target, typename CharT>
-static bool QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
-                        char quote) {
+bool QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
+                 char quote) {
   MOZ_ASSERT_IF(target == QuoteTarget::JSON, quote == '\0');
 
   using CharPtr = mozilla::RangedPtr<const CharT>;
@@ -353,6 +352,18 @@ static bool QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
   return true;
 }
 
+template bool QuoteString<QuoteTarget::String, Latin1Char>(
+    Sprinter* sp, const mozilla::Range<const Latin1Char> chars, char quote);
+
+template bool QuoteString<QuoteTarget::String, char16_t>(
+    Sprinter* sp, const mozilla::Range<const char16_t> chars, char quote);
+
+template bool QuoteString<QuoteTarget::JSON, Latin1Char>(
+    Sprinter* sp, const mozilla::Range<const Latin1Char> chars, char quote);
+
+template bool QuoteString<QuoteTarget::JSON, char16_t>(
+    Sprinter* sp, const mozilla::Range<const char16_t> chars, char quote);
+
 bool QuoteString(Sprinter* sp, JSString* str, char quote /*= '\0' */) {
   JSLinearString* linear = str->ensureLinear(sp->context);
   if (!linear) {
@@ -366,12 +377,32 @@ bool QuoteString(Sprinter* sp, JSString* str, char quote /*= '\0' */) {
                                         sp, linear->twoByteRange(nogc), quote);
 }
 
+bool QuoteString(Sprinter* sp, const frontend::ParserAtom* atom,
+                 char quote /*= '\0' */) {
+  return atom->hasLatin1Chars()
+             ? QuoteString<QuoteTarget::String>(sp, atom->latin1Range(), quote)
+             : QuoteString<QuoteTarget::String>(sp, atom->twoByteRange(),
+                                                quote);
+}
+
 UniqueChars QuoteString(JSContext* cx, JSString* str, char quote /* = '\0' */) {
   Sprinter sprinter(cx);
   if (!sprinter.init()) {
     return nullptr;
   }
   if (!QuoteString(&sprinter, str, quote)) {
+    return nullptr;
+  }
+  return sprinter.release();
+}
+
+UniqueChars QuoteString(JSContext* cx, const frontend::ParserAtom* atom,
+                        char quote /* = '\0' */) {
+  Sprinter sprinter(cx);
+  if (!sprinter.init()) {
+    return nullptr;
+  }
+  if (!QuoteString(&sprinter, atom, quote)) {
     return nullptr;
   }
   return sprinter.release();

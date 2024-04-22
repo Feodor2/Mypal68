@@ -11,12 +11,14 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Variant.h"
 
+#include <utility>
+
 #include "jspubtd.h"
 
+#include "js/AllocPolicy.h"
 #include "js/GCAPI.h"
 #include "js/HashTable.h"
 #include "js/RootingAPI.h"
@@ -160,22 +162,24 @@
 // structure of the snapshot file, the analyses should be prepared for ubi::Node
 // graphs constructed from snapshots to be even more bizarre.
 
-namespace JS {
-namespace ubi {
-
-class Edge;
-class EdgeRange;
-class StackFrame;
-
-}  // namespace ubi
-}  // namespace JS
-
 namespace js {
 class BaseScript;
 }  // namespace js
 
 namespace JS {
+
+using ZoneSet =
+    js::HashSet<Zone*, js::DefaultHasher<Zone*>, js::SystemAllocPolicy>;
+
+using CompartmentSet =
+    js::HashSet<Compartment*, js::DefaultHasher<Compartment*>,
+                js::SystemAllocPolicy>;
+
 namespace ubi {
+
+class Edge;
+class EdgeRange;
+class StackFrame;
 
 using mozilla::Maybe;
 using mozilla::RangedPtr;

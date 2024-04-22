@@ -258,7 +258,11 @@ class ArenaLists {
 
   ZoneData<FreeLists> freeLists_;
 
+  /* The main list of arenas for each alloc kind. */
   ArenaListData<AllAllocKindArray<ArenaList>> arenaLists_;
+
+  /* For each arena kind, a list of arenas allocated during marking. */
+  ArenaListData<AllAllocKindArray<ArenaList>> newArenasInMarkPhase_;
 
   /* For each arena kind, a list of arenas remaining to be swept. */
   MainThreadOrGCTaskData<AllAllocKindArray<Arena*>> arenasToSweep_;
@@ -272,7 +276,9 @@ class ArenaLists {
   ZoneData<Arena*> gcShapeArenasToUpdate;
   ZoneData<Arena*> gcAccessorShapeArenasToUpdate;
   ZoneData<Arena*> gcScriptArenasToUpdate;
+  ZoneData<Arena*> gcNewScriptArenasToUpdate;
   ZoneData<Arena*> gcObjectGroupArenasToUpdate;
+  ZoneData<Arena*> gcNewObjectGroupArenasToUpdate;
 
   // The list of empty arenas which are collected during the sweep phase and
   // released at the end of sweeping every sweep group.
@@ -292,6 +298,7 @@ class ArenaLists {
   inline Arena* getFirstArena(AllocKind thingKind) const;
   inline Arena* getFirstArenaToSweep(AllocKind thingKind) const;
   inline Arena* getFirstSweptArena(AllocKind thingKind) const;
+  inline Arena* getFirstNewArenaInMarkPhase(AllocKind thingKind) const;
   inline Arena* getArenaAfterCursor(AllocKind thingKind) const;
 
   inline bool arenaListsAreEmpty() const;
@@ -332,6 +339,9 @@ class ArenaLists {
 
   void setParallelAllocEnabled(bool enabled);
 
+  inline void mergeNewArenasInMarkPhase();
+
+  void checkGCStateNotInUse();
   void checkSweepStateNotInUse();
   void checkNoArenasToUpdate();
   void checkNoArenasToUpdateForKind(AllocKind kind);
@@ -339,6 +349,13 @@ class ArenaLists {
  private:
   ArenaList& arenaList(AllocKind i) { return arenaLists_.ref()[i]; }
   const ArenaList& arenaList(AllocKind i) const { return arenaLists_.ref()[i]; }
+
+  ArenaList& newArenasInMarkPhase(AllocKind i) {
+    return newArenasInMarkPhase_.ref()[i];
+  }
+  const ArenaList& newArenasInMarkPhase(AllocKind i) const {
+    return newArenasInMarkPhase_.ref()[i];
+  }
 
   ConcurrentUseState& concurrentUse(AllocKind i) {
     return concurrentUseState_.ref()[i];
@@ -363,6 +380,8 @@ class ArenaLists {
   TenuredCell* refillFreeListAndAllocate(FreeLists& freeLists,
                                          AllocKind thingKind,
                                          ShouldCheckThresholds checkThresholds);
+
+  void addNewArena(Arena* arena, AllocKind thingKind);
 
   friend class GCRuntime;
   friend class js::Nursery;

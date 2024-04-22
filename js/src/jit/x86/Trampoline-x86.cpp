@@ -377,8 +377,16 @@ void JitRuntime::generateInvalidator(MacroAssembler& masm, Label* bailoutTail) {
   masm.jmp(bailoutTail);
 }
 
-void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
-  argumentsRectifierOffset_ = startTrampolineCode(masm);
+void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm,
+                                            ArgumentsRectifierKind kind) {
+  switch (kind) {
+    case ArgumentsRectifierKind::Normal:
+      argumentsRectifierOffset_ = startTrampolineCode(masm);
+      break;
+    case ArgumentsRectifierKind::TrialInlining:
+      trialInliningArgumentsRectifierOffset_ = startTrampolineCode(masm);
+      break;
+  }
 
   // Caller:
   // [arg2] [arg1] [this] [ [argc] [callee] [descr] [raddr] ] <- esp
@@ -427,11 +435,11 @@ void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
 
   masm.moveValue(UndefinedValue(), ValueOperand(ebx, edi));
 
-  // NOTE: The fact that x86 ArgumentsRectifier saves the FramePointer is
-  // relied upon by the baseline bailout code.  If this changes, fix that
-  // code!  See BaselineJIT.cpp/BaselineStackBuilder::calculatePrevFramePtr,
-  // and BaselineJIT.cpp/InitFromBailout. Check for the
-  // |#if defined(JS_CODEGEN_X86)| portions.
+  // NOTE: The fact that x86 ArgumentsRectifier saves the FramePointer
+  // is relied upon by the baseline bailout code.  If this changes,
+  // fix that code!  See the |#if defined(JS_CODEGEN_X86) portions of
+  // BaselineStackBuilder::calculatePrevFramePtr and
+  // BaselineStackBuilder::buildRectifierFrame (in BaselineBailouts.cpp).
   masm.push(FramePointer);
   masm.movl(esp, FramePointer);  // Save %esp.
   masm.push(FramePointer /* padding */);
@@ -513,8 +521,24 @@ void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
 
   // Call the target function.
   masm.andl(Imm32(CalleeTokenMask), eax);
-  masm.loadJitCodeRaw(eax, eax);
-  argumentsRectifierReturnOffset_ = masm.callJitNoProfiler(eax);
+  switch (kind) {
+    case ArgumentsRectifierKind::Normal:
+      masm.loadJitCodeRaw(eax, eax);
+      argumentsRectifierReturnOffset_ = masm.callJitNoProfiler(eax);
+      break;
+    case ArgumentsRectifierKind::TrialInlining:
+      Label noBaselineScript, done;
+      masm.loadBaselineJitCodeRaw(eax, ebx, &noBaselineScript);
+      masm.callJitNoProfiler(ebx);
+      masm.jump(&done);
+
+      // See BaselineCacheIRCompiler::emitCallInlinedFunction.
+      masm.bind(&noBaselineScript);
+      masm.loadJitCodeRaw(eax, eax);
+      masm.callJitNoProfiler(eax);
+      masm.bind(&done);
+      break;
+  }
 
   // Remove the rectifier frame.
   masm.pop(ebx);                           // ebx <- descriptor with FrameType.

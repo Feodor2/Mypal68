@@ -30,11 +30,14 @@
 #include "gc/PublicIterators.h"
 #include "jit/IonScript.h"  // IonBlockCounts
 #include "js/CharacterEncoding.h"
+#include "js/experimental/CodeCoverage.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpPC, js::DumpScript
 #include "js/Printf.h"
 #include "js/Symbol.h"
 #include "util/Memory.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
+#include "vm/BuiltinObjectKind.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/CodeCoverage.h"
 #include "vm/EnvironmentObject.h"
@@ -582,6 +585,7 @@ uint32_t BytecodeParser::simulateOp(JSOp op, uint32_t offset,
       case JSOp::InitHiddenElem:
       case JSOp::InitHiddenElemGetter:
       case JSOp::InitHiddenElemSetter:
+      case JSOp::InitLockedElem:
         // Keep the third value.
         MOZ_ASSERT(nuses == 3);
         MOZ_ASSERT(ndefs == 1);
@@ -736,6 +740,13 @@ uint32_t BytecodeParser::simulateOp(JSOp op, uint32_t offset,
       MOZ_ASSERT(nuses == 1);
       MOZ_ASSERT(ndefs == 2);
       offsetStack[stackDepth + 1].set(offset, 1);
+      break;
+
+    case JSOp::CheckPrivateField:
+      // Keep the top two values, and push one new value.
+      MOZ_ASSERT(nuses == 2);
+      MOZ_ASSERT(ndefs == 3);
+      offsetStack[stackDepth + 2].set(offset, 2);
       break;
   }
 
@@ -1407,16 +1418,8 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       break;
     }
 
-    case JOF_CODE_OFFSET: {
-      ptrdiff_t off = GET_CODE_OFFSET(pc);
-      if (!sp->jsprintf(" %u (%+d)", unsigned(loc + int(off)), int(off))) {
-        return 0;
-      }
-      break;
-    }
-
     case JOF_SCOPE: {
-      RootedScope scope(cx, script->getScope(GET_UINT32_INDEX(pc)));
+      RootedScope scope(cx, script->getScope(pc));
       UniqueChars bytes;
       if (!ToDisassemblySource(cx, scope, &bytes)) {
         return 0;
@@ -1442,7 +1445,7 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
     }
 
     case JOF_ATOM: {
-      RootedValue v(cx, StringValue(script->getAtom(GET_UINT32_INDEX(pc))));
+      RootedValue v(cx, StringValue(script->getAtom(pc)));
       UniqueChars bytes = ToDisassemblySource(cx, v);
       if (!bytes) {
         return 0;
@@ -1482,7 +1485,7 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         break;
       }
 
-      JSObject* obj = script->getObject(GET_UINT32_INDEX(pc));
+      JSObject* obj = script->getObject(pc);
       {
         RootedValue v(cx, ObjectValue(*obj));
         UniqueChars bytes = ToDisassemblySource(cx, v);
@@ -1570,7 +1573,7 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       break;
 
     case JOF_CLASS_CTOR: {
-      uint32_t atomIndex = 0;
+      GCThingIndex atomIndex;
       uint32_t classStartOffset = 0, classEndOffset = 0;
       GetClassConstructorOperands(pc, &atomIndex, &classStartOffset,
                                   &classEndOffset);
@@ -1581,6 +1584,18 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       }
       if (!sp->jsprintf(" %s (off: %u-%u)", bytes.get(), classStartOffset,
                         classEndOffset)) {
+        return 0;
+      }
+      break;
+    }
+    case JOF_TWO_UINT8: {
+      int one = (int)GET_UINT8(pc);
+      int two = (int)GET_UINT8(pc + 1);
+
+      if (!sp->jsprintf(" %d", one)) {
+        return 0;
+      }
+      if (!sp->jsprintf(" %d", two)) {
         return 0;
       }
       break;
@@ -1883,7 +1898,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::NewArray:
       return write("[]");
     case JSOp::RegExp: {
-      RootedObject obj(cx, script->getObject(GET_UINT32_INDEX(pc)));
+      RootedObject obj(cx, script->getObject(pc));
       JSString* str = obj->as<RegExpObject>().toString(cx);
       if (!str) {
         return false;
@@ -1891,7 +1906,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
       return write(str);
     }
     case JSOp::NewArrayCopyOnWrite: {
-      RootedObject obj(cx, script->getObject(GET_UINT32_INDEX(pc)));
+      RootedObject obj(cx, script->getObject(pc));
       Handle<ArrayObject*> aobj = obj.as<ArrayObject>();
       if (!write("[")) {
         return false;
@@ -1912,7 +1927,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
       return write("]");
     }
     case JSOp::Object: {
-      JSObject* obj = script->getObject(GET_UINT32_INDEX(pc));
+      JSObject* obj = script->getObject(pc);
       RootedValue objv(cx, ObjectValue(*obj));
       JSString* str = ValueToSource(cx, objv);
       if (!str) {
@@ -1990,6 +2005,11 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
 #else
       return write("[bigint]");
 #endif
+
+    case JSOp::BuiltinObject: {
+      auto kind = BuiltinObjectKind(GET_UINT8(pc));
+      return write(BuiltinObjectName(kind));
+    }
 
     default:
       break;
@@ -2137,6 +2157,9 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
       case JSOp::AsyncAwait:
       case JSOp::AsyncResolve:
         return write("PROMISE");
+
+      case JSOp::CheckPrivateField:
+        return write("HasPrivateField");
 
       default:
         break;

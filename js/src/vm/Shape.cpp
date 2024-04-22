@@ -150,9 +150,6 @@ void Shape::handoffTableTo(Shape* shape) {
 
   BaseShape* nbase = base();
 
-  MOZ_ASSERT_IF(!shape->isEmptyShape() && shape->isDataProperty(),
-                nbase->slotSpan() > shape->slot());
-
   setBase(nbase->baseUnowned());
   nbase->adoptUnowned(shape->base()->toUnowned());
 
@@ -422,8 +419,8 @@ Shape* Shape::replaceLastProperty(JSContext* cx, StackBaseShape& base,
     if (!shape) {
       return nullptr;
     }
-    if (child.slot() >= obj->lastProperty()->base()->slotSpan()) {
-      if (!obj->setSlotSpan(cx, child.slot() + 1)) {
+    if (child.slot() >= obj->slotSpan()) {
+      if (!obj->ensureSlotsForDictionaryObject(cx, child.slot() + 1)) {
         new (shape) Shape(obj->lastProperty()->base()->unowned(), 0);
         return nullptr;
       }
@@ -538,7 +535,7 @@ bool js::NativeObject::toDictionaryMode(JSContext* cx, HandleNativeObject obj) {
   obj->setShape(root);
 
   MOZ_ASSERT(obj->inDictionaryMode());
-  root->base()->setSlotSpan(span);
+  obj->setDictionaryModeSlotSpan(span);
 
   return true;
 }
@@ -864,8 +861,8 @@ Shape* NativeObject::addEnumerableDataProperty(JSContext* cx,
     if (!shape) {
       return nullptr;
     }
-    if (slot >= obj->lastProperty()->base()->slotSpan()) {
-      if (MOZ_UNLIKELY(!obj->setSlotSpan(cx, slot + 1))) {
+    if (slot >= obj->slotSpan()) {
+      if (MOZ_UNLIKELY(!obj->ensureSlotsForDictionaryObject(cx, slot + 1))) {
         new (shape) Shape(obj->lastProperty()->base()->unowned(), 0);
         return nullptr;
       }
@@ -1204,7 +1201,7 @@ Shape* NativeObject::putAccessorProperty(JSContext* cx, HandleNativeObject obj,
     AccessorShape& accShape = shape->asAccessorShape();
     accShape.rawGetter = getter;
     accShape.rawSetter = setter;
-    GetterSetterWriteBarrierPost(&accShape);
+    GetterSetterPostWriteBarrier(&accShape);
   } else {
     // Updating the last property in a non-dictionary-mode object. Find an
     // alternate shared child of the last property's previous shape.
@@ -1580,15 +1577,13 @@ Shape* Shape::setObjectFlags(JSContext* cx, BaseShape::Flag flags,
 }
 
 inline BaseShape::BaseShape(const StackBaseShape& base)
-    : headerAndClasp_(base.clasp),
+    : TenuredCellWithNonGCPointer(base.clasp),
       flags(base.flags),
-      slotSpan_(0),
       unowned_(nullptr) {}
 
 /* static */
 void BaseShape::copyFromUnowned(BaseShape& dest, UnownedBaseShape& src) {
-  dest.headerAndClasp_.setPtr(src.clasp());
-  dest.slotSpan_ = src.slotSpan_;
+  dest.setHeaderPtr(src.clasp());
   dest.unowned_ = &src;
   dest.flags = src.flags | OWNED_SHAPE;
 }
@@ -1598,10 +1593,7 @@ inline void BaseShape::adoptUnowned(UnownedBaseShape* other) {
   // unowned base shape of a new last property.
   MOZ_ASSERT(isOwned());
 
-  uint32_t span = slotSpan();
-
   BaseShape::copyFromUnowned(*this, *other);
-  setSlotSpan(span);
 
   assertConsistency();
 }

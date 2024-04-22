@@ -1,4 +1,4 @@
-// |reftest| skip -- Intl.DateTimeFormat-formatRange is not supported
+// |reftest| skip-if(release_or_beta) -- Intl.DateTimeFormat-fractionalSecondDigits,Intl.DateTimeFormat-formatRange is not released yet
 // Copyright 2020 Google Inc, Igalia S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -28,8 +28,18 @@ const d1 = new Date(2019, 7, 10,  1, 2, 3, 234);
 const d2 = new Date(2019, 7, 10,  1, 2, 3, 567);
 const d3 = new Date(2019, 7, 10,  1, 2, 13, 987);
 
+assert.throws(RangeError, () => {
+    new Intl.DateTimeFormat(
+      'en', { minute: "numeric", second: "numeric", fractionalSecondDigits: 0});
+  }, "fractionalSecondDigits 0 should throw RangeError for out of range");
+
+assert.throws(RangeError, () => {
+    new Intl.DateTimeFormat(
+      'en', { minute: "numeric", second: "numeric", fractionalSecondDigits: 4});
+  }, "fractionalSecondDigits 4 should throw RangeError for out of range");
+
 let dtf = new Intl.DateTimeFormat(
-    'en', { minute: "numeric", second: "numeric", fractionalSecondDigits: 0});
+    'en', { minute: "numeric", second: "numeric", fractionalSecondDigits: undefined});
 
 compare(dtf.formatRangeToParts(d1, d2), [
   { type: "minute", value: "02", source: "shared" },

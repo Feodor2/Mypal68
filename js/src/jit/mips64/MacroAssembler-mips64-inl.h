@@ -141,6 +141,15 @@ void MacroAssembler::xorPtr(Register src, Register dest) { ma_xor(dest, src); }
 void MacroAssembler::xorPtr(Imm32 imm, Register dest) { ma_xor(dest, imm); }
 
 // ===============================================================
+// Swap instructions
+
+void MacroAssembler::byteSwap64(Register64 reg64) {
+  Register reg = reg64.reg;
+  ma_dsbh(reg, reg);
+  ma_dshd(reg, reg);
+}
+
+// ===============================================================
 // Arithmetic functions
 
 void MacroAssembler::addPtr(Register src, Register dest) {
@@ -645,6 +654,35 @@ void MacroAssembler::branchTruncateFloat32MaybeModUint32(FloatRegister src,
   ma_b(ScratchRegister, Imm32(0), fail, Assembler::NotEqual);
 
   as_sll(dest, dest, 0);
+}
+
+void MacroAssembler::fallibleUnboxPtr(const ValueOperand& src, Register dest,
+                                      JSValueType type, Label* fail) {
+  MOZ_ASSERT(type == JSVAL_TYPE_OBJECT || type == JSVAL_TYPE_STRING ||
+             type == JSVAL_TYPE_SYMBOL || type == JSVAL_TYPE_BIGINT);
+  // dest := src XOR mask
+  // scratch := dest >> JSVAL_TAG_SHIFT
+  // fail if scratch != 0
+  //
+  // Note: src and dest can be the same register
+  ScratchRegisterScope scratch(asMasm());
+  mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), scratch);
+  ma_xor(scratch, src.valueReg());
+  ma_move(dest, scratch);
+  ma_dsrl(scratch, scratch, Imm32(JSVAL_TAG_SHIFT));
+  ma_b(scratch, Imm32(0), fail, Assembler::NotEqual);
+}
+
+void MacroAssembler::fallibleUnboxPtr(const Address& src, Register dest,
+                                      JSValueType type, Label* fail) {
+  loadValue(src, ValueOperand(dest));
+  fallibleUnboxPtr(ValueOperand(dest), dest, type, fail);
+}
+
+void MacroAssembler::fallibleUnboxPtr(const BaseIndex& src, Register dest,
+                                      JSValueType type, Label* fail) {
+  loadValue(src, ValueOperand(dest));
+  fallibleUnboxPtr(ValueOperand(dest), dest, type, fail);
 }
 
 //}}} check_macroassembler_style

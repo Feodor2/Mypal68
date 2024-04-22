@@ -11,9 +11,13 @@
 using namespace js;
 using namespace js::jit;
 
-WarpBuilderShared::WarpBuilderShared(MIRGenerator& mirGen,
+WarpBuilderShared::WarpBuilderShared(WarpSnapshot& snapshot,
+                                     MIRGenerator& mirGen,
                                      MBasicBlock* current_)
-    : mirGen_(mirGen), alloc_(mirGen.alloc()), current(current_) {}
+    : snapshot_(snapshot),
+      mirGen_(mirGen),
+      alloc_(mirGen.alloc()),
+      current(current_) {}
 
 bool WarpBuilderShared::resumeAfter(MInstruction* ins, BytecodeLocation loc) {
   MOZ_ASSERT(ins->isEffectful());
@@ -44,6 +48,7 @@ void WarpBuilderShared::pushConstant(const Value& v) {
 
 MCall* WarpBuilderShared::makeCall(CallInfo& callInfo, bool needsThisCheck,
                                    WrappedFunction* target) {
+  MOZ_ASSERT(callInfo.argFormat() == CallInfo::ArgFormat::Standard);
   MOZ_ASSERT_IF(needsThisCheck, !target);
 
   // TODO: Investigate DOM calls.
@@ -103,4 +108,25 @@ MCall* WarpBuilderShared::makeCall(CallInfo& callInfo, bool needsThisCheck,
   }
 
   return call;
+}
+
+MInstruction* WarpBuilderShared::makeSpreadCall(CallInfo& callInfo,
+                                                bool isSameRealm,
+                                                WrappedFunction* target) {
+  // TODO: support SpreadNew and SpreadSuperCall
+  MOZ_ASSERT(!callInfo.constructing());
+
+  // Load dense elements of the argument array.
+  MElements* elements = MElements::New(alloc(), callInfo.arrayArg());
+  current->add(elements);
+
+  auto* apply = MApplyArray::New(alloc(), target, callInfo.callee(), elements,
+                                 callInfo.thisArg());
+  if (callInfo.ignoresReturnValue()) {
+    apply->setIgnoresReturnValue();
+  }
+  if (isSameRealm) {
+    apply->setNotCrossRealm();
+  }
+  return apply;
 }

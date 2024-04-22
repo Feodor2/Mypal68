@@ -9,8 +9,6 @@
 #include "mozilla/MacroForEach.h"
 #include "mozilla/MathAlgorithms.h"
 
-#include "vm/Realm.h"
-
 #if defined(JS_CODEGEN_X86)
 #  include "jit/x86/MacroAssembler-x86.h"
 #elif defined(JS_CODEGEN_X64)
@@ -34,10 +32,8 @@
 #include "jit/JitRealm.h"
 #include "jit/TemplateObject.h"
 #include "jit/VMFunctions.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/Memory.h"
-#include "vm/ProxyObject.h"
-#include "vm/Shape.h"
-#include "vm/TypedArrayObject.h"
 
 // [SMDOC] MacroAssembler multi-platform overview
 //
@@ -205,6 +201,9 @@
 #endif
 
 namespace js {
+
+class TypedArrayObject;
+
 namespace jit {
 
 // Defined in JitFrames.h
@@ -840,16 +839,16 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // Swap instructions
 
   // Swap the two lower bytes and sign extend the result to 32-bit.
-  inline void swap16SignExtend(Register reg) PER_SHARED_ARCH;
+  inline void byteSwap16SignExtend(Register reg) PER_SHARED_ARCH;
 
   // Swap the two lower bytes and zero extend the result to 32-bit.
-  inline void swap16ZeroExtend(Register reg) PER_SHARED_ARCH;
+  inline void byteSwap16ZeroExtend(Register reg) PER_SHARED_ARCH;
 
   // Swap all four bytes in a 32-bit integer.
-  inline void swap32(Register reg) PER_SHARED_ARCH;
+  inline void byteSwap32(Register reg) PER_SHARED_ARCH;
 
   // Swap all eight bytes in a 64-bit integer.
-  inline void swap64(Register64 reg) PER_ARCH;
+  inline void byteSwap64(Register64 reg) PER_ARCH;
 
   // ===============================================================
   // Arithmetic functions
@@ -1021,6 +1020,16 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void roundDoubleToInt32(FloatRegister src, Register dest, FloatRegister temp,
                           Label* fail) PER_SHARED_ARCH;
 
+  void truncFloat32ToInt32(FloatRegister src, Register dest,
+                           Label* fail) PER_SHARED_ARCH;
+  void truncDoubleToInt32(FloatRegister src, Register dest,
+                          Label* fail) PER_SHARED_ARCH;
+
+  void signInt32(Register input, Register output);
+  void signDouble(FloatRegister input, FloatRegister output);
+  void signDoubleToInt32(FloatRegister input, Register output,
+                         FloatRegister temp, Label* fail);
+
   // Returns a random double in range [0, 1) in |dest|. The |rng| register must
   // hold a pointer to a mozilla::non_crypto::XorShift128PlusRNG.
   void randomDouble(Register rng, FloatRegister dest, Register64 temp0,
@@ -1044,6 +1053,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // |base| and |power| are preserved, the other input registers are clobbered.
   void pow32(Register base, Register power, Register dest, Register temp1,
              Register temp2, Label* onOver);
+
+  void sameValueDouble(FloatRegister left, FloatRegister right,
+                       FloatRegister temp, Register dest);
 
   void branchIfNotRegExpPrototypeOptimizable(Register proto, Register temp,
                                              Label* label);
@@ -1081,7 +1093,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void rshift32Arithmetic(Register shift,
                                  Register srcDest) PER_SHARED_ARCH;
 
-  // These variants may use the stack, but do not have the above constraint.
+  // These variants do not have the above constraint, but may emit some extra
+  // instructions on x86_shared. They also handle shift >= 32 consistently by
+  // masking with 0x1F (either explicitly or relying on the hardware to do
+  // that).
   inline void flexibleLshift32(Register shift,
                                Register srcDest) PER_SHARED_ARCH;
   inline void flexibleRshift32(Register shift,
@@ -1383,6 +1398,11 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // RESOLVED_LENGTH flags are not set.
   void loadFunctionLength(Register func, Register funFlags, Register output,
                           Label* slowPath);
+
+  // Loads the function name. This handles interpreted, native, and bound
+  // functions.
+  void loadFunctionName(Register func, Register output, ImmGCPtr emptyString,
+                        Label* slowPath);
 
   inline void branchFunctionKind(Condition cond,
                                  FunctionFlags::FunctionKind kind, Register fun,
@@ -2385,7 +2405,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
   //
   // If arrayType is Scalar::Uint32 then:
   //
-  //   - `output` must be a float register (this is bug 1077305)
+  //   - `output` must be a float register
   //   - if the operation takes one temp register then `temp` must be defined
   //   - if the operation takes two temp registers then `temp2` must be defined.
   //
@@ -2493,6 +2513,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
                         AtomicOp op, Register value, const BaseIndex& mem,
                         Register valueTemp, Register offsetTemp,
                         Register maskTemp) DEFINED_ON(mips_shared);
+
+  void atomicIsLockFreeJS(Register value, Register output);
 
   // ========================================================================
   // Spectre Mitigations.
@@ -2671,6 +2693,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void guardGroupHasUnanalyzedNewScript(Register group, Register scratch,
                                         Label* fail);
 
+  void guardSpecificAtom(Register str, JSAtom* atom, Register scratch,
+                         const LiveRegisterSet& volatileRegs, Label* fail);
+
+  void guardStringToInt32(Register str, Register output, Register scratch,
+                          LiveRegisterSet volatileRegs, Label* fail);
+
   void loadWasmTlsRegFromFrame(Register dest = WasmTlsReg);
 
   template <typename T>
@@ -2819,6 +2847,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
     bind(&done);
   }
 
+  void boxUint32(Register source, ValueOperand dest, bool allowDouble,
+                 Label* fail);
+
   template <typename T>
   void loadFromTypedArray(Scalar::Type arrayType, const T& src,
                           AnyRegister dest, Register temp, Label* fail);
@@ -2869,6 +2900,26 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void debugAssertIsObject(const ValueOperand& val);
   void debugAssertObjHasFixedSlots(Register obj, Register scratch);
+
+  void branchArrayIsNotPacked(Register array, Register temp1, Register temp2,
+                              Label* label);
+
+  void setIsPackedArray(Register obj, Register output, Register temp);
+
+  void packedArrayPop(Register array, ValueOperand output, Register temp1,
+                      Register temp2, Label* fail);
+  void packedArrayShift(Register array, ValueOperand output, Register temp1,
+                        Register temp2, LiveRegisterSet volatileRegs,
+                        Label* fail);
+
+  void loadArgumentsObjectElement(Register obj, Register index,
+                                  ValueOperand output, Register temp,
+                                  Label* fail);
+
+  void loadArgumentsObjectLength(Register obj, Register output, Label* fail);
+
+  void typedArrayElementShift(Register obj, Register output);
+  void branchIfClassIsNotTypedArray(Register clasp, Label* notTypedArray);
 
   void branchIfNativeIteratorNotReusable(Register ni, Label* notReusable);
 
@@ -2998,6 +3049,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
     isCallableOrConstructor(false, obj, output, isProxy);
   }
 
+  void setIsCrossRealmArrayConstructor(Register obj, Register output);
+
+  void setIsDefinitelyTypedArrayConstructor(Register obj, Register output);
+
  private:
   void isCallableOrConstructor(bool isCallable, Register obj, Register output,
                                Label* isProxy);
@@ -3078,12 +3133,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // This class is used to surround call sites throughout the assembler. This
   // is used by callWithABI, and callJit functions, except if suffixed by
   // NoProfiler.
-  class AutoProfilerCallInstrumentation {
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
-
+  class MOZ_RAII AutoProfilerCallInstrumentation {
    public:
-    explicit AutoProfilerCallInstrumentation(
-        MacroAssembler& masm MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+    explicit AutoProfilerCallInstrumentation(MacroAssembler& masm);
     ~AutoProfilerCallInstrumentation() = default;
   };
   friend class AutoProfilerCallInstrumentation;
@@ -3107,6 +3159,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
  public:
   void loadJitCodeRaw(Register func, Register dest);
   void loadJitCodeNoArgCheck(Register func, Register dest);
+  void loadBaselineJitCodeRaw(Register func, Register dest,
+                              Label* failure = nullptr);
 
   void loadBaselineFramePtr(Register framePtr, Register dest);
 

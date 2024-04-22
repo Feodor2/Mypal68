@@ -162,7 +162,7 @@ class MOZ_RAII AutoEmptyNurseryAndPrepareForTracing : private AutoFinishGC,
         AutoTraceSession(cx->runtime()) {}
 };
 
-AbortReason IsIncrementalGCUnsafe(JSRuntime* rt);
+GCAbortReason IsIncrementalGCUnsafe(JSRuntime* rt);
 
 #ifdef JS_GC_ZEAL
 
@@ -223,6 +223,7 @@ struct MovingTracer final : public JS::CallbackTracer {
   bool onScopeEdge(Scope** scopep) override;
   bool onRegExpSharedEdge(RegExpShared** sharedp) override;
   bool onBigIntEdge(BigInt** bip) override;
+  bool onObjectGroupEdge(ObjectGroup** groupp) override;
   bool onChild(const JS::GCCellPtr& thing) override {
     MOZ_ASSERT(!thing.asCell()->isForwarded());
     return true;
@@ -310,6 +311,13 @@ extern void DelayCrossCompartmentGrayMarking(JSObject* src);
 inline bool IsOOMReason(JS::GCReason reason) {
   return reason == JS::GCReason::LAST_DITCH ||
          reason == JS::GCReason::MEM_PRESSURE;
+}
+
+// TODO: Bug 1650075. Adding XPCONNECT_SHUTDOWN seems to cause crash.
+inline bool IsShutdownReason(JS::GCReason reason) {
+  return reason == JS::GCReason::WORKER_SHUTDOWN ||
+         reason == JS::GCReason::SHUTDOWN_CC ||
+         reason == JS::GCReason::DESTROY_RUNTIME;
 }
 
 TenuredCell* AllocateCellInGC(JS::Zone* zone, AllocKind thingKind);

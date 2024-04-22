@@ -40,6 +40,7 @@ class CompileRuntime {
   const PropertyName* emptyString();
   const StaticStrings& staticStrings();
   const WellKnownSymbols& wellKnownSymbols();
+  const JSClass* maybeWindowProxyClass();
 
   const void* mainContextPtr();
   uint32_t* addressOfTenuredAllocCount();
@@ -106,17 +107,12 @@ class CompileRealm {
   const uint32_t* addressOfGlobalWriteBarriered();
 
   bool hasAllocationMetadataBuilder();
-
-  // Mirror RealmOptions.
-  void setSingletonsAsValues();
 };
 
 class JitCompileOptions {
  public:
   JitCompileOptions();
   explicit JitCompileOptions(JSContext* cx);
-
-  bool cloneSingletons() const { return cloneSingletons_; }
 
   bool profilerSlowAssertionsEnabled() const {
     return profilerSlowAssertionsEnabled_;
@@ -131,7 +127,6 @@ class JitCompileOptions {
 #endif
 
  private:
-  bool cloneSingletons_;
   bool profilerSlowAssertionsEnabled_;
   bool offThreadCompilationAvailable_;
 #ifdef DEBUG

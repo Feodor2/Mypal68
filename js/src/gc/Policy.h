@@ -26,21 +26,6 @@ struct InternalGCPointerPolicy : public JS::GCPointerPolicy<T> {
       "InternalGCPointerPolicy must only be used for GC thing pointers");
 #undef IS_BASE_OF_OR
 
-  static void preBarrier(T v) {
-    if (v) {
-      Type::writeBarrierPre(v);
-    }
-  }
-  static void postBarrier(T* vp, T prev, T next) {
-    if (*vp) {
-      Type::writeBarrierPost(vp, prev, next);
-    }
-  }
-  static void readBarrier(T v) {
-    if (v) {
-      Type::readBarrier(v);
-    }
-  }
   static void trace(JSTracer* trc, T* vp, const char* name) {
     // It's not safe to trace unbarriered pointers except as part of root
     // marking. If you get an assertion here you probably need to add a barrier,

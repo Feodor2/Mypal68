@@ -4,7 +4,7 @@
 
 //-----------------------------------------------------------------------------
 var BUGNUMBER = 363988;
-var summary = 'Do not crash at JS_GetPrivate with large script';
+var summary = 'Do not crash at JS::GetPrivate with large script';
 var actual = 'No Crash';
 var expect = 'No Crash';
 

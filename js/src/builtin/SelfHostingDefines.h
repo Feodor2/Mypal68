@@ -21,7 +21,7 @@
 // NB: keep this in sync with the copy in vm/ArgumentsObject.h.
 #define MAX_ARGS_LENGTH (500 * 1000)
 
-// NB: keep this in sync with js::MaxStringLength in jsfriendapi.h.
+// NB: keep this in sync with JS::MaxStringLength in js/public/String.h.
 #define MAX_STRING_LENGTH ((1 << 30) - 2)
 
 // Spread non-empty argument list of up to 15 elements.
@@ -69,10 +69,6 @@
 // name for self-hosted builtins is stored.
 #define LAZY_FUNCTION_NAME_SLOT 0
 
-// Stores the length for bound functions, so the .length property doesn't need
-// to be resolved eagerly.
-#define BOUND_FUN_LENGTH_SLOT 1
-
 #define ITERATOR_SLOT_TARGET 0
 // Used for collection iterators.
 #define ITERATOR_SLOT_RANGE 1
@@ -109,11 +105,18 @@
 #define MODULE_OBJECT_DFS_INDEX_SLOT 14
 #define MODULE_OBJECT_DFS_ANCESTOR_INDEX_SLOT 15
 
-#define MODULE_STATUS_UNINSTANTIATED 0
-#define MODULE_STATUS_INSTANTIATING 1
-#define MODULE_STATUS_INSTANTIATED 2
+// rev b012019fea18f29737a67c36911340a3e25bfc63
+// 15.2.1.16 Cyclic Module Records
+// Value types of [[Status]] in a Cyclic Module Record
+#define MODULE_STATUS_UNLINKED 0
+#define MODULE_STATUS_LINKING 1
+#define MODULE_STATUS_LINKED 2
 #define MODULE_STATUS_EVALUATING 3
 #define MODULE_STATUS_EVALUATED 4
+
+// rev b012019fea18f29737a67c36911340a3e25bfc63
+// 15.2.1.16 Cyclic Module Records
+// Value types of [[EvaluationError]] in a Cyclic Module Record
 #define MODULE_STATUS_EVALUATED_ERROR 5
 
 #define INTL_INTERNALS_OBJECT_SLOT 0
@@ -133,5 +136,9 @@
 #define TYPEDARRAY_KIND_BIGUINT64 10
 
 #define ITERATED_SLOT 0
+
+#define ITERATOR_HELPER_GENERATOR_SLOT 0
+
+#define ASYNC_ITERATOR_HELPER_GENERATOR_SLOT 0
 
 #endif

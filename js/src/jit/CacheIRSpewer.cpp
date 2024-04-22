@@ -20,6 +20,7 @@
 
 #  include "jsmath.h"
 
+#  include "js/ScalarType.h"  // js::Scalar::Type
 #  include "util/Text.h"
 #  include "vm/JSFunction.h"
 #  include "vm/JSObject.h"
@@ -96,9 +97,11 @@ class MOZ_RAII CacheIROpsJitSpewer {
     out_.printf("%s %u", name, val);
   }
   void spewCallFlagsImm(const char* name, CallFlags flags) {
-    out_.printf("%s (format %u, isConstructing %u, isSameRealm %u)", name,
-                flags.getArgFormat(), flags.isConstructing(),
-                flags.isSameRealm());
+    out_.printf(
+        "%s (format %u%s%s%s)", name, flags.getArgFormat(),
+        flags.isConstructing() ? ", isConstructing" : "",
+        flags.isSameRealm() ? ", isSameRealm" : "",
+        flags.needsUninitializedThis() ? ", needsUninitializedThis" : "");
   }
   void spewJSWhyMagicImm(const char* name, JSWhyMagic magic) {
     out_.printf("%s JSWhyMagic(%u)", name, unsigned(magic));

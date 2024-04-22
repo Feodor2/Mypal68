@@ -211,16 +211,16 @@ void MacroAssembler::xorPtr(Imm32 imm, Register dest) {
 // ===============================================================
 // Swap instructions
 
-void MacroAssembler::swap16SignExtend(Register reg) { as_revsh(reg, reg); }
+void MacroAssembler::byteSwap16SignExtend(Register reg) { as_revsh(reg, reg); }
 
-void MacroAssembler::swap16ZeroExtend(Register reg) {
+void MacroAssembler::byteSwap16ZeroExtend(Register reg) {
   as_rev16(reg, reg);
   as_uxth(reg, reg, 0);
 }
 
-void MacroAssembler::swap32(Register reg) { as_rev(reg, reg); }
+void MacroAssembler::byteSwap32(Register reg) { as_rev(reg, reg); }
 
-void MacroAssembler::swap64(Register64 reg) {
+void MacroAssembler::byteSwap64(Register64 reg) {
   as_rev(reg.high, reg.high);
   as_rev(reg.low, reg.low);
 
@@ -617,7 +617,9 @@ void MacroAssembler::lshift32(Register src, Register dest) {
 }
 
 void MacroAssembler::flexibleLshift32(Register src, Register dest) {
-  lshift32(src, dest);
+  ScratchRegisterScope scratch(*this);
+  as_and(scratch, src, Imm8(0x1F));
+  lshift32(scratch, dest);
 }
 
 void MacroAssembler::lshift32(Imm32 imm, Register dest) {
@@ -637,7 +639,9 @@ void MacroAssembler::rshift32(Register src, Register dest) {
 }
 
 void MacroAssembler::flexibleRshift32(Register src, Register dest) {
-  rshift32(src, dest);
+  ScratchRegisterScope scratch(*this);
+  as_and(scratch, src, Imm8(0x1F));
+  rshift32(scratch, dest);
 }
 
 void MacroAssembler::rshift32(Imm32 imm, Register dest) {
@@ -707,7 +711,9 @@ void MacroAssembler::rshift32Arithmetic(Imm32 imm, Register dest) {
 }
 
 void MacroAssembler::flexibleRshift32Arithmetic(Register src, Register dest) {
-  rshift32Arithmetic(src, dest);
+  ScratchRegisterScope scratch(*this);
+  as_and(scratch, src, Imm8(0x1F));
+  rshift32Arithmetic(scratch, dest);
 }
 
 void MacroAssembler::rshift64(Imm32 imm, Register64 dest) {

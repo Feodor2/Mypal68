@@ -20,8 +20,8 @@
 
 #include "jstypes.h"  // JS_FRIEND_API
 
-#include "js/HeapAPI.h"     // JS::shadow::String
 #include "js/RootingAPI.h"  // JS::Handle, JS::Rooted
+#include "js/String.h"      // JS::GetStringLength
 #include "js/TypeDecls.h"   // JSContext, JS::Latin1Char, JSString
 #include "js/Vector.h"      // js::Vector
 
@@ -29,18 +29,13 @@ class JSLinearString;
 
 namespace JS {
 
-MOZ_ALWAYS_INLINE size_t GetStringLength(JSString* s) {
-  return reinterpret_cast<shadow::String*>(s)->length();
-}
-
 /**
- * This class provides safe access to a string's chars across a GC. Once
- * we allocate strings and chars in the nursery (bug 903519), this class
- * will have to make a copy of the string's chars if they are allocated
- * in the nursery, so it's best to avoid using this class unless you really
- * need it. It's usually more efficient to use the latin1Chars/twoByteChars
- * JSString methods and often the code can be rewritten so that only indexes
- * instead of char pointers are used in parts of the code that can GC.
+ * This class provides safe access to a string's chars across a GC. If we ever
+ * nursery allocate strings' out of line chars, this class will have to make a
+ * copy, so it's best to avoid using this class unless you really need it. It's
+ * usually more efficient to use the latin1Chars/twoByteChars JSString methods
+ * and often the code can be rewritten so that only indexes instead of char
+ * pointers are used in parts of the code that can GC.
  */
 class MOZ_STACK_CLASS JS_FRIEND_API AutoStableStringChars final {
   /*

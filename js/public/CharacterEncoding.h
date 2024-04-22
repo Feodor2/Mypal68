@@ -39,6 +39,20 @@ class Latin1Chars : public mozilla::Range<Latin1Char> {
 };
 
 /*
+ * Like Latin1Chars, but the chars are const.
+ */
+class ConstLatin1Chars : public mozilla::Range<const Latin1Char> {
+  typedef mozilla::Range<const Latin1Char> Base;
+
+ public:
+  using CharT = Latin1Char;
+
+  ConstLatin1Chars() = default;
+  ConstLatin1Chars(const Latin1Char* aChars, size_t aLength)
+      : Base(aChars, aLength) {}
+};
+
+/*
  * A Latin1Chars, but with \0 termination for C compatibility.
  */
 class Latin1CharsZ : public mozilla::RangedPtr<Latin1Char> {
@@ -289,11 +303,12 @@ JS_PUBLIC_API size_t GetDeflatedUTF8StringLength(JSLinearString* s);
  * exhausted or too little space is available in |dst| to fit the scalar
  * value. Lone surrogates are converted to REPLACEMENT CHARACTER. Return
  * the number of bytes of |dst| that were filled.
- * Use |JS_EncodeStringToUTF8BufferPartial| if your string isn't already
- * flat.
  *
- * Given |JSString* str = JS_FORGET_STRING_FLATNESS(src)|,
- * if |JS_StringHasLatin1Chars(str)|, then |src| is always fully converted
+ * Use |JS_EncodeStringToUTF8BufferPartial| if your string isn't already
+ * linear.
+ *
+ * Given |JSString* str = JS_FORGET_STRING_LINEARNESS(src)|,
+ * if |JS::StringHasLatin1Chars(str)|, then |src| is always fully converted
  * if |dst.Length() >= JS_GetStringLength(str) * 2|. Otherwise |src| is
  * always fully converted if |dst.Length() >= JS_GetStringLength(str) * 3|.
  *

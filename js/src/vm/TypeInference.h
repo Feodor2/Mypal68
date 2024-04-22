@@ -200,7 +200,7 @@ class PreliminaryObjectArrayWithTemplate : public PreliminaryObjectArray {
 
   void trace(JSTracer* trc);
 
-  static void writeBarrierPre(
+  static void preWriteBarrier(
       PreliminaryObjectArrayWithTemplate* preliminaryObjects);
 };
 

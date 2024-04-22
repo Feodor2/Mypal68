@@ -6,7 +6,8 @@
 #define ds_InlineTable_h
 
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
+
+#include <utility>
 
 #include "js/AllocPolicy.h"
 #include "js/HashTable.h"

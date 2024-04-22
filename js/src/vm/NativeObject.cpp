@@ -17,6 +17,7 @@
 #include "gc/MaybeRooted.h"
 #include "jit/BaselineIC.h"
 #include "js/CharacterEncoding.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit{,DontReport}
 #include "js/Result.h"
 #include "js/Value.h"
 #include "util/Memory.h"
@@ -68,6 +69,38 @@ static constexpr EmptyObjectElements emptyElementsHeaderShared(
 /* Objects with no elements share one empty set of elements. */
 HeapSlot* const js::emptyObjectElementsShared = reinterpret_cast<HeapSlot*>(
     uintptr_t(&emptyElementsHeaderShared) + sizeof(ObjectElements));
+
+struct EmptyObjectSlots : public ObjectSlots {
+  explicit constexpr EmptyObjectSlots(size_t dictionarySlotSpan)
+      : ObjectSlots(0, dictionarySlotSpan) {}
+};
+
+static constexpr EmptyObjectSlots emptyObjectSlotsHeaders[17] = {
+    EmptyObjectSlots(0),  EmptyObjectSlots(1),  EmptyObjectSlots(2),
+    EmptyObjectSlots(3),  EmptyObjectSlots(4),  EmptyObjectSlots(5),
+    EmptyObjectSlots(6),  EmptyObjectSlots(7),  EmptyObjectSlots(8),
+    EmptyObjectSlots(9),  EmptyObjectSlots(10), EmptyObjectSlots(11),
+    EmptyObjectSlots(12), EmptyObjectSlots(13), EmptyObjectSlots(14),
+    EmptyObjectSlots(15), EmptyObjectSlots(16)};
+
+static_assert(ArrayLength(emptyObjectSlotsHeaders) ==
+              NativeObject::MAX_FIXED_SLOTS + 1);
+
+HeapSlot* const js::emptyObjectSlotsForDictionaryObject[17] = {
+    emptyObjectSlotsHeaders[0].slots(),  emptyObjectSlotsHeaders[1].slots(),
+    emptyObjectSlotsHeaders[2].slots(),  emptyObjectSlotsHeaders[3].slots(),
+    emptyObjectSlotsHeaders[4].slots(),  emptyObjectSlotsHeaders[5].slots(),
+    emptyObjectSlotsHeaders[6].slots(),  emptyObjectSlotsHeaders[7].slots(),
+    emptyObjectSlotsHeaders[8].slots(),  emptyObjectSlotsHeaders[9].slots(),
+    emptyObjectSlotsHeaders[10].slots(), emptyObjectSlotsHeaders[11].slots(),
+    emptyObjectSlotsHeaders[12].slots(), emptyObjectSlotsHeaders[13].slots(),
+    emptyObjectSlotsHeaders[14].slots(), emptyObjectSlotsHeaders[15].slots(),
+    emptyObjectSlotsHeaders[16].slots()};
+
+static_assert(ArrayLength(emptyObjectSlotsForDictionaryObject) ==
+              NativeObject::MAX_FIXED_SLOTS + 1);
+
+HeapSlot* const js::emptyObjectSlots = emptyObjectSlotsForDictionaryObject[0];
 
 #ifdef DEBUG
 
@@ -126,7 +159,8 @@ bool ObjectElements::MakeElementsCopyOnWrite(JSContext* cx, NativeObject* obj) {
 }
 
 /* static */
-bool ObjectElements::PreventExtensions(JSContext* cx, NativeObject* obj) {
+bool ObjectElements::PrepareForPreventExtensions(JSContext* cx,
+                                                 NativeObject* obj) {
   if (!obj->maybeCopyElementsForWrite(cx)) {
     return false;
   }
@@ -140,6 +174,18 @@ bool ObjectElements::PreventExtensions(JSContext* cx, NativeObject* obj) {
   MOZ_ASSERT(obj->getElementsHeader()->numShiftedElements() == 0);
 
   return true;
+}
+
+/* static */
+void ObjectElements::PreventExtensions(NativeObject* obj) {
+  MOZ_ASSERT(!obj->denseElementsAreCopyOnWrite());
+  MOZ_ASSERT(!obj->isExtensible());
+  MOZ_ASSERT(obj->getElementsHeader()->numShiftedElements() == 0);
+  MOZ_ASSERT(obj->getDenseInitializedLength() == obj->getDenseCapacity());
+
+  if (!obj->hasEmptyElements()) {
+    obj->getElementsHeader()->setNotExtensible();
+  }
 }
 
 /* static */
@@ -273,11 +319,13 @@ void js::NativeObject::initSlotRange(uint32_t start, const Value* vector,
   HeapSlot* slotsStart;
   HeapSlot* slotsEnd;
   getSlotRange(start, length, &fixedStart, &fixedEnd, &slotsStart, &slotsEnd);
+
+  uint32_t offset = start;
   for (HeapSlot* sp = fixedStart; sp < fixedEnd; sp++) {
-    sp->init(this, HeapSlot::Slot, start++, *vector++);
+    sp->init(this, HeapSlot::Slot, offset++, *vector++);
   }
   for (HeapSlot* sp = slotsStart; sp < slotsEnd; sp++) {
-    sp->init(this, HeapSlot::Slot, start++, *vector++);
+    sp->init(this, HeapSlot::Slot, offset++, *vector++);
   }
 }
 
@@ -329,16 +377,20 @@ void NativeObject::setLastPropertyShrinkFixedSlots(Shape* shape) {
   MOZ_ASSERT(newFixed < oldFixed);
   MOZ_ASSERT(shape->slotSpan() <= oldFixed);
   MOZ_ASSERT(shape->slotSpan() <= newFixed);
-  MOZ_ASSERT(dynamicSlotsCount(oldFixed, shape->slotSpan(), getClass()) == 0);
-  MOZ_ASSERT(dynamicSlotsCount(newFixed, shape->slotSpan(), getClass()) == 0);
+  MOZ_ASSERT(numDynamicSlots() == 0);
+  MOZ_ASSERT(calculateDynamicSlots(oldFixed, shape->slotSpan(), getClass()) ==
+             0);
+  MOZ_ASSERT(calculateDynamicSlots(newFixed, shape->slotSpan(), getClass()) ==
+             0);
 
   setShape(shape);
 }
 
-bool NativeObject::setSlotSpan(JSContext* cx, uint32_t span) {
+bool NativeObject::ensureSlotsForDictionaryObject(JSContext* cx,
+                                                  uint32_t span) {
   MOZ_ASSERT(inDictionaryMode());
 
-  size_t oldSpan = lastProperty()->base()->slotSpan();
+  size_t oldSpan = dictionaryModeSlotSpan();
   if (oldSpan == span) {
     return true;
   }
@@ -347,14 +399,14 @@ bool NativeObject::setSlotSpan(JSContext* cx, uint32_t span) {
     return false;
   }
 
-  lastProperty()->base()->setSlotSpan(span);
+  setDictionaryModeSlotSpan(span);
   return true;
 }
 
-bool NativeObject::growSlots(JSContext* cx, uint32_t oldCount,
-                             uint32_t newCount) {
-  MOZ_ASSERT(newCount > oldCount);
-  MOZ_ASSERT_IF(!is<ArrayObject>(), newCount >= SLOT_CAPACITY_MIN);
+bool NativeObject::growSlots(JSContext* cx, uint32_t oldCapacity,
+                             uint32_t newCapacity) {
+  MOZ_ASSERT(newCapacity > oldCapacity);
+  MOZ_ASSERT_IF(!is<ArrayObject>(), newCapacity >= SLOT_CAPACITY_MIN);
 
   /*
    * Slot capacities are determined by the span of allocated objects. Due to
@@ -362,47 +414,80 @@ bool NativeObject::growSlots(JSContext* cx, uint32_t oldCount,
    * throttled well before the slot capacity can overflow.
    */
   NativeObject::slotsSizeMustNotOverflow();
-  MOZ_ASSERT(newCount <= MAX_SLOTS_COUNT);
+  MOZ_ASSERT(newCapacity <= MAX_SLOTS_COUNT);
 
-  if (!oldCount) {
-    MOZ_ASSERT(!slots_);
-    slots_ = AllocateObjectBuffer<HeapSlot>(cx, this, newCount);
-    if (!slots_) {
-      return false;
-    }
-    Debug_SetSlotRangeToCrashOnTouch(slots_, newCount);
-
-    AddCellMemory(this, newCount * sizeof(HeapSlot), MemoryUse::ObjectSlots);
-
-    return true;
+  if (!hasDynamicSlots()) {
+    return allocateSlots(cx, newCapacity);
   }
 
-  HeapSlot* newslots =
-      ReallocateObjectBuffer<HeapSlot>(cx, this, slots_, oldCount, newCount);
-  if (!newslots) {
+  uint32_t newAllocated = ObjectSlots::allocCount(newCapacity);
+
+  uint32_t dictionarySpan = getSlotsHeader()->dictionarySlotSpan();
+
+  uint32_t oldAllocated = ObjectSlots::allocCount(oldCapacity);
+
+  ObjectSlots* oldHeaderSlots = ObjectSlots::fromSlots(slots_);
+  MOZ_ASSERT(oldHeaderSlots->capacity() == oldCapacity);
+
+  HeapSlot* allocation = ReallocateObjectBuffer<HeapSlot>(
+      cx, this, reinterpret_cast<HeapSlot*>(oldHeaderSlots), oldAllocated,
+      newAllocated);
+  if (!allocation) {
     return false; /* Leave slots at its old size. */
   }
 
-  RemoveCellMemory(this, oldCount * sizeof(HeapSlot), MemoryUse::ObjectSlots);
-  AddCellMemory(this, newCount * sizeof(HeapSlot), MemoryUse::ObjectSlots);
+  auto* newHeaderSlots =
+      new (allocation) ObjectSlots(newCapacity, dictionarySpan);
+  slots_ = newHeaderSlots->slots();
 
-  slots_ = newslots;
+  Debug_SetSlotRangeToCrashOnTouch(slots_ + oldCapacity,
+                                   newCapacity - oldCapacity);
 
-  Debug_SetSlotRangeToCrashOnTouch(slots_ + oldCount, newCount - oldCount);
+  RemoveCellMemory(this, ObjectSlots::allocSize(oldCapacity),
+                   MemoryUse::ObjectSlots);
+  AddCellMemory(this, ObjectSlots::allocSize(newCapacity),
+                MemoryUse::ObjectSlots);
 
+  MOZ_ASSERT(hasDynamicSlots());
+  return true;
+}
+
+bool NativeObject::allocateSlots(JSContext* cx, uint32_t newCapacity) {
+  MOZ_ASSERT(!hasDynamicSlots());
+
+  uint32_t newAllocated = ObjectSlots::allocCount(newCapacity);
+
+  uint32_t dictionarySpan = getSlotsHeader()->dictionarySlotSpan();
+
+  HeapSlot* allocation = AllocateObjectBuffer<HeapSlot>(cx, this, newAllocated);
+  if (!allocation) {
+    return false;
+  }
+
+  auto* newHeaderSlots =
+      new (allocation) ObjectSlots(newCapacity, dictionarySpan);
+  slots_ = newHeaderSlots->slots();
+
+  Debug_SetSlotRangeToCrashOnTouch(slots_, newCapacity);
+
+  AddCellMemory(this, ObjectSlots::allocSize(newCapacity),
+                MemoryUse::ObjectSlots);
+
+  MOZ_ASSERT(hasDynamicSlots());
   return true;
 }
 
 /* static */
 bool NativeObject::growSlotsPure(JSContext* cx, NativeObject* obj,
-                                 uint32_t newCount) {
+                                 uint32_t newCapacity) {
   // IC code calls this directly.
   AutoUnsafeCallWithABI unsafe;
 
-  if (!obj->growSlots(cx, obj->numDynamicSlots(), newCount)) {
+  if (!obj->growSlots(cx, obj->numDynamicSlots(), newCapacity)) {
     cx->recoverFromOutOfMemory();
     return false;
   }
+
   return true;
 }
 
@@ -432,8 +517,8 @@ bool NativeObject::addDenseElementPure(JSContext* cx, NativeObject* obj) {
   return true;
 }
 
-static inline void FreeSlots(JSContext* cx, NativeObject* obj, HeapSlot* slots,
-                             size_t nbytes) {
+static inline void FreeSlots(JSContext* cx, NativeObject* obj,
+                             ObjectSlots* slots, size_t nbytes) {
   if (cx->isHelperThreadContext()) {
     js_free(slots);
   } else if (obj->isTenured()) {
@@ -444,33 +529,50 @@ static inline void FreeSlots(JSContext* cx, NativeObject* obj, HeapSlot* slots,
   }
 }
 
-void NativeObject::shrinkSlots(JSContext* cx, uint32_t oldCount,
-                               uint32_t newCount) {
-  MOZ_ASSERT(newCount < oldCount);
+void NativeObject::shrinkSlots(JSContext* cx, uint32_t oldCapacity,
+                               uint32_t newCapacity) {
+  MOZ_ASSERT(newCapacity < oldCapacity);
+  MOZ_ASSERT(oldCapacity == getSlotsHeader()->capacity());
 
-  if (newCount == 0) {
-    size_t nbytes = numDynamicSlots() * sizeof(HeapSlot);
+  uint32_t dictionarySpan = getSlotsHeader()->dictionarySlotSpan();
+
+  ObjectSlots* oldHeaderSlots = ObjectSlots::fromSlots(slots_);
+  MOZ_ASSERT(oldHeaderSlots->capacity() == oldCapacity);
+
+  uint32_t oldAllocated = ObjectSlots::allocCount(oldCapacity);
+
+  if (newCapacity == 0) {
+    size_t nbytes = ObjectSlots::allocSize(oldCapacity);
     RemoveCellMemory(this, nbytes, MemoryUse::ObjectSlots);
-    FreeSlots(cx, this, slots_, nbytes);
-    slots_ = nullptr;
+    FreeSlots(cx, this, oldHeaderSlots, nbytes);
+    setEmptyDynamicSlots(dictionarySpan);
     return;
   }
 
-  MOZ_ASSERT_IF(!is<ArrayObject>(), newCount >= SLOT_CAPACITY_MIN);
+  MOZ_ASSERT_IF(!is<ArrayObject>(), newCapacity >= SLOT_CAPACITY_MIN);
 
-  // Update the memory tracking whether or not the reallocation succeeds,
-  // because we have no way to tell the buffer size if it fails.
-  RemoveCellMemory(this, oldCount * sizeof(HeapSlot), MemoryUse::ObjectSlots);
-  AddCellMemory(this, newCount * sizeof(HeapSlot), MemoryUse::ObjectSlots);
+  uint32_t newAllocated = ObjectSlots::allocCount(newCapacity);
 
-  HeapSlot* newslots =
-      ReallocateObjectBuffer<HeapSlot>(cx, this, slots_, oldCount, newCount);
-  if (!newslots) {
+  HeapSlot* allocation = ReallocateObjectBuffer<HeapSlot>(
+      cx, this, reinterpret_cast<HeapSlot*>(oldHeaderSlots), oldAllocated,
+      newAllocated);
+  if (!allocation) {
+    // It's possible for realloc to fail when shrinking an allocation. In this
+    // case we continue using the original allocation but still update the
+    // capacity to the new requested capacity, which is smaller than the actual
+    // capacity.
     cx->recoverFromOutOfMemory();
-    return; // Leave slots at its old size.
+    allocation = reinterpret_cast<HeapSlot*>(getSlotsHeader());
   }
 
-  slots_ = newslots;
+  RemoveCellMemory(this, ObjectSlots::allocSize(oldCapacity),
+                   MemoryUse::ObjectSlots);
+  AddCellMemory(this, ObjectSlots::allocSize(newCapacity),
+                MemoryUse::ObjectSlots);
+
+  auto* newHeaderSlots =
+      new (allocation) ObjectSlots(newCapacity, dictionarySpan);
+  slots_ = newHeaderSlots->slots();
 }
 
 bool NativeObject::willBeSparseElements(uint32_t requiredCapacity,
@@ -581,6 +683,14 @@ DenseElementResult NativeObject::maybeDensifySparseElements(
   }
 
   obj->ensureDenseInitializedLength(cx, newInitializedLength, 0);
+
+  if (ObjectRealm::get(obj).objectMaybeInIteration(obj)) {
+    // Mark the densified elements as maybe-in-iteration. See also the comment
+    // in GetIterator.
+    if (!obj->markDenseElementsMaybeInIteration(cx)) {
+      return DenseElementResult::Failure;
+    }
+  }
 
   RootedValue value(cx);
 
@@ -1068,7 +1178,7 @@ bool NativeObject::CopyElementsForWrite(JSContext* cx, NativeObject* obj) {
   // COPY_ON_WRITE flags is set only if obj is a dense array.
   MOZ_ASSERT(newCapacity <= MAX_DENSE_ELEMENTS_COUNT);
 
-  JSObject::writeBarrierPre(obj->getElementsHeader()->ownerObject());
+  gc::PreWriteBarrier(obj->getElementsHeader()->ownerObject().get());
 
   HeapSlot* newHeaderSlots =
       AllocateObjectBuffer<HeapSlot>(cx, obj, newAllocated);
@@ -1131,7 +1241,7 @@ bool NativeObject::allocDictionarySlot(JSContext* cx, HandleNativeObject obj,
 
   *slotp = slot;
 
-  return obj->setSlotSpan(cx, slot + 1);
+  return obj->ensureSlotsForDictionaryObject(cx, slot + 1);
 }
 
 void NativeObject::freeSlot(JSContext* cx, uint32_t slot) {
@@ -1746,7 +1856,9 @@ bool js::NativeDefineProperty(JSContext* cx, HandleNativeObject obj,
 
   // Step 2.
   if (!prop) {
-    if (!obj->isExtensible()) {
+    // Note: We are sharing the property definition machinery with private
+    //       fields. Private fields may be added to non-extensible objects.
+    if (!obj->isExtensible() && !id.isPrivateName()) {
       return result.fail(JSMSG_CANT_DEFINE_PROP_OBJECT_NOT_EXTENSIBLE);
     }
 
@@ -2289,7 +2401,8 @@ static MOZ_ALWAYS_INLINE bool GetExistingProperty(
     return true;
   }
 
-  {
+  if (!jit::JitOptions.warpBuilder) {
+    // Set the accessed-getter flag for IonBuilder.
     jsbytecode* pc;
     JSScript* script = cx->currentScript(&pc);
     if (script && script->hasJitScript()) {
@@ -2507,7 +2620,7 @@ bool js::NativeGetElement(JSContext* cx, HandleNativeObject obj,
     }
   } else {
     RootedValue indexVal(cx, Int32Value(index));
-    if (!ValueToId<CanGC>(cx, indexVal, &id)) {
+    if (!PrimitiveValueToId<CanGC>(cx, indexVal, &id)) {
       return false;
     }
   }

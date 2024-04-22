@@ -6,7 +6,6 @@
 #define vm_GeckoProfiler_h
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/GuardObjects.h"
 
 #include <stddef.h>
 
@@ -155,8 +154,8 @@ inline void GeckoProfilerRuntime::stringsReset() { strings().clear(); }
  */
 class MOZ_RAII GeckoProfilerEntryMarker {
  public:
-  explicit MOZ_ALWAYS_INLINE GeckoProfilerEntryMarker(
-      JSContext* cx, JSScript* script MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  explicit MOZ_ALWAYS_INLINE GeckoProfilerEntryMarker(JSContext* cx,
+                                                      JSScript* script);
   MOZ_ALWAYS_INLINE ~GeckoProfilerEntryMarker();
 
  private:
@@ -164,7 +163,6 @@ class MOZ_RAII GeckoProfilerEntryMarker {
 #ifdef DEBUG
   uint32_t spBefore_;
 #endif
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /*
@@ -177,7 +175,7 @@ class MOZ_NONHEAP_CLASS AutoGeckoProfilerEntry {
   explicit MOZ_ALWAYS_INLINE AutoGeckoProfilerEntry(
       JSContext* cx, const char* label,
       JS::ProfilingCategoryPair categoryPair = JS::ProfilingCategoryPair::JS,
-      uint32_t flags = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+      uint32_t flags = 0);
   MOZ_ALWAYS_INLINE ~AutoGeckoProfilerEntry();
 
  private:
@@ -185,7 +183,6 @@ class MOZ_NONHEAP_CLASS AutoGeckoProfilerEntry {
 #ifdef DEBUG
   uint32_t spBefore_;
 #endif
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /*
@@ -195,14 +192,12 @@ class MOZ_NONHEAP_CLASS AutoGeckoProfilerEntry {
  */
 class MOZ_RAII GeckoProfilerBaselineOSRMarker {
  public:
-  explicit GeckoProfilerBaselineOSRMarker(
-      JSContext* cx, bool hasProfilerFrame MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  explicit GeckoProfilerBaselineOSRMarker(JSContext* cx, bool hasProfilerFrame);
   ~GeckoProfilerBaselineOSRMarker();
 
  private:
   GeckoProfilerThread* profiler;
   mozilla::DebugOnly<uint32_t> spBefore_;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /*

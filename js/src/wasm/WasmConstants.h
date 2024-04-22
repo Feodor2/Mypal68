@@ -58,11 +58,9 @@ enum class TypeCode {
   // A function pointer with any signature
   FuncRef = 0x70,  // SLEB128(-0x10)
 
-  // A reference to any type.
+  // A reference to any host type. This is exposed to JS as 'externref' and
+  // will eventually be renamed in code as well.
   AnyRef = 0x6f,  // SLEB128(-0x11)
-
-  // A null reference.
-  NullRef = 0x6e,  // SLEB128(-0x12)
 
   // Type constructor for reference types.
   OptRef = 0x6c,
@@ -587,7 +585,10 @@ static const unsigned MaxImports = 100000;
 static const unsigned MaxExports = 100000;
 static const unsigned MaxGlobals = 1000000;
 static const unsigned MaxDataSegments = 100000;
+static const unsigned MaxDataSegmentLengthPages = 16384;
 static const unsigned MaxElemSegments = 10000000;
+static const unsigned MaxElemSegmentLength = 10000000;
+static const unsigned MaxTableLimitField = UINT32_MAX;
 static const unsigned MaxTableLength = 10000000;
 static const unsigned MaxLocals = 50000;
 static const unsigned MaxParams = 1000;
@@ -595,16 +596,15 @@ static const unsigned MaxParams = 1000;
 // `env->funcMaxResults()` to get the correct value for a module.
 static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 1000;
-static const unsigned MaxMemoryMaximumPages = 65536;
+static const unsigned MaxMemoryLimitField = 65536;
+static const unsigned MaxMemoryPages = 16384;
 static const unsigned MaxStringBytes = 100000;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;
 
 // These limits pertain to our WebAssembly implementation only.
 
-static const unsigned MaxTableInitialLength = 10000000;
 static const unsigned MaxBrTableElems = 1000000;
-static const unsigned MaxMemoryInitialPages = 16384;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
 static const unsigned MaxResultsForJitEntry = 1;
 static const unsigned MaxResultsForJitExit = 1;
@@ -621,6 +621,27 @@ static const unsigned FailFP = 0xbad;
 // Asserted by Decoder::readVarU32.
 
 static const unsigned MaxVarU32DecodedBytes = 5;
+
+// Which backend to use in the case of the optimized tier.
+
+enum class OptimizedBackend {
+  Ion,
+  Cranelift,
+};
+
+// The CompileMode controls how compilation of a module is performed (notably,
+// how many times we compile it).
+
+enum class CompileMode { Once, Tier1, Tier2 };
+
+// Typed enum for whether debugging is enabled.
+
+enum class DebugEnabled { False, True };
+
+// A wasm module can either use no memory, a unshared memory (ArrayBuffer) or
+// shared memory (SharedArrayBuffer).
+
+enum class MemoryUsage { None = false, Unshared = 1, Shared = 2 };
 
 }  // namespace wasm
 }  // namespace js

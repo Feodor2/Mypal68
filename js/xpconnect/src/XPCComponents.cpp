@@ -6,6 +6,7 @@
 
 #include "xpcprivate.h"
 #include "xpc_make_class.h"
+#include "JSServices.h"
 #include "XPCJSWeakReference.h"
 #include "WrapperFactory.h"
 #include "nsJSUtils.h"
@@ -16,6 +17,8 @@
 #include "js/Array.h"  // JS::IsArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/ContextOptions.h"
+#include "js/friend/WindowProxy.h"  // js::ToWindowProxyIfWindow
+#include "js/Object.h"              // JS::GetClass, JS::GetCompartment
 #include "js/SavedFrameAPI.h"
 #include "js/StructuredClone.h"
 #include "mozilla/Attributes.h"
@@ -1316,6 +1319,16 @@ nsXPCComponents_Utils::GetSandbox(nsIXPCComponents_utils_Sandbox** aSandbox) {
 }
 
 NS_IMETHODIMP
+nsXPCComponents_Utils::CreateServicesCache(JSContext* aCx,
+                                           MutableHandleValue aServices) {
+  if (JSObject* services = NewJSServices(aCx)) {
+    aServices.setObject(*services);
+    return NS_OK;
+  }
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
 nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
                                    JSContext* cx) {
   // This function shall never fail! Silently eat any failure conditions.
@@ -1329,18 +1342,23 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
   nsGlobalWindowInner* win = CurrentWindowOrNull(cx);
   const uint64_t innerWindowID = win ? win->WindowID() : 0;
 
-  RootedObject errorObj(cx, error.isObject() ? &error.toObject() : nullptr);
-  JSErrorReport* err = errorObj ? JS_ErrorFromException(cx, errorObj) : nullptr;
+  Rooted<Maybe<Value>> exception(cx, Some(error));
+  if (!innerWindowID) {
+    // Leak mitigation: nsConsoleService::ClearMessagesForWindowID needs
+    // a WindowID for cleanup and exception values could hold arbitrary
+    // objects alive.
+    exception = Nothing();
+  }
 
   nsCOMPtr<nsIScriptError> scripterr;
-
+  RootedObject errorObj(cx, error.isObject() ? &error.toObject() : nullptr);
   if (errorObj) {
     JS::RootedObject stackVal(cx);
     JS::RootedObject stackGlobal(cx);
     FindExceptionStackForConsoleReport(win, error, nullptr, &stackVal,
                                        &stackGlobal);
     if (stackVal) {
-      scripterr = new nsScriptErrorWithStack(stackVal, stackGlobal);
+      scripterr = CreateScriptError(win, exception, stackVal, stackGlobal);
     }
   }
 
@@ -1394,14 +1412,15 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
     }
 
     if (stackObj) {
-      scripterr = new nsScriptErrorWithStack(stackObj, stackGlobal);
+      scripterr = CreateScriptError(win, exception, stackObj, stackGlobal);
     }
   }
 
   if (!scripterr) {
-    scripterr = new nsScriptError();
+    scripterr = CreateScriptError(win, exception, nullptr, nullptr);
   }
 
+  JSErrorReport* err = errorObj ? JS_ErrorFromException(cx, errorObj) : nullptr;
   if (err) {
     // It's a proper JS Error
     nsAutoString fileUni;
@@ -1935,9 +1954,9 @@ nsXPCComponents_Utils::PermitCPOWsInScope(HandleValue obj) {
   }
 
   JSObject* scopeObj = js::UncheckedUnwrap(&obj.toObject());
-  JS::Compartment* scopeComp = js::GetObjectCompartment(scopeObj);
+  JS::Compartment* scopeComp = JS::GetCompartment(scopeObj);
   JS::Compartment* systemComp =
-      js::GetObjectCompartment(xpc::PrivilegedJunkScope());
+      JS::GetCompartment(xpc::PrivilegedJunkScope());
   MOZ_RELEASE_ASSERT(scopeComp != systemComp,
                      "Don't call Cu.PermitCPOWsInScope() on scopes in the "
                      "shared system compartment");
@@ -1950,7 +1969,7 @@ nsXPCComponents_Utils::RecomputeWrappers(HandleValue vobj, JSContext* cx) {
   // Determine the compartment of the given object, if any.
   JS::Compartment* c =
       vobj.isObject()
-          ? js::GetObjectCompartment(js::UncheckedUnwrap(&vobj.toObject()))
+          ? JS::GetCompartment(js::UncheckedUnwrap(&vobj.toObject()))
           : nullptr;
 
   // If no compartment was given, recompute all.
@@ -1975,7 +1994,7 @@ nsXPCComponents_Utils::SetWantXrays(HandleValue vscope, JSContext* cx) {
   JSObject* scopeObj = js::UncheckedUnwrap(&vscope.toObject());
   MOZ_RELEASE_ASSERT(!AccessCheck::isChrome(scopeObj),
                      "Don't call setWantXrays on system-principal scopes");
-  JS::Compartment* compartment = js::GetObjectCompartment(scopeObj);
+  JS::Compartment* compartment = JS::GetCompartment(scopeObj);
   CompartmentPrivate::Get(scopeObj)->wantXrays = true;
   bool ok = js::RecomputeWrappers(cx, js::SingleCompartment(compartment),
                                   js::AllCompartments());
@@ -2111,6 +2130,13 @@ nsXPCComponents_Utils::UnblockScriptForGlobal(HandleValue globalArg,
 }
 
 NS_IMETHODIMP
+nsXPCComponents_Utils::IsOpaqueWrapper(HandleValue obj, bool* aRetval) {
+  *aRetval =
+      obj.isObject() && xpc::WrapperFactory::IsOpaqueWrapper(&obj.toObject());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsXPCComponents_Utils::IsXrayWrapper(HandleValue obj, bool* aRetval) {
   *aRetval =
       obj.isObject() && xpc::WrapperFactory::IsXrayWrapper(&obj.toObject());
@@ -2154,7 +2180,7 @@ nsXPCComponents_Utils::GetClassName(HandleValue aObj, bool aUnwrap,
   if (aUnwrap) {
     obj = js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
   }
-  *aRv = NS_xstrdup(js::GetObjectClass(obj)->name);
+  *aRv = NS_xstrdup(JS::GetClass(obj)->name);
   return NS_OK;
 }
 

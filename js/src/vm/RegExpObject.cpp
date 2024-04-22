@@ -16,6 +16,8 @@
 #include "gc/HashUtil.h"
 #include "irregexp/RegExpAPI.h"
 #include "jit/VMFunctions.h"
+#include "js/friend/StackLimits.h"  // js::ReportOverRecursed
+#include "js/Object.h"              // JS::GetBuiltinClass
 #include "js/RegExp.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlags
 #include "js/StableStringChars.h"
@@ -195,8 +197,8 @@ const JSClass RegExpObject::class_ = {
     &RegExpObjectClassOps, &RegExpObjectClassSpec};
 
 const JSClass RegExpObject::protoClass_ = {
-    js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp), JS_NULL_CLASS_OPS,
-    &RegExpObjectClassSpec};
+    "RegExp.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
+    JS_NULL_CLASS_OPS, &RegExpObjectClassSpec};
 
 template <typename CharT>
 RegExpObject* RegExpObject::create(JSContext* cx, const CharT* chars,
@@ -597,7 +599,7 @@ bool js::StringHasRegExpMetaChars(JSLinearString* str) {
 /* RegExpShared */
 
 RegExpShared::RegExpShared(JSAtom* source, RegExpFlags flags)
-    : headerAndSource(source), pairCount_(0), flags(flags) {}
+    : CellWithTenuredGCPointer(source), pairCount_(0), flags(flags) {}
 
 void RegExpShared::traceChildren(JSTracer* trc) {
   // Discard code to avoid holding onto ExecutablePools.
@@ -605,7 +607,7 @@ void RegExpShared::traceChildren(JSTracer* trc) {
     discardJitCode();
   }
 
-  TraceNullableEdge(trc, &headerAndSource, "RegExpShared source");
+  TraceNullableCellHeaderEdge(trc, this, "RegExpShared source");
   if (kind() == RegExpShared::Kind::Atom) {
     TraceNullableEdge(trc, &patternAtom_, "RegExpShared pattern atom");
   } else {

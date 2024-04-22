@@ -319,12 +319,11 @@ void js::intl::LanguageTag::performComplexRegionMappings() {
 
         first_case = True
         for replacement_region in replacement_regions:
-            replacement_language_script = sorted(((language, script)
-                                                  for (language, script, region) in (
-                                                      non_default_replacements
-                                                  )
-                                                  if region == replacement_region),
-                                                 key=itemgetter(0))
+            replacement_language_script = sorted((language, script)
+                                                 for (language, script, region) in (
+                                                     non_default_replacements
+                                                 )
+                                                 if region == replacement_region)
 
             if_kind = u"if" if first_case else u"else if"
             first_case = False
@@ -1337,6 +1336,23 @@ def updateCLDRLangTags(args):
     out = args.out
     filename = args.file
 
+    # Determine current CLDR version from ICU.
+    if version is None:
+        icuDir = os.path.join(topsrcdir, "intl/icu/source")
+        if not os.path.isdir(icuDir):
+            raise RuntimeError("not a directory: {}".format(icuDir))
+
+        reVersion = re.compile(r'\s*cldrVersion\{"(\d+(?:\.\d+)?)"\}')
+
+        for line in flines(os.path.join(icuDir, "data/misc/supplementalData.txt")):
+            m = reVersion.match(line)
+            if m:
+                version = m.group(1)
+                break
+
+        if version is None:
+            raise RuntimeError("can't resolve CLDR version")
+
     url = url.replace("<VERSION>", version)
 
     print("Arguments:")
@@ -2076,11 +2092,38 @@ def generateTzDataTestBackzoneLinks(tzdataDir, version, ignoreBackzone, testDir)
     )
 
 
+def generateTzDataTestVersion(tzdataDir, version, testDir):
+    fileName = "timeZone_version.js"
+
+    with io.open(os.path.join(testDir, fileName), mode="w", encoding="utf-8", newline="") as f:
+        println = partial(print, file=f)
+
+        println(u'// |reftest| skip-if(!this.hasOwnProperty("Intl"))')
+        println(u"")
+        println(generatedFileWarning)
+        println(tzdataVersionComment.format(version))
+        println(u"""const tzdata = "{0}";""".format(version))
+
+        println(u"""
+if (typeof getICUOptions === "undefined") {
+    var getICUOptions = SpecialPowers.Cu.getJSTestingFunctions().getICUOptions;
+}
+
+var options = getICUOptions();
+
+assertEq(options.tzdata, tzdata);
+
+if (typeof reportCompare === "function")
+    reportCompare(0, 0, "ok");
+""")
+
+
 def generateTzDataTests(tzdataDir, version, ignoreBackzone, testDir):
     generateTzDataTestBackwardLinks(tzdataDir, version, ignoreBackzone, testDir)
     generateTzDataTestNotBackwardLinks(tzdataDir, version, ignoreBackzone, testDir)
     generateTzDataTestBackzone(tzdataDir, version, ignoreBackzone, testDir)
     generateTzDataTestBackzoneLinks(tzdataDir, version, ignoreBackzone, testDir)
+    generateTzDataTestVersion(tzdataDir, version, testDir)
 
 
 def updateTzdata(topsrcdir, args):
@@ -2752,7 +2795,6 @@ if __name__ == "__main__":
                                              help="Update CLDR language tags data")
     parser_cldr_tags.add_argument("--version",
                                   metavar="VERSION",
-                                  required=True,
                                   help="CLDR version number")
     parser_cldr_tags.add_argument("--url",
                                   metavar="URL",

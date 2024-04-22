@@ -20,7 +20,32 @@
 #include "threading/Mutex.h"
 
 namespace js {
+
+#ifdef DEBUG
+extern bool CurrentThreadIsGCMarking();
+#endif
+
 namespace gc {
+
+// Map from all trace kinds to the base GC type.
+template <JS::TraceKind kind>
+struct MapTraceKindToType {};
+
+#define DEFINE_TRACE_KIND_MAP(name, type, _, _1)   \
+  template <>                                      \
+  struct MapTraceKindToType<JS::TraceKind::name> { \
+    using Type = type;                             \
+  };
+JS_FOR_EACH_TRACEKIND(DEFINE_TRACE_KIND_MAP);
+#undef DEFINE_TRACE_KIND_MAP
+
+// Map from a possibly-derived type to the base GC type.
+template <typename T>
+struct BaseGCType {
+  using type =
+      typename MapTraceKindToType<JS::MapTypeToTraceKind<T>::kind>::Type;
+  static_assert(std::is_base_of_v<type, T>, "Failed to find base type");
+};
 
 class Arena;
 class ArenaCellSet;
@@ -143,11 +168,15 @@ class StoreBuffer {
 
   struct WholeCellBuffer {
     UniquePtr<LifoAlloc> storage_;
-    ArenaCellSet* head_;
+    ArenaCellSet* stringHead_;
+    ArenaCellSet* nonStringHead_;
     StoreBuffer* owner_;
 
     explicit WholeCellBuffer(StoreBuffer* owner)
-        : storage_(nullptr), head_(nullptr), owner_(owner) {}
+        : storage_(nullptr),
+          stringHead_(nullptr),
+          nonStringHead_(nullptr),
+          owner_(owner) {}
 
     MOZ_MUST_USE bool init();
 
@@ -167,8 +196,9 @@ class StoreBuffer {
     }
 
     bool isEmpty() const {
-      MOZ_ASSERT_IF(!head_, !storage_ || storage_->isEmpty());
-      return !head_;
+      MOZ_ASSERT_IF(!stringHead_ && !nonStringHead_,
+                    !storage_ || storage_->isEmpty());
+      return !stringHead_ && !nonStringHead_;
     }
 
    private:
@@ -387,8 +417,8 @@ class StoreBuffer {
   inline void CheckAccess() const {
 #ifdef DEBUG
     if (JS::RuntimeHeapIsBusy()) {
-      MOZ_ASSERT((CurrentThreadCanAccessRuntime(runtime_) && !lock_.isHeld()) ||
-                 lock_.ownedByCurrentThread());
+      MOZ_ASSERT(!CurrentThreadIsGCMarking());
+      MOZ_ASSERT(lock_.ownedByCurrentThread());
     } else {
       MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
     }
@@ -440,6 +470,10 @@ class StoreBuffer {
 #endif
 
  public:
+#ifdef DEBUG
+  bool markingNondeduplicatable;
+#endif
+
   explicit StoreBuffer(JSRuntime* rt, const Nursery& nursery);
   MOZ_MUST_USE bool enable();
 
@@ -583,6 +617,8 @@ class ArenaCellSet {
 
   WordT getWord(size_t wordIndex) const { return bits.getWord(wordIndex); }
 
+  void trace(TenuringTracer& mover);
+
   // Sentinel object used for all empty sets.
   //
   // We use a sentinel because it simplifies the JIT code slightly as we can
@@ -600,6 +636,49 @@ class ArenaCellSet {
   static size_t offsetOfArena() { return offsetof(ArenaCellSet, arena); }
   static size_t offsetOfBits() { return offsetof(ArenaCellSet, bits); }
 };
+
+// Post-write barrier implementation for GC cells.
+
+// Implement the post-write barrier for nursery allocateable cell type |T|. Call
+// this from |T::postWriteBarrier|.
+template <typename T>
+MOZ_ALWAYS_INLINE void PostWriteBarrierImpl(void* cellp, T* prev, T* next) {
+  MOZ_ASSERT(cellp);
+
+  // If the target needs an entry, add it.
+  js::gc::StoreBuffer* buffer;
+  if (next && (buffer = next->storeBuffer())) {
+    // If we know that the prev has already inserted an entry, we can skip
+    // doing the lookup to add the new entry. Note that we cannot safely
+    // assert the presence of the entry because it may have been added
+    // via a different store buffer.
+    if (prev && prev->storeBuffer()) {
+      return;
+    }
+    buffer->putCell(static_cast<T**>(cellp));
+    return;
+  }
+
+  // Remove the prev entry if the new value does not need it. There will only
+  // be a prev entry if the prev value was in the nursery.
+  if (prev && (buffer = prev->storeBuffer())) {
+    buffer->unputCell(static_cast<T**>(cellp));
+  }
+}
+
+template <typename T>
+MOZ_ALWAYS_INLINE void PostWriteBarrier(T** vp, T* prev, T* next) {
+  static_assert(std::is_base_of_v<Cell, T>);
+  static_assert(!std::is_same_v<Cell, T> && !std::is_same_v<TenuredCell, T>);
+
+  if constexpr (!std::is_base_of_v<gc::TenuredCell, T>) {
+    using BaseT = typename gc::BaseGCType<T>::type;
+    gc::PostWriteBarrierImpl<BaseT>(vp, prev, next);
+    return;
+  }
+
+  MOZ_ASSERT(!IsInsideNursery(next));
+}
 
 } /* namespace gc */
 } /* namespace js */

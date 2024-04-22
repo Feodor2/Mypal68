@@ -125,28 +125,31 @@ template <AllowGC allowGC>
 JSObject* GCRuntime::tryNewTenuredObject(JSContext* cx, AllocKind kind,
                                          size_t thingSize,
                                          size_t nDynamicSlots) {
-  HeapSlot* slots = nullptr;
+  ObjectSlots* slotsHeader = nullptr;
   if (nDynamicSlots) {
-    slots = cx->maybe_pod_malloc<HeapSlot>(nDynamicSlots);
-    if (MOZ_UNLIKELY(!slots)) {
+    HeapSlot* allocation =
+        cx->maybe_pod_malloc<HeapSlot>(ObjectSlots::allocCount(nDynamicSlots));
+    if (MOZ_UNLIKELY(!allocation)) {
       if (allowGC) {
         ReportOutOfMemory(cx);
       }
       return nullptr;
     }
-    Debug_SetSlotRangeToCrashOnTouch(slots, nDynamicSlots);
+
+    slotsHeader = new (allocation) ObjectSlots(nDynamicSlots, 0);
+    Debug_SetSlotRangeToCrashOnTouch(slotsHeader->slots(), nDynamicSlots);
   }
 
   JSObject* obj = tryNewTenuredThing<JSObject, allowGC>(cx, kind, thingSize);
 
   if (obj) {
     if (nDynamicSlots) {
-      static_cast<NativeObject*>(obj)->initSlots(slots);
-      AddCellMemory(obj, nDynamicSlots * sizeof(HeapSlot),
+      static_cast<NativeObject*>(obj)->initSlots(slotsHeader->slots());
+      AddCellMemory(obj, ObjectSlots::allocSize(nDynamicSlots),
                     MemoryUse::ObjectSlots);
     }
   } else {
-    js_free(slots);
+    js_free(slotsHeader);
   }
 
   return obj;
@@ -208,7 +211,7 @@ StringAllocT* js::AllocateStringImpl(JSContext* cx, InitialHeap heap) {
 
   if (cx->nursery().isEnabled() && heap != TenuredHeap &&
       cx->nursery().canAllocateStrings() && cx->zone()->allocNurseryStrings) {
-    auto str = static_cast<StringAllocT*>(
+    auto* str = static_cast<StringAllocT*>(
         rt->gc.tryNewNurseryString<allowGC>(cx, size, kind));
     if (str) {
       return str;
@@ -279,7 +282,7 @@ JS::BigInt* js::AllocateBigInt(JSContext* cx, InitialHeap heap) {
 
   if (cx->nursery().isEnabled() && heap != TenuredHeap &&
       cx->nursery().canAllocateBigInts() && cx->zone()->allocNurseryBigInts) {
-    auto bi = static_cast<JS::BigInt*>(
+    auto* bi = static_cast<JS::BigInt*>(
         rt->gc.tryNewNurseryBigInt<allowGC>(cx, size, kind));
     if (bi) {
       return bi;
@@ -344,7 +347,7 @@ template <typename T, AllowGC allowGC>
 T* GCRuntime::tryNewTenuredThing(JSContext* cx, AllocKind kind,
                                  size_t thingSize) {
   // Bump allocate in the arena's current free-list span.
-  T* t = reinterpret_cast<T*>(cx->freeLists().allocate(kind));
+  auto* t = reinterpret_cast<T*>(cx->freeLists().allocate(kind));
   if (MOZ_UNLIKELY(!t)) {
     // Get the next available free list and allocate out of it. This may
     // acquire a new arena, which will lock the chunk list. If there are no
@@ -553,8 +556,7 @@ TenuredCell* ArenaLists::refillFreeListAndAllocate(
     maybeLock.emplace(rt);
   }
 
-  ArenaList& al = arenaList(thingKind);
-  Arena* arena = al.takeNextArena();
+  Arena* arena = arenaList(thingKind).takeNextArena();
   if (arena) {
     // Empty arenas should be immediately freed.
     MOZ_ASSERT(!arena->isEmpty());
@@ -581,10 +583,17 @@ TenuredCell* ArenaLists::refillFreeListAndAllocate(
     return nullptr;
   }
 
-  MOZ_ASSERT(al.isCursorAtEnd());
-  al.insertBeforeCursor(arena);
+  addNewArena(arena, thingKind);
 
   return freeLists.setArenaAndAllocate(arena, thingKind);
+}
+
+inline void ArenaLists::addNewArena(Arena* arena, AllocKind thingKind) {
+  ArenaList& al = zone_->isGCMarking() ? newArenasInMarkPhase(thingKind)
+                                       : arenaList(thingKind);
+
+  MOZ_ASSERT(al.isCursorAtEnd());
+  al.insertBeforeCursor(arena);
 }
 
 inline TenuredCell* FreeLists::setArenaAndAllocate(Arena* arena,
@@ -790,15 +799,17 @@ BackgroundAllocTask::BackgroundAllocTask(GCRuntime* gc, ChunkPool& pool)
       chunkPool_(pool),
       enabled_(CanUseExtraThreads() && GetCPUCount() >= 2) {}
 
-void BackgroundAllocTask::run() {
+void BackgroundAllocTask::run(AutoLockHelperThreadState& lock) {
+  AutoUnlockHelperThreadState unlock(lock);
+
   TraceLoggerThread* logger = TraceLoggerForCurrentThread();
   AutoTraceLog logAllocation(logger, TraceLogger_GCAllocation);
 
-  AutoLockGC lock(gc);
-  while (!cancel_ && gc->wantBackgroundAllocation(lock)) {
+  AutoLockGC gcLock(gc);
+  while (!cancel_ && gc->wantBackgroundAllocation(gcLock)) {
     Chunk* chunk;
     {
-      AutoUnlockGC unlock(lock);
+      AutoUnlockGC unlock(gcLock);
       chunk = Chunk::allocate(gc);
       if (!chunk) {
         break;
@@ -811,7 +822,7 @@ void BackgroundAllocTask::run() {
 
 /* static */
 Chunk* Chunk::allocate(GCRuntime* gc) {
-  Chunk* chunk = static_cast<Chunk*>(MapAlignedPages(ChunkSize, ChunkSize));
+  auto* chunk = static_cast<Chunk*>(MapAlignedPages(ChunkSize, ChunkSize));
   if (!chunk) {
     return nullptr;
   }

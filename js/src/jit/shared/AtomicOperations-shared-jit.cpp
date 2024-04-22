@@ -11,6 +11,7 @@
 #include "jit/IonTypes.h"
 #include "jit/MacroAssembler.h"
 #include "jit/RegisterSets.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/Poison.h"
 
 #include "jit/MacroAssembler-inl.h"

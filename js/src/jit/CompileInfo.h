@@ -12,7 +12,6 @@
 #include "jit/JitAllocPolicy.h"
 #include "jit/JitFrames.h"
 #include "jit/Registers.h"
-#include "vm/EnvironmentObject.h"
 #include "vm/JSFunction.h"
 
 namespace js {
@@ -79,6 +78,7 @@ class InlineScriptTree {
 
   InlineScriptTree* addCallee(TempAllocator* allocator, jsbytecode* callerPc,
                               JSScript* calleeScript);
+  void removeCallee(InlineScriptTree* callee);
 
   InlineScriptTree* caller() const { return caller_; }
 
@@ -168,6 +168,7 @@ class CompileInfo {
         hadOverflowBailout_(script->hadOverflowBailout()),
         hadFrequentBailouts_(script->hadFrequentBailouts()),
         mayReadFrameArgsDirectly_(script->mayReadFrameArgsDirectly()),
+        isDerivedClassConstructor_(script->isDerivedClassConstructor()),
         inlineScriptTree_(inlineScriptTree) {
     MOZ_ASSERT_IF(osrPc, JSOp(*osrPc) == JSOp::LoopHead);
 
@@ -260,19 +261,13 @@ class CompileInfo {
 
   // Script accessors based on PC.
 
-  JSAtom* getAtom(jsbytecode* pc) const {
-    return script_->getAtom(GET_UINT32_INDEX(pc));
-  }
+  JSAtom* getAtom(jsbytecode* pc) const { return script_->getAtom(pc); }
 
-  PropertyName* getName(jsbytecode* pc) const {
-    return script_->getName(GET_UINT32_INDEX(pc));
-  }
+  PropertyName* getName(jsbytecode* pc) const { return script_->getName(pc); }
 
   inline RegExpObject* getRegExp(jsbytecode* pc) const;
 
-  JSObject* getObject(jsbytecode* pc) const {
-    return script_->getObject(GET_UINT32_INDEX(pc));
-  }
+  JSObject* getObject(jsbytecode* pc) const { return script_->getObject(pc); }
 
   inline JSFunction* getFunction(jsbytecode* pc) const;
 
@@ -466,6 +461,8 @@ class CompileInfo {
   bool hadFrequentBailouts() const { return hadFrequentBailouts_; }
   bool mayReadFrameArgsDirectly() const { return mayReadFrameArgsDirectly_; }
 
+  bool isDerivedClassConstructor() const { return isDerivedClassConstructor_; }
+
  private:
   unsigned nimplicit_;
   unsigned nargs_;
@@ -489,6 +486,8 @@ class CompileInfo {
   bool hadFrequentBailouts_;
 
   bool mayReadFrameArgsDirectly_;
+
+  bool isDerivedClassConstructor_;
 
   InlineScriptTree* inlineScriptTree_;
 

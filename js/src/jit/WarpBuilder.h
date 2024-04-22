@@ -52,8 +52,7 @@ namespace jit {
   _(Generator)                           \
   _(AsyncAwait)                          \
   _(AsyncResolve)                        \
-  /* Catch/finally */                    \
-  _(Exception)                           \
+  /* try-finally */                      \
   _(Finally)                             \
   _(Gosub)                               \
   _(Retsub)                              \
@@ -61,21 +60,46 @@ namespace jit {
   _(DelName)                             \
   _(GetRval)                             \
   _(SetIntrinsic)                        \
-  _(ThrowMsg)
-// === !! WARNING WARNING WARNING !! ===
-// Do you really want to sacrifice performance by not implementing this
-// operation in the optimizing compiler?
+  _(ThrowMsg)                            \
+  /* Private Fields */                   \
+  _(InitLockedElem)                      \
+  // === !! WARNING WARNING WARNING !! ===
+  // Do you really want to sacrifice performance by not implementing this
+  // operation in the optimizing compiler?
 
 class MIRGenerator;
 class MIRGraph;
 class WarpSnapshot;
 
+// Data that is shared across all WarpBuilders for a given compilation.
+class MOZ_STACK_CLASS WarpCompilation {
+  // The total loop depth, including loops in the caller while
+  // compiling inlined functions.
+  uint32_t loopDepth_ = 0;
+
+  // Loop phis for iterators that need to be kept alive.
+  PhiVector iterators_;
+
+ public:
+  explicit WarpCompilation(TempAllocator& alloc) : iterators_(alloc) {}
+
+  uint32_t loopDepth() const { return loopDepth_; }
+  void incLoopDepth() { loopDepth_++; }
+  void decLoopDepth() {
+    MOZ_ASSERT(loopDepth() > 0);
+    loopDepth_--;
+  }
+
+  PhiVector* iterators() { return &iterators_; }
+};
+
 // WarpBuilder builds a MIR graph from WarpSnapshot. Unlike WarpOracle,
 // WarpBuilder can run off-thread.
 class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
-  WarpSnapshot& snapshot_;
+  WarpCompilation* warpCompilation_;
   MIRGraph& graph_;
   const CompileInfo& info_;
+  const WarpScriptSnapshot* scriptSnapshot_;
   JSScript* script_;
 
   // Pointer to a WarpOpSnapshot or nullptr if we reached the end of the list.
@@ -83,30 +107,38 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
   // WarpOpSnapshot is sorted the same way), the iterator always moves forward.
   const WarpOpSnapshot* opSnapshotIter_ = nullptr;
 
-  // Note: we need both loopDepth_ and loopStack_.length(): once we support
-  // inlining, loopDepth_ will be moved to a per-compilation data structure
-  // (OuterWarpBuilder?) whereas loopStack_ and pendingEdges_ will be
-  // builder-specific state.
-  uint32_t loopDepth_ = 0;
+  // Note: loopStack_ is builder-specific. loopStack_.length is the
+  // depth relative to the current script.  The overall loop depth is
+  // stored in the WarpCompilation.
   LoopStateStack loopStack_;
   PendingEdgesMap pendingEdges_;
 
-  // Loop phis for iterators that need to be kept alive.
-  // TODO: once we support inlining, this needs to be stored once per
-  // compilation instead of builder.
-  PhiVector iterators_;
+  // These are only initialized when building an inlined script.
+  WarpBuilder* callerBuilder_ = nullptr;
+  MResumePoint* callerResumePoint_ = nullptr;
+  CallInfo* inlineCallInfo_ = nullptr;
 
+  WarpCompilation* warpCompilation() const { return warpCompilation_; }
   MIRGraph& graph() { return graph_; }
   const CompileInfo& info() const { return info_; }
-  WarpSnapshot& snapshot() const { return snapshot_; }
+  const WarpScriptSnapshot* scriptSnapshot() const { return scriptSnapshot_; }
+
+  uint32_t loopDepth() const { return warpCompilation_->loopDepth(); }
+  void incLoopDepth() { warpCompilation_->incLoopDepth(); }
+  void decLoopDepth() { warpCompilation_->decLoopDepth(); }
+  PhiVector* iterators() { return warpCompilation_->iterators(); }
+
+  WarpBuilder* callerBuilder() const { return callerBuilder_; }
+  MResumePoint* callerResumePoint() const { return callerResumePoint_; }
 
   BytecodeSite* newBytecodeSite(BytecodeLocation loc);
 
-  const WarpOpSnapshot* getOpSnapshotImpl(BytecodeLocation loc);
+  const WarpOpSnapshot* getOpSnapshotImpl(BytecodeLocation loc,
+                                          WarpOpSnapshot::Kind kind);
 
   template <typename T>
   const T* getOpSnapshot(BytecodeLocation loc) {
-    const WarpOpSnapshot* snapshot = getOpSnapshotImpl(loc);
+    const WarpOpSnapshot* snapshot = getOpSnapshotImpl(loc, T::ThisKind);
     return snapshot ? snapshot->as<T>() : nullptr;
   }
 
@@ -130,10 +162,12 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
 
   MOZ_MUST_USE bool buildPrologue();
   MOZ_MUST_USE bool buildBody();
-  MOZ_MUST_USE bool buildEpilogue();
+
+  MOZ_MUST_USE bool buildInlinePrologue();
 
   MOZ_MUST_USE bool buildIC(BytecodeLocation loc, CacheKind kind,
                             std::initializer_list<MDefinition*> inputs);
+  MOZ_MUST_USE bool buildBailoutForColdIC(BytecodeLocation loc, CacheKind kind);
 
   MOZ_MUST_USE bool buildEnvironmentChain();
   MInstruction* buildNamedLambdaEnv(MDefinition* callee, MDefinition* env,
@@ -145,6 +179,8 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
 
   MConstant* globalLexicalEnvConstant();
   MDefinition* getCallee();
+
+  MDefinition* maybeGuardNotOptimizedArguments(MDefinition* def);
 
   MOZ_MUST_USE bool buildUnaryOp(BytecodeLocation loc);
   MOZ_MUST_USE bool buildBinaryOp(BytecodeLocation loc);
@@ -162,14 +198,32 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
   bool usesEnvironmentChain() const;
   MDefinition* walkEnvironmentChain(uint32_t numHops);
 
+  MOZ_MUST_USE bool buildInlinedCall(BytecodeLocation loc,
+                                     const WarpInlinedCall* snapshot,
+                                     CallInfo& callInfo);
+
+  MDefinition* patchInlinedReturns(CompileInfo* calleeCompileInfo,
+                                   CallInfo& callInfo, MIRGraphReturns& exits,
+                                   MBasicBlock* returnBlock);
+  MDefinition* patchInlinedReturn(CompileInfo* calleeCompileInfo,
+                                  CallInfo& callInfo, MBasicBlock* exit,
+                                  MBasicBlock* returnBlock);
+
 #define BUILD_OP(OP, ...) MOZ_MUST_USE bool build_##OP(BytecodeLocation loc);
   FOR_EACH_OPCODE(BUILD_OP)
 #undef BUILD_OP
 
  public:
-  WarpBuilder(WarpSnapshot& snapshot, MIRGenerator& mirGen);
+  WarpBuilder(WarpSnapshot& snapshot, MIRGenerator& mirGen,
+              WarpCompilation* warpCompilation);
+  WarpBuilder(WarpBuilder* caller, WarpScriptSnapshot* snapshot,
+              CompileInfo& compileInfo, CallInfo* inlineCallInfo,
+              MResumePoint* callerResumePoint);
 
   MOZ_MUST_USE bool build();
+  MOZ_MUST_USE bool buildInline();
+
+  CallInfo* inlineCallInfo() const { return inlineCallInfo_; }
 };
 
 }  // namespace jit

@@ -63,6 +63,11 @@ class DeadObjectProxy : public BaseProxyHandler {
   virtual RegExpShared* regexp_toShared(JSContext* cx,
                                         HandleObject proxy) const override;
 
+  // Use the regular paths for private values
+  virtual bool useProxyExpandoObjectForPrivateFields() const override {
+    return false;
+  }
+
   virtual bool isCallable(JSObject* obj) const override {
     return flags(obj) & DeadObjectProxyIsCallable;
   }

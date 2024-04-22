@@ -22,6 +22,7 @@
 
 #include "jit/ProcessExecutableMemory.h"
 #include "util/Text.h"
+#include "vm/HelperThreadState.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCraneliftCompile.h"
 #include "wasm/WasmGenerator.h"
@@ -86,13 +87,18 @@ SharedCompileArgs CompileArgs::build(JSContext* cx,
   // additional memory and permanently stay in baseline code, so we try to
   // only enable it when a developer actually cares: when the debugger tab
   // is open.
-  bool debug = cx->realm()->debuggerObservesAsmJS();
+  bool debug = cx->realm() && cx->realm()->debuggerObservesAsmJS();
 
   bool forceTiering =
       cx->options().testWasmAwaitTier2() || JitOptions.wasmDelayTier2;
 
-  // The <Compiler>Available() predicates should ensure this.
-  MOZ_RELEASE_ASSERT(!(debug && (ion || cranelift)));
+  // The <Compiler>Available() predicates should ensure no failure here, but
+  // when we're fuzzing we allow inconsistent switches and the check may thus
+  // fail.  Let it go to a run-time error instead of crashing.
+  if (debug && (ion || cranelift)) {
+    JS_ReportErrorASCII(cx, "no WebAssembly compiler available");
+    return nullptr;
+  }
 
   if (forceTiering && !(baseline && (cranelift || ion))) {
     // This can happen only in testing, and in this case we don't have a
@@ -115,12 +121,10 @@ SharedCompileArgs CompileArgs::build(JSContext* cx,
   target->ionEnabled = ion;
   target->craneliftEnabled = cranelift;
   target->debugEnabled = debug;
-  target->sharedMemoryEnabled =
-      cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled();
+  target->sharedMemoryEnabled = wasm::ThreadsAvailable(cx);
   target->forceTiering = forceTiering;
   target->gcEnabled = wasm::GcTypesAvailable(cx);
   target->hugeMemory = wasm::IsHugeMemoryEnabled();
-  target->bigIntEnabled = wasm::I64BigIntConversionAvailable(cx);
   target->multiValuesEnabled = wasm::MultiValuesAvailable(cx);
 
   Log(cx, "available wasm compilers: tier1=%s tier2=%s",
@@ -423,7 +427,7 @@ CompilerEnvironment::CompilerEnvironment(CompileMode mode, Tier tier,
                                          bool multiValueConfigured,
                                          bool refTypesConfigured,
                                          bool gcTypesConfigured,
-                                         bool hugeMemory, bool bigIntConfigured)
+                                         bool hugeMemory)
     : state_(InitialWithModeTierDebug),
       mode_(mode),
       tier_(tier),
@@ -432,8 +436,7 @@ CompilerEnvironment::CompilerEnvironment(CompileMode mode, Tier tier,
       refTypes_(refTypesConfigured),
       gcTypes_(gcTypesConfigured),
       multiValues_(multiValueConfigured),
-      hugeMemory_(hugeMemory),
-      bigInt_(bigIntConfigured) {}
+      hugeMemory_(hugeMemory) {}
 
 void CompilerEnvironment::computeParameters() {
   MOZ_ASSERT(state_ == InitialWithModeTierDebug);
@@ -456,7 +459,6 @@ void CompilerEnvironment::computeParameters(Decoder& d) {
   bool craneliftEnabled = args_->craneliftEnabled;
   bool forceTiering = args_->forceTiering;
   bool hugeMemory = args_->hugeMemory;
-  bool bigIntEnabled = args_->bigIntEnabled;
   bool multiValuesEnabled = args_->multiValuesEnabled;
 
   bool hasSecondTier = ionEnabled || craneliftEnabled;
@@ -491,7 +493,6 @@ void CompilerEnvironment::computeParameters(Decoder& d) {
   refTypes_ = true;
   multiValues_ = multiValuesEnabled;
   hugeMemory_ = hugeMemory;
-  bigInt_ = bigIntEnabled;
   multiValues_ = multiValuesEnabled;
   state_ = Computed;
 }
@@ -598,7 +599,6 @@ void wasm::CompileTier2(const CompileArgs& args, const Bytes& bytecode,
   bool refTypesConfigured = false;
 #endif
   bool multiValueConfigured = args.multiValuesEnabled;
-  bool bigIntConfigured = args.bigIntEnabled;
 
   OptimizedBackend optimizedBackend = args.craneliftEnabled
                                           ? OptimizedBackend::Cranelift
@@ -607,7 +607,7 @@ void wasm::CompileTier2(const CompileArgs& args, const Bytes& bytecode,
   CompilerEnvironment compilerEnv(
       CompileMode::Tier2, Tier::Optimized, optimizedBackend,
       DebugEnabled::False, multiValueConfigured, refTypesConfigured,
-      gcTypesConfigured, args.hugeMemory, bigIntConfigured);
+      gcTypesConfigured, args.hugeMemory);
 
   ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
                                           ? Shareable::True

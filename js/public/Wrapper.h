@@ -105,6 +105,11 @@ class JS_FRIEND_API ForwardingProxyHandler : public BaseProxyHandler {
                                 MutableHandleValue vp) const override;
   virtual bool isCallable(JSObject* obj) const override;
   virtual bool isConstructor(JSObject* obj) const override;
+
+  // Use the target object for private fields.
+  virtual bool useProxyExpandoObjectForPrivateFields() const override {
+    return false;
+  }
 };
 
 /*

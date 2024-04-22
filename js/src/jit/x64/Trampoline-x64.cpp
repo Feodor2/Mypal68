@@ -388,10 +388,18 @@ void JitRuntime::generateInvalidator(MacroAssembler& masm, Label* bailoutTail) {
   masm.jmp(bailoutTail);
 }
 
-void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
+void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm,
+                                            ArgumentsRectifierKind kind) {
   // Do not erase the frame pointer in this function.
 
-  argumentsRectifierOffset_ = startTrampolineCode(masm);
+  switch (kind) {
+    case ArgumentsRectifierKind::Normal:
+      argumentsRectifierOffset_ = startTrampolineCode(masm);
+      break;
+    case ArgumentsRectifierKind::TrialInlining:
+      trialInliningArgumentsRectifierOffset_ = startTrampolineCode(masm);
+      break;
+  }
 
   // Caller:
   // [arg2] [arg1] [this] [[argc] [callee] [descr] [raddr]] <- rsp
@@ -527,8 +535,24 @@ void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
 
   // Call the target function.
   masm.andq(Imm32(uint32_t(CalleeTokenMask)), rax);
-  masm.loadJitCodeRaw(rax, rax);
-  argumentsRectifierReturnOffset_ = masm.callJitNoProfiler(rax);
+  switch (kind) {
+    case ArgumentsRectifierKind::Normal:
+      masm.loadJitCodeRaw(rax, rax);
+      argumentsRectifierReturnOffset_ = masm.callJitNoProfiler(rax);
+      break;
+    case ArgumentsRectifierKind::TrialInlining:
+      Label noBaselineScript, done;
+      masm.loadBaselineJitCodeRaw(rax, rbx, &noBaselineScript);
+      masm.callJitNoProfiler(rbx);
+      masm.jump(&done);
+
+      // See BaselineCacheIRCompiler::emitCallInlinedFunction.
+      masm.bind(&noBaselineScript);
+      masm.loadJitCodeRaw(rax, rax);
+      masm.callJitNoProfiler(rax);
+      masm.bind(&done);
+      break;
+  }
 
   // Remove the rectifier frame.
   masm.pop(r9);  // r9 <- descriptor with FrameType.

@@ -29,7 +29,9 @@
 #include "gc/MaybeRooted.h"
 #include "jit/InlinableNatives.h"
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType, JS_GetTypedArray{Length,ByteOffset,ByteLength}, JS_IsTypedArrayObject
 #include "js/PropertySpec.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/UniquePtr.h"
 #include "js/Wrapper.h"
 #include "util/Text.h"
@@ -415,8 +417,12 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
                                                   newKind);
     }
 
-    jsbytecode* pc;
-    RootedScript script(cx, cx->currentScript(&pc));
+    jsbytecode* pc = nullptr;
+    RootedScript script(cx);
+    if (IsTypeInferenceEnabled()) {
+      script = cx->currentScript(&pc);
+    }
+
     Rooted<TypedArrayObject*> obj(
         cx, newBuiltinClassInstance(cx, allocKind, GenericObject));
     if (!obj) {
@@ -478,8 +484,13 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
     MOZ_ASSERT(allocKind >= gc::GetGCObjectKind(instanceClass()));
 
     AutoSetNewObjectMetadata metadata(cx);
-    jsbytecode* pc;
-    RootedScript script(cx, cx->currentScript(&pc));
+
+    jsbytecode* pc = nullptr;
+    RootedScript script(cx);
+    if (IsTypeInferenceEnabled()) {
+      script = cx->currentScript(&pc);
+    }
+
     Rooted<TypedArrayObject*> tarray(
         cx, newBuiltinClassInstance(cx, allocKind, TenuredObject));
     if (!tarray) {
@@ -2210,8 +2221,8 @@ const JSClass TypedArrayObject::classes[Scalar::MaxTypedArrayViewType] = {
 // above), but it's what we've always done, so keep doing it till we
 // implement @@toStringTag or ES6 changes.
 const JSClass TypedArrayObject::protoClasses[Scalar::MaxTypedArrayViewType] = {
-#define IMPL_TYPED_ARRAY_PROTO_CLASS(NativeType, Name)                      \
-  {#Name "ArrayPrototype", JSCLASS_HAS_CACHED_PROTO(JSProto_##Name##Array), \
+#define IMPL_TYPED_ARRAY_PROTO_CLASS(NativeType, Name)                       \
+  {#Name "Array.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_##Name##Array), \
    JS_NULL_CLASS_OPS, &TypedArrayObjectClassSpecs[Scalar::Type::Name]},
 
     JS_FOR_EACH_TYPED_ARRAY(IMPL_TYPED_ARRAY_PROTO_CLASS)
@@ -2238,33 +2249,18 @@ bool js::IsTypedArrayConstructor(const JSObject* obj) {
   return false;
 }
 
-bool js::IsTypedArrayConstructor(HandleValue v, uint32_t type) {
-  switch (type) {
-    case Scalar::Int8:
-      return IsNativeFunction(v, Int8Array::class_constructor);
-    case Scalar::Uint8:
-      return IsNativeFunction(v, Uint8Array::class_constructor);
-    case Scalar::Int16:
-      return IsNativeFunction(v, Int16Array::class_constructor);
-    case Scalar::Uint16:
-      return IsNativeFunction(v, Uint16Array::class_constructor);
-    case Scalar::Int32:
-      return IsNativeFunction(v, Int32Array::class_constructor);
-    case Scalar::Uint32:
-      return IsNativeFunction(v, Uint32Array::class_constructor);
-    case Scalar::BigInt64:
-      return IsNativeFunction(v, BigInt64Array::class_constructor);
-    case Scalar::BigUint64:
-      return IsNativeFunction(v, BigUint64Array::class_constructor);
-    case Scalar::Float32:
-      return IsNativeFunction(v, Float32Array::class_constructor);
-    case Scalar::Float64:
-      return IsNativeFunction(v, Float64Array::class_constructor);
-    case Scalar::Uint8Clamped:
-      return IsNativeFunction(v, Uint8ClampedArray::class_constructor);
-    case Scalar::MaxTypedArrayViewType:
-      break;
+bool js::IsTypedArrayConstructor(HandleValue v, Scalar::Type type) {
+  return IsNativeFunction(v, TypedArrayConstructorNative(type));
+}
+
+JSNative js::TypedArrayConstructorNative(Scalar::Type type) {
+#define TYPED_ARRAY_CONSTRUCTOR_NATIVE(T, N) \
+  if (type == Scalar::N) {                   \
+    return N##Array::class_constructor;      \
   }
+  JS_FOR_EACH_TYPED_ARRAY(TYPED_ARRAY_CONSTRUCTOR_NATIVE)
+#undef TYPED_ARRAY_CONSTRUCTOR_NATIVE
+
   MOZ_CRASH("unexpected typed array type");
 }
 

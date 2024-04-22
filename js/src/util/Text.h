@@ -106,6 +106,10 @@ extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
 extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
                                           const char* s, size_t n);
 
+extern UniqueLatin1Chars DuplicateStringToArena(arena_id_t destArenaId,
+                                                JSContext* cx,
+                                                const Latin1Char* s, size_t n);
+
 extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
                                                  JSContext* cx,
                                                  const char16_t* s);
@@ -124,6 +128,10 @@ extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId,
 extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, const char* s,
                                           size_t n);
 
+extern UniqueLatin1Chars DuplicateStringToArena(arena_id_t destArenaId,
+                                                const JS::Latin1Char* s,
+                                                size_t n);
+
 extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
                                                  const char16_t* s);
 
@@ -133,6 +141,9 @@ extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
 extern UniqueChars DuplicateString(JSContext* cx, const char* s);
 
 extern UniqueChars DuplicateString(JSContext* cx, const char* s, size_t n);
+
+extern UniqueLatin1Chars DuplicateString(JSContext* cx, const JS::Latin1Char* s,
+                                         size_t n);
 
 extern UniqueTwoByteChars DuplicateString(JSContext* cx, const char16_t* s);
 
@@ -146,6 +157,8 @@ extern UniqueTwoByteChars DuplicateString(JSContext* cx, const char16_t* s,
 extern UniqueChars DuplicateString(const char* s);
 
 extern UniqueChars DuplicateString(const char* s, size_t n);
+
+extern UniqueLatin1Chars DuplicateString(const JS::Latin1Char* s, size_t n);
 
 extern UniqueTwoByteChars DuplicateString(const char16_t* s);
 
@@ -182,6 +195,15 @@ class InflatedChar16Sequence {
   char16_t next() {
     MOZ_ASSERT(hasMore());
     return static_cast<char16_t>(*units_++);
+  }
+
+  HashNumber computeHash() const {
+    auto copy = *this;
+    HashNumber hash = 0;
+    while (copy.hasMore()) {
+      hash = mozilla::AddToHash(hash, copy.next());
+    }
+    return hash;
   }
 };
 
@@ -233,6 +255,15 @@ class InflatedChar16Sequence<mozilla::Utf8Unit> {
     MOZ_ASSERT(unicode::IsTrailSurrogate(pendingTrailingSurrogate_));
 
     return lead;
+  }
+
+  HashNumber computeHash() const {
+    auto copy = *this;
+    HashNumber hash = 0;
+    while (copy.hasMore()) {
+      hash = mozilla::AddToHash(hash, copy.next());
+    }
+    return hash;
   }
 };
 

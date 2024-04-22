@@ -7,6 +7,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "jsfriendapi.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpBacktrace
 #include "js/CharacterEncoding.h"
 #include "js/RegExp.h"
 #include "js/RegExpFlags.h"

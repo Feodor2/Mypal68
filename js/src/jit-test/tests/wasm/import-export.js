@@ -16,33 +16,8 @@ const tab3Elem = new Table({initial:3, element:"funcref"});
 const tab4Elem = new Table({initial:4, element:"funcref"});
 
 function assertSegmentFitError(f) {
-    if (wasmBulkMemSupported()) {
-        assertErrorMessage(f, RuntimeError, /out of bounds/);
-    } else {
-        assertErrorMessage(f, LinkError, /segment does not fit/);
-    }
+    assertErrorMessage(f, RuntimeError, /out of bounds/);
 }
-
-// Memory size consistency and internal limits.
-assertErrorMessage(() => new Memory({initial:2, maximum:1}), RangeError, /bad Memory maximum size/);
-
-try {
-    new Memory({initial:16384});
-} catch(e) {
-    assertEq(String(e).indexOf("out of memory") !== -1, true);
-}
-
-assertErrorMessage(() => new Memory({initial: 16385}), RangeError, /bad Memory initial size/);
-
-new Memory({initial: 0, maximum: 65536});
-assertErrorMessage(() => new Memory({initial: 0, maximum: 65537}), RangeError, /bad Memory maximum size/);
-
-// Table size consistency and internal limits.
-assertErrorMessage(() => new Table({initial:2, maximum:1, element:"funcref"}), RangeError, /bad Table maximum size/);
-new Table({ initial: 10000000, element:"funcref" });
-assertErrorMessage(() => new Table({initial:10000001, element:"funcref"}), RangeError, /bad Table initial size/);
-new Table({ initial: 0, maximum: 10000000, element:"funcref" });
-assertErrorMessage(() => new Table({initial:0, maximum: 10000001, element:"funcref"}), RangeError, /bad Table maximum size/);
 
 const m1 = new Module(wasmTextToBinary('(module (import "foo" "bar" (func)) (import "baz" "quux" (func)))'));
 assertErrorMessage(() => new Instance(m1), TypeError, /second argument must be an object/);
@@ -525,15 +500,11 @@ var mem8 = new Uint8Array(mem.buffer);
 var tbl = new Table({initial:2, element:"funcref"});
 
 assertSegmentFitError(() => new Instance(m, {a:{mem, tbl, memOff:1, tblOff:2}}));
-if (wasmBulkMemSupported()) {
-    // The first active element segment is applied, but the second active
-    // element segment is completely OOB.
-    assertEq(typeof tbl.get(0), "function");
-    assertEq(tbl.get(1), null);
-} else if (!wasmCompileMode().match("cranelift")) {
-    assertEq(tbl.get(0), null);
-    assertEq(tbl.get(1), null);
-}
+// The first active element segment is applied, but the second active
+// element segment is completely OOB.
+assertEq(typeof tbl.get(0), "function");
+assertEq(tbl.get(1), null);
+
 assertEq(mem8[0], 0);
 assertEq(mem8[1], 0);
 
@@ -541,17 +512,11 @@ tbl.set(0, null);
 tbl.set(1, null);
 
 assertSegmentFitError(() => new Instance(m, {a:{mem, tbl, memOff:npages*64*1024, tblOff:1}}));
-if (wasmBulkMemSupported()) {
-    // The first and second active element segments are applied fully.  The
-    // first active data segment applies, but the second one is completely OOB.
-    assertEq(typeof tbl.get(0), "function");
-    assertEq(typeof tbl.get(1), "function");
-    assertEq(mem8[0], 1);
-} else if (!wasmCompileMode().match("cranelift")) {
-    assertEq(tbl.get(0), null);
-    assertEq(tbl.get(1), null);
-    assertEq(mem8[0], 0);
-}
+// The first and second active element segments are applied fully.  The
+// first active data segment applies, but the second one is completely OOB.
+assertEq(typeof tbl.get(0), "function");
+assertEq(typeof tbl.get(1), "function");
+assertEq(mem8[0], 1);
 
 tbl.set(0, null);
 tbl.set(1, null);
@@ -568,44 +533,40 @@ assertEq(tbl.get(1), i.exports.g);
 // Element segment doesn't apply and prevents subsequent elem segment and
 // data segment from being applied.
 
-if (wasmBulkMemSupported()) {
-    let m = new Module(wasmTextToBinary(
-        `(module
-           (import "" "mem" (memory 1))
-           (import "" "tbl" (table 3 funcref))
-           (elem (i32.const 1) $f $g $h) ;; fails after $f and $g
-           (elem (i32.const 0) $f)       ;; is not applied
-           (data (i32.const 0) "\\01")   ;; is not applied
-           (func $f)
-           (func $g)
-           (func $h))`));
-    let mem = new Memory({initial:1});
-    let tbl = new Table({initial:3, element:"funcref"});
-    assertSegmentFitError(() => new Instance(m, {"":{mem, tbl}}));
-    assertEq(tbl.get(0), null);
-    assertEq(tbl.get(1), null);
-    assertEq(tbl.get(2), null);
-    let v = new Uint8Array(mem.buffer);
-    assertEq(v[0], 0);
-}
+var m = new Module(wasmTextToBinary(
+    `(module
+       (import "" "mem" (memory 1))
+       (import "" "tbl" (table 3 funcref))
+       (elem (i32.const 1) $f $g $h) ;; fails after $f and $g
+       (elem (i32.const 0) $f)       ;; is not applied
+       (data (i32.const 0) "\\01")   ;; is not applied
+       (func $f)
+       (func $g)
+       (func $h))`));
+var mem = new Memory({initial:1});
+var tbl = new Table({initial:3, element:"funcref"});
+assertSegmentFitError(() => new Instance(m, {"":{mem, tbl}}));
+assertEq(tbl.get(0), null);
+assertEq(tbl.get(1), null);
+assertEq(tbl.get(2), null);
+var v = new Uint8Array(mem.buffer);
+assertEq(v[0], 0);
 
 // Data segment doesn't apply and prevents subsequent data segment from
 // being applied.
 
-if (wasmBulkMemSupported()) {
-    let m = new Module(wasmTextToBinary(
-        `(module
-           (import "" "mem" (memory 1))
-           (data (i32.const 65534) "\\01\\02\\03") ;; fails after 1 and 2
-           (data (i32.const 0) "\\04")             ;; is not applied
-         )`));
-    let mem = new Memory({initial:1});
-    assertSegmentFitError(() => new Instance(m, {"":{mem}}));
-    let v = new Uint8Array(mem.buffer);
-    assertEq(v[65534], 0);
-    assertEq(v[65535], 0);
-    assertEq(v[0], 0);
-}
+var m = new Module(wasmTextToBinary(
+    `(module
+       (import "" "mem" (memory 1))
+       (data (i32.const 65534) "\\01\\02\\03") ;; fails after 1 and 2
+       (data (i32.const 0) "\\04")             ;; is not applied
+     )`));
+var mem = new Memory({initial:1});
+assertSegmentFitError(() => new Instance(m, {"":{mem}}));
+var v = new Uint8Array(mem.buffer);
+assertEq(v[65534], 0);
+assertEq(v[65535], 0);
+assertEq(v[0], 0);
 
 // Elem segments on imported tables
 

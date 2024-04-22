@@ -119,6 +119,9 @@ interface nsIXPCComponents_Utils : nsISupports
 
     readonly attribute nsIXPCComponents_utils_Sandbox Sandbox;
 
+    [implicit_jscontext]
+    jsval createServicesCache();
+
     /*
      * evalInSandbox is designed to be called from JavaScript only.
      *
@@ -513,6 +516,11 @@ interface nsIXPCComponents_Utils : nsISupports
 
     [implicit_jscontext]
     void unblockScriptForGlobal(in jsval global);
+
+    /**
+     * Check whether the given object is an opaque wrapper (PermissiveXrayOpaque).
+     */
+    bool isOpaqueWrapper(in jsval obj);
 
     /**
      * Check whether the given object is an XrayWrapper.

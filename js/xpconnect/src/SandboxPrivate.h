@@ -5,19 +5,23 @@
 #ifndef __SANDBOXPRIVATE_H__
 #define __SANDBOXPRIVATE_H__
 
+#include "mozilla/WeakPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 
+#include "js/Object.h"  // JS::GetPrivate, JS::SetPrivate
 #include "js/RootingAPI.h"
 
 class SandboxPrivate : public nsIGlobalObject,
                        public nsIScriptObjectPrincipal,
                        public nsSupportsWeakReference,
+                       public mozilla::SupportsWeakPtr<SandboxPrivate>,
                        public nsWrapperCache {
  public:
+  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(SandboxPrivate);
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(SandboxPrivate,
                                                          nsIGlobalObject)
@@ -31,13 +35,13 @@ class SandboxPrivate : public nsIGlobalObject,
     // The type used to cast to void needs to match the one in GetPrivate.
     nsIScriptObjectPrincipal* sop =
         static_cast<nsIScriptObjectPrincipal*>(sbp.forget().take());
-    JS_SetPrivate(global, sop);
+    JS::SetPrivate(global, sop);
   }
 
   static SandboxPrivate* GetPrivate(JSObject* obj) {
     // The type used to cast to void needs to match the one in Create.
     return static_cast<SandboxPrivate*>(
-        static_cast<nsIScriptObjectPrincipal*>(JS_GetPrivate(obj)));
+        static_cast<nsIScriptObjectPrincipal*>(JS::GetPrivate(obj)));
   }
 
   nsIPrincipal* GetPrincipal() override { return mPrincipal; }

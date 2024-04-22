@@ -20,15 +20,15 @@
   _(ShellObjectMailbox, 100)          \
                                       \
   _(AtomsTable, 200)                  \
-                                      \
   _(WasmInitBuiltinThunks, 250)       \
   _(WasmLazyStubsTier1, 250)          \
   _(WasmLazyStubsTier2, 251)          \
                                       \
-  _(GlobalHelperThreadState, 300)     \
+  _(StoreBuffer, 275)                 \
                                       \
-  _(GCLock, 400)                      \
-  _(StoreBuffer, 400)                 \
+  _(GCLock, 300)                      \
+                                      \
+  _(GlobalHelperThreadState, 400)     \
                                       \
   _(SharedImmutableStringsCache, 500) \
   _(FutexThread, 500)                 \
@@ -44,13 +44,11 @@
   _(TraceLoggerThreadState, 500)      \
   _(DateTimeInfoMutex, 500)           \
   _(ProcessExecutableRegion, 500)     \
-  _(OffThreadPromiseState, 500)       \
   _(BufferStreamState, 500)           \
   _(SharedArrayGrow, 500)             \
   _(RuntimeScriptData, 500)           \
   _(WasmFuncTypeIdSet, 500)           \
   _(WasmCodeProfilingLabels, 500)     \
-  _(WasmCompileTaskState, 500)        \
   _(WasmCodeBytesEnd, 500)            \
   _(WasmStreamEnd, 500)               \
   _(WasmStreamStatus, 500)            \

@@ -22,8 +22,8 @@ enum class BaselineCacheIRStubKind { Regular, Monitored, Updated };
 ICStub* AttachBaselineCacheIRStub(JSContext* cx, const CacheIRWriter& writer,
                                   CacheKind kind,
                                   BaselineCacheIRStubKind stubKind,
-                                  JSScript* outerScript, ICFallbackStub* stub,
-                                  bool* attached);
+                                  JSScript* outerScript, ICScript* icScript,
+                                  ICFallbackStub* stub, bool* attached);
 
 // BaselineCacheIRCompiler compiles CacheIR to BaselineIC native code.
 class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
@@ -64,6 +64,8 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
                         Register scratch2, bool isJitCall);
   void createThis(Register argcReg, Register calleeReg, Register scratch,
                   CallFlags flags);
+  template <typename T>
+  void storeThis(const T& newThis, Register argcReg, CallFlags flags);
   void updateReturnValue();
 
   enum class NativeCallType { Native, ClassHook };
@@ -72,13 +74,8 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
                             mozilla::Maybe<bool> ignoresReturnValue,
                             mozilla::Maybe<uint32_t> targetOffset);
 
-  MOZ_MUST_USE bool emitCallScriptedGetterResultShared(
-      TypedOrValueRegister receiver, uint32_t getterOffset, bool sameRealm);
-
-  template <typename T, typename CallVM>
-  MOZ_MUST_USE bool emitCallNativeGetterResultShared(T receiver,
-                                                     uint32_t getterOffset,
-                                                     const CallVM& emitCallVM);
+  enum class StringCode { CodeUnit, CodePoint };
+  bool emitStringFromCodeResult(Int32OperandId codeId, StringCode stringCode);
 
  public:
   friend class AutoStubFrame;

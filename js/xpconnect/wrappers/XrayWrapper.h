@@ -10,6 +10,8 @@
 #include "WrapperFactory.h"
 
 #include "jsapi.h"
+#include "js/friend/XrayJitInfo.h"  // JS::XrayJitInfo
+#include "js/Object.h"              // JS::GetReservedSlot
 #include "js/Proxy.h"
 #include "js/Wrapper.h"
 
@@ -258,16 +260,16 @@ class JSXrayTraits : public XrayTraits {
   virtual JSObject* createHolder(JSContext* cx, JSObject* wrapper) override;
 
   static JSProtoKey getProtoKey(JSObject* holder) {
-    int32_t key = js::GetReservedSlot(holder, SLOT_PROTOKEY).toInt32();
+    int32_t key = JS::GetReservedSlot(holder, SLOT_PROTOKEY).toInt32();
     return static_cast<JSProtoKey>(key);
   }
 
   static bool isPrototype(JSObject* holder) {
-    return js::GetReservedSlot(holder, SLOT_ISPROTOTYPE).toBoolean();
+    return JS::GetReservedSlot(holder, SLOT_ISPROTOTYPE).toBoolean();
   }
 
   static JSProtoKey constructorFor(JSObject* holder) {
-    int32_t key = js::GetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR).toInt32();
+    int32_t key = JS::GetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR).toInt32();
     return static_cast<JSProtoKey>(key);
   }
 
@@ -479,7 +481,7 @@ void ClearXrayExpandoSlots(JSObject* target, size_t slotIndex);
 JSObject* EnsureXrayExpandoObject(JSContext* cx, JS::HandleObject wrapper);
 
 // Information about xrays for use by the JITs.
-extern js::XrayJitInfo gXrayJitInfo;
+extern JS::XrayJitInfo gXrayJitInfo;
 
 }  // namespace xpc
 

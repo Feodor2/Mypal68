@@ -8,6 +8,7 @@
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
+#include "js/Object.h"  // JS::GetCompartment
 #include "nsCCUncollectableMarker.h"
 #include "nsContentUtils.h"
 #include "nsThreadUtils.h"
@@ -311,7 +312,7 @@ JSObject* nsXPCWrappedJS::GetJSObject() { return mJSObj; }
 JSObject* nsXPCWrappedJS::GetJSObjectGlobal() {
   JSObject* obj = mJSObj;
   if (js::IsCrossCompartmentWrapper(obj)) {
-    JS::Compartment* comp = js::GetObjectCompartment(obj);
+    JS::Compartment* comp = JS::GetCompartment(obj);
     return js::GetFirstGlobalInCompartment(comp);
   }
   return JS::GetNonCCWObjectGlobal(obj);
@@ -326,7 +327,7 @@ nsresult nsXPCWrappedJS::GetNewOrUsed(JSContext* cx, JS::HandleObject jsObj,
                      "nsXPCWrappedJS::GetNewOrUsed called off main thread");
 
   MOZ_RELEASE_ASSERT(js::GetContextCompartment(cx) ==
-                     js::GetObjectCompartment(jsObj));
+                     JS::GetCompartment(jsObj));
 
   const nsXPTInterfaceInfo* info = GetInterfaceInfo(aIID);
   if (!info) {

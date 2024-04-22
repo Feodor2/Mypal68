@@ -43,9 +43,11 @@ namespace wasm {
 bool HasPlatformSupport(JSContext* cx);
 
 // Return whether WebAssembly is supported on this platform. This determines
-// whether the WebAssembly object is exposed to JS and takes into account
-// configuration options that disable various modes.  It also checks that at
-// least one compiler is (currently) available.
+// whether the WebAssembly object is exposed to JS in this context / realm and
+//
+// It does *not* guarantee that a compiler is actually available; that has to be
+// checked separately, as it is sometimes run-time variant, depending on whether
+// a debugger has been created or not.
 
 bool HasSupport(JSContext* cx);
 
@@ -62,6 +64,10 @@ bool HasSupport(JSContext* cx);
 bool BaselineAvailable(JSContext* cx);
 bool IonAvailable(JSContext* cx);
 bool CraneliftAvailable(JSContext* cx);
+
+// Test all three.
+
+bool AnyCompilerAvailable(JSContext* cx);
 
 // Predicates for white-box compiler disablement testing.
 //
@@ -94,7 +100,7 @@ bool StreamingCompilationAvailable(JSContext* cx);
 // optimizing compiler tier.
 bool CodeCachingAvailable(JSContext* cx);
 
-// General reference types (anyref, funcref, nullref) and operations on them.
+// General reference types (anyref, funcref) and operations on them.
 bool ReftypesAvailable(JSContext* cx);
 
 // Experimental (ref T) types and structure types.
@@ -102,9 +108,6 @@ bool GcTypesAvailable(JSContext* cx);
 
 // Multi-value block and function returns.
 bool MultiValuesAvailable(JSContext* cx);
-
-// I64<->BigInt interconversion at the wasm/JS boundary.
-bool I64BigIntConversionAvailable(JSContext* cx);
 
 // Shared memory and atomics.
 bool ThreadsAvailable(JSContext* cx);
@@ -433,7 +436,8 @@ class WasmTableObject : public NativeObject {
   // Note that, after creation, a WasmTableObject's table() is not initialized
   // and must be initialized before use.
 
-  static WasmTableObject* create(JSContext* cx, const wasm::Limits& limits,
+  static WasmTableObject* create(JSContext* cx, uint32_t initialLength,
+                                 mozilla::Maybe<uint32_t> maximumLength,
                                  wasm::TableKind tableKind, HandleObject proto);
   wasm::Table& table() const;
 };

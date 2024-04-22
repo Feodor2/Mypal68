@@ -11,21 +11,21 @@ namespace js {
 namespace jit {
 
 class CallInfo;
+class WarpSnapshot;
 
 // Base class for code sharing between WarpBuilder and WarpCacheIRTranspiler.
 // Because this code is used by WarpCacheIRTranspiler we should
 // generally assume that we only have access to the current basic block.
 class WarpBuilderShared {
+  WarpSnapshot& snapshot_;
   MIRGenerator& mirGen_;
   TempAllocator& alloc_;
 
  protected:
   MBasicBlock* current;
 
-  WarpBuilderShared(MIRGenerator& mirGen, MBasicBlock* current_);
-
-  MIRGenerator& mirGen() { return mirGen_; }
-  TempAllocator& alloc() { return alloc_; }
+  WarpBuilderShared(WarpSnapshot& snapshot, MIRGenerator& mirGen,
+                    MBasicBlock* current_);
 
   MOZ_MUST_USE bool resumeAfter(MInstruction* ins, BytecodeLocation loc);
 
@@ -34,6 +34,14 @@ class WarpBuilderShared {
 
   MCall* makeCall(CallInfo& callInfo, bool needsThisCheck,
                   WrappedFunction* target = nullptr);
+  MInstruction* makeSpreadCall(CallInfo& callInfo, bool isSameRealm = false,
+                               WrappedFunction* target = nullptr);
+
+ public:
+  MBasicBlock* currentBlock() const { return current; }
+  WarpSnapshot& snapshot() const { return snapshot_; }
+  MIRGenerator& mirGen() { return mirGen_; }
+  TempAllocator& alloc() { return alloc_; }
 };
 
 }  // namespace jit

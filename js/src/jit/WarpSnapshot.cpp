@@ -8,6 +8,7 @@
 
 #include <type_traits>
 
+#include "jit/CacheIRCompiler.h"
 #include "jit/CacheIRSpewer.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
@@ -21,10 +22,14 @@ using namespace js::jit;
 static_assert(!std::is_polymorphic_v<WarpOpSnapshot>,
               "WarpOpSnapshot should not have any virtual methods");
 
-WarpSnapshot::WarpSnapshot(JSContext* cx, WarpScriptSnapshot* script)
-    : script_(script),
+WarpSnapshot::WarpSnapshot(JSContext* cx, TempAllocator& alloc,
+                           WarpScriptSnapshotList&& scriptSnapshots,
+                           const WarpBailoutInfo& bailoutInfo)
+    : scriptSnapshots_(std::move(scriptSnapshots)),
       globalLexicalEnv_(&cx->global()->lexicalEnvironment()),
-      globalLexicalEnvThis_(globalLexicalEnv_->thisObject()) {}
+      globalLexicalEnvThis_(globalLexicalEnv_->thisObject()),
+      bailoutInfo_(bailoutInfo),
+      nurseryObjects_(alloc) {}
 
 WarpScriptSnapshot::WarpScriptSnapshot(
     JSScript* script, const WarpEnvironment& env,
@@ -52,12 +57,24 @@ void WarpSnapshot::dump(GenericPrinter& out) const {
   out.printf("------------------------------\n");
   out.printf("globalLexicalEnv: 0x%p\n", globalLexicalEnv());
   out.printf("globalLexicalEnvThis: 0x%p\n", globalLexicalEnvThis());
+  out.printf("failedBoundsCheck: %u\n", bailoutInfo().failedBoundsCheck());
+  out.printf("failedLexicalCheck: %u\n", bailoutInfo().failedLexicalCheck());
   out.printf("\n");
 
-  script_->dump(out);
+  out.printf("Nursery objects (%u):\n", unsigned(nurseryObjects_.length()));
+  for (size_t i = 0; i < nurseryObjects_.length(); i++) {
+    out.printf("  %u: 0x%p\n", unsigned(i), nurseryObjects_[i]);
+  }
+  out.printf("\n");
+
+  for (auto* scriptSnapshot : scriptSnapshots_) {
+    scriptSnapshot->dump(out);
+  }
 }
 
 void WarpScriptSnapshot::dump(GenericPrinter& out) const {
+  out.printf("WarpScriptSnapshot (0x%p)\n", this);
+  out.printf("------------------------------\n");
   out.printf("Script: %s:%u:%u (0x%p)\n", script_->filename(),
              script_->lineno(), script_->column(),
              static_cast<JSScript*>(script_));
@@ -115,8 +132,8 @@ void WarpRegExp::dumpData(GenericPrinter& out) const {
   out.printf("    hasShared: %u\n", hasShared());
 }
 
-void WarpFunctionProto::dumpData(GenericPrinter& out) const {
-  out.printf("    proto: 0x%p\n", proto());
+void WarpBuiltinObject::dumpData(GenericPrinter& out) const {
+  out.printf("    builtin: 0x%p\n", builtin());
 }
 
 void WarpGetIntrinsic::dumpData(GenericPrinter& out) const {
@@ -149,6 +166,14 @@ void WarpNewObject::dumpData(GenericPrinter& out) const {
   out.printf("    template: 0x%p\n", templateObject());
 }
 
+void WarpBindGName::dumpData(GenericPrinter& out) const {
+  out.printf("    globalEnv: 0x%p\n", globalEnv());
+}
+
+void WarpBailout::dumpData(GenericPrinter& out) const {
+  // No fields.
+}
+
 void WarpCacheIR::dumpData(GenericPrinter& out) const {
   out.printf("    stubCode: 0x%p\n", static_cast<JitCode*>(stubCode_));
   out.printf("    stubInfo: 0x%p\n", stubInfo_);
@@ -160,10 +185,16 @@ void WarpCacheIR::dumpData(GenericPrinter& out) const {
   out.printf("(CacheIR spew unavailable)\n");
 #  endif
 }
+
+void WarpInlinedCall::dumpData(GenericPrinter& out) const {
+  out.printf("    scriptSnapshot: 0x%p\n", scriptSnapshot_);
+  out.printf("    info: 0x%p\n", info_);
+  cacheIRSnapshot_->dumpData(out);
+}
 #endif  // JS_JITSPEW
 
 template <typename T>
-static void TraceWarpGCPtr(JSTracer* trc, WarpGCPtr<T>& thing,
+static void TraceWarpGCPtr(JSTracer* trc, const WarpGCPtr<T>& thing,
                            const char* name) {
   T thingRaw = thing;
   TraceManuallyBarrieredEdge(trc, &thingRaw, name);
@@ -171,9 +202,17 @@ static void TraceWarpGCPtr(JSTracer* trc, WarpGCPtr<T>& thing,
 }
 
 void WarpSnapshot::trace(JSTracer* trc) {
-  script_->trace(trc);
+  for (auto* script : scriptSnapshots_) {
+    script->trace(trc);
+  }
   TraceWarpGCPtr(trc, globalLexicalEnv_, "warp-lexical");
   TraceWarpGCPtr(trc, globalLexicalEnvThis_, "warp-lexicalthis");
+
+  // Note: nursery objects can be moved in parallel with Warp compilation,
+  // so don't use TraceWarpGCPtr here as that asserts non-moving.
+  for (size_t i = 0; i < nurseryObjects_.length(); i++) {
+    TraceManuallyBarrieredEdge(trc, &nurseryObjects_[i], "warp-nursery-object");
+  }
 }
 
 void WarpScriptSnapshot::trace(JSTracer* trc) {
@@ -227,8 +266,8 @@ void WarpRegExp::traceData(JSTracer* trc) {
   // No GC pointers.
 }
 
-void WarpFunctionProto::traceData(JSTracer* trc) {
-  TraceWarpGCPtr(trc, proto_, "warp-function-proto");
+void WarpBuiltinObject::traceData(JSTracer* trc) {
+  TraceWarpGCPtr(trc, builtin_, "warp-builtin-object");
 }
 
 void WarpGetIntrinsic::traceData(JSTracer* trc) {
@@ -255,7 +294,87 @@ void WarpNewObject::traceData(JSTracer* trc) {
   TraceWarpGCPtr(trc, templateObject_, "warp-newobject-template");
 }
 
+void WarpBindGName::traceData(JSTracer* trc) {
+  TraceWarpGCPtr(trc, globalEnv_, "warp-bindgname-globalenv");
+}
+
+void WarpBailout::traceData(JSTracer* trc) {
+  // No GC pointers.
+}
+
+template <typename T>
+static void TraceWarpStubPtr(JSTracer* trc, uintptr_t word, const char* name) {
+  T* ptr = reinterpret_cast<T*>(word);
+  TraceWarpGCPtr(trc, WarpGCPtr<T*>(ptr), name);
+}
+
 void WarpCacheIR::traceData(JSTracer* trc) {
   TraceWarpGCPtr(trc, stubCode_, "warp-stub-code");
-  // TODO: trace pointers in stub data.
+  if (stubData_) {
+    uint32_t field = 0;
+    size_t offset = 0;
+    while (true) {
+      StubField::Type fieldType = stubInfo_->fieldType(field);
+      switch (fieldType) {
+        case StubField::Type::RawWord:
+        case StubField::Type::RawInt64:
+        case StubField::Type::DOMExpandoGeneration:
+          break;
+        case StubField::Type::Shape: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          TraceWarpStubPtr<Shape>(trc, word, "warp-cacheir-shape");
+          break;
+        }
+        case StubField::Type::ObjectGroup: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          TraceWarpStubPtr<ObjectGroup>(trc, word, "warp-cacheir-group");
+          break;
+        }
+        case StubField::Type::JSObject: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          WarpObjectField field = WarpObjectField::fromData(word);
+          if (!field.isNurseryIndex()) {
+            TraceWarpStubPtr<JSObject>(trc, word, "warp-cacheir-object");
+          }
+          break;
+        }
+        case StubField::Type::Symbol: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          TraceWarpStubPtr<JS::Symbol>(trc, word, "warp-cacheir-symbol");
+          break;
+        }
+        case StubField::Type::String: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          TraceWarpStubPtr<JSString>(trc, word, "warp-cacheir-string");
+          break;
+        }
+        case StubField::Type::BaseScript: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          TraceWarpStubPtr<BaseScript>(trc, word, "warp-cacheir-script");
+          break;
+        }
+        case StubField::Type::Id: {
+          uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
+          jsid id = jsid::fromRawBits(word);
+          TraceWarpGCPtr(trc, WarpGCPtr<jsid>(id), "warp-cacheir-jsid");
+          break;
+        }
+        case StubField::Type::Value: {
+          uint64_t data = stubInfo_->getStubRawInt64(stubData_, offset);
+          Value val = Value::fromRawBits(data);
+          TraceWarpGCPtr(trc, WarpGCPtr<Value>(val), "warp-cacheir-value");
+          break;
+        }
+        case StubField::Type::Limit:
+          return;  // Done.
+      }
+      field++;
+      offset += StubField::sizeInBytes(fieldType);
+    }
+  }
+}
+
+void WarpInlinedCall::traceData(JSTracer* trc) {
+  // Note: scriptSnapshot_ is traced through WarpSnapshot.
+  cacheIRSnapshot_->trace(trc);
 }

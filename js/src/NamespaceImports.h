@@ -72,6 +72,7 @@ using JS::Latin1CharsZ;
 using JS::TwoByteChars;
 using JS::TwoByteCharsZ;
 using JS::UniqueChars;
+using JS::UniqueLatin1Chars;
 using JS::UniqueTwoByteChars;
 using JS::UTF8Chars;
 using JS::UTF8CharsZ;

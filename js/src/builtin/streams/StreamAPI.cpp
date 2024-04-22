@@ -9,9 +9,9 @@
 
 #include <stdint.h>  // uint32_t, uintptr_t
 
-#include "jsapi.h"        // js::AssertHeapIsIdle, JS_ReportErrorNumberASCII
-#include "jsfriendapi.h"  // JS_GetArrayBufferViewData, js::IsObjectInContextCompartment, js::GetErrorMessage, JSMSG_*
-#include "jstypes.h"      // JS_{FRIEND,PUBLIC}_API
+#include "jsapi.h"  // js::AssertHeapIsIdle, JS_ReportErrorNumberASCII
+#include "jsfriendapi.h"  // js::GetErrorMessage, js::IsObjectInContextCompartment, JSMSG_*
+#include "jstypes.h"  // JS_{FRIEND,PUBLIC}_API
 
 #include "builtin/Stream.h"  // js::ReadableByteStreamController{,Close}, js::ReadableStreamDefaultController{,Close}, js::StreamController
 #include "builtin/streams/ReadableStream.h"  // js::ReadableStream
@@ -22,7 +22,9 @@
 #include "builtin/streams/ReadableStreamReader.h"  // js::ReadableStream{,Default}Reader, js::ForAuthorCodeBool
 #include "builtin/streams/StreamController.h"  // js::StreamController
 #include "gc/Zone.h"                           // JS::Zone
+#include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewData, JS_NewUint8Array
 #include "js/GCAPI.h"       // JS::AutoCheckCannotGC, JS::AutoSuppressGCAnalysis
+#include "js/Object.h"      // JS::SetPrivate
 #include "js/RootingAPI.h"  // JS::{,Mutable}Handle, JS::Rooted
 #include "js/Stream.h"      // JS::ReadableStreamUnderlyingSource
 #include "js/Value.h"       // JS::{,Object,Undefined}Value
@@ -395,7 +397,7 @@ JS_PUBLIC_API bool JS::ReadableStreamUpdateDataAvailableFromSource(
 
 JS_PUBLIC_API void JS::ReadableStreamReleaseCCObject(JSObject* streamObj) {
   MOZ_ASSERT(JS::IsReadableStream(streamObj));
-  JS_SetPrivate(streamObj, nullptr);
+  JS::SetPrivate(streamObj, nullptr);
 }
 
 JS_PUBLIC_API bool JS::ReadableStreamTee(JSContext* cx,
@@ -599,4 +601,10 @@ JS_PUBLIC_API JSObject* JS::ReadableStreamDefaultReaderRead(
              "C++ code should not touch readers created by scripts");
 
   return js::ReadableStreamDefaultReaderRead(cx, unwrappedReader);
+}
+
+void JS::InitAbortSignalHandling(const JSClass* clasp,
+                                 AbortSignalIsAborted isAborted,
+                                 JSContext* cx) {
+  cx->runtime()->initAbortSignalHandling(clasp, isAborted);
 }

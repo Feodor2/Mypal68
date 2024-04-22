@@ -96,6 +96,8 @@
   _(MathTrunc)                                     \
   _(MathCbrt)                                      \
                                                    \
+  _(NumberToString)                                \
+                                                   \
   _(ReflectGetPrototypeOf)                         \
                                                    \
   _(RegExpMatcher)                                 \
@@ -108,6 +110,8 @@
   _(GetFirstDollarIndex)                           \
                                                    \
   _(String)                                        \
+  _(StringToString)                                \
+  _(StringValueOf)                                 \
   _(StringCharCodeAt)                              \
   _(StringFromCharCode)                            \
   _(StringFromCodePoint)                           \
@@ -121,6 +125,7 @@
   _(Object)                                        \
   _(ObjectCreate)                                  \
   _(ObjectIs)                                      \
+  _(ObjectIsPrototypeOf)                           \
   _(ObjectToString)                                \
                                                    \
   _(TestBailout)                                   \
@@ -141,7 +146,6 @@
   _(IntrinsicIsCrossRealmArrayConstructor)         \
   _(IntrinsicToInteger)                            \
   _(IntrinsicToLength)                             \
-  _(IntrinsicToString)                             \
   _(IntrinsicIsConstructing)                       \
   _(IntrinsicSubstringKernel)                      \
   _(IntrinsicObjectHasPrototype)                   \
@@ -156,6 +160,8 @@
   _(IntrinsicGuardToStringIterator)                \
   _(IntrinsicGuardToRegExpStringIterator)          \
   _(IntrinsicGuardToWrapForValidIterator)          \
+  _(IntrinsicGuardToIteratorHelper)                \
+  _(IntrinsicGuardToAsyncIteratorHelper)           \
                                                    \
   _(IntrinsicGuardToMapObject)                     \
   _(IntrinsicGetNextMapEntryForIterator)           \
@@ -183,7 +189,7 @@
   _(IntrinsicTypedArrayByteOffset)                 \
   _(IntrinsicTypedArrayElementShift)
 
-struct JSJitInfo;
+class JSJitInfo;
 
 namespace js {
 namespace jit {

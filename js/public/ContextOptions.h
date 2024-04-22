@@ -26,17 +26,22 @@ class JS_PUBLIC_API ContextOptions {
         wasmGc_(false),
         wasmMultiValue_(false),
         testWasmAwaitTier2_(false),
-#ifdef ENABLE_WASM_BIGINT
-        enableWasmBigInt_(true),
-#endif
         throwOnAsmJSValidationFailure_(false),
         disableIon_(false),
+        disableEvalSecurityChecks_(false),
         asyncStack_(true),
+        asyncStackCaptureDebuggeeOnly_(false),
         sourcePragmas_(true),
         throwOnDebuggeeWouldRun_(true),
         dumpStackOnDebuggeeWouldRun_(false),
         strictMode_(false),
-        fuzzing_(false) {
+#ifdef JS_ENABLE_SMOOSH
+        trackNotImplemented_(false),
+        trySmoosh_(false),
+#endif
+        fuzzing_(false),
+        privateClassFields_(false),
+        privateClassMethods_(false) {
   }
 
   bool asmJS() const { return asmJS_; }
@@ -93,14 +98,6 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-#ifdef ENABLE_WASM_BIGINT
-  bool isWasmBigIntEnabled() const { return enableWasmBigInt_; }
-  ContextOptions& setWasmBigIntEnabled(bool flag) {
-    enableWasmBigInt_ = flag;
-    return *this;
-  }
-#endif
-
   bool wasmGc() const { return wasmGc_; }
   // Defined out-of-line because it depends on a compile-time option
   ContextOptions& setWasmGc(bool flag);
@@ -130,9 +127,37 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
+  bool privateClassFields() const { return privateClassFields_; }
+  ContextOptions& setPrivateClassFields(bool enabled) {
+    privateClassFields_ = enabled;
+    return *this;
+  }
+
+  bool privateClassMethods() const { return privateClassMethods_; }
+  ContextOptions& setPrivateClassMethods(bool enabled) {
+    privateClassMethods_ = enabled;
+    return *this;
+  }
+
+  // Override to allow disabling the eval restriction security checks for
+  // this context.
+  bool disableEvalSecurityChecks() const { return disableEvalSecurityChecks_; }
+  ContextOptions& setDisableEvalSecurityChecks() {
+    disableEvalSecurityChecks_ = true;
+    return *this;
+  }
+
   bool asyncStack() const { return asyncStack_; }
   ContextOptions& setAsyncStack(bool flag) {
     asyncStack_ = flag;
+    return *this;
+  }
+
+  bool asyncStackCaptureDebuggeeOnly() const {
+    return asyncStackCaptureDebuggeeOnly_;
+  }
+  ContextOptions& setAsyncStackCaptureDebuggeeOnly(bool flag) {
+    asyncStackCaptureDebuggeeOnly_ = flag;
     return *this;
   }
 
@@ -167,17 +192,31 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
+#ifdef JS_ENABLE_SMOOSH
+  // Track Number of Not Implemented Calls by writing to a file
+  bool trackNotImplemented() const { return trackNotImplemented_; }
+  ContextOptions& setTrackNotImplemented(bool flag) {
+    trackNotImplemented_ = flag;
+    return *this;
+  }
+
+  // Try compiling SmooshMonkey frontend first, and fallback to C++
+  // implementation when it fails.
+  bool trySmoosh() const { return trySmoosh_; }
+  ContextOptions& setTrySmoosh(bool flag) {
+    trySmoosh_ = flag;
+    return *this;
+  }
+
+#endif  // JS_ENABLE_SMOOSH
+
   bool fuzzing() const { return fuzzing_; }
   // Defined out-of-line because it depends on a compile-time option
   ContextOptions& setFuzzing(bool flag);
 
   void disableOptionsForSafeMode() {
     setAsmJS(false);
-    setWasm(false);
     setWasmBaseline(false);
-    setWasmIon(false);
-    setWasmGc(false);
-    setWasmMultiValue(false);
   }
 
  private:
@@ -191,17 +230,22 @@ class JS_PUBLIC_API ContextOptions {
   bool wasmGc_ : 1;
   bool wasmMultiValue_ : 1;
   bool testWasmAwaitTier2_ : 1;
-#ifdef ENABLE_WASM_BIGINT
-  bool enableWasmBigInt_ : 1;
-#endif
   bool throwOnAsmJSValidationFailure_ : 1;
   bool disableIon_ : 1;
+  bool disableEvalSecurityChecks_ : 1;
   bool asyncStack_ : 1;
+  bool asyncStackCaptureDebuggeeOnly_ : 1;
   bool sourcePragmas_ : 1;
   bool throwOnDebuggeeWouldRun_ : 1;
   bool dumpStackOnDebuggeeWouldRun_ : 1;
   bool strictMode_ : 1;
+#ifdef JS_ENABLE_SMOOSH
+  bool trackNotImplemented_ : 1;
+  bool trySmoosh_ : 1;
+#endif
   bool fuzzing_ : 1;
+  bool privateClassFields_ : 1;
+  bool privateClassMethods_ : 1;
 };
 
 JS_PUBLIC_API ContextOptions& ContextOptionsRef(JSContext* cx);

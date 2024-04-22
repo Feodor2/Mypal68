@@ -118,7 +118,7 @@ var s = f(function () {});  // display name: s<
 ```
 
 ### `parameterNames`
-If the referent is a debuggee function, the names of the its parameters,
+If the referent is a debuggee function, the names of its parameters,
 as an array of strings. If the referent is not a debuggee function, or
 not a function at all, this is `undefined`.
 
@@ -128,9 +128,9 @@ is `undefined`.
 
 If the referent is a function proxy, return an empty array.
 
-If the referent uses destructuring parameters, then the array's elements
-reflect the structure of the parameters. For example, if the referent is
-a function declared in this way:
+If the function uses destructuring parameters, the corresponding array elements
+are `undefined`. For example, if the referent is a function declared in this
+way:
 
 ```js
 function f(a, [b, c], {d, e:f}) { ... }
@@ -140,7 +140,7 @@ then this `Debugger.Object` instance's `parameterNames` property would
 have the value:
 
 ```js
-["a", ["b", "c"], {d:"d", e:"f"}]
+["a", undefined, undefined]
 ```
 
 ### `script`
@@ -153,6 +153,9 @@ If the referent is a function that is debuggee code, a
 [`Debugger.Environment`][environment] instance representing the lexical
 environment enclosing the function when it was created. If the referent
 is a function proxy or not debuggee code, this is `undefined`.
+
+### `isError`
+`true` if the referent is any potentially wrapped Error; `false` otherwise.
 
 ### `errorMessageName`
 If the referent is an error created with an engine internal message template

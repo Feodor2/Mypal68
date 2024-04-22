@@ -15,6 +15,8 @@
 namespace js {
 namespace jit {
 
+class MacroAssembler;
+
 class Linker {
   MacroAssembler& masm;
   mozilla::Maybe<AutoWritableJitCodeFallible> awjcf;

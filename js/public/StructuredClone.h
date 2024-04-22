@@ -8,12 +8,13 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BufferList.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 
 #include <stdint.h>
+#include <utility>
 
 #include "jstypes.h"
 
+#include "js/AllocPolicy.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
@@ -265,7 +266,8 @@ typedef bool (*WriteStructuredCloneOp)(JSContext* cx,
  * To follow HTML5, the application must throw a DATA_CLONE_ERR DOMException
  * with error set to one of the JS_SCERR_* values.
  */
-typedef void (*StructuredCloneErrorOp)(JSContext* cx, uint32_t errorid);
+typedef void (*StructuredCloneErrorOp)(JSContext* cx, uint32_t errorid,
+                                       void* closure, const char* errorMessage);
 
 /**
  * This is called when JS_ReadStructuredClone receives a transferable object
@@ -319,6 +321,19 @@ typedef bool (*CanTransferStructuredCloneOp)(JSContext* cx,
                                              bool* sameProcessScopeRequired,
                                              void* closure);
 
+/**
+ * Called when a SharedArrayBuffer (including one owned by a Wasm memory object)
+ * has been processed in context `cx` by structured cloning.  If `receiving` is
+ * true then the SAB has been received from a channel and a new SAB object has
+ * been created; if false then an existing SAB has been serialized onto a
+ * channel.
+ *
+ * If the callback returns false then the clone operation (read or write) will
+ * signal a failure.
+ */
+typedef bool (*SharedArrayBufferClonedOp)(JSContext* cx, bool receiving,
+                                          void* closure);
+
 struct JSStructuredCloneCallbacks {
   ReadStructuredCloneOp read;
   WriteStructuredCloneOp write;
@@ -327,6 +342,7 @@ struct JSStructuredCloneCallbacks {
   TransferStructuredCloneOp writeTransfer;
   FreeTransferStructuredCloneOp freeTransfer;
   CanTransferStructuredCloneOp canTransfer;
+  SharedArrayBufferClonedOp sabCloned;
 };
 
 enum OwnTransferablePolicy {
@@ -684,6 +700,8 @@ class JS_PUBLIC_API JSAutoStructuredCloneBuffer {
 #define JS_SCERR_DUP_TRANSFERABLE 2
 #define JS_SCERR_UNSUPPORTED_TYPE 3
 #define JS_SCERR_SHMEM_TRANSFERABLE 4
+#define JS_SCERR_TYPED_ARRAY_DETACHED 5
+#define JS_SCERR_WASM_NO_TRANSFER 6
 
 JS_PUBLIC_API bool JS_ReadUint32Pair(JSStructuredCloneReader* r, uint32_t* p1,
                                      uint32_t* p2);

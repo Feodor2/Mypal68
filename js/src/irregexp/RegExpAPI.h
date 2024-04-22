@@ -7,6 +7,9 @@
 #ifndef regexp_RegExpAPI_h
 #define regexp_RegExpAPI_h
 
+#include "mozilla/Maybe.h"
+#include "mozilla/MemoryReporting.h"
+
 #include "frontend/TokenStream.h"
 #include "vm/JSContext.h"
 #include "vm/RegExpShared.h"
@@ -17,9 +20,14 @@ namespace irregexp {
 Isolate* CreateIsolate(JSContext* cx);
 void DestroyIsolate(Isolate* isolate);
 
+size_t IsolateSizeOfIncludingThis(Isolate* isolate,
+                                  mozilla::MallocSizeOf mallocSizeOf);
+
 bool CheckPatternSyntax(JSContext* cx, frontend::TokenStreamAnyChars& ts,
                         const mozilla::Range<const char16_t> chars,
-                        JS::RegExpFlags flags);
+                        JS::RegExpFlags flags,
+                        mozilla::Maybe<uint32_t> line = mozilla::Nothing(),
+                        mozilla::Maybe<uint32_t> column = mozilla::Nothing());
 bool CheckPatternSyntax(JSContext* cx, frontend::TokenStreamAnyChars& ts,
                         HandleAtom pattern, JS::RegExpFlags flags);
 

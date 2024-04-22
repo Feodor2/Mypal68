@@ -5,6 +5,7 @@
 /* Sharable code and data for wrapper around JSObjects. */
 
 #include "xpcprivate.h"
+#include "js/Object.h"  // JS::GetClass
 #include "js/Printf.h"
 #include "nsArrayEnumerator.h"
 #include "nsINamed.h"
@@ -553,6 +554,11 @@ void nsXPCWrappedJS::CleanupOutparams(const nsXPTMethodInfo* info,
 
     MOZ_ASSERT(param.IsIndirect(), "Outparams are always indirect");
 
+    // Don't try to clear optional out params that are not set.
+    if (param.IsOptional() && !nativeParams[i].val.p) {
+      continue;
+    }
+
     // Call 'CleanupValue' on parameters which we know to be initialized:
     //  1. Complex parameters (initialized by caller)
     //  2. 'inout' parameters (initialized by caller)
@@ -885,8 +891,8 @@ nsXPCWrappedJS::CallMethod(uint16_t methodIndex, const nsXPTMethodInfo* info,
     uint32_t array_count;
     RootedValue val(cx, NullValue());
 
-    // verify that null was not passed for 'out' param
-    if (param.IsOut() && !nativeParams[i].val.p) {
+    // Verify that null was not passed for a non-optional 'out' param.
+    if (param.IsOut() && !nativeParams[i].val.p && !param.IsOptional()) {
       retval = NS_ERROR_INVALID_ARG;
       goto pre_call_clean_up;
     }
@@ -991,7 +997,7 @@ pre_call_clean_up:
   for (i = 0; i < paramCount; i++) {
     const nsXPTParamInfo& param = info->GetParam(i);
     MOZ_ASSERT(!param.IsShared(), "[shared] implies [noscript]!");
-    if (!param.IsOut()) {
+    if (!param.IsOut() || !nativeParams[i].val.p) {
       continue;
     }
 
@@ -1085,7 +1091,7 @@ pre_call_clean_up:
 static const JSClass XPCOutParamClass = {"XPCOutParam", 0, JS_NULL_CLASS_OPS};
 
 bool xpc::IsOutObject(JSContext* cx, JSObject* obj) {
-  return js::GetObjectClass(obj) == &XPCOutParamClass;
+  return JS::GetClass(obj) == &XPCOutParamClass;
 }
 
 JSObject* xpc::NewOutObject(JSContext* cx) {

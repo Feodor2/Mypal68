@@ -14,6 +14,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "mozJSComponentLoader.h"
+#include "js/Object.h"  // JS::GetCompartment
 
 #include "mozilla/dom/BindingUtils.h"
 
@@ -329,7 +330,7 @@ void XPCWrappedNativeScope::UpdateWeakPointersAfterGC() {
     JSObject* obj = wrapper->GetFlatJSObjectPreserveColor();
     JS_UpdateWeakPointerAfterGCUnbarriered(&obj);
     MOZ_ASSERT(!obj || obj == wrapper->GetFlatJSObjectPreserveColor());
-    MOZ_ASSERT_IF(obj, js::GetObjectCompartment(obj) == mCompartment);
+    MOZ_ASSERT_IF(obj, JS::GetCompartment(obj) == mCompartment);
     if (!obj) {
       iter.Remove();
     }
@@ -341,7 +342,7 @@ void XPCWrappedNativeScope::UpdateWeakPointersAfterGC() {
     auto entry = static_cast<ClassInfo2WrappedNativeProtoMap::Entry*>(i.Get());
     JSObject* obj = entry->value->GetJSProtoObjectPreserveColor();
     JS_UpdateWeakPointerAfterGCUnbarriered(&obj);
-    MOZ_ASSERT_IF(obj, js::GetObjectCompartment(obj) == mCompartment);
+    MOZ_ASSERT_IF(obj, JS::GetCompartment(obj) == mCompartment);
     MOZ_ASSERT(!obj || obj == entry->value->GetJSProtoObjectPreserveColor());
     if (!obj) {
       i.Remove();
@@ -511,7 +512,8 @@ void XPCWrappedNativeScope::AddSizeOfIncludingThis(
   scopeSizeInfo->mScopeAndMapSize +=
       mWrappedNativeProtoMap->SizeOfIncludingThis(scopeSizeInfo->mMallocSizeOf);
 
-  auto realmCb = [](JSContext*, void* aData, JS::Handle<JS::Realm*> aRealm) {
+  auto realmCb = [](JSContext*, void* aData, JS::Realm* aRealm,
+                    const JS::AutoRequireNoGC& nogc) {
     auto* scopeSizeInfo = static_cast<ScopeSizeInfo*>(aData);
     JSObject* global = GetRealmGlobalOrNull(aRealm);
     if (global && dom::HasProtoAndIfaceCache(global)) {

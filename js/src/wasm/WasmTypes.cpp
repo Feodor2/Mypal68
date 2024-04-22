@@ -42,12 +42,6 @@ using mozilla::MakeEnumeratedRange;
 #  endif
 #endif
 
-// More sanity checks.
-
-static_assert(MaxMemoryInitialPages <=
-                  ArrayBufferObject::MaxBufferByteLength / PageSize,
-              "Memory sizing constraint");
-
 // All plausible targets must be able to do at least IEEE754 double
 // loads/stores, hence the lower limit of 8.  Some Intel processors support
 // AVX-512 loads/stores, hence the upper limit of 64.
@@ -256,7 +250,6 @@ static bool IsImmediateType(ValType vt) {
       switch (vt.refTypeKind()) {
         case RefType::Func:
         case RefType::Any:
-        case RefType::Null:
           return true;
         case RefType::TypeIndex:
           return false;
@@ -283,8 +276,6 @@ static unsigned EncodeImmediateType(ValType vt) {
           return 4;
         case RefType::Any:
           return 5;
-        case RefType::Null:
-          return 6;
         case RefType::TypeIndex:
           break;
       }
@@ -585,8 +576,10 @@ bool wasm::IsValidARMImmediate(uint32_t i) {
   return valid;
 }
 
-uint32_t wasm::RoundUpToNextValidARMImmediate(uint32_t i) {
-  MOZ_ASSERT(i <= 0xff000000);
+uint64_t wasm::RoundUpToNextValidARMImmediate(uint64_t i) {
+  MOZ_ASSERT(i <= HighestValidARMImmediate);
+  static_assert(HighestValidARMImmediate == 0xff000000,
+                "algorithm relies on specific constant");
 
   if (i <= 16 * 1024 * 1024) {
     i = i ? mozilla::RoundUpPow2(i) : 0;
@@ -607,7 +600,7 @@ bool wasm::IsValidBoundsCheckImmediate(uint32_t i) {
 #endif
 }
 
-size_t wasm::ComputeMappedSize(uint32_t maxSize) {
+size_t wasm::ComputeMappedSize(uint64_t maxSize) {
   MOZ_ASSERT(maxSize % PageSize == 0);
 
   // It is the bounds-check limit, not the mapped size, that gets baked into
@@ -615,9 +608,9 @@ size_t wasm::ComputeMappedSize(uint32_t maxSize) {
   // *before* adding in the guard page.
 
 #ifdef JS_CODEGEN_ARM
-  uint32_t boundsCheckLimit = RoundUpToNextValidARMImmediate(maxSize);
+  uint64_t boundsCheckLimit = RoundUpToNextValidARMImmediate(maxSize);
 #else
-  uint32_t boundsCheckLimit = maxSize;
+  uint64_t boundsCheckLimit = maxSize;
 #endif
   MOZ_ASSERT(IsValidBoundsCheckImmediate(boundsCheckLimit));
 
@@ -628,7 +621,7 @@ size_t wasm::ComputeMappedSize(uint32_t maxSize) {
 
 /* static */
 DebugFrame* DebugFrame::from(Frame* fp) {
-  MOZ_ASSERT(fp->tls->instance->code().metadata().debugEnabled);
+  MOZ_ASSERT(fp->instance()->code().metadata().debugEnabled);
   auto* df =
       reinterpret_cast<DebugFrame*>((uint8_t*)fp - DebugFrame::offsetOfFrame());
   MOZ_ASSERT(fp->instance() == df->instance());
@@ -837,7 +830,7 @@ CodeRange::CodeRange(Kind kind, uint32_t funcIndex, Offsets offsets)
     : begin_(offsets.begin), ret_(0), end_(offsets.end), kind_(kind) {
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = 0;
-  u.func.beginToNormalEntry_ = 0;
+  u.func.beginToUncheckedCallEntry_ = 0;
   u.func.beginToTierEntry_ = 0;
   MOZ_ASSERT(isEntry());
   MOZ_ASSERT(begin_ <= end_);
@@ -866,7 +859,7 @@ CodeRange::CodeRange(Kind kind, uint32_t funcIndex, CallableOffsets offsets)
   MOZ_ASSERT(ret_ < end_);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = 0;
-  u.func.beginToNormalEntry_ = 0;
+  u.func.beginToUncheckedCallEntry_ = 0;
   u.func.beginToTierEntry_ = 0;
 }
 
@@ -893,11 +886,11 @@ CodeRange::CodeRange(uint32_t funcIndex, uint32_t funcLineOrBytecode,
       kind_(Function) {
   MOZ_ASSERT(begin_ < ret_);
   MOZ_ASSERT(ret_ < end_);
-  MOZ_ASSERT(offsets.normalEntry - begin_ <= UINT8_MAX);
+  MOZ_ASSERT(offsets.uncheckedCallEntry - begin_ <= UINT8_MAX);
   MOZ_ASSERT(offsets.tierEntry - begin_ <= UINT8_MAX);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = funcLineOrBytecode;
-  u.func.beginToNormalEntry_ = offsets.normalEntry - begin_;
+  u.func.beginToUncheckedCallEntry_ = offsets.uncheckedCallEntry - begin_;
   u.func.beginToTierEntry_ = offsets.tierEntry - begin_;
 }
 
@@ -984,4 +977,35 @@ void wasm::DebugCodegen(DebugChannel channel, const char* fmt, ...) {
   vfprintf(stderr, fmt, ap);
   va_end(ap);
 #endif
+}
+
+UniqueChars wasm::ToString(ValType type) {
+  const char* literal = nullptr;
+  switch (type.kind()) {
+    case ValType::I32:
+      literal = "i32";
+      break;
+    case ValType::I64:
+      literal = "i64";
+      break;
+    case ValType::F32:
+      literal = "f32";
+      break;
+    case ValType::F64:
+      literal = "f64";
+      break;
+    case ValType::Ref:
+      switch (type.refTypeKind()) {
+        case RefType::Any:
+          literal = "externref";
+          break;
+        case RefType::Func:
+          literal = "funcref";
+          break;
+        case RefType::TypeIndex:
+          return JS_smprintf("optref %d", type.refType().typeIndex());
+      }
+      break;
+  }
+  return JS_smprintf("%s", literal);
 }

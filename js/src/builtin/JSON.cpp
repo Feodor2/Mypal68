@@ -16,6 +16,8 @@
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/Object.h"              // JS::GetBuiltinClass
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
 #include "util/StringBuffer.h"
@@ -339,7 +341,7 @@ static bool PreprocessValue(JSContext* cx, HandleObject holder, KeyType key,
     RootedObject obj(cx, &vp.get().toObject());
 
     ESClass cls;
-    if (!GetBuiltinClass(cx, obj, &cls)) {
+    if (!JS::GetBuiltinClass(cx, obj, &cls)) {
       return false;
     }
 
@@ -768,7 +770,12 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
         }
 
         /* Step 4b(iii)(5)(c-g). */
-        if (!item.isNumber() && !item.isString()) {
+        RootedId id(cx);
+        if (item.isNumber() || item.isString()) {
+          if (!PrimitiveValueToId<CanGC>(cx, item, &id)) {
+            return false;
+          }
+        } else {
           ESClass cls;
           if (!GetClassOfValue(cx, item, &cls)) {
             return false;
@@ -777,11 +784,13 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
           if (cls != ESClass::String && cls != ESClass::Number) {
             continue;
           }
-        }
 
-        RootedId id(cx);
-        if (!ValueToId<CanGC>(cx, item, &id)) {
-          return false;
+          JSAtom* atom = ToAtom<CanGC>(cx, item);
+          if (!atom) {
+            return false;
+          }
+
+          id.set(AtomToId(atom));
         }
 
         /* Step 4b(iii)(5)(g). */
@@ -803,7 +812,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
     RootedObject spaceObj(cx, &space.toObject());
 
     ESClass cls;
-    if (!GetBuiltinClass(cx, spaceObj, &cls)) {
+    if (!JS::GetBuiltinClass(cx, spaceObj, &cls)) {
       return false;
     }
 

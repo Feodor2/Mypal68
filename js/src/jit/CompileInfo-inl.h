@@ -18,7 +18,7 @@ inline RegExpObject* CompileInfo::getRegExp(jsbytecode* pc) const {
 }
 
 inline JSFunction* CompileInfo::getFunction(jsbytecode* pc) const {
-  return script_->getFunction(GET_UINT32_INDEX(pc));
+  return script_->getFunction(pc);
 }
 
 InlineScriptTree* InlineScriptTree::New(TempAllocator* allocator,
@@ -50,6 +50,18 @@ InlineScriptTree* InlineScriptTree::addCallee(TempAllocator* allocator,
   calleeTree->nextCallee_ = children_;
   children_ = calleeTree;
   return calleeTree;
+}
+
+void InlineScriptTree::removeCallee(InlineScriptTree* callee) {
+  InlineScriptTree** prevPtr = &children_;
+  for (InlineScriptTree* child = children_; child; child = child->nextCallee_) {
+    if (child == callee) {
+      *prevPtr = child->nextCallee_;
+      return;
+    }
+    prevPtr = &child->nextCallee_;
+  }
+  MOZ_CRASH("Callee not found");
 }
 
 static inline const char* AnalysisModeString(AnalysisMode mode) {

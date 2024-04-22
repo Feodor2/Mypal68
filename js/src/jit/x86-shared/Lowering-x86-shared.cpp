@@ -16,7 +16,6 @@ using namespace js::jit;
 
 using mozilla::Abs;
 using mozilla::FloorLog2;
-using mozilla::Swap;
 
 LTableSwitch* LIRGeneratorX86Shared::newLTableSwitch(
     const LAllocation& in, const LDefinition& inputCopy,
@@ -150,7 +149,7 @@ void LIRGeneratorX86Shared::lowerMulI(MMul* mul, MDefinition* lhs,
       useRegisterAtStart(lhs),
       lhs != rhs ? useOrConstant(rhs) : useOrConstantAtStart(rhs), lhsCopy);
   if (mul->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
   defineReuseInput(lir, mul, 0);
 }
@@ -186,7 +185,7 @@ void LIRGeneratorX86Shared::lowerDivI(MDiv* div) {
             LDivPowTwoI(lhs, useRegister(div->lhs()), shift, rhs < 0);
       }
       if (div->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineReuseInput(lir, div, 0);
       return;
@@ -196,7 +195,7 @@ void LIRGeneratorX86Shared::lowerDivI(MDiv* div) {
       lir = new (alloc())
           LDivOrModConstantI(useRegister(div->lhs()), rhs, tempFixed(eax));
       if (div->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineFixed(lir, div, LAllocation(AnyRegister(edx)));
       return;
@@ -206,7 +205,7 @@ void LIRGeneratorX86Shared::lowerDivI(MDiv* div) {
   LDivI* lir = new (alloc())
       LDivI(useRegister(div->lhs()), useRegister(div->rhs()), tempFixed(edx));
   if (div->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
   defineFixed(lir, div, LAllocation(AnyRegister(eax)));
 }
@@ -224,7 +223,7 @@ void LIRGeneratorX86Shared::lowerModI(MMod* mod) {
       LModPowTwoI* lir =
           new (alloc()) LModPowTwoI(useRegisterAtStart(mod->lhs()), shift);
       if (mod->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineReuseInput(lir, mod, 0);
       return;
@@ -234,7 +233,7 @@ void LIRGeneratorX86Shared::lowerModI(MMod* mod) {
       lir = new (alloc())
           LDivOrModConstantI(useRegister(mod->lhs()), rhs, tempFixed(edx));
       if (mod->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineFixed(lir, mod, LAllocation(AnyRegister(eax)));
       return;
@@ -244,7 +243,7 @@ void LIRGeneratorX86Shared::lowerModI(MMod* mod) {
   LModI* lir = new (alloc())
       LModI(useRegister(mod->lhs()), useRegister(mod->rhs()), tempFixed(eax));
   if (mod->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
   defineFixed(lir, mod, LAllocation(AnyRegister(edx)));
 }
@@ -361,14 +360,14 @@ void LIRGeneratorX86Shared::lowerUDiv(MDiv* div) {
     if (rhs != 0 && uint32_t(1) << shift == rhs) {
       LDivPowTwoI* lir = new (alloc()) LDivPowTwoI(lhs, lhs, shift, false);
       if (div->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineReuseInput(lir, div, 0);
     } else {
       LUDivOrModConstant* lir = new (alloc())
           LUDivOrModConstant(useRegister(div->lhs()), rhs, tempFixed(eax));
       if (div->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineFixed(lir, div, LAllocation(AnyRegister(edx)));
     }
@@ -378,7 +377,7 @@ void LIRGeneratorX86Shared::lowerUDiv(MDiv* div) {
   LUDivOrMod* lir = new (alloc()) LUDivOrMod(
       useRegister(div->lhs()), useRegister(div->rhs()), tempFixed(edx));
   if (div->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
   defineFixed(lir, div, LAllocation(AnyRegister(eax)));
 }
@@ -392,14 +391,14 @@ void LIRGeneratorX86Shared::lowerUMod(MMod* mod) {
       LModPowTwoI* lir =
           new (alloc()) LModPowTwoI(useRegisterAtStart(mod->lhs()), shift);
       if (mod->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineReuseInput(lir, mod, 0);
     } else {
       LUDivOrModConstant* lir = new (alloc())
           LUDivOrModConstant(useRegister(mod->lhs()), rhs, tempFixed(edx));
       if (mod->fallible()) {
-        assignSnapshot(lir, Bailout_DoubleOutput);
+        assignSnapshot(lir, BailoutKind::DoubleOutput);
       }
       defineFixed(lir, mod, LAllocation(AnyRegister(eax)));
     }
@@ -409,7 +408,7 @@ void LIRGeneratorX86Shared::lowerUMod(MMod* mod) {
   LUDivOrMod* lir = new (alloc()) LUDivOrMod(
       useRegister(mod->lhs()), useRegister(mod->rhs()), tempFixed(eax));
   if (mod->fallible()) {
-    assignSnapshot(lir, Bailout_DoubleOutput);
+    assignSnapshot(lir, BailoutKind::DoubleOutput);
   }
   defineFixed(lir, mod, LAllocation(AnyRegister(edx)));
 }
@@ -441,7 +440,7 @@ void LIRGeneratorX86Shared::lowerPowOfTwoI(MPow* mir) {
   // shift operator should be in register ecx;
   // x86 can't shift a non-ecx register.
   auto* lir = new (alloc()) LPowOfTwoI(base, useFixed(power, ecx));
-  assignSnapshot(lir, Bailout_PrecisionLoss);
+  assignSnapshot(lir, BailoutKind::PrecisionLoss);
   define(lir, mir);
 }
 
@@ -540,7 +539,6 @@ void LIRGeneratorX86Shared::lowerAtomicExchangeTypedArrayElement(
 
   LDefinition tempDef = LDefinition::BogusTemp();
   if (ins->arrayType() == Scalar::Uint32) {
-    // This restriction is bug 1077305.
     MOZ_ASSERT(ins->type() == MIRType::Double);
     tempDef = temp();
   }

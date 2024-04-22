@@ -11,11 +11,14 @@
 
 #include "jstypes.h"
 
+#include "js/shadow/Function.h"        // JS::shadow::Function
 #include "vm/FunctionFlags.h"          // FunctionFlags
 #include "vm/FunctionPrefixKind.h"     // FunctionPrefixKind
 #include "vm/GeneratorAndAsyncKind.h"  // GeneratorKind, FunctionAsyncKind
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
+
+class JSJitInfo;
 
 namespace js {
 
@@ -57,12 +60,16 @@ class JSFunction : public js::NativeObject {
     class {
       friend class JSFunction;
       js::Native func_; /* native method pointer or null */
+      // Warning: this |extra| union MUST NOT store a value that could be a
+      // valid BaseScript* pointer! JIT guards depend on this.
       union {
         // Information about this function to be used by the JIT, only
         // used if isBuiltinNative(); use the accessor!
         const JSJitInfo* jitInfo_;
-        // for wasm/asm.js without a jit entry
-        size_t wasmFuncIndex_;
+        // For wasm/asm.js without a jit entry. Always has the low bit set to
+        // ensure it's never identical to a BaseScript* pointer. See warning
+        // above.
+        uintptr_t taggedWasmFuncIndex_;
         // for wasm that has been given a jit entry
         void** wasmJitEntry_;
       } extra;
@@ -76,27 +83,27 @@ class JSFunction : public js::NativeObject {
     } scripted;
   } u;
 
-  // The |atom_| field can have different meanings depending on the function
+  // The `atom_` field can have different meanings depending on the function
   // type and flags. It is used for diagnostics, decompiling, and
   //
   // 1. If the function is not a bound function:
   //   a. If HAS_GUESSED_ATOM is not set, to store the initial value of the
   //      "name" property of functions. But also see RESOLVED_NAME.
-  //   b. If HAS_GUESSED_ATOM is set, |atom_| is only used for diagnostics,
+  //   b. If HAS_GUESSED_ATOM is set, `atom_` is only used for diagnostics,
   //      but must not be used for the "name" property.
   //   c. If HAS_INFERRED_NAME is set, the function wasn't given an explicit
-  //      name in the source text, e.g. |function fn(){}|, but instead it
+  //      name in the source text, e.g. `function fn(){}`, but instead it
   //      was inferred based on how the function was defined in the source
   //      text. The exact name inference rules are defined in the ECMAScript
   //      specification.
   //      Name inference can happen at compile-time, for example in
-  //      |var fn = function(){}|, or it can happen at runtime, for example
-  //      in |var o = {[Symbol.iterator]: function(){}}|. When it happens at
+  //      `var fn = function(){}`, or it can happen at runtime, for example
+  //      in `var o = {[Symbol.iterator]: function(){}}`. When it happens at
   //      compile-time, the HAS_INFERRED_NAME is set directly in the
   //      bytecode emitter, when it happens at runtime, the flag is set when
   //      evaluating the JSOp::SetFunName bytecode.
   //   d. HAS_GUESSED_ATOM and HAS_INFERRED_NAME cannot both be set.
-  //   e. |atom_| can be null if neither an explicit, nor inferred, nor a
+  //   e. `atom_` can be null if neither an explicit, nor inferred, nor a
   //      guessed name was set.
   //   f. HAS_INFERRED_NAME can be set for cloned singleton function, even
   //      though the clone shouldn't receive an inferred name. See the
@@ -104,15 +111,26 @@ class JSFunction : public js::NativeObject {
   //
   // 2. If the function is a bound function:
   //   a. To store the initial value of the "name" property.
-  //   b. If HAS_BOUND_FUNCTION_NAME_PREFIX is not set, |atom_| doesn't
+  //   b. If HAS_BOUND_FUNCTION_NAME_PREFIX is not set, `atom_` doesn't
   //      contain the "bound " prefix which is prepended to the "name"
   //      property of bound functions per ECMAScript.
   //   c. Bound functions can never have an inferred or guessed name.
-  //   d. |atom_| is never null for bound functions.
+  //   d. `atom_` is never null for bound functions.
+  //
+  // Self-hosted functions have two names. For example, Array.prototype.sort
+  // has the standard name "sort", but the implementation in Array.js is named
+  // "ArraySort".
+  //
+  // -   In the self-hosting realm, these functions have `_atom` set to the
+  //     implementation name.
+  //
+  // -   When we clone these functions into normal realms, we set `_atom` to
+  //     the standard name. (The self-hosted name is also stored on the clone,
+  //     in another slot; see GetClonedSelfHostedFunctionName().)
   js::GCPtrAtom atom_;
 
  public:
-  static inline JS::Result<JSFunction*, JS::OOM&> create(
+  static inline JS::Result<JSFunction*, JS::OOM> create(
       JSContext* cx, js::gc::AllocKind kind, js::gc::InitialHeap heap,
       js::HandleShape shape, js::HandleObjectGroup group);
 
@@ -158,6 +176,10 @@ class JSFunction : public js::NativeObject {
   bool isNative() const { return flags_.isNative(); }
 
   bool isConstructor() const { return flags_.isConstructor(); }
+
+  bool isNonBuiltinConstructor() const {
+    return flags_.isNonBuiltinConstructor();
+  }
 
   /* Possible attributes of a native function: */
   bool isAsmJSNative() const { return flags_.isAsmJSNative(); }
@@ -467,8 +489,13 @@ class JSFunction : public js::NativeObject {
     if (hasBaseScript()) {
       return baseScript()->generatorKind();
     }
+    if (hasSelfHostedLazyScript()) {
+      return clonedSelfHostedGeneratorKind();
+    }
     return js::GeneratorKind::NotGenerator;
   }
+
+  js::GeneratorKind clonedSelfHostedGeneratorKind() const;
 
   bool isGenerator() const {
     return generatorKind() == js::GeneratorKind::Generator;
@@ -552,13 +579,15 @@ class JSFunction : public js::NativeObject {
   void setWasmFuncIndex(uint32_t funcIndex) {
     MOZ_ASSERT(isWasm() || isAsmJSNative());
     MOZ_ASSERT(!isWasmWithJitEntry());
-    MOZ_ASSERT(!u.native.extra.wasmFuncIndex_);
-    u.native.extra.wasmFuncIndex_ = funcIndex;
+    MOZ_ASSERT(!u.native.extra.taggedWasmFuncIndex_);
+    // See wasmFuncIndex_ comment for why we set the low bit.
+    u.native.extra.taggedWasmFuncIndex_ = (uintptr_t(funcIndex) << 1) | 1;
   }
   uint32_t wasmFuncIndex() const {
     MOZ_ASSERT(isWasm() || isAsmJSNative());
     MOZ_ASSERT(!isWasmWithJitEntry());
-    return u.native.extra.wasmFuncIndex_;
+    MOZ_ASSERT(u.native.extra.taggedWasmFuncIndex_ & 1);
+    return u.native.extra.taggedWasmFuncIndex_ >> 1;
   }
   void setWasmJitEntry(void** entry) {
     MOZ_ASSERT(*entry);
@@ -675,7 +704,7 @@ class JSFunction : public js::NativeObject {
   }
 };
 
-static_assert(sizeof(JSFunction) == sizeof(js::shadow::Function),
+static_assert(sizeof(JSFunction) == sizeof(JS::shadow::Function),
               "shadow interface must match actual interface");
 
 extern JSString* fun_toStringHelper(JSContext* cx, js::HandleObject obj,
@@ -786,6 +815,10 @@ class FunctionExtended : public JSFunction {
 
   static const unsigned METHOD_HOMEOBJECT_SLOT = 0;
 
+  // Stores the length for bound functions, so the .length property doesn't need
+  // to be resolved eagerly.
+  static const unsigned BOUND_FUNCTION_LENGTH_SLOT = 1;
+
   // Exported asm.js/wasm functions store their WasmInstanceObject in the
   // first slot.
   static const unsigned WASM_INSTANCE_SLOT = 0;
@@ -808,6 +841,9 @@ class FunctionExtended : public JSFunction {
   static inline size_t offsetOfMethodHomeObjectSlot() {
     return offsetOfExtendedSlot(METHOD_HOMEOBJECT_SLOT);
   }
+  static inline size_t offsetOfBoundFunctionLengthSlot() {
+    return offsetOfExtendedSlot(BOUND_FUNCTION_LENGTH_SLOT);
+  }
 
  private:
   friend class JSFunction;
@@ -822,7 +858,6 @@ extern bool CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
 extern JSFunction* CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
                                             HandleObject enclosingEnv,
                                             gc::AllocKind kind,
-                                            NewObjectKind newKindArg,
                                             HandleObject proto);
 
 // Functions whose scripts are cloned are always given singleton types.

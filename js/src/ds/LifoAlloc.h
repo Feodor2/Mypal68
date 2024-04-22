@@ -9,7 +9,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/TemplateLib.h"
 
@@ -17,6 +16,7 @@
 #include <new>
 #include <stddef.h>  // size_t
 #include <type_traits>
+#include <utility>
 
 // This data structure supports stacky LIFO allocation (mark/release and
 // LifoAllocScope). It does not maintain one contiguous segment; instead, it
@@ -721,12 +721,9 @@ class LifoAlloc {
 #if defined(DEBUG) || defined(JS_OOM_BREAKPOINT)
     LifoAlloc* lifoAlloc_;
     bool prevFallibleScope_;
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
    public:
-    explicit AutoFallibleScope(
-        LifoAlloc* lifoAlloc MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-      MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+    explicit AutoFallibleScope(LifoAlloc* lifoAlloc) {
       lifoAlloc_ = lifoAlloc;
       prevFallibleScope_ = lifoAlloc->fallibleScope_;
       lifoAlloc->fallibleScope_ = true;
@@ -945,15 +942,12 @@ class MOZ_NON_TEMPORARY_CLASS LifoAllocScope {
   LifoAlloc* lifoAlloc;
   LifoAlloc::Mark mark;
   LifoAlloc::AutoFallibleScope fallibleScope;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
  public:
-  explicit LifoAllocScope(LifoAlloc* lifoAlloc MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit LifoAllocScope(LifoAlloc* lifoAlloc)
       : lifoAlloc(lifoAlloc),
         mark(lifoAlloc->mark()),
-        fallibleScope(lifoAlloc) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+        fallibleScope(lifoAlloc) {}
 
   ~LifoAllocScope() {
     lifoAlloc->release(mark);

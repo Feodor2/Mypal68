@@ -6,6 +6,7 @@
 #define jit_IonIC_h
 
 #include "jit/CacheIR.h"
+#include "jit/shared/Assembler-shared.h"
 
 namespace js {
 namespace jit {
@@ -59,12 +60,14 @@ class IonGetNameIC;
 class IonBindNameIC;
 class IonGetIteratorIC;
 class IonHasOwnIC;
+class IonCheckPrivateFieldIC;
 class IonInIC;
 class IonInstanceOfIC;
 class IonCompareIC;
 class IonUnaryArithIC;
 class IonBinaryArithIC;
 class IonToPropertyKeyIC;
+class IonOptimizeSpreadCallIC;
 
 class IonIC {
   // This either points at the OOL path for the fallback path, or the code for
@@ -170,9 +173,17 @@ class IonIC {
     MOZ_ASSERT(kind_ == CacheKind::GetIterator);
     return (IonGetIteratorIC*)this;
   }
+  IonOptimizeSpreadCallIC* asOptimizeSpreadCallIC() {
+    MOZ_ASSERT(kind_ == CacheKind::OptimizeSpreadCall);
+    return (IonOptimizeSpreadCallIC*)this;
+  }
   IonHasOwnIC* asHasOwnIC() {
     MOZ_ASSERT(kind_ == CacheKind::HasOwn);
     return (IonHasOwnIC*)this;
+  }
+  IonCheckPrivateFieldIC* asCheckPrivateFieldIC() {
+    MOZ_ASSERT(kind_ == CacheKind::CheckPrivateField);
+    return (IonCheckPrivateFieldIC*)this;
   }
   IonInIC* asInIC() {
     MOZ_ASSERT(kind_ == CacheKind::In);
@@ -407,6 +418,31 @@ class IonGetIteratorIC : public IonIC {
                           IonGetIteratorIC* ic, HandleValue value);
 };
 
+class IonOptimizeSpreadCallIC : public IonIC {
+  LiveRegisterSet liveRegs_;
+  ValueOperand value_;
+  Register output_;
+  Register temp_;
+
+ public:
+  IonOptimizeSpreadCallIC(LiveRegisterSet liveRegs, ValueOperand value,
+                          Register output, Register temp)
+      : IonIC(CacheKind::OptimizeSpreadCall),
+        liveRegs_(liveRegs),
+        value_(value),
+        output_(output),
+        temp_(temp) {}
+
+  ValueOperand value() const { return value_; }
+  Register output() const { return output_; }
+  Register temp() const { return temp_; }
+  LiveRegisterSet liveRegs() const { return liveRegs_; }
+
+  static bool update(JSContext* cx, HandleScript outerScript,
+                     IonOptimizeSpreadCallIC* ic, HandleValue value,
+                     bool* result);
+};
+
 class IonHasOwnIC : public IonIC {
   LiveRegisterSet liveRegs_;
 
@@ -431,6 +467,32 @@ class IonHasOwnIC : public IonIC {
   static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
                                   IonHasOwnIC* ic, HandleValue val,
                                   HandleValue idVal, int32_t* res);
+};
+
+class IonCheckPrivateFieldIC : public IonIC {
+  LiveRegisterSet liveRegs_;
+
+  TypedOrValueRegister value_;
+  TypedOrValueRegister id_;
+  Register output_;
+
+ public:
+  IonCheckPrivateFieldIC(LiveRegisterSet liveRegs, TypedOrValueRegister value,
+                         TypedOrValueRegister id, Register output)
+      : IonIC(CacheKind::CheckPrivateField),
+        liveRegs_(liveRegs),
+        value_(value),
+        id_(id),
+        output_(output) {}
+
+  TypedOrValueRegister value() const { return value_; }
+  TypedOrValueRegister id() const { return id_; }
+  Register output() const { return output_; }
+  LiveRegisterSet liveRegs() const { return liveRegs_; }
+
+  static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
+                                  IonCheckPrivateFieldIC* ic, HandleValue val,
+                                  HandleValue idVal, bool* res);
 };
 
 class IonInIC : public IonIC {

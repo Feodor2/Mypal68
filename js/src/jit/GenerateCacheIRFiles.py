@@ -64,6 +64,7 @@ arg_writer_info = {
     'ObjId': ('ObjOperandId', 'writeOperandId'),
     'StringId': ('StringOperandId', 'writeOperandId'),
     'SymbolId': ('SymbolOperandId', 'writeOperandId'),
+    'BooleanId': ('BooleanOperandId', 'writeOperandId'),
     'Int32Id': ('Int32OperandId', 'writeOperandId'),
     'NumberId': ('NumberOperandId', 'writeOperandId'),
     'BigIntId': ('BigIntOperandId', 'writeOperandId'),
@@ -77,6 +78,7 @@ arg_writer_info = {
     'AtomField': ('JSAtom*', 'writeStringField'),
     'PropertyNameField': ('PropertyName*', 'writeStringField'),
     'SymbolField': ('JS::Symbol*', 'writeSymbolField'),
+    'BaseScriptField': ('BaseScript*', 'writeBaseScriptField'),
     'RawWordField': ('uintptr_t', 'writeRawWordField'),
     'RawPointerField': ('const void*', 'writeRawPointerField'),
     'IdField': ('jsid', 'writeIdField'),
@@ -160,6 +162,7 @@ arg_reader_info = {
     'ObjId': ('ObjOperandId', 'Id', 'reader.objOperandId()'),
     'StringId': ('StringOperandId', 'Id', 'reader.stringOperandId()'),
     'SymbolId': ('SymbolOperandId', 'Id', 'reader.symbolOperandId()'),
+    'BooleanId': ('BooleanOperandId', 'Id', 'reader.booleanOperandId()'),
     'Int32Id': ('Int32OperandId', 'Id', 'reader.int32OperandId()'),
     'NumberId': ('NumberOperandId', 'Id', 'reader.numberOperandId()'),
     'BigIntId': ('BigIntOperandId', 'Id', 'reader.bigIntOperandId()'),
@@ -173,6 +176,7 @@ arg_reader_info = {
     'AtomField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
     'PropertyNameField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
     'SymbolField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
+    'BaseScriptField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
     'RawWordField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
     'RawPointerField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
     'IdField': ('uint32_t', 'Offset', 'reader.stubOffset()'),
@@ -242,6 +246,7 @@ arg_spewer_method = {
     'ObjId': 'spewOperandId',
     'StringId': 'spewOperandId',
     'SymbolId': 'spewOperandId',
+    'BooleanId': 'spewOperandId',
     'Int32Id': 'spewOperandId',
     'NumberId': 'spewOperandId',
     'BigIntId': 'spewOperandId',
@@ -255,6 +260,7 @@ arg_spewer_method = {
     'AtomField': 'spewField',
     'PropertyNameField': 'spewField',
     'SymbolField': 'spewField',
+    'BaseScriptField': 'spewField',
     'RawWordField': 'spewField',
     'RawPointerField': 'spewField',
     'IdField': 'spewField',
@@ -315,6 +321,57 @@ def gen_spewer_method(name, args):
     return code
 
 
+def gen_clone_method(name, args):
+    """Generates code for cloning a single opcode."""
+
+    method_name = 'clone' + name
+
+    # Generate code like this:
+    #
+    #  void cloneGuardShape(CacheIRReader& reader, CacheIRWriter& writer) {
+    #    writer.writeOp(CacheOp::GuardShape);
+    #    ObjOperandId objId = reader.objOperandId();
+    #    writer.writeOperandId(objId);
+    #    uint32_t shapeOffset = reader.stubOffset();
+    #    Shape* shape = getShapeField(shapeOffset);
+    #    writer.writeShapeField(shape);
+    #    writer.assertLengthMatches();
+    #  }
+
+    args_code = ''
+    if args:
+        for arg_name, arg_type in six.iteritems(args):
+            if arg_type == 'RawId':
+                arg_type = 'ValId'
+
+            read_type, suffix, readexpr = arg_reader_info[arg_type]
+            read_name = arg_name + suffix
+            value_name = read_name
+            args_code += '  {} {} = {};\\\n'.format(read_type, read_name, readexpr)
+
+            write_type, write_method = arg_writer_info[arg_type]
+            if arg_name == 'result':
+                args_code += '  writer.newOperandId();\\\n'
+            if suffix == 'Offset':
+                # If the write function takes T&, the intermediate variable
+                # should be of type T.
+                if write_type.endswith('&'):
+                    write_type = write_type[:-1]
+                value_name = arg_name
+                args_code += '  {} {} = get{}({});\\\n'.format(write_type, value_name,
+                                                               arg_type, read_name)
+            args_code += '  writer.{}({});\\\n'.format(write_method, value_name)
+
+    code = 'void {}'.format(method_name)
+    code += '(CacheIRReader& reader, CacheIRWriter& writer) {{\\\n'
+    code += '  writer.writeOp(CacheOp::{});\\\n'.format(name)
+    code += args_code
+    code += '  writer.assertLengthMatches();\\\n'
+    code += '}}\\\n'
+
+    return code
+
+
 # Length in bytes for each argument type, either an integer or a C++ expression.
 # This is used to generate the CacheIROpArgLengths array. CacheIRWriter asserts
 # the number of bytes written matches the value in that array.
@@ -323,6 +380,7 @@ arg_length = {
     'ObjId': 1,
     'StringId': 1,
     'SymbolId': 1,
+    'BooleanId': 1,
     'Int32Id': 1,
     'NumberId': 1,
     'BigIntId': 1,
@@ -336,6 +394,7 @@ arg_length = {
     'AtomField': 1,
     'PropertyNameField': 1,
     'SymbolField': 1,
+    'BaseScriptField': 1,
     'RawWordField': 1,
     'RawPointerField': 1,
     'DOMExpandoGenerationField': 1,
@@ -390,6 +449,9 @@ def generate_cacheirops_header(c_out, yaml_path):
     # Generated methods for spewers.
     spewer_methods = []
 
+    # Generated methods for cloning IC stubs
+    clone_methods = []
+
     for op in data:
         name = op['name']
 
@@ -402,6 +464,10 @@ def generate_cacheirops_header(c_out, yaml_path):
         transpile = op['transpile']
         assert isinstance(transpile, bool)
 
+        # Unscored Ops default to UINT32_MAX
+        cost_estimate = op.get('cost_estimate', int(0xffffffff))
+        #assert isinstance(cost_estimate, int)
+
         custom_writer = op.get('custom_writer', False)
         assert isinstance(custom_writer, bool)
 
@@ -409,7 +475,10 @@ def generate_cacheirops_header(c_out, yaml_path):
             args_length = ' + '.join([str(arg_length[v]) for v in args.values()])
         else:
             args_length = '0'
-        ops_items.append('_({}, {})'.format(name, args_length))
+
+        transpile_str = ('true' if transpile else 'false')
+        ops_items.append('_({}, {}, {}, {})'.format(
+            name, args_length, transpile_str, cost_estimate))
 
         writer_methods.append(gen_writer_method(name, args, custom_writer))
 
@@ -423,6 +492,8 @@ def generate_cacheirops_header(c_out, yaml_path):
             transpiler_ops.append('_({})'.format(name))
 
         spewer_methods.append(gen_spewer_method(name, args))
+
+        clone_methods.append(gen_clone_method(name, args))
 
     contents = '#define CACHE_IR_OPS(_)\\\n'
     contents += '\\\n'.join(ops_items)
@@ -450,6 +521,10 @@ def generate_cacheirops_header(c_out, yaml_path):
 
     contents += '#define CACHE_IR_SPEWER_GENERATED \\\n'
     contents += '\\\n'.join(spewer_methods)
+    contents += '\n\n'
+
+    contents += '#define CACHE_IR_CLONE_GENERATED \\\n'
+    contents += '\\\n'.join(clone_methods)
     contents += '\n\n'
 
     generate_header(c_out, 'jit_CacheIROpsGenerated_h', contents)

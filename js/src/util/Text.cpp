@@ -71,6 +71,19 @@ UniqueChars js::DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
   return ret;
 }
 
+UniqueLatin1Chars js::DuplicateStringToArena(arena_id_t destArenaId,
+                                             JSContext* cx,
+                                             const JS::Latin1Char* s,
+                                             size_t n) {
+  auto ret = cx->make_pod_arena_array<Latin1Char>(destArenaId, n + 1);
+  if (!ret) {
+    return nullptr;
+  }
+  PodCopy(ret.get(), s, n);
+  ret[n] = '\0';
+  return ret;
+}
+
 UniqueTwoByteChars js::DuplicateStringToArena(arena_id_t destArenaId,
                                               JSContext* cx,
                                               const char16_t* s) {
@@ -104,6 +117,19 @@ UniqueChars js::DuplicateStringToArena(arena_id_t destArenaId, const char* s,
   return ret;
 }
 
+UniqueLatin1Chars js::DuplicateStringToArena(arena_id_t destArenaId,
+                                             const JS::Latin1Char* s,
+                                             size_t n) {
+  UniqueLatin1Chars ret(
+      js_pod_arena_malloc<JS::Latin1Char>(destArenaId, n + 1));
+  if (!ret) {
+    return nullptr;
+  }
+  PodCopy(ret.get(), s, n);
+  ret[n] = '\0';
+  return ret;
+}
+
 UniqueTwoByteChars js::DuplicateStringToArena(arena_id_t destArenaId,
                                               const char16_t* s) {
   return DuplicateStringToArena(destArenaId, s, js_strlen(s));
@@ -128,6 +154,11 @@ UniqueChars js::DuplicateString(JSContext* cx, const char* s) {
   return DuplicateStringToArena(js::MallocArena, cx, s);
 }
 
+UniqueLatin1Chars js::DuplicateString(JSContext* cx, const JS::Latin1Char* s,
+                                      size_t n) {
+  return DuplicateStringToArena(js::MallocArena, cx, s, n);
+}
+
 UniqueTwoByteChars js::DuplicateString(JSContext* cx, const char16_t* s) {
   return DuplicateStringToArena(js::MallocArena, cx, s);
 }
@@ -142,6 +173,10 @@ UniqueChars js::DuplicateString(const char* s) {
 }
 
 UniqueChars js::DuplicateString(const char* s, size_t n) {
+  return DuplicateStringToArena(js::MallocArena, s, n);
+}
+
+UniqueLatin1Chars js::DuplicateString(const JS::Latin1Char* s, size_t n) {
   return DuplicateStringToArena(js::MallocArena, s, n);
 }
 

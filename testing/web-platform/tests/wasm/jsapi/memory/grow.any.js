@@ -1,11 +1,14 @@
-// META: global=jsshell
+// META: global=window,dedicatedworker,jsshell
 
-function assert_ArrayBuffer(actual, expected, message) {
+function assert_ArrayBuffer(actual, { size=0, shared=false, detached=false }, message) {
   // https://github.com/WebAssembly/spec/issues/840
-  const bufferType = expected.shared ? self.SharedArrayBuffer : ArrayBuffer;
-  assert_equals(Object.getPrototypeOf(actual), bufferType.prototype,
-                `${message}: prototype`);
-  if (expected.detached) {
+  // See https://github.com/whatwg/html/issues/5380 for why not `self.SharedArrayBuffer`
+  const isShared = !("isView" in actual.constructor);
+  assert_equals(isShared, shared, `${message}: constructor`);
+  const sharedString = shared ? "Shared" : "";
+  assert_equals(actual.toString(), `[object ${sharedString}ArrayBuffer]`, `${message}: toString()`);
+  assert_equals(Object.getPrototypeOf(actual).toString(), `[object ${sharedString}ArrayBuffer]`, `${message}: prototype toString()`);
+  if (detached) {
     // https://github.com/tc39/ecma262/issues/678
     let byteLength;
     try {
@@ -15,8 +18,8 @@ function assert_ArrayBuffer(actual, expected, message) {
     }
     assert_equals(byteLength, 0, `${message}: detached size`);
   } else {
-    assert_equals(actual.byteLength, 0x10000 * expected.size, `${message}: size`);
-    if (expected.size > 0) {
+    assert_equals(actual.byteLength, 0x10000 * size, `${message}: size`);
+    if (size > 0) {
       const array = new Uint8Array(actual);
       assert_equals(array[0], 0, `${message}: first element`);
       assert_equals(array[array.byteLength - 1], 0, `${message}: last element`);
@@ -27,7 +30,7 @@ function assert_ArrayBuffer(actual, expected, message) {
 test(() => {
   const argument = { "initial": 0 };
   const memory = new WebAssembly.Memory(argument);
-  assert_throws(new TypeError(), () => memory.grow());
+  assert_throws_js(TypeError, () => memory.grow());
 }, "Missing arguments");
 
 test(t => {
@@ -51,7 +54,7 @@ test(t => {
   const fn = WebAssembly.Memory.prototype.grow;
 
   for (const thisValue of thisValues) {
-    assert_throws(new TypeError(), () => fn.call(thisValue, argument), `this=${format_value(thisValue)}`);
+    assert_throws_js(TypeError, () => fn.call(thisValue, argument), `this=${format_value(thisValue)}`);
   }
 }, "Branding");
 
@@ -145,7 +148,7 @@ test(() => {
   const oldMemory = memory.buffer;
   assert_ArrayBuffer(oldMemory, { "size": 1 }, "Buffer before growing");
 
-  assert_throws(new RangeError(), () => memory.grow(2));
+  assert_throws_js(RangeError, () => memory.grow(2));
   assert_equals(memory.buffer, oldMemory);
   assert_ArrayBuffer(memory.buffer, { "size": 1 }, "Buffer before trying to grow");
 }, "Zero initial growing too much");
@@ -166,7 +169,7 @@ for (const value of outOfRangeValues) {
   test(() => {
     const argument = { "initial": 0 };
     const memory = new WebAssembly.Memory(argument);
-    assert_throws(new TypeError(), () => memory.grow(value));
+    assert_throws_js(TypeError, () => memory.grow(value));
   }, `Out-of-range argument: ${format_value(value)}`);
 }
 

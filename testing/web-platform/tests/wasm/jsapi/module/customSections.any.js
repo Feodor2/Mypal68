@@ -1,5 +1,4 @@
-// META: global=jsshell
-// META: script=/wasm/jsapi/wasm-constants.js
+// META: global=window,dedicatedworker,jsshell
 // META: script=/wasm/jsapi/wasm-module-builder.js
 
 function assert_ArrayBuffer(buffer, expected) {
@@ -25,9 +24,9 @@ setup(() => {
 });
 
 test(() => {
-  assert_throws(new TypeError(), () => WebAssembly.Module.customSections());
+  assert_throws_js(TypeError, () => WebAssembly.Module.customSections());
   const module = new WebAssembly.Module(emptyModuleBinary);
-  assert_throws(new TypeError(), () => WebAssembly.Module.customSections(module));
+  assert_throws_js(TypeError, () => WebAssembly.Module.customSections(module));
 }, "Missing arguments");
 
 test(() => {
@@ -43,8 +42,8 @@ test(() => {
     WebAssembly.Module.prototype,
   ];
   for (const argument of invalidArguments) {
-    assert_throws(new TypeError(), () => WebAssembly.Module.customSections(argument, ""),
-                  `customSections(${format_value(argument)})`);
+    assert_throws_js(TypeError, () => WebAssembly.Module.customSections(argument, ""),
+                     `customSections(${format_value(argument)})`);
   }
 }, "Non-Module arguments");
 
@@ -97,7 +96,7 @@ test(() => {
   });
 
   const builder = new WasmModuleBuilder();
-  builder.addExplicitSection(binary);
+  builder.addExplicitSection(binary.trunc_buffer());
   const buffer = builder.toBuffer()
   const module = new WebAssembly.Module(buffer);
 
@@ -127,7 +126,7 @@ test(() => {
   });
 
   const builder = new WasmModuleBuilder();
-  builder.addExplicitSection(binary);
+  builder.addExplicitSection(binary.trunc_buffer());
   const buffer = builder.toBuffer();
   const module = new WebAssembly.Module(buffer);
 
@@ -148,7 +147,7 @@ test(() => {
   });
 
   const builder = new WasmModuleBuilder();
-  builder.addExplicitSection(binary);
+  builder.addExplicitSection(binary.trunc_buffer());
   const buffer = builder.toBuffer();
   const module = new WebAssembly.Module(buffer);
 

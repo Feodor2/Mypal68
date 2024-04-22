@@ -17,7 +17,9 @@ def test_verify_options(filedir):
                      page_timeout=60000,
                      debug='True',
                      power_test=False,
-                     memory_test=False)
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     parser = ArgumentParser()
 
     with pytest.raises(SystemExit):
@@ -34,7 +36,9 @@ def test_verify_options(filedir):
                      is_release_build=False,
                      host='sophie',
                      power_test=False,
-                     memory_test=False)
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     verify_options(parser, args)  # assert no exception
 
     args = Namespace(app='refbrow',
@@ -45,7 +49,9 @@ def test_verify_options(filedir):
                      is_release_build=False,
                      host='sophie',
                      power_test=False,
-                     memory_test=False)
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     verify_options(parser, args)  # assert no exception
 
     args = Namespace(app='fenix',
@@ -56,7 +62,22 @@ def test_verify_options(filedir):
                      is_release_build=False,
                      host='sophie',
                      power_test=False,
-                     memory_test=False)
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
+    verify_options(parser, args)  # assert no exception
+
+    args = Namespace(app='geckoview',
+                     binary='org.mozilla.geckoview_example',
+                     activity='org.mozilla.geckoview_example.GeckoViewActivity',
+                     intent='android.intent.action.MAIN',
+                     gecko_profile='False',
+                     is_release_build=False,
+                     host='sophie',
+                     power_test=False,
+                     cpu_test=True,
+                     memory_test=False,
+                     enable_webrender=False)
     verify_options(parser, args)  # assert no exception
 
     args = Namespace(app='refbrow',
@@ -67,7 +88,9 @@ def test_verify_options(filedir):
                      is_release_build=False,
                      host='sophie',
                      power_test=False,
-                     memory_test=False)
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     parser = ArgumentParser()
 
     verify_options(parser, args)  # also will work as uses default activity

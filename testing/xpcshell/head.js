@@ -20,6 +20,7 @@
 /* globals Cc, Ci */
 
 /* defined by this file but is defined as read-only for tests */
+// eslint-disable-next-line no-redeclare
 /* globals runningInParent: true */
 
 /* may be defined in test files */
@@ -425,7 +426,7 @@ function _setupDebuggerServer(breakpointFiles, callback) {
         "See also https://bugzil.la/1215378."
     );
   }
-  let { DebuggerServer } = require("devtools/server/main");
+  let { DebuggerServer } = require("devtools/server/debugger-server");
   DebuggerServer.init();
   DebuggerServer.registerAllActors();
   let { createRootActor } = require("resource://testing-common/dbg-actors.js");

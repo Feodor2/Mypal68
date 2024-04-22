@@ -1,4 +1,4 @@
-// META: global=jsshell
+// META: global=window,dedicatedworker,jsshell
 // META: script=assertions.js
 // META: script=/wasm/jsapi/wasm-constants.js
 // META: script=/wasm/jsapi/wasm-module-builder.js
@@ -32,11 +32,11 @@ test(() => {
 test(() => {
   const argument = { "element": "anyfunc", "initial": 1 };
   const table = new WebAssembly.Table(argument);
-  assert_throws(new TypeError(), () => table.grow(2, {}));
+  assert_throws_js(TypeError, () => table.grow(2, {}));
 }, "Grow with non-function argument");
 
 test(() => {
   const argument = { "element": "anyfunc", "initial": 1 };
   const table = new WebAssembly.Table(argument);
-  assert_throws(new TypeError(), () => table.grow(2, () => true));
+  assert_throws_js(TypeError, () => table.grow(2, () => true));
 }, "Grow with JS-function argument");

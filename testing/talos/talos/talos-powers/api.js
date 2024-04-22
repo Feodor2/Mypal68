@@ -120,9 +120,7 @@ TalosPowersService.prototype = {
       data.entries,
       data.interval,
       ["js", "leaf", "stackwalk", "threads"],
-      4,
-      data.threadsArray,
-      data.threadsArray.length
+      data.threadsArray
     );
 
     Services.profiler.PauseSampling();

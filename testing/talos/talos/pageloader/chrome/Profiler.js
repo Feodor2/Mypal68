@@ -105,9 +105,7 @@ var Profiler;
           profiler_entries,
           profiler_interval,
           ["js", "leaf", "stackwalk", "threads"],
-          4,
-          profiler_threadsArray,
-          profiler_threadsArray.length
+          profiler_threadsArray
         );
         if (_profiler.PauseSampling) {
           _profiler.PauseSampling();

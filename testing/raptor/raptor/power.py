@@ -7,11 +7,16 @@ from __future__ import absolute_import
 import os
 import re
 
+from logger.logger import RaptorLogger
+
+
+LOG = RaptorLogger(component='raptor-power')
+
 
 def init_android_power_test(raptor):
     upload_dir = os.getenv("MOZ_UPLOAD_DIR")
     if not upload_dir:
-        raptor.log.critical(
+        LOG.critical(
             "% power test ignored; MOZ_UPLOAD_DIR unset" % raptor.config["app"]
         )
         return
@@ -85,7 +90,7 @@ def init_android_power_test(raptor):
 def finish_android_power_test(raptor, test_name):
     upload_dir = os.getenv("MOZ_UPLOAD_DIR")
     if not upload_dir:
-        raptor.log.critical(
+        LOG.critical(
             "% power test ignored because MOZ_UPLOAD_DIR was not set" % test_name
         )
         return
@@ -110,6 +115,13 @@ def finish_android_power_test(raptor, test_name):
         batterystats = raptor.device.shell_output("dumpsys batterystats")
         output.write(batterystats)
     raptor.device._verbose = verbose
+
+    # Get the android version
+    android_version = raptor.device.shell_output(
+        "getprop ro.build.version.release"
+    ).strip()
+    major_android_version = int(android_version.split('.')[0])
+
     estimated_power = False
     uid = None
     total = cpu = wifi = smearing = screen = proportional = 0
@@ -174,13 +186,13 @@ def finish_android_power_test(raptor, test_name):
     screen = full_screen if screen == 0 else screen
     wifi = full_wifi if wifi is None else wifi
 
-    raptor.log.info(
+    LOG.info(
         "power data for uid: %s, cpu: %s, wifi: %s, screen: %s, proportional: %s"
         % (uid, cpu, wifi, screen, proportional)
     )
 
-    # send power data directly to the control-server results handler,
-    # so it can be formatted and out-put for perfherder ingestion
+    # Send power data directly to the control-server results handler
+    # so it can be formatted and output for perfherder ingestion
 
     power_data = {
         "type": "power",
@@ -190,13 +202,15 @@ def finish_android_power_test(raptor, test_name):
             "cpu": float(cpu),
             "wifi": float(wifi),
             "screen": float(screen),
-            "proportional": float(proportional),
         },
     }
 
-    raptor.log.info("submitting power data via control server directly")
+    LOG.info("submitting power data via control server directly")
+    if major_android_version >= 8:
+        power_data['values']['proportional'] = float(proportional)
+
     raptor.control_server.submit_supporting_data(power_data)
 
-    # generate power bugreport zip
-    raptor.log.info("generating power bugreport zip")
+    # Generate power bugreport zip
+    LOG.info("generating power bugreport zip")
     raptor.device.command_output(["bugreport", upload_dir])

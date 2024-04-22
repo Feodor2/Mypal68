@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { prepareMessage } = require("devtools/client/webconsole/utils/messages");
+const {
+  prepareMessage,
+  getArrayTypeNames,
+} = require("devtools/client/webconsole/utils/messages");
 const {
   IdGenerator,
 } = require("devtools/client/webconsole/utils/id-generator");
@@ -104,41 +107,28 @@ function messageClose(id) {
  * @return {[type]} [description]
  */
 function messageGetMatchingElements(id, cssSelectors) {
-  return ({ dispatch, services }) => {
-    services
-      .requestEvaluation(`document.querySelectorAll('${cssSelectors}')`)
-      .then(response => {
-        dispatch(messageUpdatePayload(id, response.result));
-      })
-      .catch(err => {
-        console.error(err);
-      });
+  return async ({ dispatch, client }) => {
+    try {
+      const response = await client.evaluateJSAsync(
+        `document.querySelectorAll('${cssSelectors}')`
+      );
+      dispatch(messageUpdatePayload(id, response.result));
+    } catch (err) {
+      console.error(err);
+    }
   };
 }
 
-function messageGetTableData(id, client, dataType) {
-  return ({ dispatch }) => {
-    let fetchObjectActorData;
-    if (["Map", "WeakMap", "Set", "WeakSet"].includes(dataType)) {
-      fetchObjectActorData = cb => client.enumEntries(cb);
-    } else {
-      fetchObjectActorData = cb =>
-        client.enumProperties(
-          {
-            ignoreNonIndexedProperties: dataType === "Array",
-          },
-          cb
-        );
-    }
+function messageGetTableData(id, grip, dataType) {
+  return async ({ dispatch, client }) => {
+    const needEntries = ["Map", "WeakMap", "Set", "WeakSet"].includes(dataType);
+    const enumIndexedPropertiesOnly = getArrayTypeNames().includes(dataType);
 
-    fetchObjectActorData(enumResponse => {
-      const { iterator } = enumResponse;
-      // eslint-disable-next-line mozilla/use-returnValue
-      iterator.slice(0, iterator.count, sliceResponse => {
-        const { ownProperties } = sliceResponse;
-        dispatch(messageUpdatePayload(id, ownProperties));
-      });
-    });
+    const results = await (needEntries
+      ? client.fetchObjectEntries(grip)
+      : client.fetchObjectProperties(grip, enumIndexedPropertiesOnly));
+
+    dispatch(messageUpdatePayload(id, results));
   };
 }
 
@@ -180,6 +170,12 @@ function networkUpdateRequest(id, data) {
   };
 }
 
+function jumpToExecutionPoint(executionPoint) {
+  return ({ client }) => {
+    client.timeWarp(executionPoint);
+  };
+}
+
 module.exports = {
   messagesAdd,
   messagesClear,
@@ -194,4 +190,5 @@ module.exports = {
   privateMessagesClear,
   // for test purpose only.
   setPauseExecutionPoint,
+  jumpToExecutionPoint,
 };

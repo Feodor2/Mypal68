@@ -155,7 +155,7 @@ StyleEditorUI.prototype = {
     this._walker = this._toolbox.walker;
 
     try {
-      this._highlighter = await this._toolbox.inspector.getHighlighterByType(
+      this._highlighter = await this._toolbox.inspectorFront.getHighlighterByType(
         SELECTOR_HIGHLIGHTER_TYPE
       );
     } catch (e) {
@@ -364,14 +364,10 @@ StyleEditorUI.prototype = {
           this._removeStyleSheetEditor(editor);
           editor = null;
 
-          for (const source of sources) {
-            const generatedId = sourceMapService.generatedToOriginalId(
-              id,
-              source
-            );
+          for (const { id: originalId, url: originalURL } of sources) {
             const original = new OriginalSource(
-              source,
-              generatedId,
+              originalURL,
+              originalId,
               sourceMapService
             );
 
@@ -784,7 +780,7 @@ StyleEditorUI.prototype = {
     col = col || 0;
 
     const editorPromise = editor.getSourceEditor().then(() => {
-      editor.sourceEditor.setCursor({ line: line, ch: col });
+      editor.setCursor(line, col);
       this._styleSheetBoundToSelect = null;
     });
 

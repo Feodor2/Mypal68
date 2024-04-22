@@ -26,8 +26,6 @@
   --accessible-label-background-color: white;
   --accessible-label-border-color: #CACAD1;
   --accessible-label-color: var(--grey-60);
-  /* Similarly to webconsole, add more padding before the toolbar group. */
-  --separator-inline-margin: 5px;
 }
 
 :root.theme-dark {
@@ -134,6 +132,11 @@ body {
   align-items: center;
   font: message-box;
   font-size: var(--accessibility-font-size);
+}
+
+/* Similarly to webconsole, add more padding before the toolbar group. */
+.devtools-toolbar .devtools-separator {
+  margin-inline: 5px;
 }
 
 .devtools-toolbar .help {
@@ -344,11 +347,11 @@ body {
 }
 
 .treeTable > tbody td {
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .treeTable > tbody td > span {
-  -moz-user-select: text;
+  user-select: text;
 }
 
 .mainFrame .treeTable .treeRow.hasChildren > .treeLabelCell > .treeLabel:hover {
@@ -655,7 +658,7 @@ body {
 .checks-empty {
   font-style: italic;
   padding: 0.5em 20px;
-  -moz-user-select: none;
+  user-select: none;
   font-size: 12px;
   white-space: initial;
 }

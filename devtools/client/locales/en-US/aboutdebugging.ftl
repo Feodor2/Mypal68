@@ -102,7 +102,7 @@ about-debugging-setup-title = Setup
 about-debugging-setup-intro = Configure the connection method you wish to remotely debug your device with.
 
 # Explanatory text in the Setup page about what the 'This Firefox' page is for
-about-debugging-setup-this-firefox = Use <a>{ about-debugging-this-firefox-runtime-name }</a> to debug tabs, extensions and service workers on this version of { -brand-shorter-name }.
+about-debugging-setup-this-firefox2 = Use <a>{ about-debugging-this-firefox-runtime-name }</a> to debug extensions and service workers on this version of { -brand-shorter-name }.
 
 # Title of the heading Connect section of the Setup page.
 about-debugging-setup-connect-heading = Connect a Device
@@ -318,12 +318,14 @@ about-debugging-extension-id =
 
 # This string is displayed as a label of the button that pushes a test payload
 # to a service worker.
-# Notes, this relates to the "Push" API, which is normally not localized so it is
+# Note this relates to the "Push" API, which is normally not localized so it is
 # probably better to not localize it.
-about-debugging-worker-action-push = Push
+about-debugging-worker-action-push2 = Push
+  .disabledTitle = Service Worker push is currently disabled for multiprocess { -brand-shorter-name }
 
 # This string is displayed as a label of the button that starts a service worker.
-about-debugging-worker-action-start = Start
+about-debugging-worker-action-start2 = Start
+  .disabledTitle = Service Worker start is currently disabled for multiprocess { -brand-shorter-name }
 
 # This string is displayed as a label of the button that unregisters a service worker.
 about-debugging-worker-action-unregister = Unregister
@@ -357,6 +359,10 @@ about-debugging-worker-scope =
 about-debugging-worker-push-service =
   .label = Push Service
 
+# Displayed as title of the inspect button when service worker debugging is disabled.
+about-debugging-worker-inspect-action-disabled =
+  .title = Service Worker inspection is currently disabled for multiprocess { -brand-shorter-name }
+
 # Displayed as name for the Main Process debug target in the Processes category. Only for
 # remote runtimes, if `devtools.aboutdebugging.process-debugging` is true.
 about-debugging-main-process-name = Main Process
@@ -368,3 +374,12 @@ about-debugging-main-process-description2 = Main Process for the target browser
 # Alt text used for the close icon of message component (warnings, errors and notifications).
 about-debugging-message-close-icon =
   .alt = Close message
+
+# Label text used for the error details of message component.
+about-debugging-message-details-label-error = Error details
+
+# Label text used for the warning details of message component.
+about-debugging-message-details-label-warning = Warning details
+
+# Label text used for default state of details of message component.
+about-debugging-message-details-label = Details

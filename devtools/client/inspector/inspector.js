@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global window, BrowserLoader */
-
 "use strict";
 
 const Services = require("Services");
@@ -67,6 +65,11 @@ loader.lazyRequireGetter(
   this,
   "saveScreenshot",
   "devtools/shared/screenshot/save"
+);
+loader.lazyRequireGetter(
+  this,
+  "ObjectClient",
+  "devtools/shared/client/object-client"
 );
 
 loader.lazyImporter(
@@ -147,7 +150,17 @@ function Inspector(toolbox) {
   this.panelWin = window;
   this.panelWin.inspector = this;
   this.telemetry = toolbox.telemetry;
-  this.store = Store();
+  this.store = Store({
+    createObjectClient: object => {
+      return new ObjectClient(toolbox.target.client, object);
+    },
+    releaseActor: actor => {
+      if (!actor) {
+        return;
+      }
+      toolbox.target.client.release(actor);
+    },
+  });
 
   this._markupBox = this.panelDoc.getElementById("markup-box");
 
@@ -211,8 +224,8 @@ Inspector.prototype = {
     return this._toolbox;
   },
 
-  get inspector() {
-    return this.toolbox.inspector;
+  get inspectorFront() {
+    return this.toolbox.inspectorFront;
   },
 
   get walker() {
@@ -275,14 +288,6 @@ Inspector.prototype = {
     }
   },
 
-  get notificationBox() {
-    if (!this._notificationBox) {
-      this._notificationBox = this.toolbox.getNotificationBox();
-    }
-
-    return this._notificationBox;
-  },
-
   get search() {
     if (!this._search) {
       this._search = new InspectorSearch(
@@ -312,6 +317,7 @@ Inspector.prototype = {
   },
 
   _deferredOpen: async function() {
+    const onMarkupLoaded = this.once("markuploaded");
     this._initMarkup();
     this.isReady = false;
 
@@ -333,9 +339,9 @@ Inspector.prototype = {
       "visible";
 
     // Setup the sidebar panels.
-    this.setupSidebar();
+    await this.setupSidebar();
 
-    await this.once("markuploaded");
+    await onMarkupLoaded;
     this.isReady = true;
 
     // All the components are initialized. Take care of the remaining initialization
@@ -388,7 +394,7 @@ Inspector.prototype = {
     // the ChangesActor. We want the ChangesActor to be guaranteed available before
     // the user makes any changes.
     this.changesFront = await this.toolbox.target.getFront("changes");
-    this.changesFront.start();
+    await this.changesFront.start();
     return this.changesFront;
   },
 
@@ -401,7 +407,7 @@ Inspector.prototype = {
   },
 
   _getPageStyle: function() {
-    return this.inspector.getPageStyle().then(pageStyle => {
+    return this.inspectorFront.getPageStyle().then(pageStyle => {
       this.pageStyle = pageStyle;
     }, this._handleRejectionIfNotDestroyed);
   },
@@ -1190,7 +1196,7 @@ Inspector.prototype = {
    */
   async supportsEyeDropper() {
     try {
-      return await this.inspector.supportsHighlighters();
+      return await this.inspectorFront.supportsHighlighters();
     } catch (e) {
       console.error(e);
       return false;
@@ -1592,7 +1598,6 @@ Inspector.prototype = {
     this._is3PaneModeEnabled = null;
     this._markupBox = null;
     this._markupFrame = null;
-    this._notificationBox = null;
     this._target = null;
     this._toolbox = null;
     this.breadcrumbs = null;
@@ -1662,14 +1667,14 @@ Inspector.prototype = {
   },
 
   startEyeDropperListeners: function() {
-    this.inspector.once("color-pick-canceled", this.onEyeDropperDone);
-    this.inspector.once("color-picked", this.onEyeDropperDone);
+    this.inspectorFront.once("color-pick-canceled", this.onEyeDropperDone);
+    this.inspectorFront.once("color-picked", this.onEyeDropperDone);
     this.walker.once("new-root", this.onEyeDropperDone);
   },
 
   stopEyeDropperListeners: function() {
-    this.inspector.off("color-pick-canceled", this.onEyeDropperDone);
-    this.inspector.off("color-picked", this.onEyeDropperDone);
+    this.inspectorFront.off("color-pick-canceled", this.onEyeDropperDone);
+    this.inspectorFront.off("color-picked", this.onEyeDropperDone);
     this.walker.off("new-root", this.onEyeDropperDone);
   },
 
@@ -1692,7 +1697,7 @@ Inspector.prototype = {
     this.telemetry.scalarSet(TELEMETRY_EYEDROPPER_OPENED, 1);
     this.eyeDropperButton.classList.add("checked");
     this.startEyeDropperListeners();
-    return this.inspector
+    return this.inspectorFront
       .pickColorFromPage({ copyOnSelect: true })
       .catch(console.error);
   },
@@ -1709,7 +1714,7 @@ Inspector.prototype = {
 
     this.eyeDropperButton.classList.remove("checked");
     this.stopEyeDropperListeners();
-    return this.inspector.cancelPickColorFromPage().catch(console.error);
+    return this.inspectorFront.cancelPickColorFromPage().catch(console.error);
   },
 
   /**

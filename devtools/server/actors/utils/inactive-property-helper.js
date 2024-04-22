@@ -78,8 +78,6 @@ class InactivePropertyHelper {
           "grid-auto-rows",
           "grid-template",
           "grid-gap",
-          "row-gap",
-          "column-gap",
           "justify-items",
         ],
         when: () => !this.gridContainer,
@@ -106,7 +104,7 @@ class InactivePropertyHelper {
       },
       // Grid and flex item properties used on non-grid or non-flex item.
       {
-        invalidProperties: ["align-self"],
+        invalidProperties: ["align-self", "place-self"],
         when: () => !this.gridItem && !this.flexItem,
         fixId: "inactive-css-not-grid-or-flex-item-fix",
         msgId: "inactive-css-not-grid-or-flex-item",
@@ -114,11 +112,66 @@ class InactivePropertyHelper {
       },
       // Grid and flex container properties used on non-grid or non-flex container.
       {
-        invalidProperties: ["align-content", "align-items", "justify-content"],
+        invalidProperties: [
+          "align-content",
+          "align-items",
+          "justify-content",
+          "place-content",
+          "place-items",
+          "row-gap",
+        ],
         when: () => !this.gridContainer && !this.flexContainer,
         fixId: "inactive-css-not-grid-or-flex-container-fix",
         msgId: "inactive-css-not-grid-or-flex-container",
         numFixProps: 2,
+      },
+      // column-gap and shorthand used on non-grid or non-flex or non-multi-col container.
+      {
+        invalidProperties: [
+          "column-gap",
+          "gap",
+        ],
+        when: () =>
+          !this.gridContainer && !this.flexContainer && !this.multiColContainer,
+        fixId:
+          "inactive-css-not-grid-or-flex-container-or-multicol-container-fix",
+        msgId: "inactive-css-not-grid-or-flex-container-or-multicol-container",
+        numFixProps: 3,
+      },
+      // Inline properties used on non-inline-level elements.
+      {
+        invalidProperties: ["vertical-align"],
+        when: () => {
+          const { selectorText } = this.cssRule;
+
+          const isFirstLetter =
+            selectorText && selectorText.includes("::first-letter");
+          const isFirstLine =
+            selectorText && selectorText.includes("::first-line");
+
+          return !this.isInlineLevel() && !isFirstLetter && !isFirstLine;
+        },
+        fixId: "inactive-css-not-inline-or-tablecell-fix",
+        msgId: "inactive-css-not-inline-or-tablecell",
+        numFixProps: 2,
+      },
+      // (max-|min-)width used on inline elements, table rows, or row groups.
+      {
+        invalidProperties: ["max-width", "min-width", "width"],
+        when: () => this.nonReplacedInlineBox || this.tableRow || this.rowGroup,
+        fixId: "inactive-css-non-replaced-inline-or-table-row-or-row-group-fix",
+        msgId: "inactive-css-property-because-of-display",
+        numFixProps: 2,
+      },
+      // (max-|min-)height used on inline elements, table columns, or column groups.
+      {
+        invalidProperties: ["max-height", "min-height", "height"],
+        when: () =>
+          this.nonReplacedInlineBox || this.tableColumn || this.columnGroup,
+        fixId:
+          "inactive-css-non-replaced-inline-or-table-column-or-column-group-fix",
+        msgId: "inactive-css-property-because-of-display",
+        numFixProps: 1,
       },
     ];
   }
@@ -146,15 +199,17 @@ class InactivePropertyHelper {
    *        The CSS property name.
    *
    * @return {Object} object
-   * @return {Boolean} object.fixId
+   * @return {String} object.display
+   *         The element computed display value.
+   * @return {String} object.fixId
    *         A Fluent id containing a suggested solution to the problem that is
    *         causing a property to be inactive.
-   * @return {Boolean} object.msgId
+   * @return {String} object.msgId
    *         A Fluent id containing an error message explaining why a property
    *         is inactive in this situation.
-   * @return {Boolean} object.numFixProps
+   * @return {Integer} object.numFixProps
    *         The number of properties we suggest in the fixId string.
-   * @return {Boolean} object.property
+   * @return {String} object.property
    *         The inactive property name.
    * @return {Boolean} object.used
    *         true if the property is used.
@@ -201,7 +256,17 @@ class InactivePropertyHelper {
       return false;
     });
 
+    this.unselect();
+
+    // Accessing elStyle might throws, we wrap it in a try/catch block to avoid test
+    // failures.
+    let display;
+    try {
+      display = elStyle ? elStyle.display : null;
+    } catch (e) {}
+
     return {
+      display,
       fixId,
       msgId,
       numFixProps,
@@ -224,6 +289,16 @@ class InactivePropertyHelper {
   }
 
   /**
+   * Clear references to avoid leaks.
+   */
+  unselect() {
+    this._node = null;
+    this._cssRule = null;
+    this._property = null;
+    this._style = null;
+  }
+
+  /**
    * Provide a public reference to node.
    */
   get node() {
@@ -235,6 +310,13 @@ class InactivePropertyHelper {
    */
   get style() {
     return this._style;
+  }
+
+  /**
+   *  Provide a public reference to the css rule.
+   */
+  get cssRule() {
+    return this._cssRule;
   }
 
   /**
@@ -262,7 +344,28 @@ class InactivePropertyHelper {
    *        Values to compare against.
    */
   checkStyleForNode(node, propName, values) {
+    if (!this.style) {
+      return false;
+    }
     return values.some(value => this.style[propName] === value);
+  }
+
+  /**
+   *  Check if the current node is an inline-level box.
+   */
+  isInlineLevel() {
+    return this.checkStyle("display", [
+      "inline",
+      "inline-block",
+      "inline-table",
+      "inline-flex",
+      "inline-grid",
+      "table-cell",
+      "table-row",
+      "table-row-group",
+      "table-header-group",
+      "table-footer-group",
+    ]);
   }
 
   /**
@@ -293,6 +396,124 @@ class InactivePropertyHelper {
    */
   get gridItem() {
     return this.isGridItem(this.node);
+  }
+
+  /**
+   * Check if the current node is a multi-column container, i.e. a node element whose
+   * `column-width` or `column-count` property is not `auto`.
+   */
+  get multiColContainer() {
+    const autoColumnWidth = this.checkStyle("column-width", ["auto"]);
+    const autoColumnCount = this.checkStyle("column-count", ["auto"]);
+
+    return !autoColumnWidth || !autoColumnCount;
+  }
+
+  /**
+   * Check if the current node is a table row.
+   */
+  get tableRow() {
+    return this.style && this.style.display === "table-row";
+  }
+
+  /**
+   * Check if the current node is a row group.
+   */
+  get rowGroup() {
+    return this.style && (
+      this.style.display === "table-row-group" ||
+      this.style.display === "table-header-group" ||
+      this.style.display === "table-footer-group"
+    );
+  }
+
+  /**
+   * Check if the current node is a table column.
+   */
+  get tableColumn() {
+    return this.style && this.style.display === "table-column";
+  }
+
+  /**
+   * Check if the current node is a table column group.
+   */
+  get columnGroup() {
+    return this.style && this.style.display === "table-column-group";
+  }
+
+  /**
+   * Check if the current node is a non-replaced inline box.
+   */
+  get nonReplacedInlineBox() {
+    return this.nonReplaced && this.style && this.style.display === "inline";
+  }
+
+  /**
+   * Check if the current node is a non-replaced element. See `replaced()` for
+   * a description of what a replaced element is.
+   */
+  get nonReplaced() {
+    return !this.replaced;
+  }
+
+  /**
+   * Check if the current node is a replaced element i.e. an element with
+   * content that will be replaced e.g. <img>, <audio>, <video> or <object>
+   * elements.
+   */
+  get replaced() {
+    // The <applet> element was removed in Gecko 56 so we can ignore them.
+    // These are always treated as replaced elements:
+    if (
+      this.nodeNameOneOf([
+        "br",
+        "button",
+        "canvas",
+        "embed",
+        "hr",
+        "iframe",
+        "math",
+        "object",
+        "picture",
+        "svg",
+        "video",
+      ])
+    ) {
+      return true;
+    }
+
+    // audio – Treated as a replaced element only when it's "exposing a user
+    // interface element" i.e. has a "controls" attribute.
+    if (this.nodeName === "audio" && this.node.getAttribute("controls")) {
+      return true;
+    }
+
+    // img tags are replaced elements only when the image has finished loading.
+    if (this.nodeName === "img" && this.node.complete) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Return the current node's nodeName.
+   *
+   * @returns {String}
+   */
+  get nodeName() {
+    return this.node.nodeName ? this.node.nodeName.toLowerCase() : null;
+  }
+
+  /**
+   * Check if the current node's nodeName matches a value inside the value array.
+   *
+   * @param {Array} values
+   *        Array of values to compare against.
+   * @returns {Boolean}
+   */
+  nodeNameOneOf(values) {
+    return values.includes(this.nodeName);
   }
 
   /**
@@ -337,17 +558,18 @@ class InactivePropertyHelper {
 
   getParentGridElement(node) {
     if (node.nodeType === node.ELEMENT_NODE) {
-      const display = this.style.display;
+      const display = this.style ? this.style.display : null;
 
       if (!display || display === "none" || display === "contents") {
         // Doesn't generate a box, not a grid item.
         return null;
       }
-      const position = this.style.position;
+      const position = this.style ? this.style.position : null;
+      const cssFloat = this.style ? this.style.cssFloat : null;
       if (
         position === "absolute" ||
         position === "fixed" ||
-        this.style.cssFloat !== "none"
+        cssFloat !== "none"
       ) {
         // Out of flow, not a grid item.
         return null;

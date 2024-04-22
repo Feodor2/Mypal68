@@ -21,7 +21,14 @@ const {
   WARNING_GROUPS_TOGGLE,
   FILTERBAR_DISPLAY_MODE_SET,
   EDITOR_TOGGLE,
+  EDITOR_SET_WIDTH,
 } = require("devtools/client/webconsole/constants");
+
+function openLink(url, e) {
+  return ({ hud }) => {
+    return hud.openLink(url, e);
+  };
+}
 
 function persistToggle() {
   return ({ dispatch, getState, prefsService }) => {
@@ -96,6 +103,16 @@ function editorToggle() {
   };
 }
 
+function setEditorWidth(width) {
+  return ({ dispatch, prefsService }) => {
+    dispatch({
+      type: EDITOR_SET_WIDTH,
+      width,
+    });
+    prefsService.setIntPref(PREFS.UI.EDITOR_WIDTH, width);
+  };
+}
+
 /**
  * Dispatches a SHOW_OBJECT_IN_SIDEBAR action, with a grip property corresponding to the
  * {actor} parameter in the {messageId} message.
@@ -138,6 +155,18 @@ function filterBarDisplayModeSet(displayMode) {
   };
 }
 
+function openSidebar(messageId, rootActorId) {
+  return ({ dispatch }) => {
+    dispatch(showMessageObjectInSidebar(rootActorId, messageId));
+  };
+}
+
+function timeWarp(executionPoint) {
+  return ({ client }) => {
+    client.timeWarp(executionPoint);
+  };
+}
+
 module.exports = {
   contentMessagesToggle,
   editorToggle,
@@ -146,10 +175,14 @@ module.exports = {
   persistToggle,
   reverseSearchInputToggle,
   selectNetworkMessageTab,
+  setEditorWidth,
   showMessageObjectInSidebar,
   showObjectInSidebar,
   sidebarClose,
   splitConsoleCloseButtonToggle,
   timestampsToggle,
   warningGroupsToggle,
+  openLink,
+  openSidebar,
+  timeWarp,
 };

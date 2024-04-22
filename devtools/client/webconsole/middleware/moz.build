@@ -5,5 +5,4 @@
 DevToolsModules(
     'event-telemetry.js',
     'history-persistence.js',
-    'thunk.js',
 )

@@ -12,7 +12,7 @@
 
 const { Ci } = require("chrome");
 const ChromeUtils = require("ChromeUtils");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 const protocol = require("devtools/shared/protocol");
 const { workerTargetSpec } = require("devtools/shared/specs/targets/worker");
@@ -39,6 +39,7 @@ const WorkerTargetActor = protocol.ActorClassWithSpec(workerTargetSpec, {
     const form = {
       actor: this.actorID,
       consoleActor: this._consoleActor,
+      threadActor: this._threadActor,
       id: this._dbg.id,
       url: this._dbg.url,
       type: this._dbg.type,

@@ -9,20 +9,28 @@ const { Component } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
+const actions = require("devtools/client/webconsole/actions/index");
 const { l10n } = require("devtools/client/webconsole/utils/messages");
 const Services = require("Services");
 const isMacOS = Services.appinfo.OS === "Darwin";
 
+// Constants used for defining the direction of JSTerm input history navigation.
+const {
+  HISTORY_BACK,
+  HISTORY_FORWARD,
+} = require("devtools/client/webconsole/constants");
+
 class EditorToolbar extends Component {
   static get propTypes() {
     return {
-      webConsoleUI: PropTypes.object.isRequired,
       editorMode: PropTypes.bool,
+      dispatch: PropTypes.func.isRequired,
+      webConsoleUI: PropTypes.object.isRequired,
     };
   }
 
   render() {
-    const { editorMode, webConsoleUI } = this.props;
+    const { editorMode, dispatch, webConsoleUI } = this.props;
 
     if (!editorMode) {
       return null;
@@ -40,10 +48,38 @@ class EditorToolbar extends Component {
             "webconsole.editor.toolbar.executeButton.tooltip",
             [isMacOS ? "Cmd + Enter" : "Ctrl + Enter"]
           ),
-          onClick: () => webConsoleUI.jsterm.execute(),
+          onClick: () => dispatch(actions.evaluateExpression()),
         },
         l10n.getStr("webconsole.editor.toolbar.executeButton.label")
-      )
+      ),
+      dom.button({
+        className:
+          "devtools-button webconsole-editor-toolbar-history-prevExpressionButton",
+        title: l10n.getStr(
+          "webconsole.editor.toolbar.history.prevExpressionButton.tooltip"
+        ),
+        onClick: () => {
+          webConsoleUI.jsterm.historyPeruse(HISTORY_BACK);
+        },
+      }),
+      dom.button({
+        className:
+          "devtools-button webconsole-editor-toolbar-history-nextExpressionButton",
+        title: l10n.getStr(
+          "webconsole.editor.toolbar.history.nextExpressionButton.tooltip"
+        ),
+        onClick: () => {
+          webConsoleUI.jsterm.historyPeruse(HISTORY_FORWARD);
+        },
+      }),
+      dom.button({
+        className: "devtools-button webconsole-editor-toolbar-closeButton",
+        title: l10n.getFormatStr(
+          "webconsole.editor.toolbar.closeButton.tooltip",
+          [isMacOS ? "Cmd + B" : "Ctrl + B"]
+        ),
+        onClick: () => dispatch(actions.editorToggle()),
+      })
     );
   }
 }

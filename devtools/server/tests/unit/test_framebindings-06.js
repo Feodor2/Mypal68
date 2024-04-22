@@ -5,7 +5,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
@@ -22,9 +22,9 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-grips", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
+      gThreadFront = threadFront;
       test_banana_environment();
     });
   });
@@ -32,8 +32,7 @@ function run_test() {
 }
 
 function test_banana_environment() {
-  gThreadClient.once("paused", function(packet) {
-    equal(packet.type, "paused");
+  gThreadFront.once("paused", function(packet) {
     const env = packet.frame.environment;
     equal(env.type, "function");
     equal(env.function.name, "banana3");
@@ -50,7 +49,7 @@ function test_banana_environment() {
     equal(parent.type, "function");
     equal(parent.function.name, "banana");
 
-    gThreadClient.resume().then(function() {
+    gThreadFront.resume().then(function() {
       finishClient(gClient);
     });
   });

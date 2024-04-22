@@ -45,7 +45,7 @@ export async function prettyPrintSource(
   const url = getPrettySourceURL(generatedSource.url);
   const { code, mappings } = await prettyPrint({
     text: content.value,
-    url: url,
+    url,
   });
   await sourceMaps.applySourceMap(generatedSource.id, url, code, mappings);
 
@@ -66,7 +66,7 @@ export function createPrettySource(cx: Context, sourceId: string) {
     const url = getPrettySourceURL(source.url);
     const id = generatedToOriginalId(sourceId, url);
 
-    const prettySource: Source = {
+    const prettySource = {
       id,
       url,
       relativeUrl: url,

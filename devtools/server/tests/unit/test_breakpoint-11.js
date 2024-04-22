@@ -10,68 +10,70 @@
  */
 
 add_task(
-  threadClientTest(({ threadClient, debuggee }) => {
-    return new Promise(resolve => {
-      threadClient.once("paused", async function(packet) {
-        const source = await getSourceById(
-          threadClient,
-          packet.frame.where.actor
-        );
-        const location = {
-          sourceUrl: source.url,
-          line: debuggee.line0 + 2,
-          column: 8,
-        };
+  threadFrontTest(async ({ threadFront, client, debuggee }) => {
+    const packet = await executeOnNextTickAndWaitForPause(
+      () => evaluateTestCode(debuggee),
+      threadFront
+    );
+    const source = await getSourceById(threadFront, packet.frame.where.actor);
+    const location = {
+      sourceUrl: source.url,
+      line: debuggee.line0 + 2,
+      column: 8,
+    };
 
-        threadClient.setBreakpoint(location, {});
+    //Pause at debugger statement.
+    Assert.equal(packet.frame.where.line, debuggee.line0 + 1);
+    Assert.equal(packet.why.type, "debuggerStatement");
 
-        threadClient.once("paused", function(packet) {
-          // Check the return value.
-          Assert.equal(packet.type, "paused");
-          Assert.equal(packet.why.type, "breakpoint");
-          // Check that the breakpoint worked.
-          Assert.equal(debuggee.a, undefined);
+    threadFront.setBreakpoint(location, {});
+    await resume(threadFront);
 
-          // Remove the breakpoint.
-          threadClient.removeBreakpoint(location);
+    const packet2 = await waitForPause(threadFront);
 
-          const location2 = {
-            sourceUrl: source.url,
-            line: debuggee.line0 + 2,
-            column: 32,
-          };
+    // Check the return value.
+    Assert.equal(packet2.why.type, "breakpoint");
+    // Check that the breakpoint worked.
+    Assert.equal(debuggee.a, undefined);
+    // Check execution location
+    Assert.equal(packet2.frame.where.line, debuggee.line0 + 2);
+    Assert.equal(packet2.frame.where.column, 8);
 
-          threadClient.setBreakpoint(location2, {});
+    // Remove the breakpoint.
+    threadFront.removeBreakpoint(location);
 
-          threadClient.once("paused", function(packet) {
-            // Check the return value.
-            Assert.equal(packet.type, "paused");
-            Assert.equal(packet.why.type, "breakpoint");
-            // Check that the breakpoint worked.
-            Assert.equal(debuggee.a.b, 1);
-            Assert.equal(debuggee.res, undefined);
+    const location2 = {
+      sourceUrl: source.url,
+      line: debuggee.line0 + 2,
+      column: 32,
+    };
+    threadFront.setBreakpoint(location2, {});
 
-            // Remove the breakpoint.
-            threadClient.removeBreakpoint(location2);
+    await resume(threadFront);
+    const packet3 = await waitForPause(threadFront);
 
-            threadClient.resume().then(resolve);
-          });
+    // Check the return value.
+    Assert.equal(packet3.why.type, "breakpoint");
+    // Check that the breakpoint worked.
+    Assert.equal(debuggee.a.b, 1);
+    Assert.equal(debuggee.res, undefined);
+    // Check execution location
+    Assert.equal(packet3.frame.where.line, debuggee.line0 + 2);
+    Assert.equal(packet3.frame.where.column, 32);
 
-          // Continue until the breakpoint is hit again.
-          threadClient.resume();
-        });
+    // Remove the breakpoint.
+    threadFront.removeBreakpoint(location2);
 
-        // Continue until the breakpoint is hit.
-        threadClient.resume();
-      });
-
-    /* eslint-disable */
-    Cu.evalInSandbox("var line0 = Error().lineNumber;\n" +
-                     "debugger;\n" +                      // line0 + 1
-                     "var a = { b: 1, f: function() { return 2; } };\n" + // line0+2
-                     "var res = a.f();\n",               // line0 + 3
-                     debuggee);
-    /* eslint-enable */
-    });
+    await resume(threadFront);
   })
 );
+
+function evaluateTestCode(debuggee) {
+  /* eslint-disable */
+      Cu.evalInSandbox("var line0 = Error().lineNumber;\n" +
+                       "debugger;\n" +                      // line0 + 1
+                       "var a = { b: 1, f: function() { return 2; } };\n" + // line0+2
+                       "var res = a.f();\n",               // line0 + 3
+                       debuggee);
+      /* eslint-enable */
+}

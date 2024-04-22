@@ -5,17 +5,6 @@
 // Tests that clicking the DOM node button in any ObjectInspect
 // opens the Inspector panel
 
-function waitForInspectorPanelChange(dbg) {
-  const { toolbox } = dbg;
-
-  return new Promise(resolve => {
-    toolbox.getPanelWhenReady("inspector").then(() => {
-      ok(toolbox.inspector, "Inspector is shown.");
-      resolve(toolbox.inspector);
-    });
-  });
-}
-
 add_task(async function() {
   // Ensures the end panel is wide enough to show the inspector icon
   await pushPref("devtools.debugger.end-panel-size", 600);
@@ -31,9 +20,14 @@ add_task(async function() {
 
   // Ensure hovering over button highlights the node in content pane
   const view = inspectorNode.ownerDocument.defaultView;
-  const onNodeHighlight = toolbox.target.once("inspector")
+  const onNodeHighlight = toolbox.target
+    .once("inspector")
     .then(inspector => inspector.highlighter.once("node-highlight"));
-  EventUtils.synthesizeMouseAtCenter(inspectorNode, {type: "mousemove"}, view);
+  EventUtils.synthesizeMouseAtCenter(
+    inspectorNode,
+    { type: "mousemove" },
+    view
+  );
   const nodeFront = await onNodeHighlight;
   is(nodeFront.displayName, "button", "The correct node was highlighted");
 

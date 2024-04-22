@@ -14,9 +14,6 @@ const {
 
 types.addDictType("console.traits", {
   evaluateJSAsync: "boolean",
-  transferredResponseSize: "boolean",
-  selectedObjectActor: "boolean",
-  fetchCacheDescriptor: "boolean",
 });
 
 types.addDictType("console.startlisteners", {
@@ -49,13 +46,13 @@ const webconsoleSpecPrototype = {
   events: {
     evaluationResult: {
       resultID: Option(0, "string"),
-      type: "evaluationResult",
       awaitResult: Option(0, "nullable:boolean"),
       errorMessageName: Option(0, "nullable:string"),
       exception: Option(0, "nullable:json"),
       exceptionMessage: Option(0, "nullable:string"),
       exceptionDocURL: Option(0, "nullable:string"),
       exceptionStack: Option(0, "nullable:json"),
+      hasException: Option(0, "nullable:boolean"),
       frame: Option(0, "nullable:json"),
       helperResult: Option(0, "nullable:json"),
       input: Option(0, "nullable:string"),
@@ -106,9 +103,9 @@ const webconsoleSpecPrototype = {
      * Start the given Web Console listeners.
      *
      * @see webconsoleFront LISTENERS
-     * @Arg array listeners
-     *        Array of listeners you want to start. See this.LISTENERS for
-     *        known listeners.
+     * @Arg array events
+     *        Array of events you want to start. See this.LISTENERS for
+     *        known events.
      */
     startListeners: {
       request: {
@@ -120,9 +117,9 @@ const webconsoleSpecPrototype = {
      * Stop the given Web Console listeners.
      *
      * @see webconsoleFront LISTENERS
-     * @Arg array listeners
-     *        Array of listeners you want to stop. See this.LISTENERS for
-     *        known listeners.
+     * @Arg array events
+     *        Array of events you want to stop. See this.LISTENERS for
+     *        known events.
      * @Arg function onResponse
      *        Function to invoke when the server response is received.
      */

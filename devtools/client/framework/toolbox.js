@@ -25,6 +25,20 @@ var ChromeUtils = require("ChromeUtils");
 var { gDevTools } = require("devtools/client/framework/devtools");
 var EventEmitter = require("devtools/shared/event-emitter");
 var Telemetry = require("devtools/client/shared/telemetry");
+
+loader.lazyRequireGetter(
+  this,
+  "createToolboxStore",
+  "devtools/client/framework/store",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "registerWalkerListeners",
+  "devtools/client/framework/actions/index",
+  true
+);
+
 const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
 var {
   DOMHelpers,
@@ -76,8 +90,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "HUDService",
-  "devtools/client/webconsole/hudservice",
+  "BrowserConsoleManager",
+  "devtools/client/webconsole/browser-console-manager",
   true
 );
 loader.lazyRequireGetter(
@@ -317,6 +331,13 @@ Toolbox.prototype = {
     SIDE_ENABLED: "devtools.toolbox.sideEnabled",
   },
 
+  get store() {
+    if (!this._store) {
+      this._store = createToolboxStore();
+    }
+    return this._store;
+  },
+
   get currentToolId() {
     return this._currentToolId;
   },
@@ -434,8 +455,8 @@ Toolbox.prototype = {
     return this._target;
   },
 
-  get threadClient() {
-    return this._threadClient;
+  get threadFront() {
+    return this._threadFront;
   },
 
   /**
@@ -485,7 +506,7 @@ Toolbox.prototype = {
    * Get the toolbox's inspector front. Note that it may not always have been
    * initialized first. Use `initInspector()` if needed.
    */
-  get inspector() {
+  get inspectorFront() {
     return this._inspector;
   },
 
@@ -552,18 +573,18 @@ Toolbox.prototype = {
     this.unhighlightTool("jsdebugger");
   },
 
-  _startThreadClientListeners: function() {
-    this.threadClient.on("paused", this._onPausedState);
-    this.threadClient.on("resumed", this._onResumedState);
+  _startThreadFrontListeners: function() {
+    this.threadFront.on("paused", this._onPausedState);
+    this.threadFront.on("resumed", this._onResumedState);
   },
 
-  _stopThreadClientListeners: function() {
-    this.threadClient.off("paused", this._onPausedState);
-    this.threadClient.off("resumed", this._onResumedState);
+  _stopThreadFrontListeners: function() {
+    this.threadFront.off("paused", this._onPausedState);
+    this.threadFront.off("resumed", this._onResumedState);
   },
 
   _attachAndResumeThread: async function() {
-    const threadOptions = {
+    const [, threadFront] = await this._target.attachThread({
       autoBlackBox: false,
       ignoreFrameEnvironment: true,
       pauseOnExceptions: Services.prefs.getBoolPref(
@@ -572,11 +593,19 @@ Toolbox.prototype = {
       ignoreCaughtExceptions: Services.prefs.getBoolPref(
         "devtools.debugger.ignore-caught-exceptions"
       ),
-    };
-    const [, threadClient] = await this._target.attachThread(threadOptions);
+      showOverlayStepButtons: Services.prefs.getBoolPref(
+        "devtools.debugger.features.overlay-step-buttons"
+      ),
+      skipBreakpoints: Services.prefs.getBoolPref(
+        "devtools.debugger.skip-pausing"
+      ),
+      logEventBreakpoints: Services.prefs.getBoolPref(
+        "devtools.debugger.log-event-breakpoints"
+      ),
+    });
 
     try {
-      await threadClient.resume();
+      await threadFront.resume();
     } catch (ex) {
       // Interpret a possible error thrown by ThreadActor.resume
       if (ex.error === "wrongOrder") {
@@ -592,7 +621,7 @@ Toolbox.prototype = {
       }
     }
 
-    return threadClient;
+    return threadFront;
   },
 
   /**
@@ -632,8 +661,8 @@ Toolbox.prototype = {
         await this._target.activeConsole.startListeners(["NetworkActivity"]);
       }
 
-      this._threadClient = await this._attachAndResumeThread();
-      this._startThreadClientListeners();
+      this._threadFront = await this._attachAndResumeThread();
+      this._startThreadFrontListeners();
 
       await domReady;
 
@@ -742,6 +771,19 @@ Toolbox.prototype = {
       }
 
       await promise.all([splitConsolePromise, framesPromise]);
+
+      // We do not expect the focus to be restored when using about:debugging toolboxes
+      // Otherwise, when reloading the toolbox, the debugged tab will be focused.
+      if (this.hostType !== Toolbox.HostType.PAGE) {
+        // Request the actor to restore the focus to the content page once the
+        // target is detached. This typically happens when the console closes.
+        // We restore the focus as it may have been stolen by the console input.
+        await this.target.reconfigure({
+          options: {
+            restoreFocus: true,
+          },
+        });
+      }
 
       // Lazily connect to the profiler here and don't wait for it to complete,
       // used to intercept console.profile calls before the performance tools are open.
@@ -928,7 +970,7 @@ Toolbox.prototype = {
       if (id == "browserConsole") {
         // Add key for toggling the browser console from the detached window
         shortcuts.on(electronKey, () => {
-          HUDService.toggleBrowserConsole();
+          BrowserConsoleManager.toggleBrowserConsole();
         });
       } else if (toolId) {
         // KeyShortcuts contain tool-specific and global key shortcuts,
@@ -1075,14 +1117,14 @@ Toolbox.prototype = {
             };
 
           case "getOriginalSourceText":
-            return originalSource => {
+            return originalSourceId => {
               return target
-                .getOriginalSourceText(originalSource)
-                .catch(text => {
+                .getOriginalSourceText(originalSourceId)
+                .catch(error => {
                   const message = L10N.getFormatStr(
                     "toolbox.sourceMapSourceFailure",
-                    text,
-                    originalSource.url
+                    error.message,
+                    error.metadata ? error.metadata.url : "<unknown>"
                   );
                   this.target.logWarningInPage(message, "source map");
                   // Also replace the result with the error text.
@@ -1357,7 +1399,7 @@ Toolbox.prototype = {
       // If the debugger is paused, don't let the ESC key stop any pending navigation.
       // If the host is page, don't let the ESC stop the load of the webconsole frame.
       if (
-        this._threadClient.state == "paused" ||
+        this._threadFront.state == "paused" ||
         this.hostType === Toolbox.HostType.PAGE
       ) {
         e.preventDefault();
@@ -1700,10 +1742,10 @@ Toolbox.prototype = {
     if (currentPanel.togglePicker) {
       currentPanel.togglePicker(focus);
     } else {
-      if (!this.inspector) {
+      if (!this.inspectorFront) {
         await this.initInspector();
       }
-      this.inspector.nodePicker.togglePicker(focus);
+      this.inspectorFront.nodePicker.togglePicker(focus);
     }
   },
 
@@ -1717,7 +1759,7 @@ Toolbox.prototype = {
       if (currentPanel.cancelPicker) {
         currentPanel.cancelPicker();
       } else {
-        this.inspector.nodePicker.cancel();
+        this.inspectorFront.nodePicker.cancel();
       }
       // Stop the console from toggling.
       event.stopImmediatePropagation();
@@ -1728,7 +1770,7 @@ Toolbox.prototype = {
     this.tellRDMAboutPickerState(true);
     this.pickerButton.isChecked = true;
     await this.selectTool("inspector", "inspect_dom");
-    this.on("select", this.inspector.nodePicker.stop);
+    this.on("select", this.inspectorFront.nodePicker.stop);
   },
 
   _onPickerStarted: async function() {
@@ -1738,7 +1780,7 @@ Toolbox.prototype = {
 
   _onPickerStopped: function() {
     this.tellRDMAboutPickerState(false);
-    this.off("select", this.inspector.nodePicker.stop);
+    this.off("select", this.inspectorFront.nodePicker.stop);
     this.doc.removeEventListener("keypress", this._onPickerKeypress, true);
     this.pickerButton.isChecked = false;
   },
@@ -1861,7 +1903,7 @@ Toolbox.prototype = {
    * Update the buttons.
    */
   updateToolboxButtons() {
-    const inspector = this.inspector;
+    const inspector = this.inspectorFront;
     // two of the buttons have highlighters that need to be cleared
     // on will-navigate, otherwise we hold on to the stale highlighter
     const hasHighlighters =
@@ -3242,20 +3284,30 @@ Toolbox.prototype = {
         // TODO: replace with getFront once inspector is separated from the toolbox
         // TODO: remove these bindings
         this._inspector = await this.target.getInspector();
-        this._walker = this.inspector.walker;
-        this._highlighter = this.inspector.highlighter;
-        this._selection = this.inspector.selection;
+        this._walker = this.inspectorFront.walker;
+        this._highlighter = this.inspectorFront.highlighter;
+        this._selection = this.inspectorFront.selection;
 
-        this.inspector.nodePicker.on("picker-starting", this._onPickerStarting);
-        this.inspector.nodePicker.on("picker-started", this._onPickerStarted);
-        this.inspector.nodePicker.on("picker-stopped", this._onPickerStopped);
-        this.inspector.nodePicker.on(
+        this.inspectorFront.nodePicker.on(
+          "picker-starting",
+          this._onPickerStarting
+        );
+        this.inspectorFront.nodePicker.on(
+          "picker-started",
+          this._onPickerStarted
+        );
+        this.inspectorFront.nodePicker.on(
+          "picker-stopped",
+          this._onPickerStopped
+        );
+        this.inspectorFront.nodePicker.on(
           "picker-node-canceled",
           this._onPickerCanceled
         );
         this.walker.on("highlighter-ready", this._highlighterReady);
         this.walker.on("highlighter-hide", this._highlighterHidden);
         this._selection.on("new-node-front", this._onNewSelectedNodeFront);
+        registerWalkerListeners(this);
       }.bind(this)();
     }
     return this._initInspector;
@@ -3332,26 +3384,25 @@ Toolbox.prototype = {
 
   inspectObjectActor: async function(objectActor, inspectFromAnnotation) {
     if (
+      this.currentToolId != "inspector" &&
       objectActor.preview &&
       objectActor.preview.nodeType === domNodeConstants.ELEMENT_NODE
     ) {
-      // Open the inspector and select the DOM Element.
-      await this.loadTool("inspector");
-      const inspector = this.getPanel("inspector");
-      const nodeFound = await inspector.inspectNodeActor(
-        objectActor.actor,
-        inspectFromAnnotation
-      );
-      if (nodeFound) {
-        await this.selectTool("inspector");
-      }
-    } else if (
-      objectActor.type !== "null" &&
-      objectActor.type !== "undefined"
-    ) {
+      return this.viewElementInInspector(objectActor, inspectFromAnnotation);
+    }
+
+    if (objectActor.class == "Function") {
+      const { url, line } = objectActor.location;
+      return this.viewSourceInDebugger(url, line);
+    }
+
+    if (objectActor.type !== "null" && objectActor.type !== "undefined") {
       // Open then split console and inspect the object in the variables view,
       // when the objectActor doesn't represent an undefined or null value.
-      await this.openSplitConsole();
+      if (this.currentToolId != "webconsole") {
+        await this.openSplitConsole();
+      }
+
       const panel = this.getPanel("webconsole");
       panel.hud.ui.inspectObjectActor(objectActor);
     }
@@ -3363,29 +3414,18 @@ Toolbox.prototype = {
    * TODO: move to the inspector front once we can have listener hooks into fronts
    */
   destroyInspector: function() {
-    if (this._destroyingInspector) {
-      return this._destroyingInspector;
+    if (!this._inspector) {
+      return;
     }
 
-    this._destroyingInspector = async function() {
-      if (!this._inspector && !this._initInspector) {
-        return;
-      }
+    // Temporary fix for bug #1493131 - inspector has a different life cycle
+    // than most other fronts because it is closely related to the toolbox.
+    this._inspector.destroy();
 
-      // Ensure that the inspector isn't still being initiated, otherwise race conditions
-      // in the initialization process can throw errors.
-      await this._initInspector;
-
-      // Temporary fix for bug #1493131 - inspector has a different life cycle
-      // than most other fronts because it is closely related to the toolbox.
-      await this._inspector.destroy();
-
-      this._inspector = null;
-      this._highlighter = null;
-      this._selection = null;
-      this._walker = null;
-    }.bind(this)();
-    return this._destroyingInspector;
+    this._inspector = null;
+    this._highlighter = null;
+    this._selection = null;
+    this._walker = null;
   },
 
   /**
@@ -3503,15 +3543,12 @@ Toolbox.prototype = {
     this.browserRequire = null;
     this._toolNames = null;
 
-    // Destroying the walker and inspector fronts
-    outstanding.push(this.destroyInspector());
-
     // Reset preferences set by the toolbox
     outstanding.push(this.resetPreference());
 
     // Detach the thread
-    this._stopThreadClientListeners();
-    this._threadClient = null;
+    this._stopThreadFrontListeners();
+    this._threadFront = null;
 
     // Unregister buttons listeners
     this.toolbarButtons.forEach(button => {
@@ -3549,12 +3586,15 @@ Toolbox.prototype = {
       resolve(
         settleAll(outstanding)
           .catch(console.error)
-          .then(() => {
-            const api = this._netMonitorAPI;
-            this._netMonitorAPI = null;
-            return api ? api.destroy() : null;
-          }, console.error)
-          .then(() => {
+          .then(async () => {
+            // Destroying the walker and inspector fronts
+            await this.destroyInspector();
+
+            if (this._netMonitorAPI) {
+              this._netMonitorAPI.destroy();
+              this._netMonitorAPI = null;
+            }
+
             this._removeWindowListeners();
             this._removeChromeEventHandlerEvents();
 
@@ -3755,6 +3795,19 @@ Toolbox.prototype = {
       sourceLine,
       sourceColumn
     );
+  },
+
+  viewElementInInspector: async function(objectActor, inspectFromAnnotation) {
+    // Open the inspector and select the DOM Element.
+    await this.loadTool("inspector");
+    const inspector = this.getPanel("inspector");
+    const nodeFound = await inspector.inspectNodeActor(
+      objectActor.actor,
+      inspectFromAnnotation
+    );
+    if (nodeFound) {
+      await this.selectTool("inspector");
+    }
   },
 
   /**

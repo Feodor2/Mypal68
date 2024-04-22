@@ -77,6 +77,15 @@ export function toggleFrameworkGrouping(toggleValue: boolean) {
   };
 }
 
+export function toggleInlinePreview(toggleValue: boolean) {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    dispatch({
+      type: "TOGGLE_INLINE_PREVIEW",
+      value: toggleValue,
+    });
+  };
+}
+
 export function showSource(cx: Context, sourceId: string) {
   return ({ dispatch, getState }: ThunkArgs) => {
     const source = getSource(getState(), sourceId);
@@ -217,6 +226,10 @@ export function updateViewport() {
     type: "SET_VIEWPORT",
     viewport: getLocationsInViewport(getEditor()),
   };
+}
+
+export function updateCursorPosition(cursorPosition: SourceLocation) {
+  return { type: "SET_CURSOR_POSITION", cursorPosition };
 }
 
 export function setOrientation(orientation: OrientationType) {

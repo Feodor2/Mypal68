@@ -21,11 +21,9 @@
   --console-error-background: hsl(345, 23%, 24%);
   --console-error-border: hsl(345, 30%, 35%);
   --console-error-color: var(--red-20);
-  --console-error-icon-color: var(--red-40);
   --console-warning-background: hsl(42, 37%, 19%);
   --console-warning-border: hsl(60, 30%, 26%);
   --console-warning-color: hsl(43, 94%, 81%);
-  --console-warning-icon-color: var(--yellow-60);
   --console-navigation-color: var(--theme-highlight-blue);
   --console-navigation-border: var(--blue-60);
   --console-indent-border-color: var(--theme-highlight-blue);
@@ -45,11 +43,9 @@
   --console-error-background: hsl(344, 73%, 97%);
   --console-error-border: rgba(215, 0, 34, 0.12); /* Red 60 + opacity */
   --console-error-color: var(--red-70);
-  --console-error-icon-color: var(--red-60);
   --console-warning-background: hsl(54, 100%, 92%);
   --console-warning-border: rgba(215, 182, 0, 0.28); /* Yellow 60 + opacity */
   --console-warning-color: var(--yellow-80);
-  --console-warning-icon-color: var(--yellow-65);
   --console-navigation-color: var(--theme-highlight-blue);
   --console-navigation-border: var(--blue-30);
   --console-indent-border-color: var(--theme-highlight-blue);
@@ -280,17 +276,17 @@ a {
 
 .message.info > .icon {
   color: var(--theme-icon-color);
-  background-image: url(chrome://devtools/skin/images/webconsole/info.svg);
+  background-image: url(chrome://devtools/skin/images/info-small.svg);
 }
 
 .message.error > .icon {
-  color: var(--console-error-icon-color);
-  background-image: url(chrome://devtools/skin/images/webconsole/error.svg);
+  color: var(--theme-icon-error-color);
+  background-image: url(chrome://devtools/skin/images/error-small.svg);
 }
 
 .message.warn > .icon {
-  color: var(--console-warning-icon-color);
-  background-image: url(chrome://devtools/skin/images/alert.svg);
+  color: var(--theme-icon-warning-color);
+  background-image: url(chrome://devtools/skin/images/alert-small.svg);
 }
 
 .message.navigationMarker > .icon {
@@ -430,7 +426,7 @@ a {
 }
 
 .message .learn-more-link {
-  -moz-user-select: none;
+  user-select: none;
   color: var(--theme-highlight-blue);
   margin: 0 1ch;
 }
@@ -448,67 +444,25 @@ a {
 }
 
 /* JSTerm Styles */
-
-html .jsterm-input-node-html,
 html #webconsole-notificationbox {
   flex: 0;
-  width: 100vw;
+  width: 100%;
+}
+
+.webconsole-output:empty ~ .notificationbox .notification {
+  border-top-width: 0;
+  border-bottom-width: 1px;
 }
 
 .jsterm-input-container {
+  max-width: 100%;
   background-color: var(--console-input-background);
   border-top: 1px solid var(--theme-splitter-color);
   position: relative;
 }
 
-.jsterm-input-node {
-  box-sizing: border-box;
-  min-height: 100%;
-  color: var(--theme-text-color-strong);
-  /* input icon */
-  background-image: url(chrome://devtools/skin/images/webconsole/input.svg);
-  background-position-x: calc(10px + var(--console-icon-horizontal-offset));
-  background-position-y: 7px;
-  background-repeat: no-repeat;
-  background-size: 12px 12px;
-  -moz-context-properties: fill;
-  fill: var(--theme-icon-dimmed-color);
-}
-
-.jsterm-complete-node {
-  color: var(--theme-comment);
-}
-
-textarea.jsterm-input-node,
-textarea.jsterm-complete-node {
-  width: 100%;
-  margin: 0;
-  border: none;
-  background-color: transparent;
-  resize: none;
-  font-size: inherit;
-  line-height: 16px;
-  overflow-x: hidden;
-  padding: 5px 0;
-  padding-inline-start: var(--console-inline-start-gutter);
-}
-
-textarea.jsterm-complete-node {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  pointer-events: none;
-}
-
-textarea.jsterm-input-node:focus {
-  fill: var(--theme-icon-checked-color);
-  box-shadow: none;
-  outline: none;
-}
-
 /* CodeMirror-powered JsTerm */
-.jsterm-cm .jsterm-input-container > .CodeMirror {
+.webconsole-app .jsterm-input-container > .CodeMirror {
   font-size: var(--theme-code-font-size);
   line-height: var(--console-output-line-height);
   /* aim for a 32px left space (a descendent has 4px padding) */
@@ -523,13 +477,21 @@ textarea.jsterm-input-node:focus {
   fill: var(--theme-icon-dimmed-color);
 }
 
-.jsterm-cm .jsterm-input-container > .CodeMirror-focused {
+.webconsole-app .jsterm-input-container > .CodeMirror-focused {
   fill: var(--theme-icon-checked-color);
 }
 
-.jsterm-cm .cm-auto-complete-shadow-text::after {
+.webconsole-app .cm-auto-complete-shadow-text::after {
   content: attr(title);
   color: var(--theme-comment);
+  /* This is important for the completion text not to move while the user is typing */
+  /* See Bugs 1491776 & 1558248 */
+  position: absolute;
+}
+
+.webconsole-app .CodeMirror-hscrollbar {
+  /* We never want to see the horizontal scrollbar */
+  display: none !important;
 }
 
 /* Security styles */
@@ -632,13 +594,16 @@ a.learn-more-link.webconsole-learn-more-link {
 }
 
 .devtools-toolbar.webconsole-filterbar-secondary {
-  --separator-inline-margin: 5px;
   display: flex;
   align-items: center;
   align-self: stretch;
-  -moz-user-select: none;
+  user-select: none;
   grid-column: 1 / -1;
   min-height: var(--primary-toolbar-height);
+}
+
+.devtools-toolbar.webconsole-filterbar-secondary .devtools-separator {
+  margin-inline: 5px;
 }
 
 .split-console-close-button-wrapper {
@@ -681,7 +646,7 @@ a.learn-more-link.webconsole-learn-more-link {
   margin: 0 3px;
   display: flex;
   align-items: center;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .webconsole-filterbar-filtered-messages {
@@ -708,7 +673,7 @@ a.learn-more-link.webconsole-learn-more-link {
 
 .webconsole-filterbar-filtered-messages .filter-message-text {
   font-style: italic;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .webconsole-filterbar-filtered-messages .reset-filters-button {
@@ -824,7 +789,7 @@ a.learn-more-link.webconsole-learn-more-link {
 }
 
 /* console.table() */
-.new-consoletable {
+.message .new-consoletable {
   width: 100%;
   --consoletable-border: var(--theme-splitter-color);
   margin-block-end: var(--attachment-margin-block-end);
@@ -862,93 +827,6 @@ a.learn-more-link.webconsole-learn-more-link {
 
 .new-consoletable > [role=gridcell].even {
   background-color: var(--table-zebra-background);
-}
-
-/* Layout */
-.webconsole-output {
-  direction: ltr;
-  overflow: auto;
-  overflow-anchor: none;
-  -moz-user-select: text;
-  position: relative;
-}
-
-html,
-body {
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-#app-wrapper {
-  height: 100vh;
-  max-height: 100vh;
-}
-
-
-/*
- * Here's what the layout of the console looks like:
- *
- *  +------------------------------+--------------+
- *  |                              |              |
- *  |  WEBCONSOLE WRAPPER          |   SIDEBAR    |
- *  |                              |              |
- *  +------------------------------+--------------+
- */
-.webconsole-app {
-  --object-inspector-hover-background: transparent;
-  --attachment-margin-block-end: 3px;
-  --primary-toolbar-height: 29px;
-  display: grid;
-  grid-template-columns: minmax(200px, 1fr) auto;
-  max-height: 100vh !important;
-  height: 100vh !important;
-  width: 100vw;
-  overflow: hidden;
-  color: var(--console-output-color);
-  -moz-user-focus: normal;
-}
-
-.webconsole-wrapper {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  max-height: 100vh;
-  overflow: hidden;
-}
-
-.webconsole-wrapper .webconsole-filteringbar-wrapper {
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.webconsole-wrapper .webconsole-output {
-  flex-shrink: 100000;
-  overflow-x: hidden;
-}
-
-.webconsole-wrapper > .webconsole-output:not(:empty) {
-  min-height: 19px;
-}
-
-.webconsole-app #webconsole-notificationbox {
-  flex-shrink: 0;
-}
-
-.webconsole-app .jsterm-input-container {
-  min-height: 28px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  flex-grow: 1;
-}
-
-.jsterm-cm .jsterm-input-container {
-  padding-block-start: 2px;
-}
-
-.webconsole-wrapper > .webconsole-output:empty ~ .jsterm-input-container {
-  border-top: none;
 }
 
 /* Object Inspector */
@@ -1049,142 +927,6 @@ body {
 .webconsole-app .tree.focused .arrow,
 .webconsole-app .object-inspector .tree-node.focused .arrow {
   fill: currentColor
-}
-
-/* Sidebar */
-.sidebar {
-  display: flex;
-  grid-row: 1 / -1;
-  grid-column: -1 / -2;
-  background-color: var(--theme-sidebar-background);
-  border-inline-start: 1px solid var(--theme-splitter-color);
-}
-
-.sidebar .splitter {
-  /* Let the parent component handle the border. This is needed otherwise there is a visual
-     glitch between the input and the sidebar borders */
-  background-color: transparent;
-}
-
-.split-box.vert.sidebar {
-  /* Set to prevent the sidebar from extending past the right edge of the page */
-  width: unset;
-  height: 100vh;
-}
-
-.sidebar-wrapper {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  width: 100%;
-  overflow: hidden;
-}
-
-.webconsole-sidebar-toolbar {
-  grid-row: 1 / 2;
-  min-height: var(--primary-toolbar-height);
-  display: flex;
-  justify-content: end;
-  padding: 0;
-}
-
-.sidebar-contents {
-  grid-row: 2 / 3;
-  overflow: auto;
-}
-
-.webconsole-sidebar-toolbar .sidebar-close-button {
-  padding: 4px 0;
-  margin: 0;
-}
-
-.sidebar-close-button::before {
-  background-image: url(chrome://devtools/skin/images/close.svg);
-}
-
-.sidebar-contents .object-inspector {
-  min-width: 100%;
-}
-
-
-/** EDITOR MODE */
-.jsterm-editor .webconsole-wrapper {
-    display: grid;
-    /*
-     * Here's the design we want in editor mode
-     * +----------------------------------------------------+
-     * |    Editor Toolbar        |   Filter bar primary    |
-     * +----------------------------------------------------+
-     * |                          |  (Filter bar secondary) |
-     * |                          +-------------------------+
-     * |         Editor           |                         |
-     * |                          |                         |
-     * |                          |                         |
-     * |                          |        output           |
-     * |                          |                         |
-     * |                          |                         |
-     * +--------------------------+                         |
-     * |  (Reverse search input)  |                         |
-     * +----------------------------------------------------+
-     *
-     * Elements in parens may not be visible, so we set some rows to be auto to make them
-     * have no height when the element they contain is hidden.
-     */
-    grid-template-rows: var(--primary-toolbar-height) auto 1fr auto;
-    /* The first column is set to auto so we can resize it */
-    grid-template-columns: auto 1fr;
-}
-
-.jsterm-editor .webconsole-filteringbar-wrapper {
-    grid-column: 2 / 3;
-    grid-row: 1 / 3;
-    grid-template-rows: subgrid;
-}
-
-.jsterm-editor .webconsole-filterbar-primary {
-    grid-row: 1 / 2;
-}
-
-/* Only put the filter buttons toolbar on its own row in narrow filterbar layout  */
-.jsterm-editor .narrow .devtools-toolbar.webconsole-filterbar-secondary {
-    grid-row: 2 / 3;
-}
-
-.jsterm-editor .webconsole-editor-toolbar {
-    grid-column: 1 / 2;
-    grid-row: 1 / 2;
-    border-inline-end: 1px solid var(--theme-splitter-color);
-    display: flex;
-    flex-direction: row;
-    justify-content: start;
-    height: unset;
-}
-
-.jsterm-editor .webconsole-output {
-    grid-column: 2 / 3;
-    grid-row: 3 / -1;
-}
-
-.jsterm-editor .jsterm-input-container {
-    grid-column: 1 / 2;
-    grid-row: 2 / 4;
-    width: 50vw;
-    border-inline-end: 1px solid var(--theme-splitter-color);
-    border-top: none;
-}
-
-.jsterm-editor #webconsole-notificationbox {
-    display: none;
-}
-
-.jsterm-cm.jsterm-editor .jsterm-input-container > .CodeMirror {
-    padding-inline-start: 0;
-    background-image: none;
-}
-
-.jsterm-editor .reverse-search {
-    grid-column: 1 / 2;
-    grid-row: -1 / -2;
-    border-top: 1px solid var(--theme-splitter-color);
 }
 
 /** Utils **/

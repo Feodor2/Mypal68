@@ -20,6 +20,11 @@ loader.lazyRequireGetter(
   "devtools/client/framework/target",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "ThreadFront",
+  "devtools/shared/client/deprecated-thread-client"
+);
 loader.lazyRequireGetter(this, "getFront", "devtools/shared/protocol", true);
 
 /**
@@ -55,7 +60,7 @@ function TargetMixin(parentClass) {
       this._onNewSource = this._onNewSource.bind(this);
 
       this.activeConsole = null;
-      this.threadClient = null;
+      this.threadFront = null;
 
       this._client = client;
 
@@ -197,7 +202,8 @@ function TargetMixin(parentClass) {
       this._inspector = await getFront(
         this.client,
         "inspector",
-        this.targetForm
+        this.targetForm,
+        this
       );
       this.emit("inspector", this._inspector);
       return this._inspector;
@@ -224,7 +230,7 @@ function TargetMixin(parentClass) {
       ) {
         return front;
       }
-      front = getFront(this.client, typeName, this.targetForm);
+      front = getFront(this.client, typeName, this.targetForm, this);
       this.fronts.set(typeName, front);
       // replace the placeholder with the instance of the front once it has loaded
       front = await front;
@@ -417,15 +423,21 @@ function TargetMixin(parentClass) {
             "attachThread"
         );
       }
-      const [response, threadClient] = await this._client.attachThread(
-        this._threadActor,
-        options
-      );
-      this.threadClient = threadClient;
+      if (this.getTrait("hasThreadFront")) {
+        this.threadFront = await this.getFront("thread");
+      } else {
+        // Backwards compat for Firefox 68
+        // mimics behavior of a front
+        this.threadFront = new ThreadFront(this._client, this._threadActor);
+        this.fronts.set("thread", this.threadFront);
+        this.threadFront.actorID = this._threadActor;
+        this.manage(this.threadFront);
+      }
+      const result = await this.threadFront.attach(options);
 
-      this.threadClient.on("newSource", this._onNewSource);
+      this.threadFront.on("newSource", this._onNewSource);
 
-      return [response, threadClient];
+      return [result, this.threadFront];
     }
 
     // Listener for "newSource" event fired by the thread actor
@@ -467,12 +479,14 @@ function TargetMixin(parentClass) {
      */
     _teardownRemoteListeners() {
       // Remove listeners set in _setupRemoteListeners
-      this.client.off("closed", this.destroy);
+      if (this.client) {
+        this.client.off("closed", this.destroy);
+      }
       this.off("tabDetached", this.destroy);
 
       // Remove listeners set in attachThread
-      if (this.threadClient) {
-        this.threadClient.off("newSource", this._onNewSource);
+      if (this.threadFront) {
+        this.threadFront.off("newSource", this._onNewSource);
       }
 
       // Remove listeners set in attachConsole
@@ -549,6 +563,8 @@ function TargetMixin(parentClass) {
 
         this._teardownRemoteListeners();
 
+        this.threadFront = null;
+
         if (this.isLocalTab) {
           // We started with a local tab and created the client ourselves, so we
           // should close it. Ignore any errors while closing, since there is
@@ -573,16 +589,6 @@ function TargetMixin(parentClass) {
           }
         }
 
-        if (this.threadClient) {
-          try {
-            await this.threadClient.detach();
-          } catch (e) {
-            console.warn(
-              `Error while detaching the thread front: ${e.message}`
-            );
-          }
-        }
-
         // Do that very last in order to let a chance to dispatch `detach` requests.
         super.destroy();
 
@@ -597,7 +603,7 @@ function TargetMixin(parentClass) {
      */
     _cleanup() {
       this.activeConsole = null;
-      this.threadClient = null;
+      this.threadFront = null;
       this._client = null;
       this._tab = null;
 

@@ -5,9 +5,6 @@
 // This error shows up sometimes when running the test, and while this is a
 // strange problem that shouldn't be happening it doesn't prevent the test from
 // completing successfully.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
 PromiseTestUtils.whitelistRejectionsGlobally(/Current state is running/);
 
 function findNode(dbg, text) {
@@ -41,7 +38,9 @@ add_task(async function() {
   await dbg.toolbox._target.waitForRequestsToSettle();
   invokeInTab("startWorker");
   await waitForPaused(dbg, "scopes-worker.js");
+  const onRemoved = waitForDispatch(dbg, "REMOVE_BREAKPOINT");
   await removeBreakpoint(dbg, workerSource.id, 11);
+  await onRemoved;
 
   // We should be paused at the first line of simple-worker.js
   assertPausedAtSourceAndLine(dbg, workerSource.id, 11);
@@ -90,4 +89,10 @@ add_task(async function() {
   await toggleNode(dbg, "0");
   ok(findNodeValue(dbg, "foo"), "foo");
   await toggleNode(dbg, "var_weakset");
+
+  // Close the scopes in order to unmount the reps in order to force spawning
+  // the various `release` RDP requests which, otherwise, would happen in
+  // middle of the toolbox destruction. Then, wait for them to finish.
+  await toggleScopes(dbg);
+  await waitForRequestsToSettle(dbg);
 });

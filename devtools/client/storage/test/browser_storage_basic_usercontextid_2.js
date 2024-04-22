@@ -25,7 +25,7 @@ const testCasesUserContextId = [
       getCookieId(
         "sc1uc1",
         "sectest1.example.org",
-        "/browser/devtools/client/storage/test/"
+        "/browser/devtools/client/storage/test"
       ),
     ],
   ],

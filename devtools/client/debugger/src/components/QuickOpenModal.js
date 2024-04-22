@@ -22,6 +22,7 @@ import {
   isSymbolsLoading,
   getContext,
 } from "../selectors";
+import { memoizeLast } from "../utils/memoizeLast";
 import { scrollList } from "../utils/result-list";
 import {
   formatSymbols,
@@ -44,11 +45,15 @@ import type { Tab } from "../reducers/tabs";
 
 import "./QuickOpenModal.css";
 
+type OwnProps = {|
+  shortcutsModalEnabled: boolean,
+  toggleShortcutsModal: () => void,
+|};
 type Props = {
   cx: Context,
   enabled: boolean,
   displayedSources: Source[],
-  selectedSource?: Source,
+  selectedSource: ?Source,
   selectedContentLoaded?: boolean,
   query: string,
   searchType: QuickOpenType,
@@ -82,7 +87,7 @@ function filter(values, query) {
 
   return fuzzyAldrin.filter(values, query, {
     key: "value",
-    maxResults: maxResults,
+    maxResults,
     preparedQuery,
   });
 }
@@ -131,11 +136,15 @@ export class QuickOpenModal extends Component<Props, State> {
     return query.split(":")[0];
   };
 
+  formatSources = memoizeLast((displayedSources, tabs) => {
+    const tabUrls = new Set(tabs.map((tab: Tab) => tab.url));
+    return formatSources(displayedSources, tabUrls);
+  });
+
   searchSources = (query: string) => {
     const { displayedSources, tabs } = this.props;
-    const tabUrls = new Set(tabs.map((tab: Tab) => tab.url));
-    const sources = formatSources(displayedSources, tabUrls);
 
+    const sources = this.formatSources(displayedSources, tabs);
     const results =
       query == "" ? sources : filter(sources, this.dropGoto(query));
     return this.setResults(results);
@@ -466,7 +475,7 @@ function mapStateToProps(state) {
 }
 
 /* istanbul ignore next: ignoring testing of redux connection stuff */
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     selectSpecificLocation: actions.selectSpecificLocation,

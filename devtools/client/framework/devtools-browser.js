@@ -30,7 +30,12 @@ loader.lazyRequireGetter(
   "devtools/client/framework/toolbox",
   true
 );
-loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerServer",
+  "devtools/server/debugger-server",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "DebuggerClient",
@@ -341,8 +346,10 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         BrowserToolboxProcess.init();
         break;
       case "browserConsole":
-        const { HUDService } = require("devtools/client/webconsole/hudservice");
-        HUDService.openBrowserConsoleOrFocus();
+        const {
+          BrowserConsoleManager,
+        } = require("devtools/client/webconsole/browser-console-manager");
+        BrowserConsoleManager.openBrowserConsoleOrFocus();
         break;
       case "responsiveDesignMode":
         ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
@@ -535,28 +542,28 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
       const target = await TargetFactory.forTab(tab);
 
       gDevTools.showToolbox(target, "jsdebugger").then(toolbox => {
-        const threadClient = toolbox.threadClient;
+        const threadFront = toolbox.threadFront;
 
         // Break in place, which means resuming the debuggee thread and pausing
         // right before the next step happens.
-        switch (threadClient.state) {
+        switch (threadFront.state) {
           case "paused":
             // When the debugger is already paused.
-            threadClient.resumeThenPause();
+            threadFront.resumeThenPause();
             callback();
             break;
           case "attached":
             // When the debugger is already open.
-            threadClient.interrupt().then(() => {
-              threadClient.resumeThenPause();
+            threadFront.interrupt().then(() => {
+              threadFront.resumeThenPause();
               callback();
             });
             break;
           case "resuming":
             // The debugger is newly opened.
-            threadClient.once("resumed", () => {
-              threadClient.interrupt().then(() => {
-                threadClient.resumeThenPause();
+            threadFront.once("resumed", () => {
+              threadFront.interrupt().then(() => {
+                threadFront.resumeThenPause();
                 callback();
               });
             });
@@ -564,7 +571,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
           default:
             throw Error(
               "invalid thread client state in slow script debug handler: " +
-                threadClient.state
+                threadFront.state
             );
         }
       });

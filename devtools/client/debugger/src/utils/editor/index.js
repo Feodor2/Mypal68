@@ -11,19 +11,13 @@ export * from "../ui";
 export { onMouseOver } from "./token-events";
 
 import { createEditor } from "./create-editor";
-import { shouldPrettyPrint } from "../source";
 import { findNext, findPrev } from "./source-search";
 
 import { isWasm, lineToWasmOffset, wasmOffsetToLine } from "../wasm";
 
 import type { AstLocation } from "../../workers/parser";
 import type { EditorPosition, EditorRange } from "../editor/types";
-import type {
-  SearchModifiers,
-  Source,
-  SourceContent,
-  SourceLocation,
-} from "../../types";
+import type { SearchModifiers, Source, SourceLocation } from "../../types";
 type Editor = Object;
 
 let editor: ?Editor;
@@ -61,10 +55,6 @@ export function endOperation() {
   }
 
   codeMirror.endOperation();
-}
-
-export function shouldShowPrettyPrint(source: Source, content: SourceContent) {
-  return shouldPrettyPrint(source, content);
 }
 
 export function traverseResults(
@@ -124,10 +114,7 @@ export function toSourceLine(sourceId: string, line: number): ?number {
 }
 
 export function scrollToColumn(codeMirror: any, line: number, column: number) {
-  const { top, left } = codeMirror.charCoords(
-    { line: line, ch: column },
-    "local"
-  );
+  const { top, left } = codeMirror.charCoords({ line, ch: column }, "local");
 
   if (!isVisible(codeMirror, top, left)) {
     const scroller = codeMirror.getScrollerElement();
@@ -261,11 +248,16 @@ export function getCursorLine(codeMirror: Object): number {
   return codeMirror.getCursor().line;
 }
 
+export function getCursorColumn(codeMirror: Object): number {
+  return codeMirror.getCursor().ch;
+}
+
 export function getTokenEnd(codeMirror: Object, line: number, column: number) {
   const token = codeMirror.getTokenAt({
-    line: line,
+    line,
     ch: column + 1,
   });
+  const tokenString = token.string;
 
-  return token.end;
+  return tokenString === "{" || tokenString === "[" ? null : token.end;
 }

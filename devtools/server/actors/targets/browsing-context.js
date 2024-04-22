@@ -32,10 +32,6 @@ const InspectorUtils = require("InspectorUtils");
 
 const EXTENSION_CONTENT_JSM = "resource://gre/modules/ExtensionContent.jsm";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
-const STRINGS_URI = "devtools/shared/locales/browsing-context.properties";
-const L10N = new LocalizationHelper(STRINGS_URI);
-
 const { ActorClassWithSpec, Actor, Pool } = require("devtools/shared/protocol");
 const {
   LazyPool,
@@ -271,6 +267,8 @@ const browsingContextTargetPrototype = {
       frames: true,
       // Supports the logInPage request.
       logInPage: true,
+      // Supports watchpoints in the server for Fx71+
+      watchpoints: true,
     };
 
     this._workerTargetActorList = null;
@@ -360,7 +358,7 @@ const browsingContextTargetPrototype = {
    * Getter for the browsing context's current DOM window.
    */
   get window() {
-    return this.docShell.domWindow;
+    return this.docShell && this.docShell.domWindow;
   },
 
   get outerWindowID() {
@@ -1069,26 +1067,15 @@ const browsingContextTargetPrototype = {
         docShell.document,
         /* documentOnly = */ true
       );
-      const promises = [];
       for (const sheet of sheets) {
         if (InspectorUtils.hasRulesModifiedByCSSOM(sheet)) {
           continue;
         }
         // Reparse the sheet so that we see the existing errors.
-        promises.push(
-          getSheetText(sheet, this._consoleActor).then(text => {
-            InspectorUtils.parseStyleSheet(sheet, text, /* aUpdate = */ false);
-          })
-        );
-      }
-
-      Promise.all(promises).then(() => {
-        this.logInPage({
-          text: L10N.getStr("cssSheetsReparsedWarning"),
-          category: "CSS Parser",
-          flags: Ci.nsIScriptError.warningFlag,
+        getSheetText(sheet, this._consoleActor).then(text => {
+          InspectorUtils.parseStyleSheet(sheet, text, /* aUpdate = */ false);
         });
-      });
+      }
     }
 
     return {};
@@ -1130,6 +1117,9 @@ const browsingContextTargetPrototype = {
         options.serviceWorkersTestingEnabled
       );
     }
+    if (typeof options.restoreFocus == "boolean") {
+      this._restoreFocus = options.restoreFocus;
+    }
 
     // Reload if:
     //  - there's an explicit `performReload` flag and it's true
@@ -1152,6 +1142,10 @@ const browsingContextTargetPrototype = {
     this._setCacheDisabled(false);
     this._setServiceWorkersTestingEnabled(false);
     this._setPaintFlashingEnabled(false);
+
+    if (this._restoreFocus && this.window.docShell.isActive) {
+      this.window.focus();
+    }
   },
 
   /**
@@ -1253,33 +1247,6 @@ const browsingContextTargetPrototype = {
     return windowUtils.serviceWorkersTestingEnabled;
   },
 
-  /**
-   * Prepare to enter a nested event loop by disabling debuggee events.
-   */
-  preNest() {
-    if (!this.window) {
-      // The browsing context is already closed.
-      return;
-    }
-    const windowUtils = this.window.windowUtils;
-
-    windowUtils.suppressEventHandling(true);
-    windowUtils.suspendTimeouts();
-  },
-
-  /**
-   * Prepare to exit a nested event loop by enabling debuggee events.
-   */
-  postNest(nestData) {
-    if (!this.window) {
-      // The browsing context is already closed.
-      return;
-    }
-    const windowUtils = this.window.windowUtils;
-    windowUtils.resumeTimeouts();
-    windowUtils.suppressEventHandling(false);
-  },
-
   _changeTopLevelDocument(window) {
     // Fake a will-navigate on the previous document
     // to let a chance to unregister it
@@ -1342,25 +1309,6 @@ const browsingContextTargetPrototype = {
       isBFCache,
       id: getWindowID(window),
     });
-
-    // TODO bug 997119: move that code to ThreadActor by listening to
-    // window-ready
-    const threadActor = this.threadActor;
-    if (isTopLevel && threadActor.state != "detached") {
-      this.sources.reset();
-      threadActor.clearDebuggees();
-      threadActor.dbg.enable();
-      threadActor.maybePauseOnExceptions();
-      // Update the global no matter if the debugger is on or off,
-      // otherwise the global will be wrong when enabled later.
-      threadActor.global = window;
-    }
-
-    // Refresh the debuggee list when a new window object appears (top window or
-    // iframe).
-    if (threadActor.attached) {
-      threadActor.dbg.addDebuggees();
-    }
   },
 
   _windowDestroyed(window, id = null, isFrozen = false) {
@@ -1413,18 +1361,6 @@ const browsingContextTargetPrototype = {
       return;
     }
 
-    // Proceed normally only if the debuggee is not paused.
-    // TODO bug 997119: move that code to ThreadActor by listening to
-    // will-navigate
-    const threadActor = this.threadActor;
-    if (threadActor.state == "paused") {
-      this.conn.send(
-        threadActor.unsafeSynchronize(Promise.resolve(threadActor.onResume()))
-      );
-      threadActor.dbg.disable();
-    }
-    threadActor.disableAllBreakpoints();
-
     this.emit("tabNavigated", {
       url: newURI,
       nativeConsoleAPI: true,
@@ -1457,12 +1393,6 @@ const browsingContextTargetPrototype = {
     // (we will only update thread actor on window-ready)
     if (!isTopLevel) {
       return;
-    }
-
-    // TODO bug 997119: move that code to ThreadActor by listening to navigate
-    const threadActor = this.threadActor;
-    if (threadActor.state == "running") {
-      threadActor.dbg.enable();
     }
 
     this.emit("tabNavigated", {

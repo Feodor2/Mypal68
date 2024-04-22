@@ -6,30 +6,85 @@
 
 const { createSelector } = require("devtools/client/shared/vendor/reselect");
 
-function getFramesByChannelId(state, channelId) {
-  return state.webSockets.frames.get(channelId);
-}
+/**
+ * Returns list of frames that are visible to the user.
+ * Filtered frames by types and text are factored in.
+ */
+const getDisplayedFrames = createSelector(
+  state => state.webSockets,
+  ({ frames, frameFilterType, frameFilterText, currentChannelId }) => {
+    if (!currentChannelId || !frames.get(currentChannelId)) {
+      return [];
+    }
+
+    const framesArray = frames.get(currentChannelId);
+    if (frameFilterType === "all" && frameFilterText.length === 0) {
+      return framesArray;
+    }
+
+    // If frame payload is > 10,000 characters long, we check the LongStringActor payload string
+    return framesArray.filter(
+      frame =>
+        (frame.payload.initial
+          ? frame.payload.initial.includes(frameFilterText)
+          : frame.payload.includes(frameFilterText)) &&
+        (frameFilterType === "all" || frameFilterType === frame.type)
+    );
+  }
+);
 
 /**
  * Checks if the selected frame is visible.
  * If the selected frame is not visible, the SplitBox component
  * should not show the FramePayload component.
  */
-function isSelectedFrameVisible(state, channelId, targetFrame) {
-  const displayedFrames = getFramesByChannelId(state, channelId);
-  if (displayedFrames && targetFrame) {
-    return displayedFrames.some(frame => frame === targetFrame);
-  }
-  return false;
-}
+const isSelectedFrameVisible = createSelector(
+  state => state.webSockets,
+  getDisplayedFrames,
+  ({ selectedFrame }, displayedFrames) =>
+    displayedFrames.some(frame => frame === selectedFrame)
+);
 
+/**
+ * Returns the current selected frame.
+ */
 const getSelectedFrame = createSelector(
   state => state.webSockets,
   ({ selectedFrame }) => (selectedFrame ? selectedFrame : undefined)
 );
 
+/**
+ * Returns summary data of the list of frames that are visible to the user.
+ * Filtered frames by types and text are factored in.
+ */
+const getDisplayedFramesSummary = createSelector(
+  getDisplayedFrames,
+  displayedFrames => {
+    let firstStartedMillis = +Infinity;
+    let lastEndedMillis = -Infinity;
+    let totalSize = 0;
+
+    displayedFrames.forEach(frame => {
+      totalSize += frame.payload.length;
+      if (frame.timeStamp < firstStartedMillis) {
+        firstStartedMillis = frame.timeStamp;
+      }
+      if (frame.timeStamp > lastEndedMillis) {
+        lastEndedMillis = frame.timeStamp;
+      }
+    });
+
+    return {
+      count: displayedFrames.length,
+      totalMillis: (lastEndedMillis - firstStartedMillis) / 1000,
+      totalSize,
+    };
+  }
+);
+
 module.exports = {
-  getFramesByChannelId,
   getSelectedFrame,
   isSelectedFrameVisible,
+  getDisplayedFrames,
+  getDisplayedFramesSummary,
 };

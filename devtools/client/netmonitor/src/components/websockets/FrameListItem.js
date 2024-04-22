@@ -10,16 +10,12 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { tr } = dom;
 
-loader.lazyGetter(this, "FrameListColumnType", function() {
-  return createFactory(require("./FrameListColumnType"));
-});
 loader.lazyGetter(this, "FrameListColumnSize", function() {
   return createFactory(require("./FrameListColumnSize"));
 });
-loader.lazyGetter(this, "FrameListColumnPayload", function() {
-  return createFactory(require("./FrameListColumnPayload"));
+loader.lazyGetter(this, "FrameListColumnData", function() {
+  return createFactory(require("./FrameListColumnData"));
 });
 loader.lazyGetter(this, "FrameListColumnOpCode", function() {
   return createFactory(require("./FrameListColumnOpCode"));
@@ -34,15 +30,14 @@ loader.lazyGetter(this, "FrameListColumnTime", function() {
   return createFactory(require("./FrameListColumnTime"));
 });
 
-const COLUMN_COMPONENTS = [
-  { column: "type", ColumnComponent: FrameListColumnType },
-  { column: "size", ColumnComponent: FrameListColumnSize },
-  { column: "payload", ColumnComponent: FrameListColumnPayload },
-  { column: "opCode", ColumnComponent: FrameListColumnOpCode },
-  { column: "maskBit", ColumnComponent: FrameListColumnMaskBit },
-  { column: "finBit", ColumnComponent: FrameListColumnFinBit },
-  { column: "time", ColumnComponent: FrameListColumnTime },
-];
+const COLUMN_COMPONENT_MAP = {
+  time: FrameListColumnTime,
+  data: FrameListColumnData,
+  size: FrameListColumnSize,
+  opCode: FrameListColumnOpCode,
+  maskBit: FrameListColumnMaskBit,
+  finBit: FrameListColumnFinBit,
+};
 
 /**
  * Renders one row in the frame list.
@@ -55,31 +50,39 @@ class FrameListItem extends Component {
       isSelected: PropTypes.bool.isRequired,
       onMouseDown: PropTypes.func.isRequired,
       connector: PropTypes.object.isRequired,
+      visibleColumns: PropTypes.object.isRequired,
     };
   }
 
   render() {
-    const { item, index, isSelected, onMouseDown, connector } = this.props;
+    const {
+      item,
+      index,
+      isSelected,
+      onMouseDown,
+      connector,
+      visibleColumns,
+    } = this.props;
 
     const classList = ["ws-frame-list-item", index % 2 ? "odd" : "even"];
     if (isSelected) {
       classList.push("selected");
     }
 
-    return tr(
+    return dom.tr(
       {
         className: classList.join(" "),
         tabIndex: 0,
         onMouseDown,
       },
-      COLUMN_COMPONENTS.map(({ ColumnComponent, column }) =>
-        ColumnComponent({
-          key: column + "-" + index,
+      visibleColumns.map(name => {
+        const ColumnComponent = COLUMN_COMPONENT_MAP[name];
+        return ColumnComponent({
+          key: `ws-frame-list-column-${name}-${index}`,
           connector,
           item,
-          index,
-        })
-      )
+        });
+      })
     );
   }
 }

@@ -7,75 +7,33 @@
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   createFactory,
-  Component,
+  PureComponent,
 } = require("devtools/client/shared/vendor/react");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
 const { main } = require("devtools/client/shared/vendor/react-dom-factories");
 
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const LocalizationProvider = createFactory(FluentReact.LocalizationProvider);
 
-const WorkerList = createFactory(require("./WorkerList"));
-const WorkerListEmpty = createFactory(require("./WorkerListEmpty"));
+const WorkersPage = createFactory(require("./service-workers/WorkersPage"));
 
 /**
  * This is the main component for the application panel.
  */
-class App extends Component {
+class App extends PureComponent {
   static get propTypes() {
     return {
-      // mapped from state
-      canDebugWorkers: PropTypes.bool.isRequired,
-      client: PropTypes.object.isRequired,
-      // mapped from state
-      domain: PropTypes.string.isRequired,
       fluentBundles: PropTypes.array.isRequired,
-      serviceContainer: PropTypes.object.isRequired,
-      // mapped from state
-      workers: PropTypes.array.isRequired,
     };
   }
 
   render() {
-    const {
-      canDebugWorkers,
-      client,
-      domain,
-      fluentBundles,
-      serviceContainer,
-      workers,
-    } = this.props;
-
-    // Filter out workers from other domains
-    const domainWorkers = workers.filter(
-      x => new URL(x.url).hostname === domain
-    );
-    const isWorkerListEmpty = domainWorkers.length === 0;
+    const { fluentBundles } = this.props;
 
     return LocalizationProvider(
-      { messages: fluentBundles },
-      main(
-        {
-          className: `application ${
-            isWorkerListEmpty ? "application--empty" : ""
-          }`,
-        },
-        isWorkerListEmpty
-          ? WorkerListEmpty({ serviceContainer })
-          : WorkerList({ canDebugWorkers, client, workers: domainWorkers })
-      )
+      { bundles: fluentBundles },
+      main({ className: `application` }, WorkersPage({}))
     );
   }
 }
 
-function mapStateToProps(state) {
-  return {
-    canDebugWorkers: state.workers.canDebugWorkers,
-    domain: state.page.domain,
-    workers: state.workers.list,
-  };
-}
-
-// Exports
-
-module.exports = connect(mapStateToProps)(App);
+module.exports = App;

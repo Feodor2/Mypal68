@@ -5,6 +5,7 @@
 // @flow
 
 import React, { Component } from "react";
+import classnames from "classnames";
 import { isGeneratedId } from "devtools-source-map";
 import { connect } from "../../utils/connect";
 import { List } from "immutable";
@@ -24,6 +25,9 @@ import {
   getWorkers,
   getCurrentThread,
   getThreadContext,
+  getSourceFromId,
+  getSkipPausing,
+  shouldLogEventBreakpoints,
 } from "../../selectors";
 
 import AccessibleImage from "../shared/AccessibleImage";
@@ -39,13 +43,20 @@ import CommandBar from "./CommandBar";
 import UtilsBar from "./UtilsBar";
 import XHRBreakpoints from "./XHRBreakpoints";
 import EventListeners from "./EventListeners";
+import DOMMutationBreakpoints from "./DOMMutationBreakpoints";
 import WhyPaused from "./WhyPaused";
 
 import Scopes from "./Scopes";
 
 import "./SecondaryPanes.css";
 
-import type { Expression, Frame, WorkerList, ThreadContext } from "../../types";
+import type {
+  Expression,
+  Frame,
+  WorkerList,
+  ThreadContext,
+  Source,
+} from "../../types";
 
 type AccordionPaneItem = {
   header: string,
@@ -74,6 +85,10 @@ type State = {
   showXHRInput: boolean,
 };
 
+type OwnProps = {|
+  horizontal: boolean,
+  toggleShortcutsModal: () => void,
+|};
 type Props = {
   cx: ThreadContext,
   expressions: List<Expression>,
@@ -88,12 +103,16 @@ type Props = {
   shouldPauseOnExceptions: boolean,
   shouldPauseOnCaughtExceptions: boolean,
   workers: WorkerList,
+  skipPausing: boolean,
+  logEventBreakpoints: boolean,
+  source: ?Source,
   toggleShortcutsModal: () => void,
   toggleAllBreakpoints: typeof actions.toggleAllBreakpoints,
   toggleMapScopes: typeof actions.toggleMapScopes,
   evaluateExpressions: typeof actions.evaluateExpressions,
   pauseOnExceptions: typeof actions.pauseOnExceptions,
   breakOnNext: typeof actions.breakOnNext,
+  toggleEventLogging: typeof actions.toggleEventLogging,
 };
 
 const mdnLink =
@@ -228,9 +247,13 @@ class SecondaryPanes extends Component<Props, State> {
   }
 
   getScopesButtons() {
-    const { selectedFrame, mapScopesEnabled } = this.props;
+    const { selectedFrame, mapScopesEnabled, source } = this.props;
 
-    if (!selectedFrame || isGeneratedId(selectedFrame.location.sourceId)) {
+    if (
+      !selectedFrame ||
+      isGeneratedId(selectedFrame.location.sourceId) ||
+      (source && source.isPrettyPrinted)
+    ) {
       return null;
     }
 
@@ -257,6 +280,26 @@ class SecondaryPanes extends Component<Props, State> {
         >
           <AccessibleImage className="shortcuts" />
         </a>
+      </div>,
+    ];
+  }
+
+  getEventButtons() {
+    const { logEventBreakpoints } = this.props;
+    return [
+      <div key="events-buttons">
+        <label
+          className="events-header"
+          title={L10N.getStr("eventlisteners.log.label")}
+          onClick={e => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={logEventBreakpoints ? "checked" : ""}
+            onChange={e => this.props.toggleEventLogging()}
+          />
+          {L10N.getStr("eventlisteners.log")}
+        </label>
       </div>,
     ];
   }
@@ -352,11 +395,24 @@ class SecondaryPanes extends Component<Props, State> {
     return {
       header: L10N.getStr("eventListenersHeader1"),
       className: "event-listeners-pane",
-      buttons: [],
+      buttons: this.getEventButtons(),
       component: <EventListeners />,
       opened: prefs.eventListenersVisible,
       onToggle: opened => {
         prefs.eventListenersVisible = opened;
+      },
+    };
+  }
+
+  getDOMMutationsItem(): AccordionPaneItem {
+    return {
+      header: L10N.getStr("domMutationHeader"),
+      className: "dom-mutations-pane",
+      buttons: [],
+      component: <DOMMutationBreakpoints />,
+      opened: prefs.domMutationBreakpointsVisible,
+      onToggle: opened => {
+        prefs.domMutationBreakpointsVisible = opened;
       },
     };
   }
@@ -388,6 +444,10 @@ class SecondaryPanes extends Component<Props, State> {
 
     if (features.eventListenersBreakpoints) {
       items.push(this.getEventListenersItem());
+    }
+
+    if (features.domMutationBreakpoints) {
+      items.push(this.getDOMMutationsItem());
     }
 
     return items;
@@ -459,10 +519,16 @@ class SecondaryPanes extends Component<Props, State> {
   }
 
   render() {
+    const { skipPausing } = this.props;
     return (
       <div className="secondary-panes-wrapper">
         <CommandBar horizontal={this.props.horizontal} />
-        <div className="secondary-panes">
+        <div
+          className={classnames(
+            "secondary-panes",
+            skipPausing && "skip-pausing"
+          )}
+        >
           {this.props.horizontal
             ? this.renderHorizontalLayout()
             : this.renderVerticalLayout()}
@@ -487,6 +553,7 @@ function getRenderWhyPauseDelay(state, thread) {
 
 const mapStateToProps = state => {
   const thread = getCurrentThread(state);
+  const selectedFrame = getSelectedFrame(state, thread);
 
   return {
     cx: getThreadContext(state),
@@ -496,15 +563,19 @@ const mapStateToProps = state => {
     breakpointsDisabled: getBreakpointsDisabled(state),
     isWaitingOnBreak: getIsWaitingOnBreak(state, thread),
     renderWhyPauseDelay: getRenderWhyPauseDelay(state, thread),
-    selectedFrame: getSelectedFrame(state, thread),
+    selectedFrame,
     mapScopesEnabled: isMapScopesEnabled(state),
     shouldPauseOnExceptions: getShouldPauseOnExceptions(state),
     shouldPauseOnCaughtExceptions: getShouldPauseOnCaughtExceptions(state),
     workers: getWorkers(state),
+    skipPausing: getSkipPausing(state),
+    logEventBreakpoints: shouldLogEventBreakpoints(state),
+    source:
+      selectedFrame && getSourceFromId(state, selectedFrame.location.sourceId),
   };
 };
 
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     toggleAllBreakpoints: actions.toggleAllBreakpoints,
@@ -512,5 +583,6 @@ export default connect(
     pauseOnExceptions: actions.pauseOnExceptions,
     toggleMapScopes: actions.toggleMapScopes,
     breakOnNext: actions.breakOnNext,
+    toggleEventLogging: actions.toggleEventLogging,
   }
 )(SecondaryPanes);

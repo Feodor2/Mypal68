@@ -106,7 +106,12 @@ ChromeUtils.defineModuleGetter(
   "resource://devtools/client/shared/widgets/VariablesViewController.jsm"
 );
 
-loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerServer",
+  "devtools/server/debugger-server",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
@@ -126,8 +131,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "HUDService",
-  "devtools/client/webconsole/hudservice",
+  "BrowserConsoleManager",
+  "devtools/client/webconsole/browser-console-manager",
   true
 );
 loader.lazyRequireGetter(
@@ -559,7 +564,7 @@ var Scratchpad = {
 
     if (response.error) {
       throw new Error(response.error);
-    } else if (response.exception !== null) {
+    } else if (response.exception != null) {
       return [string, response];
     } else {
       return [string, undefined, response.result];
@@ -1586,7 +1591,7 @@ var Scratchpad = {
    * Open the Error Console.
    */
   openErrorConsole: function SP_openErrorConsole() {
-    HUDService.toggleBrowserConsole();
+    BrowserConsoleManager.toggleBrowserConsole();
   },
 
   /**

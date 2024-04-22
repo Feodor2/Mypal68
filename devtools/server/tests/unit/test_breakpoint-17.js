@@ -32,12 +32,12 @@ const secondLocation = {
 };
 
 add_task(
-  threadClientTest(({ threadClient, debuggee, client }) => {
+  threadFrontTest(({ threadFront, debuggee, client }) => {
     return new Promise(resolve => {
       client.on("paused", async (packet) => {
-        const [first, second] = await set_breakpoints(packet, threadClient);
+        const [first, second] = await set_breakpoints(packet, threadFront);
         test_different_actors(first, second);
-        await test_remove_one(first, second, threadClient, debuggee, client);
+        await test_remove_one(first, second, threadFront, debuggee, client);
         resolve();
       });
 
@@ -46,10 +46,10 @@ add_task(
   })
 );
 
-function set_breakpoints(packet, threadClient) {
+function set_breakpoints(packet, threadFront) {
   return new Promise(async resolve => {
     let first, second;
-    const source = await getSourceById(threadClient, packet.frame.where.actor);
+    const source = await getSourceById(threadFront, packet.frame.where.actor);
 
     source
       .setBreakpoint(firstLocation)
@@ -77,7 +77,7 @@ function test_different_actors(first, second) {
   );
 }
 
-function test_remove_one(first, second, threadClient, debuggee, client) {
+function test_remove_one(first, second, threadFront, debuggee, client) {
   return new Promise(resolve => {
     first.remove(function({ error }) {
       Assert.ok(!error, "Should not get an error removing a breakpoint");
@@ -106,7 +106,7 @@ function test_remove_one(first, second, threadClient, debuggee, client) {
             secondLocation.column,
             "Should be at the right column"
           );
-          threadClient.resume();
+          threadFront.resume();
           return;
         }
 
@@ -124,7 +124,7 @@ function test_remove_one(first, second, threadClient, debuggee, client) {
         Assert.ok(false, "Should never get here");
       });
 
-      threadClient.resume().then(() => debuggee.foo());
+      threadFront.resume().then(() => debuggee.foo());
     });
   });
 }

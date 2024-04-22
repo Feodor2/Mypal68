@@ -53,7 +53,6 @@ class ReverseSearchInput extends Component {
       dispatch: PropTypes.func.isRequired,
       setInputValue: PropTypes.func.isRequired,
       focusInput: PropTypes.func.isRequired,
-      evaluateInput: PropTypes.func.isRequired,
       reverseSearchResult: PropTypes.string,
       reverseSearchTotalResults: PropTypes.number,
       reverseSearchResultPosition: PropTypes.number,
@@ -91,27 +90,54 @@ class ReverseSearchInput extends Component {
     }
   }
 
+  onEnterKeyboardShortcut(event) {
+    const { dispatch } = this.props;
+    event.stopPropagation();
+    dispatch(actions.reverseSearchInputToggle());
+    dispatch(actions.evaluateExpression());
+  }
+
+  onEscapeKeyboardShortcut(event) {
+    const { dispatch } = this.props;
+    event.stopPropagation();
+    dispatch(actions.reverseSearchInputToggle());
+  }
+
+  onBackwardNavigationKeyBoardShortcut(event, canNavigate) {
+    const { dispatch } = this.props;
+    event.stopPropagation();
+    event.preventDefault();
+    if (canNavigate) {
+      dispatch(actions.showReverseSearchBack());
+    }
+  }
+
+  onForwardNavigationKeyBoardShortcut(event, canNavigate) {
+    const { dispatch } = this.props;
+    event.stopPropagation();
+    event.preventDefault();
+    if (canNavigate) {
+      dispatch(actions.showReverseSearchNext());
+    }
+  }
+
   onInputKeyDown(event) {
     const { keyCode, key, ctrlKey, shiftKey } = event;
-
-    const { dispatch, evaluateInput, reverseSearchTotalResults } = this.props;
+    const { reverseSearchTotalResults } = this.props;
 
     // On Enter, we trigger an execute.
     if (keyCode === KeyCodes.DOM_VK_RETURN) {
-      event.stopPropagation();
-      dispatch(actions.reverseSearchInputToggle());
-      evaluateInput();
-      return;
+      return this.onEnterKeyboardShortcut(event);
     }
+
+    const lowerCaseKey = key.toLowerCase();
 
     // On Escape (and Ctrl + c on OSX), we close the reverse search input.
     if (
       keyCode === KeyCodes.DOM_VK_ESCAPE ||
-      (isMacOS && ctrlKey === true && key.toLowerCase() === "c")
+      (isMacOS && ctrlKey && lowerCaseKey === "c")
     ) {
-      event.stopPropagation();
-      dispatch(actions.reverseSearchInputToggle());
-      return;
+      return this.onEscapeKeyboardShortcut(event);
     }
 
     const canNavigate =
@@ -119,27 +145,20 @@ class ReverseSearchInput extends Component {
       reverseSearchTotalResults > 1;
 
     if (
-      (!isMacOS && key === "F9" && shiftKey === false) ||
-      (isMacOS && ctrlKey === true && key.toLowerCase() === "r")
+      (!isMacOS && key === "F9" && !shiftKey) ||
+      (isMacOS && ctrlKey && lowerCaseKey === "r")
     ) {
-      event.stopPropagation();
-      event.preventDefault();
-      if (canNavigate) {
-        dispatch(actions.showReverseSearchBack());
-      }
-      return;
+      return this.onBackwardNavigationKeyBoardShortcut(event, canNavigate);
     }
 
     if (
-      (!isMacOS && key === "F9" && shiftKey === true) ||
-      (isMacOS && ctrlKey === true && key.toLowerCase() === "s")
+      (!isMacOS && key === "F9" && shiftKey) ||
+      (isMacOS && ctrlKey && lowerCaseKey === "s")
     ) {
-      event.stopPropagation();
-      event.preventDefault();
-      if (canNavigate) {
-        dispatch(actions.showReverseSearchNext());
-      }
+      return this.onForwardNavigationKeyBoardShortcut(event, canNavigate);
     }
+
+    return null;
   }
 
   renderSearchInformation() {

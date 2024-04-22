@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
 		module.exports = factory();
@@ -78,12 +82,12 @@ return /******/ (function(modules) { // webpackBootstrap
 /***/ 104:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+const {
+  generatedToOriginalId
+} = __webpack_require__(64);
 
 const sourceMapRequests = new Map();
 
@@ -91,16 +95,49 @@ function clearSourceMaps() {
   sourceMapRequests.clear();
 }
 
-function getSourceMap(generatedSourceId) {
+function getSourceMapWithMetadata(generatedSourceId) {
   return sourceMapRequests.get(generatedSourceId);
 }
 
+function getSourceMap(generatedSourceId) {
+  const request = getSourceMapWithMetadata(generatedSourceId);
+
+  if (!request) {
+    return null;
+  }
+
+  return request.then(result => result ? result.map : null);
+}
+
 function setSourceMap(generatedId, request) {
-  sourceMapRequests.set(generatedId, request);
+  sourceMapRequests.set(generatedId, request.then(map => {
+    if (!map || !map.sources) {
+      return null;
+    }
+
+    const urlsById = new Map();
+    const sources = [];
+
+    for (const url of map.sources) {
+      const id = generatedToOriginalId(generatedId, url);
+      urlsById.set(id, url);
+      sources.push({
+        id,
+        url
+      });
+    }
+
+    return {
+      map,
+      urlsById,
+      sources
+    };
+  }));
 }
 
 module.exports = {
   clearSourceMaps,
+  getSourceMapWithMetadata,
   getSourceMap,
   setSourceMap
 };
@@ -411,7 +448,6 @@ function isSlowBuffer (obj) {
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
 function networkRequest(url, opts) {
   return fetch(url, {
     cache: opts.loadFromCache ? "default" : "no-cache"
@@ -423,8 +459,12 @@ function networkRequest(url, opts) {
           isDwarf: true
         }));
       }
-      return res.text().then(text => ({ content: text }));
+
+      return res.text().then(text => ({
+        content: text
+      }));
     }
+
     return Promise.reject(`request failed with status ${res.status}`);
   });
 }
@@ -436,18 +476,18 @@ module.exports = networkRequest;
 /***/ 14:
 /***/ (function(module, exports) {
 
-
-
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 function WorkerDispatcher() {
   this.msgId = 1;
   this.worker = null;
-} /* This Source Code Form is subject to the terms of the Mozilla Public
-   * License, v. 2.0. If a copy of the MPL was not distributed with this
-   * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+}
 
 WorkerDispatcher.prototype = {
   start(url, win = window) {
     this.worker = new win.Worker(url);
+
     this.worker.onerror = () => {
       console.error(`Error in worker ${url}`);
     };
@@ -462,8 +502,11 @@ WorkerDispatcher.prototype = {
     this.worker = null;
   },
 
-  task(method, { queue = false } = {}) {
+  task(method, {
+    queue = false
+  } = {}) {
     const calls = [];
+
     const push = args => {
       return new Promise((resolve, reject) => {
         if (queue && calls.length === 0) {
@@ -493,7 +536,9 @@ WorkerDispatcher.prototype = {
         calls: items.map(item => item[0])
       });
 
-      const listener = ({ data: result }) => {
+      const listener = ({
+        data: result
+      }) => {
         if (result.id !== id) {
           return;
         }
@@ -503,12 +548,13 @@ WorkerDispatcher.prototype = {
         }
 
         this.worker.removeEventListener("message", listener);
-
         result.results.forEach((resultData, i) => {
           const [, resolve, reject] = items[i];
 
           if (resultData.error) {
-            reject(resultData.error);
+            const err = new Error(resultData.message);
+            err.metadata = resultData.metadata;
+            reject(err);
           } else {
             resolve(resultData.response);
           }
@@ -524,30 +570,56 @@ WorkerDispatcher.prototype = {
   invoke(method, ...args) {
     return this.task(method)(...args);
   }
+
 };
 
 function workerHandler(publicInterface) {
   return function (msg) {
-    const { id, method, calls } = msg.data;
-
+    const {
+      id,
+      method,
+      calls
+    } = msg.data;
     Promise.all(calls.map(args => {
       try {
         const response = publicInterface[method].apply(undefined, args);
+
         if (response instanceof Promise) {
-          return response.then(val => ({ response: val }),
-          // Error can't be sent via postMessage, so be sure to
-          // convert to string.
-          err => ({ error: err.toString() }));
+          return response.then(val => ({
+            response: val
+          }), err => asErrorMessage(err));
         }
-        return { response };
+
+        return {
+          response
+        };
       } catch (error) {
-        // Error can't be sent via postMessage, so be sure to convert to
-        // string.
-        return { error: error.toString() };
+        return asErrorMessage(error);
       }
     })).then(results => {
-      self.postMessage({ id, results });
+      self.postMessage({
+        id,
+        results
+      });
     });
+  };
+}
+
+function asErrorMessage(error) {
+  if (typeof error === "object" && error && "message" in error) {
+    // Error can't be sent via postMessage, so be sure to convert to
+    // string.
+    return {
+      error: true,
+      message: error.message,
+      metadata: error.metadata
+    };
+  }
+
+  return {
+    error: true,
+    message: error == null ? error : error.toString(),
+    metadata: undefined
   };
 }
 
@@ -1231,14 +1303,12 @@ module.exports.initialize = input => {
 /***/ 179:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
-const { SourceMapConsumer } = __webpack_require__(60);
+const {
+  SourceMapConsumer
+} = __webpack_require__(60);
 
 async function createConsumer(map, sourceMapUrl) {
   return new SourceMapConsumer(map, sourceMapUrl);
@@ -1301,9 +1371,6 @@ module.exports = __webpack_require__(390);
 /***/ 390:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -1319,20 +1386,26 @@ const {
   getOriginalSourceText,
   getGeneratedRangesForOriginal,
   getFileGeneratedRange,
-  hasMappedSource,
   clearSourceMaps,
   applySourceMap
 } = __webpack_require__(391);
 
-const { getOriginalStackFrames } = __webpack_require__(411);
-const { setAssetRootURL } = __webpack_require__(515);
+const {
+  getOriginalStackFrames
+} = __webpack_require__(411);
 
 const {
-  workerUtils: { workerHandler }
-} = __webpack_require__(7);
+  setAssetRootURL
+} = __webpack_require__(515);
 
-// The interface is implemented in source-map to be
+const {
+  workerUtils: {
+    workerHandler
+  }
+} = __webpack_require__(7); // The interface is implemented in source-map to be
 // easier to unit test.
+
+
 self.onmessage = workerHandler({
   setAssetRootURL,
   getOriginalURLs,
@@ -1347,7 +1420,6 @@ self.onmessage = workerHandler({
   getOriginalStackFrames,
   getGeneratedRangesForOriginal,
   getFileGeneratedRange,
-  hasMappedSource,
   applySourceMap,
   clearSourceMaps
 });
@@ -1357,9 +1429,6 @@ self.onmessage = workerHandler({
 /***/ 391:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -1368,22 +1437,34 @@ self.onmessage = workerHandler({
  * Source Map Worker
  * @module utils/source-map-worker
  */
+const {
+  networkRequest
+} = __webpack_require__(7);
 
-const { networkRequest } = __webpack_require__(7);
-const { SourceMapConsumer, SourceMapGenerator } = __webpack_require__(60);
+const {
+  SourceMapConsumer,
+  SourceMapGenerator
+} = __webpack_require__(60);
 
-const { createConsumer } = __webpack_require__(179);
+const {
+  createConsumer
+} = __webpack_require__(179);
+
 const assert = __webpack_require__(407);
+
 const {
   fetchSourceMap,
   hasOriginalURL,
   clearOriginalURLs
 } = __webpack_require__(408);
+
 const {
   getSourceMap,
+  getSourceMapWithMetadata,
   setSourceMap,
   clearSourceMaps: clearSourceMapsRequests
 } = __webpack_require__(104);
+
 const {
   originalToGeneratedId,
   generatedToOriginalId,
@@ -1391,38 +1472,48 @@ const {
   isOriginalId,
   getContentType
 } = __webpack_require__(64);
-const { clearWasmXScopes } = __webpack_require__(510);
+
+const {
+  clearWasmXScopes
+} = __webpack_require__(510);
 
 async function getOriginalURLs(generatedSource) {
-  const map = await fetchSourceMap(generatedSource);
-  return map && map.sources;
+  await fetchSourceMap(generatedSource);
+  const data = await getSourceMapWithMetadata(generatedSource.id);
+  return data ? data.sources : null;
 }
 
 const COMPUTED_SPANS = new WeakSet();
-
 const SOURCE_MAPPINGS = new WeakMap();
-async function getOriginalRanges(sourceId, url) {
+
+async function getOriginalRanges(sourceId) {
   if (!isOriginalId(sourceId)) {
     return [];
   }
 
   const generatedSourceId = originalToGeneratedId(sourceId);
-  const map = await getSourceMap(generatedSourceId);
-  if (!map) {
+  const data = await getSourceMapWithMetadata(generatedSourceId);
+
+  if (!data) {
     return [];
   }
 
+  const {
+    map
+  } = data;
+  const url = data.urlsById.get(sourceId);
   let mappings = SOURCE_MAPPINGS.get(map);
+
   if (!mappings) {
     mappings = new Map();
     SOURCE_MAPPINGS.set(map, mappings);
   }
 
   let fileMappings = mappings.get(url);
+
   if (!fileMappings) {
     fileMappings = [];
     mappings.set(url, fileMappings);
-
     const originalMappings = fileMappings;
     map.eachMapping(mapping => {
       if (mapping.source !== url) {
@@ -1450,39 +1541,47 @@ async function getOriginalRanges(sourceId, url) {
 
   return fileMappings;
 }
-
 /**
  * Given an original location, find the ranges on the generated file that
  * are mapped from the original range containing the location.
  */
-async function getGeneratedRanges(location, originalSource) {
+
+
+async function getGeneratedRanges(location) {
   if (!isOriginalId(location.sourceId)) {
     return [];
   }
 
   const generatedSourceId = originalToGeneratedId(location.sourceId);
-  const map = await getSourceMap(generatedSourceId);
-  if (!map) {
+  const data = await getSourceMapWithMetadata(generatedSourceId);
+
+  if (!data) {
     return [];
   }
+
+  const {
+    urlsById,
+    map
+  } = data;
 
   if (!COMPUTED_SPANS.has(map)) {
     COMPUTED_SPANS.add(map);
     map.computeColumnSpans();
-  }
-
-  // We want to use 'allGeneratedPositionsFor' to get the _first_ generated
+  } // We want to use 'allGeneratedPositionsFor' to get the _first_ generated
   // location, but it hard-codes SourceMapConsumer.LEAST_UPPER_BOUND as the
   // bias, making it search in the wrong direction for this usecase.
   // To work around this, we use 'generatedPositionFor' and then look up the
   // exact original location, making any bias value unnecessary, and then
   // use that location for the call to 'allGeneratedPositionsFor'.
+
+
   const genPos = map.generatedPositionFor({
-    source: originalSource.url,
+    source: urlsById.get(location.sourceId),
     line: location.line,
     column: location.column == null ? 0 : location.column,
     bias: SourceMapConsumer.GREATEST_LOWER_BOUND
   });
+
   if (genPos.line === null) {
     return [];
   }
@@ -1491,7 +1590,6 @@ async function getGeneratedRanges(location, originalSource) {
     line: genPos.line,
     column: genPos.column
   }));
-
   return positions.map(mapping => ({
     line: mapping.line,
     columnStart: mapping.column,
@@ -1502,28 +1600,33 @@ async function getGeneratedRanges(location, originalSource) {
   });
 }
 
-async function getGeneratedLocation(location, originalSource) {
+async function getGeneratedLocation(location) {
   if (!isOriginalId(location.sourceId)) {
     return location;
   }
 
   const generatedSourceId = originalToGeneratedId(location.sourceId);
-  const map = await getSourceMap(generatedSourceId);
-  if (!map) {
+  const data = await getSourceMapWithMetadata(generatedSourceId);
+
+  if (!data) {
     return location;
   }
 
+  const {
+    urlsById,
+    map
+  } = data;
   const positions = map.allGeneratedPositionsFor({
-    source: originalSource.url,
+    source: urlsById.get(location.sourceId),
     line: location.line,
     column: location.column == null ? 0 : location.column
-  });
-
-  // Prior to source-map 0.7, the source-map module returned the earliest
+  }); // Prior to source-map 0.7, the source-map module returned the earliest
   // generated location in the file when there were multiple generated
   // locations. The current comparison fn in 0.7 does not appear to take
   // generated location into account properly.
+
   let match;
+
   for (const pos of positions) {
     if (!match || pos.line < match.line || pos.column < match.column) {
       match = pos;
@@ -1532,7 +1635,7 @@ async function getGeneratedLocation(location, originalSource) {
 
   if (!match) {
     match = map.generatedPositionFor({
-      source: originalSource.url,
+      source: urlsById.get(location.sourceId),
       line: location.line,
       column: location.column == null ? 0 : location.column,
       bias: SourceMapConsumer.LEAST_UPPER_BOUND
@@ -1546,52 +1649,65 @@ async function getGeneratedLocation(location, originalSource) {
   };
 }
 
-async function getAllGeneratedLocations(location, originalSource) {
+async function getAllGeneratedLocations(location) {
   if (!isOriginalId(location.sourceId)) {
     return [];
   }
 
   const generatedSourceId = originalToGeneratedId(location.sourceId);
-  const map = await getSourceMap(generatedSourceId);
-  if (!map) {
+  const data = await getSourceMapWithMetadata(generatedSourceId);
+
+  if (!data) {
     return [];
   }
 
+  const {
+    urlsById,
+    map
+  } = data;
   const positions = map.allGeneratedPositionsFor({
-    source: originalSource.url,
+    source: urlsById.get(location.sourceId),
     line: location.line,
     column: location.column == null ? 0 : location.column
   });
-
-  return positions.map(({ line, column }) => ({
+  return positions.map(({
+    line,
+    column
+  }) => ({
     sourceId: generatedSourceId,
     line,
     column
   }));
 }
 
-async function getOriginalLocations(sourceId, locations, options = {}) {
-  if (locations.some(location => location.sourceId != sourceId)) {
-    throw new Error("Generated locations must belong to the same source");
+async function getOriginalLocations(locations, options = {}) {
+  const maps = {};
+  const results = [];
+
+  for (const location of locations) {
+    let map = maps[location.sourceId];
+
+    if (map === undefined) {
+      map = await getSourceMap(location.sourceId);
+      maps[location.sourceId] = map || null;
+    }
+
+    results.push(map ? getOriginalLocationSync(map, location, options) : location);
   }
 
-  const map = await getSourceMap(sourceId);
-  if (!map) {
-    return locations;
-  }
-
-  return locations.map(location => getOriginalLocationSync(map, location, options));
+  return results;
 }
 
-function getOriginalLocationSync(map, location, { search } = {}) {
+function getOriginalLocationSync(map, location, {
+  search
+} = {}) {
   // First check for an exact match
   let match = map.originalPositionFor({
     line: location.line,
     column: location.column == null ? 0 : location.column
-  });
-
-  // If there is not an exact match, look for a match with a bias at the
+  }); // If there is not an exact match, look for a match with a bias at the
   // current location and then on subsequent lines
+
   if (search) {
     let line = location.line;
     let column = location.column == null ? 0 : location.column;
@@ -1602,13 +1718,17 @@ function getOriginalLocationSync(map, location, { search } = {}) {
         column,
         bias: SourceMapConsumer[search]
       });
-
       line += search == "LEAST_UPPER_BOUND" ? 1 : -1;
       column = search == "LEAST_UPPER_BOUND" ? 0 : Infinity;
     }
   }
 
-  const { source: sourceUrl, line, column } = match;
+  const {
+    source: sourceUrl,
+    line,
+    column
+  } = match;
+
   if (sourceUrl == null) {
     // No url means the location didn't map.
     return location;
@@ -1628,6 +1748,7 @@ async function getOriginalLocation(location, options = {}) {
   }
 
   const map = await getSourceMap(location.sourceId);
+
   if (!map) {
     return location;
   }
@@ -1635,26 +1756,43 @@ async function getOriginalLocation(location, options = {}) {
   return getOriginalLocationSync(map, location, options);
 }
 
-async function getOriginalSourceText(originalSource) {
-  assert(isOriginalId(originalSource.id), "Source is not an original source");
+async function getOriginalSourceText(originalSourceId) {
+  assert(isOriginalId(originalSourceId), "Source is not an original source");
+  const generatedSourceId = originalToGeneratedId(originalSourceId);
+  const data = await getSourceMapWithMetadata(generatedSourceId);
 
-  const generatedSourceId = originalToGeneratedId(originalSource.id);
-  const map = await getSourceMap(generatedSourceId);
-  if (!map) {
+  if (!data) {
     return null;
   }
 
-  let text = map.sourceContentFor(originalSource.url);
+  const {
+    urlsById,
+    map
+  } = data;
+  const url = urlsById.get(originalSourceId);
+  let text = map.sourceContentFor(url);
+
   if (!text) {
-    text = (await networkRequest(originalSource.url, { loadFromCache: false })).content;
+    try {
+      const response = await networkRequest(url, {
+        loadFromCache: false
+      });
+      text = response.content;
+    } catch (err) {
+      // Wrapper logic renders a notification about the specific URL that
+      // failed to load, so we include it in the error metadata.
+      err.metadata = { ...err.metadata,
+        url
+      };
+      throw err;
+    }
   }
 
   return {
     text,
-    contentType: getContentType(originalSource.url || "")
+    contentType: getContentType(url || "")
   };
 }
-
 /**
  * Find the set of ranges on the generated file that map from the original
  * file's locations.
@@ -1667,16 +1805,23 @@ async function getOriginalSourceText(originalSource) {
  *   contiguous ranges associated with a file, rather than the specifics of
  *   the ranges provided by the sourcemap.
  */
+
+
 const GENERATED_MAPPINGS = new WeakMap();
-async function getGeneratedRangesForOriginal(sourceId, url, mergeUnmappedRegions = false) {
+
+async function getGeneratedRangesForOriginal(sourceId, mergeUnmappedRegions = false) {
   assert(isOriginalId(sourceId), "Source is not an original source");
+  const data = await getSourceMapWithMetadata(originalToGeneratedId(sourceId)); // NOTE: this is only needed for Flow
 
-  const map = await getSourceMap(originalToGeneratedId(sourceId));
-
-  // NOTE: this is only needed for Flow
-  if (!map) {
+  if (!data) {
     return [];
   }
+
+  const {
+    urlsById,
+    map
+  } = data;
+  const url = urlsById.get(sourceId);
 
   if (!COMPUTED_SPANS.has(map)) {
     COMPUTED_SPANS.add(map);
@@ -1688,6 +1833,7 @@ async function getGeneratedRangesForOriginal(sourceId, url, mergeUnmappedRegions
   }
 
   const generatedRangesMap = GENERATED_MAPPINGS.get(map);
+
   if (!generatedRangesMap) {
     return [];
   }
@@ -1695,10 +1841,10 @@ async function getGeneratedRangesForOriginal(sourceId, url, mergeUnmappedRegions
   if (generatedRangesMap.has(sourceId)) {
     // NOTE we need to coerce the result to an array for Flow
     return generatedRangesMap.get(sourceId) || [];
-  }
-
-  // Gather groups of mappings on the generated file, with new groups created
+  } // Gather groups of mappings on the generated file, with new groups created
   // if we cross a mapping for a different file.
+
+
   let currentGroup = [];
   const originalGroups = [currentGroup];
   map.eachMapping(mapping => {
@@ -1722,8 +1868,8 @@ async function getGeneratedRangesForOriginal(sourceId, url, mergeUnmappedRegions
       originalGroups.push(currentGroup);
     }
   }, null, SourceMapConsumer.GENERATED_ORDER);
-
   const generatedMappingsForOriginal = [];
+
   if (mergeUnmappedRegions) {
     // If we don't care about excluding unmapped regions, then we just need to
     // create a range that is the fully encompasses each group, ignoring the
@@ -1738,17 +1884,24 @@ async function getGeneratedRangesForOriginal(sourceId, url, mergeUnmappedRegions
     }
   } else {
     let lastEntry;
+
     for (const group of originalGroups) {
       lastEntry = null;
-      for (const { start, end } of group) {
-        const lastEnd = lastEntry ? wrappedMappingPosition(lastEntry.end) : null;
 
-        // If this entry comes immediately after the previous one, extend the
+      for (const {
+        start,
+        end
+      } of group) {
+        const lastEnd = lastEntry ? wrappedMappingPosition(lastEntry.end) : null; // If this entry comes immediately after the previous one, extend the
         // range of the previous entry instead of adding a new one.
+
         if (lastEntry && lastEnd && lastEnd.line === start.line && lastEnd.column === start.column) {
           lastEntry.end = end;
         } else {
-          const newEntry = { start, end };
+          const newEntry = {
+            start,
+            end
+          };
           generatedMappingsForOriginal.push(newEntry);
           lastEntry = newEntry;
         }
@@ -1763,58 +1916,52 @@ async function getGeneratedRangesForOriginal(sourceId, url, mergeUnmappedRegions
 function wrappedMappingPosition(pos) {
   if (pos.column !== Infinity) {
     return pos;
-  }
-
-  // If the end of the entry consumes the whole line, treat it as wrapping to
+  } // If the end of the entry consumes the whole line, treat it as wrapping to
   // the next line.
+
+
   return {
     line: pos.line + 1,
     column: 0
   };
 }
 
-async function getFileGeneratedRange(originalSource) {
-  assert(isOriginalId(originalSource.id), "Source is not an original source");
+async function getFileGeneratedRange(originalSourceId) {
+  assert(isOriginalId(originalSourceId), "Source is not an original source");
+  const data = await getSourceMapWithMetadata(originalToGeneratedId(originalSourceId));
 
-  const map = await getSourceMap(originalToGeneratedId(originalSource.id));
-  if (!map) {
+  if (!data) {
     return;
   }
 
+  const {
+    urlsById,
+    map
+  } = data;
   const start = map.generatedPositionFor({
-    source: originalSource.url,
+    source: urlsById.get(originalSourceId),
     line: 1,
     column: 0,
     bias: SourceMapConsumer.LEAST_UPPER_BOUND
   });
-
   const end = map.generatedPositionFor({
-    source: originalSource.url,
+    source: urlsById.get(originalSourceId),
     line: Number.MAX_SAFE_INTEGER,
     column: Number.MAX_SAFE_INTEGER,
     bias: SourceMapConsumer.GREATEST_LOWER_BOUND
   });
-
   return {
     start,
     end
   };
 }
 
-async function hasMappedSource(location) {
-  if (isOriginalId(location.sourceId)) {
-    return true;
-  }
-
-  const loc = await getOriginalLocation(location);
-  return loc.sourceId !== location.sourceId;
-}
-
 function applySourceMap(generatedId, url, code, mappings) {
-  const generator = new SourceMapGenerator({ file: url });
+  const generator = new SourceMapGenerator({
+    file: url
+  });
   mappings.forEach(mapping => generator.addMapping(mapping));
   generator.setSourceContent(url, code);
-
   const map = createConsumer(generator.toJSON());
   setSourceMap(generatedId, Promise.resolve(map));
 }
@@ -1838,8 +1985,7 @@ module.exports = {
   getGeneratedRangesForOriginal,
   getFileGeneratedRange,
   applySourceMap,
-  clearSourceMaps,
-  hasMappedSource
+  clearSourceMaps
 };
 
 /***/ }),
@@ -3642,15 +3788,11 @@ exports.SourceNode = SourceNode;
 /***/ }),
 
 /***/ 407:
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
+/***/ (function(module, exports) {
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
 function assert(condition, message) {
   if (!condition) {
     throw new Error(`Assertion failure: ${message}`);
@@ -3664,21 +3806,35 @@ module.exports = assert;
 /***/ 408:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+const {
+  networkRequest
+} = __webpack_require__(7);
 
-const { networkRequest } = __webpack_require__(7);
-const { getSourceMap, setSourceMap } = __webpack_require__(104);
-const { WasmRemap } = __webpack_require__(409);
-const { SourceMapConsumer } = __webpack_require__(60);
-const { convertToJSON } = __webpack_require__(510);
-const { createConsumer } = __webpack_require__(179);
+const {
+  getSourceMap,
+  setSourceMap
+} = __webpack_require__(104);
 
-// URLs which have been seen in a completed source map request.
+const {
+  WasmRemap
+} = __webpack_require__(409);
+
+const {
+  SourceMapConsumer
+} = __webpack_require__(60);
+
+const {
+  convertToJSON
+} = __webpack_require__(510);
+
+const {
+  createConsumer
+} = __webpack_require__(179); // URLs which have been seen in a completed source map request.
+
+
 const originalURLs = new Set();
 
 function clearOriginalURLs() {
@@ -3690,41 +3846,57 @@ function hasOriginalURL(url) {
 }
 
 function _resolveSourceMapURL(source) {
-  const { url = "", sourceMapURL = "" } = source;
+  const {
+    url = "",
+    sourceMapURL = ""
+  } = source;
 
   if (!url) {
     // If the source doesn't have a URL, don't resolve anything.
-    return { sourceMapURL, baseURL: sourceMapURL };
+    return {
+      sourceMapURL,
+      baseURL: sourceMapURL
+    };
   }
 
   const resolvedURL = new URL(sourceMapURL, url);
   const resolvedString = resolvedURL.toString();
-
-  let baseURL = resolvedString;
-  // When the sourceMap is a data: URL, fall back to using the
+  let baseURL = resolvedString; // When the sourceMap is a data: URL, fall back to using the
   // source's URL, if possible.
+
   if (resolvedURL.protocol == "data:") {
     baseURL = url;
   }
 
-  return { sourceMapURL: resolvedString, baseURL };
+  return {
+    sourceMapURL: resolvedString,
+    baseURL
+  };
 }
 
 async function _resolveAndFetch(generatedSource) {
   // Fetch the sourcemap over the network and create it.
-  const { sourceMapURL, baseURL } = _resolveSourceMapURL(generatedSource);
+  const {
+    sourceMapURL,
+    baseURL
+  } = _resolveSourceMapURL(generatedSource);
 
-  let fetched = await networkRequest(sourceMapURL, { loadFromCache: false });
+  let fetched = await networkRequest(sourceMapURL, {
+    loadFromCache: false
+  });
 
   if (fetched.isDwarf) {
-    fetched = { content: await convertToJSON(fetched.content) };
-  }
+    fetched = {
+      content: await convertToJSON(fetched.content)
+    };
+  } // Create the source map and fix it up.
 
-  // Create the source map and fix it up.
+
   let map = await createConsumer(fetched.content, baseURL);
+
   if (generatedSource.isWasm) {
-    map = new WasmRemap(map);
-    // Check if experimental scope info exists.
+    map = new WasmRemap(map); // Check if experimental scope info exists.
+
     if (fetched.content.includes("x-scopes")) {
       const parsedJSON = JSON.parse(fetched.content);
       map.xScopes = parsedJSON["x-scopes"];
@@ -3739,40 +3911,41 @@ async function _resolveAndFetch(generatedSource) {
 }
 
 function fetchSourceMap(generatedSource) {
-  const existingRequest = getSourceMap(generatedSource.id);
-
-  // If it has already been requested, return the request. Make sure
+  const existingRequest = getSourceMap(generatedSource.id); // If it has already been requested, return the request. Make sure
   // to do this even if sourcemapping is turned off, because
   // pretty-printing uses sourcemaps.
   //
   // An important behavior here is that if it's in the middle of
   // requesting it, all subsequent calls will block on the initial
   // request.
+
   if (existingRequest) {
     return existingRequest;
   }
 
   if (!generatedSource.sourceMapURL) {
     return null;
-  }
+  } // Fire off the request, set it in the cache, and return it.
 
-  // Fire off the request, set it in the cache, and return it.
-  const req = _resolveAndFetch(generatedSource);
-  // Make sure the cached promise does not reject, because we only
+
+  const req = _resolveAndFetch(generatedSource); // Make sure the cached promise does not reject, because we only
   // want to report the error once.
+
+
   setSourceMap(generatedSource.id, req.catch(() => null));
   return req;
 }
 
-module.exports = { fetchSourceMap, hasOriginalURL, clearOriginalURLs };
+module.exports = {
+  fetchSourceMap,
+  hasOriginalURL,
+  clearOriginalURLs
+};
 
 /***/ }),
 
 /***/ 409:
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
+/***/ (function(module, exports) {
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -3823,6 +3996,7 @@ class WasmRemap {
       column: generatedPosition.line,
       bias: generatedPosition.bias
     });
+
     return result;
   }
 
@@ -3831,19 +4005,23 @@ class WasmRemap {
       line: position.column,
       column: 0
     };
+
     if (this._computeColumnSpans) {
       generatedPosition.lastColumn = 0;
     }
+
     return generatedPosition;
   }
 
   generatedPositionFor(originalPosition) {
     const position = this._map.generatedPositionFor(originalPosition);
+
     return this._remapGeneratedPosition(position);
   }
 
   allGeneratedPositionsFor(originalPosition) {
     const positions = this._map.allGeneratedPositionsFor(originalPosition);
+
     return positions.map(position => {
       return this._remapGeneratedPosition(position);
     });
@@ -3877,6 +4055,7 @@ class WasmRemap {
       });
     }, context, order);
   }
+
 }
 
 exports.WasmRemap = WasmRemap;
@@ -3886,32 +4065,40 @@ exports.WasmRemap = WasmRemap;
 /***/ 411:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+const {
+  getWasmXScopes
+} = __webpack_require__(510);
 
+const {
+  getSourceMap
+} = __webpack_require__(104);
 
-const { getWasmXScopes } = __webpack_require__(510); /* This Source Code Form is subject to the terms of the Mozilla Public
-                                                            * License, v. 2.0. If a copy of the MPL was not distributed with this
-                                                            * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
-const { getSourceMap } = __webpack_require__(104);
-const { generatedToOriginalId } = __webpack_require__(64);
-
-// Returns expanded stack frames details based on the generated location.
+const {
+  generatedToOriginalId
+} = __webpack_require__(64); // Returns expanded stack frames details based on the generated location.
 // The function return null if not information was found.
+
+
 async function getOriginalStackFrames(generatedLocation) {
   const wasmXScopes = await getWasmXScopes(generatedLocation.sourceId, {
     getSourceMap,
     generatedToOriginalId
   });
+
   if (!wasmXScopes) {
     return null;
   }
 
   const scopes = wasmXScopes.search(generatedLocation);
+
   if (scopes.length === 0) {
     console.warn("Something wrong with debug data: none original frames found");
     return null;
   }
+
   return scopes;
 }
 
@@ -3936,16 +4123,21 @@ module.exports =
 /***/ 510:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+const {
+  convertToJSON
+} = __webpack_require__(512);
 
-const { convertToJSON } = __webpack_require__(512);
-const { setAssetRootURL } = __webpack_require__(511);
-const { getWasmXScopes, clearWasmXScopes } = __webpack_require__(513);
+const {
+  setAssetRootURL
+} = __webpack_require__(511);
+
+const {
+  getWasmXScopes,
+  clearWasmXScopes
+} = __webpack_require__(513);
 
 module.exports = {
   convertToJSON,
@@ -3957,15 +4149,13 @@ module.exports = {
 /***/ }),
 
 /***/ 511:
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
+/***/ (function(module, exports) {
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 let root;
+
 function setAssetRootURL(assetRoot) {
   root = assetRoot;
 }
@@ -3976,7 +4166,6 @@ async function getDwarfToWasmData(name) {
   }
 
   const response = await fetch(`${root}/dwarf_to_json.wasm`);
-
   return response.arrayBuffer();
 }
 
@@ -3990,22 +4179,25 @@ module.exports = {
 /***/ 512:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 /* eslint camelcase: 0*/
-
-const { getDwarfToWasmData } = __webpack_require__(511);
+const {
+  getDwarfToWasmData
+} = __webpack_require__(511);
 
 let cachedWasmModule;
 let utf8Decoder;
 
 function convertDwarf(wasm, instance) {
-  const { memory, alloc_mem, free_mem, convert_dwarf } = instance.exports;
+  const {
+    memory,
+    alloc_mem,
+    free_mem,
+    convert_dwarf
+  } = instance.exports;
   const wasmPtr = alloc_mem(wasm.byteLength);
   new Uint8Array(memory.buffer, wasmPtr, wasm.byteLength).set(new Uint8Array(wasm));
   const resultPtr = alloc_mem(12);
@@ -4016,12 +4208,15 @@ function convertDwarf(wasm, instance) {
   const outputPtr = resultView.getUint32(0, true),
         outputLen = resultView.getUint32(4, true);
   free_mem(resultPtr);
+
   if (!success) {
     throw new Error("Unable to convert from DWARF sections");
   }
+
   if (!utf8Decoder) {
     utf8Decoder = new TextDecoder("utf-8");
   }
+
   const output = utf8Decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
   free_mem(outputPtr);
   return output;
@@ -4031,14 +4226,15 @@ async function convertToJSON(buffer) {
   // Note: We don't 'await' here because it could mean that multiple
   // calls to 'convertToJSON' could cause multiple fetches to be started.
   cachedWasmModule = cachedWasmModule || loadConverterModule();
-
   return convertDwarf(buffer, (await cachedWasmModule));
 }
 
 async function loadConverterModule() {
   const wasm = await getDwarfToWasmData();
   const imports = {};
-  const { instance } = await WebAssembly.instantiate(wasm, imports);
+  const {
+    instance
+  } = await WebAssembly.instantiate(wasm, imports);
   return instance;
 }
 
@@ -4051,24 +4247,24 @@ module.exports = {
 /***/ 513:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 /* eslint camelcase: 0*/
-
-const { decodeExpr } = __webpack_require__(514);
+const {
+  decodeExpr
+} = __webpack_require__(514);
 
 const xScopes = new Map();
 
 function indexLinkingNames(items) {
   const result = new Map();
   let queue = [...items];
+
   while (queue.length > 0) {
     const item = queue.shift();
+
     if ("uid" in item) {
       result.set(item.uid, item);
     } else if ("linkage_name" in item) {
@@ -4076,10 +4272,12 @@ function indexLinkingNames(items) {
       // with old format. Remove in favour of the uid referencing.
       result.set(item.linkage_name, item);
     }
+
     if ("children" in item) {
       queue = [...queue, ...item.children];
     }
   }
+
   return result;
 }
 
@@ -4087,9 +4285,11 @@ function getIndexedItem(index, key) {
   if (typeof key === "object" && key != null) {
     return index.get(key.uid);
   }
+
   if (typeof key === "string") {
     return index.get(key);
   }
+
   return null;
 }
 
@@ -4097,12 +4297,18 @@ async function getXScopes(sourceId, getSourceMap) {
   if (xScopes.has(sourceId)) {
     return xScopes.get(sourceId);
   }
+
   const map = await getSourceMap(sourceId);
+
   if (!map || !map.xScopes) {
     xScopes.set(sourceId, null);
     return null;
   }
-  const { code_section_offset, debug_info } = map.xScopes;
+
+  const {
+    code_section_offset,
+    debug_info
+  } = map.xScopes;
   const xScope = {
     code_section_offset,
     debug_info,
@@ -4117,9 +4323,11 @@ function isInRange(item, pc) {
   if ("ranges" in item) {
     return item.ranges.some(r => r[0] <= pc && pc < r[1]);
   }
+
   if ("high_pc" in item) {
     return item.low_pc <= pc && pc < item.high_pc;
   }
+
   return false;
 }
 
@@ -4127,6 +4335,7 @@ function decodeExprAt(expr, pc) {
   if (typeof expr === "string") {
     return decodeExpr(expr);
   }
+
   const foundAt = expr.find(i => i.range[0] <= pc && pc < i.range[1]);
   return foundAt ? decodeExpr(foundAt.expr) : null;
 }
@@ -4141,12 +4350,14 @@ function getVariables(scope, pc) {
           expr: item.location ? decodeExprAt(item.location, pc) : null
         });
         break;
+
       case "lexical_block":
         // FIXME build scope blocks (instead of combining)
         const tmp = getVariables(item, pc);
         result = [...tmp.vars, ...result];
         break;
     }
+
     return result;
   }, []) : [];
   const frameBase = scope.frame_base ? decodeExpr(scope.frame_base) : null;
@@ -4160,18 +4371,22 @@ function filterScopes(items, pc, lastItem, index) {
   if (!items) {
     return [];
   }
+
   return items.reduce((result, item) => {
     switch (item.tag) {
       case "compile_unit":
         if (isInRange(item, pc)) {
           result = [...result, ...filterScopes(item.children, pc, lastItem, index)];
         }
+
         break;
+
       case "namespace":
       case "structure_type":
       case "union_type":
         result = [...result, ...filterScopes(item.children, pc, lastItem, index)];
         break;
+
       case "subprogram":
         if (isInRange(item, pc)) {
           const s = {
@@ -4181,7 +4396,9 @@ function filterScopes(items, pc, lastItem, index) {
           };
           result = [...result, s, ...filterScopes(item.children, pc, s, index)];
         }
+
         break;
+
       case "inlined_subroutine":
         if (isInRange(item, pc)) {
           const linkedItem = getIndexedItem(index, item.abstract_origin);
@@ -4190,31 +4407,38 @@ function filterScopes(items, pc, lastItem, index) {
             name: linkedItem ? linkedItem.name : void 0,
             variables: getVariables(item, pc)
           };
+
           if (lastItem) {
             lastItem.file = item.call_file;
             lastItem.line = item.call_line;
           }
+
           result = [...result, s, ...filterScopes(item.children, pc, s, index)];
         }
+
         break;
     }
+
     return result;
   }, []);
 }
 
 class XScope {
-
   constructor(xScopeData, sourceMapContext) {
     this.xScope = xScopeData;
     this.sourceMapContext = sourceMapContext;
   }
 
   search(generatedLocation) {
-    const { code_section_offset, debug_info, sources, idIndex } = this.xScope;
+    const {
+      code_section_offset,
+      debug_info,
+      sources,
+      idIndex
+    } = this.xScope;
     const pc = generatedLocation.line - (code_section_offset || 0);
     const scopes = filterScopes(debug_info, pc, null, idIndex);
     scopes.reverse();
-
     return scopes.map(i => {
       if (!("file" in i)) {
         return {
@@ -4222,6 +4446,7 @@ class XScope {
           variables: i.variables
         };
       }
+
       const sourceId = this.sourceMapContext.generatedToOriginalId(generatedLocation.sourceId, sources[i.file || 0]);
       return {
         displayName: i.name || "",
@@ -4233,14 +4458,19 @@ class XScope {
       };
     });
   }
+
 }
 
 async function getWasmXScopes(sourceId, sourceMapContext) {
-  const { getSourceMap } = sourceMapContext;
+  const {
+    getSourceMap
+  } = sourceMapContext;
   const xScopeData = await getXScopes(sourceId, getSourceMap);
+
   if (!xScopeData) {
     return null;
   }
+
   return new XScope(xScopeData, sourceMapContext);
 }
 
@@ -4256,54 +4486,60 @@ module.exports = {
 /***/ }),
 
 /***/ 514:
-/***/ (function(module, exports, __webpack_require__) {
+/***/ (function(module, exports) {
 
-"use strict";
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+/* eslint camelcase: 0*/
 
+/* eslint-disable no-inline-comments */
 class Value {
-
   constructor(val) {
     this.val = val;
   }
+
   toString() {
     return `${this.val}`;
   }
-} /* This Source Code Form is subject to the terms of the Mozilla Public
-   * License, v. 2.0. If a copy of the MPL was not distributed with this
-   * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-/* eslint camelcase: 0*/
-/* eslint-disable no-inline-comments */
+}
 
 const Int32Formatter = {
   fromAddr(addr) {
     return `(new DataView(memory0.buffer).getInt32(${addr}, true))`;
   },
+
   fromValue(value) {
     return `${value.val}`;
   }
-};
 
+};
 const Uint32Formatter = {
   fromAddr(addr) {
     return `(new DataView(memory0.buffer).getUint32(${addr}, true))`;
   },
+
   fromValue(value) {
     return `(${value.val} >>> 0)`;
   }
+
 };
 
 function createPieceFormatter(bytes) {
   let getter;
+
   switch (bytes) {
     case 0:
     case 1:
       getter = "getUint8";
       break;
+
     case 2:
       getter = "getUint16";
       break;
+
     case 3:
     case 4:
     default:
@@ -4311,124 +4547,178 @@ function createPieceFormatter(bytes) {
       getter = "getUint32";
       break;
   }
+
   const mask = (1 << 8 * bytes) - 1;
   return {
     fromAddr(addr) {
       return `(new DataView(memory0.buffer).${getter}(${addr}, true))`;
     },
+
     fromValue(value) {
       return `((${value.val} & ${mask}) >>> 0)`;
     }
-  };
-}
 
-// eslint-disable-next-line complexity
+  };
+} // eslint-disable-next-line complexity
+
+
 function toJS(buf, typeFormatter, frame_base = "fp()") {
   const readU8 = function () {
     return buf[i++];
   };
+
   const readS8 = function () {
     return readU8() << 24 >> 24;
   };
+
   const readU16 = function () {
     const w = buf[i] | buf[i + 1] << 8;
     i += 2;
     return w;
   };
+
   const readS16 = function () {
     return readU16() << 16 >> 16;
   };
+
   const readS32 = function () {
     const w = buf[i] | buf[i + 1] << 8 | buf[i + 2] << 16 | buf[i + 3] << 24;
     i += 4;
     return w;
   };
+
   const readU32 = function () {
     return readS32() >>> 0;
   };
+
   const readU = function () {
     let n = 0,
         shift = 0,
         b;
+
     while ((b = readU8()) & 0x80) {
       n |= (b & 0x7f) << shift;
       shift += 7;
     }
+
     return n | b << shift;
   };
+
   const readS = function () {
     let n = 0,
         shift = 0,
         b;
+
     while ((b = readU8()) & 0x80) {
       n |= (b & 0x7f) << shift;
       shift += 7;
     }
+
     n |= b << shift;
     shift += 7;
     return shift > 32 ? n << 32 - shift >> 32 - shift : n;
   };
+
   const popValue = function (formatter) {
     const loc = stack.pop();
+
     if (loc instanceof Value) {
       return formatter.fromValue(loc);
     }
+
     return formatter.fromAddr(loc);
   };
+
   let i = 0,
       a,
       b;
   const stack = [frame_base];
+
   while (i < buf.length) {
     const code = buf[i++];
+
     switch (code) {
-      case 0x03 /* DW_OP_addr */:
+      case 0x03
+      /* DW_OP_addr */
+      :
         stack.push(Uint32Formatter.fromAddr(readU32()));
         break;
-      case 0x08 /* DW_OP_const1u 0x08 1 1-byte constant */:
+
+      case 0x08
+      /* DW_OP_const1u 0x08 1 1-byte constant */
+      :
         stack.push(readU8());
         break;
-      case 0x09 /* DW_OP_const1s 0x09 1 1-byte constant */:
+
+      case 0x09
+      /* DW_OP_const1s 0x09 1 1-byte constant */
+      :
         stack.push(readS8());
         break;
-      case 0x0a /* DW_OP_const2u 0x0a 1 2-byte constant */:
+
+      case 0x0a
+      /* DW_OP_const2u 0x0a 1 2-byte constant */
+      :
         stack.push(readU16());
         break;
-      case 0x0b /* DW_OP_const2s 0x0b 1 2-byte constant */:
+
+      case 0x0b
+      /* DW_OP_const2s 0x0b 1 2-byte constant */
+      :
         stack.push(readS16());
         break;
-      case 0x0c /* DW_OP_const2u 0x0a 1 2-byte constant */:
+
+      case 0x0c
+      /* DW_OP_const2u 0x0a 1 2-byte constant */
+      :
         stack.push(readU32());
         break;
-      case 0x0d /* DW_OP_const2s 0x0b 1 2-byte constant */:
+
+      case 0x0d
+      /* DW_OP_const2s 0x0b 1 2-byte constant */
+      :
         stack.push(readS32());
         break;
-      case 0x10 /* DW_OP_constu 0x10 1 ULEB128 constant */:
+
+      case 0x10
+      /* DW_OP_constu 0x10 1 ULEB128 constant */
+      :
         stack.push(readU());
         break;
-      case 0x11 /* DW_OP_const2s 0x0b 1 2-byte constant */:
+
+      case 0x11
+      /* DW_OP_const2s 0x0b 1 2-byte constant */
+      :
         stack.push(readS());
         break;
 
-      case 0x1c /* DW_OP_minus */:
+      case 0x1c
+      /* DW_OP_minus */
+      :
         b = stack.pop();
         a = stack.pop();
         stack.push(`${a} - ${b}`);
         break;
 
-      case 0x22 /* DW_OP_plus */:
+      case 0x22
+      /* DW_OP_plus */
+      :
         b = stack.pop();
         a = stack.pop();
         stack.push(`${a} + ${b}`);
         break;
 
-      case 0x23 /* DW_OP_plus_uconst */:
+      case 0x23
+      /* DW_OP_plus_uconst */
+      :
         b = readU();
         a = stack.pop();
         stack.push(`${a} + ${b}`);
         break;
 
-      case 0x30 /* DW_OP_lit0 */:
+      case 0x30
+      /* DW_OP_lit0 */
+      :
       case 0x31:
       case 0x32:
       case 0x33:
@@ -4463,7 +4753,9 @@ function toJS(buf, typeFormatter, frame_base = "fp()") {
         stack.push(`${code - 0x30}`);
         break;
 
-      case 0x93 /* DW_OP_piece */:
+      case 0x93
+      /* DW_OP_piece */
+      :
         {
           a = readU();
           const formatter = createPieceFormatter(a);
@@ -4471,33 +4763,44 @@ function toJS(buf, typeFormatter, frame_base = "fp()") {
           break;
         }
 
-      case 0x9f /* DW_OP_stack_value */:
+      case 0x9f
+      /* DW_OP_stack_value */
+      :
         stack.push(new Value(stack.pop()));
         break;
 
-      case 0xf6 /* WASM ext (old, FIXME phase out) */:
-      case 0xed /* WASM ext */:
+      case 0xf6
+      /* WASM ext (old, FIXME phase out) */
+      :
+      case 0xed
+      /* WASM ext */
+      :
         b = readU();
         a = readS();
+
         switch (b) {
           case 0:
             stack.push(`var${a}`);
             break;
+
           case 1:
             stack.push(`global${a}`);
             break;
+
           default:
             stack.push(`ti${b}(${a})`);
             break;
         }
+
         break;
 
       default:
         // Unknown encoding, baling out
         return null;
     }
-  }
-  // FIXME use real DWARF type information
+  } // FIXME use real DWARF type information
+
+
   return popValue(typeFormatter);
 }
 
@@ -4505,10 +4808,13 @@ function decodeExpr(expr) {
   if (expr.includes("//")) {
     expr = expr.slice(0, expr.indexOf("//")).trim();
   }
+
   const code = new Uint8Array(expr.length >> 1);
+
   for (let i = 0; i < code.length; i++) {
     code[i] = parseInt(expr.substr(i << 1, 2), 16);
   }
+
   const typeFormatter = Int32Formatter;
   return toJS(code, typeFormatter) || `dwarf("${expr}")`;
 }
@@ -4522,13 +4828,13 @@ module.exports = {
 /***/ 515:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-const { SourceMapConsumer } = __webpack_require__(60);
+const {
+  SourceMapConsumer
+} = __webpack_require__(60);
+
 const {
   setAssetRootURL: wasmDwarfSetAssetRootURL
 } = __webpack_require__(510);
@@ -4536,9 +4842,7 @@ const {
 function setAssetRootURL(assetRoot) {
   // Remove any trailing slash so we don't generate a double-slash below.
   const root = assetRoot.replace(/\/$/, "");
-
   wasmDwarfSetAssetRootURL(root);
-
   SourceMapConsumer.initialize({
     "lib/mappings.wasm": `${root}/source-map-mappings.wasm`
   });
@@ -5012,13 +5316,9 @@ exports.computeSourceURL = computeSourceURL;
 /***/ 64:
 /***/ (function(module, exports, __webpack_require__) {
 
-"use strict";
-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
 const md5 = __webpack_require__(105);
 
 function originalToGeneratedId(sourceId) {
@@ -5037,28 +5337,27 @@ function generatedToOriginalId(generatedId, url) {
 }
 
 function isOriginalId(id) {
-  return (/\/originalSource/.test(id)
-  );
+  return /\/originalSource/.test(id);
 }
 
 function isGeneratedId(id) {
   return !isOriginalId(id);
 }
-
 /**
  * Trims the query part or reference identifier of a URL string, if necessary.
  */
+
+
 function trimUrlQuery(url) {
   const length = url.length;
   const q1 = url.indexOf("?");
   const q2 = url.indexOf("&");
   const q3 = url.indexOf("#");
   const q = Math.min(q1 != -1 ? q1 : length, q2 != -1 ? q2 : length, q3 != -1 ? q3 : length);
-
   return url.slice(0, q);
-}
+} // Map suffix to content type.
 
-// Map suffix to content type.
+
 const contentMap = {
   js: "text/javascript",
   jsm: "text/javascript",
@@ -5072,7 +5371,6 @@ const contentMap = {
   cljc: "text/x-clojure",
   cljs: "text/x-clojurescript"
 };
-
 /**
  * Returns the content type for the specified URL.  If no specific
  * content type can be determined, "text/plain" is returned.
@@ -5080,21 +5378,24 @@ const contentMap = {
  * @return String
  *         The content type.
  */
+
 function getContentType(url) {
   url = trimUrlQuery(url);
   const dot = url.lastIndexOf(".");
+
   if (dot >= 0) {
     const name = url.substring(dot + 1);
+
     if (name in contentMap) {
       return contentMap[name];
     }
   }
+
   return "text/plain";
 }
 
 function memoize(func) {
   const map = new Map();
-
   return arg => {
     if (map.has(arg)) {
       return map.get(arg);
@@ -5123,8 +5424,8 @@ module.exports = {
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
 const networkRequest = __webpack_require__(13);
+
 const workerUtils = __webpack_require__(14);
 
 module.exports = {

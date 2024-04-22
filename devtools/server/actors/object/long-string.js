@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 
 /**
  * Creates an actor for the specified "very long" string. "Very long" is specified

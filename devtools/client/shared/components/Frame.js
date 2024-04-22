@@ -19,6 +19,7 @@ const {
   getSourceMappedFile,
 } = require("devtools/client/shared/source-utils");
 const { LocalizationHelper } = require("devtools/shared/l10n");
+const { MESSAGE_SOURCE } = require("devtools/client/webconsole/constants");
 
 const l10n = new LocalizationHelper(
   "devtools/client/locales/components.properties"
@@ -51,6 +52,8 @@ class Frame extends Component {
       showFullSourceUrl: PropTypes.bool,
       // Service to enable the source map feature for console.
       sourceMapService: PropTypes.object,
+      // The source of the message
+      messageSource: PropTypes.string,
     };
   }
 
@@ -130,6 +133,7 @@ class Frame extends Component {
       showHost,
       showEmptyPathAsHost,
       showFullSourceUrl,
+      messageSource,
     } = this.props;
 
     if (this.state && this.state.isSourceMapped && this.state.frame) {
@@ -199,22 +203,6 @@ class Frame extends Component {
       }
     }
 
-    // If the message comes from a logPoint or conditional breakpoint,
-    // prefix the source location accordingly
-    if (frame.origin) {
-      let locationPrefix;
-      if (frame.origin === "logPoint") {
-        locationPrefix = "Logpoint @ ";
-      }
-
-      if (locationPrefix) {
-        sourceElements.push(dom.span({
-          key: "locationPrefix",
-          className: "frame-link-prefix",
-        }, locationPrefix));
-      }
-    }
-
     let displaySource = showFullSourceUrl ? unicodeLong : unicodeShort;
     if (isSourceMapped) {
       displaySource = getSourceMappedFile(displaySource);
@@ -261,13 +249,21 @@ class Frame extends Component {
 
     // Inner el is useful for achieving ellipsis on the left and correct LTR/RTL
     // ordering. See CSS styles for frame-link-source-[inner] and bug 1290056.
+    let tooltipMessage;
+    if (messageSource && messageSource === MESSAGE_SOURCE.CSS) {
+      tooltipMessage = l10n.getFormatStr(
+        "frame.viewsourceinstyleeditor",
+        tooltip
+      );
+    } else {
+      tooltipMessage = l10n.getFormatStr("frame.viewsourceindebugger", tooltip);
+    }
+
     const sourceInnerEl = dom.span(
       {
         key: "source-inner",
         className: "frame-link-source-inner",
-        title: isLinkable
-          ? l10n.getFormatStr("frame.viewsourceindebugger", tooltip)
-          : tooltip,
+        title: isLinkable ? tooltipMessage : tooltip,
       },
       sourceElements
     );

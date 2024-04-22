@@ -15,6 +15,11 @@ const {
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const { l10n } = require("devtools/client/webconsole/utils/messages");
 
+var ChromeUtils = require("ChromeUtils");
+const { BrowserLoader } = ChromeUtils.import(
+  "resource://devtools/client/shared/browser-loader.js"
+);
+
 loader.lazyRequireGetter(
   this,
   "AppConstants",
@@ -42,6 +47,11 @@ class WebConsoleUI {
     this.hud = hud;
     this.hudId = this.hud.hudId;
     this.isBrowserConsole = this.hud._browserConsole;
+
+    this.isBrowserToolboxConsole =
+      this.hud.currentTarget &&
+      this.hud.currentTarget.isParentProcess &&
+      !this.hud.currentTarget.isAddon;
     this.window = this.hud.iframeWindow;
 
     this._onPanelSelected = this._onPanelSelected.bind(this);
@@ -82,6 +92,13 @@ class WebConsoleUI {
     }
     this._destroyer = defer();
     this.React = this.ReactDOM = this.FrameView = null;
+
+    if (this.outputNode) {
+      // We do this because it's much faster than letting React handle the ConsoleOutput
+      // unmounting.
+      this.outputNode.innerHTML = "";
+    }
+
     if (this.jsterm) {
       this.jsterm.destroy();
       this.jsterm = null;
@@ -163,6 +180,10 @@ class WebConsoleUI {
     return this.wrapper;
   }
 
+  getPanelWindow() {
+    return this.window;
+  }
+
   logWarningAboutReplacedAPI() {
     return this.hud.target.logWarningInPage(
       l10n.getStr("ConsoleAPIDisabled"),
@@ -230,7 +251,14 @@ class WebConsoleUI {
 
     const toolbox = gDevTools.getToolbox(this.hud.target);
 
-    this.wrapper = new this.window.WebConsoleWrapper(
+    // Initialize module loader and load all the WebConsoleWrapper. The entire code-base
+    // doesn't need any extra privileges and runs entirely in content scope.
+    const WebConsoleWrapper = BrowserLoader({
+      baseURI: "resource://devtools/client/webconsole/",
+      window: this.window,
+    }).require("./webconsole-wrapper");
+
+    this.wrapper = new WebConsoleWrapper(
       this.outputNode,
       this,
       toolbox,
@@ -321,21 +349,6 @@ class WebConsoleUI {
   }
 
   /**
-   * Handler for page location changes.
-   *
-   * @param string uri
-   *        New page location.
-   * @param string title
-   *        New page title.
-   */
-  onLocationChange(uri, title) {
-    this.contentLocation = uri;
-    if (this.hud.onLocationChange) {
-      this.hud.onLocationChange(uri, title);
-    }
-  }
-
-  /**
    * Release an actor.
    *
    * @private
@@ -346,6 +359,10 @@ class WebConsoleUI {
     if (this.proxy) {
       this.proxy.releaseActor(actor);
     }
+  }
+
+  getLongString(grip) {
+    return this.getProxy().webConsoleClient.getString(grip);
   }
 
   /**
@@ -374,10 +391,6 @@ class WebConsoleUI {
    *        Notification packet received from the server.
    */
   async handleTabNavigated(packet) {
-    if (packet.url) {
-      this.onLocationChange(packet.url, packet.title);
-    }
-
     if (!packet.nativeConsoleAPI) {
       this.logWarningAboutReplacedAPI();
     }
@@ -390,9 +403,58 @@ class WebConsoleUI {
 
   handleTabWillNavigate(packet) {
     this.wrapper.dispatchTabWillNavigate(packet);
-    if (packet.url) {
-      this.onLocationChange(packet.url, packet.title);
+  }
+
+  getInputCursor() {
+    return this.jsterm && this.jsterm.getSelectionStart();
+  }
+
+  getJsTermTooltipAnchor() {
+    return this.outputNode.querySelector(".CodeMirror-cursor");
+  }
+
+  attachRef(id, node) {
+    this[id] = node;
+  }
+
+  /**
+   * Retrieve the FrameActor ID given a frame depth, or the selected one if no
+   * frame depth given.
+   *
+   * @return { frameActor: String|null, client: Object }:
+   *         frameActor is the FrameActor ID for the given frame depth
+   *         (or the selected frame if it exists), null if no frame was found.
+   *         client is the WebConsole client for the thread the frame is
+   *         associated with.
+   */
+  getFrameActor() {
+    const state = this.hud.getDebuggerFrames();
+    if (!state) {
+      return { frameActor: null, client: this.webConsoleClient };
     }
+
+    const grip = state.frames[state.selected];
+
+    if (!grip) {
+      return { frameActor: null, client: this.webConsoleClient };
+    }
+
+    return {
+      frameActor: grip.actor,
+      client: state.target.activeConsole,
+    };
+  }
+
+  getSelectedNodeActor() {
+    const inspectorSelection = this.hud.getInspectorSelection();
+    if (inspectorSelection && inspectorSelection.nodeFront) {
+      return inspectorSelection.nodeFront.actorID;
+    }
+    return null;
+  }
+
+  onMessageHover(type, message) {
+    this.emit("message-hover", type, message);
   }
 }
 

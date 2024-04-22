@@ -6,6 +6,7 @@
  */
 
 :root {
+  --toolbar-row-height: 28px;
   --rdm-box-shadow: 0 4px 4px 0 rgba(155, 155, 155, 0.26);
   --viewport-active-color: #3b3b3b;
   --input-invalid-border-color: var(--red-60);
@@ -48,7 +49,10 @@ input:-moz-focusring {
 
 .text-input {
   border: 1px solid var(--theme-splitter-color);
+  margin: 0 1px;
   padding: 2px;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .text-input:focus {
@@ -87,15 +91,16 @@ input:-moz-focusring {
   display: grid;
   grid-template-columns: auto min-content;
   width: 100%;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 #toolbar-center-controls,
 #toolbar-end-controls {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-rows: 29px;
-  margin: 1px;
+  grid-auto-rows: var(--toolbar-row-height);
+  grid-row-gap: 1px;
+  padding: 0 1px;
 }
 
 #toolbar-center-controls {
@@ -209,9 +214,9 @@ input:-moz-focusring {
      2 lines*/
   #toolbar.user-agent {
     background-image: linear-gradient(to bottom,
-      transparent calc(50% - .5px),
-      var(--separator-border-color) calc(50% - .5px),
-      var(--separator-border-color) calc(50% + .5px),
+      transparent var(--toolbar-row-height),
+      var(--theme-splitter-color) var(--toolbar-row-height),
+      var(--theme-splitter-color) calc(var(--toolbar-row-height) + 1px),
       transparent 0);
   }
 }
@@ -306,7 +311,7 @@ input:-moz-focusring {
 .browser {
   display: block;
   border: 0;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .browser:-moz-focusring {
@@ -370,8 +375,8 @@ input:-moz-focusring {
 }
 
 .viewport-dimension-separator {
-  -moz-user-select: none;
-  padding: 0 0.3em;
+  user-select: none;
+  padding: 0 0.2em;
 }
 
 /**

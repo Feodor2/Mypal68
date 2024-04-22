@@ -876,8 +876,10 @@ DevToolsStartup.prototype = {
     const window = Services.wm.getMostRecentWindow("devtools:webconsole");
     if (!window) {
       const require = this.initDevTools("CommandLine");
-      const { HUDService } = require("devtools/client/webconsole/hudservice");
-      HUDService.toggleBrowserConsole().catch(console.error);
+      const {
+        BrowserConsoleManager,
+      } = require("devtools/client/webconsole/browser-console-manager");
+      BrowserConsoleManager.toggleBrowserConsole().catch(console.error);
     } else {
       // the Browser Console was already open
       window.focus();
@@ -1007,7 +1009,7 @@ DevToolsStartup.prototype = {
       const serverLoader = new DevToolsLoader();
       serverLoader.invisibleToDebugger = true;
       const { DebuggerServer: debuggerServer } = serverLoader.require(
-        "devtools/server/main"
+        "devtools/server/debugger-server"
       );
       const { SocketListener } = serverLoader.require(
         "devtools/shared/security/socket"

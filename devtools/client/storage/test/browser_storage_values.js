@@ -56,7 +56,7 @@ const testCases = [
     getCookieId(
       "c_encoded",
       "test1.example.org",
-      "/browser/devtools/client/storage/test/"
+      "/browser/devtools/client/storage/test"
     ),
     [
       {

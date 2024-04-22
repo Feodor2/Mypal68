@@ -15,11 +15,12 @@ import { getUnicodeUrl } from "devtools-modules";
 import { endTruncateStr } from "./utils";
 import { truncateMiddleText } from "../utils/text";
 import { parse as parseURL } from "../utils/url";
+import { memoizeLast } from "../utils/memoizeLast";
 import { renderWasmText } from "./wasm";
 import { toEditorLine } from "./editor";
 export { isMinified } from "./isMinified";
 import { getURL, getFileExtension } from "./sources-tree";
-import { prefs, features } from "./prefs";
+import { features } from "./prefs";
 
 import type {
   SourceId,
@@ -77,23 +78,6 @@ export function shouldBlackbox(source: ?Source) {
   return true;
 }
 
-export function shouldPrettyPrint(
-  source: Source,
-  content: SourceContent
-): boolean {
-  if (
-    !source ||
-    isPretty(source) ||
-    !isJavaScript(source, content) ||
-    isOriginal(source) ||
-    (prefs.clientSourceMapsEnabled && source.sourceMapURL)
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
 /**
  * Returns true if the specified url and/or content type are specific to
  * javascript files.
@@ -118,8 +102,7 @@ export function isJavaScript(source: Source, content: SourceContent): boolean {
  * @static
  */
 export function isPretty(source: Source): boolean {
-  const url = source.url;
-  return isPrettyURL(url);
+  return isPrettyURL(source.url);
 }
 
 export function isPrettyURL(url: string): boolean {
@@ -367,9 +350,9 @@ export function getMode(
     }
   }
 
-  // if the url ends with .marko we set the name to Javascript so
-  // syntax highlighting works for marko too
-  if (url && url.match(/\.marko$/i)) {
+  // if the url ends with .marko or .es6 we set the name to Javascript so
+  // syntax highlighting works for these file extensions too
+  if (url && url.match(/\.marko|\.es6$/i)) {
     return { name: "javascript" };
   }
 
@@ -407,40 +390,41 @@ export function isInlineScript(source: SourceActor): boolean {
   return source.introductionType === "scriptElement";
 }
 
-export function getLineText(
-  sourceId: SourceId,
-  asyncContent: AsyncValue<SourceContent> | null,
-  line: number
-): string {
-  if (!asyncContent || !isFulfilled(asyncContent)) {
-    return "";
+export const getLineText = memoizeLast(
+  (
+    sourceId: SourceId,
+    asyncContent: AsyncValue<SourceContent> | null,
+    line: number
+  ) => {
+    if (!asyncContent || !isFulfilled(asyncContent)) {
+      return "";
+    }
+
+    const content = asyncContent.value;
+
+    if (content.type === "wasm") {
+      const editorLine = toEditorLine(sourceId, line);
+      const lines = renderWasmText(sourceId, content);
+      return lines[editorLine] || "";
+    }
+
+    const lineText = content.value.split("\n")[line - 1];
+    return lineText || "";
   }
-
-  const content = asyncContent.value;
-
-  if (content.type === "wasm") {
-    const editorLine = toEditorLine(sourceId, line);
-    const lines = renderWasmText(sourceId, content);
-    return lines[editorLine] || "";
-  }
-
-  const lineText = content.value.split("\n")[line - 1];
-  return lineText || "";
-}
+);
 
 export function getTextAtPosition(
   sourceId: SourceId,
   asyncContent: AsyncValue<SourceContent> | null,
   location: SourceLocation
 ) {
-  const column = location.column || 0;
-  const line = location.line;
+  const { column, line = 0 } = location;
 
   const lineText = getLineText(sourceId, asyncContent, line);
   return lineText.slice(column, column + 100).trim();
 }
 
-export function getSourceClassnames(source: Object, symbols?: Symbols) {
+export function getSourceClassnames(source: ?Object, symbols: ?Symbols) {
   // Conditionals should be ordered by priority of icon!
   const defaultClassName = "file";
 
@@ -458,6 +442,10 @@ export function getSourceClassnames(source: Object, symbols?: Symbols) {
 
   if (symbols && !symbols.loading && symbols.framework) {
     return symbols.framework.toLowerCase();
+  }
+
+  if (isUrlExtension(source.url)) {
+    return "extension";
   }
 
   return sourceTypes[getFileExtension(source)] || defaultClassName;

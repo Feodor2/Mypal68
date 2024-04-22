@@ -26,13 +26,13 @@ function setUpCode(debuggee) {
 }
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
-    setBreakpoint(threadClient, { sourceUrl: URL, line: 2 });
+  threadFrontTest(async ({ threadFront, debuggee }) => {
+    setBreakpoint(threadFront, { sourceUrl: URL, line: 2 });
 
-    await executeOnNextTickAndWaitForPause(() => setUpCode(debuggee), client);
-    await resume(threadClient);
+    await executeOnNextTickAndWaitForPause(() => setUpCode(debuggee), threadFront);
+    await resume(threadFront);
 
-    const packet = await executeOnNextTickAndWaitForPause(
+    const packet = await executeOnNextTickAndWaitForPause(debuggee.test, threadFront);
       debuggee.test,
       client
     );

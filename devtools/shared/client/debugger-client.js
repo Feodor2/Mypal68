@@ -4,7 +4,6 @@
 
 "use strict";
 
-const defer = require("devtools/shared/defer");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const {
   getStack,
@@ -38,11 +37,6 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "ThreadClient",
-  "devtools/shared/client/thread-client"
-);
-loader.lazyRequireGetter(
-  this,
   "ObjectClient",
   "devtools/shared/client/object-client"
 );
@@ -56,10 +50,6 @@ loader.lazyRequireGetter(this, "Front", "devtools/shared/protocol", true);
 function DebuggerClient(transport) {
   this._transport = transport;
   this._transport.hooks = this;
-
-  // Map actor ID to client instance for each actor type.
-  // To be removed once all clients are refactored to protocol.js
-  this._clients = new Map();
 
   this._pendingRequests = new Map();
   this._activeRequests = new Map();
@@ -192,18 +182,17 @@ DebuggerClient.prototype = {
    *         and behaviors of the server we connect to. See RootActor).
    */
   connect: function(onConnected) {
-    const deferred = defer();
+    return new Promise(resolve => {
+      this.once("connected", (applicationType, traits) => {
+        this.traits = traits;
+        if (onConnected) {
+          onConnected(applicationType, traits);
+        }
+        resolve([applicationType, traits]);
+      });
 
-    this.once("connected", (applicationType, traits) => {
-      this.traits = traits;
-      if (onConnected) {
-        onConnected(applicationType, traits);
-      }
-      deferred.resolve([applicationType, traits]);
+      this._transport.ready();
     });
-
-    this._transport.ready();
-    return deferred.promise;
   },
 
   /**
@@ -217,80 +206,37 @@ DebuggerClient.prototype = {
    *         Resolves after the underlying transport is closed.
    */
   close: function(onClosed) {
-    const deferred = defer();
-    if (onClosed) {
-      deferred.promise.then(onClosed);
-    }
+    const promise = new Promise(resolve => {
+      // Disable detach event notifications, because event handlers will be in a
+      // cleared scope by the time they run.
+      this._eventsEnabled = false;
 
-    // Disable detach event notifications, because event handlers will be in a
-    // cleared scope by the time they run.
-    this._eventsEnabled = false;
+      const cleanup = () => {
+        if (this._transport) {
+          this._transport.close();
+        }
+        this._transport = null;
+      };
 
-    const cleanup = () => {
-      if (this._transport) {
-        this._transport.close();
-      }
-      this._transport = null;
-    };
-
-    // If the connection is already closed,
-    // there is no need to detach client
-    // as we won't be able to send any message.
-    if (this._closed) {
-      cleanup();
-      deferred.resolve();
-      return deferred.promise;
-    }
-
-    this.once("closed", deferred.resolve);
-
-    // Call each client's `detach` method by calling
-    // lastly registered ones first to give a chance
-    // to detach child clients first.
-    const clients = [...this._clients.values()];
-    this._clients.clear();
-    const detachClients = () => {
-      const client = clients.pop();
-      if (!client) {
-        // All clients detached.
+      // If the connection is already closed,
+      // there is no need to detach client
+      // as we won't be able to send any message.
+      if (this._closed) {
         cleanup();
+        resolve();
         return;
       }
-      if (client.detach) {
-        client.detach(detachClients);
-        return;
-      }
-      detachClients();
-    };
-    detachClients();
 
-    return deferred.promise;
-  },
+      this.once("closed", resolve);
 
-  /**
-   * Attach to a global-scoped thread actor for chrome debugging.
-   *
-   * @param string threadActor
-   *        The actor ID for the thread to attach.
-   * @param object options
-   *        Configuration options.
-   */
-  attachThread: function(threadActor, options = {}) {
-    if (this._clients.has(threadActor)) {
-      const client = this._clients.get(threadActor);
-      return promise.resolve([{}, client]);
+      cleanup();
+    });
+
+    if (onClosed) {
+      promise.then(onClosed);
     }
 
-    const packet = {
-      to: threadActor,
-      type: "attach",
-      options,
-    };
-    return this.request(packet).then(response => {
-      const threadClient = new ThreadClient(this, threadActor);
-      this.registerClient(threadClient);
-      return [response, threadClient];
-    });
+    return promise;
   },
 
   /**
@@ -335,7 +281,7 @@ DebuggerClient.prototype = {
    *                     and will not close the stream when reading is complete
    *           * done:   If you use the stream directly (instead of |copyTo|
    *                     below), you must signal completion by resolving /
-   *                     rejecting this deferred.  If it's rejected, the
+   *                     rejecting this promise.  If it's rejected, the
    *                     transport will be closed.  If an Error is supplied as a
    *                     rejection value, it will be logged via |dumpn|.  If you
    *                     do use |copyTo|, resolving is taken care of for you
@@ -449,7 +395,7 @@ DebuggerClient.prototype = {
    *                       complete
    *           * done:     If you use the stream directly (instead of |copyFrom|
    *                       below), you must signal completion by resolving /
-   *                       rejecting this deferred.  If it's rejected, the
+   *                       rejecting this promise.  If it's rejected, the
    *                       transport will be closed.  If an Error is supplied as
    *                       a rejection value, it will be logged via |dumpn|.  If
    *                       you do use |copyFrom|, resolving is taken care of for
@@ -476,7 +422,7 @@ DebuggerClient.prototype = {
    *                     and will not close the stream when reading is complete
    *           * done:   If you use the stream directly (instead of |copyTo|
    *                     below), you must signal completion by resolving /
-   *                     rejecting this deferred.  If it's rejected, the
+   *                     rejecting this promise.  If it's rejected, the
    *                     transport will be closed.  If an Error is supplied as a
    *                     rejection value, it will be logged via |dumpn|.  If you
    *                     do use |copyTo|, resolving is taken care of for you
@@ -634,22 +580,18 @@ DebuggerClient.prototype = {
       return;
     }
 
-    // If we have a registered Front for this actor, let it handle the packet
-    // and skip all the rest of this unpleasantness.
-    const front = this.getActor(packet.from);
-    if (front) {
-      front.onPacket(packet);
+    // support older browsers for Fx69+ for using the old thread front
+    if (!this.traits.hasThreadFront && packet.from.includes("context")) {
+      this.sendToDeprecatedThreadClient(packet);
       return;
     }
 
-    if (this._clients.has(packet.from) && packet.type) {
-      const client = this._clients.get(packet.from);
-      const type = packet.type;
-      if (client.events.includes(type)) {
-        client.emit(type, packet);
-        // we ignore the rest, as the client is expected to handle this packet.
-        return;
-      }
+    // If we have a registered Front for this actor, let it handle the packet
+    // and skip all the rest of this unpleasantness.
+    const front = this.getFrontByID(packet.from);
+    if (front) {
+      front.onPacket(packet);
+      return;
     }
 
     let activeRequest;
@@ -658,11 +600,7 @@ DebuggerClient.prototype = {
     // replies.)
     if (
       this._activeRequests.has(packet.from) &&
-      !(packet.type in UnsolicitedNotifications) &&
-      !(
-        packet.type == ThreadStateTypes.paused &&
-        packet.why.type in UnsolicitedPauses
-      )
+      !(packet.type in UnsolicitedNotifications)
     ) {
       activeRequest = this._activeRequests.get(packet.from);
       this._activeRequests.delete(packet.from);
@@ -672,15 +610,6 @@ DebuggerClient.prototype = {
     // transport.  Delivery of packets on the other end is always async, even
     // in the local transport case.
     this._attemptNextRequest(packet.from);
-
-    // Packets that indicate thread state changes get special treatment.
-    if (
-      packet.type in ThreadStateTypes &&
-      this._clients.has(packet.from) &&
-      typeof this._clients.get(packet.from)._onThreadState == "function"
-    ) {
-      this._clients.get(packet.from)._onThreadState(packet);
-    }
 
     // Only try to notify listeners on events, not responses to requests
     // that lack a packet type.
@@ -702,6 +631,54 @@ DebuggerClient.prototype = {
     }
   },
 
+  // support older browsers for Fx69+
+  // The code duplication here is intentional until we drop support for
+  // these versions. Once that happens this code can be deleted.
+  sendToDeprecatedThreadClient(packet) {
+    const deprecatedThreadClient = this.getFrontByID(packet.from);
+    if (deprecatedThreadClient && packet.type) {
+      const type = packet.type;
+      if (deprecatedThreadClient.events.includes(type)) {
+        deprecatedThreadClient.emit(type, packet);
+        // we ignore the rest, as the client is expected to handle this packet.
+        return;
+      }
+    }
+
+    let activeRequest;
+    // See if we have a handler function waiting for a reply from this
+    // actor. (Don't count unsolicited notifications or pauses as
+    // replies.)
+    if (this._activeRequests.has(packet.from) &&
+        !(packet.type == ThreadStateTypes.paused &&
+          packet.why.type in UnsolicitedPauses)) {
+      activeRequest = this._activeRequests.get(packet.from);
+      this._activeRequests.delete(packet.from);
+    }
+
+    // If there is a subsequent request for the same actor, hand it off to the
+    // transport.  Delivery of packets on the other end is always async, even
+    // in the local transport case.
+    this._attemptNextRequest(packet.from);
+
+    // Packets that indicate thread state changes get special treatment.
+    if (packet.type in ThreadStateTypes &&
+        deprecatedThreadClient &&
+        typeof deprecatedThreadClient._onThreadState == "function") {
+      deprecatedThreadClient._onThreadState(packet);
+    }
+
+    // Only try to notify listeners on events, not responses to requests
+    // that lack a packet type.
+    if (packet.type) {
+      this.emit(packet.type, packet);
+    }
+
+    if (activeRequest) {
+      activeRequest.emit("json-reply", packet);
+    }
+  },
+
   /**
    * Called by the DebuggerTransport to dispatch incoming bulk packets as
    * appropriate.
@@ -716,7 +693,7 @@ DebuggerClient.prototype = {
    *                  not close the stream when reading is complete
    *        * done:   If you use the stream directly (instead of |copyTo|
    *                  below), you must signal completion by resolving /
-   *                  rejecting this deferred.  If it's rejected, the transport
+   *                  rejecting this promise.  If it's rejected, the transport
    *                  will be closed.  If an Error is supplied as a rejection
    *                  value, it will be logged via |dumpn|.  If you do use
    *                  |copyTo|, resolving is taken care of for you when copying
@@ -922,48 +899,6 @@ DebuggerClient.prototype = {
       });
   },
 
-  registerClient: function(client) {
-    const actorID = client.actor;
-    if (!actorID) {
-      throw new Error(
-        "DebuggerServer.registerClient expects " +
-          "a client instance with an `actor` attribute."
-      );
-    }
-    if (!Array.isArray(client.events)) {
-      throw new Error(
-        "DebuggerServer.registerClient expects " +
-          "a client instance with an `events` attribute " +
-          "that is an array."
-      );
-    }
-    if (client.events.length > 0 && typeof client.emit != "function") {
-      throw new Error(
-        "DebuggerServer.registerClient expects " +
-          "a client instance with non-empty `events` array to" +
-          "have an `emit` function."
-      );
-    }
-    if (this._clients.has(actorID)) {
-      throw new Error(
-        "DebuggerServer.registerClient already registered " +
-          "a client for this actor."
-      );
-    }
-    this._clients.set(actorID, client);
-  },
-
-  unregisterClient: function(client) {
-    const actorID = client.actor;
-    if (!actorID) {
-      throw new Error(
-        "DebuggerServer.unregisterClient expects " +
-          "a Client instance with a `actor` attribute."
-      );
-    }
-    this._clients.delete(actorID);
-  },
-
   /**
    * Actor lifetime management, echos the server's actor pools.
    */
@@ -982,7 +917,13 @@ DebuggerClient.prototype = {
   removeActorPool: function(pool) {
     this._pools.delete(pool);
   },
-  getActor: function(actorID) {
+
+  /**
+   * Return the Front for the Actor whose ID is the one passed in argument.
+   *
+   * @param {String} actorID: The actor ID to look for.
+   */
+  getFrontByID: function(actorID) {
     const pool = this.poolFor(actorID);
     return pool ? pool.get(actorID) : null;
   },

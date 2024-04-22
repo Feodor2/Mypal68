@@ -214,11 +214,11 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
     };
 
     return new Promise(async (resolve, reject) => {
-      const response = await super.evaluateJSAsync(options);
-      // Null check this in case the client has been detached while waiting
-      // for a response.
+      const { resultID } = await super.evaluateJSAsync(options);
+      // Null check this in case the client has been detached while sending
+      // the one way request
       if (this.pendingEvaluationResults) {
-        this.pendingEvaluationResults.set(response.resultID, resp => {
+        this.pendingEvaluationResults.set(resultID, resp => {
           if (resp.error) {
             reject(resp);
           } else {

@@ -5,7 +5,7 @@
 "use strict";
 
 const { Cu, Ci } = require("chrome");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 loader.lazyRequireGetter(
   this,
@@ -127,6 +127,7 @@ const previewers = {
           grip.location = {
             url: script.url,
             line: script.startLine,
+            column: obj.script.startColumn
           };
         }
       }
@@ -191,7 +192,7 @@ const previewers = {
             value = ObjectUtils.makeDebuggeeValueIfNeeded(obj, value);
             items.push(hooks.createValueGrip(value));
           } else {
-            items.push(null);
+            items.push(hooks.createValueGrip(undefined));
           }
         } else {
           // Workers do not have access to Cu.

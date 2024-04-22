@@ -31,6 +31,10 @@ export type UIAction =
       +value: boolean,
     |}
   | {|
+      +type: "TOGGLE_INLINE_PREVIEW",
+      +value: boolean,
+    |}
+  | {|
       +type: "SHOW_SOURCE",
       +source: Source,
     |}
@@ -77,4 +81,8 @@ export type UIAction =
   | {|
       +type: "SET_VIEWPORT",
       +viewport: Range,
+    |}
+  | {|
+      +type: "SET_CURSOR_POSITION",
+      +cursorPosition: SourceLocation,
     |};

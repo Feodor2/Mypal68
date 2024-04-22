@@ -5,6 +5,7 @@
 // @flow
 
 import type { SourceContent } from "../types";
+import { saveAs } from "devtools-modules";
 
 /**
  * Utils for utils, by utils
@@ -60,19 +61,6 @@ export function downloadFile(content: SourceContent, fileName: string) {
     return;
   }
 
-  const data = content.value;
-  const { body } = document;
-  if (!body) {
-    return;
-  }
-
-  const a = document.createElement("a");
-  body.appendChild(a);
-  a.className = "download-anchor";
-  a.href = window.URL.createObjectURL(
-    new Blob([data], { type: "text/javascript" })
-  );
-  a.setAttribute("download", fileName);
-  a.click();
-  body.removeChild(a);
+  const data = new TextEncoder().encode(content.value);
+  saveAs(window, data, fileName);
 }

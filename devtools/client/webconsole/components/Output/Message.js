@@ -79,13 +79,17 @@ class Message extends Component {
       timeStamp: PropTypes.number,
       timestampsVisible: PropTypes.bool.isRequired,
       serviceContainer: PropTypes.shape({
-        emitNewMessage: PropTypes.func.isRequired,
+        emitEvent: PropTypes.func.isRequired,
+        onViewSource: PropTypes.func.isRequired,
         onViewSourceInDebugger: PropTypes.func,
         onViewSourceInScratchpad: PropTypes.func,
         onViewSourceInStyleEditor: PropTypes.func,
         openContextMenu: PropTypes.func.isRequired,
         openLink: PropTypes.func.isRequired,
         sourceMapService: PropTypes.any,
+        canRewind: PropTypes.func.isRequired,
+        jumpToExecutionPoint: PropTypes.func.isRequired,
+        onMessageHover: PropTypes.func.isRequired,
       }),
       notes: PropTypes.arrayOf(
         PropTypes.shape({
@@ -119,15 +123,8 @@ class Message extends Component {
       if (this.props.scrollToMessage) {
         this.messageNode.scrollIntoView();
       }
-      // Event used in tests. Some message types don't pass it in because existing tests
-      // did not emit for them.
-      if (this.props.serviceContainer) {
-        this.props.serviceContainer.emitNewMessage(
-          this.messageNode,
-          this.props.messageId,
-          this.props.timeStamp
-        );
-      }
+
+      this.emitNewMessage(this.messageNode);
     }
   }
 
@@ -135,9 +132,20 @@ class Message extends Component {
     this.setState({ error: e });
   }
 
+  // Event used in tests. Some message types don't pass it in because existing tests
+  // did not emit for them.
+  emitNewMessage(node) {
+    const { serviceContainer, messageId, timeStamp } = this.props;
+    serviceContainer.emitEvent(
+      "new-messages",
+      new Set([{ node, messageId, timeStamp }])
+    );
+  }
+
   onLearnMoreClick(e) {
     const { exceptionDocURL } = this.props;
     this.props.serviceContainer.openLink(exceptionDocURL, e);
+    e.preventDefault();
   }
 
   toggleMessage(e) {
@@ -170,9 +178,9 @@ class Message extends Component {
   }
 
   onMouseEvent(ev) {
-    const { messageId, serviceContainer, executionPoint } = this.props;
+    const { message, serviceContainer, executionPoint } = this.props;
     if (serviceContainer.canRewind() && executionPoint) {
-      serviceContainer.onMessageHover(ev.type, messageId);
+      serviceContainer.onMessageHover(ev.type, message);
     }
   }
 
@@ -405,6 +413,7 @@ class Message extends Component {
             sourceMapService: serviceContainer
               ? serviceContainer.sourceMapService
               : undefined,
+            messageSource: source,
           })
         : null
     );
@@ -414,6 +423,7 @@ class Message extends Component {
       learnMore = dom.a(
         {
           className: "learn-more-link webconsole-learn-more-link",
+          href: exceptionDocURL,
           title: exceptionDocURL.split("?")[0],
           onClick: this.onLearnMoreClick,
         },

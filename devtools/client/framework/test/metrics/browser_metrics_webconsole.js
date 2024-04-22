@@ -14,11 +14,34 @@ const TEST_URL =
 
 add_task(async function() {
   const toolbox = await openNewTabAndToolbox(TEST_URL, "webconsole");
-  const panel = toolbox.getCurrentPanel();
+  const toolboxBrowserLoader = toolbox.win.getBrowserLoaderForWindow();
 
   // Retrieve the browser loader dedicated to the WebConsole.
+  const panel = toolbox.getCurrentPanel();
   const webconsoleLoader = panel._frameWindow.getBrowserLoaderForWindow();
-  const loaders = [loader.provider.loader, webconsoleLoader.loader];
+
+  const loaders = [
+    loader.provider.loader,
+    toolboxBrowserLoader.loader,
+    webconsoleLoader.loader,
+  ];
+
+  const whitelist = [
+    "@loader/unload.js",
+    "@loader/options.js",
+    "chrome.js",
+    "resource://devtools/client/webconsole/constants.js",
+    "resource://devtools/client/webconsole/utils.js",
+    "resource://devtools/client/webconsole/utils/messages.js",
+    "resource://devtools/client/webconsole/utils/l10n.js",
+    "resource://devtools/client/netmonitor/src/utils/request-utils.js",
+    "resource://devtools/client/webconsole/types.js",
+    "resource://devtools/client/shared/vendor/react.js",
+    "resource://devtools/client/shared/vendor/react-dom.js",
+    "resource://devtools/client/shared/vendor/react-prop-types.js",
+    "resource://devtools/client/shared/vendor/react-dom-factories.js",
+  ];
+  runDuplicatedModulesTest(loaders, whitelist);
 
   runMetricsTest({
     filterString: "devtools/client/webconsole",

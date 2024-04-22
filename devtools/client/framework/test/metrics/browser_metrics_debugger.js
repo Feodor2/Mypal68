@@ -14,11 +14,34 @@ const TEST_URL =
 
 add_task(async function() {
   const toolbox = await openNewTabAndToolbox(TEST_URL, "jsdebugger");
-  const panel = toolbox.getCurrentPanel();
+  const toolboxBrowserLoader = toolbox.win.getBrowserLoaderForWindow();
 
   // Retrieve the browser loader dedicated to the Debugger.
+  const panel = toolbox.getCurrentPanel();
   const debuggerLoader = panel.panelWin.getBrowserLoaderForWindow();
-  const loaders = [loader.provider.loader, debuggerLoader.loader];
+
+  const loaders = [
+    loader.provider.loader,
+    toolboxBrowserLoader.loader,
+    debuggerLoader.loader,
+  ];
+
+  const whitelist = [
+    "@loader/unload.js",
+    "@loader/options.js",
+    "chrome.js",
+    "resource://devtools/client/shared/vendor/react-dom.js",
+    "resource://devtools/client/shared/vendor/react.js",
+    "resource://devtools/client/shared/vendor/lodash.js",
+    "resource://devtools/client/debugger/dist/vendors.js",
+    "resource://devtools/client/shared/vendor/react-prop-types.js",
+    "resource://devtools/client/shared/vendor/react-dom-factories.js",
+    "resource://devtools/client/shared/vendor/react-redux.js",
+    "resource://devtools/client/shared/vendor/redux.js",
+    "resource://devtools/client/debugger/src/workers/parser/index.js",
+    "resource://devtools/client/shared/source-map/index.js",
+  ];
+  runDuplicatedModulesTest(loaders, whitelist);
 
   runMetricsTest({
     filterString: "devtools/client/debugger",

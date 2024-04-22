@@ -13,6 +13,7 @@ const actionTypes = {
   BATCH_ACTIONS: "BATCH_ACTIONS",
   CLEAR_HISTORY: "CLEAR_HISTORY",
   EDITOR_TOGGLE: "EDITOR_TOGGLE",
+  EVALUATE_EXPRESSION: "EVALUATE_EXPRESSION",
   FILTER_TEXT_SET: "FILTER_TEXT_SET",
   FILTER_TOGGLE: "FILTER_TOGGLE",
   FILTERS_CLEAR: "FILTERS_CLEAR",
@@ -45,6 +46,7 @@ const actionTypes = {
   PAUSED_EXCECUTION_POINT: "PAUSED_EXCECUTION_POINT",
   WARNING_GROUPS_TOGGLE: "WARNING_GROUPS_TOGGLE",
   WILL_NAVIGATE: "WILL_NAVIGATE",
+  EDITOR_SET_WIDTH: "EDITOR_SET_WIDTH",
 };
 
 const prefs = {
@@ -72,11 +74,12 @@ const prefs = {
       CONTENT_MESSAGES: "devtools.browserconsole.contentMessages",
       // Display timestamp in messages.
       MESSAGE_TIMESTAMP: "devtools.webconsole.timestampMessages",
+      // Store the editor width.
+      EDITOR_WIDTH: "input.editorWidth",
     },
     FEATURES: {
       // We use the same pref to enable the sidebar on webconsole and browser console.
       SIDEBAR_TOGGLE: "devtools.webconsole.sidebarToggle",
-      JSTERM_CODE_MIRROR: "devtools.webconsole.jsterm.codeMirror",
       AUTOCOMPLETE: "devtools.webconsole.input.autocomplete",
       GROUP_WARNINGS: "devtools.webconsole.groupWarningMessages",
       EDITOR: "devtools.webconsole.features.editor",

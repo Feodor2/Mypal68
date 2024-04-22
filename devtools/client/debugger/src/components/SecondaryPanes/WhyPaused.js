@@ -13,14 +13,17 @@ import {
   getPaneCollapse,
   getPauseReason as getWhy,
 } from "../../selectors";
-import type { Grip, ExceptionReason } from "../../types";
+import type { Grip, Why } from "../../types";
 
 import "./WhyPaused.css";
 
+type OwnProps = {|
+  +delay?: number,
+|};
 type Props = {
   endPanelCollapsed: boolean,
-  delay: ?number,
-  why: ExceptionReason,
+  +delay: ?number,
+  why: ?Why,
 };
 
 type State = {
@@ -28,7 +31,7 @@ type State = {
 };
 
 class WhyPaused extends PureComponent<Props, State> {
-  constructor(props) {
+  constructor(props: Props) {
     super(props);
     this.state = { hideWhyPaused: "" };
   }
@@ -50,7 +53,7 @@ class WhyPaused extends PureComponent<Props, State> {
       return exception;
     }
 
-    const preview = exception.preview;
+    const { preview } = exception;
     if (!preview || !preview.name || !preview.message) {
       return;
     }
@@ -58,17 +61,16 @@ class WhyPaused extends PureComponent<Props, State> {
     return `${preview.name}: ${preview.message}`;
   }
 
-  renderMessage(why: ExceptionReason) {
+  renderMessage(why: Why) {
     if (why.type == "exception" && why.exception) {
-      return (
-        <div className={"message warning"}>
-          {this.renderExceptionSummary(why.exception)}
-        </div>
-      );
+      // Our types for 'Why' are too general because 'type' can be 'string'.
+      // $FlowFixMe - We should have a proper discriminating union of reasons.
+      const summary = this.renderExceptionSummary(why.exception);
+      return <div className="message warning">{summary}</div>;
     }
 
     if (typeof why.message == "string") {
-      return <div className={"message"}>{why.message}</div>;
+      return <div className="message">{why.message}</div>;
     }
 
     return null;
@@ -78,33 +80,29 @@ class WhyPaused extends PureComponent<Props, State> {
     const { endPanelCollapsed, why } = this.props;
     const reason = getPauseReason(why);
 
-    if (reason) {
-      if (!endPanelCollapsed) {
-        return (
-          <div className={"pane why-paused"}>
-            <div>
-              <div className="pause reason">
-                {L10N.getStr(reason)}
-                {this.renderMessage(why)}
-              </div>
-              <div className="info icon">
-                <AccessibleImage className="info" />
-              </div>
-            </div>
-          </div>
-        );
-      }
+    if (!why || !reason || endPanelCollapsed) {
+      return <div className={this.state.hideWhyPaused} />;
     }
-    return <div className={this.state.hideWhyPaused} />;
+
+    return (
+      <div className="pane why-paused">
+        <div>
+          <div className="pause reason">
+            {L10N.getStr(reason)}
+            {this.renderMessage(why)}
+          </div>
+          <div className="info icon">
+            <AccessibleImage className="info" />
+          </div>
+        </div>
+      </div>
+    );
   }
 }
 
-const mapStateToProps = state => {
-  const thread = getCurrentThread(state);
-  return {
-    endPanelCollapsed: getPaneCollapse(state, "end"),
-    why: getWhy(state, thread),
-  };
-};
+const mapStateToProps = state => ({
+  endPanelCollapsed: getPaneCollapse(state, "end"),
+  why: getWhy(state, getCurrentThread(state)),
+});
 
-export default connect(mapStateToProps)(WhyPaused);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps)(WhyPaused);

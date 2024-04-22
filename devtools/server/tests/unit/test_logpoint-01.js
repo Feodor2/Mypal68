@@ -10,7 +10,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 function run_test() {
   initTestDebuggerServer();
@@ -20,9 +20,9 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-logpoint", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
+      gThreadFront = threadFront;
       test_simple_breakpoint();
     });
   });
@@ -41,20 +41,24 @@ function test_simple_breakpoint() {
     },
   };
 
-  gThreadClient.once("paused", async function(packet) {
-    const source = await getSourceById(gThreadClient, packet.frame.where.actor);
+  gThreadFront.once("paused", async function(packet) {
+    const source = await getSourceById(gThreadFront, packet.frame.where.actor);
 
     // Set a logpoint which should invoke console.log.
-    gThreadClient.setBreakpoint(
+    gThreadFront.setBreakpoint(
       {
         sourceUrl: source.url,
         line: 3,
       },
       { logValue: "a" }
     );
+    await gClient.waitForRequestsToSettle();
 
     // Execute the rest of the code.
-    gThreadClient.resume();
+    await gThreadFront.resume();
+    Assert.equal(lastMessage.level, "logPoint");
+    Assert.equal(lastMessage.arguments[0], "three");
+    finishClient(gClient);
   });
 
   /* eslint-disable */
@@ -66,8 +70,4 @@ function test_simple_breakpoint() {
                    "test.js",
                    1);
   /* eslint-enable */
-
-  Assert.equal(lastMessage.level, "logPoint");
-  Assert.equal(lastMessage.arguments[0], "three");
-  finishClient(gClient);
 }

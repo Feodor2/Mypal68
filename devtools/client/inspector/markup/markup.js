@@ -23,6 +23,18 @@ const RootContainer = require("devtools/client/inspector/markup/views/root-conta
 
 loader.lazyRequireGetter(
   this,
+  "createDOMMutationBreakpoint",
+  "devtools/client/framework/actions/index",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "deleteDOMMutationBreakpoint",
+  "devtools/client/framework/actions/index",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "MarkupContextMenu",
   "devtools/client/inspector/markup/markup-context-menu"
 );
@@ -183,11 +195,11 @@ function MarkupView(inspector, frame, controllerWindow) {
   this.walker.on("mutations", this._mutationObserver);
   this.win.addEventListener("copy", this._onCopy);
   this.win.addEventListener("mouseup", this._onMouseUp);
-  this.inspector.inspector.nodePicker.on(
+  this.inspector.inspectorFront.nodePicker.on(
     "picker-node-canceled",
     this._onToolboxPickerCanceled
   );
-  this.inspector.inspector.nodePicker.on(
+  this.inspector.inspectorFront.nodePicker.on(
     "picker-node-hovered",
     this._onToolboxPickerHover
   );
@@ -932,7 +944,7 @@ MarkupView.prototype = {
 
     if (type === "uri" || type === "cssresource" || type === "jsresource") {
       // Open link in a new tab.
-      this.inspector.inspector
+      this.inspector.inspectorFront
         .resolveRelativeURL(link, this.inspector.selection.nodeFront)
         .then(url => {
           if (type === "uri") {
@@ -1264,11 +1276,14 @@ MarkupView.prototype = {
       return;
     }
 
+    const toolboxStore = this.inspector.toolbox.store;
     const nodeFront = this.inspector.selection.nodeFront;
-    const mutationBreakpoints = nodeFront.mutationBreakpoints;
-    await this.walker.setMutationBreakpoints(nodeFront, {
-      [name]: !mutationBreakpoints[name],
-    });
+
+    if (nodeFront.mutationBreakpoints[name]) {
+      toolboxStore.dispatch(deleteDOMMutationBreakpoint(nodeFront, name));
+    } else {
+      toolboxStore.dispatch(createDOMMutationBreakpoint(nodeFront, name));
+    }
   },
 
   /**
@@ -2244,7 +2259,7 @@ MarkupView.prototype = {
     this._elt.removeEventListener("mouseout", this._onMouseOut);
     this._frame.removeEventListener("focus", this._onFocus);
     this.inspector.selection.off("new-node-front", this._onNewSelection);
-    this.inspector.inspector.nodePicker.off(
+    this.inspector.inspectorFront.nodePicker.off(
       "picker-node-hovered",
       this._onToolboxPickerHover
     );

@@ -17,11 +17,12 @@ import {
 import { makeWhyNormal } from "../../../utils/test-mockup";
 
 import { parserWorker } from "../../../test/tests-setup";
+import { features } from "../../../utils/prefs";
 
 const { isStepping } = selectors;
 
 let stepInResolve = null;
-const mockThreadClient = {
+const mockCommandClient = {
   stepIn: () =>
     new Promise(_resolve => {
       stepInResolve = _resolve;
@@ -70,8 +71,9 @@ const mockThreadClient = {
       }
     });
   },
-  getBreakpointPositions: async () => ({}),
-  getBreakableLines: async () => [],
+  getSourceActorBreakpointPositions: async () => ({}),
+  getSourceActorBreakableLines: async () => [],
+  actorID: "threadActorID",
 };
 
 const mockFrameId = "1";
@@ -99,13 +101,10 @@ function createPauseInfo(
   };
 }
 
-function resumedPacket() {
-  return { from: "FakeThread", type: "resumed" };
-}
 describe("pause", () => {
   describe("stepping", () => {
     it("should set and clear the command", async () => {
-      const { dispatch, getState } = createStore(mockThreadClient);
+      const { dispatch, getState } = createStore(mockCommandClient);
       const mockPauseInfo = createPauseInfo();
 
       await dispatch(actions.newGeneratedSource(makeSource("foo1")));
@@ -130,7 +129,7 @@ describe("pause", () => {
     });
 
     it("should step when paused", async () => {
-      const { dispatch, getState } = createStore(mockThreadClient);
+      const { dispatch, getState } = createStore(mockCommandClient);
       const mockPauseInfo = createPauseInfo();
 
       await dispatch(actions.newGeneratedSource(makeSource("foo1")));
@@ -141,7 +140,7 @@ describe("pause", () => {
     });
 
     it("should step over when paused", async () => {
-      const store = createStore(mockThreadClient);
+      const store = createStore(mockCommandClient);
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo();
 
@@ -155,7 +154,8 @@ describe("pause", () => {
     });
 
     it("should step over when paused before an await", async () => {
-      const store = createStore(mockThreadClient);
+      features.asyncStepping = true;
+      const store = createStore(mockCommandClient);
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo({
         sourceId: "await",
@@ -175,8 +175,8 @@ describe("pause", () => {
 
     it("should step over when paused after an await", async () => {
       const store = createStore({
-        ...mockThreadClient,
-        getBreakpointPositions: async () => ({ [2]: [1] }),
+        ...mockCommandClient,
+        getSourceActorBreakpointPositions: async () => ({ [2]: [1] }),
       });
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo({
@@ -202,11 +202,14 @@ describe("pause", () => {
         column: 0,
       };
 
-      const store = createStore(mockThreadClient, {});
+      const store = createStore(mockCommandClient, {});
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo(generatedLocation, {
         scope: {
-          bindings: { variables: { b: {} }, arguments: [{ a: {} }] },
+          bindings: {
+            variables: { b: { value: {} } },
+            arguments: [{ a: { value: {} } }],
+          },
         },
       });
 
@@ -223,7 +226,10 @@ describe("pause", () => {
           location: { column: 0, line: 1, sourceId: "foo" },
           originalDisplayName: "foo",
           scope: {
-            bindings: { arguments: [{ a: {} }], variables: { b: {} } },
+            bindings: {
+              arguments: [{ a: { value: {} } }],
+              variables: { b: { value: {} } },
+            },
           },
           thread: "FakeThread",
         },
@@ -234,7 +240,10 @@ describe("pause", () => {
           "1": {
             pending: false,
             scope: {
-              bindings: { arguments: [{ a: {} }], variables: { b: {} } },
+              bindings: {
+                arguments: [{ a: { value: {} } }],
+                variables: { b: { value: {} } },
+              },
             },
           },
         },
@@ -270,7 +279,7 @@ describe("pause", () => {
         getGeneratedLocation: async location => location,
       };
 
-      const store = createStore(mockThreadClient, {}, sourceMapsMock);
+      const store = createStore(mockCommandClient, {}, sourceMapsMock);
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo(generatedLocation);
 
@@ -331,7 +340,7 @@ describe("pause", () => {
         getGeneratedRangesForOriginal: async () => [],
       };
 
-      const store = createStore(mockThreadClient, {}, sourceMapsMock);
+      const store = createStore(mockCommandClient, {}, sourceMapsMock);
       const { dispatch, getState } = store;
       const mockPauseInfo = createPauseInfo(generatedLocation);
 
@@ -345,27 +354,10 @@ describe("pause", () => {
       await dispatch(actions.paused(mockPauseInfo));
       expect(selectors.getFrames(getState(), "FakeThread")).toEqual([
         {
-          displayName: "fooBar",
           generatedLocation: { column: 0, line: 1, sourceId: "foo-wasm" },
           id: mockFrameId,
-          isOriginal: true,
           location: originalLocation,
-          originalDisplayName: "fooBar",
           scope: { bindings: { arguments: [], variables: {} } },
-          source: null,
-          this: undefined,
-          thread: "FakeThread",
-        },
-        {
-          displayName: "barZoo",
-          generatedLocation: { column: 0, line: 1, sourceId: "foo-wasm" },
-          id: `${mockFrameId}-originalFrame1`,
-          isOriginal: true,
-          location: originalLocation2,
-          originalDisplayName: "barZoo",
-          scope: { bindings: { arguments: [], variables: {} } },
-          source: null,
-          this: undefined,
           thread: "FakeThread",
         },
       ]);
@@ -374,7 +366,7 @@ describe("pause", () => {
 
   describe("resumed", () => {
     it("should not evaluate expression while stepping", async () => {
-      const client = { ...mockThreadClient, evaluateExpressions: jest.fn() };
+      const client = { ...mockCommandClient, evaluateExpressions: jest.fn() };
       const { dispatch, getState } = createStore(client);
       const mockPauseInfo = createPauseInfo();
 
@@ -383,12 +375,12 @@ describe("pause", () => {
 
       const cx = selectors.getThreadContext(getState());
       dispatch(actions.stepIn(cx));
-      await dispatch(actions.resumed(resumedPacket()));
+      await dispatch(actions.resumed(mockCommandClient.actorID));
       expect(client.evaluateExpressions.mock.calls).toHaveLength(1);
     });
 
     it("resuming - will re-evaluate watch expressions", async () => {
-      const client = { ...mockThreadClient, evaluateExpressions: jest.fn() };
+      const client = { ...mockCommandClient, evaluateExpressions: jest.fn() };
       const store = createStore(client);
       const { dispatch, getState, cx } = store;
       const mockPauseInfo = createPauseInfo();
@@ -401,7 +393,7 @@ describe("pause", () => {
       client.evaluateExpressions.mockReturnValue(Promise.resolve(["YAY"]));
       await dispatch(actions.paused(mockPauseInfo));
 
-      await dispatch(actions.resumed(resumedPacket()));
+      await dispatch(actions.resumed(mockCommandClient.actorID));
       const expression = selectors.getExpression(getState(), "foo");
       expect(expression && expression.value).toEqual("YAY");
     });

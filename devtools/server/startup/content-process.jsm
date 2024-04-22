@@ -34,7 +34,7 @@ function setupServer(mm) {
   // using it in the same process.
   gLoader = new DevToolsLoader();
   gLoader.invisibleToDebugger = true;
-  const { DebuggerServer } = gLoader.require("devtools/server/main");
+  const { DebuggerServer } = gLoader.require("devtools/server/debugger-server");
 
   DebuggerServer.init();
   // For browser content toolbox, we do need a regular root actor and all tab
@@ -63,7 +63,7 @@ function init(msg) {
 
   // Connect both parent/child processes debugger servers RDP via message
   // managers
-  const { DebuggerServer } = loader.require("devtools/server/main");
+  const { DebuggerServer } = loader.require("devtools/server/debugger-server");
   const conn = DebuggerServer.connectToParent(prefix, mm);
   conn.parentMessageManager = mm;
 

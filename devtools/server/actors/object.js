@@ -71,6 +71,7 @@ const proto = {
   initialize(
     obj,
     {
+      thread,
       createValueGrip: createValueGripHook,
       sources,
       createEnvironmentActor,
@@ -89,6 +90,7 @@ const proto = {
 
     this.conn = conn;
     this.obj = obj;
+    this.thread = thread;
     this.hooks = {
       createValueGrip: createValueGripHook,
       sources,
@@ -98,10 +100,80 @@ const proto = {
       decrementGripDepth,
       getGlobalDebugObject,
     };
+    this._originalDescriptors = new Map();
   },
 
   rawValue: function() {
     return this.obj.unsafeDereference();
+  },
+
+  addWatchpoint(property, label, watchpointType) {
+    // We promote the object actor to the thread pool
+    // so that it lives for the lifetime of the watchpoint.
+    this.thread.threadObjectGrip(this);
+
+    if (this._originalDescriptors.has(property)) {
+      return;
+    }
+    const desc = this.obj.getOwnPropertyDescriptor(property);
+
+    if (desc.set || desc.get || !desc.configurable) {
+      return;
+    }
+
+    this._originalDescriptors.set(property, { desc, watchpointType });
+
+    const pauseAndRespond = type => {
+      const frame = this.thread.dbg.getNewestFrame();
+      this.thread._pauseAndRespond(frame, {
+        type: type,
+        message: label,
+      });
+    };
+
+    if (watchpointType === "get") {
+      this.obj.defineProperty(property, {
+        configurable: desc.configurable,
+        enumerable: desc.enumerable,
+        set: this.obj.makeDebuggeeValue(v => {
+          desc.value = v;
+        }),
+        get: this.obj.makeDebuggeeValue(() => {
+          pauseAndRespond("getWatchpoint");
+          return desc.value;
+        }),
+      });
+    }
+
+    if (watchpointType === "set") {
+      this.obj.defineProperty(property, {
+        configurable: desc.configurable,
+        enumerable: desc.enumerable,
+        set: this.obj.makeDebuggeeValue(v => {
+          pauseAndRespond("setWatchpoint");
+          desc.value = v;
+        }),
+        get: this.obj.makeDebuggeeValue(v => {
+          return desc.value;
+        }),
+      });
+    }
+  },
+
+  removeWatchpoint(property) {
+    if (!this._originalDescriptors.has(property)) {
+      return;
+    }
+
+    const desc = this._originalDescriptors.get(property).desc;
+    this._originalDescriptors.delete(property);
+    this.obj.defineProperty(property, desc);
+  },
+
+  removeWatchpoints() {
+    this._originalDescriptors.forEach(property =>
+      this.removeWatchpoint(property)
+    );
   },
 
   /**
@@ -111,28 +183,28 @@ const proto = {
     const g = {
       type: "object",
       actor: this.actorID,
-      class: this.obj.class,
     };
 
-    const unwrapped = DevToolsUtils.unwrap(this.obj);
-
     // Unsafe objects must be treated carefully.
-    if (!DevToolsUtils.isSafeDebuggerObject(this.obj)) {
-      if (DevToolsUtils.isCPOW(this.obj)) {
-        // Cross-process object wrappers can't be accessed.
-        g.class = "CPOW: " + g.class;
-      } else if (unwrapped === undefined) {
-        // Objects belonging to an invisible-to-debugger compartment might be proxies,
-        // so just in case they shouldn't be accessed.
-        g.class = "InvisibleToDebugger: " + g.class;
-      } else if (unwrapped.isProxy) {
-        // Proxy objects can run traps when accessed, so just create a preview with
-        // the target and the handler.
-        g.class = "Proxy";
-        this.hooks.incrementGripDepth();
-        previewers.Proxy[0](this, g, null);
-        this.hooks.decrementGripDepth();
-      }
+    if (DevToolsUtils.isCPOW(this.obj)) {
+      // Cross-process object wrappers can't be accessed.
+      g.class = "CPOW";
+      return g;
+    }
+    const unwrapped = DevToolsUtils.unwrap(this.obj);
+    if (unwrapped === undefined) {
+      // Objects belonging to an invisible-to-debugger compartment might be proxies,
+      // so just in case they shouldn't be accessed.
+      g.class = "InvisibleToDebugger: " + this.obj.class;
+      return g;
+    }
+    if (unwrapped && unwrapped.isProxy) {
+      // Proxy objects can run traps when accessed, so just create a preview with
+      // the target and the handler.
+      g.class = "Proxy";
+      this.hooks.incrementGripDepth();
+      previewers.Proxy[0](this, g, null);
+      this.hooks.decrementGripDepth();
       return g;
     }
 
@@ -141,6 +213,8 @@ const proto = {
     // Change the displayed class, but when creating the preview use the original one.
     if (unwrapped === null) {
       g.class = "Restricted";
+    } else {
+      g.class = this.obj.class;
     }
 
     this.hooks.incrementGripDepth();
@@ -713,10 +787,16 @@ const proto = {
     if ("value" in desc) {
       retval.writable = desc.writable;
       retval.value = this.hooks.createValueGrip(desc.value);
+    } else if (this._originalDescriptors.has(name)) {
+      const watchpointType = this._originalDescriptors.get(name).watchpointType;
+      desc = this._originalDescriptors.get(name).desc;
+      retval.value = this.hooks.createValueGrip(desc.value);
+      retval.watchpoint = watchpointType;
     } else {
       if ("get" in desc) {
         retval.get = this.hooks.createValueGrip(desc.get);
       }
+
       if ("set" in desc) {
         retval.set = this.hooks.createValueGrip(desc.set);
       }
@@ -945,7 +1025,9 @@ const proto = {
    * Release the actor, when it isn't needed anymore.
    * Protocol.js uses this release method to call the destroy method.
    */
-  release: function() {},
+  release: function() {
+    this.removeWatchpoints();
+  },
 };
 
 exports.ObjectActor = protocol.ActorClassWithSpec(objectSpec, proto);

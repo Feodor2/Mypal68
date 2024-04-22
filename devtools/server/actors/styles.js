@@ -124,7 +124,7 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
       );
     }
     this.walker = inspector.walker;
-    this.cssLogic = new CssLogic(InspectorUtils.isInheritedProperty);
+    this.cssLogic = new CssLogic();
 
     // Stores the association of DOM objects -> actors
     this.refMap = new Map();
@@ -1664,8 +1664,8 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
       text = `${selectorText} {${ruleBodyText}}`;
     }
 
-    const prettyCSS = prettifyCSS(text);
-    return Promise.resolve(prettyCSS);
+    const { result } = prettifyCSS(text);
+    return Promise.resolve(result);
   },
 
   /**

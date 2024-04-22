@@ -105,7 +105,7 @@ MarkupContainer.prototype = {
 
     this.mutationMarker = this.win.document.createElement("div");
     this.mutationMarker.classList.add("markup-tag-mutation-marker");
-    this.mutationMarker.style.left = `-${this.level}em`;
+    this.mutationMarker.style.setProperty("--markup-level", this.level);
     this.tagLine.appendChild(this.mutationMarker);
 
     this.tagState = this.win.document.createElement("span");
@@ -675,13 +675,19 @@ MarkupContainer.prototype = {
    */
   flashMutation: function() {
     if (!this.selected) {
-      flashElementOn(this.tagState, { foregroundElt: this.editor.elt });
+      flashElementOn(this.tagState, {
+        foregroundElt: this.editor.elt,
+        backgroundClass: "theme-bg-yellow-contrast",
+      });
       if (this._flashMutationTimer) {
         clearTimeout(this._flashMutationTimer);
         this._flashMutationTimer = null;
       }
       this._flashMutationTimer = setTimeout(() => {
-        flashElementOff(this.tagState, { foregroundElt: this.editor.elt });
+        flashElementOff(this.tagState, {
+          foregroundElt: this.editor.elt,
+          backgroundClass: "theme-bg-yellow-contrast",
+        });
       }, this.markup.CONTAINER_FLASHING_DURATION);
     }
   },

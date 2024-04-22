@@ -76,7 +76,10 @@ EventTooltip.prototype = {
 
       // Header
       const header = doc.createElementNS(XHTML_NS, "div");
-      header.className = "event-header devtools-toolbar";
+      header.className = "event-header";
+      const arrow = doc.createElementNS(XHTML_NS, "span");
+      arrow.className = "theme-twisty";
+      header.appendChild(arrow);
       this.container.appendChild(header);
 
       if (!listener.hide.type) {
@@ -250,10 +253,7 @@ EventTooltip.prototype = {
       const { editor, handler } = eventEditor;
 
       const iframe = doc.createElementNS(XHTML_NS, "iframe");
-      iframe.setAttribute(
-        "style",
-        "width: 100%; height: 100%; border-style: none;"
-      );
+      iframe.classList.add("event-tooltip-editor-frame");
 
       editor.appendTo(content, iframe).then(() => {
         const tidied = beautify.js(handler, { indent_size: 2 });

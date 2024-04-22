@@ -22,6 +22,15 @@ function DebuggerPanel(iframeWindow, toolbox) {
   this.toolbox = toolbox;
 }
 
+async function getNodeFront(gripOrFront, toolbox) {
+  // Given a NodeFront
+  if ("actorID" in gripOrFront) {
+    return new Promise(resolve => resolve(gripOrFront));
+  }
+  // Given a grip
+  return toolbox.walker.gripToNodeFront(gripOrFront);
+}
+
 DebuggerPanel.prototype = {
   open: async function() {
     const {
@@ -30,7 +39,7 @@ DebuggerPanel.prototype = {
       selectors,
       client,
     } = await this.panelWin.Debugger.bootstrap({
-      threadClient: this.toolbox.threadClient,
+      threadFront: this.toolbox.threadFront,
       tabTarget: this.toolbox.target,
       debuggerClient: this.toolbox.target.client,
       workers: {
@@ -71,6 +80,10 @@ DebuggerPanel.prototype = {
     return this._store.getState();
   },
 
+  getToolboxStore: function() {
+    return this.toolbox.store;
+  },
+
   openLink: function(url) {
     openContentLink(url);
   },
@@ -80,15 +93,20 @@ DebuggerPanel.prototype = {
   },
 
   openConsoleAndEvaluate: async function(input) {
-    const webconsolePanel = await this.toolbox.selectTool("webconsole");
-    const jsterm = webconsolePanel.hud.jsterm;
-    jsterm.execute(input);
+    const { hud } = await this.toolbox.selectTool("webconsole");
+    hud.ui.wrapper.dispatchEvaluateExpression(input);
   },
 
-  openElementInInspector: async function(grip) {
+  openInspector: async function() {
+    await this.toolbox.initInspector();
+    this.toolbox.selectTool("inspector");
+  },
+
+  openElementInInspector: async function(gripOrFront) {
     await this.toolbox.initInspector();
     const onSelectInspector = this.toolbox.selectTool("inspector");
-    const onGripNodeToFront = this.toolbox.walker.gripToNodeFront(grip);
+    const onGripNodeToFront = getNodeFront(gripOrFront, this.toolbox);
+
     const [front, inspector] = await Promise.all([
       onGripNodeToFront,
       onSelectInspector,
@@ -102,13 +120,13 @@ DebuggerPanel.prototype = {
     return Promise.all([onNodeFrontSet, onInspectorUpdated]);
   },
 
-  highlightDomElement: async function(grip) {
+  highlightDomElement: async function(gripOrFront) {
     await this.toolbox.initInspector();
     if (!this.toolbox.highlighter) {
       return null;
     }
-    const nodeFront = await this.toolbox.walker.gripToNodeFront(grip);
-    return this.toolbox.highlighter.highlight(nodeFront);
+    const front = await getNodeFront(gripOrFront, this.toolbox);
+    return this.toolbox.highlighter.highlight(front);
   },
 
   unHighlightDomElement: function() {
@@ -138,12 +156,9 @@ DebuggerPanel.prototype = {
     frames.forEach(frame => {
       frame.actor = frame.id;
     });
+    const target = this._client.lookupTarget(thread);
 
-    return { frames, selected };
-  },
-
-  lookupConsoleClient: function(thread) {
-    return this._client.lookupConsoleClient(thread);
+    return { frames, selected, target };
   },
 
   getMappedExpression(expression) {
@@ -160,9 +175,14 @@ DebuggerPanel.prototype = {
     return this._actions.selectSourceURL(cx, url, { line, column });
   },
 
-  selectSource(sourceId, line, column) {
+  async selectSource(sourceId, line, column) {
     const cx = this._selectors.getContext(this._getState());
-    return this._actions.selectSource(cx, sourceId, { line, column });
+    const location = { sourceId, line, column };
+
+    await this._actions.selectSource(cx, sourceId, location);
+    if (this._selectors.hasLogpoint(this._getState(), location)) {
+      this._actions.openConditionalPanel(location, true);
+    }
   },
 
   canLoadSource(sourceId) {

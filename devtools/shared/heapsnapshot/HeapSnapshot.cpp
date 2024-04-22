@@ -33,6 +33,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Object.h"  // JS::GetCompartment
 #include "nsCycleCollectionParticipant.h"
 #include "nsCRTGlue.h"
 #include "nsDirectoryServiceDefs.h"
@@ -665,7 +666,7 @@ static bool PopulateCompartmentsWithGlobals(CompartmentSet& compartments,
                                             HandleObjectVector globals) {
   unsigned length = globals.length();
   for (unsigned i = 0; i < length; i++) {
-    if (!compartments.put(GetObjectCompartment(globals[i]))) return false;
+    if (!compartments.put(JS::GetCompartment(globals[i]))) return false;
   }
 
   return true;

@@ -46,7 +46,6 @@ import "devtools-launchpad/src/components/Root.css";
 import type { ActiveSearchType } from "../selectors";
 
 import "./shared/menu.css";
-import "./shared/reps.css";
 
 import SplitBox from "devtools-splitter";
 import ProjectSearch from "./ProjectSearch";
@@ -59,12 +58,13 @@ import EditorFooter from "./Editor/Footer";
 import QuickOpenModal from "./QuickOpenModal";
 import WhyPaused from "./SecondaryPanes/WhyPaused";
 
+type OwnProps = {||};
 type Props = {
-  selectedSource: Source,
+  selectedSource: ?Source,
   orientation: OrientationType,
   startPanelCollapsed: boolean,
   endPanelCollapsed: boolean,
-  activeSearch: ActiveSearchType,
+  activeSearch: ?ActiveSearchType,
   quickOpenEnabled: boolean,
   setActiveSearch: typeof actions.setActiveSearch,
   closeActiveSearch: typeof actions.closeActiveSearch,
@@ -89,7 +89,7 @@ class App extends Component<Props, State> {
   onEscape: Function;
   onCommandSlash: Function;
 
-  constructor(props) {
+  constructor(props: Props) {
     super(props);
     this.state = {
       shortcutsModalEnabled: false,
@@ -144,7 +144,7 @@ class App extends Component<Props, State> {
     shortcuts.off("Escape", this.onEscape);
   }
 
-  onEscape = (_, e) => {
+  onEscape = (_: mixed, e: KeyboardEvent) => {
     const {
       activeSearch,
       closeActiveSearch,
@@ -164,6 +164,7 @@ class App extends Component<Props, State> {
     }
 
     if (shortcutsModalEnabled) {
+      e.preventDefault();
       this.toggleShortcutsModal();
     }
   };
@@ -177,7 +178,7 @@ class App extends Component<Props, State> {
   }
 
   toggleQuickOpenModal = (
-    _,
+    _: mixed,
     e: SyntheticEvent<HTMLElement>,
     query?: string
   ) => {
@@ -225,17 +226,9 @@ class App extends Component<Props, State> {
             startPanelCollapsed={startPanelCollapsed}
             endPanelCollapsed={endPanelCollapsed}
             horizontal={horizontal}
-            startPanelSize={startPanelSize}
-            endPanelSize={endPanelSize}
           />
-          <Editor
-            horizontal={horizontal}
-            startPanelSize={startPanelSize}
-            endPanelSize={endPanelSize}
-          />
-          {this.props.endPanelCollapsed ? (
-            <WhyPaused horizontal={horizontal} />
-          ) : null}
+          <Editor startPanelSize={startPanelSize} endPanelSize={endPanelSize} />
+          {this.props.endPanelCollapsed ? <WhyPaused /> : null}
           {!this.props.selectedSource ? (
             <WelcomeBox
               horizontal={horizontal}
@@ -356,7 +349,7 @@ const mapStateToProps = state => ({
   orientation: getOrientation(state),
 });
 
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     setActiveSearch: actions.setActiveSearch,

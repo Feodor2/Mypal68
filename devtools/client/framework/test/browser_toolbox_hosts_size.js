@@ -47,7 +47,17 @@ add_task(async function() {
     "The iframe fits within the available space"
   );
 
+  // on shutdown, the sidebar width will be set to the clientWidth of the iframe
+  const expectedWidth = iframe.clientWidth;
   await cleanup(toolbox);
+  // Wait until the toolbox-host-manager was destroyed and updated the preferences
+  // to avoid side effects in the next test.
+  await waitUntil(() => {
+    const savedWidth = Services.prefs.getIntPref(
+      "devtools.toolbox.sidebar.width"
+    );
+    return savedWidth === expectedWidth;
+  });
 });
 
 add_task(async function() {

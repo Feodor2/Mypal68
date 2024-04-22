@@ -21,11 +21,21 @@ types.addDictType("available-breakpoint-event", {
 });
 
 const threadSpec = generateActorSpec({
-  typeName: "context",
+  typeName: "thread",
 
   events: {
+    paused: {
+      actor: Option(0, "nullable:string"),
+      frame: Option(0, "nullable:json"),
+      why: Option(0, "nullable:json"),
+      poppedFrames: Option(0, "nullable:json"),
+      error: Option(0, "nullable:json"),
+    },
+    resumed: {},
+    detached: {},
+    willInterrupt: {},
     newSource: {
-      source: Option(0, "source"),
+      source: Option(0, "json"),
     },
     progress: {
       recording: Option(0, "json"),
@@ -43,6 +53,7 @@ const threadSpec = generateActorSpec({
       response: RetVal("nullable:json"),
     },
     detach: {
+      request: {},
       response: {},
     },
     reconfigure: {
@@ -68,7 +79,6 @@ const threadSpec = generateActorSpec({
       request: {
         when: Arg(0, "json"),
       },
-      response: RetVal("array:json"),
     },
     sources: {
       response: RetVal("array:json"),
@@ -141,7 +151,14 @@ const threadSpec = generateActorSpec({
         ignoreCaughtExceptions: Arg(1, "string"),
       },
     },
+    toggleEventLogging: {
+      request: {
+        logEventBreakpoints: Arg(0, "string"),
+      },
+    },
+
   },
 });
 
 exports.threadSpec = threadSpec;
+

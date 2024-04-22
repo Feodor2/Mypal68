@@ -8,11 +8,11 @@
  */
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
+  threadFrontTest(async ({ threadFront, debuggee }) => {
     dumpn("Evaluating test code and waiting for first debugger statement");
     const dbgStmt = await executeOnNextTickAndWaitForPause(
       () => evaluateTestCode(debuggee),
-      client
+      threadFront
     );
     equal(
       dbgStmt.frame.where.line,
@@ -21,19 +21,19 @@ add_task(
     );
 
     dumpn("Setting breakpoint in innerFunction");
-    const source = await getSourceById(threadClient, dbgStmt.frame.where.actor);
-    await threadClient.setBreakpoint({ sourceUrl: source.url, line: 7 }, {});
+    const source = await getSourceById(threadFront, dbgStmt.frame.where.actor);
+    await threadFront.setBreakpoint({ sourceUrl: source.url, line: 7 }, {});
 
     dumpn("Step in to innerFunction");
-    const step1 = await stepOver(client, threadClient);
+    const step1 = await stepOver(threadFront);
     equal(step1.frame.where.line, 3);
 
     dumpn("Step in to innerFunction");
-    const step2 = await stepIn(client, threadClient);
+    const step2 = await stepIn(threadFront);
     equal(step2.frame.where.line, 7);
 
     dumpn("Step out of innerFunction");
-    const step3 = await stepOut(client, threadClient);
+    const step3 = await stepOut(threadFront);
     // The bug was that we'd stop again at the breakpoint on line 7.
     equal(step3.frame.where.line, 4);
   })

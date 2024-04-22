@@ -148,7 +148,7 @@ function run_test() {
     info(test.name);
 
     const input = test.input.split("\n").join(prettifyCSS.LINE_SEPARATOR);
-    const output = prettifyCSS(input);
+    const { result: output } = prettifyCSS(input);
     const expected =
       test.expected.join(prettifyCSS.LINE_SEPARATOR) +
       prettifyCSS.LINE_SEPARATOR;
@@ -160,7 +160,7 @@ function run_test() {
     info(test.name);
 
     const input = test.input.split("\n").join(prettifyCSS.LINE_SEPARATOR);
-    const output = prettifyCSS(input);
+    const { result: output } = prettifyCSS(input);
     const expected =
       test.expected.join(prettifyCSS.LINE_SEPARATOR) +
       prettifyCSS.LINE_SEPARATOR;

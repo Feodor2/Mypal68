@@ -9,9 +9,9 @@
  * @module reducers/ui
  */
 
-import { prefs } from "../utils/prefs";
+import { prefs, features } from "../utils/prefs";
 
-import type { Source, Range, SourceLocation } from "../types";
+import type { Source, SourceLocation, Range } from "../types";
 
 import type { Action, panelPositionType } from "../actions/types";
 
@@ -30,6 +30,7 @@ export type UIState = {
   frameworkGroupingOn: boolean,
   orientation: OrientationType,
   viewport: ?Range,
+  cursorPosition: ?SourceLocation,
   highlightedLineRange?: {
     start?: number,
     end?: number,
@@ -37,6 +38,7 @@ export type UIState = {
   },
   conditionalPanelLocation: null | SourceLocation,
   isLogPoint: boolean,
+  inlinePreviewEnabled: boolean,
 };
 
 export const createUIState = (): UIState => ({
@@ -51,6 +53,8 @@ export const createUIState = (): UIState => ({
   isLogPoint: false,
   orientation: "horizontal",
   viewport: null,
+  cursorPosition: null,
+  inlinePreviewEnabled: features.inlinePreview,
 });
 
 function update(state: UIState = createUIState(), action: Action): UIState {
@@ -62,6 +66,11 @@ function update(state: UIState = createUIState(), action: Action): UIState {
     case "TOGGLE_FRAMEWORK_GROUPING": {
       prefs.frameworkGroupingOn = action.value;
       return { ...state, frameworkGroupingOn: action.value };
+    }
+
+    case "TOGGLE_INLINE_PREVIEW": {
+      features.inlinePreview = action.value;
+      return { ...state, inlinePreviewEnabled: action.value };
     }
 
     case "SET_ORIENTATION": {
@@ -118,6 +127,10 @@ function update(state: UIState = createUIState(), action: Action): UIState {
 
     case "SET_VIEWPORT": {
       return { ...state, viewport: action.viewport };
+    }
+
+    case "SET_CURSOR_POSITION": {
+      return { ...state, cursorPosition: action.cursorPosition };
     }
 
     case "NAVIGATE": {
@@ -183,6 +196,14 @@ export function getOrientation(state: OuterState): OrientationType {
 
 export function getViewport(state: OuterState) {
   return state.ui.viewport;
+}
+
+export function getCursorPosition(state: OuterState) {
+  return state.ui.cursorPosition;
+}
+
+export function getInlinePreview(state: OuterState) {
+  return state.ui.inlinePreviewEnabled;
 }
 
 export default update;

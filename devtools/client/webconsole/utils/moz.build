@@ -6,6 +6,7 @@ DevToolsModules(
     'clipboard.js',
     'context-menu.js',
     'id-generator.js',
+    'l10n.js',
     'messages.js',
     'object-inspector.js',
     'prefs.js',

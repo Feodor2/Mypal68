@@ -30,10 +30,11 @@ import {
   isUrlExtension,
   shouldBlackbox,
 } from "../../utils/source";
-import { isDirectory } from "../../utils/sources-tree";
+import { isDirectory, getPathWithoutThread } from "../../utils/sources-tree";
 import { copyToTheClipboard } from "../../utils/clipboard";
 import { features } from "../../utils/prefs";
 import { downloadFile } from "../../utils/utils";
+import { isFulfilled } from "../../utils/async-value";
 
 import type { TreeNode } from "../../utils/sources-tree/types";
 import type {
@@ -44,15 +45,29 @@ import type {
   SourceContent,
 } from "../../types";
 
+type OwnProps = {|
+  item: TreeNode,
+  threads: Thread[],
+  depth: number,
+  focused: boolean,
+  autoExpand: ?boolean,
+  expanded: boolean,
+  focusItem: TreeNode => void,
+  selectItem: TreeNode => void,
+  source: ?Source,
+  debuggeeUrl: string,
+  projectRoot: string,
+  setExpanded: (TreeNode, boolean, boolean) => void,
+|};
 type Props = {
+  source: ?Source,
+  item: TreeNode,
   autoExpand: ?boolean,
   cx: Context,
   debuggeeUrl: string,
   projectRoot: string,
-  source: ?Source,
   extensionName: string | null,
-  item: TreeNode,
-  sourceContent: SourceContent,
+  sourceContent: ?SourceContent,
   depth: number,
   focused: boolean,
   expanded: boolean,
@@ -128,9 +143,11 @@ class SourceTreeItem extends Component<Props, State> {
           const blackBoxMenuItem = {
             id: "node-menu-blackbox",
             label: source.isBlackBoxed
-              ? L10N.getStr("sourceFooter.unblackbox")
-              : L10N.getStr("sourceFooter.blackbox"),
-            accesskey: L10N.getStr("sourceFooter.blackbox.accesskey"),
+              ? L10N.getStr("blackboxContextItem.unblackbox")
+              : L10N.getStr("blackboxContextItem.blackbox"),
+            accesskey: source.isBlackBoxed
+              ? L10N.getStr("blackboxContextItem.unblackbox.accesskey")
+              : L10N.getStr("blackboxContextItem.blackbox.accesskey"),
             disabled: !shouldBlackbox(source),
             click: () => this.props.toggleBlackBox(cx, source),
           };
@@ -176,12 +193,18 @@ class SourceTreeItem extends Component<Props, State> {
   };
 
   handleDownloadFile = async (cx: Context, source: ?Source, item: TreeNode) => {
-    const name = item.name;
+    if (!source) {
+      return;
+    }
+
     if (!this.props.sourceContent) {
       await this.props.loadSourceText({ cx, source });
     }
     const data = this.props.sourceContent;
-    downloadFile(data, name);
+    if (!data) {
+      return;
+    }
+    downloadFile(data, item.name);
   };
 
   addCollapseExpandAllOptions = (menuOptions: ContextMenu, item: TreeNode) => {
@@ -252,18 +275,24 @@ class SourceTreeItem extends Component<Props, State> {
       return <AccessibleImage className="folder" />;
     }
 
+    if (source && source.isBlackBoxed) {
+      return <AccessibleImage className="blackBox" />;
+    }
+
     if (hasPrettySource) {
       return <AccessibleImage className="prettyPrint" />;
     }
 
     if (source) {
-      return <SourceIcon source={source} />;
+      return (
+        <SourceIcon source={source} shouldHide={icon => icon === "extension"} />
+      );
     }
 
     return null;
   }
 
-  renderItemName(depth) {
+  renderItemName(depth: number) {
     const { item, threads, extensionName } = this.props;
 
     if (depth === 0) {
@@ -296,7 +325,9 @@ class SourceTreeItem extends Component<Props, State> {
       return item.name;
     }
 
-    return item.type === "source" ? unescape(item.contents.url) : "";
+    return item.type === "source"
+      ? unescape(item.contents.url)
+      : getPathWithoutThread(item.path);
   }
 
   render() {
@@ -352,14 +383,14 @@ function getHasMatchingGeneratedSource(state, source: ?Source) {
 
 function getSourceContentValue(state, source: Source) {
   const content = getSourceContent(state, source.id);
-  return content !== null ? content.value : false;
+  return content && isFulfilled(content) ? content.value : null;
 }
 
 function isExtensionDirectory(depth, extensionName) {
   return extensionName && depth === 1;
 }
 
-const mapStateToProps = (state, props) => {
+const mapStateToProps = (state, props: OwnProps) => {
   const { source, item } = props;
   return {
     cx: getContext(state),
@@ -367,7 +398,7 @@ const mapStateToProps = (state, props) => {
     hasMatchingGeneratedSource: getHasMatchingGeneratedSource(state, source),
     hasSiblingOfSameName: getHasSiblingOfSameName(state, source),
     hasPrettySource: source ? checkHasPrettySource(state, source.id) : false,
-    sourceContent: source ? getSourceContentValue(state, source) : false,
+    sourceContent: source ? getSourceContentValue(state, source) : null,
     extensionName:
       (isUrlExtension(item.name) &&
         getExtensionNameBySourceUrl(state, item.name)) ||
@@ -375,7 +406,7 @@ const mapStateToProps = (state, props) => {
   };
 };
 
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     setProjectDirectoryRoot: actions.setProjectDirectoryRoot,

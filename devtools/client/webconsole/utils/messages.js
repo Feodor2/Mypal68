@@ -4,7 +4,7 @@
 
 "use strict";
 
-const l10n = require("devtools/client/webconsole/webconsole-l10n");
+const l10n = require("devtools/client/webconsole/utils/l10n");
 const {
   getUrlDetails,
 } = require("devtools/client/netmonitor/src/utils/request-utils");
@@ -116,7 +116,7 @@ function transformPacket(packet) {
   }
 }
 
-/* eslint-disable complexity */
+// eslint-disable-next-line complexity
 function transformConsoleAPICallPacket(packet) {
   const { message } = packet;
 
@@ -196,13 +196,13 @@ function transformConsoleAPICallPacket(packet) {
       break;
     case "table":
       const supportedClasses = [
-        "Array",
         "Object",
         "Map",
         "Set",
         "WeakMap",
         "WeakSet",
-      ];
+      ].concat(getArrayTypeNames());
+
       if (
         !Array.isArray(parameters) ||
         parameters.length === 0 ||
@@ -245,7 +245,7 @@ function transformConsoleAPICallPacket(packet) {
     : null;
 
   if (type === "logPointError" || type === "logPoint") {
-    frame.origin = "logPoint";
+    frame.options = { logPoint: true };
   }
 
   return new ConsoleMessage({
@@ -260,12 +260,10 @@ function transformConsoleAPICallPacket(packet) {
     userProvidedStyles: message.styles,
     prefix: message.prefix,
     private: message.private,
-    executionPoint: message.executionPoint,
     logpointId: message.logpointId,
     chromeContext: message.chromeContext,
   });
 }
-/* eslint-enable complexity */
 
 function transformNavigationMessagePacket(packet) {
   const { url } = packet;
@@ -295,7 +293,7 @@ function transformLogMessagePacket(packet) {
 function transformPageErrorPacket(packet) {
   const { pageError } = packet;
   let level = MESSAGE_LEVEL.ERROR;
-  if (pageError.warning || pageError.strict) {
+  if (pageError.warning) {
     level = MESSAGE_LEVEL.WARN;
   } else if (pageError.info) {
     level = MESSAGE_LEVEL.INFO;
@@ -325,15 +323,13 @@ function transformPageErrorPacket(packet) {
     frame,
     errorMessageName: pageError.errorMessageName,
     exceptionDocURL: pageError.exceptionDocURL,
+    hasException: pageError.hasException,
+    parameters: pageError.hasException ? [pageError.exception] : null,
     timeStamp: pageError.timeStamp,
     notes: pageError.notes,
     private: pageError.private,
-    executionPoint: pageError.executionPoint,
     chromeContext: pageError.chromeContext,
-    // Backward compatibility: cssSelectors might not be available when debugging
-    // Firefox 67 or older.
-    // Remove `|| ""` when Firefox 68 is on the release channel.
-    cssSelectors: pageError.cssSelectors || "",
+    cssSelectors: pageError.cssSelectors,
   });
 }
 
@@ -365,6 +361,7 @@ function transformEvaluationResultPacket(packet) {
     exceptionDocURL,
     exception,
     exceptionStack,
+    hasException,
     frame,
     result,
     helperResult,
@@ -372,22 +369,27 @@ function transformEvaluationResultPacket(packet) {
     notes,
   } = packet;
 
-  const parameter =
-    helperResult && helperResult.object ? helperResult.object : result;
+  let parameter;
 
-  if (helperResult && helperResult.type === "error") {
+  if (hasException) {
+    // If we have an exception, we prefix it, and we reset the exception message, as we're
+    // not going to use it.
+    parameter = exception;
+    exceptionMessage = null;
+  } else if (helperResult?.object) {
+    parameter = helperResult.object;
+  } else if (helperResult?.type === "error") {
     try {
       exceptionMessage = l10n.getStr(helperResult.message);
     } catch (ex) {
       exceptionMessage = helperResult.message;
     }
-  } else if (typeof exception === "string") {
-    // Wrap thrown strings in Error objects, so `throw "foo"` outputs "Error: foo"
-    exceptionMessage = new Error(exceptionMessage).toString();
+  } else {
+    parameter = result;
   }
 
   const level =
-    typeof exceptionMessage !== "undefined" && exceptionMessage !== null
+    typeof exceptionMessage !== "undefined" && packet.exceptionMessage !== null
       ? MESSAGE_LEVEL.ERROR
       : MESSAGE_LEVEL.LOG;
 
@@ -397,6 +399,7 @@ function transformEvaluationResultPacket(packet) {
     helperType: helperResult ? helperResult.type : null,
     level,
     messageText: exceptionMessage,
+    hasException,
     parameters: [parameter],
     errorMessageName,
     exceptionDocURL,
@@ -405,25 +408,34 @@ function transformEvaluationResultPacket(packet) {
     timeStamp,
     notes,
     private: packet.private,
+    allowRepeating: false,
   });
 }
 
 // Helpers
 function getRepeatId(message) {
-  return JSON.stringify({
-    frame: message.frame,
-    groupId: message.groupId,
-    indent: message.indent,
-    level: message.level,
-    messageText: message.messageText,
-    parameters: message.parameters,
-    source: message.source,
-    type: message.type,
-    userProvidedStyles: message.userProvidedStyles,
-    private: message.private,
-    stacktrace: message.stacktrace,
-    executionPoint: message.executionPoint,
-  });
+  return JSON.stringify(
+    {
+      frame: message.frame,
+      groupId: message.groupId,
+      indent: message.indent,
+      level: message.level,
+      messageText: message.messageText,
+      parameters: message.parameters,
+      source: message.source,
+      type: message.type,
+      userProvidedStyles: message.userProvidedStyles,
+      private: message.private,
+      stacktrace: message.stacktrace,
+    },
+    function(_, value) {
+      if (typeof value === "bigint") {
+        return value.toString() + "n";
+      }
+
+      return value;
+    }
+  );
 }
 
 function convertCachedPacket(packet) {
@@ -663,8 +675,26 @@ function isTrackingProtectionMessage(message) {
   return category == "Tracking Protection";
 }
 
+function getArrayTypeNames() {
+  return [
+    "Array",
+    "Int8Array",
+    "Uint8Array",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float32Array",
+    "Float64Array",
+    "Uint8ClampedArray",
+    "BigInt64Array",
+    "BigUint64Array",
+  ];
+}
+
 module.exports = {
   createWarningGroupMessage,
+  getArrayTypeNames,
   getInitialMessageCountForViewport,
   getParentWarningGroupMessageId,
   getWarningGroupType,

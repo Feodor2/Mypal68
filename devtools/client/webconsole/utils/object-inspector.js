@@ -9,10 +9,17 @@ const {
   createElement,
 } = require("devtools/client/shared/vendor/react");
 
-const reps = require("devtools/client/shared/components/reps/reps");
-const { REPS, MODE, objectInspector } = reps;
-const ObjectInspector = createFactory(objectInspector.ObjectInspector);
-const { Grip } = REPS;
+loader.lazyGetter(this, "REPS", function() {
+  return require("devtools/client/shared/components/reps/reps").REPS;
+});
+loader.lazyGetter(this, "MODE", function() {
+  return require("devtools/client/shared/components/reps/reps").MODE;
+});
+loader.lazyGetter(this, "ObjectInspector", function() {
+  const reps = require("devtools/client/shared/components/reps/reps");
+  return createFactory(reps.objectInspector.ObjectInspector);
+});
+
 loader.lazyRequireGetter(
   this,
   "SmartTrace",
@@ -51,7 +58,7 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
       : null;
   }
 
-  const roots = createRootsFromGrip(grip);
+  const roots = createRootsFromGrip(grip, override.pathPrefix);
 
   const objectInspectorProps = {
     autoExpandDepth: 0,
@@ -60,8 +67,12 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
     onViewSourceInDebugger: serviceContainer.onViewSourceInDebugger,
     recordTelemetryEvent: serviceContainer.recordTelemetryEvent,
     openLink: serviceContainer.openLink,
+    sourceMapService: serviceContainer.sourceMapService,
+    customFormat: override.customFormat !== false,
+    urlCropLimit: 120,
     renderStacktrace: stacktrace =>
       createElement(SmartTrace, {
+        key: "stacktrace",
         stacktrace,
         onViewSourceInDebugger: serviceContainer
           ? serviceContainer.onViewSourceInDebugger ||
@@ -84,7 +95,7 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
       onDOMNodeMouseOver,
       onDOMNodeMouseOut,
       onInspectIconClick,
-      defaultRep: Grip,
+      defaultRep: REPS.Grip,
     });
   }
 
@@ -97,10 +108,10 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
   return ObjectInspector({ ...objectInspectorProps, ...override });
 }
 
-function createRootsFromGrip(grip) {
+function createRootsFromGrip(grip, pathPrefix = "") {
   return [
     {
-      path: Symbol((grip && grip.actor) || JSON.stringify(grip)),
+      path: `${pathPrefix}${(grip && grip.actor) || JSON.stringify(grip)}`,
       contents: { value: grip },
     },
   ];

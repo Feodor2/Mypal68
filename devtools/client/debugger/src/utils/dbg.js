@@ -25,7 +25,7 @@ function sendPacket(dbg: any, packet: any) {
 
 function sendPacketToThread(dbg: Object, packet: any) {
   return sendPacket(dbg, {
-    to: dbg.connection.tabConnection.threadClient.actor,
+    to: dbg.connection.tabConnection.threadFront.actor,
     ...packet,
   });
 }
@@ -88,7 +88,7 @@ export function setupHelper(obj: Object) {
       evaluate: expression => evaluate(dbg, expression),
       sendPacketToThread: packet => sendPacketToThread(dbg, packet),
       sendPacket: packet => sendPacket(dbg, packet),
-      dumpThread: () => sendPacketToThread(dbg, { type: "dumpThread" }),
+      dumpThread: () => dbg.connection.tabConnection.threadFront.dumpThread(),
       getDocument: url => getDocumentForUrl(dbg, url),
     },
     formatters: {

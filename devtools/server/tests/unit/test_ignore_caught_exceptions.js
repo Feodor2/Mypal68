@@ -10,20 +10,20 @@
  */
 
 add_task(
-  threadClientTest(
-    async ({ threadClient, client, debuggee }) => {
+  threadFrontTest(
+    async ({ threadFront, debuggee }) => {
       await executeOnNextTickAndWaitForPause(
         () => evaluateTestCode(debuggee),
-        client
+        threadFront
       );
 
-      threadClient.pauseOnExceptions(true, true);
-      await resume(threadClient);
-      const paused = await waitForPause(client);
+      threadFront.pauseOnExceptions(true, true);
+      await resume(threadFront);
+      const paused = await waitForPause(threadFront);
       Assert.equal(paused.why.type, "exception");
       equal(paused.frame.where.line, 6, "paused at throw");
 
-      await resume(threadClient);
+      await resume(threadFront);
     },
     {
       // Bug 1508289, exception tests fails in worker scope
@@ -37,10 +37,10 @@ function evaluateTestCode(debuggee) {
   try {
   Cu.evalInSandbox(`                    // 1
    debugger;                            // 2
-   try {                                // 3           
+   try {                                // 3
      throw "foo";                       // 4
    } catch (e) {}                       // 5
-   throw "bar";                         // 6  
+   throw "bar";                         // 6
   `,                                    // 7
     debuggee,
     "1.8",

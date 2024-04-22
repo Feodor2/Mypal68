@@ -68,7 +68,6 @@ BuiltinProvider.prototype = {
       paths,
       invisibleToDebugger: this.invisibleToDebugger,
       freshCompartment: this.freshCompartment,
-      sharedGlobal: true,
       sandboxName: "DevTools (Module loader)",
       requireHook: (id, require) => {
         if (id.startsWith("raw!") || id.startsWith("theme-loader!")) {
@@ -94,13 +93,10 @@ var gNextLoaderID = 0;
  */
 this.DevToolsLoader = function DevToolsLoader() {
   this.require = this.require.bind(this);
-
-  Services.obs.addObserver(this, "devtools-unload");
 };
 
 DevToolsLoader.prototype = {
   destroy: function(reason = "shutdown") {
-    Services.obs.removeObserver(this, "devtools-unload");
 
     if (this._provider) {
       this._provider.unload(reason);
@@ -220,19 +216,6 @@ DevToolsLoader.prototype = {
    */
   _loadProvider: function() {
     this.setProvider(new BuiltinProvider());
-  },
-
-  /**
-   * Handles "devtools-unload" event
-   *
-   * @param String data
-   *    reason passed to modules when unloaded
-   */
-  observe: function(subject, topic, data) {
-    if (topic != "devtools-unload") {
-      return;
-    }
-    this.destroy(data);
   },
 
   /**

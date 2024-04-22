@@ -24,7 +24,6 @@ const features = [
   "js",
   "leaf",
   "mainthreadio",
-  "memory",
   "privacy",
   "responsiveness",
   "screenshots",

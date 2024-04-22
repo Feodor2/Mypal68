@@ -10,12 +10,6 @@
  *   - Reload inside debugger with toolbox caching enabled
  */
 
-// Debugger operations may still be in progress when we navigate.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
-PromiseTestUtils.whitelistRejectionsGlobally(/Page has navigated/);
-
 const server = createTestHTTPServer();
 
 let docValue = 1;
@@ -139,6 +133,7 @@ add_task(async function() {
   pageValue = await getPageValue(tab);
   is(pageValue, "let x = 5;", "Content loads from network, has doc value 5");
   await waitForLoadedSource(dbg, "inline-cache.html");
+  await waitForSelectedSource(dbg, "inline-cache.html");
   dbgValue = findSourceContent(dbg, "inline-cache.html");
   info(`Debugger text: ${dbgValue.value}`);
   ok(

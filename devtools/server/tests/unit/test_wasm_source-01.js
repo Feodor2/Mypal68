@@ -10,7 +10,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
@@ -33,10 +33,10 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-wasm-source", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
-      gThreadClient
+      gThreadFront = threadFront;
+      gThreadFront
         .reconfigure({
           observeAsmJS: true,
           wasmBinarySource: true,
@@ -111,8 +111,8 @@ const EXPECTED_CONTENT = String.fromCharCode(
 );
 
 function test_source() {
-  gThreadClient.once("paused", function(packet) {
-    gThreadClient.getSources().then(function(response) {
+  gThreadFront.once("paused", function(packet) {
+    gThreadFront.getSources().then(function(response) {
       Assert.ok(!!response);
       Assert.ok(!!response.sources);
 
@@ -122,7 +122,7 @@ function test_source() {
 
       Assert.ok(!!source);
 
-      const sourceFront = gThreadClient.source(source);
+      const sourceFront = gThreadFront.source(source);
       sourceFront.source().then(function(response) {
         Assert.ok(!!response);
         Assert.ok(!!response.contentType);
@@ -134,7 +134,7 @@ function test_source() {
         Assert.ok("binary" in sourceContent);
         Assert.equal(EXPECTED_CONTENT, sourceContent.binary);
 
-        gThreadClient.resume().then(function() {
+        gThreadFront.resume().then(function() {
           finishClient(gClient);
         });
       });

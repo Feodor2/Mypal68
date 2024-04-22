@@ -3,16 +3,20 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
+    'FrameFilterMenu.js',
+    'FrameListColumnData.js',
     'FrameListColumnFinBit.js',
     'FrameListColumnMaskBit.js',
     'FrameListColumnOpCode.js',
-    'FrameListColumnPayload.js',
     'FrameListColumnSize.js',
     'FrameListColumnTime.js',
-    'FrameListColumnType.js',
     'FrameListContent.js',
     'FrameListHeader.js',
+    'FrameListHeaderContextMenu.js',
     'FrameListItem.js',
     'FramePayload.js',
+    'RawData.js',
+    'StatusBar.js',
+    'Toolbar.js',
     'WebSocketsPanel.js',
 )

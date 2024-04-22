@@ -8,14 +8,12 @@ const xpcInspector = Cc["@mozilla.org/jsinspector;1"].getService(
 );
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client, targetFront }) => {
+  threadFrontTest(async ({ threadFront, debuggee, client, targetFront }) => {
     Assert.equal(xpcInspector.eventLoopNestLevel, 0);
 
     await new Promise(resolve => {
-      client.on("paused", function(packet) {
+      threadFront.on("paused", function(packet) {
         Assert.equal(false, "error" in packet);
-        Assert.equal(packet.from, threadClient.actor);
-        Assert.equal(packet.type, "paused");
         Assert.ok("actor" in packet);
         Assert.ok("why" in packet);
         Assert.equal(packet.why.type, "debuggerStatement");
@@ -28,7 +26,7 @@ add_task(
         Assert.equal(xpcInspector.eventLoopNestLevel, 1);
 
         // Let the debuggee continue execution.
-        threadClient.resume().then(resolve);
+        threadFront.resume().then(resolve);
       });
 
       // Now that we know we're resumed, we can make the debuggee do something.

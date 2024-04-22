@@ -77,7 +77,7 @@ class MarkupContextMenu {
    * This method is here for the benefit of copying links.
    */
   _copyAttributeLink(link) {
-    this.inspector.inspector
+    this.inspector.inspectorFront
       .resolveRelativeURL(link, this.selection.nodeFront)
       .then(url => {
         clipboardHelper.copyString(url);
@@ -342,11 +342,8 @@ class MarkupContextMenu {
    */
   _showDOMProperties() {
     this.toolbox.openSplitConsole().then(() => {
-      const panel = this.toolbox.getPanel("webconsole");
-      const jsterm = panel.hud.jsterm;
-
-      jsterm.execute("inspect($0)");
-      jsterm.focus();
+      const { hud } = this.toolbox.getPanel("webconsole");
+      hud.ui.wrapper.dispatchEvaluateExpression("inspect($0)");
     });
   }
 
@@ -357,26 +354,27 @@ class MarkupContextMenu {
    * temp variable on the content window.  Also opens the split console and
    * autofills it with the temp variable.
    */
-  _useInConsole() {
-    this.toolbox.openSplitConsole().then(() => {
-      const { hud } = this.toolbox.getPanel("webconsole");
+  async _useInConsole() {
+    await this.toolbox.openSplitConsole();
+    const { hud } = this.toolbox.getPanel("webconsole");
 
-      const evalString = `{ let i = 0;
-        while (window.hasOwnProperty("temp" + i) && i < 1000) {
-          i++;
-        }
-        window["temp" + i] = $0;
-        "temp" + i;
-      }`;
+    const evalString = `{ let i = 0;
+      while (window.hasOwnProperty("temp" + i) && i < 1000) {
+        i++;
+      }
+      window["temp" + i] = $0;
+      "temp" + i;
+    }`;
 
-      const options = {
-        selectedNodeActor: this.selection.nodeFront.actorID,
-      };
-      hud.jsterm.requestEvaluation(evalString, options).then(res => {
-        hud.setInputValue(res.result);
-        this.inspector.emit("console-var-ready");
-      });
-    });
+    const options = {
+      selectedNodeActor: this.selection.nodeFront.actorID,
+    };
+    const res = await hud.ui.webConsoleClient.evaluateJSAsync(
+      evalString,
+      options
+    );
+    hud.setInputValue(res.result);
+    this.inspector.emit("console-var-ready");
   }
 
   _buildA11YMenuItem(menu) {
@@ -542,6 +540,7 @@ class MarkupContextMenu {
 
     menu.append(
       new MenuItem({
+        id: "node-menu-mutation-breakpoint-subtree",
         checked: mutationBreakpoints.subtree,
         click: () => this.markup.toggleMutationBreakpoint("subtree"),
         disabled: !isSelectionElement,
@@ -552,6 +551,7 @@ class MarkupContextMenu {
 
     menu.append(
       new MenuItem({
+        id: "node-menu-mutation-breakpoint-attribute",
         checked: mutationBreakpoints.attribute,
         click: () => this.markup.toggleMutationBreakpoint("attribute"),
         disabled: !isSelectionElement,
@@ -817,6 +817,7 @@ class MarkupContextMenu {
         new MenuItem({
           label: INSPECTOR_L10N.getStr("inspectorBreakpointSubmenu.label"),
           submenu: this._getDOMBreakpointSubmenu(isSelectionElement),
+          id: "node-menu-mutation-breakpoint",
         })
       );
     }

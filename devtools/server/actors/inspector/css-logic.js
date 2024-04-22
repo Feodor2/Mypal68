@@ -47,13 +47,7 @@ const COMPAREMODE = {
   INTEGER: "int",
 };
 
-/**
- * @param {function} isInherited A function that determines if the CSS property
- *                   is inherited.
- */
-function CssLogic(isInherited) {
-  // The cache of examined CSS properties.
-  this._isInherited = isInherited;
+function CssLogic() {
   this._propertyInfos = {};
 }
 
@@ -214,7 +208,7 @@ CssLogic.prototype = {
 
     let info = this._propertyInfos[property];
     if (!info) {
-      info = new CssPropertyInfo(this, property, this._isInherited);
+      info = new CssPropertyInfo(this, property);
       this._propertyInfos[property] = info;
     }
 
@@ -515,7 +509,8 @@ CssLogic.prototype = {
         if (
           rule.getPropertyValue(property) &&
           (status == STATUS.MATCHED ||
-            (status == STATUS.PARENT_MATCH && this._isInherited(property)))
+            (status == STATUS.PARENT_MATCH &&
+              InspectorUtils.isInheritedProperty(property)))
         ) {
           result[property] = true;
           return false;
@@ -1226,15 +1221,12 @@ CssSelector.prototype = {
  *
  * @param {CssLogic} cssLogic Reference to the parent CssLogic instance
  * @param {string} property The CSS property we are gathering information for
- * @param {function} isInherited A function that determines if the CSS property
- *                   is inherited.
  * @constructor
  */
-function CssPropertyInfo(cssLogic, property, isInherited) {
+function CssPropertyInfo(cssLogic, property) {
   this._cssLogic = cssLogic;
   this.property = property;
   this._value = "";
-  this._isInherited = isInherited;
 
   // An array holding CssSelectorInfo objects for each of the matched selectors
   // that are inside a CSS rule. Only rules that hold the this.property are
@@ -1323,7 +1315,8 @@ CssPropertyInfo.prototype = {
     if (
       value &&
       (status == STATUS.MATCHED ||
-        (status == STATUS.PARENT_MATCH && this._isInherited(this.property)))
+        (status == STATUS.PARENT_MATCH &&
+          InspectorUtils.isInheritedProperty(this.property)))
     ) {
       const selectorInfo = new CssSelectorInfo(
         selector,

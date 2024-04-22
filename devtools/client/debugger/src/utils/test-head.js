@@ -30,11 +30,6 @@ import type { Source, OriginalSourceData, GeneratedSourceData } from "../types";
  * @static
  */
 function createStore(client: any, initialState: any = {}, sourceMapsMock: any) {
-  client = {
-    hasWasmSupport: () => true,
-    ...client,
-  };
-
   const store = configureStore({
     log: false,
     history: getHistory(),
@@ -89,7 +84,6 @@ function makeFrame({ id, sourceId }: Object, opts: Object = {}) {
 function createSourceObject(
   filename: string,
   props: {
-    sourceMapURL?: string,
     introductionType?: string,
     introductionUrl?: string,
     isBlackBoxed?: boolean,

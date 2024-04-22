@@ -10,7 +10,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 function run_test() {
   if (typeof WebAssembly == "undefined") {
@@ -26,30 +26,27 @@ function run_test() {
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack", function(
+    attachTestTabAndResume(gClient, "test-stack", async function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
-      gThreadClient.reconfigure(
+      gThreadFront = threadFront;
+      await gThreadFront.reconfigure(
         {
           observeAsmJS: true,
           wasmBinarySource: true,
-        },
-        function(response) {
-          Assert.equal(!!response.error, false);
-          test_pause_frame();
         }
       );
+      test_pause_frame();
     });
   });
   do_test_pending();
 }
 
 function test_pause_frame() {
-  gThreadClient.once("paused", function(packet) {
-    gThreadClient.getFrames(0, null).then(async function(frameResponse) {
+  gThreadFront.once("paused", function(packet) {
+    gThreadFront.getFrames(0, null).then(async function(frameResponse) {
       Assert.equal(frameResponse.frames.length, 4);
 
       const wasmFrame = frameResponse.frames[1];
@@ -57,7 +54,7 @@ function test_pause_frame() {
       Assert.equal(wasmFrame.this, undefined);
 
       const location = wasmFrame.where;
-      const source = await getSourceById(gThreadClient, location.actor);
+      const source = await getSourceById(gThreadFront, location.actor);
       Assert.equal(location.line > 0, true);
       Assert.equal(location.column > 0, true);
       Assert.equal(/^wasm:(?:[^:]*:)*?[0-9a-f]{16}$/.test(source.url), true);

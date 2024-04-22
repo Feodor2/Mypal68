@@ -24,9 +24,10 @@ import {
 
 import type { Frame, Why, SourceWithContent } from "../../types";
 
+type OwnProps = {||};
 type Props = {
-  frame: Frame,
-  why: Why,
+  frame: ?Frame,
+  why: ?Why,
   source: ?SourceWithContent,
 };
 
@@ -35,7 +36,7 @@ type TextClasses = {
   lineClass: string,
 };
 
-function isDocumentReady(source: ?SourceWithContent, frame) {
+function isDocumentReady(source: ?SourceWithContent, frame: ?Frame) {
   return (
     frame && source && source.content && hasDocument(frame.location.sourceId)
   );
@@ -63,15 +64,19 @@ export class DebugLine extends PureComponent<Props> {
     endOperation();
   }
 
-  setDebugLine(why: Why, frame: Frame, source: ?SourceWithContent) {
-    if (!isDocumentReady(source, frame)) {
+  setDebugLine(
+    why: ?Why,
+    frame: ?Frame,
+    source: ?SourceWithContent
+  ) {
+    if (!frame || !isDocumentReady(source, frame)) {
       return;
     }
-    const sourceId = frame.location.sourceId;
+    const { sourceId } = frame.location;
     const doc = getDocument(sourceId);
 
     let { line, column } = toEditorPosition(frame.location);
-    const { markTextClass, lineClass } = this.getTextClasses(why);
+    let { markTextClass, lineClass } = this.getTextClasses(why);
     doc.addLineClass(line, "line", lineClass);
 
     const lineText = doc.getLine(line);
@@ -81,6 +86,10 @@ export class DebugLine extends PureComponent<Props> {
     // another source tab, codeMirror will be null.
     const columnEnd = doc.cm ? getTokenEnd(doc.cm, line, column) : null;
 
+    if (columnEnd === null) {
+      markTextClass += " to-line-end";
+    }
+
     this.debugExpression = doc.markText(
       { ch: column, line },
       { ch: columnEnd, line },
@@ -88,8 +97,8 @@ export class DebugLine extends PureComponent<Props> {
     );
   }
 
-  clearDebugLine(why: Why, frame: Frame, source: ?SourceWithContent) {
-    if (!isDocumentReady(source, frame)) {
+  clearDebugLine(why: ?Why, frame: ?Frame, source: ?SourceWithContent) {
+    if (!frame || !isDocumentReady(source, frame)) {
       return;
     }
 
@@ -97,14 +106,13 @@ export class DebugLine extends PureComponent<Props> {
       this.debugExpression.clear();
     }
 
-    const sourceId = frame.location.sourceId;
     const { line } = toEditorPosition(frame.location);
-    const doc = getDocument(sourceId);
+    const doc = getDocument(location.sourceId);
     const { lineClass } = this.getTextClasses(why);
     doc.removeLineClass(line, "line", lineClass);
   }
 
-  getTextClasses(why: Why): TextClasses {
+  getTextClasses(why: ?Why): TextClasses {
     if (isException(why)) {
       return {
         markTextClass: "debug-expression-error",
@@ -129,4 +137,4 @@ const mapStateToProps = state => {
   };
 };
 
-export default connect(mapStateToProps)(DebugLine);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps)(DebugLine);

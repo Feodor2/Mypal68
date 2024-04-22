@@ -16,6 +16,7 @@
   --onboarding-link-active-color: var(--blue-40);
 
   /* Tooltips */
+  --theme-tooltip-color: var(--theme-text-color-strong);
   --theme-tooltip-border: #434850;
   --theme-tooltip-background: rgba(19, 28, 38, .9);
   --theme-tooltip-shadow: rgba(25, 25, 25, 0.76);
@@ -39,6 +40,7 @@
   --onboarding-link-active-color: var(--blue-70);
 
   /* Tooltips */
+  --theme-tooltip-color: var(--theme-body-color);
   --theme-tooltip-border: #d9e1e8;
   --theme-tooltip-background: rgba(255, 255, 255, .9);
   --theme-tooltip-shadow: rgba(155, 155, 155, 0.26);
@@ -80,13 +82,24 @@ strong {
 /* Tooltip: Inactive CSS tooltip */
 
 .devtools-tooltip-inactive-css {
-  color: var(--theme-body-color);
-  padding: 7px 10px;
+  color: var(--theme-arrowpanel-color);
+  padding: 7px 14px 9px;
+  font-size: 12px;
   margin: 0;
+}
+
+.devtools-tooltip-inactive-css,
+.devtools-tooltip-inactive-css strong {
+  user-select: text;
+  -moz-user-focus: normal;
 }
 
 .devtools-tooltip-inactive-css p {
   margin-block-start: 0;
+  margin-block-end: calc(1em - 4px);
+}
+
+.devtools-tooltip-inactive-css p:last-child {
   margin-block-end: 0;
 }
 
@@ -109,7 +122,6 @@ strong {
   display: none;
   position: fixed;
   z-index: 9999;
-  display: none;
   background: transparent;
   pointer-events: none;
   overflow: hidden;
@@ -344,7 +356,8 @@ strong {
    * padding.
    */
   margin-bottom: 0;
-  padding-bottom: 6px;
+  padding-top: 6px;
+  padding-bottom: 2px;
 }
 
 .tooltip-container[type="doorhanger"].tooltip-bottom > .tooltip-panel {
@@ -354,6 +367,7 @@ strong {
    */
   margin-top: 0;
   padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .tooltip-container[type="doorhanger"].tooltip-top > .tooltip-arrow {
@@ -426,8 +440,9 @@ strong {
   background-position: center left 7px;
 }
 
-.tooltip-container[type="doorhanger"] .menuitem > .command[aria-checked="true"]:-moz-locale-dir(rtl) {
-  background-position: center right 7px;
+.tooltip-container[type="doorhanger"] .menuitem > .command[aria-checked="true"]:-moz-locale-dir(rtl),
+.tooltip-container[type="doorhanger"] .menuitem > .command[aria-checked="true"]:dir(rtl) {
+  background-position-x: right 7px;
 }
 
 .tooltip-container[type="doorhanger"] .menuitem > .command > .label {
@@ -476,28 +491,37 @@ strong {
 
 /* Tooltip: Events */
 
+.devtools-tooltip-events-container {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .event-header {
   display: flex;
   align-items: center;
+  box-sizing: content-box;
+  height: 24px;
+  padding: 0 4px;
+  border-top: 1px solid var(--theme-splitter-color);
   cursor: pointer;
   overflow: hidden;
+  color: var(--theme-tooltip-color);
 }
 
-.event-header:before {
-  content: "▶︎";
-  padding-inline-end: 5px;
+.devtools-tooltip-events-container .event-header:first-child {
+  border-top-width: 0;
 }
 
-.event-header.content-expanded:before {
-  content: "▼";
+.event-header .theme-twisty {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-inline-end: 4px;
+  fill: currentColor;
 }
 
-.event-header:first-child {
-  border-width: 0;
-}
-
-.event-header:not(:first-child) {
-  border-width: 1px 0 0 0;
+.event-header.content-expanded .theme-twisty {
+  transform: none;
 }
 
 .event-tooltip-debugger-icon {
@@ -507,19 +531,15 @@ strong {
   background-repeat: no-repeat;
   background-position: center;
   width: 20px;
-  height: 18px;
+  height: 20px;
   border-radius: 2px;
   margin-inline-end: 4px;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .event-tooltip-debugger-icon:hover {
   background-color: var(--toolbarbutton-hover-background);
-}
-
-.devtools-tooltip-events-container {
-  height: 100%;
-  overflow-y: auto;
 }
 
 .event-tooltip-event-type,
@@ -532,7 +552,8 @@ strong {
 
 .event-tooltip-event-type {
   font-weight: bold;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .event-tooltip-filename {
@@ -588,8 +609,8 @@ strong {
   align-items: center;
   height: 14px;
   border-radius: 3px;
-  padding: 2px;
-  margin-inline-start: 5px;
+  padding: 1px 3px;
+  margin-inline-start: 4px;
   background-color: var(--theme-text-color-alt);
   color: var(--theme-body-background);
 }
@@ -597,7 +618,13 @@ strong {
 .event-tooltip-attributes {
   margin: 0;
   font-size: 9px;
-  padding-top: 2px;
+  line-height: 14px;
+}
+
+.event-tooltip-editor-frame {
+  border-style: none;
+  height: 100%;
+  width: 100%;
 }
 
 /* Tooltip: HTML Search */
@@ -614,6 +641,55 @@ strong {
 }
 
 /* Tooltip: Image tooltip */
+
+/*
+ * Overview of the Image Tooltip layout.
+ *
+ * ┌─────────────────────────────────────────┐
+ * │ .devtools-tooltip-image-container       │
+ * │ ┌─────────────────────────────────────┐ │
+ * │ │ .devtools-tooltip-image-wrapper     │ │
+ * │ │ ┌─────────────────────────────────┐ │ │
+ * │ │ │ .devtools-tooltip-image         │ │ │
+ * │ │ │ (the actual image tag)          │ │ │
+ * │ │ └─────────────────────────────────┘ │ │
+ * │ └─────────────────────────────────────┘ │
+ * │ ┌─────────────────────────────────────┐ │
+ * │ │ .devtools-tooltip-image-dimensions  │ │
+ * │ └─────────────────────────────────────┘ │
+ * └─────────────────────────────────────────┘
+ *
+ */
+
+.devtools-tooltip-image-container {
+  /* Saved as variables to be synchronized easily with ImageTooltipHelper.js */
+  --image-tooltip-image-padding: 4px;
+  --image-tooltip-label-height: 20px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 100px;
+  text-align: center;
+}
+
+.devtools-tooltip-image-wrapper {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  padding: var(--image-tooltip-image-padding);
+  justify-content: center;
+  min-height: 1px
+}
+
+.devtools-tooltip-image {
+  max-height: 100%;
+}
+
+.devtools-tooltip-image-dimensions {
+  height: var(--image-tooltip-label-height);
+  text-align: center;
+}
 
 .devtools-tooltip-image-broken {
   box-sizing: border-box;
@@ -632,7 +708,7 @@ strong {
   font-size: 12px;
   padding: 7px;
   width: 100%;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .onboarding-icon {
@@ -679,16 +755,35 @@ strong {
   max-width: 212px;
 }
 
+.invoke-confirm .close-confirm-dialog-button::before {
+  background-image: url("chrome://devtools/skin/images/close.svg");
+}
+
 .invoke-confirm .confirm-label {
   margin: 0;
   padding: 4px;
   background-color: var(--theme-toolbar-background-alt);
+  display: flex;
+  align-items: start;
+}
+
+.invoke-confirm .confirm-label p {
+  margin: 0;
+  padding: 0;
+  flex-grow: 1;
+  hyphens: auto;
 }
 
 .invoke-confirm .emphasized {
   font-family: var(--monospace-font-family);
   font-weight: bold;
   overflow-wrap: break-word;
+}
+
+.invoke-confirm .close-confirm-dialog-button {
+  padding: 0;
+  margin: 0;
+  flex-grow: 0;
 }
 
 .invoke-confirm .confirm-button {

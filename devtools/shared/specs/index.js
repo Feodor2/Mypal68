@@ -58,6 +58,11 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/css-properties",
   },
   {
+    types: ["processDescriptor"],
+    spec: "devtools/shared/specs/descriptors/process",
+    front: "devtools/shared/fronts/descriptors/process",
+  },
+  {
     types: ["device"],
     spec: "devtools/shared/specs/device",
     front: "devtools/shared/fronts/device",
@@ -259,11 +264,10 @@ const Types = (exports.__TypesForTests = [
     spec: "devtools/shared/specs/targets/worker",
     front: "devtools/shared/fronts/targets/worker",
   },
-  /* Thread has an old fashion client and no front */
   {
-    types: ["context"],
+    types: ["thread"],
     spec: "devtools/shared/specs/thread",
-    front: null,
+    front: "devtools/shared/fronts/thread",
   },
   {
     types: ["console"],

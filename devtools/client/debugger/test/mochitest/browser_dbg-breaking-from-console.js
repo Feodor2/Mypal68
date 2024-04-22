@@ -14,19 +14,15 @@ add_task(async function() {
   const toolbox = await openNewTabAndToolbox(url, "webconsole");
 
   // Type "debugger" into console
-  let jsterm = toolbox.getPanel("webconsole").hud.jsterm;
-  jsterm.execute("debugger");
+  let wrapper = toolbox.getPanel("webconsole").hud.ui.wrapper;
+  wrapper.dispatchEvaluateExpression("debugger");
 
   // Wait for the debugger to be selected and make sure it's paused
   await waitOnToolbox(toolbox, "jsdebugger-selected");
-  is(toolbox.threadClient.state, "paused");
+  is(toolbox.threadFront.state, "paused");
 
   // Create a dbg context
   const dbg = createDebuggerContext(toolbox);
-  const {
-    selectors: { getSelectedSource },
-    getState
-  } = dbg;
 
   // Make sure the thread is paused in the right source and location
   await waitForPaused(dbg);

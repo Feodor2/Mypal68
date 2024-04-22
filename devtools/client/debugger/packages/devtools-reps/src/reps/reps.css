@@ -68,7 +68,7 @@
   color: var(--object-color);
 }
 
-.objectBox-stackTrace {
+.objectBox-stackTrace.reps-custom-format {
   color: var(--error-color);
 }
 

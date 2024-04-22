@@ -10,16 +10,17 @@
  */
 
 add_task(
-  threadClientTest(
-    async ({ threadClient, client, debuggee }) => {
+  threadFrontTest(
+    async ({ threadFront, client, debuggee }) => {
+      let onResume = null;
       let packet = null;
 
-      threadClient.once("paused", function(packet) {
+      threadFront.once("paused", function(packet) {
         packet = pkt;
-        threadClient.resume();
+        onResume = threadFront.resume();
       });
 
-      await threadClient.pauseOnExceptions(true, true);
+      await threadFront.pauseOnExceptions(true, true);
       try {
         /* eslint-disable */
     Cu.evalInSandbox(
@@ -37,17 +38,19 @@ add_task(
     /* eslint-enable */
       } catch (e) {}
 
+      await onResume;
+
       Assert.equal(!!packet, true);
       Assert.equal(packet.why.type, "exception");
       Assert.equal(packet.why.exception, "42");
       packet = null;
 
-      threadClient.once("paused", function(packet) {
+      threadFront.once("paused", function(pkt) {
         packet = pkt;
-        threadClient.resume();
+        onResume = threadFront.resume();
       });
 
-      await threadClient.pauseOnExceptions(false, true);
+      await threadFront.pauseOnExceptions(false, true);
       try {
         /* eslint-disable */
     Cu.evalInSandbox(
@@ -69,7 +72,7 @@ add_task(
       // on the thrown error from dontStopMe()
       Assert.equal(!!packet, false);
 
-      await threadClient.pauseOnExceptions(true, true);
+      await threadFront.pauseOnExceptions(true, true);
       try {
         /* eslint-disable */
     Cu.evalInSandbox(
@@ -86,6 +89,8 @@ add_task(
     );
     /* eslint-enable */
       } catch (e) {}
+
+      await onResume;
 
       // Test that the paused listener callback has been called
       // on the thrown error from stopMeAgain()

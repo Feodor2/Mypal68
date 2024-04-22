@@ -16,10 +16,6 @@
 }
 
 .tree.noselect {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  -o-user-select: none;
   user-select: none;
 }
 
@@ -163,7 +159,7 @@ html[dir="rtl"] .tree-node button:not(.expanded) {
   color: var(--object-color);
 }
 
-.objectBox-stackTrace {
+.objectBox-stackTrace.reps-custom-format {
   color: var(--error-color);
 }
 
@@ -387,7 +383,7 @@ button.jump-definition {
 /* Invoke getter button */
 
 button.invoke-getter {
-  mask: url("resource://devtools/client/shared/components/reps/images/input.svg")
+  mask: url(resource://devtools/client/shared/components/reps/images/input.svg)
     no-repeat;
   display: inline-block;
   background-color: var(--theme-icon-color);
@@ -461,4 +457,40 @@ button.invoke-getter {
 .tree-node.focused button.open-inspector,
 .tree-node.focused button.invoke-getter {
   background-color: currentColor;
+}
+
+button.remove-set-watchpoint {
+  mask: url("resource://devtools/client/debugger/images/webconsole-logpoint.svg")
+    no-repeat;
+  display: inline-block;
+  vertical-align: top;
+  height: 13px;
+  width: 15px;
+  margin: 0 4px 0px 20px;
+  padding: 0;
+  border: none;
+  background-color: var(--breakpoint-fill);
+  cursor: pointer;
+}
+
+button.remove-get-watchpoint {
+  mask: url("resource://devtools/client/debugger/images/webconsole-logpoint.svg")
+    no-repeat;
+  display: inline-block;
+  vertical-align: top;
+  height: 13px;
+  width: 15px;
+  margin: 0 4px 0px 20px;
+  padding: 0;
+  border: none;
+  background-color: var(--purple-60);
+  cursor: pointer;
+}
+.theme-dark button.remove-set-watchpoint:hover,
+.theme-light button.remove-set-watchpoint:hover {
+  background-color: var(--breakpoint-fill);
+}
+.theme-dark button.remove-get-watchpoint:hover,
+.theme-light button.remove-get-watchpoint:hover {
+  background-color: var(--purple-60);
 }

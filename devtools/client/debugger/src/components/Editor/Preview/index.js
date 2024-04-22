@@ -16,6 +16,10 @@ import type { ThreadContext } from "../../../types";
 
 import type { Preview as PreviewType } from "../../../reducers/types";
 
+type OwnProps = {|
+  editor: any,
+  editorRef: ?HTMLDivElement,
+|};
 type Props = {
   cx: ThreadContext,
   editor: any,
@@ -30,23 +34,9 @@ type State = {
   selecting: boolean,
 };
 
-function getElementFromPos(pos: DOMRect) {
-  // We need to use element*s*AtPoint because the tooltip overlays
-  // the token and thus an undesirable element may be returned
-  const elementsAtPoint = [
-    // $FlowIgnore
-    ...document.elementsFromPoint(
-      pos.x + pos.width / 2,
-      pos.y + pos.height / 2
-    ),
-  ];
-
-  return elementsAtPoint.find(el => el.className.startsWith("cm-"));
-}
-
 class Preview extends PureComponent<Props, State> {
   target = null;
-  constructor(props) {
+  constructor(props: Props) {
     super(props);
     this.state = { selecting: false };
   }
@@ -65,10 +55,6 @@ class Preview extends PureComponent<Props, State> {
     codeMirrorWrapper.removeEventListener("mousedown", this.onMouseDown);
   }
 
-  componentDidUpdate(prevProps) {
-    this.updateHighlight(prevProps);
-  }
-
   updateListeners(prevProps: ?Props) {
     const { codeMirror } = this.props.editor;
     const codeMirrorWrapper = codeMirror.getWrapperElement();
@@ -78,31 +64,11 @@ class Preview extends PureComponent<Props, State> {
     codeMirrorWrapper.addEventListener("mousedown", this.onMouseDown);
   }
 
-  updateHighlight(prevProps) {
-    const { preview } = this.props;
+  onTokenEnter = ({ target, tokenPos }: any) => {
+    const { cx, editor, updatePreview } = this.props;
 
-    if (preview && preview.target.matches(":hover")) {
-      const target = getElementFromPos(preview.cursorPos);
-      target && target.classList.add("preview-selection");
-    }
-
-    if (prevProps.preview && prevProps.preview !== preview) {
-      const target = getElementFromPos(prevProps.preview.cursorPos);
-      target && target.classList.remove("preview-selection");
-    }
-  }
-
-  onTokenEnter = ({ target, tokenPos }) => {
-    const { cx, editor, updatePreview, preview } = this.props;
-
-    if (cx.isPaused || (!preview || target !== preview.target)) {
+    if (cx.isPaused && !this.state.selecting) {
       updatePreview(cx, target, tokenPos, editor.codeMirror);
-    }
-  };
-
-  onScroll = () => {
-    if (this.props.cx.isPaused) {
-      this.props.clearPreview(this.props.cx);
     }
   };
 
@@ -117,6 +83,12 @@ class Preview extends PureComponent<Props, State> {
     if (this.props.cx.isPaused) {
       this.setState({ selecting: true });
       return true;
+    }
+  };
+
+  onScroll = () => {
+    if (this.props.cx.isPaused) {
+      this.props.clearPreview(this.props.cx);
     }
   };
 
@@ -141,7 +113,7 @@ const mapStateToProps = state => ({
   preview: getPreview(state),
 });
 
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     clearPreview: actions.clearPreview,

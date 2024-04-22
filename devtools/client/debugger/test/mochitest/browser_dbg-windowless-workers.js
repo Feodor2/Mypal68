@@ -2,15 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// Debugger operations may still be in progress when we switch threads.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
-PromiseTestUtils.whitelistRejectionsGlobally(
-  /Current thread has paused or resumed/
-);
-PromiseTestUtils.whitelistRejectionsGlobally(/Current thread has changed/);
-
 function assertClass(dbg, selector, className, ...args) {
   ok(
     findElement(dbg, selector, ...args).classList.contains(className),
@@ -38,14 +29,10 @@ function getValue(dbg, index) {
 // separately controlled from the same debugger.
 add_task(async function() {
   await pushPref("devtools.debugger.features.windowless-workers", true);
+  await pushPref("devtools.debugger.workers-visible", true);
 
   const dbg = await initDebugger("doc-windowless-workers.html");
-  const mainThread = dbg.toolbox.threadClient.actor;
-
-  // NOTE: by default we do not wait on worker
-  // commands to complete because the thread could be
-  // shutting down.
-  dbg.client.waitForWorkers(true);
+  const mainThread = dbg.toolbox.threadFront.actor;
 
   const workers = await getWorkers(dbg);
   ok(workers.length == 2, "Got two workers");
@@ -119,7 +106,7 @@ add_task(async function() {
   assertPausedAtSourceAndLine(dbg, workerSource.id, 10);
 
   info("View the second paused thread");
-  dbg.actions.selectThread(getContext(dbg), thread2);
+  await dbg.actions.selectThread(getContext(dbg), thread2);
   threadIsSelected(dbg, 3);
   await waitForPaused(dbg);
   assertPausedAtSourceAndLine(dbg, workerSource.id, 10);
@@ -127,6 +114,6 @@ add_task(async function() {
   info("StepOver in second worker and not the first");
   await stepOver(dbg);
   assertPausedAtSourceAndLine(dbg, workerSource.id, 11);
-  dbg.actions.selectThread(getContext(dbg), thread1);
+  await dbg.actions.selectThread(getContext(dbg), thread1);
   assertPausedAtSourceAndLine(dbg, workerSource.id, 10);
 });

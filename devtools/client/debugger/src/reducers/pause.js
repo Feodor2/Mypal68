@@ -28,6 +28,7 @@ import type {
   ThreadId,
   Context,
   ThreadContext,
+  Previews,
 } from "../types";
 
 export type Command = null | "stepOver" | "stepIn" | "stepOut" | "resume";
@@ -73,6 +74,9 @@ type ThreadPauseState = {
   lastCommand: Command,
   wasStepping: boolean,
   previousLocation: ?MappedLocation,
+  inlinePreview: {
+    [FrameId]: Object,
+  },
 };
 
 // Pause state describing all threads.
@@ -114,6 +118,7 @@ const resumedPauseState = {
   },
   selectedFrameId: null,
   why: null,
+  inlinePreview: {},
 };
 
 const createInitialPauseState = () => ({
@@ -349,6 +354,18 @@ function update(
         expandedScopes.delete(path);
       }
       return updateThreadState({ expandedScopes });
+    }
+
+    case "ADD_INLINE_PREVIEW": {
+      const { frame, previews } = action;
+      const selectedFrameId = frame.id;
+
+      return updateThreadState({
+        inlinePreview: {
+          ...threadState().inlinePreview,
+          [selectedFrameId]: previews,
+        },
+      });
     }
   }
 
@@ -586,6 +603,39 @@ export function getSkipPausing(state: State) {
 
 export function isMapScopesEnabled(state: State) {
   return state.pause.mapScopes;
+}
+
+export function getInlinePreviews(
+  state: State,
+  thread: ThreadId,
+  frameId: string
+): Previews {
+  return getThreadPauseState(state.pause, thread).inlinePreview[
+    getGeneratedFrameId(frameId)
+  ];
+}
+
+export function getSelectedInlinePreviews(state: State) {
+  const thread = getCurrentThread(state);
+  const frameId = getSelectedFrameId(state, thread);
+  if (!frameId) {
+    return null;
+  }
+
+  return getInlinePreviews(state, thread, frameId);
+}
+
+export function getInlinePreviewExpression(
+  state: State,
+  thread: ThreadId,
+  frameId: string,
+  line: number,
+  expression: string
+) {
+  const previews = getThreadPauseState(state.pause, thread).inlinePreview[
+    getGeneratedFrameId(frameId)
+  ];
+  return previews && previews[line] && previews[line][expression];
 }
 
 // NOTE: currently only used for chrome

@@ -14,10 +14,11 @@ FilterButton.propTypes = {
   filterKey: PropTypes.string.isRequired,
   active: PropTypes.bool.isRequired,
   dispatch: PropTypes.func.isRequired,
+  title: PropTypes.string,
 };
 
 function FilterButton(props) {
-  const { active, label, filterKey, dispatch } = props;
+  const { active, label, filterKey, dispatch, title } = props;
   const classList = ["devtools-button", filterKey];
   if (active) {
     classList.push("checked");
@@ -27,6 +28,7 @@ function FilterButton(props) {
     {
       "aria-pressed": active === true,
       className: classList.join(" "),
+      title,
       onClick: () => {
         dispatch(actions.filterToggle(filterKey));
       },

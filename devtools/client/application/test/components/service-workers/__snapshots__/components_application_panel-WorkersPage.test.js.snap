@@ -1,0 +1,107 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`WorkersPage filters out workers from diferent domains 1`] = `
+<section
+  className="workers-page "
+>
+  <WorkerList
+    canDebugWorkers={true}
+    workers={
+      Array [
+        Object {
+          "active": true,
+          "name": "worker1",
+          "registrationFront": "",
+          "scope": "SCOPE 123",
+          "url": "http://example.com/worker.js",
+          "workerTargetFront": "",
+        },
+        Object {
+          "active": false,
+          "name": "worker2",
+          "registrationFront": "",
+          "scope": "SCOPE 456",
+          "url": "http://example.com/worker.js",
+          "workerTargetFront": "",
+        },
+      ]
+    }
+  />
+</section>
+`;
+
+exports[`WorkersPage filters out workers from different domains and renders an empty list when there is none left 1`] = `
+<section
+  className="workers-page workers-page--empty"
+>
+  <WorkerListEmpty />
+</section>
+`;
+
+exports[`WorkersPage it renders a list with a single element if there's just 1 worker 1`] = `
+<section
+  className="workers-page "
+>
+  <WorkerList
+    canDebugWorkers={true}
+    workers={
+      Array [
+        Object {
+          "active": true,
+          "name": "worker1",
+          "registrationFront": "",
+          "scope": "SCOPE 123",
+          "url": "http://example.com/worker.js",
+          "workerTargetFront": "",
+        },
+      ]
+    }
+  />
+</section>
+`;
+
+exports[`WorkersPage renders a list with multiple elements when there are multiple workers 1`] = `
+<section
+  className="workers-page "
+>
+  <WorkerList
+    canDebugWorkers={true}
+    workers={
+      Array [
+        Object {
+          "active": true,
+          "name": "worker1",
+          "registrationFront": "",
+          "scope": "SCOPE 123",
+          "url": "http://example.com/worker.js",
+          "workerTargetFront": "",
+        },
+        Object {
+          "active": false,
+          "name": "worker2",
+          "registrationFront": "",
+          "scope": "SCOPE 456",
+          "url": "http://example.com/worker.js",
+          "workerTargetFront": "",
+        },
+        Object {
+          "active": true,
+          "name": "worker3",
+          "registrationFront": "",
+          "scope": "SCOPE 789",
+          "url": "http://example.com/worker.js",
+          "workerTargetFront": "",
+        },
+      ]
+    }
+  />
+</section>
+`;
+
+exports[`WorkersPage renders an empty list if there are no workers 1`] = `
+<section
+  className="workers-page workers-page--empty"
+>
+  <WorkerListEmpty />
+</section>
+`;

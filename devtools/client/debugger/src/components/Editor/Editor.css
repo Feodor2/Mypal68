@@ -17,7 +17,6 @@
 
 .editor-wrapper .CodeMirror-linewidget {
   margin-right: -7px;
-  overflow: hidden;
 }
 
 .editor-wrapper {
@@ -106,6 +105,10 @@ html[dir="rtl"] .editor-mount {
 }
 
 .debug-expression {
+  background-color: var(--debug-expression-background);
+}
+
+.to-line-end ~ .CodeMirror-widget {
   background-color: var(--debug-expression-background);
 }
 

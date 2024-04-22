@@ -17,12 +17,13 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-nesting", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
       // Reach over the protocol connection and get a reference to the thread
       // actor.
-      gThreadActor = threadClient._transport._serverConnection.getActor(
-        threadClient._actor
+      // TODO: rewrite tests so we don't do this kind of reaching anymore..
+      gThreadActor = gClient._transport._serverConnection.getActor(
+        threadFront.actorID
       );
 
       test_nesting();

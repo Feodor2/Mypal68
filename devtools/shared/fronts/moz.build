@@ -4,6 +4,7 @@
 
 DIRS += [
     'addon',
+    'descriptors',
     'inspector',
     'targets',
     'worker',
@@ -37,6 +38,7 @@ DevToolsModules(
     'string.js',
     'styles.js',
     'stylesheets.js',
+    'thread.js',
     'webconsole.js',
     'websocket.js',
 )

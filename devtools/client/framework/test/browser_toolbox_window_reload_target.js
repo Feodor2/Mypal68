@@ -111,9 +111,18 @@ function testReload(shortcut, toolbox, toolID) {
         : Promise.resolve();
 
     const complete = () => {
+    // If we have a jsdebugger panel, wait for it to complete its reload
+    const jsdebugger = toolbox.getPanel("jsdebugger");
+    let onReloaded = Promise.resolve;
+    if (jsdebugger) {
+      onReloaded = jsdebugger.once("reloaded");
+    }
+
       mm.removeMessageListener("devtools:test:load", complete);
       toolUpdated.then(resolve);
+      await onReloaded;
     };
+
     mm.addMessageListener("devtools:test:load", complete);
 
     toolbox.win.focus();

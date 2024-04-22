@@ -11,7 +11,7 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-var { DebuggerServer } = require("devtools/server/main");
+var { DebuggerServer } = require("devtools/server/debugger-server");
 var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 loader.lazyRequireGetter(this, "defer", "devtools/shared/defer");
@@ -139,10 +139,10 @@ async function waitForWorkerClose(workerTargetFront) {
   info("Worker did close.");
 }
 
-// Return a promise with a reference to jsterm, opening the split
+// Return a promise with a reference to webconsole, opening the split
 // console if necessary.  This cleans up the split console pref so
 // it won't pollute other tests.
-function getSplitConsole(toolbox, win) {
+async function getSplitConsole(toolbox, win) {
   if (!win) {
     win = toolbox.win;
   }
@@ -151,12 +151,32 @@ function getSplitConsole(toolbox, win) {
     EventUtils.synthesizeKey("VK_ESCAPE", {}, win);
   }
 
+  await toolbox.getPanelWhenReady("webconsole");
+  ok(toolbox.splitConsole, "Split console is shown.");
+  return toolbox.getPanel("webconsole");
+}
+
+function executeAndWaitForMessage(
+  webconsole,
+  expression,
+  expectedTextContent,
+  className = "result"
+) {
+  const { ui } = webconsole.hud;
   return new Promise(resolve => {
-    toolbox.getPanelWhenReady("webconsole").then(() => {
-      ok(toolbox.splitConsole, "Split console is shown.");
-      const jsterm = toolbox.getPanel("webconsole").hud.jsterm;
-      resolve(jsterm);
-    });
+    const onNewMessages = messages => {
+      for (const message of messages) {
+        if (
+          message.node.classList.contains(className) &&
+          message.node.textContent.includes(expectedTextContent)
+        ) {
+          ui.off("new-messages", onNewMessages);
+          resolve(message.node);
+        }
+      }
+    };
+    ui.on("new-messages", onNewMessages);
+    ui.wrapper.dispatchEvaluateExpression(expression);
   });
 }
 
@@ -245,9 +265,9 @@ this.removeTab = function removeTab(tab, win) {
 async function attachThreadActorForTab(tab) {
   const target = await TargetFactory.forTab(tab);
   await target.attach();
-  const [, threadClient] = await target.attachThread();
-  await threadClient.resume();
-  return { client: target.client, threadClient };
+  const [, threadFront] = await target.attachThread();
+  await threadFront.resume();
+  return { client: target.client, threadFront };
 }
 
 function pushPrefs(...aPrefs) {

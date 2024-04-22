@@ -47,12 +47,12 @@ const testCases = [
       getCookieId(
         "sc1",
         "sectest1.example.org",
-        "/browser/devtools/client/storage/test/"
+        "/browser/devtools/client/storage/test"
       ),
       getCookieId(
         "sc2",
         "sectest1.example.org",
-        "/browser/devtools/client/storage/test/"
+        "/browser/devtools/client/storage/test"
       ),
     ],
   ],

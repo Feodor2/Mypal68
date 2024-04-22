@@ -18,6 +18,7 @@ import type { Thread, Worker as WorkerType } from "../../types";
 
 import "./Workers.css";
 
+type OwnProps = {||};
 type Props = {
   threads: Thread[],
   openWorkerToolbox: typeof actions.openWorkerToolbox,
@@ -34,7 +35,7 @@ export class Workers extends Component<Props> {
         onClick={() => openWorkerToolbox(thread)}
       >
         <div className="icon">
-          <AccessibleImage className={"worker"} />
+          <AccessibleImage className="worker" />
         </div>
         <div className="label">{getDisplayName(thread)}</div>
       </div>
@@ -58,8 +59,7 @@ const mapStateToProps = state => ({
   threads: getThreads(state),
 });
 
-export default connect(
-  mapStateToProps,
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps,
   {
     openWorkerToolbox: actions.openWorkerToolbox,
   }

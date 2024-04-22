@@ -7,7 +7,7 @@
 const defer = require("devtools/shared/defer");
 const Services = require("Services");
 
-const l10n = require("devtools/client/webconsole/webconsole-l10n");
+const l10n = require("devtools/client/webconsole/utils/l10n");
 
 const PREF_CONNECTION_TIMEOUT = "devtools.debugger.remote-timeout";
 // Web Console connection proxy
@@ -129,9 +129,6 @@ WebConsoleConnectionProxy.prototype = {
     this.target.on("will-navigate", this._onTabWillNavigate);
     this.target.on("navigate", this._onTabNavigated);
 
-    if (this.target.isBrowsingContext) {
-      this.webConsoleUI.onLocationChange(this.target.url, this.target.title);
-    }
     this.isAttached = this._attachConsole();
 
     return connPromise;
@@ -391,10 +388,6 @@ WebConsoleConnectionProxy.prototype = {
    *        The message received from the server.
    */
   _onTabNavigated: function(packet) {
-    if (!this.webConsoleUI) {
-      return;
-    }
-
     this.webConsoleUI.handleTabNavigated(packet);
   },
 
@@ -406,10 +399,6 @@ WebConsoleConnectionProxy.prototype = {
    *        The message received from the server.
    */
   _onTabWillNavigate: function(packet) {
-    if (!this.webConsoleUI) {
-      return;
-    }
-
     this.webConsoleUI.handleTabWillNavigate(packet);
   },
 

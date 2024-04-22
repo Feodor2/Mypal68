@@ -3,12 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 BROWSER_CHROME_MANIFESTS += [
-  'fixtures/stub-generators/browser.ini',
-  'mochitest/browser.ini',
+  'browser/browser.ini',
 ]
 
 DIRS += [
-    'fixtures'
+    'node',
+    'browser'
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
@@ -16,5 +16,5 @@ MOCHITEST_CHROME_MANIFESTS += [
 ]
 
 XPCSHELL_TESTS_MANIFESTS += [
-  'unit/xpcshell.ini'
+  'xpcshell/xpcshell.ini'
 ]

@@ -112,7 +112,7 @@ export type SourcePacket = {
 };
 
 /**
- * Sources Packet from calling threadClient.getSources();
+ * Sources Packet from calling threadFront.getSources();
  * @memberof firefox/packets
  * @static
  */
@@ -137,11 +137,6 @@ export type PausedPacket = {
     type: string,
     onNext?: Function,
   },
-};
-
-export type ResumedPacket = {
-  from: ActorId,
-  type: string,
 };
 
 /**
@@ -188,7 +183,7 @@ export type TabPayload = {
  */
 export type Actions = {
   paused: Pause => void,
-  resumed: ResumedPacket => void,
+  resumed: ActorId => void,
   newQueuedSources: (QueuedSourceData[]) => void,
   fetchEventListeners: () => void,
   updateWorkers: () => void,
@@ -202,6 +197,7 @@ export type Actions = {
 export type TabTarget = {
   on: (string, Function) => void,
   emit: (string, any) => void,
+  threadFront: ThreadFront,
   activeConsole: {
     evaluateJS: (
       script: Script,
@@ -255,7 +251,7 @@ export type DebuggerClient = {
   connect: () => Promise<*>,
   request: (packet: Object) => Promise<*>,
   attachConsole: (actor: String, listeners: Array<*>) => Promise<*>,
-  createObjectClient: (grip: Grip) => {},
+  createObjectClient: (grip: Grip) => ObjectClient,
   release: (actor: String) => {},
 };
 
@@ -320,7 +316,7 @@ export type FunctionGrip = {|
  */
 export type SourceClient = {
   source: () => { source: any, contentType?: string },
-  _activeThread: ThreadClient,
+  _activeThread: ThreadFront,
   actor: string,
   getBreakpointPositionsCompressed: (range: ?Range) => Promise<any>,
   prettyPrint: number => Promise<*>,
@@ -337,14 +333,20 @@ export type SourceClient = {
  */
 export type ObjectClient = {
   getPrototypeAndProperties: () => any,
+  addWatchpoint: (
+    property: string,
+    label: string,
+    watchpointType: string
+  ) => {},
+  removeWatchpoint: (property: string) => {},
 };
 
 /**
- * ThreadClient
+ * ThreadFront
  * @memberof firefox
  * @static
  */
-export type ThreadClient = {
+export type ThreadFront = {
   resume: Function => Promise<*>,
   stepIn: Function => Promise<*>,
   stepOver: Function => Promise<*>,
@@ -368,6 +370,7 @@ export type ThreadClient = {
   getLastPausePacket: () => ?PausedPacket,
   _parent: TabClient,
   actor: ActorId,
+  actorID: ActorId,
   request: (payload: Object) => Promise<*>,
   url: string,
   setActiveEventBreakpoints: (string[]) => void,
@@ -378,9 +381,11 @@ export type ThreadClient = {
 export type Panel = {|
   emit: (eventName: string) => void,
   openLink: (url: string) => void,
+  openInspector: () => void,
   openWorkerToolbox: (worker: Worker) => void,
   openElementInInspector: (grip: Object) => void,
   openConsoleAndEvaluate: (input: string) => void,
   highlightDomElement: (grip: Object) => void,
   unHighlightDomElement: (grip: Object) => void,
+  getToolboxStore: () => any,
 |};

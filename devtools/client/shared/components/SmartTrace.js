@@ -180,7 +180,9 @@ class SmartTrace extends Component {
 
       this.setState(state => {
         const stacktrace = (state && state.stacktrace) || this.props.stacktrace;
-        const frame = stacktrace[index];
+        const frame = { ...stacktrace[index] };
+        // Remove any sourceId that might confuse the viewSource util.
+        delete frame.sourceId;
 
         const newStacktrace = stacktrace
           .slice(0, index)

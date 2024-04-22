@@ -3,8 +3,6 @@
 
 "use strict";
 
-/* global DebuggerServer */
-
 /**
  * Test actor designed to check that clients are properly notified of errors when calling
  * methods on old style actors.

@@ -40,9 +40,8 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIFilePicker"
 );
 
-// sizeof(double) + sizeof(char)
-// http://searchfox.org/mozilla-central/rev/e8835f52eff29772a57dca7bcc86a9a312a23729/tools/profiler/core/ProfileEntry.h#73
-const PROFILE_ENTRY_SIZE = 9;
+// The Gecko Profiler interprets the "entries" setting as 8 bytes per entry.
+const PROFILE_ENTRY_SIZE = 8;
 
 const NOTCHES = Array(22).fill("discrete-level-notch");
 
@@ -152,13 +151,6 @@ const featureCheckboxes = [
     title: "Record main thread I/O markers.",
   },
   {
-    name: "Memory",
-    value: "memory",
-    title:
-      "Add memory measurements to the samples, this includes resident set size " +
-      "(RSS) and unique set size (USS).",
-  },
-  {
     name: "Privacy",
     value: "privacy",
     title: "Remove some potentially user-identifiable information.",
@@ -187,6 +179,16 @@ const featureCheckboxes = [
     name: "JSTracer",
     value: "jstracer",
     title: "Trace JS engine (Experimental, requires custom build.)",
+  },
+  {
+    name: "JS Allocations",
+    value: "jsallocations",
+    title: "Track JavaScript allocations (Experimental.)",
+  },
+  {
+    name: "Native Allocations",
+    value: "nativeallocations",
+    title: "Track native allocations (Experimental.)",
   },
 ];
 
@@ -359,7 +361,8 @@ class Settings extends PureComponent {
       // Contain the overflow of the slide down animation with the first div.
       div(
         { className: "perf-settings-details-contents" },
-        // Provide a second <div> element for the contents of the slide down animation.
+        // Provide a second <div> element for the contents of the slide down
+        // animation.
         div(
           { className: "perf-settings-details-contents-slider" },
           div(

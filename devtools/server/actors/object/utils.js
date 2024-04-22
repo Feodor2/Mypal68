@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert } = DevToolsUtils;
 
@@ -161,6 +161,8 @@ const TYPED_ARRAY_CLASSES = [
   "Int32Array",
   "Float32Array",
   "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
 ];
 
 /**

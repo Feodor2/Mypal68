@@ -40,7 +40,7 @@ add_task(async function() {
   });
 
   const cookiePath = actualPath
-    .substr(0, actualPath.lastIndexOf("/") + 1)
+    .substr(0, actualPath.lastIndexOf("/"))
     .replace(/file:\/\//g, "");
   await checkState([
     [

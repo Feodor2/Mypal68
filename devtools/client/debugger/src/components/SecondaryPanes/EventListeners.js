@@ -18,13 +18,21 @@ import {
 import AccessibleImage from "../shared/AccessibleImage";
 
 import type {
+  EventListenerEvent,
   EventListenerActiveList,
+  EventListenerCategory,
   EventListenerCategoryList,
   EventListenerExpandedList,
 } from "../../actions/types";
 
 import "./EventListeners.css";
 
+type State = {
+  searchText: string,
+  focused: boolean,
+};
+
+type OwnProps = {||};
 type Props = {
   categories: EventListenerCategoryList,
   expandedCategories: EventListenerExpandedList,
@@ -35,8 +43,40 @@ type Props = {
   removeEventListenerExpanded: typeof actions.removeEventListenerExpanded,
 };
 
-class EventListeners extends Component<Props> {
-  onCategoryToggle(category) {
+class EventListeners extends Component<Props, State> {
+  state = {
+    searchText: "",
+    focused: false,
+  };
+
+  hasMatch(eventOrCategoryName: string, searchText: string) {
+    const lowercaseEventOrCategoryName = eventOrCategoryName.toLowerCase();
+    const lowercaseSearchText = searchText.toLowerCase();
+
+    return lowercaseEventOrCategoryName.includes(lowercaseSearchText);
+  }
+
+  getSearchResults() {
+    const { searchText } = this.state;
+    const { categories } = this.props;
+    const searchResults = categories.reduce((results, cat, index) => {
+      const category = categories[index];
+
+      if (this.hasMatch(category.name, searchText)) {
+        results[category.name] = category.events;
+      } else {
+        results[category.name] = category.events.filter(event =>
+          this.hasMatch(event.name, searchText)
+        );
+      }
+
+      return results;
+    }, {});
+
+    return searchResults;
+  }
+
+  onCategoryToggle(category: string) {
     const {
       expandedCategories,
       removeEventListenerExpanded,
@@ -50,7 +90,7 @@ class EventListeners extends Component<Props> {
     }
   }
 
-  onCategoryClick(category, isChecked) {
+  onCategoryClick(category: EventListenerCategory, isChecked: boolean) {
     const { addEventListeners, removeEventListeners } = this.props;
     const eventsIds = category.events.map(event => event.id);
 
@@ -61,7 +101,7 @@ class EventListeners extends Component<Props> {
     }
   }
 
-  onEventTypeClick(eventId, isChecked) {
+  onEventTypeClick(eventId: string, isChecked: boolean) {
     const { addEventListeners, removeEventListeners } = this.props;
     if (isChecked) {
       addEventListeners([eventId]);
@@ -70,7 +110,90 @@ class EventListeners extends Component<Props> {
     }
   }
 
-  renderCategoryHeading(category) {
+  onInputChange = (event: SyntheticEvent<HTMLInputElement>) => {
+    this.setState({ searchText: event.currentTarget.value });
+  };
+
+  onKeyDown = (event: SyntheticKeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      this.setState({ searchText: "" });
+    }
+  };
+
+  onFocus = (event: SyntheticEvent<>) => {
+    this.setState({ focused: true });
+  };
+
+  onBlur = (event: SyntheticEvent<>) => {
+    this.setState({ focused: false });
+  };
+
+  renderSearchInput() {
+    const { focused, searchText } = this.state;
+    const placeholder = L10N.getStr("eventListenersHeader1.placeholder");
+
+    return (
+      <form className="event-search-form" onSubmit={e => e.preventDefault()}>
+        <input
+          className={classnames("event-search-input", { focused })}
+          placeholder={placeholder}
+          value={searchText}
+          onChange={this.onInputChange}
+          onKeyDown={this.onKeyDown}
+          onFocus={this.onFocus}
+          onBlur={this.onBlur}
+        />
+      </form>
+    );
+  }
+
+  renderClearSearchButton() {
+    const { searchText } = this.state;
+
+    if (!searchText) {
+      return null;
+    }
+
+    return (
+      <button
+        onClick={() => this.setState({ searchText: "" })}
+        className="devtools-searchinput-clear"
+      />
+    );
+  }
+
+  renderCategoriesList() {
+    const { categories } = this.props;
+
+    return (
+      <ul className="event-listeners-list">
+        {categories.map((category, index) => {
+          return (
+            <li className="event-listener-group" key={index}>
+              {this.renderCategoryHeading(category)}
+              {this.renderCategoryListing(category)}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  renderSearchResultsList() {
+    const searchResults = this.getSearchResults();
+
+    return (
+      <ul className="event-search-results-list">
+        {Object.keys(searchResults).map(category => {
+          return searchResults[category].map(event => {
+            return this.renderListenerEvent(event, category);
+          });
+        })}
+      </ul>
+    );
+  }
+
+  renderCategoryHeading(category: EventListenerCategory) {
     const { activeEventListeners, expandedCategories } = this.props;
     const { events } = category;
 
@@ -108,8 +231,8 @@ class EventListeners extends Component<Props> {
     );
   }
 
-  renderCategoryListing(category) {
-    const { activeEventListeners, expandedCategories } = this.props;
+  renderCategoryListing(category: EventListenerCategory) {
+    const { expandedCategories } = this.props;
 
     const expanded = expandedCategories.includes(category.name);
     if (!expanded) {
@@ -119,55 +242,64 @@ class EventListeners extends Component<Props> {
     return (
       <ul>
         {category.events.map(event => {
-          return (
-            <li className="event-listener-event" key={event.id}>
-              <label className="event-listener-label">
-                <input
-                  type="checkbox"
-                  value={event.id}
-                  onChange={e =>
-                    this.onEventTypeClick(event.id, e.target.checked)
-                  }
-                  checked={activeEventListeners.includes(event.id)}
-                />
-                <span className="event-listener-name">{event.name}</span>
-              </label>
-            </li>
-          );
+          return this.renderListenerEvent(event, category.name);
         })}
       </ul>
     );
   }
 
-  render() {
-    const { categories } = this.props;
+  renderCategory(category: string) {
+    return <span className="category-label">{category} ▸ </span>;
+  }
+
+  renderListenerEvent(event: EventListenerEvent, category: string) {
+    const { activeEventListeners } = this.props;
+    const { searchText } = this.state;
 
     return (
-      <div className="event-listeners-content">
-        <ul className="event-listeners-list">
-          {categories.map((category, index) => {
-            return (
-              <li className="event-listener-group" key={index}>
-                {this.renderCategoryHeading(category)}
-                {this.renderCategoryListing(category)}
-              </li>
-            );
-          })}
-        </ul>
+      <li className="event-listener-event" key={event.id}>
+        <label className="event-listener-label">
+          <input
+            type="checkbox"
+            value={event.id}
+            onChange={e => this.onEventTypeClick(event.id, e.target.checked)}
+            checked={activeEventListeners.includes(event.id)}
+          />
+          <span className="event-listener-name">
+            {searchText ? this.renderCategory(category) : null}
+            {event.name}
+          </span>
+        </label>
+      </li>
+    );
+  }
+
+  render() {
+    const { searchText } = this.state;
+
+    return (
+      <div className="event-listeners">
+        <div className="event-search-container">
+          {this.renderSearchInput()}
+          {this.renderClearSearchButton()}
+        </div>
+        <div className="event-listeners-content">
+          {searchText
+            ? this.renderSearchResultsList()
+            : this.renderCategoriesList()}
+        </div>
       </div>
     );
   }
 }
 
-const mapStateToProps = state => {
-  return {
-    activeEventListeners: getActiveEventListeners(state),
-    categories: getEventListenerBreakpointTypes(state),
-    expandedCategories: getEventListenerExpanded(state),
-  };
-};
+const mapStateToProps = state => ({
+  activeEventListeners: getActiveEventListeners(state),
+  categories: getEventListenerBreakpointTypes(state),
+  expandedCategories: getEventListenerExpanded(state),
+});
 
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     addEventListeners: actions.addEventListenerBreakpoints,

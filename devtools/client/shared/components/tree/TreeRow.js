@@ -54,6 +54,7 @@ define(function(require, exports, module) {
           hidden: PropTypes.bool,
           selected: PropTypes.bool,
           active: PropTypes.bool,
+          loading: PropTypes.bool,
         }),
         decorator: PropTypes.object,
         renderCell: PropTypes.object,

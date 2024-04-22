@@ -10,6 +10,7 @@ const actionTypes = {
   BATCH_ACTIONS: "BATCH_ACTIONS",
   BATCH_ENABLE: "BATCH_ENABLE",
   BATCH_FLUSH: "BATCH_FLUSH",
+  BLOCK_SELECTED_REQUEST_DONE: "BLOCK_SELECTED_REQUEST_DONE",
   CLEAR_REQUESTS: "CLEAR_REQUESTS",
   CLEAR_TIMING_MARKERS: "CLEAR_TIMING_MARKERS",
   CLONE_REQUEST: "CLONE_REQUEST",
@@ -31,12 +32,18 @@ const actionTypes = {
   TOGGLE_COLUMN: "TOGGLE_COLUMN",
   TOGGLE_RECORDING: "TOGGLE_RECORDING",
   TOGGLE_REQUEST_FILTER_TYPE: "TOGGLE_REQUEST_FILTER_TYPE",
+  UNBLOCK_SELECTED_REQUEST_DONE: "UNBLOCK_SELECTED_REQUEST_DONE",
   UPDATE_REQUEST: "UPDATE_REQUEST",
   WATERFALL_RESIZE: "WATERFALL_RESIZE",
   SET_COLUMNS_WIDTH: "SET_COLUMNS_WIDTH",
   WS_ADD_FRAME: "WS_ADD_FRAME",
   WS_SELECT_FRAME: "WS_SELECT_FRAME",
   WS_OPEN_FRAME_DETAILS: "WS_OPEN_FRAME_DETAILS",
+  WS_CLEAR_FRAMES: "WS_CLEAR_FRAMES",
+  WS_TOGGLE_FRAME_FILTER_TYPE: "WS_TOGGLE_FRAME_FILTER_TYPE",
+  WS_SET_REQUEST_FILTER_TEXT: "WS_SET_REQUEST_FILTER_TEXT",
+  WS_TOGGLE_COLUMN: "WS_TOGGLE_COLUMN",
+  WS_RESET_COLUMNS: "WS_RESET_COLUMNS",
 };
 
 // Descriptions for what this frontend is currently doing.
@@ -163,7 +170,7 @@ const UPDATE_PROPS = [
 const PANELS = {
   COOKIES: "cookies",
   HEADERS: "headers",
-  WEBSOCKETS: "webSockets",
+  MESSAGES: "messages",
   PARAMS: "params",
   RESPONSE: "response",
   CACHE: "cache",
@@ -319,25 +326,28 @@ const FILTER_TAGS = [
 
 const WS_FRAMES_HEADERS = [
   {
-    name: "frameType",
+    name: "data",
+    width: "40%",
   },
   {
     name: "size",
-  },
-  {
-    name: "payload",
+    width: "12%",
   },
   {
     name: "opCode",
+    width: "9%",
   },
   {
     name: "maskBit",
+    width: "9%",
   },
   {
     name: "finBit",
+    width: "9%",
   },
   {
     name: "time",
+    width: "22%",
   },
 ];
 

@@ -39,10 +39,10 @@ async function testChromeTab() {
   const target = await TargetFactory.forTab(tab);
   await target.attach();
 
-  const [, threadClient] = await target.attachThread();
-  await threadClient.resume();
+  const [, threadFront] = await target.attachThread();
+  await threadFront.resume();
 
-  const { sources } = await threadClient.getSources();
+  const { sources } = await threadFront.getSources();
   ok(
     sources.find(s => s.url == CHROME_PAGE),
     "The thread actor is able to attach to the chrome page and its sources"
@@ -80,7 +80,9 @@ async function testMainProcess() {
   );
   const customLoader = new DevToolsLoader();
   customLoader.invisibleToDebugger = true;
-  const { DebuggerServer } = customLoader.require("devtools/server/main");
+  const { DebuggerServer } = customLoader.require(
+    "devtools/server/debugger-server"
+  );
   const { DebuggerClient } = require("devtools/shared/client/debugger-client");
 
   DebuggerServer.init();
@@ -104,9 +106,9 @@ async function testMainProcess() {
   const target = await client.mainRoot.getMainProcess();
   await target.attach();
 
-  const [, threadClient] = await target.attachThread();
-  await threadClient.resume();
-  const { sources } = await threadClient.getSources();
+  const [, threadFront] = await target.attachThread();
+  await threadFront.resume();
+  const { sources } = await threadFront.getSources();
   ok(
     sources.find(
       s => s.url == "resource://devtools/client/framework/devtools.js"

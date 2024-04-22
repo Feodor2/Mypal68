@@ -8,10 +8,15 @@ const {
   createFactory,
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const ObjectClient = require("devtools/shared/client/object-client");
 const actions = require("devtools/client/webconsole/actions/messages");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const { MODE } = require("devtools/client/shared/components/reps/reps");
+const {
+  l10n,
+  getArrayTypeNames,
+} = require("devtools/client/webconsole/utils/messages");
+loader.lazyGetter(this, "MODE", function() {
+  return require("devtools/client/shared/components/reps/reps").MODE;
+});
+
 const GripMessageBody = createFactory(
   require("devtools/client/webconsole/components/Output/GripMessageBody")
 );
@@ -30,9 +35,7 @@ class ConsoleTable extends Component {
     return {
       dispatch: PropTypes.func.isRequired,
       parameters: PropTypes.array.isRequired,
-      serviceContainer: PropTypes.shape({
-        proxy: PropTypes.object.isRequired,
-      }),
+      serviceContainer: PropTypes.object.isRequired,
       id: PropTypes.string.isRequired,
       tableData: PropTypes.object,
     };
@@ -45,20 +48,20 @@ class ConsoleTable extends Component {
   }
 
   componentWillMount() {
-    const { id, dispatch, serviceContainer, parameters } = this.props;
+    const { id, dispatch, parameters } = this.props;
 
     if (!Array.isArray(parameters) || parameters.length === 0) {
       return;
     }
 
-    const client = new ObjectClient(
-      serviceContainer.proxy.client,
-      parameters[0]
-    );
-    const dataType = getParametersDataType(parameters);
-
     // Get all the object properties.
-    dispatch(actions.messageGetTableData(id, client, dataType));
+    dispatch(
+      actions.messageGetTableData(
+        id,
+        parameters[0],
+        getParametersDataType(parameters)
+      )
+    );
   }
 
   getHeaders(columns) {
@@ -69,6 +72,7 @@ class ConsoleTable extends Component {
           {
             className: "new-consoletable-header",
             role: "columnheader",
+            key,
           },
           value
         )
@@ -88,6 +92,7 @@ class ConsoleTable extends Component {
             {
               role: "gridcell",
               className: index % 2 ? "odd" : "even",
+              key,
             },
             GripMessageBody({
               grip: item[key],
@@ -145,7 +150,9 @@ function getTableItems(data = {}, type, headers = null) {
   const INDEX_NAME = "_index";
   const VALUE_NAME = "_value";
   const namedIndexes = {
-    [INDEX_NAME]: ["Object", "Array"].includes(type)
+    [INDEX_NAME]: getArrayTypeNames()
+      .concat("Object")
+      .includes(type)
       ? l10n.getStr("table.index")
       : l10n.getStr("table.iterationIndex"),
     [VALUE_NAME]: l10n.getStr("table.value"),
@@ -191,11 +198,11 @@ function getTableItems(data = {}, type, headers = null) {
       const { preview } = property;
       const entries = preview.ownProperties || preview.items;
       if (entries) {
-        for (const key of Object.keys(entries)) {
-          const entry = entries[key];
-          item[key] = Object.prototype.hasOwnProperty.call(entry, "value")
-            ? entry.value
-            : entry;
+        for (const [key, entry] of Object.entries(entries)) {
+          item[key] =
+            entry && Object.prototype.hasOwnProperty.call(entry, "value")
+              ? entry.value
+              : entry;
         }
       } else {
         if (preview.key) {

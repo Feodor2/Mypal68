@@ -6,6 +6,7 @@
 const {
   APPEND_TO_HISTORY,
   CLEAR_HISTORY,
+  EVALUATE_EXPRESSION,
   HISTORY_LOADED,
   UPDATE_HISTORY_POSITION,
   HISTORY_BACK,
@@ -44,6 +45,7 @@ function getInitialState() {
 function history(state = getInitialState(), action, prefsState) {
   switch (action.type) {
     case APPEND_TO_HISTORY:
+    case EVALUATE_EXPRESSION:
       return appendToHistory(state, prefsState, action.expression);
     case CLEAR_HISTORY:
       return clearHistory(state);

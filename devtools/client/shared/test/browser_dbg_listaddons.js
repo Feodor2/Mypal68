@@ -9,7 +9,7 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-var { DebuggerServer } = require("devtools/server/main");
+var { DebuggerServer } = require("devtools/server/debugger-server");
 var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 
 /**

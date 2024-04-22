@@ -7,7 +7,8 @@
 import type { GripProperties, Node, Props, ReduxAction } from "./types";
 
 const { loadItemProperties } = require("./utils/load-properties");
-const { getLoadedProperties, getActors } = require("./reducer");
+const { getPathExpression, getValue } = require("./utils/node");
+const { getLoadedProperties, getActors, getWatchpoints } = require("./reducer");
 
 type Dispatch = ReduxAction => void;
 
@@ -50,8 +51,7 @@ function nodeLoadProperties(node: Node, actor) {
     try {
       const properties = await loadItemProperties(
         node,
-        client.createObjectClient,
-        client.createLongStringClient,
+        client,
         loadedProperties
       );
 
@@ -70,6 +70,50 @@ function nodePropertiesLoaded(
   return {
     type: "NODE_PROPERTIES_LOADED",
     data: { node, actor, properties },
+  };
+}
+
+/*
+ * This action adds a property watchpoint to an object
+ */
+function addWatchpoint(item, watchpoint: string) {
+  return async function({ dispatch, client }: ThunkArgs) {
+    const { parent, name } = item;
+    const object = getValue(parent);
+    if (!object) {
+      return;
+    }
+
+    const path = parent.path;
+    const property = name;
+    const label = getPathExpression(item);
+    const actor = object.actor;
+
+    await client.addWatchpoint(object, property, label, watchpoint);
+
+    dispatch({
+      type: "SET_WATCHPOINT",
+      data: { path, watchpoint, property, actor },
+    });
+  };
+}
+
+/*
+ * This action removes a property watchpoint from an object
+ */
+function removeWatchpoint(item) {
+  return async function({ dispatch, client }: ThunkArgs) {
+    const object = getValue(item.parent);
+    const property = item.name;
+    const path = item.parent.path;
+    const actor = object.actor;
+
+    await client.removeWatchpoint(object, property);
+
+    dispatch({
+      type: "REMOVE_WATCHPOINT",
+      data: { path, property, actor },
+    });
   };
 }
 
@@ -99,8 +143,14 @@ function rootsChanged(props: Props) {
 
 function releaseActors(state, client) {
   const actors = getActors(state);
+  const watchpoints = getWatchpoints(state);
+
   for (const actor of actors) {
-    client.releaseActor(actor);
+    // Watchpoints are stored in object actors.
+    // If we release the actor we lose the watchpoint.
+    if (!watchpoints.has(actor)) {
+      client.releaseActor(actor);
+    }
   }
 }
 
@@ -138,4 +188,6 @@ module.exports = {
   nodeLoadProperties,
   nodePropertiesLoaded,
   rootsChanged,
+  addWatchpoint,
+  removeWatchpoint,
 };

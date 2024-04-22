@@ -17,38 +17,34 @@ registerCleanupFunction(() => {
  */
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
+  threadFrontTest(async ({ threadFront, debuggee }) => {
     dumpn("Evaluating test code and waiting for first debugger statement");
     await executeOnNextTickAndWaitForPause(
       () => evaluateTestCode(debuggee),
-      client
+      threadFront
     );
 
-    const step1 = await stepIn(client, threadClient);
-    equal(step1.type, "paused");
+    const step1 = await stepIn(threadFront);
     equal(step1.frame.where.line, 3);
     equal(step1.why.type, "resumeLimit");
     equal(debuggee.a, undefined);
     equal(debuggee.b, undefined);
 
-    const step2 = await stepIn(client, threadClient);
-    equal(step2.type, "paused");
+    const step2 = await stepIn(threadFront);
     equal(step2.frame.where.line, 4);
     equal(step2.why.type, "resumeLimit");
     equal(debuggee.a, 1);
     equal(debuggee.b, undefined);
 
-    const step3 = await stepIn(client, threadClient);
-    equal(step3.type, "paused");
+    const step3 = await stepIn(threadFront);
     equal(step3.frame.where.line, 4);
     equal(step3.why.type, "resumeLimit");
     equal(debuggee.a, 1);
     equal(debuggee.b, 2);
 
     await new Promise(async resolve => {
-      await threadClient.stepIn();
-      threadClient.once("paused", (packet) => {
-        equal(packet.type, "paused");
+      await threadFront.stepIn();
+      threadFront.once("paused", (packet) => {
         // Before fixing bug 785689, the type was resumeLimit.
         equal(packet.why.type, "debuggerStatement");
         resolve();

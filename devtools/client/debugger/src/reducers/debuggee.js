@@ -12,6 +12,8 @@
 import { sortBy } from "lodash";
 import { createSelector } from "reselect";
 
+import { features } from "../utils/prefs";
+
 import { getDisplayName } from "../utils/workers";
 
 import type { Selector, State } from "./types";
@@ -21,6 +23,7 @@ import type { Action } from "../actions/types";
 export type DebuggeeState = {
   workers: WorkerList,
   mainThread: MainThread,
+  traits: Object,
   isWebExtension: boolean,
 };
 
@@ -28,6 +31,7 @@ export function initialDebuggeeState(): DebuggeeState {
   return {
     workers: [],
     mainThread: { actor: "", url: "", type: -1, name: "" },
+    traits: {},
     isWebExtension: false,
   };
 }
@@ -41,6 +45,7 @@ export default function debuggee(
       return {
         ...state,
         mainThread: { ...action.mainThread, name: L10N.getStr("mainThread") },
+        traits: action.traits,
         isWebExtension: action.isWebExtension,
       };
     case "INSERT_WORKERS":
@@ -94,6 +99,14 @@ export const getThreads: Selector<Thread[]> = createSelector(
   getWorkers,
   (mainThread, workers) => [mainThread, ...sortBy(workers, getDisplayName)]
 );
+
+export function getCanRewind(state: State) {
+  return state.debuggee.traits.canRewind;
+}
+
+export function supportsWasm(state: State) {
+  return features.wasm && state.debuggee.traits.wasmBinarySource;
+}
 
 // checks if a path begins with a thread actor
 // e.g "server1.conn0.child1/workerTarget22/context1/dbg-workers.glitch.me"

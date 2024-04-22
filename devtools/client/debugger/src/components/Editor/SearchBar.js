@@ -14,11 +14,9 @@ import {
   getActiveSearch,
   getSelectedSource,
   getSourceContent,
-  getSelectedLocation,
   getFileSearchQuery,
   getFileSearchModifiers,
   getFileSearchResults,
-  getHighlightedLineRange,
   getContext,
 } from "../../selectors";
 
@@ -57,10 +55,15 @@ type State = {
   inputFocused: boolean,
 };
 
+type OwnProps = {|
+  editor: SourceEditor,
+  showClose?: boolean,
+  size?: string,
+|};
 type Props = {
   cx: Context,
   editor: SourceEditor,
-  selectedSource?: Source,
+  selectedSource: ?Source,
   selectedContentLoaded: boolean,
   searchOn: boolean,
   searchResults: SearchResults,
@@ -141,15 +144,15 @@ class SearchBar extends Component<Props, State> {
     }
   };
 
-  closeSearch = (e: SyntheticEvent<HTMLElement>) => {
-    const { cx, closeFileSearch, editor, searchOn } = this.props;
+  closeSearch = (e: SyntheticKeyboardEvent<HTMLElement>) => {
+    const { cx, closeFileSearch, editor, searchOn, query } = this.props;
+    this.clearSearch();
     if (editor && searchOn) {
-      this.clearSearch();
       closeFileSearch(cx, editor);
       e.stopPropagation();
       e.preventDefault();
     }
-    this.setState({ query: "", inputFocused: false });
+    this.setState({ query, inputFocused: false });
   };
 
   toggleSearch = (e: SyntheticKeyboardEvent<HTMLElement>) => {
@@ -157,11 +160,14 @@ class SearchBar extends Component<Props, State> {
     e.preventDefault();
     const { editor, searchOn, setActiveSearch } = this.props;
 
+    // Set inputFocused to false, so that search query is highlighted whenever search shortcut is used, even if the input already has focus.
+    this.setState({ inputFocused: false });
+
     if (!searchOn) {
       setActiveSearch("file");
     }
 
-    if (searchOn && editor) {
+    if (this.props.searchOn && editor) {
       const query = editor.codeMirror.getSelection() || this.state.query;
 
       if (query !== "") {
@@ -363,7 +369,7 @@ SearchBar.contextTypes = {
   shortcuts: PropTypes.object,
 };
 
-const mapStateToProps = state => {
+const mapStateToProps = (state, p: OwnProps) => {
   const selectedSource = getSelectedSource(state);
 
   return {
@@ -372,16 +378,14 @@ const mapStateToProps = state => {
     selectedSource,
     selectedContentLoaded: selectedSource
       ? !!getSourceContent(state, selectedSource.id)
-      : null,
-    selectedLocation: getSelectedLocation(state),
+      : false,
     query: getFileSearchQuery(state),
     modifiers: getFileSearchModifiers(state),
-    highlightedLineRange: getHighlightedLineRange(state),
     searchResults: getFileSearchResults(state),
   };
 };
 
-export default connect(
+export default connect<Props, OwnProps, _, _, _, _>(
   mapStateToProps,
   {
     toggleFileSearchModifier: actions.toggleFileSearchModifier,

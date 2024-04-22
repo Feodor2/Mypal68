@@ -3,22 +3,21 @@
 const SOURCE_URL = getFileUrl("setBreakpoint-on-column-minified.js");
 
 add_task(
-  threadClientTest(
-    async ({ threadClient, debuggee, client }) => {
-      const promise = waitForNewSource(threadClient, SOURCE_URL);
+  threadFrontTest(
+    async ({ threadFront, debuggee }) => {
+      const promise = waitForNewSource(threadFront, SOURCE_URL);
       loadSubScript(SOURCE_URL, debuggee);
       const { source } = await promise;
 
       // Pause inside of the nested function so we can make sure that we don't
       // add any other breakpoints at other places on this line.
       const location = { sourceUrl: source.url, line: 3, column: 81 };
-      setBreakpoint(threadClient, location);
+      setBreakpoint(threadFront, location);
 
       const packet = await executeOnNextTickAndWaitForPause(function() {
         Cu.evalInSandbox("f()", debuggee);
-      }, client);
+      }, threadFront);
 
-      Assert.equal(packet.type, "paused");
       const why = packet.why;
       Assert.equal(why.type, "breakpoint");
       Assert.equal(why.actors.length, 1);
@@ -34,7 +33,7 @@ add_task(
       Assert.equal(variables.b.value, 2);
       Assert.equal(variables.c.value, 3);
 
-      await resume(threadClient);
+      await resume(threadFront);
     },
     { doNotRunWorker: true }
   )

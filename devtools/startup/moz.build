@@ -4,10 +4,6 @@
 
 JAR_MANIFESTS += ['jar.mn']
 
-DIRS += [
-    'preferences',
-]
-
 # Register the startup components only for 'all' builds.
 if CONFIG['MOZ_DEVTOOLS'] == 'all':
     EXTRA_JS_MODULES += [
@@ -22,11 +18,6 @@ if CONFIG['MOZ_DEVTOOLS'] == 'all':
     DIRS += [
       'aboutdevtools',
       'locales',
-    ]
-
-if CONFIG['NIGHTLY_BUILD']:
-    EXTRA_JS_MODULES += [
-        'AboutDebuggingNewRegistration.jsm',
     ]
 
 XPCOM_MANIFESTS += [

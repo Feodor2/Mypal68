@@ -8,11 +8,11 @@
  */
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
+  threadFrontTest(async ({ threadFront, debuggee }) => {
     dumpn("Evaluating test code and waiting for first debugger statement");
     const dbgStmt1 = await executeOnNextTickAndWaitForPause(
       () => evaluateTestCode(debuggee),
-      client
+      threadFront
     );
     equal(
       dbgStmt1.frame.where.line,
@@ -21,9 +21,9 @@ add_task(
     );
 
     dumpn("Testing stepping with implicit return");
-    const step1 = await stepOver(client, threadClient);
+    const step1 = await stepOver(threadFront);
     equal(step1.frame.where.line, 4, "Should step to line 4");
-    const step2 = await stepOver(client, threadClient);
+    const step2 = await stepOver(threadFront);
     equal(
       step2.frame.where.line,
       7,
@@ -36,7 +36,7 @@ add_task(
     // ok(step2.why.frameFinished, "This should be the implicit function return");
 
     dumpn("Continuing and waiting for second debugger statement");
-    const dbgStmt2 = await resumeAndWaitForPause(client, threadClient);
+    const dbgStmt2 = await resumeAndWaitForPause(threadFront);
     equal(
       dbgStmt2.frame.where.line,
       12,
@@ -44,9 +44,9 @@ add_task(
     );
 
     dumpn("Testing stepping with explicit return");
-    const step3 = await stepOver(client, threadClient);
+    const step3 = await stepOver(threadFront);
     equal(step3.frame.where.line, 13, "Should step to line 13");
-    const step4 = await stepOver(client, threadClient);
+    const step4 = await stepOver(threadFront);
     equal(
       step4.frame.where.line,
       15,

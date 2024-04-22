@@ -9,6 +9,7 @@ DIRS += [
 
 CompiledModules(
     'CommandBar.js',
+    'DOMMutationBreakpoints.js',
     'EventListeners.js',
     'Expressions.js',
     'index.js',
@@ -22,6 +23,7 @@ CompiledModules(
 
 DevToolsModules(
     'CommandBar.css',
+    'DOMMutationBreakpoints.css',
     'EventListeners.css',
     'Expressions.css',
     'Scopes.css',

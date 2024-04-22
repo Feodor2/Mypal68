@@ -178,6 +178,11 @@ function NetworkEventMessage({
         selectTab: tabId => {
           dispatch(actions.selectNetworkMessageTab(tabId));
         },
+        openNetworkDetails: enabled => {
+          if (!enabled) {
+            dispatch(actions.messageClose(id));
+          }
+        },
         hideToggleButton: true,
         showWebSocketsTab: false,
       })

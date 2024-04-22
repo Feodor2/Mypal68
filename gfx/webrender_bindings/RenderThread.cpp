@@ -535,19 +535,19 @@ void RenderThread::IncPendingFrameCount(wr::WindowId aWindowId,
   it->second->mDocFrameCounts.push(aDocFrameCount);
 }
 
-mozilla::Pair<bool, bool> RenderThread::IncRenderingFrameCount(
+std::pair<bool, bool> RenderThread::IncRenderingFrameCount(
     wr::WindowId aWindowId, bool aRender) {
   auto windows = mWindowInfos.Lock();
   auto it = windows->find(AsUint64(aWindowId));
   if (it == windows->end()) {
     MOZ_ASSERT(false);
-    return MakePair(false, false);
+    return std::make_pair(false, false);
   }
 
   it->second->mDocFramesSeen++;
   if (it->second->mDocFramesSeen < it->second->mDocFrameCounts.front()) {
     it->second->mRender |= aRender;
-    return MakePair(false, it->second->mRender);
+    return std::make_pair(false, it->second->mRender);
   } else {
     MOZ_ASSERT(it->second->mDocFramesSeen ==
                it->second->mDocFrameCounts.front());
@@ -556,7 +556,7 @@ mozilla::Pair<bool, bool> RenderThread::IncRenderingFrameCount(
     it->second->mRenderingCount++;
     it->second->mDocFrameCounts.pop();
     it->second->mDocFramesSeen = 0;
-    return MakePair(true, render);
+    return std::make_pair(true, render);
   }
 }
 
@@ -964,9 +964,8 @@ extern "C" {
 static void HandleFrame(mozilla::wr::WrWindowId aWindowId, bool aRender) {
   auto incResult = mozilla::wr::RenderThread::Get()->IncRenderingFrameCount(
       aWindowId, aRender);
-  if (incResult.first()) {
-    mozilla::wr::RenderThread::Get()->HandleFrame(aWindowId,
-                                                  incResult.second());
+  if (incResult.first) {
+    mozilla::wr::RenderThread::Get()->HandleFrame(aWindowId, incResult.second);
   }
 }
 

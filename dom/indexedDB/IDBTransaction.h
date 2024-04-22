@@ -14,6 +14,7 @@
 #include "nsIRunnable.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "SafeRefPtr.h"
 
 namespace mozilla {
 
@@ -111,24 +112,25 @@ class IDBTransaction final
                      ///< incomplete).
   FlippedOnce<false> mAbortedByScript;
   bool mNotedActiveTransaction;
+  FlippedOnce<false> mSentCommitOrAbort;
 
 #ifdef DEBUG
-  FlippedOnce<false> mSentCommitOrAbort;
   FlippedOnce<false> mFiredCompleteOrAbort;
+  FlippedOnce<false> mWasExplicitlyCommitted;
 #endif
 
  public:
-  static MOZ_MUST_USE RefPtr<IDBTransaction> CreateVersionChange(
+  static MOZ_MUST_USE SafeRefPtr<IDBTransaction> CreateVersionChange(
       IDBDatabase* aDatabase,
       indexedDB::BackgroundVersionChangeTransactionChild* aActor,
       IDBOpenDBRequest* aOpenRequest, int64_t aNextObjectStoreId,
       int64_t aNextIndexId);
 
-  static MOZ_MUST_USE RefPtr<IDBTransaction> Create(
+  static MOZ_MUST_USE SafeRefPtr<IDBTransaction> Create(
       JSContext* aCx, IDBDatabase* aDatabase,
       const nsTArray<nsString>& aObjectStoreNames, Mode aMode);
 
-  static IDBTransaction* GetCurrent();
+  static Maybe<IDBTransaction&> MaybeCurrent();
 
   void AssertIsOnOwningThread() const
 #ifdef DEBUG
@@ -162,8 +164,6 @@ class IDBTransaction final
                   const indexedDB::OpenCursorParams& aParams);
 
   void RefreshSpec(bool aMayDelete);
-
-  bool CanAcceptRequests() const;
 
   bool IsCommittingOrFinished() const {
     AssertIsOnOwningThread();
@@ -200,6 +200,10 @@ class IDBTransaction final
     AssertIsOnOwningThread();
     return NS_FAILED(mAbortCode);
   }
+
+#ifdef DEBUG
+  bool WasExplicitlyCommitted() const { return mWasExplicitlyCommitted; }
+#endif
 
   template <ReadyState OriginalState, ReadyState TemporaryState>
   class AutoRestoreState {
@@ -355,7 +359,7 @@ class IDBTransaction final
 
   void AbortInternal(nsresult aAbortCode, RefPtr<DOMException> aError);
 
-  void SendCommit();
+  void SendCommit(bool aAutoCommit);
 
   void SendAbort(nsresult aResultCode);
 
@@ -375,6 +379,14 @@ class IDBTransaction final
 
   bool HasTransactionChild() const;
 };
+
+inline bool ReferenceEquals(const Maybe<IDBTransaction&>& aLHS,
+                            const Maybe<IDBTransaction&>& aRHS) {
+  if (aLHS.isNothing() != aRHS.isNothing()) {
+    return false;
+  }
+  return aLHS.isNothing() || &aLHS.ref() == &aRHS.ref();
+}
 
 }  // namespace dom
 }  // namespace mozilla

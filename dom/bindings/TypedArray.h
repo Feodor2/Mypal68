@@ -5,14 +5,16 @@
 #ifndef mozilla_dom_TypedArray_h
 #define mozilla_dom_TypedArray_h
 
-#include "jsfriendapi.h"  // js::Scalar
+#include <utility>
+
 #include "js/ArrayBuffer.h"
 #include "js/ArrayBufferMaybeShared.h"
-#include "js/SharedArrayBuffer.h"
+#include "js/experimental/TypedData.h"  // js::Unwrap(Ui|I)nt(8|16|32)Array, js::Get(Ui|I)nt(8|16|32)ArrayLengthAndData, js::UnwrapUint8ClampedArray, js::GetUint8ClampedArrayLengthAndData, js::UnwrapFloat(32|64)Array, js::GetFloat(32|64)ArrayLengthAndData, JS_GetArrayBufferViewType
 #include "js/GCAPI.h"       // JS::AutoCheckCannotGC
 #include "js/RootingAPI.h"  // JS::Rooted
+#include "js/ScalarType.h"  // js::Scalar::Type
+#include "js/SharedArrayBuffer.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Move.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/SpiderMonkeyInterface.h"
 #include "nsWrapperCache.h"

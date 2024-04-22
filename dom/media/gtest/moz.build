@@ -112,8 +112,8 @@ FINAL_LIBRARY = 'xul-gtest'
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
-if CONFIG['CC_TYPE'] == 'clang':
-    CXXFLAGS += ['-Wno-unused-private-field']
-
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
+    CXXFLAGS += [
+        '-Wno-inconsistent-missing-override',
+        '-Wno-unused-private-field',
+    ]

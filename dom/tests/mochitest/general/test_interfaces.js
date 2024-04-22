@@ -52,7 +52,7 @@ var ecmaGlobals = [
   { name: "AggregateError", insecureContext: true },
   { name: "Array", insecureContext: true },
   { name: "ArrayBuffer", insecureContext: true },
-  { name: "Atomics", insecureContext: true, disabled: true },
+  { name: "Atomics", insecureContext: true },
   { name: "BigInt", insecureContext: true },
   { name: "BigInt64Array", insecureContext: true },
   { name: "BigUint64Array", insecureContext: true },
@@ -63,6 +63,7 @@ var ecmaGlobals = [
   { name: "Date", insecureContext: true },
   { name: "Error", insecureContext: true },
   { name: "EvalError", insecureContext: true },
+  { name: "FinalizationRegistry", insecureContext: true },
   { name: "Float32Array", insecureContext: true },
   { name: "Float64Array", insecureContext: true },
   { name: "Function", insecureContext: true },
@@ -86,7 +87,10 @@ var ecmaGlobals = [
   { name: "Reflect", insecureContext: true },
   { name: "RegExp", insecureContext: true },
   { name: "Set", insecureContext: true },
-  { name: "SharedArrayBuffer", insecureContext: true, disabled: true },
+  {
+    name: "SharedArrayBuffer",
+    insecureContext: true,
+  },
   { name: "String", insecureContext: true },
   { name: "Symbol", insecureContext: true },
   { name: "SyntaxError", insecureContext: true },
@@ -98,6 +102,7 @@ var ecmaGlobals = [
   { name: "Uint8ClampedArray", insecureContext: true },
   { name: "URIError", insecureContext: true },
   { name: "WeakMap", insecureContext: true },
+  { name: "WeakRef", insecureContext: true },
   { name: "WeakSet", insecureContext: true },
   {
     name: "WebAssembly",
@@ -163,13 +168,15 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioParam", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "AudioParamMap", insecureContext: true, disabled: true },
+  { name: "AudioParamMap", insecureContext: false, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioProcessingEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioScheduledSourceNode", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "AudioWorkletNode", insecureContext: false, disabled: true },
+  { name: "AudioWorklet", insecureContext: false, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "AudioWorkletNode", insecureContext: false, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AuthenticatorAssertionResponse" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -443,7 +450,7 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "HTMLDetailsElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "HTMLDialogElement", insecureContext: true, disabled: true },
+  { name: "HTMLDialogElement", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "HTMLDirectoryElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1332,6 +1339,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Worker", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Worklet", insecureContext: false, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "XMLDocument", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "XMLHttpRequest", insecureContext: true },
@@ -1382,6 +1391,7 @@ function createInterfaceMap() {
           // will get treated as "insecureContext: false", which means exposed
           // only in secure contexts.
           (isInsecureContext && !entry.insecureContext) ||
+          entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

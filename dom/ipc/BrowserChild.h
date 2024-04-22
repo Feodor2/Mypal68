@@ -139,67 +139,12 @@ class ContentListener final : public nsIDOMEventListener {
   BrowserChild* mBrowserChild;
 };
 
-// This is base clase which helps to share Viewport and touch related
-// functionality between b2g/android FF/embedlite clients implementation.
-// It make sense to place in this class all helper functions, and functionality
-// which could be shared between Cross-process/Cross-thread implmentations.
-class BrowserChildBase : public nsISupports,
-                         public nsMessageManagerScriptExecutor,
-                         public ipc::MessageManagerCallback {
- protected:
-  typedef mozilla::widget::PuppetWidget PuppetWidget;
-
- public:
-  BrowserChildBase();
-
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(BrowserChildBase)
-
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
-    return mBrowserChildMessageManager->WrapObject(aCx, aGivenProto);
-  }
-
-  virtual nsIWebNavigation* WebNavigation() const = 0;
-  virtual PuppetWidget* WebWidget() = 0;
-  nsIPrincipal* GetPrincipal() { return mPrincipal; }
-  virtual bool DoUpdateZoomConstraints(
-      const uint32_t& aPresShellId,
-      const mozilla::layers::ScrollableLayerGuid::ViewID& aViewId,
-      const Maybe<mozilla::layers::ZoomConstraints>& aConstraints) = 0;
-
-  virtual ScreenIntSize GetInnerSize() = 0;
-
-  // Get the Document for the top-level window in this tab.
-  already_AddRefed<Document> GetTopLevelDocument() const;
-
-  // Get the pres-shell of the document for the top-level window in this tab.
-  PresShell* GetTopLevelPresShell() const;
-
- protected:
-  virtual ~BrowserChildBase();
-
-  // Wraps up a JSON object as a structured clone and sends it to the browser
-  // chrome script.
-  //
-  // XXX/bug 780335: Do the work the browser chrome script does in C++ instead
-  // so we don't need things like this.
-  void DispatchMessageManagerMessage(const nsAString& aMessageName,
-                                     const nsAString& aJSONData);
-
-  void ProcessUpdateFrame(const mozilla::layers::RepaintRequest& aRequest);
-
-  bool UpdateFrameHandler(const mozilla::layers::RepaintRequest& aRequest);
-
- protected:
-  RefPtr<BrowserChildMessageManager> mBrowserChildMessageManager;
-  nsCOMPtr<nsIWebBrowserChrome3> mWebBrowserChrome;
-};
-
 /**
  * BrowserChild implements the child actor part of the PBrowser protocol. See
  * PBrowser for more information.
  */
-class BrowserChild final : public BrowserChildBase,
+class BrowserChild final : public nsMessageManagerScriptExecutor,
+                           public ipc::MessageManagerCallback,
                            public PBrowserChild,
                            public nsIWebBrowserChrome2,
                            public nsIEmbeddingSiteWindow,
@@ -213,6 +158,7 @@ class BrowserChild final : public BrowserChildBase,
                            public TabContext,
                            public nsITooltipListener,
                            public mozilla::ipc::IShmemAllocator {
+  typedef mozilla::widget::PuppetWidget PuppetWidget;
   typedef mozilla::dom::ClonedMessageData ClonedMessageData;
   typedef mozilla::dom::CoalescedMouseData CoalescedMouseData;
   typedef mozilla::dom::CoalescedWheelData CoalescedWheelData;
@@ -257,7 +203,7 @@ class BrowserChild final : public BrowserChildBase,
     return mUniqueId;
   }
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIWEBBROWSERCHROME
   NS_DECL_NSIWEBBROWSERCHROME2
   NS_DECL_NSIEMBEDDINGSITEWINDOW
@@ -270,10 +216,21 @@ class BrowserChild final : public BrowserChildBase,
   NS_DECL_NSIWEBPROGRESSLISTENER2
   NS_DECL_NSITOOLTIPLISTENER
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(BrowserChild,
-                                                         BrowserChildBase)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(BrowserChild,
+                                                         nsIBrowserChild)
 
   FORWARD_SHMEM_ALLOCATOR_TO(PBrowserChild)
+
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+    return mBrowserChildMessageManager->WrapObject(aCx, aGivenProto);
+  }
+
+  nsIPrincipal* GetPrincipal() { return mPrincipal; }
+  // Get the Document for the top-level window in this tab.
+  already_AddRefed<Document> GetTopLevelDocument() const;
+
+  // Get the pres-shell of the document for the top-level window in this tab.
+  PresShell* GetTopLevelPresShell() const;
 
   BrowserChildMessageManager* GetMessageManager() {
     return mBrowserChildMessageManager;
@@ -294,9 +251,9 @@ class BrowserChild final : public BrowserChildBase,
                                       JS::Handle<JSObject*> aCpows,
                                       nsIPrincipal* aPrincipal) override;
 
-  virtual bool DoUpdateZoomConstraints(
+  bool DoUpdateZoomConstraints(
       const uint32_t& aPresShellId, const ViewID& aViewId,
-      const Maybe<ZoomConstraints>& aConstraints) override;
+      const Maybe<ZoomConstraints>& aConstraints);
 
   mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aURI,
                                       const ShowInfo& aInfo);
@@ -452,9 +409,9 @@ class BrowserChild final : public BrowserChildBase,
 
   bool DeallocPFilePickerChild(PFilePickerChild* aActor);
 
-  virtual nsIWebNavigation* WebNavigation() const override { return mWebNav; }
+  nsIWebNavigation* WebNavigation() const { return mWebNav; }
 
-  virtual PuppetWidget* WebWidget() override { return mPuppetWidget; }
+  PuppetWidget* WebWidget() { return mPuppetWidget; }
 
   bool IsTransparent() const { return mIsTransparent; }
 
@@ -576,7 +533,7 @@ class BrowserChild final : public BrowserChildBase,
   const mozilla::layers::CompositorOptions& GetCompositorOptions() const;
   bool AsyncPanZoomEnabled() const;
 
-  virtual ScreenIntSize GetInnerSize() override;
+  ScreenIntSize GetInnerSize();
 
   // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
   void DoFakeShow(const ShowInfo& aShowInfo);
@@ -745,6 +702,10 @@ class BrowserChild final : public BrowserChildBase,
       GetContentBlockingLogResolver&& aResolve);
 
  private:
+  void ProcessUpdateFrame(const mozilla::layers::RepaintRequest& aRequest);
+
+  bool UpdateFrameHandler(const mozilla::layers::RepaintRequest& aRequest);
+
   void HandleDoubleTap(const CSSPoint& aPoint, const Modifiers& aModifiers,
                        const ScrollableLayerGuid& aGuid);
 
@@ -815,6 +776,8 @@ class BrowserChild final : public BrowserChildBase,
 
   class DelayedDeleteRunnable;
 
+  RefPtr<BrowserChildMessageManager> mBrowserChildMessageManager;
+  nsCOMPtr<nsIWebBrowserChrome3> mWebBrowserChrome;
   TextureFactoryIdentifier mTextureFactoryIdentifier;
   RefPtr<nsWebBrowser> mWebBrowser;
   nsCOMPtr<nsIWebNavigation> mWebNav;

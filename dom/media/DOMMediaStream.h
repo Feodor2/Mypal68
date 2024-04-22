@@ -7,7 +7,6 @@
 
 #include "ImageContainer.h"
 
-#include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsIPrincipal.h"
@@ -169,6 +168,16 @@ class DOMMediaStream : public DOMEventTargetHelper,
    * to be called from an async task.
    */
   void AddTrackInternal(MediaStreamTrack* aTrack);
+
+  /**
+   * Removes a MediaStreamTrack from mTracks and fires "removetrack" if it
+   * was removed.
+   *
+   * Note that "removetrack" is raised synchronously and only has an effect if
+   * this MediaStream is already exposed to script. For spec compliance this is
+   * to be called from an async task.
+   */
+  void RemoveTrackInternal(MediaStreamTrack* aTrack);
 
   /**
    * Add an nsISupports object that this stream will keep alive as long as

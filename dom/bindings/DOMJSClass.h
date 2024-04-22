@@ -7,6 +7,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
 #include "js/PropertySpec.h"
 #include "js/Wrapper.h"
 #include "mozilla/Assertions.h"
@@ -19,6 +20,7 @@
 #include "mozilla/dom/JSSlots.h"
 
 class nsCycleCollectionParticipant;
+class nsWrapperCache;
 struct JSStructuredCloneReader;
 struct JSStructuredCloneWriter;
 class nsIGlobalObject;
@@ -411,6 +413,8 @@ typedef JSObject* (*WebIDLDeserializer)(JSContext* aCx,
                                         nsIGlobalObject* aGlobal,
                                         JSStructuredCloneReader* aReader);
 
+typedef nsWrapperCache* (*WrapperCacheGetter)(JS::Handle<JSObject*> aObj);
+
 // Special JSClass for reflected DOM objects.
 struct DOMJSClass {
   // It would be nice to just inherit from JSClass, but that precludes pure
@@ -445,6 +449,10 @@ struct DOMJSClass {
   // Null otherwise.
   WebIDLSerializer mSerializer;
 
+  // A callback to get the wrapper cache for C++ objects that don't inherit from
+  // nsISupports, or null.
+  WrapperCacheGetter mWrapperCacheGetter;
+
   static const DOMJSClass* FromJSClass(const JSClass* base) {
     MOZ_ASSERT(base->flags & JSCLASS_IS_DOMJSCLASS);
     return reinterpret_cast<const DOMJSClass*>(base);
@@ -475,9 +483,9 @@ struct DOMIfaceAndProtoJSClass {
 
   const NativePropertyHooks* mNativeHooks;
 
-  // The value to return for toString() on this interface or interface prototype
+  // The value to return for Function.prototype.toString on this interface
   // object.
-  const char* mToString;
+  const char* mFunToString;
 
   ProtoGetter mGetParentProto;
 
@@ -492,22 +500,22 @@ struct DOMIfaceAndProtoJSClass {
 class ProtoAndIfaceCache;
 
 inline bool DOMGlobalHasProtoAndIFaceCache(JSObject* global) {
-  MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   // This can be undefined if we GC while creating the global
-  return !js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
+  return !JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
 }
 
 inline bool HasProtoAndIfaceCache(JSObject* global) {
-  if (!(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
+  if (!(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
     return false;
   }
   return DOMGlobalHasProtoAndIFaceCache(global);
 }
 
 inline ProtoAndIfaceCache* GetProtoAndIfaceCache(JSObject* global) {
-  MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   return static_cast<ProtoAndIfaceCache*>(
-      js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
+      JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
 }
 
 }  // namespace dom

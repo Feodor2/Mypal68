@@ -12,7 +12,6 @@
 #include "nsCOMArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
-#include "nsAutoPtr.h"
 #include "mozilla/dom/Document.h"
 #include "nsIIncrementalStreamLoader.h"
 #include "nsURIHashKey.h"
@@ -149,6 +148,16 @@ class ScriptLoader final : public nsISupports {
   }
 
   /**
+   *  Check whether to speculatively OMT parse scripts as soon as
+   *  they are fetched, even if not a parser blocking request.
+   *  Controlled by
+   *  dom.script_loader.external_scripts.speculative_omt_parse_enabled
+   */
+  bool SpeculativeOMTParsingEnabled() const {
+    return mSpeculativeOMTParsingEnabled;
+  }
+
+  /**
    * Add/remove a blocker for parser-blocking scripts (and XSLT
    * scripts). Blockers will stop such scripts from executing, but not from
    * loading.
@@ -269,16 +278,16 @@ class ScriptLoader final : public nsISupports {
    */
   void BeginDeferringScripts() {
     mDeferEnabled = true;
-    if (mDocumentParsingDone) {
+    if (mDeferCheckpointReached) {
       // We already completed a parse and were just waiting for some async
       // scripts to load (and were already blocking the load event waiting for
       // that to happen), when document.open() happened and now we're doing a
       // new parse.  We shouldn't block the load event again, but _should_ reset
-      // mDocumentParsingDone to false.  It'll get set to true again when the
-      // ParsingComplete call that corresponds to this BeginDeferringScripts
-      // call happens (on document.close()), since we just set mDeferEnabled to
-      // true.
-      mDocumentParsingDone = false;
+      // mDeferCheckpointReached to false.  It'll get set to true again when the
+      // DeferCheckpointReached call that corresponds to this
+      // BeginDeferringScripts call happens (on document.close()), since we just
+      // set mDeferEnabled to true.
+      mDeferCheckpointReached = false;
     } else {
       if (mDocument) {
         mDocument->BlockOnload();
@@ -288,14 +297,24 @@ class ScriptLoader final : public nsISupports {
 
   /**
    * Notifies the script loader that parsing is done.  If aTerminated is true,
-   * this will drop any pending scripts that haven't run yet.  Otherwise, it
-   * will stops deferring scripts and immediately processes the
+   * this will drop any pending scripts that haven't run yet, otherwise it will
+   * do nothing.
+   */
+  void ParsingComplete(bool aTerminated);
+
+  /**
+   * Notifies the script loader that the checkpoint to begin execution of defer
+   * scripts has been reached. This is either the end of of the document parse
+   * or the end of loading of parser-inserted stylesheets, whatever happens
+   * last.
+   *
+   * Otherwise, it will stop deferring scripts and immediately processes the
    * mDeferredRequests queue.
    *
    * WARNING: This function will synchronously execute content scripts, so be
    * prepared that the world might change around you.
    */
-  void ParsingComplete(bool aTerminated);
+  void DeferCheckpointReached();
 
   /**
    * Returns the number of pending scripts, deferred or not.
@@ -411,7 +430,8 @@ class ScriptLoader final : public nsISupports {
   bool ProcessInlineScript(nsIScriptElement* aElement, ScriptKind aScriptKind);
 
   ScriptLoadRequest* LookupPreloadRequest(nsIScriptElement* aElement,
-                                          ScriptKind aScriptKind);
+                                          ScriptKind aScriptKind,
+                                          const SRIMetadata& aSRIMetadata);
 
   void GetSRIMetadata(const nsAString& aIntegrityAttr,
                       SRIMetadata* aMetadataOut);
@@ -541,6 +561,8 @@ class ScriptLoader final : public nsISupports {
   void AddAsyncRequest(ScriptLoadRequest* aRequest);
   bool MaybeRemovedDeferRequests();
 
+  bool ShouldCompileOffThread(ScriptLoadRequest* aRequest);
+
   void MaybeMoveToLoadedList(ScriptLoadRequest* aRequest);
 
   using MaybeSourceText =
@@ -634,7 +656,8 @@ class ScriptLoader final : public nsISupports {
   uint32_t mNumberOfProcessors;
   bool mEnabled;
   bool mDeferEnabled;
-  bool mDocumentParsingDone;
+  bool mSpeculativeOMTParsingEnabled;
+  bool mDeferCheckpointReached;
   bool mBlockingDOMContentLoaded;
   bool mLoadEventFired;
   bool mGiveUpEncoding;

@@ -6,6 +6,7 @@
 #define MOZILLA_CONTAINERPARSER_H_
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "MediaSpan.h"
 #include "MediaContainerType.h"
 #include "MediaResource.h"
@@ -72,7 +73,8 @@ class ContainerParser : public DecoderDoctorLifeLogger<ContainerParser> {
   // range if not complete.
   MediaByteRange MediaSegmentRange();
 
-  static ContainerParser* CreateForMIMEType(const MediaContainerType& aType);
+  static UniquePtr<ContainerParser> CreateForMIMEType(
+      const MediaContainerType& aType);
 
   const MediaContainerType& ContainerType() const { return mType; }
 

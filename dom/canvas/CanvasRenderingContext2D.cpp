@@ -66,6 +66,7 @@
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_NewUint8ClampedArray, JS_GetUint8ClampedArrayData
 #include "js/HeapAPI.h"
 #include "js/Warnings.h"  // JS::WarnASCII
 
@@ -155,17 +156,13 @@ static int64_t gCanvasAzureMemoryUsed = 0;
 // Adds Save() / Restore() calls to the scope.
 class MOZ_RAII AutoSaveRestore {
  public:
-  explicit AutoSaveRestore(
-      CanvasRenderingContext2D* aCtx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mCtx(aCtx) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoSaveRestore(CanvasRenderingContext2D* aCtx) : mCtx(aCtx) {
     mCtx->Save();
   }
   ~AutoSaveRestore() { mCtx->Restore(); }
 
  private:
   RefPtr<CanvasRenderingContext2D> mCtx;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // This is KIND_OTHER because it's not always clear where in memory the pixels

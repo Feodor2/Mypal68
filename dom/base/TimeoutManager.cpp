@@ -139,7 +139,7 @@ void TimeoutManager::MoveIdleToActive() {
     timeout->remove();
     mTimeouts.InsertFront(timeout);
 #if MOZ_GECKO_PROFILER
-    if (profiler_is_active()) {
+    if (profiler_can_accept_markers()) {
       if (num == 0) {
         now = TimeStamp::Now();
       }
@@ -152,11 +152,9 @@ void TimeoutManager::MoveIdleToActive() {
           int(elapsed.ToMilliseconds()), int(target.ToMilliseconds()),
           int(delta.ToMilliseconds()));
       // don't have end before start...
-      profiler_add_marker(
-          "setTimeout deferred release", JS::ProfilingCategoryPair::DOM,
-          MakeUnique<TextMarkerPayload>(
-              marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now,
-              now));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "setTimeout deferred release", DOM, TextMarkerPayload,
+          (marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now, now));
     }
 #endif
     num++;
@@ -890,7 +888,7 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
         // This timeout is good to run.
         bool timeout_was_cleared = window->RunTimeoutHandler(timeout, scx);
 #if MOZ_GECKO_PROFILER
-        if (profiler_is_active()) {
+        if (profiler_can_accept_markers()) {
           TimeDuration elapsed = now - timeout->SubmitTime();
           TimeDuration target = timeout->When() - timeout->SubmitTime();
           TimeDuration delta = now - timeout->When();
@@ -903,11 +901,10 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
               int(elapsed.ToMilliseconds()), int(target.ToMilliseconds()),
               int(delta.ToMilliseconds()), int(runtime.ToMilliseconds()));
           // don't have end before start...
-          profiler_add_marker(
-              "setTimeout", JS::ProfilingCategoryPair::DOM,
-              MakeUnique<TextMarkerPayload>(
-                  marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now,
-                  now));
+          PROFILER_ADD_MARKER_WITH_PAYLOAD(
+              "setTimeout", DOM, TextMarkerPayload,
+              (marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now,
+               now));
         }
 #endif
 

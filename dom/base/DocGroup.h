@@ -53,6 +53,9 @@ class DocGroup final {
 
   PerformanceCounter* GetPerformanceCounter() { return mPerformanceCounter; }
 
+  JSExecutionManager* GetExecutionManager() const { return mExecutionManager; }
+  void SetExecutionManager(JSExecutionManager*);
+
   RefPtr<PerformanceInfoPromise> ReportPerformanceInfo();
 
   TabGroup* GetTabGroup() { return mTabGroup; }
@@ -127,6 +130,11 @@ class DocGroup final {
 
   RefPtr<mozilla::ThrottledEventQueue> mIframePostMessageQueue;
   nsTHashtable<nsUint64HashKey> mIframesUsedPostMessageQueue;
+
+  // non-null if the JS execution for this docgroup is regulated with regards
+  // to worker threads. This should only be used when we are forcing serialized
+  // SAB access.
+  RefPtr<JSExecutionManager> mExecutionManager;
 
   RefPtr<mozilla::dom::DOMArena> mArena;
 };

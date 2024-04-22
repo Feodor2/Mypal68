@@ -6,6 +6,7 @@
 
 #include "jsapi.h"
 #include "js/Class.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetPrivate, JS::SetPrivate
 
 #include "nsJSPrincipals.h"
 #include "nsThreadUtils.h"
@@ -40,8 +41,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SimpleGlobalObject)
 NS_INTERFACE_MAP_END
 
 static void SimpleGlobal_finalize(JSFreeOp* fop, JSObject* obj) {
-  SimpleGlobalObject* globalObject =
-      static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
+  auto* globalObject = static_cast<SimpleGlobalObject*>(JS::GetPrivate(obj));
   if (globalObject) {
     globalObject->ClearWrapper(obj);
     NS_RELEASE(globalObject);
@@ -49,8 +49,7 @@ static void SimpleGlobal_finalize(JSFreeOp* fop, JSObject* obj) {
 }
 
 static size_t SimpleGlobal_moved(JSObject* obj, JSObject* old) {
-  SimpleGlobalObject* globalObject =
-      static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
+  auto* globalObject = static_cast<SimpleGlobalObject*>(JS::GetPrivate(obj));
   if (globalObject) {
     globalObject->UpdateWrapper(obj, old);
   }
@@ -131,7 +130,7 @@ JSObject* SimpleGlobalObject::Create(GlobalType globalType,
         new SimpleGlobalObject(global, globalType);
 
     // Pass on ownership of globalObject to |global|.
-    JS_SetPrivate(global, globalObject.forget().take());
+    JS::SetPrivate(global, globalObject.forget().take());
 
     if (proto.isObjectOrNull()) {
       JS::Rooted<JSObject*> protoObj(cx, proto.toObjectOrNull());
@@ -158,12 +157,11 @@ JSObject* SimpleGlobalObject::Create(GlobalType globalType,
 // static
 SimpleGlobalObject::GlobalType SimpleGlobalObject::SimpleGlobalType(
     JSObject* obj) {
-  if (js::GetObjectClass(obj) != &SimpleGlobalClass) {
+  if (JS::GetClass(obj) != &SimpleGlobalClass) {
     return SimpleGlobalObject::GlobalType::NotSimpleGlobal;
   }
 
-  SimpleGlobalObject* globalObject =
-      static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
+  auto* globalObject = static_cast<SimpleGlobalObject*>(JS::GetPrivate(obj));
   return globalObject->Type();
 }
 

@@ -6,6 +6,7 @@
 
 #include "mozilla/Unused.h"
 #include "mozilla/dom/CacheBinding.h"
+#include "mozilla/dom/FetchTypes.h"
 #include "mozilla/dom/InternalRequest.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"

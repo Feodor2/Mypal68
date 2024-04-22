@@ -4,7 +4,7 @@
 
 #include "nsXBLSerialize.h"
 
-#include "jsfriendapi.h"
+#include "js/Object.h"  // JS::GetCompartment
 #include "nsXBLPrototypeBinding.h"
 #include "nsContentUtils.h"
 
@@ -15,7 +15,7 @@ nsresult XBL_SerializeFunction(nsIObjectOutputStream* aStream,
   AssertInCompilationScope();
   AutoJSContext cx;
   MOZ_ASSERT(js::GetContextCompartment(cx) ==
-             js::GetObjectCompartment(aFunction));
+             JS::GetCompartment(aFunction));
   return nsContentUtils::XPConnect()->WriteFunction(aStream, cx, aFunction);
 }
 

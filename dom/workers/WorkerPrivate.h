@@ -38,6 +38,7 @@ enum WorkerType { WorkerTypeDedicated, WorkerTypeShared, WorkerTypeService };
 class ClientInfo;
 class ClientSource;
 class Function;
+class JSExecutionManager;
 class MessagePort;
 class UniqueMessagePortId;
 class PerformanceStorage;
@@ -159,6 +160,9 @@ class WorkerPrivate : public RelativeTimeline {
 
   void WaitForIsDebuggerRegistered(bool aDebuggerRegistered) {
     AssertIsOnParentThread();
+
+    // Yield so that the main thread won't be blocked.
+    AutoYieldJSThreadExecution yield;
 
     MOZ_ASSERT(!NS_IsMainThread());
 
@@ -345,17 +349,9 @@ class WorkerPrivate : public RelativeTimeline {
   // This may block!
   void EndCTypesCall();
 
-  void BeginCTypesCallback() {
-    // If a callback is beginning then we need to do the exact same thing as
-    // when a ctypes call ends.
-    EndCTypesCall();
-  }
+  void BeginCTypesCallback();
 
-  void EndCTypesCallback() {
-    // If a callback is ending then we need to do the exact same thing as
-    // when a ctypes call begins.
-    BeginCTypesCall();
-  }
+  void EndCTypesCallback();
 
   bool ConnectMessagePort(JSContext* aCx, UniqueMessagePortId& aIdentifier);
 
@@ -453,6 +449,15 @@ class WorkerPrivate : public RelativeTimeline {
   Maybe<ClientInfo> GetClientInfo() const;
 
   const ClientState GetClientState() const;
+
+  bool GetExecutionGranted() const;
+  void SetExecutionGranted(bool aGranted);
+
+  void ScheduleTimeSliceExpiration(uint32_t aDelay);
+  void CancelTimeSliceExpiration();
+
+  JSExecutionManager* GetExecutionManager() const;
+  void SetExecutionManager(JSExecutionManager* aManager);
 
   const Maybe<ServiceWorkerDescriptor> GetController();
 
@@ -797,9 +802,9 @@ class WorkerPrivate : public RelativeTimeline {
 
   // We can assume that an nsPIDOMWindow will be available for Freeze, Thaw
   // as these are only used for globals going in and out of the bfcache.
-  bool Freeze(nsPIDOMWindowInner* aWindow);
+  bool Freeze(const nsPIDOMWindowInner* aWindow);
 
-  bool Thaw(nsPIDOMWindowInner* aWindow);
+  bool Thaw(const nsPIDOMWindowInner* aWindow);
 
   void PropagateFirstPartyStorageAccessGranted();
 
@@ -1117,6 +1122,15 @@ class WorkerPrivate : public RelativeTimeline {
     // thread.
     nsCOMPtr<nsIGlobalObject> mCurrentEventLoopGlobal;
 
+    // Timer that triggers an interrupt on expiration of the current time slice
+    nsCOMPtr<nsITimer> mTSTimer;
+
+    // Execution manager used to regulate execution for this worker.
+    RefPtr<JSExecutionManager> mExecutionManager;
+
+    // Used to relinguish clearance for CTypes Callbacks.
+    nsTArray<AutoYieldJSThreadExecution> mYieldJSThreadExecution;
+
     uint32_t mNumWorkerRefsPreventingShutdownStart;
     uint32_t mDebuggerEventLoopLevel;
 
@@ -1129,6 +1143,7 @@ class WorkerPrivate : public RelativeTimeline {
     bool mPeriodicGCTimerRunning;
     bool mIdleGCTimerRunning;
     bool mOnLine;
+    bool mJSThreadExecutionGranted;
   };
   ThreadBound<WorkerThreadAccessible> mWorkerThreadAccessible;
 

@@ -94,7 +94,6 @@ hardware (via AudioStream).
 #  include "mozilla/Attributes.h"
 #  include "mozilla/ReentrantMonitor.h"
 #  include "mozilla/StateMirroring.h"
-#  include "nsAutoPtr.h"
 #  include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -236,7 +235,7 @@ class MediaDecoderStateMachine
     return mMetadataLoadedEvent;
   }
 
-  MediaEventSourceExc<nsAutoPtr<MediaInfo>, MediaDecoderEventVisibility>&
+  MediaEventSourceExc<UniquePtr<MediaInfo>, MediaDecoderEventVisibility>&
   FirstFrameLoadedEvent() {
     return mFirstFrameLoadedEvent;
   }
@@ -659,7 +658,7 @@ class MediaDecoderStateMachine
   MediaEventProducerExc<UniquePtr<MediaInfo>, UniquePtr<MetadataTags>,
                         MediaDecoderEventVisibility>
       mMetadataLoadedEvent;
-  MediaEventProducerExc<nsAutoPtr<MediaInfo>, MediaDecoderEventVisibility>
+  MediaEventProducerExc<UniquePtr<MediaInfo>, MediaDecoderEventVisibility>
       mFirstFrameLoadedEvent;
 
   MediaEventProducer<MediaPlaybackEvent> mOnPlaybackEvent;

@@ -10,7 +10,6 @@
 #include "mozilla/dom/PlacesObserversBinding.h"
 #include "mozilla/dom/PlacesEvent.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Pair.h"
 #include "mozilla/places/INativePlacesEventCallback.h"
 #include "nsIWeakReferenceUtils.h"
 

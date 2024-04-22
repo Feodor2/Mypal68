@@ -358,6 +358,11 @@ class MediaStreamTrackConsumer
    * including MediaStreamTrack::Stop().
    */
   virtual void NotifyEnded(MediaStreamTrack* aTrack){};
+
+  /**
+   * Called when the track's enabled state changes.
+   */
+  virtual void NotifyEnabledChanged(MediaStreamTrack* aTrack, bool aEnabled){};
 };
 
 // clang-format off
@@ -413,6 +418,7 @@ class MediaStreamTrack : public DOMEventTargetHelper,
       nsPIDOMWindowInner* aWindow, mozilla::MediaTrack* aInputTrack,
       MediaStreamTrackSource* aSource,
       MediaStreamTrackState aReadyState = MediaStreamTrackState::Live,
+      bool aMuted = false,
       const MediaTrackConstraints& aConstraints = MediaTrackConstraints());
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -574,6 +580,12 @@ class MediaStreamTrack : public DOMEventTargetHelper,
    * Notifies all MediaStreamTrackConsumers that this track ended.
    */
   void NotifyEnded();
+
+  /**
+   * Called when this track's enabled state has changed.
+   * Notifies all MediaStreamTrackConsumers.
+   */
+  void NotifyEnabledChanged();
 
   /**
    * Called when mSource's principal has changed.

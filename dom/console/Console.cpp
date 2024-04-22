@@ -98,7 +98,7 @@ static JS::Value CreateCounterOrResetCounterValue(JSContext* aCx,
 
 class ConsoleCallData final {
  public:
-  NS_INLINE_DECL_REFCOUNTING(ConsoleCallData)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ConsoleCallData)
 
   ConsoleCallData(Console::MethodName aName, const nsAString& aString,
                   Console* aConsole)
@@ -213,7 +213,9 @@ class ConsoleCallData final {
   nsCOMPtr<nsIStackFrame> mStack;
 
  private:
-  ~ConsoleCallData() { AssertIsOnOwningThread(); }
+  ~ConsoleCallData() = default;
+
+  NS_DECL_OWNINGTHREAD;
 };
 
 // MainThreadConsoleData instances are created on the Console thread and
@@ -249,6 +251,8 @@ class MainThreadConsoleData final {
 class ConsoleRunnable : public StructuredCloneHolderBase {
  public:
   ~ConsoleRunnable() override {
+    MOZ_ASSERT(!mClonedData.mGlobal,
+               "mClonedData.mGlobal is set and cleared in a main thread scope");
     // Clear the StructuredCloneHolderBase class.
     Clear();
   }
@@ -370,12 +374,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     }
 
     JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*arguments));
-
-    if (NS_WARN_IF(!Write(aCx, value))) {
-      return false;
-    }
-
-    return true;
+    return WriteData(aCx, value);
   }
 
   // Helper method for Profile calls
@@ -421,6 +420,20 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     Console::ProfileMethodMainthread(aCx, aAction, arguments);
   }
 
+  bool WriteData(JSContext* aCx, JS::Handle<JS::Value> aValue) {
+    // We use structuredClone to send the JSValue to the main-thread, in order
+    // to store it into the Console API Service. The consumer will be the
+    // console panel in the devtools and, because of this, we want to allow the
+    // cloning of sharedArrayBuffers and WASM modules.
+
+    if (NS_WARN_IF(!Write(aCx, aValue))) {
+      // Ignore the message.
+      return false;
+    }
+
+    return true;
+  }
+
   ConsoleStructuredCloneData mClonedData;
 };
 
@@ -438,29 +451,7 @@ class ConsoleWorkletRunnable : public Runnable, public ConsoleRunnable {
 
   ~ConsoleWorkletRunnable() override = default;
 
-  NS_IMETHOD
-  Run() override {
-    // This runnable is dispatched to main-thread first, then it goes back to
-    // worklet thread.
-    if (NS_IsMainThread()) {
-      RunOnMainThread();
-      RefPtr<ConsoleWorkletRunnable> runnable(this);
-      return mWorkletImpl->SendControlMessage(runnable.forget());
-    }
-
-    WorkletThread::AssertIsOnWorkletThread();
-
-    ReleaseData();
-    return NS_OK;
-  }
-
  protected:
-  // This method is called in the main-thread.
-  virtual void RunOnMainThread() = 0;
-
-  // This method is called in the owning thread of the Console object.
-  virtual void ReleaseData() = 0;
-
   RefPtr<MainThreadConsoleData> mConsoleData;
 
   RefPtr<WorkletImpl> mWorkletImpl;
@@ -496,16 +487,19 @@ class ConsoleCallDataWorkletRunnable final : public ConsoleWorkletRunnable {
     mCallData->SetIDs(loadInfo.OuterWindowID(), loadInfo.InnerWindowID());
   }
 
-  ~ConsoleCallDataWorkletRunnable() override { MOZ_ASSERT(!mCallData); }
+  ~ConsoleCallDataWorkletRunnable() override = default;
 
-  void RunOnMainThread() override {
-    AutoSafeJSContext cx;
+  NS_IMETHOD Run() override {
+    AssertIsOnMainThread();
+    AutoJSAPI jsapi;
+    jsapi.Init();
+    JSContext* cx = jsapi.cx();
 
     JSObject* sandbox =
         mConsoleData->GetOrCreateSandbox(cx, mWorkletImpl->Principal());
     JS::Rooted<JSObject*> global(cx, sandbox);
     if (NS_WARN_IF(!global)) {
-      return;
+      return NS_ERROR_FAILURE;
     }
 
     // The CreateSandbox call returns a proxy to the actual sandbox object. We
@@ -518,9 +512,9 @@ class ConsoleCallDataWorkletRunnable final : public ConsoleWorkletRunnable {
     // DOM objects exposed to worklet.
 
     ProcessCallData(cx, mConsoleData, mCallData);
-  }
 
-  virtual void ReleaseData() override { mCallData = nullptr; }
+    return NS_OK;
+  }
 
   RefPtr<ConsoleCallData> mCallData;
 };
@@ -631,7 +625,6 @@ class ConsoleWorkerRunnable : public WorkerProxyToMainThreadRunnable,
   void RunBackOnWorkerThreadForCleanup(WorkerPrivate* aWorkerPrivate) override {
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
-    ReleaseData();
   }
 
   // This method is called in the main-thread.
@@ -639,9 +632,6 @@ class ConsoleWorkerRunnable : public WorkerProxyToMainThreadRunnable,
                           WorkerPrivate* aWorkerPrivate,
                           nsPIDOMWindowOuter* aOuterWindow,
                           nsPIDOMWindowInner* aInnerWindow) = 0;
-
-  // This method is called in the owning thread of the Console object.
-  virtual void ReleaseData() = 0;
 
   bool ForMessaging() const override { return true; }
 
@@ -659,7 +649,7 @@ class ConsoleCallDataWorkerRunnable final : public ConsoleWorkerRunnable {
   }
 
  private:
-  ~ConsoleCallDataWorkerRunnable() override { MOZ_ASSERT(!mCallData); }
+  ~ConsoleCallDataWorkerRunnable() override = default;
 
   void RunConsole(JSContext* aCx, nsIGlobalObject* aGlobal,
                   WorkerPrivate* aWorkerPrivate,
@@ -703,8 +693,6 @@ class ConsoleCallDataWorkerRunnable final : public ConsoleWorkerRunnable {
     mClonedData.mGlobal = nullptr;
   }
 
-  virtual void ReleaseData() override { mCallData = nullptr; }
-
   RefPtr<ConsoleCallData> mCallData;
 };
 
@@ -733,16 +721,18 @@ class ConsoleProfileWorkletRunnable final : public ConsoleWorkletRunnable {
     MOZ_ASSERT(aConsole);
   }
 
-  void RunOnMainThread() override {
+  NS_IMETHOD Run() override {
     AssertIsOnMainThread();
 
-    AutoSafeJSContext cx;
+    AutoJSAPI jsapi;
+    jsapi.Init();
+    JSContext* cx = jsapi.cx();
 
     JSObject* sandbox =
         mConsoleData->GetOrCreateSandbox(cx, mWorkletImpl->Principal());
     JS::Rooted<JSObject*> global(cx, sandbox);
     if (NS_WARN_IF(!global)) {
-      return;
+      return NS_ERROR_FAILURE;
     }
 
     // The CreateSandbox call returns a proxy to the actual sandbox object. We
@@ -754,9 +744,9 @@ class ConsoleProfileWorkletRunnable final : public ConsoleWorkletRunnable {
     // We don't need to set a parent object in mCallData bacause there are not
     // DOM objects exposed to worklet.
     ProcessProfileData(cx, mName, mAction);
-  }
 
-  virtual void ReleaseData() override {}
+    return NS_OK;
+  }
 
   Console::MethodName mName;
   nsString mAction;
@@ -785,8 +775,6 @@ class ConsoleProfileWorkerRunnable final : public ConsoleWorkerRunnable {
 
     mClonedData.mGlobal = nullptr;
   }
-
-  virtual void ReleaseData() override {}
 
   Console::MethodName mName;
   nsString mAction;
@@ -1934,7 +1922,7 @@ static bool ProcessArguments(JSContext* aCx, const Sequence<JS::Value>& aData,
         // If there isn't any output but there's already a style, then
         // discard the previous style and use the next one instead.
         if (output.IsEmpty() && !aStyles.IsEmpty()) {
-          aStyles.TruncateLength(aStyles.Length() - 1);
+          aStyles.RemoveLastElement();
         }
 
         if (NS_WARN_IF(!FlushOutput(aCx, aSequence, output))) {
@@ -2083,9 +2071,7 @@ static bool UnstoreGroupName(nsAString& aName,
     return false;
   }
 
-  uint32_t pos = aGroupStack->Length() - 1;
-  aName = (*aGroupStack)[pos];
-  aGroupStack->RemoveElementAt(pos);
+  aName = aGroupStack->PopLastElement();
   return true;
 }
 

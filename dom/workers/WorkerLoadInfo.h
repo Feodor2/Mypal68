@@ -170,7 +170,7 @@ struct WorkerLoadInfo : WorkerLoadInfoData {
 
   bool ProxyReleaseMainThreadObjects(
       WorkerPrivate* aWorkerPrivate,
-      nsCOMPtr<nsILoadGroup>& aLoadGroupToCancel);
+      nsCOMPtr<nsILoadGroup>&& aLoadGroupToCancel);
 };
 
 }  // namespace dom

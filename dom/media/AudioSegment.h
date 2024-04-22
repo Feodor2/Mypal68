@@ -39,9 +39,8 @@ namespace mozilla {
 template <typename T>
 class SharedChannelArrayBuffer : public ThreadSharedObject {
  public:
-  explicit SharedChannelArrayBuffer(nsTArray<nsTArray<T> >* aBuffers) {
-    mBuffers.SwapElements(*aBuffers);
-  }
+  explicit SharedChannelArrayBuffer(nsTArray<nsTArray<T> >&& aBuffers)
+      : mBuffers(std::move(aBuffers)) {}
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override {
     size_t amount = 0;
@@ -282,6 +281,9 @@ struct AudioChunk {
  * The audio rate is determined by the track, not stored in this class.
  */
 class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
+  // The channel count that MaxChannelCount() returned last time it was called.
+  uint32_t mMemoizedMaxChannelCount = 0;
+
  public:
   typedef mozilla::AudioSampleFormat SampleFormat;
 
@@ -348,7 +350,7 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
       }
       MOZ_ASSERT(channels > 0);
       c.mDuration = output[0].Length();
-      c.mBuffer = new mozilla::SharedChannelArrayBuffer<T>(&output);
+      c.mBuffer = new mozilla::SharedChannelArrayBuffer<T>(std::move(output));
       for (uint32_t i = 0; i < channels; i++) {
         c.mChannelData[i] = bufferPtrs[i];
       }
@@ -396,7 +398,7 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
   AudioChunk* AppendAndConsumeChunk(AudioChunk* aChunk) {
     AudioChunk* chunk = AppendChunk(aChunk->mDuration);
     chunk->mBuffer = std::move(aChunk->mBuffer);
-    chunk->mChannelData.SwapElements(aChunk->mChannelData);
+    chunk->mChannelData = std::move(aChunk->mChannelData);
 
     MOZ_ASSERT(chunk->mBuffer || aChunk->mChannelData.IsEmpty(),
                "Appending invalid data ?");
@@ -416,17 +418,20 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
   // aChannelCount channels.
   void Mix(AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
 
-  // Returns the maximum
+  // Returns the maximum channel count across all chunks in this segment.
+  // Should there be no chunk with a channel count we return the memoized return
+  // value from last time this method was called.
   uint32_t MaxChannelCount() {
-    // Find the first chunk that has non-zero channels. A chunk that hs zero
-    // channels is just silence and we can simply discard it.
     uint32_t channelCount = 0;
     for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
       if (ci->ChannelCount()) {
         channelCount = std::max(channelCount, ci->ChannelCount());
       }
     }
-    return channelCount;
+    if (channelCount == 0) {
+      return mMemoizedMaxChannelCount;
+    }
+    return mMemoizedMaxChannelCount = channelCount;
   }
 
   static Type StaticType() { return AUDIO; }

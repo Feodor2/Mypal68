@@ -9,6 +9,7 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/StructuredCloneBlob.h"
+#include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/File.h"
@@ -17,14 +18,17 @@
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
 #include "mozilla/dom/PMessagePort.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/WebIDLSerializable.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -106,8 +110,45 @@ bool StructuredCloneCallbacksCanTransfer(JSContext* aCx,
                                           aSameProcessScopeRequired);
 }
 
-void StructuredCloneCallbacksError(JSContext* aCx, uint32_t aErrorId) {
+bool StructuredCloneCallbacksSharedArrayBuffer(JSContext* cx, bool aReceiving,
+                                               void* aClosure) {
+  if (!StaticPrefs::dom_workers_serialized_sab_access()) {
+    return true;
+  }
+
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+
+  if (workerPrivate) {
+    workerPrivate->SetExecutionManager(
+        JSExecutionManager::GetSABSerializationManager());
+  } else if (NS_IsMainThread()) {
+    nsIGlobalObject* global = GetCurrentGlobal();
+
+    nsPIDOMWindowInner* innerWindow = nullptr;
+    if (global) {
+      innerWindow = global->AsInnerWindow();
+    }
+
+    DocGroup* docGroup = nullptr;
+    if (innerWindow) {
+      docGroup = innerWindow->GetDocGroup();
+    }
+
+    if (docGroup) {
+      docGroup->SetExecutionManager(
+          JSExecutionManager::GetSABSerializationManager());
+    }
+  }
+  return true;
+}
+
+void StructuredCloneCallbacksError(JSContext* aCx, uint32_t aErrorId,
+                                   void* aClosure, const char* aErrorMessage) {
   NS_WARNING("Failed to clone data.");
+  StructuredCloneHolderBase* holder =
+      static_cast<StructuredCloneHolderBase*>(aClosure);
+  MOZ_ASSERT(holder);
+  return holder->SetErrorMessage(aErrorMessage);
 }
 
 void AssertTagValues() {
@@ -133,10 +174,14 @@ void AssertTagValues() {
 }  // anonymous namespace
 
 const JSStructuredCloneCallbacks StructuredCloneHolder::sCallbacks = {
-    StructuredCloneCallbacksRead,          StructuredCloneCallbacksWrite,
-    StructuredCloneCallbacksError,         StructuredCloneCallbacksReadTransfer,
-    StructuredCloneCallbacksWriteTransfer, StructuredCloneCallbacksFreeTransfer,
+    StructuredCloneCallbacksRead,
+    StructuredCloneCallbacksWrite,
+    StructuredCloneCallbacksError,
+    StructuredCloneCallbacksReadTransfer,
+    StructuredCloneCallbacksWriteTransfer,
+    StructuredCloneCallbacksFreeTransfer,
     StructuredCloneCallbacksCanTransfer,
+    StructuredCloneCallbacksSharedArrayBuffer,
 };
 
 // StructuredCloneHolderBase class
@@ -261,7 +306,7 @@ void StructuredCloneHolder::Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                   ErrorResult& aRv) {
   if (!StructuredCloneHolderBase::Write(aCx, aValue, aTransfer,
                                         cloneDataPolicy)) {
-    aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
+    aRv.ThrowDataCloneError(mErrorMessage);
     return;
   }
 }
@@ -272,11 +317,12 @@ void StructuredCloneHolder::Read(nsIGlobalObject* aGlobal, JSContext* aCx,
   MOZ_ASSERT(aGlobal);
 
   mozilla::AutoRestore<nsIGlobalObject*> guard(mGlobal);
+  auto errorMessageGuard = MakeScopeExit([&] { mErrorMessage.Truncate(); });
   mGlobal = aGlobal;
 
   if (!StructuredCloneHolderBase::Read(aCx, aValue)) {
     JS_ClearPendingException(aCx);
-    aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
+    aRv.ThrowDataCloneError(mErrorMessage);
     return;
   }
 
@@ -308,12 +354,14 @@ void StructuredCloneHolder::ReadFromBuffer(nsIGlobalObject* aGlobal,
   MOZ_ASSERT(!mBuffer, "ReadFromBuffer() must be called without a Write().");
 
   mozilla::AutoRestore<nsIGlobalObject*> guard(mGlobal);
+  auto errorMessageGuard = MakeScopeExit([&] { mErrorMessage.Truncate(); });
   mGlobal = aGlobal;
 
   if (!JS_ReadStructuredClone(aCx, aBuffer, aAlgorithmVersion, CloneScope(),
                               aValue, &sCallbacks, this)) {
     JS_ClearPendingException(aCx);
-    aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
+    aRv.ThrowDataCloneError(mErrorMessage);
+    return;
   }
 }
 

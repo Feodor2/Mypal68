@@ -14,7 +14,6 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/StateWatching.h"
 #include "mozilla/TaskQueue.h"
-#include "nsAutoPtr.h"
 #include "nsAutoRef.h"
 #include "nsIRunnable.h"
 #include "nsTArray.h"
@@ -47,23 +46,8 @@ extern LazyLogModule gMediaTrackGraphLog;
 namespace dom {
 enum class AudioContextOperation;
 enum class AudioContextOperationFlags;
+enum class AudioContextState : uint8_t;
 }  // namespace dom
-
-inline TrackTicks RateConvertTicksRoundDown(TrackRate aOutRate,
-                                            TrackRate aInRate,
-                                            TrackTicks aTicks) {
-  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
-  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
-  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
-  return (aTicks * aOutRate) / aInRate;
-}
-inline TrackTicks RateConvertTicksRoundUp(TrackRate aOutRate, TrackRate aInRate,
-                                          TrackTicks aTicks) {
-  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
-  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
-  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
-  return (aTicks * aOutRate + aInRate - 1) / aInRate;
-}
 
 /*
  * MediaTrackGraph is a framework for synchronized audio/video processing
@@ -124,6 +108,11 @@ class AudioDataListenerInterface {
   virtual void NotifyOutputData(MediaTrackGraphImpl* aGraph,
                                 AudioDataValue* aBuffer, size_t aFrames,
                                 TrackRate aRate, uint32_t aChannels) = 0;
+  /**
+   * An AudioCallbackDriver signaling that it has started and may notify of data
+   * soon.
+   */
+  virtual void NotifyStarted(MediaTrackGraphImpl* aGraph) = 0;
   /**
    * Input data from a microphone (or other audio source.  This is not
    * guaranteed to be in any particular size chunks.
@@ -315,7 +304,7 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   virtual void Resume();
   // Events will be dispatched by calling methods of aListener.
   virtual void AddListener(MediaTrackListener* aListener);
-  virtual void RemoveListener(MediaTrackListener* aListener);
+  virtual RefPtr<GenericPromise> RemoveListener(MediaTrackListener* aListener);
 
   /**
    * Adds aListener to the source track of this track.
@@ -912,7 +901,7 @@ class ProcessedMediaTrack : public MediaTrack {
    * (including if there is no input track), this track automatically
    * enters the ended state.
    */
-  void QueueSetAutoend(bool aAutoend);
+  virtual void QueueSetAutoend(bool aAutoend);
 
   ProcessedMediaTrack* AsProcessedTrack() override { return this; }
 
@@ -1068,9 +1057,13 @@ class MediaTrackGraph {
    */
   void AddTrack(MediaTrack* aTrack);
 
-  /* From the main thread, ask the MTG to send back an event when the graph
-   * thread is running, and audio is being processed. */
-  void NotifyWhenGraphStarted(AudioNodeTrack* aNodeTrack);
+  /* From the main thread, ask the MTG to tell us when the graph
+   * thread is running, and audio is being processed, by resolving the returned
+   * promise. The promise is rejected with NS_ERROR_NOT_AVAILABLE if aNodeTrack
+   * is destroyed, or NS_ERROR_ILLEGAL_DURING_SHUTDOWN if the graph is shut
+   * down, before the promise could be resolved. */
+  using GraphStartedPromise = GenericPromise;
+  RefPtr<GraphStartedPromise> NotifyWhenGraphStarted(AudioNodeTrack* aTrack);
   /* From the main thread, suspend, resume or close an AudioContext.
    * aTracks are the tracks of all the AudioNodes of the AudioContext that
    * need to be suspended or resumed. This can be empty if this is a second
@@ -1079,13 +1072,13 @@ class MediaTrackGraph {
    * This can possibly pause the graph thread, releasing system resources, if
    * all tracks have been suspended/closed.
    *
-   * When the operation is complete, aPromise is resolved.
+   * When the operation is complete, the returned promise is resolved.
    */
-  void ApplyAudioContextOperation(MediaTrack* aDestinationTrack,
-                                  const nsTArray<MediaTrack*>& aTracks,
-                                  dom::AudioContextOperation aState,
-                                  void* aPromise,
-                                  dom::AudioContextOperationFlags aFlags);
+  using AudioContextOperationPromise =
+      MozPromise<dom::AudioContextState, bool, true>;
+  RefPtr<AudioContextOperationPromise> ApplyAudioContextOperation(
+      MediaTrack* aDestinationTrack, const nsTArray<MediaTrack*>& aTracks,
+      dom::AudioContextOperation aOperation);
 
   bool IsNonRealtime() const;
   /**

@@ -8,6 +8,7 @@
 #include "nsJSUtils.h"
 #include "jsapi.h"
 #include "js/CharacterEncoding.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
 #include "nsUnicharUtils.h"
 #include "nsReadableUtils.h"
 #include "nsXBLProtoImplField.h"
@@ -107,7 +108,7 @@ bool ValueHasISupportsPrivate(JS::Handle<JS::Value> v) {
     return domClass->mDOMObjectIsISupports;
   }
 
-  const JSClass* clasp = ::JS_GetClass(&v.toObject());
+  const JSClass* clasp = ::JS::GetClass(&v.toObject());
   const uint32_t HAS_PRIVATE_NSISUPPORTS =
       JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS;
   return (clasp->flags & HAS_PRIVATE_NSISUPPORTS) == HAS_PRIVATE_NSISUPPORTS;
@@ -187,7 +188,7 @@ static bool InstallXBLField(JSContext* cx, JS::Handle<JSObject*> callee,
     // with the xbl prototype, and the object is a cross-compartment wrapper.
     xblProto = js::UncheckedUnwrap(xblProto);
     JSAutoRealm ar2(cx, xblProto);
-    JS::Value slotVal = ::JS_GetReservedSlot(xblProto, 0);
+    JS::Value slotVal = ::JS::GetReservedSlot(xblProto, 0);
     protoBinding = static_cast<nsXBLPrototypeBinding*>(slotVal.toPrivate());
     MOZ_ASSERT(protoBinding);
   }

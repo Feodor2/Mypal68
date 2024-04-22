@@ -370,10 +370,11 @@ OscillatorNode::OscillatorNode(AudioContext* aContext)
                                ChannelInterpretation::Speakers),
       mType(OscillatorType::Sine),
       mStartCalled(false) {
-  CreateAudioParam(mFrequency, OscillatorNodeEngine::FREQUENCY, "frequency",
-                   440.0f, -(aContext->SampleRate() / 2),
-                   aContext->SampleRate() / 2);
-  CreateAudioParam(mDetune, OscillatorNodeEngine::DETUNE, "detune", 0.0f);
+  mFrequency = CreateAudioParam(
+      OscillatorNodeEngine::FREQUENCY, NS_LITERAL_STRING("frequency"), 440.0f,
+      -(aContext->SampleRate() / 2), aContext->SampleRate() / 2);
+  mDetune = CreateAudioParam(OscillatorNodeEngine::DETUNE,
+                             NS_LITERAL_STRING("detune"), 0.0f);
   OscillatorNodeEngine* engine =
       new OscillatorNodeEngine(this, aContext->Destination());
   mTrack = AudioNodeTrack::Create(aContext, engine,

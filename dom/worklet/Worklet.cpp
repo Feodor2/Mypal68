@@ -366,6 +366,7 @@ bool ExecutionRunnable::ParseAndLinkModule(
 }
 
 void ExecutionRunnable::RunOnWorkletThread() {
+  // This can be called on a GraphRunner thread or a DOM Worklet thread.
   WorkletThread::EnsureCycleCollectedJSContext(mParentRuntime);
 
   WorkletGlobalScope* globalScope = mWorkletImpl->GetGlobalScope();
@@ -435,10 +436,6 @@ Worklet::Worklet(nsPIDOMWindowInner* aWindow, RefPtr<WorkletImpl> aImpl,
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(mImpl);
   MOZ_ASSERT(NS_IsMainThread());
-
-#ifdef RELEASE_OR_BETA
-  MOZ_CRASH("This code should not go to release/beta yet!");
-#endif
 }
 
 Worklet::~Worklet() { mImpl->NotifyWorkletFinished(); }

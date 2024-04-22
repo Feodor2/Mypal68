@@ -9,7 +9,6 @@
 #  include "Intervals.h"
 #  include "MediaData.h"
 #  include "mozilla/Attributes.h"
-#  include "mozilla/GuardObjects.h"
 #  include "mozilla/UniquePtr.h"
 #  include "nsISeekableStream.h"
 #  include "nsThreadUtils.h"
@@ -132,9 +131,7 @@ class MediaResource : public DecoderDoctorLifeLogger<MediaResource> {
 template <class T>
 class MOZ_RAII AutoPinned {
  public:
-  explicit AutoPinned(T* aResource MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mResource(aResource) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoPinned(T* aResource) : mResource(aResource) {
     MOZ_ASSERT(mResource);
     mResource->Pin();
   }
@@ -146,7 +143,6 @@ class MOZ_RAII AutoPinned {
 
  private:
   T* mResource;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 DDLoggedTypeDeclName(MediaResourceIndex);

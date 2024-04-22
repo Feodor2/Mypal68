@@ -37,6 +37,12 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
   static NS_NAMED_LITERAL_STRING(sAllowedEval2,
                                  "function anonymous(\n) {\nreturn this\n}");
 
+  if (JS::ContextOptionsRef(cx).disableEvalSecurityChecks()) {
+    MOZ_LOG(sCSMLog, LogLevel::Debug,
+            ("Allowing eval() because this JSContext was set to allow it"));
+    return true;
+  }
+
   if (!aSubjectPrincipal->IsSystemPrincipal()) {
     return true;
   }

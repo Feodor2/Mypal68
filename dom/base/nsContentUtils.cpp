@@ -18,7 +18,8 @@
 #include "imgRequestProxy.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "js/Array.h"        // JS::NewArrayObject
+#include "js/Array.h"  // JS::NewArrayObject
+#include "js/BuildId.h"
 #include "js/ArrayBuffer.h"  // JS::{GetArrayBufferData,IsArrayBufferObject,NewArrayBuffer}
 #include "js/JSON.h"
 #include "js/RegExp.h"  // JS::ExecuteRegExpNoStatics, JS::NewUCRegExpObject, JS::RegExpFlags
@@ -638,10 +639,6 @@ nsresult nsContentUtils::Init() {
   sBypassCSSOMOriginCheck = getenv("MOZ_BYPASS_CSSOM_ORIGIN_CHECK");
 #endif
 
-  nsDependentCString buildID(mozilla::PlatformBuildID());
-  sJSBytecodeMimeType =
-      new nsCString(NS_LITERAL_CSTRING("javascript/moz-bytecode-") + buildID);
-
   Element::InitCCCallbacks();
 
   Unused << nsRFPService::GetOrCreate();
@@ -664,6 +661,21 @@ nsresult nsContentUtils::Init() {
   sInitialized = true;
 
   return NS_OK;
+}
+
+bool nsContentUtils::InitJSBytecodeMimeType() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!sJSBytecodeMimeType);
+
+  JS::BuildIdCharVector jsBuildId;
+  if (!JS::GetScriptTranscodingBuildId(&jsBuildId)) {
+    return false;
+  }
+
+  nsDependentCSubstring jsBuildIdStr(jsBuildId.begin(), jsBuildId.length());
+  sJSBytecodeMimeType =
+      new nsCString(NS_LITERAL_CSTRING("javascript/moz-bytecode-") + jsBuildIdStr);
+  return true;
 }
 
 void nsContentUtils::GetShiftText(nsAString& text) {
@@ -4684,7 +4696,7 @@ already_AddRefed<DocumentFragment> nsContentUtils::CreateContextualFragment(
 
   AutoTArray<nsString, 32> tagStack;
   nsAutoString uriStr, nameStr;
-  for (Element* element : InclusiveAncestorsOfType<Element>(*aContextNode)) {
+  for (Element* element : aContextNode->InclusiveAncestorsOfType<Element>()) {
     nsString& tagName = *tagStack.AppendElement();
     // It mostly doesn't actually matter what tag name we use here: XML doesn't
     // have parsing that depends on the open tag stack, apart from namespace
@@ -6107,7 +6119,7 @@ void* nsContentUtils::AllocClassMatchingInfo(nsINode* aRootNode,
   // nsAttrValue::Equals is sensitive to order, so we'll send an array
   auto* info = new ClassMatchingInfo;
   if (attrValue.Type() == nsAttrValue::eAtomArray) {
-    info->mClasses.SwapElements(*(attrValue.GetAtomArrayValue()));
+    info->mClasses = std::move(*(attrValue.GetAtomArrayValue()));
   } else if (attrValue.Type() == nsAttrValue::eAtom) {
     info->mClasses.AppendElement(attrValue.GetAtomValue());
   }
@@ -6470,9 +6482,10 @@ Maybe<bool> nsContentUtils::IsPatternMatching(nsAString& aValue,
   JSContext* cx = jsapi.cx();
   AutoDisableJSInterruptCallback disabler(cx);
 
-  // We can use the junk scope here, because we're just using it for
-  // regexp evaluation, not actual script execution.
-  JSAutoRealm ar(cx, xpc::UnprivilegedJunkScope());
+  // We can use the junk scope here, because we're just using it for regexp
+  // evaluation, not actual script execution, and we disable statics so that the
+  // evaluation does not interact with the execution global.
+  JSAutoRealm ar(cx, xpc::PrivilegedJunkScope());
 
   // Check if the pattern by itself is valid first, and not that it only becomes
   // valid once we add ^(?: and )$.
@@ -7026,13 +7039,6 @@ bool nsContentUtils::IsJavascriptMIMEType(const nsAString& aMIMEType) {
       return true;
     }
   }
-
-#ifdef JS_BUILD_BINAST
-  if (nsJSUtils::BinASTEncodingEnabled() &&
-      aMIMEType.LowerCaseEqualsASCII(APPLICATION_JAVASCRIPT_BINAST)) {
-    return true;
-  }
-#endif
 
   return false;
 }

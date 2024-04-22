@@ -6,7 +6,6 @@
 #define GMPChild_h_
 
 #include "mozilla/gmp/PGMPChild.h"
-#include "mozilla/Pair.h"
 #include "GMPTimerChild.h"
 #include "GMPStorageChild.h"
 #include "GMPLoader.h"
@@ -67,7 +66,7 @@ class GMPChild : public PGMPChild {
   GMPErr GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
                 uint32_t aDecryptorId = 0);
 
-  nsTArray<Pair<nsCString, nsCString>> MakeCDMHostVerificationPaths();
+  nsTArray<std::pair<nsCString, nsCString>> MakeCDMHostVerificationPaths();
 
   nsTArray<UniquePtr<GMPContentChild>> mGMPContentChildren;
 
@@ -78,6 +77,9 @@ class GMPChild : public PGMPChild {
   nsString mPluginPath;
   nsCString mStorageId;
   UniquePtr<GMPLoader> mGMPLoader;
+#ifdef XP_LINUX
+  nsTArray<void*> mLibHandles;
+#endif
 };
 
 }  // namespace gmp

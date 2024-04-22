@@ -694,9 +694,9 @@ class ErrorResult : public binding_danger::TErrorResult<
       BaseErrorResult;
 
  public:
-  ErrorResult() : BaseErrorResult() {}
+  ErrorResult() = default;
 
-  ErrorResult(ErrorResult&& aRHS) : BaseErrorResult(std::move(aRHS)) {}
+  ErrorResult(ErrorResult&& aRHS) = default;
   // Explicitly allow moving out of a CopyableErrorResult into an ErrorResult.
   // This is implemented below so it can see the definition of
   // CopyableErrorResult.
@@ -707,16 +707,12 @@ class ErrorResult : public binding_danger::TErrorResult<
   // This operator is deprecated and ideally shouldn't be used.
   void operator=(nsresult rv) { BaseErrorResult::operator=(rv); }
 
-  ErrorResult& operator=(ErrorResult&& aRHS) {
-    BaseErrorResult::operator=(std::move(aRHS));
-    return *this;
-  }
+  ErrorResult& operator=(ErrorResult&& aRHS) = default;
 
- private:
   // Not to be implemented, to make sure people always pass this by
   // reference, not by value.
   ErrorResult(const ErrorResult&) = delete;
-  void operator=(const ErrorResult&) = delete;
+  ErrorResult& operator=(const ErrorResult&) = delete;
 };
 
 template <typename CleanupPolicy>

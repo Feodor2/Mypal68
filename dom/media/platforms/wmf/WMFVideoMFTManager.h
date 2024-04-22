@@ -11,7 +11,6 @@
 #  include "WMFMediaDataDecoder.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/RefPtr.h"
-#  include "nsAutoPtr.h"
 #  include "mozilla/gfx/Rect.h"
 
 namespace mozilla {
@@ -74,7 +73,7 @@ class WMFVideoMFTManager : public MFTManager {
 
   RefPtr<layers::ImageContainer> mImageContainer;
   RefPtr<layers::KnowsCompositor> mKnowsCompositor;
-  nsAutoPtr<DXVA2Manager> mDXVA2Manager;
+  UniquePtr<DXVA2Manager> mDXVA2Manager;
 
   media::TimeUnit mLastDuration;
 

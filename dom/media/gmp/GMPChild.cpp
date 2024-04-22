@@ -3,32 +3,38 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPChild.h"
+
+#include "base/command_line.h"
+#include "base/task.h"
+#include "ChromiumCDMAdapter.h"
+#ifdef XP_LINUX
+#  include "dlfcn.h"
+#endif
+#include "gmp-video-decode.h"
+#include "gmp-video-encode.h"
 #include "GMPContentChild.h"
-#include "GMPProcessChild.h"
 #include "GMPLoader.h"
+#include "GMPLog.h"
+#include "GMPPlatform.h"
+#include "GMPProcessChild.h"
+#include "GMPUtils.h"
 #include "GMPVideoDecoderChild.h"
 #include "GMPVideoEncoderChild.h"
 #include "GMPVideoHost.h"
+#include "mozilla/Algorithm.h"
+#include "mozilla/ipc/CrashReporterClient.h"
+#include "mozilla/ipc/ProcessChild.h"
+#if defined(MOZ_SANDBOX)
+#  if defined(XP_MACOSX)
+#    include "mozilla/Sandbox.h"
+#  endif
+#endif
+#include "mozilla/TextUtils.h"
 #include "nsDebugImpl.h"
 #include "nsExceptionHandler.h"
 #include "nsIFile.h"
 #include "nsXULAppAPI.h"
-#include "gmp-video-decode.h"
-#include "gmp-video-encode.h"
-#include "GMPPlatform.h"
-#include "mozilla/Algorithm.h"
-#include "mozilla/ipc/CrashReporterClient.h"
-#include "mozilla/ipc/ProcessChild.h"
-#include "mozilla/TextUtils.h"
-#include "GMPUtils.h"
 #include "prio.h"
-#include "base/task.h"
-#include "base/command_line.h"
-#include "ChromiumCDMAdapter.h"
-#include "GMPLog.h"
-
-using namespace mozilla::ipc;
-
 #ifdef XP_WIN
 #  include <stdlib.h>  // for _exit()
 #  include "WinUtils.h"
@@ -36,32 +42,30 @@ using namespace mozilla::ipc;
 #  include <unistd.h>  // for _exit()
 #endif
 
-#if defined(MOZ_SANDBOX)
-#  if defined(XP_MACOSX)
-#    include "mozilla/Sandbox.h"
-#  endif
-#endif
+using namespace mozilla::ipc;
 
 namespace mozilla {
 
-#undef LOG
-#undef LOGD
-
-extern LogModule* GetGMPLog();
-#define LOG(level, x, ...) MOZ_LOG(GetGMPLog(), (level), (x, ##__VA_ARGS__))
-#define LOGD(x, ...)                                   \
-  LOG(mozilla::LogLevel::Debug, "GMPChild[pid=%d] " x, \
-      (int)base::GetCurrentProcId(), ##__VA_ARGS__)
+#define GMP_CHILD_LOG_DEBUG(x, ...)                                   \
+  GMP_LOG_DEBUG("GMPChild[pid=%d] " x, (int)base::GetCurrentProcId(), \
+                ##__VA_ARGS__)
 
 namespace gmp {
 
 GMPChild::GMPChild()
     : mGMPMessageLoop(MessageLoop::current()), mGMPLoader(nullptr) {
-  LOGD("GMPChild ctor");
+  GMP_CHILD_LOG_DEBUG("GMPChild ctor");
   nsDebugImpl::SetMultiprocessMode("GMP");
 }
 
-GMPChild::~GMPChild() { LOGD("GMPChild dtor"); }
+GMPChild::~GMPChild() {
+  GMP_CHILD_LOG_DEBUG("GMPChild dtor");
+#ifdef XP_LINUX
+  for (auto& libHandle : mLibHandles) {
+    dlclose(libHandle);
+  }
+#endif
+}
 
 static bool GetFileBase(const nsAString& aPluginPath,
                         nsCOMPtr<nsIFile>& aLibDirectory,
@@ -222,8 +226,8 @@ bool GMPChild::SetMacSandboxInfo(bool aAllowWindowServer) {
 
 bool GMPChild::Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
                     MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel) {
-  LOGD("%s pluginPath=%s", __FUNCTION__,
-       NS_ConvertUTF16toUTF8(aPluginPath).get());
+  GMP_CHILD_LOG_DEBUG("%s pluginPath=%s", __FUNCTION__,
+                      NS_ConvertUTF16toUTF8(aPluginPath).get());
 
   if (NS_WARN_IF(!Open(std::move(aChannel), aParentPid, aIOLoop))) {
     return false;
@@ -238,7 +242,7 @@ bool GMPChild::Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
 
 mozilla::ipc::IPCResult GMPChild::RecvProvideStorageId(
     const nsCString& aStorageId) {
-  LOGD("%s", __FUNCTION__);
+  GMP_CHILD_LOG_DEBUG("%s", __FUNCTION__);
   mStorageId = aStorageId;
   return IPC_OK();
 }
@@ -252,17 +256,20 @@ GMPErr GMPChild::GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
 }
 
 mozilla::ipc::IPCResult GMPChild::RecvPreloadLibs(const nsCString& aLibs) {
+  // Pre-load libraries that may need to be used by the EME plugin but that
+  // can't be loaded after the sandbox has started.
 #ifdef XP_WIN
-  // Pre-load DLLs that need to be used by the EME plugin but that can't be
-  // loaded after the sandbox has started
   // Items in this must be lowercase!
   constexpr static const char16_t* whitelist[] = {
       u"dxva2.dll",        // Get monitor information
       u"evr.dll",          // MFGetStrideForBitmapInfoHeader
+      u"freebl3.dll",      // NSS for clearkey CDM
       u"mfplat.dll",       // MFCreateSample, MFCreateAlignedMemoryBuffer,
                            // MFCreateMediaType
       u"msmpeg2vdec.dll",  // H.264 decoder
+      u"nss3.dll",         // NSS for clearkey CDM
       u"psapi.dll",        // For GetMappedFileNameW, see bug 1383611
+      u"softokn3.dll",     // NSS for clearkey CDM
   };
   constexpr static bool (*IsASCII)(const char16_t*) =
       IsAsciiNullTerminated<char16_t>;
@@ -279,6 +286,26 @@ mozilla::ipc::IPCResult GMPChild::RecvPreloadLibs(const nsCString& aLibs) {
               .EqualsASCII(lib.Data(), lib.Length())) {
         LoadLibraryW(char16ptr_t(whiteListedLib));
         break;
+      }
+    }
+  }
+#elif defined(XP_LINUX)
+  constexpr static const char* whitelist[] = {
+      "libfreeblpriv3.so",
+      "libsoftokn3.so",
+  };
+
+  nsTArray<nsCString> libs;
+  SplitAt(", ", aLibs, libs);
+  for (const nsCString& lib : libs) {
+    for (const char* whiteListedLib : whitelist) {
+      if (lib.EqualsASCII(whiteListedLib)) {
+        auto libHandle = dlopen(whiteListedLib, RTLD_NOW | RTLD_GLOBAL);
+        if (libHandle) {
+          mLibHandles.AppendElement(libHandle);
+        } else {
+          MOZ_CRASH("Couldn't load lib needed by NSS");
+        }
       }
     }
   }
@@ -423,7 +450,7 @@ static bool GetSigPath(const int aRelativeLayers,
 #endif
 
 static bool AppendHostPath(nsCOMPtr<nsIFile>& aFile,
-                           nsTArray<Pair<nsCString, nsCString>>& aPaths) {
+                           nsTArray<std::pair<nsCString, nsCString>>& aPaths) {
   nsString str;
   if (!FileExists(aFile) || !ResolveLinks(aFile) ||
       NS_FAILED(aFile->GetPath(str))) {
@@ -453,19 +480,21 @@ static bool AppendHostPath(nsCOMPtr<nsIFile>& aFile,
   sigFilePath =
       nsCString(NS_ConvertUTF16toUTF8(str) + NS_LITERAL_CSTRING(".sig"));
 #endif
-  aPaths.AppendElement(MakePair(std::move(filePath), std::move(sigFilePath)));
+  aPaths.AppendElement(
+      std::make_pair(std::move(filePath), std::move(sigFilePath)));
   return true;
 }
 
-nsTArray<Pair<nsCString, nsCString>> GMPChild::MakeCDMHostVerificationPaths() {
+nsTArray<std::pair<nsCString, nsCString>>
+GMPChild::MakeCDMHostVerificationPaths() {
   // Record the file path and its sig file path.
-  nsTArray<Pair<nsCString, nsCString>> paths;
+  nsTArray<std::pair<nsCString, nsCString>> paths;
   // Plugin binary path.
   nsCOMPtr<nsIFile> path;
   nsString str;
   if (GetPluginFile(mPluginPath, path) && FileExists(path) &&
       ResolveLinks(path) && NS_SUCCEEDED(path->GetPath(str))) {
-    paths.AppendElement(MakePair(
+    paths.AppendElement(std::make_pair(
         nsCString(NS_ConvertUTF16toUTF8(str)),
         nsCString(NS_ConvertUTF16toUTF8(str) + NS_LITERAL_CSTRING(".sig"))));
   }
@@ -517,20 +546,20 @@ nsTArray<Pair<nsCString, nsCString>> GMPChild::MakeCDMHostVerificationPaths() {
   return paths;
 }
 
-static nsCString ToCString(const nsTArray<Pair<nsCString, nsCString>>& aPairs) {
+static nsCString ToCString(
+    const nsTArray<std::pair<nsCString, nsCString>>& aPairs) {
   nsCString result;
   for (const auto& p : aPairs) {
     if (!result.IsEmpty()) {
       result.AppendLiteral(",");
     }
-    result.Append(
-        nsPrintfCString("(%s,%s)", p.first().get(), p.second().get()));
+    result.Append(nsPrintfCString("(%s,%s)", p.first.get(), p.second.get()));
   }
   return result;
 }
 
 mozilla::ipc::IPCResult GMPChild::AnswerStartPlugin(const nsString& aAdapter) {
-  LOGD("%s", __FUNCTION__);
+  GMP_CHILD_LOG_DEBUG("%s", __FUNCTION__);
 
   nsCString libPath;
   if (!GetUTF8LibPath(libPath)) {
@@ -554,7 +583,7 @@ mozilla::ipc::IPCResult GMPChild::AnswerStartPlugin(const nsString& aAdapter) {
   mGMPLoader = MakeUnique<GMPLoader>();
 #if defined(MOZ_SANDBOX)
   if (!mGMPLoader->CanSandbox()) {
-    LOGD("%s Can't sandbox GMP, failing", __FUNCTION__);
+    GMP_CHILD_LOG_DEBUG("%s Can't sandbox GMP, failing", __FUNCTION__);
     delete platformAPI;
     return IPC_FAIL(this, "Can't sandbox GMP.");
   }
@@ -575,7 +604,8 @@ mozilla::ipc::IPCResult GMPChild::AnswerStartPlugin(const nsString& aAdapter) {
   GMPAdapter* adapter = nullptr;
   if (isChromium) {
     auto&& paths = MakeCDMHostVerificationPaths();
-    GMP_LOG("%s CDM host paths=%s", __func__, ToCString(paths).get());
+    GMP_CHILD_LOG_DEBUG("%s CDM host paths=%s", __func__,
+                        ToCString(paths).get());
     adapter = new ChromiumCDMAdapter(std::move(paths));
   }
 
@@ -602,7 +632,7 @@ mozilla::ipc::IPCResult GMPChild::AnswerStartPlugin(const nsString& aAdapter) {
 MessageLoop* GMPChild::GMPMessageLoop() { return mGMPMessageLoop; }
 
 void GMPChild::ActorDestroy(ActorDestroyReason aWhy) {
-  LOGD("%s reason=%d", __FUNCTION__, aWhy);
+  GMP_CHILD_LOG_DEBUG("%s reason=%d", __FUNCTION__, aWhy);
 
   for (uint32_t i = mGMPContentChildren.Length(); i > 0; i--) {
     MOZ_ASSERT_IF(aWhy == NormalShutdown,
@@ -722,5 +752,5 @@ void GMPChild::GMPContentChildActorDestroy(GMPContentChild* aGMPContentChild) {
 }  // namespace gmp
 }  // namespace mozilla
 
-#undef LOG
-#undef LOGD
+#undef GMP_CHILD_LOG_DEBUG
+#undef __CLASS__

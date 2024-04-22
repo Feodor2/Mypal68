@@ -22,7 +22,6 @@
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/mscom/EnsureMTA.h"
-#include "nsAutoPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIXULRuntime.h"
 #include "nsServiceManagerUtils.h"
@@ -121,7 +120,7 @@ already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateVideoDecoder(
     return nullptr;
   }
 
-  nsAutoPtr<WMFVideoMFTManager> manager(new WMFVideoMFTManager(
+  UniquePtr<WMFVideoMFTManager> manager(new WMFVideoMFTManager(
       aParams.VideoConfig(), aParams.mKnowsCompositor, aParams.mImageContainer,
       aParams.mRate.mValue, aParams.mOptions, sDXVAEnabled));
 
@@ -134,14 +133,14 @@ already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateVideoDecoder(
   }
 
   RefPtr<MediaDataDecoder> decoder =
-      new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
+      new WMFMediaDataDecoder(manager.release(), aParams.mTaskQueue);
 
   return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
-  nsAutoPtr<WMFAudioMFTManager> manager(
+  UniquePtr<WMFAudioMFTManager> manager(
       new WMFAudioMFTManager(aParams.AudioConfig()));
 
   if (!manager->Init()) {
@@ -149,7 +148,7 @@ already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateAudioDecoder(
   }
 
   RefPtr<MediaDataDecoder> decoder =
-      new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
+      new WMFMediaDataDecoder(manager.release(), aParams.mTaskQueue);
   return decoder.forget();
 }
 

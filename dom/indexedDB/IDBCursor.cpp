@@ -28,7 +28,7 @@ using namespace indexedDB;
 IDBCursor::IDBCursor(BackgroundCursorChildBase* const aBackgroundActor)
     : mBackgroundActor(aBackgroundActor),
       mRequest(aBackgroundActor->GetRequest()),
-      mTransaction(mRequest->GetTransaction()),
+      mTransaction(&mRequest->MutableTransactionRef()),
       mCachedKey(JS::UndefinedValue()),
       mCachedPrimaryKey(JS::UndefinedValue()),
       mCachedValue(JS::UndefinedValue()),
@@ -42,7 +42,6 @@ IDBCursor::IDBCursor(BackgroundCursorChildBase* const aBackgroundActor)
   MOZ_ASSERT(aBackgroundActor);
   aBackgroundActor->AssertIsOnOwningThread();
   MOZ_ASSERT(mRequest);
-  MOZ_ASSERT(mTransaction);
 
   mTransaction->RegisterCursor(this);
 }
@@ -140,7 +139,7 @@ template <IDBCursor::Type CursorType>
 bool IDBTypedCursor<CursorType>::IsSourceDeleted() const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mTransaction);
-  MOZ_ASSERT(mTransaction->CanAcceptRequests());
+  MOZ_ASSERT(mTransaction->IsActive());
 
   const auto* const sourceObjectStore = [this]() -> const IDBObjectStore* {
     if constexpr (IsObjectStoreCursor) {
@@ -329,7 +328,7 @@ void IDBTypedCursor<CursorType>::Continue(JSContext* const aCx,
                                           ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
-  if (!mTransaction->CanAcceptRequests()) {
+  if (!mTransaction->IsActive()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
     return;
   }
@@ -397,7 +396,7 @@ void IDBTypedCursor<CursorType>::Continue(JSContext* const aCx,
         "cursor(%s).continue(%s)",
         "IDBCursor.continue()", mTransaction->LoggingSerialNumber(),
         requestSerialNumber, IDB_LOG_STRINGIFY(mTransaction->Database()),
-        IDB_LOG_STRINGIFY(mTransaction), IDB_LOG_STRINGIFY(mSource),
+        IDB_LOG_STRINGIFY(*mTransaction), IDB_LOG_STRINGIFY(mSource),
         IDB_LOG_STRINGIFY(mDirection), IDB_LOG_STRINGIFY(key));
   } else {
     IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
@@ -405,7 +404,7 @@ void IDBTypedCursor<CursorType>::Continue(JSContext* const aCx,
         "index(%s).cursor(%s).continue(%s)",
         "IDBCursor.continue()", mTransaction->LoggingSerialNumber(),
         requestSerialNumber, IDB_LOG_STRINGIFY(mTransaction->Database()),
-        IDB_LOG_STRINGIFY(mTransaction),
+        IDB_LOG_STRINGIFY(*mTransaction),
         IDB_LOG_STRINGIFY(GetSourceRef().ObjectStore()),
         IDB_LOG_STRINGIFY(mSource), IDB_LOG_STRINGIFY(mDirection),
         IDB_LOG_STRINGIFY(key));
@@ -422,7 +421,7 @@ void IDBTypedCursor<CursorType>::ContinuePrimaryKey(
     JS::Handle<JS::Value> aPrimaryKey, ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
-  if (!mTransaction->CanAcceptRequests()) {
+  if (!mTransaction->IsActive()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
     return;
   }
@@ -515,7 +514,7 @@ void IDBTypedCursor<CursorType>::ContinuePrimaryKey(
         "index(%s).cursor(%s).continuePrimaryKey(%s, %s)",
         "IDBCursor.continuePrimaryKey()", mTransaction->LoggingSerialNumber(),
         requestSerialNumber, IDB_LOG_STRINGIFY(mTransaction->Database()),
-        IDB_LOG_STRINGIFY(mTransaction),
+        IDB_LOG_STRINGIFY(*mTransaction),
         IDB_LOG_STRINGIFY(&GetSourceObjectStoreRef()),
         IDB_LOG_STRINGIFY(mSource), IDB_LOG_STRINGIFY(mDirection),
         IDB_LOG_STRINGIFY(key), IDB_LOG_STRINGIFY(primaryKey));
@@ -537,7 +536,7 @@ void IDBTypedCursor<CursorType>::Advance(const uint32_t aCount,
     return;
   }
 
-  if (!mTransaction->CanAcceptRequests()) {
+  if (!mTransaction->IsActive()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
     return;
   }
@@ -556,7 +555,7 @@ void IDBTypedCursor<CursorType>::Advance(const uint32_t aCount,
         "cursor(%s).advance(%ld)",
         "IDBCursor.advance()", mTransaction->LoggingSerialNumber(),
         requestSerialNumber, IDB_LOG_STRINGIFY(mTransaction->Database()),
-        IDB_LOG_STRINGIFY(mTransaction), IDB_LOG_STRINGIFY(mSource),
+        IDB_LOG_STRINGIFY(*mTransaction), IDB_LOG_STRINGIFY(mSource),
         IDB_LOG_STRINGIFY(mDirection), aCount);
   } else {
     IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
@@ -564,7 +563,7 @@ void IDBTypedCursor<CursorType>::Advance(const uint32_t aCount,
         "index(%s).cursor(%s).advance(%ld)",
         "IDBCursor.advance()", mTransaction->LoggingSerialNumber(),
         requestSerialNumber, IDB_LOG_STRINGIFY(mTransaction->Database()),
-        IDB_LOG_STRINGIFY(mTransaction),
+        IDB_LOG_STRINGIFY(*mTransaction),
         IDB_LOG_STRINGIFY(GetSourceRef().ObjectStore()),
         IDB_LOG_STRINGIFY(mSource), IDB_LOG_STRINGIFY(mDirection), aCount);
   }
@@ -580,7 +579,7 @@ RefPtr<IDBRequest> IDBTypedCursor<CursorType>::Update(
     JSContext* const aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
-  if (!mTransaction->CanAcceptRequests()) {
+  if (!mTransaction->IsActive()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
     return nullptr;
   }
@@ -662,7 +661,7 @@ RefPtr<IDBRequest> IDBTypedCursor<CursorType>::Update(
           "IDBCursor.update()", mTransaction->LoggingSerialNumber(),
           request->LoggingSerialNumber(),
           IDB_LOG_STRINGIFY(mTransaction->Database()),
-          IDB_LOG_STRINGIFY(mTransaction), IDB_LOG_STRINGIFY(&objectStore),
+          IDB_LOG_STRINGIFY(*mTransaction), IDB_LOG_STRINGIFY(&objectStore),
           IDB_LOG_STRINGIFY(mDirection),
           IDB_LOG_STRINGIFY(&objectStore, primaryKey));
     } else {
@@ -672,7 +671,7 @@ RefPtr<IDBRequest> IDBTypedCursor<CursorType>::Update(
           "IDBCursor.update()", mTransaction->LoggingSerialNumber(),
           request->LoggingSerialNumber(),
           IDB_LOG_STRINGIFY(mTransaction->Database()),
-          IDB_LOG_STRINGIFY(mTransaction), IDB_LOG_STRINGIFY(&objectStore),
+          IDB_LOG_STRINGIFY(*mTransaction), IDB_LOG_STRINGIFY(&objectStore),
           IDB_LOG_STRINGIFY(mSource), IDB_LOG_STRINGIFY(mDirection),
           IDB_LOG_STRINGIFY(&objectStore, primaryKey));
     }
@@ -690,7 +689,7 @@ RefPtr<IDBRequest> IDBTypedCursor<CursorType>::Delete(JSContext* const aCx,
                                                       ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
-  if (!mTransaction->CanAcceptRequests()) {
+  if (!mTransaction->IsActive()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
     return nullptr;
   }
@@ -734,7 +733,7 @@ RefPtr<IDBRequest> IDBTypedCursor<CursorType>::Delete(JSContext* const aCx,
           "IDBCursor.delete()", mTransaction->LoggingSerialNumber(),
           request->LoggingSerialNumber(),
           IDB_LOG_STRINGIFY(mTransaction->Database()),
-          IDB_LOG_STRINGIFY(mTransaction), IDB_LOG_STRINGIFY(&objectStore),
+          IDB_LOG_STRINGIFY(*mTransaction), IDB_LOG_STRINGIFY(&objectStore),
           IDB_LOG_STRINGIFY(mDirection),
           IDB_LOG_STRINGIFY(&objectStore, primaryKey));
     } else {
@@ -744,7 +743,7 @@ RefPtr<IDBRequest> IDBTypedCursor<CursorType>::Delete(JSContext* const aCx,
           "IDBCursor.delete()", mTransaction->LoggingSerialNumber(),
           request->LoggingSerialNumber(),
           IDB_LOG_STRINGIFY(mTransaction->Database()),
-          IDB_LOG_STRINGIFY(mTransaction), IDB_LOG_STRINGIFY(&objectStore),
+          IDB_LOG_STRINGIFY(*mTransaction), IDB_LOG_STRINGIFY(&objectStore),
           IDB_LOG_STRINGIFY(mSource), IDB_LOG_STRINGIFY(mDirection),
           IDB_LOG_STRINGIFY(&objectStore, primaryKey));
     }

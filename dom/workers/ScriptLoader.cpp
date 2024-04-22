@@ -27,6 +27,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/CompilationAndEvaluation.h"
+#include "js/Exception.h"
 #include "js/SourceText.h"
 #include "nsError.h"
 #include "nsContentPolicyUtils.h"
@@ -324,6 +325,8 @@ struct ScriptLoadInfo {
   bool mLoadingFinished = false;
   bool mExecutionScheduled = false;
   bool mExecutionResult = false;
+
+  Maybe<nsString> mSourceMapURL;
 
   enum CacheStatus {
     // By default a normal script is just loaded from the network. But for
@@ -1151,6 +1154,11 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
 
       Unused << httpChannel->GetResponseHeader(
           NS_LITERAL_CSTRING("referrer-policy"), tRPHeaderCValue);
+
+      nsAutoCString sourceMapURL;
+      if (nsContentUtils::GetSourceMapURL(httpChannel, sourceMapURL)) {
+        aLoadInfo.mSourceMapURL = Some(NS_ConvertUTF8toUTF16(sourceMapURL));
+      }
     }
 
     // May be null.
@@ -1385,33 +1393,38 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
       mWorkerPrivate->WorkerScriptLoaded();
     }
 
-    uint32_t firstIndex = UINT32_MAX;
-    uint32_t lastIndex = UINT32_MAX;
+    const auto [firstIndex,
+                lastIndex] = [this]() -> std::pair<uint32_t, uint32_t> {
+      // Find firstIndex based on whether mExecutionScheduled is unset.
+      const auto begin = mLoadInfos.begin();
+      const auto end = mLoadInfos.end();
+      auto foundFirstIt =
+          std::find_if(begin, end, [](const ScriptLoadInfo& loadInfo) {
+            return !loadInfo.mExecutionScheduled;
+          });
 
-    // Find firstIndex based on whether mExecutionScheduled is unset.
-    for (uint32_t index = 0; index < mLoadInfos.Length(); index++) {
-      if (!mLoadInfos[index].mExecutionScheduled) {
-        firstIndex = index;
-        break;
+      // Find lastIndex based on whether mChannel is set, and update
+      // mExecutionScheduled on the ones we're about to schedule.
+      if (foundFirstIt == end) {
+        return std::pair(UINT32_MAX, UINT32_MAX);
       }
-    }
 
-    // Find lastIndex based on whether mChannel is set, and update
-    // mExecutionScheduled on the ones we're about to schedule.
-    if (firstIndex != UINT32_MAX) {
-      for (uint32_t index = firstIndex; index < mLoadInfos.Length(); index++) {
-        ScriptLoadInfo& loadInfo = mLoadInfos[index];
+      const auto foundLastIt =
+          std::find_if(foundFirstIt, end, [](ScriptLoadInfo& loadInfo) {
+            if (!loadInfo.Finished()) {
+              return true;
+            }
 
-        if (!loadInfo.Finished()) {
-          break;
-        }
+            // We can execute this one.
+            loadInfo.mExecutionScheduled = true;
 
-        // We can execute this one.
-        loadInfo.mExecutionScheduled = true;
+            return false;
+          });
 
-        lastIndex = index;
-      }
-    }
+      return std::pair(foundFirstIt - begin, foundLastIt == foundFirstIt
+                                                 ? UINT32_MAX
+                                                 : foundLastIt - begin - 1);
+    }();
 
     // This is the last index, we can unused things before the exection of the
     // script and the stopping of the sync loop.
@@ -2046,6 +2059,10 @@ bool ScriptExecutorRunnable::WorkerRun(JSContext* aCx,
     MOZ_ASSERT(loadInfo.mMutedErrorFlag.isSome());
     options.setMutedErrors(loadInfo.mMutedErrorFlag.valueOr(true));
 
+    if (loadInfo.mSourceMapURL) {
+      options.setSourceMapURL(loadInfo.mSourceMapURL->get());
+    }
+
     // Our ErrorResult still shouldn't be a failure.
     MOZ_ASSERT(!mScriptLoader.mRv.Failed(), "Who failed it and why?");
 
@@ -2163,8 +2180,9 @@ void ScriptExecutorRunnable::LogExceptionToConsole(
   MOZ_ASSERT(!JS_IsExceptionPending(aCx));
   MOZ_ASSERT(!mScriptLoader.mRv.Failed());
 
-  js::ErrorReport report(aCx);
-  if (!report.init(aCx, exn, js::ErrorReport::WithSideEffects)) {
+  JS::ExceptionStack exnStack(aCx, exn, nullptr);
+  JS::ErrorReportBuilder report(aCx);
+  if (!report.init(aCx, exnStack, JS::ErrorReportBuilder::WithSideEffects)) {
     JS_ClearPendingException(aCx);
     return;
   }

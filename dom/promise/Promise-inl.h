@@ -6,6 +6,7 @@
 #define mozilla_dom_Promise_inl_h
 
 #include <type_traits>
+#include <utility>
 
 #include "mozilla/TupleCycleCollection.h"
 #include "mozilla/TypeTraits.h"
@@ -39,10 +40,9 @@ class PromiseNativeThenHandlerBase : public PromiseNativeHandler {
 
 namespace {
 
-template <typename T,
-          bool = IsRefcounted<typename RemovePointer<T>::Type>::value,
-          bool = (IsConvertible<T, nsISupports*>::value ||
-                  IsConvertible<T*, nsISupports*>::value)>
+template <typename T, bool = IsRefcounted<std::remove_pointer_t<T>>::value,
+          bool = (std::is_convertible_v<T, nsISupports*> ||
+                  std::is_convertible_v<T*, nsISupports*>)>
 struct StorageTypeHelper {
   using Type = T;
 };
@@ -64,7 +64,9 @@ struct StorageTypeHelper<T*, true, false> {
 
 template <template <typename> class SmartPtr, typename T>
 struct StorageTypeHelper<SmartPtr<T>, true, false>
-    : EnableIf<IsConvertible<SmartPtr<T>, T*>::value, RefPtr<T>> {};
+    : std::enable_if<std::is_convertible_v<SmartPtr<T>, T*>, RefPtr<T>> {
+  using Type = typename StorageTypeHelper::enable_if::type;
+};
 
 template <typename T>
 using StorageType = typename StorageTypeHelper<std::decay_t<T>>::Type;
@@ -78,7 +80,7 @@ using StorageType = typename StorageTypeHelper<std::decay_t<T>>::Type;
 // spec-compliant behavior there should still give us the expected results, MSVC
 // considers it an illegal use of std::forward.
 template <template <typename> class SmartPtr, typename T>
-decltype(DeclVal<SmartPtr<T>>().get()) ArgType(SmartPtr<T>& aVal) {
+decltype(std::declval<SmartPtr<T>>().get()) ArgType(SmartPtr<T>& aVal) {
   return aVal.get();
 }
 

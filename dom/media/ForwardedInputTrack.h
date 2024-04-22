@@ -6,7 +6,6 @@
 #define MOZILLA_FORWARDEDINPUTTRACK_H_
 
 #include "MediaTrackGraph.h"
-#include "nsAutoPtr.h"
 #include <algorithm>
 
 namespace mozilla {

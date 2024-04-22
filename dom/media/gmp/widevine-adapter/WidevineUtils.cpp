@@ -12,12 +12,12 @@
 namespace mozilla {
 
 WidevineBuffer::WidevineBuffer(size_t aSize) {
-  GMP_LOG("WidevineBuffer(size=%zu) created", aSize);
+  GMP_LOG_DEBUG("WidevineBuffer(size=%zu) created", aSize);
   mBuffer.SetLength(aSize);
 }
 
 WidevineBuffer::~WidevineBuffer() {
-  GMP_LOG("WidevineBuffer(size=%" PRIu32 ") destroyed", Size());
+  GMP_LOG_DEBUG("WidevineBuffer(size=%" PRIu32 ") destroyed", Size());
 }
 
 void WidevineBuffer::Destroy() { delete this; }
@@ -31,8 +31,7 @@ void WidevineBuffer::SetSize(uint32_t aSize) { mBuffer.SetLength(aSize); }
 uint32_t WidevineBuffer::Size() const { return mBuffer.Length(); }
 
 nsTArray<uint8_t> WidevineBuffer::ExtractBuffer() {
-  nsTArray<uint8_t> out;
-  out.SwapElements(mBuffer);
+  nsTArray<uint8_t> out = std::move(mBuffer);
   return out;
 }
 

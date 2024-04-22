@@ -44,12 +44,13 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   // moved to another drive using a junction point, so allow for this specific
   // case. See bug 1236680 for details.
   if (!widget::WinUtils::ResolveJunctionPointsAndSymLinks(wGMPPath)) {
-    GMP_LOG("ResolveJunctionPointsAndSymLinks failed for GMP path=%S",
-            wGMPPath.c_str());
+    GMP_LOG_DEBUG("ResolveJunctionPointsAndSymLinks failed for GMP path=%S",
+                  wGMPPath.c_str());
     NS_WARNING("ResolveJunctionPointsAndSymLinks failed for GMP path.");
     return false;
   }
-  GMP_LOG("GMPProcessParent::Launch() resolved path to %S", wGMPPath.c_str());
+  GMP_LOG_DEBUG("GMPProcessParent::Launch() resolved path to %S",
+                wGMPPath.c_str());
 
   // If the GMP path is a network path that is not mapped to a drive letter,
   // then we need to fix the path format for the sandbox rule.

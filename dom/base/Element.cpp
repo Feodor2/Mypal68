@@ -3798,7 +3798,6 @@ void Element::InsertAdjacentHTML(const nsAString& aPosition,
   // listeners on the fragment that comes from the parser.
   nsAutoScriptBlockerSuppressNodeRemoved scriptBlocker;
 
-  nsAutoMutationBatch mb(destination, true, false);
   switch (position) {
     case eBeforeBegin:
       destination->InsertBefore(*fragment, this, aError);

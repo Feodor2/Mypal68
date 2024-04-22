@@ -8,6 +8,7 @@
 
 #include "js/CompilationAndEvaluation.h"
 #include "js/ContextOptions.h"
+#include "js/Exception.h"
 #include "js/LocaleSensitive.h"
 #include "js/MemoryMetrics.h"
 #include "js/SourceText.h"
@@ -37,6 +38,7 @@
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/WorkerBinding.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/ThrottledEventQueue.h"
@@ -226,6 +228,9 @@ class WorkerFinishedRunnable final : public WorkerControlRunnable {
 
   virtual bool WorkerRun(JSContext* aCx,
                          WorkerPrivate* aWorkerPrivate) override {
+    // This may block on the main thread.
+    AutoYieldJSThreadExecution yield;
+
     if (!mFinishedWorker->ProxyReleaseMainThreadObjects()) {
       NS_WARNING("Failed to dispatch, going to leak!");
     }
@@ -235,7 +240,7 @@ class WorkerFinishedRunnable final : public WorkerControlRunnable {
 
     mFinishedWorker->DisableDebugger();
 
-    runtime->UnregisterWorker(mFinishedWorker);
+    runtime->UnregisterWorker(*mFinishedWorker);
 
     mFinishedWorker->ClearSelfAndParentEventTargetRef();
     return true;
@@ -266,7 +271,7 @@ class TopLevelWorkerFinishedRunnable final : public Runnable {
 
     mFinishedWorker->DisableDebugger();
 
-    runtime->UnregisterWorker(mFinishedWorker);
+    runtime->UnregisterWorker(*mFinishedWorker);
 
     if (!mFinishedWorker->ProxyReleaseMainThreadObjects()) {
       NS_WARNING("Failed to dispatch, going to leak!");
@@ -378,7 +383,23 @@ class CompileScriptRunnable final : public WorkerDebuggeeRunnable {
     // current compartment.  Luckily we have a global now.
     JSAutoRealm ar(aCx, globalScope->GetGlobalJSObject());
     if (rv.MaybeSetPendingException(aCx)) {
-      return false;
+      // In the event of an uncaught exception, the worker should still keep
+      // running (return true) but should not be marked as having executed
+      // successfully (which will cause ServiceWorker installation to fail).
+      // In previous error handling cases in this method, we return false (to
+      // trigger CloseInternal) because the global is not in an operable
+      // state at all.
+      //
+      // For ServiceWorkers, this would correspond to the "Run Service Worker"
+      // algorithm returning an "abrupt completion" and _not_ failure.
+      //
+      // For DedicatedWorkers and SharedWorkers, this would correspond to the
+      // "run a worker" algorithm disregarding the return value of "run the
+      // classic script"/"run the module script" in step 24:
+      //
+      // "If script is a classic script, then run the classic script script.
+      // Otherwise, it is a module script; run the module script script."
+      return true;
     }
 
     aWorkerPrivate->SetWorkerScriptExecutedSuccessfully();
@@ -963,8 +984,8 @@ class WorkerJSContextStats final : public JS::RuntimeStats {
 
   const nsCString& Path() const { return mRtPath; }
 
-  virtual void initExtraZoneStats(JS::Zone* aZone,
-                                  JS::ZoneStats* aZoneStats) override {
+  virtual void initExtraZoneStats(JS::Zone* aZone, JS::ZoneStats* aZoneStats,
+                                  const JS::AutoRequireNoGC& nogc) override {
     MOZ_ASSERT(!aZoneStats->extra);
 
     // ReportJSRuntimeExplicitTreeStats expects that
@@ -978,8 +999,9 @@ class WorkerJSContextStats final : public JS::RuntimeStats {
     aZoneStats->extra = extras;
   }
 
-  virtual void initExtraRealmStats(JS::Handle<JS::Realm*> aRealm,
-                                   JS::RealmStats* aRealmStats) override {
+  virtual void initExtraRealmStats(JS::Realm* aRealm,
+                                   JS::RealmStats* aRealmStats,
+                                   const JS::AutoRequireNoGC& nogc) override {
     MOZ_ASSERT(!aRealmStats->extra);
 
     // ReportJSRuntimeExplicitTreeStats expects that
@@ -1593,7 +1615,7 @@ bool WorkerPrivate::Notify(WorkerStatus aStatus) {
   return runnable->Dispatch();
 }
 
-bool WorkerPrivate::Freeze(nsPIDOMWindowInner* aWindow) {
+bool WorkerPrivate::Freeze(const nsPIDOMWindowInner* aWindow) {
   AssertIsOnParentThread();
 
   mParentFrozen = true;
@@ -1631,7 +1653,7 @@ bool WorkerPrivate::Freeze(nsPIDOMWindowInner* aWindow) {
   return true;
 }
 
-bool WorkerPrivate::Thaw(nsPIDOMWindowInner* aWindow) {
+bool WorkerPrivate::Thaw(const nsPIDOMWindowInner* aWindow) {
   AssertIsOnParentThread();
   MOZ_ASSERT(mParentFrozen);
 
@@ -1768,8 +1790,8 @@ bool WorkerPrivate::ProxyReleaseMainThreadObjects() {
     mLoadInfo.mLoadGroup.swap(loadGroupToCancel);
   }
 
-  bool result =
-      mLoadInfo.ProxyReleaseMainThreadObjects(this, loadGroupToCancel);
+  bool result = mLoadInfo.ProxyReleaseMainThreadObjects(
+      this, std::move(loadGroupToCancel));
 
   mMainThreadObjectsForgotten = true;
 
@@ -2061,7 +2083,8 @@ WorkerPrivate::WorkerThreadAccessible::WorkerThreadAccessible(
       mRunningExpiredTimeouts(false),
       mPeriodicGCTimerRunning(false),
       mIdleGCTimerRunning(false),
-      mOnLine(aParent ? aParent->OnLine() : !NS_IsOffline()) {}
+      mOnLine(aParent ? aParent->OnLine() : !NS_IsOffline()),
+      mJSThreadExecutionGranted(false) {}
 
 namespace {
 
@@ -2158,20 +2181,51 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
 
     RuntimeService::GetDefaultJSSettings(mJSSettings);
 
-    mJSSettings.chrome.realmOptions.behaviors().setClampAndJitterTime(
-        !UsesSystemPrincipal());
-    mJSSettings.content.realmOptions.behaviors().setClampAndJitterTime(
-        !UsesSystemPrincipal());
+    {
+      JS::RealmOptions& chromeRealmOptions = mJSSettings.chrome.realmOptions;
+      JS::RealmOptions& contentRealmOptions = mJSSettings.content.realmOptions;
 
-    mJSSettings.chrome.realmOptions.creationOptions().setToSourceEnabled(
-        UsesSystemPrincipal());
-    mJSSettings.content.realmOptions.creationOptions().setToSourceEnabled(
-        UsesSystemPrincipal());
+      JS::RealmBehaviors& chromeRealmBehaviors = chromeRealmOptions.behaviors();
+      JS::RealmBehaviors& contentRealmBehaviors =
+          contentRealmOptions.behaviors();
 
+      bool usesSystemPrincipal = UsesSystemPrincipal();
 
-    if (mIsSecureContext) {
-      mJSSettings.chrome.realmOptions.creationOptions().setSecureContext(true);
-      mJSSettings.content.realmOptions.creationOptions().setSecureContext(true);
+      // Make timing imprecise in unprivileged code to blunt Spectre timing
+      // attacks.
+      bool clampAndJitterTime = !usesSystemPrincipal;
+      chromeRealmBehaviors.setClampAndJitterTime(clampAndJitterTime);
+      contentRealmBehaviors.setClampAndJitterTime(clampAndJitterTime);
+
+      JS::RealmCreationOptions& chromeCreationOptions =
+          chromeRealmOptions.creationOptions();
+      JS::RealmCreationOptions& contentCreationOptions =
+          contentRealmOptions.creationOptions();
+
+      // Expose uneval and toSource functions only if this is privileged code.
+      bool toSourceEnabled = usesSystemPrincipal;
+      chromeCreationOptions.setToSourceEnabled(toSourceEnabled);
+      contentCreationOptions.setToSourceEnabled(toSourceEnabled);
+
+      if (mIsSecureContext) {
+        chromeCreationOptions.setSecureContext(true);
+        contentCreationOptions.setSecureContext(true);
+      }
+
+      // The SharedArrayBuffer global constructor property should not be present
+      // in a fresh global object when shared memory objects aren't allowed
+      // (because COOP/COEP support isn't enabled, or because COOP/COEP don't
+      // act to isolate this worker to a separate process).
+      //
+      // Normal pages haven't yet been made to respect COOP/COEP in this regard
+      // yet -- they just always add the property.  This should be changed to
+      // |IsSharedMemoryAllowed()| when bug 1624266 fixes this for normal pages.
+      bool defineSharedArrayBufferConstructor = true;
+
+      chromeCreationOptions.setDefineSharedArrayBufferConstructor(
+          defineSharedArrayBufferConstructor);
+      contentCreationOptions.setDefineSharedArrayBufferConstructor(
+          defineSharedArrayBufferConstructor);
     }
 
     mIsInAutomation = xpc::IsInAutomation();
@@ -2313,7 +2367,7 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
 
   worker->mDefaultLocale = std::move(defaultLocale);
 
-  if (!runtimeService->RegisterWorker(worker)) {
+  if (!runtimeService->RegisterWorker(*worker)) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
@@ -2682,6 +2736,8 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
   MOZ_ASSERT(mThread);
 
+  MOZ_RELEASE_ASSERT(!GetExecutionManager());
+
   {
     AutoLock lock(mMutex);
     mJSContext = aCx;
@@ -2718,6 +2774,12 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
              !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
              !(normalRunnablesPending = NS_HasPendingEvents(mThread)) &&
              !(mStatus != Running && !HasActiveWorkerRefs())) {
+        // We pop out to this loop when there are no pending events.
+        // If we don't reset these, we may not re-enter ProcessNextEvent()
+        // until we have events to process, and it may seem like we have
+        // an event running for a very long time.
+        mThread->SetRunningEventDelay(TimeDuration(), TimeStamp());
+
         WaitForWorkerEvents();
       }
 
@@ -3024,6 +3086,49 @@ const ClientState WorkerPrivate::GetClientState() const {
   return ClientState();
 }
 
+bool WorkerPrivate::GetExecutionGranted() const {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+  return data->mJSThreadExecutionGranted;
+}
+
+void WorkerPrivate::SetExecutionGranted(bool aGranted) {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+  data->mJSThreadExecutionGranted = aGranted;
+}
+
+void WorkerPrivate::ScheduleTimeSliceExpiration(uint32_t aDelay) {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+
+  if (!data->mTSTimer) {
+    data->mTSTimer = NS_NewTimer();
+    MOZ_ALWAYS_SUCCEEDS(data->mTSTimer->SetTarget(mWorkerControlEventTarget));
+  }
+
+  // Whenever an event is scheduled on the WorkerControlEventTarget an
+  // interrupt is automatically requested which causes us to yield JS execution
+  // and the next JS execution in the queue to execute.
+  // This allows for simple code reuse of the existing interrupt callback code
+  // used for control events.
+  MOZ_ALWAYS_SUCCEEDS(data->mTSTimer->InitWithNamedFuncCallback(
+      [](nsITimer* Timer, void* aClosure) { return; }, nullptr, aDelay,
+      nsITimer::TYPE_ONE_SHOT, "TimeSliceExpirationTimer"));
+}
+
+void WorkerPrivate::CancelTimeSliceExpiration() {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+  MOZ_ALWAYS_SUCCEEDS(data->mTSTimer->Cancel());
+}
+
+JSExecutionManager* WorkerPrivate::GetExecutionManager() const {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+  return data->mExecutionManager.get();
+}
+
+void WorkerPrivate::SetExecutionManager(JSExecutionManager* aManager) {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+  data->mExecutionManager = aManager;
+}
+
 const Maybe<ServiceWorkerDescriptor> WorkerPrivate::GetController() {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
   {
@@ -3157,6 +3262,8 @@ void WorkerPrivate::ShutdownGCTimers() {
 
 bool WorkerPrivate::InterruptCallback(JSContext* aCx) {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+
+  AutoYieldJSThreadExecution yield;
 
   // If we are here it's because a WorkerControlRunnable has been dispatched.
   // The runnable could be processed here or it could have already been
@@ -3346,6 +3453,8 @@ WorkerPrivate::ProcessAllControlRunnablesLocked() {
   AssertIsOnWorkerThread();
   mMutex.AssertCurrentThreadOwns();
 
+  AutoYieldJSThreadExecution yield;
+
   auto result = ProcessAllControlRunnablesResult::Nothing;
 
   for (;;) {
@@ -3422,6 +3531,8 @@ void WorkerPrivate::ClearDebuggerEventQueue() {
 bool WorkerPrivate::FreezeInternal() {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
   NS_ASSERTION(!data->mFrozen, "Already frozen!");
+
+  AutoYieldJSThreadExecution yield;
 
   if (data->mClientSource) {
     data->mClientSource->Freeze();
@@ -3691,6 +3802,8 @@ bool WorkerPrivate::RunCurrentSyncLoop() {
 
   SyncLoopInfo* loopInfo = mSyncLoopStack[currentLoopIndex];
 
+  AutoYieldJSThreadExecution yield;
+
   MOZ_ASSERT(loopInfo);
   MOZ_ASSERT(!loopInfo->mHasRun);
   MOZ_ASSERT(!loopInfo->mCompleted);
@@ -3767,6 +3880,8 @@ bool WorkerPrivate::RunCurrentSyncLoop() {
 bool WorkerPrivate::DestroySyncLoop(uint32_t aLoopIndex) {
   MOZ_ASSERT(!mSyncLoopStack.IsEmpty());
   MOZ_ASSERT(mSyncLoopStack.Length() - 1 == aLoopIndex);
+
+  AutoYieldJSThreadExecution yield;
 
   // We're about to delete the loop, stash its event target and result.
   SyncLoopInfo* loopInfo = mSyncLoopStack[aLoopIndex];
@@ -3944,6 +4059,7 @@ void WorkerPrivate::EnterDebuggerEventLoop() {
   MOZ_ASSERT(cx);
 
   AutoPushEventLoopGlobal eventLoopGlobal(this, cx);
+  AutoYieldJSThreadExecution yield;
 
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
 
@@ -4044,6 +4160,10 @@ void WorkerPrivate::ReportErrorToDebugger(const nsAString& aFilename,
 
 bool WorkerPrivate::NotifyInternal(WorkerStatus aStatus) {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+
+  // Yield execution while notifying out-of-module WorkerRefs and cancelling
+  // runnables.
+  AutoYieldJSThreadExecution yield;
 
   NS_ASSERTION(aStatus > Running && aStatus < Dead, "Bad status!");
 
@@ -4157,27 +4277,30 @@ void WorkerPrivate::ReportError(JSContext* aCx,
                    data->mErrorHandlerRecursionCount == 1,
                "Bad recursion logic!");
 
-  JS::Rooted<JS::Value> exn(aCx);
-  if (!JS_GetPendingException(aCx, &exn)) {
-    // Probably shouldn't actually happen?  But let's go ahead and just use null
-    // for lack of anything better.
-    exn.setNull();
-  }
-  JS::RootedObject exnStack(aCx, JS::GetPendingExceptionStack(aCx));
-  JS_ClearPendingException(aCx);
-
   UniquePtr<WorkerErrorReport> report = MakeUnique<WorkerErrorReport>();
   if (aReport) {
     report->AssignErrorReport(aReport);
   }
 
-  JS::RootedObject stack(aCx), stackGlobal(aCx);
-  xpc::FindExceptionStackForConsoleReport(nullptr, exn, exnStack, &stack,
-                                          &stackGlobal);
+  JS::ExceptionStack exnStack(aCx);
+  if (JS_IsExceptionPending(aCx)) {
+    if (!JS::StealPendingExceptionStack(aCx, &exnStack)) {
+      JS_ClearPendingException(aCx);
+      return;
+    }
 
-  if (stack) {
-    JSAutoRealm ar(aCx, stackGlobal);
-    report->SerializeWorkerStack(aCx, this, stack);
+    JS::RootedObject stack(aCx), stackGlobal(aCx);
+    xpc::FindExceptionStackForConsoleReport(
+        nullptr, exnStack.exception(), exnStack.stack(), &stack, &stackGlobal);
+
+    if (stack) {
+      JSAutoRealm ar(aCx, stackGlobal);
+      report->SerializeWorkerStack(aCx, this, stack);
+    }
+  } else {
+    // ReportError is also used for reporting warnings,
+    // so there won't be a pending exception.
+    MOZ_ASSERT(aReport->isWarning());
   }
 
   if (report->mMessage.IsEmpty() && aToStringResult) {
@@ -4206,7 +4329,7 @@ void WorkerPrivate::ReportError(JSContext* aCx,
                      JS::CurrentGlobalOrNull(aCx);
 
   WorkerErrorReport::ReportError(aCx, this, fireAtScope, nullptr,
-                                 std::move(report), 0, exn);
+                                 std::move(report), 0, exnStack.exception());
 
   data->mErrorHandlerRecursionCount--;
 }
@@ -4715,16 +4838,39 @@ void WorkerPrivate::ResetWorkerPrivateInWorkerThread() {
 
 void WorkerPrivate::BeginCTypesCall() {
   AssertIsOnWorkerThread();
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
 
   // Don't try to GC while we're blocked in a ctypes call.
   SetGCTimerMode(NoTimer);
+
+  data->mYieldJSThreadExecution.EmplaceBack();
 }
 
 void WorkerPrivate::EndCTypesCall() {
   AssertIsOnWorkerThread();
+  MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+
+  data->mYieldJSThreadExecution.RemoveLastElement();
 
   // Make sure the periodic timer is running before we start running JS again.
   SetGCTimerMode(PeriodicTimer);
+}
+
+void WorkerPrivate::BeginCTypesCallback() {
+  AssertIsOnWorkerThread();
+
+  // Make sure the periodic timer is running before we start running JS again.
+  SetGCTimerMode(PeriodicTimer);
+
+  // Re-requesting execution is not needed since the JSRuntime code calling
+  // this will do an AutoEntryScript.
+}
+
+void WorkerPrivate::EndCTypesCallback() {
+  AssertIsOnWorkerThread();
+
+  // Don't try to GC while we're blocked in a ctypes call.
+  SetGCTimerMode(NoTimer);
 }
 
 bool WorkerPrivate::ConnectMessagePort(JSContext* aCx,

@@ -18,7 +18,7 @@ void Action::CancelOnInitiatingThread() {
 
 Action::Action() : mCanceled(false) {}
 
-Action::~Action() {}
+Action::~Action() = default;
 
 bool Action::IsCanceled() const { return mCanceled; }
 

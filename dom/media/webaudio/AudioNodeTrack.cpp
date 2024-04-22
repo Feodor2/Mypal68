@@ -230,9 +230,9 @@ void AudioNodeTrack::SetReverb(WebCore::Reverb* aReverb,
           mImpulseChanelCount(aImpulseChannelCount) {}
     void Run() override {
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetReverb(
-          mReverb.forget(), mImpulseChanelCount);
+          mReverb.release(), mImpulseChanelCount);
     }
-    nsAutoPtr<WebCore::Reverb> mReverb;
+    UniquePtr<WebCore::Reverb> mReverb;
     uint32_t mImpulseChanelCount;
   };
 
@@ -240,20 +240,19 @@ void AudioNodeTrack::SetReverb(WebCore::Reverb* aReverb,
       MakeUnique<Message>(this, aReverb, aImpulseChannelCount));
 }
 
-void AudioNodeTrack::SetRawArrayData(nsTArray<float>& aData) {
+void AudioNodeTrack::SetRawArrayData(nsTArray<float>&& aData) {
   class Message final : public ControlMessage {
    public:
-    Message(AudioNodeTrack* aTrack, nsTArray<float>& aData)
-        : ControlMessage(aTrack) {
-      mData.SwapElements(aData);
-    }
+    Message(AudioNodeTrack* aTrack, nsTArray<float>&& aData)
+        : ControlMessage(aTrack), mData(std::move(aData)) {}
     void Run() override {
-      static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetRawArrayData(mData);
+      static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetRawArrayData(
+          std::move(mData));
     }
     nsTArray<float> mData;
   };
 
-  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aData));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, std::move(aData)));
 }
 
 void AudioNodeTrack::SetChannelMixingParameters(
@@ -522,7 +521,8 @@ void AudioNodeTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                               &finished);
       } else {
         mEngine->ProcessBlocksOnPorts(
-            this, MakeSpan(mInputChunks.Elements(), mEngine->InputCount()),
+            this, aFrom,
+            MakeSpan(mInputChunks.Elements(), mEngine->InputCount()),
             MakeSpan(mLastChunks.Elements(), mEngine->OutputCount()),
             &finished);
       }

@@ -31,6 +31,7 @@
 #include "xpcpublic.h"
 #include "jsapi.h"
 #include "js/ContextOptions.h"
+#include "js/Object.h"  // JS::GetCompartment
 #include "js/TracingAPI.h"
 
 namespace mozilla {
@@ -63,7 +64,7 @@ class CallbackObject : public nsISupports {
   explicit CallbackObject(JSContext* aCx, JS::Handle<JSObject*> aCallback,
                           JS::Handle<JSObject*> aCallbackGlobal,
                           nsIGlobalObject* aIncumbentGlobal) {
-    if (aCx && JS::ContextOptionsRef(aCx).asyncStack()) {
+    if (aCx && JS::IsAsyncStackCaptureEnabledForRealm(aCx)) {
       JS::RootedObject stack(aCx);
       if (!JS::CaptureCurrentStack(aCx, &stack)) {
         JS_ClearPendingException(aCx);
@@ -219,8 +220,8 @@ class CallbackObject : public nsISupports {
                          nsIGlobalObject* aIncumbentGlobal) {
     MOZ_ASSERT(aCallback && !mCallback);
     MOZ_ASSERT(aCallbackGlobal);
-    MOZ_DIAGNOSTIC_ASSERT(js::GetObjectCompartment(aCallback) ==
-                          js::GetObjectCompartment(aCallbackGlobal));
+    MOZ_DIAGNOSTIC_ASSERT(JS::GetCompartment(aCallback) ==
+                          JS::GetCompartment(aCallbackGlobal));
     MOZ_ASSERT(JS_IsGlobalObject(aCallbackGlobal));
     mCallback = aCallback;
     mCallbackGlobal = aCallbackGlobal;

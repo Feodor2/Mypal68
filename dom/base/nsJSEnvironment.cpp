@@ -61,13 +61,7 @@
 #include "mozilla/SystemGroup.h"
 #include "nsRefreshDriver.h"
 #include "nsJSPrincipals.h"
-
-#ifdef XP_MACOSX
-// AssertMacros.h defines 'check' and conflicts with AccessCheck.h
-#  undef check
-#endif
 #include "AccessCheck.h"
-
 #include "mozilla/Logging.h"
 #include "prthread.h"
 
@@ -534,7 +528,9 @@ class ScriptErrorEvent : public Runnable {
       JS::Rooted<JSObject*> stackGlobal(rootingCx);
       xpc::FindExceptionStackForConsoleReport(win, mError, mErrorStack, &stack,
                                               &stackGlobal);
-      mReport->LogToConsoleWithStack(stack, stackGlobal);
+      JS::Rooted<Maybe<JS::Value>> exception(rootingCx, Some(mError));
+      nsGlobalWindowInner* inner = nsGlobalWindowInner::Cast(win);
+      mReport->LogToConsoleWithStack(inner, exception, stack, stackGlobal);
     }
 
     return NS_OK;
@@ -2202,35 +2198,6 @@ void nsJSContext::KillICCRunner() {
   }
 }
 
-class NotifyGCEndRunnable : public Runnable {
-  nsString mMessage;
-
- public:
-  explicit NotifyGCEndRunnable(nsString&& aMessage)
-      : mozilla::Runnable("NotifyGCEndRunnable"),
-        mMessage(std::move(aMessage)) {}
-
-  NS_DECL_NSIRUNNABLE
-};
-
-NS_IMETHODIMP
-NotifyGCEndRunnable::Run() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-  if (!observerService) {
-    return NS_OK;
-  }
-
-  const char16_t oomMsg[3] = {'{', '}', 0};
-  const char16_t* toSend = mMessage.get() ? mMessage.get() : oomMsg;
-  observerService->NotifyObservers(nullptr, "garbage-collection-statistics",
-                                   toSend);
-
-  return NS_OK;
-}
-
 static void DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress,
                                const JS::GCDescription& aDesc) {
   NS_ASSERTION(NS_IsMainThread(), "GCs must run on the main thread");
@@ -2258,18 +2225,6 @@ static void DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress,
             do_GetService(NS_CONSOLESERVICE_CONTRACTID);
         if (cs) {
           cs->LogStringMessage(msg.get());
-        }
-      }
-
-      if (!sShuttingDown) {
-        if (StaticPrefs::javascript_options_mem_notify() ||
-            Telemetry::CanRecordExtended()) {
-          nsString json;
-          json.Adopt(aDesc.formatJSONTelemetry(aCx, PR_Now()));
-          RefPtr<NotifyGCEndRunnable> notify =
-              new NotifyGCEndRunnable(std::move(json));
-          SystemGroup::Dispatch(TaskCategory::GarbageCollection,
-                                notify.forget());
         }
       }
 
@@ -2653,6 +2608,16 @@ void nsJSContext::EnsureStatics() {
       "javascript.options.mem.gc_max_empty_chunk_count",
       (void*)JSGC_MAX_EMPTY_CHUNK_COUNT);
 
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackInt,
+      "javascript.options.mem.gc_helper_thread_ratio",
+      (void*)JSGC_HELPER_THREAD_RATIO);
+
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackInt,
+      "javascript.options.mem.gc_max_helper_threads",
+      (void*)JSGC_MAX_HELPER_THREADS);
+
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (!obs) {
     MOZ_CRASH();
@@ -2685,10 +2650,23 @@ void AsyncErrorReporter::SerializeStack(JSContext* aCx,
   mStackHolder->SerializeMainThreadOrWorkletStack(aCx, aStack);
 }
 
+void AsyncErrorReporter::SetException(JSContext* aCx,
+                                      JS::Handle<JS::Value> aException) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mException.init(aCx, aException);
+  mHasException = true;
+}
+
 NS_IMETHODIMP AsyncErrorReporter::Run() {
   AutoJSAPI jsapi;
-  DebugOnly<bool> ok = jsapi.Init(xpc::UnprivilegedJunkScope());
-  MOZ_ASSERT(ok, "Problem with junk scope?");
+  // We're only using this context to deserialize a stack to report to the
+  // console, so the scope we use doesn't matter. Stack frame filtering happens
+  // based on the principal encoded into the frame and the caller compartment,
+  // not the compartment of the frame object, and the console reporting code
+  // will not be using our context, and therefore will not care what compartment
+  // it has entered.
+  DebugOnly<bool> ok = jsapi.Init(xpc::PrivilegedJunkScope());
+  MOZ_ASSERT(ok, "Problem with system global?");
   JSContext* cx = jsapi.cx();
   JS::Rooted<JSObject*> stack(cx);
   JS::Rooted<JSObject*> stackGlobal(cx);
@@ -2698,7 +2676,17 @@ NS_IMETHODIMP AsyncErrorReporter::Run() {
       stackGlobal = JS::CurrentGlobalOrNull(cx);
     }
   }
-  mReport->LogToConsoleWithStack(stack, stackGlobal);
+
+  JS::Rooted<Maybe<JS::Value>> exception(cx, Nothing());
+  if (mHasException) {
+    MOZ_ASSERT(NS_IsMainThread());
+    exception = Some(mException);
+    // Remove our reference to the exception.
+    mException.setUndefined();
+    mHasException = false;
+  }
+
+  mReport->LogToConsoleWithStack(nullptr, exception, stack, stackGlobal);
   return NS_OK;
 }
 

@@ -12,6 +12,7 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Telemetry.h"
 
@@ -352,7 +353,6 @@ WorkerRunnable::Run() {
 
   MOZ_ASSERT(!jsapi->HasException());
   result = WorkerRun(cx, mWorkerPrivate);
-  MOZ_ASSERT_IF(result, !jsapi->HasException());
   jsapi->ReportException();
 
   // We can't even assert that this didn't create our global, since in the case

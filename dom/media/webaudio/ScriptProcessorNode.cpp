@@ -13,7 +13,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/PodOperations.h"
-#include "nsAutoPtr.h"
 #include <deque>
 
 namespace mozilla {
@@ -247,7 +246,7 @@ class ScriptProcessorNodeEngine final : public AudioNodeEngine {
         mInputChannelCount(aNumberOfInputChannels),
         mInputWriteIndex(0) {}
 
-  SharedBuffers* GetSharedBuffers() const { return mSharedBuffers; }
+  SharedBuffers* GetSharedBuffers() const { return mSharedBuffers.get(); }
 
   enum {
     IS_CONNECTED,
@@ -455,7 +454,7 @@ class ScriptProcessorNodeEngine final : public AudioNodeEngine {
   friend class ScriptProcessorNode;
 
   RefPtr<AudioNodeTrack> mDestination;
-  nsAutoPtr<SharedBuffers> mSharedBuffers;
+  UniquePtr<SharedBuffers> mSharedBuffers;
   RefPtr<ThreadSharedFloatArrayBufferList> mInputBuffer;
   const uint32_t mBufferSize;
   const uint32_t mInputChannelCount;

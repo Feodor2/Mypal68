@@ -70,24 +70,17 @@ struct OriginAttributesDictionary;
 // before creating the ArrayBuffer itself.  Will do doubling
 // based reallocation, up to an optional maximum growth given.
 //
-// When all the data has been appended, call getArrayBuffer,
+// When all the data has been appended, call GetArrayBuffer,
 // passing in the JSContext* for which the ArrayBuffer object
-// is to be created.  This also implicitly resets the builder,
-// or it can be reset explicitly at any point by calling reset().
+// is to be created.  This also implicitly resets the builder.
 class ArrayBufferBuilder {
-  uint8_t* mDataPtr;
-  uint32_t mCapacity;
-  uint32_t mLength;
-  void* mMapPtr;
-
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ArrayBufferBuilder);
+
   ArrayBufferBuilder();
-  ~ArrayBufferBuilder();
 
-  void reset();
-
-  // Will truncate if aNewCap is < length().
-  bool setCapacity(uint32_t aNewCap);
+  // Will truncate if aNewCap is < Length().
+  bool SetCapacity(uint32_t aNewCap);
 
   // Append aDataLen bytes from data to the current buffer.  If we
   // need to grow the buffer, grow by doubling the size up to a
@@ -96,13 +89,13 @@ class ArrayBufferBuilder {
   //
   // The data parameter must not overlap with anything beyond the
   // builder's current valid contents [0..length)
-  bool append(const uint8_t* aNewData, uint32_t aDataLen,
+  bool Append(const uint8_t* aNewData, uint32_t aDataLen,
               uint32_t aMaxGrowth = 0);
 
-  uint32_t length() { return mLength; }
-  uint32_t capacity() { return mCapacity; }
+  uint32_t Length();
+  uint32_t Capacity();
 
-  JSObject* getArrayBuffer(JSContext* aCx);
+  JSObject* TakeArrayBuffer(JSContext* aCx);
 
   // Memory mapping to starting position of file(aFile) in the zip
   // package(aJarFile).
@@ -110,11 +103,30 @@ class ArrayBufferBuilder {
   // The file in the zip package has to be uncompressed and the starting
   // position of the file must be aligned according to array buffer settings
   // in JS engine.
-  nsresult mapToFileInPackage(const nsCString& aFile, nsIFile* aJarFile);
+  nsresult MapToFileInPackage(const nsCString& aFile, nsIFile* aJarFile);
 
- protected:
-  static bool areOverlappingRegions(const uint8_t* aStart1, uint32_t aLength1,
+ private:
+  ~ArrayBufferBuilder();
+
+  ArrayBufferBuilder(const ArrayBufferBuilder&) = delete;
+  ArrayBufferBuilder& operator=(const ArrayBufferBuilder&) = delete;
+  ArrayBufferBuilder& operator=(const ArrayBufferBuilder&&) = delete;
+
+  bool SetCapacityInternal(uint32_t aNewCap, const MutexAutoLock& aProofOfLock);
+
+  static bool AreOverlappingRegions(const uint8_t* aStart1, uint32_t aLength1,
                                     const uint8_t* aStart2, uint32_t aLength2);
+
+  Mutex mMutex;
+
+  // All of these are protected by mMutex.
+  uint8_t* mDataPtr;
+  uint32_t mCapacity;
+  uint32_t mLength;
+  void* mMapPtr;
+
+  // This is used in assertions only.
+  bool mNeutered;
 };
 
 class nsXMLHttpRequestXPCOMifier;
@@ -374,6 +386,10 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   virtual void GetResponseText(DOMString& aResponseText,
                                ErrorResult& aRv) override;
 
+  // GetResponse* for workers:
+  already_AddRefed<BlobImpl> GetResponseBlobImpl();
+  already_AddRefed<ArrayBufferBuilder> GetResponseArrayBufferBuilder();
+  nsresult GetResponseTextForJSON(nsAString& aString);
   void GetResponseText(XMLHttpRequestStringSnapshot& aSnapshot,
                        ErrorResult& aRv);
 
@@ -431,7 +447,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   void BlobStoreCompleted(MutableBlobStorage* aBlobStorage, BlobImpl* aBlobImpl,
                           nsresult aResult) override;
 
-  void LocalFileToBlobCompleted(Blob* aBlob);
+  void LocalFileToBlobCompleted(BlobImpl* aBlobImpl);
 
  protected:
   nsresult DetectCharset();
@@ -557,7 +573,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
     }
 
    private:
-    virtual ~nsHeaderVisitor() {}
+    virtual ~nsHeaderVisitor() = default;
 
     nsTArray<HeaderEntry> mHeaderList;
     nsCString mHeaders;
@@ -592,9 +608,12 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   XMLHttpRequestResponseType mResponseType;
 
-  // It is either a cached blob-response from the last call to GetResponse,
-  // but is also explicitly set in OnStopRequest.
+  RefPtr<BlobImpl> mResponseBlobImpl;
+
+  // This is the cached blob-response, created only at the first GetResponse()
+  // call.
   RefPtr<Blob> mResponseBlob;
+
   // We stream data to mBlobStorage when response type is "blob".
   RefPtr<MutableBlobStorage> mBlobStorage;
 
@@ -710,7 +729,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   JS::Heap<JS::Value> mResultJSON;
 
-  ArrayBufferBuilder mArrayBufferBuilder;
+  RefPtr<ArrayBufferBuilder> mArrayBufferBuilder;
   JS::Heap<JSObject*> mResultArrayBuffer;
   bool mIsMappedArrayBuffer;
 
@@ -836,7 +855,7 @@ class nsXHRParseEndListener : public nsIDOMEventListener {
   void SetIsStale() { mXHR = nullptr; }
 
  private:
-  virtual ~nsXHRParseEndListener() {}
+  virtual ~nsXHRParseEndListener() = default;
 
   XMLHttpRequestMainThread* mXHR;
 };

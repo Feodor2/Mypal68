@@ -26,6 +26,8 @@
 #include "nsStubMutationObserver.h"
 #include "MediaSegment.h"  // for PrincipalHandle, GraphTime
 
+#include <utility>
+
 // X.h on Linux #defines CurrentTime as 0L, so we have to #undef it here.
 #ifdef CurrentTime
 #  undef CurrentTime
@@ -120,6 +122,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
     ~OutputMediaStream();
 
     RefPtr<DOMMediaStream> mStream;
+    nsTArray<RefPtr<MediaStreamTrack>> mLiveTracks;
     const bool mCapturingAudioOnly;
     const bool mFinishWhenEnded;
     // If mFinishWhenEnded is true, this is the URI of the first resource
@@ -731,7 +734,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // empty and the default device is being used.
   void GetSinkId(nsString& aSinkId) {
     MOZ_ASSERT(NS_IsMainThread());
-    aSinkId = mSink.first();
+    aSinkId = mSink.first;
   }
 
   // This is used to notify MediaElementAudioSourceNode that media element is
@@ -858,6 +861,19 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    * and unmuting when playing the media element again.
    */
   void SetCapturedOutputStreamsEnabled(bool aEnabled);
+
+  /**
+   * Returns true if output tracks should be muted, based on the state of this
+   * media element.
+   */
+  enum class OutputMuteState { Muted, Unmuted };
+  OutputMuteState OutputTracksMuted();
+
+  /**
+   * Sets the muted state of all output track sources. They are muted when we're
+   * paused and unmuted otherwise.
+   */
+  void UpdateOutputTracksMuting();
 
   /**
    * Create a new MediaStreamTrack for the TrackSource corresponding to aTrack
@@ -1861,7 +1877,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // unplugged. It can be set to ("", nullptr). It follows the spec attribute:
   // https://w3c.github.io/mediacapture-output/#htmlmediaelement-extensions
   // Read/Write from the main thread only.
-  Pair<nsString, RefPtr<AudioDeviceInfo>> mSink;
+  std::pair<nsString, RefPtr<AudioDeviceInfo>> mSink;
 
   // This flag is used to control when the user agent is to show a poster frame
   // for a video element instead of showing the video contents.

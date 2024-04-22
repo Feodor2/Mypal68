@@ -7,7 +7,6 @@
 
 #include "ContainerParser.h"
 #include "mozilla/ArrayUtils.h"
-#include "nsAutoPtr.h"
 
 using namespace mozilla;
 
@@ -15,7 +14,7 @@ TEST(ContainerParser, MIMETypes)
 {
   const char* containerTypes[] = {"video/webm", "audio/webm", "video/mp4",
                                   "audio/mp4", "audio/aac"};
-  nsAutoPtr<ContainerParser> parser;
+  UniquePtr<ContainerParser> parser;
   for (size_t i = 0; i < ArrayLength(containerTypes); ++i) {
     Maybe<MediaContainerType> containerType =
         MakeMediaContainerType(containerTypes[i]);
@@ -34,7 +33,7 @@ already_AddRefed<MediaByteBuffer> make_adts_header() {
 
 TEST(ContainerParser, ADTSHeader)
 {
-  nsAutoPtr<ContainerParser> parser;
+  UniquePtr<ContainerParser> parser;
   parser = ContainerParser::CreateForMIMEType(
       MediaContainerType(MEDIAMIMETYPE("audio/aac")));
   ASSERT_NE(parser, nullptr);
@@ -100,7 +99,7 @@ TEST(ContainerParser, ADTSHeader)
 
 TEST(ContainerParser, ADTSBlankMedia)
 {
-  nsAutoPtr<ContainerParser> parser;
+  UniquePtr<ContainerParser> parser;
   parser = ContainerParser::CreateForMIMEType(
       MediaContainerType(MEDIAMIMETYPE("audio/aac")));
   ASSERT_NE(parser, nullptr);

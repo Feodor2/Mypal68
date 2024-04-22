@@ -22,6 +22,7 @@ void HostReleaseTopLevelScript(const JS::Value& aPrivate);
 
 class ClassicScript;
 class ModuleScript;
+class EventScript;
 
 class LoadedScript : public nsISupports {
   ScriptKind mKind;
@@ -39,11 +40,13 @@ class LoadedScript : public nsISupports {
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(LoadedScript)
 
   bool IsModuleScript() const { return mKind == ScriptKind::eModule; }
+  bool IsEventScript() const { return mKind == ScriptKind::eEvent; }
 
   inline ClassicScript* AsClassicScript();
   inline ModuleScript* AsModuleScript();
+  inline EventScript* AsEventScript();
 
-  ScriptFetchOptions* FetchOptions() const { return mFetchOptions; }
+  ScriptFetchOptions* GetFetchOptions() const { return mFetchOptions; }
   nsIURI* BaseURL() const { return mBaseURL; }
 
   void AssociateWithScript(JSScript* aScript);
@@ -54,6 +57,13 @@ class ClassicScript final : public LoadedScript {
 
  public:
   ClassicScript(ScriptFetchOptions* aFetchOptions, nsIURI* aBaseURL);
+};
+
+class EventScript final : public LoadedScript {
+  ~EventScript() = default;
+
+ public:
+  EventScript(ScriptFetchOptions* aFetchOptions, nsIURI* aBaseURL);
 };
 
 // A single module script. May be used to satisfy multiple load requests.

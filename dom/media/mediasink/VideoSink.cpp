@@ -34,13 +34,13 @@ extern LazyLogModule gMediaDecoderLog;
   MOZ_LOG(gMediaDecoderLog, LogLevel::Verbose, (FMT(x, ##__VA_ARGS__)))
 
 #ifdef MOZ_GECKO_PROFILER
-#  define VSINK_ADD_PROFILER_MARKER(tag, markerTime, aTime, vTime)          \
-    do {                                                                    \
-      if (profiler_thread_is_being_profiled()) {                            \
-        profiler_add_marker(                                                \
-            tag, JS::ProfilingCategoryPair::GRAPHICS,                       \
-            MakeUnique<VideoFrameMarkerPayload>(markerTime, aTime, vTime)); \
-      }                                                                     \
+#  define VSINK_ADD_PROFILER_MARKER(tag, markerTime, aTime, vTime)    \
+    do {                                                              \
+      if (profiler_thread_is_being_profiled()) {                      \
+        PROFILER_ADD_MARKER_WITH_PAYLOAD(tag, GRAPHICS,               \
+                                         VideoFrameMarkerPayload,     \
+                                         (markerTime, aTime, vTime)); \
+      }                                                               \
     } while (0)
 
 class VideoFrameMarkerPayload : public ProfilerMarkerPayload {
@@ -52,9 +52,32 @@ class VideoFrameMarkerPayload : public ProfilerMarkerPayload {
         mAudioPositionUs(aAudioPositionUs),
         mVideoFrameTimeUs(aVideoFrameTimeUs) {}
 
+  BlocksRingBuffer::Length TagAndSerializationBytes() const override {
+    return CommonPropsTagAndSerializationBytes() +
+           BlocksRingBuffer::SumBytes(mAudioPositionUs, mVideoFrameTimeUs);
+  }
+
+  void SerializeTagAndPayload(
+      BlocksRingBuffer::EntryWriter& aEntryWriter) const override {
+    static const DeserializerTag tag = TagForDeserializer(Deserialize);
+    SerializeTagAndCommonProps(tag, aEntryWriter);
+    aEntryWriter.WriteObject(mAudioPositionUs);
+    aEntryWriter.WriteObject(mVideoFrameTimeUs);
+  }
+
+  static UniquePtr<ProfilerMarkerPayload> Deserialize(
+      BlocksRingBuffer::EntryReader& aEntryReader) {
+    ProfilerMarkerPayload::CommonProps props =
+        DeserializeCommonProps(aEntryReader);
+    auto audioPositionUs = aEntryReader.ReadObject<int64_t>();
+    auto videoFrameTimeUs = aEntryReader.ReadObject<int64_t>();
+    return UniquePtr<ProfilerMarkerPayload>(new VideoFrameMarkerPayload(
+        std::move(props), audioPositionUs, videoFrameTimeUs));
+  }
+
   void StreamPayload(SpliceableJSONWriter& aWriter,
                      const TimeStamp& aProcessStartTime,
-                     UniqueStacks& aUniqueStacks) {
+                     UniqueStacks& aUniqueStacks) const override {
     StreamCommonProps("UpdateRenderVideoFrames", aWriter, aProcessStartTime,
                       aUniqueStacks);
     aWriter.IntProperty("audio", mAudioPositionUs);
@@ -62,6 +85,12 @@ class VideoFrameMarkerPayload : public ProfilerMarkerPayload {
   }
 
  private:
+  VideoFrameMarkerPayload(CommonProps&& aCommonProps, int64_t aAudioPositionUs,
+                          int64_t aVideoFrameTimeUs)
+      : ProfilerMarkerPayload(std::move(aCommonProps)),
+        mAudioPositionUs(aAudioPositionUs),
+        mVideoFrameTimeUs(aVideoFrameTimeUs) {}
+
   int64_t mAudioPositionUs;
   int64_t mVideoFrameTimeUs;
 };

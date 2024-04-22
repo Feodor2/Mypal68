@@ -97,12 +97,20 @@ function continueToNextStepSync() {
 
 function enableTesting() {
   SpecialPowers.setBoolPref("dom.quotaManager.testing", true);
+  if (Services.appinfo.OS === "WINNT") {
+    SpecialPowers.setBoolPref("dom.quotaManager.useDOSDevicePathSyntax", true);
+  }
   SpecialPowers.setBoolPref("dom.simpleDB.enabled", true);
+  SpecialPowers.setBoolPref("dom.storage.next_gen", true);
 }
 
 function resetTesting() {
   SpecialPowers.clearUserPref("dom.quotaManager.testing");
+  if (Services.appinfo.OS === "WINNT") {
+    SpecialPowers.clearUserPref("dom.quotaManager.useDOSDevicePathSyntax");
+  }
   SpecialPowers.clearUserPref("dom.simpleDB.enabled");
+  SpecialPowers.clearUserPref("dom.storage.next_gen");
 }
 
 function setGlobalLimit(globalLimit) {
@@ -201,6 +209,16 @@ function reset(callback) {
   return request;
 }
 
+function resetClient(principal, client) {
+  let request = Services.qms.resetStoragesForPrincipal(
+    principal,
+    "default",
+    client
+  );
+
+  return request;
+}
+
 function persist(principal, callback) {
   let request = SpecialPowers._getQuotaManager().persist(principal);
   request.callback = callback;
@@ -290,6 +308,12 @@ function getRelativeFile(relativePath, baseFile) {
   }
 
   let file = baseFile.clone();
+
+  if (Services.appinfo.OS === "WINNT") {
+    let winFile = file.QueryInterface(Ci.nsILocalFileWin);
+    winFile.useDOSDevicePathSyntax = true;
+  }
+
   relativePath.split("/").forEach(function(component) {
     if (component == "..") {
       file = file.parent;

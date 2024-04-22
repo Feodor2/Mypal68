@@ -7,7 +7,6 @@
 
 #include "MediaTrackGraph.h"
 #include "mozilla/dom/AudioNodeBinding.h"
-#include "nsAutoPtr.h"
 #include "AlignedTArray.h"
 #include "AudioBlock.h"
 #include "AudioSegment.h"
@@ -104,7 +103,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
                          const dom::AudioTimelineEvent& aEvent);
   // This consumes the contents of aData.  aData will be emptied after this
   // returns.
-  void SetRawArrayData(nsTArray<float>& aData);
+  void SetRawArrayData(nsTArray<float>&& aData);
   void SetChannelMixingParameters(uint32_t aNumberOfChannels,
                                   ChannelCountMode aChannelCountMoe,
                                   ChannelInterpretation aChannelInterpretation);
@@ -155,7 +154,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
   }
 
   // Any thread
-  AudioNodeEngine* Engine() { return mEngine; }
+  AudioNodeEngine* Engine() { return mEngine.get(); }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
@@ -209,7 +208,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
   void DecrementActiveInputCount();
 
   // The engine that will generate output for this node.
-  const nsAutoPtr<AudioNodeEngine> mEngine;
+  const UniquePtr<AudioNodeEngine> mEngine;
   // The mixed input blocks are kept from iteration to iteration to avoid
   // reallocating channel data arrays and any buffers for mixing.
   OutputChunks mInputChunks;

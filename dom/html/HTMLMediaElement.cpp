@@ -117,6 +117,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 mozilla::LazyLogModule gMediaElementLog("nsMediaElement");
 static mozilla::LazyLogModule gMediaElementEventsLog("nsMediaElementEvents");
@@ -769,30 +770,46 @@ class HTMLMediaElement::MediaStreamRenderer
 
 class HTMLMediaElement::MediaElementTrackSource
     : public MediaStreamTrackSource,
-      public MediaStreamTrackSource::Sink {
+      public MediaStreamTrackSource::Sink,
+      public MediaStreamTrackConsumer {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaElementTrackSource,
                                            MediaStreamTrackSource)
 
   /* MediaDecoder track source */
-  MediaElementTrackSource(ProcessedMediaTrack* aTrack, nsIPrincipal* aPrincipal)
-      : MediaStreamTrackSource(aPrincipal, nsString()), mTrack(aTrack) {
+  MediaElementTrackSource(nsISerialEventTarget* aMainThreadEventTarget,
+                          ProcessedMediaTrack* aTrack, nsIPrincipal* aPrincipal,
+                          OutputMuteState aMuteState)
+      : MediaStreamTrackSource(aPrincipal, nsString()),
+        mMainThreadEventTarget(aMainThreadEventTarget),
+        mTrack(aTrack),
+        mIntendedElementMuteState(aMuteState),
+        mElementMuteState(aMuteState) {
     MOZ_ASSERT(mTrack);
   }
 
   /* MediaStream track source */
-  MediaElementTrackSource(MediaStreamTrackSource* aCapturedTrackSource,
-                          ProcessedMediaTrack* aTrack, MediaInputPort* aPort)
+  MediaElementTrackSource(nsISerialEventTarget* aMainThreadEventTarget,
+                          MediaStreamTrack* aCapturedTrack,
+                          MediaStreamTrackSource* aCapturedTrackSource,
+                          ProcessedMediaTrack* aTrack, MediaInputPort* aPort,
+                          OutputMuteState aMuteState)
       : MediaStreamTrackSource(aCapturedTrackSource->GetPrincipal(),
                                nsString()),
+        mMainThreadEventTarget(aMainThreadEventTarget),
+        mCapturedTrack(aCapturedTrack),
         mCapturedTrackSource(aCapturedTrackSource),
         mTrack(aTrack),
-        mPort(aPort) {
+        mPort(aPort),
+        mIntendedElementMuteState(aMuteState),
+        mElementMuteState(aMuteState) {
     MOZ_ASSERT(mTrack);
+    MOZ_ASSERT(mCapturedTrack);
     MOZ_ASSERT(mCapturedTrackSource);
     MOZ_ASSERT(mPort);
 
+    mCapturedTrack->AddConsumer(this);
     mCapturedTrackSource->RegisterSink(this);
   }
 
@@ -809,7 +826,24 @@ class HTMLMediaElement::MediaElementTrackSource
     MediaStreamTrackSource::PrincipalChanged();
   }
 
+  void SetMutedByElement(OutputMuteState aMuteState) {
+    if (mIntendedElementMuteState == aMuteState) {
+      return;
+    }
+    mIntendedElementMuteState = aMuteState;
+    mMainThreadEventTarget->Dispatch(NS_NewRunnableFunction(
+        "MediaElementTrackSource::SetMutedByElement",
+        [self = RefPtr<MediaElementTrackSource>(this), this, aMuteState] {
+          mElementMuteState = aMuteState;
+          MediaStreamTrackSource::MutedChanged(Muted());
+        }));
+  }
+
   void Destroy() override {
+    if (mCapturedTrack) {
+      mCapturedTrack->RemoveConsumer(this);
+      mCapturedTrack = nullptr;
+    }
     if (mCapturedTrackSource) {
       mCapturedTrackSource->UnregisterSink(this);
       mCapturedTrackSource = nullptr;
@@ -858,7 +892,7 @@ class HTMLMediaElement::MediaElementTrackSource
   }
 
   void MutedChanged(bool aNewState) override {
-    MediaStreamTrackSource::MutedChanged(aNewState);
+    MediaStreamTrackSource::MutedChanged(Muted());
   }
 
   void OverrideEnded() override {
@@ -866,14 +900,31 @@ class HTMLMediaElement::MediaElementTrackSource
     MediaStreamTrackSource::OverrideEnded();
   }
 
+  void NotifyEnabledChanged(MediaStreamTrack* aTrack, bool aEnabled) override {
+    MediaStreamTrackSource::MutedChanged(Muted());
+  }
+
+  bool Muted() const {
+    return mElementMuteState == OutputMuteState::Muted ||
+           (mCapturedTrack &&
+            (mCapturedTrack->Muted() || !mCapturedTrack->Enabled()));
+  }
+
   ProcessedMediaTrack* Track() const { return mTrack; }
 
  private:
   virtual ~MediaElementTrackSource() { Destroy(); };
 
+  const RefPtr<nsISerialEventTarget> mMainThreadEventTarget;
+  RefPtr<MediaStreamTrack> mCapturedTrack;
   RefPtr<MediaStreamTrackSource> mCapturedTrackSource;
   const RefPtr<ProcessedMediaTrack> mTrack;
   RefPtr<MediaInputPort> mPort;
+  // The mute state as intended by the media element.
+  OutputMuteState mIntendedElementMuteState;
+  // The mute state as applied to this track source. It is applied async, so
+  // needs to be tracked separately from the intended state.
+  OutputMuteState mElementMuteState;
 };
 
 HTMLMediaElement::OutputMediaStream::OutputMediaStream(
@@ -888,6 +939,8 @@ void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
                                  HTMLMediaElement::OutputMediaStream& aField,
                                  const char* aName, uint32_t aFlags) {
   ImplCycleCollectionTraverse(aCallback, aField.mStream, "mStream", aFlags);
+  ImplCycleCollectionTraverse(aCallback, aField.mLiveTracks, "mLiveTracks",
+                              aFlags);
   ImplCycleCollectionTraverse(aCallback, aField.mFinishWhenEndedLoadingSrc,
                               "mFinishWhenEndedLoadingSrc", aFlags);
   ImplCycleCollectionTraverse(aCallback, aField.mFinishWhenEndedAttrStream,
@@ -896,6 +949,7 @@ void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
 
 void ImplCycleCollectionUnlink(HTMLMediaElement::OutputMediaStream& aField) {
   ImplCycleCollectionUnlink(aField.mStream);
+  ImplCycleCollectionUnlink(aField.mLiveTracks);
   ImplCycleCollectionUnlink(aField.mFinishWhenEndedLoadingSrc);
   ImplCycleCollectionUnlink(aField.mFinishWhenEndedAttrStream);
 }
@@ -911,10 +965,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLMediaElement::MediaElementTrackSource)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
     HTMLMediaElement::MediaElementTrackSource, MediaStreamTrackSource)
   tmp->Destroy();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCapturedTrack)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCapturedTrackSource)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
     HTMLMediaElement::MediaElementTrackSource, MediaStreamTrackSource)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCapturedTrack)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCapturedTrackSource)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -1985,6 +2041,13 @@ void HTMLMediaElement::SetSrcObject(DOMMediaStream& aValue) {
 }
 
 void HTMLMediaElement::SetSrcObject(DOMMediaStream* aValue) {
+  for (auto& outputStream : mOutputStreams) {
+    if (aValue == outputStream.mStream) {
+      ReportToConsole(nsIScriptError::warningFlag,
+                      "MediaElementStreamCaptureCycle");
+      return;
+    }
+  }
   mSrcAttrStream = aValue;
   UpdateAudioChannelPlayingState();
   DoLoad();
@@ -3326,6 +3389,17 @@ void HTMLMediaElement::SetCapturedOutputStreamsEnabled(bool aEnabled) {
   }
 }
 
+HTMLMediaElement::OutputMuteState HTMLMediaElement::OutputTracksMuted() {
+  return mPaused || mReadyState <= HAVE_CURRENT_DATA ? OutputMuteState::Muted
+                                                     : OutputMuteState::Unmuted;
+}
+
+void HTMLMediaElement::UpdateOutputTracksMuting() {
+  for (auto& entry : mOutputTrackSources) {
+    entry.GetData()->SetMutedByElement(OutputTracksMuted());
+  }
+}
+
 void HTMLMediaElement::AddOutputTrackSourceToOutputStream(
     MediaElementTrackSource* aSource, OutputMediaStream& aOutputStream,
     AddTrackMode aMode) {
@@ -3344,12 +3418,16 @@ void HTMLMediaElement::AddOutputTrackSourceToOutputStream(
 
   RefPtr<MediaStreamTrack> domTrack;
   if (aSource->Track()->mType == MediaSegment::AUDIO) {
-    domTrack = new AudioStreamTrack(aOutputStream.mStream->GetParentObject(),
-                                    aSource->Track(), aSource);
+    domTrack = new AudioStreamTrack(
+        aOutputStream.mStream->GetParentObject(), aSource->Track(), aSource,
+        MediaStreamTrackState::Live, aSource->Muted());
   } else {
-    domTrack = new VideoStreamTrack(aOutputStream.mStream->GetParentObject(),
-                                    aSource->Track(), aSource);
+    domTrack = new VideoStreamTrack(
+        aOutputStream.mStream->GetParentObject(), aSource->Track(), aSource,
+        MediaStreamTrackState::Live, aSource->Muted());
   }
+
+  aOutputStream.mLiveTracks.AppendElement(domTrack);
 
   switch (aMode) {
     case AddTrackMode::ASYNC:
@@ -3438,6 +3516,27 @@ void HTMLMediaElement::UpdateOutputTrackSources() {
         NewRunnableMethod("MediaElementTrackSource::OverrideEnded", source,
                           &MediaElementTrackSource::OverrideEnded));
 
+    // Remove the track from the MediaStream after it ended.
+    for (OutputMediaStream& ms : mOutputStreams) {
+      if (source->Track()->mType == MediaSegment::VIDEO &&
+          ms.mCapturingAudioOnly) {
+        continue;
+      }
+      DebugOnly<size_t> length = ms.mLiveTracks.Length();
+      ms.mLiveTracks.RemoveElementsBy(
+          [&](const RefPtr<MediaStreamTrack>& aTrack) {
+            if (&aTrack->GetSource() != source) {
+              return false;
+            }
+            mMainThreadEventTarget->Dispatch(
+                NewRunnableMethod<RefPtr<MediaStreamTrack>>(
+                    "DOMMediaStream::RemoveTrackInternal", ms.mStream,
+                    &DOMMediaStream::RemoveTrackInternal, aTrack));
+            return true;
+          });
+      MOZ_ASSERT(ms.mLiveTracks.Length() == length - 1);
+    }
+
     mOutputTrackSources.Remove(id);
   }
 
@@ -3503,7 +3602,8 @@ void HTMLMediaElement::UpdateOutputTrackSources() {
       if (!principal || IsCORSSameOrigin()) {
         principal = NodePrincipal();
       }
-      source = MakeAndAddRef<MediaElementTrackSource>(track, principal);
+      source = MakeAndAddRef<MediaElementTrackSource>(
+          mMainThreadEventTarget, track, principal, OutputTracksMuted());
       mDecoder->AddOutputTrack(track);
     } else if (mSrcStream) {
       MediaStreamTrack* inputTrack;
@@ -3523,8 +3623,9 @@ void HTMLMediaElement::UpdateOutputTrackSources() {
 
       track = inputTrack->Graph()->CreateForwardedInputTrack(type);
       RefPtr<MediaInputPort> port = inputTrack->ForwardTrackContentsTo(track);
-      source = MakeAndAddRef<MediaElementTrackSource>(&inputTrack->GetSource(),
-                                                      track, port);
+      source = MakeAndAddRef<MediaElementTrackSource>(
+          mMainThreadEventTarget, inputTrack, &inputTrack->GetSource(), track,
+          port, OutputTracksMuted());
 
       // Track is muted initially, so we don't leak data if it's added while
       // paused and an MTG iteration passes before the mute comes into effect.
@@ -3931,7 +4032,7 @@ HTMLMediaElement::HTMLMediaElement(
       mTracksCaptured(nullptr, "HTMLMediaElement::mTracksCaptured"),
       mErrorSink(new ErrorSink(this)),
       mAudioChannelWrapper(new AudioChannelAgentCallback(this)),
-      mSink(MakePair(nsString(), RefPtr<AudioDeviceInfo>())),
+      mSink(std::pair(nsString(), RefPtr<AudioDeviceInfo>())),
       mShowPoster(IsVideo()) {
   MOZ_ASSERT(mMainThreadEventTarget);
   MOZ_ASSERT(mAbstractMainThread);
@@ -3955,6 +4056,8 @@ void HTMLMediaElement::Init() {
   DecoderDoctorLogger::LogConstruction(this);
 
   mWatchManager.Watch(mPaused, &HTMLMediaElement::UpdateWakeLock);
+  mWatchManager.Watch(mPaused, &HTMLMediaElement::UpdateOutputTracksMuting);
+  mWatchManager.Watch(mReadyState, &HTMLMediaElement::UpdateOutputTracksMuting);
 
   mWatchManager.Watch(mTracksCaptured,
                       &HTMLMediaElement::UpdateOutputTrackSources);
@@ -4823,7 +4926,7 @@ nsresult HTMLMediaElement::SetupDecoder(DecoderType* aDecoder,
 
   rv = FinishDecoderSetup(aDecoder);
   // Only ChannelMediaDecoder supports resource cloning.
-  if (IsSame<DecoderType, ChannelMediaDecoder>::value && NS_SUCCEEDED(rv)) {
+  if (std::is_same_v<DecoderType, ChannelMediaDecoder> && NS_SUCCEEDED(rv)) {
     AddMediaElementToURITable();
     NS_ASSERTION(
         MediaElementTableCount(this, mLoadingSrc) == 1,
@@ -4915,9 +5018,9 @@ nsresult HTMLMediaElement::FinishDecoderSetup(MediaDecoder* aDecoder) {
   NotifyDecoderPrincipalChanged();
 
   // Set sink device if we have one. Otherwise the default is used.
-  if (mSink.second()) {
+  if (mSink.second) {
     mDecoder
-        ->SetSink(mSink.second())
+        ->SetSink(mSink.second)
 #ifdef DEBUG
         ->Then(mAbstractMainThread, __func__,
                [](const GenericPromise::ResolveOrRejectValue& aValue) {
@@ -4994,7 +5097,7 @@ void HTMLMediaElement::UpdateSrcMediaStreamPlaying(uint32_t aFlags) {
       mMediaStreamRenderer->Start();
     }
 
-    if (mSink.second()) {
+    if (mSink.second) {
       NS_WARNING(
           "setSinkId() when playing a MediaStream is not supported yet and "
           "will be ignored");
@@ -7484,7 +7587,7 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
     return nullptr;
   }
 
-  if (mSink.first().Equals(aSinkId)) {
+  if (mSink.first.Equals(aSinkId)) {
     promise->MaybeResolveWithUndefined();
     return promise.forget();
   }
@@ -7525,7 +7628,7 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
              [promise, self = RefPtr<HTMLMediaElement>(this),
               sinkId](const SinkInfoPromise::ResolveOrRejectValue& aValue) {
                if (aValue.IsResolve()) {
-                 self->mSink = MakePair(sinkId, aValue.ResolveValue());
+                 self->mSink = std::pair(sinkId, aValue.ResolveValue());
                  promise->MaybeResolveWithUndefined();
                } else {
                  switch (aValue.RejectValue()) {

@@ -6,6 +6,7 @@
 
 #include "nsSimpleEnumerator.h"
 
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
 

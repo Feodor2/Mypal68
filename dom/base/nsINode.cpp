@@ -394,7 +394,7 @@ nsIContent* nsINode::GetTextEditorRootContent(TextEditor** aTextEditor) {
   if (aTextEditor) {
     *aTextEditor = nullptr;
   }
-  for (auto* element : InclusiveAncestorsOfType<nsGenericHTMLElement>(*this)) {
+  for (auto* element : InclusiveAncestorsOfType<nsGenericHTMLElement>()) {
     RefPtr<TextEditor> textEditor = element->GetTextEditorInternal();
     if (!textEditor) {
       continue;
@@ -832,7 +832,7 @@ void nsINode::Normalize() {
   }
 
   // We're relying on mozAutoSubtreeModified to keep the doc alive here.
-  Document* doc = OwnerDoc();
+  RefPtr<Document> doc = OwnerDoc();
 
   // Batch possible DOMSubtreeModified events.
   mozAutoSubtreeModified subtree(doc, nullptr);
@@ -842,10 +842,11 @@ void nsINode::Normalize() {
   bool hasRemoveListeners = nsContentUtils::HasMutationListeners(
       doc, NS_EVENT_BITS_MUTATION_NODEREMOVED);
   if (hasRemoveListeners) {
-    for (uint32_t i = 0; i < nodes.Length(); ++i) {
-      nsINode* parentNode = nodes[i]->GetParentNode();
-      if (parentNode) {  // Node may have already been removed.
-        nsContentUtils::MaybeFireNodeRemoved(nodes[i], parentNode);
+    for (nsCOMPtr<nsIContent>& node : nodes) {
+      // Node may have already been removed.
+      if (nsCOMPtr<nsINode> parentNode = node->GetParentNode()) {
+        // TODO: Bug 1622253
+        nsContentUtils::MaybeFireNodeRemoved(MOZ_KnownLive(node), parentNode);
       }
     }
   }
@@ -924,7 +925,7 @@ void nsINode::LookupPrefix(const nsAString& aNamespaceURI, nsAString& aPrefix) {
     // Trace up the content parent chain looking for the namespace
     // declaration that defines the aNamespaceURI namespace. Once found,
     // return the prefix (i.e. the attribute localName).
-    for (Element* element : InclusiveAncestorsOfType<Element>(*nsElement)) {
+    for (Element* element : nsElement->InclusiveAncestorsOfType<Element>()) {
       uint32_t attrCount = element->GetAttrCount();
 
       for (uint32_t i = 0; i < attrCount; ++i) {
@@ -2042,6 +2043,53 @@ void nsINode::Append(const Sequence<OwningNodeOrString>& aNodes,
   AppendChild(*node, aRv);
 }
 
+// https://dom.spec.whatwg.org/#dom-parentnode-replacechildren
+void nsINode::ReplaceChildren(const Sequence<OwningNodeOrString>& aNodes,
+                              ErrorResult& aRv) {
+  nsCOMPtr<Document> doc = OwnerDoc();
+  nsCOMPtr<nsINode> node = ConvertNodesOrStringsIntoNode(aNodes, doc, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+
+  EnsurePreInsertionValidity(*node, nullptr, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+
+  // Batch possible DOMSubtreeModified events.
+  mozAutoSubtreeModified subtree(OwnerDoc(), nullptr);
+
+  if (nsContentUtils::HasMutationListeners(
+          OwnerDoc(), NS_EVENT_BITS_MUTATION_NODEREMOVED)) {
+    FireNodeRemovedForChildren();
+    if (node) {
+      if (node->NodeType() == DOCUMENT_FRAGMENT_NODE) {
+        node->FireNodeRemovedForChildren();
+      } else if (nsCOMPtr<nsINode> parent = node->GetParentNode()) {
+        nsContentUtils::MaybeFireNodeRemoved(node, parent);
+      }
+    }
+  }
+
+  // Needed when used in combination with contenteditable (maybe)
+  mozAutoDocUpdate updateBatch(doc, true);
+
+  nsAutoMutationBatch mb(this, true, true);
+
+  // The code above explicitly dispatched DOMNodeRemoved events if needed.
+  nsAutoScriptBlockerSuppressNodeRemoved scriptBlocker;
+
+  // Replace all with node within this.
+  while (mFirstChild) {
+    RemoveChildNode(mFirstChild, true);
+  }
+  mb.RemovalDone();
+
+  AppendChild(*node, aRv);
+  mb.NodesAdded();
+}
+
 void nsINode::RemoveChildNode(nsIContent* aKid, bool aNotify) {
   // NOTE: This function must not trigger any calls to
   // Document::GetRootElement() calls until *after* it has removed aKid from
@@ -2372,8 +2420,7 @@ nsINode* nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
 
     // If the new node already has a parent, fire for removing from old
     // parent
-    nsINode* oldParent = aNewChild->GetParentNode();
-    if (oldParent) {
+    if (nsCOMPtr<nsINode> oldParent = aNewChild->GetParentNode()) {
       nsContentUtils::MaybeFireNodeRemoved(aNewChild, oldParent);
     }
 
@@ -2609,10 +2656,14 @@ nsINode* nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
    */
   nsINode* result = aReplace ? aRefChild : aNewChild;
   if (nodeType == DOCUMENT_FRAGMENT_NODE) {
-    if (!aReplace) {
-      mb.Init(this, true, true);
-    }
     nsAutoMutationBatch* mutationBatch = nsAutoMutationBatch::GetCurrentBatch();
+    if (mutationBatch && mutationBatch != &mb) {
+      mutationBatch = nullptr;
+    } else if (!aReplace) {
+      mb.Init(this, true, true);
+      mutationBatch = nsAutoMutationBatch::GetCurrentBatch();
+    }
+
     if (mutationBatch) {
       mutationBatch->RemovalDone();
       mutationBatch->SetPrevSibling(
@@ -2945,7 +2996,7 @@ JSObject* nsINode::WrapObject(JSContext* aCx,
   JS::Rooted<JSObject*> obj(aCx, WrapNode(aCx, aGivenProto));
   if (obj && ChromeOnlyAccess()) {
     MOZ_RELEASE_ASSERT(
-        JS::GetNonCCWObjectGlobal(obj) == xpc::UnprivilegedJunkScope() ||
+        xpc::IsUnprivilegedJunkScope(JS::GetNonCCWObjectGlobal(obj)) ||
         xpc::IsInUAWidgetScope(obj) || xpc::AccessCheck::isChrome(obj));
   }
   return obj;
@@ -3391,6 +3442,21 @@ DocGroup* nsINode::GetDocGroup() const { return OwnerDoc()->GetDocGroup(); }
 
 nsINode* nsINode::GetFlattenedTreeParentNodeNonInline() const {
   return GetFlattenedTreeParentNode();
+}
+
+void nsINode::FireNodeRemovedForChildren() {
+  Document* doc = OwnerDoc();
+  // Optimize the common case
+  if (!nsContentUtils::HasMutationListeners(
+          doc, NS_EVENT_BITS_MUTATION_NODEREMOVED)) {
+    return;
+  }
+
+  nsCOMPtr<nsINode> child;
+  for (child = GetFirstChild(); child && child->GetParentNode() == this;
+       child = child->GetNextSibling()) {
+    nsContentUtils::MaybeFireNodeRemoved(child, this);
+  }
 }
 
 NS_IMPL_ISUPPORTS(nsNodeWeakReference, nsIWeakReference)

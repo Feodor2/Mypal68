@@ -71,6 +71,8 @@ inline bool IsSpaceCharacter(char aChar) {
          aChar == '\f';
 }
 class AccessibleNode;
+template <typename T>
+class AncestorsOfTypeIterator;
 struct BoxQuadOptions;
 struct ConvertCoordinateOptions;
 class DocGroup;
@@ -82,6 +84,12 @@ class DOMQuad;
 class DOMRectReadOnly;
 class Element;
 class EventHandlerNonNull;
+template <typename T>
+class FlatTreeAncestorsOfTypeIterator;
+template <typename T>
+class InclusiveAncestorsOfTypeIterator;
+template <typename T>
+class InclusiveFlatTreeAncestorsOfTypeIterator;
 class MutationObservers;
 template <typename T>
 class Optional;
@@ -1093,6 +1101,28 @@ class nsINode : public mozilla::dom::EventTarget {
     }
   }
 
+  /**
+   * Helper methods to access ancestor node(s) of type T.
+   * The implementations of the methods are in mozilla/dom/AncestorIterator.h.
+   */
+  template <typename T>
+  inline mozilla::dom::AncestorsOfTypeIterator<T> AncestorsOfType() const;
+
+  template <typename T>
+  inline mozilla::dom::InclusiveAncestorsOfTypeIterator<T>
+  InclusiveAncestorsOfType() const;
+
+  template <typename T>
+  inline mozilla::dom::FlatTreeAncestorsOfTypeIterator<T>
+  FlatTreeAncestorsOfType() const;
+
+  template <typename T>
+  inline mozilla::dom::InclusiveFlatTreeAncestorsOfTypeIterator<T>
+  InclusiveFlatTreeAncestorsOfType() const;
+
+  template <typename T>
+  T* FirstAncestorOfType() const;
+
  private:
   /**
    * Walks aNode, its attributes and, if aDeep is true, its descendant nodes.
@@ -1390,7 +1420,8 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   Document* GetOwnerDocument() const;
 
-  void Normalize();
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Normalize();
 
   /**
    * Get the base URI for any relative URIs within this piece of
@@ -1494,6 +1525,12 @@ class nsINode : public mozilla::dom::EventTarget {
   bool Contains(const nsINode* aOther) const;
 
   bool UnoptimizableCCNode() const;
+
+  /**
+   * Fire a DOMNodeRemoved mutation event for all children of this node
+   * TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireNodeRemovedForChildren();
 
  private:
   mozilla::dom::SVGUseElement* DoGetContainingSVGUseShadowHost() const;
@@ -1915,7 +1952,9 @@ class nsINode : public mozilla::dom::EventTarget {
                         mozilla::ErrorResult& aError) {
     return ReplaceOrInsertBefore(true, &aNode, &aChild, aError);
   }
-  nsINode* RemoveChild(nsINode& aChild, mozilla::ErrorResult& aError);
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsINode* RemoveChild(
+      nsINode& aChild, mozilla::ErrorResult& aError);
   already_AddRefed<nsINode> CloneNode(bool aDeep, mozilla::ErrorResult& aError);
   bool IsSameNode(nsINode* aNode);
   bool IsEqualNode(nsINode* aNode);
@@ -1971,6 +2010,8 @@ class nsINode : public mozilla::dom::EventTarget {
                                   ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void Append(const Sequence<OwningNodeOrString>& aNodes,
                                  ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void ReplaceChildren(
+      const Sequence<OwningNodeOrString>& aNodes, ErrorResult& aRv);
 
   void GetBoxQuads(const BoxQuadOptions& aOptions,
                    nsTArray<RefPtr<DOMQuad>>& aResult, CallerType aCallerType,
@@ -2066,9 +2107,10 @@ class nsINode : public mozilla::dom::EventTarget {
   void EnsurePreInsertionValidity2(bool aReplace, nsINode& aNewChild,
                                    nsINode* aRefChild,
                                    mozilla::ErrorResult& aError);
-  nsINode* ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
-                                 nsINode* aRefChild,
-                                 mozilla::ErrorResult& aError);
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsINode* ReplaceOrInsertBefore(
+      bool aReplace, nsINode* aNewChild, nsINode* aRefChild,
+      mozilla::ErrorResult& aError);
 
   /**
    * Returns the Element that should be used for resolving namespaces

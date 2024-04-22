@@ -11,15 +11,17 @@
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/TimeStamp.h"
 #  include "mozilla/UniquePtr.h"
-#  include "nsAutoPtr.h"
 #  include "nsCOMPtr.h"
 #  include "nsThreadUtils.h"
-#  include "soundtouch/SoundTouchFactory.h"
 #  include "WavDumper.h"
 
 #  if defined(XP_WIN)
 #    include "mozilla/audio/AudioNotificationReceiver.h"
 #  endif
+
+namespace soundtouch {
+class MOZ_EXPORT SoundTouch;
+}
 
 namespace mozilla {
 
@@ -83,7 +85,7 @@ class AudioClock {
   // True if the we are timestretching, false if we are resampling.
   bool mPreservesPitch;
   // The history of frames sent to the audio engine in each DataCallback.
-  const nsAutoPtr<FrameHistory> mFrameHistory;
+  const UniquePtr<FrameHistory> mFrameHistory;
 };
 
 /*

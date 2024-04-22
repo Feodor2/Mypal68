@@ -117,11 +117,6 @@ class FragmentOrElement : public nsIContent {
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_INHERITED(
       FragmentOrElement, nsIContent)
 
-  /**
-   * Fire a DOMNodeRemoved mutation event for all children of this node
-   */
-  void FireNodeRemovedForChildren();
-
   static void ClearContentUnbinder();
   static bool CanSkip(nsINode* aNode, bool aRemovingAllowed);
   static bool CanSkipInCC(nsINode* aNode);

@@ -106,6 +106,7 @@ interface RTCPeerConnection : EventTarget  {
   readonly attribute boolean? canTrickleIceCandidates;
   readonly attribute RTCIceGatheringState iceGatheringState;
   readonly attribute RTCIceConnectionState iceConnectionState;
+  void restartIce ();
   [Pref="media.peerconnection.identity.enabled"]
   readonly attribute Promise<RTCIdentityAssertion> peerIdentity;
   [Pref="media.peerconnection.identity.enabled"]
@@ -144,6 +145,7 @@ interface RTCPeerConnection : EventTarget  {
   void mozInsertAudioLevelForContributingSource(RTCRtpReceiver receiver,
                                                 unsigned long source,
                                                 DOMHighResTimeStamp timestamp,
+                                                unsigned long rtpTimestamp,
                                                 boolean hasLevel,
                                                 byte level);
   [ChromeOnly]

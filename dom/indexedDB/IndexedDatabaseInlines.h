@@ -46,7 +46,7 @@ inline StructuredCloneFileChild::StructuredCloneFileChild(
 }
 
 inline StructuredCloneFileParent::StructuredCloneFileParent(
-    FileType aType, RefPtr<indexedDB::FileInfo> aFileInfo)
+    FileType aType, SafeRefPtr<indexedDB::FileInfo> aFileInfo)
     : StructuredCloneFileBase{aType}, mContents{Some(std::move(aFileInfo))} {
   MOZ_ASSERT(**mContents);
   MOZ_COUNT_CTOR(StructuredCloneFileParent);
@@ -73,9 +73,9 @@ inline StructuredCloneFileParent::~StructuredCloneFileParent() {
   MOZ_COUNT_DTOR(StructuredCloneFileParent);
 }
 
-inline RefPtr<indexedDB::FileInfo> StructuredCloneFileParent::FileInfoPtr()
+inline SafeRefPtr<indexedDB::FileInfo> StructuredCloneFileParent::FileInfoPtr()
     const {
-  return **mContents;
+  return (*mContents)->clonePtr();
 }
 
 inline RefPtr<dom::Blob> StructuredCloneFileChild::BlobPtr() const {

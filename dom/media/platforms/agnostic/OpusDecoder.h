@@ -7,7 +7,6 @@
 #  include "PlatformDecoderModule.h"
 
 #  include "mozilla/Maybe.h"
-#  include "nsAutoPtr.h"
 #  include "nsTArray.h"
 
 struct OpusMSDecoder;
@@ -52,7 +51,7 @@ class OpusDataDecoder : public MediaDataDecoder,
   const RefPtr<TaskQueue> mTaskQueue;
 
   // Opus decoder state
-  nsAutoPtr<OpusParser> mOpusParser;
+  UniquePtr<OpusParser> mOpusParser;
   OpusMSDecoder* mOpusDecoder;
 
   uint16_t mSkip;  // Samples left to trim before playback.

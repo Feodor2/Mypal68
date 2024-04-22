@@ -8,6 +8,8 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
 #include "mozilla/dom/RemoteObjectProxy.h"
+#include "js/friend/WindowProxy.h"  // js::IsWindowProxy
+#include "js/Object.h"              // JS::GetClass
 #include "js/Proxy.h"
 #include "js/RootingAPI.h"
 #include "js/Wrapper.h"
@@ -17,7 +19,7 @@
 
 #ifdef DEBUG
 static bool IsLocation(JSObject* obj) {
-  return strcmp(js::GetObjectClass(obj)->name, "Location") == 0;
+  return strcmp(JS::GetClass(obj)->name, "Location") == 0;
 }
 #endif  // DEBUG
 
@@ -397,6 +399,14 @@ bool MaybeCrossOriginObject<Base>::getPrototypeIfOrdinary(
 }
 
 template <typename Base>
+bool MaybeCrossOriginObject<Base>::setImmutablePrototype(
+    JSContext* cx, JS::Handle<JSObject*> proxy, bool* succeeded) const {
+  // We just want to disallow this.
+  *succeeded = false;
+  return true;
+}
+
+template <typename Base>
 bool MaybeCrossOriginObject<Base>::isExtensible(JSContext* cx,
                                                 JS::Handle<JSObject*> proxy,
                                                 bool* extensible) const {
@@ -469,14 +479,26 @@ bool MaybeCrossOriginObject<Base>::hasInstance(JSContext* cx,
     return js::ReportIsNotFunction(cx, val);
   }
 
-  // Safe to enter the realm of "proxy" and do the normal thing of looking up
-  // @@hasInstance, etc.
-  JSAutoRealm ar(cx, proxy);
-  JS::Rooted<JS::Value> val(cx, v);
-  if (!MaybeWrapValue(cx, &val)) {
+  // We need to wrap `proxy` into our compartment or enter proxy's realm
+  // and wrap `v` into proxy's compartment because at this point `v` and `proxy`
+  // might no longer be same-compartment. One solution is to enter the realm of
+  // `proxy` and look up @@hasInstance there. However, that will lead to
+  // incorrect error reporting because the mechanism for reporting the "not a
+  // function" exception only works correctly if we are in the realm of the
+  // script that encountered the instanceof expression. Thus, we don't want to
+  // switch realms and will wrap `proxy` into our current compartment and lookup
+  // @@hasInstance. Note that accesses to get @@hasInstance on `proxy` after it
+  // is wrapped in the `cx` compartment will still work because `cx` and `proxy`
+  // are same-origin.
+  JS::Rooted<JSObject*> proxyWrap(cx, proxy);
+  if (!MaybeWrapObject(cx, &proxyWrap)) {
     return false;
   }
-  return JS::InstanceofOperator(cx, proxy, val, bp);
+  // We are not calling BaseProxyHandler::hasInstance here because it expects
+  // `proxy` to be passed as the object. However, `proxy`, as a
+  // MaybeCrossOriginObject, may not be in current cx->realm() and we may now
+  // have a cross-compartment wrapper for `proxy`.
+  return JS::InstanceofOperator(cx, proxyWrap, v, bp);
 }
 
 // Force instantiations of the out-of-line template methods we need.

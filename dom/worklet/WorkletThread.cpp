@@ -11,6 +11,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/ThreadEventQueue.h"
+#include "js/Exception.h"
 
 namespace mozilla {
 namespace dom {
@@ -126,7 +127,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 
     JSContext* cx = Context();
 
-    js::SetPreserveWrapperCallback(cx, PreserveWrapper);
+    js::SetPreserveWrapperCallbacks(cx, PreserveWrapper, HasReleasedWrapper);
     JS_InitDestroyPrincipalsCallback(cx, WorkletPrincipals::Destroy);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     JS_SetFutexCanWait(cx);
@@ -184,16 +185,17 @@ void WorkletJSContext::ReportError(JSErrorReport* aReport,
   RefPtr<AsyncErrorReporter> reporter = new AsyncErrorReporter(xpcReport);
 
   JSContext* cx = Context();
-  JS::Rooted<JS::Value> exn(cx);
-  if (JS_GetPendingException(cx, &exn)) {
-    JS::Rooted<JSObject*> exnStack(cx, JS::GetPendingExceptionStack(cx));
-    JS_ClearPendingException(cx);
-    JS::Rooted<JSObject*> stack(cx);
-    JS::Rooted<JSObject*> stackGlobal(cx);
-    xpc::FindExceptionStackForConsoleReport(nullptr, exn, exnStack, &stack,
-                                            &stackGlobal);
-    if (stack) {
-      reporter->SerializeStack(cx, stack);
+  if (JS_IsExceptionPending(cx)) {
+    JS::ExceptionStack exnStack(cx);
+    if (JS::StealPendingExceptionStack(cx, &exnStack)) {
+      JS::Rooted<JSObject*> stack(cx);
+      JS::Rooted<JSObject*> stackGlobal(cx);
+      xpc::FindExceptionStackForConsoleReport(nullptr, exnStack.exception(),
+                                              exnStack.stack(), &stack,
+                                              &stackGlobal);
+      if (stack) {
+        reporter->SerializeStack(cx, stack);
+      }
     }
   }
 
@@ -306,7 +308,38 @@ WorkletThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t aFlags) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-/* static */
+static bool DispatchToEventLoop(void* aClosure,
+                                JS::Dispatchable* aDispatchable) {
+  // This callback may execute either on the worklet thread or a random
+  // JS-internal helper thread.
+
+  // See comment at JS::InitDispatchToEventLoop() below for how we know the
+  // thread is alive.
+  nsIThread* thread = static_cast<nsIThread*>(aClosure);
+
+  nsresult rv = thread->Dispatch(
+      NS_NewRunnableFunction(
+          "WorkletThread::DispatchToEventLoop",
+          [aDispatchable]() {
+            CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
+            if (!ccjscx) {
+              return;
+            }
+
+            WorkletJSContext* wjc = ccjscx->GetAsWorkletJSContext();
+            if (!wjc) {
+              return;
+            }
+
+            aDispatchable->run(wjc->Context(),
+                               JS::Dispatchable::NotShuttingDown);
+          }),
+      NS_DISPATCH_NORMAL);
+
+  return NS_SUCCEEDED(rv);
+}
+
+// static
 void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
   if (ccjscx) {
@@ -328,6 +361,11 @@ void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
   // FIXME: JS_AddInterruptCallback
   // FIXME: JS::SetCTypesActivityCallback
   // FIXME: JS_SetGCZeal
+
+  // A thread lives strictly longer than its JSRuntime so we can safely
+  // store a raw pointer as the callback's closure argument on the JSRuntime.
+  JS::InitDispatchToEventLoop(context->Context(), DispatchToEventLoop,
+                              NS_GetCurrentThread());
 
   JS_SetNativeStackQuota(context->Context(),
                          WORKLET_CONTEXT_NATIVE_STACK_LIMIT);

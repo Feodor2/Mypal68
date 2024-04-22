@@ -151,8 +151,8 @@ class WaveShaperNodeEngine final : public AudioNodeEngine {
 
   enum Parameters { TYPE };
 
-  void SetRawArrayData(nsTArray<float>& aCurve) override {
-    mCurve.SwapElements(aCurve);
+  void SetRawArrayData(nsTArray<float>&& aCurve) override {
+    mCurve = std::move(aCurve);
   }
 
   void SetInt32Parameter(uint32_t aIndex, int32_t aValue) override {
@@ -362,7 +362,7 @@ void WaveShaperNode::SendCurveToTrack() {
   MOZ_ASSERT(ns, "Why don't we have a track here?");
 
   nsTArray<float> copyCurve(mCurve);
-  ns->SetRawArrayData(copyCurve);
+  ns->SetRawArrayData(std::move(copyCurve));
 }
 
 void WaveShaperNode::GetCurve(JSContext* aCx,

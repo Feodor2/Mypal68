@@ -37,6 +37,17 @@ AudioWorkletGlobalScope::AudioWorkletGlobalScope(AudioWorkletImpl* aImpl)
 bool AudioWorkletGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
   JS::RealmOptions options;
+
+  // The SharedArrayBuffer global constructor property should not be present in
+  // a fresh global object when shared memory objects aren't allowed (because
+  // COOP/COEP support isn't enabled, or because COOP/COEP don't act to isolate
+  // this worklet to a separate process).  However, it's not presently clear how
+  // to do this, so for now assign a backwards-compatible value.  Bug 1630877
+  // will fix this.
+  bool defineSharedArrayBufferConstructor = true;
+  options.creationOptions().setDefineSharedArrayBufferConstructor(
+      defineSharedArrayBufferConstructor);
+
   JS::AutoHoldPrincipals principals(aCx, new WorkletPrincipals(mImpl));
   return AudioWorkletGlobalScope_Binding::Wrap(
       aCx, this, this, options, principals.get(), true, aReflector);
@@ -271,18 +282,14 @@ AudioParamDescriptorMap AudioWorkletGlobalScope::DescriptorsFromJS(
 }
 
 bool AudioWorkletGlobalScope::ConstructProcessor(
-    const nsAString& aName, NotNull<StructuredCloneHolder*> aSerializedOptions,
+    JSContext* aCx, const nsAString& aName,
+    NotNull<StructuredCloneHolder*> aSerializedOptions,
     UniqueMessagePortId& aPortIdentifier,
     JS::MutableHandle<JSObject*> aRetProcessor) {
   /**
    * See
    * https://webaudio.github.io/web-audio-api/#AudioWorkletProcessor-instantiation
    */
-  AutoJSAPI jsapi;
-  if (NS_WARN_IF(!jsapi.Init(this))) {
-    return false;
-  }
-  JSContext* cx = jsapi.cx();
   ErrorResult rv;
   /**
    * 4. Let deserializedPort be the result of
@@ -290,16 +297,16 @@ bool AudioWorkletGlobalScope::ConstructProcessor(
    */
   RefPtr<MessagePort> deserializedPort =
       MessagePort::Create(this, aPortIdentifier, rv);
-  if (NS_WARN_IF(rv.MaybeSetPendingException(cx))) {
+  if (NS_WARN_IF(rv.MaybeSetPendingException(aCx))) {
     return false;
   }
   /**
    * 5. Let deserializedOptions be the result of
    *    StructuredDeserialize(serializedOptions, the current Realm).
    */
-  JS::Rooted<JS::Value> deserializedOptions(cx);
-  aSerializedOptions->Read(this, cx, &deserializedOptions, rv);
-  if (rv.MaybeSetPendingException(cx)) {
+  JS::Rooted<JS::Value> deserializedOptions(aCx);
+  aSerializedOptions->Read(this, aCx, &deserializedOptions, rv);
+  if (rv.MaybeSetPendingException(aCx)) {
     return false;
   }
   /**
@@ -325,18 +332,17 @@ bool AudioWorkletGlobalScope::ConstructProcessor(
    */
   // The options were an object before serialization and so will be an object
   // if deserialization succeeded above.  toObject() asserts.
-  JS::Rooted<JSObject*> options(cx, &deserializedOptions.toObject());
+  JS::Rooted<JSObject*> options(aCx, &deserializedOptions.toObject());
   RefPtr<AudioWorkletProcessor> processor = processorCtor->Construct(
       options, rv, "AudioWorkletProcessor construction",
-      CallbackFunction::eReportExceptions);
+      CallbackFunction::eRethrowExceptions);
   // https://github.com/WebAudio/web-audio-api/issues/2096
   mPortForProcessor = nullptr;
-  if (rv.Failed()) {
-    rv.SuppressException();  // already reported
+  if (rv.MaybeSetPendingException(aCx)) {
     return false;
   }
-  JS::Rooted<JS::Value> processorVal(cx);
-  if (NS_WARN_IF(!ToJSValue(cx, processor, &processorVal))) {
+  JS::Rooted<JS::Value> processorVal(aCx);
+  if (NS_WARN_IF(!ToJSValue(aCx, processor, &processorVal))) {
     return false;
   }
   MOZ_ASSERT(processorVal.isObject());

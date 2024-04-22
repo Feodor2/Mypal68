@@ -86,6 +86,7 @@ class nsScriptErrorBase : public nsIScriptError {
   mozilla::Atomic<bool> mInitializedOnMainThread;
   bool mIsFromPrivateWindow;
   bool mIsFromChromeContext;
+  bool mIsPromiseRejection;
 };
 
 class nsScriptError final : public nsScriptErrorBase {
@@ -99,11 +100,15 @@ class nsScriptError final : public nsScriptErrorBase {
 
 class nsScriptErrorWithStack : public nsScriptErrorBase {
  public:
-  nsScriptErrorWithStack(JS::HandleObject aStack,
+  nsScriptErrorWithStack(JS::Handle<mozilla::Maybe<JS::Value>> aException,
+                         JS::HandleObject aStack,
                          JS::HandleObject aStackGlobal);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsScriptErrorWithStack)
+
+  NS_IMETHOD GetHasException(bool*) override;
+  NS_IMETHOD GetException(JS::MutableHandleValue) override;
 
   NS_IMETHOD GetStack(JS::MutableHandleValue) override;
   NS_IMETHOD GetStackGlobal(JS::MutableHandleValue) override;
@@ -111,11 +116,25 @@ class nsScriptErrorWithStack : public nsScriptErrorBase {
 
  private:
   virtual ~nsScriptErrorWithStack();
+
+  // The "exception" value.
+  JS::Heap<JS::Value> mException;
+  bool mHasException;
+
   // Complete stackframe where the error happened.
   // Must be a (possibly wrapped) SavedFrame object.
   JS::Heap<JSObject*> mStack;
   // Global object that must be same-compartment with mStack.
   JS::Heap<JSObject*> mStackGlobal;
 };
+
+// Creates either nsScriptErrorWithStack or nsScriptError,
+// depending on whether |aStack| or |aException| is passed.
+// Additionally when the first (optional) |win| argument is
+// provided this function makes sure that the GlobalWindow
+// isn't already dying to prevent leaks.
+already_AddRefed<nsScriptErrorBase> CreateScriptError(
+    nsGlobalWindowInner* win, JS::Handle<mozilla::Maybe<JS::Value>> aException,
+    JS::HandleObject aStack, JS::HandleObject aStackGlobal);
 
 #endif /* mozilla_dom_nsScriptError_h */

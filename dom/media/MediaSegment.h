@@ -53,6 +53,24 @@ const TrackTime TRACK_TIME_MAX = MEDIA_TIME_MAX;
 typedef MediaTime GraphTime;
 const GraphTime GRAPH_TIME_MAX = MEDIA_TIME_MAX;
 
+/* Time conversion helper functions */
+inline TrackTicks RateConvertTicksRoundDown(TrackRate aOutRate,
+                                            TrackRate aInRate,
+                                            TrackTicks aTicks) {
+  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
+  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
+  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
+  return (aTicks * aOutRate) / aInRate;
+}
+
+inline TrackTicks RateConvertTicksRoundUp(TrackRate aOutRate, TrackRate aInRate,
+                                          TrackTicks aTicks) {
+  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
+  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
+  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
+  return (aTicks * aOutRate + aInRate - 1) / aInRate;
+}
+
 /**
  * The number of chunks allocated by default for a MediaSegment.
  * Appending more chunks than this will cause further allocations.
@@ -245,7 +263,9 @@ class MediaSegmentBase : public MediaSegment {
       return;
     }
 
-    if (mChunks[0].IsNull()) {
+    if (!aNewEnd) {
+      Clear();
+    } else if (mChunks[0].IsNull()) {
       TrackTime extraToKeep = aNewEnd - mChunks[0].GetDuration();
       if (extraToKeep < 0) {
         // reduce the size of the Null, get rid of everthing else
@@ -353,8 +373,8 @@ class MediaSegmentBase : public MediaSegment {
   explicit MediaSegmentBase(Type aType) : MediaSegment(aType), mChunks() {}
 
   MediaSegmentBase(MediaSegmentBase&& aSegment)
-      : MediaSegment(std::move(aSegment)), mChunks() {
-    mChunks.SwapElements(aSegment.mChunks);
+      : MediaSegment(std::move(aSegment)),
+        mChunks(std::move(aSegment.mChunks)) {
     MOZ_ASSERT(mChunks.Capacity() >= DEFAULT_SEGMENT_CAPACITY,
                "Capacity must be retained in self after swap");
     MOZ_ASSERT(aSegment.mChunks.Capacity() >= DEFAULT_SEGMENT_CAPACITY,
@@ -448,19 +468,17 @@ class MediaSegmentBase : public MediaSegment {
     NS_ASSERTION(aKeep >= 0, "Can't keep negative duration");
     TrackTime t = aKeep;
     uint32_t i;
-    for (i = aStartIndex; i < mChunks.Length(); ++i) {
+    for (i = aStartIndex; i < mChunks.Length() && t; ++i) {
       Chunk* c = &mChunks[i];
       if (c->GetDuration() > t) {
         c->SliceTo(0, t);
         break;
       }
       t -= c->GetDuration();
-      if (t == 0) {
-        break;
-      }
     }
-    if (i + 1 < mChunks.Length()) {
-      mChunks.RemoveElementsAt(i + 1, mChunks.Length() - (i + 1));
+    // At this point `i` is already advanced due to last check in the loop.
+    if (i < mChunks.Length()) {
+      mChunks.RemoveElementsAt(i, mChunks.Length() - i);
     }
     MOZ_ASSERT(mChunks.Capacity() >= DEFAULT_SEGMENT_CAPACITY,
                "Capacity must be retained after removing chunks");

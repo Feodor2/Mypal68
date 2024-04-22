@@ -3,54 +3,45 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPParent.h"
-#include "mozilla/Logging.h"
-#include "nsComponentManagerUtils.h"
-#include "nsComponentManagerUtils.h"
-#include "nsPrintfCString.h"
-#include "nsThreadUtils.h"
-#include "nsIRunnable.h"
-#include "nsIWritablePropertyBag2.h"
+
+#include "CDMStorageIdProvider.h"
+#include "ChromiumCDMAdapter.h"
+#include "GMPContentParent.h"
+#include "GMPLog.h"
+#include "GMPTimerParent.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/dom/WidevineCDMManifestBinding.h"
 #include "mozilla/ipc/CrashReporterHost.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/SSE.h"
-#include "mozilla/SyncRunnable.h"
-#include "mozilla/Unused.h"
-#include "nsIObserverService.h"
-#include "GMPTimerParent.h"
-#include "runnable_utils.h"
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxInfo.h"
 #endif
-#include "CDMStorageIdProvider.h"
-#include "GMPContentParent.h"
+#include "mozilla/SSE.h"
+#include "mozilla/SyncRunnable.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/Unused.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIRunnable.h"
+#include "nsIObserverService.h"
+#include "nsIWritablePropertyBag2.h"
+#include "nsPrintfCString.h"
+#include "nsThreadUtils.h"
+#include "runnable_utils.h"
 #include "VideoUtils.h"
+#ifdef XP_WIN
+#  include "WMFDecoderModule.h"
+#endif
 
 using mozilla::ipc::GeckoChildProcessHost;
 
 using CrashReporter::AnnotationTable;
 using CrashReporter::GetIDFromMinidump;
 
-#include "mozilla/Telemetry.h"
-
-#ifdef XP_WIN
-#  include "WMFDecoderModule.h"
-#endif
-
-#include "mozilla/dom/WidevineCDMManifestBinding.h"
-#include "ChromiumCDMAdapter.h"
-
 namespace mozilla {
 
-#undef LOG
-#undef LOGD
-
-extern LogModule* GetGMPLog();
-#define LOG(level, x, ...) MOZ_LOG(GetGMPLog(), (level), (x, ##__VA_ARGS__))
-#define LOGD(x, ...)                                                  \
-  LOG(mozilla::LogLevel::Debug, "GMPParent[%p|childPid=%d] " x, this, \
-      mChildPid, ##__VA_ARGS__)
+#define GMP_PARENT_LOG_DEBUG(x, ...) \
+  GMP_LOG_DEBUG("GMPParent[%p|childPid=%d] " x, this, mChildPid, ##__VA_ARGS__)
 
 #ifdef __CLASS__
 #  undef __CLASS__
@@ -71,11 +62,11 @@ GMPParent::GMPParent(AbstractThread* aMainThread)
       mHoldingSelfRef(false),
       mMainThread(aMainThread) {
   mPluginId = GeckoChildProcessHost::GetUniqueID();
-  LOGD("GMPParent ctor id=%u", mPluginId);
+  GMP_PARENT_LOG_DEBUG("GMPParent ctor id=%u", mPluginId);
 }
 
 GMPParent::~GMPParent() {
-  LOGD("GMPParent dtor id=%u", mPluginId);
+  GMP_PARENT_LOG_DEBUG("GMPParent dtor id=%u", mPluginId);
   MOZ_ASSERT(!mProcess);
 }
 
@@ -89,7 +80,7 @@ void GMPParent::CloneFrom(const GMPParent* aOther) {
   mVersion = aOther->mVersion;
   mDescription = aOther->mDescription;
   mDisplayName = aOther->mDisplayName;
-#ifdef XP_WIN
+#if defined(XP_WIN) || defined(XP_LINUX)
   mLibs = aOther->mLibs;
 #endif
   for (const GMPCapability& cap : aOther->mCapabilities) {
@@ -119,8 +110,8 @@ RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return GenericPromise::CreateAndReject(rv, __func__);
   }
-  LOGD("%s: for %s", __FUNCTION__,
-       NS_LossyConvertUTF16toASCII(parentLeafName).get());
+  GMP_PARENT_LOG_DEBUG("%s: for %s", __FUNCTION__,
+                       NS_LossyConvertUTF16toASCII(parentLeafName).get());
 
   MOZ_ASSERT(parentLeafName.Length() > 4);
   mName = Substring(parentLeafName, 4);
@@ -143,29 +134,33 @@ nsresult GMPParent::LoadProcess() {
   if (NS_WARN_IF(NS_FAILED(mDirectory->GetPath(path)))) {
     return NS_ERROR_FAILURE;
   }
-  LOGD("%s: for %s", __FUNCTION__, NS_ConvertUTF16toUTF8(path).get());
+  GMP_PARENT_LOG_DEBUG("%s: for %s", __FUNCTION__,
+                       NS_ConvertUTF16toUTF8(path).get());
 
   if (!mProcess) {
     mProcess = new GMPProcessParent(NS_ConvertUTF16toUTF8(path).get());
     if (!mProcess->Launch(30 * 1000)) {
-      LOGD("%s: Failed to launch new child process", __FUNCTION__);
+      GMP_PARENT_LOG_DEBUG("%s: Failed to launch new child process",
+                           __FUNCTION__);
       mProcess->Delete();
       mProcess = nullptr;
       return NS_ERROR_FAILURE;
     }
 
     mChildPid = base::GetProcId(mProcess->GetChildProcessHandle());
-    LOGD("%s: Launched new child process", __FUNCTION__);
+    GMP_PARENT_LOG_DEBUG("%s: Launched new child process", __FUNCTION__);
 
     bool opened = Open(mProcess->TakeChannel(),
                        base::GetProcId(mProcess->GetChildProcessHandle()));
     if (!opened) {
-      LOGD("%s: Failed to open channel to new child process", __FUNCTION__);
+      GMP_PARENT_LOG_DEBUG("%s: Failed to open channel to new child process",
+                           __FUNCTION__);
       mProcess->Delete();
       mProcess = nullptr;
       return NS_ERROR_FAILURE;
     }
-    LOGD("%s: Opened channel to new child process", __FUNCTION__);
+    GMP_PARENT_LOG_DEBUG("%s: Opened channel to new child process",
+                         __FUNCTION__);
 
     // ComputeStorageId may return empty string, we leave the error handling to
     // CDM. The CDM will reject the promise once we provide a empty string of
@@ -173,29 +168,32 @@ nsresult GMPParent::LoadProcess() {
     bool ok =
         SendProvideStorageId(CDMStorageIdProvider::ComputeStorageId(mNodeId));
     if (!ok) {
-      LOGD("%s: Failed to send storage id to child process", __FUNCTION__);
+      GMP_PARENT_LOG_DEBUG("%s: Failed to send storage id to child process",
+                           __FUNCTION__);
       return NS_ERROR_FAILURE;
     }
-    LOGD("%s: Sent storage id to child process", __FUNCTION__);
+    GMP_PARENT_LOG_DEBUG("%s: Sent storage id to child process", __FUNCTION__);
 
-#ifdef XP_WIN
+#if defined(XP_WIN) || defined(XP_LINUX)
     if (!mLibs.IsEmpty()) {
       bool ok = SendPreloadLibs(mLibs);
       if (!ok) {
-        LOGD("%s: Failed to send preload-libs to child process", __FUNCTION__);
+        GMP_PARENT_LOG_DEBUG("%s: Failed to send preload-libs to child process",
+                             __FUNCTION__);
         return NS_ERROR_FAILURE;
       }
-      LOGD("%s: Sent preload-libs ('%s') to child process", __FUNCTION__,
-           mLibs.get());
+      GMP_PARENT_LOG_DEBUG("%s: Sent preload-libs ('%s') to child process",
+                           __FUNCTION__, mLibs.get());
     }
 #endif
 
     // Intr call to block initialization on plugin load.
     if (!CallStartPlugin(mAdapter)) {
-      LOGD("%s: Failed to send start to child process", __FUNCTION__);
+      GMP_PARENT_LOG_DEBUG("%s: Failed to send start to child process",
+                           __FUNCTION__);
       return NS_ERROR_FAILURE;
     }
-    LOGD("%s: Sent StartPlugin to child process", __FUNCTION__);
+    GMP_PARENT_LOG_DEBUG("%s: Sent StartPlugin to child process", __FUNCTION__);
   }
 
   mState = GMPStateLoaded;
@@ -220,7 +218,7 @@ mozilla::ipc::IPCResult GMPParent::RecvPGMPContentChildDestroyed() {
 
 void GMPParent::CloseIfUnused() {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
-  LOGD("%s", __FUNCTION__);
+  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
 
   if ((mDeleteProcessOnlyOnUnload || mState == GMPStateLoaded ||
        mState == GMPStateUnloading) &&
@@ -240,7 +238,7 @@ void GMPParent::CloseIfUnused() {
 }
 
 void GMPParent::CloseActive(bool aDieWhenUnloaded) {
-  LOGD("%s: state %d", __FUNCTION__, mState);
+  GMP_PARENT_LOG_DEBUG("%s: state %d", __FUNCTION__, mState);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   if (aDieWhenUnloaded) {
@@ -263,7 +261,7 @@ void GMPParent::MarkForDeletion() {
 bool GMPParent::IsMarkedForDeletion() { return mIsBlockingDeletion; }
 
 void GMPParent::Shutdown() {
-  LOGD("%s", __FUNCTION__);
+  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   if (mAbnormalShutdownInProgress) {
@@ -313,7 +311,8 @@ void GMPParent::ChildTerminated() {
     // PluginTerminated removes the GMP from the GMPService.
     // On shutdown we can have this case where it is already been
     // removed so there is no harm in not trying to remove it again.
-    LOGD("%s::%s: GMPEventTarget() returned nullptr.", __CLASS__, __FUNCTION__);
+    GMP_PARENT_LOG_DEBUG("%s::%s: GMPEventTarget() returned nullptr.",
+                         __CLASS__, __FUNCTION__);
   } else {
     gmpEventTarget->Dispatch(
         NewRunnableMethod<RefPtr<GMPParent>>(
@@ -324,7 +323,7 @@ void GMPParent::ChildTerminated() {
 }
 
 void GMPParent::DeleteProcess() {
-  LOGD("%s", __FUNCTION__);
+  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
 
   if (mState != GMPStateClosing) {
     // Don't Close() twice!
@@ -334,7 +333,7 @@ void GMPParent::DeleteProcess() {
   }
   mProcess->Delete(NewRunnableMethod("gmp::GMPParent::ChildTerminated", this,
                                      &GMPParent::ChildTerminated));
-  LOGD("%s: Shut down process", __FUNCTION__);
+  GMP_PARENT_LOG_DEBUG("%s: Shut down process", __FUNCTION__);
   mProcess = nullptr;
   mState = GMPStateNotLoaded;
 
@@ -459,7 +458,7 @@ static void GMPNotifyObservers(const uint32_t aPluginID,
 }
 
 void GMPParent::ActorDestroy(ActorDestroyReason aWhy) {
-  LOGD("%s: (%d)", __FUNCTION__, (int)aWhy);
+  GMP_PARENT_LOG_DEBUG("%s: (%d)", __FUNCTION__, (int)aWhy);
 
   if (AbnormalShutdown == aWhy) {
     Telemetry::Accumulate(Telemetry::SUBPROCESS_ABNORMAL_ABORT,
@@ -585,7 +584,7 @@ RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
-#ifdef XP_WIN
+#if defined(XP_WIN) || defined(XP_LINUX)
   // "Libraries" field is optional.
   ReadInfoField(parser, NS_LITERAL_CSTRING("libraries"), mLibs);
 #endif
@@ -659,7 +658,8 @@ static bool IsCDMAPISupported(
 
 RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
     const nsAString& aJSON) {
-  LOGD("%s: for '%s'", __FUNCTION__, NS_LossyConvertUTF16toASCII(aJSON).get());
+  GMP_PARENT_LOG_DEBUG("%s: for '%s'", __FUNCTION__,
+                       NS_LossyConvertUTF16toASCII(aJSON).get());
 
   MOZ_ASSERT(NS_IsMainThread());
   mozilla::dom::WidevineCDMManifest m;
@@ -682,7 +682,7 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
         " but this system can't sandbox it; not loading.",
         mDisplayName.get());
     printf_stderr("%s\n", msg.get());
-    LOGD("%s", msg.get());
+    GMP_PARENT_LOG_DEBUG("%s", msg.get());
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 #endif
@@ -695,7 +695,10 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
     kEMEKeySystem.AssignLiteral(EME_KEY_SYSTEM_CLEARKEY);
 #if XP_WIN
     mLibs = NS_LITERAL_CSTRING(
-        "dxva2.dll, msmpeg2vdec.dll, evr.dll, mfh264dec.dll, mfplat.dll");
+        "dxva2.dll, evr.dll, freebl3.dll, mfh264dec.dll, mfplat.dll, "
+        "msmpeg2vdec.dll, nss3.dll, softokn3.dll");
+#elif XP_LINUX
+    mLibs = NS_LITERAL_CSTRING("libfreeblpriv3.so, libsoftokn3.so");
 #endif
   } else if (mDisplayName.EqualsASCII("WidevineCdm")) {
     kEMEKeySystem.AssignLiteral(EME_KEY_SYSTEM_WIDEVINE);
@@ -780,8 +783,8 @@ const nsCString& GMPParent::GetVersion() const { return mVersion; }
 uint32_t GMPParent::GetPluginId() const { return mPluginId; }
 
 void GMPParent::ResolveGetContentParentPromises() {
-  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises;
-  promises.SwapElements(mGetContentParentPromises);
+  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises =
+      std::move(mGetContentParentPromises);
   MOZ_ASSERT(mGetContentParentPromises.IsEmpty());
   RefPtr<GMPContentParent::CloseBlocker> blocker(
       new GMPContentParent::CloseBlocker(mGMPContentParent));
@@ -817,8 +820,8 @@ bool GMPParent::OpenPGMPContent() {
 }
 
 void GMPParent::RejectGetContentParentPromises() {
-  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises;
-  promises.SwapElements(mGetContentParentPromises);
+  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises =
+      std::move(mGetContentParentPromises);
   MOZ_ASSERT(mGetContentParentPromises.IsEmpty());
   for (auto& holder : promises) {
     holder->Reject(NS_ERROR_FAILURE, __func__);
@@ -827,7 +830,7 @@ void GMPParent::RejectGetContentParentPromises() {
 
 void GMPParent::GetGMPContentParent(
     UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>&& aPromiseHolder) {
-  LOGD("%s %p", __FUNCTION__, this);
+  GMP_PARENT_LOG_DEBUG("%s %p", __FUNCTION__, this);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   if (mGMPContentParent) {
@@ -877,5 +880,5 @@ nsString GMPParent::GetPluginBaseName() const {
 }  // namespace gmp
 }  // namespace mozilla
 
-#undef LOG
-#undef LOGD
+#undef GMP_PARENT_LOG_DEBUG
+#undef __CLASS__

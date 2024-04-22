@@ -9,6 +9,7 @@
 #include "nsIScriptGlobalObject.h"
 
 #include "jsapi.h"
+#include "js/Object.h"  // JS::GetClass
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
@@ -58,10 +59,10 @@ using namespace mozilla::ipc;
 
 class FileManagerInfo {
  public:
-  MOZ_MUST_USE RefPtr<FileManager> GetFileManager(
+  MOZ_MUST_USE SafeRefPtr<FileManager> GetFileManager(
       PersistenceType aPersistenceType, const nsAString& aName) const;
 
-  void AddFileManager(FileManager* aFileManager);
+  void AddFileManager(SafeRefPtr<FileManager> aFileManager);
 
   bool HasFileManagers() const {
     AssertIsOnIOThread();
@@ -79,16 +80,17 @@ class FileManagerInfo {
                                       const nsAString& aName);
 
  private:
-  nsTArray<RefPtr<FileManager> >& GetArray(PersistenceType aPersistenceType);
+  nsTArray<SafeRefPtr<FileManager> >& GetArray(
+      PersistenceType aPersistenceType);
 
-  const nsTArray<RefPtr<FileManager> >& GetImmutableArray(
+  const nsTArray<SafeRefPtr<FileManager> >& GetImmutableArray(
       PersistenceType aPersistenceType) const {
     return const_cast<FileManagerInfo*>(this)->GetArray(aPersistenceType);
   }
 
-  nsTArray<RefPtr<FileManager> > mPersistentStorageFileManagers;
-  nsTArray<RefPtr<FileManager> > mTemporaryStorageFileManagers;
-  nsTArray<RefPtr<FileManager> > mDefaultStorageFileManagers;
+  nsTArray<SafeRefPtr<FileManager> > mPersistentStorageFileManagers;
+  nsTArray<SafeRefPtr<FileManager> > mTemporaryStorageFileManagers;
+  nsTArray<SafeRefPtr<FileManager> > mDefaultStorageFileManagers;
 };
 
 }  // namespace indexedDB
@@ -378,9 +380,8 @@ void IndexedDatabaseManager::Destroy() {
 
 // static
 nsresult IndexedDatabaseManager::CommonPostHandleEvent(
-    EventChainPostVisitor& aVisitor, IDBFactory* aFactory) {
+    EventChainPostVisitor& aVisitor, const IDBFactory& aFactory) {
   MOZ_ASSERT(aVisitor.mDOMEvent);
-  MOZ_ASSERT(aFactory);
 
   if (!gPrefErrorEventToSelfError) {
     return NS_OK;
@@ -473,8 +474,8 @@ nsresult IndexedDatabaseManager::CommonPostHandleEvent(
 
   // Log the error to the error console.
   ScriptErrorHelper::Dump(errorName, init.mFilename, init.mLineno, init.mColno,
-                          nsIScriptError::errorFlag, aFactory->IsChrome(),
-                          aFactory->InnerWindowID());
+                          nsIScriptError::errorFlag, aFactory.IsChrome(),
+                          aFactory.InnerWindowID());
 
   return NS_OK;
 }
@@ -482,9 +483,9 @@ nsresult IndexedDatabaseManager::CommonPostHandleEvent(
 // static
 bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(js::GetObjectClass(JS::CurrentGlobalOrNull(aCx))->flags &
-                 JSCLASS_DOM_GLOBAL,
-             "Passed object is not a global object!");
+  MOZ_ASSERT(
+      JS::GetClass(JS::CurrentGlobalOrNull(aCx))->flags & JSCLASS_DOM_GLOBAL,
+      "Passed object is not a global object!");
 
   // We need to ensure that the manager has been created already here so that we
   // load preferences that may control which properties are exposed.
@@ -515,7 +516,7 @@ bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
 bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
                                              JS::Handle<JSObject*> aGlobal) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(js::GetObjectClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
+  MOZ_ASSERT(JS::GetClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
              "Passed object is not a global object!");
 
   nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
@@ -523,11 +524,12 @@ bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
     return false;
   }
 
-  RefPtr<IDBFactory> factory;
-  if (NS_FAILED(
-          IDBFactory::CreateForMainThreadJS(global, getter_AddRefs(factory)))) {
+  auto res = IDBFactory::CreateForMainThreadJS(global);
+  if (res.isErr()) {
     return false;
   }
+
+  auto factory = res.unwrap();
 
   MOZ_ASSERT(factory, "This should never fail for chrome!");
 
@@ -678,7 +680,7 @@ void IndexedDatabaseManager::ClearBackgroundActor() {
   mBackgroundActor = nullptr;
 }
 
-RefPtr<FileManager> IndexedDatabaseManager::GetFileManager(
+SafeRefPtr<FileManager> IndexedDatabaseManager::GetFileManager(
     PersistenceType aPersistenceType, const nsACString& aOrigin,
     const nsAString& aDatabaseName) {
   AssertIsOnIOThread();
@@ -691,7 +693,8 @@ RefPtr<FileManager> IndexedDatabaseManager::GetFileManager(
   return info->GetFileManager(aPersistenceType, aDatabaseName);
 }
 
-void IndexedDatabaseManager::AddFileManager(FileManager* aFileManager) {
+void IndexedDatabaseManager::AddFileManager(
+    SafeRefPtr<FileManager> aFileManager) {
   AssertIsOnIOThread();
   NS_ASSERTION(aFileManager, "Null file manager!");
 
@@ -701,7 +704,7 @@ void IndexedDatabaseManager::AddFileManager(FileManager* aFileManager) {
     mFileManagerInfos.Put(aFileManager->Origin(), info);
   }
 
-  info->AddFileManager(aFileManager);
+  info->AddFileManager(std::move(aFileManager));
 }
 
 void IndexedDatabaseManager::InvalidateAllFileManagers() {
@@ -854,7 +857,7 @@ const nsCString& IndexedDatabaseManager::GetLocale() {
   return idbManager->mLocale;
 }
 
-RefPtr<FileManager> FileManagerInfo::GetFileManager(
+SafeRefPtr<FileManager> FileManagerInfo::GetFileManager(
     PersistenceType aPersistenceType, const nsAString& aName) const {
   AssertIsOnIOThread();
 
@@ -864,17 +867,17 @@ RefPtr<FileManager> FileManagerInfo::GetFileManager(
   const auto foundIt =
       std::find_if(managers.cbegin(), end, DatabaseNameMatchPredicate(&aName));
 
-  return foundIt != end ? *foundIt : nullptr;
+  return foundIt != end ? foundIt->clonePtr() : nullptr;
 }
 
-void FileManagerInfo::AddFileManager(FileManager* aFileManager) {
+void FileManagerInfo::AddFileManager(SafeRefPtr<FileManager> aFileManager) {
   AssertIsOnIOThread();
 
-  nsTArray<RefPtr<FileManager> >& managers = GetArray(aFileManager->Type());
+  nsTArray<SafeRefPtr<FileManager> >& managers = GetArray(aFileManager->Type());
 
   NS_ASSERTION(!managers.Contains(aFileManager), "Adding more than once?!");
 
-  managers.AppendElement(aFileManager);
+  managers.AppendElement(std::move(aFileManager));
 }
 
 void FileManagerInfo::InvalidateAllFileManagers() const {
@@ -899,7 +902,7 @@ void FileManagerInfo::InvalidateAndRemoveFileManagers(
     PersistenceType aPersistenceType) {
   AssertIsOnIOThread();
 
-  nsTArray<RefPtr<FileManager> >& managers = GetArray(aPersistenceType);
+  nsTArray<SafeRefPtr<FileManager> >& managers = GetArray(aPersistenceType);
 
   for (uint32_t i = 0; i < managers.Length(); i++) {
     managers[i]->Invalidate();
@@ -923,7 +926,7 @@ void FileManagerInfo::InvalidateAndRemoveFileManager(
   }
 }
 
-nsTArray<RefPtr<FileManager> >& FileManagerInfo::GetArray(
+nsTArray<SafeRefPtr<FileManager> >& FileManagerInfo::GetArray(
     PersistenceType aPersistenceType) {
   switch (aPersistenceType) {
     case PERSISTENCE_TYPE_PERSISTENT:

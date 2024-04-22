@@ -164,71 +164,20 @@ typedef nsDataHashtable<nsUint64HashKey, BrowserChild*> BrowserChildMap;
 static BrowserChildMap* sBrowserChildren;
 StaticMutex sBrowserChildrenMutex;
 
-BrowserChildBase::BrowserChildBase() : mBrowserChildMessageManager(nullptr) {}
-
-BrowserChildBase::~BrowserChildBase() { mAnonymousGlobalScopes.Clear(); }
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(BrowserChildBase)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(BrowserChildBase)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowserChildMessageManager)
-  tmp->nsMessageManagerScriptExecutor::Unlink();
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWebBrowserChrome)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(BrowserChildBase)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowserChildMessageManager)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebBrowserChrome)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(BrowserChildBase)
-  tmp->nsMessageManagerScriptExecutor::Trace(aCallbacks, aClosure);
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserChildBase)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
-
-NS_IMPL_CYCLE_COLLECTING_ADDREF(BrowserChildBase)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(BrowserChildBase)
-
-already_AddRefed<Document> BrowserChildBase::GetTopLevelDocument() const {
+already_AddRefed<Document> BrowserChild::GetTopLevelDocument() const {
   nsCOMPtr<Document> doc;
   WebNavigation()->GetDocument(getter_AddRefs(doc));
   return doc.forget();
 }
 
-PresShell* BrowserChildBase::GetTopLevelPresShell() const {
+PresShell* BrowserChild::GetTopLevelPresShell() const {
   if (RefPtr<Document> doc = GetTopLevelDocument()) {
     return doc->GetPresShell();
   }
   return nullptr;
 }
 
-void BrowserChildBase::DispatchMessageManagerMessage(
-    const nsAString& aMessageName, const nsAString& aJSONData) {
-  AutoSafeJSContext cx;
-  JS::Rooted<JS::Value> json(cx, JS::NullValue());
-  dom::ipc::StructuredCloneData data;
-  if (JS_ParseJSON(cx, static_cast<const char16_t*>(aJSONData.BeginReading()),
-                   aJSONData.Length(), &json)) {
-    ErrorResult rv;
-    data.Write(cx, json, rv);
-    if (NS_WARN_IF(rv.Failed())) {
-      rv.SuppressException();
-      return;
-    }
-  }
-
-  RefPtr<BrowserChildMessageManager> kungFuDeathGrip(
-      mBrowserChildMessageManager);
-  RefPtr<nsFrameMessageManager> mm = kungFuDeathGrip->GetMessageManager();
-  mm->ReceiveMessage(static_cast<EventTarget*>(kungFuDeathGrip), nullptr,
-                     aMessageName, false, &data, nullptr, nullptr, nullptr,
-                     IgnoreErrors());
-}
-
-bool BrowserChildBase::UpdateFrameHandler(const RepaintRequest& aRequest) {
+bool BrowserChild::UpdateFrame(const RepaintRequest& aRequest) {
   MOZ_ASSERT(aRequest.GetScrollId() != ScrollableLayerGuid::NULL_SCROLL_ID);
 
   if (aRequest.IsRootContent()) {
@@ -249,7 +198,7 @@ bool BrowserChildBase::UpdateFrameHandler(const RepaintRequest& aRequest) {
   return true;
 }
 
-void BrowserChildBase::ProcessUpdateFrame(const RepaintRequest& aRequest) {
+void BrowserChild::ProcessUpdateFrame(const RepaintRequest& aRequest) {
   if (!mBrowserChildMessageManager) {
     return;
   }
@@ -360,6 +309,7 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
                            BrowsingContext* aBrowsingContext,
                            uint32_t aChromeFlags)
     : TabContext(aContext),
+      mBrowserChildMessageManager(nullptr),
       mTabGroup(aTabGroup),
       mManager(aManager),
       mBrowsingContext(aBrowsingContext),
@@ -644,20 +594,25 @@ void BrowserChild::UpdateFrameType() {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(BrowserChild)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(BrowserChild, BrowserChildBase)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(BrowserChild)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowserChildMessageManager)
+  tmp->nsMessageManagerScriptExecutor::Unlink();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWebBrowserChrome)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mStatusFilter)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mWebNav)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowsingContext)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(BrowserChild,
-                                                  BrowserChildBase)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(BrowserChild)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowserChildMessageManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebBrowserChrome)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStatusFilter)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebNav)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowsingContext)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(BrowserChild, BrowserChildBase)
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(BrowserChild)
+  tmp->nsMessageManagerScriptExecutor::Trace(aCallbacks, aClosure);
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserChild)
@@ -673,10 +628,11 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserChild)
   NS_INTERFACE_MAP_ENTRY(nsITooltipListener)
   NS_INTERFACE_MAP_ENTRY(nsIWebProgressListener)
   NS_INTERFACE_MAP_ENTRY(nsIWebProgressListener2)
-NS_INTERFACE_MAP_END_INHERITING(BrowserChildBase)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIBrowserChild)
+NS_INTERFACE_MAP_END
 
-NS_IMPL_ADDREF_INHERITED(BrowserChild, BrowserChildBase);
-NS_IMPL_RELEASE_INHERITED(BrowserChild, BrowserChildBase);
+NS_IMPL_CYCLE_COLLECTING_ADDREF(BrowserChild)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(BrowserChild)
 
 NS_IMETHODIMP
 BrowserChild::SetStatus(uint32_t aStatusType, const char16_t* aStatus) {
@@ -1026,6 +982,7 @@ void BrowserChild::ActorDestroy(ActorDestroyReason why) {
 }
 
 BrowserChild::~BrowserChild() {
+  mAnonymousGlobalScopes.Clear();
   if (sVisibleTabs) {
     sVisibleTabs->RemoveEntry(this);
     if (sVisibleTabs->IsEmpty()) {
@@ -1265,10 +1222,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvSetIsUnderHiddenEmbedderElement(
     presShell->SetIsUnderHiddenEmbedderElement(aIsUnderHiddenEmbedderElement);
   }
   return IPC_OK();
-}
-
-bool BrowserChild::UpdateFrame(const RepaintRequest& aRequest) {
-  return BrowserChildBase::UpdateFrameHandler(aRequest);
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvSuppressDisplayport(
@@ -3589,8 +3542,8 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
     locationChangeData->mayEnableCharacterEncodingMenu() =
         docShell->GetMayEnableCharacterEncodingMenu();
     // 1543077
-    //    locationChangeData->charsetAutodetected() =
-    //        docShell->GetCharsetAutodetected();
+    //locationChangeData->charsetAutodetected() =
+    //    docShell->GetCharsetAutodetected();
 
     locationChangeData->contentPrincipal() = document->NodePrincipal();
     locationChangeData->contentStoragePrincipal() =
@@ -3599,7 +3552,7 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
     locationChangeData->contentBlockingAllowListPrincipal() =
         document->GetContentBlockingAllowListPrincipal();
     // 1534681
-    //    locationChangeData->referrerInfo() = document->ReferrerInfo();
+    locationChangeData->referrerInfo() = document->ReferrerInfo();
     locationChangeData->isSyntheticDocument() = document->IsSyntheticDocument();
 
     if (nsCOMPtr<nsILoadGroup> loadGroup = document->GetDocumentLoadGroup()) {

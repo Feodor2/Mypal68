@@ -10,7 +10,6 @@
 #include "MediaData.h"
 #include "mozilla/ArrayUtils.h"
 #include "H264.h"
-#include "nsAutoPtr.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
 #include "VideoUtils.h"
@@ -52,6 +51,8 @@ AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig, TaskQueue* aTaskQueue,
       ,
       mIsFlushing(false),
       mMonitor("AppleVTDecoder"),
+      mPromise(&mMonitor),  // To ensure our PromiseHolder is only ever accessed
+                            // with the monitor held.
       mFormat(nullptr),
       mSession(nullptr),
       mIsHardwareAccelerated(false) {
@@ -59,9 +60,6 @@ AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig, TaskQueue* aTaskQueue,
   // TODO: Verify aConfig.mime_type.
   LOG("Creating AppleVTDecoder for %dx%d h.264 video", mDisplayWidth,
       mDisplayHeight);
-
-  // To ensure our PromiseHolder is only ever accessed with the monitor held.
-  mPromise.SetMonitor(&mMonitor);
 }
 
 AppleVTDecoder::~AppleVTDecoder() { MOZ_COUNT_DTOR(AppleVTDecoder); }
@@ -272,7 +270,7 @@ static void PlatformCallback(void* decompressionOutputRefCon,
   LOGEX(decoder, "AppleVideoDecoder %s status %d flags %d", __func__,
         static_cast<int>(status), flags);
 
-  nsAutoPtr<AppleVTDecoder::AppleFrameRef> frameRef(
+  UniquePtr<AppleVTDecoder::AppleFrameRef> frameRef(
       static_cast<AppleVTDecoder::AppleFrameRef*>(sourceFrameRefCon));
 
   // Validate our arguments.

@@ -180,8 +180,7 @@ void SMILTimedElement::RemoveInstanceTimes(InstanceTimeList& aArray,
       newArray.AppendElement(item);
     }
   }
-  aArray.Clear();
-  aArray.SwapElements(newArray);
+  aArray = std::move(newArray);
 }
 
 //----------------------------------------------------------------------
@@ -1416,8 +1415,7 @@ void SMILTimedElement::FilterIntervals() {
       filteredList.AppendElement(std::move(mOldIntervals[i]));
     }
   }
-  mOldIntervals.Clear();
-  mOldIntervals.SwapElements(filteredList);
+  mOldIntervals = std::move(filteredList);
 }
 
 namespace {

@@ -11,6 +11,7 @@
 #include "mozilla/Mutex.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "SafeRefPtr.h"
 
 namespace mozilla {
 
@@ -101,11 +102,11 @@ class IndexedDatabaseManager final {
 
   void ClearBackgroundActor();
 
-  MOZ_MUST_USE RefPtr<FileManager> GetFileManager(
+  MOZ_MUST_USE SafeRefPtr<FileManager> GetFileManager(
       PersistenceType aPersistenceType, const nsACString& aOrigin,
       const nsAString& aDatabaseName);
 
-  void AddFileManager(FileManager* aFileManager);
+  void AddFileManager(SafeRefPtr<FileManager> aFileManager);
 
   void InvalidateAllFileManagers();
 
@@ -130,7 +131,7 @@ class IndexedDatabaseManager final {
   static const nsCString& GetLocale();
 
   static nsresult CommonPostHandleEvent(EventChainPostVisitor& aVisitor,
-                                        IDBFactory* aFactory);
+                                        const IDBFactory& aFactory);
 
   static bool ResolveSandboxBinding(JSContext* aCx);
 

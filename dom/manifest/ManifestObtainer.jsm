@@ -23,7 +23,6 @@
  *
  * exported ManifestObtainer
  */
-/* globals Components, Task, PromiseMessage, XPCOMUtils, ManifestProcessor, BrowserUtils*/
 "use strict";
 
 const { PromiseMessage } = ChromeUtils.import(
@@ -39,16 +38,22 @@ var ManifestObtainer = {
    * Public interface for obtaining a web manifest from a XUL browser, to use
    * on the parent process.
    * @param  {XULBrowser} The browser to check for the manifest.
+   * @param {Object} aOptions
+   * @param {Boolean} aOptions.checkConformance If spec conformance messages should be collected.
+   *                                            Adds proprietary moz_* members to manifest.
    * @return {Promise<Object>} The processed manifest.
    */
-  async browserObtainManifest(aBrowser) {
+  async browserObtainManifest(
+    aBrowser,
+    aOptions = { checkConformance: false }
+  ) {
     if (!isXULBrowser(aBrowser)) {
       throw new TypeError("Invalid input. Expected XUL browser.");
     }
     const mm = aBrowser.messageManager;
     const {
       data: { success, result },
-    } = await PromiseMessage.send(mm, "DOM:ManifestObtainer:Obtain");
+    } = await PromiseMessage.send(mm, "DOM:ManifestObtainer:Obtain", aOptions);
     if (!success) {
       const error = toError(result);
       throw error;
@@ -57,15 +62,19 @@ var ManifestObtainer = {
   },
   /**
    * Public interface for obtaining a web manifest from a XUL browser.
-   * @param  {Window} The content Window from which to extract the manifest.
+   * @param {Window} aContent A content Window from which to extract the manifest.
+   * @param {Object} aOptions
+   * @param {Boolean} aOptions.checkConformance If spec conformance messages should be collected.
+   *                                            Adds proprietary moz_* members to manifest.
    * @return {Promise<Object>} The processed manifest.
    */
-  contentObtainManifest(aContent) {
+  contentObtainManifest(aContent, aOptions = { checkConformance: false }) {
     if (!aContent || isXULBrowser(aContent)) {
-      throw new TypeError("Invalid input. Expected a DOM Window.");
+      const err = new TypeError("Invalid input. Expected a DOM Window.");
+      return Promise.reject(err);
     }
     return fetchManifest(aContent).then(response =>
-      processResponse(response, aContent)
+      processResponse(response, aContent, aOptions)
     );
   },
 };
@@ -100,7 +109,7 @@ function isXULBrowser(aBrowser) {
  * @param {Window} aContentWindow The content window.
  * @return {Promise<Object>} The processed manifest.
  */
-async function processResponse(aResp, aContentWindow) {
+async function processResponse(aResp, aContentWindow, aOptions) {
   const badStatus = aResp.status < 200 || aResp.status >= 300;
   if (aResp.type === "error" || badStatus) {
     const msg = `Fetch error: ${aResp.status} - ${aResp.statusText} at ${
@@ -114,7 +123,8 @@ async function processResponse(aResp, aContentWindow) {
     manifestURL: aResp.url,
     docURL: aContentWindow.location.href,
   };
-  const manifest = ManifestProcessor.process(args);
+  const processingOptions = Object.assign({}, args, aOptions);
+  const manifest = ManifestProcessor.process(processingOptions);
   return manifest;
 }
 

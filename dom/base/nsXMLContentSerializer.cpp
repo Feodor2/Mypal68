@@ -430,7 +430,7 @@ void nsXMLContentSerializer::PopNameSpaceDeclsFor(nsIContent* aOwner) {
     if (mNameSpaceStack[index].mOwner != aOwner) {
       break;
     }
-    mNameSpaceStack.RemoveElementAt(index);
+    mNameSpaceStack.RemoveLastElement();
   }
 }
 

@@ -506,14 +506,14 @@ nsresult GetLocalStorageArchiveFile(const nsAString& aDirectoryPath,
   MOZ_ASSERT(!aDirectoryPath.IsEmpty());
   MOZ_ASSERT(aLsArchiveFile);
 
-  nsCOMPtr<nsIFile> lsArchiveFile;
-  nsresult rv =
-      NS_NewLocalFile(aDirectoryPath, false, getter_AddRefs(lsArchiveFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto lsArchiveFileOrErr = QM_NewLocalFile(aDirectoryPath);
+  if (NS_WARN_IF(lsArchiveFileOrErr.isErr())) {
+    return lsArchiveFileOrErr.unwrapErr();
   }
 
-  rv = lsArchiveFile->Append(NS_LITERAL_STRING(LS_ARCHIVE_FILE_NAME));
+  nsCOMPtr<nsIFile> lsArchiveFile = lsArchiveFileOrErr.unwrap();
+
+  nsresult rv = lsArchiveFile->Append(NS_LITERAL_STRING(LS_ARCHIVE_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -528,14 +528,15 @@ nsresult GetLocalStorageArchiveTmpFile(const nsAString& aDirectoryPath,
   MOZ_ASSERT(!aDirectoryPath.IsEmpty());
   MOZ_ASSERT(aLsArchiveTmpFile);
 
-  nsCOMPtr<nsIFile> lsArchiveTmpFile;
-  nsresult rv =
-      NS_NewLocalFile(aDirectoryPath, false, getter_AddRefs(lsArchiveTmpFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto lsArchiveTempFileOrErr = QM_NewLocalFile(aDirectoryPath);
+  if (NS_WARN_IF(lsArchiveTempFileOrErr.isErr())) {
+    return lsArchiveTempFileOrErr.unwrapErr();
   }
 
-  rv = lsArchiveTmpFile->Append(NS_LITERAL_STRING(LS_ARCHIVE_TMP_FILE_NAME));
+  nsCOMPtr<nsIFile> lsArchiveTmpFile = lsArchiveTempFileOrErr.unwrap();
+
+  nsresult rv =
+      lsArchiveTmpFile->Append(NS_LITERAL_STRING(LS_ARCHIVE_TMP_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -3906,14 +3907,19 @@ void QuotaManager::CollectPendingOriginsForListing(P aPredicate) {
 nsresult QuotaManager::Init(const nsAString& aBasePath) {
   mBasePath = aBasePath;
 
-  nsCOMPtr<nsIFile> baseDir;
-  nsresult rv = NS_NewLocalFile(aBasePath, false, getter_AddRefs(baseDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+#ifdef XP_WIN
+  CacheUseDOSDevicePathSyntaxPrefValue();
+#endif
+
+  auto baseDirOrErr = QM_NewLocalFile(aBasePath);
+  if (NS_WARN_IF(baseDirOrErr.isErr())) {
+    return baseDirOrErr.unwrapErr();
   }
 
-  rv = CloneStoragePath(baseDir, NS_LITERAL_STRING(INDEXEDDB_DIRECTORY_NAME),
-                        mIndexedDBPath);
+  nsCOMPtr<nsIFile> baseDir = baseDirOrErr.unwrap();
+
+  nsresult rv = CloneStoragePath(
+      baseDir, NS_LITERAL_STRING(INDEXEDDB_DIRECTORY_NAME), mIndexedDBPath);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -4738,9 +4744,12 @@ already_AddRefed<QuotaObject> QuotaManager::GetQuotaObject(
     *aFileSizeOut = 0;
   }
 
-  nsCOMPtr<nsIFile> file;
-  nsresult rv = NS_NewLocalFile(aPath, false, getter_AddRefs(file));
-  NS_ENSURE_SUCCESS(rv, nullptr);
+  auto fileOrErr = QM_NewLocalFile(aPath);
+  if (NS_WARN_IF(fileOrErr.isErr())) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIFile> file = fileOrErr.unwrap();
 
   return GetQuotaObject(aPersistenceType, aGroup, aOrigin, aClientType, file,
                         aFileSize, aFileSizeOut);
@@ -4813,15 +4822,17 @@ void QuotaManager::AbortOperationsForProcess(ContentParentId aContentParentId) {
 nsresult QuotaManager::GetDirectoryForOrigin(PersistenceType aPersistenceType,
                                              const nsACString& aASCIIOrigin,
                                              nsIFile** aDirectory) const {
-  nsCOMPtr<nsIFile> directory;
-  nsresult rv = NS_NewLocalFile(GetStoragePath(aPersistenceType), false,
-                                getter_AddRefs(directory));
-  NS_ENSURE_SUCCESS(rv, rv);
+  auto directoryOrErr = QM_NewLocalFile(GetStoragePath(aPersistenceType));
+  if (NS_WARN_IF(directoryOrErr.isErr())) {
+    return directoryOrErr.unwrapErr();
+  }
+
+  nsCOMPtr<nsIFile> directory = directoryOrErr.unwrap();
 
   nsAutoCString originSanitized(aASCIIOrigin);
   SanitizeOriginString(originSanitized);
 
-  rv = directory->Append(NS_ConvertASCIItoUTF16(originSanitized));
+  nsresult rv = directory->Append(NS_ConvertASCIItoUTF16(originSanitized));
   NS_ENSURE_SUCCESS(rv, rv);
 
   directory.forget(aDirectory);
@@ -5023,16 +5034,16 @@ nsresult QuotaManager::InitializeRepository(PersistenceType aPersistenceType) {
   MOZ_ASSERT(aPersistenceType == PERSISTENCE_TYPE_TEMPORARY ||
              aPersistenceType == PERSISTENCE_TYPE_DEFAULT);
 
-  nsCOMPtr<nsIFile> directory;
-  nsresult rv = NS_NewLocalFile(GetStoragePath(aPersistenceType), false,
-                                getter_AddRefs(directory));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  auto directoryOrErr = QM_NewLocalFile(GetStoragePath(aPersistenceType));
+  if (NS_WARN_IF(directoryOrErr.isErr())) {
     REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, Rep_NewLocalFile);
-    return rv;
+    return directoryOrErr.unwrapErr();
   }
 
+  nsCOMPtr<nsIFile> directory = directoryOrErr.unwrap();
+
   bool created;
-  rv = EnsureDirectory(directory, &created);
+  nsresult rv = EnsureDirectory(directory, &created);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, Rep_EnsureDirectory);
     return rv;
@@ -5220,8 +5231,7 @@ nsresult QuotaManager::InitializeOrigin(PersistenceType aPersistenceType,
     UsageInfo usageInfo;
     rv = mClients[clientType]->InitOrigin(aPersistenceType, aGroup, aOrigin,
                                           /* aCanceled */ Atomic<bool>(false),
-                                          trackQuota ? &usageInfo : nullptr,
-                                          /* aForGetUsage */ false);
+                                          trackQuota ? &usageInfo : nullptr);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       // error should have reported in InitOrigin
       RECORD_IN_NIGHTLY(statusKeeper, rv);
@@ -5274,10 +5284,12 @@ QuotaManager::UpgradeFromIndexedDBDirectoryToPersistentStorageDirectory(
     return NS_OK;
   }
 
-  nsCOMPtr<nsIFile> persistentStorageDir;
-  rv = NS_NewLocalFile(mStoragePath, false,
-                       getter_AddRefs(persistentStorageDir));
-  NS_ENSURE_SUCCESS(rv, rv);
+  auto persistentStorageDirOrErr = QM_NewLocalFile(mStoragePath);
+  if (NS_WARN_IF(persistentStorageDirOrErr.isErr())) {
+    return persistentStorageDirOrErr.unwrapErr();
+  }
+
+  nsCOMPtr<nsIFile> persistentStorageDir = persistentStorageDirOrErr.unwrap();
 
   rv = persistentStorageDir->Append(
       NS_LITERAL_STRING(PERSISTENT_DIRECTORY_NAME));
@@ -5332,12 +5344,12 @@ QuotaManager::UpgradeFromPersistentStorageDirectoryToDefaultStorageDirectory(
     return NS_OK;
   }
 
-  nsCOMPtr<nsIFile> defaultStorageDir;
-  rv = NS_NewLocalFile(mDefaultStoragePath, false,
-                       getter_AddRefs(defaultStorageDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto defaultStorageDirOrErr = QM_NewLocalFile(mDefaultStoragePath);
+  if (NS_WARN_IF(defaultStorageDirOrErr.isErr())) {
+    return defaultStorageDirOrErr.unwrapErr();
   }
+
+  nsCOMPtr<nsIFile> defaultStorageDir = defaultStorageDirOrErr.unwrap();
 
   bool exists;
   rv = defaultStorageDir->Exists(&exists);
@@ -5367,12 +5379,12 @@ QuotaManager::UpgradeFromPersistentStorageDirectoryToDefaultStorageDirectory(
   }
 
   // Upgrade metadata files for origin directories in temporary storage.
-  nsCOMPtr<nsIFile> temporaryStorageDir;
-  rv = NS_NewLocalFile(mTemporaryStoragePath, false,
-                       getter_AddRefs(temporaryStorageDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto temporaryStorageDirOrErr = QM_NewLocalFile(mTemporaryStoragePath);
+  if (NS_WARN_IF(temporaryStorageDirOrErr.isErr())) {
+    return temporaryStorageDirOrErr.unwrapErr();
   }
+
+  nsCOMPtr<nsIFile> temporaryStorageDir = temporaryStorageDirOrErr.unwrap();
 
   rv = temporaryStorageDir->Exists(&exists);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -5422,12 +5434,12 @@ nsresult QuotaManager::UpgradeStorage(const int32_t aOldVersion,
   nsresult rv;
 
   for (const PersistenceType persistenceType : kAllPersistenceTypes) {
-    nsCOMPtr<nsIFile> directory;
-    rv = NS_NewLocalFile(GetStoragePath(persistenceType), false,
-                         getter_AddRefs(directory));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto directoryOrErr = QM_NewLocalFile(GetStoragePath(persistenceType));
+    if (NS_WARN_IF(directoryOrErr.isErr())) {
+      return directoryOrErr.unwrapErr();
     }
+
+    nsCOMPtr<nsIFile> directory = directoryOrErr.unwrap();
 
     bool exists;
     rv = directory->Exists(&exists);
@@ -5699,15 +5711,15 @@ nsresult QuotaManager::MaybeRemoveLocalStorageData() {
 nsresult QuotaManager::MaybeRemoveLocalStorageDirectories() {
   AssertIsOnIOThread();
 
-  nsCOMPtr<nsIFile> defaultStorageDir;
-  nsresult rv = NS_NewLocalFile(mDefaultStoragePath, false,
-                                getter_AddRefs(defaultStorageDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto defaultStorageDirOrErr = QM_NewLocalFile(mDefaultStoragePath);
+  if (NS_WARN_IF(defaultStorageDirOrErr.isErr())) {
+    return defaultStorageDirOrErr.unwrapErr();
   }
 
+  nsCOMPtr<nsIFile> defaultStorageDir = defaultStorageDirOrErr.unwrap();
+
   bool exists;
-  rv = defaultStorageDir->Exists(&exists);
+  nsresult rv = defaultStorageDir->Exists(&exists);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -5852,11 +5864,12 @@ nsresult QuotaManager::CreateLocalStorageArchiveConnectionFromWebAppsStore(
   }
 
   // Get the web apps store file.
-  nsCOMPtr<nsIFile> webAppsStoreFile;
-  rv = NS_NewLocalFile(mBasePath, false, getter_AddRefs(webAppsStoreFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto webAppsStoreFileOrErr = QM_NewLocalFile(mBasePath);
+  if (NS_WARN_IF(webAppsStoreFileOrErr.isErr())) {
+    return webAppsStoreFileOrErr.unwrapErr();
   }
+
+  nsCOMPtr<nsIFile> webAppsStoreFile = webAppsStoreFileOrErr.unwrap();
 
   rv = webAppsStoreFile->Append(NS_LITERAL_STRING(WEB_APPS_STORE_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -5919,11 +5932,12 @@ nsresult QuotaManager::CreateLocalStorageArchiveConnectionFromWebAppsStore(
     // <profile>/webappsstore.sqlite to
     // <profile>/storage/ls-archive-tmp.sqlite
     // We use a "-tmp" postfix since we are not done yet.
-    nsCOMPtr<nsIFile> storageDir;
-    rv = NS_NewLocalFile(mStoragePath, false, getter_AddRefs(storageDir));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto storageDirOrErr = QM_NewLocalFile(mStoragePath);
+    if (NS_WARN_IF(storageDirOrErr.isErr())) {
+      return storageDirOrErr.unwrapErr();
     }
+
+    nsCOMPtr<nsIFile> storageDir = storageDirOrErr.unwrap();
 
     rv = webAppsStoreFile->CopyTo(storageDir,
                                   NS_LITERAL_STRING(LS_ARCHIVE_TMP_FILE_NAME));
@@ -5980,12 +5994,12 @@ nsresult QuotaManager::CreateLocalStorageArchiveConnectionFromWebAppsStore(
     // If webappsstore database is not useable, just create an empty archive.
 
     // Ensure the storage directory actually exists.
-    nsCOMPtr<nsIFile> storageDirectory;
-    rv = NS_NewLocalFile(GetStoragePath(), false,
-                         getter_AddRefs(storageDirectory));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto storageDirectoryOrErr = QM_NewLocalFile(GetStoragePath());
+    if (NS_WARN_IF(storageDirectoryOrErr.isErr())) {
+      return storageDirectoryOrErr.unwrapErr();
     }
+
+    nsCOMPtr<nsIFile> storageDirectory = storageDirectoryOrErr.unwrap();
 
     bool dummy;
     rv = EnsureDirectory(storageDirectory, &dummy);
@@ -6244,13 +6258,14 @@ nsresult QuotaManager::EnsureStorageIsInitialized() {
     return NS_OK;
   }
 
-  nsCOMPtr<nsIFile> storageFile;
-  nsresult rv = NS_NewLocalFile(mBasePath, false, getter_AddRefs(storageFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto storageFileOrErr = QM_NewLocalFile(mBasePath);
+  if (NS_WARN_IF(storageFileOrErr.isErr())) {
+    return storageFileOrErr.unwrapErr();
   }
 
-  rv = storageFile->Append(NS_LITERAL_STRING(STORAGE_FILE_NAME));
+  nsCOMPtr<nsIFile> storageFile = storageFileOrErr.unwrap();
+
+  nsresult rv = storageFile->Append(NS_LITERAL_STRING(STORAGE_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -6262,11 +6277,12 @@ nsresult QuotaManager::EnsureStorageIsInitialized() {
   }
 
   if (!exists) {
-    nsCOMPtr<nsIFile> indexedDBDir;
-    rv = NS_NewLocalFile(mIndexedDBPath, false, getter_AddRefs(indexedDBDir));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto indexedDBDirOrErr = QM_NewLocalFile(mIndexedDBPath);
+    if (NS_WARN_IF(indexedDBDirOrErr.isErr())) {
+      return indexedDBDirOrErr.unwrapErr();
     }
+
+    nsCOMPtr<nsIFile> indexedDBDir = indexedDBDirOrErr.unwrap();
 
     bool indexedDBDirExists;
     rv = indexedDBDir->Exists(&indexedDBDirExists);
@@ -6282,12 +6298,12 @@ nsresult QuotaManager::EnsureStorageIsInitialized() {
       }
     }
 
-    nsCOMPtr<nsIFile> persistentStorageDir;
-    rv = NS_NewLocalFile(mStoragePath, false,
-                         getter_AddRefs(persistentStorageDir));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto persistentStorageDirOrErr = QM_NewLocalFile(mStoragePath);
+    if (NS_WARN_IF(persistentStorageDirOrErr.isErr())) {
+      return persistentStorageDirOrErr.unwrapErr();
     }
+
+    nsCOMPtr<nsIFile> persistentStorageDir = persistentStorageDirOrErr.unwrap();
 
     rv = persistentStorageDir->Append(
         NS_LITERAL_STRING(PERSISTENT_DIRECTORY_NAME));
@@ -6365,11 +6381,12 @@ nsresult QuotaManager::EnsureStorageIsInitialized() {
   if (storageVersion < kStorageVersion) {
     const bool newDatabase = !storageVersion;
 
-    nsCOMPtr<nsIFile> storageDir;
-    rv = NS_NewLocalFile(mStoragePath, false, getter_AddRefs(storageDir));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto storageDirOrErr = QM_NewLocalFile(mStoragePath);
+    if (NS_WARN_IF(storageDirOrErr.isErr())) {
+      return storageDirOrErr.unwrapErr();
     }
+
+    nsCOMPtr<nsIFile> storageDir = storageDirOrErr.unwrap();
 
     rv = storageDir->Exists(&exists);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -7728,7 +7745,7 @@ bool QuotaManager::IsSanitizedOriginValid(const nsACString& aSanitizedOrigin) {
 }
 
 int64_t QuotaManager::GenerateDirectoryLockId() {
-  const int64_t directroylockId = mNextDirectoryLockId;
+  const int64_t directorylockId = mNextDirectoryLockId;
 
   CheckedInt64 result = CheckedInt64(mNextDirectoryLockId) + 1;
   if (result.isValid()) {
@@ -7745,7 +7762,7 @@ int64_t QuotaManager::GenerateDirectoryLockId() {
   // TODO: Maybe add an assertion here to check that there is no existing
   //       directory lock with given id.
 
-  return directroylockId;
+  return directorylockId;
 }
 
 /*******************************************************************************
@@ -8988,7 +9005,7 @@ nsresult QuotaUsageRequestBase::GetUsageForOrigin(
                                        mCanceled, aUsageInfo);
       } else {
         rv = client->InitOrigin(aPersistenceType, aGroup, aOrigin, mCanceled,
-                                aUsageInfo, /* aForGetUsage */ true);
+                                aUsageInfo);
       }
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -9043,15 +9060,16 @@ nsresult TraverseRepositoryHelper::TraverseRepository(
   AssertIsOnIOThread();
   MOZ_ASSERT(aQuotaManager);
 
-  nsCOMPtr<nsIFile> directory;
-  nsresult rv = NS_NewLocalFile(aQuotaManager->GetStoragePath(aPersistenceType),
-                                false, getter_AddRefs(directory));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto directoryOrErr =
+      QM_NewLocalFile(aQuotaManager->GetStoragePath(aPersistenceType));
+  if (NS_WARN_IF(directoryOrErr.isErr())) {
+    return directoryOrErr.unwrapErr();
   }
 
+  nsCOMPtr<nsIFile> directory = directoryOrErr.unwrap();
+
   bool exists;
-  rv = directory->Exists(&exists);
+  nsresult rv = directory->Exists(&exists);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -9500,12 +9518,12 @@ void ResetOrClearOp::DeleteFiles(QuotaManager* aQuotaManager) {
     return;
   }
 
-  nsCOMPtr<nsIFile> directory;
-  rv = NS_NewLocalFile(aQuotaManager->GetStoragePath(), false,
-                       getter_AddRefs(directory));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  auto directoryOrErr = QM_NewLocalFile(aQuotaManager->GetStoragePath());
+  if (NS_WARN_IF(directoryOrErr.isErr())) {
     return;
   }
+
+  nsCOMPtr<nsIFile> directory = directoryOrErr.unwrap();
 
   rv = directory->Remove(true);
   if (rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
@@ -9520,14 +9538,14 @@ void ResetOrClearOp::DeleteStorageFile(QuotaManager* aQuotaManager) {
   AssertIsOnIOThread();
   MOZ_ASSERT(aQuotaManager);
 
-  nsCOMPtr<nsIFile> storageFile;
-  nsresult rv = NS_NewLocalFile(aQuotaManager->GetBasePath(), false,
-                                getter_AddRefs(storageFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  auto storageFileOrErr = QM_NewLocalFile(aQuotaManager->GetBasePath());
+  if (NS_WARN_IF(storageFileOrErr.isErr())) {
     return;
   }
 
-  rv = storageFile->Append(NS_LITERAL_STRING(STORAGE_FILE_NAME));
+  nsCOMPtr<nsIFile> storageFile = storageFileOrErr.unwrap();
+
+  nsresult rv = storageFile->Append(NS_LITERAL_STRING(STORAGE_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -9581,12 +9599,13 @@ void ClearRequestBase::DeleteFiles(QuotaManager* aQuotaManager,
     return;
   }
 
-  nsCOMPtr<nsIFile> directory;
-  rv = NS_NewLocalFile(aQuotaManager->GetStoragePath(aPersistenceType), false,
-                       getter_AddRefs(directory));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  auto directoryOrErr =
+      QM_NewLocalFile(aQuotaManager->GetStoragePath(aPersistenceType));
+  if (NS_WARN_IF(directoryOrErr.isErr())) {
     return;
   }
+
+  nsCOMPtr<nsIFile> directory = directoryOrErr.unwrap();
 
   nsCOMPtr<nsIDirectoryEnumerator> entries;
   if (NS_WARN_IF(
@@ -11324,11 +11343,12 @@ nsresult CreateOrUpgradeDirectoryMetadataHelper::ProcessOriginDirectory(
         const nsString& permanentStoragePath =
             quotaManager->GetStoragePath(PERSISTENCE_TYPE_PERSISTENT);
 
-        rv = NS_NewLocalFile(permanentStoragePath, false,
-                             getter_AddRefs(mPermanentStorageDir));
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
+        auto permanentstorageDirOrErr = QM_NewLocalFile(permanentStoragePath);
+        if (NS_WARN_IF(permanentstorageDirOrErr.isErr())) {
+          return permanentstorageDirOrErr.unwrapErr();
         }
+
+        mPermanentStorageDir = permanentstorageDirOrErr.unwrap();
       }
 
       nsString leafName;

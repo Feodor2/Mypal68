@@ -4,11 +4,26 @@
 
 #include "QuotaCommon.h"
 
+#include "mozilla/Logging.h"  // LazyLogModule
+#include "nsIFile.h"
+#include "nsXPCOM.h"
+#include "nsXULAppAPI.h"
+#ifdef XP_WIN
+#  include "mozilla/ipc/BackgroundParent.h"
+#  include "mozilla/StaticPrefs_dom.h"
+#  include "nsILocalFileWin.h"
+#endif
+#include "nsXPCOM.h"
+
 namespace mozilla {
 namespace dom {
 namespace quota {
 
 namespace {
+
+#ifdef XP_WIN
+Atomic<int32_t> gUseDOSDevicePathSyntax(-1);
+#endif
 
 LazyLogModule gLogger("QuotaManager");
 
@@ -61,6 +76,44 @@ void AnonymizeOriginString(nsACString& aOriginString) {
   }
 
   AnonymizeCString(aOriginString, start);
+}
+
+#ifdef XP_WIN
+void CacheUseDOSDevicePathSyntaxPrefValue() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  AssertIsOnBackgroundThread();
+
+  if (gUseDOSDevicePathSyntax == -1) {
+    bool useDOSDevicePathSyntax =
+        StaticPrefs::dom_quotaManager_useDOSDevicePathSyntax_DoNotUseDirectly();
+    gUseDOSDevicePathSyntax = useDOSDevicePathSyntax ? 1 : 0;
+  }
+}
+#endif
+
+Result<nsCOMPtr<nsIFile>, nsresult> QM_NewLocalFile(const nsAString& aPath) {
+  nsCOMPtr<nsIFile> file;
+  nsresult rv =
+      NS_NewLocalFile(aPath, /* aFollowLinks */ false, getter_AddRefs(file));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return Err(rv);
+  }
+
+#ifdef XP_WIN
+  MOZ_ASSERT(gUseDOSDevicePathSyntax != -1);
+
+  if (gUseDOSDevicePathSyntax) {
+    nsCOMPtr<nsILocalFileWin> winFile = do_QueryInterface(file, &rv);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return Err(rv);
+    }
+
+    MOZ_ASSERT(winFile);
+    winFile->SetUseDOSDevicePathSyntax(true);
+  }
+#endif
+
+  return file;
 }
 
 }  // namespace quota

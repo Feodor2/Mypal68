@@ -21,6 +21,7 @@
 #include "nsIXMLContentSink.h"
 #include "nsContentCID.h"
 #include "mozilla/dom/XMLDocument.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetPrivate, JS::GetReservedSlot, JS::SetPrivate
 #include "jsapi.h"
 #include "nsXBLService.h"
 #include "nsIScriptContext.h"
@@ -55,13 +56,13 @@ using namespace mozilla::dom;
 //
 static void XBLFinalize(JSFreeOp* fop, JSObject* obj) {
   nsXBLDocumentInfo* docInfo =
-      static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(obj));
+      static_cast<nsXBLDocumentInfo*>(::JS::GetPrivate(obj));
   DeferredFinalize(docInfo);
 }
 
 static bool XBLEnumerate(JSContext* cx, JS::Handle<JSObject*> obj) {
   nsXBLPrototypeBinding* protoBinding = static_cast<nsXBLPrototypeBinding*>(
-      ::JS_GetReservedSlot(obj, 0).toPrivate());
+      ::JS::GetReservedSlot(obj, 0).toPrivate());
   MOZ_ASSERT(protoBinding);
 
   return protoBinding->ResolveAllFields(cx, obj);
@@ -616,19 +617,19 @@ void nsXBLBinding::ChangeDocument(Document* aOldDocument,
             break;
           }
 
-          if (JS_GetClass(proto) != &gPrototypeJSClass) {
+          if (JS::GetClass(proto) != &gPrototypeJSClass) {
             // Clearly not the right class
             continue;
           }
 
           RefPtr<nsXBLDocumentInfo> docInfo =
-              static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(proto));
+              static_cast<nsXBLDocumentInfo*>(::JS::GetPrivate(proto));
           if (!docInfo) {
             // Not the proto we seek
             continue;
           }
 
-          JS::Value protoBinding = ::JS_GetReservedSlot(proto, 0);
+          JS::Value protoBinding = ::JS::GetReservedSlot(proto, 0);
 
           if (protoBinding.toPrivate() != mPrototypeBinding) {
             // Not the right binding
@@ -776,9 +777,9 @@ static JSObject* GetOrCreateMapEntryForPrototype(JSContext* cx,
 }
 
 static nsXBLPrototypeBinding* GetProtoBindingFromClassObject(JSObject* obj) {
-  MOZ_ASSERT(JS_GetClass(obj) == &gPrototypeJSClass);
+  MOZ_ASSERT(JS::GetClass(obj) == &gPrototypeJSClass);
   return static_cast<nsXBLPrototypeBinding*>(
-      ::JS_GetReservedSlot(obj, 0).toPrivate());
+      ::JS::GetReservedSlot(obj, 0).toPrivate());
 }
 
 // static
@@ -867,7 +868,7 @@ nsresult nsXBLBinding::DoInitJSClass(JSContext* cx, JS::Handle<JSObject*> obj,
     // collection doesn't seem to work right if the private is not an
     // nsISupports.
     nsXBLDocumentInfo* docInfo = aProtoBinding->XBLDocumentInfo();
-    ::JS_SetPrivate(proto, docInfo);
+    ::JS::SetPrivate(proto, docInfo);
     NS_ADDREF(docInfo);
     JS_SetReservedSlot(proto, 0, JS::PrivateValue(aProtoBinding));
 

@@ -8,7 +8,6 @@
 #include "MediaSpan.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "nsAutoPtr.h"
 
 using namespace mozilla;
 

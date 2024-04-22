@@ -25,13 +25,13 @@ class FileManagerBase {
   using MutexType = StaticMutex;
   using AutoLock = StaticMutexAutoLock;
 
-  MOZ_MUST_USE RefPtr<FileInfo> GetFileInfo(int64_t aId) const {
+  MOZ_MUST_USE SafeRefPtr<FileInfo> GetFileInfo(int64_t aId) const {
     if (!AssertValid()) {
       // In release, the assertions are disabled.
       return nullptr;
     }
 
-    // TODO: We cannot simply change this to RefPtr<FileInfo>, because
+    // TODO: We cannot simply change this to SafeRefPtr<FileInfo>, because
     // FileInfo::AddRef also acquires the FileManager::Mutex.
     // This looks quirky at least.
     FileInfo* fileInfo;
@@ -40,16 +40,16 @@ class FileManagerBase {
       fileInfo = mFileInfos.Get(aId);
     }
 
-    return fileInfo;
+    return {fileInfo, AcquireStrongRefFromRawPtr{}};
   }
 
-  MOZ_MUST_USE RefPtr<FileInfo> CreateFileInfo() {
+  MOZ_MUST_USE SafeRefPtr<FileInfo> CreateFileInfo() {
     if (!AssertValid()) {
       // In release, the assertions are disabled.
       return nullptr;
     }
 
-    // TODO: We cannot simply change this to RefPtr<FileInfo>, because
+    // TODO: We cannot simply change this to SafeRefPtr<FileInfo>, because
     // FileInfo::AddRef also acquires the FileManager::Mutex.
     // This looks quirky at least.
     FileInfo* fileInfo;
@@ -58,13 +58,15 @@ class FileManagerBase {
 
       const int64_t id = ++mLastFileId;
 
-      fileInfo =
-          new FileInfo(FileManagerGuard{}, static_cast<FileManager*>(this), id);
+      fileInfo = new FileInfo(FileManagerGuard{},
+                              SafeRefPtr{static_cast<FileManager*>(this),
+                                         AcquireStrongRefFromRawPtr{}},
+                              id);
 
       mFileInfos.Put(id, fileInfo);
     }
 
-    return fileInfo;
+    return {fileInfo, AcquireStrongRefFromRawPtr{}};
   }
 
   void RemoveFileInfo(const int64_t aId, const AutoLock& aFileMutexLock) {

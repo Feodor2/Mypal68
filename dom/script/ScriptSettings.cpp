@@ -7,6 +7,8 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ThreadLocal.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/WorkerPrivate.h"
 
 #include "jsapi.h"
@@ -300,6 +302,7 @@ void AutoJSAPI::InitInternal(nsIGlobalObject* aGlobalObject, JSObject* aGlobal,
   mOldWarningReporter.emplace(JS::GetWarningReporter(aCx));
 
   JS::SetWarningReporter(aCx, WarningOnlyErrorReporter);
+  JS::SetGetElementCallback(aCx, &GetElementCallback);
 
 #ifdef DEBUG
   if (haveException) {
@@ -489,11 +492,10 @@ void AutoJSAPI::ReportException() {
   }
   MOZ_ASSERT(JS_IsGlobalObject(errorGlobal));
   JSAutoRealm ar(cx(), errorGlobal);
-  JS::Rooted<JS::Value> exn(cx());
-  JS::Rooted<JSObject*> exnStack(cx());
-  js::ErrorReport jsReport(cx());
-  if (StealExceptionAndStack(&exn, &exnStack) &&
-      jsReport.init(cx(), exn, js::ErrorReport::WithSideEffects, exnStack)) {
+  JS::ExceptionStack exnStack(cx());
+  JS::ErrorReportBuilder jsReport(cx());
+  if (StealExceptionAndStack(&exnStack) &&
+      jsReport.init(cx(), exnStack, JS::ErrorReportBuilder::WithSideEffects)) {
     if (mIsMainThread) {
       RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
 
@@ -504,13 +506,18 @@ void AutoJSAPI::ReportException() {
                       isChrome, inner ? inner->WindowID() : 0);
       if (inner && jsReport.report()->errorNumber != JSMSG_OUT_OF_MEMORY) {
         JS::RootingContext* rcx = JS::RootingContext::get(cx());
-        DispatchScriptErrorEvent(inner, rcx, xpcReport, exn, exnStack);
+        DispatchScriptErrorEvent(inner, rcx, xpcReport, exnStack.exception(),
+                                 exnStack.stack());
       } else {
         JS::Rooted<JSObject*> stack(cx());
         JS::Rooted<JSObject*> stackGlobal(cx());
-        xpc::FindExceptionStackForConsoleReport(inner, exn, exnStack, &stack,
+        xpc::FindExceptionStackForConsoleReport(inner, exnStack.exception(),
+                                                exnStack.stack(), &stack,
                                                 &stackGlobal);
-        xpcReport->LogToConsoleWithStack(stack, stackGlobal);
+        // This error is not associated with a specific window,
+        // so omit the exception value to mitigate potential leaks.
+        xpcReport->LogToConsoleWithStack(inner, JS::NothingHandleValue, stack,
+                                         stackGlobal);
       }
     } else {
       // On a worker or worklet, we just use the error reporting mechanism and
@@ -523,7 +530,7 @@ void AutoJSAPI::ReportException() {
       // because it may want to put it in its error events and has no other way
       // to get hold of it.  After we invoke ReportError, clear the exception on
       // cx(), just in case ReportError didn't.
-      JS::SetPendingExceptionAndStack(cx(), exn, exnStack);
+      JS::SetPendingExceptionStack(cx(), exnStack);
       ccjscx->ReportError(jsReport.report(), jsReport.toStringResult());
       ClearException();
     }
@@ -537,25 +544,24 @@ bool AutoJSAPI::PeekException(JS::MutableHandle<JS::Value> aVal) {
   MOZ_ASSERT_IF(mIsMainThread, IsStackTop());
   MOZ_ASSERT(HasException());
   MOZ_ASSERT(js::GetContextRealm(cx()));
-  if (!JS_GetPendingException(cx(), aVal)) {
-    return false;
-  }
-  return true;
+  return JS_GetPendingException(cx(), aVal);
 }
 
 bool AutoJSAPI::StealException(JS::MutableHandle<JS::Value> aVal) {
-  JS::Rooted<JSObject*> stack(cx());
-  return StealExceptionAndStack(aVal, &stack);
-}
-
-bool AutoJSAPI::StealExceptionAndStack(JS::MutableHandle<JS::Value> aVal,
-                                       JS::MutableHandle<JSObject*> aStack) {
-  if (!PeekException(aVal)) {
+  JS::ExceptionStack exnStack(cx());
+  if (!StealExceptionAndStack(&exnStack)) {
     return false;
   }
-  aStack.set(JS::GetPendingExceptionStack(cx()));
-  JS_ClearPendingException(cx());
+  aVal.set(exnStack.exception());
   return true;
+}
+
+bool AutoJSAPI::StealExceptionAndStack(JS::ExceptionStack* aExnStack) {
+  MOZ_ASSERT_IF(mIsMainThread, IsStackTop());
+  MOZ_ASSERT(HasException());
+  MOZ_ASSERT(js::GetContextRealm(cx()));
+
+  return JS::StealPendingExceptionStack(cx(), aExnStack);
 }
 
 #ifdef DEBUG
@@ -578,7 +584,8 @@ AutoEntryScript::AutoEntryScript(nsIGlobalObject* aGlobalObject,
           "", aReason, JS::ProfilingCategoryPair::JS,
           uint32_t(js::ProfilingStackFrame::Flags::RELEVANT_FOR_JS))
 #endif
-{
+      ,
+      mJSThreadExecution(aGlobalObject, aIsMainThread) {
   MOZ_ASSERT(aGlobalObject);
 
   if (aIsMainThread) {
@@ -667,21 +674,31 @@ AutoIncumbentScript::AutoIncumbentScript(nsIGlobalObject* aGlobalObject)
 
 AutoIncumbentScript::~AutoIncumbentScript() { ScriptSettingsStack::Pop(this); }
 
-AutoNoJSAPI::AutoNoJSAPI() : ScriptSettingsStackEntry(nullptr, eNoJSAPI) {
+AutoNoJSAPI::AutoNoJSAPI(JSContext* aCx)
+    : ScriptSettingsStackEntry(nullptr, eNoJSAPI),
+      JSAutoNullableRealm(aCx, nullptr),
+      mCx(aCx) {
+  // Make sure we don't seem to have an incumbent global due to
+  // whatever script is running right now.
+  JS::HideScriptedCaller(aCx);
+
+  // Make sure the fallback GetIncumbentGlobal() behavior and
+  // GetEntryGlobal() both return null.
   ScriptSettingsStack::Push(this);
 }
 
-AutoNoJSAPI::~AutoNoJSAPI() { ScriptSettingsStack::Pop(this); }
+AutoNoJSAPI::~AutoNoJSAPI() {
+  ScriptSettingsStack::Pop(this);
+  JS::UnhideScriptedCaller(mCx);
+}
 
 }  // namespace dom
 
-AutoJSContext::AutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
-    : mCx(nullptr) {
+AutoJSContext::AutoJSContext() : mCx(nullptr) {
   JS::AutoSuppressGCAnalysis nogc;
   MOZ_ASSERT(!mCx, "mCx should not be initialized!");
   MOZ_ASSERT(NS_IsMainThread());
 
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 
   if (dom::IsJSAPIActive()) {
     mCx = dom::danger::GetJSContext();
@@ -693,12 +710,9 @@ AutoJSContext::AutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
 
 AutoJSContext::operator JSContext*() const { return mCx; }
 
-AutoSafeJSContext::AutoSafeJSContext(
-    MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
-    : AutoJSAPI() {
+AutoSafeJSContext::AutoSafeJSContext() : AutoJSAPI() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 
   DebugOnly<bool> ok = Init(xpc::UnprivilegedJunkScope());
   MOZ_ASSERT(ok,
@@ -707,10 +721,7 @@ AutoSafeJSContext::AutoSafeJSContext(
              "returned null, and inited correctly otherwise!");
 }
 
-AutoSlowOperation::AutoSlowOperation(
-    MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
-    : mIsMainThread(NS_IsMainThread()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+AutoSlowOperation::AutoSlowOperation() : mIsMainThread(NS_IsMainThread()) {
   if (mIsMainThread) {
     mScriptActivity.emplace(true);
   }
@@ -719,11 +730,16 @@ AutoSlowOperation::AutoSlowOperation(
 void AutoSlowOperation::CheckForInterrupt() {
   // For now we support only main thread!
   if (mIsMainThread) {
-    // JS_CheckForInterrupt expects us to be in a realm.
-    AutoJSAPI jsapi;
-    if (jsapi.Init(xpc::UnprivilegedJunkScope())) {
-      JS_CheckForInterrupt(jsapi.cx());
-    }
+    // JS_CheckForInterrupt expects us to be in a realm, so we use a junk scope.
+    // In principle, it doesn't matter which one we use, since we aren't really
+    // running scripts here, and none of our interrupt callbacks can stop
+    // scripts in a junk scope anyway. In practice, though, the privileged junk
+    // scope is the same as the JSM global, and therefore always exists, while
+    // the unprivileged junk scope is created lazily, and may not exist until we
+    // try to use it. So we use the former for the sake of efficiency.
+    dom::AutoJSAPI jsapi;
+    MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
+    JS_CheckForInterrupt(jsapi.cx());
   }
 }
 

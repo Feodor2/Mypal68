@@ -12,9 +12,11 @@
 #include "nsIPrincipal.h"
 #include "xpcpublic.h"
 
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/Maybe.h"
 
 #include "jsapi.h"
+#include "js/Exception.h"
 #include "js/Debug.h"
 #include "js/Warnings.h"  // JS::WarningReporter
 
@@ -265,11 +267,9 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
   // into the current compartment.
   MOZ_MUST_USE bool StealException(JS::MutableHandle<JS::Value> aVal);
 
-  // As for StealException(), but put the saved frames for any stack trace
-  // associated with the point the exception was thrown into aStack.
-  // aVal will be in the current compartment, but aStack might not be.
-  MOZ_MUST_USE bool StealExceptionAndStack(JS::MutableHandle<JS::Value> aVal,
-                                           JS::MutableHandle<JSObject*> aStack);
+  // As for StealException(), but uses the JS::ExceptionStack class to also
+  // include the exception's stack, represented by SavedFrames.
+  MOZ_MUST_USE bool StealExceptionAndStack(JS::ExceptionStack* aExnStack);
 
   // Peek the current exception from the JS engine, without stealing it.
   // Callers must ensure that HasException() is true, and that cx() is in a
@@ -382,6 +382,7 @@ class MOZ_STACK_CLASS AutoEntryScript : public AutoJSAPI {
 #ifdef MOZ_GECKO_PROFILER
   AutoProfilerLabel mAutoProfilerLabel;
 #endif
+  AutoRequestJSThreadExecution mJSThreadExecution;
 };
 
 /*
@@ -404,10 +405,25 @@ class AutoIncumbentScript : protected ScriptSettingsStackEntry {
  *
  * This class may not be instantiated if an exception is pending.
  */
-class AutoNoJSAPI : protected ScriptSettingsStackEntry {
+class AutoNoJSAPI : protected ScriptSettingsStackEntry,
+                    protected JSAutoNullableRealm {
  public:
-  explicit AutoNoJSAPI();
+  AutoNoJSAPI() : AutoNoJSAPI(danger::GetJSContext()) {}
   ~AutoNoJSAPI();
+
+ private:
+  // Helper constructor to avoid doing GetJSContext() multiple times
+  // during construction.
+  explicit AutoNoJSAPI(JSContext* aCx);
+
+  // Stashed JSContext* so we don't need to GetJSContext in our destructor.
+  // It's probably safe to hold on to this, in the sense that the world should
+  // not get torn down while we're on the stack, and if it's not, we'd need to
+  // fix JSAutoNullableRealm to not hold on to a JSContext either, or
+  // something.
+  JSContext* mCx;
+
+  AutoYieldJSThreadExecution mExecutionYield;
 };
 
 }  // namespace dom
@@ -419,13 +435,12 @@ class AutoNoJSAPI : protected ScriptSettingsStackEntry {
  */
 class MOZ_RAII AutoJSContext {
  public:
-  explicit AutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+  explicit AutoJSContext();
   operator JSContext*() const;
 
  protected:
   JSContext* mCx;
   dom::AutoJSAPI mJSAPI;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /**
@@ -437,11 +452,10 @@ class MOZ_RAII AutoJSContext {
  */
 class MOZ_RAII AutoSafeJSContext : public dom::AutoJSAPI {
  public:
-  explicit AutoSafeJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+  explicit AutoSafeJSContext();
   operator JSContext*() const { return cx(); }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /**
@@ -456,11 +470,10 @@ class MOZ_RAII AutoSafeJSContext : public dom::AutoJSAPI {
  */
 class MOZ_RAII AutoSlowOperation {
  public:
-  explicit AutoSlowOperation(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+  explicit AutoSlowOperation();
   void CheckForInterrupt();
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
   bool mIsMainThread;
   Maybe<xpc::AutoScriptActivity> mScriptActivity;
 };

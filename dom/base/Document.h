@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifndef mozilla_dom_Document_h___
 #define mozilla_dom_Document_h___
 
@@ -8,7 +9,6 @@
 #include "mozilla/FlushType.h"    // for enum
 #include "mozilla/MozPromise.h"   // for MozPromise
 #include "mozilla/FunctionRef.h"  // for FunctionRef
-#include "mozilla/Pair.h"         // for Pair
 #include "nsAutoPtr.h"            // for member
 #include "nsCOMArray.h"           // for member
 #include "nsCompatibility.h"      // for member
@@ -60,6 +60,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include <bitset>  // for member
+#include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
 
 // windows.h #defines CreateEvent
 #ifdef CreateEvent
@@ -3452,7 +3453,9 @@ class Document : public nsINode,
       const nsAString& target, const nsAString& data, ErrorResult& rv) const;
   already_AddRefed<nsINode> ImportNode(nsINode& aNode, bool aDeep,
                                        ErrorResult& rv) const;
-  nsINode* AdoptNode(nsINode& aNode, ErrorResult& rv);
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsINode* AdoptNode(nsINode& aNode,
+                                                 ErrorResult& rv);
   already_AddRefed<Event> CreateEvent(const nsAString& aEventType,
                                       CallerType aCallerType,
                                       ErrorResult& rv) const;
@@ -5183,7 +5186,7 @@ class Document : public nsINode,
 
  public:
   // Needs to be public because the bindings code pokes at it.
-  js::ExpandoAndGeneration mExpandoAndGeneration;
+  JS::ExpandoAndGeneration mExpandoAndGeneration;
 
   bool HasPendingInitialTranslation() { return mPendingInitialTranslation; }
 

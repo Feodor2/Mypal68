@@ -147,9 +147,8 @@ class EventTargetChainItem {
 
   static void DestroyLast(nsTArray<EventTargetChainItem>& aChain,
                           EventTargetChainItem* aItem) {
-    uint32_t lastIndex = aChain.Length() - 1;
-    MOZ_ASSERT(&aChain[lastIndex] == aItem);
-    aChain.RemoveElementAt(lastIndex);
+    MOZ_ASSERT(&aChain.LastElement() == aItem);
+    aChain.RemoveLastElement();
   }
 
   static EventTargetChainItem* GetFirstCanHandleEventTarget(
@@ -843,7 +842,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
     if (!sCachedMainThreadChain) {
       sCachedMainThreadChain = new nsTArray<EventTargetChainItem>();
     }
-    chain.SwapElements(*sCachedMainThreadChain);
+    chain = std::move(*sCachedMainThreadChain);
     chain.SetCapacity(128);
   }
 
@@ -1026,20 +1025,18 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
           nsCOMPtr<nsIDocShell> docShell;
           docShell = nsContentUtils::GetDocShellForEventTarget(aEvent->mTarget);
           DECLARE_DOCSHELL_AND_HISTORY_ID(docShell);
-          profiler_add_marker(
-              "DOMEvent", JS::ProfilingCategoryPair::DOM,
-              MakeUnique<DOMEventMarkerPayload>(
-                  typeStr, aEvent->mTimeStamp, "DOMEvent",
-                  TRACING_INTERVAL_START, docShellId, docShellHistoryId));
+          PROFILER_ADD_MARKER_WITH_PAYLOAD(
+              "DOMEvent", DOM, DOMEventMarkerPayload,
+              (typeStr, aEvent->mTimeStamp, "DOMEvent", TRACING_INTERVAL_START,
+               docShellId, docShellHistoryId));
 
           EventTargetChainItem::HandleEventTargetChain(chain, postVisitor,
                                                        aCallback, cd);
 
-          profiler_add_marker(
-              "DOMEvent", JS::ProfilingCategoryPair::DOM,
-              MakeUnique<DOMEventMarkerPayload>(
-                  typeStr, aEvent->mTimeStamp, "DOMEvent", TRACING_INTERVAL_END,
-                  docShellId, docShellHistoryId));
+          PROFILER_ADD_MARKER_WITH_PAYLOAD(
+              "DOMEvent", DOM, DOMEventMarkerPayload,
+              (typeStr, aEvent->mTimeStamp, "DOMEvent", TRACING_INTERVAL_END,
+               docShellId, docShellHistoryId));
         } else
 #endif
         {

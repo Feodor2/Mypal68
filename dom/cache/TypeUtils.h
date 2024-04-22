@@ -45,7 +45,7 @@ class TypeUtils {
 
   enum SchemeAction { IgnoreInvalidScheme, TypeErrorOnInvalidScheme };
 
-  ~TypeUtils() {}
+  ~TypeUtils() = default;
   virtual nsIGlobalObject* GetGlobalObject() const = 0;
 #ifdef DEBUG
   virtual void AssertOwningThread() const = 0;

@@ -168,6 +168,9 @@ void Performance::GetEntriesByName(
     return;
   }
 
+  // ::Measure expects that results from this function are already
+  // passed through ReduceTimePrecision. mResourceEntries and mUserEntries
+  // are, so the invariant holds.
   for (PerformanceEntry* entry : mResourceEntries) {
     if (entry->GetName().Equals(aName) &&
         (!aEntryType.WasPassed() ||
@@ -219,15 +222,14 @@ void Performance::Mark(const nsAString& aName, ErrorResult& aRv) {
   InsertUserEntry(performanceMark);
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active()) {
+  if (profiler_can_accept_markers()) {
     nsCOMPtr<EventTarget> et = do_QueryInterface(GetOwner());
     nsCOMPtr<nsIDocShell> docShell =
         nsContentUtils::GetDocShellForEventTarget(et);
     DECLARE_DOCSHELL_AND_HISTORY_ID(docShell);
-    profiler_add_marker(
-        "UserTiming", JS::ProfilingCategoryPair::DOM,
-        MakeUnique<UserTimingMarkerPayload>(aName, TimeStamp::Now(), docShellId,
-                                            docShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "UserTiming", DOM, UserTimingMarkerPayload,
+        (aName, TimeStamp::Now(), docShellId, docShellHistoryId));
   }
 #endif
 }
@@ -276,8 +278,6 @@ void Performance::Measure(const nsAString& aName,
 
   if (aStartMark.WasPassed()) {
     startTime = ResolveTimestampFromName(aStartMark.Value(), aRv);
-    startTime = nsRFPService::ReduceTimePrecisionAsMSecs(
-        startTime, GetRandomTimelineSeed());
     if (NS_WARN_IF(aRv.Failed())) {
       return;
     }
@@ -290,8 +290,6 @@ void Performance::Measure(const nsAString& aName,
 
   if (aEndMark.WasPassed()) {
     endTime = ResolveTimestampFromName(aEndMark.Value(), aRv);
-    endTime = nsRFPService::ReduceTimePrecisionAsMSecs(endTime,
-                                                       GetRandomTimelineSeed());
     if (NS_WARN_IF(aRv.Failed())) {
       return;
     }
@@ -304,7 +302,7 @@ void Performance::Measure(const nsAString& aName,
   InsertUserEntry(performanceMeasure);
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active()) {
+  if (profiler_can_accept_markers()) {
     TimeStamp startTimeStamp =
         CreationTimeStamp() + TimeDuration::FromMilliseconds(startTime);
     TimeStamp endTimeStamp =
@@ -325,10 +323,10 @@ void Performance::Measure(const nsAString& aName,
     nsCOMPtr<nsIDocShell> docShell =
         nsContentUtils::GetDocShellForEventTarget(et);
     DECLARE_DOCSHELL_AND_HISTORY_ID(docShell);
-    profiler_add_marker("UserTiming", JS::ProfilingCategoryPair::DOM,
-                        MakeUnique<UserTimingMarkerPayload>(
-                            aName, startMark, endMark, startTimeStamp,
-                            endTimeStamp, docShellId, docShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "UserTiming", DOM, UserTimingMarkerPayload,
+        (aName, startMark, endMark, startTimeStamp, endTimeStamp, docShellId,
+         docShellHistoryId));
   }
 #endif
 }

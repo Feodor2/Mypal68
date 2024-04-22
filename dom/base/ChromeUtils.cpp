@@ -5,6 +5,7 @@
 #include "ChromeUtils.h"
 
 #include "js/CharacterEncoding.h"
+#include "js/Object.h"  // JS::GetClass
 #include "js/SavedFrameAPI.h"
 #include "jsfriendapi.h"
 #include "WrapperFactory.h"
@@ -27,7 +28,9 @@
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WindowBinding.h"  // For IdleRequestCallback/Options
 #include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/SocketProcessHost.h"
 #include "IOActivityMonitor.h"
 #include "nsIOService.h"
 #include "nsThreadUtils.h"
@@ -210,8 +213,7 @@ void ChromeUtils::GetClassName(GlobalObject& aGlobal, JS::HandleObject aObj,
     obj = js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
   }
 
-  aRetval =
-      NS_ConvertUTF8toUTF16(nsDependentCString(js::GetObjectClass(obj)->name));
+  aRetval = NS_ConvertUTF8toUTF16(nsDependentCString(JS::GetClass(obj)->name));
 }
 
 /* static */
@@ -688,64 +690,92 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
       ->Then(
           target, __func__,
           [target, domPromise, parentPid](ProcInfo aParentInfo) {
-            // Iterate over each child process to build an array of promises.
-            nsTArray<ContentParent*> parents;
-            ContentParent::GetAll(parents);
+            // Get a list of ContentParent
+            nsTArray<ContentParent*> contentParents;
+            ContentParent::GetAll(contentParents);
             nsTArray<RefPtr<ProcInfoPromise>> promises;
-            for (ContentParent* contentParent : parents) {
-              // Getting the child process id.
-              int32_t childPid = contentParent->Pid();
-              if (childPid == -1) {
-                continue;
-              }
-              // Converting the Content Type into a ProcType
-              nsAutoString processType;
-              processType.Assign(contentParent->GetRemoteType());
-              mozilla::ProcType type = mozilla::ProcType::Unknown;
-              if (processType.EqualsLiteral(DEFAULT_REMOTE_TYPE)) {
-                type = mozilla::ProcType::Web;
-              } else if (processType.EqualsLiteral(FILE_REMOTE_TYPE)) {
-                type = mozilla::ProcType::File;
-              } else if (processType.EqualsLiteral(EXTENSION_REMOTE_TYPE)) {
-                type = mozilla::ProcType::Extension;
-              } else if (processType.EqualsLiteral(PRIVILEGED_REMOTE_TYPE)) {
-                type = mozilla::ProcType::Privileged;
-              } else if (processType.EqualsLiteral(
-                             LARGE_ALLOCATION_REMOTE_TYPE)) {
-                type = mozilla::ProcType::WebLargeAllocation;
-              }
+            mozilla::ipc::GeckoChildProcessHost::GetAll(
+                [&promises, contentParents](
+                    mozilla::ipc::GeckoChildProcessHost* aGeckoProcess) {
+                  if (!aGeckoProcess->GetChildProcessHandle()) {
+                    return;
+                  }
 
-              promises.AppendElement(mozilla::GetProcInfo(
-                  (base::ProcessId)childPid, contentParent->ChildID(), type));
-            }
+                  base::ProcessId childPid =
+                      base::GetProcId(aGeckoProcess->GetChildProcessHandle());
+                  int32_t childId = 0;
+                  mozilla::ProcType type;
+                  switch (aGeckoProcess->GetProcessType()) {
+                    case GeckoProcessType::GeckoProcessType_Content: {
+                      ContentParent* contentParent = nullptr;
+                      // This loop can become slow as we get more processes in
+                      // Fission, so might need some refactoring in the future.
+                      for (ContentParent* parent : contentParents) {
+                        // find the match
+                        if (parent->Process() == aGeckoProcess) {
+                          contentParent = parent;
+                          break;
+                        }
+                      }
+                      if (!contentParent) {
+                        return;
+                      }
+                      // Converting the Content Type into a ProcType
+                      nsAutoString processType;
+                      processType.Assign(contentParent->GetRemoteType());
+                      if (processType.EqualsLiteral(DEFAULT_REMOTE_TYPE)) {
+                        type = mozilla::ProcType::Web;
+                      } else if (processType.EqualsLiteral(FILE_REMOTE_TYPE)) {
+                        type = mozilla::ProcType::File;
+                      } else if (processType.EqualsLiteral(
+                                     EXTENSION_REMOTE_TYPE)) {
+                        type = mozilla::ProcType::Extension;
+                      } else if (processType.EqualsLiteral(PRIVILEGED_REMOTE_TYPE)) {
+                        type = mozilla::ProcType::Privileged;
+                      } else if (processType.EqualsLiteral(
+                                     LARGE_ALLOCATION_REMOTE_TYPE)) {
+                        type = mozilla::ProcType::WebLargeAllocation;
+                      }
+                      childId = contentParent->ChildID();
+                      break;
+                    }
+                    case GeckoProcessType::GeckoProcessType_Default:
+                      type = mozilla::ProcType::Browser;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_Plugin:
+                      type = mozilla::ProcType::Plugin;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_GMPlugin:
+                      type = mozilla::ProcType::GMPlugin;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_GPU:
+                      type = mozilla::ProcType::GPU;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_VR:
+                      type = mozilla::ProcType::VR;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_RDD:
+                      type = mozilla::ProcType::RDD;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_Socket:
+                      type = mozilla::ProcType::Socket;
+                      break;
+                    case GeckoProcessType::GeckoProcessType_RemoteSandboxBroker:
+                      type = mozilla::ProcType::RemoteSandboxBroker;
+                      break;
+                    default:
+                      type = mozilla::ProcType::Unknown;
+                  }
 
-            // Getting the Socket Process
-            int32_t SocketPid = net::gIOService->SocketProcessPid();
-            if (SocketPid != 0) {
-              promises.AppendElement(mozilla::GetProcInfo(
-                  (base::ProcessId)SocketPid, 0, mozilla::ProcType::Socket));
-            }
-
-            // Getting the GPU and RDD processes on supported platforms
-            gfx::GPUProcessManager* pm = gfx::GPUProcessManager::Get();
-            if (pm) {
-              base::ProcessId GpuPid = pm->GPUProcessPid();
-              if (GpuPid != -1) {
-                promises.AppendElement(
-                    mozilla::GetProcInfo(GpuPid, 0, mozilla::ProcType::Gpu));
-              }
-            }
-            RDDProcessManager* RDDPm = RDDProcessManager::Get();
-            if (RDDPm) {
-              base::ProcessId RDDPid = RDDPm->RDDProcessPid();
-              if (RDDPid != -1) {
-                promises.AppendElement(
-                    mozilla::GetProcInfo(RDDPid, 0, mozilla::ProcType::Rdd));
-              }
-            }
-
-            // two more processes to add: VR and GMP
-            // see https://bugzilla.mozilla.org/show_bug.cgi?id=1529022
+                  promises.AppendElement(
+#ifdef XP_MACOSX
+                      mozilla::GetProcInfo(childPid, childId, type,
+                                           aGeckoProcess->GetChildTask())
+#else
+                      mozilla::GetProcInfo(childPid, childId, type)
+#endif
+                  );
+                });
 
             auto ProcInfoResolver =
                 [domPromise, parentPid, parentInfo = aParentInfo](

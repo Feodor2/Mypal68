@@ -6,7 +6,6 @@
 #define mozilla_CamerasChild_h
 
 #include "mozilla/Move.h"
-#include "mozilla/Pair.h"
 #include "mozilla/camera/PCamerasChild.h"
 #include "mozilla/camera/PCamerasParent.h"
 #include "mozilla/media/DeviceChangeCallback.h"

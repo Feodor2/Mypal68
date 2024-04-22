@@ -181,9 +181,9 @@ WorkerDebugger::~WorkerDebugger() {
   MOZ_ASSERT(!mWorkerPrivate);
 
   if (!NS_IsMainThread()) {
-    for (size_t index = 0; index < mListeners.Length(); ++index) {
+    for (auto& listener : mListeners) {
       NS_ReleaseOnMainThreadSystemGroup("WorkerDebugger::mListeners",
-                                        mListeners[index].forget());
+                                        listener.forget());
     }
   }
 }
@@ -397,8 +397,8 @@ void WorkerDebugger::Close() {
   mWorkerPrivate = nullptr;
 
   nsTArray<nsCOMPtr<nsIWorkerDebuggerListener>> listeners(mListeners);
-  for (size_t index = 0; index < listeners.Length(); ++index) {
-    listeners[index]->OnClose();
+  for (const auto& listener : listeners) {
+    listener->OnClose();
   }
 }
 
@@ -418,8 +418,8 @@ void WorkerDebugger::PostMessageToDebuggerOnMainThread(
   AssertIsOnMainThread();
 
   nsTArray<nsCOMPtr<nsIWorkerDebuggerListener>> listeners(mListeners);
-  for (size_t index = 0; index < listeners.Length(); ++index) {
-    listeners[index]->OnMessage(aMessage);
+  for (const auto& listener : listeners) {
+    listener->OnMessage(aMessage);
   }
 }
 
@@ -441,15 +441,19 @@ void WorkerDebugger::ReportErrorToDebuggerOnMainThread(
   AssertIsOnMainThread();
 
   nsTArray<nsCOMPtr<nsIWorkerDebuggerListener>> listeners(mListeners);
-  for (size_t index = 0; index < listeners.Length(); ++index) {
-    listeners[index]->OnError(aFilename, aLineno, aMessage);
+  for (const auto& listener : listeners) {
+    listener->OnError(aFilename, aLineno, aMessage);
   }
 
-  // We need a JSContext to be able to read any stack associated with the error.
-  // This will not run any scripts.
   AutoJSAPI jsapi;
-  DebugOnly<bool> ok = jsapi.Init(xpc::UnprivilegedJunkScope());
-  MOZ_ASSERT(ok, "UnprivilegedJunkScope should exist");
+  // We're only using this context to deserialize a stack to report to the
+  // console, so the scope we use doesn't matter. Stack frame filtering happens
+  // based on the principal encoded into the frame and the caller compartment,
+  // not the compartment of the frame object, and the console reporting code
+  // will not be using our context, and therefore will not care what compartment
+  // it has entered.
+  DebugOnly<bool> ok = jsapi.Init(xpc::PrivilegedJunkScope());
+  MOZ_ASSERT(ok, "PrivilegedJunkScope should exist");
 
   WorkerErrorReport report;
   report.mMessage = aMessage;

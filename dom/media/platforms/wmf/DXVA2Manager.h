@@ -12,7 +12,6 @@
 #  include "MediaInfo.h"
 #  include "WMF.h"
 #  include "mozilla/Mutex.h"
-#  include "nsAutoPtr.h"
 #  include "mozilla/gfx/Rect.h"
 #  include "d3d11.h"
 

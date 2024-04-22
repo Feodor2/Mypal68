@@ -150,6 +150,8 @@ class AudioContext final : public DOMEventTargetHelper,
 
   nsPIDOMWindowInner* GetParentObject() const { return GetOwner(); }
 
+  nsISerialEventTarget* GetMainThread() const;
+
   virtual void DisconnectFromOwner() override;
   virtual void BindToOwner(nsIGlobalObject* aNew) override;
 
@@ -228,6 +230,8 @@ class AudioContext final : public DOMEventTargetHelper,
   // calling from inner window, so we won't need to return promise for caller.
   void SuspendFromChrome();
   void ResumeFromChrome();
+  // Called on completion of offline rendering:
+  void OfflineClose();
 
   already_AddRefed<AudioBufferSourceNode> CreateBufferSource();
 

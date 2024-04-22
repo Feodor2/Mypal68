@@ -10,7 +10,9 @@
 #include "mozilla/TextUtils.h"
 
 #include "jsapi.h"
+#include "js/Object.h"  // JS::GetClass
 #include "js/Proxy.h"
+#include "js/String.h"  // JS::AtomToLinearString, JS::GetLinearString{CharAt,Length}
 #include "nsString.h"
 
 namespace mozilla {
@@ -26,10 +28,10 @@ namespace dom {
  * interface is annotated with the [OverrideBuiltins] extended attribute.
  *
  * If it is, the proxy is initialized with a PrivateValue, which contains a
- * pointer to a js::ExpandoAndGeneration object; this contains a pointer to
+ * pointer to a JS::ExpandoAndGeneration object; this contains a pointer to
  * the actual expando object as well as the "generation" of the object.  The
  * proxy handler will trace the expando object stored in the
- * js::ExpandoAndGeneration while the proxy itself is alive.
+ * JS::ExpandoAndGeneration while the proxy itself is alive.
  *
  * If it is not, the proxy is initialized with an UndefinedValue. In
  * EnsureExpandoObject, it is set to an ObjectValue that points to the
@@ -111,6 +113,12 @@ class DOMProxyHandler : public BaseDOMProxyHandler {
            JS::Handle<JS::Value> v, JS::Handle<JS::Value> receiver,
            JS::ObjectOpResult& result) const override;
 
+  // Use the DOMProxyExpando object for private fields, rather than the proxy
+  // expando object.
+  virtual bool useProxyExpandoObjectForPrivateFields() const override {
+    return false;
+  }
+
   /*
    * If assigning to proxy[id] hits a named setter with OverrideBuiltins or
    * an indexed setter, call it and set *done to true on success. Otherwise, set
@@ -146,13 +154,13 @@ class DOMProxyHandler : public BaseDOMProxyHandler {
 };
 
 // Class used by shadowing handlers (the ones that have [OverrideBuiltins].
-// This handles tracing the expando in ExpandoAndGeneration.
+// This handles tracing the expando in JS::ExpandoAndGeneration.
 class ShadowingDOMProxyHandler : public DOMProxyHandler {
   virtual void trace(JSTracer* trc, JSObject* proxy) const override;
 };
 
 inline bool IsDOMProxy(JSObject* obj) {
-  const JSClass* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = JS::GetClass(obj);
   return clasp->isProxy() &&
          js::GetProxyHandler(obj)->family() == &DOMProxyHandler::family;
 }
@@ -182,12 +190,12 @@ inline uint32_t GetArrayIndexFromId(JS::Handle<jsid> id) {
     return UINT32_MAX;
   }
 
-  JSLinearString* str = js::AtomToLinearString(JSID_TO_ATOM(id));
-  if (MOZ_UNLIKELY(js::GetLinearStringLength(str) == 0)) {
+  JSLinearString* str = JS::AtomToLinearString(JSID_TO_ATOM(id));
+  if (MOZ_UNLIKELY(JS::GetLinearStringLength(str) == 0)) {
     return UINT32_MAX;
   }
 
-  char16_t firstChar = js::GetLinearStringCharAt(str, 0);
+  char16_t firstChar = JS::GetLinearStringCharAt(str, 0);
   if (MOZ_LIKELY(IsAsciiLowercaseAlpha(firstChar))) {
     return UINT32_MAX;
   }

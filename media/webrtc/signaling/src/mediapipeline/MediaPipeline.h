@@ -31,18 +31,19 @@
 class nsIPrincipal;
 
 namespace mozilla {
+class AudioProxyThread;
+class MediaInputPort;
 class MediaPipelineFilter;
 class MediaTransportHandler;
 class PeerIdentity;
-class AudioProxyThread;
+class ProcessedMediaTrack;
+class SourceMediaTrack;
 class VideoFrameConverter;
 
 namespace dom {
 class MediaStreamTrack;
 struct RTCRTPContributingSourceStats;
 }  // namespace dom
-
-class SourceMediaTrack;
 
 // A class that represents the pipeline of audio and video
 // The dataflow looks like:
@@ -86,7 +87,7 @@ class MediaPipeline : public sigslot::has_slots<> {
                 RefPtr<MediaSessionConduit> aConduit);
 
   virtual void Start() = 0;
-  virtual void Stop() = 0;
+  virtual RefPtr<GenericPromise> Stop() = 0;
   virtual void DetachMedia() {}
 
   void SetLevel(size_t aLevel) { mLevel = aLevel; }
@@ -156,6 +157,8 @@ class MediaPipeline : public sigslot::has_slots<> {
   int32_t RtpPacketsReceived() const { return mRtpPacketsReceived; }
   int64_t RtpBytesReceived() const { return mRtpBytesReceived; }
   int32_t RtcpPacketsReceived() const { return mRtcpPacketsReceived; }
+  // Gets the current time as a DOMHighResTimeStamp
+  DOMHighResTimeStamp GetNow() const;
 
   MediaSessionConduit* Conduit() const { return mConduit; }
 
@@ -260,9 +263,6 @@ class MediaPipeline : public sigslot::has_slots<> {
   UniquePtr<PacketDumper> mPacketDumper;
 
  private:
-  // Gets the current time as a DOMHighResTimeStamp
-  static DOMHighResTimeStamp GetNow();
-
   bool IsRtp(const unsigned char* aData, size_t aLen) const;
   // Must be called on the STS thread.  Must be called after DetachMedia().
   void DetachTransport_s();
@@ -282,7 +282,7 @@ class MediaPipelineTransmit : public MediaPipeline {
   bool Transmitting() const;
 
   void Start() override;
-  void Stop() override;
+  RefPtr<GenericPromise> Stop() override;
 
   // written and used from MainThread
   bool IsVideo() const override;
@@ -300,14 +300,15 @@ class MediaPipelineTransmit : public MediaPipeline {
   // Override MediaPipeline::TransportReady_s.
   void TransportReady_s() override;
 
-  // Replace a track with a different one
-  // In non-compliance with the likely final spec, allow the new
-  // track to be part of a different stream (since we don't support
-  // multiple tracks of a type in a stream yet).  bug 1056650
-  virtual nsresult SetTrack(RefPtr<dom::MediaStreamTrack> aDomTrack);
+  // Replace a track with a different one.
+  nsresult SetTrack(RefPtr<dom::MediaStreamTrack> aDomTrack);
+
+  // Set the track whose data we will transmit. For internal and test use. */
+  void SetSendTrack(RefPtr<ProcessedMediaTrack> aSendTrack);
 
   // Separate classes to allow ref counting
   class PipelineListener;
+  class PipelineListenerTrackConsumer;
   class VideoFrameFeeder;
 
  protected:
@@ -318,10 +319,18 @@ class MediaPipelineTransmit : public MediaPipeline {
  private:
   const bool mIsVideo;
   const RefPtr<PipelineListener> mListener;
+  // Listens for changes in enabled state on the attached MediaStreamTrack, and
+  // notifies mListener.
+  const nsMainThreadPtrHandle<PipelineListenerTrackConsumer> mTrackConsumer;
   const RefPtr<VideoFrameFeeder> mFeeder;
   RefPtr<AudioProxyThread> mAudioProcessing;
   RefPtr<VideoFrameConverter> mConverter;
   RefPtr<dom::MediaStreamTrack> mDomTrack;
+  // Input port connecting mDomTrack's MediaTrack to mSendTrack.
+  RefPtr<MediaInputPort> mSendPort;
+  // MediaTrack that we send over the network. This allows changing mDomTrack.
+  RefPtr<ProcessedMediaTrack> mSendTrack;
+  // True if we're actively transmitting data to the network. Main thread only.
   bool mTransmitting;
 };
 
@@ -359,7 +368,7 @@ class MediaPipelineReceiveAudio : public MediaPipelineReceive {
   void MakePrincipalPrivate_s() override;
 
   void Start() override;
-  void Stop() override;
+  RefPtr<GenericPromise> Stop() override;
 
   void OnRtpPacketReceived() override;
 
@@ -390,7 +399,7 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
   void MakePrincipalPrivate_s() override;
 
   void Start() override;
-  void Stop() override;
+  RefPtr<GenericPromise> Stop() override;
 
   void OnRtpPacketReceived() override;
 

@@ -1487,7 +1487,7 @@ PBackgroundChild* ChildImpl::GetOrCreateForCurrentThread(
           MOZ_ASSERT(content);
 
           if (!content->SendInitBackground(std::move(aParent))) {
-            MOZ_CRASH("Failed to create top level actor!");
+            NS_WARNING("Failed to create top level actor!");
           }
         });
     if (!runnable) {
@@ -1593,7 +1593,7 @@ PBackgroundChild* ChildImpl::GetOrCreateSocketActorForCurrentThread(
               SocketProcessBridgeChild::GetSingleton();
 
           if (!bridgeChild->SendInitBackground(std::move(aParent))) {
-            MOZ_CRASH("Failed to create top level actor!");
+            NS_WARNING("Failed to create top level actor!");
           }
         });
     if (!runnable) {

@@ -86,9 +86,7 @@ async function startProfilerAndgetFileIOPayloads(features, filename) {
     entries,
     interval,
     features,
-    features.length,
     threads,
-    threads.length
   );
 
   const file = FileUtils.getFile("TmpD", [filename]);

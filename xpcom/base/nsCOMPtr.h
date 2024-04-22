@@ -18,17 +18,17 @@
  *                      -- scc
  */
 
+#include <type_traits>
+#include <utility>
+
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Move.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/TypeTraits.h"
-
+#include "nsCycleCollectionNoteChild.h"
 #include "nsDebug.h"  // for |NS_ASSERTION|
 #include "nsISupportsUtils.h"  // for |nsresult|, |NS_ADDREF|, |NS_GET_TEMPLATE_IID| et al
-#include "mozilla/RefPtr.h"
-
-#include "nsCycleCollectionNoteChild.h"
 
 /*
  * WARNING: This file defines several macros for internal use only. These
@@ -202,8 +202,7 @@ namespace mozilla {
 // variety of smart pointer types in addition to raw pointers. These types
 // include RefPtr<>, nsCOMPtr<>, and OwningNonNull<>.
 template <class T>
-using PointedToType =
-    typename mozilla::RemovePointer<decltype(&*mozilla::DeclVal<T>())>::Type;
+using PointedToType = std::remove_pointer_t<decltype(&*std::declval<T>())>;
 }  // namespace mozilla
 
 #ifdef NSCAP_FEATURE_USE_BASE
@@ -1506,5 +1505,21 @@ template <class T>
 RefPtr<T> ToRefPtr(nsCOMPtr<T>&& aObj) {
   return aObj.forget();
 }
+
+// Integration with ResultExtensions.h
+template <typename R>
+auto ResultRefAsParam(nsCOMPtr<R>& aResult) {
+  return getter_AddRefs(aResult);
+}
+
+namespace mozilla::detail {
+template <typename T>
+struct outparam_as_pointer;
+
+template <typename T>
+struct outparam_as_pointer<nsGetterAddRefs<T>> {
+  using type = T**;
+};
+}  // namespace mozilla::detail
 
 #endif  // !defined(nsCOMPtr_h___)

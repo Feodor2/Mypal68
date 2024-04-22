@@ -353,14 +353,17 @@ ContentPrincipal::SetDomain(nsIURI* aDomain) {
 
   // Set the changed-document-domain flag on compartments containing realms
   // using this principal.
-  auto cb = [](JSContext*, void*, JS::Handle<JS::Realm*> aRealm) {
+  auto cb = [](JSContext*, void*, JS::Realm* aRealm,
+               const JS::AutoRequireNoGC& nogc) {
     JS::Compartment* comp = JS::GetCompartmentForRealm(aRealm);
     xpc::SetCompartmentChangedDocumentDomain(comp);
   };
   JSPrincipals* principals =
       nsJSPrincipals::get(static_cast<nsIPrincipal*>(this));
-  AutoSafeJSContext cx;
-  JS::IterateRealmsWithPrincipals(cx, principals, nullptr, cb);
+
+  dom::AutoJSAPI jsapi;
+  jsapi.Init();
+  JS::IterateRealmsWithPrincipals(jsapi.cx(), principals, nullptr, cb);
 
   return NS_OK;
 }

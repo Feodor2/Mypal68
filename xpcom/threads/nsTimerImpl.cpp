@@ -4,7 +4,6 @@
 
 #include "nsTimerImpl.h"
 #include "TimerThread.h"
-#include "nsAutoPtr.h"
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #include "pratom.h"

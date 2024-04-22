@@ -4222,6 +4222,7 @@ function start_httpserver() {
   gTestserver.registerPathHandler("/" + gHTTPHandlerPath, pathHandler);
   gTestserver.start(-1);
   let testserverPort = gTestserver.identity.primaryPort;
+  // eslint-disable-next-line no-global-assign
   gURLData = URL_HOST + ":" + testserverPort + "/";
   debugDump("http server port = " + testserverPort);
 }

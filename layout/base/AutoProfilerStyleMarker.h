@@ -18,7 +18,7 @@ class MOZ_RAII AutoProfilerStyleMarker {
   explicit AutoProfilerStyleMarker(UniqueProfilerBacktrace aCause,
                                    const Maybe<nsID>& aDocShellId,
                                    const Maybe<uint32_t>& aDocShellHistoryId)
-      : mActive(profiler_is_active()),
+      : mActive(profiler_can_accept_markers()),
         mStartTime(TimeStamp::Now()),
         mCause(std::move(aCause)),
         mDocShellId(aDocShellId),
@@ -37,11 +37,11 @@ class MOZ_RAII AutoProfilerStyleMarker {
       return;
     }
     ServoTraversalStatistics::sActive = false;
-    profiler_add_marker("Styles", JS::ProfilingCategoryPair::LAYOUT,
-                        MakeUnique<StyleMarkerPayload>(
-                            mStartTime, TimeStamp::Now(), std::move(mCause),
-                            ServoTraversalStatistics::sSingleton, mDocShellId,
-                            mDocShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "Styles", LAYOUT, StyleMarkerPayload,
+        (mStartTime, TimeStamp::Now(), std::move(mCause),
+         ServoTraversalStatistics::sSingleton, mDocShellId,
+         mDocShellHistoryId));
   }
 
  private:

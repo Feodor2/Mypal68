@@ -9,7 +9,7 @@
 #include "mozilla/IOInterposer.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsThreadUtils.h"
 
@@ -207,11 +207,11 @@ namespace mozilla {
 namespace MainThreadIOLogger {
 
 bool Init() {
-  nsAutoPtr<MainThreadIOLoggerImpl> impl(new MainThreadIOLoggerImpl());
+  auto impl = MakeUnique<MainThreadIOLoggerImpl>();
   if (!impl->Init()) {
     return false;
   }
-  sImpl = impl.forget();
+  sImpl = impl.release();
   IOInterposer::Register(IOInterposeObserver::OpAllWithStaging, sImpl);
   return true;
 }

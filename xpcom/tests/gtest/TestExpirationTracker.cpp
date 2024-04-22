@@ -7,7 +7,6 @@
 #include <prthread.h>
 #include "nsExpirationTracker.h"
 #include "nsMemory.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"

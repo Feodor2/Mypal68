@@ -11,8 +11,12 @@
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/net/IOActivityMonitor.h"
-//#include "mozilla/IOInterposer.h"
+#include "mozilla/IOInterposer.h"
 #include "nsEscape.h"
+
+#ifdef XP_WIN
+#  include "mozilla/StaticPrefs_dom.h"
+#endif
 
 // The last VFS version for which this file has been updated.
 #define LAST_KNOWN_VFS_VERSION 3
@@ -85,8 +89,8 @@ class IOThreadAutoTimer {
    * either "sqlite-mainthread" or "sqlite-otherthread".
    */
   explicit IOThreadAutoTimer(
-      Telemetry::HistogramID aId)//,
-      //IOInterposeObserver::Operation aOp = IOInterposeObserver::OpNone)
+      Telemetry::HistogramID aId,
+      IOInterposeObserver::Operation aOp = IOInterposeObserver::OpNone)
       : start(TimeStamp::Now()),
         id(aId)
 #if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
@@ -102,7 +106,7 @@ class IOThreadAutoTimer {
    *
    * @param aOp IO Operation to report through the IOInterposer.
    */
-  explicit IOThreadAutoTimer()//IOInterposeObserver::Operation aOp)
+  explicit IOThreadAutoTimer(IOInterposeObserver::Operation aOp)
       : start(TimeStamp::Now()),
         id(Telemetry::HistogramCount)
 #if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
@@ -123,7 +127,7 @@ class IOThreadAutoTimer {
     // mechanism for intercepting I/O on that platform that captures a superset
     // of the data captured here.
 #if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
-    /*if (IOInterposer::IsObservedOperation(op)) {
+    if (IOInterposer::IsObservedOperation(op)) {
       const char* main_ref = "sqlite-mainthread";
       const char* other_ref = "sqlite-otherthread";
 
@@ -132,7 +136,7 @@ class IOThreadAutoTimer {
                                           (mainThread ? main_ref : other_ref));
       // Report observation
       IOInterposer::Report(ob);
-    }*/
+    }
 #endif /* defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN) */
   }
 
@@ -342,7 +346,7 @@ int xClose(sqlite3_file* pFile) {
   telemetry_file* p = (telemetry_file*)pFile;
   int rc;
   {  // Scope for IOThreadAutoTimer
-    //IOThreadAutoTimer ioTimer(IOInterposeObserver::OpClose);
+    IOThreadAutoTimer ioTimer(IOInterposeObserver::OpClose);
     rc = p->pReal->pMethods->xClose(p->pReal);
   }
   if (rc == SQLITE_OK) {
@@ -378,7 +382,7 @@ int xRead(sqlite3_file* pFile, void* zBuf, int iAmt, sqlite_int64 iOfst) {
 ** Return the current file-size of a telemetry_file.
 */
 int xFileSize(sqlite3_file* pFile, sqlite_int64* pSize) {
-  //IOThreadAutoTimer ioTimer(IOInterposeObserver::OpStat);
+  IOThreadAutoTimer ioTimer(IOInterposeObserver::OpStat);
   telemetry_file* p = (telemetry_file*)pFile;
   int rc;
   rc = p->pReal->pMethods->xFileSize(p->pReal, pSize);
@@ -391,8 +395,8 @@ int xFileSize(sqlite3_file* pFile, sqlite_int64* pSize) {
 int xWrite(sqlite3_file* pFile, const void* zBuf, int iAmt,
            sqlite_int64 iOfst) {
   telemetry_file* p = (telemetry_file*)pFile;
-  /*IOThreadAutoTimer ioTimer(p->histograms->writeMS,
-                            IOInterposeObserver::OpWrite);*/
+  IOThreadAutoTimer ioTimer(p->histograms->writeMS,
+                            IOInterposeObserver::OpWrite);
   int rc;
   if (p->quotaObject) {
     MOZ_ASSERT(INT64_MAX - iOfst >= iAmt);
@@ -463,8 +467,8 @@ int xTruncate(sqlite3_file* pFile, sqlite_int64 size) {
 */
 int xSync(sqlite3_file* pFile, int flags) {
   telemetry_file* p = (telemetry_file*)pFile;
-  /*IOThreadAutoTimer ioTimer(p->histograms->syncMS,
-                            IOInterposeObserver::OpFSync);*/
+  IOThreadAutoTimer ioTimer(p->histograms->syncMS,
+                            IOInterposeObserver::OpFSync);
   return p->pReal->pMethods->xSync(p->pReal, flags);
 }
 
@@ -601,8 +605,8 @@ int xUnfetch(sqlite3_file* pFile, sqlite3_int64 iOff, void* pResOut) {
 
 int xOpen(sqlite3_vfs* vfs, const char* zName, sqlite3_file* pFile, int flags,
           int* pOutFlags) {
-  /*IOThreadAutoTimer ioTimer(Telemetry::MOZ_SQLITE_OPEN_MS,
-                            IOInterposeObserver::OpCreateOrOpen);*/
+  IOThreadAutoTimer ioTimer(Telemetry::MOZ_SQLITE_OPEN_MS,
+                            IOInterposeObserver::OpCreateOrOpen);
   Telemetry::AutoTimer<Telemetry::MOZ_SQLITE_OPEN_MS> timer;
   sqlite3_vfs* orig_vfs = static_cast<sqlite3_vfs*>(vfs->pAppData);
   int rc;
@@ -702,6 +706,43 @@ int xAccess(sqlite3_vfs* vfs, const char* zName, int flags, int* pResOut) {
 }
 
 int xFullPathname(sqlite3_vfs* vfs, const char* zName, int nOut, char* zOut) {
+#if defined(XP_WIN)
+  // SQLite uses GetFullPathnameW which also normailizes file path. If a file
+  // component ends with a dot, it would be removed. However, it's not desired.
+  //
+  // And that would result SQLite uses wrong database and quotaObject.
+  // Note that we are safe to avoid the GetFullPathnameW call for \\?\ prefixed
+  // paths.
+  // And note that this hack will be removed once the issue is fixed directly in
+  // SQLite.
+
+  // zName that starts with "//?/" is the case when a file URI was passed and
+  // zName that starts with "\\?\" is the case when a normal path was passed
+  // (not file URI).
+  if (StaticPrefs::dom_quotaManager_overrideXFullPathname() &&
+      ((zName[0] == '/' && zName[1] == '/' && zName[2] == '?' &&
+        zName[3] == '/') ||
+       (zName[0] == '\\' && zName[1] == '\\' && zName[2] == '?' &&
+        zName[3] == '\\'))) {
+    MOZ_ASSERT(nOut >= vfs->mxPathname);
+    MOZ_ASSERT(nOut > strlen(zName));
+
+    size_t index = 0;
+    while (zName[index] != '\0') {
+      if (zName[index] == '/') {
+        zOut[index] = '\\';
+      } else {
+        zOut[index] = zName[index];
+      }
+
+      index++;
+    }
+    zOut[index] = '\0';
+
+    return SQLITE_OK;
+  }
+#endif
+
   sqlite3_vfs* orig_vfs = static_cast<sqlite3_vfs*>(vfs->pAppData);
   return orig_vfs->xFullPathname(orig_vfs, zName, nOut, zOut);
 }

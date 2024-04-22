@@ -278,14 +278,6 @@ pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode.addl", "")
 // explanation for the detail.
 pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
 
-#ifdef JS_BUILD_BINAST
-  // Until we're satisfied that it works nicely, we're restricting
-  // BinAST to a few partner sites:
-  // - A subset of Facebook
-  // - A subset of Cloudflare
-  pref("dom.script_loader.binast_encoding.domain.restrict.list", "*.facebook.com,static.xx.fbcdn.net,*.cloudflare.com,*.cloudflarestream.com,unpkg.com");
-#endif
-
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
@@ -488,6 +480,10 @@ pref("media.videocontrols.picture-in-picture.video-toggle.flyout-wait-ms", 5000)
   pref("media.peerconnection.ice.proxy_only_if_behind_proxy", false);
   pref("media.peerconnection.ice.proxy_only", false);
   pref("media.peerconnection.turn.disable", false);
+
+  // 770 = DTLS 1.0, 771 = DTLS 1.2
+  pref("media.peerconnection.dtls.version.min", 770);
+  pref("media.peerconnection.dtls.version.max", 771);
 
   // These values (aec, agc, and noise) are from:
   // media/webrtc/trunk/webrtc/modules/audio_processing/include/audio_processing.h
@@ -1007,6 +1003,9 @@ pref("javascript.options.baselinejit",      true);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.baselinejit.threshold", 100);
 pref("javascript.options.ion",              true);
+#ifdef NIGHTLY_BUILD
+pref("javascript.options.warp",             false);
+#endif
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.ion.threshold",    1000);
 pref("javascript.options.ion.full.threshold", 100000);
@@ -1030,11 +1029,12 @@ pref("javascript.options.wasm_baselinejit",       true);
 pref("javascript.options.native_regexp",    true);
 pref("javascript.options.parallel_parsing", true);
 pref("javascript.options.source_pragmas",    true);
-#if !defined(RELEASE_OR_BETA) && !defined(ANDROID) && !defined(XP_IOS)
-  pref("javascript.options.asyncstack",       true);
-#else
-  pref("javascript.options.asyncstack",       false);
-#endif
+
+pref("javascript.options.asyncstack", true);
+// Broadly capturing async stack data adds overhead that is only advisable for
+// developers, so we only enable it when the devtools are open, by default.
+pref("javascript.options.asyncstack_capture_debuggee_only", true);
+
 pref("javascript.options.throw_on_asmjs_validation_failure", false);
 pref("javascript.options.ion.offthread_compilation", true);
 #ifdef DEBUG
@@ -1108,9 +1108,15 @@ pref("javascript.options.mem.gc_min_empty_chunk_count", 1);
 // JSGC_MAX_EMPTY_CHUNK_COUNT
 pref("javascript.options.mem.gc_max_empty_chunk_count", 30);
 
+// JSGC_HELPER_THREAD_RATIO
+pref("javascript.options.mem.gc_helper_thread_ratio", 50);
+
+// JSGC_MAX_HELPER_THREADS
+pref("javascript.options.mem.gc_max_helper_threads", 8);
+
 pref("javascript.options.showInConsole", false);
 
-pref("javascript.options.shared_memory", false);
+pref("javascript.options.shared_memory", true);
 
 pref("javascript.options.throw_on_debuggee_would_run", false);
 pref("javascript.options.dump_stack_on_debuggee_would_run", false);
@@ -2161,7 +2167,7 @@ pref("security.dialog_enable_delay", 1000);
 pref("security.notification_enable_delay", 500);
 
 #if defined(DEBUG) && !defined(ANDROID)
-  pref("csp.about_uris_without_csp", "blank,printpreview,srcdoc,about,addons,cache-entry,config,crashes,debugging,devtools,downloads,home,memory,networking,newtab,performance,plugins,policies,profiles,restartrequired,serviceworkers,sessionrestore,support,sync-log,telemetry,url-classifier");
+  pref("csp.about_uris_without_csp", "blank,printpreview,srcdoc,addons,config,downloads,home,newtab,preferences,sessionrestore,sync-log");
   // the following prefs are for testing purposes only.
   pref("csp.overrule_about_uris_without_csp_whitelist", false);
   pref("csp.skip_about_page_has_csp_assert", false);
@@ -4019,12 +4025,6 @@ pref("memory.blob_report.stack_frames", 0);
 // Activates the activity monitor
 pref("io.activity.enabled", false);
 
-// If true, reuse the same global for (almost) everything loaded by the component
-// loader (JS components, JSMs, etc). This saves memory, but makes it possible
-// for the scripts to interfere with each other.  A restart is required for this
-// to take effect.
-pref("jsloader.shareGlobal", true);
-
 // path to OSVR DLLs
 pref("gfx.vr.osvr.utilLibPath", "");
 pref("gfx.vr.osvr.commonLibPath", "");
@@ -4647,3 +4647,87 @@ pref("remote.force-local", true);
 // "Config", "Info", "Warn", "Error", and "Fatal". The value is treated
 // case-sensitively.
 pref("remote.log.level", "Info");
+
+// Enable the JSON View tool (an inspector for application/json documents).
+pref("devtools.jsonview.enabled", true);
+
+// Default theme ("dark" or "light").
+#ifdef MOZ_DEV_EDITION
+  pref("devtools.theme", "dark", sticky);
+#else
+  pref("devtools.theme", "light", sticky);
+#endif
+
+// Completely disable DevTools entry points, as well as all DevTools command
+// line arguments This should be merged with devtools.enabled, see Bug 1440675.
+pref("devtools.policy.disabled", false);
+
+// Tells if DevTools have been explicitely enabled by the user. This pref
+// allows to disable all features related to DevTools for users that never use
+// them. Until bug 1361080 lands, we always consider them enabled.
+pref("devtools.enabled", true);
+
+// Enable deprecation warnings.
+pref("devtools.errorconsole.deprecation_warnings", true);
+
+#ifdef NIGHTLY_BUILD
+  // Don't show the Browser Toolbox prompt on local builds / nightly.
+  pref("devtools.debugger.prompt-connection", false, sticky);
+#else
+  pref("devtools.debugger.prompt-connection", true, sticky);
+#endif
+
+#ifdef MOZILLA_OFFICIAL
+  // Disable debugging chrome.
+  pref("devtools.chrome.enabled", false, sticky);
+  // Disable remote debugging connections.
+  pref("devtools.debugger.remote-enabled", false, sticky);
+#else
+  // In local builds, enable the browser toolbox by default.
+  pref("devtools.chrome.enabled", true, sticky);
+  pref("devtools.debugger.remote-enabled", true, sticky);
+#endif
+
+// Disable remote debugging protocol logging.
+pref("devtools.debugger.log", false);
+pref("devtools.debugger.log.verbose", false);
+
+pref("devtools.debugger.remote-port", 6000);
+pref("devtools.debugger.remote-websocket", false);
+// Force debugger server binding on the loopback interface.
+pref("devtools.debugger.force-local", true);
+
+// Limit for intercepted request and response bodies (1 MB).
+// Possible values:
+// 0 => the response body has no limit
+// n => represents max number of bytes stored
+pref("devtools.netmonitor.responseBodyLimit", 1048576);
+pref("devtools.netmonitor.requestBodyLimit", 1048576);
+
+// Limit for WebSocket frames (100 KB).
+pref("devtools.netmonitor.ws.messageDataLimit", 100000);
+
+// DevTools default color unit.
+pref("devtools.defaultColorUnit", "authored");
+
+// Used for devtools debugging.
+pref("devtools.dump.emit", false);
+
+// Disable device discovery logging.
+pref("devtools.discovery.log", false);
+// Whether to scan for DevTools devices via WiFi.
+pref("devtools.remote.wifi.scan", true);
+// Client must complete TLS handshake within this window (ms).
+pref("devtools.remote.tls-handshake-timeout", 10000);
+
+// The extension ID for devtools-adb-extension.
+pref("devtools.remote.adb.extensionID", "adb@mozilla.org");
+// The URL for for devtools-adb-extension (overridden in tests to a local
+// path).
+pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/mozilla.org/labs/devtools/adb-extension/#OS#/adb-extension-latest-#OS#.xpi");
+
+// URL of the remote JSON catalog used for device simulation.
+pref("devtools.devices.url", "https://code.cdn.mozilla.net/devices/devices.json");
+
+// Enable Inactive CSS detection; used both by the client and the server.
+pref("devtools.inspector.inactive.css.enabled", true);

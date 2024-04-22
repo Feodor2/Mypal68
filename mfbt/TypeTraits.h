@@ -9,6 +9,8 @@
 
 #include "mozilla/Types.h"
 
+#include <utility>
+
 /*
  * These traits are approximate copies of the traits and semantics from C++11's
  * <type_traits> header.  Don't add traits not in that header!  When all
@@ -21,19 +23,6 @@ namespace mozilla {
 
 template <typename>
 struct RemoveCV;
-template <typename>
-struct AddRvalueReference;
-
-/* 20.2.4 Function template declval [declval] */
-
-/**
- * DeclVal simplifies the definition of expressions which occur as unevaluated
- * operands. It converts T to a reference type, making it possible to use in
- * decltype expressions even if T does not have a default constructor, e.g.:
- * decltype(DeclVal<TWithNoDefaultConstructor>().foo())
- */
-template <typename T>
-typename AddRvalueReference<T>::Type DeclVal();
 
 /* 20.9.3 Helper classes [meta.help] */
 
@@ -76,30 +65,6 @@ struct IsVoidHelper<void> : TrueType {};
  */
 template <typename T>
 struct IsVoid : detail::IsVoidHelper<typename RemoveCV<T>::Type> {};
-
-namespace detail {
-
-template <typename T>
-struct IsArrayHelper : FalseType {};
-
-template <typename T, decltype(sizeof(1)) N>
-struct IsArrayHelper<T[N]> : TrueType {};
-
-template <typename T>
-struct IsArrayHelper<T[]> : TrueType {};
-
-}  // namespace detail
-
-/**
- * IsArray determines whether a type is an array type, of known or unknown
- * length.
- *
- * mozilla::IsArray<int>::value is false;
- * mozilla::IsArray<int[]>::value is true;
- * mozilla::IsArray<int[5]>::value is true.
- */
-template <typename T>
-struct IsArray : detail::IsArrayHelper<typename RemoveCV<T>::Type> {};
 
 /* 20.9.4.3 Type properties [meta.unary.prop] */
 
@@ -152,7 +117,7 @@ struct IsPod<T*> : TrueType {};
 namespace detail {
 
 struct DoIsDestructibleImpl {
-  template <typename T, typename = decltype(DeclVal<T&>().~T())>
+  template <typename T, typename = decltype(std::declval<T&>().~T())>
   static TrueType test(int);
   template <typename T>
   static FalseType test(...);
@@ -198,64 +163,6 @@ struct IsSame : FalseType {};
 
 template <typename T>
 struct IsSame<T, T> : TrueType {};
-
-namespace detail {
-
-template <typename From, typename To>
-struct ConvertibleTester {
- private:
-  template <typename To1>
-  static char test_helper(To1);
-
-  template <typename From1, typename To1>
-  static decltype(test_helper<To1>(DeclVal<From1>())) test(int);
-
-  template <typename From1, typename To1>
-  static int test(...);
-
- public:
-  static const bool value = sizeof(test<From, To>(0)) == sizeof(char);
-};
-
-}  // namespace detail
-
-/**
- * IsConvertible determines whether a value of type From will implicitly convert
- * to a value of type To.  For example:
- *
- *   struct A {};
- *   struct B : public A {};
- *   struct C {};
- *
- * mozilla::IsConvertible<A, A>::value is true;
- * mozilla::IsConvertible<A*, A*>::value is true;
- * mozilla::IsConvertible<B, A>::value is true;
- * mozilla::IsConvertible<B*, A*>::value is true;
- * mozilla::IsConvertible<C, A>::value is false;
- * mozilla::IsConvertible<A, C>::value is false;
- * mozilla::IsConvertible<A*, C*>::value is false;
- * mozilla::IsConvertible<C*, A*>::value is false.
- *
- * For obscure reasons, you can't use IsConvertible when the types being tested
- * are related through private inheritance, and you'll get a compile error if
- * you try.  Just don't do it!
- *
- * Note - we need special handling for void, which ConvertibleTester doesn't
- * handle. The void handling here doesn't handle const/volatile void correctly,
- * which could be easily fixed if the need arises.
- */
-template <typename From, typename To>
-struct IsConvertible
-    : IntegralConstant<bool, detail::ConvertibleTester<From, To>::value> {};
-
-template <typename B>
-struct IsConvertible<void, B> : IntegralConstant<bool, IsVoid<B>::value> {};
-
-template <typename A>
-struct IsConvertible<A, void> : IntegralConstant<bool, IsVoid<A>::value> {};
-
-template <>
-struct IsConvertible<void, void> : TrueType {};
 
 /* 20.9.7 Transformations between types [meta.trans] */
 
@@ -312,29 +219,6 @@ struct RemoveCV {
 
 /* 20.9.7.2 Reference modifications [meta.trans.ref] */
 
-/**
- * Converts reference types to the underlying types.
- *
- * mozilla::RemoveReference<T>::Type is T;
- * mozilla::RemoveReference<T&>::Type is T;
- * mozilla::RemoveReference<T&&>::Type is T;
- */
-
-template <typename T>
-struct RemoveReference {
-  typedef T Type;
-};
-
-template <typename T>
-struct RemoveReference<T&> {
-  typedef T Type;
-};
-
-template <typename T>
-struct RemoveReference<T&&> {
-  typedef T Type;
-};
-
 namespace detail {
 
 enum Voidness { TIsVoid, TIsNotVoid };
@@ -371,85 +255,6 @@ struct AddRvalueReferenceHelper<T, TIsNotVoid> {
  */
 template <typename T>
 struct AddRvalueReference : detail::AddRvalueReferenceHelper<T> {};
-
-/* 20.9.7.5 Pointer modifications [meta.trans.ptr] */
-
-namespace detail {
-
-template <typename T, typename CVRemoved>
-struct RemovePointerHelper {
-  typedef T Type;
-};
-
-template <typename T, typename Pointee>
-struct RemovePointerHelper<T, Pointee*> {
-  typedef Pointee Type;
-};
-
-}  // namespace detail
-
-/**
- * Produces the pointed-to type if a pointer is provided, else returns the input
- * type.  Note that this does not dereference pointer-to-member pointers.
- *
- * struct S { bool m; void f(); };
- * mozilla::RemovePointer<int>::Type is int;
- * mozilla::RemovePointer<int*>::Type is int;
- * mozilla::RemovePointer<int* const>::Type is int;
- * mozilla::RemovePointer<int* volatile>::Type is int;
- * mozilla::RemovePointer<const long*>::Type is const long;
- * mozilla::RemovePointer<void* const>::Type is void;
- * mozilla::RemovePointer<void (S::*)()>::Type is void (S::*)();
- * mozilla::RemovePointer<void (*)()>::Type is void();
- * mozilla::RemovePointer<bool S::*>::Type is bool S::*.
- */
-template <typename T>
-struct RemovePointer
-    : detail::RemovePointerHelper<T, typename RemoveCV<T>::Type> {};
-
-/* 20.9.7.6 Other transformations [meta.trans.other] */
-
-/**
- * EnableIf is a struct containing a typedef of T if and only if B is true.
- *
- * mozilla::EnableIf<true, int>::Type is int;
- * mozilla::EnableIf<false, int>::Type is a compile-time error.
- *
- * Use this template to implement SFINAE-style (Substitution Failure Is not An
- * Error) requirements.  For example, you might use it to impose a restriction
- * on a template parameter:
- *
- *   template<typename T>
- *   class PodVector // vector optimized to store POD (memcpy-able) types
- *   {
- *      EnableIf<IsPod<T>::value, T>::Type* vector;
- *      size_t length;
- *      ...
- *   };
- */
-template <bool B, typename T = void>
-struct EnableIf {};
-
-template <typename T>
-struct EnableIf<true, T> {
-  typedef T Type;
-};
-
-/**
- * Conditional selects a class between two, depending on a given boolean value.
- *
- * mozilla::Conditional<true, A, B>::Type is A;
- * mozilla::Conditional<false, A, B>::Type is B;
- */
-template <bool Condition, typename A, typename B>
-struct Conditional {
-  typedef A Type;
-};
-
-template <class A, class B>
-struct Conditional<false, A, B> {
-  typedef B Type;
-};
 
 } /* namespace mozilla */
 

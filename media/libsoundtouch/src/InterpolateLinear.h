@@ -8,10 +8,6 @@
 ///
 ////////////////////////////////////////////////////////////////////////////////
 //
-// $Id: InterpolateLinear.h 179 2014-01-06 18:41:42Z oparviai $
-//
-////////////////////////////////////////////////////////////////////////////////
-//
 // License :
 //
 //  SoundTouch audio processing library
@@ -42,14 +38,12 @@
 namespace soundtouch
 {
 
-/// Linear transposer class that uses integer arithmetics
+/// Linear transposer class that uses integer arithmetic
 class InterpolateLinearInteger : public TransposerBase
 {
 protected:
     int iFract;
     int iRate;
-
-    virtual void resetRegisters();
 
     virtual int transposeMono(SAMPLETYPE *dest, 
                        const SAMPLETYPE *src, 
@@ -63,17 +57,22 @@ public:
 
     /// Sets new target rate. Normal rate = 1.0, smaller values represent slower 
     /// rate, larger faster rates.
-    virtual void setRate(float newRate);
+    virtual void setRate(double newRate);
+
+    virtual void resetRegisters();
+
+    int getLatency() const
+    {
+        return 0;
+    }
 };
 
 
-/// Linear transposer class that uses floating point arithmetics
+/// Linear transposer class that uses floating point arithmetic
 class InterpolateLinearFloat : public TransposerBase
 {
 protected:
-    float fract;
-
-    virtual void resetRegisters();
+    double fract;
 
     virtual int transposeMono(SAMPLETYPE *dest, 
                        const SAMPLETYPE *src, 
@@ -85,6 +84,13 @@ protected:
 
 public:
     InterpolateLinearFloat();
+
+    virtual void resetRegisters();
+
+    int getLatency() const
+    {
+        return 0;
+    }
 };
 
 }

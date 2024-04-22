@@ -12,10 +12,23 @@
 
 using namespace mozilla;
 
-void PrioritizedEventQueue::PutEvent(
-    already_AddRefed<nsIRunnable>&& aEvent, EventQueuePriority aPriority,
-    const AutoLock& aProofOfLock) {
+PrioritizedEventQueue::PrioritizedEventQueue(
+    already_AddRefed<nsIIdlePeriod> aIdlePeriod)
+    : mHighQueue(MakeUnique<EventQueue>(EventQueuePriority::High)),
+      mInputQueue(MakeUnique<EventQueueSized<32>>(EventQueuePriority::Input)),
+      mMediumHighQueue(MakeUnique<EventQueue>(EventQueuePriority::MediumHigh)),
+      mNormalQueue(MakeUnique<EventQueueSized<64>>(EventQueuePriority::Normal)),
+      mDeferredTimersQueue(
+          MakeUnique<EventQueue>(EventQueuePriority::DeferredTimers)),
+      mIdleQueue(MakeUnique<EventQueue>(EventQueuePriority::Idle)),
+      mIdlePeriod(aIdlePeriod) {}
 
+PrioritizedEventQueue::~PrioritizedEventQueue() = default;
+
+void PrioritizedEventQueue::PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
+                                     EventQueuePriority aPriority,
+                                     const AutoLock& aProofOfLock,
+                                     mozilla::TimeDuration* aDelay) {
   // Double check the priority with a QI.
   RefPtr<nsIRunnable> event(aEvent);
   EventQueuePriority priority = aPriority;
@@ -30,22 +43,24 @@ void PrioritizedEventQueue::PutEvent(
 
   switch (priority) {
     case EventQueuePriority::High:
-      mHighQueue->PutEvent(event.forget(), priority, aProofOfLock);
+      mHighQueue->PutEvent(event.forget(), priority, aProofOfLock, aDelay);
       break;
     case EventQueuePriority::Input:
-      mInputQueue->PutEvent(event.forget(), priority, aProofOfLock);
+      mInputQueue->PutEvent(event.forget(), priority, aProofOfLock, aDelay);
       break;
     case EventQueuePriority::MediumHigh:
-      mMediumHighQueue->PutEvent(event.forget(), priority, aProofOfLock);
+      mMediumHighQueue->PutEvent(event.forget(), priority, aProofOfLock,
+                                 aDelay);
       break;
     case EventQueuePriority::Normal:
-      mNormalQueue->PutEvent(event.forget(), priority, aProofOfLock);
+      mNormalQueue->PutEvent(event.forget(), priority, aProofOfLock, aDelay);
       break;
     case EventQueuePriority::DeferredTimers:
-      mDeferredTimersQueue->PutEvent(event.forget(), priority, aProofOfLock);
+      mDeferredTimersQueue->PutEvent(event.forget(), priority, aProofOfLock,
+                                     aDelay);
       break;
     case EventQueuePriority::Idle:
-      mIdleQueue->PutEvent(event.forget(), priority, aProofOfLock);
+      mIdleQueue->PutEvent(event.forget(), priority, aProofOfLock, aDelay);
       break;
     case EventQueuePriority::Count:
       MOZ_CRASH("EventQueuePriority::Count isn't a valid priority");
@@ -174,16 +189,16 @@ EventQueuePriority PrioritizedEventQueue::SelectQueue(
   return queue;
 }
 
+// The delay returned is the queuing delay a hypothetical Input event would
+// see due to the current running event if it had arrived while the current
+// event was queued.  This means that any event running at  priority below
+// Input doesn't cause queuing delay for Input events, and we return
+// TimeDuration() for those cases.
 already_AddRefed<nsIRunnable> PrioritizedEventQueue::GetEvent(
-    EventQueuePriority* aPriority, const AutoLock& aProofOfLock) {
+    EventQueuePriority* aPriority, const AutoLock& aProofOfLock,
+    mozilla::TimeDuration* aHypotheticalInputEventDelay) {
   auto guard =
       MakeScopeExit([&] { mHasPendingEventsPromisedIdleEvent = false; });
-
-#ifndef RELEASE_OR_BETA
-  // Clear mNextIdleDeadline so that it is possible to determine that
-  // we're running an idle runnable in ProcessNextEvent.
-  *mNextIdleDeadline = TimeStamp();
-#endif
 
   EventQueuePriority queue = SelectQueue(true, aProofOfLock);
 
@@ -191,71 +206,85 @@ already_AddRefed<nsIRunnable> PrioritizedEventQueue::GetEvent(
     *aPriority = queue;
   }
 
-  if (queue == EventQueuePriority::High) {
-    nsCOMPtr<nsIRunnable> event = mHighQueue->GetEvent(aPriority, aProofOfLock);
-    MOZ_ASSERT(event);
-    mInputHandlingStartTime = TimeStamp();
-    mProcessHighPriorityQueue = false;
-    return event.forget();
-  }
+  // Since Input events will only be delayed behind Input or High events,
+  // the amount of time a lower-priority event spent in the queue is
+  // irrelevant in knowing how long an input event would be delayed.
+  // Alternatively, we could export the delay and let the higher-level code
+  // key off the returned priority level (though then it'd need to know
+  // if the thread's queue was a PrioritizedEventQueue or normal/other
+  // EventQueue).
+  nsCOMPtr<nsIRunnable> event;
+  switch (queue) {
+    default:
+      MOZ_CRASH();
+      break;
 
-  if (queue == EventQueuePriority::Input) {
-    nsCOMPtr<nsIRunnable> event =
-        mInputQueue->GetEvent(aPriority, aProofOfLock);
-    MOZ_ASSERT(event);
-    return event.forget();
-  }
+    case EventQueuePriority::High:
+      event = mHighQueue->GetEvent(aPriority, aProofOfLock,
+                                   aHypotheticalInputEventDelay);
+      MOZ_ASSERT(event);
+      mInputHandlingStartTime = TimeStamp();
+      mProcessHighPriorityQueue = false;
+      break;
 
-  if (queue == EventQueuePriority::MediumHigh) {
-    nsCOMPtr<nsIRunnable> event =
-        mMediumHighQueue->GetEvent(aPriority, aProofOfLock);
-    return event.forget();
-  }
+    case EventQueuePriority::Input:
+      event = mInputQueue->GetEvent(aPriority, aProofOfLock,
+                                    aHypotheticalInputEventDelay);
+      MOZ_ASSERT(event);
+      break;
 
-  if (queue == EventQueuePriority::Normal) {
-    nsCOMPtr<nsIRunnable> event =
-        mNormalQueue->GetEvent(aPriority, aProofOfLock);
-    return event.forget();
-  }
+      // All queue priorities below Input don't add their queuing time to the
+      // time an input event will be delayed, so report 0 for time-in-queue
+      // if we're below Input; input events will only be delayed by the time
+      // an event actually runs (if the event is below Input event's priority)
+    case EventQueuePriority::MediumHigh:
+      event = mMediumHighQueue->GetEvent(aPriority, aProofOfLock);
+      *aHypotheticalInputEventDelay = TimeDuration();
+      break;
 
-  // If we get here, then all queues except deferredtimers and idle are empty.
-  MOZ_ASSERT(queue == EventQueuePriority::Idle ||
-             queue == EventQueuePriority::DeferredTimers);
+    case EventQueuePriority::Normal:
+      event = mNormalQueue->GetEvent(aPriority, aProofOfLock);
+      *aHypotheticalInputEventDelay = TimeDuration();
+      break;
 
-  if (mIdleQueue->IsEmpty(aProofOfLock) &&
-      mDeferredTimersQueue->IsEmpty(aProofOfLock)) {
-    MOZ_ASSERT(!mHasPendingEventsPromisedIdleEvent);
-    return nullptr;
-  }
+    case EventQueuePriority::Idle:
+    case EventQueuePriority::DeferredTimers:
+      *aHypotheticalInputEventDelay = TimeDuration();
+      // If we get here, then all queues except deferredtimers and idle are
+      // empty.
 
-  TimeStamp idleDeadline = GetIdleDeadline();
-  if (!idleDeadline) {
-    return nullptr;
-  }
+      if (mIdleQueue->IsEmpty(aProofOfLock) &&
+          mDeferredTimersQueue->IsEmpty(aProofOfLock)) {
+        MOZ_ASSERT(!mHasPendingEventsPromisedIdleEvent);
+        return nullptr;
+      }
 
-  nsCOMPtr<nsIRunnable> event =
-      mDeferredTimersQueue->GetEvent(aPriority, aProofOfLock);
+      TimeStamp idleDeadline = GetIdleDeadline();
+      if (!idleDeadline) {
+        return nullptr;
+      }
+
+      event = mDeferredTimersQueue->GetEvent(aPriority, aProofOfLock);
+      if (!event) {
+        event = mIdleQueue->GetEvent(aPriority, aProofOfLock);
+      }
+      if (event) {
+        nsCOMPtr<nsIIdleRunnable> idleEvent = do_QueryInterface(event);
+        if (idleEvent) {
+          idleEvent->SetDeadline(idleDeadline);
+        }
+      }
+      break;
+  }  // switch (queue)
+
   if (!event) {
-    event = mIdleQueue->GetEvent(aPriority, aProofOfLock);
-  }
-  if (event) {
-    nsCOMPtr<nsIIdleRunnable> idleEvent = do_QueryInterface(event);
-    if (idleEvent) {
-      idleEvent->SetDeadline(idleDeadline);
-    }
-
-#ifndef RELEASE_OR_BETA
-    // Store the next idle deadline to be able to determine budget use
-    // in ProcessNextEvent.
-    *mNextIdleDeadline = idleDeadline;
-#endif
+    *aHypotheticalInputEventDelay = TimeDuration();
   }
 
   return event.forget();
 }
 
-bool PrioritizedEventQueue::IsEmpty(
-    const AutoLock& aProofOfLock) {
+bool PrioritizedEventQueue::IsEmpty(const AutoLock& aProofOfLock) {
   // Just check IsEmpty() on the sub-queues. Don't bother checking the idle
   // deadline since that only determines whether an idle event is ready or not.
   return mHighQueue->IsEmpty(aProofOfLock) &&
@@ -266,8 +295,7 @@ bool PrioritizedEventQueue::IsEmpty(
          mIdleQueue->IsEmpty(aProofOfLock);
 }
 
-bool PrioritizedEventQueue::HasReadyEvent(
-    const AutoLock& aProofOfLock) {
+bool PrioritizedEventQueue::HasReadyEvent(const AutoLock& aProofOfLock) {
   mHasPendingEventsPromisedIdleEvent = false;
 
   EventQueuePriority queue = SelectQueue(false, aProofOfLock);
@@ -307,8 +335,7 @@ bool PrioritizedEventQueue::HasPendingHighPriorityEvents(
   return !mHighQueue->IsEmpty(aProofOfLock);
 }
 
-size_t PrioritizedEventQueue::Count(
-    const AutoLock& aProofOfLock) const {
+size_t PrioritizedEventQueue::Count(const AutoLock& aProofOfLock) const {
   MOZ_CRASH("unimplemented");
 }
 

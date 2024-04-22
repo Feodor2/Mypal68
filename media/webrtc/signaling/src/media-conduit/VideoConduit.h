@@ -102,6 +102,8 @@ class WebrtcVideoConduit
    * feed in received RTCP Frames to the VideoEngine for decoding
    */
   MediaConduitErrorCode ReceivedRTCPPacket(const void* data, int len) override;
+  Maybe<DOMHighResTimeStamp> LastRtcpReceived() const override;
+  DOMHighResTimeStamp GetNow() const override { return mCall->GetNow(); }
 
   MediaConduitErrorCode StopTransmitting() override;
   MediaConduitErrorCode StartTransmitting() override;
@@ -625,6 +627,9 @@ class WebrtcVideoConduit
 
   // Main thread only
   std::string mPCHandle;
+
+  // Accessed only on mStsThread
+  Maybe<DOMHighResTimeStamp> mLastRtcpReceived;
 };
 }  // namespace mozilla
 

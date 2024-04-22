@@ -86,6 +86,7 @@ EXPORTS += [
 EXPORTS.mozilla += [
     'ArenaAllocator.h',
     'ArenaAllocatorExtensions.h',
+    'ArrayAlgorithm.h',
     'ArrayIterator.h',
     'AtomArray.h',
     'Dafsa.h',

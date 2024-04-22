@@ -4,8 +4,8 @@
 
 #include "ProfileBuffer.h"
 
-#include "ProfilerMarker.h"
-
+#include "BaseProfiler.h"
+#include "js/GCAPI.h"
 #include "jsfriendapi.h"
 #include "mozilla/MathAlgorithms.h"
 #include "nsJSPrincipals.h"
@@ -13,44 +13,63 @@
 
 using namespace mozilla;
 
-ProfileBuffer::ProfileBuffer(uint32_t aCapacity)
-    : mEntryIndexMask(0), mRangeStart(0), mRangeEnd(0), mCapacity(0) {
-  // Round aCapacity up to the nearest power of two, so that we can index
-  // mEntries with a simple mask and don't need to do a slow modulo operation.
-  const uint32_t UINT32_MAX_POWER_OF_TWO = 1 << 31;
-  MOZ_RELEASE_ASSERT(aCapacity <= UINT32_MAX_POWER_OF_TWO,
-                     "aCapacity is larger than what we support");
-  mCapacity = RoundUpPow2(aCapacity);
-  mEntryIndexMask = mCapacity - 1;
-  mEntries = MakeUnique<ProfileBufferEntry[]>(mCapacity);
+// 65536 bytes should be plenty for a single backtrace.
+static constexpr auto WorkerBufferBytes = MakePowerOfTwo32<65536>();
+
+ProfileBuffer::ProfileBuffer(BlocksRingBuffer& aBuffer, PowerOfTwo32 aCapacity)
+    : mEntries(aBuffer),
+      mWorkerBuffer(
+          MakeUnique<BlocksRingBuffer::Byte[]>(WorkerBufferBytes.Value())) {
+  // Only ProfileBuffer should control this buffer, and it should be empty when
+  // there is no ProfileBuffer using it.
+  MOZ_ASSERT(mEntries.BufferLength().isNothing());
+  // Allocate the requested capacity.
+  mEntries.Set(aCapacity);
+}
+
+ProfileBuffer::ProfileBuffer(BlocksRingBuffer& aBuffer) : mEntries(aBuffer) {
+  // Assume the given buffer is not empty.
+  MOZ_ASSERT(mEntries.BufferLength().isSome());
 }
 
 ProfileBuffer::~ProfileBuffer() {
-  while (mStoredMarkers.peek()) {
-    delete mStoredMarkers.popHead();
+  // Only ProfileBuffer controls this buffer, and it should be empty when there
+  // is no ProfileBuffer using it.
+  mEntries.Reset();
+  MOZ_ASSERT(mEntries.BufferLength().isNothing());
+}
+
+/* static */
+BlocksRingBuffer::BlockIndex ProfileBuffer::AddEntry(
+    BlocksRingBuffer& aBlocksRingBuffer, const ProfileBufferEntry& aEntry) {
+  switch (aEntry.GetKind()) {
+#define SWITCH_KIND(KIND, TYPE, SIZE)                      \
+  case ProfileBufferEntry::Kind::KIND: {                   \
+    return aBlocksRingBuffer.PutFrom(&aEntry, 1 + (SIZE)); \
+  }
+
+    FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(SWITCH_KIND)
+
+#undef SWITCH_KIND
+    default:
+      MOZ_ASSERT(false, "Unhandled ProfilerBuffer entry KIND");
+      return BlockIndex{};
   }
 }
 
 // Called from signal, call only reentrant functions
-void ProfileBuffer::AddEntry(const ProfileBufferEntry& aEntry) {
-  GetEntry(mRangeEnd++) = aEntry;
+uint64_t ProfileBuffer::AddEntry(const ProfileBufferEntry& aEntry) {
+  return AddEntry(mEntries, aEntry).ConvertToU64();
+}
 
-  // The distance between mRangeStart and mRangeEnd must never exceed
-  // mCapacity, so advance mRangeStart if necessary.
-  if (mRangeEnd - mRangeStart > mCapacity) {
-    mRangeStart++;
-  }
+/* static */
+BlocksRingBuffer::BlockIndex ProfileBuffer::AddThreadIdEntry(
+    BlocksRingBuffer& aBlocksRingBuffer, int aThreadId) {
+  return AddEntry(aBlocksRingBuffer, ProfileBufferEntry::ThreadId(aThreadId));
 }
 
 uint64_t ProfileBuffer::AddThreadIdEntry(int aThreadId) {
-  uint64_t pos = mRangeEnd;
-  AddEntry(ProfileBufferEntry::ThreadId(aThreadId));
-  return pos;
-}
-
-void ProfileBuffer::AddStoredMarker(ProfilerMarker* aStoredMarker) {
-  aStoredMarker->SetPositionInBuffer(mRangeEnd);
-  mStoredMarkers.insert(aStoredMarker);
+  return AddThreadIdEntry(mEntries, aThreadId).ConvertToU64();
 }
 
 void ProfileBuffer::CollectCodeLocation(
@@ -90,26 +109,61 @@ void ProfileBuffer::CollectCodeLocation(
   }
 }
 
-void ProfileBuffer::DeleteExpiredStoredMarkers() {
-  // Delete markers of samples that have been overwritten due to circular
-  // buffer wraparound.
-  while (mStoredMarkers.peek() &&
-         mStoredMarkers.peek()->HasExpired(mRangeStart)) {
-    delete mStoredMarkers.popHead();
-  }
-}
-
-size_t ProfileBuffer::SizeOfIncludingThis(
-    mozilla::MallocSizeOf aMallocSizeOf) const {
-  size_t n = aMallocSizeOf(this);
-  n += aMallocSizeOf(mEntries.get());
-
+size_t ProfileBuffer::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:
   // - memory pointed to by the elements within mEntries
-  // - mStoredMarkers
+  return mEntries.SizeOfExcludingThis(aMallocSizeOf);
+}
 
-  return n;
+size_t ProfileBuffer::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
+}
+
+void ProfileBuffer::CollectOverheadStats(TimeDuration aSamplingTime,
+                                         TimeDuration aLocking,
+                                         TimeDuration aCleaning,
+                                         TimeDuration aCounters,
+                                         TimeDuration aThreads) {
+  double time = aSamplingTime.ToMilliseconds() * 1000.0;
+  if (mFirstSamplingTimeNs == 0.0) {
+    mFirstSamplingTimeNs = time;
+  } else {
+    // Note that we'll have 1 fewer interval than other numbers (because
+    // we need both ends of an interval to know its duration). The final
+    // difference should be insignificant over the expected many thousands
+    // of iterations.
+    mIntervalsNs.Count(time - mLastSamplingTimeNs);
+  }
+  mLastSamplingTimeNs = time;
+  double locking = aLocking.ToMilliseconds() * 1000.0;
+  double cleaning = aCleaning.ToMilliseconds() * 1000.0;
+  double counters = aCounters.ToMilliseconds() * 1000.0;
+  double threads = aThreads.ToMilliseconds() * 1000.0;
+
+  mOverheadsNs.Count(locking + cleaning + counters + threads);
+  mLockingsNs.Count(locking);
+  mCleaningsNs.Count(cleaning);
+  mCountersNs.Count(counters);
+  mThreadsNs.Count(threads);
+
+  AddEntry(ProfileBufferEntry::ProfilerOverheadTime(time));
+  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(locking));
+  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(cleaning));
+  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(counters));
+  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(threads));
+}
+
+ProfilerBufferInfo ProfileBuffer::GetProfilerBufferInfo() const {
+  return {BufferRangeStart(),
+          BufferRangeEnd(),
+          mEntries.BufferLength()->Value() / 8,  // 8 bytes per entry.
+          mIntervalsNs,
+          mOverheadsNs,
+          mLockingsNs,
+          mCleaningsNs,
+          mCountersNs,
+          mThreadsNs};
 }
 
 /* ProfileBufferCollector */

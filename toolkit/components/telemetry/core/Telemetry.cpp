@@ -80,7 +80,6 @@
 #include "nsXULAppAPI.h"
 #include "other/CombinedStacks.h"
 //#include "other/TelemetryIOInterposeObserver.h"
-#include "other/WebrtcTelemetry.h"
 #include "plstr.h"
 #if defined(MOZ_GECKO_PROFILER)
 #  include "shared-libraries.h"
@@ -200,8 +199,6 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   uint32_t mFailedLockCount;
   nsCOMArray<nsIFetchTelemetryDataCallback> mCallbacks;
   friend class nsFetchTelemetryData;
-
-  WebrtcTelemetry mWebrtcTelemetry;
 };
 
 TelemetryImpl* TelemetryImpl::sTelemetry = nullptr;
@@ -223,10 +220,6 @@ TelemetryImpl::CollectReports(nsIHandleReportCallback* aHandleReport,
       "explicit/telemetry/scalar/shallow",
       TelemetryScalar::GetMapShallowSizesOfExcludingThis(aMallocSizeOf),
       "Memory used by the Telemetry Scalar implemenation");
-
-  COLLECT_REPORT("explicit/telemetry/WebRTC",
-                 mWebrtcTelemetry.SizeOfExcludingThis(aMallocSizeOf),
-                 "Memory used by WebRTC Telemetry");
 
   {  // Scope for mHashMutex lock
     MutexAutoLock lock(mHashMutex);
@@ -670,12 +663,6 @@ TelemetryImpl::GetDebugSlowSQL(JSContext* cx,
   bool revealPrivateSql =
       Preferences::GetBool("toolkit.telemetry.debugSlowSql", false);
   if (GetSQLStats(cx, ret, revealPrivateSql)) return NS_OK;
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-TelemetryImpl::GetWebrtcStats(JSContext* cx, JS::MutableHandle<JS::Value> ret) {
-  if (mWebrtcTelemetry.GetWebrtcStats(cx, ret)) return NS_OK;
   return NS_ERROR_FAILURE;
 }
 
@@ -1487,14 +1474,6 @@ void TelemetryImpl::RecordSlowStatement(const nsACString& sql,
   StoreSlowSQL(fullSQL, delay, Unsanitized);
 }
 
-void TelemetryImpl::RecordIceCandidates(const uint32_t iceCandidateBitmask,
-                                        const bool success) {
-  if (!sTelemetry || !TelemetryHistogram::CanRecordExtended()) return;
-
-  sTelemetry->mWebrtcTelemetry.RecordIceCandidateMask(iceCandidateBitmask,
-                                                      success);
-}
-
 #if defined(MOZ_GECKO_PROFILER)
 
 void TelemetryImpl::DoStackCapture(const nsACString& aKey) {
@@ -2000,11 +1979,6 @@ bool CanRecordPrereleaseData() {
 void RecordSlowSQLStatement(const nsACString& statement,
                             const nsACString& dbName, uint32_t delay) {
   TelemetryImpl::RecordSlowStatement(statement, dbName, delay);
-}
-
-void RecordWebrtcIceCandidates(const uint32_t iceCandidateBitmask,
-                               const bool success) {
-  TelemetryImpl::RecordIceCandidates(iceCandidateBitmask, success);
 }
 
 void Init() {

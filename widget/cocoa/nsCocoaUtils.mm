@@ -1234,8 +1234,7 @@ void nsCocoaUtils::ResolveMediaCapturePromises(bool aGranted, PromiseArray& aPro
 
   // Remove each promise from the list and resolve it.
   while (aPromiseList->Length() > 0) {
-    RefPtr<Promise> promise = aPromiseList->LastElement();
-    aPromiseList->RemoveLastElement();
+    RefPtr<Promise> promise = aPromiseList->PopLastElement();
 
     // Resolve on main thread
     nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(

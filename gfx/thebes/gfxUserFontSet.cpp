@@ -322,7 +322,7 @@ void gfxUserFontEntry::StoreUserFontData(gfxFontEntry* aFontEntry,
   userFontData->mFormat = src.mFormatFlags;
   userFontData->mRealName = aOriginalName;
   if (aMetadata) {
-    userFontData->mMetadata.SwapElements(*aMetadata);
+    userFontData->mMetadata = std::move(*aMetadata);
     userFontData->mMetaOrigLen = aMetaOrigLen;
     userFontData->mCompression = aCompression;
   }

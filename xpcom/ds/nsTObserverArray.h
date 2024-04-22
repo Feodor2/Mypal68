@@ -6,6 +6,7 @@
 #define nsTObserverArray_h___
 
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/ReverseIterator.h"
 #include "nsTArray.h"
 #include "nsCycleCollectionNoteChild.h"
 
@@ -29,6 +30,9 @@ class nsTObserverArray_base {
 
  protected:
   class Iterator_base {
+   public:
+    Iterator_base(const Iterator_base&) = delete;
+
    protected:
     friend class nsTObserverArray_base;
 
@@ -181,8 +185,8 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
   // Append an element to the array.
   // @param aItem The item to append.
   template <class Item>
-  void AppendElement(const Item& aItem) {
-    mArray.AppendElement(aItem);
+  void AppendElement(Item&& aItem) {
+    mArray.AppendElement(std::forward<Item>(aItem));
   }
 
   // Same as above, but without copy-constructing. This is useful to avoid
@@ -267,6 +271,9 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
    protected:
     friend class nsAutoTObserverArray;
     typedef nsAutoTObserverArray<T, N> array_type;
+
+    Iterator(const Iterator& aOther)
+        : Iterator(aOther.mPosition, aOther.mArray) {}
 
     Iterator(index_type aPosition, const array_type& aArray)
         : Iterator_base(aPosition, aArray.mIterators),
@@ -387,6 +394,110 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
       return base_type::mArray.RemoveElementAt(base_type::mPosition);
     }
   };
+
+  struct EndSentinel {};
+
+  // Internal type, do not use directly, see
+  // ForwardRange()/EndLimitedRange()/BackwardRange().
+  template <typename Iterator, typename U>
+  struct STLIterator {
+    using value_type = std::remove_reference_t<U>;
+
+    explicit STLIterator(const nsAutoTObserverArray<T, N>& aArray)
+        : mIterator{aArray} {
+      operator++();
+    }
+
+    bool operator!=(const EndSentinel&) const {
+      // We are a non-end-sentinel and the other is an end-sentinel, so we are
+      // still valid if mCurrent is valid.
+      return mCurrent;
+    }
+
+    STLIterator& operator++() {
+      mCurrent = mIterator.HasMore() ? &mIterator.GetNext() : nullptr;
+      return *this;
+    }
+
+    value_type* operator->() { return mCurrent; }
+    U& operator*() { return *mCurrent; }
+
+   private:
+    Iterator mIterator;
+    value_type* mCurrent;
+  };
+
+  // Internal type, do not use directly, see
+  // ForwardRange()/EndLimitedRange()/BackwardRange().
+  template <typename Iterator, typename U>
+  class STLIteratorRange {
+   public:
+    using iterator = STLIterator<Iterator, U>;
+
+    explicit STLIteratorRange(const nsAutoTObserverArray<T, N>& aArray)
+        : mArray{aArray} {}
+
+    STLIteratorRange(const STLIteratorRange& aOther) = delete;
+
+    iterator begin() const { return iterator{mArray}; }
+    EndSentinel end() const { return {}; }
+
+   private:
+    const nsAutoTObserverArray<T, N>& mArray;
+  };
+
+  template <typename U>
+  using STLForwardIteratorRange = STLIteratorRange<ForwardIterator, U>;
+
+  template <typename U>
+  using STLEndLimitedIteratorRange = STLIteratorRange<EndLimitedIterator, U>;
+
+  template <typename U>
+  using STLBackwardIteratorRange = STLIteratorRange<BackwardIterator, U>;
+
+  // Constructs a range (usable with range-based for) based on the
+  // ForwardIterator semantics. Note that this range does not provide
+  // full-feature STL-style iterators usable with STL-style algorithms.
+  auto ForwardRange() { return STLForwardIteratorRange<T>{*this}; }
+
+  // Constructs a const range (usable with range-based for) based on the
+  // ForwardIterator semantics. Note that this range does not provide
+  // full-feature STL-style iterators usable with STL-style algorithms.
+  auto ForwardRange() const { return STLForwardIteratorRange<const T>{*this}; }
+
+  // Constructs a range (usable with range-based for) based on the
+  // EndLimitedIterator semantics. Note that this range does not provide
+  // full-feature STL-style iterators usable with STL-style algorithms.
+  auto EndLimitedRange() { return STLEndLimitedIteratorRange<T>{*this}; }
+
+  // Constructs a const range (usable with range-based for) based on the
+  // EndLimitedIterator semantics. Note that this range does not provide
+  // full-feature STL-style iterators usable with STL-style algorithms.
+  auto EndLimitedRange() const {
+    return STLEndLimitedIteratorRange<const T>{*this};
+  }
+
+  // Constructs a range (usable with range-based for) based on the
+  // BackwardIterator semantics. Note that this range does not provide
+  // full-feature STL-style iterators usable with STL-style algorithms.
+  auto BackwardRange() { return STLBackwardIteratorRange<T>{*this}; }
+
+  // Constructs a const range (usable with range-based for) based on the
+  // BackwardIterator semantics. Note that this range does not provide
+  // full-feature STL-style iterators usable with STL-style algorithms.
+  auto BackwardRange() const {
+    return STLBackwardIteratorRange<const T>{*this};
+  }
+
+  // Constructs a const range (usable with range-based for and STL-style
+  // algorithms) based on a non-observing iterator. The array must not be
+  // modified during iteration.
+  auto NonObservingRange() const {
+    return mozilla::detail::IteratorRange<
+        typename AutoTArray<T, N>::const_iterator,
+        typename AutoTArray<T, N>::const_reverse_iterator>{mArray.cbegin(),
+                                                           mArray.cend()};
+  }
 
  protected:
   AutoTArray<T, N> mArray;

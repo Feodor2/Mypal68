@@ -63,6 +63,8 @@ namespace mozilla {
 using namespace dom;
 using namespace widget;
 
+using ChildBlockBoundary = HTMLEditUtils::ChildBlockBoundary;
+
 const char16_t kNBSP = 160;
 
 // Some utilities to handle overloading of "A" tag for link and named anchor.
@@ -855,7 +857,7 @@ void HTMLEditor::IsPrevCharInNodeWhitespace(nsIContent* aContent,
   }
 }
 
-bool HTMLEditor::IsVisibleBRElement(nsINode* aNode) {
+bool HTMLEditor::IsVisibleBRElement(const nsINode* aNode) {
   MOZ_ASSERT(aNode);
   if (!aNode->IsHTMLElement(nsGkAtoms::br)) {
     return false;
@@ -2519,7 +2521,7 @@ Element* HTMLEditor::GetInclusiveAncestorByTagNameInternal(
 
   bool lookForLink = IsLinkTag(aTagName);
   bool lookForNamedAnchor = IsNamedAnchorTag(aTagName);
-  for (Element* element : InclusiveAncestorsOfType<Element>(*currentElement)) {
+  for (Element* element : currentElement->InclusiveAncestorsOfType<Element>()) {
     // Stop searching if parent is a body element.  Note: Originally used
     // IsRoot() to/ stop at table cells, but that's too messy when you are
     // trying to find the parent table.
@@ -2739,9 +2741,21 @@ already_AddRefed<Element> HTMLEditor::GetSelectedElement(const nsAtom* aTagName,
     // - <p><b>[def</b>}<br></p>
     // Note that we don't need special handling for <a href> because double
     // clicking it selects the element and we use the first path to handle it.
-    if (lastElementInRange->GetNextSibling() &&
-        lastElementInRange->GetNextSibling()->IsHTMLElement(nsGkAtoms::br)) {
-      return nullptr;
+    // Additionally, we have this case too:
+    // - <p><b>[def</b><b>}<br></b></p>
+    // In these cases, the <br> element is not listed up by PostContentIterator.
+    // So, we should return nullptr if next sibling is a `<br>` element or
+    // next sibling starts with `<br>` element.
+    if (nsIContent* nextSibling = lastElementInRange->GetNextSibling()) {
+      if (nextSibling->IsHTMLElement(nsGkAtoms::br)) {
+        return nullptr;
+      }
+      nsIContent* firstEditableLeaf = HTMLEditUtils::GetFirstLeafChild(
+          *nextSibling, ChildBlockBoundary::Ignore);
+      if (firstEditableLeaf &&
+          firstEditableLeaf->IsHTMLElement(nsGkAtoms::br)) {
+        return nullptr;
+      }
     }
 
     if (!aTagName) {
@@ -3057,8 +3071,7 @@ nsresult HTMLEditor::RemoveEmptyInclusiveAncestorInlineElements(
   }
 
   OwningNonNull<nsIContent> content = aContent;
-  for (nsIContent* parentContent :
-       InclusiveAncestorsOfType<nsIContent>(*aContent.GetParent())) {
+  for (nsIContent* parentContent : aContent.AncestorsOfType<nsIContent>()) {
     if (HTMLEditUtils::IsBlockElement(*parentContent) ||
         parentContent->Length() != 1 ||
         !HTMLEditUtils::IsSimplyEditableNode(*parentContent) ||
@@ -4836,7 +4849,7 @@ nsIContent* HTMLEditor::GetNextHTMLSibling(nsINode* aNode,
 }
 
 nsIContent* HTMLEditor::GetPreviousHTMLElementOrTextInternal(
-    nsINode& aNode, bool aNoBlockCrossing) const {
+    const nsINode& aNode, bool aNoBlockCrossing) const {
   if (NS_WARN_IF(!GetActiveEditingHost())) {
     return nullptr;
   }
@@ -4874,7 +4887,7 @@ nsIContent* HTMLEditor::GetPreviousEditableHTMLNodeInternal(
 }
 
 nsIContent* HTMLEditor::GetNextHTMLElementOrTextInternal(
-    nsINode& aNode, bool aNoBlockCrossing) const {
+    const nsINode& aNode, bool aNoBlockCrossing) const {
   if (NS_WARN_IF(!GetActiveEditingHost())) {
     return nullptr;
   }
@@ -4948,7 +4961,8 @@ nsIContent* HTMLEditor::GetLastEditableChild(nsINode& aNode) const {
 }
 
 nsIContent* HTMLEditor::GetFirstEditableLeaf(nsINode& aNode) const {
-  nsIContent* child = GetLeftmostChild(&aNode);
+  nsIContent* child =
+      HTMLEditUtils::GetFirstLeafChild(aNode, ChildBlockBoundary::Ignore);
   while (child && (!EditorUtils::IsEditableContent(*child, EditorType::HTML) ||
                    child->HasChildren())) {
     child = GetNextEditableHTMLNode(*child);
@@ -4963,7 +4977,8 @@ nsIContent* HTMLEditor::GetFirstEditableLeaf(nsINode& aNode) const {
 }
 
 nsIContent* HTMLEditor::GetLastEditableLeaf(nsINode& aNode) const {
-  nsCOMPtr<nsIContent> child = GetRightmostChild(&aNode, false);
+  nsIContent* child =
+      HTMLEditUtils::GetLastLeafChild(aNode, ChildBlockBoundary::Ignore);
   while (child && (!EditorUtils::IsEditableContent(*child, EditorType::HTML) ||
                    child->HasChildren())) {
     child = GetPreviousEditableHTMLNode(*child);

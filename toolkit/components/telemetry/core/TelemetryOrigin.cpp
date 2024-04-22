@@ -16,7 +16,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Pair.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/Tuple.h"
@@ -26,11 +25,9 @@
 #include <type_traits>
 
 using mozilla::Get;
-using mozilla::MakePair;
 using mozilla::MakeTuple;
 using mozilla::MakeUnique;
 using mozilla::MallocSizeOf;
-using mozilla::Pair;
 using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
 using mozilla::Tuple;
@@ -125,7 +122,7 @@ UniquePtr<IdToOriginBag> gMetricToOriginBag;
 mozilla::Atomic<bool, mozilla::Relaxed> gInitDone(false);
 
 // Useful for app-encoded data
-typedef nsTArray<Pair<OriginMetricID, nsTArray<nsTArray<bool>>>>
+typedef nsTArray<std::pair<OriginMetricID, nsTArray<nsTArray<bool>>>>
     IdBoolsPairArray;
 
 // Prio has a maximum supported number of bools it can encode at a time.
@@ -196,9 +193,7 @@ nsresult AppEncodeTo(const StaticMutexAutoLock& lock,
 //
 // EXTERNALLY VISIBLE FUNCTIONS in namespace TelemetryOrigin::
 
-void TelemetryOrigin::InitializeGlobalState() {
-  gInitDone = false;
-}
+void TelemetryOrigin::InitializeGlobalState() { gInitDone = false; }
 
 void TelemetryOrigin::DeInitializeGlobalState() {
   if (!XRE_IsParentProcess()) {
@@ -333,7 +328,7 @@ nsresult TelemetryOrigin::GetOriginSnapshot(bool aClear, JSContext* aCx,
 
 nsresult TelemetryOrigin::GetEncodedOriginSnapshot(
     bool aClear, JSContext* aCx, JS::MutableHandleValue aSnapshot) {
-    return NS_ERROR_FAILURE;
+  return NS_ERROR_FAILURE;
 }
 
 /**

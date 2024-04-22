@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ProcInfo.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include <windows.h>
 #include <psapi.h>
 #include <tlhelp32.h>

@@ -7,24 +7,26 @@
 #ifndef mozilla_css_Loader_h
 #define mozilla_css_Loader_h
 
-#include "nsIPrincipal.h"
+#include <tuple>
+#include <utility>
+
+#include "mozilla/Attributes.h"
+#include "mozilla/CORSMode.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCompatibility.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
+#include "nsIPrincipal.h"
+#include "nsIStyleSheetLinkingElement.h"
 #include "nsRefPtrHashtable.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsTObserverArray.h"
 #include "nsURIHashKey.h"
-#include "nsIStyleSheetLinkingElement.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/CORSMode.h"
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
-#include "mozilla/StyleSheet.h"
-#include "mozilla/UniquePtr.h"
 
 class nsICSSLoaderObserver;
 class nsIConsoleReportCollector;
@@ -203,7 +205,7 @@ class Loader final {
       nsIURI*, SheetParsingMode = eAuthorSheetFeatures,
       UseSystemPrincipal = UseSystemPrincipal::No);
 
-  enum class IsPreload { No, Yes };
+  enum class IsPreload : uint8_t { No, Yes };
 
   /**
    * Asynchronously load the stylesheet at aURL.  If a successful result is
@@ -331,21 +333,22 @@ class Loader final {
     Complete
   };
 
-  Tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
+  std::tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
       const SheetInfo& aInfo, nsIPrincipal* aLoaderPrincipal,
-      css::SheetParsingMode aParsingMode, bool aSyncLoad) {
+      css::SheetParsingMode aParsingMode, bool aSyncLoad,
+      IsPreload aIsPreload) {
     return CreateSheet(aInfo.mURI, aInfo.mContent, aLoaderPrincipal,
                        aParsingMode, aInfo.mCORSMode, aInfo.mReferrerInfo,
-                       aInfo.mIntegrity, aSyncLoad);
+                       aInfo.mIntegrity, aSyncLoad, aIsPreload);
   }
 
   // For inline style, the aURI param is null, but the aLinkingContent
   // must be non-null then.  The loader principal must never be null
   // if aURI is not null.
-  Tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
+  std::tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
       nsIURI* aURI, nsIContent* aLinkingContent, nsIPrincipal* aLoaderPrincipal,
       css::SheetParsingMode, CORSMode, nsIReferrerInfo* aLoadingReferrerInfo,
-      const nsAString& aIntegrity, bool aSyncLoad);
+      const nsAString& aIntegrity, bool aSyncLoad, IsPreload aIsPreload);
 
   // Pass in either a media string or the MediaList from the CSSParser.  Don't
   // pass both.
@@ -370,15 +373,8 @@ class Loader final {
   // Post a load event for aObserver to be notified about aSheet.  The
   // notification will be sent with status NS_OK unless the load event is
   // canceled at some point (in which case it will be sent with
-  // NS_BINDING_ABORTED).  aWasAlternate indicates the state when the load was
-  // initiated, not the state at some later time.  aURI should be the URI the
-  // sheet was loaded from (may be null for inline sheets).  aElement is the
-  // owning element for this sheet.
-  nsresult PostLoadEvent(nsIURI* aURI, StyleSheet* aSheet,
-                         nsICSSLoaderObserver* aObserver,
-                         IsAlternate aWasAlternate, MediaMatched aMediaMatched,
-                         nsIReferrerInfo* aReferrerInfo,
-                         nsIStyleSheetLinkingElement* aElement);
+  // NS_BINDING_ABORTED).
+  nsresult PostLoadEvent(RefPtr<SheetLoadData>);
 
   // Start the loads of all the sheets in mPendingDatas
   void StartDeferredLoads();
@@ -387,7 +383,7 @@ class Loader final {
 
   // Note: LoadSheet is responsible for setting the sheet to complete on
   // failure.
-  nsresult LoadSheet(SheetLoadData&, SheetState, IsPreload);
+  nsresult LoadSheet(SheetLoadData&, SheetState);
 
   enum class AllowAsyncParse {
     Yes,

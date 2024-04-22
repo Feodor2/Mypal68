@@ -615,7 +615,7 @@ class WinUtils {
                                                      PWSTR *ppszPath);
   static SHGetKnownFolderPathPtr sGetKnownFolderPath;
 
-  static const nsTArray<Pair<nsString, nsDependentString>>&
+  static const nsTArray<std::pair<nsString, nsDependentString>>&
   GetWhitelistedPaths();
 
 #ifdef ACCESSIBILITY

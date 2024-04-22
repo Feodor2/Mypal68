@@ -71,7 +71,7 @@ void PeerConnectionMedia::StunAddrsHandler::OnStunAddrsAvailable(
              (int)addrs.Length());
   if (pcm_) {
     pcm_->mStunAddrs = addrs;
-    pcm_->mLocalAddrsCompleted = true;
+    pcm_->mLocalAddrsRequestState = STUN_ADDR_REQUEST_COMPLETE;
     pcm_->FlushIceCtxOperationQueueIfReady();
     // If parent process returns 0 STUN addresses, change ICE connection
     // state to failed.
@@ -90,7 +90,7 @@ PeerConnectionMedia::PeerConnectionMedia(PeerConnectionImpl* parent)
       mSTSThread(mParent->GetSTSThread()),
       mForceProxy(false),
       mStunAddrsRequest(nullptr),
-      mLocalAddrsCompleted(false),
+      mLocalAddrsRequestState(STUN_ADDR_REQUEST_NONE),
       mTargetForDefaultLocalAddressLookupIsSet(false),
       mDestroyed(false) {
   if (XRE_IsContentProcess()) {
@@ -109,10 +109,14 @@ PeerConnectionMedia::~PeerConnectionMedia() {
 }
 
 void PeerConnectionMedia::InitLocalAddrs() {
+  if (mLocalAddrsRequestState == STUN_ADDR_REQUEST_PENDING) {
+    return;
+  }
   if (mStunAddrsRequest) {
+    mLocalAddrsRequestState = STUN_ADDR_REQUEST_PENDING;
     mStunAddrsRequest->SendGetStunAddrs();
   } else {
-    mLocalAddrsCompleted = true;
+    mLocalAddrsRequestState = STUN_ADDR_REQUEST_COMPLETE;
   }
 }
 
@@ -393,8 +397,8 @@ void PeerConnectionMedia::FlushIceCtxOperationQueueIfReady() {
   ASSERT_ON_THREAD(mMainThread);
 
   if (IsIceCtxReady()) {
-    for (auto& mQueuedIceCtxOperation : mQueuedIceCtxOperations) {
-      mQueuedIceCtxOperation->Run();
+    for (auto& queuedIceCtxOperation : mQueuedIceCtxOperations) {
+      queuedIceCtxOperation->Run();
     }
     mQueuedIceCtxOperations.clear();
   }
@@ -413,6 +417,14 @@ void PeerConnectionMedia::PerformOrEnqueueIceCtxOperation(
 
 void PeerConnectionMedia::GatherIfReady() {
   ASSERT_ON_THREAD(mMainThread);
+
+  // Init local addrs here so that if we re-gather after an ICE restart
+  // resulting from changing WiFi networks, we get new local addrs.
+  // Otherwise, we would reuse the addrs from the original WiFi network
+  // and the ICE restart will fail.
+  if (!mStunAddrs.Length()) {
+    InitLocalAddrs();
+  }
 
   // If we had previously queued gathering or ICE start, unqueue them
   mQueuedIceCtxOperations.clear();
@@ -583,7 +595,7 @@ nsresult PeerConnectionMedia::AddTransceiver(
     dom::MediaStreamTrack* aSendTrack, const PrincipalHandle& aPrincipalHandle,
     RefPtr<TransceiverImpl>* aTransceiverImpl) {
   if (!mCall) {
-    mCall = WebRtcCallWrapper::Create();
+    mCall = WebRtcCallWrapper::Create(mParent->GetTimestampMaker());
   }
 
   RefPtr<TransceiverImpl> transceiver = new TransceiverImpl(
@@ -615,7 +627,7 @@ nsresult PeerConnectionMedia::AddTransceiver(
 
 void PeerConnectionMedia::GetTransmitPipelinesMatching(
     const MediaStreamTrack* aTrack,
-    nsTArray<RefPtr<MediaPipeline>>* aPipelines) {
+    nsTArray<RefPtr<MediaPipelineTransmit>>* aPipelines) {
   for (RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
     if (transceiver->HasSendTrack(aTrack)) {
       aPipelines->AppendElement(transceiver->GetSendPipeline());
@@ -625,7 +637,7 @@ void PeerConnectionMedia::GetTransmitPipelinesMatching(
 
 void PeerConnectionMedia::GetReceivePipelinesMatching(
     const MediaStreamTrack* aTrack,
-    nsTArray<RefPtr<MediaPipeline>>* aPipelines) {
+    nsTArray<RefPtr<MediaPipelineReceive>>* aPipelines) {
   for (RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
     if (transceiver->HasReceiveTrack(aTrack)) {
       aPipelines->AppendElement(transceiver->GetReceivePipeline());
@@ -636,7 +648,8 @@ void PeerConnectionMedia::GetReceivePipelinesMatching(
 std::string PeerConnectionMedia::GetTransportIdMatching(
     const dom::MediaStreamTrack& aTrack) const {
   for (const RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
-    if (transceiver->HasReceiveTrack(&aTrack)) {
+    if (transceiver->HasReceiveTrack(&aTrack) ||
+        transceiver->HasSendTrack(&aTrack)) {
       return transceiver->GetTransportId();
     }
   }

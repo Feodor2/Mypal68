@@ -4,8 +4,8 @@
 
 #include <algorithm>
 
-//#include "mozilla/IOInterposer.h"
-//#include "mozilla/PoisonIOInterposer.h"
+#include "mozilla/IOInterposer.h"
+#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/ProcessedStack.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/Scoped.h"
@@ -227,7 +227,7 @@ void StopLateWriteChecks() {
     IOInterposer::Unregister(IOInterposeObserver::OpAll, sLateWriteObserver);
     // Deallocation would not be thread-safe, and StopLateWriteChecks() is
     // called at shutdown and only in special cases.
-    // sLateWriteObserver = nullptr;
+    sLateWriteObserver = nullptr;
   }
 }
 

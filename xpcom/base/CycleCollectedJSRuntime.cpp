@@ -52,29 +52,35 @@
 // traversed.
 
 #include "mozilla/CycleCollectedJSRuntime.h"
+
 #include <algorithm>
+#include <utility>
+
+#include "GeckoProfiler.h"
+#include "js/Debug.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpHeap
+#include "js/GCAPI.h"
+#include "js/HeapAPI.h"
+#include "js/Object.h"    // JS::GetClass, JS::GetCompartment, JS::GetPrivate
+#include "js/Warnings.h"  // JS::SetWarningReporter
+#include "jsfriendapi.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/Move.h"
+#include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/TimelineMarker.h"
 #include "mozilla/Unused.h"
-#include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/dom/DOMJSClass.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/ProfileTimelineMarkerBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "js/Debug.h"
-#include "js/GCAPI.h"
-#include "js/HeapAPI.h"
-#include "js/Warnings.h"  // JS::SetWarningReporter
-#include "jsfriendapi.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -82,9 +88,8 @@
 #include "nsDOMJSUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsJSUtils.h"
-#include "nsWrapperCache.h"
 #include "nsStringBuffer.h"
-#include "GeckoProfiler.h"
+#include "nsWrapperCache.h"
 
 #ifdef MOZ_GECKO_PROFILER
 #  include "ProfilerMarkerPayload.h"
@@ -432,7 +437,8 @@ bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   return true;
 }
 
-static void NoteJSChildGrayWrapperShim(void* aData, JS::GCCellPtr aThing) {
+static void NoteJSChildGrayWrapperShim(void* aData, JS::GCCellPtr aThing,
+                                       const JS::AutoRequireNoGC& nogc) {
   TraversalTracer* trc = static_cast<TraversalTracer*>(aData);
   trc->onChild(aThing);
 }
@@ -684,6 +690,8 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
 
   JS_SetObjectsTenuredCallback(aCx, JSObjectsTenuredCb, this);
   JS::SetOutOfMemoryCallback(aCx, OutOfMemoryCallback, this);
+  JS::SetWaitCallback(mJSRuntime, BeforeWaitCallback, AfterWaitCallback,
+                      sizeof(dom::AutoYieldJSThreadExecution));
   JS::SetWarningReporter(aCx, MozCrashWarningReporter);
 
   js::AutoEnterOOMUnsafeRegion::setAnnotateOOMAllocationSizeCallback(
@@ -767,8 +775,8 @@ void CycleCollectedJSRuntime::DescribeGCThing(
   uint64_t compartmentAddress = 0;
   if (aThing.is<JSObject>()) {
     JSObject* obj = &aThing.as<JSObject>();
-    compartmentAddress = (uint64_t)js::GetObjectCompartment(obj);
-    const JSClass* clasp = js::GetObjectClass(obj);
+    compartmentAddress = (uint64_t)JS::GetCompartment(obj);
+    const JSClass* clasp = JS::GetClass(obj);
 
     // Give the subclass a chance to do something
     if (DescribeCustomObjects(obj, clasp, name)) {
@@ -806,7 +814,7 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
     const JSClass* aClasp, JSObject* aObj,
     nsCycleCollectionTraversalCallback& aCb) const {
   MOZ_ASSERT(aClasp);
-  MOZ_ASSERT(aClasp == js::GetObjectClass(aObj));
+  MOZ_ASSERT(aClasp == JS::GetClass(aObj));
 
   JS::Rooted<JSObject*> obj(RootingCx(), aObj);
 
@@ -819,8 +827,8 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
   //     that do hold a strong reference, but that might not be possible.
   if (aClasp->flags & JSCLASS_HAS_PRIVATE &&
       aClasp->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "js::GetObjectPrivate(obj)");
-    aCb.NoteXPCOMChild(static_cast<nsISupports*>(js::GetObjectPrivate(obj)));
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "JS::GetPrivate(obj)");
+    aCb.NoteXPCOMChild(static_cast<nsISupports*>(JS::GetPrivate(obj)));
     return;
   }
 
@@ -877,7 +885,7 @@ void CycleCollectedJSRuntime::TraverseGCThing(
 
   if (aThing.is<JSObject>()) {
     JSObject* obj = &aThing.as<JSObject>();
-    NoteGCThingXPCOMChildren(js::GetObjectClass(obj), obj, aCb);
+    NoteGCThingXPCOMChildren(JS::GetClass(obj), obj, aCb);
   }
 }
 
@@ -920,8 +928,8 @@ void CycleCollectedJSRuntime::TraverseZone(
 }
 
 /* static */
-void CycleCollectedJSRuntime::TraverseObjectShim(void* aData,
-                                                 JS::GCCellPtr aThing) {
+void CycleCollectedJSRuntime::TraverseObjectShim(
+    void* aData, JS::GCCellPtr aThing, const JS::AutoRequireNoGC& nogc) {
   TraverseObjectShimClosure* closure =
       static_cast<TraverseObjectShimClosure*>(aData);
 
@@ -999,17 +1007,15 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
 #ifdef MOZ_GECKO_PROFILER
   if (profiler_thread_is_being_profiled()) {
     if (aProgress == JS::GC_CYCLE_END) {
-      profiler_add_marker(
-          "GCMajor", JS::ProfilingCategoryPair::GCCC,
-          MakeUnique<GCMajorMarkerPayload>(aDesc.startTime(aContext),
-                                           aDesc.endTime(aContext),
-                                           aDesc.formatJSONProfiler(aContext)));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "GCMajor", GCCC, GCMajorMarkerPayload,
+          (aDesc.startTime(aContext), aDesc.endTime(aContext),
+           aDesc.formatJSONProfiler(aContext)));
     } else if (aProgress == JS::GC_SLICE_END) {
-      profiler_add_marker(
-          "GCSlice", JS::ProfilingCategoryPair::GCCC,
-          MakeUnique<GCSliceMarkerPayload>(
-              aDesc.lastSliceStart(aContext), aDesc.lastSliceEnd(aContext),
-              aDesc.sliceToJSONProfiler(aContext)));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "GCSlice", GCCC, GCSliceMarkerPayload,
+          (aDesc.lastSliceStart(aContext), aDesc.lastSliceEnd(aContext),
+           aDesc.sliceToJSONProfiler(aContext)));
     }
   }
 #endif
@@ -1088,10 +1094,10 @@ void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
 #ifdef MOZ_GECKO_PROFILER
   else if (aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END &&
            profiler_thread_is_being_profiled()) {
-    profiler_add_marker("GCMinor", JS::ProfilingCategoryPair::GCCC,
-                        MakeUnique<GCMinorMarkerPayload>(
-                            self->mLatestNurseryCollectionStart,
-                            TimeStamp::Now(), JS::MinorGcToJSON(aContext)));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "GCMinor", GCCC, GCMinorMarkerPayload,
+        (self->mLatestNurseryCollectionStart, TimeStamp::Now(),
+         JS::MinorGcToJSON(aContext)));
   }
 #endif
 
@@ -1109,6 +1115,22 @@ void CycleCollectedJSRuntime::OutOfMemoryCallback(JSContext* aContext,
   MOZ_ASSERT(CycleCollectedJSContext::Get()->Runtime() == self);
 
   self->OnOutOfMemory();
+}
+
+/* static */
+void* CycleCollectedJSRuntime::BeforeWaitCallback(uint8_t* aMemory) {
+  MOZ_ASSERT(aMemory);
+
+  // aMemory is stack allocated memory to contain our RAII object. This allows
+  // for us to avoid allocations on the heap during this callback.
+  return new (aMemory) dom::AutoYieldJSThreadExecution;
+}
+
+/* static */
+void CycleCollectedJSRuntime::AfterWaitCallback(void* aCookie) {
+  MOZ_ASSERT(aCookie);
+  static_cast<dom::AutoYieldJSThreadExecution*>(aCookie)
+      ->~AutoYieldJSThreadExecution();
 }
 
 struct JsGcTracer : public TraceCallbacks {

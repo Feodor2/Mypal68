@@ -19,7 +19,7 @@ module.exports = {
 
     // Temporarily disabled since they aren't vendored into in mozilla central yet
     // "react-hooks", // require("react-hooks")
-    // "fetch-options", // require("eslint-plugin-fetch-options")
+    "fetch-options", // require("eslint-plugin-fetch-options")
   ],
   "settings": {
     "react": {
@@ -76,7 +76,7 @@ module.exports = {
   "rules": {
     // "react-hooks/rules-of-hooks": 2,
 
-    // "fetch-options/no-fetch-credentials": 2,
+    "fetch-options/no-fetch-credentials": 2,
 
     "react/jsx-boolean-value": [2, "always"],
     "react/jsx-closing-bracket-location": [2, "after-props"],

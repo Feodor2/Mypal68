@@ -11,13 +11,13 @@
 #include "nsThreadUtils.h"
 #include "nsString.h"
 #include "nsTObserverArray.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SynchronizedEventQueue.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/TimeStamp.h"
-#include "nsAutoPtr.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Array.h"
@@ -86,6 +86,12 @@ class nsThread : public nsIThreadInternal,
   // nsIThreadManager::NewThread.
   bool ShutdownRequired() { return mShutdownRequired; }
 
+  // Lets GetRunningEventDelay() determine if the pool this is part
+  // of has an unstarted thread
+  void SetPoolThreadFreePtr(mozilla::Atomic<bool, mozilla::Relaxed>* aPtr) {
+    mIsAPoolThreadFree = aPtr;
+  }
+
   void SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver);
 
   uint32_t RecursionDepth() const;
@@ -112,10 +118,6 @@ class nsThread : public nsIThreadInternal,
   void ResumeInputEventPrioritization() {
     EventQueue()->ResumeInputEventPrioritization();
   }
-
-#ifndef RELEASE_OR_BETA
-  mozilla::TimeStamp& NextIdleDeadlineRef() { return mNextIdleDeadline; }
-#endif
 
   mozilla::SynchronizedEventQueue* EventQueue() { return mEvents.get(); }
 
@@ -202,7 +204,15 @@ class nsThread : public nsIThreadInternal,
   RefPtr<mozilla::ThreadEventTarget> mEventTarget;
 
   // The shutdown contexts for any other threads we've asked to shut down.
-  using ShutdownContexts = nsTArray<nsAutoPtr<struct nsThreadShutdownContext>>;
+  using ShutdownContexts =
+      nsTArray<mozilla::UniquePtr<struct nsThreadShutdownContext>>;
+
+  // Helper for finding a ShutdownContext in the contexts array.
+  struct ShutdownContextsComp {
+    bool Equals(const ShutdownContexts::elem_type& a,
+                const ShutdownContexts::elem_type::Pointer b) const;
+  };
+
   ShutdownContexts mRequestedShutdownContexts;
   // The shutdown context for ourselves.
   struct nsThreadShutdownContext* mShutdownContext;
@@ -224,6 +234,7 @@ class nsThread : public nsIThreadInternal,
   int8_t mPriority;
 
   bool mIsMainThread;
+  mozilla::Atomic<bool, mozilla::Relaxed>* mIsAPoolThreadFree;
 
   // Set to true if this thread creates a JSRuntime.
   bool mCanInvokeJS;
@@ -233,8 +244,16 @@ class nsThread : public nsIThreadInternal,
   // Used to track which event is being executed by ProcessNextEvent
   nsCOMPtr<nsIRunnable> mCurrentEvent;
 
+  // When the current event started.  Note: recursive events use the time
+  // the outmost event started, so the entire recursion chain is considered
+  // one event.
   mozilla::TimeStamp mCurrentEventStart;
-  mozilla::TimeStamp mNextIdleDeadline;
+
+  // The time the currently running event spent in event queues, and
+  // when it started running.  If no event is running, they are
+  // TimeDuration() & TimeStamp().
+  mozilla::TimeDuration mLastEventDelay;
+  mozilla::TimeStamp mLastEventStart;
 
   RefPtr<mozilla::PerformanceCounter> mCurrentPerformanceCounter;
 

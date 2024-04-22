@@ -5762,7 +5762,7 @@ nsresult nsHttpChannel::ContinueProcessRedirectionAfterFallback(nsresult rv) {
   }
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active()) {
+  if (profiler_can_accept_markers()) {
     int32_t priority = PRIORITY_NORMAL;
     GetPriority(&priority);
 
@@ -6203,7 +6203,7 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
 #ifdef MOZ_GECKO_PROFILER
   mLastStatusReported =
       TimeStamp::Now();  // in case we enable the profiler after AsyncOpen()
-  if (profiler_is_active()) {
+  if (profiler_can_accept_markers()) {
     profiler_add_network_marker(
         mURI, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, mCacheDisposition);
@@ -8001,7 +8001,7 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
   MaybeReportTimingData();
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active() && !mRedirectURI) {
+  if (profiler_can_accept_markers() && !mRedirectURI) {
     // Don't include this if we already redirected
     // These do allocations/frees/etc; avoid if not active
     nsCOMPtr<nsIURI> uri;
@@ -8909,10 +8909,10 @@ void nsHttpChannel::PushRedirectAsyncFunc(nsContinueRedirectionFunc func) {
 }
 
 void nsHttpChannel::PopRedirectAsyncFunc(nsContinueRedirectionFunc func) {
-  MOZ_ASSERT(func == mRedirectFuncStack[mRedirectFuncStack.Length() - 1],
+  MOZ_ASSERT(func == mRedirectFuncStack.LastElement(),
              "Trying to pop wrong method from redirect async stack!");
 
-  mRedirectFuncStack.TruncateLength(mRedirectFuncStack.Length() - 1);
+  mRedirectFuncStack.RemoveLastElement();
 }
 
 //-----------------------------------------------------------------------------

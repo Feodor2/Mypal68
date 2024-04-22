@@ -415,25 +415,34 @@ const char FaviconHelper::kJumpListCacheDir[] = "jumpListCache";
 const char FaviconHelper::kShortcutCacheDir[] = "shortcutCache";
 
 // apis available on vista and up.
-WinUtils::SHCreateItemFromParsingNamePtr WinUtils::sCreateItemFromParsingName = nullptr;
+WinUtils::SHCreateItemFromParsingNamePtr WinUtils::sCreateItemFromParsingName =
+    nullptr;
 WinUtils::SHGetKnownFolderPathPtr WinUtils::sGetKnownFolderPath = nullptr;
 
 // We just leak these DLL HMODULEs. There's no point in calling FreeLibrary
 // on them during shutdown anyway.
-static const wchar_t kShellLibraryName[] =  L"shell32.dll";
+static const wchar_t kShellLibraryName[] = L"shell32.dll";
 static HMODULE sShellDll = nullptr;
 static const wchar_t kDwmLibraryName[] = L"dwmapi.dll";
 static HMODULE sDwmDll = nullptr;
 
-WinUtils::DwmExtendFrameIntoClientAreaProc WinUtils::dwmExtendFrameIntoClientAreaPtr = nullptr;
-WinUtils::DwmIsCompositionEnabledProc WinUtils::dwmIsCompositionEnabledPtr = nullptr;
-WinUtils::DwmSetIconicThumbnailProc WinUtils::dwmSetIconicThumbnailPtr = nullptr;
-WinUtils::DwmSetIconicLivePreviewBitmapProc WinUtils::dwmSetIconicLivePreviewBitmapPtr = nullptr;
-WinUtils::DwmGetWindowAttributeProc WinUtils::dwmGetWindowAttributePtr = nullptr;
-WinUtils::DwmSetWindowAttributeProc WinUtils::dwmSetWindowAttributePtr = nullptr;
-WinUtils::DwmInvalidateIconicBitmapsProc WinUtils::dwmInvalidateIconicBitmapsPtr = nullptr;
+WinUtils::DwmExtendFrameIntoClientAreaProc
+    WinUtils::dwmExtendFrameIntoClientAreaPtr = nullptr;
+WinUtils::DwmIsCompositionEnabledProc WinUtils::dwmIsCompositionEnabledPtr =
+    nullptr;
+WinUtils::DwmSetIconicThumbnailProc WinUtils::dwmSetIconicThumbnailPtr =
+    nullptr;
+WinUtils::DwmSetIconicLivePreviewBitmapProc
+    WinUtils::dwmSetIconicLivePreviewBitmapPtr = nullptr;
+WinUtils::DwmGetWindowAttributeProc WinUtils::dwmGetWindowAttributePtr =
+    nullptr;
+WinUtils::DwmSetWindowAttributeProc WinUtils::dwmSetWindowAttributePtr =
+    nullptr;
+WinUtils::DwmInvalidateIconicBitmapsProc
+    WinUtils::dwmInvalidateIconicBitmapsPtr = nullptr;
 WinUtils::DwmDefWindowProcProc WinUtils::dwmDwmDefWindowProcPtr = nullptr;
-WinUtils::DwmGetCompositionTimingInfoProc WinUtils::dwmGetCompositionTimingInfoPtr = nullptr;
+WinUtils::DwmGetCompositionTimingInfoProc
+    WinUtils::dwmGetCompositionTimingInfoPtr = nullptr;
 WinUtils::DwmFlushProc WinUtils::dwmFlushProcPtr = nullptr;
 
 // Prefix for path used by NT calls.
@@ -454,15 +463,29 @@ void WinUtils::Initialize() {
     sDwmDll = ::LoadLibraryW(kDwmLibraryName);
 
     if (sDwmDll) {
-      dwmExtendFrameIntoClientAreaPtr = (DwmExtendFrameIntoClientAreaProc)::GetProcAddress(sDwmDll, "DwmExtendFrameIntoClientArea");
-      dwmIsCompositionEnabledPtr = (DwmIsCompositionEnabledProc)::GetProcAddress(sDwmDll, "DwmIsCompositionEnabled");
-      dwmSetIconicThumbnailPtr = (DwmSetIconicThumbnailProc)::GetProcAddress(sDwmDll, "DwmSetIconicThumbnail");
-      dwmSetIconicLivePreviewBitmapPtr = (DwmSetIconicLivePreviewBitmapProc)::GetProcAddress(sDwmDll, "DwmSetIconicLivePreviewBitmap");
-      dwmGetWindowAttributePtr = (DwmGetWindowAttributeProc)::GetProcAddress(sDwmDll, "DwmGetWindowAttribute");
-      dwmSetWindowAttributePtr = (DwmSetWindowAttributeProc)::GetProcAddress(sDwmDll, "DwmSetWindowAttribute");
-      dwmInvalidateIconicBitmapsPtr = (DwmInvalidateIconicBitmapsProc)::GetProcAddress(sDwmDll, "DwmInvalidateIconicBitmaps");
-      dwmDwmDefWindowProcPtr = (DwmDefWindowProcProc)::GetProcAddress(sDwmDll, "DwmDefWindowProc");
-      dwmGetCompositionTimingInfoPtr = (DwmGetCompositionTimingInfoProc)::GetProcAddress(sDwmDll, "DwmGetCompositionTimingInfo");
+      dwmExtendFrameIntoClientAreaPtr =
+          (DwmExtendFrameIntoClientAreaProc)::GetProcAddress(
+              sDwmDll, "DwmExtendFrameIntoClientArea");
+      dwmIsCompositionEnabledPtr =
+          (DwmIsCompositionEnabledProc)::GetProcAddress(
+              sDwmDll, "DwmIsCompositionEnabled");
+      dwmSetIconicThumbnailPtr = (DwmSetIconicThumbnailProc)::GetProcAddress(
+          sDwmDll, "DwmSetIconicThumbnail");
+      dwmSetIconicLivePreviewBitmapPtr =
+          (DwmSetIconicLivePreviewBitmapProc)::GetProcAddress(
+              sDwmDll, "DwmSetIconicLivePreviewBitmap");
+      dwmGetWindowAttributePtr = (DwmGetWindowAttributeProc)::GetProcAddress(
+          sDwmDll, "DwmGetWindowAttribute");
+      dwmSetWindowAttributePtr = (DwmSetWindowAttributeProc)::GetProcAddress(
+          sDwmDll, "DwmSetWindowAttribute");
+      dwmInvalidateIconicBitmapsPtr =
+          (DwmInvalidateIconicBitmapsProc)::GetProcAddress(
+              sDwmDll, "DwmInvalidateIconicBitmaps");
+      dwmDwmDefWindowProcPtr =
+          (DwmDefWindowProcProc)::GetProcAddress(sDwmDll, "DwmDefWindowProc");
+      dwmGetCompositionTimingInfoPtr =
+          (DwmGetCompositionTimingInfoProc)::GetProcAddress(
+              sDwmDll, "DwmGetCompositionTimingInfo");
       dwmFlushProcPtr = (DwmFlushProc)::GetProcAddress(sDwmDll, "DwmFlush");
     }
   }
@@ -622,7 +645,8 @@ GETPROCESSDPIAWARENESSPROC sGetProcessDpiAwareness;
 static bool SlowIsPerMonitorDPIAware() {
   if (IsVistaOrLater()) {
     // Intentionally leak the handle.
-    HMODULE shcore = LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    HMODULE shcore =
+        LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (shcore) {
       sGetDpiForMonitor =
           (GETDPIFORMONITORPROC)GetProcAddress(shcore, "GetDpiForMonitor");
@@ -1094,8 +1118,8 @@ MSG WinUtils::InitMSG(UINT aMessage, WPARAM wParam, LPARAM lParam, HWND aWnd) {
 }
 
 /* static */
-HRESULT WinUtils::SHCreateItemFromParsingName(PCWSTR pszPath, IBindCtx *pbc,
-                                      REFIID riid, void **ppv) {
+HRESULT WinUtils::SHCreateItemFromParsingName(PCWSTR pszPath, IBindCtx* pbc,
+                                              REFIID riid, void** ppv) {
   if (sCreateItemFromParsingName) {
     return sCreateItemFromParsingName(pszPath, pbc, riid, ppv);
   }
@@ -1107,19 +1131,16 @@ HRESULT WinUtils::SHCreateItemFromParsingName(PCWSTR pszPath, IBindCtx *pbc,
     }
   }
 
-  sCreateItemFromParsingName = (SHCreateItemFromParsingNamePtr)
-    GetProcAddress(sShellDll, "SHCreateItemFromParsingName");
-  if (!sCreateItemFromParsingName)
-    return E_FAIL;
+  sCreateItemFromParsingName = (SHCreateItemFromParsingNamePtr)GetProcAddress(
+      sShellDll, "SHCreateItemFromParsingName");
+  if (!sCreateItemFromParsingName) return E_FAIL;
 
   return sCreateItemFromParsingName(pszPath, pbc, riid, ppv);
 }
 
 /* static */
-HRESULT WinUtils::SHGetKnownFolderPath(REFKNOWNFOLDERID rfid,
-                               DWORD dwFlags,
-                               HANDLE hToken,
-                               PWSTR *ppszPath) {
+HRESULT WinUtils::SHGetKnownFolderPath(REFKNOWNFOLDERID rfid, DWORD dwFlags,
+                                       HANDLE hToken, PWSTR* ppszPath) {
   if (sGetKnownFolderPath) {
     return sGetKnownFolderPath(rfid, dwFlags, hToken, ppszPath);
   }
@@ -1131,10 +1152,9 @@ HRESULT WinUtils::SHGetKnownFolderPath(REFKNOWNFOLDERID rfid,
     }
   }
 
-  sGetKnownFolderPath = (SHGetKnownFolderPathPtr)
-    GetProcAddress(sShellDll, "SHGetKnownFolderPath");
-  if (!sGetKnownFolderPath)
-    return E_FAIL;
+  sGetKnownFolderPath = (SHGetKnownFolderPathPtr)GetProcAddress(
+      sShellDll, "SHGetKnownFolderPath");
+  if (!sGetKnownFolderPath) return E_FAIL;
 
   return sGetKnownFolderPath(rfid, dwFlags, hToken, ppszPath);
 }
@@ -1974,10 +1994,10 @@ PointerCapabilities WinUtils::GetAllPointerCapabilities() {
   return result;
 }
 
-typedef DWORD (WINAPI * GetFinalPathNameByHandlePtr)(HANDLE hFile,
-                                                    LPTSTR lpszFilePath,
-                                                    DWORD cchFilePath,
-                                                    DWORD dwFlags);
+typedef DWORD(WINAPI* GetFinalPathNameByHandlePtr)(HANDLE hFile,
+                                                   LPTSTR lpszFilePath,
+                                                   DWORD cchFilePath,
+                                                   DWORD dwFlags);
 /* static */
 bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
   LOG_D("ResolveJunctionPointsAndSymLinks: Resolving path: %S", aPath.c_str());
@@ -1999,16 +2019,16 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
   GetFinalPathNameByHandlePtr getFinalPathNameFnPtr = nullptr;
   HMODULE kernel32Dll = ::GetModuleHandleW(L"Kernel32");
   if (kernel32Dll) {
-    getFinalPathNameFnPtr = (GetFinalPathNameByHandlePtr)
-      ::GetProcAddress(kernel32Dll, "GetFinalPathNameByHandleW");
+    getFinalPathNameFnPtr = (GetFinalPathNameByHandlePtr)::GetProcAddress(
+        kernel32Dll, "GetFinalPathNameByHandleW");
   }
 
   if (!getFinalPathNameFnPtr) {
     return false;
   }
 
-  DWORD pathLen = getFinalPathNameFnPtr(
-    handle, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  DWORD pathLen = getFinalPathNameFnPtr(handle, path, MAX_PATH,
+                                        FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
   if (pathLen == 0 || pathLen >= MAX_PATH) {
     return false;
   }
@@ -2148,23 +2168,23 @@ bool WinUtils::UnexpandEnvVars(nsAString& aPath) {
  * @see PreparePathForTelemetry for an example of its usage.
  */
 /* static */
-const nsTArray<mozilla::Pair<nsString, nsDependentString>>&
+const nsTArray<std::pair<nsString, nsDependentString>>&
 WinUtils::GetWhitelistedPaths() {
   // We know the maximum number of items this array will hold, so avoid a heap
   // allocation by using AutoTArray<T,N>
   static const size_t kMaxWhitelistedItems = 2;
   static StaticAutoPtr<
-      AutoTArray<Pair<nsString, nsDependentString>, kMaxWhitelistedItems>>
+      AutoTArray<std::pair<nsString, nsDependentString>, kMaxWhitelistedItems>>
       sWhitelist;
   if (sWhitelist) {
     return *sWhitelist;
   }
-  sWhitelist =
-      new AutoTArray<Pair<nsString, nsDependentString>, kMaxWhitelistedItems>();
-  sWhitelist->AppendElement(mozilla::MakePair(
+  sWhitelist = new AutoTArray<std::pair<nsString, nsDependentString>,
+                              kMaxWhitelistedItems>();
+  sWhitelist->AppendElement(std::make_pair(
       nsString(NS_LITERAL_STRING("%ProgramFiles%")), nsDependentString()));
   // When no substitution is required, set the void flag
-  sWhitelist->LastElement().second().SetIsVoid(true);
+  sWhitelist->LastElement().second.SetIsVoid(true);
   wchar_t tmpPath[MAX_PATH + 1] = {0};
   if (GetTempPath(MAX_PATH, tmpPath)) {
     // GetTempPath's result always ends with a backslash, which we don't want
@@ -2174,8 +2194,8 @@ WinUtils::GetWhitelistedPaths() {
     }
     nsAutoString cleanTmpPath(tmpPath);
     if (UnexpandEnvVars(cleanTmpPath)) {
-      sWhitelist->AppendElement(mozilla::MakePair(
-          nsString(cleanTmpPath), nsDependentString(L"%TEMP%")));
+      sWhitelist->AppendElement(
+          std::make_pair(nsString(cleanTmpPath), nsDependentString(L"%TEMP%")));
     }
   }
   ClearOnShutdown(&sWhitelist);
@@ -2273,12 +2293,12 @@ bool WinUtils::PreparePathForTelemetry(nsAString& aPath,
     }
   }
 
-  const nsTArray<Pair<nsString, nsDependentString>>& whitelistedPaths =
+  const nsTArray<std::pair<nsString, nsDependentString>>& whitelistedPaths =
       GetWhitelistedPaths();
 
   for (uint32_t i = 0; i < whitelistedPaths.Length(); ++i) {
-    const nsString& testPath = whitelistedPaths[i].first();
-    const nsDependentString& substitution = whitelistedPaths[i].second();
+    const nsString& testPath = whitelistedPaths[i].first;
+    const nsDependentString& substitution = whitelistedPaths[i].second;
     if (StringBeginsWith(aPath, testPath,
                          nsCaseInsensitiveStringComparator())) {
       if (!substitution.IsVoid()) {

@@ -586,9 +586,17 @@ class ContextMenuChild extends ActorChild {
     let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
       Ci.nsIReferrerInfo
     );
-    referrerInfo.initWithElement(
-      context.onLink ? context.link : aEvent.composedTarget
-    );
+    referrerInfo.initWithElement(aEvent.composedTarget);
+
+    // In the case "onLink" we may have to send link referrerInfo to use in
+    // _openLinkInParameters
+    let linkReferrerInfo = null;
+    if (context.onLink) {
+      linkReferrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
+        Ci.nsIReferrerInfo
+      );
+      linkReferrerInfo.initWithElement(context.link);
+    }
 
     let targetAsCPOW = context.target;
     if (targetAsCPOW) {
@@ -652,17 +660,12 @@ class ContextMenuChild extends ActorChild {
       );
     }
 
-    // In the case "onLink" we may have to send target referrerInfo. This object
-    // may be used to in saveMedia function.
-    if (context.onLink) {
-      let targetReferrerInfo = Cc[
-        "@mozilla.org/referrer-info;1"
-      ].createInstance(Ci.nsIReferrerInfo);
-
-      targetReferrerInfo.initWithElement(aEvent.composedTarget);
-      data.targetReferrerInfo = E10SUtils.serializeReferrerInfo(
-        targetReferrerInfo
-      );
+    if (linkReferrerInfo) {
+      if (isRemote) {
+        data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
+      } else {
+        data.linkReferrerInfo = linkReferrerInfo;
+      }
     }
 
     Services.obs.notifyObservers(

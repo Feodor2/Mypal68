@@ -66,7 +66,7 @@ void ProfilerScreenshots::SubmitScreenshot(
        originalSize, scaledSize, timeStamp]() {
         // Create a new surface that wraps backingSurface's data but has the
         // correct size.
-        {
+        if (profiler_can_accept_markers()) {
           DataSourceSurface::ScopedMap scopedMap(backingSurface,
                                                  DataSourceSurface::READ);
           RefPtr<DataSourceSurface> surf =
@@ -81,6 +81,7 @@ void ProfilerScreenshots::SubmitScreenshot(
               gfxUtils::eDataURIEncode, nullptr, &dataURL);
           if (NS_SUCCEEDED(rv)) {
             // Add a marker with the data URL.
+            AUTO_PROFILER_STATS(add_marker_with_ScreenshotPayload);
             profiler_add_marker_for_thread(
                 sourceThread, JS::ProfilingCategoryPair::GRAPHICS,
                 "CompositorScreenshot",

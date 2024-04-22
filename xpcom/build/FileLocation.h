@@ -7,7 +7,6 @@
 
 #include "nsString.h"
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsIFile.h"
 #include "FileUtils.h"
 

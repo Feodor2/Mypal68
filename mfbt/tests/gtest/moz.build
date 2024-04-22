@@ -9,7 +9,9 @@ UNIFIED_SOURCES += [
 ]
 
 SOURCES += [
+    'TestAlgorithm.cpp',
     'TestInitializedOnce.cpp',
+    'TestResultExtensions.cpp',
 ]
 
 if not CONFIG['MOZILLA_OFFICIAL']:

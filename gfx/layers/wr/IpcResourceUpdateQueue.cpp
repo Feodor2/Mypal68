@@ -70,11 +70,9 @@ layers::OffsetRange ShmSegmentsWriter::Write(Range<uint8_t> aBytes) {
       if (!AllocChunk()) {
         // Allocation failed, so roll back to the state at the start of this
         // Write() call and abort.
-        for (size_t i = mSmallAllocs.Length(); currAllocLen < i; i--) {
-          MOZ_ASSERT(i > 0);
-          RefCountedShmem& shm = mSmallAllocs.ElementAt(i - 1);
+        while (mSmallAllocs.Length() > currAllocLen) {
+          RefCountedShmem shm = mSmallAllocs.PopLastElement();
           RefCountedShm::Dealloc(mShmAllocator, shm);
-          mSmallAllocs.RemoveElementAt(i - 1);
         }
         MOZ_ASSERT(mSmallAllocs.Length() == currAllocLen);
         return layers::OffsetRange(0, start, 0);
@@ -143,8 +141,8 @@ void ShmSegmentsWriter::Flush(nsTArray<RefCountedShmem>& aSmallAllocs,
                               nsTArray<ipc::Shmem>& aLargeAllocs) {
   MOZ_ASSERT(aSmallAllocs.IsEmpty());
   MOZ_ASSERT(aLargeAllocs.IsEmpty());
-  mSmallAllocs.SwapElements(aSmallAllocs);
-  mLargeAllocs.SwapElements(aLargeAllocs);
+  aSmallAllocs = std::move(mSmallAllocs);
+  aLargeAllocs = std::move(mLargeAllocs);
   mCursor = 0;
 }
 
@@ -414,8 +412,7 @@ void IpcResourceUpdateQueue::Flush(
     nsTArray<layers::OpUpdateResource>& aUpdates,
     nsTArray<layers::RefCountedShmem>& aSmallAllocs,
     nsTArray<ipc::Shmem>& aLargeAllocs) {
-  aUpdates.Clear();
-  mUpdates.SwapElements(aUpdates);
+  aUpdates = std::move(mUpdates);
   mWriter.Flush(aSmallAllocs, aLargeAllocs);
 }
 

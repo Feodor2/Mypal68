@@ -5,7 +5,6 @@
 #include "SpecialSystemDirectory.h"
 #include "nsString.h"
 #include "nsDependentString.h"
-#include "nsAutoPtr.h"
 
 #if defined(XP_WIN)
 

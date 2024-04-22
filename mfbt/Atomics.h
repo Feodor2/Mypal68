@@ -374,9 +374,8 @@ class Atomic;
  * swap method is provided.
  */
 template <typename T, MemoryOrdering Order>
-class Atomic<
-    T, Order,
-    typename EnableIf<std::is_integral_v<T> && !IsSame<T, bool>::value>::Type>
+class Atomic<T, Order,
+             std::enable_if_t<std::is_integral_v<T> && !IsSame<T, bool>::value>>
     : public detail::AtomicBaseIncDec<T, Order> {
   typedef typename detail::AtomicBaseIncDec<T, Order> Base;
 
@@ -446,7 +445,7 @@ class Atomic<T*, Order> : public detail::AtomicBaseIncDec<T*, Order> {
  * The atomic store and load operations and the atomic swap method is provided.
  */
 template <typename T, MemoryOrdering Order>
-class Atomic<T, Order, typename EnableIf<std::is_enum_v<T>>::Type>
+class Atomic<T, Order, std::enable_if_t<std::is_enum_v<T>>>
     : public detail::AtomicBase<T, Order> {
   typedef typename detail::AtomicBase<T, Order> Base;
 
@@ -503,10 +502,14 @@ class Atomic<bool, Order> : protected detail::AtomicBase<uint32_t, Order> {
   Atomic(Atomic& aOther) = delete;
 };
 
-// If you want to atomically swap two atomic values, use exchange().
-template <typename T, MemoryOrdering Order>
-void Swap(Atomic<T, Order>&, Atomic<T, Order>&) = delete;
-
 }  // namespace mozilla
+
+namespace std {
+
+// If you want to atomically swap two atomic values, use exchange().
+template <typename T, mozilla::MemoryOrdering Order>
+void swap(mozilla::Atomic<T, Order>&, mozilla::Atomic<T, Order>&) = delete;
+
+}  // namespace std
 
 #endif /* mozilla_Atomics_h */

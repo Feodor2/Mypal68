@@ -877,7 +877,7 @@ static void NewSimpleChannel(nsIURI* aURI, nsILoadInfo* aLoadinfo,
         nsresult rv = origChannel->AsyncOpen(listener);
         if (NS_FAILED(rv)) {
           simpleChannel->Cancel(NS_BINDING_ABORTED);
-          return RequestOrReason(rv);
+          return Err(rv);
         }
         return RequestOrReason(origChannel);
       });

@@ -11,6 +11,7 @@
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/GCAPI.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetPrivate, JS::SetPrivate
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/Atomics.h"
@@ -1788,13 +1789,13 @@ bool internal_JSHistogram_Add(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::CallArgs args = CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
   MOZ_ASSERT(internal_IsHistogramEnumId(id));
@@ -1824,13 +1825,13 @@ bool internal_JSHistogram_Name(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::CallArgs args = CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
   MOZ_ASSERT(internal_IsHistogramEnumId(id));
@@ -1893,13 +1894,13 @@ bool internal_JSHistogram_Snapshot(JSContext* cx, unsigned argc,
   }
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
 
@@ -1956,13 +1957,13 @@ bool internal_JSHistogram_Clear(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
 
   nsAutoString storeName;
@@ -2007,19 +2008,19 @@ nsresult internal_WrapAndReturnHistogram(HistogramID id, JSContext* cx,
   }
 
   JSHistogramData* data = new JSHistogramData{id};
-  JS_SetPrivate(obj, data);
+  JS::SetPrivate(obj, data);
   ret.setObject(*obj);
 
   return NS_OK;
 }
 
 void internal_JSHistogram_finalize(JSFreeOp*, JSObject* obj) {
-  if (!obj || JS_GetClass(obj) != &sJSHistogramClass) {
+  if (!obj || JS::GetClass(obj) != &sJSHistogramClass) {
     MOZ_ASSERT_UNREACHABLE("Should have the right JS class.");
     return;
   }
 
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   delete data;
 }
@@ -2072,13 +2073,13 @@ bool internal_JSKeyedHistogram_Snapshot(JSContext* cx, unsigned argc,
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSKeyedHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
   MOZ_ASSERT(internal_IsHistogramEnumId(id));
@@ -2133,13 +2134,13 @@ bool internal_JSKeyedHistogram_Add(JSContext* cx, unsigned argc,
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSKeyedHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
   MOZ_ASSERT(internal_IsHistogramEnumId(id));
@@ -2195,13 +2196,13 @@ bool internal_JSKeyedHistogram_Name(JSContext* cx, unsigned argc,
   JS::CallArgs args = CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSKeyedHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
   MOZ_ASSERT(internal_IsHistogramEnumId(id));
@@ -2218,13 +2219,13 @@ bool internal_JSKeyedHistogram_Keys(JSContext* cx, unsigned argc,
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSKeyedHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
 
@@ -2290,13 +2291,13 @@ bool internal_JSKeyedHistogram_Clear(JSContext* cx, unsigned argc,
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
   if (!args.thisv().isObject() ||
-      JS_GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
+      JS::GetClass(&args.thisv().toObject()) != &sJSKeyedHistogramClass) {
     JS_ReportErrorASCII(cx, "Wrong JS class, expected JSKeyedHistogram class");
     return false;
   }
 
   JSObject* obj = &args.thisv().toObject();
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   HistogramID id = data->histogramId;
 
@@ -2353,19 +2354,19 @@ nsresult internal_WrapAndReturnKeyedHistogram(
   }
 
   JSHistogramData* data = new JSHistogramData{id};
-  JS_SetPrivate(obj, data);
+  JS::SetPrivate(obj, data);
   ret.setObject(*obj);
 
   return NS_OK;
 }
 
 void internal_JSKeyedHistogram_finalize(JSFreeOp*, JSObject* obj) {
-  if (!obj || JS_GetClass(obj) != &sJSKeyedHistogramClass) {
+  if (!obj || JS::GetClass(obj) != &sJSKeyedHistogramClass) {
     MOZ_ASSERT_UNREACHABLE("Should have the right JS class.");
     return;
   }
 
-  JSHistogramData* data = static_cast<JSHistogramData*>(JS_GetPrivate(obj));
+  JSHistogramData* data = static_cast<JSHistogramData*>(JS::GetPrivate(obj));
   MOZ_ASSERT(data);
   delete data;
 }

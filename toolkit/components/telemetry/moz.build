@@ -43,7 +43,6 @@ BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
 
 XPIDL_SOURCES += [
     'core/nsITelemetry.idl',
-    'other/GCTelemetry.idl',
 ]
 
 XPIDL_MODULE = 'telemetry'
@@ -79,7 +78,6 @@ SOURCES += [
     'other/CombinedStacks.cpp',
     'other/ProcessedStack.cpp',
     #'other/TelemetryIOInterposeObserver.cpp',
-    'other/WebrtcTelemetry.cpp',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -113,7 +111,6 @@ EXTRA_JS_MODULES += [
     'app/TelemetryStorage.jsm',
     'app/TelemetryTimestamps.jsm',
     'app/TelemetryUtils.jsm',
-    'other/GCTelemetry.jsm',
     'other/UITelemetry.jsm',
     'pings/CoveragePing.jsm',
     'pings/EcosystemTelemetry.jsm',

@@ -60,6 +60,7 @@ included_inclnames_to_ignore = set([
     'double-conversion/double-conversion.h',  # strange MFBT case
     'javascript-trace.h',       # generated in $OBJDIR if HAVE_DTRACE is defined
     'frontend/ReservedWordsGenerated.h',  # generated in $OBJDIR
+    'frontend/smoosh_generated.h',        # generated in $OBJDIR
     'gc/StatsPhasesGenerated.h',         # generated in $OBJDIR
     'gc/StatsPhasesGenerated.inc',       # generated in $OBJDIR
     'jit/CacheIROpsGenerated.h',         # generated in $OBJDIR
@@ -96,6 +97,7 @@ included_inclnames_to_ignore = set([
     'unicode/ucurr.h',          # ICU
     'unicode/udat.h',           # ICU
     'unicode/udata.h',          # ICU
+    'unicode/udateintervalformat.h',  # ICU
     'unicode/udatpg.h',         # ICU
     'unicode/udisplaycontext.h',  # ICU
     'unicode/uenum.h',          # ICU
@@ -301,7 +303,7 @@ def check_style(enable_fixup):
     js_public_root = os.path.join('js', 'public')
     for dirpath, dirnames, filenames in os.walk(js_public_root):
         for filename in filenames:
-            if filename.endswith('.h'):
+            if filename.endswith(('.h', '.msg')):
                 filepath = os.path.join(dirpath, filename).replace('\\', '/')
                 inclname = 'js/' + filepath[len('js/public/'):]
                 js_names[filepath] = inclname
@@ -362,12 +364,21 @@ def is_module_header(enclosing_inclname, header_inclname):
 
     module = module_name(enclosing_inclname)
 
-    # Normal case, e.g. module == "foo/Bar", header_inclname == "foo/Bar.h".
+    # Normal case, for example:
+    #   module == "vm/Runtime", header_inclname == "vm/Runtime.h".
     if module == module_name(header_inclname):
         return True
 
-    # A public header, e.g. module == "foo/Bar", header_inclname == "js/Bar.h".
-    m = re.match(r'js\/(.*)\.h', header_inclname)
+    # A public header, for example:
+    #
+    #   module == "vm/CharacterEncoding",
+    #   header_inclname == "js/CharacterEncoding.h"
+    #
+    # or (for implementation files for js/public/*/*.h headers)
+    #
+    #   module == "vm/SourceHook",
+    #   header_inclname == "js/experimental/SourceHook.h"
+    m = re.match(r'js\/.*?([^\/]+)\.h', header_inclname)
     if m is not None and module.endswith('/' + m.group(1)):
         return True
 
@@ -400,7 +411,7 @@ class Include(object):
           4. foo/Bar.h
           5. jsfooinlines.h
           6. foo/Bar-inl.h
-          7. non-.h, e.g. *.tbl, *.msg
+          7. non-.h, e.g. *.tbl, *.msg (these can be scattered throughout files)
         '''
 
         if self.is_system:

@@ -625,15 +625,6 @@
     "bug_numbers": [1545093],
     "description": "Time from the beginning of the first slice to the end of the last slice (ms)"
   },
-  "GC_BUDGET_MS": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
-    "expires_in_version": "never",
-    "kind": "linear",
-    "high": 100,
-    "n_buckets": 10,
-    "description": "Requested GC slice budget (ms)"
-  },
   "GC_ANIMATION_MS": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org", "jcoppeard@mozilla.com", "sdetar@mozilla.com"],
@@ -682,24 +673,6 @@
     "high": 10000,
     "n_buckets": 50,
     "description": "Time spent running JS GC compact phase (ms)"
-  },
-  "GC_MARK_ROOTS_MS": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
-    "expires_in_version": "never",
-    "kind": "linear",
-    "high": 200,
-    "n_buckets": 50,
-    "description": "Time spent marking GC roots (ms)"
-  },
-  "GC_MARK_GRAY_MS": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
-    "expires_in_version": "never",
-    "kind": "linear",
-    "high": 200,
-    "n_buckets": 50,
-    "description": "Time spent marking gray GC objects (ms)"
   },
   "GC_SLICE_MS": {
     "record_in_processes": ["main", "content"],
@@ -804,15 +777,6 @@
     "bug_numbers": [1528867],
     "description": "Size of the GC nursery (bytes)"
   },
-  "GC_PRETENURE_COUNT": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
-    "expires_in_version": "never",
-    "kind": "enumerated",
-    "n_values": 32,
-    "bug_numbers": [1293262],
-    "description": "How many objects groups were selected for pretenuring by a minor GC"
-  },
   "GC_SLICE_DURING_IDLE": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
@@ -842,17 +806,6 @@
     "n_buckets": 50,
     "bug_numbers": [1485299],
     "description": "The percentage of nursery objects that were promoted to tenured heap."
-  },
-  "GC_MARK_RATE": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org", "jcoppeard@mozilla.com"],
-    "expires_in_version": "never",
-    "kind": "linear",
-    "low": 1000,
-    "high": 1000000,
-    "n_buckets": 100,
-    "bug_numbers": [1475896],
-    "description": "The number of objects marked per ms during GC."
   },
   "GEOLOCATION_ACCURACY_EXPONENTIAL": {
     "record_in_processes": ["main", "content"],
@@ -958,28 +911,6 @@
     "releaseChannelCollection": "opt-out",
     "n_values":  10,
     "description": "Count how often we use different fallbacks when the GPU process crashes: None=0, GPUProcessDecodingDisabled=1, GPUProcessDisabled=2"
-  },
-  "JS_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dteller@mozilla.com"],
-    "expires_in_version": "70",
-    "bug_numbers": [1343483],
-    "kind": "exponential",
-    "low": 10,
-    "high": 10000,
-    "n_buckets": 10,
-    "description": "Time elapsed between the moment a function is lazy-parsed (end of parsing of the ScriptSource) and the moment it is recompiled as non-lazy (start of compilation), in milliseconds, for privileged code."
-  },
-  "JS_WEB_PARSER_COMPILE_LAZY_AFTER_MS": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dteller@mozilla.com"],
-    "expires_in_version": "70",
-    "bug_numbers": [1343483],
-    "kind": "exponential",
-    "low": 10,
-    "high": 10000,
-    "n_buckets": 10,
-    "description": "Time elapsed between the moment a function is lazy-parsed (end of parsing of the ScriptSource) and the moment it is recompiled as non-lazy (start of compilation), in milliseconds, for web code."
   },
   "XUL_CACHE_DISABLED": {
     "record_in_processes": ["main", "content"],

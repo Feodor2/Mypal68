@@ -37,4 +37,3 @@ env_logger = "0.7.1"
 # panicking on OOM.  Note that this is only safe within Gecko where the system
 # allocator has been globally overridden (see BMO 1457359).
 mp4parse_fallible = ["mp4parse/mp4parse_fallible"]
-

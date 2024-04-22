@@ -91,9 +91,7 @@ this.geckoProfiler = class extends ExtensionAPI {
               bufferSize,
               interval,
               features,
-              features.length,
               threads,
-              threads.length,
               windowLength
             );
           } else {
@@ -101,9 +99,7 @@ this.geckoProfiler = class extends ExtensionAPI {
               bufferSize,
               interval,
               features,
-              features.length,
               [],
-              0,
               windowLength
             );
           }
@@ -123,6 +119,29 @@ this.geckoProfiler = class extends ExtensionAPI {
 
         async resume() {
           Services.profiler.ResumeSampling();
+        },
+
+        async dumpProfileToFile(fileName) {
+          if (!Services.profiler.IsActive()) {
+            throw new ExtensionError(
+              "The profiler is stopped. " +
+                "You need to start the profiler before you can capture a profile."
+            );
+          }
+
+          if (fileName.includes("\\") || fileName.includes("/")) {
+            throw new ExtensionError("Path cannot contain a subdirectory.");
+          }
+
+          let fragments = [OS.Constants.Path.profileDir, "profiler", fileName];
+          let filePath = OS.Path.join(...fragments);
+
+          try {
+            await Services.profiler.dumpProfileToFileAsync(filePath);
+          } catch (e) {
+            Cu.reportError(e);
+            throw new ExtensionError(`Dumping profile to ${filePath} failed.`);
+          }
         },
 
         async getProfile() {

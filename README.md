@@ -35,3 +35,10 @@ Then report like for site 'x' is missing feature 'y'
 **YOU MAY DONATE**
 
 But only by crypto [Look here](https://github.com/Feodor2/Mypal68/issues/84)
+
+
+**MY MIRROR PAGES**
+
+https://codeberg.org/Theodor2/Mypal68
+https://notabug.org/Theodor/Mypal68
+

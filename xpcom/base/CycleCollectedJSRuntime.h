@@ -196,7 +196,8 @@ class CycleCollectedJSRuntime {
 
   void TraverseZone(JS::Zone* aZone, nsCycleCollectionTraversalCallback& aCb);
 
-  static void TraverseObjectShim(void* aData, JS::GCCellPtr aThing);
+  static void TraverseObjectShim(void* aData, JS::GCCellPtr aThing,
+                                 const JS::AutoRequireNoGC& nogc);
 
   void TraverseNativeRoots(nsCycleCollectionNoteRootCallback& aCb);
 
@@ -212,6 +213,9 @@ class CycleCollectedJSRuntime {
   static void OutOfMemoryCallback(JSContext* aContext, void* aData);
 
   static bool ContextCallback(JSContext* aCx, unsigned aOperation, void* aData);
+
+  static void* BeforeWaitCallback(uint8_t* aMemory);
+  static void AfterWaitCallback(void* aCookie);
 
   virtual void TraceNativeBlackRoots(JSTracer* aTracer){};
   void TraceNativeGrayRoots(JSTracer* aTracer,

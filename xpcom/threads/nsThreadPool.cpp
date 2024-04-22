@@ -9,7 +9,6 @@
 #include "nsThreadManager.h"
 #include "nsThread.h"
 #include "nsMemory.h"
-#include "nsAutoPtr.h"
 #include "prinrval.h"
 #include "mozilla/Logging.h"
 #include "mozilla/SystemGroup.h"
@@ -50,7 +49,8 @@ nsThreadPool::nsThreadPool()
       mIdleCount(0),
       mStackSize(nsIThreadManager::DEFAULT_STACK_SIZE),
       mShutdown(false),
-      mRegressiveMaxIdleTime(false) {
+      mRegressiveMaxIdleTime(false),
+      mIsAPoolThreadFree(true) {
   LOG(("THRD-P(%p) constructor!!!\n", this));
 }
 
@@ -119,7 +119,11 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
       killThread = true;
     } else if (mThreads.Count() < (int32_t)mThreadLimit) {
       mThreads.AppendObject(thread);
+      if (mThreads.Count() >= (int32_t)mThreadLimit) {
+        mIsAPoolThreadFree = false;
+      }
     } else {
+      // Someone else may have also been starting a thread
       killThread = true;  // okay, we don't need this thread anymore
     }
   }
@@ -153,6 +157,35 @@ void nsThreadPool::ShutdownThread(nsIThread* aThread) {
                                           &nsIThread::AsyncShutdown));
 }
 
+// This event 'runs' for the lifetime of the worker thread.  The actual
+// eventqueue is mEvents, and is shared by all the worker threads.  This
+// means that the set of threads together define the delay seen by a new
+// event sent to the pool.
+//
+// To model the delay experienced by the pool, we can have each thread in
+// the pool report 0 if it's idle OR if the pool is below the threadlimit;
+// or otherwise the current event's queuing delay plus current running
+// time.
+//
+// To reconstruct the delays for the pool, the profiler can look at all the
+// threads that are part of a pool (pools have defined naming patterns that
+// can be user to connect them).  If all threads have delays at time X,
+// that means that all threads saturated at that point and any event
+// dispatched to the pool would get a delay.
+//
+// The delay experienced by an event dispatched when all pool threads are
+// busy is based on the calculations shown in platform.cpp.  Run that
+// algorithm for each thread in the pool, and the delay at time X is the
+// longest value for time X of any of the threads, OR the time from X until
+// any one of the threads reports 0 (i.e. it's not busy), whichever is
+// shorter.
+
+// In order to record this when the profiler samples threads in the pool,
+// each thread must (effectively) override GetRunnningEventDelay, by
+// resetting the mLastEventDelay/Start values in the nsThread when we start
+// to run an event (or when we run out of events to run).  Note that handling
+// the shutdown of a thread may be a little tricky.
+
 NS_IMETHODIMP
 nsThreadPool::Run() {
   LOG(("THRD-P(%p) enter %s\n", this, mName.BeginReading()));
@@ -164,6 +197,10 @@ nsThreadPool::Run() {
   bool exitThread = false;
   bool wasIdle = false;
   TimeStamp idleSince;
+
+  // This thread is an nsThread created below with NS_NewNamedThread()
+  static_cast<nsThread*>(current.get())
+      ->SetPoolThreadFreePtr(&mIsAPoolThreadFree);
 
   nsCOMPtr<nsIThreadPoolListener> listener;
   {
@@ -177,10 +214,11 @@ nsThreadPool::Run() {
 
   do {
     nsCOMPtr<nsIRunnable> event;
+    TimeDuration delay;
     {
       AutoLock lock(mMutex);
 
-      event = mEvents.GetEvent(nullptr, lock);
+      event = mEvents.GetEvent(nullptr, lock, &delay);
       if (!event) {
         TimeStamp now = TimeStamp::Now();
         uint32_t idleTimeoutDivider =
@@ -216,7 +254,12 @@ nsThreadPool::Run() {
             --mIdleCount;
           }
           shutdownThreadOnExit = mThreads.RemoveObject(current);
+
+          // keep track if there are threads available to start
+          mIsAPoolThreadFree = (mThreads.Count() < (int32_t)mThreadLimit);
         } else {
+          current->SetRunningEventDelay(TimeDuration(), TimeStamp());
+
           AUTO_PROFILER_LABEL("nsThreadPool::Run::Wait", IDLE);
 
           TimeDuration delta = timeout - (now - idleSince);
@@ -240,6 +283,10 @@ nsThreadPool::Run() {
       // Delay event processing to encourage whoever dispatched this event
       // to run.
       DelayForChaosMode(ChaosFeature::TaskRunning, 1000);
+
+      // We'll handle the case of unstarted threads available
+      // when we sample.
+      current->SetRunningEventDelay(delay, TimeStamp::Now());
 
       event->Run();
     }
@@ -430,17 +477,18 @@ nsThreadPool::ShutdownWithTimeout(int32_t aTimeoutMs) {
   // For any threads that have not shutdown yet, we need to remove them from
   // mRequestedShutdownContexts so the thread manager does not wait for them
   // at shutdown.
+  static const nsThread::ShutdownContextsComp comparator{};
   for (int32_t i = 0; i < threads.Count(); ++i) {
     nsThread* thread = static_cast<nsThread*>(threads[i]);
     // If mThread is not null on the thread it means that it hasn't shutdown
     // context[i] corresponds to thread[i]
     if (thread->mThread && contexts[i]) {
-      auto index =
-          currentThread->mRequestedShutdownContexts.IndexOf(contexts[i]);
+      auto index = currentThread->mRequestedShutdownContexts.IndexOf(
+          contexts[i], 0, comparator);
       if (index != nsThread::ShutdownContexts::NoIndex) {
         // We must leak the shutdown context just in case the leaked thread
         // does get unstuck and completes before the main thread is done.
-        currentThread->mRequestedShutdownContexts[index].forget();
+        Unused << currentThread->mRequestedShutdownContexts[index].release();
         currentThread->mRequestedShutdownContexts.RemoveElementsAt(index, 1);
       }
     }

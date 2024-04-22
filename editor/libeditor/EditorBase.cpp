@@ -29,7 +29,6 @@
 #include "mozilla/BasePrincipal.h"            // for BasePrincipal
 #include "mozilla/CheckedInt.h"               // for CheckedInt
 #include "mozilla/ComposerCommandsUpdater.h"  // for ComposerCommandsUpdater
-#include "mozilla/ComputedStyle.h"            // for ComputedStyle
 #include "mozilla/CSSEditUtils.h"             // for CSSEditUtils
 #include "mozilla/EditAction.h"               // for EditSubAction
 #include "mozilla/EditorDOMPoint.h"           // for EditorDOMPoint
@@ -78,7 +77,6 @@
 #include "nsCaseTreatment.h"
 #include "nsCharTraits.h"              // for NS_IS_HIGH_SURROGATE, etc.
 #include "nsComponentManagerUtils.h"   // for do_CreateInstance
-#include "nsComputedDOMStyle.h"        // for nsComputedDOMStyle
 #include "nsContentUtils.h"            // for nsContentUtils
 #include "nsDOMString.h"               // for DOMStringIsNull
 #include "nsDebug.h"                   // for NS_WARNING, etc.
@@ -125,6 +123,8 @@ namespace mozilla {
 
 using namespace dom;
 using namespace widget;
+
+using ChildBlockBoundary = HTMLEditUtils::ChildBlockBoundary;
 
 /*****************************************************************************
  * mozilla::EditorBase
@@ -2585,7 +2585,8 @@ nsINode* EditorBase::GetFirstEditableNode(nsINode* aRoot) {
   MOZ_ASSERT(aRoot);
 
   EditorType editorType = GetEditorType();
-  nsIContent* content = GetLeftmostChild(aRoot);
+  nsIContent* content =
+      HTMLEditUtils::GetFirstLeafChild(*aRoot, ChildBlockBoundary::TreatAsLeaf);
   if (content && !EditorUtils::IsEditableContent(*content, editorType)) {
     content = GetNextEditableNode(*content);
   }
@@ -2815,7 +2816,7 @@ nsresult EditorBase::DeleteTextWithTransaction(Text& aTextNode,
   return rv;
 }
 
-nsIContent* EditorBase::GetPreviousNodeInternal(nsINode& aNode,
+nsIContent* EditorBase::GetPreviousNodeInternal(const nsINode& aNode,
                                                 bool aFindEditableNode,
                                                 bool aFindAnyDataNode,
                                                 bool aNoBlockCrossing) const {
@@ -2856,24 +2857,25 @@ nsIContent* EditorBase::GetPreviousNodeInternal(const EditorRawDOMPoint& aPoint,
 
   // unless there isn't one, in which case we are at the end of the node
   // and want the deep-right child.
-  nsIContent* rightMostContent =
-      GetRightmostChild(aPoint.GetContainer(), aNoBlockCrossing);
-  if (!rightMostContent) {
+  nsIContent* lastLeafContent = HTMLEditUtils::GetLastLeafChild(
+      *aPoint.GetContainer(), aNoBlockCrossing ? ChildBlockBoundary::TreatAsLeaf
+                                               : ChildBlockBoundary::Ignore);
+  if (!lastLeafContent) {
     return nullptr;
   }
 
   if ((!aFindEditableNode ||
-       EditorUtils::IsEditableContent(*rightMostContent, GetEditorType())) &&
-      (aFindAnyDataNode || EditorUtils::IsElementOrText(*rightMostContent))) {
-    return rightMostContent;
+       EditorUtils::IsEditableContent(*lastLeafContent, GetEditorType())) &&
+      (aFindAnyDataNode || EditorUtils::IsElementOrText(*lastLeafContent))) {
+    return lastLeafContent;
   }
 
   // restart the search from the non-editable node we just found
-  return GetPreviousNodeInternal(*rightMostContent, aFindEditableNode,
+  return GetPreviousNodeInternal(*lastLeafContent, aFindEditableNode,
                                  aFindAnyDataNode, aNoBlockCrossing);
 }
 
-nsIContent* EditorBase::GetNextNodeInternal(nsINode& aNode,
+nsIContent* EditorBase::GetNextNodeInternal(const nsINode& aNode,
                                             bool aFindEditableNode,
                                             bool aFindAnyDataNode,
                                             bool aNoBlockCrossing) const {
@@ -2909,24 +2911,25 @@ nsIContent* EditorBase::GetNextNodeInternal(const EditorRawDOMPoint& aPoint,
       return point.GetChild();
     }
 
-    nsIContent* leftMostContent =
-        GetLeftmostChild(point.GetChild(), aNoBlockCrossing);
-    if (!leftMostContent) {
+    nsIContent* firstLeafContent = HTMLEditUtils::GetFirstLeafChild(
+        *point.GetChild(), aNoBlockCrossing ? ChildBlockBoundary::TreatAsLeaf
+                                            : ChildBlockBoundary::Ignore);
+    if (!firstLeafContent) {
       return point.GetChild();
     }
 
-    if (!IsDescendantOfEditorRoot(leftMostContent)) {
+    if (!IsDescendantOfEditorRoot(firstLeafContent)) {
       return nullptr;
     }
 
     if ((!aFindEditableNode ||
-         EditorUtils::IsEditableContent(*leftMostContent, GetEditorType())) &&
-        (aFindAnyDataNode || EditorUtils::IsElementOrText(*leftMostContent))) {
-      return leftMostContent;
+         EditorUtils::IsEditableContent(*firstLeafContent, GetEditorType())) &&
+        (aFindAnyDataNode || EditorUtils::IsElementOrText(*firstLeafContent))) {
+      return firstLeafContent;
     }
 
     // restart the search from the non-editable node we just found
-    return GetNextNodeInternal(*leftMostContent, aFindEditableNode,
+    return GetNextNodeInternal(*firstLeafContent, aFindEditableNode,
                                aFindAnyDataNode, aNoBlockCrossing);
   }
 
@@ -2942,14 +2945,15 @@ nsIContent* EditorBase::GetNextNodeInternal(const EditorRawDOMPoint& aPoint,
                              aFindAnyDataNode, aNoBlockCrossing);
 }
 
-nsIContent* EditorBase::FindNextLeafNode(nsINode* aCurrentNode, bool aGoForward,
+nsIContent* EditorBase::FindNextLeafNode(const nsINode* aCurrentNode,
+                                         bool aGoForward,
                                          bool bNoBlockCrossing) const {
   // called only by GetPriorNode so we don't need to check params.
   MOZ_ASSERT(
       IsDescendantOfEditorRoot(aCurrentNode) && !IsEditorRoot(aCurrentNode),
       "Bogus arguments");
 
-  nsINode* cur = aCurrentNode;
+  const nsINode* cur = aCurrentNode;
   for (;;) {
     // if aCurrentNode has a sibling in the right direction, return
     // that sibling's closest child (or itself if it has no children)
@@ -2960,14 +2964,14 @@ nsIContent* EditorBase::FindNextLeafNode(nsINode* aCurrentNode, bool aGoForward,
         // don't look inside prevsib, since it is a block
         return sibling;
       }
-      nsIContent* leaf = aGoForward
-                             ? GetLeftmostChild(sibling, bNoBlockCrossing)
-                             : GetRightmostChild(sibling, bNoBlockCrossing);
-      if (!leaf) {
-        return sibling;
-      }
-
-      return leaf;
+      ChildBlockBoundary childBlockBoundary =
+          bNoBlockCrossing ? ChildBlockBoundary::TreatAsLeaf
+                           : ChildBlockBoundary::Ignore;
+      nsIContent* leafContent =
+          aGoForward
+              ? HTMLEditUtils::GetFirstLeafChild(*sibling, childBlockBoundary)
+              : HTMLEditUtils::GetLastLeafChild(*sibling, childBlockBoundary);
+      return leafContent ? leafContent : sibling;
     }
 
     nsINode* parent = cur->GetParentNode();
@@ -2992,7 +2996,7 @@ nsIContent* EditorBase::FindNextLeafNode(nsINode* aCurrentNode, bool aGoForward,
   return nullptr;
 }
 
-nsIContent* EditorBase::FindNode(nsINode* aCurrentNode, bool aGoForward,
+nsIContent* EditorBase::FindNode(const nsINode* aCurrentNode, bool aGoForward,
                                  bool aEditableNode, bool aFindAnyDataNode,
                                  bool bNoBlockCrossing) const {
   if (IsEditorRoot(aCurrentNode)) {
@@ -3020,55 +3024,7 @@ nsIContent* EditorBase::FindNode(nsINode* aCurrentNode, bool aGoForward,
                   bNoBlockCrossing);
 }
 
-nsIContent* EditorBase::GetRightmostChild(nsINode* aCurrentNode,
-                                          bool bNoBlockCrossing) const {
-  if (NS_WARN_IF(!aCurrentNode)) {
-    return nullptr;
-  }
-  nsIContent* content = aCurrentNode->GetLastChild();
-  if (!content) {
-    return nullptr;
-  }
-  for (;;) {
-    if (bNoBlockCrossing && HTMLEditUtils::IsBlockElement(*content)) {
-      return content;
-    }
-    nsIContent* nextContent = content->GetLastChild();
-    if (!nextContent) {
-      return content;
-    }
-    content = nextContent;
-  }
-
-  MOZ_ASSERT_UNREACHABLE("What part of for(;;) do you not understand?");
-  return nullptr;
-}
-
-nsIContent* EditorBase::GetLeftmostChild(nsINode* aCurrentNode,
-                                         bool bNoBlockCrossing) const {
-  if (NS_WARN_IF(!aCurrentNode)) {
-    return nullptr;
-  }
-  nsIContent* content = aCurrentNode->GetFirstChild();
-  if (!content) {
-    return nullptr;
-  }
-  for (;;) {
-    if (bNoBlockCrossing && HTMLEditUtils::IsBlockElement(*content)) {
-      return content;
-    }
-    nsIContent* next = content->GetFirstChild();
-    if (!next) {
-      return content;
-    }
-    content = next;
-  }
-
-  MOZ_ASSERT_UNREACHABLE("What part of for(;;) do you not understand?");
-  return nullptr;
-}
-
-bool EditorBase::IsRoot(nsINode* inNode) const {
+bool EditorBase::IsRoot(const nsINode* inNode) const {
   if (NS_WARN_IF(!inNode)) {
     return false;
   }
@@ -3076,7 +3032,7 @@ bool EditorBase::IsRoot(nsINode* inNode) const {
   return inNode == rootNode;
 }
 
-bool EditorBase::IsEditorRoot(nsINode* aNode) const {
+bool EditorBase::IsEditorRoot(const nsINode* aNode) const {
   if (NS_WARN_IF(!aNode)) {
     return false;
   }
@@ -3084,7 +3040,7 @@ bool EditorBase::IsEditorRoot(nsINode* aNode) const {
   return aNode == rootNode;
 }
 
-bool EditorBase::IsDescendantOfRoot(nsINode* inNode) const {
+bool EditorBase::IsDescendantOfRoot(const nsINode* inNode) const {
   if (NS_WARN_IF(!inNode)) {
     return false;
   }
@@ -3096,7 +3052,7 @@ bool EditorBase::IsDescendantOfRoot(nsINode* inNode) const {
   return inNode->IsInclusiveDescendantOf(root);
 }
 
-bool EditorBase::IsDescendantOfEditorRoot(nsINode* aNode) const {
+bool EditorBase::IsDescendantOfEditorRoot(const nsINode* aNode) const {
   if (NS_WARN_IF(!aNode)) {
     return false;
   }
@@ -3223,36 +3179,6 @@ nsresult EditorBase::GetEndChildNode(const Selection& aSelection,
 
   NS_IF_ADDREF(*aEndNode = range->GetChildAtEndOffset());
   return NS_OK;
-}
-
-/**
- * IsPreformatted() checks the style info for the node for the preformatted
- * text style.
- */
-// static
-bool EditorBase::IsPreformatted(nsINode* aNode) {
-  if (NS_WARN_IF(!aNode)) {
-    return false;
-  }
-  // Look at the node (and its parent if it's not an element), and grab its
-  // ComputedStyle.
-  Element* element = aNode->GetAsElementOrParentElement();
-  if (!element) {
-    return false;
-  }
-
-  RefPtr<ComputedStyle> elementStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(element, nullptr);
-  if (!elementStyle) {
-    // Consider nodes without a ComputedStyle to be NOT preformatted:
-    // For instance, this is true of JS tags inside the body (which show
-    // up as #text nodes but have no ComputedStyle).
-    return false;
-  }
-
-  const nsStyleText* styleText = elementStyle->StyleText();
-
-  return styleText->WhiteSpaceIsSignificant();
 }
 
 nsresult EditorBase::EnsureNoPaddingBRElementForEmptyEditor() {
@@ -4260,23 +4186,10 @@ nsresult EditorBase::DeleteSelectionWithTransaction(
   return rv;
 }
 
-nsresult EditorBase::CreateRange(nsINode* aStartContainer, int32_t aStartOffset,
-                                 nsINode* aEndContainer, int32_t aEndOffset,
-                                 nsRange** aRange) {
-  RefPtr<nsRange> range = nsRange::Create(
-      aStartContainer, aStartOffset, aEndContainer, aEndOffset, IgnoreErrors());
-  if (!range) {
-    NS_WARNING("nsRange::Create() failed");
-    return NS_ERROR_FAILURE;
-  }
-  range.forget(aRange);
-  return NS_OK;
-}
-
 nsresult EditorBase::AppendNodeToSelectionAsRange(nsINode* aNode) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  if (NS_WARN_IF(!aNode) && NS_WARN_IF(!aNode->IsContent())) {
+  if (NS_WARN_IF(!aNode) || NS_WARN_IF(!aNode->IsContent())) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -4285,15 +4198,11 @@ nsresult EditorBase::AppendNodeToSelectionAsRange(nsINode* aNode) {
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<nsRange> range;
-  nsresult rv = CreateRange(atContent.GetContainer(), atContent.Offset(),
-                            atContent.GetContainer(), atContent.Offset() + 1,
-                            getter_AddRefs(range));
-  if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::CreateRange() failed");
-    return rv;
-  }
+  RefPtr<nsRange> range = nsRange::Create(
+      atContent.ToRawRangeBoundary(),
+      atContent.NextPoint().ToRawRangeBoundary(), IgnoreErrors());
   if (NS_WARN_IF(!range)) {
+    NS_WARNING("nsRange::Create() failed");
     return NS_ERROR_FAILURE;
   }
 

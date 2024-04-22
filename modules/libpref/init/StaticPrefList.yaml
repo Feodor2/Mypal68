@@ -1010,6 +1010,12 @@
   value: false
   mirror: always
 
+# Provide ability to turn on support for canvas mozGetAsFile API.
+- name: canvas.mozgetasfile.enabled
+  type: bool
+  value: false
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "channelclassifier."
 #---------------------------------------------------------------------------
@@ -1257,7 +1263,7 @@
 # Is support for AudioWorklet enabled?
 - name: dom.audioworklet.enabled
   type: bool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Is support for Navigator.getBattery enabled?
@@ -1339,7 +1345,7 @@
 # HTML <dialog> element
 - name: dom.dialog_element.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # Only propagate the open window click permission if the setTimeout() is equal
@@ -1951,11 +1957,25 @@
   value: false
   mirror: always
 
-# Is support for Navigator.registerContentHandler enabled?
-- name: dom.registerContentHandler.enabled
-  type: bool
-  value: false
-  mirror: always
+#ifdef XP_WIN
+  # Preference that is used to set nsILocalFileWin::useDOSDevicePathSyntax
+  # attribute for all local file instances created by QuotaManager and its
+  # clients. The value of this preference is cached so changing the preference
+  # during runtime has no effect.
+  # See bug 1626846 for setting this to false by default.
+-   name: dom.quotaManager.useDOSDevicePathSyntax
+    type: RelaxedAtomicBool
+    value: true
+    mirror: always
+    do_not_use_directly: true
+
+  # Preference that is used to enable the hack for overrriding xFullPathname in
+  # TelemetryVFS.
+-   name: dom.quotaManager.overrideXFullPathname
+    type: RelaxedAtomicBool
+    value: true
+    mirror: always
+#endif
 
 # Reporting API.
 - name: dom.reporting.enabled
@@ -2008,18 +2028,6 @@
   value: true
   mirror: always
 
-#ifdef JS_BUILD_BINAST
--   name: dom.script_loader.binast_encoding.domain.restrict
-    type: bool
-    value: true
-    mirror: always
-
--   name: dom.script_loader.binast_encoding.enabled
-    type: RelaxedAtomicBool
-    value: false
-    mirror: always
-#endif
-
 # Whether to enable the JavaScript start-up cache. This causes one of the first
 # execution to record the bytecode of the JavaScript function used, and save it
 # in the existing cache entry. On the following loads of the same script, the
@@ -2055,6 +2063,31 @@
 - name: dom.script_loader.external_scripts.utf8_parsing.enabled
   type: bool
   value: true
+  mirror: always
+
+# Enable  speculative off main thread parsing of external scripts as
+# soon as they are fetched.
+- name: dom.script_loader.external_scripts.speculative_omt_parse.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
+# Speculatively compile non parser inserted scripts
+- name: dom.script_loader.external_scripts.speculate_non_parser_inserted.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# Speculatively compile async scripts
+- name: dom.script_loader.external_scripts.speculate_async.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# Speculatively compile link preload scripts
+- name: dom.script_loader.external_scripts.speculate_link_preload.enabled
+  type: bool
+  value: false
   mirror: always
 
 - name: dom.securecontext.whitelist_onions
@@ -2117,6 +2150,11 @@
   mirror: never
 
 - name: dom.serviceWorkers.testing.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+- name: dom.workers.serialized-sab-access
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -2697,7 +2735,7 @@
 
 - name: dom.worklet.enabled
   type: bool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Enable content type normalization of XHR uploads via MIME Sniffing standard
@@ -3893,26 +3931,37 @@
   value: @IS_NOT_RELEASE_OR_BETA@
   mirror: always
 
-#ifdef NIGHTLY_BUILD
-  # Experimental support for weak references in JavaScript (WeakRef and
-  # FinalizationRegistry).
-- name: javascript.options.experimental.weakrefs.enabled
+# Support for weak references in JavaScript (WeakRef and FinalizationRegistry).
+- name: javascript.options.weakrefs
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
-  # Whether to expose the FinalizationRegistry.prototype.cleanupSome method.
+# Whether to expose the FinalizationRegistry.prototype.cleanupSome method.
 - name: javascript.options.experimental.weakrefs.expose_cleanupSome
   type: RelaxedAtomicBool
   value: false
   mirror: always
 
+#ifdef NIGHTLY_BUILD
   # Experimental support for Iterator Helpers in JavaScript.
 - name: javascript.options.experimental.iterator_helpers
   type: RelaxedAtomicBool
   value: false
   mirror: always
 #endif
+
+  # Support for Private Fields in JavaScript.
+- name: javascript.options.experimental.private_fields
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+  # Experimental support for Private Methods in JavaScript.
+- name: javascript.options.experimental.private_methods
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
 
 # The amount of time we wait between a request to GC (due to leaving a page) and doing the actual GC, in ms.
 - name: javascript.options.gc_delay
@@ -3988,6 +4037,14 @@
   value: 2 * 1024 * 1024
 #endif
   mirror: always
+
+# True if off-thread parsing should use a parse GlobalObject in order to
+# directly allocate to the GC from a helper thread. If false, transfer the
+# CompilationStencil back to main thread before allocating GC objects.
+- name: javascript.options.off_thread_parse_global
+  type: bool
+  value: true
+  mirror: once
 
 #---------------------------------------------------------------------------
 # Prefs starting with "keyword."

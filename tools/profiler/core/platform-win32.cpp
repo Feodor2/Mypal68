@@ -124,7 +124,7 @@ void Sampler::Disable(PSLockRef aLock) {}
 template <typename Func>
 void Sampler::SuspendAndSampleAndResumeThread(
     PSLockRef aLock, const RegisteredThread& aRegisteredThread,
-    const Func& aProcessRegs) {
+    const TimeStamp& aNow, const Func& aProcessRegs) {
   HANDLE profiled_thread =
       aRegisteredThread.GetPlatformData()->ProfiledThread();
   if (profiled_thread == nullptr) {
@@ -170,7 +170,7 @@ void Sampler::SuspendAndSampleAndResumeThread(
 
   Registers regs;
   PopulateRegsFromContext(regs, &context);
-  aProcessRegs(regs);
+  aProcessRegs(regs, aNow);
 
   //----------------------------------------------------------------//
   // Resume the target thread.
@@ -196,7 +196,7 @@ static unsigned int __stdcall ThreadEntry(void* aArg) {
 
 SamplerThread::SamplerThread(PSLockRef aLock, uint32_t aActivityGeneration,
                              double aIntervalMilliseconds)
-    : Sampler(aLock),
+    : mSampler(aLock),
       mActivityGeneration(aActivityGeneration),
       mIntervalMicroseconds(
           std::max(1, int(floor(aIntervalMilliseconds * 1000 + 0.5)))) {
@@ -235,7 +235,7 @@ void SamplerThread::SleepMicro(uint32_t aMicroseconds) {
   if (mIntervalMicroseconds >= 1000) {
     ::Sleep(std::max(1u, aMicroseconds / 1000));
   } else {
-    TimeStamp start = TimeStamp::Now();
+    TimeStamp start = TimeStamp::NowUnfuzzed();
     TimeStamp end = start + TimeDuration::FromMicroseconds(aMicroseconds);
 
     // First, sleep for as many whole milliseconds as possible.
@@ -244,7 +244,7 @@ void SamplerThread::SleepMicro(uint32_t aMicroseconds) {
     }
 
     // Then, spin until enough time has passed.
-    while (TimeStamp::Now() < end) {
+    while (TimeStamp::NowUnfuzzed() < end) {
       YieldProcessor();
     }
   }
@@ -263,7 +263,7 @@ void SamplerThread::Stop(PSLockRef aLock) {
     ::timeEndPeriod(mIntervalMicroseconds / 1000);
   }
 
-  Sampler::Disable(aLock);
+  mSampler.Disable(aLock);
 }
 
 // END SamplerThread target specifics

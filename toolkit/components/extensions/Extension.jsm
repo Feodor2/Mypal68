@@ -12,7 +12,6 @@ var EXPORTED_SYMBOLS = [
 ];
 
 /* exported Extension, ExtensionData */
-/* globals Extension ExtensionData */
 
 /*
  * This file is the main entry point for extensions. When an extension
@@ -308,7 +307,7 @@ var UninstallObserver = {
 
       // If LSNG is not enabled, we need to clear localStorage explicitly using
       // the old API.
-      if (!Services.lsm.nextGenLocalStorageEnabled) {
+      if (!Services.domStorageManager.nextGenLocalStorageEnabled) {
         // Clear localStorage created by the extension
         let storage = Services.domStorageManager.getStorage(
           null,

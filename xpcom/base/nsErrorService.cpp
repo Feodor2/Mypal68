@@ -4,7 +4,6 @@
 
 #include "nsErrorService.h"
 #include "nsCRTGlue.h"
-#include "nsAutoPtr.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ClearOnShutdown.h"
 

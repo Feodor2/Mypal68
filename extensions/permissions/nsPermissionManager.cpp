@@ -8,7 +8,6 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Pair.h"
 #include "mozilla/Services.h"
 #include "mozilla/SystemGroup.h"
 #include "nsPermissionManager.h"
@@ -2130,7 +2129,7 @@ nsPermissionManager::RemoveAllSince(int64_t aSince) {
 
 template <class T>
 nsresult nsPermissionManager::RemovePermissionEntries(T aCondition) {
-  Vector<Pair<nsCOMPtr<nsIPrincipal>, nsCString>, 10> array;
+  Vector<std::pair<nsCOMPtr<nsIPrincipal>, nsCString>, 10> array;
   for (auto iter = mPermissionTable.Iter(); !iter.Done(); iter.Next()) {
     PermissionHashKey* entry = iter.Get();
     for (const auto& permEntry : entry->GetPermissions()) {
@@ -2153,7 +2152,7 @@ nsresult nsPermissionManager::RemovePermissionEntries(T aCondition) {
 
   for (auto& i : array) {
     // AddInternal handles removal, so let it do the work...
-    AddInternal(i.first(), i.second(), nsIPermissionManager::UNKNOWN_ACTION, 0,
+    AddInternal(i.first, i.second, nsIPermissionManager::UNKNOWN_ACTION, 0,
                 nsIPermissionManager::EXPIRE_NEVER, 0, 0,
                 nsPermissionManager::eNotify, nsPermissionManager::eWriteToDB);
   }
@@ -2679,7 +2678,7 @@ nsresult nsPermissionManager::RemovePermissionsWithAttributes(
 
 nsresult nsPermissionManager::RemovePermissionsWithAttributes(
     mozilla::OriginAttributesPattern& aPattern) {
-  Vector<Pair<nsCOMPtr<nsIPrincipal>, nsCString>, 10> permissions;
+  Vector<std::pair<nsCOMPtr<nsIPrincipal>, nsCString>, 10> permissions;
   for (auto iter = mPermissionTable.Iter(); !iter.Done(); iter.Next()) {
     PermissionHashKey* entry = iter.Get();
 
@@ -2702,7 +2701,7 @@ nsresult nsPermissionManager::RemovePermissionsWithAttributes(
   }
 
   for (auto& i : permissions) {
-    AddInternal(i.first(), i.second(), nsIPermissionManager::UNKNOWN_ACTION, 0,
+    AddInternal(i.first, i.second, nsIPermissionManager::UNKNOWN_ACTION, 0,
                 nsIPermissionManager::EXPIRE_NEVER, 0, 0,
                 nsPermissionManager::eNotify, nsPermissionManager::eWriteToDB);
   }

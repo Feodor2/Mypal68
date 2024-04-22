@@ -45,6 +45,8 @@ namespace mozilla {
 
 using namespace dom;
 
+using ChildBlockBoundary = HTMLEditUtils::ChildBlockBoundary;
+
 nsresult HTMLEditor::SetInlinePropertyAsAction(nsAtom& aProperty,
                                                nsAtom* aAttribute,
                                                const nsAString& aValue,
@@ -757,7 +759,7 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
 
   AutoTArray<OwningNonNull<nsIContent>, 24> arrayOfParents;
   for (nsIContent* content :
-       InclusiveAncestorsOfType<nsIContent>(*aPointToSplit.GetContainer())) {
+       aPointToSplit.GetContainer()->InclusiveAncestorsOfType<nsIContent>()) {
     if (HTMLEditUtils::IsBlockElement(*content) || !content->GetParent() ||
         !EditorUtils::IsEditableContent(*content->GetParent(),
                                         EditorType::HTML)) {
@@ -882,10 +884,10 @@ EditResult HTMLEditor::ClearStyleAt(const EditorDOMPoint& aPoint,
   // the next node.  The first example should become
   // `<p><b><i>a</i></b><b><i></i></b><b><i>bc</i></b></p>`.
   //                    ^^^^^^^^^^^^^^
-  nsIContent* leftmostChildOfNextNode =
-      GetLeftmostChild(splitResult.GetNextNode());
-  EditorDOMPoint atStartOfNextNode(leftmostChildOfNextNode
-                                       ? leftmostChildOfNextNode
+  nsIContent* firstLeafChildOfNextNode = HTMLEditUtils::GetFirstLeafChild(
+      *splitResult.GetNextNode(), ChildBlockBoundary::Ignore);
+  EditorDOMPoint atStartOfNextNode(firstLeafChildOfNextNode
+                                       ? firstLeafChildOfNextNode
                                        : splitResult.GetNextNode(),
                                    0);
   RefPtr<HTMLBRElement> brElement;
@@ -940,11 +942,13 @@ EditResult HTMLEditor::ClearStyleAt(const EditorDOMPoint& aPoint,
   // Now, we want to put `<br>` element into the empty split node if
   // it was in next node of the first split.
   // E.g., `<p><b><i>a</i></b><b><i><br></i></b><b><i>bc</i></b></p>`
-  nsIContent* leftmostChild =
-      GetLeftmostChild(splitResultAtStartOfNextNode.GetPreviousNode());
+  nsIContent* firstLeafChildOfPreviousNode = HTMLEditUtils::GetFirstLeafChild(
+      *splitResultAtStartOfNextNode.GetPreviousNode(),
+      ChildBlockBoundary::Ignore);
   EditorDOMPoint pointToPutCaret(
-      leftmostChild ? leftmostChild
-                    : splitResultAtStartOfNextNode.GetPreviousNode(),
+      firstLeafChildOfPreviousNode
+          ? firstLeafChildOfPreviousNode
+          : splitResultAtStartOfNextNode.GetPreviousNode(),
       0);
   // If the right node starts with a `<br>`, suck it out of right node and into
   // the left node left node.  This is so we you don't revert back to the
@@ -1184,7 +1188,7 @@ nsresult HTMLEditor::PromoteRangeIfStartsOrEndsInNamedAnchor(nsRange& aRange) {
   }
   EditorRawDOMPoint newRangeStart(aRange.StartRef());
   for (Element* element :
-       InclusiveAncestorsOfType<Element>(*aRange.GetStartContainer())) {
+       aRange.GetStartContainer()->InclusiveAncestorsOfType<Element>()) {
     if (element->IsHTMLElement(nsGkAtoms::body)) {
       break;
     }
@@ -1204,7 +1208,7 @@ nsresult HTMLEditor::PromoteRangeIfStartsOrEndsInNamedAnchor(nsRange& aRange) {
 
   EditorRawDOMPoint newRangeEnd(aRange.EndRef());
   for (Element* element :
-       InclusiveAncestorsOfType<Element>(*aRange.GetEndContainer())) {
+       aRange.GetEndContainer()->InclusiveAncestorsOfType<Element>()) {
     if (element->IsHTMLElement(nsGkAtoms::body)) {
       break;
     }
@@ -1239,7 +1243,7 @@ nsresult HTMLEditor::PromoteInlineRange(nsRange& aRange) {
   }
   EditorRawDOMPoint newRangeStart(aRange.StartRef());
   for (nsIContent* content :
-       InclusiveAncestorsOfType<nsIContent>(*aRange.GetStartContainer())) {
+       aRange.GetStartContainer()->InclusiveAncestorsOfType<nsIContent>()) {
     MOZ_ASSERT(newRangeStart.GetContainer() == content);
     if (content->IsHTMLElement(nsGkAtoms::body) ||
         !EditorUtils::IsEditableContent(*content, EditorType::HTML) ||
@@ -1257,7 +1261,7 @@ nsresult HTMLEditor::PromoteInlineRange(nsRange& aRange) {
 
   EditorRawDOMPoint newRangeEnd(aRange.EndRef());
   for (nsIContent* content :
-       InclusiveAncestorsOfType<nsIContent>(*aRange.GetEndContainer())) {
+       aRange.GetEndContainer()->InclusiveAncestorsOfType<nsIContent>()) {
     MOZ_ASSERT(newRangeEnd.GetContainer() == content);
     if (content->IsHTMLElement(nsGkAtoms::body) ||
         !EditorUtils::IsEditableContent(*content, EditorType::HTML) ||

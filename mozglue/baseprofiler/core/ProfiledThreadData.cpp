@@ -62,6 +62,7 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
         schema.WriteField("line");
         schema.WriteField("column");
         schema.WriteField("category");
+        schema.WriteField("subcategory");
       }
 
       aWriter.StartArrayProperty("data");
@@ -123,8 +124,6 @@ void StreamSamplesAndMarkers(const char* aName, int aThreadId,
       schema.WriteField("stack");
       schema.WriteField("time");
       schema.WriteField("responsiveness");
-      schema.WriteField("rss");
-      schema.WriteField("uss");
     }
 
     aWriter.StartArrayProperty("data");

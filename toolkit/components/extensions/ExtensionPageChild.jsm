@@ -292,6 +292,10 @@ class ExtensionPageContextChild extends ExtensionBaseContextChild {
   constructor(extension, params) {
     super(extension, Object.assign(params, { envType: "addon_child" }));
 
+    if (this.viewType == "background") {
+      initializeBackgroundPage(this);
+    }
+
     this.extension.views.add(this);
   }
 
@@ -318,10 +322,6 @@ defineLazyGetter(
     });
 
     this.callOnClose(childManager);
-
-    if (this.viewType == "background") {
-      initializeBackgroundPage(this);
-    }
 
     return childManager;
   }

@@ -32,8 +32,6 @@ var gExceptionPaths = [
 
   // https://github.com/mozilla/activity-stream/issues/3053
   "resource://activity-stream/data/content/tippytop/images/",
-  // https://github.com/mozilla/activity-stream/issues/3758
-  "resource://activity-stream/prerendered/",
 
   // browser/extensions/pdfjs/content/build/pdf.js#1999
   "resource://pdf.js/web/images/",
@@ -265,6 +263,11 @@ if (!isDevtools) {
     "extension-storage.js",
   ]) {
     whitelist.add("resource://services-sync/engines/" + module);
+  }
+  // resource://devtools/shared/worker/loader.js,
+  // resource://devtools/shared/builtin-modules.js
+  if (!AppConstants.ENABLE_REMOTE_AGENT) {
+    whitelist.add("resource://gre/modules/jsdebugger.jsm");
   }
 }
 

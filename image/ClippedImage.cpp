@@ -15,7 +15,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Move.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Pair.h"
 #include "mozilla/Tuple.h"
 
 #include "ImageRegion.h"
@@ -238,13 +237,14 @@ ClippedImage::GetFrameAtSize(const IntSize& aSize, uint32_t aWhichFrame,
   return GetFrame(aWhichFrame, aFlags);
 }
 
-Pair<ImgDrawResult, RefPtr<SourceSurface>> ClippedImage::GetFrameInternal(
+std::pair<ImgDrawResult, RefPtr<SourceSurface>> ClippedImage::GetFrameInternal(
     const nsIntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
     uint32_t aWhichFrame, uint32_t aFlags, float aOpacity) {
   if (!ShouldClip()) {
     RefPtr<SourceSurface> surface = InnerImage()->GetFrame(aWhichFrame, aFlags);
-    return MakePair(surface ? ImgDrawResult::SUCCESS : ImgDrawResult::NOT_READY,
-                    std::move(surface));
+    return std::make_pair(
+        surface ? ImgDrawResult::SUCCESS : ImgDrawResult::NOT_READY,
+        std::move(surface));
   }
 
   float frameToDraw = InnerImage()->GetFrameIndex(aWhichFrame);
@@ -257,7 +257,8 @@ Pair<ImgDrawResult, RefPtr<SourceSurface>> ClippedImage::GetFrameInternal(
             IntSize(aSize.width, aSize.height), SurfaceFormat::B8G8R8A8);
     if (!target || !target->IsValid()) {
       NS_ERROR("Could not create a DrawTarget");
-      return MakePair(ImgDrawResult::TEMPORARY_ERROR, RefPtr<SourceSurface>());
+      return std::make_pair(ImgDrawResult::TEMPORARY_ERROR,
+                            RefPtr<SourceSurface>());
     }
 
     RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(target);
@@ -284,7 +285,7 @@ Pair<ImgDrawResult, RefPtr<SourceSurface>> ClippedImage::GetFrameInternal(
 
   MOZ_ASSERT(mCachedSurface, "Should have a cached surface now");
   RefPtr<SourceSurface> surface = mCachedSurface->Surface();
-  return MakePair(mCachedSurface->GetDrawResult(), std::move(surface));
+  return std::make_pair(mCachedSurface->GetDrawResult(), std::move(surface));
 }
 
 NS_IMETHODIMP_(bool)

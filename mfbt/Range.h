@@ -10,6 +10,7 @@
 #include "mozilla/Span.h"
 
 #include <stddef.h>
+#include <type_traits>
 
 namespace mozilla {
 
@@ -32,15 +33,15 @@ class Range {
     MOZ_ASSERT(aStart <= aEnd);
   }
 
-  template <typename U, class = typename EnableIf<
-                            IsConvertible<U (*)[], T (*)[]>::value, int>::Type>
+  template <typename U, class = std::enable_if_t<
+                            std::is_convertible_v<U (*)[], T (*)[]>, int>>
   MOZ_IMPLICIT Range(const Range<U>& aOther)
       : mStart(aOther.mStart), mEnd(aOther.mEnd) {}
 
   MOZ_IMPLICIT Range(Span<T> aSpan) : Range(aSpan.Elements(), aSpan.Length()) {}
 
-  template <typename U, class = typename EnableIf<
-                            IsConvertible<U (*)[], T (*)[]>::value, int>::Type>
+  template <typename U, class = std::enable_if_t<
+                            std::is_convertible_v<U (*)[], T (*)[]>, int>>
   MOZ_IMPLICIT Range(const Span<U>& aSpan)
       : Range(aSpan.Elements(), aSpan.Length()) {}
 

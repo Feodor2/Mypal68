@@ -21,6 +21,7 @@
 #include "nsXPCOMPrivate.h"
 #include "nsXPCOMCIDInternal.h"
 
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 
@@ -71,8 +72,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/BackgroundHangMonitor.h"
 
-//#include "mozilla/PoisonIOInterposer.h"
-//#include "mozilla/LateWriteChecks.h"
+#include "mozilla/PoisonIOInterposer.h"
+#include "mozilla/LateWriteChecks.h"
 
 #include "mozilla/scache/StartupCache.h"
 
@@ -321,6 +322,7 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+  AUTO_PROFILER_INIT2;
 
   // Init the SystemGroup for dispatching main thread runnables.
   SystemGroup::InitStatic();
@@ -481,6 +483,8 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   sMainHangMonitor = new mozilla::BackgroundHangMonitor(
       loop->thread_name().c_str(), loop->transient_hang_timeout(),
       loop->permanent_hang_timeout());
+
+  mozilla::dom::JSExecutionManager::Initialize();
 
   return NS_OK;
 }
@@ -647,6 +651,8 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
     NS_ProcessPendingEvents(thread);
 
     BackgroundHangMonitor().NotifyActivity();
+
+    mozilla::dom::JSExecutionManager::Shutdown();
 
     // Late-write checks needs to find the profile directory, so it has to
     // be initialized before mozilla::services::Shutdown or (because of

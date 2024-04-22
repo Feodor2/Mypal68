@@ -38,22 +38,18 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
  public:
   static const bool SupportsPrioritization = true;
 
-  explicit PrioritizedEventQueue(already_AddRefed<nsIIdlePeriod> aIdlePeriod)
-      : mHighQueue(MakeUnique<EventQueue>(EventQueuePriority::High)),
-        mInputQueue(MakeUnique<EventQueue>(EventQueuePriority::Input)),
-        mMediumHighQueue(
-            MakeUnique<EventQueue>(EventQueuePriority::MediumHigh)),
-        mNormalQueue(MakeUnique<EventQueue>(EventQueuePriority::Normal)),
-        mDeferredTimersQueue(
-            MakeUnique<EventQueue>(EventQueuePriority::DeferredTimers)),
-        mIdleQueue(MakeUnique<EventQueue>(EventQueuePriority::Idle)),
-        mIdlePeriod(aIdlePeriod) {}
+  explicit PrioritizedEventQueue(already_AddRefed<nsIIdlePeriod> aIdlePeriod);
+
+  virtual ~PrioritizedEventQueue();
 
   void PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
-                EventQueuePriority aPriority,
-                const AutoLock& aProofOfLock) final;
+                EventQueuePriority aPriority, const AutoLock& aProofOfLock,
+                mozilla::TimeDuration* aDelay = nullptr) final;
+  // See PrioritizedEventQueue.cpp for explanation of
+  // aHypotheticalInputEventDelay
   already_AddRefed<nsIRunnable> GetEvent(
-      EventQueuePriority* aPriority, const AutoLock& aProofOfLock) final;
+      EventQueuePriority* aPriority, const AutoLock& aProofOfLock,
+      mozilla::TimeDuration* aHypotheticalInputEventDelay = nullptr) final;
 
   bool IsEmpty(const AutoLock& aProofOfLock) final;
   size_t Count(const AutoLock& aProofOfLock) const final;
@@ -65,15 +61,6 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   // it and reacquire it when checking the idle deadline. The mutex must live at
   // least as long as the queue.
   void SetMutexRef(Lock& aMutex) { mMutex = &aMutex; }
-
-#ifndef RELEASE_OR_BETA
-  // nsThread.cpp sends telemetry containing the most recently computed idle
-  // deadline. We store a reference to a field in nsThread where this deadline
-  // will be stored so that it can be fetched quickly for telemetry.
-  void SetNextIdleDeadlineRef(TimeStamp& aDeadline) {
-    mNextIdleDeadline = &aDeadline;
-  }
-#endif
 
   void EnableInputEventPrioritization(const AutoLock& aProofOfLock) final;
   void FlushInputEventPrioritization(const AutoLock& aProofOfLock) final;
@@ -106,9 +93,9 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   mozilla::TimeStamp GetIdleDeadline();
 
   UniquePtr<EventQueue> mHighQueue;
-  UniquePtr<EventQueue> mInputQueue;
+  UniquePtr<EventQueueSized<32>> mInputQueue;
   UniquePtr<EventQueue> mMediumHighQueue;
-  UniquePtr<EventQueue> mNormalQueue;
+  UniquePtr<EventQueueSized<64>> mNormalQueue;
   UniquePtr<EventQueue> mDeferredTimersQueue;
   UniquePtr<EventQueue> mIdleQueue;
 
@@ -116,11 +103,8 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   // a pointer to it here.
   Lock* mMutex = nullptr;
 
-#ifndef RELEASE_OR_BETA
-  // Pointer to a place where the most recently computed idle deadline is
-  // stored.
-  TimeStamp* mNextIdleDeadline = nullptr;
-#endif
+  TimeDuration mLastEventDelay;
+  TimeStamp mLastEventStart;
 
   // Try to process one high priority runnable after each normal
   // priority runnable. This gives the processing model HTML spec has for

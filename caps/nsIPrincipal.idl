@@ -430,6 +430,12 @@ interface nsIPrincipal : nsISerializable
     * Returns true if the URI is an Onion URI
     */
     [infallible] readonly attribute boolean isOnion;
+
+    /*
+     * Returns true if the Domain Policy allows js execution
+     * for the Principals URI
+     */
+    readonly attribute boolean isScriptAllowedByPolicy;
 };
 
 /**

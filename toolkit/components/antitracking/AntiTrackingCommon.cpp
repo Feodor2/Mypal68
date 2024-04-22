@@ -11,7 +11,6 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MruCache.h"
-#include "mozilla/Pair.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -467,8 +466,8 @@ void ReportUnblockingToConsole(
   nsresult rv = NS_DispatchToCurrentThreadQueue(
       NS_NewRunnableFunction(
           "ReportUnblockingToConsoleDelayed",
-          [doc, principal, trackingOrigin, sourceLine, lineNumber,
-           columnNumber, aReason]() {
+          [doc, principal, trackingOrigin, sourceLine, lineNumber, columnNumber,
+           aReason]() {
             nsAutoString origin;
             nsresult rv = nsContentUtils::GetUTFOrigin(principal, origin);
             if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -493,8 +492,9 @@ void ReportUnblockingToConsole(
             }
 
             nsContentUtils::ReportToConsole(
-                nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Content Blocking"),
-                doc, nsContentUtils::eNECKO_PROPERTIES, messageWithSameOrigin,
+                nsIScriptError::warningFlag,
+                NS_LITERAL_CSTRING("Content Blocking"), doc,
+                nsContentUtils::eNECKO_PROPERTIES, messageWithSameOrigin,
                 params, nullptr, sourceLine, lineNumber, columnNumber);
           }),
       kMaxConsoleOutputDelayMs, EventQueuePriority::Idle);
@@ -529,19 +529,19 @@ already_AddRefed<nsPIDOMWindowOuter> GetTopWindow(nsPIDOMWindowInner* aWindow) {
 
 class TemporaryAccessGrantCacheKey : public PLDHashEntryHdr {
  public:
-  typedef Pair<nsCOMPtr<nsIPrincipal>, nsCString> KeyType;
+  typedef std::pair<nsCOMPtr<nsIPrincipal>, nsCString> KeyType;
   typedef const KeyType* KeyTypePointer;
 
   explicit TemporaryAccessGrantCacheKey(KeyTypePointer aKey)
-      : mPrincipal(aKey->first()), mType(aKey->second()) {}
+      : mPrincipal(aKey->first), mType(aKey->second) {}
   TemporaryAccessGrantCacheKey(TemporaryAccessGrantCacheKey&& aOther) = default;
 
   ~TemporaryAccessGrantCacheKey() = default;
 
-  KeyType GetKey() const { return MakePair(mPrincipal, mType); }
+  KeyType GetKey() const { return std::make_pair(mPrincipal, mType); }
   bool KeyEquals(KeyTypePointer aKey) const {
-    return !!mPrincipal == !!aKey->first() && mType == aKey->second() &&
-           (mPrincipal ? (mPrincipal->Equals(aKey->first())) : true);
+    return !!mPrincipal == !!aKey->first && mType == aKey->second &&
+           (mPrincipal ? (mPrincipal->Equals(aKey->first)) : true);
   }
 
   static KeyTypePointer KeyToPointer(KeyType& aKey) { return &aKey; }
@@ -550,9 +550,9 @@ class TemporaryAccessGrantCacheKey : public PLDHashEntryHdr {
       return 0;
     }
 
-    BasePrincipal* bp = BasePrincipal::Cast(aKey->first());
+    BasePrincipal* bp = BasePrincipal::Cast(aKey->first);
     return HashGeneric(bp->GetOriginNoSuffixHash(), bp->GetOriginSuffixHash(),
-                       HashString(aKey->second()));
+                       HashString(aKey->second));
   }
 
   enum { ALLOW_MEMMOVE = true };
@@ -575,8 +575,8 @@ class TemporaryAccessGrantObserver final : public nsIObserver {
       sObservers = MakeUnique<ObserversTable>();
     }
     Unused << sObservers
-                  ->LookupForAdd(MakePair(nsCOMPtr<nsIPrincipal>(aPrincipal),
-                                          nsCString(aType)))
+                  ->LookupForAdd(std::make_pair(
+                      nsCOMPtr<nsIPrincipal>(aPrincipal), nsCString(aType)))
                   .OrInsert([&]() -> nsITimer* {
                     // Only create a new observer if we don't have a matching
                     // entry in our hashtable.
@@ -641,7 +641,7 @@ TemporaryAccessGrantObserver::Observe(nsISupports* aSubject, const char* aTopic,
     Unused << mPM->RemoveFromPrincipal(mPrincipal, mType);
 
     MOZ_ASSERT(sObservers);
-    sObservers->Remove(MakePair(mPrincipal, mType));
+    sObservers->Remove(std::make_pair(mPrincipal, mType));
   } else if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     nsCOMPtr<nsIObserverService> observerService =
         mozilla::services::GetObserverService();
@@ -1763,23 +1763,23 @@ nsresult AntiTrackingCommon::IsOnContentBlockingAllowList(
 
   // Check both the normal mode and private browsing mode user override
   // permissions.
-  Pair<const nsLiteralCString, bool> types[] = {
+  std::pair<const nsLiteralCString, bool> types[] = {
       {NS_LITERAL_CSTRING("trackingprotection"), false},
       {NS_LITERAL_CSTRING("trackingprotection-pb"), true}};
 
   for (size_t i = 0; i < ArrayLength(types); ++i) {
-    if (aIsPrivateBrowsing != types[i].second()) {
+    if (aIsPrivateBrowsing != types[i].second) {
       continue;
     }
 
     uint32_t permissions = nsIPermissionManager::UNKNOWN_ACTION;
     nsresult rv = permManager->TestPermissionFromPrincipal(
-        aTopWinPrincipal, types[i].first(), &permissions);
+        aTopWinPrincipal, types[i].first, &permissions);
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (permissions == nsIPermissionManager::ALLOW_ACTION) {
       aIsAllowListed = true;
-      LOG(("Found user override type %s", types[i].first().get()));
+      LOG(("Found user override type %s", types[i].first.get()));
       // Stop checking the next permisson type if we decided to override.
       break;
     }

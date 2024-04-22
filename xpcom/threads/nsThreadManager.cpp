@@ -8,7 +8,6 @@
 #include "nsThreadUtils.h"
 #include "nsIClassInfoImpl.h"
 #include "nsTArray.h"
-#include "nsAutoPtr.h"
 #include "nsXULAppAPI.h"
 #include "MainThreadQueue.h"
 #include "mozilla/AbstractThread.h"
@@ -45,8 +44,8 @@ class BackgroundEventTarget final : public nsIEventTarget {
 
   nsresult Init();
 
-  already_AddRefed<nsISerialEventTarget>
-    CreateBackgroundTaskQueue(const char* aName);
+  already_AddRefed<nsISerialEventTarget> CreateBackgroundTaskQueue(
+      const char* aName);
 
   void BeginShutdown(nsTArray<RefPtr<ShutdownPromise>>&);
   void FinishShutdown();
@@ -64,8 +63,7 @@ class BackgroundEventTarget final : public nsIEventTarget {
 NS_IMPL_ISUPPORTS(BackgroundEventTarget, nsIEventTarget)
 
 BackgroundEventTarget::BackgroundEventTarget()
-    : mMutex("BEvtTgt")
-{}
+    : mMutex("BEvtTgt") {}
 
 nsresult BackgroundEventTarget::Init() {
   nsCOMPtr<nsIThreadPool> pool(new nsThreadPool());
@@ -168,7 +166,8 @@ BackgroundEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable> aRunnable,
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-void BackgroundEventTarget::BeginShutdown(nsTArray<RefPtr<ShutdownPromise>>& promises) {
+void BackgroundEventTarget::BeginShutdown(
+    nsTArray<RefPtr<ShutdownPromise>>& promises) {
   for (auto& queue : mTaskQueues) {
     promises.AppendElement(queue->BeginShutdown());
   }
@@ -179,12 +178,13 @@ void BackgroundEventTarget::FinishShutdown() {
   mIOPool->Shutdown();
 }
 
-already_AddRefed<nsISerialEventTarget> BackgroundEventTarget::CreateBackgroundTaskQueue(const char* aName) {
+already_AddRefed<nsISerialEventTarget>
+BackgroundEventTarget::CreateBackgroundTaskQueue(const char* aName) {
   AutoLock lock(mMutex);
 
   RefPtr<TaskQueue> queue = new TaskQueue(do_AddRef(this), aName,
-                                          /*aSupportsTailDispatch=*/ false,
-                                          /*aRetainFlags=*/ true);
+                                          /*aSupportsTailDispatch=*/false,
+                                          /*aRetainFlags=*/true);
   nsCOMPtr<nsISerialEventTarget> target(queue->WrapAsEventTarget());
 
   mTaskQueues.AppendElement(queue.forget());
@@ -424,20 +424,22 @@ void nsThreadManager::Shutdown() {
 
   bool taskQueuesShutdown = false;
 
-  complete->Then(mMainThread, __func__,
-                 [&](const ResolveValueT& aResolveValue) {
-                   mBackgroundEventTarget->FinishShutdown();
-                   taskQueuesShutdown = true;
-                 },
-                 [&](RejectValueT aRejectValue) {
-                   mBackgroundEventTarget->FinishShutdown();
-                   taskQueuesShutdown = true;
-                 });
+  complete->Then(
+      mMainThread, __func__,
+      [&](const ResolveValueT& aResolveValue) {
+        mBackgroundEventTarget->FinishShutdown();
+        taskQueuesShutdown = true;
+      },
+      [&](RejectValueT aRejectValue) {
+        mBackgroundEventTarget->FinishShutdown();
+        taskQueuesShutdown = true;
+      });
 
-  // Wait for task queues to shutdown, so we don't shut down the underlying threads
-  // of the background event target in the block below, thereby preventing the task
-  // queues from emptying, preventing the shutdown promises from resolving, and
-  // prevent anything checking `taskQueuesShutdown` from working.
+  // Wait for task queues to shutdown, so we don't shut down the underlying
+  // threads of the background event target in the block below, thereby
+  // preventing the task queues from emptying, preventing the shutdown promises
+  // from resolving, and prevent anything checking `taskQueuesShutdown` from
+  // working.
   ::SpinEventLoopUntil([&]() { return taskQueuesShutdown; }, mMainThread);
 
   {
@@ -550,7 +552,8 @@ nsresult nsThreadManager::DispatchToBackgroundThread(nsIRunnable* aEvent,
   return backgroundTarget->Dispatch(aEvent, aDispatchFlags);
 }
 
-already_AddRefed<nsISerialEventTarget> nsThreadManager::CreateBackgroundTaskQueue(const char* aName) {
+already_AddRefed<nsISerialEventTarget>
+nsThreadManager::CreateBackgroundTaskQueue(const char* aName) {
   if (!mInitialized) {
     return nullptr;
   }

@@ -10,9 +10,7 @@
       settings.entries,
       settings.interval,
       settings.features,
-      settings.features.length,
       settings.threads,
-      settings.threads.length,
       settings.duration
     );
 

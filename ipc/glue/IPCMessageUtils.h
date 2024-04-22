@@ -628,7 +628,7 @@ struct ParamTraits<FallibleTArray<E>> {
     nsTArray<E> temp;
     if (!ReadParam(aMsg, aIter, &temp)) return false;
 
-    aResult->SwapElements(temp);
+    *aResult = std::move(temp);
     return true;
   }
 

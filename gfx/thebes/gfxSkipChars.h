@@ -82,7 +82,7 @@ class gfxSkipChars {
   void KeepChar() { KeepChars(1); }
 
   void TakeFrom(gfxSkipChars* aSkipChars) {
-    mRanges.SwapElements(aSkipChars->mRanges);
+    mRanges = std::move(aSkipChars->mRanges);
     mCharCount = aSkipChars->mCharCount;
     aSkipChars->mCharCount = 0;
   }

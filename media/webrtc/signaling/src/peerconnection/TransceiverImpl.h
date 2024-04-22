@@ -97,9 +97,9 @@ class TransceiverImpl : public nsISupports {
   bool HasReceiveTrack(const dom::MediaStreamTrack* aReceiveTrack) const;
 
   // TODO: These are for stats; try to find a cleaner way.
-  RefPtr<MediaPipeline> GetSendPipeline();
+  RefPtr<MediaPipelineTransmit> GetSendPipeline();
 
-  RefPtr<MediaPipeline> GetReceivePipeline();
+  RefPtr<MediaPipelineReceive> GetReceivePipeline();
 
   std::string GetTransportId() const {
     return mJsepTransceiver->mTransport.mTransportId;
@@ -120,9 +120,11 @@ class TransceiverImpl : public nsISupports {
                      nsTArray<dom::RTCRtpSourceEntry>& outSources) const;
 
   // test-only: insert fake CSRCs and audio levels for testing
-  void InsertAudioLevelForContributingSource(uint32_t aSource,
-                                             int64_t aTimestamp, bool aHasLevel,
-                                             uint8_t aLevel);
+  void InsertAudioLevelForContributingSource(const uint32_t aSource,
+                                             const int64_t aTimestamp,
+                                             const uint32_t aRtpTimestamp,
+                                             const bool aHasLevel,
+                                             const uint8_t aLevel);
 
   NS_DECL_THREADSAFE_ISUPPORTS
 

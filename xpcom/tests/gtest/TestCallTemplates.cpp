@@ -14,7 +14,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "nsAutoPtr.h"
 #include "mozilla/Attributes.h"
 
 #define NS_ITESTSERVICE_IID                          \

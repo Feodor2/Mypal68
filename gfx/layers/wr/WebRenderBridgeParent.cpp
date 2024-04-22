@@ -67,7 +67,7 @@ void gecko_profiler_add_text_marker(const char* name, const char* text_bytes,
                                     size_t text_len, uint64_t microseconds) {
 #ifdef MOZ_GECKO_PROFILER
   if (profiler_thread_is_being_profiled()) {
-    auto now = mozilla::TimeStamp::Now();
+    auto now = mozilla::TimeStamp::NowUnfuzzed();
     auto start = now - mozilla::TimeDuration::FromMicroseconds(microseconds);
     profiler_add_text_marker(name, nsDependentCSubstring(text_bytes, text_len),
                              JS::ProfilingCategoryPair::GRAPHICS, start, now);
@@ -203,20 +203,43 @@ class SceneBuiltNotification : public wr::NotificationHandler {
         "SceneBuiltNotificationRunnable", [parent, epoch, startTime]() {
           auto endTime = TimeStamp::Now();
 #ifdef MOZ_GECKO_PROFILER
-          if (profiler_is_active()) {
+          if (profiler_can_accept_markers()) {
             class ContentFullPaintPayload : public ProfilerMarkerPayload {
              public:
               ContentFullPaintPayload(const mozilla::TimeStamp& aStartTime,
                                       const mozilla::TimeStamp& aEndTime)
                   : ProfilerMarkerPayload(aStartTime, aEndTime) {}
+              mozilla::BlocksRingBuffer::Length TagAndSerializationBytes()
+                  const override {
+                return CommonPropsTagAndSerializationBytes();
+              }
+              void SerializeTagAndPayload(
+                  mozilla::BlocksRingBuffer::EntryWriter& aEntryWriter)
+                  const override {
+                static const DeserializerTag tag =
+                    TagForDeserializer(Deserialize);
+                SerializeTagAndCommonProps(tag, aEntryWriter);
+              }
               void StreamPayload(SpliceableJSONWriter& aWriter,
                                  const TimeStamp& aProcessStartTime,
-                                 UniqueStacks& aUniqueStacks) override {
+                                 UniqueStacks& aUniqueStacks) const override {
                 StreamCommonProps("CONTENT_FULL_PAINT_TIME", aWriter,
                                   aProcessStartTime, aUniqueStacks);
               }
+
+             private:
+              explicit ContentFullPaintPayload(CommonProps&& aCommonProps)
+                  : ProfilerMarkerPayload(std::move(aCommonProps)) {}
+              static mozilla::UniquePtr<ProfilerMarkerPayload> Deserialize(
+                  mozilla::BlocksRingBuffer::EntryReader& aEntryReader) {
+                ProfilerMarkerPayload::CommonProps props =
+                    DeserializeCommonProps(aEntryReader);
+                return UniquePtr<ProfilerMarkerPayload>(
+                    new ContentFullPaintPayload(std::move(props)));
+              }
             };
 
+            AUTO_PROFILER_STATS(add_marker_with_ContentFullPaintPayload);
             profiler_add_marker_for_thread(
                 profiler_current_thread_id(),
                 JS::ProfilingCategoryPair::GRAPHICS, "CONTENT_FULL_PAINT_TIME",

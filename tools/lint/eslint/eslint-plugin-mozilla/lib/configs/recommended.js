@@ -64,6 +64,9 @@ module.exports = {
       files: "**/*.jsm",
       rules: {
         "mozilla/mark-exported-symbols-as-used": "error",
+        // TODO: Bug 1575506 turn `builtinGlobals` on here.
+        // We can enable builtinGlobals for jsms due to their scopes.
+        "no-redeclare": ["error", { builtinGlobals: false }],
         // JSM modules are far easier to check for no-unused-vars on a global scope,
         // than our content files. Hence we turn that on here.
         "no-unused-vars": [
@@ -82,7 +85,11 @@ module.exports = {
   },
 
   // When adding items to this file please check for effects on sub-directories.
-  plugins: ["html", "no-unsanitized"],
+  plugins: [
+    "fetch-options",
+     "html",
+     "no-unsanitized",
+   ],
 
   // When adding items to this file please check for effects on all of toolkit
   // and browser
@@ -103,6 +110,10 @@ module.exports = {
 
     // Encourage the use of dot notation whenever possible.
     "dot-notation": "error",
+
+    // XXX This rule should be enabled, see Bug 1557040
+    // No credentials submitted with fetch calls
+    "fetch-options/no-fetch-credentials": "off",
 
     // XXX This rule line should be removed to enable it. See bug 1487642.
     // Enforce return statements in getters
@@ -167,9 +178,18 @@ module.exports = {
     // Disallow unnecessary calls to .bind()
     "no-extra-bind": "error",
 
-    // XXX Bug 1487642 - decide if we want to enable this or not.
     // Disallow fallthrough of case statements
-    "no-fallthrough": "off",
+    "no-fallthrough": [
+      "error",
+      {
+        // The eslint rule doesn't allow for case-insensitive regex option.
+        // The following pattern allows for a dash between "fall through" as
+        // well as alternate spelling of "fall thru". The pattern also allows
+        // for an optional "s" at the end of "fall" ("falls through").
+        commentPattern:
+          "[Ff][Aa][Ll][Ll][Ss]?[\\s-]?([Tt][Hh][Rr][Oo][Uu][Gg][Hh]|[Tt][Hh][Rr][Uu])",
+      },
+    ],
 
     // Disallow assignments to native objects or read-only global variables
     "no-global-assign": "error",
@@ -199,8 +219,15 @@ module.exports = {
     // Use {} instead of new Object()
     "no-new-object": "error",
 
-    // Dissallow use of new wrappers
+    // Disallow use of new wrappers
     "no-new-wrappers": "error",
+
+    // We don't want this, see bug 1551829
+    "no-prototype-builtins": "off",
+
+    // Disable builtinGlobals for no-redeclare as this conflicts with our
+    // globals declarations especially for browser window.
+    "no-redeclare": ["error", { builtinGlobals: false }],
 
     // Disallow use of event global.
     "no-restricted-globals": ["error", "event"],
@@ -263,6 +290,10 @@ module.exports = {
 
     // Require object-literal shorthand with ES6 method syntax
     "object-shorthand": ["error", "always", { avoidQuotes: true }],
+
+    // This generates too many false positives that are not easy to work around,
+    // and false positives seem to be inherent in the rule.
+    "require-atomic-updates": "off",
 
     // XXX Bug 1487642 - decide if we want to enable this or not.
     // Require generator functions to contain yield

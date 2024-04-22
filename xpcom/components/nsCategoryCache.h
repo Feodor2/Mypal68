@@ -11,7 +11,6 @@
 
 #include "nsServiceManagerUtils.h"
 
-#include "nsAutoPtr.h"
 #include "nsCOMArray.h"
 #include "nsInterfaceHashtable.h"
 

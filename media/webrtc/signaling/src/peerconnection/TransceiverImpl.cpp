@@ -558,11 +558,11 @@ already_AddRefed<dom::MediaStreamTrack> TransceiverImpl::GetReceiveTrack() {
   return do_AddRef(mReceiveTrack);
 }
 
-RefPtr<MediaPipeline> TransceiverImpl::GetSendPipeline() {
+RefPtr<MediaPipelineTransmit> TransceiverImpl::GetSendPipeline() {
   return mTransmitPipeline;
 }
 
-RefPtr<MediaPipeline> TransceiverImpl::GetReceivePipeline() {
+RefPtr<MediaPipelineReceive> TransceiverImpl::GetReceivePipeline() {
   return mReceivePipeline;
 }
 
@@ -982,17 +982,16 @@ void TransceiverImpl::GetRtpSources(
   audio_conduit->GetRtpSources(aTimeNow, outSources);
 }
 
-void TransceiverImpl::InsertAudioLevelForContributingSource(uint32_t aSource,
-                                                            int64_t aTimestamp,
-                                                            bool aHasLevel,
-                                                            uint8_t aLevel) {
+void TransceiverImpl::InsertAudioLevelForContributingSource(
+    const uint32_t aSource, const int64_t aTimestamp,
+    const uint32_t aRtpTimestamp, const bool aHasLevel, const uint8_t aLevel) {
   if (!IsValid() || IsVideo()) {
     return;
   }
   WebrtcAudioConduit* audio_conduit =
       static_cast<WebrtcAudioConduit*>(mConduit.get());
-  audio_conduit->InsertAudioLevelForContributingSource(aSource, aTimestamp,
-                                                       aHasLevel, aLevel);
+  audio_conduit->InsertAudioLevelForContributingSource(
+      aSource, aTimestamp, aRtpTimestamp, aHasLevel, aLevel);
 }
 
 }  // namespace mozilla

@@ -600,11 +600,10 @@ void PresShell::DirtyRootsList::Remove(nsIFrame* aFrame) {
 nsIFrame* PresShell::DirtyRootsList::PopShallowestRoot() {
   // List is sorted in order of decreasing depth, so there are no deeper
   // frames than the last one.
-  const FrameAndDepth& lastFAD = mList.LastElement();
+  const FrameAndDepth& lastFAD = mList.PopLastElement();
   nsIFrame* frame = lastFAD.mFrame;
   // We don't expect frame to change depths.
   MOZ_ASSERT(frame->GetDepthInFrameTree() == lastFAD.mDepth);
-  mList.RemoveLastElement();
   return frame;
 }
 
@@ -5552,8 +5551,8 @@ void PresShell::RebuildApproximateFrameVisibilityDisplayList(
 
   // Remove the entries of the mApproximatelyVisibleFrames hashtable and put
   // them in oldApproxVisibleFrames.
-  VisibleFrames oldApproximatelyVisibleFrames;
-  mApproximatelyVisibleFrames.SwapElements(oldApproximatelyVisibleFrames);
+  VisibleFrames oldApproximatelyVisibleFrames =
+      std::move(mApproximatelyVisibleFrames);
 
   MarkFramesInListApproximatelyVisible(aList);
 
@@ -5704,8 +5703,8 @@ void PresShell::RebuildApproximateFrameVisibility(
 
   // Remove the entries of the mApproximatelyVisibleFrames hashtable and put
   // them in oldApproximatelyVisibleFrames.
-  VisibleFrames oldApproximatelyVisibleFrames;
-  mApproximatelyVisibleFrames.SwapElements(oldApproximatelyVisibleFrames);
+  VisibleFrames oldApproximatelyVisibleFrames =
+      std::move(mApproximatelyVisibleFrames);
 
   nsRect vis(nsPoint(0, 0), rootFrame->GetSize());
   if (aRect) {

@@ -12,7 +12,7 @@
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #include "mozilla/EventQueue.h"
-//#include "mozilla/IOInterposer.h"
+#include "mozilla/IOInterposer.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "GeckoProfiler.h"
 
@@ -419,10 +419,10 @@ void CacheIOThread::ThreadFunc(void* aClosure) {
   // so causes leaks, see bug 1323100.
   NS_SetCurrentThreadName("Cache2 I/O");
 
-  //mozilla::IOInterposer::RegisterCurrentThread();
+  mozilla::IOInterposer::RegisterCurrentThread();
   CacheIOThread* thread = static_cast<CacheIOThread*>(aClosure);
   thread->ThreadFunc();
-  //mozilla::IOInterposer::UnregisterCurrentThread();
+  mozilla::IOInterposer::UnregisterCurrentThread();
 }
 
 void CacheIOThread::ThreadFunc() {
@@ -512,8 +512,7 @@ void CacheIOThread::ThreadFunc() {
 }
 
 void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
-  EventQueue events;
-  events.SwapElements(mEventQueue[aLevel]);
+  EventQueue events = std::move(mEventQueue[aLevel]);
   EventQueue::size_type length = events.Length();
 
   mCurrentlyExecutingLevel = aLevel;
@@ -576,7 +575,7 @@ void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
     // pretended earlier.
     events.AppendElements(std::move(mEventQueue[aLevel]));
     // And finally move everything back to the main queue.
-    events.SwapElements(mEventQueue[aLevel]);
+    mEventQueue[aLevel] = std::move(events);
   }
 }
 

@@ -48,7 +48,7 @@
 #  include <mach/mach_time.h>
 #endif
 
-//#include "mozilla/IOInterposer.h"
+#include "mozilla/IOInterposer.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/StartupTimeline.h"
 
@@ -591,11 +591,11 @@ nsAppStartup::Observe(nsISupports* aSubject, const char* aTopic,
     ExitLastWindowClosingSurvivalArea();
   } else if (!strcmp(aTopic, "sessionstore-windows-restored")) {
     StartupTimeline::Record(StartupTimeline::SESSION_RESTORED);
-    //IOInterposer::EnteringNextStage();
+    IOInterposer::EnteringNextStage();
   } else if (!strcmp(aTopic, "sessionstore-init-started")) {
     StartupTimeline::Record(StartupTimeline::SESSION_RESTORE_INIT);
   } else if (!strcmp(aTopic, "xpcom-shutdown")) {
-    //IOInterposer::EnteringNextStage();
+    IOInterposer::EnteringNextStage();
   } else if (!strcmp(aTopic, "quit-application")) {
     StartupTimeline::Record(StartupTimeline::QUIT_APPLICATION);
   } else if (!strcmp(aTopic, "profile-before-change")) {

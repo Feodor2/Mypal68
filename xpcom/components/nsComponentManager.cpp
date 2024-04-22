@@ -1448,10 +1448,6 @@ nsresult nsComponentManagerImpl::GetService(ModuleID aId, const nsIID& aIID,
 
   MutexLock lock(mLock);
 
-  if (!entry.Active()) {
-    return NS_ERROR_FACTORY_NOT_REGISTERED;
-  }
-
   Maybe<EntryWrapper> wrapper;
   if (entry.Overridable()) {
     // If we expect this service to be overridden by test code, we need to look
@@ -1460,6 +1456,8 @@ nsresult nsComponentManagerImpl::GetService(ModuleID aId, const nsIID& aIID,
     if (!wrapper) {
       return NS_ERROR_FACTORY_NOT_REGISTERED;
     }
+  } else if (!entry.Active()) {
+    return NS_ERROR_FACTORY_NOT_REGISTERED;
   } else {
     wrapper.emplace(&entry);
   }
@@ -1596,7 +1594,7 @@ nsComponentManagerImpl::RegisterFactory(const nsCID& aClass, const char* aName,
     return NS_ERROR_FACTORY_NOT_REGISTERED;
   }
 
-  nsAutoPtr<nsFactoryEntry> f(new nsFactoryEntry(aClass, aFactory));
+  auto f = MakeUnique<nsFactoryEntry>(aClass, aFactory);
 
   SafeMutexAutoLock lock(mLock);
   if (auto entry = mFactories.LookupForAdd(f->mCIDEntry->cid)) {
@@ -1608,12 +1606,12 @@ nsComponentManagerImpl::RegisterFactory(const nsCID& aClass, const char* aName,
     }
     if (aContractID) {
       nsDependentCString contractID(aContractID);
-      mContractIDs.Put(contractID, f);
+      mContractIDs.Put(contractID, f.get());
       // We allow dynamically-registered contract IDs to override static
       // entries, so invalidate any static entry for this contract ID.
       StaticComponents::InvalidateContractID(contractID);
     }
-    entry.OrInsert([&f]() { return f.forget(); });
+    entry.OrInsert([&f]() { return f.release(); });
   }
 
   return NS_OK;

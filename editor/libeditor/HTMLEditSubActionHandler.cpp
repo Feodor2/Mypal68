@@ -67,6 +67,7 @@ namespace mozilla {
 
 using namespace dom;
 using StyleDifference = HTMLEditUtils::StyleDifference;
+using ChildBlockBoundary = HTMLEditUtils::ChildBlockBoundary;
 
 enum { kLonely = 0, kPrevSib = 1, kNextSib = 2, kBothSibs = 3 };
 
@@ -97,14 +98,11 @@ static bool IsStyleCachePreservingSubAction(EditSubAction aEditSubAction) {
 }
 
 class MOZ_RAII AutoSetTemporaryAncestorLimiter final {
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
 
  public:
-  explicit AutoSetTemporaryAncestorLimiter(
-      HTMLEditor& aHTMLEditor, Selection& aSelection,
-      nsINode& aStartPointNode MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-
+  explicit AutoSetTemporaryAncestorLimiter(HTMLEditor& aHTMLEditor,
+                                           Selection& aSelection,
+                                           nsINode& aStartPointNode) {
     MOZ_ASSERT(aSelection.GetType() == SelectionType::eNormal);
 
     if (aSelection.GetAncestorLimiter()) {
@@ -1009,7 +1007,7 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
   }
 
   for (nsIContent* containerContent :
-       InclusiveAncestorsOfType<nsIContent>(*editTargetContent)) {
+       editTargetContent->InclusiveAncestorsOfType<nsIContent>()) {
     // If the node is a parent `<table>` element of edit target, let's break
     // here to materialize the 'inline-block' behaviour of html tables
     // regarding to text alignment.
@@ -1453,7 +1451,8 @@ EditActionResult HTMLEditor::HandleInsertText(
   }
 
   EditorDOMPoint pointToInsert(firstRange->StartRef());
-  if (NS_WARN_IF(!pointToInsert.IsSet())) {
+  if (NS_WARN_IF(!pointToInsert.IsSet()) ||
+      NS_WARN_IF(!pointToInsert.IsInContentNode())) {
     return EditActionHandled(NS_ERROR_FAILURE);
   }
   MOZ_ASSERT(pointToInsert.IsSetAndValid());
@@ -1521,7 +1520,8 @@ EditActionResult HTMLEditor::HandleInsertText(
 
   // is our text going to be PREformatted?
   // We remember this so that we know how to handle tabs.
-  bool isPRE = EditorBase::IsPreformatted(pointToInsert.GetContainer());
+  bool isPRE =
+      EditorUtils::IsContentPreformatted(*pointToInsert.ContainerAsContent());
 
   // turn off the edit listener: we know how to
   // build the "doc changed range" ourselves, and it's
@@ -7825,8 +7825,9 @@ nsresult HTMLEditor::MaybeExtendSelectionToHardLineEdgesForBlockEditAction() {
     // of going "down" into a block and "up" out of a block.
     if (wsScannerAtEnd.StartsFromOtherBlockElement()) {
       // endpoint is just after the close of a block.
-      nsINode* child = GetRightmostChild(
-          wsScannerAtEnd.StartReasonOtherBlockElementPtr(), true);
+      nsIContent* child = HTMLEditUtils::GetLastLeafChild(
+          *wsScannerAtEnd.StartReasonOtherBlockElementPtr(),
+          ChildBlockBoundary::TreatAsLeaf);
       if (child) {
         newEndPoint.SetAfter(child);
       }
@@ -7853,8 +7854,9 @@ nsresult HTMLEditor::MaybeExtendSelectionToHardLineEdgesForBlockEditAction() {
     // of going "down" into a block and "up" out of a block.
     if (wsScannerAtStart.EndsByOtherBlockElement()) {
       // startpoint is just before the start of a block.
-      nsINode* child = GetLeftmostChild(
-          wsScannerAtStart.EndReasonOtherBlockElementPtr(), true);
+      nsINode* child = HTMLEditUtils::GetFirstLeafChild(
+          *wsScannerAtStart.EndReasonOtherBlockElementPtr(),
+          ChildBlockBoundary::TreatAsLeaf);
       if (child) {
         newStartPoint.Set(child);
       }
@@ -8072,8 +8074,8 @@ EditorDOMPoint HTMLEditor::GetCurrentHardLineEndPoint(
     }
 
     // Check for newlines in pre-formatted text nodes.
-    if (EditorBase::IsPreformatted(nextEditableContent) &&
-        nextEditableContent->IsText()) {
+    if (nextEditableContent->IsText() &&
+        EditorUtils::IsContentPreformatted(*nextEditableContent)) {
       nsAutoString textContent;
       nextEditableContent->GetAsText()->GetData(textContent);
       int32_t newlinePos = textContent.FindChar(nsCRT::LF);
@@ -8793,8 +8795,7 @@ nsIContent* HTMLEditor::GetMostAncestorInlineElement(nsINode& aNode) const {
 
   // Looks for the highest inline parent in the editing host.
   nsIContent* topMostInlineContent = aNode.AsContent();
-  for (nsIContent* content :
-       InclusiveAncestorsOfType<nsIContent>(*aNode.GetParent())) {
+  for (nsIContent* content : aNode.AncestorsOfType<nsIContent>()) {
     if (content == host || !HTMLEditUtils::IsInlineElement(*content)) {
       break;
     }
@@ -9237,7 +9238,8 @@ nsresult HTMLEditor::SplitParagraph(
 
   // selection to beginning of right hand para;
   // look inside any containers that are up front.
-  nsCOMPtr<nsIContent> child = GetLeftmostChild(&aParentDivOrP, true);
+  nsCOMPtr<nsIContent> child = HTMLEditUtils::GetFirstLeafChild(
+      aParentDivOrP, ChildBlockBoundary::TreatAsLeaf);
   if (child && (child->IsText() || HTMLEditUtils::IsContainerNode(*child))) {
     nsresult rv = CollapseSelectionToStartOf(*child);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {

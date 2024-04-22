@@ -5,10 +5,12 @@
 #ifndef mozilla_SyncRunnable_h
 #define mozilla_SyncRunnable_h
 
-#include "nsThreadUtils.h"
+#include <utility>
+
 #include "mozilla/AbstractThread.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/Monitor2.h"
-#include "mozilla/Move.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 
@@ -58,6 +60,10 @@ class SyncRunnable : public Runnable {
     rv = aThread->Dispatch(this, NS_DISPATCH_NORMAL);
     if (NS_SUCCEEDED(rv)) {
       mozilla::Monitor2AutoLock lock(mMonitor);
+      // This could be synchronously dispatching to a thread currently waiting
+      // for JS execution clearance. Yield JS execution.
+      dom::AutoYieldJSThreadExecution yield;
+
       while (!mDone) {
         lock.Wait();
       }

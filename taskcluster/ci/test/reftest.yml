@@ -88,13 +88,14 @@ jsreftest:
             linux64-qr/debug: 5
             linux64/debug: 5
             macosx.*-64-ccov/debug: 5
-            macosx.*-64(-shippable)?/.*: 2
+            macosx.*-64(-shippable)?/opt: 2
             default: 3
     max-run-time:
         by-test-platform:
             android-em.*: 7200
             windows10-64-ccov/debug: 7200
             macosx.*64-ccov/debug: 7200
+            linux.*64-ccov/debug: 7200
             default: 3600
     tier:
         by-test-platform:

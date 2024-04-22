@@ -8,10 +8,6 @@
 ///
 ////////////////////////////////////////////////////////////////////////////////
 //
-// $Id: InterpolateCubic.h 179 2014-01-06 18:41:42Z oparviai $
-//
-////////////////////////////////////////////////////////////////////////////////
-//
 // License :
 //
 //  SoundTouch audio processing library
@@ -45,7 +41,6 @@ namespace soundtouch
 class InterpolateCubic : public TransposerBase
 {
 protected:
-    virtual void resetRegisters();
     virtual int transposeMono(SAMPLETYPE *dest, 
                         const SAMPLETYPE *src, 
                         int &srcSamples);
@@ -56,10 +51,17 @@ protected:
                         const SAMPLETYPE *src, 
                         int &srcSamples);
 
-    float fract;
+    double fract;
 
 public:
     InterpolateCubic();
+
+    virtual void resetRegisters();
+
+    int getLatency() const
+    {
+        return 1;
+    }
 };
 
 }

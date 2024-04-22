@@ -22,9 +22,6 @@ const { BulkKeyBundle } = ChromeUtils.import(
 );
 const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 
-/* globals BulkKeyBundle, CommonUtils, EncryptionRemoteTransformer */
-/* globals Utils */
-
 function handleCannedResponse(cannedResponse, request, response) {
   response.setStatusLine(
     null,

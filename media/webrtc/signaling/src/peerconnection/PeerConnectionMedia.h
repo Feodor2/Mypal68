@@ -36,6 +36,8 @@ class PeerConnectionImpl;
 class PeerConnectionMedia;
 class PCUuidGenerator;
 class MediaPipeline;
+class MediaPipelineReceive;
+class MediaPipelineTransmit;
 class MediaPipelineFilter;
 class JsepSession;
 
@@ -59,6 +61,8 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   // or when rollback occurs.
   nsresult UpdateTransports(const JsepSession& aSession,
                             const bool forceIceTcp);
+
+  void ResetStunAddrsForIceRestart() { mStunAddrs.Clear(); }
 
   // Start ICE checks.
   void StartIceChecks(const JsepSession& session);
@@ -87,10 +91,11 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
 
   void GetTransmitPipelinesMatching(
       const dom::MediaStreamTrack* aTrack,
-      nsTArray<RefPtr<MediaPipeline>>* aPipelines);
+      nsTArray<RefPtr<MediaPipelineTransmit>>* aPipelines);
 
-  void GetReceivePipelinesMatching(const dom::MediaStreamTrack* aTrack,
-                                   nsTArray<RefPtr<MediaPipeline>>* aPipelines);
+  void GetReceivePipelinesMatching(
+      const dom::MediaStreamTrack* aTrack,
+      nsTArray<RefPtr<MediaPipelineReceive>>* aPipelines);
 
   std::string GetTransportIdMatching(const dom::MediaStreamTrack& aTrack) const;
 
@@ -188,7 +193,9 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   void OnCandidateFound_m(const std::string& aTransportId,
                           const CandidateInfo& aCandidateInfo);
 
-  bool IsIceCtxReady() const { return mLocalAddrsCompleted; }
+  bool IsIceCtxReady() const {
+    return mLocalAddrsRequestState == STUN_ADDR_REQUEST_COMPLETE;
+  }
 
   // The parent PC
   PeerConnectionImpl* mParent;
@@ -216,8 +223,13 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   // Used to cancel incoming stun addrs response
   RefPtr<net::StunAddrsRequestChild> mStunAddrsRequest;
 
+  enum StunAddrRequestState {
+    STUN_ADDR_REQUEST_NONE,
+    STUN_ADDR_REQUEST_PENDING,
+    STUN_ADDR_REQUEST_COMPLETE
+  };
   // Used to track the state of the stun addr IPC request
-  bool mLocalAddrsCompleted;
+  StunAddrRequestState mLocalAddrsRequestState;
 
   // Used to store the result of the stun addr IPC request
   nsTArray<NrIceStunAddr> mStunAddrs;

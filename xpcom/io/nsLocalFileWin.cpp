@@ -9,7 +9,6 @@
 #include "mozilla/WindowsVersion.h"
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsMemory.h"
 #include "GeckoProfiler.h"
 
@@ -59,6 +58,8 @@
 #include "mozilla/WidgetUtils.h"
 
 using namespace mozilla;
+using mozilla::FilePreferences::kDevicePathSpecifier;
+using mozilla::FilePreferences::kPathSeparator;
 
 #define CHECK_mWorkingPath()                                     \
   do {                                                           \
@@ -77,6 +78,28 @@ using namespace mozilla;
 #ifndef DRIVE_REMOTE
 #  define DRIVE_REMOTE 4
 #endif
+
+namespace {
+
+nsresult NewLocalFile(const nsAString& aPath, bool aFollowLinks,
+                      bool aUseDOSDevicePathSyntax, nsIFile** aResult) {
+  RefPtr<nsLocalFile> file = new nsLocalFile();
+
+  file->SetFollowLinks(aFollowLinks);
+  file->SetUseDOSDevicePathSyntax(aUseDOSDevicePathSyntax);
+
+  if (!aPath.IsEmpty()) {
+    nsresult rv = file->InitWithPath(aPath);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+  }
+
+  file.forget(aResult);
+  return NS_OK;
+}
+
+}  // anonymous namespace
 
 static HWND GetMostRecentNavigatorHWND() {
   nsresult rv;
@@ -222,7 +245,7 @@ class AsyncRevealOperation : public Runnable {
 class nsDriveEnumerator : public nsSimpleEnumerator,
                           public nsIDirectoryEnumerator {
  public:
-  nsDriveEnumerator();
+  explicit nsDriveEnumerator(bool aUseDOSDevicePathSyntax);
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSISIMPLEENUMERATOR
   NS_FORWARD_NSISIMPLEENUMERATORBASE(nsSimpleEnumerator::)
@@ -258,6 +281,7 @@ class nsDriveEnumerator : public nsSimpleEnumerator,
   nsString mDrives;
   nsAString::const_iterator mStartOfCurrentDrive;
   nsAString::const_iterator mEndOfDrivesString;
+  const bool mUseDOSDevicePathSyntax;
 };
 
 //-----------------------------------------------------------------------------
@@ -503,12 +527,21 @@ static void FileTimeToPRTime(const FILETIME* aFiletime, PRTime* aPrtm) {
 // copied from nsprpub/pr/src/{io/prfile.c | md/windows/w95io.c} with some
 // changes : PR_GetFileInfo64, _PR_MD_GETFILEINFO64
 static nsresult GetFileInfo(const nsString& aName, PRFileInfo64* aInfo) {
-  WIN32_FILE_ATTRIBUTE_DATA fileData;
-
-  if (aName.IsEmpty() || aName.FindCharInSet(u"?*") != kNotFound) {
+  if (aName.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
 
+  // Checking u"?*" for the file path excluding the kDevicePathSpecifier.
+  // ToDo: Check if checking "?" for the file path is still needed.
+  const int32_t offset = StringBeginsWith(aName, kDevicePathSpecifier)
+                             ? kDevicePathSpecifier.Length()
+                             : 0;
+
+  if (aName.FindCharInSet(u"?*", offset) != kNotFound) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  WIN32_FILE_ATTRIBUTE_DATA fileData;
   if (!::GetFileAttributesExW(aName.get(), GetFileExInfoStandard, &fileData)) {
     return ConvertWinError(GetLastError());
   }
@@ -546,9 +579,6 @@ static nsresult OpenDir(const nsString& aName, nsDir** aDir) {
   }
 
   *aDir = nullptr;
-  if (aName.Length() + 3 >= MAX_PATH) {
-    return NS_ERROR_FILE_NAME_TOO_LONG;
-  }
 
   nsDir* d = new nsDir();
   nsAutoString filename(aName);
@@ -762,9 +792,13 @@ NS_IMPL_ISUPPORTS_INHERITED(nsDirEnumerator, nsSimpleEnumerator,
 //-----------------------------------------------------------------------------
 
 nsLocalFile::nsLocalFile()
-    : mDirty(true), mResolveDirty(true), mFollowSymlinks(false) {}
+    : mDirty(true),
+      mResolveDirty(true),
+      mFollowSymlinks(false),
+      mUseDOSDevicePathSyntax(false) {}
 
-nsLocalFile::nsLocalFile(const nsAString& aFilePath) : mFollowSymlinks(false) {
+nsLocalFile::nsLocalFile(const nsAString& aFilePath)
+    : mFollowSymlinks(false), mUseDOSDevicePathSyntax(false) {
   InitWithPath(aFilePath);
 }
 
@@ -801,6 +835,7 @@ nsLocalFile::nsLocalFile(const nsLocalFile& aOther)
     : mDirty(true),
       mResolveDirty(true),
       mFollowSymlinks(aOther.mFollowSymlinks),
+      mUseDOSDevicePathSyntax(aOther.mUseDOSDevicePathSyntax),
       mWorkingPath(aOther.mWorkingPath) {}
 
 // Resolve the shortcut file from mWorkingPath and write the path
@@ -993,6 +1028,15 @@ nsLocalFile::InitWithPath(const nsAString& aFilePath) {
   // kill any trailing '\'
   if (mWorkingPath.Last() == L'\\') {
     mWorkingPath.Truncate(mWorkingPath.Length() - 1);
+  }
+
+  // Bug 1626514: make sure that we don't end up with multiple prefixes.
+
+  // Prepend the "\\?\" prefix if the useDOSDevicePathSyntax is set and the path
+  // starts with a disk designator and backslash.
+  if (mUseDOSDevicePathSyntax &&
+      FilePreferences::StartsWithDiskDesignatorAndBackslash(mWorkingPath)) {
+    mWorkingPath = kDevicePathSpecifier + mWorkingPath;
   }
 
   return NS_OK;
@@ -1526,6 +1570,9 @@ nsLocalFile::SetLeafName(const nsAString& aLeafName) {
 
 NS_IMETHODIMP
 nsLocalFile::GetPath(nsAString& aResult) {
+  MOZ_ASSERT_IF(
+      mUseDOSDevicePathSyntax,
+      !FilePreferences::StartsWithDiskDesignatorAndBackslash(mWorkingPath));
   aResult = mWorkingPath;
   return NS_OK;
 }
@@ -1675,6 +1722,24 @@ nsresult nsLocalFile::CopySingleFile(nsIFile* aSourceFile, nsIFile* aDestParent,
   if (NS_FAILED(rv)) {
     return rv;
   }
+
+#ifdef DEBUG
+  nsCOMPtr<nsILocalFileWin> srcWinFile = do_QueryInterface(aSourceFile);
+  MOZ_ASSERT(srcWinFile);
+
+  bool srcUseDOSDevicePathSyntax;
+  srcWinFile->GetUseDOSDevicePathSyntax(&srcUseDOSDevicePathSyntax);
+
+  nsCOMPtr<nsILocalFileWin> destWinFile = do_QueryInterface(aDestParent);
+  MOZ_ASSERT(destWinFile);
+
+  bool destUseDOSDevicePathSyntax;
+  destWinFile->GetUseDOSDevicePathSyntax(&destUseDOSDevicePathSyntax);
+
+  MOZ_ASSERT(srcUseDOSDevicePathSyntax == destUseDOSDevicePathSyntax,
+             "Copy or Move files with different values for "
+             "useDOSDevicePathSyntax would fail");
+#endif
 
   if (FilePreferences::IsBlockedUNCPath(destPath)) {
     return NS_ERROR_FILE_ACCESS_DENIED;
@@ -2606,8 +2671,8 @@ nsLocalFile::GetParent(nsIFile** aParent) {
 
   nsCOMPtr<nsIFile> localFile;
   nsresult rv =
-      NS_NewLocalFile(parentPath, mFollowSymlinks, getter_AddRefs(localFile));
-
+      NewLocalFile(parentPath, mFollowSymlinks, mUseDOSDevicePathSyntax,
+                   getter_AddRefs(localFile));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -2863,8 +2928,32 @@ nsLocalFile::Equals(nsIFile* aInFile, bool* aResult) {
   nsAutoString inFilePath;
   lf->GetCanonicalPath(inFilePath);
 
+  bool inUseDOSDevicePathSyntax;
+  lf->GetUseDOSDevicePathSyntax(&inUseDOSDevicePathSyntax);
+
+  // Remove the prefix for both inFilePath and mShortWorkingPath if the
+  // useDOSDevicePathSyntax from them are not the same.
+  // This is added because of Omnijar. It compare files from different moduals
+  // with itself
+  nsAutoString shortWorkingPath;
+  if (inUseDOSDevicePathSyntax == mUseDOSDevicePathSyntax) {
+    shortWorkingPath = mShortWorkingPath;
+  } else if (inUseDOSDevicePathSyntax &&
+             StringBeginsWith(inFilePath, kDevicePathSpecifier)) {
+    MOZ_ASSERT(!StringBeginsWith(mShortWorkingPath, kDevicePathSpecifier));
+
+    shortWorkingPath = mShortWorkingPath;
+    inFilePath = Substring(inFilePath, kDevicePathSpecifier.Length());
+  } else if (mUseDOSDevicePathSyntax &&
+             StringBeginsWith(mShortWorkingPath, kDevicePathSpecifier)) {
+    MOZ_ASSERT(!StringBeginsWith(inFilePath, kDevicePathSpecifier));
+
+    shortWorkingPath =
+        Substring(mShortWorkingPath, kDevicePathSpecifier.Length());
+  }
+
   // Ok : Win9x
-  *aResult = _wcsicmp(mShortWorkingPath.get(), inFilePath.get()) == 0;
+  *aResult = _wcsicmp(shortWorkingPath.get(), inFilePath.get()) == 0;
 
   return NS_OK;
 }
@@ -2904,6 +2993,10 @@ nsLocalFile::GetTarget(nsAString& aResult) {
   aResult.Truncate();
   Resolve();
 
+  MOZ_ASSERT_IF(
+      mUseDOSDevicePathSyntax,
+      !FilePreferences::StartsWithDiskDesignatorAndBackslash(mResolvedPath));
+
   aResult = mResolvedPath;
   return NS_OK;
 }
@@ -2926,7 +3019,8 @@ nsLocalFile::GetDirectoryEntriesImpl(nsIDirectoryEnumerator** aEntries) {
 
   *aEntries = nullptr;
   if (mWorkingPath.EqualsLiteral("\\\\.")) {
-    RefPtr<nsDriveEnumerator> drives = new nsDriveEnumerator;
+    RefPtr<nsDriveEnumerator> drives =
+        new nsDriveEnumerator(mUseDOSDevicePathSyntax);
     rv = drives->Init();
     if (NS_FAILED(rv)) {
       return rv;
@@ -2999,6 +3093,38 @@ nsLocalFile::SetFileAttributesWin(uint32_t aAttribs) {
   if (SetFileAttributesW(mWorkingPath.get(), dwAttrs) == 0) {
     return NS_ERROR_FAILURE;
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLocalFile::GetUseDOSDevicePathSyntax(bool* aUseDOSDevicePathSyntax) {
+  MOZ_ASSERT(aUseDOSDevicePathSyntax);
+
+  *aUseDOSDevicePathSyntax = mUseDOSDevicePathSyntax;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLocalFile::SetUseDOSDevicePathSyntax(bool aUseDOSDevicePathSyntax) {
+  if (mUseDOSDevicePathSyntax == aUseDOSDevicePathSyntax) {
+    return NS_OK;
+  }
+
+  if (mUseDOSDevicePathSyntax) {
+    if (StringBeginsWith(mWorkingPath, kDevicePathSpecifier)) {
+      MakeDirty();
+      // Remove the prefix
+      mWorkingPath = Substring(mWorkingPath, kDevicePathSpecifier.Length());
+    }
+  } else {
+    if (FilePreferences::StartsWithDiskDesignatorAndBackslash(mWorkingPath)) {
+      MakeDirty();
+      // Prepend the prefix
+      mWorkingPath = kDevicePathSpecifier + mWorkingPath;
+    }
+  }
+
+  mUseDOSDevicePathSyntax = aUseDOSDevicePathSyntax;
   return NS_OK;
 }
 
@@ -3279,7 +3405,8 @@ void nsLocalFile::EnsureShortPath() {
 NS_IMPL_ISUPPORTS_INHERITED(nsDriveEnumerator, nsSimpleEnumerator,
                             nsIDirectoryEnumerator)
 
-nsDriveEnumerator::nsDriveEnumerator() {}
+nsDriveEnumerator::nsDriveEnumerator(bool aUseDOSDevicePathSyntax)
+    : mUseDOSDevicePathSyntax(aUseDOSDevicePathSyntax) {}
 
 nsDriveEnumerator::~nsDriveEnumerator() {}
 
@@ -3323,7 +3450,7 @@ nsDriveEnumerator::GetNext(nsISupports** aNext) {
   mStartOfCurrentDrive = ++driveEnd;
 
   nsIFile* file;
-  nsresult rv = NS_NewLocalFile(drive, false, &file);
+  nsresult rv = NewLocalFile(drive, false, mUseDOSDevicePathSyntax, &file);
 
   *aNext = file;
   return rv;

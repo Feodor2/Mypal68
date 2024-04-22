@@ -182,12 +182,17 @@ xpcom/xpidl/export: xpcom/idl-parser/xpidl/export
 dom/bindings/export: layout/style/export
 
 ifdef ENABLE_CLANG_PLUGIN
-$(filter-out config/host build/unix/stdc++compat/% build/clang-plugin/%,$(compile_targets)): build/clang-plugin/host build/clang-plugin/tests/target-objects
+# Only target rules use the clang plugin.
+$(filter %/target %/target-objects,$(filter-out config/export config/host build/unix/stdc++compat/% build/clang-plugin/%,$(compile_targets))): build/clang-plugin/host build/clang-plugin/tests/target-objects
 build/clang-plugin/tests/target-objects: build/clang-plugin/host
 # clang-plugin tests require js-confdefs.h on js standalone builds and mozilla-config.h on
 # other builds, because they are -include'd.
 ifdef JS_STANDALONE
+# The js/src/export target only exists when CURRENT_TIER is export. If we're in a later tier,
+# we can assume js/src/export has happened anyways.
+ifeq ($(CURRENT_TIER),export)
 build/clang-plugin/tests/target-objects: js/src/export
+endif
 else
 build/clang-plugin/tests/target-objects: mozilla-config.h
 endif

@@ -1636,6 +1636,7 @@ STATIC_ATOMS = [
     Atom("csch_", "csch"),
     Atom("cs_", "cs"),
     Atom("csymbol_", "csymbol"),
+    Atom("csp", "csp"),
     Atom("curl_", "curl"),
     Atom("decimalpoint_", "decimalpoint"),
     Atom("definitionURL_", "definitionURL"),

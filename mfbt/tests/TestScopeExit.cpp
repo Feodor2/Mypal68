@@ -19,6 +19,7 @@ using mozilla::MakeScopeExit;
 static bool Test() {
   int a = 1;
   int b = 1;
+  int c = 1;
 
   {
     a++;
@@ -28,10 +29,18 @@ static bool Test() {
     auto guardB = MakeScopeExit([&] { b--; });
 
     guardB.release();
+
+    c++;
+    auto guardC = MakeScopeExit([&] { c--; });
+
+    { auto guardC_ = std::move(guardC); }
+
+    CHECK(c == 1);
   }
 
   CHECK(a == 1);
   CHECK(b == 2);
+  CHECK(c == 1);
 
   return true;
 }

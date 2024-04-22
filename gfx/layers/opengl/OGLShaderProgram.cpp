@@ -183,7 +183,7 @@ ProgramProfileOGL ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig) {
     vs << "attribute vec2 aCoord;" << endl;
   }
 
-  result.mAttributes.AppendElement(Pair<nsCString, GLuint>{"aCoord", 0});
+  result.mAttributes.AppendElement(std::pair<nsCString, GLuint>{"aCoord", 0});
 
   if (!(aConfig.mFeatures & ENABLE_RENDER_COLOR)) {
     vs << "uniform mat4 uTextureTransform;" << endl;
@@ -192,7 +192,8 @@ ProgramProfileOGL ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig) {
 
     if (aConfig.mFeatures & ENABLE_DYNAMIC_GEOMETRY) {
       vs << "attribute vec2 aTexCoord;" << endl;
-      result.mAttributes.AppendElement(Pair<nsCString, GLuint>{"aTexCoord", 1});
+      result.mAttributes.AppendElement(
+          std::pair<nsCString, GLuint>{"aTexCoord", 1});
     }
   }
 
@@ -930,9 +931,8 @@ bool ShaderProgramOGL::CreateProgram(const char* aVertexShaderString,
   mGL->fAttachShader(result, vertexShader);
   mGL->fAttachShader(result, fragmentShader);
 
-  for (Pair<nsCString, GLuint>& attribute : mProfile.mAttributes) {
-    mGL->fBindAttribLocation(result, attribute.second(),
-                             attribute.first().get());
+  for (std::pair<nsCString, GLuint>& attribute : mProfile.mAttributes) {
+    mGL->fBindAttribLocation(result, attribute.second, attribute.first.get());
   }
 
   mGL->fLinkProgram(result);

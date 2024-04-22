@@ -699,7 +699,7 @@ nsHttpConnection* nsHttpConnectionMgr::FindCoalescableConnectionByHashKey(
         listOfWeakConns->Elements()[j] =
             listOfWeakConns->Elements()[listLen - 1];
       }
-      listOfWeakConns->RemoveElementAt(listLen - 1);
+      listOfWeakConns->RemoveLastElement();
       MOZ_ASSERT(listOfWeakConns->Length() == listLen - 1);
       listLen--;
       continue;  // without adjusting iterator

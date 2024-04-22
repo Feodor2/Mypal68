@@ -111,9 +111,8 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   void SendPacket(const std::string& aTransportId,
                   MediaPacket&& aPacket) override;
 
-  RefPtr<StatsPromise> GetIceStats(
-      const std::string& aTransportId, DOMHighResTimeStamp aNow,
-      std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) override;
+  RefPtr<dom::RTCStatsPromise> GetIceStats(const std::string& aTransportId,
+                                           DOMHighResTimeStamp aNow) override;
 
  private:
   RefPtr<TransportFlow> CreateTransportFlow(const std::string& aTransportId,
@@ -152,7 +151,7 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   RefPtr<TransportFlow> GetTransportFlow(const std::string& aTransportId,
                                          bool aIsRtcp) const;
   void GetIceStats(const NrIceMediaStream& aStream, DOMHighResTimeStamp aNow,
-                   dom::RTCStatsReportInternal* aReport) const;
+                   dom::RTCStatsCollection* aStats) const;
 
   virtual ~MediaTransportHandlerSTS() = default;
   nsCOMPtr<nsISerialEventTarget> mStsThread;
@@ -160,6 +159,8 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   RefPtr<NrIceResolver> mDNSResolver;
   std::map<std::string, Transport> mTransports;
   bool mObfuscateHostAddresses = false;
+  uint32_t minDtlsVersion = 0;
+  uint32_t maxDtlsVersion = 0;
 
   std::set<std::string> mSignaledAddresses;
 
@@ -426,6 +427,13 @@ nsresult MediaTransportHandlerSTS::CreateIceCtx(
           return InitPromise::CreateAndReject("Failed to get dns resolver",
                                               __func__);
         }
+
+        // We are reading these here, because when we setup the DTLS transport
+        // we are on the wrong thread to read prefs
+        minDtlsVersion =
+            Preferences::GetUint("media.peerconnection.dtls.version.min");
+        maxDtlsVersion =
+            Preferences::GetUint("media.peerconnection.dtls.version.max");
 
         CSFLogDebug(LOGTAG, "%s done", __func__);
         return InitPromise::CreateAndResolve(true, __func__);
@@ -927,22 +935,21 @@ void MediaTransportHandler::OnRtcpStateChange(const std::string& aTransportId,
   SignalRtcpStateChange(aTransportId, aState);
 }
 
-RefPtr<MediaTransportHandler::StatsPromise>
-MediaTransportHandlerSTS::GetIceStats(
-    const std::string& aTransportId, DOMHighResTimeStamp aNow,
-    std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) {
+RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
+    const std::string& aTransportId, DOMHighResTimeStamp aNow) {
   return InvokeAsync(
       mStsThread, __func__,
-      [=, aReport = std::move(aReport),
-       self = RefPtr<MediaTransportHandlerSTS>(this)]() mutable {
+      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+        UniquePtr<dom::RTCStatsCollection> stats(new dom::RTCStatsCollection);
         if (mIceCtx) {
           for (const auto& stream : mIceCtx->GetStreams()) {
             if (aTransportId.empty() || aTransportId == stream->GetId()) {
-              GetIceStats(*stream, aNow, aReport.get());
+              GetIceStats(*stream, aNow, stats.get());
             }
           }
         }
-        return StatsPromise::CreateAndResolve(std::move(aReport), __func__);
+        return dom::RTCStatsPromise::CreateAndResolve(std::move(stats),
+                                                      __func__);
       });
 }
 
@@ -1016,10 +1023,10 @@ void MediaTransportHandlerSTS::ExitPrivateMode() {
 static void ToRTCIceCandidateStats(
     const std::vector<NrIceCandidate>& candidates,
     dom::RTCStatsType candidateType, const nsString& transportId,
-    DOMHighResTimeStamp now, dom::RTCStatsReportInternal* report,
+    DOMHighResTimeStamp now, dom::RTCStatsCollection* stats,
     bool obfuscateHostAddresses,
     const std::set<std::string>& signaledAddresses) {
-  MOZ_ASSERT(report);
+  MOZ_ASSERT(stats);
   for (const auto& candidate : candidates) {
     dom::RTCIceCandidateStats cand;
     cand.mType.Construct(candidateType);
@@ -1054,15 +1061,14 @@ static void ToRTCIceCandidateStats(
     }
     cand.mProxied.Construct(NS_ConvertASCIItoUTF16(
         candidate.is_proxied ? "proxied" : "non-proxied"));
-    if (!report->mIceCandidateStats.Value().AppendElement(cand, fallible)) {
+    if (!stats->mIceCandidateStats.AppendElement(cand, fallible)) {
       // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
       // involve multiple reallocations) and potentially crashing here,
       // SetCapacity could be called outside the loop once.
       mozalloc_handle_oom(0);
     }
     if (candidate.trickled) {
-      if (!report->mTrickledIceCandidateStats.Value().AppendElement(cand,
-                                                                    fallible)) {
+      if (!stats->mTrickledIceCandidateStats.AppendElement(cand, fallible)) {
         mozalloc_handle_oom(0);
       }
     }
@@ -1071,7 +1077,7 @@ static void ToRTCIceCandidateStats(
 
 void MediaTransportHandlerSTS::GetIceStats(
     const NrIceMediaStream& aStream, DOMHighResTimeStamp aNow,
-    dom::RTCStatsReportInternal* aReport) const {
+    dom::RTCStatsCollection* aStats) const {
   MOZ_ASSERT(mStsThread->IsOnCurrentThread());
 
   NS_ConvertASCIItoUTF16 transportId(aStream.GetId().c_str());
@@ -1110,7 +1116,7 @@ void MediaTransportHandlerSTS::GetIceStats(
     s.mLastPacketReceivedTimestamp.Construct(candPair.ms_since_last_recv);
     s.mState.Construct(dom::RTCStatsIceCandidatePairState(candPair.state));
     s.mComponentId.Construct(candPair.component_id);
-    if (!aReport->mIceCandidatePairStats.Value().AppendElement(s, fallible)) {
+    if (!aStats->mIceCandidatePairStats.AppendElement(s, fallible)) {
       // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
       // involve multiple reallocations) and potentially crashing here,
       // SetCapacity could be called outside the loop once.
@@ -1121,11 +1127,11 @@ void MediaTransportHandlerSTS::GetIceStats(
   std::vector<NrIceCandidate> candidates;
   if (NS_SUCCEEDED(aStream.GetLocalCandidates(&candidates))) {
     ToRTCIceCandidateStats(candidates, dom::RTCStatsType::Local_candidate,
-                           transportId, aNow, aReport, mObfuscateHostAddresses,
+                           transportId, aNow, aStats, mObfuscateHostAddresses,
                            mSignaledAddresses);
     // add the local candidates unparsed string to a sequence
     for (const auto& candidate : candidates) {
-      if (!aReport->mRawLocalCandidates.Value().AppendElement(
+      if (!aStats->mRawLocalCandidates.AppendElement(
               NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible)) {
         // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
         // involve multiple reallocations) and potentially crashing here,
@@ -1138,11 +1144,11 @@ void MediaTransportHandlerSTS::GetIceStats(
 
   if (NS_SUCCEEDED(aStream.GetRemoteCandidates(&candidates))) {
     ToRTCIceCandidateStats(candidates, dom::RTCStatsType::Remote_candidate,
-                           transportId, aNow, aReport, mObfuscateHostAddresses,
+                           transportId, aNow, aStats, mObfuscateHostAddresses,
                            mSignaledAddresses);
     // add the remote candidates unparsed string to a sequence
     for (const auto& candidate : candidates) {
-      if (!aReport->mRawRemoteCandidates.Value().AppendElement(
+      if (!aStats->mRawRemoteCandidates.AppendElement(
               NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible)) {
         // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
         // involve multiple reallocations) and potentially crashing here,
@@ -1183,6 +1189,10 @@ RefPtr<TransportFlow> MediaTransportHandlerSTS::CreateTransportFlow(
                             : TransportLayerDtls::SERVER);
 
   dtls->SetIdentity(aDtlsIdentity);
+
+  dtls->SetMinMaxVersion(
+      static_cast<TransportLayerDtls::Version>(minDtlsVersion),
+      static_cast<TransportLayerDtls::Version>(maxDtlsVersion));
 
   for (const auto& digest : aDigests) {
     rv = dtls->SetVerificationDigest(digest);

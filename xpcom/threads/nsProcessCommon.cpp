@@ -13,7 +13,6 @@
 #include "mozilla/ArrayUtils.h"
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsMemory.h"
 #include "nsProcess.h"
 #include "prio.h"

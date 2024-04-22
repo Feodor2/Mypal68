@@ -10,13 +10,6 @@
 ///
 ////////////////////////////////////////////////////////////////////////////////
 //
-// Last changed  : $Date: 2014-04-06 15:57:21 +0000 (Sun, 06 Apr 2014) $
-// File revision : $Revision: 4 $
-//
-// $Id: RateTransposer.cpp 195 2014-04-06 15:57:21Z oparviai $
-//
-////////////////////////////////////////////////////////////////////////////////
-//
 // License :
 //
 //  SoundTouch audio processing library
@@ -57,13 +50,19 @@ TransposerBase::ALGORITHM TransposerBase::algorithm = TransposerBase::CUBIC;
 // Constructor
 RateTransposer::RateTransposer() : FIFOProcessor(&outputBuffer)
 {
-    bUseAAFilter = true;
+    bUseAAFilter =
+#ifndef SOUNDTOUCH_PREVENT_CLICK_AT_RATE_CROSSOVER
+        true;
+#else
+        // Disable Anti-alias filter if desirable to avoid click at rate change zero value crossover
+        false;
+#endif
 
     // Instantiates the anti-alias filter
     pAAFilter = new AAFilter(64);
     pTransposer = TransposerBase::newInstance();
+    clear();
 }
-
 
 
 RateTransposer::~RateTransposer()
@@ -73,11 +72,14 @@ RateTransposer::~RateTransposer()
 }
 
 
-
 /// Enables/disables the anti-alias filter. Zero to disable, nonzero to enable
 void RateTransposer::enableAAFilter(bool newMode)
 {
+#ifndef SOUNDTOUCH_PREVENT_CLICK_AT_RATE_CROSSOVER
+    // Disable Anti-alias filter if desirable to avoid click at rate change zero value crossover
     bUseAAFilter = newMode;
+    clear();
+#endif
 }
 
 
@@ -94,23 +96,22 @@ AAFilter *RateTransposer::getAAFilter()
 }
 
 
-
 // Sets new target iRate. Normal iRate = 1.0, smaller values represent slower 
 // iRate, larger faster iRates.
-void RateTransposer::setRate(float newRate)
+void RateTransposer::setRate(double newRate)
 {
     double fCutoff;
 
     pTransposer->setRate(newRate);
 
     // design a new anti-alias filter
-    if (newRate > 1.0f) 
+    if (newRate > 1.0)
     {
-        fCutoff = 0.5f / newRate;
+        fCutoff = 0.5 / newRate;
     } 
     else 
     {
-        fCutoff = 0.5f * newRate;
+        fCutoff = 0.5 * newRate;
     }
     pAAFilter->setCutoffFreq(fCutoff);
 }
@@ -177,11 +178,10 @@ void RateTransposer::processSamples(const SAMPLETYPE *src, uint nSamples)
 // Sets the number of channels, 1 = mono, 2 = stereo
 void RateTransposer::setChannels(int nChannels)
 {
-    assert(nChannels > 0);
+    if (!verifyNumberOfChannels(nChannels) ||
+        (pTransposer->numChannels == nChannels)) return;
 
-    if (pTransposer->numChannels == nChannels) return;
     pTransposer->setChannels(nChannels);
-
     inputBuffer.setChannels(nChannels);
     midBuffer.setChannels(nChannels);
     outputBuffer.setChannels(nChannels);
@@ -194,6 +194,11 @@ void RateTransposer::clear()
     outputBuffer.clear();
     midBuffer.clear();
     inputBuffer.clear();
+    pTransposer->resetRegisters();
+
+    // prefill buffer to avoid losing first samples at beginning of stream
+    int prefill = getLatency();
+    inputBuffer.addSilent(prefill);
 }
 
 
@@ -205,6 +210,14 @@ int RateTransposer::isEmpty() const
     res = FIFOProcessor::isEmpty();
     if (res == 0) return 0;
     return inputBuffer.isEmpty();
+}
+
+
+/// Return approximate initial input-output latency
+int RateTransposer::getLatency() const
+{
+    return pTransposer->getLatency() +
+        ((bUseAAFilter) ? (pAAFilter->getLength() / 2) : 0);
 }
 
 
@@ -225,7 +238,7 @@ void TransposerBase::setAlgorithm(TransposerBase::ALGORITHM a)
 int TransposerBase::transpose(FIFOSampleBuffer &dest, FIFOSampleBuffer &src)
 {
     int numSrcSamples = src.numSamples();
-    int sizeDemand = (int)((float)numSrcSamples / rate) + 8;
+    int sizeDemand = (int)((double)numSrcSamples / rate) + 8;
     int numOutput;
     SAMPLETYPE *psrc = src.ptrBegin();
     SAMPLETYPE *pdest = dest.ptrEnd(sizeDemand);
@@ -270,7 +283,7 @@ void TransposerBase::setChannels(int channels)
 }
 
 
-void TransposerBase::setRate(float newRate)
+void TransposerBase::setRate(double newRate)
 {
     rate = newRate;
 }
@@ -280,7 +293,7 @@ void TransposerBase::setRate(float newRate)
 TransposerBase *TransposerBase::newInstance()
 {
 #ifdef SOUNDTOUCH_INTEGER_SAMPLES
-    // Notice: For integer arithmetics support only linear algorithm (due to simplest calculus)
+    // Notice: For integer arithmetic support only linear algorithm (due to simplest calculus)
     return ::new InterpolateLinearInteger;
 #else
     switch (algorithm)

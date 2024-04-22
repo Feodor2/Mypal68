@@ -291,22 +291,26 @@ void WebrtcAudioConduit::GetRtpSources(
 // test-only: inserts a CSRC entry in a RtpSourceObserver's history for
 // getContributingSources mochitests
 void InsertAudioLevelForContributingSource(RtpSourceObserver& observer,
-                                           uint32_t aCsrcSource,
-                                           int64_t aTimestamp,
-                                           bool aHasAudioLevel,
-                                           uint8_t aAudioLevel) {
+                                           const uint32_t aCsrcSource,
+                                           const int64_t aTimestamp,
+                                           const uint32_t aRtpTimestamp,
+                                           const bool aHasAudioLevel,
+                                           const uint8_t aAudioLevel) {
   using EntryType = dom::RTCRtpSourceEntryType;
   auto key = RtpSourceObserver::GetKey(aCsrcSource, EntryType::Contributing);
   auto& hist = observer.mRtpSources[key];
-  hist.Insert(aTimestamp, aTimestamp, aHasAudioLevel, aAudioLevel);
+  hist.Insert(aTimestamp, aTimestamp, aRtpTimestamp, aHasAudioLevel,
+              aAudioLevel);
 }
 
 void WebrtcAudioConduit::InsertAudioLevelForContributingSource(
-    uint32_t aCsrcSource, int64_t aTimestamp, bool aHasAudioLevel,
-    uint8_t aAudioLevel) {
+    const uint32_t aCsrcSource, const int64_t aTimestamp,
+    const uint32_t aRtpTimestamp, const bool aHasAudioLevel,
+    const uint8_t aAudioLevel) {
   MOZ_ASSERT(NS_IsMainThread());
   mozilla::InsertAudioLevelForContributingSource(
-      mRtpSourceObserver, aCsrcSource, aTimestamp, aHasAudioLevel, aAudioLevel);
+      mRtpSourceObserver, aCsrcSource, aTimestamp, aRtpTimestamp,
+      aHasAudioLevel, aAudioLevel);
 }
 
 /*
@@ -716,7 +720,18 @@ MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTCPPacket(const void* data,
     CSFLogError(LOGTAG, "%s RTCP Processing Failed", __FUNCTION__);
     return kMediaConduitRTPProcessingFailed;
   }
+
+  // TODO(bug 1496533): We will need to keep separate timestamps for each SSRC,
+  // and for each SSRC we will need to keep a timestamp for SR and RR.
+  mLastRtcpReceived = Some(GetNow());
   return kMediaConduitNoError;
+}
+
+// TODO(bug 1496533): We will need to add a type (ie; SR or RR) param here, or
+// perhaps break this function into two functions, one for each type.
+Maybe<DOMHighResTimeStamp> WebrtcAudioConduit::LastRtcpReceived() const {
+  ASSERT_ON_THREAD(mStsThread);
+  return mLastRtcpReceived;
 }
 
 MediaConduitErrorCode WebrtcAudioConduit::StopTransmitting() {

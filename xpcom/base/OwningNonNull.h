@@ -7,7 +7,7 @@
 #ifndef mozilla_OwningNonNull_h
 #define mozilla_OwningNonNull_h
 
-#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 
 namespace mozilla {

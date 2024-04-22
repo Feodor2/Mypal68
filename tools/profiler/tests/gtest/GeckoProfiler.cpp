@@ -14,7 +14,9 @@
 #include "ProfilerMarkerPayload.h"
 
 #include "js/Initialization.h"
+#include "js/Printf.h"
 #include "jsapi.h"
+#include "mozilla/BlocksRingBufferGeckoExtensions.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
@@ -28,6 +30,53 @@
 // (which is just an RAII wrapper for profiler_init() and profiler_shutdown()).
 
 using namespace mozilla;
+
+TEST(BaseProfiler, BlocksRingBuffer)
+{
+  constexpr uint32_t MBSize = 256;
+  uint8_t buffer[MBSize * 3];
+  for (size_t i = 0; i < MBSize * 3; ++i) {
+    buffer[i] = uint8_t('A' + i);
+  }
+  BlocksRingBuffer rb(BlocksRingBuffer::ThreadSafety::WithMutex,
+                      &buffer[MBSize], MakePowerOfTwo32<MBSize>());
+
+  {
+    nsCString cs(NS_LITERAL_CSTRING("nsCString"));
+    nsString s(NS_LITERAL_STRING("nsString"));
+    nsAutoCString acs(NS_LITERAL_CSTRING("nsAutoCString"));
+    nsAutoString as(NS_LITERAL_STRING("nsAutoString"));
+    nsAutoCStringN<8> acs8(NS_LITERAL_CSTRING("nsAutoCStringN"));
+    nsAutoStringN<8> as8(NS_LITERAL_STRING("nsAutoStringN"));
+    JS::UniqueChars jsuc = JS_smprintf("%s", "JS::UniqueChars");
+
+    rb.PutObjects(cs, s, acs, as, acs8, as8, jsuc);
+  }
+
+  rb.ReadEach([](BlocksRingBuffer::EntryReader& aER) {
+    ASSERT_EQ(aER.ReadObject<nsCString>(), NS_LITERAL_CSTRING("nsCString"));
+    ASSERT_EQ(aER.ReadObject<nsString>(), NS_LITERAL_STRING("nsString"));
+    ASSERT_EQ(aER.ReadObject<nsAutoCString>(),
+              NS_LITERAL_CSTRING("nsAutoCString"));
+    ASSERT_EQ(aER.ReadObject<nsAutoString>(),
+              NS_LITERAL_STRING("nsAutoString"));
+    ASSERT_EQ(aER.ReadObject<nsAutoCStringN<8>>(),
+              NS_LITERAL_CSTRING("nsAutoCStringN"));
+    ASSERT_EQ(aER.ReadObject<nsAutoStringN<8>>(),
+              NS_LITERAL_STRING("nsAutoStringN"));
+    auto jsuc2 = aER.ReadObject<JS::UniqueChars>();
+    ASSERT_TRUE(!!jsuc2);
+    ASSERT_TRUE(strcmp(jsuc2.get(), "JS::UniqueChars") == 0);
+  });
+
+  // Everything around the sub-buffer should be unchanged.
+  for (size_t i = 0; i < MBSize; ++i) {
+    ASSERT_EQ(buffer[i], uint8_t('A' + i));
+  }
+  for (size_t i = MBSize * 2; i < MBSize * 3; ++i) {
+    ASSERT_EQ(buffer[i], uint8_t('A' + i));
+  }
+}
 
 typedef Vector<const char*> StrVec;
 
@@ -92,9 +141,9 @@ TEST(GeckoProfiler, FeaturesAndParams)
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::Privacy));
 
-    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
-                      features, filters, MOZ_ARRAY_LENGTH(filters),
-                      Some(PROFILER_DEFAULT_DURATION));
+    ActiveParamsCheck(
+        PROFILER_DEFAULT_ENTRIES.Value(), PROFILER_DEFAULT_INTERVAL, features,
+        filters, MOZ_ARRAY_LENGTH(filters), Some(PROFILER_DEFAULT_DURATION));
 
     profiler_stop();
 
@@ -107,15 +156,18 @@ TEST(GeckoProfiler, FeaturesAndParams)
         ProfilerFeature::MainThreadIO | ProfilerFeature::Privacy;
     const char* filters[] = {"GeckoMain", "Foo", "Bar"};
 
-    profiler_start(999999, 3, features, filters, MOZ_ARRAY_LENGTH(filters),
-                   Some(25.0));
+    // Testing with some arbitrary buffer size (as could be provided by
+    // external code), which we convert to the appropriate power of 2.
+    profiler_start(PowerOfTwo32(999999), 3, features, filters,
+                   MOZ_ARRAY_LENGTH(filters), Some(25.0));
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::Privacy));
 
     // Profiler::Threads is added because filters has multiple entries.
-    ActiveParamsCheck(999999, 3, features | ProfilerFeature::Threads, filters,
+    ActiveParamsCheck(PowerOfTwo32(999999).Value(), 3,
+                      features | ProfilerFeature::Threads, filters,
                       MOZ_ARRAY_LENGTH(filters), Some(25.0));
 
     profiler_stop();
@@ -129,15 +181,16 @@ TEST(GeckoProfiler, FeaturesAndParams)
         ProfilerFeature::MainThreadIO | ProfilerFeature::Privacy;
     const char* filters[] = {"GeckoMain", "Foo", "Bar"};
 
-    profiler_start(999999, 3, features, filters, MOZ_ARRAY_LENGTH(filters),
-                   Nothing());
+    profiler_start(PowerOfTwo32(999999), 3, features, filters,
+                   MOZ_ARRAY_LENGTH(filters), Nothing());
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::Privacy));
 
     // Profiler::Threads is added because filters has multiple entries.
-    ActiveParamsCheck(999999, 3, features | ProfilerFeature::Threads, filters,
+    ActiveParamsCheck(PowerOfTwo32(999999).Value(), 3,
+                      features | ProfilerFeature::Threads, filters,
                       MOZ_ARRAY_LENGTH(filters), Nothing());
 
     profiler_stop();
@@ -150,15 +203,15 @@ TEST(GeckoProfiler, FeaturesAndParams)
     uint32_t availableFeatures = profiler_get_available_features();
     const char* filters[] = {""};
 
-    profiler_start(88888, 10, availableFeatures, filters,
+    profiler_start(PowerOfTwo32(88888), 10, availableFeatures, filters,
                    MOZ_ARRAY_LENGTH(filters), Some(15.0));
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::Privacy));
 
-    ActiveParamsCheck(88888, 10, availableFeatures, filters,
-                      MOZ_ARRAY_LENGTH(filters), Some(15.0));
+    ActiveParamsCheck(PowerOfTwo32(88888).Value(), 10, availableFeatures,
+                      filters, MOZ_ARRAY_LENGTH(filters), Some(15.0));
 
     // Don't call profiler_stop() here.
   }
@@ -170,15 +223,16 @@ TEST(GeckoProfiler, FeaturesAndParams)
 
     // Second profiler_start() call in a row without an intervening
     // profiler_stop(); this will do an implicit profiler_stop() and restart.
-    profiler_start(0, 0, features, filters, MOZ_ARRAY_LENGTH(filters),
-                   Some(0.0));
+    profiler_start(PowerOfTwo32(0), 0, features, filters,
+                   MOZ_ARRAY_LENGTH(filters), Some(0.0));
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::Privacy));
 
     // Entries and intervals go to defaults if 0 is specified.
-    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
+    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES.Value(),
+                      PROFILER_DEFAULT_INTERVAL,
                       features | ProfilerFeature::Threads, filters,
                       MOZ_ARRAY_LENGTH(filters), Nothing());
 
@@ -206,19 +260,22 @@ TEST(GeckoProfiler, EnsureStarted)
                             features, filters, MOZ_ARRAY_LENGTH(filters),
                             Some(PROFILER_DEFAULT_DURATION));
 
-    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
-                      features, filters, MOZ_ARRAY_LENGTH(filters),
-                      Some(PROFILER_DEFAULT_DURATION));
+    ActiveParamsCheck(
+        PROFILER_DEFAULT_ENTRIES.Value(), PROFILER_DEFAULT_INTERVAL, features,
+        filters, MOZ_ARRAY_LENGTH(filters), Some(PROFILER_DEFAULT_DURATION));
   }
 
   {
     // Active -> Active with same settings
 
+    Maybe<ProfilerBufferInfo> info0 = profiler_get_buffer_info();
+    ASSERT_TRUE(info0->mRangeEnd > 0);
+
     // First, write some samples into the buffer.
     PR_Sleep(PR_MillisecondsToInterval(500));
 
     Maybe<ProfilerBufferInfo> info1 = profiler_get_buffer_info();
-    ASSERT_TRUE(info1->mRangeEnd > 0);
+    ASSERT_TRUE(info1->mRangeEnd > info0->mRangeEnd);
 
     // Call profiler_ensure_started with the same settings as before.
     // This operation must not clear our buffer!
@@ -226,14 +283,18 @@ TEST(GeckoProfiler, EnsureStarted)
                             features, filters, MOZ_ARRAY_LENGTH(filters),
                             Some(PROFILER_DEFAULT_DURATION));
 
-    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
-                      features, filters, MOZ_ARRAY_LENGTH(filters),
-                      Some(PROFILER_DEFAULT_DURATION));
+    ActiveParamsCheck(
+        PROFILER_DEFAULT_ENTRIES.Value(), PROFILER_DEFAULT_INTERVAL, features,
+        filters, MOZ_ARRAY_LENGTH(filters), Some(PROFILER_DEFAULT_DURATION));
 
-    // Check that our position in the buffer stayed the same or advanced.
-    // In particular, it shouldn't have reverted to the start.
+    // Check that our position in the buffer stayed the same or advanced, but
+    // not by much, and the range-start after profiler_ensure_started shouldn't
+    // have passed the range-end before.
     Maybe<ProfilerBufferInfo> info2 = profiler_get_buffer_info();
     ASSERT_TRUE(info2->mRangeEnd >= info1->mRangeEnd);
+    ASSERT_TRUE(info2->mRangeEnd - info1->mRangeEnd <
+                info1->mRangeEnd - info0->mRangeEnd);
+    ASSERT_TRUE(info2->mRangeStart < info1->mRangeEnd);
   }
 
   {
@@ -249,11 +310,14 @@ TEST(GeckoProfiler, EnsureStarted)
                             differentFeatures, filters,
                             MOZ_ARRAY_LENGTH(filters));
 
-    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
-                      differentFeatures, filters, MOZ_ARRAY_LENGTH(filters));
+    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES.Value(),
+                      PROFILER_DEFAULT_INTERVAL, differentFeatures, filters,
+                      MOZ_ARRAY_LENGTH(filters));
 
+    // Check the the buffer was cleared, so its range-start should be at/after
+    // its range-end before.
     Maybe<ProfilerBufferInfo> info2 = profiler_get_buffer_info();
-    ASSERT_TRUE(info2->mRangeEnd < info1->mRangeEnd);
+    ASSERT_TRUE(info2->mRangeStart >= info1->mRangeEnd);
   }
 
   {
@@ -292,8 +356,9 @@ TEST(GeckoProfiler, DifferentThreads)
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::Privacy));
 
-    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
-                      features, filters, MOZ_ARRAY_LENGTH(filters));
+    ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES.Value(),
+                      PROFILER_DEFAULT_INTERVAL, features, filters,
+                      MOZ_ARRAY_LENGTH(filters));
 
     thread->Dispatch(
         NS_NewRunnableFunction("GeckoProfiler_DifferentThreads_Test::TestBody",
@@ -321,7 +386,7 @@ TEST(GeckoProfiler, DifferentThreads)
                   !profiler_feature_active(ProfilerFeature::MainThreadIO));
               ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::Privacy));
 
-              ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES,
+              ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES.Value(),
                                 PROFILER_DEFAULT_INTERVAL, features, filters,
                                 MOZ_ARRAY_LENGTH(filters));
             }),
@@ -391,11 +456,13 @@ TEST(GeckoProfiler, Pause)
   const char* filters[] = {"GeckoMain"};
 
   ASSERT_TRUE(!profiler_is_paused());
+  ASSERT_TRUE(!profiler_can_accept_markers());
 
   profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
                  filters, MOZ_ARRAY_LENGTH(filters));
 
   ASSERT_TRUE(!profiler_is_paused());
+  ASSERT_TRUE(profiler_can_accept_markers());
 
   // Check that we are writing samples while not paused.
   Maybe<ProfilerBufferInfo> info1 = profiler_get_buffer_info();
@@ -403,9 +470,16 @@ TEST(GeckoProfiler, Pause)
   Maybe<ProfilerBufferInfo> info2 = profiler_get_buffer_info();
   ASSERT_TRUE(info1->mRangeEnd != info2->mRangeEnd);
 
+  // Check that we are writing markers while not paused.
+  info1 = profiler_get_buffer_info();
+  PROFILER_ADD_MARKER("Not paused", OTHER);
+  info2 = profiler_get_buffer_info();
+  ASSERT_TRUE(info1->mRangeEnd != info2->mRangeEnd);
+
   profiler_pause();
 
   ASSERT_TRUE(profiler_is_paused());
+  ASSERT_TRUE(!profiler_can_accept_markers());
 
   // Check that we are not writing samples while paused.
   info1 = profiler_get_buffer_info();
@@ -413,47 +487,88 @@ TEST(GeckoProfiler, Pause)
   info2 = profiler_get_buffer_info();
   ASSERT_TRUE(info1->mRangeEnd == info2->mRangeEnd);
 
+  // Check that we are now writing markers while paused.
+  info1 = profiler_get_buffer_info();
+  PROFILER_ADD_MARKER("Paused", OTHER);
+  info2 = profiler_get_buffer_info();
+  ASSERT_TRUE(info1->mRangeEnd == info2->mRangeEnd);
+
   profiler_resume();
 
   ASSERT_TRUE(!profiler_is_paused());
+  ASSERT_TRUE(profiler_can_accept_markers());
 
   profiler_stop();
 
   ASSERT_TRUE(!profiler_is_paused());
+  ASSERT_TRUE(!profiler_can_accept_markers());
 }
 
 // A class that keeps track of how many instances have been created, streamed,
 // and destroyed.
 class GTestMarkerPayload : public ProfilerMarkerPayload {
  public:
-  explicit GTestMarkerPayload(int aN) : mN(aN) { sNumCreated++; }
+  explicit GTestMarkerPayload(int aN) : mN(aN) { ++sNumCreated; }
 
-  virtual ~GTestMarkerPayload() { sNumDestroyed++; }
+  virtual ~GTestMarkerPayload() { ++sNumDestroyed; }
 
-  virtual void StreamPayload(SpliceableJSONWriter& aWriter,
-                             const mozilla::TimeStamp& aStartTime,
-                             UniqueStacks& aUniqueStacks) override {
-    StreamCommonProps("gtest", aWriter, aStartTime, aUniqueStacks);
-    char buf[64];
-    SprintfLiteral(buf, "gtest-%d", mN);
-    aWriter.IntProperty(buf, mN);
-    sNumStreamed++;
-  }
+  DECL_STREAM_PAYLOAD
 
  private:
+  GTestMarkerPayload(CommonProps&& aCommonProps, int aN)
+      : ProfilerMarkerPayload(std::move(aCommonProps)), mN(aN) {
+    ++sNumDeserialized;
+  }
+
   int mN;
 
  public:
   // The number of GTestMarkerPayload instances that have been created,
   // streamed, and destroyed.
   static int sNumCreated;
+  static int sNumSerialized;
+  static int sNumDeserialized;
   static int sNumStreamed;
   static int sNumDestroyed;
 };
 
 int GTestMarkerPayload::sNumCreated = 0;
+int GTestMarkerPayload::sNumSerialized = 0;
+int GTestMarkerPayload::sNumDeserialized = 0;
 int GTestMarkerPayload::sNumStreamed = 0;
 int GTestMarkerPayload::sNumDestroyed = 0;
+
+BlocksRingBuffer::Length GTestMarkerPayload::TagAndSerializationBytes() const {
+  return CommonPropsTagAndSerializationBytes() + BlocksRingBuffer::SumBytes(mN);
+}
+
+void GTestMarkerPayload::SerializeTagAndPayload(
+    BlocksRingBuffer::EntryWriter& aEntryWriter) const {
+  static const DeserializerTag tag = TagForDeserializer(Deserialize);
+  SerializeTagAndCommonProps(tag, aEntryWriter);
+  aEntryWriter.WriteObject(mN);
+  ++sNumSerialized;
+}
+
+// static
+UniquePtr<ProfilerMarkerPayload> GTestMarkerPayload::Deserialize(
+    BlocksRingBuffer::EntryReader& aEntryReader) {
+  ProfilerMarkerPayload::CommonProps props =
+      DeserializeCommonProps(aEntryReader);
+  auto n = aEntryReader.ReadObject<int>();
+  return UniquePtr<ProfilerMarkerPayload>(
+      new GTestMarkerPayload(std::move(props), n));
+}
+
+void GTestMarkerPayload::StreamPayload(SpliceableJSONWriter& aWriter,
+                                       const mozilla::TimeStamp& aStartTime,
+                                       UniqueStacks& aUniqueStacks) const {
+  StreamCommonProps("gtest", aWriter, aStartTime, aUniqueStacks);
+  char buf[64];
+  SprintfLiteral(buf, "gtest-%d", mN);
+  aWriter.IntProperty(buf, mN);
+  ++sNumStreamed;
+}
 
 TEST(GeckoProfiler, Markers)
 {
@@ -473,19 +588,25 @@ TEST(GeckoProfiler, Markers)
 
   { AUTO_PROFILER_TRACING("C", "A", OTHER); }
 
-  profiler_add_marker("M1", JS::ProfilingCategoryPair::OTHER);
-  profiler_add_marker("M2", JS::ProfilingCategoryPair::OTHER,
-                      MakeUnique<TracingMarkerPayload>("C", TRACING_EVENT));
+  PROFILER_ADD_MARKER("M1", OTHER);
+  PROFILER_ADD_MARKER_WITH_PAYLOAD("M2", OTHER, TracingMarkerPayload,
+                                   ("C", TRACING_EVENT));
   PROFILER_ADD_MARKER("M3", OTHER);
-  profiler_add_marker("M4", JS::ProfilingCategoryPair::OTHER,
-                      MakeUnique<TracingMarkerPayload>(
-                          "C", TRACING_EVENT, mozilla::Nothing(),
-                          mozilla::Nothing(), profiler_get_backtrace()));
+  PROFILER_ADD_MARKER_WITH_PAYLOAD(
+      "M4", OTHER, TracingMarkerPayload,
+      ("C", TRACING_EVENT, mozilla::Nothing(), mozilla::Nothing(),
+       profiler_get_backtrace()));
 
   for (int i = 0; i < 10; i++) {
-    profiler_add_marker("M5", JS::ProfilingCategoryPair::OTHER,
-                        MakeUnique<GTestMarkerPayload>(i));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD("M5", OTHER, GTestMarkerPayload, (i));
   }
+  // The GTestMarkerPayloads should have been created, serialized, and
+  // destroyed.
+  ASSERT_EQ(GTestMarkerPayload::sNumCreated, 10);
+  ASSERT_EQ(GTestMarkerPayload::sNumSerialized, 10);
+  ASSERT_EQ(GTestMarkerPayload::sNumDeserialized, 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumStreamed, 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumDestroyed, 10);
 
   // Create two strings: one that is the maximum allowed length, and one that
   // is one char longer.
@@ -514,11 +635,13 @@ TEST(GeckoProfiler, Markers)
 
   UniquePtr<char[]> profile = w.WriteFunc()->CopyData();
 
-  // The GTestMarkerPayloads should have been created and streamed, but not yet
+  // The GTestMarkerPayloads should have been deserialized, streamed, and
   // destroyed.
-  ASSERT_TRUE(GTestMarkerPayload::sNumCreated == 10);
-  ASSERT_TRUE(GTestMarkerPayload::sNumStreamed == 10);
-  ASSERT_TRUE(GTestMarkerPayload::sNumDestroyed == 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumCreated, 10 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumSerialized, 10 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumDeserialized, 0 + 10);
+  ASSERT_EQ(GTestMarkerPayload::sNumStreamed, 0 + 10);
+  ASSERT_EQ(GTestMarkerPayload::sNumDestroyed, 10 + 10);
   for (int i = 0; i < 10; i++) {
     char buf[64];
     SprintfLiteral(buf, "\"gtest-%d\"", i);
@@ -536,14 +659,46 @@ TEST(GeckoProfiler, Markers)
   ASSERT_TRUE(!strstr(profile.get(), longstr.get()));
   ASSERT_TRUE(strstr(profile.get(), "(too long)"));
 
+  Maybe<ProfilerBufferInfo> info = profiler_get_buffer_info();
+  MOZ_RELEASE_ASSERT(info.isSome());
+  printf("Profiler buffer range: %llu .. %llu (%llu bytes)\n",
+         static_cast<unsigned long long>(info->mRangeStart),
+         static_cast<unsigned long long>(info->mRangeEnd),
+         // sizeof(ProfileBufferEntry) == 9
+         (static_cast<unsigned long long>(info->mRangeEnd) -
+          static_cast<unsigned long long>(info->mRangeStart)) *
+             9);
+  printf("Stats:         min(ns) .. mean(ns) .. max(ns)  [count]\n");
+  printf("- Intervals:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mIntervalsNs.min, info->mIntervalsNs.sum / info->mIntervalsNs.n,
+         info->mIntervalsNs.max, info->mIntervalsNs.n);
+  printf("- Overheads:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mOverheadsNs.min, info->mOverheadsNs.sum / info->mOverheadsNs.n,
+         info->mOverheadsNs.max, info->mOverheadsNs.n);
+  printf("  - Locking:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mLockingsNs.min, info->mLockingsNs.sum / info->mLockingsNs.n,
+         info->mLockingsNs.max, info->mLockingsNs.n);
+  printf("  - Clearning: %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mCleaningsNs.min, info->mCleaningsNs.sum / info->mCleaningsNs.n,
+         info->mCleaningsNs.max, info->mCleaningsNs.n);
+  printf("  - Counters:  %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mCountersNs.min, info->mCountersNs.sum / info->mCountersNs.n,
+         info->mCountersNs.max, info->mCountersNs.n);
+  printf("  - Threads:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mThreadsNs.min, info->mThreadsNs.sum / info->mThreadsNs.n,
+         info->mThreadsNs.max, info->mThreadsNs.n);
+
   profiler_stop();
 
-  // The GTestMarkerPayloads should have been destroyed.
-  ASSERT_TRUE(GTestMarkerPayload::sNumDestroyed == 10);
+  // Nothing more should have happened to the GTestMarkerPayloads.
+  ASSERT_EQ(GTestMarkerPayload::sNumCreated, 10 + 0 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumSerialized, 10 + 0 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumDeserialized, 0 + 10 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumStreamed, 0 + 10 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumDestroyed, 10 + 10 + 0);
 
   for (int i = 0; i < 10; i++) {
-    profiler_add_marker("M5", JS::ProfilingCategoryPair::OTHER,
-                        MakeUnique<GTestMarkerPayload>(i));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD("M5", OTHER, GTestMarkerPayload, (i));
   }
 
   // Warning: this could be racy
@@ -554,10 +709,13 @@ TEST(GeckoProfiler, Markers)
 
   profiler_stop();
 
-  // The second set of GTestMarkerPayloads should not have been streamed.
-  ASSERT_TRUE(GTestMarkerPayload::sNumCreated == 20);
-  ASSERT_TRUE(GTestMarkerPayload::sNumStreamed == 10);
-  ASSERT_TRUE(GTestMarkerPayload::sNumDestroyed == 20);
+  // The second set of GTestMarkerPayloads should not have been serialized or
+  // streamed.
+  ASSERT_EQ(GTestMarkerPayload::sNumCreated, 10 + 0 + 0 + 10);
+  ASSERT_EQ(GTestMarkerPayload::sNumSerialized, 10 + 0 + 0 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumDeserialized, 0 + 10 + 0 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumStreamed, 0 + 10 + 0 + 0);
+  ASSERT_EQ(GTestMarkerPayload::sNumDestroyed, 10 + 10 + 0 + 10);
 }
 
 TEST(GeckoProfiler, DurationLimit)
@@ -570,23 +728,26 @@ TEST(GeckoProfiler, DurationLimit)
 
   // Clear up the counters after the last test.
   GTestMarkerPayload::sNumCreated = 0;
+  GTestMarkerPayload::sNumSerialized = 0;
+  GTestMarkerPayload::sNumDeserialized = 0;
   GTestMarkerPayload::sNumStreamed = 0;
   GTestMarkerPayload::sNumDestroyed = 0;
 
-  profiler_add_marker("M1", JS::ProfilingCategoryPair::OTHER,
-                      MakeUnique<GTestMarkerPayload>(1));
+  PROFILER_ADD_MARKER_WITH_PAYLOAD("M1", OTHER, GTestMarkerPayload, (1));
   PR_Sleep(PR_MillisecondsToInterval(1100));
-  profiler_add_marker("M2", JS::ProfilingCategoryPair::OTHER,
-                      MakeUnique<GTestMarkerPayload>(2));
+  PROFILER_ADD_MARKER_WITH_PAYLOAD("M2", OTHER, GTestMarkerPayload, (2));
   PR_Sleep(PR_MillisecondsToInterval(500));
 
   SpliceableChunkedJSONWriter w;
   ASSERT_TRUE(profiler_stream_json_for_this_process(w));
 
-  // The first marker should be destroyed.
-  ASSERT_TRUE(GTestMarkerPayload::sNumCreated == 2);
-  ASSERT_TRUE(GTestMarkerPayload::sNumStreamed == 1);
-  ASSERT_TRUE(GTestMarkerPayload::sNumDestroyed == 1);
+  // Both markers created, serialized, destroyed; Only the first marker should
+  // have been deserialized, streamed, and destroyed again.
+  ASSERT_EQ(GTestMarkerPayload::sNumCreated, 2);
+  ASSERT_EQ(GTestMarkerPayload::sNumSerialized, 2);
+  ASSERT_EQ(GTestMarkerPayload::sNumDeserialized, 1);
+  ASSERT_EQ(GTestMarkerPayload::sNumStreamed, 1);
+  ASSERT_EQ(GTestMarkerPayload::sNumDestroyed, 3);
 }
 
 #define COUNTER_NAME "TestCounter"

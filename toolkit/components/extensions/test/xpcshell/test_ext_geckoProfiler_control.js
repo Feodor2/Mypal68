@@ -1,5 +1,8 @@
 "use strict";
 
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+
+
 let getExtension = () => {
   return ExtensionTestUtils.loadExtension({
     background: async function() {
@@ -11,7 +14,7 @@ let getExtension = () => {
         }
       };
 
-      browser.test.onMessage.addListener(async message => {
+      browser.test.onMessage.addListener(async (message, data) => {
         let result;
         switch (message) {
           case "start":
@@ -57,6 +60,16 @@ let getExtension = () => {
               "The profile contains a GeckoMain thread."
             );
             browser.test.sendMessage("tested profile");
+            break;
+          case "test dump to file":
+            try {
+              await browser.geckoProfiler.dumpProfileToFile(data.fileName);
+              browser.test.sendMessage("tested dump to file", {});
+            } catch (e) {
+              browser.test.sendMessage("tested dump to file", {
+                error: e.message,
+              });
+            }
             break;
           case "test profile as array buffer":
             let arrayBuffer = await browser.geckoProfiler.getProfileAsArrayBuffer();
@@ -107,6 +120,16 @@ let getExtension = () => {
   });
 };
 
+let verifyProfileData = bytes => {
+  let textDecoder = new TextDecoder();
+  let profile = JSON.parse(textDecoder.decode(bytes));
+  ok("libs" in profile, "The profile contains libs.");
+  ok("meta" in profile, "The profile contains meta.");
+  ok("threads" in profile, "The profile contains threads.");
+  ok(profile.threads.some(t => t.name == "GeckoMain"),
+     "The profile contains a GeckoMain thread.");
+};
+
 add_task(async function testProfilerControl() {
   const acceptedExtensionIdsPref =
     "extensions.geckoProfiler.acceptedExtensionIds";
@@ -125,6 +148,41 @@ add_task(async function testProfilerControl() {
 
   extension.sendMessage("test profile");
   await extension.awaitMessage("tested profile");
+
+  const profilerPath = OS.Path.join(OS.Constants.Path.profileDir, "profiler");
+  let data, fileName, targetPath;
+
+  // test with file name only
+  fileName = "bar.profile";
+  targetPath = OS.Path.join(profilerPath, fileName);
+  extension.sendMessage("test dump to file", {fileName});
+  data = await extension.awaitMessage("tested dump to file");
+  equal(data.error, undefined, "No error thrown");
+  ok(await OS.File.exists(targetPath), "Saved gecko profile exists.");
+  verifyProfileData(await OS.File.read(targetPath));
+
+  // test overwriting the formerly created file
+  extension.sendMessage("test dump to file", {fileName});
+  data = await extension.awaitMessage("tested dump to file");
+  equal(data.error, undefined, "No error thrown");
+  ok(await OS.File.exists(targetPath), "Saved gecko profile exists.");
+  verifyProfileData(await OS.File.read(targetPath));
+
+  // test with a POSIX path, which is not allowed
+  fileName = "foo/bar.profile";
+  targetPath = OS.Path.join(profilerPath, ...fileName.split("/"));
+  extension.sendMessage("test dump to file", {fileName});
+  data = await extension.awaitMessage("tested dump to file");
+  equal(data.error, "Path cannot contain a subdirectory.");
+  ok(!await OS.File.exists(targetPath), "Gecko profile hasn't been saved.");
+
+  // test with a non POSIX path which is not allowed
+  fileName = "foo\\bar.profile";
+  targetPath = OS.Path.join(profilerPath, ...fileName.split("\\"));
+  extension.sendMessage("test dump to file", {fileName});
+  data = await extension.awaitMessage("tested dump to file");
+  equal(data.error, "Path cannot contain a subdirectory.");
+  ok(!await OS.File.exists(targetPath), "Gecko profile hasn't been saved.");
 
   extension.sendMessage("test profile as array buffer");
   await extension.awaitMessage("tested profile as array buffer");

@@ -41,6 +41,10 @@
 #include <functional>
 #include <stdint.h>
 
+namespace mozilla {
+struct SymbolTable;
+}
+
 extern mozilla::LazyLogModule gProfilerLog;
 
 // These are for MOZ_LOG="prof:3" or higher. It's the default logging level for
@@ -91,9 +95,8 @@ void profiler_get_profile_json_into_lazily_allocated_buffer(
 // Flags to conveniently track various JS instrumentations.
 enum class JSInstrumentationFlags {
   StackSampling = 0x1,
-  TrackOptimizations = 0x2,
-  TraceLogging = 0x4,
-  Allocations = 0x8
+  TraceLogging = 0x2,
+  Allocations = 0x4,
 };
 
 // Record an exit profile from a child process.
@@ -102,5 +105,21 @@ void profiler_received_exit_profile(const nsCString& aExitProfile);
 // Extract all received exit profiles that have not yet expired (i.e., they
 // still intersect with this process' buffer range).
 mozilla::Vector<nsCString> profiler_move_exit_profiles();
+
+// If the "MOZ_PROFILER_SYMBOLICATE" env-var is set, we return a new
+// ProfilerCodeAddressService object to use for local symbolication of profiles.
+// This is off by default, and mainly intended for local development.
+mozilla::UniquePtr<ProfilerCodeAddressService>
+profiler_code_address_service_for_presymbolication();
+
+extern "C" {
+// This function is defined in the profiler rust module at
+// tools/profiler/rust-helper. mozilla::SymbolTable and CompactSymbolTable
+// have identical memory layout.
+bool profiler_get_symbol_table(const char* debug_path, const char* breakpad_id,
+                               mozilla::SymbolTable* symbol_table);
+
+bool profiler_demangle_rust(const char* mangled, char* buffer, size_t len);
+}
 
 #endif /* ndef TOOLS_PLATFORM_H_ */

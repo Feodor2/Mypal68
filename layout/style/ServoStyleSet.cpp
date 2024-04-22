@@ -976,10 +976,7 @@ bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
   });
 
   while (!queue.IsEmpty()) {
-    uint32_t idx = queue.Length() - 1;
-    auto* sheet = queue[idx].first;
-    SheetOwner owner = queue[idx].second;
-    queue.RemoveElementAt(idx);
+    auto [sheet, owner] = queue.PopLastElement();
 
     // Only call EnsureUniqueInner for complete sheets. If we do call it on
     // incomplete sheets, we'll cause problems when the sheet is actually
@@ -1185,8 +1182,7 @@ void ServoStyleSet::RunPostTraversalTasks() {
     return;
   }
 
-  nsTArray<PostTraversalTask> tasks;
-  tasks.SwapElements(mPostTraversalTasks);
+  nsTArray<PostTraversalTask> tasks = std::move(mPostTraversalTasks);
 
   for (auto& task : tasks) {
     task.Run();

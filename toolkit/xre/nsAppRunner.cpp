@@ -13,7 +13,7 @@
 #include "mozilla/FilePreferences.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
-//#include "mozilla/IOInterposer.h"
+#include "mozilla/IOInterposer.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/Poison.h"
@@ -22,7 +22,6 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
-//#include "mozilla/Telemetry.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -4082,7 +4081,7 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   mAppData->sandboxPermissionsService = aConfig.sandboxPermissionsService;
 #endif
 
-  //mozilla::IOInterposerInit ioInterposerGuard;
+  mozilla::IOInterposerInit ioInterposerGuard;
 
 #if defined(XP_WIN)
   // Some COM settings are global to the process and must be set before any non-

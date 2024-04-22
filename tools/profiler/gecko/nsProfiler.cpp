@@ -40,14 +40,6 @@ using dom::AutoJSAPI;
 using dom::Promise;
 using std::string;
 
-extern "C" {
-// This function is defined in the profiler rust module at
-// tools/profiler/rust-helper. nsProfiler::SymbolTable and CompactSymbolTable
-// have identical memory layout.
-bool profiler_get_symbol_table(const char* debug_path, const char* breakpad_id,
-                               nsProfiler::SymbolTable* symbol_table);
-}
-
 NS_IMPL_ISUPPORTS(nsProfiler, nsIProfiler, nsIObserver)
 
 nsProfiler::nsProfiler()
@@ -104,10 +96,21 @@ nsProfiler::CanProfile(bool* aCanProfile) {
   return NS_OK;
 }
 
+static nsresult FillVectorFromStringArray(Vector<const char*>& aVector,
+                                          const nsTArray<nsCString>& aArray) {
+  if (NS_WARN_IF(!aVector.reserve(aArray.Length()))) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  for (auto& entry : aArray) {
+    aVector.infallibleAppend(entry.get());
+  }
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
-                          const char** aFeatures, uint32_t aFeatureCount,
-                          const char** aFilters, uint32_t aFilterCount,
+                          const nsTArray<nsCString>& aFeatures,
+                          const nsTArray<nsCString>& aFilters,
                           double aDuration) {
   if (mLockedForPrivateBrowsing) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -115,9 +118,22 @@ nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
 
   ResetGathering();
 
-  uint32_t features = ParseFeaturesFromStringArray(aFeatures, aFeatureCount);
+  Vector<const char*> featureStringVector;
+  nsresult rv = FillVectorFromStringArray(featureStringVector, aFeatures);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  uint32_t features = ParseFeaturesFromStringArray(
+      featureStringVector.begin(), featureStringVector.length());
   Maybe<double> duration = aDuration > 0.0 ? Some(aDuration) : Nothing();
-  profiler_start(aEntries, aInterval, features, aFilters, aFilterCount,
+
+  Vector<const char*> filterStringVector;
+  rv = FillVectorFromStringArray(filterStringVector, aFilters);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  profiler_start(PowerOfTwo32(aEntries), aInterval, features,
+                 filterStringVector.begin(), filterStringVector.length(),
                  duration);
 
   return NS_OK;
@@ -156,7 +172,7 @@ nsProfiler::ResumeSampling() {
 
 NS_IMETHODIMP
 nsProfiler::AddMarker(const char* aMarker) {
-  profiler_add_marker(aMarker, JS::ProfilingCategoryPair::OTHER);
+  PROFILER_ADD_MARKER(aMarker, OTHER);
   return NS_OK;
 }
 
@@ -570,8 +586,8 @@ nsProfiler::IsActive(bool* aIsActive) {
   return NS_OK;
 }
 
-static void GetArrayOfStringsForFeatures(uint32_t aFeatures, uint32_t* aCount,
-                                         char*** aFeatureList) {
+static void GetArrayOfStringsForFeatures(uint32_t aFeatures,
+                                         nsTArray<nsCString>& aFeatureList) {
 #define COUNT_IF_SET(n_, str_, Name_, desc_)    \
   if (ProfilerFeature::Has##Name_(aFeatures)) { \
     len++;                                      \
@@ -583,34 +599,29 @@ static void GetArrayOfStringsForFeatures(uint32_t aFeatures, uint32_t* aCount,
 
 #undef COUNT_IF_SET
 
-  auto featureList = static_cast<char**>(moz_xmalloc(len * sizeof(char*)));
+  aFeatureList.SetCapacity(len);
 
 #define DUP_IF_SET(n_, str_, Name_, desc_)      \
   if (ProfilerFeature::Has##Name_(aFeatures)) { \
-    featureList[i] = moz_xstrdup(str_);         \
-    i++;                                        \
+    aFeatureList.AppendElement(str_);           \
   }
 
   // Insert the strings for the features in use.
-  size_t i = 0;
   PROFILER_FOR_EACH_FEATURE(DUP_IF_SET)
 
 #undef DUP_IF_SET
-
-  *aFeatureList = featureList;
-  *aCount = len;
 }
 
 NS_IMETHODIMP
-nsProfiler::GetFeatures(uint32_t* aCount, char*** aFeatureList) {
+nsProfiler::GetFeatures(nsTArray<nsCString>& aFeatureList) {
   uint32_t features = profiler_get_available_features();
-  GetArrayOfStringsForFeatures(features, aCount, aFeatureList);
+  GetArrayOfStringsForFeatures(features, aFeatureList);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsProfiler::GetAllFeatures(uint32_t* aCount, char*** aFeatureList) {
-  GetArrayOfStringsForFeatures((uint32_t)-1, aCount, aFeatureList);
+nsProfiler::GetAllFeatures(nsTArray<nsCString>& aFeatureList) {
+  GetArrayOfStringsForFeatures((uint32_t)-1, aFeatureList);
   return NS_OK;
 }
 
@@ -691,10 +702,14 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
 
   mWriter.emplace();
 
+  UniquePtr<ProfilerCodeAddressService> service =
+      profiler_code_address_service_for_presymbolication();
+
   // Start building up the JSON result and grab the profile from this process.
   mWriter->Start();
   if (!profiler_stream_json_for_this_process(*mWriter, aSinceTime,
-                                             /* aIsShuttingDown */ false)) {
+                                             /* aIsShuttingDown */ false,
+                                             service.get())) {
     // The profiler is inactive. This either means that it was inactive even
     // at the time that ProfileGatherer::Start() was called, or that it was
     // stopped on a different thread since that call. Either way, we need to

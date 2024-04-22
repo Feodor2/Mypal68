@@ -8,6 +8,7 @@
 #include "base/lock.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/TimeStamp.h"
 
 class nsIRunnable;
 
@@ -42,19 +43,26 @@ enum class EventQueuePriority {
 class AbstractEventQueue {
  public:
   // Add an event to the end of the queue. Implementors are free to use
-  // aPriority however they wish.  If the runnable supports nsIRunnablePriority
-  // and the implementing class supports prioritization, aPriority represents
-  // the result of calling nsIRunnablePriority::GetPriority().
+  // aPriority however they wish.  If the runnable supports
+  // nsIRunnablePriority and the implementing class supports
+  // prioritization, aPriority represents the result of calling
+  // nsIRunnablePriority::GetPriority().  *aDelay is time the event has
+  // already been delayed (used when moving an event from one queue to
+  // another)
   virtual void PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
                         EventQueuePriority aPriority,
-                        const AutoLock& aProofOfLock) = 0;
+                        const AutoLock& aProofOfLock,
+                        mozilla::TimeDuration* aDelay = nullptr) = 0;
 
   // Get an event from the front of the queue. aPriority is an out param. If the
   // implementation supports priorities, then this should be the same priority
   // that the event was pushed with. aPriority may be null. This should return
   // null if the queue is non-empty but the event in front is not ready to run.
+  // *aLastEventDelay is the time the event spent in queues before being
+  // retrieved.
   virtual already_AddRefed<nsIRunnable> GetEvent(
-      EventQueuePriority* aPriority, const AutoLock& aProofOfLock) = 0;
+      EventQueuePriority* aPriority, const AutoLock& aProofOfLock,
+      mozilla::TimeDuration* aLastEventDelay = nullptr) = 0;
 
   // Returns true if the queue is empty. Implies !HasReadyEvent().
   virtual bool IsEmpty(const AutoLock& aProofOfLock) = 0;

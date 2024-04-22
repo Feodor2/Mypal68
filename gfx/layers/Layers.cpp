@@ -2321,12 +2321,12 @@ void RecordCompositionPayloadsPresented(
     TimeStamp presented = TimeStamp::Now();
     for (const CompositionPayload& payload : aPayloads) {
 #if MOZ_GECKO_PROFILER
-      if (profiler_is_active()) {
+      if (profiler_can_accept_markers()) {
         nsPrintfCString marker(
             "Payload Presented, type: %d latency: %dms\n",
             int32_t(payload.mType),
             int32_t((presented - payload.mTimeStamp).ToMilliseconds()));
-        profiler_add_marker(marker.get(), JS::ProfilingCategoryPair::GRAPHICS);
+        PROFILER_ADD_MARKER(marker.get(), GRAPHICS);
       }
 #endif
 

@@ -1,4 +1,4 @@
-/* global gBrowser SessionStore */
+/* global gBrowser */
 "use strict";
 
 add_task(async function test_discarded() {

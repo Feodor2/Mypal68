@@ -21,7 +21,7 @@
 // unlinking them they will self-destruct (since a garbage cycle is
 // only keeping itself alive with internal links, by definition).
 //
-// Snow-white is an addition to the original algorithm. Snow-white object
+// Snow-white is an addition to the original algorithm. A snow-white node
 // has reference count zero and is just waiting for deletion.
 //
 // Grey nodes are being scanned. Nodes that turn grey will turn
@@ -158,39 +158,40 @@
 #include "mozilla/HashTable.h"
 #include "mozilla/HoldDropJSObjects.h"
 /* This must occur *after* base/process_util.h to avoid typedefs conflicts. */
-#include "mozilla/LinkedList.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
-#include "mozilla/MruCache.h"
-#include "mozilla/SegmentedVector.h"
-
-#include "nsCycleCollectionParticipant.h"
-#include "nsCycleCollectionNoteRootCallback.h"
-#include "nsDeque.h"
-#include "nsExceptionHandler.h"
-#include "nsCycleCollector.h"
-#include "nsThreadUtils.h"
-#include "nsXULAppAPI.h"
-#include "prenv.h"
-#include "nsPrintfCString.h"
-#include "nsTArray.h"
-#include "nsIConsoleService.h"
-#include "mozilla/Attributes.h"
-#include "nsICycleCollectorListener.h"
-#include "nsISerialEventTarget.h"
-#include "nsIMemoryReporter.h"
-#include "nsIFile.h"
-#include "nsDumpUtils.h"
-#include "xpcpublic.h"
-#include "GeckoProfiler.h"
 #include <stdint.h>
 #include <stdio.h>
 
+#include <utility>
+
+#include "GeckoProfiler.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/AutoGlobalTimelineMarker.h"
 #include "mozilla/Likely.h"
-//#include "mozilla/PoisonIOInterposer.h"
+#include "mozilla/LinkedList.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/MruCache.h"
+#include "mozilla/PoisonIOInterposer.h"
+#include "mozilla/SegmentedVector.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThreadLocal.h"
+#include "mozilla/UniquePtr.h"
+#include "nsCycleCollectionNoteRootCallback.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsCycleCollector.h"
+#include "nsDeque.h"
+#include "nsDumpUtils.h"
+#include "nsExceptionHandler.h"
+#include "nsIConsoleService.h"
+#include "nsICycleCollectorListener.h"
+#include "nsIFile.h"
+#include "nsIMemoryReporter.h"
+#include "nsISerialEventTarget.h"
+#include "nsPrintfCString.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
+#include "prenv.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 
@@ -519,9 +520,9 @@ enum NodeColor { black, white, grey };
 // This structure should be kept as small as possible; we may expect
 // hundreds of thousands of them to be allocated and touched
 // repeatedly during each cycle collection.
-
 class PtrInfo final {
  public:
+  // mParticipant knows a more concrete type.
   void* mPointer;
   nsCycleCollectionParticipant* mParticipant;
   uint32_t mColor : 2;
@@ -1008,7 +1009,7 @@ struct nsPurpleBuffer {
   // (1) if !aAsyncSnowWhiteFreeing and nsPurpleBufferEntry::mRefCnt is 0 or
   // (2) if nsXPCOMCycleCollectionParticipant::CanSkip() for the obj or
   // (3) if nsPurpleBufferEntry::mRefCnt->IsPurple() is false.
-  // (4) If removeChildlessNodes is true, then any nodes in the purple buffer
+  // (4) If aRemoveChildlessNodes is true, then any nodes in the purple buffer
   //     that will have no children in the cycle collector graph will also be
   //     removed. CanSkip() may be run on these children.
   void RemoveSkippable(nsCycleCollector* aCollector, js::SliceBudget& aBudget,
@@ -1107,7 +1108,7 @@ class nsCycleCollector : public nsIMemoryReporter {
 
   ccPhase mIncrementalPhase;
   CCGraph mGraph;
-  nsAutoPtr<CCGraphBuilder> mBuilder;
+  UniquePtr<CCGraphBuilder> mBuilder;
   RefPtr<nsCycleCollectorLogger> mLogger;
 
 #ifdef DEBUG
@@ -1826,7 +1827,7 @@ class CCGraphBuilder final : public nsCycleCollectionTraversalCallback,
   nsCString mNextEdgeName;
   RefPtr<nsCycleCollectorLogger> mLogger;
   bool mMergeZones;
-  nsAutoPtr<NodePool::Enumerator> mCurrNode;
+  UniquePtr<NodePool::Enumerator> mCurrNode;
   uint32_t mNoteChildCount;
 
   struct PtrInfoCache : public MruCache<void*, PtrInfo*, PtrInfoCache, 491> {
@@ -2032,7 +2033,7 @@ void CCGraphBuilder::DoneAddingRoots() {
   // We've finished adding roots, and everything in the graph is a root.
   mGraph.mRootCount = mGraph.MapCount();
 
-  mCurrNode = new NodePool::Enumerator(mGraph.mNodes);
+  mCurrNode = MakeUnique<NodePool::Enumerator>(mGraph.mNodes);
 }
 
 MOZ_NEVER_INLINE bool CCGraphBuilder::BuildGraph(SliceBudget& aBudget) {
@@ -2415,6 +2416,7 @@ class SnowWhiteKiller : public TraceCallbacks {
     }
   }
 
+ private:
   void MaybeKillObject(SnowWhiteObject& aObject) {
     if (!aObject.mRefCnt->get() && !aObject.mRefCnt->IsInPurpleBuffer()) {
       mCollector->RemoveObjectFromGraph(aObject.mPointer);
@@ -2427,6 +2429,7 @@ class SnowWhiteKiller : public TraceCallbacks {
     }
   }
 
+ public:
   bool Visit(nsPurpleBuffer& aBuffer, nsPurpleBufferEntry* aEntry) {
     if (mBudget) {
       if (mBudget->isOverBudget()) {
@@ -3587,8 +3590,8 @@ void nsCycleCollector::BeginCollection(
   mResults.mMergedZones = mergeZones;
 
   MOZ_ASSERT(!mBuilder, "Forgot to clear mBuilder");
-  mBuilder =
-      new CCGraphBuilder(mGraph, mResults, mCCJSRuntime, mLogger, mergeZones);
+  mBuilder = MakeUnique<CCGraphBuilder>(mGraph, mResults, mCCJSRuntime, mLogger,
+                                        mergeZones);
   timeLog.Checkpoint("BeginCollection prepare graph builder");
 
   if (mCCJSRuntime) {

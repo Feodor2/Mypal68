@@ -11,7 +11,6 @@ add_task(async function testPageActionPopupResize() {
       },
     },
     background: function() {
-      /* global browser */
       browser.tabs.query({ active: true, currentWindow: true }, tabs => {
         const tabId = tabs[0].id;
 

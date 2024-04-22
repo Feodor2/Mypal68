@@ -49,6 +49,7 @@
 
 #include <string>
 
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"

@@ -6,6 +6,7 @@
 #  define MozPromise_h_
 
 #  include <type_traits>
+#  include <utility>
 
 #  include "mozilla/Logging.h"
 #  include "mozilla/Maybe.h"
@@ -13,6 +14,7 @@
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/Tuple.h"
 #  include "mozilla/TypeTraits.h"
+#  include "mozilla/UniquePtr.h"
 #  include "mozilla/Variant.h"
 
 #  include "nsISerialEventTarget.h"
@@ -62,7 +64,7 @@ struct MethodTraitsHelper<Ret (ThisType::*)(ArgTypes...) const volatile> {
   static const size_t ArgSize = sizeof...(ArgTypes);
 };
 template <typename T>
-struct MethodTrait : MethodTraitsHelper<typename RemoveReference<T>::Type> {};
+struct MethodTrait : MethodTraitsHelper<std::remove_reference_t<T>> {};
 
 }  // namespace detail
 
@@ -72,8 +74,8 @@ using TakesArgument =
 
 template <typename MethodType, typename TargetType>
 using ReturnTypeIs =
-    IsConvertible<typename detail::MethodTrait<MethodType>::ReturnType,
-                  TargetType>;
+    std::is_convertible<typename detail::MethodTrait<MethodType>::ReturnType,
+                        TargetType>;
 
 template <typename ResolveValueT, typename RejectValueT, bool IsExclusive>
 class MozPromise;
@@ -154,7 +156,7 @@ class MozPromise : public MozPromiseBase {
   // Return a |T&&| to enable move when IsExclusive is true or
   // a |const T&| to enforce copy otherwise.
   template <typename T,
-            typename R = typename Conditional<IsExclusive, T&&, const T&>::Type>
+            typename R = std::conditional_t<IsExclusive, T&&, const T&>>
   static R MaybeMove(T& aX) {
     return static_cast<R>(aX);
   }
@@ -241,35 +243,35 @@ class MozPromise : public MozPromiseBase {
   class Private;
 
   template <typename ResolveValueType_>
-  static RefPtr<MozPromise> CreateAndResolve(ResolveValueType_&& aResolveValue,
-                                             const char* aResolveSite) {
-    static_assert(IsConvertible<ResolveValueType_, ResolveValueT>::value,
+  [[nodiscard]] static RefPtr<MozPromise> CreateAndResolve(
+      ResolveValueType_&& aResolveValue, const char* aResolveSite) {
+    static_assert(std::is_convertible_v<ResolveValueType_, ResolveValueT>,
                   "Resolve() argument must be implicitly convertible to "
                   "MozPromise's ResolveValueT");
     RefPtr<typename MozPromise::Private> p =
         new MozPromise::Private(aResolveSite);
     p->Resolve(std::forward<ResolveValueType_>(aResolveValue), aResolveSite);
-    return p.forget();
+    return p;
   }
 
   template <typename RejectValueType_>
-  static RefPtr<MozPromise> CreateAndReject(RejectValueType_&& aRejectValue,
-                                            const char* aRejectSite) {
-    static_assert(IsConvertible<RejectValueType_, RejectValueT>::value,
+  [[nodiscard]] static RefPtr<MozPromise> CreateAndReject(
+      RejectValueType_&& aRejectValue, const char* aRejectSite) {
+    static_assert(std::is_convertible_v<RejectValueType_, RejectValueT>,
                   "Reject() argument must be implicitly convertible to "
                   "MozPromise's RejectValueT");
     RefPtr<typename MozPromise::Private> p =
         new MozPromise::Private(aRejectSite);
     p->Reject(std::forward<RejectValueType_>(aRejectValue), aRejectSite);
-    return p.forget();
+    return p;
   }
 
   template <typename ResolveOrRejectValueType_>
-  static RefPtr<MozPromise> CreateAndResolveOrReject(
+  [[nodiscard]] static RefPtr<MozPromise> CreateAndResolveOrReject(
       ResolveOrRejectValueType_&& aValue, const char* aSite) {
     RefPtr<typename MozPromise::Private> p = new MozPromise::Private(aSite);
     p->ResolveOrReject(std::forward<ResolveOrRejectValueType_>(aValue), aSite);
-    return p.forget();
+    return p;
   }
 
   typedef MozPromise<nsTArray<ResolveValueType>, RejectValueType, IsExclusive>
@@ -325,8 +327,9 @@ class MozPromise : public MozPromiseBase {
   };
 
  public:
-  static RefPtr<AllPromiseType> All(nsISerialEventTarget* aProcessingTarget,
-                                    nsTArray<RefPtr<MozPromise>>& aPromises) {
+  [[nodiscard]] static RefPtr<AllPromiseType> All(
+      nsISerialEventTarget* aProcessingTarget,
+      nsTArray<RefPtr<MozPromise>>& aPromises) {
     if (aPromises.Length() == 0) {
       return AllPromiseType::CreateAndResolve(nsTArray<ResolveValueType>(),
                                               __func__);
@@ -495,17 +498,15 @@ class MozPromise : public MozPromiseBase {
    * make the resolve/reject value argument "optional".
    */
   template <typename ThisType, typename MethodType, typename ValueType>
-  static typename EnableIf<
-      TakesArgument<MethodType>::value,
-      typename detail::MethodTrait<MethodType>::ReturnType>::Type
+  static std::enable_if_t<TakesArgument<MethodType>::value,
+                          typename detail::MethodTrait<MethodType>::ReturnType>
   InvokeMethod(ThisType* aThisVal, MethodType aMethod, ValueType&& aValue) {
     return (aThisVal->*aMethod)(std::forward<ValueType>(aValue));
   }
 
   template <typename ThisType, typename MethodType, typename ValueType>
-  static typename EnableIf<
-      !TakesArgument<MethodType>::value,
-      typename detail::MethodTrait<MethodType>::ReturnType>::Type
+  static std::enable_if_t<!TakesArgument<MethodType>::value,
+                          typename detail::MethodTrait<MethodType>::ReturnType>
   InvokeMethod(ThisType* aThisVal, MethodType aMethod, ValueType&& aValue) {
     return (aThisVal->*aMethod)();
   }
@@ -513,7 +514,7 @@ class MozPromise : public MozPromiseBase {
   // Called when promise chaining is supported.
   template <bool SupportChaining, typename ThisType, typename MethodType,
             typename ValueType, typename CompletionPromiseType>
-  static typename EnableIf<SupportChaining, void>::Type InvokeCallbackMethod(
+  static std::enable_if_t<SupportChaining, void> InvokeCallbackMethod(
       ThisType* aThisVal, MethodType aMethod, ValueType&& aValue,
       CompletionPromiseType&& aCompletionPromise) {
     auto p = InvokeMethod(aThisVal, aMethod, std::forward<ValueType>(aValue));
@@ -525,7 +526,7 @@ class MozPromise : public MozPromiseBase {
   // Called when promise chaining is not supported.
   template <bool SupportChaining, typename ThisType, typename MethodType,
             typename ValueType, typename CompletionPromiseType>
-  static typename EnableIf<!SupportChaining, void>::Type InvokeCallbackMethod(
+  static std::enable_if_t<!SupportChaining, void> InvokeCallbackMethod(
       ThisType* aThisVal, MethodType aMethod, ValueType&& aValue,
       CompletionPromiseType&& aCompletionPromise) {
     MOZ_DIAGNOSTIC_ASSERT(
@@ -556,7 +557,7 @@ class MozPromise : public MozPromiseBase {
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
     using PromiseType =
-        typename Conditional<SupportChaining::value, R1, MozPromise>::Type;
+        std::conditional_t<SupportChaining::value, R1, MozPromise>;
 
    public:
     ThenValue(nsISerialEventTarget* aResponseTarget, ThisType* aThisVal,
@@ -619,7 +620,7 @@ class MozPromise : public MozPromiseBase {
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
     using PromiseType =
-        typename Conditional<SupportChaining::value, R1, MozPromise>::Type;
+        std::conditional_t<SupportChaining::value, R1, MozPromise>;
 
    public:
     ThenValue(nsISerialEventTarget* aResponseTarget, ThisType* aThisVal,
@@ -679,7 +680,7 @@ class MozPromise : public MozPromiseBase {
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
     using PromiseType =
-        typename Conditional<SupportChaining::value, R1, MozPromise>::Type;
+        std::conditional_t<SupportChaining::value, R1, MozPromise>;
 
    public:
     ThenValue(nsISerialEventTarget* aResponseTarget,
@@ -749,7 +750,7 @@ class MozPromise : public MozPromiseBase {
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
     using PromiseType =
-        typename Conditional<SupportChaining::value, R1, MozPromise>::Type;
+        std::conditional_t<SupportChaining::value, R1, MozPromise>;
 
    public:
     ThenValue(nsISerialEventTarget* aResponseTarget,
@@ -873,8 +874,8 @@ class MozPromise : public MozPromiseBase {
     }
 
     template <typename... Ts>
-    auto Then(Ts&&... aArgs)
-        -> decltype(DeclVal<PromiseType>().Then(std::forward<Ts>(aArgs)...)) {
+    auto Then(Ts&&... aArgs) -> decltype(
+        std::declval<PromiseType>().Then(std::forward<Ts>(aArgs)...)) {
       return static_cast<RefPtr<PromiseType>>(*this)->Then(
           std::forward<Ts>(aArgs)...);
     }
@@ -1096,29 +1097,18 @@ typedef MozPromise<bool, nsresult, /* IsExclusive = */ false>
  * Class to encapsulate a promise for a particular role. Use this as the member
  * variable for a class whose method returns a promise.
  */
-template <typename PromiseType>
-class MozPromiseHolder {
+template <typename PromiseType, typename ImplType>
+class MozPromiseHolderBase {
  public:
-  MozPromiseHolder() : mMonitor(nullptr) {}
+  MozPromiseHolderBase() = default;
 
-  MozPromiseHolder(MozPromiseHolder&& aOther)
-      : mMonitor(nullptr), mPromise(aOther.mPromise.forget()) {}
+  MozPromiseHolderBase(MozPromiseHolderBase&& aOther) = default;
+  MozPromiseHolderBase& operator=(MozPromiseHolderBase&& aOther) = default;
 
-  // Move semantics.
-  MozPromiseHolder& operator=(MozPromiseHolder&& aOther) {
-    MOZ_ASSERT(!mMonitor && !aOther.mMonitor);
-    MOZ_DIAGNOSTIC_ASSERT(!mPromise);
-    mPromise = aOther.mPromise;
-    aOther.mPromise = nullptr;
-    return *this;
-  }
-
-  ~MozPromiseHolder() { MOZ_ASSERT(!mPromise); }
+  ~MozPromiseHolderBase() { MOZ_ASSERT(!mPromise); }
 
   already_AddRefed<PromiseType> Ensure(const char* aMethodName) {
-    if (mMonitor) {
-      mMonitor->AssertCurrentThreadOwns();
-    }
+    static_cast<ImplType*>(this)->Check();
     if (!mPromise) {
       mPromise = new (typename PromiseType::Private)(aMethodName);
     }
@@ -1126,33 +1116,24 @@ class MozPromiseHolder {
     return p.forget();
   }
 
-  // Provide a Monitor that should always be held when accessing this instance.
-  void SetMonitor(Monitor2* aMonitor) { mMonitor = aMonitor; }
-
   bool IsEmpty() const {
-    if (mMonitor) {
-      mMonitor->AssertCurrentThreadOwns();
-    }
+    static_cast<const ImplType*>(this)->Check();
     return !mPromise;
   }
 
   already_AddRefed<typename PromiseType::Private> Steal() {
-    if (mMonitor) {
-      mMonitor->AssertCurrentThreadOwns();
-    }
+    static_cast<ImplType*>(this)->Check();
     return mPromise.forget();
   }
 
   template <typename ResolveValueType_>
   void Resolve(ResolveValueType_&& aResolveValue, const char* aMethodName) {
-    static_assert(IsConvertible<ResolveValueType_,
-                                typename PromiseType::ResolveValueType>::value,
+    static_assert(std::is_convertible_v<ResolveValueType_,
+                                        typename PromiseType::ResolveValueType>,
                   "Resolve() argument must be implicitly convertible to "
                   "MozPromise's ResolveValueT");
 
-    if (mMonitor) {
-      mMonitor->AssertCurrentThreadOwns();
-    }
+    static_cast<ImplType*>(this)->Check();
     MOZ_ASSERT(mPromise);
     mPromise->Resolve(std::forward<ResolveValueType_>(aResolveValue),
                       aMethodName);
@@ -1169,14 +1150,12 @@ class MozPromiseHolder {
 
   template <typename RejectValueType_>
   void Reject(RejectValueType_&& aRejectValue, const char* aMethodName) {
-    static_assert(IsConvertible<RejectValueType_,
-                                typename PromiseType::RejectValueType>::value,
+    static_assert(std::is_convertible_v<RejectValueType_,
+                                        typename PromiseType::RejectValueType>,
                   "Reject() argument must be implicitly convertible to "
                   "MozPromise's RejectValueT");
 
-    if (mMonitor) {
-      mMonitor->AssertCurrentThreadOwns();
-    }
+    static_cast<ImplType*>(this)->Check();
     MOZ_ASSERT(mPromise);
     mPromise->Reject(std::forward<RejectValueType_>(aRejectValue), aMethodName);
     mPromise = nullptr;
@@ -1193,9 +1172,7 @@ class MozPromiseHolder {
   template <typename ResolveOrRejectValueType_>
   void ResolveOrReject(ResolveOrRejectValueType_&& aValue,
                        const char* aMethodName) {
-    if (mMonitor) {
-      mMonitor->AssertCurrentThreadOwns();
-    }
+    static_cast<ImplType*>(this)->Check();
     MOZ_ASSERT(mPromise);
     mPromise->ResolveOrReject(std::forward<ResolveOrRejectValueType_>(aValue),
                               aMethodName);
@@ -1212,8 +1189,37 @@ class MozPromiseHolder {
   }
 
  private:
-  Monitor2* mMonitor;
   RefPtr<typename PromiseType::Private> mPromise;
+};
+
+template <typename PromiseType>
+class MozPromiseHolder
+    : public MozPromiseHolderBase<PromiseType, MozPromiseHolder<PromiseType>> {
+ public:
+  using MozPromiseHolderBase<
+      PromiseType, MozPromiseHolder<PromiseType>>::MozPromiseHolderBase;
+  static constexpr void Check(){};
+};
+
+template <typename PromiseType>
+class MozMonitoredPromiseHolder
+    : public MozPromiseHolderBase<PromiseType,
+                                  MozMonitoredPromiseHolder<PromiseType>> {
+ public:
+  // Provide a Monitor that should always be held when accessing this instance.
+  explicit MozMonitoredPromiseHolder(Monitor2* const aMonitor)
+      : mMonitor(aMonitor) {
+    MOZ_ASSERT(aMonitor);
+  }
+
+  MozMonitoredPromiseHolder(MozMonitoredPromiseHolder&& aOther) = delete;
+  MozMonitoredPromiseHolder& operator=(MozMonitoredPromiseHolder&& aOther) =
+      delete;
+
+  void Check() const { mMonitor->AssertCurrentThreadOwns(); }
+
+ private:
+  Monitor2* const mMonitor;
 };
 
 /*
@@ -1319,7 +1325,7 @@ class ProxyRunnable : public CancelableRunnable {
 
  private:
   RefPtr<typename PromiseType::Private> mProxyPromise;
-  nsAutoPtr<MethodCall<PromiseType, MethodType, ThisType, Storages...>>
+  UniquePtr<MethodCall<PromiseType, MethodType, ThisType, Storages...>>
       mMethodCall;
 };
 
@@ -1343,7 +1349,7 @@ static RefPtr<PromiseType> InvokeAsyncImpl(
       new (typename PromiseType::Private)(aCallerName);
   RefPtr<ProxyRunnableType> r = new ProxyRunnableType(p, methodCall);
   aTarget->Dispatch(r.forget());
-  return p.forget();
+  return p;
 }
 
 constexpr bool Any() { return false; }
@@ -1364,7 +1370,7 @@ constexpr bool Any(T1 a, Ts... aOthers) {
 // See ParameterStorage in nsThreadUtils.h for help.
 template <typename... Storages, typename PromiseType, typename ThisType,
           typename... ArgTypes, typename... ActualArgTypes,
-          typename EnableIf<sizeof...(Storages) != 0, int>::Type = 0>
+          std::enable_if_t<sizeof...(Storages) != 0, int> = 0>
 static RefPtr<PromiseType> InvokeAsync(
     nsISerialEventTarget* aTarget, ThisType* aThisVal, const char* aCallerName,
     RefPtr<PromiseType> (ThisType::*aMethod)(ArgTypes...),
@@ -1383,14 +1389,14 @@ static RefPtr<PromiseType> InvokeAsync(
 // then move them out of the runnable into the target method parameters.
 template <typename... Storages, typename PromiseType, typename ThisType,
           typename... ArgTypes, typename... ActualArgTypes,
-          typename EnableIf<sizeof...(Storages) == 0, int>::Type = 0>
+          std::enable_if_t<sizeof...(Storages) == 0, int> = 0>
 static RefPtr<PromiseType> InvokeAsync(
     nsISerialEventTarget* aTarget, ThisType* aThisVal, const char* aCallerName,
     RefPtr<PromiseType> (ThisType::*aMethod)(ArgTypes...),
     ActualArgTypes&&... aArgs) {
   static_assert(
       !detail::Any(
-          std::is_pointer_v<typename RemoveReference<ActualArgTypes>::Type>...),
+          std::is_pointer_v<std::remove_reference_t<ActualArgTypes>>...),
       "Cannot pass pointer types through InvokeAsync, Storages must be "
       "provided");
   static_assert(sizeof...(ArgTypes) == sizeof...(ActualArgTypes),
@@ -1459,7 +1465,7 @@ static auto InvokeAsync(nsISerialEventTarget* aTarget, const char* aCallerName,
   auto p = MakeRefPtr<typename PromiseType::Private>(aCallerName);
   auto r = MakeRefPtr<ProxyRunnableType>(p, std::forward<Function>(aFunction));
   aTarget->Dispatch(r.forget());
-  return p.forget();
+  return p;
 }
 
 }  // namespace detail

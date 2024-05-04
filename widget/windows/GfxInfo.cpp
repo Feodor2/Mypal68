@@ -1674,7 +1674,18 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         "FEATURE_BLOCKED_DRIVER_VERSION");
 
     ////////////////////////////////////
-    // FEATURE_DX_P010
+    // FEATURE_DX9_INTEL
+
+    APPEND_TO_DRIVER_BLOCKLIST2(
+        OperatingSystem::Windows,
+        (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
+        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
+        GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS,
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN,
+        GfxDriverInfo::allDriverVersions, "FEATURE_DX9_INTEL");
+
+    ////////////////////////////////////
+    // FEATURE_INTELDX_P010
 
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,

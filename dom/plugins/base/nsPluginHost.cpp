@@ -1153,12 +1153,6 @@ nsPluginTag* nsPluginHost::FindNativePluginForType(const nsACString& aMimeType,
     return nullptr;
   }
 
-  // As of FF 52, we only support flash and test plugins, so if the mime types
-  // don't match for that, exit before we start loading plugins.
-  if (!nsPluginHost::CanUsePluginForMIMEType(aMimeType)) {
-    return nullptr;
-  }
-
   LoadPlugins();
 
   nsTArray<nsPluginTag*> matchingPlugins;
@@ -1432,41 +1426,12 @@ nsresult nsPluginHost::EnumerateSiteData(const nsACString& domain,
   return NS_OK;
 }
 
-static bool MimeTypeIsAllowedForFakePlugin(const nsString& aMimeType) {
-  static const char* const allowedFakePlugins[] = {
-      // Flash
-      "application/x-shockwave-flash",
-      // PDF
-      "application/pdf",
-      "application/vnd.adobe.pdf",
-      "application/vnd.adobe.pdfxml",
-      "application/vnd.adobe.x-mars",
-      "application/vnd.adobe.xdp+xml",
-      "application/vnd.adobe.xfdf",
-      "application/vnd.adobe.xfd+xml",
-      "application/vnd.fdf",
-  };
-
-  for (const auto allowed : allowedFakePlugins) {
-    if (aMimeType.EqualsASCII(allowed)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 NS_IMETHODIMP
 nsPluginHost::RegisterFakePlugin(JS::Handle<JS::Value> aInitDictionary,
                                  JSContext* aCx, nsIFakePluginTag** aResult) {
   FakePluginTagInit initDictionary;
   if (!initDictionary.Init(aCx, aInitDictionary)) {
     return NS_ERROR_FAILURE;
-  }
-
-  for (const FakePluginMimeEntry& mimeEntry : initDictionary.mMimeEntries) {
-    if (!MimeTypeIsAllowedForFakePlugin(mimeEntry.mType)) {
-      return NS_ERROR_FAILURE;
-    }
   }
 
   RefPtr<nsFakePluginTag> newTag;
@@ -3681,24 +3646,6 @@ void nsPluginHost::DestroyRunningInstances(nsPluginTag* aPluginTag) {
       }
     }
   }
-}
-
-/* static */
-bool nsPluginHost::CanUsePluginForMIMEType(const nsACString& aMIMEType) {
-  // We only support flash as a plugin, so if the mime types don't match for
-  // those, exit before we start loading plugins.
-  //
-  // XXX: Remove test/java cases when bug 1351885 lands.
-  if (nsPluginHost::GetSpecialType(aMIMEType) ==
-          nsPluginHost::eSpecialType_Flash ||
-      MimeTypeIsAllowedForFakePlugin(NS_ConvertUTF8toUTF16(aMIMEType)) ||
-      aMIMEType.LowerCaseEqualsLiteral("application/x-test") ||
-      aMIMEType.LowerCaseEqualsLiteral("application/x-second-test") ||
-      aMIMEType.LowerCaseEqualsLiteral("application/x-third-test")) {
-    return true;
-  }
-
-  return false;
 }
 
 // Runnable that does an async destroy of a plugin.

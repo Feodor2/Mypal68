@@ -7376,7 +7376,7 @@
 
 - name: webgl.disable-angle
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 - name: webgl.disable-wgl
@@ -7441,7 +7441,7 @@
 
 - name: webgl.force-enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 - name: webgl.force-layers-readback

@@ -11,7 +11,7 @@
 namespace mozilla {
 namespace gl {
 
-class GLContextWGL final : public GLContext {
+class GLContextWGL : public GLContext {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(GLContextWGL, override)
   // From Window: (possibly for offscreen!)
@@ -30,10 +30,21 @@ class GLContextWGL final : public GLContext {
     return GLContextType::WGL;
   }
 
+  static GLContextWGL* Cast(GLContext* gl) {
+    MOZ_ASSERT(gl->GetContextType() == GLContextType::WGL);
+    return static_cast<GLContextWGL*>(gl);
+  }
+
   virtual bool MakeCurrentImpl() const override;
+
   virtual bool IsCurrentImpl() const override;
-  virtual bool IsDoubleBuffered() const override { return mIsDoubleBuffered; }
+
+  void SetIsDoubleBuffered(bool aIsDB);
+
+  virtual bool IsDoubleBuffered() const override;
+
   virtual bool SwapBuffers() override;
+
   virtual void GetWSIInfo(nsCString* const out) const override;
 
   Maybe<SymbolLoader> GetSymbolLoader() const override {
@@ -51,7 +62,6 @@ class GLContextWGL final : public GLContext {
   HANDLE mPBuffer;
   int mPixelFormat;
 
- public:
   bool mIsDoubleBuffered = false;
 };
 

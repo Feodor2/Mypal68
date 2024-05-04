@@ -322,7 +322,7 @@ pref("browser.download.autohideButton", true);
 #endif
 
 // search engines URL
-pref("browser.search.searchEnginesURL",      "data:text/plain,");
+pref("browser.search.searchEnginesURL",      "https://mycroftproject.com");
 
 // Market-specific search defaults
 pref("browser.search.geoSpecificDefaults", false);

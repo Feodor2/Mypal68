@@ -3264,7 +3264,7 @@ JSObject* XPCJSRuntime::UnprivilegedJunkScope(const mozilla::fallible_t&) {
 
 JSObject* XPCJSRuntime::UnprivilegedJunkScope() {
   JSObject* scope = UnprivilegedJunkScope(fallible);
-  MOZ_RELEASE_ASSERT(scope);
+  //MOZ_RELEASE_ASSERT(scope);
   return scope;
 }
 

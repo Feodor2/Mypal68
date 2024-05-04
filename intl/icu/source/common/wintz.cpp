@@ -229,6 +229,7 @@ uprv_detectWindowsTimeZone()
     TZI tziReg;
     TIME_ZONE_INFORMATION apiTZI;
 
+    BOOL isVistaOrHigher;
     BOOL tryPreVistaFallback;
     OSVERSIONINFO osVerInfo;
 
@@ -252,9 +253,10 @@ uprv_detectWindowsTimeZone()
     tmpid[0] = 0;
 
     id = GetUserGeoID(GEOCLASS_NATION);
-    errorCode = GetGeoInfoW(id, GEO_ISO2, ISOcodeW, 3, 0);
-    u_strToUTF8(ISOcodeA, 3, NULL, (const UChar *)ISOcodeW, 3, &status);
+    errorCode = GetGeoInfoW(id, GEO_ISO2, ISOcodeW, sizeof(ISOcodeW), 0);
+    u_strToUTF8(ISOcodeA, sizeof(ISOcodeA), NULL, (const UChar *)ISOcodeW, sizeof(ISOcodeW), &status);
 
+    status = U_ZERO_ERROR;
     bundle = ures_openDirect(NULL, "windowsZones", &status);
     ures_getByKey(bundle, "mapTimezones", bundle, &status);
 
@@ -265,53 +267,83 @@ uprv_detectWindowsTimeZone()
     */
     uprv_memset(&osVerInfo, 0, sizeof(osVerInfo));
     osVerInfo.dwOSVersionInfoSize = sizeof(osVerInfo);
-    tryPreVistaFallback = TRUE;
-    result = getTZKeyName(regStdName, sizeof(regStdName));
-    if(ERROR_SUCCESS == result)
-    {
-        UResourceBundle* winTZ = ures_getByKey(bundle, regStdName, NULL, &status);
-        if(U_SUCCESS(status))
-        {
-            const UChar* icuTZ = NULL;
-            if (errorCode != 0)
-            {
-                icuTZ = ures_getStringByKey(winTZ, ISOcodeA, &len, &status);
-            }
-            if (errorCode==0 || icuTZ==NULL)
-            {
-                /* fallback to default "001" and reset status */
-                status = U_ZERO_ERROR;
-                icuTZ = ures_getStringByKey(winTZ, "001", &len, &status);
-            }
+    isVistaOrHigher = osVerInfo.dwMajorVersion >= 6;
 
+    tryPreVistaFallback = TRUE;
+
+    if(isVistaOrHigher) {
+        result = getTZKeyName(regStdName, sizeof(regStdName));
+        if(ERROR_SUCCESS == result)
+        {
+            UResourceBundle* winTZ = ures_getByKey(bundle, regStdName, NULL, &status);
             if(U_SUCCESS(status))
             {
-                int index=0;
-                while (! (*icuTZ == '\0' || *icuTZ ==' '))
+                const UChar* icuTZ = NULL;
+                if (errorCode != 0)
                 {
-                    tmpid[index++]=(char)(*icuTZ++);  /* safe to assume 'char' is ASCII compatible on windows */
+                    icuTZ = ures_getStringByKey(winTZ, ISOcodeA, &len, &status);
                 }
-                tmpid[index]='\0';
-                tryPreVistaFallback = FALSE;
+                if (errorCode==0 || icuTZ==NULL)
+                {
+                    /* fallback to default "001" and reset status */
+                    status = U_ZERO_ERROR;
+                    icuTZ = ures_getStringByKey(winTZ, "001", &len, &status);
+                }
+
+                if(U_SUCCESS(status))
+                {
+                    int index=0;
+                    while (! (*icuTZ == '\0' || *icuTZ ==' '))
+                    {
+                        tmpid[index++]=(char)(*icuTZ++);  /* safe to assume 'char' is ASCII compatible on windows */
+                    }
+                    tmpid[index]='\0';
+                    tryPreVistaFallback = FALSE;
+                }
             }
+            ures_close(winTZ);
         }
-        ures_close(winTZ);
     }
 
     if(tryPreVistaFallback)
     {
-        /* Note: We get the winid not from static tables but from resource bundle. */
-        while (U_SUCCESS(status) && ures_hasNext(bundle))
+        HKEY hZonesKey;
+        DWORD dwIndex;
+        DWORD dwNameSize;
+        CHAR szKeyName[MAX_LENGTH_ID];
+        CHAR tmp[256];
+        UBool idFound = FALSE;
+
+        /* Open the registry key containing the list of time zones */
+        result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                               TZ_REGKEY,
+                               0,
+                               KEY_ENUMERATE_SUB_KEYS,
+                               &hZonesKey);
+        if (result != ERROR_SUCCESS)
         {
-            UBool idFound = FALSE;
-            const char* winid;
-            UResourceBundle* winTZ = ures_getNextResource(bundle, NULL, &status);
-            if (U_FAILURE(status))
+            return icuid;
+        }
+
+        /* Enumerate it */
+        for (dwIndex = 0;; dwIndex++)
+        {
+            dwNameSize = sizeof(szKeyName);
+            result = RegEnumKeyExA(hZonesKey,
+                                   dwIndex,
+                                   szKeyName,
+                                   &dwNameSize,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL);
+            // if (lError != ERROR_SUCCESS && lError != ERROR_MORE_DATA)
+            if (result == ERROR_NO_MORE_ITEMS)
             {
                 break;
             }
-            winid = ures_getKey(winTZ);
-            result = getTZI(winid, &tziReg);
+
+            result = getTZI(szKeyName, &tziReg);
 
             if (result == ERROR_SUCCESS)
             {
@@ -321,9 +353,10 @@ uprv_detectWindowsTimeZone()
                 tziKey.standardBias = tziReg.standardBias;
                 tziKey.daylightBias = tziReg.daylightBias;
 
-                if (uprv_memcmp((char *)&tziKey, (char*)&tziReg, sizeof(tziKey)) == 0)
+                if (uprv_memcmp((char*)&tziKey, (char*)&tziReg, sizeof(tziKey)) == 0)
                 {
                     const UChar* icuTZ = NULL;
+                    UResourceBundle* winTZ = ures_getByKey(bundle, szKeyName, NULL, &status);
                     if (errorCode != 0)
                     {
                         icuTZ = ures_getStringByKey(winTZ, ISOcodeA, &len, &status);
@@ -337,17 +370,7 @@ uprv_detectWindowsTimeZone()
 
                     if (U_SUCCESS(status))
                     {
-                        /* Get the standard name from the registry key to compare with
-                           the one from Windows API call. */
-                        uprv_memset(regStdName, 0, sizeof(regStdName));
-                        result = getSTDName(winid, regStdName, sizeof(regStdName));
-                        if (result == ERROR_SUCCESS)
-                        {
-                            if (uprv_strcmp(apiStdName, regStdName) == 0)
-                            {
-                                idFound = TRUE;
-                            }
-                        }
+                        idFound = TRUE;
 
                         /* tmpid buffer holds the ICU timezone ID corresponding to the timezone ID from Windows.
                          * If none is found, tmpid buffer will contain a fallback ID (i.e. the time zone ID matching
@@ -364,14 +387,15 @@ uprv_detectWindowsTimeZone()
                             tmpid[index]='\0';
                         }
                     }
+                    ures_close(winTZ);
                 }
             }
-            ures_close(winTZ);
             if (idFound)
             {
                 break;
             }
         }
+        RegCloseKey(hZonesKey);
     }
 
     /*

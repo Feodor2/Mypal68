@@ -131,19 +131,25 @@ namespace {
 
 class DateTimeHelper {
  private:
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+  static double localTZA(double t, DateTimeInfo::TimeZoneOffset offset);
+#else
   static int equivalentYearForDST(int year);
   static bool isRepresentableAsTime32(double t);
   static double daylightSavingTA(double t);
   static double adjustTime(double date);
   static PRMJTime toPRMJTime(double localTime, double utcTime);
+#endif
 
  public:
   static double localTime(double t);
   static double UTC(double t);
   static JSString* timeZoneComment(JSContext* cx, double utcTime,
                                    double localTime);
+#if !JS_HAS_INTL_API || MOZ_SYSTEM_ICU
   static size_t formatTime(char* buf, size_t buflen, const char* fmt,
                            double utcTime, double localTime);
+#endif
 };
 
 }  // namespace
@@ -435,6 +441,43 @@ JS_PUBLIC_API void JS::SetTimeResolutionUsec(uint32_t resolution, bool jitter) {
   sJitter = jitter;
 }
 
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+// ES2019 draft rev 0ceb728a1adbffe42b26972a6541fd7f398b1557
+// 20.3.1.7 LocalTZA ( t, isUTC )
+double DateTimeHelper::localTZA(double t, DateTimeInfo::TimeZoneOffset offset) {
+  MOZ_ASSERT(IsFinite(t));
+
+  int64_t milliseconds = static_cast<int64_t>(t);
+  int32_t offsetMilliseconds =
+      DateTimeInfo::getOffsetMilliseconds(milliseconds, offset);
+  return static_cast<double>(offsetMilliseconds);
+}
+
+// ES2019 draft rev 0ceb728a1adbffe42b26972a6541fd7f398b1557
+// 20.3.1.8 LocalTime ( t )
+double DateTimeHelper::localTime(double t) {
+  if (!IsFinite(t)) {
+    return GenericNaN();
+  }
+
+  MOZ_ASSERT(StartOfTime <= t && t <= EndOfTime);
+  return t + localTZA(t, DateTimeInfo::TimeZoneOffset::UTC);
+}
+
+// ES2019 draft rev 0ceb728a1adbffe42b26972a6541fd7f398b1557
+// 20.3.1.9 UTC ( t )
+double DateTimeHelper::UTC(double t) {
+  if (!IsFinite(t)) {
+    return GenericNaN();
+  }
+
+  if (t < (StartOfTime - msPerDay) || t > (EndOfTime + msPerDay)) {
+    return GenericNaN();
+  }
+
+  return t - localTZA(t, DateTimeInfo::TimeZoneOffset::Local);
+}
+#else
 /*
  * Find a year for which any given date will fall on the same weekday.
  *
@@ -520,6 +563,7 @@ double DateTimeHelper::UTC(double t) {
 
   return t - adjustTime(t - DateTimeInfo::localTZA() - msPerHour);
 }
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
 static double LocalTime(double t) { return DateTimeHelper::localTime(t); }
 
@@ -2643,6 +2687,45 @@ static bool date_toJSON(JSContext* cx, unsigned argc, Value* vp) {
   return Call(cx, toISO, obj, args.rval());
 }
 
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+JSString* DateTimeHelper::timeZoneComment(JSContext* cx, double utcTime,
+                                          double localTime) {
+  const char* locale = cx->runtime()->getDefaultLocale();
+  if (!locale) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_DEFAULT_LOCALE_ERROR);
+    return nullptr;
+  }
+
+  char16_t tzbuf[100];
+  tzbuf[0] = ' ';
+  tzbuf[1] = '(';
+
+  char16_t* timeZoneStart = tzbuf + 2;
+  constexpr size_t remainingSpace =
+      mozilla::ArrayLength(tzbuf) - 2 - 1;  // for the trailing ')'
+
+  int64_t utcMilliseconds = static_cast<int64_t>(utcTime);
+  if (!DateTimeInfo::timeZoneDisplayName(timeZoneStart, remainingSpace,
+                                         utcMilliseconds, locale)) {
+    {
+      JS_ReportOutOfMemory(cx);
+    }
+    return nullptr;
+  }
+
+  // Reject if the result string is empty.
+  size_t len = js_strlen(timeZoneStart);
+  if (len == 0) {
+    return cx->names().empty;
+  }
+
+  // Parenthesize the returned display name.
+  timeZoneStart[len] = ')';
+
+  return NewStringCopyN<CanGC>(cx, tzbuf, 2 + len + 1);
+}
+#else
 /* Interface to PRMJTime date struct. */
 PRMJTime DateTimeHelper::toPRMJTime(double localTime, double utcTime) {
   double year = YearFromTime(localTime);
@@ -2710,6 +2793,7 @@ JSString* DateTimeHelper::timeZoneComment(JSContext* cx, double utcTime,
 
   return cx->names().empty;
 }
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
 static JSString* TimeZoneComment(JSContext* cx, double utcTime,
                                  double localTime) {
@@ -2811,6 +2895,7 @@ static bool FormatDate(JSContext* cx, double utcTime, FormatSpec format,
   return true;
 }
 
+#if !JS_HAS_INTL_API
 static bool ToLocaleFormatHelper(JSContext* cx, HandleObject obj,
                                  const char* format, MutableHandleValue rval) {
   double utcTime = obj->as<DateObject>().UTCTime().toNumber();
@@ -2918,6 +3003,7 @@ static bool date_toLocaleTimeString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<IsDate, date_toLocaleTimeString_impl>(cx, args);
 }
+#endif /* !JS_HAS_INTL_API */
 
 /* ES5 15.9.5.4. */
 MOZ_ALWAYS_INLINE bool date_toTimeString_impl(JSContext* cx,
@@ -3056,9 +3142,17 @@ static const JSFunctionSpec date_methods[] = {
     JS_FN("setMilliseconds", date_setMilliseconds, 1, 0),
     JS_FN("setUTCMilliseconds", date_setUTCMilliseconds, 1, 0),
     JS_FN("toUTCString", date_toGMTString, 0, 0),
+#if JS_HAS_INTL_API
+    JS_SELF_HOSTED_FN(js_toLocaleString_str, "Date_toLocaleString", 0, 0),
+    JS_FN("toLocaleDateString", date_toDateString, 0, 0),
+    JS_FN("toLocaleTimeString", date_toTimeString, 0, 0),
+    //JS_SELF_HOSTED_FN("toLocaleDateString", "Date_toLocaleDateString", 0, 0),
+    //JS_SELF_HOSTED_FN("toLocaleTimeString", "Date_toLocaleTimeString", 0, 0),
+#else
     JS_FN(js_toLocaleString_str, date_toLocaleString, 0, 0),
     JS_FN("toLocaleDateString", date_toLocaleDateString, 0, 0),
     JS_FN("toLocaleTimeString", date_toLocaleTimeString, 0, 0),
+#endif
     JS_FN("toDateString", date_toDateString, 0, 0),
     JS_FN("toTimeString", date_toTimeString, 0, 0),
     JS_FN("toISOString", date_toISOString, 0, 0),

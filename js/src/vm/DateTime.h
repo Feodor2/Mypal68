@@ -15,6 +15,14 @@
 #include "js/Utility.h"
 #include "threading/ExclusiveData.h"
 
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+#  include "unicode/uversion.h"
+
+U_NAMESPACE_BEGIN
+class TimeZone;
+U_NAMESPACE_END
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
+
 namespace js {
 
 /* Constants defined by ES5 15.9.1.10. */
@@ -156,6 +164,32 @@ class DateTimeInfo {
     return guard->utcToLocalStandardOffsetSeconds_;
   }
 
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+  enum class TimeZoneOffset { UTC, Local };
+
+  /**
+   * Return the time zone offset, including DST, in milliseconds at the
+   * given time. The input time can be either at UTC or at local time.
+   */
+  static int32_t getOffsetMilliseconds(int64_t milliseconds,
+                                       TimeZoneOffset offset) {
+    auto guard = acquireLockWithValidTimeZone();
+    return guard->internalGetOffsetMilliseconds(milliseconds, offset);
+  }
+
+  /**
+   * Copy the display name for the current time zone at the given time,
+   * localized for the specified locale, into the supplied buffer. If the
+   * buffer is too small, an empty string is stored. The stored display name
+   * is null-terminated in any case.
+   */
+  static bool timeZoneDisplayName(char16_t* buf, size_t buflen,
+                                  int64_t utcMilliseconds, const char* locale) {
+    auto guard = acquireLockWithValidTimeZone();
+    return guard->internalTimeZoneDisplayName(buf, buflen, utcMilliseconds,
+                                              locale);
+  }
+#else
   /**
    * Return the local time zone adjustment (ES2019 20.3.1.7) as computed by
    * the operating system.
@@ -163,6 +197,7 @@ class DateTimeInfo {
   static int32_t localTZA() {
     return utcToLocalStandardOffsetSeconds() * msPerSecond;
   }
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
  private:
   // The two methods below should only be called via js::ResetTimeZoneInternal()
@@ -237,6 +272,35 @@ class DateTimeInfo {
 
   RangeCache dstRange_;  // UTC-based ranges
 
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+  // ICU's TimeZone class is currently only available through the C++ API,
+  // see <https://unicode-org.atlassian.net/browse/ICU-13706>. Due to the
+  // lack of a stable ABI in C++, we therefore need to restrict this class
+  // to only use ICU when we use our in-tree ICU copy.
+
+  // Use the full date-time range when we can use ICU's TimeZone support.
+  static constexpr int64_t MinTimeT =
+      static_cast<int64_t>(StartOfTime / msPerSecond);
+  static constexpr int64_t MaxTimeT =
+      static_cast<int64_t>(EndOfTime / msPerSecond);
+
+  RangeCache utcRange_;    // localtime-based ranges
+  RangeCache localRange_;  // UTC-based ranges
+
+  /**
+   * The current ICU time zone. Lazily constructed to avoid potential I/O
+   * access when initializing this class.
+   */
+  mozilla::UniquePtr<icu::TimeZone> timeZone_;
+
+  /**
+   * Cached names of the standard and daylight savings display names of the
+   * current time zone for the default locale.
+   */
+  JS::UniqueChars locale_;
+  JS::UniqueTwoByteChars standardName_;
+  JS::UniqueTwoByteChars daylightSavingsName_;
+#else
   // Restrict the data-time range to the minimum required time_t range as
   // specified in POSIX. Most operating systems support 64-bit time_t
   // values, but we currently still have some configurations which use
@@ -245,6 +309,7 @@ class DateTimeInfo {
   // underlying operating system.
   static constexpr int64_t MinTimeT = 0;          /* time_t 01/01/1970 */
   static constexpr int64_t MaxTimeT = 2145830400; /* time_t 12/31/2037 */
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
   static constexpr int64_t RangeExpansionAmount = 30 * SecondsPerDay;
 
@@ -272,6 +337,28 @@ class DateTimeInfo {
   int32_t computeDSTOffsetMilliseconds(int64_t utcSeconds);
 
   int32_t internalGetDSTOffsetMilliseconds(int64_t utcMilliseconds);
+
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
+  /**
+   * Compute the UTC offset in milliseconds for the given local time. Called
+   * by internalGetOffsetMilliseconds on a cache miss.
+   */
+  int32_t computeUTCOffsetMilliseconds(int64_t localSeconds);
+
+  /**
+   * Compute the local time offset in milliseconds for the given UTC time.
+   * Called by internalGetOffsetMilliseconds on a cache miss.
+   */
+  int32_t computeLocalOffsetMilliseconds(int64_t utcSeconds);
+
+  int32_t internalGetOffsetMilliseconds(int64_t milliseconds,
+                                        TimeZoneOffset offset);
+
+  bool internalTimeZoneDisplayName(char16_t* buf, size_t buflen,
+                                   int64_t utcMilliseconds, const char* locale);
+
+  icu::TimeZone* timeZone();
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 };
 
 } /* namespace js */

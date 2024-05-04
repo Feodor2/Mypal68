@@ -1640,22 +1640,39 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   nsAutoCString host, ua;
   nsAutoString override;
   nsresult rv;
+
   nsCOMPtr<nsIPrefBranch> prefBranch;
   nsCOMPtr<nsIPrefService> prefService =
       do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
   prefService->GetBranch("general.useragent.override.",
                          getter_AddRefs(prefBranch));
-  if (prefBranch && aWindow) {
-    nsCOMPtr<Document> doc = aWindow->GetDoc();
-    if (doc) {
-      nsIURI* uri = doc->GetDocumentURI();
+  if (prefBranch) {
+    if (aCallerPrincipal) {
+      nsCOMPtr<nsIURI> uri;
       if (uri) {
+        aCallerPrincipal->GetURI(getter_AddRefs(uri));
         MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
         rv = prefBranch->GetCharPref(host.get(), ua);
         if (NS_SUCCEEDED(rv)) {
           CopyASCIItoUTF16(ua, aUserAgent);
           return NS_OK;
+        }
+      }
+    }
+
+    if (aWindow) {
+      nsIURI* uri;
+      nsCOMPtr<Document> doc = aWindow->GetDoc();
+      if (doc) {
+        uri = doc->GetDocumentURI();
+        if (uri) {
+           MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
+           rv = prefBranch->GetCharPref(host.get(), ua);
+          if (NS_SUCCEEDED(rv)) {
+            CopyASCIItoUTF16(ua, aUserAgent);
+            return NS_OK;
+          }
         }
       }
     }
@@ -1673,6 +1690,7 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
       return NS_OK;
     }
   }
+
 
   // When the caller is content and 'privacy.resistFingerprinting' is true,
   // return a spoofed userAgent which reveals the platform but not the

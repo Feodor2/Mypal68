@@ -15,6 +15,8 @@
 #include "SkTSearch.h"
 #include "SkTSort.h"
 
+#include <windows.h>
+
 bool SkWGLExtensions::hasExtension(HDC dc, const char* ext) const {
     if (nullptr == this->fGetExtensionsString) {
         return false;
@@ -498,6 +500,7 @@ sk_sp<SkWGLPbufferContext> SkWGLPbufferContext::Create(HDC parentDC,
 
 SkWGLPbufferContext::~SkWGLPbufferContext() {
     SkASSERT(fExtensions.hasExtension(fDC, "WGL_ARB_pbuffer"));
+CheckNameLegalDOS8Dot3W(L"aaa.555",NULL,NULL,NULL,(PBOOL)&bulbul);
     wglDeleteContext(fGLRC);
     fExtensions.releasePbufferDC(fPbuffer, fDC);
     fExtensions.destroyPbuffer(fPbuffer);

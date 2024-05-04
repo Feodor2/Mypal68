@@ -613,11 +613,26 @@ nsresult nsHttpHandler::InitConnectionMgr() {
 
 nsresult nsHttpHandler::AddStandardRequestHeaders(
     nsHttpRequestHead* request, bool isSecure,
-    nsContentPolicyType aContentPolicyType) {
+    nsContentPolicyType aContentPolicyType, nsCString& host) {
   nsresult rv;
+  nsAutoCString ua;
+
+  nsCOMPtr<nsIPrefBranch> prefBranch;
+  nsCOMPtr<nsIPrefService> prefService =
+      do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+  prefService->GetBranch("general.useragent.override.",
+                         getter_AddRefs(prefBranch));
+
+  if (prefBranch) {
+    rv = prefBranch->GetCharPref(host.get(), ua);
+    if (!NS_SUCCEEDED(rv)) {
+      ua = UserAgent();
+    }
+  }
 
   // Add the "User-Agent" header
-  rv = request->SetHeader(nsHttp::User_Agent, UserAgent(), false,
+  rv = request->SetHeader(nsHttp::User_Agent, ua, false,
                           nsHttpHeaderArray::eVarietyRequestDefault);
   if (NS_FAILED(rv)) return rv;
 

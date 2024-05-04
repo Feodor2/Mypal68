@@ -100,7 +100,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   MOZ_MUST_USE nsresult
   AddStandardRequestHeaders(nsHttpRequestHead*, bool isSecure,
-                            nsContentPolicyType aContentPolicyType);
+                            nsContentPolicyType aContentPolicyType,
+                            nsCString& host);
   MOZ_MUST_USE nsresult AddConnectionHeader(nsHttpRequestHead*,
                                             uint32_t capabilities);
   bool IsAcceptableEncoding(const char* encoding, bool isSecure);

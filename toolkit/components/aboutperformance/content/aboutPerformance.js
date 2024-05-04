@@ -480,6 +480,17 @@ var State = {
     }
     return counters;
   },
+
+  getMaxEnergyImpact(counters) {
+    return Math.max(
+      ...counters.map(c => {
+        return Control._computeEnergyImpact(
+          c.dispatchesSincePrevious,
+          c.durationSincePrevious
+        );
+      })
+    );
+  },
 };
 
 var View = {
@@ -501,22 +512,52 @@ var View = {
     row.parentNode.insertBefore(this._fragment, row.nextSibling);
     this._fragment = document.createDocumentFragment();
   },
-  displayEnergyImpact(elt, energyImpact) {
+  displayEnergyImpact(elt, energyImpact, maxEnergyImpact) {
     if (!energyImpact) {
       elt.textContent = "–";
+      elt.style.setProperty("--bar-width", 0);
     } else {
-      let impact = "high";
+      let impact;
+      let barWidth;
+      const mediumEnergyImpact = 25;
       if (energyImpact < 1) {
         impact = "low";
-      } else if (energyImpact < 25) {
+        // Width 0-10%.
+        barWidth = 10 * energyImpact;
+      } else if (energyImpact < mediumEnergyImpact) {
         impact = "medium";
+        // Width 10-50%.
+        barWidth = (10 + 2 * energyImpact) * (5 / 6);
+      } else {
+        impact = "high";
+        // Width 50-100%.
+        let energyImpactFromZero = energyImpact - mediumEnergyImpact;
+        if (maxEnergyImpact > 100) {
+          barWidth =
+            50 +
+            (energyImpactFromZero / (maxEnergyImpact - mediumEnergyImpact)) *
+              50;
+        } else {
+          barWidth = 50 + energyImpactFromZero * (2 / 3);
+        }
       }
       document.l10n.setAttributes(elt, "energy-impact-" + impact, {
         value: energyImpact,
       });
+      if (maxEnergyImpact != -1) {
+        elt.style.setProperty("--bar-width", barWidth);
+      }
     }
   },
-  appendRow(name, energyImpact, memory, tooltip, type, image = "") {
+  appendRow(
+    name,
+    energyImpact,
+    memory,
+    tooltip,
+    type,
+    maxEnergyImpact = -1,
+    image = ""
+  ) {
     let row = document.createElement("tr");
 
     let elt = document.createElement("td");
@@ -549,7 +590,8 @@ var View = {
     row.appendChild(elt);
 
     elt = document.createElement("td");
-    this.displayEnergyImpact(elt, energyImpact);
+    elt.classList.add("energy-impact");
+    this.displayEnergyImpact(elt, energyImpact, maxEnergyImpact);
     row.appendChild(elt);
 
     elt = document.createElement("td");
@@ -600,6 +642,7 @@ var View = {
 
 var Control = {
   _openItems: new Set(),
+  _sortOrder: "",
   _removeSubtree(row) {
     while (
       row.nextSibling &&
@@ -691,6 +734,40 @@ var Control = {
         this._updateDisplay(true);
       }
     });
+
+    document
+      .getElementById("dispatch-thead")
+      .addEventListener("click", async (event) => {
+      if (!event.target.classList.contains("clickable"))
+        return;
+
+      if (this._sortOrder) {
+        let [column, direction] = this._sortOrder.split("_");
+        const td = document.getElementById(`column-${column}`);
+        td.classList.remove(direction);
+      }
+
+      const columnId = event.target.id;
+      if (columnId == "column-type")
+        this._sortOrder =
+          this._sortOrder == "type_asc" ? "type_desc" : "type_asc";
+      else if (columnId == "column-energy-impact")
+        this._sortOrder =
+          this._sortOrder == "energy-impact_desc"
+            ? "energy-impact_asc"
+            : "energy-impact_desc";
+      else if (columnId == "column-memory")
+        this._sortOrder =
+          this._sortOrder == "memory_desc" ? "memory_asc" : "memory_desc";
+      else if (columnId == "column-name")
+        this._sortOrder =
+          this._sortOrder == "name_asc" ? "name_desc" : "name_asc";
+
+      let direction = this._sortOrder.split("_")[1];
+      event.target.classList.add(direction);
+
+      await this._updateDisplay(true);
+    });
   },
   _lastMouseEvent: 0,
   _updateLastMouseEvent() {
@@ -710,6 +787,8 @@ var Control = {
   // The force parameter can force a full update even when the mouse has been
   // moved recently.
   async _updateDisplay(force = false) {
+    let counters = State.getCounters();
+    let maxEnergyImpact = State.getMaxEnergyImpact(counters);
     // If the mouse has been moved recently, update the data displayed
     // without moving any item to avoid the risk of users clicking an action
     // button for the wrong item.
@@ -724,7 +803,7 @@ var Control = {
         id,
         dispatchesSincePrevious,
         durationSincePrevious,
-      } of State.getCounters()) {
+      } of counters) {
         let energyImpact = this._computeEnergyImpact(
           dispatchesSincePrevious,
           durationSincePrevious
@@ -740,7 +819,11 @@ var Control = {
           // risk of making other rows move up or down.
           const kEnergyImpactColumn = 2;
           let elt = row.childNodes[kEnergyImpactColumn];
-          View.displayEnergyImpact(elt, energyImpactPerId.get(row.windowId));
+          View.displayEnergyImpact(
+            elt,
+            energyImpactPerId.get(row.windowId),
+            maxEnergyImpact
+          );
         }
         row = row.nextSibling;
       }
@@ -757,7 +840,7 @@ var Control = {
     let openItems = this._openItems;
     this._openItems = new Set();
 
-    let counters = this._sortCounters(State.getCounters());
+    counters = this._sortCounters(counters);
     for (let {
       id,
       name,
@@ -784,6 +867,7 @@ var Control = {
           durationSincePrevious: Math.ceil(durationSincePrevious / 1000),
         },
         type,
+        maxEnergyImpact,
         image
       );
       row.windowId = id;
@@ -872,12 +956,50 @@ var Control = {
     // Keep only 2 digits after the decimal point.
     return Math.ceil(energyImpact * 100) / 100;
   },
+  _getTypeWeight(type) {
+    let weights = {
+      tab: 3,
+      addon: 2,
+      "system-addon": 1,
+    };
+    return weights[type] || 0;
+  },
   _sortCounters(counters) {
     return counters.sort((a, b) => {
       // Force 'Recently Closed Tabs' to be always at the bottom, because it'll
       // never be actionable.
       if (a.name.id && a.name.id == "ghost-windows") {
         return 1;
+      }
+
+      if (this._sortOrder) {
+        let res;
+        let [column, order] = this._sortOrder.split("_");
+        switch (column) {
+          case "memory":
+            res = a.memory - b.memory;
+            break;
+          case "type":
+            if (a.type != b.type)
+              res = this._getTypeWeight(b.type) - this._getTypeWeight(a.type);
+            else
+              res = String.prototype.localeCompare.call(a.name, b.name);
+            break;
+          case "name":
+            res = String.prototype.localeCompare.call(a.name, b.name);
+            break;
+          case "energy-impact":
+            res = this._computeEnergyImpact(a.dispatchesSincePrevious,
+                                            a.durationSincePrevious) -
+              this._computeEnergyImpact(b.dispatchesSincePrevious,
+                                        b.durationSincePrevious);
+            break;
+          default:
+            res = String.prototype.localeCompare.call(a.name, b.name);
+        }
+        if (order == "desc")
+          res = -1 * res;
+        return res;
       }
 
       // Note: _computeEnergyImpact uses UPDATE_INTERVAL_MS which doesn't match

@@ -49,6 +49,7 @@
   --in-content-table-background: #ebebeb;
   --in-content-table-border-dark-color: #d1d1d1;
   --in-content-table-header-background: #0a84ff;
+  --in-content-dialog-header-background: #f1f1f1;
 
   --panel-border-radius: 2px; /* This is overridden on Windows */
 
@@ -65,7 +66,6 @@
   --grey-20: #ededf0;
   --grey-30: #d7d7db;
   --grey-40: #b1b1b3;
-  --grey-50: #737373;
   --grey-60: #4a4a4f;
   --grey-90: #0c0c0d;
   --grey-90-a10: rgba(12, 12, 13, 0.1);
@@ -103,7 +103,6 @@
   --card-shadow-focus: 0 0 0 2px var(--blue-50), 0 0 0 6px var(--blue-50-a30);
 }
 
-@supports -moz-bool-pref("browser.in-content.dark-mode") {
 @media (prefers-color-scheme: dark) {
   :root {
     /* Keep this in sync with layout/base/PresShell.cpp! */
@@ -133,6 +132,7 @@
     --in-content-table-background: #202023;
     --in-content-table-border-dark-color: rgba(249,249,250,0.2);
     --in-content-table-header-background: #002b57;
+    --in-content-dialog-header-background: rgba(249,249,250,0.05);
 
     --in-content-category-text-selected: var(--blue-40);
     --in-content-category-text-selected-active: var(--blue-50);
@@ -146,7 +146,6 @@
 
     scrollbar-color: rgba(249,249,250,.4) rgba(20,20,25,.3);
   }
-}
 }
 
 html|html,
@@ -329,18 +328,21 @@ xul|menulist[disabled="true"] {
 }
 
 html|button[autofocus],
+html|button[type="submit"],
 *|button.primary {
   background-color: var(--in-content-primary-button-background);
   color: var(--in-content-selected-text) !important;
 }
 
 html|button[autofocus]:enabled:hover,
+html|button[type="submit"]:enabled:hover,
 html|button.primary:enabled:hover,
 xul|button.primary:not([disabled="true"]):hover {
   background-color: var(--in-content-primary-button-background-hover);
 }
 
 html|button[autofocus]:enabled:hover:active,
+html|button[type="submit"]:enabled:hover:active,
 html|button.primary:enabled:hover:active,
 xul|button.primary:not([disabled="true"]):hover:active {
   background-color: var(--in-content-primary-button-background-active);

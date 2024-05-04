@@ -4,6 +4,13 @@
 
 %include ../../../shared/in-content/common.inc.css
 
+@media (prefers-color-scheme: dark) {
+  /* Don't apply scrollbar-color since it removes the native scrollbar style on Linux */
+  :root {
+    scrollbar-color: initial;
+  }
+}
+
 xul|tab[visuallyselected] {
   /* Override styles for tab[selected] from
      toolkit/themes/linux/global/tabbox.css */

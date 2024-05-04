@@ -11,12 +11,10 @@
   --success-color: #00c100;
 }
 
-@supports -moz-bool-pref("browser.in-content.dark-mode") {
 @media (prefers-color-scheme: dark) {
   :host {
     --success-color: #86DE74;
   }
-}
 }
 
 :host([data-editing]) .edit-button,
@@ -181,12 +179,10 @@
   box-shadow: 0 0 0 4px var(--in-content-border-active-shadow);
 }
 
-@supports -moz-bool-pref("browser.in-content.dark-mode") {
 @media (prefers-color-scheme: dark) {
   :host {
     --reveal-checkbox-opacity: .8;
     --reveal-checkbox-opacity-hover: 1;
     --reveal-checkbox-opacity-active: .6;
   }
-}
 }

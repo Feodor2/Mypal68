@@ -592,7 +592,8 @@ JSObject* NACScope(JSObject* global) {
     return global;
   }
 
-  JSObject* scope = UnprivilegedJunkScope();
+  JSObject* scope = UnprivilegedJunkScope(fallible);
+  if (!scope) return nullptr;
   JS::ExposeObjectToActiveJS(scope);
   return scope;
 }

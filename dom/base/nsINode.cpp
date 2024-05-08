@@ -2996,7 +2996,7 @@ JSObject* nsINode::WrapObject(JSContext* aCx,
   JS::Rooted<JSObject*> obj(aCx, WrapNode(aCx, aGivenProto));
   if (obj && ChromeOnlyAccess()) {
     MOZ_RELEASE_ASSERT(
-        //xpc::IsUnprivilegedJunkScope(JS::GetNonCCWObjectGlobal(obj)) ||
+        xpc::IsUnprivilegedJunkScope(JS::GetNonCCWObjectGlobal(obj)) ||
         xpc::IsInUAWidgetScope(obj) || xpc::AccessCheck::isChrome(obj));
   }
   return obj;

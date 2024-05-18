@@ -41,7 +41,9 @@ class nsInputStreamReadyEvent final : public CancelableRunnable,
 
  private:
   ~nsInputStreamReadyEvent() {
-    if (!mCallback) {
+    /* I do not get this, it begins cycling untill buffer overrun crush - stupid!
+       Let we test without it (codeberg)
+if (!mCallback) {
       return;
     }
     //
@@ -54,6 +56,7 @@ class nsInputStreamReadyEvent final : public CancelableRunnable,
     bool val;
     nsresult rv = mTarget->IsOnCurrentThread(&val);
     if (NS_FAILED(rv) || !val) {
+      __asm int 3;
       nsCOMPtr<nsIInputStreamCallback> event = NS_NewInputStreamReadyEvent(
           "~nsInputStreamReadyEvent", mCallback, mTarget);
       mCallback = nullptr;
@@ -65,7 +68,7 @@ class nsInputStreamReadyEvent final : public CancelableRunnable,
           NS_ADDREF(sup);
         }
       }
-    }
+    }*/
   }
 
  public:

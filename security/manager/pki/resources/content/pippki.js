@@ -37,28 +37,15 @@ function viewCertHelper(parent, cert) {
   );
 }
 
-function getDERString(cert) {
-  var length = {};
-  var derArray = cert.getRawDER(length);
-  var derString = "";
-  for (var i = 0; i < derArray.length; i++) {
-    derString += String.fromCharCode(derArray[i]);
-  }
-  return derString;
-}
-
 function getPKCS7String(certArray) {
-  let certList = Cc["@mozilla.org/security/x509certlist;1"].createInstance(
-    Ci.nsIX509CertList
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
   );
-  for (let cert of certArray) {
-    certList.addCert(cert);
-  }
-  return certList.asPKCS7Blob();
+  return certdb.asPKCS7Blob(certArray);
 }
 
 function getPEMString(cert) {
-  var derb64 = btoa(getDERString(cert));
+  var derb64 = cert.getBase64DERString();
   // Wrap the Base64 string into lines of 64 characters with CRLF line breaks
   // (as specified in RFC 1421).
   var wrapped = derb64.replace(/(\S{64}(?!$))/g, "$1\r\n");
@@ -159,7 +146,7 @@ async function exportToFile(parent, cert) {
       }
       break;
     case 2:
-      content = getDERString(cert);
+      content = cert.getRawDER();
       break;
     case 3:
       content = getPKCS7String([cert]);
@@ -292,7 +279,7 @@ function getChainForUsage(results, usage) {
       certificateUsages[result.usageString] == usage &&
       result.errorCode == PRErrorCodeSuccess
     ) {
-      return Array.from(result.chain.getEnumerator());
+      return result.chain;
     }
   }
   return null;

@@ -30,15 +30,13 @@ using mozilla::OriginAttributes;
 class nsIObserver;
 
 class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
-                              public nsISSLSocketControl,
-                              public nsIClientAuthUserDecision {
+                              public nsISSLSocketControl {
  public:
   nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags,
                   uint32_t providerTlsFlags);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSISSLSOCKETCONTROL
-  NS_DECL_NSICLIENTAUTHUSERDECISION
 
   void SetForSTARTTLS(bool aForSTARTTLS);
   bool GetForSTARTTLS();
@@ -163,13 +161,13 @@ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
   bool mForSTARTTLS;
   SSLVersionRange mTLSVersionRange;
   bool mHandshakePending;
-  bool mRememberClientAuthCertificate;
   bool mPreliminaryHandshakeDone;  // after false start items are complete
 
   nsresult ActivateSSL();
 
   nsCString mNegotiatedNPN;
   nsCString mEsniTxt;
+  nsCString mPeerId;
   bool mNPNCompleted;
   bool mEarlyDataAccepted;
   bool mDenyClientCert;

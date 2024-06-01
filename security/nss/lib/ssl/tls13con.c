@@ -22,6 +22,7 @@
 #include "tls13esni.h"
 #include "tls13exthandle.h"
 #include "tls13hashstate.h"
+#include "tls13subcerts.h"
 
 static SECStatus tls13_SetCipherSpec(sslSocket *ss, PRUint16 epoch,
                                      SSLSecretDirection install,
@@ -477,7 +478,7 @@ tls13_SetupClientHello(sslSocket *ss, sslClientHelloType chType)
     session_ticket = &sid->u.ssl3.locked.sessionTicket;
     PORT_Assert(session_ticket && session_ticket->ticket.data);
 
-    if (ssl_TicketTimeValid(session_ticket)) {
+    if (ssl_TicketTimeValid(ss, session_ticket)) {
         ss->statelessResume = PR_TRUE;
     }
 
@@ -911,7 +912,7 @@ SECStatus
 tls13_HandlePostHelloHandshakeMessage(sslSocket *ss, PRUint8 *b, PRUint32 length)
 {
     if (ss->sec.isServer && ss->ssl3.hs.zeroRttIgnore != ssl_0rtt_ignore_none) {
-        SSL_TRC(3, ("%d: TLS13[%d]: %s successfully decrypted handshake after"
+        SSL_TRC(3, ("%d: TLS13[%d]: successfully decrypted handshake after "
                     "failed 0-RTT",
                     SSL_GETPID(), ss->fd));
         ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_none;
@@ -1389,26 +1390,29 @@ tls13_NegotiateZeroRtt(sslSocket *ss, const sslSessionID *sid)
         return;
     }
 
-    /* If we rejected 0-RTT on the first ClientHello, then we can just say that
-     * there is no 0-RTT for the second.  We shouldn't get any more.  Reset the
-     * ignore state so that we treat decryption failure normally. */
-    if (ss->ssl3.hs.zeroRttIgnore == ssl_0rtt_ignore_hrr) {
-        PORT_Assert(ss->ssl3.hs.helloRetry);
-        ss->ssl3.hs.zeroRttState = ssl_0rtt_none;
-        ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_none;
+    if (ss->ssl3.hs.zeroRttState == ssl_0rtt_ignored) {
+        /* HelloRetryRequest causes 0-RTT to be ignored. On the second
+         * ClientHello, reset the ignore state so that decryption failure is
+         * handled normally. */
+        if (ss->ssl3.hs.zeroRttIgnore == ssl_0rtt_ignore_hrr) {
+            PORT_Assert(ss->ssl3.hs.helloRetry);
+            ss->ssl3.hs.zeroRttState = ssl_0rtt_none;
+            ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_none;
+        } else {
+            SSL_TRC(3, ("%d: TLS13[%d]: application ignored 0-RTT",
+                        SSL_GETPID(), ss->fd));
+        }
         return;
     }
 
     if (!tls13_CanNegotiateZeroRtt(ss, sid)) {
-        SSL_TRC(3, ("%d: TLS13[%d]: ignore 0-RTT",
-                    SSL_GETPID(), ss->fd));
+        SSL_TRC(3, ("%d: TLS13[%d]: ignore 0-RTT", SSL_GETPID(), ss->fd));
         ss->ssl3.hs.zeroRttState = ssl_0rtt_ignored;
         ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_trial;
         return;
     }
 
-    SSL_TRC(3, ("%d: TLS13[%d]: enable 0-RTT",
-                SSL_GETPID(), ss->fd));
+    SSL_TRC(3, ("%d: TLS13[%d]: enable 0-RTT", SSL_GETPID(), ss->fd));
     PORT_Assert(ss->statelessResume);
     ss->ssl3.hs.zeroRttState = ssl_0rtt_accepted;
     ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_none;
@@ -1584,6 +1588,20 @@ tls13_SelectServerCert(sslSocket *ss)
         if (rv == SECSuccess) {
             /* Found one. */
             ss->sec.serverCert = cert;
+
+            /* If we can use a delegated credential (DC) for authentication in
+             * the current handshake, then commit to using it now. We'll send a
+             * DC as an extension and use the DC private key to sign the
+             * handshake.
+             *
+             * This sets the signature scheme to be the signature scheme
+             * indicated by the DC.
+             */
+            rv = tls13_MaybeSetDelegatedCredential(ss);
+            if (rv != SECSuccess) {
+                return SECFailure; /* Failure indicates an internal error. */
+            }
+
             ss->sec.authType = ss->ssl3.hs.kea_def_mutable.authKeyType =
                 ssl_SignatureSchemeToAuthType(ss->ssl3.hs.signatureScheme);
             ss->sec.authKeyBits = cert->serverKeyBits;
@@ -1637,6 +1655,11 @@ tls13_MaybeSendHelloRetry(sslSocket *ss, const sslNamedGroupDef *requestedGroup,
     if (action == ssl_hello_retry_fail) {
         FATAL_ERROR(ss, SSL_ERROR_APPLICATION_ABORT, handshake_failure);
         return SECFailure;
+    }
+
+    if (action == ssl_hello_retry_reject_0rtt) {
+        ss->ssl3.hs.zeroRttState = ssl_0rtt_ignored;
+        ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_trial;
     }
 
     if (!requestedGroup && action != ssl_hello_retry_request) {
@@ -1706,18 +1729,10 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
         ss->ssl3.hs.zeroRttState = ssl_0rtt_sent;
     }
 
-#ifndef PARANOID
-    /* Look for a matching cipher suite. */
-    if (ssl3_config_match_init(ss) == 0) { /* no ciphers are working/supported by PK11 */
-        FATAL_ERROR(ss, PORT_GetError(), internal_error);
-        goto loser;
-    }
-#endif
-
     /* Negotiate cipher suite. */
     rv = ssl3_NegotiateCipherSuite(ss, suites, PR_FALSE);
     if (rv != SECSuccess) {
-        FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP, handshake_failure);
+        FATAL_ERROR(ss, PORT_GetError(), handshake_failure);
         goto loser;
     }
 
@@ -2610,7 +2625,14 @@ tls13_SendEncryptedServerSequence(sslSocket *ss)
             return SECFailure; /* error code is set. */
         }
 
-        svrPrivKey = ss->sec.serverCert->serverKeyPair->privKey;
+        if (tls13_IsSigningWithDelegatedCredential(ss)) {
+            SSL_TRC(3, ("%d: TLS13[%d]: Signing with delegated credential",
+                        SSL_GETPID(), ss->fd));
+            svrPrivKey = ss->sec.serverCert->delegCredKeyPair->privKey;
+        } else {
+            svrPrivKey = ss->sec.serverCert->serverKeyPair->privKey;
+        }
+
         rv = tls13_SendCertificateVerify(ss, svrPrivKey);
         if (rv != SECSuccess) {
             return SECFailure; /* err code is set. */
@@ -2722,7 +2744,7 @@ tls13_SendServerHelloSequence(sslSocket *ss)
         }
     }
 
-    ss->ssl3.hs.serverHelloTime = ssl_TimeUsec();
+    ss->ssl3.hs.serverHelloTime = ssl_Time(ss);
     return SECSuccess;
 }
 
@@ -4110,6 +4132,9 @@ done:
 SECStatus
 tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
 {
+    sslDelegatedCredential *dc = ss->xtnData.peerDelegCred;
+    CERTSubjectPublicKeyInfo *spki;
+    SECKEYPublicKey *pubKey = NULL;
     SECItem signed_hash = { siBuffer, NULL, 0 };
     SECStatus rv;
     SSLSignatureScheme sigScheme;
@@ -4149,7 +4174,38 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
         return SECFailure;
     }
 
-    rv = ssl_CheckSignatureSchemeConsistency(ss, sigScheme, ss->sec.peerCert);
+    /* Set the |spki| used to verify the handshake. When verifying with a
+     * delegated credential (DC), this corresponds to the DC public key;
+     * otherwise it correspond to the public key of the peer's end-entity
+     * certificate.
+     */
+    if (tls13_IsVerifyingWithDelegatedCredential(ss)) {
+        /* DelegatedCredential.cred.expected_cert_verify_algorithm is expected
+         * to match CertificateVerify.scheme.
+         */
+        if (sigScheme != dc->expectedCertVerifyAlg) {
+            FATAL_ERROR(ss, SSL_ERROR_DC_CERT_VERIFY_ALG_MISMATCH, illegal_parameter);
+            return SECFailure;
+        }
+
+        /* Verify the DC has three steps: (1) use the peer's end-entity
+         * certificate to verify DelegatedCredential.signature, (2) check that
+         * the certificate has the correct key usage, and (3) check that the DC
+         * hasn't expired.
+         */
+        rv = tls13_VerifyDelegatedCredential(ss, dc);
+        if (rv != SECSuccess) { /* Calls FATAL_ERROR() */
+            return SECFailure;
+        }
+
+        SSL_TRC(3, ("%d: TLS13[%d]: Verifying with delegated credential",
+                    SSL_GETPID(), ss->fd));
+        spki = dc->spki;
+    } else {
+        spki = &ss->sec.peerCert->subjectPublicKeyInfo;
+    }
+
+    rv = ssl_CheckSignatureSchemeConsistency(ss, sigScheme, spki);
     if (rv != SECSuccess) {
         /* Error set already */
         FATAL_ERROR(ss, PORT_GetError(), illegal_parameter);
@@ -4174,15 +4230,26 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
         return SECFailure;
     }
 
-    rv = ssl3_VerifySignedHashes(ss, sigScheme, &tbsHash, &signed_hash);
+    pubKey = SECKEY_ExtractPublicKey(spki);
+    if (pubKey == NULL) {
+        ssl_MapLowLevelError(SSL_ERROR_EXTRACT_PUBLIC_KEY_FAILURE);
+        return SECFailure;
+    }
+
+    rv = ssl_VerifySignedHashesWithPubKey(ss, pubKey, sigScheme,
+                                          &tbsHash, &signed_hash);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, PORT_GetError(), decrypt_error);
-        return SECFailure;
+        goto loser;
     }
 
     /* Set the auth type. */
     if (!ss->sec.isServer) {
         ss->sec.authType = ssl_SignatureSchemeToAuthType(sigScheme);
+        rv = ssl_SetAuthKeyBits(ss, pubKey);
+        if (rv != SECSuccess) {
+            goto loser; /* Alert sent and code set. */
+        }
     }
 
     /* Request a client certificate now if one was requested. */
@@ -4193,13 +4260,17 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
             &ss->xtnData.certReqAuthorities);
         if (rv != SECSuccess) {
             FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
-            return rv;
+            goto loser;
         }
     }
 
+    SECKEY_DestroyPublicKey(pubKey);
     TLS13_SET_HS_STATE(ss, wait_finished);
-
     return SECSuccess;
+
+loser:
+    SECKEY_DestroyPublicKey(pubKey);
+    return SECFailure;
 }
 
 static SECStatus
@@ -4559,6 +4630,11 @@ tls13_ServerHandleFinished(sslSocket *ss, PRUint8 *b, PRUint32 length)
         return SECFailure;
     }
 
+    rv = tls13_FinishHandshake(ss);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
     ssl_GetXmitBufLock(ss);
     if (ss->opt.enableSessionTickets) {
         rv = tls13_SendNewSessionTicket(ss, NULL, 0);
@@ -4571,8 +4647,7 @@ tls13_ServerHandleFinished(sslSocket *ss, PRUint8 *b, PRUint32 length)
         }
     }
     ssl_ReleaseXmitBufLock(ss);
-
-    return tls13_FinishHandshake(ss);
+    return SECSuccess;
 
 loser:
     ssl_ReleaseXmitBufLock(ss);
@@ -4979,7 +5054,7 @@ tls13_HandleNewSessionTicket(sslSocket *ss, PRUint8 *b, PRUint32 length)
         return SECFailure;
     }
 
-    ticket.received_timestamp = ssl_TimeUsec();
+    ticket.received_timestamp = ssl_Time(ss);
     rv = ssl3_ConsumeHandshakeNumber(ss, &ticket.ticket_lifetime_hint, 4, &b,
                                      &length);
     if (rv != SECSuccess) {
@@ -5124,6 +5199,7 @@ static const struct {
                                          certificate) },
     { ssl_cert_status_xtn, _M3(client_hello, certificate_request,
                                certificate) },
+    { ssl_delegated_credentials_xtn, _M2(client_hello, certificate) },
     { ssl_tls13_cookie_xtn, _M2(client_hello, hello_retry_request) },
     { ssl_tls13_certificate_authorities_xtn, _M1(certificate_request) },
     { ssl_tls13_supported_versions_xtn, _M3(client_hello, server_hello,

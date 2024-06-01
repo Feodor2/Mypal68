@@ -17,6 +17,7 @@
 #include "TransportSecurityInfo.h"
 #include "mozilla/MacroArgs.h"
 #include "mozilla/ModuleUtils.h"
+#include "mozilla/SyncRunnable.h"
 #include "nsCURILoader.h"
 #include "nsCertOverrideService.h"
 #include "nsCryptoHash.h"
@@ -130,7 +131,6 @@ IMPL(nsPK11TokenDB, nullptr)
 IMPL(PKCS11ModuleDB, nullptr)
 IMPL(nsNSSCertificate, nullptr, ProcessRestriction::AnyProcess)
 IMPL(nsNSSCertificateDB, nullptr)
-IMPL(nsNSSCertList, nullptr, ProcessRestriction::AnyProcess)
 #ifdef MOZ_XUL
 IMPL(nsCertTree, nullptr)
 #endif

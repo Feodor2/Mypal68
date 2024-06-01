@@ -17,6 +17,7 @@
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsNSSCallbacks.h"
+#include "nsServiceManagerUtils.h"
 #include "prerror.h"
 #include "sslt.h"
 
@@ -27,7 +28,6 @@
 
 class nsIDOMWindow;
 class nsIPrompt;
-class nsIX509CertList;
 class SmartCardThreadList;
 
 namespace mozilla {
@@ -35,6 +35,7 @@ namespace psm {
 
 MOZ_MUST_USE
 ::already_AddRefed<mozilla::psm::SharedCertVerifier> GetDefaultCertVerifier();
+UniqueCERTCertList FindNonCACertificatesWithPrivateKeys();
 
 }  // namespace psm
 }  // namespace mozilla

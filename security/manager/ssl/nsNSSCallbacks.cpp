@@ -16,6 +16,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
+#include "nsIChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIPrompt.h"
 #include "nsIProtocolProxyService.h"
@@ -27,6 +29,7 @@
 #include "nsNSSCertHelper.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSComponent.h"
+#include "nsNSSHelper.h"
 #include "nsNSSIOLayer.h"
 #include "nsNetUtil.h"
 #include "nsProtectedAuthThread.h"
@@ -35,6 +38,7 @@
 #include "mozpkix/pkixtypes.h"
 #include "ssl.h"
 #include "sslproto.h"
+#include "SSLTokensCache.h"
 
 #include "TrustOverrideUtils.h"
 #include "TrustOverride-SymantecData.inc"
@@ -1041,17 +1045,22 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
 
   // We don't own these pointers.
   const SECItemArray* stapledOCSPResponses = SSL_PeerStapledOCSPResponses(fd);
-  const SECItem* stapledOCSPResponse = nullptr;
+  Maybe<nsTArray<uint8_t>> stapledOCSPResponse;
   // we currently only support single stapled responses
   if (stapledOCSPResponses && stapledOCSPResponses->len == 1) {
-    stapledOCSPResponse = &stapledOCSPResponses->items[0];
+    stapledOCSPResponse.emplace();
+    stapledOCSPResponse->SetCapacity(stapledOCSPResponses->items[0].len);
+    stapledOCSPResponse->AppendElements(stapledOCSPResponses->items[0].data,
+                                        stapledOCSPResponses->items[0].len);
   }
-  const SECItem* sctsFromTLSExtension = SSL_PeerSignedCertTimestamps(fd);
-  if (sctsFromTLSExtension && sctsFromTLSExtension->len == 0) {
-    // SSL_PeerSignedCertTimestamps returns null on error and empty item
-    // when no extension was returned by the server. We always use null when
-    // no extension was received (for whatever reason), ignoring errors.
-    sctsFromTLSExtension = nullptr;
+
+  Maybe<nsTArray<uint8_t>> sctsFromTLSExtension;
+  const SECItem* sctsFromTLSExtensionSECItem = SSL_PeerSignedCertTimestamps(fd);
+  if (sctsFromTLSExtensionSECItem) {
+    sctsFromTLSExtension.emplace();
+    sctsFromTLSExtension->SetCapacity(sctsFromTLSExtensionSECItem->len);
+    sctsFromTLSExtension->AppendElements(sctsFromTLSExtensionSECItem->data,
+                                         sctsFromTLSExtensionSECItem->len);
   }
 
   int flags = mozilla::psm::CertVerifier::FLAG_LOCAL_ONLY;
@@ -1097,18 +1106,19 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
   }
 }
 
-static nsresult IsCertificateDistrustImminent(nsIX509CertList* aCertList,
-                                              /* out */ bool& isDistrusted) {
-  if (!aCertList) {
-    return NS_ERROR_INVALID_POINTER;
+static nsresult IsCertificateDistrustImminent(
+    const nsTArray<RefPtr<nsIX509Cert>>& aCertArray,
+    /* out */ bool& isDistrusted) {
+  if (aCertArray.IsEmpty()) {
+    return NS_ERROR_INVALID_ARG;
   }
 
   nsCOMPtr<nsIX509Cert> rootCert;
-  nsCOMPtr<nsIX509CertList> intCerts;
+  nsTArray<RefPtr<nsIX509Cert>> intCerts;
   nsCOMPtr<nsIX509Cert> eeCert;
 
-  RefPtr<nsNSSCertList> certList = aCertList->GetCertList();
-  nsresult rv = certList->SegmentCertificateChain(rootCert, intCerts, eeCert);
+  nsresult rv = nsNSSCertificate::SegmentCertificateChain(aCertArray, rootCert,
+                                                          intCerts, eeCert);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1147,6 +1157,80 @@ static nsresult IsCertificateDistrustImminent(nsIX509CertList* aCertList,
     }
   }
   return NS_OK;
+}
+
+static bool ConstructCERTCertListFromBytesArray(
+    nsTArray<nsTArray<uint8_t>>& aCertArray,
+    /*out*/ UniqueCERTCertList& aCertList) {
+  aCertList = UniqueCERTCertList(CERT_NewCertList());
+  if (!aCertList) {
+    return false;
+  }
+
+  CERTCertDBHandle* certDB(CERT_GetDefaultCertDB());  // non-owning
+  for (auto& cert : aCertArray) {
+    SECItem certDER = {siBuffer, cert.Elements(),
+                       static_cast<unsigned int>(cert.Length())};
+    UniqueCERTCertificate tmpCert(
+        CERT_NewTempCertificate(certDB, &certDER, nullptr, false, true));
+    if (!tmpCert) {
+      return false;
+    }
+
+    if (CERT_AddCertToListTail(aCertList.get(), tmpCert.get()) != SECSuccess) {
+      return false;
+    }
+    Unused << tmpCert.release();  // tmpCert is now owned by aCertList.
+  }
+
+  return true;
+}
+
+static void RebuildCertificateInfoFromSSLTokenCache(
+    nsNSSSocketInfo* aInfoObject) {
+  MOZ_ASSERT(aInfoObject);
+
+  if (!aInfoObject) {
+    return;
+  }
+
+  nsAutoCString key;
+  aInfoObject->GetPeerId(key);
+  mozilla::net::SessionCacheInfo info;
+  if (!mozilla::net::SSLTokensCache::GetSessionCacheInfo(key, info)) {
+    MOZ_LOG(
+        gPIPNSSLog, LogLevel::Debug,
+        ("RebuildCertificateInfoFromSSLTokenCache cannot find cached info."));
+    return;
+  }
+
+  RefPtr<nsNSSCertificate> nssc = nsNSSCertificate::ConstructFromDER(
+      BitwiseCast<char*, uint8_t*>(info.mServerCertBytes.Elements()),
+      info.mServerCertBytes.Length());
+  if (!nssc) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("RebuildCertificateInfoFromSSLTokenCache failed to construct "
+             "server cert"));
+    return;
+  }
+
+  UniqueCERTCertList builtCertChain;
+  if (info.mSucceededCertChainBytes) {
+    if (!ConstructCERTCertListFromBytesArray(
+            info.mSucceededCertChainBytes.ref(), builtCertChain)) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("RebuildCertificateInfoFromSSLTokenCache failed to construct "
+               "cert list"));
+      return;
+    }
+  }
+
+  aInfoObject->SetServerCert(nssc, info.mEVStatus);
+  aInfoObject->SetCertificateTransparencyStatus(
+      info.mCertificateTransparencyStatus);
+  if (builtCertChain) {
+    aInfoObject->SetSucceededCertChain(std::move(builtCertChain));
+  }
 }
 
 void HandshakeCallback(PRFileDesc* fd, void* client_data) {
@@ -1286,18 +1370,23 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("HandshakeCallback KEEPING existing cert\n"));
   } else {
-    RebuildVerifiedCertificateInformation(fd, infoObject);
+    if (mozilla::net::SSLTokensCache::IsEnabled()) {
+      RebuildCertificateInfoFromSSLTokenCache(infoObject);
+    } else {
+      RebuildVerifiedCertificateInformation(fd, infoObject);
+    }
   }
 
-  nsCOMPtr<nsIX509CertList> succeededCertChain;
-  // This always returns NS_OK, but the list could be empty. This is a
-  // best-effort check for now. Bug 731478 will reduce the incidence of empty
+  nsTArray<RefPtr<nsIX509Cert>> succeededCertArray;
+  // The list could be empty. Bug 731478 will reduce the incidence of empty
   // succeeded cert chains through better caching.
-  Unused << infoObject->GetSucceededCertChain(
-      getter_AddRefs(succeededCertChain));
+  nsresult srv = infoObject->GetSucceededCertChain(succeededCertArray);
+
   bool distrustImminent;
-  nsresult srv =
-      IsCertificateDistrustImminent(succeededCertChain, distrustImminent);
+  if (NS_SUCCEEDED(srv)) {
+    srv = IsCertificateDistrustImminent(succeededCertArray, distrustImminent);
+  }
+
   if (NS_SUCCEEDED(srv) && distrustImminent) {
     state |= nsIWebProgressListener::STATE_CERT_DISTRUST_IMMINENT;
   }

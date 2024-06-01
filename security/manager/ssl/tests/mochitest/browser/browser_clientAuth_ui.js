@@ -131,7 +131,7 @@ function checkDialogContents(win, notBefore, notAfter) {
 }
 
 function findCertByCommonName(commonName) {
-  for (let cert of certDB.getCerts().getEnumerator()) {
+  for (let cert of certDB.getCerts()) {
     if (cert.commonName == commonName) {
       return cert;
     }

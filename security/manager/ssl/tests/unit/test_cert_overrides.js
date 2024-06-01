@@ -499,6 +499,94 @@ function add_simple_tests() {
     );
     run_next_test();
   });
+
+  add_test(function() {
+    // Add a bunch of overrides...
+    let certOverrideService = Cc[
+      "@mozilla.org/security/certoverride;1"
+    ].getService(Ci.nsICertOverrideService);
+    let cert = constructCertFromFile("bad_certs/default-ee.pem");
+    let expectedBits = Ci.nsICertOverrideService.ERROR_UNTRUSTED;
+    certOverrideService.rememberValidityOverride(
+      "example.com",
+      443,
+      cert,
+      expectedBits,
+      false
+    );
+    Assert.ok(
+      certOverrideService.hasMatchingOverride("example.com", 443, cert, {}, {}),
+      "Should have added override for example.com:443"
+    );
+    certOverrideService.rememberValidityOverride(
+      "example.com",
+      80,
+      cert,
+      expectedBits,
+      false
+    );
+    Assert.ok(
+      certOverrideService.hasMatchingOverride("example.com", 80, cert, {}, {}),
+      "Should have added override for example.com:80"
+    );
+    certOverrideService.rememberValidityOverride(
+      "example.org",
+      443,
+      cert,
+      expectedBits,
+      false
+    );
+    Assert.ok(
+      certOverrideService.hasMatchingOverride("example.org", 443, cert, {}, {}),
+      "Should have added override for example.org:443"
+    );
+    certOverrideService.rememberValidityOverride(
+      "example.org",
+      80,
+      cert,
+      expectedBits,
+      true
+    );
+    Assert.ok(
+      certOverrideService.hasMatchingOverride("example.org", 80, cert, {}, {}),
+      "Should have added override for example.org:80"
+    );
+
+    // Clear them all...
+    certOverrideService.clearAllOverrides();
+
+    // And ensure they're all gone.
+    Assert.ok(
+      !certOverrideService.hasMatchingOverride(
+        "example.com",
+        443,
+        cert,
+        {},
+        {}
+      ),
+      "Should have removed override for example.com:443"
+    );
+    Assert.ok(
+      !certOverrideService.hasMatchingOverride("example.com", 80, cert, {}, {}),
+      "Should have removed override for example.com:80"
+    );
+    Assert.ok(
+      !certOverrideService.hasMatchingOverride(
+        "example.org",
+        443,
+        cert,
+        {},
+        {}
+      ),
+      "Should have removed override for example.org:443"
+    );
+    Assert.ok(
+      !certOverrideService.hasMatchingOverride("example.org", 80, cert, {}, {}),
+      "Should have removed override for example.org:80"
+    );
+
+    run_next_test();
+  });
 }
 
 function add_localhost_tests() {

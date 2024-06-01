@@ -153,14 +153,27 @@ function pemToBase64(pem) {
 }
 
 function build_cert_chain(certNames, testDirectory = "bad_certs") {
-  let certList = Cc["@mozilla.org/security/x509certlist;1"].createInstance(
-    Ci.nsIX509CertList
-  );
+  let certList = [];
   certNames.forEach(function(certName) {
     let cert = constructCertFromFile(`${testDirectory}/${certName}.pem`);
-    certList.addCert(cert);
+    certList.push(cert);
   });
   return certList;
+}
+
+function areCertArraysEqual(certArrayA, certArrayB) {
+  if (certArrayA.length != certArrayB.length) {
+    return false;
+  }
+
+  for (let i = 0; i < certArrayA.length; i++) {
+    const certA = certArrayA[i];
+    const certB = certArrayB[i];
+    if (!certA.equals(certB)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function readFile(file) {
@@ -192,7 +205,7 @@ function constructCertFromFile(filename) {
     Ci.nsIX509CertDB
   );
   try {
-    return certdb.constructX509(certBytes);
+    return certdb.constructX509(stringToArray(certBytes));
   } catch (e) {}
   // It might be PEM instead of DER.
   return certdb.constructX509FromBase64(pemToBase64(certBytes));

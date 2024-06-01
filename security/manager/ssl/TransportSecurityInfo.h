@@ -82,6 +82,11 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   void SetCertificateTransparencyInfo(
       const mozilla::psm::CertificateTransparencyInfo& info);
 
+  void SetCertificateTransparencyStatus(
+      uint16_t aCertificateTransparencyStatus) {
+    mCertificateTransparencyStatus = aCertificateTransparencyStatus;
+  }
+
   uint16_t mCipherSuite;
   uint16_t mProtocolVersion;
   uint16_t mCertificateTransparencyStatus;
@@ -99,7 +104,6 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   /* mHaveCertErrrorBits is relied on to determine whether or not a SPDY
      connection is eligible for joining in nsNSSSocketInfo::JoinConnection() */
   bool mHaveCertErrorBits;
-
  private:
   // True if SetCanceled has been called (or if this was deserialized with a
   // non-zero mErrorCode, which can only be the case if SetCanceled was called
@@ -110,6 +114,7 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
 
  protected:
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
+  nsTArray<RefPtr<nsIX509Cert>> mSucceededCertChain;
 
  private:
   uint32_t mSecurityState;
@@ -121,12 +126,19 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   OriginAttributes mOriginAttributes;
 
   nsCOMPtr<nsIX509Cert> mServerCert;
-  nsCOMPtr<nsIX509CertList> mSucceededCertChain;
 
   /* Peer cert chain for failed connections (for error reporting) */
-  nsCOMPtr<nsIX509CertList> mFailedCertChain;
+  nsTArray<RefPtr<nsIX509Cert>> mFailedCertChain;
 
   nsresult ReadSSLStatus(nsIObjectInputStream* aStream);
+
+  // This function is used to read the binary that are serialized
+  // by using nsIX509CertList
+  nsresult ReadCertList(nsIObjectInputStream* aStream,
+                        nsTArray<RefPtr<nsIX509Cert>>& aCertList);
+  nsresult ReadCertificatesFromStream(nsIObjectInputStream* aStream,
+                                      uint32_t aSize,
+                                      nsTArray<RefPtr<nsIX509Cert>>& aCertList);
 };
 
 class RememberCertErrorsTable {

@@ -728,21 +728,24 @@ class SSLServerCertVerificationJob : public Runnable {
                             const void* fdForLogging,
                             nsNSSSocketInfo* infoObject,
                             const UniqueCERTCertificate& serverCert,
-                            const UniqueCERTCertList& peerCertChain,
-                            const SECItem* stapledOCSPResponse,
-                            const SECItem* sctsFromTLSExtension,
+                            UniqueCERTCertList& peerCertChain,
+                            Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+                            Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
                             uint32_t providerFlags, Time time, PRTime prtime);
 
  private:
   NS_DECL_NSIRUNNABLE
 
   // Must be called only on the socket transport thread
-  SSLServerCertVerificationJob(
-      const RefPtr<SharedCertVerifier>& certVerifier, const void* fdForLogging,
-      nsNSSSocketInfo* infoObject, const UniqueCERTCertificate& cert,
-      UniqueCERTCertList peerCertChain, const SECItem* stapledOCSPResponse,
-      const SECItem* sctsFromTLSExtension, uint32_t providerFlags, Time time,
-      PRTime prtime);
+  SSLServerCertVerificationJob(const RefPtr<SharedCertVerifier>& certVerifier,
+                               const void* fdForLogging,
+                               nsNSSSocketInfo* infoObject,
+                               const UniqueCERTCertificate& cert,
+                               UniqueCERTCertList peerCertChain,
+                               Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+                               Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+                               uint32_t providerFlags, Time time,
+                               PRTime prtime);
   const RefPtr<SharedCertVerifier> mCertVerifier;
   const void* const mFdForLogging;
   const RefPtr<nsNSSSocketInfo> mInfoObject;
@@ -752,16 +755,17 @@ class SSLServerCertVerificationJob : public Runnable {
   const Time mTime;
   const PRTime mPRTime;
   const TimeStamp mJobStartTime;
-  const UniqueSECItem mStapledOCSPResponse;
-  const UniqueSECItem mSCTsFromTLSExtension;
+  Maybe<nsTArray<uint8_t>> mStapledOCSPResponse;
+  Maybe<nsTArray<uint8_t>> mSCTsFromTLSExtension;
 };
 
 SSLServerCertVerificationJob::SSLServerCertVerificationJob(
     const RefPtr<SharedCertVerifier>& certVerifier, const void* fdForLogging,
     nsNSSSocketInfo* infoObject, const UniqueCERTCertificate& cert,
-    UniqueCERTCertList peerCertChain, const SECItem* stapledOCSPResponse,
-    const SECItem* sctsFromTLSExtension, uint32_t providerFlags, Time time,
-    PRTime prtime)
+    UniqueCERTCertList peerCertChain,
+    Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags,
+    Time time, PRTime prtime)
     : Runnable("psm::SSLServerCertVerificationJob"),
       mCertVerifier(certVerifier),
       mFdForLogging(fdForLogging),
@@ -772,8 +776,8 @@ SSLServerCertVerificationJob::SSLServerCertVerificationJob(
       mTime(time),
       mPRTime(prtime),
       mJobStartTime(TimeStamp::Now()),
-      mStapledOCSPResponse(SECITEM_DupItem(stapledOCSPResponse)),
-      mSCTsFromTLSExtension(SECITEM_DupItem(sctsFromTLSExtension)) {}
+      mStapledOCSPResponse(std::move(stapledOCSPResponse)),
+      mSCTsFromTLSExtension(std::move(sctsFromTLSExtension)) {}
 
 // This function assumes that we will only use the SPDY connection coalescing
 // feature on connections where we have negotiated SPDY using NPN. If we ever
@@ -1135,10 +1139,6 @@ void GatherRootCATelemetry(const UniqueCERTCertList& certList) {
                                rootCert);
 }
 
-// These time are appoximate, i.e., doesn't account for leap seconds, etc
-const uint64_t ONE_WEEK_IN_SECONDS = (7 * (24 * 60 * 60));
-const uint64_t ONE_YEAR_IN_WEEKS = 52;
-
 // There are various things that we want to measure about certificate
 // chains that we accept.  This is a single entry point for all of them.
 void GatherSuccessfulValidationTelemetry(const UniqueCERTCertList& certList) {
@@ -1274,8 +1274,8 @@ SECStatus AuthCertificate(CertVerifier& certVerifier,
                           nsNSSSocketInfo* infoObject,
                           const UniqueCERTCertificate& cert,
                           UniqueCERTCertList& peerCertChain,
-                          const SECItem* stapledOCSPResponse,
-                          const SECItem* sctsFromTLSExtension,
+                          const Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+                          const Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
                           uint32_t providerFlags, Time time) {
   MOZ_ASSERT(infoObject);
   MOZ_ASSERT(cert);
@@ -1378,9 +1378,10 @@ SECStatus AuthCertificate(CertVerifier& certVerifier,
 SECStatus SSLServerCertVerificationJob::Dispatch(
     const RefPtr<SharedCertVerifier>& certVerifier, const void* fdForLogging,
     nsNSSSocketInfo* infoObject, const UniqueCERTCertificate& serverCert,
-    const UniqueCERTCertList& peerCertChain, const SECItem* stapledOCSPResponse,
-    const SECItem* sctsFromTLSExtension, uint32_t providerFlags, Time time,
-    PRTime prtime) {
+    UniqueCERTCertList& peerCertChain,
+    Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags,
+    Time time, PRTime prtime) {
   // Runs on the socket transport thread
   if (!certVerifier || !infoObject || !serverCert) {
     NS_ERROR("Invalid parameters for SSL server cert validation");
@@ -1393,14 +1394,7 @@ SECStatus SSLServerCertVerificationJob::Dispatch(
     return SECFailure;
   }
 
-  // Copy the certificate list so the runnable can take ownership of it in the
-  // constructor.
-  UniqueCERTCertList peerCertChainCopy =
-      nsNSSCertList::DupCertList(peerCertChain);
-  if (!peerCertChainCopy) {
-    PR_SetError(SEC_ERROR_NO_MEMORY, 0);
-    return SECFailure;
-  }
+  UniqueCERTCertList peerCertChainCopy = std::move(peerCertChain);
 
   RefPtr<SSLServerCertVerificationJob> job(new SSLServerCertVerificationJob(
       certVerifier, fdForLogging, infoObject, serverCert,
@@ -1442,10 +1436,9 @@ SSLServerCertVerificationJob::Run() {
   // Reset the error code here so we can detect if AuthCertificate fails to
   // set the error code if/when it fails.
   PR_SetError(0, 0);
-  SECStatus rv =
-      AuthCertificate(*mCertVerifier, mInfoObject, mCert, mPeerCertChain,
-                      mStapledOCSPResponse.get(), mSCTsFromTLSExtension.get(),
-                      mProviderFlags, mTime);
+  SECStatus rv = AuthCertificate(*mCertVerifier, mInfoObject, mCert,
+                                 mPeerCertChain, mStapledOCSPResponse,
+                                 mSCTsFromTLSExtension, mProviderFlags, mTime);
   MOZ_ASSERT((mPeerCertChain && rv == SECSuccess) ||
                  (!mPeerCertChain && rv != SECSuccess),
              "AuthCertificate() should take ownership of chain on failure");
@@ -1589,18 +1582,21 @@ SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd, PRBool checkSig,
   // return a stapled OCSP response.
   // We don't own these pointers.
   const SECItemArray* csa = SSL_PeerStapledOCSPResponses(fd);
-  SECItem* stapledOCSPResponse = nullptr;
+  Maybe<nsTArray<uint8_t>> stapledOCSPResponse;
   // we currently only support single stapled responses
   if (csa && csa->len == 1) {
-    stapledOCSPResponse = &csa->items[0];
+    stapledOCSPResponse.emplace();
+    stapledOCSPResponse->SetCapacity(csa->items[0].len);
+    stapledOCSPResponse->AppendElements(csa->items[0].data, csa->items[0].len);
   }
 
-  const SECItem* sctsFromTLSExtension = SSL_PeerSignedCertTimestamps(fd);
-  if (sctsFromTLSExtension && sctsFromTLSExtension->len == 0) {
-    // SSL_PeerSignedCertTimestamps returns null on error and empty item
-    // when no extension was returned by the server. We always use null when
-    // no extension was received (for whatever reason), ignoring errors.
-    sctsFromTLSExtension = nullptr;
+  Maybe<nsTArray<uint8_t>> sctsFromTLSExtension;
+  const SECItem* sctsFromTLSExtensionSECItem = SSL_PeerSignedCertTimestamps(fd);
+  if (sctsFromTLSExtensionSECItem) {
+    sctsFromTLSExtension.emplace();
+    sctsFromTLSExtension->SetCapacity(sctsFromTLSExtensionSECItem->len);
+    sctsFromTLSExtension->AppendElements(sctsFromTLSExtensionSECItem->data,
+                                         sctsFromTLSExtensionSECItem->len);
   }
 
   uint32_t providerFlags = 0;

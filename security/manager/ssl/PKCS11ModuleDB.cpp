@@ -5,6 +5,7 @@
 #include "PKCS11ModuleDB.h"
 
 #include "ScopedNSSTypes.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSComponent.h"

@@ -285,7 +285,6 @@ struct SFTKSessionStr {
     SFTKSession *next;
     SFTKSession *prev;
     CK_SESSION_HANDLE handle;
-    int refCount;
     PZLock *objectLock;
     int objectIDCount;
     CK_SESSION_INFO info;
@@ -459,7 +458,7 @@ struct SFTKItemTemplateStr {
 
 #define SFTK_TOKEN_KRL_HANDLE (SFTK_TOKEN_MAGIC | SFTK_TOKEN_TYPE_CRL | 1)
 /* how big (in bytes) a password/pin we can deal with */
-#define SFTK_MAX_PIN 255
+#define SFTK_MAX_PIN 500
 /* minimum password/pin length (in Unicode characters) in FIPS mode */
 #define FIPS_MIN_PIN 7
 
@@ -683,6 +682,7 @@ extern SFTKSlot *sftk_SlotFromSessionHandle(CK_SESSION_HANDLE handle);
 extern CK_SLOT_ID sftk_SlotIDFromSessionHandle(CK_SESSION_HANDLE handle);
 extern SFTKSession *sftk_SessionFromHandle(CK_SESSION_HANDLE handle);
 extern void sftk_FreeSession(SFTKSession *session);
+extern void sftk_DestroySession(SFTKSession *session);
 extern SFTKSession *sftk_NewSession(CK_SLOT_ID slotID, CK_NOTIFY notify,
                                     CK_VOID_PTR pApplication, CK_FLAGS flags);
 extern void sftk_update_state(SFTKSlot *slot, SFTKSession *session);

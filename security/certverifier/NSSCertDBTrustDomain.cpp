@@ -27,6 +27,7 @@
 #include "nsNSSCertHelper.h"
 #include "nsNSSCertValidity.h"
 #include "nsNSSCertificate.h"
+#include "nsNSSCertificateDB.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nss.h"
@@ -40,7 +41,6 @@
 
 #include "TrustOverrideUtils.h"
 #include "TrustOverride-StartComAndWoSignData.inc"
-#include "TrustOverride-GlobalSignData.inc"
 #include "TrustOverride-SymantecData.inc"
 #include "TrustOverride-AppleGoogleDigiCertData.inc"
 
@@ -96,12 +96,127 @@ NSSCertDBTrustDomain::NSSCertDBTrustDomain(
 #endif
       mOCSPStaplingStatus(CertVerifier::OCSP_STAPLING_NEVER_CHECKED),
       mSCTListFromCertificate(),
-      mSCTListFromOCSPStapling() {}
+      mSCTListFromOCSPStapling(),
+      mBuiltInRootsModule(SECMOD_FindModule(kRootModuleName)) {
+}
+
+static Result FindRootsWithSubject(UniqueSECMODModule& rootsModule,
+                                   SECItem subject,
+                                   /*out*/ Vector<Vector<uint8_t>>& roots) {
+  MOZ_ASSERT(rootsModule);
+  for (int slotIndex = 0; slotIndex < rootsModule->slotCount; slotIndex++) {
+    CERTCertificateList* rawResults = nullptr;
+    if (PK11_FindRawCertsWithSubject(rootsModule->slots[slotIndex], &subject,
+                                     &rawResults) != SECSuccess) {
+      return Result::FATAL_ERROR_LIBRARY_FAILURE;
+    }
+    // rawResults == nullptr means we didn't find any matching certificates
+    if (!rawResults) {
+      continue;
+    }
+    UniqueCERTCertificateList results(rawResults);
+    for (int certIndex = 0; certIndex < results->len; certIndex++) {
+      Vector<uint8_t> root;
+      if (!root.append(results->certs[certIndex].data,
+                       results->certs[certIndex].len)) {
+        return Result::FATAL_ERROR_NO_MEMORY;
+      }
+      if (!roots.append(std::move(root))) {
+        return Result::FATAL_ERROR_NO_MEMORY;
+      }
+    }
+  }
+  return Success;
+}
+
+// A self-signed issuer certificate should never be necessary in order to build
+// a trusted certificate chain unless it is a trust anchor. This is because if
+// it were necessary, there would exist another certificate with the same
+// subject and public key that is also a valid issing certificate. Given this
+// certificate, it is possible to build another chain using just it instead of
+// it and the self-signed certificate. This is only true as long as the
+// certificate extensions we support are restrictive rather than additive in
+// terms of the rest of the chain (for example, we don't support policy mapping
+// and we ignore any SCT information in intermediates).
+static bool ShouldSkipSelfSignedNonTrustAnchor(TrustDomain& trustDomain,
+                                               Input certDER) {
+  BackCert cert(certDER, EndEntityOrCA::MustBeCA, nullptr);
+  if (cert.Init() != Success) {
+    return false;  // turn any failures into "don't skip trying this cert"
+  }
+  // If subject != issuer, this isn't a self-signed cert.
+  if (!InputsAreEqual(cert.GetSubject(), cert.GetIssuer())) {
+    return false;
+  }
+  TrustLevel trust;
+  if (trustDomain.GetCertTrust(EndEntityOrCA::MustBeCA, CertPolicyId::anyPolicy,
+                               certDER, trust) != Success) {
+    return false;
+  }
+  // If the trust for this certificate is anything other than "inherit", we want
+  // to process it like normal.
+  if (trust != TrustLevel::InheritsTrust) {
+    return false;
+  }
+  uint8_t digestBuf[MAX_DIGEST_SIZE_IN_BYTES];
+  pkix::der::PublicKeyAlgorithm publicKeyAlg;
+  SignedDigest signature;
+  if (DigestSignedData(trustDomain, cert.GetSignedData(), digestBuf,
+                       publicKeyAlg, signature) != Success) {
+    return false;
+  }
+  if (VerifySignedDigest(trustDomain, publicKeyAlg, signature,
+                         cert.GetSubjectPublicKeyInfo()) != Success) {
+    return false;
+  }
+  // This is a self-signed, non-trust-anchor certificate, so we shouldn't use it
+  // for path building. See bug 1056341.
+  return true;
+}
+
+static Result CheckCandidates(TrustDomain& trustDomain,
+                              TrustDomain::IssuerChecker& checker,
+                              Vector<Input>& candidates,
+                              Input* nameConstraintsInputPtr, bool& keepGoing) {
+  for (Input candidate : candidates) {
+    if (ShouldSkipSelfSignedNonTrustAnchor(trustDomain, candidate)) {
+      continue;
+    }
+    Result rv = checker.Check(candidate, nameConstraintsInputPtr, keepGoing);
+    if (rv != Success) {
+      return rv;
+    }
+    if (!keepGoing) {
+      return Success;
+    }
+  }
+
+  return Success;
+}
 
 Result NSSCertDBTrustDomain::FindIssuer(Input encodedIssuerName,
                                         IssuerChecker& checker, Time) {
-  Vector<Input> rootCandidates;
-  Vector<Input> intermediateCandidates;
+  SECItem encodedIssuerNameItem = UnsafeMapInputToSECItem(encodedIssuerName);
+  // Handle imposed name constraints, if any.
+  ScopedAutoSECItem nameConstraints;
+  Input nameConstraintsInput;
+  Input* nameConstraintsInputPtr = nullptr;
+  SECStatus srv =
+      CERT_GetImposedNameConstraints(&encodedIssuerNameItem, &nameConstraints);
+  if (srv == SECSuccess) {
+    if (nameConstraintsInput.Init(nameConstraints.data, nameConstraints.len) !=
+        Success) {
+      return Result::FATAL_ERROR_LIBRARY_FAILURE;
+    }
+    nameConstraintsInputPtr = &nameConstraintsInput;
+  } else if (PR_GetError() != SEC_ERROR_EXTENSION_NOT_FOUND) {
+    return Result::FATAL_ERROR_LIBRARY_FAILURE;
+  }
+
+  // First try all relevant certificates known to Gecko, which avoids calling
+  // CERT_CreateSubjectCertList, because that can be expensive.
+  Vector<Input> geckoRootCandidates;
+  Vector<Input> geckoIntermediateCandidates;
 
 #ifdef MOZ_NEW_CERT_STORAGE
   if (!mCertStorage) {
@@ -124,37 +239,34 @@ Result NSSCertDBTrustDomain::FindIssuer(Input encodedIssuerName,
       continue;  // probably too big
     }
     // Currently we're only expecting intermediate certificates in cert storage.
-    if (!intermediateCandidates.append(certDER)) {
+    if (!geckoIntermediateCandidates.append(certDER)) {
       return Result::FATAL_ERROR_NO_MEMORY;
     }
   }
 #endif
 
-  SECItem encodedIssuerNameItem = UnsafeMapInputToSECItem(encodedIssuerName);
-
-  // NSS seems not to differentiate between "no potential issuers found" and
-  // "there was an error trying to retrieve the potential issuers." We assume
-  // there was no error if CERT_CreateSubjectCertList returns nullptr.
-  UniqueCERTCertList candidates(CERT_CreateSubjectCertList(
-      nullptr, CERT_GetDefaultCertDB(), &encodedIssuerNameItem, 0, false));
-  if (candidates) {
-    for (CERTCertListNode* n = CERT_LIST_HEAD(candidates);
-         !CERT_LIST_END(n, candidates); n = CERT_LIST_NEXT(n)) {
-      Input certDER;
-      Result rv = certDER.Init(n->cert->derCert.data, n->cert->derCert.len);
+  // We might not have this module if e.g. we're on a Linux distribution that
+  // does something unexpected.
+  Vector<Vector<uint8_t>> builtInRoots;
+  if (mBuiltInRootsModule) {
+    Result rv = FindRootsWithSubject(mBuiltInRootsModule, encodedIssuerNameItem,
+                                     builtInRoots);
+    if (rv != Success) {
+      return rv;
+    }
+    for (const auto& root : builtInRoots) {
+      Input rootInput;
+      rv = rootInput.Init(root.begin(), root.length());
       if (rv != Success) {
         continue;  // probably too big
       }
-      if (n->cert->isRoot) {
-        if (!rootCandidates.append(certDER)) {
-          return Result::FATAL_ERROR_NO_MEMORY;
-        }
-      } else {
-        if (!intermediateCandidates.append(certDER)) {
-          return Result::FATAL_ERROR_NO_MEMORY;
-        }
+      if (!geckoRootCandidates.append(rootInput)) {
+        return Result::FATAL_ERROR_NO_MEMORY;
       }
     }
+  } else {
+    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
+            ("NSSCertDBTrustDomain::FindIssuer: no built-in roots module"));
   }
 
   for (const auto& thirdPartyRootInput : mThirdPartyRootInputs) {
@@ -169,7 +281,7 @@ Result NSSCertDBTrustDomain::FindIssuer(Input encodedIssuerName,
     if (!InputsAreEqual(encodedIssuerName, root.GetSubject())) {
       continue;
     }
-    if (!rootCandidates.append(thirdPartyRootInput)) {
+    if (!geckoRootCandidates.append(thirdPartyRootInput)) {
       return Result::FATAL_ERROR_NO_MEMORY;
     }
   }
@@ -188,63 +300,64 @@ Result NSSCertDBTrustDomain::FindIssuer(Input encodedIssuerName,
     if (!InputsAreEqual(encodedIssuerName, intermediate.GetSubject())) {
       continue;
     }
-    if (!intermediateCandidates.append(thirdPartyIntermediateInput)) {
+    if (!geckoIntermediateCandidates.append(thirdPartyIntermediateInput)) {
       return Result::FATAL_ERROR_NO_MEMORY;
     }
   }
 
-  // Handle imposed name constraints, if any.
-  ScopedAutoSECItem nameConstraints;
-  Input nameConstraintsInput;
-  Input* nameConstraintsInputPtr = nullptr;
-  SECStatus srv =
-      CERT_GetImposedNameConstraints(&encodedIssuerNameItem, &nameConstraints);
-  if (srv == SECSuccess) {
-    if (nameConstraintsInput.Init(nameConstraints.data, nameConstraints.len) !=
-        Success) {
-      return Result::FATAL_ERROR_LIBRARY_FAILURE;
-    }
-    nameConstraintsInputPtr = &nameConstraintsInput;
-  } else if (PR_GetError() != SEC_ERROR_EXTENSION_NOT_FOUND) {
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
   // Try all root certs first and then all (presumably) intermediates.
-  if (!rootCandidates.appendAll(intermediateCandidates)) {
+  if (!geckoRootCandidates.appendAll(geckoIntermediateCandidates)) {
     return Result::FATAL_ERROR_NO_MEMORY;
   }
 
-  for (Input candidate : rootCandidates) {
-    bool keepGoing;
-    Result rv = checker.Check(candidate, nameConstraintsInputPtr, keepGoing);
-    if (rv != Success) {
-      return rv;
-    }
-    if (!keepGoing) {
-      return Success;
-    }
+  bool keepGoing = true;
+  Result result = CheckCandidates(*this, checker, geckoRootCandidates,
+                                  nameConstraintsInputPtr, keepGoing);
+  if (result != Success) {
+    return result;
+  }
+  if (!keepGoing) {
+    return Success;
   }
 
-  return Success;
+  // NSS seems not to differentiate between "no potential issuers found" and
+  // "there was an error trying to retrieve the potential issuers." We assume
+  // there was no error if CERT_CreateSubjectCertList returns nullptr.
+  Vector<Input> nssRootCandidates;
+  Vector<Input> nssIntermediateCandidates;
+  UniqueCERTCertList candidates(CERT_CreateSubjectCertList(
+      nullptr, CERT_GetDefaultCertDB(), &encodedIssuerNameItem, 0, false));
+  if (candidates) {
+    for (CERTCertListNode* n = CERT_LIST_HEAD(candidates);
+         !CERT_LIST_END(n, candidates); n = CERT_LIST_NEXT(n)) {
+      Input certDER;
+      Result rv = certDER.Init(n->cert->derCert.data, n->cert->derCert.len);
+      if (rv != Success) {
+        continue;  // probably too big
+      }
+      if (n->cert->isRoot) {
+        if (!nssRootCandidates.append(certDER)) {
+          return Result::FATAL_ERROR_NO_MEMORY;
+        }
+      } else {
+        if (!nssIntermediateCandidates.append(certDER)) {
+          return Result::FATAL_ERROR_NO_MEMORY;
+        }
+      }
+    }
+  }
+  if (!nssRootCandidates.appendAll(nssIntermediateCandidates)) {
+    return Result::FATAL_ERROR_NO_MEMORY;
+  }
+
+  return CheckCandidates(*this, checker, nssRootCandidates,
+                         nameConstraintsInputPtr, keepGoing);
 }
 
 Result NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
                                           const CertPolicyId& policy,
                                           Input candidateCertDER,
                                           /*out*/ TrustLevel& trustLevel) {
-  // XXX: This would be cleaner and more efficient if we could get the trust
-  // information without constructing a CERTCertificate here, but NSS doesn't
-  // expose it in any other easy-to-use fashion. The use of
-  // CERT_NewTempCertificate to get a CERTCertificate shouldn't be a
-  // performance problem because NSS will just find the existing
-  // CERTCertificate in its in-memory cache and return it.
-  SECItem candidateCertDERSECItem = UnsafeMapInputToSECItem(candidateCertDER);
-  UniqueCERTCertificate candidateCert(CERT_NewTempCertificate(
-      CERT_GetDefaultCertDB(), &candidateCertDERSECItem, nullptr, false, true));
-  if (!candidateCert) {
-    return MapPRErrorCodeToResult(PR_GetError());
-  }
-
   // Check the certificate against the OneCRL cert blocklist
 #ifdef MOZ_NEW_CERT_STORAGE
   if (!mCertStorage) {
@@ -265,8 +378,9 @@ Result NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
     nsTArray<uint8_t> subjectBytes;
     nsTArray<uint8_t> pubKeyBytes;
 
-    nsresult nsrv = BuildRevocationCheckArrays(
-        candidateCert, issuerBytes, serialBytes, subjectBytes, pubKeyBytes);
+    Result result =
+        BuildRevocationCheckArrays(candidateCertDER, endEntityOrCA, issuerBytes,
+                                   serialBytes, subjectBytes, pubKeyBytes);
 #else
     bool isCertRevoked;
 
@@ -275,20 +389,21 @@ Result NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
     nsAutoCString encSubject;
     nsAutoCString encPubKey;
 
-    nsresult nsrv = BuildRevocationCheckStrings(
-        candidateCert.get(), encIssuer, encSerial, encSubject, encPubKey);
+    Result result =
+        BuildRevocationCheckStrings(candidateCertDER, endEntityOrCA, encIssuer,
+                                    encSerial, encSubject, encPubKey);
 #endif
 
-    if (NS_FAILED(nsrv)) {
-      return Result::FATAL_ERROR_LIBRARY_FAILURE;
+    if (result != Success) {
+      return result;
     }
 
 #ifdef MOZ_NEW_CERT_STORAGE
-    nsrv = mCertStorage->GetRevocationState(
+    nsresult nsrv = mCertStorage->GetRevocationState(
         issuerBytes, serialBytes, subjectBytes, pubKeyBytes, &revocationState);
 #else
-    nsrv = mCertBlocklist->IsCertRevoked(encIssuer, encSerial, encSubject,
-                                         encPubKey, &isCertRevoked);
+    nsresult nsrv = mCertBlocklist->IsCertRevoked(
+        encIssuer, encSerial, encSubject, encPubKey, &isCertRevoked);
 #endif
     if (NS_FAILED(nsrv)) {
       return Result::FATAL_ERROR_LIBRARY_FAILURE;
@@ -313,6 +428,31 @@ Result NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
     }
   }
 
+  // This may be a third-party intermediate.
+  for (const auto& thirdPartyIntermediateInput :
+       mThirdPartyIntermediateInputs) {
+    if (InputsAreEqual(candidateCertDER, thirdPartyIntermediateInput)) {
+      trustLevel = TrustLevel::InheritsTrust;
+      return Success;
+    }
+  }
+
+  // XXX: This would be cleaner and more efficient if we could get the trust
+  // information without constructing a CERTCertificate here, but NSS doesn't
+  // expose it in any other easy-to-use fashion. The use of
+  // CERT_NewTempCertificate to get a CERTCertificate shouldn't be a
+  // performance problem for certificates already known to NSS because NSS will
+  // just find the existing CERTCertificate in its in-memory cache and return
+  // it. For certificates not already in NSS (namely third-party roots and
+  // intermediates), we want to avoid calling CERT_NewTempCertificate
+  // repeatedly, so we've already checked if the candidate certificate is a
+  // third-party certificate, above.
+  SECItem candidateCertDERSECItem = UnsafeMapInputToSECItem(candidateCertDER);
+  UniqueCERTCertificate candidateCert(CERT_NewTempCertificate(
+      CERT_GetDefaultCertDB(), &candidateCertDERSECItem, nullptr, false, true));
+  if (!candidateCert) {
+    return MapPRErrorCodeToResult(PR_GetError());
+  }
   // XXX: CERT_GetCertTrust seems to be abusing SECStatus as a boolean, where
   // SECSuccess means that there is a trust record and SECFailure means there
   // is not a trust record. I looked at NSS's internal uses of
@@ -441,7 +581,7 @@ Result NSSCertDBTrustDomain::CheckRevocation(
 
   // Bug 991815: The BR allow OCSP for intermediates to be up to one year old.
   // Since this affects EV there is no reason why DV should be more strict
-  // so all intermediatates are allowed to have OCSP responses up to one year
+  // so all intermediates are allowed to have OCSP responses up to one year
   // old.
   uint16_t maxOCSPLifetimeInDays = 10;
   if (endEntityOrCA == EndEntityOrCA::MustBeCA) {
@@ -632,7 +772,7 @@ Result NSSCertDBTrustDomain::CheckRevocation(
       cachedResponseResult == Result::ERROR_OCSP_UNKNOWN_CERT ||
       cachedResponseResult == Result::ERROR_OCSP_OLD_RESPONSE) {
     // Only send a request to, and process a response from, the server if we
-    // didn't have a cached indication of failure.  Also, ddon't keep requesting
+    // didn't have a cached indication of failure.  Also, don't keep requesting
     // responses from a failing server.
     return SynchronousCheckRevocationWithServer(
         certID, aiaLocation, time, maxOCSPLifetimeInDays, cachedResponseResult,
@@ -856,19 +996,16 @@ Result NSSCertDBTrustDomain::IsChainValid(const DERArray& certArray, Time time,
   }
 
   // Modernization in-progress: Keep certList as a CERTCertList for storage into
-  // the mBuiltChain variable at the end, but let's use nsNSSCertList for the
-  // validity calculations.
-  UniqueCERTCertList certListCopy = nsNSSCertList::DupCertList(certList);
+  // the mBuiltChain variable at the end.
+  nsTArray<RefPtr<nsIX509Cert>> nssCertList;
+  nsresult nsrv = nsNSSCertificateDB::ConstructCertArrayFromUniqueCertList(
+      certList, nssCertList);
 
-  // This adopts the list
-  RefPtr<nsNSSCertList> nssCertList =
-      new nsNSSCertList(std::move(certListCopy));
-  if (!nssCertList) {
+  if (NS_FAILED(nsrv)) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
-
   nsCOMPtr<nsIX509Cert> rootCert;
-  nsresult nsrv = nssCertList->GetRootCertificate(rootCert);
+  nsrv = nsNSSCertificate::GetRootCertificate(nssCertList, rootCert);
   if (NS_FAILED(nsrv)) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
@@ -901,52 +1038,6 @@ Result NSSCertDBTrustDomain::IsChainValid(const DERArray& certArray, Time time,
     }
   }
 
-  // See bug 1349762. If the root is "GlobalSign Root CA - R2", don't consider
-  // the end-entity valid for EV unless the
-  // "GlobalSign Extended Validation CA - SHA256 - G2" intermediate is in the
-  // chain as well. It should be possible to remove this workaround after
-  // January 2019 as per bug 1349727 comment 17.
-  if (requiredPolicy == sGlobalSignEVPolicy &&
-      CertMatchesStaticData(root.get(), sGlobalSignRootCAR2SubjectBytes,
-                            sGlobalSignRootCAR2SPKIBytes)) {
-    rootCert = nullptr;  // Clear the state for Segment...
-    nsCOMPtr<nsIX509CertList> intCerts;
-    nsCOMPtr<nsIX509Cert> eeCert;
-
-    nsrv = nssCertList->SegmentCertificateChain(rootCert, intCerts, eeCert);
-    if (NS_FAILED(nsrv)) {
-      // This is supposed to be a valid EV chain (where at least 3 certificates
-      // are required: end-entity, at least one intermediate, and a root), so
-      // this is an error.
-      return Result::ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED;
-    }
-
-    bool foundRequiredIntermediate = false;
-    RefPtr<nsNSSCertList> intCertList = intCerts->GetCertList();
-    nsrv = intCertList->ForEachCertificateInChain(
-        [&foundRequiredIntermediate](nsCOMPtr<nsIX509Cert> aCert, bool aHasMore,
-                                     /* out */ bool& aContinue) {
-          // We need an owning handle when calling nsIX509Cert::GetCert().
-          UniqueCERTCertificate nssCert(aCert->GetCert());
-          if (CertMatchesStaticData(
-                  nssCert.get(),
-                  sGlobalSignExtendedValidationCASHA256G2SubjectBytes,
-                  sGlobalSignExtendedValidationCASHA256G2SPKIBytes)) {
-            foundRequiredIntermediate = true;
-            aContinue = false;
-          }
-          return NS_OK;
-        });
-
-    if (NS_FAILED(nsrv)) {
-      return Result::FATAL_ERROR_LIBRARY_FAILURE;
-    }
-
-    if (!foundRequiredIntermediate) {
-      return Result::ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED;
-    }
-  }
-
   // See bug 1434300. If the root is a Symantec root, see if we distrust this
   // path. Since we already have the root available, we can check that cheaply
   // here before proceeding with the rest of the algorithm.
@@ -959,10 +1050,11 @@ Result NSSCertDBTrustDomain::IsChainValid(const DERArray& certArray, Time time,
        (mDistrustedCAPolicy &
         DistrustedCAPolicy::DistrustSymantecRootsRegardlessOfDate))) {
     rootCert = nullptr;  // Clear the state for Segment...
-    nsCOMPtr<nsIX509CertList> intCerts;
+    nsTArray<RefPtr<nsIX509Cert>> intCerts;
     nsCOMPtr<nsIX509Cert> eeCert;
 
-    nsrv = nssCertList->SegmentCertificateChain(rootCert, intCerts, eeCert);
+    nsrv = nsNSSCertificate::SegmentCertificateChain(nssCertList, rootCert,
+                                                     intCerts, eeCert);
     if (NS_FAILED(nsrv)) {
       // This chain is supposed to be complete, so this is an error.
       return Result::ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED;
@@ -1176,8 +1268,8 @@ void NSSCertDBTrustDomain::NoteAuxiliaryExtension(AuxiliaryExtension extension,
   }
 }
 
-SECStatus InitializeNSS(const nsACString& dir, bool readOnly,
-                        bool loadPKCS11Modules) {
+SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
+                        PKCS11DBConfig pkcs11DbConfig) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // The NSS_INIT_NOROOTINIT flag turns off the loading of the root certs
@@ -1186,24 +1278,24 @@ SECStatus InitializeNSS(const nsACString& dir, bool readOnly,
   // Ubuntu 8.04, which loads any nonexistent "<configdir>/libnssckbi.so" as
   // "/usr/lib/nss/libnssckbi.so".
   uint32_t flags = NSS_INIT_NOROOTINIT | NSS_INIT_OPTIMIZESPACE;
-  if (readOnly) {
+  if (nssDbConfig == NSSDBConfig::ReadOnly) {
     flags |= NSS_INIT_READONLY;
   }
-  if (!loadPKCS11Modules) {
+  if (pkcs11DbConfig == PKCS11DBConfig::DoNotLoadModules) {
     flags |= NSS_INIT_NOMODDB;
   }
   nsAutoCString dbTypeAndDirectory("sql:");
   dbTypeAndDirectory.Append(dir);
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-          ("InitializeNSS(%s, %d, %d)", dbTypeAndDirectory.get(), readOnly,
-           loadPKCS11Modules));
+          ("InitializeNSS(%s, %d, %d)", dbTypeAndDirectory.get(),
+           (int)nssDbConfig, (int)pkcs11DbConfig));
   SECStatus srv =
       NSS_Initialize(dbTypeAndDirectory.get(), "", "", SECMOD_DB, flags);
   if (srv != SECSuccess) {
     return srv;
   }
 
-  if (!readOnly) {
+  if (nssDbConfig == NSSDBConfig::ReadWrite) {
     UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
     if (!slot) {
       return SECFailure;
@@ -1333,74 +1425,77 @@ nsresult DefaultServerNicknameForCert(const CERTCertificate* cert,
 }
 
 #ifdef MOZ_NEW_CERT_STORAGE
-nsresult BuildRevocationCheckArrays(const UniqueCERTCertificate& cert,
-                                    /*out*/ nsTArray<uint8_t>& issuerBytes,
-                                    /*out*/ nsTArray<uint8_t>& serialBytes,
-                                    /*out*/ nsTArray<uint8_t>& subjectBytes,
-                                    /*out*/ nsTArray<uint8_t>& pubKeyBytes) {
+Result BuildRevocationCheckArrays(Input certDER, EndEntityOrCA endEntityOrCA,
+                                  /*out*/ nsTArray<uint8_t>& issuerBytes,
+                                  /*out*/ nsTArray<uint8_t>& serialBytes,
+                                  /*out*/ nsTArray<uint8_t>& subjectBytes,
+                                  /*out*/ nsTArray<uint8_t>& pubKeyBytes) {
+  BackCert cert(certDER, endEntityOrCA, nullptr);
+  Result rv = cert.Init();
+  if (rv != Success) {
+    return rv;
+  }
   issuerBytes.Clear();
-  if (!issuerBytes.AppendElements(
-          BitwiseCast<char*, uint8_t*>(cert->derIssuer.data),
-          cert->derIssuer.len)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  Input issuer(cert.GetIssuer());
+  issuerBytes.AppendElements(issuer.UnsafeGetData(), issuer.GetLength());
   serialBytes.Clear();
-  if (!serialBytes.AppendElements(
-          BitwiseCast<char*, uint8_t*>(cert->serialNumber.data),
-          cert->serialNumber.len)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  Input serial(cert.GetSerialNumber());
+  serialBytes.AppendElements(serial.UnsafeGetData(), serial.GetLength());
   subjectBytes.Clear();
-  if (!subjectBytes.AppendElements(
-          BitwiseCast<char*, uint8_t*>(cert->derSubject.data),
-          cert->derSubject.len)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  Input subject(cert.GetSubject());
+  subjectBytes.AppendElements(subject.UnsafeGetData(), subject.GetLength());
   pubKeyBytes.Clear();
-  if (!pubKeyBytes.AppendElements(
-          BitwiseCast<char*, uint8_t*>(cert->derPublicKey.data),
-          cert->derPublicKey.len)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  return NS_OK;
+  Input pubKey(cert.GetSubjectPublicKeyInfo());
+  pubKeyBytes.AppendElements(pubKey.UnsafeGetData(), pubKey.GetLength());
+
+  return Success;
 }
 #else
-nsresult BuildRevocationCheckStrings(const CERTCertificate* cert,
-                                     /*out*/ nsCString& encIssuer,
-                                     /*out*/ nsCString& encSerial,
-                                     /*out*/ nsCString& encSubject,
-                                     /*out*/ nsCString& encPubKey) {
+Result BuildRevocationCheckStrings(Input certDER, EndEntityOrCA endEntityOrCA,
+                                   /*out*/ nsCString& encIssuer,
+                                   /*out*/ nsCString& encSerial,
+                                   /*out*/ nsCString& encSubject,
+                                   /*out*/ nsCString& encPubKey) {
   // Convert issuer, serial, subject and pubKey data to Base64 encoded DER
+  BackCert cert(certDER, endEntityOrCA, nullptr);
+  Result result = cert.Init();
+  if (result != Success) {
+    return result;
+  }
+  Input issuer(cert.GetIssuer());
   nsDependentCSubstring issuerString(
-      BitwiseCast<char*, uint8_t*>(cert->derIssuer.data), cert->derIssuer.len);
+      reinterpret_cast<const char*>(issuer.UnsafeGetData()),
+      issuer.GetLength());
+  Input serial(cert.GetSerialNumber());
   nsDependentCSubstring serialString(
-      BitwiseCast<char*, uint8_t*>(cert->serialNumber.data),
-      cert->serialNumber.len);
+      reinterpret_cast<const char*>(serial.UnsafeGetData()),
+      serial.GetLength());
+  Input subject(cert.GetSubject());
   nsDependentCSubstring subjectString(
-      BitwiseCast<char*, uint8_t*>(cert->derSubject.data),
-      cert->derSubject.len);
+      reinterpret_cast<const char*>(subject.UnsafeGetData()),
+      subject.GetLength());
+  Input pubKey(cert.GetSubjectPublicKeyInfo());
   nsDependentCSubstring pubKeyString(
-      BitwiseCast<char*, uint8_t*>(cert->derPublicKey.data),
-      cert->derPublicKey.len);
+      reinterpret_cast<const char*>(pubKey.UnsafeGetData()),
+      pubKey.GetLength());
 
   nsresult rv = Base64Encode(issuerString, encIssuer);
   if (NS_FAILED(rv)) {
-    return rv;
+    return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
   rv = Base64Encode(serialString, encSerial);
   if (NS_FAILED(rv)) {
-    return rv;
+    return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
   rv = Base64Encode(subjectString, encSubject);
   if (NS_FAILED(rv)) {
-    return rv;
+    return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
   rv = Base64Encode(pubKeyString, encPubKey);
   if (NS_FAILED(rv)) {
-    return rv;
+    return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
-
-  return NS_OK;
+  return Success;
 }
 #endif
 

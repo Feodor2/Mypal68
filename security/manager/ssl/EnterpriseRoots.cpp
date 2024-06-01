@@ -8,6 +8,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Unused.h"
 #include "mozpkix/Result.h"
+#include "nsThreadUtils.h"
 
 #ifdef XP_MACOSX
 #  include <Security/Security.h>
@@ -16,7 +17,12 @@
 #  include "nsCocoaFeatures.h"
 #endif  // XP_MACOSX
 
-extern LazyLogModule gPIPNSSLog;
+#ifdef XP_WIN
+#  include <windows.h>
+#  include <wincrypt.h>
+#endif  // XP_WIN
+
+extern mozilla::LazyLogModule gPIPNSSLog;
 
 using namespace mozilla;
 

@@ -4,8 +4,8 @@
 
 #include "CredentialManagerSecret.h"
 
-#include <wincred.h>
 #include <windows.h>
+#include <wincred.h>
 
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"

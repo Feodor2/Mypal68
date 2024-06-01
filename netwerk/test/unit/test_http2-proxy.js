@@ -20,9 +20,11 @@
  */
 
 const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
+const { NodeServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 let proxy_port;
 let server_port;
+let filter;
 
 // See moz-http2
 const proxy_auth = "authorization-token";
@@ -37,7 +39,12 @@ class ProxyFilter {
     this.QueryInterface = ChromeUtils.generateQI([Ci.nsIProtocolProxyFilter]);
   }
   applyFilter(pps, uri, pi, cb) {
-    if (uri.spec.match(/(\/proxy-session-counter)/)) {
+    if (
+      uri.pathQueryRef.startsWith("/execute") ||
+      uri.pathQueryRef.startsWith("/fork") ||
+      uri.pathQueryRef.startsWith("/kill")
+    ) {
+      // So we allow NodeServer.execute to work
       cb.onProxyFilterResult(pi);
       return;
     }
@@ -109,33 +116,157 @@ function get_response(channel, flags = CL_ALLOW_UNKNOWN_CL) {
 
 let initial_session_count = 0;
 
+class http2ProxyCode {
+  static listen(server, envport) {
+    if (!server) {
+      return Promise.resolve(0);
+    }
+
+    let portSelection = 0;
+    if (envport !== undefined) {
+      try {
+        portSelection = parseInt(envport, 10);
+      } catch (e) {
+        portSelection = -1;
+      }
+    }
+    return new Promise(resolve => {
+      server.listen(portSelection, "0.0.0.0", 2000, () => {
+        resolve(server.address().port);
+      });
+    });
+  }
+
+  static startNewProxy() {
+    const fs = require("fs");
+    const options = {
+      key: fs.readFileSync(__dirname + "/http2-cert.key"),
+      cert: fs.readFileSync(__dirname + "/http2-cert.pem"),
+    };
+    const http2 = require("http2");
+    global.proxy = http2.createSecureServer(options);
+    this.setupProxy();
+    return http2ProxyCode.listen(proxy).then(port => {
+      return { port, success: true };
+    });
+  }
+
+  static closeProxy() {
+    proxy.closeSockets();
+    return new Promise(resolve => {
+      proxy.close(resolve);
+    });
+  }
+
+  static proxySessionCount() {
+    if (!proxy) {
+      return 0;
+    }
+    return proxy.proxy_session_count;
+  }
+
+  static setupProxy() {
+    if (!proxy) {
+      throw new Error("proxy is null");
+    }
+    proxy.proxy_session_count = 0;
+    proxy.on("session", () => {
+      ++proxy.proxy_session_count;
+    });
+
+    // We need to track active connections so we can forcefully close keep-alive
+    // connections when shutting down the proxy.
+    proxy.socketIndex = 0;
+    proxy.socketMap = {};
+    proxy.on("connection", function(socket) {
+      let index = proxy.socketIndex++;
+      proxy.socketMap[index] = socket;
+      socket.on("close", function() {
+        delete proxy.socketMap[index];
+      });
+    });
+    proxy.closeSockets = function() {
+      for (let i in proxy.socketMap) {
+        proxy.socketMap[i].destroy();
+      }
+    };
+
+    proxy.on("stream", (stream, headers) => {
+      if (headers[":method"] !== "CONNECT") {
+        // Only accept CONNECT requests
+        stream.respond({ ":status": 405 });
+        stream.end();
+        return;
+      }
+
+      const target = headers[":authority"];
+
+      const authorization_token = headers["proxy-authorization"];
+      if (
+        "authorization-token" != authorization_token ||
+        target == "407.example.com:443"
+      ) {
+        stream.respond({ ":status": 407 });
+        // Deliberately send no Proxy-Authenticate header
+        stream.end();
+        return;
+      }
+      if (target == "404.example.com:443") {
+        // 404 Not Found, a response code that a proxy should return when the host can't be found
+        stream.respond({ ":status": 404 });
+        stream.end();
+        return;
+      }
+      if (target == "429.example.com:443") {
+        // 429 Too Many Requests, a response code that a proxy should return when receiving too many requests
+        stream.respond({ ":status": 429 });
+        stream.end();
+        return;
+      }
+      if (target == "502.example.com:443") {
+        // 502 Bad Gateway, a response code mostly resembling immediate connection error
+        stream.respond({ ":status": 502 });
+        stream.end();
+        return;
+      }
+      if (target == "504.example.com:443") {
+        // 504 Gateway Timeout, did not receive a timely response from an upstream server
+        stream.respond({ ":status": 504 });
+        stream.end();
+        return;
+      }
+
+      const net = require("net");
+      const socket = net.connect(serverPort, "127.0.0.1", () => {
+        try {
+          stream.respond({ ":status": 200 });
+          socket.pipe(stream);
+          stream.pipe(socket);
+        } catch (exception) {
+          console.log(exception);
+          stream.close();
+        }
+      });
+      socket.on("error", error => {
+        throw `Unxpected error when conneting the HTTP/2 server from the HTTP/2 proxy during CONNECT handling: '${error}'`;
+      });
+    });
+  }
+}
+
 function proxy_session_counter() {
   return new Promise(async resolve => {
-    const channel = make_channel(
-      `https://localhost:${server_port}/proxy-session-counter`
+    let data = await NodeServer.execute(
+      processId,
+      `http2ProxyCode.proxySessionCount()`
     );
-    const { data } = await get_response(channel);
     resolve(parseInt(data) - initial_session_count);
   });
 }
-
+let processId;
 add_task(async function setup() {
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  server_port = env.get("MOZHTTP2_PORT");
-  Assert.notEqual(server_port, null);
-  proxy_port = env.get("MOZHTTP2_PROXY_PORT");
-  Assert.notEqual(proxy_port, null);
-
   // Set to allow the cert presented by our H2 server
   do_get_profile();
-
-  Services.prefs.setBoolPref("network.http.spdy.enabled", true);
-  Services.prefs.setBoolPref("network.http.spdy.enabled.http2", true);
-
-  // make all native resolve calls "secretly" resolve localhost instead
-  Services.prefs.setBoolPref("network.dns.native-is-localhost", true);
 
   // The moz-http2 cert is for foo.example.com and is signed by http2-ca.pem
   // so add that cert to the trust list as a signing cert.
@@ -144,16 +275,43 @@ add_task(async function setup() {
   );
   addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
-  pps.registerFilter(new ProxyFilter("https", "localhost", proxy_port, 0), 10);
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  server_port = env.get("MOZHTTP2_PORT");
+  Assert.notEqual(server_port, null);
+  processId = await NodeServer.fork();
+  await NodeServer.execute(processId, `serverPort = ${server_port}`);
+  await NodeServer.execute(processId, http2ProxyCode);
+  let proxy = await NodeServer.execute(
+    processId,
+    `http2ProxyCode.startNewProxy()`
+  );
+  proxy_port = proxy.port;
+  Assert.notEqual(proxy_port, null);
+
+  Services.prefs.setBoolPref("network.http.spdy.enabled", true);
+  Services.prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+
+  // make all native resolve calls "secretly" resolve localhost instead
+  Services.prefs.setBoolPref("network.dns.native-is-localhost", true);
+
+  filter = new ProxyFilter("https", "localhost", proxy_port, 0);
+  pps.registerFilter(filter, 10);
 
   initial_session_count = await proxy_session_counter();
   info(`Initial proxy session count = ${initial_session_count}`);
 });
 
-registerCleanupFunction(() => {
+registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.http.spdy.enabled");
   Services.prefs.clearUserPref("network.http.spdy.enabled.http2");
   Services.prefs.clearUserPref("network.dns.native-is-localhost");
+
+  pps.unregisterFilter(filter);
+
+  await NodeServer.execute(processId, `http2ProxyCode.closeProxy()`);
+  await NodeServer.kill(processId);
 });
 
 /**

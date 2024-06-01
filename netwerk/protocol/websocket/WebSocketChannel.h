@@ -134,7 +134,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
   friend class CallAcknowledge;
 
   // Common send code for binary + text msgs
-  MOZ_MUST_USE nsresult SendMsgCommon(const nsACString* aMsg, bool isBinary,
+  MOZ_MUST_USE nsresult SendMsgCommon(const nsACString& aMsg, bool isBinary,
                                       uint32_t length,
                                       nsIInputStream* aStream = nullptr);
 
@@ -289,7 +289,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
   uint32_t mHdrOutToSend;
   uint8_t* mHdrOut;
   uint8_t mOutHeader[kCopyBreak + 16];
-  nsAutoPtr<PMCECompression> mPMCECompressor;
+  UniquePtr<PMCECompression> mPMCECompressor;
   uint32_t mDynamicOutputSize;
   uint8_t* mDynamicOutput;
   bool mPrivateBrowsing;

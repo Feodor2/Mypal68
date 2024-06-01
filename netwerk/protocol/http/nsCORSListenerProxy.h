@@ -32,7 +32,11 @@ class nsHttpChannel;
 
 enum class DataURIHandling { Allow, Disallow };
 
-enum class UpdateType { Default, InternalOrHSTSRedirect };
+enum class UpdateType {
+  Default,
+  StripRequestBodyHeader,
+  InternalOrHSTSRedirect
+};
 
 class nsCORSListenerProxy final : public nsIStreamListener,
                                   public nsIInterfaceRequestor,

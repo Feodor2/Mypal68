@@ -9,7 +9,6 @@
 #include "nsISupportsImpl.h"
 #include "prthread.h"
 #include "nsTArray.h"
-#include "nsAutoPtr.h"
 #include "mozilla/Monitor2.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Atomics.h"

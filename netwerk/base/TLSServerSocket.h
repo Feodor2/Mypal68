@@ -5,7 +5,6 @@
 #ifndef mozilla_net_TLSServerSocket_h
 #define mozilla_net_TLSServerSocket_h
 
-#include "nsAutoPtr.h"
 #include "nsITLSServerSocket.h"
 #include "nsServerSocket.h"
 #include "nsString.h"

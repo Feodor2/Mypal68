@@ -10,7 +10,6 @@
 #include "mozIStorageConnection.h"
 #include "mozIStorageFunction.h"
 #include "nsIFile.h"
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 #include "nsInterfaceHashtable.h"

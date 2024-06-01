@@ -429,9 +429,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   uint32_t DefaultHpackBuffer() const { return mDefaultHpackBuffer; }
 
-  bool Bug1563538() const { return mBug1563538; }
   bool Bug1563695() const { return mBug1563695; }
-  bool Bug1562315() const { return mBug1562315; }
   bool Bug1556491() const { return mBug1556491; }
 
   uint32_t MaxHttpResponseHeaderSize() const {
@@ -499,10 +497,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // the connection manager
   RefPtr<nsHttpConnectionMgr> mConnMgr;
 
-  // This thread is used for performing operations that should not block
-  // the main thread.
-  nsCOMPtr<nsIThread> mBackgroundThread;
-
   //
   // prefs
   //
@@ -548,6 +542,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   uint8_t mRedirectionLimit;
 
+  bool mBeConservativeForProxy;
+
   // we'll warn the user if we load an URL containing a userpass field
   // unless its length is less than this threshold.  this warning is
   // intended to protect the user against spoofing attempts that use
@@ -557,6 +553,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint8_t mQoSBits;
 
   bool mEnforceAssocReq;
+
+  nsCString mImageAcceptHeader;
 
   nsCString mAcceptLanguages;
   nsCString mHttpAcceptEncodings;
@@ -674,10 +672,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // The default size (in bytes) of the HPACK decompressor table.
   uint32_t mDefaultHpackBuffer;
 
-  // Pref for the whole fix that bug provides
-  Atomic<bool, Relaxed> mBug1563538;
   Atomic<bool, Relaxed> mBug1563695;
-  Atomic<bool, Relaxed> mBug1562315;
   Atomic<bool, Relaxed> mBug1556491;
 
   // The max size (in bytes) for received Http response header.

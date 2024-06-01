@@ -38,12 +38,12 @@
 #include "nsIObserverService.h"
 #include "nsCharSeparatedTokenizer.h"
 
-#include "nsAutoPtr.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsCRT.h"
 #include "nsThreadUtils.h"
 #include "nsError.h"
+#include "mozilla/Base64.h"
 #include "nsStringStream.h"
 #include "nsAlgorithm.h"
 #include "nsProxyRelease.h"
@@ -182,18 +182,13 @@ class FailDelayManager {
     }
   }
 
-  ~FailDelayManager() {
-    MOZ_COUNT_DTOR(FailDelayManager);
-    for (uint32_t i = 0; i < mEntries.Length(); i++) {
-      delete mEntries[i];
-    }
-  }
+  ~FailDelayManager() { MOZ_COUNT_DTOR(FailDelayManager); }
 
   void Add(nsCString& address, int32_t port) {
     if (mDelaysDisabled) return;
 
-    FailDelay* record = new FailDelay(address, port);
-    mEntries.AppendElement(record);
+    UniquePtr<FailDelay> record(new FailDelay(address, port));
+    mEntries.AppendElement(std::move(record));
   }
 
   // Element returned may not be valid after next main thread event: don't keep
@@ -208,7 +203,7 @@ class FailDelayManager {
     // We also remove expired entries during search: iterate from end to make
     // indexing simpler
     for (int32_t i = mEntries.Length() - 1; i >= 0; --i) {
-      FailDelay* fail = mEntries[i];
+      FailDelay* fail = mEntries[i].get();
       if (fail->mAddress.Equals(address) && fail->mPort == port) {
         if (outIndex) *outIndex = i;
         result = fail;
@@ -218,7 +213,6 @@ class FailDelayManager {
         break;
       } else if (fail->IsExpired(rightNow)) {
         mEntries.RemoveElementAt(i);
-        delete fail;
       }
     }
     return result;
@@ -252,7 +246,6 @@ class FailDelayManager {
           // call
         } else if (fail->IsExpired(rightNow)) {
           mEntries.RemoveElementAt(failIndex);
-          delete fail;
         }
       }
     }
@@ -269,17 +262,16 @@ class FailDelayManager {
 
     // iterate from end, to make deletion indexing easier
     for (int32_t i = mEntries.Length() - 1; i >= 0; --i) {
-      FailDelay* entry = mEntries[i];
+      FailDelay* entry = mEntries[i].get();
       if ((entry->mAddress.Equals(address) && entry->mPort == port) ||
           entry->IsExpired(rightNow)) {
         mEntries.RemoveElementAt(i);
-        delete entry;
       }
     }
   }
 
  private:
-  nsTArray<FailDelay*> mEntries;
+  nsTArray<UniquePtr<FailDelay>> mEntries;
   bool mDelaysDisabled;
 };
 
@@ -323,9 +315,8 @@ class nsWSAdmissionManager {
     bool found = (sManager->IndexOf(ws->mAddress) >= 0);
 
     // Always add ourselves to queue, even if we'll connect immediately
-    nsOpenConn* newdata = new nsOpenConn(ws->mAddress, ws);
-    LOG(("Websocket: adding conn %p to the queue", newdata));
-    sManager->mQueue.AppendElement(newdata);
+    UniquePtr<nsOpenConn> newdata(new nsOpenConn(ws->mAddress, ws));
+    sManager->mQueue.AppendElement(std::move(newdata));
 
     if (found) {
       LOG(
@@ -447,10 +438,7 @@ class nsWSAdmissionManager {
     MOZ_COUNT_CTOR(nsWSAdmissionManager);
   }
 
-  ~nsWSAdmissionManager() {
-    MOZ_COUNT_DTOR(nsWSAdmissionManager);
-    for (uint32_t i = 0; i < mQueue.Length(); i++) delete mQueue[i];
-  }
+  ~nsWSAdmissionManager() { MOZ_COUNT_DTOR(nsWSAdmissionManager); }
 
   class nsOpenConn {
    public:
@@ -484,10 +472,7 @@ class nsWSAdmissionManager {
     int32_t index = IndexOf(aChannel);
     MOZ_ASSERT(index >= 0, "connection to remove not in queue");
     if (index >= 0) {
-      nsOpenConn* olddata = mQueue[index];
       mQueue.RemoveElementAt(index);
-      LOG(("Websocket: removing conn %p from the queue", olddata));
-      delete olddata;
     }
   }
 
@@ -514,7 +499,7 @@ class nsWSAdmissionManager {
   //
   // We could hash hostnames instead of using a single big vector here, but the
   // dataset is expected to be small.
-  nsTArray<nsOpenConn*> mQueue;
+  nsTArray<UniquePtr<nsOpenConn>> mQueue;
 
   FailDelayManager mFailures;
 
@@ -529,13 +514,12 @@ StaticMutex nsWSAdmissionManager::sLock;
 // CallOnMessageAvailable
 //-----------------------------------------------------------------------------
 
-class CallOnMessageAvailable final : public nsIRunnable {
+class CallOnMessageAvailable final : public Runnable {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-
   CallOnMessageAvailable(WebSocketChannel* aChannel, nsACString& aData,
                          int32_t aLen)
-      : mChannel(aChannel),
+      : Runnable("net::CallOnMessageAvailable"),
+        mChannel(aChannel),
         mListenerMT(aChannel->mListenerMT),
         mData(aData),
         mLen(aLen) {}
@@ -571,18 +555,16 @@ class CallOnMessageAvailable final : public nsIRunnable {
   nsCString mData;
   int32_t mLen;
 };
-NS_IMPL_ISUPPORTS(CallOnMessageAvailable, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallOnStop
 //-----------------------------------------------------------------------------
 
-class CallOnStop final : public nsIRunnable {
+class CallOnStop final : public Runnable {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-
   CallOnStop(WebSocketChannel* aChannel, nsresult aReason)
-      : mChannel(aChannel),
+      : Runnable("net::CallOnStop"),
+        mChannel(aChannel),
         mListenerMT(mChannel->mListenerMT),
         mReason(aReason) {}
 
@@ -611,19 +593,17 @@ class CallOnStop final : public nsIRunnable {
   RefPtr<BaseWebSocketChannel::ListenerAndContextContainer> mListenerMT;
   nsresult mReason;
 };
-NS_IMPL_ISUPPORTS(CallOnStop, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallOnServerClose
 //-----------------------------------------------------------------------------
 
-class CallOnServerClose final : public nsIRunnable {
+class CallOnServerClose final : public Runnable {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-
   CallOnServerClose(WebSocketChannel* aChannel, uint16_t aCode,
                     nsACString& aReason)
-      : mChannel(aChannel),
+      : Runnable("net::CallOnServerClose"),
+        mChannel(aChannel),
         mListenerMT(mChannel->mListenerMT),
         mCode(aCode),
         mReason(aReason) {}
@@ -652,7 +632,6 @@ class CallOnServerClose final : public nsIRunnable {
   uint16_t mCode;
   nsCString mReason;
 };
-NS_IMPL_ISUPPORTS(CallOnServerClose, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallAcknowledge
@@ -694,15 +673,14 @@ class CallAcknowledge final : public CancelableRunnable {
 // CallOnTransportAvailable
 //-----------------------------------------------------------------------------
 
-class CallOnTransportAvailable final : public nsIRunnable {
+class CallOnTransportAvailable final : public Runnable {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-
   CallOnTransportAvailable(WebSocketChannel* aChannel,
                            nsISocketTransport* aTransport,
                            nsIAsyncInputStream* aSocketIn,
                            nsIAsyncOutputStream* aSocketOut)
-      : mChannel(aChannel),
+      : Runnable("net::CallOnTransportAvailble"),
+        mChannel(aChannel),
         mTransport(aTransport),
         mSocketIn(aSocketIn),
         mSocketOut(aSocketOut) {}
@@ -720,7 +698,6 @@ class CallOnTransportAvailable final : public nsIRunnable {
   nsCOMPtr<nsIAsyncInputStream> mSocketIn;
   nsCOMPtr<nsIAsyncOutputStream> mSocketOut;
 };
-NS_IMPL_ISUPPORTS(CallOnTransportAvailable, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // PMCECompression
@@ -928,22 +905,18 @@ static const char* msgNames[] = {"text", "binaryString", "binaryStream",
 
 class OutboundMessage {
  public:
-  OutboundMessage(WsMsgType type, nsCString* str)
-      : mMsgType(type), mDeflated(false), mOrigLength(0) {
+  OutboundMessage(WsMsgType type, const nsACString& str)
+      : mMsg(mozilla::AsVariant(pString(str))),
+        mMsgType(type),
+        mDeflated(false) {
     MOZ_COUNT_CTOR(OutboundMessage);
-    mMsg.pString.mValue = str;
-    mMsg.pString.mOrigValue = nullptr;
-    mLength = str ? str->Length() : 0;
   }
 
   OutboundMessage(nsIInputStream* stream, uint32_t length)
-      : mMsgType(kMsgTypeStream),
-        mLength(length),
-        mDeflated(false),
-        mOrigLength(0) {
+      : mMsg(mozilla::AsVariant(StreamWithLength(stream, length))),
+        mMsgType(kMsgTypeStream),
+        mDeflated(false) {
     MOZ_COUNT_CTOR(OutboundMessage);
-    mMsg.pStream = stream;
-    mMsg.pStream->AddRef();
   }
 
   ~OutboundMessage() {
@@ -953,14 +926,11 @@ class OutboundMessage {
       case kMsgTypeBinaryString:
       case kMsgTypePing:
       case kMsgTypePong:
-        delete mMsg.pString.mValue;
-        if (mMsg.pString.mOrigValue) delete mMsg.pString.mOrigValue;
         break;
       case kMsgTypeStream:
         // for now this only gets hit if msg deleted w/o being sent
-        if (mMsg.pStream) {
-          mMsg.pStream->Close();
-          mMsg.pStream->Release();
+        if (mMsg.as<StreamWithLength>().mStream) {
+          mMsg.as<StreamWithLength>().mStream->Close();
         }
         break;
       case kMsgTypeFin:
@@ -969,47 +939,65 @@ class OutboundMessage {
   }
 
   WsMsgType GetMsgType() const { return mMsgType; }
-  int32_t Length() const { return mLength; }
-  int32_t OrigLength() const { return mDeflated ? mOrigLength : mLength; }
+  int32_t Length() {
+    if (mMsg.is<pString>()) {
+      return mMsg.as<pString>().mValue.Length();
+    }
+
+    return mMsg.as<StreamWithLength>().mLength;
+  }
+  int32_t OrigLength() {
+    if (mMsg.is<pString>()) {
+      pString& ref = mMsg.as<pString>();
+      return mDeflated ? ref.mOrigValue.Length() : ref.mValue.Length();
+    }
+
+    return mMsg.as<StreamWithLength>().mLength;
+  }
 
   uint8_t* BeginWriting() {
     MOZ_ASSERT(mMsgType != kMsgTypeStream,
                "Stream should have been converted to string by now");
-    return (uint8_t*)(mMsg.pString.mValue ? mMsg.pString.mValue->BeginWriting()
-                                          : nullptr);
+    if (!mMsg.as<pString>().mValue.IsVoid()) {
+      return (uint8_t*)mMsg.as<pString>().mValue.BeginWriting();
+    }
+    return nullptr;
   }
 
   uint8_t* BeginReading() {
     MOZ_ASSERT(mMsgType != kMsgTypeStream,
                "Stream should have been converted to string by now");
-    return (uint8_t*)(mMsg.pString.mValue ? mMsg.pString.mValue->BeginReading()
-                                          : nullptr);
+    if (!mMsg.as<pString>().mValue.IsVoid()) {
+      return (uint8_t*)mMsg.as<pString>().mValue.BeginReading();
+    }
+    return nullptr;
   }
 
   uint8_t* BeginOrigReading() {
     MOZ_ASSERT(mMsgType != kMsgTypeStream,
                "Stream should have been converted to string by now");
     if (!mDeflated) return BeginReading();
-    return (uint8_t*)(mMsg.pString.mOrigValue
-                          ? mMsg.pString.mOrigValue->BeginReading()
-                          : nullptr);
+    if (!mMsg.as<pString>().mOrigValue.IsVoid()) {
+      return (uint8_t*)mMsg.as<pString>().mOrigValue.BeginReading();
+    }
+    return nullptr;
   }
 
   nsresult ConvertStreamToString() {
     MOZ_ASSERT(mMsgType == kMsgTypeStream, "Not a stream!");
+    nsAutoCString temp;
+    {
+      StreamWithLength& ref = mMsg.as<StreamWithLength>();
+      nsresult rv = NS_ReadInputStreamToString(ref.mStream, temp, ref.mLength);
 
-    nsAutoPtr<nsCString> temp(new nsCString());
-    nsresult rv = NS_ReadInputStreamToString(mMsg.pStream, *temp, mLength);
-
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (temp->Length() != mLength) {
-      return NS_ERROR_UNEXPECTED;
+      NS_ENSURE_SUCCESS(rv, rv);
+      if (temp.Length() != ref.mLength) {
+        return NS_ERROR_UNEXPECTED;
+      }
+      ref.mStream->Close();
     }
 
-    mMsg.pStream->Close();
-    mMsg.pStream->Release();
-    mMsg.pString.mValue = temp.forget();
-    mMsg.pString.mOrigValue = nullptr;
+    mMsg = mozilla::AsVariant(pString(temp));
     mMsgType = kMsgTypeBinaryString;
 
     return NS_OK;
@@ -1021,14 +1009,14 @@ class OutboundMessage {
     MOZ_ASSERT(!mDeflated);
 
     nsresult rv;
-
-    if (mLength == 0) {
+    pString& ref = mMsg.as<pString>();
+    if (ref.mValue.Length() == 0) {
       // Empty message
       return false;
     }
 
-    nsAutoPtr<nsCString> temp(new nsCString());
-    rv = aCompressor->Deflate(BeginReading(), mLength, *temp);
+    nsAutoCString temp;
+    rv = aCompressor->Deflate(BeginReading(), ref.mValue.Length(), temp);
     if (NS_FAILED(rv)) {
       LOG(
           ("WebSocketChannel::OutboundMessage: Deflating payload failed "
@@ -1037,7 +1025,8 @@ class OutboundMessage {
       return false;
     }
 
-    if (!aCompressor->UsingContextTakeover() && temp->Length() > mLength) {
+    if (!aCompressor->UsingContextTakeover() &&
+        temp.Length() > ref.mValue.Length()) {
       // When "<local>_no_context_takeover" was negotiated, do not send deflated
       // payload if it's larger that the original one. OTOH, it makes sense
       // to send the larger deflated payload when the sliding window is not
@@ -1048,42 +1037,42 @@ class OutboundMessage {
           ("WebSocketChannel::OutboundMessage: Not deflating message since the "
            "deflated payload is larger than the original one [deflated=%d, "
            "original=%d]",
-           temp->Length(), mLength));
+           temp.Length(), ref.mValue.Length()));
       return false;
     }
 
-    mOrigLength = mLength;
     mDeflated = true;
-    mLength = temp->Length();
-    mMsg.pString.mOrigValue = mMsg.pString.mValue;
-    mMsg.pString.mValue = temp.forget();
+    mMsg.as<pString>().mOrigValue = mMsg.as<pString>().mValue;
+    mMsg.as<pString>().mValue = temp;
     return true;
   }
 
  private:
-  union {
-    struct {
-      nsCString* mValue;
-      nsCString* mOrigValue;
-    } pString;
-    nsIInputStream* pStream;
-  } mMsg;
+  struct pString {
+    nsCString mValue;
+    nsCString mOrigValue;
+    explicit pString(const nsACString& value)
+        : mValue(value), mOrigValue(VoidCString()) {}
+  };
+  struct StreamWithLength {
+    nsCOMPtr<nsIInputStream> mStream;
+    uint32_t mLength;
+    explicit StreamWithLength(nsIInputStream* stream, uint32_t Length)
+        : mStream(stream), mLength(Length) {}
+  };
+  mozilla::Variant<pString, StreamWithLength> mMsg;
   WsMsgType mMsgType;
-  uint32_t mLength;
   bool mDeflated;
-  uint32_t mOrigLength;
 };
 
 //-----------------------------------------------------------------------------
 // OutboundEnqueuer
 //-----------------------------------------------------------------------------
 
-class OutboundEnqueuer final : public nsIRunnable {
+class OutboundEnqueuer final : public Runnable {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-
   OutboundEnqueuer(WebSocketChannel* aChannel, OutboundMessage* aMsg)
-      : mChannel(aChannel), mMessage(aMsg) {}
+    : Runnable("OutboundEnquerer"), mChannel(aChannel), mMessage(aMsg) {}
 
   NS_IMETHOD Run() override {
     mChannel->EnqueueOutgoingMessage(mChannel->mOutgoingMessages, mMessage);
@@ -1096,7 +1085,6 @@ class OutboundEnqueuer final : public nsIRunnable {
   RefPtr<WebSocketChannel> mChannel;
   OutboundMessage* mMessage;
 };
-NS_IMPL_ISUPPORTS(OutboundEnqueuer, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // WebSocketChannel
@@ -1178,10 +1166,6 @@ WebSocketChannel::~WebSocketChannel() {
     delete mCurrentOut;
   while ((mCurrentOut = (OutboundMessage*)mOutgoingMessages.PopFront()))
     delete mCurrentOut;
-
-  NS_ReleaseOnMainThreadSystemGroup("WebSocketChannel::mURI", mURI.forget());
-  NS_ReleaseOnMainThreadSystemGroup("WebSocketChannel::mOriginalURI",
-                                    mOriginalURI.forget());
 
   mListenerMT = nullptr;
 
@@ -1886,22 +1870,21 @@ void WebSocketChannel::ApplyMask(uint32_t mask, uint8_t* data, uint64_t len) {
 }
 
 void WebSocketChannel::GeneratePing() {
-  nsCString* buf = new nsCString();
-  buf->AssignLiteral("PING");
+  nsAutoCString buf;
+  buf.AssignLiteral("PING");
   EnqueueOutgoingMessage(mOutgoingPingMessages,
                          new OutboundMessage(kMsgTypePing, buf));
 }
 
 void WebSocketChannel::GeneratePong(uint8_t* payload, uint32_t len) {
-  nsCString* buf = new nsCString();
-  buf->SetLength(len);
-  if (buf->Length() < len) {
+  nsAutoCString buf;
+  buf.SetLength(len);
+  if (buf.Length() < len) {
     LOG(("WebSocketChannel::GeneratePong Allocation Failure\n"));
-    delete buf;
     return;
   }
 
-  memcpy(buf->BeginWriting(), payload, len);
+  memcpy(buf.BeginWriting(), payload, len);
   EnqueueOutgoingMessage(mOutgoingPongMessages,
                          new OutboundMessage(kMsgTypePong, buf));
 }
@@ -2069,7 +2052,7 @@ void WebSocketChannel::PrimeNewOutgoingMessage() {
     // deflate the payload if PMCE is negotiated
     if (mPMCECompressor &&
         (msgType == kMsgTypeString || msgType == kMsgTypeBinaryString)) {
-      if (mCurrentOut->DeflatePayload(mPMCECompressor)) {
+      if (mCurrentOut->DeflatePayload(mPMCECompressor.get())) {
         // The payload was deflated successfully, set RSV1 bit
         mOutHeader[0] |= kRsv1Bit;
 
@@ -2402,7 +2385,8 @@ void WebSocketChannel::AbortSession(nsresult reason) {
       mRequestedClose = true;
       mStopOnClose = reason;
       mSocketThread->Dispatch(
-          new OutboundEnqueuer(this, new OutboundMessage(kMsgTypeFin, nullptr)),
+          new OutboundEnqueuer(this,
+                               new OutboundMessage(kMsgTypeFin, VoidCString())),
           nsIEventTarget::DISPATCH_NORMAL);
       return;
     }
@@ -2617,7 +2601,7 @@ nsresult WebSocketChannel::HandleExtensions() {
     serverMaxWindowBits = 15;
   }
 
-  mPMCECompressor = new PMCECompression(
+  mPMCECompressor = MakeUnique<PMCECompression>(
       clientNoContextTakeover, clientMaxWindowBits, serverMaxWindowBits);
   if (mPMCECompressor->Active()) {
     LOG(
@@ -2762,11 +2746,12 @@ nsresult WebSocketChannel::SetupRequest() {
 
   rv = mRandomGenerator->GenerateRandomBytes(16, &secKey);
   NS_ENSURE_SUCCESS(rv, rv);
-  char* b64 = PL_Base64Encode((const char*)secKey, 16, nullptr);
+  rv = Base64Encode(nsDependentCSubstring((char*)secKey, 16), secKeyString);
   free(secKey);
-  if (!b64) return NS_ERROR_OUT_OF_MEMORY;
-  secKeyString.Assign(b64);
-  PR_Free(b64);  // PL_Base64Encode() uses PR_Malloc.
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
   rv = mHttpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Sec-WebSocket-Key"),
                                       secKeyString, false);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -2824,10 +2809,12 @@ nsresult WebSocketChannel::ApplyForAdmission() {
   MOZ_ASSERT(!mCancelable);
 
   nsresult rv;
-  rv = pps->AsyncResolve(mHttpChannel,
-                         nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
-                             nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL,
-                         this, nullptr, getter_AddRefs(mCancelable));
+  rv = pps->AsyncResolve(
+      mHttpChannel,
+      nsIProtocolProxyService::RESOLVE_PREFER_SOCKS_PROXY |
+          nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
+          nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL,
+      this, nullptr, getter_AddRefs(mCancelable));
   NS_ASSERTION(NS_FAILED(rv) || mCancelable,
                "nsIProtocolProxyService::AsyncResolve succeeded but didn't "
                "return a cancelable object!");
@@ -3385,9 +3372,10 @@ WebSocketChannel::AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
   // allow setting proxy uri/flags
   rv = ioService->NewChannelFromURIWithProxyFlags(
       localURI, mURI,
-      nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
+      nsIProtocolProxyService::RESOLVE_PREFER_SOCKS_PROXY |
+          nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
           nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL,
-      mLoadInfo->LoadingNode(), mLoadInfo->LoadingPrincipal(),
+      mLoadInfo->LoadingNode(), mLoadInfo->GetLoadingPrincipal(),
       mLoadInfo->TriggeringPrincipal(), mLoadInfo->GetSecurityFlags(),
       mLoadInfo->InternalContentPolicyType(), getter_AddRefs(localChannel));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -3484,7 +3472,8 @@ WebSocketChannel::Close(uint16_t code, const nsACString& reason) {
 
     if (mDataStarted) {
       return mSocketThread->Dispatch(
-          new OutboundEnqueuer(this, new OutboundMessage(kMsgTypeFin, nullptr)),
+          new OutboundEnqueuer(this,
+                               new OutboundMessage(kMsgTypeFin, VoidCString())),
           nsIEventTarget::DISPATCH_NORMAL);
     }
 
@@ -3509,23 +3498,23 @@ NS_IMETHODIMP
 WebSocketChannel::SendMsg(const nsACString& aMsg) {
   LOG(("WebSocketChannel::SendMsg() %p\n", this));
 
-  return SendMsgCommon(&aMsg, false, aMsg.Length());
+  return SendMsgCommon(aMsg, false, aMsg.Length());
 }
 
 NS_IMETHODIMP
 WebSocketChannel::SendBinaryMsg(const nsACString& aMsg) {
   LOG(("WebSocketChannel::SendBinaryMsg() %p len=%d\n", this, aMsg.Length()));
-  return SendMsgCommon(&aMsg, true, aMsg.Length());
+  return SendMsgCommon(aMsg, true, aMsg.Length());
 }
 
 NS_IMETHODIMP
 WebSocketChannel::SendBinaryStream(nsIInputStream* aStream, uint32_t aLength) {
   LOG(("WebSocketChannel::SendBinaryStream() %p\n", this));
 
-  return SendMsgCommon(nullptr, true, aLength, aStream);
+  return SendMsgCommon(VoidCString(), true, aLength, aStream);
 }
 
-nsresult WebSocketChannel::SendMsgCommon(const nsACString* aMsg, bool aIsBinary,
+nsresult WebSocketChannel::SendMsgCommon(const nsACString& aMsg, bool aIsBinary,
                                          uint32_t aLength,
                                          nsIInputStream* aStream) {
   MOZ_ASSERT(IsOnTargetThread(), "not target thread");
@@ -3560,9 +3549,9 @@ nsresult WebSocketChannel::SendMsgCommon(const nsACString* aMsg, bool aIsBinary,
       aStream
           ? new OutboundEnqueuer(this, new OutboundMessage(aStream, aLength))
           : new OutboundEnqueuer(
-                this, new OutboundMessage(
-                          aIsBinary ? kMsgTypeBinaryString : kMsgTypeString,
-                          new nsCString(*aMsg))),
+                this,
+                new OutboundMessage(
+                    aIsBinary ? kMsgTypeBinaryString : kMsgTypeString, aMsg)),
       nsIEventTarget::DISPATCH_NORMAL);
 }
 
@@ -3628,7 +3617,7 @@ WebSocketChannel::OnTransportAvailable(nsISocketTransport* aTransport,
         serverMaxWindowBits = 15;
       }
 
-      mPMCECompressor = new PMCECompression(
+      mPMCECompressor = MakeUnique<PMCECompression>(
           serverNoContextTakeover, serverMaxWindowBits, clientMaxWindowBits);
       if (mPMCECompressor->Active()) {
         LOG(

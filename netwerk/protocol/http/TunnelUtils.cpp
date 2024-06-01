@@ -144,15 +144,7 @@ void TLSFilterTransaction::Close(nsresult aReason) {
     }
   }
 
-  if (gHttpHandler->Bug1563538()) {
-    if (NS_FAILED(aReason)) {
-      mCloseReason = aReason;
-    } else {
-      mCloseReason = NS_BASE_STREAM_CLOSED;
-    }
-  } else {
-    MOZ_ASSERT(NS_ERROR_UNEXPECTED == mCloseReason);
-  }
+  mCloseReason = NS_FAILED(aReason) ? aReason : NS_BASE_STREAM_CLOSED;
 }
 
 nsresult TLSFilterTransaction::OnReadSegment(const char* aData, uint32_t aCount,
@@ -378,57 +370,17 @@ nsresult TLSFilterTransaction::WriteSegmentsAgain(nsAHttpSegmentWriter* aWriter,
     return mCloseReason;
   }
 
-  bool againBeforeWriteSegmentsCall = *again;
-
   mSegmentWriter = aWriter;
 
-  /*
-   * Bug 1562315 replaced TLSFilterTransaction::WriteSegments with
-   * WriteSegmentsAgain and the call of WriteSegments on the associated
-   * transaction was replaced with WriteSegmentsAgain call.
-   *
-   * When TLSFilterTransaction::WriteSegmentsAgain was called from outside, it
-   * internally called WriteSegments (nsAHttpTransaction default impl) and did
-   * not modify the 'again' out flag.
-   *
-   * So, to disable the bug fix, we only need two things:
-   * - call mTransaction->WriteSegments
-   * - don't modify 'again' (which is an automatic outcome of step 1, this
-   * method doesn't touch it itself)
-   */
+  nsresult rv = mTransaction->WriteSegmentsAgain(this, aCount, outCountWritten,
+                                                 again);
 
-  nsresult rv =
-      gHttpHandler->Bug1562315()
-          ? mTransaction->WriteSegmentsAgain(this, aCount, outCountWritten,
-                                             again)
-          : mTransaction->WriteSegments(this, aCount, outCountWritten);
-
-  if (NS_SUCCEEDED(rv) && !(*outCountWritten)) {
-    if (NS_FAILED(mFilterReadCode)) {
+  if (NS_SUCCEEDED(rv) && !(*outCountWritten) && NS_FAILED(mFilterReadCode)) {
       // nsPipe turns failures into silent OK.. undo that!
       rv = mFilterReadCode;
       if (Connection() && (mFilterReadCode == NS_BASE_STREAM_WOULD_BLOCK)) {
         Unused << Connection()->ResumeRecv();
       }
-    }
-    if (againBeforeWriteSegmentsCall && !*again) {
-      // This code can never be reached if bug1562315 pref is off.
-      LOG(
-          ("TLSFilterTransaction %p called trans->WriteSegments which dropped "
-           "the 'again' flag",
-           this));
-      // The transaction (=h2 session) wishes to break the loop.  There is a
-      // pending close of the transaction that is being handled by the current
-      // input stream of the session.  After cancellation of that transaction
-      // the state of the stream will change and move the state machine of the
-      // session forward on the next call of WriteSegmentsAgain. But if there
-      // are no data on the socket to read to call this code again, the session
-      // and the stream will just hang in an intermediate state, blocking. Hence
-      // forcing receive to finish the stream cleanup.
-      if (Connection()) {
-        Unused << Connection()->ForceRecv();
-      }
-    }
   }
   LOG(("TLSFilterTransaction %p called trans->WriteSegments rv=%" PRIx32
        " %d\n",
@@ -542,6 +494,17 @@ nsresult TLSFilterTransaction::StartTimerCallback() {
     return cb->OnTunnelNudged(this);
   }
   return NS_OK;
+}
+
+bool TLSFilterTransaction::HasDataToRecv() {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  if (!mFD) {
+    return false;
+  }
+  int32_t n = 0;
+  char c;
+  n = PR_Recv(mFD, &c, 1, PR_MSG_PEEK, 0);
+  return n > 0;
 }
 
 PRStatus TLSFilterTransaction::GetPeerName(PRFileDesc* aFD, PRNetAddr* addr) {
@@ -1903,33 +1866,30 @@ SocketTransportShim::Close(nsresult aReason) {
     LOG(("SocketTransportShim::Close %p", this));
   }
 
-  if (gHttpHandler->Bug1563538()) {
-    // Must always post, because mSession->CloseTransaction releases the
-    // Http2Stream which is still on stack.
-    RefPtr<SocketTransportShim> self(this);
+  // Must always post, because mSession->CloseTransaction releases the
+  // Http2Stream which is still on stack.
+  RefPtr<SocketTransportShim> self(this);
 
-    nsCOMPtr<nsIEventTarget> sts =
-        do_GetService("@mozilla.org/network/socket-transport-service;1");
-    Unused << sts->Dispatch(NS_NewRunnableFunction(
-        "SocketTransportShim::Close", [self = std::move(self), aReason]() {
-          RefPtr<NullHttpTransaction> baseTrans =
-              self->mWeakTrans->QueryTransaction();
-          if (!baseTrans) {
-            return;
-          }
-          SpdyConnectTransaction* trans =
-              baseTrans->QuerySpdyConnectTransaction();
-          MOZ_ASSERT(trans);
-          if (!trans) {
-            return;
-          }
+  nsCOMPtr<nsIEventTarget> sts =
+      do_GetService("@mozilla.org/network/socket-transport-service;1");
+  Unused << sts->Dispatch(NS_NewRunnableFunction(
+      "SocketTransportShim::Close", [self = std::move(self), aReason]() {
+        RefPtr<NullHttpTransaction> baseTrans =
+            self->mWeakTrans->QueryTransaction();
+        if (!baseTrans) {
+          return;
+        }
+        SpdyConnectTransaction* trans =
+            baseTrans->QuerySpdyConnectTransaction();
+        MOZ_ASSERT(trans);
+        if (!trans) {
+          return;
+        }
 
-          trans->mSession->CloseTransaction(trans, aReason);
-        }));
-    return NS_OK;
-  }
+        trans->mSession->CloseTransaction(trans, aReason);
+      }));
 
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return NS_OK;
 }
 
 NS_IMETHODIMP

@@ -34,6 +34,7 @@ nsHttpResponseHead::nsHttpResponseHead(const nsHttpResponseHead& aOther)
   mContentLength = other.mContentLength;
   mContentType = other.mContentType;
   mContentCharset = other.mContentCharset;
+  mCacheControlPublic = other.mCacheControlPublic;
   mCacheControlPrivate = other.mCacheControlPrivate;
   mCacheControlNoStore = other.mCacheControlNoStore;
   mCacheControlNoCache = other.mCacheControlNoCache;
@@ -54,6 +55,7 @@ nsHttpResponseHead& nsHttpResponseHead::operator=(
   mContentLength = other.mContentLength;
   mContentType = other.mContentType;
   mContentCharset = other.mContentCharset;
+  mCacheControlPublic = other.mCacheControlPublic;
   mCacheControlPrivate = other.mCacheControlPrivate;
   mCacheControlNoStore = other.mCacheControlNoStore;
   mCacheControlNoCache = other.mCacheControlNoCache;
@@ -68,7 +70,7 @@ HttpVersion nsHttpResponseHead::Version() {
   return mVersion;
 }
 
-uint16_t nsHttpResponseHead::Status() {
+uint16_t nsHttpResponseHead::Status() const {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   return mStatus;
 }
@@ -91,6 +93,11 @@ void nsHttpResponseHead::ContentType(nsACString& aContentType) {
 void nsHttpResponseHead::ContentCharset(nsACString& aContentCharset) {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   aContentCharset = mContentCharset;
+}
+
+bool nsHttpResponseHead::Public() {
+  RecursiveMutexAutoLock monitor(mRecursiveMutex);
+  return mCacheControlPublic;
 }
 
 bool nsHttpResponseHead::Private() {
@@ -180,7 +187,7 @@ bool nsHttpResponseHead::HasHeaderValue(nsHttpAtom h, const char* v) {
   return mHeaders.HasHeaderValue(h, v);
 }
 
-bool nsHttpResponseHead::HasHeader(nsHttpAtom h) {
+bool nsHttpResponseHead::HasHeader(nsHttpAtom h) const {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   return mHeaders.HasHeader(h);
 }
@@ -656,6 +663,20 @@ nsresult nsHttpResponseHead::ComputeFreshnessLifetime(uint32_t* result) {
     return NS_OK;
   }
 
+  // From RFC 7234 Section 4.2.2, heuristics can only be used on responses
+  // without explicit freshness whose status codes are defined as cacheable
+  // by default, and those responses without explicit freshness that have been
+  // marked as explicitly cacheable.
+  // Note that |MustValidate| handled most of non-cacheable status codes.
+  if ((mStatus == 302 || mStatus == 304 || mStatus == 307) &&
+      !mCacheControlPublic && !mCacheControlPrivate) {
+    LOG((
+        "nsHttpResponseHead::ComputeFreshnessLifetime [this = %p] "
+        "Do not calculate heuristic max-age for non-cacheable status code %u\n",
+        this, unsigned(mStatus)));
+    return NS_OK;
+  }
+
   // Fallback on heuristic using last modified header...
   if (NS_SUCCEEDED(GetLastModifiedValue_locked(&date2))) {
     LOG(("using last-modified to determine freshness-lifetime\n"));
@@ -682,12 +703,13 @@ bool nsHttpResponseHead::MustValidate() {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   LOG(("nsHttpResponseHead::MustValidate ??\n"));
 
-  // Some response codes are cacheable, but the rest are not.  This switch
-  // should stay in sync with the list in nsHttpChannel::ProcessResponse
+  // Some response codes are cacheable, but the rest are not. This switch should
+  // stay in sync with the list in nsHttpChannel::ContinueProcessResponse3
   switch (mStatus) {
       // Success codes
     case 200:
     case 203:
+    case 204:
     case 206:
       // Cacheable redirects
     case 300:
@@ -707,6 +729,7 @@ bool nsHttpResponseHead::MustValidate() {
     case 407:
     case 412:
     case 416:
+    case 425:
     case 429:
     default:  // revalidate unknown error pages
       LOG(("Must validate since response is an uncacheable error page\n"));
@@ -813,7 +836,7 @@ bool nsHttpResponseHead::ExpiresInPast_locked() const {
          NS_SUCCEEDED(GetDateValue_locked(&dateVal)) && expiresVal < dateVal;
 }
 
-nsresult nsHttpResponseHead::UpdateHeaders(nsHttpResponseHead* aOther) {
+void nsHttpResponseHead::UpdateHeaders(nsHttpResponseHead* aOther) {
   LOG(("nsHttpResponseHead::UpdateHeaders [this=%p]\n", this));
 
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
@@ -856,8 +879,6 @@ nsresult nsHttpResponseHead::UpdateHeaders(nsHttpResponseHead* aOther) {
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
   }
-
-  return NS_OK;
 }
 
 void nsHttpResponseHead::Reset() {
@@ -870,6 +891,7 @@ void nsHttpResponseHead::Reset() {
   mVersion = HttpVersion::v1_1;
   mStatus = 200;
   mContentLength = -1;
+  mCacheControlPublic = false;
   mCacheControlPrivate = false;
   mCacheControlNoStore = false;
   mCacheControlNoCache = false;
@@ -1016,6 +1038,7 @@ bool nsHttpResponseHead::operator==(const nsHttpResponseHead& aOther) const {
          mContentLength == aOther.mContentLength &&
          mContentType == aOther.mContentType &&
          mContentCharset == aOther.mContentCharset &&
+         mCacheControlPublic == aOther.mCacheControlPublic &&
          mCacheControlPrivate == aOther.mCacheControlPrivate &&
          mCacheControlNoCache == aOther.mCacheControlNoCache &&
          mCacheControlNoStore == aOther.mCacheControlNoStore &&
@@ -1097,11 +1120,17 @@ void nsHttpResponseHead::ParseVersion(const char* str) {
 void nsHttpResponseHead::ParseCacheControl(const char* val) {
   if (!(val && *val)) {
     // clear flags
+    mCacheControlPublic = false;
     mCacheControlPrivate = false;
     mCacheControlNoCache = false;
     mCacheControlNoStore = false;
     mCacheControlImmutable = false;
     return;
+  }
+
+  // search header value for occurrence of "public"
+  if (nsHttp::FindToken(val, "public", HTTP_HEADER_VALUE_SEPS)) {
+    mCacheControlPublic = true;
   }
 
   // search header value for occurrence of "private"

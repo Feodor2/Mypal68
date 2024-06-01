@@ -13,7 +13,6 @@
 #include "nsIChannel.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsISimpleEnumerator.h"
 #include "nsServiceManagerUtils.h"
 #include "nsNetCID.h"
 #include "nsIPrefBranch.h"
@@ -70,7 +69,7 @@ void SetACookie(nsICookieService* aCookieService, const char* aSpec1,
   if (aSpec2) NS_NewURI(getter_AddRefs(uri2), aSpec2);
 
   nsresult rv = aCookieService->SetCookieStringFromHttp(
-      uri1, uri2, nullptr, nsDependentCString(aCookieString),
+      uri1, uri2, nsDependentCString(aCookieString),
       aServerTime ? nsDependentCString(aServerTime) : VoidCString(), nullptr);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
@@ -107,7 +106,7 @@ void SetASameSiteCookie(nsICookieService* aCookieService, const char* aSpec1,
   loadInfo->SetCookieSettings(cookieSettings);
 
   nsresult rv = aCookieService->SetCookieStringFromHttp(
-      uri1, uri2, nullptr, nsDependentCString(aCookieString),
+      uri1, uri2, nsDependentCString(aCookieString),
       aServerTime ? nsDependentCString(aServerTime) : VoidCString(),
       dummyChannel);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
@@ -119,7 +118,7 @@ void SetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
   NS_NewURI(getter_AddRefs(uri), aSpec);
 
   nsresult rv = aCookieService->SetCookieString(
-      uri, nullptr, nsDependentCString(aCookieString), nullptr);
+      uri, nsDependentCString(aCookieString), nullptr);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
@@ -342,7 +341,7 @@ TEST(TestCookie, TestCookieMain)
   SetACookie(cookieService, "http://path.net/path/file", nullptr,
              "test=path; path=/path/", nullptr);
   GetACookie(cookieService, "http://path.net/path", nullptr, cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=path"));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
   GetACookie(cookieService, "http://path.net/path/", nullptr, cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=path"));
   SetACookie(cookieService, "http://path.net/path/file", nullptr,
@@ -358,7 +357,7 @@ TEST(TestCookie, TestCookieMain)
   GetACookie(cookieService, "http://path.net/path", nullptr, cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
   GetACookie(cookieService, "http://path.net/foo", nullptr, cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=path"));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
   SetACookie(cookieService, "http://path.net/path/file", nullptr,
              "test=path; path=/foo/; max-age=-1", nullptr);
   GetACookie(cookieService, "http://path.net/foo/", nullptr, cookie);
@@ -880,28 +879,18 @@ TEST(TestCookie, TestCookieMain)
                             &attrs,  // originAttributes
                             nsICookie::SAMESITE_UNSET)));
   // confirm using enumerator
-  nsCOMPtr<nsISimpleEnumerator> enumerator;
-  EXPECT_TRUE(
-      NS_SUCCEEDED(cookieMgr->GetEnumerator(getter_AddRefs(enumerator))));
-  int32_t i = 0;
-  bool more;
+  nsTArray<RefPtr<nsICookie>> cookies;
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
   nsCOMPtr<nsICookie> expiredCookie, newDomainCookie;
-  while (NS_SUCCEEDED(enumerator->HasMoreElements(&more)) && more) {
-    nsCOMPtr<nsISupports> cookie;
-    if (NS_FAILED(enumerator->GetNext(getter_AddRefs(cookie)))) break;
-    ++i;
-
-    // keep tabs on the second and third cookies, so we can check them later
-    nsCOMPtr<nsICookie> cookie2(do_QueryInterface(cookie));
-    if (!cookie2) break;
+  for (const auto& cookie : cookies) {
     nsAutoCString name;
-    cookie2->GetName(name);
+    cookie->GetName(name);
     if (name.EqualsLiteral("test2"))
-      expiredCookie = cookie2;
+      expiredCookie = cookie;
     else if (name.EqualsLiteral("test3"))
-      newDomainCookie = cookie2;
+      newDomainCookie = cookie;
   }
-  EXPECT_EQ(i, 3);
+  EXPECT_EQ(cookies.Length(), 3ul);
   // check the httpOnly attribute of the second cookie is honored
   GetACookie(cookieService, "http://cookiemgr.test/foo/", nullptr, cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "test2=yes"));
@@ -932,9 +921,9 @@ TEST(TestCookie, TestCookieMain)
   EXPECT_TRUE(found);
   // double-check RemoveAll() using the enumerator
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
-  EXPECT_TRUE(
-      NS_SUCCEEDED(cookieMgr->GetEnumerator(getter_AddRefs(enumerator))) &&
-      NS_SUCCEEDED(enumerator->HasMoreElements(&more)) && !more);
+  cookies.SetLength(0);
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)) &&
+              cookies.IsEmpty());
 
   // *** eviction and creation ordering tests
 
@@ -1001,18 +990,10 @@ TEST(TestCookie, TestCookieMain)
   SetASameSiteCookie(cookieService, "http://samesite.test", nullptr,
                      "lax=yes; samesite=lax", nullptr, false);
 
-  EXPECT_TRUE(
-      NS_SUCCEEDED(cookieMgr->GetEnumerator(getter_AddRefs(enumerator))));
-  i = 0;
+  cookies.SetLength(0);
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
 
-  // check the cookies for the required samesite value
-  while (NS_SUCCEEDED(enumerator->HasMoreElements(&more)) && more) {
-    nsCOMPtr<nsISupports> cookie;
-    if (NS_FAILED(enumerator->GetNext(getter_AddRefs(cookie)))) break;
-    ++i;
-  }
-
-  EXPECT_TRUE(i == 0);
+  EXPECT_TRUE(cookies.IsEmpty());
 
   // Set cookies with various incantations of the samesite attribute:
   // No same site attribute present
@@ -1034,23 +1015,15 @@ TEST(TestCookie, TestCookieMain)
   SetASameSiteCookie(cookieService, "http://samesite.test", nullptr,
                      "lax=yes; samesite=lax", nullptr, true);
 
-  EXPECT_TRUE(
-      NS_SUCCEEDED(cookieMgr->GetEnumerator(getter_AddRefs(enumerator))));
-  i = 0;
+  cookies.SetLength(0);
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
 
   // check the cookies for the required samesite value
-  while (NS_SUCCEEDED(enumerator->HasMoreElements(&more)) && more) {
-    nsCOMPtr<nsISupports> cookie;
-    if (NS_FAILED(enumerator->GetNext(getter_AddRefs(cookie)))) break;
-    ++i;
-
-    // keep tabs on the second and third cookies, so we can check them later
-    nsCOMPtr<nsICookie> cookie2(do_QueryInterface(cookie));
-    if (!cookie2) break;
+  for (const auto& cookie : cookies) {
     nsAutoCString name;
-    cookie2->GetName(name);
+    cookie->GetName(name);
     int32_t sameSiteAttr;
-    cookie2->GetSameSite(&sameSiteAttr);
+    cookie->GetSameSite(&sameSiteAttr);
     if (name.EqualsLiteral("unset")) {
       EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
     } else if (name.EqualsLiteral("unspecified")) {
@@ -1066,7 +1039,7 @@ TEST(TestCookie, TestCookieMain)
     }
   }
 
-  EXPECT_TRUE(i == 6);
+  EXPECT_TRUE(cookies.Length() == 6);
 
   // *** SameSite attribute
   // Clear the cookies

@@ -334,10 +334,18 @@ interface nsIHttpChannelInternal : nsISupports
      * the CORS preflight parameters.
      */
     [noscript, notxpcom, nostdcall]
-    void setCorsPreflightParameters(in CStringArrayRef unsafeHeaders);
+    void setCorsPreflightParameters(in CStringArrayRef unsafeHeaders,
+                                    in boolean shouldStripRequestBodyHeader);
 
     [noscript, notxpcom, nostdcall]
     void setAltDataForChild(in boolean aIsForChild);
+
+    /**
+     * Prevent the use of alt-data cache for this request.  Use by the
+     * extension StreamFilter class to force use of the regular cache.
+     */
+    [noscript, notxpcom, nostdcall]
+    void disableAltDataCache();
 
     /**
      * When set to true, the channel will not pop any authentication prompts up

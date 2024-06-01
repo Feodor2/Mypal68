@@ -27,11 +27,13 @@
 #include "nsICorsPreflightCallback.h"
 #include "AlternateServices.h"
 #include "nsIRaceCacheWithNetwork.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/extensions/PStreamFilterParent.h"
 #include "mozilla/Mutex.h"
 
 class nsDNSPrefetch;
 class nsICancelable;
+class nsIDNSRecord;
 class nsIHttpChannelAuthProvider;
 class nsInputStreamPump;
 class nsITransportSecurityInfo;
@@ -41,6 +43,8 @@ namespace net {
 
 class nsChannelClassifier;
 class Http2PushedStream;
+
+using DNSPromise = MozPromise<nsCOMPtr<nsIDNSRecord>, nsresult, false>;
 
 class HttpChannelSecurityWarningReporter : public nsISupports {
  public:
@@ -142,7 +146,7 @@ class nsHttpChannel final : public HttpBaseChannel,
                                Http2PushedStreamWrapper* pushedStream);
 
   static bool IsRedirectStatus(uint32_t status);
-  static bool WillRedirect(nsHttpResponseHead* response);
+  static bool WillRedirect(const nsHttpResponseHead& response);
 
   // Methods HttpBaseChannel didn't implement for us or that we override.
   //
@@ -311,7 +315,23 @@ class nsHttpChannel final : public HttpBaseChannel,
   // Connections will only be established in this function.
   // (including DNS prefetch and speculative connection.)
   nsresult BeginConnectActual();
-  void MaybeStartDNSPrefetch();
+  nsresult MaybeStartDNSPrefetch();
+
+  // Tells the channel to resolve the origin of the end server we are connecting
+  // to.
+  static uint16_t const DNS_PREFETCH_ORIGIN = 1 << 0;
+  // Tells the channel to resolve the host name of the proxy.
+  static uint16_t const DNS_PREFETCH_PROXY = 1 << 1;
+  // Will be set if the current channel uses an HTTP/HTTPS proxy.
+  static uint16_t const DNS_PROXY_IS_HTTP = 1 << 2;
+  // Tells the channel to wait for the result of the origin server resolution
+  // before any connection attempts are made.
+  static uint16_t const DNS_BLOCK_ON_ORIGIN_RESOLVE = 1 << 3;
+
+  // Based on the proxy configuration determine the strategy for resolving the
+  // end server host name.
+  // Returns a combination of the above flags.
+  uint16_t GetProxyDNSStrategy();
 
   // We might synchronously or asynchronously call BeginConnectActual,
   // which includes DNS prefetch and speculative connection, according to
@@ -436,6 +456,8 @@ class nsHttpChannel final : public HttpBaseChannel,
                           aContinueOnStopRequestFunc);
   MOZ_MUST_USE nsresult
   DoConnect(nsHttpTransaction* aTransWithStickyConn = nullptr);
+  MOZ_MUST_USE nsresult
+  DoConnectActual(nsHttpTransaction* aTransWithStickyConn);
   MOZ_MUST_USE nsresult ContinueOnStopRequestAfterAuthRetry(
       nsresult aStatus, bool aAuthRetry, bool aIsFromNet, bool aContentComplete,
       nsHttpTransaction* aTransWithStickyConn);
@@ -548,10 +570,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   // writing a new entry. The content type is used in cache internally only.
   void SetCachedContentType();
 
-  // Stores information about access from eTLD+1 of the top level document to
-  // the cache entry.
-  void StoreSiteAccessToCacheEntry();
-
  private:
   // this section is for main-thread-only object
   // all the references need to be proxy released on main thread.
@@ -610,7 +628,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   // We must close mCacheInputStream explicitly to avoid leaks.
   AutoClose<nsIInputStream> mCacheInputStream;
   RefPtr<nsInputStreamPump> mCachePump;
-  nsAutoPtr<nsHttpResponseHead> mCachedResponseHead;
+  UniquePtr<nsHttpResponseHead> mCachedResponseHead;
   nsCOMPtr<nsISupports> mCachedSecurityInfo;
   uint32_t mPostID;
   uint32_t mRequestTime;
@@ -646,8 +664,9 @@ class nsHttpChannel final : public HttpBaseChannel,
   bool mCacheOpenWithPriority;
   uint32_t mCacheQueueSizeWhenOpen;
 
+  Atomic<bool, Relaxed> mCachedContentIsValid;
+
   // state flags
-  uint32_t mCachedContentIsValid : 1;
   uint32_t mCachedContentIsPartial : 1;
   uint32_t mCacheOnlyMetadata : 1;
   uint32_t mTransactionReplaced : 1;
@@ -796,6 +815,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   // Is true if the network request has been triggered.
   bool mNetworkTriggered = false;
   bool mWaitingForProxy = false;
+  bool mStaleRevalidation = false;
   // Will be true if the onCacheEntryAvailable callback is not called by the
   // time we send the network request
   Atomic<bool> mRaceCacheWithNetwork;
@@ -809,6 +829,14 @@ class nsHttpChannel final : public HttpBaseChannel,
   mozilla::Mutex mRCWNLock;
 
   TimeStamp mNavigationStartTimeStamp;
+
+  // Promise that blocks connection creation when we want to resolve the origin
+  // host name to be able to give the configured proxy only the resolved IP
+  // to not leak names.
+  MozPromiseHolder<DNSPromise> mDNSBlockingPromise;
+  // When we hit DoConnect before the resolution is done, Then() will be set
+  // here to resume DoConnect.
+  RefPtr<DNSPromise> mDNSBlockingThenable;
 
  protected:
   virtual void DoNotifyListenerCleanup() override;

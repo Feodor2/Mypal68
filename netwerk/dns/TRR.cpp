@@ -24,9 +24,11 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tokenizer.h"
+#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 namespace net {
@@ -230,17 +232,18 @@ nsresult TRR::SendHTTPRequest() {
     return rv;
   }
 
-  rv = NS_NewChannel(
-      getter_AddRefs(mChannel), dnsURI, nsContentUtils::GetSystemPrincipal(),
-      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-      nsIContentPolicy::TYPE_OTHER,
-      nullptr,  // nsICookieSettings
-      nullptr,  // PerformanceStorage
-      nullptr,  // aLoadGroup
-      this,
-      nsIRequest::LOAD_ANONYMOUS | (mPB ? nsIRequest::INHIBIT_CACHING : 0) |
-          nsIChannel::LOAD_BYPASS_URL_CLASSIFIER,
-      ios);
+  rv = NS_NewChannel(getter_AddRefs(mChannel), dnsURI,
+                     nsContentUtils::GetSystemPrincipal(),
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsIContentPolicy::TYPE_OTHER,
+                     nullptr,  // nsICookieSettings
+                     nullptr,  // PerformanceStorage
+                     nullptr,  // aLoadGroup
+                     this,
+                     nsIRequest::LOAD_ANONYMOUS | nsIRequest::INHIBIT_CACHING |
+                         nsIRequest::LOAD_BYPASS_CACHE |
+                         nsIChannel::LOAD_BYPASS_URL_CLASSIFIER,
+                     ios);
   if (NS_FAILED(rv)) {
     LOG(("TRR:SendHTTPRequest: NewChannel failed!\n"));
     return rv;
@@ -299,6 +302,21 @@ nsresult TRR::SendHTTPRequest() {
     rv = uploadChannel->ExplicitSetUploadStream(
         uploadStream, NS_LITERAL_CSTRING("application/dns-message"),
         streamLength, NS_LITERAL_CSTRING("POST"), false);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Sanitize the request by removing the Accept-Language header so we minimize
+  // the amount of fingerprintable information we send to the server.
+  if (!StaticPrefs::network_trr_send_accept_language_headers()) {
+    rv = httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept-Language"),
+                                       EmptyCString(), false);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Sanitize the request by removing the User-Agent
+  if (!StaticPrefs::network_trr_send_user_agent_headers()) {
+    rv = httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("User-Agent"),
+                                       EmptyCString(), false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -430,6 +448,10 @@ nsresult TRR::ReceivePush(nsIHttpChannel* pushed, nsHostRecord* pushedRec) {
       (mType != TRRTYPE_TXT)) {
     LOG(("TRR::ReceivePush unknown type %d\n", mType));
     return NS_ERROR_UNEXPECTED;
+  }
+
+  if (gTRRService->IsExcludedFromTRR(mHost)) {
+    return NS_ERROR_FAILURE;
   }
 
   RefPtr<nsHostRecord> hostRecord;
@@ -1041,7 +1063,7 @@ TRR::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
 
 nsresult DOHresp::Add(uint32_t TTL, unsigned char* dns, int index, uint16_t len,
                       bool aLocalAllowed) {
-  nsAutoPtr<DOHaddr> doh(new DOHaddr);
+  auto doh = MakeUnique<DOHaddr>();
   NetAddr* addr = &doh->mNet;
   if (4 == len) {
     // IPv4
@@ -1071,7 +1093,7 @@ nsresult DOHresp::Add(uint32_t TTL, unsigned char* dns, int index, uint16_t len,
     NetAddrToString(addr, buf, sizeof(buf));
     LOG(("DOHresp:Add %s\n", buf));
   }
-  mAddresses.insertBack(doh.forget());
+  mAddresses.insertBack(doh.release());
   return NS_OK;
 }
 

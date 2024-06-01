@@ -385,7 +385,8 @@ class nsAsyncResolveRequest final : public nsIRunnable,
         // now that the load is triggered, we can resubmit the query
         RefPtr<nsAsyncResolveRequest> newRequest =
             new nsAsyncResolveRequest(mPPS, mChannel, mResolveFlags, mCallback);
-        rv = mPPS->mPACMan->AsyncGetProxyForURI(proxyURI, newRequest, true);
+        rv = mPPS->mPACMan->AsyncGetProxyForURI(proxyURI, newRequest,
+                                                mResolveFlags, true);
       }
 
       if (NS_FAILED(rv))
@@ -539,18 +540,19 @@ nsAsyncResolveRequest::AsyncApplyFilters::OnProxyFilterResult(
   }
 
   mFilterCalledBack = true;
+
+  if (!mRequest) {
+    // We got canceled
+    LOG(("  canceled"));
+    return NS_OK;
+  }
+
   mProxyInfo = aProxyInfo;
 
   if (mProcessingInLoop) {
     // No need to call/dispatch ProcessNextFilter(), we are in a control
     // loop that will do this for us and save recursion/dispatching.
     LOG(("  in a root loop"));
-    return NS_OK;
-  }
-
-  if (!mRequest) {
-    // We got canceled
-    LOG(("  canceled"));
     return NS_OK;
   }
 
@@ -680,22 +682,22 @@ static void proxy_MaskIPv6Addr(PRIPv6Addr& addr, uint16_t mask_len) {
 
   if (mask_len > 96) {
     addr.pr_s6_addr32[3] =
-        PR_htonl(PR_ntohl(addr.pr_s6_addr32[3]) & (~0L << (128 - mask_len)));
+        PR_htonl(PR_ntohl(addr.pr_s6_addr32[3]) & (~0uL << (128 - mask_len)));
   } else if (mask_len > 64) {
     addr.pr_s6_addr32[3] = 0;
     addr.pr_s6_addr32[2] =
-        PR_htonl(PR_ntohl(addr.pr_s6_addr32[2]) & (~0L << (96 - mask_len)));
+        PR_htonl(PR_ntohl(addr.pr_s6_addr32[2]) & (~0uL << (96 - mask_len)));
   } else if (mask_len > 32) {
     addr.pr_s6_addr32[3] = 0;
     addr.pr_s6_addr32[2] = 0;
     addr.pr_s6_addr32[1] =
-        PR_htonl(PR_ntohl(addr.pr_s6_addr32[1]) & (~0L << (64 - mask_len)));
+        PR_htonl(PR_ntohl(addr.pr_s6_addr32[1]) & (~0uL << (64 - mask_len)));
   } else {
     addr.pr_s6_addr32[3] = 0;
     addr.pr_s6_addr32[2] = 0;
     addr.pr_s6_addr32[1] = 0;
     addr.pr_s6_addr32[0] =
-        PR_htonl(PR_ntohl(addr.pr_s6_addr32[0]) & (~0L << (32 - mask_len)));
+        PR_htonl(PR_ntohl(addr.pr_s6_addr32[0]) & (~0uL << (32 - mask_len)));
   }
 }
 
@@ -1102,7 +1104,7 @@ bool nsProtocolProxyService::CanUseProxy(nsIURI* aURI, int32_t defaultPort) {
 
   int32_t index = -1;
   while (++index < int32_t(mHostFiltersArray.Length())) {
-    HostInfo* hinfo = mHostFiltersArray[index];
+    const auto& hinfo = mHostFiltersArray[index];
 
     if (is_ipaddr != hinfo->is_ipaddr) continue;
     if (hinfo->port && hinfo->port != port) continue;
@@ -1190,7 +1192,7 @@ const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
   const char* type = nullptr;
   switch (len) {
     case 4:
-      if (PL_strncasecmp(start, kProxyType_HTTP, 5) == 0) {
+      if (PL_strncasecmp(start, kProxyType_HTTP, 4) == 0) {
         type = kProxyType_HTTP;
       }
       break;
@@ -1215,7 +1217,6 @@ const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
       break;
   }
   if (type) {
-    const char *host = nullptr, *hostEnd = nullptr;
     int32_t port = -1;
 
     // If it's a SOCKS5 proxy, do name resolution on the server side.
@@ -1237,7 +1238,7 @@ const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
       port = 1080;
     }
 
-    nsProxyInfo* pi = new nsProxyInfo();
+    RefPtr<nsProxyInfo> pi = new nsProxyInfo();
     pi->mType = type;
     pi->mFlags = flags;
     pi->mResolveFlags = aResolveFlags;
@@ -1248,10 +1249,18 @@ const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
     nsCOMPtr<nsIURI> pacURI;
 
     nsAutoCString urlHost;
-    if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(pacURI), maybeURL)) &&
-        NS_SUCCEEDED(pacURI->GetAsciiHost(urlHost)) && !urlHost.IsEmpty()) {
-      // http://www.example.com:8080
+    // First assume the scheme is present, e.g. http://www.example.com:8080
+    if (NS_FAILED(NS_NewURI(getter_AddRefs(pacURI), maybeURL)) ||
+        NS_FAILED(pacURI->GetAsciiHost(urlHost)) || urlHost.IsEmpty()) {
+      // It isn't, assume www.example.com:8080
+      maybeURL.Insert("http://", 0);
 
+      if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(pacURI), maybeURL))) {
+        pacURI->GetAsciiHost(urlHost);
+      }
+    }
+
+    if (!urlHost.IsEmpty()) {
       pi->mHost = urlHost;
 
       int32_t tPort;
@@ -1259,25 +1268,9 @@ const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
         port = tPort;
       }
       pi->mPort = port;
-    } else {
-      // www.example.com:8080
-      if (start < end) {
-        host = start;
-        hostEnd = strchr(host, ':');
-        if (!hostEnd || hostEnd > end) {
-          hostEnd = end;
-          // no port, so assume default
-        } else {
-          port = atoi(hostEnd + 1);
-        }
-      }
-      // YES, it is ok to specify a null proxy host.
-      if (host) {
-        pi->mHost.Assign(host, hostEnd - host);
-        pi->mPort = port;
-      }
     }
-    NS_ADDREF(*result = pi);
+
+    pi.forget(result);
   }
 
   while (*end == ';' || *end == ' ' || *end == '\t') ++end;
@@ -1562,8 +1555,7 @@ nsresult nsProtocolProxyService::AsyncResolveInternal(
   }
 
   // else kick off a PAC thread query
-
-  rv = mPACMan->AsyncGetProxyForURI(uri, ctx, true);
+  rv = mPACMan->AsyncGetProxyForURI(uri, ctx, flags, true);
   if (NS_SUCCEEDED(rv)) ctx.forget(result);
   return rv;
 }
@@ -1682,7 +1674,7 @@ nsProtocolProxyService::GetFailoverForProxy(nsIProxyInfo* aProxy, nsIURI* aURI,
   LOG(("PAC failover from %s %s:%d to %s %s:%d\n", pi->mType, pi->mHost.get(),
        pi->mPort, pi->mNext->mType, pi->mNext->mHost.get(), pi->mNext->mPort));
 
-  NS_ADDREF(*aResult = pi->mNext);
+  *aResult = do_AddRef(pi->mNext).take();
   return NS_OK;
 }
 
@@ -2011,8 +2003,7 @@ nsresult nsProtocolProxyService::NewProxyInfo_Internal(
     NS_ENSURE_ARG(failover);
   }
 
-  nsProxyInfo* proxyInfo = new nsProxyInfo();
-  if (!proxyInfo) return NS_ERROR_OUT_OF_MEMORY;
+  RefPtr<nsProxyInfo> proxyInfo = new nsProxyInfo();
 
   proxyInfo->mType = aType;
   proxyInfo->mHost = aHost;
@@ -2027,7 +2018,7 @@ nsresult nsProtocolProxyService::NewProxyInfo_Internal(
   proxyInfo->mConnectionIsolationKey = aConnectionIsolationKey;
   failover.swap(proxyInfo->mNext);
 
-  NS_ADDREF(*aResult = proxyInfo);
+  proxyInfo.forget(aResult);
   return NS_OK;
 }
 
@@ -2115,7 +2106,26 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
     // now try the system proxy settings for this particular url
     if (NS_SUCCEEDED(mSystemProxySettings->GetProxyForURI(spec, scheme, host,
                                                           port, pacString))) {
-      ProcessPACString(pacString, 0, result);
+      nsCOMPtr<nsIProxyInfo> pi;
+      ProcessPACString(pacString, 0, getter_AddRefs(pi));
+
+      if (flags & RESOLVE_PREFER_SOCKS_PROXY &&
+          flags & RESOLVE_PREFER_HTTPS_PROXY) {
+        nsAutoCString type;
+        pi->GetType(type);
+        // DIRECT from ProcessPACString indicates that system proxy settings
+        // are not configured to use SOCKS proxy. Try https proxy as a
+        // secondary preferrable proxy. This is mainly for websocket whose
+        // proxy precedence is SOCKS > HTTPS > DIRECT.
+        if (type.EqualsLiteral(kProxyType_DIRECT)) {
+          scheme.AssignLiteral(kProxyType_HTTPS);
+          if (NS_SUCCEEDED(mSystemProxySettings->GetProxyForURI(
+                  spec, scheme, host, port, pacString))) {
+            ProcessPACString(pacString, 0, getter_AddRefs(pi));
+          }
+        }
+      }
+      pi.forget(result);
       return NS_OK;
     }
   }

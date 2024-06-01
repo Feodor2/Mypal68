@@ -11,31 +11,30 @@
 #undef LOG_ENABLED
 #define LOG_ENABLED() LOG5_ENABLED()
 
-#include "nsHttpConnectionMgr.h"
-#include "nsHttpConnection.h"
-#include "nsHttpHandler.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsNetCID.h"
-#include "nsCOMPtr.h"
-#include "nsNetUtil.h"
-#include "mozilla/net/DNS.h"
-#include "nsISocketTransport.h"
+#include <algorithm>
+#include <utility>
+
+#include "NullHttpTransaction.h"
+#include "mozilla/ChaosMode.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/net/DashboardTypes.h"
-#include "NullHttpTransaction.h"
-#include "nsIDNSRecord.h"
-#include "nsITransport.h"
-#include "nsInterfaceRequestorAgg.h"
-#include "nsIRequestContext.h"
-#include "nsISocketTransportService.h"
-#include <algorithm>
-#include "mozilla/ChaosMode.h"
 #include "mozilla/Unused.h"
+#include "mozilla/net/DNS.h"
+#include "mozilla/net/DashboardTypes.h"
+#include "nsCOMPtr.h"
+#include "nsHttpConnection.h"
+#include "nsHttpConnectionMgr.h"
+#include "nsHttpHandler.h"
+#include "nsIDNSRecord.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIRequestContext.h"
+#include "nsISocketTransport.h"
+#include "nsISocketTransportService.h"
+#include "nsITransport.h"
 #include "nsIXPConnect.h"
-
-#include "mozilla/Move.h"
-#include "mozilla/Telemetry.h"
+#include "nsInterfaceRequestorAgg.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
 
 namespace mozilla {
 namespace net {
@@ -123,6 +122,7 @@ nsHttpConnectionMgr::nsHttpConnectionMgr()
       mThrottleReadInterval(0),
       mThrottleHoldTime(0),
       mThrottleMaxTime(0),
+      mBeConservativeForProxy(true),
       mIsShuttingDown(false),
       mNumActiveConns(0),
       mNumIdleConns(0),
@@ -170,7 +170,8 @@ nsresult nsHttpConnectionMgr::Init(
     uint16_t maxRequestDelay, bool throttleEnabled, uint32_t throttleVersion,
     uint32_t throttleSuspendFor, uint32_t throttleResumeFor,
     uint32_t throttleReadLimit, uint32_t throttleReadInterval,
-    uint32_t throttleHoldTime, uint32_t throttleMaxTime) {
+    uint32_t throttleHoldTime, uint32_t throttleMaxTime,
+    bool beConservativeForProxy) {
   LOG(("nsHttpConnectionMgr::Init\n"));
 
   {
@@ -190,6 +191,8 @@ nsresult nsHttpConnectionMgr::Init(
     mThrottleReadInterval = throttleReadInterval;
     mThrottleHoldTime = throttleHoldTime;
     mThrottleMaxTime = TimeDuration::FromMilliseconds(throttleMaxTime);
+
+    mBeConservativeForProxy = beConservativeForProxy;
 
     mIsShuttingDown = false;
   }
@@ -619,7 +622,7 @@ nsresult nsHttpConnectionMgr::UpdateRequestTokenBucket(
                    aBucket);
 }
 
-nsresult nsHttpConnectionMgr::ClearConnectionHistory() {
+void nsHttpConnectionMgr::ClearConnectionHistory() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   for (auto iter = mCT.Iter(); !iter.Done(); iter.Next()) {
@@ -631,8 +634,6 @@ nsresult nsHttpConnectionMgr::ClearConnectionHistory() {
       iter.Remove();
     }
   }
-
-  return NS_OK;
 }
 
 nsresult nsHttpConnectionMgr::CloseIdleConnection(nsHttpConnection* conn) {
@@ -2978,6 +2979,9 @@ void nsHttpConnectionMgr::OnMsgUpdateParam(int32_t inParam, ARefBase*) {
     case THROTTLING_MAX_TIME:
       mThrottleMaxTime = TimeDuration::FromMilliseconds(value);
       break;
+    case PROXY_BE_CONSERVATIVE:
+      mBeConservativeForProxy = !!value;
+      break;
     default:
       MOZ_ASSERT_UNREACHABLE("unexpected parameter name");
   }
@@ -3988,6 +3992,24 @@ nsHttpConnectionMgr::nsHalfOpenSocket::~nsHalfOpenSocket() {
   if (mEnt) mEnt->RemoveHalfOpen(this);
 }
 
+bool nsHttpConnectionMgr::BeConservativeIfProxied(nsIProxyInfo* proxy) {
+  if (mBeConservativeForProxy) {
+    // The pref says to be conservative for proxies.
+    return true;
+  }
+
+  if (!proxy) {
+    // There is no proxy, so be conservative by default.
+    return true;
+  }
+
+  // Be conservative only if there is no proxy host set either.
+  // This logic was copied from nsSSLIOLayerAddToSocket.
+  nsAutoCString proxyHost;
+  proxy->GetHost(proxyHost);
+  return proxyHost.IsEmpty();
+}
+
 nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
     nsISocketTransport** transport, nsIAsyncInputStream** instream,
     nsIAsyncOutputStream** outstream, bool isBackup) {
@@ -4060,7 +4082,8 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
     tmpFlags |= nsISocketTransport::DONT_TRY_ESNI;
   }
 
-  if ((mCaps & NS_HTTP_BE_CONSERVATIVE) || ci->GetBeConservative()) {
+  if (((mCaps & NS_HTTP_BE_CONSERVATIVE) || ci->GetBeConservative()) &&
+      gHttpHandler->ConnMgr()->BeConservativeIfProxied(ci->ProxyInfo())) {
     LOG(("Setting Socket to BE_CONSERVATIVE"));
     tmpFlags |= nsISocketTransport::BE_CONSERVATIVE;
   }

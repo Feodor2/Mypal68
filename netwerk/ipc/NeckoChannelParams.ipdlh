@@ -134,6 +134,7 @@ struct LoadInfoArgs
   bool                        serviceWorkerTaintingSynthesized;
   bool                        documentHasUserInteracted;
   bool                        documentHasLoaded;
+  bool allowListFutureDocumentsCreatedFromThisRedirectChain;
   nsString                    cspNonce;
   bool                        isFromProcessingFrameAttributes;
   CookieSettingsArgs cookieSettings;
@@ -174,6 +175,7 @@ struct ParentLoadInfoForwarderArgs
 
   bool documentHasUserInteracted;
   bool documentHasLoaded;
+  bool allowListFutureDocumentsCreatedFromThisRedirectChain;
 
   CookieSettingsArgs? cookieSettings;
 
@@ -201,6 +203,8 @@ struct ChildLoadInfoForwarderArgs
   // The ServiceWorker controller may be cleared in the child during
   // a redirect.
   IPCServiceWorkerDescriptor? controller;
+
+  uint32_t requestBlockingReason;
 };
 
 //-----------------------------------------------------------------------------

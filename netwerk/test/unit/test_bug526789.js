@@ -136,7 +136,7 @@ function run_test() {
 
   var uri = NetUtil.newURI("http://baz.com/");
   Assert.equal(uri.asciiHost, "baz.com");
-  cs.setCookieString(uri, null, "foo=bar", null);
+  cs.setCookieString(uri, "foo=bar", null);
   Assert.equal(cs.getCookieString(uri, null), "foo=bar");
 
   Assert.equal(cm.countCookiesFromHost(""), 0);
@@ -147,8 +147,8 @@ function run_test() {
     cm.countCookiesFromHost("..");
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
 
-  var e = cm.getCookiesFromHost("", {});
-  Assert.ok(!e.hasMoreElements());
+  var cookies = cm.getCookiesFromHost("", {});
+  Assert.ok(!cookies.length);
   do_check_throws(function() {
     cm.getCookiesFromHost(".", {});
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
@@ -156,12 +156,11 @@ function run_test() {
     cm.getCookiesFromHost("..", {});
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
 
-  e = cm.getCookiesFromHost("baz.com", {});
-  Assert.ok(e.hasMoreElements());
-  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie).name, "foo");
-  Assert.ok(!e.hasMoreElements());
-  e = cm.getCookiesFromHost("", {});
-  Assert.ok(!e.hasMoreElements());
+  cookies = cm.getCookiesFromHost("baz.com", {});
+  Assert.equal(cookies.length, 1);
+  Assert.equal(cookies[0].name, "foo");
+  cookies = cm.getCookiesFromHost("", {});
+  Assert.ok(!cookies.length);
   do_check_throws(function() {
     cm.getCookiesFromHost(".", {});
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
@@ -176,13 +175,13 @@ function run_test() {
   Assert.equal(emptyuri.asciiHost, "");
   Assert.equal(NetUtil.newURI("file://./").asciiHost, "");
   Assert.equal(NetUtil.newURI("file://foo.bar/").asciiHost, "");
-  cs.setCookieString(emptyuri, null, "foo2=bar", null);
+  cs.setCookieString(emptyuri, "foo2=bar", null);
   Assert.equal(getCookieCount(), 1);
-  cs.setCookieString(emptyuri, null, "foo3=bar; domain=", null);
+  cs.setCookieString(emptyuri, "foo3=bar; domain=", null);
   Assert.equal(getCookieCount(), 2);
-  cs.setCookieString(emptyuri, null, "foo4=bar; domain=.", null);
+  cs.setCookieString(emptyuri, "foo4=bar; domain=.", null);
   Assert.equal(getCookieCount(), 2);
-  cs.setCookieString(emptyuri, null, "foo5=bar; domain=bar.com", null);
+  cs.setCookieString(emptyuri, "foo5=bar; domain=bar.com", null);
   Assert.equal(getCookieCount(), 2);
 
   Assert.equal(cs.getCookieString(emptyuri, null), "foo2=bar; foo3=bar");
@@ -193,14 +192,10 @@ function run_test() {
     cm.countCookiesFromHost(".");
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
 
-  e = cm.getCookiesFromHost("baz.com", {});
-  Assert.ok(!e.hasMoreElements());
-  e = cm.getCookiesFromHost("", {});
-  Assert.ok(e.hasMoreElements());
-  e.getNext();
-  Assert.ok(e.hasMoreElements());
-  e.getNext();
-  Assert.ok(!e.hasMoreElements());
+  cookies = cm.getCookiesFromHost("baz.com", {});
+  Assert.ok(!cookies.length);
+  cookies = cm.getCookiesFromHost("", {});
+  Assert.equal(cookies.length, 2);
   do_check_throws(function() {
     cm.getCookiesFromHost(".", {});
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
@@ -262,7 +257,7 @@ function run_test() {
 function getCookieCount() {
   var count = 0;
   var cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
-  for (let cookie of cm.enumerator) {
+  for (let cookie of cm.cookies) {
     ++count;
   }
   return count;
@@ -275,16 +270,16 @@ function testDomainCookie(uriString, domain) {
   cm.removeAll();
 
   var uri = NetUtil.newURI(uriString);
-  cs.setCookieString(uri, null, "foo=bar; domain=" + domain, null);
-  var e = cm.getCookiesFromHost(domain, {});
-  Assert.ok(e.hasMoreElements());
-  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie).host, domain);
+  cs.setCookieString(uri, "foo=bar; domain=" + domain, null);
+  var cookies = cm.getCookiesFromHost(domain, {});
+  Assert.ok(cookies.length);
+  Assert.equal(cookies[0].host, domain);
   cm.removeAll();
 
-  cs.setCookieString(uri, null, "foo=bar; domain=." + domain, null);
-  e = cm.getCookiesFromHost(domain, {});
-  Assert.ok(e.hasMoreElements());
-  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie).host, domain);
+  cs.setCookieString(uri, "foo=bar; domain=." + domain, null);
+  cookies = cm.getCookiesFromHost(domain, {});
+  Assert.ok(cookies.length);
+  Assert.equal(cookies[0].host, domain);
   cm.removeAll();
 }
 
@@ -295,13 +290,13 @@ function testTrailingDotCookie(uriString, domain) {
   cm.removeAll();
 
   var uri = NetUtil.newURI(uriString);
-  cs.setCookieString(uri, null, "foo=bar; domain=" + domain + ".", null);
+  cs.setCookieString(uri, "foo=bar; domain=" + domain + ".", null);
   Assert.equal(cm.countCookiesFromHost(domain), 0);
   Assert.equal(cm.countCookiesFromHost(domain + "."), 0);
   cm.removeAll();
 
   uri = NetUtil.newURI(uriString + ".");
-  cs.setCookieString(uri, null, "foo=bar; domain=" + domain, null);
+  cs.setCookieString(uri, "foo=bar; domain=" + domain, null);
   Assert.equal(cm.countCookiesFromHost(domain), 0);
   Assert.equal(cm.countCookiesFromHost(domain + "."), 0);
   cm.removeAll();

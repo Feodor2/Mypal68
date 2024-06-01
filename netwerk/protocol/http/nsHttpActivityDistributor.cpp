@@ -7,7 +7,6 @@
 
 #include "nsHttpActivityDistributor.h"
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {

@@ -10,7 +10,6 @@
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
-#include "nsAutoPtr.h"
 #include "nsITransport.h"
 #include "mozilla/net/DNS.h"
 #include "nsFtpControlConnection.h"

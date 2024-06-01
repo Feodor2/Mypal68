@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAutoPtr.h"
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIDocumentLoader.h"
 #include "nsIObserverService.h"
 #include "nsIXULRuntime.h"
@@ -57,7 +57,7 @@ class RequestContext final : public nsIRequestContext, public nsITimerCallback {
 
   uint64_t mID;
   Atomic<uint32_t> mBlockingTransactionCount;
-  nsAutoPtr<SpdyPushCache> mSpdyCache;
+  UniquePtr<SpdyPushCache> mSpdyCache;
   nsCString mUserAgentOverride;
 
   typedef nsCOMPtr<nsIRequestTailUnblockCallback> PendingTailRequest;
@@ -177,10 +177,10 @@ RequestContext::RemoveBlockingTransaction(uint32_t* outval) {
   return NS_OK;
 }
 
-SpdyPushCache* RequestContext::GetSpdyPushCache() { return mSpdyCache; }
+SpdyPushCache* RequestContext::GetSpdyPushCache() { return mSpdyCache.get(); }
 
 void RequestContext::SetSpdyPushCache(SpdyPushCache* aSpdyPushCache) {
-  mSpdyCache = aSpdyPushCache;
+  mSpdyCache = WrapUnique(aSpdyPushCache);
 }
 
 uint64_t RequestContext::GetID() { return mID; }

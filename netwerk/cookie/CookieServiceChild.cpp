@@ -289,7 +289,7 @@ void CookieServiceChild::GetCookieStringFromCookieHashTable(
 
   nsAutoCString hostFromURI, pathFromURI;
   aHostURI->GetAsciiHost(hostFromURI);
-  aHostURI->GetPathQueryRef(pathFromURI);
+  aHostURI->GetFilePath(pathFromURI);
   bool isSecure = aHostURI->SchemeIs("https");
   int64_t currentTimeInUsec = PR_Now();
   int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
@@ -656,7 +656,7 @@ CookieServiceChild::GetCookieStringFromHttp(nsIURI* aHostURI, nsIURI* aFirstURI,
 }
 
 NS_IMETHODIMP
-CookieServiceChild::SetCookieString(nsIURI* aHostURI, nsIPrompt* aPrompt,
+CookieServiceChild::SetCookieString(nsIURI* aHostURI,
                                     const nsACString& aCookieString,
                                     nsIChannel* aChannel) {
   return SetCookieStringInternal(aHostURI, aChannel, aCookieString,
@@ -665,7 +665,6 @@ CookieServiceChild::SetCookieString(nsIURI* aHostURI, nsIPrompt* aPrompt,
 
 NS_IMETHODIMP
 CookieServiceChild::SetCookieStringFromHttp(nsIURI* aHostURI, nsIURI* aFirstURI,
-                                            nsIPrompt* aPrompt,
                                             const nsACString& aCookieString,
                                             const nsACString& aServerTime,
                                             nsIChannel* aChannel) {

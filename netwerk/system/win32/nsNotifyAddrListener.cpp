@@ -27,7 +27,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsNotifyAddrListener.h"
 #include "nsString.h"
-#include "nsAutoPtr.h"
 #include "mozilla/Services.h"
 #include "nsCRT.h"
 #include "mozilla/Preferences.h"

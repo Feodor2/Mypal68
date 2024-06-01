@@ -110,7 +110,7 @@ nsDirIndexParser::Field nsDirIndexParser::gFieldTable[] = {
 nsrefcnt nsDirIndexParser::gRefCntParser = 0;
 nsITextToSubURI* nsDirIndexParser::gTextToSubURI;
 
-nsresult nsDirIndexParser::ParseFormat(const char* aFormatStr) {
+void nsDirIndexParser::ParseFormat(const char* aFormatStr) {
   // Parse a "200" format line, and remember the fields and their
   // ordering in mFormat. Multiple 200 lines stomp on each other.
   unsigned int formatNum = 0;
@@ -145,28 +145,25 @@ nsresult nsDirIndexParser::ParseFormat(const char* aFormatStr) {
     }
 
   } while (*aFormatStr && (formatNum < (ArrayLength(mFormat) - 1)));
-
-  return NS_OK;
 }
 
-nsresult nsDirIndexParser::ParseData(nsIDirIndex* aIdx, char* aDataStr,
-                                     int32_t aLineLen) {
+void nsDirIndexParser::ParseData(nsIDirIndex* aIdx, char* aDataStr,
+                                 int32_t aLineLen) {
   // Parse a "201" data line, using the field ordering specified in
   // mFormat.
 
   if (mFormat[0] == -1) {
     // Ignore if we haven't seen a format yet.
-    return NS_OK;
+    return;
   }
 
-  nsresult rv = NS_OK;
   nsAutoCString filename;
   int32_t lineLen = aLineLen;
 
   for (int32_t i = 0; mFormat[i] != -1; ++i) {
     // If we've exhausted the data before we run out of fields, just bail.
     if (!*aDataStr || (lineLen < 1)) {
-      return NS_OK;
+      return;
     }
 
     while ((lineLen > 0) && nsCRT::IsAsciiSpace(*aDataStr)) {
@@ -176,7 +173,7 @@ nsresult nsDirIndexParser::ParseData(nsIDirIndex* aIdx, char* aDataStr,
 
     if (lineLen < 1) {
       // invalid format, bail
-      return NS_OK;
+      return;
     }
 
     char* value = aDataStr;
@@ -196,7 +193,7 @@ nsresult nsDirIndexParser::ParseData(nsIDirIndex* aIdx, char* aDataStr,
 
       if (!lineLen) {
         // invalid format, bail
-        return NS_OK;
+        return;
       }
     } else {
       // it's unquoted. snarf until we see whitespace.
@@ -225,8 +222,8 @@ nsresult nsDirIndexParser::ParseData(nsIDirIndex* aIdx, char* aDataStr,
 
         if (gTextToSubURI) {
           nsAutoString result;
-          if (NS_SUCCEEDED(rv = gTextToSubURI->UnEscapeAndConvert(
-                               mEncoding, filename, result))) {
+          if (NS_SUCCEEDED(gTextToSubURI->UnEscapeAndConvert(
+                  mEncoding, filename, result))) {
             if (!result.IsEmpty()) {
               aIdx->SetLocation(filename);
               if (!mHasDescription) aIdx->SetDescription(result);
@@ -288,8 +285,6 @@ nsresult nsDirIndexParser::ParseData(nsIDirIndex* aIdx, char* aDataStr,
         break;
     }
   }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -336,7 +331,6 @@ nsresult nsDirIndexParser::ProcessData(nsIRequest* aRequest,
     mLineStart = eol + 1;
 
     if (lineLen >= 4) {
-      nsresult rv;
       const char* buf = line;
 
       if (buf[0] == '1') {
@@ -361,19 +355,12 @@ nsresult nsDirIndexParser::ProcessData(nsIRequest* aRequest,
         if (buf[1] == '0') {
           if (buf[2] == '0' && buf[3] == ':') {
             // 200. Define field names
-            rv = ParseFormat(buf + 4);
-            if (NS_FAILED(rv)) {
-              return rv;
-            }
+            ParseFormat(buf + 4);
           } else if (buf[2] == '1' && buf[3] == ':') {
             // 201. Field data
             nsCOMPtr<nsIDirIndex> idx = new nsDirIndex();
 
-            rv = ParseData(idx, ((char*)buf) + 4, lineLen - 4);
-            if (NS_FAILED(rv)) {
-              return rv;
-            }
-
+            ParseData(idx, ((char*)buf) + 4, lineLen - 4);
             mListener->OnIndexAvailable(aRequest, aCtxt, idx);
           }
         }

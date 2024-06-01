@@ -36,7 +36,8 @@ FuzzySecurityInfo::GetErrorCodeString(nsAString& aErrorString) {
 }
 
 NS_IMETHODIMP
-FuzzySecurityInfo::GetFailedCertChain(nsIX509CertList** _result) {
+FuzzySecurityInfo::GetFailedCertChain(
+    nsTArray<RefPtr<nsIX509Cert>>& aFailedCertChain) {
   MOZ_CRASH("Unused");
   return NS_OK;
 }
@@ -52,8 +53,8 @@ FuzzySecurityInfo::GetServerCert(nsIX509Cert** aServerCert) {
 }
 
 NS_IMETHODIMP
-FuzzySecurityInfo::GetSucceededCertChain(nsIX509CertList** _result) {
-  NS_ENSURE_ARG_POINTER(_result);
+FuzzySecurityInfo::GetSucceededCertChain(
+    nsTArray<RefPtr<nsIX509Cert>>& aSucceededCertChain) {
   MOZ_CRASH("Unused");
   return NS_OK;
 }
@@ -315,12 +316,6 @@ FuzzySecurityInfo::SetEsniTxt(const nsACString& aEsniTxt) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-FuzzySecurityInfo::GetServerRootCertIsBuiltInRoot(bool* aIsBuiltInRoot) {
-  *aIsBuiltInRoot = true;
-  return NS_OK;
-}
-
 void FuzzySecurityInfo::SerializeToIPC(IPC::Message* aMsg) {
   MOZ_CRASH("Unused");
 }
@@ -329,6 +324,12 @@ bool FuzzySecurityInfo::DeserializeFromIPC(const IPC::Message* aMsg,
                                            PickleIterator* aIter) {
   MOZ_CRASH("Unused");
   return false;
+}
+
+NS_IMETHODIMP
+FuzzySecurityInfo::GetPeerId(nsACString& aResult) {
+  aResult.Assign(EmptyCString());
+  return NS_OK;
 }
 
 }  // namespace net

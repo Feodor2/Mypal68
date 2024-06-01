@@ -930,17 +930,14 @@ bool nsHttpChannelAuthProvider::BlockPrompt(bool proxyAuth) {
   if (!topDoc && !xhr) {
     nsCOMPtr<nsIURI> topURI;
     Unused << chanInternal->GetTopWindowURI(getter_AddRefs(topURI));
-
-    if (!topURI) {
-      // If we do not have topURI try the loadingPrincipal.
-      nsCOMPtr<nsIPrincipal> loadingPrinc = loadInfo->LoadingPrincipal();
-      if (loadingPrinc) {
-        loadingPrinc->GetURI(getter_AddRefs(topURI));
-      }
-    }
-
-    if (!NS_SecurityCompareURIs(topURI, mURI, true)) {
-      mCrossOrigin = true;
+    if (topURI) {
+      mCrossOrigin = !NS_SecurityCompareURIs(topURI, mURI, true);
+    } else {
+      nsIPrincipal* loadingPrinc = loadInfo->GetLoadingPrincipal();
+      MOZ_ASSERT(loadingPrinc);
+      bool sameOrigin = false;
+      loadingPrinc->IsSameOrigin(mURI, false, &sameOrigin);
+      mCrossOrigin = !sameOrigin;
     }
   }
 

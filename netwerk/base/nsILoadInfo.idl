@@ -263,10 +263,19 @@ interface nsILoadInfo : nsISupports
   readonly attribute nsIPrincipal loadingPrincipal;
 
   /**
-   * A C++-friendly version of loadingPrincipal.
+   * A C++-friendly version of triggeringPrincipal.
+   *
+   * This is a bit awkward because we can't use
+   * binaryname(GetLoadingPrincipal).
    */
-  [noscript, notxpcom, nostdcall, binaryname(LoadingPrincipal)]
-  nsIPrincipal binaryLoadingPrincipal();
+  [noscript, notxpcom, nostdcall]
+  nsIPrincipal virtualGetLoadingPrincipal();
+
+%{C++
+  nsIPrincipal* GetLoadingPrincipal() {
+    return VirtualGetLoadingPrincipal();
+  }
+%}
 
   /**
    * This is the principal which caused the network load to start. I.e.
@@ -1015,13 +1024,19 @@ interface nsILoadInfo : nsISupports
   /**
    * Set a custom performance storage. This is meant to be executed only for
    * workers. If a PerformanceStorage is not set, the loadingDocument->Window
-   * Performance object will be used instead.
+   * Performance object will be returned instead.
    */
   [noscript, nostdcall, notxpcom]
   void SetPerformanceStorage(in PerformanceStoragePtr aPerformanceStorage);
 
   /**
-   * Get the PerformanceStorage.
+   * Get the custom PerformanceStorage if set by SetPerformanceStorage.
+   * Otherwise the loadingDocument->Window Performance object will be returned
+   * instead if all the following conditions are met:
+   * - the triggeringPrincipal is the same as the loadingDocument's principal.
+   * - if the external content policy type is TYPE_SUBDOCUMENT then loading
+   *   wasn't caused by processing the attributes of the browsing context
+   *   container.
    */
   [noscript, nostdcall, notxpcom]
   PerformanceStoragePtr GetPerformanceStorage();
@@ -1091,6 +1106,16 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean documentHasLoaded;
 
   /**
+    * During a top-level document channel redirect from tracking to
+    * non-tracking resources, our anti-tracking heuristic, grants the storage
+    * access permission for a short amount of seconds (See
+    * privacy.restrict3rdpartystorage.expiration_redirect pref).
+    * We use this flag to remember this decision even if this channel is part
+    * of a chain of redirects.
+    */
+  [infallible] attribute boolean allowListFutureDocumentsCreatedFromThisRedirectChain;
+
+  /**
    * A snapshot of the nonce at load start time which is used for CSP
    * checks and only set for:
    *  * TYPE_SCRIPT and
@@ -1134,6 +1159,10 @@ interface nsILoadInfo : nsISupports
   const uint32_t BLOCKING_REASON_CONTENT_POLICY_DATA_DOCUMENT = 4004;
   const uint32_t BLOCKING_REASON_CONTENT_POLICY_WEB_BROWSER = 4005;
   const uint32_t BLOCKING_REASON_CONTENT_POLICY_PRELOAD = 4006;
+  // The reason used when SEC_REQUIRE_SAME_ORIGIN_* is set and not satisifed.
+  const uint32_t BLOCKING_REASON_NOT_SAME_ORIGIN = 5000;
+  // The reason used when an extension cancels the request via the WebRequest api.
+  const uint32_t BLOCKING_REASON_EXTENSION_WEBREQUEST = 6000;
 
   /**
    * If the request associated with this load info was blocked by some of

@@ -6,6 +6,7 @@
 
 #include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIAuthPrompt.h"
 #include "nsIDHCPClient.h"
@@ -30,6 +31,10 @@ LazyLogModule gProxyLog("proxy");
 #define LOG(args) MOZ_LOG(gProxyLog, LogLevel::Debug, args)
 #define MOZ_WPAD_URL "http://wpad/wpad.dat"
 #define MOZ_DHCP_WPAD_OPTION 252
+
+// These pointers are declared in nsProtocolProxyService.cpp
+extern const char kProxyType_HTTPS[];
+extern const char kProxyType_DIRECT[];
 
 // The PAC thread does evaluations of both PAC files and
 // nsISystemProxySettings because they can both block the calling thread and we
@@ -298,10 +303,11 @@ class ExecutePACThreadAction final : public Runnable {
 //-----------------------------------------------------------------------------
 
 PendingPACQuery::PendingPACQuery(nsPACMan* pacMan, nsIURI* uri,
-                                 nsPACManCallback* callback,
+                                 nsPACManCallback* callback, uint32_t flags,
                                  bool mainThreadResponse)
     : Runnable("net::PendingPACQuery"),
       mPort(0),
+      mFlags(flags),
       mPACMan(pacMan),
       mCallback(callback),
       mOnMainThreadOnly(mainThreadResponse) {
@@ -425,6 +431,7 @@ nsresult nsPACMan::DispatchToPAC(already_AddRefed<nsIRunnable> aEvent,
 }
 
 nsresult nsPACMan::AsyncGetProxyForURI(nsIURI* uri, nsPACManCallback* callback,
+                                       uint32_t flags,
                                        bool mainThreadResponse) {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
   if (mShutdown) return NS_ERROR_NOT_AVAILABLE;
@@ -438,7 +445,7 @@ nsresult nsPACMan::AsyncGetProxyForURI(nsIURI* uri, nsPACManCallback* callback,
   }
 
   RefPtr<PendingPACQuery> query =
-      new PendingPACQuery(this, uri, callback, mainThreadResponse);
+      new PendingPACQuery(this, uri, callback, flags, mainThreadResponse);
 
   if (IsPACURI(uri)) {
     // deal with this directly instead of queueing it
@@ -763,6 +770,19 @@ bool nsPACMan::ProcessPending() {
       NS_SUCCEEDED(mSystemProxySettings->GetProxyForURI(
           query->mSpec, query->mScheme, query->mHost, query->mPort,
           pacString))) {
+    if (query->mFlags & nsIProtocolProxyService::RESOLVE_PREFER_SOCKS_PROXY &&
+        query->mFlags & nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY) {
+      const nsCaseInsensitiveUTF8StringComparator comp;
+      if (StringBeginsWith(pacString, nsDependentCString(kProxyType_DIRECT),
+                           comp)) {
+        // DIRECT indicates that system proxy settings are not configured to use
+        // SOCKS proxy. Try https proxy as a secondary preferrable proxy. This
+        // is mainly for websocket whose precedence is SOCKS > HTTPS > DIRECT.
+        NS_SUCCEEDED(mSystemProxySettings->GetProxyForURI(
+            query->mSpec, nsDependentCString(kProxyType_HTTPS), query->mHost,
+            query->mPort, pacString));
+      }
+    }
     LOG(("Use proxy from system settings: %s\n", pacString.get()));
     query->Complete(NS_OK, pacString);
     completed = true;

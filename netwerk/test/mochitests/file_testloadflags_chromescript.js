@@ -68,7 +68,7 @@ obs.prototype = {
 
 function getCookieCount(cs) {
   let count = 0;
-  for (let cookie of cs.enumerator) {
+  for (let cookie of cs.cookies) {
     info("cookie: " + cookie);
     info(
       "cookie host " +
@@ -101,7 +101,7 @@ addMessageListener("init", ({ domain }) => {
   cs.removeAll();
   cs.add(
     domain,
-    "",
+    "/",
     "oh",
     "hai",
     false,

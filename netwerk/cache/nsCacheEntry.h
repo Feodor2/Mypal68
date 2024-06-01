@@ -11,7 +11,6 @@
 
 #include "nspr.h"
 #include "PLDHashTable.h"
-#include "nsAutoPtr.h"
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"

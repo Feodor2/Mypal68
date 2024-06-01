@@ -178,10 +178,10 @@ static nsPreflightCache* sPreflightCache = nullptr;
 static bool EnsurePreflightCache() {
   if (sPreflightCache) return true;
 
-  nsAutoPtr<nsPreflightCache> newCache(new nsPreflightCache());
+  UniquePtr<nsPreflightCache> newCache(new nsPreflightCache());
 
   if (newCache->Initialize()) {
-    sPreflightCache = newCache.forget();
+    sPreflightCache = newCache.release();
     return true;
   }
 
@@ -559,7 +559,7 @@ nsresult nsCORSListenerProxy::CheckRequestApproved(nsIRequest* aRequest) {
   if (mWithCredentials || !allowedOriginHeader.EqualsLiteral("*")) {
     MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(mOriginHeaderPrincipal));
     nsAutoCString origin;
-    nsContentUtils::GetASCIIOrigin(mOriginHeaderPrincipal, origin);
+    mOriginHeaderPrincipal->GetAsciiOrigin(origin);
 
     if (!allowedOriginHeader.Equals(origin)) {
       LogBlockedRequest(
@@ -742,8 +742,18 @@ nsCORSListenerProxy::AsyncOnChannelRedirect(
       }
     }
 
+    bool rewriteToGET = false;
+    nsCOMPtr<nsIHttpChannel> oldHttpChannel = do_QueryInterface(aOldChannel);
+    if (oldHttpChannel) {
+      nsAutoCString method;
+      Unused << oldHttpChannel->GetRequestMethod(method);
+      Unused << oldHttpChannel->ShouldStripRequestBodyHeader(method,
+                                                             &rewriteToGET);
+    }
+
     rv = UpdateChannel(aNewChannel, DataURIHandling::Disallow,
-                       UpdateType::Default);
+                       rewriteToGET ? UpdateType::StripRequestBodyHeader
+                                    : UpdateType::Default);
     if (NS_FAILED(rv)) {
       NS_WARNING(
           "nsCORSListenerProxy::AsyncOnChannelRedirect: "
@@ -1018,8 +1028,9 @@ nsresult nsCORSListenerProxy::CheckPreflightNeeded(nsIChannel* aChannel,
     return NS_ERROR_DOM_BAD_URI;
   }
 
-  internal->SetCorsPreflightParameters(headers.IsEmpty() ? loadInfoHeaders
-                                                         : headers);
+  internal->SetCorsPreflightParameters(
+      headers.IsEmpty() ? loadInfoHeaders : headers,
+      aUpdateType == UpdateType::StripRequestBodyHeader);
 
   return NS_OK;
 }
@@ -1384,7 +1395,7 @@ nsresult nsCORSListenerProxy::StartCORSPreflight(
                  nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS,
              "how did we end up here?");
 
-  nsCOMPtr<nsIPrincipal> principal = originalLoadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> principal = originalLoadInfo->GetLoadingPrincipal();
   MOZ_ASSERT(principal && originalLoadInfo->GetExternalContentPolicyType() !=
                               nsIContentPolicy::TYPE_DOCUMENT,
              "Should not do CORS loads for top-level loads, so a "

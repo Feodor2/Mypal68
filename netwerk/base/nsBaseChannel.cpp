@@ -442,8 +442,8 @@ nsBaseChannel::SetLoadGroup(nsILoadGroup* aLoadGroup) {
 
 NS_IMETHODIMP
 nsBaseChannel::GetOriginalURI(nsIURI** aURI) {
-  *aURI = OriginalURI();
-  NS_ADDREF(*aURI);
+  RefPtr<nsIURI> uri = OriginalURI();
+  uri.forget(aURI);
   return NS_OK;
 }
 
@@ -574,7 +574,8 @@ nsBaseChannel::GetContentDispositionFilename(
 NS_IMETHODIMP
 nsBaseChannel::SetContentDispositionFilename(
     const nsAString& aContentDispositionFilename) {
-  mContentDispositionFilename = new nsString(aContentDispositionFilename);
+  mContentDispositionFilename =
+      MakeUnique<nsString>(aContentDispositionFilename);
   return NS_OK;
 }
 
@@ -637,12 +638,12 @@ nsBaseChannel::AsyncOpen(nsIStreamListener* aListener) {
   }
 
   MOZ_ASSERT(
-      !mLoadInfo || mLoadInfo->GetSecurityMode() == 0 ||
+      mLoadInfo->GetSecurityMode() == 0 ||
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           mLoadInfo->LoadingPrincipal() &&
-           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
+           mLoadInfo->GetLoadingPrincipal() &&
+           mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   NS_ENSURE_TRUE(mURI, NS_ERROR_NOT_INITIALIZED);
@@ -727,12 +728,12 @@ nsBaseChannel::OnTransportStatus(nsITransport* transport, nsresult status,
   if (!HasLoadFlag(LOAD_BACKGROUND)) {
     nsAutoString statusArg;
     if (GetStatusArg(status, statusArg)) {
-      mProgressSink->OnStatus(this, nullptr, status, statusArg.get());
+      mProgressSink->OnStatus(this, status, statusArg.get());
     }
   }
 
   if (progress) {
-    mProgressSink->OnProgress(this, nullptr, progress, progressMax);
+    mProgressSink->OnProgress(this, progress, progressMax);
   }
 
   return NS_OK;

@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 #include "prtime.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsError.h"
 #include "nsTArray.h"

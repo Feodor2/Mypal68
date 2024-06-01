@@ -14,7 +14,6 @@
 #include "nsCookie.h"
 #include "nsCookieKey.h"
 #include "nsString.h"
-#include "nsAutoPtr.h"
 #include "nsHashKeys.h"
 #include "nsIMemoryReporter.h"
 #include "nsTHashtable.h"
@@ -62,7 +61,7 @@ using mozilla::net::nsCookieKey;
 class nsCookieEntry : public nsCookieKey {
  public:
   // Hash methods
-  typedef nsTArray<RefPtr<nsCookie> > ArrayType;
+  typedef nsTArray<RefPtr<nsCookie>> ArrayType;
   typedef ArrayType::index_type IndexType;
 
   explicit nsCookieEntry(KeyTypePointer aKey) : nsCookieKey(aKey) {}
@@ -225,6 +224,13 @@ class nsCookieService final : public nsICookieService,
                         const OriginAttributes& aOriginAttrs,
                         nsTArray<nsCookie*>& aCookieList);
 
+  /**
+   * This method is a helper that allows calling nsICookieManager::Remove()
+   * with OriginAttributes parameter.
+   */
+  nsresult Remove(const nsACString& aHost, const OriginAttributes& aAttrs,
+                  const nsACString& aName, const nsACString& aPath);
+
  protected:
   virtual ~nsCookieService();
 
@@ -325,18 +331,10 @@ class nsCookieService final : public nsICookieService,
 
   nsresult GetCookiesWithOriginAttributes(
       const mozilla::OriginAttributesPattern& aPattern,
-      const nsCString& aBaseDomain, nsISimpleEnumerator** aEnumerator);
+      const nsCString& aBaseDomain, nsTArray<RefPtr<nsICookie>>& aResult);
   nsresult RemoveCookiesWithOriginAttributes(
       const mozilla::OriginAttributesPattern& aPattern,
       const nsCString& aBaseDomain);
-
-  /**
-   * This method is a helper that allows calling nsICookieManager::Remove()
-   * with OriginAttributes parameter.
-   * NOTE: this could be added to a public interface if we happen to need it.
-   */
-  nsresult Remove(const nsACString& aHost, const OriginAttributes& aAttrs,
-                  const nsACString& aName, const nsACString& aPath);
 
  protected:
   nsresult RemoveCookiesFromExactHost(

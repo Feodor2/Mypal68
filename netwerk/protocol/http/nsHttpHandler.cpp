@@ -58,6 +58,7 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
+#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LazyIdleThread.h"
 
@@ -111,8 +112,8 @@
   "network.tcp.tcp_fastopen_http_stalls_timeout"
 
 #define ACCEPT_HEADER_NAVIGATION \
-  "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-#define ACCEPT_HEADER_IMAGE "image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
+  "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+#define ACCEPT_HEADER_IMAGE "image/webp,*/*"
 #define ACCEPT_HEADER_STYLE "text/css,*/*;q=0.1"
 #define ACCEPT_HEADER_ALL "*/*"
 
@@ -126,7 +127,6 @@
 //-----------------------------------------------------------------------------
 
 using mozilla::dom::Promise;
-using mozilla::Telemetry::LABELS_NETWORK_HTTP_REDIRECT_TO_SCHEME;
 
 namespace mozilla {
 namespace net {
@@ -153,9 +153,9 @@ static nsCString GetDeviceModelId() {
     deviceString.Trim(" ", true, true);
     deviceString.ReplaceSubstring(NS_LITERAL_CSTRING("%DEVICEID%"),
                                   deviceModelId);
-    return deviceString;
+    return std::move(deviceString);
   }
-  return deviceModelId;
+  return std::move(deviceModelId);
 }
 #endif
 
@@ -215,9 +215,11 @@ nsHttpHandler::nsHttpHandler()
       mTailDelayMax(6000),
       mTailTotalMax(0),
       mRedirectionLimit(10),
+      mBeConservativeForProxy(true),
       mPhishyUserPassLength(1),
       mQoSBits(0x00),
       mEnforceAssocReq(false),
+      mImageAcceptHeader(ACCEPT_HEADER_IMAGE),
       mLastUniqueID(NowInSeconds()),
       mSessionStartTime(0),
       mLegacyAppName("Mozilla"),
@@ -267,9 +269,7 @@ nsHttpHandler::nsHttpHandler()
       mTCPKeepaliveLongLivedIdleTimeS(600),
       mEnforceH1Framing(FRAMECHECK_BARELY),
       mDefaultHpackBuffer(4096),
-      mBug1563538(true),
       mBug1563695(true),
-      mBug1562315(true),
       mBug1556491(true),
       mMaxHttpResponseHeaderSize(393216),
       mFocusedWindowTransactionRatio(0.9f),
@@ -430,6 +430,7 @@ static const char* gCallbackPrefs[] = {
     TCP_FAST_OPEN_STALLS_LIMIT,
     TCP_FAST_OPEN_STALLS_IDLE,
     TCP_FAST_OPEN_STALLS_TIMEOUT,
+    "image.http.accept",
     nullptr,
 };
 
@@ -449,9 +450,6 @@ nsresult nsHttpHandler::Init() {
   }
   mIOService = new nsMainThreadPtrHolder<nsIIOService>(
       "nsHttpHandler::mIOService", service);
-
-  mBackgroundThread = new mozilla::LazyIdleThread(
-      10000, NS_LITERAL_CSTRING("HTTP Handler Background"));
 
   if (IsNeckoChild()) NeckoChild::InitNeckoChild();
 
@@ -607,7 +605,7 @@ nsresult nsHttpHandler::InitConnectionMgr() {
       mMaxPersistentConnectionsPerServer, mMaxPersistentConnectionsPerProxy,
       mMaxRequestDelay, mThrottleEnabled, mThrottleVersion, mThrottleSuspendFor,
       mThrottleResumeFor, mThrottleReadLimit, mThrottleReadInterval,
-      mThrottleHoldTime, mThrottleMaxTime);
+      mThrottleHoldTime, mThrottleMaxTime, mBeConservativeForProxy);
   return rv;
 }
 
@@ -646,7 +644,7 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
     accept.Assign(ACCEPT_HEADER_NAVIGATION);
   } else if (aContentPolicyType == nsIContentPolicy::TYPE_IMAGE ||
              aContentPolicyType == nsIContentPolicy::TYPE_IMAGESET) {
-    accept.Assign(ACCEPT_HEADER_IMAGE);
+    accept.Assign(mImageAcceptHeader);
   } else if (aContentPolicyType == nsIContentPolicy::TYPE_STYLESHEET) {
     accept.Assign(ACCEPT_HEADER_STYLE);
   } else {
@@ -774,8 +772,7 @@ nsresult nsHttpHandler::GetStreamConverterService(
     mStreamConvSvc = new nsMainThreadPtrHolder<nsIStreamConverterService>(
         "nsHttpHandler::mStreamConvSvc", service);
   }
-  *result = mStreamConvSvc;
-  NS_ADDREF(*result);
+  *result = do_AddRef(mStreamConvSvc.get()).take();
   return NS_OK;
 }
 
@@ -802,7 +799,7 @@ nsICookieService* nsHttpHandler::GetCookieService() {
 nsresult nsHttpHandler::GetIOService(nsIIOService** result) {
   NS_ENSURE_ARG_POINTER(result);
 
-  NS_ADDREF(*result = mIOService);
+  *result = do_AddRef(mIOService.get()).take();
   return NS_OK;
 }
 
@@ -836,18 +833,15 @@ nsresult nsHttpHandler::AsyncOnChannelRedirect(
     nsIEventTarget* mainThreadEventTarget) {
   MOZ_ASSERT(NS_IsMainThread() && (oldChan && newChan));
 
+  nsCOMPtr<nsIURI> oldURI;
+  oldChan->GetURI(getter_AddRefs(oldURI));
+  MOZ_ASSERT(oldURI);
+
   nsCOMPtr<nsIURI> newURI;
   newChan->GetURI(getter_AddRefs(newURI));
   MOZ_ASSERT(newURI);
 
-  nsAutoCString scheme;
-  newURI->GetScheme(scheme);
-  MOZ_ASSERT(!scheme.IsEmpty());
-
-  Telemetry::AccumulateCategoricalKeyed(
-      scheme, oldChan->IsDocument()
-                  ? LABELS_NETWORK_HTTP_REDIRECT_TO_SCHEME::topLevel
-                  : LABELS_NETWORK_HTTP_REDIRECT_TO_SCHEME::subresource);
+  AntiTrackingCommon::RedirectHeuristic(oldChan, oldURI, newChan, newURI);
 
   // TODO E10S This helper has to be initialized on the other process
   RefPtr<nsAsyncRedirectVerifyHelper> redirectCallbackHelper =
@@ -954,8 +948,8 @@ void nsHttpHandler::BuildUserAgent() {
 }
 
 #ifdef XP_WIN
-#  define WNT_BASE "Windows NT %ld.%ld"
-#  define W64_PREFIX "; Win64"
+#  define OSCPU_WINDOWS "Windows NT %ld.%ld"
+#  define OSCPU_WIN64 OSCPU_WINDOWS "; Win64; x64"
 #endif
 
 void nsHttpHandler::InitUserAgentComponents() {
@@ -1031,18 +1025,18 @@ void nsHttpHandler::InitUserAgentComponents() {
 #    pragma warning(disable : 4996)
   if (GetVersionEx(&info)) {
 #    pragma warning(pop)
+
     const char* format;
-#    if defined _M_IA64
-    format = WNT_BASE W64_PREFIX "; IA64";
-#    elif defined _M_X64 || defined _M_AMD64
-    format = WNT_BASE W64_PREFIX "; x64";
+#    if defined _M_X64 || defined _M_AMD64
+    format = OSCPU_WIN64;
 #    else
     BOOL isWow64 = FALSE;
     if (!IsWow64Process(GetCurrentProcess(), &isWow64)) {
       isWow64 = FALSE;
     }
-    format = isWow64 ? WNT_BASE "; WOW64" : WNT_BASE;
+    format = isWow64 ? OSCPU_WIN64 : OSCPU_WINDOWS;
 #    endif
+
     SmprintfPointer buf =
         mozilla::Smprintf(format, info.dwMajorVersion, info.dwMinorVersion);
     if (buf) {
@@ -1061,35 +1055,22 @@ void nsHttpHandler::InitUserAgentComponents() {
                             static_cast<int>(minorVersion));
 #  elif defined(XP_UNIX)
   struct utsname name;
-
   int ret = uname(&name);
   if (ret >= 0) {
     nsAutoCString buf;
     buf = (char*)name.sysname;
-
-    if (strcmp(name.machine, "x86_64") == 0 &&
-        sizeof(void*) == sizeof(int32_t)) {
-      // We're running 32-bit code on x86_64. Make this browser
-      // look like it's running on i686 hardware, but append "
-      // (x86_64)" to the end of the oscpu identifier to be able
-      // to differentiate this from someone running 64-bit code
-      // on x86_64..
-
-      buf += " i686 on x86_64";
-    } else {
-      buf += ' ';
+    buf += ' ';
 
 #    ifdef AIX
-      // AIX uname returns machine specific info in the uname.machine
-      // field and does not return the cpu type like other platforms.
-      // We use the AIX version and release numbers instead.
-      buf += (char*)name.version;
-      buf += '.';
-      buf += (char*)name.release;
+    // AIX uname returns machine specific info in the uname.machine
+    // field and does not return the cpu type like other platforms.
+    // We use the AIX version and release numbers instead.
+    buf += (char*)name.version;
+    buf += '.';
+    buf += (char*)name.release;
 #    else
-      buf += (char*)name.machine;
+    buf += (char*)name.machine;
 #    endif
-    }
 
     mOscpu.Assign(buf);
   }
@@ -1346,6 +1327,19 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
       else
         mProxyHttpVersion = HttpVersion::v1_0;
       // it does not make sense to issue a HTTP/0.9 request to a proxy server
+    }
+  }
+
+  if (PREF_CHANGED(HTTP_PREF("proxy.respect-be-conservative"))) {
+    rv =
+        Preferences::GetBool(HTTP_PREF("proxy.respect-be-conservative"), &cVar);
+    if (NS_SUCCEEDED(rv)) {
+      mBeConservativeForProxy = cVar;
+      if (mConnMgr) {
+        Unused << mConnMgr->UpdateParam(
+            nsHttpConnectionMgr::PROXY_BE_CONSERVATIVE,
+            static_cast<int32_t>(mBeConservativeForProxy));
+      }
     }
   }
 
@@ -1905,28 +1899,23 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
     }
   }
 
-  if (PREF_CHANGED(HTTP_PREF("spdy.bug1563538"))) {
-    rv = Preferences::GetBool(HTTP_PREF("spdy.bug1563538"), &cVar);
-    if (NS_SUCCEEDED(rv)) {
-      mBug1563538 = cVar;
-    }
-  }
   if (PREF_CHANGED(HTTP_PREF("spdy.bug1563695"))) {
     rv = Preferences::GetBool(HTTP_PREF("spdy.bug1563695"), &cVar);
     if (NS_SUCCEEDED(rv)) {
       mBug1563695 = cVar;
     }
   }
-  if (PREF_CHANGED(HTTP_PREF("spdy.bug1562315"))) {
-    rv = Preferences::GetBool(HTTP_PREF("spdy.bug1562315"), &cVar);
-    if (NS_SUCCEEDED(rv)) {
-      mBug1562315 = cVar;
-    }
-  }
   if (PREF_CHANGED(HTTP_PREF("spdy.bug1556491"))) {
     rv = Preferences::GetBool(HTTP_PREF("spdy.bug1556491"), &cVar);
     if (NS_SUCCEEDED(rv)) {
       mBug1556491 = cVar;
+    }
+  }
+
+  if (PREF_CHANGED("image.http.accept")) {
+    rv = Preferences::GetCString("image.http.accept", mImageAcceptHeader);
+    if (NS_FAILED(rv)) {
+      mImageAcceptHeader.Assign(ACCEPT_HEADER_IMAGE);
     }
   }
 
@@ -2091,12 +2080,8 @@ nsHttpHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
   nsresult rv = NewChannelId(channelId);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsContentPolicyType contentPolicyType =
-      aLoadInfo ? aLoadInfo->GetExternalContentPolicyType()
-                : nsIContentPolicy::TYPE_OTHER;
-
   rv = httpChannel->Init(uri, caps, proxyInfo, proxyResolveFlags, proxyURI,
-                         channelId, contentPolicyType);
+                         channelId, aLoadInfo->GetExternalContentPolicyType());
   if (NS_FAILED(rv)) return rv;
 
   // set the loadInfo on the new channel
@@ -2170,8 +2155,8 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
     mHandlerActive = false;
 
     // clear cache of all authentication credentials.
-    Unused << mAuthCache.ClearAll();
-    Unused << mPrivateAuthCache.ClearAll();
+    mAuthCache.ClearAll();
+    mPrivateAuthCache.ClearAll();
     if (mWifiTickler) mWifiTickler->Cancel();
 
     // Inform nsIOService that network is tearing down.
@@ -2206,8 +2191,8 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
     rv = InitConnectionMgr();
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   } else if (!strcmp(topic, "net:clear-active-logins")) {
-    Unused << mAuthCache.ClearAll();
-    Unused << mPrivateAuthCache.ClearAll();
+    mAuthCache.ClearAll();
+    mPrivateAuthCache.ClearAll();
   } else if (!strcmp(topic, "net:cancel-all-connections")) {
     if (mConnMgr) {
       mConnMgr->AbortAndCloseAllConnections(0, nullptr);
@@ -2240,7 +2225,7 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
          nsCOMPtr<nsIURI> uri = do_QueryInterface(subject);
 #endif
   } else if (!strcmp(topic, "last-pb-context-exited")) {
-    Unused << mPrivateAuthCache.ClearAll();
+    mPrivateAuthCache.ClearAll();
     if (mConnMgr) {
       mConnMgr->ClearAltServiceMappings();
     }
@@ -2356,15 +2341,9 @@ void nsHttpHandler::MaybeEnableSpeculativeConnect() {
     return;
   }
 
-  if (!mBackgroundThread) {
-    NS_WARNING(
-        "nsHttpHandler::MaybeEnableSpeculativeConnect() no background thread");
-    return;
-  }
-
   net_EnsurePSMInit();
 
-  mBackgroundThread->Dispatch(
+  NS_DispatchBackgroundTask(
       NS_NewRunnableFunction("CanEnableSpeculativeConnect", [] {
         gHttpHandler->mSpeculativeConnectEnabled =
             CanEnableSpeculativeConnect();

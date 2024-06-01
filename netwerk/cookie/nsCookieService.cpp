@@ -16,6 +16,7 @@
 #include "mozilla/net/NeckoCommon.h"
 
 #include "nsCookieService.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIWebProgressListener.h"
 #include "nsIHttpChannel.h"
@@ -38,18 +39,15 @@
 #include "nsTArray.h"
 #include "nsCOMArray.h"
 #include "nsIMutableArray.h"
-#include "nsArrayEnumerator.h"
-#include "nsEnumeratorUtils.h"
-#include "nsAutoPtr.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
 #include "prprf.h"
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIInputStream.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsNetCID.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/storage.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/FileUtils.h"
@@ -63,6 +61,7 @@
 #include "nsVariant.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::net;
 
 // Create key from baseDomain that will access the default cookie namespace.
@@ -2006,41 +2005,18 @@ already_AddRefed<nsICookieSettings> nsCookieService::GetCookieSettings(
 }
 
 NS_IMETHODIMP
-nsCookieService::SetCookieString(nsIURI* aHostURI, nsIPrompt* aPrompt,
+nsCookieService::SetCookieString(nsIURI* aHostURI,
                                  const nsACString& aCookieHeader,
                                  nsIChannel* aChannel) {
-  // The aPrompt argument is deprecated and unused.  Avoid introducing new
-  // code that uses this argument by warning if the value is non-null.
-  MOZ_ASSERT(!aPrompt);
-  if (aPrompt) {
-    nsCOMPtr<nsIConsoleService> aConsoleService =
-        do_GetService("@mozilla.org/consoleservice;1");
-    if (aConsoleService) {
-      aConsoleService->LogStringMessage(
-          u"Non-null prompt ignored by nsCookieService.");
-    }
-  }
   return SetCookieStringCommon(aHostURI, aCookieHeader, VoidCString(), aChannel,
                                false);
 }
 
 NS_IMETHODIMP
 nsCookieService::SetCookieStringFromHttp(nsIURI* aHostURI, nsIURI* aFirstURI,
-                                         nsIPrompt* aPrompt,
                                          const nsACString& aCookieHeader,
                                          const nsACString& aServerTime,
                                          nsIChannel* aChannel) {
-  // The aPrompt argument is deprecated and unused.  Avoid introducing new
-  // code that uses this argument by warning if the value is non-null.
-  MOZ_ASSERT(!aPrompt);
-  if (aPrompt) {
-    nsCOMPtr<nsIConsoleService> aConsoleService =
-        do_GetService("@mozilla.org/consoleservice;1");
-    if (aConsoleService) {
-      aConsoleService->LogStringMessage(
-          u"Non-null prompt ignored by nsCookieService.");
-    }
-  }
   return SetCookieStringCommon(aHostURI, aCookieHeader, aServerTime, aChannel,
                                true);
 }
@@ -2049,8 +2025,7 @@ int64_t nsCookieService::ParseServerTime(const nsACString& aServerTime) {
   // parse server local time. this is not just done here for efficiency
   // reasons - if there's an error parsing it, and we need to default it
   // to the current time, we must do it here since the current time in
-  // SetCookieInternal() will change for each cookie processed (e.g. if the
-  // user is prompted).
+  // SetCookieInternal() will change for each cookie processed.
   PRTime tempServerTime;
   int64_t serverTime;
   PRStatus result =
@@ -2365,7 +2340,7 @@ nsCookieService::RemoveAll() {
 }
 
 NS_IMETHODIMP
-nsCookieService::GetEnumerator(nsISimpleEnumerator** aEnumerator) {
+nsCookieService::GetCookies(nsTArray<RefPtr<nsICookie>>& aCookies) {
   if (!mDBState) {
     NS_WARNING("No DBState! Profile already closed?");
     return NS_ERROR_NOT_AVAILABLE;
@@ -2373,19 +2348,19 @@ nsCookieService::GetEnumerator(nsISimpleEnumerator** aEnumerator) {
 
   EnsureReadComplete(true);
 
-  nsCOMArray<nsICookie> cookieList(mDBState->cookieCount);
+  aCookies.SetCapacity(mDBState->cookieCount);
   for (auto iter = mDBState->hostTable.Iter(); !iter.Done(); iter.Next()) {
     const nsCookieEntry::ArrayType& cookies = iter.Get()->GetCookies();
     for (nsCookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
-      cookieList.AppendObject(cookies[i]);
+      aCookies.AppendElement(cookies[i]);
     }
   }
 
-  return NS_NewArrayEnumerator(aEnumerator, cookieList, NS_GET_IID(nsICookie));
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsCookieService::GetSessionEnumerator(nsISimpleEnumerator** aEnumerator) {
+nsCookieService::GetSessionCookies(nsTArray<RefPtr<nsICookie>>& aCookies) {
   if (!mDBState) {
     NS_WARNING("No DBState! Profile already closed?");
     return NS_ERROR_NOT_AVAILABLE;
@@ -2393,19 +2368,19 @@ nsCookieService::GetSessionEnumerator(nsISimpleEnumerator** aEnumerator) {
 
   EnsureReadComplete(true);
 
-  nsCOMArray<nsICookie> cookieList(mDBState->cookieCount);
+  aCookies.SetCapacity(mDBState->cookieCount);
   for (auto iter = mDBState->hostTable.Iter(); !iter.Done(); iter.Next()) {
     const nsCookieEntry::ArrayType& cookies = iter.Get()->GetCookies();
     for (nsCookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
       nsCookie* cookie = cookies[i];
       // Filter out non-session cookies.
       if (cookie->IsSession()) {
-        cookieList.AppendObject(cookie);
+        aCookies.AppendElement(cookie);
       }
     }
   }
 
-  return NS_NewArrayEnumerator(aEnumerator, cookieList, NS_GET_IID(nsICookie));
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -2492,8 +2467,10 @@ nsresult nsCookieService::Remove(const nsACString& aHost,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString baseDomain;
-  rv = GetBaseDomainFromHost(mTLDService, host, baseDomain);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (!host.IsEmpty()) {
+    rv = GetBaseDomainFromHost(mTLDService, host, baseDomain);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   nsListIter matchIter;
   RefPtr<nsCookie> cookie;
@@ -2869,11 +2846,6 @@ nsCookieService::ImportCookies(nsIFile* aCookieFile) {
  * private GetCookie/SetCookie helpers
  ******************************************************************************/
 
-// helper function for GetCookieList
-static inline bool ispathdelimiter(char c) {
-  return c == '/' || c == '?' || c == '#' || c == ';';
-}
-
 bool nsCookieService::DomainMatches(nsCookie* aCookie,
                                     const nsACString& aHost) {
   // first, check for an exact host or domain cookie match, e.g. "google.com"
@@ -2884,33 +2856,28 @@ bool nsCookieService::DomainMatches(nsCookie* aCookie,
 }
 
 bool nsCookieService::PathMatches(nsCookie* aCookie, const nsACString& aPath) {
-  // calculate cookie path length, excluding trailing '/'
-  uint32_t cookiePathLen = aCookie->Path().Length();
-  if (cookiePathLen > 0 && aCookie->Path().Last() == '/') --cookiePathLen;
+  nsCString cookiePath(aCookie->GetFilePath());
 
-  // if the given path is shorter than the cookie path, it doesn't match
-  // if the given path doesn't start with the cookie path, it doesn't match.
-  if (!StringBeginsWith(aPath, Substring(aCookie->Path(), 0, cookiePathLen)))
-    return false;
+  // if our cookie path is empty we can't really perform our prefix check, and
+  // also we can't check the last character of the cookie path, so we would
+  // never return a successful match.
+  if (cookiePath.IsEmpty()) return false;
 
-  // if the given path is longer than the cookie path, and the first char after
-  // the cookie path is not a path delimiter, it doesn't match.
-  if (aPath.Length() > cookiePathLen &&
-      !ispathdelimiter(aPath.CharAt(cookiePathLen))) {
-    /*
-     * |ispathdelimiter| tests four cases: '/', '?', '#', and ';'.
-     * '/' is the "standard" case; the '?' test allows a site at host/abc?def
-     * to receive a cookie that has a path attribute of abc.  this seems
-     * strange but at least one major site (citibank, bug 156725) depends
-     * on it.  The test for # and ; are put in to proactively avoid problems
-     * with other sites - these are the only other chars allowed in the path.
-     */
-    return false;
-  }
+  // if the cookie path and the request path are identical, they match.
+  if (cookiePath.Equals(aPath)) return true;
 
-  // either the paths match exactly, or the cookie path is a prefix of
-  // the given path.
-  return true;
+  // if the cookie path is a prefix of the request path, and the last character
+  // of the cookie path is %x2F ("/"), they match.
+  bool isPrefix = StringBeginsWith(aPath, cookiePath);
+  if (isPrefix && cookiePath.Last() == '/') return true;
+
+  // if the cookie path is a prefix of the request path, and the first character
+  // of the request path that is not included in the cookie path is a %x2F ("/")
+  // character, they match.
+  uint32_t cookiePathLen = cookiePath.Length();
+  if (isPrefix && aPath[cookiePathLen] == '/') return true;
+
+  return false;
 }
 
 void nsCookieService::GetCookiesForURI(
@@ -2942,7 +2909,7 @@ void nsCookieService::GetCookiesForURI(
   nsresult rv =
       GetBaseDomain(mTLDService, aHostURI, baseDomain, requireHostMatch);
   if (NS_SUCCEEDED(rv)) rv = aHostURI->GetAsciiHost(hostFromURI);
-  if (NS_SUCCEEDED(rv)) rv = aHostURI->GetPathQueryRef(pathFromURI);
+  if (NS_SUCCEEDED(rv)) rv = aHostURI->GetFilePath(pathFromURI);
   if (NS_FAILED(rv)) {
     COOKIE_LOGFAILURE(GET_COOKIE, aHostURI, VoidCString(),
                       "invalid host/path from URI");
@@ -2966,7 +2933,10 @@ void nsCookieService::GetCookiesForURI(
   // (but not if there was an error)
   switch (cookieStatus) {
     case STATUS_REJECTED:
-      NotifyRejected(aHostURI, aChannel, rejectedReason, OPERATION_READ);
+      // If we don't have any cookies from this host, fail silently.
+      if (priorCookieCount) {
+        NotifyRejected(aHostURI, aChannel, rejectedReason, OPERATION_READ);
+      }
       return;
     default:
       break;
@@ -4524,7 +4494,9 @@ NS_IMETHODIMP
 nsCookieService::GetCookiesFromHost(const nsACString& aHost,
                                     JS::HandleValue aOriginAttributes,
                                     JSContext* aCx,
-                                    nsISimpleEnumerator** aEnumerator) {
+                                    nsTArray<RefPtr<nsICookie>>& aResult) {
+  aResult.Clear();
+
   if (!mDBState) {
     NS_WARNING("No DBState! Profile already closed?");
     return NS_ERROR_NOT_AVAILABLE;
@@ -4552,21 +4524,21 @@ nsCookieService::GetCookiesFromHost(const nsACString& aHost,
   nsCookieKey key = nsCookieKey(baseDomain, attrs);
 
   nsCookieEntry* entry = mDBState->hostTable.GetEntry(key);
-  if (!entry) return NS_NewEmptyEnumerator(aEnumerator);
+  if (!entry) return NS_OK;
 
-  nsCOMArray<nsICookie> cookieList(mMaxCookiesPerHost);
+  aResult.SetCapacity(mMaxCookiesPerHost);
   const nsCookieEntry::ArrayType& cookies = entry->GetCookies();
   for (nsCookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
-    cookieList.AppendObject(cookies[i]);
+    aResult.AppendElement(cookies[i]);
   }
 
-  return NS_NewArrayEnumerator(aEnumerator, cookieList, NS_GET_IID(nsICookie));
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsCookieService::GetCookiesWithOriginAttributes(
     const nsAString& aPattern, const nsACString& aHost,
-    nsISimpleEnumerator** aEnumerator) {
+    nsTArray<RefPtr<nsICookie>>& aResult) {
   mozilla::OriginAttributesPattern pattern;
   if (!pattern.Init(aPattern)) {
     return NS_ERROR_INVALID_ARG;
@@ -4580,12 +4552,12 @@ nsCookieService::GetCookiesWithOriginAttributes(
   rv = GetBaseDomainFromHost(mTLDService, host, baseDomain);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return GetCookiesWithOriginAttributes(pattern, baseDomain, aEnumerator);
+  return GetCookiesWithOriginAttributes(pattern, baseDomain, aResult);
 }
 
 nsresult nsCookieService::GetCookiesWithOriginAttributes(
     const mozilla::OriginAttributesPattern& aPattern,
-    const nsCString& aBaseDomain, nsISimpleEnumerator** aEnumerator) {
+    const nsCString& aBaseDomain, nsTArray<RefPtr<nsICookie>>& aResult) {
   if (!mDBState) {
     NS_WARNING("No DBState! Profile already closed?");
     return NS_ERROR_NOT_AVAILABLE;
@@ -4598,7 +4570,6 @@ nsresult nsCookieService::GetCookiesWithOriginAttributes(
                  ? mPrivateDBState
                  : mDefaultDBState;
 
-  nsCOMArray<nsICookie> cookies;
   for (auto iter = mDBState->hostTable.Iter(); !iter.Done(); iter.Next()) {
     nsCookieEntry* entry = iter.Get();
 
@@ -4613,11 +4584,11 @@ nsresult nsCookieService::GetCookiesWithOriginAttributes(
     const nsCookieEntry::ArrayType& entryCookies = entry->GetCookies();
 
     for (nsCookieEntry::IndexType i = 0; i < entryCookies.Length(); ++i) {
-      cookies.AppendObject(entryCookies[i]);
+      aResult.AppendElement(entryCookies[i]);
     }
   }
 
-  return NS_NewArrayEnumerator(aEnumerator, cookies, NS_GET_IID(nsICookie));
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -4764,6 +4735,88 @@ nsresult nsCookieService::RemoveCookiesFromExactHost(
   return NS_OK;
 }
 
+namespace {
+
+class RemoveAllSinceRunnable : public Runnable {
+ public:
+  typedef nsTArray<nsCOMPtr<nsICookie>> CookieArray;
+  RemoveAllSinceRunnable(Promise* aPromise, nsCookieService* aSelf,
+                         CookieArray&& aCookieArray, int64_t aSinceWhen)
+      : Runnable("RemoveAllSinceRunnable"),
+        mPromise(aPromise),
+        mSelf(aSelf),
+        mList(std::move(aCookieArray)),
+        mIndex(0),
+        mSinceWhen(aSinceWhen) {}
+
+  NS_IMETHODIMP Run() {
+    RemoveSome();
+
+    if (mIndex < mList.Length()) {
+      return NS_DispatchToCurrentThread(this);
+    } else {
+      mPromise->MaybeResolveWithUndefined();
+    }
+    return NS_OK;
+  }
+
+ private:
+  void RemoveSome() {
+    for (CookieArray::size_type iter = 0;
+         iter < kYieldPeriod && mIndex < mList.Length(); ++mIndex, ++iter) {
+      nsCookie* cookie = static_cast<nsCookie*>(mList[mIndex].get());
+      if (cookie->CreationTime() > mSinceWhen &&
+          NS_FAILED(mSelf->Remove(cookie->Host(), cookie->OriginAttributesRef(),
+                                  cookie->Name(), cookie->Path()))) {
+        continue;
+      }
+    }
+  }
+
+ private:
+  RefPtr<Promise> mPromise;
+  RefPtr<nsCookieService> mSelf;
+  CookieArray mList;
+  CookieArray::size_type mIndex;
+  int64_t mSinceWhen;
+  static const CookieArray::size_type kYieldPeriod = 10;
+};
+
+}  // namespace
+
+NS_IMETHODIMP
+nsCookieService::RemoveAllSince(int64_t aSinceWhen, JSContext* aCx,
+                                Promise** aRetVal) {
+  nsIGlobalObject* globalObject = xpc::CurrentNativeGlobal(aCx);
+  if (NS_WARN_IF(!globalObject)) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  ErrorResult result;
+  RefPtr<Promise> promise = Promise::Create(globalObject, result);
+  if (NS_WARN_IF(result.Failed())) {
+    return result.StealNSResult();
+  }
+
+  EnsureReadComplete(true);
+
+  typedef RemoveAllSinceRunnable::CookieArray CookieArray;
+  CookieArray cookieList(mDBState->cookieCount);
+  for (auto iter = mDBState->hostTable.Iter(); !iter.Done(); iter.Next()) {
+    const nsCookieEntry::ArrayType& cookies = iter.Get()->GetCookies();
+    for (nsCookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
+      cookieList.AppendElement(cookies[i]);
+    }
+  }
+
+  RefPtr<RemoveAllSinceRunnable> runMe = new RemoveAllSinceRunnable(
+      promise, this, std::move(cookieList), aSinceWhen);
+
+  promise.forget(aRetVal);
+
+  return runMe->Run();
+}
+
 // find an secure cookie specified by host and name
 bool nsCookieService::FindSecureCookie(const nsCookieKey& aKey,
                                        nsCookie* aCookie) {
@@ -4784,7 +4837,7 @@ bool nsCookieService::FindSecureCookie(const nsCookieKey& aKey,
       // aren't "/", then this situation needs to compare paths to
       // ensure only that a newly-created non-secure cookie does not
       // overlay an existing secure cookie.
-      if (PathMatches(cookie, aCookie->Path())) {
+      if (PathMatches(cookie, aCookie->GetFilePath())) {
         return true;
       }
     }

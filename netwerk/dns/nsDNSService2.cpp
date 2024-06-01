@@ -12,7 +12,6 @@
 #include "nsProxyRelease.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
-#include "nsAutoPtr.h"
 #include "nsNetCID.h"
 #include "nsError.h"
 #include "nsDNSPrefetch.h"
@@ -227,7 +226,8 @@ nsDNSRecord::GetScriptableNextAddr(uint16_t port, nsINetAddr** result) {
   nsresult rv = GetNextAddr(port, &addr);
   if (NS_FAILED(rv)) return rv;
 
-  NS_ADDREF(*result = new nsNetAddr(&addr));
+  RefPtr<nsNetAddr> netaddr = new nsNetAddr(&addr);
+  netaddr.forget(result);
 
   return NS_OK;
 }

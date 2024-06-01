@@ -10,7 +10,6 @@
 #include "nsCOMPtr.h"
 #include "nsIByteRangeRequest.h"
 #include "nsIMultiPartChannel.h"
-#include "nsAutoPtr.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/IncrementalTokenizer.h"
 #include "nsHttpResponseHead.h"
@@ -45,8 +44,9 @@ class nsPartChannel final : public nsIChannel,
   /* SetContentDisposition expects the full value of the Content-Disposition
    * header */
   void SetContentDisposition(const nsACString& aContentDispositionHeader);
+  // TODO(ER): This appears to be dead code
   void SetResponseHead(mozilla::net::nsHttpResponseHead* head) {
-    mResponseHead = head;
+    mResponseHead.reset(head);
   }
 
   NS_DECL_ISUPPORTS
@@ -61,7 +61,7 @@ class nsPartChannel final : public nsIChannel,
  protected:
   nsCOMPtr<nsIChannel> mMultipartChannel;
   nsCOMPtr<nsIStreamListener> mListener;
-  nsAutoPtr<mozilla::net::nsHttpResponseHead> mResponseHead;
+  UniquePtr<mozilla::net::nsHttpResponseHead> mResponseHead;
 
   nsresult mStatus;
   nsLoadFlags mLoadFlags;

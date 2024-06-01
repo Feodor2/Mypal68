@@ -61,8 +61,7 @@ nsHttpAuthCache::nsHttpAuthCache()
 nsHttpAuthCache::~nsHttpAuthCache() {
   LOG(("nsHttpAuthCache::~nsHttpAuthCache %p", this));
 
-  DebugOnly<nsresult> rv = ClearAll();
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  ClearAll();
   nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
   if (obsSvc) {
     obsSvc->RemoveObserver(mObserver, "clear-origin-attributes-data");
@@ -143,10 +142,9 @@ void nsHttpAuthCache::ClearAuthEntry(const char* scheme, const char* host,
   mDB.Remove(key);
 }
 
-nsresult nsHttpAuthCache::ClearAll() {
+void nsHttpAuthCache::ClearAll() {
   LOG(("nsHttpAuthCache::ClearAll %p\n", this));
   mDB.Clear();
-  return NS_OK;
 }
 
 //-----------------------------------------------------------------------------

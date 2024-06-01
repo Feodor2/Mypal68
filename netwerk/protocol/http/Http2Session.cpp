@@ -1914,7 +1914,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
   RefPtr<Http2PushTransactionBuffer> transactionBuffer =
       new Http2PushTransactionBuffer();
   transactionBuffer->SetConnection(self);
-  nsAutoPtr<Http2PushedStream> pushedStream(new Http2PushedStream(
+  UniquePtr<Http2PushedStream> pushedStream(new Http2PushedStream(
       transactionBuffer, self, associatedStream, promisedID,
       self->mCurrentForegroundTabOuterContentWindowId));
 
@@ -1941,7 +1941,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
     return rv;
   }
 
-  WeakPtr<Http2Stream> pushedWeak = pushedStream.forget();
+  WeakPtr<Http2Stream> pushedWeak = pushedStream.release();
 
   // Ownership of the pushed stream is by the transaction hash, just as it
   // is for a client initiated stream. Errors that aren't fatal to the

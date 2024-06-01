@@ -1934,7 +1934,7 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   // TYPE_DOCUMENT loads have a null LoadingPrincipal and can not be cross
   // origin.
-  if (!loadInfo->LoadingPrincipal()) {
+  if (!loadInfo->GetLoadingPrincipal()) {
     return false;
   }
 
@@ -1943,7 +1943,7 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
     return true;
   }
 
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->GetLoadingPrincipal();
   uint32_t mode = loadInfo->GetSecurityMode();
   bool dataInherits =
       mode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
@@ -2598,8 +2598,7 @@ uint32_t NS_GetContentDispositionFromHeader(const nsACString& aHeader,
 }
 
 nsresult NS_GetFilenameFromDisposition(nsAString& aFilename,
-                                       const nsACString& aDisposition,
-                                       nsIURI* aURI /* = nullptr */) {
+                                       const nsACString& aDisposition) {
   aFilename.Truncate();
 
   nsresult rv;
@@ -2962,8 +2961,8 @@ nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel) {
   // the loadInfo will use originAttributes from the content. Thus, the
   // originAttributes between loadInfo and loadContext will be different.
   // That's why we have to skip the comparison for the favicon loading.
-  if (loadInfo->LoadingPrincipal() &&
-      loadInfo->LoadingPrincipal()->IsSystemPrincipal() &&
+  if (loadInfo->GetLoadingPrincipal() &&
+      loadInfo->GetLoadingPrincipal()->IsSystemPrincipal() &&
       loadInfo->InternalContentPolicyType() ==
           nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON) {
     return NS_OK;

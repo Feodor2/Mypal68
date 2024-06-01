@@ -66,8 +66,8 @@ void InterceptedChannelBase::DoNotifyController() {
   mController = nullptr;
 }
 
-nsresult InterceptedChannelBase::DoSynthesizeStatus(uint16_t aStatus,
-                                                    const nsACString& aReason) {
+void InterceptedChannelBase::DoSynthesizeStatus(uint16_t aStatus,
+                                                const nsACString& aReason) {
   EnsureSynthesizedResponse();
 
   // Always assume HTTP 1.1 for synthesized responses.
@@ -78,7 +78,6 @@ nsresult InterceptedChannelBase::DoSynthesizeStatus(uint16_t aStatus,
   statusLine.Append(aReason);
 
   (*mSynthesizedResponseHead)->ParseStatusLine(statusLine);
-  return NS_OK;
 }
 
 nsresult InterceptedChannelBase::DoSynthesizeHeader(const nsACString& aName,
@@ -87,9 +86,7 @@ nsresult InterceptedChannelBase::DoSynthesizeHeader(const nsACString& aName,
 
   nsAutoCString header = aName + NS_LITERAL_CSTRING(": ") + aValue;
   // Overwrite any existing header.
-  nsresult rv = (*mSynthesizedResponseHead)->ParseHeaderLine(header);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return NS_OK;
+  return (*mSynthesizedResponseHead)->ParseHeaderLine(header);
 }
 
 NS_IMETHODIMP
@@ -268,7 +265,8 @@ InterceptedChannelContent::SynthesizeStatus(uint16_t aStatus,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return DoSynthesizeStatus(aStatus, aReason);
+  DoSynthesizeStatus(aStatus, aReason);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -311,7 +309,7 @@ InterceptedChannelContent::StartSynthesizedResponse(
   originalURI->Equals(responseURI, &equal);
   if (!equal) {
     mChannel->ForceIntercepted(aBody, aBodyCallback, aCacheInfoChannel);
-    mChannel->BeginNonIPCRedirect(responseURI, *mSynthesizedResponseHead.ptr(),
+    mChannel->BeginNonIPCRedirect(responseURI, mSynthesizedResponseHead->get(),
                                   aResponseRedirected);
   } else {
     mChannel->OverrideWithSynthesizedResponse(

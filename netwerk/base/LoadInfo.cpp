@@ -9,6 +9,7 @@
 #include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientSource.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ToJSValue.h"
@@ -34,7 +35,6 @@
 #include "nsQueryObject.h"
 #include "nsRedirectHistoryEntry.h"
 #include "nsSandboxFlags.h"
-#include "LoadInfo.h"
 
 using namespace mozilla::dom;
 
@@ -95,6 +95,7 @@ LoadInfo::LoadInfo(
       mServiceWorkerTaintingSynthesized(false),
       mDocumentHasUserInteracted(false),
       mDocumentHasLoaded(false),
+      mAllowListFutureDocumentsCreatedFromThisRedirectChain(false),
       mIsFromProcessingFrameAttributes(false) {
   MOZ_ASSERT(mLoadingPrincipal);
   MOZ_ASSERT(mTriggeringPrincipal);
@@ -346,6 +347,7 @@ LoadInfo::LoadInfo(nsPIDOMWindowOuter* aOuterWindow,
       mServiceWorkerTaintingSynthesized(false),
       mDocumentHasUserInteracted(false),
       mDocumentHasLoaded(false),
+      mAllowListFutureDocumentsCreatedFromThisRedirectChain(false),
       mIsFromProcessingFrameAttributes(false) {
   // Top-level loads are never third-party
   // Grab the information we can out of the window.
@@ -461,6 +463,8 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mServiceWorkerTaintingSynthesized(false),
       mDocumentHasUserInteracted(rhs.mDocumentHasUserInteracted),
       mDocumentHasLoaded(rhs.mDocumentHasLoaded),
+      mAllowListFutureDocumentsCreatedFromThisRedirectChain(
+          rhs.mAllowListFutureDocumentsCreatedFromThisRedirectChain),
       mCspNonce(rhs.mCspNonce),
       mIsFromProcessingFrameAttributes(rhs.mIsFromProcessingFrameAttributes) {}
 
@@ -494,8 +498,9 @@ LoadInfo::LoadInfo(
     const nsTArray<nsCString>& aCorsUnsafeHeaders, bool aForcePreflight,
     bool aIsPreflight, bool aLoadTriggeredFromExternal,
     bool aServiceWorkerTaintingSynthesized, bool aDocumentHasUserInteracted,
-    bool aDocumentHasLoaded, const nsAString& aCspNonce,
-    uint32_t aRequestBlockingReason)
+    bool aDocumentHasLoaded,
+    bool aAllowListFutureDocumentsCreatedFromThisRedirectChain,
+    const nsAString& aCspNonce, uint32_t aRequestBlockingReason)
     : mLoadingPrincipal(aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal),
       mPrincipalToInherit(aPrincipalToInherit),
@@ -544,6 +549,8 @@ LoadInfo::LoadInfo(
       mServiceWorkerTaintingSynthesized(aServiceWorkerTaintingSynthesized),
       mDocumentHasUserInteracted(aDocumentHasUserInteracted),
       mDocumentHasLoaded(aDocumentHasLoaded),
+      mAllowListFutureDocumentsCreatedFromThisRedirectChain(
+          aAllowListFutureDocumentsCreatedFromThisRedirectChain),
       mCspNonce(aCspNonce),
       mIsFromProcessingFrameAttributes(false) {
   // Only top level TYPE_DOCUMENT loads can have a null loadingPrincipal
@@ -604,11 +611,13 @@ LoadInfo::GetLoadingPrincipal(nsIPrincipal** aLoadingPrincipal) {
   return NS_OK;
 }
 
-nsIPrincipal* LoadInfo::LoadingPrincipal() { return mLoadingPrincipal; }
+nsIPrincipal* LoadInfo::VirtualGetLoadingPrincipal() {
+  return mLoadingPrincipal;
+}
 
 NS_IMETHODIMP
 LoadInfo::GetTriggeringPrincipal(nsIPrincipal** aTriggeringPrincipal) {
-  NS_ADDREF(*aTriggeringPrincipal = mTriggeringPrincipal);
+  *aTriggeringPrincipal = do_AddRef(mTriggeringPrincipal).take();
   return NS_OK;
 }
 
@@ -1283,6 +1292,20 @@ LoadInfo::SetDocumentHasLoaded(bool aDocumentHasLoaded) {
 }
 
 NS_IMETHODIMP
+LoadInfo::GetAllowListFutureDocumentsCreatedFromThisRedirectChain(
+    bool* aValue) {
+  MOZ_ASSERT(aValue);
+  *aValue = mAllowListFutureDocumentsCreatedFromThisRedirectChain;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetAllowListFutureDocumentsCreatedFromThisRedirectChain(bool aValue) {
+  mAllowListFutureDocumentsCreatedFromThisRedirectChain = aValue;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 LoadInfo::GetCspNonce(nsAString& aCspNonce) {
   aCspNonce = mCspNonce;
   return NS_OK;
@@ -1415,7 +1438,39 @@ void LoadInfo::SetPerformanceStorage(PerformanceStorage* aPerformanceStorage) {
 }
 
 PerformanceStorage* LoadInfo::GetPerformanceStorage() {
-  return mPerformanceStorage;
+  if (mPerformanceStorage) {
+    return mPerformanceStorage;
+  }
+
+  RefPtr<dom::Document> loadingDocument;
+  GetLoadingDocument(getter_AddRefs(loadingDocument));
+  if (!loadingDocument) {
+    return nullptr;
+  }
+
+  if (!TriggeringPrincipal()->Equals(loadingDocument->NodePrincipal())) {
+    return nullptr;
+  }
+
+  if (nsILoadInfo::GetExternalContentPolicyType() ==
+          nsIContentPolicy::TYPE_SUBDOCUMENT &&
+      !GetIsFromProcessingFrameAttributes()) {
+    // We only report loads caused by processing the attributes of the
+    // browsing context container.
+    return nullptr;
+  }
+
+  nsCOMPtr<nsPIDOMWindowInner> innerWindow = loadingDocument->GetInnerWindow();
+  if (!innerWindow) {
+    return nullptr;
+  }
+
+  mozilla::dom::Performance* performance = innerWindow->GetPerformance();
+  if (!performance) {
+    return nullptr;
+  }
+
+  return performance->AsPerformanceStorage();
 }
 
 NS_IMETHODIMP

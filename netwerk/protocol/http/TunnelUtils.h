@@ -147,6 +147,8 @@ class TLSFilterTransaction final : public nsAHttpTransaction,
                                            uint32_t* countWritten,
                                            bool* again) override;
 
+  bool HasDataToRecv();
+
  private:
   MOZ_MUST_USE nsresult StartTimerCallback();
   void Cleanup();

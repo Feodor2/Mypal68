@@ -59,23 +59,17 @@ FileStreamListener.prototype = {
   _got_onstoprequest: false,
   _contentLen: -1,
 
-  _isDir: function(request) {
+  _isDir(request) {
     request.QueryInterface(Ci.nsIFileChannel);
     return request.file.isDirectory();
   },
 
-  QueryInterface: function(iid) {
-    if (
-      iid.equals(Ci.nsIStreamListener) ||
-      iid.equals(Ci.nsIRequestObserver) ||
-      iid.equals(Ci.nsISupports)
-    ) {
-      return this;
-    }
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([
+     "nsIStreamListener",
+     "nsIRequestObserver"
+  ]),
 
-  onStartRequest: function(request) {
+  onStartRequest(request) {
     if (this._got_onstartrequest) {
       do_throw("Got second onStartRequest event!");
     }
@@ -90,7 +84,7 @@ FileStreamListener.prototype = {
     }
   },
 
-  onDataAvailable: function(request, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     if (!this._got_onstartrequest) {
       do_throw("onDataAvailable without onStartRequest event!");
     }
@@ -104,7 +98,7 @@ FileStreamListener.prototype = {
     this._buffer = this._buffer.concat(read_stream(stream, count));
   },
 
-  onStopRequest: function(request, status) {
+  onStopRequest(request, status) {
     if (!this._got_onstartrequest) {
       do_throw("onStopRequest without onStartRequest event!");
     }
@@ -284,9 +278,5 @@ function test_load_replace() {
       ios.newFileURI(file).pathQueryRef
     );
   }
-  run_next_test();
-}
-
-function run_test() {
   run_next_test();
 }

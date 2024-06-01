@@ -76,7 +76,7 @@ nsresult nsBufferedStream::Init(nsISupports* aStream, uint32_t bufferSize) {
   return NS_OK;
 }
 
-nsresult nsBufferedStream::Close() {
+void nsBufferedStream::Close() {
   // Drop the reference from nsBufferedStream::Init()
   mStream = nullptr;
   if (mBuffer) {
@@ -114,7 +114,6 @@ nsresult nsBufferedStream::Close() {
     }
   }
 #endif
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -130,9 +129,7 @@ nsBufferedStream::Seek(int32_t whence, int64_t offset) {
   nsresult rv;
   nsCOMPtr<nsISeekableStream> ras = do_QueryInterface(mStream, &rv);
   if (NS_FAILED(rv)) {
-#ifdef DEBUG
     NS_WARNING("mStream doesn't QI to nsISeekableStream");
-#endif
     return rv;
   }
 
@@ -373,32 +370,18 @@ already_AddRefed<nsIInputStream> nsBufferedInputStream::GetInputStream() {
 
 NS_IMETHODIMP
 nsBufferedInputStream::Close() {
-  nsresult rv1 = NS_OK, rv2;
+  nsresult rv = NS_OK;
   if (mStream) {
-    rv1 = Source()->Close();
-#ifdef DEBUG
-    if (NS_FAILED(rv1)) {
+    rv = Source()->Close();
+    if (NS_FAILED(rv)) {
       NS_WARNING(
-          "(debug) Error: Source()->Close() returned error (rv1) in "
+          "(debug) Error: Source()->Close() returned error in "
           "bsBuffedInputStream::Close().");
-    };
-#endif
+    }
   }
 
-  rv2 = nsBufferedStream::Close();
-
-#ifdef DEBUG
-  if (NS_FAILED(rv2)) {
-    NS_WARNING(
-        "(debug) Error: nsBufferedStream::Close() returned error (rv2) within "
-        "nsBufferedInputStream::Close().");
-  };
-#endif
-
-  if (NS_FAILED(rv1)) {
-    return rv1;
-  }
-  return rv2;
+  nsBufferedStream::Close();
+  return rv;
 }
 
 NS_IMETHODIMP
@@ -875,7 +858,7 @@ nsBufferedOutputStream::Init(nsIOutputStream* stream, uint32_t bufferSize) {
 
 NS_IMETHODIMP
 nsBufferedOutputStream::Close() {
-  nsresult rv1, rv2 = NS_OK, rv3;
+  nsresult rv1, rv2 = NS_OK;
 
   rv1 = Flush();
 
@@ -900,15 +883,7 @@ nsBufferedOutputStream::Close() {
     }
 #endif
   }
-  rv3 = nsBufferedStream::Close();
-
-#ifdef DEBUG
-  if (NS_FAILED(rv3)) {
-    NS_WARNING(
-        "(debug) nsBufferedStream:Close() inside "
-        "nsBufferedOutputStream::Close() returned error (rv3).");
-  }
-#endif
+  nsBufferedStream::Close();
 
   if (NS_FAILED(rv1)) {
     return rv1;
@@ -916,7 +891,7 @@ nsBufferedOutputStream::Close() {
   if (NS_FAILED(rv2)) {
     return rv2;
   }
-  return rv3;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1001,7 +976,7 @@ NS_IMETHODIMP
 nsBufferedOutputStream::Finish() {
   // flush the stream, to write out any buffered data...
   nsresult rv1 = nsBufferedOutputStream::Flush();
-  nsresult rv2 = NS_OK, rv3;
+  nsresult rv2 = NS_OK;
 
   if (NS_FAILED(rv1)) {
     NS_WARNING(
@@ -1025,7 +1000,7 @@ nsBufferedOutputStream::Finish() {
 
   // ... and close the buffered stream, so any further attempts to flush/close
   // the buffered stream won't cause errors.
-  rv3 = nsBufferedStream::Close();
+  nsBufferedStream::Close();
 
   // We want to return the errors precisely from Finish()
   // and mimick the existing error handling in
@@ -1037,7 +1012,7 @@ nsBufferedOutputStream::Finish() {
   if (NS_FAILED(rv2)) {
     return rv2;
   }
-  return rv3;
+  return NS_OK;
 }
 
 static nsresult nsReadFromInputStream(nsIOutputStream* outStr, void* closure,

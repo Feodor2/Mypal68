@@ -3,79 +3,75 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
-
 #include "mozilla/net/HttpBaseChannel.h"
 
+#include <algorithm>
+#include <utility>
+
+#include "HttpBaseChannel.h"
+#include "HttpLog.h"
+#include "LoadInfo.h"
+#include "mozIThirdPartyUtil.h"
+#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/BinarySearch.h"
+#include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/InputStreamLengthHelper.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/Services.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/Tokenizer.h"
+#include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/net/PartiallySeekableInputStream.h"
+#include "mozilla/net/UrlClassifierCommon.h"
+#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "nsCRT.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
+#include "nsEscape.h"
 #include "nsGlobalWindowOuter.h"
+#include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
+#include "nsIApplicationCacheChannel.h"
+#include "nsICacheInfoChannel.h"
+#include "nsICachingChannel.h"
+#include "nsIChannelEventSink.h"
+#include "nsIConsoleService.h"
+#include "nsICookieService.h"
+#include "nsIDOMWindowUtils.h"
+#include "nsIDocShell.h"
+#include "nsIEncodedChannel.h"
+#include "nsIHttpHeaderVisitor.h"
+#include "nsILoadGroupChild.h"
+#include "nsIMIMEInputStream.h"
+#include "nsIMutableArray.h"
+#include "nsINetworkInterceptController.h"
+#include "nsIObserverService.h"
+#include "nsIPrincipal.h"
+#include "nsIProtocolProxyService.h"
+#include "nsISSLSocketControl.h"
+#include "nsIScriptError.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsISecurityConsoleMessage.h"
+#include "nsISeekableStream.h"
+#include "nsIStorageStream.h"
+#include "nsIStreamConverterService.h"
+#include "nsITimedChannel.h"
+#include "nsIURIMutator.h"
 #include "nsMimeTypes.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
-#include "nsReadableUtils.h"
-
-#include "mozilla/BasePrincipal.h"
-#include "nsICachingChannel.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptError.h"
-#include "nsISeekableStream.h"
-#include "nsIStorageStream.h"
-#include "nsITimedChannel.h"
-#include "nsIEncodedChannel.h"
-#include "nsIApplicationCacheChannel.h"
-#include "nsIMutableArray.h"
-#include "nsEscape.h"
-#include "nsStreamListenerWrapper.h"
-#include "nsISecurityConsoleMessage.h"
-#include "nsURLHelper.h"
-#include "nsICookieService.h"
-#include "nsIStreamConverterService.h"
-#include "nsCRT.h"
-#include "nsContentUtils.h"
-#include "nsIMutableArray.h"
-#include "nsIURIMutator.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIObserverService.h"
-#include "nsIProtocolProxyService.h"
-#include "nsProxyRelease.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDocShell.h"
-#include "nsINetworkInterceptController.h"
-#include "mozilla/AntiTrackingCommon.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/PerformanceStorage.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/NullPrincipal.h"
-#include "mozilla/Services.h"
-#include "mozIThirdPartyUtil.h"
-#include "nsStreamUtils.h"
-#include "nsThreadUtils.h"
-#include "nsContentSecurityManager.h"
-#include "nsIChannelEventSink.h"
-#include "nsILoadGroupChild.h"
-#include "mozilla/ConsoleReportCollector.h"
-#include "LoadInfo.h"
-#include "nsISSLSocketControl.h"
-#include "mozilla/Telemetry.h"
-#include "nsIConsoleService.h"
-#include "mozilla/BinarySearch.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Move.h"
-#include "mozilla/net/PartiallySeekableInputStream.h"
-#include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/InputStreamLengthHelper.h"
-#include "mozilla/Tokenizer.h"
-#include "nsIHttpHeaderVisitor.h"
-#include "nsIMIMEInputStream.h"
-#include "nsICacheInfoChannel.h"
-#include "nsIDOMWindowUtils.h"
-#include "nsHttpChannel.h"
+#include "nsProxyRelease.h"
+#include "nsReadableUtils.h"
 #include "nsRedirectHistoryEntry.h"
 #include "nsServerTiming.h"
-#include "mozilla/Tokenizer.h"
-
-#include <algorithm>
-#include "HttpBaseChannel.h"
+#include "nsStreamListenerWrapper.h"
+#include "nsStreamUtils.h"
+#include "nsThreadUtils.h"
+#include "nsURLHelper.h"
 
 namespace mozilla {
 namespace net {
@@ -224,6 +220,7 @@ HttpBaseChannel::HttpBaseChannel()
       mAfterOnStartRequestBegun(false),
       mRequireCORSPreflight(false),
       mAltDataForChild(false),
+      mDisableAltDataCache(false),
       mForceMainDocumentChannel(false),
       mPendingInputStreamLengthOperation(false) {
   this->mSelfAddr.inet = {};
@@ -279,18 +276,12 @@ void HttpBaseChannel::ReleaseMainThreadOnlyReferences() {
   }
 
   nsTArray<nsCOMPtr<nsISupports>> arrayToRelease;
-  arrayToRelease.AppendElement(mURI.forget());
-  arrayToRelease.AppendElement(mOriginalURI.forget());
-  arrayToRelease.AppendElement(mDocumentURI.forget());
   arrayToRelease.AppendElement(mLoadGroup.forget());
   arrayToRelease.AppendElement(mLoadInfo.forget());
   arrayToRelease.AppendElement(mCallbacks.forget());
   arrayToRelease.AppendElement(mProgressSink.forget());
   arrayToRelease.AppendElement(mApplicationCache.forget());
-  arrayToRelease.AppendElement(mAPIRedirectToURI.forget());
-  arrayToRelease.AppendElement(mProxyURI.forget());
   arrayToRelease.AppendElement(mPrincipal.forget());
-  arrayToRelease.AppendElement(mTopWindowURI.forget());
   arrayToRelease.AppendElement(mContentBlockingAllowListPrincipal.forget());
   arrayToRelease.AppendElement(mListener.forget());
   arrayToRelease.AppendElement(mCompressListener.forget());
@@ -518,8 +509,7 @@ HttpBaseChannel::SetDocshellUserAgentOverride() {
 NS_IMETHODIMP
 HttpBaseChannel::GetOriginalURI(nsIURI** aOriginalURI) {
   NS_ENSURE_ARG_POINTER(aOriginalURI);
-  *aOriginalURI = mOriginalURI;
-  NS_ADDREF(*aOriginalURI);
+  *aOriginalURI = do_AddRef(mOriginalURI).take();
   return NS_OK;
 }
 
@@ -535,8 +525,7 @@ HttpBaseChannel::SetOriginalURI(nsIURI* aOriginalURI) {
 NS_IMETHODIMP
 HttpBaseChannel::GetURI(nsIURI** aURI) {
   NS_ENSURE_ARG_POINTER(aURI);
-  *aURI = mURI;
-  NS_ADDREF(*aURI);
+  *aURI = do_AddRef(mURI).take();
   return NS_OK;
 }
 
@@ -693,14 +682,14 @@ HttpBaseChannel::GetContentDispositionFilename(
     return NS_OK;
   }
 
-  return NS_GetFilenameFromDisposition(aContentDispositionFilename, header,
-                                       mURI);
+  return NS_GetFilenameFromDisposition(aContentDispositionFilename, header);
 }
 
 NS_IMETHODIMP
 HttpBaseChannel::SetContentDispositionFilename(
     const nsAString& aContentDispositionFilename) {
-  mContentDispositionFilename = new nsString(aContentDispositionFilename);
+  mContentDispositionFilename =
+      MakeUnique<nsString>(aContentDispositionFilename);
   return NS_OK;
 }
 
@@ -1036,13 +1025,13 @@ HttpBaseChannel::ExplicitSetUploadStream(nsIInputStream* aStream,
   return NS_OK;
 }
 
-nsresult HttpBaseChannel::ExplicitSetUploadStreamLength(
-    uint64_t aContentLength, bool aStreamHasHeaders) {
+void HttpBaseChannel::ExplicitSetUploadStreamLength(uint64_t aContentLength,
+                                                    bool aStreamHasHeaders) {
   // We already have the content length. We don't need to determinate it.
   mReqContentLength = aContentLength;
 
   if (aStreamHasHeaders) {
-    return NS_OK;
+    return;
   }
 
   nsAutoCString header;
@@ -1052,7 +1041,7 @@ nsresult HttpBaseChannel::ExplicitSetUploadStreamLength(
   nsAutoCString value;
   nsresult rv = GetRequestHeader(header, value);
   if (NS_SUCCEEDED(rv) && !value.IsEmpty()) {
-    return NS_OK;
+    return;
   }
 
   // SetRequestHeader propagates headers to chrome if HttpChannelChild
@@ -1060,8 +1049,6 @@ nsresult HttpBaseChannel::ExplicitSetUploadStreamLength(
   nsAutoCString contentLengthStr;
   contentLengthStr.AppendInt(aContentLength);
   SetRequestHeader(header, contentLengthStr, false);
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1275,8 +1262,9 @@ HttpBaseChannel::GetContentEncodings(nsIUTF8StringEnumerator** aEncodings) {
     *aEncodings = nullptr;
     return NS_OK;
   }
-  nsContentEncodings* enumerator = new nsContentEncodings(this, encoding.get());
-  NS_ADDREF(*aEncodings = enumerator);
+  RefPtr<nsContentEncodings> enumerator =
+      new nsContentEncodings(this, encoding.get());
+  enumerator.forget(aEncodings);
   return NS_OK;
 }
 
@@ -1489,8 +1477,6 @@ HttpBaseChannel::IsThirdPartyTrackingResource(bool* aIsTrackingResource) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetClassificationFlags(uint32_t* aFlags) {
-  MOZ_ASSERT(!mFirstPartyClassificationFlags ||
-             !mThirdPartyClassificationFlags);
   if (mThirdPartyClassificationFlags) {
     *aFlags = mThirdPartyClassificationFlags;
   } else {
@@ -1501,16 +1487,12 @@ HttpBaseChannel::GetClassificationFlags(uint32_t* aFlags) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetFirstPartyClassificationFlags(uint32_t* aFlags) {
-  MOZ_ASSERT(
-      !(mFirstPartyClassificationFlags && mFirstPartyClassificationFlags));
   *aFlags = mFirstPartyClassificationFlags;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 HttpBaseChannel::GetThirdPartyClassificationFlags(uint32_t* aFlags) {
-  MOZ_ASSERT(
-      !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
   *aFlags = mThirdPartyClassificationFlags;
   return NS_OK;
 }
@@ -1908,10 +1890,8 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
   // and to bypass CORS for early redirects.
   // To avoid any bypasses after the channel was flagged by
   // the WebRequst API, we are dropping the flag here.
-  if (mLoadInfo) {
-    mLoadInfo->SetBypassCORSChecks(false);
-    mLoadInfo->SetAllowInsecureRedirectToDataURI(false);
-  }
+  mLoadInfo->SetBypassCORSChecks(false);
+  mLoadInfo->SetAllowInsecureRedirectToDataURI(false);
   return NS_OK;
 }
 
@@ -2159,8 +2139,8 @@ HttpBaseChannel::SetCookie(const nsACString& aCookieHeader) {
   nsAutoCString date;
   // empty date is not an error
   Unused << mResponseHead->GetHeader(nsHttp::Date, date);
-  nsresult rv = cs->SetCookieStringFromHttp(mURI, nullptr, nullptr,
-                                            aCookieHeader, date, this);
+  nsresult rv =
+      cs->SetCookieStringFromHttp(mURI, nullptr, aCookieHeader, date, this);
   if (NS_SUCCEEDED(rv)) {
     NotifySetCookie(aCookieHeader);
   }
@@ -2220,7 +2200,7 @@ HttpBaseChannel::SetChannelIsForDownload(bool aChannelIsForDownload) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetCacheKeysRedirectChain(nsTArray<nsCString>* cacheKeys) {
-  mRedirectedCachekeys = cacheKeys;
+  mRedirectedCachekeys = WrapUnique(cacheKeys);
   return NS_OK;
 }
 
@@ -2862,10 +2842,6 @@ void HttpBaseChannel::RemoveAsNonTailRequest() {
 void HttpBaseChannel::AssertPrivateBrowsingId() {
   nsCOMPtr<nsILoadContext> loadContext;
   NS_QueryNotificationCallbacks(this, loadContext);
-  // For addons it's possible that mLoadInfo is null.
-  if (!mLoadInfo) {
-    return;
-  }
 
   if (!loadContext) {
     return;
@@ -2874,8 +2850,8 @@ void HttpBaseChannel::AssertPrivateBrowsingId() {
   // We skip testing of favicon loading here since it could be triggered by XUL
   // image which uses SystemPrincipal. The SystemPrincpal doesn't have
   // mPrivateBrowsingId.
-  if (mLoadInfo->LoadingPrincipal() &&
-      mLoadInfo->LoadingPrincipal()->IsSystemPrincipal() &&
+  if (mLoadInfo->GetLoadingPrincipal() &&
+      mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal() &&
       mLoadInfo->InternalContentPolicyType() ==
           nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON) {
     return;
@@ -2894,10 +2870,6 @@ already_AddRefed<nsILoadInfo> HttpBaseChannel::CloneLoadInfoForRedirect(
     nsIURI* newURI, uint32_t redirectFlags) {
   // make a copy of the loadinfo, append to the redirectchain
   // this will be set on the newly created channel for the redirect target.
-  if (!mLoadInfo) {
-    return nullptr;
-  }
-
   nsCOMPtr<nsILoadInfo> newLoadInfo =
       static_cast<mozilla::net::LoadInfo*>(mLoadInfo.get())->Clone();
 
@@ -3046,7 +3018,7 @@ void HttpBaseChannel::DoNotifyListener() {
   if (!IsNavigation()) {
     if (mLoadGroup) {
       FlushConsoleReports(mLoadGroup);
-    } else if (mLoadInfo) {
+    } else {
       RefPtr<dom::Document> doc;
       mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
       FlushConsoleReports(doc);
@@ -3109,6 +3081,27 @@ bool HttpBaseChannel::ShouldRewriteRedirectToGET(
 
   // otherwise, such as for 307, do not rewrite
   return false;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::ShouldStripRequestBodyHeader(const nsACString& aMethod,
+                                              bool* aResult) {
+  *aResult = false;
+  uint32_t httpStatus = 0;
+  if (NS_FAILED(GetResponseStatus(&httpStatus))) {
+    return NS_OK;
+  }
+
+  nsAutoCString method(aMethod);
+  nsHttpRequestHead::ParsedMethodType parsedMethod;
+  nsHttpRequestHead::ParseMethod(method, parsedMethod);
+  // Fetch 4.4.11, which is slightly different than the perserved method
+  // algrorithm: strip request-body-header for GET->GET redirection for 303.
+  *aResult =
+      ShouldRewriteRedirectToGET(httpStatus, parsedMethod) &&
+      !(httpStatus == 303 && parsedMethod == nsHttpRequestHead::kMethod_Get);
+
+  return NS_OK;
 }
 
 nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
@@ -3180,7 +3173,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     httpInternal->SetLastRedirectFlags(redirectFlags);
 
     if (mRequireCORSPreflight) {
-      httpInternal->SetCorsPreflightParameters(mUnsafeHeaders);
+      httpInternal->SetCorsPreflightParameters(mUnsafeHeaders, false);
     }
   }
 
@@ -3326,8 +3319,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
       realChannel->SetContentBlockingAllowListPrincipal(
           mContentBlockingAllowListPrincipal);
 
-      rv = realChannel->SetTopWindowURI(mTopWindowURI);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      realChannel->SetTopWindowURI(mTopWindowURI);
     }
 
     // update the DocumentURI indicator since we are being redirected.
@@ -3348,7 +3340,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
            "[this=%p] transferring chain of redirect cache-keys",
            this));
       rv = httpInternal->SetCacheKeysRedirectChain(
-          mRedirectedCachekeys.forget());
+          mRedirectedCachekeys.release());
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
 
@@ -3365,6 +3357,9 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     httpInternal->SetAltDataForChild(mAltDataForChild);
+    if (mDisableAltDataCache) {
+      httpInternal->DisableAltDataCache();
+    }
   }
 
   // transfer application cache information
@@ -3455,7 +3450,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     // AllRedirectsPassTimingAllowCheck on them.
     if (loadInfo->GetExternalContentPolicyType() !=
         nsIContentPolicy::TYPE_DOCUMENT) {
-      nsCOMPtr<nsIPrincipal> principal = loadInfo->LoadingPrincipal();
+      nsCOMPtr<nsIPrincipal> principal = loadInfo->GetLoadingPrincipal();
       newTimedChannel->SetAllRedirectsPassTimingAllowCheck(
           mAllRedirectsPassTimingAllowCheck &&
           oldTimedChannel->TimingAllowCheck(principal));
@@ -3710,7 +3705,7 @@ HttpBaseChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
   }
 
   nsAutoCString origin;
-  nsContentUtils::GetASCIIOrigin(aOrigin, origin);
+  aOrigin->GetAsciiOrigin(origin);
 
   Tokenizer p(headerValue);
   Tokenizer::Token t;
@@ -3945,48 +3940,7 @@ mozilla::dom::PerformanceStorage* HttpBaseChannel::GetPerformanceStorage() {
   if (XRE_IsE10sParentProcess()) {
     return nullptr;
   }
-
-  if (!mLoadInfo) {
-    return nullptr;
-  }
-
-  // If a custom performance storage is set, let's use it.
-  mozilla::dom::PerformanceStorage* performanceStorage =
-      mLoadInfo->GetPerformanceStorage();
-  if (performanceStorage) {
-    return performanceStorage;
-  }
-
-  RefPtr<dom::Document> loadingDocument;
-  mLoadInfo->GetLoadingDocument(getter_AddRefs(loadingDocument));
-  if (!loadingDocument) {
-    return nullptr;
-  }
-
-  if (!mLoadInfo->TriggeringPrincipal()->Equals(
-          loadingDocument->NodePrincipal())) {
-    return nullptr;
-  }
-
-  if (mLoadInfo->GetExternalContentPolicyType() ==
-          nsIContentPolicy::TYPE_SUBDOCUMENT &&
-      !mLoadInfo->GetIsFromProcessingFrameAttributes()) {
-    // We only report loads caused by processing the attributes of the
-    // browsing context container.
-    return nullptr;
-  }
-
-  nsCOMPtr<nsPIDOMWindowInner> innerWindow = loadingDocument->GetInnerWindow();
-  if (!innerWindow) {
-    return nullptr;
-  }
-
-  mozilla::dom::Performance* performance = innerWindow->GetPerformance();
-  if (!performance) {
-    return nullptr;
-  }
-
-  return performance->AsPerformanceStorage();
+  return mLoadInfo->GetPerformanceStorage();
 }
 
 void HttpBaseChannel::MaybeReportTimingData() {
@@ -4139,11 +4093,20 @@ void HttpBaseChannel::EnsureTopLevelOuterContentWindowId() {
 }
 
 void HttpBaseChannel::SetCorsPreflightParameters(
-    const nsTArray<nsCString>& aUnsafeHeaders) {
+    const nsTArray<nsCString>& aUnsafeHeaders,
+    bool aShouldStripRequestBodyHeader) {
   MOZ_RELEASE_ASSERT(!mRequestObserversCalled);
 
   mRequireCORSPreflight = true;
   mUnsafeHeaders = aUnsafeHeaders;
+  if (aShouldStripRequestBodyHeader) {
+    mUnsafeHeaders.RemoveElementsBy([&](const nsCString& aHeader) {
+      return aHeader.LowerCaseEqualsASCII("content-type") ||
+             aHeader.LowerCaseEqualsASCII("content-encoding") ||
+             aHeader.LowerCaseEqualsASCII("content-language") ||
+             aHeader.LowerCaseEqualsASCII("content-location");
+    });
+  }
 }
 
 void HttpBaseChannel::SetAltDataForChild(bool aIsForChild) {
@@ -4243,7 +4206,7 @@ void HttpBaseChannel::CallTypeSniffers(void* aClosure, const uint8_t* aData,
 
 template <class T>
 static void ParseServerTimingHeader(
-    const nsAutoPtr<T>& aHeader, nsTArray<nsCOMPtr<nsIServerTiming>>& aOutput) {
+    const UniquePtr<T>& aHeader, nsTArray<nsCOMPtr<nsIServerTiming>>& aOutput) {
   if (!aHeader) {
     return;
   }

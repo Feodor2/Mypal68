@@ -41,7 +41,8 @@ parent:
 
   // Reports approval/veto of redirect by child process redirect observers
   async Redirect2Verify(nsresult result, RequestHeaderTuples changedHeaders,
-                        ChildLoadInfoForwarderArgs loadInfoForwarder,
+                        uint32_t sourceRequestBlockingReason,
+                        ChildLoadInfoForwarderArgs? targetLoadInfoForwarder,
                         uint32_t loadFlags, nsIReferrerInfo referrerInfo,
                         URIParams? apiRedirectTo,
                         CorsPreflightArgs? corsPreflightArgs,
@@ -187,6 +188,10 @@ child:
   async OriginalCacheInputStreamAvailable(IPCStream? stream);
 
   async AltDataCacheInputStreamAvailable(IPCStream? stream);
+
+  async OnProgress(int64_t progress, int64_t progressMax);
+
+  async OnStatus(nsresult status);
 
 both:
   // After receiving this message, the parent also calls

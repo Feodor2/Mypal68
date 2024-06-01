@@ -10,12 +10,14 @@
 #include "TRRService.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
 
 static const char kOpenCaptivePortalLoginEvent[] = "captive-portal-login";
 static const char kClearPrivateData[] = "clear-private-data";
 static const char kPurge[] = "browser:purge-session-history";
 static const char kDisableIpv6Pref[] = "network.dns.disableIPv6";
+static const char kCaptivedetectCanonicalURL[] = "captivedetect.canonicalURL";
 
 #define TRR_PREF_PREFIX "network.trr."
 #define TRR_PREF(x) TRR_PREF_PREFIX x
@@ -35,7 +37,6 @@ TRRService::TRRService()
     : mInitialized(false),
       mMode(0),
       mTRRBlacklistExpireTime(72 * 3600),
-      mTRRTimeout(3000),
       mLock("trrservice"),
       mConfirmationNS(NS_LITERAL_CSTRING("example.com")),
       mWaitForCaptive(true),
@@ -71,6 +72,7 @@ nsresult TRRService::Init() {
   if (prefBranch) {
     prefBranch->AddObserver(TRR_PREF_PREFIX, this, true);
     prefBranch->AddObserver(kDisableIpv6Pref, this, true);
+    prefBranch->AddObserver(kCaptivedetectCanonicalURL, this, true);
   }
   nsCOMPtr<nsICaptivePortalService> captivePortalService =
       do_GetService(NS_CAPTIVEPORTAL_CID);
@@ -122,12 +124,23 @@ void TRRService::GetPrefBranch(nsIPrefBranch** result) {
 
 nsresult TRRService::ReadPrefs(const char* name) {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
+
+  // Whenever a pref change occurs that would cause us to clear the cache
+  // we set this to true then do it at the end of the method.
+  bool clearEntireCache = false;
+
   if (!name || !strcmp(name, TRR_PREF("mode"))) {
-    // 0 - off, 1 - parallel, 2 - TRR first, 3 - TRR only, 4 - shadow,
+    // 0 - off, 1 - reserved, 2 - TRR first, 3 - TRR only, 4 - reserved,
     // 5 - explicit off
     uint32_t tmp;
     if (NS_SUCCEEDED(Preferences::GetUint(TRR_PREF("mode"), &tmp))) {
       if (tmp > MODE_TRROFF) {
+        tmp = MODE_TRROFF;
+      }
+      if (tmp == MODE_RESERVED1) {
+        tmp = MODE_TRROFF;
+      }
+      if (tmp == MODE_RESERVED4) {
         tmp = MODE_TRROFF;
       }
       mMode = tmp;
@@ -184,6 +197,7 @@ nsresult TRRService::ReadPrefs(const char* name) {
     if (!old.IsEmpty() && !mPrivateURI.Equals(old)) {
       mClearTRRBLStorage = true;
       LOG(("TRRService clearing blacklist because of change is uri service\n"));
+      clearEntireCache = true;
     }
   }
   if (!name || !strcmp(name, TRR_PREF("credentials"))) {
@@ -203,6 +217,7 @@ nsresult TRRService::ReadPrefs(const char* name) {
   if (!name || !strcmp(name, TRR_PREF("bootstrapAddress"))) {
     AutoLock lock(mLock);
     Preferences::GetCString(TRR_PREF("bootstrapAddress"), mBootstrapAddr);
+    clearEntireCache = true;
   }
   if (!name || !strcmp(name, TRR_PREF("wait-for-portal"))) {
     // Wait for captive portal?
@@ -231,17 +246,25 @@ nsresult TRRService::ReadPrefs(const char* name) {
       mTRRBlacklistExpireTime = secs;
     }
   }
-  if (!name || !strcmp(name, TRR_PREF("request-timeout"))) {
-    // number of milliseconds
-    uint32_t ms;
-    if (NS_SUCCEEDED(Preferences::GetUint(TRR_PREF("request-timeout"), &ms))) {
-      mTRRTimeout = ms;
-    }
-  }
   if (!name || !strcmp(name, TRR_PREF("early-AAAA"))) {
     bool tmp;
     if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("early-AAAA"), &tmp))) {
       mEarlyAAAA = tmp;
+    }
+  }
+
+  if (!name || !strcmp(name, TRR_PREF("skip-AAAA-when-not-supported"))) {
+    bool tmp;
+    if (NS_SUCCEEDED(Preferences::GetBool(
+            TRR_PREF("skip-AAAA-when-not-supported"), &tmp))) {
+      mCheckIPv6Connectivity = tmp;
+    }
+  }
+  if (!name || !strcmp(name, TRR_PREF("wait-for-A-and-AAAA"))) {
+    bool tmp;
+    if (NS_SUCCEEDED(
+            Preferences::GetBool(TRR_PREF("wait-for-A-and-AAAA"), &tmp))) {
+      mWaitForAllResponses = tmp;
     }
   }
   if (!name || !strcmp(name, kDisableIpv6Pref)) {
@@ -262,17 +285,57 @@ nsresult TRRService::ReadPrefs(const char* name) {
       mDisableAfterFails = fails;
     }
   }
-  if (!name || !strcmp(name, TRR_PREF("excluded-domains"))) {
-    nsAutoCString excludedDomains;
-    Preferences::GetCString(TRR_PREF("excluded-domains"), excludedDomains);
-
+  if (!name || !strcmp(name, TRR_PREF("excluded-domains")) ||
+      !strcmp(name, TRR_PREF("builtin-excluded-domains")) ||
+      !strcmp(name, kCaptivedetectCanonicalURL)) {
+    AutoLock lock(mLock);
     mExcludedDomains.Clear();
-    nsCCharSeparatedTokenizer tokenizer(
-        excludedDomains, ',', nsCCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
-    while (tokenizer.hasMoreTokens()) {
-      nsAutoCString token(tokenizer.nextToken());
-      LOG(("TRRService::ReadPrefs excluded-domains host:[%s]\n", token.get()));
-      mExcludedDomains.PutEntry(token);
+
+    auto parseExcludedDomains = [this](const char* aPrefName) {
+      nsAutoCString excludedDomains;
+      Preferences::GetCString(aPrefName, excludedDomains);
+      if (excludedDomains.IsEmpty()) {
+        return;
+      }
+
+      nsCCharSeparatedTokenizer tokenizer(
+          excludedDomains, ',', nsCCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
+      while (tokenizer.hasMoreTokens()) {
+        nsAutoCString token(tokenizer.nextToken());
+        LOG(("TRRService::ReadPrefs %s host:[%s]\n", aPrefName, token.get()));
+        mExcludedDomains.PutEntry(token);
+      }
+    };
+
+    parseExcludedDomains(TRR_PREF("excluded-domains"));
+    parseExcludedDomains(TRR_PREF("builtin-excluded-domains"));
+    clearEntireCache = true;
+
+    nsAutoCString canonicalSiteURL;
+    Preferences::GetCString(kCaptivedetectCanonicalURL, canonicalSiteURL);
+
+    nsCOMPtr<nsIURI> uri;
+    nsresult rv = NS_NewURI(getter_AddRefs(uri), canonicalSiteURL,
+                            UTF_8_ENCODING, nullptr);
+    if (NS_SUCCEEDED(rv)) {
+      nsAutoCString host;
+      uri->GetHost(host);
+      LOG(("TRRService::ReadPrefs captive portal URL:[%s]\n", host.get()));
+      mExcludedDomains.PutEntry(host);
+    }
+  }
+
+  // if name is null, then we're just now initializing. In that case we don't
+  // need to clear the cache.
+  if (name && clearEntireCache) {
+    bool tmp;
+    if (NS_SUCCEEDED(Preferences::GetBool(
+            TRR_PREF("clear-cache-on-pref-change"), &tmp)) &&
+        tmp) {
+      nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
+      if (dns) {
+        dns->ClearCache(true);
+      }
     }
   }
 
@@ -289,6 +352,14 @@ nsresult TRRService::GetCredentials(nsCString& result) {
   AutoLock lock(mLock);
   result = mPrivateCred;
   return NS_OK;
+}
+
+uint32_t TRRService::GetRequestTimeout() {
+  if (mMode == MODE_TRRONLY) {
+    return StaticPrefs::network_trr_request_timeout_mode_trronly_ms();
+  }
+
+  return StaticPrefs::network_trr_request_timeout_ms();
 }
 
 nsresult TRRService::Start() {
@@ -425,56 +496,26 @@ bool TRRService::MaybeBootstrap(const nsACString& aPossible,
   return true;
 }
 
-// When running in TRR-only mode, the blacklist is not used and it will also
-// try resolving the localhost / .local names.
-bool TRRService::IsTRRBlacklisted(const nsACString& aHost,
-                                  const nsACString& aOriginSuffix,
-                                  bool aPrivateBrowsing,
-                                  bool aParentsToo)  // false if domain
-{
+bool TRRService::IsDomainBlacklisted(const nsACString& aHost,
+                                     const nsACString& aOriginSuffix,
+                                     bool aPrivateBrowsing) {
   // Only use the Storage API on the main thread
-  MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
-
-  if (mMode == MODE_TRRONLY) {
-    return false;  // might as well try
-  }
-
-  LOG(("Checking if host [%s] is blacklisted", aHost.BeginReading()));
-  // hardcode these so as to not worry about expiration
-  if (StringEndsWith(aHost, NS_LITERAL_CSTRING(".local")) ||
-      aHost.Equals(NS_LITERAL_CSTRING("localhost"))) {
-    return true;
-  }
-
-  if (mExcludedDomains.GetEntry(aHost)) {
-    LOG(("Host [%s] is TRR blacklisted via pref\n", aHost.BeginReading()));
-    return true;
-  }
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(), "wrong thread");
 
   if (!Enabled()) {
     return true;
   }
 
-  int32_t dot = aHost.FindChar('.');
-  if ((dot == kNotFound) && aParentsToo) {
-    // Only if a full host name. Domains can be dotless to be able to
-    // blacklist entire TLDs
+  // It's OK to call this method here because it only happens on the main
+  // thread, and we only change the excluded domains/dns suffix list
+  // on the main thread in response to observer notifications.
+  // Calling the locking version of this method would cause us to grab
+  // the mutex for every label of the hostname, which would be very
+  // inefficient.
+  if (IsExcludedFromTRR_unlocked(aHost)) {
     return true;
-  } else if (dot != kNotFound) {
-    // there was a dot, check the parent first
-    dot++;
-    nsDependentCSubstring domain = Substring(aHost, dot, aHost.Length() - dot);
-    nsAutoCString check(domain);
-
-    // recursively check the domain part of this name
-    if (IsTRRBlacklisted(check, aOriginSuffix, aPrivateBrowsing, false)) {
-      // the domain name of this name is already TRR blacklisted
-      return true;
-    }
   }
 
-  // These checks need to happen after the recursive result, otherwise we
-  // might not check the pref for parent domains.
   if (!mTRRBLStorage) {
     return false;
   }
@@ -507,23 +548,76 @@ bool TRRService::IsTRRBlacklisted(const nsACString& aHost,
   return false;
 }
 
-bool TRRService::IsExcludedFromTRR(const nsACString& aHost) {
-  if (mExcludedDomains.GetEntry(aHost)) {
-    LOG(("Host [%s] Is Excluded From TRR via pref\n", aHost.BeginReading()));
+// When running in TRR-only mode, the blacklist is not used and it will also
+// try resolving the localhost / .local names.
+bool TRRService::IsTRRBlacklisted(const nsACString& aHost,
+                                  const nsACString& aOriginSuffix,
+                                  bool aPrivateBrowsing,
+                                  bool aParentsToo)  // false if domain
+{
+  if (mMode == MODE_TRRONLY) {
+    return false;  // might as well try
+  }
+
+  LOG(("Checking if host [%s] is blacklisted", aHost.BeginReading()));
+
+  int32_t dot = aHost.FindChar('.');
+  if ((dot == kNotFound) && aParentsToo) {
+    // Only if a full host name. Domains can be dotless to be able to
+    // blacklist entire TLDs
     return true;
   }
 
-  int32_t dot = aHost.FindChar('.');
-  if (dot != kNotFound) {
-    // there was a dot, check the parent first
-    dot++;
-    nsDependentCSubstring domain = Substring(aHost, dot, aHost.Length() - dot);
-    nsAutoCString check(domain);
+  if (IsDomainBlacklisted(aHost, aOriginSuffix, aPrivateBrowsing)) {
+    return true;
+  }
 
-    // recursively check the domain part of this name
-    if (IsExcludedFromTRR(check)) {
+  nsDependentCSubstring domain = Substring(aHost, 0);
+  while (dot != kNotFound) {
+    dot++;
+    domain.Rebind(domain, dot, domain.Length() - dot);
+
+    if (IsDomainBlacklisted(domain, aOriginSuffix, aPrivateBrowsing)) {
       return true;
     }
+
+    dot = domain.FindChar('.');
+  }
+
+  return false;
+}
+
+bool TRRService::IsExcludedFromTRR(const nsACString& aHost) {
+  // This method may be called off the main thread. We need to lock so
+  // mExcludedDomains and mDNSSuffixDomains don't change while this code
+  // is running.
+  AutoLock lock(mLock);
+
+  return IsExcludedFromTRR_unlocked(aHost);
+}
+
+bool TRRService::IsExcludedFromTRR_unlocked(const nsACString& aHost) {
+  if (!NS_IsMainThread()) {
+    mLock.AssertCurrentThreadOwns();
+  }
+
+  int32_t dot = 0;
+  // iteratively check the sub-domain of |aHost|
+  while (dot < static_cast<int32_t>(aHost.Length())) {
+    nsDependentCSubstring subdomain =
+        Substring(aHost, dot, aHost.Length() - dot);
+
+    if (mExcludedDomains.GetEntry(subdomain)) {
+      LOG(("Subdomain [%s] of host [%s] Is Excluded From TRR via pref\n",
+           subdomain.BeginReading(), aHost.BeginReading()));
+      return true;
+    }
+
+    dot = aHost.FindChar('.', dot + 1);
+    if (dot == kNotFound) {
+      break;
+    }
+    dot++;
   }
 
   return false;

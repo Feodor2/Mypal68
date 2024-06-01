@@ -14,7 +14,6 @@
 #include "nsProxyInfo.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "plstr.h"
 #include "prerr.h"
@@ -1238,8 +1237,22 @@ SECStatus nsSocketTransport::StoreResumptionToken(
     return SECFailure;
   }
 
-  SSLTokensCache::Put(static_cast<nsSocketTransport*>(ctx)->mHost,
-                      resumptionToken, len);
+  nsCOMPtr<nsISSLSocketControl> secCtrl =
+      do_QueryInterface(static_cast<nsSocketTransport*>(ctx)->mSecInfo);
+  if (!secCtrl) {
+    return SECFailure;
+  }
+  nsAutoCString peerId;
+  secCtrl->GetPeerId(peerId);
+
+  nsCOMPtr<nsITransportSecurityInfo> secInfo = do_QueryInterface(secCtrl);
+  if (!secInfo) {
+    return SECFailure;
+  }
+
+  if (NS_FAILED(SSLTokensCache::Put(peerId, resumptionToken, len, secInfo))) {
+    return SECFailure;
+  }
 
   return SECSuccess;
 }
@@ -1533,19 +1546,22 @@ nsresult nsSocketTransport::InitiateSocket() {
     }
   }
 
-  if (usingSSL && SSLTokensCache::IsEnabled()) {
+  nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
+  if (usingSSL && secCtrl && SSLTokensCache::IsEnabled()) {
     PRIntn val;
     // If SSL_NO_CACHE option was set, we must not use the cache
     if (SSL_OptionGet(fd, SSL_NO_CACHE, &val) == SECSuccess && val == 0) {
       nsTArray<uint8_t> token;
-      nsresult rv2 = SSLTokensCache::Get(mHost, token);
+      nsAutoCString peerId;
+      secCtrl->GetPeerId(peerId);
+      nsresult rv2 = SSLTokensCache::Get(peerId, token);
       if (NS_SUCCEEDED(rv2) && token.Length() != 0) {
         SECStatus srv =
             SSL_SetResumptionToken(fd, token.Elements(), token.Length());
         if (srv == SECFailure) {
-          SOCKET_LOG(("Setting token failed with NSS error %d [host=%s]",
-                      PORT_GetError(), PromiseFlatCString(mHost).get()));
-          SSLTokensCache::Remove(mHost);
+          SOCKET_LOG(("Setting token failed with NSS error %d [id=%s]",
+                      PORT_GetError(), PromiseFlatCString(peerId).get()));
+          SSLTokensCache::Remove(peerId);
         }
       }
     }
@@ -1687,7 +1703,7 @@ nsresult nsSocketTransport::InitiateSocket() {
     //
     else {
       if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
-          connectStarted && connectStarted) {
+          connectStarted && connectCalled) {
         SendPRBlockingTelemetry(
             connectStarted, Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_NORMAL,
             Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_SHUTDOWN,
@@ -2759,7 +2775,7 @@ nsSocketTransport::Bind(NetAddr* aLocalAddr) {
     return NS_ERROR_FAILURE;
   }
 
-  mBindAddr = new NetAddr();
+  mBindAddr = MakeUnique<NetAddr>();
   memcpy(mBindAddr.get(), aLocalAddr, sizeof(NetAddr));
 
   return NS_OK;
@@ -2773,8 +2789,8 @@ nsSocketTransport::GetScriptablePeerAddr(nsINetAddr** addr) {
   rv = GetPeerAddr(&rawAddr);
   if (NS_FAILED(rv)) return rv;
 
-  NS_ADDREF(*addr = new nsNetAddr(&rawAddr));
-
+  RefPtr<nsNetAddr> netaddr = new nsNetAddr(&rawAddr);
+  netaddr.forget(addr);
   return NS_OK;
 }
 
@@ -2786,7 +2802,8 @@ nsSocketTransport::GetScriptableSelfAddr(nsINetAddr** addr) {
   rv = GetSelfAddr(&rawAddr);
   if (NS_FAILED(rv)) return rv;
 
-  NS_ADDREF(*addr = new nsNetAddr(&rawAddr));
+  RefPtr<nsNetAddr> netaddr = new nsNetAddr(&rawAddr);
+  netaddr.forget(addr);
 
   return NS_OK;
 }

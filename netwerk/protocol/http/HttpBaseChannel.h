@@ -5,49 +5,48 @@
 #ifndef mozilla_net_HttpBaseChannel_h
 #define mozilla_net_HttpBaseChannel_h
 
+#include <utility>
+
 #include "mozilla/Atomics.h"
-#include "nsHttp.h"
-#include "nsAutoPtr.h"
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Tuple.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/net/ChannelEventQueue.h"
+#include "mozilla/net/DNS.h"
+#include "mozilla/net/NeckoCommon.h"
+#include "mozilla/net/PrivateBrowsingChannel.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
 #include "nsHashPropertyBag.h"
-#include "nsProxyInfo.h"
+#include "nsHttp.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpResponseHead.h"
-#include "nsHttpConnectionInfo.h"
-#include "nsIConsoleReportCollector.h"
-#include "nsIEncodedChannel.h"
-#include "nsIHttpChannel.h"
-#include "nsHttpHandler.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsIForcePendingChannel.h"
-#include "nsIFormPOSTActionChannel.h"
-#include "nsIUploadChannel2.h"
-#include "nsIProgressEventSink.h"
-#include "nsIURI.h"
-#include "nsIStringEnumerator.h"
-#include "nsISupportsPriority.h"
+#include "nsIApplicationCache.h"
 #include "nsIClassOfService.h"
 #include "nsIClassifiedChannel.h"
-#include "nsIApplicationCache.h"
-#include "nsIResumableChannel.h"
-#include "nsITraceableChannel.h"
-#include "nsILoadInfo.h"
-#include "mozilla/net/NeckoCommon.h"
-#include "nsThreadUtils.h"
-#include "mozilla/net/PrivateBrowsingChannel.h"
-#include "mozilla/net/DNS.h"
-#include "nsITimedChannel.h"
+#include "nsIConsoleReportCollector.h"
+#include "nsIEncodedChannel.h"
+#include "nsIForcePendingChannel.h"
+#include "nsIFormPOSTActionChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsILoadInfo.h"
+#include "nsIProgressEventSink.h"
+#include "nsIResumableChannel.h"
 #include "nsISecurityConsoleMessage.h"
-#include "nsCOMArray.h"
-#include "mozilla/net/ChannelEventQueue.h"
-#include "mozilla/Move.h"
-#include "mozilla/Tuple.h"
+#include "nsIStringEnumerator.h"
+#include "nsISupportsPriority.h"
 #include "nsIThrottledInputChannel.h"
-#include "nsTArray.h"
-#include "nsCOMPtr.h"
-#include "mozilla/IntegerPrintfMacros.h"
+#include "nsITimedChannel.h"
+#include "nsITraceableChannel.h"
+#include "nsIURI.h"
+#include "nsIUploadChannel2.h"
+#include "nsProxyInfo.h"
 #include "nsStringEnumerator.h"
-#include "mozilla/dom/ReferrerInfo.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 #define HTTP_BASE_CHANNEL_IID                        \
   {                                                  \
@@ -191,6 +190,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD VisitRequestHeaders(nsIHttpHeaderVisitor* visitor) override;
   NS_IMETHOD VisitNonDefaultRequestHeaders(
       nsIHttpHeaderVisitor* visitor) override;
+  NS_IMETHOD ShouldStripRequestBodyHeader(const nsACString& aMethod,
+                                          bool* aResult) override;
   NS_IMETHOD GetResponseHeader(const nsACString& header,
                                nsACString& value) override;
   NS_IMETHOD SetResponseHeader(const nsACString& header,
@@ -299,8 +300,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetTopWindowURIIfUnknown(nsIURI* aTopWindowURI) override;
   NS_IMETHOD GetProxyURI(nsIURI** proxyURI) override;
   virtual void SetCorsPreflightParameters(
-      const nsTArray<nsCString>& unsafeHeaders) override;
+      const nsTArray<nsCString>& unsafeHeaders,
+      bool aShouldStripRequestBodyHeader) override;
   virtual void SetAltDataForChild(bool aIsForChild) override;
+  virtual void DisableAltDataCache() override { mDisableAltDataCache = true; };
+
   NS_IMETHOD GetConnectionInfoHashKey(
       nsACString& aConnectionInfoHashKey) override;
   NS_IMETHOD GetIntegrityMetadata(nsAString& aIntegrityMetadata) override;
@@ -387,9 +391,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
     bool mReady;
   };
 
-  nsHttpResponseHead* GetResponseHead() const { return mResponseHead; }
+  nsHttpResponseHead* GetResponseHead() const { return mResponseHead.get(); }
   nsHttpRequestHead* GetRequestHead() { return &mRequestHead; }
-  nsHttpHeaderArray* GetResponseTrailers() const { return mResponseTrailers; }
+  nsHttpHeaderArray* GetResponseTrailers() const {
+    return mResponseTrailers.get();
+  }
 
   const NetAddr& GetSelfAddr() { return mSelfAddr; }
   const NetAddr& GetPeerAddr() { return mPeerAddr; }
@@ -448,10 +454,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
     return mRequestHead.ClearHeader(nsHttp::Referer);
   }
 
-  MOZ_MUST_USE nsresult SetTopWindowURI(nsIURI* aTopWindowURI) {
-    mTopWindowURI = aTopWindowURI;
-    return NS_OK;
-  }
+  void SetTopWindowURI(nsIURI* aTopWindowURI) { mTopWindowURI = aTopWindowURI; }
 
   void SetContentBlockingAllowListPrincipal(nsIPrincipal* aPrincipal) {
     mContentBlockingAllowListPrincipal = aPrincipal;
@@ -567,8 +570,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
 
-  nsresult ExplicitSetUploadStreamLength(uint64_t aContentLength,
-                                         bool aStreamHasHeaders);
+  void ExplicitSetUploadStreamLength(uint64_t aContentLength,
+                                     bool aStreamHasHeaders);
 
   void MaybeResumeAsyncOpen();
 
@@ -605,17 +608,17 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCOMPtr<nsIInputChannelThrottleQueue> mThrottleQueue;
   nsCOMPtr<nsIInputStream> mUploadStream;
   nsCOMPtr<nsIRunnable> mUploadCloneableCallback;
-  nsAutoPtr<nsHttpResponseHead> mResponseHead;
-  nsAutoPtr<nsHttpHeaderArray> mResponseTrailers;
+  UniquePtr<nsHttpResponseHead> mResponseHead;
+  UniquePtr<nsHttpHeaderArray> mResponseTrailers;
   RefPtr<nsHttpConnectionInfo> mConnectionInfo;
   nsCOMPtr<nsIProxyInfo> mProxyInfo;
   nsCOMPtr<nsISupports> mSecurityInfo;
   nsCOMPtr<nsIHttpUpgradeListener> mUpgradeProtocolCallback;
-  nsAutoPtr<nsString> mContentDispositionFilename;
+  UniquePtr<nsString> mContentDispositionFilename;
   nsCOMPtr<nsIConsoleReportCollector> mReportCollector;
 
   RefPtr<nsHttpHandler> mHttpHandler;  // keep gHttpHandler alive
-  nsAutoPtr<nsTArray<nsCString>> mRedirectedCachekeys;
+  UniquePtr<nsTArray<nsCString>> mRedirectedCachekeys;
   nsCOMPtr<nsIRequestContext> mRequestContext;
 
   NetAddr mSelfAddr;
@@ -787,6 +790,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // This flag will be true if the consumer is requesting alt-data AND the
   // consumer is in the child process.
   bool mAltDataForChild;
+
+  // This flag will be true if the consumer cannot process alt-data.  This
+  // is used in the webextension StreamFilter handler.  If true, we bypass
+  // using alt-data for the request.
+  bool mDisableAltDataCache;
 
   bool mForceMainDocumentChannel;
   // This is set true if the channel is waiting for the

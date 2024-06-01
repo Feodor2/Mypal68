@@ -696,12 +696,15 @@ npnComplete:
 
   if (ssl) {
     // Telemetry for tls failure rate with and without esni;
-    bool esni;
-    mSocketTransport->GetEsniUsed(&esni);
-    Telemetry::Accumulate(
-        Telemetry::ESNI_NOESNI_TLS_SUCCESS_RATE,
-        (esni) ? ((handshakeSucceeded) ? ESNI_SUCCESSFUL : ESNI_FAILED)
-               : ((handshakeSucceeded) ? NO_ESNI_SUCCESSFUL : NO_ESNI_FAILED));
+    bool esni = false;
+    rv = mSocketTransport->GetEsniUsed(&esni);
+    if (NS_SUCCEEDED(rv)) {
+      Telemetry::Accumulate(
+          Telemetry::ESNI_NOESNI_TLS_SUCCESS_RATE,
+          (esni)
+              ? ((handshakeSucceeded) ? ESNI_SUCCESSFUL : ESNI_FAILED)
+              : ((handshakeSucceeded) ? NO_ESNI_SUCCESSFUL : NO_ESNI_FAILED));
+    }
   }
 
   if (rv == psm::GetXPCOMFromNSSError(
@@ -1684,7 +1687,12 @@ nsresult nsHttpConnection::ResumeRecv() {
   // may get done before the ResumeRecv() call
   mLastReadTime = PR_IntervalNow();
 
-  if (mSocketIn) return mSocketIn->AsyncWait(this, 0, 0, nullptr);
+  if (mSocketIn) {
+    if (!mTLSFilter || !mTLSFilter->HasDataToRecv() || NS_FAILED(ForceRecv())) {
+      return mSocketIn->AsyncWait(this, 0, 0, nullptr);
+    }
+    return NS_OK;
+  }
 
   MOZ_ASSERT_UNREACHABLE("no socket input stream");
   return NS_ERROR_UNEXPECTED;

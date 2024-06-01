@@ -102,11 +102,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   // Called to take ownership of the response headers; the transaction
   // will drop any reference to the response headers after this call.
-  nsHttpResponseHead* TakeResponseHead();
+  UniquePtr<nsHttpResponseHead> TakeResponseHead();
 
   // Called to take ownership of the trailer headers.
   // Returning null if there is no trailer.
-  nsHttpHeaderArray* TakeResponseTrailers();
+  UniquePtr<nsHttpHeaderArray> TakeResponseTrailers();
 
   void SetH2WSConnRefTaken();
 
@@ -387,7 +387,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   // protected by nsHttp::GetLock()
   bool mResponseHeadTaken;
-  nsAutoPtr<nsHttpHeaderArray> mForTakeResponseTrailers;
+  UniquePtr<nsHttpHeaderArray> mForTakeResponseTrailers;
   bool mResponseTrailersTaken;
 
   // The time when the transaction was submitted to the Connection Manager

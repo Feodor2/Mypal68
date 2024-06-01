@@ -127,11 +127,11 @@ class WebSocketEvent {
 class WrappedWebSocketEvent : public Runnable {
  public:
   WrappedWebSocketEvent(WebSocketChannelChild* aChild,
-                        WebSocketEvent* aWebSocketEvent)
+                        UniquePtr<WebSocketEvent>&& aWebSocketEvent)
       : Runnable("net::WrappedWebSocketEvent"),
         mChild(aChild),
-        mWebSocketEvent(aWebSocketEvent) {
-    MOZ_RELEASE_ASSERT(aWebSocketEvent);
+        mWebSocketEvent(std::move(aWebSocketEvent)) {
+    MOZ_RELEASE_ASSERT(!!mWebSocketEvent);
   }
   NS_IMETHOD Run() override {
     mWebSocketEvent->Run(mChild);
@@ -140,7 +140,7 @@ class WrappedWebSocketEvent : public Runnable {
 
  private:
   RefPtr<WebSocketChannelChild> mChild;
-  nsAutoPtr<WebSocketEvent> mWebSocketEvent;
+  UniquePtr<WebSocketEvent> mWebSocketEvent;
 };
 
 class EventTargetDispatcher : public ChannelEvent {
@@ -155,7 +155,7 @@ class EventTargetDispatcher : public ChannelEvent {
   void Run() override {
     if (mEventTarget) {
       mEventTarget->Dispatch(
-          new WrappedWebSocketEvent(mChild, mWebSocketEvent.forget()),
+          new WrappedWebSocketEvent(mChild, std::move(mWebSocketEvent)),
           NS_DISPATCH_NORMAL);
       return;
     }
@@ -174,7 +174,7 @@ class EventTargetDispatcher : public ChannelEvent {
  private:
   // The lifetime of the child is ensured by ChannelEventQueue.
   WebSocketChannelChild* mChild;
-  nsAutoPtr<WebSocketEvent> mWebSocketEvent;
+  UniquePtr<WebSocketEvent> mWebSocketEvent;
   nsCOMPtr<nsIEventTarget> mEventTarget;
 };
 

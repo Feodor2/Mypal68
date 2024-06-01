@@ -5,7 +5,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsStreamConverterService.h"
 #include "nsIComponentRegistrar.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsAtom.h"
 #include "nsDeque.h"
@@ -18,6 +17,7 @@
 #include "nsTArray.h"
 #include "nsServiceManagerUtils.h"
 #include "nsISimpleEnumerator.h"
+#include "mozilla/UniquePtr.h"
 
 ///////////////////////////////////////////////////////////////////
 // Breadth-First-Search (BFS) algorithm state classes and types.
@@ -30,7 +30,7 @@ struct BFSTableData {
   nsCString key;
   BFScolors color;
   int32_t distance;
-  nsAutoPtr<nsCString> predecessor;
+  mozilla::UniquePtr<nsCString> predecessor;
 
   explicit BFSTableData(const nsACString& aKey)
       : key(aKey), color(white), distance(-1) {}
@@ -250,7 +250,8 @@ nsresult nsStreamConverterService::FindConverter(
       if (white == curVertexState->color) {
         curVertexState->color = gray;
         curVertexState->distance = headVertexState->distance + 1;
-        curVertexState->predecessor = new nsCString(*currentHead);
+        curVertexState->predecessor =
+            mozilla::MakeUnique<nsCString>(*currentHead);
         grayQ.Push(curVertex);
       } else {
         delete curVertex;  // if this vertex has already been discovered, we
@@ -522,8 +523,8 @@ nsresult NS_NewStreamConv(nsStreamConverterService** aStreamConv) {
   MOZ_ASSERT(aStreamConv != nullptr, "null ptr");
   if (!aStreamConv) return NS_ERROR_NULL_POINTER;
 
-  *aStreamConv = new nsStreamConverterService();
-  NS_ADDREF(*aStreamConv);
+  RefPtr<nsStreamConverterService> conv = new nsStreamConverterService();
+  conv.forget(aStreamConv);
 
   return NS_OK;
 }

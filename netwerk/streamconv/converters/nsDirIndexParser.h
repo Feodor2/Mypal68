@@ -57,8 +57,8 @@ class nsDirIndexParser : public nsIDirIndexParser {
   int mFormat[8];
 
   nsresult ProcessData(nsIRequest* aRequest, nsISupports* aCtxt);
-  nsresult ParseFormat(const char* buf);
-  nsresult ParseData(nsIDirIndex* aIdx, char* aDataStr, int32_t lineLen);
+  void ParseFormat(const char* buf);
+  void ParseData(nsIDirIndex* aIdx, char* aDataStr, int32_t lineLen);
 
   struct Field {
     const char* mName;

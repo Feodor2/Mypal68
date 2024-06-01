@@ -11,7 +11,6 @@
 #include "nsThreadUtils.h"
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
-#include "nsAutoPtr.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Attributes.h"
@@ -64,7 +63,8 @@ class nsHttpConnectionMgr final : public nsIObserver, public AltSvcCache {
     THROTTLING_READ_LIMIT,
     THROTTLING_READ_INTERVAL,
     THROTTLING_HOLD_TIME,
-    THROTTLING_MAX_TIME
+    THROTTLING_MAX_TIME,
+    PROXY_BE_CONSERVATIVE
   };
 
   //-------------------------------------------------------------------------
@@ -80,7 +80,8 @@ class nsHttpConnectionMgr final : public nsIObserver, public AltSvcCache {
        bool throttleEnabled, uint32_t throttleVersion,
        uint32_t throttleSuspendFor, uint32_t throttleResumeFor,
        uint32_t throttleReadLimit, uint32_t throttleReadInterval,
-       uint32_t throttleHoldTime, uint32_t throttleMaxTime);
+       uint32_t throttleHoldTime, uint32_t throttleMaxTime,
+       bool beConservativeForProxy);
   MOZ_MUST_USE nsresult Shutdown();
 
   //-------------------------------------------------------------------------
@@ -179,7 +180,7 @@ class nsHttpConnectionMgr final : public nsIObserver, public AltSvcCache {
   MOZ_MUST_USE nsresult UpdateRequestTokenBucket(EventTokenBucket* aBucket);
 
   // clears the connection history mCT
-  MOZ_MUST_USE nsresult ClearConnectionHistory();
+  void ClearConnectionHistory();
 
   void ReportFailedToProcess(nsIURI* uri);
 
@@ -564,6 +565,7 @@ class nsHttpConnectionMgr final : public nsIObserver, public AltSvcCache {
   uint32_t mThrottleReadInterval;
   uint32_t mThrottleHoldTime;
   TimeDuration mThrottleMaxTime;
+  bool mBeConservativeForProxy;
   Atomic<bool, mozilla::Relaxed> mIsShuttingDown;
 
   //-------------------------------------------------------------------------
@@ -817,6 +819,10 @@ class nsHttpConnectionMgr final : public nsIObserver, public AltSvcCache {
   // Then, it notifies selected transactions' connection of the new active tab
   // id.
   void NotifyConnectionOfWindowIdChange(uint64_t previousWindowId);
+
+  // A test if be-conservative should be used when proxy is setup for the
+  // connection
+  bool BeConservativeIfProxied(nsIProxyInfo* proxy);
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsHttpConnectionMgr::nsHalfOpenSocket,

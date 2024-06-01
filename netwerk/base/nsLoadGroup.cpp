@@ -653,7 +653,7 @@ nsLoadGroup::SetParentLoadGroup(nsILoadGroup* aParentLoadGroup) {
 
 NS_IMETHODIMP
 nsLoadGroup::GetChildLoadGroup(nsILoadGroup** aChildLoadGroup) {
-  NS_ADDREF(*aChildLoadGroup = this);
+  *aChildLoadGroup = do_AddRef(this).take();
   return NS_OK;
 }
 
@@ -668,7 +668,7 @@ nsLoadGroup::GetRootLoadGroup(nsILoadGroup** aRootLoadGroup) {
   if (ancestor) return ancestor->GetRootLoadGroup(aRootLoadGroup);
 
   // finally just return this
-  NS_ADDREF(*aRootLoadGroup = this);
+  *aRootLoadGroup = do_AddRef(this).take();
   return NS_OK;
 }
 

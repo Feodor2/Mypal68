@@ -10,7 +10,6 @@
 #include "nsIMemoryReporter.h"
 #include "nsIObserver.h"
 #include "nsHostResolver.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"

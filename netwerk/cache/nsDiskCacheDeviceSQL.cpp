@@ -19,7 +19,6 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIURI.h"
-#include "nsAutoPtr.h"
 #include "nsEscape.h"
 #include "nsIPrefBranch.h"
 #include "nsString.h"
@@ -680,11 +679,7 @@ nsApplicationCache::GetClientID(nsACString& out) {
 
 NS_IMETHODIMP
 nsApplicationCache::GetProfileDirectory(nsIFile** out) {
-  if (mDevice->BaseDirectory())
-    NS_ADDREF(*out = mDevice->BaseDirectory());
-  else
-    *out = nullptr;
-
+  *out = do_AddRef(mDevice->BaseDirectory()).take();
   return NS_OK;
 }
 

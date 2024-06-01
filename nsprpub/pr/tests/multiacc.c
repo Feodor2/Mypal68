@@ -64,7 +64,7 @@ int main(int argc, char **argv)
     char buf[1024];
 
     serverThreads = (PRThread **)
-            PR_Malloc(num_server_threads * sizeof(PRThread *));
+                    PR_Malloc(num_server_threads * sizeof(PRThread *));
     if (NULL == serverThreads) {
         fprintf(stderr, "PR_Malloc failed\n");
         exit(1);
@@ -131,8 +131,8 @@ int main(int argc, char **argv)
     printf("creating dummy thread\n");
     fflush(stdout);
     dummyThread = PR_CreateThread(PR_USER_THREAD,
-            ServerThreadFunc, dummySock, PR_PRIORITY_NORMAL,
-            thread_scope, PR_JOINABLE_THREAD, 0);
+                                  ServerThreadFunc, dummySock, PR_PRIORITY_NORMAL,
+                                  thread_scope, PR_JOINABLE_THREAD, 0);
     if (NULL == dummyThread) {
         fprintf(stderr, "PR_CreateThread failed\n");
         exit(1);
@@ -142,8 +142,8 @@ int main(int argc, char **argv)
     PR_Sleep(PR_SecondsToInterval(1));
     for (idx = 0; idx < num_server_threads; idx++) {
         serverThreads[idx] = PR_CreateThread(PR_USER_THREAD,
-                ServerThreadFunc, listenSock, PR_PRIORITY_NORMAL,
-                thread_scope, PR_JOINABLE_THREAD, 0);
+                                             ServerThreadFunc, listenSock, PR_PRIORITY_NORMAL,
+                                             thread_scope, PR_JOINABLE_THREAD, 0);
         if (NULL == serverThreads[idx]) {
             fprintf(stderr, "PR_CreateThread failed\n");
             exit(1);

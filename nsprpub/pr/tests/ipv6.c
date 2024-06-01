@@ -54,13 +54,17 @@ static PRStatus PrintAddress(const PRNetAddr* address)
     PRNetAddr translation;
     char buffer[ADDR_BUFFER];
     PRStatus rv = PR_NetAddrToString(address, buffer, sizeof(buffer));
-    if (PR_FAILURE == rv) PL_FPrintError(err, "PR_NetAddrToString");
+    if (PR_FAILURE == rv) {
+        PL_FPrintError(err, "PR_NetAddrToString");
+    }
     else
     {
         PR_fprintf(err, "\t%s\n", buffer);
         memset(&translation, 0, sizeof(translation));
         rv = PR_StringToNetAddr(buffer, &translation);
-        if (PR_FAILURE == rv) PL_FPrintError(err, "PR_StringToNetAddr");
+        if (PR_FAILURE == rv) {
+            PL_FPrintError(err, "PR_StringToNetAddr");
+        }
         else
         {
             PRSize addr_len = NETADDR_SIZE(address);
@@ -90,19 +94,21 @@ int main(int argc, char **argv)
 
     while (PL_OPT_EOL != (os = PL_GetNextOpt(opt)))
     {
-        if (PL_OPT_BAD == os) continue;
+        if (PL_OPT_BAD == os) {
+            continue;
+        }
         switch (opt->option)
         {
-        case 0:  /* Name of host to lookup */
-            name = opt->value;
-            break;
-         case 'V':  /* Do version discovery */
-            version = PR_TRUE;
-            break;
-        case 'h':  /* user wants some guidance */
-         default:
-            Help();  /* so give him an earful */
-            return 2;  /* but not a lot else */
+            case 0:  /* Name of host to lookup */
+                name = opt->value;
+                break;
+            case 'V':  /* Do version discovery */
+                version = PR_TRUE;
+                break;
+            case 'h':  /* user wants some guidance */
+            default:
+                Help();  /* so give him an earful */
+                return 2;  /* but not a lot else */
         }
     }
     PL_DestroyOptState(opt);
@@ -118,14 +124,16 @@ int main(int argc, char **argv)
         char *nspr_path = PR_GetEnv("LD_LIBRARY_PATH");
         char *nspr_name = PR_GetLibraryName(nspr_path, NSPR_LIB);
         PRLibrary *runtime = PR_LoadLibrary(nspr_name);
-        if (NULL == runtime)
+        if (NULL == runtime) {
             PL_FPrintError(err, "PR_LoadLibrary");
+        }
         else
         {
             versionEntryPointType versionPoint = (versionEntryPointType)
-                PR_FindSymbol(runtime, "libVersionPoint");
-            if (NULL == versionPoint)
+                                                 PR_FindSymbol(runtime, "libVersionPoint");
+            if (NULL == versionPoint) {
                 PL_FPrintError(err, "PR_FindSymbol");
+            }
             else
             {
                 char buffer[100];
@@ -154,7 +162,9 @@ int main(int argc, char **argv)
                 (void)PR_fprintf(err, "  comment: %s\n", version_info->comment);
             }
         }
-        if (NULL != nspr_name) PR_FreeLibraryName(nspr_name);
+        if (NULL != nspr_name) {
+            PR_FreeLibraryName(nspr_name);
+        }
     }
 
     {
@@ -191,7 +201,9 @@ int main(int argc, char **argv)
             do
             {
                 index = PR_EnumerateHostEnt(index, &host, 0, &address);
-                if (index > 0) PrintAddress(&address);
+                if (index > 0) {
+                    PrintAddress(&address);
+                }
                 else if (-1 == index)
                 {
                     failed = PR_TRUE;

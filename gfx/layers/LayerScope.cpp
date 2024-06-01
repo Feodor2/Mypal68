@@ -27,12 +27,12 @@
 #include "GLContextProvider.h"
 #include "GLReadTexImageHelper.h"
 
-
 #include <memory>
 #include "mozilla/LinkedList.h"
 #include "mozilla/Base64.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/StaticPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsISocketTransport.h"
 #include "nsIServerSocket.h"

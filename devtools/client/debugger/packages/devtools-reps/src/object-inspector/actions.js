@@ -51,7 +51,8 @@ function nodeLoadProperties(node: Node, actor) {
     try {
       const properties = await loadItemProperties(
         node,
-        client,
+        client.createObjectClient,
+        client.createLongStringClient,
         loadedProperties
       );
 

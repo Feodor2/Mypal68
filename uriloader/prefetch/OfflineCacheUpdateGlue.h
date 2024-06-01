@@ -8,7 +8,6 @@
 #include "nsIOfflineCacheUpdate.h"
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
 #include "mozilla/Attributes.h"

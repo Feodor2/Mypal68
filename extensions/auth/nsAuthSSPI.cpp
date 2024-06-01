@@ -19,6 +19,7 @@
 #include "nsIDNSRecord.h"
 #include "nsMemory.h"
 #include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsICryptoHash.h"
 #include "mozilla/Telemetry.h"

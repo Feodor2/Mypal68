@@ -146,7 +146,7 @@ gfxMacFont::gfxMacFont(const RefPtr<UnscaledFontMac>& aUnscaledFont,
   if ((mAdjustedSize <=
        (gfxFloat)gfxPlatformMac::GetPlatform()->GetAntiAliasingThreshold()) ||
       // Turn off AA for Ahem for testing purposes when requested.
-      MOZ_UNLIKELY(StaticPrefs::gfx_font_ahem_antialias_none() &&
+      MOZ_UNLIKELY(StaticPrefs::gfx_font_rendering_ahem_antialias_none() &&
                    mFontEntry->FamilyName().EqualsLiteral("Ahem"))) {
     cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_NONE);
     mAntialiasOption = kAntialiasNone;
@@ -200,7 +200,8 @@ bool gfxMacFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
   // Currently, we don't support vertical shaping via CoreText,
   // so we ignore RequiresAATLayout if vertical is requested.
   auto macFontEntry = static_cast<MacOSFontEntry*>(GetFontEntry());
-  if (macFontEntry->RequiresAATLayout() && !aVertical) {
+  if (macFontEntry->RequiresAATLayout() && !aVertical &&
+      StaticPrefs::CoreTextEnabled()) {
     if (!mCoreTextShaper) {
       mCoreTextShaper = MakeUnique<gfxCoreTextShaper>(this);
     }

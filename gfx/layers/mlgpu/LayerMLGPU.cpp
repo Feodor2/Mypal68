@@ -7,6 +7,7 @@
 #include "RenderViewMLGPU.h"
 #include "FrameBuilder.h"
 #include "mozilla/layers/ImageHost.h"
+#include "mozilla/layers/LayerManagerComposite.h"
 
 namespace mozilla {
 namespace layers {
@@ -14,6 +15,8 @@ namespace layers {
 using namespace gfx;
 
 uint64_t LayerMLGPU::sFrameKey = 0;
+
+LayerMLGPU::~LayerMLGPU() = default;
 
 LayerMLGPU::LayerMLGPU(LayerManagerMLGPU* aManager)
     : HostLayer(aManager),

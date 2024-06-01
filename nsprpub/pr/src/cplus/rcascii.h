@@ -80,7 +80,7 @@ private:
     ** for this class.
     */
     PRSize StuffFunction(void*, const char*, PRSize);
-        
+
 };  /* RCFormatBuffer */
 
 /*

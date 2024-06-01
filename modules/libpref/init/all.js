@@ -208,15 +208,8 @@ pref("browser.cache.check_doc_frequency",   3);
 // The half life used to re-compute cache entries frecency in hours.
 pref("browser.cache.frecency_half_life_hours", 6);
 
-// AppCache over insecure connection is disabled by default
-pref("browser.cache.offline.insecure.enable",  false);
-
 // offline cache capacity in kilobytes
 pref("browser.cache.offline.capacity",         512000);
-
-// the user should be warned if offline app disk usage exceeds this amount
-// (in kilobytes)
-pref("offline-apps.quota.warn",        51200);
 
 // Don't show "Open with" option on download dialog if true.
 pref("browser.download.forbid_open_with", false);
@@ -1245,6 +1238,13 @@ pref("network.http.proxy.version", "1.1");    // default
 // pref("network.http.proxy.version", "1.0"); // uncomment this out in case of problems
                                               // (required if using junkbuster proxy)
 
+// Whether we should respect the BE_CONSERVATIVE (aka nsIHttpChannelInternal.beConservative)
+// flag when connecting to a proxy.  If the configured proxy accepts only TLS 1.3, system
+// requests like updates will not pass through.  Setting this pref to false will fix that
+// problem.
+// Default at true to preserve the behavior we had before for backward compat.
+pref("network.http.proxy.respect-be-conservative", true);
+
 // this preference can be set to override the socket type used for normal
 // HTTP traffic.  an empty value indicates the normal TCP/IP socket type.
 pref("network.http.default-socket-type", "");
@@ -1734,8 +1734,6 @@ pref("network.ftp.idleConnectionTimeout", 300);
 // enables the prefetch service (i.e., prefetching of <link rel="next"> and
 // <link rel="prefetch"> URLs).
 pref("network.prefetch-next", true);
-// enables the preloading (i.e., preloading of <link rel="preload"> URLs).
-pref("network.preload", false);
 
 // The following prefs pertain to the negotiate-auth extension (see bug 17578),
 // which provides transparent Kerberos or NTLM authentication using the SPNEGO
@@ -1852,10 +1850,7 @@ pref("network.http.tailing.delay-max", 6000);
 // Total limit we delay tailed requests since a page load beginning.
 pref("network.http.tailing.total-max", 45000);
 
-// Enable or disable the whole fix from bug 1563538
-pref("network.http.spdy.bug1563538", true);
 pref("network.http.spdy.bug1563695", true);
-pref("network.http.spdy.bug1562315", true);
 pref("network.http.spdy.bug1556491", true);
 
 pref("permissions.default.image",           1); // 1-Accept, 2-Deny, 3-dontAcceptForeign
@@ -1870,7 +1865,6 @@ pref("network.proxy.ssl_port",              0);
 pref("network.proxy.socks",                 "");
 pref("network.proxy.socks_port",            0);
 pref("network.proxy.socks_version",         5);
-pref("network.proxy.socks_remote_dns",      false);
 pref("network.proxy.proxy_over_tls",        true);
 pref("network.proxy.no_proxies_on",         "");
 // Set true to allow resolving proxy for localhost
@@ -2783,7 +2777,7 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
 
 #ifdef XP_WIN
 
-  pref("font.name-list.emoji", "Segoe UI Emoji, Twemoji Mozilla");
+  pref("font.name-list.emoji", "Twemoji Mozilla, Segoe UI Emoji");
 
   pref("font.name-list.serif.ar", "Times New Roman");
   pref("font.name-list.sans-serif.ar", "Segoe UI, Tahoma, Arial");
@@ -2973,6 +2967,15 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
 
   // override double-click word selection behavior.
   pref("layout.word_select.eat_space_to_next_word", true);
+
+  // Locate plugins by scanning the Adobe Acrobat installation directory with a minimum version
+  pref("plugin.scan.Acrobat", "5.0");
+
+  // Locate plugins by scanning the Quicktime installation directory with a minimum version
+  pref("plugin.scan.Quicktime", "5.0");
+
+  // Locate and scan the Window Media Player installation directory for plugins with a minimum version
+  pref("plugin.scan.WindowsMediaPlayer", "7.0");
 
   // Locate plugins by the directories specified in the Windows registry for PLIDs
   // Which is currently HKLM\Software\MozillaPlugins\xxxPLIDxxx\Path
@@ -4050,7 +4053,7 @@ pref("network.connectivity-service.IPv4.url", "http://detectportal.firefox.com/s
 pref("network.connectivity-service.IPv6.url", "http://detectportal.firefox.com/success.txt?ipv6");
 
 // DNS Trusted Recursive Resolver
-// 0 - default off, 1 - race, 2 TRR first, 3 TRR only, 4 shadow, 5 off by choice
+// 0 - default off, 1 - reserved/off, 2 - TRR first, 3 - TRR only, 4 - reserved/off, 5 off by choice
 pref("network.trr.mode", 0);
 // DNS-over-HTTP service to use, must be HTTPS://
 pref("network.trr.uri", "data:text/plain,");
@@ -4079,16 +4082,24 @@ pref("network.trr.bootstrapAddress", "");
 // TRR blacklist entry expire time (in seconds). Default is one minute.
 // Meant to survive basically a page load.
 pref("network.trr.blacklist-duration", 60);
-// Single TRR request timeout, in milliseconds
-pref("network.trr.request-timeout", 1500);
 // Allow AAAA entries to be used "early", before the A results are in
 pref("network.trr.early-AAAA", false);
+// When true, it only sends AAAA when the system has IPv6 connectivity
+pref("network.trr.skip-AAAA-when-not-supported", true);
+// When true, the DNS request will wait for both A and AAAA responses
+// (if both have been requested) before notifying the listeners.
+// When true, it effectively cancels `network.trr.early-AAAA`
+pref("network.trr.wait-for-A-and-AAAA", true);
 // Explicitly disable ECS (EDNS Client Subnet, RFC 7871)
 pref("network.trr.disable-ECS", true);
 // After this many failed TRR requests in a row, consider TRR borked
 pref("network.trr.max-fails", 5);
 // Comma separated list of domains that we should not use TRR for
-pref("network.trr.excluded-domains", "localhost,local");
+pref("network.trr.excluded-domains", "");
+pref("network.trr.builtin-excluded-domains", "localhost,local");
+// When true, the DNS+TRR cache will be cleared when a relevant TRR pref
+// changes. (uri, bootstrapAddress, excluded-domains)
+pref("network.trr.clear-cache-on-pref-change", true);
 
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/success.txt");
 pref("captivedetect.canonicalContent", "success\n");

@@ -5,6 +5,7 @@
 #ifndef nsJSThingHashtable_h__
 #define nsJSThingHashtable_h__
 
+#include "js/RootingAPI.h"
 #include "nsHashKeys.h"
 #include "nsBaseHashtable.h"
 

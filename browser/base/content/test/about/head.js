@@ -16,24 +16,14 @@ function getSecurityInfo(securityInfoAsString) {
 function getCertChain(securityInfoAsString) {
   let certChain = "";
   let securityInfo = getSecurityInfo(securityInfoAsString);
-  for (let cert of securityInfo.failedCertChain.getEnumerator()) {
+  for (let cert of securityInfo.failedCertChain) {
     certChain += getPEMString(cert);
   }
   return certChain;
 }
 
-function getDERString(cert) {
-  var length = {};
-  var derArray = cert.getRawDER(length);
-  var derString = "";
-  for (var i = 0; i < derArray.length; i++) {
-    derString += String.fromCharCode(derArray[i]);
-  }
-  return derString;
-}
-
 function getPEMString(cert) {
-  var derb64 = btoa(getDERString(cert));
+  var derb64 = cert.getBase64DERString();
   // Wrap the Base64 string into lines of 64 characters,
   // with CRLF line breaks (as specified in RFC 1421).
   var wrapped = derb64.replace(/(\S{64}(?!$))/g, "$1\r\n");

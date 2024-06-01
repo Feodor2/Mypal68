@@ -46,7 +46,7 @@ class ITextureClientAllocationHelper {
         mAllocationFlags(aAllocationFlags) {}
 
   virtual already_AddRefed<TextureClient> Allocate(
-      KnowsCompositor* aAllocator) = 0;
+      KnowsCompositor* aKnowsCompositor) = 0;
   virtual bool IsCompatible(TextureClient* aTextureClient) = 0;
 
   const gfx::SurfaceFormat mFormat;
@@ -65,7 +65,7 @@ class MOZ_RAII YCbCrTextureClientAllocationHelper
   bool IsCompatible(TextureClient* aTextureClient) override;
 
   already_AddRefed<TextureClient> Allocate(
-      KnowsCompositor* aAllocator) override;
+      KnowsCompositor* aKnowsCompositor) override;
 
  protected:
   const PlanarYCbCrData& mData;
@@ -86,7 +86,7 @@ class TextureClientRecycleAllocator : public ITextureClientRecycleAllocator {
   virtual ~TextureClientRecycleAllocator();
 
  public:
-  explicit TextureClientRecycleAllocator(KnowsCompositor* aAllocator);
+  explicit TextureClientRecycleAllocator(KnowsCompositor* aKnowsCompositor);
 
   void SetMaxPoolSize(uint32_t aMax);
 
@@ -102,12 +102,14 @@ class TextureClientRecycleAllocator : public ITextureClientRecycleAllocator {
 
   void Destroy();
 
+  KnowsCompositor* GetKnowsCompositor() { return mKnowsCompositor; }
+
  protected:
   virtual already_AddRefed<TextureClient> Allocate(
       gfx::SurfaceFormat aFormat, gfx::IntSize aSize, BackendSelector aSelector,
       TextureFlags aTextureFlags, TextureAllocationFlags aAllocFlags);
 
-  RefPtr<KnowsCompositor> mSurfaceAllocator;
+  RefPtr<KnowsCompositor> mKnowsCompositor;
 
   friend class DefaultTextureClientAllocationHelper;
   void RecycleTextureClient(TextureClient* aClient) override;

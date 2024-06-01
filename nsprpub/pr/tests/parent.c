@@ -27,7 +27,7 @@ static char *default_argv[] = {"cvar", "-c", "2000", NULL};
 static void PrintUsage(void)
 {
     PR_fprintf(PR_GetSpecialFD(PR_StandardError),
-        "Usage: parent [-d] child [options]\n");
+               "Usage: parent [-d] child [options]\n");
 }
 
 int main(int argc, char **argv)
@@ -48,8 +48,9 @@ int main(int argc, char **argv)
         argv += 1;  /* don't care about our program name */
         while (*argv != NULL && argv[0][0] == '-')
         {
-            if (argv[0][1] == 'd')
+            if (argv[0][1] == 'd') {
                 debug = PR_GetSpecialFD(PR_StandardError);
+            }
             else
             {
                 PrintUsage();
@@ -67,7 +68,9 @@ int main(int argc, char **argv)
     }
 
     child->name = *child->argv;
-    if (NULL != debug) PR_fprintf(debug, "Forking %s\n", child->name);
+    if (NULL != debug) {
+        PR_fprintf(debug, "Forking %s\n", child->name);
+    }
 
     child->attr = PR_NewProcessAttr();
     PR_ProcessAttrSetStdioRedirect(
@@ -79,7 +82,7 @@ int main(int argc, char **argv)
 
     t_start = PR_IntervalNow();
     child->process = PR_CreateProcess(
-        child->name, child->argv, NULL, child->attr);
+                         child->name, child->argv, NULL, child->attr);
     t_elapsed = (PRIntervalTime) (PR_IntervalNow() - t_start);
 
     PR_DestroyProcessAttr(child->attr);
@@ -98,7 +101,9 @@ int main(int argc, char **argv)
 
     if (0 == test_status)
     {
-        if (NULL != debug) PR_fprintf(debug, "Waiting for child to exit\n");
+        if (NULL != debug) {
+            PR_fprintf(debug, "Waiting for child to exit\n");
+        }
         rv = PR_WaitProcess(child->process, &test_status);
         if (PR_SUCCESS == rv)
         {
@@ -110,14 +115,15 @@ int main(int argc, char **argv)
         else
         {
             test_status = 1;
-            if (NULL != debug)
+            if (NULL != debug) {
                 PR_fprintf(debug, "PR_WaitProcess failed\n");
+            }
         }
     }
     PR_DELETE(child);
     PR_Cleanup();
     return test_status;
-    
+
 }  /* main */
 
 /* parent.c */

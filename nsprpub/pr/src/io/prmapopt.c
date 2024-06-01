@@ -61,11 +61,10 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
         {
             case PR_SockOpt_Linger:
             {
-#if !defined(XP_BEOS) || defined(BONE_VERSION)
                 struct linger linger;
                 length = sizeof(linger);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char *) &linger, &length);
+                         fd, level, name, (char *) &linger, &length);
                 if (PR_SUCCESS == rv)
                 {
                     PR_ASSERT(sizeof(linger) == length);
@@ -75,10 +74,6 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
                         PR_SecondsToInterval(linger.l_linger);
                 }
                 break;
-#else
-                PR_SetError( PR_NOT_IMPLEMENTED_ERROR, 0 );
-                return PR_FAILURE;
-#endif
             }
             case PR_SockOpt_Reuseaddr:
             case PR_SockOpt_Keepalive:
@@ -93,9 +88,10 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
 #endif
                 length = sizeof(value);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char*)&value, &length);
-                if (PR_SUCCESS == rv)
+                         fd, level, name, (char*)&value, &length);
+                if (PR_SUCCESS == rv) {
                     data->value.reuse_addr = (0 == value) ? PR_FALSE : PR_TRUE;
+                }
                 break;
             }
             case PR_SockOpt_McastLoopback:
@@ -107,9 +103,10 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
 #endif
                 length = sizeof(bool);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char*)&bool, &length);
-                if (PR_SUCCESS == rv)
+                         fd, level, name, (char*)&bool, &length);
+                if (PR_SUCCESS == rv) {
                     data->value.mcast_loopback = (0 == bool) ? PR_FALSE : PR_TRUE;
+                }
                 break;
             }
             case PR_SockOpt_RecvBufferSize:
@@ -119,9 +116,10 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
                 PRIntn value;
                 length = sizeof(value);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char*)&value, &length);
-                if (PR_SUCCESS == rv)
+                         fd, level, name, (char*)&value, &length);
+                if (PR_SUCCESS == rv) {
                     data->value.recv_buffer_size = value;
+                }
                 break;
             }
             case PR_SockOpt_IpTimeToLive:
@@ -130,7 +128,7 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
                 /* These options should really be an int (or PRIntn). */
                 length = sizeof(PRUintn);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char*)&data->value.ip_ttl, &length);
+                         fd, level, name, (char*)&data->value.ip_ttl, &length);
                 break;
             }
             case PR_SockOpt_McastTimeToLive:
@@ -142,9 +140,10 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
 #endif
                 length = sizeof(ttl);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char*)&ttl, &length);
-                if (PR_SUCCESS == rv)
+                         fd, level, name, (char*)&ttl, &length);
+                if (PR_SUCCESS == rv) {
                     data->value.mcast_ttl = ttl;
+                }
                 break;
             }
 #ifdef IP_ADD_MEMBERSHIP
@@ -154,7 +153,7 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
                 struct ip_mreq mreq;
                 length = sizeof(mreq);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name, (char*)&mreq, &length);
+                         fd, level, name, (char*)&mreq, &length);
                 if (PR_SUCCESS == rv)
                 {
                     data->value.add_member.mcaddr.inet.ip =
@@ -170,14 +169,14 @@ PRStatus PR_CALLBACK _PR_SocketGetSocketOption(PRFileDesc *fd, PRSocketOptionDat
                 /* This option is a struct in_addr. */
                 length = sizeof(data->value.mcast_if.inet.ip);
                 rv = _PR_MD_GETSOCKOPT(
-                    fd, level, name,
-                    (char*)&data->value.mcast_if.inet.ip, &length);
+                         fd, level, name,
+                         (char*)&data->value.mcast_if.inet.ip, &length);
                 break;
             }
             default:
                 PR_NOT_REACHED("Unknown socket option");
                 break;
-        }  
+        }
     }
     return rv;
 }  /* _PR_SocketGetSocketOption */
@@ -195,7 +194,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
     {
 #ifdef WINNT
         PR_ASSERT((fd->secret->md.io_model_committed == PR_FALSE)
-            || (fd->secret->nonblocking == data->value.non_blocking));
+                  || (fd->secret->nonblocking == data->value.non_blocking));
         if (fd->secret->md.io_model_committed
             && (fd->secret->nonblocking != data->value.non_blocking))
         {
@@ -220,17 +219,12 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
         {
             case PR_SockOpt_Linger:
             {
-#if !defined(XP_BEOS) || defined(BONE_VERSION)
                 struct linger linger;
                 linger.l_onoff = data->value.linger.polarity;
                 linger.l_linger = PR_IntervalToSeconds(data->value.linger.linger);
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&linger, sizeof(linger));
+                         fd, level, name, (char*)&linger, sizeof(linger));
                 break;
-#else
-                PR_SetError( PR_NOT_IMPLEMENTED_ERROR, 0 );
-                return PR_FAILURE;
-#endif
             }
             case PR_SockOpt_Reuseaddr:
             case PR_SockOpt_Keepalive:
@@ -245,7 +239,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
 #endif
                 value = (data->value.reuse_addr) ? 1 : 0;
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&value, sizeof(value));
+                         fd, level, name, (char*)&value, sizeof(value));
                 break;
             }
             case PR_SockOpt_McastLoopback:
@@ -257,7 +251,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
 #endif
                 bool = data->value.mcast_loopback ? 1 : 0;
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&bool, sizeof(bool));
+                         fd, level, name, (char*)&bool, sizeof(bool));
                 break;
             }
             case PR_SockOpt_RecvBufferSize:
@@ -266,7 +260,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
             {
                 PRIntn value = data->value.recv_buffer_size;
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&value, sizeof(value));
+                         fd, level, name, (char*)&value, sizeof(value));
                 break;
             }
             case PR_SockOpt_IpTimeToLive:
@@ -274,7 +268,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
             {
                 /* These options should really be an int (or PRIntn). */
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&data->value.ip_ttl, sizeof(PRUintn));
+                         fd, level, name, (char*)&data->value.ip_ttl, sizeof(PRUintn));
                 break;
             }
             case PR_SockOpt_McastTimeToLive:
@@ -286,7 +280,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
 #endif
                 ttl = data->value.mcast_ttl;
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&ttl, sizeof(ttl));
+                         fd, level, name, (char*)&ttl, sizeof(ttl));
                 break;
             }
 #ifdef IP_ADD_MEMBERSHIP
@@ -299,7 +293,7 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
                 mreq.imr_interface.s_addr =
                     data->value.add_member.ifaddr.inet.ip;
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&mreq, sizeof(mreq));
+                         fd, level, name, (char*)&mreq, sizeof(mreq));
                 break;
             }
 #endif /* IP_ADD_MEMBERSHIP */
@@ -307,14 +301,14 @@ PRStatus PR_CALLBACK _PR_SocketSetSocketOption(PRFileDesc *fd, const PRSocketOpt
             {
                 /* This option is a struct in_addr. */
                 rv = _PR_MD_SETSOCKOPT(
-                    fd, level, name, (char*)&data->value.mcast_if.inet.ip,
-                    sizeof(data->value.mcast_if.inet.ip));
+                         fd, level, name, (char*)&data->value.mcast_if.inet.ip,
+                         sizeof(data->value.mcast_if.inet.ip));
                 break;
             }
             default:
                 PR_NOT_REACHED("Unknown socket option");
                 break;
-        }  
+        }
     }
     return rv;
 }  /* _PR_SocketSetSocketOption */
@@ -440,7 +434,7 @@ PRStatus _PR_MapOptionName(
     };
 
     if ((optname < PR_SockOpt_Linger)
-    || (optname >= PR_SockOpt_Last))
+        || (optname >= PR_SockOpt_Last))
     {
         PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
         return PR_FAILURE;

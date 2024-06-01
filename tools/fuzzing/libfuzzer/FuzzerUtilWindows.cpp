@@ -146,9 +146,9 @@ unsigned long GetPid() { return GetCurrentProcessId(); }
 
 size_t GetPeakRSSMb() {
   PROCESS_MEMORY_COUNTERS info;
-  //if (!GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info)))
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info)))
     return 0;
-  //return info.PeakWorkingSetSize >> 20;
+  return info.PeakWorkingSetSize >> 20;
 }
 
 FILE *OpenProcessPipe(const char *Command, const char *Mode) {

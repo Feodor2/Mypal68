@@ -5,7 +5,7 @@
 /*
 ** prshma.h -- NSPR Anonymous Shared Memory
 **
-** 
+**
 */
 
 #include "primpl.h"
@@ -41,7 +41,7 @@ extern PRFileMap * _PR_MD_IMPORT_FILE_MAP_FROM_STRING(const char *fmstring)
 PR_IMPLEMENT(PRFileMap*)
 PR_OpenAnonFileMap(
     const char *dirName,
-    PRSize      size, 
+    PRSize      size,
     PRFileMapProtect prot
 )
 {
@@ -49,21 +49,21 @@ PR_OpenAnonFileMap(
 } /* end PR_OpenAnonFileMap() */
 
 /*
-** PR_ProcessAttrSetInheritableFileMap() -- Prepare FileMap for export  
+** PR_ProcessAttrSetInheritableFileMap() -- Prepare FileMap for export
 **   to my children processes via PR_CreateProcess()
 **
 **
 */
-PR_IMPLEMENT( PRStatus) 
-PR_ProcessAttrSetInheritableFileMap( 
+PR_IMPLEMENT( PRStatus)
+PR_ProcessAttrSetInheritableFileMap(
     PRProcessAttr   *attr,
-    PRFileMap       *fm, 
+    PRFileMap       *fm,
     const char      *shmname
 )
 {
     PR_SetError( PR_NOT_IMPLEMENTED_ERROR, 0 );
     return( PR_FAILURE);
-} /* end PR_ProcessAttrSetInheritableFileMap() */ 
+} /* end PR_ProcessAttrSetInheritableFileMap() */
 
 /*
 ** PR_GetInheritedFileMap() -- Import a PRFileMap previously exported
@@ -71,8 +71,8 @@ PR_ProcessAttrSetInheritableFileMap(
 **
 */
 PR_IMPLEMENT( PRFileMap *)
-PR_GetInheritedFileMap( 
-    const char *shmname 
+PR_GetInheritedFileMap(
+    const char *shmname
 )
 {
     PRFileMap   *fm = NULL;
@@ -85,7 +85,7 @@ PR_GetInheritedFileMap(
 **
 */
 PR_IMPLEMENT( PRStatus )
-PR_ExportFileMapAsString( 
+PR_ExportFileMapAsString(
     PRFileMap *fm,
     PRSize    bufSize,
     char      *buf
@@ -100,7 +100,7 @@ PR_ExportFileMapAsString(
 **
 */
 PR_IMPLEMENT( PRFileMap * )
-PR_ImportFileMapFromString( 
+PR_ImportFileMapFromString(
     const char *fmstring
 )
 {

@@ -8,7 +8,6 @@ UNIFIED_SOURCES += [
     'TestArrayAlgorithm.cpp',
     'TestAtoms.cpp',
     'TestAutoPtr.cpp',
-    'TestAutoRef.cpp',
     'TestAutoRefCnt.cpp',
     'TestBase64.cpp',
     'TestCallTemplates.cpp',

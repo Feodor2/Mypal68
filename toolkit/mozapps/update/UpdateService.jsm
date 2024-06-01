@@ -2523,7 +2523,7 @@ UpdateService.prototype = {
     this._attemptResume();
   },
 
-  onCheckComplete: function AUS_onCheckComplete(request, updates, updateCount) {
+  onCheckComplete: function AUS_onCheckComplete(request, updates) {
     this._selectAndInstallUpdate(updates);
   },
 
@@ -2989,7 +2989,7 @@ UpdateService.prototype = {
       return;
     }
 
-    var update = this.selectUpdate(updates, updates.length);
+    var update = this.selectUpdate(updates);
     if (!update || update.elevationFailure) {
       return;
     }
@@ -4036,8 +4036,11 @@ Checker.prototype = {
       if (sslStatus && sslStatus.succeededCertChain) {
         let rootCert = null;
         // The root cert is the last cert in the chain.
-        // eslint-disable-next-line no-empty
-        for (rootCert of sslStatus.succeededCertChain.getEnumerator()) {
+        if (sslStatus.succeededCertChain.length) {
+          rootCert =
+            sslStatus.succeededCertChain[
+              sslStatus.succeededCertChain.length - 1
+            ];
         }
         if (rootCert) {
           Services.prefs.setStringPref(
@@ -4060,7 +4063,7 @@ Checker.prototype = {
       }
 
       // Tell the callback about the updates
-      this._callback.onCheckComplete(event.target, updates, updates.length);
+      this._callback.onCheckComplete(event.target, updates);
     } catch (e) {
       LOG(
         "Checker:onLoad - there was a problem checking for updates. " +
@@ -4873,19 +4876,12 @@ Downloader.prototype = {
    * When new data has been downloaded
    * @param   request
    *          The nsIRequest object for the transfer
-   * @param   context
-   *          Additional data
    * @param   progress
    *          The current number of bytes transferred
    * @param   maxProgress
    *          The total number of bytes that must be transferred
    */
-  onProgress: function Downloader_onProgress(
-    request,
-    context,
-    progress,
-    maxProgress
-  ) {
+  onProgress: function Downloader_onProgress(request, progress, maxProgress) {
     LOG("Downloader:onProgress - progress: " + progress + "/" + maxProgress);
     if (this._startDownloadMs) {
       let seconds = Math.round((Date.now() - this._startDownloadMs) / 1000);
@@ -4932,7 +4928,7 @@ Downloader.prototype = {
     for (var i = 0; i < listenerCount; ++i) {
       var listener = listeners[i];
       if (listener instanceof Ci.nsIProgressEventSink) {
-        listener.onProgress(request, context, progress, maxProgress);
+        listener.onProgress(request, progress, maxProgress);
       }
     }
     this.updateService._consecutiveSocketErrors = 0;
@@ -4942,14 +4938,12 @@ Downloader.prototype = {
    * When we have new status text
    * @param   request
    *          The nsIRequest object for the transfer
-   * @param   context
-   *          Additional data
    * @param   status
    *          A status code
    * @param   statusText
    *          Human readable version of |status|
    */
-  onStatus: function Downloader_onStatus(request, context, status, statusText) {
+  onStatus: function Downloader_onStatus(request, status, statusText) {
     LOG(
       "Downloader:onStatus - status: " + status + ", statusText: " + statusText
     );
@@ -4960,7 +4954,7 @@ Downloader.prototype = {
     for (var i = 0; i < listenerCount; ++i) {
       var listener = listeners[i];
       if (listener instanceof Ci.nsIProgressEventSink) {
-        listener.onStatus(request, context, status, statusText);
+        listener.onStatus(request, status, statusText);
       }
     }
   },

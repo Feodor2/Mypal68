@@ -10160,68 +10160,6 @@
     "n_values": 160,
     "description": "The longest hash match between a newly added entry and all the existing entries."
   },
-  "NETWORK_CACHE_ISOLATION_SIZE_INCREASE" : {
-    "record_in_processes": ["main"],
-    "alert_emails": ["necko@mozilla.com", "mnovotny@mozilla.com"],
-    "bug_numbers": [1506534],
-    "expires_in_version": "74",
-    "kind": "exponential",
-    "high": 200,
-    "keyed": true,
-    "keys": [
-      "ALL",
-      "UNKNOWN",
-      "OTHER",
-      "JAVASCRIPT",
-      "IMAGE",
-      "MEDIA",
-      "STYLESHEET",
-      "WASM"
-    ],
-    "n_buckets": 100,
-    "description": "Percentage increase of cache size that would be caused by first party isolation without deduplication keyed by content type."
-  },
-  "NETWORK_CACHE_ISOLATION_ENTRY_COUNT_INCREASE" : {
-    "record_in_processes": ["main"],
-    "alert_emails": ["necko@mozilla.com", "mnovotny@mozilla.com"],
-    "bug_numbers": [1506534],
-    "expires_in_version": "74",
-    "kind": "exponential",
-    "high": 200,
-    "keyed": true,
-    "keys": [
-      "ALL",
-      "UNKNOWN",
-      "OTHER",
-      "JAVASCRIPT",
-      "IMAGE",
-      "MEDIA",
-      "STYLESHEET",
-      "WASM"
-    ],
-    "n_buckets": 100,
-    "description": "Percentage increase of cache entry count that would be caused by first party isolation without deduplication keyed by content type."
-  },
-  "NETWORK_CACHE_ISOLATION_UNIQUE_SITE_ACCESS_COUNT" : {
-    "record_in_processes": ["main"],
-    "alert_emails": ["necko@mozilla.com", "mnovotny@mozilla.com"],
-    "bug_numbers": [1506534],
-    "expires_in_version": "74",
-    "kind": "exponential",
-    "high": 1000,
-    "keyed": true,
-    "keys": [
-      "UNKNOWN",
-      "OTHER",
-      "JAVASCRIPT",
-      "IMAGE",
-      "MEDIA",
-      "STYLESHEET",
-      "WASM"
-    ],
-    "n_buckets": 100,
-    "description": "Number of unique sites accessing the cache entry keyed by content type."
-  },
   "NETWORK_CACHE_SIZE" : {
     "record_in_processes": ["main"],
     "alert_emails": ["necko@mozilla.com", "mnovotny@mozilla.com"],
@@ -12102,15 +12040,6 @@
     "n_buckets": 40,
     "keyed": true,
     "description": "Measures the number of milliseconds we spend waiting for sync IPC messages to finish sending, keyed by message name. Note: only messages that wait for more than 500 microseconds and block the main thread are included in this probe."
-  },
-  "REJECTED_MESSAGE_MANAGER_MESSAGE": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["amccreight@mozilla.com"],
-    "bug_numbers": [1272423],
-    "expires_in_version": "55",
-    "kind": "count",
-    "keyed": true,
-    "description": "Each key is the message name, with digits removed, from an async message manager message that was rejected for being over approximately 128MB, recorded in the sending process at the time of sending."
   },
   "SANDBOX_HAS_SECCOMP_BPF": {
     "record_in_processes": ["main", "content"],

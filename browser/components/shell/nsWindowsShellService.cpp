@@ -9,6 +9,7 @@
 #include "imgIContainer.h"
 #include "imgIRequest.h"
 #include "mozilla/RefPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
 #include "nsIOutputStream.h"

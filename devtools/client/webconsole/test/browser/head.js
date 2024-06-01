@@ -443,7 +443,7 @@ async function checkClickOnNode(
 ) {
   info("checking click on node location");
 
-  const onSourceInDebuggerOpened = once(hud, "source-in-debugger-opened");
+  const onSourceInDebuggerOpened = once(hud.ui, "source-in-debugger-opened");
 
   EventUtils.sendMouseEvent(
     { type: "click" },

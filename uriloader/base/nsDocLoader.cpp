@@ -22,7 +22,6 @@
 #include "nsCOMPtr.h"
 #include "nscore.h"
 #include "nsIWeakReferenceUtils.h"
-#include "nsAutoPtr.h"
 #include "nsQueryObject.h"
 
 #include "nsPIDOMWindow.h"
@@ -1052,8 +1051,8 @@ int64_t nsDocLoader::GetMaxTotalProgress() {
 // on this information.
 ////////////////////////////////////////////////////////////////////////////////////
 
-NS_IMETHODIMP nsDocLoader::OnProgress(nsIRequest* aRequest, nsISupports* ctxt,
-                                      int64_t aProgress, int64_t aProgressMax) {
+NS_IMETHODIMP nsDocLoader::OnProgress(nsIRequest* aRequest, int64_t aProgress,
+                                      int64_t aProgressMax) {
   int64_t progressDelta = 0;
 
   //
@@ -1148,8 +1147,7 @@ NS_IMETHODIMP nsDocLoader::OnProgress(nsIRequest* aRequest, nsISupports* ctxt,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsDocLoader::OnStatus(nsIRequest* aRequest, nsISupports* ctxt,
-                                    nsresult aStatus,
+NS_IMETHODIMP nsDocLoader::OnStatus(nsIRequest* aRequest, nsresult aStatus,
                                     const char16_t* aStatusArg) {
   //
   // Fire progress notifications out to any registered nsIWebProgressListeners
@@ -1188,7 +1186,7 @@ NS_IMETHODIMP nsDocLoader::OnStatus(nsIRequest* aRequest, nsISupports* ctxt,
     // already done.
     if (info) {
       if (!info->mLastStatus) {
-        info->mLastStatus = new nsStatusInfo(aRequest);
+        info->mLastStatus = MakeUnique<nsStatusInfo>(aRequest);
       } else {
         // We're going to move it to the front of the list, so remove
         // it from wherever it is now.
@@ -1197,7 +1195,7 @@ NS_IMETHODIMP nsDocLoader::OnStatus(nsIRequest* aRequest, nsISupports* ctxt,
       info->mLastStatus->mStatusMessage = msg;
       info->mLastStatus->mStatusCode = aStatus;
       // Put the info at the front of the list
-      mStatusInfoList.insertFront(info->mLastStatus);
+      mStatusInfoList.insertFront(info->mLastStatus.get());
     }
     FireOnStatusChange(this, aRequest, aStatus, msg.get());
   }

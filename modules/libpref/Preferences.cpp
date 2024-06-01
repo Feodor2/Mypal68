@@ -39,11 +39,11 @@
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 #include "nsAppDirectoryServiceDefs.h"
-#include "nsAutoPtr.h"
 #include "nsCategoryManagerUtils.h"
 #include "nsClassHashtable.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsCRT.h"
 #include "nsDataHashtable.h"
 #include "nsDirectoryServiceDefs.h"
@@ -1190,7 +1190,7 @@ class CallbackNode {
 
 using PrefsHashTable = HashSet<UniquePtr<Pref>, PrefHasher>;
 
-static PrefsHashTable* gHashTable;
+static PrefsHashTable* gHashTable = nullptr;
 
 #ifdef DEBUG
 // This defines the type used to store our `once` mirrors checker. We can't use
@@ -1217,7 +1217,7 @@ static CallbackNode* gLastPriorityNode = nullptr;
 
 #ifdef ACCESS_COUNTS
 using AccessCountsHashTable = nsDataHashtable<nsCStringHashKey, uint32_t>;
-static AccessCountsHashTable* gAccessCounts;
+static AccessCountsHashTable* gAccessCounts = nullptr;
 
 static void AddAccessCount(const nsACString& aPrefName) {
   // FIXME: Servo reads preferences from background threads in unsafe ways (bug
@@ -4143,16 +4143,14 @@ static nsresult pref_ReadPrefFromJar(nsZipArchive* aJarReader,
 
 static nsresult pref_ReadDefaultPrefs(const RefPtr<nsZipArchive> jarReader,
                                       const char* path) {
-  nsZipFind* findPtr;
-  nsAutoPtr<nsZipFind> find;
+  UniquePtr<nsZipFind> find;
   nsTArray<nsCString> prefEntries;
   const char* entryName;
   uint16_t entryNameLen;
 
-  nsresult rv = jarReader->FindInit(path, &findPtr);
+  nsresult rv = jarReader->FindInit(path, getter_Transfers(find));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  find = findPtr;
   while (NS_SUCCEEDED(find->FindNext(&entryName, &entryNameLen))) {
     prefEntries.AppendElement(Substring(entryName, entryNameLen));
   }
@@ -4276,8 +4274,7 @@ nsresult Preferences::InitInitialObjects(bool aIsStartup) {
   // preferences from omni.jar, whether or not `$app == $gre`.
 
   nsresult rv = NS_ERROR_FAILURE;
-  nsZipFind* findPtr;
-  nsAutoPtr<nsZipFind> find;
+  UniquePtr<nsZipFind> find;
   nsTArray<nsCString> prefEntries;
   const char* entryName;
   uint16_t entryNameLen;
@@ -4373,9 +4370,9 @@ nsresult Preferences::InitInitialObjects(bool aIsStartup) {
   }
 
   if (appJarReader) {
-    rv = appJarReader->FindInit("defaults/preferences/*.js$", &findPtr);
+    rv = appJarReader->FindInit("defaults/preferences/*.js$",
+                                getter_Transfers(find));
     NS_ENSURE_SUCCESS(rv, rv);
-    find = findPtr;
     prefEntries.Clear();
     while (NS_SUCCEEDED(find->FindNext(&entryName, &entryNameLen))) {
       prefEntries.AppendElement(Substring(entryName, entryNameLen));

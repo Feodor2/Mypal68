@@ -37,14 +37,10 @@ import type {
   Node,
 } from "../types";
 
-type Client = {
-  createObjectClient: CreateObjectClient,
-  createLongStringClient: CreateLongStringClient,
-};
-
 function loadItemProperties(
   item: Node,
-  client: Client,
+  createObjectClient: CreateObjectClient,
+  createLongStringClient: CreateLongStringClient,
   loadedProperties: LoadedProperties
 ): Promise<GripProperties> {
   const gripItem = getClosestGripNode(item);
@@ -56,8 +52,7 @@ function loadItemProperties(
 
   const promises = [];
   let objectClient;
-  const getObjectClient = () =>
-    objectClient || client.createObjectClient(value);
+  const getObjectClient = () => objectClient || createObjectClient(value);
 
   if (shouldLoadItemIndexedProperties(item, loadedProperties)) {
     promises.push(enumIndexedProperties(getObjectClient(), start, end));
@@ -80,7 +75,7 @@ function loadItemProperties(
   }
 
   if (shouldLoadItemFullText(item, loadedProperties)) {
-    promises.push(getFullText(client.createLongStringClient(value), item));
+    promises.push(getFullText(createLongStringClient(value), item));
   }
 
   if (shouldLoadItemProxySlots(item, loadedProperties)) {

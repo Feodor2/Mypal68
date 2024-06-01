@@ -63,13 +63,14 @@ function openContextMenu(aMessage) {
     makeURI(data.baseURI)
   );
 
-  if (frameReferrerInfo) {
-    frameReferrerInfo =
-      E10SUtils.deserializeReferrerInfo(frameReferrerInfo);
-  }
-
-  if (linkReferrerInfo && data.isRemote) {
-    linkReferrerInfo = E10SUtils.deserializeReferrerInfo(linkReferrerInfo);
+  if (data.isRemote) {
+    if (frameReferrerInfo) {
+      frameReferrerInfo =
+        E10SUtils.deserializeReferrerInfo(frameReferrerInfo);
+    }
+    if (linkReferrerInfo) {
+      linkReferrerInfo = E10SUtils.deserializeReferrerInfo(linkReferrerInfo);
+    }
   }
 
   gContextMenuContentData = {

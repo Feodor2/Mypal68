@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/nsCSPContext.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentTypeParser.h"
 #include "nsContentUtils.h"
@@ -92,8 +93,7 @@ AddonContentPolicy::ShouldLoad(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
 
   uint32_t contentType = aLoadInfo->GetExternalContentPolicyType();
   nsCOMPtr<nsIURI> requestOrigin;
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->LoadingPrincipal();
-  if (loadingPrincipal) {
+  if (nsIPrincipal* loadingPrincipal = aLoadInfo->GetLoadingPrincipal()) {
     loadingPrincipal->GetURI(getter_AddRefs(requestOrigin));
   }
 

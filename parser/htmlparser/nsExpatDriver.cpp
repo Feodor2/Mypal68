@@ -19,6 +19,7 @@
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsIContentPolicy.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsError.h"
 #include "nsXPCOMCIDInternal.h"

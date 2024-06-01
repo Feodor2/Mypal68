@@ -83,10 +83,19 @@ function configureStore(webConsoleUI, options = {}) {
     }),
   };
 
+  // Prepare middleware.
+  const services = options.services || {};
+
   const middleware = applyMiddleware(
     thunkWithOptions.bind(null, {
       prefsService,
-      ...options.thunkArgs,
+      services,
+      // Needed for the ObjectInspector
+      client: {
+        createObjectClient: services.createObjectClient,
+        createLongStringClient: services.createLongStringClient,
+        releaseActor: services.releaseActor,
+      },
     }),
     historyPersistence,
     eventTelemetry.bind(null, options.telemetry, options.sessionId)

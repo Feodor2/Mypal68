@@ -44,22 +44,24 @@ static PRIntn PR_CALLBACK RealMain( PRIntn argc, char **argv )
 
     while (PL_OPT_EOL != (os = PL_GetNextOpt(opt)))
     {
-        if (PL_OPT_BAD == os) continue;
+        if (PL_OPT_BAD == os) {
+            continue;
+        }
         switch (opt->option)
         {
-        case 's':  /* number of CVs to association with lock */
-            stats = PR_TRUE;
-            break;
-        case 'c':  /* number of CVs to association with lock */
-            cvs = atoi(opt->value);
-            break;
-        case 'l':  /* number of times to run the tests */
-            loops = atoi(opt->value);
-            break;
-        case 'h':  /* user wants some guidance */
-         default:
-            Help();  /* so give him an earful */
-            return 2;  /* but not a lot else */
+            case 's':  /* number of CVs to association with lock */
+                stats = PR_TRUE;
+                break;
+            case 'c':  /* number of CVs to association with lock */
+                cvs = atoi(opt->value);
+                break;
+            case 'l':  /* number of times to run the tests */
+                loops = atoi(opt->value);
+                break;
+            case 'h':  /* user wants some guidance */
+            default:
+                Help();  /* so give him an earful */
+                return 2;  /* but not a lot else */
         }
     }
     PL_DestroyOptState(opt);
@@ -86,20 +88,24 @@ static PRIntn PR_CALLBACK RealMain( PRIntn argc, char **argv )
         for (nl = 0; nl < cvs; ++nl)
         {
             PRInt32 ran = RandomNum() % 8;
-            if (0 == ran) PR_NotifyAllCondVar(cv[nl]);
-            else for (nc = 0; nc < ran; ++nc)
-                PR_NotifyCondVar(cv[nl]);
+            if (0 == ran) {
+                PR_NotifyAllCondVar(cv[nl]);
+            }
+            else for (nc = 0; nc < ran; ++nc) {
+                    PR_NotifyCondVar(cv[nl]);
+                }
         }
         PR_Unlock(ml);
     }
 
-    for (index = 0; index < cvs; ++index)
+    for (index = 0; index < cvs; ++index) {
         PR_DestroyCondVar(cv[index]);
+    }
 
     PR_DELETE(cv);
 
     PR_DestroyLock(ml);
-    
+
     printf("PASS\n");
 
     PT_FPrintStats(err, "\nPThread Statistics\n");
@@ -110,7 +116,7 @@ static PRIntn PR_CALLBACK RealMain( PRIntn argc, char **argv )
 int main(int argc, char **argv)
 {
     PRIntn rv;
-    
+
     PR_STDIO_INIT();
     rv = PR_Initialize(RealMain, argc, argv, 0);
     return rv;

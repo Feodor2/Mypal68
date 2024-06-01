@@ -9,4 +9,5 @@ DIRS += [
     'base',
     'exthandler',
     'prefetch',
+    'preload',
 ]

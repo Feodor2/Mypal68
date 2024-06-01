@@ -40,33 +40,7 @@ class nsInputStreamReadyEvent final : public CancelableRunnable,
       : CancelableRunnable(aName), mCallback(aCallback), mTarget(aTarget) {}
 
  private:
-  ~nsInputStreamReadyEvent() {
-    if (!mCallback) {
-      return;
-    }
-    //
-    // whoa!!  looks like we never posted this event.  take care to
-    // release mCallback on the correct thread.  if mTarget lives on the
-    // calling thread, then we are ok.  otherwise, we have to try to
-    // proxy the Release over the right thread.  if that thread is dead,
-    // then there's nothing we can do... better to leak than crash.
-    //
-    bool val;
-    nsresult rv = mTarget->IsOnCurrentThread(&val);
-    if (NS_FAILED(rv) || !val) {
-      nsCOMPtr<nsIInputStreamCallback> event = NS_NewInputStreamReadyEvent(
-          "~nsInputStreamReadyEvent", mCallback, mTarget);
-      mCallback = nullptr;
-      if (event) {
-        rv = event->OnInputStreamReady(nullptr);
-        if (NS_FAILED(rv)) {
-          MOZ_ASSERT_UNREACHABLE("leaking stream event");
-          nsISupports* sup = event;
-          NS_ADDREF(sup);
-        }
-      }
-    }
-  }
+  ~nsInputStreamReadyEvent() = default;
 
  public:
   NS_IMETHOD OnInputStreamReady(nsIAsyncInputStream* aStream) override {

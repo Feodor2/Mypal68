@@ -24,7 +24,7 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIStorageActivityService"
 );
 
-// A Cleaner is an object with 3 methods. These methods must return a Promise
+// A Cleaner is an object with 4 methods. These methods must return a Promise
 // object. Here a description of these methods:
 // * deleteAll() - this method _must_ exist. When called, it deletes all the
 //                 data owned by the cleaner.
@@ -34,12 +34,27 @@ XPCOMUtils.defineLazyServiceGetter(
 // * deleteByHost() - this method is implemented only if the cleaner knows
 //                    how to delete data by host + originAttributes pattern. If
 //                    not implemented, deleteAll() will be used as fallback.
-// *deleteByRange() - this method is implemented only if the cleaner knows how
+// * deleteByRange() - this method is implemented only if the cleaner knows how
 //                    to delete data by time range. It receives 2 time range
 //                    parameters: aFrom/aTo. If not implemented, deleteAll() is
 //                    used as fallback.
+// * deleteByLocalFiles() - this method removes data held for local files and
+//                          other hostless origins. If not implemented,
+//                          **no fallback is used**, as for a number of
+//                          cleaners, no such data will ever exist and
+//                          therefore clearing it does not make sense.
 
 const CookieCleaner = {
+  deleteByLocalFiles(aOriginAttributes) {
+    return new Promise(aResolve => {
+      Services.cookies.removeCookiesFromExactHost(
+        "",
+        JSON.stringify(aOriginAttributes)
+      );
+      aResolve();
+    });
+  },
+
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
       Services.cookies.removeCookiesFromExactHost(
@@ -51,11 +66,7 @@ const CookieCleaner = {
   },
 
   deleteByRange(aFrom, aTo) {
-    let enumerator = Services.cookies.enumerator;
-    return this._deleteInternal(
-      enumerator,
-      aCookie => aCookie.creationTime > aFrom
-    );
+    return Services.cookies.removeAllSince(aFrom);
   },
 
   deleteAll() {
@@ -64,31 +75,25 @@ const CookieCleaner = {
       aResolve();
     });
   },
+};
 
-  _deleteInternal(aEnumerator, aCb) {
-    // A number of iterations after which to yield time back to the system.
-    const YIELD_PERIOD = 10;
+const CertCleaner = {
+  deleteByHost(aHost, aOriginAttributes) {
+    let overrideService = Cc["@mozilla.org/security/certoverride;1"].getService(
+      Ci.nsICertOverrideService
+    );
+    return new Promise(aResolve => {
+      overrideService.clearValidityOverride(aHost, -1);
+      aResolve();
+    });
+  },
 
-    return new Promise((aResolve, aReject) => {
-      let count = 0;
-      for (let cookie of aEnumerator) {
-        if (aCb(cookie)) {
-          Services.cookies.remove(
-            cookie.host,
-            cookie.name,
-            cookie.path,
-            cookie.originAttributes
-          );
-          // We don't want to block the main-thread.
-          if (++count % YIELD_PERIOD == 0) {
-            setTimeout(() => {
-              this._deleteInternal(aEnumerator, aCb).then(aResolve, aReject);
-            }, 0);
-            return;
-          }
-        }
-      }
-
+  deleteAll() {
+    let overrideService = Cc["@mozilla.org/security/certoverride;1"].getService(
+      Ci.nsICertOverrideService
+    );
+    return new Promise(aResolve => {
+      overrideService.clearAllOverrides();
       aResolve();
     });
   },
@@ -942,6 +947,8 @@ const ReportsCleaner = {
 
 // Here the map of Flags-Cleaner.
 const FLAGS_MAP = [
+  { flag: Ci.nsIClearDataService.CLEAR_CERT_EXCEPTIONS, cleaner: CertCleaner },
+
   { flag: Ci.nsIClearDataService.CLEAR_COOKIES, cleaner: CookieCleaner },
 
   {
@@ -1038,6 +1045,22 @@ ClearDataService.prototype = Object.freeze({
     if (!Services.qms) {
       Cu.reportError("Failed initializiation of QuotaManagerService.");
     }
+  },
+
+  deleteDataFromLocalFiles(aIsUserRequest, aFlags, aCallback) {
+    if (!aCallback) {
+      return Cr.NS_ERROR_INVALID_ARG;
+    }
+
+    return this._deleteInternal(aFlags, aCallback, aCleaner => {
+      // Some of the 'Cleaners' do not support clearing data for
+      // local files. Ignore those.
+      if (aCleaner.deleteByLocalFiles) {
+        // A generic originAttributes dictionary.
+        return aCleaner.deleteByLocalFiles({});
+      }
+      return Promise.resolve();
+    });
   },
 
   deleteDataFromHost(aHost, aIsUserRequest, aFlags, aCallback) {

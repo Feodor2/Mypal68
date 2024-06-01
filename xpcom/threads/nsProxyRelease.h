@@ -5,11 +5,11 @@
 #ifndef nsProxyRelease_h__
 #define nsProxyRelease_h__
 
+#include <utility>
+
 #include "MainThreadUtils.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Move.h"
 #include "mozilla/SystemGroup.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsIEventTarget.h"
@@ -148,6 +148,11 @@ inline NS_HIDDEN_(void)
     NS_ReleaseOnMainThreadSystemGroup(const char* aName,
                                       already_AddRefed<T> aDoomed,
                                       bool aAlwaysProxy = false) {
+  RefPtr<T> doomed = aDoomed;
+  if (!doomed) {
+    return; // Nothing to do.
+  }
+
   // NS_ProxyRelease treats a null event target as "the current thread".  So a
   // handle on the main thread is only necessary when we're not already on the
   // main thread or the release must happen asynchronously.
@@ -158,12 +163,12 @@ inline NS_HIDDEN_(void)
 
     if (!systemGroupEventTarget) {
       MOZ_ASSERT_UNREACHABLE("Could not get main thread; leaking an object!");
-      mozilla::Unused << aDoomed.take();
+      mozilla::Unused << doomed.forget().take();
       return;
     }
   }
 
-  NS_ProxyRelease(aName, systemGroupEventTarget, std::move(aDoomed),
+  NS_ProxyRelease(aName, systemGroupEventTarget, doomed.forget(),
                   aAlwaysProxy);
 }
 

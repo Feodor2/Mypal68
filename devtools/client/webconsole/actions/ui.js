@@ -24,12 +24,6 @@ const {
   EDITOR_SET_WIDTH,
 } = require("devtools/client/webconsole/constants");
 
-function openLink(url, e) {
-  return ({ hud }) => {
-    return hud.openLink(url, e);
-  };
-}
-
 function persistToggle() {
   return ({ dispatch, getState, prefsService }) => {
     dispatch({
@@ -155,18 +149,6 @@ function filterBarDisplayModeSet(displayMode) {
   };
 }
 
-function openSidebar(messageId, rootActorId) {
-  return ({ dispatch }) => {
-    dispatch(showMessageObjectInSidebar(rootActorId, messageId));
-  };
-}
-
-function timeWarp(executionPoint) {
-  return ({ client }) => {
-    client.timeWarp(executionPoint);
-  };
-}
-
 module.exports = {
   contentMessagesToggle,
   editorToggle,
@@ -182,7 +164,4 @@ module.exports = {
   splitConsoleCloseButtonToggle,
   timestampsToggle,
   warningGroupsToggle,
-  openLink,
-  openSidebar,
-  timeWarp,
 };

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * Program to test different ways to get file info; right now it 
+ * Program to test different ways to get file info; right now it
  * only works for solaris and OS/2.
  *
  */
@@ -34,9 +34,9 @@ static void statPRStat(void)
 {
     PRFileInfo finfo;
     PRInt32 index = count;
- 
-    for (;index--;) {
-         PR_GetFileInfo(filename, &finfo);
+
+    for (; index--;) {
+        PR_GetFileInfo(filename, &finfo);
     }
 }
 
@@ -44,8 +44,8 @@ static void statStat(void)
 {
     struct stat finfo;
     PRInt32 index = count;
- 
-    for (;index--;) {
+
+    for (; index--;) {
         stat(filename, &finfo);
     }
 }
@@ -74,9 +74,9 @@ int main(int argc, char **argv)
     PR_STDIO_INIT();
 
     if (argc > 1) {
-	count = atoi(argv[1]);
+        count = atoi(argv[1]);
     } else {
-	count = DEFAULT_COUNT;
+        count = DEFAULT_COUNT;
     }
 
     Measure(statPRStat, "time to call PR_GetFileInfo()");

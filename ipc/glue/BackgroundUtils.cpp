@@ -419,20 +419,12 @@ nsresult RHEntryToRHEntryInfo(nsIRedirectHistoryEntry* aRHEntry,
 
 nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
                                 Maybe<LoadInfoArgs>* aOptionalLoadInfoArgs) {
-  if (!aLoadInfo) {
-    // if there is no loadInfo, then there is nothing to serialize
-    *aOptionalLoadInfoArgs = Nothing();
-    return NS_OK;
-  }
-
   nsresult rv = NS_OK;
   Maybe<PrincipalInfo> loadingPrincipalInfo;
-  if (aLoadInfo->LoadingPrincipal()) {
-    PrincipalInfo loadingPrincipalInfoTemp;
-    rv = PrincipalToPrincipalInfo(aLoadInfo->LoadingPrincipal(),
-                                  &loadingPrincipalInfoTemp);
+  if (nsIPrincipal* loadingPrin = aLoadInfo->GetLoadingPrincipal()) {
+    loadingPrincipalInfo.emplace();
+    rv = PrincipalToPrincipalInfo(loadingPrin, loadingPrincipalInfo.ptr());
     NS_ENSURE_SUCCESS(rv, rv);
-    loadingPrincipalInfo = Some(loadingPrincipalInfoTemp);
   }
 
   PrincipalInfo triggeringPrincipalInfo;
@@ -441,40 +433,33 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
   NS_ENSURE_SUCCESS(rv, rv);
 
   Maybe<PrincipalInfo> principalToInheritInfo;
-  if (aLoadInfo->PrincipalToInherit()) {
-    PrincipalInfo principalToInheritInfoTemp;
-    rv = PrincipalToPrincipalInfo(aLoadInfo->PrincipalToInherit(),
-                                  &principalToInheritInfoTemp);
+  if (nsIPrincipal* principalToInherit = aLoadInfo->PrincipalToInherit()) {
+    principalToInheritInfo.emplace();
+    rv = PrincipalToPrincipalInfo(principalToInherit,
+                                  principalToInheritInfo.ptr());
     NS_ENSURE_SUCCESS(rv, rv);
-    principalToInheritInfo = Some(principalToInheritInfoTemp);
   }
 
   Maybe<PrincipalInfo> sandboxedLoadingPrincipalInfo;
   if (aLoadInfo->GetLoadingSandboxed()) {
-    PrincipalInfo sandboxedLoadingPrincipalInfoTemp;
+    sandboxedLoadingPrincipalInfo.emplace();
     rv = PrincipalToPrincipalInfo(aLoadInfo->GetSandboxedLoadingPrincipal(),
-                                  &sandboxedLoadingPrincipalInfoTemp);
+                                  sandboxedLoadingPrincipalInfo.ptr());
     NS_ENSURE_SUCCESS(rv, rv);
-    sandboxedLoadingPrincipalInfo = Some(sandboxedLoadingPrincipalInfoTemp);
   }
 
   Maybe<PrincipalInfo> topLevelPrincipalInfo;
-  if (aLoadInfo->GetTopLevelPrincipal()) {
-    PrincipalInfo topLevelPrincipalInfoTemp;
-    rv = PrincipalToPrincipalInfo(aLoadInfo->GetTopLevelPrincipal(),
-                                  &topLevelPrincipalInfoTemp);
+  if (nsIPrincipal* topLevenPrin = aLoadInfo->GetTopLevelPrincipal()) {
+    topLevelPrincipalInfo.emplace();
+    rv = PrincipalToPrincipalInfo(topLevenPrin, topLevelPrincipalInfo.ptr());
     NS_ENSURE_SUCCESS(rv, rv);
-    topLevelPrincipalInfo = Some(topLevelPrincipalInfoTemp);
   }
 
   Maybe<PrincipalInfo> topLevelStorageAreaPrincipalInfo;
-  if (aLoadInfo->GetTopLevelStorageAreaPrincipal()) {
-    PrincipalInfo topLevelStorageAreaPrincipalInfoTemp;
-    rv = PrincipalToPrincipalInfo(aLoadInfo->GetTopLevelStorageAreaPrincipal(),
-                                  &topLevelStorageAreaPrincipalInfoTemp);
+  if (nsIPrincipal* prin = aLoadInfo->GetTopLevelStorageAreaPrincipal()) {
+    topLevelStorageAreaPrincipalInfo.emplace();
+    rv = PrincipalToPrincipalInfo(prin, topLevelStorageAreaPrincipalInfo.ptr());
     NS_ENSURE_SUCCESS(rv, rv);
-    topLevelStorageAreaPrincipalInfo =
-        Some(topLevelStorageAreaPrincipalInfoTemp);
   }
 
   Maybe<URIParams> optionalResultPrincipalURI;
@@ -585,9 +570,11 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetIsPreflight(), aLoadInfo->GetLoadTriggeredFromExternal(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
-      aLoadInfo->GetDocumentHasLoaded(), cspNonce,
-      aLoadInfo->GetIsFromProcessingFrameAttributes(), cookieSettingsArgs,
-      aLoadInfo->GetRequestBlockingReason(), maybeCspToInheritInfo));
+      aLoadInfo->GetDocumentHasLoaded(),
+      aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
+      cspNonce, aLoadInfo->GetIsFromProcessingFrameAttributes(),
+      cookieSettingsArgs, aLoadInfo->GetRequestBlockingReason(),
+      maybeCspToInheritInfo));
 
   return NS_OK;
 }
@@ -746,8 +733,9 @@ nsresult LoadInfoArgsToLoadInfo(
       loadInfoArgs.isPreflight(), loadInfoArgs.loadTriggeredFromExternal(),
       loadInfoArgs.serviceWorkerTaintingSynthesized(),
       loadInfoArgs.documentHasUserInteracted(),
-      loadInfoArgs.documentHasLoaded(), loadInfoArgs.cspNonce(),
-      loadInfoArgs.requestBlockingReason());
+      loadInfoArgs.documentHasLoaded(),
+      loadInfoArgs.allowListFutureDocumentsCreatedFromThisRedirectChain(),
+      loadInfoArgs.cspNonce(), loadInfoArgs.requestBlockingReason());
 
   if (loadInfoArgs.isFromProcessingFrameAttributes()) {
     loadInfo->SetIsFromProcessingFrameAttributes();
@@ -759,17 +747,6 @@ nsresult LoadInfoArgsToLoadInfo(
 
 void LoadInfoToParentLoadInfoForwarder(
     nsILoadInfo* aLoadInfo, ParentLoadInfoForwarderArgs* aForwarderArgsOut) {
-  if (!aLoadInfo) {
-    *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
-        false, false, Nothing(), nsILoadInfo::TAINTING_BASIC,
-        false,  // serviceWorkerTaintingSynthesized
-        false,  // documentHasUserInteracted
-        false,  // documentHasLoaded
-        Maybe<CookieSettingsArgs>(),
-        nsILoadInfo::BLOCKING_REASON_NONE);  // requestBlockingReason
-    return;
-  }
-
   Maybe<IPCServiceWorkerDescriptor> ipcController;
   Maybe<ServiceWorkerDescriptor> controller(aLoadInfo->GetController());
   if (controller.isSome()) {
@@ -795,16 +772,13 @@ void LoadInfoToParentLoadInfoForwarder(
       aLoadInfo->GetBypassCORSChecks(), ipcController, tainting,
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
-      aLoadInfo->GetDocumentHasLoaded(), cookieSettingsArgs,
-      aLoadInfo->GetRequestBlockingReason());
+      aLoadInfo->GetDocumentHasLoaded(),
+      aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
+      cookieSettingsArgs, aLoadInfo->GetRequestBlockingReason());
 }
 
 nsresult MergeParentLoadInfoForwarder(
     ParentLoadInfoForwarderArgs const& aForwarderArgs, nsILoadInfo* aLoadInfo) {
-  if (!aLoadInfo) {
-    return NS_OK;
-  }
-
   nsresult rv;
 
   rv = aLoadInfo->SetAllowInsecureRedirectToDataURI(
@@ -831,6 +805,10 @@ nsresult MergeParentLoadInfoForwarder(
       aForwarderArgs.documentHasUserInteracted()));
   MOZ_ALWAYS_SUCCEEDS(
       aLoadInfo->SetDocumentHasLoaded(aForwarderArgs.documentHasLoaded()));
+  MOZ_ALWAYS_SUCCEEDS(
+      aLoadInfo->SetAllowListFutureDocumentsCreatedFromThisRedirectChain(
+          aForwarderArgs
+              .allowListFutureDocumentsCreatedFromThisRedirectChain()));
   MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetRequestBlockingReason(
       aForwarderArgs.requestBlockingReason()));
 
@@ -850,12 +828,6 @@ nsresult MergeParentLoadInfoForwarder(
 
 void LoadInfoToChildLoadInfoForwarder(
     nsILoadInfo* aLoadInfo, ChildLoadInfoForwarderArgs* aForwarderArgsOut) {
-  if (!aLoadInfo) {
-    *aForwarderArgsOut =
-        ChildLoadInfoForwarderArgs(Nothing(), Nothing(), Nothing());
-    return;
-  }
-
   Maybe<IPCClientInfo> ipcReserved;
   Maybe<ClientInfo> reserved(aLoadInfo->GetReservedClientInfo());
   if (reserved.isSome()) {
@@ -875,15 +847,12 @@ void LoadInfoToChildLoadInfoForwarder(
   }
 
   *aForwarderArgsOut =
-      ChildLoadInfoForwarderArgs(ipcReserved, ipcInitial, ipcController);
+      ChildLoadInfoForwarderArgs(ipcReserved, ipcInitial, ipcController,
+                                 aLoadInfo->GetRequestBlockingReason());
 }
 
 nsresult MergeChildLoadInfoForwarder(
     const ChildLoadInfoForwarderArgs& aForwarderArgs, nsILoadInfo* aLoadInfo) {
-  if (!aLoadInfo) {
-    return NS_OK;
-  }
-
   Maybe<ClientInfo> reservedClientInfo;
   auto& ipcReserved = aForwarderArgs.reservedClientInfo();
   if (ipcReserved.isSome()) {
@@ -925,6 +894,13 @@ nsresult MergeChildLoadInfoForwarder(
   auto& controller = aForwarderArgs.controller();
   if (controller.isSome()) {
     aLoadInfo->SetController(ServiceWorkerDescriptor(controller.ref()));
+  }
+
+  uint32_t blockingReason = aForwarderArgs.requestBlockingReason();
+  if (blockingReason) {
+    // We only want to override when non-null, so that any earlier set non-null
+    // value is not reverted to 0.
+    aLoadInfo->SetRequestBlockingReason(blockingReason);
   }
 
   return NS_OK;

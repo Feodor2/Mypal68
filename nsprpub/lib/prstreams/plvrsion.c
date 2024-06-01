@@ -67,9 +67,9 @@ PRVersionDescription VERSION_DESC_NAME =
  * must not end in a '$' to prevent rcs keyword substitution.
  */
 static char rcsid[] = "$Header: NSPR " PR_VERSION _DEBUG_STRING
-        "  " _BUILD_STRING " $";
+                      "  " _BUILD_STRING " $";
 static char sccsid[] = "@(#)NSPR " PR_VERSION _DEBUG_STRING
-        "  " _BUILD_STRING;
+                       "  " _BUILD_STRING;
 
 #endif /* XP_UNIX */
 
@@ -85,7 +85,7 @@ PR_IMPLEMENT(const PRVersionDescription*) libVersionPoint()
      * from being optimized away as unused variables.
      */
     const char *dummy;
-    
+
     dummy = rcsid;
     dummy = sccsid;
 #endif

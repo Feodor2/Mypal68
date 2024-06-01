@@ -30,7 +30,9 @@ void ThreadFunc(void *arg)
             exit(1);
         }
         if (counter == 2*i+1) {
-            if (debug_mode) printf("thread 2: counter = %d\n", counter);
+            if (debug_mode) {
+                printf("thread 2: counter = %d\n", counter);
+            }
         } else {
             fprintf(stderr, "thread 2: counter should be %d but is %d\n",
                     2*i+1, counter);
@@ -60,7 +62,9 @@ int main(int argc, char **argv)
     PLOptState *opt = PL_CreateOptState(argc, argv, "dc:h");
 
     while (PL_OPT_EOL != (os = PL_GetNextOpt(opt))) {
-        if (PL_OPT_BAD == os) continue;
+        if (PL_OPT_BAD == os) {
+            continue;
+        }
         switch (opt->option) {
             case 'd':  /* debug mode */
                 debug_mode = PR_TRUE;
@@ -97,7 +101,7 @@ int main(int argc, char **argv)
         exit(1);
     }
     thred = PR_CreateThread(PR_USER_THREAD, ThreadFunc, NULL,
-            PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
+                            PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
     if (NULL == thred) {
         fprintf(stderr, "PR_CreateThread failed\n");
         exit(1);
@@ -112,7 +116,9 @@ int main(int argc, char **argv)
             exit(1);
         }
         if (counter == 2*i) {
-            if (debug_mode) printf("thread 1: counter = %d\n", counter);
+            if (debug_mode) {
+                printf("thread 1: counter = %d\n", counter);
+            }
         } else {
             fprintf(stderr, "thread 1: counter should be %d but is %d\n",
                     2*i, counter);

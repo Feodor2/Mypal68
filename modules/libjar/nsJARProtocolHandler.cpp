@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ClearOnShutdown.h"
-#include "nsAutoPtr.h"
 #include "nsJARProtocolHandler.h"
+#include "nsComponentManagerUtils.h"
 #include "nsCRT.h"
 #include "nsJARURI.h"
 #include "nsJARChannel.h"

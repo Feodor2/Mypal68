@@ -80,11 +80,11 @@ static void Help(void)
     debug_out = PR_STDOUT;
 
     PR_fprintf(
-            debug_out, "Usage: pollable [-c n] [-t n] [-d] [-v] [-G] [-C n] [-D n]\n");
+        debug_out, "Usage: pollable [-c n] [-t n] [-d] [-v] [-G] [-C n] [-D n]\n");
     PR_fprintf(
-            debug_out, "-c n\tloops at thread level (default: %d)\n", DEFAULT_LOOPS);
+        debug_out, "-c n\tloops at thread level (default: %d)\n", DEFAULT_LOOPS);
     PR_fprintf(
-            debug_out, "-t n\tnumber of threads (default: %d)\n", DEFAULT_THREADS);
+        debug_out, "-t n\tnumber of threads (default: %d)\n", DEFAULT_THREADS);
     PR_fprintf(debug_out, "-d\tturn on debugging output (default: FALSE)\n");
     PR_fprintf(debug_out, "-v\tturn on verbose output (default: FALSE)\n");
     PR_fprintf(debug_out, "-G\tglobal threads only (default: FALSE)\n");
@@ -157,12 +157,12 @@ int main(int argc, char **argv)
 
     if (PR_TRUE == debug_mode) {
         debug_out = PR_STDOUT;
-	PR_fprintf(debug_out, "Test parameters\n");
+        PR_fprintf(debug_out, "Test parameters\n");
         PR_fprintf(debug_out, "\tThreads involved: %d\n", numThreads);
         PR_fprintf(debug_out, "\tIteration limit: %d\n", numIterations);
         PR_fprintf(debug_out, "\tConcurrency: %d\n", concurrency);
         PR_fprintf(debug_out, "\tThread type: %s\n",
-                (PR_GLOBAL_THREAD == thread_scope) ? "GLOBAL" : "LOCAL");
+                   (PR_GLOBAL_THREAD == thread_scope) ? "GLOBAL" : "LOCAL");
     }
 
     /*
@@ -180,7 +180,7 @@ int main(int argc, char **argv)
     selfData.event = PR_NewPollableEvent();
     if (selfData.event == NULL) {
         PR_fprintf(PR_STDERR, "cannot create event: (%ld, %ld)\n",
-                PR_GetError(), PR_GetOSError());
+                   PR_GetError(), PR_GetOSError());
         exit(1);
     }
     selfData.next = &data[0];
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
         data[i].event = PR_NewPollableEvent();
         if (data[i].event == NULL) {
             PR_fprintf(PR_STDERR, "cannot create event: (%ld, %ld)\n",
-                    PR_GetError(), PR_GetOSError());
+                       PR_GetError(), PR_GetOSError());
             exit(1);
         }
         data[i].index = i;
@@ -199,8 +199,8 @@ int main(int argc, char **argv)
         }
 
         thread[i] = PR_CreateThread(PR_USER_THREAD,
-                ThreadRoutine, &data[i], PR_PRIORITY_NORMAL,
-                thread_scope, PR_JOINABLE_THREAD, 0);
+                                    ThreadRoutine, &data[i], PR_PRIORITY_NORMAL,
+                                    thread_scope, PR_JOINABLE_THREAD, 0);
         if (thread[i] == NULL) {
             PR_fprintf(PR_STDERR, "cannot create thread\n");
             exit(1);
@@ -231,7 +231,7 @@ int main(int argc, char **argv)
         if (verbosity) {
             PR_fprintf(debug_out, "main thread awakened\n");
         }
-	if (PR_WaitForPollableEvent(selfData.event) == PR_FAILURE) {
+        if (PR_WaitForPollableEvent(selfData.event) == PR_FAILURE) {
             PR_fprintf(PR_STDERR, "consume event failed\n");
             exit(1);
         }
@@ -240,9 +240,9 @@ int main(int argc, char **argv)
 
     if (debug_mode) {
         average = PR_IntervalToMicroseconds(timeEnd - timeStart)
-                / (numIterations * numThreads);
+                  / (numIterations * numThreads);
         PR_fprintf(debug_out, "Average switch times %d usecs for %d threads\n",
-                average, numThreads);
+                   average, numThreads);
     }
 
     for (i = 0; i < numThreads; i++) {
@@ -253,7 +253,7 @@ int main(int argc, char **argv)
         PR_DestroyPollableEvent(data[i].event);
     }
     PR_DELETE(block);
-	PR_DestroyPollableEvent(selfData.event);
+    PR_DestroyPollableEvent(selfData.event);
 
     PR_fprintf(PR_STDOUT, "PASSED\n");
     return 0;

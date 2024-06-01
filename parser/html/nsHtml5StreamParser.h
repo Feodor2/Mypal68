@@ -5,11 +5,11 @@
 #ifndef nsHtml5StreamParser_h
 #define nsHtml5StreamParser_h
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsICharsetDetectionObserver.h"
 #include "nsHtml5MetaScanner.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/UniquePtr.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsHtml5OwningUTF16Buffer.h"
 #include "nsIInputStream.h"
@@ -406,7 +406,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   /**
    * <meta> prescan implementation
    */
-  nsAutoPtr<nsHtml5MetaScanner> mMetaScanner;
+  mozilla::UniquePtr<nsHtml5MetaScanner> mMetaScanner;
 
   // encoding-related stuff
   /**
@@ -456,12 +456,12 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   /**
    * The HTML5 tree builder
    */
-  nsAutoPtr<nsHtml5TreeBuilder> mTreeBuilder;
+  mozilla::UniquePtr<nsHtml5TreeBuilder> mTreeBuilder;
 
   /**
    * The HTML5 tokenizer
    */
-  nsAutoPtr<nsHtml5Tokenizer> mTokenizer;
+  mozilla::UniquePtr<nsHtml5Tokenizer> mTokenizer;
 
   /**
    * Makes sure the main thread can't mess the tokenizer state while it's
@@ -505,7 +505,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * obtained.
    * The current speculation is the last element
    */
-  nsTArray<nsAutoPtr<nsHtml5Speculation>> mSpeculations;
+  nsTArray<mozilla::UniquePtr<nsHtml5Speculation>> mSpeculations;
   mozilla::Mutex mSpeculationMutex;
 
   /**

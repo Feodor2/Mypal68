@@ -5,6 +5,7 @@
 #include "nsXPCOM.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/Bootstrap.h"
+#include "XREChildData.h"
 
 #ifdef XP_WIN
 #  include <windows.h>

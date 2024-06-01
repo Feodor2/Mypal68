@@ -9,16 +9,16 @@
 **
 ** Design Notes:
 **
-** The Counter Facility (CF) has a single anchor: qNameList.      
+** The Counter Facility (CF) has a single anchor: qNameList.
 ** The anchor is a PRCList. qNameList is a list of links in QName
 ** structures. From qNameList any QName structure and its
-** associated RName structure can be located. 
-** 
+** associated RName structure can be located.
+**
 ** For each QName, a list of RName structures is anchored at
 ** rnLink in the QName structure.
-** 
+**
 ** The counter itself is embedded in the RName structure.
-** 
+**
 ** For manipulating the counter database, single lock is used to
 ** protect the entire list: counterLock.
 **
@@ -28,7 +28,7 @@
 ** "overloaded" for traversing the QName structures; only the
 ** function PR_FindNextQnameHandle() uses this overloading.
 **
-** 
+**
 ** ToDo (lth): decide on how to lock or atomically update
 ** individual counters. Candidates are: the global lock; a lock
 ** per RName structure; Atomic operations (Note that there are
@@ -63,9 +63,9 @@ typedef struct RName
     PRCList link;
     QName   *qName;
     PRLock  *lock;
-    volatile PRUint32   counter;    
-    char    name[PRCOUNTER_NAME_MAX+1]; 
-    char    desc[PRCOUNTER_DESC_MAX+1]; 
+    volatile PRUint32   counter;
+    char    name[PRCOUNTER_NAME_MAX+1];
+    char    desc[PRCOUNTER_DESC_MAX+1];
 } RName;
 
 
@@ -86,7 +86,7 @@ static void _PR_CounterInitialize( void )
     ** This function should be called only once
     */
     PR_ASSERT( counterLock == NULL );
-    
+
     counterLock = PR_NewLock();
     PR_INIT_CLIST( &qNameList );
     lm = PR_NewLogModule("counters");
@@ -110,20 +110,21 @@ static void _PR_CounterInitialize( void )
 **  Unlock
 **
 */
-PR_IMPLEMENT(PRCounterHandle) 
-	PR_CreateCounter( 
-		const char *qName, 
-    	const char *rName, 
-        const char *description 
-) 
+PR_IMPLEMENT(PRCounterHandle)
+PR_CreateCounter(
+    const char *qName,
+    const char *rName,
+    const char *description
+)
 {
     QName   *qnp;
     RName   *rnp;
     PRBool  matchQname = PR_FALSE;
 
     /* Self initialize, if necessary */
-    if ( counterLock == NULL )
+    if ( counterLock == NULL ) {
         _PR_CounterInitialize();
+    }
 
     /* Validate input arguments */
     PR_ASSERT( strlen(qName) <= PRCOUNTER_NAME_MAX );
@@ -156,10 +157,10 @@ PR_IMPLEMENT(PRCounterHandle)
     {
         qnp = PR_NEWZAP( QName );
         PR_ASSERT( qnp != NULL );
-        PR_INIT_CLIST( &qnp->link ); 
-        PR_INIT_CLIST( &qnp->rNameList ); 
+        PR_INIT_CLIST( &qnp->link );
+        PR_INIT_CLIST( &qnp->rNameList );
         strcpy( qnp->name, qName );
-        PR_APPEND_LINK( &qnp->link, &qNameList ); 
+        PR_APPEND_LINK( &qnp->link, &qNameList );
     }
 
     /* Do we already have a matching RName? */
@@ -188,31 +189,31 @@ PR_IMPLEMENT(PRCounterHandle)
         PR_ASSERT(0);
     }
 
-    PR_APPEND_LINK( &rnp->link, &qnp->rNameList ); /* add RName to QName's rnList */    
+    PR_APPEND_LINK( &rnp->link, &qnp->rNameList ); /* add RName to QName's rnList */
     rnp->qName = qnp;                       /* point the RName to the QName */
 
     /* Unlock the Facility */
     PR_Unlock( counterLock );
     PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Create: QName: %s %p, RName: %s %p\n\t",
-        qName, qnp, rName, rnp ));
+                               qName, qnp, rName, rnp ));
 
     return((PRCounterHandle)rnp);
 } /*  end PR_CreateCounter() */
-  
+
 
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_DestroyCounter( 
-		PRCounterHandle handle 
+PR_IMPLEMENT(void)
+PR_DestroyCounter(
+    PRCounterHandle handle
 )
 {
     RName   *rnp = (RName *)handle;
     QName   *qnp = rnp->qName;
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Deleting: QName: %s, RName: %s", 
-        qnp->name, rnp->name));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Deleting: QName: %s, RName: %s",
+                               qnp->name, rnp->name));
 
     /* Lock the Facility */
     PR_Lock( counterLock );
@@ -221,8 +222,8 @@ PR_IMPLEMENT(void)
     ** Remove RName from the list of RNames in QName
     ** and free RName
     */
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Deleting RName: %s, %p", 
-        rnp->name, rnp));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Deleting RName: %s, %p",
+                               rnp->name, rnp));
     PR_REMOVE_LINK( &rnp->link );
     PR_Free( rnp->lock );
     PR_DELETE( rnp );
@@ -233,11 +234,11 @@ PR_IMPLEMENT(void)
     */
     if ( PR_CLIST_IS_EMPTY( &qnp->rNameList ) )
     {
-        PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Deleting unused QName: %s, %p", 
-            qnp->name, qnp));
+        PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Deleting unused QName: %s, %p",
+                                   qnp->name, qnp));
         PR_REMOVE_LINK( &qnp->link );
         PR_DELETE( qnp );
-    } 
+    }
 
     /* Unlock the Facility */
     PR_Unlock( counterLock );
@@ -247,10 +248,10 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(PRCounterHandle) 
-	PR_GetCounterHandleFromName( 
-    	const char *qName, 
-    	const char *rName 
+PR_IMPLEMENT(PRCounterHandle)
+PR_GetCounterHandleFromName(
+    const char *qName,
+    const char *rName
 )
 {
     const char    *qn, *rn, *desc;
@@ -258,7 +259,7 @@ PR_IMPLEMENT(PRCounterHandle)
     RName   *rnp = NULL;
 
     PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: GetCounterHandleFromName:\n\t"
-        "QName: %s, RName: %s", qName, rName ));
+                               "QName: %s, RName: %s", qName, rName ));
 
     qh = PR_FindNextCounterQname( NULL );
     while (qh != NULL)
@@ -268,7 +269,7 @@ PR_IMPLEMENT(PRCounterHandle)
         {
             PR_GetCounterNameFromHandle( rh, &qn, &rn, &desc );
             if ( (strcmp( qName, qn ) == 0)
-                && (strcmp( rName, rn ) == 0 ))
+                 && (strcmp( rName, rn ) == 0 ))
             {
                 rnp = (RName *)rh;
                 goto foundIt;
@@ -286,12 +287,12 @@ foundIt:
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_GetCounterNameFromHandle( 
-    	PRCounterHandle handle,  
-	    const char **qName, 
-	    const char **rName, 
-		const char **description 
+PR_IMPLEMENT(void)
+PR_GetCounterNameFromHandle(
+    PRCounterHandle handle,
+    const char **qName,
+    const char **rName,
+    const char **description
 )
 {
     RName   *rnp = (RName *)handle;
@@ -302,8 +303,8 @@ PR_IMPLEMENT(void)
     *description = rnp->desc;
 
     PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: GetConterNameFromHandle: "
-        "QNp: %p, RNp: %p,\n\tQName: %s, RName: %s, Desc: %s", 
-        qnp, rnp, qnp->name, rnp->name, rnp->desc ));
+                               "QNp: %p, RNp: %p,\n\tQName: %s, RName: %s, Desc: %s",
+                               qnp, rnp, qnp->name, rnp->name, rnp->desc ));
 
     return;
 } /*  end PR_GetCounterNameFromHandle() */
@@ -312,17 +313,17 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_IncrementCounter( 
-		PRCounterHandle handle
+PR_IMPLEMENT(void)
+PR_IncrementCounter(
+    PRCounterHandle handle
 )
 {
     PR_Lock(((RName *)handle)->lock);
     ((RName *)handle)->counter++;
     PR_Unlock(((RName *)handle)->lock);
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Increment: %p, %ld", 
-        handle, ((RName *)handle)->counter ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Increment: %p, %ld",
+                               handle, ((RName *)handle)->counter ));
 
     return;
 } /*  end PR_IncrementCounter() */
@@ -332,17 +333,17 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_DecrementCounter( 
-		PRCounterHandle handle
+PR_IMPLEMENT(void)
+PR_DecrementCounter(
+    PRCounterHandle handle
 )
 {
     PR_Lock(((RName *)handle)->lock);
     ((RName *)handle)->counter--;
     PR_Unlock(((RName *)handle)->lock);
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Decrement: %p, %ld", 
-        handle, ((RName *)handle)->counter ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: Decrement: %p, %ld",
+                               handle, ((RName *)handle)->counter ));
 
     return;
 } /*  end PR_DecrementCounter()  */
@@ -351,18 +352,18 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_AddToCounter( 
-    	PRCounterHandle handle, 
-	    PRUint32 value 
+PR_IMPLEMENT(void)
+PR_AddToCounter(
+    PRCounterHandle handle,
+    PRUint32 value
 )
 {
     PR_Lock(((RName *)handle)->lock);
     ((RName *)handle)->counter += value;
     PR_Unlock(((RName *)handle)->lock);
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: AddToCounter: %p, %ld", 
-        handle, ((RName *)handle)->counter ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: AddToCounter: %p, %ld",
+                               handle, ((RName *)handle)->counter ));
 
     return;
 } /*  end PR_AddToCounter() */
@@ -371,18 +372,18 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_SubtractFromCounter( 
-    	PRCounterHandle handle, 
-	    PRUint32 value 
+PR_IMPLEMENT(void)
+PR_SubtractFromCounter(
+    PRCounterHandle handle,
+    PRUint32 value
 )
 {
     PR_Lock(((RName *)handle)->lock);
     ((RName *)handle)->counter -= value;
     PR_Unlock(((RName *)handle)->lock);
-    
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: SubtractFromCounter: %p, %ld", 
-        handle, ((RName *)handle)->counter ));
+
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: SubtractFromCounter: %p, %ld",
+                               handle, ((RName *)handle)->counter ));
 
     return;
 } /*  end  PR_SubtractFromCounter() */
@@ -390,13 +391,13 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(PRUint32) 
-	PR_GetCounter( 
-		PRCounterHandle handle 
+PR_IMPLEMENT(PRUint32)
+PR_GetCounter(
+    PRCounterHandle handle
 )
 {
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: GetCounter: %p, %ld", 
-        handle, ((RName *)handle)->counter ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: GetCounter: %p, %ld",
+                               handle, ((RName *)handle)->counter ));
 
     return(((RName *)handle)->counter);
 } /*  end  PR_GetCounter() */
@@ -404,16 +405,16 @@ PR_IMPLEMENT(PRUint32)
 /*
 **
 */
-PR_IMPLEMENT(void) 
-	PR_SetCounter( 
-		PRCounterHandle handle, 
-		PRUint32 value 
+PR_IMPLEMENT(void)
+PR_SetCounter(
+    PRCounterHandle handle,
+    PRUint32 value
 )
 {
     ((RName *)handle)->counter = value;
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: SetCounter: %p, %ld", 
-        handle, ((RName *)handle)->counter ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: SetCounter: %p, %ld",
+                               handle, ((RName *)handle)->counter ));
 
     return;
 } /*  end  PR_SetCounter() */
@@ -421,24 +422,28 @@ PR_IMPLEMENT(void)
 /*
 **
 */
-PR_IMPLEMENT(PRCounterHandle) 
-	PR_FindNextCounterQname( 
-        PRCounterHandle handle
+PR_IMPLEMENT(PRCounterHandle)
+PR_FindNextCounterQname(
+    PRCounterHandle handle
 )
 {
     QName *qnp = (QName *)handle;
 
-    if ( PR_CLIST_IS_EMPTY( &qNameList ))
-            qnp = NULL;
-    else if ( qnp == NULL )
-        qnp = (QName *)PR_LIST_HEAD( &qNameList );
-    else if ( PR_NEXT_LINK( &qnp->link ) ==  &qNameList )
+    if ( PR_CLIST_IS_EMPTY( &qNameList )) {
         qnp = NULL;
-    else  
+    }
+    else if ( qnp == NULL ) {
+        qnp = (QName *)PR_LIST_HEAD( &qNameList );
+    }
+    else if ( PR_NEXT_LINK( &qnp->link ) ==  &qNameList ) {
+        qnp = NULL;
+    }
+    else {
         qnp = (QName *)PR_NEXT_LINK( &qnp->link );
+    }
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: FindNextQname: Handle: %p, Returns: %p", 
-        handle, qnp ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: FindNextQname: Handle: %p, Returns: %p",
+                               handle, qnp ));
 
     return((PRCounterHandle)qnp);
 } /*  end  PR_FindNextCounterQname() */
@@ -447,27 +452,31 @@ PR_IMPLEMENT(PRCounterHandle)
 /*
 **
 */
-PR_IMPLEMENT(PRCounterHandle) 
-	PR_FindNextCounterRname( 
-        PRCounterHandle rhandle, 
-        PRCounterHandle qhandle 
+PR_IMPLEMENT(PRCounterHandle)
+PR_FindNextCounterRname(
+    PRCounterHandle rhandle,
+    PRCounterHandle qhandle
 )
 {
     RName *rnp = (RName *)rhandle;
     QName *qnp = (QName *)qhandle;
 
 
-    if ( PR_CLIST_IS_EMPTY( &qnp->rNameList ))
+    if ( PR_CLIST_IS_EMPTY( &qnp->rNameList )) {
         rnp = NULL;
-    else if ( rnp == NULL )
+    }
+    else if ( rnp == NULL ) {
         rnp = (RName *)PR_LIST_HEAD( &qnp->rNameList );
-    else if ( PR_NEXT_LINK( &rnp->link ) ==  &qnp->rNameList )
+    }
+    else if ( PR_NEXT_LINK( &rnp->link ) ==  &qnp->rNameList ) {
         rnp = NULL;
-    else
+    }
+    else {
         rnp = (RName *)PR_NEXT_LINK( &rnp->link );
+    }
 
-    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: FindNextRname: Rhandle: %p, QHandle: %p, Returns: %p", 
-        rhandle, qhandle, rnp ));
+    PR_LOG( lm, PR_LOG_DEBUG, ("PR_Counter: FindNextRname: Rhandle: %p, QHandle: %p, Returns: %p",
+                               rhandle, qhandle, rnp ));
 
     return((PRCounterHandle)rnp);
 } /*  end PR_FindNextCounterRname() */

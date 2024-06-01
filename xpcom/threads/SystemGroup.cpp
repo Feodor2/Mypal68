@@ -4,8 +4,9 @@
 
 #include "SystemGroup.h"
 
+#include <utility>
+
 #include "mozilla/AbstractThread.h"
-#include "mozilla/Move.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 

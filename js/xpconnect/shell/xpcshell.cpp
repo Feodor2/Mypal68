@@ -6,14 +6,15 @@
 
 #include <stdio.h>
 
-#include "mozilla/WindowsDllBlocklist.h"
 #include "mozilla/Bootstrap.h"
+#include "XREShellData.h"
 
 #include "nsXULAppAPI.h"
 #ifdef XP_MACOSX
 #  include "xpcshellMacUtils.h"
 #endif
 #ifdef XP_WIN
+#  include "mozilla/WindowsDllBlocklist.h"
 #  include <windows.h>
 #  include <shlobj.h>
 

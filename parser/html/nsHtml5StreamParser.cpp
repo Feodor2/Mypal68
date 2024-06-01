@@ -164,7 +164,8 @@ nsHtml5StreamParser::nsHtml5StreamParser(nsHtml5TreeOpExecutor* aExecutor,
               ? nullptr
               : mExecutor->GetStage(),
           aMode == NORMAL ? mExecutor->GetStage() : nullptr)),
-      mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, aMode == VIEW_SOURCE_XML)),
+      mTokenizer(
+          new nsHtml5Tokenizer(mTreeBuilder.get(), aMode == VIEW_SOURCE_XML)),
       mTokenizerMutex("nsHtml5StreamParser mTokenizerMutex"),
       mOwner(aOwner),
       mLastWasCR(false),
@@ -695,7 +696,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
 
   if (!mMetaScanner &&
       (mMode == NORMAL || mMode == VIEW_SOURCE_HTML || mMode == LOAD_AS_DATA)) {
-    mMetaScanner = new nsHtml5MetaScanner(mTreeBuilder);
+    mMetaScanner = MakeUnique<nsHtml5MetaScanner>(mTreeBuilder.get());
   }
 
   if (mSniffingLength + aFromSegment.Length() >= SNIFFING_BUFFER_SIZE) {
@@ -1692,7 +1693,7 @@ void nsHtml5StreamParser::ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer,
       return;
     }
 
-    nsHtml5Speculation* speculation = mSpeculations.ElementAt(0);
+    const auto& speculation = mSpeculations.ElementAt(0);
     if (aLastWasCR || !aTokenizer->isInDataState() ||
         !aTreeBuilder->snapshotMatches(speculation->GetSnapshot())) {
       speculationFailed = true;
@@ -1742,7 +1743,7 @@ void nsHtml5StreamParser::ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer,
     if (speculationFailed) {
       // Rewind the stream
       mAtEOF = false;
-      nsHtml5Speculation* speculation = mSpeculations.ElementAt(0);
+      const auto& speculation = mSpeculations.ElementAt(0);
       mFirstBuffer = speculation->GetBuffer();
       mFirstBuffer->setStart(speculation->GetStart());
       mTokenizer->setLineNumber(speculation->GetStartLineNumber());

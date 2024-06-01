@@ -5,6 +5,7 @@
 #include "nsError.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Likely.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/UniquePtr.h"
 
 nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsHtml5OplessBuilder* aBuilder)
@@ -178,7 +179,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
           nsHtml5String sizes =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_SIZES);
           mSpeculativeLoadQueue.AppendElement()->InitImage(
-              url, crossOrigin, referrerPolicy, srcset, sizes);
+              url, crossOrigin, referrerPolicy, srcset, sizes, false);
         } else if (nsGkAtoms::source == aName) {
           nsHtml5String srcset =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_SRCSET);
@@ -228,7 +229,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 aAttributes->contains(nsHtml5AttributeName::ATTR_NOMODULE);
             mSpeculativeLoadQueue.AppendElement()->InitScript(
                 url, charset, type, crossOrigin, integrity, referrerPolicy,
-                mode == nsHtml5TreeBuilder::IN_HEAD, async, defer, noModule);
+                mode == nsHtml5TreeBuilder::IN_HEAD, async, defer, noModule,
+                false);
             mCurrentHtmlScriptIsAsyncOrDefer = async || defer;
           }
         } else if (nsGkAtoms::link == aName) {
@@ -250,7 +252,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 nsHtml5String referrerPolicy = aAttributes->getValue(
                     nsHtml5AttributeName::ATTR_REFERRERPOLICY);
                 mSpeculativeLoadQueue.AppendElement()->InitStyle(
-                    url, charset, crossOrigin, referrerPolicy, integrity);
+                    url, charset, crossOrigin, referrerPolicy, integrity,
+                    false);
               }
             } else if (rel.LowerCaseEqualsASCII("preconnect")) {
               nsHtml5String url =
@@ -261,6 +264,56 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 mSpeculativeLoadQueue.AppendElement()->InitPreconnect(
                     url, crossOrigin);
               }
+            } else if (StaticPrefs::network_preload() &&
+                       rel.LowerCaseEqualsASCII("preload")) {
+              nsHtml5String url =
+                  aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
+              if (url) {
+                nsHtml5String as =
+                    aAttributes->getValue(nsHtml5AttributeName::ATTR_AS);
+                nsHtml5String charset =
+                    aAttributes->getValue(nsHtml5AttributeName::ATTR_CHARSET);
+                nsHtml5String crossOrigin = aAttributes->getValue(
+                    nsHtml5AttributeName::ATTR_CROSSORIGIN);
+                nsHtml5String integrity =
+                    aAttributes->getValue(nsHtml5AttributeName::ATTR_INTEGRITY);
+                nsHtml5String referrerPolicy = aAttributes->getValue(
+                    nsHtml5AttributeName::ATTR_REFERRERPOLICY);
+
+                // Note that respective speculative loaders for scripts and
+                // styles check all additional attributes to be equal to use the
+                // speculative load.  So, if any of them is specified and the
+                // preload has to take the expected effect, those attributes
+                // must also be specified on the actual tag to use the preload.
+                // Omitting an attribute on both will make the values equal
+                // (empty) and thus use the preload.
+                if (as.LowerCaseEqualsASCII("script")) {
+                  nsHtml5String type =
+                      aAttributes->getValue(nsHtml5AttributeName::ATTR_TYPE);
+                  mSpeculativeLoadQueue.AppendElement()->InitScript(
+                      url, charset, type, crossOrigin, integrity,
+                      referrerPolicy, mode == nsHtml5TreeBuilder::IN_HEAD,
+                      false, false, false, true);
+                } else if (as.LowerCaseEqualsASCII("style")) {
+                  mSpeculativeLoadQueue.AppendElement()->InitStyle(
+                      url, charset, crossOrigin, referrerPolicy, integrity,
+                      true);
+                } else if (as.LowerCaseEqualsASCII("image")) {
+                  nsHtml5String srcset = aAttributes->getValue(
+                      nsHtml5AttributeName::ATTR_IMAGESRCSET);
+                  nsHtml5String sizes = aAttributes->getValue(
+                      nsHtml5AttributeName::ATTR_IMAGESIZES);
+                  mSpeculativeLoadQueue.AppendElement()->InitImage(
+                      url, crossOrigin, referrerPolicy, srcset, sizes, true);
+                } else if (as.LowerCaseEqualsASCII("font")) {
+                  mSpeculativeLoadQueue.AppendElement()->InitFont(
+                      url, crossOrigin, referrerPolicy);
+                } else if (as.LowerCaseEqualsASCII("fetch")) {
+                  mSpeculativeLoadQueue.AppendElement()->InitFetch(
+                      url, crossOrigin, referrerPolicy);
+                }
+                // Other "as" values will be supported later.
+              }
             }
           }
         } else if (nsGkAtoms::video == aName) {
@@ -268,7 +321,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
               aAttributes->getValue(nsHtml5AttributeName::ATTR_POSTER);
           if (url) {
             mSpeculativeLoadQueue.AppendElement()->InitImage(
-                url, nullptr, nullptr, nullptr, nullptr);
+                url, nullptr, nullptr, nullptr, nullptr, false);
           }
         } else if (nsGkAtoms::style == aName) {
           mImportScanner.Start();
@@ -321,7 +374,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
               aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
           if (url) {
             mSpeculativeLoadQueue.AppendElement()->InitImage(
-                url, nullptr, nullptr, nullptr, nullptr);
+                url, nullptr, nullptr, nullptr, nullptr, false);
           }
         } else if (nsGkAtoms::script == aName) {
           nsHtml5TreeOperation* treeOp =
@@ -348,7 +401,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 nsHtml5AttributeName::ATTR_REFERRERPOLICY);
             mSpeculativeLoadQueue.AppendElement()->InitScript(
                 url, nullptr, type, crossOrigin, integrity, referrerPolicy,
-                mode == nsHtml5TreeBuilder::IN_HEAD, false, false, false);
+                mode == nsHtml5TreeBuilder::IN_HEAD, false, false, false,
+                false);
           }
         } else if (nsGkAtoms::style == aName) {
           mImportScanner.Start();

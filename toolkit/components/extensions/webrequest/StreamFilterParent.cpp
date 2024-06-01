@@ -133,6 +133,10 @@ bool StreamFilterParent::Create(dom::ContentParent* aContentParent,
       &parent, &child);
   NS_ENSURE_SUCCESS(rv, false);
 
+  // Disable alt-data for extension stream listeners.
+  nsCOMPtr<nsIHttpChannelInternal> internal(do_QueryObject(channel));
+  internal->DisableAltDataCache();
+
   if (!chan->AttachStreamFilter(std::move(parent))) {
     return false;
   }
@@ -198,14 +202,17 @@ void StreamFilterParent::Broken() {
   switch (mState) {
     case State::Initialized:
     case State::TransferringData:
-    case State::Suspended:
+    case State::Suspended: {
       mState = State::Disconnecting;
-      if (mChannel) {
-        mChannel->Cancel(NS_ERROR_FAILURE);
-      }
+      RefPtr<StreamFilterParent> self(this);
+      RunOnMainThread(FUNC, [=] {
+        if (self->mChannel) {
+          self->mChannel->Cancel(NS_ERROR_FAILURE);
+        }
+      });
 
       FinishDisconnect();
-      break;
+    } break;
 
     default:
       break;
@@ -320,15 +327,15 @@ void StreamFilterParent::FinishDisconnect() {
     self->FlushBufferedData();
 
     RunOnMainThread(FUNC, [=] {
-      if (self->mLoadGroup) {
+      if (self->mLoadGroup && !self->mDisconnected) {
         Unused << self->mLoadGroup->RemoveRequest(self, nullptr, NS_OK);
       }
+      self->mDisconnected = true;
     });
 
     RunOnActorThread(FUNC, [=] {
       if (self->mState != State::Closed) {
         self->mState = State::Disconnected;
-        self->mDisconnected = true;
       }
     });
   });
@@ -376,12 +383,14 @@ nsresult StreamFilterParent::Write(Data& aData) {
 
 NS_IMETHODIMP
 StreamFilterParent::GetName(nsACString& aName) {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   return mChannel->GetName(aName);
 }
 
 NS_IMETHODIMP
 StreamFilterParent::GetStatus(nsresult* aStatus) {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   return mChannel->GetStatus(aStatus);
 }
@@ -402,18 +411,21 @@ StreamFilterParent::IsPending(bool* aIsPending) {
 
 NS_IMETHODIMP
 StreamFilterParent::Cancel(nsresult aResult) {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   return mChannel->Cancel(aResult);
 }
 
 NS_IMETHODIMP
 StreamFilterParent::Suspend() {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   return mChannel->Suspend();
 }
 
 NS_IMETHODIMP
 StreamFilterParent::Resume() {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   return mChannel->Resume();
 }
@@ -431,6 +443,7 @@ StreamFilterParent::SetLoadGroup(nsILoadGroup* aLoadGroup) {
 
 NS_IMETHODIMP
 StreamFilterParent::GetLoadFlags(nsLoadFlags* aLoadFlags) {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   MOZ_TRY(mChannel->GetLoadFlags(aLoadFlags));
   *aLoadFlags &= ~nsIChannel::LOAD_DOCUMENT_URI;
@@ -439,6 +452,7 @@ StreamFilterParent::GetLoadFlags(nsLoadFlags* aLoadFlags) {
 
 NS_IMETHODIMP
 StreamFilterParent::SetLoadFlags(nsLoadFlags aLoadFlags) {
+  AssertIsMainThread();
   MOZ_ASSERT(mChannel);
   return mChannel->SetLoadFlags(aLoadFlags);
 }
@@ -461,6 +475,24 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
         CheckResult(self->SendError(NS_LITERAL_CSTRING("Channel redirected")));
       }
     });
+  }
+
+  // Check if alterate cached data is being sent, if so we receive un-decoded
+  // data and we must disconnect the filter and send an error to the extension.
+  if (!mDisconnected) {
+    RefPtr<net::HttpBaseChannel> chan = do_QueryObject(aRequest);
+    if (chan && chan->IsDeliveringAltData()) {
+      mDisconnected = true;
+
+      RefPtr<StreamFilterParent> self(this);
+      RunOnActorThread(FUNC, [=] {
+        if (self->IPCActive()) {
+          self->mState = State::Disconnected;
+          CheckResult(self->SendError(
+              NS_LITERAL_CSTRING("Channel is delivering cached alt-data")));
+        }
+      });
+    }
   }
 
   if (!mDisconnected) {

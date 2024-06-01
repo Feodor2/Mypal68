@@ -6,6 +6,7 @@
 #define Telemetry_h__
 
 #include "mozilla/GuardObjects.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TelemetryEventEnums.h"
 #include "mozilla/TelemetryHistogramEnums.h"
 #include "mozilla/TelemetryOriginEnums.h"

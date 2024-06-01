@@ -176,9 +176,14 @@ void ChannelWrapper::ClearCachedAttributes() {
  * ...
  *****************************************************************************/
 
-void ChannelWrapper::Cancel(uint32_t aResult, ErrorResult& aRv) {
+void ChannelWrapper::Cancel(uint32_t aResult, uint32_t aReason,
+                            ErrorResult& aRv) {
   nsresult rv = NS_ERROR_UNEXPECTED;
   if (nsCOMPtr<nsIChannel> chan = MaybeChannel()) {
+    nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo();
+    if (aReason > 0 && loadInfo) {
+      loadInfo->SetRequestBlockingReason(aReason);
+    }
     rv = chan->Cancel(nsresult(aResult));
     ErrorCheck();
   }
@@ -393,7 +398,7 @@ static inline bool IsSystemPrincipal(nsIPrincipal* aPrincipal) {
 
 bool ChannelWrapper::IsSystemLoad() const {
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
-    if (nsIPrincipal* prin = loadInfo->LoadingPrincipal()) {
+    if (nsIPrincipal* prin = loadInfo->GetLoadingPrincipal()) {
       return IsSystemPrincipal(prin);
     }
 
@@ -413,7 +418,7 @@ bool ChannelWrapper::IsSystemLoad() const {
 
 bool ChannelWrapper::CanModify() const {
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
-    if (nsIPrincipal* prin = loadInfo->LoadingPrincipal()) {
+    if (nsIPrincipal* prin = loadInfo->GetLoadingPrincipal()) {
       if (IsSystemPrincipal(prin)) {
         return false;
       }
@@ -437,7 +442,7 @@ already_AddRefed<nsIURI> ChannelWrapper::GetOriginURI() const {
 already_AddRefed<nsIURI> ChannelWrapper::GetDocumentURI() const {
   nsCOMPtr<nsIURI> uri;
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
-    if (nsIPrincipal* prin = loadInfo->LoadingPrincipal()) {
+    if (nsIPrincipal* prin = loadInfo->GetLoadingPrincipal()) {
       if (prin->GetIsCodebasePrincipal()) {
         Unused << prin->GetURI(getter_AddRefs(uri));
       }
@@ -525,7 +530,7 @@ bool ChannelWrapper::Matches(
     bool isProxy =
         aOptions.mIsProxy && aExtension->HasPermission(nsGkAtoms::proxy);
     // Proxies are allowed access to all urls, including restricted urls.
-    if (!aExtension->CanAccessURI(urlInfo, false)) {
+    if (!aExtension->CanAccessURI(urlInfo, false, true)) {
       return false;
     }
 
@@ -536,14 +541,12 @@ bool ChannelWrapper::Matches(
         return false;
       }
 
-      if (auto origin = DocumentURLInfo()) {
-        nsAutoCString baseURL;
-        aExtension->GetBaseURL(baseURL);
-
-        if (!StringBeginsWith(origin->CSpec(), baseURL) &&
-            !aExtension->CanAccessURI(*origin)) {
-          return false;
-        }
+      auto origin = DocumentURLInfo();
+      // Extensions with the file:-permission may observe requests from file:
+      // origins, because such documents can already be modified by content
+      // scripts anyway.
+      if (origin && !aExtension->CanAccessURI(*origin, false, true)) {
+        return false;
       }
     }
   }

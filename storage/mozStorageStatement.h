@@ -5,7 +5,6 @@
 #ifndef mozStorageStatement_h
 #define mozStorageStatement_h
 
-#include "nsAutoPtr.h"
 #include "nsString.h"
 
 #include "nsTArray.h"

@@ -220,7 +220,7 @@ const query = function*(detailsIn, props, context) {
   }
 
   // We can use getCookiesFromHost for faster searching.
-  let enumerator;
+  let cookies;
   let host;
   let url;
   let originAttributes = {
@@ -245,9 +245,9 @@ const query = function*(detailsIn, props, context) {
   if (host && "firstPartyDomain" in originAttributes) {
     // getCookiesFromHost is more efficient than getCookiesWithOriginAttributes
     // if the host and all origin attributes are known.
-    enumerator = Services.cookies.getCookiesFromHost(host, originAttributes);
+    cookies = Services.cookies.getCookiesFromHost(host, originAttributes);
   } else {
-    enumerator = Services.cookies.getCookiesWithOriginAttributes(
+    cookies = Services.cookies.getCookiesWithOriginAttributes(
       JSON.stringify(originAttributes),
       host
     );
@@ -324,7 +324,7 @@ const query = function*(detailsIn, props, context) {
     return true;
   }
 
-  for (const cookie of enumerator) {
+  for (const cookie of cookies) {
     if (matches(cookie)) {
       yield { cookie, isPrivate, storeId };
     }

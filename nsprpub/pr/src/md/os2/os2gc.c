@@ -8,7 +8,7 @@
  */
 #include "primpl.h"
 
-PRWord *_MD_HomeGCRegisters(PRThread *t, int isCurrent, int *np) 
+PRWord *_MD_HomeGCRegisters(PRThread *t, int isCurrent, int *np)
 {
     CONTEXTRECORD context;
     context.ContextFlags = CONTEXT_INTEGER;
@@ -33,7 +33,7 @@ PRWord *_MD_HomeGCRegisters(PRThread *t, int isCurrent, int *np)
 }
 
 /* This function is not used right now, but is left as a reference.
- * If you ever need to get the fiberID from the currently running fiber, 
+ * If you ever need to get the fiberID from the currently running fiber,
  * this is it.
  */
 void *
@@ -42,8 +42,8 @@ GetMyFiberID()
     void *fiberData = 0;
 
     /* A pointer to our tib entry is found at FS:[18]
-     * At offset 10h is the fiberData pointer.  The context of the 
-     * fiber is stored in there.  
+     * At offset 10h is the fiberData pointer.  The context of the
+     * fiber is stored in there.
      */
 #ifdef HAVE_ASM
     __asm {
@@ -52,6 +52,6 @@ GetMyFiberID()
         mov    [fiberData], EAX
     }
 #endif
-  
+
     return fiberData;
 }

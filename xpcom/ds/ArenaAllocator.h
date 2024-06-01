@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <sstream>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/fallible.h"

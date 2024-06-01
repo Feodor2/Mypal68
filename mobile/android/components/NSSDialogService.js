@@ -251,7 +251,7 @@ NSSDialogs.prototype = {
         this.formatString("clientAuthAsk.keyUsages", [keyUsages])
       );
     }
-    let emailAddresses = cert.getEmailAddresses({});
+    let emailAddresses = cert.getEmailAddresses();
     if (emailAddresses.length > 0) {
       let joinedAddresses = emailAddresses.join(", ");
       detailLines.push(
@@ -268,26 +268,27 @@ NSSDialogs.prototype = {
     return detailLines.join("<br/>");
   },
 
-  viewCertDetails: function(details, ctx) {
+  viewCertDetails: function(details) {
     let p = this.getPrompt(
       this.getString("clientAuthAsk.message3"),
       "",
       [this.getString("nssdialogs.ok.label")],
-      ctx
+      null
     );
     p.addLabel({ label: details });
     this.showPrompt(p);
   },
 
   chooseCertificate: function(
-    ctx,
     hostname,
     port,
     organization,
     issuerOrg,
     certList,
-    selectedIndex
+    selectedIndex,
+    rememberClientAuthCertificate
   ) {
+    rememberClientAuthCertificate.value = false;
     let rememberSetting = Services.prefs.getBoolPref(
       "security.remember_cert_checkbox_default_setting"
     );
@@ -325,7 +326,7 @@ NSSDialogs.prototype = {
         this.getString("clientAuthAsk.title"),
         this.getString("clientAuthAsk.message1"),
         buttons,
-        ctx
+        null
       )
         .addLabel({ id: "requestedDetails", label: serverRequestedDetails })
         .addMenulist({
@@ -342,14 +343,11 @@ NSSDialogs.prototype = {
       let response = this.showPrompt(prompt);
       selectedIndex.value = response.nicknames;
       if (response.button == 1 /* buttons[1] */) {
-        this.viewCertDetails(certDetailsList[selectedIndex.value], ctx);
+        this.viewCertDetails(certDetailsList[selectedIndex.value]);
         continue;
       } else if (response.button == 0 /* buttons[0] */) {
         if (response.rememberBox) {
-          let caud = ctx.QueryInterface(Ci.nsIClientAuthUserDecision);
-          if (caud) {
-            caud.rememberClientAuthCertificate = true;
-          }
+          rememberClientAuthCertificate.value = true;
         }
         return true;
       }

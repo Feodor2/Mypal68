@@ -26,6 +26,7 @@
 #include "nsFocusManager.h"
 #include "Layers.h"
 #include "nsILoadContext.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDocShell.h"
 
 #include "mozilla/dom/Element.h"

@@ -3,14 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHashPropertyBag.h"
+
+#include <utility>
+
+#include "mozilla/Attributes.h"
 #include "nsArray.h"
 #include "nsArrayEnumerator.h"
-#include "nsIVariant.h"
 #include "nsIProperty.h"
+#include "nsIVariant.h"
 #include "nsThreadUtils.h"
 #include "nsVariant.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Move.h"
 
 extern "C" {
 

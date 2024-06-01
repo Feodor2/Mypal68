@@ -8,10 +8,12 @@
 PR_IMPLEMENT(PRIntn)
 PL_strcmp(const char *a, const char *b)
 {
-    if( (const char *)0 == a )
+    if( (const char *)0 == a ) {
         return ((const char *)0 == b) ? 0 : -1;
-    if( (const char *)0 == b )
+    }
+    if( (const char *)0 == b ) {
         return 1;
+    }
 
     return (PRIntn)strcmp(a, b);
 }
@@ -19,10 +21,12 @@ PL_strcmp(const char *a, const char *b)
 PR_IMPLEMENT(PRIntn)
 PL_strncmp(const char *a, const char *b, PRUint32 max)
 {
-    if( (const char *)0 == a )
+    if( (const char *)0 == a ) {
         return ((const char *)0 == b) ? 0 : -1;
-    if( (const char *)0 == b )
+    }
+    if( (const char *)0 == b ) {
         return 1;
+    }
 
     return (PRIntn)strncmp(a, b, (size_t)max);
 }

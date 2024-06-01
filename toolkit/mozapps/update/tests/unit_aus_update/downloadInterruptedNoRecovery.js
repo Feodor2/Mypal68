@@ -19,7 +19,6 @@ async function run_test() {
   await waitForUpdateCheck(true, { updateCount: 1 }).then(async aArgs => {
     await waitForUpdateDownload(
       aArgs.updates,
-      aArgs.updateCount,
       Cr.NS_ERROR_NET_RESET
     );
   });

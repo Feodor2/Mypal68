@@ -16,6 +16,7 @@
 
 #include "nsIChannel.h"
 #include "nsICacheInfoChannel.h"
+#include "nsIClassOfService.h"
 #include "mozilla/dom/Document.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIInputStream.h"
@@ -61,6 +62,8 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mCORSMode(imgIRequest::CORS_NONE),
       mImageErrorCode(NS_OK),
       mImageAvailable(false),
+      mIsDeniedCrossSiteCORSRequest(false),
+      mIsCrossSiteNoCORSRequest(false),
       mMutex("imgRequest"),
       mProgressTracker(new ProgressTracker()),
       mIsMultiPartChannel(false),
@@ -84,8 +87,9 @@ imgRequest::~imgRequest() {
 nsresult imgRequest::Init(nsIURI* aURI, nsIURI* aFinalURI,
                           bool aHadInsecureRedirect, nsIRequest* aRequest,
                           nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
-                          nsISupports* aCX, nsIPrincipal* aTriggeringPrincipal,
-                          int32_t aCORSMode, nsIReferrerInfo* aReferrerInfo) {
+                          mozilla::dom::Document* aLoadingDocument,
+                          nsIPrincipal* aTriggeringPrincipal, int32_t aCORSMode,
+                          nsIReferrerInfo* aReferrerInfo) {
   MOZ_ASSERT(NS_IsMainThread(), "Cannot use nsIURI off main thread!");
 
   LOG_FUNC(gImgLog, "imgRequest::Init");
@@ -134,12 +138,11 @@ nsresult imgRequest::Init(nsIURI* aURI, nsIURI* aFinalURI,
   mCacheEntry = aCacheEntry;
   mCacheEntry->UpdateLoadTime();
 
-  SetLoadId(aCX);
+  SetLoadId(aLoadingDocument);
 
   // Grab the inner window ID of the loading document, if possible.
-  nsCOMPtr<dom::Document> doc = do_QueryInterface(aCX);
-  if (doc) {
-    mInnerWindowId = doc->InnerWindowID();
+  if (aLoadingDocument) {
+    mInnerWindowId = aLoadingDocument->InnerWindowID();
   }
 
   return NS_OK;
@@ -642,12 +645,23 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
 
   RefPtr<Image> image;
 
+  if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest)) {
+    nsresult rv;
+    nsCOMPtr<nsILoadInfo> loadInfo = httpChannel->LoadInfo();
+    mIsDeniedCrossSiteCORSRequest =
+        loadInfo->GetTainting() == LoadTainting::CORS &&
+        (NS_FAILED(httpChannel->GetStatus(&rv)) || NS_FAILED(rv));
+    mIsCrossSiteNoCORSRequest = loadInfo->GetTainting() == LoadTainting::Opaque;
+  }
+
   // Figure out if we're multipart.
   nsCOMPtr<nsIMultiPartChannel> multiPartChannel = do_QueryInterface(aRequest);
-  MOZ_ASSERT(multiPartChannel || !mIsMultiPartChannel,
-             "Stopped being multipart?");
   {
     MutexAutoLock lock(mMutex);
+
+    MOZ_ASSERT(multiPartChannel || !mIsMultiPartChannel,
+               "Stopped being multipart?");
+
     mNewPartPending = true;
     image = mImage;
     mIsMultiPartChannel = bool(multiPartChannel);

@@ -95,10 +95,10 @@ RefPtr<ProcInfoPromise> GetProcInfo(base::ProcessId pid, int32_t childId,
         }
 
         wchar_t filename[MAX_PATH];
-        //if (GetProcessImageFileNameW(handle.get(), filename, MAX_PATH) == 0) {
-        //  holder->Reject(NS_ERROR_FAILURE, __func__);
-        //  return;
-        //}
+        if (GetProcessImageFileNameW(handle.get(), filename, MAX_PATH) == 0) {
+          holder->Reject(NS_ERROR_FAILURE, __func__);
+          return;
+        }
         FILETIME createTime, exitTime, kernelTime, userTime;
         if (!GetProcessTimes(handle.get(), &createTime, &exitTime, &kernelTime,
                              &userTime)) {
@@ -106,12 +106,12 @@ RefPtr<ProcInfoPromise> GetProcInfo(base::ProcessId pid, int32_t childId,
           return;
         }
         PROCESS_MEMORY_COUNTERS memoryCounters;
-        /*if (!GetProcessMemoryInfo(handle.get(),
+        if (!GetProcessMemoryInfo(handle.get(),
                                   (PPROCESS_MEMORY_COUNTERS)&memoryCounters,
                                   sizeof(memoryCounters))) {
           holder->Reject(NS_ERROR_FAILURE, __func__);
           return;
-        }*/
+        }
         ProcInfo info;
         info.pid = pid;
         info.childId = childId;

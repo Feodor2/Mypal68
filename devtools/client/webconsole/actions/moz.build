@@ -10,7 +10,5 @@ DevToolsModules(
     'input.js',
     'messages.js',
     'notifications.js',
-    'object.js',
-    'toolbox.js',
     'ui.js',
 )

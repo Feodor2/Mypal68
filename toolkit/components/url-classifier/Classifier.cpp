@@ -581,7 +581,7 @@ void Classifier::MergeNewLookupCaches() {
       mLookupCaches.AppendElement(nullptr);
     }
 
-    Swap(mLookupCaches[swapIndex], newCache);
+    std::swap(mLookupCaches[swapIndex], newCache);
     mLookupCaches[swapIndex]->UpdateRootDirHandle(mRootStoreDirectory);
   }
 

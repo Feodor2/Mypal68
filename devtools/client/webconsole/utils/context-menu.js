@@ -11,7 +11,6 @@ const { MESSAGE_SOURCE } = require("devtools/client/webconsole/constants");
 
 const clipboardHelper = require("devtools/shared/platform/clipboard");
 const { l10n } = require("devtools/client/webconsole/utils/messages");
-const actions = require("devtools/client/webconsole/actions/index");
 
 loader.lazyRequireGetter(this, "saveAs", "devtools/shared/DevToolsUtils", true);
 loader.lazyRequireGetter(
@@ -30,54 +29,48 @@ loader.lazyRequireGetter(
 /**
  * Create a Menu instance for the webconsole.
  *
- * @param {Event} context menu event
- *        {Object} message (optional) message object containing metadata such as:
- *        - {String} source
- *        - {String} request
+ * @param {WebConsoleUI} webConsoleUI
+ *        The webConsoleUI instance.
+ * @param {Element} parentNode
+ *        The container of the new console frontend output wrapper.
  * @param {Object} options
- *        - {Actions} bound actions
- *        - {WebConsoleWrapper} wrapper instance used for accessing properties like the store
- *          and window.
+ *        - {String} actor (optional) actor id to use for context menu actions
+ *        - {String} clipboardText (optional) text to "Copy" if no selection is available
+ *        - {String} variableText (optional) which is the textual frontend
+ *            representation of the variable
+ *        - {Object} message (optional) message object containing metadata such as:
+ *          - {String} source
+ *          - {String} request
+ *        - {Function} openSidebar (optional) function that will open the object
+ *            inspector sidebar
+ *        - {String} rootActorId (optional) actor id for the root object being clicked on
+ *        - {Object} executionPoint (optional) when replaying, the execution point where
+ *            this message was logged
  */
-function createContextMenu(event, message, webConsoleWrapper) {
-  const { target } = event;
-  const { parentNode, toolbox, hud } = webConsoleWrapper;
-  const store = webConsoleWrapper.getStore();
-  const { dispatch } = store;
-
-  const messageEl = target.closest(".message");
-  const clipboardText = getElementText(messageEl);
-
-  const linkEl = target.closest("a[href]");
-  const url = linkEl && linkEl.href;
-
-  const messageVariable = target.closest(".objectBox");
-  // Ensure that console.group and console.groupCollapsed commands are not captured
-  const variableText =
-    messageVariable &&
-    !messageEl.classList.contains("startGroup") &&
-    !messageEl.classList.contains("startGroupCollapsed")
-      ? messageVariable.textContent
-      : null;
-
-  // Retrieve closes actor id from the DOM.
-  const actorEl =
-    target.closest("[data-link-actor-id]") ||
-    target.querySelector("[data-link-actor-id]");
-  const actor = actorEl ? actorEl.dataset.linkActorId : null;
-
-  const rootObjectInspector = target.closest(".object-inspector");
-  const rootActor = rootObjectInspector
-    ? rootObjectInspector.querySelector("[data-link-actor-id]")
-    : null;
-  const rootActorId = rootActor ? rootActor.dataset.linkActorId : null;
-
+function createContextMenu(
+  webConsoleUI,
+  parentNode,
+  {
+    actor,
+    clipboardText,
+    variableText,
+    message,
+    serviceContainer,
+    openSidebar,
+    rootActorId,
+    executionPoint,
+    toolbox,
+    url,
+  }
+) {
   const win = parentNode.ownerDocument.defaultView;
   const selection = win.getSelection();
 
-  const { source, request, executionPoint, messageId } = message || {};
+  const { source, request } = message || {};
 
-  const menu = new Menu({ id: "webconsole-menu" });
+  const menu = new Menu({
+    id: "webconsole-menu",
+  });
 
   // Copy URL for a network request.
   menu.append(
@@ -96,20 +89,20 @@ function createContextMenu(event, message, webConsoleWrapper) {
   );
 
   // Open Network message in the Network panel.
-  if (toolbox && request) {
+  if (serviceContainer.openNetworkPanel && request) {
     menu.append(
       new MenuItem({
         id: "console-menu-open-in-network-panel",
         label: l10n.getStr("webconsole.menu.openInNetworkPanel.label"),
         accesskey: l10n.getStr("webconsole.menu.openInNetworkPanel.accesskey"),
         visible: source === MESSAGE_SOURCE.NETWORK,
-        click: () => dispatch(actions.openNetworkPanel(message.messageId)),
+        click: () => serviceContainer.openNetworkPanel(message.messageId),
       })
     );
   }
 
   // Resend Network message.
-  if (toolbox && request) {
+  if (serviceContainer.resendNetworkRequest && request) {
     menu.append(
       new MenuItem({
         id: "console-menu-resend-network-request",
@@ -118,7 +111,7 @@ function createContextMenu(event, message, webConsoleWrapper) {
           "webconsole.menu.resendNetworkRequest.accesskey"
         ),
         visible: source === MESSAGE_SOURCE.NETWORK,
-        click: () => dispatch(actions.resendNetworkRequest(messageId)),
+        click: () => serviceContainer.resendNetworkRequest(message.messageId),
       })
     );
   }
@@ -146,7 +139,25 @@ function createContextMenu(event, message, webConsoleWrapper) {
       label: l10n.getStr("webconsole.menu.storeAsGlobalVar.label"),
       accesskey: l10n.getStr("webconsole.menu.storeAsGlobalVar.accesskey"),
       disabled: !actor,
-      click: () => dispatch(actions.storeAsGlobal(actor)),
+      click: () => {
+        const evalString = `{ let i = 0;
+        while (this.hasOwnProperty("temp" + i) && i < 1000) {
+          i++;
+        }
+        this["temp" + i] = _self;
+        "temp" + i;
+      }`;
+        const options = {
+          selectedObjectActor: actor,
+        };
+
+        webConsoleUI.webConsoleClient
+          .evaluateJSAsync(evalString, options)
+          .then(res => {
+            webConsoleUI.jsterm.focus();
+            webConsoleUI.hud.setInputValue(res.result);
+          });
+      },
     })
   );
 
@@ -178,7 +189,19 @@ function createContextMenu(event, message, webConsoleWrapper) {
       accesskey: l10n.getStr("webconsole.menu.copyObject.accesskey"),
       // Disabled if there is no actor and no variable text associated.
       disabled: !actor && !variableText,
-      click: () => dispatch(actions.copyMessageObject(actor, variableText)),
+      click: () => {
+        if (actor) {
+          // The Debugger.Object of the OA will be bound to |_self| during evaluation.
+          // See server/actors/webconsole/eval-with-debugger.js `evalWithDebugger`.
+          webConsoleUI.webConsoleClient
+            .evaluateJSAsync("copy(_self)", { selectedObjectActor: actor })
+            .then(res => {
+              clipboardHelper.copyString(res.helperResult.value);
+            });
+        } else {
+          clipboardHelper.copyString(variableText);
+        }
+      },
     })
   );
 
@@ -243,15 +266,14 @@ function createContextMenu(event, message, webConsoleWrapper) {
   );
 
   // Open object in sidebar.
-  const shouldOpenSidebar = store.getState().prefs.sidebarToggle;
-  if (shouldOpenSidebar) {
+  if (openSidebar) {
     menu.append(
       new MenuItem({
         id: "console-menu-open-sidebar",
         label: l10n.getStr("webconsole.menu.openInSidebar.label"),
         accesskey: l10n.getStr("webconsole.menu.openInSidebar.accesskey"),
         disabled: !rootActorId,
-        click: () => dispatch(actions.openSidebar(messageId, rootActorId)),
+        click: () => openSidebar(message.messageId),
       })
     );
   }
@@ -263,7 +285,10 @@ function createContextMenu(event, message, webConsoleWrapper) {
         id: "console-menu-time-warp",
         label: l10n.getStr("webconsole.menu.timeWarp.label"),
         disabled: false,
-        click: () => dispatch(actions.jumpToExecutionPoint(executionPoint)),
+        click: () => {
+          const threadFront = toolbox.threadFront;
+          threadFront.timeWarp(executionPoint);
+        },
       })
     );
   }
@@ -278,11 +303,6 @@ function createContextMenu(event, message, webConsoleWrapper) {
       })
     );
   }
-
-  // Emit the "menu-open" event for testing.
-  const { screenX, screenY } = event;
-  menu.once("open", () => webConsoleWrapper.emit("menu-open"));
-  menu.popup(screenX, screenY, hud.chromeWindow.document);
 
   return menu;
 }

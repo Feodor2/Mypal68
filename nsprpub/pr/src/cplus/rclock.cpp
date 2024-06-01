@@ -16,7 +16,9 @@ RCLock::RCLock()
 
 RCLock::~RCLock()
 {
-    if (NULL != lock) PR_DestroyLock(lock);
+    if (NULL != lock) {
+        PR_DestroyLock(lock);
+    }
     lock = NULL;
 }  /* RCLock::~RCLock */
 

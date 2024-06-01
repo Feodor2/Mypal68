@@ -34,8 +34,8 @@ static_assert(eAuthorSheetFeatures == 0 && eUserSheetFeatures == 1 &&
               "in SheetLoadData::mParsingMode");
 
 class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
-  using MediaMatched = nsIStyleSheetLinkingElement::MediaMatched;
-  using IsAlternate = nsIStyleSheetLinkingElement::IsAlternate;
+  using MediaMatched = dom::LinkStyle::MediaMatched;
+  using IsAlternate = dom::LinkStyle::IsAlternate;
   using IsPreload = Loader::IsPreload;
   using UseSystemPrincipal = Loader::UseSystemPrincipal;
 
@@ -45,24 +45,24 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
  public:
   // Data for loading a sheet linked from a document
   SheetLoadData(Loader* aLoader, const nsAString& aTitle, nsIURI* aURI,
-                StyleSheet* aSheet, bool aSyncLoad,
-                nsIStyleSheetLinkingElement* aOwningElement,
+                StyleSheet* aSheet, bool aSyncLoad, nsINode* aOwningNode,
                 IsAlternate aIsAlternate, MediaMatched aMediaMatched,
                 IsPreload aIsPreload, nsICSSLoaderObserver* aObserver,
-                nsIPrincipal* aLoaderPrincipal, nsIReferrerInfo* aReferrerInfo,
-                nsINode* aRequestingNode);
+                nsIPrincipal* aTriggeringPrincipal,
+                nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode);
 
   // Data for loading a sheet linked from an @import rule
   SheetLoadData(Loader* aLoader, nsIURI* aURI, StyleSheet* aSheet,
                 SheetLoadData* aParentData, nsICSSLoaderObserver* aObserver,
-                nsIPrincipal* aLoaderPrincipal, nsIReferrerInfo* aReferrerInfo,
-                nsINode* aRequestingNode);
+                nsIPrincipal* aTriggeringPrincipal,
+                nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode);
 
   // Data for loading a non-document sheet
   SheetLoadData(Loader* aLoader, nsIURI* aURI, StyleSheet* aSheet,
                 bool aSyncLoad, UseSystemPrincipal, IsPreload,
                 const Encoding* aPreloadEncoding,
-                nsICSSLoaderObserver* aObserver, nsIPrincipal* aLoaderPrincipal,
+                nsICSSLoaderObserver* aObserver,
+                nsIPrincipal* aTriggeringPrincipal,
                 nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode);
 
   nsIReferrerInfo* ReferrerInfo() { return mReferrerInfo; }
@@ -184,15 +184,15 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
   // which causes a false positive warning here.
   const IsPreload mIsPreload;
 
-  // This is the element that imported the sheet.  Needed to get the
-  // charset set on it and to fire load/error events.
-  const nsCOMPtr<nsIStyleSheetLinkingElement> mOwningElement;
+  // This is the node that imported the sheet. Needed to get the charset set on
+  // it, and to fire load/error events. Must implement LinkStyle.
+  const nsCOMPtr<nsINode> mOwningNode;
 
   // The observer that wishes to be notified of load completion
   const nsCOMPtr<nsICSSLoaderObserver> mObserver;
 
   // The principal that identifies who started loading us.
-  const nsCOMPtr<nsIPrincipal> mLoaderPrincipal;
+  const nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
 
   // Referrer info of the load.
   const nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
@@ -225,7 +225,7 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
     }
   }
 
-  bool IsLinkPreload() const { return mIsPreload == IsPreload::Yes; }
+  bool IsLinkPreload() const { return mIsPreload == IsPreload::FromLink; }
 
  private:
   void FireLoadEvent(nsIThreadInternal* aThread);

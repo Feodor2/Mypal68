@@ -422,6 +422,9 @@ NS_IMPL_ISUPPORTS(SRGBOverrideObserver, nsIObserver, nsISupportsWeakReference)
 #define GFX_PREF_WORD_CACHE_MAXENTRIES "gfx.font_rendering.wordcache.maxentries"
 
 #define GFX_PREF_GRAPHITE_SHAPING "gfx.font_rendering.graphite.enabled"
+#if defined(XP_MACOSX)
+#define GFX_PREF_CORETEXT_SHAPING "gfx.font_rendering.coretext.enabled"
+#endif
 
 #define BIDI_NUMERAL_PREF "bidi.numeral"
 
@@ -2263,8 +2266,7 @@ int32_t gfxPlatform::GetBidiNumeralOption() {
 void gfxPlatform::FlushFontAndWordCaches() {
   gfxFontCache* fontCache = gfxFontCache::GetCache();
   if (fontCache) {
-    fontCache->AgeAllGenerations();
-    fontCache->FlushShapedWordCaches();
+    fontCache->Flush();
   }
 
   gfxPlatform::PurgeSkiaFontCache();
@@ -2303,6 +2305,12 @@ void gfxPlatform::FontsPrefsChanged(const char* aPref) {
     FlushFontAndWordCaches();
   } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
     mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
+    FlushFontAndWordCaches();
+  } else if (
+#if defined(XP_MACOSX)
+      !strcmp(GFX_PREF_CORETEXT_SHAPING, aPref) ||
+#endif
+      !strcmp("gfx.font_rendering.ahem_antialias_none", aPref)) {
     FlushFontAndWordCaches();
   } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
     mBidiNumeralOption = UNINITIALIZED_VALUE;

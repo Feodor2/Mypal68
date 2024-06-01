@@ -4132,16 +4132,16 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
     gUpdateChecker.checkForUpdates(
       {
         onProgress: (aRequest, aPosition, aTotalSize) => {},
-        onCheckComplete: (request, updates, updateCount) => {
+        onCheckComplete: (request, updates) => {
           Assert.ok(aSuccess, "the update check should succeed");
           if (aExpectedValues.updateCount) {
             Assert.equal(
               aExpectedValues.updateCount,
-              updateCount,
+              updates.length,
               "the update count" + MSG_SHOULD_EQUAL
             );
           }
-          resolve({ request, updates, updateCount });
+          resolve({ request, updates });
         },
         onError: (request, update) => {
           Assert.ok(!aSuccess, "the update check should error");
@@ -4173,8 +4173,8 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
  * @return  A promise which will resolve the first time the update download
  *          onStopRequest occurs and returns the arguments from onStopRequest.
  */
-function waitForUpdateDownload(aUpdates, aUpdateCount, aExpectedStatus) {
-  let bestUpdate = gAUS.selectUpdate(aUpdates, aUpdateCount);
+function waitForUpdateDownload(aUpdates, aExpectedStatus) {
+  let bestUpdate = gAUS.selectUpdate(aUpdates);
   let state = gAUS.downloadUpdate(bestUpdate, false);
   if (state == STATE_NONE || state == STATE_FAILED) {
     do_throw("nsIApplicationUpdateService:downloadUpdate returned " + state);
@@ -4183,7 +4183,7 @@ function waitForUpdateDownload(aUpdates, aUpdateCount, aExpectedStatus) {
     gAUS.addDownloadListener({
       onStartRequest: aRequest => {},
       onProgress: (aRequest, aContext, aProgress, aMaxProgress) => {},
-      onStatus: (aRequest, aContext, aStatus, aStatusText) => {},
+      onStatus: (aRequest, aStatus, aStatusText) => {},
       onStopRequest: (request, status) => {
         gAUS.removeDownloadListener(this);
         Assert.equal(

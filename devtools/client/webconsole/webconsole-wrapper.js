@@ -26,8 +26,6 @@ const Telemetry = require("devtools/client/shared/telemetry");
 
 const EventEmitter = require("devtools/shared/event-emitter");
 const App = createFactory(require("devtools/client/webconsole/components/App"));
-const ConsoleCommands = require("devtools/client/webconsole/commands.js");
-
 const {
   setupServiceContainer,
 } = require("devtools/client/webconsole/service-container");
@@ -73,29 +71,20 @@ class WebConsoleWrapper {
       const { webConsoleUI } = this;
       const debuggerClient = this.hud.target.client;
 
-      const commands = new ConsoleCommands({
+      const serviceContainer = setupServiceContainer({
         debuggerClient,
-        proxy: webConsoleUI.proxy,
-        threadFront: this.toolbox && this.toolbox.threadFront,
-        currentTarget: this.hud.currentTarget,
+        webConsoleUI,
+        actions,
+        toolbox: this.toolbox,
+        hud: this.hud,
+        webconsoleWrapper: this,
       });
 
       store = configureStore(this.webConsoleUI, {
         // We may not have access to the toolbox (e.g. in the browser console).
         sessionId: (this.toolbox && this.toolbox.sessionId) || -1,
         telemetry: this.telemetry,
-        thunkArgs: {
-          webConsoleUI,
-          hud: this.hud,
-          client: commands,
-        },
-      });
-
-      const serviceContainer = setupServiceContainer({
-        webConsoleUI,
-        toolbox: this.toolbox,
-        hud: this.hud,
-        webConsoleWrapper: this,
+        services: serviceContainer,
       });
 
       if (this.toolbox) {
@@ -339,10 +328,6 @@ class WebConsoleWrapper {
     this.setTimeoutIfNeeded();
   }
 
-  requestData(id, type) {
-    this.networkDataProvider.requestData(id, type);
-  }
-
   dispatchClearLogpointMessages(logpointId) {
     store.dispatch(actions.messagesClearLogpoint(logpointId));
   }
@@ -437,10 +422,6 @@ class WebConsoleWrapper {
 
   subscribeToStore(callback) {
     store.subscribe(() => callback(store.getState()));
-  }
-
-  createElement(nodename) {
-    return this.document.createElement(nodename);
   }
 
   // Called by pushing close button.

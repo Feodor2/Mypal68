@@ -9,10 +9,10 @@
 
 #if defined(WIN95)
 /*
-** Some local variables report warnings on Win95 because the code paths 
+** Some local variables report warnings on Win95 because the code paths
 ** using them are conditioned on HAVE_CUSTOME_USER_THREADS.
 ** The pragma suppresses the warning.
-** 
+**
 */
 #pragma warning(disable : 4101)
 #endif
@@ -38,24 +38,25 @@ PRBool _PR_NotifyThread (PRThread *thread, PRThread *me)
             /* The notify and timeout can collide; in which case both may
              * attempt to delete from the sleepQ; only let one do it.
              */
-            if (thread->flags & (_PR_ON_SLEEPQ|_PR_ON_PAUSEQ))
+            if (thread->flags & (_PR_ON_SLEEPQ|_PR_ON_PAUSEQ)) {
                 _PR_DEL_SLEEPQ(thread, PR_TRUE);
+            }
             _PR_SLEEPQ_UNLOCK(thread->cpu);
 
-	    if (thread->flags & _PR_SUSPENDING) {
-		/*
-		 * set thread state to SUSPENDED; a Resume operation
-		 * on the thread will move it to the runQ
-		 */
-            	thread->state = _PR_SUSPENDED;
-		_PR_MISCQ_LOCK(thread->cpu);
-		_PR_ADD_SUSPENDQ(thread, thread->cpu);
-		_PR_MISCQ_UNLOCK(thread->cpu);
-            	_PR_THREAD_UNLOCK(thread);
-	    } else {
-            	/* Make thread runnable */
-            	thread->state = _PR_RUNNABLE;
-            	_PR_THREAD_UNLOCK(thread);
+            if (thread->flags & _PR_SUSPENDING) {
+                /*
+                 * set thread state to SUSPENDED; a Resume operation
+                 * on the thread will move it to the runQ
+                 */
+                thread->state = _PR_SUSPENDED;
+                _PR_MISCQ_LOCK(thread->cpu);
+                _PR_ADD_SUSPENDQ(thread, thread->cpu);
+                _PR_MISCQ_UNLOCK(thread->cpu);
+                _PR_THREAD_UNLOCK(thread);
+            } else {
+                /* Make thread runnable */
+                thread->state = _PR_RUNNABLE;
+                _PR_THREAD_UNLOCK(thread);
 
                 _PR_AddThreadToRunQ(me, thread);
                 _PR_MD_WAKEUP_WAITER(thread);
@@ -71,29 +72,30 @@ PRBool _PR_NotifyThread (PRThread *thread, PRThread *me)
         if (thread->wait.cvar) {
             thread->wait.cvar = NULL;
 
-	    if (thread->flags & _PR_SUSPENDING) {
-		/*
-		 * set thread state to SUSPENDED; a Resume operation
-		 * on the thread will enable the thread to run
-		 */
-            	thread->state = _PR_SUSPENDED;
-	     } else
-            	thread->state = _PR_RUNNING;
+            if (thread->flags & _PR_SUSPENDING) {
+                /*
+                 * set thread state to SUSPENDED; a Resume operation
+                 * on the thread will enable the thread to run
+                 */
+                thread->state = _PR_SUSPENDED;
+            } else {
+                thread->state = _PR_RUNNING;
+            }
             _PR_THREAD_UNLOCK(thread);
             _PR_MD_WAKEUP_WAITER(thread);
             rv = PR_TRUE;
         } else {
             _PR_THREAD_UNLOCK(thread);
             rv = PR_FALSE;
-        }    
-    }    
+        }
+    }
 
     return rv;
 }
 
 /*
  * Notify thread waiting on cvar; called when thread is interrupted
- * 	The thread lock is held on entry and released before return
+ *  The thread lock is held on entry and released before return
  */
 void _PR_NotifyLockedThread (PRThread *thread)
 {
@@ -101,8 +103,9 @@ void _PR_NotifyLockedThread (PRThread *thread)
     PRCondVar *cvar;
     PRThreadPriority pri;
 
-    if ( !_PR_IS_NATIVE_THREAD(me))
-    	PR_ASSERT(_PR_MD_GET_INTSOFF() != 0);
+    if ( !_PR_IS_NATIVE_THREAD(me)) {
+        PR_ASSERT(_PR_MD_GET_INTSOFF() != 0);
+    }
 
     cvar = thread->wait.cvar;
     thread->wait.cvar = NULL;
@@ -112,36 +115,38 @@ void _PR_NotifyLockedThread (PRThread *thread)
     _PR_THREAD_LOCK(thread);
 
     if (!_PR_IS_NATIVE_THREAD(thread)) {
-            _PR_SLEEPQ_LOCK(thread->cpu);
-            /* The notify and timeout can collide; in which case both may
-             * attempt to delete from the sleepQ; only let one do it.
-             */
-            if (thread->flags & (_PR_ON_SLEEPQ|_PR_ON_PAUSEQ))
-                _PR_DEL_SLEEPQ(thread, PR_TRUE);
-            _PR_SLEEPQ_UNLOCK(thread->cpu);
+        _PR_SLEEPQ_LOCK(thread->cpu);
+        /* The notify and timeout can collide; in which case both may
+         * attempt to delete from the sleepQ; only let one do it.
+         */
+        if (thread->flags & (_PR_ON_SLEEPQ|_PR_ON_PAUSEQ)) {
+            _PR_DEL_SLEEPQ(thread, PR_TRUE);
+        }
+        _PR_SLEEPQ_UNLOCK(thread->cpu);
 
-	    /* Make thread runnable */
-	    pri = thread->priority;
-	    thread->state = _PR_RUNNABLE;
+        /* Make thread runnable */
+        pri = thread->priority;
+        thread->state = _PR_RUNNABLE;
 
-	    PR_ASSERT(!(thread->flags & _PR_IDLE_THREAD));
+        PR_ASSERT(!(thread->flags & _PR_IDLE_THREAD));
 
-            _PR_AddThreadToRunQ(me, thread);
-            _PR_THREAD_UNLOCK(thread);
+        _PR_AddThreadToRunQ(me, thread);
+        _PR_THREAD_UNLOCK(thread);
 
-            _PR_MD_WAKEUP_WAITER(thread);
+        _PR_MD_WAKEUP_WAITER(thread);
     } else {
-	    if (thread->flags & _PR_SUSPENDING) {
-		/*
-		 * set thread state to SUSPENDED; a Resume operation
-		 * on the thread will enable the thread to run
-		 */
-            	thread->state = _PR_SUSPENDED;
-	     } else
-            	thread->state = _PR_RUNNING;
-            _PR_THREAD_UNLOCK(thread);
-            _PR_MD_WAKEUP_WAITER(thread);
-    }    
+        if (thread->flags & _PR_SUSPENDING) {
+            /*
+             * set thread state to SUSPENDED; a Resume operation
+             * on the thread will enable the thread to run
+             */
+            thread->state = _PR_SUSPENDED;
+        } else {
+            thread->state = _PR_RUNNING;
+        }
+        _PR_THREAD_UNLOCK(thread);
+        _PR_MD_WAKEUP_WAITER(thread);
+    }
 
     _PR_CVAR_UNLOCK(cvar);
     return;
@@ -180,8 +185,9 @@ PRStatus _PR_WaitCondVar(
     return PR_SUCCESS;
 #else  /* _PR_GLOBAL_THREADS_ONLY */
 
-    if ( !_PR_IS_NATIVE_THREAD(thread))
-    	_PR_INTSOFF(is);
+    if ( !_PR_IS_NATIVE_THREAD(thread)) {
+        _PR_INTSOFF(is);
+    }
 
     _PR_CVAR_LOCK(cvar);
     _PR_THREAD_LOCK(thread);
@@ -189,10 +195,11 @@ PRStatus _PR_WaitCondVar(
     if (_PR_PENDING_INTERRUPT(thread)) {
         PR_SetError(PR_PENDING_INTERRUPT_ERROR, 0);
         thread->flags &= ~_PR_INTERRUPT;
-    	_PR_CVAR_UNLOCK(cvar);
-    	_PR_THREAD_UNLOCK(thread);
-    	if ( !_PR_IS_NATIVE_THREAD(thread))
-    		_PR_INTSON(is);
+        _PR_CVAR_UNLOCK(cvar);
+        _PR_THREAD_UNLOCK(thread);
+        if ( !_PR_IS_NATIVE_THREAD(thread)) {
+            _PR_INTSON(is);
+        }
         return PR_FAILURE;
     }
 
@@ -215,15 +222,15 @@ PRStatus _PR_WaitCondVar(
     }
     _PR_CVAR_UNLOCK(cvar);
     _PR_THREAD_UNLOCK(thread);
-   
-    /* 
-    ** Release lock protecting the condition variable and thereby giving time 
+
+    /*
+    ** Release lock protecting the condition variable and thereby giving time
     ** to the next thread which can potentially notify on the condition variable
     */
     PR_Unlock(lock);
 
     PR_LOG(_pr_cvar_lm, PR_LOG_MIN,
-	   ("PR_Wait: cvar=%p waiting for %d", cvar, timeout));
+           ("PR_Wait: cvar=%p waiting for %d", cvar, timeout));
 
     rv = _PR_MD_WAIT(thread, timeout);
 
@@ -232,10 +239,11 @@ PRStatus _PR_WaitCondVar(
     _PR_CVAR_UNLOCK(cvar);
 
     PR_LOG(_pr_cvar_lm, PR_LOG_MIN,
-	   ("PR_Wait: cvar=%p done waiting", cvar));
+           ("PR_Wait: cvar=%p done waiting", cvar));
 
-    if ( !_PR_IS_NATIVE_THREAD(thread))
-    	_PR_INTSON(is);
+    if ( !_PR_IS_NATIVE_THREAD(thread)) {
+        _PR_INTSON(is);
+    }
 
     /* Acquire lock again that we had just relinquished */
     PR_Lock(lock);
@@ -259,8 +267,9 @@ void _PR_NotifyCondVar(PRCondVar *cvar, PRThread *me)
     PRCList *q;
     PRIntn is;
 
-    if ( !_PR_IS_NATIVE_THREAD(me))
-    	_PR_INTSOFF(is);
+    if ( !_PR_IS_NATIVE_THREAD(me)) {
+        _PR_INTSOFF(is);
+    }
     PR_ASSERT(_PR_IS_NATIVE_THREAD(me) || _PR_MD_GET_INTSOFF() != 0);
 
     _PR_CVAR_LOCK(cvar);
@@ -268,15 +277,17 @@ void _PR_NotifyCondVar(PRCondVar *cvar, PRThread *me)
     while (q != &cvar->condQ) {
         PR_LOG(_pr_cvar_lm, PR_LOG_MIN, ("_PR_NotifyCondVar: cvar=%p", cvar));
         if (_PR_THREAD_CONDQ_PTR(q)->wait.cvar)  {
-            if (_PR_NotifyThread(_PR_THREAD_CONDQ_PTR(q), me) == PR_TRUE)
+            if (_PR_NotifyThread(_PR_THREAD_CONDQ_PTR(q), me) == PR_TRUE) {
                 break;
+            }
         }
         q = q->next;
     }
     _PR_CVAR_UNLOCK(cvar);
 
-    if ( !_PR_IS_NATIVE_THREAD(me))
-    	_PR_INTSON(is);
+    if ( !_PR_IS_NATIVE_THREAD(me)) {
+        _PR_INTSON(is);
+    }
 
 #endif  /* _PR_GLOBAL_THREADS_ONLY */
 }
@@ -289,10 +300,10 @@ PRUint32 _PR_CondVarToString(PRCondVar *cvar, char *buf, PRUint32 buflen)
     PRUint32 nb;
 
     if (cvar->lock->owner) {
-	nb = PR_snprintf(buf, buflen, "[%p] owner=%ld[%p]",
-			 cvar, cvar->lock->owner->id, cvar->lock->owner);
+        nb = PR_snprintf(buf, buflen, "[%p] owner=%ld[%p]",
+                         cvar, cvar->lock->owner->id, cvar->lock->owner);
     } else {
-	nb = PR_snprintf(buf, buflen, "[%p]", cvar);
+        nb = PR_snprintf(buf, buflen, "[%p]", cvar);
     }
     return nb;
 }
@@ -306,7 +317,7 @@ void _PR_ClockInterrupt(void)
     PRThread *thread, *me = _PR_MD_CURRENT_THREAD();
     _PRCPU *cpu = me->cpu;
     PRIntervalTime elapsed, now;
- 
+
     PR_ASSERT(_PR_MD_GET_INTSOFF() != 0);
     /* Figure out how much time elapsed since the last clock tick */
     now = PR_IntervalNow();
@@ -314,7 +325,7 @@ void _PR_ClockInterrupt(void)
     cpu->last_clock = now;
 
     PR_LOG(_pr_clock_lm, PR_LOG_MAX,
-	   ("ExpireWaits: elapsed=%lld usec", elapsed));
+           ("ExpireWaits: elapsed=%lld usec", elapsed));
 
     while(1) {
         _PR_SLEEPQ_LOCK(cpu);
@@ -369,8 +380,8 @@ void _PR_ClockInterrupt(void)
 
         /* Notify the thread waiting on the condition variable */
         if (thread->flags & _PR_SUSPENDING) {
-		PR_ASSERT((thread->state == _PR_IO_WAIT) ||
-				(thread->state == _PR_COND_WAIT));
+            PR_ASSERT((thread->state == _PR_IO_WAIT) ||
+                      (thread->state == _PR_COND_WAIT));
             /*
             ** Thread is suspended and its condition timeout
             ** expired. Transfer thread from sleepQ to suspendQ.
@@ -397,8 +408,9 @@ void _PR_ClockInterrupt(void)
                 _PR_ADD_RUNQ(thread, cpu, pri);
                 _PR_RUNQ_UNLOCK(cpu);
 
-                if (pri > me->priority)
+                if (pri > me->priority) {
                     _PR_SET_RESCHED_FLAG();
+                }
 
                 thread->wait.cvar = NULL;
 
@@ -410,14 +422,14 @@ void _PR_ClockInterrupt(void)
 
                 thread->io_suspended = PR_TRUE;
 #ifdef WINNT
-				/*
-				 * For NT, record the cpu on which I/O was issued
-				 * I/O cancellation is done on the same cpu
-				 */
+                /*
+                 * For NT, record the cpu on which I/O was issued
+                 * I/O cancellation is done on the same cpu
+                 */
                 thread->md.thr_bound_cpu = cpu;
 #endif
 
-				PR_ASSERT(!(thread->flags & _PR_IDLE_THREAD));
+                PR_ASSERT(!(thread->flags & _PR_IDLE_THREAD));
                 PR_ASSERT(thread->cpu == cpu);
                 thread->state = _PR_RUNNABLE;
                 _PR_RUNQ_LOCK(cpu);
@@ -433,7 +445,7 @@ void _PR_ClockInterrupt(void)
 
 /*
 ** Create a new condition variable.
-** 	"lock" is the lock to use with the condition variable.
+**  "lock" is the lock to use with the condition variable.
 **
 ** Condition variables are synchronization objects that threads can use
 ** to wait for some condition to occur.
@@ -517,11 +529,13 @@ PR_IMPLEMENT(PRStatus) PR_WaitCondVar(PRCondVar *cvar, PRIntervalTime timeout)
 {
     PRThread *me = _PR_MD_CURRENT_THREAD();
 
-	PR_ASSERT(cvar->lock->owner == me);
-	PR_ASSERT(me != suspendAllThread);
-    	if (cvar->lock->owner != me) return PR_FAILURE;
+    PR_ASSERT(cvar->lock->owner == me);
+    PR_ASSERT(me != suspendAllThread);
+    if (cvar->lock->owner != me) {
+        return PR_FAILURE;
+    }
 
-	return _PR_WaitCondVar(me, cvar, cvar->lock, timeout);
+    return _PR_WaitCondVar(me, cvar, cvar->lock, timeout);
 }
 
 /*
@@ -535,7 +549,9 @@ PR_IMPLEMENT(PRStatus) PR_NotifyCondVar(PRCondVar *cvar)
 
     PR_ASSERT(cvar->lock->owner == me);
     PR_ASSERT(me != suspendAllThread);
-    if (cvar->lock->owner != me) return PR_FAILURE;
+    if (cvar->lock->owner != me) {
+        return PR_FAILURE;
+    }
 
     _PR_NotifyCondVar(cvar, me);
     return PR_SUCCESS;
@@ -553,24 +569,28 @@ PR_IMPLEMENT(PRStatus) PR_NotifyAllCondVar(PRCondVar *cvar)
     PRThread *me = _PR_MD_CURRENT_THREAD();
 
     PR_ASSERT(cvar->lock->owner == me);
-    if (cvar->lock->owner != me) return PR_FAILURE;
+    if (cvar->lock->owner != me) {
+        return PR_FAILURE;
+    }
 
 #ifdef _PR_GLOBAL_THREADS_ONLY
     _PR_MD_NOTIFYALL_CV(&cvar->md, &cvar->lock->ilock);
     return PR_SUCCESS;
 #else  /* _PR_GLOBAL_THREADS_ONLY */
-    if ( !_PR_IS_NATIVE_THREAD(me))
-    	_PR_INTSOFF(is);
+    if ( !_PR_IS_NATIVE_THREAD(me)) {
+        _PR_INTSOFF(is);
+    }
     _PR_CVAR_LOCK(cvar);
     q = cvar->condQ.next;
     while (q != &cvar->condQ) {
-		PR_LOG(_pr_cvar_lm, PR_LOG_MIN, ("PR_NotifyAll: cvar=%p", cvar));
-		_PR_NotifyThread(_PR_THREAD_CONDQ_PTR(q), me);
-		q = q->next;
+        PR_LOG(_pr_cvar_lm, PR_LOG_MIN, ("PR_NotifyAll: cvar=%p", cvar));
+        _PR_NotifyThread(_PR_THREAD_CONDQ_PTR(q), me);
+        q = q->next;
     }
     _PR_CVAR_UNLOCK(cvar);
-    if (!_PR_IS_NATIVE_THREAD(me))
-    	_PR_INTSON(is);
+    if (!_PR_IS_NATIVE_THREAD(me)) {
+        _PR_INTSON(is);
+    }
 
     return PR_SUCCESS;
 #endif  /* _PR_GLOBAL_THREADS_ONLY */
@@ -591,13 +611,13 @@ PR_IMPLEMENT(PRCondVar*) PRP_NewNakedCondVar(void)
     {
         if (_PR_MD_NEW_LOCK(&(cvar->ilock)) == PR_FAILURE)
         {
-		    PR_DELETE(cvar); cvar = NULL;
-	    }
-	    else
-	    {
-	        PR_INIT_CLIST(&cvar->condQ);
+            PR_DELETE(cvar); cvar = NULL;
+        }
+        else
+        {
+            PR_INIT_CLIST(&cvar->condQ);
             cvar->lock = _PR_NAKED_CV_LOCK;
-	    }
+        }
 
     }
     return cvar;
@@ -609,16 +629,16 @@ PR_IMPLEMENT(void) PRP_DestroyNakedCondVar(PRCondVar *cvar)
     PR_ASSERT(_PR_NAKED_CV_LOCK == cvar->lock);
 
     _PR_MD_FREE_LOCK(&(cvar->ilock));
- 
+
     PR_DELETE(cvar);
 }
 
 PR_IMPLEMENT(PRStatus) PRP_NakedWait(
-	PRCondVar *cvar, PRLock *lock, PRIntervalTime timeout)
+    PRCondVar *cvar, PRLock *lock, PRIntervalTime timeout)
 {
     PRThread *me = _PR_MD_CURRENT_THREAD();
     PR_ASSERT(_PR_NAKED_CV_LOCK == cvar->lock);
-	return _PR_WaitCondVar(me, cvar, lock, timeout);
+    return _PR_WaitCondVar(me, cvar, lock, timeout);
 }  /* PRP_NakedWait */
 
 PR_IMPLEMENT(PRStatus) PRP_NakedNotify(PRCondVar *cvar)
@@ -638,16 +658,20 @@ PR_IMPLEMENT(PRStatus) PRP_NakedBroadcast(PRCondVar *cvar)
     PRThread *me = _PR_MD_CURRENT_THREAD();
     PR_ASSERT(_PR_NAKED_CV_LOCK == cvar->lock);
 
-    if ( !_PR_IS_NATIVE_THREAD(me)) _PR_INTSOFF(is);
-	_PR_MD_LOCK( &(cvar->ilock) );
+    if ( !_PR_IS_NATIVE_THREAD(me)) {
+        _PR_INTSOFF(is);
+    }
+    _PR_MD_LOCK( &(cvar->ilock) );
     q = cvar->condQ.next;
     while (q != &cvar->condQ) {
-		PR_LOG(_pr_cvar_lm, PR_LOG_MIN, ("PR_NotifyAll: cvar=%p", cvar));
-		_PR_NotifyThread(_PR_THREAD_CONDQ_PTR(q), me);
-		q = q->next;
+        PR_LOG(_pr_cvar_lm, PR_LOG_MIN, ("PR_NotifyAll: cvar=%p", cvar));
+        _PR_NotifyThread(_PR_THREAD_CONDQ_PTR(q), me);
+        q = q->next;
     }
-	_PR_MD_UNLOCK( &(cvar->ilock) );
-    if (!_PR_IS_NATIVE_THREAD(me)) _PR_INTSON(is);
+    _PR_MD_UNLOCK( &(cvar->ilock) );
+    if (!_PR_IS_NATIVE_THREAD(me)) {
+        _PR_INTSON(is);
+    }
 
     return PR_SUCCESS;
 }  /* PRP_NakedBroadcast */

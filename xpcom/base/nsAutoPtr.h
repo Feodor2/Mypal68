@@ -274,7 +274,7 @@ class nsAutoPtrGetterTransfers
 };
 
 template <class T>
-inline nsAutoPtrGetterTransfers<T> getter_Transfers(nsAutoPtr<T>& aSmartPtr)
+inline nsAutoPtrGetterTransfers<T> getter_Transfers2(nsAutoPtr<T>& aSmartPtr)
 /*
   Used around a |nsAutoPtr| when
   ...makes the class |nsAutoPtrGetterTransfers<T>| invisible.

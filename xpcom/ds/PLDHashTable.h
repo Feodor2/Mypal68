@@ -8,21 +8,21 @@
 #ifndef PLDHashTable_h
 #define PLDHashTable_h
 
+#include <utility>
+
+#include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"  // for MOZ_ALWAYS_INLINE
-#include "mozilla/fallible.h"
-#include "mozilla/FunctionTypeTraits.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
-#include "mozilla/Types.h"
+#include "mozilla/fallible.h"
 #include "nscore.h"
 
 using PLDHashNumber = mozilla::HashNumber;
 static const uint32_t kPLDHashNumberBits = mozilla::kHashNumberBits;
 
-#ifdef DEBUG
-#define MOZ_HASH_TABLE_CHECKS_ENABLED 1
+#if defined(DEBUG) || defined(FUZZING)
+#  define MOZ_HASH_TABLE_CHECKS_ENABLED 1
 #endif
 
 class PLDHashTable;
@@ -320,6 +320,7 @@ class PLDHashTable {
     }
 
     char* Get() const { return mEntryStore; }
+    bool IsAllocated() const { return !!mEntryStore; }
 
     Slot SlotForIndex(uint32_t aIndex, uint32_t aEntrySize,
                       uint32_t aCapacity) const {
@@ -409,11 +410,7 @@ class PLDHashTable {
   PLDHashTable(PLDHashTable&& aOther)
       // Initialize fields which are checked by the move assignment operator
       // and the destructor (which the move assignment operator calls).
-      : mOps(nullptr),
-        mEntryStore(),
-        mGeneration(0),
-        mEntrySize(0)
-  {
+      : mOps(nullptr), mEntryStore(), mGeneration(0), mEntrySize(0) {
     *this = std::move(aOther);
   }
 
@@ -428,7 +425,7 @@ class PLDHashTable {
   // This can be zero if no elements have been added yet, in which case the
   // entry storage will not have yet been allocated.
   uint32_t Capacity() const {
-    return mEntryStore.Get() ? CapacityFromHashShift() : 0;
+    return mEntryStore.IsAllocated() ? CapacityFromHashShift() : 0;
   }
 
   uint32_t EntrySize() const { return mEntrySize; }
@@ -529,6 +526,74 @@ class PLDHashTable {
   // Hash/match operations for tables holding C strings.
   static PLDHashNumber HashStringKey(const void* aKey);
   static bool MatchStringKey(const PLDHashEntryHdr* aEntry, const void* aKey);
+
+  class EntryHandle {
+   public:
+    EntryHandle(EntryHandle&& aOther) noexcept;
+    ~EntryHandle();
+
+    EntryHandle(const EntryHandle&) = delete;
+    EntryHandle& operator=(const EntryHandle&) = delete;
+    EntryHandle& operator=(EntryHandle&& aOther) = delete;
+
+    // Is this slot currently occupied?
+    bool HasEntry() const { return mSlot.IsLive(); }
+
+    explicit operator bool() const { return HasEntry(); }
+
+    // Get the entry stored in this slot. May not be called unless the slot is
+    // currently occupied.
+    PLDHashEntryHdr* Entry() {
+      MOZ_ASSERT(HasEntry());
+      return mSlot.ToEntry();
+    }
+
+    template <class F>
+    void Insert(F&& aInitEntry) {
+      MOZ_ASSERT(!HasEntry());
+      OccupySlot();
+      std::forward<F>(aInitEntry)(Entry());
+    }
+
+    // If the slot is currently vacant, the slot is occupied and `initEntry` is
+    // invoked to initialize the entry. Returns the entry stored in now-occupied
+    // slot.
+    template <class F>
+    PLDHashEntryHdr* OrInsert(F&& aInitEntry) {
+      if (!HasEntry()) {
+        Insert(std::forward<F>(aInitEntry));
+      }
+      return Entry();
+    }
+
+    void Remove();
+
+    void OrRemove();
+
+   private:
+    friend class PLDHashTable;
+
+    EntryHandle(PLDHashTable* aTable, PLDHashNumber aKeyHash, Slot aSlot);
+
+    void OccupySlot();
+
+    PLDHashTable* mTable;
+    PLDHashNumber mKeyHash;
+    Slot mSlot;
+  };
+
+  template <class F>
+  auto WithEntryHandle(const void* aKey, F&& aFunc)
+      -> std::invoke_result_t<F, EntryHandle&&> {
+    return std::forward<F>(aFunc)(MakeEntryHandle(aKey));
+  }
+
+  template <class F>
+  auto WithEntryHandle(const void* aKey, const mozilla::fallible_t& aFallible,
+                       F&& aFunc)
+      -> std::invoke_result_t<F, mozilla::Maybe<EntryHandle>&&> {
+    return std::forward<F>(aFunc)(MakeEntryHandle(aKey, aFallible));
+  }
 
   // This is an iterator for PLDHashtable. Assertions will detect some, but not
   // all, mid-iteration table modifications that might invalidate (e.g.
@@ -651,6 +716,11 @@ class PLDHashTable {
 
   void RawRemove(Slot& aSlot);
   void ShrinkIfAppropriate();
+
+  mozilla::Maybe<EntryHandle> MakeEntryHandle(const void* aKey,
+                                              const mozilla::fallible_t&);
+
+  EntryHandle MakeEntryHandle(const void* aKey);
 
   PLDHashTable(const PLDHashTable& aOther) = delete;
   PLDHashTable& operator=(const PLDHashTable& aOther) = delete;

@@ -52,8 +52,8 @@ _PR_MD_INIT_IO()
     {
         SYSTEMTIME systime;
         union {
-           PRTime prt;
-           FILETIME ft;
+            PRTime prt;
+            FILETIME ft;
         } filetime;
         BOOL rv;
 
@@ -83,16 +83,16 @@ _PR_MD_WAIT(PRThread *thread, PRIntervalTime ticks)
     DWORD rv;
 
     PRUint32 msecs = (ticks == PR_INTERVAL_NO_TIMEOUT) ?
-        INFINITE : PR_IntervalToMilliseconds(ticks);
+                     INFINITE : PR_IntervalToMilliseconds(ticks);
     rv = WaitForSingleObject(thread->md.blocked_sema, msecs);
-    switch(rv) 
+    switch(rv)
     {
         case WAIT_OBJECT_0:
             return PR_SUCCESS;
         case WAIT_TIMEOUT:
             _PR_THREAD_LOCK(thread);
             if (thread->state == _PR_IO_WAIT) {
-			  ;
+                ;
             } else {
                 if (thread->wait.cvar != NULL) {
                     thread->wait.cvar = NULL;
@@ -115,13 +115,15 @@ _PR_MD_WAIT(PRThread *thread, PRIntervalTime ticks)
 PRStatus
 _PR_MD_WAKEUP_WAITER(PRThread *thread)
 {
-    if ( _PR_IS_NATIVE_THREAD(thread) ) 
+    if ( _PR_IS_NATIVE_THREAD(thread) )
     {
-        if (ReleaseSemaphore(thread->md.blocked_sema, 1, NULL) == FALSE)
+        if (ReleaseSemaphore(thread->md.blocked_sema, 1, NULL) == FALSE) {
             return PR_FAILURE;
-        else
-			return PR_SUCCESS;
-	}
+        }
+        else {
+            return PR_SUCCESS;
+        }
+    }
 }
 
 
@@ -134,7 +136,7 @@ _PR_MD_WAKEUP_WAITER(PRThread *thread)
  *  The NSPR open flags (osflags) are translated into flags for Win95
  *
  *  Mode seems to be passed in as a unix style file permissions argument
- *  as in 0666, in the case of opening the logFile. 
+ *  as in 0666, in the case of opening the logFile.
  *
  */
 PROsfd
@@ -144,26 +146,35 @@ _PR_MD_OPEN(const char *name, PRIntn osflags, int mode)
     PRInt32 access = 0;
     PRInt32 flags = 0;
     PRInt32 flag6 = 0;
-    
-    if (osflags & PR_SYNC) flag6 = FILE_FLAG_WRITE_THROUGH;
- 
-    if (osflags & PR_RDONLY || osflags & PR_RDWR)
-        access |= GENERIC_READ;
-    if (osflags & PR_WRONLY || osflags & PR_RDWR)
-        access |= GENERIC_WRITE;
 
-    if ( osflags & PR_CREATE_FILE && osflags & PR_EXCL )
+    if (osflags & PR_SYNC) {
+        flag6 = FILE_FLAG_WRITE_THROUGH;
+    }
+
+    if (osflags & PR_RDONLY || osflags & PR_RDWR) {
+        access |= GENERIC_READ;
+    }
+    if (osflags & PR_WRONLY || osflags & PR_RDWR) {
+        access |= GENERIC_WRITE;
+    }
+
+    if ( osflags & PR_CREATE_FILE && osflags & PR_EXCL ) {
         flags = CREATE_NEW;
+    }
     else if (osflags & PR_CREATE_FILE) {
-        if (osflags & PR_TRUNCATE)
+        if (osflags & PR_TRUNCATE) {
             flags = CREATE_ALWAYS;
-        else
+        }
+        else {
             flags = OPEN_ALWAYS;
+        }
     } else {
-        if (osflags & PR_TRUNCATE)
+        if (osflags & PR_TRUNCATE) {
             flags = TRUNCATE_EXISTING;
-        else
+        }
+        else {
             flags = OPEN_EXISTING;
+        }
     }
 
     file = CreateFileA(name,
@@ -174,9 +185,9 @@ _PR_MD_OPEN(const char *name, PRIntn osflags, int mode)
                        flag6,
                        NULL);
     if (file == INVALID_HANDLE_VALUE) {
-		_PR_MD_MAP_OPEN_ERROR(GetLastError());
-        return -1; 
-	}
+        _PR_MD_MAP_OPEN_ERROR(GetLastError());
+        return -1;
+    }
 
     return (PROsfd)file;
 }
@@ -195,33 +206,42 @@ _PR_MD_OPEN_FILE(const char *name, PRIntn osflags, int mode)
 
     if (osflags & PR_CREATE_FILE) {
         if (_PR_NT_MakeSecurityDescriptorACL(mode, fileAccessTable,
-                &pSD, &pACL) == PR_SUCCESS) {
+                                             &pSD, &pACL) == PR_SUCCESS) {
             sa.nLength = sizeof(sa);
             sa.lpSecurityDescriptor = pSD;
             sa.bInheritHandle = FALSE;
             lpSA = &sa;
         }
     }
-    
-    if (osflags & PR_SYNC) flag6 = FILE_FLAG_WRITE_THROUGH;
- 
-    if (osflags & PR_RDONLY || osflags & PR_RDWR)
-        access |= GENERIC_READ;
-    if (osflags & PR_WRONLY || osflags & PR_RDWR)
-        access |= GENERIC_WRITE;
 
-    if ( osflags & PR_CREATE_FILE && osflags & PR_EXCL )
+    if (osflags & PR_SYNC) {
+        flag6 = FILE_FLAG_WRITE_THROUGH;
+    }
+
+    if (osflags & PR_RDONLY || osflags & PR_RDWR) {
+        access |= GENERIC_READ;
+    }
+    if (osflags & PR_WRONLY || osflags & PR_RDWR) {
+        access |= GENERIC_WRITE;
+    }
+
+    if ( osflags & PR_CREATE_FILE && osflags & PR_EXCL ) {
         flags = CREATE_NEW;
+    }
     else if (osflags & PR_CREATE_FILE) {
-        if (osflags & PR_TRUNCATE)
+        if (osflags & PR_TRUNCATE) {
             flags = CREATE_ALWAYS;
-        else
+        }
+        else {
             flags = OPEN_ALWAYS;
+        }
     } else {
-        if (osflags & PR_TRUNCATE)
+        if (osflags & PR_TRUNCATE) {
             flags = TRUNCATE_EXISTING;
-        else
+        }
+        else {
             flags = OPEN_EXISTING;
+        }
     }
 
     file = CreateFileA(name,
@@ -235,9 +255,9 @@ _PR_MD_OPEN_FILE(const char *name, PRIntn osflags, int mode)
         _PR_NT_FreeSecurityDescriptorACL(pSD, pACL);
     }
     if (file == INVALID_HANDLE_VALUE) {
-		_PR_MD_MAP_OPEN_ERROR(GetLastError());
-        return -1; 
-	}
+        _PR_MD_MAP_OPEN_ERROR(GetLastError());
+        return -1;
+    }
 
     return (PROsfd)file;
 }
@@ -249,22 +269,23 @@ _PR_MD_READ(PRFileDesc *fd, void *buf, PRInt32 len)
     int rv, err;
 
     rv = ReadFile((HANDLE)fd->secret->md.osfd,
-            (LPVOID)buf,
-            len,
-            &bytes,
-            NULL);
-    
-    if (rv == 0) 
+                  (LPVOID)buf,
+                  len,
+                  &bytes,
+                  NULL);
+
+    if (rv == 0)
     {
         err = GetLastError();
         /* ERROR_HANDLE_EOF can only be returned by async io */
         PR_ASSERT(err != ERROR_HANDLE_EOF);
-        if (err == ERROR_BROKEN_PIPE)
+        if (err == ERROR_BROKEN_PIPE) {
             return 0;
-		else {
-			_PR_MD_MAP_READ_ERROR(err);
-        return -1;
-    }
+        }
+        else {
+            _PR_MD_MAP_READ_ERROR(err);
+            return -1;
+        }
     }
     return bytes;
 }
@@ -275,16 +296,16 @@ _PR_MD_WRITE(PRFileDesc *fd, const void *buf, PRInt32 len)
     PROsfd f = fd->secret->md.osfd;
     PRInt32 bytes;
     int rv;
-    
+
     rv = WriteFile((HANDLE)f,
-            buf,
-            len,
-            &bytes,
-            NULL );
-            
-    if (rv == 0) 
+                   buf,
+                   len,
+                   &bytes,
+                   NULL );
+
+    if (rv == 0)
     {
-		_PR_MD_MAP_WRITE_ERROR(GetLastError());
+        _PR_MD_MAP_WRITE_ERROR(GetLastError());
         return -1;
     }
     return bytes;
@@ -347,7 +368,7 @@ _PR_MD_LSEEK64(PRFileDesc *fd, PROffset64 offset, PRSeekWhence whence)
 
     li.QuadPart = offset;
     li.LowPart = SetFilePointer((HANDLE)fd->secret->md.osfd,
-            li.LowPart, &li.HighPart, moveMethod);
+                                li.LowPart, &li.HighPart, moveMethod);
 
     if (0xffffffff == li.LowPart && (err = GetLastError()) != NO_ERROR) {
         _PR_MD_MAP_LSEEK_ERROR(err);
@@ -368,10 +389,10 @@ _PR_MD_FSYNC(PRFileDesc *fd)
     /*
      * From the documentation:
      *
-     *	   On Windows NT, the function FlushFileBuffers fails if hFile
-     *	   is a handle to console output. That is because console
-     *	   output is not buffered. The function returns FALSE, and
-     *	   GetLastError returns ERROR_INVALID_HANDLE.
+     *     On Windows NT, the function FlushFileBuffers fails if hFile
+     *     is a handle to console output. That is because console
+     *     output is not buffered. The function returns FALSE, and
+     *     GetLastError returns ERROR_INVALID_HANDLE.
      *
      * On the other hand, on Win95, it returns without error.  I cannot
      * assume that 0, 1, and 2 are console, because if someone closes
@@ -385,11 +406,11 @@ _PR_MD_FSYNC(PRFileDesc *fd)
     BOOL ok = FlushFileBuffers((HANDLE)fd->secret->md.osfd);
 
     if (!ok) {
-	DWORD err = GetLastError();
-	if (err != ERROR_ACCESS_DENIED) {	// from winerror.h
-			_PR_MD_MAP_FSYNC_ERROR(err);
-	    return -1;
-	}
+        DWORD err = GetLastError();
+        if (err != ERROR_ACCESS_DENIED) {   // from winerror.h
+            _PR_MD_MAP_FSYNC_ERROR(err);
+            return -1;
+        }
     }
     return 0;
 }
@@ -398,17 +419,18 @@ PRInt32
 _MD_CloseFile(PROsfd osfd)
 {
     PRInt32 rv;
-    
+
     rv = (CloseHandle((HANDLE)osfd))?0:-1;
-	if (rv == -1)
-		_PR_MD_MAP_CLOSE_ERROR(GetLastError());
+    if (rv == -1) {
+        _PR_MD_MAP_CLOSE_ERROR(GetLastError());
+    }
     return rv;
 }
 
 
 /* --- DIR IO ------------------------------------------------------------ */
 #define GetFileFromDIR(d)       (d)->d_entry.cFileName
-#define FileIsHidden(d)	((d)->d_entry.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
+#define FileIsHidden(d) ((d)->d_entry.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
 
 static void FlipSlashes(char *cp, size_t len)
 {
@@ -433,12 +455,12 @@ _PR_MD_CLOSE_DIR(_MDDir *d)
 {
     if ( d ) {
         if (FindClose(d->d_hdl)) {
-        d->magic = (PRUint32)-1;
-        return 0;
-		} else {
-			_PR_MD_MAP_CLOSEDIR_ERROR(GetLastError());
-        	return -1;
-		}
+            d->magic = (PRUint32)-1;
+            return 0;
+        } else {
+            _PR_MD_MAP_CLOSEDIR_ERROR(GetLastError());
+            return -1;
+        }
     }
     PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
     return -1;
@@ -471,7 +493,7 @@ _PR_MD_OPEN_DIR(_MDDir *d, const char *name)
 
     d->d_hdl = FindFirstFileA( filename, &(d->d_entry) );
     if ( d->d_hdl == INVALID_HANDLE_VALUE ) {
-		_PR_MD_MAP_OPENDIR_ERROR(GetLastError());
+        _PR_MD_MAP_OPENDIR_ERROR(GetLastError());
         return PR_FAILURE;
     }
     d->firstEntry = PR_TRUE;
@@ -499,21 +521,24 @@ _PR_MD_READ_DIR(_MDDir *d, PRIntn flags)
             }
             fileName = GetFileFromDIR(d);
             if ( (flags & PR_SKIP_DOT) &&
-                 (fileName[0] == '.') && (fileName[1] == '\0'))
-                 continue;
+                 (fileName[0] == '.') && (fileName[1] == '\0')) {
+                continue;
+            }
             if ( (flags & PR_SKIP_DOT_DOT) &&
                  (fileName[0] == '.') && (fileName[1] == '.') &&
-                 (fileName[2] == '\0'))
-                 continue;
-            if ( (flags & PR_SKIP_HIDDEN) && FileIsHidden(d))
-                 continue;
+                 (fileName[2] == '\0')) {
+                continue;
+            }
+            if ( (flags & PR_SKIP_HIDDEN) && FileIsHidden(d)) {
+                continue;
+            }
             return fileName;
         }
         err = GetLastError();
         PR_ASSERT(NO_ERROR != err);
-			_PR_MD_MAP_READDIR_ERROR(err);
+        _PR_MD_MAP_READDIR_ERROR(err);
         return NULL;
-		}
+    }
     PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
     return NULL;
 }
@@ -524,7 +549,7 @@ _PR_MD_DELETE(const char *name)
     if (DeleteFileA(name)) {
         return 0;
     } else {
-		_PR_MD_MAP_DELETE_ERROR(GetLastError());
+        _PR_MD_MAP_DELETE_ERROR(GetLastError());
         return -1;
     }
 }
@@ -601,7 +626,7 @@ _PR_MD_STAT(const char *fn, struct stat *info)
 
         size_t len = strlen(fn);
         if (len > 0 && len <= _MAX_PATH
-                && IsPrevCharSlash(fn, fn + len)) {
+            && IsPrevCharSlash(fn, fn + len)) {
             char newfn[_MAX_PATH + 1];
 
             strcpy(newfn, fn);
@@ -623,8 +648,9 @@ IsPrevCharSlash(const char *str, const char *current)
 {
     const char *prev;
 
-    if (str >= current)
+    if (str >= current) {
         return PR_FALSE;
+    }
     prev = _mbsdec(str, current);
     return (prev == current - 1) && _PR_IS_SLASH(*prev);
 }
@@ -659,7 +685,7 @@ IsRootDirectory(char *fn, size_t buflen)
     }
 
     if (isalpha(fn[0]) && fn[1] == ':' && _PR_IS_SLASH(fn[2])
-            && fn[3] == '\0') {
+        && fn[3] == '\0') {
         rv = GetDriveType(fn) > 1 ? PR_TRUE : PR_FALSE;
         return rv;
     }
@@ -722,7 +748,7 @@ _PR_MD_GETFILEINFO64(const char *fn, PRFileInfo64 *info)
 {
     WIN32_FILE_ATTRIBUTE_DATA findFileData;
     BOOL rv;
-    
+
     if (NULL == fn || '\0' == *fn) {
         PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
         return -1;
@@ -746,11 +772,11 @@ _PR_MD_GETFILEINFO64(const char *fn, PRFileInfo64 *info)
     _PR_FileTimeToPRTime(&findFileData.ftLastWriteTime, &info->modifyTime);
 
     if (0 == findFileData.ftCreationTime.dwLowDateTime &&
-            0 == findFileData.ftCreationTime.dwHighDateTime) {
+        0 == findFileData.ftCreationTime.dwHighDateTime) {
         info->creationTime = info->modifyTime;
     } else {
         _PR_FileTimeToPRTime(&findFileData.ftCreationTime,
-                &info->creationTime);
+                             &info->creationTime);
     }
 
     return 0;
@@ -780,14 +806,16 @@ _PR_MD_GETOPENFILEINFO64(const PRFileDesc *fd, PRFileInfo64 *info)
 
     rv = GetFileInformationByHandle((HANDLE)fd->secret->md.osfd, &hinfo);
     if (rv == FALSE) {
-		_PR_MD_MAP_FSTAT_ERROR(GetLastError());
+        _PR_MD_MAP_FSTAT_ERROR(GetLastError());
         return -1;
-	}
+    }
 
-    if (hinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+    if (hinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         info->type = PR_FILE_DIRECTORY;
-    else
+    }
+    else {
         info->type = PR_FILE_FILE;
+    }
 
     info->size = hinfo.nFileSizeHigh;
     info->size = (info->size << 32) + hinfo.nFileSizeLow;
@@ -823,15 +851,15 @@ _PR_MD_SET_FD_INHERITABLE(PRFileDesc *fd, PRBool inheritable)
      * ERROR_CALL_NOT_IMPLEMENTED error on Win95.
      */
     rv = SetHandleInformation(
-            (HANDLE)fd->secret->md.osfd,
-            HANDLE_FLAG_INHERIT,
-            inheritable ? HANDLE_FLAG_INHERIT : 0);
+             (HANDLE)fd->secret->md.osfd,
+             HANDLE_FLAG_INHERIT,
+             inheritable ? HANDLE_FLAG_INHERIT : 0);
     if (0 == rv) {
         _PR_MD_MAP_DEFAULT_ERROR(GetLastError());
         return PR_FAILURE;
     }
     return PR_SUCCESS;
-} 
+}
 
 void
 _PR_MD_INIT_FD_INHERITABLE(PRFileDesc *fd, PRBool imported)
@@ -865,7 +893,7 @@ _PR_MD_RENAME(const char *from, const char *to)
     if (MoveFileA(from, to)) {
         return 0;
     } else {
-		_PR_MD_MAP_RENAME_ERROR(GetLastError());
+        _PR_MD_MAP_RENAME_ERROR(GetLastError());
         return -1;
     }
 }
@@ -873,23 +901,24 @@ _PR_MD_RENAME(const char *from, const char *to)
 PRInt32
 _PR_MD_ACCESS(const char *name, PRAccessHow how)
 {
-PRInt32 rv;
+    PRInt32 rv;
     switch (how) {
-      case PR_ACCESS_WRITE_OK:
-        rv = _access(name, 02);
-		break;
-      case PR_ACCESS_READ_OK:
-        rv = _access(name, 04);
-		break;
-      case PR_ACCESS_EXISTS:
-        return _access(name, 00);
-	  	break;
-      default:
-		PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
-		return -1;
+        case PR_ACCESS_WRITE_OK:
+            rv = _access(name, 02);
+            break;
+        case PR_ACCESS_READ_OK:
+            rv = _access(name, 04);
+            break;
+        case PR_ACCESS_EXISTS:
+            return _access(name, 00);
+            break;
+        default:
+            PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
+            return -1;
     }
-	if (rv < 0)
-		_PR_MD_MAP_ACCESS_ERROR(errno);
+    if (rv < 0) {
+        _PR_MD_MAP_ACCESS_ERROR(errno);
+    }
     return rv;
 }
 
@@ -900,7 +929,7 @@ _PR_MD_MKDIR(const char *name, PRIntn mode)
     if (CreateDirectoryA(name, NULL)) {
         return 0;
     } else {
-		_PR_MD_MAP_MKDIR_ERROR(GetLastError());
+        _PR_MD_MAP_MKDIR_ERROR(GetLastError());
         return -1;
     }
 }
@@ -915,7 +944,7 @@ _PR_MD_MAKE_DIR(const char *name, PRIntn mode)
     PACL pACL = NULL;
 
     if (_PR_NT_MakeSecurityDescriptorACL(mode, dirAccessTable,
-            &pSD, &pACL) == PR_SUCCESS) {
+                                         &pSD, &pACL) == PR_SUCCESS) {
         sa.nLength = sizeof(sa);
         sa.lpSecurityDescriptor = pSD;
         sa.bInheritHandle = FALSE;
@@ -939,7 +968,7 @@ _PR_MD_RMDIR(const char *name)
     if (RemoveDirectoryA(name)) {
         return 0;
     } else {
-		_PR_MD_MAP_RMDIR_ERROR(GetLastError());
+        _PR_MD_MAP_RMDIR_ERROR(GetLastError());
         return -1;
     }
 }
@@ -948,16 +977,16 @@ PRStatus
 _PR_MD_LOCKFILE(PROsfd f)
 {
     PRStatus  rc = PR_SUCCESS;
-	DWORD     rv;
+    DWORD     rv;
 
-	rv = LockFile( (HANDLE)f,
-		0l, 0l,
-		0x0l, 0xffffffffl ); 
-	if ( rv == 0 ) {
+    rv = LockFile( (HANDLE)f,
+                   0l, 0l,
+                   0x0l, 0xffffffffl );
+    if ( rv == 0 ) {
         DWORD err = GetLastError();
         _PR_MD_MAP_DEFAULT_ERROR(err);
         PR_LOG( _pr_io_lm, PR_LOG_ERROR,
-            ("_PR_MD_LOCKFILE() failed. Error: %d", err ));
+                ("_PR_MD_LOCKFILE() failed. Error: %d", err ));
         rc = PR_FAILURE;
     }
 
@@ -975,30 +1004,32 @@ _PR_MD_TLOCKFILE(PROsfd f)
 PRStatus
 _PR_MD_UNLOCKFILE(PROsfd f)
 {
-	PRInt32   rv;
-    
+    PRInt32   rv;
+
     rv = UnlockFile( (HANDLE) f,
-    		0l, 0l,
-            0x0l, 0xffffffffl ); 
-            
+                     0l, 0l,
+                     0x0l, 0xffffffffl );
+
     if ( rv )
     {
-    	return PR_SUCCESS;
+        return PR_SUCCESS;
     }
     else
     {
-		_PR_MD_MAP_DEFAULT_ERROR(GetLastError());
-		return PR_FAILURE;
+        _PR_MD_MAP_DEFAULT_ERROR(GetLastError());
+        return PR_FAILURE;
     }
 } /* end _PR_MD_UNLOCKFILE() */
 
 PRInt32
 _PR_MD_PIPEAVAILABLE(PRFileDesc *fd)
 {
-    if (NULL == fd)
-		PR_SetError(PR_BAD_DESCRIPTOR_ERROR, 0);
-	else
-		PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    if (NULL == fd) {
+        PR_SetError(PR_BAD_DESCRIPTOR_ERROR, 0);
+    }
+    else {
+        PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    }
     return -1;
 }
 
@@ -1044,7 +1075,7 @@ _PR_MD_OPEN_FILE_UTF16(const PRUnichar *name, PRIntn osflags, int mode)
 
     if (osflags & PR_CREATE_FILE) {
         if (_PR_NT_MakeSecurityDescriptorACL(mode, fileAccessTable,
-                &pSD, &pACL) == PR_SUCCESS) {
+                                             &pSD, &pACL) == PR_SUCCESS) {
             sa.nLength = sizeof(sa);
             sa.lpSecurityDescriptor = pSD;
             sa.bInheritHandle = FALSE;
@@ -1052,25 +1083,34 @@ _PR_MD_OPEN_FILE_UTF16(const PRUnichar *name, PRIntn osflags, int mode)
         }
     }
 
-    if (osflags & PR_SYNC) flag6 = FILE_FLAG_WRITE_THROUGH;
+    if (osflags & PR_SYNC) {
+        flag6 = FILE_FLAG_WRITE_THROUGH;
+    }
 
-    if (osflags & PR_RDONLY || osflags & PR_RDWR)
+    if (osflags & PR_RDONLY || osflags & PR_RDWR) {
         access |= GENERIC_READ;
-    if (osflags & PR_WRONLY || osflags & PR_RDWR)
+    }
+    if (osflags & PR_WRONLY || osflags & PR_RDWR) {
         access |= GENERIC_WRITE;
- 
-    if ( osflags & PR_CREATE_FILE && osflags & PR_EXCL )
+    }
+
+    if ( osflags & PR_CREATE_FILE && osflags & PR_EXCL ) {
         flags = CREATE_NEW;
+    }
     else if (osflags & PR_CREATE_FILE) {
-        if (osflags & PR_TRUNCATE)
+        if (osflags & PR_TRUNCATE) {
             flags = CREATE_ALWAYS;
-        else
+        }
+        else {
             flags = OPEN_ALWAYS;
+        }
     } else {
-        if (osflags & PR_TRUNCATE)
+        if (osflags & PR_TRUNCATE) {
             flags = TRUNCATE_EXISTING;
-        else
+        }
+        else {
             flags = OPEN_EXISTING;
+        }
     }
 
     file = createFileW(name,
@@ -1087,10 +1127,10 @@ _PR_MD_OPEN_FILE_UTF16(const PRUnichar *name, PRIntn osflags, int mode)
         _PR_MD_MAP_OPEN_ERROR(GetLastError());
         return -1;
     }
- 
+
     return (PROsfd)file;
 }
- 
+
 PRStatus
 _PR_MD_OPEN_DIR_UTF16(_MDDirUTF16 *d, const PRUnichar *name)
 {
@@ -1145,14 +1185,17 @@ _PR_MD_READ_DIR_UTF16(_MDDirUTF16 *d, PRIntn flags)
             }
             fileName = GetFileFromDIR(d);
             if ( (flags & PR_SKIP_DOT) &&
-                 (fileName[0] == L'.') && (fileName[1] == L'\0'))
+                 (fileName[0] == L'.') && (fileName[1] == L'\0')) {
                 continue;
+            }
             if ( (flags & PR_SKIP_DOT_DOT) &&
                  (fileName[0] == L'.') && (fileName[1] == L'.') &&
-                 (fileName[2] == L'\0'))
+                 (fileName[2] == L'\0')) {
                 continue;
-            if ( (flags & PR_SKIP_HIDDEN) && FileIsHidden(d))
+            }
+            if ( (flags & PR_SKIP_HIDDEN) && FileIsHidden(d)) {
                 continue;
+            }
             return fileName;
         }
         err = GetLastError();
@@ -1163,7 +1206,7 @@ _PR_MD_READ_DIR_UTF16(_MDDirUTF16 *d, PRIntn flags)
     PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
     return NULL;
 }
- 
+
 PRInt32
 _PR_MD_CLOSE_DIR_UTF16(_MDDirUTF16 *d)
 {
@@ -1212,7 +1255,7 @@ IsRootDirectoryW(PRUnichar *fn, size_t buflen)
     }
 
     if (iswalpha(fn[0]) && fn[1] == L':' && _PR_IS_W_SLASH(fn[2])
-            && fn[3] == L'\0') {
+        && fn[3] == L'\0') {
         rv = getDriveTypeW(fn) > 1 ? PR_TRUE : PR_FALSE;
         return rv;
     }
@@ -1311,9 +1354,9 @@ _PR_MD_GETFILEINFO64_UTF16(const PRUnichar *fn, PRFileInfo64 *info)
         if (NULL == wcspbrk(fn, L".\\/")) {
             _PR_MD_MAP_OPENDIR_ERROR(GetLastError());
             return -1;
-        } 
+        }
         len = getFullPathNameW(fn, sizeof(pathbuf)/sizeof(pathbuf[0]), pathbuf,
-                &filePart);
+                               &filePart);
         if (0 == len) {
             _PR_MD_MAP_OPENDIR_ERROR(GetLastError());
             return -1;
@@ -1359,11 +1402,11 @@ _PR_MD_GETFILEINFO64_UTF16(const PRUnichar *fn, PRFileInfo64 *info)
     _PR_FileTimeToPRTime(&findFileData.ftLastWriteTime, &info->modifyTime);
 
     if (0 == findFileData.ftCreationTime.dwLowDateTime &&
-            0 == findFileData.ftCreationTime.dwHighDateTime) {
+        0 == findFileData.ftCreationTime.dwHighDateTime) {
         info->creationTime = info->modifyTime;
     } else {
         _PR_FileTimeToPRTime(&findFileData.ftCreationTime,
-                &info->creationTime);
+                             &info->creationTime);
     }
 
     return 0;

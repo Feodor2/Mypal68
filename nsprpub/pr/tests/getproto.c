@@ -38,7 +38,9 @@ int main(int argc, char **argv)
             prstderr,"tcp is usually 6, but is %d on this machine\n",
             proto.p_num);
     }
-    else PR_fprintf(prstderr, "tcp is protocol number %d\n", proto.p_num);
+    else {
+        PR_fprintf(prstderr, "tcp is protocol number %d\n", proto.p_num);
+    }
 
     rv = PR_GetProtoByName("udp", buf, sizeof(buf), &proto);
     if (PR_FAILURE == rv) {
@@ -50,7 +52,9 @@ int main(int argc, char **argv)
             prstderr, "udp is usually 17, but is %d on this machine\n",
             proto.p_num);
     }
-    else PR_fprintf(prstderr, "udp is protocol number %d\n", proto.p_num);
+    else {
+        PR_fprintf(prstderr, "udp is protocol number %d\n", proto.p_num);
+    }
 
     rv = PR_GetProtoByNumber(6, buf, sizeof(buf), &proto);
     if (PR_FAILURE == rv) {
@@ -62,7 +66,9 @@ int main(int argc, char **argv)
             prstderr, "Protocol number 6 is usually tcp, but is %s"
             " on this platform\n", proto.p_name);
     }
-    else PR_fprintf(prstderr, "Protocol number 6 is %s\n", proto.p_name);
+    else {
+        PR_fprintf(prstderr, "Protocol number 6 is %s\n", proto.p_name);
+    }
 
     rv = PR_GetProtoByNumber(17, buf, sizeof(buf), &proto);
     if (PR_FAILURE == rv) {
@@ -74,7 +80,9 @@ int main(int argc, char **argv)
             prstderr, "Protocol number 17 is usually udp, but is %s"
             " on this platform\n", proto.p_name);
     }
-    else PR_fprintf(prstderr, "Protocol number 17 is %s\n", proto.p_name);
+    else {
+        PR_fprintf(prstderr, "Protocol number 17 is %s\n", proto.p_name);
+    }
 
     PR_fprintf(prstderr, (failed) ? "FAILED\n" : "PASSED\n");
     return (failed) ? 1 : 0;

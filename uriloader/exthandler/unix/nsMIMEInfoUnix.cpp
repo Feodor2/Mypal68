@@ -7,7 +7,6 @@
 #include "nsIGIOService.h"
 #include "nsNetCID.h"
 #include "nsIIOService.h"
-#include "nsAutoPtr.h"
 #ifdef MOZ_ENABLE_DBUS
 #  include "nsDBusHandlerApp.h"
 #endif

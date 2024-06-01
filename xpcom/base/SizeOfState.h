@@ -6,7 +6,6 @@
 #define SizeOfState_h
 
 #include "mozilla/fallible.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Unused.h"
 #include "nsTHashtable.h"

@@ -497,7 +497,8 @@ var Sanitizer = {
           Ci.nsIClearDataService.CLEAR_PERMISSIONS |
             Ci.nsIClearDataService.CLEAR_CONTENT_PREFERENCES |
             Ci.nsIClearDataService.CLEAR_DOM_PUSH_NOTIFICATIONS |
-            Ci.nsIClearDataService.CLEAR_SECURITY_SETTINGS
+            Ci.nsIClearDataService.CLEAR_SECURITY_SETTINGS |
+            Ci.nsIClearDataService.CLEAR_CERT_EXCEPTIONS
         );
         TelemetryStopwatch.finish("FX_SANITIZE_SITESETTINGS", refObj);
       },
@@ -807,9 +808,9 @@ class PrincipalsCollector {
 
     // Let's take the list of unique hosts+OA from cookies.
     progress.step = "principals-cookies";
-    let enumerator = Services.cookies.enumerator;
+    let cookies = Services.cookies.cookies;
     let hosts = new Set();
-    for (let cookie of enumerator) {
+    for (let cookie of cookies) {
       hosts.add(
         cookie.rawHost +
           ChromeUtils.originAttributesToSuffix(cookie.originAttributes)

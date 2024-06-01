@@ -88,6 +88,7 @@ class LayerMLGPU : public HostLayer {
 
  protected:
   LayerMLGPU(LayerManagerMLGPU* aManager);
+  ~LayerMLGPU();
   LayerManagerMLGPU* GetManager();
 
   void AddBoundsToView(FrameBuilder* aBuilder, RenderViewMLGPU* aView,

@@ -10,8 +10,6 @@
 #include "nsTArray.h"
 #include "nsCycleCollectionNoteChild.h"
 
-#include <functional>
-
 /**
  * An array of observers. Like a normal array, but supports iterators that are
  * stable even if the array is modified during iteration.

@@ -233,16 +233,17 @@ class nsHtml5TreeOpExecutor final
                      const nsAString& aType, const nsAString& aCrossOrigin,
                      const nsAString& aIntegrity,
                      ReferrerPolicy aReferrerPolicy, bool aScriptFromHead,
-                     bool aAsync, bool aDefer, bool aNoModule);
+                     bool aAsync, bool aDefer, bool aNoModule,
+                     bool aLinkPreload);
 
   void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
                     const nsAString& aCrossOrigin,
                     const nsAString& aReferrerPolicy,
-                    const nsAString& aIntegrity);
+                    const nsAString& aIntegrity, bool aLinkPreload);
 
   void PreloadImage(const nsAString& aURL, const nsAString& aCrossOrigin,
                     const nsAString& aSrcset, const nsAString& aSizes,
-                    const nsAString& aImageReferrerPolicy);
+                    const nsAString& aImageReferrerPolicy, bool aLinkPreload);
 
   void PreloadOpenPicture();
 
@@ -250,6 +251,12 @@ class nsHtml5TreeOpExecutor final
 
   void PreloadPictureSource(const nsAString& aSrcset, const nsAString& aSizes,
                             const nsAString& aType, const nsAString& aMedia);
+
+  void PreloadFont(const nsAString& aURL, const nsAString& aCrossOrigin,
+                   const nsAString& aReferrerPolicy);
+
+  void PreloadFetch(const nsAString& aURL, const nsAString& aCrossOrigin,
+                    const nsAString& aReferrerPolicy);
 
   void SetSpeculationBase(const nsAString& aURL);
 

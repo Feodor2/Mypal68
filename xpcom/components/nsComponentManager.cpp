@@ -16,7 +16,6 @@
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsCategoryManager.h"
-#include "nsCategoryManagerUtils.h"
 #include "nsLayoutModule.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsIObserverService.h"
@@ -71,48 +70,6 @@ static LazyLogModule nsComponentManagerLog("nsComponentManager");
 #  define SHOW_DENIED_ON_SHUTDOWN
 #  define SHOW_CI_ON_EXISTING_SERVICE
 #endif
-
-NS_DEFINE_CID(kCategoryManagerCID, NS_CATEGORYMANAGER_CID);
-
-nsresult nsGetServiceFromCategory::operator()(const nsIID& aIID,
-                                              void** aInstancePtr) const {
-  nsresult rv;
-  nsCString value;
-  nsCOMPtr<nsICategoryManager> catman;
-  nsComponentManagerImpl* compMgr = nsComponentManagerImpl::gComponentManager;
-  if (!compMgr) {
-    rv = NS_ERROR_NOT_INITIALIZED;
-    goto error;
-  }
-
-  rv = compMgr->nsComponentManagerImpl::GetService(
-      kCategoryManagerCID, NS_GET_IID(nsICategoryManager),
-      getter_AddRefs(catman));
-  if (NS_FAILED(rv)) {
-    goto error;
-  }
-
-  /* find the contractID for category.entry */
-  rv = catman->GetCategoryEntry(mCategory, mEntry, value);
-  if (NS_FAILED(rv)) {
-    goto error;
-  }
-  if (value.IsVoid()) {
-    rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
-    goto error;
-  }
-
-  rv = compMgr->nsComponentManagerImpl::GetServiceByContractID(
-      value.get(), aIID, aInstancePtr);
-  if (NS_FAILED(rv)) {
-  error:
-    *aInstancePtr = 0;
-  }
-  if (mErrorPtr) {
-    *mErrorPtr = rv;
-  }
-  return rv;
-}
 
 namespace {
 
@@ -675,26 +632,27 @@ void nsComponentManagerImpl::RegisterCIDEntryLocked(
   }
 #endif
 
-  if (auto entry = mFactories.LookupForAdd(aEntry->cid)) {
-    nsFactoryEntry* f = entry.Data();
-    NS_WARNING("Re-registering a CID?");
+  mFactories.WithEntryHandle(aEntry->cid, [&](auto&& entry) {
+    if (entry) {
+      nsFactoryEntry* f = entry.Data();
+      NS_WARNING("Re-registering a CID?");
 
-    nsCString existing;
-    if (f->mModule) {
-      existing = f->mModule->Description();
+      nsCString existing;
+      if (f->mModule) {
+        existing = f->mModule->Description();
+      } else {
+        existing = "<unknown module>";
+      }
+      SafeMutexAutoUnlock unlock(mLock);
+      LogMessage(
+          "While registering XPCOM module %s, trying to re-register CID '%s' "
+          "already registered by %s.",
+          aModule->Description().get(), AutoIDString(*aEntry->cid).get(),
+          existing.get());
     } else {
-      existing = "<unknown module>";
+      entry.Insert(new nsFactoryEntry(aEntry, aModule));
     }
-    SafeMutexAutoUnlock unlock(mLock);
-    LogMessage(
-        "While registering XPCOM module %s, trying to re-register CID '%s' "
-        "already registered by %s.",
-        aModule->Description().get(), AutoIDString(*aEntry->cid).get(),
-        existing.get());
-  } else {
-    entry.OrInsert(
-        [aEntry, aModule]() { return new nsFactoryEntry(aEntry, aModule); });
-  }
+  });
 }
 
 void nsComponentManagerImpl::RegisterContractIDLocked(
@@ -1597,11 +1555,11 @@ nsComponentManagerImpl::RegisterFactory(const nsCID& aClass, const char* aName,
   auto f = MakeUnique<nsFactoryEntry>(aClass, aFactory);
 
   SafeMutexAutoLock lock(mLock);
-  if (auto entry = mFactories.LookupForAdd(f->mCIDEntry->cid)) {
-    return NS_ERROR_FACTORY_EXISTS;
-  } else {
+  return mFactories.WithEntryHandle(f->mCIDEntry->cid, [&](auto&& entry) {
+    if (entry) {
+      return NS_ERROR_FACTORY_EXISTS;
+    }
     if (StaticComponents::LookupByCID(*f->mCIDEntry->cid)) {
-      entry.OrRemove();
       return NS_ERROR_FACTORY_EXISTS;
     }
     if (aContractID) {
@@ -1611,10 +1569,10 @@ nsComponentManagerImpl::RegisterFactory(const nsCID& aClass, const char* aName,
       // entries, so invalidate any static entry for this contract ID.
       StaticComponents::InvalidateContractID(contractID);
     }
-    entry.OrInsert([&f]() { return f.release(); });
-  }
+    entry.Insert(f.release());
 
-  return NS_OK;
+    return NS_OK;
+  });
 }
 
 NS_IMETHODIMP

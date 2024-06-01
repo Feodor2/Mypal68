@@ -24,6 +24,7 @@
 #  endif
 #endif
 
+#include "nsCOMPtr.h"
 #include "nsStringFwd.h"
 #include "nsXULAppAPI.h"
 

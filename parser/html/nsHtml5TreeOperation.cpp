@@ -8,6 +8,7 @@
 #include "mozilla/dom/Comment.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
@@ -30,7 +31,6 @@
 #include "nsINode.h"
 #include "nsIProtocolHandler.h"
 #include "nsIScriptElement.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsISupportsImpl.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
@@ -38,6 +38,7 @@
 #include "nsXBLBinding.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using mozilla::dom::Document;
 
 /**
@@ -456,10 +457,8 @@ nsIContent* nsHtml5TreeOperation::CreateHTMLElement(
     aBuilder->HoldElement(newElement.forget());
 
     if (MOZ_UNLIKELY(aName == nsGkAtoms::style || aName == nsGkAtoms::link)) {
-      nsCOMPtr<nsIStyleSheetLinkingElement> ssle(do_QueryInterface(newContent));
-      if (ssle) {
-        ssle->InitStyleLinkElement(false);
-        ssle->SetEnableUpdates(false);
+      if (auto* linkStyle = dom::LinkStyle::FromNode(*newContent)) {
+        linkStyle->SetEnableUpdates(false);
       }
     }
 
@@ -484,10 +483,8 @@ nsIContent* nsHtml5TreeOperation::CreateHTMLElement(
     aBuilder->HoldElement(newElement.forget());
 
     if (MOZ_UNLIKELY(aName == nsGkAtoms::style || aName == nsGkAtoms::link)) {
-      nsCOMPtr<nsIStyleSheetLinkingElement> ssle(do_QueryInterface(newContent));
-      if (ssle) {
-        ssle->InitStyleLinkElement(false);
-        ssle->SetEnableUpdates(false);
+      if (auto* linkStyle = dom::LinkStyle::FromNode(*newContent)) {
+        linkStyle->SetEnableUpdates(false);
       }
     }
 
@@ -533,10 +530,8 @@ nsIContent* nsHtml5TreeOperation::CreateSVGElement(
   aBuilder->HoldElement(newElement.forget());
 
   if (MOZ_UNLIKELY(aName == nsGkAtoms::style)) {
-    nsCOMPtr<nsIStyleSheetLinkingElement> ssle(do_QueryInterface(newContent));
-    if (ssle) {
-      ssle->InitStyleLinkElement(false);
-      ssle->SetEnableUpdates(false);
+    if (auto* linkStyle = dom::LinkStyle::FromNode(*newContent)) {
+      linkStyle->SetEnableUpdates(false);
     }
   }
 
@@ -994,9 +989,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
 
     nsresult operator()(const opSetStyleLineNumber& aOperation) {
       nsIContent* node = *(aOperation.mContent);
-      nsCOMPtr<nsIStyleSheetLinkingElement> ssle = do_QueryInterface(node);
-      if (ssle) {
-        ssle->SetLineNumber(aOperation.mLineNumber);
+      if (auto* linkStyle = dom::LinkStyle::FromNode(*node)) {
+        linkStyle->SetLineNumber(aOperation.mLineNumber);
       } else {
         MOZ_ASSERT(nsNameSpaceManager::GetInstance()->mSVGDisabled,
                    "Node didn't QI to style, but SVG wasn't disabled.");

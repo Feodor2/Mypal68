@@ -17,7 +17,7 @@ BOOL WINAPI DllMain(
     DWORD fdwReason,
     LPVOID lpvReserved)
 {
-PRThread *me;
+    PRThread *me;
 
     switch (fdwReason) {
         case DLL_PROCESS_ATTACH:
@@ -27,8 +27,9 @@ PRThread *me;
         case DLL_THREAD_DETACH:
             if (_pr_initialized) {
                 me = _MD_GET_ATTACHED_THREAD();
-                if ((me != NULL) && (me->flags & _PR_ATTACHED))
+                if ((me != NULL) && (me->flags & _PR_ATTACHED)) {
                     _PRI_DetachThread();
+                }
             }
             break;
         case DLL_PROCESS_DETACH:

@@ -12,6 +12,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/StyleSheet.h"
@@ -21,7 +22,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
 #include "nsIPrincipal.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsRefPtrHashtable.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
@@ -89,14 +89,14 @@ class Loader final {
   using ReferrerPolicy = dom::ReferrerPolicy;
 
  public:
-  typedef nsIStyleSheetLinkingElement::Completed Completed;
-  typedef nsIStyleSheetLinkingElement::HasAlternateRel HasAlternateRel;
-  typedef nsIStyleSheetLinkingElement::IsAlternate IsAlternate;
-  typedef nsIStyleSheetLinkingElement::IsInline IsInline;
-  typedef nsIStyleSheetLinkingElement::IsExplicitlyEnabled IsExplicitlyEnabled;
-  typedef nsIStyleSheetLinkingElement::MediaMatched MediaMatched;
-  typedef nsIStyleSheetLinkingElement::Update LoadSheetResult;
-  typedef nsIStyleSheetLinkingElement::SheetInfo SheetInfo;
+  using Completed = dom::LinkStyle::Completed;
+  using HasAlternateRel = dom::LinkStyle::HasAlternateRel;
+  using IsAlternate = dom::LinkStyle::IsAlternate;
+  using IsInline = dom::LinkStyle::IsInline;
+  using IsExplicitlyEnabled = dom::LinkStyle::IsExplicitlyEnabled;
+  using MediaMatched = dom::LinkStyle::MediaMatched;
+  using LoadSheetResult = dom::LinkStyle::Update;
+  using SheetInfo = dom::LinkStyle::SheetInfo;
 
   Loader();
   // aDocGroup is used for dispatching SheetLoadData in PostLoadEvent(). It
@@ -205,7 +205,15 @@ class Loader final {
       nsIURI*, SheetParsingMode = eAuthorSheetFeatures,
       UseSystemPrincipal = UseSystemPrincipal::No);
 
-  enum class IsPreload : uint8_t { No, Yes };
+  enum class IsPreload : uint8_t {
+    No,
+    // This is a speculative load initiated by a <link rel=stylesheet> tag
+    // scanned by the parser, or @import rules found in a <style> tag.
+    FromParser,
+    // This is a speculative load as well, but initiated by
+    // <link rel="preload" as="style">
+    FromLink,
+  };
 
   /**
    * Asynchronously load the stylesheet at aURL.  If a successful result is
@@ -229,10 +237,9 @@ class Loader final {
    * non-UTF8 sheets being treated as UTF-8 by this method.
    */
   Result<RefPtr<StyleSheet>, nsresult> LoadSheet(
-      nsIURI* aURI, IsPreload, nsIPrincipal* aOriginPrincipal,
-      const Encoding* aPreloadEncoding, nsIReferrerInfo* aReferrerInfo,
-      nsICSSLoaderObserver* aObserver, CORSMode aCORSMode = CORS_NONE,
-      const nsAString& aIntegrity = EmptyString());
+      nsIURI* aURI, IsPreload, const Encoding* aPreloadEncoding,
+      nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
+      CORSMode = CORS_NONE, const nsAString& aIntegrity = EmptyString());
 
   /**
    * As above, but without caring for a couple things.
@@ -334,10 +341,10 @@ class Loader final {
   };
 
   std::tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
-      const SheetInfo& aInfo, nsIPrincipal* aLoaderPrincipal,
+      const SheetInfo& aInfo, nsIPrincipal* aTriggeringPrincipal,
       css::SheetParsingMode aParsingMode, bool aSyncLoad,
       IsPreload aIsPreload) {
-    return CreateSheet(aInfo.mURI, aInfo.mContent, aLoaderPrincipal,
+    return CreateSheet(aInfo.mURI, aInfo.mContent, aTriggeringPrincipal,
                        aParsingMode, aInfo.mCORSMode, aInfo.mReferrerInfo,
                        aInfo.mIntegrity, aSyncLoad, aIsPreload);
   }
@@ -346,9 +353,10 @@ class Loader final {
   // must be non-null then.  The loader principal must never be null
   // if aURI is not null.
   std::tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
-      nsIURI* aURI, nsIContent* aLinkingContent, nsIPrincipal* aLoaderPrincipal,
-      css::SheetParsingMode, CORSMode, nsIReferrerInfo* aLoadingReferrerInfo,
-      const nsAString& aIntegrity, bool aSyncLoad, IsPreload aIsPreload);
+      nsIURI* aURI, nsIContent* aLinkingContent,
+      nsIPrincipal* aTriggeringPrincipal, css::SheetParsingMode, CORSMode,
+      nsIReferrerInfo* aLoadingReferrerInfo, const nsAString& aIntegrity,
+      bool aSyncLoad, IsPreload aIsPreload);
 
   // Pass in either a media string or the MediaList from the CSSParser.  Don't
   // pass both.
@@ -365,10 +373,9 @@ class Loader final {
 
   Result<RefPtr<StyleSheet>, nsresult> InternalLoadNonDocumentSheet(
       nsIURI* aURL, IsPreload, SheetParsingMode aParsingMode,
-      UseSystemPrincipal, nsIPrincipal* aOriginPrincipal,
-      const Encoding* aPreloadEncoding, nsIReferrerInfo* aReferrerInfo,
-      nsICSSLoaderObserver* aObserver, CORSMode aCORSMode,
-      const nsAString& aIntegrity);
+      UseSystemPrincipal, const Encoding* aPreloadEncoding,
+      nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
+      CORSMode aCORSMode, const nsAString& aIntegrity);
 
   // Post a load event for aObserver to be notified about aSheet.  The
   // notification will be sent with status NS_OK unless the load event is

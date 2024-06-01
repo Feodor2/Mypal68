@@ -525,7 +525,7 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
 #  include <algorithm>
 
 #  define HAVE_VSIZE_AND_RESIDENT_REPORTERS 1
-static MOZ_MUST_USE nsresult VsizeDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult VsizeDistinguishedAmount(int64_t* aN) {
   MEMORYSTATUSEX s;
   s.dwLength = sizeof(s);
 
@@ -537,25 +537,25 @@ static MOZ_MUST_USE nsresult VsizeDistinguishedAmount(int64_t* aN) {
   return NS_OK;
 }
 
-static MOZ_MUST_USE nsresult ResidentDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult ResidentDistinguishedAmount(int64_t* aN) {
   PROCESS_MEMORY_COUNTERS pmc;
   pmc.cb = sizeof(PROCESS_MEMORY_COUNTERS);
 
-  //if (!GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
     return NS_ERROR_FAILURE;
-  //}
+  }
 
   *aN = pmc.WorkingSetSize;
   return NS_OK;
 }
 
-static MOZ_MUST_USE nsresult ResidentFastDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult ResidentFastDistinguishedAmount(int64_t* aN) {
   return ResidentDistinguishedAmount(aN);
 }
 
 #  define HAVE_RESIDENT_UNIQUE_REPORTER 1
 
-static MOZ_MUST_USE nsresult ResidentUniqueDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(int64_t* aN) {
   // Determine how many entries we need.
   PSAPI_WORKING_SET_INFORMATION tmp;
   DWORD tmpSize = sizeof(tmp);
@@ -629,14 +629,14 @@ static MOZ_MUST_USE nsresult ResidentUniqueDistinguishedAmount(int64_t* aN) {
 }
 
 #  define HAVE_PRIVATE_REPORTER 1
-static MOZ_MUST_USE nsresult PrivateDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult PrivateDistinguishedAmount(int64_t* aN) {
   PROCESS_MEMORY_COUNTERS_EX pmcex;
   pmcex.cb = sizeof(PROCESS_MEMORY_COUNTERS_EX);
 
-  //if (!GetProcessMemoryInfo(GetCurrentProcess(),
-  //                          (PPROCESS_MEMORY_COUNTERS)&pmcex, sizeof(pmcex))) {
+  if (!GetProcessMemoryInfo(GetCurrentProcess(),
+                            (PPROCESS_MEMORY_COUNTERS)&pmcex, sizeof(pmcex))) {
     return NS_ERROR_FAILURE;
-  //}
+  }
 
   *aN = pmcex.PrivateUsage;
   return NS_OK;
@@ -646,7 +646,7 @@ static MOZ_MUST_USE nsresult PrivateDistinguishedAmount(int64_t* aN) {
 // Windows can have multiple separate heaps. During testing there were multiple
 // heaps present but the non-default ones had sizes no more than a few 10s of
 // KiBs. So we combine their sizes into a single measurement.
-static MOZ_MUST_USE nsresult SystemHeapSize(int64_t* aSizeOut) {
+[[nodiscard]] static nsresult SystemHeapSize(int64_t* aSizeOut) {
   // Get the number of heaps.
   DWORD nHeaps = GetProcessHeaps(0, nullptr);
   NS_ENSURE_TRUE(nHeaps != 0, NS_ERROR_FAILURE);

@@ -164,8 +164,9 @@ PRIntn strcasecmp(const char *a, const char *b)
     const unsigned char *ua = (const unsigned char *)a;
     const unsigned char *ub = (const unsigned char *)b;
 
-    if( ((const char *)0 == a) || (const char *)0 == b ) 
+    if( ((const char *)0 == a) || (const char *)0 == b ) {
         return (PRIntn)(a-b);
+    }
 
     while( (uc[*ua] == uc[*ub]) && ('\0' != *a) )
     {
@@ -199,7 +200,9 @@ void _PR_InitLog(void)
             count = sscanf(&ev[pos], "%63[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]%n:%d%n",
                            module, &delta, &level, &delta);
             pos += delta;
-            if (count == 0) break;
+            if (count == 0) {
+                break;
+            }
 
             /*
             ** If count == 2, then we got module and level. If count
@@ -221,7 +224,9 @@ void _PR_InitLog(void)
                     (0 == strcasecmp (module, "all")) ? PR_TRUE : PR_FALSE;
 
                 while (lm != NULL) {
-                    if (skip_modcheck) lm -> level = (PRLogModuleLevel)level;
+                    if (skip_modcheck) {
+                        lm -> level = (PRLogModuleLevel)level;
+                    }
                     else if (strcasecmp(module, lm->name) == 0) {
                         lm->level = (PRLogModuleLevel)level;
                         break;
@@ -232,7 +237,9 @@ void _PR_InitLog(void)
             /*found:*/
             count = sscanf(&ev[pos], " , %n", &delta);
             pos += delta;
-            if (count == EOF) break;
+            if (count == EOF) {
+                break;
+            }
         }
         PR_SetLogBuffering(isSync ? 0 : bufSize);
 
@@ -272,7 +279,7 @@ void _PR_LogCleanup(void)
 #ifdef XP_PC
         && logFile != WIN32_DEBUG_FILE
 #endif
-        ) {
+       ) {
         fclose(logFile);
     }
 #else
@@ -282,8 +289,9 @@ void _PR_LogCleanup(void)
 #endif
     logFile = NULL;
 
-    if (logBuf)
+    if (logBuf) {
         PR_DELETE(logBuf);
+    }
 
     while (lm != NULL) {
         PRLogModuleInfo *next = lm->next;
@@ -316,7 +324,9 @@ static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
             count = sscanf(&ev[pos], "%63[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]%n:%d%n",
                            module, &delta, &level, &delta);
             pos += delta;
-            if (count == 0) break;
+            if (count == 0) {
+                break;
+            }
 
             /*
             ** If count == 2, then we got module and level. If count
@@ -332,7 +342,9 @@ static void _PR_SetLogModuleLevel( PRLogModuleInfo *lm )
             }
             count = sscanf(&ev[pos], " , %n", &delta);
             pos += delta;
-            if (count == EOF) break;
+            if (count == EOF) {
+                break;
+            }
         }
     }
 } /* end _PR_SetLogModuleLevel() */
@@ -341,7 +353,9 @@ PR_IMPLEMENT(PRLogModuleInfo*) PR_NewLogModule(const char *name)
 {
     PRLogModuleInfo *lm;
 
-        if (!_pr_initialized) _PR_ImplicitInitialization();
+    if (!_pr_initialized) {
+        _PR_ImplicitInitialization();
+    }
 
     lm = PR_NEWZAP(PRLogModuleInfo);
     if (lm) {
@@ -369,8 +383,9 @@ PR_IMPLEMENT(PRBool) PR_SetLogFile(const char *file)
     {
         const char *mode = appendToLog ? "a" : "w";
         newLogFile = fopen(file, mode);
-        if (!newLogFile)
+        if (!newLogFile) {
             return PR_FALSE;
+        }
 
 #ifndef WINCE  /* _IONBF does not exist in the Windows Mobile 6 SDK. */
         /* We do buffering ourselves. */
@@ -383,7 +398,7 @@ PR_IMPLEMENT(PRBool) PR_SetLogFile(const char *file)
 #ifdef XP_PC
         && logFile != WIN32_DEBUG_FILE
 #endif
-        ) {
+       ) {
         fclose(logFile);
     }
     logFile = newLogFile;
@@ -412,8 +427,9 @@ PR_IMPLEMENT(void) PR_SetLogBuffering(PRIntn buffer_size)
 {
     PR_LogFlush();
 
-    if (logBuf)
+    if (logBuf) {
         PR_DELETE(logBuf);
+    }
 
     if (buffer_size >= LINE_BUF_SIZE) {
         logp = logBuf = (char*) PR_MALLOC(buffer_size);
@@ -430,7 +446,9 @@ PR_IMPLEMENT(void) PR_LogPrint(const char *fmt, ...)
     PRThread *me;
     PRExplodedTime now;
 
-    if (!_pr_initialized) _PR_ImplicitInitialization();
+    if (!_pr_initialized) {
+        _PR_ImplicitInitialization();
+    }
 
     if (!logFile) {
         return;
@@ -518,10 +536,10 @@ PR_IMPLEMENT(void) PR_LogFlush(void)
 {
     if (logBuf && logFile) {
         _PR_LOCK_LOG();
-            if (logp > logBuf) {
-                _PUT_LOG(logFile, logBuf, logp - logBuf);
-                logp = logBuf;
-            }
+        if (logp > logBuf) {
+            _PUT_LOG(logFile, logBuf, logp - logBuf);
+            logp = logBuf;
+        }
         _PR_UNLOCK_LOG();
     }
 }

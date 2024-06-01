@@ -7,7 +7,6 @@
 
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "mozStorageHelper.h"
 
 struct sqlite3;

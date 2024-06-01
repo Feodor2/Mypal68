@@ -1268,7 +1268,7 @@ bool MouseScrollHandler::Device::Elantech::IsHelperWindow(HWND aWnd) {
 
   bool result = false;
   wchar_t path[256] = {L'\0'};
-  /*if (::GetProcessImageFileNameW(hProcess, path, ArrayLength(path))) {
+  if (::GetProcessImageFileNameW(hProcess, path, ArrayLength(path))) {
     int pathLength = lstrlenW(path);
     if (pathLength >= filenameSuffixLength) {
       if (lstrcmpiW(path + pathLength - filenameSuffixLength, filenameSuffix) ==
@@ -1276,7 +1276,7 @@ bool MouseScrollHandler::Device::Elantech::IsHelperWindow(HWND aWnd) {
         result = true;
       }
     }
-  }*/
+  }
   ::CloseHandle(hProcess);
 
   return result;

@@ -38,7 +38,6 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsThreadUtils.h"
-#include "nsAutoPtr.h"
 #include "nsIMutableArray.h"
 #include "nsIRedirectHistoryEntry.h"
 #include "nsOSHelperAppService.h"
@@ -1973,7 +1972,7 @@ nsExternalAppHandler::OnSaveComplete(nsIBackgroundFileSaver* aSaver,
   if (!mCanceled) {
     // Save the hash and signature information
     (void)mSaver->GetSha256Hash(mHash);
-    (void)mSaver->GetSignatureInfo(getter_AddRefs(mSignatureInfo));
+    (void)mSaver->GetSignatureInfo(mSignatureInfo);
 
     // Free the reference that the saver keeps on us, even if we couldn't get
     // the hash.

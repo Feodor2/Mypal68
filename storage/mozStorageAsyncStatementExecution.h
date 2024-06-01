@@ -7,7 +7,6 @@
 
 #include "nscore.h"
 #include "nsTArray.h"
-#include "nsAutoPtr.h"
 #include "base/lock.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Attributes.h"

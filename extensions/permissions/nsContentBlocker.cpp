@@ -155,7 +155,7 @@ NS_IMETHODIMP
 nsContentBlocker::ShouldLoad(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
                              const nsACString& aMimeGuess, int16_t* aDecision) {
   uint32_t contentType = aLoadInfo->GetExternalContentPolicyType();
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->GetLoadingPrincipal();
   nsCOMPtr<nsIURI> requestingLocation;
   if (loadingPrincipal) {
     loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));
@@ -213,7 +213,7 @@ nsContentBlocker::ShouldProcess(nsIURI* aContentLocation,
                                 int16_t* aDecision) {
   uint32_t contentType = aLoadInfo->GetExternalContentPolicyType();
   nsCOMPtr<nsISupports> requestingContext = aLoadInfo->GetLoadingContext();
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->GetLoadingPrincipal();
   nsCOMPtr<nsIURI> requestingLocation;
   if (loadingPrincipal) {
     loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));

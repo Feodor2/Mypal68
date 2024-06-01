@@ -193,6 +193,12 @@ if CONFIG['OS_TARGET'] == 'WINNT':
         'MemoryInfo.cpp',
     ]
 
+    DEFINES["PSAPI_VERSION"] = "1"
+
+    OS_LIBS += [
+        'psapi',
+    ]
+
 GeneratedFile("ErrorList.h", script="ErrorList.py", entry_point="error_list_h")
 GeneratedFile("ErrorNamesInternal.h", script="ErrorList.py",
               entry_point="error_names_internal_h")

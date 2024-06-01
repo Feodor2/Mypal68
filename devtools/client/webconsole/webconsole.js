@@ -122,19 +122,6 @@ class WebConsole {
     return this.ui ? this.ui.jsterm : null;
   }
 
-  canRewind() {
-    if (
-      !(
-        this.hud &&
-        this.hud.target &&
-        this.hud.target.traits
-      )
-    ) {
-      return false;
-    }
-    return this.hud.target.traits.canRewind;
-  }
-
   /**
    * Get the value from the input field.
    * @returns {String|null} returns null if there's no input.
@@ -145,18 +132,6 @@ class WebConsole {
     }
 
     return this.jsterm._getValue();
-  }
-
-  inputHasSelection() {
-    const { editor } = this.jsterm || {};
-    return editor && !!editor.getSelection();
-  }
-
-  getInputSelection() {
-    if (!this.jsterm || !this.jsterm.editor) {
-      return null;
-    }
-    return this.jsterm.editor.getSelection();
   }
 
   /**
@@ -170,10 +145,6 @@ class WebConsole {
     }
 
     this.jsterm._setValue(newValue);
-  }
-
-  focusInput() {
-    return this.jsterm && this.jsterm.focus();
   }
 
   /**
@@ -239,15 +210,17 @@ class WebConsole {
    * @param integer sourceColumn
    *        The column number which you want to place the caret.
    */
-  async viewSourceInDebugger(sourceURL, sourceLine, sourceColumn) {
+  viewSourceInDebugger(sourceURL, sourceLine, sourceColumn) {
     const toolbox = gDevTools.getToolbox(this.target);
     if (!toolbox) {
       this.viewSource(sourceURL, sourceLine, sourceColumn);
       return;
     }
-
-    await toolbox.viewSourceInDebugger(sourceURL, sourceLine, sourceColumn);
-    this.ui.emit("source-in-debugger-opened");
+    toolbox
+      .viewSourceInDebugger(sourceURL, sourceLine, sourceColumn)
+      .then(() => {
+        this.ui.emit("source-in-debugger-opened");
+      });
   }
 
   /**
@@ -368,77 +341,6 @@ class WebConsole {
       return null;
     }
     return panel.selection;
-  }
-
-  async onViewSourceInDebugger(frame) {
-    if (this.toolbox) {
-      await this.toolbox.viewSourceInDebugger(
-        frame.url,
-        frame.line,
-        frame.column,
-        frame.sourceId
-      );
-
-      this.emit("source-in-debugger-opened");
-    }
-  }
-
-  async onViewSourceInScratchpad(frame) {
-    if (this.toolbox) {
-      await this.toolbox.viewSourceInScratchpad(frame.url, frame.line);
-    }
-  }
-
-  async onViewSourceInStyleEditor(frame) {
-    if (!this.toolbox) {
-      return;
-    }
-    await this.toolbox.viewSourceInStyleEditor(
-      frame.url,
-      frame.line,
-      frame.column
-    );
-  }
-
-  async openNetworkPanel(requestId) {
-    if (!this.toolbox) {
-      return;
-    }
-    const netmonitor = await this.toolbox.selectTool("netmonitor");
-    await netmonitor.panelWin.Netmonitor.inspectRequest(requestId);
-  }
-
-  async resendNetworkRequest(requestId) {
-    if (!this.toolbox) {
-      return;
-    }
-
-    const api = await this.toolbox.getNetMonitorAPI();
-    await api.resendRequest(requestId);
-  }
-
-  async openNodeInInspector(grip) {
-    if (!this.toolbox) {
-      return;
-    }
-
-    await this.toolbox.initInspector();
-    const onSelectInspector = this.toolbox.selectTool(
-      "inspector",
-      "inspect_dom"
-    );
-    const onGripNodeToFront = this.toolbox.walker.gripToNodeFront(grip);
-    const [front, inspector] = await Promise.all([
-      onGripNodeToFront,
-      onSelectInspector,
-    ]);
-
-    const onInspectorUpdated = inspector.once("inspector-updated");
-    const onNodeFrontSet = this.toolbox.selection.setNodeFront(front, {
-      reason: "console",
-    });
-
-    await Promise.all([onNodeFrontSet, onInspectorUpdated]);
   }
 
   /**

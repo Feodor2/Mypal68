@@ -152,11 +152,15 @@ class WebNavigationChild extends ActorChild {
       csp = E10SUtils.deserializeCSP(csp);
     }
 
+    if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
+      referrerInfo = E10SUtils.deserializeReferrerInfo(referrerInfo);
+    }
+
     let loadURIOptions = {
       triggeringPrincipal,
       csp,
       loadFlags: flags,
-      referrerInfo: E10SUtils.deserializeReferrerInfo(referrerInfo),
+      referrerInfo,
       postData,
       headers,
       baseURI,

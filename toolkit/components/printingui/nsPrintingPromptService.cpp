@@ -11,6 +11,7 @@
 #include "nsString.h"
 #include "nsIPrintDialogService.h"
 #include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
 #include "nsXULAppAPI.h"
 
 // Printing Progress Includes

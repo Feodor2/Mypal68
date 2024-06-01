@@ -7,6 +7,7 @@
 #include "nsCOMPtr.h"
 #include "nsXPCOM.h"
 #include "nsPIDOMWindow.h"
+#include "nsIFile.h"
 #include "nsIWindowMediator.h"
 #include "nsIBaseWindow.h"
 #include "nsIWidget.h"

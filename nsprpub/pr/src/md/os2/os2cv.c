@@ -15,7 +15,7 @@
  *  until right after we unlock the lock.  This way the awakened threads
  *  have a better chance to reaquire the lock.
  */
- 
+
 #include "primpl.h"
 
 /*
@@ -29,7 +29,7 @@ static void
 AddThreadToCVWaitQueueInternal(PRThread *thred, struct _MDCVar *cv)
 {
     PR_ASSERT((cv->waitTail != NULL && cv->waitHead != NULL)
-            || (cv->waitTail == NULL && cv->waitHead == NULL));
+              || (cv->waitTail == NULL && cv->waitHead == NULL));
     cv->nwait += 1;
     thred->md.inCVWaitQueue = PR_TRUE;
     thred->md.next = NULL;
@@ -77,7 +77,7 @@ md_UnlockAndPostNotifies(
     lock->notified.link = NULL;
 #endif
 
-    /* 
+    /*
      * Figure out how many threads we need to wake up.
      */
     notified = &post;  /* this is where we start */
@@ -86,7 +86,7 @@ md_UnlockAndPostNotifies(
             _MDCVar *cv = notified->cv[index].cv;
             PRThread *thred;
             int i;
-            
+
             /* Fast special case: no waiting threads */
             if (cv->waitHead == NULL) {
                 notified->cv[index].notifyHead = NULL;
@@ -154,7 +154,9 @@ md_UnlockAndPostNotifies(
         }
         prev = notified;
         notified = notified->link;
-        if (&post != prev) PR_DELETE(prev);
+        if (&post != prev) {
+            PR_DELETE(prev);
+        }
     } while (NULL != notified);
 }
 
@@ -164,7 +166,7 @@ md_UnlockAndPostNotifies(
  * MP systems don't contend for a lock that they can't have.
  */
 static void md_PostNotifyToCvar(_MDCVar *cvar, _MDLock *lock,
-        PRBool broadcast)
+                                PRBool broadcast)
 {
     PRIntn index = 0;
     _MDNotified *notified = &lock->notified;
@@ -181,7 +183,9 @@ static void md_PostNotifyToCvar(_MDCVar *cvar, _MDLock *lock,
             }
         }
         /* if not full, enter new CV in this array */
-        if (notified->length < _MD_CV_NOTIFIED_LENGTH) break;
+        if (notified->length < _MD_CV_NOTIFIED_LENGTH) {
+            break;
+        }
 
         /* if there's no link, create an empty array and link it */
         if (NULL == notified->link) {
@@ -214,7 +218,7 @@ _PR_MD_NEW_CV(_MDCVar *cv)
      * when the PRCondVar structure is created.
      */
     return 0;
-} 
+}
 
 void _PR_MD_FREE_CV(_MDCVar *cv)
 {
@@ -231,7 +235,7 @@ _PR_MD_WAIT_CV(_MDCVar *cv, _MDLock *lock, PRIntervalTime timeout )
     PRThread *thred = _PR_MD_CURRENT_THREAD();
     ULONG rv, count;
     ULONG msecs = (timeout == PR_INTERVAL_NO_TIMEOUT) ?
-            SEM_INDEFINITE_WAIT : PR_IntervalToMilliseconds(timeout);
+                  SEM_INDEFINITE_WAIT : PR_IntervalToMilliseconds(timeout);
 
     /*
      * If we have pending notifies, post them now.
@@ -240,7 +244,7 @@ _PR_MD_WAIT_CV(_MDCVar *cv, _MDLock *lock, PRIntervalTime timeout )
         md_UnlockAndPostNotifies(lock, thred, cv);
     } else {
         AddThreadToCVWaitQueueInternal(thred, cv);
-        DosReleaseMutexSem(lock->mutex); 
+        DosReleaseMutexSem(lock->mutex);
     }
 
     /* Wait for notification or timeout; don't really care which */
@@ -255,42 +259,42 @@ _PR_MD_WAIT_CV(_MDCVar *cv, _MDLock *lock, PRIntervalTime timeout )
 
     if(rv == ERROR_TIMEOUT)
     {
-       if (thred->md.inCVWaitQueue) {
-           PR_ASSERT((cv->waitTail != NULL && cv->waitHead != NULL)
-                   || (cv->waitTail == NULL && cv->waitHead == NULL));
-           cv->nwait -= 1;
-           thred->md.inCVWaitQueue = PR_FALSE;
-           if (cv->waitHead == thred) {
-               cv->waitHead = thred->md.next;
-               if (cv->waitHead == NULL) {
-                   cv->waitTail = NULL;
-               } else {
-                   cv->waitHead->md.prev = NULL;
-               }
-           } else {
-               PR_ASSERT(thred->md.prev != NULL);
-               thred->md.prev->md.next = thred->md.next;
-               if (thred->md.next != NULL) {
-                   thred->md.next->md.prev = thred->md.prev;
-               } else {
-                   PR_ASSERT(cv->waitTail == thred);
-                   cv->waitTail = thred->md.prev;
-               }
-           }
-           thred->md.next = thred->md.prev = NULL;
-       } else {
-           /*
-            * This thread must have been notified, but the
-            * SemRelease call happens after SemRequest
-            * times out.  Wait on the semaphore again to make it
-            * non-signaled.  We assume this wait won't take long.
-            */
-           rv = DosWaitEventSem(thred->md.blocked_sema, SEM_INDEFINITE_WAIT);
-           if (rv == NO_ERROR) {
-               DosResetEventSem(thred->md.blocked_sema, &count);
-           }
-           PR_ASSERT(rv == NO_ERROR);
-       }
+        if (thred->md.inCVWaitQueue) {
+            PR_ASSERT((cv->waitTail != NULL && cv->waitHead != NULL)
+                      || (cv->waitTail == NULL && cv->waitHead == NULL));
+            cv->nwait -= 1;
+            thred->md.inCVWaitQueue = PR_FALSE;
+            if (cv->waitHead == thred) {
+                cv->waitHead = thred->md.next;
+                if (cv->waitHead == NULL) {
+                    cv->waitTail = NULL;
+                } else {
+                    cv->waitHead->md.prev = NULL;
+                }
+            } else {
+                PR_ASSERT(thred->md.prev != NULL);
+                thred->md.prev->md.next = thred->md.next;
+                if (thred->md.next != NULL) {
+                    thred->md.next->md.prev = thred->md.prev;
+                } else {
+                    PR_ASSERT(cv->waitTail == thred);
+                    cv->waitTail = thred->md.prev;
+                }
+            }
+            thred->md.next = thred->md.prev = NULL;
+        } else {
+            /*
+             * This thread must have been notified, but the
+             * SemRelease call happens after SemRequest
+             * times out.  Wait on the semaphore again to make it
+             * non-signaled.  We assume this wait won't take long.
+             */
+            rv = DosWaitEventSem(thred->md.blocked_sema, SEM_INDEFINITE_WAIT);
+            if (rv == NO_ERROR) {
+                DosResetEventSem(thred->md.blocked_sema, &count);
+            }
+            PR_ASSERT(rv == NO_ERROR);
+        }
     }
     PR_ASSERT(thred->md.inCVWaitQueue == PR_FALSE);
     return;

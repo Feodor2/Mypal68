@@ -19,10 +19,12 @@ static void _PR_PostNotifyToMonitor(PRMonitor *mon, PRBool broadcast)
     /* mon->notifyTimes is protected by the monitor, so we don't need to
      * acquire mon->lock.
      */
-    if (broadcast)
+    if (broadcast) {
         mon->notifyTimes = -1;
-    else if (mon->notifyTimes != -1)
+    }
+    else if (mon->notifyTimes != -1) {
         mon->notifyTimes += 1;
+    }
 }
 
 static void _PR_PostNotifiesFromMonitor(PRCondVar *cv, PRIntn times)
@@ -54,7 +56,9 @@ PR_IMPLEMENT(PRMonitor*) PR_NewMonitor()
     PRMonitor *mon;
     PRStatus rv;
 
-    if (!_pr_initialized) _PR_ImplicitInitialization();
+    if (!_pr_initialized) {
+        _PR_ImplicitInitialization();
+    }
 
     mon = PR_NEWZAP(PRMonitor);
     if (mon == NULL) {
@@ -64,20 +68,23 @@ PR_IMPLEMENT(PRMonitor*) PR_NewMonitor()
 
     rv = _PR_InitLock(&mon->lock);
     PR_ASSERT(rv == PR_SUCCESS);
-    if (rv != PR_SUCCESS)
+    if (rv != PR_SUCCESS) {
         goto error1;
+    }
 
     mon->owner = NULL;
 
     rv = _PR_InitCondVar(&mon->entryCV, &mon->lock);
     PR_ASSERT(rv == PR_SUCCESS);
-    if (rv != PR_SUCCESS)
+    if (rv != PR_SUCCESS) {
         goto error2;
+    }
 
     rv = _PR_InitCondVar(&mon->waitCV, &mon->lock);
     PR_ASSERT(rv == PR_SUCCESS);
-    if (rv != PR_SUCCESS)
+    if (rv != PR_SUCCESS) {
         goto error3;
+    }
 
     mon->notifyTimes = 0;
     mon->entryCount = 0;
@@ -96,8 +103,9 @@ error1:
 PR_IMPLEMENT(PRMonitor*) PR_NewNamedMonitor(const char* name)
 {
     PRMonitor* mon = PR_NewMonitor();
-    if (mon)
+    if (mon) {
         mon->name = name;
+    }
     return mon;
 }
 
@@ -129,8 +137,9 @@ PR_IMPLEMENT(void) PR_EnterMonitor(PRMonitor *mon)
     PR_ASSERT(mon != NULL);
     PR_Lock(&mon->lock);
     if (mon->entryCount != 0) {
-        if (mon->owner == me)
+        if (mon->owner == me) {
             goto done;
+        }
         while (mon->entryCount != 0) {
             rv = PR_WaitCondVar(&mon->entryCV, PR_INTERVAL_NO_TIMEOUT);
             PR_ASSERT(rv == PR_SUCCESS);
@@ -160,8 +169,9 @@ PR_IMPLEMENT(PRBool) PR_TestAndEnterMonitor(PRMonitor *mon)
     PR_ASSERT(mon != NULL);
     PR_Lock(&mon->lock);
     if (mon->entryCount != 0) {
-        if (mon->owner == me)
+        if (mon->owner == me) {
             goto done;
+        }
         rv = PR_Unlock(&mon->lock);
         PR_ASSERT(rv == PR_SUCCESS);
         return PR_FALSE;
@@ -227,8 +237,9 @@ PR_IMPLEMENT(PRIntn) PR_GetMonitorEntryCount(PRMonitor *mon)
     PRIntn count = 0;
 
     PR_Lock(&mon->lock);
-    if (mon->owner == me)
+    if (mon->owner == me) {
         count = mon->entryCount;
+    }
     rv = PR_Unlock(&mon->lock);
     PR_ASSERT(rv == PR_SUCCESS);
     return count;
@@ -336,10 +347,10 @@ PRUint32 _PR_MonitorToString(PRMonitor *mon, char *buf, PRUint32 buflen)
     PRUint32 nb;
 
     if (mon->owner) {
-	nb = PR_snprintf(buf, buflen, "[%p] owner=%d[%p] count=%ld",
-			 mon, mon->owner->id, mon->owner, mon->entryCount);
+        nb = PR_snprintf(buf, buflen, "[%p] owner=%d[%p] count=%ld",
+                         mon, mon->owner->id, mon->owner, mon->entryCount);
     } else {
-	nb = PR_snprintf(buf, buflen, "[%p]", mon);
+        nb = PR_snprintf(buf, buflen, "[%p]", mon);
     }
     return nb;
 }

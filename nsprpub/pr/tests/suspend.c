@@ -2,15 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef XP_BEOS
-#include <stdio.h>
-int main()
-{
-    printf( "This test is not ported to the BeOS\n" );
-    return 0;
-}
-#else
-
 #include "nspr.h"
 #include "prpriv.h"
 #include "prinrval.h"
@@ -41,21 +32,21 @@ Level_1_Thread(void *arg)
     PRThread *thr;
 
     thr = PR_CreateThreadGCAble(PR_USER_THREAD,
-        Level_2_Thread,
-        NULL,
-        PR_PRIORITY_HIGH,
-        scope,
-        PR_JOINABLE_THREAD,
-        0);
+                                Level_2_Thread,
+                                NULL,
+                                PR_PRIORITY_HIGH,
+                                scope,
+                                PR_JOINABLE_THREAD,
+                                0);
 
     if (!thr) {
         printf("Could not create thread!\n");
     } else {
         printf("Level_1_Thread[0x%lx] created %15s thread 0x%lx\n",
-            PR_GetCurrentThread(),
-            (scope == PR_GLOBAL_THREAD) ?
-            "PR_GLOBAL_THREAD" : "PR_LOCAL_THREAD",
-            thr);
+               PR_GetCurrentThread(),
+               (scope == PR_GLOBAL_THREAD) ?
+               "PR_GLOBAL_THREAD" : "PR_LOCAL_THREAD",
+               thr);
         PR_JoinThread(thr);
     }
     PR_EnterMonitor(mon);
@@ -71,13 +62,13 @@ static PRStatus PR_CALLBACK print_thread(PRThread *thread, int i, void *arg)
     PRWord *registers;
 
     printf(
-        "\nprint_thread[0x%lx]: %-20s - i = %ld\n",thread, 
+        "\nprint_thread[0x%lx]: %-20s - i = %ld\n",thread,
         (PR_GLOBAL_THREAD == PR_GetThreadScope(thread)) ?
         "PR_GLOBAL_THREAD" : "PR_LOCAL_THREAD", i);
     registers = PR_GetGCRegisters(thread, 0, (int *)&words);
     if (registers)
         printf("Registers R0 = 0x%x R1 = 0x%x R2 = 0x%x R3 = 0x%x\n",
-            registers[0],registers[1],registers[2],registers[3]);
+               registers[0],registers[1],registers[2],registers[3]);
     printf("Stack Pointer = 0x%lx\n", PR_GetSP(thread));
     return PR_SUCCESS;
 }
@@ -96,21 +87,21 @@ static void Level_0_Thread(PRThreadScope scope1, PRThreadScope scope2)
     alive = count;
     for (n=0; n<count; n++) {
         thr = PR_CreateThreadGCAble(PR_USER_THREAD,
-            Level_1_Thread, 
-            (void *)scope2, 
-            PR_PRIORITY_NORMAL,
-            scope1,
-            PR_UNJOINABLE_THREAD,
-            0);
+                                    Level_1_Thread,
+                                    (void *)scope2,
+                                    PR_PRIORITY_NORMAL,
+                                    scope1,
+                                    PR_UNJOINABLE_THREAD,
+                                    0);
         if (!thr) {
             printf("Could not create thread!\n");
             alive--;
         }
         printf("Level_0_Thread[0x%lx] created %15s thread 0x%lx\n",
-            PR_GetCurrentThread(),
-            (scope1 == PR_GLOBAL_THREAD) ?
-            "PR_GLOBAL_THREAD" : "PR_LOCAL_THREAD",
-            thr);
+               PR_GetCurrentThread(),
+               (scope1 == PR_GLOBAL_THREAD) ?
+               "PR_GLOBAL_THREAD" : "PR_LOCAL_THREAD",
+               thr);
 
         PR_Sleep(0);
     }
@@ -119,7 +110,7 @@ static void Level_0_Thread(PRThreadScope scope1, PRThreadScope scope2)
     registers = PR_GetGCRegisters(me, 1, (int *)&words);
     if (registers)
         printf("My Registers: R0 = 0x%x R1 = 0x%x R2 = 0x%x R3 = 0x%x\n",
-            registers[0],registers[1],registers[2],registers[3]);
+               registers[0],registers[1],registers[2],registers[3]);
     printf("My Stack Pointer = 0x%lx\n", PR_GetSP(me));
     PR_ResumeAll();
 
@@ -183,4 +174,3 @@ int main(int argc, char **argv)
     return 0;
 }
 
-#endif /* XP_BEOS */

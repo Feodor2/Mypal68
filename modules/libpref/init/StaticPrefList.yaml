@@ -653,6 +653,15 @@
   value: true
   mirror: always
 
+- name: browser.cache.offline.storage.enable
+  type: bool
+#ifdef EARLY_BETA_OR_EARLIER
+  value: false
+#else
+  value: true
+#endif
+  mirror: always
+
 - name: browser.cache.disk.enable
   type: RelaxedAtomicBool
   value: true
@@ -1550,6 +1559,14 @@
   value: false
   mirror: always
 
+# <img loading="lazy">
+#
+# See https://github.com/whatwg/html/pull/3752
+- name: dom.image-lazy-loading.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Enable passing the "storage" option to indexedDB.open.
 - name: dom.indexedDB.storageOption.enabled
   type: RelaxedAtomicBool
@@ -1740,6 +1757,12 @@
 - name: dom.link.disabled_attribute.enabled
   type: bool
   value: true
+  mirror: always
+
+# Whether "W3C Web Manifest" processing is enabled
+- name: dom.manifest.enabled
+  type: bool
+  value: false
   mirror: always
 
 # Whether window.onappinstalled from "W3C Web Manifest" is enabled
@@ -2644,8 +2667,8 @@
   value: false
   mirror: always
 
-# Is support for elementInternals enabled?
-- name: dom.webcomponents.elementInternals.enabled
+# Is support for form-associated custom element enabled?
+- name: dom.webcomponents.formAssociatedCustomElement.enabled
   type: bool
   value: @IS_NIGHTLY_BUILD@
   mirror: always
@@ -2829,13 +2852,6 @@
 - name: extensions.allowPrivateBrowsingByDefault
   type: bool
   value: true
-  mirror: always
-
-# This pref should be set to true only in case of regression related to the
-# changes applied in Bug 152591 (to be removed as part of Bug 1537753).
-- name: extensions.cookiesBehavior.overrideOnTopLevel
-  type: bool
-  value: false
   mirror: always
 
 # This pref governs whether we run webextensions in a separate process (true)
@@ -3363,7 +3379,7 @@
   mirror: once
 
 # Disable antialiasing of Ahem, for use in tests.
-- name: gfx.font_ahem_antialias_none
+- name: gfx.font_rendering.ahem_antialias_none
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -6609,6 +6625,12 @@
   value: false
   mirror: always
 
+# Enables `<link rel="preload">` tag and `Link: rel=preload` response header handling.
+- name: network.preload
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 - name: network.delay.tracking.load
   type: uint32_t
   value: 0
@@ -6625,6 +6647,12 @@
   value: 2000
   mirror: always
 
+# Whether the SOCKS proxy should be in charge of DNS resolution.
+- name: network.proxy.socks_remote_dns
+  type: bool
+  value: false
+  mirror: always
+
 # Some requests during a page load are marked as "tail", mainly trackers, but not only.
 # This pref controls whether such requests are put to the tail, behind other requests
 # emerging during page loading process.
@@ -6637,6 +6665,35 @@
 - name: network.http.altsvc.proxy_checks
   type: bool
   value: true
+  mirror: always
+
+- name: network.http.stale_while_revalidate.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Single TRR request timeout, in milliseconds
+- name: network.trr.request_timeout_ms
+  type: uint32_t
+  value: 1500
+  mirror: always
+
+# Single TRR request timeout, in milliseconds for mode 3
+- name: network.trr.request_timeout_mode_trronly_ms
+  type: uint32_t
+  value: 30000
+  mirror: always
+
+# Whether to send the Accept-Language header for TRR requests
+- name: network.trr.send_accept-language_headers
+  type: bool
+  value: false
+  mirror: always
+
+# Whether to send the User-Agent header for TRR requests
+- name: network.trr.send_user-agent_headers
+  type: bool
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -6686,7 +6743,7 @@
 
 - name: plugins.http_https_only
   type: bool
-  value: true
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -6911,6 +6968,24 @@
 - name: privacy.restrict3rdpartystorage.expiration
   type: uint32_t
   value: 2592000   # 30 days (in seconds)
+  mirror: always
+
+# Report Anti-tracking warnings to console lazily
+- name: privacy.restrict3rdpartystorage.console.lazy
+  type: bool
+  value: true
+  mirror: always
+
+# Enable the heuristic to allow storage access for windows opened using window.open()
+- name: privacy.restrict3rdpartystorage.heuristic.redirect
+  type: bool
+  value: true
+  mirror: always
+
+# Anti-tracking permission expiration.
+- name: privacy.restrict3rdpartystorage.expiration_redirect
+  type: uint32_t
+  value: 900    # 15 minutes
   mirror: always
 
 # Anti-tracking user-interaction expiration.

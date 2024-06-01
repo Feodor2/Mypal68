@@ -1423,6 +1423,8 @@ class nsTSubstringSplitter {
   }
 };
 
+#include "nsTDependentSubstring.h"
+
 extern template class nsTSubstringSplitter<char>;
 extern template class nsTSubstringSplitter<char16_t>;
 

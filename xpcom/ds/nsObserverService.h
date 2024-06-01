@@ -19,8 +19,6 @@
     }                                               \
   }
 
-class nsIMemoryReporter;
-
 class nsObserverService final : public nsIObserverService,
                                 public nsIMemoryReporter {
  public:

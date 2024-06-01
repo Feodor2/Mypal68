@@ -49,7 +49,7 @@ ExternalHelperAppParent::ExternalHelperAppParent(
   mContentDispositionHeader = aContentDispositionHeader;
   if (!mContentDispositionHeader.IsEmpty()) {
     NS_GetFilenameFromDisposition(mContentDispositionFilename,
-                                  mContentDispositionHeader, mURI);
+                                  mContentDispositionHeader);
     mContentDisposition =
         NS_GetContentDispositionFromHeader(mContentDispositionHeader, this);
   } else {

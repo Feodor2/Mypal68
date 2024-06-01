@@ -79,7 +79,7 @@ class Message extends Component {
       timeStamp: PropTypes.number,
       timestampsVisible: PropTypes.bool.isRequired,
       serviceContainer: PropTypes.shape({
-        emitEvent: PropTypes.func.isRequired,
+        emitNewMessage: PropTypes.func.isRequired,
         onViewSource: PropTypes.func.isRequired,
         onViewSourceInDebugger: PropTypes.func,
         onViewSourceInScratchpad: PropTypes.func,
@@ -123,23 +123,20 @@ class Message extends Component {
       if (this.props.scrollToMessage) {
         this.messageNode.scrollIntoView();
       }
-
-      this.emitNewMessage(this.messageNode);
+      // Event used in tests. Some message types don't pass it in because existing tests
+      // did not emit for them.
+      if (this.props.serviceContainer) {
+        this.props.serviceContainer.emitNewMessage(
+          this.messageNode,
+          this.props.messageId,
+          this.props.timeStamp
+        );
+      }
     }
   }
 
   componentDidCatch(e) {
     this.setState({ error: e });
-  }
-
-  // Event used in tests. Some message types don't pass it in because existing tests
-  // did not emit for them.
-  emitNewMessage(node) {
-    const { serviceContainer, messageId, timeStamp } = this.props;
-    serviceContainer.emitEvent(
-      "new-messages",
-      new Set([{ node, messageId, timeStamp }])
-    );
   }
 
   onLearnMoreClick(e) {
@@ -178,9 +175,9 @@ class Message extends Component {
   }
 
   onMouseEvent(ev) {
-    const { message, serviceContainer, executionPoint } = this.props;
+    const { messageId, serviceContainer, executionPoint } = this.props;
     if (serviceContainer.canRewind() && executionPoint) {
-      serviceContainer.onMessageHover(ev.type, message);
+      serviceContainer.onMessageHover(ev.type, messageId);
     }
   }
 

@@ -3,24 +3,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XPathEvaluator.h"
-#include "mozilla/Move.h"
-#include "nsCOMPtr.h"
-#include "nsAtom.h"
-#include "mozilla/dom/XPathExpression.h"
+
+#include <utility>
+
 #include "XPathResult.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/XPathEvaluatorBinding.h"
+#include "mozilla/dom/XPathExpression.h"
+#include "mozilla/dom/XPathNSResolverBinding.h"
+#include "nsAtom.h"
+#include "nsCOMPtr.h"
 #include "nsContentCID.h"
+#include "nsContentUtils.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsNameSpaceManager.h"
 #include "txExpr.h"
 #include "txExprParser.h"
-#include "nsError.h"
-#include "txURIUtils.h"
-#include "mozilla/dom/Document.h"
-#include "nsDOMString.h"
-#include "nsNameSpaceManager.h"
-#include "nsContentUtils.h"
 #include "txIXPathContext.h"
-#include "mozilla/dom/XPathEvaluatorBinding.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/XPathNSResolverBinding.h"
+#include "txURIUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -85,7 +87,7 @@ XPathExpression* XPathEvaluator::CreateExpression(const nsAString& aExpression,
     mRecycler = new txResultRecycler;
   }
 
-  nsAutoPtr<Expr> expression;
+  UniquePtr<Expr> expression;
   aRv = txExprParser::createExpr(PromiseFlatString(aExpression), aContext,
                                  getter_Transfers(expression));
   if (aRv.Failed()) {
@@ -115,7 +117,7 @@ already_AddRefed<XPathResult> XPathEvaluator::Evaluate(
     JSContext* aCx, const nsAString& aExpression, nsINode& aContextNode,
     XPathNSResolver* aResolver, uint16_t aType, JS::Handle<JSObject*> aResult,
     ErrorResult& rv) {
-  nsAutoPtr<XPathExpression> expression(
+  UniquePtr<XPathExpression> expression(
       CreateExpression(aExpression, aResolver, rv));
   if (rv.Failed()) {
     return nullptr;

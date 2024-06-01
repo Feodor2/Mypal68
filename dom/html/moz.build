@@ -8,6 +8,7 @@ with Files("**"):
 DIRS += ['input']
 
 MOCHITEST_MANIFESTS += [
+    'test/dialog/mochitest.ini',
     'test/forms/mochitest.ini',
     'test/mochitest.ini',
 ]

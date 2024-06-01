@@ -34,6 +34,7 @@ namespace dom {
 class Element;
 class ScriptLoader;
 class Document;
+class XMLStylesheetProcessingInstruction;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -236,7 +237,7 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
    */
   nsresult InsertXMLStylesheetPI(const nsXULPrototypePI* aProtoPI,
                                  nsINode* aParent, nsINode* aBeforeThis,
-                                 nsIContent* aPINode);
+                                 XMLStylesheetProcessingInstruction* aPINode);
   void CloseElement(Element* aElement);
 };
 

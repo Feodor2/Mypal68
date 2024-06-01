@@ -6,7 +6,6 @@
 #define txResultRecycler_h__
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "txStack.h"
 
 class txAExprResult;

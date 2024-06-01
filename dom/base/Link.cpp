@@ -7,16 +7,10 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Element.h"
-#if defined(MOZ_PLACES)
-#  include "mozilla/places/History.h"
-#else
-#  include "mozilla/IHistory.h"
-#endif
+#include "mozilla/IHistory.h"
 #include "nsIURL.h"
 #include "nsIURIMutator.h"
 #include "nsISizeOf.h"
-#include "nsIPrefetchService.h"
-#include "nsStyleLinkElement.h"
 
 #include "nsEscape.h"
 #include "nsGkAtoms.h"
@@ -30,10 +24,6 @@
 
 namespace mozilla {
 namespace dom {
-
-#if defined(MOZ_PLACES)
-using places::History;
-#endif
 
 Link::Link(Element* aElement)
     : mElement(aElement),
@@ -133,14 +123,7 @@ EventStates Link::LinkState() const {
     // Make sure the href attribute has a valid link (bug 23209).
     // If we have a good href, register with History if available.
     if (mHistory && hrefURI) {
-#ifdef ANDROID
-      nsCOMPtr<IHistory> history = services::GetHistoryService();
-#elif defined(MOZ_PLACES)
-      History* history = History::GetService();
-#else
-      nsCOMPtr<IHistory> history;
-#endif
-      if (history) {
+      if (nsCOMPtr<IHistory> history = services::GetHistoryService()) {
         nsresult rv = history->RegisterVisitedCallback(hrefURI, self);
         if (NS_SUCCEEDED(rv)) {
           self->mRegistered = true;
@@ -555,14 +538,7 @@ void Link::UnregisterFromHistory() {
 
   // And tell History to stop tracking us.
   if (mHistory && mCachedURI) {
-#ifdef ANDROID
-    nsCOMPtr<IHistory> history = services::GetHistoryService();
-#elif defined(MOZ_PLACES)
-    History* history = History::GetService();
-#else
-    nsCOMPtr<IHistory> history;
-#endif
-    if (history) {
+    if (nsCOMPtr<IHistory> history = services::GetHistoryService()) {
       nsresult rv = history->UnregisterVisitedCallback(mCachedURI, this);
       NS_ASSERTION(NS_SUCCEEDED(rv),
                    "This should only fail if we misuse the API!");

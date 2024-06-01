@@ -30,6 +30,7 @@
 #include "js/Exception.h"
 #include "js/SourceText.h"
 #include "nsError.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShellCID.h"

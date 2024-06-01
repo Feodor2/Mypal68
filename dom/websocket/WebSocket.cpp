@@ -1683,8 +1683,10 @@ nsresult WebSocketImpl::AsyncOpen(
   MOZ_ASSERT_IF(!aTransportProvider, aNegotiatedExtensions.IsEmpty());
 
   nsCString asciiOrigin;
-  nsresult rv = nsContentUtils::GetASCIIOrigin(aPrincipal, asciiOrigin);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsresult rv = aPrincipal->GetAsciiOrigin(asciiOrigin);
+  if (NS_FAILED(rv)) {
+    asciiOrigin.AssignLiteral("null");
+  }
 
   if (aTransportProvider) {
     rv = mChannel->SetServerParameters(aTransportProvider,

@@ -11,6 +11,8 @@
 #include "txStylesheetCompiler.h"
 #include "txPatternOptimizer.h"
 
+using mozilla::UniquePtr;
+
 nsresult txPatternParser::createPattern(const nsString& aPattern,
                                         txIParseContext* aContext,
                                         txPattern** aResult) {
@@ -20,7 +22,7 @@ nsresult txPatternParser::createPattern(const nsString& aPattern,
     // XXX error report parsing error
     return rv;
   }
-  nsAutoPtr<txPattern> pattern;
+  UniquePtr<txPattern> pattern;
   rv = createUnionPattern(lexer, aContext, *getter_Transfers(pattern));
   if (NS_FAILED(rv)) {
     // XXX error report parsing error
@@ -29,10 +31,10 @@ nsresult txPatternParser::createPattern(const nsString& aPattern,
 
   txPatternOptimizer optimizer;
   txPattern* newPattern = nullptr;
-  rv = optimizer.optimize(pattern, &newPattern);
+  rv = optimizer.optimize(pattern.get(), &newPattern);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  *aResult = newPattern ? newPattern : pattern.forget();
+  *aResult = newPattern ? newPattern : pattern.release();
 
   return NS_OK;
 }
@@ -276,11 +278,11 @@ nsresult txPatternParser::createStepPattern(txExprLexer& aLexer,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  nsAutoPtr<txStepPattern> step(new txStepPattern(nodeTest, isAttr));
-  rv = parsePredicates(step, aLexer, aContext);
+  UniquePtr<txStepPattern> step(new txStepPattern(nodeTest, isAttr));
+  rv = parsePredicates(step.get(), aLexer, aContext);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aPattern = step.forget();
+  aPattern = step.release();
 
   return NS_OK;
 }

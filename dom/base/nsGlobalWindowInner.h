@@ -14,7 +14,6 @@
 // Local Includes
 // Helper Classes
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsWeakReference.h"
 #include "nsDataHashtable.h"
 #include "nsJSThingHashtable.h"
@@ -392,9 +391,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   already_AddRefed<nsPIDOMWindowOuter> IndexedGetter(uint32_t aIndex);
 
   static bool IsPrivilegedChromeWindow(JSContext* /* unused */, JSObject* aObj);
-
-  static bool OfflineCacheAllowedForContext(JSContext* /* unused */,
-                                            JSObject* aObj);
 
   static bool IsRequestIdleCallbackEnabled(JSContext* aCx,
                                            JSObject* /* unused */);

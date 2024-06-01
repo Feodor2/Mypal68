@@ -6,7 +6,7 @@
 
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Move.h"
+#include <utility>
 #include "mozilla/SMILAttr.h"
 #include "mozilla/SMILCSSValueType.h"
 #include "mozilla/SMILNullType.h"

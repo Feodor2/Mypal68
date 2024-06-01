@@ -112,6 +112,8 @@ class TextTrack final : public DOMEventTargetHelper {
                                   RefPtr<TextTrackCueList>& aOtherCues,
                                   const media::TimeInterval& aInterval) const;
 
+  void ClearAllCues();
+
  private:
   ~TextTrack();
 

@@ -5,12 +5,12 @@
 #ifndef mozilla_dom_XPathExpression_h
 #define mozilla_dom_XPathExpression_h
 
-#include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIWeakReferenceUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/XPathExpressionBinding.h"
+#include "mozilla/UniquePtr.h"
 
 class Expr;
 
@@ -20,6 +20,7 @@ class txResultRecycler;
 namespace mozilla {
 namespace dom {
 
+class Document;
 class XPathResult;
 
 /**
@@ -27,8 +28,8 @@ class XPathResult;
  */
 class XPathExpression final : public NonRefcountedDOMObject {
  public:
-  XPathExpression(nsAutoPtr<Expr>&& aExpression, txResultRecycler* aRecycler,
-                  Document* aDocument);
+  XPathExpression(mozilla::UniquePtr<Expr>&& aExpression,
+                  txResultRecycler* aRecycler, Document* aDocument);
   ~XPathExpression();
 
   bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
@@ -56,7 +57,7 @@ class XPathExpression final : public NonRefcountedDOMObject {
       uint16_t aType, XPathResult* aInResult, ErrorResult& aRv);
 
  private:
-  nsAutoPtr<Expr> mExpression;
+  mozilla::UniquePtr<Expr> mExpression;
   RefPtr<txResultRecycler> mRecycler;
   nsWeakPtr mDocument;
   bool mCheckDocument;

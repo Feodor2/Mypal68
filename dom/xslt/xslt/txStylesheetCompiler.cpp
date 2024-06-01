@@ -2,25 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Move.h"
-#include "mozilla/UniquePtr.h"
-
 #include "txStylesheetCompiler.h"
-#include "txStylesheetCompileHandlers.h"
+
+#include <utility>
+
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/UniquePtr.h"
 #include "nsGkAtoms.h"
-#include "txURIUtils.h"
+#include "nsServiceManagerUtils.h"
+#include "nsTArray.h"
 #include "nsWhitespaceTokenizer.h"
-#include "txStylesheet.h"
-#include "txInstructions.h"
-#include "txToplevelItems.h"
 #include "txExprParser.h"
+#include "txInstructions.h"
 #include "txLog.h"
 #include "txPatternParser.h"
 #include "txStringUtils.h"
+#include "txStylesheet.h"
+#include "txStylesheetCompileHandlers.h"
+#include "txToplevelItems.h"
+#include "txURIUtils.h"
 #include "txXSLTFunctions.h"
-#include "nsServiceManagerUtils.h"
-#include "nsTArray.h"
 
 using namespace mozilla;
 using mozilla::dom::ReferrerPolicy;
@@ -293,9 +294,8 @@ nsresult txStylesheetCompiler::endElement() {
   for (i = mInScopeVariables.Length() - 1; i >= 0; --i) {
     txInScopeVariable* var = mInScopeVariables[i];
     if (!--(var->mLevel)) {
-      nsAutoPtr<txInstruction> instr(new txRemoveVariable(var->mName));
-      rv = addInstruction(std::move(instr));
-      NS_ENSURE_SUCCESS(rv, rv);
+      UniquePtr<txInstruction> instr(new txRemoveVariable(var->mName));
+      addInstruction(std::move(instr));
 
       mInScopeVariables.RemoveElementAt(i);
       delete var;
@@ -309,7 +309,7 @@ nsresult txStylesheetCompiler::endElement() {
 
   if (!--mElementContext->mDepth) {
     // this will delete the old object
-    mElementContext = static_cast<txElementContext*>(popObject());
+    mElementContext = WrapUnique(static_cast<txElementContext*>(popObject()));
   }
 
   return NS_OK;
@@ -416,11 +416,11 @@ nsresult txStylesheetCompiler::ensureNewElementContext() {
     return NS_OK;
   }
 
-  nsAutoPtr<txElementContext> context(new txElementContext(*mElementContext));
-  nsresult rv = pushObject(mElementContext);
+  UniquePtr<txElementContext> context(new txElementContext(*mElementContext));
+  nsresult rv = pushObject(mElementContext.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mElementContext.forget();
+  Unused << mElementContext.release();
   mElementContext = std::move(context);
 
   return NS_OK;
@@ -508,7 +508,7 @@ nsresult txStylesheetCompilerState::init(const nsAString& aStylesheetURI,
     mIsTopCompiler = true;
   }
 
-  mElementContext = new txElementContext(aStylesheetURI);
+  mElementContext = MakeUnique<txElementContext>(aStylesheetURI);
   NS_ENSURE_TRUE(mElementContext->mMappings, NS_ERROR_OUT_OF_MEMORY);
 
   // Push the "old" txElementContext
@@ -556,18 +556,18 @@ void txStylesheetCompilerState::popSorter() {
 }
 
 nsresult txStylesheetCompilerState::pushChooseGotoList() {
-  nsresult rv = pushObject(mChooseGotoList);
+  nsresult rv = pushObject(mChooseGotoList.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mChooseGotoList.forget();
-  mChooseGotoList = new txList;
+  Unused << mChooseGotoList.release();
+  mChooseGotoList = MakeUnique<txList>();
 
   return NS_OK;
 }
 
 void txStylesheetCompilerState::popChooseGotoList() {
   // this will delete the old value
-  mChooseGotoList = static_cast<txList*>(popObject());
+  mChooseGotoList = WrapUnique(static_cast<txList*>(popObject()));
 }
 
 nsresult txStylesheetCompilerState::pushObject(txObject* aObject) {
@@ -607,15 +607,15 @@ void* txStylesheetCompilerState::popPtr(enumStackType aType) {
   return value;
 }
 
-nsresult txStylesheetCompilerState::addToplevelItem(txToplevelItem* aItem) {
-  return mToplevelIterator.addBefore(aItem);
+void txStylesheetCompilerState::addToplevelItem(txToplevelItem* aItem) {
+  mToplevelIterator.addBefore(aItem);
 }
 
 nsresult txStylesheetCompilerState::openInstructionContainer(
     txInstructionContainer* aContainer) {
   MOZ_ASSERT(!mNextInstrPtr, "can't nest instruction-containers");
 
-  mNextInstrPtr = aContainer->mFirstInstruction.StartAssignment();
+  mNextInstrPtr = &aContainer->mFirstInstruction;
   return NS_OK;
 }
 
@@ -625,22 +625,20 @@ void txStylesheetCompilerState::closeInstructionContainer() {
   mNextInstrPtr = 0;
 }
 
-nsresult txStylesheetCompilerState::addInstruction(
-    nsAutoPtr<txInstruction>&& aInstruction) {
+void txStylesheetCompilerState::addInstruction(
+    UniquePtr<txInstruction>&& aInstruction) {
   MOZ_ASSERT(mNextInstrPtr, "adding instruction outside container");
 
-  txInstruction* newInstr = aInstruction;
+  txInstruction* newInstr = aInstruction.get();
 
-  *mNextInstrPtr = aInstruction.forget();
-  mNextInstrPtr = newInstr->mNext.StartAssignment();
+  *mNextInstrPtr = std::move(aInstruction);
+  mNextInstrPtr = &newInstr->mNext;
 
   uint32_t i, count = mGotoTargetPointers.Length();
   for (i = 0; i < count; ++i) {
     *mGotoTargetPointers[i] = newInstr;
   }
   mGotoTargetPointers.Clear();
-
-  return NS_OK;
 }
 
 nsresult txStylesheetCompilerState::loadIncludedStylesheet(
@@ -653,13 +651,10 @@ nsresult txStylesheetCompilerState::loadIncludedStylesheet(
   }
   NS_ENSURE_TRUE(mObserver, NS_ERROR_NOT_IMPLEMENTED);
 
-  nsAutoPtr<txToplevelItem> item(new txDummyItem);
+  UniquePtr<txToplevelItem> item(new txDummyItem);
   NS_ENSURE_TRUE(item, NS_ERROR_OUT_OF_MEMORY);
 
-  nsresult rv = mToplevelIterator.addBefore(item);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  item.forget();
+  mToplevelIterator.addBefore(item.release());
 
   // step back to the dummy-item
   mToplevelIterator.previous();
@@ -677,7 +672,8 @@ nsresult txStylesheetCompilerState::loadIncludedStylesheet(
   // pretended earlier.
   mChildCompilerList.AppendElement(compiler);
 
-  rv = mObserver->loadURI(aURI, mStylesheetURI, mReferrerPolicy, compiler);
+  nsresult rv =
+      mObserver->loadURI(aURI, mStylesheetURI, mReferrerPolicy, compiler);
   if (NS_FAILED(rv)) {
     mChildCompilerList.RemoveElement(compiler);
   }
@@ -838,7 +834,7 @@ extern bool TX_XSLTFunctionAvailable(nsAtom* aName, int32_t aNameSpaceID) {
       new txStylesheetCompiler(EmptyString(), ReferrerPolicy::_empty, nullptr);
   NS_ENSURE_TRUE(compiler, false);
 
-  nsAutoPtr<FunctionCall> fnCall;
+  UniquePtr<FunctionCall> fnCall;
 
   return NS_SUCCEEDED(
       findFunction(aName, aNameSpaceID, compiler, getter_Transfers(fnCall)));

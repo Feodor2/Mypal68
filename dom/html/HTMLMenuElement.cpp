@@ -11,6 +11,7 @@
 #include "mozilla/dom/HTMLMenuItemElement.h"
 #include "nsIMenuBuilder.h"
 #include "nsAttrValueInlines.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIURI.h"
 
@@ -18,8 +19,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Menu)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 enum MenuType : uint8_t { MENU_TYPE_CONTEXT = 1, MENU_TYPE_TOOLBAR };
 
@@ -211,5 +211,4 @@ JSObject* HTMLMenuElement::WrapNode(JSContext* aCx,
   return HTMLMenuElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

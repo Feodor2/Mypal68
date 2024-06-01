@@ -6,7 +6,6 @@
 #define __TX_XPATH_CONTEXT
 
 #include "txIXPathContext.h"
-#include "nsAutoPtr.h"
 #include "txNodeSet.h"
 
 class txForwardContext : public txIEvalContext {

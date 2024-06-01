@@ -12,6 +12,8 @@
 #include "BrowserParent.h"
 #include "mozilla/dom/MediaControlService.h"
 
+#include "mozilla/XREAppData.h"
+
 #if defined(ANDROID) || defined(LINUX)
 #  include <sys/time.h>
 #  include <sys/resource.h>

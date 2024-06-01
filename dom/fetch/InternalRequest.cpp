@@ -255,6 +255,7 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_FONT:
+    case nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD:
       destination = RequestDestination::Font;
       break;
     case nsIContentPolicy::TYPE_MEDIA:
@@ -292,6 +293,12 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
       break;
     case nsIContentPolicy::TYPE_SPECULATIVE:
       destination = RequestDestination::_empty;
+      break;
+    case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
+      destination = RequestDestination::Audioworklet;
+      break;
+    case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
+      destination = RequestDestination::Paintworklet;
       break;
     default:
       MOZ_ASSERT(false, "Unhandled nsContentPolicyType value");

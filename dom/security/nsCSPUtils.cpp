@@ -262,12 +262,15 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_MODULE:
     case nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
+    case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
+    case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
       return nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_STYLESHEET:
       return nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_FONT:
+    case nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD:
       return nsIContentSecurityPolicy::FONT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_MEDIA:
@@ -873,6 +876,25 @@ bool nsCSPNonceSrc::permits(nsIURI* aUri, const nsAString& aNonce,
     CSPUTILSLOG(("nsCSPNonceSrc::permits, aUri: %s, aNonce: %s",
                  aUri->GetSpecOrDefault().get(),
                  NS_ConvertUTF16toUTF8(aNonce).get()));
+  }
+
+  if (aReportOnly && aWasRedirected && aNonce.IsEmpty()) {
+    /* Fix for Bug 1505412
+     *  If we land here, we're currently handling a script-preload which got
+     *  redirected. Preloads do not have any info about the nonce assiociated.
+     *  Because of Report-Only the preload passes the 1st CSP-check so the
+     *  preload does not get retried with a nonce attached.
+     *  Currently we're relying on the script-manager to
+     *  provide a fake loadinfo to check the preloads against csp.
+     *  So during HTTPChannel->OnRedirect we cant check csp for this case.
+     *  But as the script-manager already checked the csp,
+     *  a report would already have been send,
+     *  if the nonce didnt match.
+     *  So we can pass the check here for Report-Only Cases.
+     */
+    MOZ_ASSERT(aParserCreated == false,
+               "Skipping nonce-check is only allowed for Preloads");
+    return true;
   }
 
   // nonces can not be invalidated by strict-dynamic

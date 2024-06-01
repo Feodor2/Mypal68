@@ -270,7 +270,7 @@ nsMixedContentBlocker::AsyncOnChannelRedirect(
 
   // Get the loading Info from the old channel
   nsCOMPtr<nsILoadInfo> loadInfo = aOldChannel->LoadInfo();
-  nsCOMPtr<nsIPrincipal> requestingPrincipal = loadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> requestingPrincipal = loadInfo->GetLoadingPrincipal();
 
   // Since we are calling shouldLoad() directly on redirects, we don't go
   // through the code in nsContentPolicyUtils::NS_CheckContentLoadPolicy().
@@ -316,9 +316,13 @@ nsMixedContentBlocker::ShouldLoad(nsIURI* aContentLocation,
   nsCOMPtr<nsISupports> requestingContext = aLoadInfo->GetLoadingContext();
   nsCOMPtr<nsIPrincipal> requestPrincipal = aLoadInfo->TriggeringPrincipal();
   nsCOMPtr<nsIURI> requestingLocation;
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->LoadingPrincipal();
-  if (loadingPrincipal) {
-    loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->GetLoadingPrincipal();
+
+  // We need to get a Requesting Location if possible
+  // so we're casting to BasePrincipal to acess GetURI
+  auto* basePrin = BasePrincipal::Cast(loadingPrincipal);
+  if (basePrin) {
+    basePrin->GetURI(getter_AddRefs(requestingLocation));
   }
 
   // We pass in false as the first parameter to ShouldLoad(), because the
@@ -669,8 +673,11 @@ nsresult nsMixedContentBlocker::ShouldLoad(
   }
 
   nsCOMPtr<nsIURI> requestingLocation;
-  if (principal) {
-    principal->GetURI(getter_AddRefs(requestingLocation));
+  // We need to get a Requesting Location if possible
+  // so we're casting to BasePrincipal to acess GetURI
+  auto* basePrin = BasePrincipal::Cast(principal);
+  if (basePrin) {
+    basePrin->GetURI(getter_AddRefs(requestingLocation));
   }
 
   // 2) if aRequestingContext yields a principal but no location, we check if

@@ -20,6 +20,7 @@
 #include "nsFrameLoaderOwner.h"
 #include "nsGlobalWindowInner.h"
 #include "nsFrameLoaderOwner.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
 
 #include "mozilla/dom/JSWindowActorBinding.h"

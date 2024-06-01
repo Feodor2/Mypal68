@@ -1990,10 +1990,9 @@ static bool MatchAttribute(Element* aElement, int32_t aNamespaceID,
 already_AddRefed<nsIHTMLCollection> nsINode::GetElementsByAttribute(
     const nsAString& aAttribute, const nsAString& aValue) {
   RefPtr<nsAtom> attrAtom(NS_Atomize(aAttribute));
-  nsAutoPtr<nsString> attrValue(new nsString(aValue));
   RefPtr<nsContentList> list = new nsContentList(
       this, MatchAttribute, nsContentUtils::DestroyMatchString,
-      attrValue.forget(), true, attrAtom, kNameSpaceID_Unknown);
+      new nsString(aValue), true, attrAtom, kNameSpaceID_Unknown);
 
   return list.forget();
 }
@@ -2002,7 +2001,6 @@ already_AddRefed<nsIHTMLCollection> nsINode::GetElementsByAttributeNS(
     const nsAString& aNamespaceURI, const nsAString& aAttribute,
     const nsAString& aValue, ErrorResult& aRv) {
   RefPtr<nsAtom> attrAtom(NS_Atomize(aAttribute));
-  nsAutoPtr<nsString> attrValue(new nsString(aValue));
 
   int32_t nameSpaceId = kNameSpaceID_Wildcard;
   if (!aNamespaceURI.EqualsLiteral("*")) {
@@ -2016,7 +2014,7 @@ already_AddRefed<nsIHTMLCollection> nsINode::GetElementsByAttributeNS(
 
   RefPtr<nsContentList> list = new nsContentList(
       this, MatchAttribute, nsContentUtils::DestroyMatchString,
-      attrValue.forget(), true, attrAtom, nameSpaceId);
+      new nsString(aValue), true, attrAtom, nameSpaceId);
   return list.forget();
 }
 

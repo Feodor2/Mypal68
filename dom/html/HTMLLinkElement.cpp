@@ -11,6 +11,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLLinkElementBinding.h"
@@ -23,11 +24,9 @@
 #include "mozilla/dom/Document.h"
 #include "nsINode.h"
 #include "nsIPrefetchService.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
-#include "nsStyleLinkElement.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowSizes.h"
 #include "nsIContentPolicy.h"
@@ -70,21 +69,20 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLLinkElement)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLLinkElement,
                                                   nsGenericHTMLElement)
-  tmp->nsStyleLinkElement::Traverse(cb);
+  tmp->LinkStyle::Traverse(cb);
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRelList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSizes)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLLinkElement,
                                                 nsGenericHTMLElement)
-  tmp->nsStyleLinkElement::Unlink();
+  tmp->LinkStyle::Unlink();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mRelList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSizes)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLLinkElement,
-                                             nsGenericHTMLElement,
-                                             nsIStyleSheetLinkingElement, Link)
+                                             nsGenericHTMLElement, Link)
 
 NS_IMPL_ELEMENT_CLONE(HTMLLinkElement)
 
@@ -397,16 +395,31 @@ void HTMLLinkElement::GetLinkTarget(nsAString& aTarget) {
 }
 
 static const DOMTokenListSupportedToken sSupportedRelValues[] = {
-    // Keep this in sync with ToLinkMask in nsStyleLinkElement.cpp.
+    // Keep this and the one below in sync with ToLinkMask in
+    // LinkStyle.cpp.
     // "preload" must come first because it can be disabled.
     "preload",   "prefetch",   "dns-prefetch", "stylesheet", "next",
     "alternate", "preconnect", "icon",         "search",     nullptr};
 
+static const DOMTokenListSupportedToken sSupportedRelValuesWithManifest[] = {
+    // Keep this in sync with ToLinkMask in LinkStyle.cpp.
+    // "preload" and "manifest" must come first because they can be disabled.
+    "preload",   "manifest",   "prefetch", "dns-prefetch", "stylesheet", "next",
+    "alternate", "preconnect", "icon",     "search",       nullptr};
+
 nsDOMTokenList* HTMLLinkElement::RelList() {
   if (!mRelList) {
-    if (Preferences::GetBool("network.preload")) {
+    auto preload = StaticPrefs::network_preload();
+    auto manifest = StaticPrefs::dom_manifest_enabled();
+    if (manifest && preload) {
+      mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
+                                    sSupportedRelValuesWithManifest);
+    } else if (manifest && !preload) {
+      mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
+                                    &sSupportedRelValuesWithManifest[1]);
+    } else if (!manifest && preload) {
       mRelList = new nsDOMTokenList(this, nsGkAtoms::rel, sSupportedRelValues);
-    } else {
+    } else {  // both false...drop preload
       mRelList =
           new nsDOMTokenList(this, nsGkAtoms::rel, &sSupportedRelValues[1]);
     }
@@ -418,7 +431,7 @@ already_AddRefed<nsIURI> HTMLLinkElement::GetHrefURI() const {
   return GetHrefURIForAnchors();
 }
 
-Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
+Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
   nsAutoString rel;
   GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel);
   uint32_t linkTypes = ParseLinkTypes(rel);
@@ -577,41 +590,41 @@ void HTMLLinkElement::
 
   uint32_t linkTypes = ParseLinkTypes(rel);
 
-  if ((linkTypes & ePREFETCH) || (linkTypes & eNEXT) ||
-      (linkTypes & ePRELOAD)) {
+  if ((linkTypes & ePREFETCH) || (linkTypes & eNEXT)) {
     nsCOMPtr<nsIPrefetchService> prefetchService(
         components::Prefetch::Service());
     if (prefetchService) {
       nsCOMPtr<nsIURI> uri(GetURI());
       if (uri) {
-        bool preload = !!(linkTypes & ePRELOAD);
-        nsContentPolicyType policyType;
-
-        if (preload) {
-          nsAttrValue asAttr;
-          nsAutoString mimeType;
-          nsAutoString media;
-          GetContentPolicyMimeTypeMedia(asAttr, policyType, mimeType, media);
-
-          if (policyType == nsIContentPolicy::TYPE_INVALID) {
-            // Ignore preload with a wrong or empty as attribute.
-            return;
-          }
-
-          if (!CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
-            policyType = nsIContentPolicy::TYPE_INVALID;
-          }
-        }
-
         auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
-        if (preload) {
-          prefetchService->PreloadURI(uri, referrerInfo, this, policyType);
-        } else {
-          prefetchService->PrefetchURI(uri, referrerInfo, this,
-                                       linkTypes & ePREFETCH);
-        }
+        prefetchService->PrefetchURI(uri, referrerInfo, this,
+                                     linkTypes & ePREFETCH);
         return;
       }
+    }
+  }
+
+  if (linkTypes & ePRELOAD) {
+    nsCOMPtr<nsIURI> uri(GetURI());
+    if (uri) {
+      nsContentPolicyType policyType;
+
+      nsAttrValue asAttr;
+      nsAutoString mimeType;
+      nsAutoString media;
+      GetContentPolicyMimeTypeMedia(asAttr, policyType, mimeType, media);
+
+      if (policyType == nsIContentPolicy::TYPE_INVALID) {
+        // Ignore preload with a wrong or empty as attribute.
+        return;
+      }
+
+      if (!CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
+        policyType = nsIContentPolicy::TYPE_INVALID;
+      }
+
+      StartPreload(policyType);
+      return;
     }
   }
 
@@ -653,11 +666,6 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     return;
   }
 
-  nsCOMPtr<nsIPrefetchService> prefetchService(components::Prefetch::Service());
-  if (!prefetchService) {
-    return;
-  }
-
   nsCOMPtr<nsIURI> uri(GetURI());
   if (!uri) {
     return;
@@ -672,7 +680,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   if (asPolicyType == nsIContentPolicy::TYPE_INVALID) {
     // Ignore preload with a wrong or empty as attribute, but be sure to cancel
     // the old one.
-    prefetchService->CancelPrefetchPreloadURI(uri, this);
+    CancelPrefetchOrPreload();
     return;
   }
 
@@ -685,10 +693,8 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     CORSMode corsMode = AttrValueToCORSMode(aValue);
     CORSMode oldCorsMode = AttrValueToCORSMode(aOldValue);
     if (corsMode != oldCorsMode) {
-      prefetchService->CancelPrefetchPreloadURI(uri, this);
-
-      auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
-      prefetchService->PreloadURI(uri, referrerInfo, this, policyType);
+      CancelPrefetchOrPreload();
+      StartPreload(policyType);
     }
     return;
   }
@@ -736,7 +742,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
 
   if ((policyType != oldPolicyType) &&
       (oldPolicyType != nsIContentPolicy::TYPE_INVALID)) {
-    prefetchService->CancelPrefetchPreloadURI(uri, this);
+    CancelPrefetchOrPreload();
   }
 
   // Trigger a new preload if the policy type has changed.
@@ -744,17 +750,37 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   // trigger an error event.
   if ((policyType != oldPolicyType) ||
       (policyType == nsIContentPolicy::TYPE_INVALID)) {
-    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
-    prefetchService->PreloadURI(uri, referrerInfo, this, policyType);
+    StartPreload(policyType);
   }
 }
 
 void HTMLLinkElement::CancelPrefetchOrPreload() {
+  CancelPreload();
+
   nsCOMPtr<nsIPrefetchService> prefetchService(components::Prefetch::Service());
   if (prefetchService) {
     if (nsCOMPtr<nsIURI> uri = GetURI()) {
       prefetchService->CancelPrefetchPreloadURI(uri, this);
     }
+  }
+}
+
+void HTMLLinkElement::StartPreload(nsContentPolicyType policyType) {
+  MOZ_ASSERT(!mPreload, "Forgot to cancel the running preload");
+
+  auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
+  RefPtr<PreloaderBase> preload =
+      OwnerDoc()->Preloads().PreloadLinkElement(this, policyType, referrerInfo);
+  mPreload = preload.get();
+}
+
+void HTMLLinkElement::CancelPreload() {
+  if (mPreload) {
+    // This will cancel the loading channel if this was the last referred node
+    // and the preload is not used up until now to satisfy a regular tag load
+    // request.
+    mPreload->RemoveLinkPreloadNode(this);
+    mPreload = nullptr;
   }
 }
 

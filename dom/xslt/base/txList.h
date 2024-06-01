@@ -39,7 +39,7 @@ class txList : public txObject {
   /**
    * Adds the given Object to the list
    **/
-  nsresult add(void* objPtr);
+  void add(void* objPtr);
 
   /*
    * Removes all the objects from the list
@@ -65,8 +65,8 @@ class txList : public txObject {
   ListItem* lastItem;
   int32_t itemCount;
 
-  nsresult insertAfter(void* objPtr, ListItem* sItem);
-  nsresult insertBefore(void* objPtr, ListItem* sItem);
+  void insertAfter(void* objPtr, ListItem* sItem);
+  void insertBefore(void* objPtr, ListItem* sItem);
 };
 
 /**
@@ -86,7 +86,7 @@ class txListIterator {
    * based on the current position within the txList
    * @param objPtr the Object pointer to add to the list
    **/
-  nsresult addAfter(void* objPtr);
+  void addAfter(void* objPtr);
 
   /**
    * Adds the Object pointer to the txList pointed to by this txListIterator.
@@ -94,7 +94,7 @@ class txListIterator {
    * based on the current position within the txList
    * @param objPtr the Object pointer to add to the list
    **/
-  nsresult addBefore(void* objPtr);
+  void addBefore(void* objPtr);
 
   /**
    * Returns true if a successful call to the next() method can be made

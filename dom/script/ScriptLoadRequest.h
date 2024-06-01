@@ -12,12 +12,14 @@
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PreloaderBase.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIScriptElement.h"
+#include "ScriptKind.h"
 
 class nsICacheInfoChannel;
 
@@ -26,8 +28,6 @@ namespace dom {
 
 class ModuleLoadRequest;
 class ScriptLoadRequestList;
-
-enum class ScriptKind { eClassic, eModule, eEvent };
 
 /*
  * Some options used when fetching script resources. This only loosely
@@ -60,7 +60,7 @@ class ScriptFetchOptions {
  */
 
 class ScriptLoadRequest
-    : public nsISupports,
+    : public PreloaderBase,
       private mozilla::LinkedListElement<ScriptLoadRequest> {
   typedef LinkedListElement<ScriptLoadRequest> super;
 
@@ -78,6 +78,10 @@ class ScriptLoadRequest
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ScriptLoadRequest)
+
+  // PreloaderBase
+  static void PrioritizeAsPreload(nsIChannel* aChannel);
+  virtual void PrioritizeAsPreload() override;
 
   bool IsModuleRequest() const { return mKind == ScriptKind::eModule; }
 
@@ -220,9 +224,19 @@ class ScriptLoadRequest
                          : ScriptText<Utf8Unit>().clearAndFree();
   }
 
-  enum class ScriptMode : uint8_t { eBlocking, eDeferred, eAsync };
+  enum class ScriptMode : uint8_t {
+    eBlocking,
+    eDeferred,
+    eAsync,
+    eLinkPreload  // this is a load initiated by <link rel="preload"
+                  // as="script"> tag
+  };
 
-  void SetScriptMode(bool aDeferAttr, bool aAsyncAttr);
+  void SetScriptMode(bool aDeferAttr, bool aAsyncAttr, bool aLinkPreload);
+
+  bool IsLinkPreloadScript() const {
+    return mScriptMode == ScriptMode::eLinkPreload;
+  }
 
   bool IsBlockingScript() const { return mScriptMode == ScriptMode::eBlocking; }
 

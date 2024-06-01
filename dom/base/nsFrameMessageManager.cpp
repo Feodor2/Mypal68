@@ -85,7 +85,7 @@ nsFrameMessageManager::nsFrameMessageManager(MessageManagerCallback* aCallback,
   NS_ASSERTION(!mIsBroadcaster || !mCallback,
                "Broadcasters cannot have callbacks!");
   if (mOwnsCallback) {
-    mOwnedCallback = aCallback;
+    mOwnedCallback = WrapUnique(aCallback);
   }
 }
 
@@ -439,17 +439,7 @@ static bool AllowMessage(size_t aDataLength, const nsAString& aMessageName) {
   // result in an overly large IPC message.
   static const size_t kMaxMessageSize =
       IPC::Channel::kMaximumMessageSize - 20 * 1024;
-  if (aDataLength < kMaxMessageSize) {
-    return true;
-  }
-
-  NS_ConvertUTF16toUTF8 messageName(aMessageName);
-  messageName.StripTaggedASCII(ASCIIMask::Mask0to9());
-
-  Telemetry::Accumulate(Telemetry::REJECTED_MESSAGE_MANAGER_MESSAGE,
-                        messageName);
-
-  return false;
+  return aDataLength < kMaxMessageSize;
 }
 
 void nsFrameMessageManager::SendMessage(
@@ -845,7 +835,7 @@ void nsFrameMessageManager::SetCallback(MessageManagerCallback* aCallback) {
   if (aCallback && mCallback != aCallback) {
     mCallback = aCallback;
     if (mOwnsCallback) {
-      mOwnedCallback = aCallback;
+      mOwnedCallback = WrapUnique(aCallback);
     }
   }
 }

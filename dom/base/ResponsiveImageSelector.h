@@ -7,7 +7,6 @@
 
 #include "mozilla/UniquePtr.h"
 #include "mozilla/ServoBindingTypes.h"
-#include "nsAutoPtr.h"
 #include "nsISupports.h"
 #include "nsIContent.h"
 #include "nsString.h"

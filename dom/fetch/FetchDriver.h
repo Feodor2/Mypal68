@@ -14,6 +14,7 @@
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 
 #include "mozilla/DebugOnly.h"
 
@@ -136,7 +137,7 @@ class FetchDriver final : public nsIStreamListener,
   Maybe<ClientInfo> mClientInfo;
   Maybe<ServiceWorkerDescriptor> mController;
   nsCOMPtr<nsIChannel> mChannel;
-  nsAutoPtr<SRICheckDataVerifier> mSRIDataVerifier;
+  UniquePtr<SRICheckDataVerifier> mSRIDataVerifier;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
 
   nsCOMPtr<nsICookieSettings> mCookieSettings;
@@ -158,6 +159,16 @@ class FetchDriver final : public nsIStreamListener,
   RefPtr<AlternativeDataStreamListener> mAltDataListener;
   bool mOnStopRequestCalled;
 
+  // This flag is true when this fetch has found a matching preload and is being
+  // satisfied by a its response.
+  bool mFromPreload = false;
+  // This flag is set in call to Abort() and spans the possible window this
+  // fetch doesn't have mChannel (to be cancelled) between reuse of the matching
+  // preload, that has already finished and dropped reference to its channel,
+  // and OnStartRequest notification.  It let's us cancel the load when we get
+  // the channel in OnStartRequest.
+  bool mAborted = false;
+
 #ifdef DEBUG
   bool mResponseAvailableCalled;
   bool mFetchCalled;
@@ -170,6 +181,10 @@ class FetchDriver final : public nsIStreamListener,
   FetchDriver& operator=(const FetchDriver&) = delete;
   ~FetchDriver();
 
+  already_AddRefed<PreloaderBase> FindPreload(nsIURI* aURI);
+
+  void UpdateReferrerInfoFromNewChannel(nsIChannel* aChannel);
+
   nsresult HttpFetch(
       const nsACString& aPreferredAlternativeDataType = EmptyCString());
   // Returns the filtered response sent to the observer.
@@ -179,7 +194,8 @@ class FetchDriver final : public nsIStreamListener,
   // response.
   void FailWithNetworkError(nsresult rv);
 
-  void SetRequestHeaders(nsIHttpChannel* aChannel) const;
+  void SetRequestHeaders(nsIHttpChannel* aChannel,
+                         bool aStripRequestBodyHeader) const;
 
   void FinishOnStopRequest(AlternativeDataStreamListener* aAltDataListener);
 };

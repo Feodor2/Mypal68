@@ -15,7 +15,6 @@
 // Local Includes
 // Helper Classes
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsWeakReference.h"
 #include "nsDataHashtable.h"
 #include "nsJSThingHashtable.h"

@@ -163,7 +163,7 @@ already_AddRefed<TextTrack> TextTrackManager::AddTextTrack(
     RefPtr<nsIRunnable> task = NewRunnableMethod(
         "dom::TextTrackManager::HonorUserPreferencesForTrackSelection", this,
         &TextTrackManager::HonorUserPreferencesForTrackSelection);
-    nsContentUtils::RunInStableState(task.forget());
+    NS_DispatchToMainThread(task.forget());
   }
 
   return track.forget();
@@ -182,7 +182,7 @@ void TextTrackManager::AddTextTrack(TextTrack* aTextTrack) {
     RefPtr<nsIRunnable> task = NewRunnableMethod(
         "dom::TextTrackManager::HonorUserPreferencesForTrackSelection", this,
         &TextTrackManager::HonorUserPreferencesForTrackSelection);
-    nsContentUtils::RunInStableState(task.forget());
+    NS_DispatchToMainThread(task.forget());
   }
 }
 

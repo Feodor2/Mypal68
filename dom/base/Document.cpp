@@ -90,6 +90,7 @@
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FeaturePolicy.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
@@ -97,6 +98,7 @@
 #include "mozilla/dom/HTMLAllCollection.h"
 #include "mozilla/dom/HTMLMetaElement.h"
 #include "mozilla/dom/HTMLSharedElement.h"
+#include "mozilla/dom/HTMLDialogElement.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/Performance.h"
@@ -411,7 +413,7 @@ bool IdentifierMapEntry::HasNameElement() const {
 void IdentifierMapEntry::AddContentChangeCallback(
     Document::IDTargetObserver aCallback, void* aData, bool aForImage) {
   if (!mChangeCallbacks) {
-    mChangeCallbacks = new nsTHashtable<ChangeCallbackEntry>;
+    mChangeCallbacks = MakeUnique<nsTHashtable<ChangeCallbackEntry>>();
   }
 
   ChangeCallback cc = {aCallback, aData, aForImage};
@@ -1335,7 +1337,8 @@ Document::Document(const char* aContentType)
       mPendingInitialTranslation(false),
       mGeneration(0),
       mCachedTabSizeGeneration(0),
-      mInRDMPane(false) {
+      mInRDMPane(false),
+      mPreloadService(this) {
   MOZ_LOG(gDocumentLeakPRLog, LogLevel::Debug, ("DOCUMENT %p created", this));
 
   SetIsInDocument();
@@ -1757,9 +1760,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
     }
   }
 
-  if (tmp->mResizeObserverController) {
-    tmp->mResizeObserverController->Traverse(cb);
-  }
   for (size_t i = 0; i < tmp->mMetaViewports.Length(); i++) {
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMetaViewports[i].mElement);
   }
@@ -1885,9 +1885,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
 
   tmp->mInUnlinkOrDeletion = false;
 
-  if (tmp->mResizeObserverController) {
-    tmp->mResizeObserverController->Unlink();
-  }
   tmp->mMetaViewports.Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mL10nProtoElements)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -3330,8 +3327,10 @@ bool Document::DocumentSupportsL10n(JSContext* aCx, JSObject* aObject) {
   nsCOMPtr<nsIPrincipal> callerPrincipal =
       nsContentUtils::SubjectPrincipal(aCx);
   nsGlobalWindowInner* win = xpc::WindowOrNull(aObject);
-  return nsContentUtils::PrincipalAllowsL10n(
-      callerPrincipal, win ? win->GetDocumentURI() : nullptr);
+  bool allowed = false;
+  callerPrincipal->IsL10nAllowed(win ? win->GetDocumentURI() : nullptr,
+                                 &allowed);
+  return allowed;
 }
 
 void Document::LocalizationLinkAdded(Element* aLinkElement) {
@@ -3440,7 +3439,9 @@ void Document::InitialDocumentTranslationCompleted() {
 }
 
 bool Document::AllowsL10n() const {
-  return nsContentUtils::PrincipalAllowsL10n(NodePrincipal(), GetDocumentURI());
+  bool allowed = false;
+  NodePrincipal()->IsL10nAllowed(GetDocumentURI(), &allowed);
+  return allowed;
 }
 
 bool Document::IsWebAnimationsEnabled(JSContext* aCx, JSObject* /*unused*/) {
@@ -5211,7 +5212,7 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& rv) {
     }
 
     NS_ConvertUTF16toUTF8 cookie(aCookie);
-    service->SetCookieString(codebaseURI, nullptr, cookie, channel);
+    service->SetCookieString(codebaseURI, cookie, channel);
   }
 }
 
@@ -10105,6 +10106,9 @@ void Document::Destroy() {
   // Manually break cycles via promise's global object pointer.
   mReadyForIdle = nullptr;
   mOrientationPendingPromise = nullptr;
+
+  // To break cycles.
+  mPreloadService.ClearAllPreloads();
 }
 
 void Document::RemovedFromDocShell() {
@@ -10930,16 +10934,9 @@ already_AddRefed<nsIURI> Document::ResolvePreloadImage(
   return uri.forget();
 }
 
-void Document::MaybePreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
-                                 enum ReferrerPolicy aReferrerPolicy,
-                                 bool aIsImgSet) {
-  // Early exit if the img is already present in the img-cache
-  // which indicates that the "real" load has already started and
-  // that we shouldn't preload it.
-  if (nsContentUtils::IsImageInCache(uri, this)) {
-    return;
-  }
-
+void Document::PreLoadImage(nsIURI* aUri, const nsAString& aCrossOriginAttr,
+                            ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
+                            bool aLinkPreload) {
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL |
                           nsContentUtils::CORSModeToLoadImageFlags(
                               Element::StringToCORSMode(aCrossOriginAttr));
@@ -10951,19 +10948,48 @@ void Document::MaybePreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
       ReferrerInfo::CreateFromDocumentAndPolicyOverride(this, aReferrerPolicy);
 
-  // Image not in cache - trigger preload
   RefPtr<imgRequestProxy> request;
   nsresult rv = nsContentUtils::LoadImage(
-      uri, static_cast<nsINode*>(this), this, NodePrincipal(), 0, referrerInfo,
-      nullptr,  // no observer
-      loadFlags, NS_LITERAL_STRING("img"), getter_AddRefs(request), policyType);
+      aUri, static_cast<nsINode*>(this), this, NodePrincipal(), 0, referrerInfo,
+      nullptr /* no observer */, loadFlags,
+      aLinkPreload ? NS_LITERAL_STRING("link") : NS_LITERAL_STRING("img"),
+      getter_AddRefs(request), policyType, false /* urgent */, aLinkPreload);
 
   // Pin image-reference to avoid evicting it from the img-cache before
   // the "real" load occurs. Unpinned in DispatchContentLoadedEvents and
   // unlink
-  if (NS_SUCCEEDED(rv)) {
-    mPreloadingImages.Put(uri, std::move(request));
+  if (!aLinkPreload && NS_SUCCEEDED(rv)) {
+    mPreloadingImages.Put(aUri, std::move(request));
   }
+}
+
+void Document::MaybePreLoadImage(nsIURI* aUri,
+                                 const nsAString& aCrossOriginAttr,
+                                 ReferrerPolicyEnum aReferrerPolicy,
+                                 bool aIsImgSet, bool aLinkPreload) {
+  if (aLinkPreload) {
+    // Check if the image was already preloaded in this document to avoid
+    // duplicate preloading.
+    PreloadHashKey key = PreloadHashKey::CreateAsImage(
+        aUri, NodePrincipal(), dom::Element::StringToCORSMode(aCrossOriginAttr),
+        aReferrerPolicy);
+    if (!mPreloadService.PreloadExists(&key)) {
+      PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet,
+                   aLinkPreload);
+    }
+    return;
+  }
+
+  // Early exit if the img is already present in the img-cache
+  // which indicates that the "real" load has already started and
+  // that we shouldn't preload it.
+  if (nsContentUtils::IsImageInCache(aUri, this)) {
+    return;
+  }
+
+  // Image not in cache - trigger preload
+  PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet,
+               aLinkPreload);
 }
 
 void Document::MaybePreconnect(nsIURI* aOrigURI, mozilla::CORSMode aCORSMode) {
@@ -11071,18 +11097,20 @@ NS_IMPL_ISUPPORTS(StubCSSLoaderObserver, nsICSSLoaderObserver)
 void Document::PreloadStyle(nsIURI* uri, const Encoding* aEncoding,
                             const nsAString& aCrossOriginAttr,
                             const enum ReferrerPolicy aReferrerPolicy,
-                            const nsAString& aIntegrity) {
+                            const nsAString& aIntegrity, bool aIsLinkPreload) {
   // The CSSLoader will retain this object after we return.
   nsCOMPtr<nsICSSLoaderObserver> obs = new StubCSSLoaderObserver();
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
       ReferrerInfo::CreateFromDocumentAndPolicyOverride(this, aReferrerPolicy);
 
+  auto preloadType = aIsLinkPreload ? css::Loader::IsPreload::FromLink
+                                    : css::Loader::IsPreload::FromParser;
+
   // Charset names are always ASCII.
   Unused << CSSLoader()->LoadSheet(
-      uri, css::Loader::IsPreload::Yes, NodePrincipal(), aEncoding,
-      referrerInfo, obs, Element::StringToCORSMode(aCrossOriginAttr),
-      aIntegrity);
+      uri, preloadType, aEncoding, referrerInfo, obs,
+      Element::StringToCORSMode(aCrossOriginAttr), aIntegrity);
 }
 
 RefPtr<StyleSheet> Document::LoadChromeSheetSync(nsIURI* uri) {
@@ -11322,6 +11350,13 @@ class nsAutoFocusEvent : public Runnable {
       return NS_OK;
     }
 
+    if (Document* doc = mTopWindow->GetExtantDoc()) {
+      if (doc->IsAutoFocusFired()) {
+        return NS_OK;
+      }
+      doc->SetAutoFocusFired();
+    }
+
     // Don't steal focus from the user.
     if (mTopWindow->GetFocusedElement()) {
       return NS_OK;
@@ -11354,6 +11389,10 @@ void Document::SetAutoFocusElement(Element* aAutoFocusElement) {
   TriggerAutoFocus();
 }
 
+void Document::SetAutoFocusFired() { mAutoFocusFired = true; }
+
+bool Document::IsAutoFocusFired() { return mAutoFocusFired; }
+
 void Document::TriggerAutoFocus() {
   if (mAutoFocusFired) {
     return;
@@ -11367,8 +11406,6 @@ void Document::TriggerAutoFocus() {
 
   nsCOMPtr<Element> autoFocusElement = do_QueryReferent(mAutoFocusElement);
   if (autoFocusElement && autoFocusElement->OwnerDoc() == this) {
-    mAutoFocusFired = true;
-
     nsCOMPtr<nsPIDOMWindowOuter> topWindow =
         FindTopWindowForElement(autoFocusElement);
     if (!topWindow) {
@@ -11481,7 +11518,7 @@ void Document::ScrollToRef() {
 
 void Document::RegisterActivityObserver(nsISupports* aSupports) {
   if (!mActivityObservers) {
-    mActivityObservers = new nsTHashtable<nsPtrHashKey<nsISupports>>();
+    mActivityObservers = MakeUnique<nsTHashtable<nsPtrHashKey<nsISupports>>>();
   }
   mActivityObservers->PutEntry(aSupports);
 }
@@ -12522,6 +12559,18 @@ size_t Document::CountFullscreenElements() const {
 
 void Document::SetFullscreenRoot(Document* aRoot) {
   mFullscreenRoot = do_GetWeakReference(aRoot);
+}
+
+void Document::TryCancelDialog() {
+  // Check if the document is blocked by modal dialog
+  for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
+    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+    if (HTMLDialogElement* dialog =
+            HTMLDialogElement::FromNodeOrNull(element)) {
+      dialog->QueueCancelDialog();
+      break;
+    }
+  }
 }
 
 already_AddRefed<Promise> Document::ExitFullscreen(ErrorResult& aRv) {

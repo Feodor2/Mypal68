@@ -1873,35 +1873,6 @@ struct CompareFilesByTime {
 
 }  // namespace
 
-static bool ShouldAddPlugin(const nsPluginInfo& info, bool flashOnly) {
-  if (!info.fName ||
-      (strcmp(info.fName, "Shockwave Flash") != 0 && flashOnly)) {
-    return false;
-  }
-  for (uint32_t i = 0; i < info.fVariantCount; ++i) {
-    if (info.fMimeTypeArray[i] &&
-        (!strcmp(info.fMimeTypeArray[i], "application/x-shockwave-flash") ||
-         !strcmp(info.fMimeTypeArray[i],
-                 "application/x-shockwave-flash-test"))) {
-      return true;
-    }
-    if (flashOnly) {
-      continue;
-    }
-    if (info.fMimeTypeArray[i] &&
-        (!strcmp(info.fMimeTypeArray[i], "application/x-test") ||
-         !strcmp(info.fMimeTypeArray[i], "application/x-Second-Test"))) {
-      return true;
-    }
-  }
-#ifdef PLUGIN_LOGGING
-  PLUGIN_LOG(PLUGIN_LOG_NORMAL,
-             ("ShouldAddPlugin : Ignoring non-flash plugin library %s\n",
-              aPluginTag->FileName().get()));
-#endif  // PLUGIN_LOGGING
-  return false;
-}
-
 void nsPluginHost::AddPluginTag(nsPluginTag* aPluginTag) {
   aPluginTag->mNext = mPlugins;
   mPlugins = aPluginTag;
@@ -1936,8 +1907,6 @@ nsresult nsPluginHost::ScanPluginsDirectory(nsIFile* pluginsDir,
   PLUGIN_LOG(PLUGIN_LOG_BASIC,
              ("nsPluginHost::ScanPluginsDirectory dir=%s\n", dirPath.get()));
 #endif
-
-  bool flashOnly = Preferences::GetBool("plugin.load_flash_only", true);
 
   nsCOMPtr<nsIDirectoryEnumerator> iter;
   rv = pluginsDir->GetDirectoryEntries(getter_AddRefs(iter));
@@ -2036,8 +2005,7 @@ nsresult nsPluginHost::ScanPluginsDirectory(nsIFile* pluginsDir,
         res = pluginFile.GetPluginInfo(info, &library);
       }
       // if we don't have mime type don't proceed, this is not a plugin
-      if (NS_FAILED(res) || !info.fMimeTypeArray ||
-          (!ShouldAddPlugin(info, flashOnly))) {
+      if (NS_FAILED(res) || !info.fMimeTypeArray) {
         RefPtr<nsInvalidPluginTag> invalidTag =
             new nsInvalidPluginTag(filePath.get(), fileModTime);
         pluginFile.FreePluginInfo(info);
@@ -2373,6 +2341,35 @@ nsresult nsPluginHost::FindPlugins(bool aCreatePluginList,
       }
     }
   }
+
+  // Scan the installation paths of our popular plugins if the prefs are enabled
+
+  // This table controls the order of scanning
+  const char* const prefs[] = {NS_WIN_ACROBAT_SCAN_KEY,
+                               NS_WIN_QUICKTIME_SCAN_KEY, NS_WIN_WMP_SCAN_KEY};
+
+  uint32_t size = sizeof(prefs) / sizeof(prefs[0]);
+
+  for (uint32_t i = 0; i < size; i += 1) {
+    nsCOMPtr<nsIFile> dirToScan;
+    bool bExists;
+    if (NS_SUCCEEDED(dirService->Get(prefs[i], NS_GET_IID(nsIFile),
+                                     getter_AddRefs(dirToScan))) &&
+        dirToScan && NS_SUCCEEDED(dirToScan->Exists(&bExists)) && bExists) {
+      ScanPluginsDirectory(dirToScan, aCreatePluginList, &pluginschanged);
+
+      if (pluginschanged) *aPluginsChanged = true;
+
+      // if we are just looking for possible changes,
+      // no need to proceed if changes are detected
+      if (!aCreatePluginList && *aPluginsChanged) {
+        NS_ITERATIVE_UNREF_LIST(RefPtr<nsPluginTag>, mCachedPlugins, mNext);
+        NS_ITERATIVE_UNREF_LIST(RefPtr<nsInvalidPluginTag>, mInvalidPlugins,
+                                mNext);
+        return NS_OK;
+      }
+    }
+  }
 #endif
 
   // We should also consider plugins to have changed if any plugins have been
@@ -2624,17 +2621,14 @@ nsresult nsPluginHost::WritePluginInfo() {
     return rv;
   }
 
-  bool flashOnly = Preferences::GetBool("plugin.load_flash_only", true);
-
   PR_fprintf(fd, "Generated File. Do not edit.\n");
 
-  PR_fprintf(fd, "\n[HEADER]\nVersion%c%s%c%c%c\nArch%c%s%c%c\n",
-             PLUGIN_REGISTRY_FIELD_DELIMITER, kPluginRegistryVersion,
-             flashOnly ? 't' : 'f', PLUGIN_REGISTRY_FIELD_DELIMITER,
-             PLUGIN_REGISTRY_END_OF_LINE_MARKER,
-             PLUGIN_REGISTRY_FIELD_DELIMITER, arch.get(),
-             PLUGIN_REGISTRY_FIELD_DELIMITER,
-             PLUGIN_REGISTRY_END_OF_LINE_MARKER);
+  PR_fprintf(
+      fd, "\n[HEADER]\nVersion%c%s%c%c\nArch%c%s%c%c\n",
+      PLUGIN_REGISTRY_FIELD_DELIMITER, kPluginRegistryVersion,
+      PLUGIN_REGISTRY_FIELD_DELIMITER, PLUGIN_REGISTRY_END_OF_LINE_MARKER,
+      PLUGIN_REGISTRY_FIELD_DELIMITER, arch.get(),
+      PLUGIN_REGISTRY_FIELD_DELIMITER, PLUGIN_REGISTRY_END_OF_LINE_MARKER);
 
   // Store all plugins in the mPlugins list - all plugins currently in use.
   PR_fprintf(fd, "\n[PLUGINS]\n");
@@ -2801,10 +2795,7 @@ nsresult nsPluginHost::ReadPluginInfo() {
   if (PL_strcmp(values[0], "Version")) return rv;
 
   // If we're reading an old registry, ignore it
-  // If we flipped the flash-only pref, ignore it
-  bool flashOnly = Preferences::GetBool("plugin.load_flash_only", true);
   nsAutoCString expectedVersion(kPluginRegistryVersion);
-  expectedVersion.Append(flashOnly ? 't' : 'f');
 
   if (!expectedVersion.Equals(values[1])) {
     return rv;

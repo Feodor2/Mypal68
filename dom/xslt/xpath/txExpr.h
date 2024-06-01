@@ -6,7 +6,7 @@
 #define TRANSFRMX_EXPR_H
 
 #include "mozilla/Attributes.h"
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "txExprResult.h"
 #include "txCore.h"
 #include "nsString.h"
@@ -165,14 +165,14 @@ class Expr {
   TX_IMPL_EXPR_STUBS_BASE(_class, _ReturnType)                 \
   Expr* _class::getSubExprAt(uint32_t aPos) {                  \
     if (aPos == 0) {                                           \
-      return _Expr1;                                           \
+      return _Expr1.get();                                     \
     }                                                          \
     return nullptr;                                            \
   }                                                            \
   void _class::setSubExprAt(uint32_t aPos, Expr* aExpr) {      \
     NS_ASSERTION(aPos < 1, "setting bad subexpression index"); \
-    _Expr1.forget();                                           \
-    _Expr1 = aExpr;                                            \
+    mozilla::Unused << _Expr1.release();                       \
+    _Expr1 = mozilla::WrapUnique(aExpr);                       \
   }
 
 #define TX_IMPL_EXPR_STUBS_2(_class, _ReturnType, _Expr1, _Expr2) \
@@ -180,9 +180,9 @@ class Expr {
   Expr* _class::getSubExprAt(uint32_t aPos) {                     \
     switch (aPos) {                                               \
       case 0:                                                     \
-        return _Expr1;                                            \
+        return _Expr1.get();                                      \
       case 1:                                                     \
-        return _Expr2;                                            \
+        return _Expr2.get();                                      \
       default:                                                    \
         break;                                                    \
     }                                                             \
@@ -191,11 +191,11 @@ class Expr {
   void _class::setSubExprAt(uint32_t aPos, Expr* aExpr) {         \
     NS_ASSERTION(aPos < 2, "setting bad subexpression index");    \
     if (aPos == 0) {                                              \
-      _Expr1.forget();                                            \
-      _Expr1 = aExpr;                                             \
+      mozilla::Unused << _Expr1.release();                        \
+      _Expr1 = mozilla::WrapUnique(aExpr);                        \
     } else {                                                      \
-      _Expr2.forget();                                            \
-      _Expr2 = aExpr;                                             \
+      mozilla::Unused << _Expr2.release();                        \
+      _Expr2 = mozilla::WrapUnique(aExpr);                        \
     }                                                             \
   }
 
@@ -431,8 +431,8 @@ class txPredicatedNodeTest : public txNodeTest {
   TX_DECL_NODE_TEST
 
  private:
-  nsAutoPtr<txNodeTest> mNodeTest;
-  nsAutoPtr<Expr> mPredicate;
+  mozilla::UniquePtr<txNodeTest> mNodeTest;
+  mozilla::UniquePtr<Expr> mPredicate;
 };
 
 /**
@@ -521,10 +521,10 @@ class LocationStep : public Expr, public PredicateList {
 
   TX_DECL_OPTIMIZABLE_EXPR
 
-  txNodeTest* getNodeTest() { return mNodeTest; }
+  txNodeTest* getNodeTest() { return mNodeTest.get(); }
   void setNodeTest(txNodeTest* aNodeTest) {
-    mNodeTest.forget();
-    mNodeTest = aNodeTest;
+    mozilla::Unused << mNodeTest.release();
+    mNodeTest = mozilla::WrapUnique(aNodeTest);
   }
   LocationStepType getAxisIdentifier() { return mAxisIdentifier; }
   void setAxisIdentifier(LocationStepType aAxisIdentifier) {
@@ -556,7 +556,7 @@ class LocationStep : public Expr, public PredicateList {
                                         txIMatchContext* aContext,
                                         txNodeSet* aNodes);
 
-  nsAutoPtr<txNodeTest> mNodeTest;
+  mozilla::UniquePtr<txNodeTest> mNodeTest;
   LocationStepType mAxisIdentifier;
 };
 
@@ -571,7 +571,7 @@ class FilterExpr : public Expr, public PredicateList {
   TX_DECL_EXPR
 
  private:
-  nsAutoPtr<Expr> expr;
+  mozilla::UniquePtr<Expr> expr;
 
 };  //-- FilterExpr
 
@@ -599,7 +599,7 @@ class UnaryExpr : public Expr {
   TX_DECL_EXPR
 
  private:
-  nsAutoPtr<Expr> expr;
+  mozilla::UniquePtr<Expr> expr;
 };  //-- UnaryExpr
 
 /**
@@ -617,7 +617,7 @@ class BooleanExpr : public Expr {
   TX_DECL_EXPR
 
  private:
-  nsAutoPtr<Expr> leftExpr, rightExpr;
+  mozilla::UniquePtr<Expr> leftExpr, rightExpr;
   short op;
 };  //-- BooleanExpr
 
@@ -639,7 +639,7 @@ class txNumberExpr : public Expr {
   TX_DECL_EXPR
 
  private:
-  nsAutoPtr<Expr> mLeftExpr, mRightExpr;
+  mozilla::UniquePtr<Expr> mLeftExpr, mRightExpr;
   eOp mOp;
 };  //-- MultiplicativeExpr
 
@@ -673,8 +673,8 @@ class RelationalExpr : public Expr {
   bool compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
                       txAExprResult* aRight);
 
-  nsAutoPtr<Expr> mLeftExpr;
-  nsAutoPtr<Expr> mRightExpr;
+  mozilla::UniquePtr<Expr> mLeftExpr;
+  mozilla::UniquePtr<Expr> mRightExpr;
   RelationalExprType mOp;
 };
 
@@ -735,7 +735,7 @@ class PathExpr : public Expr {
  private:
   class PathExprItem {
    public:
-    nsAutoPtr<Expr> expr;
+    mozilla::UniquePtr<Expr> expr;
     PathOperator pathOp;
   };
 

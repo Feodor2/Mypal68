@@ -9,7 +9,6 @@
 #include "mozilla/FlushType.h"    // for enum
 #include "mozilla/MozPromise.h"   // for MozPromise
 #include "mozilla/FunctionRef.h"  // for FunctionRef
-#include "nsAutoPtr.h"            // for member
 #include "nsCOMArray.h"           // for member
 #include "nsCompatibility.h"      // for member
 #include "nsCOMPtr.h"             // for member
@@ -56,6 +55,7 @@
 #include "mozilla/HashTable.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/PreloadService.h"
 #include "mozilla/SegmentedVector.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -1700,6 +1700,8 @@ class Document : public nsINode,
 
   void SetKeyPressEventModel(uint16_t aKeyPressEventModel);
 
+  PreloadService& Preloads() { return mPreloadService; }
+
  protected:
   friend class nsUnblockOnloadEvent;
 
@@ -2087,6 +2089,9 @@ class Document : public nsINode,
   // Pushes the given element into the top of top layer and set fullscreen
   // flag.
   bool SetFullscreenElement(Element* aElement);
+
+  // Cancel the dialog element if the document is blocked by the dialog
+  void TryCancelDialog();
 
   /**
    * Called when a frame in a child process has entered fullscreen or when a
@@ -3082,7 +3087,11 @@ class Document : public nsINode,
    * when this image is for loading <picture> or <img srcset> images.
    */
   void MaybePreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
-                         ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet);
+                         ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
+                         bool aLinkPreload);
+  void PreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
+                    ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
+                    bool aLinkPreload);
 
   /**
    * Called by images to forget an image preload when they start doing
@@ -3097,7 +3106,7 @@ class Document : public nsINode,
   void PreloadStyle(nsIURI* aURI, const Encoding* aEncoding,
                     const nsAString& aCrossOriginAttr,
                     ReferrerPolicyEnum aReferrerPolicy,
-                    const nsAString& aIntegrity);
+                    const nsAString& aIntegrity, bool aIsLinkPreload);
 
   /**
    * Called by the chrome registry to load style sheets.
@@ -3175,6 +3184,8 @@ class Document : public nsINode,
 
   void SetAutoFocusElement(Element* aAutoFocusElement);
   void TriggerAutoFocus();
+  void SetAutoFocusFired();
+  bool IsAutoFocusFired();
 
   void SetScrollToRef(nsIURI* aDocumentURI);
   MOZ_CAN_RUN_SCRIPT void ScrollToRef();
@@ -4405,7 +4416,7 @@ class Document : public nsINode,
   //
   // These are non-owning pointers, the elements are responsible for removing
   // themselves when they go away.
-  nsAutoPtr<nsTHashtable<nsPtrHashKey<nsISupports>>> mActivityObservers;
+  UniquePtr<nsTHashtable<nsPtrHashKey<nsISupports>>> mActivityObservers;
 
   // A hashtable of styled links keyed by address pointer.
   nsTHashtable<nsPtrHashKey<Link>> mStyledLinks;
@@ -5183,6 +5194,9 @@ class Document : public nsINode,
 
   // The principal to use for the content blocking allow list.
   nsCOMPtr<nsIPrincipal> mContentBlockingAllowListPrincipal;
+
+  // Scope preloads per document.  This is used by speculative loading as well.
+  PreloadService mPreloadService;
 
  public:
   // Needs to be public because the bindings code pokes at it.

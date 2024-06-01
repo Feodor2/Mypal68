@@ -11,6 +11,7 @@
 #include "mozilla/ErrorResult.h"
 #include "TCPServerSocket.h"
 #include "TCPSocket.h"
+#include "nsComponentManagerUtils.h"
 
 using namespace mozilla::dom;
 

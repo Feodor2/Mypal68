@@ -85,8 +85,8 @@ class nsXMLFragmentContentSink : public nsXMLContentSink,
   // nsContentSink overrides
   virtual nsresult ProcessStyleLinkFromHeader(
       const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
-      const nsAString& aType, const nsAString& aMedia,
-      const nsAString& aReferrerPolicy) override;
+      const nsAString& aIntegrity, const nsAString& aType,
+      const nsAString& aMedia, const nsAString& aReferrerPolicy) override;
 
   // nsXMLContentSink overrides
   virtual nsresult MaybeProcessXSLTLink(
@@ -118,7 +118,7 @@ nsXMLFragmentContentSink::nsXMLFragmentContentSink() : mParseError(false) {
   mRunsToCompletion = true;
 }
 
-nsXMLFragmentContentSink::~nsXMLFragmentContentSink() {}
+nsXMLFragmentContentSink::~nsXMLFragmentContentSink() = default;
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsXMLFragmentContentSink)
   NS_INTERFACE_MAP_ENTRY(nsIFragmentContentSink)
@@ -288,8 +288,8 @@ nsXMLFragmentContentSink::ReportError(const char16_t* aErrorText,
 
 nsresult nsXMLFragmentContentSink::ProcessStyleLinkFromHeader(
     const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
-    const nsAString& aType, const nsAString& aMedia,
-    const nsAString& aReferrerPolicy)
+    const nsAString& aIntegrity, const nsAString& aType,
+    const nsAString& aMedia, const nsAString& aReferrerPolicy)
 
 {
   MOZ_ASSERT_UNREACHABLE("Shouldn't have headers for a fragment sink");

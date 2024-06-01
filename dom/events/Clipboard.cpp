@@ -10,9 +10,11 @@
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/DataTransferItem.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsIClipboard.h"
 #include "nsComponentManagerUtils.h"
+#include "nsServiceManagerUtils.h"
 #include "nsITransferable.h"
 #include "nsArrayUtils.h"
 

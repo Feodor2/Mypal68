@@ -79,6 +79,7 @@
 #include "mozilla/dom/power/PowerManagerService.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsAttrValueInlines.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
@@ -133,8 +134,7 @@ using namespace mozilla::layers;
 using mozilla::net::nsMediaFragmentURIParser;
 using namespace mozilla::dom::HTMLMediaElement_Binding;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 extern void NotifyMediaStarted(uint64_t aWindowID);
 extern void NotifyMediaStopped(uint64_t aWindowID);
@@ -7711,8 +7711,7 @@ void HTMLMediaElement::ClearResumeDelayedMediaPlaybackAgentIfNeeded() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #undef LOG
 #undef LOG_EVENT

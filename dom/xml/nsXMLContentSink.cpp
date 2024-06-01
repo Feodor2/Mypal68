@@ -9,7 +9,6 @@
 #include "nsIContent.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsHTMLParts.h"
 #include "nsCRT.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -25,7 +24,6 @@
 #include "mozilla/Logging.h"
 #include "nsRect.h"
 #include "nsIScriptElement.h"
-#include "nsStyleLinkElement.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsIChannel.h"
@@ -91,7 +89,7 @@ nsXMLContentSink::nsXMLContentSink()
   PodArrayZero(mText);
 }
 
-nsXMLContentSink::~nsXMLContentSink() {}
+nsXMLContentSink::~nsXMLContentSink() = default;
 
 nsresult nsXMLContentSink::Init(Document* aDoc, nsIURI* aURI,
                                 nsISupports* aContainer, nsIChannel* aChannel) {
@@ -489,15 +487,13 @@ nsresult nsXMLContentSink::CreateElement(
   if (aNodeInfo->Equals(nsGkAtoms::link, kNameSpaceID_XHTML) ||
       aNodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_XHTML) ||
       aNodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_SVG)) {
-    nsCOMPtr<nsIStyleSheetLinkingElement> ssle(do_QueryInterface(content));
-    if (ssle) {
-      ssle->InitStyleLinkElement(false);
+    if (auto* linkStyle = LinkStyle::FromNode(*content)) {
       if (aFromParser) {
-        ssle->SetEnableUpdates(false);
+        linkStyle->SetEnableUpdates(false);
       }
       if (!aNodeInfo->Equals(nsGkAtoms::link, kNameSpaceID_XHTML)) {
-        ssle->SetLineNumber(aFromParser ? aLineNumber : 0);
-        ssle->SetColumnNumber(aFromParser ? aColumnNumber : 0);
+        linkStyle->SetLineNumber(aFromParser ? aLineNumber : 0);
+        linkStyle->SetColumnNumber(aFromParser ? aColumnNumber : 0);
       }
     }
   }
@@ -573,11 +569,10 @@ nsresult nsXMLContentSink::CloseElement(nsIContent* aContent) {
   } else if (nodeInfo->Equals(nsGkAtoms::link, kNameSpaceID_XHTML) ||
              nodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_XHTML) ||
              nodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_SVG)) {
-    nsCOMPtr<nsIStyleSheetLinkingElement> ssle(do_QueryInterface(aContent));
-    if (ssle) {
-      ssle->SetEnableUpdates(true);
+    if (auto* linkStyle = LinkStyle::FromNode(*aContent)) {
+      linkStyle->SetEnableUpdates(true);
       auto updateOrError =
-          ssle->UpdateStyleSheet(mRunsToCompletion ? nullptr : this);
+          linkStyle->UpdateStyleSheet(mRunsToCompletion ? nullptr : this);
       if (updateOrError.isErr()) {
         rv = updateOrError.unwrapErr();
       } else if (updateOrError.unwrap().ShouldBlock() && !mRunsToCompletion) {
@@ -633,8 +628,8 @@ nsresult nsXMLContentSink::LoadXSLStyleSheet(nsIURI* aUrl) {
 
 nsresult nsXMLContentSink::ProcessStyleLinkFromHeader(
     const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
-    const nsAString& aType, const nsAString& aMedia,
-    const nsAString& aReferrerPolicy) {
+    const nsAString& aIntegrity, const nsAString& aType,
+    const nsAString& aMedia, const nsAString& aReferrerPolicy) {
   mPrettyPrintXML = false;
 
   nsAutoCString cmd;
@@ -653,7 +648,7 @@ nsresult nsXMLContentSink::ProcessStyleLinkFromHeader(
 
   // Otherwise fall through to nsContentSink to handle CSS Link headers.
   return nsContentSink::ProcessStyleLinkFromHeader(
-      aHref, aAlternate, aTitle, aType, aMedia, aReferrerPolicy);
+      aHref, aAlternate, aTitle, aIntegrity, aType, aMedia, aReferrerPolicy);
 }
 
 nsresult nsXMLContentSink::MaybeProcessXSLTLink(
@@ -1162,11 +1157,9 @@ nsXMLContentSink::HandleProcessingInstruction(const char16_t* aTarget,
   RefPtr<ProcessingInstruction> node =
       NS_NewXMLProcessingInstruction(mNodeInfoManager, target, data);
 
-  nsCOMPtr<nsIStyleSheetLinkingElement> ssle =
-      do_QueryInterface(ToSupports(node));
-  if (ssle) {
-    ssle->InitStyleLinkElement(false);
-    ssle->SetEnableUpdates(false);
+  auto* linkStyle = LinkStyle::FromNode(*node);
+  if (linkStyle) {
+    linkStyle->SetEnableUpdates(false);
     mPrettyPrintXML = false;
   }
 
@@ -1174,12 +1167,12 @@ nsXMLContentSink::HandleProcessingInstruction(const char16_t* aTarget,
   NS_ENSURE_SUCCESS(rv, rv);
   DidAddContent();
 
-  if (ssle) {
+  if (linkStyle) {
     // This is an xml-stylesheet processing instruction... but it might not be
     // a CSS one if the type is set to something else.
-    ssle->SetEnableUpdates(true);
+    linkStyle->SetEnableUpdates(true);
     auto updateOrError =
-        ssle->UpdateStyleSheet(mRunsToCompletion ? nullptr : this);
+        linkStyle->UpdateStyleSheet(mRunsToCompletion ? nullptr : this);
     if (updateOrError.isErr()) {
       return updateOrError.unwrapErr();
     }

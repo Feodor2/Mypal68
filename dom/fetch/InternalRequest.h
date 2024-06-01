@@ -34,15 +34,15 @@ namespace dom {
  * RequestDestination| nsContentPolicyType
  * ------------------+--------------------
  * audio             | TYPE_INTERNAL_AUDIO
- * audioworklet      | TODO
+ * audioworklet      | TYPE_INTERNAL_AUDIOWORKLET
  * document          | TYPE_DOCUMENT, TYPE_INTERNAL_IFRAME, TYPE_SUBDOCUMENT
  * embed             | TYPE_INTERNAL_EMBED
- * font              | TYPE_FONT
+ * font              | TYPE_FONT, TYPE_INTERNAL_FONT_PRELOAD
  * image             | TYPE_INTERNAL_IMAGE, TYPE_INTERNAL_IMAGE_PRELOAD,
  *                   | TYPE_IMAGE, TYPE_INTERNAL_IMAGE_FAVICON, TYPE_IMAGESET
  * manifest          | TYPE_WEB_MANIFEST
  * object            | TYPE_INTERNAL_OBJECT, TYPE_OBJECT
- * "paintworklet"    | TODO
+ * "paintworklet"    | TYPE_INTERNAL_PAINTWORKLET
  * report"           | TODO
  * script            | TYPE_INTERNAL_SCRIPT, TYPE_INTERNAL_SCRIPT_PRELOAD,
  *                   | TYPE_INTERNAL_MODULE, TYPE_INTERNAL_MODULE_PRELOAD,

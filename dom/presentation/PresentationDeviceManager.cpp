@@ -9,6 +9,7 @@
 #include "nsArrayUtils.h"
 #include "nsCategoryCache.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"

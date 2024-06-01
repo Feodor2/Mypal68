@@ -12,6 +12,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/UniquePtr.h"
 #include "nsContentUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIEventTarget.h"
@@ -1059,7 +1060,7 @@ class WorkerPrivate : public RelativeTimeline {
   // This is only modified on the worker thread, but in DEBUG builds
   // AssertValidSyncLoop function iterates it on other threads. Therefore
   // modifications are done with mMutex held *only* in DEBUG builds.
-  nsTArray<nsAutoPtr<SyncLoopInfo>> mSyncLoopStack;
+  nsTArray<UniquePtr<SyncLoopInfo>> mSyncLoopStack;
 
   nsCOMPtr<nsITimer> mCancelingTimer;
 
@@ -1098,7 +1099,7 @@ class WorkerPrivate : public RelativeTimeline {
     RefPtr<WorkerDebuggerGlobalScope> mDebuggerScope;
     nsTArray<WorkerPrivate*> mChildWorkers;
     nsTObserverArray<WorkerRef*> mWorkerRefs;
-    nsTArray<nsAutoPtr<TimeoutInfo>> mTimeouts;
+    nsTArray<UniquePtr<TimeoutInfo>> mTimeouts;
 
     nsCOMPtr<nsITimer> mTimer;
     nsCOMPtr<nsITimerCallback> mTimerRunnable;

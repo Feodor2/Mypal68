@@ -37,6 +37,7 @@
 #include "ReferrerInfo.h"
 
 using namespace mozilla;
+using mozilla::dom::Document;
 using mozilla::dom::ReferrerPolicy;
 
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
@@ -407,12 +408,10 @@ nsresult txCompileObserver::startLoad(nsIURI* aUri,
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
   if (httpChannel) {
-    nsCOMPtr<nsIURI> referrerURI;
-    aReferrerPrincipal->GetURI(getter_AddRefs(referrerURI));
-    if (referrerURI) {
-      DebugOnly<nsresult> rv;
-      nsCOMPtr<nsIReferrerInfo> referrerInfo =
-          new dom::ReferrerInfo(referrerURI, aReferrerPolicy);
+    nsCOMPtr<nsIReferrerInfo> referrerInfo;
+    nsresult rv = aReferrerPrincipal->CreateReferrerInfo(
+        aReferrerPolicy, getter_AddRefs(referrerInfo));
+    if (NS_SUCCEEDED(rv)) {
       rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
@@ -554,7 +553,7 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
   if (mProcessor) {
     source = mProcessor->GetSourceContentModel();
   }
-  nsAutoSyncOperation sync(source ? source->OwnerDoc() : nullptr);
+  dom::nsAutoSyncOperation sync(source ? source->OwnerDoc() : nullptr);
   nsCOMPtr<Document> document;
 
   rv = nsSyncLoadService::LoadDocument(

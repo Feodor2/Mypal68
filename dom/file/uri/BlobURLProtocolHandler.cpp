@@ -684,9 +684,9 @@ nsresult BlobURLProtocolHandler::GenerateURIString(nsIPrincipal* aPrincipal,
 
   if (aPrincipal) {
     nsAutoCString origin;
-    rv = nsContentUtils::GetASCIIOrigin(aPrincipal, origin);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    rv = aPrincipal->GetAsciiOrigin(origin);
+    if (NS_FAILED(rv)) {
+      origin.AssignLiteral("null");
     }
 
     aUri.Append(origin);
@@ -826,8 +826,8 @@ BlobURLProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   // principal and which is never mutated to have a non-zero mPrivateBrowsingId
   // or container.
   if (aLoadInfo &&
-      (!aLoadInfo->LoadingPrincipal() ||
-       !aLoadInfo->LoadingPrincipal()->IsSystemPrincipal()) &&
+      (!aLoadInfo->GetLoadingPrincipal() ||
+       !aLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()) &&
       !ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
           aLoadInfo->GetOriginAttributes(),
           BasePrincipal::Cast(info->mPrincipal)->OriginAttributesRef())) {

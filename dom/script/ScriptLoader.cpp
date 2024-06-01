@@ -47,6 +47,7 @@
 #include "nsICacheInfoChannel.h"
 #include "nsITimedChannel.h"
 #include "nsIScriptElement.h"
+#include "nsISupportsPriority.h"
 #include "nsIDocShell.h"
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
@@ -1277,6 +1278,9 @@ nsresult ScriptLoader::RestartLoad(ScriptLoadRequest* aRequest) {
   aRequest->mScriptBytecode.clearAndFree();
   TRACE_FOR_TEST(aRequest->GetScriptElement(), "scriptloader_fallback");
 
+  // Notify preload restart so that we can register this preload request again.
+  aRequest->NotifyRestart(mDocument);
+
   // Start a new channel from which we explicitly request to stream the source
   // instead of the bytecode.
   aRequest->mProgress = ScriptLoadRequest::Progress::eLoading_Source;
@@ -1423,8 +1427,16 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
   LOG(("ScriptLoadRequest (%p): mode=%u tracking=%d", aRequest,
        unsigned(aRequest->mScriptMode), aRequest->IsTracking()));
 
-  nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(channel));
-  if (cos) {
+  if (aRequest->IsLinkPreloadScript()) {
+    // This is <link rel="preload" as="script"> initiated speculative load,
+    // put it to the group that is not blocked by leaders and doesn't block
+    // follower at the same time. Giving it a much higher priority will make
+    // this request be processed ahead of other Unblocked requests, but with
+    // the same weight as Leaders.  This will make us behave similar way for
+    // both http2 and http1.
+    ScriptLoadRequest::PrioritizeAsPreload(channel);
+    ScriptLoadRequest::AddLoadBackgroundFlag(channel);
+  } else if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(channel)) {
     if (aRequest->mScriptFromHead && aRequest->IsBlockingScript()) {
       // synchronous head scripts block loading of most other non js/css
       // content such as images, Leader implicitely disallows tailing
@@ -1489,7 +1501,11 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
   // Set the initiator type
   nsCOMPtr<nsITimedChannel> timedChannel(do_QueryInterface(httpChannel));
   if (timedChannel) {
-    timedChannel->SetInitiatorType(NS_LITERAL_STRING("script"));
+    if (aRequest->IsLinkPreloadScript()) {
+      timedChannel->SetInitiatorType(NS_LITERAL_STRING("link"));
+    } else {
+      timedChannel->SetInitiatorType(NS_LITERAL_STRING("script"));
+    }
   }
 
   UniquePtr<mozilla::dom::SRICheckDataVerifier> sriDataVerifier;
@@ -1509,7 +1525,21 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
   rv = NS_NewIncrementalStreamLoader(getter_AddRefs(loader), handler);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  auto key = PreloadHashKey::CreateAsScript(
+      aRequest->mURI, aRequest->CORSMode(), aRequest->mKind,
+      aRequest->ReferrerPolicy());
+  aRequest->NotifyOpen(&key, channel, mDocument,
+                       aRequest->IsLinkPreloadScript());
+
   rv = channel->AsyncOpen(loader);
+
+  if (NS_FAILED(rv)) {
+    // Make sure to inform any <link preload> tags about failure to load the
+    // resource.
+    aRequest->NotifyStart(channel);
+    aRequest->NotifyStop(rv);
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aRequest->IsModuleRequest()) {
@@ -1691,7 +1721,7 @@ bool ScriptLoader::ProcessExternalScript(nsIScriptElement* aElement,
     // It's possible these attributes changed since we started the preload so
     // update them here.
     request->SetScriptMode(aElement->GetScriptDeferred(),
-                           aElement->GetScriptAsync());
+                           aElement->GetScriptAsync(), false);
 
     AccumulateCategorical(LABELS_DOM_SCRIPT_PRELOAD_RESULT::Used);
   } else {
@@ -1710,7 +1740,7 @@ bool ScriptLoader::ProcessExternalScript(nsIScriptElement* aElement,
                                 ourCORSMode, sriMetadata, referrerPolicy);
     request->mIsInline = false;
     request->SetScriptMode(aElement->GetScriptDeferred(),
-                           aElement->GetScriptAsync());
+                           aElement->GetScriptAsync(), false);
     // keep request->mScriptFromHead to false so we don't treat non preloaded
     // scripts as blockers for full page load. See bug 792438.
 
@@ -1860,7 +1890,7 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
   // inline classic scripts ignore both these attributes.
   MOZ_ASSERT(!aElement->GetScriptDeferred());
   MOZ_ASSERT_IF(!request->IsModuleRequest(), !aElement->GetScriptAsync());
-  request->SetScriptMode(false, aElement->GetScriptAsync());
+  request->SetScriptMode(false, aElement->GetScriptAsync(), false);
 
   LOG(("ScriptLoadRequest (%p): Created request for inline script",
        request.get()));
@@ -1974,6 +2004,14 @@ ScriptLoadRequest* ScriptLoader::LookupPreloadRequest(
 
   // Report any errors that we skipped while preloading.
   ReportPreloadErrorsToConsole(request);
+
+  // This makes sure the pending preload (if exists) for this resource is
+  // properly marked as used and thus not notified in the console as unused.
+  request->NotifyUsage();
+  // A used preload must no longer be found in the Document's hash table.  Any
+  // <link preload> tag after the <script> tag will start a new request, that
+  // can be satisfied from a different cache, but not from the preload cache.
+  request->RemoveSelf(mDocument);
 
   return request;
 }
@@ -3901,6 +3939,7 @@ void ScriptLoader::PreloadURI(nsIURI* aURI, const nsAString& aCharset,
                               const nsAString& aCrossOrigin,
                               const nsAString& aIntegrity, bool aScriptFromHead,
                               bool aAsync, bool aDefer, bool aNoModule,
+                              bool aLinkPreload,
                               const ReferrerPolicy aReferrerPolicy) {
   NS_ENSURE_TRUE_VOID(mDocument);
   // Check to see if scripts has been turned off.
@@ -3939,7 +3978,7 @@ void ScriptLoader::PreloadURI(nsIURI* aURI, const nsAString& aCharset,
       Element::StringToCORSMode(aCrossOrigin), sriMetadata, aReferrerPolicy);
   request->mIsInline = false;
   request->mScriptFromHead = aScriptFromHead;
-  request->SetScriptMode(aDefer, aAsync);
+  request->SetScriptMode(aDefer, aAsync, aLinkPreload);
   request->SetIsPreloadRequest();
 
   if (LOG_ENABLED()) {

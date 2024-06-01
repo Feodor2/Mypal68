@@ -12,7 +12,7 @@
 #define MITREXSL_EXPRPARSER_H
 
 #include "txCore.h"
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "nsString.h"
 
 class Expr;
@@ -46,8 +46,8 @@ class txExprParser {
    * Using nsAutoPtr& to optimize passing the ownership to the
    * created binary expression objects.
    */
-  static nsresult createBinaryExpr(nsAutoPtr<Expr>& left,
-                                   nsAutoPtr<Expr>& right, Token* op,
+  static nsresult createBinaryExpr(mozilla::UniquePtr<Expr>& left,
+                                   mozilla::UniquePtr<Expr>& right, Token* op,
                                    Expr** aResult);
   static nsresult createExpr(txExprLexer& lexer, txIParseContext* aContext,
                              Expr** aResult);

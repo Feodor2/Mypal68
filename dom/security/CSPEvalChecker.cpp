@@ -35,8 +35,8 @@ nsresult CheckInternal(nsIContentSecurityPolicy* aCSP,
 
 #if !defined(ANDROID)
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
-  if (!nsContentSecurityUtils::IsEvalAllowed(cx, aSubjectPrincipal,
-                                             aExpression)) {
+  if (cx && !nsContentSecurityUtils::IsEvalAllowed(cx, aSubjectPrincipal,
+                                                    aExpression)) {
     *aAllowed = false;
     return NS_OK;
   }

@@ -7,8 +7,9 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Link.h"
+#include "mozilla/dom/LinkStyle.h"
+#include "mozilla/WeakPtr.h"
 #include "nsGenericHTMLElement.h"
-#include "nsStyleLinkElement.h"
 #include "nsDOMTokenList.h"
 
 namespace mozilla {
@@ -19,7 +20,7 @@ namespace dom {
 // NOTE(emilio): If we stop inheriting from Link, we need to remove the
 // IsHTMLElement(nsGkAtoms::link) checks in Link.cpp.
 class HTMLLinkElement final : public nsGenericHTMLElement,
-                              public nsStyleLinkElement,
+                              public LinkStyle,
                               public Link {
  public:
   explicit HTMLLinkElement(
@@ -129,7 +130,7 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
     }
     return mSizes;
   }
-  void GetType(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::type, aValue); }
+  void GetType(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::type, aValue); }
   void SetType(const nsAString& aType, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::type, aType, aRv);
   }
@@ -159,6 +160,18 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   void GetReferrerPolicy(nsAString& aReferrer) {
     GetEnumAttr(nsGkAtoms::referrerpolicy, EmptyCString().get(), aReferrer);
   }
+  void GetImageSrcset(nsAString& aImageSrcset) {
+    GetHTMLAttr(nsGkAtoms::imagesrcset, aImageSrcset);
+  }
+  void SetImageSrcset(const nsAString& aImageSrcset, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::imagesrcset, aImageSrcset, aError);
+  }
+  void GetImageSizes(nsAString& aImageSizes) {
+    GetHTMLAttr(nsGkAtoms::imagesizes, aImageSizes);
+  }
+  void SetImageSizes(const nsAString& aImageSizes, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::imagesizes, aImageSizes, aError);
+  }
 
   CORSMode GetCORSMode() const {
     return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
@@ -183,16 +196,26 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
                      const nsAttrValue* aOldValue);
   void CancelPrefetchOrPreload();
 
+  void StartPreload(nsContentPolicyType policyType);
+  void CancelPreload();
+
   // Returns whether the type attribute specifies the text/css mime type for
   // link elements.
   static bool IsCSSMimeTypeAttributeForLinkElement(
       const mozilla::dom::Element&);
 
-  // nsStyleLinkElement
+  // LinkStyle
+  nsIContent& AsContent() final { return *this; }
+  const LinkStyle* AsLinkStyle() const final { return this; }
   Maybe<SheetInfo> GetStyleSheetInfo() final;
 
   RefPtr<nsDOMTokenList> mRelList;
   RefPtr<nsDOMTokenList> mSizes;
+
+  // A weak reference to our preload is held only to cancel the preload when
+  // this node updates or unbounds from the tree.  We want to prevent cycles,
+  // the preload is held alive by other means.
+  WeakPtr<PreloaderBase> mPreload;
 
   // The "explicitly enabled" flag. This flag is set whenever the `disabled`
   // attribute is explicitly unset, and makes alternate stylesheets not be

@@ -58,6 +58,7 @@
 #include "mozilla/dom/DOMSecurityMonitor.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FileSystemSecurity.h"
@@ -1694,8 +1695,8 @@ bool nsContentUtils::OfflineAppAllowed(nsIPrincipal* aPrincipal) {
   nsresult rv = updateService->OfflineAppAllowed(aPrincipal, &allowed);
   return NS_SUCCEEDED(rv) && allowed;
 }
-
-static bool IsErrorPage(nsIURI* aURI) {
+// Static
+bool nsContentUtils::IsErrorPage(nsIURI* aURI) {
   if (!aURI) {
     return false;
   }
@@ -1710,45 +1711,6 @@ static bool IsErrorPage(nsIURI* aURI) {
 
   return name.EqualsLiteral("certerror") || name.EqualsLiteral("neterror") ||
          name.EqualsLiteral("blocked");
-}
-
-/* static */
-bool nsContentUtils::PrincipalAllowsL10n(nsIPrincipal* aPrincipal,
-                                         nsIURI* aDocumentURI) {
-  if (IsErrorPage(aDocumentURI)) {
-    return true;
-  }
-
-  // The system principal is always allowed.
-  if (aPrincipal->IsSystemPrincipal()) {
-    return true;
-  }
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  bool hasFlags;
-
-  // Allow access to uris that cannot be loaded by web content.
-  rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_DANGEROUS_TO_LOAD,
-                           &hasFlags);
-  NS_ENSURE_SUCCESS(rv, false);
-  if (hasFlags) {
-    return true;
-  }
-
-  // UI resources also get access.
-  rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_IS_UI_RESOURCE,
-                           &hasFlags);
-  NS_ENSURE_SUCCESS(rv, false);
-  if (hasFlags) {
-    return true;
-  }
-
-  auto principal = BasePrincipal::Cast(aPrincipal);
-  auto policy = principal->AddonPolicy();
-  return (policy && policy->IsPrivileged());
 }
 
 // static
@@ -3363,7 +3325,7 @@ nsresult nsContentUtils::LoadImage(
     nsIReferrerInfo* aReferrerInfo, imgINotificationObserver* aObserver,
     int32_t aLoadFlags, const nsAString& initiatorType,
     imgRequestProxy** aRequest, uint32_t aContentPolicyType,
-    bool aUseUrgentStartForChannel) {
+    bool aUseUrgentStartForChannel, bool aLinkPreload) {
   MOZ_ASSERT(aURI, "Must have a URI");
   MOZ_ASSERT(aContext, "Must have a context");
   MOZ_ASSERT(aLoadingDocument, "Must have a document");
@@ -3399,6 +3361,7 @@ nsresult nsContentUtils::LoadImage(
                               aContentPolicyType, /* content policy type */
                               initiatorType,      /* the load initiator */
                               aUseUrgentStartForChannel, /* urgent-start flag */
+                              aLinkPreload, /* <link preload> initiator */
                               aRequest);
 }
 
@@ -5846,26 +5809,6 @@ SameOriginCheckerImpl::GetInterface(const nsIID& aIID, void** aResult) {
 }
 
 /* static */
-nsresult nsContentUtils::GetASCIIOrigin(nsIPrincipal* aPrincipal,
-                                        nsACString& aOrigin) {
-  MOZ_ASSERT(aPrincipal, "missing principal");
-
-  aOrigin.Truncate();
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (uri) {
-    return GetASCIIOrigin(uri, aOrigin);
-  }
-
-  aOrigin.AssignLiteral("null");
-
-  return NS_OK;
-}
-
-/* static */
 nsresult nsContentUtils::GetASCIIOrigin(nsIURI* aURI, nsACString& aOrigin) {
   MOZ_ASSERT(aURI, "missing uri");
 
@@ -5922,8 +5865,10 @@ nsresult nsContentUtils::GetUTFOrigin(nsIPrincipal* aPrincipal,
   aOrigin.Truncate();
   nsAutoCString asciiOrigin;
 
-  nsresult rv = GetASCIIOrigin(aPrincipal, asciiOrigin);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsresult rv = aPrincipal->GetAsciiOrigin(asciiOrigin);
+  if (NS_FAILED(rv)) {
+    asciiOrigin.AssignLiteral("null");
+  }
 
   aOrigin = NS_ConvertUTF8toUTF16(asciiOrigin);
   return NS_OK;
@@ -8020,7 +7965,8 @@ bool nsContentUtils::IsPreloadType(nsContentPolicyType aType) {
   return (aType == nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD ||
           aType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD ||
           aType == nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD ||
-          aType == nsIContentPolicy::TYPE_INTERNAL_STYLESHEET_PRELOAD);
+          aType == nsIContentPolicy::TYPE_INTERNAL_STYLESHEET_PRELOAD ||
+          aType == nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD);
 }
 
 /* static */
@@ -8330,7 +8276,8 @@ class StringBuilder {
       return false;
     }
 
-    for (StringBuilder* current = this; current; current = current->mNext) {
+    for (StringBuilder* current = this; current;
+         current = current->mNext.get()) {
       uint32_t len = current->mUnits.Length();
       for (uint32_t i = 0; i < len; ++i) {
         Unit& u = current->mUnits[i];
@@ -8386,7 +8333,7 @@ class StringBuilder {
 
   explicit StringBuilder(StringBuilder* aFirst) : mLast(nullptr), mLength(0) {
     MOZ_COUNT_CTOR(StringBuilder);
-    aFirst->mLast->mNext = this;
+    aFirst->mLast->mNext = WrapUnique(this);
     aFirst->mLast = this;
   }
 
@@ -8457,7 +8404,7 @@ class StringBuilder {
   }
 
   AutoTArray<Unit, STRING_BUFFER_UNITS> mUnits;
-  nsAutoPtr<StringBuilder> mNext;
+  mozilla::UniquePtr<StringBuilder> mNext;
   StringBuilder* mLast;
   // mLength is used only in the first StringBuilder object in the linked list.
   CheckedInt<uint32_t> mLength;
@@ -8806,20 +8753,15 @@ bool nsContentUtils::IsSpecificAboutPage(JSObject* aGlobal, const char* aUri) {
 
   nsCOMPtr<nsIPrincipal> principal = win->GetPrincipal();
   NS_ENSURE_TRUE(principal, false);
-  nsCOMPtr<nsIURI> uri;
-  principal->GetURI(getter_AddRefs(uri));
-  if (!uri) {
-    return false;
-  }
 
   // First check the scheme to avoid getting long specs in the common case.
   if (!principal->SchemeIs("about")) {
     return false;
   }
 
-  // Now check the spec itself
   nsAutoCString spec;
-  uri->GetSpecIgnoringRef(spec);
+  principal->GetAsciiSpec(spec);
+
   return spec.EqualsASCII(aUri);
 }
 

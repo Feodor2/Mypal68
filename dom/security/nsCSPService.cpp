@@ -104,7 +104,7 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
   uint32_t contentType = aLoadInfo->InternalContentPolicyType();
   nsCOMPtr<nsISupports> requestContext = aLoadInfo->GetLoadingContext();
   nsCOMPtr<nsIURI> requestOrigin;
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->GetLoadingPrincipal();
   if (loadingPrincipal) {
     loadingPrincipal->GetURI(getter_AddRefs(requestOrigin));
   }

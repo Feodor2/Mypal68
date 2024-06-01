@@ -10,13 +10,13 @@
 #include "jsapi.h"             // For most JSAPI
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Move.h"
+#include <utility>
 #include "mozilla/RangedArray.h"
-#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoCSSParser.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StyleAnimationValue.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimingParams.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h"  // For FastBaseKeyframe etc.
 #include "mozilla/dom/BindingCallContext.h"

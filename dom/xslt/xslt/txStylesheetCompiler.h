@@ -6,11 +6,11 @@
 #define TRANSFRMX_TXSTYLESHEETCOMPILER_H
 
 #include "mozilla/Attributes.h"
+#include "mozilla/UniquePtr.h"
 #include "txStack.h"
 #include "txXSLTPatterns.h"
 #include "txExpr.h"
 #include "txIXPathContext.h"
-#include "nsAutoPtr.h"
 #include "txStylesheet.h"
 #include "nsTArray.h"
 
@@ -98,10 +98,10 @@ class txStylesheetCompilerState : public txIParseContext {
   void* popPtr(enumStackType aType);
 
   // stylesheet functions
-  nsresult addToplevelItem(txToplevelItem* aItem);
+  void addToplevelItem(txToplevelItem* aItem);
   nsresult openInstructionContainer(txInstructionContainer* aContainer);
   void closeInstructionContainer();
-  nsresult addInstruction(nsAutoPtr<txInstruction>&& aInstruction);
+  void addInstruction(mozilla::UniquePtr<txInstruction>&& aInstruction);
   nsresult loadIncludedStylesheet(const nsAString& aURI);
   nsresult loadImportedStylesheet(const nsAString& aURI,
                                   txStylesheet::ImportFrame* aFrame);
@@ -133,9 +133,9 @@ class txStylesheetCompilerState : public txIParseContext {
 
   RefPtr<txStylesheet> mStylesheet;
   txHandlerTable* mHandlerTable;
-  nsAutoPtr<txElementContext> mElementContext;
+  mozilla::UniquePtr<txElementContext> mElementContext;
   txPushNewContext* mSorter;
-  nsAutoPtr<txList> mChooseGotoList;
+  mozilla::UniquePtr<txList> mChooseGotoList;
   bool mDOE;
   bool mSearchingForFallback;
   uint16_t mDisAllowed;
@@ -155,7 +155,7 @@ class txStylesheetCompilerState : public txIParseContext {
   nsTArray<enumStackType> mTypeStack;
 
  private:
-  txInstruction** mNextInstrPtr;
+  mozilla::UniquePtr<txInstruction>* mNextInstrPtr;
   txListIterator mToplevelIterator;
   nsTArray<txInstruction**> mGotoTargetPointers;
   ReferrerPolicy mReferrerPolicy;

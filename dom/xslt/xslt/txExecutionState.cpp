@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/UniquePtrExtensions.h"
 #include "txExecutionState.h"
 #include "txSingleNodeContext.h"
 #include "txInstructions.h"
@@ -13,10 +14,14 @@
 #include "txURIUtils.h"
 #include "txXMLParser.h"
 
+using mozilla::UniquePtr;
+using mozilla::Unused;
+using mozilla::WrapUnique;
+
 const int32_t txExecutionState::kMaxRecursionDepth = 20000;
 
 nsresult txLoadedDocumentsHash::init(const txXPathNode& aSource) {
-  mSourceDocument = txXPathNodeUtils::getOwnerDocument(aSource);
+  mSourceDocument = WrapUnique(txXPathNodeUtils::getOwnerDocument(aSource));
 
   nsAutoString baseURI;
   nsresult rv = txXPathNodeUtils::getBaseURI(*mSourceDocument, baseURI);
@@ -34,8 +39,8 @@ nsresult txLoadedDocumentsHash::init(const txXPathNode& aSource) {
   // txMozillaXSLTProcessor::TransformToFragment) it makes more sense to return
   // the real root of the source tree, which is the node where the transform
   // started.
-  PutEntry(baseURI)->mDocument =
-      txXPathNativeNode::createXPathNode(txXPathNativeNode::getNode(aSource));
+  PutEntry(baseURI)->mDocument = WrapUnique(
+      txXPathNativeNode::createXPathNode(txXPathNativeNode::getNode(aSource)));
   return NS_OK;
 }
 
@@ -46,7 +51,7 @@ txLoadedDocumentsHash::~txLoadedDocumentsHash() {
     if (NS_SUCCEEDED(rv)) {
       txLoadedDocumentEntry* entry = GetEntry(baseURI);
       if (entry) {
-        delete entry->mDocument.forget();
+        delete entry->mDocument.release();
       }
     }
   }
@@ -238,20 +243,20 @@ nsresult txExecutionState::getVariable(int32_t aNamespace, nsAtom* aLName,
       return rv;
     }
   } else {
-    nsAutoPtr<txRtfHandler> rtfHandler(new txRtfHandler);
+    UniquePtr<txRtfHandler> rtfHandler(new txRtfHandler);
 
-    rv = pushResultHandler(rtfHandler);
+    rv = pushResultHandler(rtfHandler.get());
     if (NS_FAILED(rv)) {
       popAndDeleteEvalContextUntil(mInitialEvalContext);
       return rv;
     }
 
-    rtfHandler.forget();
+    Unused << rtfHandler.release();
 
     txInstruction* prevInstr = mNextInstruction;
     // set return to nullptr to stop execution
     mNextInstruction = nullptr;
-    rv = runTemplate(var->mFirstInstruction);
+    rv = runTemplate(var->mFirstInstruction.get());
     if (NS_FAILED(rv)) {
       popAndDeleteEvalContextUntil(mInitialEvalContext);
       return rv;
@@ -267,7 +272,7 @@ nsresult txExecutionState::getVariable(int32_t aNamespace, nsAtom* aLName,
     popTemplateRule();
 
     mNextInstruction = prevInstr;
-    rtfHandler = (txRtfHandler*)popResultHandler();
+    rtfHandler = WrapUnique((txRtfHandler*)popResultHandler());
     rv = rtfHandler->getAsRTF(&aResult);
     if (NS_FAILED(rv)) {
       popAndDeleteEvalContextUntil(mInitialEvalContext);
@@ -370,7 +375,7 @@ const txXPathNode* txExecutionState::retrieveDocument(const nsAString& aUri) {
     return nullptr;
   }
 
-  MOZ_LOG(txLog::xslt, LogLevel::Debug,
+  MOZ_LOG(txLog::xslt, mozilla::LogLevel::Debug,
           ("Retrieve Document %s", NS_LossyConvertUTF16toASCII(aUri).get()));
 
   // try to get already loaded document
@@ -395,7 +400,7 @@ const txXPathNode* txExecutionState::retrieveDocument(const nsAString& aUri) {
     }
   }
 
-  return entry->mDocument;
+  return entry->mDocument.get();
 }
 
 nsresult txExecutionState::getKeyNodes(const txExpandedName& aKeyName,
@@ -415,7 +420,7 @@ txExecutionState::TemplateRule* txExecutionState::getCurrentTemplateRule() {
 txInstruction* txExecutionState::getNextInstruction() {
   txInstruction* instr = mNextInstruction;
   if (instr) {
-    mNextInstruction = instr->mNext;
+    mNextInstruction = instr->mNext.get();
   }
 
   return instr;

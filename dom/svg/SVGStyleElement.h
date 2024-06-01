@@ -6,8 +6,8 @@
 #define mozilla_dom_SVGStyleElement_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "SVGElement.h"
-#include "nsStyleLinkElement.h"
 #include "nsStubMutationObserver.h"
 
 nsresult NS_NewSVGStyleElement(
@@ -19,8 +19,8 @@ namespace dom {
 typedef SVGElement SVGStyleElementBase;
 
 class SVGStyleElement final : public SVGStyleElementBase,
-                              public nsStyleLinkElement,
-                              public nsStubMutationObserver {
+                              public nsStubMutationObserver,
+                              public LinkStyle {
  protected:
   friend nsresult(::NS_NewSVGStyleElement(
       nsIContent** aResult,
@@ -74,7 +74,9 @@ class SVGStyleElement final : public SVGStyleElementBase,
   // completely optimized away.
   inline nsresult Init() { return NS_OK; }
 
-  // nsStyleLinkElement overrides
+  // LinkStyle overrides
+  nsIContent& AsContent() final { return *this; }
+  const LinkStyle* AsLinkStyle() const final { return this; }
   Maybe<SheetInfo> GetStyleSheetInfo() final;
 
   /**

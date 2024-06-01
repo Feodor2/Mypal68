@@ -235,6 +235,7 @@ class nsContentUtils {
 #else
       ;
 #endif
+  static bool IsErrorPage(nsIURI* aURI);
 
   static bool IsCallerChromeOrFuzzingEnabled(JSContext* aCx, JSObject*) {
     return ThreadsafeIsSystemCaller(aCx) || IsFuzzingEnabled();
@@ -905,7 +906,7 @@ class nsContentUtils {
       int32_t aLoadFlags, const nsAString& initiatorType,
       imgRequestProxy** aRequest,
       uint32_t aContentPolicyType = nsIContentPolicy::TYPE_INTERNAL_IMAGE,
-      bool aUseUrgentStartForChannel = false);
+      bool aUseUrgentStartForChannel = false, bool aLinkPreload = false);
 
   /**
    * Obtain an image loader that respects the given document/channel's privacy
@@ -2195,7 +2196,6 @@ class nsContentUtils {
    *
    * @note this should be used for HTML5 origin determination.
    */
-  static nsresult GetASCIIOrigin(nsIPrincipal* aPrincipal, nsACString& aOrigin);
   static nsresult GetASCIIOrigin(nsIURI* aURI, nsACString& aOrigin);
   static nsresult GetUTFOrigin(nsIPrincipal* aPrincipal, nsAString& aOrigin);
   static nsresult GetUTFOrigin(nsIURI* aURI, nsAString& aOrigin);
@@ -3351,6 +3351,8 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
+    case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
+    case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
       return nsIContentPolicy::TYPE_SCRIPT;
 
     case nsIContentPolicy::TYPE_INTERNAL_EMBED:
@@ -3382,6 +3384,9 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_DTD:
     case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
       return nsIContentPolicy::TYPE_DTD;
+
+    case nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD:
+      return nsIContentPolicy::TYPE_FONT;
 
     default:
       return aType;

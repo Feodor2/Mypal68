@@ -4,6 +4,7 @@
 
 #include "nsGkAtoms.h"
 #include "nsUnicharUtils.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "mozilla/dom/ProcessingInstructionBinding.h"
 #include "mozilla/dom/XMLStylesheetProcessingInstruction.h"
@@ -53,11 +54,14 @@ ProcessingInstruction::ProcessingInstruction(
                   false);  // Don't notify (bug 420429).
 }
 
-ProcessingInstruction::~ProcessingInstruction() {}
+ProcessingInstruction::~ProcessingInstruction() = default;
 
-// If you add nsIStyleSheetLinkingElement here, make sure we actually
-// implement the nsStyleLinkElement methods.
-NS_IMPL_ISUPPORTS_INHERITED0(ProcessingInstruction, CharacterData)
+StyleSheet* ProcessingInstruction::GetSheet() const {
+  if (const auto* linkStyle = LinkStyle::FromNode(*this)) {
+    return linkStyle->GetSheet();
+  }
+  return nullptr;
+}
 
 JSObject* ProcessingInstruction::WrapNode(JSContext* aCx,
                                           JS::Handle<JSObject*> aGivenProto) {
@@ -78,16 +82,6 @@ already_AddRefed<CharacterData> ProcessingInstruction::CloneDataNode(
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
   auto* nim = ni->NodeInfoManager();
   return do_AddRef(new (nim) ProcessingInstruction(ni.forget(), data));
-}
-
-Maybe<nsStyleLinkElement::SheetInfo>
-ProcessingInstruction::GetStyleSheetInfo() {
-  MOZ_ASSERT_UNREACHABLE(
-      "XMLStylesheetProcessingInstruction should override "
-      "this and we don't try to do stylesheet stuff.  In "
-      "particular, we do not implement "
-      "nsIStyleSheetLinkingElement");
-  return Nothing();
 }
 
 #ifdef DEBUG

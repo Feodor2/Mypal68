@@ -11,10 +11,10 @@
 #include "mozilla/Components.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/MutationObservers.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/SRILogHelper.h"
-#include "nsStyleLinkElement.h"
 #include "nsIDocShell.h"
 #include "nsILoadContext.h"
 #include "nsIPrefetchService.h"
@@ -279,8 +279,8 @@ nsresult nsContentSink::ProcessHeaderData(nsAtom* aHeader,
       mParser->GetChannel(getter_AddRefs(channel));
     }
 
-    rv = cookieServ->SetCookieString(codebaseURI, nullptr,
-                                     NS_ConvertUTF16toUTF8(aValue), channel);
+    rv = cookieServ->SetCookieString(codebaseURI, NS_ConvertUTF16toUTF8(aValue),
+                                     channel);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -385,6 +385,9 @@ nsresult nsContentSink::ProcessLinkHeader(const nsAString& aLinkData) {
   nsAutoString rel;
   nsAutoString title;
   nsAutoString titleStar;
+  nsAutoString integrity;
+  nsAutoString srcset;
+  nsAutoString sizes;
   nsAutoString type;
   nsAutoString media;
   nsAutoString anchor;
@@ -588,6 +591,18 @@ nsresult nsContentSink::ProcessLinkHeader(const nsAString& aLinkData) {
             if (referrerPolicy.IsEmpty()) {
               referrerPolicy = value;
             }
+          } else if (attr.LowerCaseEqualsLiteral("integrity")) {
+            if (integrity.IsEmpty()) {
+              integrity = value;
+            }
+          } else if (attr.LowerCaseEqualsLiteral("imagesrcset")) {
+            if (srcset.IsEmpty()) {
+              srcset = value;
+            }
+          } else if (attr.LowerCaseEqualsLiteral("imagesizes")) {
+            if (sizes.IsEmpty()) {
+              sizes = value;
+            }
           }
         }
       }
@@ -601,14 +616,17 @@ nsresult nsContentSink::ProcessLinkHeader(const nsAString& aLinkData) {
         rv = ProcessLinkFromHeader(
             anchor, href, rel,
             // prefer RFC 5987 variant over non-I18zed version
-            titleStar.IsEmpty() ? title : titleStar, type, media, crossOrigin,
-            referrerPolicy, as);
+            titleStar.IsEmpty() ? title : titleStar, integrity, srcset, sizes,
+            type, media, crossOrigin, referrerPolicy, as);
       }
 
       href.Truncate();
       rel.Truncate();
       title.Truncate();
       type.Truncate();
+      integrity.Truncate();
+      srcset.Truncate();
+      sizes.Truncate();
       media.Truncate();
       anchor.Truncate();
       referrerPolicy.Truncate();
@@ -623,11 +641,11 @@ nsresult nsContentSink::ProcessLinkHeader(const nsAString& aLinkData) {
 
   href.Trim(" \t\n\r\f");  // trim HTML5 whitespace
   if (!href.IsEmpty() && !rel.IsEmpty()) {
-    rv =
-        ProcessLinkFromHeader(anchor, href, rel,
-                              // prefer RFC 5987 variant over non-I18zed version
-                              titleStar.IsEmpty() ? title : titleStar, type,
-                              media, crossOrigin, referrerPolicy, as);
+    rv = ProcessLinkFromHeader(
+        anchor, href, rel,
+        // prefer RFC 5987 variant over non-I18zed version
+        titleStar.IsEmpty() ? title : titleStar, integrity, srcset, sizes, type,
+        media, crossOrigin, referrerPolicy, as);
   }
 
   return rv;
@@ -635,10 +653,11 @@ nsresult nsContentSink::ProcessLinkHeader(const nsAString& aLinkData) {
 
 nsresult nsContentSink::ProcessLinkFromHeader(
     const nsAString& aAnchor, const nsAString& aHref, const nsAString& aRel,
-    const nsAString& aTitle, const nsAString& aType, const nsAString& aMedia,
-    const nsAString& aCrossOrigin, const nsAString& aReferrerPolicy,
-    const nsAString& aAs) {
-  uint32_t linkTypes = nsStyleLinkElement::ParseLinkTypes(aRel);
+    const nsAString& aTitle, const nsAString& aIntegrity,
+    const nsAString& aSrcset, const nsAString& aSizes, const nsAString& aType,
+    const nsAString& aMedia, const nsAString& aCrossOrigin,
+    const nsAString& aReferrerPolicy, const nsAString& aAs) {
+  uint32_t linkTypes = LinkStyle::ParseLinkTypes(aRel);
 
   // The link relation may apply to a different resource, specified
   // in the anchor parameter. For the link relations supported so far,
@@ -650,35 +669,38 @@ nsresult nsContentSink::ProcessLinkFromHeader(
 
   if (nsContentUtils::PrefetchPreloadEnabled(mDocShell)) {
     // prefetch href if relation is "next" or "prefetch"
-    if ((linkTypes & nsStyleLinkElement::eNEXT) ||
-        (linkTypes & nsStyleLinkElement::ePREFETCH) ||
-        (linkTypes & nsStyleLinkElement::ePRELOAD)) {
-      PrefetchPreloadHref(aHref, linkTypes, aAs, aType, aMedia);
+    if ((linkTypes & LinkStyle::eNEXT) || (linkTypes & LinkStyle::ePREFETCH)) {
+      PrefetchHref(aHref, aAs, aType, aMedia);
     }
 
-    if (!aHref.IsEmpty() && (linkTypes & nsStyleLinkElement::eDNS_PREFETCH)) {
+    if (!aHref.IsEmpty() && (linkTypes & LinkStyle::eDNS_PREFETCH)) {
       PrefetchDNS(aHref);
     }
 
-    if (!aHref.IsEmpty() && (linkTypes & nsStyleLinkElement::ePRECONNECT)) {
+    if (!aHref.IsEmpty() && (linkTypes & LinkStyle::ePRECONNECT)) {
       Preconnect(aHref, aCrossOrigin);
+    }
+
+    if (linkTypes & LinkStyle::ePRELOAD) {
+      PreloadHref(aHref, aAs, aType, aMedia, aIntegrity, aSrcset, aSizes,
+                  aCrossOrigin, aReferrerPolicy);
     }
   }
 
   // is it a stylesheet link?
-  if (!(linkTypes & nsStyleLinkElement::eSTYLESHEET)) {
+  if (!(linkTypes & LinkStyle::eSTYLESHEET)) {
     return NS_OK;
   }
 
-  bool isAlternate = linkTypes & nsStyleLinkElement::eALTERNATE;
-  return ProcessStyleLinkFromHeader(aHref, isAlternate, aTitle, aType, aMedia,
-                                    aReferrerPolicy);
+  bool isAlternate = linkTypes & LinkStyle::eALTERNATE;
+  return ProcessStyleLinkFromHeader(aHref, isAlternate, aTitle, aIntegrity,
+                                    aType, aMedia, aReferrerPolicy);
 }
 
 nsresult nsContentSink::ProcessStyleLinkFromHeader(
     const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
-    const nsAString& aType, const nsAString& aMedia,
-    const nsAString& aReferrerPolicy) {
+    const nsAString& aIntegrity, const nsAString& aType,
+    const nsAString& aMedia, const nsAString& aReferrerPolicy) {
   if (aAlternate && aTitle.IsEmpty()) {
     // alternates must have title return without error, for now
     return NS_OK;
@@ -719,7 +741,7 @@ nsresult nsContentSink::ProcessStyleLinkFromHeader(
       CORS_NONE,
       aTitle,
       aMedia,
-      /* integrity = */ EmptyString(),
+      aIntegrity,
       /* nonce = */ EmptyString(),
       aAlternate ? Loader::HasAlternateRel::Yes : Loader::HasAlternateRel::No,
       Loader::IsInline::No,
@@ -788,11 +810,9 @@ nsresult nsContentSink::ProcessMETATag(nsIContent* aContent) {
   return rv;
 }
 
-void nsContentSink::PrefetchPreloadHref(const nsAString& aHref,
-                                        uint32_t aLinkTypes,
-                                        const nsAString& aAs,
-                                        const nsAString& aType,
-                                        const nsAString& aMedia) {
+void nsContentSink::PrefetchHref(const nsAString& aHref, const nsAString& aAs,
+                                 const nsAString& aType,
+                                 const nsAString& aMedia) {
   nsCOMPtr<nsIPrefetchService> prefetchService(components::Prefetch::Service());
   if (prefetchService) {
     // construct URI using document charset
@@ -800,40 +820,47 @@ void nsContentSink::PrefetchPreloadHref(const nsAString& aHref,
     nsCOMPtr<nsIURI> uri;
     NS_NewURI(getter_AddRefs(uri), aHref, encoding, mDocument->GetDocBaseURI());
     if (uri) {
-      bool preload = !!(aLinkTypes & nsStyleLinkElement::ePRELOAD);
-      nsContentPolicyType policyType;
-
-      if (preload) {
-        nsAttrValue asAttr;
-        HTMLLinkElement::ParseAsValue(aAs, asAttr);
-        policyType = HTMLLinkElement::AsValueToContentPolicy(asAttr);
-
-        if (policyType == nsIContentPolicy::TYPE_INVALID) {
-          // Ignore preload with a wrong or empty as attribute.
-          return;
-        }
-
-        nsAutoString mimeType;
-        nsAutoString notUsed;
-        nsContentUtils::SplitMimeType(aType, mimeType, notUsed);
-        if (!HTMLLinkElement::CheckPreloadAttrs(asAttr, mimeType, aMedia,
-                                                mDocument)) {
-          policyType = nsIContentPolicy::TYPE_INVALID;
-        }
-      }
-
       auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mDocument);
       referrerInfo = referrerInfo->CloneWithNewOriginalReferrer(mDocumentURI);
 
-      if (preload) {
-        prefetchService->PreloadURI(uri, referrerInfo, mDocument, policyType);
-      } else {
-        prefetchService->PrefetchURI(
-            uri, referrerInfo, mDocument,
-            aLinkTypes & nsStyleLinkElement::ePREFETCH);
-      }
+      prefetchService->PrefetchURI(uri, referrerInfo, mDocument, true);
     }
   }
+}
+
+void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
+                                const nsAString& aType, const nsAString& aMedia,
+                                const nsAString& aIntegrity,
+                                const nsAString& aSrcset,
+                                const nsAString& aSizes, const nsAString& aCORS,
+                                const nsAString& aReferrerPolicy) {
+  nsAttrValue asAttr;
+  HTMLLinkElement::ParseAsValue(aAs, asAttr);
+  auto policyType = HTMLLinkElement::AsValueToContentPolicy(asAttr);
+
+  if (policyType == nsIContentPolicy::TYPE_INVALID) {
+    // Ignore preload with a wrong or empty as attribute.
+    return;
+  }
+
+  nsAutoString mimeType;
+  nsAutoString notUsed;
+  nsContentUtils::SplitMimeType(aType, mimeType, notUsed);
+  if (!HTMLLinkElement::CheckPreloadAttrs(asAttr, mimeType, aMedia,
+                                          mDocument)) {
+    policyType = nsIContentPolicy::TYPE_INVALID;
+  }
+
+  auto encoding = mDocument->GetDocumentCharacterSet();
+  nsCOMPtr<nsIURI> uri;
+  NS_NewURI(getter_AddRefs(uri), aHref, encoding, mDocument->GetDocBaseURI());
+
+  auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mDocument);
+  referrerInfo = referrerInfo->CloneWithNewOriginalReferrer(mDocumentURI);
+
+  RefPtr<PreloaderBase> preload = mDocument->Preloads().PreloadLinkHeader(
+      uri, aHref, policyType, aAs, aType, aIntegrity, aSrcset, aSizes, aCORS,
+      aReferrerPolicy, referrerInfo);
 }
 
 void nsContentSink::PrefetchDNS(const nsAString& aHref) {
@@ -998,6 +1025,11 @@ void nsContentSink::ProcessOfflineManifest(const nsAString& aManifestSpec) {
   // Don't bother processing offline manifest for documents
   // without a docshell
   if (!mDocShell) {
+    return;
+  }
+
+  // If offline storage is disabled skip processing
+  if (!StaticPrefs::browser_cache_offline_storage_enable()) {
     return;
   }
 
@@ -1491,12 +1523,11 @@ nsresult nsContentSink::WillParseImpl(void) {
     uint32_t lastEventTime;
     vm->GetLastUserEventTime(lastEventTime);
 
-    bool newDynLower =
-        mDocument->IsInBackgroundWindow() ||
-        ((currentTime - mBeginLoadTime) >
-             StaticPrefs::content_sink_initial_perf_time() &&
-         (currentTime - lastEventTime) <
-             StaticPrefs::content_sink_interactive_time());
+    bool newDynLower = mDocument->IsInBackgroundWindow() ||
+                       ((currentTime - mBeginLoadTime) >
+                            StaticPrefs::content_sink_initial_perf_time() &&
+                        (currentTime - lastEventTime) <
+                            StaticPrefs::content_sink_interactive_time());
 
     if (mDynamicLowerValue != newDynLower) {
       FavorPerformanceHint(!newDynLower, 0);

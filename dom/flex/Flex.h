@@ -5,7 +5,6 @@
 #ifndef mozilla_dom_Flex_h
 #define mozilla_dom_Flex_h
 
-#include "mozilla/dom/Element.h"
 #include "mozilla/dom/FlexBinding.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
@@ -15,6 +14,7 @@ class nsFlexContainerFrame;
 namespace mozilla {
 namespace dom {
 
+class Element;
 class FlexLineValues;
 
 class Flex : public nsISupports, public nsWrapperCache {

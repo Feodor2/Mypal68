@@ -5551,7 +5551,7 @@ bool nsGlobalWindowOuter::SameLoadingURI(Document* aDoc, nsIChannel* aChannel) {
   }
   nsCOMPtr<nsILoadInfo> channelLoadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsIPrincipal> channelLoadingPrincipal =
-      channelLoadInfo->LoadingPrincipal();
+      channelLoadInfo->GetLoadingPrincipal();
   if (!channelLoadingPrincipal) {
     // TYPE_DOCUMENT loads will not have a channelLoadingPrincipal. But top
     // level loads should not be blocked by Tracking Protection, so we will

@@ -8,25 +8,23 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/CharacterData.h"
 #include "nsAString.h"
-#include "nsStyleLinkElement.h"
 
 class nsIPrincipal;
 class nsIURI;
 
 namespace mozilla {
+
+class StyleSheet;
+
 namespace dom {
 
-class ProcessingInstruction : public CharacterData, public nsStyleLinkElement {
+class ProcessingInstruction : public CharacterData {
  public:
   ProcessingInstruction(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                         const nsAString& aData);
 
-  // nsISupports.  We need to declare QI, because nsStyleLinkElement
-  // has a pure-virtual QI.
-  NS_DECL_ISUPPORTS_INHERITED
-
   virtual already_AddRefed<CharacterData> CloneDataNode(
-      mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const override;
+      dom::NodeInfo* aNodeInfo, bool aCloneText) const override;
 
 #ifdef DEBUG
   virtual void List(FILE* out, int32_t aIndent) const override;
@@ -36,6 +34,9 @@ class ProcessingInstruction : public CharacterData, public nsStyleLinkElement {
 
   // WebIDL API
   void GetTarget(nsAString& aTarget) { aTarget = NodeName(); }
+  // This is the WebIDL API for LinkStyle, even though only
+  // XMLStylesheetProcessingInstruction actually implements LinkStyle.
+  StyleSheet* GetSheet() const;
 
   NS_IMPL_FROMNODE_HELPER(ProcessingInstruction, IsProcessingInstruction())
 
@@ -54,11 +55,7 @@ class ProcessingInstruction : public CharacterData, public nsStyleLinkElement {
    */
   bool GetAttrValue(nsAtom* aName, nsAString& aValue);
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
-
-  // nsStyleLinkElement overrides, because we can't leave them pure virtual.
-  Maybe<SheetInfo> GetStyleSheetInfo() override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 };
 
 }  // namespace dom

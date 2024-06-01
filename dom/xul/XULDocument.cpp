@@ -58,7 +58,6 @@
 #include "nsCharsetSource.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsXULPopupManager.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsURILoader.h"

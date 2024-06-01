@@ -64,10 +64,6 @@ class ResizeObserverController final {
     MOZ_ASSERT(mDocument, "Need a non-null document");
   }
 
-  // Methods for supporting cycle-collection
-  void Traverse(nsCycleCollectionTraversalCallback& aCb);
-  void Unlink();
-
   void AddSizeOfIncludingThis(nsWindowSizes&) const;
 
   void ShellDetachedFromDocument();

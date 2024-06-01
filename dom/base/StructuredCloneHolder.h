@@ -5,11 +5,12 @@
 #ifndef mozilla_dom_StructuredCloneHolder_h
 #define mozilla_dom_StructuredCloneHolder_h
 
-#include "jsapi.h"
+#include <utility>
+
 #include "js/StructuredClone.h"
 #include "js/WasmModule.h"
+#include "jsapi.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsTArray.h"

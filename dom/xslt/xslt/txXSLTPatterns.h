@@ -124,7 +124,7 @@ class txLocPathPattern : public txPattern {
  private:
   class Step {
    public:
-    nsAutoPtr<txPattern> pattern;
+    mozilla::UniquePtr<txPattern> pattern;
     bool isChild;
   };
 
@@ -188,14 +188,14 @@ class txStepPattern : public txPattern, public PredicateList {
   TX_DECL_PATTERN;
   Type getType() override;
 
-  txNodeTest* getNodeTest() { return mNodeTest; }
+  txNodeTest* getNodeTest() { return mNodeTest.get(); }
   void setNodeTest(txNodeTest* aNodeTest) {
-    mNodeTest.forget();
-    mNodeTest = aNodeTest;
+    mozilla::Unused << mNodeTest.release();
+    mNodeTest = mozilla::WrapUnique(aNodeTest);
   }
 
  private:
-  nsAutoPtr<txNodeTest> mNodeTest;
+  mozilla::UniquePtr<txNodeTest> mNodeTest;
   bool mIsAttr;
 };
 

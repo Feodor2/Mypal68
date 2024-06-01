@@ -4,6 +4,7 @@
 
 #include "FetchUtil.h"
 
+#include "nsCRT.h"
 #include "nsError.h"
 #include "nsString.h"
 #include "mozilla/dom/Document.h"

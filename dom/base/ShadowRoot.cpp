@@ -8,7 +8,6 @@
 #include "mozilla/dom/DocumentFragment.h"
 #include "ChildIterator.h"
 #include "nsContentUtils.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsWindowSizes.h"
 #include "nsXBLPrototypeBinding.h"
 #include "mozilla/dom/DirectionalityUtils.h"

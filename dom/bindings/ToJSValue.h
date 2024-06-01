@@ -31,6 +31,10 @@ class WindowProxyHolder;
 MOZ_MUST_USE bool ToJSValue(JSContext* aCx, const nsAString& aArgument,
                             JS::MutableHandle<JS::Value> aValue);
 
+// Treats the input as UTF-8, and throws otherwise.
+MOZ_MUST_USE bool ToJSValue(JSContext* aCx, const nsACString& aArgument,
+                            JS::MutableHandle<JS::Value> aValue);
+
 // Accept booleans.  But be careful here: if we just have a function that takes
 // a boolean argument, then any pointer that doesn't match one of our other
 // signatures/templates will get treated as a boolean, which is clearly not
@@ -189,6 +193,32 @@ MOZ_MUST_USE
   return true;
 }
 
+namespace binding_detail {
+// Helper type alias for picking a script-exposable non-wrappercached XPIDL
+// interface to expose to JS code. Falls back to `nsISupports` if the specific
+// interface type is ambiguous.
+template <typename T, typename = void>
+struct GetScriptableInterfaceType {
+  using Type = nsISupports;
+
+  static_assert(std::is_base_of_v<nsISupports, T>,
+                "T must inherit from nsISupports");
+};
+template <typename T>
+struct GetScriptableInterfaceType<
+    T, std::void_t<typename T::ScriptableInterfaceType>> {
+  using Type = typename T::ScriptableInterfaceType;
+
+  static_assert(std::is_base_of_v<Type, T>,
+                "T must inherit from ScriptableInterfaceType");
+  static_assert(std::is_base_of_v<nsISupports, Type>,
+                "ScriptableInterfaceType must inherit from nsISupports");
+};
+
+template <typename T>
+using ScriptableInterfaceType = typename GetScriptableInterfaceType<T>::Type;
+}  // namespace binding_detail
+
 // Accept objects that inherit from nsISupports but not nsWrapperCache (e.g.
 // DOM File).
 template <class T>
@@ -202,7 +232,9 @@ ToJSValue(JSContext* aCx, T& aArgument, JS::MutableHandle<JS::Value> aValue) {
 
   xpcObjectHelper helper(ToSupports(&aArgument));
   JS::Rooted<JSObject*> scope(aCx, JS::CurrentGlobalOrNull(aCx));
-  return XPCOMObjectToJsval(aCx, scope, helper, nullptr, true, aValue);
+  const nsIID& iid =
+      NS_GET_TEMPLATE_IID(binding_detail::ScriptableInterfaceType<T>);
+  return XPCOMObjectToJsval(aCx, scope, helper, &iid, true, aValue);
 }
 
 MOZ_MUST_USE bool ToJSValue(JSContext* aCx, const WindowProxyHolder& aArgument,

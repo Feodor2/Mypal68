@@ -10,6 +10,8 @@
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "nsContentUtils.h"
+#include "nsIClassOfService.h"
+#include "nsISupportsPriority.h"
 #include "ScriptLoadRequest.h"
 #include "ScriptSettings.h"
 
@@ -169,8 +171,11 @@ inline ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() {
   return static_cast<ModuleLoadRequest*>(this);
 }
 
-void ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr) {
-  if (aAsyncAttr) {
+void ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr,
+                                      bool aLinkPreload) {
+  if (aLinkPreload) {
+    mScriptMode = ScriptMode::eLinkPreload;
+  } else if (aAsyncAttr) {
     mScriptMode = ScriptMode::eAsync;
   } else if (aDeferAttr || IsModuleRequest()) {
     mScriptMode = ScriptMode::eDeferred;
@@ -217,6 +222,24 @@ void ScriptLoadRequest::SetScript(JSScript* aScript) {
   MOZ_ASSERT(!mScript);
   mScript = aScript;
   HoldJSObjects(this);
+}
+
+// static
+void ScriptLoadRequest::PrioritizeAsPreload(nsIChannel* aChannel) {
+  if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(aChannel)) {
+    cos->AddClassFlags(nsIClassOfService::Unblocked);
+  }
+  if (nsCOMPtr<nsISupportsPriority> sp = do_QueryInterface(aChannel)) {
+    sp->AdjustPriority(nsISupportsPriority::PRIORITY_HIGHEST);
+  }
+}
+
+void ScriptLoadRequest::PrioritizeAsPreload() {
+  if (!IsLinkPreloadScript()) {
+    // Do the prioritization only if this request has not already been created
+    // as a preload.
+    PrioritizeAsPreload(Channel());
+  }
 }
 
 //////////////////////////////////////////////////////////////

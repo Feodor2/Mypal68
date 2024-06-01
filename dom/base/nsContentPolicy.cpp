@@ -68,7 +68,7 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   nsContentPolicyType contentType = loadInfo->InternalContentPolicyType();
   nsCOMPtr<nsISupports> requestingContext = loadInfo->GetLoadingContext();
   nsCOMPtr<nsIURI> requestingLocation;
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->GetLoadingPrincipal();
   if (loadingPrincipal) {
     loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));
   }
@@ -164,7 +164,7 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
 #define LOG_CHECK(logType)                                                     \
   PR_BEGIN_MACRO                                                               \
   nsCOMPtr<nsIURI> requestingLocation;                                         \
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();      \
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->GetLoadingPrincipal();   \
   if (loadingPrincipal) {                                                      \
     loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));              \
   }                                                                            \

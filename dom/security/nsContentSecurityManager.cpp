@@ -283,11 +283,11 @@ static nsresult DoCheckLoadURIChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
       nsIContentPolicy::TYPE_INTERNAL_DTD) {
     RefPtr<Document> doc;
     aLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
-    return nsContentUtils::PrincipalAllowsL10n(
-               aLoadInfo->TriggeringPrincipal(),
-               doc ? doc->GetDocumentURI() : nullptr)
-               ? NS_OK
-               : NS_ERROR_DOM_BAD_URI;
+    bool allowed = false;
+    aLoadInfo->TriggeringPrincipal()->IsL10nAllowed(
+        doc ? doc->GetDocumentURI() : nullptr, &allowed);
+
+    return allowed ? NS_OK : NS_ERROR_DOM_BAD_URI;
   }
 
   // This is used in order to allow a privileged DOMParser to parse documents
@@ -334,7 +334,11 @@ static nsresult DoSOPChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo,
     return DoCheckLoadURIChecks(aURI, aLoadInfo);
   }
 
-  NS_ENSURE_FALSE(NS_HasBeenCrossOrigin(aChannel, true), NS_ERROR_DOM_BAD_URI);
+  if (NS_HasBeenCrossOrigin(aChannel, true)) {
+    NS_SetRequestBlockingReason(aLoadInfo,
+                                nsILoadInfo::BLOCKING_REASON_NOT_SAME_ORIGIN);
+    return NS_ERROR_DOM_BAD_URI;
+  }
 
   return NS_OK;
 }
@@ -711,7 +715,7 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
 
     // Log Principals
     nsCOMPtr<nsIPrincipal> requestPrincipal = aLoadInfo->TriggeringPrincipal();
-    LogPrincipal(aLoadInfo->LoadingPrincipal(),
+    LogPrincipal(aLoadInfo->GetLoadingPrincipal(),
                  NS_LITERAL_STRING("loadingPrincipal"));
     LogPrincipal(requestPrincipal, NS_LITERAL_STRING("triggeringPrincipal"));
     LogPrincipal(aLoadInfo->PrincipalToInherit(),
@@ -769,8 +773,8 @@ nsresult nsContentSecurityManager::CheckAllowLoadInSystemPrivilegedContext(
 
   // nothing to do here if we are not loading a resource into a
   // system prvileged context.
-  if (!loadInfo->LoadingPrincipal() ||
-      !loadInfo->LoadingPrincipal()->IsSystemPrincipal()) {
+  if (!loadInfo->GetLoadingPrincipal() ||
+      !loadInfo->GetLoadingPrincipal()->IsSystemPrincipal()) {
     return NS_OK;
   }
 
@@ -970,7 +974,7 @@ nsresult nsContentSecurityManager::CheckChannel(nsIChannel* aChannel) {
     // We shouldn't have the SEC_COOKIES_SAME_ORIGIN flag for top level loads
     MOZ_ASSERT(loadInfo->GetExternalContentPolicyType() !=
                nsIContentPolicy::TYPE_DOCUMENT);
-    nsIPrincipal* loadingPrincipal = loadInfo->LoadingPrincipal();
+    nsIPrincipal* loadingPrincipal = loadInfo->GetLoadingPrincipal();
 
     // It doesn't matter what we pass for the third, data-inherits, argument.
     // Any protocol which inherits won't pay attention to cookies anyway.

@@ -9,15 +9,14 @@
 #ifndef mozilla_IdentifierMapEntry_h
 #define mozilla_IdentifierMapEntry_h
 
+#include <utility>
+
 #include "PLDHashTable.h"
-
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/TreeOrderedArray.h"
-
-#include "nsAutoPtr.h"
-#include "nsCOMPtr.h"
 #include "nsAtom.h"
+#include "nsCOMPtr.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
@@ -221,7 +220,7 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
   OwningAtomOrString mKey;
   dom::TreeOrderedArray<Element> mIdContentList;
   RefPtr<nsBaseContentList> mNameContentList;
-  nsAutoPtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
+  UniquePtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
   RefPtr<Element> mImageElement;
 };
 

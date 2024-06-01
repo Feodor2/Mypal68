@@ -23,6 +23,7 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Vector.h"
+#include "ScriptKind.h"
 
 class nsIURI;
 
@@ -338,6 +339,7 @@ class ScriptLoader final : public nsISupports {
                           const nsAString& aType, const nsAString& aCrossOrigin,
                           const nsAString& aIntegrity, bool aScriptFromHead,
                           bool aAsync, bool aDefer, bool aNoModule,
+                          bool aLinkPreload,
                           const ReferrerPolicy aReferrerPolicy);
 
   /**

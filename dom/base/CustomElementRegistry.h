@@ -139,7 +139,8 @@ struct CustomElementDefinition {
                           CustomElementConstructor* aConstructor,
                           nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
                           UniquePtr<LifecycleCallbacks>&& aCallbacks,
-                          bool aDisableInternals, bool aDisableShadow);
+                          bool aFormAssociated, bool aDisableInternals,
+                          bool aDisableShadow);
 
   // The type (name) for this custom element, for <button is="x-foo"> or <x-foo>
   // this would be x-foo.
@@ -159,6 +160,10 @@ struct CustomElementDefinition {
 
   // The lifecycle callbacks to call for this custom element.
   UniquePtr<LifecycleCallbacks> mCallbacks;
+
+  // If this is true, user agent treats elements associated to this custom
+  // element definition as form-associated custom elements.
+  bool mFormAssociated = false;
 
   // Determine whether to allow to attachInternals() for this custom element.
   bool mDisableInternals = false;
@@ -537,21 +542,6 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
   bool mIsCustomDefinitionRunning;
 
  private:
-  class MOZ_RAII AutoSetRunningFlag final {
-   public:
-    explicit AutoSetRunningFlag(CustomElementRegistry* aRegistry)
-        : mRegistry(aRegistry) {
-      MOZ_ASSERT(!mRegistry->mIsCustomDefinitionRunning,
-                 "IsCustomDefinitionRunning flag should be initially false");
-      mRegistry->mIsCustomDefinitionRunning = true;
-    }
-
-    ~AutoSetRunningFlag() { mRegistry->mIsCustomDefinitionRunning = false; }
-
-   private:
-    CustomElementRegistry* mRegistry;
-  };
-
   int32_t InferNamespace(JSContext* aCx, JS::Handle<JSObject*> constructor);
 
  public:

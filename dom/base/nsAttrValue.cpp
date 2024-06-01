@@ -38,7 +38,7 @@ using namespace mozilla;
 MiscContainer* nsAttrValue::AllocMiscContainer() {
   MOZ_ASSERT(NS_IsMainThread());
   MiscContainer* cont = nullptr;
-  Swap(cont, sMiscContainerCache);
+  std::swap(cont, sMiscContainerCache);
 
   if (cont) {
     return new (cont) MiscContainer;

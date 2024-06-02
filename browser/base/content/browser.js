@@ -4089,18 +4089,9 @@ function getDetailedCertErrorInfo(location, securityInfo) {
       hasHPKP,
     ]);
 
-  let certChain = "";
-  if (securityInfo.failedCertChain) {
-    for (let cert of securityInfo.failedCertChain.getEnumerator()) {
-      certChain += getPEMString(cert);
-    }
-  }
-
   certErrorDetails +=
     "\r\n\r\n" +
-    gNavigatorBundle.getString("certErrorDetailsCertChain.label") +
-    "\r\n\r\n" +
-    certChain;
+    gNavigatorBundle.getString("certErrorDetailsCertChain.label");
 
   return certErrorDetails;
 }

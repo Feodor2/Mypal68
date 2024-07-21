@@ -124,7 +124,7 @@ ThreadEventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
 #endif
 
   if (aFlags & DISPATCH_SYNC) {
-    nsCOMPtr<nsIEventTarget> current = GetCurrentThreadEventTarget();
+    nsCOMPtr<nsIEventTarget> current = GetCurrentEventTarget();
     if (NS_WARN_IF(!current)) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -165,10 +165,11 @@ ThreadEventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
 NS_IMETHODIMP
 ThreadEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
                                    uint32_t aDelayMs) {
+  nsCOMPtr<nsIRunnable> event = aEvent;
   NS_ENSURE_TRUE(!!aDelayMs, NS_ERROR_UNEXPECTED);
 
   RefPtr<DelayedRunnable> r =
-      new DelayedRunnable(do_AddRef(this), std::move(aEvent), aDelayMs);
+      new DelayedRunnable(do_AddRef(this), event.forget(), aDelayMs);
   nsresult rv = r->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 

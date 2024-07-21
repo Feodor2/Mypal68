@@ -7,12 +7,13 @@
 
 #include "mozilla/AbstractEventQueue.h"
 #include "mozilla/EventQueue.h"
+#include "mozilla/IdlePeriodState.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
-#include "nsIIdlePeriod.h"
 
+class nsIIdlePeriod;
 class nsIRunnable;
 
 namespace mozilla {
@@ -38,7 +39,7 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
  public:
   static const bool SupportsPrioritization = true;
 
-  explicit PrioritizedEventQueue(already_AddRefed<nsIIdlePeriod> aIdlePeriod);
+  explicit PrioritizedEventQueue(already_AddRefed<nsIIdlePeriod>&& aIdlePeriod);
 
   virtual ~PrioritizedEventQueue();
 
@@ -49,7 +50,12 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   // aHypotheticalInputEventDelay
   already_AddRefed<nsIRunnable> GetEvent(
       EventQueuePriority* aPriority, const AutoLock& aProofOfLock,
-      mozilla::TimeDuration* aHypotheticalInputEventDelay = nullptr) final;
+      TimeDuration* aHypotheticalInputEventDelay = nullptr) final;
+  // *aIsIdleEvent will be set to true when we are returning a non-null runnable
+  // which came from one of our idle queues, and will be false otherwise.
+  already_AddRefed<nsIRunnable> GetEvent(
+      EventQueuePriority* aPriority, const AutoLock& aProofOfLock,
+      TimeDuration* aHypotheticalInputEventDelay, bool* aIsIdleEvent);
 
   bool IsEmpty(const AutoLock& aProofOfLock) final;
   size_t Count(const AutoLock& aProofOfLock) const final;
@@ -67,6 +73,10 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   void SuspendInputEventPrioritization(const AutoLock& aProofOfLock) final;
   void ResumeInputEventPrioritization(const AutoLock& aProofOfLock) final;
 
+  IdlePeriodState* GetIdlePeriodState() { return &mIdlePeriodState; }
+
+  bool HasIdleRunnables(const AutoLock& aProofOfLock) const;
+
   size_t SizeOfExcludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const override {
     size_t n = 0;
@@ -78,9 +88,7 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
     n += mDeferredTimersQueue->SizeOfIncludingThis(aMallocSizeOf);
     n += mIdleQueue->SizeOfIncludingThis(aMallocSizeOf);
 
-    if (mIdlePeriod) {
-      n += aMallocSizeOf(mIdlePeriod);
-    }
+    n += mIdlePeriodState.SizeOfExcludingThis(aMallocSizeOf);
 
     return n;
   }
@@ -89,8 +97,10 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   EventQueuePriority SelectQueue(bool aUpdateState,
                                  const AutoLock& aProofOfLock);
 
-  // Returns a null TimeStamp if we're not in the idle period.
-  mozilla::TimeStamp GetIdleDeadline();
+  void IndirectlyQueueRunnable(already_AddRefed<nsIRunnable>&& aEvent,
+                               EventQueuePriority aPriority,
+                               const AutoLock& aProofOfLock,
+                               mozilla::TimeDuration* aDelay);
 
   UniquePtr<EventQueue> mHighQueue;
   UniquePtr<EventQueueSized<32>> mInputQueue;
@@ -112,17 +122,6 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   // secondary queue and prevents starving the normal queue.
   bool mProcessHighPriorityQueue = false;
 
-  // mIdlePeriod keeps track of the current idle period. If at any
-  // time the main event queue is empty, calling
-  // mIdlePeriod->GetIdlePeriodHint() will give an estimate of when
-  // the current idle period will end.
-  nsCOMPtr<nsIIdlePeriod> mIdlePeriod;
-
-  // Set to true if HasPendingEvents() has been called and returned true because
-  // of a pending idle event.  This is used to remember to return that idle
-  // event from GetIdleEvent() to ensure that HasPendingEvents() never lies.
-  bool mHasPendingEventsPromisedIdleEvent = false;
-
   TimeStamp mInputHandlingStartTime;
 
   enum InputEventQueueState {
@@ -132,6 +131,9 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
     STATE_ENABLED
   };
   InputEventQueueState mInputQueueState = STATE_DISABLED;
+
+  // Tracking of our idle state of various sorts.
+  IdlePeriodState mIdlePeriodState;
 };
 
 }  // namespace mozilla

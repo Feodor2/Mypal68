@@ -7,6 +7,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsEnumeratorUtils.h"
 #include "nsAtom.h"
+#include "nsIDirectoryService.h"
 #include "nsIFile.h"
 #include "nsString.h"
 #include "nsSimpleEnumerator.h"

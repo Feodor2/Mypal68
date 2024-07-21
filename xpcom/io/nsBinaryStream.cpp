@@ -41,7 +41,6 @@
 #include "js/Value.h"       // JS::Value
 
 using mozilla::AsBytes;
-using mozilla::MakeSpan;
 using mozilla::MakeUnique;
 using mozilla::PodCopy;
 using mozilla::Span;
@@ -219,7 +218,7 @@ nsBinaryOutputStream::WriteWStringZ(const char16_t* aString) {
   }
 
 #ifdef IS_BIG_ENDIAN
-  rv = WriteBytes(AsBytes(MakeSpan(aString, length)));
+  rv = WriteBytes(AsBytes(Span(aString, length)));
 #else
   // XXX use WriteSegments here to avoid copy!
   char16_t* copy;
@@ -234,7 +233,7 @@ nsBinaryOutputStream::WriteWStringZ(const char16_t* aString) {
   }
   NS_ASSERTION((uintptr_t(aString) & 0x1) == 0, "aString not properly aligned");
   mozilla::NativeEndian::copyAndSwapToBigEndian(copy, aString, length);
-  rv = WriteBytes(AsBytes(MakeSpan(copy, length)));
+  rv = WriteBytes(AsBytes(Span(copy, length)));
   if (copy != temp) {
     free(copy);
   }
@@ -265,7 +264,7 @@ nsresult nsBinaryOutputStream::WriteBytes(Span<const uint8_t> aBytes) {
 
 NS_IMETHODIMP
 nsBinaryOutputStream::WriteBytesFromJS(const char* aString, uint32_t aLength) {
-  return WriteBytes(AsBytes(MakeSpan(aString, aLength)));
+  return WriteBytes(AsBytes(Span(aString, aLength)));
 }
 
 NS_IMETHODIMP
@@ -740,25 +739,31 @@ nsBinaryInputStream::ReadString(nsAString& aString) {
   return NS_OK;
 }
 
+nsresult nsBinaryInputStream::ReadBytesToBuffer(uint32_t aLength,
+                                                uint8_t* aBuffer) {
+  uint32_t bytesRead;
+  nsresult rv = Read(reinterpret_cast<char*>(aBuffer), aLength, &bytesRead);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  if (bytesRead != aLength) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsBinaryInputStream::ReadBytes(uint32_t aLength, char** aResult) {
-  nsresult rv;
-  uint32_t bytesRead;
-  char* s;
-
-  s = reinterpret_cast<char*>(malloc(aLength));
+  char* s = static_cast<char*>(malloc(aLength));
   if (!s) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  rv = Read(s, aLength, &bytesRead);
+  nsresult rv = ReadBytesToBuffer(aLength, reinterpret_cast<uint8_t*>(s));
   if (NS_FAILED(rv)) {
     free(s);
     return rv;
-  }
-  if (bytesRead != aLength) {
-    free(s);
-    return NS_ERROR_FAILURE;
   }
 
   *aResult = s;
@@ -766,8 +771,16 @@ nsBinaryInputStream::ReadBytes(uint32_t aLength, char** aResult) {
 }
 
 NS_IMETHODIMP
-nsBinaryInputStream::ReadByteArray(uint32_t aLength, uint8_t** aResult) {
-  return ReadBytes(aLength, reinterpret_cast<char**>(aResult));
+nsBinaryInputStream::ReadByteArray(uint32_t aLength,
+                                   nsTArray<uint8_t>& aResult) {
+  if (!aResult.SetLength(aLength, mozilla::fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  nsresult rv = ReadBytesToBuffer(aLength, aResult.Elements());
+  if (NS_FAILED(rv)) {
+    aResult.Clear();
+  }
+  return rv;
 }
 
 NS_IMETHODIMP

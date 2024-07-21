@@ -160,9 +160,7 @@ AbstractThread* SchedulerGroup::AbstractMainThreadForImpl(
 
   if (!mAbstractThreads[size_t(aCategory)]) {
     mAbstractThreads[size_t(aCategory)] =
-        AbstractThread::CreateEventTargetWrapper(
-            mEventTargets[size_t(aCategory)],
-            /* aDrainDirectTasks = */ true);
+        AbstractThread::MainThread();
   }
 
   return mAbstractThreads[size_t(aCategory)];

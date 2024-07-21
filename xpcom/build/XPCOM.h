@@ -157,7 +157,6 @@
 
 // xpcom/base utility headers
 
-#include "nsAgg.h"
 #include "nsAutoRef.h"
 #include "nsInterfaceRequestorAgg.h"
 

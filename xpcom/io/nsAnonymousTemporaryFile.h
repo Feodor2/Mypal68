@@ -6,6 +6,7 @@
 
 #include "prio.h"
 #include "nscore.h"
+#include "nsIFile.h"
 
 /**
  * OpenAnonymousTemporaryFile

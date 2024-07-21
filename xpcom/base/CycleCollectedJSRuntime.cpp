@@ -147,15 +147,14 @@ class IncrementalFinalizeRunnable : public CancelableRunnable {
 struct NoteWeakMapChildrenTracer : public JS::CallbackTracer {
   NoteWeakMapChildrenTracer(JSRuntime* aRt,
                             nsCycleCollectionNoteRootCallback& aCb)
-      : JS::CallbackTracer(aRt),
+      : JS::CallbackTracer(aRt, JS::TracerKind::Callback,
+                           JS::IdTraceAction::CanSkip),
         mCb(aCb),
         mTracedAny(false),
         mMap(nullptr),
         mKey(nullptr),
-        mKeyDelegate(nullptr) {
-    setCanSkipJsids(true);
-  }
-  bool onChild(const JS::GCCellPtr& aThing) override;
+        mKeyDelegate(nullptr) {}
+  void onChild(const JS::GCCellPtr& aThing) override;
   nsCycleCollectionNoteRootCallback& mCb;
   bool mTracedAny;
   JSObject* mMap;
@@ -163,13 +162,13 @@ struct NoteWeakMapChildrenTracer : public JS::CallbackTracer {
   JSObject* mKeyDelegate;
 };
 
-bool NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
+void NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
   if (aThing.is<JSString>()) {
-    return true;
+    return;
   }
 
   if (!JS::GCThingIsMarkedGray(aThing) && !mCb.WantAllTraces()) {
-    return true;
+    return;
   }
 
   if (JS::IsCCTraceKind(aThing.kind())) {
@@ -178,7 +177,6 @@ bool NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
   } else {
     JS::TraceChildren(this, aThing);
   }
-  return true;
 }
 
 struct NoteWeakMapsTracer : public js::WeakMapTracer {
@@ -389,23 +387,25 @@ JSZoneParticipant::TraverseNative(void* aPtr,
 
 struct TraversalTracer : public JS::CallbackTracer {
   TraversalTracer(JSRuntime* aRt, nsCycleCollectionTraversalCallback& aCb)
-      : JS::CallbackTracer(aRt, DoNotTraceWeakMaps), mCb(aCb) {
-    setCanSkipJsids(true);
-  }
-  bool onChild(const JS::GCCellPtr& aThing) override;
+      : JS::CallbackTracer(aRt, JS::TracerKind::Callback,
+                           JS::TraceOptions(JS::WeakMapTraceAction::Skip,
+                                            JS::WeakEdgeTraceAction::Trace,
+                                            JS::IdTraceAction::CanSkip)),
+        mCb(aCb) {}
+  void onChild(const JS::GCCellPtr& aThing) override;
   nsCycleCollectionTraversalCallback& mCb;
 };
 
-bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
+void TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   // Checking strings and symbols for being gray is rather slow, and we don't
   // need either of them for the cycle collector.
   if (aThing.is<JSString>() || aThing.is<JS::Symbol>()) {
-    return true;
+    return;
   }
 
   // Don't traverse non-gray objects, unless we want all traces.
   if (!JS::GCThingIsMarkedGray(aThing) && !mCb.WantAllTraces()) {
-    return true;
+    return;
   }
 
   /*
@@ -418,7 +418,7 @@ bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   if (JS::IsCCTraceKind(aThing.kind())) {
     if (MOZ_UNLIKELY(mCb.WantDebugInfo())) {
       char buffer[200];
-      getTracingEdgeName(buffer, sizeof(buffer));
+      context().getEdgeName(buffer, sizeof(buffer));
       mCb.NoteNextEdgeName(buffer);
     }
     mCb.NoteJSChild(aThing);
@@ -434,13 +434,6 @@ bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   } else {
     JS::TraceChildren(this, aThing);
   }
-  return true;
-}
-
-static void NoteJSChildGrayWrapperShim(void* aData, JS::GCCellPtr aThing,
-                                       const JS::AutoRequireNoGC& nogc) {
-  TraversalTracer* trc = static_cast<TraversalTracer*>(aData);
-  trc->onChild(aThing);
 }
 
 /*
@@ -712,14 +705,14 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
 class JSLeakTracer : public JS::CallbackTracer {
  public:
   explicit JSLeakTracer(JSRuntime* aRuntime)
-      : JS::CallbackTracer(aRuntime, TraceWeakMapKeysValues) {}
+      : JS::CallbackTracer(aRuntime, JS::TracerKind::Callback,
+                           JS::WeakMapTraceAction::TraceKeysAndValues) {}
 
  private:
-  bool onChild(const JS::GCCellPtr& thing) override {
+  void onChild(const JS::GCCellPtr& thing) override {
     const char* kindName = JS::GCTraceKindToAscii(thing.kind());
     size_t size = JS::GCTraceKindSize(thing.kind());
     MOZ_LOG_CTOR(thing.asCell(), kindName, size);
-    return true;
   }
 };
 #endif
@@ -917,7 +910,7 @@ void CycleCollectedJSRuntime::TraverseZone(
    * unnecessary loop edges to the graph (bug 842137).
    */
   TraversalTracer trc(mJSRuntime, aCb);
-  js::VisitGrayWrapperTargets(aZone, NoteJSChildGrayWrapperShim, &trc);
+  js::TraceGrayWrapperTargets(&trc, aZone);
 
   /*
    * To find C++ children of things in the zone, we scan every JS Object in

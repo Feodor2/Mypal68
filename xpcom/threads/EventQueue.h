@@ -13,6 +13,8 @@ class nsIRunnable;
 
 namespace mozilla {
 
+class IdlePeriodState;
+
 namespace detail {
 
 template <size_t ItemsPerPage>
@@ -29,6 +31,14 @@ class EventQueueInternal : public AbstractEventQueue {
   already_AddRefed<nsIRunnable> GetEvent(
       EventQueuePriority* aPriority, const AutoLock& aProofOfLock,
       mozilla::TimeDuration* aLastEventDelay = nullptr) final;
+  already_AddRefed<nsIRunnable> GetEvent(EventQueuePriority* aPriority,
+                                         const AutoLock& aProofOfLock,
+                                         TimeDuration* aLastEventDelay,
+                                         bool* aIsIdleEvent) {
+    *aIsIdleEvent = false;
+    return GetEvent(aPriority, aProofOfLock, aLastEventDelay);
+  }
+
 
   bool IsEmpty(const AutoLock& aProofOfLock) final;
   bool HasReadyEvent(const AutoLock& aProofOfLock) final;
@@ -54,6 +64,12 @@ class EventQueueInternal : public AbstractEventQueue {
   void SuspendInputEventPrioritization(
       const AutoLock& aProofOfLock) final {}
   void ResumeInputEventPrioritization(const AutoLock& aProofOfLock) final {
+  }
+
+  IdlePeriodState* GetIdlePeriodState() const { return nullptr; }
+
+  bool HasIdleRunnables(const AutoLock& aProofOfLock) const {
+    return false;
   }
 
   size_t SizeOfExcludingThis(

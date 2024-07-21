@@ -3,10 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsThreadUtils.h"
+
+#include "LeakRefPtr.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "mozilla/TimeStamp.h"
-#include "LeakRefPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsITimer.h"
@@ -15,9 +16,9 @@
 #ifdef MOZILLA_INTERNAL_API
 #  include "nsThreadManager.h"
 #else
-#  include "nsXPCOMCIDInternal.h"
 #  include "nsIThreadManager.h"
 #  include "nsServiceManagerUtils.h"
+#  include "nsXPCOMCIDInternal.h"
 #endif
 
 #ifdef XP_WIN
@@ -32,6 +33,8 @@
 #endif
 
 using namespace mozilla;
+
+NS_IMPL_ISUPPORTS(TailDispatchingTarget, nsIEventTarget, nsISerialEventTarget)
 
 #ifndef XPCOM_GLUE_AVOID_NSPR
 
@@ -132,7 +135,15 @@ already_AddRefed<nsIRunnable> mozilla::CreateMediumHighRunnable(
 //-----------------------------------------------------------------------------
 
 nsresult NS_NewNamedThread(const nsACString& aName, nsIThread** aResult,
-                           nsIRunnable* aEvent, uint32_t aStackSize) {
+                           nsIRunnable* aInitialEvent, uint32_t aStackSize) {
+  nsCOMPtr<nsIRunnable> event = aInitialEvent;
+  return NS_NewNamedThread(aName, aResult, event.forget(), aStackSize);
+}
+
+nsresult NS_NewNamedThread(const nsACString& aName, nsIThread** aResult,
+                           already_AddRefed<nsIRunnable> aInitialEvent,
+                           uint32_t aStackSize) {
+  nsCOMPtr<nsIRunnable> event = std::move(aInitialEvent);
   nsCOMPtr<nsIThread> thread;
 #ifdef MOZILLA_INTERNAL_API
   nsresult rv = nsThreadManager::get().nsThreadManager::NewNamedThread(
@@ -151,8 +162,8 @@ nsresult NS_NewNamedThread(const nsACString& aName, nsIThread** aResult,
     return rv;
   }
 
-  if (aEvent) {
-    rv = thread->Dispatch(aEvent, NS_DISPATCH_NORMAL);
+  if (event) {
+    rv = thread->Dispatch(event.forget(), NS_DISPATCH_NORMAL);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -200,7 +211,7 @@ nsresult NS_DispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent) {
   nsresult rv;
   nsCOMPtr<nsIRunnable> event(aEvent);
 #ifdef MOZILLA_INTERNAL_API
-  nsIEventTarget* thread = GetCurrentThreadEventTarget();
+  nsIEventTarget* thread = GetCurrentEventTarget();
   if (!thread) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -261,7 +272,7 @@ nsresult NS_DelayedDispatchToCurrentThread(
     already_AddRefed<nsIRunnable>&& aEvent, uint32_t aDelayMs) {
   nsCOMPtr<nsIRunnable> event(aEvent);
 #ifdef MOZILLA_INTERNAL_API
-  nsIEventTarget* thread = GetCurrentThreadEventTarget();
+  nsIEventTarget* thread = GetCurrentEventTarget();
   if (!thread) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -381,7 +392,7 @@ extern nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
              aQueue == EventQueuePriority::DeferredTimers);
 
   // XXX Using current thread for now as the nsIEventTarget.
-  nsIEventTarget* target = mozilla::GetCurrentThreadEventTarget();
+  nsIEventTarget* target = mozilla::GetCurrentEventTarget();
   if (!target) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -554,7 +565,7 @@ nsAutoLowPriorityIO::~nsAutoLowPriorityIO() {
 
 namespace mozilla {
 
-nsIEventTarget* GetCurrentThreadEventTarget() {
+nsIEventTarget* GetCurrentEventTarget() {
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_GetCurrentThread(getter_AddRefs(thread));
   if (NS_FAILED(rv)) {
@@ -565,16 +576,15 @@ nsIEventTarget* GetCurrentThreadEventTarget() {
 }
 
 nsIEventTarget* GetMainThreadEventTarget() {
-  nsCOMPtr<nsIThread> thread;
-  nsresult rv = NS_GetMainThread(getter_AddRefs(thread));
-  if (NS_FAILED(rv)) {
-    return nullptr;
-  }
-
-  return thread->EventTarget();
+  return GetMainThreadSerialEventTarget();
 }
 
-nsISerialEventTarget* GetCurrentThreadSerialEventTarget() {
+nsISerialEventTarget* GetCurrentSerialEventTarget() {
+  if (nsISerialEventTarget* current =
+          SerialEventTargetGuard::GetCurrentSerialEventTarget()) {
+    return current;
+  }
+
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_GetCurrentThread(getter_AddRefs(thread));
   if (NS_FAILED(rv)) {
@@ -585,13 +595,7 @@ nsISerialEventTarget* GetCurrentThreadSerialEventTarget() {
 }
 
 nsISerialEventTarget* GetMainThreadSerialEventTarget() {
-  nsCOMPtr<nsIThread> thread;
-  nsresult rv = NS_GetMainThread(getter_AddRefs(thread));
-  if (NS_FAILED(rv)) {
-    return nullptr;
-  }
-
-  return thread->SerialEventTarget();
+  return static_cast<nsThread*>(nsThreadManager::get().GetMainThreadWeak());
 }
 
 size_t GetNumberOfProcessors() {
@@ -602,6 +606,15 @@ size_t GetNumberOfProcessors() {
 #endif
   MOZ_ASSERT(procs > 0);
   return static_cast<size_t>(procs);
+}
+
+MOZ_THREAD_LOCAL(nsISerialEventTarget*)
+SerialEventTargetGuard::sCurrentThreadTLS;
+void SerialEventTargetGuard::InitTLS() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!sCurrentThreadTLS.init()) {
+    MOZ_CRASH();
+  }
 }
 
 }  // namespace mozilla
@@ -619,7 +632,7 @@ extern "C" {
 // that enable Rust code to get/create threads and dispatch runnables on them.
 
 nsresult NS_GetCurrentThreadEventTarget(nsIEventTarget** aResult) {
-  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentEventTarget();
   if (!target) {
     return NS_ERROR_UNEXPECTED;
   }

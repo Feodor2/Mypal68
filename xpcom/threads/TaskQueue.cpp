@@ -76,6 +76,8 @@ TaskQueue::~TaskQueue() {
   // pending as all Runner hold a reference to this TaskQueue.
 }
 
+NS_IMPL_ISUPPORTS_INHERITED(TaskQueue, AbstractThread, nsIDirectTaskDispatcher);
+
 TaskDispatcher& TaskQueue::TailDispatcher() {
   MOZ_ASSERT(IsCurrentThreadIn());
   MOZ_ASSERT(mTailDispatcher);
@@ -93,7 +95,8 @@ nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
 
   AbstractThread* currentThread;
   if (aReason != TailDispatch && (currentThread = GetCurrent()) &&
-      RequiresTailDispatch(currentThread)) {
+      RequiresTailDispatch(currentThread) &&
+      currentThread->IsTailDispatcherAvailable()) {
     MOZ_ASSERT(aFlags == NS_DISPATCH_NORMAL,
                "Tail dispatch doesn't support flags");
     return currentThread->TailDispatcher().AddTask(this, aRunnable.forget());
@@ -202,6 +205,7 @@ nsresult TaskQueue::Runner::Run() {
   // in this task queue.
   {
     AutoTaskGuard g(mQueue);
+    SerialEventTargetGuard tg(mQueue);
     event.event->Run();
   }
 
@@ -243,6 +247,36 @@ nsresult TaskQueue::Runner::Run() {
     mon.Broadcast();
   }
 
+  return NS_OK;
+}
+
+//-----------------------------------------------------------------------------
+// nsIDirectTaskDispatcher
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+TaskQueue::DispatchDirectTask(already_AddRefed<nsIRunnable> aEvent) {
+  if (!IsCurrentThreadIn()) {
+    return NS_ERROR_FAILURE;
+  }
+  mDirectTasks.AddTask(std::move(aEvent));
+  return NS_OK;
+}
+
+NS_IMETHODIMP TaskQueue::DrainDirectTasks() {
+  if (!IsCurrentThreadIn()) {
+    return NS_ERROR_FAILURE;
+  }
+  mDirectTasks.DrainTasks();
+  return NS_OK;
+}
+
+NS_IMETHODIMP TaskQueue::HaveDirectTasks(bool* aValue) {
+  if (!IsCurrentThreadIn()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aValue = mDirectTasks.HaveTasks();
   return NS_OK;
 }
 

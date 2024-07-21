@@ -41,7 +41,7 @@ using mozilla::ipc::StringInputStreamParams;
 // This enables LogLevel::Debug level information and places all output in
 // the file storage.log.
 //
-static LazyLogModule sStorageStreamLog("nsStorageStream");
+static mozilla::LazyLogModule sStorageStreamLog("nsStorageStream");
 #ifdef LOG
 #  undef LOG
 #endif
@@ -589,8 +589,8 @@ void nsStorageInputStream::SerializeInternal(InputStreamParams& aParams,
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   if (remaining >= aMaxSize) {
-    InputStreamHelper::SerializeInputStreamAsPipe(this, aParams, aDelayedStart,
-                                                  aManager);
+    mozilla::ipc::InputStreamHelper::SerializeInputStreamAsPipe(
+        this, aParams, aDelayedStart, aManager);
     return;
   }
 

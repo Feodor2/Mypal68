@@ -29,7 +29,7 @@ static nsresult String2Double(const char* aString, double* aResult) {
 }
 
 static nsresult AString2Double(const nsAString& aString, double* aResult) {
-  char* pChars = ToNewCString(aString);
+  char* pChars = ToNewCString(aString, mozilla::fallible);
   if (!pChars) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -631,7 +631,7 @@ bool nsDiscriminatedUnion::String2ID(nsID* aPid) const {
       return false;
   }
 
-  char* pChars = ToNewCString(*pString);
+  char* pChars = ToNewCString(*pString, mozilla::fallible);
   if (!pChars) {
     return false;
   }
@@ -1159,9 +1159,7 @@ nsresult nsDiscriminatedUnion::SetFromVariant(nsIVariant* aValue) {
     case nsIDataType::VTYPE_WSTRING_SIZE_IS:
       CASE__SET_FROM_VARIANT_VTYPE_PROLOGUE(VTYPE_ASTRING);
       u.mAStringValue = new nsString();
-      if (!u.mAStringValue) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
+
       rv = aValue->GetAsAString(*u.mAStringValue);
       if (NS_FAILED(rv)) {
         delete u.mAStringValue;
@@ -1171,9 +1169,7 @@ nsresult nsDiscriminatedUnion::SetFromVariant(nsIVariant* aValue) {
     case nsIDataType::VTYPE_CSTRING:
       CASE__SET_FROM_VARIANT_VTYPE_PROLOGUE(VTYPE_CSTRING);
       u.mCStringValue = new nsCString();
-      if (!u.mCStringValue) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
+
       rv = aValue->GetAsACString(*u.mCStringValue);
       if (NS_FAILED(rv)) {
         delete u.mCStringValue;
@@ -1183,9 +1179,7 @@ nsresult nsDiscriminatedUnion::SetFromVariant(nsIVariant* aValue) {
     case nsIDataType::VTYPE_UTF8STRING:
       CASE__SET_FROM_VARIANT_VTYPE_PROLOGUE(VTYPE_UTF8STRING);
       u.mUTF8StringValue = new nsUTF8String();
-      if (!u.mUTF8StringValue) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
+
       rv = aValue->GetAsAUTF8String(*u.mUTF8StringValue);
       if (NS_FAILED(rv)) {
         delete u.mUTF8StringValue;

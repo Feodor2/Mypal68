@@ -95,8 +95,6 @@ NS_IMPL_ISUPPORTS(nsReceiver, nsIRunnable)
 
 static nsresult TestPipe(nsIInputStream* in, nsIOutputStream* out) {
   RefPtr<nsReceiver> receiver = new nsReceiver(in);
-  if (!receiver) return NS_ERROR_OUT_OF_MEMORY;
-
   nsresult rv;
 
   nsCOMPtr<nsIThread> thread;
@@ -209,8 +207,6 @@ NS_IMPL_ISUPPORTS(nsShortReader, nsIRunnable)
 
 static nsresult TestShortWrites(nsIInputStream* in, nsIOutputStream* out) {
   RefPtr<nsShortReader> receiver = new nsShortReader(in);
-  if (!receiver) return NS_ERROR_OUT_OF_MEMORY;
-
   nsresult rv;
 
   nsCOMPtr<nsIThread> thread;

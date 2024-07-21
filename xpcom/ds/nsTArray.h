@@ -2892,18 +2892,6 @@ struct nsTArray_RelocationStrategy<AutoTArray<E, N>> {
 
 // Span integration
 namespace mozilla {
-
-template <class ElementType, class TArrayAlloc>
-Span<ElementType> MakeSpan(nsTArray_Impl<ElementType, TArrayAlloc>& aTArray) {
-  return aTArray;
-}
-
-template <class ElementType, class TArrayAlloc>
-Span<const ElementType> MakeSpan(
-    const nsTArray_Impl<ElementType, TArrayAlloc>& aTArray) {
-  return aTArray;
-}
-
 template <typename T>
 class nsTArrayBackInserter
     : public std::iterator<std::output_iterator_tag, void, void, void, void> {
@@ -2946,7 +2934,7 @@ Span(const nsTArray_Impl<E, Alloc>&) -> Span<const E>;
 template <class E, class Alloc>
 std::ostream& operator<<(std::ostream& aOut,
                          const nsTArray_Impl<E, Alloc>& aTArray) {
-  return aOut << mozilla::MakeSpan(aTArray);
+  return aOut << mozilla::Span(aTArray);
 }
 
 // Assert that AutoTArray doesn't have any extra padding inside.

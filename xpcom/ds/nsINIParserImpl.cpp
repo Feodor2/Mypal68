@@ -31,9 +31,6 @@ nsINIParserFactory::CreateINIParser(nsIFile* aINIFile, nsIINIParser** aResult) {
   *aResult = nullptr;
 
   RefPtr<nsINIParserImpl> p(new nsINIParserImpl());
-  if (!p) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   if (aINIFile) {
     nsresult rv = p->Init(aINIFile);
@@ -75,9 +72,6 @@ static bool SectionCB(const char* aSection, void* aClosure) {
 NS_IMETHODIMP
 nsINIParserImpl::GetSections(nsIUTF8StringEnumerator** aResult) {
   nsTArray<nsCString>* strings = new nsTArray<nsCString>;
-  if (!strings) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   nsresult rv = mParser.GetSections(SectionCB, strings);
   if (NS_SUCCEEDED(rv)) {
@@ -105,9 +99,6 @@ nsINIParserImpl::GetKeys(const nsACString& aSection,
   }
 
   nsTArray<nsCString>* strings = new nsTArray<nsCString>;
-  if (!strings) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   nsresult rv =
       mParser.GetStrings(PromiseFlatCString(aSection).get(), KeyCB, strings);

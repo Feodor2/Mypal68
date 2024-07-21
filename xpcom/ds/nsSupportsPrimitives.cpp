@@ -40,7 +40,7 @@ nsSupportsCString::GetData(nsACString& aData) {
 
 NS_IMETHODIMP
 nsSupportsCString::ToString(char** aResult) {
-  *aResult = ToNewCString(mData);
+  *aResult = ToNewCString(mData, mozilla::fallible);
   if (!*aResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -79,7 +79,7 @@ nsSupportsString::GetData(nsAString& aData) {
 
 NS_IMETHODIMP
 nsSupportsString::ToString(char16_t** aResult) {
-  *aResult = ToNewUnicode(mData);
+  *aResult = ToNewUnicode(mData, mozilla::fallible);
   if (!*aResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -588,7 +588,7 @@ nsSupportsDependentCString::ToString(char** aResult) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  *aResult = ToNewCString(mData);
+  *aResult = ToNewCString(mData, mozilla::fallible);
   if (!*aResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

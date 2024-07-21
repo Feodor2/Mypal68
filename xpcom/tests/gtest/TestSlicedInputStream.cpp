@@ -594,7 +594,7 @@ TEST(TestSlicedInputStream, AsyncInputStreamLength)
   RefPtr<testing::LengthCallback> callback = new testing::LengthCallback();
 
   nsresult rv =
-      qi->AsyncLengthWait(callback, GetCurrentThreadSerialEventTarget());
+      qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
@@ -620,7 +620,7 @@ TEST(TestSlicedInputStream, NegativeAsyncInputStreamLength)
   RefPtr<testing::LengthCallback> callback = new testing::LengthCallback();
 
   nsresult rv =
-      qi->AsyncLengthWait(callback, GetCurrentThreadSerialEventTarget());
+      qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
@@ -645,11 +645,11 @@ TEST(TestSlicedInputStream, AbortLengthCallback)
 
   RefPtr<testing::LengthCallback> callback1 = new testing::LengthCallback();
   nsresult rv =
-      qi->AsyncLengthWait(callback1, GetCurrentThreadSerialEventTarget());
+      qi->AsyncLengthWait(callback1, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   RefPtr<testing::LengthCallback> callback2 = new testing::LengthCallback();
-  rv = qi->AsyncLengthWait(callback2, GetCurrentThreadSerialEventTarget());
+  rv = qi->AsyncLengthWait(callback2, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback2->Called(); }));

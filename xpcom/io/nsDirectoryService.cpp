@@ -10,6 +10,7 @@
 #include "nsDebug.h"
 #include "nsGkAtoms.h"
 #include "nsEnumeratorUtils.h"
+#include "nsThreadUtils.h"
 
 #include "mozilla/SimpleEnumerator.h"
 #include "nsICategoryManager.h"

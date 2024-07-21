@@ -13,10 +13,9 @@
 #  include "mozilla/Monitor2.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/Tuple.h"
-#  include "mozilla/TypeTraits.h"
 #  include "mozilla/UniquePtr.h"
 #  include "mozilla/Variant.h"
-
+#  include "nsIDirectTaskDispatcher.h"
 #  include "nsISerialEventTarget.h"
 #  include "nsTArray.h"
 #  include "nsThreadUtils.h"
@@ -31,6 +30,10 @@
 #    define PROMISE_ASSERT(...) \
       do {                      \
       } while (0)
+#  endif
+
+#  if DEBUG
+#    include "nsPrintfCString.h"
 #  endif
 
 namespace mozilla {
@@ -70,7 +73,7 @@ struct MethodTrait : MethodTraitsHelper<std::remove_reference_t<T>> {};
 
 template <typename MethodType>
 using TakesArgument =
-    IntegralConstant<bool, detail::MethodTrait<MethodType>::ArgSize != 0>;
+    std::integral_constant<bool, detail::MethodTrait<MethodType>::ArgSize != 0>;
 
 template <typename MethodType, typename TargetType>
 using ReturnTypeIs =
@@ -81,11 +84,11 @@ template <typename ResolveValueT, typename RejectValueT, bool IsExclusive>
 class MozPromise;
 
 template <typename Return>
-struct IsMozPromise : FalseType {};
+struct IsMozPromise : std::false_type {};
 
 template <typename ResolveValueT, typename RejectValueT, bool IsExclusive>
 struct IsMozPromise<MozPromise<ResolveValueT, RejectValueT, IsExclusive>>
-    : TrueType {};
+    : std::true_type {};
 
 /*
  * A promise manages an asynchronous request that may or may not be able to be
@@ -440,9 +443,43 @@ class MozPromise : public MozPromiseBase {
 
       nsCOMPtr<nsIRunnable> r = new ResolveOrRejectRunnable(this, aPromise);
       PROMISE_LOG(
-          "%s Then() call made from %s [Runnable=%p, Promise=%p, ThenValue=%p]",
+          "%s Then() call made from %s [Runnable=%p, Promise=%p, ThenValue=%p] "
+          "%s dispatch",
           aPromise->mValue.IsResolve() ? "Resolving" : "Rejecting", mCallSite,
-          r.get(), aPromise, this);
+          r.get(), aPromise, this,
+          aPromise->mUseSynchronousTaskDispatch
+              ? "synchronous"
+              : aPromise->mUseDirectTaskDispatch ? "directtask" : "normal");
+
+      if (aPromise->mUseSynchronousTaskDispatch &&
+          mResponseTarget->IsOnCurrentThread()) {
+        PROMISE_LOG("ThenValue::Dispatch running task synchronously [this=%p]",
+                    this);
+        r->Run();
+        return;
+      }
+
+      if (aPromise->mUseDirectTaskDispatch &&
+          mResponseTarget->IsOnCurrentThread()) {
+        PROMISE_LOG(
+            "ThenValue::Dispatch dispatch task via direct task queue [this=%p]",
+            this);
+        nsCOMPtr<nsIDirectTaskDispatcher> dispatcher =
+            do_QueryInterface(mResponseTarget);
+        if (dispatcher) {
+          dispatcher->DispatchDirectTask(r.forget());
+          return;
+        }
+        NS_WARNING(
+            nsPrintfCString(
+                "Direct Task dispatching not available for thread \"%s\"",
+                PR_GetThreadName(PR_GetCurrentThread()))
+                .get());
+        MOZ_DIAGNOSTIC_ASSERT(
+            false,
+            "mResponseTarget must implement nsIDirectTaskDispatcher for direct "
+            "task dispatching");
+      }
 
       // Promise consumers are allowed to disconnect the Request object and
       // then shut down the thread or task queue that the promise result would
@@ -551,8 +588,9 @@ class MozPromise : public MozPromiseBase {
         typename detail::MethodTrait<ResolveMethodType>::ReturnType>::Type;
     using R2 = typename RemoveSmartPointer<
         typename detail::MethodTrait<RejectMethodType>::ReturnType>::Type;
-    using SupportChaining = IntegralConstant<bool, IsMozPromise<R1>::value &&
-                                                       IsSame<R1, R2>::value>;
+    using SupportChaining =
+        std::integral_constant<bool, IsMozPromise<R1>::value &&
+                                         std::is_same_v<R1, R2>>;
 
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
@@ -615,7 +653,8 @@ class MozPromise : public MozPromiseBase {
 
     using R1 = typename RemoveSmartPointer<typename detail::MethodTrait<
         ResolveRejectMethodType>::ReturnType>::Type;
-    using SupportChaining = IntegralConstant<bool, IsMozPromise<R1>::value>;
+    using SupportChaining =
+        std::integral_constant<bool, IsMozPromise<R1>::value>;
 
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
@@ -674,8 +713,9 @@ class MozPromise : public MozPromiseBase {
         typename detail::MethodTrait<ResolveFunction>::ReturnType>::Type;
     using R2 = typename RemoveSmartPointer<
         typename detail::MethodTrait<RejectFunction>::ReturnType>::Type;
-    using SupportChaining = IntegralConstant<bool, IsMozPromise<R1>::value &&
-                                                       IsSame<R1, R2>::value>;
+    using SupportChaining =
+        std::integral_constant<bool, IsMozPromise<R1>::value &&
+                                         std::is_same_v<R1, R2>>;
 
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
@@ -745,7 +785,8 @@ class MozPromise : public MozPromiseBase {
 
     using R1 = typename RemoveSmartPointer<
         typename detail::MethodTrait<ResolveRejectFunction>::ReturnType>::Type;
-    using SupportChaining = IntegralConstant<bool, IsMozPromise<R1>::value>;
+    using SupportChaining =
+        std::integral_constant<bool, IsMozPromise<R1>::value>;
 
     // Fall back to MozPromise when promise chaining is not supported to make
     // code compile.
@@ -1003,6 +1044,8 @@ class MozPromise : public MozPromiseBase {
   const char* mCreationSite;  // For logging
   Lock mMutex;
   ResolveOrRejectValue mValue;
+  bool mUseSynchronousTaskDispatch = false;
+  bool mUseDirectTaskDispatch = false;
 #  ifdef PROMISE_DEBUG
   uint32_t mMagic1 = sMagic;
 #  endif
@@ -1082,6 +1125,43 @@ class MozPromise<ResolveValueT, RejectValueT, IsExclusive>::Private
     }
     mValue = std::forward<ResolveOrRejectValue_>(aValue);
     DispatchAll();
+  }
+
+  // If the caller and target are both on the same thread, run the the resolve
+  // or reject callback synchronously. Otherwise, the task will be dispatched
+  // via the target Dispatch method.
+  void UseSynchronousTaskDispatch(const char* aSite) {
+    static_assert(
+        IsExclusive,
+        "Synchronous dispatch can only be used with exclusive promises");
+    PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
+                   mMagic3 == sMagic && mMagic4 == &mMutex);
+    AutoLock lock(mMutex);
+    PROMISE_LOG("%s UseSynchronousTaskDispatch MozPromise (%p created at %s)",
+                aSite, this, mCreationSite);
+    MOZ_ASSERT(IsPending(),
+               "A Promise must not have been already resolved or rejected to "
+               "set dispatch state");
+    mUseSynchronousTaskDispatch = true;
+  }
+
+  // If the caller and target are both on the same thread, run the
+  // resolve/reject callback off the direct task queue instead. This avoids a
+  // full trip to the back of the event queue for each additional asynchronous
+  // step when using MozPromise, and is similar (but not identical to) the
+  // microtask semantics of JS promises.
+  void UseDirectTaskDispatch(const char* aSite) {
+    PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
+                   mMagic3 == sMagic && mMagic4 == &mMutex);
+    AutoLock lock(mMutex);
+    PROMISE_LOG("%s UseDirectTaskDispatch MozPromise (%p created at %s)", aSite,
+                this, mCreationSite);
+    MOZ_ASSERT(IsPending(),
+               "A Promise must not have been already resolved or rejected to "
+               "set dispatch state");
+    MOZ_ASSERT(!mUseSynchronousTaskDispatch,
+               "Promise already set for synchronous dispatch");
+    mUseDirectTaskDispatch = true;
   }
 };
 

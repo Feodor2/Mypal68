@@ -26,7 +26,10 @@
 #include "XPCOMModule.h"
 
 using namespace mozilla::ipc;
+using mozilla::fallible;
+using mozilla::MallocSizeOf;
 using mozilla::Maybe;
+using mozilla::ReentrantMonitorAutoEnter;
 using mozilla::Some;
 
 //-----------------------------------------------------------------------------
@@ -497,7 +500,7 @@ nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
 }
 
 nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
-                               Span<const char> aStringToRead,
+                               mozilla::Span<const char> aStringToRead,
                                nsAssignmentType aAssignment) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 

@@ -72,6 +72,8 @@ class nsThreadManager : public nsIThreadManager {
 
   static bool MainThreadHasPendingHighPriorityEvents();
 
+  nsIThread* GetMainThreadWeak() { return mMainThread; }
+
  private:
   nsThreadManager();
 

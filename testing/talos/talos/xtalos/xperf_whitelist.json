@@ -260,12 +260,6 @@
     "minbytes": 8192,
     "maxbytes": 8192
   },
-  "{firefox}\\gmp-clearkey\\0.1\\manifest.json": {
-    "mincount": 2,
-    "maxcount": 2,
-    "minbytes": 512,
-    "maxbytes": 512
-  },
   "{firefox}\\omni.ja": {
     "mincount": 0,
     "maxcount": 46,

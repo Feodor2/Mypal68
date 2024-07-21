@@ -21,7 +21,7 @@ from hpack.exceptions import HPACKError
 from .config import H2Configuration
 from .errors import ErrorCodes, _error_code_from_int
 from .events import (
-    WindowUpdated, RemoteSettingsChanged, PingAcknowledged,
+    WindowUpdated, PingAcknowledged,
     SettingsAcknowledged, ConnectionTerminated, PriorityUpdated,
     AlternativeServiceAvailable,
 )
@@ -1738,13 +1738,6 @@ class H2Connection(object):
             events.append(ack_event)
             return [], events
 
-        # Add the new settings.
-        self.remote_settings.update(frame.settings)
-        events.append(
-            RemoteSettingsChanged.from_settings(
-                self.remote_settings, frame.settings
-            )
-        )
         frames = self._acknowledge_settings()
 
         return frames, events

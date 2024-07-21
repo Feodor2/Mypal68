@@ -75,10 +75,6 @@ let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 let selectorFactory = XPCOMUtils._getFactory(NewProcessSelector);
 registrar.registerFactory(OUR_PROCESSSELECTOR_CID, "", null, selectorFactory);
 
-// For now, we'll allow tests to use CPOWs in this module for
-// some cases.
-Cu.permitCPOWsInScope(this);
-
 var gSendCharCount = 0;
 var gSynthesizeKeyCount = 0;
 var gSynthesizeCompositionCount = 0;

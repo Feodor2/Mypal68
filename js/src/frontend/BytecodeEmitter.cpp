@@ -55,8 +55,9 @@
 #include "frontend/TryEmitter.h"     // TryEmitter
 #include "frontend/WhileEmitter.h"   // WhileEmitter
 #include "js/CompileOptions.h"       // TransitiveCompileOptions, CompileOptions
-#include "js/friend/StackLimits.h"   // CheckRecursionLimit
-#include "util/StringBuffer.h"       // StringBuffer
+#include "js/friend/ErrorMessages.h"      // JSMSG_*
+#include "js/friend/StackLimits.h"        // CheckRecursionLimit
+#include "util/StringBuffer.h"            // StringBuffer
 #include "vm/AsyncFunctionResolveKind.h"  // AsyncFunctionResolveKind
 #include "vm/BytecodeUtil.h"  // JOF_*, IsArgOp, IsLocalOp, SET_UINT24, SET_ICINDEX, BytecodeFallsThrough, BytecodeIsJumpTarget
 #include "vm/FunctionPrefixKind.h"  // FunctionPrefixKind
@@ -120,16 +121,11 @@ BytecodeEmitter::BytecodeEmitter(BytecodeEmitter* parent, SharedContext* sc,
     : sc(sc),
       cx(sc->cx_),
       parent(parent),
-      bytecodeSection_(cx, sc->extent().lineno),
+      bytecodeSection_(cx, sc->extent().lineno, sc->extent().column),
       perScriptData_(cx, compilationInfo),
       compilationInfo(compilationInfo),
       compilationState(compilationState),
-      emitterMode(emitterMode) {
-  if (IsTypeInferenceEnabled() && sc->isFunctionBox()) {
-    // Functions have IC entries for type monitoring |this| and arguments.
-    bytecodeSection().setNumICEntries(sc->asFunctionBox()->nargs() + 1);
-  }
-}
+      emitterMode(emitterMode) {}
 
 BytecodeEmitter::BytecodeEmitter(BytecodeEmitter* parent,
                                  BCEParserHandle* handle, SharedContext* sc,
@@ -254,10 +250,6 @@ bool BytecodeEmitter::emitCheck(JSOp op, ptrdiff_t delta,
 
   if (!bytecodeSection().code().growByUninitialized(delta)) {
     return false;
-  }
-
-  if (BytecodeOpHasTypeSet(op)) {
-    bytecodeSection().incrementNumTypeSets();
   }
 
   if (BytecodeOpHasIC(op)) {
@@ -551,6 +543,11 @@ bool BytecodeEmitter::updateLineNumberNotes(uint32_t offset) {
     unsigned line = er->lineAt(offset);
     unsigned delta = line - bytecodeSection().currentLine();
 
+    // If we use a `SetLine` note below, we want it to be relative to the
+    // scripts initial line number for better chance of sharing.
+    unsigned initialLine = sc->extent().lineno;
+    MOZ_ASSERT(line >= initialLine);
+
     /*
      * Encode any change in the current source line number by using
      * either several SrcNoteType::NewLine notes or just one
@@ -563,9 +560,9 @@ bool BytecodeEmitter::updateLineNumberNotes(uint32_t offset) {
      * SrcNoteType::SetLine.
      */
     bytecodeSection().setCurrentLine(line, offset);
-    if (delta >= SrcNote::SetLine::lengthFor(line)) {
+    if (delta >= SrcNote::SetLine::lengthFor(line, initialLine)) {
       if (!newSrcNote2(SrcNoteType::SetLine,
-                       SrcNote::SetLine::toOperand(line))) {
+                       SrcNote::SetLine::toOperand(line, initialLine))) {
         return false;
       }
     } else {
@@ -592,17 +589,16 @@ bool BytecodeEmitter::updateSourceCoordNotes(uint32_t offset) {
   }
 
   uint32_t columnIndex = parser->errorReporter().columnAt(offset);
+  MOZ_ASSERT(columnIndex <= ColumnLimit);
+
+  // Assert colspan is always representable.
+  static_assert((0 - ptrdiff_t(ColumnLimit)) >= SrcNote::ColSpan::MinColSpan);
+  static_assert((ptrdiff_t(ColumnLimit) - 0) <= SrcNote::ColSpan::MaxColSpan);
+
   ptrdiff_t colspan =
       ptrdiff_t(columnIndex) - ptrdiff_t(bytecodeSection().lastColumn());
+
   if (colspan != 0) {
-    // If the column span is so large that we can't store it, then just
-    // discard this information. This can happen with minimized or otherwise
-    // machine-generated code. Even gigantic column numbers are still
-    // valuable if you have a source map to relate them to something real;
-    // but it's better to fail soft here.
-    if (!SrcNote::ColSpan::isRepresentable(colspan)) {
-      return true;
-    }
     if (!newSrcNote2(SrcNoteType::ColSpan,
                      SrcNote::ColSpan::toOperand(colspan))) {
       return false;
@@ -1541,12 +1537,9 @@ bool BytecodeEmitter::isInLoop() {
   return findInnermostNestableControl<LoopControl>();
 }
 
-bool BytecodeEmitter::checkRunOnceContext() {
-  return sc->treatAsRunOnce() && !isInLoop();
-}
-
 bool BytecodeEmitter::checkSingletonContext() {
-  return sc->isTopLevelContext() && checkRunOnceContext();
+  MOZ_ASSERT_IF(sc->treatAsRunOnce(), sc->isTopLevelContext());
+  return sc->treatAsRunOnce() && !isInLoop();
 }
 
 bool BytecodeEmitter::needsImplicitThis() {
@@ -1653,6 +1646,10 @@ bool BytecodeEmitter::iteratorResultShape(GCThingIndex* shape) {
   ObjLiteralFlags flags{ObjLiteralFlag::NoValues};
 
   ObjLiteralIndex objIndex(compilationInfo.stencil.objLiteralData.length());
+  if (uint32_t(objIndex) >= TaggedScriptThingIndex::IndexLimit) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
   if (!compilationInfo.stencil.objLiteralData.emplaceBack()) {
     js::ReportOutOfMemory(cx);
     return false;
@@ -1846,11 +1843,11 @@ bool BytecodeEmitter::emitPropIncDec(UnaryNode* incDec) {
       this,
       kind == ParseNodeKind::PostIncrementExpr
           ? PropOpEmitter::Kind::PostIncrement
-          : kind == ParseNodeKind::PreIncrementExpr
-                ? PropOpEmitter::Kind::PreIncrement
-                : kind == ParseNodeKind::PostDecrementExpr
-                      ? PropOpEmitter::Kind::PostDecrement
-                      : PropOpEmitter::Kind::PreDecrement,
+      : kind == ParseNodeKind::PreIncrementExpr
+          ? PropOpEmitter::Kind::PreIncrement
+      : kind == ParseNodeKind::PostDecrementExpr
+          ? PropOpEmitter::Kind::PostDecrement
+          : PropOpEmitter::Kind::PreDecrement,
       isSuper ? PropOpEmitter::ObjKind::Super : PropOpEmitter::ObjKind::Other);
   if (!poe.prepareForObj()) {
     return false;
@@ -1884,11 +1881,11 @@ bool BytecodeEmitter::emitNameIncDec(UnaryNode* incDec) {
   NameOpEmitter noe(this, nameAtom,
                     kind == ParseNodeKind::PostIncrementExpr
                         ? NameOpEmitter::Kind::PostIncrement
-                        : kind == ParseNodeKind::PreIncrementExpr
-                              ? NameOpEmitter::Kind::PreIncrement
-                              : kind == ParseNodeKind::PostDecrementExpr
-                                    ? NameOpEmitter::Kind::PostDecrement
-                                    : NameOpEmitter::Kind::PreDecrement);
+                    : kind == ParseNodeKind::PreIncrementExpr
+                        ? NameOpEmitter::Kind::PreIncrement
+                    : kind == ParseNodeKind::PostDecrementExpr
+                        ? NameOpEmitter::Kind::PostDecrement
+                        : NameOpEmitter::Kind::PreDecrement);
   if (!noe.emitIncDec()) {
     return false;
   }
@@ -1964,11 +1961,11 @@ bool BytecodeEmitter::emitElemIncDec(UnaryNode* incDec) {
       this,
       kind == ParseNodeKind::PostIncrementExpr
           ? ElemOpEmitter::Kind::PostIncrement
-          : kind == ParseNodeKind::PreIncrementExpr
-                ? ElemOpEmitter::Kind::PreIncrement
-                : kind == ParseNodeKind::PostDecrementExpr
-                      ? ElemOpEmitter::Kind::PostDecrement
-                      : ElemOpEmitter::Kind::PreDecrement,
+      : kind == ParseNodeKind::PreIncrementExpr
+          ? ElemOpEmitter::Kind::PreIncrement
+      : kind == ParseNodeKind::PostDecrementExpr
+          ? ElemOpEmitter::Kind::PostDecrement
+          : ElemOpEmitter::Kind::PreDecrement,
       isSuper ? ElemOpEmitter::ObjKind::Super : ElemOpEmitter::ObjKind::Other,
       isPrivate ? NameVisibility::Private : NameVisibility::Public);
   if (!emitElemObjAndKey(elemExpr, isSuper, eoe)) {
@@ -2477,7 +2474,7 @@ bool BytecodeEmitter::emitScript(ParseNode* body) {
     return false;
   }
 
-  if (!NameFunctions(cx, compilationInfo, body)) {
+  if (!NameFunctions(cx, compilationState.parserAtoms, body)) {
     return false;
   }
 
@@ -2498,9 +2495,9 @@ js::UniquePtr<ImmutableScriptData> BytecodeEmitter::createImmutableScriptData(
 
   return ImmutableScriptData::new_(
       cx, mainOffset(), maxFixedSlots, nslots, bodyScopeIndex,
-      bytecodeSection().numICEntries(), bytecodeSection().numTypeSets(),
-      isFunction, funLength, bytecodeSection().code(),
-      bytecodeSection().notes(), bytecodeSection().resumeOffsetList().span(),
+      bytecodeSection().numICEntries(), isFunction, funLength,
+      bytecodeSection().code(), bytecodeSection().notes(),
+      bytecodeSection().resumeOffsetList().span(),
       bytecodeSection().scopeNoteList().span(),
       bytecodeSection().tryNoteList().span());
 }
@@ -2516,8 +2513,7 @@ bool BytecodeEmitter::getNslots(uint32_t* nslots) {
   return true;
 }
 
-bool BytecodeEmitter::emitFunctionScript(FunctionNode* funNode,
-                                         TopLevelFunction isTopLevel) {
+bool BytecodeEmitter::emitFunctionScript(FunctionNode* funNode) {
   MOZ_ASSERT(inPrologue());
   ListNode* paramsBody = &funNode->body()->as<ListNode>();
   MOZ_ASSERT(paramsBody->isKind(ParseNodeKind::ParamsBody));
@@ -2556,8 +2552,8 @@ bool BytecodeEmitter::emitFunctionScript(FunctionNode* funNode,
     return false;
   }
 
-  if (isTopLevel == TopLevelFunction::Yes) {
-    if (!NameFunctions(cx, compilationInfo, funNode)) {
+  if (funbox->index() == CompilationInfo::TopLevelIndex) {
+    if (!NameFunctions(cx, compilationState.parserAtoms, funNode)) {
       return false;
     }
   }
@@ -4163,8 +4159,8 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
       bool isSuper = prop->isSuper();
       poe.emplace(this,
                   isCompound ? PropOpEmitter::Kind::CompoundAssignment
-                             : isInit ? PropOpEmitter::Kind::PropInit
-                                      : PropOpEmitter::Kind::SimpleAssignment,
+                  : isInit   ? PropOpEmitter::Kind::PropInit
+                             : PropOpEmitter::Kind::SimpleAssignment,
                   isSuper ? PropOpEmitter::ObjKind::Super
                           : PropOpEmitter::ObjKind::Other);
       if (!poe->prepareForObj()) {
@@ -4194,8 +4190,8 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
       bool isPrivate = elem->key().isKind(ParseNodeKind::PrivateName);
       eoe.emplace(this,
                   isCompound ? ElemOpEmitter::Kind::CompoundAssignment
-                             : isInit ? ElemOpEmitter::Kind::PropInit
-                                      : ElemOpEmitter::Kind::SimpleAssignment,
+                  : isInit   ? ElemOpEmitter::Kind::PropInit
+                             : ElemOpEmitter::Kind::SimpleAssignment,
                   isSuper ? ElemOpEmitter::ObjKind::Super
                           : ElemOpEmitter::ObjKind::Other,
                   isPrivate ? NameVisibility::Private : NameVisibility::Public);
@@ -4621,6 +4617,10 @@ bool BytecodeEmitter::emitCallSiteObjectArray(ListNode* cookedOrRaw,
   }
 
   ObjLiteralIndex objIndex(compilationInfo.stencil.objLiteralData.length());
+  if (uint32_t(objIndex) >= TaggedScriptThingIndex::IndexLimit) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
   if (!compilationInfo.stencil.objLiteralData.emplaceBack()) {
     js::ReportOutOfMemory(cx);
     return false;
@@ -5724,36 +5724,10 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitFunction(
                                   FieldPlacement::Instance);
       if (!memberInitializers) {
         ReportAllocationOverflow(cx);
+        return false;
       }
       funbox->setMemberInitializers(*memberInitializers);
     }
-
-    // A function is a run-once lambda if the following all hold:
-    //  - Enclosing script must be run-once lambda or run-once top-level.
-    //        `SharedContext::treatAsRunOnce()`
-    //  - Function definition must not be in a loop.
-    //        `BytecodeEmitter::isInLoop() == false`
-    //  - Function must be an IIFE like "(function(){ })()".
-    //        `CallOrNewEmitter::state == State::FunctionCallee`
-    //  - Function must not match `shouldSuppressRunOnce` conditions.
-    //
-    // NOTE: This is a heuristic and through trick such as `fun.caller` it may
-    //       still be run more than once. The VM must accomodate this.
-    // NOTE: For a lazy function, this will be applied to any existing function
-    //       in UpdateEmittedInnerFunctions().
-    bool isRunOnceLambda =
-        emittingRunOnceLambda && !funbox->shouldSuppressRunOnce();
-    funbox->setTreatAsRunOnce(isRunOnceLambda);
-
-    // Mark functions which are expected to only have one instance as singletons
-    // functions. These function instances will then always have a unique script
-    // of which they are the canonical function. This improves type-inferrence
-    // precision. CloneFunctionObject will make a deep clone of the function and
-    // script as needed if our prediction is wrong.
-    //
-    // NOTE: This heuristic is arbitrary, but some debugger tests rely on the
-    //       current behaviour and need to be updated if the condiditons change.
-    funbox->setIsSingleton(checkRunOnceContext());
 
     if (!funbox->emitBytecode) {
       return fe.emitLazy();
@@ -5772,7 +5746,7 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitFunction(
     }
 
     /* We measured the max scope depth when we parsed the function. */
-    if (!bce2.emitFunctionScript(funNode, TopLevelFunction::No)) {
+    if (!bce2.emitFunctionScript(funNode)) {
       return false;
     }
 
@@ -8651,8 +8625,8 @@ bool BytecodeEmitter::emitPropertyList(ListNode* obj, PropertyEmitter& pe,
         if (key->isKind(ParseNodeKind::NumberExpr)) {
           MOZ_ASSERT(accessorType == AccessorType::None);
 
-          const ParserAtom* keyAtom =
-              key->as<NumericLiteral>().toAtom(cx, compilationInfo);
+          const ParserAtom* keyAtom = key->as<NumericLiteral>().toAtom(
+              cx, compilationState.parserAtoms);
           if (!keyAtom) {
             return false;
           }
@@ -8682,11 +8656,10 @@ bool BytecodeEmitter::emitPropertyList(ListNode* obj, PropertyEmitter& pe,
             }
           }
 
-          FunctionPrefixKind prefix = accessorType == AccessorType::None
-                                          ? FunctionPrefixKind::None
-                                          : accessorType == AccessorType::Getter
-                                                ? FunctionPrefixKind::Get
-                                                : FunctionPrefixKind::Set;
+          FunctionPrefixKind prefix =
+              accessorType == AccessorType::None     ? FunctionPrefixKind::None
+              : accessorType == AccessorType::Getter ? FunctionPrefixKind::Get
+                                                     : FunctionPrefixKind::Set;
 
           if (!emitAnonymousFunctionWithComputedName(propVal, prefix)) {
             //      [stack] CTOR? OBJ CTOR? KEY VAL
@@ -8834,6 +8807,10 @@ bool BytecodeEmitter::emitPropertyList(ListNode* obj, PropertyEmitter& pe,
 bool BytecodeEmitter::emitPropertyListObjLiteral(ListNode* obj,
                                                  ObjLiteralFlags flags) {
   ObjLiteralIndex objIndex(compilationInfo.stencil.objLiteralData.length());
+  if (uint32_t(objIndex) >= TaggedScriptThingIndex::IndexLimit) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
   if (!compilationInfo.stencil.objLiteralData.emplaceBack()) {
     js::ReportOutOfMemory(cx);
     return false;
@@ -8887,9 +8864,9 @@ bool BytecodeEmitter::emitPropertyListObjLiteral(ListNode* obj,
   // JSOp::Object may only be used by (top-level) run-once scripts.
   MOZ_ASSERT_IF(singleton, compilationInfo.input.options.isRunOnce);
 
-  JSOp op = singleton
-                ? JSOp::Object
-                : isInnerSingleton ? JSOp::NewObjectWithGroup : JSOp::NewObject;
+  JSOp op = singleton          ? JSOp::Object
+            : isInnerSingleton ? JSOp::NewObjectWithGroup
+                               : JSOp::NewObject;
   if (!emitGCIndexOp(op, index)) {
     //              [stack] OBJ
     return false;
@@ -8906,6 +8883,10 @@ bool BytecodeEmitter::emitDestructuringRestExclusionSetObjLiteral(
   ObjLiteralFlags flags{ObjLiteralFlag::NoValues};
 
   ObjLiteralIndex objIndex(compilationInfo.stencil.objLiteralData.length());
+  if (uint32_t(objIndex) >= TaggedScriptThingIndex::IndexLimit) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
   if (!compilationInfo.stencil.objLiteralData.emplaceBack()) {
     js::ReportOutOfMemory(cx);
     return false;
@@ -8959,6 +8940,10 @@ bool BytecodeEmitter::emitDestructuringRestExclusionSetObjLiteral(
 
 bool BytecodeEmitter::emitObjLiteralArray(ParseNode* arrayHead, bool isCow) {
   ObjLiteralIndex objIndex(compilationInfo.stencil.objLiteralData.length());
+  if (uint32_t(objIndex) >= TaggedScriptThingIndex::IndexLimit) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
   if (!compilationInfo.stencil.objLiteralData.emplaceBack()) {
     js::ReportOutOfMemory(cx);
     return false;
@@ -9262,7 +9247,7 @@ bool BytecodeEmitter::emitPrivateMethodInitializers(ClassEmitter& ce,
         MOZ_CRASH("Invalid private method accessor type");
     }
     const ParserAtom* storedMethodAtom =
-        storedMethodName.finishParserAtom(compilationInfo);
+        storedMethodName.finishParserAtom(compilationState.parserAtoms);
 
     // Emit the private method body and store it as a lexical var.
     if (!emitFunction(&propdef->as<ClassMethod>().method())) {
@@ -9742,22 +9727,9 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitObject(ListNode* objNode,
 
 bool BytecodeEmitter::emitArrayLiteral(ListNode* array) {
   bool isSingleton = checkSingletonContext();
-  if (!array->hasNonConstInitializer() && array->head()) {
-    // If the array consists entirely of primitive values, make a
-    // template object with copy on write elements that can be reused
-    // every time the initializer executes. In non-singleton mode, don't do
-    // this if the array is small: copying the elements lazily is not worth it
-    // in that case.
-    // Note: for now we don't use COW arrays if TI is disabled. We probably need
-    // a BaseShape flag to optimize this better without TI. See bug 1626854.
-    static const size_t MinElementsForCopyOnWrite = 5;
-    if (IsTypeInferenceEnabled() &&
-        emitterMode != BytecodeEmitter::SelfHosting &&
-        (array->count() >= MinElementsForCopyOnWrite || isSingleton) &&
-        isArrayObjLiteralCompatible(array->head())) {
-      return emitObjLiteralArray(array->head(), /* isCow = */ !isSingleton);
-    }
-  }
+
+  // TODO(no-TI): remove COW arrays. See if we can use JSOp::Object for arrays
+  // again.
 
   return emitArray(array->head(), array->count(),
                    /* isInner = */ isSingleton);
@@ -10481,7 +10453,7 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitInstrumentationSlow(
   //            [stack] CALLBACK UNDEFINED
 
   const ParserAtom* atom = RealmInstrumentation::getInstrumentationKindName(
-      cx, compilationInfo, kind);
+      cx, compilationState.parserAtoms, kind);
   if (!atom) {
     return false;
   }
@@ -11249,10 +11221,30 @@ bool BytecodeEmitter::intoScriptStencil(ScriptStencil* script) {
   MOZ_ASSERT(outermostScope().hasOnChain(ScopeKind::NonSyntactic) ==
              sc->hasNonSyntacticScope());
 
-  script->gcThings = perScriptData().gcThingList().stealGCThings();
+  auto& things = perScriptData().gcThingList().objects();
+  size_t ngcthings = things.length();
+
+  // Copy the TaggedScriptThingIndex data from the emitter to the stencil.
+  mozilla::Span<TaggedScriptThingIndex> stencilThings =
+      NewScriptThingSpanUninitialized(cx, compilationInfo.stencil.alloc,
+                                      ngcthings);
+  if (stencilThings.empty()) {
+    return false;
+  }
+  std::uninitialized_copy(things.begin(), things.end(), stencilThings.begin());
+  script->gcThings = stencilThings;
 
   // Hand over the ImmutableScriptData instance generated by BCE.
-  script->immutableScriptData = std::move(immutableScriptData);
+  script->sharedData =
+      SharedImmutableScriptData::createWith(cx, std::move(immutableScriptData));
+  if (!script->sharedData) {
+    return false;
+  }
+
+  // De-duplicate the bytecode within the runtime.
+  if (!SharedImmutableScriptData::shareScriptData(cx, script->sharedData)) {
+    return false;
+  }
 
   // Update flags specific to functions.
   if (sc->isFunctionBox()) {

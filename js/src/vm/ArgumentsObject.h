@@ -275,6 +275,11 @@ class ArgumentsObject : public NativeObject {
    */
   static bool reifyIterator(JSContext* cx, Handle<ArgumentsObject*> obj);
 
+  /*
+   * Return the arguments iterator function.
+   */
+  static bool getArgumentsIterator(JSContext* cx, MutableHandleValue val);
+
   /* True iff any element has been assigned or its attributes
    * changed. */
   bool hasOverriddenElement() const {
@@ -335,7 +340,7 @@ class ArgumentsObject : public NativeObject {
    */
   const Value& element(uint32_t i) const;
 
-  inline void setElement(JSContext* cx, uint32_t i, const Value& v);
+  inline void setElement(uint32_t i, const Value& v);
 
   const Value& arg(unsigned i) const {
     MOZ_ASSERT(i < data()->numArgs);

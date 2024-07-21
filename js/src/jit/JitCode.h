@@ -12,17 +12,19 @@
 
 #include "jstypes.h"
 
-#include "gc/Allocator.h"             // AllowGC
-#include "gc/Cell.h"                  // gc::TenuredCellWithNonGCPointer
-#include "jit/ExecutableAllocator.h"  // ExecutablePool
-#include "js/TraceKind.h"             // JS::TraceKind
-#include "js/UbiNode.h"               // ubi::{TracerConcrete, Size, CourseType}
+#include "gc/Allocator.h"  // AllowGC
+#include "gc/Cell.h"       // gc::TenuredCellWithNonGCPointer
+#include "js/TraceKind.h"  // JS::TraceKind
+#include "js/UbiNode.h"    // ubi::{TracerConcrete, Size, CourseType}
 
 namespace js {
 namespace jit {
 
+class ExecutablePool;
 class JitCode;
 class MacroAssembler;
+
+enum class CodeKind : uint8_t;
 
 // Header at start of raw code buffer
 struct JitCodeHeader {

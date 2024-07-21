@@ -15,10 +15,10 @@
 #include "jit/arm/disasm/Disasm-arm.h"
 #include "jit/CompactBuffer.h"
 #include "jit/JitCode.h"
-#include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 #include "jit/shared/Disassembler-shared.h"
 #include "jit/shared/IonAssemblerBufferWithConstantPools.h"
+#include "wasm/WasmTypes.h"
 
 union PoolHintPun;
 
@@ -145,6 +145,7 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 };
 
 bool IsUnaligned(const wasm::MemoryAccessDesc& access);
@@ -1265,10 +1266,6 @@ class Assembler : public AssemblerShared {
 
   static DoubleCondition InvertCondition(DoubleCondition cond);
 
-  void writeRelocation(BufferOffset src) {
-    jumpRelocations_.writeUnsigned(src.getOffset());
-  }
-
   void writeDataRelocation(BufferOffset offset, ImmGCPtr ptr) {
     // Raw GC pointer relocations and Value relocations both end up in
     // Assembler::TraceDataRelocations.
@@ -1689,7 +1686,7 @@ class Assembler : public AssemblerShared {
   void addPendingJump(BufferOffset src, ImmPtr target, RelocationKind kind) {
     enoughMemory_ &= jumps_.append(RelativePatch(target.value, kind));
     if (kind == RelocationKind::JITCODE) {
-      writeRelocation(src);
+      jumpRelocations_.writeUnsigned(src.getOffset());
     }
   }
 
@@ -2203,16 +2200,6 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   return true;
 }
 
-#if !defined(JS_CODEGEN_ARM_HARDFP) || defined(JS_SIMULATOR_ARM)
-
-static inline uint32_t GetArgStackDisp(uint32_t arg) {
-  MOZ_ASSERT(!UseHardFpABI());
-  MOZ_ASSERT(arg >= NumIntArgRegs);
-  return (arg - NumIntArgRegs) * sizeof(intptr_t);
-}
-
-#endif
-
 #if defined(JS_CODEGEN_ARM_HARDFP) || defined(JS_SIMULATOR_ARM)
 
 static inline bool GetFloat32ArgReg(uint32_t usedIntArgs,
@@ -2234,47 +2221,6 @@ static inline bool GetDoubleArgReg(uint32_t usedIntArgs, uint32_t usedFloatArgs,
   }
   *out = VFPRegister(usedFloatArgs >> 1, VFPRegister::Double);
   return true;
-}
-
-static inline uint32_t GetIntArgStackDisp(uint32_t usedIntArgs,
-                                          uint32_t usedFloatArgs,
-                                          uint32_t* padding) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT(usedIntArgs >= NumIntArgRegs);
-  uint32_t doubleSlots =
-      std::max(0, (int32_t)usedFloatArgs - (int32_t)NumFloatArgRegs);
-  doubleSlots *= 2;
-  int intSlots = usedIntArgs - NumIntArgRegs;
-  return (intSlots + doubleSlots + *padding) * sizeof(intptr_t);
-}
-
-static inline uint32_t GetFloat32ArgStackDisp(uint32_t usedIntArgs,
-                                              uint32_t usedFloatArgs,
-                                              uint32_t* padding) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT(usedFloatArgs >= NumFloatArgRegs);
-  uint32_t intSlots = 0;
-  if (usedIntArgs > NumIntArgRegs) {
-    intSlots = usedIntArgs - NumIntArgRegs;
-  }
-  uint32_t float32Slots = usedFloatArgs - NumFloatArgRegs;
-  return (intSlots + float32Slots + *padding) * sizeof(intptr_t);
-}
-
-static inline uint32_t GetDoubleArgStackDisp(uint32_t usedIntArgs,
-                                             uint32_t usedFloatArgs,
-                                             uint32_t* padding) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT(usedFloatArgs >= NumFloatArgRegs);
-  uint32_t intSlots = 0;
-  if (usedIntArgs > NumIntArgRegs) {
-    intSlots = usedIntArgs - NumIntArgRegs;
-    // Update the amount of padding required.
-    *padding += (*padding + usedIntArgs) % 2;
-  }
-  uint32_t doubleSlots = usedFloatArgs - NumFloatArgRegs;
-  doubleSlots *= 2;
-  return (intSlots + doubleSlots + *padding) * sizeof(intptr_t);
 }
 
 #endif

@@ -14,7 +14,6 @@
 #include "vm/JSObject-inl.h"
 #include "vm/ObjectGroup-inl.h"
 #include "vm/ObjectOperations-inl.h"  // js::GetElement
-#include "vm/TypeInference-inl.h"
 
 namespace js {
 
@@ -22,12 +21,6 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
   MOZ_ASSERT(lengthIsWritable());
   MOZ_ASSERT_IF(length != getElementsHeader()->length,
                 !denseElementsAreFrozen());
-
-  if (length > INT32_MAX) {
-    /* Track objects with overflowing lengths in type information. */
-    MarkObjectGroupFlags(cx, this, OBJECT_FLAG_LENGTH_OVERFLOW);
-  }
-
   getElementsHeader()->length = length;
 }
 
@@ -39,10 +32,6 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
   MOZ_ASSERT(clasp == shape->getObjectClass());
   MOZ_ASSERT(clasp == &ArrayObject::class_);
   MOZ_ASSERT_IF(clasp->hasFinalize(), heap == gc::TenuredHeap);
-  MOZ_ASSERT_IF(group->hasUnanalyzedPreliminaryObjects(),
-                heap == js::gc::TenuredHeap);
-  MOZ_ASSERT_IF(group->shouldPreTenureDontCheckGeneration(),
-                heap == gc::TenuredHeap);
 
   // Arrays can use their fixed slots to store elements, so can't have shapes
   // which allow named properties to be stored in the fixed slots.

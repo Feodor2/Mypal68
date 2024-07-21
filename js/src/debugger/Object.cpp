@@ -14,8 +14,7 @@
 #include <type_traits>  // for remove_reference<>::type
 #include <utility>      // for move
 
-#include "jsapi.h"        // for CallArgs, RootedObject, Rooted
-#include "jsfriendapi.h"  // for GetErrorMessage
+#include "jsapi.h"  // for CallArgs, RootedObject, Rooted
 
 #include "builtin/Array.h"       // for NewDenseCopiedArray
 #include "builtin/Promise.h"     // for PromiseReactionRecordBuilder
@@ -29,11 +28,12 @@
 #include "gc/Tracer.h"  // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "js/CompilationAndEvaluation.h"  //  for Compile
 #include "js/Conversions.h"               // for ToObject
+#include "js/friend/ErrorMessages.h"      // for GetErrorMessage, JSMSG_*
 #include "js/friend/WindowProxy.h"  // for IsWindow, IsWindowProxy, ToWindowIfWindowProxy
 #include "js/HeapAPI.h"             // for IsInsideNursery
 #include "js/Promise.h"             // for PromiseState
 #include "js/Proxy.h"               // for PropertyDescriptor
-#include "js/SourceText.h"          // for SourceText
+#include "js/SourceText.h"               // for SourceText
 #include "js/StableStringChars.h"        // for AutoStableStringChars
 #include "js/String.h"                   // for JS::StringHasLatin1Chars
 #include "proxy/ScriptedProxyHandler.h"  // for ScriptedProxyHandler

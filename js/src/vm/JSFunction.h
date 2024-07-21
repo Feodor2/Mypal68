@@ -292,10 +292,6 @@ class JSFunction : public js::NativeObject {
   void setResolvedLength() { flags_.setResolvedLength(); }
   void setResolvedName() { flags_.setResolvedName(); }
 
-  // Mark a function as having its 'new' script information cleared.
-  bool wasNewScriptCleared() const { return flags_.wasNewScriptCleared(); }
-  void setNewScriptCleared() { flags_.setNewScriptCleared(); }
-
   static bool getUnresolvedLength(JSContext* cx, js::HandleFunction fun,
                                   js::MutableHandleValue v);
 
@@ -512,6 +508,8 @@ class JSFunction : public js::NativeObject {
     return asyncKind() == js::FunctionAsyncKind::AsyncFunction;
   }
 
+  bool isGeneratorOrAsync() const { return isGenerator() || isAsync(); }
+
   void initScript(js::BaseScript* script) {
     MOZ_ASSERT_IF(script, realm() == script->realm());
     MOZ_ASSERT(isInterpreted());
@@ -683,10 +681,6 @@ class JSFunction : public js::NativeObject {
   inline js::FunctionExtended* toExtendedOffMainThread();
   inline const js::FunctionExtended* toExtendedOffMainThread() const;
   inline const js::Value& getExtendedSlotOffMainThread(size_t which) const;
-
-  /* Constructs a new type for the function if necessary. */
-  static bool setTypeForScriptedFunction(JSContext* cx, js::HandleFunction fun,
-                                         bool singleton = false);
 
   /* GC support. */
   js::gc::AllocKind getAllocKind() const {

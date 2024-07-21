@@ -8,9 +8,9 @@
 
 #include "jsnum.h"
 
-#include "frontend/CompilationInfo.h"
 #include "frontend/FullParseHandler.h"
 #include "frontend/ParseContext.h"
+#include "frontend/ParserAtom.h"
 #include "frontend/SharedContext.h"
 #include "vm/BigIntType.h"
 #include "vm/Printer.h"
@@ -390,20 +390,34 @@ BigInt* BigIntLiteral::create(JSContext* cx) {
 
 bool BigIntLiteral::isZero() { return stencil_.bigIntData[index_].isZero(); }
 
-const ParserAtom* NumericLiteral::toAtom(
-    JSContext* cx, CompilationInfo& compilationInfo) const {
-  return NumberToParserAtom(cx, compilationInfo, value());
+const ParserAtom* NumericLiteral::toAtom(JSContext* cx,
+                                         ParserAtomsTable& parserAtoms) const {
+  return NumberToParserAtom(cx, parserAtoms, value());
 }
 
-RegExpObject* RegExpStencil::createRegExp(JSContext* cx) const {
-  MOZ_ASSERT(buf_);
-  return RegExpObject::createSyntaxChecked(cx, buf_.get(), length_, flags_,
-                                           TenuredObject);
+RegExpObject* RegExpStencil::createRegExp(
+    JSContext* cx, CompilationAtomCache& atomCache) const {
+  RootedAtom atom(cx, atomCache.getExistingAtomAt(cx, atom_));
+  return RegExpObject::createSyntaxChecked(cx, atom, flags_, TenuredObject);
+}
+
+RegExpObject* RegExpStencil::createRegExpAndEnsureAtom(
+    JSContext* cx, CompilationAtomCache& atomCache,
+    CompilationStencil& stencil) const {
+  const ParserAtom* parserAtom = stencil.getParserAtomAt(cx, atom_);
+  MOZ_ASSERT(parserAtom);
+  RootedAtom atom(cx, parserAtom->toJSAtom(cx, atomCache));
+  if (!atom) {
+    return nullptr;
+  }
+  return RegExpObject::createSyntaxChecked(cx, atom, flags_, TenuredObject);
 }
 
 RegExpObject* RegExpLiteral::create(JSContext* cx,
+                                    CompilationAtomCache& atomCache,
                                     CompilationStencil& stencil) const {
-  return stencil.regExpData[index_].createRegExp(cx);
+  return stencil.regExpData[index_].createRegExpAndEnsureAtom(cx, atomCache,
+                                                              stencil);
 }
 
 bool js::frontend::IsAnonymousFunctionDefinition(ParseNode* pn) {

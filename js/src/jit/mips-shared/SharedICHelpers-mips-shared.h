@@ -5,8 +5,8 @@
 #ifndef jit_mips_shared_SharedICHelpers_mips_shared_h
 #define jit_mips_shared_SharedICHelpers_mips_shared_h
 
-#include "jit/BaselineFrame.h"
 #include "jit/BaselineIC.h"
+#include "jit/JitFrames.h"
 #include "jit/MacroAssembler.h"
 #include "jit/SharedICRegisters.h"
 
@@ -46,21 +46,6 @@ inline void EmitCallIC(MacroAssembler& masm, CodeOffset* callOffset) {
   // Call the stubcode via a direct jump-and-link
   masm.call(R2.scratchReg());
   *callOffset = CodeOffset(masm.currentOffset());
-}
-
-inline void EmitEnterTypeMonitorIC(
-    MacroAssembler& masm,
-    size_t monitorStubOffset = ICMonitoredStub::offsetOfFirstMonitorStub()) {
-  // This is expected to be called from within an IC, when ICStubReg
-  // is properly initialized to point to the stub.
-  masm.loadPtr(Address(ICStubReg, (uint32_t)monitorStubOffset), ICStubReg);
-
-  // Load stubcode pointer from BaselineStubEntry.
-  // R2 won't be active when we call ICs, so we can use it.
-  masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), R2.scratchReg());
-
-  // Jump to the stubcode.
-  masm.branch(R2.scratchReg());
 }
 
 inline void EmitReturnFromIC(MacroAssembler& masm) { masm.branch(ra); }

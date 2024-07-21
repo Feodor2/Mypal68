@@ -7,11 +7,12 @@
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
 #include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MoveEmitter.h"
 #include "util/Memory.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
+#include "vm/JSContext.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -132,17 +133,17 @@ void MacroAssemblerX64::boxValue(JSValueType type, Register src,
   orq(src, dest);
 }
 
-void MacroAssemblerX64::handleFailureWithHandlerTail(void* handler,
-                                                     Label* profilerExitTail) {
+void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail) {
   // Reserve space for exception information.
   subq(Imm32(sizeof(ResumeFromException)), rsp);
   movq(rsp, rax);
 
   // Call the handler.
+  using Fn = void (*)(ResumeFromException * rfe);
   asMasm().setupUnalignedABICall(rcx);
   asMasm().passABIArg(rax);
-  asMasm().callWithABI(handler, MoveOp::GENERAL,
-                       CheckUnsafeCallWithABI::DontCheckHasExitFrame);
+  asMasm().callWithABI<Fn, HandleException>(
+      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   Label entryFrame;
   Label catch_;
@@ -302,7 +303,7 @@ void MacroAssembler::subFromStackPtr(Imm32 imm32) {
 // ABI function calls.
 
 void MacroAssembler::setupUnalignedABICall(Register scratch) {
-  setupABICall();
+  setupNativeABICall();
   dynamicAlignment_ = true;
 
   movq(rsp, scratch);

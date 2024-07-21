@@ -132,13 +132,9 @@ struct ZonesInState {
   JSRuntime* runtime;
   JS::shadow::Zone::GCState state;
 };
-struct CompilationsUsingNursery {
-  JSRuntime* runtime;
-};
 
-using CompilationSelector =
-    mozilla::Variant<JSScript*, JS::Realm*, JS::Zone*, ZonesInState, JSRuntime*,
-                     CompilationsUsingNursery>;
+using CompilationSelector = mozilla::Variant<JSScript*, JS::Realm*, JS::Zone*,
+                                             ZonesInState, JSRuntime*>;
 
 /*
  * Cancel scheduled or in progress Ion compilations.
@@ -166,16 +162,24 @@ inline void CancelOffThreadIonCompile(JSRuntime* runtime) {
   CancelOffThreadIonCompile(CompilationSelector(runtime));
 }
 
-inline void CancelOffThreadIonCompilesUsingNurseryPointers(JSRuntime* runtime) {
-  CancelOffThreadIonCompile(
-      CompilationSelector(CompilationsUsingNursery{runtime}));
-}
-
 #ifdef DEBUG
 bool HasOffThreadIonCompile(JS::Realm* realm);
 #endif
 
-/* Cancel all scheduled, in progress or finished parses for runtime. */
+/*
+ * Wait for all scheduled, in progress or finished parse tasks for the runtime
+ * to complete.
+ */
+void WaitForOffThreadParses(JSRuntime* runtime);
+
+/*
+ * Cancel all scheduled, in progress or finished parses for runtime.
+ *
+ * Parse tasks which have completed but for which JS::FinishOffThreadScript (or
+ * equivalent) has not been called are removed from the system. This is only
+ * safe to do during shutdown, or if you know that the main thread isn't waiting
+ * for tasks to complete.
+ */
 void CancelOffThreadParses(JSRuntime* runtime);
 
 /*
@@ -258,6 +262,11 @@ void SweepPendingCompressions(AutoLockHelperThreadState& lock);
 
 // Run all pending source compression tasks synchronously, for testing purposes
 void RunPendingSourceCompressions(JSRuntime* runtime);
+
+// False if the off-thread source compression mechanism isn't being used. This
+// happens on low core count machines where we are concerned about blocking
+// main-thread execution.
+bool IsOffThreadSourceCompressionEnabled();
 
 // Return whether, if a new parse task was started, it would need to wait for
 // an in-progress GC to complete before starting.

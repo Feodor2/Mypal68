@@ -13,14 +13,16 @@
 #include "gc/Marking.h"
 #include "gc/Statistics.h"
 #include "jit/BaselineJIT.h"
-#include "jit/JitRealm.h"
+#include "jit/InlineScriptTree.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
 #include "js/Vector.h"
+#include "vm/BytecodeLocation.h"  // for BytecodeLocation
 #include "vm/GeckoProfiler.h"
 
+#include "vm/BytecodeLocation-inl.h"
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSScript-inl.h"
-#include "vm/TypeInference-inl.h"
 
 using mozilla::Maybe;
 
@@ -98,6 +100,18 @@ uint32_t JitcodeGlobalEntry::IonEntry::callStackAtAddr(
   return count;
 }
 
+uint64_t JitcodeGlobalEntry::IonEntry::lookupRealmID(void* ptr) const {
+  uint32_t ptrOffset;
+  JitcodeRegionEntry region = RegionAtAddr(*this, ptr, &ptrOffset);
+  JitcodeRegionEntry::ScriptPcIterator locationIter = region.scriptPcIterator();
+  MOZ_ASSERT(locationIter.hasMore());
+  uint32_t scriptIdx, pcOffset;
+  locationIter.readNext(&scriptIdx, &pcOffset);
+
+  JSScript* script = getScript(scriptIdx);
+  return script->realm()->creationOptions().profilerRealmID();
+}
+
 void JitcodeGlobalEntry::IonEntry::destroy() {
   // The region table is stored at the tail of the compacted data,
   // which means the start of the region table is a pointer to
@@ -153,6 +167,10 @@ uint32_t JitcodeGlobalEntry::BaselineEntry::callStackAtAddr(
   return 1;
 }
 
+uint64_t JitcodeGlobalEntry::BaselineEntry::lookupRealmID() const {
+  return script_->realm()->creationOptions().profilerRealmID();
+}
+
 void JitcodeGlobalEntry::BaselineEntry::destroy() {
   if (!str_) {
     return;
@@ -173,6 +191,10 @@ bool JitcodeGlobalEntry::BaselineInterpreterEntry::callStackAtAddr(
 
 uint32_t JitcodeGlobalEntry::BaselineInterpreterEntry::callStackAtAddr(
     void* ptr, const char** results, uint32_t maxResults) const {
+  MOZ_CRASH("shouldn't be called for BaselineInterpreter entries");
+}
+
+uint64_t JitcodeGlobalEntry::BaselineInterpreterEntry::lookupRealmID() const {
   MOZ_CRASH("shouldn't be called for BaselineInterpreter entries");
 }
 
@@ -537,6 +559,7 @@ void JitcodeGlobalTable::setAllEntriesAsExpired() {
   }
 }
 
+// TODO(no-TI): remove this and IfUnmarked.
 struct Unconditionally {
   template <typename T>
   static bool ShouldTrace(JSRuntime* rt, T* thingp) {
@@ -550,12 +573,6 @@ struct IfUnmarked {
     return !IsMarkedUnbarriered(rt, thingp);
   }
 };
-
-template <>
-bool IfUnmarked::ShouldTrace<TypeSet::Type>(JSRuntime* rt,
-                                            TypeSet::Type* type) {
-  return !TypeSet::IsTypeMarked(rt, type);
-}
 
 bool JitcodeGlobalTable::markIteratively(GCMarker* marker) {
   // JitcodeGlobalTable must keep entries that are in the sampler buffer
@@ -1313,6 +1330,10 @@ JS::ProfiledFrameHandle::frameKind() const {
     return JS::ProfilingFrameIterator::Frame_Baseline;
   }
   return JS::ProfilingFrameIterator::Frame_Ion;
+}
+
+JS_PUBLIC_API uint64_t JS::ProfiledFrameHandle::realmID() const {
+  return entry_.lookupRealmID(rt_, addr_);
 }
 
 JS_PUBLIC_API JS::ProfiledFrameRange JS::GetProfiledFrames(JSContext* cx,

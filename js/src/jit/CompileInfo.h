@@ -9,15 +9,17 @@
 
 #include <algorithm>
 
+#include "jit/CompileWrappers.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/JitFrames.h"
 #include "jit/Registers.h"
+#include "vm/JSAtomState.h"
 #include "vm/JSFunction.h"
 
 namespace js {
 namespace jit {
 
-class TrackedOptimizations;
+class InlineScriptTree;
 
 inline unsigned StartArgSlot(JSScript* script) {
   // Reserved slots:
@@ -43,109 +45,9 @@ inline unsigned CountArgSlots(JSScript* script, JSFunction* fun) {
   return StartArgSlot(script) + (fun ? fun->nargs() + 1 : 0);
 }
 
-// The compiler at various points needs to be able to store references to the
-// current inline path (the sequence of scripts and call-pcs that lead to the
-// current function being inlined).
-//
-// To support this, the top-level IonBuilder keeps a tree that records the
-// inlinings done during compilation.
-class InlineScriptTree {
-  // InlineScriptTree for the caller
-  InlineScriptTree* caller_;
-
-  // PC in the caller corresponding to this script.
-  jsbytecode* callerPc_;
-
-  // Script for this entry.
-  JSScript* script_;
-
-  // Child entries (linked together by nextCallee pointer)
-  InlineScriptTree* children_;
-  InlineScriptTree* nextCallee_;
-
- public:
-  InlineScriptTree(InlineScriptTree* caller, jsbytecode* callerPc,
-                   JSScript* script)
-      : caller_(caller),
-        callerPc_(callerPc),
-        script_(script),
-        children_(nullptr),
-        nextCallee_(nullptr) {}
-
-  static InlineScriptTree* New(TempAllocator* allocator,
-                               InlineScriptTree* caller, jsbytecode* callerPc,
-                               JSScript* script);
-
-  InlineScriptTree* addCallee(TempAllocator* allocator, jsbytecode* callerPc,
-                              JSScript* calleeScript);
-  void removeCallee(InlineScriptTree* callee);
-
-  InlineScriptTree* caller() const { return caller_; }
-
-  bool isOutermostCaller() const { return caller_ == nullptr; }
-  bool hasCaller() const { return caller_ != nullptr; }
-  InlineScriptTree* outermostCaller() {
-    if (isOutermostCaller()) {
-      return this;
-    }
-    return caller_->outermostCaller();
-  }
-
-  jsbytecode* callerPc() const { return callerPc_; }
-
-  JSScript* script() const { return script_; }
-
-  bool hasChildren() const { return children_ != nullptr; }
-  InlineScriptTree* firstChild() const {
-    MOZ_ASSERT(hasChildren());
-    return children_;
-  }
-
-  bool hasNextCallee() const { return nextCallee_ != nullptr; }
-  InlineScriptTree* nextCallee() const {
-    MOZ_ASSERT(hasNextCallee());
-    return nextCallee_;
-  }
-
-  unsigned depth() const {
-    if (isOutermostCaller()) {
-      return 1;
-    }
-    return 1 + caller_->depth();
-  }
-};
-
-class BytecodeSite : public TempObject {
-  // InlineScriptTree identifying innermost active function at site.
-  InlineScriptTree* tree_;
-
-  // Bytecode address within innermost active function.
-  jsbytecode* pc_;
-
- public:
-  BytecodeSite() : tree_(nullptr), pc_(nullptr) {}
-
-  BytecodeSite(InlineScriptTree* tree, jsbytecode* pc) : tree_(tree), pc_(pc) {
-    MOZ_ASSERT(tree_ != nullptr);
-    MOZ_ASSERT(pc_ != nullptr);
-  }
-
-  InlineScriptTree* tree() const { return tree_; }
-
-  jsbytecode* pc() const { return pc_; }
-
-  JSScript* script() const { return tree_ ? tree_->script() : nullptr; }
-};
-
 enum AnalysisMode {
   /* JavaScript execution, not analysis. */
   Analysis_None,
-
-  /*
-   * MIR analysis performed when invoking 'new' on a script, to determine
-   * definite properties. Used by the optimizing JIT.
-   */
-  Analysis_DefiniteProperties,
 
   /*
    * MIR analysis performed when executing a script which uses its arguments,
@@ -166,7 +68,9 @@ class CompileInfo {
         analysisMode_(analysisMode),
         scriptNeedsArgsObj_(scriptNeedsArgsObj),
         hadOverflowBailout_(script->hadOverflowBailout()),
-        hadFrequentBailouts_(script->hadFrequentBailouts()),
+        hadSpeculativePhiBailout_(script->hadSpeculativePhiBailout()),
+        hadLICMBailout_(script->hadLICMBailout()),
+        hadBoundsCheckBailout_(script->failedBoundsCheck()),
         mayReadFrameArgsDirectly_(script->mayReadFrameArgsDirectly()),
         isDerivedClassConstructor_(script->isDerivedClassConstructor()),
         inlineScriptTree_(inlineScriptTree) {
@@ -227,7 +131,9 @@ class CompileInfo {
         analysisMode_(Analysis_None),
         scriptNeedsArgsObj_(false),
         hadOverflowBailout_(false),
-        hadFrequentBailouts_(false),
+        hadSpeculativePhiBailout_(false),
+        hadLICMBailout_(false),
+        hadBoundsCheckBailout_(false),
         mayReadFrameArgsDirectly_(false),
         inlineScriptTree_(nullptr),
         needsBodyEnvironmentObject_(false),
@@ -250,9 +156,6 @@ class CompileInfo {
     MOZ_ASSERT(JSOp(*pc) == JSOp::LoopHead);
     return pc == osrPc();
   }
-
-  jsbytecode* startPC() const { return script_->code(); }
-  jsbytecode* limitPC() const { return script_->codeEnd(); }
 
   const char* filename() const { return script_->filename(); }
 
@@ -458,7 +361,9 @@ class CompileInfo {
   // Check previous bailout states to prevent doing the same bailout in the
   // next compilation.
   bool hadOverflowBailout() const { return hadOverflowBailout_; }
-  bool hadFrequentBailouts() const { return hadFrequentBailouts_; }
+  bool hadSpeculativePhiBailout() const { return hadSpeculativePhiBailout_; }
+  bool hadLICMBailout() const { return hadLICMBailout_; }
+  bool hadBoundsCheckBailout() const { return hadBoundsCheckBailout_; }
   bool mayReadFrameArgsDirectly() const { return mayReadFrameArgsDirectly_; }
 
   bool isDerivedClassConstructor() const { return isDerivedClassConstructor_; }
@@ -483,7 +388,9 @@ class CompileInfo {
   // Record the state of previous bailouts in order to prevent compiling the
   // same function identically the next time.
   bool hadOverflowBailout_;
-  bool hadFrequentBailouts_;
+  bool hadSpeculativePhiBailout_;
+  bool hadLICMBailout_;
+  bool hadBoundsCheckBailout_;
 
   bool mayReadFrameArgsDirectly_;
 

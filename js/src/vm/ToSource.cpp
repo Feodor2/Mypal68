@@ -58,7 +58,9 @@ static JSString* StringToSource(JSContext* cx, JSString* str) {
   return NewStringCopyZ<CanGC>(cx, chars.get());
 }
 
-static JSString* SymbolToSource(JSContext* cx, Symbol* symbol) {
+static JSString* SymbolToSource(JSContext* cx, JS::Symbol* symbol) {
+  using JS::SymbolCode;
+
   RootedString desc(cx, symbol->description());
   SymbolCode code = symbol->code();
   if (symbol->isWellKnownSymbol()) {

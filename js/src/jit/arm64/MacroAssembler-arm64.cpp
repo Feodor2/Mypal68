@@ -4,18 +4,37 @@
 
 #include "jit/arm64/MacroAssembler-arm64.h"
 
+#include "jsmath.h"
+
 #include "jit/arm64/MoveEmitter-arm64.h"
 #include "jit/arm64/SharedICRegisters-arm64.h"
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
+#include "jit/JitRuntime.h"
 #include "jit/MacroAssembler.h"
 #include "util/Memory.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
+#include "vm/JSContext.h"
 
 #include "jit/MacroAssembler-inl.h"
 
 namespace js {
 namespace jit {
+
+void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
+                                    Register dest) {
+#ifdef DEBUG
+  if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
+    Label upper32BitsZeroed;
+    movePtr(ImmWord(UINT32_MAX), dest);
+    asMasm().branchPtr(Assembler::BelowOrEqual, src, dest, &upper32BitsZeroed);
+    breakpoint();
+    bind(&upper32BitsZeroed);
+  }
+#endif
+  Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
+      Operand(ImmShiftedTag(type).value));
+}
 
 void MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output) {
   ARMRegister dest(output, 32);
@@ -112,7 +131,7 @@ void MacroAssemblerCompat::loadPrivate(const Address& src, Register dest) {
 }
 
 void MacroAssemblerCompat::handleFailureWithHandlerTail(
-    void* handler, Label* profilerExitTail) {
+    Label* profilerExitTail) {
   // Reserve space for exception information.
   int64_t size = (sizeof(ResumeFromException) + 7) & ~7;
   Sub(GetStackPointer64(), GetStackPointer64(), Operand(size));
@@ -123,10 +142,11 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
   Mov(x0, GetStackPointer64());
 
   // Call the handler.
+  using Fn = void (*)(ResumeFromException * rfe);
   asMasm().setupUnalignedABICall(r1);
   asMasm().passABIArg(r0);
-  asMasm().callWithABI(handler, MoveOp::GENERAL,
-                       CheckUnsafeCallWithABI::DontCheckHasExitFrame);
+  asMasm().callWithABI<Fn, HandleException>(
+      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   Label entryFrame;
   Label catch_;
@@ -259,6 +279,10 @@ void MacroAssemblerCompat::profilerEnterFrame(RegisterOrSP framePtr,
   }
   storePtr(ImmPtr(nullptr),
            Address(scratch, JitActivation::offsetOfLastProfilingCallSite()));
+}
+
+void MacroAssemblerCompat::profilerExitFrame() {
+  jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
 }
 
 void MacroAssemblerCompat::breakpoint() {
@@ -614,7 +638,8 @@ void MacroAssembler::Pop(Register reg) {
 }
 
 void MacroAssembler::Pop(FloatRegister f) {
-  MOZ_CRASH("NYI: Pop(FloatRegister)");
+  loadDouble(Address(getStackPointer(), 0), f);
+  freeStack(sizeof(double));
 }
 
 void MacroAssembler::Pop(const ValueOperand& val) {
@@ -761,7 +786,7 @@ void MacroAssembler::popReturnAddress() {
 // ABI function calls.
 
 void MacroAssembler::setupUnalignedABICall(Register scratch) {
-  setupABICall();
+  setupNativeABICall();
   dynamicAlignment_ = true;
 
   int64_t alignment = ~(int64_t(ABIStackAlignment) - 1);
@@ -1060,18 +1085,19 @@ CodeOffset MacroAssembler::wasmTrapInstruction() {
   return offs;
 }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Register boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Register boundsCheckLimit,
+                                       Label* label) {
   branch32(cond, index, boundsCheckLimit, label);
   if (JitOptions.spectreIndexMasking) {
     csel(ARMRegister(index, 32), vixl::wzr, ARMRegister(index, 32), cond);
   }
 }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Address boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Address boundsCheckLimit, Label* label) {
   MOZ_ASSERT(boundsCheckLimit.offset ==
-             offsetof(wasm::TlsData, boundsCheckLimit));
+             offsetof(wasm::TlsData, boundsCheckLimit32));
 
   branch32(cond, index, boundsCheckLimit, label);
   if (JitOptions.spectreIndexMasking) {
@@ -2279,6 +2305,21 @@ void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
   }
 
   bind(&done);
+}
+
+void MacroAssembler::copySignDouble(FloatRegister lhs, FloatRegister rhs,
+                                    FloatRegister output) {
+  ScratchDoubleScope scratch(*this);
+
+  // Double with only the sign bit set (= negative zero).
+  loadConstantDouble(0, scratch);
+  negateDouble(scratch);
+
+  moveDouble(lhs, output);
+
+  bit(ARMFPRegister(output.encoding(), vixl::VectorFormat::kFormat8B),
+      ARMFPRegister(rhs.encoding(), vixl::VectorFormat::kFormat8B),
+      ARMFPRegister(scratch.encoding(), vixl::VectorFormat::kFormat8B));
 }
 
 //}}} check_macroassembler_style

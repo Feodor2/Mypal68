@@ -5,6 +5,7 @@
 #include "jit/Linker.h"
 
 #include "gc/GC.h"
+#include "jit/JitZone.h"
 #include "util/Memory.h"
 
 #include "gc/StoreBuffer-inl.h"
@@ -17,8 +18,6 @@ JitCode* Linker::newCode(JSContext* cx, CodeKind kind) {
   if (masm.oom()) {
     return fail(cx);
   }
-
-  masm.performPendingReadBarriers();
 
   static const size_t ExecutableAllocatorAlignment = sizeof(void*);
   static_assert(CodeAlignment >= ExecutableAllocatorAlignment,

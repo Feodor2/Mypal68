@@ -17,8 +17,9 @@
 #include "jsfriendapi.h"
 #include "xpcprivate.h"                   // xpc::OptionsBase
 #include "js/CompilationAndEvaluation.h"  // JS::Compile
+#include "js/CompileOptions.h"            // JS::ReadOnlyCompileOptions
 #include "js/friend/JSMEnvironment.h"  // JS::ExecuteInJSMEnvironment, JS::IsJSMEnvironment
-#include "js/SourceText.h"                // JS::Source{Ownership,Text}
+#include "js/SourceText.h"             // JS::Source{Ownership,Text}
 #include "js/Wrapper.h"
 
 #include "mozilla/ContentPrincipal.h"
@@ -118,11 +119,8 @@ static void ReportError(JSContext* cx, const char* origMsg, nsIURI* uri) {
   ReportError(cx, msg);
 }
 
-static JSScript* PrepareScript(nsIURI* uri, JSContext* cx,
-                               bool wantGlobalScript, const char* uriStr,
-                               const char* buf, int64_t len,
-                               bool wantReturnValue) {
-  JS::CompileOptions options(cx);
+static void FillCompileOptions(JS::CompileOptions& options, const char* uriStr,
+                               bool wantGlobalScript, bool wantReturnValue) {
   options.setFileAndLine(uriStr, 1).setNoScriptRval(!wantReturnValue);
 
   // This presumes that no one else might be compiling a script for this
@@ -138,7 +136,11 @@ static JSScript* PrepareScript(nsIURI* uri, JSContext* cx,
   if (!wantGlobalScript) {
     options.setNonSyntacticScope(true);
   }
+}
 
+static JSScript* PrepareScript(nsIURI* uri, JSContext* cx,
+                               const JS::ReadOnlyCompileOptions& options,
+                               const char* buf, int64_t len) {
   JS::SourceText<Utf8Unit> srcBuf;
   if (!srcBuf.init(cx, buf, len, JS::SourceOwnership::Borrowed)) {
     return nullptr;
@@ -242,10 +244,11 @@ static bool EvalScript(JSContext* cx, HandleObject targetObj,
   return true;
 }
 
-bool mozJSSubScriptLoader::ReadScript(
-    JS::MutableHandle<JSScript*> script,
-    nsIURI* uri, JSContext* cx, HandleObject targetObj, const char* uriStr,
-    nsIIOService* serv, bool wantReturnValue, bool useCompilationScope) {
+bool mozJSSubScriptLoader::ReadScript(JS::MutableHandle<JSScript*> script,
+                                      nsIURI* uri, JSContext* cx,
+                                      const JS::ReadOnlyCompileOptions& options,
+                                      nsIIOService* serv,
+                                      bool useCompilationScope) {
   // We create a channel and call SetContentType, to avoid expensive MIME type
   // lookups (bug 632490).
   nsCOMPtr<nsIChannel> chan;
@@ -302,8 +305,7 @@ bool mozJSSubScriptLoader::ReadScript(
     ar.emplace(cx, xpc::CompilationScope());
   }
 
-  JSScript* ret = PrepareScript(uri, cx, JS_IsGlobalObject(targetObj), uriStr, buf.get(),
-                                len, wantReturnValue);
+  JSScript* ret = PrepareScript(uri, cx, options, buf.get(), len);
   if (!ret) {
     return false;
   }
@@ -453,13 +455,18 @@ nsresult mozJSSubScriptLoader::DoLoadSubScriptWithOptions(
   nsAutoCString cachePath;
   SubscriptCachePath(cx, uri, targetObj, cachePath);
 
+  JS::CompileOptions compileOptions(cx);
+  FillCompileOptions(compileOptions, uriStr.get(), JS_IsGlobalObject(targetObj),
+                     options.wantReturnValue);
+
   RootedScript script(cx);
   if (!options.ignoreCache) {
     if (!options.wantReturnValue) {
-      script = ScriptPreloader::GetSingleton().GetCachedScript(cx, cachePath);
+      script = ScriptPreloader::GetSingleton().GetCachedScript(
+          cx, compileOptions, cachePath);
     }
     if (!script && cache) {
-      rv = ReadCachedScript(cache, cachePath, cx, &script);
+      rv = ReadCachedScript(cache, cachePath, cx, compileOptions, &script);
     }
     if (NS_FAILED(rv) || !script) {
       // ReadCachedScript may have set a pending exception.
@@ -472,8 +479,8 @@ nsresult mozJSSubScriptLoader::DoLoadSubScriptWithOptions(
     // |back there.
     cache = nullptr;
   } else {
-    if (!ReadScript(&script, uri, cx, targetObj, static_cast<const char*>(uriStr.get()),
-                    serv, options.wantReturnValue, useCompilationScope)) {
+    if (!ReadScript(&script, uri, cx, compileOptions, serv,
+                    useCompilationScope)) {
       return NS_OK;
     }
   }

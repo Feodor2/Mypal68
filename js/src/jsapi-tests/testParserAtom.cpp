@@ -17,23 +17,27 @@
 BEGIN_TEST(testParserAtom_empty) {
   using js::frontend::ParserAtom;
   using js::frontend::ParserAtomsTable;
+  using js::frontend::ParserAtomVector;
 
-  ParserAtomsTable atomTable(cx->runtime());
-
-  constexpr size_t len = 0;
+  js::LifoAlloc alloc(512);
+  ParserAtomVector atoms;
+  ParserAtomsTable atomTable(cx->runtime(), alloc, atoms);
 
   const char ascii[] = {};
   const JS::Latin1Char latin1[] = {};
   const mozilla::Utf8Unit utf8[] = {};
   const char16_t char16[] = {};
 
+  const uint8_t bytes[] = {};
+  const js::LittleEndianChars leTwoByte(bytes);
+
   // Check that the well-known empty atom matches for different entry points.
   const ParserAtom* ref = cx->parserNames().empty;
   CHECK(ref);
-  CHECK(atomTable.internAscii(cx, ascii, len).unwrap() == ref);
-  CHECK(atomTable.internLatin1(cx, latin1, len).unwrap() == ref);
-  CHECK(atomTable.internUtf8(cx, utf8, len).unwrap() == ref);
-  CHECK(atomTable.internChar16(cx, char16, len).unwrap() == ref);
+  CHECK(atomTable.internAscii(cx, ascii, 0).unwrap() == ref);
+  CHECK(atomTable.internLatin1(cx, latin1, 0).unwrap() == ref);
+  CHECK(atomTable.internUtf8(cx, utf8, 0).unwrap() == ref);
+  CHECK(atomTable.internChar16(cx, char16, 0).unwrap() == ref);
 
   // Check concatenation works on empty atoms.
   const ParserAtom* concat[] = {
@@ -51,14 +55,20 @@ END_TEST(testParserAtom_empty)
 BEGIN_TEST(testParserAtom_tiny1) {
   using js::frontend::ParserAtom;
   using js::frontend::ParserAtomsTable;
+  using js::frontend::ParserAtomVector;
 
-  ParserAtomsTable atomTable(cx->runtime());
+  js::LifoAlloc alloc(512);
+  ParserAtomVector atoms;
+  ParserAtomsTable atomTable(cx->runtime(), alloc, atoms);
 
   char16_t a = 'a';
   const char ascii[] = {'a'};
   JS::Latin1Char latin1[] = {'a'};
   const mozilla::Utf8Unit utf8[] = {mozilla::Utf8Unit('a')};
   char16_t char16[] = {'a'};
+
+  const uint8_t bytes[] = {'a', 0};
+  const js::LittleEndianChars leTwoByte(bytes);
 
   const ParserAtom* ref = cx->parserNames().lookupTiny(&a, 1);
   CHECK(ref);
@@ -87,14 +97,20 @@ END_TEST(testParserAtom_tiny1)
 BEGIN_TEST(testParserAtom_tiny2) {
   using js::frontend::ParserAtom;
   using js::frontend::ParserAtomsTable;
+  using js::frontend::ParserAtomVector;
 
-  ParserAtomsTable atomTable(cx->runtime());
+  js::LifoAlloc alloc(512);
+  ParserAtomVector atoms;
+  ParserAtomsTable atomTable(cx->runtime(), alloc, atoms);
 
   const char ascii[] = {'a', '0'};
   JS::Latin1Char latin1[] = {'a', '0'};
   const mozilla::Utf8Unit utf8[] = {mozilla::Utf8Unit('a'),
                                     mozilla::Utf8Unit('0')};
   char16_t char16[] = {'a', '0'};
+
+  const uint8_t bytes[] = {'a', 0, '0', 0};
+  const js::LittleEndianChars leTwoByte(bytes);
 
   const ParserAtom* ref = cx->parserNames().lookupTiny(ascii, 2);
   CHECK(ref);
@@ -122,8 +138,11 @@ END_TEST(testParserAtom_tiny2)
 BEGIN_TEST(testParserAtom_concat) {
   using js::frontend::ParserAtom;
   using js::frontend::ParserAtomsTable;
+  using js::frontend::ParserAtomVector;
 
-  ParserAtomsTable atomTable(cx->runtime());
+  js::LifoAlloc alloc(512);
+  ParserAtomVector atoms;
+  ParserAtomsTable atomTable(cx->runtime(), alloc, atoms);
 
   auto CheckConcat = [&](const char16_t* exp,
                          std::initializer_list<const char16_t*> args) -> bool {

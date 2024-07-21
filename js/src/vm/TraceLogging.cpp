@@ -15,18 +15,18 @@
 #include "jit/BaselineJIT.h"
 #include "jit/CompileWrappers.h"
 #include "jit/JitSpewer.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Printf.h"
 #include "js/TraceLoggerAPI.h"
 #include "threading/LockGuard.h"
 #include "util/Text.h"
 #include "vm/Activation.h"  // js::ActivationIterator
 #include "vm/FrameIter.h"   // js::JitFrameIter
+#include "vm/JSContext.h"
 #include "vm/JSScript.h"
 #include "vm/Runtime.h"
 #include "vm/Time.h"
 #include "vm/TraceLoggingGraph.h"
-
-#include "jit/JitFrames-inl.h"
 
 using namespace js;
 

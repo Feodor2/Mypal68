@@ -151,9 +151,9 @@ struct Cell {
   MOZ_ALWAYS_INLINE bool isMarkedAtLeast(gc::MarkColor color) const;
 
   MOZ_ALWAYS_INLINE CellColor color() const {
-    return isMarkedBlack()
-               ? CellColor::Black
-               : isMarkedGray() ? CellColor::Gray : CellColor::White;
+    return isMarkedBlack()  ? CellColor::Black
+           : isMarkedGray() ? CellColor::Gray
+                            : CellColor::White;
   }
 
   inline JSRuntime* runtimeFromMainThread() const;
@@ -237,9 +237,9 @@ class TenuredCell : public Cell {
 
   // Same as Cell::color, but skips nursery checks.
   MOZ_ALWAYS_INLINE CellColor color() const {
-    return isMarkedBlack()
-               ? CellColor::Black
-               : isMarkedGray() ? CellColor::Gray : CellColor::White;
+    return isMarkedBlack()  ? CellColor::Black
+           : isMarkedGray() ? CellColor::Gray
+                            : CellColor::White;
   }
 
   // The return value indicates if the cell went from unmarked to marked.
@@ -284,7 +284,6 @@ class TenuredCell : public Cell {
     MOZ_ASSERT(this->is<T>());
     return static_cast<const T*>(this);
   }
-
 
   // Default implementation for kinds that don't require fixup.
   void fixupAfterMovingGC() {}

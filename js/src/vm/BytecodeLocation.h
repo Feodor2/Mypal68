@@ -76,6 +76,8 @@ class BytecodeLocation {
   // Return true if this bytecode location is within the bounds of the
   // bytecode for a given script.
   bool isInBounds(const JSScript* script) const;
+
+  const JSScript* getDebugOnlyScript() const;
 #endif
 
   inline uint32_t bytecodeToOffset(const JSScript* script) const;
@@ -177,7 +179,6 @@ class BytecodeLocation {
   }
 
   bool opHasIC() const { return BytecodeOpHasIC(getOp()); }
-  bool opHasTypeSet() const { return BytecodeOpHasTypeSet(getOp()); }
 
   bool fallsThrough() const { return BytecodeFallsThrough(getOp()); }
 
@@ -198,6 +199,10 @@ class BytecodeLocation {
   bool isSpreadOp() const { return IsSpreadOp(getOp()); }
 
   bool isInvokeOp() const { return IsInvokeOp(getOp()); }
+
+  bool isGetPropOp() const { return IsGetPropOp(getOp()); }
+
+  bool isSetPropOp() const { return IsSetPropOp(getOp()); }
 
   bool resultIsPopped() const {
     MOZ_ASSERT(StackDefs(rawBytecode_) == 1);

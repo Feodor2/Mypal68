@@ -12,6 +12,7 @@
 #include "jsmath.h"
 #include "jsnum.h"
 
+#include "jit/CompileInfo.h"
 #include "jit/Ion.h"
 #include "jit/IonAnalysis.h"
 #include "jit/JitSpewer.h"
@@ -23,6 +24,7 @@
 #include "util/CheckedArithmetic.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/TypedArrayObject.h"
+#include "vm/Uint8Clamped.h"
 
 #include "vm/BytecodeUtil-inl.h"
 
@@ -1722,10 +1724,6 @@ void MLimitedTruncate::computeRange(TempAllocator& alloc) {
   setRange(output);
 }
 
-void MFilterTypeSet::computeRange(TempAllocator& alloc) {
-  setRange(new (alloc) Range(getOperand(0)));
-}
-
 static Range* GetArrayBufferViewRange(TempAllocator& alloc, Scalar::Type type) {
   switch (type) {
     case Scalar::Uint8Clamped:
@@ -1948,7 +1946,7 @@ bool RangeAnalysis::analyzeLoop(MBasicBlock* header) {
     analyzeLoopPhi(iterationBound, *iter);
   }
 
-  if (!mir->compilingWasm()) {
+  if (!mir->compilingWasm() && !mir->outerInfo().hadBoundsCheckBailout()) {
     // Try to hoist any bounds checks from the loop using symbolic bounds.
 
     Vector<MBoundsCheck*, 0, JitAllocPolicy> hoistedChecks(alloc());
@@ -2276,12 +2274,14 @@ bool RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header,
   MBasicBlock* preLoop = header->loopPredecessor();
   MOZ_ASSERT(!preLoop->isMarked());
 
-  MDefinition* lowerTerm = ConvertLinearSum(alloc(), preLoop, lower->sum);
+  MDefinition* lowerTerm = ConvertLinearSum(alloc(), preLoop, lower->sum,
+                                            BailoutKind::HoistBoundsCheck);
   if (!lowerTerm) {
     return false;
   }
 
-  MDefinition* upperTerm = ConvertLinearSum(alloc(), preLoop, upper->sum);
+  MDefinition* upperTerm = ConvertLinearSum(alloc(), preLoop, upper->sum,
+                                            BailoutKind::HoistBoundsCheck);
   if (!upperTerm) {
     return false;
   }
@@ -2315,6 +2315,7 @@ bool RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header,
   lowerCheck->setMinimum(lowerConstant);
   lowerCheck->computeRange(alloc());
   lowerCheck->collectRangeInfoPreTrunc();
+  lowerCheck->setBailoutKind(BailoutKind::HoistBoundsCheck);
   preLoop->insertBefore(preLoop->lastIns(), lowerCheck);
 
   // Hoist the loop invariant upper bounds checks.
@@ -2331,6 +2332,7 @@ bool RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header,
     upperCheck->setMaximum(upperConstant);
     upperCheck->computeRange(alloc());
     upperCheck->collectRangeInfoPreTrunc();
+    upperCheck->setBailoutKind(BailoutKind::HoistBoundsCheck);
     preLoop->insertBefore(preLoop->lastIns(), upperCheck);
   }
 
@@ -3048,6 +3050,7 @@ static void AdjustTruncatedInputs(TempAllocator& alloc,
       } else {
         op = MTruncateToInt32::New(alloc, truncated->getOperand(i));
       }
+      op->setBailoutKind(input->bailoutKind());
 
       if (truncated->isPhi()) {
         MBasicBlock* pred = block->getPredecessor(i);

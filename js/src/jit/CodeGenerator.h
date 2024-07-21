@@ -67,7 +67,6 @@ class OutOfLineTypedArrayIndexToInt32;
 class OutOfLineBoxNonStrictThis;
 
 class CodeGenerator final : public CodeGeneratorSpecific {
-  void generateArgumentsChecks(bool assert = false);
   MOZ_MUST_USE bool generateBody();
 
   ConstantOrRegister toConstantOrRegister(LInstruction* lir, size_t n,
@@ -103,12 +102,13 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                                  wasm::FuncOffsets* offsets,
                                  wasm::StackMaps* stackMaps);
 
-  MOZ_MUST_USE bool link(JSContext* cx, CompilerConstraintList* constraints,
-                         const WarpSnapshot* snapshot);
+  MOZ_MUST_USE bool link(JSContext* cx, const WarpSnapshot* snapshot);
 
   void emitOOLTestObject(Register objreg, Label* ifTruthy, Label* ifFalsy,
                          Register scratch);
   void emitIntToString(Register input, Register output, Label* ool);
+
+  void emitTypeOfObject(Register obj, Register output, Label* done);
 
   template <typename Fn, Fn fn, class ArgSeq, class StoreOutputTo>
   void visitOutOfLineCallVM(
@@ -205,9 +205,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   template <typename T>
   void emitStoreElementHoleV(T* lir);
 
-  void emitArrayPopShift(LInstruction* lir, const MArrayPopShift* mir,
-                         Register obj, Register elementsTemp,
-                         Register lengthTemp, TypedOrValueRegister out);
   void emitArrayPush(LInstruction* lir, Register obj,
                      const ConstantOrRegister& value, Register elementsTemp,
                      Register length, Register spectreTemp);
@@ -238,15 +235,11 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   void addGetPropertyCache(LInstruction* ins, LiveRegisterSet liveRegs,
                            TypedOrValueRegister value,
-                           const ConstantOrRegister& id,
-                           TypedOrValueRegister output, Register maybeTemp,
-                           GetPropertyResultFlags flags);
+                           const ConstantOrRegister& id, ValueOperand output);
   void addSetPropertyCache(LInstruction* ins, LiveRegisterSet liveRegs,
                            Register objReg, Register temp,
                            const ConstantOrRegister& id,
-                           const ConstantOrRegister& value, bool strict,
-                           bool needsPostBarrier, bool needsTypeBarrier,
-                           bool guardHoles);
+                           const ConstantOrRegister& value, bool strict);
 
   MOZ_MUST_USE bool generateBranchV(const ValueOperand& value, Label* ifTrue,
                                     Label* ifFalse, FloatRegister fr);

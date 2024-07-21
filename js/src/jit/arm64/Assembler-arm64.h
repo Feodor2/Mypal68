@@ -7,8 +7,9 @@
 
 #include "jit/arm64/vixl/Assembler-vixl.h"
 
-#include "jit/JitRealm.h"
+#include "jit/CompactBuffer.h"
 #include "jit/shared/Disassembler-shared.h"
+#include "wasm/WasmTypes.h"
 
 namespace js {
 namespace jit {
@@ -289,19 +290,21 @@ class Assembler : public vixl::Assembler {
   static bool SupportsFastUnalignedAccesses() { return true; }
   static bool SupportsSimd() { return js::jit::SupportsSimd; }
 
-  static bool HasRoundInstruction(RoundingMode mode) { return false; }
-
-  // Tracks a jump that is patchable after finalization.
-  void addJumpRelocation(BufferOffset src, RelocationKind reloc);
+  static bool HasRoundInstruction(RoundingMode mode) {
+    switch (mode) {
+      case RoundingMode::Up:
+      case RoundingMode::Down:
+      case RoundingMode::NearestTiesToEven:
+      case RoundingMode::TowardsZero:
+        return true;
+    }
+    MOZ_CRASH("unexpected mode");
+  }
 
  protected:
   // Add a jump whose target is unknown until finalization.
   // The jump may not be patched at runtime.
   void addPendingJump(BufferOffset src, ImmPtr target, RelocationKind kind);
-
-  // Add a jump whose target is unknown until finalization, and may change
-  // thereafter. The jump is patchable at runtime.
-  size_t addPatchableJump(BufferOffset src, RelocationKind kind);
 
  public:
   static uint32_t PatchWrite_NearCallSize() { return 4; }
@@ -381,19 +384,6 @@ class Assembler : public vixl::Assembler {
   }
 
  protected:
-  // Because jumps may be relocated to a target inaccessible by a short jump,
-  // each relocatable jump must have a unique entry in the extended jump table.
-  // Valid relocatable targets are of type RelocationKind::JITCODE.
-  struct JumpRelocation {
-    BufferOffset
-        jump;  // Offset to the short jump, from the start of the code buffer.
-    uint32_t
-        extendedTableIndex;  // Unique index within the extended jump table.
-
-    JumpRelocation(BufferOffset jump, uint32_t extendedTableIndex)
-        : jump(jump), extendedTableIndex(extendedTableIndex) {}
-  };
-
   // Structure for fixing up pc-relative loads/jumps when the machine
   // code gets moved (executable copy, gc, etc.).
   struct RelativePatch {
@@ -426,6 +416,7 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 
  protected:
   unsigned intRegIndex_;

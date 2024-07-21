@@ -8,7 +8,6 @@
 #include "mozilla/LinkedList.h"
 
 #include "gc/Barrier.h"
-#include "gc/DeletePolicy.h"
 #include "gc/Tracer.h"
 #include "gc/ZoneAllocator.h"
 #include "js/HashTable.h"
@@ -179,7 +178,7 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
 #endif
 
   // Object that this weak map is part of, if any.
-  GCPtrObject memberOf;
+  HeapPtrObject memberOf;
 
   // Zone containing this weak map.
   JS::Zone* zone_;
@@ -437,13 +436,5 @@ class ObjectWeakMap {
 };
 
 } /* namespace js */
-
-namespace JS {
-
-template <>
-struct DeletePolicy<js::ObjectValueWeakMap>
-    : public js::GCManagedDeletePolicy<js::ObjectValueWeakMap> {};
-
-} /* namespace JS */
 
 #endif /* gc_WeakMap_h */

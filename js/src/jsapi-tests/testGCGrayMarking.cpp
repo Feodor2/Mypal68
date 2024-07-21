@@ -29,10 +29,6 @@ struct GCManagedObjectWeakMap : public ObjectWeakMap {
 namespace JS {
 
 template <>
-struct DeletePolicy<js::GCManagedObjectWeakMap>
-    : public js::GCManagedDeletePolicy<js::GCManagedObjectWeakMap> {};
-
-template <>
 struct MapTypeToRootKind<js::GCManagedObjectWeakMap*> {
   static const JS::RootKind kind = JS::RootKind::Traceable;
 };

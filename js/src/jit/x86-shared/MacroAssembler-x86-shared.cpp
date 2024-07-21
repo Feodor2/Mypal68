@@ -4,6 +4,10 @@
 
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 
+#include "mozilla/Casting.h"
+
+#include "jsmath.h"
+
 #include "jit/JitFrames.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MoveEmitter.h"
@@ -631,8 +635,9 @@ CodeOffset MacroAssembler::wasmTrapInstruction() { //return ud2(); }
     masm.nop();
     return off; }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Register boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Register boundsCheckLimit,
+                                       Label* label) {
   cmp32(index, boundsCheckLimit);
   j(cond, label);
   if (JitOptions.spectreIndexMasking) {
@@ -640,8 +645,8 @@ void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
   }
 }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Address boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Address boundsCheckLimit, Label* label) {
   cmp32(index, Operand(boundsCheckLimit));
   j(cond, label);
   if (JitOptions.spectreIndexMasking) {
@@ -1952,6 +1957,36 @@ void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
   }
 
   bind(&end);
+}
+
+void MacroAssembler::copySignDouble(FloatRegister lhs, FloatRegister rhs,
+                                    FloatRegister output) {
+  ScratchDoubleScope scratch(*this);
+
+  double clearSignMask = mozilla::BitwiseCast<double>(INT64_MAX);
+  loadConstantDouble(clearSignMask, scratch);
+  vandpd(scratch, lhs, output);
+
+  double keepSignMask = mozilla::BitwiseCast<double>(INT64_MIN);
+  loadConstantDouble(keepSignMask, scratch);
+  vandpd(rhs, scratch, scratch);
+
+  vorpd(scratch, output, output);
+}
+
+void MacroAssembler::copySignFloat32(FloatRegister lhs, FloatRegister rhs,
+                                     FloatRegister output) {
+  ScratchFloat32Scope scratch(*this);
+
+  float clearSignMask = mozilla::BitwiseCast<float>(INT32_MAX);
+  loadConstantFloat32(clearSignMask, scratch);
+  vandps(scratch, lhs, output);
+
+  float keepSignMask = mozilla::BitwiseCast<float>(INT32_MIN);
+  loadConstantFloat32(keepSignMask, scratch);
+  vandps(rhs, scratch, scratch);
+
+  vorps(scratch, output, output);
 }
 
 //}}} check_macroassembler_style

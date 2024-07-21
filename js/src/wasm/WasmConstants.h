@@ -58,12 +58,17 @@ enum class TypeCode {
   // A function pointer with any signature
   FuncRef = 0x70,  // SLEB128(-0x10)
 
-  // A reference to any host type. This is exposed to JS as 'externref' and
-  // will eventually be renamed in code as well.
-  AnyRef = 0x6f,  // SLEB128(-0x11)
+  // A reference to any host value.
+  ExternRef = 0x6f,  // SLEB128(-0x11)
 
-  // Type constructor for reference types.
-  OptRef = 0x6c,
+  // A reference to a struct/array value.
+  EqRef = 0x6d,  // SLEB128(-0x12)
+
+  // Type constructor for nullable reference types.
+  NullableRef = 0x6c,  // SLEB128(-0x14)
+
+  // Type constructor for non-nullable reference types.
+  Ref = 0x6b,  // SLEB128(-0x15)
 
   // Type constructor for function types
   Func = 0x60,  // SLEB128(-0x20)
@@ -82,6 +87,16 @@ enum class TypeCode {
 // reference typecode then the logic in that function MUST change.
 
 static constexpr TypeCode LowestPrimitiveTypeCode = TypeCode::F64;
+
+// An arbitrary reference type used as the result of
+// UnpackTypeCodeTypeAbstracted() when a value type is a reference.
+
+static constexpr TypeCode AbstractReferenceTypeCode = TypeCode::ExternRef;
+
+// A type code used to represent (ref null? typeindex) whether or not the type
+// is encoded with 'Ref' or 'NullableRef'.
+
+static constexpr TypeCode AbstractReferenceTypeIndexCode = TypeCode::Ref;
 
 enum class FuncTypeIdDescKind { None, Immediate, Global };
 
@@ -373,6 +388,10 @@ enum class Op {
   RefIsNull = 0xd1,
   RefFunc = 0xd2,
 
+  // Function references
+  RefAsNonNull = 0xd3,
+  BrOnNull = 0xd4,
+
   // GC (experimental)
   RefEq = 0xd5,
 
@@ -576,6 +595,11 @@ enum class NameType { Module = 0, Function = 1, Local = 2 };
 
 enum class FieldFlags { Mutable = 0x01, AllowedMask = 0x01 };
 
+// The WebAssembly spec hard-codes the virtual page size to be 64KiB and
+// requires the size of linear memory to always be a multiple of 64KiB.
+
+static const unsigned PageSize = 64 * 1024;
+
 // These limits are agreed upon with other engines for consistency.
 
 static const unsigned MaxTypes = 1000000;
@@ -596,8 +620,16 @@ static const unsigned MaxParams = 1000;
 // `env->funcMaxResults()` to get the correct value for a module.
 static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 1000;
-static const unsigned MaxMemoryLimitField = 65536;
-static const unsigned MaxMemoryPages = 16384;
+static const unsigned MaxMemory32LimitField = 65536;
+#ifdef JS_64BIT
+// FIXME (large ArrayBuffer): This should be upped to UINT32_MAX / PageSize
+// initially, then to (size_t(UINT32_MAX) + 1) / PageSize subsequently, see the
+// companion FIXME in WasmMemoryObject::grow() for additional information.
+static const unsigned MaxMemory32Pages = INT32_MAX / PageSize;
+#else
+static const unsigned MaxMemory32Pages = INT32_MAX / PageSize;
+#endif
+static const size_t MaxMemory32Bytes = size_t(MaxMemory32Pages) * PageSize;
 static const unsigned MaxStringBytes = 100000;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;
@@ -606,6 +638,7 @@ static const unsigned MaxFunctionBytes = 7654321;
 
 static const unsigned MaxBrTableElems = 1000000;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
+static const unsigned MaxArgsForJitInlineCall = 8;
 static const unsigned MaxResultsForJitEntry = 1;
 static const unsigned MaxResultsForJitExit = 1;
 static const unsigned MaxResultsForJitInlineCall = MaxResultsForJitEntry;

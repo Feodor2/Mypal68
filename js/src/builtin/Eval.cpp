@@ -11,8 +11,9 @@
 #include "frontend/BytecodeCompilation.h"
 #include "frontend/CompilationInfo.h"
 #include "gc/HashUtil.h"
+#include "js/friend/ErrorMessages.h"   // js::GetErrorMessage, JSMSG_*
 #include "js/friend/JSMEnvironment.h"  // JS::NewJSMEnvironment, JS::ExecuteInJSMEnvironment, JS::GetJSMEnvironmentOfScriptedCaller, JS::IsJSMEnvironment
-#include "js/friend/WindowProxy.h"  // js::IsWindowProxy
+#include "js/friend/WindowProxy.h"     // js::IsWindowProxy
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "vm/GlobalObject.h"

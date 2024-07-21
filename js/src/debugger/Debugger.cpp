@@ -23,9 +23,8 @@
 #include <string.h>    // for strlen, strcmp
 #include <utility>     // for std::move
 
-#include "jsapi.h"        // for CallArgs, CallArgsFromVp
-#include "jsfriendapi.h"  // for GetErrorMessage
-#include "jstypes.h"      // for JS_PUBLIC_API
+#include "jsapi.h"    // for CallArgs, CallArgsFromVp
+#include "jstypes.h"  // for JS_PUBLIC_API
 
 #include "builtin/Array.h"               // for NewDenseFullyAllocatedArray
 #include "debugger/DebugAPI.h"           // for ResumeMode, DebugAPI
@@ -40,9 +39,8 @@
 #include "frontend/NameAnalysisTypes.h"  // for ParseGoal, ParseGoal::Script
 #include "frontend/ParseContext.h"       // for UsedNameTracker
 #include "frontend/Parser.h"             // for Parser
-#include "gc/Barrier.h"                  // for GCPtrNativeObject
 #include "gc/FreeOp.h"                   // for JSFreeOp
-#include "gc/GC.h"                       // for IterateLazyScripts
+#include "gc/GC.h"                       // for IterateScripts
 #include "gc/GCMarker.h"                 // for GCMarker
 #include "gc/GCRuntime.h"                // for GCRuntime, AutoEnterIteration
 #include "gc/HashUtil.h"                 // for DependentAddPtr
@@ -55,39 +53,41 @@
 #include "gc/ZoneAllocator.h"            // for ZoneAllocPolicy
 #include "jit/BaselineDebugModeOSR.h"  // for RecompileOnStackBaselineScriptsForDebugMode
 #include "jit/BaselineJIT.h"           // for FinishDiscardBaselineScript
-#include "jit/Ion.h"                   // for JitContext
-#include "jit/JitScript.h"             // for JitScript
-#include "jit/JSJitFrameIter.h"        // for InlineFrameIterator
-#include "jit/RematerializedFrame.h"   // for RematerializedFrame
-#include "js/Conversions.h"            // for ToBoolean, ToUint32
-#include "js/Debug.h"                  // for Builder::Object, Builder
-#include "js/GCAPI.h"                  // for GarbageCollectionEvent
-#include "js/HeapAPI.h"                // for ExposeObjectToActiveJS
-#include "js/Promise.h"                // for AutoDebuggerJobQueueInterruption
-#include "js/Proxy.h"                  // for PropertyDescriptor
-#include "js/SourceText.h"             // for SourceOwnership, SourceText
-#include "js/StableStringChars.h"      // for AutoStableStringChars
-#include "js/UbiNode.h"                // for Node, RootList, Edge
-#include "js/UbiNodeBreadthFirst.h"    // for BreadthFirst
-#include "js/Warnings.h"               // for AutoSuppressWarningReporter
-#include "js/Wrapper.h"                // for CheckedUnwrapStatic
-#include "util/Text.h"                 // for DuplicateString, js_strlen
-#include "vm/ArrayObject.h"            // for ArrayObject
-#include "vm/AsyncFunction.h"          // for AsyncFunctionGeneratorObject
-#include "vm/AsyncIteration.h"         // for AsyncGeneratorObject
-#include "vm/BytecodeUtil.h"           // for JSDVG_IGNORE_STACK
-#include "vm/Compartment.h"            // for CrossCompartmentKey
-#include "vm/EnvironmentObject.h"      // for IsSyntacticEnvironment
-#include "vm/ErrorReporting.h"         // for ReportErrorToGlobal
-#include "vm/GeneratorObject.h"        // for AbstractGeneratorObject
-#include "vm/GlobalObject.h"           // for GlobalObject
-#include "vm/Interpreter.h"            // for Call, ReportIsNotFunction
-#include "vm/Iteration.h"              // for CreateIterResultObject
-#include "vm/JSAtom.h"                 // for Atomize, ClassName
-#include "vm/JSContext.h"              // for JSContext
-#include "vm/JSFunction.h"             // for JSFunction
-#include "vm/JSObject.h"               // for JSObject, RequireObject
-#include "vm/ObjectGroup.h"            // for TenuredObject
+#include "jit/Invalidation.h"         // for RecompileInfoVector
+#include "jit/Ion.h"                  // for JitContext
+#include "jit/JitScript.h"            // for JitScript
+#include "jit/JSJitFrameIter.h"       // for InlineFrameIterator
+#include "jit/RematerializedFrame.h"  // for RematerializedFrame
+#include "js/Conversions.h"           // for ToBoolean, ToUint32
+#include "js/Debug.h"                 // for Builder::Object, Builder
+#include "js/friend/ErrorMessages.h"  // for GetErrorMessage, JSMSG_*
+#include "js/GCAPI.h"                 // for GarbageCollectionEvent
+#include "js/HeapAPI.h"               // for ExposeObjectToActiveJS
+#include "js/Promise.h"               // for AutoDebuggerJobQueueInterruption
+#include "js/Proxy.h"                 // for PropertyDescriptor
+#include "js/SourceText.h"            // for SourceOwnership, SourceText
+#include "js/StableStringChars.h"     // for AutoStableStringChars
+#include "js/UbiNode.h"               // for Node, RootList, Edge
+#include "js/UbiNodeBreadthFirst.h"   // for BreadthFirst
+#include "js/Warnings.h"              // for AutoSuppressWarningReporter
+#include "js/Wrapper.h"               // for CheckedUnwrapStatic
+#include "util/Text.h"                // for DuplicateString, js_strlen
+#include "vm/ArrayObject.h"           // for ArrayObject
+#include "vm/AsyncFunction.h"         // for AsyncFunctionGeneratorObject
+#include "vm/AsyncIteration.h"        // for AsyncGeneratorObject
+#include "vm/BytecodeUtil.h"          // for JSDVG_IGNORE_STACK
+#include "vm/Compartment.h"           // for CrossCompartmentKey
+#include "vm/EnvironmentObject.h"     // for IsSyntacticEnvironment
+#include "vm/ErrorReporting.h"        // for ReportErrorToGlobal
+#include "vm/GeneratorObject.h"       // for AbstractGeneratorObject
+#include "vm/GlobalObject.h"          // for GlobalObject
+#include "vm/Interpreter.h"           // for Call, ReportIsNotFunction
+#include "vm/Iteration.h"             // for CreateIterResultObject
+#include "vm/JSAtom.h"                // for Atomize, ClassName
+#include "vm/JSContext.h"             // for JSContext
+#include "vm/JSFunction.h"            // for JSFunction
+#include "vm/JSObject.h"              // for JSObject, RequireObject
+#include "vm/ObjectGroup.h"           // for TenuredObject
 #include "vm/ObjectOperations.h"      // for DefineDataProperty
 #include "vm/PlainObject.h"           // for js::PlainObject
 #include "vm/PromiseObject.h"         // for js::PromiseObject
@@ -99,7 +99,6 @@
 #include "vm/Scope.h"                 // for Scope
 #include "vm/StringType.h"            // for JSString, PropertyName
 #include "vm/TraceLogging.h"          // for TraceLoggerForCurrentThread
-#include "vm/TypeInference.h"         // for TypeZone
 #include "vm/WrapperObject.h"         // for CrossCompartmentWrapperObject
 #include "wasm/WasmDebug.h"           // for DebugState
 #include "wasm/WasmInstance.h"        // for Instance
@@ -125,7 +124,6 @@
 #include "vm/ObjectOperations-inl.h"  // for GetProperty, HasProperty
 #include "vm/Realm-inl.h"             // for AutoRealm::AutoRealm
 #include "vm/Stack-inl.h"             // for AbstractFramePtr::script
-#include "vm/TypeInference-inl.h"     // for AutoEnterAnalysis
 
 namespace js {
 
@@ -2846,25 +2844,12 @@ bool Debugger::appendAllocationSite(JSContext* cx, HandleObject obj,
     return false;
   }
 
-  // Try to get the constructor name from the ObjectGroup's TypeNewScript.
-  // This is only relevant for native objects.
-  RootedAtom ctorName(cx);
-  if (obj->is<NativeObject>()) {
-    AutoRealm ar(cx, obj);
-    if (!JSObject::constructorDisplayAtom(cx, obj, &ctorName)) {
-      return false;
-    }
-  }
-  if (ctorName) {
-    cx->markAtom(ctorName);
-  }
-
   auto className = obj->getClass()->name;
   auto size =
       JS::ubi::Node(obj.get()).size(cx->runtime()->debuggerMallocSizeOf);
   auto inNursery = gc::IsInsideNursery(obj);
 
-  if (!allocationsLog.emplaceBack(wrappedFrame, when, className, ctorName, size,
+  if (!allocationsLog.emplaceBack(wrappedFrame, when, className, size,
                                   inNursery)) {
     ReportOutOfMemory(cx);
     return false;
@@ -3115,13 +3100,14 @@ static inline void MarkJitScriptActiveIfObservable(
 
 static bool AppendAndInvalidateScript(JSContext* cx, Zone* zone,
                                       JSScript* script,
+                                      jit::RecompileInfoVector& invalid,
                                       Vector<JSScript*>& scripts) {
-  // Enter the script's realm as addPendingRecompile attempts to
+  // Enter the script's realm as AddPendingInvalidation attempts to
   // cancel off-thread compilations, whose books are kept on the
   // script's realm.
   MOZ_ASSERT(script->zone() == zone);
   AutoRealm ar(cx, script);
-  zone->types.addPendingRecompile(cx, script);
+  AddPendingInvalidation(invalid, script);
   return scripts.append(script);
 }
 
@@ -3139,10 +3125,10 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
   // Iterate through observable scripts, invalidating their Ion scripts and
   // appending them to a vector for discarding their baseline scripts later.
   {
-    AutoEnterAnalysis enter(fop, zone);
+    RecompileInfoVector invalid;
     if (JSScript* script = obs.singleScriptForZoneInvalidation()) {
       if (obs.shouldRecompileOrInvalidate(script)) {
-        if (!AppendAndInvalidateScript(cx, zone, script, scripts)) {
+        if (!AppendAndInvalidateScript(cx, zone, script, invalid, scripts)) {
           return false;
         }
       }
@@ -3154,12 +3140,13 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
         }
         JSScript* script = base->asJSScript();
         if (obs.shouldRecompileOrInvalidate(script)) {
-          if (!AppendAndInvalidateScript(cx, zone, script, scripts)) {
+          if (!AppendAndInvalidateScript(cx, zone, script, invalid, scripts)) {
             return false;
           }
         }
       }
     }
+    Invalidate(cx, invalid);
   }
 
   // Code below this point must be infallible to ensure the active bit of
@@ -3739,9 +3726,9 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
                                            AbstractGeneratorObject* generator) {
   MOZ_ASSERT(generator->realm()->isDebuggee());
 
-  // Ignore callback tracers.
+  // Ignore generic tracers.
   //
-  // There are two kinds of callback tracers we need to bar: MovingTracers used
+  // There are two kinds of generic tracers we need to bar: MovingTracers used
   // by compacting GC; and CompartmentCheckTracers.
   //
   // MovingTracers are used by the compacting GC to update pointers to objects
@@ -3778,10 +3765,10 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
   // safely hide the edges from CompartmentCheckTracers.
   //
   // We can't quite recognize MovingTracers and CompartmentCheckTracers
-  // precisely, but they're both callback tracers, so we just show them all the
+  // precisely, but they're both generic tracers, so we just show them all the
   // door. This means the generator -> Debugger.Frame edge is going to be
   // invisible to some traversals. We'll cope with that when it's a problem.
-  if (tracer->isCallbackTracer()) {
+  if (tracer->isGenericTracer()) {
     return;
   }
 
@@ -4864,8 +4851,7 @@ class MOZ_STACK_CLASS Debugger::QueryBase {
       : cx(cx),
         debugger(dbg),
         iterMarker(&cx->runtime()->gc),
-        realms(cx->zone()),
-        oom(false) {}
+        realms(cx->zone()) {}
 
   // The context in which we should do our work.
   JSContext* cx;
@@ -4882,7 +4868,7 @@ class MOZ_STACK_CLASS Debugger::QueryBase {
   RealmSet realms;
 
   // Indicates whether OOM has occurred while matching.
-  bool oom;
+  bool oom = false;
 
   bool addRealm(Realm* realm) { return realms.put(realm); }
 
@@ -4923,13 +4909,9 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
       : QueryBase(cx, dbg),
         url(cx),
         displayURLString(cx),
-        hasSource(false),
         source(cx, AsVariant(static_cast<ScriptSourceObject*>(nullptr))),
-        hasLine(false),
-        line(0),
-        innermost(false),
-        innermostForRealm(cx, cx->zone()),
         scriptVector(cx, BaseScriptVector(cx)),
+        partialMatchVector(cx, BaseScriptVector(cx)),
         wasmInstanceVector(cx, WasmInstanceObjectVector(cx)) {}
 
   /*
@@ -5048,13 +5030,14 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
         return false;
       }
       double doubleLine = lineProperty.toNumber();
-      if (doubleLine <= 0 || (unsigned int)doubleLine != doubleLine) {
+      uint32_t uintLine = (uint32_t)doubleLine;
+      if (doubleLine <= 0 || uintLine != doubleLine) {
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                   JSMSG_DEBUG_BAD_LINE);
         return false;
       }
       hasLine = true;
-      line = doubleLine;
+      line = uintLine;
     } else {
       JS_ReportErrorNumberASCII(
           cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
@@ -5100,14 +5083,6 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
       return false;
     }
 
-    bool delazified = false;
-    if (needsDelazifyBeforeQuery()) {
-      if (!delazifyScripts()) {
-        return false;
-      }
-      delazified = true;
-    }
-
     Realm* singletonRealm = nullptr;
     if (realms.count() == 1) {
       singletonRealm = realms.all().front();
@@ -5115,25 +5090,119 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
 
     // Search each realm for debuggee scripts.
     MOZ_ASSERT(scriptVector.empty());
+    MOZ_ASSERT(partialMatchVector.empty());
     oom = false;
     IterateScripts(cx, singletonRealm, this, considerScript);
-    if (!delazified) {
-      IterateLazyScripts(cx, singletonRealm, this, considerLazyScript);
-    }
     if (oom) {
       ReportOutOfMemory(cx);
       return false;
     }
 
-    // For most queries, we just accumulate results in 'scriptVector' as we find
-    // them. But if this is an 'innermost' query, then we've accumulated the
-    // results in the 'innermostForRealm' map. In that case, we now need to walk
-    // that map and populate 'scriptVector'.
+    // If we are filtering by line number, the lazy BaseScripts were not checked
+    // yet since they do not implement `GetScriptLineExtent`. Instead we revisit
+    // each result script and delazify its children and add any matching ones to
+    // the results list.
+    MOZ_ASSERT(hasLine || partialMatchVector.empty());
+    Rooted<BaseScript*> script(cx);
+    RootedFunction fun(cx);
+    while (!partialMatchVector.empty()) {
+      script = partialMatchVector.popCopy();
+
+      // As a performance optimization, we can skip scripts that are definitely
+      // out-of-bounds for the target line. This was checked before adding to
+      // the partialMatchVector, but the bound may have improved since then.
+      if (script->extent().sourceEnd <= sourceOffsetLowerBound) {
+        continue;
+      }
+
+      MOZ_ASSERT(script->isFunction());
+      MOZ_ASSERT(script->isReadyForDelazification());
+
+      fun = script->function();
+
+      // Delazify script.
+      JSScript* compiledScript = GetOrCreateFunctionScript(cx, fun);
+      if (!compiledScript) {
+        return false;
+      }
+
+      // If target line isn't in script, we are done with it.
+      if (!scriptIsLineMatch(compiledScript)) {
+        continue;
+      }
+
+      // Add script to results now that we've completed checks.
+      if (!scriptVector.append(compiledScript)) {
+        return false;
+      }
+
+      // If script was a leaf we are done with it. This is an optional
+      // optimization to avoid inspecting the `gcthings` list below.
+      if (!script->hasInnerFunctions()) {
+        continue;
+      }
+
+      // Now add inner scripts to `partialMatchVector` work list to determine if
+      // they are matches. Note that out IterateScripts callback ignored them
+      // already since they did not have a compiled parent at the time.
+      for (const JS::GCCellPtr& thing : script->gcthings()) {
+        if (!thing.is<JSObject>() || !thing.as<JSObject>().is<JSFunction>()) {
+          continue;
+        }
+        if (!thing.as<JSObject>().as<JSFunction>().hasBaseScript()) {
+          continue;
+        }
+        BaseScript* inner = thing.as<JSObject>().as<JSFunction>().baseScript();
+
+        if (!scriptIsPartialLineMatch(inner)) {
+          continue;
+        }
+
+        // Add the matching inner script to the back of the results queue
+        // where it will be processed recursively.
+        if (!partialMatchVector.append(inner)) {
+          return false;
+        }
+      }
+    }
+
+    // If this is an 'innermost' query, we want to filter the results again to
+    // only return the innermost script for each realm. To do this we build a
+    // hashmap to track innermost and then recreate the `scriptVector` with the
+    // results that remain in the hashmap.
     if (innermost) {
+      using RealmToScriptMap =
+          GCHashMap<Realm*, BaseScript*, DefaultHasher<Realm*>>;
+
+      Rooted<RealmToScriptMap> innermostForRealm(cx);
+
+      // Visit each candidate script and find innermost in each realm.
+      for (BaseScript* script : scriptVector) {
+        Realm* realm = script->realm();
+        RealmToScriptMap::AddPtr p = innermostForRealm.lookupForAdd(realm);
+        if (p) {
+          // Is our newly found script deeper than the last one we found?
+          BaseScript* incumbent = p->value();
+          if (script->asJSScript()->innermostScope()->chainLength() >
+              incumbent->asJSScript()->innermostScope()->chainLength()) {
+            p->value() = script;
+          }
+        } else {
+          // This is the first matching script we've encountered for this
+          // realm, so it is thus the innermost such script.
+          if (!innermostForRealm.add(p, realm, script)) {
+            return false;
+          }
+        }
+      }
+
+      // Reset the results vector.
+      scriptVector.clear();
+
+      // Re-add only the innermost scripts to the results.
       for (RealmToScriptMap::Range r = innermostForRealm.all(); !r.empty();
            r.popFront()) {
         if (!scriptVector.append(r.front().value())) {
-          ReportOutOfMemory(cx);
           return false;
         }
       }
@@ -5177,27 +5246,29 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
    * to this instance. Ideally we'd use a Maybe here, but Maybe interacts
    * very badly with Rooted's LIFO invariant.
    */
-  bool hasSource;
+  bool hasSource = false;
   Rooted<DebuggerSourceReferent> source;
 
   /* True if the query contained a 'line' property. */
-  bool hasLine;
+  bool hasLine = false;
 
   /* The line matching scripts must cover. */
-  unsigned int line;
+  uint32_t line = 0;
+
+  // As a performance optimization (and to avoid delazifying as many scripts),
+  // we would like to know the source offset of the target line.
+  //
+  // Since we do not have a simple way to compute this precisely, we instead
+  // track a lower-bound of the offset value. As we collect SourceExtent
+  // examples with (line,column) <-> sourceStart mappings, we can improve the
+  // bound. The target line is within the range [sourceOffsetLowerBound, Inf).
+  //
+  // NOTE: Using a SourceExtent for updating the bound happens independently of
+  //       if the script matches the target line or not in the in the end.
+  mutable uint32_t sourceOffsetLowerBound = 0;
 
   /* True if the query has an 'innermost' property whose value is true. */
-  bool innermost;
-
-  using RealmToScriptMap =
-      GCHashMap<Realm*, JSScript*, DefaultHasher<Realm*>, ZoneAllocPolicy>;
-
-  /*
-   * For 'innermost' queries, a map from realms to the innermost script
-   * we've seen so far in that realm. (Template instantiation code size
-   * explosion ho!)
-   */
-  Rooted<RealmToScriptMap> innermostForRealm;
+  bool innermost = false;
 
   /*
    * Accumulate the scripts in an Rooted<BaseScriptVector> instead of creating
@@ -5205,6 +5276,16 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
    * we use the CellIter.
    */
   Rooted<BaseScriptVector> scriptVector;
+
+  /*
+   * While in the CellIter we may find BaseScripts that need to be compiled
+   * before the query can be fully checked. Since we cannot compile while under
+   * CellIter we accumulate them here instead.
+   *
+   * This occurs when matching line numbers since `GetScriptLineExtent` cannot
+   * be computed without bytecode existing.
+   */
+  Rooted<BaseScriptVector> partialMatchVector;
 
   /*
    * Like above, but for wasm modules.
@@ -5228,37 +5309,55 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
     return true;
   }
 
-  bool delazifyScripts() {
-    // All scripts in debuggee realms must be visible, so delazify
-    // everything.
-    for (auto r = realms.all(); !r.empty(); r.popFront()) {
-      Realm* realm = r.front();
-      if (!realm->ensureDelazifyScriptsForDebugger(cx)) {
-        return false;
-      }
+  void updateSourceOffsetLowerBound(const SourceExtent& extent) {
+    // We trying to find the offset of (target-line, 0) so just ignore any
+    // extents on target line to keep things simple.
+    MOZ_ASSERT(extent.lineno <= line);
+    if (extent.lineno == line) {
+      return;
     }
-    return true;
+
+    // The extent.sourceStart position is now definitely *before* the target
+    // line, so update sourceOffsetLowerBound if extent.sourceStart is a tighter
+    // bound.
+    if (extent.sourceStart > sourceOffsetLowerBound) {
+      sourceOffsetLowerBound = extent.sourceStart;
+    }
+  }
+
+  // A partial match is a script that starts before the target line, but may or
+  // may not end before it. If we can prove the script definitely ends before
+  // the target line, we may return false here.
+  bool scriptIsPartialLineMatch(BaseScript* script) {
+    const SourceExtent& extent = script->extent();
+
+    // Check that start of script is before or on target line.
+    if (extent.lineno > line) {
+      return false;
+    }
+
+    // Use the implicit (line, column) <-> sourceStart mapping from the
+    // SourceExtent to update our bounds on possible matches. We call this
+    // without knowing if the script is a match or not.
+    updateSourceOffsetLowerBound(script->extent());
+
+    // As an optional performance optimization, we rule out any script that ends
+    // before the lower-bound on where target line exists.
+    return extent.sourceEnd > sourceOffsetLowerBound;
+  }
+
+  // True if any part of script source is on the target line.
+  bool scriptIsLineMatch(JSScript* script) {
+    MOZ_ASSERT(scriptIsPartialLineMatch(script));
+
+    uint32_t lineCount = GetScriptLineExtent(script);
+    return (script->lineno() + lineCount > line);
   }
 
   static void considerScript(JSRuntime* rt, void* data, BaseScript* script,
                              const JS::AutoRequireNoGC& nogc) {
     ScriptQuery* self = static_cast<ScriptQuery*>(data);
-    self->consider(script->asJSScript(), nogc);
-  }
-
-  static void considerLazyScript(JSRuntime* rt, void* data, BaseScript* script,
-                                 const JS::AutoRequireNoGC& nogc) {
-    ScriptQuery* self = static_cast<ScriptQuery*>(data);
-    self->considerLazy(script, nogc);
-  }
-
-  bool needsDelazifyBeforeQuery() const {
-    // * innermost
-    //   Currently not supported, since this is not used outside of test.
-    //
-    // * hasLine
-    //   Only JSScript supports GetScriptLineExtent.
-    return innermost || hasLine;
+    self->consider(script, nogc);
   }
 
   template <typename T>
@@ -5299,86 +5398,53 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
   }
 
   /*
-   * If |script| matches this query, append it to |scriptVector| or place it
-   * in |innermostForRealm|, as appropriate. Set |oom| if an out of memory
-   * condition occurred.
+   * If |script| matches this query, append it to |scriptVector|. Set |oom| if
+   * an out of memory condition occurred.
    */
-  void consider(JSScript* script, const JS::AutoRequireNoGC& nogc) {
+  void consider(BaseScript* script, const JS::AutoRequireNoGC& nogc) {
     if (oom || script->selfHosted()) {
       return;
     }
+
     Realm* realm = script->realm();
     if (!realms.has(realm)) {
       return;
     }
+
     if (!commonFilter(script, nogc)) {
       return;
     }
+
+    bool partial = false;
+
     if (hasLine) {
-      if (line < script->lineno() ||
-          script->lineno() + GetScriptLineExtent(script) < line) {
+      if (!scriptIsPartialLineMatch(script)) {
         return;
       }
-    }
 
-    if (innermost) {
-      // For 'innermost' queries, we don't place scripts in
-      // |scriptVector| right away; we may later find another script that
-      // is nested inside this one. Instead, we record the innermost
-      // script we've found so far for each realm in innermostForRealm,
-      // and only populate |scriptVector| at the bottom of findScripts,
-      // when we've traversed all the scripts.
-      //
-      // So: check this script against the innermost one we've found so
-      // far (if any), as recorded in innermostForRealm, and replace that
-      // if it's better.
-      RealmToScriptMap::AddPtr p = innermostForRealm.lookupForAdd(realm);
-      if (p) {
-        // Is our newly found script deeper than the last one we found?
-        JSScript* incumbent = p->value();
-        if (script->innermostScope()->chainLength() >
-            incumbent->innermostScope()->chainLength()) {
-          p->value() = script;
-        }
-      } else {
-        // This is the first matching script we've encountered for this
-        // realm, so it is thus the innermost such script.
-        if (!innermostForRealm.add(p, realm, script)) {
-          oom = true;
+      if (script->hasBytecode()) {
+        // Check if line is within script (or any of its inner scripts).
+        if (!scriptIsLineMatch(script->asJSScript())) {
           return;
         }
+      } else {
+        // GetScriptLineExtent is not available on lazy scripts so instead to
+        // the partial match list for be compiled and reprocessed later. We only
+        // add scripts that are ready for delazification and they may in turn
+        // process their inner functions.
+        if (!script->isReadyForDelazification()) {
+          return;
+        }
+        partial = true;
       }
-    } else {
-      // Record this matching script in the results scriptVector.
-      if (!scriptVector.append(script)) {
-        oom = true;
-        return;
-      }
-    }
-  }
-
-  void considerLazy(BaseScript* lazyScript, const JS::AutoRequireNoGC& nogc) {
-    MOZ_ASSERT(!needsDelazifyBeforeQuery());
-
-    if (oom) {
-      return;
-    }
-    Realm* realm = lazyScript->realm();
-    if (!realms.has(realm)) {
-      return;
     }
 
-    // If the script is already delazified, it should be in scriptVector.
-    if (lazyScript->hasBytecode()) {
-      return;
-    }
+    // If innermost filter is required, we collect everything that matches the
+    // line number and filter at the end of `findScripts`.
+    MOZ_ASSERT_IF(innermost, hasLine);
 
-    if (!commonFilter(lazyScript, nogc)) {
-      return;
-    }
-
-    /* Record this matching script in the results scriptVector. */
-    if (!scriptVector.append(lazyScript)) {
+    Rooted<BaseScriptVector>& vec = partial ? partialMatchVector : scriptVector;
+    if (!vec.append(script)) {
       oom = true;
     }
   }
@@ -5477,7 +5543,6 @@ class MOZ_STACK_CLASS Debugger::SourceQuery : public Debugger::QueryBase {
     MOZ_ASSERT(sources.empty());
     oom = false;
     IterateScripts(cx, singletonRealm, this, considerScript);
-    IterateLazyScripts(cx, singletonRealm, this, considerLazyScript);
     if (oom) {
       ReportOutOfMemory(cx);
       return false;
@@ -5507,50 +5572,20 @@ class MOZ_STACK_CLASS Debugger::SourceQuery : public Debugger::QueryBase {
   static void considerScript(JSRuntime* rt, void* data, BaseScript* script,
                              const JS::AutoRequireNoGC& nogc) {
     SourceQuery* self = static_cast<SourceQuery*>(data);
-    self->consider(script->asJSScript(), nogc);
+    self->consider(script, nogc);
   }
 
-  static void considerLazyScript(JSRuntime* rt, void* data, BaseScript* script,
-                                 const JS::AutoRequireNoGC& nogc) {
-    SourceQuery* self = static_cast<SourceQuery*>(data);
-    self->considerLazy(script, nogc);
-  }
-
-  void consider(JSScript* script, const JS::AutoRequireNoGC& nogc) {
+  void consider(BaseScript* script, const JS::AutoRequireNoGC& nogc) {
     if (oom || script->selfHosted()) {
       return;
     }
+
     Realm* realm = script->realm();
     if (!realms.has(realm)) {
       return;
     }
 
-    if (!script->sourceObject()) {
-      return;
-    }
-
-    ScriptSourceObject* source =
-        &UncheckedUnwrap(script->sourceObject())->as<ScriptSourceObject>();
-    if (!sources.put(source)) {
-      oom = true;
-    }
-  }
-
-  void considerLazy(BaseScript* lazyScript, const JS::AutoRequireNoGC& nogc) {
-    if (oom) {
-      return;
-    }
-    Realm* realm = lazyScript->realm();
-    if (!realms.has(realm)) {
-      return;
-    }
-
-    // If the script is already delazified, it should already be handled.
-    if (lazyScript->hasBytecode()) {
-      return;
-    }
-
-    ScriptSourceObject* source = lazyScript->sourceObject();
+    ScriptSourceObject* source = script->sourceObject();
     if (!sources.put(source)) {
       oom = true;
     }
@@ -5966,7 +6001,8 @@ bool Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  frontend::CompilationState compilationState(cx, allocScope, options);
+  frontend::CompilationState compilationState(cx, allocScope, options,
+                                              compilationInfo.get().stencil);
 
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   frontend::Parser<frontend::FullParseHandler, char16_t> parser(

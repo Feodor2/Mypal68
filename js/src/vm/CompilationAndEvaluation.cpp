@@ -12,8 +12,7 @@
 
 #include <utility>  // std::move
 
-#include "jsfriendapi.h"  // js::GetErrorMessage
-#include "jstypes.h"      // JS_PUBLIC_API
+#include "jstypes.h"  // JS_PUBLIC_API
 
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScript
 #include "frontend/CompilationInfo.h"  // for frontened::CompilationInfo, frontened::CompilationGCOutput
@@ -21,8 +20,9 @@
 #include "frontend/ParseContext.h"      // frontend::UsedNameTracker
 #include "frontend/Parser.h"            // frontend::Parser, frontend::ParseGoal
 #include "js/CharacterEncoding.h"  // JS::UTF8Chars, JS::UTF8CharsToNewTwoByteCharsZ
-#include "js/RootingAPI.h"         // JS::Rooted
-#include "js/SourceText.h"         // JS::SourceText
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/RootingAPI.h"            // JS::Rooted
+#include "js/SourceText.h"            // JS::SourceText
 #include "js/TypeDecls.h"          // JS::HandleObject, JS::MutableHandleScript
 #include "js/Utility.h"            // js::MallocArena, JS::UniqueTwoByteChars
 #include "js/Value.h"              // JS::Value
@@ -82,13 +82,47 @@ template <typename Unit>
 static JSScript* CompileSourceBufferAndStartIncrementalEncoding(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     SourceText<Unit>& srcBuf) {
-  Rooted<JSScript*> script(cx, CompileSourceBuffer(cx, options, srcBuf));
+  ScopeKind scopeKind =
+      options.nonSyntacticScope ? ScopeKind::NonSyntactic : ScopeKind::Global;
+
+  MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+
+  Rooted<frontend::CompilationInfo> compilationInfo(
+      cx, frontend::CompilationInfo(cx, options));
+  if (!compilationInfo.get().input.initForGlobal(cx)) {
+    return nullptr;
+  }
+  if (!frontend::CompileGlobalScriptToStencil(cx, compilationInfo.get(), srcBuf,
+                                              scopeKind)) {
+    return nullptr;
+  }
+
+  Rooted<frontend::CompilationGCOutput> gcOutput(cx);
+  if (!frontend::InstantiateStencils(cx, compilationInfo.get(),
+                                     gcOutput.get())) {
+    return nullptr;
+  }
+
+  RootedScript script(cx, gcOutput.get().script);
   if (!script) {
     return nullptr;
   }
 
-  if (!script->scriptSource()->xdrEncodeTopLevel(cx, script)) {
-    return nullptr;
+  if (options.useStencilXDR) {
+    UniquePtr<XDRIncrementalEncoderBase> xdrEncoder;
+
+    if (!compilationInfo.get().input.source()->xdrEncodeInitialStencil(
+            cx, compilationInfo.get(), xdrEncoder)) {
+      return nullptr;
+    }
+
+    script->scriptSource()->setIncrementalEncoder(xdrEncoder.release());
+  } else {
+    if (!script->scriptSource()->xdrEncodeTopLevel(cx, script)) {
+      return nullptr;
+    }
   }
 
   return script;
@@ -170,7 +204,8 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  frontend::CompilationState compilationState(cx, allocScope, options);
+  frontend::CompilationState compilationState(cx, allocScope, options,
+                                              compilationInfo.get().stencil);
 
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   Parser<FullParseHandler, char16_t> parser(cx, options, chars.get(), length,

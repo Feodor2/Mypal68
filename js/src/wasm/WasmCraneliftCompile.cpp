@@ -15,10 +15,12 @@
 
 #include "wasm/WasmCraneliftCompile.h"
 
+#include "mozilla/CheckedInt.h"
 #include "mozilla/ScopeExit.h"
 
 #include "jit/Disassemble.h"
 #include "js/Printf.h"
+#include "vm/JSContext.h"
 
 #include "wasm/cranelift/baldrapi.h"
 #include "wasm/cranelift/clifapi.h"
@@ -32,6 +34,8 @@
 using namespace js;
 using namespace js::jit;
 using namespace js::wasm;
+
+using mozilla::CheckedInt;
 
 bool wasm::CraneliftPlatformSupport() {
 #ifdef JS_CODEGEN_X64
@@ -296,7 +300,7 @@ CraneliftFuncCompileInput::CraneliftFuncCompileInput(
       index(func.index),
       offset_in_module(func.lineOrBytecode) {}
 
-static_assert(offsetof(TlsData, boundsCheckLimit) == sizeof(size_t),
+static_assert(offsetof(TlsData, boundsCheckLimit32) == sizeof(void*),
               "fix make_heap() in wasm2clif.rs");
 
 CraneliftStaticEnvironment::CraneliftStaticEnvironment()
@@ -552,7 +556,7 @@ BD_ConstantValue global_constantValue(const GlobalDesc* global) {
     case TypeCode::F64:
       v.u.f64 = value.f64();
       break;
-    case TypeCode::OptRef:
+    case AbstractReferenceTypeCode:
       v.u.r = value.ref().forCompiledCode();
       break;
     default:

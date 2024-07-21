@@ -331,3 +331,37 @@ ${expectedStacks.map(stacks => stacks.join("/")).join('\n')}`);
 function fuzzingSafe() {
     return typeof getErrorNotes == 'undefined';
 }
+
+// Common instantiations of wasm values for dynamic type check testing
+
+let WasmNonNullEqrefValues = [];
+let WasmEqrefValues = [];
+if (wasmGcEnabled()) {
+    let { newStruct } = wasmEvalText(`
+      (module
+        (type $s (struct))
+        (func (export "newStruct") (result eqref) struct.new $s)
+      )`).exports;
+    WasmNonNullEqrefValues.push(newStruct());
+    WasmEqrefValues.push(null, ...WasmNonNullEqrefValues);
+}
+let WasmNonEqrefValues = [
+    undefined,
+    true,
+    false,
+    {x:1337},
+    ["abracadabra"],
+    1337,
+    13.37,
+    "hi",
+    37n,
+    new Number(42),
+    new Boolean(true),
+    Symbol("status"),
+    () => 1337
+];
+let WasmNonNullExternrefValues = [
+    ...WasmNonEqrefValues,
+    ...WasmNonNullEqrefValues
+];
+let WasmExternrefValues = [null, ...WasmNonNullExternrefValues];

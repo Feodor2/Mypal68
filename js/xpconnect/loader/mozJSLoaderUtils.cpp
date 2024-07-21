@@ -17,6 +17,7 @@ using mozilla::UniquePtr;
 // principals when writing a script. Instead, when reading it back, we set the
 // principals to the system principals.
 nsresult ReadCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
+                          const JS::ReadOnlyCompileOptions& options,
                           MutableHandleScript scriptp) {
   UniquePtr<char[]> buf;
   uint32_t len;
@@ -27,7 +28,7 @@ nsresult ReadCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
 
   JS::TranscodeBuffer buffer;
   buffer.replaceRawBuffer(reinterpret_cast<uint8_t*>(buf.release()), len);
-  JS::TranscodeResult code = JS::DecodeScript(cx, buffer, scriptp);
+  JS::TranscodeResult code = JS::DecodeScript(cx, options, buffer, scriptp);
   if (code == JS::TranscodeResult_Ok) {
     return NS_OK;
   }

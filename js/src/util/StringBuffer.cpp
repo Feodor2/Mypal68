@@ -10,8 +10,8 @@
 
 #include <algorithm>
 
-#include "frontend/CompilationInfo.h"  // frontend::CompilationInfo
-#include "frontend/ParserAtom.h"       // frontend::ParserAtom
+#include "frontend/ParserAtom.h"  // frontend::ParserAtom, frontend::ParserAtomsTable
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "vm/JSObject-inl.h"
 #include "vm/StringType-inl.h"
 
@@ -153,15 +153,14 @@ JSAtom* StringBuffer::finishAtom() {
 }
 
 const frontend::ParserAtom* StringBuffer::finishParserAtom(
-    frontend::CompilationInfo& compilationInfo) {
+    frontend::ParserAtomsTable& parserAtoms) {
   size_t len = length();
   if (len == 0) {
     return cx_->parserNames().empty;
   }
 
   if (isLatin1()) {
-    auto result = compilationInfo.stencil.parserAtoms.internLatin1(
-        cx_, latin1Chars().begin(), len);
+    auto result = parserAtoms.internLatin1(cx_, latin1Chars().begin(), len);
     if (result.isErr()) {
       return nullptr;
     }
@@ -169,8 +168,7 @@ const frontend::ParserAtom* StringBuffer::finishParserAtom(
     return result.unwrap();
   }
 
-  auto result = compilationInfo.stencil.parserAtoms.internChar16(
-      cx_, twoByteChars().begin(), len);
+  auto result = parserAtoms.internChar16(cx_, twoByteChars().begin(), len);
   if (result.isErr()) {
     return nullptr;
   }

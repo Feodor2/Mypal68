@@ -8,7 +8,6 @@
 #include "mozilla/ArrayUtils.h"
 
 #include "jit/JitCode.h"
-#include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 
 namespace js {
@@ -189,6 +188,7 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 };
 
 // These registers may be volatile or nonvolatile.
@@ -292,16 +292,6 @@ class Assembler : public AssemblerX86Shared {
   // jump table at the bottom of the instruction stream, and if a jump
   // overflows its range, it will redirect here.
   //
-  // In our relocation table, we store two offsets instead of one: the offset
-  // to the original jump, and an offset to the extended jump if we will need
-  // to use it instead. The offsets are stored as:
-  //    [unsigned] Unsigned offset to short jump, from the start of the code.
-  //    [unsigned] Unsigned offset to the extended jump, from the start of
-  //               the jump table, in units of SizeOfJumpTableEntry.
-  //
-  // The start of the relocation table contains the offset from the code
-  // buffer to the start of the extended jump table.
-  //
   // Each entry in this table is a jmp [rip], followed by a ud2 to hint to the
   // hardware branch predictor that there is no fallthrough, followed by the
   // eight bytes containing an immediate address. This comes out to 16 bytes.
@@ -314,16 +304,25 @@ class Assembler : public AssemblerX86Shared {
   static const uint32_t SizeOfExtendedJump = 1 + 1 + 4 + 2 + 8;
   static const uint32_t SizeOfJumpTableEntry = 16;
 
+  // Two kinds of jumps on x64:
+  //
+  // * codeJumps_ tracks jumps with target within the executable code region
+  //   for the process. These jumps don't need entries in the extended jump
+  //   table because source and target must be within 2 GB of each other.
+  //
+  // * extendedJumps_ tracks jumps with target outside the executable code
+  //   region. These jumps need entries in the extended jump table described
+  //   above.
+  using PendingJumpVector = Vector<RelativePatch, 8, SystemAllocPolicy>;
+  PendingJumpVector codeJumps_;
+  PendingJumpVector extendedJumps_;
+
   uint32_t extendedJumpTable_;
 
   static JitCode* CodeFromJump(JitCode* code, uint8_t* jump);
 
  private:
-  void writeRelocation(JmpSrc src, RelocationKind reloc);
   void addPendingJump(JmpSrc src, ImmPtr target, RelocationKind reloc);
-
- protected:
-  size_t addPatchableJump(JmpSrc src, RelocationKind reloc);
 
  public:
   using AssemblerX86Shared::j;
@@ -344,6 +343,18 @@ class Assembler : public AssemblerX86Shared {
   // Copy the assembly code to the given buffer, and perform any pending
   // relocations relying on the target address.
   void executableCopy(uint8_t* buffer);
+
+  void assertNoGCThings() const {
+#ifdef DEBUG
+    MOZ_ASSERT(dataRelocations_.length() == 0);
+    for (auto& j : codeJumps_) {
+      MOZ_ASSERT(j.kind == RelocationKind::HARDCODED);
+    }
+    for (auto& j : extendedJumps_) {
+      MOZ_ASSERT(j.kind == RelocationKind::HARDCODED);
+    }
+#endif
+  }
 
   // Actual assembly emitting functions.
 

@@ -27,6 +27,7 @@
 #include "vm/ErrorReporting.h"
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
+#include "vm/SharedStencil.h"  // js::SharedImmutableScriptDataTable
 
 struct JS_PUBLIC_API JSContext;
 
@@ -355,9 +356,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // For JIT use.
   static size_t offsetOfZone() { return offsetof(JSContext, zone_); }
 
-  // Zone local methods that can be used freely.
-  inline js::LifoAlloc& typeLifoAlloc();
-
   // Current global. This is only safe to use within the scope of the
   // AutoRealm from which it's called.
   inline js::Handle<js::GlobalObject*> global() const;
@@ -371,7 +369,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::SymbolRegistry& symbolRegistry() { return runtime_->symbolRegistry(); }
 
   // Methods to access runtime data that must be protected by locks.
-  js::RuntimeScriptDataTable& scriptDataTable(js::AutoLockScriptData& lock) {
+  js::SharedImmutableScriptDataTable& scriptDataTable(
+      js::AutoLockScriptData& lock) {
     return runtime_->scriptDataTable(lock);
   }
 
@@ -887,34 +886,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // object.
   js::FutexThread fx;
 
-  // In certain cases, we want to optimize certain opcodes to typed
-  // instructions, to avoid carrying an extra register to feed into an unbox.
-  // Unfortunately, that's not always possible. For example, a GetPropertyCacheT
-  // could return a typed double, but if it takes its out-of-line path, it could
-  // return an object, and trigger invalidation. The invalidation bailout will
-  // consider the return value to be a double, and create a garbage Value.
-  //
-  // To allow the GetPropertyCacheT optimization, we allow the ability for
-  // GetPropertyCache to override the return value at the top of the stack - the
-  // value that will be temporarily corrupt. This special override value is set
-  // only in callVM() targets that are about to return *and* have invalidated
-  // their callee.
-  js::ContextData<js::Value> ionReturnOverride_;
-
-  bool hasIonReturnOverride() const {
-    return !ionReturnOverride_.ref().isMagic(JS_ARG_POISON);
-  }
-  js::Value takeIonReturnOverride() {
-    js::Value v = ionReturnOverride_;
-    ionReturnOverride_ = js::MagicValue(JS_ARG_POISON);
-    return v;
-  }
-  void setIonReturnOverride(const js::Value& v) {
-    MOZ_ASSERT(!hasIonReturnOverride());
-    MOZ_ASSERT(!v.isMagic());
-    ionReturnOverride_ = v;
-  }
-
   mozilla::Atomic<uintptr_t, mozilla::Relaxed> jitStackLimit;
 
   // Like jitStackLimit, but not reset to trigger interrupts.
@@ -1120,7 +1091,7 @@ class MOZ_RAII AutoLockScriptData {
     MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt) ||
                CurrentThreadIsParseThread());
     runtime = rt;
-    if (runtime->hasHelperThreadZones()) {
+    if (runtime->hasParseTasks()) {
       runtime->scriptDataLock.lock();
     } else {
       MOZ_ASSERT(!runtime->activeThreadHasScriptDataAccess);
@@ -1130,7 +1101,7 @@ class MOZ_RAII AutoLockScriptData {
     }
   }
   ~AutoLockScriptData() {
-    if (runtime->hasHelperThreadZones()) {
+    if (runtime->hasParseTasks()) {
       runtime->scriptDataLock.unlock();
     } else {
       MOZ_ASSERT(runtime->activeThreadHasScriptDataAccess);
@@ -1293,7 +1264,7 @@ class MOZ_RAII AutoSuppressNurseryCellAlloc {
 } /* namespace js */
 
 #define CHECK_THREAD(cx)                            \
-  MOZ_ASSERT_IF(cx && !cx->isHelperThreadContext(), \
-                js::CurrentThreadCanAccessRuntime(cx->runtime()))
+  MOZ_ASSERT_IF(cx, !cx->isHelperThreadContext() && \
+                        js::CurrentThreadCanAccessRuntime(cx->runtime()))
 
 #endif /* vm_JSContext_h */

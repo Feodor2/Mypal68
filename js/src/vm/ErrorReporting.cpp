@@ -10,8 +10,9 @@
 #include "jsexn.h"
 #include "jsfriendapi.h"
 
-#include "js/Printf.h"    // JS_vsmprintf
-#include "js/Warnings.h"  // JS::WarningReporter
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Printf.h"                // JS_vsmprintf
+#include "js/Warnings.h"              // JS::WarningReporter
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 
@@ -552,8 +553,8 @@ bool js::ReportErrorVA(JSContext* cx, IsWarning isWarning, const char* format,
     report.initOwnedMessage(message.release());
   } else {
     MOZ_ASSERT(argumentsType == ArgumentsAreLatin1);
-    Latin1Chars latin1(message.get(), strlen(message.get()));
-    UTF8CharsZ utf8(JS::CharsToNewUTF8CharsZ(cx, latin1));
+    JS::Latin1Chars latin1(message.get(), strlen(message.get()));
+    JS::UTF8CharsZ utf8(JS::CharsToNewUTF8CharsZ(cx, latin1));
     if (!utf8) {
       return false;
     }

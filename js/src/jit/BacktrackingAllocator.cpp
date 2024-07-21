@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "jit/BitSet.h"
+#include "jit/CompileInfo.h"
 #include "js/Printf.h"
 
 using namespace js;
@@ -1678,6 +1679,35 @@ bool BacktrackingAllocator::evictBundle(LiveBundle* bundle) {
 
 bool BacktrackingAllocator::splitAndRequeueBundles(
     LiveBundle* bundle, const LiveBundleVector& newBundles) {
+#ifdef DEBUG
+  if (newBundles.length() == 1) {
+    LiveBundle* newBundle = newBundles[0];
+    if (newBundle->numRanges() == bundle->numRanges() &&
+        computePriority(newBundle) == computePriority(bundle)) {
+      bool different = false;
+      LiveRange::BundleLinkIterator oldRanges = bundle->rangesBegin();
+      LiveRange::BundleLinkIterator newRanges = newBundle->rangesBegin();
+      while (oldRanges) {
+        LiveRange* oldRange = LiveRange::get(*oldRanges);
+        LiveRange* newRange = LiveRange::get(*newRanges);
+        if (oldRange->from() != newRange->from() ||
+            oldRange->to() != newRange->to()) {
+          different = true;
+          break;
+        }
+        oldRanges++;
+        newRanges++;
+      }
+
+      // This is likely to trigger an infinite loop in register allocation. This
+      // can be the result of invalid register constraints, making regalloc
+      // impossible; consider relaxing those.
+      MOZ_ASSERT(different,
+                 "Split results in the same bundle with the same priority");
+    }
+  }
+#endif
+
   if (JitSpewEnabled(JitSpew_RegAlloc)) {
     JitSpew(JitSpew_RegAlloc,
             "    splitting bundle %s into:", bundle->toString().get());

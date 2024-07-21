@@ -7,6 +7,8 @@
 
 #include "jit/shared/CodeGenerator-shared.h"
 
+#include "jit/JitFrames.h"
+
 #include "jit/MacroAssembler-inl.h"
 
 namespace js {

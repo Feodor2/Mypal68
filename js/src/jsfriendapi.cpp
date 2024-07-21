@@ -19,9 +19,12 @@
 #include "gc/WeakMap.h"
 #include "js/CharacterEncoding.h"
 #include "js/experimental/CodeCoverage.h"
-#include "js/friend/StackLimits.h"  // JS_STACK_GROWTH_DIRECTION
-#include "js/friend/WindowProxy.h"  // js::ToWindowIfWindowProxy
-#include "js/Object.h"              // JS::GetClass
+#include "js/experimental/CTypes.h"  // JS::AutoCTypesActivityCallback, JS::SetCTypesActivityCallback
+#include "js/experimental/Intl.h"  // JS::Add{,Moz}DisplayNamesConstructor, JS::AddMozDateTimeFormatConstructor
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // JS_STACK_GROWTH_DIRECTION
+#include "js/friend/WindowProxy.h"    // js::ToWindowIfWindowProxy
+#include "js/Object.h"                // JS::GetClass
 #include "js/Printf.h"
 #include "js/Proxy.h"
 #include "js/shadow/Object.h"  // JS::shadow::Object
@@ -30,15 +33,18 @@
 #include "proxy/DeadObjectProxy.h"
 #include "util/Poison.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/BooleanObject.h"
 #include "vm/DateObject.h"
 #include "vm/ErrorObject.h"
 #include "vm/FrameIter.h"  // js::FrameIter
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
+#include "vm/NumberObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Printer.h"
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/Realm.h"
+#include "vm/StringObject.h"
 #include "vm/Time.h"
 #include "vm/WrapperObject.h"
 
@@ -154,10 +160,6 @@ JS_FRIEND_API bool JS::GetIsSecureContext(JS::Realm* realm) {
   return realm->creationOptions().secureContext();
 }
 
-JS_FRIEND_API void js::AssertCompartmentHasSingleRealm(JS::Compartment* comp) {
-  MOZ_RELEASE_ASSERT(comp->realms().length() == 1);
-}
-
 JS_FRIEND_API JSPrincipals* JS::GetRealmPrincipals(JS::Realm* realm) {
   return realm->principals();
 }
@@ -193,10 +195,6 @@ JS_FRIEND_API void JS::SetRealmPrincipals(JS::Realm* realm,
 
 JS_FRIEND_API JSPrincipals* JS_GetScriptPrincipals(JSScript* script) {
   return script->principals();
-}
-
-JS_FRIEND_API JS::Realm* js::GetScriptRealm(JSScript* script) {
-  return script->realm();
 }
 
 JS_FRIEND_API bool JS_ScriptHasMutedErrors(JSScript* script) {
@@ -322,11 +320,6 @@ JS_FRIEND_API bool js::IsArgumentsObject(HandleObject obj) {
   return obj->is<ArgumentsObject>();
 }
 
-JS_FRIEND_API const char* js::ObjectClassName(JSContext* cx, HandleObject obj) {
-  cx->check(obj);
-  return GetObjectClassName(cx, obj);
-}
-
 JS_FRIEND_API JS::Zone* js::GetRealmZone(JS::Realm* realm) {
   return realm->zone();
 }
@@ -346,21 +339,12 @@ JS_FRIEND_API bool js::IsSystemRealm(JS::Realm* realm) {
 
 JS_FRIEND_API bool js::IsSystemZone(Zone* zone) { return zone->isSystemZone(); }
 
-JS_FRIEND_API bool js::IsAtomsZone(JS::Zone* zone) {
-  return zone->isAtomsZone();
-}
-
 JS_FRIEND_API bool js::IsFunctionObject(JSObject* obj) {
   return obj->is<JSFunction>();
 }
 
 JS_FRIEND_API bool js::UninlinedIsCrossCompartmentWrapper(const JSObject* obj) {
   return js::IsCrossCompartmentWrapper(obj);
-}
-
-JS_FRIEND_API JSObject* js::GetPrototypeNoProxy(JSObject* obj) {
-  MOZ_ASSERT(!obj->is<js::ProxyObject>());
-  return obj->staticPrototype();
 }
 
 JS_FRIEND_API void js::AssertSameCompartment(JSContext* cx, JSObject* obj) {
@@ -544,16 +528,15 @@ JS_FRIEND_API bool js::IsCompartmentZoneSweepingOrCompacting(
   return comp->zone()->isGCSweepingOrCompacting();
 }
 
-JS_FRIEND_API void js::VisitGrayWrapperTargets(Zone* zone,
-                                               IterateGCThingCallback callback,
-                                               void* closure) {
+JS_FRIEND_API void js::TraceGrayWrapperTargets(JSTracer* trc, Zone* zone) {
   JS::AutoSuppressGCAnalysis nogc;
 
   for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next()) {
     for (Compartment::ObjectWrapperEnum e(comp); !e.empty(); e.popFront()) {
       JSObject* target = e.front().key();
       if (target->isMarkedGray()) {
-        callback(closure, JS::GCCellPtr(target), nogc);
+        TraceManuallyBarrieredEdge(trc, &target, "gray CCW target");
+        MOZ_ASSERT(target == e.front().key());
       }
     }
   }
@@ -752,14 +735,13 @@ JS_FRIEND_API void js::SetScriptEnvironmentPreparer(
   cx->runtime()->scriptEnvironmentPreparer = preparer;
 }
 
-JS_FRIEND_API void js::SetCTypesActivityCallback(JSContext* cx,
+JS_FRIEND_API void JS::SetCTypesActivityCallback(JSContext* cx,
                                                  CTypesActivityCallback cb) {
   cx->runtime()->ctypesActivityCallback = cb;
 }
 
-js::AutoCTypesActivityCallback::AutoCTypesActivityCallback(
-    JSContext* cx, js::CTypesActivityType beginType,
-    js::CTypesActivityType endType)
+JS::AutoCTypesActivityCallback::AutoCTypesActivityCallback(
+    JSContext* cx, CTypesActivityType beginType, CTypesActivityType endType)
     : cx(cx),
       callback(cx->runtime()->ctypesActivityCallback),
       endType(endType) {
@@ -797,21 +779,6 @@ JS_FRIEND_API bool js::ForwardToNative(JSContext* cx, JSNative native,
   return native(cx, args.length(), args.base());
 }
 
-JS_FRIEND_API JSObject* js::ConvertArgsToArray(JSContext* cx,
-                                               const CallArgs& args) {
-  RootedObject argsArray(cx,
-                         NewDenseCopiedArray(cx, args.length(), args.array()));
-  return argsArray;
-}
-
-JS_FRIEND_API JSAtom* js::GetPropertyNameFromPC(JSScript* script,
-                                                jsbytecode* pc) {
-  if (!IsGetPropPC(pc) && !IsSetPropPC(pc)) {
-    return nullptr;
-  }
-  return script->getName(pc);
-}
-
 AutoAssertNoContentJS::AutoAssertNoContentJS(JSContext* cx)
     : context_(cx), prevAllowContentJS_(cx->runtime()->allowContentJS_) {
   cx->runtime()->allowContentJS_ = false;
@@ -833,8 +800,6 @@ JS_FRIEND_API void js::SetRealmValidAccessPtr(JSContext* cx,
   MOZ_ASSERT(global->is<GlobalObject>());
   global->as<GlobalObject>().realm()->setValidAccessPtr(accessp);
 }
-
-JS_FRIEND_API bool js::SystemZoneAvailable(JSContext* cx) { return true; }
 
 JS_FRIEND_API JS::Value js::MaybeGetScriptPrivate(JSObject* object) {
   if (!object->is<ScriptSourceObject>()) {
@@ -866,15 +831,15 @@ static bool IntlNotEnabled(JSContext* cx) {
   return false;
 }
 
-bool js::AddMozDateTimeFormatConstructor(JSContext* cx, JS::HandleObject intl) {
+bool JS::AddMozDateTimeFormatConstructor(JSContext* cx, JS::HandleObject intl) {
   return IntlNotEnabled(cx);
 }
 
-bool js::AddMozDisplayNamesConstructor(JSContext* cx, JS::HandleObject intl) {
+bool JS::AddMozDisplayNamesConstructor(JSContext* cx, JS::HandleObject intl) {
   return IntlNotEnabled(cx);
 }
 
-bool js::AddDisplayNamesConstructor(JSContext* cx, JS::HandleObject intl) {
+bool JS::AddDisplayNamesConstructor(JSContext* cx, JS::HandleObject intl) {
   return IntlNotEnabled(cx);
 }
 

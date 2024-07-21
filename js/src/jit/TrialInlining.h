@@ -34,6 +34,7 @@
 namespace js {
 namespace jit {
 
+class BaselineFrame;
 class ICEntry;
 class ICScript;
 
@@ -75,16 +76,38 @@ class InliningRoot {
   size_t totalBytecodeSize_;
 };
 
-class InlinableCallData {
+class InlinableOpData {
+ public:
+  JSFunction* target = nullptr;
+  ICScript* icScript = nullptr;
+  const uint8_t* endOfSharedPrefix = nullptr;
+};
+
+class InlinableCallData : public InlinableOpData {
  public:
   ObjOperandId calleeOperand;
   CallFlags callFlags;
-  const uint8_t* endOfSharedPrefix = nullptr;
-  JSFunction* target = nullptr;
-  ICScript* icScript = nullptr;
 };
 
+class InlinableGetterData : public InlinableOpData {
+ public:
+  ValOperandId receiverOperand;
+  bool sameRealm = false;
+};
+
+class InlinableSetterData : public InlinableOpData {
+ public:
+  ObjOperandId receiverOperand;
+  ValOperandId rhsOperand;
+  bool sameRealm = false;
+};
+
+mozilla::Maybe<InlinableOpData> FindInlinableOpData(ICStub* stub,
+                                                    BytecodeLocation loc);
+
 mozilla::Maybe<InlinableCallData> FindInlinableCallData(ICStub* stub);
+mozilla::Maybe<InlinableGetterData> FindInlinableGetterData(ICStub* stub);
+mozilla::Maybe<InlinableSetterData> FindInlinableSetterData(ICStub* stub);
 
 class MOZ_RAII TrialInliner {
  public:
@@ -96,6 +119,10 @@ class MOZ_RAII TrialInliner {
 
   MOZ_MUST_USE bool tryInlining();
   MOZ_MUST_USE bool maybeInlineCall(const ICEntry& entry, BytecodeLocation loc);
+  MOZ_MUST_USE bool maybeInlineGetter(const ICEntry& entry,
+                                      BytecodeLocation loc);
+  MOZ_MUST_USE bool maybeInlineSetter(const ICEntry& entry,
+                                      BytecodeLocation loc);
 
   static bool canInline(JSFunction* target, HandleScript caller);
 

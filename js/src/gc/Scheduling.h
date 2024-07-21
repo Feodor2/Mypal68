@@ -410,6 +410,9 @@ static const double PretenureThreshold = 0.6;
 /* JSGC_PRETENURE_GROUP_THRESHOLD */
 static const double PretenureGroupThreshold = 3000;
 
+/* JSGC_PRETENURE_STRING_THRESHOLD */
+static const double PretenureStringThreshold = 0.55;
+
 /* JSGC_MIN_LAST_DITCH_GC_PERIOD */
 static const auto MinLastDitchGCPeriod = 60;  // in seconds
 
@@ -548,6 +551,15 @@ class GCSchedulingTunables {
   UnprotectedData<uint32_t> pretenureGroupThreshold_;
 
   /*
+   * JSGC_PRETENURE_STRING_THRESHOLD
+   *
+   * If the percentage of the tenured strings exceeds this threshold, string
+   * will be allocated in tenured heap instead. (Default is allocated in
+   * nursery.)
+   */
+  MainThreadData<double> pretenureStringThreshold_;
+
+  /*
    * JSGC_MIN_LAST_DITCH_GC_PERIOD
    *
    * Last ditch GC is skipped if allocation failure occurs less than this many
@@ -609,6 +621,7 @@ class GCSchedulingTunables {
   bool attemptPretenuring() const { return pretenureThreshold_ < 1.0; }
   double pretenureThreshold() const { return pretenureThreshold_; }
   uint32_t pretenureGroupThreshold() const { return pretenureGroupThreshold_; }
+  double pretenureStringThreshold() const { return pretenureStringThreshold_; }
 
   mozilla::TimeDuration minLastDitchGCPeriod() const {
     return minLastDitchGCPeriod_;
@@ -662,10 +675,8 @@ class GCSchedulingState {
   }
 };
 
-enum class TriggerKind { None, Incremental, NonIncremental };
-
 struct TriggerResult {
-  TriggerKind kind;
+  bool shouldTrigger;
   size_t usedBytes;
   size_t thresholdBytes;
 };

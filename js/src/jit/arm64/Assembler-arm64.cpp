@@ -12,8 +12,8 @@
 #include "jit/arm64/Architecture-arm64.h"
 #include "jit/arm64/MacroAssembler-arm64.h"
 #include "jit/arm64/vixl/Disasm-vixl.h"
+#include "jit/AutoWritableJitCode.h"
 #include "jit/ExecutableAllocator.h"
-#include "jit/JitRealm.h"
 #include "vm/Realm.h"
 
 #include "gc/StoreBuffer-inl.h"
@@ -72,16 +72,6 @@ void Assembler::finish() {
   // The extended jump table is part of the code buffer.
   ExtendedJumpTable_ = emitExtendedJumpTable();
   Assembler::FinalizeCode();
-
-  // The jump relocation table starts with a fixed-width integer pointing
-  // to the start of the extended jump table.
-  // Space for this integer is allocated by Assembler::addJumpRelocation()
-  // before writing the first entry.
-  // Don't touch memory if we saw an OOM error.
-  if (jumpRelocations_.length() && !oom()) {
-    MOZ_ASSERT(jumpRelocations_.length() >= sizeof(uint32_t));
-    *(uint32_t*)jumpRelocations_.buffer() = ExtendedJumpTable_.getOffset();
-  }
 }
 
 bool Assembler::appendRawCode(const uint8_t* code, size_t numBytes) {
@@ -155,13 +145,7 @@ void Assembler::executableCopy(uint8_t* buffer) {
   // The extended jump table may be used for distant jumps.
   for (size_t i = 0; i < pendingJumps_.length(); i++) {
     RelativePatch& rp = pendingJumps_[i];
-
-    if (!rp.target) {
-      // The patch target is nullptr for jumps that have been linked to
-      // a label within the same code block, but may be repatched later
-      // to jump to a different code block.
-      continue;
-    }
+    MOZ_ASSERT(rp.target);
 
     Instruction* target = (Instruction*)rp.target;
     Instruction* branch = (Instruction*)(buffer + rp.offset.getOffset());
@@ -281,29 +265,12 @@ void Assembler::bind(Label* label, BufferOffset targetOffset) {
   label->bind(targetOffset.getOffset());
 }
 
-void Assembler::addJumpRelocation(BufferOffset src, RelocationKind reloc) {
-  // Only JITCODE relocations are patchable at runtime.
-  MOZ_ASSERT(reloc == RelocationKind::JITCODE);
-
-  // The jump relocation table starts with a fixed-width integer pointing
-  // to the start of the extended jump table. But, we don't know the
-  // actual extended jump table offset yet, so write a 0 which we'll
-  // patch later in Assembler::finish().
-  if (!jumpRelocations_.length()) {
-    jumpRelocations_.writeFixedUint32_t(0);
-  }
-
-  // Each entry in the table is an (offset, extendedTableIndex) pair.
-  jumpRelocations_.writeUnsigned(src.getOffset());
-  jumpRelocations_.writeUnsigned(pendingJumps_.length());
-}
-
 void Assembler::addPendingJump(BufferOffset src, ImmPtr target,
                                RelocationKind reloc) {
   MOZ_ASSERT(target.value != nullptr);
 
   if (reloc == RelocationKind::JITCODE) {
-    addJumpRelocation(src, reloc);
+    jumpRelocations_.writeUnsigned(src.getOffset());
   }
 
   // This jump is not patchable at runtime. Extended jump table entry
@@ -311,17 +278,6 @@ void Assembler::addPendingJump(BufferOffset src, ImmPtr target,
   // jump and entry. This also causes GC tracing of the target.
   enoughMemory_ &=
       pendingJumps_.append(RelativePatch(src, target.value, reloc));
-}
-
-size_t Assembler::addPatchableJump(BufferOffset src, RelocationKind reloc) {
-  MOZ_CRASH("TODO: This is currently unused (and untested)");
-  if (reloc == RelocationKind::JITCODE) {
-    addJumpRelocation(src, reloc);
-  }
-
-  size_t extendedTableIndex = pendingJumps_.length();
-  enoughMemory_ &= pendingJumps_.append(RelativePatch(src, nullptr, reloc));
-  return extendedTableIndex;
 }
 
 void Assembler::PatchWrite_NearCall(CodeLocationLabel start,
@@ -332,7 +288,6 @@ void Assembler::PatchWrite_NearCall(CodeLocationLabel start,
   MOZ_RELEASE_ASSERT((relTarget & 0x3) == 0);
   MOZ_RELEASE_ASSERT(vixl::IsInt26(relTarget00));
 
-  // printf("patching %p with call to %p\n", start.raw(), toCall.raw());
   bl(dest, relTarget00);
 }
 
@@ -446,27 +401,20 @@ void Assembler::UpdateLoad64Value(Instruction* inst0, uint64_t value) {
 
 class RelocationIterator {
   CompactBufferReader reader_;
-  uint32_t tableStart_;
-  uint32_t offset_;
-  uint32_t extOffset_;
+  uint32_t offset_ = 0;
 
  public:
-  explicit RelocationIterator(CompactBufferReader& reader) : reader_(reader) {
-    // The first uint32_t stores the extended table offset.
-    tableStart_ = reader_.readFixedUint32_t();
-  }
+  explicit RelocationIterator(CompactBufferReader& reader) : reader_(reader) {}
 
   bool read() {
     if (!reader_.more()) {
       return false;
     }
     offset_ = reader_.readUnsigned();
-    extOffset_ = reader_.readUnsigned();
     return true;
   }
 
   uint32_t offset() const { return offset_; }
-  uint32_t extendedOffset() const { return extOffset_; }
 };
 
 static JitCode* CodeFromJump(JitCode* code, uint8_t* jump) {

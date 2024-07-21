@@ -6,12 +6,14 @@
 #define jit_JitcodeMap_h
 
 #include "jit/CompactBuffer.h"
-#include "jit/CompileInfo.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/shared/Assembler-shared.h"
+#include "vm/BytecodeLocation.h"  // for BytecodeLocation
 
 namespace js {
 namespace jit {
+
+class InlineScriptTree;
 
 /*
  * The Ion jitcode map implements tables to allow mapping from addresses in ion
@@ -132,12 +134,6 @@ class JitcodeGlobalEntry {
   };
   static_assert(LIMIT <= 8);
 
-  struct BytecodeLocation {
-    JSScript* script;
-    jsbytecode* pc;
-    BytecodeLocation(JSScript* script, jsbytecode* pc)
-        : script(script), pc(pc) {}
-  };
   typedef Vector<BytecodeLocation, 0, SystemAllocPolicy> BytecodeLocationVector;
 
   struct BaseEntry {
@@ -281,6 +277,8 @@ class JitcodeGlobalEntry {
     uint32_t callStackAtAddr(void* ptr, const char** results,
                              uint32_t maxResults) const;
 
+    uint64_t lookupRealmID(void* ptr) const;
+
     template <class ShouldTraceProvider>
     bool trace(JSTracer* trc);
     void sweepChildren();
@@ -332,6 +330,8 @@ class JitcodeGlobalEntry {
     uint32_t callStackAtAddr(void* ptr, const char** results,
                              uint32_t maxResults) const;
 
+    uint64_t lookupRealmID() const;
+
     template <class ShouldTraceProvider>
     bool trace(JSTracer* trc);
     void sweepChildren();
@@ -355,6 +355,7 @@ class JitcodeGlobalEntry {
     uint32_t callStackAtAddr(void* ptr, const char** results,
                              uint32_t maxResults) const;
 
+    uint64_t lookupRealmID() const;
   };
 
   // Dummy entries are created for jitcode generated when profiling is not
@@ -382,6 +383,7 @@ class JitcodeGlobalEntry {
       return 0;
     }
 
+    uint64_t lookupRealmID() const { return 0; }
   };
 
   // QueryEntry is never stored in the table, just used for queries
@@ -620,6 +622,19 @@ class JitcodeGlobalEntry {
         MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
     }
     return false;
+  }
+
+  uint64_t lookupRealmID(JSRuntime* rt, void* ptr) const {
+    switch (kind()) {
+      case Ion:
+        return ionEntry().lookupRealmID(ptr);
+      case Baseline:
+        return baselineEntry().lookupRealmID();
+      case Dummy:
+        return dummyEntry().lookupRealmID();
+      default:
+        MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
+    }
   }
 
   // Figure out the number of the (JSScript*, jsbytecode*) pairs that are active

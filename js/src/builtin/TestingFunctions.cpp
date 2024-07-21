@@ -41,13 +41,15 @@
 #ifdef DEBUG
 #  include "frontend/TokenStream.h"
 #endif
+#include "frontend/BytecodeCompilation.h"
+#include "frontend/CompilationInfo.h"  // frontend::CompilationInfo, frontend::CompilationInfoVector
 #include "gc/Allocator.h"
 #include "gc/Zone.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Disassemble.h"
 #include "jit/InlinableNatives.h"
 #include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/TrialInlining.h"
 #include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{DetachArrayBuffer,GetArrayBufferLengthAndData,NewArrayBufferWithContents}
@@ -59,6 +61,7 @@
 #include "js/experimental/CodeCoverage.h"  // js::GetCodeCoverageSummary
 #include "js/experimental/TypedData.h"     // JS_GetObjectAsUint8Array
 #include "js/friend/DumpFunctions.h"  // js::Dump{Backtrace,Heap,Object}, JS::FormatStackDump, js::IgnoreNurseryObjects
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/WindowProxy.h"    // js::ToWindowProxyIfWindow
 #include "js/HashTable.h"
 #include "js/LocaleSensitive.h"
@@ -98,6 +101,7 @@
 #include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseSlot_*
 #include "vm/ProxyObject.h"
 #include "vm/SavedStacks.h"
+#include "vm/ScopeKind.h"
 #include "vm/Stack.h"
 #include "vm/StringType.h"
 #include "vm/TraceLogging.h"
@@ -124,8 +128,8 @@ using namespace js;
 using mozilla::ArrayLength;
 using mozilla::AssertedCast;
 using mozilla::AsWritableChars;
-using mozilla::MakeSpan;
 using mozilla::Maybe;
+using mozilla::Span;
 using mozilla::Tie;
 using mozilla::Tuple;
 
@@ -447,15 +451,6 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-#ifdef JS_HAS_TYPED_OBJECTS
-  value = BooleanValue(true);
-#else
-  value = BooleanValue(false);
-#endif
-  if (!JS_SetProperty(cx, info, "typed-objects", value)) {
-    return false;
-  }
-
 #ifdef JS_HAS_INTL_API
   value = BooleanValue(true);
 #else
@@ -500,7 +495,8 @@ static bool IsLCovEnabled(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool IsTypeInferenceEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setBoolean(js::IsTypeInferenceEnabled());
+  // TODO(no-TI): remove testing function.
+  args.rval().setBoolean(false);
   return true;
 }
 
@@ -513,7 +509,7 @@ static bool TrialInline(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   FrameIter iter(cx);
-  if (iter.done() || !iter.isBaseline()) {
+  if (iter.done() || !iter.isBaseline() || iter.realm() != cx->realm()) {
     return true;
   }
 
@@ -804,25 +800,25 @@ static bool WasmIsSupportedByHardware(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool WasmDebuggingIsSupported(JSContext* cx, unsigned argc, Value* vp) {
+static bool WasmDebuggingEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(wasm::HasSupport(cx) && wasm::BaselineAvailable(cx));
   return true;
 }
 
-static bool WasmStreamingIsSupported(JSContext* cx, unsigned argc, Value* vp) {
+static bool WasmStreamingEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(wasm::StreamingCompilationAvailable(cx));
   return true;
 }
 
-static bool WasmCachingIsSupported(JSContext* cx, unsigned argc, Value* vp) {
+static bool WasmCachingEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(wasm::CodeCachingAvailable(cx));
   return true;
 }
 
-static bool WasmHugeMemoryIsSupported(JSContext* cx, unsigned argc, Value* vp) {
+static bool WasmHugeMemorySupported(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 #ifdef WASM_SUPPORTS_HUGE_MEMORY
   args.rval().setBoolean(true);
@@ -832,7 +828,7 @@ static bool WasmHugeMemoryIsSupported(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool WasmThreadsSupported(JSContext* cx, unsigned argc, Value* vp) {
+static bool WasmThreadsEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(wasm::ThreadsAvailable(cx));
   return true;
@@ -841,6 +837,13 @@ static bool WasmThreadsSupported(JSContext* cx, unsigned argc, Value* vp) {
 static bool WasmReftypesEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(wasm::ReftypesAvailable(cx));
+  return true;
+}
+
+static bool WasmFunctionReferencesEnabled(JSContext* cx, unsigned argc,
+                                          Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  args.rval().setBoolean(wasm::FunctionReferencesAvailable(cx));
   return true;
 }
 
@@ -864,18 +867,21 @@ static bool WasmCompilersPresent(JSContext* cx, unsigned argc, Value* vp) {
   if (wasm::BaselinePlatformSupport()) {
     strcat(buf, "baseline");
   }
-  if (wasm::IonPlatformSupport()) {
-    if (*buf) {
-      strcat(buf, ",");
-    }
-    strcat(buf, "ion");
-  }
+#ifdef ENABLE_WASM_CRANELIFT
   if (wasm::CraneliftPlatformSupport()) {
     if (*buf) {
       strcat(buf, ",");
     }
     strcat(buf, "cranelift");
   }
+#else
+  if (wasm::IonPlatformSupport()) {
+    if (*buf) {
+      strcat(buf, ",");
+    }
+    strcat(buf, "ion");
+  }
+#endif
 
   JSString* result = JS_NewStringCopyZ(cx, buf);
   if (!result) {
@@ -1321,6 +1327,58 @@ static bool IsRelazifiableFunction(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool HasSameBytecodeData(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (args.length() != 2) {
+    JS_ReportErrorASCII(cx, "The function takes exactly two argument.");
+    return false;
+  }
+
+  auto GetSharedData = [](JSContext* cx,
+                          HandleValue v) -> SharedImmutableScriptData* {
+    if (!v.isObject()) {
+      JS_ReportErrorASCII(cx, "The arguments must be interpreted functions.");
+      return nullptr;
+    }
+
+    RootedObject obj(cx, CheckedUnwrapDynamic(&v.toObject(), cx));
+    if (!obj) {
+      return nullptr;
+    }
+
+    if (!obj->is<JSFunction>() || !obj->as<JSFunction>().isInterpreted()) {
+      JS_ReportErrorASCII(cx, "The arguments must be interpreted functions.");
+      return nullptr;
+    }
+
+    AutoRealm ar(cx, obj);
+    RootedFunction fun(cx, &obj->as<JSFunction>());
+    RootedScript script(cx, JSFunction::getOrCreateScript(cx, fun));
+    if (!script) {
+      return nullptr;
+    }
+
+    MOZ_ASSERT(script->sharedData());
+    return script->sharedData();
+  };
+
+  // NOTE: We use RefPtr below to keep the data alive across possible GC since
+  //       the functions may be in different Zones.
+
+  RefPtr<SharedImmutableScriptData> sharedData1 = GetSharedData(cx, args[0]);
+  if (!sharedData1) {
+    return false;
+  }
+
+  RefPtr<SharedImmutableScriptData> sharedData2 = GetSharedData(cx, args[1]);
+  if (!sharedData2) {
+    return false;
+  }
+
+  args.rval().setBoolean(sharedData1 == sharedData2);
+  return true;
+}
+
 static bool InternalConst(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   if (args.length() == 0) {
@@ -1748,16 +1806,16 @@ class HasChildTracer final : public JS::CallbackTracer {
   RootedValue child_;
   bool found_;
 
-  bool onChild(const JS::GCCellPtr& thing) override {
+  void onChild(const JS::GCCellPtr& thing) override {
     if (thing.asCell() == child_.toGCThing()) {
       found_ = true;
     }
-    return true;
   }
 
  public:
   HasChildTracer(JSContext* cx, HandleValue child)
-      : JS::CallbackTracer(cx, TraceWeakMapKeysValues),
+      : JS::CallbackTracer(cx, JS::TracerKind::Callback,
+                           JS::WeakMapTraceAction::TraceKeysAndValues),
         child_(cx, child),
         found_(false) {}
 
@@ -1775,7 +1833,7 @@ static bool HasChild(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   HasChildTracer trc(cx, child);
-  TraceChildren(&trc, parent.toGCThing(), parent.traceKind());
+  TraceChildren(&trc, JS::GCCellPtr(parent.toGCThing(), parent.traceKind()));
   args.rval().setBoolean(trc.found());
   return true;
 }
@@ -4722,6 +4780,129 @@ static bool SetLazyParsingDisabled(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool CompileStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (!args.requireAtLeast(cx, "compileStencilXDR", 1)) {
+    return false;
+  }
+
+  RootedString src(cx, ToString<CanGC>(cx, args[0]));
+  if (!src) {
+    return false;
+  }
+
+  /* TODO: Retrieve these from an optional `config` object. */
+  const char* filename = "compileStencilXDR-DATA.js";
+  uint32_t lineno = 1;
+
+  /* Linearize the string to obtain a char16_t* range. */
+  AutoStableStringChars linearChars(cx);
+  if (!linearChars.initTwoByte(cx, src)) {
+    return false;
+  }
+  JS::SourceText<char16_t> srcBuf;
+  if (!srcBuf.init(cx, linearChars.twoByteChars(), src->length(),
+                   JS::SourceOwnership::Borrowed)) {
+    return false;
+  }
+
+  /* Compile the script text to stencil. */
+  CompileOptions options(cx);
+  options.setFileAndLine(filename, lineno);
+
+  /* TODO: StencilXDR - Add option to select between full and syntax parse. */
+  options.setForceFullParse();
+
+  Rooted<frontend::CompilationInfo> compilationInfo(
+      cx, frontend::CompilationInfo(cx, options));
+  if (!compilationInfo.get().input.initForGlobal(cx)) {
+    return false;
+  }
+  if (!frontend::CompileGlobalScriptToStencil(cx, compilationInfo.get(), srcBuf,
+                                              ScopeKind::Global)) {
+    return false;
+  }
+
+  /* Serialize the stencil to XDR. */
+  JS::TranscodeBuffer xdrBytes;
+  if (!compilationInfo.get().serializeStencils(cx, xdrBytes)) {
+    return false;
+  }
+
+  /* Dump the bytes into a javascript ArrayBuffer and return a UInt8Array. */
+  RootedObject arrayBuf(cx, JS::NewArrayBuffer(cx, xdrBytes.length()));
+  if (!arrayBuf) {
+    return false;
+  }
+
+  {
+    JS::AutoAssertNoGC nogc;
+    bool isSharedMemory = false;
+    uint8_t* data = JS::GetArrayBufferData(arrayBuf, &isSharedMemory, nogc);
+    std::copy(xdrBytes.begin(), xdrBytes.end(), data);
+  }
+
+  args.rval().setObject(*arrayBuf);
+  return true;
+}
+
+static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (!args.requireAtLeast(cx, "evalStencilXDR", 1)) {
+    return false;
+  }
+
+  /* Prepare the input byte array. */
+  if (!args[0].isObject() || !args[0].toObject().is<ArrayBufferObject>()) {
+    JS_ReportErrorASCII(cx, "evalStencilXDR: ArrayBuffer expected");
+    return false;
+  }
+  RootedArrayBufferObject src(cx, &args[0].toObject().as<ArrayBufferObject>());
+
+  const char* filename = "compileStencilXDR-DATA.js";
+  uint32_t lineno = 1;
+
+  /* Prepare the CompilationInfoVector for decoding. */
+  CompileOptions options(cx);
+  options.setFileAndLine(filename, lineno);
+  options.setForceFullParse();
+
+  Rooted<frontend::CompilationInfoVector> compilationInfos(
+      cx, frontend::CompilationInfoVector(cx, options));
+  if (!compilationInfos.get().initial.input.initForGlobal(cx)) {
+    return false;
+  }
+
+  /* Deserialize the stencil from XDR. */
+  JS::TranscodeRange xdrRange(src->dataPointer(), src->byteLength().get());
+  bool succeeded = false;
+  if (!compilationInfos.get().deserializeStencils(cx, xdrRange, &succeeded)) {
+    return false;
+  }
+  if (!succeeded) {
+    JS_ReportErrorASCII(cx, "Decoding failure");
+    return false;
+  }
+
+  /* Instantiate the stencil. */
+  Rooted<frontend::CompilationGCOutput> output(cx);
+  if (!compilationInfos.get().instantiateStencils(cx, output.get())) {
+    return false;
+  }
+
+  /* Obtain the JSScript and evaluate it. */
+  RootedScript script(cx, output.get().script);
+  RootedValue retVal(cx, UndefinedValue());
+  if (!JS_ExecuteScript(cx, script, &retVal)) {
+    return false;
+  }
+
+  args.rval().set(retVal);
+  return true;
+}
+
 static bool SetDiscardSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -4729,33 +4910,6 @@ static bool SetDiscardSource(JSContext* cx, unsigned argc, Value* vp) {
   cx->realm()->behaviors().setDiscardSource(discard);
 
   args.rval().setUndefined();
-  return true;
-}
-
-static bool GetConstructorName(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  if (!args.requireAtLeast(cx, "getConstructorName", 1)) {
-    return false;
-  }
-
-  if (!args[0].isObject()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_NOT_EXPECTED_TYPE, "getConstructorName",
-                              "Object", InformalValueTypeName(args[0]));
-    return false;
-  }
-
-  RootedAtom name(cx);
-  RootedObject obj(cx, &args[0].toObject());
-  if (!JSObject::constructorDisplayAtom(cx, obj, &name)) {
-    return false;
-  }
-
-  if (name) {
-    args.rval().setString(name);
-  } else {
-    args.rval().setNull();
-  }
   return true;
 }
 
@@ -5640,117 +5794,6 @@ static bool GlobalLexicals(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool MonitorType(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  RootedObject callee(cx, &args.callee());
-
-  // First argument must be either a scripted function or null/undefined (in
-  // this case we use the caller's script).
-  RootedFunction fun(cx);
-  RootedScript script(cx);
-  if (args.get(0).isNullOrUndefined()) {
-    script = cx->currentScript();
-    if (!script) {
-      ReportUsageErrorASCII(cx, callee, "No scripted caller");
-      return false;
-    }
-  } else {
-    if (!IsFunctionObject(args.get(0), fun.address()) ||
-        !fun->isInterpreted()) {
-      ReportUsageErrorASCII(
-          cx, callee,
-          "First argument must be a scripted function or null/undefined");
-      return false;
-    }
-
-    script = JSFunction::getOrCreateScript(cx, fun);
-    if (!script) {
-      return false;
-    }
-  }
-
-  int32_t index;
-  if (!ToInt32(cx, args.get(1), &index)) {
-    return false;
-  }
-
-  if (index < 0 || uint32_t(index) >= jit::JitScript::NumTypeSets(script)) {
-    ReportUsageErrorASCII(cx, callee, "Index out of range");
-    return false;
-  }
-
-  RootedValue val(cx, args.get(2));
-
-  // If val is "unknown" or "unknownObject" we mark the TypeSet as unknown or
-  // unknownObject, respectively.
-  bool unknown = false;
-  bool unknownObject = false;
-  if (val.isString()) {
-    if (!JS_StringEqualsLiteral(cx, val.toString(), "unknown", &unknown)) {
-      return false;
-    }
-    if (!JS_StringEqualsLiteral(cx, val.toString(), "unknownObject",
-                                &unknownObject)) {
-      return false;
-    }
-  }
-
-  // Avoid assertion failures if TI or Baseline Interpreter is disabled or if we
-  // can't Baseline Interpret this script.
-  if (!IsTypeInferenceEnabled() || !jit::IsBaselineInterpreterEnabled() ||
-      !jit::CanBaselineInterpretScript(script)) {
-    args.rval().setUndefined();
-    return true;
-  }
-
-  AutoRealm ar(cx, script);
-
-  if (!cx->realm()->ensureJitRealmExists(cx)) {
-    return false;
-  }
-
-  jit::AutoKeepJitScripts keepJitScript(cx);
-  if (!script->ensureHasJitScript(cx, keepJitScript)) {
-    return false;
-  }
-
-  AutoEnterAnalysis enter(cx);
-  AutoSweepJitScript sweep(script);
-  StackTypeSet* typeSet = script->jitScript()->typeArray(sweep) + index;
-  if (unknown) {
-    typeSet->addType(sweep, cx, TypeSet::UnknownType());
-  } else if (unknownObject) {
-    typeSet->addType(sweep, cx, TypeSet::AnyObjectType());
-  } else {
-    typeSet->addType(sweep, cx, TypeSet::GetValueType(val));
-  }
-
-  args.rval().setUndefined();
-  return true;
-}
-
-static bool MarkObjectPropertiesUnknown(JSContext* cx, unsigned argc,
-                                        Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  RootedObject callee(cx, &args.callee());
-
-  if (!args.get(0).isObject()) {
-    ReportUsageErrorASCII(cx, callee, "Argument must be an object");
-    return false;
-  }
-
-  RootedObject obj(cx, &args[0].toObject());
-  RootedObjectGroup group(cx, JSObject::getGroup(cx, obj));
-  if (!group) {
-    return false;
-  }
-
-  MarkObjectGroupUnknownProperties(cx, group);
-
-  args.rval().setUndefined();
-  return true;
-}
-
 static bool EncodeAsUtf8InBuffer(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   if (!args.requireAtLeast(cx, "encodeAsUtf8InBuffer", 2)) {
@@ -5785,7 +5828,7 @@ static bool EncodeAsUtf8InBuffer(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   Maybe<Tuple<size_t, size_t>> amounts = JS_EncodeStringToUTF8BufferPartial(
-      cx, args[0].toString(), AsWritableChars(MakeSpan(data, length)));
+      cx, args[0].toString(), AsWritableChars(Span(data, length)));
   if (!amounts) {
     ReportOutOfMemory(cx);
     return false;
@@ -6502,28 +6545,50 @@ gc::ZealModeHelpText),
 "wasmIsSupportedByHardware()",
 "  Returns a boolean indicating whether WebAssembly is supported on the current hardware (regardless of whether we've enabled support)."),
 
-    JS_FN_HELP("wasmDebuggingIsSupported", WasmDebuggingIsSupported, 0, 0,
-"wasmDebuggingIsSupported()",
+    JS_FN_HELP("wasmDebuggingEnabled", WasmDebuggingEnabled, 0, 0,
+"wasmDebuggingEnabled()",
 "  Returns a boolean indicating whether WebAssembly debugging is supported on the current device;\n"
 "  returns false also if WebAssembly is not supported"),
 
-    JS_FN_HELP("wasmStreamingIsSupported", WasmStreamingIsSupported, 0, 0,
-"wasmStreamingIsSupported()",
+    JS_FN_HELP("wasmStreamingEnabled", WasmStreamingEnabled, 0, 0,
+"wasmStreamingEnabled()",
 "  Returns a boolean indicating whether WebAssembly caching is supported by the runtime."),
 
-    JS_FN_HELP("wasmCachingIsSupported", WasmCachingIsSupported, 0, 0,
-"wasmCachingIsSupported()",
+    JS_FN_HELP("wasmCachingEnabled", WasmCachingEnabled, 0, 0,
+"wasmCachingEnabled()",
 "  Returns a boolean indicating whether WebAssembly caching is supported by the runtime."),
 
-    JS_FN_HELP("wasmHugeMemoryIsSupported", WasmHugeMemoryIsSupported, 0, 0,
-"wasmHugeMemoryIsSupported()",
+    JS_FN_HELP("wasmHugeMemorySupported", WasmHugeMemorySupported, 0, 0,
+"wasmHugeMemorySupported()",
 "  Returns a boolean indicating whether WebAssembly supports using a large"
 "  virtual memory reservation in order to elide bounds checks on this platform."),
 
-    JS_FN_HELP("wasmThreadsSupported", WasmThreadsSupported, 0, 0,
-"wasmThreadsSupported()",
+    JS_FN_HELP("wasmThreadsEnabled", WasmThreadsEnabled, 0, 0,
+"wasmThreadsEnabled()",
 "  Returns a boolean indicating whether the WebAssembly threads proposal is\n"
 "  supported on the current device."),
+
+    JS_FN_HELP("wasmReftypesEnabled", WasmReftypesEnabled, 1, 0,
+"wasmReftypesEnabled()",
+"  Returns a boolean indicating whether the WebAssembly reftypes proposal is enabled."),
+
+    JS_FN_HELP("wasmFunctionReferencesEnabled", WasmFunctionReferencesEnabled, 1, 0,
+"wasmFunctionReferencesEnabled()",
+"  Returns a boolean indicating whether the WebAssembly function-references proposal is enabled."),
+
+    JS_FN_HELP("wasmGcEnabled", WasmGcEnabled, 1, 0,
+"wasmGcEnabled()",
+"  Returns a boolean indicating whether the WebAssembly GC types proposal is enabled."),
+
+    JS_FN_HELP("wasmMultiValueEnabled", WasmMultiValueEnabled, 1, 0,
+"wasmMultiValueEnabled()",
+"  Returns a boolean indicating whether the WebAssembly multi-value proposal is enabled."),
+
+#if defined(ENABLE_WASM_SIMD) && defined(DEBUG)
+    JS_FN_HELP("wasmSimdAnalysis", WasmSimdAnalysis, 1, 0,
+"wasmSimdAnalysis(...)",
+"  Unstable API for white-box testing.\n"),
+#endif
 
     JS_FN_HELP("wasmCompilersPresent", WasmCompilersPresent, 0, 0,
 "wasmCompilersPresent()",
@@ -6575,18 +6640,6 @@ gc::ZealModeHelpText),
 "  Returns a boolean indicating whether a given module was deserialized directly from a\n"
 "  cache (as opposed to compiled from bytecode)."),
 
-    JS_FN_HELP("wasmReftypesEnabled", WasmReftypesEnabled, 1, 0,
-"wasmReftypesEnabled()",
-"  Returns a boolean indicating whether the WebAssembly reftypes proposal is enabled."),
-
-    JS_FN_HELP("wasmGcEnabled", WasmGcEnabled, 1, 0,
-"wasmGcEnabled()",
-"  Returns a boolean indicating whether the WebAssembly GC types proposal is enabled."),
-
-    JS_FN_HELP("wasmMultiValueEnabled", WasmMultiValueEnabled, 1, 0,
-"wasmMultiValueEnabled()",
-"  Returns a boolean indicating whether the WebAssembly multi-value proposal is enabled."),
-
     JS_FN_HELP("isLazyFunction", IsLazyFunction, 1, 0,
 "isLazyFunction(fun)",
 "  True if fun is a lazy JSFunction."),
@@ -6594,6 +6647,11 @@ gc::ZealModeHelpText),
     JS_FN_HELP("isRelazifiableFunction", IsRelazifiableFunction, 1, 0,
 "isRelazifiableFunction(fun)",
 "  True if fun is a JSFunction with a relazifiable JSScript."),
+
+    JS_FN_HELP("hasSameBytecodeData", HasSameBytecodeData, 2, 0,
+"hasSameBytecodeData(fun1, fun2)",
+"  True if fun1 and fun2 share the same copy of bytecode data. This will\n"
+"  delazify the function if necessary."),
 
     JS_FN_HELP("enableShellAllocationMetadataBuilder", EnableShellAllocationMetadataBuilder, 0, 0,
 "enableShellAllocationMetadataBuilder()",
@@ -6810,11 +6868,6 @@ gc::ZealModeHelpText),
 "  Explicitly enable source discarding in the current compartment.  The default is that "
 "  source discarding is not explicitly enabled."),
 
-    JS_FN_HELP("getConstructorName", GetConstructorName, 1, 0,
-"getConstructorName(object)",
-"  If the given object was created with `new Ctor`, return the constructor's display name. "
-"  Otherwise, return null."),
-
     JS_FN_HELP("allocationMarker", AllocationMarker, 0, 0,
 "allocationMarker([options])",
 "  Return a freshly allocated object whose [[Class]] name is\n"
@@ -6945,14 +6998,6 @@ gc::ZealModeHelpText),
 "  Returns an object containing a copy of all global lexical bindings.\n"
 "  Example use: let x = 1; assertEq(globalLexicals().x, 1);\n"),
 
-    JS_FN_HELP("monitorType", MonitorType, 3, 0,
-"monitorType(fun, index, val)",
-"  Adds val's type to the index'th StackTypeSet of the function's\n"
-"  JitScript.\n"
-"  If fun is null or undefined, the caller's script is used.\n"
-"  If the value is the string 'unknown' or 'unknownObject'\n"
-"  the TypeSet is marked as unknown or unknownObject, respectively.\n"),
-
     JS_FN_HELP("baselineCompile", BaselineCompile, 2, 0,
 "baselineCompile([fun/code], forceDebugInstrumentation=false)",
 "  Baseline-compiles the given JS function or script.\n"
@@ -6962,10 +7007,6 @@ gc::ZealModeHelpText),
 "    baselineCompile();  for (var i=0; i<1; i++) {} ...\n"
 "  The interpreter will enter the new jitcode at the loop header unless\n"
 "  baselineCompile returned a string or threw an error.\n"),
-
-    JS_FN_HELP("markObjectPropertiesUnknown", MarkObjectPropertiesUnknown, 1, 0,
-"markObjectPropertiesUnknown(obj)",
-"  Mark all objects in obj's object group as having unknown properties.\n"),
 
     JS_FN_HELP("encodeAsUtf8InBuffer", EncodeAsUtf8InBuffer, 2, 0,
 "encodeAsUtf8InBuffer(str, uint8Array)",
@@ -7018,6 +7059,16 @@ JS_FN_HELP("setDefaultLocale", SetDefaultLocale, 1, 0,
 "  Set the runtime default locale to the given value.\n"
 "  An empty string or undefined resets the runtime locale to its default value.\n"
 "  NOTE: The input string is not fully validated, it must be a valid BCP-47 language tag."),
+
+    JS_FN_HELP("compileStencilXDR", CompileStencilXDR, 1, 0,
+"compileStencilXDR(string)",
+"  Parses the given string argument as js script, produces the stencil"
+"  for it, XDR-encodes the stencil, and returns an ArrayBuf of the contents."),
+
+    JS_FN_HELP("evalStencilXDR", EvalStencilXDR, 1, 0,
+"evalStencilXDR(arrayBuf)",
+"  Reads the given buffer as an XDR-encoded stencil, and evaluates the"
+"  top-level script it defines."),
 
     JS_FS_HELP_END
 };

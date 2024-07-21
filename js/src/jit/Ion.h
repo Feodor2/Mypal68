@@ -5,19 +5,35 @@
 #ifndef jit_Ion_h
 #define jit_Ion_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Result.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jsfriendapi.h"
+#include "jspubtd.h"
 
 #include "jit/BaselineJIT.h"
-#include "jit/CompileWrappers.h"
+#include "jit/IonTypes.h"
 #include "jit/JitContext.h"
 #include "jit/JitOptions.h"
+#include "js/Principals.h"
+#include "js/TypeDecls.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/JSContext.h"
-#include "vm/Realm.h"
-#include "vm/TypeInference.h"
+#include "vm/JSFunction.h"
+#include "vm/JSScript.h"
 
 namespace js {
+
+class RunState;
+
 namespace jit {
+
+class BaselineFrame;
 
 bool CanIonCompileScript(JSContext* cx, JSScript* script);
 bool CanIonInlineScript(JSScript* script);
@@ -46,17 +62,6 @@ MOZ_MUST_USE bool IonCompileScriptForBaselineOSR(JSContext* cx,
 MethodStatus CanEnterIon(JSContext* cx, RunState& state);
 
 MethodStatus Recompile(JSContext* cx, HandleScript script, bool force);
-
-struct EnterJitData;
-
-// Walk the stack and invalidate active Ion frames for the invalid scripts.
-void Invalidate(TypeZone& types, JSFreeOp* fop,
-                const RecompileInfoVector& invalid, bool resetUses = true,
-                bool cancelOffThread = true);
-void Invalidate(JSContext* cx, const RecompileInfoVector& invalid,
-                bool resetUses = true, bool cancelOffThread = true);
-void Invalidate(JSContext* cx, JSScript* script, bool resetUses = true,
-                bool cancelOffThread = true);
 
 class MIRGenerator;
 class LIRGraph;
@@ -105,10 +110,10 @@ inline size_t NumLocalsAndArgs(JSScript* script) {
 // backend compilation.
 class MOZ_RAII AutoEnterIonBackend {
  public:
-  explicit AutoEnterIonBackend(bool safeForMinorGC) {
+  AutoEnterIonBackend() {
 #ifdef DEBUG
     JitContext* jcx = GetJitContext();
-    jcx->enterIonBackend(safeForMinorGC);
+    jcx->enterIonBackend();
 #endif
   }
 
@@ -131,14 +136,8 @@ inline bool IsIonEnabled(JSContext* cx) {
     return false;
   }
 
-  // If TI is disabled, Ion can only be used if WarpBuilder is enabled.
-  if (MOZ_LIKELY(IsTypeInferenceEnabled())) {
-    MOZ_ASSERT(!JitOptions.warpBuilder,
-               "Shouldn't enable WarpBuilder without disabling TI!");
-  } else {
-    if (!JitOptions.warpBuilder) {
-      return false;
-    }
+  if (!JitOptions.warpBuilder) {
+    return false;
   }
 
   if (MOZ_LIKELY(JitOptions.ion)) {

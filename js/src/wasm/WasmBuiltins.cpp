@@ -19,6 +19,7 @@
 
 #include "fdlibm.h"
 #include "jslibmath.h"
+#include "jsmath.h"
 
 #include "gc/Allocator.h"
 #include "jit/AtomicOperations.h"
@@ -26,7 +27,8 @@
 #include "jit/MacroAssembler.h"
 #include "jit/Simulator.h"
 #include "js/experimental/JitInfo.h"  // JSJitInfo
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::CheckRecursionLimit
 #include "threading/Mutex.h"
 #include "util/Memory.h"
 #include "util/Poison.h"
@@ -213,8 +215,8 @@ const SymbolicAddressSignature SASigStructNarrow = {
     SymbolicAddress::StructNarrow,
     _RoN,
     _Infallible,
-    4,
-    {_PTR, _I32, _I32, _RoN, _END}};
+    3,
+    {_PTR, _I32, _RoN, _END}};
 
 }  // namespace wasm
 }  // namespace js
@@ -299,7 +301,7 @@ static bool WasmHandleDebugTrap() {
   JitActivation* activation = CallingActivation();
   JSContext* cx = activation->cx();
   Frame* fp = activation->wasmExitFP();
-  Instance* instance = fp->instance();
+  Instance* instance = GetNearestEffectiveTls(fp)->instance;
   const Code& code = instance->code();
   MOZ_ASSERT(code.metadata().debugEnabled);
 
@@ -504,7 +506,7 @@ static void* WasmHandleTrap() {
       if (!CheckRecursionLimit(cx)) {
         return nullptr;
       }
-      if (activation->wasmExitFP()->tls()->isInterrupted()) {
+      if (activation->wasmExitTls()->isInterrupted()) {
         return CheckInterrupt(cx, activation);
       }
       return ReportError(cx, JSMSG_OVER_RECURSED);
@@ -619,7 +621,7 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, TlsData* tlsData,
       }
       case ValType::Ref: {
         switch (fe.funcType().args()[i].refTypeKind()) {
-          case RefType::Any:
+          case RefType::Extern:
             // Leave Object and Null alone, we will unbox inline.  All we need
             // to do is convert other values to an Object representation.
             if (!arg.isObjectOrNull()) {
@@ -631,6 +633,7 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, TlsData* tlsData,
             }
             break;
           case RefType::Func:
+          case RefType::Eq:
           case RefType::TypeIndex:
             // Guarded against by temporarilyUnsupportedReftypeForEntry()
             MOZ_CRASH("unexpected input argument in CoerceInPlace_JitEntry");
@@ -788,36 +791,11 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
     case SymbolicAddress::HandleTrap:
       *abiType = Args_General0;
       return FuncCast(WasmHandleTrap, *abiType);
-    case SymbolicAddress::CallImport_Void:
+    case SymbolicAddress::CallImport_General:
       *abiType = MakeABIFunctionType(
           ArgType_Int32,
           {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
-      return FuncCast(Instance::callImport_void, *abiType);
-    case SymbolicAddress::CallImport_I32:
-      *abiType = MakeABIFunctionType(
-          ArgType_Int32,
-          {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
-      return FuncCast(Instance::callImport_i32, *abiType);
-    case SymbolicAddress::CallImport_I64:
-      *abiType = MakeABIFunctionType(
-          ArgType_Int32,
-          {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
-      return FuncCast(Instance::callImport_i64, *abiType);
-    case SymbolicAddress::CallImport_F64:
-      *abiType = MakeABIFunctionType(
-          ArgType_Int32,
-          {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
-      return FuncCast(Instance::callImport_f64, *abiType);
-    case SymbolicAddress::CallImport_FuncRef:
-      *abiType = MakeABIFunctionType(
-          ArgType_Int32,
-          {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
-      return FuncCast(Instance::callImport_funcref, *abiType);
-    case SymbolicAddress::CallImport_AnyRef:
-      *abiType = MakeABIFunctionType(
-          ArgType_Int32,
-          {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
-      return FuncCast(Instance::callImport_anyref, *abiType);
+      return FuncCast(Instance::callImport_general, *abiType);
     case SymbolicAddress::CoerceInPlace_ToInt32:
       *abiType = Args_General1;
       return FuncCast(CoerceInPlace_ToInt32, *abiType);
@@ -1074,8 +1052,7 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       return FuncCast(Instance::structNew, *abiType);
     case SymbolicAddress::StructNarrow:
       *abiType = MakeABIFunctionType(
-          ArgType_General,
-          {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General});
+          ArgType_General, {ArgType_General, ArgType_Int32, ArgType_General});
       MOZ_ASSERT(*abiType == ToABIType(SASigStructNarrow));
       return FuncCast(Instance::structNarrow, *abiType);
 
@@ -1111,15 +1088,10 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
   // Some functions don't want to a thunk, because they already have one or
   // they don't have frame info.
   switch (sym) {
-    case SymbolicAddress::HandleDebugTrap:  // GenerateDebugTrapStub
-    case SymbolicAddress::HandleThrow:      // GenerateThrowStub
-    case SymbolicAddress::HandleTrap:       // GenerateTrapExit
-    case SymbolicAddress::CallImport_Void:  // GenerateImportInterpExit
-    case SymbolicAddress::CallImport_I32:
-    case SymbolicAddress::CallImport_I64:
-    case SymbolicAddress::CallImport_F64:
-    case SymbolicAddress::CallImport_FuncRef:
-    case SymbolicAddress::CallImport_AnyRef:
+    case SymbolicAddress::HandleDebugTrap:        // GenerateDebugTrapStub
+    case SymbolicAddress::HandleThrow:            // GenerateThrowStub
+    case SymbolicAddress::HandleTrap:             // GenerateTrapExit
+    case SymbolicAddress::CallImport_General:     // GenerateImportInterpExit
     case SymbolicAddress::CoerceInPlace_ToInt32:  // GenerateImportJitExit
     case SymbolicAddress::CoerceInPlace_ToNumber:
     case SymbolicAddress::CoerceInPlace_ToBigInt:

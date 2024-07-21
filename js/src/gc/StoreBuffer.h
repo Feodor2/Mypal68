@@ -462,8 +462,6 @@ class StoreBuffer {
 
   bool aboutToOverflow_;
   bool enabled_;
-  bool cancelIonCompilations_;
-  bool hasTypeSetPointers_;
   bool mayHavePointersToDeadCells_;
 #ifdef DEBUG
   bool mEntered; /* For ReentrancyGuard. */
@@ -486,15 +484,6 @@ class StoreBuffer {
 
   /* Get the overflowed status. */
   bool isAboutToOverflow() const { return aboutToOverflow_; }
-
-  bool cancelIonCompilations() const { return cancelIonCompilations_; }
-
-  /*
-   * Type inference data structures are moved during sweeping, so if we we are
-   * to sweep them then we must make sure that the storebuffer has no pointers
-   * into them.
-   */
-  bool hasTypeSetPointers() const { return hasTypeSetPointers_; }
 
   /*
    * Brain transplants may add whole cell buffer entires for dead cells. We must
@@ -534,8 +523,6 @@ class StoreBuffer {
     put(bufferGeneric, t);
   }
 
-  void setShouldCancelIonCompilations() { cancelIonCompilations_ = true; }
-  void setHasTypeSetPointers() { hasTypeSetPointers_ = true; }
   void setMayHavePointersToDeadCells() { mayHavePointersToDeadCells_ = true; }
 
   /* Methods to trace the source of all edges in the store buffer. */
@@ -646,7 +633,7 @@ MOZ_ALWAYS_INLINE void PostWriteBarrierImpl(void* cellp, T* prev, T* next) {
   MOZ_ASSERT(cellp);
 
   // If the target needs an entry, add it.
-  js::gc::StoreBuffer* buffer;
+  StoreBuffer* buffer;
   if (next && (buffer = next->storeBuffer())) {
     // If we know that the prev has already inserted an entry, we can skip
     // doing the lookup to add the new entry. Note that we cannot safely
@@ -671,14 +658,17 @@ MOZ_ALWAYS_INLINE void PostWriteBarrier(T** vp, T* prev, T* next) {
   static_assert(std::is_base_of_v<Cell, T>);
   static_assert(!std::is_same_v<Cell, T> && !std::is_same_v<TenuredCell, T>);
 
-  if constexpr (!std::is_base_of_v<gc::TenuredCell, T>) {
-    using BaseT = typename gc::BaseGCType<T>::type;
-    gc::PostWriteBarrierImpl<BaseT>(vp, prev, next);
+  if constexpr (!std::is_base_of_v<TenuredCell, T>) {
+    using BaseT = typename BaseGCType<T>::type;
+    PostWriteBarrierImpl<BaseT>(vp, prev, next);
     return;
   }
 
   MOZ_ASSERT(!IsInsideNursery(next));
 }
+
+// Used when we don't have a specific edge to put in the store buffer.
+void PostWriteBarrierCell(Cell* cell, Cell* prev, Cell* next);
 
 } /* namespace gc */
 } /* namespace js */

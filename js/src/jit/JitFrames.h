@@ -5,74 +5,26 @@
 #ifndef jit_JitFrames_h
 #define jit_JitFrames_h
 
-#include <stdint.h>  // uintptr_t
+#include "mozilla/Assertions.h"
 
-#include "jit/JSJitFrameIter.h"
-#include "vm/JSContext.h"
-#include "vm/JSFunction.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jit/CalleeToken.h"
+#include "jit/Registers.h"
+#include "js/Id.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
 
 namespace js {
 namespace jit {
 
+enum class FrameType;
+class IonScript;
+class JitActivation;
+class JitFrameLayout;
 struct SafepointSlotEntry;
 struct VMFunctionData;
-
-enum CalleeTokenTag {
-  CalleeToken_Function = 0x0,  // untagged
-  CalleeToken_FunctionConstructing = 0x1,
-  CalleeToken_Script = 0x2
-};
-
-// Any CalleeToken with this bit set must be CalleeToken_Script.
-static const uintptr_t CalleeTokenScriptBit = CalleeToken_Script;
-
-static const uintptr_t CalleeTokenMask = ~uintptr_t(0x3);
-
-static inline CalleeTokenTag GetCalleeTokenTag(CalleeToken token) {
-  CalleeTokenTag tag = CalleeTokenTag(uintptr_t(token) & 0x3);
-  MOZ_ASSERT(tag <= CalleeToken_Script);
-  return tag;
-}
-static inline CalleeToken CalleeToToken(JSFunction* fun, bool constructing) {
-  CalleeTokenTag tag =
-      constructing ? CalleeToken_FunctionConstructing : CalleeToken_Function;
-  return CalleeToken(uintptr_t(fun) | uintptr_t(tag));
-}
-static inline CalleeToken CalleeToToken(JSScript* script) {
-  return CalleeToken(uintptr_t(script) | uintptr_t(CalleeToken_Script));
-}
-static inline bool CalleeTokenIsFunction(CalleeToken token) {
-  CalleeTokenTag tag = GetCalleeTokenTag(token);
-  return tag == CalleeToken_Function || tag == CalleeToken_FunctionConstructing;
-}
-static inline bool CalleeTokenIsConstructing(CalleeToken token) {
-  return GetCalleeTokenTag(token) == CalleeToken_FunctionConstructing;
-}
-static inline JSFunction* CalleeTokenToFunction(CalleeToken token) {
-  MOZ_ASSERT(CalleeTokenIsFunction(token));
-  return (JSFunction*)(uintptr_t(token) & CalleeTokenMask);
-}
-static inline JSScript* CalleeTokenToScript(CalleeToken token) {
-  MOZ_ASSERT(GetCalleeTokenTag(token) == CalleeToken_Script);
-  return (JSScript*)(uintptr_t(token) & CalleeTokenMask);
-}
-static inline bool CalleeTokenIsModuleScript(CalleeToken token) {
-  CalleeTokenTag tag = GetCalleeTokenTag(token);
-  return tag == CalleeToken_Script && CalleeTokenToScript(token)->isModule();
-}
-
-static inline JSScript* ScriptFromCalleeToken(CalleeToken token) {
-  switch (GetCalleeTokenTag(token)) {
-    case CalleeToken_Script:
-      return CalleeTokenToScript(token);
-    case CalleeToken_Function:
-    case CalleeToken_FunctionConstructing:
-      return CalleeTokenToFunction(token)->nonLazyScript();
-  }
-  MOZ_CRASH("invalid callee token tag");
-}
-
-JSScript* MaybeForwardedScriptFromCalleeToken(CalleeToken token);
 
 // In between every two frames lies a small header describing both frames. This
 // header, minimally, contains a returnAddress word and a descriptor word. The
@@ -86,64 +38,6 @@ JSScript* MaybeForwardedScriptFromCalleeToken(CalleeToken token);
 // per activation of EnterIon or EnterBaseline. These reuse JitFrameLayout.
 // - Exit frames are necessary to leave JIT code and enter C++, and thus,
 // C++ code will always begin iterating from the topmost exit frame.
-
-class LSafepoint;
-class CodegenSafepointIndex;
-
-// Two-tuple that lets you look up the safepoint entry given the
-// displacement of a call instruction within the JIT code.
-class SafepointIndex {
-  // The displacement is the distance from the first byte of the JIT'd code
-  // to the return address (of the call that the safepoint was generated for).
-  uint32_t displacement_ = 0;
-
-  // Offset within the safepoint buffer.
-  uint32_t safepointOffset_ = 0;
-
- public:
-  inline explicit SafepointIndex(const CodegenSafepointIndex& csi);
-
-  uint32_t displacement() const { return displacement_; }
-  uint32_t safepointOffset() const { return safepointOffset_; }
-};
-
-class CodegenSafepointIndex {
-  uint32_t displacement_ = 0;
-
-  LSafepoint* safepoint_ = nullptr;
-
- public:
-  CodegenSafepointIndex(uint32_t displacement, LSafepoint* safepoint)
-      : displacement_(displacement), safepoint_(safepoint) {}
-
-  LSafepoint* safepoint() const { return safepoint_; }
-  uint32_t displacement() const { return displacement_; }
-  void adjustDisplacement(uint32_t offset) {
-    MOZ_ASSERT(offset >= displacement_);
-    displacement_ = offset;
-  }
-  inline SnapshotOffset snapshotOffset() const;
-  inline bool hasSnapshotOffset() const;
-};
-
-class MacroAssembler;
-// The OSI point is patched to a call instruction. Therefore, the
-// returnPoint for an OSI call is the address immediately following that
-// call instruction. The displacement of that point within the assembly
-// buffer is the |returnPointDisplacement|.
-class OsiIndex {
-  uint32_t callPointDisplacement_;
-  uint32_t snapshotOffset_;
-
- public:
-  OsiIndex(uint32_t callPointDisplacement, uint32_t snapshotOffset)
-      : callPointDisplacement_(callPointDisplacement),
-        snapshotOffset_(snapshotOffset) {}
-
-  uint32_t returnPointDisplacement() const;
-  uint32_t callPointDisplacement() const { return callPointDisplacement_; }
-  uint32_t snapshotOffset() const { return snapshotOffset_; }
-};
 
 // The layout of an Ion frame on the C stack is roughly:
 //      argN     _
@@ -245,7 +139,7 @@ struct ResumeFromException {
   uint32_t kind;
 
   // Value to push when resuming into a |finally| block.
-  Value exception;
+  JS::Value exception;
 
   BaselineBailoutInfo* bailoutInfo;
 };
@@ -275,19 +169,7 @@ static inline uint32_t MakeFrameDescriptor(uint32_t frameSize, FrameType type,
 }
 
 // Returns the JSScript associated with the topmost JIT frame.
-inline JSScript* GetTopJitJSScript(JSContext* cx) {
-  JSJitFrameIter frame(cx->activation()->asJit());
-  MOZ_ASSERT(frame.type() == FrameType::Exit);
-  ++frame;
-
-  if (frame.isBaselineStub()) {
-    ++frame;
-    MOZ_ASSERT(frame.isBaselineJS());
-  }
-
-  MOZ_ASSERT(frame.isScripted());
-  return frame.script();
-}
+JSScript* GetTopJitJSScript(JSContext* cx);
 
 #ifdef JS_CODEGEN_MIPS32
 uint8_t* alignDoubleSpill(uint8_t* pointer);
@@ -349,18 +231,20 @@ class JitFrameLayout : public CommonFrameLayout {
   }
   static size_t offsetOfThis() { return sizeof(JitFrameLayout); }
   static size_t offsetOfEvalNewTarget() { return sizeof(JitFrameLayout); }
-  static size_t offsetOfActualArgs() { return offsetOfThis() + sizeof(Value); }
+  static size_t offsetOfActualArgs() {
+    return offsetOfThis() + sizeof(JS::Value);
+  }
   static size_t offsetOfActualArg(size_t arg) {
-    return offsetOfActualArgs() + arg * sizeof(Value);
+    return offsetOfActualArgs() + arg * sizeof(JS::Value);
   }
 
-  Value thisv() {
+  JS::Value thisv() {
     MOZ_ASSERT(CalleeTokenIsFunction(calleeToken()));
     return argv()[0];
   }
-  Value* argv() {
+  JS::Value* argv() {
     MOZ_ASSERT(CalleeTokenIsFunction(calleeToken()));
-    return (Value*)(this + 1);
+    return (JS::Value*)(this + 1);
   }
   uintptr_t numActualArgs() const { return numActualArgs_; }
 
@@ -518,7 +402,9 @@ class NativeExitFrameLayout {
   static size_t offsetOfResult() {
     return offsetof(NativeExitFrameLayout, loCalleeResult_);
   }
-  inline Value* vp() { return reinterpret_cast<Value*>(&loCalleeResult_); }
+  inline JS::Value* vp() {
+    return reinterpret_cast<JS::Value*>(&loCalleeResult_);
+  }
   inline uintptr_t argc() const { return argc_; }
 };
 
@@ -563,7 +449,7 @@ class IonOOLNativeExitFrameLayout {
   static inline size_t Size(size_t argc) {
     // The frame accounts for the callee/result and |this|, so we only need
     // args.
-    return sizeof(IonOOLNativeExitFrameLayout) + (argc * sizeof(Value));
+    return sizeof(IonOOLNativeExitFrameLayout) + (argc * sizeof(JS::Value));
   }
 
   static size_t offsetOfResult() {
@@ -571,8 +457,10 @@ class IonOOLNativeExitFrameLayout {
   }
 
   inline JitCode** stubCode() { return &stubCode_; }
-  inline Value* vp() { return reinterpret_cast<Value*>(&loCalleeResult_); }
-  inline Value* thisp() { return reinterpret_cast<Value*>(&loThis_); }
+  inline JS::Value* vp() {
+    return reinterpret_cast<JS::Value*>(&loCalleeResult_);
+  }
+  inline JS::Value* thisp() { return reinterpret_cast<JS::Value*>(&loThis_); }
   inline uintptr_t argc() const { return argc_; }
 };
 
@@ -611,7 +499,7 @@ class IonOOLProxyExitFrameLayout {
   }
 
   inline JitCode** stubCode() { return &stubCode_; }
-  inline Value* vp() { return reinterpret_cast<Value*>(&vp0_); }
+  inline JS::Value* vp() { return reinterpret_cast<JS::Value*>(&vp0_); }
   inline jsid* id() { return &id_; }
   inline JSObject** proxy() { return &proxy_; }
 };
@@ -636,7 +524,9 @@ class IonDOMExitFrameLayout {
   static size_t offsetOfResult() {
     return offsetof(IonDOMExitFrameLayout, loCalleeResult_);
   }
-  inline Value* vp() { return reinterpret_cast<Value*>(&loCalleeResult_); }
+  inline JS::Value* vp() {
+    return reinterpret_cast<JS::Value*>(&loCalleeResult_);
+  }
   inline JSObject** thisObjAddress() { return &thisObj; }
   inline bool isMethodFrame();
 };
@@ -650,7 +540,7 @@ class IonDOMMethodExitFrameLayout {
   // This must be the last thing pushed, so as to stay common with
   // IonDOMExitFrameLayout.
   JSObject* thisObj_;
-  Value* argv_;
+  JS::Value* argv_;
   uintptr_t argc_;
 
   // We need to split the Value into 2 fields of 32 bits, otherwise the C++
@@ -669,12 +559,12 @@ class IonDOMMethodExitFrameLayout {
     return offsetof(IonDOMMethodExitFrameLayout, loCalleeResult_);
   }
 
-  inline Value* vp() {
+  inline JS::Value* vp() {
     // The code in visitCallDOMNative depends on this static assert holding
     static_assert(
         offsetof(IonDOMMethodExitFrameLayout, loCalleeResult_) ==
         (offsetof(IonDOMMethodExitFrameLayout, argc_) + sizeof(uintptr_t)));
-    return reinterpret_cast<Value*>(&loCalleeResult_);
+    return reinterpret_cast<JS::Value*>(&loCalleeResult_);
   }
   inline JSObject** thisObjAddress() { return &thisObj_; }
   inline uintptr_t argc() { return argc_; }
@@ -849,8 +739,6 @@ class InvalidationBailoutStack {
 };
 
 void GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes);
-
-CalleeToken TraceCalleeToken(JSTracer* trc, CalleeToken token);
 
 // Baseline requires one slot for this/argument type checks.
 static const uint32_t MinJITStackSize = 1;

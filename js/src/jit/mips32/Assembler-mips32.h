@@ -41,6 +41,8 @@ class ABIArgGenerator {
 
     return usedArgSlots_ * sizeof(intptr_t);
   }
+
+  void increaseStackOffset(uint32_t bytes) { MOZ_CRASH("NYI"); }
 };
 
 // These registers may be volatile or nonvolatile.
@@ -255,12 +257,6 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   }
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
-}
-
-static inline uint32_t GetArgStackDisp(uint32_t usedArgSlots) {
-  MOZ_ASSERT(usedArgSlots >= NumIntArgRegs);
-  // Even register arguments have place reserved on stack.
-  return usedArgSlots * sizeof(intptr_t);
 }
 
 }  // namespace jit

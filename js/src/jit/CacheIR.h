@@ -7,22 +7,27 @@
 
 #include "mozilla/Maybe.h"
 
-#include "jsmath.h"
-
 #include "NamespaceImports.h"
 
-#include "builtin/TypedObject.h"
 #include "gc/Rooting.h"
 #include "jit/CacheIROpsGenerated.h"
 #include "jit/CompactBuffer.h"
 #include "jit/ICState.h"
 #include "jit/Simulator.h"
+#include "js/experimental/JitInfo.h"
 #include "js/friend/XrayJitInfo.h"  // JS::XrayJitInfo
 #include "js/ScalarType.h"          // js::Scalar::Type
-#include "vm/Iteration.h"
+#include "vm/JSFunction.h"
 #include "vm/Shape.h"
+#include "wasm/TypedObject.h"
+
+enum class JSOp : uint8_t;
 
 namespace js {
+
+enum class ReferenceType;
+enum class UnaryMathFunction : uint8_t;
+
 namespace jit {
 
 enum class BaselineCacheIRStubKind;
@@ -32,6 +37,7 @@ class ICStub;
 class ICScript;
 class Label;
 class MacroAssembler;
+struct Register;
 
 // [SMDOC] CacheIR
 //
@@ -226,7 +232,8 @@ class StubField {
  public:
   enum class Type : uint8_t {
     // These fields take up a single word.
-    RawWord,
+    RawInt32,
+    RawPointer,
     Shape,
     ObjectGroup,
     JSObject,
@@ -238,7 +245,6 @@ class StubField {
     // These fields take up 64 bits on all platforms.
     RawInt64,
     First64BitType = RawInt64,
-    DOMExpandoGeneration,
     Value,
 
     Limit
@@ -480,13 +486,6 @@ enum class GuardClassKind : uint8_t {
 // zone, which refer to the actual shape via a reserved slot.
 JSObject* NewWrapperWithObjectShape(JSContext* cx, HandleNativeObject obj);
 
-// Enum for stubs handling a combination of typed arrays and typed objects.
-enum class TypedThingLayout : uint8_t {
-  TypedArray,
-  OutlineTypedObject,
-  InlineTypedObject
-};
-
 void LoadShapeWrapperContents(MacroAssembler& masm, Register obj, Register dst,
                               Label* failure);
 
@@ -619,11 +618,11 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     MOZ_ASSERT(script);
     addStubField(uintptr_t(script), StubField::Type::BaseScript);
   }
-  void writeRawWordField(uintptr_t word) {
-    addStubField(word, StubField::Type::RawWord);
+  void writeRawInt32Field(uint32_t val) {
+    addStubField(val, StubField::Type::RawInt32);
   }
   void writeRawPointerField(const void* ptr) {
-    addStubField(uintptr_t(ptr), StubField::Type::RawWord);
+    addStubField(uintptr_t(ptr), StubField::Type::RawPointer);
   }
   void writeIdField(jsid id) {
     addStubField(uintptr_t(JSID_BITS(id)), StubField::Type::Id);
@@ -631,8 +630,8 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   void writeValueField(const Value& val) {
     addStubField(val.asRawBits(), StubField::Type::Value);
   }
-  void writeDOMExpandoGenerationField(uint64_t generation) {
-    addStubField(generation, StubField::Type::DOMExpandoGeneration);
+  void writeRawInt64Field(uint64_t val) {
+    addStubField(val, StubField::Type::RawInt64);
   }
 
   void writeJSOpImm(JSOp op) {
@@ -653,15 +652,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     static_assert(JS_WHY_MAGIC_COUNT <= UINT8_MAX,
                   "JSWhyMagic must fit in uint8_t");
     buffer_.writeByte(uint8_t(whyMagic));
-  }
-  void writeTypedThingLayoutImm(TypedThingLayout layout) {
-    static_assert(sizeof(TypedThingLayout) == sizeof(uint8_t),
-                  "TypedThingLayout must fit in a byte");
-    buffer_.writeByte(uint8_t(layout));
-  }
-  void writeReferenceTypeImm(ReferenceType type) {
-    MOZ_ASSERT(size_t(type) <= UINT8_MAX);
-    buffer_.writeByte(uint8_t(type));
   }
   void writeScalarTypeImm(Scalar::Type type) {
     MOZ_ASSERT(size_t(type) <= UINT8_MAX);
@@ -737,7 +727,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
 
   size_t stubDataSize() const { return stubDataSize_; }
   void copyStubData(uint8_t* dest) const;
-  bool stubDataEqualsMaybeUpdate(uint8_t* stubData, bool* updated) const;
+  bool stubDataEquals(const uint8_t* stubData) const;
 
   bool operandIsDead(uint32_t operandId, uint32_t currentInstruction) const {
     if (operandId >= operandLastUsed_.length()) {
@@ -822,14 +812,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   // below to clarify what constraint the group guard is implying.
   void guardGroupForProto(ObjOperandId obj, ObjectGroup* group) {
     MOZ_ASSERT(!group->hasUncacheableProto());
-    guardGroup(obj, group);
-  }
-
-  void guardGroupForTypeBarrier(ObjOperandId obj, ObjectGroup* group) {
-    // Typesets will always be a super-set of any typesets previously seen
-    // for this group. If the type/group of a value being stored to a
-    // property in this group is not known, a TypeUpdate IC chain should be
-    // used as well.
     guardGroup(obj, group);
   }
 
@@ -936,6 +918,18 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
 #endif
   }
 
+  void callDOMFunction(ObjOperandId calleeId, Int32OperandId argc,
+                       ObjOperandId thisObjId, HandleFunction calleeFunc,
+                       CallFlags flags) {
+#ifdef JS_SIMULATOR
+    void* rawPtr = JS_FUNC_TO_DATA_PTR(void*, calleeFunc->native());
+    void* redirected = Simulator::RedirectNativeFunction(rawPtr, Args_General3);
+    callDOMFunction_(calleeId, argc, thisObjId, flags, redirected);
+#else
+    callDOMFunction_(calleeId, argc, thisObjId, flags);
+#endif
+  }
+
   void callAnyNativeFunction(ObjOperandId calleeId, Int32OperandId argc,
                              CallFlags flags) {
     MOZ_ASSERT(!flags.isSameRealm());
@@ -973,6 +967,16 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     MOZ_ASSERT(getter->hasJitEntry());
     uint32_t nargsAndFlags = encodeNargsAndFlags(getter);
     callScriptedGetterResult_(receiver, getter, sameRealm, nargsAndFlags);
+    trialInliningState_ = TrialInliningState::Candidate;
+  }
+
+  void callInlinedGetterResult(ValOperandId receiver, JSFunction* getter,
+                               ICScript* icScript, bool sameRealm) {
+    MOZ_ASSERT(getter->hasJitEntry());
+    uint32_t nargsAndFlags = encodeNargsAndFlags(getter);
+    callInlinedGetterResult_(receiver, getter, icScript, sameRealm,
+                             nargsAndFlags);
+    trialInliningState_ = TrialInliningState::Inlined;
   }
 
   void callNativeGetterResult(ValOperandId receiver, JSFunction* getter,
@@ -987,6 +991,16 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     MOZ_ASSERT(setter->hasJitEntry());
     uint32_t nargsAndFlags = encodeNargsAndFlags(setter);
     callScriptedSetter_(receiver, setter, rhs, sameRealm, nargsAndFlags);
+    trialInliningState_ = TrialInliningState::Candidate;
+  }
+
+  void callInlinedSetter(ObjOperandId receiver, JSFunction* setter,
+                         ValOperandId rhs, ICScript* icScript, bool sameRealm) {
+    MOZ_ASSERT(setter->hasJitEntry());
+    uint32_t nargsAndFlags = encodeNargsAndFlags(setter);
+    callInlinedSetter_(receiver, setter, rhs, icScript, sameRealm,
+                       nargsAndFlags);
+    trialInliningState_ = TrialInliningState::Inlined;
   }
 
   void callNativeSetter(ObjOperandId receiver, JSFunction* setter,
@@ -1074,10 +1088,6 @@ class MOZ_RAII CacheIRReader {
   JSValueType jsValueType() { return JSValueType(buffer_.readByte()); }
   ValueType valueType() { return ValueType(buffer_.readByte()); }
 
-  TypedThingLayout typedThingLayout() {
-    return TypedThingLayout(buffer_.readByte());
-  }
-
   Scalar::Type scalarType() { return Scalar::Type(buffer_.readByte()); }
   uint32_t typeDescrKey() { return buffer_.readByte(); }
   JSWhyMagic whyMagic() { return JSWhyMagic(buffer_.readByte()); }
@@ -1089,10 +1099,6 @@ class MOZ_RAII CacheIRReader {
   template <typename MetaKind>
   MetaKind metaKind() {
     return MetaKind(buffer_.readByte());
-  }
-
-  ReferenceType referenceTypeDescrType() {
-    return ReferenceType(buffer_.readByte());
   }
 
   UnaryMathFunction unaryMathFunction() {
@@ -1185,11 +1191,11 @@ class MOZ_RAII CacheIRCloner {
   PropertyName* getPropertyNameField(uint32_t stubOffset);
   JS::Symbol* getSymbolField(uint32_t stubOffset);
   BaseScript* getBaseScriptField(uint32_t stubOffset);
-  uintptr_t getRawWordField(uint32_t stubOffset);
+  uint32_t getRawInt32Field(uint32_t stubOffset);
   const void* getRawPointerField(uint32_t stubOffset);
   jsid getIdField(uint32_t stubOffset);
   const Value getValueField(uint32_t stubOffset);
-  uint64_t getDOMExpandoGenerationField(uint32_t stubOffset);
+  uint64_t getRawInt64Field(uint32_t stubOffset);
 };
 
 class MOZ_RAII IRGenerator {
@@ -1228,49 +1234,11 @@ class MOZ_RAII IRGenerator {
   static constexpr char* NotAttached = nullptr;
 };
 
-// Flags used to describe what values a GetProperty cache may produce.
-enum class GetPropertyResultFlags {
-  None = 0,
-
-  // Values produced by this cache will go through a type barrier,
-  // so the cache may produce any type of value that is compatible with its
-  // result operand.
-  Monitored = 1 << 0,
-
-  // Whether particular primitives may be produced by this cache.
-  AllowUndefined = 1 << 1,
-  AllowInt32 = 1 << 2,
-  AllowDouble = 1 << 3,
-
-  All = Monitored | AllowUndefined | AllowInt32 | AllowDouble
-};
-
-static inline bool operator&(GetPropertyResultFlags a,
-                             GetPropertyResultFlags b) {
-  return static_cast<int>(a) & static_cast<int>(b);
-}
-
-static inline GetPropertyResultFlags operator|(GetPropertyResultFlags a,
-                                               GetPropertyResultFlags b) {
-  return static_cast<GetPropertyResultFlags>(static_cast<int>(a) |
-                                             static_cast<int>(b));
-}
-
-static inline GetPropertyResultFlags& operator|=(GetPropertyResultFlags& lhs,
-                                                 GetPropertyResultFlags b) {
-  lhs = lhs | b;
-  return lhs;
-}
-
 // GetPropIRGenerator generates CacheIR for a GetProp IC.
 class MOZ_RAII GetPropIRGenerator : public IRGenerator {
   HandleValue val_;
   HandleValue idVal_;
   HandleValue receiver_;
-  GetPropertyResultFlags resultFlags_;
-
-  enum class PreliminaryObjectAction { None, Unlink, NotePreliminary };
-  PreliminaryObjectAction preliminaryObjectAction_;
 
   AttachDecision tryAttachNative(HandleObject obj, ObjOperandId objId,
                                  HandleId id, ValOperandId receiverId);
@@ -1278,8 +1246,6 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
                                   HandleId id);
   AttachDecision tryAttachUnboxedExpando(HandleObject obj, ObjOperandId objId,
                                          HandleId id);
-  AttachDecision tryAttachTypedObject(HandleObject obj, ObjOperandId objId,
-                                      HandleId id);
   AttachDecision tryAttachObjectLength(HandleObject obj, ObjOperandId objId,
                                        HandleId id);
   AttachDecision tryAttachTypedArrayLength(HandleObject obj, ObjOperandId objId,
@@ -1297,6 +1263,9 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
                                                       ValOperandId receiverId);
   AttachDecision tryAttachFunction(HandleObject obj, ObjOperandId objId,
                                    HandleId id);
+  AttachDecision tryAttachArgumentsObjectIterator(HandleObject obj,
+                                                  ObjOperandId objId,
+                                                  HandleId id);
 
   AttachDecision tryAttachGenericProxy(HandleObject obj, ObjOperandId objId,
                                        HandleId id, bool handleDOMProxies);
@@ -1328,8 +1297,9 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
                                            Int32OperandId indexId);
   AttachDecision tryAttachSparseElement(HandleObject obj, ObjOperandId objId,
                                         uint32_t index, Int32OperandId indexId);
-  AttachDecision tryAttachTypedElement(HandleObject obj, ObjOperandId objId,
-                                       uint32_t index, Int32OperandId indexId);
+  AttachDecision tryAttachTypedArrayElement(HandleObject obj,
+                                            ObjOperandId objId, uint32_t index,
+                                            Int32OperandId indexId);
   AttachDecision tryAttachTypedArrayNonInt32Index(HandleObject obj,
                                                   ObjOperandId objId);
 
@@ -1362,10 +1332,6 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
             cacheKind_ == CacheKind::GetElemSuper);
   }
 
-  // No pc if idempotent, as there can be multiple bytecode locations
-  // due to GVN.
-  bool idempotent() const { return pc_ == nullptr; }
-
   // If this is a GetElem cache, emit instructions to guard the incoming Value
   // matches |id|.
   void maybeEmitIdGuard(jsid id);
@@ -1375,19 +1341,9 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
  public:
   GetPropIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
                      ICState::Mode mode, CacheKind cacheKind, HandleValue val,
-                     HandleValue idVal, HandleValue receiver,
-                     GetPropertyResultFlags resultFlags);
+                     HandleValue idVal, HandleValue receiver);
 
   AttachDecision tryAttachStub();
-  AttachDecision tryAttachIdempotentStub();
-
-  bool shouldUnlinkPreliminaryObjectStubs() const {
-    return preliminaryObjectAction_ == PreliminaryObjectAction::Unlink;
-  }
-
-  bool shouldNotePreliminaryObjectStub() const {
-    return preliminaryObjectAction_ == PreliminaryObjectAction::NotePreliminary;
-  }
 };
 
 // GetNameIRGenerator generates CacheIR for a GetName IC.
@@ -1427,58 +1383,11 @@ class MOZ_RAII BindNameIRGenerator : public IRGenerator {
   AttachDecision tryAttachStub();
 };
 
-// Information used by SetProp/SetElem stubs to check/update property types.
-class MOZ_RAII PropertyTypeCheckInfo {
-  RootedObjectGroup group_;
-  RootedId id_;
-  bool needsTypeBarrier_;
-
-  PropertyTypeCheckInfo(const PropertyTypeCheckInfo&) = delete;
-  void operator=(const PropertyTypeCheckInfo&) = delete;
-
- public:
-  PropertyTypeCheckInfo(JSContext* cx, bool needsTypeBarrier)
-      : group_(cx), id_(cx), needsTypeBarrier_(needsTypeBarrier) {
-    if (!IsTypeInferenceEnabled()) {
-      needsTypeBarrier_ = false;
-    }
-  }
-
-  bool needsTypeBarrier() const { return needsTypeBarrier_; }
-  bool isSet() const { return group_ != nullptr; }
-
-  ObjectGroup* group() const {
-    MOZ_ASSERT(isSet());
-    return group_;
-  }
-
-  jsid id() const {
-    MOZ_ASSERT(isSet());
-    return id_;
-  }
-
-  void set(ObjectGroup* group, jsid id) {
-    MOZ_ASSERT(!group_);
-    MOZ_ASSERT(group);
-    if (needsTypeBarrier_) {
-      group_ = group;
-      id_ = id;
-    }
-  }
-};
-
 // SetPropIRGenerator generates CacheIR for a SetProp IC.
 class MOZ_RAII SetPropIRGenerator : public IRGenerator {
   HandleValue lhsVal_;
   HandleValue idVal_;
   HandleValue rhsVal_;
-  PropertyTypeCheckInfo typeCheckInfo_;
-
-  enum class PreliminaryObjectAction { None, Unlink, NotePreliminary };
-  PreliminaryObjectAction preliminaryObjectAction_;
-  bool attachedTypedArrayOOBStub_;
-
-  bool maybeHasExtraIndexedProps_;
 
  public:
   enum class DeferType { None, AddSlot };
@@ -1510,9 +1419,6 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator {
                                                 ValOperandId rhsId);
   AttachDecision tryAttachUnboxedProperty(HandleObject obj, ObjOperandId objId,
                                           HandleId id, ValOperandId rhsId);
-  AttachDecision tryAttachTypedObjectProperty(HandleObject obj,
-                                              ObjOperandId objId, HandleId id,
-                                              ValOperandId rhsId);
   AttachDecision tryAttachSetter(HandleObject obj, ObjOperandId objId,
                                  HandleId id, ValOperandId rhsId);
   AttachDecision tryAttachSetArrayLength(HandleObject obj, ObjOperandId objId,
@@ -1524,10 +1430,11 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator {
                                           uint32_t index,
                                           Int32OperandId indexId,
                                           ValOperandId rhsId);
-  AttachDecision tryAttachSetTypedElement(HandleObject obj, ObjOperandId objId,
-                                          uint32_t index,
-                                          Int32OperandId indexId,
-                                          ValOperandId rhsId);
+  AttachDecision tryAttachSetTypedArrayElement(HandleObject obj,
+                                               ObjOperandId objId,
+                                               uint32_t index,
+                                               Int32OperandId indexId,
+                                               ValOperandId rhsId);
   AttachDecision tryAttachSetTypedArrayElementNonInt32Index(HandleObject obj,
                                                             ObjOperandId objId,
                                                             ValOperandId rhsId);
@@ -1567,26 +1474,12 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator {
  public:
   SetPropIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
                      CacheKind cacheKind, ICState::Mode mode,
-                     HandleValue lhsVal, HandleValue idVal, HandleValue rhsVal,
-                     bool needsTypeBarrier = true,
-                     bool maybeHasExtraIndexedProps = true);
+                     HandleValue lhsVal, HandleValue idVal, HandleValue rhsVal);
 
   AttachDecision tryAttachStub();
   AttachDecision tryAttachAddSlotStub(HandleObjectGroup oldGroup,
                                       HandleShape oldShape);
   void trackAttached(const char* name);
-
-  bool shouldUnlinkPreliminaryObjectStubs() const {
-    return preliminaryObjectAction_ == PreliminaryObjectAction::Unlink;
-  }
-
-  bool shouldNotePreliminaryObjectStub() const {
-    return preliminaryObjectAction_ == PreliminaryObjectAction::NotePreliminary;
-  }
-
-  const PropertyTypeCheckInfo* typeCheckInfo() const { return &typeCheckInfo_; }
-
-  bool attachedTypedArrayOOBStub() const { return attachedTypedArrayOOBStub_; }
 
   DeferType deferType() const { return deferType_; }
 };
@@ -1618,8 +1511,6 @@ class MOZ_RAII HasPropIRGenerator : public IRGenerator {
                                   ValOperandId keyId);
   AttachDecision tryAttachUnboxedExpando(JSObject* obj, ObjOperandId objId,
                                          jsid key, ValOperandId keyId);
-  AttachDecision tryAttachTypedObject(JSObject* obj, ObjOperandId objId,
-                                      jsid key, ValOperandId keyId);
   AttachDecision tryAttachSlotDoesNotExist(JSObject* obj, ObjOperandId objId,
                                            jsid key, ValOperandId keyId);
   AttachDecision tryAttachDoesNotExist(HandleObject obj, ObjOperandId objId,
@@ -1729,8 +1620,6 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   HandleValue thisval_;
   HandleValue newTarget_;
   HandleValueArray args_;
-  PropertyTypeCheckInfo typeCheckInfo_;
-  BaselineCacheIRStubKind cacheIRStubKind_;
 
   ScriptedThisResult getThisForScripted(HandleFunction calleeFunc,
                                         MutableHandleObject result);
@@ -1856,6 +1745,7 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   AttachDecision tryAttachFunApply(HandleFunction calleeFunc);
   AttachDecision tryAttachCallScripted(HandleFunction calleeFunc);
   AttachDecision tryAttachInlinableNative(HandleFunction calleeFunc);
+  AttachDecision tryAttachWasmCall(HandleFunction calleeFunc);
   AttachDecision tryAttachCallNative(HandleFunction calleeFunc);
   AttachDecision tryAttachCallHook(HandleObject calleeObj);
 
@@ -1870,10 +1760,6 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   AttachDecision tryAttachStub();
 
   AttachDecision tryAttachDeferredStub(HandleValue result);
-
-  BaselineCacheIRStubKind cacheIRStubKind() const { return cacheIRStubKind_; }
-
-  const PropertyTypeCheckInfo* typeCheckInfo() const { return &typeCheckInfo_; }
 };
 
 class MOZ_RAII CompareIRGenerator : public IRGenerator {
@@ -1891,10 +1777,8 @@ class MOZ_RAII CompareIRGenerator : public IRGenerator {
   AttachDecision tryAttachBigInt(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachNumberUndefined(ValOperandId lhsId,
                                           ValOperandId rhsId);
-  AttachDecision tryAttachPrimitiveUndefined(ValOperandId lhsId,
-                                             ValOperandId rhsId);
-  AttachDecision tryAttachObjectUndefined(ValOperandId lhsId,
-                                          ValOperandId rhsId);
+  AttachDecision tryAttachAnyNullUndefined(ValOperandId lhsId,
+                                           ValOperandId rhsId);
   AttachDecision tryAttachNullUndefined(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachStringNumber(ValOperandId lhsId, ValOperandId rhsId);
   AttachDecision tryAttachPrimitiveSymbol(ValOperandId lhsId,
@@ -2026,25 +1910,6 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
 
   AttachDecision tryAttachStub();
 };
-
-static inline uint32_t SimpleTypeDescrKey(SimpleTypeDescr* descr) {
-  if (descr->is<ScalarTypeDescr>()) {
-    return uint32_t(descr->as<ScalarTypeDescr>().type()) << 1;
-  }
-  return (uint32_t(descr->as<ReferenceTypeDescr>().type()) << 1) | 1;
-}
-
-inline bool SimpleTypeDescrKeyIsScalar(uint32_t key) { return !(key & 1); }
-
-inline ScalarTypeDescr::Type ScalarTypeFromSimpleTypeDescrKey(uint32_t key) {
-  MOZ_ASSERT(SimpleTypeDescrKeyIsScalar(key));
-  return ScalarTypeDescr::Type(key >> 1);
-}
-
-inline ReferenceType ReferenceTypeFromSimpleTypeDescrKey(uint32_t key) {
-  MOZ_ASSERT(!SimpleTypeDescrKeyIsScalar(key));
-  return ReferenceType(key >> 1);
-}
 
 // Returns whether obj is a WindowProxy wrapping the script's global.
 extern bool IsWindowProxyForScriptGlobal(JSScript* script, JSObject* obj);

@@ -31,7 +31,6 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/PrimitiveConversions.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 
 using namespace xpc;
 using namespace mozilla;
@@ -46,22 +45,6 @@ using namespace JS;
 #endif  // STRICT_CHECK_OF_UNICODE
 
 #define ILLEGAL_CHAR_RANGE(c) (0 != ((c)&0x80))
-
-/***********************************************************/
-
-static JSObject* UnwrapNativeCPOW(nsISupports* wrapper) {
-  nsCOMPtr<nsIXPConnectWrappedJS> underware = do_QueryInterface(wrapper);
-  if (underware) {
-    // The analysis falsely believes that ~nsCOMPtr can GC because it could
-    // drop the refcount to zero, but that can't happen here.
-    JS::AutoSuppressGCAnalysis nogc;
-    JSObject* mainObj = underware->GetJSObject();
-    if (mainObj && mozilla::jsipc::IsWrappedCPOW(mainObj)) {
-      return mainObj;
-    }
-  }
-  return nullptr;
-}
 
 /***************************************************************************/
 
@@ -277,7 +260,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
         }
 
         size_t written = LossyConvertUtf8toLatin1(
-            *utf8String, MakeSpan(reinterpret_cast<char*>(buffer.get()), len));
+            *utf8String, Span(reinterpret_cast<char*>(buffer.get()), len));
         buffer[written] = 0;
 
         // written can never exceed len, so the truncation is OK.
@@ -315,8 +298,8 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       // code units in the source. That's why it's OK to claim the
       // output buffer has len + 1 space but then still expect to
       // have space for the zero terminator.
-      size_t written = ConvertUtf8toUtf16(
-          *utf8String, MakeSpan(buffer.get(), allocLen.value()));
+      size_t written =
+          ConvertUtf8toUtf16(*utf8String, Span(buffer.get(), allocLen.value()));
       MOZ_RELEASE_ASSERT(written <= len);
       buffer[written] = 0;
 
@@ -694,10 +677,15 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
       }
 
       size_t utf8Length = JS::GetDeflatedUTF8StringLength(linear);
-      rs->SetLength(utf8Length);
+      if (!rs->SetLength(utf8Length, fallible)) {
+        if (pErr) {
+          *pErr = NS_ERROR_OUT_OF_MEMORY;
+        }
+        return false;
+      }
 
       mozilla::DebugOnly<size_t> written = JS::DeflateStringToUTF8Buffer(
-          linear, mozilla::MakeSpan(rs->BeginWriting(), utf8Length));
+          linear, mozilla::Span(rs->BeginWriting(), utf8Length));
       MOZ_ASSERT(written == utf8Length);
 
       return true;
@@ -726,7 +714,12 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
         return true;
       }
 
-      rs->SetLength(uint32_t(length));
+      if (!rs->SetLength(uint32_t(length), fallible)) {
+        if (pErr) {
+          *pErr = NS_ERROR_OUT_OF_MEMORY;
+        }
+        return false;
+      }
       if (rs->Length() != uint32_t(length)) {
         return false;
       }
@@ -945,19 +938,6 @@ bool XPCConvert::NativeInterface2JSObject(JSContext* cx, MutableHandleValue d,
       d.setObjectOrNull(flat);
       return true;
     }
-  }
-
-  // Don't double wrap CPOWs. This is a temporary measure for compatibility
-  // with objects that don't provide necessary QIs (such as objects under
-  // the new DOM bindings). We expect the other side of the CPOW to have
-  // the appropriate wrappers in place.
-  RootedObject cpow(cx, UnwrapNativeCPOW(aHelper.Object()));
-  if (cpow) {
-    if (!JS_WrapObject(cx, &cpow)) {
-      return false;
-    }
-    d.setObject(*cpow);
-    return true;
   }
 
   // Go ahead and create an XPCWrappedNative for this object.

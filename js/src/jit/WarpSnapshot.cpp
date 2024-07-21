@@ -202,17 +202,22 @@ static void TraceWarpGCPtr(JSTracer* trc, const WarpGCPtr<T>& thing,
 }
 
 void WarpSnapshot::trace(JSTracer* trc) {
+  // Nursery objects can be tenured in parallel with Warp compilation.
+  // Note: don't use TraceWarpGCPtr here as that asserts non-moving.
+  for (size_t i = 0; i < nurseryObjects_.length(); i++) {
+    TraceManuallyBarrieredEdge(trc, &nurseryObjects_[i], "warp-nursery-object");
+  }
+
+  // Other GC things are not in the nursery.
+  if (trc->runtime()->heapState() == JS::HeapState::MinorCollecting) {
+    return;
+  }
+
   for (auto* script : scriptSnapshots_) {
     script->trace(trc);
   }
   TraceWarpGCPtr(trc, globalLexicalEnv_, "warp-lexical");
   TraceWarpGCPtr(trc, globalLexicalEnvThis_, "warp-lexicalthis");
-
-  // Note: nursery objects can be moved in parallel with Warp compilation,
-  // so don't use TraceWarpGCPtr here as that asserts non-moving.
-  for (size_t i = 0; i < nurseryObjects_.length(); i++) {
-    TraceManuallyBarrieredEdge(trc, &nurseryObjects_[i], "warp-nursery-object");
-  }
 }
 
 void WarpScriptSnapshot::trace(JSTracer* trc) {
@@ -316,9 +321,9 @@ void WarpCacheIR::traceData(JSTracer* trc) {
     while (true) {
       StubField::Type fieldType = stubInfo_->fieldType(field);
       switch (fieldType) {
-        case StubField::Type::RawWord:
+        case StubField::Type::RawInt32:
+        case StubField::Type::RawPointer:
         case StubField::Type::RawInt64:
-        case StubField::Type::DOMExpandoGeneration:
           break;
         case StubField::Type::Shape: {
           uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);

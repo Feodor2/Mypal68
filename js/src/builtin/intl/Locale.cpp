@@ -22,11 +22,13 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
+#include "builtin/Boolean.h"
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/String.h"
 #include "gc/Rooting.h"
 #include "js/Conversions.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/TypeDecls.h"
 #include "js/Wrapper.h"
 #include "util/StringBuffer.h"
@@ -1389,8 +1391,8 @@ bool js::intl_ValidateAndCanonicalizeUnicodeExtensionType(JSContext* cx,
   intl::AsciiToLowerCase(unicodeTypeChars.get(), unicodeTypeLength,
                          unicodeTypeChars.get());
 
-  auto key = mozilla::MakeSpan(unicodeKey, UnicodeKeyLength);
-  auto type = mozilla::MakeSpan(unicodeTypeChars.get(), unicodeTypeLength);
+  auto key = mozilla::Span(unicodeKey, UnicodeKeyLength);
+  auto type = mozilla::Span(unicodeTypeChars.get(), unicodeTypeLength);
 
   // Search if there's a replacement for the current Unicode keyword.
   JSString* result;

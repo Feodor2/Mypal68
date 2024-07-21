@@ -162,6 +162,18 @@ class MOZ_RAII AutoEmptyNurseryAndPrepareForTracing : private AutoFinishGC,
         AutoTraceSession(cx->runtime()) {}
 };
 
+/*
+ * Temporarily disable incremental barriers.
+ */
+class AutoDisableBarriers {
+ public:
+  explicit AutoDisableBarriers(GCRuntime* gc);
+  ~AutoDisableBarriers();
+
+ private:
+  GCRuntime* gc;
+};
+
 GCAbortReason IsIncrementalGCUnsafe(JSRuntime* rt);
 
 #ifdef JS_GC_ZEAL
@@ -211,59 +223,48 @@ void CheckHashTablesAfterMovingGC(JSRuntime* rt);
 void CheckHeapAfterGC(JSRuntime* rt);
 #endif
 
-struct MovingTracer final : public JS::CallbackTracer {
+struct MovingTracer final : public GenericTracer {
   explicit MovingTracer(JSRuntime* rt)
-      : CallbackTracer(rt, TraceWeakMapKeysValues) {}
+      : GenericTracer(rt, JS::TracerKind::Moving,
+                      JS::WeakMapTraceAction::TraceKeysAndValues) {}
 
-  bool onObjectEdge(JSObject** objp) override;
-  bool onShapeEdge(Shape** shapep) override;
-  bool onStringEdge(JSString** stringp) override;
-  bool onScriptEdge(js::BaseScript** scriptp) override;
-  bool onBaseShapeEdge(BaseShape** basep) override;
-  bool onScopeEdge(Scope** scopep) override;
-  bool onRegExpSharedEdge(RegExpShared** sharedp) override;
-  bool onBigIntEdge(BigInt** bip) override;
-  bool onObjectGroupEdge(ObjectGroup** groupp) override;
-  bool onChild(const JS::GCCellPtr& thing) override {
-    MOZ_ASSERT(!thing.asCell()->isForwarded());
-    return true;
-  }
-
-#ifdef DEBUG
-  TracerKind getTracerKind() const override { return TracerKind::Moving; }
-#endif
+  JSObject* onObjectEdge(JSObject* obj) override;
+  Shape* onShapeEdge(Shape* shape) override;
+  JSString* onStringEdge(JSString* string) override;
+  js::BaseScript* onScriptEdge(js::BaseScript* script) override;
+  BaseShape* onBaseShapeEdge(BaseShape* base) override;
+  Scope* onScopeEdge(Scope* scope) override;
+  RegExpShared* onRegExpSharedEdge(RegExpShared* shared) override;
+  BigInt* onBigIntEdge(BigInt* bi) override;
+  ObjectGroup* onObjectGroupEdge(ObjectGroup* group) override;
+  JS::Symbol* onSymbolEdge(JS::Symbol* sym) override;
+  jit::JitCode* onJitCodeEdge(jit::JitCode* jit) override;
 
  private:
   template <typename T>
-  bool updateEdge(T** thingp);
+  T* onEdge(T* thingp);
 };
 
-struct SweepingTracer final : public JS::CallbackTracer {
+struct SweepingTracer final : public GenericTracer {
   explicit SweepingTracer(JSRuntime* rt)
-      : CallbackTracer(rt, TraceWeakMapKeysValues) {}
+      : GenericTracer(rt, JS::TracerKind::Sweeping,
+                      JS::WeakMapTraceAction::TraceKeysAndValues) {}
 
-  bool onObjectEdge(JSObject** objp) override;
-  bool onShapeEdge(Shape** shapep) override;
-  bool onStringEdge(JSString** stringp) override;
-  bool onScriptEdge(js::BaseScript** scriptp) override;
-  bool onBaseShapeEdge(BaseShape** basep) override;
-  bool onJitCodeEdge(jit::JitCode** jitp) override;
-  bool onScopeEdge(Scope** scopep) override;
-  bool onRegExpSharedEdge(RegExpShared** sharedp) override;
-  bool onBigIntEdge(BigInt** bip) override;
-  bool onObjectGroupEdge(js::ObjectGroup** groupp) override;
-  bool onChild(const JS::GCCellPtr& thing) override {
-    MOZ_CRASH("unexpected edge.");
-    return true;
-  }
-
-#ifdef DEBUG
-  TracerKind getTracerKind() const override { return TracerKind::Sweeping; }
-#endif
+  JSObject* onObjectEdge(JSObject* obj) override;
+  Shape* onShapeEdge(Shape* shape) override;
+  JSString* onStringEdge(JSString* string) override;
+  js::BaseScript* onScriptEdge(js::BaseScript* script) override;
+  BaseShape* onBaseShapeEdge(BaseShape* base) override;
+  jit::JitCode* onJitCodeEdge(jit::JitCode* jit) override;
+  Scope* onScopeEdge(Scope* scope) override;
+  RegExpShared* onRegExpSharedEdge(RegExpShared* shared) override;
+  BigInt* onBigIntEdge(BigInt* bi) override;
+  js::ObjectGroup* onObjectGroupEdge(js::ObjectGroup* group) override;
+  JS::Symbol* onSymbolEdge(JS::Symbol* sym) override;
 
  private:
   template <typename T>
-  bool sweepEdge(T** thingp);
+  T* onEdge(T* thingp);
 };
 
 // Structure for counting how many times objects in a particular group have
@@ -289,11 +290,7 @@ struct TenureCountCache {
   TenureCountCache() = default;
 
   HashNumber hash(ObjectGroup* group) {
-#if JS_BITS_PER_WORD == 32
     static const size_t ZeroBits = 3;
-#else
-    static const size_t ZeroBits = 4;
-#endif
 
     uintptr_t word = uintptr_t(group);
     MOZ_ASSERT((word & ((1 << ZeroBits) - 1)) == 0);

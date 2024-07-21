@@ -27,11 +27,10 @@ namespace wasm {
 MOZ_MUST_USE bool BaselinePlatformSupport();
 
 // Generate adequate code quickly.
-MOZ_MUST_USE bool BaselineCompileFunctions(const ModuleEnvironment& env,
-                                           LifoAlloc& lifo,
-                                           const FuncCompileInputVector& inputs,
-                                           CompiledCode* code,
-                                           UniqueChars* error);
+MOZ_MUST_USE bool BaselineCompileFunctions(
+    const ModuleEnvironment& moduleEnv, const CompilerEnvironment& compilerEnv,
+    LifoAlloc& lifo, const FuncCompileInputVector& inputs, CompiledCode* code,
+    UniqueChars* error);
 
 class BaseLocalIter {
  private:
@@ -39,7 +38,7 @@ class BaseLocalIter {
 
   const ValTypeVector& locals_;
   const ArgTypeVector& args_;
-  jit::ABIArgIter<ArgTypeVector> argsIter_;
+  jit::WasmABIArgIter<ArgTypeVector> argsIter_;
   size_t index_;
   int32_t frameSize_;
   int32_t nextFrameSize_;

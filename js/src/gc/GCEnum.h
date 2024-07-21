@@ -53,7 +53,6 @@ enum class State {
   D(YieldBeforeSweepingAtoms, 17)      \
   D(CheckGrayMarking, 18)              \
   D(YieldBeforeSweepingCaches, 19)     \
-  D(YieldBeforeSweepingTypes, 20)      \
   D(YieldBeforeSweepingObjects, 21)    \
   D(YieldBeforeSweepingNonObjects, 22) \
   D(YieldBeforeSweepingShapeTrees, 23) \
@@ -114,7 +113,6 @@ enum class GCAbortReason {
   _(TypeDescrTraceList)                    \
   _(NativeIterator)                        \
   _(JitScript)                             \
-  _(ObjectGroupAddendum)                   \
   _(ScriptDebugScript)                     \
   _(BreakpointSite)                        \
   _(Breakpoint)                            \

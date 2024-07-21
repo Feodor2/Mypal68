@@ -16,10 +16,10 @@
 #ifndef wasm_instance_h
 #define wasm_instance_h
 
-#include "builtin/TypedObject.h"
 #include "gc/Barrier.h"
 #include "gc/Zone.h"
 #include "vm/SharedMem.h"
+#include "wasm/TypedObject.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmDebug.h"
 #include "wasm/WasmFrameIter.h"  // js::wasm::WasmFrameIter
@@ -65,7 +65,7 @@ class Instance {
   void tracePrivate(JSTracer* trc);
 
   bool callImport(JSContext* cx, uint32_t funcImportIndex, unsigned argc,
-                  const uint64_t* argv, MutableHandleValue rval);
+                  uint64_t* argv);
 
  public:
   Instance(JSContext* cx, HandleWasmInstanceObject object, SharedCode code,
@@ -142,14 +142,6 @@ class Instance {
   JSAtom* getFuncDisplayAtom(JSContext* cx, uint32_t funcIndex) const;
   void ensureProfilingLabels(bool profilingEnabled) const;
 
-  // Initially, calls to imports in wasm code call out through the generic
-  // callImport method. If the imported callee gets JIT compiled and the types
-  // match up, callImport will patch the code to instead call through a thunk
-  // directly into the JIT code. If the JIT code is released, the Instance must
-  // be notified so it can go back to the generic callImport.
-
-  void deoptimizeImportExit(uint32_t funcImportIndex);
-
   // Called by Wasm(Memory|Table)Object when a moving resize occurs:
 
   void onMovingGrowMemory();
@@ -181,12 +173,7 @@ class Instance {
 
  public:
   // Functions to be called directly from wasm code.
-  static int32_t callImport_void(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_i32(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_i64(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_f64(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_anyref(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_funcref(Instance*, int32_t, int32_t, uint64_t*);
+  static int32_t callImport_general(Instance*, int32_t, int32_t, uint64_t*);
   static uint32_t memoryGrow_i32(Instance* instance, uint32_t delta);
   static uint32_t memorySize_i32(Instance* instance);
   static int32_t wait_i32(Instance* instance, uint32_t byteOffset,
@@ -228,8 +215,8 @@ class Instance {
   static void postBarrier(Instance* instance, gc::Cell** location);
   static void postBarrierFiltering(Instance* instance, gc::Cell** location);
   static void* structNew(Instance* instance, uint32_t typeIndex);
-  static void* structNarrow(Instance* instance, uint32_t mustUnboxAnyref,
-                            uint32_t outputTypeIndex, void* maybeNullPtr);
+  static void* structNarrow(Instance* instance, uint32_t outputTypeIndex,
+                            void* maybeNullPtr);
 };
 
 using UniqueInstance = UniquePtr<Instance>;

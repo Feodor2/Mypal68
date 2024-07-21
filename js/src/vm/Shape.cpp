@@ -1245,8 +1245,6 @@ Shape* NativeObject::changeProperty(JSContext* cx, HandleNativeObject obj,
   MOZ_ASSERT_IF(shape->isDataProperty() != needSlot, needSlot);
 #endif
 
-  MarkTypePropertyNonData(cx, obj, shape->propid());
-
   AssertCanChangeAttrs(shape, attrs);
 
   if (shape->attrs == attrs && shape->getter() == getter &&
@@ -1407,32 +1405,6 @@ void NativeObject::clear(JSContext* cx, HandleNativeObject obj) {
   MOZ_ALWAYS_TRUE(obj->setLastProperty(cx, shape));
 
   obj->checkShapeConsistency();
-}
-
-/* static */
-bool NativeObject::rollbackProperties(JSContext* cx, HandleNativeObject obj,
-                                      uint32_t slotSpan) {
-  /*
-   * Remove properties from this object until it has a matching slot span.
-   * The object cannot have escaped in a way which would prevent safe
-   * removal of the last properties.
-   */
-  MOZ_ASSERT(!obj->inDictionaryMode() && slotSpan <= obj->slotSpan());
-  while (true) {
-    if (obj->lastProperty()->isEmptyShape()) {
-      MOZ_ASSERT(slotSpan == 0);
-      break;
-    }
-    uint32_t slot = obj->lastProperty()->slot();
-    if (slot < slotSpan) {
-      break;
-    }
-    if (!NativeObject::removeProperty(cx, obj, obj->lastProperty()->propid())) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 /* static */

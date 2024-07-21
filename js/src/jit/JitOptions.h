@@ -55,9 +55,6 @@ struct DefaultJitOptions {
   bool baselineInterpreter;
   bool baselineJit;
   bool ion;
-#ifdef NIGHTLY_BUILD
-  bool typeInference;
-#endif
   bool warpBuilder;
   bool jitForTrustedPrincipals;
   bool nativeRegExp;
@@ -132,7 +129,6 @@ struct DefaultJitOptions {
   void resetFullIonWarmUpThreshold();
   void enableGvn(bool val);
   void setFastWarmUp();
-  void setWarpEnabled(bool enable);
 
   bool eagerIonCompilation() const { return normalIonWarmUpThreshold == 0; }
 };
@@ -148,16 +144,6 @@ inline bool IsBaselineInterpreterEnabled() {
 }
 
 }  // namespace jit
-
-inline bool IsTypeInferenceEnabled() {
-#ifdef NIGHTLY_BUILD
-  return jit::JitOptions.typeInference;
-#else
-  // Always enable TI on non-Nightly for now to avoid performance overhead.
-  return true;
-#endif
-}
-
 }  // namespace js
 
 #endif /* jit_JitOptions_h */

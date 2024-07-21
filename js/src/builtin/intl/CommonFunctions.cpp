@@ -12,11 +12,10 @@
 
 #include <algorithm>
 
-#include "jsfriendapi.h"  // for GetErrorMessage, JSMSG_INTERNAL_INTL_ERROR
-
 #include "gc/GCEnum.h"
 #include "gc/Zone.h"
 #include "gc/ZoneAllocator.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_INTERNAL_INTL_ERROR
 #include "js/Value.h"
 #include "unicode/uformattedvalue.h"
 #include "vm/JSContext.h"
@@ -124,13 +123,6 @@ void js::intl::AddICUCellMemory(JSObject* obj, size_t nbytes) {
   // Account the (estimated) number of bytes allocated by an ICU object against
   // the JSObject's zone.
   AddCellMemory(obj, nbytes, MemoryUse::ICUObject);
-
-  // Manually trigger malloc zone GCs in case there's memory pressure and
-  // collecting any unreachable Intl objects could free ICU allocated memory.
-  //
-  // (ICU allocations use the system memory allocator, so we can't rely on
-  // ZoneAllocPolicy to call |maybeMallocTriggerZoneGC|.)
-  obj->zone()->maybeMallocTriggerZoneGC();
 }
 
 void js::intl::RemoveICUCellMemory(JSFreeOp* fop, JSObject* obj,

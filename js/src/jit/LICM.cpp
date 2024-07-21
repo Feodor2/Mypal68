@@ -148,6 +148,7 @@ static void MoveDeferredOperands(MInstruction* ins, MInstruction* hoistPoint,
 #endif
 
     opIns->block()->moveBefore(hoistPoint, opIns);
+    opIns->setBailoutKind(BailoutKind::LICM);
   }
 }
 
@@ -188,6 +189,7 @@ static void VisitLoopBlock(MBasicBlock* block, MBasicBlock* header,
 
     // Move the instruction to the hoistPoint.
     block->moveBefore(hoistPoint, ins);
+    ins->setBailoutKind(BailoutKind::LICM);
   }
 }
 

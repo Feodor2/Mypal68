@@ -115,15 +115,21 @@ struct CompileTaskState {
 // helper thread as well as, eventually, the results of compilation.
 
 struct CompileTask : public HelperThreadTask {
-  const ModuleEnvironment& env;
+  const ModuleEnvironment& moduleEnv;
+  const CompilerEnvironment& compilerEnv;
+
   CompileTaskState& state;
   LifoAlloc lifo;
   FuncCompileInputVector inputs;
   CompiledCode output;
 
-  CompileTask(const ModuleEnvironment& env, CompileTaskState& state,
+  CompileTask(const ModuleEnvironment& moduleEnv,
+              const CompilerEnvironment& compilerEnv, CompileTaskState& state,
               size_t defaultChunkSize)
-      : env(env), state(state), lifo(defaultChunkSize) {}
+      : moduleEnv(moduleEnv),
+        compilerEnv(compilerEnv),
+        state(state),
+        lifo(defaultChunkSize) {}
 
   virtual ~CompileTask() = default;
 
@@ -153,7 +159,8 @@ class MOZ_STACK_CLASS ModuleGenerator {
   SharedCompileArgs const compileArgs_;
   UniqueChars* const error_;
   const Atomic<bool>* const cancelled_;
-  ModuleEnvironment* const env_;
+  ModuleEnvironment* const moduleEnv_;
+  CompilerEnvironment* const compilerEnv_;
 
   // Data that is moved into the result of finish()
   UniqueLinkData linkData_;
@@ -202,13 +209,14 @@ class MOZ_STACK_CLASS ModuleGenerator {
   UniqueCodeTier finishCodeTier();
   SharedMetadata finishMetadata(const Bytes& bytecode);
 
-  bool isAsmJS() const { return env_->isAsmJS(); }
-  Tier tier() const { return env_->tier(); }
-  CompileMode mode() const { return env_->mode(); }
-  bool debugEnabled() const { return env_->debugEnabled(); }
+  bool isAsmJS() const { return moduleEnv_->isAsmJS(); }
+  Tier tier() const { return compilerEnv_->tier(); }
+  CompileMode mode() const { return compilerEnv_->mode(); }
+  bool debugEnabled() const { return compilerEnv_->debugEnabled(); }
 
  public:
-  ModuleGenerator(const CompileArgs& args, ModuleEnvironment* env,
+  ModuleGenerator(const CompileArgs& args, ModuleEnvironment* moduleEnv,
+                  CompilerEnvironment* compilerEnv,
                   const Atomic<bool>* cancelled, UniqueChars* error);
   ~ModuleGenerator();
   MOZ_MUST_USE bool init(Metadata* maybeAsmJSMetadata = nullptr);

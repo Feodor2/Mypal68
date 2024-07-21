@@ -58,7 +58,6 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/WindowBinding.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ProcessHangMonitor.h"
@@ -198,7 +197,6 @@ CompartmentPrivate::CompartmentPrivate(
       wantXrays(false),
       allowWaivers(true),
       isWebExtensionContentScript(false),
-      allowCPOWs(false),
       isContentXBLCompartment(false),
       isUAWidgetCompartment(false),
       hasExclusiveExpandos(false),
@@ -1070,7 +1068,9 @@ size_t CompartmentPrivate::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) {
 void XPCJSRuntime::SystemIsBeingShutDown() {
   // We don't want to track wrapped JS roots after this point since we're
   // making them !IsValid anyway through SystemIsBeingShutDown.
-  mWrappedJSRoots = nullptr;
+  while (mWrappedJSRoots) {
+    mWrappedJSRoots->RemoveFromRootSet();
+  }
 }
 
 StaticAutoPtr<HelperThreadPool> gHelperThreads;
@@ -1411,9 +1411,6 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
       pathPrefix + NS_LITERAL_CSTRING("object-groups/gc-heap"),
       zStats.objectGroupsGCHeap,
       "Classification and type inference information about objects.");
-
-  ZRREPORT_BYTES(pathPrefix + NS_LITERAL_CSTRING("object-groups/malloc-heap"),
-                 zStats.objectGroupsMallocHeap, "Object group addenda.");
 
   ZRREPORT_GC_BYTES(pathPrefix + NS_LITERAL_CSTRING("scopes/gc-heap"),
                     zStats.scopesGCHeap, "Scope information for scripts.");

@@ -9,7 +9,6 @@
 
 #include "gc/Marking.h"
 #include "jit/ExecutableAllocator.h"
-#include "jit/JitRealm.h"
 #include "vm/Realm.h"
 
 using mozilla::DebugOnly;

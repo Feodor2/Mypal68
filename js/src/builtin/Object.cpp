@@ -16,18 +16,22 @@
 #include "builtin/SelfHostingDefines.h"
 #include "frontend/BytecodeCompiler.h"
 #include "jit/InlinableNatives.h"
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::CheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "js/UniquePtr.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
 #include "vm/AsyncFunction.h"
+#include "vm/BooleanObject.h"
 #include "vm/DateObject.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/ErrorObject.h"
 #include "vm/JSContext.h"
+#include "vm/NumberObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
+#include "vm/StringObject.h"
 #include "vm/ToSource.h"  // js::ValueToSource
 
 #include "vm/JSObject-inl.h"
@@ -1367,7 +1371,7 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
 
   if (obj->is<TypedArrayObject>()) {
     Handle<TypedArrayObject*> tobj = obj.as<TypedArrayObject>();
-    uint32_t len = tobj->length();
+    uint32_t len = tobj->length().deprecatedGetUint32();
 
     // Fail early if the typed array contains too many elements for a
     // dense array, because we likely OOM anyway when trying to allocate
@@ -1611,10 +1615,7 @@ static bool EnumerableOwnProperties(JSContext* cx, const JS::CallArgs& args) {
     if (obj->is<NativeObject>()) {
       HandleNativeObject nobj = obj.as<NativeObject>();
       if (JSID_IS_INT(id) && nobj->containsDenseElement(JSID_TO_INT(id))) {
-        if (!nobj->getDenseOrTypedArrayElement<CanGC>(cx, JSID_TO_INT(id),
-                                                      &value)) {
-          return false;
-        }
+        value.set(nobj->getDenseElement(JSID_TO_INT(id)));
       } else {
         shape = nobj->lookup(cx, id);
         if (!shape || !shape->enumerable()) {
@@ -2044,17 +2045,6 @@ static JSObject* CreateObjectPrototype(JSContext* cx, JSProtoKey key) {
   MOZ_ASSERT(succeeded,
              "should have been able to make a fresh Object.prototype's "
              "[[Prototype]] immutable");
-
-  /*
-   * The default 'new' type of Object.prototype is required by type inference
-   * to have unknown properties, to simplify handling of e.g. heterogenous
-   * objects in JSON and script literals.
-   */
-  ObjectGroupRealm& realm = ObjectGroupRealm::getForNewObject(cx);
-  if (!JSObject::setNewGroupUnknown(cx, realm, &PlainObject::class_,
-                                    objectProto)) {
-    return nullptr;
-  }
 
   return objectProto;
 }

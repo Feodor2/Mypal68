@@ -25,6 +25,7 @@
 #include "builtin/Eval.h"
 #include "builtin/Object.h"
 #include "builtin/SelfHostingDefines.h"
+#include "builtin/Symbol.h"
 #include "frontend/BytecodeCompilation.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/TokenStream.h"
@@ -34,7 +35,8 @@
 #include "jit/Ion.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/CompileOptions.h"
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::CheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "js/Proxy.h"
 #include "js/SourceText.h"
@@ -43,6 +45,7 @@
 #include "util/StringBuffer.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
+#include "vm/BooleanObject.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
 #include "vm/GlobalObject.h"
@@ -51,10 +54,12 @@
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
+#include "vm/NumberObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SelfHosting.h"
 #include "vm/Shape.h"
 #include "vm/SharedImmutableStringsCache.h"
+#include "vm/StringObject.h"
 #include "vm/WrapperObject.h"
 #include "vm/Xdr.h"
 #include "wasm/AsmJS.h"
@@ -547,7 +552,6 @@ XDRResult js::XDRInterpretedFunction(XDRState<mode>* xdr,
     IsGenerator = 1 << 1,
     IsAsync = 1 << 2,
     IsLazy = 1 << 3,
-    HasSingletonType = 1 << 4,
   };
 
   /* NB: Keep this in sync with CloneInnerInterpretedFunction. */
@@ -568,10 +572,6 @@ XDRResult js::XDRInterpretedFunction(XDRState<mode>* xdr,
     fun = objp;
     if (!fun->isInterpreted() || fun->isBoundFunction()) {
       return xdr->fail(JS::TranscodeResult_Failure_NotInterpretedFun);
-    }
-
-    if (fun->isSingleton()) {
-      xdrFlags |= HasSingletonType;
     }
 
     if (fun->isGenerator()) {
@@ -652,18 +652,6 @@ XDRResult js::XDRInterpretedFunction(XDRState<mode>* xdr,
       return xdr->fail(JS::TranscodeResult_Throw);
     }
     objp.set(fun);
-
-    // If this function has an enclosing-scope, it is accesible by script and
-    // should use an updated ObjectGroup. Note that the singleton flag is not
-    // computed correctly until the enclosing-script has been compiled. The
-    // delazification of a script will apply types to inner functions at that
-    // time.
-    if (enclosingScope) {
-      bool singleton = (xdrFlags & HasSingletonType);
-      if (!JSFunction::setTypeForScriptedFunction(cx, fun, singleton)) {
-        return xdr->fail(JS::TranscodeResult_Throw);
-      }
-    }
   }
 
   if (xdrFlags & IsLazy) {
@@ -1564,7 +1552,6 @@ bool DelazifyCanonicalScriptedFunctionImpl(JSContext* cx, HandleFunction fun,
 
   size_t sourceStart = lazy->sourceStart();
   size_t sourceLength = lazy->sourceEnd() - lazy->sourceStart();
-  bool hadLazyScriptData = lazy->hasPrivateScriptData();
 
   {
     MOZ_ASSERT(ss->hasSourceText());
@@ -1596,8 +1583,6 @@ bool DelazifyCanonicalScriptedFunctionImpl(JSContext* cx, HandleFunction fun,
       return false;
     }
 
-    // TODO: encode stencil here.
-
     if (!frontend::InstantiateStencilsForDelazify(cx, compilationInfo.get())) {
       // The frontend shouldn't fail after linking the function and the
       // non-lazy script together.
@@ -1605,21 +1590,23 @@ bool DelazifyCanonicalScriptedFunctionImpl(JSContext* cx, HandleFunction fun,
       MOZ_ASSERT(lazy->isReadyForDelazification());
       return false;
     }
-  }
 
-  RootedScript script(cx, fun->nonLazyScript());
-
-  // NOTE: Only allow relazification if there was no lazy PrivateScriptData.
-  // This excludes non-leaf functions and all script class constructors.
-  if (script->isRelazifiable() && !hadLazyScriptData) {
-    script->setAllowRelazify();
-  }
-
-  // XDR the newly delazified function.
-  if (ss->hasEncoder()) {
-    RootedScriptSourceObject sourceObject(cx, script->sourceObject());
-    if (!ss->xdrEncodeFunction(cx, fun, sourceObject)) {
-      return false;
+    if (ss->hasEncoder()) {
+      // NOTE: Currently we rely on the UseOffThreadParseGlobal to decide which
+      //       format to use for incremental encoding.
+      bool useStencilXDR = !js::UseOffThreadParseGlobal();
+      if (useStencilXDR) {
+        if (!ss->xdrEncodeFunctionStencil(cx, compilationInfo.get().stencil)) {
+          return false;
+        }
+      } else {
+        // XDR the newly delazified function.
+        RootedScriptSourceObject sourceObject(
+            cx, fun->nonLazyScript()->sourceObject());
+        if (!ss->xdrEncodeFunction(cx, fun, sourceObject)) {
+          return false;
+        }
+      }
     }
   }
 
@@ -1742,8 +1729,6 @@ void JSFunction::maybeRelazify(JSRuntime* rt) {
   } else {
     script->relazify(rt);
   }
-
-  realm->scheduleDelazificationForDebugger();
 }
 
 js::GeneratorKind JSFunction::clonedSelfHostedGeneratorKind() const {
@@ -2121,8 +2106,7 @@ bool js::CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
                                 HandleObject newEnclosingEnv) {
   MOZ_ASSERT(fun->isInterpreted());
 
-  if (realm != fun->realm() || fun->isSingleton() ||
-      ObjectGroup::useSingletonForClone(fun)) {
+  if (realm != fun->realm() || fun->isSingleton()) {
     return false;
   }
 
@@ -2215,16 +2199,7 @@ JSFunction* js::CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
   MOZ_ASSERT(!fun->isBoundFunction());
   MOZ_ASSERT(CanReuseScriptForClone(cx->realm(), fun, enclosingEnv));
 
-  // If an explicit prototype is present and this prototype doesn't match the
-  // original function's prototype and furthermore the original function's group
-  // has a type, then also create a type for the cloned function. This ensures
-  // derived class constructors will have a type assigned.
-  bool setTypeForFunction = proto && fun->staticPrototype() != proto &&
-                            fun->group()->maybeInterpretedFunction();
-
-  // The function needs to be tenured when used as an object group addendum.
-  NewObjectKind newKind = setTypeForFunction ? TenuredObject : GenericObject;
-
+  NewObjectKind newKind = GenericObject;
   RootedFunction clone(cx,
                        NewFunctionClone(cx, fun, newKind, allocKind, proto));
   if (!clone) {
@@ -2242,17 +2217,6 @@ JSFunction* js::CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
     clone->initEnvironment(enclosingEnv);
   }
 
-  /*
-   * Clone the function, reusing its script. We can use the same group as
-   * the original function provided that its prototype is correct.
-   */
-  if (fun->staticPrototype() == clone->staticPrototype()) {
-    clone->setGroup(fun->group());
-  } else if (setTypeForFunction) {
-    if (!JSFunction::setTypeForScriptedFunction(cx, clone)) {
-      return nullptr;
-    }
-  }
   return clone;
 }
 

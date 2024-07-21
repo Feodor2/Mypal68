@@ -7,11 +7,16 @@
 #include "mozilla/ScopeExit.h"
 
 #include "jit/BaselineJIT.h"
+#include "jit/Invalidation.h"
 #include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitFrames.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
+#include "jit/JSJitFrameIter.h"
+#include "jit/SafepointIndex.h"
 #include "jit/Snapshots.h"
 #include "vm/JSContext.h"
+#include "vm/Stack.h"
 #include "vm/TraceLogging.h"
 
 #include "jit/JSJitFrameIter-inl.h"
@@ -36,7 +41,6 @@ static_assert(!(FAKE_EXITFP_FOR_BAILOUT_ADDR & wasm::ExitOrJitEntryFPTag),
 bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   JSContext* cx = TlsContext.get();
   MOZ_ASSERT(bailoutInfo);
-  MOZ_ASSERT(!cx->hasIonReturnOverride());
 
   // We don't have an exit frame.
   MOZ_ASSERT(IsInRange(FAKE_EXITFP_FOR_BAILOUT, 0, 0x1000) &&
@@ -282,8 +286,8 @@ void jit::CheckFrequentBailouts(JSContext* cx, JSScript* script,
       // the first execution bailout can be related to an inlined script,
       // so there is no need to penalize the caller.
       if (bailoutKind != BailoutKind::FirstExecution &&
-          !script->hadFrequentBailouts()) {
-        script->setHadFrequentBailouts();
+          !script->hadLICMBailout()) {
+        script->setHadLICMBailout();
       }
 
       JitSpew(JitSpew_IonInvalidate, "Invalidating due to too many bailouts");

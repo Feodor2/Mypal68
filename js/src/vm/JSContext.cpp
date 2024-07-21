@@ -38,22 +38,12 @@
 #include "irregexp/RegExpAPI.h"
 #include "jit/Ion.h"
 #include "jit/PcScriptCache.h"
+#include "jit/Simulator.h"
 #include "js/CharacterEncoding.h"
-#include "js/ContextOptions.h"      // JS::ContextOptions
-#include "js/friend/StackLimits.h"  // js::ReportOverRecursed
+#include "js/ContextOptions.h"        // JS::ContextOptions
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "js/Printf.h"
-#ifdef JS_SIMULATOR_ARM
-#  include "jit/arm/Simulator-arm.h"
-#endif
-#ifdef JS_SIMULATOR_ARM64
-#  include "jit/arm64/vixl/Simulator-vixl.h"
-#endif
-#ifdef JS_SIMULATOR_MIPS32
-#  include "jit/mips32/Simulator-mips32.h"
-#endif
-#ifdef JS_SIMULATOR_MIPS64
-#  include "jit/mips64/Simulator-mips64.h"
-#endif
 #include "util/DiagnosticAssertions.h"
 #include "util/DoubleToString.h"
 #include "util/NativeStack.h"
@@ -874,11 +864,6 @@ mozilla::GenericErrorResult<OOM> JSContext::alreadyReportedOOM() {
 }
 
 mozilla::GenericErrorResult<JS::Error> JSContext::alreadyReportedError() {
-#ifdef DEBUG
-  if (!isHelperThreadContext()) {
-    MOZ_ASSERT(isExceptionPending());
-  }
-#endif
   return mozilla::Err(JS::Error());
 }
 
@@ -951,7 +936,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       interruptCallbackDisabled(this, false),
       interruptBits_(0),
       inlinedICScript_(this, nullptr),
-      ionReturnOverride_(this, MagicValue(JS_ARG_POISON)),
       jitStackLimit(UINTPTR_MAX),
       jitStackLimitNoInterrupt(this, UINTPTR_MAX),
       jobQueue(this, nullptr),

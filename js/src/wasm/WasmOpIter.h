@@ -33,7 +33,7 @@ namespace wasm {
 enum class LabelKind : uint8_t { Body, Block, Loop, Then, Else };
 
 // The type of values on the operand stack during validation.  This is either a
-// ValType or the special type "TVar".
+// ValType or the special type "Bottom".
 
 class StackType {
   PackedTypeCode tc_;
@@ -45,25 +45,31 @@ class StackType {
 
   explicit StackType(const ValType& t) : tc_(t.packed()) {
     MOZ_ASSERT(IsValid(tc_));
-    MOZ_ASSERT(!isTVar());
+    MOZ_ASSERT(!isBottom());
   }
 
-  static StackType tvar() { return StackType(PackTypeCode(TypeCode::Limit)); }
+  static StackType bottom() { return StackType(PackTypeCode(TypeCode::Limit)); }
 
-  bool isTVar() const {
+  bool isBottom() const {
     MOZ_ASSERT(IsValid(tc_));
     return UnpackTypeCodeType(tc_) == TypeCode::Limit;
   }
 
   ValType valType() const {
     MOZ_ASSERT(IsValid(tc_));
-    MOZ_ASSERT(!isTVar());
+    MOZ_ASSERT(!isBottom());
     return ValType(tc_);
+  }
+
+  ValType asNonNullable() const {
+    MOZ_ASSERT(IsValid(tc_));
+    MOZ_ASSERT(!isBottom());
+    return ValType(RepackTypeCodeAsNonNullable(tc_));
   }
 
   bool isValidForUntypedSelect() const {
     MOZ_ASSERT(IsValid(tc_));
-    if (isTVar()) {
+    if (isBottom()) {
       return true;
     }
     switch (valType().kind()) {
@@ -155,6 +161,8 @@ enum class OpKind {
   TableSize,
   RefNull,
   RefFunc,
+  RefAsNonNull,
+  BrOnNull,
   StructNew,
   StructGet,
   StructSet,
@@ -224,7 +232,7 @@ class TypeAndValueT {
   mozilla::CompactPair<StackType, Value> tv_;
 
  public:
-  TypeAndValueT() : tv_(StackType::tvar(), Value()) {}
+  TypeAndValueT() : tv_(StackType::bottom(), Value()) {}
   explicit TypeAndValueT(StackType type) : tv_(type, Value()) {}
   explicit TypeAndValueT(ValType type) : tv_(StackType(type), Value()) {}
   TypeAndValueT(StackType type, Value value) : tv_(type, value) {}
@@ -291,7 +299,9 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool popStackType(StackType* type, Value* value);
   MOZ_MUST_USE bool popWithType(ValType expected, Value* value);
   MOZ_MUST_USE bool popWithType(ResultType expected, ValueVector* values);
+  MOZ_MUST_USE bool popWithRefType(Value* value, StackType* type);
   MOZ_MUST_USE bool popThenPushType(ResultType expected, ValueVector* values);
+  MOZ_MUST_USE bool topWithType(ResultType expected, ValueVector* values);
 
   MOZ_MUST_USE bool pushControl(LabelKind kind, BlockType type);
   MOZ_MUST_USE bool checkStackAtEndOfBlock(ResultType* type,
@@ -431,6 +441,9 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readRefFunc(uint32_t* funcTypeIndex);
   MOZ_MUST_USE bool readRefNull();
   MOZ_MUST_USE bool readRefIsNull(Value* input);
+  MOZ_MUST_USE bool readRefAsNonNull(Value* input);
+  MOZ_MUST_USE bool readBrOnNull(uint32_t* relativeDepth, ResultType* type,
+                                 ValueVector* values, Value* condition);
   MOZ_MUST_USE bool readCall(uint32_t* calleeIndex, ValueVector* argValues);
   MOZ_MUST_USE bool readCallIndirect(uint32_t* funcTypeIndex,
                                      uint32_t* tableIndex, Value* callee,
@@ -480,7 +493,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readStructNarrow(ValType* inputType, ValType* outputType,
                                      Value* ptr);
   MOZ_MUST_USE bool readValType(ValType* type);
-  MOZ_MUST_USE bool readRefType(RefType* type);
+  MOZ_MUST_USE bool readHeapType(bool nullable, RefType* type);
   MOZ_MUST_USE bool readReferenceType(ValType* type, const char* const context);
 
   // At a location where readOp is allowed, peek at the next opcode
@@ -542,12 +555,20 @@ inline bool OpIter<Policy>::checkIsSubtypeOf(ValType actual, ValType expected) {
   }
 
   if (actual.isReference() && expected.isReference() &&
-      env_.isRefSubtypeOf(actual, expected)) {
+      env_.isRefSubtypeOf(actual.refType(), expected.refType())) {
     return true;
   }
 
   UniqueChars actualText = ToString(actual);
+  if (!actualText) {
+    return false;
+  }
+
   UniqueChars expectedText = ToString(expected);
+  if (!expectedText) {
+    return false;
+  }
+
   UniqueChars error(
       JS_smprintf("type mismatch: expression has type %s but expected %s",
                   actualText.get(), expectedText.get()));
@@ -589,9 +610,9 @@ inline bool OpIter<Policy>::failEmptyStack() {
                              : fail("popping value from outside block");
 }
 
-// This function pops exactly one value from the stack, yielding TVar types in
+// This function pops exactly one value from the stack, yielding Bottom types in
 // various cases and therefore making it the caller's responsibility to do the
-// right thing for StackType::TVar. Prefer (pop|top)WithType.  This is an
+// right thing for StackType::Bottom. Prefer (pop|top)WithType.  This is an
 // optimization for the super-common case where the caller is statically
 // expecting the resulttype `[valtype]`.
 template <typename Policy>
@@ -601,10 +622,10 @@ inline bool OpIter<Policy>::popStackType(StackType* type, Value* value) {
   MOZ_ASSERT(valueStack_.length() >= block.valueStackBase());
   if (MOZ_UNLIKELY(valueStack_.length() == block.valueStackBase())) {
     // If the base of this block's stack is polymorphic, then we can pop a
-    // dummy value of any type; it won't be used since we're in unreachable
-    // code.
+    // dummy value of the bottom type; it won't be used since we're in
+    // unreachable code.
     if (block.polymorphicBase()) {
-      *type = StackType::tvar();
+      *type = StackType::bottom();
       *value = Value();
 
       // Maintain the invariant that, after a pop, there is always memory
@@ -631,7 +652,7 @@ inline bool OpIter<Policy>::popWithType(ValType expectedType, Value* value) {
     return false;
   }
 
-  return stackType.isTVar() ||
+  return stackType.isBottom() ||
          checkIsSubtypeOf(stackType.valType(), expectedType);
 }
 
@@ -652,6 +673,33 @@ inline bool OpIter<Policy>::popWithType(ResultType expected,
     }
   }
   return true;
+}
+
+// This function pops exactly one value from the stack, checking that it is a
+// reference type.
+template <typename Policy>
+inline bool OpIter<Policy>::popWithRefType(Value* value, StackType* type) {
+  if (!popStackType(type, value)) {
+    return false;
+  }
+
+  if (type->isBottom() || type->valType().isReference()) {
+    return true;
+  }
+
+  UniqueChars actualText = ToString(type->valType());
+  if (!actualText) {
+    return false;
+  }
+
+  UniqueChars error(JS_smprintf(
+      "type mismatch: expression has type %s but expected a reference type",
+      actualText.get()));
+  if (!error) {
+    return false;
+  }
+
+  return fail(error.get());
 }
 
 // This function is an optimization of the sequence:
@@ -705,8 +753,69 @@ inline bool OpIter<Policy>::popThenPushType(ResultType expected,
     } else {
       TypeAndValue& observed = valueStack_[currentValueStackLength - 1];
 
-      if (observed.type().isTVar()) {
+      if (observed.type().isBottom()) {
         observed.typeRef() = StackType(expectedType);
+        collectValue(Value());
+      } else {
+        if (!checkIsSubtypeOf(observed.type().valType(), expectedType)) {
+          return false;
+        }
+
+        collectValue(observed.value());
+      }
+    }
+  }
+  return true;
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::topWithType(ResultType expected,
+                                        ValueVector* values) {
+  if (expected.empty()) {
+    return true;
+  }
+
+  Control& block = controlStack_.back();
+
+  size_t expectedLength = expected.length();
+  if (values && !values->resize(expectedLength)) {
+    return false;
+  }
+
+  for (size_t i = 0; i != expectedLength; i++) {
+    // We're iterating as-if we were popping each expected/actual type one by
+    // one, which means iterating the array of expected results backwards.
+    // The "current" value stack length refers to what the value stack length
+    // would have been if we were popping it.
+    size_t reverseIndex = expectedLength - i - 1;
+    ValType expectedType = expected[reverseIndex];
+    auto collectValue = [&](const Value& v) {
+      if (values) {
+        (*values)[reverseIndex] = v;
+      }
+    };
+
+    size_t currentValueStackLength = valueStack_.length() - i;
+
+    MOZ_ASSERT(currentValueStackLength >= block.valueStackBase());
+    if (currentValueStackLength == block.valueStackBase()) {
+      if (!block.polymorphicBase()) {
+        return failEmptyStack();
+      }
+
+      // If the base of this block's stack is polymorphic, then we can just
+      // pull out as many fake values as we need to validate; they won't be used
+      // since we're in unreachable code.
+      if (!valueStack_.insert(valueStack_.begin() + currentValueStackLength,
+                              TypeAndValue())) {
+        return false;
+      }
+
+      collectValue(Value());
+    } else {
+      TypeAndValue& observed = valueStack_[currentValueStackLength - 1];
+
+      if (observed.type().isBottom()) {
         collectValue(Value());
       } else {
         if (!checkIsSubtypeOf(observed.type().valType(), expectedType)) {
@@ -781,7 +890,7 @@ inline bool OpIter<Policy>::readBlockType(BlockType* type) {
   }
 
 #ifdef ENABLE_WASM_MULTI_VALUE
-  if (!env_.multiValuesEnabled()) {
+  if (!env_.multiValueEnabled()) {
     return fail("invalid block type reference");
   }
 
@@ -1002,7 +1111,7 @@ inline bool OpIter<Policy>::checkBranchValue(uint32_t relativeDepth,
   }
 
   *type = block->branchTargetType();
-  return popThenPushType(*type, values);
+  return topWithType(*type, values);
 }
 
 template <typename Policy>
@@ -1065,7 +1174,7 @@ inline bool OpIter<Policy>::checkBrTableEntry(uint32_t* relativeDepth,
     branchValues = nullptr;
   }
 
-  return popThenPushType(*type, branchValues);
+  return topWithType(*type, branchValues);
 }
 
 template <typename Policy>
@@ -1419,9 +1528,9 @@ inline bool OpIter<Policy>::readSelect(bool typed, StackType* type,
     return fail("invalid types for old-style 'select'");
   }
 
-  if (falseType.isTVar()) {
+  if (falseType.isBottom()) {
     *type = trueType;
-  } else if (trueType.isTVar() || falseType == trueType) {
+  } else if (trueType.isBottom() || falseType == trueType) {
     *type = falseType;
   } else {
     return fail("select operand types must match");
@@ -1611,7 +1720,7 @@ inline bool OpIter<Policy>::readRefNull() {
   MOZ_ASSERT(Classify(op_) == OpKind::RefNull);
 
   RefType type;
-  if (!readRefType(&type)) {
+  if (!readHeapType(true, &type)) {
     return false;
   }
   return push(type);
@@ -1621,25 +1730,65 @@ template <typename Policy>
 inline bool OpIter<Policy>::readRefIsNull(Value* input) {
   MOZ_ASSERT(Classify(op_) == OpKind::Conversion);
 
-  RefType type;
-  if (!readRefType(&type)) {
-    return false;
-  }
-  if (!popWithType(type, input)) {
+  StackType type;
+  if (!popWithRefType(input, &type)) {
     return false;
   }
   return push(ValType::I32);
 }
 
 template <typename Policy>
-inline bool OpIter<Policy>::readValType(ValType* type) {
-  return d_.readValType(env_.types, env_.refTypesEnabled(),
-                        env_.gcTypesEnabled(), type);
+inline bool OpIter<Policy>::readRefAsNonNull(Value* input) {
+  MOZ_ASSERT(Classify(op_) == OpKind::RefAsNonNull);
+
+  StackType type;
+  if (!popWithRefType(input, &type)) {
+    return false;
+  }
+
+  if (type.isBottom()) {
+    infalliblePush(type);
+  } else {
+    infalliblePush(type.asNonNullable());
+  }
+  return true;
 }
 
 template <typename Policy>
-inline bool OpIter<Policy>::readRefType(RefType* type) {
-  return d_.readRefType(env_.types, env_.gcTypesEnabled(), type);
+inline bool OpIter<Policy>::readBrOnNull(uint32_t* relativeDepth,
+                                         ResultType* type, ValueVector* values,
+                                         Value* condition) {
+  MOZ_ASSERT(Classify(op_) == OpKind::BrOnNull);
+
+  if (!readVarU32(relativeDepth)) {
+    return fail("unable to read br_on_null depth");
+  }
+
+  StackType refType;
+  if (!popWithRefType(condition, &refType)) {
+    return false;
+  }
+
+  if (!checkBranchValue(*relativeDepth, type, values)) {
+    return false;
+  }
+
+  if (refType.isBottom()) {
+    infalliblePush(refType);
+  } else {
+    infalliblePush(refType.asNonNullable());
+  }
+  return true;
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readValType(ValType* type) {
+  return d_.readValType(env_.types, env_.features, type);
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readHeapType(bool nullable, RefType* type) {
+  return d_.readHeapType(env_.types, env_.features, nullable, type);
 }
 
 template <typename Policy>
@@ -1719,7 +1868,7 @@ inline bool OpIter<Policy>::readCallIndirect(uint32_t* funcTypeIndex,
     }
     return fail("table index out of range for call_indirect");
   }
-  if (env_.tables[*tableIndex].kind != TableKind::FuncRef) {
+  if (!env_.tables[*tableIndex].elemType.isFunc()) {
     return fail("indirect calls must go through a table of 'funcref'");
   }
 
@@ -1964,8 +2113,8 @@ inline bool OpIter<Policy>::readMemOrTableCopy(bool isMem,
         *srcMemOrTableIndex >= env_.tables.length()) {
       return fail("table index out of range for table.copy");
     }
-    ValType dstElemType = ToElemValType(env_.tables[*dstMemOrTableIndex].kind);
-    ValType srcElemType = ToElemValType(env_.tables[*srcMemOrTableIndex].kind);
+    ValType dstElemType = env_.tables[*dstMemOrTableIndex].elemType;
+    ValType srcElemType = env_.tables[*srcMemOrTableIndex].elemType;
     if (!checkIsSubtypeOf(srcElemType, dstElemType)) {
       return false;
     }
@@ -2095,8 +2244,8 @@ inline bool OpIter<Policy>::readMemOrTableInit(bool isMem, uint32_t* segIndex,
     if (*segIndex >= env_.elemSegments.length()) {
       return fail("table.init segment index out of range");
     }
-    if (!checkIsSubtypeOf(env_.elemSegments[*segIndex]->elemType(),
-                          ToElemValType(env_.tables[*dstTableIndex].kind))) {
+    if (!checkIsSubtypeOf(env_.elemSegments[*segIndex]->elemType,
+                          env_.tables[*dstTableIndex].elemType)) {
       return false;
     }
   }
@@ -2119,7 +2268,7 @@ inline bool OpIter<Policy>::readTableFill(uint32_t* tableIndex, Value* start,
   if (!popWithType(ValType::I32, len)) {
     return false;
   }
-  if (!popWithType(ToElemValType(env_.tables[*tableIndex].kind), val)) {
+  if (!popWithType(env_.tables[*tableIndex].elemType, val)) {
     return false;
   }
   if (!popWithType(ValType::I32, start)) {
@@ -2144,7 +2293,7 @@ inline bool OpIter<Policy>::readTableGet(uint32_t* tableIndex, Value* index) {
     return false;
   }
 
-  infalliblePush(ToElemValType(env_.tables[*tableIndex].kind));
+  infalliblePush(env_.tables[*tableIndex].elemType);
   return true;
 }
 
@@ -2163,7 +2312,7 @@ inline bool OpIter<Policy>::readTableGrow(uint32_t* tableIndex,
   if (!popWithType(ValType::I32, delta)) {
     return false;
   }
-  if (!popWithType(ToElemValType(env_.tables[*tableIndex].kind), initValue)) {
+  if (!popWithType(env_.tables[*tableIndex].elemType, initValue)) {
     return false;
   }
 
@@ -2183,7 +2332,7 @@ inline bool OpIter<Policy>::readTableSet(uint32_t* tableIndex, Value* index,
     return fail("table index out of range for table.set");
   }
 
-  if (!popWithType(ToElemValType(env_.tables[*tableIndex].kind), value)) {
+  if (!popWithType(env_.tables[*tableIndex].elemType, value)) {
     return false;
   }
   if (!popWithType(ValType::I32, index)) {
@@ -2266,7 +2415,7 @@ inline bool OpIter<Policy>::readStructNew(uint32_t* typeIndex,
     }
   }
 
-  return push(RefType::fromTypeIndex(*typeIndex));
+  return push(RefType::fromTypeIndex(*typeIndex, false));
 }
 
 template <typename Policy>
@@ -2285,7 +2434,7 @@ inline bool OpIter<Policy>::readStructGet(uint32_t* typeIndex,
     return false;
   }
 
-  if (!popWithType(RefType::fromTypeIndex(*typeIndex), ptr)) {
+  if (!popWithType(RefType::fromTypeIndex(*typeIndex, true), ptr)) {
     return false;
   }
 
@@ -2317,7 +2466,7 @@ inline bool OpIter<Policy>::readStructSet(uint32_t* typeIndex,
     return fail("field is not mutable");
   }
 
-  if (!popWithType(RefType::fromTypeIndex(*typeIndex), ptr)) {
+  if (!popWithType(RefType::fromTypeIndex(*typeIndex, true), ptr)) {
     return false;
   }
 
@@ -2351,8 +2500,8 @@ inline bool OpIter<Policy>::readStructNarrow(ValType* inputType,
     if (!outputStruct.hasPrefix(inputStruct)) {
       return fail("invalid narrowing operation");
     }
-  } else if (outputType->isAnyRef()) {
-    if (!inputType->isAnyRef()) {
+  } else if (outputType->isEqRef()) {
+    if (!inputType->isEqRef()) {
       return fail("invalid type combination in struct.narrow");
     }
   }

@@ -15,6 +15,7 @@
 #include "gc/ArenaList.h"
 #include "gc/AtomMarking.h"
 #include "gc/GCMarker.h"
+#include "gc/IteratorUtils.h"
 #include "gc/Nursery.h"
 #include "gc/Scheduling.h"
 #include "gc/Statistics.h"
@@ -185,38 +186,6 @@ struct Callback {
 template <typename F>
 using CallbackVector = Vector<Callback<F>, 4, SystemAllocPolicy>;
 
-template <typename T, typename Iter0, typename Iter1>
-class ChainedIter {
-  Iter0 iter0_;
-  Iter1 iter1_;
-
- public:
-  ChainedIter(const Iter0& iter0, const Iter1& iter1)
-      : iter0_(iter0), iter1_(iter1) {}
-
-  bool done() const { return iter0_.done() && iter1_.done(); }
-  void next() {
-    MOZ_ASSERT(!done());
-    if (!iter0_.done()) {
-      iter0_.next();
-    } else {
-      MOZ_ASSERT(!iter1_.done());
-      iter1_.next();
-    }
-  }
-  T get() const {
-    MOZ_ASSERT(!done());
-    if (!iter0_.done()) {
-      return iter0_.get();
-    }
-    MOZ_ASSERT(!iter1_.done());
-    return iter1_.get();
-  }
-
-  operator T() const { return get(); }
-  T operator->() const { return get(); }
-};
-
 typedef HashMap<Value*, const char*, DefaultHasher<Value*>, SystemAllocPolicy>
     RootedValueMap;
 
@@ -306,15 +275,13 @@ class GCRuntime {
   void setPerformanceHint(PerformanceHint hint);
 
   MOZ_MUST_USE bool triggerGC(JS::GCReason reason);
-  // Check whether to trigger a zone GC after allocating GC cells. During an
-  // incremental GC, optionally count |nbytes| towards the threshold for
-  // performing the next slice.
-  void maybeAllocTriggerZoneGC(Zone* zone);
+  // Check whether to trigger a zone GC after allocating GC cells.
+  void maybeTriggerGCAfterAlloc(Zone* zone);
   // Check whether to trigger a zone GC after malloc memory.
-  void maybeMallocTriggerZoneGC(Zone* zone);
-  bool maybeMallocTriggerZoneGC(Zone* zone, const HeapSize& heap,
-                                const HeapThreshold& threshold,
-                                JS::GCReason reason);
+  void maybeTriggerGCAfterMalloc(Zone* zone);
+  bool maybeTriggerGCAfterMalloc(Zone* zone, const HeapSize& heap,
+                                 const HeapThreshold& threshold,
+                                 JS::GCReason reason);
   // The return value indicates if we were able to do the GC.
   bool triggerZoneGC(Zone* zone, JS::GCReason reason, size_t usedBytes,
                      size_t thresholdBytes);
@@ -406,6 +373,7 @@ class GCRuntime {
   void waitBackgroundSweepEnd();
   void waitBackgroundAllocEnd() { allocTask.cancelAndWait(); }
   void waitBackgroundFreeEnd();
+  void waitForBackgroundTasks();
 
   void lockGC() { lock.lock(); }
 
@@ -538,11 +506,9 @@ class GCRuntime {
   const ChunkPool& emptyChunks(const AutoLockGC& lock) const {
     return emptyChunks_.ref();
   }
-  typedef ChainedIter<Chunk*, ChunkPool::Iter, ChunkPool::Iter>
-      NonEmptyChunksIter;
+  using NonEmptyChunksIter = ChainedIterator<ChunkPool::Iter, 2>;
   NonEmptyChunksIter allNonEmptyChunks(const AutoLockGC& lock) {
-    return NonEmptyChunksIter(ChunkPool::Iter(availableChunks(lock)),
-                              ChunkPool::Iter(fullChunks(lock)));
+    return NonEmptyChunksIter(availableChunks(lock), fullChunks(lock));
   }
 
   Chunk* getOrAllocChunk(AutoLockGCBgAlloc& lock);
@@ -624,6 +590,9 @@ class GCRuntime {
 
   TriggerResult checkHeapThreshold(Zone* zone, const HeapSize& heapSize,
                                    const HeapThreshold& heapThreshold);
+
+  void updateGCThresholdsAfterCollection(const AutoLockGC& lock);
+  void updateAllGCStartThresholds(const AutoLockGC& lock);
 
   // Delete an empty zone after its contents have been merged.
   void deleteEmptyZone(Zone* zone);
@@ -777,9 +746,6 @@ class GCRuntime {
   void sweepWeakRefs();
   IncrementalProgress endSweepingSweepGroup(JSFreeOp* fop, SliceBudget& budget);
   IncrementalProgress performSweepActions(SliceBudget& sliceBudget);
-  IncrementalProgress sweepTypeInformation(JSFreeOp* fop, SliceBudget& budget);
-  IncrementalProgress releaseSweptEmptyArenas(JSFreeOp* fop,
-                                              SliceBudget& budget);
   void startSweepingAtomsTable();
   IncrementalProgress sweepAtomsTable(JSFreeOp* fop, SliceBudget& budget);
   IncrementalProgress sweepWeakCaches(JSFreeOp* fop, SliceBudget& budget);
@@ -803,7 +769,6 @@ class GCRuntime {
                                    SliceBudget& sliceBudget,
                                    AutoGCSession& session);
   void endCompactPhase();
-  void sweepTypesAfterCompacting(Zone* zone);
   void sweepZoneAfterCompacting(MovingTracer* trc, Zone* zone);
   bool canRelocateZone(Zone* zone) const;
   MOZ_MUST_USE bool relocateArenas(Zone* zone, JS::GCReason reason,
@@ -876,7 +841,7 @@ class GCRuntime {
 
   Vector<JS::GCCellPtr, 0, SystemAllocPolicy> unmarkGrayStack;
 
-  /* Track heap size for this runtime. */
+  /* Track total GC heap size for this runtime. */
   HeapSize heapSize;
 
   /* GC scheduling state and parameters. */
@@ -1267,7 +1232,6 @@ inline bool GCRuntime::hasIncrementalTwoSliceZealMode() {
          hasZealMode(ZealMode::YieldBeforeSweeping) ||
          hasZealMode(ZealMode::YieldBeforeSweepingAtoms) ||
          hasZealMode(ZealMode::YieldBeforeSweepingCaches) ||
-         hasZealMode(ZealMode::YieldBeforeSweepingTypes) ||
          hasZealMode(ZealMode::YieldBeforeSweepingObjects) ||
          hasZealMode(ZealMode::YieldBeforeSweepingNonObjects) ||
          hasZealMode(ZealMode::YieldBeforeSweepingShapeTrees) ||

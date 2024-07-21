@@ -65,7 +65,7 @@ struct MinimalFunc : MinimalAlloc {
   }
 
   MParameter* createParameter() {
-    MParameter* p = MParameter::New(alloc, numParams++, nullptr);
+    MParameter* p = MParameter::New(alloc, numParams++);
     return p;
   }
 

@@ -6,12 +6,16 @@
 
 #include "mozilla/DebugOnly.h"
 
+#include "jit/BaselineFrame.h"
 #include "jit/CacheIR.h"
+#include "jit/CompileInfo.h"
+#include "jit/InlineScriptTree.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "jit/WarpCacheIRTranspiler.h"
 #include "jit/WarpSnapshot.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_BAD_CONST_ASSIGN
 #include "vm/Opcodes.h"
 
 #include "jit/JitScript-inl.h"
@@ -185,8 +189,7 @@ bool WarpBuilder::startNewOsrPreHeaderBlock(BytecodeLocation loopHead) {
 
   if (info().funMaybeLazy()) {
     // Initialize |this| parameter.
-    MParameter* thisv =
-        MParameter::New(alloc(), MParameter::THIS_SLOT, nullptr);
+    MParameter* thisv = MParameter::New(alloc(), MParameter::THIS_SLOT);
     osrBlock->add(thisv);
     osrBlock->initSlot(info().thisSlot(), thisv);
 
@@ -203,7 +206,7 @@ bool WarpBuilder::startNewOsrPreHeaderBlock(BytecodeLocation loopHead) {
       uint32_t slot = info().argSlotUnchecked(i);
       MInstruction* osrv;
       if (!needsArgsObj || !info().argsObjAliasesFormals()) {
-        osrv = MParameter::New(alloc().fallible(), i, nullptr);
+        osrv = MParameter::New(alloc().fallible(), i);
       } else if (script_->formalIsAliased(i)) {
         osrv = MConstant::New(alloc().fallible(), UndefinedValue());
       } else {
@@ -247,7 +250,7 @@ bool WarpBuilder::startNewOsrPreHeaderBlock(BytecodeLocation loopHead) {
   current->add(start);
 
   // Note: phi specialization can add type guard instructions to the OSR entry
-  // block if needed. See ShouldSpecializeOsrPhis.
+  // block if needed. See TypeAnalyzer::shouldSpecializeOsrPhis.
 
   // Create the preheader block, with the predecessor block and OSR block as
   // predecessors.
@@ -438,14 +441,13 @@ bool WarpBuilder::buildPrologue() {
 
   if (info().funMaybeLazy()) {
     // Initialize |this|.
-    MParameter* param =
-        MParameter::New(alloc(), MParameter::THIS_SLOT, nullptr);
+    MParameter* param = MParameter::New(alloc(), MParameter::THIS_SLOT);
     current->add(param);
     current->initSlot(info().thisSlot(), param);
 
     // Initialize arguments.
     for (uint32_t i = 0; i < info().nargs(); i++) {
-      MParameter* param = MParameter::New(alloc().fallible(), i, nullptr);
+      MParameter* param = MParameter::New(alloc().fallible(), i);
       if (!param) {
         return false;
       }
@@ -858,8 +860,7 @@ bool WarpBuilder::build_RegExp(BytecodeLocation loc) {
 
   auto* snapshot = getOpSnapshot<WarpRegExp>(loc);
 
-  MRegExp* regexp = MRegExp::New(alloc(), /* constraints = */ nullptr, reObj,
-                                 snapshot->hasShared());
+  MRegExp* regexp = MRegExp::New(alloc(), reObj, snapshot->hasShared());
   current->add(regexp);
   current->push(regexp);
 
@@ -1064,6 +1065,25 @@ bool WarpBuilder::build_StrictEq(BytecodeLocation loc) {
 
 bool WarpBuilder::build_StrictNe(BytecodeLocation loc) {
   return buildCompareOp(loc);
+}
+
+// Returns true iff the MTest added for |op| has a true-target corresponding
+// with the join point in the bytecode.
+static bool TestTrueTargetIsJoinPoint(JSOp op) {
+  switch (op) {
+    case JSOp::IfNe:
+    case JSOp::Or:
+    case JSOp::Case:
+      return true;
+
+    case JSOp::IfEq:
+    case JSOp::And:
+    case JSOp::Coalesce:
+      return false;
+
+    default:
+      MOZ_CRASH("Unexpected op");
+  }
 }
 
 bool WarpBuilder::build_JumpTarget(BytecodeLocation loc) {
@@ -1429,14 +1449,12 @@ bool WarpBuilder::buildBackedge() {
   MBasicBlock* header = loopStack_.popCopy().header();
   current->end(MGoto::New(alloc(), header));
 
-  AbortReason r = header->setBackedge(alloc(), current);
-  if (r == AbortReason::NoAbort) {
-    setTerminatedBlock();
-    return true;
+  if (!header->setBackedge(current)) {
+    return false;
   }
 
-  MOZ_ASSERT(r == AbortReason::Alloc);
-  return false;
+  setTerminatedBlock();
+  return true;
 }
 
 bool WarpBuilder::buildForwardGoto(BytecodeLocation target) {
@@ -1481,7 +1499,7 @@ bool WarpBuilder::build_DynamicImport(BytecodeLocation loc) {
 
 bool WarpBuilder::build_Not(BytecodeLocation loc) {
   MDefinition* value = current->pop();
-  MNot* ins = MNot::New(alloc(), value, /* constraints = */ nullptr);
+  MNot* ins = MNot::New(alloc(), value);
   current->add(ins);
   current->push(ins);
   return true;
@@ -1490,9 +1508,6 @@ bool WarpBuilder::build_Not(BytecodeLocation loc) {
 bool WarpBuilder::build_ToString(BytecodeLocation loc) {
   MDefinition* value = current->pop();
 
-  // TODO: Consider making MToString non-effectul similar to Ion. That way GVN
-  // will be able to fold away MToString(string) automatically. For now simply
-  // handle this case here.
   if (value->type() == MIRType::String) {
     value->setImplicitlyUsedUnchecked();
     current->push(value);
@@ -1503,8 +1518,10 @@ bool WarpBuilder::build_ToString(BytecodeLocation loc) {
       MToString::New(alloc(), value, MToString::SideEffectHandling::Supported);
   current->add(ins);
   current->push(ins);
-  MOZ_ASSERT(ins->isEffectful());
-  return resumeAfter(ins, loc);
+  if (ins->isEffectful()) {
+    return resumeAfter(ins, loc);
+  }
+  return true;
 }
 
 bool WarpBuilder::usesEnvironmentChain() const {
@@ -1619,12 +1636,9 @@ bool WarpBuilder::build_ToPropertyKey(BytecodeLocation loc) {
   return buildIC(loc, CacheKind::ToPropertyKey, {value});
 }
 
-bool WarpBuilder::build_Typeof(BytecodeLocation) {
+bool WarpBuilder::build_Typeof(BytecodeLocation loc) {
   MDefinition* input = current->pop();
-  MTypeOf* ins = MTypeOf::New(alloc(), input);
-  current->add(ins);
-  current->push(ins);
-  return true;
+  return buildIC(loc, CacheKind::TypeOf, {input});
 }
 
 bool WarpBuilder::build_TypeofExpr(BytecodeLocation loc) {
@@ -1765,6 +1779,16 @@ bool WarpBuilder::build_IsNoIter(BytecodeLocation) {
   return true;
 }
 
+bool WarpBuilder::transpileCall(BytecodeLocation loc,
+                                const WarpCacheIR* cacheIRSnapshot,
+                                CallInfo* callInfo) {
+  // Synthesize the constant number of arguments for this call op.
+  auto* argc = MConstant::New(alloc(), Int32Value(callInfo->argc()));
+  current->add(argc);
+
+  return TranspileCacheIRToMIR(this, loc, cacheIRSnapshot, {argc}, callInfo);
+}
+
 bool WarpBuilder::buildCallOp(BytecodeLocation loc) {
   uint32_t argc = loc.getCallArgc();
   JSOp op = loc.getOp();
@@ -1778,11 +1802,20 @@ bool WarpBuilder::buildCallOp(BytecodeLocation loc) {
   }
 
   if (const auto* inliningSnapshot = getOpSnapshot<WarpInlinedCall>(loc)) {
+    // Transpile the CacheIR to generate the correct guards before
+    // inlining.  In this case, CacheOp::CallInlinedFunction updates
+    // the CallInfo, but does not generate a call.
+    callInfo.markAsInlined();
+    if (!transpileCall(loc, inliningSnapshot->cacheIRSnapshot(), &callInfo)) {
+      return false;
+    }
+
+    // Generate the body of the inlined function.
     return buildInlinedCall(loc, inliningSnapshot, callInfo);
   }
 
   if (auto* cacheIRSnapshot = getOpSnapshot<WarpCacheIR>(loc)) {
-    return TranspileCacheIRToMIR(this, loc, cacheIRSnapshot, callInfo);
+    return transpileCall(loc, cacheIRSnapshot, &callInfo);
   }
 
   if (getOpSnapshot<WarpBailout>(loc)) {
@@ -2262,11 +2295,11 @@ bool WarpBuilder::build_NewArray(BytecodeLocation loc) {
 
   MNewArray* ins;
   if (useVMCall) {
-    ins = MNewArray::NewVM(alloc(), /* constraints = */ nullptr, length,
-                           templateConst, heap, loc.toRawBytecode());
+    ins = MNewArray::NewVM(alloc(), length, templateConst, heap,
+                           loc.toRawBytecode());
   } else {
-    ins = MNewArray::New(alloc(), /* constraints = */ nullptr, length,
-                         templateConst, heap, loc.toRawBytecode());
+    ins = MNewArray::New(alloc(), length, templateConst, heap,
+                         loc.toRawBytecode());
   }
   current->add(ins);
   current->push(ins);
@@ -2280,12 +2313,10 @@ bool WarpBuilder::build_NewArrayCopyOnWrite(BytecodeLocation loc) {
 
   // TODO: pre-tenuring.
   gc::InitialHeap heap = gc::DefaultHeap;
-  MConstant* templateConst =
-      MConstant::NewConstraintlessObject(alloc(), templateObject);
+  MConstant* templateConst = MConstant::NewObject(alloc(), templateObject);
   current->add(templateConst);
 
-  auto* ins = MNewArrayCopyOnWrite::New(alloc(), /* constraints = */ nullptr,
-                                        templateConst, heap);
+  auto* ins = MNewArrayCopyOnWrite::New(alloc(), templateConst, heap);
   current->add(ins);
   current->push(ins);
   return true;
@@ -2298,12 +2329,12 @@ bool WarpBuilder::build_NewObject(BytecodeLocation loc) {
   MNewObject* ins;
   if (const auto* snapshot = getOpSnapshot<WarpNewObject>(loc)) {
     auto* templateConst = constant(ObjectValue(*snapshot->templateObject()));
-    ins = MNewObject::New(alloc(), /* constraints = */ nullptr, templateConst,
-                          heap, MNewObject::ObjectLiteral);
+    ins = MNewObject::New(alloc(), templateConst, heap,
+                          MNewObject::ObjectLiteral);
   } else {
     auto* templateConst = constant(NullValue());
-    ins = MNewObject::NewVM(alloc(), /* constraints = */ nullptr, templateConst,
-                            heap, MNewObject::ObjectLiteral);
+    ins = MNewObject::NewVM(alloc(), templateConst, heap,
+                            MNewObject::ObjectLiteral);
   }
   current->add(ins);
   current->push(ins);
@@ -2577,11 +2608,9 @@ bool WarpBuilder::build_InitElemInc(BytecodeLocation loc) {
 
 static LambdaFunctionInfo LambdaInfoFromSnapshot(JSFunction* fun,
                                                  const WarpLambda* snapshot) {
-  // Pass false for singletonType and useSingletonForClone as asserted in
-  // WarpOracle.
+  // Pass false for singletonType as asserted in WarpOracle.
   return LambdaFunctionInfo(fun, snapshot->baseScript(), snapshot->flags(),
-                            snapshot->nargs(), /* singletonType = */ false,
-                            /* useSingletonForClone = */ false);
+                            snapshot->nargs(), /* singletonType = */ false);
 }
 
 bool WarpBuilder::build_Lambda(BytecodeLocation loc) {
@@ -2594,7 +2623,7 @@ bool WarpBuilder::build_Lambda(BytecodeLocation loc) {
   JSFunction* fun = loc.getFunction(script_);
   MConstant* funConst = constant(ObjectValue(*fun));
 
-  auto* ins = MLambda::New(alloc(), /* constraints = */ nullptr, env, funConst,
+  auto* ins = MLambda::New(alloc(), env, funConst,
                            LambdaInfoFromSnapshot(fun, snapshot));
   current->add(ins);
   current->push(ins);
@@ -2612,9 +2641,8 @@ bool WarpBuilder::build_LambdaArrow(BytecodeLocation loc) {
   JSFunction* fun = loc.getFunction(script_);
   MConstant* funConst = constant(ObjectValue(*fun));
 
-  auto* ins =
-      MLambdaArrow::New(alloc(), /* constraints = */ nullptr, env, newTarget,
-                        funConst, LambdaInfoFromSnapshot(fun, snapshot));
+  auto* ins = MLambdaArrow::New(alloc(), env, newTarget, funConst,
+                                LambdaInfoFromSnapshot(fun, snapshot));
   current->add(ins);
   current->push(ins);
   return resumeAfter(ins, loc);
@@ -2642,7 +2670,7 @@ bool WarpBuilder::build_SpreadCall(BytecodeLocation loc) {
   callInfo.initForSpreadCall(current);
 
   if (auto* cacheIRSnapshot = getOpSnapshot<WarpCacheIR>(loc)) {
-    return TranspileCacheIRToMIR(this, loc, cacheIRSnapshot, callInfo);
+    return transpileCall(loc, cacheIRSnapshot, &callInfo);
   }
 
   MInstruction* call = makeSpreadCall(callInfo);
@@ -2787,11 +2815,11 @@ bool WarpBuilder::build_Rest(BytecodeLocation loc) {
     MConstant* templateConst = constant(ObjectValue(*templateObject));
     MNewArray* newArray;
     if (numRest > snapshot->maxInlineElements()) {
-      newArray = MNewArray::NewVM(alloc(), /* constraints = */ nullptr, numRest,
-                                  templateConst, heap, loc.toRawBytecode());
+      newArray = MNewArray::NewVM(alloc(), numRest, templateConst, heap,
+                                  loc.toRawBytecode());
     } else {
-      newArray = MNewArray::New(alloc(), /* constraints = */ nullptr, numRest,
-                                templateConst, heap, loc.toRawBytecode());
+      newArray = MNewArray::New(alloc(), numRest, templateConst, heap,
+                                loc.toRawBytecode());
     }
     current->add(newArray);
     current->push(newArray);
@@ -2844,8 +2872,7 @@ bool WarpBuilder::build_Rest(BytecodeLocation loc) {
   // Pass in the number of actual arguments, the number of formals (not
   // including the rest parameter slot itself), and the template object.
   unsigned numFormals = info().nargs() - 1;
-  MRest* rest = MRest::New(alloc(), /* constraints = */ nullptr, numActuals,
-                           numFormals, templateObject);
+  MRest* rest = MRest::New(alloc(), numActuals, numFormals, templateObject);
   current->add(rest);
   current->push(rest);
   return true;
@@ -2906,11 +2933,7 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
   MOZ_ASSERT(numInputs == NumInputsForCacheKind(kind));
 
   if (auto* cacheIRSnapshot = getOpSnapshot<WarpCacheIR>(loc)) {
-    MDefinitionStackVector inputs_;
-    if (!inputs_.append(inputs.begin(), inputs.end())) {
-      return false;
-    }
-    return TranspileCacheIRToMIR(this, loc, cacheIRSnapshot, inputs_);
+    return TranspileCacheIRToMIR(this, loc, cacheIRSnapshot, inputs);
   }
 
   if (getOpSnapshot<WarpBailout>(loc)) {
@@ -2918,6 +2941,20 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
       input->setImplicitlyUsedUnchecked();
     }
     return buildBailoutForColdIC(loc, kind);
+  }
+
+  if (const auto* inliningSnapshot = getOpSnapshot<WarpInlinedCall>(loc)) {
+    // The CallInfo will be initialized by the transpiler.
+    jsbytecode* pc = loc.toRawBytecode();
+    bool ignoresRval = BytecodeIsPopped(pc);
+    CallInfo callInfo(alloc(), pc, /*constructing =*/false, ignoresRval);
+    callInfo.markAsInlined();
+
+    if (!TranspileCacheIRToMIR(this, loc, inliningSnapshot->cacheIRSnapshot(),
+                               inputs, &callInfo)) {
+      return false;
+    }
+    return buildInlinedCall(loc, inliningSnapshot, callInfo);
   }
 
   // Work around std::initializer_list not defining operator[].
@@ -3019,11 +3056,7 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
           val = maybeGuardNotOptimizedArguments(val);
         }
       }
-      // For now pass monitoredResult = true to get the behavior we want (no
-      // TI-related restrictions apply, similar to the Baseline IC).
-      // See also IonGetPropertyICFlags.
-      bool monitoredResult = true;
-      auto* ins = MGetPropertyCache::New(alloc(), val, id, monitoredResult);
+      auto* ins = MGetPropertyCache::New(alloc(), val, id);
       current->add(ins);
       current->push(ins);
       return resumeAfter(ins, loc);
@@ -3031,9 +3064,7 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
     case CacheKind::GetElem: {
       MOZ_ASSERT(numInputs == 2);
       MDefinition* val = maybeGuardNotOptimizedArguments(getInput(0));
-      bool monitoredResult = true;  // See GetProp case above.
-      auto* ins =
-          MGetPropertyCache::New(alloc(), val, getInput(1), monitoredResult);
+      auto* ins = MGetPropertyCache::New(alloc(), val, getInput(1));
       current->add(ins);
       current->push(ins);
       return resumeAfter(ins, loc);
@@ -3043,24 +3074,16 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
       PropertyName* name = loc.getPropertyName(script_);
       MConstant* id = constant(StringValue(name));
       bool strict = loc.isStrictSetOp();
-      bool needsPostBarrier = true;
-      bool needsTypeBarrier = false;
-      bool guardHoles = true;
-      auto* ins = MSetPropertyCache::New(alloc(), getInput(0), id, getInput(1),
-                                         strict, needsPostBarrier,
-                                         needsTypeBarrier, guardHoles);
+      auto* ins =
+          MSetPropertyCache::New(alloc(), getInput(0), id, getInput(1), strict);
       current->add(ins);
       return resumeAfter(ins, loc);
     }
     case CacheKind::SetElem: {
       MOZ_ASSERT(numInputs == 3);
       bool strict = loc.isStrictSetOp();
-      bool needsPostBarrier = true;
-      bool needsTypeBarrier = false;
-      bool guardHoles = true;
       auto* ins = MSetPropertyCache::New(alloc(), getInput(0), getInput(1),
-                                         getInput(2), strict, needsPostBarrier,
-                                         needsTypeBarrier, guardHoles);
+                                         getInput(2), strict);
       current->add(ins);
       return resumeAfter(ins, loc);
     }
@@ -3091,9 +3114,16 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
       current->push(ins);
       return resumeAfter(ins, loc);
     }
+    case CacheKind::TypeOf: {
+      // Note: Warp does not have a TypeOf IC, it just inlines the operation.
+      MOZ_ASSERT(numInputs == 1);
+      auto* ins = MTypeOf::New(alloc(), getInput(0));
+      current->add(ins);
+      current->push(ins);
+      return true;
+    }
     case CacheKind::GetIntrinsic:
     case CacheKind::ToBool:
-    case CacheKind::TypeOf:
     case CacheKind::Call:
     case CacheKind::NewObject:
       // We're currently not using an IC or transpiling CacheIR for these kinds.
@@ -3182,22 +3212,18 @@ MDefinition* WarpBuilder::maybeGuardNotOptimizedArguments(MDefinition* def) {
 bool WarpBuilder::buildInlinedCall(BytecodeLocation loc,
                                    const WarpInlinedCall* inlineSnapshot,
                                    CallInfo& callInfo) {
-  // We transpile the CacheIR to generate the correct guards before
-  // inlining.  In this case, CacheOp::CallInlinedFunction updates the
-  // CallInfo, but does not generate a call. The body of the inlined
-  // function is generated below.
-  callInfo.markAsInlined();
-  if (!TranspileCacheIRToMIR(this, loc, inlineSnapshot->cacheIRSnapshot(),
-                             callInfo)) {
-    return false;
-  }
-
   jsbytecode* pc = loc.toRawBytecode();
+
+  if (callInfo.isSetter()) {
+    // build_SetProp pushes the rhs argument onto the stack. Remove it
+    // in preparation for pushCallStack.
+    current->pop();
+  }
 
   callInfo.setImplicitlyUsedUnchecked();
 
   // Capture formals in the outer resume point.
-  if (!callInfo.pushCallStack(&mirGen(), current)) {
+  if (!callInfo.pushCallStack(current)) {
     return false;
   }
   MResumePoint* outerResumePoint =
@@ -3300,9 +3326,9 @@ MDefinition* WarpBuilder::patchInlinedReturn(CompileInfo* calleeCompileInfo,
     auto* filter = MReturnFromCtor::New(alloc(), rdef, callInfo.thisArg());
     exit->add(filter);
     rdef = filter;
-  }
-  if (callInfo.isSetter()) {
-    MOZ_CRASH("TODO");
+  } else if (callInfo.isSetter()) {
+    // Setters return the rhs argument, not whatever value is returned.
+    rdef = callInfo.getArg(0);
   }
 
   exit->end(MGoto::New(alloc(), returnBlock));

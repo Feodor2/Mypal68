@@ -343,19 +343,8 @@ class MOZ_STACK_CLASS LanguageTag final {
     privateuse_ = std::move(privateuse);
   }
 
- private:
-  enum class DuplicateVariants { Reject, Accept };
-
-  bool canonicalizeBaseName(JSContext* cx, DuplicateVariants duplicateVariants);
-
- public:
-  /**
-   * Canonicalize the base-name subtags, that means the language, script,
-   * region, and variant subtags.
-   */
-  bool canonicalizeBaseName(JSContext* cx) {
-    return canonicalizeBaseName(cx, DuplicateVariants::Reject);
-  }
+  /** Canonicalize the base-name (language, script, region, variant) subtags. */
+  bool canonicalizeBaseName(JSContext* cx);
 
   /**
    * Canonicalize all extension subtags.
@@ -477,10 +466,10 @@ class MOZ_STACK_CLASS LanguageTagParser final {
     size_t length = tok.length();
     if (locale_.is<const JS::Latin1Char*>()) {
       using T = const JS::Latin1Char;
-      subtag.set(mozilla::MakeSpan(locale_.as<T*>() + index, length));
+      subtag.set(mozilla::Span(locale_.as<T*>() + index, length));
     } else {
       using T = const char16_t;
-      subtag.set(mozilla::MakeSpan(locale_.as<T*>() + index, length));
+      subtag.set(mozilla::Span(locale_.as<T*>() + index, length));
     }
   }
 

@@ -15,9 +15,9 @@
 #include "frontend/TokenStream.h"
 #include "gc/HashUtil.h"
 #include "irregexp/RegExpAPI.h"
-#include "jit/VMFunctions.h"
-#include "js/friend/StackLimits.h"  // js::ReportOverRecursed
-#include "js/Object.h"              // JS::GetBuiltinClass
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::ReportOverRecursed
+#include "js/Object.h"                // JS::GetBuiltinClass
 #include "js/RegExp.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlags
 #include "js/StableStringChars.h"
@@ -68,7 +68,7 @@ RegExpObject* js::RegExpAlloc(JSContext* cx, NewObjectKind newKind,
     return nullptr;
   }
 
-  regexp->initPrivate(nullptr);
+  regexp->clearShared();
 
   if (!EmptyShape::ensureInitialCustomShape<RegExpObject>(cx, regexp)) {
     return nullptr;
@@ -110,7 +110,7 @@ bool VectorMatchPairs::allocOrExpandArray(size_t pairCount) {
 RegExpShared* RegExpObject::getShared(JSContext* cx,
                                       Handle<RegExpObject*> regexp) {
   if (regexp->hasShared()) {
-    return regexp->sharedRef();
+    return regexp->getShared();
   }
 
   return createShared(cx, regexp);
@@ -146,11 +146,6 @@ bool RegExpObject::isOriginalFlagGetter(JSNative native, RegExpFlags* mask) {
   return false;
 }
 
-/* static */
-void RegExpObject::trace(JSTracer* trc, JSObject* obj) {
-  obj->as<RegExpObject>().trace(trc);
-}
-
 static inline bool IsMarkingTrace(JSTracer* trc) {
   // Determine whether tracing is happening during normal marking.  We need to
   // test all the following conditions, since:
@@ -163,24 +158,6 @@ static inline bool IsMarkingTrace(JSTracer* trc) {
   return JS::RuntimeHeapIsCollecting() && trc->isMarkingTracer();
 }
 
-void RegExpObject::trace(JSTracer* trc) {
-  TraceNullableEdge(trc, &sharedRef(), "RegExpObject shared");
-}
-
-static const JSClassOps RegExpObjectClassOps = {
-    nullptr,              // addProperty
-    nullptr,              // delProperty
-    nullptr,              // enumerate
-    nullptr,              // newEnumerate
-    nullptr,              // resolve
-    nullptr,              // mayResolve
-    nullptr,              // finalize
-    nullptr,              // call
-    nullptr,              // hasInstance
-    nullptr,              // construct
-    RegExpObject::trace,  // trace
-};
-
 static const ClassSpec RegExpObjectClassSpec = {
     GenericCreateConstructor<js::regexp_construct, 2, gc::AllocKind::FUNCTION>,
     GenericCreatePrototype<RegExpObject>,
@@ -191,10 +168,9 @@ static const ClassSpec RegExpObjectClassSpec = {
 
 const JSClass RegExpObject::class_ = {
     js_RegExp_str,
-    JSCLASS_HAS_PRIVATE |
-        JSCLASS_HAS_RESERVED_SLOTS(RegExpObject::RESERVED_SLOTS) |
+    JSCLASS_HAS_RESERVED_SLOTS(RegExpObject::RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
-    &RegExpObjectClassOps, &RegExpObjectClassSpec};
+    JS_NULL_CLASS_OPS, &RegExpObjectClassSpec};
 
 const JSClass RegExpObject::protoClass_ = {
     "RegExp.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
@@ -252,19 +228,6 @@ RegExpObject* RegExpObject::create(JSContext* cx, HandleAtom source,
 }
 
 RegExpObject* RegExpObject::createSyntaxChecked(JSContext* cx,
-                                                const char16_t* chars,
-                                                size_t length,
-                                                RegExpFlags flags,
-                                                NewObjectKind newKind) {
-  RootedAtom source(cx, AtomizeChars(cx, chars, length));
-  if (!source) {
-    return nullptr;
-  }
-
-  return createSyntaxChecked(cx, source, flags, newKind);
-}
-
-RegExpObject* RegExpObject::createSyntaxChecked(JSContext* cx,
                                                 HandleAtom source,
                                                 RegExpFlags flags,
                                                 NewObjectKind newKind) {
@@ -295,6 +258,8 @@ RegExpObject* RegExpObject::create(JSContext* cx, HandleAtom source,
 
   regexp->initAndZeroLastIndex(source, flags, cx);
 
+  MOZ_ASSERT(!regexp->hasShared());
+
   return regexp;
 }
 
@@ -309,7 +274,10 @@ RegExpShared* RegExpObject::createShared(JSContext* cx,
     return nullptr;
   }
 
-  regexp->setShared(*shared);
+  regexp->setShared(shared);
+
+  MOZ_ASSERT(regexp->hasShared());
+
   return shared;
 }
 
@@ -327,7 +295,7 @@ Shape* RegExpObject::assignInitialShape(JSContext* cx,
 void RegExpObject::initIgnoringLastIndex(JSAtom* source, RegExpFlags flags) {
   // If this is a re-initialization with an existing RegExpShared, 'flags'
   // may not match getShared()->flags, so forget the RegExpShared.
-  sharedRef() = nullptr;
+  clearShared();
 
   setSource(source);
   setFlags(flags);
@@ -837,7 +805,6 @@ bool RegExpShared::initializeNamedCaptures(JSContext* cx, HandleRegExpShared re,
                                   JSPROP_ENUMERATE)) {
       return false;
     }
-    AddTypePropertyId(cx, templateObject, id, UndefinedValue());
   }
 
   // Allocate the capture index array.
@@ -989,8 +956,6 @@ ArrayObject* RegExpRealm::createMatchResultTemplateObject(JSContext* cx) {
                                 groupsVal, JSPROP_ENUMERATE)) {
     return nullptr;
   }
-  AddTypePropertyId(cx, templateObject, NameToId(cx->names().groups),
-                    TypeSet::AnyObjectType());
 
   // Make sure that the properties are in the right slots.
 #ifdef DEBUG
@@ -1004,11 +969,6 @@ ArrayObject* RegExpRealm::createMatchResultTemplateObject(JSContext* cx) {
   MOZ_ASSERT(indexShape->slot() == MatchResultObjectIndexSlot &&
              indexShape->propidRef() == NameToId(cx->names().index));
 #endif
-
-  // Make sure type information reflects the indexed properties which might
-  // be added.
-  AddTypePropertyId(cx, templateObject, JSID_VOID, TypeSet::StringType());
-  AddTypePropertyId(cx, templateObject, JSID_VOID, TypeSet::UndefinedType());
 
   matchResultTemplateObject_.set(templateObject);
 
@@ -1070,7 +1030,8 @@ JSObject* js::CloneRegExpObject(JSContext* cx, Handle<RegExpObject*> regex) {
   if (!clone) {
     return nullptr;
   }
-  clone->initPrivate(nullptr);
+
+  clone->clearShared();
 
   if (!EmptyShape::ensureInitialCustomShape<RegExpObject>(cx, clone)) {
     return nullptr;
@@ -1082,7 +1043,7 @@ JSObject* js::CloneRegExpObject(JSContext* cx, Handle<RegExpObject*> regex) {
   }
 
   clone->initAndZeroLastIndex(shared->getSource(), shared->getFlags(), cx);
-  clone->setShared(*shared);
+  clone->setShared(shared);
 
   return clone;
 }
@@ -1149,7 +1110,7 @@ bool js::ParseRegExpFlags(JSContext* cx, JSString* flagStr,
   }
 
   if (!ok) {
-    TwoByteChars range(&invalidFlag, 1);
+    JS::TwoByteChars range(&invalidFlag, 1);
     UniqueChars utf8(JS::CharsToNewUTF8CharsZ(cx, range).c_str());
     if (!utf8) {
       return false;
@@ -1203,11 +1164,6 @@ JSObject* js::CloneScriptRegExpObject(JSContext* cx, RegExpObject& reobj) {
   cx->markAtom(source);
 
   return RegExpObject::create(cx, source, reobj.getFlags(), TenuredObject);
-}
-
-JS_FRIEND_API RegExpShared* js::RegExpToSharedNonInline(JSContext* cx,
-                                                        HandleObject obj) {
-  return RegExpToShared(cx, obj);
 }
 
 JS::ubi::Node::Size JS::ubi::Concrete<RegExpShared>::size(

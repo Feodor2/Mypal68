@@ -7,12 +7,11 @@
 
 #include "builtin/Eval.h"
 #include "builtin/ModuleObject.h"  // js::GetOrCreateModuleMetaObject
-#include "builtin/Promise.h"  // js::AsyncFunctionAwait
+#include "builtin/Promise.h"       // js::AsyncFunctionAwait
 #include "builtin/RegExp.h"
 #include "builtin/String.h"
 #include "jit/BaselineIC.h"
 #include "jit/IonIC.h"
-#include "jit/JitRealm.h"
 #include "jit/TrialInlining.h"
 #include "jit/VMFunctions.h"
 #include "vm/AsyncFunction.h"
@@ -37,9 +36,7 @@ namespace jit {
   _(ArgumentsObjectCreateForIon, js::ArgumentsObject::createForIon)            \
   _(ArrayConstructorOneArg, js::ArrayConstructorOneArg)                        \
   _(ArrayJoin, js::jit::ArrayJoin)                                             \
-  _(ArrayPopDense, js::jit::ArrayPopDense)                                     \
   _(ArrayPushDense, js::jit::ArrayPushDense)                                   \
-  _(ArrayShiftDense, js::jit::ArrayShiftDense)                                 \
   _(ArraySliceDense, js::ArraySliceDense)                                      \
   _(AsyncFunctionAwait, js::AsyncFunctionAwait)                                \
   _(AsyncFunctionResolve, js::AsyncFunctionResolve)                            \
@@ -120,7 +117,6 @@ namespace jit {
   _(DoSpreadCallFallback, js::jit::DoSpreadCallFallback)                       \
   _(DoStringToInt64, js::jit::DoStringToInt64)                                 \
   _(DoTrialInlining, js::jit::DoTrialInlining)                                 \
-  _(DoTypeUpdateFallback, js::jit::DoTypeUpdateFallback)                       \
   _(EnterWith, js::jit::EnterWith)                                             \
   _(FinalSuspend, js::jit::FinalSuspend)                                       \
   _(FinishBoundFunctionInit, JSFunction::finishBoundFunctionInit)              \
@@ -128,7 +124,6 @@ namespace jit {
   _(FunWithProtoOperation, js::FunWithProtoOperation)                          \
   _(GeneratorThrowOrReturn, js::jit::GeneratorThrowOrReturn)                   \
   _(GetAndClearException, js::GetAndClearException)                            \
-  _(GetElementOperation, js::GetElementOperation)                              \
   _(GetFirstDollarIndexRaw, js::GetFirstDollarIndexRaw)                        \
   _(GetImportOperation, js::GetImportOperation)                                \
   _(GetIntrinsicValue, js::jit::GetIntrinsicValue)                             \
@@ -136,7 +131,6 @@ namespace jit {
   _(GetOrCreateModuleMetaObject, js::GetOrCreateModuleMetaObject)              \
   _(GetPrototypeOf, js::jit::GetPrototypeOf)                                   \
   _(GetSparseElementHelper, js::GetSparseElementHelper)                        \
-  _(GetValueProperty, js::GetValueProperty)                                    \
   _(GlobalNameConflictsCheckFromIon, js::jit::GlobalNameConflictsCheckFromIon) \
   _(GreaterThan, js::GreaterThan)                                              \
   _(GreaterThanOrEqual, js::GreaterThanOrEqual)                                \
@@ -144,8 +138,6 @@ namespace jit {
   _(ImplicitThisOperation, js::ImplicitThisOperation)                          \
   _(ImportMetaOperation, js::ImportMetaOperation)                              \
   _(InitElemGetterSetterOperation, js::InitElemGetterSetterOperation)          \
-  _(InitElemOperation, js::InitElemOperation)                                  \
-  _(InitElementArray, js::InitElementArray)                                    \
   _(InitFunctionEnvironmentObjects, js::jit::InitFunctionEnvironmentObjects)   \
   _(InitPropGetterSetterOperation, js::InitPropGetterSetterOperation)          \
   _(InitRestParameter, js::jit::InitRestParameter)                             \
@@ -238,7 +230,6 @@ namespace jit {
   _(SetFunctionName, js::SetFunctionName)                                      \
   _(SetIntrinsicOperation, js::SetIntrinsicOperation)                          \
   _(SetObjectElementWithReceiver, js::SetObjectElementWithReceiver)            \
-  _(SetProperty, js::jit::SetProperty)                                         \
   _(SetPropertySuper, js::SetPropertySuper)                                    \
   _(StartDynamicModuleImport, js::StartDynamicModuleImport)                    \
   _(StrictlyEqual, js::jit::StrictlyEqual<js::jit::EqualityKind::Equal>)       \
@@ -306,7 +297,6 @@ namespace jit {
   _(DoSetPropFallback, js::jit::DoSetPropFallback, 1)                       \
   _(DoToBoolFallback, js::jit::DoToBoolFallback, 0)                         \
   _(DoToPropertyKeyFallback, js::jit::DoToPropertyKeyFallback, 0)           \
-  _(DoTypeMonitorFallback, js::jit::DoTypeMonitorFallback, 0)               \
   _(DoTypeOfFallback, js::jit::DoTypeOfFallback, 0)                         \
   _(DoUnaryArithFallback, js::jit::DoUnaryArithFallback, 1)
 

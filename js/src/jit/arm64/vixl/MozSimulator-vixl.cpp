@@ -33,6 +33,7 @@
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
 #include "threading/LockGuard.h"
+#include "vm/JSContext.h"
 #include "vm/Runtime.h"
 
 js::jit::SimulatorProcess* js::jit::SimulatorProcess::singleton_ = nullptr;
@@ -224,8 +225,9 @@ uintptr_t* Simulator::addressOfStackLimit() {
 
 
 bool Simulator::overRecursed(uintptr_t newsp) const {
-  if (newsp)
+  if (newsp == 0) {
     newsp = get_sp();
+  }
   return newsp <= stackLimit();
 }
 
@@ -543,10 +545,9 @@ typedef int64_t (*Prototype_General_GeneralInt32)(int64_t, int32_t);
 typedef int64_t (*Prototype_General_GeneralInt32Int32)(int64_t,
                                                        int32_t,
                                                        int32_t);
-typedef int64_t (*Prototype_General_GeneralInt32Int32General)(int64_t,
-                                                              int32_t,
-                                                              int32_t,
-                                                              int64_t);
+typedef int64_t (*Prototype_General_GeneralInt32General)(int64_t,
+                                                         int32_t,
+                                                         int64_t);
 
 // Simulator support for callWithABI().
 void
@@ -836,10 +837,10 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setGPR64Result(ret);
       break;
     }
-    case js::jit::Args_General_GeneralInt32Int32General: {
+    case js::jit::Args_General_GeneralInt32General: {
       int64_t ret =
-          reinterpret_cast<Prototype_General_GeneralInt32Int32General>(
-              nativeFn)(x0, x1, x2, x3);
+          reinterpret_cast<Prototype_General_GeneralInt32General>(
+              nativeFn)(x0, x1, x2);
       setGPR64Result(ret);
       break;
     }

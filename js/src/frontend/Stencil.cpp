@@ -8,13 +8,14 @@
 
 #include "frontend/AbstractScopePtr.h"  // ScopeIndex
 #include "frontend/BytecodeSection.h"   // EmitScriptThingsVector
-#include "frontend/CompilationInfo.h"   // CompilationInfo
+#include "frontend/CompilationInfo.h"  // CompilationInfo, CompilationInfoVector, CompilationGCOutput
 #include "frontend/SharedContext.h"
-#include "gc/AllocKind.h"   // gc::AllocKind
-#include "js/CallArgs.h"    // JSNative
-#include "js/RootingAPI.h"  // Rooted
-#include "js/Value.h"       // ObjectValue
-#include "js/WasmModule.h"  // JS::WasmModule
+#include "gc/AllocKind.h"    // gc::AllocKind
+#include "js/CallArgs.h"     // JSNative
+#include "js/RootingAPI.h"   // Rooted
+#include "js/Transcoding.h"  // JS::TranscodeBuffer
+#include "js/Value.h"        // ObjectValue
+#include "js/WasmModule.h"   // JS::WasmModule
 #include "vm/EnvironmentObject.h"
 #include "vm/GeneratorAndAsyncKind.h"  // GeneratorKind, FunctionAsyncKind
 #include "vm/JSContext.h"              // JSContext
@@ -27,13 +28,15 @@
 #include "vm/Scope.h"         // Scope, ScopeKindString
 #include "vm/StencilEnums.h"  // ImmutableScriptFlagsEnum
 #include "vm/StringType.h"    // JSAtom, js::CopyChars
+#include "vm/Xdr.h"           // XDRMode, XDRResult, XDREncoder
 #include "wasm/AsmJS.h"       // InstantiateAsmJS
 #include "wasm/WasmModule.h"  // wasm::Module
 
 using namespace js;
 using namespace js::frontend;
 
-AbstractScopePtr ScopeStencil::enclosing(CompilationInfo& compilationInfo) {
+AbstractScopePtr ScopeStencil::enclosing(
+    CompilationInfo& compilationInfo) const {
   if (enclosing_) {
     return AbstractScopePtr(compilationInfo, *enclosing_);
   }
@@ -41,14 +44,24 @@ AbstractScopePtr ScopeStencil::enclosing(CompilationInfo& compilationInfo) {
   return AbstractScopePtr(compilationInfo.input.enclosingScope);
 }
 
-Scope* ScopeStencil::createScope(JSContext* cx,
-                                 CompilationInfo& compilationInfo,
-                                 CompilationGCOutput& gcOutput) {
+Scope* ScopeStencil::enclosingExistingScope(
+    const CompilationInput& input, const CompilationGCOutput& gcOutput) const {
+  if (enclosing_) {
+    Scope* result = gcOutput.scopes[*enclosing_];
+    MOZ_ASSERT(result, "Scope must already exist to use this method");
+    return result;
+  }
+
+  return input.enclosingScope;
+}
+
+Scope* ScopeStencil::createScope(JSContext* cx, CompilationInput& input,
+                                 CompilationGCOutput& gcOutput) const {
   Scope* scope = nullptr;
   switch (kind()) {
     case ScopeKind::Function: {
-      scope = createSpecificScope<FunctionScope, CallObject>(
-          cx, compilationInfo, gcOutput);
+      scope =
+          createSpecificScope<FunctionScope, CallObject>(cx, input, gcOutput);
       break;
     }
     case ScopeKind::Lexical:
@@ -59,34 +72,34 @@ Scope* ScopeStencil::createScope(JSContext* cx,
     case ScopeKind::FunctionLexical:
     case ScopeKind::ClassBody: {
       scope = createSpecificScope<LexicalScope, LexicalEnvironmentObject>(
-          cx, compilationInfo, gcOutput);
+          cx, input, gcOutput);
       break;
     }
     case ScopeKind::FunctionBodyVar: {
-      scope = createSpecificScope<VarScope, VarEnvironmentObject>(
-          cx, compilationInfo, gcOutput);
+      scope = createSpecificScope<VarScope, VarEnvironmentObject>(cx, input,
+                                                                  gcOutput);
       break;
     }
     case ScopeKind::Global:
     case ScopeKind::NonSyntactic: {
-      scope = createSpecificScope<GlobalScope, std::nullptr_t>(
-          cx, compilationInfo, gcOutput);
+      scope =
+          createSpecificScope<GlobalScope, std::nullptr_t>(cx, input, gcOutput);
       break;
     }
     case ScopeKind::Eval:
     case ScopeKind::StrictEval: {
-      scope = createSpecificScope<EvalScope, VarEnvironmentObject>(
-          cx, compilationInfo, gcOutput);
+      scope = createSpecificScope<EvalScope, VarEnvironmentObject>(cx, input,
+                                                                   gcOutput);
       break;
     }
     case ScopeKind::Module: {
       scope = createSpecificScope<ModuleScope, ModuleEnvironmentObject>(
-          cx, compilationInfo, gcOutput);
+          cx, input, gcOutput);
       break;
     }
     case ScopeKind::With: {
-      scope = createSpecificScope<WithScope, std::nullptr_t>(
-          cx, compilationInfo, gcOutput);
+      scope =
+          createSpecificScope<WithScope, std::nullptr_t>(cx, input, gcOutput);
       break;
     }
     case ScopeKind::WasmFunction:
@@ -134,18 +147,19 @@ uint32_t ScopeStencil::nextFrameSlot() const {
 
 static bool CreateLazyScript(JSContext* cx, CompilationInfo& compilationInfo,
                              CompilationGCOutput& gcOutput,
-                             ScriptStencil& script, HandleFunction function) {
-  const ScriptThingsVector& gcthings = script.gcThings;
+                             const ScriptStencil& script,
+                             HandleFunction function) {
+  Rooted<ScriptSourceObject*> sourceObject(cx, gcOutput.sourceObject);
+  size_t ngcthings = script.gcThings.size();
 
   Rooted<BaseScript*> lazy(
-      cx, BaseScript::CreateRawLazy(cx, gcthings.length(), function,
-                                    gcOutput.sourceObject, script.extent,
-                                    script.immutableFlags));
+      cx, BaseScript::CreateRawLazy(cx, ngcthings, function, sourceObject,
+                                    script.extent, script.immutableFlags));
   if (!lazy) {
     return false;
   }
 
-  if (!EmitScriptThingsVector(cx, compilationInfo, gcOutput, gcthings,
+  if (!EmitScriptThingsVector(cx, compilationInfo, gcOutput, script.gcThings,
                               lazy->gcthingsForInit())) {
     return false;
   }
@@ -157,7 +171,7 @@ static bool CreateLazyScript(JSContext* cx, CompilationInfo& compilationInfo,
 
 static JSFunction* CreateFunction(JSContext* cx,
                                   CompilationInfo& compilationInfo,
-                                  ScriptStencil& script,
+                                  const ScriptStencil& script,
                                   FunctionIndex functionIndex) {
   GeneratorKind generatorKind =
       script.immutableFlags.hasFlag(ImmutableScriptFlagsEnum::IsGenerator)
@@ -184,11 +198,9 @@ static JSFunction* CreateFunction(JSContext* cx,
 
   RootedAtom displayAtom(cx);
   if (script.functionAtom) {
-    displayAtom.set(
-        compilationInfo.liftParserAtomToJSAtom(cx, script.functionAtom));
-    if (!displayAtom) {
-      return nullptr;
-    }
+    displayAtom.set(compilationInfo.input.atomCache.getExistingAtomAt(
+        cx, script.functionAtom));
+    MOZ_ASSERT(displayAtom);
   }
   RootedFunction fun(
       cx, NewFunctionWithProto(cx, maybeNative, script.nargs,
@@ -214,6 +226,11 @@ static JSFunction* CreateFunction(JSContext* cx,
   return fun;
 }
 
+static bool InstantiateAtoms(JSContext* cx, CompilationInfo& compilationInfo) {
+  return InstantiateMarkedAtoms(cx, compilationInfo.stencil.parserAtomData,
+                                compilationInfo.input.atomCache);
+}
+
 static bool InstantiateScriptSourceObject(JSContext* cx,
                                           CompilationInfo& compilationInfo,
                                           CompilationGCOutput& gcOutput) {
@@ -235,7 +252,8 @@ static bool InstantiateScriptSourceObject(JSContext* cx,
   // Instead, we put off populating those SSO slots in off-thread compilations
   // until after we've merged compartments.
   if (!cx->isHelperThreadContext()) {
-    if (!ScriptSourceObject::initFromOptions(cx, gcOutput.sourceObject,
+    Rooted<ScriptSourceObject*> sourceObject(cx, gcOutput.sourceObject);
+    if (!ScriptSourceObject::initFromOptions(cx, sourceObject,
                                              compilationInfo.input.options)) {
       return false;
     }
@@ -255,8 +273,9 @@ static bool MaybeInstantiateModule(JSContext* cx,
       return false;
     }
 
-    if (!compilationInfo.stencil.moduleMetadata.initModule(cx, compilationInfo,
-                                                           gcOutput.module)) {
+    Rooted<ModuleObject*> module(cx, gcOutput.module);
+    if (!compilationInfo.stencil.moduleMetadata.initModule(
+            cx, compilationInfo.input.atomCache, module)) {
       return false;
     }
   }
@@ -274,12 +293,12 @@ static bool InstantiateFunctions(JSContext* cx,
 
     MOZ_ASSERT(!item.function);
 
-    RootedFunction fun(
-        cx, CreateFunction(cx, compilationInfo, scriptStencil, functionIndex));
+    JSFunction* fun =
+        CreateFunction(cx, compilationInfo, scriptStencil, functionIndex);
     if (!fun) {
       return false;
     }
-    gcOutput.functions[functionIndex].set(fun);
+    gcOutput.functions[functionIndex] = fun;
   }
 
   return true;
@@ -296,77 +315,20 @@ static bool InstantiateScopes(JSContext* cx, CompilationInfo& compilationInfo,
   // enclosing Scope should already be allocated.
   //
   // Enclosing scope of ScopeStencil can be either ScopeStencil or Scope*
-  // pointer, capsulated by AbstractScopePtr.
+  // pointer.
   //
   // If the enclosing scope is ScopeStencil, it's guaranteed to be earlier
-  // element in compilationInfo.scopeData, because AbstractScopePtr holds index
+  // element in compilationInfo.scopeData, because enclosing_ field holds index
   // into it, and newly created ScopeStencil is pushed back to the vector.
+  //
+  // If the enclosing scope is Scope*, it's CompilationInput.enclosingScope.
 
-  if (!gcOutput.scopes.reserve(compilationInfo.stencil.scopeData.length())) {
-    return false;
-  }
-
-  for (auto& scd : compilationInfo.stencil.scopeData) {
-    Scope* scope = scd.createScope(cx, compilationInfo, gcOutput);
+  for (const ScopeStencil& scd : compilationInfo.stencil.scopeData) {
+    Scope* scope = scd.createScope(cx, compilationInfo.input, gcOutput);
     if (!scope) {
       return false;
     }
     gcOutput.scopes.infallibleAppend(scope);
-  }
-
-  return true;
-}
-
-// JSFunctions have a default ObjectGroup when they are created. Once their
-// enclosing script is compiled, we have more precise heuristic information and
-// now compute their final group. These functions have not been exposed to
-// script before this point.
-//
-// As well, anonymous functions may have either an "inferred" or a "guessed"
-// name assigned to them. This name isn't known until the enclosing function is
-// compiled so we must update it here.
-static bool SetTypeAndNameForExposedFunctions(JSContext* cx,
-                                              CompilationInfo& compilationInfo,
-                                              CompilationGCOutput& gcOutput) {
-  for (auto item : compilationInfo.functionScriptStencils(gcOutput)) {
-    auto& scriptStencil = item.script;
-    auto& fun = item.function;
-    if (!scriptStencil.functionFlags.hasBaseScript()) {
-      continue;
-    }
-
-    // If the function was not referenced by enclosing script's bytecode, we do
-    // not generate a BaseScript for it. For example, `(function(){});`.
-    if (!scriptStencil.wasFunctionEmitted &&
-        !scriptStencil.isStandaloneFunction) {
-      continue;
-    }
-
-    if (!JSFunction::setTypeForScriptedFunction(
-            cx, fun, scriptStencil.isSingletonFunction)) {
-      return false;
-    }
-
-    // Inferred and Guessed names are computed by BytecodeEmitter and so may
-    // need to be applied to existing JSFunctions during delazification.
-    if (fun->displayAtom() == nullptr) {
-      JSAtom* funcAtom = nullptr;
-      if (scriptStencil.functionFlags.hasInferredName() ||
-          scriptStencil.functionFlags.hasGuessedAtom()) {
-        funcAtom = compilationInfo.liftParserAtomToJSAtom(
-            cx, scriptStencil.functionAtom);
-        if (!funcAtom) {
-          return false;
-        }
-      }
-      if (scriptStencil.functionFlags.hasInferredName()) {
-        fun->setInferredName(funcAtom);
-      }
-
-      if (scriptStencil.functionFlags.hasGuessedAtom()) {
-        fun->setGuessedAtom(funcAtom);
-      }
-    }
   }
 
   return true;
@@ -378,12 +340,18 @@ static bool SetTypeAndNameForExposedFunctions(JSContext* cx,
 static bool InstantiateScriptStencils(JSContext* cx,
                                       CompilationInfo& compilationInfo,
                                       CompilationGCOutput& gcOutput) {
+  MOZ_ASSERT(compilationInfo.input.lazy == nullptr);
+
+  Rooted<JSFunction*> fun(cx);
   for (auto item : compilationInfo.functionScriptStencils(gcOutput)) {
     auto& scriptStencil = item.script;
-    auto& fun = item.function;
-    if (scriptStencil.immutableScriptData) {
+    fun = item.function;
+    if (scriptStencil.sharedData) {
       // If the function was not referenced by enclosing script's bytecode, we
       // do not generate a BaseScript for it. For example, `(function(){});`.
+      //
+      // `wasFunctionEmitted` is false also for standalone functions. They are
+      // handled in InstantiateTopLevel.
       if (!scriptStencil.wasFunctionEmitted) {
         continue;
       }
@@ -394,12 +362,17 @@ static bool InstantiateScriptStencils(JSContext* cx,
       if (!script) {
         return false;
       }
+
+      // NOTE: Inner functions can be marked `allowRelazify` after merging
+      // a stencil for delazification into the top-level stencil.
+      if (scriptStencil.allowRelazify) {
+        MOZ_ASSERT(script->isRelazifiable());
+        script->setAllowRelazify();
+      }
     } else if (scriptStencil.functionFlags.isAsmJSNative()) {
       MOZ_ASSERT(fun->isAsmJSNative());
-    } else if (fun->isIncomplete()) {
-      // Lazy functions are generally only allocated in the initial parse.
-      MOZ_ASSERT(compilationInfo.input.lazy == nullptr);
-
+    } else {
+      MOZ_ASSERT(fun->isIncomplete());
       if (!CreateLazyScript(cx, compilationInfo, gcOutput, scriptStencil,
                             fun)) {
         return false;
@@ -414,45 +387,64 @@ static bool InstantiateScriptStencils(JSContext* cx,
 // includes standalone functions and functions being delazified.
 static bool InstantiateTopLevel(JSContext* cx, CompilationInfo& compilationInfo,
                                 CompilationGCOutput& gcOutput) {
-  ScriptStencil& script =
+  const ScriptStencil& scriptStencil =
       compilationInfo.stencil.scriptData[CompilationInfo::TopLevelIndex];
   RootedFunction fun(cx);
-  if (script.isFunction()) {
+  if (scriptStencil.isFunction()) {
     fun = gcOutput.functions[CompilationInfo::TopLevelIndex];
   }
 
   // Top-level asm.js does not generate a JSScript.
-  if (script.functionFlags.isAsmJSNative()) {
+  if (scriptStencil.functionFlags.isAsmJSNative()) {
     return true;
   }
 
-  MOZ_ASSERT(script.immutableScriptData);
+  MOZ_ASSERT(scriptStencil.sharedData);
 
   if (compilationInfo.input.lazy) {
     gcOutput.script = JSScript::CastFromLazy(compilationInfo.input.lazy);
-    return JSScript::fullyInitFromStencil(cx, compilationInfo, gcOutput,
-                                          gcOutput.script, script, fun);
+
+    Rooted<JSScript*> script(cx, gcOutput.script);
+    if (!JSScript::fullyInitFromStencil(cx, compilationInfo, gcOutput, script,
+                                        scriptStencil, fun)) {
+      return false;
+    }
+
+    if (scriptStencil.allowRelazify) {
+      MOZ_ASSERT(gcOutput.script->isRelazifiable());
+      gcOutput.script->setAllowRelazify();
+    }
+
+    return true;
   }
 
   gcOutput.script =
-      JSScript::fromStencil(cx, compilationInfo, gcOutput, script, fun);
+      JSScript::fromStencil(cx, compilationInfo, gcOutput, scriptStencil, fun);
   if (!gcOutput.script) {
     return false;
   }
 
+  if (scriptStencil.allowRelazify) {
+    MOZ_ASSERT(gcOutput.script->isRelazifiable());
+    gcOutput.script->setAllowRelazify();
+  }
+
   // Finish initializing the ModuleObject if needed.
-  if (script.isModule()) {
-    gcOutput.module->initScriptSlots(gcOutput.script);
+  if (scriptStencil.isModule()) {
+    Rooted<JSScript*> script(cx, gcOutput.script);
+
+    gcOutput.module->initScriptSlots(script);
     gcOutput.module->initStatusSlot();
 
-    if (!ModuleObject::createEnvironment(cx, gcOutput.module)) {
+    Rooted<ModuleObject*> module(cx, gcOutput.module);
+    if (!ModuleObject::createEnvironment(cx, module)) {
       return false;
     }
 
     // Off-thread compilation with parseGlobal will freeze the module object
-    // in GlobalHelperThreadState::finishModuleParseTask instead
+    // in GlobalHelperThreadState::finishSingleParseTask instead.
     if (!cx->isHelperThreadContext()) {
-      if (!ModuleObject::Freeze(cx, gcOutput.module)) {
+      if (!ModuleObject::Freeze(cx, module)) {
         return false;
       }
     }
@@ -465,7 +457,8 @@ static bool InstantiateTopLevel(JSContext* cx, CompilationInfo& compilationInfo,
 // to update it with information determined by the BytecodeEmitter. This applies
 // to both initial and delazification parses. The functions being update may or
 // may not have bytecode at this point.
-static void UpdateEmittedInnerFunctions(CompilationInfo& compilationInfo,
+static void UpdateEmittedInnerFunctions(JSContext* cx,
+                                        CompilationInfo& compilationInfo,
                                         CompilationGCOutput& gcOutput) {
   for (auto item : compilationInfo.functionScriptStencils(gcOutput)) {
     auto& scriptStencil = item.script;
@@ -483,13 +476,29 @@ static void UpdateEmittedInnerFunctions(CompilationInfo& compilationInfo,
       BaseScript* script = fun->baseScript();
 
       ScopeIndex index = *scriptStencil.lazyFunctionEnclosingScopeIndex_;
-      Scope* scope = gcOutput.scopes[index].get();
+      Scope* scope = gcOutput.scopes[index];
       script->setEnclosingScope(scope);
-      script->initTreatAsRunOnce(scriptStencil.immutableFlags.hasFlag(
-          ImmutableScriptFlagsEnum::TreatAsRunOnce));
 
       if (scriptStencil.memberInitializers) {
         script->setMemberInitializers(*scriptStencil.memberInitializers);
+      }
+
+      // Inferred and Guessed names are computed by BytecodeEmitter and so may
+      // need to be applied to existing JSFunctions during delazification.
+      if (fun->displayAtom() == nullptr) {
+        JSAtom* funcAtom = nullptr;
+        if (scriptStencil.functionFlags.hasInferredName() ||
+            scriptStencil.functionFlags.hasGuessedAtom()) {
+          funcAtom = compilationInfo.input.atomCache.getExistingAtomAt(
+              cx, scriptStencil.functionAtom);
+          MOZ_ASSERT(funcAtom);
+        }
+        if (scriptStencil.functionFlags.hasInferredName()) {
+          fun->setInferredName(funcAtom);
+        }
+        if (scriptStencil.functionFlags.hasGuessedAtom()) {
+          fun->setGuessedAtom(funcAtom);
+        }
       }
     }
   }
@@ -522,6 +531,55 @@ static void LinkEnclosingLazyScript(CompilationInfo& compilationInfo,
   }
 }
 
+#ifdef DEBUG
+// Some fields aren't used in delazification, given the target functions and
+// scripts are already instantiated, but they still should match.
+static void AssertDelazificationFieldsMatch(CompilationInfo& compilationInfo,
+                                            CompilationGCOutput& gcOutput) {
+  for (auto item : compilationInfo.functionScriptStencils(gcOutput)) {
+    auto& scriptStencil = item.script;
+    auto& fun = item.function;
+
+    BaseScript* script = fun->baseScript();
+
+    MOZ_ASSERT(script->immutableFlags() == scriptStencil.immutableFlags);
+
+    MOZ_ASSERT(script->extent().sourceStart ==
+               scriptStencil.extent.sourceStart);
+    MOZ_ASSERT(script->extent().sourceEnd == scriptStencil.extent.sourceEnd);
+    MOZ_ASSERT(script->extent().toStringStart ==
+               scriptStencil.extent.toStringStart);
+    MOZ_ASSERT(script->extent().toStringEnd ==
+               scriptStencil.extent.toStringEnd);
+    MOZ_ASSERT(script->extent().lineno == scriptStencil.extent.lineno);
+    MOZ_ASSERT(script->extent().column == scriptStencil.extent.column);
+
+    // Names are updated by UpdateInnerFunctions.
+    constexpr uint16_t HAS_INFERRED_NAME =
+        uint16_t(FunctionFlags::Flags::HAS_INFERRED_NAME);
+    constexpr uint16_t HAS_GUESSED_ATOM =
+        uint16_t(FunctionFlags::Flags::HAS_GUESSED_ATOM);
+    constexpr uint16_t MUTABLE_FLAGS =
+        uint16_t(FunctionFlags::Flags::MUTABLE_FLAGS);
+    constexpr uint16_t acceptableDifferenceForFunction =
+        HAS_INFERRED_NAME | HAS_GUESSED_ATOM | MUTABLE_FLAGS;
+
+    MOZ_ASSERT((fun->flags().toRaw() | acceptableDifferenceForFunction) ==
+               (scriptStencil.functionFlags.toRaw() |
+                acceptableDifferenceForFunction));
+
+    // Delazification shouldn't delazify inner scripts.
+    MOZ_ASSERT_IF(item.functionIndex == 0, scriptStencil.sharedData);
+    MOZ_ASSERT_IF(item.functionIndex > 0, !scriptStencil.sharedData);
+
+    // FIXME: If this function is lazily parsed again, nargs isn't set to
+    //        correct value (bug 1666978).
+    MOZ_ASSERT_IF(scriptStencil.sharedData,
+                  fun->nargs() == scriptStencil.nargs);
+  }
+}
+#endif  // DEBUG
+
 // When delazifying, use the existing JSFunctions. The initial and delazifying
 // parse are required to generate the same sequence of functions for lazy
 // parsing to work at all.
@@ -530,13 +588,13 @@ static void FunctionsFromExistingLazy(CompilationInfo& compilationInfo,
   MOZ_ASSERT(compilationInfo.input.lazy);
 
   size_t idx = 0;
-  gcOutput.functions[idx++].set(compilationInfo.input.lazy->function());
+  gcOutput.functions[idx++] = compilationInfo.input.lazy->function();
 
   for (JS::GCCellPtr elem : compilationInfo.input.lazy->gcthings()) {
     if (!elem.is<JSObject>()) {
       continue;
     }
-    gcOutput.functions[idx++].set(&elem.as<JSObject>().as<JSFunction>());
+    gcOutput.functions[idx++] = &elem.as<JSObject>().as<JSFunction>();
   }
 
   MOZ_ASSERT(idx == gcOutput.functions.length());
@@ -544,20 +602,42 @@ static void FunctionsFromExistingLazy(CompilationInfo& compilationInfo,
 
 bool CompilationInfo::instantiateStencils(JSContext* cx,
                                           CompilationGCOutput& gcOutput) {
+  if (!preparationIsPerformed) {
+    if (!prepareForInstantiate(cx, gcOutput)) {
+      return false;
+    }
+  }
+
+  return instantiateStencilsAfterPreparation(cx, gcOutput);
+}
+
+bool CompilationInfo::instantiateStencilsAfterPreparation(
+    JSContext* cx, CompilationGCOutput& gcOutput) {
   if (!gcOutput.functions.resize(stencil.scriptData.length())) {
+    ReportOutOfMemory(cx);
     return false;
   }
 
-  if (stencil.scriptData[CompilationInfo::TopLevelIndex].isModule()) {
-    MOZ_ASSERT(input.enclosingScope == nullptr);
-    input.enclosingScope = &cx->global()->emptyGlobalScope();
-    MOZ_ASSERT(input.enclosingScope->environmentChainLength() ==
-               ModuleScope::EnclosingEnvironmentChainLength);
+  if (!InstantiateAtoms(cx, *this)) {
+    return false;
   }
 
   if (input.lazy) {
+    MOZ_ASSERT(!stencil.scriptData[CompilationInfo::TopLevelIndex].isModule());
+
     FunctionsFromExistingLazy(*this, gcOutput);
+
+#ifdef DEBUG
+    AssertDelazificationFieldsMatch(*this, gcOutput);
+#endif
   } else {
+    if (stencil.scriptData[CompilationInfo::TopLevelIndex].isModule()) {
+      MOZ_ASSERT(input.enclosingScope == nullptr);
+      input.enclosingScope = &cx->global()->emptyGlobalScope();
+      MOZ_ASSERT(input.enclosingScope->environmentChainLength() ==
+                 ModuleScope::EnclosingEnvironmentChainLength);
+    }
+
     if (!InstantiateScriptSourceObject(cx, *this, gcOutput)) {
       return false;
     }
@@ -575,12 +655,10 @@ bool CompilationInfo::instantiateStencils(JSContext* cx,
     return false;
   }
 
-  if (!SetTypeAndNameForExposedFunctions(cx, *this, gcOutput)) {
-    return false;
-  }
-
-  if (!InstantiateScriptStencils(cx, *this, gcOutput)) {
-    return false;
+  if (!input.lazy) {
+    if (!InstantiateScriptStencils(cx, *this, gcOutput)) {
+      return false;
+    }
   }
 
   if (!InstantiateTopLevel(cx, *this, gcOutput)) {
@@ -589,42 +667,316 @@ bool CompilationInfo::instantiateStencils(JSContext* cx,
 
   // Must be infallible from here forward.
 
-  UpdateEmittedInnerFunctions(*this, gcOutput);
+  UpdateEmittedInnerFunctions(cx, *this, gcOutput);
 
-  if (input.lazy == nullptr) {
+  if (!input.lazy) {
     LinkEnclosingLazyScript(*this, gcOutput);
   }
 
   return true;
 }
 
+bool CompilationInfoVector::buildDelazificationIndices(JSContext* cx) {
+  // Standalone-functions are not supported by XDR.
+  MOZ_ASSERT(!initial.stencil.scriptData[0].isFunction());
+
+  // If no delazifications, we are done.
+  if (delazifications.empty()) {
+    return true;
+  }
+
+  if (!delazificationIndices.resize(delazifications.length())) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  HashMap<FunctionKey, size_t> keyToIndex(cx);
+  if (!keyToIndex.reserve(delazifications.length())) {
+    return false;
+  }
+
+  for (size_t i = 0; i < delazifications.length(); i++) {
+    const auto& delazification = delazifications[i];
+    auto key = toFunctionKey(delazification.stencil.scriptData[0].extent);
+    keyToIndex.putNewInfallible(key, i);
+  }
+
+  MOZ_ASSERT(keyToIndex.count() == delazifications.length());
+
+  for (size_t i = 1; i < initial.stencil.scriptData.length(); i++) {
+    auto key = toFunctionKey(initial.stencil.scriptData[i].extent);
+    auto ptr = keyToIndex.lookup(key);
+    if (!ptr) {
+      continue;
+    }
+    delazificationIndices[ptr->value()] = FunctionIndex(i);
+  }
+
+  return true;
+}
+
+bool CompilationInfoVector::instantiateStencils(JSContext* cx,
+                                                CompilationGCOutput& gcOutput) {
+  if (!prepareForInstantiate(cx, gcOutput)) {
+    return false;
+  }
+
+  return instantiateStencilsAfterPreparation(cx, gcOutput);
+}
+
+bool CompilationInfoVector::instantiateStencilsAfterPreparation(
+    JSContext* cx, CompilationGCOutput& gcOutput) {
+  if (!initial.instantiateStencilsAfterPreparation(cx, gcOutput)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < delazifications.length(); i++) {
+    auto& delazification = delazifications[i];
+    auto index = delazificationIndices[i];
+
+    JSFunction* fun = gcOutput.functions[index];
+    MOZ_ASSERT(fun);
+
+    BaseScript* lazy = fun->baseScript();
+    MOZ_ASSERT(!lazy->hasBytecode());
+
+    // CompilationInfo.input for delazification isn't initialized when
+    // decoding.
+    delazification.input.initFromLazy(lazy);
+
+    Rooted<CompilationGCOutput> gcOutputForDelazification(cx);
+    if (!delazification.prepareGCOutputForInstantiate(
+            cx, gcOutputForDelazification.get())) {
+      return false;
+    }
+    if (!delazification.instantiateStencilsAfterPreparation(
+            cx, gcOutputForDelazification.get())) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool CompilationInfo::prepareInputAndStencilForInstantiate(JSContext* cx) {
+  if (!input.atomCache.allocate(cx, stencil.parserAtomData.length())) {
+    return false;
+  }
+
+  preparationIsPerformed = true;
+
+  return true;
+}
+
+bool CompilationInfo::prepareGCOutputForInstantiate(
+    JSContext* cx, CompilationGCOutput& gcOutput) {
+  if (!gcOutput.functions.reserve(stencil.scriptData.length())) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  if (!gcOutput.scopes.reserve(stencil.scopeData.length())) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  return true;
+}
+
+bool CompilationInfo::prepareForInstantiate(JSContext* cx,
+                                            CompilationGCOutput& gcOutput) {
+  if (!prepareInputAndStencilForInstantiate(cx)) {
+    return false;
+  }
+  if (!prepareGCOutputForInstantiate(cx, gcOutput)) {
+    return false;
+  }
+  return true;
+}
+
+bool CompilationInfoVector::prepareForInstantiate(
+    JSContext* cx, CompilationGCOutput& gcOutput) {
+  if (!initial.prepareForInstantiate(cx, gcOutput)) {
+    return false;
+  }
+
+  for (auto& delazification : delazifications) {
+    if (!delazification.prepareInputAndStencilForInstantiate(cx)) {
+      return false;
+    }
+  }
+
+  if (!buildDelazificationIndices(cx)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool CompilationInfo::serializeStencils(JSContext* cx, JS::TranscodeBuffer& buf,
+                                        bool* succeededOut) {
+  if (succeededOut) {
+    *succeededOut = false;
+  }
+  XDRIncrementalStencilEncoder encoder(cx);
+
+  XDRResult res = encoder.codeStencil(*this);
+  if (res.isErr()) {
+    if (res.unwrapErr() & JS::TranscodeResult_Failure) {
+      buf.clear();
+      return true;
+    }
+    MOZ_ASSERT(res.unwrapErr() == JS::TranscodeResult_Throw);
+
+    return false;
+  }
+
+  // Lineareize the endcoder, return empty buffer on failure.
+  res = encoder.linearize(buf);
+  if (res.isErr()) {
+    MOZ_ASSERT(cx->isThrowingOutOfMemory());
+    buf.clear();
+    return false;
+  }
+
+  if (succeededOut) {
+    *succeededOut = true;
+  }
+  return true;
+}
+
+bool CompilationInfoVector::deserializeStencils(JSContext* cx,
+                                                const JS::TranscodeRange& range,
+                                                bool* succeededOut) {
+  if (succeededOut) {
+    *succeededOut = false;
+  }
+  MOZ_ASSERT(initial.stencil.parserAtomData.empty());
+  XDRStencilDecoder decoder(cx, &initial.input.options, range);
+
+  XDRResult res = decoder.codeStencils(*this);
+  if (res.isErr()) {
+    if (res.unwrapErr() & JS::TranscodeResult_Failure) {
+      return true;
+    }
+    MOZ_ASSERT(res.unwrapErr() == JS::TranscodeResult_Throw);
+
+    return false;
+  }
+
+  if (succeededOut) {
+    *succeededOut = true;
+  }
+  return true;
+}
+
+CompilationState::CompilationState(JSContext* cx,
+                                   LifoAllocScope& frontendAllocScope,
+                                   const JS::ReadOnlyCompileOptions& options,
+                                   CompilationStencil& stencil,
+                                   Scope* enclosingScope /* = nullptr */,
+                                   JSObject* enclosingEnv /* = nullptr */)
+    : directives(options.forceStrictMode()),
+      scopeContext(cx, enclosingScope, enclosingEnv),
+      usedNames(cx),
+      allocScope(frontendAllocScope),
+      parserAtoms(cx->runtime(), stencil.alloc, stencil.parserAtomData) {}
+
 #if defined(DEBUG) || defined(JS_JITSPEW)
+
+void frontend::DumpTaggedParserAtomIndex(
+    js::JSONPrinter& json, TaggedParserAtomIndex taggedIndex,
+    CompilationStencil* compilationStencil) {
+  if (taggedIndex.isParserAtomIndex()) {
+    json.property("tag", "AtomIndex");
+    auto index = taggedIndex.toParserAtomIndex();
+    if (compilationStencil && compilationStencil->parserAtomData[index]) {
+      GenericPrinter& out = json.beginStringProperty("atom");
+      compilationStencil->parserAtomData[index]->dumpCharsNoQuote(out);
+      json.endString();
+    } else {
+      json.property("index", size_t(index));
+    }
+    return;
+  }
+
+  if (taggedIndex.isWellKnownAtomId()) {
+    json.property("tag", "WellKnown");
+    auto index = taggedIndex.toWellKnownAtomId();
+    switch (index) {
+      case WellKnownAtomId::empty:
+        json.property("atom", "");
+        break;
+
+#  define CASE_(_, name, _2)                                  \
+    case WellKnownAtomId::name: {                             \
+      GenericPrinter& out = json.beginStringProperty("atom"); \
+      WellKnownParserAtoms::rom_.name.dumpCharsNoQuote(out);  \
+      json.endString();                                       \
+      break;                                                  \
+    }
+        FOR_EACH_NONTINY_COMMON_PROPERTYNAME(CASE_)
+#  undef CASE_
+
+#  define CASE_(name, _)                                      \
+    case WellKnownAtomId::name: {                             \
+      GenericPrinter& out = json.beginStringProperty("atom"); \
+      WellKnownParserAtoms::rom_.name.dumpCharsNoQuote(out);  \
+      json.endString();                                       \
+      break;                                                  \
+    }
+        JS_FOR_EACH_PROTOTYPE(CASE_)
+#  undef CASE_
+
+      default:
+        // This includes tiny WellKnownAtomId atoms, which is invalid.
+        json.property("index", size_t(index));
+        break;
+    }
+    return;
+  }
+
+  if (taggedIndex.isStaticParserString1()) {
+    json.property("tag", "Static1");
+    auto index = taggedIndex.toStaticParserString1();
+    GenericPrinter& out = json.beginStringProperty("atom");
+    WellKnownParserAtoms::getStatic1(index)->dumpCharsNoQuote(out);
+    json.endString();
+    return;
+  }
+
+  if (taggedIndex.isStaticParserString2()) {
+    json.property("tag", "Static2");
+    auto index = taggedIndex.toStaticParserString2();
+    GenericPrinter& out = json.beginStringProperty("atom");
+    WellKnownParserAtoms::getStatic2(index)->dumpCharsNoQuote(out);
+    json.endString();
+    return;
+  }
+
+  MOZ_ASSERT(taggedIndex.isNull());
+  json.property("tag", "null");
+}
 
 void RegExpStencil::dump() {
   js::Fprinter out(stderr);
   js::JSONPrinter json(out);
-  dump(json);
+  dump(json, nullptr);
 }
 
-void RegExpStencil::dump(js::JSONPrinter& json) {
-  GenericPrinter& out = json.beginString();
+void RegExpStencil::dump(js::JSONPrinter& json,
+                         CompilationStencil* compilationStencil) {
+  json.beginObject();
+  dumpFields(json, compilationStencil);
+  json.endObject();
+}
 
-  out.put("/");
-  for (size_t i = 0; i < length_; i++) {
-    char16_t c = buf_[i];
-    if (c == '\n') {
-      out.put("\\n");
-    } else if (c == '\t') {
-      out.put("\\t");
-    } else if (c >= 32 && c < 127) {
-      out.putChar(char(buf_[i]));
-    } else if (c <= 255) {
-      out.printf("\\x%02x", unsigned(c));
-    } else {
-      out.printf("\\u%04x", unsigned(c));
-    }
-  }
-  out.put("/");
+void RegExpStencil::dumpFields(js::JSONPrinter& json,
+                               CompilationStencil* compilationStencil) {
+  json.beginObjectProperty("pattern");
+  DumpTaggedParserAtomIndex(json, atom_, compilationStencil);
+  json.endObject();
+
+  GenericPrinter& out = json.beginStringProperty("flags");
 
   if (flags_.global()) {
     out.put("g");
@@ -645,7 +997,7 @@ void RegExpStencil::dump(js::JSONPrinter& json) {
     out.put("y");
   }
 
-  json.endString();
+  json.endStringProperty();
 }
 
 void BigIntStencil::dump() {
@@ -713,7 +1065,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
 
   switch (kind_) {
     case ScopeKind::Function: {
-      auto* data = static_cast<ParserFunctionScopeData*>(data_.get());
+      auto* data = static_cast<ParserFunctionScopeData*>(data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
       json.property("hasParameterExprs", data->hasParameterExprs);
       json.property("nonPositionalFormalStart", data->nonPositionalFormalStart);
@@ -725,7 +1077,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
     }
 
     case ScopeKind::FunctionBodyVar: {
-      auto* data = static_cast<ParserVarScopeData*>(data_.get());
+      auto* data = static_cast<ParserVarScopeData*>(data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
 
       trailingNames = &data->trailingNames;
@@ -740,7 +1092,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
     case ScopeKind::StrictNamedLambda:
     case ScopeKind::FunctionLexical:
     case ScopeKind::ClassBody: {
-      auto* data = static_cast<ParserLexicalScopeData*>(data_.get());
+      auto* data = static_cast<ParserLexicalScopeData*>(data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
       json.property("constStart", data->constStart);
 
@@ -755,7 +1107,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
 
     case ScopeKind::Eval:
     case ScopeKind::StrictEval: {
-      auto* data = static_cast<ParserEvalScopeData*>(data_.get());
+      auto* data = static_cast<ParserEvalScopeData*>(data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
 
       trailingNames = &data->trailingNames;
@@ -765,7 +1117,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
 
     case ScopeKind::Global:
     case ScopeKind::NonSyntactic: {
-      auto* data = static_cast<ParserGlobalScopeData*>(data_.get());
+      auto* data = static_cast<ParserGlobalScopeData*>(data_);
       json.property("letStart", data->letStart);
       json.property("constStart", data->constStart);
 
@@ -775,7 +1127,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
     }
 
     case ScopeKind::Module: {
-      auto* data = static_cast<ParserModuleScopeData*>(data_.get());
+      auto* data = static_cast<ParserModuleScopeData*>(data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
       json.property("varStart", data->varStart);
       json.property("letStart", data->letStart);
@@ -789,7 +1141,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
     case ScopeKind::WasmInstance: {
       auto* data =
           static_cast<AbstractScopeData<WasmInstanceScope, const ParserAtom>*>(
-              data_.get());
+              data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
       json.property("globalsStart", data->globalsStart);
 
@@ -801,7 +1153,7 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
     case ScopeKind::WasmFunction: {
       auto* data =
           static_cast<AbstractScopeData<WasmFunctionScope, const ParserAtom>*>(
-              data_.get());
+              data_);
       json.property("nextFrameSlot", data->nextFrameSlot);
 
       trailingNames = &data->trailingNames;
@@ -838,28 +1190,29 @@ void ScopeStencil::dumpFields(js::JSONPrinter& json) {
 }
 
 static void DumpModuleEntryVectorItems(
-    js::JSONPrinter& json, const StencilModuleMetadata::EntryVector& entries) {
+    js::JSONPrinter& json, const StencilModuleMetadata::EntryVector& entries,
+    CompilationStencil* compilationStencil) {
   for (const auto& entry : entries) {
     json.beginObject();
     if (entry.specifier) {
-      GenericPrinter& out = json.beginStringProperty("specifier");
-      entry.specifier->dumpCharsNoQuote(out);
-      json.endStringProperty();
+      json.beginObjectProperty("specifier");
+      DumpTaggedParserAtomIndex(json, entry.specifier, compilationStencil);
+      json.endObject();
     }
     if (entry.localName) {
-      GenericPrinter& out = json.beginStringProperty("localName");
-      entry.localName->dumpCharsNoQuote(out);
-      json.endStringProperty();
+      json.beginObjectProperty("localName");
+      DumpTaggedParserAtomIndex(json, entry.localName, compilationStencil);
+      json.endObject();
     }
     if (entry.importName) {
-      GenericPrinter& out = json.beginStringProperty("importName");
-      entry.importName->dumpCharsNoQuote(out);
-      json.endStringProperty();
+      json.beginObjectProperty("importName");
+      DumpTaggedParserAtomIndex(json, entry.importName, compilationStencil);
+      json.endObject();
     }
     if (entry.exportName) {
-      GenericPrinter& out = json.beginStringProperty("exportName");
-      entry.exportName->dumpCharsNoQuote(out);
-      json.endStringProperty();
+      json.beginObjectProperty("exportName");
+      DumpTaggedParserAtomIndex(json, entry.exportName, compilationStencil);
+      json.endObject();
     }
     json.endObject();
   }
@@ -868,34 +1221,36 @@ static void DumpModuleEntryVectorItems(
 void StencilModuleMetadata::dump() {
   js::Fprinter out(stderr);
   js::JSONPrinter json(out);
-  dump(json);
+  dump(json, nullptr);
 }
 
-void StencilModuleMetadata::dump(js::JSONPrinter& json) {
+void StencilModuleMetadata::dump(js::JSONPrinter& json,
+                                 CompilationStencil* compilationStencil) {
   json.beginObject();
-  dumpFields(json);
+  dumpFields(json, compilationStencil);
   json.endObject();
 }
 
-void StencilModuleMetadata::dumpFields(js::JSONPrinter& json) {
+void StencilModuleMetadata::dumpFields(js::JSONPrinter& json,
+                                       CompilationStencil* compilationStencil) {
   json.beginListProperty("requestedModules");
-  DumpModuleEntryVectorItems(json, requestedModules);
+  DumpModuleEntryVectorItems(json, requestedModules, compilationStencil);
   json.endList();
 
   json.beginListProperty("importEntries");
-  DumpModuleEntryVectorItems(json, importEntries);
+  DumpModuleEntryVectorItems(json, importEntries, compilationStencil);
   json.endList();
 
   json.beginListProperty("localExportEntries");
-  DumpModuleEntryVectorItems(json, localExportEntries);
+  DumpModuleEntryVectorItems(json, localExportEntries, compilationStencil);
   json.endList();
 
   json.beginListProperty("indirectExportEntries");
-  DumpModuleEntryVectorItems(json, indirectExportEntries);
+  DumpModuleEntryVectorItems(json, indirectExportEntries, compilationStencil);
   json.endList();
 
   json.beginListProperty("starExportEntries");
-  DumpModuleEntryVectorItems(json, starExportEntries);
+  DumpModuleEntryVectorItems(json, starExportEntries, compilationStencil);
   json.endList();
 
   json.beginListProperty("functionDecls");
@@ -994,9 +1349,6 @@ static void DumpImmutableScriptFlags(js::JSONPrinter& json,
         case ImmutableScriptFlagsEnum::HasMappedArgsObj:
           json.value("HasMappedArgsObj");
           break;
-        case ImmutableScriptFlagsEnum::IsLikelyConstructorWrapper:
-          json.value("IsLikelyConstructorWrapper");
-          break;
         default:
           json.value("Unknown(%x)", i);
           break;
@@ -1078,9 +1430,6 @@ static void DumpFunctionFlagsItems(js::JSONPrinter& json,
         case FunctionFlags::Flags::RESOLVED_LENGTH:
           json.value("RESOLVED_LENGTH");
           break;
-        case FunctionFlags::Flags::NEW_SCRIPT_CLEARED:
-          json.value("NEW_SCRIPT_CLEARED");
-          break;
         default:
           json.value("Unknown(%x)", i);
           break;
@@ -1089,64 +1438,56 @@ static void DumpFunctionFlagsItems(js::JSONPrinter& json,
   }
 }
 
-static void DumpScriptThing(js::JSONPrinter& json, ScriptThingVariant& thing) {
-  struct Matcher {
-    js::JSONPrinter& json;
-
-    void operator()(ScriptAtom& data) {
+static void DumpScriptThing(js::JSONPrinter& json,
+                            CompilationStencil* compilationStencil,
+                            TaggedScriptThingIndex& thing) {
+  switch (thing.tag()) {
+    case TaggedScriptThingIndex::Kind::ParserAtomIndex:
+    case TaggedScriptThingIndex::Kind::WellKnown:
       json.beginObject();
-      json.property("type", "ScriptAtom");
-      const ParserAtom* atom = data;
-      GenericPrinter& out = json.beginStringProperty("value");
-      atom->dumpCharsNoQuote(out);
-      json.endStringProperty();
+      json.property("type", "Atom");
+      DumpTaggedParserAtomIndex(json, thing.toAtom(), compilationStencil);
       json.endObject();
-    }
-
-    void operator()(NullScriptThing& data) { json.nullValue(); }
-
-    void operator()(BigIntIndex& index) {
-      json.value("BigIntIndex(%zu)", size_t(index));
-    }
-
-    void operator()(RegExpIndex& index) {
-      json.value("RegExpIndex(%zu)", size_t(index));
-    }
-
-    void operator()(ObjLiteralIndex& index) {
-      json.value("ObjLiteralIndex(%zu)", size_t(index));
-    }
-
-    void operator()(ScopeIndex& index) {
-      json.value("ScopeIndex(%zu)", size_t(index));
-    }
-
-    void operator()(FunctionIndex& index) {
-      json.value("FunctionIndex(%zu)", size_t(index));
-    }
-
-    void operator()(EmptyGlobalScopeType& emptyGlobalScope) {
+      break;
+    case TaggedScriptThingIndex::Kind::Null:
+      json.nullValue();
+      break;
+    case TaggedScriptThingIndex::Kind::BigInt:
+      json.value("BigIntIndex(%zu)", size_t(thing.toBigInt()));
+      break;
+    case TaggedScriptThingIndex::Kind::ObjLiteral:
+      json.value("ObjLiteralIndex(%zu)", size_t(thing.toObjLiteral()));
+      break;
+    case TaggedScriptThingIndex::Kind::RegExp:
+      json.value("RegExpIndex(%zu)", size_t(thing.toRegExp()));
+      break;
+    case TaggedScriptThingIndex::Kind::Scope:
+      json.value("ScopeIndex(%zu)", size_t(thing.toScope()));
+      break;
+    case TaggedScriptThingIndex::Kind::Function:
+      json.value("FunctionIndex(%zu)", size_t(thing.toFunction()));
+      break;
+    case TaggedScriptThingIndex::Kind::EmptyGlobalScope:
       json.value("EmptyGlobalScope");
-    }
-  };
-
-  Matcher m{json};
-  thing.match(m);
+      break;
+  }
 }
 
 void ScriptStencil::dump() {
   js::Fprinter out(stderr);
   js::JSONPrinter json(out);
-  dump(json);
+  dump(json, nullptr);
 }
 
-void ScriptStencil::dump(js::JSONPrinter& json) {
+void ScriptStencil::dump(js::JSONPrinter& json,
+                         CompilationStencil* compilationStencil) {
   json.beginObject();
-  dumpFields(json);
+  dumpFields(json, compilationStencil);
   json.endObject();
 }
 
-void ScriptStencil::dumpFields(js::JSONPrinter& json) {
+void ScriptStencil::dumpFields(js::JSONPrinter& json,
+                               CompilationStencil* compilationStencil) {
   json.beginListProperty("immutableFlags");
   DumpImmutableScriptFlags(json, immutableFlags);
   json.endList();
@@ -1160,15 +1501,15 @@ void ScriptStencil::dumpFields(js::JSONPrinter& json) {
 
   json.beginListProperty("gcThings");
   for (auto& thing : gcThings) {
-    DumpScriptThing(json, thing);
+    DumpScriptThing(json, compilationStencil, thing);
   }
   json.endList();
 
-  if (immutableScriptData) {
-    json.formatProperty("immutableScriptData", "u8[%zu]",
-                        immutableScriptData->immutableData().Length());
+  if (sharedData) {
+    json.formatProperty("sharedData", "u8[%zu]",
+                        sharedData->immutableDataLength());
   } else {
-    json.nullProperty("immutableScriptData");
+    json.nullProperty("sharedData");
   }
 
   json.beginObjectProperty("extent");
@@ -1181,13 +1522,9 @@ void ScriptStencil::dumpFields(js::JSONPrinter& json) {
   json.endObject();
 
   if (isFunction()) {
-    if (functionAtom) {
-      GenericPrinter& out = json.beginStringProperty("functionAtom");
-      functionAtom->dumpCharsNoQuote(out);
-      json.endStringProperty();
-    } else {
-      json.nullProperty("functionAtom");
-    }
+    json.beginObjectProperty("functionAtom");
+    DumpTaggedParserAtomIndex(json, functionAtom, compilationStencil);
+    json.endObject();
 
     json.beginListProperty("functionFlags");
     DumpFunctionFlagsItems(json, functionFlags);
@@ -1203,9 +1540,8 @@ void ScriptStencil::dumpFields(js::JSONPrinter& json) {
       json.property("lazyFunctionEnclosingScopeIndex", "Nothing");
     }
 
-    json.boolProperty("isStandaloneFunction", isStandaloneFunction);
     json.boolProperty("wasFunctionEmitted", wasFunctionEmitted);
-    json.boolProperty("isSingletonFunction", isSingletonFunction);
+    json.boolProperty("allowRelazify", allowRelazify);
   }
 }
 
@@ -1223,13 +1559,13 @@ void CompilationStencil::dump(js::JSONPrinter& json) {
 
   json.beginListProperty("scriptData");
   for (auto& data : scriptData) {
-    data.dump(json);
+    data.dump(json, this);
   }
   json.endList();
 
   json.beginListProperty("regExpData");
   for (auto& data : regExpData) {
-    data.dump(json);
+    data.dump(json, this);
   }
   json.endList();
 
@@ -1241,7 +1577,7 @@ void CompilationStencil::dump(js::JSONPrinter& json) {
 
   json.beginListProperty("objLiteralData");
   for (auto& data : objLiteralData) {
-    data.dump(json);
+    data.dump(json, this);
   }
   json.endList();
 
@@ -1253,7 +1589,7 @@ void CompilationStencil::dump(js::JSONPrinter& json) {
 
   if (scriptData[CompilationInfo::TopLevelIndex].isModule()) {
     json.beginObjectProperty("moduleMetadata");
-    moduleMetadata.dumpFields(json);
+    moduleMetadata.dumpFields(json, this);
     json.endObject();
   }
 
@@ -1261,3 +1597,111 @@ void CompilationStencil::dump(js::JSONPrinter& json) {
 }
 
 #endif  // defined(DEBUG) || defined(JS_JITSPEW)
+
+mozilla::Span<TaggedScriptThingIndex>
+js::frontend::NewScriptThingSpanUninitialized(JSContext* cx, LifoAlloc& alloc,
+                                              uint32_t ngcthings) {
+  MOZ_ASSERT(ngcthings > 0);
+
+  TaggedScriptThingIndex* stencilThings =
+      alloc.newArrayUninitialized<TaggedScriptThingIndex>(ngcthings);
+  if (!stencilThings) {
+    js::ReportOutOfMemory(cx);
+    return mozilla::Span<TaggedScriptThingIndex>();
+  }
+
+  return mozilla::Span<TaggedScriptThingIndex>(stencilThings, ngcthings);
+}
+
+JSAtom* CompilationAtomCache::getExistingAtomAt(ParserAtomIndex index) const {
+  return atoms_[index];
+}
+
+JSAtom* CompilationAtomCache::getExistingAtomAt(
+    JSContext* cx, TaggedParserAtomIndex taggedIndex) const {
+  if (taggedIndex.isParserAtomIndex()) {
+    auto index = taggedIndex.toParserAtomIndex();
+    return getExistingAtomAt(index);
+  }
+
+  if (taggedIndex.isWellKnownAtomId()) {
+    auto index = taggedIndex.toWellKnownAtomId();
+    return GetWellKnownAtom(cx, index);
+  }
+
+  if (taggedIndex.isStaticParserString1()) {
+    auto index = taggedIndex.toStaticParserString1();
+    return cx->staticStrings().getUnit(char16_t(index));
+  }
+
+  MOZ_ASSERT(taggedIndex.isStaticParserString2());
+  auto index = taggedIndex.toStaticParserString2();
+  return cx->staticStrings().getLength2FromIndex(size_t(index));
+}
+
+JSAtom* CompilationAtomCache::getAtomAt(ParserAtomIndex index) const {
+  if (size_t(index) >= atoms_.length()) {
+    return nullptr;
+  }
+  return atoms_[index];
+}
+
+bool CompilationAtomCache::hasAtomAt(ParserAtomIndex index) const {
+  if (size_t(index) >= atoms_.length()) {
+    return false;
+  }
+  return !!atoms_[index];
+}
+
+bool CompilationAtomCache::setAtomAt(JSContext* cx, ParserAtomIndex index,
+                                     JSAtom* atom) {
+  if (size_t(index) < atoms_.length()) {
+    atoms_[index] = atom;
+    return true;
+  }
+
+  if (!atoms_.resize(size_t(index) + 1)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  atoms_[index] = atom;
+  return true;
+}
+
+bool CompilationAtomCache::allocate(JSContext* cx, size_t length) {
+  MOZ_ASSERT(length >= atoms_.length());
+  if (length == atoms_.length()) {
+    return true;
+  }
+
+  if (!atoms_.resize(length)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  return true;
+}
+
+const ParserAtom* CompilationStencil::getParserAtomAt(
+    JSContext* cx, TaggedParserAtomIndex taggedIndex) const {
+  if (taggedIndex.isParserAtomIndex()) {
+    auto index = taggedIndex.toParserAtomIndex();
+    MOZ_ASSERT(index < parserAtomData.length());
+    return parserAtomData[index]->asAtom();
+  }
+
+  if (taggedIndex.isWellKnownAtomId()) {
+    auto index = taggedIndex.toWellKnownAtomId();
+    return cx->runtime()->commonParserNames->getWellKnown(index);
+  }
+
+  if (taggedIndex.isStaticParserString1()) {
+    auto index = taggedIndex.toStaticParserString1();
+    return WellKnownParserAtoms::getStatic1(index);
+  }
+
+  MOZ_ASSERT(taggedIndex.isStaticParserString2());
+  auto index = taggedIndex.toStaticParserString2();
+  return WellKnownParserAtoms::getStatic2(index);
+}

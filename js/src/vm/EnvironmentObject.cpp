@@ -6,8 +6,9 @@
 
 #include "builtin/ModuleObject.h"
 #include "gc/Policy.h"
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
-#include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::CheckRecursionLimit
+#include "js/friend/WindowProxy.h"    // js::IsWindow, js::IsWindowProxy
 #include "vm/ArgumentsObject.h"
 #include "vm/AsyncFunction.h"
 #include "vm/GlobalObject.h"
@@ -30,7 +31,6 @@
 #include "vm/NativeObject-inl.h"
 #include "vm/ObjectGroup-inl.h"  // JSObject::setSingleton
 #include "vm/Stack-inl.h"
-#include "vm/TypeInference-inl.h"
 
 #ifdef DEBUG
 #  include "vm/BytecodeIterator-inl.h"
@@ -104,10 +104,6 @@ static T* CreateEnvironmentObject(JSContext* cx, HandleShape shape,
       return nullptr;
     }
     obj = objRoot;
-  } else {
-    // Don't track property types for non-singleton environment objects. The
-    // JITs don't use them anyway.
-    MarkObjectGroupUnknownProperties(cx, group);
   }
 
   return &obj->as<T>();
@@ -1584,10 +1580,6 @@ class DebugEnvironmentProxyHandler : public BaseProxyHandler {
             return true;
           }
         }
-
-        if (action == SET) {
-          jit::JitScript::MonitorArgType(cx, script, i, vp);
-        }
       }
 
       // It is possible that an optimized out value flows to this
@@ -2455,7 +2447,10 @@ ArrayObject* DebugEnvironmentProxy::maybeSnapshot() const {
 }
 
 void DebugEnvironmentProxy::initSnapshot(ArrayObject& o) {
-  MOZ_ASSERT(maybeSnapshot() == nullptr);
+  MOZ_ASSERT_IF(
+      maybeSnapshot() != nullptr,
+      environment().is<CallObject>() &&
+          environment().as<CallObject>().callee().isGeneratorOrAsync());
   setReservedSlot(SNAPSHOT_SLOT, ObjectValue(o));
 }
 
@@ -2663,11 +2658,6 @@ bool DebugEnvironments::addDebugEnvironment(
     Handle<DebugEnvironmentProxy*> debugEnv) {
   MOZ_ASSERT(!ei.hasSyntacticEnvironment());
   MOZ_ASSERT(cx->realm() == debugEnv->nonCCWRealm());
-  // Generators should always have environments.
-  MOZ_ASSERT_IF(
-      ei.scope().is<FunctionScope>(),
-      !ei.scope().as<FunctionScope>().canonicalFunction()->isGenerator() &&
-          !ei.scope().as<FunctionScope>().canonicalFunction()->isAsync());
 
   if (!CanUseDebugEnvironmentMaps(cx)) {
     return true;
@@ -2833,10 +2823,6 @@ void DebugEnvironments::onPopCall(JSContext* cx, AbstractFramePtr frame) {
       return;
     }
 
-    if (frame.callee()->isGenerator() || frame.callee()->isAsync()) {
-      return;
-    }
-
     CallObject& callobj = frame.environmentChain()->as<CallObject>();
     envs->liveEnvs.remove(&callobj);
     if (JSObject* obj = envs->proxiedEnvs.lookup(&callobj)) {
@@ -2956,12 +2942,6 @@ bool DebugEnvironments::updateLiveEnvironments(JSContext* cx) {
     AbstractFramePtr frame = i.abstractFramePtr();
     if (frame.realm() != cx->realm()) {
       continue;
-    }
-
-    if (frame.isFunctionFrame()) {
-      if (frame.callee()->isGenerator() || frame.callee()->isAsync()) {
-        continue;
-      }
     }
 
     if (!frame.isDebuggee()) {
@@ -3141,8 +3121,6 @@ static DebugEnvironmentProxy* GetDebugEnvironmentForMissing(
   if (ei.scope().is<FunctionScope>()) {
     RootedFunction callee(cx,
                           ei.scope().as<FunctionScope>().canonicalFunction());
-    // Generators should always reify their scopes.
-    MOZ_ASSERT(!callee->isGenerator() && !callee->isAsync());
 
     JS::ExposeObjectToActiveJS(callee);
     Rooted<CallObject*> callobj(cx,

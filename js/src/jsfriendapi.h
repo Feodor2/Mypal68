@@ -15,7 +15,6 @@
 #include "js/Class.h"
 #include "js/ErrorReport.h"
 #include "js/Exception.h"
-#include "js/friend/ErrorMessages.h"
 #include "js/HeapAPI.h"
 #include "js/Object.h"              // JS::GetClass
 #include "js/shadow/Function.h"     // JS::shadow::Function
@@ -114,15 +113,6 @@ extern JS_FRIEND_API void JS_TraceObjectGroupCycleCollectorChildren(
 
 extern JS_FRIEND_API JSPrincipals* JS_GetScriptPrincipals(JSScript* script);
 
-namespace js {
-
-// Release-assert the compartment contains exactly one realm.
-extern JS_FRIEND_API void AssertCompartmentHasSingleRealm(
-    JS::Compartment* comp);
-
-extern JS_FRIEND_API JS::Realm* GetScriptRealm(JSScript* script);
-} /* namespace js */
-
 extern JS_FRIEND_API bool JS_ScriptHasMutedErrors(JSScript* script);
 
 extern JS_FRIEND_API JSObject* JS_CloneObject(JSContext* cx,
@@ -149,14 +139,10 @@ namespace js {
 
 JS_FRIEND_API bool IsArgumentsObject(JS::HandleObject obj);
 
-JS_FRIEND_API const char* ObjectClassName(JSContext* cx, JS::HandleObject obj);
-
 JS_FRIEND_API bool AddRawValueRoot(JSContext* cx, JS::Value* vp,
                                    const char* name);
 
 JS_FRIEND_API void RemoveRawValueRoot(JSContext* cx, JS::Value* vp);
-
-JS_FRIEND_API JSAtom* GetPropertyNameFromPC(JSScript* script, jsbytecode* pc);
 
 }  // namespace js
 
@@ -287,8 +273,6 @@ extern JS_FRIEND_API bool IsSystemCompartment(JS::Compartment* comp);
 
 extern JS_FRIEND_API bool IsSystemZone(JS::Zone* zone);
 
-extern JS_FRIEND_API bool IsAtomsZone(JS::Zone* zone);
-
 struct WeakMapTracer {
   JSRuntime* runtime;
 
@@ -316,8 +300,8 @@ extern JS_FRIEND_API bool IsCompartmentZoneSweepingOrCompacting(
 using IterateGCThingCallback = void (*)(void*, JS::GCCellPtr,
                                         const JS::AutoRequireNoGC&);
 
-extern JS_FRIEND_API void VisitGrayWrapperTargets(
-    JS::Zone* zone, IterateGCThingCallback callback, void* closure);
+extern JS_FRIEND_API void TraceGrayWrapperTargets(JSTracer* trc,
+                                                  JS::Zone* zone);
 
 /**
  * Invoke cellCallback on every gray JSObject in the given zone.
@@ -332,11 +316,6 @@ extern JS_FRIEND_API void IterateGrayObjects(
 //
 // This doesn't trace weak maps as these are handled separately.
 extern JS_FRIEND_API bool CheckGrayMarkingState(JSRuntime* rt);
-#endif
-
-#ifdef JS_HAS_CTYPES
-extern JS_FRIEND_API size_t
-SizeOfDataIfCDataObject(mozilla::MallocSizeOf mallocSizeOf, JSObject* obj);
 #endif
 
 // Note: this returns nullptr iff |zone| is the atoms zone.
@@ -397,8 +376,6 @@ static MOZ_ALWAYS_INLINE JS::Realm* GetNonCCWObjectRealm(JSObject* obj) {
   MOZ_ASSERT(!js::UninlinedIsCrossCompartmentWrapper(obj));
   return reinterpret_cast<JS::shadow::Object*>(obj)->group->realm;
 }
-
-JS_FRIEND_API JSObject* GetPrototypeNoProxy(JSObject* obj);
 
 JS_FRIEND_API void AssertSameCompartment(JSContext* cx, JSObject* obj);
 
@@ -481,12 +458,9 @@ JS_FRIEND_API bool AppendUnique(JSContext* cx, JS::MutableHandleIdVector base,
 JS_FRIEND_API bool StringIsArrayIndex(JSLinearString* str, uint32_t* indexp);
 
 /**
- * Overloads of StringIsArrayIndex taking (char*,length) pairs.  These
- * behave the same as the JSLinearString version.
+ * Overload of StringIsArrayIndex taking a (char16_t*,length) pair. Behaves
+ * the same as the JSLinearString version.
  */
-JS_FRIEND_API bool StringIsArrayIndex(const char* str, uint32_t length,
-                                      uint32_t* indexp);
-
 JS_FRIEND_API bool StringIsArrayIndex(const char16_t* str, uint32_t length,
                                       uint32_t* indexp);
 
@@ -544,9 +518,6 @@ extern JS_FRIEND_API JSObject* GetTestingFunctions(JSContext* cx);
 extern JS_FRIEND_API JSLinearString* GetErrorTypeName(JSContext* cx,
                                                       int16_t exnType);
 
-extern JS_FRIEND_API RegExpShared* RegExpToSharedNonInline(
-    JSContext* cx, JS::HandleObject regexp);
-
 /* Implemented in CrossCompartmentWrapper.cpp. */
 typedef enum NukeReferencesToWindow {
   NukeWindowReferences,
@@ -568,18 +539,6 @@ struct CompartmentFilter {
 
 struct AllCompartments : public CompartmentFilter {
   virtual bool match(JS::Compartment* c) const override { return true; }
-};
-
-struct ContentCompartmentsOnly : public CompartmentFilter {
-  virtual bool match(JS::Compartment* c) const override {
-    return !IsSystemCompartment(c);
-  }
-};
-
-struct ChromeCompartmentsOnly : public CompartmentFilter {
-  virtual bool match(JS::Compartment* c) const override {
-    return IsSystemCompartment(c);
-  }
 };
 
 struct SingleCompartment : public CompartmentFilter {
@@ -617,35 +576,23 @@ extern JS_FRIEND_API uint64_t GetSCOffset(JSStructuredCloneWriter* writer);
 
 }  // namespace js
 
-
 namespace js {
-
-static MOZ_ALWAYS_INLINE JS::shadow::Function* FunctionObjectToShadowFunction(
-    JSObject* fun) {
-  MOZ_ASSERT(JS::GetClass(fun) == FunctionClassPtr);
-  return reinterpret_cast<JS::shadow::Function*>(fun);
-}
 
 /* Statically asserted in FunctionFlags.cpp. */
 static const unsigned JS_FUNCTION_INTERPRETED_BITS = 0x0060;
-
-// Return whether the given function object is native.
-static MOZ_ALWAYS_INLINE bool FunctionObjectIsNative(JSObject* fun) {
-  return !(FunctionObjectToShadowFunction(fun)->flags &
-           JS_FUNCTION_INTERPRETED_BITS);
-}
-
-static MOZ_ALWAYS_INLINE JSNative GetFunctionObjectNative(JSObject* fun) {
-  MOZ_ASSERT(FunctionObjectIsNative(fun));
-  return FunctionObjectToShadowFunction(fun)->native;
-}
 
 }  // namespace js
 
 static MOZ_ALWAYS_INLINE const JSJitInfo* FUNCTION_VALUE_TO_JITINFO(
     const JS::Value& v) {
-  MOZ_ASSERT(js::FunctionObjectIsNative(&v.toObject()));
-  return js::FunctionObjectToShadowFunction(&v.toObject())->jitinfo;
+  JSObject* obj = &v.toObject();
+  MOZ_ASSERT(JS::GetClass(obj) == js::FunctionClassPtr);
+
+  auto* fun = reinterpret_cast<JS::shadow::Function*>(obj);
+  MOZ_ASSERT(!(fun->flags & js::JS_FUNCTION_INTERPRETED_BITS),
+             "Unexpected non-native function");
+
+  return fun->jitinfo;
 }
 
 static MOZ_ALWAYS_INLINE void SET_JITINFO(JSFunction* func,
@@ -713,40 +660,6 @@ extern JS_FRIEND_API void PrepareScriptEnvironmentAndInvoke(
 
 JS_FRIEND_API void SetScriptEnvironmentPreparer(
     JSContext* cx, ScriptEnvironmentPreparer* preparer);
-
-enum CTypesActivityType {
-  CTYPES_CALL_BEGIN,
-  CTYPES_CALL_END,
-  CTYPES_CALLBACK_BEGIN,
-  CTYPES_CALLBACK_END
-};
-
-using CTypesActivityCallback = void (*)(JSContext*, CTypesActivityType);
-
-/**
- * Sets a callback that is run whenever js-ctypes is about to be used when
- * calling into C.
- */
-JS_FRIEND_API void SetCTypesActivityCallback(JSContext* cx,
-                                             CTypesActivityCallback cb);
-
-class MOZ_RAII JS_FRIEND_API AutoCTypesActivityCallback {
- private:
-  JSContext* cx;
-  CTypesActivityCallback callback;
-  CTypesActivityType endType;
-
- public:
-  AutoCTypesActivityCallback(JSContext* cx, CTypesActivityType beginType,
-                             CTypesActivityType endType);
-  ~AutoCTypesActivityCallback() { DoEndCallback(); }
-  void DoEndCallback() {
-    if (callback) {
-      callback(cx, endType);
-      callback = nullptr;
-    }
-  }
-};
 
 // Abstract base class for objects that build allocation metadata for JavaScript
 // values.
@@ -846,40 +759,6 @@ extern JS_FRIEND_API void SetJitExceptionHandler(JitExceptionHandler handler);
 
 extern JS_FRIEND_API bool ReportIsNotFunction(JSContext* cx, JS::HandleValue v);
 
-extern JS_FRIEND_API JSObject* ConvertArgsToArray(JSContext* cx,
-                                                  const JS::CallArgs& args);
-
-// Create and add the Intl.MozDateTimeFormat constructor function to the
-// provided object.
-// If JS was built without JS_HAS_INTL_API, this function will throw an
-// exception.
-//
-// This custom date/time formatter constructor gives users the ability
-// to specify a custom format pattern. This pattern is passed *directly*
-// to ICU with NO SYNTAX PARSING OR VALIDATION WHATSOEVER. ICU appears to
-// have a a modicum of testing of this, and it won't fall over completely
-// if passed bad input. But the current behavior is entirely under-specified
-// and emphatically not shippable on the web, and it *must* be fixed before
-// this functionality can be exposed in the real world. (There are also some
-// questions about whether the format exposed here is the *right* one to
-// standardize, that will also need to be resolved to ship this.)
-extern bool AddMozDateTimeFormatConstructor(JSContext* cx,
-                                            JS::Handle<JSObject*> intl);
-
-// Create and add the Intl.MozDisplayNames constructor function to the
-// provided object.
-// If JS was built without JS_HAS_INTL_API, this function will throw an
-// exception.
-extern bool AddMozDisplayNamesConstructor(JSContext* cx,
-                                          JS::Handle<JSObject*> intl);
-
-// Create and add the Intl.DisplayNames constructor function to the provided
-// object.
-// If JS was built without JS_HAS_INTL_API, this function will throw an
-// exception.
-extern bool AddDisplayNamesConstructor(JSContext* cx,
-                                       JS::Handle<JSObject*> intl);
-
 class MOZ_STACK_CLASS JS_FRIEND_API AutoAssertNoContentJS {
  public:
   explicit AutoAssertNoContentJS(JSContext* cx);
@@ -903,10 +782,6 @@ extern JS_FRIEND_API void EnableAccessValidation(JSContext* cx, bool enabled);
 extern JS_FRIEND_API void SetRealmValidAccessPtr(JSContext* cx,
                                                  JS::HandleObject global,
                                                  bool* accessp);
-
-// Returns true if the system zone is available (i.e., if no cooperative
-// contexts are using it now).
-extern JS_FRIEND_API bool SystemZoneAvailable(JSContext* cx);
 
 /**
  * This function only reports GC heap memory,

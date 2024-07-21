@@ -22,7 +22,6 @@
 #define FOR_EACH_NURSERY_PROFILE_TIME(_)      \
   /* Key                       Header text */ \
   _(Total, "total")                           \
-  _(CancelIonCompilations, "canIon")          \
   _(TraceValues, "mkVals")                    \
   _(TraceCells, "mkClls")                     \
   _(TraceSlots, "mkSlts")                     \
@@ -132,7 +131,7 @@ class TenuringTracer : public JSTracer {
 
   // The store buffers need to be able to call these directly.
   void traceObject(JSObject* src);
-  void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t length);
+  void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t end);
   void traceSlots(JS::Value* vp, uint32_t nslots);
   void traceString(JSString* src);
   void traceBigInt(JS::BigInt* src);
@@ -243,11 +242,11 @@ class Nursery {
   gc::Cell* allocateBigInt(JS::Zone* zone, size_t size) {
     return allocateCell(zone, size, JS::TraceKind::BigInt);
   }
-  gc::Cell* allocateString(JS::Zone* zone, size_t size) {
-    return allocateCell(zone, size, JS::TraceKind::String);
-  }
+  gc::Cell* allocateString(JS::Zone* zone, size_t size);
 
-  static size_t nurseryCellHeaderSize() { return sizeof(gc::NurseryCellHeader); }
+  static size_t nurseryCellHeaderSize() {
+    return sizeof(gc::NurseryCellHeader);
+  }
 
   // Allocate a buffer for a given zone, using the nursery if possible.
   void* allocateBuffer(JS::Zone* zone, size_t nbytes);

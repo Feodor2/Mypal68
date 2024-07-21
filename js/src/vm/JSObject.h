@@ -9,6 +9,7 @@
 
 #include "gc/Barrier.h"
 #include "js/Conversions.h"
+#include "js/friend/ErrorMessages.h"  // JSErrNum
 #include "js/GCVector.h"
 #include "js/HeapAPI.h"
 #include "js/shadow/Zone.h"  // JS::shadow::Zone
@@ -247,21 +248,6 @@ class JSObject
    */
   MOZ_ALWAYS_INLINE bool maybeHasInterestingSymbolProperty() const;
 
-  /*
-   * If this object was instantiated with `new Ctor`, return the constructor's
-   * display atom. Otherwise, return nullptr.
-   */
-  static bool constructorDisplayAtom(JSContext* cx, js::HandleObject obj,
-                                     js::MutableHandleAtom name);
-
-  /*
-   * The same as constructorDisplayAtom above, however if this object has a
-   * lazy group, nullptr is returned. This allows for use in situations that
-   * cannot GC and where having some information, even if it is inconsistently
-   * available, is better than no information.
-   */
-  JSAtom* maybeConstructorDisplayAtom() const;
-
   /* GC support. */
 
   void traceChildren(JSTracer* trc);
@@ -311,9 +297,6 @@ class JSObject
   // Constructs a new, unique shape for the object. This should only be
   // called for an object that was just created.
   static inline bool setSingleton(JSContext* cx, js::HandleObject obj);
-
-  // Change an existing object to have a singleton group.
-  static bool changeToSingleton(JSContext* cx, js::HandleObject obj);
 
   static inline js::ObjectGroup* getGroup(JSContext* cx, js::HandleObject obj);
 
@@ -379,24 +362,6 @@ class JSObject
   inline bool staticPrototypeIsImmutable() const;
 
   inline void setGroup(js::ObjectGroup* group);
-
-  /*
-   * Mark an object that has been iterated over and is a singleton. We need
-   * to recover this information in the object's type information after it
-   * is purged on GC.
-   */
-  inline bool isIteratedSingleton() const;
-  static bool setIteratedSingleton(JSContext* cx, JS::HandleObject obj) {
-    return setFlags(cx, obj, js::BaseShape::ITERATED_SINGLETON);
-  }
-
-  /*
-   * Mark an object as requiring its default 'new' type to have unknown
-   * properties.
-   */
-  inline bool isNewGroupUnknown() const;
-  static bool setNewGroupUnknown(JSContext* cx, js::ObjectGroupRealm& realm,
-                                 const JSClass* clasp, JS::HandleObject obj);
 
   /* Set a new prototype for an object with a singleton type. */
   static bool splicePrototype(JSContext* cx, js::HandleObject obj,
@@ -1123,6 +1088,17 @@ template <typename ObjectSubclass>
 void CallTraceMethod(JSTracer* trc, JSObject* obj) {
   obj->as<ObjectSubclass>().trace(trc);
 }
+
+#ifdef JS_HAS_CTYPES
+
+namespace ctypes {
+
+extern size_t SizeOfDataIfCDataObject(mozilla::MallocSizeOf mallocSizeOf,
+                                      JSObject* obj);
+
+}  // namespace ctypes
+
+#endif
 
 } /* namespace js */
 

@@ -19,8 +19,9 @@
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
+#include "js/CompileOptions.h"         // JS::CompileOptions
 #include "js/friend/JSMEnvironment.h"  // JS::ExecuteInJSMEnvironment, JS::GetJSMEnvironmentOfScriptedCaller, JS::NewJSMEnvironment
-#include "js/Object.h"  // JS::GetCompartment
+#include "js/Object.h"                 // JS::GetCompartment
 #include "js/Printf.h"
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::SourceText
@@ -742,9 +743,17 @@ nsresult mozJSComponentLoader::ObjectForLocation(
   rv = PathifyURI(aInfo.ResolvedURI(), cachePath);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  script = ScriptPreloader::GetSingleton().GetCachedScript(cx, cachePath);
+  CompileOptions options(cx);
+  ScriptPreloader::FillCompileOptionsForCachedScript(options);
+  options.setForceStrictMode()
+      .setFileAndLine(nativePath.get(), 1)
+      .setSourceIsLazy(true)
+      .setNonSyntacticScope(true);
+
+  script =
+      ScriptPreloader::GetSingleton().GetCachedScript(cx, options, cachePath);
   if (!script && cache) {
-    ReadCachedScript(cache, cachePath, cx, &script);
+    ReadCachedScript(cache, cachePath, cx, options, &script);
   }
 
   if (script) {
@@ -762,18 +771,13 @@ nsresult mozJSComponentLoader::ObjectForLocation(
     // The script wasn't in the cache , so compile it now.
     LOG(("Slow loading %s\n", nativePath.get()));
 
-    // Use lazy source if we're using the startup cache. Non-lazy source +
-    // startup cache regresses installer size (due to source code stored in
-    // XDR encoded modules in omni.ja). Also, XDR decoding is relatively
-    // fast. When we're not using the startup cache, we want to use non-lazy
-    // source code so that we can use lazy parsing.
-    // See bug 1303754.
-    CompileOptions options(cx);
-    options.setNoScriptRval(true)
-        .setForceStrictMode()
-        .setFileAndLine(nativePath.get(), 1)
-        .setSourceIsLazy(cache || ScriptPreloader::GetSingleton().Active())
-        .setNonSyntacticScope(true);
+    // If we can no longer write to caches, we should stop using lazy sources
+    // and instead let normal syntax parsing occur. This can occur in content
+    // processes after the ScriptPreloader is flushed where we can read but no
+    // longer write.
+    if (!cache && !ScriptPreloader::GetSingleton().Active()) {
+      options.setSourceIsLazy(false);
+    }
 
     if (realFile) {
       AutoMemMap map;
@@ -815,9 +819,12 @@ nsresult mozJSComponentLoader::ObjectForLocation(
     return NS_ERROR_FAILURE;
   }
 
+  MOZ_ASSERT_IF(ScriptPreloader::GetSingleton().Active(), options.sourceIsLazy);
   ScriptPreloader::GetSingleton().NoteScript(nativePath, cachePath, script);
 
   if (writeToCache) {
+    MOZ_ASSERT(options.sourceIsLazy);
+
     // We successfully compiled the script, so cache it.
     rv = WriteCachedScript(cache, cachePath, cx, script);
 
@@ -865,7 +872,7 @@ nsresult mozJSComponentLoader::ObjectForLocation(
   }
 
   /* Freed when we remove from the table. */
-  *aLocation = ToNewCString(nativePath);
+  *aLocation = ToNewCString(nativePath, mozilla::fallible);
   if (!*aLocation) {
     aObject.set(nullptr);
     aTableScript.set(nullptr);

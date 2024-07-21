@@ -11,7 +11,9 @@
 
 #include "jit/BaselineJIT.h"
 #include "jit/IonAnalysis.h"
+#include "jit/IonScript.h"
 #include "jit/JitScript.h"
+#include "vm/GeneratorObject.h"  // js::AsyncGeneratorObject
 #include "vm/RegExpObject.h"
 #include "wasm/AsmJS.h"
 
@@ -173,6 +175,13 @@ inline bool js::BaseScript::hasBaselineScript() const {
 
 inline bool js::BaseScript::hasIonScript() const {
   return hasJitScript() && jitScript()->hasIonScript();
+}
+
+inline void js::BaseScript::initSharedData(SharedImmutableScriptData* data) {
+  MOZ_ASSERT(sharedData_ == nullptr);
+  MOZ_ASSERT_IF(isGenerator() || isAsync(),
+                data->nfixed() <= AbstractGeneratorObject::FixedSlotLimit);
+  sharedData_ = data;
 }
 
 inline bool JSScript::isIonCompilingOffThread() const {

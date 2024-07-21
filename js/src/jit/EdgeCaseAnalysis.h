@@ -5,11 +5,12 @@
 #ifndef jit_EdgeCaseAnalysis_h
 #define jit_EdgeCaseAnalysis_h
 
-#include "jit/MIRGenerator.h"
+#include "mozilla/Attributes.h"
 
 namespace js {
 namespace jit {
 
+class MIRGenerator;
 class MIRGraph;
 
 class EdgeCaseAnalysis {

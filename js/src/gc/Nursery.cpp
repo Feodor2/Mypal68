@@ -28,7 +28,6 @@
 #include "vm/Realm.h"
 #include "vm/Time.h"
 #include "vm/TypedArrayObject.h"
-#include "vm/TypeInference.h"
 
 #include "gc/Marking-inl.h"
 #include "gc/Zone-inl.h"
@@ -472,6 +471,14 @@ Cell* js::Nursery::allocateCell(Zone* zone, size_t size, JS::TraceKind kind) {
   return cell;
 }
 
+Cell* js::Nursery::allocateString(JS::Zone* zone, size_t size) {
+  Cell* cell = allocateCell(zone, size, JS::TraceKind::String);
+  if (cell) {
+    zone->nurseryAllocatedStrings++;
+  }
+  return cell;
+}
+
 inline void* js::Nursery::allocate(size_t size) {
   MOZ_ASSERT(isEnabled());
   MOZ_ASSERT(!JS::RuntimeHeapIsBusy());
@@ -736,7 +743,8 @@ void js::Nursery::forwardBufferPointer(uintptr_t* pSlotsElems) {
 }
 
 js::TenuringTracer::TenuringTracer(JSRuntime* rt, Nursery* nursery)
-    : JSTracer(rt, JSTracer::TracerKindTag::Tenuring, TraceWeakMapKeysValues),
+    : JSTracer(rt, JS::TracerKind::Tenuring,
+               JS::WeakMapTraceAction::TraceKeysAndValues),
       nursery_(*nursery),
       tenuredSize(0),
       tenuredCells(0),
@@ -1084,13 +1092,7 @@ void js::Nursery::printCollectionProfile(JS::GCReason reason,
 }
 
 void js::Nursery::printTenuringData(const TenureCountCache& tenureCounts) {
-  for (const auto& entry : tenureCounts.entries) {
-    if (entry.count >= reportTenurings_) {
-      fprintf(stderr, "  %u x ", entry.count);
-      AutoSweepObjectGroup sweep(entry.group);
-      entry.group->print(sweep);
-    }
-  }
+  // TODO(no-TI): remove.
 }
 
 js::Nursery::CollectionResult js::Nursery::doCollection(
@@ -1107,15 +1109,6 @@ js::Nursery::CollectionResult js::Nursery::doCollection(
 
   // Mark the store buffer. This must happen first.
   StoreBuffer& sb = gc->storeBuffer();
-
-  // The MIR graph only contains nursery pointers if cancelIonCompilations()
-  // is set on the store buffer, in which case we cancel all compilations
-  // of such graphs.
-  startProfile(ProfileKey::CancelIonCompilations);
-  if (sb.cancelIonCompilations()) {
-    js::CancelOffThreadIonCompilesUsingNurseryPointers(rt);
-  }
-  endProfile(ProfileKey::CancelIonCompilations);
 
   // Strings in the whole cell buffer must be traced first, in order to mark
   // tenured dependent strings' bases as non-deduplicatable. The rest of
@@ -1241,21 +1234,12 @@ size_t js::Nursery::doPretenuring(JSRuntime* rt, JS::GCReason reason,
   size_t pretenureCount = 0;
 
   if (pretenureObj) {
-    JSContext* cx = rt->mainContextFromOwnThread();
     uint32_t threshold = tunables().pretenureGroupThreshold();
     for (auto& entry : tenureCounts.entries) {
       if (entry.count < threshold) {
         continue;
       }
-
-      ObjectGroup* group = entry.group;
-      AutoMaybeLeaveAtomsZone leaveAtomsZone(cx);
-      AutoRealm ar(cx, group);
-      AutoSweepObjectGroup sweep(group);
-      if (group->canPreTenure(sweep)) {
-        group->setShouldPreTenure(sweep, cx);
-        pretenureCount++;
-      }
+      // TODO(no-TI): remove.
     }
   }
   stats().setStat(gcstats::STAT_OBJECT_GROUPS_PRETENURED, pretenureCount);
@@ -1266,8 +1250,18 @@ size_t js::Nursery::doPretenuring(JSRuntime* rt, JS::GCReason reason,
   uint32_t numBigIntsTenured = 0;
   uint32_t numNurseryBigIntRealmsDisabled = 0;
   for (ZonesIter zone(gc, SkipAtoms); !zone.done(); zone.next()) {
-    bool disableNurseryStrings = pretenureStr && zone->allocNurseryStrings &&
-                                 zone->tenuredStrings >= 30 * 1000;
+    // For some tests in JetStream2 and Kranken, the tenuredRate is high but the
+    // number of allocated strings is low. So we calculate the tenuredRate only
+    // if the number of string allocations is enough.
+    bool allocThreshold = zone->nurseryAllocatedStrings > 30000;
+    double tenuredRate = allocThreshold
+                             ? double(zone->tenuredStrings) /
+                                   double(zone->nurseryAllocatedStrings)
+                             : 0.0;
+
+    bool disableNurseryStrings =
+        pretenureStr && zone->allocNurseryStrings &&
+        tenuredRate > tunables().pretenureStringThreshold();
     bool disableNurseryBigInts = pretenureBigInt && zone->allocNurseryBigInts &&
                                  zone->tenuredBigInts >= 30 * 1000;
     if (disableNurseryStrings || disableNurseryBigInts) {
@@ -1302,6 +1296,7 @@ size_t js::Nursery::doPretenuring(JSRuntime* rt, JS::GCReason reason,
     zone->tenuredStrings = 0;
     numBigIntsTenured += zone->tenuredBigInts;
     zone->tenuredBigInts = 0;
+    zone->nurseryAllocatedStrings = 0;
   }
   session.reset();  // End the minor GC session, if running one.
   stats().setStat(gcstats::STAT_NURSERY_STRING_REALMS_DISABLED,

@@ -323,6 +323,16 @@ void CodeGenerator::visitUDivOrModI64(LUDivOrModI64* lir) {
   masm.bind(&done);
 }
 
+void CodeGenerator::visitWasmRegisterResult(LWasmRegisterResult* lir) {
+  if (JitOptions.spectreIndexMasking) {
+    if (MWasmRegisterResult* mir = lir->mir()) {
+      if (mir->type() == MIRType::Int32) {
+        masm.movl(ToRegister(lir->output()), ToRegister(lir->output()));
+      }
+    }
+  }
+}
+
 void CodeGenerator::visitWasmSelectI64(LWasmSelectI64* lir) {
   MOZ_ASSERT(lir->mir()->type() == MIRType::Int64);
 
@@ -563,6 +573,22 @@ void CodeGenerator::visitTruncateDToInt32(LTruncateDToInt32* ins) {
   // implementation, this should handle most doubles and we can just
   // call a stub if it fails.
   emitTruncateDouble(input, output, ins->mir());
+}
+
+void CodeGenerator::visitWasmBuiltinTruncateDToInt32(
+    LWasmBuiltinTruncateDToInt32* lir) {
+  FloatRegister input = ToFloatRegister(lir->getOperand(0));
+  Register output = ToRegister(lir->getDef(0));
+
+  emitTruncateDouble(input, output, lir->mir());
+}
+
+void CodeGenerator::visitWasmBuiltinTruncateFToInt32(
+    LWasmBuiltinTruncateFToInt32* lir) {
+  FloatRegister input = ToFloatRegister(lir->getOperand(0));
+  Register output = ToRegister(lir->getDef(0));
+
+  emitTruncateFloat32(input, output, lir->mir());
 }
 
 void CodeGenerator::visitTruncateFToInt32(LTruncateFToInt32* ins) {

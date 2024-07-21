@@ -486,22 +486,6 @@ js_option('--enable-wasm-codegen-debug',
 set_config('WASM_CODEGEN_DEBUG', depends_if('--enable-wasm-codegen-debug')(lambda x: True))
 set_define('WASM_CODEGEN_DEBUG', depends_if('--enable-wasm-codegen-debug')(lambda x: True))
 
-
-# Support for typed objects.
-# =====================================================
-
-@depends(milestone.is_nightly)
-def default_typed_objects(is_nightly):
-    return is_nightly
-
-js_option('--enable-typed-objects',
-          default=default_typed_objects,
-          help='{Enable|Disable} typed objects')
-
-set_config('JS_HAS_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
-set_define('JS_HAS_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
-
-
 # Support for WebAssembly reference types.
 # =====================================================
 
@@ -516,28 +500,52 @@ def enable_wasm_reftypes(value):
 set_config('ENABLE_WASM_REFTYPES', enable_wasm_reftypes)
 set_define('ENABLE_WASM_REFTYPES', enable_wasm_reftypes)
 
+# Support for WebAssembly function-references.
+# ===========================
+
+@depends(milestone.is_nightly, '--disable-wasm-reftypes')
+def default_wasm_function_references(is_nightly, reftypes):
+    if is_nightly and reftypes:
+        return True
+
+js_option('--enable-wasm-function-references',
+          default=default_wasm_function_references,
+          help='{Enable|Disable} WebAssembly function-references')
+
+@depends('--enable-wasm-function-references', '--disable-wasm-reftypes')
+def wasm_function_references(value, reftypes):
+    if not value:
+        return
+
+    if reftypes:
+        return True
+
+    die('--enable-wasm-function-references only possible without --disable-wasm-reftypes')
+
+set_config('ENABLE_WASM_FUNCTION_REFERENCES', wasm_function_references)
+set_define('ENABLE_WASM_FUNCTION_REFERENCES', wasm_function_references)
 
 # Support for WebAssembly GC.
 # ===========================
 
-@depends(milestone.is_nightly, '--enable-wasm-reftypes', '--enable-typed-objects')
-def default_wasm_gc(is_nightly, reftypes, typed_objects):
-    if is_nightly and reftypes and typed_objects:
+@depends(milestone.is_nightly, '--enable-wasm-function-references')
+def default_wasm_gc(is_nightly, function_references):
+    if is_nightly and function_references:
         return True
 
 js_option('--enable-wasm-gc',
           default=default_wasm_gc,
           help='{Enable|Disable} WebAssembly GC')
 
-@depends('--enable-wasm-gc', '--enable-wasm-reftypes', '--enable-typed-objects')
-def wasm_gc(value, reftypes, typed_objects):
+@depends('--enable-wasm-gc', '--enable-wasm-function-references')
+def wasm_gc(value, function_references):
     if not value:
         return
 
-    if reftypes and typed_objects:
+    if function_references:
         return True
 
-    die('--enable-wasm-gc only possible with --enable-wasm-reftypes and --enable-typed-objects')
+    die('--enable-wasm-gc only possible with --enable-wasm-function-references')
 
 set_config('ENABLE_WASM_GC', wasm_gc)
 set_define('ENABLE_WASM_GC', wasm_gc)
@@ -595,4 +603,16 @@ set_config('ENABLE_SHARED_MEMORY', enable_shared_memory)
 set_define('ENABLE_SHARED_MEMORY', enable_shared_memory)
 
 
+# Initial support for WebAssembly JS-API Type Reflections
+# =======================================================
 
+@depends(milestone.is_nightly)
+def default_wasm_type_reflections(is_nightly):
+    return is_nightly
+
+js_option('--enable-wasm-type-reflections',
+          default=default_wasm_type_reflections,
+          help='{Enable|Disable} type reflection in WASM JS-API')
+
+set_config('ENABLE_WASM_TYPE_REFLECTIONS', depends_if('--enable-wasm-type-reflections')(lambda x: True))
+set_define('ENABLE_WASM_TYPE_REFLECTIONS', depends_if('--enable-wasm-type-reflections')(lambda x: True))

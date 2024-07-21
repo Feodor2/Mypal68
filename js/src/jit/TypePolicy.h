@@ -6,7 +6,6 @@
 #define jit_TypePolicy_h
 
 #include "jit/IonTypes.h"
-#include "jit/JitAllocPolicy.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 
 namespace js {
@@ -14,6 +13,7 @@ namespace jit {
 
 class MInstruction;
 class MDefinition;
+class TempAllocator;
 
 extern MDefinition* AlwaysBoxAt(TempAllocator& alloc, MInstruction* at,
                                 MDefinition* operand);
@@ -124,14 +124,6 @@ class SameValuePolicy final : public TypePolicy {
 class TestPolicy final : public TypePolicy {
  public:
   constexpr TestPolicy() = default;
-  EMPTY_DATA_;
-  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
-                                 MInstruction* ins) const override;
-};
-
-class TypeBarrierPolicy final : public TypePolicy {
- public:
-  constexpr TypeBarrierPolicy() = default;
   EMPTY_DATA_;
   MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
                                  MInstruction* ins) const override;
@@ -501,14 +493,6 @@ class StoreTypedArrayHolePolicy final : public StoreUnboxedScalarPolicy {
 class ClampPolicy final : public TypePolicy {
  public:
   constexpr ClampPolicy() = default;
-  EMPTY_DATA_;
-  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
-                                 MInstruction* ins) const override;
-};
-
-class FilterTypeSetPolicy final : public TypePolicy {
- public:
-  constexpr FilterTypeSetPolicy() = default;
   EMPTY_DATA_;
   MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
                                  MInstruction* ins) const override;

@@ -31,8 +31,8 @@
 #include "gc/Tracer.h"
 #include "js/AllocationRecording.h"
 #include "js/BuildId.h"  // JS::BuildIdOp
-#include "js/CompilationAndEvaluation.h"
 #include "js/Debug.h"
+#include "js/experimental/CTypes.h"      // JS::CTypesActivityCallback
 #include "js/experimental/SourceHook.h"  // js::SourceHook
 #include "js/friend/StackLimits.h"       // js::ReportOverRecursed
 #include "js/friend/UsageStatistics.h"   // JSAccumulateTelemetryDataCallback
@@ -54,10 +54,12 @@
 #include "vm/CommonPropertyNames.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/JSAtom.h"
+#include "vm/JSAtomState.h"
 #include "vm/JSScript.h"
 #include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseRuntimeState
 #include "vm/Scope.h"
 #include "vm/SharedImmutableStringsCache.h"
+#include "vm/SharedStencil.h"  // js::SharedImmutableScriptDataTable
 #include "vm/Stack.h"
 #include "vm/SymbolType.h"
 #include "wasm/WasmTypes.h"
@@ -134,34 +136,6 @@ namespace JS {
 struct RuntimeSizes;
 }  // namespace JS
 
-/* Various built-in or commonly-used names pinned on first context. */
-struct JSAtomState {
-#define PROPERTYNAME_FIELD(idpart, id, text) js::ImmutablePropertyNamePtr id;
-  FOR_EACH_COMMON_PROPERTYNAME(PROPERTYNAME_FIELD)
-#undef PROPERTYNAME_FIELD
-#define PROPERTYNAME_FIELD(name, clasp) js::ImmutablePropertyNamePtr name;
-  JS_FOR_EACH_PROTOTYPE(PROPERTYNAME_FIELD)
-#undef PROPERTYNAME_FIELD
-#define PROPERTYNAME_FIELD(name) js::ImmutablePropertyNamePtr name;
-  JS_FOR_EACH_WELL_KNOWN_SYMBOL(PROPERTYNAME_FIELD)
-#undef PROPERTYNAME_FIELD
-#define PROPERTYNAME_FIELD(name) js::ImmutablePropertyNamePtr Symbol_##name;
-  JS_FOR_EACH_WELL_KNOWN_SYMBOL(PROPERTYNAME_FIELD)
-#undef PROPERTYNAME_FIELD
-
-  js::ImmutablePropertyNamePtr* wellKnownSymbolNames() {
-#define FIRST_PROPERTYNAME_FIELD(name) return &name;
-    JS_FOR_EACH_WELL_KNOWN_SYMBOL(FIRST_PROPERTYNAME_FIELD)
-#undef FIRST_PROPERTYNAME_FIELD
-  }
-
-  js::ImmutablePropertyNamePtr* wellKnownSymbolDescriptions() {
-#define FIRST_PROPERTYNAME_FIELD(name) return &Symbol_##name;
-    JS_FOR_EACH_WELL_KNOWN_SYMBOL(FIRST_PROPERTYNAME_FIELD)
-#undef FIRST_PROPERTYNAME_FIELD
-  }
-};
-
 namespace js {
 
 /*
@@ -194,14 +168,6 @@ struct WellKnownSymbols {
   WellKnownSymbols& operator=(const WellKnownSymbols&) = delete;
 };
 
-#define NAME_OFFSET(name) offsetof(JSAtomState, name)
-
-inline HandlePropertyName AtomStateOffsetToName(const JSAtomState& atomState,
-                                                size_t offset) {
-  return *reinterpret_cast<js::ImmutablePropertyNamePtr*>((char*)&atomState +
-                                                          offset);
-}
-
 // There are several coarse locks in the enum below. These may be either
 // per-runtime or per-process. When acquiring more than one of these locks,
 // the acquisition must be done in the order below to avoid deadlocks.
@@ -228,8 +194,15 @@ struct SelfHostedLazyScript {
   // in BaseScript::jitCodeRaw_.
   uint8_t* jitCodeRaw_ = nullptr;
 
+  // Warm-up count of zero. This field is stored at the same offset as
+  // BaseScript::warmUpData_.
+  ScriptWarmUpData warmUpData_ = {};
+
   static constexpr size_t offsetOfJitCodeRaw() {
     return offsetof(SelfHostedLazyScript, jitCodeRaw_);
+  }
+  static constexpr size_t offsetOfWarmUpData() {
+    return offsetof(SelfHostedLazyScript, warmUpData_);
   }
 };
 
@@ -423,7 +396,7 @@ struct JSRuntime {
 
   js::MainThreadData<js::ScriptEnvironmentPreparer*> scriptEnvironmentPreparer;
 
-  js::MainThreadData<js::CTypesActivityCallback> ctypesActivityCallback;
+  js::MainThreadData<JS::CTypesActivityCallback> ctypesActivityCallback;
 
  private:
   js::WriteOnceData<const JSClass*> windowProxyClass_;
@@ -535,6 +508,11 @@ struct JSRuntime {
   bool activeThreadHasScriptDataAccess;
 #endif
 
+  // Number of off-thread ParseTasks that are using this runtime. This is only
+  // updated on main-thread. If this is non-zero we must use `scriptDataLock` to
+  // protect access to the bytecode table;
+  mozilla::Atomic<size_t, mozilla::SequentiallyConsistent> numParseTasks;
+
   // Number of zones which may be operated on by helper threads.
   mozilla::Atomic<size_t, mozilla::SequentiallyConsistent>
       numActiveHelperThreadZones;
@@ -545,11 +523,15 @@ struct JSRuntime {
   void setUsedByHelperThread(JS::Zone* zone);
   void clearUsedByHelperThread(JS::Zone* zone);
 
+  bool hasParseTasks() const { return numParseTasks > 0; }
   bool hasHelperThreadZones() const { return numActiveHelperThreadZones > 0; }
+
+  void addParseTaskRef() { numParseTasks++; }
+  void decParseTaskRef() { numParseTasks--; }
 
 #ifdef DEBUG
   bool currentThreadHasScriptDataAccess() const {
-    if (!hasHelperThreadZones()) {
+    if (!hasParseTasks()) {
       return js::CurrentThreadCanAccessRuntime(this) &&
              activeThreadHasScriptDataAccess;
     }
@@ -859,10 +841,10 @@ struct JSRuntime {
   // within the runtime. This may be modified by threads using
   // AutoLockScriptData.
  private:
-  js::ScriptDataLockData<js::RuntimeScriptDataTable> scriptDataTable_;
+  js::ScriptDataLockData<js::SharedImmutableScriptDataTable> scriptDataTable_;
 
  public:
-  js::RuntimeScriptDataTable& scriptDataTable(
+  js::SharedImmutableScriptDataTable& scriptDataTable(
       const js::AutoLockScriptData& lock) {
     return scriptDataTable_.ref();
   }

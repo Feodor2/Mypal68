@@ -16,8 +16,10 @@
 #include "gc/Marking.h"
 #include "gc/Tracer.h"  // js::TraceRoot
 #include "jit/JitcodeMap.h"
-#include "js/Value.h"      // JS::Value
-#include "vm/FrameIter.h"  // js::FrameIter
+#include "jit/JitRuntime.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
+#include "js/Value.h"                 // JS::Value
+#include "vm/FrameIter.h"             // js::FrameIter
 #include "vm/JSContext.h"
 #include "vm/Opcodes.h"
 #include "wasm/WasmInstance.h"
@@ -619,6 +621,8 @@ JS::ProfilingFrameIterator::getPhysicalFrameAndEntry(
     frame.label = nullptr;
     frame.endStackAddress = activation_->asJit()->jsOrWasmExitFP();
     frame.interpreterScript = nullptr;
+    // TODO: get the realm ID of wasm frames. Bug 1596235.
+    frame.realmID = 0;
     return mozilla::Some(frame);
   }
 
@@ -670,14 +674,15 @@ JS::ProfilingFrameIterator::getPhysicalFrameAndEntry(
   frame.stackAddress = stackAddr;
   if (entry->isBaselineInterpreter()) {
     frame.label = jsJitIter().baselineInterpreterLabel();
-    jsJitIter().baselineInterpreterScriptPC(&frame.interpreterScript,
-                                            &frame.interpreterPC_);
+    jsJitIter().baselineInterpreterScriptPC(
+        &frame.interpreterScript, &frame.interpreterPC_, &frame.realmID);
     MOZ_ASSERT(frame.interpreterScript);
     MOZ_ASSERT(frame.interpreterPC_);
   } else {
     frame.interpreterScript = nullptr;
     frame.returnAddress_ = returnAddr;
     frame.label = nullptr;
+    frame.realmID = 0;
   }
   frame.activation = activation_;
   frame.endStackAddress = activation_->asJit()->jsOrWasmExitFP();

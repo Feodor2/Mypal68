@@ -14,12 +14,13 @@
 #include "jstypes.h"
 
 #include "jit/IonTypes.h"  // js::jit::Bailout{Id,Kind}, js::jit::SnapshotOffset
-#include "jit/JSJitFrameIter.h"  // js::jit::InlineFrameIterator
-#include "jit/Registers.h"       // js::jit::MachineState
-#include "js/TypeDecls.h"        // jsbytecode
-#include "vm/Stack.h"            // js::AbstractFramePtr
+#include "jit/Registers.h"  // js::jit::MachineState
+#include "js/TypeDecls.h"   // jsbytecode
 
 namespace js {
+
+class AbstractFramePtr;
+
 namespace jit {
 
 // [SMDOC] IonMonkey Bailouts
@@ -136,8 +137,10 @@ class BailoutStack;
 class InvalidationBailoutStack;
 
 class IonScript;
+class InlineFrameIterator;
 class JitActivation;
 class JitActivationIterator;
+class JSJitFrameIter;
 struct ResumeFromException;
 
 // Must be implemented by each architecture.

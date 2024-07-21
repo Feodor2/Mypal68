@@ -2662,13 +2662,6 @@ class CompartmentPrivate {
   // receives various bits of special compatibility behavior.
   bool isWebExtensionContentScript;
 
-  // If CPOWs are disabled for browser code via the
-  // dom.ipc.cpows.forbid-unsafe-from-browser preferences, then only
-  // add-ons can use CPOWs. This flag allows a non-addon scope
-  // to opt into CPOWs. It's necessary for the implementation of
-  // RemoteAddonsParent.jsm.
-  bool allowCPOWs;
-
   // True if this compartment is a content XBL compartment. Every global in
   // such a compartment is a content XBL scope.
   bool isContentXBLCompartment;

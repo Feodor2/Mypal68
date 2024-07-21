@@ -9,9 +9,9 @@
 #include "jit/arm64/vixl/Debugger-vixl.h"
 #include "jit/arm64/vixl/MacroAssembler-vixl.h"
 #include "jit/AtomicOp.h"
-#include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
 #include "vm/BigIntType.h"  // JS::BigInt
+#include "wasm/WasmTypes.h"
 
 #ifdef _M_ARM64
 #  ifdef move32
@@ -391,10 +391,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     return CodeOffset(off.getOffset());
   }
 
-  void boxValue(JSValueType type, Register src, Register dest) {
-    Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
-        Operand(ImmShiftedTag(type).value));
-  }
+  void boxValue(JSValueType type, Register src, Register dest);
+
   void splitSignExtTag(Register src, Register dest) {
     sbfx(ARMRegister(dest, 64), ARMRegister(src, 64), JSVAL_TAG_SHIFT,
          (64 - JSVAL_TAG_SHIFT));
@@ -1986,13 +1984,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
 
  public:
-  void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail);
 
   void profilerEnterFrame(Register framePtr, Register scratch);
   void profilerEnterFrame(RegisterOrSP framePtr, Register scratch);
-  void profilerExitFrame() {
-    jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
-  }
+  void profilerExitFrame();
   Address ToPayload(Address value) { return value; }
   Address ToType(Address value) { return value; }
 

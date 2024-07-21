@@ -4,18 +4,21 @@
 
 #ifndef jit_JitContext_h
 #define jit_JitContext_h
-#include "mozilla/MemoryReporting.h"
+
+#include "mozilla/Assertions.h"
 #include "mozilla/Result.h"
 
-#include "jit/CompileWrappers.h"
-#include "jit/JitOptions.h"
-#include "vm/JSContext.h"
-#include "vm/Realm.h"
-#include "vm/TypeInference.h"
+#include <stdint.h>
+
+#include "jstypes.h"
+
+struct JS_PUBLIC_API JSContext;
 
 namespace js {
 namespace jit {
 
+class CompileRealm;
+class CompileRuntime;
 class TempAllocator;
 
 enum MethodStatus {
@@ -57,12 +60,8 @@ class JitContext {
 #ifdef DEBUG
   // Whether this thread is actively Ion compiling (does not include Wasm or
   // IonBuilder).
+  // TODO(no-TI): fix IonBuilder references in comments.
   bool inIonBackend_ = false;
-
-  // Whether this thread is actively Ion compiling in a context where a minor
-  // GC could happen simultaneously. If this is true, this thread cannot use
-  // any pointers into the nursery.
-  bool inIonBackendSafeForMinorGC_ = false;
 
   bool isCompilingWasm_ = false;
   bool oom_ = false;
@@ -107,20 +106,13 @@ class JitContext {
 
   bool inIonBackend() const { return inIonBackend_; }
 
-  bool inIonBackendSafeForMinorGC() const {
-    return inIonBackendSafeForMinorGC_;
-  }
-
-  void enterIonBackend(bool safeForMinorGC) {
+  void enterIonBackend() {
     MOZ_ASSERT(!inIonBackend_);
-    MOZ_ASSERT(!inIonBackendSafeForMinorGC_);
     inIonBackend_ = true;
-    inIonBackendSafeForMinorGC_ = safeForMinorGC;
   }
   void leaveIonBackend() {
     MOZ_ASSERT(inIonBackend_);
     inIonBackend_ = false;
-    inIonBackendSafeForMinorGC_ = false;
   }
 #endif
 };

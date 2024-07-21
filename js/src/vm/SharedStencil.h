@@ -5,16 +5,22 @@
 #ifndef vm_SharedStencil_h
 #define vm_SharedStencil_h
 
-#include "mozilla/Span.h"  // mozilla::Span
+#include "mozilla/HashFunctions.h"    // mozilla::HahNumber, mozilla::HashBytes
+#include "mozilla/HashTable.h"        // mozilla::HashSet
+#include "mozilla/MemoryReporting.h"  // mozilla::MallocSizeOf
+#include "mozilla/RefPtr.h"           // RefPtr
+#include "mozilla/Span.h"             // mozilla::Span
 
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint32_t
 
 #include "frontend/SourceNotes.h"  // js::SrcNote
 #include "frontend/TypedIndex.h"   // js::frontend::TypedIndex
-#include "js/TypeDecls.h"          // JSContext,jsbytecode
-#include "js/UniquePtr.h"          // js::UniquePtr
-#include "util/TrailingArray.h"    // js::TrailingArray
+
+#include "js/AllocPolicy.h"      // js::SystemAllocPolicy
+#include "js/TypeDecls.h"        // JSContext,jsbytecode
+#include "js/UniquePtr.h"        // js::UniquePtr
+#include "util/TrailingArray.h"  // js::TrailingArray
 #include "vm/StencilEnums.h"  // js::{TryNoteKind,ImmutableScriptFlagsEnum,MutableScriptFlagsEnum}
 
 //
@@ -22,6 +28,10 @@
 //
 
 namespace js {
+
+namespace frontend {
+class StencilXDR;
+}  // namespace frontend
 
 // Index into gcthings array.
 class GCThingIndexType;
@@ -115,26 +125,58 @@ struct ScopeNote {
 //   function * foo(a, b) { return a + b; }
 //   ^             ^                       ^
 //   |             |                       |
-//   |             sourceStart             sourceEnd
+//   |             sourceStart     sourceEnd
 //   |                                     |
-//   toStringStart                         toStringEnd
+//   toStringStart               toStringEnd
 //
 // For the special case of class constructors, the spec requires us to use an
 // alternate definition of toStringStart / toStringEnd.
 //
 //   class C { constructor() { this.field = 42; } }
 //   ^                    ^                      ^ ^
-//   |                    |                      | `---------`
-//   |                    sourceStart            sourceEnd   |
-//   |                                                       |
-//   toStringStart                                           toStringEnd
+//   |                    |                      | |
+//   |                    sourceStart    sourceEnd |
+//   |                                             |
+//   toStringStart                       toStringEnd
+//
+// Implicit class constructors use the following definitions.
+//
+//   class C { someMethod() { } }
+//   ^                           ^
+//   |                           |
+//   sourceStart         sourceEnd
+//   |                           |
+//   toStringStart     toStringEnd
+//
+// Field initializer lambdas are internal details of the engine, but we still
+// provide a sensible definition of these values.
+//
+//   class C { static field = 1 }
+//   class C {        field = 1 }
+//   class C {        somefield }
+//                    ^        ^
+//                    |        |
+//          sourceStart        sourceEnd
+//
+// The non-static private class methods (including getters and setters) ALSO
+// create a hidden initializer lambda in addition to the method itself. These
+// lambdas are not exposed directly to script.
+//
+//   class C { #field() {       } }
+//   class C { get #field() {   } }
+//   class C { async #field() { } }
+//   class C { * #field() {     } }
+//             ^                 ^
+//             |                 |
+//             sourceStart       sourceEnd
 //
 // NOTE: These are counted in Code Units from the start of the script source.
 //
 // Also included in the SourceExtent is the line and column numbers of the
-// sourceStart position. In most cases this is derived from the source text,
-// however in the case of dynamic functions it may be overriden by the
-// compilation options.
+// sourceStart position. Compilation options may specify the initial line and
+// column number.
+//
+// NOTE: Column number may saturate and must not be used as unique identifier.
 struct SourceExtent {
   SourceExtent() = default;
 
@@ -154,6 +196,11 @@ struct SourceExtent {
   static SourceExtent makeGlobalExtent(uint32_t len, uint32_t lineno,
                                        uint32_t column) {
     return SourceExtent(0, len, 0, len, lineno, column);
+  }
+
+  static SourceExtent makeClassExtent(uint32_t start, uint32_t end,
+                                      uint32_t lineno, uint32_t column) {
+    return SourceExtent(start, end, start, end, lineno, column);
   }
 
   uint32_t sourceStart = 0;
@@ -298,11 +345,9 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
   // ES6 function length.
   uint16_t funLength = 0;
 
-  // Number of type sets used in this script for dynamic type monitoring.
-  uint16_t numBytecodeTypeSets = 0;
-
   // NOTE: The raw bytes of this structure are used for hashing so use explicit
   // padding values as needed for predicatable results across compilers.
+  uint16_t padding = 0;
 
  private:
   struct Flags {
@@ -373,9 +418,9 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
  public:
   static js::UniquePtr<ImmutableScriptData> new_(
       JSContext* cx, uint32_t mainOffset, uint32_t nfixed, uint32_t nslots,
-      GCThingIndex bodyScopeIndex, uint32_t numICEntries,
-      uint32_t numBytecodeTypeSets, bool isFunction, uint16_t funLength,
-      mozilla::Span<const jsbytecode> code, mozilla::Span<const SrcNote> notes,
+      GCThingIndex bodyScopeIndex, uint32_t numICEntries, bool isFunction,
+      uint16_t funLength, mozilla::Span<const jsbytecode> code,
+      mozilla::Span<const SrcNote> notes,
       mozilla::Span<const uint32_t> resumeOffsets,
       mozilla::Span<const ScopeNote> scopeNotes,
       mozilla::Span<const TryNote> tryNotes);
@@ -404,7 +449,7 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
   // Span over all raw bytes in this struct and its trailing arrays.
   mozilla::Span<const uint8_t> immutableData() const {
     size_t allocSize = endOffset();
-    return mozilla::MakeSpan(reinterpret_cast<const uint8_t*>(this), allocSize);
+    return mozilla::Span{reinterpret_cast<const uint8_t*>(this), allocSize};
   }
 
  private:
@@ -425,16 +470,16 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
   mozilla::Span<SrcNote> notesSpan() { return {notes(), noteLength()}; }
 
   mozilla::Span<uint32_t> resumeOffsets() {
-    return mozilla::MakeSpan(offsetToPointer<uint32_t>(resumeOffsetsOffset()),
-                             offsetToPointer<uint32_t>(scopeNotesOffset()));
+    return mozilla::Span{offsetToPointer<uint32_t>(resumeOffsetsOffset()),
+                         offsetToPointer<uint32_t>(scopeNotesOffset())};
   }
   mozilla::Span<ScopeNote> scopeNotes() {
-    return mozilla::MakeSpan(offsetToPointer<ScopeNote>(scopeNotesOffset()),
-                             offsetToPointer<ScopeNote>(tryNotesOffset()));
+    return mozilla::Span{offsetToPointer<ScopeNote>(scopeNotesOffset()),
+                         offsetToPointer<ScopeNote>(tryNotesOffset())};
   }
   mozilla::Span<TryNote> tryNotes() {
-    return mozilla::MakeSpan(offsetToPointer<TryNote>(tryNotesOffset()),
-                             offsetToPointer<TryNote>(endOffset()));
+    return mozilla::Span{offsetToPointer<TryNote>(tryNotesOffset()),
+                         offsetToPointer<TryNote>(endOffset())};
   }
 
   // Expose offsets to the JITs.
@@ -462,6 +507,92 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
   ImmutableScriptData(const ImmutableScriptData&) = delete;
   ImmutableScriptData& operator=(const ImmutableScriptData&) = delete;
 };
+
+// Wrapper type for ImmutableScriptData to allow sharing across a JSRuntime.
+//
+// Note: This is distinct from ImmutableScriptData because it contains a mutable
+//       ref-count while the ImmutableScriptData may live in read-only memory.
+//
+// Note: This is *not* directly inlined into the SharedImmutableScriptDataTable
+//       because scripts point directly to object and table resizing moves
+//       entries. This allows for fast finalization by decrementing the
+//       ref-count directly without doing a hash-table lookup.
+class SharedImmutableScriptData {
+  // This class is reference counted as follows: each pointer from a JSScript
+  // counts as one reference plus there may be one reference from the shared
+  // script data table.
+  mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent> refCount_ = {};
+
+  js::UniquePtr<ImmutableScriptData> isd_ = nullptr;
+
+  // End of fields.
+
+  friend class ::JSScript;
+  friend class js::frontend::StencilXDR;
+
+ public:
+  SharedImmutableScriptData() = default;
+
+  // Hash over the contents of SharedImmutableScriptData and its
+  // ImmutableScriptData.
+  struct Hasher;
+
+  uint32_t refCount() const { return refCount_; }
+  void AddRef() { refCount_++; }
+  void Release() {
+    MOZ_ASSERT(refCount_ != 0);
+    uint32_t remain = --refCount_;
+    if (remain == 0) {
+      isd_ = nullptr;
+      js_free(this);
+    }
+  }
+
+  static constexpr size_t offsetOfISD() {
+    return offsetof(SharedImmutableScriptData, isd_);
+  }
+
+ private:
+  static SharedImmutableScriptData* create(JSContext* cx);
+
+ public:
+  static SharedImmutableScriptData* createWith(
+      JSContext* cx, js::UniquePtr<ImmutableScriptData>&& isd);
+
+  size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
+    return mallocSizeOf(this) + mallocSizeOf(isd_.get());
+  }
+
+  // SharedImmutableScriptData has trailing data so isn't copyable or movable.
+  SharedImmutableScriptData(const SharedImmutableScriptData&) = delete;
+  SharedImmutableScriptData& operator=(const SharedImmutableScriptData&) =
+      delete;
+
+  static bool shareScriptData(JSContext* cx,
+                              RefPtr<SharedImmutableScriptData>& sisd);
+
+  size_t immutableDataLength() const { return isd_->immutableData().Length(); }
+  uint32_t nfixed() const { return isd_->nfixed; }
+};
+
+// Matches SharedImmutableScriptData objects that have the same atoms as well as
+// contain the same bytes in their ImmutableScriptData.
+struct SharedImmutableScriptData::Hasher {
+  using Lookup = RefPtr<SharedImmutableScriptData>;
+
+  static mozilla::HashNumber hash(const Lookup& l) {
+    mozilla::Span<const uint8_t> immutableData = l->isd_->immutableData();
+    return mozilla::HashBytes(immutableData.data(), immutableData.size());
+  }
+
+  static bool match(SharedImmutableScriptData* entry, const Lookup& lookup) {
+    return (entry->isd_->immutableData() == lookup->isd_->immutableData());
+  }
+};
+
+using SharedImmutableScriptDataTable =
+    mozilla::HashSet<SharedImmutableScriptData*,
+                     SharedImmutableScriptData::Hasher, SystemAllocPolicy>;
 
 }  // namespace js
 

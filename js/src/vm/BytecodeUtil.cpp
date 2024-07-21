@@ -32,12 +32,14 @@
 #include "js/CharacterEncoding.h"
 #include "js/experimental/CodeCoverage.h"
 #include "js/friend/DumpFunctions.h"  // js::DumpPC, js::DumpScript
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Printf.h"
 #include "js/Symbol.h"
 #include "util/Memory.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
 #include "vm/BuiltinObjectKind.h"
+#include "vm/BytecodeIterator.h"  // for AllBytecodesIterable
 #include "vm/BytecodeLocation.h"
 #include "vm/CodeCoverage.h"
 #include "vm/EnvironmentObject.h"
@@ -48,6 +50,7 @@
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/Opcodes.h"
+#include "vm/Printer.h"
 #include "vm/Realm.h"
 #include "vm/Shape.h"
 #include "vm/ToSource.h"  // js::ValueToSource
@@ -1477,14 +1480,6 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
     }
 
     case JOF_OBJECT: {
-      /* Don't call obj.toSource if analysis/inference is active. */
-      if (script->zone()->types.activeAnalysis) {
-        if (!sp->jsprintf(" object")) {
-          return 0;
-        }
-        break;
-      }
-
       JSObject* obj = script->getObject(pc);
       {
         RootedValue v(cx, ObjectValue(*obj));
@@ -1790,6 +1785,10 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
         if (result) {
           return write(result.get());
         }
+
+        // If it fails, do not return parameter name and let the caller
+        // fallback.
+        return write("(intermediate value)");
       }
 
       JSAtom* atom = getArg(slot);
@@ -2697,9 +2696,9 @@ JS_FRIEND_API JSString* js::GetPCCountScriptSummary(JSContext* cx,
 
   uint64_t total = 0;
 
-  jsbytecode* codeEnd = script->codeEnd();
-  for (jsbytecode* pc = script->code(); pc < codeEnd; pc = GetNextPc(pc)) {
-    if (const PCCounts* counts = sac.maybeGetPCCounts(pc)) {
+  AllBytecodesIterable iter(script);
+  for (BytecodeLocation loc : iter) {
+    if (const PCCounts* counts = sac.maybeGetPCCounts(loc.toRawBytecode())) {
       total += counts->numExec();
     }
   }

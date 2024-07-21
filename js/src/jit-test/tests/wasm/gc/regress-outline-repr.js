@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !wasmGcEnabled() || wasmCompileMode() != 'baseline'
+// |jit-test| skip-if: !wasmGcEnabled()
 
 // White-box test for bug 1617908.  The significance of this test is that the
 // type $S is too large to fit in an inline TypedObject, and the write barrier
@@ -27,7 +27,7 @@ const wat = `
       (field (mut i64))
       (field (mut i64))
       (field (mut i64))
-      (field (mut anyref))))
+      (field (mut eqref))))
   (type $S2 (struct))
 
   (func $main
@@ -51,7 +51,7 @@ const wat = `
         (i64.const 0)
         (i64.const 0)
         (i64.const 0)
-        (ref.null extern))
+        (ref.null eq))
       (struct.new $S2)))
   (start $main))
 `

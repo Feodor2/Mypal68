@@ -20,7 +20,11 @@ WarpBuilderShared::WarpBuilderShared(WarpSnapshot& snapshot,
       current(current_) {}
 
 bool WarpBuilderShared::resumeAfter(MInstruction* ins, BytecodeLocation loc) {
-  MOZ_ASSERT(ins->isEffectful());
+  // resumeAfter should only be used with effectful instructions. The only
+  // exception is MInt64ToBigInt, it's used to convert the result of a call into
+  // Wasm code so we attach the resume point to that instead of to the call.
+  MOZ_ASSERT(ins->isEffectful() || ins->isInt64ToBigInt());
+  MOZ_ASSERT(!ins->isMovable());
 
   MResumePoint* resumePoint = MResumePoint::New(
       alloc(), ins->block(), loc.toRawBytecode(), MResumePoint::ResumeAfter);
@@ -47,13 +51,22 @@ void WarpBuilderShared::pushConstant(const Value& v) {
 }
 
 MCall* WarpBuilderShared::makeCall(CallInfo& callInfo, bool needsThisCheck,
-                                   WrappedFunction* target) {
+                                   WrappedFunction* target, bool isDOMCall) {
   MOZ_ASSERT(callInfo.argFormat() == CallInfo::ArgFormat::Standard);
   MOZ_ASSERT_IF(needsThisCheck, !target);
+  MOZ_ASSERT_IF(isDOMCall, target->jitInfo()->type() == JSJitInfo::Method);
 
-  // TODO: Investigate DOM calls.
-  bool isDOMCall = false;
   DOMObjectKind objKind = DOMObjectKind::Unknown;
+  if (isDOMCall) {
+    const JSClass* clasp = callInfo.thisArg()->toGuardToClass()->getClass();
+    MOZ_ASSERT(clasp->isDOMClass());
+    if (clasp->isNative()) {
+      objKind = DOMObjectKind::Native;
+    } else {
+      MOZ_ASSERT(clasp->isProxy());
+      objKind = DOMObjectKind::Proxy;
+    }
+  }
 
   uint32_t targetArgs = callInfo.argc();
 
@@ -96,6 +109,11 @@ MCall* WarpBuilderShared::makeCall(CallInfo& callInfo, bool needsThisCheck,
   // Skip addArg(0) because it is reserved for |this|.
   for (int32_t i = callInfo.argc() - 1; i >= 0; i--) {
     call->addArg(i + 1, callInfo.getArg(i));
+  }
+
+  if (isDOMCall) {
+    // Now that we've told it about all the args, compute whether it's movable
+    call->computeMovable();
   }
 
   // Pass |this| and callee.

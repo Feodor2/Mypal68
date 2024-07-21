@@ -35,10 +35,9 @@ static void IterateRealmsArenasCellsUnbarriered(
     for (ArenaIter aiter(zone, thingKind); !aiter.done(); aiter.next()) {
       Arena* arena = aiter.get();
       (*arenaCallback)(cx->runtime(), data, arena, traceKind, thingSize, nogc);
-      for (ArenaCellIter iter(arena); !iter.done(); iter.next()) {
-        (*cellCallback)(cx->runtime(), data,
-                        JS::GCCellPtr(iter.getCell(), traceKind), thingSize,
-                        nogc);
+      for (ArenaCellIter cell(arena); !cell.done(); cell.next()) {
+        (*cellCallback)(cx->runtime(), data, JS::GCCellPtr(cell, traceKind),
+                        thingSize, nogc);
       }
     }
   }
@@ -136,9 +135,8 @@ static inline void DoScriptCallback(JSContext* cx, void* data,
   }
 }
 
-template <bool HasBytecode>
-static void IterateScriptsImpl(JSContext* cx, Realm* realm, void* data,
-                               IterateScriptCallback scriptCallback) {
+void js::IterateScripts(JSContext* cx, Realm* realm, void* data,
+                        IterateScriptCallback scriptCallback) {
   MOZ_ASSERT(!cx->suppressGC);
   AutoEmptyNurseryAndPrepareForTracing prep(cx);
   JS::AutoSuppressGCAnalysis nogc;
@@ -150,32 +148,16 @@ static void IterateScriptsImpl(JSContext* cx, Realm* realm, void* data,
       if (iter->realm() != realm) {
         continue;
       }
-      if (HasBytecode != iter->hasBytecode()) {
-        continue;
-      }
       DoScriptCallback(cx, data, iter.get(), scriptCallback, nogc);
     }
   } else {
     for (ZonesIter zone(cx->runtime(), SkipAtoms); !zone.done(); zone.next()) {
       for (auto iter = zone->cellIter<BaseScript>(prep); !iter.done();
            iter.next()) {
-        if (HasBytecode != iter->hasBytecode()) {
-          continue;
-        }
         DoScriptCallback(cx, data, iter.get(), scriptCallback, nogc);
       }
     }
   }
-}
-
-void js::IterateScripts(JSContext* cx, Realm* realm, void* data,
-                        IterateScriptCallback scriptCallback) {
-  IterateScriptsImpl</*HasBytecode = */ true>(cx, realm, data, scriptCallback);
-}
-
-void js::IterateLazyScripts(JSContext* cx, Realm* realm, void* data,
-                            IterateScriptCallback scriptCallback) {
-  IterateScriptsImpl</*HasBytecode = */ false>(cx, realm, data, scriptCallback);
 }
 
 void js::IterateGrayObjects(Zone* zone, IterateGCThingCallback cellCallback,

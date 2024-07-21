@@ -24,7 +24,8 @@
 #include "js/Class.h"
 #include "js/Conversions.h"
 #include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::CheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "util/Poison.h"
 #include "util/StringBuffer.h"
@@ -274,11 +275,6 @@ JS_FRIEND_API bool js::StringIsArrayIndex(const char16_t* str, uint32_t length,
   return StringIsArrayIndexHelper(str, length, indexp);
 }
 
-JS_FRIEND_API bool js::StringIsArrayIndex(const char* str, uint32_t length,
-                                          uint32_t* indexp) {
-  return StringIsArrayIndexHelper(str, length, indexp);
-}
-
 template <typename T>
 static bool ToId(JSContext* cx, T index, MutableHandleId id);
 
@@ -456,7 +452,7 @@ bool js::GetElements(JSContext* cx, HandleObject aobj, uint32_t length,
 
   if (aobj->is<TypedArrayObject>()) {
     Handle<TypedArrayObject*> typedArray = aobj.as<TypedArrayObject>();
-    if (typedArray->length() == length) {
+    if (typedArray->length().deprecatedGetUint32() == length) {
       return TypedArrayObject::getElements(cx, typedArray, vp);
     }
   }
@@ -2489,18 +2485,17 @@ static inline void SetInitializedLength(JSContext* cx, NativeObject* obj,
   }
 }
 
-static DenseElementResult MoveDenseElements(JSContext* cx, NativeObject* obj,
-                                            uint32_t dstStart,
-                                            uint32_t srcStart,
-                                            uint32_t length) {
+static MOZ_MUST_USE bool MoveDenseElements(JSContext* cx, NativeObject* obj,
+                                           uint32_t dstStart, uint32_t srcStart,
+                                           uint32_t length) {
   MOZ_ASSERT(obj->isExtensible());
 
   if (!obj->maybeCopyElementsForWrite(cx)) {
-    return DenseElementResult::Failure;
+    return false;
   }
-  obj->moveDenseElements(dstStart, srcStart, length);
 
-  return DenseElementResult::Success;
+  obj->moveDenseElements(dstStart, srcStart, length);
+  return true;
 }
 
 static DenseElementResult ArrayShiftDenseKernel(JSContext* cx, HandleObject obj,
@@ -2532,9 +2527,8 @@ static DenseElementResult ArrayShiftDenseKernel(JSContext* cx, HandleObject obj,
     return DenseElementResult::Success;
   }
 
-  DenseElementResult result = MoveDenseElements(cx, nobj, 0, 1, initlen - 1);
-  if (result != DenseElementResult::Success) {
-    return result;
+  if (!MoveDenseElements(cx, nobj, 0, 1, initlen - 1)) {
+    return DenseElementResult::Failure;
   }
 
   SetInitializedLength(cx, nobj, initlen - 1);
@@ -2754,8 +2748,7 @@ enum class ArrayAccess { Read, Write };
  * modifications.
  */
 template <ArrayAccess Access>
-static bool CanOptimizeForDenseStorage(HandleObject arr, uint64_t endIndex,
-                                       JSContext* cx) {
+static bool CanOptimizeForDenseStorage(HandleObject arr, uint64_t endIndex) {
   /* If the desired properties overflow dense storage, we can't optimize. */
   if (endIndex > UINT32_MAX) {
     return false;
@@ -2961,8 +2954,8 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
     }
     uint32_t count = uint32_t(actualDeleteCount);
 
-    if (CanOptimizeForDenseStorage<ArrayAccess::Read>(obj, actualStart + count,
-                                                      cx)) {
+    if (CanOptimizeForDenseStorage<ArrayAccess::Read>(obj,
+                                                      actualStart + count)) {
       MOZ_ASSERT(actualStart <= UINT32_MAX,
                  "if actualStart + count <= UINT32_MAX, then actualStart <= "
                  "UINT32_MAX");
@@ -3034,26 +3027,24 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
     uint64_t sourceIndex = actualStart + actualDeleteCount;
     uint64_t targetIndex = actualStart + itemCount;
 
-    if (CanOptimizeForDenseStorage<ArrayAccess::Write>(obj, len, cx)) {
+    if (CanOptimizeForDenseStorage<ArrayAccess::Write>(obj, len)) {
       MOZ_ASSERT(sourceIndex <= len && targetIndex <= len && len <= UINT32_MAX,
                  "sourceIndex and targetIndex are uint32 array indices");
       MOZ_ASSERT(finalLength < len, "finalLength is strictly less than len");
       MOZ_ASSERT(obj->isNative());
 
       /* Steps 15.a-b. */
-      if (targetIndex != 0 ||
-          !obj->as<NativeObject>().tryShiftDenseElements(sourceIndex)) {
-        DenseElementResult result = MoveDenseElements(
-            cx, &obj->as<NativeObject>(), uint32_t(targetIndex),
-            uint32_t(sourceIndex), uint32_t(len - sourceIndex));
-        MOZ_ASSERT(result != DenseElementResult::Incomplete);
-        if (result == DenseElementResult::Failure) {
+      HandleArrayObject arr = obj.as<ArrayObject>();
+      if (targetIndex != 0 || !arr->tryShiftDenseElements(sourceIndex)) {
+        if (!MoveDenseElements(cx, arr, uint32_t(targetIndex),
+                               uint32_t(sourceIndex),
+                               uint32_t(len - sourceIndex))) {
           return false;
         }
       }
 
       /* Steps 15.c-d. */
-      SetInitializedLength(cx, obj.as<NativeObject>(), finalLength);
+      SetInitializedLength(cx, arr, finalLength);
     } else {
       /*
        * This is all very slow if the length is very large. We don't yet
@@ -3153,16 +3144,12 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
       uint32_t start = uint32_t(actualStart);
       uint32_t length = uint32_t(len);
 
-      DenseElementResult result = MoveDenseElements(
-          cx, &obj->as<NativeObject>(), start + itemCount, start + deleteCount,
-          length - (start + deleteCount));
-      MOZ_ASSERT(result != DenseElementResult::Incomplete);
-      if (result == DenseElementResult::Failure) {
-        return false;
-      }
+      HandleArrayObject arr = obj.as<ArrayObject>();
+      arr->moveDenseElements(start + itemCount, start + deleteCount,
+                             length - (start + deleteCount));
 
       /* Steps 16.a-b. */
-      SetInitializedLength(cx, obj.as<NativeObject>(), finalLength);
+      SetInitializedLength(cx, arr, finalLength);
     } else {
       MOZ_ASSERT(res == DenseElementResult::Incomplete);
 
@@ -3280,7 +3267,8 @@ static bool GetIndexedPropertiesInRange(JSContext* cx, HandleObject obj,
 
     // Append typed array elements.
     if (nativeObj->is<TypedArrayObject>()) {
-      uint32_t len = nativeObj->as<TypedArrayObject>().length();
+      uint32_t len =
+          nativeObj->as<TypedArrayObject>().length().deprecatedGetUint32();
       for (uint32_t i = begin; i < len && i < end; i++) {
         if (!indexes.append(i)) {
           return false;
@@ -3392,11 +3380,6 @@ static JSObject* SliceArguments(JSContext* cx, Handle<ArgumentsObject*> argsobj,
   }
   result->setDenseInitializedLength(count);
 
-  MOZ_ASSERT(result->group()->unknownPropertiesDontCheckGeneration(),
-             "The default array group has unknown properties, so we can "
-             "directly initialize the"
-             "dense elements without needing to update the indexed type set.");
-
   for (uint32_t index = 0; index < count; index++) {
     const Value& v = argsobj->element(begin + index);
     result->initDenseElement(index, v);
@@ -3430,7 +3413,7 @@ static bool ArraySliceOrdinary(JSContext* cx, HandleObject obj, uint64_t begin,
   }
   uint32_t count = uint32_t(end - begin);
 
-  if (CanOptimizeForDenseStorage<ArrayAccess::Read>(obj, end, cx)) {
+  if (CanOptimizeForDenseStorage<ArrayAccess::Read>(obj, end)) {
     MOZ_ASSERT(begin <= UINT32_MAX,
                "if end <= UINT32_MAX, then begin <= UINT32_MAX");
     JSObject* narr = CopyDenseArrayElements(cx, obj.as<NativeObject>(),
@@ -3764,7 +3747,7 @@ static const JSFunctionSpec array_methods[] = {
     JS_SELF_HOSTED_FN("flatMap", "ArrayFlatMap", 1, 0),
     JS_SELF_HOSTED_FN("flat", "ArrayFlat", 0, 0),
 
-    /* Proposal */
+/* Proposal */
     JS_SELF_HOSTED_FN("at", "ArrayAt", 1, 0),
 
     JS_FS_END};
@@ -3894,18 +3877,6 @@ static JSObject* CreateArrayPrototype(JSContext* cx, JSProtoKey key) {
   if (!arrayProto || !JSObject::setSingleton(cx, arrayProto) ||
       !JSObject::setDelegate(cx, arrayProto) ||
       !AddLengthProperty(cx, arrayProto)) {
-    return nullptr;
-  }
-
-  /*
-   * The default 'new' group of Array.prototype is required by type inference
-   * to have unknown properties, to simplify handling of e.g. heterogenous
-   * arrays in JSON and script literals and allows setDenseArrayElement to
-   * be used without updating the indexed type set for such default arrays.
-   */
-  ObjectGroupRealm& realm = ObjectGroupRealm::getForNewObject(cx);
-  if (!JSObject::setNewGroupUnknown(cx, realm, &ArrayObject::class_,
-                                    arrayProto)) {
     return nullptr;
   }
 
@@ -4180,13 +4151,6 @@ static inline ArrayObject* NewArrayTryUseGroup(
     JSContext* cx, HandleObjectGroup group, size_t length,
     NewObjectKind newKind = GenericObject) {
   MOZ_ASSERT(newKind != SingletonObject);
-
-  {
-    AutoSweepObjectGroup sweep(group);
-    if (group->shouldPreTenure(sweep)) {
-      newKind = TenuredObject;
-    }
-  }
 
   RootedObject proto(cx, group->proto().toObject());
   ArrayObject* res = NewArray<maxLength>(cx, length, proto, newKind);

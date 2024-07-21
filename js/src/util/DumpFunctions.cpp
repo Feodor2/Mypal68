@@ -499,7 +499,8 @@ struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
   mozilla::MallocSizeOf mallocSizeOf;
 
   DumpHeapTracer(FILE* fp, JSContext* cx, mozilla::MallocSizeOf mallocSizeOf)
-      : JS::CallbackTracer(cx, DoNotTraceWeakMaps),
+      : JS::CallbackTracer(cx, JS::TracerKind::Callback,
+                           JS::WeakMapTraceAction::Skip),
         WeakMapTracer(cx->runtime()),
         prefix(""),
         output(fp),
@@ -516,7 +517,7 @@ struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
             key.asCell(), kdelegate, value.asCell());
   }
 
-  bool onChild(const JS::GCCellPtr& thing) override;
+  void onChild(const JS::GCCellPtr& thing) override;
 };
 
 static char MarkDescriptor(js::gc::Cell* thing) {
@@ -567,8 +568,8 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
                               const JS::AutoRequireNoGC& nogc) {
   DumpHeapTracer* dtrc = static_cast<DumpHeapTracer*>(data);
   char cellDesc[1024 * 32];
-  JS_GetTraceThingInfo(cellDesc, sizeof(cellDesc), dtrc, cellptr.asCell(),
-                       cellptr.kind(), true);
+  js::gc::GetTraceThingInfo(cellDesc, sizeof(cellDesc), cellptr.asCell(),
+                            cellptr.kind(), true);
 
   fprintf(dtrc->output, "%p %c %s", cellptr.asCell(),
           MarkDescriptor(cellptr.asCell()), cellDesc);
@@ -579,19 +580,18 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
     fprintf(dtrc->output, "\n");
   }
 
-  js::TraceChildren(dtrc, cellptr.asCell(), cellptr.kind());
+  JS::TraceChildren(dtrc, cellptr);
 }
 
-bool DumpHeapTracer::onChild(const JS::GCCellPtr& thing) {
+void DumpHeapTracer::onChild(const JS::GCCellPtr& thing) {
   if (js::gc::IsInsideNursery(thing.asCell())) {
-    return true;
+    return;
   }
 
   char buffer[1024];
-  getTracingEdgeName(buffer, sizeof(buffer));
+  context().getEdgeName(buffer, sizeof(buffer));
   fprintf(output, "%s%p %c %s\n", prefix, thing.asCell(),
           MarkDescriptor(thing.asCell()), buffer);
-  return true;
 }
 
 void js::DumpHeap(JSContext* cx, FILE* fp,

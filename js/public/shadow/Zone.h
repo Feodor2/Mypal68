@@ -23,6 +23,7 @@ namespace shadow {
 struct Zone {
   enum GCState : uint8_t {
     NoGC,
+    Prepare,
     MarkBlackOnly,
     MarkBlackAndGray,
     Sweep,
@@ -62,6 +63,7 @@ struct Zone {
 
   GCState gcState() const { return gcState_; }
   bool wasGCStarted() const { return gcState_ != NoGC; }
+  bool isGCPreparing() const { return gcState_ == Prepare; }
   bool isGCMarkingBlackOnly() const { return gcState_ == MarkBlackOnly; }
   bool isGCMarkingBlackAndGray() const { return gcState_ == MarkBlackAndGray; }
   bool isGCSweeping() const { return gcState_ == Sweep; }

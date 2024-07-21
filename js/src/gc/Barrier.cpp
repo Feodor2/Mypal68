@@ -4,7 +4,6 @@
 
 #include "gc/Barrier.h"
 
-#include "builtin/TypedObject.h"
 #include "gc/Policy.h"
 #include "jit/Ion.h"
 #include "js/HashTable.h"
@@ -64,11 +63,6 @@ bool CurrentThreadIsIonCompiling() {
   return jcx && jcx->inIonBackend();
 }
 
-bool CurrentThreadIsIonCompilingSafeForMinorGC() {
-  jit::JitContext* jcx = jit::MaybeGetJitContext();
-  return jcx && jcx->inIonBackendSafeForMinorGC();
-}
-
 bool CurrentThreadIsGCMarking() {
   JSContext* cx = MaybeGetJSContext();
   return cx && cx->gcUse == JSContext::GCUse::Marking;
@@ -124,8 +118,8 @@ static MOZ_ALWAYS_INLINE bool ValueIsPermanent(const Value& value) {
 #ifdef DEBUG
   // Using mozilla::DebugOnly here still generated code in opt builds.
   bool isPermanent = MapGCThingTyped(value, [](auto t) {
-    return t->isPermanentAndMayBeShared();
-  }).value();
+                       return t->isPermanentAndMayBeShared();
+                     }).value();
   MOZ_ASSERT(!isPermanent);
 #endif
 
@@ -161,8 +155,8 @@ static MOZ_ALWAYS_INLINE bool IdIsPermanent(jsid id) {
 
 #ifdef DEBUG
   bool isPermanent = MapGCThingTyped(id, [](auto t) {
-    return t->isPermanentAndMayBeShared();
-  }).value();
+                       return t->isPermanentAndMayBeShared();
+                     }).value();
   MOZ_ASSERT(!isPermanent);
 #endif
 
@@ -183,9 +177,8 @@ static MOZ_ALWAYS_INLINE bool CellPtrIsPermanent(JS::GCCellPtr thing) {
   }
 
 #ifdef DEBUG
-  bool isPermanent = MapGCThingTyped(thing, [](auto t) {
-    return t->isPermanentAndMayBeShared();
-  });
+  bool isPermanent = MapGCThingTyped(
+      thing, [](auto t) { return t->isPermanentAndMayBeShared(); });
   MOZ_ASSERT(!isPermanent);
 #endif
 

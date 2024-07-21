@@ -25,6 +25,7 @@
 #include "builtin/intl/CommonFunctions.h"
 #include "ds/Sort.h"
 #include "gc/Tracer.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Result.h"
 #include "js/TracingAPI.h"
 #include "js/Utility.h"
@@ -259,8 +260,7 @@ static bool SortAlphabetically(JSContext* cx,
   return true;
 }
 
-bool LanguageTag::canonicalizeBaseName(JSContext* cx,
-                                       DuplicateVariants duplicateVariants) {
+bool LanguageTag::canonicalizeBaseName(JSContext* cx) {
   // Per 6.2.3 CanonicalizeUnicodeLocaleId, the very first step is to
   // canonicalize the syntax by normalizing the case and ordering all subtags.
   // The canonical syntax form is specified in UTS 35, 3.2.1.
@@ -300,20 +300,17 @@ bool LanguageTag::canonicalizeBaseName(JSContext* cx,
       return false;
     }
 
-    if (duplicateVariants == DuplicateVariants::Reject) {
-      // Reject the Locale identifier if a duplicate variant was found, e.g.
-      // "en-variant-Variant".
-      const UniqueChars* duplicate =
-          std::adjacent_find(variants().begin(), variants().end(),
-                             [](const auto& a, const auto& b) {
-                               return strcmp(a.get(), b.get()) == 0;
-                             });
-      if (duplicate != variants().end()) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_DUPLICATE_VARIANT_SUBTAG,
-                                  duplicate->get());
-        return false;
-      }
+    // Reject the Locale identifier if a duplicate variant was found, e.g.
+    // "en-variant-Variant".
+    const UniqueChars* duplicate = std::adjacent_find(
+        variants().begin(), variants().end(), [](const auto& a, const auto& b) {
+          return strcmp(a.get(), b.get()) == 0;
+        });
+    if (duplicate != variants().end()) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_DUPLICATE_VARIANT_SUBTAG,
+                                duplicate->get());
+      return false;
     }
   }
 
@@ -461,7 +458,7 @@ bool LanguageTag::canonicalizeUnicodeExtension(
   JS_TRY_VAR_OR_RETURN_FALSE(
       cx, ok,
       LanguageTagParser::parseUnicodeExtension(
-          cx, mozilla::MakeSpan(extension, length), attributes, keywords));
+          cx, mozilla::Span(extension, length), attributes, keywords));
   MOZ_ASSERT(ok, "unexpected invalid Unicode extension subtag");
 
   auto attributesLessOrEqual = [extension](const Attribute& a,
@@ -754,7 +751,7 @@ bool LanguageTag::canonicalizeTransformExtension(
   JS_TRY_VAR_OR_RETURN_FALSE(
       cx, ok,
       LanguageTagParser::parseTransformExtension(
-          cx, mozilla::MakeSpan(extension, length), tag, fields));
+          cx, mozilla::Span(extension, length), tag, fields));
   MOZ_ASSERT(ok, "unexpected invalid transform extension subtag");
 
   auto tfieldLessOrEqual = [extension](const TField& a, const TField& b) {
@@ -795,10 +792,7 @@ bool LanguageTag::canonicalizeTransformExtension(
       return false;
     }
 
-    // ECMA-402 is unclear whether or not duplicate variants are allowed in
-    // transform extensions. Tentatively allow duplicates until
-    // https://github.com/tc39/ecma402/issues/330 has been addressed.
-    if (!tag.canonicalizeBaseName(cx, DuplicateVariants::Accept)) {
+    if (!tag.canonicalizeBaseName(cx)) {
       return false;
     }
 

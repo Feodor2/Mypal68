@@ -278,9 +278,6 @@ void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc, gc::Cell** thingp,
 
 void TraceGCCellPtrRoot(JSTracer* trc, JS::GCCellPtr* thingp, const char* name);
 
-// Deprecated. Please use one of the strongly typed variants above.
-void TraceChildren(JSTracer* trc, void* thing, JS::TraceKind kind);
-
 namespace gc {
 
 // Trace through a shape or group iteratively during cycle collection to avoid
@@ -294,6 +291,10 @@ void TraceCycleCollectorChildren(JS::CallbackTracer* trc, ObjectGroup* group);
  * |compartments|.
  */
 void TraceIncomingCCWs(JSTracer* trc, const JS::CompartmentSet& compartments);
+
+/* Get information about a GC thing. Used when dumping the heap. */
+void GetTraceThingInfo(char* buf, size_t bufsize, void* thing,
+                       JS::TraceKind kind, bool includeDetails);
 
 }  // namespace gc
 }  // namespace js

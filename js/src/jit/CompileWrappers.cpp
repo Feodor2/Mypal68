@@ -7,7 +7,7 @@
 #include "gc/GC.h"
 #include "gc/Heap.h"
 #include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 
 #include "vm/Realm-inl.h"
 
@@ -158,12 +158,6 @@ bool CompileZone::canNurseryAllocateStrings() {
 bool CompileZone::canNurseryAllocateBigInts() {
   return zone()->runtimeFromAnyThread()->gc.nursery().canAllocateBigInts() &&
          zone()->allocNurseryBigInts;
-}
-
-void CompileZone::setMinorGCShouldCancelIonCompilations() {
-  MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
-  JSRuntime* rt = zone()->runtimeFromMainThread();
-  rt->gc.storeBuffer().setShouldCancelIonCompilations();
 }
 
 uintptr_t CompileZone::nurseryCellHeader(JS::TraceKind kind) {

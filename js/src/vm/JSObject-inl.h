@@ -12,6 +12,7 @@
 #include "vm/EnvironmentObject.h"
 #include "vm/JSFunction.h"
 #include "vm/Probes.h"
+#include "vm/TypedArrayObject.h"
 
 #include "gc/FreeOp-inl.h"
 #include "gc/Marking-inl.h"
@@ -201,6 +202,21 @@ inline bool ClassCanHaveFixedData(const JSClass* clasp) {
          js::IsTypedArrayClass(clasp);
 }
 
+class MOZ_RAII AutoSuppressAllocationMetadataBuilder {
+  JS::Zone* zone;
+  bool saved;
+
+ public:
+  explicit AutoSuppressAllocationMetadataBuilder(JSContext* cx)
+      : zone(cx->zone()), saved(zone->suppressAllocationMetadataBuilder) {
+    zone->suppressAllocationMetadataBuilder = true;
+  }
+
+  ~AutoSuppressAllocationMetadataBuilder() {
+    zone->suppressAllocationMetadataBuilder = saved;
+  }
+};
+
 // This function is meant to be called from allocation fast paths.
 //
 // If we do have an allocation metadata builder, it can cause a GC, so the
@@ -281,14 +297,6 @@ inline bool JSObject::staticPrototypeIsImmutable() const {
   return hasAllFlags(js::BaseShape::IMMUTABLE_PROTOTYPE);
 }
 
-inline bool JSObject::isIteratedSingleton() const {
-  return hasAllFlags(js::BaseShape::ITERATED_SINGLETON);
-}
-
-inline bool JSObject::isNewGroupUnknown() const {
-  return hasAllFlags(js::BaseShape::NEW_GROUP_UNKNOWN);
-}
-
 namespace js {
 
 static MOZ_ALWAYS_INLINE bool IsFunctionObject(const js::Value& v) {
@@ -343,7 +351,7 @@ static MOZ_ALWAYS_INLINE bool HasNativeMethodPure(JSObject* obj,
 // Return whether 'obj' definitely has no @@toPrimitive method.
 static MOZ_ALWAYS_INLINE bool HasNoToPrimitiveMethodPure(JSObject* obj,
                                                          JSContext* cx) {
-  Symbol* toPrimitive = cx->wellKnownSymbols().toPrimitive;
+  JS::Symbol* toPrimitive = cx->wellKnownSymbols().toPrimitive;
   JSObject* holder;
   if (!MaybeHasInterestingSymbolProperty(cx, obj, toPrimitive, &holder)) {
 #ifdef DEBUG
@@ -402,11 +410,6 @@ inline gc::InitialHeap GetInitialHeap(NewObjectKind newKind,
 
 inline gc::InitialHeap GetInitialHeap(NewObjectKind newKind,
                                       ObjectGroup* group) {
-  AutoSweepObjectGroup sweep(group);
-  if (group->shouldPreTenure(sweep)) {
-    return gc::TenuredHeap;
-  }
-
   return GetInitialHeap(newKind, group->clasp());
 }
 

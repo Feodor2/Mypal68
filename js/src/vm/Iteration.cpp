@@ -24,6 +24,7 @@
 #include "ds/Sort.h"
 #include "gc/FreeOp.h"
 #include "gc/Marking.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/Proxy.h"
 #include "util/Poison.h"
@@ -210,7 +211,7 @@ static bool EnumerateNativeProperties(JSContext* cx, HandleNativeObject pobj,
     // Collect any typed array or shared typed array elements from this
     // object.
     if (pobj->is<TypedArrayObject>()) {
-      size_t len = pobj->as<TypedArrayObject>().length();
+      size_t len = pobj->as<TypedArrayObject>().length().deprecatedGetUint32();
       for (size_t i = 0; i < len; i++) {
         if (!Enumerate<CheckForDuplicates>(cx, pobj, INT_TO_JSID(i),
                                            /* enumerable = */ true, flags,
@@ -946,13 +947,6 @@ static JSObject* GetIterator(JSContext* cx, HandleObject obj) {
     return nullptr;
   }
 
-  if (IsTypeInferenceEnabled()) {
-    if (obj->isSingleton() && !JSObject::setIteratedSingleton(cx, obj)) {
-      return nullptr;
-    }
-    MarkObjectGroupFlags(cx, obj, OBJECT_FLAG_ITERATED);
-  }
-
   // If the object has dense elements, mark the dense elements as
   // maybe-in-iteration.
   //
@@ -1087,18 +1081,6 @@ PlainObject* Realm::createIterResultTemplateObject(
   if (!NativeDefineDataProperty(cx, templateObject, cx->names().done,
                                 TrueHandleValue, JSPROP_ENUMERATE)) {
     return nullptr;
-  }
-
-  AutoSweepObjectGroup sweep(group);
-  if (!group->unknownProperties(sweep)) {
-    // Update `value` property typeset, since it can be any value.
-    HeapTypeSet* types =
-        group->maybeGetProperty(sweep, NameToId(cx->names().value));
-    MOZ_ASSERT(types);
-    {
-      AutoEnterAnalysis enter(cx);
-      types->makeUnknown(sweep, cx);
-    }
   }
 
   // Make sure that the properties are in the right slots.

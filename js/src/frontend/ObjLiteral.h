@@ -140,8 +140,10 @@ namespace js {
 class JSONPrinter;
 
 namespace frontend {
-struct CompilationInfo;
-}
+struct CompilationAtomCache;
+struct CompilationStencil;
+class StencilXDR;
+}  // namespace frontend
 
 // Object-literal instruction opcodes. An object literal is constructed by a
 // straight-line sequence of these ops, each adding one property to the
@@ -256,8 +258,11 @@ struct ObjLiteralWriterBase {
   static const uint32_t INDEXED_PROP = 0x00800000;
   static const int OP_SHIFT = 24;
 
+ public:
+  using CodeVector = Vector<uint8_t, 64, js::SystemAllocPolicy>;
+
  protected:
-  Vector<uint8_t, 64, js::SystemAllocPolicy> code_;
+  CodeVector code_;
 
  public:
   ObjLiteralWriterBase() = default;
@@ -315,6 +320,13 @@ struct ObjLiteralWriter : private ObjLiteralWriterBase {
   ObjLiteralWriter() = default;
 
   void clear() { code_.clear(); }
+
+  // For XDR decoding.
+  using CodeVector = typename ObjLiteralWriterBase::CodeVector;
+  void initializeForXDR(CodeVector&& code, uint8_t flags) {
+    code_ = std::move(code);
+    flags_.deserialize(flags);
+  }
 
   mozilla::Span<const uint8_t> getCode() const { return code_; }
   ObjLiteralFlags getFlags() const { return flags_; }
@@ -548,25 +560,26 @@ struct ObjLiteralReader : private ObjLiteralReaderBase {
   }
 };
 
-typedef Vector<const frontend::ParserAtom*, 4, js::SystemAllocPolicy>
-    ObjLiteralAtomVector;
+using ObjLiteralAtomVector =
+    Vector<frontend::TaggedParserAtomIndex, 4, js::SystemAllocPolicy>;
 
 JSObject* InterpretObjLiteral(JSContext* cx,
-                              frontend::CompilationInfo& compilationInfo,
+                              frontend::CompilationAtomCache& atomCache,
                               const ObjLiteralAtomVector& atoms,
                               const mozilla::Span<const uint8_t> insns,
                               ObjLiteralFlags flags);
 
 inline JSObject* InterpretObjLiteral(JSContext* cx,
-                                     frontend::CompilationInfo& compilationInfo,
+                                     frontend::CompilationAtomCache& atomCache,
                                      const ObjLiteralAtomVector& atoms,
                                      const ObjLiteralWriter& writer) {
-  return InterpretObjLiteral(cx, compilationInfo, atoms, writer.getCode(),
+  return InterpretObjLiteral(cx, atomCache, atoms, writer.getCode(),
                              writer.getFlags());
 }
 
 class ObjLiteralStencil {
- private:
+  friend class frontend::StencilXDR;
+
   ObjLiteralWriter writer_;
   ObjLiteralAtomVector atoms_;
 
@@ -578,19 +591,24 @@ class ObjLiteralStencil {
   bool addAtom(JSContext* cx, const frontend::ParserAtom* atom,
                uint32_t* index) {
     *index = atoms_.length();
-    if (!atoms_.append(atom)) {
+    atom->markUsedByStencil();
+    if (!atoms_.append(atom->toIndex())) {
       js::ReportOutOfMemory(cx);
       return false;
     }
     return true;
   }
 
-  JSObject* create(JSContext* cx, frontend::CompilationInfo& info) const;
+  JSObject* create(JSContext* cx,
+                   frontend::CompilationAtomCache& atomCache) const;
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dump();
-  void dump(JSONPrinter& json);
-  void dumpFields(JSONPrinter& json);
+  void dump(JSONPrinter& json,
+            frontend::CompilationStencil* compilationStencil);
+  void dumpFields(JSONPrinter& json,
+                  frontend::CompilationStencil* compilationStencil);
+
 #endif
 };
 

@@ -19,6 +19,7 @@
 
 #include "debugger/Debugger.h"
 #include "ds/Sort.h"
+#include "jit/AutoWritableJitCode.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/MacroAssembler.h"
 #include "wasm/WasmInstance.h"
@@ -444,7 +445,7 @@ bool DebugState::getSourceMappingURL(JSContext* cx,
       return true;  // ignoring invalid section data
     }
 
-    UTF8Chars utf8Chars(reinterpret_cast<const char*>(chars), nchars);
+    JS::UTF8Chars utf8Chars(reinterpret_cast<const char*>(chars), nchars);
     JSString* str = JS_NewStringCopyUTF8N(cx, utf8Chars);
     if (!str) {
       return false;
@@ -456,7 +457,7 @@ bool DebugState::getSourceMappingURL(JSContext* cx,
   // Check presence of "SourceMap:" HTTP response header.
   char* sourceMapURL = metadata().sourceMapURL.get();
   if (sourceMapURL && strlen(sourceMapURL)) {
-    UTF8Chars utf8Chars(sourceMapURL, strlen(sourceMapURL));
+    JS::UTF8Chars utf8Chars(sourceMapURL, strlen(sourceMapURL));
     JSString* str = JS_NewStringCopyUTF8N(cx, utf8Chars);
     if (!str) {
       return false;

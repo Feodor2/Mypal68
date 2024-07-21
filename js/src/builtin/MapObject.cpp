@@ -371,9 +371,6 @@ JSObject* MapIteratorObject::createResultPair(JSContext* cx) {
   resultPairObj->initDenseElement(0, NullValue());
   resultPairObj->initDenseElement(1, NullValue());
 
-  // See comments in MapIteratorObject::next.
-  AddTypePropertyId(cx, resultPairObj, JSID_VOID, TypeSet::UnknownType());
-
   return resultPairObj;
 }
 
@@ -1156,9 +1153,6 @@ JSObject* SetIteratorObject::createResult(JSContext* cx) {
 
   resultObj->setDenseInitializedLength(1);
   resultObj->initDenseElement(0, NullValue());
-
-  // See comments in SetIteratorObject::next.
-  AddTypePropertyId(cx, resultObj, JSID_VOID, TypeSet::UnknownType());
 
   return resultObj;
 }

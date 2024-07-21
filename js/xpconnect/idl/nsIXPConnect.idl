@@ -8,6 +8,7 @@
 
 %{ C++
 #include "jspubtd.h"
+#include "js/CompileOptions.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "xptinfo.h"
@@ -25,6 +26,7 @@ class nsWrapperCache;
 [ptr] native JSScriptPtr(JSScript);
 [ptr] native nsWrapperCachePtr(nsWrapperCache);
       native JSHandleId(JS::Handle<jsid>);
+[ref] native const_JSReadOnlyCompileOptionsRef(const JS::ReadOnlyCompileOptions);
 
 /***************************************************************************/
 
@@ -262,7 +264,8 @@ interface nsIXPConnect : nsISupports
                                 in JSScriptPtr aJSScript);
 
     [noscript] JSScriptPtr readScript(in nsIObjectInputStream aStream,
-                                      in JSContextPtr aJSContext);
+                                      in JSContextPtr aJSContext,
+                                      in const_JSReadOnlyCompileOptionsRef aOptions);
 
     [noscript] void writeFunction(in nsIObjectOutputStream aStream,
                                   in JSContextPtr aJSContext,

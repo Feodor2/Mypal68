@@ -8,24 +8,30 @@
 // This file declares the data structures used to build a control-flow graph
 // containing MIR.
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Result.h"
 
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "jit/CompileInfo.h"
+#include "jit/CompileWrappers.h"
 #include "jit/JitAllocPolicy.h"
-#include "jit/JitRealm.h"
-#include "jit/MIR.h"
+#include "jit/JitContext.h"
+#include "jit/JitSpewer.h"
 #ifdef JS_ION_PERF
 #  include "jit/PerfSpewer.h"
 #endif
-#include "jit/RegisterSets.h"
-#include "vm/JSContext.h"
-#include "vm/Realm.h"
+#include "js/Utility.h"
+#include "vm/GeckoProfiler.h"
 
 namespace js {
 namespace jit {
 
+class JitRuntime;
 class MIRGraph;
 class OptimizationInfo;
 
@@ -97,9 +103,6 @@ class MIRGenerator final {
 
   bool bigIntsCanBeInNursery() const { return bigIntsCanBeInNursery_; }
 
-  bool safeForMinorGC() const { return safeForMinorGC_; }
-  void setNotSafeForMinorGC() { safeForMinorGC_ = false; }
-
   // Whether the main thread is trying to cancel this build.
   bool shouldCancel(const char* why) { return cancelBuild_; }
   void cancel() { cancelBuild_ = true; }
@@ -143,7 +146,6 @@ class MIRGenerator final {
 
   bool instrumentedProfiling_;
   bool instrumentedProfilingIsCached_;
-  bool safeForMinorGC_;
   bool stringsCanBeInNursery_;
   bool bigIntsCanBeInNursery_;
 

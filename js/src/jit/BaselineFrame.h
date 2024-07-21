@@ -7,13 +7,17 @@
 
 #include <algorithm>
 
+#include "jit/CalleeToken.h"
 #include "jit/JitFrames.h"
+#include "jit/ScriptFromCalleeToken.h"
 #include "vm/Stack.h"
 
 namespace js {
 namespace jit {
 
 class ICEntry;
+class ICScript;
+class JSJitFrameIter;
 
 // The stack looks like this, fp is the frame pointer:
 //
@@ -189,6 +193,9 @@ class BaselineFrame {
                     BaselineFrame::Size() + offsetOfArg(0));
   }
 
+  MOZ_MUST_USE bool saveGeneratorSlots(JSContext* cx, unsigned nslots,
+                                       ArrayObject* dest) const;
+
  private:
   Value* evalNewTargetAddress() const {
     MOZ_ASSERT(isEvalFrame());
@@ -232,19 +239,23 @@ class BaselineFrame {
     interpreterICEntry_ = nullptr;
   }
 
+ private:
+  bool uninlineIsProfilerSamplingEnabled(JSContext* cx);
+
+ public:
   // Switch a JIT frame on the stack to Interpreter mode. The caller is
   // responsible for patching the return address into this frame to a location
   // in the interpreter code. Also assert profiler sampling has been suppressed
   // so the sampler thread doesn't see an inconsistent state while we are
   // patching frames.
   void switchFromJitToInterpreter(JSContext* cx, jsbytecode* pc) {
-    MOZ_ASSERT(!cx->isProfilerSamplingEnabled());
+    MOZ_ASSERT(!uninlineIsProfilerSamplingEnabled(cx));
     MOZ_ASSERT(!runningInInterpreter());
     flags_ |= RUNNING_IN_INTERPRETER;
     setInterpreterFields(pc);
   }
   void switchFromJitToInterpreterAtPrologue(JSContext* cx) {
-    MOZ_ASSERT(!cx->isProfilerSamplingEnabled());
+    MOZ_ASSERT(!uninlineIsProfilerSamplingEnabled(cx));
     MOZ_ASSERT(!runningInInterpreter());
     flags_ |= RUNNING_IN_INTERPRETER;
     setInterpreterFieldsForPrologue(script());
@@ -256,7 +267,7 @@ class BaselineFrame {
   // pc anyway so we can avoid the overhead.
   void switchFromJitToInterpreterForExceptionHandler(JSContext* cx,
                                                      jsbytecode* pc) {
-    MOZ_ASSERT(!cx->isProfilerSamplingEnabled());
+    MOZ_ASSERT(!uninlineIsProfilerSamplingEnabled(cx));
     MOZ_ASSERT(!runningInInterpreter());
     flags_ |= RUNNING_IN_INTERPRETER;
     interpreterScript_ = script();
@@ -287,10 +298,7 @@ class BaselineFrame {
   void setInterpreterFieldsForPrologue(JSScript* script);
 
   ICScript* icScript() const;
-  void setICScript(ICScript* icScript) {
-    MOZ_ASSERT(JitOptions.warpBuilder);
-    icScript_ = icScript;
-  }
+  void setICScript(ICScript* icScript) { icScript_ = icScript; }
 
   JSScript* invalidationScript() const;
 

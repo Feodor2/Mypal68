@@ -7,23 +7,24 @@
 #ifndef vm_CommonPropertyNames_h
 #define vm_CommonPropertyNames_h
 
-#include "js/ProtoKey.h"
-
 // The following common atoms are reserved by the js::StaticStrigs /
 // WellKnownParserAtoms::lookupTiny mechanisms. We still use a named reference
 // for the parser and VM to use.
-#define FOR_EACH_TINY_PROPERTYNAME(MACRO) \
-  MACRO(as, as, "as")                     \
-  MACRO(by, by, "by")                     \
-  MACRO(comma, comma, ",")                \
-  MACRO(do, do_, "do")                    \
-  MACRO(empty, empty, "")                 \
-  MACRO(futexOK, futexOK, "ok")           \
-  MACRO(if, if_, "if")                    \
-  MACRO(in, in, "in")                     \
-  MACRO(js, js, "js")                     \
-  MACRO(of, of, "of")                     \
+#define FOR_EACH_NON_EMPTY_TINY_PROPERTYNAME(MACRO) \
+  MACRO(as, as, "as")                               \
+  MACRO(by, by, "by")                               \
+  MACRO(comma, comma, ",")                          \
+  MACRO(do, do_, "do")                              \
+  MACRO(futexOK, futexOK, "ok")                     \
+  MACRO(if, if_, "if")                              \
+  MACRO(in, in, "in")                               \
+  MACRO(js, js, "js")                               \
+  MACRO(of, of, "of")                               \
   MACRO(star, star, "*")
+
+#define FOR_EACH_TINY_PROPERTYNAME(MACRO) \
+  MACRO(empty, empty, "")                 \
+  FOR_EACH_NON_EMPTY_TINY_PROPERTYNAME(MACRO)
 
 #define FOR_EACH_NONTINY_COMMON_PROPERTYNAME(MACRO)                            \
   MACRO(abort, abort, "abort")                                                 \
@@ -98,7 +99,6 @@
         "constructContentFunction")                                            \
   MACRO(constructor, constructor, "constructor")                               \
   MACRO(continue, continue_, "continue")                                       \
-  MACRO(ConvertAndCopyTo, ConvertAndCopyTo, "ConvertAndCopyTo")                \
   MACRO(CopyDataProperties, CopyDataProperties, "CopyDataProperties")          \
   MACRO(CopyDataPropertiesUnfiltered, CopyDataPropertiesUnfiltered,            \
         "CopyDataPropertiesUnfiltered")                                        \
@@ -292,6 +292,7 @@
   MACRO(MapConstructorInit, MapConstructorInit, "MapConstructorInit")          \
   MACRO(MapIterator, MapIterator, "Map Iterator")                              \
   MACRO(maxColumn, maxColumn, "maxColumn")                                     \
+  MACRO(maximum, maximum, "maximum")                                           \
   MACRO(maximumFractionDigits, maximumFractionDigits, "maximumFractionDigits") \
   MACRO(maximumSignificantDigits, maximumSignificantDigits,                    \
         "maximumSignificantDigits")                                            \
@@ -301,6 +302,7 @@
   MACRO(meta, meta, "meta")                                                    \
   MACRO(minColumn, minColumn, "minColumn")                                     \
   MACRO(minDays, minDays, "minDays")                                           \
+  MACRO(minimum, minimum, "minimum")                                           \
   MACRO(minimumFractionDigits, minimumFractionDigits, "minimumFractionDigits") \
   MACRO(minimumIntegerDigits, minimumIntegerDigits, "minimumIntegerDigits")    \
   MACRO(minimumSignificantDigits, minimumSignificantDigits,                    \
@@ -317,6 +319,7 @@
   MACRO(ModuleEvaluate, ModuleEvaluate, "ModuleEvaluate")                      \
   MACRO(month, month, "month")                                                 \
   MACRO(multiline, multiline, "multiline")                                     \
+  MACRO(mutable, mutable_, "mutable")                                          \
   MACRO(name, name, "name")                                                    \
   MACRO(nan, nan, "nan")                                                       \
   MACRO(NaN, NaN, "NaN")                                                       \

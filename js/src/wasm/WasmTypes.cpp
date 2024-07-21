@@ -15,6 +15,7 @@
 
 #include "wasm/WasmTypes.h"
 
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/Printf.h"
 #include "util/Memory.h"
 #include "vm/ArrayBufferObject.h"
@@ -51,7 +52,7 @@ static_assert((MaxMemoryAccessSize & (MaxMemoryAccessSize - 1)) == 0,
               "MaxMemoryAccessSize is not a power of two");
 
 #if defined(WASM_SUPPORTS_HUGE_MEMORY)
-static_assert(HugeMappedSize > ArrayBufferObject::MaxBufferByteLength,
+static_assert(HugeMappedSize > MaxMemory32Bytes,
               "Normal array buffer could be confused with huge memory");
 #endif
 
@@ -153,38 +154,6 @@ Value wasm::UnboxFuncRef(FuncRef val) {
   return result;
 }
 
-bool js::IsBoxedWasmAnyRef(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  args.rval().setBoolean(args[0].isObject() &&
-                         args[0].toObject().is<WasmValueBox>());
-  return true;
-}
-
-bool js::IsBoxableWasmAnyRef(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  args.rval().setBoolean(!(args[0].isObject() || args[0].isNull()));
-  return true;
-}
-
-bool js::BoxWasmAnyRef(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  WasmValueBox* box = WasmValueBox::create(cx, args[0]);
-  if (!box) return false;
-  args.rval().setObject(*box);
-  return true;
-}
-
-bool js::UnboxBoxedWasmAnyRef(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  WasmValueBox* box = &args[0].toObject().as<WasmValueBox>();
-  args.rval().set(box->value());
-  return true;
-}
-
 bool wasm::IsRoundingFunction(SymbolicAddress callee, jit::RoundingMode* mode) {
   switch (callee) {
     case SymbolicAddress::FloorD:
@@ -249,7 +218,8 @@ static bool IsImmediateType(ValType vt) {
     case ValType::Ref:
       switch (vt.refTypeKind()) {
         case RefType::Func:
-        case RefType::Any:
+        case RefType::Extern:
+        case RefType::Eq:
           return true;
         case RefType::TypeIndex:
           return false;
@@ -274,8 +244,10 @@ static unsigned EncodeImmediateType(ValType vt) {
       switch (vt.refTypeKind()) {
         case RefType::Func:
           return 4;
-        case RefType::Any:
+        case RefType::Extern:
           return 5;
+        case RefType::Eq:
+          return 6;
         case RefType::TypeIndex:
           break;
       }
@@ -482,14 +454,14 @@ size_t Export::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
 }
 
 size_t ElemSegment::serializedSize() const {
-  return sizeof(kind) + sizeof(tableIndex) + sizeof(elementType) +
+  return sizeof(kind) + sizeof(tableIndex) + sizeof(elemType) +
          sizeof(offsetIfActive) + SerializedPodVectorSize(elemFuncIndices);
 }
 
 uint8_t* ElemSegment::serialize(uint8_t* cursor) const {
   cursor = WriteBytes(cursor, &kind, sizeof(kind));
   cursor = WriteBytes(cursor, &tableIndex, sizeof(tableIndex));
-  cursor = WriteBytes(cursor, &elementType, sizeof(elementType));
+  cursor = WriteBytes(cursor, &elemType, sizeof(elemType));
   cursor = WriteBytes(cursor, &offsetIfActive, sizeof(offsetIfActive));
   cursor = SerializePodVector(cursor, elemFuncIndices);
   return cursor;
@@ -498,7 +470,7 @@ uint8_t* ElemSegment::serialize(uint8_t* cursor) const {
 const uint8_t* ElemSegment::deserialize(const uint8_t* cursor) {
   (cursor = ReadBytes(cursor, &kind, sizeof(kind))) &&
       (cursor = ReadBytes(cursor, &tableIndex, sizeof(tableIndex))) &&
-      (cursor = ReadBytes(cursor, &elementType, sizeof(elementType))) &&
+      (cursor = ReadBytes(cursor, &elemType, sizeof(elemType))) &&
       (cursor = ReadBytes(cursor, &offsetIfActive, sizeof(offsetIfActive))) &&
       (cursor = DeserializePodVector(cursor, &elemFuncIndices));
   return cursor;
@@ -621,10 +593,11 @@ size_t wasm::ComputeMappedSize(uint64_t maxSize) {
 
 /* static */
 DebugFrame* DebugFrame::from(Frame* fp) {
-  MOZ_ASSERT(fp->instance()->code().metadata().debugEnabled);
+  MOZ_ASSERT(
+      GetNearestEffectiveTls(fp)->instance->code().metadata().debugEnabled);
   auto* df =
       reinterpret_cast<DebugFrame*>((uint8_t*)fp - DebugFrame::offsetOfFrame());
-  MOZ_ASSERT(fp->instance() == df->instance());
+  MOZ_ASSERT(GetNearestEffectiveTls(fp)->instance == df->instance());
   return df;
 }
 
@@ -643,6 +616,10 @@ void DebugFrame::alignmentStaticAsserts() {
   // aware of possible problems.
   static_assert(sizeof(DebugFrame) % 16 == 0, "ARM64 SP alignment");
 #endif
+}
+
+Instance* DebugFrame::instance() const {
+  return GetNearestEffectiveTls(&frame_)->instance;
 }
 
 GlobalObject* DebugFrame::global() const {
@@ -995,17 +972,44 @@ UniqueChars wasm::ToString(ValType type) {
       literal = "f64";
       break;
     case ValType::Ref:
-      switch (type.refTypeKind()) {
-        case RefType::Any:
-          literal = "externref";
-          break;
-        case RefType::Func:
-          literal = "funcref";
-          break;
-        case RefType::TypeIndex:
-          return JS_smprintf("optref %d", type.refType().typeIndex());
+      if (type.isNullable() && !type.isTypeIndex()) {
+        switch (type.refTypeKind()) {
+          case RefType::Func:
+            literal = "funcref";
+            break;
+          case RefType::Extern:
+            literal = "externref";
+            break;
+          case RefType::Eq:
+            literal = "eqref";
+            break;
+          case RefType::TypeIndex:
+            MOZ_ASSERT_UNREACHABLE();
+        }
+      } else {
+        const char* heapType = nullptr;
+        switch (type.refTypeKind()) {
+          case RefType::Func:
+            heapType = "func";
+            break;
+          case RefType::Extern:
+            heapType = "extern";
+            break;
+          case RefType::Eq:
+            heapType = "eq";
+            break;
+          case RefType::TypeIndex:
+            return JS_smprintf("(ref %s%d)", type.isNullable() ? "null " : "",
+                               type.refType().typeIndex());
+        }
+        return JS_smprintf("(ref %s%s)", type.isNullable() ? "null " : "",
+                           heapType);
       }
       break;
   }
   return JS_smprintf("%s", literal);
+}
+
+UniqueChars wasm::ToString(const Maybe<ValType>& type) {
+  return type ? ToString(type.ref()) : JS_smprintf("%s", "void");
 }

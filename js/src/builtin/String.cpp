@@ -30,7 +30,8 @@
 #include "builtin/RegExp.h"
 #include "jit/InlinableNatives.h"
 #include "js/Conversions.h"
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::CheckRecursionLimit
 #if !JS_HAS_INTL_API
 #  include "js/LocaleSensitive.h"
 #endif
@@ -62,7 +63,6 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/StringObject-inl.h"
 #include "vm/StringType-inl.h"
-#include "vm/TypeInference-inl.h"
 
 using namespace js;
 
@@ -3303,15 +3303,6 @@ static ArrayObject* NewFullyAllocatedStringArray(JSContext* cx,
   if (!array) {
     return nullptr;
   }
-
-  // Only string values will be added to this array. Inform TI early about
-  // the element type, so we can directly initialize all elements using
-  // NativeObject::initDenseElement() instead of the slightly more expensive
-  // NativeObject::initDenseElementWithType() method.
-  // Since this function is never called to create a zero-length array, it's
-  // always necessary and correct to call AddTypePropertyId here.
-  MOZ_ASSERT(length > 0);
-  AddTypePropertyId(cx, array, JSID_VOID, TypeSet::StringType());
 
   return array;
 }

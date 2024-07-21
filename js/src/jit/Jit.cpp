@@ -5,11 +5,13 @@
 #include "jit/Jit.h"
 
 #include "jit/BaselineJIT.h"
+#include "jit/CalleeToken.h"
 #include "jit/Ion.h"
 #include "jit/JitCommon.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
 #include "vm/Interpreter.h"
+#include "vm/JSContext.h"
 
 #include "vm/Stack-inl.h"
 
@@ -105,8 +107,6 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
                         calleeToken, envChain, /* osrNumStackValues = */ 0,
                         result.address());
   }
-
-  MOZ_ASSERT(!cx->hasIonReturnOverride());
 
   // Release temporary buffer used for OSR into Ion.
   cx->runtime()->jitRuntime()->freeIonOsrTempData();

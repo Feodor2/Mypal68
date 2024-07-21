@@ -486,10 +486,7 @@ static void StatsCellCallback(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
     }
 
     case JS::TraceKind::ObjectGroup: {
-      ObjectGroup* group = &cellptr.as<ObjectGroup>();
       zStats->objectGroupsGCHeap += thingSize;
-      zStats->objectGroupsMallocHeap +=
-          group->sizeOfExcludingThis(rtStats->mallocSizeOf_);
       break;
     }
 
@@ -620,12 +617,19 @@ static bool FindNotableScriptSources(JS::RuntimeSizes& runtime) {
 static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
                                       ObjectPrivateVisitor* opv, bool anonymize,
                                       IterateCellCallback statsCellCallback) {
+  // Wait for any off-thread parsing to finish, as that currently allocates GC
+  // things.
+  JSRuntime* rt = cx->runtime();
+  WaitForOffThreadParses(rt);
+
   // Finish any ongoing incremental GC that may change the data we're gathering
   // and ensure that we don't do anything that could start another one.
   gc::FinishGC(cx);
   JS::AutoAssertNoGC nogc(cx);
 
-  JSRuntime* rt = cx->runtime();
+  // Wait for any background tasks to finish.
+  WaitForAllHelperThreads();
+
   if (!rtStats->realmStatsVector.reserve(rt->numRealms)) {
     return false;
   }

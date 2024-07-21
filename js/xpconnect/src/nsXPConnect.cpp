@@ -12,7 +12,8 @@
 #include "XPCWrapper.h"
 #include "jsfriendapi.h"
 #include "js/AllocationLogging.h"  // JS::SetLogCtorDtorFunctions
-#include "js/Object.h"  // JS::GetClass
+#include "js/CompileOptions.h"     // JS::ReadOnlyCompileOptions
+#include "js/Object.h"             // JS::GetClass
 #include "js/ProfilingStack.h"
 #include "GeckoProfiler.h"
 #include "nsJSEnvironment.h"
@@ -959,14 +960,16 @@ static nsresult WriteScriptOrFunction(nsIObjectOutputStream* stream,
   rv = stream->Write32(size);
   if (NS_SUCCEEDED(rv)) {
     // Ideally we could just pass "buffer" here.  See bug 1566574.
-    rv = stream->WriteBytes(MakeSpan(buffer.begin(), size));
+    rv = stream->WriteBytes(Span(buffer.begin(), size));
   }
 
   return rv;
 }
 
 static nsresult ReadScriptOrFunction(nsIObjectInputStream* stream,
-                                     JSContext* cx, JSScript** scriptp,
+                                     JSContext* cx,
+                                     const JS::ReadOnlyCompileOptions& options,
+                                     JSScript** scriptp,
                                      JSObject** functionObjp) {
   // Exactly one of script or functionObj must be given
   MOZ_ASSERT(!scriptp != !functionObjp);
@@ -1006,13 +1009,13 @@ static nsresult ReadScriptOrFunction(nsIObjectInputStream* stream,
     TranscodeResult code;
     if (scriptp) {
       Rooted<JSScript*> script(cx);
-      code = DecodeScript(cx, buffer, &script);
+      code = DecodeScript(cx, options, buffer, &script);
       if (code == TranscodeResult_Ok) {
         *scriptp = script.get();
       }
     } else {
       Rooted<JSFunction*> funobj(cx);
-      code = DecodeInterpretedFunction(cx, buffer, &funobj);
+      code = DecodeInterpretedFunction(cx, options, buffer, &funobj);
       if (code == TranscodeResult_Ok) {
         *functionObjp = JS_GetFunctionObject(funobj.get());
       }
@@ -1039,8 +1042,9 @@ nsXPConnect::WriteScript(nsIObjectOutputStream* stream, JSContext* cx,
 
 NS_IMETHODIMP
 nsXPConnect::ReadScript(nsIObjectInputStream* stream, JSContext* cx,
+                        const JS::ReadOnlyCompileOptions& options,
                         JSScript** scriptp) {
-  return ReadScriptOrFunction(stream, cx, scriptp, nullptr);
+  return ReadScriptOrFunction(stream, cx, options, scriptp, nullptr);
 }
 
 NS_IMETHODIMP
@@ -1053,7 +1057,9 @@ nsXPConnect::WriteFunction(nsIObjectOutputStream* stream, JSContext* cx,
 NS_IMETHODIMP
 nsXPConnect::ReadFunction(nsIObjectInputStream* stream, JSContext* cx,
                           JSObject** functionObjp) {
-  return ReadScriptOrFunction(stream, cx, nullptr, functionObjp);
+  JS::CompileOptions compileOptions(cx);
+  return ReadScriptOrFunction(stream, cx, compileOptions, nullptr,
+                              functionObjp);
 }
 
 NS_IMETHODIMP

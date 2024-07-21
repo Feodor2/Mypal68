@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "gc/FreeOp.h"
+#include "jit/CalleeToken.h"
 #include "jit/JitFrames.h"
 #include "util/BitArray.h"
 #include "vm/AsyncFunction.h"
@@ -503,19 +504,10 @@ static bool MappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
   MOZ_ASSERT(!(attrs & JSPROP_READONLY));
   attrs &= (JSPROP_ENUMERATE | JSPROP_PERMANENT); /* only valid attributes */
 
-  RootedFunction callee(cx, &argsobj->callee());
-  RootedScript script(cx, JSFunction::getOrCreateScript(cx, callee));
-  if (!script) {
-    return false;
-  }
-
   if (JSID_IS_INT(id)) {
     unsigned arg = unsigned(JSID_TO_INT(id));
     if (arg < argsobj->initialLength() && !argsobj->isElementDeleted(arg)) {
-      argsobj->setElement(cx, arg, v);
-      if (arg < script->function()->nargs()) {
-        jit::JitScript::MonitorArgType(cx, script, arg, v);
-      }
+      argsobj->setElement(arg, v);
       return result.succeed();
     }
   } else {
@@ -536,18 +528,13 @@ static bool MappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
          NativeDefineDataProperty(cx, argsobj, id, v, attrs, result);
 }
 
-static bool DefineArgumentsIterator(JSContext* cx,
-                                    Handle<ArgumentsObject*> argsobj) {
-  RootedId iteratorId(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator));
+/* static */
+bool ArgumentsObject::getArgumentsIterator(JSContext* cx,
+                                           MutableHandleValue val) {
   HandlePropertyName shName = cx->names().ArrayValues;
   RootedAtom name(cx, cx->names().values);
-  RootedValue val(cx);
-  if (!GlobalObject::getSelfHostedFunction(cx, cx->global(), shName, name, 0,
-                                           &val)) {
-    return false;
-  }
-  return NativeDefineDataProperty(cx, argsobj, iteratorId, val,
-                                  JSPROP_RESOLVING);
+  return GlobalObject::getSelfHostedFunction(cx, cx->global(), shName, name, 0,
+                                             val);
 }
 
 /* static */
@@ -573,7 +560,12 @@ bool ArgumentsObject::reifyIterator(JSContext* cx,
     return true;
   }
 
-  if (!DefineArgumentsIterator(cx, obj)) {
+  RootedId iteratorId(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator));
+  RootedValue val(cx);
+  if (!ArgumentsObject::getArgumentsIterator(cx, &val)) {
+    return false;
+  }
+  if (!NativeDefineDataProperty(cx, obj, iteratorId, val, JSPROP_RESOLVING)) {
     return false;
   }
 
@@ -592,7 +584,7 @@ bool MappedArgumentsObject::obj_resolve(JSContext* cx, HandleObject obj,
       return true;
     }
 
-    if (!DefineArgumentsIterator(cx, argsobj)) {
+    if (!reifyIterator(cx, argsobj)) {
       return false;
     }
     *resolvedp = true;
@@ -723,15 +715,7 @@ bool MappedArgumentsObject::obj_defineProperty(JSContext* cx, HandleObject obj,
       }
     } else {
       if (desc.hasValue()) {
-        RootedFunction callee(cx, &argsobj->callee());
-        RootedScript script(cx, JSFunction::getOrCreateScript(cx, callee));
-        if (!script) {
-          return false;
-        }
-        argsobj->setElement(cx, arg, desc.value());
-        if (arg < script->function()->nargs()) {
-          jit::JitScript::MonitorArgType(cx, script, arg, desc.value());
-        }
+        argsobj->setElement(arg, desc.value());
       }
       if (desc.hasWritable() && !desc.writable()) {
         if (!argsobj->markElementDeleted(cx, arg)) {
@@ -786,7 +770,7 @@ static bool UnmappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
   if (JSID_IS_INT(id)) {
     unsigned arg = unsigned(JSID_TO_INT(id));
     if (arg < argsobj->initialLength()) {
-      argsobj->setElement(cx, arg, v);
+      argsobj->setElement(arg, v);
       return result.succeed();
     }
   } else {
@@ -815,7 +799,7 @@ bool UnmappedArgumentsObject::obj_resolve(JSContext* cx, HandleObject obj,
       return true;
     }
 
-    if (!DefineArgumentsIterator(cx, argsobj)) {
+    if (!reifyIterator(cx, argsobj)) {
       return false;
     }
     *resolvedp = true;

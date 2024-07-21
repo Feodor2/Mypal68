@@ -42,7 +42,6 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ProcessHangMonitor.h"
@@ -268,8 +267,8 @@ class WatchdogManager {
   }
 
  private:
-  static void PrefsChanged(const char* aPref, WatchdogManager* aSelf) {
-    aSelf->RefreshWatchdog();
+  static void PrefsChanged(const char* aPref, void* aSelf) {
+    static_cast<WatchdogManager*>(aSelf)->RefreshWatchdog();
   }
 
  public:
@@ -774,7 +773,6 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   bool useBaselineInterp = Preferences::GetBool(JS_OPTIONS_DOT_STR "blinterp");
   bool useBaselineJit = Preferences::GetBool(JS_OPTIONS_DOT_STR "baselinejit");
   bool useIon = Preferences::GetBool(JS_OPTIONS_DOT_STR "ion");
-  bool useWarp = Preferences::GetBool(JS_OPTIONS_DOT_STR "warp");
   bool useJitForTrustedPrincipals =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "jit_trustedprincipals");
   bool useNativeRegExp =
@@ -838,7 +836,6 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_BASELINE_ENABLE,
                                 useBaselineJit);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_ENABLE, useIon);
-  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_WARP_ENABLE, useWarp);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_JIT_TRUSTEDPRINCIPALS_ENABLE,
                                 useJitForTrustedPrincipals);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_NATIVE_REGEXP_ENABLE,
@@ -886,21 +883,23 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   JS::SetUseOffThreadParseGlobal(useOffThreadParseGlobal);
 }
 
-static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
+static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   // Note: Prefs that require a restart are handled in LoadStartupJSPrefs above.
 
+  auto xpccx = static_cast<XPCJSContext*>(aXpccx);
   JSContext* cx = xpccx->Context();
 
   bool useAsmJS = Preferences::GetBool(JS_OPTIONS_DOT_STR "asmjs");
   bool useWasm = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm");
   bool useWasmTrustedPrincipals =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_trustedprincipals");
-  bool useWasmIon = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_ionjit");
+  bool useWasmOptimizing =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_optimizingjit");
   bool useWasmBaseline =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_baselinejit");
-#ifdef ENABLE_WASM_CRANELIFT
-  bool useWasmCranelift =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_cranelift");
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+  bool useWasmFunctionReferences =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_function_references");
 #endif
 #ifdef ENABLE_WASM_GC
   bool useWasmGc = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_gc");
@@ -971,10 +970,14 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
 #endif
       .setWasm(useWasm)
       .setWasmForTrustedPrinciples(useWasmTrustedPrincipals)
-      .setWasmIon(useWasmIon)
-      .setWasmBaseline(useWasmBaseline)
 #ifdef ENABLE_WASM_CRANELIFT
-      .setWasmCranelift(useWasmCranelift)
+      .setWasmCranelift(useWasmOptimizing)
+#else
+      .setWasmIon(useWasmOptimizing)
+#endif
+      .setWasmBaseline(useWasmBaseline)
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+      .setWasmFunctionReferences(useWasmFunctionReferences)
 #endif
 #ifdef ENABLE_WASM_GC
       .setWasmGc(useWasmGc)
@@ -1336,7 +1339,6 @@ void XPCJSContext::AfterProcessTask(uint32_t aNewRecursionDepth) {
   MOZ_ASSERT(NS_IsMainThread());
   nsJSContext::MaybePokeCC();
   CycleCollectedJSContext::AfterProcessTask(aNewRecursionDepth);
-  mozilla::jsipc::AfterProcessTask();
 }
 
 bool XPCJSContext::IsSystemCaller() const {

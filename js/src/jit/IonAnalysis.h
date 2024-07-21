@@ -7,10 +7,21 @@
 
 // This file declares various analysis passes that operate on MIR.
 
+#include "mozilla/Attributes.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jit/IonTypes.h"
 #include "jit/JitAllocPolicy.h"
+#include "js/TypeDecls.h"
+#include "js/Utility.h"
+#include "js/Vector.h"
 
 namespace js {
 
+class GenericPrinter;
+class ObjectGroup;
 class PlainObject;
 
 namespace jit {
@@ -98,7 +109,8 @@ struct SimpleLinearSum {
 enum class MathSpace { Modulo, Infinite, Unknown };
 
 SimpleLinearSum ExtractLinearSum(MDefinition* ins,
-                                 MathSpace space = MathSpace::Unknown);
+                                 MathSpace space = MathSpace::Unknown,
+                                 int32_t recursionDepth = 0);
 
 MOZ_MUST_USE bool ExtractLinearInequality(MTest* test,
                                           BranchDirection direction,
@@ -150,21 +162,10 @@ class LinearSum {
   int32_t constant_;
 };
 
-// Convert all components of a linear sum (except, optionally, the constant)
+// Convert all components of a linear sum (except the constant)
 // and add any new instructions to the end of block.
 MDefinition* ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
-                              const LinearSum& sum,
-                              bool convertConstant = false);
-
-// Convert the test 'sum >= 0' to a comparison, adding any necessary
-// instructions to the end of block.
-MCompare* ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
-                                  const LinearSum& sum);
-
-MOZ_MUST_USE bool AnalyzeNewScriptDefiniteProperties(
-    JSContext* cx, DPAConstraintInfo& constraintInfo, HandleFunction fun,
-    ObjectGroup* group, Handle<PlainObject*> baseobj,
-    Vector<TypeNewScriptInitializer>* initializerList);
+                              const LinearSum& sum, BailoutKind bailoutKind);
 
 MOZ_MUST_USE bool AnalyzeArgumentsUsage(JSContext* cx, JSScript* script);
 

@@ -5,14 +5,21 @@
 #ifndef vm_GeckoProfiler_h
 #define vm_GeckoProfiler_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
-#include "js/ProfilingStack.h"
+#include "jspubtd.h"
+
+#include "js/AllocPolicy.h"
+#include "js/HashTable.h"
+#include "js/ProfilingCategory.h"
+#include "js/TypeDecls.h"
+#include "js/Utility.h"
 #include "threading/ProtectedData.h"
-#include "vm/JSScript.h"
-#include "vm/MutexIDs.h"
 
 /*
  * Gecko Profiler integration with the JS Engine
@@ -98,10 +105,13 @@
 
 namespace js {
 
+class BaseScript;
+class GeckoProfilerThread;
+
 // The `ProfileStringMap` weakly holds its `BaseScript*` keys and owns its
 // string values. Entries are removed when the `BaseScript` is finalized; see
 // `GeckoProfiler::onScriptFinalized`.
-using ProfileStringMap = HashMap<BaseScript*, UniqueChars,
+using ProfileStringMap = HashMap<BaseScript*, JS::UniqueChars,
                                  DefaultHasher<BaseScript*>, SystemAllocPolicy>;
 
 class GeckoProfilerRuntime {
@@ -122,7 +132,7 @@ class GeckoProfilerRuntime {
 
   void setEventMarker(void (*fn)(const char*));
 
-  static UniqueChars allocProfileString(JSContext* cx, BaseScript* script);
+  static JS::UniqueChars allocProfileString(JSContext* cx, BaseScript* script);
   const char* profileString(JSContext* cx, BaseScript* script);
 
   void onScriptFinalized(BaseScript* script);
@@ -198,39 +208,6 @@ class MOZ_RAII GeckoProfilerBaselineOSRMarker {
  private:
   GeckoProfilerThread* profiler;
   mozilla::DebugOnly<uint32_t> spBefore_;
-};
-
-/*
- * This class manages the instrumentation portion of the profiling for JIT
- * code.
- *
- * The instrumentation tracks entry into functions, leaving those functions via
- * a function call, reentering the functions from a function call, and exiting
- * the functions from returning. This class also handles inline frames and
- * manages the instrumentation which needs to be attached to them as well.
- *
- * The basic methods which emit instrumentation are at the end of this class,
- * and the management functions are all described in the middle.
- */
-template <class Assembler, class Register>
-class GeckoProfilerInstrumentation {
-  GeckoProfilerRuntime* profiler_;  // Instrumentation location management
-
- public:
-  /*
-   * Creates instrumentation which writes information out the the specified
-   * profiler's stack and constituent fields.
-   */
-  explicit GeckoProfilerInstrumentation(GeckoProfilerRuntime* profiler)
-      : profiler_(profiler) {}
-
-  /* Small proxies around GeckoProfiler */
-  bool enabled() { return profiler_ && profiler_->enabled(); }
-  GeckoProfilerRuntime* profiler() {
-    MOZ_ASSERT(enabled());
-    return profiler_;
-  }
-  void disable() { profiler_ = nullptr; }
 };
 
 } /* namespace js */

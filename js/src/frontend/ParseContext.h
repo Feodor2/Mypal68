@@ -9,10 +9,13 @@
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/CompilationInfo.h"
 #include "frontend/ErrorReporter.h"
+#include "frontend/NameAnalysisTypes.h"  // DeclaredNameInfo
 #include "frontend/NameCollections.h"
 #include "frontend/SharedContext.h"
 #include "frontend/UsedNameTracker.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
+#include "vm/GeneratorObject.h"  // js::AbstractGeneratorObject::FixedSlotLimit
 
 namespace js {
 
@@ -106,6 +109,13 @@ class ParseContext : public Nestable<ParseContext> {
     // Monotonically increasing id.
     uint32_t id_;
 
+    // Scope size info, relevant for scopes in generators and async functions
+    // only. During parsing, this is the estimated number of slots needed for
+    // nested scopes inside this one. When the parser leaves a scope, this is
+    // set to UINT32_MAX if there are too many bindings overrall to store them
+    // in stack frames, and 0 otherwise.
+    uint32_t sizeBits_ = 0;
+
     bool maybeReportOOM(ParseContext* pc, bool result) {
       if (!result) {
         ReportOutOfMemory(pc->sc()->cx_);
@@ -138,6 +148,12 @@ class ParseContext : public Nestable<ParseContext> {
 
     bool isEmpty() const { return declared_->all().empty(); }
 
+    uint32_t declaredCount() const {
+      size_t count = declared_->count();
+      MOZ_ASSERT(count <= UINT32_MAX);
+      return uint32_t(count);
+    }
+
     DeclaredNamePtr lookupDeclaredName(const ParserAtom* name) {
       return declared_->lookup(name);
     }
@@ -148,9 +164,10 @@ class ParseContext : public Nestable<ParseContext> {
 
     MOZ_MUST_USE bool addDeclaredName(ParseContext* pc, AddDeclaredNamePtr& p,
                                       const ParserAtom* name,
-                                      DeclarationKind kind, uint32_t pos) {
+                                      DeclarationKind kind, uint32_t pos,
+                                      ClosedOver closedOver = ClosedOver::No) {
       return maybeReportOOM(
-          pc, declared_->add(p, name, DeclaredNameInfo(kind, pos)));
+          pc, declared_->add(p, name, DeclaredNameInfo(kind, pos, closedOver)));
     }
 
     // Add a FunctionBox as a possible candidate for Annex B.3.3 semantics.
@@ -169,6 +186,35 @@ class ParseContext : public Nestable<ParseContext> {
     void useAsVarScope(ParseContext* pc) {
       MOZ_ASSERT(!pc->varScope_);
       pc->varScope_ = this;
+    }
+
+    // This is called as we leave a function, var, or lexical scope in a
+    // generator or async function. `ownSlotCount` is the number of `bindings_`
+    // that are not closed over.
+    void setOwnStackSlotCount(uint32_t ownSlotCount) {
+      // Determine if this scope is too big to optimize bindings into stack
+      // slots. The meaning of sizeBits_ changes from "maximum nested slot
+      // count" to "UINT32_MAX if too big".
+      uint32_t slotCount = ownSlotCount + sizeBits_;
+      if (slotCount > AbstractGeneratorObject::FixedSlotLimit) {
+        slotCount = sizeBits_;
+        sizeBits_ = UINT32_MAX;
+      } else {
+        sizeBits_ = 0;
+      }
+
+      // Propagate total size to enclosing scope.
+      if (Scope* parent = enclosing()) {
+        if (slotCount > parent->sizeBits_) {
+          parent->sizeBits_ = slotCount;
+        }
+      }
+    }
+
+    bool tooBigToOptimize() const {
+      MOZ_ASSERT(sizeBits_ == 0 || sizeBits_ == UINT32_MAX,
+                 "call this only after the parser leaves the scope");
+      return sizeBits_ != 0;
     }
 
     // An iterator for the set of names a scope binds: the set of all
@@ -299,7 +345,7 @@ class ParseContext : public Nestable<ParseContext> {
   // All inner functions in this context. Only used when syntax parsing.
   // The Functions (or FunctionCreateionDatas) are traced as part of the
   // CompilationInfo function vector.
-  Vector<FunctionIndex> innerFunctionIndexesForLazy;
+  Vector<FunctionIndex, 4> innerFunctionIndexesForLazy;
 
   // In a function context, points to a Directive struct that can be updated
   // to reflect new directives encountered in the Directive Prologue that
@@ -454,7 +500,9 @@ class ParseContext : public Nestable<ParseContext> {
     return sc_->isFunctionBox() && sc_->asFunctionBox()->isAsync();
   }
 
-  bool needsDotGeneratorName() const { return isGenerator() || isAsync(); }
+  bool isGeneratorOrAsync() const { return isGenerator() || isAsync(); }
+
+  bool needsDotGeneratorName() const { return isGeneratorOrAsync(); }
 
   FunctionAsyncKind asyncKind() const {
     return isAsync() ? FunctionAsyncKind::AsyncFunction

@@ -8,10 +8,10 @@
 #include "mozilla/DebugOnly.h"
 
 #include "jit/arm/Assembler-arm.h"
-#include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
 #include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"
+#include "wasm/WasmTypes.h"
 
 namespace js {
 namespace jit {
@@ -1112,7 +1112,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void storeTypeTag(ImmTag tag, const Address& dest);
   void storeTypeTag(ImmTag tag, const BaseIndex& dest);
 
-  void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.

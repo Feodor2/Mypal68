@@ -21,8 +21,6 @@ class ArgumentsObject;
 
 namespace jit {
 
-using CalleeToken = void*;
-
 enum class FrameType {
   // A JS frame is analogous to a js::InterpreterFrame, representing one
   // scripted function activation. IonJS frames are used by the optimizing
@@ -300,7 +298,8 @@ class JSJitProfilingFrameIterator {
   bool done() const { return fp_ == nullptr; }
 
   const char* baselineInterpreterLabel() const;
-  void baselineInterpreterScriptPC(JSScript** script, jsbytecode** pc) const;
+  void baselineInterpreterScriptPC(JSScript** script, jsbytecode** pc,
+                                   uint64_t* realmID) const;
 
   void* fp() const {
     MOZ_ASSERT(!done());

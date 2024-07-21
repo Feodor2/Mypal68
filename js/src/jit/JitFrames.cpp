@@ -17,22 +17,24 @@
 #include "jit/Ion.h"
 #include "jit/IonScript.h"
 #include "jit/JitcodeMap.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
+#include "jit/LIR.h"
 #include "jit/PcScriptCache.h"
 #include "jit/Recover.h"
 #include "jit/Safepoints.h"
+#include "jit/ScriptFromCalleeToken.h"
 #include "jit/Snapshots.h"
 #include "jit/VMFunctions.h"
 #include "js/friend/DumpFunctions.h"  // js::DumpObject, js::DumpValue
 #include "vm/ArgumentsObject.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/Interpreter.h"
+#include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/TraceLogging.h"
-#include "vm/TypeInference.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmInstance.h"
 
@@ -42,7 +44,6 @@
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/Probes-inl.h"
-#include "vm/TypeInference-inl.h"
 
 namespace js {
 namespace jit {
@@ -590,14 +591,6 @@ void HandleException(ResumeFromException* rfe) {
   rfe->kind = ResumeFromException::RESUME_ENTRY_FRAME;
 
   JitSpew(JitSpew_IonInvalidate, "handling exception");
-
-  // Clear any Ion return override that's been set.
-  // This may happen if a callVM function causes an invalidation (setting the
-  // override), and then fails, bypassing the bailout handlers that would
-  // otherwise clear the return override.
-  if (cx->hasIonReturnOverride()) {
-    cx->takeIonReturnOverride();
-  }
 
   JitActivation* activation = cx->activation()->asJit();
 
@@ -1325,6 +1318,20 @@ void UpdateJitActivationsForMinorGC(JSRuntime* rt) {
   }
 }
 
+JSScript* GetTopJitJSScript(JSContext* cx) {
+  JSJitFrameIter frame(cx->activation()->asJit());
+  MOZ_ASSERT(frame.type() == FrameType::Exit);
+  ++frame;
+
+  if (frame.isBaselineStub()) {
+    ++frame;
+    MOZ_ASSERT(frame.isBaselineJS());
+  }
+
+  MOZ_ASSERT(frame.isScripted());
+  return frame.script();
+}
+
 void GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes) {
   JitSpew(JitSpew_IonSnapshots, "Recover PC & Script from the last frame.");
 
@@ -1401,13 +1408,6 @@ void GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes) {
   if (cx->ionPcScriptCache.ref()) {
     cx->ionPcScriptCache->add(hash, retAddr, *pcRes, *scriptRes);
   }
-}
-
-uint32_t OsiIndex::returnPointDisplacement() const {
-  // In general, pointer arithmetic on code is bad, but in this case,
-  // getting the return address from a call instruction, stepping over pools
-  // would be wrong.
-  return callPointDisplacement_ + Assembler::PatchWrite_NearCallSize();
 }
 
 RInstructionResults::RInstructionResults(JitFrameLayout* fp)
@@ -1900,9 +1900,10 @@ bool SnapshotIterator::computeInstructionResults(
       return true;
     }
 
-    // Use AutoEnterAnalysis to avoid invoking the object metadata callback,
-    // which could try to walk the stack while bailing out.
-    AutoEnterAnalysis enter(cx);
+    // Avoid invoking the object metadata callback, which could try to walk the
+    // stack while bailing out.
+    gc::AutoSuppressGC suppressGC(cx);
+    js::AutoSuppressAllocationMetadataBuilder suppressMetadata(cx);
 
     // Fill with the results of recover instructions.
     SnapshotIterator s(*this);

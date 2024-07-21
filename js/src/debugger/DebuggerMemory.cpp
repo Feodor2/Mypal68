@@ -15,6 +15,7 @@
 #include "gc/Marking.h"
 #include "js/AllocPolicy.h"
 #include "js/Debug.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/TracingAPI.h"
 #include "js/UbiNode.h"
@@ -234,14 +235,6 @@ bool DebuggerMemory::CallData::drainAllocationsLog() {
     }
     RootedValue classNameValue(cx, StringValue(className));
     if (!DefineDataProperty(cx, obj, cx->names().class_, classNameValue)) {
-      return false;
-    }
-
-    RootedValue ctorName(cx, NullValue());
-    if (entry.ctorName) {
-      ctorName.setString(entry.ctorName);
-    }
-    if (!DefineDataProperty(cx, obj, cx->names().constructor, ctorName)) {
       return false;
     }
 

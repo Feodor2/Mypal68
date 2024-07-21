@@ -6,7 +6,7 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "frontend/CompilationInfo.h"  // frontend::CompilationInfo
+#include "frontend/CompilationInfo.h"  // frontend::CompilationAtomCache
 #include "frontend/ParserAtom.h"  // frontend::ParserAtom, frontend::ParserAtomTable
 #include "js/RootingAPI.h"
 #include "vm/JSAtom.h"
@@ -21,47 +21,41 @@
 
 namespace js {
 
-static bool InterpretObjLiteralValue(JSContext* cx,
+static void InterpretObjLiteralValue(JSContext* cx,
                                      const ObjLiteralAtomVector& atoms,
-                                     frontend::CompilationInfo& compilationInfo,
+                                     frontend::CompilationAtomCache& atomCache,
                                      const ObjLiteralInsn& insn,
                                      JS::Value* valOut) {
   switch (insn.getOp()) {
     case ObjLiteralOpcode::ConstValue:
       *valOut = insn.getConstValue();
-      return true;
+      return;
     case ObjLiteralOpcode::ConstAtom: {
       uint32_t index = insn.getAtomIndex();
-      // TODO-Stencil
-      //   This needs to be coalesced to wherever jsatom creation is eventually
-      //   Seems like InterpretLiteralObj would be called from main-thread
-      //   stencil instantiation.
-      JSAtom* jsatom = compilationInfo.liftParserAtomToJSAtom(cx, atoms[index]);
-      if (!jsatom) {
-        return false;
-      }
+      JSAtom* jsatom = atomCache.getExistingAtomAt(cx, atoms[index]);
+      MOZ_ASSERT(jsatom);
       *valOut = StringValue(jsatom);
-      return true;
+      return;
     }
     case ObjLiteralOpcode::Null:
       *valOut = NullValue();
-      return true;
+      return;
     case ObjLiteralOpcode::Undefined:
       *valOut = UndefinedValue();
-      return true;
+      return;
     case ObjLiteralOpcode::True:
       *valOut = BooleanValue(true);
-      return true;
+      return;
     case ObjLiteralOpcode::False:
       *valOut = BooleanValue(false);
-      return true;
+      return;
     default:
       MOZ_CRASH("Unexpected object-literal instruction opcode");
   }
 }
 
 static JSObject* InterpretObjLiteralObj(
-    JSContext* cx, frontend::CompilationInfo& compilationInfo,
+    JSContext* cx, frontend::CompilationAtomCache& atomCache,
     const ObjLiteralAtomVector& atoms,
     const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags) {
   bool specificGroup = flags.contains(ObjLiteralFlag::SpecificGroup);
@@ -81,24 +75,15 @@ static JSObject* InterpretObjLiteralObj(
     if (insn.getKey().isArrayIndex()) {
       propId = INT_TO_JSID(insn.getKey().getArrayIndex());
     } else {
-      // TODO-Stencil
-      //   Just a note, but it seems like this is an OK place to convert atoms
-      //   since the other GC allocations in the function (properties vector,
-      //   etc.) would need to be addressed.
-      const frontend::ParserAtom* atom = atoms[insn.getKey().getAtomIndex()];
-      JSAtom* jsatom = compilationInfo.liftParserAtomToJSAtom(cx, atom);
-      if (!jsatom) {
-        return nullptr;
-      }
+      JSAtom* jsatom =
+          atomCache.getExistingAtomAt(cx, atoms[insn.getKey().getAtomIndex()]);
+      MOZ_ASSERT(jsatom);
       propId = AtomToId(jsatom);
     }
 
     JS::Value propVal;
     if (!noValues) {
-      if (!InterpretObjLiteralValue(cx, atoms, compilationInfo, insn,
-                                    &propVal)) {
-        return nullptr;
-      }
+      InterpretObjLiteralValue(cx, atoms, atomCache, insn, &propVal);
     }
 
     if (!properties.emplaceBack(propId, propVal)) {
@@ -117,7 +102,7 @@ static JSObject* InterpretObjLiteralObj(
 }
 
 static JSObject* InterpretObjLiteralArray(
-    JSContext* cx, frontend::CompilationInfo& compilationInfo,
+    JSContext* cx, frontend::CompilationAtomCache& atomCache,
     const ObjLiteralAtomVector& atoms,
     const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags) {
   bool isCow = flags.contains(ObjLiteralFlag::ArrayCOW);
@@ -130,9 +115,7 @@ static JSObject* InterpretObjLiteralArray(
     MOZ_ASSERT(insn.isValid());
 
     JS::Value propVal;
-    if (!InterpretObjLiteralValue(cx, atoms, compilationInfo, insn, &propVal)) {
-      return nullptr;
-    }
+    InterpretObjLiteralValue(cx, atoms, atomCache, insn, &propVal);
     if (!elements.append(propVal)) {
       return nullptr;
     }
@@ -152,14 +135,14 @@ static JSObject* InterpretObjLiteralArray(
 }
 
 JSObject* InterpretObjLiteral(JSContext* cx,
-                              frontend::CompilationInfo& compilationInfo,
+                              frontend::CompilationAtomCache& atomCache,
                               const ObjLiteralAtomVector& atoms,
                               const mozilla::Span<const uint8_t> literalInsns,
                               ObjLiteralFlags flags) {
   return flags.contains(ObjLiteralFlag::Array)
-             ? InterpretObjLiteralArray(cx, compilationInfo, atoms,
-                                        literalInsns, flags)
-             : InterpretObjLiteralObj(cx, compilationInfo, atoms, literalInsns,
+             ? InterpretObjLiteralArray(cx, atomCache, atoms, literalInsns,
+                                        flags)
+             : InterpretObjLiteralObj(cx, atomCache, atoms, literalInsns,
                                       flags);
 }
 
@@ -266,27 +249,25 @@ void ObjLiteralWriter::dumpFields(js::JSONPrinter& json) {
 void ObjLiteralStencil::dump() {
   js::Fprinter out(stderr);
   js::JSONPrinter json(out);
-  dump(json);
+  dump(json, nullptr);
 }
 
-void ObjLiteralStencil::dump(js::JSONPrinter& json) {
+void ObjLiteralStencil::dump(js::JSONPrinter& json,
+                             frontend::CompilationStencil* compilationStencil) {
   json.beginObject();
-  dumpFields(json);
+  dumpFields(json, compilationStencil);
   json.endObject();
 }
 
-void ObjLiteralStencil::dumpFields(js::JSONPrinter& json) {
+void ObjLiteralStencil::dumpFields(
+    js::JSONPrinter& json, frontend::CompilationStencil* compilationStencil) {
   writer_.dumpFields(json);
 
   json.beginListProperty("atoms");
   for (auto& atom : atoms_) {
-    if (atom) {
-      GenericPrinter& out = json.beginString();
-      atom->dumpCharsNoQuote(out);
-      json.endString();
-    } else {
-      json.nullValue();
-    }
+    json.beginObject();
+    frontend::DumpTaggedParserAtomIndex(json, atom, compilationStencil);
+    json.endObject();
   }
   json.endList();
 }

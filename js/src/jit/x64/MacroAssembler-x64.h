@@ -5,11 +5,11 @@
 #ifndef jit_x64_MacroAssembler_x64_h
 #define jit_x64_MacroAssembler_x64_h
 
-#include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 #include "js/HeapAPI.h"
 #include "vm/BigIntType.h"  // JS::BigInt
+#include "wasm/WasmTypes.h"
 
 namespace js {
 namespace jit {
@@ -1035,7 +1035,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                            Label* failure);
 
  public:
-  void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail);
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register framePtr, Register scratch);

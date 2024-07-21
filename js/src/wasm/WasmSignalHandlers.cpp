@@ -704,7 +704,9 @@ static MOZ_MUST_USE bool HandleTrap(CONTEXT* context,
   // due to this trap occurring in the indirect call prologue, while fp points
   // to the caller's Frame which can be in a different Module. In any case,
   // though, the containing JSContext is the same.
-  Instance* instance = ((Frame*)ContextToFP(context))->instance();
+
+  auto* frame = reinterpret_cast<Frame*>(ContextToFP(context));
+  Instance* instance = GetNearestEffectiveTls(frame)->instance;
   MOZ_RELEASE_ASSERT(&instance->code() == &segment.code() ||
                      trap == Trap::IndirectCallBadSig);
 
@@ -1164,7 +1166,8 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
     return false;
   }
 
-  Instance& instance = *Frame::fromUntaggedWasmExitFP(regs.fp)->instance();
+  Instance& instance =
+      *GetNearestEffectiveTls(Frame::fromUntaggedWasmExitFP(regs.fp))->instance;
   MOZ_ASSERT(&instance.code() == &segment.code());
 
   if (!instance.memoryAccessInGuardRegion((uint8_t*)addr, numBytes)) {

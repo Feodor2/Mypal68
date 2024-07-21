@@ -210,9 +210,8 @@ extern JS_PUBLIC_API bool JS_IsBuiltinFunctionConstructor(JSFunction* fun);
 // Compartment
 // -----------
 // Security membrane; when an object from compartment A is used in compartment
-// B, a cross-compartment wrapper (a kind of proxy) is used. In the browser each
-// compartment currently contains one global/realm, but we want to change that
-// so each compartment contains multiple same-origin realms (bug 1357862).
+// B, a cross-compartment wrapper (a kind of proxy) is used. In the browser,
+// same-origin realms can share a compartment.
 //
 // Zone
 // ----
@@ -224,7 +223,11 @@ extern JS_PUBLIC_API bool JS_IsBuiltinFunctionConstructor(JSFunction* fun);
 // Context
 // -------
 // JSContext represents a thread: there must be exactly one JSContext for each
-// thread running JS/Wasm. Internally, helper threads have their own JSContext.
+// thread running JS/Wasm.
+//
+// Internally, helper threads can also have a JSContext. They do not always have
+// an active context, but one may be requested by AutoSetHelperThreadContext,
+// which activates a pre-allocated JSContext for the duration of its lifetime.
 //
 // Runtime
 // -------
@@ -646,41 +649,6 @@ extern JS_PUBLIC_API void SetProfileTimelineRecordingEnabled(bool enabled);
 extern JS_PUBLIC_API bool IsProfileTimelineRecordingEnabled();
 
 }  // namespace JS
-
-#ifdef JS_HAS_CTYPES
-/**
- * Initialize the 'ctypes' object on a global variable 'obj'. The 'ctypes'
- * object will be sealed.
- */
-extern JS_PUBLIC_API bool JS_InitCTypesClass(JSContext* cx,
-                                             JS::HandleObject global);
-
-/**
- * Convert a unicode string 'source' of length 'slen' to the platform native
- * charset, returning a null-terminated string allocated with JS_malloc. On
- * failure, this function should report an error.
- */
-using JSCTypesUnicodeToNativeFun = char* (*)(JSContext*, const char16_t*,
-                                             size_t);
-
-/**
- * Set of function pointers that ctypes can use for various internal functions.
- * See JS_SetCTypesCallbacks below. Providing nullptr for a function is safe,
- * and will result in the applicable ctypes functionality not being available.
- */
-struct JSCTypesCallbacks {
-  JSCTypesUnicodeToNativeFun unicodeToNative;
-};
-
-/**
- * Set the callbacks on the provided 'ctypesObj' object. 'callbacks' should be a
- * pointer to static data that exists for the lifetime of 'ctypesObj', but it
- * may safely be altered after calling this function and without having
- * to call this function again.
- */
-extern JS_PUBLIC_API void JS_SetCTypesCallbacks(
-    JSObject* ctypesObj, const JSCTypesCallbacks* callbacks);
-#endif
 
 /*
  * A replacement for MallocAllocPolicy that allocates in the JS heap and adds no
@@ -2695,12 +2663,10 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(SPECTRE_STRING_MITIGATIONS, "spectre.string-mitigations") \
   Register(SPECTRE_VALUE_MASKING, "spectre.value-masking") \
   Register(SPECTRE_JIT_TO_CXX_CALLS, "spectre.jit-to-C++-calls") \
-  Register(WARP_ENABLE, "warp.enable") \
   Register(WASM_FOLD_OFFSETS, "wasm.fold-offsets") \
   Register(WASM_DELAY_TIER2, "wasm.delay-tier2") \
   Register(WASM_JIT_BASELINE, "wasm.baseline") \
-  Register(WASM_JIT_CRANELIFT, "wasm.cranelift") \
-  Register(WASM_JIT_ION, "wasm.ion")
+  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing") \
 // clang-format on
 
 typedef enum JSJitCompilerOption {

@@ -10,6 +10,7 @@
 #include "jit/IonScript.h"
 #include "jit/JitSpewer.h"
 #include "jit/LIR.h"
+#include "jit/SafepointIndex.h"
 
 using namespace js;
 using namespace jit;
@@ -102,11 +103,10 @@ void SafepointWriter::writeGcRegs(LSafepoint* safepoint) {
 #ifdef JS_JITSPEW
   if (JitSpewEnabled(JitSpew_Safepoints)) {
     for (GeneralRegisterForwardIterator iter(spilledGpr); iter.more(); ++iter) {
-      const char* type = gc.has(*iter)
-                             ? "gc"
-                             : slots.has(*iter)
-                                   ? "slots"
-                                   : valueRegs.has(*iter) ? "value" : "any";
+      const char* type = gc.has(*iter)          ? "gc"
+                         : slots.has(*iter)     ? "slots"
+                         : valueRegs.has(*iter) ? "value"
+                                                : "any";
       JitSpew(JitSpew_Safepoints, "    %s reg: %s", type, (*iter).name());
     }
     for (FloatRegisterForwardIterator iter(spilledFloat); iter.more(); ++iter) {

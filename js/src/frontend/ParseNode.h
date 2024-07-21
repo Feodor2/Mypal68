@@ -56,6 +56,7 @@ class RegExpObject;
 namespace frontend {
 
 class ParseContext;
+class ParserAtomsTable;
 struct CompilationStencil;
 class ParserSharedBase;
 class FullParseHandler;
@@ -1077,8 +1078,14 @@ class TernaryNode : public ParseNode {
   TernaryNode(ParseNodeKind kind, ParseNode* kid1, ParseNode* kid2,
               ParseNode* kid3)
       : TernaryNode(kind, kid1, kid2, kid3,
-                    TokenPos((kid1 ? kid1 : kid2 ? kid2 : kid3)->pn_pos.begin,
-                             (kid3 ? kid3 : kid2 ? kid2 : kid1)->pn_pos.end)) {}
+                    TokenPos((kid1   ? kid1
+                              : kid2 ? kid2
+                                     : kid3)
+                                 ->pn_pos.begin,
+                             (kid3   ? kid3
+                              : kid2 ? kid2
+                                     : kid1)
+                                 ->pn_pos.end)) {}
 
   TernaryNode(ParseNodeKind kind, ParseNode* kid1, ParseNode* kid2,
               ParseNode* kid3, const TokenPos& pos)
@@ -1572,8 +1579,7 @@ class NumericLiteral : public ParseNode {
   void setDecimalPoint(DecimalPoint d) { decimalPoint_ = d; }
 
   // Return the decimal string representation of this numeric literal.
-  const ParserAtom* toAtom(JSContext* cx,
-                           CompilationInfo& compilationInfo) const;
+  const ParserAtom* toAtom(JSContext* cx, ParserAtomsTable& parserAtoms) const;
 };
 
 class BigIntLiteral : public ParseNode {
@@ -1888,7 +1894,8 @@ class RegExpLiteral : public ParseNode {
       : ParseNode(ParseNodeKind::RegExpExpr, pos), index_(dataIndex) {}
 
   // Create a RegExp object of this RegExp literal.
-  RegExpObject* create(JSContext* cx, CompilationStencil& stencil) const;
+  RegExpObject* create(JSContext* cx, CompilationAtomCache& atomCache,
+                       CompilationStencil& stencil) const;
 
 #ifdef DEBUG
   void dumpImpl(GenericPrinter& out, int indent);
@@ -2120,8 +2127,7 @@ class ClassField : public BinaryNode {
 
  public:
   ClassField(ParseNode* name, ParseNode* initializer, bool isStatic)
-      : BinaryNode(ParseNodeKind::ClassField,
-                   TokenPos::box(name->pn_pos, initializer->pn_pos), name,
+      : BinaryNode(ParseNodeKind::ClassField, initializer->pn_pos, name,
                    initializer),
         isStatic_(isStatic) {}
 

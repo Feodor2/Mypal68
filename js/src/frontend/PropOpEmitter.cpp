@@ -183,12 +183,11 @@ bool PropOpEmitter::emitAssignment(const ParserAtom* prop) {
   }
 
   MOZ_ASSERT_IF(isPropInit(), !isSuper());
-  JSOp setOp = isPropInit()
-                   ? JSOp::InitProp
-                   : isSuper() ? bce_->sc->strict() ? JSOp::StrictSetPropSuper
-                                                    : JSOp::SetPropSuper
-                               : bce_->sc->strict() ? JSOp::StrictSetProp
-                                                    : JSOp::SetProp;
+  JSOp setOp = isPropInit() ? JSOp::InitProp
+               : isSuper()  ? bce_->sc->strict() ? JSOp::StrictSetPropSuper
+                                                 : JSOp::SetPropSuper
+               : bce_->sc->strict() ? JSOp::StrictSetProp
+                                    : JSOp::SetProp;
   if (!bce_->emitAtomOp(setOp, propAtomIndex_, ShouldInstrument::Yes)) {
     //              [stack] VAL
     return false;
@@ -232,10 +231,10 @@ bool PropOpEmitter::emitIncDec(const ParserAtom* prop) {
     return false;
   }
 
-  JSOp setOp =
-      isSuper()
-          ? bce_->sc->strict() ? JSOp::StrictSetPropSuper : JSOp::SetPropSuper
-          : bce_->sc->strict() ? JSOp::StrictSetProp : JSOp::SetProp;
+  JSOp setOp = isSuper() ? bce_->sc->strict() ? JSOp::StrictSetPropSuper
+                                              : JSOp::SetPropSuper
+               : bce_->sc->strict() ? JSOp::StrictSetProp
+                                    : JSOp::SetProp;
   if (!bce_->emitAtomOp(setOp, propAtomIndex_, ShouldInstrument::Yes)) {
     //              [stack] N? N+1
     return false;

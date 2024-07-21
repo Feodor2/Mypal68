@@ -8,6 +8,7 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/MacroForEach.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/Maybe.h"
 
 #if defined(JS_CODEGEN_X86)
 #  include "jit/x86/MacroAssembler-x86.h"
@@ -26,14 +27,18 @@
 #else
 #  error "Unknown architecture!"
 #endif
+#include "jit/ABIFunctions.h"
 #include "jit/AtomicOp.h"
-#include "jit/IonInstrumentation.h"
+#include "jit/AutoJitContextAlloc.h"
 #include "jit/IonTypes.h"
-#include "jit/JitRealm.h"
-#include "jit/TemplateObject.h"
 #include "jit/VMFunctions.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/Memory.h"
+#include "vm/BytecodeUtil.h"
+#include "vm/FunctionFlags.h"
+#include "vm/JSObject.h"
+#include "vm/ObjectGroup.h"
+#include "vm/StringType.h"
 
 // [SMDOC] MacroAssembler multi-platform overview
 //
@@ -200,9 +205,25 @@
 #  define IMM32_16ADJ(X) (X)
 #endif
 
+namespace JS {
+struct ExpandoAndGeneration;
+}
+
 namespace js {
 
 class TypedArrayObject;
+
+namespace wasm {
+class CalleeDesc;
+class CallSiteDesc;
+class BytecodeOffset;
+class MemoryAccessDesc;
+
+enum class FailureMode : uint8_t;
+enum class SimdOp;
+enum class SymbolicAddress;
+enum class Trap;
+}  // namespace wasm
 
 namespace jit {
 
@@ -210,6 +231,9 @@ namespace jit {
 enum class ExitFrameType : uint8_t;
 
 class AutoSaveLiveRegisters;
+class CompileZone;
+class NativeTemplateObject;
+class TemplateObject;
 
 enum class CheckUnsafeCallWithABI {
   // Require the callee to use AutoUnsafeCallWithABI.
@@ -225,7 +249,18 @@ enum class CheckUnsafeCallWithABI {
   DontCheckOther,
 };
 
+// This is a global function made to create the DynFn type in a controlled
+// environment which would check if the function signature has been registered
+// as an ABI function signature.
+template <typename Sig>
+static inline DynFn DynamicFunction(Sig fun);
+
 enum class CharEncoding { Latin1, TwoByte };
+
+constexpr uint32_t WasmCallerTLSOffsetBeforeCall =
+    wasm::FrameWithTls::callerTLSOffset() + ShadowStackSpace;
+constexpr uint32_t WasmCalleeTLSOffsetBeforeCall =
+    wasm::FrameWithTls::calleeTLSOffset() + ShadowStackSpace;
 
 // The public entrypoint for emitting assembly. Note that a MacroAssembler can
 // use cx->lifoAlloc, so take care not to interleave masm use with other
@@ -539,12 +574,14 @@ class MacroAssembler : public MacroAssemblerSpecific {
   //
   // 4) Make the call:
   //
-  //      masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, Callee));
+  //      using Fn = int32_t (*)(int32_t)
+  //      masm.callWithABI<Fn, Callee>();
   //
   //    In the case where the call returns a double, that needs to be
   //    indicated to the callWithABI like this:
   //
-  //      masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, ...), MoveOp::DOUBLE);
+  //      using Fn = double (*)(int32_t)
+  //      masm.callWithABI<Fn, Callee>(MoveOp::DOUBLE);
   //
   //    There are overloads to allow calls to registers and addresses.
   //
@@ -597,13 +634,18 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void passABIArg(FloatRegister reg, MoveOp::Type type);
 
   inline void callWithABI(
-      void* fun, MoveOp::Type result = MoveOp::GENERAL,
+      DynFn fun, MoveOp::Type result = MoveOp::GENERAL,
+      CheckUnsafeCallWithABI check = CheckUnsafeCallWithABI::Check);
+  template <typename Sig, Sig fun>
+  inline void callWithABI(
+      MoveOp::Type result = MoveOp::GENERAL,
       CheckUnsafeCallWithABI check = CheckUnsafeCallWithABI::Check);
   inline void callWithABI(Register fun, MoveOp::Type result = MoveOp::GENERAL);
   inline void callWithABI(const Address& fun,
                           MoveOp::Type result = MoveOp::GENERAL);
 
   CodeOffset callWithABI(wasm::BytecodeOffset offset, wasm::SymbolicAddress fun,
+                         mozilla::Maybe<int32_t> tlsOffset,
                          MoveOp::Type result = MoveOp::GENERAL);
   void callDebugWithABI(wasm::SymbolicAddress fun,
                         MoveOp::Type result = MoveOp::GENERAL);
@@ -611,7 +653,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
  private:
   // Reinitialize the variables which have to be cleared before making a call
   // with callWithABI.
-  void setupABICall();
+  template <class ABIArgGeneratorT>
+  void setupABICallHelper();
+
+  // Reinitialize the variables which have to be cleared before making a call
+  // with native abi.
+  void setupNativeABICall();
 
   // Reserve the stack and resolve the arguments move.
   void callWithABIPre(uint32_t* stackAdjust,
@@ -1030,6 +1077,11 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void signDoubleToInt32(FloatRegister input, Register output,
                          FloatRegister temp, Label* fail);
 
+  void copySignDouble(FloatRegister lhs, FloatRegister rhs,
+                      FloatRegister output) PER_SHARED_ARCH;
+  void copySignFloat32(FloatRegister lhs, FloatRegister rhs,
+                       FloatRegister output) DEFINED_ON(x86_shared);
+
   // Returns a random double in range [0, 1) in |dest|. The |rng| register must
   // hold a pointer to a mozilla::non_crypto::XorShift128PlusRNG.
   void randomDouble(Register rng, FloatRegister dest, Register64 temp0,
@@ -1384,6 +1436,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void branchTestFunctionFlags(Register fun, uint32_t flags,
                                       Condition cond, Label* label);
 
+  inline void branchIfNotFunctionIsNonBuiltinCtor(Register fun,
+                                                  Register scratch,
+                                                  Label* label);
+
   inline void branchIfFunctionHasNoJitEntry(Register fun, bool isConstructing,
                                             Label* label);
   inline void branchIfFunctionHasJitEntry(Register fun, bool isConstructing,
@@ -1493,8 +1549,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void branchIfNonNativeObj(Register obj, Register scratch, Label* label);
 
-  void branchIfInlineTypedObject(Register obj, Register scratch, Label* label);
-
   inline void branchTestClassIsProxy(bool proxy, Register clasp, Label* label);
 
   inline void branchTestObjectIsProxy(bool proxy, Register object,
@@ -1506,9 +1560,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void copyObjGroupNoPreBarrier(Register sourceObj, Register destObj,
                                 Register scratch);
-
-  void loadTypedObjectDescr(Register obj, Register dest);
-  void loadTypedObjectLength(Register obj, Register dest);
 
   // Emit type case branch on tag matching if the type tag in the definition
   // might actually be that type.
@@ -1912,15 +1963,15 @@ class MacroAssembler : public MacroAssemblerSpecific {
   std::pair<CodeOffset, uint32_t> wasmReserveStackChecked(
       uint32_t amount, wasm::BytecodeOffset trapOffset);
 
-  // Emit a bounds check against the wasm heap limit, jumping to 'label' if
-  // 'cond' holds. If JitOptions.spectreMaskIndex is true, in speculative
-  // executions 'index' is saturated in-place to 'boundsCheckLimit'.
-  void wasmBoundsCheck(Condition cond, Register index,
-                       Register boundsCheckLimit, Label* label)
+  // Emit a bounds check against the wasm heap limit for 32-bit memory, jumping
+  // to 'label' if 'cond' holds. If JitOptions.spectreMaskIndex is true, in
+  // speculative executions 'index' is saturated in-place to 'boundsCheckLimit'.
+  void wasmBoundsCheck32(Condition cond, Register index,
+                         Register boundsCheckLimit, Label* label)
       DEFINED_ON(arm, arm64, mips32, mips64, x86_shared);
 
-  void wasmBoundsCheck(Condition cond, Register index, Address boundsCheckLimit,
-                       Label* label)
+  void wasmBoundsCheck32(Condition cond, Register index,
+                         Address boundsCheckLimit, Label* label)
       DEFINED_ON(arm, arm64, mips32, mips64, x86_shared);
 
   // Each wasm load/store instruction appends its own wasm::Trap::OutOfBounds.
@@ -2544,22 +2595,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   //}}} check_macroassembler_decl_style
  public:
-  // Emits a test of a value against all types in a TypeSet. A scratch
-  // register is required.
-  template <typename Source>
-  void guardTypeSet(const Source& address, const TypeSet* types,
-                    BarrierKind kind, Register unboxScratch,
-                    Register objScratch, Register spectreRegToZero,
-                    Label* miss);
-
-  void guardObjectType(Register obj, const TypeSet* types, Register scratch,
-                       Register spectreRegToZero, Label* miss);
-
-#ifdef DEBUG
-  void guardTypeSetMightBeIncomplete(const TypeSet* types, Register obj,
-                                     Register scratch, Label* label);
-#endif
-
   // Unsafe here means the caller is responsible for Spectre mitigations if
   // needed. Prefer branchTestObjGroup or one of the other masm helpers!
   void loadObjGroupUnsafe(Register obj, Register dest) {
@@ -2582,6 +2617,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   template <typename EmitPreBarrier>
   inline void storeObjShape(Shape* shape, Register obj,
                             EmitPreBarrier emitPreBarrier);
+
+  template <typename T>
+  void storeObjPrivate(T src, const Address& address);
 
   void loadObjPrivate(Register obj, uint32_t nfixed, Register dest) {
     loadPtr(Address(obj, NativeObject::getPrivateDataOffset(nfixed)), dest);
@@ -2685,10 +2723,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void switchToWasmTlsRealm(Register scratch1, Register scratch2);
   void debugAssertContextRealm(const void* realm, Register scratch);
 
-  void loadJitActivation(Register dest) {
-    loadJSContext(dest);
-    loadPtr(Address(dest, offsetof(JSContext, activation_)), dest);
-  }
+  void loadJitActivation(Register dest);
 
   void guardGroupHasUnanalyzedNewScript(Register group, Register scratch,
                                         Label* fail);
@@ -2698,8 +2733,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void guardStringToInt32(Register str, Register output, Register scratch,
                           LiveRegisterSet volatileRegs, Label* fail);
-
-  void loadWasmTlsRegFromFrame(Register dest = WasmTlsReg);
 
   template <typename T>
   void loadTypedOrValue(const T& src, TypedOrValueRegister dest) {
@@ -2806,6 +2839,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void storeCallResultValue(TypedOrValueRegister dest);
 
  private:
+  TrampolinePtr preBarrierTrampoline(MIRType type);
+
   template <typename T>
   void unguardedCallPreBarrier(const T& address, MIRType type) {
     Label done;
@@ -2818,8 +2853,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
     Push(PreBarrierReg);
     computeEffectiveAddress(address, PreBarrierReg);
 
-    const JitRuntime* rt = GetJitContext()->runtime->jitRuntime();
-    TrampolinePtr preBarrier = rt->preBarrier(type);
+    TrampolinePtr preBarrier = preBarrierTrampoline(type);
 
     call(preBarrier);
     Pop(PreBarrierReg);
@@ -2917,6 +2951,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                   Label* fail);
 
   void loadArgumentsObjectLength(Register obj, Register output, Label* fail);
+
+  void branchArgumentsObjectHasOverridenIterator(Register obj, Register temp,
+                                                 Label* label);
 
   void typedArrayElementShift(Register obj, Register output);
   void branchIfClassIsNotTypedArray(Register clasp, Label* notTypedArray);
@@ -3053,6 +3090,15 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void setIsDefinitelyTypedArrayConstructor(Register obj, Register output);
 
+  void loadDOMExpandoValueGuardGeneration(
+      Register obj, ValueOperand output,
+      JS::ExpandoAndGeneration* expandoAndGeneration, uint64_t generation,
+      Label* fail);
+
+  void loadArrayBufferByteLengthInt32(Register obj, Register output);
+  void loadArrayBufferViewByteOffsetInt32(Register obj, Register output);
+  void loadArrayBufferViewLengthInt32(Register obj, Register output);
+
  private:
   void isCallableOrConstructor(bool isCallable, Register obj, Register output,
                                Label* isProxy);
@@ -3161,6 +3207,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void loadJitCodeNoArgCheck(Register func, Register dest);
   void loadBaselineJitCodeRaw(Register func, Register dest,
                               Label* failure = nullptr);
+  void storeICScriptInJSContext(Register icScript);
 
   void loadBaselineFramePtr(Register framePtr, Register dest);
 
@@ -3203,10 +3250,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void printf(const char* output, Register value);
 
 #ifdef JS_TRACE_LOGGING
-  void loadTraceLogger(Register logger) {
-    loadJSContext(logger);
-    loadPtr(Address(logger, offsetof(JSContext, traceLogger)), logger);
-  }
+  void loadTraceLogger(Register logger);
   void tracelogStartId(Register logger, uint32_t textId, bool force = false);
   void tracelogStartId(Register logger, Register textId);
   void tracelogStartEvent(Register logger, Register event);
@@ -3340,20 +3384,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   inline void assertStackAlignment(uint32_t alignment, int32_t offset = 0);
 
-  void performPendingReadBarriers();
-
   void touchFrameValues(Register numStackValues, Register scratch1,
                         Register scratch2);
-
- private:
-  // Methods to get a singleton object or object group from a type set without
-  // a read barrier, and record the result so that we can perform the barrier
-  // later.
-  JSObject* getSingletonAndDelayBarrier(const TypeSet* types, size_t i);
-  ObjectGroup* getGroupAndDelayBarrier(const TypeSet* types, size_t i);
-
-  Vector<JSObject*, 0, SystemAllocPolicy> pendingObjectReadBarriers_;
-  Vector<ObjectGroup*, 0, SystemAllocPolicy> pendingObjectGroupReadBarriers_;
 };
 
 // StackMacroAssembler checks no GC will happen while it's on the stack.
@@ -3499,9 +3531,12 @@ static inline MIRType ToMIRType(ABIArgType argType) {
   MOZ_CRASH("unexpected argType");
 }
 
-template <class VecT>
-class ABIArgIter {
-  ABIArgGenerator gen_;
+// Helper for generatePreBarrier.
+inline DynFn JitMarkFunction(MIRType type);
+
+template <class VecT, class ABIArgGeneratorT>
+class ABIArgIterBase {
+  ABIArgGeneratorT gen_;
   const VecT& types_;
   unsigned i_;
 
@@ -3510,7 +3545,9 @@ class ABIArgIter {
   }
 
  public:
-  explicit ABIArgIter(const VecT& types) : types_(types), i_(0) { settle(); }
+  explicit ABIArgIterBase(const VecT& types) : types_(types), i_(0) {
+    settle();
+  }
   void operator++(int) {
     MOZ_ASSERT(!done());
     i_++;
@@ -3540,7 +3577,35 @@ class ABIArgIter {
   }
 };
 
+// This is not an alias because we want to allow class template argument
+// deduction.
+template <class VecT>
+class ABIArgIter : public ABIArgIterBase<VecT, ABIArgGenerator> {
+ public:
+  explicit ABIArgIter(const VecT& types)
+      : ABIArgIterBase<VecT, ABIArgGenerator>(types) {}
+};
+
+class WasmABIArgGenerator : public ABIArgGenerator {
+ public:
+  WasmABIArgGenerator() {
+    increaseStackOffset(wasm::FrameWithTls::sizeWithoutFrame());
+  }
+};
+
+template <class VecT>
+class WasmABIArgIter : public ABIArgIterBase<VecT, WasmABIArgGenerator> {
+ public:
+  explicit WasmABIArgIter(const VecT& types)
+      : ABIArgIterBase<VecT, WasmABIArgGenerator>(types) {}
+};
 }  // namespace jit
+
+namespace wasm {
+const TlsData* ExtractCalleeTlsFromFrameWithTls(const Frame* fp);
+const TlsData* ExtractCallerTlsFromFrameWithTls(const Frame* fp);
+}  // namespace wasm
+
 }  // namespace js
 
 #endif /* jit_MacroAssembler_h */

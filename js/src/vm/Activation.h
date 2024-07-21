@@ -13,14 +13,14 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "jit/JSJitFrameIter.h"  // js::jit::CalleeToken
-#include "js/CallArgs.h"         // JS::CallArgs
-#include "js/RootingAPI.h"       // JS::Handle, JS::Rooted
-#include "js/TypeDecls.h"        // jsbytecode
-#include "js/UniquePtr.h"        // js::UniquePtr
-#include "js/Value.h"            // JS::Value
-#include "vm/SavedFrame.h"       // js::SavedFrame
-#include "vm/Stack.h"            // js::InterpreterRegs
+#include "jit/CalleeToken.h"  // js::jit::CalleeToken
+#include "js/CallArgs.h"      // JS::CallArgs
+#include "js/RootingAPI.h"    // JS::Handle, JS::Rooted
+#include "js/TypeDecls.h"     // jsbytecode
+#include "js/UniquePtr.h"     // js::UniquePtr
+#include "js/Value.h"         // JS::Value
+#include "vm/SavedFrame.h"    // js::SavedFrame
+#include "vm/Stack.h"         // js::InterpreterRegs
 
 struct JS_PUBLIC_API JSContext;
 
@@ -280,9 +280,6 @@ class LiveSavedFrameCache {
     // for its frame. Otherwise, return Nothing.
     static inline mozilla::Maybe<FramePtr> create(const FrameIter& iter);
 
-    // Construct a FramePtr from an AbstractFramePtr. This always succeeds.
-    static inline FramePtr create(AbstractFramePtr abstractFramePtr);
-
     inline bool hasCachedSavedFrame() const;
     inline void setHasCachedSavedFrame();
     inline void clearHasCachedSavedFrame();
@@ -390,7 +387,7 @@ class LiveSavedFrameCache {
   // youngest. They must all be younger than the frame that the |find| method
   // found a hit for; or you must have cleared the entire cache with the
   // |clear| method.
-  bool insert(JSContext* cx, FramePtr& framePtr, const jsbytecode* pc,
+  bool insert(JSContext* cx, FramePtr&& framePtr, const jsbytecode* pc,
               HandleSavedFrame savedFrame);
 
   // Remove all entries from the cache.

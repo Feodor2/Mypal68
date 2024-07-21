@@ -11,7 +11,8 @@
 #include "frontend/ModuleSharedContext.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
-#include "vm/StencilEnums.h"           // ImmutableScriptFlagsEnum
+#include "vm/JSScript.h"  // js::FillImmutableFlagsFromCompileOptionsForTopLevel, js::FillImmutableFlagsFromCompileOptionsForFunction
+#include "vm/StencilEnums.h"  // ImmutableScriptFlagsEnum
 #include "wasm/AsmJS.h"
 #include "wasm/WasmModule.h"
 
@@ -54,14 +55,12 @@ SharedContext::SharedContext(JSContext* cx, Kind kind,
   // Initialize the transitive "input" flags. These are applied to all
   // SharedContext in this compilation and generally cannot be determined from
   // the source text alone.
-  setFlag(ImmutableFlags::SelfHosted, options.selfHostingMode);
-  setFlag(ImmutableFlags::ForceStrict, options.forceStrictMode());
-  setFlag(ImmutableFlags::HasNonSyntacticScope, options.nonSyntacticScope);
-
-  // Initialize the non-transistive "input" flags if this is a top-level.
   if (isTopLevelContext()) {
-    setFlag(ImmutableFlags::TreatAsRunOnce, options.isRunOnce);
-    setFlag(ImmutableFlags::NoScriptRval, options.noScriptRval);
+    js::FillImmutableFlagsFromCompileOptionsForTopLevel(options,
+                                                        immutableFlags_);
+  } else {
+    js::FillImmutableFlagsFromCompileOptionsForFunction(options,
+                                                        immutableFlags_);
   }
 
   // Initialize the strict flag. This may be updated by the parser as we observe
@@ -225,29 +224,21 @@ EvalSharedContext::EvalSharedContext(JSContext* cx,
 
 FunctionBox::FunctionBox(JSContext* cx, SourceExtent extent,
                          CompilationInfo& compilationInfo,
-                         CompilationState& compilationState,
                          Directives directives, GeneratorKind generatorKind,
                          FunctionAsyncKind asyncKind, const ParserAtom* atom,
-                         FunctionFlags flags, FunctionIndex index,
-                         TopLevelFunction isTopLevel)
+                         FunctionFlags flags, FunctionIndex index)
     : SharedContext(cx, Kind::FunctionBox, compilationInfo, directives, extent),
       atom_(atom),
       funcDataIndex_(index),
       flags_(FunctionFlags::clearMutableflags(flags)),
-      isTopLevel_(isTopLevel),
       emitBytecode(false),
-      isStandalone_(false),
       wasEmitted_(false),
-      isSingleton_(false),
       isAnnexB(false),
       useAsm(false),
       hasParameterExprs(false),
       hasDestructuringArgs(false),
       hasDuplicateParameters(false),
       hasExprBody_(false),
-      usesApply(false),
-      usesThis(false),
-      usesReturn(false),
       isFunctionFieldCopiedToStencil(false) {
   setFlag(ImmutableFlags::IsGenerator,
           generatorKind == GeneratorKind::Generator);
@@ -412,8 +403,6 @@ void FunctionBox::finishScriptFlags() {
 
   using ImmutableFlags = ImmutableScriptFlagsEnum;
   immutableFlags_.setFlag(ImmutableFlags::HasMappedArgsObj, hasMappedArgsObj());
-  immutableFlags_.setFlag(ImmutableFlags::IsLikelyConstructorWrapper,
-                          isLikelyConstructorWrapper());
 }
 
 void FunctionBox::copyScriptFields(ScriptStencil& script) {
@@ -431,13 +420,14 @@ void FunctionBox::copyFunctionFields(ScriptStencil& script) {
   MOZ_ASSERT(&script == &functionStencil());
   MOZ_ASSERT(!isFunctionFieldCopiedToStencil);
 
-  script.functionAtom = atom_;
+  if (atom_) {
+    atom_->markUsedByStencil();
+    script.functionAtom = atom_->toIndex();
+  }
   script.functionFlags = flags_;
   script.nargs = nargs_;
   script.lazyFunctionEnclosingScopeIndex_ = enclosingScopeIndex_;
-  script.isStandaloneFunction = isStandalone_;
   script.wasFunctionEmitted = wasEmitted_;
-  script.isSingletonFunction = isSingleton_;
 
   isFunctionFieldCopiedToStencil = true;
 }
@@ -464,18 +454,16 @@ void FunctionBox::copyUpdatedEnclosingScopeIndex() {
 
 void FunctionBox::copyUpdatedAtomAndFlags() {
   ScriptStencil& script = functionStencil();
-  script.functionAtom = atom_;
+  if (atom_) {
+    atom_->markUsedByStencil();
+    script.functionAtom = atom_->toIndex();
+  }
   script.functionFlags = flags_;
 }
 
 void FunctionBox::copyUpdatedWasEmitted() {
   ScriptStencil& script = functionStencil();
   script.wasFunctionEmitted = wasEmitted_;
-}
-
-void FunctionBox::copyUpdatedIsSingleton() {
-  ScriptStencil& script = functionStencil();
-  script.isSingletonFunction = isSingleton_;
 }
 
 }  // namespace frontend

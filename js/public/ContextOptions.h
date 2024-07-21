@@ -23,6 +23,7 @@ class JS_PUBLIC_API ContextOptions {
         wasmBaseline_(true),
         wasmIon_(true),
         wasmCranelift_(false),
+        wasmFunctionReferences_(false),
         wasmGc_(false),
         wasmMultiValue_(false),
         testWasmAwaitTier2_(false),
@@ -97,6 +98,10 @@ class JS_PUBLIC_API ContextOptions {
     testWasmAwaitTier2_ = flag;
     return *this;
   }
+
+  bool wasmFunctionReferences() const { return wasmFunctionReferences_; }
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmFunctionReferences(bool flag);
 
   bool wasmGc() const { return wasmGc_; }
   // Defined out-of-line because it depends on a compile-time option
@@ -227,6 +232,7 @@ class JS_PUBLIC_API ContextOptions {
   bool wasmBaseline_ : 1;
   bool wasmIon_ : 1;
   bool wasmCranelift_ : 1;
+  bool wasmFunctionReferences_ : 1;
   bool wasmGc_ : 1;
   bool wasmMultiValue_ : 1;
   bool testWasmAwaitTier2_ : 1;

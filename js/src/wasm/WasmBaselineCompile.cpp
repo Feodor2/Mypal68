@@ -1774,6 +1774,8 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     masm.storePtr(tls, Address(sp_, stackOffset(tlsPointerOffset_)));
   }
 
+  int32_t getTlsPtrOffset() { return stackOffset(tlsPointerOffset_); }
+
   // An outgoing stack result area pointer is for stack results of callees of
   // the function being compiled.
   void computeOutgoingStackResultAreaPtr(const StackResultsLoc& results,
@@ -2885,7 +2887,8 @@ class BaseCompiler final : public BaseCompilerInterface {
     bool onlyPointerAlignment;
   };
 
-  const ModuleEnvironment& env_;
+  const ModuleEnvironment& moduleEnv_;
+  const CompilerEnvironment& compilerEnv_;
   BaseOpIter iter_;
   const FuncCompileInput& func_;
   size_t lastReadCallSite_;
@@ -2923,8 +2926,10 @@ class BaseCompiler final : public BaseCompilerInterface {
   // There are more members scattered throughout.
 
  public:
-  BaseCompiler(const ModuleEnvironment& env, const FuncCompileInput& input,
-               const ValTypeVector& locals, const MachineState& trapExitLayout,
+  BaseCompiler(const ModuleEnvironment& moduleEnv,
+               const CompilerEnvironment& compilerEnv,
+               const FuncCompileInput& input, const ValTypeVector& locals,
+               const MachineState& trapExitLayout,
                size_t trapExitLayoutNumWords, Decoder& decoder,
                StkVector& stkSource, TempAllocator* alloc, MacroAssembler* masm,
                StackMaps* stackMaps);
@@ -2938,14 +2943,14 @@ class BaseCompiler final : public BaseCompilerInterface {
   void emitInitStackLocals();
 
   const FuncTypeWithId& funcType() const {
-    return *env_.funcTypes[func_.index];
+    return *moduleEnv_.funcTypes[func_.index];
   }
 
   // Used by some of the ScratchRegister implementations.
   operator MacroAssembler&() const { return masm; }
   operator BaseRegAlloc&() { return ra; }
 
-  bool usesSharedMemory() const { return env_.usesSharedMemory(); }
+  bool usesSharedMemory() const { return moduleEnv_.usesSharedMemory(); }
 
  private:
   ////////////////////////////////////////////////////////////
@@ -3190,6 +3195,23 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
   }
 
+#ifdef JS_CODEGEN_X64
+  inline void maskResultRegisters(ResultType type) {
+    MOZ_ASSERT(JitOptions.spectreIndexMasking);
+
+    if (type.empty()) {
+      return;
+    }
+
+    for (ABIResultIter iter(type); !iter.done(); iter.next()) {
+      ABIResult result = iter.cur();
+      if (result.inRegister() && result.type().kind() == ValType::I32) {
+        masm.movl(result.gpr(), result.gpr());
+      }
+    }
+  }
+#endif
+
   inline void freeResultRegisters(ResultType type, RegKind which) {
     if (type.empty()) {
       return;
@@ -3271,6 +3293,15 @@ class BaseCompiler final : public BaseCompilerInterface {
   void captureResultRegisters(ResultType type) {
     assertResultRegistersAvailable(type);
     needResultRegisters(type);
+  }
+
+  void captureCallResultRegisters(ResultType type) {
+    captureResultRegisters(type);
+#ifdef JS_CODEGEN_X64
+    if (JitOptions.spectreIndexMasking) {
+      maskResultRegisters(type);
+    }
+#endif
   }
 
   ////////////////////////////////////////////////////////////
@@ -4674,9 +4705,7 @@ class BaseCompiler final : public BaseCompilerInterface {
   // Labels
 
   void insertBreakablePoint(CallSiteDesc::Kind kind) {
-    // The debug trap exit requires WasmTlsReg be loaded. However, since we
-    // are emitting millions of these breakable points inline, we push this
-    // loading of TLS into the FarJumpIsland created by linkCallSites.
+    fr.loadTlsPtr(WasmTlsReg);
     masm.nopPatchableToCall(CallSiteDesc(iter_.lastOpcodeOffset(), kind));
   }
 
@@ -4707,7 +4736,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
 
     // Identify GC-managed pointers passed on the stack.
-    for (ABIArgIter<const ArgTypeVector> i(args); !i.done(); i++) {
+    for (WasmABIArgIter i(args); !i.done(); i++) {
       ABIArg argLoc = *i;
       if (argLoc.kind() == ABIArg::Stack &&
           args[i.index()] == MIRType::RefOrNull) {
@@ -4719,10 +4748,11 @@ class BaseCompiler final : public BaseCompilerInterface {
       }
     }
 
-    GenerateFunctionPrologue(
-        masm, env_.funcTypes[func_.index]->id,
-        env_.mode() == CompileMode::Tier1 ? Some(func_.index) : Nothing(),
-        &offsets_);
+    GenerateFunctionPrologue(masm, moduleEnv_.funcTypes[func_.index]->id,
+                             compilerEnv_.mode() == CompileMode::Tier1
+                                 ? Some(func_.index)
+                                 : Nothing(),
+                             &offsets_);
 
     // GenerateFunctionPrologue pushes exactly one wasm::Frame's worth of
     // stuff, and none of the values are GC pointers.  Hence:
@@ -4734,7 +4764,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     // Initialize DebugFrame fields before the stack overflow trap so that
     // we have the invariant that all observable Frames in a debugEnabled
     // Module have valid DebugFrames.
-    if (env_.debugEnabled()) {
+    if (compilerEnv_.debugEnabled()) {
 #ifdef JS_CODEGEN_ARM64
       static_assert(DebugFrame::offsetOfFrame() % WasmStackAlignment == 0,
                     "aligned");
@@ -4793,7 +4823,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
 
     // Copy arguments from registers to stack.
-    for (ABIArgIter<const ArgTypeVector> i(args); !i.done(); i++) {
+    for (WasmABIArgIter i(args); !i.done(); i++) {
       if (args.isSyntheticStackResultPointerArg(i.index())) {
         // If there are stack results and the pointer to stack results
         // was passed in a register, store it to the stack.
@@ -4802,7 +4832,7 @@ class BaseCompiler final : public BaseCompilerInterface {
         }
         // If we're in a debug frame, copy the stack result pointer arg
         // to a well-known place.
-        if (env_.debugEnabled()) {
+        if (compilerEnv_.debugEnabled()) {
           Register target = ABINonArgReturnReg0;
           fr.loadIncomingStackResultAreaPtr(RegPtr(target));
           size_t debugFrameOffset =
@@ -4848,7 +4878,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     fr.zeroLocals(&ra);
     fr.storeTlsPtr(WasmTlsReg);
 
-    if (env_.debugEnabled()) {
+    if (compilerEnv_.debugEnabled()) {
       insertBreakablePoint(CallSiteDesc::EnterFrame);
       if (!createStackMap("debug: breakable point")) {
         return false;
@@ -4876,7 +4906,7 @@ class BaseCompiler final : public BaseCompilerInterface {
   }
 
   void saveRegisterReturnValues(const ResultType& resultType) {
-    MOZ_ASSERT(env_.debugEnabled());
+    MOZ_ASSERT(compilerEnv_.debugEnabled());
     size_t debugFrameOffset = masm.framePushed() - DebugFrame::offsetOfFrame();
     size_t registerResultIdx = 0;
     for (ABIResultIter i(resultType); !i.done(); i.next()) {
@@ -4922,7 +4952,7 @@ class BaseCompiler final : public BaseCompilerInterface {
   }
 
   void restoreRegisterReturnValues(const ResultType& resultType) {
-    MOZ_ASSERT(env_.debugEnabled());
+    MOZ_ASSERT(compilerEnv_.debugEnabled());
     size_t debugFrameOffset = masm.framePushed() - DebugFrame::offsetOfFrame();
     size_t registerResultIdx = 0;
     for (ABIResultIter i(resultType); !i.done(); i.next()) {
@@ -4981,7 +5011,7 @@ class BaseCompiler final : public BaseCompilerInterface {
 
     popStackReturnValues(resultType);
 
-    if (env_.debugEnabled()) {
+    if (compilerEnv_.debugEnabled()) {
       // Store and reload the return value from DebugFrame::return so that
       // it can be clobbered, and/or modified by the debug trap.
       saveRegisterReturnValues(resultType);
@@ -4998,6 +5028,9 @@ class BaseCompiler final : public BaseCompilerInterface {
       restoreRegisterReturnValues(resultType);
     }
 
+    // To satisy Tls extent invariant we need to reload WasmTlsReg because
+    // baseline can clobber it.
+    fr.loadTlsPtr(WasmTlsReg);
     GenerateFunctionEpilogue(masm, fr.fixedAllocSize(), &offsets_);
 
 #if defined(JS_ION_PERF)
@@ -5041,7 +5074,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
 
     uint32_t lineOrBytecode;
-    ABIArgGenerator abi;
+    WasmABIArgGenerator abi;
     bool isInterModule;
     bool usesSystemAbi;
 #ifdef JS_CODEGEN_ARM
@@ -5286,10 +5319,10 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   CodeOffset callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                           const Stk& indexVal, const FunctionCall& call) {
-    const FuncTypeWithId& funcType = env_.types[funcTypeIndex].funcType();
+    const FuncTypeWithId& funcType = moduleEnv_.types[funcTypeIndex].funcType();
     MOZ_ASSERT(funcType.id.kind() != FuncTypeIdDescKind::None);
 
-    const TableDesc& table = env_.tables[tableIndex];
+    const TableDesc& table = moduleEnv_.tables[tableIndex];
 
     loadI32(indexVal, RegI32(WasmTableCallIndexReg));
 
@@ -5918,7 +5951,8 @@ class BaseCompiler final : public BaseCompilerInterface {
       return;
     }
 
-    uint32_t offsetGuardLimit = GetOffsetGuardLimit(env_.hugeMemoryEnabled());
+    uint32_t offsetGuardLimit =
+        GetOffsetGuardLimit(moduleEnv_.hugeMemoryEnabled());
 
     if ((bceSafe_ & (BCESet(1) << local)) &&
         access->offset() < offsetGuardLimit) {
@@ -5939,7 +5973,8 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   void prepareMemoryAccess(MemoryAccessDesc* access, AccessCheck* check,
                            RegI32 tls, RegI32 ptr) {
-    uint32_t offsetGuardLimit = GetOffsetGuardLimit(env_.hugeMemoryEnabled());
+    uint32_t offsetGuardLimit =
+        GetOffsetGuardLimit(moduleEnv_.hugeMemoryEnabled());
 
     // Fold offset if necessary for further computations.
     if (access->offset() >= offsetGuardLimit ||
@@ -5968,7 +6003,7 @@ class BaseCompiler final : public BaseCompilerInterface {
 
     // Ensure no tls if we don't need it.
 
-    if (env_.hugeMemoryEnabled()) {
+    if (moduleEnv_.hugeMemoryEnabled()) {
       // We have HeapReg and no bounds checking and need load neither
       // memoryBase nor boundsCheckLimit from tls.
       MOZ_ASSERT_IF(check->omitBoundsCheck, tls.isInvalid());
@@ -5980,11 +6015,11 @@ class BaseCompiler final : public BaseCompilerInterface {
 
     // Bounds check if required.
 
-    if (!env_.hugeMemoryEnabled() && !check->omitBoundsCheck) {
+    if (!moduleEnv_.hugeMemoryEnabled() && !check->omitBoundsCheck) {
       Label ok;
-      masm.wasmBoundsCheck(Assembler::Below, ptr,
-                           Address(tls, offsetof(TlsData, boundsCheckLimit)),
-                           &ok);
+      masm.wasmBoundsCheck32(
+          Assembler::Below, ptr,
+          Address(tls, offsetof(TlsData, boundsCheckLimit32)), &ok);
       masm.wasmTrap(Trap::OutOfBounds, bytecodeOffset());
       masm.bind(&ok);
     }
@@ -6046,7 +6081,7 @@ class BaseCompiler final : public BaseCompilerInterface {
     // x86 requires Tls for memory base
     return true;
 #else
-    return !env_.hugeMemoryEnabled() && !check.omitBoundsCheck;
+    return !moduleEnv_.hugeMemoryEnabled() && !check.omitBoundsCheck;
 #endif
   }
 
@@ -7281,6 +7316,8 @@ class BaseCompiler final : public BaseCompilerInterface {
     latentType_ = operandType;
   }
 
+  bool hasLatentOp() const { return latentOp_ != LatentOp::None; }
+
   void resetLatentOp() { latentOp_ = LatentOp::None; }
 
   void branchTo(Assembler::DoubleCondition c, RegF64 lhs, RegF64 rhs,
@@ -7309,12 +7346,16 @@ class BaseCompiler final : public BaseCompilerInterface {
     masm.branch64(c, lhs, rhs, l);
   }
 
+  void branchTo(Assembler::Condition c, RegPtr lhs, ImmWord rhs, Label* l) {
+    masm.branchPtr(c, lhs, rhs, l);
+  }
+
   // Emit a conditional branch that optionally and optimally cleans up the CPU
   // stack before we branch.
   //
   // Cond is either Assembler::Condition or Assembler::DoubleCondition.
   //
-  // Lhs is RegI32, RegI64, or RegF32, or RegF64.
+  // Lhs is RegI32, RegI64, or RegF32, RegF64, or RegPtr.
   //
   // Rhs is either the same as Lhs, or an immediate expression compatible with
   // Lhs "when applicable".
@@ -7541,6 +7582,10 @@ class BaseCompiler final : public BaseCompilerInterface {
   MOZ_MUST_USE bool emitRefFunc();
   MOZ_MUST_USE bool emitRefNull();
   MOZ_MUST_USE bool emitRefIsNull();
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+  MOZ_MUST_USE bool emitRefAsNonNull();
+  MOZ_MUST_USE bool emitBrOnNull();
+#endif
 
   MOZ_MUST_USE bool emitAtomicCmpXchg(ValType type, Scalar::Type viewType);
   MOZ_MUST_USE bool emitAtomicLoad(ValType type, Scalar::Type viewType);
@@ -9173,6 +9218,41 @@ bool BaseCompiler::emitBrIf() {
   return true;
 }
 
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+bool BaseCompiler::emitBrOnNull() {
+  MOZ_ASSERT(!hasLatentOp());
+
+  uint32_t relativeDepth;
+  ResultType type;
+  NothingVector unused_values;
+  Nothing unused_condition;
+  if (!iter_.readBrOnNull(&relativeDepth, &type, &unused_values,
+                          &unused_condition)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  Control& target = controlItem(relativeDepth);
+  target.bceSafeOnExit &= bceSafe_;
+
+  BranchState b(&target.label, target.stackHeight, InvertBranch(false), type);
+  if (b.hasBlockResults()) {
+    needResultRegisters(b.resultType);
+  }
+  RegPtr rp = popRef();
+  if (b.hasBlockResults()) {
+    freeResultRegisters(b.resultType);
+  }
+  jumpConditionalWithResults(&b, Assembler::Equal, rp, ImmWord(NULLREF_VALUE));
+  pushRef(rp);
+
+  return true;
+}
+#endif
+
 bool BaseCompiler::emitBrTable() {
   Uint32Vector depths;
   uint32_t defaultDepth;
@@ -9464,8 +9544,8 @@ bool BaseCompiler::emitCall() {
 
   sync();
 
-  const FuncType& funcType = *env_.funcTypes[funcIndex];
-  bool import = env_.funcIsImport(funcIndex);
+  const FuncType& funcType = *moduleEnv_.funcTypes[funcIndex];
+  bool import = moduleEnv_.funcIsImport(funcIndex);
 
   uint32_t numArgs = funcType.args().length();
   size_t stackArgBytes = stackConsumed(numArgs);
@@ -9487,8 +9567,8 @@ bool BaseCompiler::emitCall() {
 
   CodeOffset raOffset;
   if (import) {
-    raOffset =
-        callImport(env_.funcImportGlobalDataOffsets[funcIndex], baselineCall);
+    raOffset = callImport(moduleEnv_.funcImportGlobalDataOffsets[funcIndex],
+                          baselineCall);
   } else {
     raOffset = callDefinition(funcIndex, baselineCall);
   }
@@ -9503,7 +9583,7 @@ bool BaseCompiler::emitCall() {
 
   popValueStackBy(numArgs);
 
-  captureResultRegisters(resultType);
+  captureCallResultRegisters(resultType);
   pushCallResults(baselineCall, resultType, results);
 
   return true;
@@ -9526,7 +9606,7 @@ bool BaseCompiler::emitCallIndirect() {
 
   sync();
 
-  const FuncTypeWithId& funcType = env_.types[funcTypeIndex].funcType();
+  const FuncTypeWithId& funcType = moduleEnv_.types[funcTypeIndex].funcType();
 
   // Stack: ... arg1 .. argn callee
 
@@ -9560,7 +9640,7 @@ bool BaseCompiler::emitCallIndirect() {
 
   popValueStackBy(numArgs);
 
-  captureResultRegisters(resultType);
+  captureCallResultRegisters(resultType);
   pushCallResults(baselineCall, resultType, results);
 
   return true;
@@ -9658,7 +9738,8 @@ bool BaseCompiler::emitDivOrModI64BuiltinCall(SymbolicAddress callee,
   masm.passABIArg(srcDest.low);
   masm.passABIArg(rhs.high);
   masm.passABIArg(rhs.low);
-  CodeOffset raOffset = masm.callWithABI(bytecodeOffset(), callee);
+  CodeOffset raOffset = masm.callWithABI(bytecodeOffset(), callee,
+                                         mozilla::Some(fr.getTlsPtrOffset()));
   if (!createStackMap("emitDivOrModI64Bui[..]", raOffset)) {
     return false;
   }
@@ -9689,7 +9770,7 @@ bool BaseCompiler::emitConvertInt64ToFloatingCallout(SymbolicAddress callee,
   masm.passABIArg(input.low);
 #  endif
   CodeOffset raOffset = masm.callWithABI(
-      bytecodeOffset(), callee,
+      bytecodeOffset(), callee, mozilla::Some(fr.getTlsPtrOffset()),
       resultType == ValType::F32 ? MoveOp::FLOAT32 : MoveOp::DOUBLE);
   if (!createStackMap("emitConvertInt64To[..]", raOffset)) {
     return false;
@@ -9733,7 +9814,8 @@ bool BaseCompiler::emitConvertFloatingToInt64Callout(SymbolicAddress callee,
 
   masm.setupWasmABICall();
   masm.passABIArg(doubleInput, MoveOp::DOUBLE);
-  CodeOffset raOffset = masm.callWithABI(bytecodeOffset(), callee);
+  CodeOffset raOffset = masm.callWithABI(bytecodeOffset(), callee,
+                                         mozilla::Some(fr.getTlsPtrOffset()));
   if (!createStackMap("emitConvertFloatin[..]", raOffset)) {
     return false;
   }
@@ -9908,7 +9990,7 @@ bool BaseCompiler::emitGetGlobal() {
     return true;
   }
 
-  const GlobalDesc& global = env_.globals[id];
+  const GlobalDesc& global = moduleEnv_.globals[id];
 
   if (global.isConstant()) {
     LitVal value = global.constantValue();
@@ -9988,7 +10070,7 @@ bool BaseCompiler::emitSetGlobal() {
     return true;
   }
 
-  const GlobalDesc& global = env_.globals[id];
+  const GlobalDesc& global = moduleEnv_.globals[id];
 
   switch (global.type().kind()) {
     case ValType::I32: {
@@ -10092,7 +10174,7 @@ bool BaseCompiler::emitSetGlobal() {
 //
 // Finally, when the debugger allows locals to be mutated we must disable BCE
 // for references via a local, by returning immediately from bceCheckLocal if
-// env_.debugEnabled() is true.
+// compilerEnv_.debugEnabled() is true.
 //
 //
 // Alignment check elimination.
@@ -10117,10 +10199,11 @@ RegI32 BaseCompiler::popMemoryAccess(MemoryAccessDesc* access,
   if (popConstI32(&addrTemp)) {
     uint32_t addr = addrTemp;
 
-    uint32_t offsetGuardLimit = GetOffsetGuardLimit(env_.hugeMemoryEnabled());
+    uint32_t offsetGuardLimit =
+        GetOffsetGuardLimit(moduleEnv_.hugeMemoryEnabled());
 
     uint64_t ea = uint64_t(addr) + uint64_t(access->offset());
-    uint64_t limit = env_.minMemoryLength + offsetGuardLimit;
+    uint64_t limit = moduleEnv_.minMemoryLength + offsetGuardLimit;
 
     check->omitBoundsCheck = ea < limit;
     check->omitAlignmentCheck = (ea & (access->byteSize() - 1)) == 0;
@@ -10580,7 +10663,7 @@ bool BaseCompiler::emitInstanceCall(uint32_t lineOrBytecode,
         t = ValType::I64;
         break;
       case MIRType::RefOrNull:
-        t = RefType::any();
+        t = RefType::extern_();
         break;
       case MIRType::Pointer:
         // Instance function args can now be uninterpreted pointers (eg, for
@@ -10692,6 +10775,28 @@ bool BaseCompiler::emitRefIsNull() {
   pushI32(rd);
   return true;
 }
+
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+bool BaseCompiler::emitRefAsNonNull() {
+  Nothing nothing;
+  if (!iter_.readRefAsNonNull(&nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  RegPtr rp = popRef();
+  Label ok;
+  masm.branchTestPtr(Assembler::NonZero, rp, rp, &ok);
+  trap(Trap::NullPointerDereference);
+  masm.bind(&ok);
+  pushRef(rp);
+
+  return true;
+}
+#endif
 
 bool BaseCompiler::emitAtomicCmpXchg(ValType type, Scalar::Type viewType) {
   LinearMemoryAddress<Nothing> addr;
@@ -11582,7 +11687,7 @@ bool BaseCompiler::emitStructNew() {
   //
   // Returns null on OOM.
 
-  const StructType& structType = env_.types[typeIndex].structType();
+  const StructType& structType = moduleEnv_.types[typeIndex].structType();
 
   pushI32(structType.moduleIndex_);
   if (!emitInstanceCall(lineOrBytecode, SASigStructNew)) {
@@ -11710,7 +11815,7 @@ bool BaseCompiler::emitStructGet() {
     return true;
   }
 
-  const StructType& structType = env_.types[typeIndex].structType();
+  const StructType& structType = moduleEnv_.types[typeIndex].structType();
 
   RegPtr rp = popRef();
 
@@ -11777,7 +11882,7 @@ bool BaseCompiler::emitStructSet() {
     return true;
   }
 
-  const StructType& structType = env_.types[typeIndex].structType();
+  const StructType& structType = moduleEnv_.types[typeIndex].structType();
 
   RegI32 ri;
   RegI64 rl;
@@ -11887,27 +11992,22 @@ bool BaseCompiler::emitStructNarrow() {
 
   // struct.narrow validation ensures that these hold.
 
-  MOZ_ASSERT(inputType.isAnyRef() || env_.isStructType(inputType));
-  MOZ_ASSERT(outputType.isAnyRef() || env_.isStructType(outputType));
-  MOZ_ASSERT_IF(outputType.isAnyRef(), inputType.isAnyRef());
+  MOZ_ASSERT(inputType.isEqRef() || moduleEnv_.isStructType(inputType));
+  MOZ_ASSERT(outputType.isEqRef() || moduleEnv_.isStructType(outputType));
+  MOZ_ASSERT_IF(outputType.isEqRef(), inputType.isEqRef());
 
-  // AnyRef -> AnyRef is a no-op, just leave the value on the stack.
+  // EqRef -> EqRef is a no-op, just leave the value on the stack.
 
-  if (inputType.isAnyRef() && outputType.isAnyRef()) {
+  if (inputType.isEqRef() && outputType.isEqRef()) {
     return true;
   }
 
   RegPtr rp = popRef();
 
-  // AnyRef -> (optref T) must first unbox; leaves rp or null
-
-  bool mustUnboxAnyref = inputType.isAnyRef();
-
-  // Dynamic downcast (optref T) -> (optref U), leaves rp or null
+  // Dynamic downcast eqref|(optref T) -> (optref U), leaves rp or null
   const StructType& outputStruct =
-      env_.types[outputType.refType().typeIndex()].structType();
+      moduleEnv_.types[outputType.refType().typeIndex()].structType();
 
-  pushI32(mustUnboxAnyref);
   pushI32(outputStruct.moduleIndex_);
   pushRef(rp);
   return emitInstanceCall(lineOrBytecode, SASigStructNarrow);
@@ -12008,11 +12108,12 @@ bool BaseCompiler::emitBody() {
     OpBytes op;
     CHECK(iter_.readOp(&op));
 
-    // When env_.debugEnabled(), every operator has breakpoint site but Op::End.
-    if (env_.debugEnabled() && op.b0 != (uint16_t)Op::End) {
+    // When compilerEnv_.debugEnabled(), every operator has breakpoint site but
+    // Op::End.
+    if (compilerEnv_.debugEnabled() && op.b0 != (uint16_t)Op::End) {
       // TODO sync only registers that can be clobbered by the exit
       // prologue/epilogue or disable these registers for use in
-      // baseline compiler when env_.debugEnabled() is set.
+      // baseline compiler when compilerEnv_.debugEnabled() is set.
       sync();
 
       insertBreakablePoint(CallSiteDesc::Breakpoint);
@@ -12098,7 +12199,7 @@ bool BaseCompiler::emitBody() {
       case uint16_t(Op::SelectNumeric):
         CHECK_NEXT(emitSelect(/*typed*/ false));
       case uint16_t(Op::SelectTyped):
-        if (!env_.refTypesEnabled()) {
+        if (!moduleEnv_.refTypesEnabled()) {
           return iter_.unrecognizedOpcode(&op);
         }
         CHECK_NEXT(emitSelect(/*typed*/ true));
@@ -12595,13 +12696,25 @@ bool BaseCompiler::emitBody() {
       case uint16_t(Op::MemorySize):
         CHECK_NEXT(emitMemorySize());
 
-#ifdef ENABLE_WASM_GC
-      case uint16_t(Op::RefEq):
-        if (!env_.gcTypesEnabled()) {
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+      case uint16_t(Op::RefAsNonNull):
+        if (!moduleEnv_.functionReferencesEnabled()) {
           return iter_.unrecognizedOpcode(&op);
         }
-        CHECK_NEXT(
-            emitComparison(emitCompareRef, RefType::any(), Assembler::Equal));
+        CHECK_NEXT(emitRefAsNonNull());
+      case uint16_t(Op::BrOnNull):
+        if (!moduleEnv_.functionReferencesEnabled()) {
+          return iter_.unrecognizedOpcode(&op);
+        }
+        CHECK_NEXT(emitBrOnNull());
+#endif
+#ifdef ENABLE_WASM_GC
+      case uint16_t(Op::RefEq):
+        if (!moduleEnv_.gcTypesEnabled()) {
+          return iter_.unrecognizedOpcode(&op);
+        }
+        CHECK_NEXT(dispatchComparison(emitCompareRef, RefType::eq(),
+                                       Assembler::Equal));
 #endif
 #ifdef ENABLE_WASM_REFTYPES
       case uint16_t(Op::RefFunc):
@@ -12618,7 +12731,7 @@ bool BaseCompiler::emitBody() {
 #ifdef ENABLE_WASM_GC
       // "GC" operations
       case uint16_t(Op::GcPrefix): {
-        if (!env_.gcTypesEnabled()) {
+        if (!moduleEnv_.gcTypesEnabled()) {
           return iter_.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -12726,7 +12839,7 @@ bool BaseCompiler::emitBody() {
 
       // Thread operations
       case uint16_t(Op::ThreadPrefix): {
-        if (env_.sharedMemoryEnabled == Shareable::False) {
+        if (moduleEnv_.sharedMemoryEnabled() == Shareable::False) {
           return iter_.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -12957,15 +13070,17 @@ bool BaseCompiler::emitFunction() {
   return true;
 }
 
-BaseCompiler::BaseCompiler(const ModuleEnvironment& env,
+BaseCompiler::BaseCompiler(const ModuleEnvironment& moduleEnv,
+                           const CompilerEnvironment& compilerEnv,
                            const FuncCompileInput& func,
                            const ValTypeVector& locals,
                            const MachineState& trapExitLayout,
                            size_t trapExitLayoutNumWords, Decoder& decoder,
                            StkVector& stkSource, TempAllocator* alloc,
                            MacroAssembler* masm, StackMaps* stackMaps)
-    : env_(env),
-      iter_(env, decoder),
+    : moduleEnv_(moduleEnv),
+      compilerEnv_(compilerEnv),
+      iter_(moduleEnv, decoder),
       func_(func),
       lastReadCallSite_(0),
       alloc_(*alloc),
@@ -13013,7 +13128,8 @@ bool BaseCompiler::init() {
   }
 
   ArgTypeVector args(funcType());
-  if (!fr.setupLocals(locals_, args, env_.debugEnabled(), &localInfo_)) {
+  if (!fr.setupLocals(locals_, args, compilerEnv_.debugEnabled(),
+                      &localInfo_)) {
     return false;
   }
 
@@ -13057,13 +13173,14 @@ bool js::wasm::BaselinePlatformSupport() {
 #endif
 }
 
-bool js::wasm::BaselineCompileFunctions(const ModuleEnvironment& env,
+bool js::wasm::BaselineCompileFunctions(const ModuleEnvironment& moduleEnv,
+                                        const CompilerEnvironment& compilerEnv,
                                         LifoAlloc& lifo,
                                         const FuncCompileInputVector& inputs,
                                         CompiledCode* code,
                                         UniqueChars* error) {
-  MOZ_ASSERT(env.tier() == Tier::Baseline);
-  MOZ_ASSERT(env.kind == ModuleKind::Wasm);
+  MOZ_ASSERT(compilerEnv.tier() == Tier::Baseline);
+  MOZ_ASSERT(moduleEnv.kind == ModuleKind::Wasm);
 
   // The MacroAssembler will sometimes access the jitContext.
 
@@ -13097,18 +13214,18 @@ bool js::wasm::BaselineCompileFunctions(const ModuleEnvironment& env,
     // Build the local types vector.
 
     ValTypeVector locals;
-    if (!locals.appendAll(env.funcTypes[func.index]->args())) {
+    if (!locals.appendAll(moduleEnv.funcTypes[func.index]->args())) {
       return false;
     }
-    if (!DecodeLocalEntries(d, env.types, env.refTypesEnabled(),
-                            env.gcTypesEnabled(), &locals)) {
+    if (!DecodeLocalEntries(d, moduleEnv.types, moduleEnv.features, &locals)) {
       return false;
     }
 
     // One-pass baseline compilation.
 
-    BaseCompiler f(env, func, locals, trapExitLayout, trapExitLayoutNumWords, d,
-                   stk, &alloc, &masm, &code->stackMaps);
+    BaseCompiler f(moduleEnv, compilerEnv, func, locals, trapExitLayout,
+                   trapExitLayoutNumWords, d, stk, &alloc, &masm,
+                   &code->stackMaps);
     if (!f.init()) {
       return false;
     }

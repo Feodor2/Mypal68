@@ -12,6 +12,7 @@
 #endif
 
 #include "jit/BaselineFrameInfo-inl.h"
+#include "jit/JitFrames.h"
 #include "jit/MacroAssembler-inl.h"
 
 using namespace js;

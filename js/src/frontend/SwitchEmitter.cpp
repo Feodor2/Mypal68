@@ -13,6 +13,7 @@
 
 #include "frontend/BytecodeEmitter.h"  // BytecodeEmitter
 #include "frontend/SharedContext.h"    // StatementKind
+#include "js/friend/ErrorMessages.h"   // JSMSG_*
 #include "js/TypeDecls.h"              // jsbytecode
 #include "util/BitArray.h"
 #include "vm/BytecodeUtil.h"  // SET_JUMP_OFFSET, JUMP_OFFSET_LEN, SET_RESUMEINDEX
@@ -380,7 +381,7 @@ bool SwitchEmitter::emitEnd() {
     // Allocate resume index range.
     uint32_t firstResumeIndex = 0;
     mozilla::Span<BytecodeOffset> offsets =
-        mozilla::MakeSpan(caseOffsets_.begin(), caseOffsets_.end());
+        mozilla::Span(caseOffsets_.begin(), caseOffsets_.end());
     if (!bce_->allocateResumeIndexRange(offsets, &firstResumeIndex)) {
       return false;
     }

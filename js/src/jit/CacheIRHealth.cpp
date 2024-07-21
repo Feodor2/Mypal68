@@ -136,13 +136,17 @@ CacheIRHealth::Happiness CacheIRHealth::spewJSOpAndCacheIRHealth(
   return entryHappiness;
 }
 
-bool CacheIRHealth::rateMyCacheIR(JSContext* cx, HandleScript script) {
-  AutoStructuredSpewer spew(cx, SpewChannel::RateMyCacheIR, script);
-  if (!spew) {
-    return true;
+void CacheIRHealth::rateMyCacheIR(JSContext* cx, HandleScript script) {
+  jit::JitScript* jitScript = script->maybeJitScript();
+  if (!jitScript) {
+    return;
   }
 
-  jit::JitScript* jitScript = script->jitScript();
+  AutoStructuredSpewer spew(cx, SpewChannel::RateMyCacheIR, script);
+  if (!spew) {
+    return;
+  }
+
   jsbytecode* next = script->code();
   jsbytecode* end = script->codeEnd();
 
@@ -179,8 +183,6 @@ bool CacheIRHealth::rateMyCacheIR(JSContext* cx, HandleScript script) {
   spew->endList();  // entries
 
   spew->property("scriptHappiness", uint8_t(scriptHappiness));
-
-  return true;
 }
 
 #endif /* JS_CACHEIR_SPEW */

@@ -10,8 +10,8 @@
 #include "jsnum.h"
 
 #include "jit/CodeGenerator.h"
-#include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
+#include "jit/InlineScriptTree.h"
+#include "jit/JitRuntime.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
@@ -1128,6 +1128,18 @@ void CodeGenerator::visitTruncateFToInt32(LTruncateFToInt32* ins) {
                       ins->mir());
 }
 
+void CodeGenerator::visitWasmBuiltinTruncateDToInt32(
+    LWasmBuiltinTruncateDToInt32* lir) {
+  emitTruncateDouble(ToFloatRegister(lir->getOperand(0)),
+                     ToRegister(lir->getDef(0)), lir->mir());
+}
+
+void CodeGenerator::visitWasmBuiltinTruncateFToInt32(
+    LWasmBuiltinTruncateFToInt32* lir) {
+  emitTruncateFloat32(ToFloatRegister(lir->getOperand(0)),
+                      ToRegister(lir->getDef(0)), lir->mir());
+}
+
 void CodeGenerator::visitWasmTruncateToInt32(LWasmTruncateToInt32* lir) {
   auto input = ToFloatRegister(lir->input());
   auto output = ToRegister(lir->output());
@@ -1632,8 +1644,8 @@ void CodeGenerator::visitAsmJSLoadHeap(LAsmJSLoadHeap* ins) {
   }
 
   Label done, outOfRange;
-  masm.wasmBoundsCheck(Assembler::AboveOrEqual, ptrReg,
-                       ToRegister(boundsCheckLimit), &outOfRange);
+  masm.wasmBoundsCheck32(Assembler::AboveOrEqual, ptrReg,
+                         ToRegister(boundsCheckLimit), &outOfRange);
   // Offset is ok, let's load value.
   if (isFloat) {
     if (size == 32) {
@@ -1751,8 +1763,8 @@ void CodeGenerator::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins) {
   }
 
   Label outOfRange;
-  masm.wasmBoundsCheck(Assembler::AboveOrEqual, ptrReg,
-                       ToRegister(boundsCheckLimit), &outOfRange);
+  masm.wasmBoundsCheck32(Assembler::AboveOrEqual, ptrReg,
+                         ToRegister(boundsCheckLimit), &outOfRange);
 
   // Offset is ok, let's store value.
   if (isFloat) {

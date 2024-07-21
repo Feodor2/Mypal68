@@ -10,6 +10,7 @@
 #include "js/GCHashTable.h"
 #include "js/UbiNode.h"
 #include "js/Wrapper.h"
+#include "vm/NativeObject.h"
 
 namespace js {
 

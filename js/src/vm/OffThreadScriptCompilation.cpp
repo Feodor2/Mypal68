@@ -46,9 +46,12 @@ static bool CanDoOffThread(JSContext* cx, const ReadOnlyCompileOptions& options,
     // If the parsing task would have to wait for GC to complete, it'll probably
     // be faster to just start it synchronously on the main thread unless the
     // script is huge.
-    bool needsParseGlobal =
-        options.useOffThreadParseGlobal || what == OffThread::Decode;
-    if (needsParseGlobal && OffThreadParsingMustWaitForGC(cx->runtime())) {
+    //
+    // NOTE: JS::DecodeMultiOffThreadScript does not use this API so we don't
+    // have to worry about it still using off-thread parse global.
+    bool mustWait = options.useOffThreadParseGlobal &&
+                    OffThreadParsingMustWaitForGC(cx->runtime());
+    if (mustWait) {
       if (what == OffThread::Compile && length < HUGE_SRC_LENGTH) {
         return false;
       }

@@ -33,6 +33,7 @@
 
 #include "js/Conversions.h"
 #include "js/Date.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/LocaleSensitive.h"
 #include "js/Object.h"  // JS::GetBuiltinClass
 #include "js/PropertySpec.h"
@@ -2708,9 +2709,7 @@ JSString* DateTimeHelper::timeZoneComment(JSContext* cx, double utcTime,
   int64_t utcMilliseconds = static_cast<int64_t>(utcTime);
   if (!DateTimeInfo::timeZoneDisplayName(timeZoneStart, remainingSpace,
                                          utcMilliseconds, locale)) {
-    {
-      JS_ReportOutOfMemory(cx);
-    }
+    { JS_ReportOutOfMemory(cx); }
     return nullptr;
   }
 
@@ -3144,10 +3143,8 @@ static const JSFunctionSpec date_methods[] = {
     JS_FN("toUTCString", date_toGMTString, 0, 0),
 #if JS_HAS_INTL_API
     JS_SELF_HOSTED_FN(js_toLocaleString_str, "Date_toLocaleString", 0, 0),
-    JS_FN("toLocaleDateString", date_toDateString, 0, 0),
-    JS_FN("toLocaleTimeString", date_toTimeString, 0, 0),
-    //JS_SELF_HOSTED_FN("toLocaleDateString", "Date_toLocaleDateString", 0, 0),
-    //JS_SELF_HOSTED_FN("toLocaleTimeString", "Date_toLocaleTimeString", 0, 0),
+    JS_SELF_HOSTED_FN("toLocaleDateString", "Date_toLocaleDateString", 0, 0),
+    JS_SELF_HOSTED_FN("toLocaleTimeString", "Date_toLocaleTimeString", 0, 0),
 #else
     JS_FN(js_toLocaleString_str, date_toLocaleString, 0, 0),
     JS_FN("toLocaleDateString", date_toLocaleDateString, 0, 0),

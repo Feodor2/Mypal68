@@ -8,6 +8,7 @@
 #include "vm/GeckoProfiler.h"
 
 #include "vm/JSContext.h"
+#include "vm/Realm.h"
 #include "vm/Runtime.h"
 
 namespace js {
@@ -61,7 +62,9 @@ GeckoProfilerEntryMarker::GeckoProfilerEntryMarker(JSContext* cx,
   profiler_->profilingStack_->pushSpMarkerFrame(this);
 
   profiler_->profilingStack_->pushJsFrame(
-      "js::RunScript", /* dynamicString = */ nullptr, script, script->code());
+      "js::RunScript",
+      /* dynamicString = */ nullptr, script, script->code(),
+      script->realm()->creationOptions().profilerRealmID());
 }
 
 MOZ_ALWAYS_INLINE

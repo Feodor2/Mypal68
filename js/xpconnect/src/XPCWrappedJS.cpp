@@ -7,7 +7,6 @@
 #include "xpcprivate.h"
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "js/Object.h"  // JS::GetCompartment
 #include "nsCCUncollectableMarker.h"
 #include "nsContentUtils.h"

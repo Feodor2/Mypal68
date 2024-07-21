@@ -287,7 +287,7 @@ MSG_DEF(JSMSG_BAD_ESCAPE,              0, JSEXN_SYNTAXERR, "invalid escape seque
 MSG_DEF(JSMSG_MISSING_PRIVATE_NAME,    0, JSEXN_SYNTAXERR, "'#' not followed by identifier")
 MSG_DEF(JSMSG_PRIVATE_DELETE,          0, JSEXN_SYNTAXERR, "private fields can't be deleted")
 MSG_DEF(JSMSG_MISSING_PRIVATE_DECL,    1, JSEXN_SYNTAXERR, "reference to undeclared private field or method {0}")
-MSG_DEF(JSMSG_ILLEGAL_CHARACTER,       0, JSEXN_SYNTAXERR, "illegal character")
+MSG_DEF(JSMSG_ILLEGAL_CHARACTER,       1, JSEXN_SYNTAXERR, "illegal character {0}")
 MSG_DEF(JSMSG_IMPORT_META_OUTSIDE_MODULE, 0, JSEXN_SYNTAXERR, "import.meta may only appear in a module")
 MSG_DEF(JSMSG_IMPORT_DECL_AT_TOP_LEVEL, 0, JSEXN_SYNTAXERR, "import declarations may only appear at top level of a module")
 MSG_DEF(JSMSG_OF_AFTER_FOR_LOOP_DECL,  0, JSEXN_SYNTAXERR, "a declaration in the head of a for-of loop can't have an initializer")
@@ -373,6 +373,7 @@ MSG_DEF(JSMSG_WHILE_AFTER_DO,          0, JSEXN_SYNTAXERR, "missing while after 
 MSG_DEF(JSMSG_YIELD_IN_PARAMETER,      0, JSEXN_SYNTAXERR, "yield expression can't be used in parameter")
 MSG_DEF(JSMSG_YIELD_OUTSIDE_GENERATOR, 0, JSEXN_SYNTAXERR, "yield expression is only valid in generators")
 MSG_DEF(JSMSG_BAD_COLUMN_NUMBER,       0, JSEXN_RANGEERR, "column number out of range")
+MSG_DEF(JSMSG_BAD_LINE_NUMBER,         0, JSEXN_RANGEERR, "line number out of range")
 MSG_DEF(JSMSG_COMPUTED_NAME_IN_PATTERN,0, JSEXN_SYNTAXERR, "computed property names aren't supported in this destructuring declaration")
 MSG_DEF(JSMSG_DEFAULT_IN_PATTERN,      0, JSEXN_SYNTAXERR, "destructuring defaults aren't supported in this destructuring declaration")
 MSG_DEF(JSMSG_BAD_NEWTARGET,           0, JSEXN_SYNTAXERR, "new.target only allowed within functions")
@@ -437,7 +438,9 @@ MSG_DEF(JSMSG_WASM_BAD_ELEMENT,        0, JSEXN_TYPEERR,     "\"element\" proper
 MSG_DEF(JSMSG_WASM_BAD_ELEMENT_GENERALIZED, 0, JSEXN_TYPEERR, "\"element\" property of table descriptor must be \"funcref\" or \"externref\"")
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_ARG,     0, JSEXN_TYPEERR,     "second argument must be an object")
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_FIELD,   1, JSEXN_TYPEERR,     "import object field '{0}' is not an Object")
+MSG_DEF(JSMSG_WASM_BAD_REF_NONNULLABLE_VALUE,  0, JSEXN_TYPEERR,     "cannot pass null to non-nullable WebAssembly reference")
 MSG_DEF(JSMSG_WASM_BAD_FUNCREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass WebAssembly exported functions to funcref")
+MSG_DEF(JSMSG_WASM_BAD_EQREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass a TypedObject to an eqref")
 MSG_DEF(JSMSG_WASM_BAD_I64_TYPE,       0, JSEXN_TYPEERR,     "cannot pass v128 to or from JS")
 MSG_DEF(JSMSG_WASM_BAD_GLOBAL_TYPE,    0, JSEXN_TYPEERR,     "bad type for a WebAssembly.Global")
 MSG_DEF(JSMSG_WASM_NO_TRANSFER,        0, JSEXN_TYPEERR,     "cannot transfer WebAssembly/asm.js ArrayBuffer")
@@ -448,6 +451,9 @@ MSG_DEF(JSMSG_WASM_TYPEREF_FROM_JS,    0, JSEXN_TYPEERR,     "conversion from Ja
 MSG_DEF(JSMSG_WASM_TYPEREF_TO_JS,      0, JSEXN_TYPEERR,     "conversion from WebAssembly typed ref to JavaScript value unimplemented")
 MSG_DEF(JSMSG_WASM_WRONG_NUMBER_OF_VALUES, 2, JSEXN_TYPEERR, "wrong number of values returned by JavaScript to WebAssembly (expected {0}, got {1})")
 MSG_DEF(JSMSG_WASM_NONSHARED_WAIT ,    0, JSEXN_WASMRUNTIMEERROR, "atomic wait on non-shared memory")
+MSG_DEF(JSMSG_WASM_NULL_REQUIRED,      0, JSEXN_TYPEERR,     "nullref requires a null value")
+MSG_DEF(JSMSG_WASM_SUPPLY_ONLY_ONE,    2, JSEXN_TYPEERR,     "exactly one of {0} and {1} must be supplied")
+MSG_DEF(JSMSG_WASM_MISSING_REQUIRED,   1, JSEXN_TYPEERR,     "Missing required argument {0}")
 
 // Proxy
 MSG_DEF(JSMSG_BAD_TRAP_RETURN_VALUE,   2, JSEXN_TYPEERR,"trap {1} for {0} returned a primitive value")
@@ -604,8 +610,6 @@ MSG_DEF(JSMSG_INVALID_PROTOTYPE,       0, JSEXN_TYPEERR, "prototype field is not
 MSG_DEF(JSMSG_TYPEDOBJECT_BAD_ARGS,    0, JSEXN_TYPEERR, "invalid arguments")
 MSG_DEF(JSMSG_TYPEDOBJECT_BINARYARRAY_BAD_INDEX, 0, JSEXN_RANGEERR, "invalid or out-of-range index")
 MSG_DEF(JSMSG_TYPEDOBJECT_HANDLE_UNATTACHED, 0, JSEXN_TYPEERR, "handle unattached")
-MSG_DEF(JSMSG_TYPEDOBJECT_STRUCTTYPE_BAD_ARGS, 0, JSEXN_RANGEERR, "invalid field descriptor")
-MSG_DEF(JSMSG_TYPEDOBJECT_STRUCTTYPE_NOT_CALLABLE, 0, JSEXN_TYPEERR, "not callable")
 MSG_DEF(JSMSG_TYPEDOBJECT_TOO_BIG,     0, JSEXN_ERR, "Type is too large to allocate")
 MSG_DEF(JSMSG_TYPEDOBJECT_SETTING_IMMUTABLE, 0, JSEXN_ERR, "setting immutable field")
 MSG_DEF(JSMSG_TYPEDOBJECT_NOT_CONSTRUCTIBLE, 0, JSEXN_TYPEERR, "not constructible")
@@ -626,6 +630,7 @@ MSG_DEF(JSMSG_TYPED_ARRAY_CALL_OR_CONSTRUCT, 1, JSEXN_TYPEERR, "cannot directly 
 MSG_DEF(JSMSG_NON_TYPED_ARRAY_RETURNED, 0, JSEXN_TYPEERR, "constructor didn't return TypedArray object")
 MSG_DEF(JSMSG_SHORT_TYPED_ARRAY_RETURNED, 2, JSEXN_TYPEERR, "expected TypedArray of at least length {0}, but constructor returned TypedArray of length {1}")
 MSG_DEF(JSMSG_TYPED_ARRAY_NOT_COMPATIBLE, 2, JSEXN_TYPEERR, "{0} elements are incompatible with {1}")
+MSG_DEF(JSMSG_ARRAYBUFFER_REQUIRED, 0, JSEXN_TYPEERR, "ArrayBuffer object required")
 
 // Shared array buffer
 MSG_DEF(JSMSG_SHARED_ARRAY_BAD_LENGTH,  0, JSEXN_RANGEERR, "length argument out of range")

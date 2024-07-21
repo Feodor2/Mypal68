@@ -32,6 +32,11 @@ using namespace js::wasm;
 #  else
 #    define WASM_REF_OP(code) break
 #  endif
+#  ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#    define WASM_FUNCTION_REFERENCES_OP(code) return code
+#  else
+#    define WASM_FUNCTION_REFERENCES_OP(code) break
+#  endif
 #  ifdef ENABLE_WASM_GC
 #    define WASM_GC_OP(code) return code
 #  else
@@ -262,6 +267,10 @@ OpKind wasm::Classify(OpBytes op) {
       WASM_REF_OP(OpKind::Conversion);
     case Op::RefFunc:
       WASM_REF_OP(OpKind::RefFunc);
+    case Op::RefAsNonNull:
+      WASM_FUNCTION_REFERENCES_OP(OpKind::RefAsNonNull);
+    case Op::BrOnNull:
+      WASM_FUNCTION_REFERENCES_OP(OpKind::BrOnNull);
     case Op::RefEq:
       WASM_GC_OP(OpKind::Comparison);
     case Op::GcPrefix: {

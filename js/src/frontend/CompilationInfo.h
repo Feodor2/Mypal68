@@ -7,6 +7,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
 #include "mozilla/Variant.h"
 
 #include "builtin/ModuleObject.h"
@@ -20,6 +21,7 @@
 #include "js/HashTable.h"
 #include "js/RealmOptions.h"
 #include "js/SourceText.h"
+#include "js/Transcoding.h"
 #include "js/Vector.h"
 #include "js/WasmModule.h"
 #include "vm/GlobalObject.h"  // GlobalObject
@@ -88,16 +90,32 @@ struct ScopeContext {
   static Scope* determineEffectiveScope(Scope* scope, JSObject* environment);
 };
 
-// Input of the compilation, including source and enclosing context.
-struct CompilationInput {
-  const JS::ReadOnlyCompileOptions& options;
-
-  // Atoms lowered into or converted from CompilationStencil.parserAtoms.
+struct CompilationAtomCache {
+ private:
+  // Atoms lowered into or converted from CompilationStencil.parserAtomData.
   //
   // This field is here instead of in CompilationGCOutput because atoms lowered
   // from JSAtom is part of input (enclosing scope bindings, lazy function name,
   // etc), and having 2 vectors in both input/output is error prone.
-  JS::GCVector<JSAtom*, 0, js::SystemAllocPolicy> atoms;
+  JS::GCVector<JSAtom*, 0, js::SystemAllocPolicy> atoms_;
+
+ public:
+  JSAtom* getExistingAtomAt(ParserAtomIndex index) const;
+  JSAtom* getExistingAtomAt(JSContext* cx,
+                            TaggedParserAtomIndex taggedIndex) const;
+  JSAtom* getAtomAt(ParserAtomIndex index) const;
+  bool hasAtomAt(ParserAtomIndex index) const;
+  bool setAtomAt(JSContext* cx, ParserAtomIndex index, JSAtom* atom);
+  bool allocate(JSContext* cx, size_t length);
+
+  void trace(JSTracer* trc);
+} JS_HAZ_GC_POINTER;
+
+// Input of the compilation, including source and enclosing context.
+struct CompilationInput {
+  const JS::ReadOnlyCompileOptions& options;
+
+  CompilationAtomCache atomCache;
 
   BaseScript* lazy = nullptr;
 
@@ -184,6 +202,8 @@ struct CompilationInput {
   void trace(JSTracer* trc);
 } JS_HAZ_GC_POINTER;
 
+struct CompilationStencil;
+
 struct MOZ_RAII CompilationState {
   // Until we have dealt with Atoms in the front end, we need to hold
   // onto them.
@@ -194,18 +214,21 @@ struct MOZ_RAII CompilationState {
   UsedNameTracker usedNames;
   LifoAllocScope& allocScope;
 
-  CompilationState(JSContext* cx, LifoAllocScope& alloc,
+  // Table of parser atoms for this compilation.
+  ParserAtomsTable parserAtoms;
+
+  CompilationState(JSContext* cx, LifoAllocScope& frontendAllocScope,
                    const JS::ReadOnlyCompileOptions& options,
-                   Scope* enclosingScope = nullptr,
-                   JSObject* enclosingEnv = nullptr)
-      : directives(options.forceStrictMode()),
-        scopeContext(cx, enclosingScope, enclosingEnv),
-        usedNames(cx),
-        allocScope(alloc) {}
+                   CompilationStencil& stencil, Scope* enclosingScope = nullptr,
+                   JSObject* enclosingEnv = nullptr);
 };
 
 // The top level struct of stencil.
 struct CompilationStencil {
+  // This holds allocations that do not require destructors to be run but are
+  // live until the stencil is released.
+  LifoAlloc alloc;
+
   // Hold onto the RegExpStencil, BigIntStencil, and ObjLiteralStencil that are
   // allocated during parse to ensure correct destruction.
   Vector<RegExpStencil, 0, js::SystemAllocPolicy> regExpData;
@@ -236,10 +259,34 @@ struct CompilationStencil {
           mozilla::DefaultHasher<FunctionIndex>, js::SystemAllocPolicy>
       asmJS;
 
-  // Table of parser atoms for this compilation.
-  ParserAtomsTable parserAtoms;
+  // List of parser atoms for this compilation.
+  // This may contain nullptr entries when round-tripping with XDR if the atom
+  // was generated in original parse but not used by stencil.
+  ParserAtomVector parserAtomData;
 
-  explicit CompilationStencil(JSRuntime* rt) : parserAtoms(rt) {}
+  // Parameterized chunk size to use for LifoAlloc.
+  static constexpr size_t LifoAllocChunkSize = 512;
+
+  CompilationStencil() : alloc(LifoAllocChunkSize) {}
+
+  // We need a move-constructor to work with Rooted, but must be explicit in
+  // order to steal the LifoAlloc data.
+  CompilationStencil(CompilationStencil&& other) noexcept
+      : alloc(LifoAllocChunkSize),
+        regExpData(std::move(other.regExpData)),
+        bigIntData(std::move(other.bigIntData)),
+        objLiteralData(std::move(other.objLiteralData)),
+        scriptData(std::move(other.scriptData)),
+        scopeData(std::move(other.scopeData)),
+        moduleMetadata(std::move(other.moduleMetadata)),
+        asmJS(std::move(other.asmJS)),
+        parserAtomData(std::move(other.parserAtomData)) {
+    // Steal the data from the LifoAlloc.
+    alloc.steal(&other.alloc);
+  }
+
+  const ParserAtom* getParserAtomAt(JSContext* cx,
+                                    TaggedParserAtomIndex taggedIndex) const;
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dump();
@@ -248,58 +295,59 @@ struct CompilationStencil {
 };
 
 // The output of GC allocation from stencil.
-struct MOZ_RAII CompilationGCOutput {
+struct CompilationGCOutput {
   // The resulting outermost script for the compilation powered
   // by this CompilationInfo.
-  JS::Rooted<JSScript*> script;
+  JSScript* script = nullptr;
 
   // The resulting module object if there is one.
-  JS::Rooted<ModuleObject*> module;
+  ModuleObject* module = nullptr;
 
   // A Rooted vector to handle tracing of JSFunction* and Atoms within.
   //
   // If the top level script isn't a function, the item at TopLevelIndex is
   // nullptr.
-  JS::RootedVector<JSFunction*> functions;
+  JS::GCVector<JSFunction*, 0, js::SystemAllocPolicy> functions;
 
   // References to scopes are controlled via AbstractScopePtr, which holds onto
   // an index (and CompilationInfo reference).
-  JS::RootedVector<js::Scope*> scopes;
+  JS::GCVector<js::Scope*, 0, js::SystemAllocPolicy> scopes;
 
   // The result ScriptSourceObject. This is unused in delazifying parses.
-  JS::Rooted<ScriptSourceObject*> sourceObject;
+  ScriptSourceObject* sourceObject = nullptr;
 
-  explicit CompilationGCOutput(JSContext* cx)
-      : script(cx), module(cx), functions(cx), scopes(cx), sourceObject(cx) {}
-};
+  CompilationGCOutput() = default;
+
+  void trace(JSTracer* trc);
+} JS_HAZ_GC_POINTER;
 
 class ScriptStencilIterable {
  public:
   class ScriptAndFunction {
    public:
-    ScriptStencil& script;
-    HandleFunction function;
+    const ScriptStencil& script;
+    JSFunction* function;
     FunctionIndex functionIndex;
 
     ScriptAndFunction() = delete;
-    ScriptAndFunction(ScriptStencil& script, HandleFunction function,
+    ScriptAndFunction(const ScriptStencil& script, JSFunction* function,
                       FunctionIndex functionIndex)
         : script(script), function(function), functionIndex(functionIndex) {}
   };
 
   class Iterator {
     size_t index_ = 0;
-    CompilationStencil& stencil_;
+    const CompilationStencil& stencil_;
     CompilationGCOutput& gcOutput_;
 
-    Iterator(CompilationStencil& stencil, CompilationGCOutput& gcOutput,
+    Iterator(const CompilationStencil& stencil, CompilationGCOutput& gcOutput,
              size_t index)
         : index_(index), stencil_(stencil), gcOutput_(gcOutput) {
       skipNonFunctions();
     }
 
    public:
-    explicit Iterator(CompilationStencil& stencil,
+    explicit Iterator(const CompilationStencil& stencil,
                       CompilationGCOutput& gcOutput)
         : stencil_(stencil), gcOutput_(gcOutput) {
       skipNonFunctions();
@@ -332,23 +380,23 @@ class ScriptStencilIterable {
     }
 
     ScriptAndFunction operator*() {
-      ScriptStencil& script = stencil_.scriptData[index_];
+      const ScriptStencil& script = stencil_.scriptData[index_];
 
       FunctionIndex functionIndex = FunctionIndex(index_);
       return ScriptAndFunction(script, gcOutput_.functions[functionIndex],
                                functionIndex);
     }
 
-    static Iterator end(CompilationStencil& stencil,
+    static Iterator end(const CompilationStencil& stencil,
                         CompilationGCOutput& gcOutput) {
       return Iterator(stencil, gcOutput, stencil.scriptData.length());
     }
   };
 
-  CompilationStencil& stencil_;
+  const CompilationStencil& stencil_;
   CompilationGCOutput& gcOutput_;
 
-  explicit ScriptStencilIterable(CompilationStencil& stencil,
+  explicit ScriptStencilIterable(const CompilationStencil& stencil,
                                  CompilationGCOutput& gcOutput)
       : stencil_(stencil), gcOutput_(gcOutput) {}
 
@@ -364,6 +412,10 @@ struct CompilationInfo {
   CompilationInput input;
   CompilationStencil stencil;
 
+  // Set to true once prepareForInstantiate is called.
+  // NOTE: This field isn't XDR-encoded.
+  bool preparationIsPerformed = false;
+
   // Track the state of key allocations and roll them back as parts of parsing
   // get retried. This ensures iteration during stencil instantiation does not
   // encounter discarded frontend state.
@@ -377,18 +429,21 @@ struct CompilationInfo {
 
   // Construct a CompilationInfo
   CompilationInfo(JSContext* cx, const JS::ReadOnlyCompileOptions& options)
-      : input(options), stencil(cx->runtime()) {}
+      : input(options) {}
 
+  MOZ_MUST_USE bool prepareInputAndStencilForInstantiate(JSContext* cx);
+  MOZ_MUST_USE bool prepareGCOutputForInstantiate(
+      JSContext* cx, CompilationGCOutput& gcOutput);
+
+  MOZ_MUST_USE bool prepareForInstantiate(JSContext* cx,
+                                          CompilationGCOutput& gcOutput);
   MOZ_MUST_USE bool instantiateStencils(JSContext* cx,
                                         CompilationGCOutput& gcOutput);
+  MOZ_MUST_USE bool instantiateStencilsAfterPreparation(
+      JSContext* cx, CompilationGCOutput& gcOutput);
 
-  JSAtom* liftParserAtomToJSAtom(JSContext* cx, const ParserAtom* parserAtom) {
-    return parserAtom->toJSAtom(cx, *this).unwrapOr(nullptr);
-  }
-  const ParserAtom* lowerJSAtomToParserAtom(JSContext* cx, JSAtom* atom) {
-    auto result = stencil.parserAtoms.internJSAtom(cx, *this, atom);
-    return result.unwrapOr(nullptr);
-  }
+  MOZ_MUST_USE bool serializeStencils(JSContext* cx, JS::TranscodeBuffer& buf,
+                                      bool* succeededOut = nullptr);
 
   // Move constructor is necessary to use Rooted.
   CompilationInfo(CompilationInfo&&) = default;
@@ -404,6 +459,54 @@ struct CompilationInfo {
 
   void trace(JSTracer* trc);
 };
+
+// A set of CompilationInfo, for XDR purpose.
+// This contains the initial compilation, and a vector of delazification.
+struct CompilationInfoVector {
+ private:
+  using FunctionKey = uint64_t;
+  using FunctionIndexVector = Vector<FunctionIndex, 0, js::SystemAllocPolicy>;
+
+  static FunctionKey toFunctionKey(const SourceExtent& extent) {
+    return (FunctionKey)extent.sourceStart << 32 | extent.sourceEnd;
+  }
+
+  MOZ_MUST_USE bool buildDelazificationIndices(JSContext* cx);
+
+ public:
+  frontend::CompilationInfo initial;
+  GCVector<frontend::CompilationInfo, 0, js::SystemAllocPolicy> delazifications;
+  FunctionIndexVector delazificationIndices;
+
+  CompilationInfoVector(JSContext* cx,
+                        const JS::ReadOnlyCompileOptions& options)
+      : initial(cx, options) {}
+
+  // Move constructor is necessary to use Rooted.
+  CompilationInfoVector(CompilationInfoVector&&) = default;
+
+  // To avoid any misuses, make sure this is neither copyable or assignable.
+  CompilationInfoVector(const CompilationInfoVector&) = delete;
+  CompilationInfoVector& operator=(const CompilationInfoVector&) = delete;
+  CompilationInfoVector& operator=(CompilationInfoVector&&) = delete;
+
+  MOZ_MUST_USE bool prepareForInstantiate(JSContext* cx,
+                                          CompilationGCOutput& gcOutput);
+  MOZ_MUST_USE bool instantiateStencils(JSContext* cx,
+                                        CompilationGCOutput& gcOutput);
+  MOZ_MUST_USE bool instantiateStencilsAfterPreparation(
+      JSContext* cx, CompilationGCOutput& gcOutput);
+
+  MOZ_MUST_USE bool deserializeStencils(JSContext* cx,
+                                        const JS::TranscodeRange& range,
+                                        bool* succeededOut);
+
+  void trace(JSTracer* trc);
+};
+
+// Allocate an uninitialized script-things array using the Stencil's allocator.
+mozilla::Span<TaggedScriptThingIndex> NewScriptThingSpanUninitialized(
+    JSContext* cx, LifoAlloc& alloc, uint32_t ngcthings);
 
 }  // namespace frontend
 }  // namespace js

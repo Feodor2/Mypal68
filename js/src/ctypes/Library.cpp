@@ -9,6 +9,7 @@
 
 #include "ctypes/CTypes.h"
 #include "js/CharacterEncoding.h"
+#include "js/experimental/CTypes.h"  // JS::CTypesCallbacks
 #include "js/MemoryFunctions.h"
 #include "js/Object.h"  // JS::GetReservedSlot
 #include "js/PropertySpec.h"
@@ -95,7 +96,7 @@ bool Library::Name(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 JSObject* Library::Create(JSContext* cx, HandleValue path,
-                          const JSCTypesCallbacks* callbacks) {
+                          const JS::CTypesCallbacks* callbacks) {
   RootedObject libraryObj(cx, JS_NewObject(cx, &sLibraryClass));
   if (!libraryObj) {
     return nullptr;
@@ -159,7 +160,7 @@ JSObject* Library::Create(JSContext* cx, HandleValue path,
     }
 
     nbytes = JS::DeflateStringToUTF8Buffer(
-        pathStr, mozilla::MakeSpan(pathBytes.get(), nbytes));
+        pathStr, mozilla::Span(pathBytes.get(), nbytes));
     pathBytes[nbytes] = 0;
   }
 

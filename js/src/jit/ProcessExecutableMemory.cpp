@@ -569,6 +569,11 @@ class ProcessExecutableMemory {
                            uintptr_t(base_) + MaxCodeBytesPerProcess);
   }
 
+  bool containsAddress(const void* p) const {
+    return p >= base_ &&
+           uintptr_t(p) < uintptr_t(base_) + MaxCodeBytesPerProcess;
+  }
+
   void* allocate(size_t bytes, ProtectionSetting protection,
                  MemCheckKind checkKind);
   void deallocate(void* addr, size_t bytes, bool decommit);
@@ -721,6 +726,10 @@ bool js::jit::CanLikelyAllocateMoreExecutableMemory() {
   MOZ_ASSERT(execMemory.bytesAllocated() <= MaxCodeBytesPerProcess);
 
   return execMemory.bytesAllocated() + BufferSize <= MaxCodeBytesPerProcess;
+}
+
+bool js::jit::AddressIsInExecutableMemory(const void* p) {
+  return execMemory.containsAddress(p);
 }
 
 bool js::jit::ReprotectRegion(void* start, size_t size,

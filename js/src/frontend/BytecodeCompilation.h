@@ -15,8 +15,8 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "frontend/CompilationInfo.h"  // CompilationInfo, CompilationGCOutput
-#include "frontend/ParseContext.h"     // js::frontend::UsedNameTracker
+#include "frontend/CompilationInfo.h"  // CompilationInfo, CompilationInfoVector, CompilationGCOutput
+#include "frontend/ParseContext.h"  // js::frontend::UsedNameTracker
 #include "frontend/SharedContext.h"  // js::frontend::Directives, js::frontend::{,Eval,Global}SharedContext
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "js/RootingAPI.h"      // JS::{,Mutable}Handle, JS::Rooted
@@ -65,7 +65,23 @@ extern UniquePtr<CompilationInfo> CompileGlobalScriptToStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<mozilla::Utf8Unit>& srcBuf, ScopeKind scopeKind);
 
+// Perform some operation to reduce the time taken by instantiation.
+//
+// Part of InstantiateStencils can be done by calling PrepareForInstantiate.
+// PrepareForInstantiate is GC-free operation that can be performed
+// off-main-thread without parse global.
+extern bool PrepareForInstantiate(JSContext* cx,
+                                  CompilationInfo& compilationInfo,
+                                  CompilationGCOutput& gcOutput);
+extern bool PrepareForInstantiate(JSContext* cx,
+                                  CompilationInfoVector& compilationInfos,
+                                  CompilationGCOutput& gcOutput);
+
 extern bool InstantiateStencils(JSContext* cx, CompilationInfo& compilationInfo,
+                                CompilationGCOutput& gcOutput);
+
+extern bool InstantiateStencils(JSContext* cx,
+                                CompilationInfoVector& compilationInfos,
                                 CompilationGCOutput& gcOutput);
 
 extern JSScript* CompileGlobalScript(JSContext* cx,

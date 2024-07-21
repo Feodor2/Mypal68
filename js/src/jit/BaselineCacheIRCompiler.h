@@ -17,7 +17,8 @@ namespace jit {
 class ICFallbackStub;
 class ICStub;
 
-enum class BaselineCacheIRStubKind { Regular, Monitored, Updated };
+// TODO(no-TI): remove.
+enum class BaselineCacheIRStubKind { Regular };
 
 ICStub* AttachBaselineCacheIRStub(JSContext* cx, const CacheIRWriter& writer,
                                   CacheKind kind,
@@ -76,6 +77,16 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
 
   enum class StringCode { CodeUnit, CodePoint };
   bool emitStringFromCodeResult(Int32OperandId codeId, StringCode stringCode);
+
+  bool emitCallScriptedGetterShared(ValOperandId receiverId,
+                                    uint32_t getterOffset, bool sameRealm,
+                                    uint32_t nargsAndFlagsOffset,
+                                    mozilla::Maybe<uint32_t> icScriptOffset);
+  bool emitCallScriptedSetterShared(ObjOperandId receiverId,
+                                    uint32_t setterOffset, ValOperandId rhsId,
+                                    bool sameRealm,
+                                    uint32_t nargsAndFlagsOffset,
+                                    mozilla::Maybe<uint32_t> icScriptOffset);
 
  public:
   friend class AutoStubFrame;

@@ -5,6 +5,9 @@
 #include "jit/IonCompileTask.h"
 
 #include "jit/CodeGenerator.h"
+#include "jit/CompileInfo.h"
+#include "jit/Ion.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitScript.h"
 #include "jit/WarpSnapshot.h"
 #include "vm/HelperThreadState.h"
@@ -68,10 +71,8 @@ void IonCompileTask::trace(JSTracer* trc) {
 }
 
 IonCompileTask::IonCompileTask(MIRGenerator& mirGen, bool scriptHasIonScript,
-                               CompilerConstraintList* constraints,
                                WarpSnapshot* snapshot)
     : mirGen_(mirGen),
-      constraints_(constraints),
       snapshot_(snapshot),
       scriptHasIonScript_(scriptHasIonScript) {}
 

@@ -32,7 +32,7 @@ inline bool ArrayBufferObjectMaybeShared::isDetached() const {
   return false;
 }
 
-inline uint32_t AnyArrayBufferByteLength(
+inline BufferSize AnyArrayBufferByteLength(
     const ArrayBufferObjectMaybeShared* buf) {
   if (buf->is<ArrayBufferObject>()) {
     return buf->as<ArrayBufferObject>().byteLength();
@@ -40,7 +40,7 @@ inline uint32_t AnyArrayBufferByteLength(
   return buf->as<SharedArrayBufferObject>().byteLength();
 }
 
-inline uint32_t ArrayBufferObjectMaybeShared::byteLength() const {
+inline BufferSize ArrayBufferObjectMaybeShared::byteLength() const {
   return AnyArrayBufferByteLength(this);
 }
 

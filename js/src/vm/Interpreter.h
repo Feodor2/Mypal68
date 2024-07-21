@@ -502,9 +502,6 @@ bool ThrowOperation(JSContext* cx, HandleValue v);
 bool GetProperty(JSContext* cx, HandleValue value, HandlePropertyName name,
                  MutableHandleValue vp);
 
-bool GetValueProperty(JSContext* cx, HandleValue value, HandlePropertyName name,
-                      MutableHandleValue vp);
-
 JSObject* Lambda(JSContext* cx, HandleFunction fun, HandleObject parent);
 
 JSObject* LambdaArrow(JSContext* cx, HandleFunction fun, HandleObject parent,
@@ -516,9 +513,6 @@ bool SetObjectElement(JSContext* cx, HandleObject obj, HandleValue index,
 bool SetObjectElementWithReceiver(JSContext* cx, HandleObject obj,
                                   HandleValue index, HandleValue value,
                                   HandleValue receiver, bool strict);
-bool SetObjectElement(JSContext* cx, HandleObject obj, HandleValue index,
-                      HandleValue value, HandleValue receiver, bool strict,
-                      HandleScript script, jsbytecode* pc);
 
 bool InitElementArray(JSContext* cx, jsbytecode* pc, HandleArrayObject arr,
                       uint32_t index, HandleValue value);

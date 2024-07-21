@@ -22,7 +22,6 @@
 #include "js/SavedFrameAPI.h"
 #include "js/StructuredClone.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/Preferences.h"
 #include "nsJSEnvironment.h"
@@ -1922,45 +1921,6 @@ nsXPCComponents_Utils::IsDeadWrapper(HandleValue obj, bool* out) {
                 !JS_IsDeadWrapper(js::UncheckedUnwrap(&obj.toObject())));
 
   *out = JS_IsDeadWrapper(&obj.toObject());
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::IsCrossProcessWrapper(HandleValue obj, bool* out) {
-  *out = false;
-  if (obj.isPrimitive()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *out = jsipc::IsWrappedCPOW(&obj.toObject());
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::GetCrossProcessWrapperTag(HandleValue obj,
-                                                 nsACString& out) {
-  if (obj.isPrimitive() || !jsipc::IsWrappedCPOW(&obj.toObject())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  jsipc::GetWrappedCPOWTag(&obj.toObject(), out);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::PermitCPOWsInScope(HandleValue obj) {
-  if (!obj.isObject()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  JSObject* scopeObj = js::UncheckedUnwrap(&obj.toObject());
-  JS::Compartment* scopeComp = JS::GetCompartment(scopeObj);
-  JS::Compartment* systemComp =
-      JS::GetCompartment(xpc::PrivilegedJunkScope());
-  MOZ_RELEASE_ASSERT(scopeComp != systemComp,
-                     "Don't call Cu.PermitCPOWsInScope() on scopes in the "
-                     "shared system compartment");
-  CompartmentPrivate::Get(scopeComp)->allowCPOWs = true;
   return NS_OK;
 }
 

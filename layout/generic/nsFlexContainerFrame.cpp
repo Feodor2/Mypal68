@@ -970,8 +970,6 @@ class nsFlexContainerFrame::FlexLine final {
    */
   nscoord MainGapSize() const { return mMainGapSize; }
 
-  inline void SetMainGapSize(nscoord aNewSize) { mMainGapSize = aNewSize; }
-
   // Runs the "Resolving Flexible Lengths" algorithm from section 9.7 of the
   // CSS flexbox spec to distribute aFlexContainerMainSize among our flex items.
   // https://drafts.csswg.org/css-flexbox-1/#resolve-flexible-lengths
@@ -1014,7 +1012,7 @@ class nsFlexContainerFrame::FlexLine final {
   nscoord mLastBaselineOffset = nscoord_MIN;
 
   // Maintain size of each {row,column}-gap in the main axis
-  nscoord mMainGapSize = 0;
+  const nscoord mMainGapSize;
 };
 
 // Information about a strut left behind by a FlexItem that's been collapsed
@@ -1305,7 +1303,7 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
     LayoutDeviceIntSize widgetMinSize;
     bool canOverride = true;
     PresContext()->Theme()->GetMinimumWidgetSize(PresContext(), aChildFrame,
-                                                 disp->mAppearance,
+                                                 disp->EffectiveAppearance(),
                                                  &widgetMinSize, &canOverride);
 
     nscoord widgetMainMinSize = PresContext()->DevPixelsToAppUnits(
@@ -2395,8 +2393,6 @@ class MOZ_STACK_CLASS CrossAxisPositionTracker : public PositionTracker {
   // Advances past the given FlexLine
   void TraverseLine(FlexLine& aLine) { mPosition += aLine.LineCrossSize(); }
 
-  inline void SetCrossGapSize(nscoord aNewSize) { mCrossGapSize = aNewSize; }
-
   // Redeclare the frame-related methods from PositionTracker with
   // = delete, to be sure (at compile time) that no client code can invoke
   // them. (Unlike the other PositionTracker derived classes, this class here
@@ -2411,7 +2407,7 @@ class MOZ_STACK_CLASS CrossAxisPositionTracker : public PositionTracker {
   uint32_t mNumPackingSpacesRemaining = 0;
   StyleContentDistribution mAlignContent = {StyleAlignFlags::AUTO};
 
-  nscoord mCrossGapSize = 0;
+  const nscoord mCrossGapSize;
 };
 
 // Utility class for managing our position along the cross axis, *within* a
@@ -2510,21 +2506,6 @@ nscoord nsFlexContainerFrame::GetLogicalBaseline(
   return mBaselineFromLastReflow;
 }
 
-// Helper for BuildDisplayList, to implement this special-case for flex items
-// from the spec:
-//    Flex items paint exactly the same as block-level elements in the
-//    normal flow, except that 'z-index' values other than 'auto' create
-//    a stacking context even if 'position' is 'static'.
-// http://www.w3.org/TR/2012/CR-css3-flexbox-20120918/#painting
-static uint32_t GetDisplayFlagsForFlexItem(nsIFrame* aFrame) {
-  MOZ_ASSERT(aFrame->IsFlexItem(), "Should only be called on flex items");
-  const nsStylePosition* pos = aFrame->StylePosition();
-  if (pos->mZIndex.IsInteger()) {
-    return nsIFrame::DISPLAY_CHILD_FORCE_STACKING_CONTEXT;
-  }
-  return nsIFrame::DISPLAY_CHILD_FORCE_PSEUDO_STACKING_CONTEXT;
-}
-
 void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                             const nsDisplayListSet& aLists) {
   DisplayBorderBackgroundOutline(aBuilder, aLists);
@@ -2540,7 +2521,7 @@ void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   for (; !iter.AtEnd(); iter.Next()) {
     nsIFrame* childFrame = *iter;
     BuildDisplayListForChild(aBuilder, childFrame, childLists,
-                             GetDisplayFlagsForFlexItem(childFrame));
+                             childFrame->DisplayFlagForFlexOrGridItem());
   }
 }
 
@@ -4819,24 +4800,6 @@ void nsFlexContainerFrame::DoFlexLayout(
       IsLegacyBox(aReflowInput.mFrame)
           ? ConvertLegacyStyleToJustifyContent(StyleXUL())
           : aReflowInput.mStylePosition->mJustifyContent;
-
-  // Recalculate the gap sizes if necessary now that the container size has
-  // been determined.
-  if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE &&
-      aReflowInput.mStylePosition->mRowGap.IsLengthPercentage() &&
-      aReflowInput.mStylePosition->mRowGap.AsLengthPercentage().HasPercent()) {
-    bool rowIsCross = aAxisTracker.IsRowOriented();
-    nscoord newBlockGapSize = nsLayoutUtils::ResolveGapToLength(
-        aReflowInput.mStylePosition->mRowGap,
-        rowIsCross ? aContentBoxCrossSize : aContentBoxMainSize);
-    if (rowIsCross) {
-      crossAxisPosnTracker.SetCrossGapSize(newBlockGapSize);
-    } else {
-      for (FlexLine& line : aLines) {
-        line.SetMainGapSize(newBlockGapSize);
-      }
-    }
-  }
 
   lineIndex = 0;
   for (FlexLine& line : aLines) {

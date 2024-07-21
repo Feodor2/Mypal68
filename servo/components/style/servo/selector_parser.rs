@@ -29,7 +29,7 @@ use style_traits::{ParseError, StyleParseErrorKind};
 /// A pseudo-element, both public and private.
 ///
 /// NB: If you add to this list, be sure to update `each_simple_pseudo_element` too.
-#[derive(Clone, Debug, Eq, Hash, MallocSizeOf, PartialEq, ToShmem)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, ToShmem)]
 #[allow(missing_docs)]
 #[repr(usize)]
 pub enum PseudoElement {
@@ -342,6 +342,7 @@ impl ToCss for NonTSPseudoClass {
             Fullscreen => ":fullscreen",
             Hover => ":hover",
             Indeterminate => ":indeterminate",
+            MozInert => ":-moz-inert",
             Link => ":link",
             PlaceholderShown => ":placeholder-shown",
             ReadWrite => ":read-write",
@@ -431,6 +432,7 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
             "fullscreen" => Fullscreen,
             "hover" => Hover,
             "indeterminate" => Indeterminate,
+            "-moz-inert" => MozInert,
             "link" => Link,
             "placeholder-shown" => PlaceholderShown,
             "read-write" => ReadWrite,

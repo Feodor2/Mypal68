@@ -156,7 +156,7 @@ void nsRangeFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     nsIFrame* thumb = mThumbDiv->GetPrimaryFrame();
     if (thumb) {
       nsDisplayListSet set(aLists, aLists.Content());
-      BuildDisplayListForChild(aBuilder, thumb, set, DISPLAY_CHILD_INLINE);
+      BuildDisplayListForChild(aBuilder, thumb, set, DisplayChildFlag::Inline);
     }
   } else {
     BuildDisplayListForInline(aBuilder, aLists);
@@ -702,7 +702,8 @@ bool nsRangeFrame::ShouldUseNativeStyle() const {
   nsIFrame* progressFrame = mProgressDiv->GetPrimaryFrame();
   nsIFrame* thumbFrame = mThumbDiv->GetPrimaryFrame();
 
-  return StyleDisplay()->mAppearance == StyleAppearance::Range && trackFrame &&
+  return StyleDisplay()->EffectiveAppearance() == StyleAppearance::Range &&
+         trackFrame &&
          !PresContext()->HasAuthorSpecifiedRules(
              trackFrame, STYLES_DISABLING_NATIVE_THEMING) &&
          progressFrame &&

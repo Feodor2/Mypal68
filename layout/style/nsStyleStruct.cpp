@@ -2223,6 +2223,8 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mOriginalDisplay(StyleDisplay::Inline),
       mContain(StyleContain::NONE),
       mAppearance(StyleAppearance::None),
+      mDefaultAppearance(StyleAppearance::None),
+      mButtonAppearance(StyleButtonAppearance::Allow),
       mPosition(StylePositionProperty::Static),
       mFloat(StyleFloat::None),
       mBreakType(StyleClear::None),
@@ -2293,6 +2295,8 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mOriginalDisplay(aSource.mOriginalDisplay),
       mContain(aSource.mContain),
       mAppearance(aSource.mAppearance),
+      mDefaultAppearance(aSource.mDefaultAppearance),
+      mButtonAppearance(aSource.mButtonAppearance),
       mPosition(aSource.mPosition),
       mFloat(aSource.mFloat),
       mBreakType(aSource.mBreakType),
@@ -2399,6 +2403,16 @@ static inline nsChangeHint CompareMotionValues(
   return result;
 }
 
+static bool ScrollbarGenerationChanged(const nsStyleDisplay& aOld,
+                                       const nsStyleDisplay& aNew) {
+  auto changed = [](StyleOverflow aOld, StyleOverflow aNew) {
+    return aOld != aNew &&
+           (aOld == StyleOverflow::Hidden || aNew == StyleOverflow::Hidden);
+  };
+  return changed(aOld.mOverflowX, aNew.mOverflowX) ||
+         changed(aOld.mOverflowY, aNew.mOverflowY);
+}
+
 nsChangeHint nsStyleDisplay::CalcDifference(
     const nsStyleDisplay& aNewData, const nsStylePosition& aOldPosition) const {
   if (mBinding != aNewData.mBinding || mDisplay != aNewData.mDisplay ||
@@ -2410,10 +2424,13 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     return nsChangeHint_ReconstructFrame;
   }
 
-  if ((mAppearance == StyleAppearance::Textfield &&
-       aNewData.mAppearance != StyleAppearance::Textfield) ||
-      (mAppearance != StyleAppearance::Textfield &&
-       aNewData.mAppearance == StyleAppearance::Textfield)) {
+  auto oldAppearance = EffectiveAppearance();
+  auto newAppearance = aNewData.EffectiveAppearance();
+
+  if ((oldAppearance == StyleAppearance::Textfield &&
+       newAppearance != StyleAppearance::Textfield) ||
+      (oldAppearance != StyleAppearance::Textfield &&
+       newAppearance == StyleAppearance::Textfield)) {
     // This is for <input type=number> where we allow authors to specify a
     // |-moz-appearance:textfield| to get a control without a spinner. (The
     // spinner is present for |-moz-appearance:number-input| but also other
@@ -2457,8 +2474,42 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     hint |= nsChangeHint_NeutralChange;
   }
 
+  if (mDefaultAppearance != aNewData.mDefaultAppearance) {
+    hint |= nsChangeHint_NeutralChange;
+  }
+
   if (mOverflowX != aNewData.mOverflowX || mOverflowY != aNewData.mOverflowY) {
-    hint |= nsChangeHint_ScrollbarChange;
+    const bool isScrollable = IsScrollableOverflow();
+    if (isScrollable != aNewData.IsScrollableOverflow()) {
+      // We may need to construct or destroy a scroll frame as a result of this
+      // change.
+      hint |= nsChangeHint_ScrollbarChange;
+    } else if (isScrollable) {
+      if (ScrollbarGenerationChanged(*this, aNewData)) {
+        // We need to reframe in the case of hidden -> non-hidden case though,
+        // since ScrollFrameHelper::CreateAnonymousContent avoids creating
+        // scrollbars altogether for overflow: hidden. That seems it could
+        // create some interesting perf cliffs...
+        //
+        // We reframe when non-hidden -> hidden too, for now.
+        //
+        // FIXME(bug 1590247): Seems we could avoid reframing once we've created
+        // scrollbars, which should get us the optimization for elements that
+        // have toggled scrollbars, but would prevent the cliff of toggling
+        // overflow causing jank.
+        hint |= nsChangeHint_ScrollbarChange;
+      } else {
+        // Otherwise, for changes where both overflow values are scrollable,
+        // means that scrollbars may appear or disappear. We need to reflow,
+        // since reflow is what determines which scrollbars if any are visible.
+        hint |= nsChangeHint_ReflowHintsForScrollbarChange;
+      }
+    } else {
+      // Otherwise this is a change between visible and
+      // -moz-hidden-unscrollable. Here only whether we have a clip changes, so
+      // just repaint and update our overflow areas in that case.
+      hint |= nsChangeHint_UpdateOverflow | nsChangeHint_RepaintFrame;
+    }
   }
 
   /* Note: When mScrollBehavior or mScrollSnapType are changed,
@@ -2472,6 +2523,9 @@ nsChangeHint nsStyleDisplay::CalcDifference(
    * if this does become common perhaps a faster-path might be worth while.
    *
    * FIXME(emilio): Can we do what we do for overflow changes?
+   *
+   * FIXME(emilio): These properties no longer propagate from the body to the
+   * viewport.
    */
 
   if (mFloat != aNewData.mFloat) {
@@ -2513,7 +2567,10 @@ nsChangeHint nsStyleDisplay::CalcDifference(
       mBreakInside != aNewData.mBreakInside ||
       mBreakBefore != aNewData.mBreakBefore ||
       mBreakAfter != aNewData.mBreakAfter ||
-      mAppearance != aNewData.mAppearance || mOrient != aNewData.mOrient ||
+      mAppearance != aNewData.mAppearance ||
+      mDefaultAppearance != aNewData.mDefaultAppearance ||
+      mButtonAppearance != aNewData.mButtonAppearance ||
+      mOrient != aNewData.mOrient ||
       mOverflowClipBoxBlock != aNewData.mOverflowClipBoxBlock ||
       mOverflowClipBoxInline != aNewData.mOverflowClipBoxInline) {
     hint |= nsChangeHint_AllReflowHints | nsChangeHint_RepaintFrame;
@@ -3052,7 +3109,8 @@ LogicalSide nsStyleText::TextEmphasisSide(WritingMode aWM) const {
 //
 
 nsStyleUI::nsStyleUI(const Document& aDocument)
-    : mUserInput(StyleUserInput::Auto),
+    : mInert(StyleInert::None),
+      mUserInput(StyleUserInput::Auto),
       mUserModify(StyleUserModify::ReadOnly),
       mUserFocus(StyleUserFocus::None),
       mPointerEvents(StylePointerEvents::Auto),
@@ -3063,7 +3121,8 @@ nsStyleUI::nsStyleUI(const Document& aDocument)
 }
 
 nsStyleUI::nsStyleUI(const nsStyleUI& aSource)
-    : mUserInput(aSource.mUserInput),
+    : mInert(aSource.mInert),
+      mUserInput(aSource.mUserInput),
       mUserModify(aSource.mUserModify),
       mUserFocus(aSource.mUserFocus),
       mPointerEvents(aSource.mPointerEvents),
@@ -3124,7 +3183,7 @@ nsChangeHint nsStyleUI::CalcDifference(const nsStyleUI& aNewData) const {
     }
   }
 
-  if (mUserFocus != aNewData.mUserFocus) {
+  if (mUserFocus != aNewData.mUserFocus || mInert != aNewData.mInert) {
     hint |= nsChangeHint_NeutralChange;
   }
 

@@ -503,14 +503,15 @@ static nsChangeHint ChangeForContentStateChange(const Element& aElement,
       return nsChangeHint_ReconstructFrame;
     }
 
-    auto* disp = primaryFrame->StyleDisplay();
-    if (disp->HasAppearance()) {
+    StyleAppearance appearance =
+        primaryFrame->StyleDisplay()->EffectiveAppearance();
+    if (appearance != StyleAppearance::None) {
       nsPresContext* pc = primaryFrame->PresContext();
       nsITheme* theme = pc->Theme();
-      if (theme->ThemeSupportsWidget(pc, primaryFrame, disp->mAppearance)) {
+      if (theme->ThemeSupportsWidget(pc, primaryFrame, appearance)) {
         bool repaint = false;
-        theme->WidgetStateChanged(primaryFrame, disp->mAppearance, nullptr,
-                                  &repaint, nullptr);
+        theme->WidgetStateChanged(primaryFrame, appearance, nullptr, &repaint,
+                                  nullptr);
         if (repaint) {
           changeHint |= nsChangeHint_RepaintFrame;
         }
@@ -1342,12 +1343,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
             // Under these conditions, we're OK to assume that this "overflow"
             // change only impacts the root viewport's scrollframe, which
             // already exists, so we can simply reflow instead of reframing.
-            // When requesting this reflow, we send the exact same change hints
-            // that "width" and "height" would send (since conceptually,
-            // adding/removing scrollbars is like changing the available
-            // space).
-            data.mHint |= (nsChangeHint_ReflowHintsForISizeChange |
-                           nsChangeHint_ReflowHintsForBSizeChange);
+            data.mHint |= nsChangeHint_ReflowHintsForScrollbarChange;
             doReconstruct = false;
           }
         }
@@ -3339,13 +3335,13 @@ void RestyleManager::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
 
   if (nsIFrame* primaryFrame = aElement->GetPrimaryFrame()) {
     // See if we have appearance information for a theme.
-    const nsStyleDisplay* disp = primaryFrame->StyleDisplay();
-    if (disp->HasAppearance()) {
+    StyleAppearance appearance =
+        primaryFrame->StyleDisplay()->EffectiveAppearance();
+    if (appearance != StyleAppearance::None) {
       nsITheme* theme = PresContext()->Theme();
-      if (theme->ThemeSupportsWidget(PresContext(), primaryFrame,
-                                     disp->mAppearance)) {
+      if (theme->ThemeSupportsWidget(PresContext(), primaryFrame, appearance)) {
         bool repaint = false;
-        theme->WidgetStateChanged(primaryFrame, disp->mAppearance, aAttribute,
+        theme->WidgetStateChanged(primaryFrame, appearance, aAttribute,
                                   &repaint, aOldValue);
         if (repaint) {
           changeHint |= nsChangeHint_RepaintFrame;

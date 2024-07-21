@@ -11,7 +11,8 @@ textarea,
 button,
 xul|button,
 * > input:not(:-moz-any([type="image"], [type="checkbox"], [type="radio"])) {
-  -moz-appearance: none !important;  /* See bug 598421 for fixing the platform */
+  appearance: none !important;  /* See bug 598421 for fixing the platform */
+  -moz-default-appearance: none !important;
 }
 
 textarea,

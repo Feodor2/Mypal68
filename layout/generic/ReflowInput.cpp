@@ -2454,8 +2454,8 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   bool needPaddingProp;
   LayoutDeviceIntMargin widgetPadding;
   if (isThemed && presContext->Theme()->GetWidgetPadding(
-                      presContext->DeviceContext(), mFrame, disp->mAppearance,
-                      &widgetPadding)) {
+                      presContext->DeviceContext(), mFrame,
+                      disp->EffectiveAppearance(), &widgetPadding)) {
     ComputedPhysicalPadding() = LayoutDevicePixel::ToAppUnits(
         widgetPadding, presContext->AppUnitsPerDevPixel());
     needPaddingProp = false;
@@ -2505,7 +2505,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
 
   if (isThemed) {
     LayoutDeviceIntMargin border = presContext->Theme()->GetWidgetBorder(
-        presContext->DeviceContext(), mFrame, disp->mAppearance);
+        presContext->DeviceContext(), mFrame, disp->EffectiveAppearance());
     ComputedPhysicalBorderPadding() = LayoutDevicePixel::ToAppUnits(
         border, presContext->AppUnitsPerDevPixel());
   } else if (nsSVGUtils::IsInSVGTextSubtree(mFrame)) {

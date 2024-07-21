@@ -8,17 +8,16 @@
 #![deny(missing_docs)]
 
 use crate::applicable_declarations::ApplicableDeclarationBlock;
+use crate::context::SharedStyleContext;
 #[cfg(feature = "gecko")]
-use crate::context::PostAnimationTasks;
-#[cfg(feature = "gecko")]
-use crate::context::UpdateAnimationsTasks;
+use crate::context::{PostAnimationTasks, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::element_state::ElementState;
 use crate::font_metrics::FontMetricsProvider;
 use crate::media_queries::Device;
-use crate::properties::{AnimationRules, ComputedValues, PropertyDeclarationBlock};
+use crate::properties::{AnimationDeclarations, ComputedValues, PropertyDeclarationBlock};
 use crate::selector_parser::{AttrValue, Lang, PseudoElement, SelectorImpl};
-use crate::shared_lock::Locked;
+use crate::shared_lock::{Locked, SharedRwLock};
 use crate::stylist::CascadeData;
 use crate::traversal_flags::TraversalFlags;
 use crate::{Atom, LocalName, Namespace, WeakAtom};
@@ -129,6 +128,9 @@ pub trait TDocument: Sized + Copy + Clone {
     {
         Err(())
     }
+
+    /// This document's shared lock.
+    fn shared_lock(&self) -> &SharedRwLock;
 }
 
 /// The `TNode` trait. This is the main generic trait over which the style
@@ -477,23 +479,28 @@ pub trait TElement:
     /// Get the combined animation and transition rules.
     ///
     /// FIXME(emilio): Is this really useful?
-    fn animation_rules(&self) -> AnimationRules {
+    fn animation_declarations(&self, context: &SharedStyleContext) -> AnimationDeclarations {
         if !self.may_have_animations() {
-            return AnimationRules(None, None);
+            return Default::default();
         }
 
-        AnimationRules(self.animation_rule(), self.transition_rule())
+        AnimationDeclarations {
+            animations: self.animation_rule(context),
+            transitions: self.transition_rule(context),
+        }
     }
 
     /// Get this element's animation rule.
-    fn animation_rule(&self) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        None
-    }
+    fn animation_rule(
+        &self,
+        _: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>>;
 
     /// Get this element's transition rule.
-    fn transition_rule(&self) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        None
-    }
+    fn transition_rule(
+        &self,
+        context: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>>;
 
     /// Get this element's state, for non-tree-structural pseudos.
     fn state(&self) -> ElementState;
@@ -727,9 +734,7 @@ pub trait TElement:
     /// In Gecko, element has a flag that represents the element may have
     /// any type of animations or not to bail out animation stuff early.
     /// Whereas Servo doesn't have such flag.
-    fn may_have_animations(&self) -> bool {
-        false
-    }
+    fn may_have_animations(&self) -> bool;
 
     /// Creates a task to update various animation state on a given (pseudo-)element.
     #[cfg(feature = "gecko")]
@@ -746,14 +751,25 @@ pub trait TElement:
     /// Returns true if the element has relevant animations. Relevant
     /// animations are those animations that are affecting the element's style
     /// or are scheduled to do so in the future.
-    fn has_animations(&self) -> bool;
+    fn has_animations(&self, context: &SharedStyleContext) -> bool;
 
-    /// Returns true if the element has a CSS animation.
-    fn has_css_animations(&self) -> bool;
+    /// Returns true if the element has a CSS animation. The `context` and `pseudo_element`
+    /// arguments are only used by Servo, since it stores animations globally and pseudo-elements
+    /// are not in the DOM.
+    fn has_css_animations(
+        &self,
+        context: &SharedStyleContext,
+        pseudo_element: Option<PseudoElement>,
+    ) -> bool;
 
     /// Returns true if the element has a CSS transition (including running transitions and
-    /// completed transitions).
-    fn has_css_transitions(&self) -> bool;
+    /// completed transitions). The `context` and `pseudo_element` arguments are only used
+    /// by Servo, since it stores animations globally and pseudo-elements are not in the DOM.
+    fn has_css_transitions(
+        &self,
+        context: &SharedStyleContext,
+        pseudo_element: Option<PseudoElement>,
+    ) -> bool;
 
     /// Returns true if the element has animation restyle hints.
     fn has_animation_restyle_hints(&self) -> bool {
@@ -805,7 +821,7 @@ pub trait TElement:
         Self: 'a,
         F: FnMut(&'a CascadeData, Self),
     {
-        use rule_collector::containing_shadow_ignoring_svg_use;
+        use crate::rule_collector::containing_shadow_ignoring_svg_use;
 
         let target = self.rule_hash_target();
         if !target.matches_user_and_author_rules() {
@@ -841,18 +857,6 @@ pub trait TElement:
 
         doc_rules_apply
     }
-
-    /// Does a rough (and cheap) check for whether or not transitions might need to be updated that
-    /// will quickly return false for the common case of no transitions specified or running. If
-    /// this returns false, we definitely don't need to update transitions but if it returns true
-    /// we can perform the more thoroughgoing check, needs_transitions_update, to further
-    /// reduce the possibility of false positives.
-    #[cfg(feature = "gecko")]
-    fn might_need_transitions_update(
-        &self,
-        old_values: Option<&ComputedValues>,
-        new_values: &ComputedValues,
-    ) -> bool;
 
     /// Returns true if one of the transitions needs to be updated on this element. We check all
     /// the transition properties to make sure that updating transitions is necessary.

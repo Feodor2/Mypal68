@@ -311,9 +311,9 @@ class nsDisplayButtonForeground final : public nsPaintedDisplayItem {
   void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                  const nsDisplayItemGeometry* aGeometry,
                                  nsRegion* aInvalidRegion) const override;
-  virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 #ifdef MOZ_BUILD_WEBRENDER
-  virtual bool CreateWebRenderCommands(
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+  bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
@@ -345,23 +345,18 @@ void nsDisplayButtonForeground::ComputeInvalidationRegion(
   nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsDisplayButtonForeground::Paint(nsDisplayListBuilder* aBuilder,
                                       gfxContext* aCtx) {
-  nsPresContext* presContext = mFrame->PresContext();
-  const nsStyleDisplay* disp = mFrame->StyleDisplay();
-  if (!mFrame->IsThemed(disp) ||
-      presContext->Theme()->ThemeWantsButtonInnerFocusRing(disp->mAppearance)) {
-    nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
+  nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
 
-    // Draw the -moz-focus-inner border
-    ImgDrawResult result = mBFR->PaintInnerFocusBorder(
-        aBuilder, presContext, *aCtx, GetPaintRect(), r);
+  // Draw the -moz-focus-inner border
+  ImgDrawResult result = mBFR->PaintInnerFocusBorder(
+      aBuilder, mFrame->PresContext(), *aCtx, GetPaintRect(), r);
 
-    nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
-  }
+  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
 }
 
-#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayButtonForeground::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -370,15 +365,10 @@ bool nsDisplayButtonForeground::CreateWebRenderCommands(
     nsDisplayListBuilder* aDisplayListBuilder) {
   Maybe<nsCSSBorderRenderer> br;
   bool borderIsEmpty = false;
-  nsPresContext* presContext = mFrame->PresContext();
-  const nsStyleDisplay* disp = mFrame->StyleDisplay();
-  if (!mFrame->IsThemed(disp) ||
-      presContext->Theme()->ThemeWantsButtonInnerFocusRing(disp->mAppearance)) {
-    nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
-    br = mBFR->CreateInnerFocusBorderRenderer(aDisplayListBuilder, presContext,
-                                              nullptr, GetPaintRect(), r,
-                                              &borderIsEmpty);
-  }
+  nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
+  br = mBFR->CreateInnerFocusBorderRenderer(aDisplayListBuilder,
+                                            mFrame->PresContext(), nullptr,
+                                            GetPaintRect(), r, &borderIsEmpty);
 
   if (!br) {
     return borderIsEmpty;
@@ -407,7 +397,12 @@ nsresult nsButtonFrameRenderer::DisplayButton(nsDisplayListBuilder* aBuilder,
 
   // Only display focus rings if we actually have them. Since at most one
   // button would normally display a focus ring, most buttons won't have them.
-  if (mInnerFocusStyle && mInnerFocusStyle->StyleBorder()->HasBorder()) {
+  const auto* disp = mFrame->StyleDisplay();
+  nsPresContext* pc = mFrame->PresContext();
+  if (mInnerFocusStyle && mInnerFocusStyle->StyleBorder()->HasBorder() &&
+      mFrame->IsThemed(disp) &&
+      pc->Theme()->ThemeWantsButtonInnerFocusRing(
+          disp->EffectiveAppearance())) {
     aForeground->AppendNewToTop<nsDisplayButtonForeground>(aBuilder, GetFrame(),
                                                            this);
   }

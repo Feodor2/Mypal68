@@ -1213,7 +1213,13 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
                                            //         otherwise equal to
                                            //         mDisplay
   mozilla::StyleContain mContain;
+
+ private:
   mozilla::StyleAppearance mAppearance;
+
+ public:
+  mozilla::StyleAppearance mDefaultAppearance;
+  mozilla::StyleButtonAppearance mButtonAppearance;
   mozilla::StylePositionProperty mPosition;
 
   mozilla::StyleFloat mFloat;
@@ -1317,7 +1323,55 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleShapeOutside mShapeOutside;
 
   bool HasAppearance() const {
-    return mAppearance != mozilla::StyleAppearance::None;
+    return EffectiveAppearance() != mozilla::StyleAppearance::None;
+  }
+
+  mozilla::StyleAppearance EffectiveAppearance() const {
+    switch (mAppearance) {
+      case mozilla::StyleAppearance::Auto:
+      case mozilla::StyleAppearance::Searchfield:
+      case mozilla::StyleAppearance::Textarea:
+      case mozilla::StyleAppearance::Checkbox:
+      case mozilla::StyleAppearance::Radio:
+      case mozilla::StyleAppearance::Menulist:
+      case mozilla::StyleAppearance::Listbox:
+      case mozilla::StyleAppearance::Meter:
+      case mozilla::StyleAppearance::ProgressBar:
+        // These are all the values that behave like `auto`.
+        return mDefaultAppearance;
+      case mozilla::StyleAppearance::Textfield:
+        // `appearance: textfield` should behave like `auto` on all elements
+        // except <input type=search> elements, which we identify using the
+        // internal -moz-default-appearance property.  (In the browser chrome
+        // we have some other elements that set `-moz-default-appearance:
+        // searchfield`, but not in content documents.)
+        if (mDefaultAppearance == mozilla::StyleAppearance::Searchfield) {
+          return mAppearance;
+        }
+        // We also need to support `appearance: textfield` on <input
+        // type=number>, since that is the only way in Gecko to disable the
+        // spinners.
+        if (mDefaultAppearance == mozilla::StyleAppearance::NumberInput) {
+          return mAppearance;
+        }
+        return mDefaultAppearance;
+      case mozilla::StyleAppearance::MenulistButton:
+        // `appearance: menulist-button` should behave like `auto` on all
+        // elements except for drop down selects, but since we have very little
+        // difference between menulist and menulist-button handling, we don't
+        // bother.
+        return mDefaultAppearance;
+      case mozilla::StyleAppearance::Button:
+        // `appearance: button` should behave like `auto` for a specific list
+        // of widget elements, and we encode that using the internal
+        // -moz-button-appearance property.
+        if (mButtonAppearance == mozilla::StyleButtonAppearance::Disallow) {
+          return mDefaultAppearance;
+        }
+        return mAppearance;
+      default:
+        return mAppearance;
+    }
   }
 
   static mozilla::StyleDisplayOutside DisplayOutside(
@@ -1678,6 +1732,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
 
   nsChangeHint CalcDifference(const nsStyleUI& aNewData) const;
 
+  mozilla::StyleInert mInert;
   mozilla::StyleUserInput mUserInput;
   mozilla::StyleUserModify mUserModify;  // (modify-content)
   mozilla::StyleUserFocus mUserFocus;    // (auto-select)

@@ -2,31 +2,52 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/DebugOnly.h"
-
 #include "FrameLayerBuilder.h"
 
-#include "gfxContext.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
-#include "mozilla/gfx/Matrix.h"
+#include <algorithm>
+#include <deque>
+#include <functional>
+#include <utility>
+
 #include "ActiveLayerTracker.h"
 #include "BasicLayers.h"
+#include "GeckoProfiler.h"
 #include "ImageContainer.h"
 #include "ImageLayers.h"
 #include "LayerTreeInvalidation.h"
-#include "Layers.h"
 #include "LayerUserData.h"
-#include "MatrixStack.h"
+#include "Layers.h"
+#include "LayersLogging.h"
 #include "MaskLayerImageCache.h"
+#include "MatrixStack.h"
 #include "UnitTransforms.h"
 #include "Units.h"
 #include "gfx2DGlue.h"
+#include "gfxContext.h"
 #include "gfxEnv.h"
 #include "gfxUtils.h"
-#include "nsAnimationManager.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/EffectCompositor.h"
+#include "mozilla/LayerAnimationInfo.h"
+#include "mozilla/LayerTimelineMarker.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ReverseIterator.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Matrix.h"
+#include "mozilla/gfx/Tools.h"
+#include "mozilla/layers/ShadowLayers.h"
+#include "mozilla/layers/TextureClient.h"
+#include "mozilla/layers/TextureWrapperImage.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderUserData.h"
+#endif
 #include "nsDisplayList.h"
 #include "nsDocShell.h"
 #include "nsIScrollableFrame.h"
@@ -36,30 +57,6 @@
 #include "nsPrintfCString.h"
 #include "nsSVGIntegrationUtils.h"
 #include "nsTransitionManager.h"
-#include "mozilla/LayerTimelineMarker.h"
-
-#include "mozilla/EffectCompositor.h"
-#include "mozilla/LayerAnimationInfo.h"
-#include "mozilla/Move.h"
-#include "mozilla/ReverseIterator.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Tools.h"
-#include "mozilla/layers/ShadowLayers.h"
-#include "mozilla/layers/TextureClient.h"
-#include "mozilla/layers/TextureWrapperImage.h"
-#ifdef MOZ_BUILD_WEBRENDER
-#  include "mozilla/layers/WebRenderUserData.h"
-#endif
-#include "mozilla/Unused.h"
-#include "GeckoProfiler.h"
-#include "LayersLogging.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_layers.h"
-#include "mozilla/StaticPrefs_layout.h"
-
-#include <algorithm>
-#include <functional>
-#include <deque>
 
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
@@ -400,9 +397,9 @@ void DisplayItemData::ClearAnimationCompositorState() {
 
   const DisplayItemType type = GetDisplayItemTypeFromKey(mDisplayItemKey);
 
-  // FIXME: Bug 1530857: Add background_color.
   if (type != DisplayItemType::TYPE_TRANSFORM &&
-      type != DisplayItemType::TYPE_OPACITY) {
+      type != DisplayItemType::TYPE_OPACITY &&
+      type != DisplayItemType::TYPE_BACKGROUND_COLOR) {
     return;
   }
 

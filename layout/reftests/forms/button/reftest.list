@@ -50,3 +50,5 @@ fails-if(Android) == disabled-1.html disabled-1-ref.html
 == 1349646.html 1349646-ref.html
 
 == appearance-revert.html appearance-revert-ref.html
+
+needs-focus == focus-non-themed.html focus-non-themed-ref.html

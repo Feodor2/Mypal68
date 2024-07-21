@@ -75,32 +75,6 @@ class PresShell;
 #  define NS_FRAME_TRACE_REFLOW_OUT(_method, _status)
 #endif
 
-// Frame allocation boilerplate macros. Every subclass of nsFrame must
-// either use NS_{DECL,IMPL}_FRAMEARENA_HELPERS pair for allocating
-// memory correctly, or use NS_DECL_ABSTRACT_FRAME to declare a frame
-// class abstract and stop it from being instantiated. If a frame class
-// without its own operator new and GetFrameId gets instantiated, the
-// per-frame recycler lists in nsPresArena will not work correctly,
-// with potentially catastrophic consequences (not enough memory is
-// allocated for a frame object).
-
-#define NS_DECL_FRAMEARENA_HELPERS(class)                                      \
-  NS_DECL_QUERYFRAME_TARGET(class)                                             \
-  static constexpr nsIFrame::ClassID kClassID = nsIFrame::ClassID::class##_id; \
-  void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE;           \
-  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE {       \
-    return nsQueryFrame::class##_id;                                           \
-  }
-
-#define NS_IMPL_FRAMEARENA_HELPERS(class)                             \
-  void* class ::operator new(size_t sz, mozilla::PresShell* aShell) { \
-    return aShell->AllocateFrame(nsQueryFrame::class##_id, sz);       \
-  }
-
-#define NS_DECL_ABSTRACT_FRAME(class)                                         \
-  void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE = delete; \
-  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE = 0;
-
 //----------------------------------------------------------------------
 
 struct nsBoxLayoutMetrics;
@@ -143,7 +117,7 @@ class nsFrame : public nsIFrame {
   // nsQueryFrame
   NS_DECL_QUERYFRAME
   NS_DECL_QUERYFRAME_TARGET(nsFrame)
-  virtual nsQueryFrame::FrameIID GetFrameId() const MOZ_MUST_OVERRIDE {
+  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE {
     return kFrameIID;
   }
   void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE;
@@ -153,12 +127,6 @@ class nsFrame : public nsIFrame {
             nsIFrame* aPrevInFlow) override;
   void DestroyFrom(nsIFrame* aDestructRoot,
                    PostDestroyData& aPostDestroyData) override;
-
-  static nsresult GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
-                                                 nsPeekOffsetStruct* aPos,
-                                                 nsIFrame* aBlockFrame,
-                                                 int32_t aLineStart,
-                                                 int8_t aOutSideLimit);
 
   void DidReflow(nsPresContext* aPresContext,
                  const ReflowInput* aReflowInput) override;
@@ -173,11 +141,6 @@ class nsFrame : public nsIFrame {
                                   nsSelectionAmount aAmountForward,
                                   int32_t aStartPos, bool aJumpLines,
                                   uint32_t aSelectFlags);
-
-  // Helper for GetContentAndOffsetsFromPoint; calculation of content offsets
-  // in this function assumes there is no child frame that can be targeted.
-  virtual ContentOffsets CalcContentOffsetsFromFramePoint(
-      const nsPoint& aPoint);
 
   //--------------------------------------------------
   // Additional methods
@@ -278,11 +241,6 @@ class nsFrame : public nsIFrame {
    * that need a view.
    */
   void CreateView();
-
-  // given a frame five me the first/last leaf available
-  // XXX Robert O'Callahan wants to move these elsewhere
-  static void GetLastLeaf(nsPresContext* aPresContext, nsIFrame** aFrame);
-  static void GetFirstLeaf(nsPresContext* aPresContext, nsIFrame** aFrame);
 
  private:
   // Returns true if this frame has any kind of CSS animations.

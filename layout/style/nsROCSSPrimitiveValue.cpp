@@ -150,7 +150,7 @@ void nsROCSSPrimitiveValue::SetAppUnits(float aValue) {
 
 void nsROCSSPrimitiveValue::SetString(const nsACString& aString) {
   Reset();
-  mValue.mString = ToNewUnicode(aString);
+  mValue.mString = ToNewUnicode(aString, mozilla::fallible);
   if (mValue.mString) {
     mType = CSS_STRING;
   } else {
@@ -161,7 +161,7 @@ void nsROCSSPrimitiveValue::SetString(const nsACString& aString) {
 
 void nsROCSSPrimitiveValue::SetString(const nsAString& aString) {
   Reset();
-  mValue.mString = ToNewUnicode(aString);
+  mValue.mString = ToNewUnicode(aString, mozilla::fallible);
   if (mValue.mString) {
     mType = CSS_STRING;
   } else {

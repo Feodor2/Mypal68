@@ -143,8 +143,13 @@ bitflags! {
         const IN_FOCUS_VISIBLE_STATE = 1 << 52;
         /// State that dialog element is modal, for centered alignment
         ///
-        /// https://html.spec.whatwg.org/#centered-alignment
+        /// https://html.spec.whatwg.org/multipage/#centered-alignment
         const IN_MODAL_DIALOG_STATE = 1 << 53;
+
+        /// https://html.spec.whatwg.org/multipage/interaction.html#inert-subtrees
+        const IN_MOZINERT_STATE = 1 << 54;
+        /// State for the topmost dialog element in top layer
+        const IN_TOPMOST_MODAL_DIALOG_STATE = 1 << 55;
     }
 }
 

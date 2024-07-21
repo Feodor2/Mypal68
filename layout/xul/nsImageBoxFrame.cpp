@@ -270,7 +270,7 @@ void nsImageBoxFrame::UpdateImage() {
     nsPresContext* pc = PresContext();
     if (!(display->HasAppearance() &&
           pc->Theme()->ThemeSupportsWidget(nullptr, this,
-                                           display->mAppearance))) {
+                                           display->mDefaultAppearance))) {
       // get the list-style-image
       imgRequestProxy* styleRequest = StyleList()->GetListStyleImage();
       if (styleRequest) {
@@ -635,7 +635,7 @@ void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   const nsStyleDisplay* disp = StyleDisplay();
   nsPresContext* pc = PresContext();
   if (disp->HasAppearance() &&
-      pc->Theme()->ThemeSupportsWidget(nullptr, this, disp->mAppearance))
+      pc->Theme()->ThemeSupportsWidget(nullptr, this, disp->mDefaultAppearance))
     return;
 
   // If list-style-image changes, we have a new image.

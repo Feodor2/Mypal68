@@ -212,7 +212,9 @@ inline bool StyleArcSlice<T>::IsEmpty() const {
 template <typename T>
 inline Span<const T> StyleArcSlice<T>::AsSpan() const {
   ASSERT_CANARY
-  return MakeSpan(_0.ptr->data.slice, Length());
+  // Explicitly specify template argument here to avoid instantiating Span<T>
+  // first and then implicitly converting to Span<const T>
+  return Span<const T>{_0.ptr->data.slice, Length()};
 }
 
 template <typename T>
@@ -232,7 +234,7 @@ inline StyleArcSlice<T>::~StyleArcSlice() {
   if (MOZ_LIKELY(!_0.ptr->DecrementRef())) {
     return;
   }
-  for (T& elem : MakeSpan(_0.ptr->data.slice, Length())) {
+  for (T& elem : Span(_0.ptr->data.slice, Length())) {
     elem.~T();
   }
   free(_0.ptr);  // Drop the allocation now.

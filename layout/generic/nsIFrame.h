@@ -516,6 +516,34 @@ static void ReleaseValue(T* aPropertyValue) {
 
 //----------------------------------------------------------------------
 
+// Frame allocation boilerplate macros. Every subclass of nsFrame must
+// either use NS_{DECL,IMPL}_FRAMEARENA_HELPERS pair for allocating
+// memory correctly, or use NS_DECL_ABSTRACT_FRAME to declare a frame
+// class abstract and stop it from being instantiated. If a frame class
+// without its own operator new and GetFrameId gets instantiated, the
+// per-frame recycler lists in nsPresArena will not work correctly,
+// with potentially catastrophic consequences (not enough memory is
+// allocated for a frame object).
+
+#define NS_DECL_FRAMEARENA_HELPERS(class)                                      \
+  NS_DECL_QUERYFRAME_TARGET(class)                                             \
+  static constexpr nsIFrame::ClassID kClassID = nsIFrame::ClassID::class##_id; \
+  void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE;           \
+  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE {       \
+    return nsQueryFrame::class##_id;                                           \
+  }
+
+#define NS_IMPL_FRAMEARENA_HELPERS(class)                             \
+  void* class ::operator new(size_t sz, mozilla::PresShell* aShell) { \
+    return aShell->AllocateFrame(nsQueryFrame::class##_id, sz);       \
+  }
+
+#define NS_DECL_ABSTRACT_FRAME(class)                                         \
+  void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE = delete; \
+  nsQueryFrame::FrameIID GetFrameId() const override MOZ_MUST_OVERRIDE = 0;
+
+//----------------------------------------------------------------------
+
 /**
  * A frame in the layout model. This interface is supported by all frame
  * objects.
@@ -613,6 +641,10 @@ class nsIFrame : public nsQueryFrame {
   nsPresContext* PresContext() const { return mPresContext; }
 
   mozilla::PresShell* PresShell() const { return PresContext()->PresShell(); }
+
+  virtual nsQueryFrame::FrameIID GetFrameId() const MOZ_MUST_OVERRIDE {
+    return kFrameIID;
+  }
 
   /**
    * Called to initialize the frame. This is called immediately after creating
@@ -1741,12 +1773,13 @@ class nsIFrame : public nsQueryFrame {
     nsIFrame* mutable_this = const_cast<nsIFrame*>(this);
     nsPresContext* pc = PresContext();
     nsITheme* theme = pc->Theme();
-    if (!theme->ThemeSupportsWidget(pc, mutable_this, aDisp->mAppearance)) {
+    if (!theme->ThemeSupportsWidget(pc, mutable_this,
+                                    aDisp->EffectiveAppearance())) {
       return false;
     }
     if (aTransparencyState) {
-      *aTransparencyState =
-          theme->GetWidgetTransparency(mutable_this, aDisp->mAppearance);
+      *aTransparencyState = theme->GetWidgetTransparency(
+          mutable_this, aDisp->EffectiveAppearance());
     }
     return true;
   }
@@ -1762,28 +1795,43 @@ class nsIFrame : public nsQueryFrame {
       nsDisplayListBuilder* aBuilder, nsDisplayList* aList,
       bool* aCreatedContainerItem = nullptr);
 
-  enum {
-    DISPLAY_CHILD_FORCE_PSEUDO_STACKING_CONTEXT = 0x01,
-    DISPLAY_CHILD_FORCE_STACKING_CONTEXT = 0x02,
-    DISPLAY_CHILD_INLINE = 0x04
+  enum class DisplayChildFlag {
+    ForcePseudoStackingContext,
+    ForceStackingContext,
+    Inline,
   };
+  using DisplayChildFlags = mozilla::EnumSet<DisplayChildFlag>;
+
   /**
    * Adjusts aDirtyRect for the child's offset, checks that the dirty rect
    * actually intersects the child (or its descendants), calls BuildDisplayList
    * on the child if necessary, and puts things in the right lists if the child
    * is positioned.
    *
-   * @param aFlags combination of DISPLAY_CHILD_FORCE_PSEUDO_STACKING_CONTEXT,
-   *    DISPLAY_CHILD_FORCE_STACKING_CONTEXT and DISPLAY_CHILD_INLINE
+   * @param aFlags a set of of DisplayChildFlag values that are applicable for
+   * this operation.
    */
   void BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
                                 nsIFrame* aChild,
                                 const nsDisplayListSet& aLists,
-                                uint32_t aFlags = 0);
+                                DisplayChildFlags aFlags = {});
 
   void BuildDisplayListForSimpleChild(nsDisplayListBuilder* aBuilder,
                                       nsIFrame* aChild,
                                       const nsDisplayListSet& aLists);
+
+  /**
+   * Helper for BuildDisplayListForChild, to implement this special-case for
+   * grid (and flex) items from the spec:
+   *   The painting order of grid items is exactly the same as inline blocks,
+   *   except that [...], and 'z-index' values other than 'auto' create a
+   *   stacking context even if 'position' is 'static' (behaving exactly as if
+   *   'position' were 'relative'). https://drafts.csswg.org/css-grid/#z-order
+   *
+   * Flex items also have the same special-case described in
+   * https://drafts.csswg.org/css-flexbox/#painting
+   */
+  DisplayChildFlag DisplayFlagForFlexOrGridItem() const;
 
   bool RefusedAsyncAnimation() const {
     return GetProperty(RefusedAsyncAnimationProperty());
@@ -2110,6 +2158,11 @@ class nsIFrame : public nsQueryFrame {
       const nsPoint& aPoint, uint32_t aFlags = 0) {
     return GetContentOffsetsFromPoint(aPoint, aFlags);
   }
+
+  // Helper for GetContentAndOffsetsFromPoint; calculation of content offsets
+  // in this function assumes there is no child frame that can be targeted.
+  virtual ContentOffsets CalcContentOffsetsFromFramePoint(
+      const nsPoint& aPoint);
 
   /**
    * Ensure that `this` gets notifed when `aImage`s underlying image request
@@ -3589,6 +3642,17 @@ class nsIFrame : public nsQueryFrame {
    * @param aPOS is defined in nsFrameSelection
    */
   virtual nsresult PeekOffset(nsPeekOffsetStruct* aPos);
+
+  // given a frame five me the first/last leaf available
+  // XXX Robert O'Callahan wants to move these elsewhere
+  static void GetLastLeaf(nsPresContext* aPresContext, nsIFrame** aFrame);
+  static void GetFirstLeaf(nsPresContext* aPresContext, nsIFrame** aFrame);
+
+  static nsresult GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
+                                                 nsPeekOffsetStruct* aPos,
+                                                 nsIFrame* aBlockFrame,
+                                                 int32_t aLineStart,
+                                                 int8_t aOutSideLimit);
 
   /**
    * Called to find the previous/next non-anonymous selectable leaf frame.

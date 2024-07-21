@@ -714,7 +714,7 @@ void nsDisplayListBuilder::SetGlassDisplayItem(nsDisplayItem* aItem) {
 
 bool nsDisplayListBuilder::NeedToForceTransparentSurfaceForItem(
     nsDisplayItem* aItem) {
-  return aItem == mGlassDisplayItem || aItem->ClearsBackground();
+  return aItem == mGlassDisplayItem;
 }
 
 AnimatedGeometryRoot* nsDisplayListBuilder::WrapAGRForFrame(
@@ -3543,13 +3543,6 @@ bool nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
   }
 
   if (isThemed) {
-    nsITheme* theme = presContext->Theme();
-    if (theme->NeedToClearBackgroundBehindWidget(
-            aFrame, aFrame->StyleDisplay()->mAppearance) &&
-        aBuilder->IsInChromeDocumentOrPopup() && !aBuilder->IsInTransform()) {
-      bgItemList.AppendNewToTop<nsDisplayClearBackground>(aBuilder, aFrame);
-    }
-
     nsDisplayThemedBackground* bgItem = CreateThemedBackground(
         aBuilder, aFrame, aSecondaryReferenceFrame, bgRect);
 
@@ -4157,19 +4150,19 @@ nsDisplayThemedBackground::nsDisplayThemedBackground(
 
 void nsDisplayThemedBackground::Init(nsDisplayListBuilder* aBuilder) {
   const nsStyleDisplay* disp = StyleFrame()->StyleDisplay();
-  mAppearance = disp->mAppearance;
+  mAppearance = disp->EffectiveAppearance();
   StyleFrame()->IsThemed(disp, &mThemeTransparency);
 
   // Perform necessary RegisterThemeGeometry
   nsITheme* theme = StyleFrame()->PresContext()->Theme();
   nsITheme::ThemeGeometryType type =
-      theme->ThemeGeometryTypeForWidget(StyleFrame(), disp->mAppearance);
+      theme->ThemeGeometryTypeForWidget(StyleFrame(), mAppearance);
   if (type != nsITheme::eThemeGeometryTypeUnknown) {
     RegisterThemeGeometry(aBuilder, this, StyleFrame(), type);
   }
 
-  if (disp->mAppearance == StyleAppearance::MozWinBorderlessGlass ||
-      disp->mAppearance == StyleAppearance::MozWinGlass) {
+  if (mAppearance == StyleAppearance::MozWinBorderlessGlass ||
+      mAppearance == StyleAppearance::MozWinGlass) {
     aBuilder->SetGlassDisplayItem(this);
   }
 
@@ -4289,9 +4282,9 @@ nsRect nsDisplayThemedBackground::GetBoundsInternal() {
   nsPresContext* presContext = mFrame->PresContext();
 
   nsRect r = mBackgroundRect - ToReferenceFrame();
-  presContext->Theme()->GetWidgetOverflow(presContext->DeviceContext(), mFrame,
-                                          mFrame->StyleDisplay()->mAppearance,
-                                          &r);
+  presContext->Theme()->GetWidgetOverflow(
+      presContext->DeviceContext(), mFrame,
+      mFrame->StyleDisplay()->EffectiveAppearance(), &r);
   return r + ToReferenceFrame();
 }
 
@@ -4636,50 +4629,6 @@ void nsDisplayBackgroundColor::WriteDebugInfo(std::stringstream& aStream) {
           << mColor.a << ")";
   aStream << " backgroundRect" << mBackgroundRect;
 }
-
-already_AddRefed<Layer> nsDisplayClearBackground::BuildLayer(
-    nsDisplayListBuilder* aBuilder, LayerManager* aManager,
-    const ContainerLayerParameters& aParameters) {
-  RefPtr<ColorLayer> layer = static_cast<ColorLayer*>(
-      aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, this));
-  if (!layer) {
-    layer = aManager->CreateColorLayer();
-    if (!layer) {
-      return nullptr;
-    }
-  }
-  layer->SetColor(Color());
-  layer->SetMixBlendMode(gfx::CompositionOp::OP_SOURCE);
-
-  bool snap;
-  nsRect bounds = GetBounds(aBuilder, &snap);
-  int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
-  layer->SetBounds(bounds.ToNearestPixels(appUnitsPerDevPixel));  // XXX Do we
-                                                                  // need to
-                                                                  // respect the
-                                                                  // parent
-                                                                  // layer's
-                                                                  // scale here?
-
-  return layer.forget();
-}
-
-#ifdef MOZ_BUILD_WEBRENDER
-bool nsDisplayClearBackground::CreateWebRenderCommands(
-    mozilla::wr::DisplayListBuilder& aBuilder,
-    mozilla::wr::IpcResourceUpdateQueue& aResources,
-    const StackingContextHelper& aSc,
-    mozilla::layers::RenderRootStateManager* aManager,
-    nsDisplayListBuilder* aDisplayListBuilder) {
-  LayoutDeviceRect bounds = LayoutDeviceRect::FromAppUnits(
-      nsRect(ToReferenceFrame(), mFrame->GetSize()),
-      mFrame->PresContext()->AppUnitsPerDevPixel());
-
-  aBuilder.PushClearRect(wr::ToLayoutRect(bounds));
-
-  return true;
-}
-#endif
 
 nsRect nsDisplayOutline::GetBounds(nsDisplayListBuilder* aBuilder,
                                    bool* aSnap) const {

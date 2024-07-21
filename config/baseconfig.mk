@@ -50,9 +50,7 @@ RUNNABLE_TIERS := $(ALL_TIERS)
 ifndef MOZ_ARTIFACT_BUILDS
 RUNNABLE_TIERS := $(filter-out artifact,$(RUNNABLE_TIERS))
 endif
-ifndef MOZ_EME_WIN32_ARTIFACT
 RUNNABLE_TIERS := $(filter-out win32-artifact,$(RUNNABLE_TIERS))
-endif
 ifndef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
 RUNNABLE_TIERS := $(filter-out android-fat-aar-artifact,$(RUNNABLE_TIERS))
 endif

@@ -53,7 +53,7 @@ html|h2 {
 
 description.indent,
 .indent > description {
-  color: #737373;
+  color: var(--in-content-deemphasized-text);
 }
 
 button,
@@ -202,7 +202,8 @@ button > hbox > label {
 .androidIcon,
 .iOSIcon,
 #updateSettingCrossUserWarning,
-.extension-controlled > description {
+.extension-controlled > description,
+.info-panel > description {
   -moz-context-properties: fill;
   fill: currentColor;
 }

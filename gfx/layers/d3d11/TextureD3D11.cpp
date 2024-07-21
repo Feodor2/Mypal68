@@ -993,7 +993,7 @@ void DXGITextureHostD3D11::CreateRenderTexture(
                                                  texture.forget());
 }
 
-uint32_t DXGITextureHostD3D11::NumSubTextures() const {
+uint32_t DXGITextureHostD3D11::NumSubTextures() {
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
     case gfx::SurfaceFormat::R8G8B8A8:
@@ -1257,7 +1257,7 @@ void DXGIYCbCrTextureHostD3D11::CreateRenderTexture(
                                                  texture.forget());
 }
 
-uint32_t DXGIYCbCrTextureHostD3D11::NumSubTextures() const {
+uint32_t DXGIYCbCrTextureHostD3D11::NumSubTextures() {
   // ycbcr use 3 sub textures.
   return 3;
 }

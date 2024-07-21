@@ -115,9 +115,10 @@ class ArtifactJob(object):
     # to dist/.
     test_artifact_patterns = {
         ('bin/BadCertAndPinningServer', ('bin', 'bin')),
+        ('bin/DelegatedCredentialsServer', ('bin', 'bin')),
         ('bin/GenerateOCSPResponse', ('bin', 'bin')),
         ('bin/OCSPStaplingServer', ('bin', 'bin')),
-        ('bin/SymantecSanctionsServer', ('bin', 'bin')),
+        ('bin/SanctionsTestServer', ('bin', 'bin')),
         ('bin/certutil', ('bin', 'bin')),
         ('bin/fileid', ('bin', 'bin')),
         ('bin/geckodriver', ('bin', 'bin')),
@@ -496,9 +497,6 @@ class MacArtifactJob(ArtifactJob):
                     'browser/components/libbrowsercomps.dylib',
                     'dependentlibs.list',
                     # 'firefox',
-                    'gmp-clearkey/0.1/libclearkey.dylib',
-                    # 'gmp-fake/1.0/libfake.dylib',
-                    # 'gmp-fakeopenh264/1.0/libfakeopenh264.dylib',
                 ]),
             ]
 
@@ -556,9 +554,10 @@ class WinArtifactJob(ArtifactJob):
     # These are a subset of TEST_HARNESS_BINS in testing/mochitest/Makefile.in.
     test_artifact_patterns = {
         ('bin/BadCertAndPinningServer.exe', ('bin', 'bin')),
+        ('bin/DelegatedCredentialsServer.exe', ('bin', 'bin')),
         ('bin/GenerateOCSPResponse.exe', ('bin', 'bin')),
         ('bin/OCSPStaplingServer.exe', ('bin', 'bin')),
-        ('bin/SymantecSanctionsServer.exe', ('bin', 'bin')),
+        ('bin/SanctionsTestServer.exe', ('bin', 'bin')),
         ('bin/certutil.exe', ('bin', 'bin')),
         ('bin/fileid.exe', ('bin', 'bin')),
         ('bin/geckodriver.exe', ('bin', 'bin')),

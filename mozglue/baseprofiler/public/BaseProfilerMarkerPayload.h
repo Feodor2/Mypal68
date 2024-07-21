@@ -7,8 +7,8 @@
 
 #include "BaseProfiler.h"
 
-#ifndef MOZ_BASE_PROFILER
-#  error Do not #include this header when MOZ_BASE_PROFILER is not #defined.
+#ifndef MOZ_GECKO_PROFILER
+#  error Do not #include this header when MOZ_GECKO_PROFILER is not #defined.
 #endif
 
 #include "mozilla/Atomics.h"
@@ -106,9 +106,7 @@ class ProfilerMarkerPayload {
   using DeserializerTagAtomic = int;
 
   // Number of currently-registered deserializers.
-  static Atomic<DeserializerTagAtomic, ReleaseAcquire,
-                recordreplay::Behavior::DontPreserve>
-      sDeserializerCount;
+  static Atomic<DeserializerTagAtomic, ReleaseAcquire> sDeserializerCount;
 
   // List of currently-registered deserializers.
   // sDeserializers[0] is a no-payload deserializer.

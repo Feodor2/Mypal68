@@ -16,11 +16,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "RemoteSettings",
-  "resource://services-settings/remote-settings.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "SelectionChangedMenulist",
   "resource:///modules/SelectionChangedMenulist.jsm"
 );
@@ -55,16 +50,6 @@ async function installFromUrl(url, hash, callback) {
   }
   await install.install();
   return install.addon;
-}
-
-async function dictionaryIdsForLocale(locale) {
-  let entries = await RemoteSettings("language-dictionaries").get({
-    filters: { id: locale },
-  });
-  if (entries.length > 0) {
-    return entries[0].dictionaries;
-  }
-  return [];
 }
 
 class OrderedListBox {

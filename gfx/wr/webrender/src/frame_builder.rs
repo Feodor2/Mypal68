@@ -7,7 +7,7 @@ use api::{PipelineId};
 use api::units::*;
 use crate::batch::{BatchBuilder, AlphaBatchBuilder, AlphaBatchContainer};
 use crate::clip::{ClipStore, ClipChainStack};
-use crate::clip_scroll_tree::{ClipScrollTree, ROOT_SPATIAL_NODE_INDEX, SpatialNodeIndex};
+use crate::clip_scroll_tree::{ClipScrollTree, ROOT_SPATIAL_NODE_INDEX, SpatialNodeIndex, CoordinateSystemId};
 use crate::composite::{CompositorKind, CompositeState};
 use crate::debug_render::DebugItem;
 use crate::gpu_cache::{GpuCache, GpuCacheHandle};
@@ -155,6 +155,7 @@ pub struct FrameBuildingState<'a> {
     pub segment_builder: SegmentBuilder,
     pub surfaces: &'a mut Vec<SurfaceInfo>,
     pub dirty_region_stack: Vec<DirtyRegion>,
+    pub composite_state: &'a mut CompositeState,
 }
 
 impl<'a> FrameBuildingState<'a> {
@@ -379,6 +380,7 @@ impl FrameBuilder {
             segment_builder: SegmentBuilder::new(),
             surfaces,
             dirty_region_stack: Vec::new(),
+            composite_state,
         };
 
         frame_state
@@ -502,12 +504,21 @@ impl FrameBuilder {
         // (1) If globally enabled when WR was initialized
         // (2) If current debug flags allow picture caching
         // (3) [In future] Whether we are currently pinch zooming
+        // (4) If any picture cache spatial nodes are not in the root coordinate system
         let picture_caching_is_enabled =
             scene.config.global_enable_picture_caching &&
-            !debug_flags.contains(DebugFlags::DISABLE_PICTURE_CACHING);
+            !debug_flags.contains(DebugFlags::DISABLE_PICTURE_CACHING) &&
+            !scene.picture_cache_spatial_nodes.iter().any(|spatial_node_index| {
+                let spatial_node = &scene
+                    .clip_scroll_tree
+                    .spatial_nodes[spatial_node_index.0 as usize];
+                spatial_node.coordinate_system_id != CoordinateSystemId::root()
+            });
+
         let mut composite_state = CompositeState::new(
             scene.config.compositor_kind,
             picture_caching_is_enabled,
+            global_device_pixel_scale,
         );
 
         let main_render_task_id = self.build_layer_screen_rects_and_cull_layers(

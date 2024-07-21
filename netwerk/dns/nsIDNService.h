@@ -96,9 +96,10 @@ class nsIDNService final : public nsIIDNService,
   bool isInWhitelist(const nsACString& host);
   void prefsChanged(const char* pref);
 
-  static void PrefChanged(const char* aPref, nsIDNService* aSelf) {
-    AutoLock lock(aSelf->mLock);
-    aSelf->prefsChanged(aPref);
+  static void PrefChanged(const char* aPref, void* aSelf) {
+    auto self = static_cast<nsIDNService*>(aSelf);
+    AutoLock lock(self->mLock);
+    self->prefsChanged(aPref);
   }
 
   /**

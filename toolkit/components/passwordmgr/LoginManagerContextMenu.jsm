@@ -32,8 +32,8 @@ this.LoginManagerContextMenu = {
   /**
    * Look for login items and add them to the contextual menu.
    *
-   * @param {HTMLInputElement} inputElement
-   *        The target input element of the context menu click.
+   * @param {Object} inputElementIdentifier
+   *        An identifier generated for the input element via ContentDOMReference.
    * @param {xul:browser} browser
    *        The browser for the document the context menu was open on.
    * @param {string} formOrigin
@@ -42,7 +42,7 @@ this.LoginManagerContextMenu = {
    *        when subframes are involved.
    * @returns {DocumentFragment} a document fragment with all the login items.
    */
-  addLoginsToMenu(inputElement, browser, formOrigin) {
+  addLoginsToMenu(inputElementIdentifier, browser, formOrigin) {
     let foundLogins = this._findLogins(formOrigin);
 
     if (!foundLogins.length) {
@@ -75,7 +75,7 @@ this.LoginManagerContextMenu = {
         function(login, event) {
           this._fillTargetField(
             login,
-            inputElement,
+            inputElementIdentifier,
             browser,
             formOrigin
           );
@@ -200,8 +200,8 @@ this.LoginManagerContextMenu = {
   /**
    * @param {nsILoginInfo} login
    *        The login we want to fill the form with.
-   * @param {Element} inputElement
-   *        The target input element we want to fill.
+   * @param {Object} inputElementIdentifier
+   *        An identifier generated for the input element via ContentDOMReference.
    * @param {xul:browser} browser
    *        The target tab browser.
    * @param {string} formOrigin
@@ -210,12 +210,12 @@ this.LoginManagerContextMenu = {
    *        This isn't the same as the browser's top-level
    *        origin when subframes are involved.
    */
-  _fillTargetField(login, inputElement, browser, formOrigin) {
+  _fillTargetField(login, inputElementIdentifier, browser, formOrigin) {
     LoginManagerParent.fillForm({
       browser,
+      inputElementIdentifier,
       loginFormOrigin: formOrigin,
       login,
-      inputElement,
     }).catch(Cu.reportError);
   },
 

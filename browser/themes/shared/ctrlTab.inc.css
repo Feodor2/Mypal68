@@ -7,7 +7,7 @@
 /* Ctrl-Tab */
 
 #ctrlTab-panel {
-  -moz-appearance: none;
+  appearance: none;
 %ifdef XP_MACOSX
   -moz-window-shadow: none;
 %endif
@@ -21,7 +21,7 @@
 }
 
 .ctrlTab-preview {
-  -moz-appearance: none;
+  appearance: none;
   /* !important overrides the :hover color from button.css on Linux */
   color: inherit !important;
   /* remove the :-moz-focusring outline from button.css on Windows */

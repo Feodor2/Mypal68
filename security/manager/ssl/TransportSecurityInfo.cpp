@@ -9,10 +9,12 @@
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/Casting.h"
 #include "nsComponentManagerUtils.h"
+#include "nsIArray.h"
 #include "nsICertOverrideService.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIWebProgressListener.h"
+#include "nsIX509CertValidity.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSComponent.h"
@@ -44,6 +46,7 @@ TransportSecurityInfo::TransportSecurityInfo()
           nsITransportSecurityInfo::CERTIFICATE_TRANSPARENCY_NOT_APPLICABLE),
       mKeaGroup(),
       mSignatureSchemeName(),
+      mIsDelegatedCredential(false),
       mIsDomainMismatch(false),
       mIsNotValidAtThisTime(false),
       mIsUntrusted(false),
@@ -188,7 +191,7 @@ TransportSecurityInfo::Write(nsIObjectOutputStream* aStream) {
   // Re-purpose mErrorMessageCached to represent serialization version
   // If string doesn't match exact version it will be treated as older
   // serialization.
-  rv = aStream->WriteWStringZ(NS_ConvertUTF8toUTF16("2").get());
+  rv = aStream->WriteWStringZ(NS_ConvertUTF8toUTF16("3").get());
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -242,6 +245,11 @@ TransportSecurityInfo::Write(nsIObjectOutputStream* aStream) {
   for (const auto& cert : mFailedCertChain) {
     rv = aStream->WriteCompoundObject(cert, NS_GET_IID(nsIX509Cert), true);
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  rv = aStream->WriteBoolean(mIsDelegatedCredential);
+  if (NS_FAILED(rv)) {
+    return rv;
   }
 
   return NS_OK;
@@ -502,7 +510,8 @@ TransportSecurityInfo::Read(nsIObjectInputStream* aStream) {
   }
 
   // moved from nsISSLStatus
-  if (!serVersion.EqualsASCII("1") && !serVersion.EqualsASCII("2")) {
+  if (!serVersion.EqualsASCII("1") && !serVersion.EqualsASCII("2") &&
+      !serVersion.EqualsASCII("3")) {
     // nsISSLStatus may be present
     rv = ReadSSLStatus(aStream);
     CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
@@ -596,7 +605,7 @@ TransportSecurityInfo::Read(nsIObjectInputStream* aStream) {
     }
   }
   // END moved from nsISSLStatus
-  if (!serVersion.EqualsASCII("2")) {
+  if (!serVersion.EqualsASCII("3")) {
     // The old data structure of certList(nsIX509CertList) presents
     rv = ReadCertList(aStream, mFailedCertChain);
     CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
@@ -611,6 +620,16 @@ TransportSecurityInfo::Read(nsIObjectInputStream* aStream) {
 
     rv = ReadCertificatesFromStream(aStream, certCount, mFailedCertChain);
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // mIsDelegatedCredential added in bug 1562773
+  if (serVersion.EqualsASCII("2") || serVersion.EqualsASCII("3")) {
+    rv = aStream->ReadBoolean(&mIsDelegatedCredential);
+    CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
+                            "Deserialization should not fail");
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
   }
 
   return NS_OK;
@@ -640,6 +659,7 @@ void TransportSecurityInfo::SerializeToIPC(IPC::Message* aMsg) {
   WriteParam(aMsg, mSignatureSchemeName);
   WriteParam(aMsg, mSucceededCertChain);
   WriteParam(aMsg, mFailedCertChain);
+  WriteParam(aMsg, mIsDelegatedCredential);
 }
 
 bool TransportSecurityInfo::DeserializeFromIPC(const IPC::Message* aMsg,
@@ -664,7 +684,8 @@ bool TransportSecurityInfo::DeserializeFromIPC(const IPC::Message* aMsg,
       !ReadParam(aMsg, aIter, &mKeaGroup) ||
       !ReadParam(aMsg, aIter, &mSignatureSchemeName) ||
       !ReadParam(aMsg, aIter, &mSucceededCertChain) ||
-      !ReadParam(aMsg, aIter, &mFailedCertChain)) {
+      !ReadParam(aMsg, aIter, &mFailedCertChain) ||
+      !ReadParam(aMsg, aIter, &mIsDelegatedCredential)) {
     return false;
   }
 
@@ -1046,6 +1067,16 @@ TransportSecurityInfo::GetIsExtendedValidation(bool* aIsEV) {
   }
 
   return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+TransportSecurityInfo::GetIsDelegatedCredential(bool* aIsDelegCred) {
+  NS_ENSURE_ARG_POINTER(aIsDelegCred);
+  if (!mHaveCipherSuiteAndProtocol) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  *aIsDelegCred = mIsDelegatedCredential;
+  return NS_OK;
 }
 
 }  // namespace psm

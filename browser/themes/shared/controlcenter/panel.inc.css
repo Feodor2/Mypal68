@@ -103,8 +103,7 @@
   fill-opacity: .6;
   padding: 0.5em 0 1em;
   /* .identity-popup-host depends on this width */
-  padding-inline-start: calc(2em + 24px);
-  padding-inline-end: 1em;
+  padding-inline: calc(2em + 24px) 1em;
 }
 
 .identity-popup-security-content:-moz-locale-dir(rtl),
@@ -121,7 +120,7 @@
   min-width: auto;
   width: 38px;
   border-style: none;
-  -moz-appearance: none;
+  appearance: none;
   background: url("chrome://browser/skin/arrow-left.svg") center no-repeat;
   background-size: 16px, auto;
   -moz-context-properties: fill;
@@ -324,8 +323,7 @@
 }
 
 #identity-popup-securityView-body {
-  margin-inline-start: calc(2em + 24px);
-  margin-inline-end: 1em;
+  margin-inline: calc(2em + 24px) 1em;
   border-top: 1px solid var(--panel-separator-color);
   padding-inline-end: 1em;
 }
@@ -347,8 +345,7 @@ description#identity-popup-content-verifier,
 }
 
 #identity-popup-securityView-body > button {
-  margin-inline-start: 0;
-  margin-inline-end: 0;
+  margin-inline: 0;
 }
 
 /* CONTENT BLOCKING / TRACKING PROTECTION */
@@ -385,7 +382,7 @@ description#identity-popup-content-verifier,
 
 .identity-popup-content-blocking-category {
   /* Overwrite toolbarbutton styles */
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   padding-inline-start: 0;
 }
@@ -405,7 +402,7 @@ description#identity-popup-content-verifier,
   content: url(chrome://browser/skin/back-12.svg);
   -moz-context-properties: fill, fill-opacity;
   transform: scaleX(-1) translateY(1px);
-  float: right;
+  float: inline-end;
 }
 
 .identity-popup-content-blocking-category:-moz-locale-dir(rtl)::after {
@@ -438,8 +435,7 @@ description#identity-popup-content-verifier,
 
 #identity-popup-cookiesView .identity-popup-content-blocking-empty-label {
   margin-inline-start: 24px;
-  margin-top: 2px;
-  margin-bottom: 4px;
+  margin-block: 2px 4px;
 }
 
 .identity-popup-cookiesView-list-header {
@@ -466,17 +462,13 @@ description#identity-popup-content-verifier,
 .identity-popup-content-blocking-list-host-label {
   -moz-box-flex: 1;
   direction: ltr;
-}
-
-.identity-popup-content-blocking-list-host-label:-moz-locale-dir(rtl) {
-  text-align: right;
+  text-align: match-parent;
 }
 
 .identity-popup-content-blocking-list-state-label {
   -moz-box-flex: 1;
   text-align: end;
-  margin-inline-start: 5px;
-  margin-inline-end: 2px;
+  margin-inline: 5px 2px;
 }
 
 .identity-popup-fingerprintersView-icon,
@@ -579,15 +571,15 @@ description#identity-popup-content-verifier,
 
 .tracking-protection-button {
   list-style-image: url(chrome://browser/skin/tracking-protection.svg);
-  -moz-appearance: none;
-  margin: 1em 0 0;
+  appearance: none;
+  margin-block: 1em 0;
+  margin-inline: 0 8px;
   display: none;
   height: 32px;
   background-color: var(--arrowpanel-dimmed);
   /* !important to override -moz-mac-buttonactivetext from applying on :active on mac
    and -moz-buttonhovertext from applying on :hover on linux. */
   color: inherit !important;
-  margin-inline-end: 8px;
 }
 
 .tracking-protection-button:hover {
@@ -740,8 +732,9 @@ description#identity-popup-content-verifier,
 }
 
 .identity-popup-permission-remove-button {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
+  margin-inline-start: 2px;
   border-width: 0;
   border-radius: 50%;
   min-width: 0;
@@ -750,7 +743,6 @@ description#identity-popup-content-verifier,
   /* !important overrides :hover and :active colors from button.css */
   color: inherit !important;
   opacity: 0.6;
-  margin-inline-start: 2px;
 }
 
 .identity-popup-permission-remove-button > .button-box {

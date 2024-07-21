@@ -71,21 +71,19 @@ inline size_t strlen16(const char16_t* aZeroTerminated) {
 }
 
 template <class T>
-struct is_span_oracle : mozilla::FalseType {};
+struct is_span_oracle : std::false_type {};
 
 template <class ElementType, size_t Extent>
-struct is_span_oracle<mozilla::Span<ElementType, Extent>> : mozilla::TrueType {
-};
+struct is_span_oracle<mozilla::Span<ElementType, Extent>> : std::true_type {};
 
 template <class T>
 struct is_span : public is_span_oracle<std::remove_cv_t<T>> {};
 
 template <class T>
-struct is_std_array_oracle : mozilla::FalseType {};
+struct is_std_array_oracle : std::false_type {};
 
 template <class ElementType, size_t Extent>
-struct is_std_array_oracle<std::array<ElementType, Extent>>
-    : mozilla::TrueType {};
+struct is_std_array_oracle<std::array<ElementType, Extent>> : std::true_type {};
 
 template <class T>
 struct is_std_array : public is_std_array_oracle<std::remove_cv_t<T>> {};
@@ -306,8 +304,7 @@ class extent_type<dynamic_extent> {
  * including (pre-decay) C arrays, XPCOM strings, nsTArray, mozilla::Array,
  * mozilla::Range and contiguous standard-library containers, auto-convert
  * into Spans when attempting to pass them as arguments to methods that take
- * Spans. MakeSpan() functions can be used for explicit conversion in other
- * contexts. (Span itself autoconverts into mozilla::Range.)
+ * Spans. (Span itself autoconverts into mozilla::Range.)
  *
  * Like Rust's slices, Span provides safety against out-of-bounds access by
  * performing run-time bound checks. However, unlike Rust's slices, Span
@@ -320,10 +317,10 @@ class extent_type<dynamic_extent> {
  * so the pointer can be used as a raw part of a Rust slice without further
  * checks.)
  *
- * In addition to having constructors and MakeSpan() functions that take
- * various well-known types, a Span for an arbitrary type can be constructed
- * (via constructor or MakeSpan()) from a pointer and a length or a pointer
- * and another pointer pointing just past the last element.
+ * In addition to having constructors (with the support of deduction guides)
+ * that take various well-known types, a Span for an arbitrary type can be
+ * constructed from a pointer and a length or a pointer and another pointer
+ * pointing just past the last element.
  *
  * A Span<const char> or Span<const char16_t> can be obtained for const char*
  * or const char16_t pointing to a zero-terminated string using the
@@ -431,10 +428,17 @@ class Span {
   // a zero-terminated string. A Span<const char> or Span<const char16_t> can be
   // obtained for const char* or const char16_t pointing to a zero-terminated
   // string using the MakeStringSpan() function.
-  Span(char* aStr) = delete;
-  Span(const char* aStr) = delete;
-  Span(char16_t* aStr) = delete;
-  Span(const char16_t* aStr) = delete;
+  // (This must be a template because otherwise it will prevent the previous
+  // array constructor to match because an array decays to a pointer. This only
+  // exists to point to the above explanation, since there's no other
+  // constructor that would match.)
+  template <
+      typename T,
+      typename = std::enable_if_t<
+          std::is_pointer_v<T> &&
+          (std::is_same_v<std::remove_const_t<std::decay_t<T>>, char> ||
+           std::is_same_v<std::remove_const_t<std::decay_t<T>>, char16_t>)>>
+  Span(T& aStr) = delete;
 
   /**
    * Constructor for std::array.
@@ -483,13 +487,15 @@ class Span {
    */
   template <
       class Container,
-      class = std::enable_if_t<
-          !span_details::is_span<Container>::value &&
-          !span_details::is_std_array<Container>::value &&
-          std::is_convertible_v<typename Container::pointer, pointer> &&
-          std::is_convertible_v<typename Container::pointer,
-                                decltype(std::declval<Container>().data())>>>
-  constexpr MOZ_IMPLICIT Span(Container& cont)
+      class Dummy = std::enable_if_t<
+          !std::is_const_v<Container> &&
+              !span_details::is_span<Container>::value &&
+              !span_details::is_std_array<Container>::value &&
+              std::is_convertible_v<typename Container::pointer, pointer> &&
+              std::is_convertible_v<typename Container::pointer,
+                                    decltype(std::declval<Container>().data())>,
+          Container>>
+  constexpr MOZ_IMPLICIT Span(Container& cont, Dummy* = nullptr)
       : Span(cont.data(), ReleaseAssertedCast<index_type>(cont.size())) {}
 
   /**
@@ -505,6 +511,39 @@ class Span {
                                 decltype(std::declval<Container>().data())>>>
   constexpr MOZ_IMPLICIT Span(const Container& cont)
       : Span(cont.data(), ReleaseAssertedCast<index_type>(cont.size())) {}
+
+  // NB: the SFINAE here uses .Elements() as a incomplete/imperfect proxy for
+  // the requirement on Container to be a contiguous sequence container.
+  /**
+   * Constructor for contiguous Mozilla containers.
+   */
+  template <
+      class Container,
+      class = std::enable_if_t<
+          !std::is_const_v<Container> &&
+          !span_details::is_span<Container>::value &&
+          !span_details::is_std_array<Container>::value &&
+          std::is_convertible_v<typename Container::elem_type*, pointer> &&
+          std::is_convertible_v<
+              typename Container::elem_type*,
+              decltype(std::declval<Container>().Elements())>>>
+  constexpr MOZ_IMPLICIT Span(Container& cont, void* = nullptr)
+      : Span(cont.Elements(), ReleaseAssertedCast<index_type>(cont.Length())) {}
+
+  /**
+   * Constructor for contiguous Mozilla containers (const version).
+   */
+  template <
+      class Container,
+      class = std::enable_if_t<
+          std::is_const_v<element_type> &&
+          !span_details::is_span<Container>::value &&
+          std::is_convertible_v<typename Container::elem_type*, pointer> &&
+          std::is_convertible_v<
+              typename Container::elem_type*,
+              decltype(std::declval<Container>().Elements())>>>
+  constexpr MOZ_IMPLICIT Span(const Container& cont, void* = nullptr)
+      : Span(cont.Elements(), ReleaseAssertedCast<index_type>(cont.Length())) {}
 
   /**
    * Constructor from other Span.
@@ -767,13 +806,19 @@ Span(span_details::span_iterator<Span<T, OtherExtent>, IsConst> aBegin,
     -> Span<std::conditional_t<IsConst, std::add_const_t<T>, T>>;
 
 template <typename T, size_t Extent>
-Span(T (&aArr)[Extent]) -> Span<T, Extent>;
+Span(T (&)[Extent]) -> Span<T, Extent>;
 
 template <class Container>
 Span(Container&) -> Span<typename Container::value_type>;
 
 template <class Container>
 Span(const Container&) -> Span<const typename Container::value_type>;
+
+template <typename T, size_t Extent>
+Span(mozilla::Array<T, Extent>&) -> Span<T, Extent>;
+
+template <typename T, size_t Extent>
+Span(const mozilla::Array<T, Extent>&) -> Span<const T, Extent>;
 
 // [Span.comparison], Span comparison operators
 template <class ElementType, size_t FirstExtent, size_t SecondExtent>
@@ -865,82 +910,6 @@ inline Span<const char> AsChars(Span<const uint8_t> s) {
  */
 inline Span<char> AsWritableChars(Span<uint8_t> s) {
   return {reinterpret_cast<char*>(s.data()), s.size()};
-}
-
-//
-// MakeSpan() - Utility functions for creating Spans
-//
-/**
- * Create span from pointer and length.
- */
-template <class ElementType>
-Span<ElementType> MakeSpan(ElementType* aPtr,
-                           typename Span<ElementType>::index_type aLength) {
-  return Span<ElementType>(aPtr, aLength);
-}
-
-/**
- * Create span from start pointer and pointer past end.
- */
-template <class ElementType>
-Span<ElementType> MakeSpan(ElementType* aStartPtr, ElementType* aEndPtr) {
-  return Span<ElementType>(aStartPtr, aEndPtr);
-}
-
-/**
- * Create span from C array.
- * MakeSpan() does not permit creating Span objects from string literals (const
- * char or char16_t arrays) because the Span length would include the zero
- * terminator, which may surprise callers. Use MakeStringSpan() to create a
- * Span whose length that excludes the string literal's zero terminator or use
- * the MakeSpan() overload that accepts a pointer and length and specify the
- * string literal's full length.
- */
-template <class ElementType, size_t N,
-          class = std::enable_if_t<!IsSame<ElementType, const char>::value &&
-                                   !IsSame<ElementType, const char16_t>::value>>
-Span<ElementType> MakeSpan(ElementType (&aArr)[N]) {
-  return Span<ElementType>(aArr, N);
-}
-
-/**
- * Create span from mozilla::Array.
- */
-template <class ElementType, size_t N>
-Span<ElementType> MakeSpan(mozilla::Array<ElementType, N>& aArr) {
-  return aArr;
-}
-
-/**
- * Create span from const mozilla::Array.
- */
-template <class ElementType, size_t N>
-Span<const ElementType> MakeSpan(const mozilla::Array<ElementType, N>& arr) {
-  return arr;
-}
-
-/**
- * Create span from standard-library container.
- */
-template <class Container>
-Span<typename Container::value_type> MakeSpan(Container& cont) {
-  return Span<typename Container::value_type>(cont);
-}
-
-/**
- * Create span from standard-library container (const version).
- */
-template <class Container>
-Span<const typename Container::value_type> MakeSpan(const Container& cont) {
-  return Span<const typename Container::value_type>(cont);
-}
-
-/**
- * Create span from smart pointer and length.
- */
-template <class Ptr>
-Span<typename Ptr::element_type> MakeSpan(Ptr& aPtr, size_t aLength) {
-  return Span<typename Ptr::element_type>(aPtr, aLength);
 }
 
 /**

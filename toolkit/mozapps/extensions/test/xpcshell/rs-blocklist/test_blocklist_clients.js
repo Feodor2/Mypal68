@@ -1,5 +1,4 @@
 const BlocklistGlobal = ChromeUtils.import("resource://gre/modules/Blocklist.jsm", null);
-const { Utils: RemoteSettingsUtils } = ChromeUtils.import("resource://services-settings/Utils.jsm");
 
 const IS_ANDROID = AppConstants.platform == "android";
 
@@ -40,7 +39,6 @@ add_task(async function test_initial_dump_is_loaded_as_synced_when_collection_is
       // On Android we don't ship the dumps of plugins and gfx.
       continue;
     }
-    Assert.ok(await RemoteSettingsUtils.hasLocalDump(client.bucketName, client.collectionName));
   }
 });
 add_task(clear_state);

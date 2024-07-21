@@ -34,15 +34,12 @@ class BackgroundParentImpl : public PBackgroundParent {
   virtual bool DeallocPBackgroundTestParent(
       PBackgroundTestParent* aActor) override;
 
-  virtual PBackgroundIDBFactoryParent* AllocPBackgroundIDBFactoryParent(
-      const LoggingInfo& aLoggingInfo) override;
+  virtual already_AddRefed<PBackgroundIDBFactoryParent>
+  AllocPBackgroundIDBFactoryParent(const LoggingInfo& aLoggingInfo) override;
 
   virtual mozilla::ipc::IPCResult RecvPBackgroundIDBFactoryConstructor(
       PBackgroundIDBFactoryParent* aActor,
       const LoggingInfo& aLoggingInfo) override;
-
-  virtual bool DeallocPBackgroundIDBFactoryParent(
-      PBackgroundIDBFactoryParent* aActor) override;
 
   virtual PBackgroundIndexedDBUtilsParent*
   AllocPBackgroundIndexedDBUtilsParent() override;
@@ -241,11 +238,8 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   virtual bool DeallocPCacheParent(dom::cache::PCacheParent* aActor) override;
 
-  virtual dom::cache::PCacheStreamControlParent*
-  AllocPCacheStreamControlParent() override;
-
-  virtual bool DeallocPCacheStreamControlParent(
-      dom::cache::PCacheStreamControlParent* aActor) override;
+  virtual already_AddRefed<dom::cache::PCacheStreamControlParent>
+  AllocPCacheStreamControlParent();
 
   virtual PUDPSocketParent* AllocPUDPSocketParent(
       const Maybe<PrincipalInfo>& pInfo, const nsCString& aFilter) override;

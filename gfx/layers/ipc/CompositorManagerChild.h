@@ -95,7 +95,7 @@ class CompositorManagerChild : public PCompositorManagerChild {
   void ActorDealloc() override;
 
   already_AddRefed<nsIEventTarget> GetSpecificMessageEventTarget(
-      const Message& aMsg) override;
+      const Message& aMsg);
 
   void SetReplyTimeout();
 

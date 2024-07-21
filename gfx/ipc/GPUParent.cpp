@@ -33,6 +33,7 @@
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/layers/MemoryReportingMLGPU.h"
+#include "mozilla/layers/VideoBridgeParent.h"
 #ifdef MOZ_BUILD_WEBRENDER
 #  include "mozilla/image/ImageMemoryReporter.h"
 #  include "mozilla/webrender/RenderThread.h"
@@ -302,6 +303,12 @@ mozilla::ipc::IPCResult GPUParent::RecvInitVsyncBridge(
 mozilla::ipc::IPCResult GPUParent::RecvInitImageBridge(
     Endpoint<PImageBridgeParent>&& aEndpoint) {
   ImageBridgeParent::CreateForGPUProcess(std::move(aEndpoint));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult GPUParent::RecvInitVideoBridge(
+    Endpoint<PVideoBridgeParent>&& aEndpoint) {
+  VideoBridgeParent::Open(std::move(aEndpoint), VideoBridgeSource::RddProcess);
   return IPC_OK();
 }
 

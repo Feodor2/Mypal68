@@ -14,7 +14,8 @@ tree {
   margin: 0 4px;
   background-color: -moz-Field;
   color: -moz-FieldText;
-  -moz-appearance: listbox;
+  appearance: auto;
+  -moz-default-appearance: listbox;
 }
 
 /* ::::: tree rows ::::: */
@@ -106,7 +107,8 @@ treechildren::-moz-tree-drop-feedback {
 
 treecol,
 treecolpicker {
-  -moz-appearance: treeheadercell;
+  appearance: auto;
+  -moz-default-appearance: treeheadercell;
   -moz-box-align: center;
   -moz-box-pack: center;
   color: -moz-DialogText;
@@ -122,7 +124,7 @@ treecolpicker {
 }
 
 treecol[hideheader="true"] {
-  -moz-appearance: none;
+  appearance: none;
 }
 
 /* ::::: column drag and drop styles ::::: */
@@ -157,9 +159,8 @@ treechildren::-moz-tree-image {
 /* ::::: twisty :::::  */
 
 treechildren::-moz-tree-twisty {
-  padding-inline-end: 4px;
-  padding-inline-start: 4px;
   padding-top: 1px;
+  padding-inline: 4px;
   width: 8px; /* The image's width is 8 pixels */
   list-style-image: url("chrome://global/skin/icons/twisty-collapsed.svg");
   -moz-context-properties: fill;
@@ -190,7 +191,7 @@ treechildren::-moz-tree-cell-text(selected, editing) {
 }
 
 .tree-input {
-  -moz-appearance: none;
+  appearance: none;
   border: 1px solid Highlight;
   margin: 0;
   margin-inline-start: -4px;

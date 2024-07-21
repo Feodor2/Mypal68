@@ -9,9 +9,6 @@ const { actionTypes: at } = ChromeUtils.import(
 const { getDomain } = ChromeUtils.import(
   "resource://activity-stream/lib/TippyTopProvider.jsm"
 );
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
-);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -148,50 +145,10 @@ this.FaviconFeed = class FaviconFeed {
       return;
     }
 
-    const site = await this.getSite(getDomain(url));
-    if (!site) {
-      if (!this._queryForRedirects.has(url)) {
-        this._queryForRedirects.add(url);
-        Services.tm.idleDispatchToMainThread(() => fetchIconFromRedirects(url));
-      }
-      return;
+    if (!this._queryForRedirects.has(url)) {
+      this._queryForRedirects.add(url);
+      Services.tm.idleDispatchToMainThread(() => fetchIconFromRedirects(url));
     }
-
-    let iconUri = Services.io.newURI(site.image_url);
-    // The #tippytop is to be able to identify them for telemetry.
-    iconUri = iconUri
-      .mutate()
-      .setRef("tippytop")
-      .finalize();
-    PlacesUtils.favicons.setAndFetchFaviconForPage(
-      Services.io.newURI(url),
-      iconUri,
-      false,
-      PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-      null,
-      Services.scriptSecurityManager.getSystemPrincipal()
-    );
-  }
-
-  /**
-   * Get the site tippy top data from Remote Settings.
-   */
-  async getSite(domain) {
-    const sites = await this.tippyTop.get({
-      filters: { domain },
-      syncIfEmpty: false,
-    });
-    return sites.length ? sites[0] : null;
-  }
-
-  /**
-   * Get the tippy top collection from Remote Settings.
-   */
-  get tippyTop() {
-    if (!this._tippyTop) {
-      this._tippyTop = RemoteSettings("tippytop");
-    }
-    return this._tippyTop;
   }
 
   /**

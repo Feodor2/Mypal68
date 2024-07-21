@@ -19,7 +19,8 @@ add_task(async function test_show_logins() {
     let loginList = Cu.waiveXrays(content.document.querySelector("login-list"));
     let loginFound = await ContentTaskUtils.waitForCondition(() => {
       return (
-        loginList._logins.length == 1 && loginList._logins[0].guid == loginGuid
+        loginList._loginGuidsSortedOrder.length == 1 &&
+        loginList._loginGuidsSortedOrder[0] == loginGuid
       );
     }, "Waiting for login to be displayed");
     ok(loginFound, "Stored logins should be displayed upon loading the page");
@@ -63,14 +64,38 @@ add_task(async function test_login_item() {
       usernameInput.value += "-undome";
       passwordInput.value += "-undome";
 
+      let dialog = content.document.querySelector("confirmation-dialog");
+      ok(dialog.hidden, "Confirm dialog should initially be hidden");
+
       let cancelButton = loginItem.shadowRoot.querySelector(".cancel-button");
       cancelButton.click();
+
+      ok(!dialog.hidden, "Confirm dialog should be visible");
+
+      let confirmDiscardButton = dialog.shadowRoot.querySelector(
+        ".confirm-button"
+      );
+      await content.document.l10n.translateElements([
+        dialog.shadowRoot.querySelector(".title"),
+        dialog.shadowRoot.querySelector(".message"),
+        confirmDiscardButton,
+      ]);
+
+      confirmDiscardButton.click();
+
+      ok(dialog.hidden, "Confirm dialog should be hidden after confirming");
+
       usernameInput = loginItem.shadowRoot.querySelector(
         "input[name='username']"
       );
       passwordInput = loginItem.shadowRoot.querySelector(
         "input[name='password']"
       );
+
+      await ContentTaskUtils.waitForCondition(
+        () => usernameInput.value == login.username
+      );
+
       is(
         usernameInput.value,
         login.username,
@@ -103,9 +128,10 @@ add_task(async function test_login_item() {
       );
       await ContentTaskUtils.waitForCondition(() => {
         loginListItem = Cu.waiveXrays(
-          loginList.shadowRoot.querySelector(".login-list-item")
+          loginList.shadowRoot.querySelector(".login-list-item[data-guid]")
         );
         return (
+          loginListItem._login &&
           loginListItem._login.username == usernameInput.value &&
           loginListItem._login.password == passwordInput.value
         );
@@ -123,7 +149,7 @@ add_task(async function test_login_item() {
       let deleteButton = loginItem.shadowRoot.querySelector(".delete-button");
       deleteButton.click();
       let confirmDeleteDialog = Cu.waiveXrays(
-        content.document.querySelector("confirm-delete-dialog")
+        content.document.querySelector("confirmation-dialog")
       );
       let confirmDeleteButton = confirmDeleteDialog.shadowRoot.querySelector(
         ".confirm-button"
@@ -131,8 +157,8 @@ add_task(async function test_login_item() {
       confirmDeleteButton.click();
 
       await ContentTaskUtils.waitForCondition(() => {
-        loginListItem = Cu.waiveXrays(
-          loginList.shadowRoot.querySelector(".login-list-item")
+        loginListItem = loginList.shadowRoot.querySelector(
+          ".login-list-item[data-guid]"
         );
         return !loginListItem;
       }, "Waiting for login to be removed from list");

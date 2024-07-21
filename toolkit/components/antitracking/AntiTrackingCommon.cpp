@@ -1031,7 +1031,7 @@ AntiTrackingCommon::AddFirstPartyStorageAccessGrantedFor(
       return SaveFirstPartyStorageAccessGrantedForOriginOnParentProcess(
                  topLevelStoragePrincipal, trackingPrincipal, trackingOrigin,
                  aAllowMode)
-          ->Then(GetCurrentThreadSerialEventTarget(), __func__,
+          ->Then(GetCurrentSerialEventTarget(), __func__,
                  [](FirstPartyStorageAccessGrantPromise::ResolveOrRejectValue&&
                         aValue) {
                    if (aValue.IsResolve()) {
@@ -1059,7 +1059,7 @@ AntiTrackingCommon::AddFirstPartyStorageAccessGrantedFor(
         ->SendFirstPartyStorageAccessGrantedForOrigin(
             IPC::Principal(topLevelStoragePrincipal),
             IPC::Principal(trackingPrincipal), trackingOrigin, aAllowMode)
-        ->Then(GetCurrentThreadSerialEventTarget(), __func__,
+        ->Then(GetCurrentSerialEventTarget(), __func__,
                [](const ContentChild::
                       FirstPartyStorageAccessGrantedForOriginPromise::
                           ResolveOrRejectValue& aValue) {
@@ -1074,7 +1074,7 @@ AntiTrackingCommon::AddFirstPartyStorageAccessGrantedFor(
 
   if (aPerformFinalChecks) {
     return aPerformFinalChecks()->Then(
-        GetCurrentThreadSerialEventTarget(), __func__,
+        GetCurrentSerialEventTarget(), __func__,
         [storePermission](
             StorageAccessGrantPromise::ResolveOrRejectValue&& aValue) {
           if (aValue.IsResolve()) {

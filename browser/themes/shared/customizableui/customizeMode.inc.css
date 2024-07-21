@@ -59,7 +59,7 @@
   border: 1px solid #b1b1b1;
   border-radius: 2px;
   background-color: #fcfcfd;
-  -moz-appearance: none;
+  appearance: none;
 }
 
 .customizationmode-checkbox,
@@ -90,8 +90,6 @@
 .customizationmode-button > .box-inherit {
   border-width: 0;
   padding: 3px 0;
-  padding-inline-start: 0;
-  padding-inline-end: 0;
 }
 
 /* We use a smaller padding to ensure images don't have padding.
@@ -219,14 +217,11 @@ toolbarpaletteitem[mousedown] > toolbaritem.toolbaritem-combined-buttons {
 
 /* Override the toolkit styling for items being dragged over. */
 toolbarpaletteitem[place="toolbar"] {
-  border-left-width: 0;
-  border-right-width: 0;
-  margin-right: 0;
-  margin-left: 0;
+  border-inline-width: 0;
+  margin-inline: 0;
 }
 #widget-overflow-fixed-list > toolbarpaletteitem[place="menu-panel"] {
-  border-top: 0px solid transparent;
-  border-bottom: 0px solid transparent;
+  border-block: 0 solid transparent;
 }
 
 #customization-palette:not([hidden]) {
@@ -276,8 +271,7 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
   outline: 1px solid;
   outline-offset: -2px;
   opacity: .6;
-  margin-top: 5px;
-  margin-bottom: 5px;
+  margin-block: 5px;
 }
 
 #wrapper-edit-controls > #edit-controls > toolbarbutton > .toolbarbutton-icon {
@@ -336,13 +330,11 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
 
 .customization-uidensity-menuitem,
 .customization-lwtheme-menu-theme {
-  -moz-appearance: none;
+  appearance: none;
   border: 1px solid transparent;
   margin: 0 -5px 5px;
-  padding-top: 0;
-  padding-inline-end: 5px;
-  padding-bottom: 0;
-  padding-inline-start: 0;
+  padding-block: 0;
+  padding-inline: 0 5px;
 }
 
 .customization-uidensity-menuitem {
@@ -397,8 +389,7 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
 #customization-lwtheme-menu-header,
 #customization-lwtheme-menu-recommended,
 #customization-lwtheme-menu-footer {
-  margin-right: -10px;
-  margin-left: -10px;
+  margin-inline: -10px;
 }
 
 #customization-lwtheme-menu-header {
@@ -416,13 +407,12 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
 }
 
 .customization-lwtheme-menu-footeritem {
-  -moz-appearance: none;
+  appearance: none;
   -moz-box-flex: 1;
   color: inherit;
   border-style: none;
   padding: 10px;
-  margin-left: 0;
-  margin-right: 0;
+  margin-inline: 0;
 }
 
 .customization-lwtheme-menu-footeritem:hover {
@@ -443,7 +433,6 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
   transform: scaleX(-1);
 }
 
-
 #customization-panelWrapper > .panel-arrowcontent {
   color: var(--arrowpanel-color);
   background: var(--arrowpanel-background);
@@ -452,7 +441,7 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
   /* Native styling adds more 'oompf' to the popup box-shadow, so simulate that
    * as best as we can here: */
   box-shadow: 0 0 1px hsla(0,0%,0%,.3), 0 4px 10px hsla(0,0%,0%,.3);
-  -moz-appearance: none;
+  appearance: none;
   border-radius: var(--arrowpanel-border-radius);
 %else
   border: 1px solid var(--arrowpanel-border-color);
@@ -610,8 +599,7 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
 #customization-pong-arena {
   width: 300px;
   height: 300px;
-  border-left: 1px solid currentColor;
-  border-right: 1px solid currentColor;
+  border-inline: 1px solid currentColor;
   margin: 16px auto 0;
   box-sizing: content-box;
 }

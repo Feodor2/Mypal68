@@ -14,5 +14,5 @@ html|input[type="number"] {
 }
 
 html|input[type="number"][hidespinbuttons="true"] {
-  -moz-appearance: textfield !important;
+  appearance: textfield !important;
 }

@@ -40,11 +40,6 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 ChromeUtils.defineModuleGetter(
   this,
-  "RemoteSettings",
-  "resource://services-settings/remote-settings.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "jexlFilterFunc",
   "resource://services-settings/remote-settings.js"
 );
@@ -418,15 +413,6 @@ this.GfxBlocklistRS = {
       return;
     }
     this._initialized = true;
-    this._client = RemoteSettings(
-      Services.prefs.getCharPref(PREF_BLOCKLIST_GFX_COLLECTION),
-      {
-        bucketNamePref: PREF_BLOCKLIST_BUCKET,
-        lastCheckTimePref: PREF_BLOCKLIST_GFX_CHECKED_SECONDS,
-        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_GFX_SIGNER),
-        filterFunc: targetAppFilter,
-      }
-    );
     this.checkForEntries = this.checkForEntries.bind(this);
     this._client.on("sync", this.checkForEntries);
   },
@@ -662,15 +648,6 @@ this.PluginBlocklistRS = {
       return;
     }
     this._initialized = true;
-    this._client = RemoteSettings(
-      Services.prefs.getCharPref(PREF_BLOCKLIST_PLUGINS_COLLECTION),
-      {
-        bucketNamePref: PREF_BLOCKLIST_BUCKET,
-        lastCheckTimePref: PREF_BLOCKLIST_PLUGINS_CHECKED_SECONDS,
-        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_PLUGINS_SIGNER),
-        filterFunc: this._filterItem,
-      }
-    );
     this._onUpdate = this._onUpdate.bind(this);
     this._client.on("sync", this._onUpdate);
   },
@@ -1098,15 +1075,6 @@ this.ExtensionBlocklistRS = {
       return;
     }
     this._initialized = true;
-    this._client = RemoteSettings(
-      Services.prefs.getCharPref(PREF_BLOCKLIST_ADDONS_COLLECTION),
-      {
-        bucketNamePref: PREF_BLOCKLIST_BUCKET,
-        lastCheckTimePref: PREF_BLOCKLIST_ADDONS_CHECKED_SECONDS,
-        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_ADDONS_SIGNER),
-        filterFunc: this._filterItem,
-      }
-    );
     this._onUpdate = this._onUpdate.bind(this);
     this._client.on("sync", this._onUpdate);
   },

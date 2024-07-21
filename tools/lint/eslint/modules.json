@@ -176,7 +176,6 @@
   "Reducers.jsm": ["reducers", "INITIAL_STATE", "insertPinned", "TOP_SITES_DEFAULT_ROWS", "TOP_SITES_MAX_SITES_PER_ROW"],
   "Redux.jsm": ["redux"],
   "reflect.jsm": ["Reflect"],
-  "remote-settings.js": ["RemoteSettings", "jexlFilterFunc", "remoteSettingsBroadcastHandler"],
   "RemotePageManagerChild.jsm": ["ChildMessagePort"],
   "RemotePageManagerParent.jsm": ["RemotePages", "RemotePageManager"],
   "RemoteWebProgress.jsm": ["RemoteWebProgressManager"],

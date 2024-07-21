@@ -118,7 +118,7 @@ button::selection {
 
 .devtools-autocomplete-listbox {
   --autocomplete-item-padding-inline: 8px;
-  -moz-appearance: none !important;
+  appearance: none !important;
   background-color: transparent;
   border-width: 0px !important;
   margin: 0;
@@ -144,13 +144,13 @@ button::selection {
 .devtools-autocomplete-listbox .autocomplete-item > .autocomplete-value {
   margin: 0;
   padding: 0;
-  float: left;
+  float: inline-start;
 }
 
 .devtools-autocomplete-listbox .autocomplete-item > .autocomplete-postlabel {
   font-style: italic;
-  float: right;
-  padding-right: 3px;
+  float: inline-end;
+  padding-inline-end: 3px;
 }
 
 .devtools-autocomplete-listbox .autocomplete-item > .autocomplete-count {
@@ -293,7 +293,7 @@ checkbox:-moz-focusring {
 /* Toolbar buttons */
 .devtools-toolbarbutton,
 .devtools-button {
-  -moz-appearance: none;
+  appearance: none;
   background: transparent;
   border: none;
   border-radius: 2px;
@@ -453,7 +453,7 @@ checkbox:-moz-focusring {
 .devtools-textinput,
 .devtools-searchinput,
 .devtools-filterinput {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   padding: 0 4px;
   font: inherit;
@@ -753,7 +753,7 @@ checkbox:-moz-focusring {
 .devtools-checkbox-toggle {
   --x-pos: .15em;
   /* Reset native checkbox styling. */
-  -moz-appearance: none;
+  appearance: none;
   background-color: var(--toggle-track-color);
   cursor: pointer;
   /* Change font-size to scale. */

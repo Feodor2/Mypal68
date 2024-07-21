@@ -157,7 +157,7 @@ class BaseProcessLauncher {
   void GetChildLogName(const char* origLogName, nsACString& buffer);
 
   const char* ChildProcessType() {
-    return XRE_ChildProcessTypeToString(mProcessType);
+    return XRE_GeckoProcessTypeToString(mProcessType);
   }
 
   nsCOMPtr<nsIEventTarget> GetIPCLauncher();
@@ -635,10 +635,10 @@ bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
             // If something failed let's set the error state and notify.
             CHROMIUM_LOG(ERROR)
                 << "Failed to launch "
-                << XRE_ChildProcessTypeToString(mProcessType) << " subprocess";
+                << XRE_GeckoProcessTypeToString(mProcessType) << " subprocess";
             Telemetry::Accumulate(
                 Telemetry::SUBPROCESS_LAUNCH_FAILURE,
-                nsDependentCString(XRE_ChildProcessTypeToString(mProcessType)));
+                nsDependentCString(XRE_GeckoProcessTypeToString(mProcessType)));
             {
               Monitor2AutoLock lock(mMonitor);
               mProcessState = PROCESS_ERROR;
@@ -742,8 +742,8 @@ void BaseProcessLauncher::GetChildLogName(const char* origLogName,
     std::wstring resolvedPath(NS_ConvertUTF8toUTF16(absPath).get());
     if (widget::WinUtils::ResolveJunctionPointsAndSymLinks(resolvedPath)) {
       AppendUTF16toUTF8(
-          MakeSpan(reinterpret_cast<const char16_t*>(resolvedPath.data()),
-                   resolvedPath.size()),
+          Span(reinterpret_cast<const char16_t*>(resolvedPath.data()),
+               resolvedPath.size()),
           buffer);
     } else
 #  endif
@@ -1255,12 +1255,10 @@ bool WindowsProcessLauncher::DoSetup() {
 
 #  if defined(MOZ_SANDBOX) || defined(_ARM64_)
   const bool isGMP = mProcessType == GeckoProcessType_GMPlugin;
-  const bool isWidevine = isGMP && Contains(mExtraOpts, "gmp-widevinecdm");
 #    if defined(_ARM64_)
-  const bool isClearKey = isGMP && Contains(mExtraOpts, "gmp-clearkey");
   const bool isSandboxBroker =
       mProcessType == GeckoProcessType_RemoteSandboxBroker;
-  if (isClearKey || isWidevine || isSandboxBroker) {
+  if (isSandboxBroker) {
     // On Windows on ARM64 for ClearKey and Widevine, and for the sandbox
     // launcher process, we want to run the x86 plugin-container.exe in
     // the "i686" subdirectory, instead of the aarch64 plugin-container.exe.
@@ -1300,11 +1298,6 @@ bool WindowsProcessLauncher::DoSetup() {
   }
 
 #  if defined(MOZ_SANDBOX)
-#    if defined(_ARM64_)
-  if (isClearKey || isWidevine)
-    mResults.mSandboxBroker = new RemoteSandboxBroker();
-  else
-#    endif  // if defined(_ARM64_)
     mResults.mSandboxBroker = new SandboxBroker();
 
   // XXX: Bug 1124167: We should get rid of the process specific logic for
@@ -1340,8 +1333,7 @@ bool WindowsProcessLauncher::DoSetup() {
         // not at USER_LOCKDOWN. So look in the command line arguments
         // to see if we're loading the path to the Widevine CDM, and if
         // so use sandbox level USER_RESTRICTED instead of USER_LOCKDOWN.
-        auto level =
-            isWidevine ? SandboxBroker::Restricted : SandboxBroker::LockDown;
+        auto level = SandboxBroker::LockDown;
         if (!mResults.mSandboxBroker->SetSecurityLevelForGMPlugin(level)) {
           return false;
         }

@@ -6,7 +6,8 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 textbox {
-  -moz-appearance: textfield;
+  appearance: auto;
+  -moz-default-appearance: textfield;
   cursor: text;
   margin: 4px;
   padding: 0px;
@@ -15,7 +16,7 @@ textbox {
 }
 
 html|*.textbox-input {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   border: none;
   padding: 0 1px;
@@ -48,7 +49,7 @@ textbox[disabled="true"] {
 }
 
 textbox.plain {
-  -moz-appearance: none !important;
+  appearance: none !important;
   background-color: transparent;
   padding: 0px !important;
   margin: 0px !important;
@@ -62,7 +63,7 @@ textbox.plain html|*.textbox-input {
 /* ::::: search box ::::: */
 
 textbox[is="search-textbox"] {
-  -moz-appearance: searchfield;
+  appearance: searchfield;
   padding: 1px;
   font-size: 12px;
 }

@@ -65,7 +65,7 @@ RemoteController.prototype = {
     );
   },
 
-  getSupportedCommands(aCount, aCommands) {
+  getSupportedCommands() {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
 

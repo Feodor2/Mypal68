@@ -90,7 +90,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   };
 
   struct MenuBackgroundParams {
-    mozilla::Maybe<mozilla::gfx::Color> vibrancyColor;
     bool disabled = false;
     bool submenuRightOfParent = false;
   };
@@ -104,7 +103,7 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   };
 
   struct MenuItemParams {
-    mozilla::Maybe<mozilla::gfx::Color> vibrancyColor;
+    bool backgroundIsVibrant = false;
     bool checked = false;
     bool disabled = false;
     bool selected = false;
@@ -226,9 +225,7 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   };
 
   enum Widget : uint8_t {
-    eColorFill,  // mozilla::gfx::Color
-    eSheetBackground,
-    eDialogBackground,
+    eColorFill,       // mozilla::gfx::sRGBColor
     eMenuBackground,  // MenuBackgroundParams
     eMenuIcon,        // MenuIconParams
     eMenuItem,        // MenuItemParams
@@ -271,8 +268,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     static WidgetInfo ColorFill(const mozilla::gfx::Color& aParams) {
       return WidgetInfo(Widget::eColorFill, aParams);
     }
-    static WidgetInfo SheetBackground() { return WidgetInfo(Widget::eSheetBackground, false); }
-    static WidgetInfo DialogBackground() { return WidgetInfo(Widget::eDialogBackground, false); }
     static WidgetInfo MenuBackground(const MenuBackgroundParams& aParams) {
       return WidgetInfo(Widget::eMenuBackground, aParams);
     }
@@ -420,8 +415,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   bool ThemeDrawsFocusForWidget(StyleAppearance aAppearance) override;
   bool ThemeNeedsComboboxDropmarker() override;
   virtual bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance aAppearance) override;
-  virtual bool NeedToClearBackgroundBehindWidget(nsIFrame* aFrame,
-                                                 StyleAppearance aAppearance) override;
   virtual ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame* aFrame,
                                                        StyleAppearance aAppearance) override;
   virtual Transparency GetWidgetTransparency(nsIFrame* aFrame,
@@ -455,8 +448,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   MeterParams ComputeMeterParams(nsIFrame* aFrame);
   TreeHeaderCellParams ComputeTreeHeaderCellParams(nsIFrame* aFrame,
                                                    mozilla::EventStates aEventState);
-  ScaleParams ComputeXULScaleParams(nsIFrame* aFrame, mozilla::EventStates aEventState,
-                                    bool aIsHorizontal);
   mozilla::Maybe<ScaleParams> ComputeHTMLScaleParams(nsIFrame* aFrame,
                                                      mozilla::EventStates aEventState);
   ScrollbarParams ComputeScrollbarParams(nsIFrame* aFrame, bool aIsHorizontal);
@@ -512,6 +503,8 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   void DrawScrollCorner(CGContextRef cgContext, const CGRect& inBoxRect, ScrollbarParams aParams);
   void DrawMultilineTextField(CGContextRef cgContext, const CGRect& inBoxRect, bool aIsFocused);
   void DrawSourceList(CGContextRef cgContext, const CGRect& inBoxRect, bool aIsActive);
+  void DrawSourceListSelection(CGContextRef aContext, const CGRect& aRect, bool aWindowIsActive,
+                               bool aSelectionIsActive);
 
   // Scrollbars
   bool IsParentScrollbarRolledOver(nsIFrame* aFrame);

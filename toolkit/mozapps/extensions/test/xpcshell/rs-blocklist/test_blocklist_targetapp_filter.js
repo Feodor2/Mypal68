@@ -2,9 +2,6 @@ const BlocklistGlobal = ChromeUtils.import(
   "resource://gre/modules/Blocklist.jsm",
   null
 );
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
-);
 
 const APP_ID = "xpcshell@tests.mozilla.org";
 const TOOLKIT_ID = "toolkit@mozilla.org";
@@ -35,8 +32,6 @@ function run_test() {
   // This will initialize the remote settings clients for blocklists,
   // with their specific options etc.
   BlocklistGlobal.PluginBlocklistRS.ensureInitialized();
-  // Obtain one of the instantiated client for our tests.
-  client = RemoteSettings("plugins", { bucketName: "blocklists" });
 
   run_next_test();
 }

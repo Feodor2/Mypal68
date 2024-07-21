@@ -12,7 +12,8 @@
 /* ::::: textbox ::::: */
 
 textbox {
-  -moz-appearance: textfield;
+  appearance: auto;
+  -moz-default-appearance: textfield;
   cursor: text;
   margin: 2px 4px;
   padding: 2px 2px 3px;
@@ -22,7 +23,7 @@ textbox {
 }
 
 html|*.textbox-input {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   border: none;
   padding: 0 1px;
@@ -58,7 +59,7 @@ textbox[disabled="true"] {
 /* ::::: plain textbox ::::: */
 
 textbox.plain {
-  -moz-appearance: none !important;
+  appearance: none !important;
   background-color: transparent;
   padding: 0px !important;
   margin: 0px !important;

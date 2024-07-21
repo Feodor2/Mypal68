@@ -585,6 +585,7 @@ def _cxxConstRefType(ipdltype, side):
         t.ref = True
         return t
     if ipdltype.isCxx() and ipdltype.isMoveonly():
+        t.const = True
         t.ref = True
         return t
     if ipdltype.isCxx() and ipdltype.isRefcounted():
@@ -1071,11 +1072,16 @@ class MessageDecl(ipdl.ast.MessageDecl):
         return self.params[0]
 
     def makeCxxParams(self, paramsems='in', returnsems='out',
-                      side=None, implicit=True):
+                      side=None, implicit=True, direction=None):
         """Return a list of C++ decls per the spec'd configuration.
 |params| and |returns| is the C++ semantics of those: 'in', 'out', or None."""
 
         def makeDecl(d, sems):
+            if self.decl.type.tainted and direction == 'recv':
+                # Tainted types are passed by-value, allowing the receiver to move them if desired.
+                assert sems != 'out'
+                return Decl(Type('Tainted', T=d.bareType(side)), d.name)
+
             if sems == 'in':
                 return Decl(d.inType(side), d.name)
             elif sems == 'move':
@@ -1776,8 +1782,10 @@ def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
         prioEnum = 'NORMAL_PRIORITY'
     elif prio == ipdl.ast.INPUT_PRIORITY:
         prioEnum = 'INPUT_PRIORITY'
-    else:
+    elif prio == ipdl.ast.HIGH_PRIORITY:
         prioEnum = 'HIGH_PRIORITY'
+    else:
+        prioEnum = 'MEDIUMHIGH_PRIORITY'
 
     if md.decl.type.isSync():
         syncEnum = 'SYNC'
@@ -2049,10 +2057,13 @@ class _ParamTraits():
                 if (id == 1) {  // kFreedActorId
                     ${var}->FatalError("Actor has been |delete|d");
                 }
-                MOZ_ASSERT(
+                MOZ_RELEASE_ASSERT(
                     ${actor}->GetIPCChannel() == ${var}->GetIPCChannel(),
                     "Actor must be from the same channel as the"
                     " actor it's being sent over");
+                MOZ_RELEASE_ASSERT(
+                    ${var}->CanSend(),
+                    "Actor must still be open when sending");
             }
 
             ${write};
@@ -2145,12 +2156,11 @@ class _ParamTraits():
 
         prelude = [
             Typedef(cxxtype, alias),
-            StmtDecl(Decl(Type.INT, typevar.name)),
         ]
 
         writeswitch = StmtSwitch(typevar)
         write = prelude + [
-            StmtExpr(ExprAssn(typevar, ud.callType(cls.var))),
+            StmtDecl(Decl(Type.INT, typevar.name), init=ud.callType(cls.var)),
             cls.checkedWrite(None,
                              typevar,
                              cls.msgvar,
@@ -2162,6 +2172,7 @@ class _ParamTraits():
 
         readswitch = StmtSwitch(typevar)
         read = prelude + [
+            StmtDecl(Decl(Type.INT, typevar.name), init=ExprLiteral.ZERO),
             cls._checkedRead(None,
                              ExprAddrOf(typevar),
                              uniontype.name(),
@@ -3205,7 +3216,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             #include "prenv.h"
             #endif  // DEBUG
 
-            #include "base/id_map.h"
+            #include "mozilla/Tainting.h"
             #include "mozilla/ipc/MessageChannel.h"
             #include "mozilla/ipc/ProtocolUtils.h"
             ''')
@@ -3304,7 +3315,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 recvDecl = MethodDecl(
                     md.recvMethod(),
                     params=md.makeCxxParams(paramsems='move', returnsems=returnsems,
-                                            side=self.side, implicit=implicit),
+                                            side=self.side, implicit=implicit, direction='recv'),
                     ret=Type('mozilla::ipc::IPCResult'),
                     methodspec=MethodSpec.VIRTUAL)
 
@@ -3345,7 +3356,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
                 self.cls.addstmt(StmtDecl(MethodDecl(
                     _allocMethod(managed, self.side),
-                    params=md.makeCxxParams(side=self.side, implicit=False),
+                    params=md.makeCxxParams(side=self.side, implicit=False, direction='recv'),
                     ret=actortype, methodspec=MethodSpec.PURE)))
 
             # add the Dealloc interface for all managed non-refcounted actors,
@@ -4009,35 +4020,45 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
     def genAsyncCtor(self, md):
         actor = md.actorDecl()
         method = MethodDefn(self.makeSendMethodDecl(md))
-        method.addstmts(self.bindManagedActor(actor) + [Whitespace.NL])
 
         msgvar, stmts = self.makeMessage(md, errfnSendCtor)
         sendok, sendstmts = self.sendAsync(md, msgvar)
 
-        warnif = StmtIf(ExprNot(sendok))
-        warnif.addifstmt(_printWarningMessage('Error sending constructor'))
+        method.addcode(
+            '''
+            $*{bind}
 
-        method.addstmts(
-            # Build our constructor message & verify it.
-            stmts
-            + self.genVerifyMessage(md.decl.type.verify, md.params,
-                                    errfnSendCtor, ExprVar('msg__'))
+            // Build our constructor message & verify it.
+            $*{stmts}
+            $*{verify}
 
-            # Notify the other side about the newly created actor.
-            #
-            # If the MessageChannel is closing, and we haven't been told yet,
-            # this send may fail. This error is ignored to treat it like a
-            # message being lost due to the other side shutting down before
-            # processing it.
-            #
-            # NOTE: We don't free the actor here, as our caller may be
-            # depending on it being alive after calling SendConstructor.
-            + sendstmts
+            // Notify the other side about the newly created actor. This can
+            // fail if our manager has already been destroyed.
+            //
+            // NOTE: If the send call fails due to toplevel channel teardown,
+            // the `IProtocol::ChannelSend` wrapper absorbs the error for us,
+            // so we don't tear down actors unexpectedly.
+            $*{sendstmts}
 
-            # Warn if the message failed to send, and return our newly created
-            # actor.
-            + [warnif,
-               StmtReturn(actor.var())])
+            // Warn, destroy the actor, and return null if the message failed to
+            // send. Otherwise, return the successfully created actor reference.
+            if (!${sendok}) {
+                NS_WARNING("Error sending ${actorname} constructor");
+                $*{destroy}
+                return nullptr;
+            }
+            return ${actor};
+            ''',
+            bind=self.bindManagedActor(actor),
+            stmts=stmts,
+            verify=self.genVerifyMessage(md.decl.type.verify, md.params,
+                                         errfnSendCtor, ExprVar('msg__')),
+            sendstmts=sendstmts,
+            sendok=sendok,
+            destroy=self.destroyActor(md, actor.var(),
+                                      why=_DestroyReason.FailedConstructor),
+            actor=actor.var(),
+            actorname=actor.ipdltype.protocol.name() + self.side.capitalize())
 
         lbl = CaseLabel(md.pqReplyId())
         case = StmtBlock()
@@ -4050,45 +4071,53 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
     def genBlockingCtorMethod(self, md):
         actor = md.actorDecl()
         method = MethodDefn(self.makeSendMethodDecl(md))
-        method.addstmts(self.bindManagedActor(actor) + [Whitespace.NL])
 
         msgvar, stmts = self.makeMessage(md, errfnSendCtor)
+        verify = self.genVerifyMessage(md.decl.type.verify, md.params,
+                                       errfnSendCtor, ExprVar('msg__'))
 
         replyvar = self.replyvar
         sendok, sendstmts = self.sendBlocking(md, msgvar, replyvar)
-
-        failIf = StmtIf(ExprNot(sendok))
-        failIf.addifstmt(_printWarningMessage('Error sending constructor'))
-        failIf.addifstmts(self.destroyActor(md, actor.var(),
-                                            why=_DestroyReason.FailedConstructor))
-        failIf.addifstmt(StmtReturn(ExprLiteral.NULL))
-
-        method.addstmts(
-            # Build our constructor message & verify it.
-            stmts
-            + [Whitespace.NL,
-                StmtDecl(Decl(Type('Message'), replyvar.name))]
-            + self.genVerifyMessage(md.decl.type.verify, md.params,
-                                    errfnSendCtor, ExprVar('msg__'))
-
-            # Synchronously send the constructor message to the other side.
-            #
-            # If the MessageChannel is closing, and we haven't been told yet,
-            # this send may fail. This error is ignored to treat it like a
-            # message being lost due to the other side shutting down before
-            # processing it.
-            #
-            # NOTE: We also free the actor here.
-            + sendstmts
-
-            # Warn, destroy the actor and return null if the message failed to
-            # send.
-            + [failIf])
-
-        stmts = self.deserializeReply(
+        replystmts = self.deserializeReply(
             md, ExprAddrOf(replyvar), self.side,
             errfnSendCtor, errfnSentinel(ExprLiteral.NULL))
-        method.addstmts(stmts + [StmtReturn(actor.var())])
+
+        method.addcode(
+            '''
+            $*{bind}
+
+            // Build our constructor message & verify it.
+            $*{stmts}
+            $*{verify}
+
+            // Synchronously send the constructor message to the other side. If
+            // the send fails, e.g. due to the remote side shutting down, the
+            // actor will be destroyed and potentially freed.
+            Message ${replyvar};
+            $*{sendstmts}
+
+            if (!(${sendok})) {
+                // Warn, destroy the actor and return null if the message
+                // failed to send.
+                NS_WARNING("Error sending constructor");
+                $*{destroy}
+                return nullptr;
+            }
+
+            $*{replystmts}
+            return ${actor};
+            ''',
+            bind=self.bindManagedActor(actor),
+            stmts=stmts,
+            verify=verify,
+            replyvar=replyvar,
+            sendstmts=sendstmts,
+            sendok=sendok,
+            destroy=self.destroyActor(md, actor.var(),
+                                      why=_DestroyReason.FailedConstructor),
+            replystmts=replystmts,
+            actor=actor.var(),
+            actorname=actor.ipdltype.protocol.name() + self.side.capitalize())
 
         return method
 
@@ -4103,7 +4132,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         return [StmtCode(
             '''
             if (!${actor}) {
-                NS_WARNING("Error constructing actor ${actorname}");
+                NS_WARNING("Cannot bind null ${actorname} actor");
                 return ${errfn};
             }
 
@@ -4325,7 +4354,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         idvar, saveIdStmts = self.saveActorId(md)
         case.addstmts(
             stmts
-            + [StmtDecl(Decl(r.bareType(self.side), r.var().name))
+            + [StmtDecl(Decl(r.bareType(self.side), r.var().name), initargs=[])
                 for r in md.returns]
             # alloc the actor, register it under the foreign ID
             + [self.callAllocActor(md, retsems='in', side=self.side)]
@@ -4352,7 +4381,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         idvar, saveIdStmts = self.saveActorId(md)
         case.addstmts(
             stmts
-            + [StmtDecl(Decl(r.bareType(self.side), r.var().name))
+            + [StmtDecl(Decl(r.bareType(self.side), r.var().name), initargs=[])
                 for r in md.returns]
             + self.invokeRecvHandler(md, implicit=False)
             + [Whitespace.NL]
@@ -4375,7 +4404,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                                         errfnSent=errfnSentinel(_Result.ValuError))
 
         idvar, saveIdStmts = self.saveActorId(md)
-        declstmts = [StmtDecl(Decl(r.bareType(self.side), r.var().name))
+        declstmts = [StmtDecl(Decl(r.bareType(self.side), r.var().name), initargs=[])
                      for r in md.returns]
         if md.decl.type.isAsync() and md.returns:
             declstmts = self.makeResolver(md, errfnRecv, routingId=idvar)
@@ -4437,34 +4466,34 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                                 init=ExprCall(ExprVar('ChannelSend'),
                                               args=[self.replyvar])),
                        failifsendok])
-        if len(md.returns) > 1:
-            resolvedecl = Decl(_tuple([p.moveType(self.side) for p in md.returns],
-                                      const=True, ref=True),
-                               'aParam')
-            destructexpr = ExprCall(ExprVar('Tie'),
-                                    args=[p.var() for p in md.returns])
-        else:
-            resolvedecl = Decl(md.returns[0].moveType(self.side), 'aParam')
-            destructexpr = md.returns[0].var()
         selfvar = ExprVar('self__')
         ifactorisdead = StmtIf(ExprNot(selfvar))
         ifactorisdead.addifstmts([
             _printWarningMessage("Not resolving response because actor is dead."),
             StmtReturn()])
         resolverfn = ExprLambda([ExprVar.THIS, selfvar, routingId, seqno],
-                                [resolvedecl])
+                                [Decl(Type.AUTORVAL, 'aParam')])
         resolverfn.addstmts([ifactorisdead]
                             + [StmtDecl(Decl(Type.BOOL, resolve.name),
-                                        init=ExprLiteral.TRUE)]
-                            + [StmtDecl(Decl(p.bareType(self.side), p.var().name))
-                                for p in md.returns]
-                            + [StmtExpr(ExprAssn(destructexpr, ExprMove(ExprVar('aParam')))),
-                                StmtDecl(Decl(Type('IPC::Message', ptr=True), self.replyvar.name),
-                                         init=ExprCall(ExprVar(md.pqReplyCtorFunc()),
-                                                       args=[routingId]))]
+                                        init=ExprLiteral.TRUE)])
+        fwdparam = ExprCode("std::forward<decltype(aParam)>(aParam)")
+        if len(md.returns) > 1:
+            resolverfn.addstmts([StmtDecl(Decl(p.bareType(self.side), p.var().name), initargs=[])
+                                    for p in md.returns]
+                                + [StmtExpr(ExprAssn(ExprCall(ExprVar('Tie'),
+                                                        args=[p.var() for p in md.returns]),
+                                                     fwdparam))])
+        else:
+            resolverfn.addstmts([StmtDecl(Decl(md.returns[0].bareType(self.side),
+                                               md.returns[0].var().name),
+                                          init=fwdparam)])
+        resolverfn.addstmts([StmtDecl(Decl(Type('IPC::Message', ptr=True),
+                                           self.replyvar.name),
+                                      init=ExprCall(ExprVar(md.pqReplyCtorFunc()),
+                                                    args=[routingId]))]
                             + [_ParamTraits.checkedWrite(None, resolve, self.replyvar,
                                                          sentinelKey=resolve.name, actor=selfvar)]
-                            + [_ParamTraits.checkedWrite(r.ipdltype, r.var(), self.replyvar,
+                            + [_ParamTraits.checkedWrite(r.ipdltype, ExprMove(r.var()), self.replyvar,
                                                          sentinelKey=r.name, actor=selfvar)
                                 for r in md.returns])
         resolverfn.addstmts(sendmsg)
@@ -4521,7 +4550,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             [StmtDecl(Decl(_iterType(ptr=False), itervar.name),
                       initargs=[msgvar])]
             # declare varCopy for each variable to deserialize.
-            + [StmtDecl(Decl(p.bareType(side), p.var().name + 'Copy'))
+            + [StmtDecl(Decl(p.bareType(side), p.var().name + 'Copy'), initargs=[])
                 for p in params]
             + [Whitespace.NL]
             #  checked Read(&(varCopy), &(msgverify__), &(msgverifyIter__))
@@ -4571,7 +4600,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             # to construct the "real" actor
             handlevar = self.handlevar
             handletype = Type('ActorHandle')
-            decls = [StmtDecl(Decl(handletype, handlevar.name))]
+            decls = [StmtDecl(Decl(handletype, handlevar.name), initargs=[])]
             reads = [_ParamTraits.checkedRead(None, ExprAddrOf(handlevar), msgexpr,
                                               ExprAddrOf(self.itervar),
                                               errfn, "'%s'" % handletype.name,
@@ -4579,18 +4608,26 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                                               actor=ExprVar.THIS)]
             start = 1
 
+        decls.extend([StmtDecl(Decl(
+                                   (Type('Tainted', T=p.bareType(side))
+                                    if md.decl.type.tainted else
+                                    p.bareType(side)),
+                                   p.var().name), initargs=[])
+                      for p in md.params[start:]])
+        reads.extend([_ParamTraits.checkedRead(p.ipdltype,
+                                               ExprAddrOf(p.var()),
+                                               msgexpr, ExprAddrOf(itervar),
+                                               errfn, "'%s'" % p.ipdltype.name(),
+                                               sentinelKey=p.name, errfnSentinel=errfnSent,
+                                               actor=ExprVar.THIS)
+                      for p in md.params[start:]])
+
         stmts.extend((
             [StmtDecl(Decl(_iterType(ptr=False), self.itervar.name),
                       initargs=[msgvar])]
-            + decls + [StmtDecl(Decl(p.bareType(side), p.var().name))
-                       for p in md.params[start:]]
+            + decls
             + [Whitespace.NL]
-            + reads + [_ParamTraits.checkedRead(p.ipdltype, ExprAddrOf(p.var()),
-                                                msgexpr, ExprAddrOf(itervar),
-                                                errfn, "'%s'" % p.ipdltype.name(),
-                                                sentinelKey=p.name, errfnSentinel=errfnSent,
-                                                actor=ExprVar.THIS)
-                       for p in md.params[start:]]
+            + reads
             + [self.endRead(msgvar, itervar)]))
 
         return stmts
@@ -4602,13 +4639,13 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         isctor = md.decl.type.isCtor()
         resolve = ExprVar('resolve__')
         reason = ExprVar('reason__')
-        desresolve = [StmtDecl(Decl(Type.BOOL, resolve.name)),
+        desresolve = [StmtDecl(Decl(Type.BOOL, resolve.name), init=ExprLiteral.FALSE),
                       _ParamTraits.checkedRead(None, ExprAddrOf(resolve), msgexpr,
                                                ExprAddrOf(itervar),
                                                errfn, "'%s'" % resolve.name,
                                                sentinelKey=resolve.name, errfnSentinel=errfnSent,
                                                actor=ExprVar.THIS)]
-        desrej = [StmtDecl(Decl(_ResponseRejectReason.Type(), reason.name)),
+        desrej = [StmtDecl(Decl(_ResponseRejectReason.Type(), reason.name), initargs=[]),
                   _ParamTraits.checkedRead(None, ExprAddrOf(reason), msgexpr,
                                            ExprAddrOf(itervar),
                                            errfn, "'%s'" % reason.name,
@@ -4635,7 +4672,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             # to construct the "real" actor
             handlevar = self.handlevar
             handletype = Type('ActorHandle')
-            decls = [StmtDecl(Decl(handletype, handlevar.name))]
+            decls = [StmtDecl(Decl(handletype, handlevar.name), initargs=[])]
             reads = [_ParamTraits.checkedRead(None, ExprAddrOf(handlevar), msgexpr,
                                               ExprAddrOf(itervar),
                                               errfn, "'%s'" % handletype.name,
@@ -4644,7 +4681,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             start = 1
 
         stmts = (
-            decls + [StmtDecl(Decl(p.bareType(side), p.var().name))
+            decls + [StmtDecl(Decl(p.bareType(side), p.var().name), initargs=[])
                      for p in md.returns]
             + [Whitespace.NL]
             + reads + [_ParamTraits.checkedRead(p.ipdltype, ExprAddrOf(p.var()),
@@ -4667,7 +4704,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         itervar = self.itervar
         declstmts = []
         if decls:
-            declstmts = [StmtDecl(Decl(p.bareType(side), p.var().name))
+            declstmts = [StmtDecl(Decl(p.bareType(side), p.var().name), initargs=[])
                          for p in md.returns]
         stmts.extend(
             [Whitespace.NL,
@@ -4726,7 +4763,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
               self.logMessage(md, msgexpr, 'Sending ', actor),
               self.profilerLabel(md)]
              + [Whitespace.NL,
-                StmtDecl(Decl(Type.BOOL, sendok.name)),
+                StmtDecl(Decl(Type.BOOL, sendok.name), init=ExprLiteral.FALSE),
                 StmtBlock([
                     StmtExpr(ExprCall(ExprVar('AUTO_PROFILER_TRACING'),
                                       [ExprLiteral.String("IPC"),
@@ -4764,10 +4801,11 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             ''',
             resolvetype=resolvetype)
 
-        args = [p.var() for p in md.params] + [resolve, reject]
+        args = [ExprMove(p.var()) for p in md.params] + [resolve, reject]
         stmt = StmtCode(
             '''
             RefPtr<${promise}> promise__ = new ${promise}(__func__);
+            promise__->UseDirectTaskDispatch(__func__);
             ${send}($,{args});
             return promise__;
             ''',
@@ -4831,7 +4869,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         decl = MethodDecl(
             md.sendMethod(),
             params=md.makeCxxParams(paramsems, returnsems=returnsems,
-                                    side=self.side, implicit=implicit),
+                                    side=self.side, implicit=implicit, direction='send'),
             warn_unused=((self.side == 'parent' and returnsems != 'callback') or
                          (md.decl.type.isCtor() and not md.decl.type.isAsync())),
             ret=rettype)

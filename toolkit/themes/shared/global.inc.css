@@ -5,7 +5,7 @@
 /* General styles */
 
 *|*.plain {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0 !important;
   border: none;
   padding: 0;
@@ -18,7 +18,7 @@ html|textarea {
 /* Close icon */
 
 .close-icon {
-  -moz-appearance: none;
+  appearance: none;
   -moz-context-properties: fill, fill-opacity;
   list-style-image: url(chrome://global/skin/icons/close.svg);
   color: inherit !important;
@@ -50,7 +50,7 @@ html|textarea {
   background-size: contain;
   background-color: transparent;
   background-repeat: no-repeat;
-  -moz-appearance: none;
+  appearance: none;
   -moz-window-shadow: none;
 }
 
@@ -69,7 +69,7 @@ html|textarea {
 }
 
 .panel-footer > button {
-  -moz-appearance: none;
+  appearance: none;
   border-top: 1px solid var(--panel-separator-color);
   /* !important overrides :hover and :active colors from button.css: */
   color: inherit !important;

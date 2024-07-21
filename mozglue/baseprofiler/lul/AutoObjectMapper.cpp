@@ -2,25 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <sys/mman.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include "mozilla/Assertions.h"
+#include "mozilla/Sprintf.h"
+
 #include "BaseProfiler.h"
+#include "PlatformMacros.h"
+#include "AutoObjectMapper.h"
 
-#ifdef MOZ_BASE_PROFILER
-
-#  include <sys/mman.h>
-#  include <unistd.h>
-#  include <sys/types.h>
-#  include <sys/stat.h>
-#  include <fcntl.h>
-
-#  include "mozilla/Assertions.h"
-#  include "mozilla/Sprintf.h"
-
-#  include "PlatformMacros.h"
-#  include "AutoObjectMapper.h"
-
-#  if defined(GP_OS_android)
-#    include <dlfcn.h>
-#    include "mozilla/Types.h"
+#if defined(GP_OS_android)
+#  include <dlfcn.h>
+#  include "mozilla/Types.h"
 // FIXME move these out of mozglue/linker/ElfLoader.h into their
 // own header, so as to avoid conflicts arising from two definitions
 // of Array
@@ -29,7 +26,7 @@ MFBT_API size_t __dl_get_mappable_length(void* handle);
 MFBT_API void* __dl_mmap(void* handle, void* addr, size_t length, off_t offset);
 MFBT_API void __dl_munmap(void* handle, void* addr, size_t length);
 }
-#  endif
+#endif
 
 // A helper function for creating failure error messages in
 // AutoObjectMapper*::Map.
@@ -93,7 +90,7 @@ bool AutoObjectMapperPOSIX::Map(/*OUT*/ void** start, /*OUT*/ size_t* length,
   return true;
 }
 
-#  if defined(GP_OS_android)
+#if defined(GP_OS_android)
 AutoObjectMapperFaultyLib::AutoObjectMapperFaultyLib(void (*aLog)(const char*))
     : AutoObjectMapperPOSIX(aLog), mHdl(nullptr) {}
 
@@ -123,6 +120,4 @@ bool AutoObjectMapperFaultyLib::Map(/*OUT*/ void** start,
   return false;
 }
 
-#  endif  // defined(GP_OS_android)
-
-#endif  // MOZ_BASE_PROFILER
+#endif  // defined(MOZ_LINKER)

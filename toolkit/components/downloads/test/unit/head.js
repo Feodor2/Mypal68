@@ -418,6 +418,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
           null,
           null,
           targetFile,
+          Ci.nsIContentPolicy.TYPE_SAVEAS_DOWNLOAD,
           isPrivate
         );
       })

@@ -64,12 +64,6 @@ var SearchUtils = {
   DEFAULT_QUERY_CHARSET: "ISO-8859-1",
 
   /**
-   * This is the Remote Settings key that we use to get the ignore lists for
-   * engines.
-   */
-  SETTINGS_IGNORELIST_KEY: "hijack-blocklists",
-
-  /**
    * Notifies watchers of SEARCH_ENGINE_TOPIC about changes to an engine or to
    * the state of the search service.
    *

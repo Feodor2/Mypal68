@@ -572,10 +572,6 @@
 #else
                           />
 #endif
-                <menuitem id="menu_openTour"
-                          oncommand="openTourPage();"
-                          label="&helpShowTour2.label;"
-                          accesskey="&helpShowTour2.accesskey;"/>
                 <menuitem id="menu_keyboardShortcuts"
                           oncommand="openHelpLink('')"
                           onclick="checkForMiddleClick(this, event);"

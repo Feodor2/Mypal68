@@ -61,6 +61,11 @@ ChromeUtils.defineModuleGetter(
   "InsecurePasswordUtils",
   "resource://gre/modules/InsecurePasswordUtils.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "ContentDOMReference",
+  "resource://gre/modules/ContentDOMReference.jsm"
+);
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -391,7 +396,6 @@ this.LoginManagerContent = {
         topDocument: topWindow.document,
         loginFormOrigin: msg.data.loginFormOrigin,
         loginsFound: LoginHelper.vanillaObjectsToLogins(msg.data.logins),
-        inputElement: msg.objects.inputElement,
         inputElementIdentifier: msg.data.inputElementIdentifier,
       });
       return;
@@ -871,8 +875,8 @@ this.LoginManagerContent = {
    *            from the origin of the form used for the fill.
    *          recipes:
    *            Fill recipes transmitted together with the original message.
-   *          inputElement:
-   *            Username or password input element from the form we want to fill.
+   *          inputElementIdentifier:
+   *            An identifier generated for the input element via ContentDOMReference.
    *        }
    */
   fillForm({
@@ -880,10 +884,18 @@ this.LoginManagerContent = {
     loginFormOrigin,
     loginsFound,
     recipes,
-    inputElement,
+    inputElementIdentifier
   }) {
-    if (!inputElement) {
+    if (!inputElementIdentifier) {
       log("fillForm: No input element specified");
+      return;
+    }
+
+    let inputElement = ContentDOMReference.resolve(inputElementIdentifier);
+    if (!inputElement) {
+      log(
+        "fillForm: Could not resolve inputElementIdentifier to a living element."
+      );
       return;
     }
 

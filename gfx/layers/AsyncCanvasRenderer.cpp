@@ -97,7 +97,7 @@ void AsyncCanvasRenderer::SetCanvasClient(CanvasClient* aClient) {
 
 void AsyncCanvasRenderer::SetActiveEventTarget() {
   MutexAutoLock lock(mMutex);
-  mActiveEventTarget = GetCurrentThreadSerialEventTarget();
+  mActiveEventTarget = GetCurrentSerialEventTarget();
 }
 
 void AsyncCanvasRenderer::ResetActiveEventTarget() {

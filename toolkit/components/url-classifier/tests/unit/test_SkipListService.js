@@ -6,9 +6,6 @@
 
 /* Unit tests for the nsIUrlClassifierSkipListService implementation. */
 
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
-);
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -51,11 +48,6 @@ add_task(async function test_list_changes() {
     },
   ];
 
-  // Add some initial data.
-  let collection = await RemoteSettings(COLLECTION_NAME).openCollection();
-  await collection.create(records[0], { synced: true });
-  await collection.db.saveLastModified(42);
-
   let promise = waitForEvent(updateEvent, "update");
 
   skipListService.registerAndRunSkipListObserver(
@@ -89,10 +81,6 @@ add_task(async function test_list_changes() {
   );
 
   promise = waitForEvent(updateEvent, "update");
-
-  await RemoteSettings(COLLECTION_NAME).emit("sync", {
-    data: { current: records },
-  });
 
   list = await promise;
 

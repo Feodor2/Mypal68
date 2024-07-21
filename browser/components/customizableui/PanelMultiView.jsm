@@ -988,14 +988,6 @@ var PanelMultiView = class extends AssociatedToNode {
       this._viewStack.style.marginInlineStart = "-" + deltaX + "px";
     }
 
-    // Set the transition style and listen for its end to clean up and make sure
-    // the box sizing becomes dynamic again.
-    // Somehow, putting these properties in PanelUI.css doesn't work for newly
-    // shown nodes in a XUL parent node.
-    this._viewStack.style.transition =
-      "transform var(--animation-easing-function)" +
-      " var(--panelui-subview-transition-duration)";
-    this._viewStack.style.willChange = "transform";
     // Use an outline instead of a border so that the size is not affected.
     deepestNode.style.outline = "1px solid var(--panel-separator-color)";
 
@@ -1021,41 +1013,6 @@ var PanelMultiView = class extends AssociatedToNode {
     details.phase = TRANSITION_PHASES.TRANSITION;
     this._viewStack.style.transform =
       "translateX(" + (moveToLeft ? "" : "-") + deltaX + "px)";
-
-    await new Promise(resolve => {
-      details.resolve = resolve;
-      this._viewContainer.addEventListener(
-        "transitionend",
-        (details.listener = ev => {
-          // It's quite common that `height` on the view container doesn't need
-          // to transition, so we make sure to do all the work on the transform
-          // transition-end, because that is guaranteed to happen.
-          if (ev.target != this._viewStack || ev.propertyName != "transform") {
-            return;
-          }
-          this._viewContainer.removeEventListener(
-            "transitionend",
-            details.listener
-          );
-          delete details.listener;
-          resolve();
-        })
-      );
-      this._viewContainer.addEventListener(
-        "transitioncancel",
-        (details.cancelListener = ev => {
-          if (ev.target != this._viewStack) {
-            return;
-          }
-          this._viewContainer.removeEventListener(
-            "transitioncancel",
-            details.cancelListener
-          );
-          delete details.cancelListener;
-          resolve();
-        })
-      );
-    });
 
     // Bail out if the panel was closed during the transition.
     if (!nextPanelView.isOpenIn(this)) {

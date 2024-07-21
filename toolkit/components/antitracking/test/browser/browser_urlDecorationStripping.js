@@ -7,9 +7,6 @@
 
 "use strict";
 
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
-);
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
@@ -34,10 +31,6 @@ const TOP_PAGE_WITH_TRACKING_IDENTIFIER =
   TOP_PAGE_WITHOUT_TRACKING_IDENTIFIER + "?" + TOKEN_1 + "=123";
 
 add_task(async _ => {
-  let uds = Cc["@mozilla.org/tracking-url-decoration-service;1"].getService(
-    Ci.nsIURLDecorationAnnotationsService
-  );
-
   let records = [
     {
       id: "1",
@@ -47,27 +40,12 @@ add_task(async _ => {
     },
   ];
 
-  // Add some initial data
-  async function emitSync() {
-    await RemoteSettings(COLLECTION_NAME).emit("sync", {
-      data: { current: records },
-    });
-  }
-  let collection = await RemoteSettings(COLLECTION_NAME).openCollection();
-  await collection.create(records[0], { useRecordId: true });
-  await collection.db.saveLastModified(42);
-  await emitSync();
-
-  await uds.ensureUpdated();
-
   let list = Preferences.get(PREF_NAME).split(" ");
   ok(list.includes(TOKEN_1), "Token must now be available in " + PREF_NAME);
   ok(Preferences.locked(PREF_NAME), PREF_NAME + " must be locked");
 
   async function verifyList(array, not_array) {
     await emitSync();
-
-    await uds.ensureUpdated();
 
     list = Preferences.get(PREF_NAME).split(" ");
     for (let token of array) {

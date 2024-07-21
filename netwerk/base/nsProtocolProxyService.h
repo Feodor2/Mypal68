@@ -309,7 +309,8 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
   void MaybeDisableDNSPrefetch(nsIProxyInfo* aProxy);
 
  private:
-  nsresult SetupPACThread(nsIEventTarget* mainThreadEventTarget = nullptr);
+  nsresult SetupPACThread(
+      nsISerialEventTarget* mainThreadEventTarget = nullptr);
   nsresult ResetPACThread();
   nsresult ReloadNetworkPAC();
 
@@ -399,9 +400,9 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
   nsresult AsyncResolveInternal(nsIChannel* channel, uint32_t flags,
                                 nsIProtocolProxyCallback* callback,
                                 nsICancelable** result, bool isSyncOK,
-                                nsIEventTarget* mainThreadEventTarget);
+                                nsISerialEventTarget* mainThreadEventTarget);
   bool mIsShutdown;
-  nsCOMPtr<nsIEventTarget> mProxySettingTarget;
+  nsCOMPtr<nsISerialEventTarget> mProxySettingTarget;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsProtocolProxyService,

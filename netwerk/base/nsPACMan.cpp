@@ -353,7 +353,7 @@ static uint32_t sThreadLocalIndex = 0xdeadbeef;  // out of range
 static const char* kPACIncludePath =
     "network.proxy.autoconfig_url.include_path";
 
-nsPACMan::nsPACMan(nsIEventTarget* mainThreadEventTarget)
+nsPACMan::nsPACMan(nsISerialEventTarget* mainThreadEventTarget)
     : NeckoTargetHolder(mainThreadEventTarget),
       mLoadPending(false),
       mShutdown(false),
@@ -526,7 +526,7 @@ nsresult nsPACMan::LoadPACFromURI(const nsACString& aSpec,
     nsresult rv =
         NS_IsMainThread()
             ? Dispatch(runnable.forget())
-            : GetCurrentThreadEventTarget()->Dispatch(runnable.forget());
+            : GetCurrentEventTarget()->Dispatch(runnable.forget());
     if (NS_FAILED(rv)) return rv;
     mLoadPending = true;
   }

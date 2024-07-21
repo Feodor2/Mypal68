@@ -32,6 +32,7 @@ namespace baseprofiler {
   MACRO(FrameFlags, uint64_t, sizeof(uint64_t))                      \
   MACRO(DynamicStringFragment, char*, ProfileBufferEntry::kNumChars) \
   MACRO(JitReturnAddr, void*, sizeof(void*))                         \
+  MACRO(InnerWindowID, uint64_t, sizeof(uint64_t))                   \
   MACRO(LineNumber, int, sizeof(int))                                \
   MACRO(ColumnNumber, int, sizeof(int))                              \
   MACRO(NativeLeafAddr, void*, sizeof(void*))                        \
@@ -161,14 +162,15 @@ class UniqueStacks {
  public:
   struct FrameKey {
     explicit FrameKey(const char* aLocation)
-        : mData(NormalFrameData{std::string(aLocation), false, Nothing(),
+        : mData(NormalFrameData{std::string(aLocation), false, 0, Nothing(),
                                 Nothing()}) {}
 
     FrameKey(std::string&& aLocation, bool aRelevantForJS,
-             const Maybe<unsigned>& aLine, const Maybe<unsigned>& aColumn,
+             uint64_t aInnerWindowID, const Maybe<unsigned>& aLine,
+             const Maybe<unsigned>& aColumn,
              const Maybe<ProfilingCategoryPair>& aCategoryPair)
-        : mData(NormalFrameData{aLocation, aRelevantForJS, aLine, aColumn,
-                                aCategoryPair}) {}
+        : mData(NormalFrameData{aLocation, aRelevantForJS, aInnerWindowID,
+                                aLine, aColumn, aCategoryPair}) {}
 
     FrameKey(const FrameKey& aToCopy) = default;
 
@@ -182,6 +184,7 @@ class UniqueStacks {
 
       std::string mLocation;
       bool mRelevantForJS;
+      uint64_t mInnerWindowID;
       Maybe<unsigned> mLine;
       Maybe<unsigned> mColumn;
       Maybe<ProfilingCategoryPair> mCategoryPair;
@@ -201,6 +204,7 @@ class UniqueStacks {
           hash = AddToHash(hash, HashString(data.mLocation.c_str()));
         }
         hash = AddToHash(hash, data.mRelevantForJS);
+        hash = mozilla::AddToHash(hash, data.mInnerWindowID);
         if (data.mLine.isSome()) {
           hash = AddToHash(hash, *data.mLine);
         }
@@ -317,11 +321,11 @@ class UniqueStacks {
 //     {
 //       "stack": 0,          /* index into stackTable */
 //       "time": 1,           /* number */
-//       "responsiveness": 2, /* number */
+//       "eventDelay": 2, /* number */
 //     },
 //     "data":
 //     [
-//       [ 1, 0.0, 0.0 ]      /* { stack: 1, time: 0.0, responsiveness: 0.0 } */
+//       [ 1, 0.0, 0.0 ]      /* { stack: 1, time: 0.0, eventDelay: 0.0 } */
 //     ]
 //   },
 //
@@ -359,12 +363,13 @@ class UniqueStacks {
 //     {
 //       "location": 0,       /* index into stringTable */
 //       "relevantForJS": 1,  /* bool */
-//       "implementation": 2, /* index into stringTable */
-//       "optimizations": 3,  /* arbitrary JSON */
-//       "line": 4,           /* number */
-//       "column": 5,         /* number */
-//       "category": 6        /* index into profile.meta.categories */
-//       "subcategory": 7     /* index into
+//       "innerWindowID": 2,  /* inner window ID of global JS `window` object */
+//       "implementation": 3, /* index into stringTable */
+//       "optimizations": 4,  /* arbitrary JSON */
+//       "line": 5,           /* number */
+//       "column": 6,         /* number */
+//       "category": 7,       /* index into profile.meta.categories */
+//       "subcategory": 8     /* index into
 //       profile.meta.categories[category].subcategories */
 //     },
 //     "data":

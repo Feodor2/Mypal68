@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_NETBSD)
 #  include <sched.h>
 #endif
 #include <stddef.h>
@@ -192,6 +192,8 @@ bool SetCloseOnExec(int fd) {
   return true;
 }
 
+bool ErrorIsBrokenPipe(int err) { return err == EPIPE || err == ECONNRESET; }
+
 }  // namespace
 //------------------------------------------------------------------------------
 
@@ -309,7 +311,7 @@ bool Channel::ChannelImpl::EnqueueHelloMessage() {
     return false;
   }
 
-  OutputQueuePush(msg.release());
+  OutputQueuePush(std::move(msg));
   return true;
 }
 
@@ -353,8 +355,10 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       if (errno == EAGAIN) {
         return true;
       } else {
-        CHROMIUM_LOG(ERROR)
-            << "pipe error (" << pipe_ << "): " << strerror(errno);
+        if (!ErrorIsBrokenPipe(errno)) {
+          CHROMIUM_LOG(ERROR)
+              << "pipe error (fd " << pipe_ << "): " << strerror(errno);
+        }
         return false;
       }
     } else if (bytes_read == 0) {
@@ -363,12 +367,6 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       return false;
     }
     DCHECK(bytes_read);
-
-    if (client_pipe_ != -1) {
-      PipeMap::instance().Remove(pipe_name_);
-      IGNORE_EINTR(close(client_pipe_));
-      client_pipe_ = -1;
-    }
 
     // a pointer to an array of |num_wire_fds| file descriptors from the read
     const int* wire_fds = NULL;
@@ -547,11 +545,11 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
 #if defined(OS_MACOSX)
         // Send a message to the other side, indicating that we are now
         // responsible for closing the descriptor.
-        Message* fdAck =
-            new Message(MSG_ROUTING_NONE, RECEIVED_FDS_MESSAGE_TYPE);
+        auto fdAck = mozilla::MakeUnique<Message>(MSG_ROUTING_NONE,
+                                                  RECEIVED_FDS_MESSAGE_TYPE);
         DCHECK(m.fd_cookie() != 0);
         fdAck->set_fd_cookie(m.fd_cookie());
-        OutputQueuePush(fdAck);
+        OutputQueuePush(std::move(fdAck));
 #endif
 
         m.file_descriptor_set()->SetDescriptors(&fds[fds_i],
@@ -698,13 +696,14 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
           // Not an error; the sendmsg would have blocked, so return to the
           // event loop and try again later.
           break;
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_NETBSD)
           // (Note: this comment is copied from https://crrev.com/86c3d9ef4fdf6;
           // see also bug 1142693 comment #73.)
           //
           // On OS X if sendmsg() is trying to send fds between processes and
           // there isn't enough room in the output buffer to send the fd
-          // structure over atomically then EMSGSIZE is returned.
+          // structure over atomically then EMSGSIZE is returned. The same
+          // applies to NetBSD as well.
           //
           // EMSGSIZE presents a problem since the system APIs can only call us
           // when there's room in the socket buffer and not when there is
@@ -722,7 +721,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
           break;
 #endif
         default:
-          CHROMIUM_LOG(ERROR) << "pipe error: " << strerror(errno);
+          if (!ErrorIsBrokenPipe(errno)) {
+            CHROMIUM_LOG(ERROR) << "pipe error: " << strerror(errno);
+          }
           return false;
       }
     }
@@ -762,16 +763,16 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
   return true;
 }
 
-bool Channel::ChannelImpl::Send(Message* message) {
+bool Channel::ChannelImpl::Send(mozilla::UniquePtr<Message> message) {
 #ifdef IPC_MESSAGE_DEBUG_EXTRA
-  DLOG(INFO) << "sending message @" << message << " on channel @" << this
+  DLOG(INFO) << "sending message @" << message.get() << " on channel @" << this
              << " with type " << message->type() << " (" << output_queue_.size()
              << " in queue)";
 #endif
 
 #ifdef FUZZING
   message = mozilla::ipc::Faulty::instance().MutateIPCMessage(
-      "Channel::ChannelImpl::Send", message);
+      "Channel::ChannelImpl::Send", std::move(message));
 #endif
 
   // If the channel has been closed, ProcessOutgoingMessages() is never going
@@ -784,11 +785,10 @@ bool Channel::ChannelImpl::Send(Message* message) {
               "Can't send message %s, because this channel is closed.\n",
               message->name());
     }
-    delete message;
     return false;
   }
 
-  OutputQueuePush(message);
+  OutputQueuePush(std::move(message));
   if (!waiting_connect_) {
     if (!is_blocked_on_write_) {
       if (!ProcessOutgoingMessages()) return false;
@@ -840,8 +840,8 @@ void Channel::ChannelImpl::CloseDescriptors(uint32_t pending_fd_id) {
 }
 #endif
 
-void Channel::ChannelImpl::OutputQueuePush(Message* msg) {
-  output_queue_.push(msg);
+void Channel::ChannelImpl::OutputQueuePush(mozilla::UniquePtr<Message> msg) {
+  output_queue_.push(msg.release());
   output_queue_length_++;
 }
 
@@ -938,7 +938,9 @@ Channel::Listener* Channel::set_listener(Listener* listener) {
   return channel_impl_->set_listener(listener);
 }
 
-bool Channel::Send(Message* message) { return channel_impl_->Send(message); }
+bool Channel::Send(mozilla::UniquePtr<Message> message) {
+  return channel_impl_->Send(std::move(message));
+}
 
 void Channel::GetClientFileDescriptorMapping(int* src_fd, int* dest_fd) const {
   return channel_impl_->GetClientFileDescriptorMapping(src_fd, dest_fd);

@@ -8,7 +8,8 @@
 
 menupopup,
 panel {
-  -moz-appearance: menupopup;
+  appearance: auto;
+  -moz-default-appearance: menupopup;
   min-width: 1px;
   color: MenuText;
 }
@@ -16,19 +17,17 @@ panel {
 /* ::::: arrow panel ::::: */
 
 panel[type="arrow"] {
-  -moz-appearance: none;
+  appearance: none;
 }
 
 panel[type="arrow"][side="top"],
 panel[type="arrow"][side="bottom"] {
-  margin-left: -20px;
-  margin-right: -20px;
+  margin-inline: -20px;
 }
 
 panel[type="arrow"][side="left"],
 panel[type="arrow"][side="right"] {
-  margin-top: -20px;
-  margin-bottom: -20px;
+  margin-block: -20px;
 }
 
 .panel-arrowcontent {
@@ -50,8 +49,7 @@ panel[type="arrow"][side="right"] {
 .panel-arrow[side="bottom"] {
   list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
   position: relative;
-  margin-left: 10px;
-  margin-right: 10px;
+  margin-inline: 10px;
 }
 
 .panel-arrow[side="top"] {
@@ -67,8 +65,7 @@ panel[type="arrow"][side="right"] {
 .panel-arrow[side="right"] {
   list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
   position: relative;
-  margin-top: 10px;
-  margin-bottom: 10px;
+  margin-block: 10px;
 }
 
 .panel-arrow[side="left"] {
@@ -83,10 +80,10 @@ panel[type="arrow"][side="right"] {
 /* rules for popups associated with menulists */
 
 menulist > menupopup {
-  padding: 0px;
-  min-width: 0px;
+  padding: 0;
+  min-width: 0;
 }
 
 menupopup[customoptionstyling="true"] {
-  -moz-appearance: none;
+  appearance: none;
 }

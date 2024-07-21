@@ -165,7 +165,8 @@ bool BackgroundParentImpl::DeallocPBackgroundTestParent(
 }
 
 auto BackgroundParentImpl::AllocPBackgroundIDBFactoryParent(
-    const LoggingInfo& aLoggingInfo) -> PBackgroundIDBFactoryParent* {
+    const LoggingInfo& aLoggingInfo)
+    -> already_AddRefed<PBackgroundIDBFactoryParent> {
   using mozilla::dom::indexedDB::AllocPBackgroundIDBFactoryParent;
 
   AssertIsInMainOrSocketProcess();
@@ -187,17 +188,6 @@ BackgroundParentImpl::RecvPBackgroundIDBFactoryConstructor(
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
-}
-
-bool BackgroundParentImpl::DeallocPBackgroundIDBFactoryParent(
-    PBackgroundIDBFactoryParent* aActor) {
-  using mozilla::dom::indexedDB::DeallocPBackgroundIDBFactoryParent;
-
-  AssertIsInMainOrSocketProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  return DeallocPBackgroundIDBFactoryParent(aActor);
 }
 
 auto BackgroundParentImpl::AllocPBackgroundIndexedDBUtilsParent()
@@ -913,17 +903,11 @@ bool BackgroundParentImpl::DeallocPCacheParent(PCacheParent* aActor) {
   return true;
 }
 
-PCacheStreamControlParent*
+already_AddRefed<PCacheStreamControlParent>
 BackgroundParentImpl::AllocPCacheStreamControlParent() {
   MOZ_CRASH(
       "CacheStreamControlParent actor must be provided to PBackground manager");
   return nullptr;
-}
-
-bool BackgroundParentImpl::DeallocPCacheStreamControlParent(
-    PCacheStreamControlParent* aActor) {
-  dom::cache::DeallocPCacheStreamControlParent(aActor);
-  return true;
 }
 
 PMessagePortParent* BackgroundParentImpl::AllocPMessagePortParent(

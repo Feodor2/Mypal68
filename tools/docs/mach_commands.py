@@ -4,18 +4,18 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import yaml
 import os
 import sys
+import multiprocessing
 from functools import partial
 
+from mozbuild.base import MachCommandBase
 from mach.decorators import (
     Command,
     CommandArgument,
     CommandProvider,
 )
-
-import which
-from mozbuild.base import MachCommandBase
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -51,11 +51,14 @@ class Documentation(MachCommandBase):
                           'default "localhost:5500".')
     @CommandArgument('--upload', action='store_true',
                      help='Upload generated files to S3.')
+    @CommandArgument('-j', '--jobs', default=str(multiprocessing.cpu_count()), dest='jobs',
+                     help='Distribute the build over N processes in parallel.')
     def build_docs(self, path=None, fmt='html', outdir=None, auto_open=True,
-                   serve=True, http=None, archive=False, upload=False):
-        try:
-            which.which('jsdoc')
-        except which.WhichError:
+                   serve=True, http=None, archive=False, upload=False, jobs=None):
+
+        from mozfile import which
+
+        if not which('jsdoc'):
             return die('jsdoc not found - please install from npm.')
 
         self.activate_pipenv(os.path.join(here, 'Pipfile'))
@@ -75,7 +78,7 @@ class Documentation(MachCommandBase):
             return die('failed to generate documentation:\n'
                        '%s: could not find docs at this location' % path)
 
-        result = self._run_sphinx(docdir, savedir, fmt=fmt)
+        result = self._run_sphinx(docdir, savedir, fmt=fmt, jobs=jobs)
         if result != 0:
             return die('failed to generate documentation:\n'
                        '%s: sphinx return code %d' % (path, result))
@@ -108,12 +111,12 @@ class Documentation(MachCommandBase):
 
         sphinx_trees = self.manager.trees or {savedir: docdir}
         for dest, src in sphinx_trees.items():
-            run_sphinx = partial(self._run_sphinx, src, savedir, fmt=fmt)
+            run_sphinx = partial(self._run_sphinx, src, savedir, fmt=fmt, jobs=jobs)
             server.watch(src, run_sphinx)
         server.serve(host=host, port=port, root=savedir,
                      open_url_delay=0.1 if auto_open else None)
 
-    def _run_sphinx(self, docdir, savedir, config=None, fmt='html'):
+    def _run_sphinx(self, docdir, savedir, config=None, fmt='html', jobs=None):
         import sphinx
         config = config or self.manager.conf_py_path
         args = [
@@ -123,6 +126,8 @@ class Documentation(MachCommandBase):
             docdir,
             savedir,
         ]
+        if jobs:
+            args.extend(['-j', jobs])
         return sphinx.build_main(args)
 
     @property
@@ -175,7 +180,7 @@ class Documentation(MachCommandBase):
 
     def _s3_upload(self, root, project, version=None):
         from moztreedocs.package import distribution_files
-        from moztreedocs.upload import s3_upload
+        from moztreedocs.upload import s3_upload, s3_set_redirects
 
         # Files are uploaded to multiple locations:
         #
@@ -186,15 +191,32 @@ class Documentation(MachCommandBase):
         # S3 bucket.
 
         files = list(distribution_files(root))
-
-        s3_upload(files, key_prefix='%s/latest' % project)
+        key_prefixes = ['%s/latest' % project]
         if version:
-            s3_upload(files, key_prefix='%s/%s' % (project, version))
+            key_prefixes.append('%s/%s' % (project, version))
 
         # Until we redirect / to main/latest, upload the main docs
         # to the root.
         if project == 'main':
-            s3_upload(files)
+            key_prefixes.append('')
+
+        with open(os.path.join(here, 'redirects.yml'), 'r') as fh:
+            redirects = yaml.safe_load(fh)['redirects']
+
+        redirects = {k.strip("/"): v.strip("/") for k, v in redirects.items()}
+
+        all_redirects = {}
+
+        for prefix in key_prefixes:
+            s3_upload(files, prefix)
+            if prefix:
+                prefix += '/'
+            all_redirects.update({prefix + k: prefix + v for k, v in redirects.items()})
+
+        print("Redirects currently staged")
+        pprint(all_redirects, indent=1)
+
+        s3_set_redirects(all_redirects)
 
 
 def die(msg, exit_code=1):

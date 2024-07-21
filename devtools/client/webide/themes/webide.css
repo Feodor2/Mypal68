@@ -59,7 +59,7 @@ window.busy-determined #action-busy-undetermined {
 /* Action buttons */
 
 .action-button {
-  -moz-appearance: none;
+  appearance: none;
   border-width: 0;
   margin: 0;
   padding: 0;

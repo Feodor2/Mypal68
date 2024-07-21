@@ -62,6 +62,10 @@
     -moz-list-reversed: initial;
     -moz-font-smoothing-background-color: initial;
     -moz-min-font-size-ratio: initial;
+    -moz-script-level: initial;
+    /* As long as inert implies pointer-events: none as it does now, we're
+     * good. */
+    -moz-inert: initial;
 
     /* Using initial is not sufficient for direction, since its initial value can
      * depend on the document's language.
@@ -124,7 +128,8 @@ resizer {
   z-index: 2147483647;
   /* Widget gets decide on its own whether or not the native theme should apply,
      based on the context/OS theme. If it does not, SVG background will kick in. */
-  -moz-appearance: resizer;
+  appearance: auto;
+  -moz-default-appearance: resizer;
 
   /* native resizer should never flip on its own;
      we will flip it (or the SVG background) with CSS transform below. */

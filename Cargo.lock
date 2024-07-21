@@ -1235,6 +1235,7 @@ name = "gkrust"
 version = "0.1.0"
 dependencies = [
  "gkrust-shared",
+ "mozglue-static",
  "mozilla-central-workspace-hack",
  "stylo_tests",
 ]
@@ -1245,6 +1246,7 @@ version = "0.1.0"
 dependencies = [
  "bench-collections-gtest",
  "gkrust-shared",
+ "mozglue-static",
  "mp4parse-gtest",
  "nsstring-gtest",
  "xpcom-gtest",
@@ -1555,6 +1557,8 @@ name = "jsrust"
 version = "0.1.0"
 dependencies = [
  "jsrust_shared",
+ "mozglue-static",
+ "wat",
 ]
 
 [[package]]
@@ -1623,6 +1627,12 @@ name = "lazycell"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b294d6fa9ee409a054354afc4352b0b9ef7ca222c69b8812cbea9e7d2bf3783f"
+
+[[package]]
+name = "leb128"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3576a87f2ba00f6f106fdfcd16db1d698d648a26ad8e0573cad8537c3c362d2a"
 
 [[package]]
 name = "libc"
@@ -3743,6 +3753,24 @@ name = "wasmparser"
 version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a026c1436af49d5537c7561c7474f81f7a754e36445fe52e6e88795a9747291c"
+
+[[package]]
+name = "wast"
+version = "23.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26b080a48623c1b15193eac2e28c7b8d0e6b2e1c6c67ed46ddcd86063e78e504"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
+name = "wat"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c350d7431aa486488d28cdf75b57d59c02fab9cde20d93c52424510afe18ecc"
+dependencies = [
+ "wast",
+]
 
 [[package]]
 name = "webdriver"

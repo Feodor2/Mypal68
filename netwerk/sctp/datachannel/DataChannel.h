@@ -135,7 +135,7 @@ class DataChannelConnection final : public net::NeckoTargetHolder
   // Create a new DataChannel Connection
   // Must be called on Main thread
   static Maybe<RefPtr<DataChannelConnection>> Create(
-      DataConnectionListener* aListener, nsIEventTarget* aTarget,
+      DataConnectionListener* aListener, nsISerialEventTarget* aTarget,
       MediaTransportHandler* aHandler, const uint16_t aLocalPort,
       const uint16_t aNumStreams, const Maybe<uint64_t>& aMaxMessageSize);
 
@@ -227,7 +227,7 @@ class DataChannelConnection final : public net::NeckoTargetHolder
   friend class DataChannelConnectRunnable;
 
   DataChannelConnection(DataConnectionListener* aListener,
-                        nsIEventTarget* aTarget,
+                        nsISerialEventTarget* aTarget,
                         MediaTransportHandler* aHandler);
 
   bool Init(const uint16_t aLocalPort, const uint16_t aNumStreams,
@@ -540,7 +540,7 @@ class DataChannel {
   nsCString mRecvBuffer;
   nsTArray<UniquePtr<BufferedOutgoingMsg>>
       mBufferedData;  // GUARDED_BY(mConnection->mLock)
-  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
+  nsCOMPtr<nsISerialEventTarget> mMainThreadEventTarget;
 };
 
 // used to dispatch notifications of incoming data to the main thread

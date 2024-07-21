@@ -61,8 +61,8 @@ class VRManagerChild : public PVRManagerChild {
 
   static bool IsCreated();
 
-  PVRLayerChild* CreateVRLayer(uint32_t aDisplayID, nsIEventTarget* aTarget,
-                               uint32_t aGroup);
+  PVRLayerChild* CreateVRLayer(uint32_t aDisplayID,
+                               nsISerialEventTarget* aTarget, uint32_t aGroup);
 
   static void IdentifyTextureHost(
       const layers::TextureFactoryIdentifier& aIdentifier);

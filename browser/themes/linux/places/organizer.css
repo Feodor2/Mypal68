@@ -5,7 +5,8 @@
 
 /* Toolbar */
 #placesToolbar {
-  -moz-appearance: menubar;
+  appearance: auto;
+  -moz-default-appearance: menubar;
 }
 
 @media (-moz-menubar-drag) {
@@ -61,7 +62,8 @@
 /* Menu */
 #placesMenu > menu {
   padding-inline-start: 4px;
-  -moz-appearance: toolbarbutton;
+  appearance: auto;
+  -moz-default-appearance: toolbarbutton;
 }
 
 #placesMenu > menu:hover {
@@ -76,7 +78,8 @@
 #placesMenu > menu::after {
   content: "";
   display: -moz-box;
-  -moz-appearance: toolbarbutton-dropdown;
+  appearance: auto;
+  -moz-default-appearance: toolbarbutton-dropdown;
   width: 12px;
   height: 12px;
 }

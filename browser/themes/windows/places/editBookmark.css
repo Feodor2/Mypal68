@@ -60,7 +60,8 @@
 }
 
 #editBMPanel_tagsSelector > richlistitem > image {
-  -moz-appearance: checkbox;
+  appearance: auto;
+  -moz-default-appearance: checkbox;
   -moz-box-align: center;
   margin: 0px 2px;
   border: 1px solid -moz-DialogText;

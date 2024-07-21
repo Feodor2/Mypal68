@@ -467,7 +467,7 @@ PRStatus nsSOCKSSocketInfo::StartDNS(PRFileDesc* fd) {
 
   mFD = fd;
   nsresult rv = dns->AsyncResolveNative(proxyHost, 0, this,
-                                        mozilla::GetCurrentThreadEventTarget(),
+                                        mozilla::GetCurrentEventTarget(),
                                         attrs, getter_AddRefs(mLookup));
 
   if (NS_FAILED(rv)) {

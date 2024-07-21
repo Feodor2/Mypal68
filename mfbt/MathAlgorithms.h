@@ -46,20 +46,20 @@ MOZ_ALWAYS_INLINE IntegerType EuclidLCM(IntegerType aA, IntegerType aB) {
 namespace detail {
 
 template <typename T>
-struct AllowDeprecatedAbsFixed : FalseType {};
+struct AllowDeprecatedAbsFixed : std::false_type {};
 
 template <>
-struct AllowDeprecatedAbsFixed<int32_t> : TrueType {};
+struct AllowDeprecatedAbsFixed<int32_t> : std::true_type {};
 template <>
-struct AllowDeprecatedAbsFixed<int64_t> : TrueType {};
+struct AllowDeprecatedAbsFixed<int64_t> : std::true_type {};
 
 template <typename T>
 struct AllowDeprecatedAbs : AllowDeprecatedAbsFixed<T> {};
 
 template <>
-struct AllowDeprecatedAbs<int> : TrueType {};
+struct AllowDeprecatedAbs<int> : std::true_type {};
 template <>
-struct AllowDeprecatedAbs<long> : TrueType {};
+struct AllowDeprecatedAbs<long> : std::true_type {};
 
 }  // namespace detail
 

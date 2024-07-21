@@ -195,7 +195,7 @@ this.LoginManagerParent = {
    * Trigger a login form fill and send relevant data (e.g. logins and recipes)
    * to the child process (LoginManagerContent).
    */
-  async fillForm({ browser, loginFormOrigin, login, inputElement }) {
+  async fillForm({ browser, loginFormOrigin, login, inputElementIdentifier }) {
     let recipes = [];
     if (loginFormOrigin) {
       let formHost;
@@ -208,16 +208,16 @@ this.LoginManagerParent = {
       }
     }
 
-    let objects = inputElement ? {inputElement} : null;
     // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
     // doesn't support structured cloning.
     let jsLogins = [LoginHelper.loginToVanillaObject(login)];
 
     browser.messageManager.sendAsyncMessage("PasswordManager:fillForm", {
+      inputElementIdentifier,
       loginFormOrigin,
       logins: jsLogins,
       recipes,
-    }, objects);
+    });
   },
 
   /**

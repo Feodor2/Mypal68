@@ -2,13 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "PageInformation.h"
+
 #include "BaseProfiler.h"
-
-#ifdef MOZ_BASE_PROFILER
-
-#  include "PageInformation.h"
-
-#  include "BaseProfileJSONWriter.h"
+#include "BaseProfileJSONWriter.h"
 
 namespace mozilla {
 namespace baseprofiler {
@@ -43,5 +40,3 @@ size_t PageInformation::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
 
 }  // namespace baseprofiler
 }  // namespace mozilla
-
-#endif  // MOZ_BASE_PROFILER

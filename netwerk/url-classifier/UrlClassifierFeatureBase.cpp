@@ -14,12 +14,13 @@ namespace net {
 
 namespace {
 
-void OnPrefsChange(const char* aPrefName, nsTArray<nsCString>* aArray) {
-  MOZ_ASSERT(aArray);
+void OnPrefsChange(const char* aPrefName, void* aArray) {
+  auto array = static_cast<nsTArray<nsCString>*>(aArray);
+  MOZ_ASSERT(array);
 
   nsAutoCString value;
   Preferences::GetCString(aPrefName, value);
-  Classifier::SplitTables(value, *aArray);
+  Classifier::SplitTables(value, *array);
 }
 
 }  // namespace
@@ -27,7 +28,6 @@ void OnPrefsChange(const char* aPrefName, nsTArray<nsCString>* aArray) {
 NS_INTERFACE_MAP_BEGIN(UrlClassifierFeatureBase)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIUrlClassifierFeature)
   NS_INTERFACE_MAP_ENTRY(nsIUrlClassifierFeature)
-  NS_INTERFACE_MAP_ENTRY(nsIUrlClassifierSkipListObserver)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF(UrlClassifierFeatureBase)
@@ -70,14 +70,6 @@ void UrlClassifierFeatureBase::InitializePreferences() {
                                            &mHosts[i]);
     }
   }
-
-  nsCOMPtr<nsIUrlClassifierSkipListService> skipListService =
-      do_GetService("@mozilla.org/url-classifier/skip-list-service;1");
-  if (NS_WARN_IF(!skipListService)) {
-    return;
-  }
-
-  skipListService->RegisterAndRunSkipListObserver(mName, mPrefSkipHosts, this);
 }
 
 void UrlClassifierFeatureBase::ShutdownPreferences() {
@@ -91,18 +83,6 @@ void UrlClassifierFeatureBase::ShutdownPreferences() {
       Preferences::UnregisterCallback(OnPrefsChange, mPrefHosts[i], &mHosts[i]);
     }
   }
-
-  nsCOMPtr<nsIUrlClassifierSkipListService> skipListService =
-      do_GetService("@mozilla.org/url-classifier/skip-list-service;1");
-  if (skipListService) {
-    skipListService->UnregisterSkipListObserver(mName, this);
-  }
-}
-
-NS_IMETHODIMP
-UrlClassifierFeatureBase::OnSkipListUpdate(const nsACString& aList) {
-  mSkipHosts = aList;
-  return NS_OK;
 }
 
 NS_IMETHODIMP

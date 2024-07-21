@@ -1711,7 +1711,7 @@ nsresult nsUrlClassifierDBService::Init() {
 // nsChannelClassifier is the only consumer of this interface.
 NS_IMETHODIMP
 nsUrlClassifierDBService::Classify(nsIPrincipal* aPrincipal,
-                                   nsIEventTarget* aEventTarget,
+                                   nsISerialEventTarget* aEventTarget,
                                    nsIURIClassifierCallback* c, bool* aResult) {
   NS_ENSURE_ARG(aPrincipal);
   NS_ENSURE_ARG(aResult);
@@ -1737,7 +1737,7 @@ nsUrlClassifierDBService::Classify(nsIPrincipal* aPrincipal,
       // In the case null event target we should use systemgroup event target
       NS_WARNING(
           ("Null event target, we should use SystemGroup to do labelling"));
-      nsCOMPtr<nsIEventTarget> systemGroupEventTarget =
+      nsCOMPtr<nsISerialEventTarget> systemGroupEventTarget =
           mozilla::SystemGroup::EventTargetFor(mozilla::TaskCategory::Other);
       content->SetEventTargetForActor(actor, systemGroupEventTarget);
     }
@@ -2453,7 +2453,7 @@ nsUrlClassifierDBService::AsyncClassifyLocalWithFeatures(
     auto actor = new URLClassifierLocalChild();
 
     // TODO: Bug 1353701 - Supports custom event target for labelling.
-    nsCOMPtr<nsIEventTarget> systemGroupEventTarget =
+    nsCOMPtr<nsISerialEventTarget> systemGroupEventTarget =
         mozilla::SystemGroup::EventTargetFor(mozilla::TaskCategory::Other);
     content->SetEventTargetForActor(actor, systemGroupEventTarget);
 

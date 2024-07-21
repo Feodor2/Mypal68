@@ -2,19 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "BaseProfiler.h"
+#include "LulDwarfSummariser.h"
 
-#ifdef MOZ_BASE_PROFILER
+#include "mozilla/Assertions.h"
+#include "mozilla/Sprintf.h"
 
-#  include "LulDwarfSummariser.h"
-
-#  include "LulDwarfExt.h"
-
-#  include "mozilla/Assertions.h"
-#  include "mozilla/Sprintf.h"
+#include "LulDwarfExt.h"
 
 // Set this to 1 for verbose logging
-#  define DEBUG_SUMMARISER 0
+#define DEBUG_SUMMARISER 0
 
 namespace lul {
 
@@ -126,7 +122,7 @@ void Summariser::Rule(uintptr_t aAddress, int aNewReg, LExprHow how,
 
   // FIXME: factor out common parts of the arch-dependent summarisers.
 
-#  if defined(GP_ARCH_arm)
+#if defined(GP_ARCH_arm)
 
   // ----------------- arm ----------------- //
 
@@ -248,7 +244,7 @@ void Summariser::Rule(uintptr_t aAddress, int aNewReg, LExprHow how,
     mCurrRules.mR15expr = LExpr(NODEREF, DW_REG_ARM_R14, 0);
   }
 
-#  elif defined(GP_ARCH_arm64)
+#elif defined(GP_ARCH_arm64)
 
   // ----------------- arm64 ----------------- //
 
@@ -329,7 +325,7 @@ void Summariser::Rule(uintptr_t aAddress, int aNewReg, LExprHow how,
   if (mCurrRules.mSPexpr.mHow == UNKNOWN) {
     mCurrRules.mSPexpr = LExpr(NODEREF, DW_REG_CFA, 0);
   }
-#  elif defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
+#elif defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
 
   // ---------------- x64/x86 ---------------- //
 
@@ -429,7 +425,7 @@ void Summariser::Rule(uintptr_t aAddress, int aNewReg, LExprHow how,
     mCurrRules.mXbpExpr = LExpr(NODEREF, DW_REG_INTEL_XBP, 0);
   }
 
-#  elif defined(GP_ARCH_mips64)
+#elif defined(GP_ARCH_mips64)
   // ---------------- mips ---------------- //
   //
   // Now, can we add the rule to our summary?  This depends on whether
@@ -511,10 +507,10 @@ void Summariser::Rule(uintptr_t aAddress, int aNewReg, LExprHow how,
     mCurrRules.mFPexpr = LExpr(NODEREF, DW_REG_MIPS_FP, 0);
   }
 
-#  else
+#else
 
-#    error "Unsupported arch"
-#  endif
+#  error "Unsupported arch"
+#endif
 
   return;
 
@@ -553,5 +549,3 @@ void Summariser::End() {
 }
 
 }  // namespace lul
-
-#endif  // MOZ_BASE_PROFILER

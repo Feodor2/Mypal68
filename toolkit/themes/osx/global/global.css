@@ -33,13 +33,14 @@ window,
 page,
 dialog,
 wizard {
-  -moz-appearance: dialog;
+  appearance: auto;
+  -moz-default-appearance: dialog;
   background-color: #FFFFFF;
   color: -moz-DialogText;
   font: message-box;
 }
 
-/* ::::: alert icons :::::*/
+/* ::::: Alert icons :::::*/
 
 .message-icon,
 .alert-icon,
@@ -95,7 +96,7 @@ sidebarheader {
 }
 
 :root:-moz-lwtheme {
-  -moz-appearance: none;
+  appearance: none;
 }
 
 :root[lwtheme-image]:-moz-lwtheme-darktext {
@@ -123,23 +124,19 @@ separator.thin[orient="vertical"] {
 separator.groove:not([orient="vertical"]) {
   border-top: 1px solid #A3A3A3;
   height: 0;
-  margin-top: 0.4em;
-  margin-bottom: 0.4em;
+  margin-block: 0.4em;
 }
 separator.groove[orient="vertical"] {
   border-left: 1px solid #A3A3A3;
   width: 0;
-  margin-left: 0.4em;
-  margin-right: 0.4em;
+  margin-inline: 0.4em;
 }
 
 description,
 label {
   cursor: default;
-  margin-top: 1px;
-  margin-bottom: 2px;
-  margin-inline-start: 6px;
-  margin-inline-end: 5px;
+  margin-block: 1px 2px;
+  margin-inline: 6px 5px;
 }
 
 description {
@@ -184,7 +181,7 @@ notification > hbox > button {
   padding: 1px 10px;
   min-width: 60px;
   min-height: 16px;
-  -moz-appearance: none;
+  appearance: none;
   border-radius: 10000px;
   border: @roundButtonBorderWidth@ @roundButtonBorderStyle@ @roundButtonBorderColor@;
   text-shadow: @loweredShadow@;
@@ -233,7 +230,8 @@ popupnotificationcontent {
    * clears everything under it.
    * Without help from native theming this effect wouldn't be achievable.
    */
-  -moz-appearance: menuitem;
+  appearance: auto;
+  -moz-default-appearance: menuitem;
 }
 
 .popup-internal-box > .scrollbutton-up {
@@ -242,7 +240,8 @@ popupnotificationcontent {
 }
 
 .popup-internal-box > .scrollbutton-up > .toolbarbutton-icon {
-  -moz-appearance: button-arrow-up;
+  appearance: auto;
+  -moz-default-appearance: button-arrow-up;
 }
 
 .popup-internal-box > .scrollbutton-down {
@@ -251,7 +250,8 @@ popupnotificationcontent {
 }
 
 .popup-internal-box > .scrollbutton-down > .toolbarbutton-icon {
-  -moz-appearance: button-arrow-down;
+  appearance: auto;
+  -moz-default-appearance: button-arrow-down;
 }
 
 .popup-internal-box > .scrollbutton-up[disabled="true"],

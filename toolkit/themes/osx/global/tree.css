@@ -8,7 +8,7 @@
 /* ::::: editable tree ::::: */
 
 .tree-input {
-  -moz-appearance: none;
+  appearance: none;
   border-width: 0;
   box-shadow: var(--focus-ring-box-shadow);
 }

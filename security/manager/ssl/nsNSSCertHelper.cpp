@@ -744,7 +744,7 @@ static nsresult ProcessExtKeyUsage(SECItem* extData, nsAString& text) {
 
 void LossyUTF8ToUTF16(const char* str, uint32_t len,
                       /*out*/ nsAString& result) {
-  auto span = MakeSpan(str, len);
+  auto span = Span(str, len);
   if (IsUtf8(span)) {
     CopyUTF8toUTF16(span, result);
   } else {
@@ -861,7 +861,7 @@ static nsresult AppendBMPtoUTF16(const UniquePLArenaPool& arena,
                                 &utf8ValLen)) {
     return NS_ERROR_FAILURE;
   }
-  AppendUTF8toUTF16(MakeSpan(reinterpret_cast<char*>(utf8Val), utf8ValLen),
+  AppendUTF8toUTF16(Span(reinterpret_cast<char*>(utf8Val), utf8ValLen),
                     text);
   return NS_OK;
 }

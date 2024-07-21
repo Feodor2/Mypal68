@@ -69,7 +69,7 @@
               oncommand="MigrationWizard.onImportItemCommand();">
     <description control="dataSources">&importItems.label;</description>
 
-    <vbox id="dataSources" style="overflow: auto; -moz-appearance: listbox" align="left" flex="1" role="group"/>
+    <vbox id="dataSources" style="overflow: auto; appearance: auto; -moz-default-appearance: listbox" align="left" flex="1" role="group"/>
   </wizardpage>
 
   <wizardpage id="migrating" pageid="migrating" label="&migrating.title;"

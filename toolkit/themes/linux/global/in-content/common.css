@@ -23,11 +23,11 @@ xul|button > xul|*.button-box,
 xul|menulist > xul|*.menulist-label-box,
 xul|*.radio-label-box,
 xul|*.checkbox-label-box {
-  -moz-appearance: none;
+  appearance: none;
 }
 
 xul|button[type="menu"] > xul|*.button-box > xul|*.button-menu-dropmarker {
-  -moz-appearance: none !important;
+  appearance: none !important;
 }
 
 xul|*.help-button > xul|*.button-box > xul|*.button-icon {
@@ -40,8 +40,7 @@ xul|menulist {
 
 xul|*.menulist-dropmarker {
   display: -moz-box;
-  margin-top: 6px;
-  margin-bottom: 6px;
+  margin-block: 6px;
 }
 
 xul|checkbox[checked] > xul|*.checkbox-check,

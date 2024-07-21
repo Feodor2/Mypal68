@@ -51,7 +51,7 @@ body {
 }
 
 #filter-input {
-    -moz-appearance: none;
+    appearance: none;
     border: none;
     background-image: none;
     background-color: transparent;

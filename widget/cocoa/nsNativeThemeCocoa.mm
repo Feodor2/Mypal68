@@ -365,16 +365,6 @@ static void InflateControlRect(NSRect* rect, NSControlSize cocoaControlSize,
   rect->size.height += buttonMargins[bottomMargin] + buttonMargins[topMargin];
 }
 
-static ChildView* ChildViewForFrame(nsIFrame* aFrame) {
-  if (!aFrame) return nil;
-
-  nsIWidget* widget = aFrame->GetNearestWidget();
-  if (!widget) return nil;
-
-  NSWindow* window = (NSWindow*)widget->GetNativeData(NS_NATIVE_WINDOW);
-  return [window isKindOfClass:[BaseWindow class]] ? [(BaseWindow*)window mainChildView] : nil;
-}
-
 static NSWindow* NativeWindowForFrame(nsIFrame* aFrame, nsIWidget** aTopLevelWidget = NULL) {
   if (!aFrame) return nil;
 
@@ -430,8 +420,9 @@ static BOOL IsActive(nsIFrame* aFrame, BOOL aIsToolbarControl) {
 }
 
 static bool IsInSourceList(nsIFrame* aFrame) {
-  for (nsIFrame* frame = aFrame->GetParent(); frame; frame = frame->GetParent()) {
-    if (frame->StyleDisplay()->mAppearance == StyleAppearance::MozMacSourceList) {
+  for (nsIFrame* frame = aFrame->GetParent(); frame;
+       frame = nsLayoutUtils::GetCrossDocParentFrame(frame)) {
+    if (frame->StyleDisplay()->EffectiveAppearance() == StyleAppearance::MozMacSourceList) {
       return true;
     }
   }
@@ -994,7 +985,7 @@ static bool IsToolbarStyleContainer(nsIFrame* aFrame) {
     return true;
   }
 
-  switch (aFrame->StyleDisplay()->mAppearance) {
+  switch (aFrame->StyleDisplay()->EffectiveAppearance()) {
     case StyleAppearance::Toolbar:
     case StyleAppearance::Statusbar:
       return true;
@@ -1041,89 +1032,31 @@ void nsNativeThemeCocoa::DrawSearchField(CGContextRef cgContext, const HIRect& i
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-static Color NSColorToColor(NSColor* aColor) {
-  NSColor* deviceColor = [aColor colorUsingColorSpaceName:NSDeviceRGBColorSpace];
-  return Color([deviceColor redComponent], [deviceColor greenComponent],
-               [deviceColor blueComponent], [deviceColor alphaComponent]);
-}
-
-static Color VibrancyFillColor(nsIFrame* aFrame, nsITheme::ThemeGeometryType aThemeGeometryType) {
-  ChildView* childView = ChildViewForFrame(aFrame);
-  if (childView) {
-    return NSColorToColor([childView vibrancyFillColorForThemeGeometryType:aThemeGeometryType]);
-  }
-  return Color();
-}
-
-static void DrawVibrancyBackground(CGContextRef cgContext, CGRect inBoxRect, const Color& aColor,
-                                   int aCornerRadiusIfOpaque = 0) {
-  NSRect rect = NSRectFromCGRect(inBoxRect);
-  NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-  NSGraphicsContext* context = [NSGraphicsContext graphicsContextWithGraphicsPort:cgContext
-                                                                          flipped:YES];
-  [NSGraphicsContext setCurrentContext:context];
-  [NSGraphicsContext saveGraphicsState];
-
-  NSColor* fillColor = [NSColor colorWithDeviceRed:aColor.r
-                                             green:aColor.g
-                                              blue:aColor.b
-                                             alpha:aColor.a];
-
-  if ([fillColor alphaComponent] == 1.0 && aCornerRadiusIfOpaque > 0) {
-    // The fillColor being opaque means that the system-wide pref "reduce
-    // transparency" is set. In that scenario, we still go through all the
-    // vibrancy rendering paths (VibrancyManager::SystemSupportsVibrancy()
-    // will still return true), but the result just won't look "vibrant".
-    // However, there's one unfortunate change of behavior that this pref
-    // has: It stops the window server from applying window masks. We use
-    // a window mask to get rounded corners on menus. So since the mask
-    // doesn't work in "reduce vibrancy" mode, we need to do our own rounded
-    // corner clipping here.
-    [[NSBezierPath bezierPathWithRoundedRect:rect
-                                     xRadius:aCornerRadiusIfOpaque
-                                     yRadius:aCornerRadiusIfOpaque] addClip];
-  }
-
-  [fillColor set];
-  NSRectFill(rect);
-
-  [NSGraphicsContext restoreGraphicsState];
-  [NSGraphicsContext setCurrentContext:savedContext];
-}
-
 nsNativeThemeCocoa::MenuBackgroundParams nsNativeThemeCocoa::ComputeMenuBackgroundParams(
     nsIFrame* aFrame, EventStates aEventState) {
   MenuBackgroundParams params;
-  if (VibrancyManager::SystemSupportsVibrancy()) {
-    params.vibrancyColor = Some(VibrancyFillColor(aFrame, eThemeGeometryTypeMenu));
-  } else {
-    params.disabled = IsDisabled(aFrame, aEventState);
-    bool isLeftOfParent = false;
-    params.submenuRightOfParent = IsSubmenu(aFrame, &isLeftOfParent) && !isLeftOfParent;
-  }
+  params.disabled = IsDisabled(aFrame, aEventState);
+  bool isLeftOfParent = false;
+  params.submenuRightOfParent = IsSubmenu(aFrame, &isLeftOfParent) && !isLeftOfParent;
   return params;
 }
 
 void nsNativeThemeCocoa::DrawMenuBackground(CGContextRef cgContext, const CGRect& inBoxRect,
                                             const MenuBackgroundParams& aParams) {
-  if (aParams.vibrancyColor) {
-    DrawVibrancyBackground(cgContext, inBoxRect, *aParams.vibrancyColor, 4);
-  } else {
-    HIThemeMenuDrawInfo mdi;
-    memset(&mdi, 0, sizeof(mdi));
-    mdi.version = 0;
-    mdi.menuType = aParams.disabled ? static_cast<ThemeMenuType>(kThemeMenuTypeInactive)
-                                    : static_cast<ThemeMenuType>(kThemeMenuTypePopUp);
+  HIThemeMenuDrawInfo mdi;
+  memset(&mdi, 0, sizeof(mdi));
+  mdi.version = 0;
+  mdi.menuType = aParams.disabled ? static_cast<ThemeMenuType>(kThemeMenuTypeInactive)
+                                  : static_cast<ThemeMenuType>(kThemeMenuTypePopUp);
 
-    if (aParams.submenuRightOfParent) {
-      mdi.menuType = kThemeMenuTypeHierarchical;
-    }
-
-    // The rounded corners draw outside the frame.
-    CGRect deflatedRect = CGRectMake(inBoxRect.origin.x, inBoxRect.origin.y + 4,
-                                     inBoxRect.size.width, inBoxRect.size.height - 8);
-    HIThemeDrawMenuBackground(&deflatedRect, &mdi, cgContext, HITHEME_ORIENTATION);
+  if (aParams.submenuRightOfParent) {
+    mdi.menuType = kThemeMenuTypeHierarchical;
   }
+
+  // The rounded corners draw outside the frame.
+  CGRect deflatedRect = CGRectMake(inBoxRect.origin.x, inBoxRect.origin.y + 4, inBoxRect.size.width,
+                                   inBoxRect.size.height - 8);
+  HIThemeDrawMenuBackground(&deflatedRect, &mdi, cgContext, HITHEME_ORIENTATION);
 }
 
 static const NSSize kCheckmarkSize = NSMakeSize(11, 11);
@@ -1219,10 +1152,7 @@ nsNativeThemeCocoa::MenuItemParams nsNativeThemeCocoa::ComputeMenuItemParams(
   bool isDisabled = IsDisabled(aFrame, aEventState);
 
   MenuItemParams params;
-  if (VibrancyManager::SystemSupportsVibrancy()) {
-    ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, StyleAppearance::Menuitem);
-    params.vibrancyColor = Some(VibrancyFillColor(aFrame, type));
-  }
+  params.backgroundIsVibrant = VibrancyManager::SystemSupportsVibrancy();
   params.checked = aIsChecked;
   params.disabled = isDisabled;
   params.selected = !isDisabled && CheckBooleanAttr(aFrame, nsGkAtoms::menuactive);
@@ -1246,10 +1176,9 @@ static void SetCGContextStrokeColor(CGContextRef cgContext, nscolor aColor) {
 
 void nsNativeThemeCocoa::DrawMenuItem(CGContextRef cgContext, const CGRect& inBoxRect,
                                       const MenuItemParams& aParams) {
-  if (aParams.vibrancyColor) {
-    SetCGContextFillColor(cgContext, *aParams.vibrancyColor);
-    CGContextFillRect(cgContext, inBoxRect);
-  } else {
+  // If the background is contributed by vibrancy (which is part of the window background), we don't
+  // need to draw any background here.
+  if (!aParams.backgroundIsVibrant) {
     HIThemeMenuItemDrawInfo drawInfo;
     memset(&drawInfo, 0, sizeof(drawInfo));
     drawInfo.version = 0;
@@ -2086,28 +2015,6 @@ void nsNativeThemeCocoa::DrawTabPanel(CGContextRef cgContext, const HIRect& inBo
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-nsNativeThemeCocoa::ScaleParams nsNativeThemeCocoa::ComputeXULScaleParams(nsIFrame* aFrame,
-                                                                          EventStates aEventState,
-                                                                          bool aIsHorizontal) {
-  ScaleParams params;
-  params.value = CheckIntAttr(aFrame, nsGkAtoms::curpos, 0);
-  params.min = CheckIntAttr(aFrame, nsGkAtoms::minpos, 0);
-  params.max = CheckIntAttr(aFrame, nsGkAtoms::maxpos, 100);
-  if (!params.max) {
-    params.max = 100;
-  }
-
-  params.reverse =
-      aFrame->GetContent()->IsElement() &&
-      aFrame->GetContent()->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::dir,
-                                                     NS_LITERAL_STRING("reverse"), eCaseMatters);
-  params.insideActiveWindow = FrameIsInActiveWindow(aFrame);
-  params.focused = aEventState.HasState(NS_EVENT_STATE_FOCUS);
-  params.disabled = IsDisabled(aFrame, aEventState);
-  params.horizontal = aIsHorizontal;
-  return params;
-}
-
 Maybe<nsNativeThemeCocoa::ScaleParams> nsNativeThemeCocoa::ComputeHTMLScaleParams(
     nsIFrame* aFrame, EventStates aEventState) {
   nsRangeFrame* rangeFrame = do_QueryFrame(aFrame);
@@ -2430,7 +2337,7 @@ static bool IsSmallScrollbar(nsIFrame* aFrame) {
   }
   nsIFrame* scrollbarFrame = GetParentScrollbarFrame(aFrame);
   if (scrollbarFrame &&
-      scrollbarFrame->StyleDisplay()->mAppearance == StyleAppearance::ScrollbarSmall) {
+      scrollbarFrame->StyleDisplay()->EffectiveAppearance() == StyleAppearance::ScrollbarSmall) {
     return true;
   }
   return false;
@@ -2719,6 +2626,52 @@ void nsNativeThemeCocoa::DrawSourceList(CGContextRef cgContext, const CGRect& in
   CGColorSpaceRelease(rgb);
 }
 
+#if !defined(MAC_OS_X_VERSION_10_14) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_14
+@interface NSColor (NSColorControlAccentColor)
+@property(class, strong, readonly) NSColor* controlAccentColor NS_AVAILABLE_MAC(10_14);
+@end
+#endif
+
+void nsNativeThemeCocoa::DrawSourceListSelection(CGContextRef aContext, const CGRect& aRect,
+                                                 bool aWindowIsActive, bool aSelectionIsActive) {
+  if (!nsCocoaFeatures::OnYosemiteOrLater()) {
+    // Render with the 10.9 gradient style.
+    RenderWithCoreUI(
+        aRect, aContext,
+        [NSDictionary
+            dictionaryWithObjectsAndKeys:[NSNumber numberWithBool:aSelectionIsActive], @"focus",
+                                         [NSNumber numberWithBool:YES], @"is.flipped",
+                                         @"kCUIVariantGradientSideBarSelection", @"kCUIVariantKey",
+                                         (aWindowIsActive ? @"normal" : @"inactive"), @"state",
+                                         @"gradient", @"widget", nil]);
+    return;
+  }
+
+  NSColor* fillColor;
+  if (aSelectionIsActive) {
+    // Active selection, blue or graphite.
+    if (@available(macOS 10.14, *)) {
+      fillColor = [NSColor controlAccentColor];
+    } else {
+      // Pre-10.14, use hardcoded colors.
+      if ([NSColor currentControlTint] == NSGraphiteControlTint) {
+        fillColor = [NSColor colorWithSRGBRed:0.635 green:0.635 blue:0.655 alpha:1.0];
+      } else {
+        fillColor = [NSColor colorWithSRGBRed:0.247 green:0.584 blue:0.965 alpha:1.0];
+      }
+    }
+  } else {
+    // Inactive selection, gray.
+    if (aWindowIsActive) {
+      fillColor = [NSColor colorWithWhite:0.871 alpha:1.0];
+    } else {
+      fillColor = [NSColor colorWithWhite:0.808 alpha:1.0];
+    }
+  }
+  CGContextSetFillColorWithColor(aContext, [fillColor CGColor]);
+  CGContextFillRect(aContext, aRect);
+}
+
 bool nsNativeThemeCocoa::IsParentScrollbarRolledOver(nsIFrame* aFrame) {
   nsIFrame* scrollbarFrame = GetParentScrollbarFrame(aFrame);
   return nsLookAndFeel::UseOverlayScrollbars()
@@ -2756,17 +2709,10 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
   EventStates eventState = GetContentState(aFrame, aAppearance);
 
   switch (aAppearance) {
-    case StyleAppearance::Dialog:
-      if (IsWindowSheet(aFrame)) {
-        if (VibrancyManager::SystemSupportsVibrancy()) {
-          ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-          return Some(WidgetInfo::ColorFill(VibrancyFillColor(aFrame, type)));
-        }
-        return Some(WidgetInfo::SheetBackground());
-      }
-      return Some(WidgetInfo::DialogBackground());
-
     case StyleAppearance::Menupopup:
+      if (VibrancyManager::SystemSupportsVibrancy()) {
+        return Nothing();
+      }
       return Some(WidgetInfo::MenuBackground(ComputeMenuBackgroundParams(aFrame, eventState)));
 
     case StyleAppearance::Menuarrow:
@@ -2791,8 +2737,7 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
 
     case StyleAppearance::Tooltip:
       if (VibrancyManager::SystemSupportsVibrancy()) {
-        ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-        return Some(WidgetInfo::ColorFill(VibrancyFillColor(aFrame, type)));
+        return Nothing();
       }
       return Some(WidgetInfo::Tooltip());
 
@@ -2878,38 +2823,29 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
           WidgetInfo::Button(ButtonParams{ComputeControlParams(aFrame, eventState), buttonType}));
     }
 
-    case StyleAppearance::ButtonBevel: {
-      bool isDefaultButton = IsDefaultButton(aFrame);
-      ButtonType buttonType =
-          isDefaultButton ? ButtonType::eDefaultBevelButton : ButtonType::eRegularBevelButton;
-      return Some(
-          WidgetInfo::Button(ButtonParams{ComputeControlParams(aFrame, eventState), buttonType}));
-    }
-
-    case StyleAppearance::InnerSpinButton: {
-      case StyleAppearance::Spinner:
-        bool isSpinner = (aAppearance == StyleAppearance::Spinner);
-        nsIContent* content = aFrame->GetContent();
-        if (isSpinner && content->IsHTMLElement()) {
-          // In HTML the theming for the spin buttons is drawn individually into
-          // their own backgrounds instead of being drawn into the background of
-          // their spinner parent as it is for XUL.
-          break;
+    case StyleAppearance::Spinner: {
+      bool isSpinner = (aAppearance == StyleAppearance::Spinner);
+      nsIContent* content = aFrame->GetContent();
+      if (isSpinner && content->IsHTMLElement()) {
+        // In HTML the theming for the spin buttons is drawn individually into
+        // their own backgrounds instead of being drawn into the background of
+        // their spinner parent as it is for XUL.
+        break;
+      }
+      SpinButtonParams params;
+      if (content->IsElement()) {
+        if (content->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::state,
+                                              NS_LITERAL_STRING("up"), eCaseMatters)) {
+          params.pressedButton = Some(SpinButton::eUp);
+        } else if (content->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::state,
+                                                     NS_LITERAL_STRING("down"), eCaseMatters)) {
+          params.pressedButton = Some(SpinButton::eDown);
         }
-        SpinButtonParams params;
-        if (content->IsElement()) {
-          if (content->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::state,
-                                                NS_LITERAL_STRING("up"), eCaseMatters)) {
-            params.pressedButton = Some(SpinButton::eUp);
-          } else if (content->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::state,
-                                                       NS_LITERAL_STRING("down"), eCaseMatters)) {
-            params.pressedButton = Some(SpinButton::eDown);
-          }
-        }
-        params.disabled = IsDisabled(aFrame, eventState);
-        params.insideActiveWindow = FrameIsInActiveWindow(aFrame);
+      }
+      params.disabled = IsDisabled(aFrame, eventState);
+      params.insideActiveWindow = FrameIsInActiveWindow(aFrame);
 
-        return Some(WidgetInfo::SpinButtons(params));
+      return Some(WidgetInfo::SpinButtons(params));
     }
 
     case StyleAppearance::SpinnerUpbutton:
@@ -2983,7 +2919,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
     case StyleAppearance::Groupbox:
       return Some(WidgetInfo::GroupBox());
 
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::Textfield:
     case StyleAppearance::NumberInput: {
       bool isFocused = eventState.HasState(NS_EVENT_STATE_FOCUS);
@@ -2997,8 +2932,7 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
       }
 
       bool isDisabled = IsDisabled(aFrame, eventState) || IsReadOnly(aFrame);
-      bool borderless = (aAppearance == StyleAppearance::MenulistTextfield && !isFocused);
-      return Some(WidgetInfo::TextBox(TextBoxParams{isDisabled, isFocused, borderless}));
+      return Some(WidgetInfo::TextBox(TextBoxParams{isDisabled, isFocused, /* borderless = */ false}));
     }
 
     case StyleAppearance::Searchfield:
@@ -3014,9 +2948,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
       return Some(WidgetInfo::ProgressBar(
           ComputeProgressParams(aFrame, eventState, !IsVerticalProgress(aFrame))));
     }
-
-    case StyleAppearance::ProgressbarVertical:
-      return Some(WidgetInfo::ProgressBar(ComputeProgressParams(aFrame, eventState, false)));
 
     case StyleAppearance::Meter:
       return Some(WidgetInfo::Meter(ComputeMeterParams(aFrame)));
@@ -3047,16 +2978,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
       // do nothing, taken care of by treeview header
     case StyleAppearance::Treeline:
       // do nothing, these lines don't exist on macos
-      break;
-
-    case StyleAppearance::ScaleHorizontal:
-    case StyleAppearance::ScaleVertical:
-      return Some(WidgetInfo::Scale(ComputeXULScaleParams(
-          aFrame, eventState, aAppearance == StyleAppearance::ScaleHorizontal)));
-
-    case StyleAppearance::ScalethumbHorizontal:
-    case StyleAppearance::ScalethumbVertical:
-      // do nothing, drawn by scale
       break;
 
     case StyleAppearance::Range: {
@@ -3097,22 +3018,17 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
 
     case StyleAppearance::MozMacSourceList: {
       if (VibrancyManager::SystemSupportsVibrancy()) {
-        ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-        return Some(WidgetInfo::ColorFill(VibrancyFillColor(aFrame, type)));
+        return Nothing();
       }
       return Some(WidgetInfo::SourceList(FrameIsInActiveWindow(aFrame)));
     }
 
     case StyleAppearance::MozMacSourceListSelection:
     case StyleAppearance::MozMacActiveSourceListSelection: {
-      // If we're in XUL tree, we need to rely on the source list's clear
-      // background display item. If we cleared the background behind the
-      // selections, the source list would not pick up the right font
-      // smoothing background. So, to simplify a bit, we only support vibrancy
-      // if we're in a source list.
+      // We only support vibrancy for source list selections if we're inside
+      // a source list, because we need the background to be transparent.
       if (VibrancyManager::SystemSupportsVibrancy() && IsInSourceList(aFrame)) {
-        ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-        return Some(WidgetInfo::ColorFill(VibrancyFillColor(aFrame, type)));
+        return Nothing();
       }
       bool isInActiveWindow = FrameIsInActiveWindow(aFrame);
       if (aAppearance == StyleAppearance::MozMacActiveSourceListSelection) {
@@ -3133,13 +3049,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
     case StyleAppearance::Resizer:
       return Some(WidgetInfo::Resizer(IsFrameRTL(aFrame)));
 
-    case StyleAppearance::MozMacVibrancyLight:
-    case StyleAppearance::MozMacVibrancyDark:
-    case StyleAppearance::MozMacVibrantTitlebarLight:
-    case StyleAppearance::MozMacVibrantTitlebarDark: {
-      ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-      return Some(WidgetInfo::ColorFill(VibrancyFillColor(aFrame, type)));
-    }
     default:
       break;
   }
@@ -3208,16 +3117,6 @@ void nsNativeThemeCocoa::RenderWidget(const WidgetInfo& aWidgetInfo, DrawTarget&
     case Widget::eColorFill: {
       Color params = aWidgetInfo.Params<Color>();
       SetCGContextFillColor(cgContext, params);
-      CGContextFillRect(cgContext, macRect);
-      break;
-    }
-    case Widget::eSheetBackground: {
-      HIThemeSetFill(kThemeBrushSheetBackgroundTransparent, NULL, cgContext, HITHEME_ORIENTATION);
-      CGContextFillRect(cgContext, macRect);
-      break;
-    }
-    case Widget::eDialogBackground: {
-      HIThemeSetFill(kThemeBrushDialogBackgroundActive, NULL, cgContext, HITHEME_ORIENTATION);
       CGContextFillRect(cgContext, macRect);
       break;
     }
@@ -3394,16 +3293,8 @@ void nsNativeThemeCocoa::RenderWidget(const WidgetInfo& aWidgetInfo, DrawTarget&
     case Widget::eActiveSourceListSelection:
     case Widget::eInactiveSourceListSelection: {
       bool isInActiveWindow = aWidgetInfo.Params<bool>();
-      BOOL isActiveSelection = aWidgetInfo.Widget() == Widget::eActiveSourceListSelection;
-      RenderWithCoreUI(
-          macRect, cgContext,
-          [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithBool:isActiveSelection],
-                                                     @"focus", [NSNumber numberWithBool:YES],
-                                                     @"is.flipped",
-                                                     @"kCUIVariantGradientSideBarSelection",
-                                                     @"kCUIVariantKey",
-                                                     (isInActiveWindow ? @"normal" : @"inactive"),
-                                                     @"state", @"gradient", @"widget", nil]);
+      bool isActiveSelection = aWidgetInfo.Widget() == Widget::eActiveSourceListSelection;
+      DrawSourceListSelection(cgContext, macRect, isInActiveWindow, isActiveSelection);
       break;
     }
     case Widget::eTabPanel: {
@@ -3445,28 +3336,24 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
   //  - If the case in DrawWidgetBackground draws something complicated for the
   //    given widget type, return false here.
   switch (aAppearance) {
-    case StyleAppearance::Dialog:
-      if (IsWindowSheet(aFrame) && VibrancyManager::SystemSupportsVibrancy()) {
-        ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-        aBuilder.PushRect(bounds, bounds, true, wr::ToColorF(VibrancyFillColor(aFrame, type)));
+    case StyleAppearance::Menupopup:
+      if (VibrancyManager::SystemSupportsVibrancy()) {
         return true;
       }
       return false;
 
-    case StyleAppearance::Menupopup:
     case StyleAppearance::Menuarrow:
     case StyleAppearance::Menuitem:
     case StyleAppearance::Checkmenuitem:
     case StyleAppearance::Menuseparator:
+      return false;
+
     case StyleAppearance::ButtonArrowUp:
     case StyleAppearance::ButtonArrowDown:
       return false;
 
     case StyleAppearance::Tooltip:
-      if (VibrancyManager::SystemSupportsVibrancy()) {
-        ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-        aBuilder.PushRect(bounds, bounds, true, wr::ToColorF(VibrancyFillColor(aFrame, type)));
-      } else {
+      if (!VibrancyManager::SystemSupportsVibrancy()) {
         aBuilder.PushRect(bounds, bounds, true, wr::ToColorF(kTooltipBackgroundColor));
       }
       return true;
@@ -3478,7 +3365,6 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     case StyleAppearance::MozMacHelpButton:
     case StyleAppearance::MozMacDisclosureButtonOpen:
     case StyleAppearance::MozMacDisclosureButtonClosed:
-    case StyleAppearance::ButtonBevel:
     case StyleAppearance::Spinner:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
@@ -3488,7 +3374,6 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     case StyleAppearance::MozWindowTitlebar:
     case StyleAppearance::Statusbar:
     case StyleAppearance::Menulist:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::MozMenulistArrowButton:
     case StyleAppearance::Groupbox:
@@ -3496,15 +3381,12 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     case StyleAppearance::NumberInput:
     case StyleAppearance::Searchfield:
     case StyleAppearance::ProgressBar:
-    case StyleAppearance::ProgressbarVertical:
     case StyleAppearance::Meter:
     case StyleAppearance::Treetwisty:
     case StyleAppearance::Treetwistyopen:
     case StyleAppearance::Treeheadercell:
     case StyleAppearance::Treeitem:
     case StyleAppearance::Treeview:
-    case StyleAppearance::ScaleHorizontal:
-    case StyleAppearance::ScaleVertical:
     case StyleAppearance::Range:
     case StyleAppearance::ScrollbarthumbVertical:
     case StyleAppearance::ScrollbarthumbHorizontal:
@@ -3573,20 +3455,9 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
 
     case StyleAppearance::MozMacSourceList:
       if (VibrancyManager::SystemSupportsVibrancy()) {
-        ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-        aBuilder.PushRect(bounds, bounds, true, wr::ToColorF(VibrancyFillColor(aFrame, type)));
         return true;
       }
       return false;
-
-    case StyleAppearance::MozMacVibrancyLight:
-    case StyleAppearance::MozMacVibrancyDark:
-    case StyleAppearance::MozMacVibrantTitlebarLight:
-    case StyleAppearance::MozMacVibrantTitlebarDark: {
-      ThemeGeometryType type = ThemeGeometryTypeForWidget(aFrame, aAppearance);
-      aBuilder.PushRect(bounds, bounds, true, wr::ToColorF(VibrancyFillColor(aFrame, type)));
-      return true;
-    }
 
     case StyleAppearance::Tab:
     case StyleAppearance::Tabpanels:
@@ -3649,7 +3520,6 @@ LayoutDeviceIntMargin nsNativeThemeCocoa::GetWidgetBorder(nsDeviceContext* aCont
       result = DirectionAwareMargin(kAquaDropdownBorder, aFrame);
       break;
 
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield: {
       SInt32 frameOutset = 0;
@@ -3763,7 +3633,6 @@ bool nsNativeThemeCocoa::GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* 
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::MozMenulistArrowButton:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::Checkbox:
     case StyleAppearance::Radio:
     case StyleAppearance::Tab:
@@ -3852,7 +3721,6 @@ nsNativeThemeCocoa::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* 
       break;
     }
 
-    case StyleAppearance::InnerSpinButton:
     case StyleAppearance::Spinner:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton: {
@@ -3883,7 +3751,6 @@ nsNativeThemeCocoa::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* 
       break;
     }
 
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
@@ -3954,22 +3821,6 @@ nsNativeThemeCocoa::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* 
       ::GetThemeMetric(kThemeMetricSliderMinThumbWidth, &width);
       ::GetThemeMetric(kThemeMetricSliderMinThumbHeight, &height);
       aResult->SizeTo(width, height);
-      *aIsOverridable = false;
-      break;
-    }
-
-    case StyleAppearance::ScaleHorizontal: {
-      SInt32 scaleHeight = 0;
-      ::GetThemeMetric(kThemeMetricHSliderHeight, &scaleHeight);
-      aResult->SizeTo(scaleHeight, scaleHeight);
-      *aIsOverridable = false;
-      break;
-    }
-
-    case StyleAppearance::ScaleVertical: {
-      SInt32 scaleWidth = 0;
-      ::GetThemeMetric(kThemeMetricVSliderWidth, &scaleWidth);
-      aResult->SizeTo(scaleWidth, scaleWidth);
       *aIsOverridable = false;
       break;
     }
@@ -4095,7 +3946,6 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame, StyleAppearance aAppear
     case StyleAppearance::Groupbox:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::ProgressBar:
-    case StyleAppearance::ProgressbarVertical:
     case StyleAppearance::Meter:
     case StyleAppearance::Meterchunk:
     case StyleAppearance::MozMacVibrancyLight:
@@ -4180,9 +4030,7 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFra
     case StyleAppearance::Button:
     case StyleAppearance::ButtonArrowUp:
     case StyleAppearance::ButtonArrowDown:
-    case StyleAppearance::ButtonBevel:
     case StyleAppearance::Toolbarbutton:
-    case StyleAppearance::InnerSpinButton:
     case StyleAppearance::Spinner:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
@@ -4195,7 +4043,6 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFra
     case StyleAppearance::Toolbox:
     // case StyleAppearance::Toolbarbutton:
     case StyleAppearance::ProgressBar:
-    case StyleAppearance::ProgressbarVertical:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::Meter:
     case StyleAppearance::Meterchunk:
@@ -4212,17 +4059,11 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFra
     case StyleAppearance::Treeheadersortarrow:
     case StyleAppearance::Treeitem:
     case StyleAppearance::Treeline:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::MozMacSourceList:
     case StyleAppearance::MozMacSourceListSelection:
     case StyleAppearance::MozMacActiveSourceListSelection:
 
     case StyleAppearance::Range:
-
-    case StyleAppearance::ScaleHorizontal:
-    case StyleAppearance::ScalethumbHorizontal:
-    case StyleAppearance::ScaleVertical:
-    case StyleAppearance::ScalethumbVertical:
 
     case StyleAppearance::Scrollbar:
     case StyleAppearance::ScrollbarSmall:
@@ -4325,13 +4166,11 @@ bool nsNativeThemeCocoa::WidgetAppearanceDependsOnWindowFocus(StyleAppearance aA
     case StyleAppearance::Menuitem:
     case StyleAppearance::Menuseparator:
     case StyleAppearance::Tooltip:
-    case StyleAppearance::InnerSpinButton:
     case StyleAppearance::Spinner:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
     case StyleAppearance::Separator:
     case StyleAppearance::Toolbox:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Treeview:
@@ -4353,32 +4192,6 @@ bool nsNativeThemeCocoa::IsWindowSheet(nsIFrame* aFrame) {
     return false;
   }
   return (widget->WindowType() == eWindowType_sheet);
-}
-
-bool nsNativeThemeCocoa::NeedToClearBackgroundBehindWidget(nsIFrame* aFrame,
-                                                           StyleAppearance aAppearance) {
-  switch (aAppearance) {
-    case StyleAppearance::MozMacSourceList:
-    // If we're in a XUL tree, we don't want to clear the background behind the
-    // selections below, since that would make our source list to not pick up
-    // the right font smoothing background. But since we don't call this method
-    // in nsTreeBodyFrame::BuildDisplayList, we never get here.
-    case StyleAppearance::MozMacSourceListSelection:
-    case StyleAppearance::MozMacActiveSourceListSelection:
-    case StyleAppearance::MozMacVibrancyLight:
-    case StyleAppearance::MozMacVibrancyDark:
-    case StyleAppearance::MozMacVibrantTitlebarLight:
-    case StyleAppearance::MozMacVibrantTitlebarDark:
-    case StyleAppearance::Tooltip:
-    case StyleAppearance::Menupopup:
-    case StyleAppearance::Menuitem:
-    case StyleAppearance::Checkmenuitem:
-      return true;
-    case StyleAppearance::Dialog:
-      return IsWindowSheet(aFrame);
-    default:
-      return false;
-  }
 }
 
 nsITheme::ThemeGeometryType nsNativeThemeCocoa::ThemeGeometryTypeForWidget(
@@ -4433,10 +4246,8 @@ nsITheme::Transparency nsNativeThemeCocoa::GetWidgetTransparency(nsIFrame* aFram
   switch (aAppearance) {
     case StyleAppearance::Menupopup:
     case StyleAppearance::Tooltip:
-      return eTransparent;
-
     case StyleAppearance::Dialog:
-      return IsWindowSheet(aFrame) ? eTransparent : eOpaque;
+      return eTransparent;
 
     case StyleAppearance::ScrollbarSmall:
     case StyleAppearance::Scrollbar:

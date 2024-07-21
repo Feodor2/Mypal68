@@ -21,7 +21,7 @@ nsresult NewObjectInputStreamFromBuffer(UniquePtr<char[]> buffer, uint32_t len,
                                         nsIObjectInputStream** stream) {
   nsCOMPtr<nsIInputStream> stringStream;
   nsresult rv = NS_NewByteInputStream(getter_AddRefs(stringStream),
-                                      MakeSpan(buffer.release(), len),
+                                      Span(buffer.release(), len),
                                       NS_ASSIGNMENT_ADOPT);
   MOZ_ALWAYS_SUCCEEDS(rv);
 

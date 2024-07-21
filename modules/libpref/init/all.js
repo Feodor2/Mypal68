@@ -31,6 +31,7 @@ pref("security.tls.enable_post_handshake_auth", false);
 #else
   pref("security.tls.hello_downgrade_check", true);
 #endif
+pref("security.tls.enable_delegated_credentials", false);
 
 pref("security.ssl.treat_unsafe_negotiation_as_broken", false);
 pref("security.ssl.require_safe_negotiation",  false);
@@ -996,11 +997,8 @@ pref("javascript.options.baselinejit",      true);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.baselinejit.threshold", 100);
 pref("javascript.options.ion",              true);
-#ifdef NIGHTLY_BUILD
-pref("javascript.options.warp",             false);
-#endif
 // Duplicated in JitOptions - ensure both match.
-pref("javascript.options.ion.threshold",    1000);
+pref("javascript.options.ion.threshold",    1500);
 pref("javascript.options.ion.full.threshold", 100000);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.ion.frequent_bailout_threshold", 10);
@@ -1008,11 +1006,14 @@ pref("javascript.options.asmjs",                  true);
 pref("javascript.options.wasm",                   true);
 pref("javascript.options.wasm_trustedprincipals", true);
 pref("javascript.options.wasm_verbose",           false);
-pref("javascript.options.wasm_ionjit",            true);
 pref("javascript.options.wasm_baselinejit",       true);
-#ifdef ENABLE_WASM_CRANELIFT
-  pref("javascript.options.wasm_cranelift",       false);
+
+#if defined(MOZ_AARCH64) && !defined(ENABLE_WASM_CRANELIFT)
+  pref("javascript.options.wasm_optimizingjit",   false);
+#else
+  pref("javascript.options.wasm_optimizingjit",   true);
 #endif
+
 #ifdef ENABLE_WASM_REFTYPES
   pref("javascript.options.wasm_gc",              false);
 #endif
@@ -2441,7 +2442,7 @@ pref("gestures.enable_single_finger_input", true);
 pref("editor.resizing.preserve_ratio",       true);
 pref("editor.positioning.offset",            0);
 
-pref("dom.use_watchdog", true);
+pref("dom.use_watchdog", false);
 pref("dom.max_chrome_script_run_time", 20);
 pref("dom.max_script_run_time", 10);
 pref("dom.max_ext_content_script_run_time", 5);
@@ -3945,14 +3946,14 @@ pref("full-screen-api.ignore-widgets", false);
 pref("full-screen-api.pointer-lock.enabled", true);
 // transition duration of fade-to-black and fade-from-black, unit: ms
 #ifndef MOZ_WIDGET_GTK
-  pref("full-screen-api.transition-duration.enter", "200 200");
-  pref("full-screen-api.transition-duration.leave", "200 200");
+  pref("full-screen-api.transition-duration.enter", "0 0");
+  pref("full-screen-api.transition-duration.leave", "0 0");
 #else
   pref("full-screen-api.transition-duration.enter", "0 0");
   pref("full-screen-api.transition-duration.leave", "0 0");
 #endif
 // timeout for black screen in fullscreen transition, unit: ms
-pref("full-screen-api.transition.timeout", 1000);
+pref("full-screen-api.transition.timeout", 0);
 // time for the warning box stays on the screen before sliding out, unit: ms
 pref("full-screen-api.warning.timeout", 3000);
 // delay for the warning box to show when pointer stays on the top, unit: ms

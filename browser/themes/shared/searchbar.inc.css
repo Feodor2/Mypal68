@@ -82,7 +82,7 @@
 }
 
 .searchbar-engine-one-off-item {
-  -moz-appearance: none;
+  appearance: none;
   display: inline-block;
   min-width: 48px;
   height: 32px;
@@ -148,7 +148,7 @@
 }
 
 .addengine-item {
-  -moz-appearance: none;
+  appearance: none;
   color: inherit;
   height: 32px;
   margin: 0;
@@ -204,7 +204,8 @@
 
 .addengine-item[type=menu] > .toolbarbutton-menu-dropmarker {
   display: -moz-box;
-  -moz-appearance: menuarrow !important;
+  appearance: auto !important;
+  -moz-default-appearance: menuarrow !important;
   list-style-image: none;
 }
 
@@ -235,7 +236,7 @@
 }
 
 .search-setting-button {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   min-height: 32px;
 }

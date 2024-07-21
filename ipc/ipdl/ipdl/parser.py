@@ -136,6 +136,7 @@ reserved = set((
     'returns',
     'struct',
     'sync',
+    'tainted',
     'union',
     'UniquePtr',
     'upto',
@@ -531,7 +532,8 @@ def p_OptionalMessageModifiers(p):
 
 def p_MessageModifier(p):
     """ MessageModifier : MessageVerify
-                        | MessageCompress """
+                        | MessageCompress
+                        | MessageTainted """
     p[0] = p[1]
 
 
@@ -543,6 +545,10 @@ def p_MessageVerify(p):
 def p_MessageCompress(p):
     """MessageCompress : COMPRESS
                        | COMPRESSALL"""
+    p[0] = p[1]
+
+def p_MessageTainted(p):
+    """MessageTainted : TAINTED"""
     p[0] = p[1]
 
 
@@ -563,9 +569,10 @@ def p_Priority(p):
     """Priority : ID"""
     kinds = {'normal': 1,
              'input': 2,
-             'high': 3}
+             'high': 3,
+             'mediumhigh': 4}
     if p[1] not in kinds:
-        _error(locFromTok(p, 1), "Expected normal or high for prio()")
+        _error(locFromTok(p, 1), "Expected normal, input, high or mediumhigh for prio()")
 
     p[0] = {'prio': kinds[p[1]]}
 

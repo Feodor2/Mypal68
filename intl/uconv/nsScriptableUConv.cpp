@@ -40,8 +40,8 @@ nsScriptableUnicodeConverter::ConvertFromUnicode(const nsAString& aSrc,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  auto src = MakeSpan(aSrc);
-  auto dst = AsWritableBytes(MakeSpan(_retval));
+  auto src = Span(aSrc);
+  auto dst = AsWritableBytes(Span(_retval));
   size_t totalWritten = 0;
   for (;;) {
     uint32_t result;
@@ -120,7 +120,7 @@ nsScriptableUnicodeConverter::ConvertToUnicode(const nsACString& aSrc,
   }
 
   auto src =
-      MakeSpan(reinterpret_cast<const uint8_t*>(aSrc.BeginReading()), length);
+      Span(reinterpret_cast<const uint8_t*>(aSrc.BeginReading()), length);
   uint32_t result;
   size_t read;
   size_t written;
@@ -165,8 +165,8 @@ nsScriptableUnicodeConverter::ConvertToByteArray(const nsAString& aString,
   if (!data) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  auto src = MakeSpan(aString);
-  auto dst = MakeSpan(data, needed.value());
+  auto src = Span(aString);
+  auto dst = Span(data, needed.value());
   size_t totalWritten = 0;
   for (;;) {
     uint32_t result;

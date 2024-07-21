@@ -99,8 +99,8 @@ void Channel::ChannelImpl::Init(Mode mode, Listener* listener) {
   input_buf_offset_ = 0;
 }
 
-void Channel::ChannelImpl::OutputQueuePush(Message* msg) {
-  output_queue_.push(msg);
+void Channel::ChannelImpl::OutputQueuePush(mozilla::UniquePtr<Message> msg) {
+  output_queue_.push(msg.release());
   output_queue_length_++;
 }
 
@@ -143,17 +143,18 @@ void Channel::ChannelImpl::Close() {
   closed_ = true;
 }
 
-bool Channel::ChannelImpl::Send(Message* message) {
+bool Channel::ChannelImpl::Send(mozilla::UniquePtr<Message> message) {
   ASSERT_OWNINGTHREAD(ChannelImpl);
+
 #ifdef IPC_MESSAGE_DEBUG_EXTRA
-  DLOG(INFO) << "sending message @" << message << " on channel @" << this
+  DLOG(INFO) << "sending message @" << message.get() << " on channel @" << this
              << " with type " << message->type() << " (" << output_queue_.size()
              << " in queue)";
 #endif
 
 #ifdef FUZZING
   message = mozilla::ipc::Faulty::instance().MutateIPCMessage(
-      "Channel::ChannelImpl::Send", message);
+      "Channel::ChannelImpl::Send", std::move(message));
 #endif
 
   if (closed_) {
@@ -162,11 +163,10 @@ bool Channel::ChannelImpl::Send(Message* message) {
               "Can't send message %s, because this channel is closed.\n",
               message->name());
     }
-    delete message;
     return false;
   }
 
-  OutputQueuePush(message);
+  OutputQueuePush(std::move(message));
   // ensure waiting to write
   if (!waiting_connect_) {
     if (!output_state_.is_pending) {
@@ -232,8 +232,7 @@ bool Channel::ChannelImpl::CreatePipe(const std::wstring& channel_id,
 }
 
 bool Channel::ChannelImpl::EnqueueHelloMessage() {
-  mozilla::UniquePtr<Message> m =
-      mozilla::MakeUnique<Message>(MSG_ROUTING_NONE, HELLO_MESSAGE_TYPE);
+  auto m = mozilla::MakeUnique<Message>(MSG_ROUTING_NONE, HELLO_MESSAGE_TYPE);
 
   // If we're waiting for our shared secret from the other end's hello message
   // then don't give the game away by sending it in ours.
@@ -247,7 +246,7 @@ bool Channel::ChannelImpl::EnqueueHelloMessage() {
     return false;
   }
 
-  OutputQueuePush(m.release());
+  OutputQueuePush(std::move(m));
   return true;
 }
 
@@ -343,7 +342,9 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
           input_state_.is_pending = true;
           return true;
         }
-        CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+        if (err != ERROR_BROKEN_PIPE) {
+          CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+        }
         return false;
       }
       input_state_.is_pending = true;
@@ -460,7 +461,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
     output_state_.is_pending = false;
     if (!context || bytes_written == 0) {
       DWORD err = GetLastError();
-      CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+      if (err != ERROR_BROKEN_PIPE) {
+        CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+      }
       return false;
     }
     // Message was sent.
@@ -504,7 +507,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
 
       return true;
     }
-    CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+    if (err != ERROR_BROKEN_PIPE) {
+      CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+    }
     return false;
   }
 
@@ -582,7 +587,9 @@ Channel::Listener* Channel::set_listener(Listener* listener) {
   return channel_impl_->set_listener(listener);
 }
 
-bool Channel::Send(Message* message) { return channel_impl_->Send(message); }
+bool Channel::Send(mozilla::UniquePtr<Message> message) {
+  return channel_impl_->Send(std::move(message));
+}
 
 bool Channel::Unsound_IsClosed() const {
   return channel_impl_->Unsound_IsClosed();

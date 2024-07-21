@@ -238,8 +238,8 @@ nsresult nsIOService::Init() {
     mRestrictedPortList.AppendElement(gBadPortList[i]);
 
   // Further modifications to the port list come from prefs
-  Preferences::RegisterPrefixCallbacks(
-      PREF_CHANGE_METHOD(nsIOService::PrefsChanged), gCallbackPrefs, this);
+  Preferences::RegisterPrefixCallbacks(nsIOService::PrefsChanged,
+                                       gCallbackPrefs, this);
   PrefsChanged();
 
   // Register for profile change notifications
@@ -402,7 +402,7 @@ nsresult nsIOService::LaunchSocketProcess() {
   }
 
   Preferences::RegisterPrefixCallbacks(
-      PREF_CHANGE_METHOD(nsIOService::NotifySocketProcessPrefsChanged),
+      nsIOService::NotifySocketProcessPrefsChanged,
       gCallbackPrefsForSocketProcess, this);
 
   // The subprocess is launched asynchronously, so we wait for a callback to
@@ -426,7 +426,7 @@ void nsIOService::DestroySocketProcess() {
   }
 
   Preferences::UnregisterPrefixCallbacks(
-      PREF_CHANGE_METHOD(nsIOService::NotifySocketProcessPrefsChanged),
+      nsIOService::NotifySocketProcessPrefsChanged,
       gCallbackPrefsForSocketProcess, this);
 
   mSocketProcess->Shutdown();
@@ -435,6 +435,12 @@ void nsIOService::DestroySocketProcess() {
 
 bool nsIOService::SocketProcessReady() {
   return mSocketProcess && mSocketProcess->IsConnected();
+}
+
+// static
+void nsIOService::NotifySocketProcessPrefsChanged(const char* aName,
+                                                  void* aSelf) {
+  static_cast<nsIOService*>(aSelf)->NotifySocketProcessPrefsChanged(aName);
 }
 
 void nsIOService::NotifySocketProcessPrefsChanged(const char* aName) {
@@ -1235,6 +1241,11 @@ nsIOService::AllowPort(int32_t inPort, const char* scheme, bool* _retval) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+// static
+void nsIOService::PrefsChanged(const char* pref, void* self) {
+  static_cast<nsIOService*>(self)->PrefsChanged(pref);
+}
 
 void nsIOService::PrefsChanged(const char* pref) {
   // Look for extra ports to block

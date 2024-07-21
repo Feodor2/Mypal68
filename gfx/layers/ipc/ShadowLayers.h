@@ -398,7 +398,7 @@ class ShadowLayerForwarder final : public LayersIPCActor,
 
   CompositorBridgeChild* GetCompositorBridgeChild();
 
-  nsIEventTarget* GetEventTarget() { return mEventTarget; };
+  nsISerialEventTarget* GetEventTarget() { return mEventTarget; };
 
   bool IsThreadSafe() const override { return false; }
 
@@ -426,7 +426,7 @@ class ShadowLayerForwarder final : public LayersIPCActor,
  private:
   ClientLayerManager* mClientLayerManager;
   Transaction* mTxn;
-  MessageLoop* mMessageLoop;
+  nsCOMPtr<nsISerialEventTarget> mThread;
   DiagnosticTypes mDiagnosticTypes;
   bool mIsFirstPaint;
   FocusTarget mFocusTarget;
@@ -441,7 +441,7 @@ class ShadowLayerForwarder final : public LayersIPCActor,
    * browserChild don't exist anymore; therefore we hold the event target since
    * its lifecycle is independent of these objects.
    */
-  nsCOMPtr<nsIEventTarget> mEventTarget;
+  nsCOMPtr<nsISerialEventTarget> mEventTarget;
 };
 
 class CompositableClient;

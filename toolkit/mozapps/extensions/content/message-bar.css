@@ -122,7 +122,7 @@ button.close {
 }
 
 .icon::after {
-  -moz-appearance: none;
+  appearance: none;
   -moz-context-properties: fill, stroke;
   color: inherit !important;
   fill: currentColor;

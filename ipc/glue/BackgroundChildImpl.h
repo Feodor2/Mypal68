@@ -51,12 +51,6 @@ class BackgroundChildImpl : public PBackgroundChild {
   virtual bool DeallocPBackgroundTestChild(
       PBackgroundTestChild* aActor) override;
 
-  virtual PBackgroundIDBFactoryChild* AllocPBackgroundIDBFactoryChild(
-      const LoggingInfo& aLoggingInfo) override;
-
-  virtual bool DeallocPBackgroundIDBFactoryChild(
-      PBackgroundIDBFactoryChild* aActor) override;
-
   virtual PBackgroundIndexedDBUtilsChild* AllocPBackgroundIndexedDBUtilsChild()
       override;
 
@@ -190,11 +184,8 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPCacheChild(dom::cache::PCacheChild* aActor) override;
 
-  virtual dom::cache::PCacheStreamControlChild* AllocPCacheStreamControlChild()
-      override;
-
-  virtual bool DeallocPCacheStreamControlChild(
-      dom::cache::PCacheStreamControlChild* aActor) override;
+  virtual already_AddRefed<dom::cache::PCacheStreamControlChild>
+  AllocPCacheStreamControlChild() override;
 
   virtual PMessagePortChild* AllocPMessagePortChild(
       const nsID& aUUID, const nsID& aDestinationUUID,

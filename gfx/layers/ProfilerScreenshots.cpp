@@ -85,8 +85,8 @@ void ProfilerScreenshots::SubmitScreenshot(
             profiler_add_marker_for_thread(
                 sourceThread, JS::ProfilingCategoryPair::GRAPHICS,
                 "CompositorScreenshot",
-                MakeUnique<ScreenshotPayload>(timeStamp, std::move(dataURL),
-                                              originalSize, windowIdentifier));
+                ScreenshotPayload(timeStamp, std::move(dataURL), originalSize,
+                                  windowIdentifier));
           }
         }
 

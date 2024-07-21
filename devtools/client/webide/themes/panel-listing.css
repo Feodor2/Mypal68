@@ -62,7 +62,7 @@ label,
 }
 
 .panel-item {
-  -moz-appearance: none;
+  appearance: none;
   -moz-box-align: center;
   padding: 3%;
   display: block;

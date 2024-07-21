@@ -12,7 +12,8 @@
 /* :::::::::: menulist :::::::::: */
 
 menulist {
-  -moz-appearance: menulist;
+  appearance: auto;
+  -moz-default-appearance: menulist;
   margin: 2px 4px;
   color: -moz-DialogText;
   font: menu;
@@ -20,7 +21,8 @@ menulist {
 }
 
 .menulist-label-box {
-  -moz-appearance: menulist-text;
+  appearance: auto;
+  -moz-default-appearance: menulist-text;
   -moz-box-align: center;
   -moz-box-pack: center;
   color: inherit;

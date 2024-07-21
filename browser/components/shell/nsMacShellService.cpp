@@ -150,7 +150,8 @@ nsMacShellService::SetDesktopBackground(Element* aElement, int32_t aPosition,
 
   auto referrerInfo = mozilla::MakeRefPtr<mozilla::dom::ReferrerInfo>(*aElement);
   return wbp->SaveURI(imageURI, aElement->NodePrincipal(), 0, referrerInfo,
-                      nullptr, nullptr, mBackgroundFile, loadContext);
+                      nullptr, nullptr, mBackgroundFile,
+                      nsIContentPolicy::TYPE_IMAGE, loadContext);
 }
 
 NS_IMETHODIMP

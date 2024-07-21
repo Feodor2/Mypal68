@@ -45,21 +45,22 @@
 }
 
 #navigator-toolbox {
-  -moz-appearance: none;
+  appearance: none;
   --tabs-border-color: rgba(0,0,0,.3);
 }
 
 /*
   This is a workaround for Bug 1482157
-  -moz-appearance: toolbox; makes the macOS sheets attached to the element's
-  bottom border. We cannot put this property on the toolbox itself as it
-  cancels all backgrounds that are there, so we set it on the toolbox bottom
+  -moz-default-appearance: toolbox; makes the macOS sheets attached to the
+  element's bottom border. We cannot put this property on the toolbox itself as
+  it cancels all backgrounds that are there, so we set it on the toolbox bottom
   border.
 */
 #navigator-toolbox::after {
   content: "";
   display: -moz-box;
-  -moz-appearance: toolbox;
+  appearance: auto;
+  -moz-default-appearance: toolbox;
   height: 1px;
   margin-top: -1px;
   opacity: 0.001;
@@ -72,11 +73,6 @@
 #navigator-toolbox toolbarbutton:-moz-lwtheme {
   color: inherit;
   text-shadow: inherit;
-}
-
-:root {
-  -moz-appearance: none;
-  background-color: #eeeeee;
 }
 
 /** Begin titlebar **/
@@ -124,13 +120,13 @@
 }
 
 .browser-toolbar:not(.titlebar-color) {
-  -moz-appearance: none;
+  appearance: none;
   background: var(--toolbar-bgcolor);
   color: var(--toolbar-color);
 }
 
 /* Draw the bottom border of the tabs toolbar when it's not using
-   -moz-appearance: toolbar. */
+   -moz-default-appearance: toolbar. */
 :root:-moz-any([sizemode="fullscreen"],[customize-entered]) #nav-bar:not([tabs-hidden="true"]),
 :root:not([tabsintitlebar]) #nav-bar:not([tabs-hidden="true"]),
 #nav-bar:not([tabs-hidden="true"]):-moz-lwtheme {
@@ -271,55 +267,9 @@ html|input.urlbar-input {
   border-inline-end-style: none;
 }
 
-/* ::::: URL Bar Zoom Reset Button ::::: */
-@keyframes urlbar-zoom-reset-pulse {
-  0% {
-    transform: scale(0);
-  }
-  75% {
-    transform: scale(1.5);
-  }
-  100% {
-    transform: scale(1.0);
-  }
-}
-
-#urlbar-search-footer {
-  border-top: 1px solid var(--panel-separator-color);
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings {
-  -moz-appearance: none;
-  -moz-user-focus: ignore;
-  color: GrayText;
-  margin: 0;
-  padding: 8px 20px;
-}
-
-#urlbar-search-settings:hover {
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings:hover:active {
-  background-color: var(--arrowpanel-dimmed-further);
-}
-
-#search-container {
-  min-width: calc(54px + 11ch);
-}
-
 #wrapper-urlbar-container[place="palette"] {
   max-width: 20em;
 }
-
-.urlbar-display {
-  margin-top: 0;
-  margin-bottom: 0;
-  color: GrayText;
-}
-
-%include ../shared/urlbarSearchSuggestionsNotification.inc.css
 
 /* ----- AUTOCOMPLETE ----- */
 
@@ -337,40 +287,22 @@ html|input.urlbar-input {
   border-style: none;
 }
 
-/* Give an extra margin top to align the top of the awesomebar with the
- * bottom of the nav bar, OSX calculates the panel position with an missing
- * 1px - https://bugzilla.mozilla.org/show_bug.cgi?id=1406353
- */
-#PopupAutoCompleteRichResult {
-  margin-top: 1px;
-}
-
 #PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
   border-top: 1px solid #C7C7C7;
 }
 
-.ac-title,
 #urlbarView-results {
   font-size: 14px;
 }
 
-.ac-separator,
-.ac-url,
-.ac-action,
-.ac-tags {
-  font-size: 12px;
-}
-
 #BMB_bookmarksPopup[side="top"],
 #BMB_bookmarksPopup[side="bottom"] {
-  margin-left: -26px;
-  margin-right: -26px;
+  margin-inline: -26px;
 }
 
 #BMB_bookmarksPopup[side="left"],
 #BMB_bookmarksPopup[side="right"] {
-  margin-top: -26px;
-  margin-bottom: -26px;
+  margin-block: -26px;
 }
 
 /* Bookmarking panel */
@@ -379,7 +311,7 @@ html|input.urlbar-input {
 
 #editBookmarkPanelRows > vbox > textbox,
 #editBookmarkPanelRows > vbox > hbox > textbox {
-  -moz-appearance: none;
+  appearance: none;
   background-color: var(--arrowpanel-field-background);
   color: inherit;
   border-radius: 2px;
@@ -410,7 +342,7 @@ html|input.urlbar-input {
 }
 
 #editBMPanel_newFolderButton {
-  -moz-appearance: none;
+  appearance: none;
   -moz-box-flex: 1;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
@@ -444,10 +376,8 @@ html|input.urlbar-input {
 #editBMPanel_folderMenuList {
   margin: 0;
   min-height: 22px;
-  padding-top: 2px;
-  padding-bottom: 1px;
-  padding-inline-start: 8px;
-  padding-inline-end: 4px;
+  padding-block: 2px 1px;
+  padding-inline: 8px 4px;
 }
 
 #editBMPanel_folderMenuList:-moz-focusring {
@@ -455,7 +385,7 @@ html|input.urlbar-input {
 }
 
 #editBMPanel_folderMenuList > .menulist-dropmarker {
-  -moz-appearance: none;
+  appearance: none;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: 0.8;
@@ -470,7 +400,7 @@ html|input.urlbar-input {
 
 #editBMPanel_folderTree,
 #editBMPanel_tagsSelector {
-  -moz-appearance: none;
+  appearance: none;
   background-color: var(--arrowpanel-field-background);
   color: inherit;
   border-radius: 2px;
@@ -510,7 +440,7 @@ html|input.urlbar-input {
 
 #editBookmarkPanel .expander-up,
 #editBookmarkPanel .expander-down {
-  -moz-appearance: none; /* override button.css */
+  appearance: none; /* override button.css */
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: 0.8;
@@ -549,10 +479,18 @@ html|input.urlbar-input {
 #sidebar-box {
   /* Default font size is 11px on mac, so this is 12px */
   font-size: 1.0909rem;
+  --sidebar-background-color: -moz-mac-source-list;
 }
 
-#sidebar-box:not([lwt-sidebar]) {
-  -moz-appearance: -moz-mac-source-list;
+/* Give the sidebar a vibrant appearance. Only do this when no lwtheme is
+ * in use, because vibrant appearance values only work if there is no
+ * background-color rendered behind the element, and we have :root:-moz-lwtheme
+ * rules which set appearance: none and an opaque background color on the
+ * root element. That background color would interfere with the vibrancy.
+ * See bug 1594132 for fixing this. */
+#sidebar-box:not(:-moz-lwtheme) {
+  appearance: auto;
+  -moz-default-appearance: -moz-mac-source-list;
   -moz-font-smoothing-background-color: -moz-mac-source-list;
 }
 
@@ -585,8 +523,7 @@ html|input.urlbar-input {
 %include ../shared/tabs.inc.css
 
 .tab-label {
-  margin-top: 1px;
-  margin-bottom: 0;
+  margin-block: 1px 0;
 }
 
 .tabbrowser-tab:not(:hover) > .tab-stack > .tab-content > .tab-icon-image:not([selected="true"]):not([multiselected]) {
@@ -637,7 +574,8 @@ html|input.urlbar-input {
 }
 
 :root:-moz-any([inFullscreen], [tabsintitlebar]) #TabsToolbar:not(:-moz-lwtheme) {
-  -moz-appearance: -moz-mac-vibrant-titlebar-dark;
+  appearance: auto;
+  -moz-default-appearance: -moz-mac-vibrant-titlebar-dark;
   -moz-font-smoothing-background-color: -moz-mac-vibrant-titlebar-dark;
   background-color: #232323;
   color: hsl(240, 9%, 98%);
@@ -651,8 +589,7 @@ html|input.urlbar-input {
 
 #tabbrowser-tabs {
   -moz-box-align: stretch;
-  padding-left: 0;
-  padding-right: 0;
+  padding-inline: 0;
   margin-bottom: 0;
   position: static;
 }
@@ -694,8 +631,7 @@ html|input.urlbar-input {
 .menupopup-drop-indicator-bar {
   position: relative;
   /* these two margins must together compensate the indicator's height */
-  margin-top: -1px;
-  margin-bottom: -1px;
+  margin-block: -1px;
 }
 
 .menupopup-drop-indicator {
@@ -717,14 +653,12 @@ notification[value="translation"] {
   background-image: none;
   border-top: none;
   border-bottom: 1px solid #c4c4c4;
-  padding-top: 1px;
-  padding-bottom: 1px;
+  padding-block: 1px;
   min-height: 35px;
 }
 
 .translate-infobar-element {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
+  margin-block: 0 !important;
 }
 
 button.translate-infobar-element {
@@ -738,13 +672,11 @@ button.translate-infobar-element {
   min-height: 22px;
   min-width: 0;
   padding: 0 0.8em;
-  margin-left: 0.25em;
-  margin-right: 0.25em;
+  margin-inline: 0.25em;
 }
 
 button.translate-infobar-element .button-text {
-  margin-left: 0;
-  margin-right: 0;
+  margin-inline: 0;
 }
 
 label.translate-infobar-element {
@@ -775,8 +707,7 @@ button.translate-infobar-element[anonid="translate"]:hover {
 }
 
 button.translate-infobar-element.options-menu-button {
-  padding-inline-start: 0.5em;
-  padding-inline-end: 0;
+  padding-inline: 0.5em 0;
 }
 
 button.translate-infobar-element.options-menu-button > .button-box > .button-menu-dropmarker {
@@ -803,8 +734,7 @@ menulist.translate-infobar-element {
 menulist.translate-infobar-element > .menulist-label-box {
   padding-top: 1px;
   padding-inline-start: 0.3em;
-  margin-top: 0;
-  margin-bottom: 0;
+  margin-block: 0;
 }
 
 menulist.translate-infobar-element:hover {
@@ -866,18 +796,6 @@ menulist.translate-infobar-element > .menulist-dropmarker {
 %include ../shared/customizableui/customizeMode.inc.css
 
 /* End customization mode */
-
-%include ../shared/UITour.inc.css
-
-#UITourTooltipDescription {
-  font-size: 1.18rem;
-  line-height: 2rem;
-}
-
-#UITourTooltipClose {
-  margin-inline-end: -10px;
-  margin-top: -14px;
-}
 
 %include ../shared/contextmenu.inc.css
 

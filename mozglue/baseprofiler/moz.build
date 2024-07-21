@@ -58,6 +58,11 @@ if CONFIG['MOZ_GECKO_PROFILER']:
             'core/shared-libraries-win32.cc',
         ]
 
+        DEFINES['PSAPI_VERSION'] = '1'
+        OS_LIBS += [
+            'psapi',
+        ]
+
     LOCAL_INCLUDES += [
         '/mozglue/baseprofiler/core/',
         '/mozglue/linker',
@@ -72,8 +77,9 @@ if CONFIG['MOZ_GECKO_PROFILER']:
 
     FINAL_LIBRARY = 'mozglue'
 
-# BaseProfiler.h and BaseProfilerCounts.h are the only headers that are usable
-# in non-MOZ_GECKO_PROFILER builds, and they only contains no-op macros in that
+# Many of the headers in this directory are usable in non-MOZ_GECKO_PROFILER
+# builds.
+# BaseProfiler.h and BaseProfilerCounts.h only contain no-op macros in that
 # case.
 EXPORTS += [
     'public/BaseProfiler.h',
@@ -86,6 +92,7 @@ EXPORTS.mozilla += [
     'public/leb128iterator.h',
     'public/ModuloBuffer.h',
     'public/PowerOfTwo.h',
+    'public/ProfileBufferIndex.h',
 ]
 
 if CONFIG['MOZ_VTUNE']:

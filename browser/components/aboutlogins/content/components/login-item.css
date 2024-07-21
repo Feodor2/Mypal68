@@ -3,25 +3,30 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :host {
-  padding: 18px;
+  padding: 40px;
 
   --reveal-checkbox-opacity: .8;
   --reveal-checkbox-opacity-hover: .6;
   --reveal-checkbox-opacity-active: 1;
   --success-color: #00c100;
+  --edit-delete-button-color: #4a4a4f;
 }
 
 @media (prefers-color-scheme: dark) {
   :host {
+    --reveal-checkbox-opacity: .8;
+    --reveal-checkbox-opacity-hover: 1;
+    --reveal-checkbox-opacity-active: .6;
     --success-color: #86DE74;
+    --edit-delete-button-color: #cfcfd1;
   }
 }
 
 :host([data-editing]) .edit-button,
+:host([data-editing]) .copy-button,
+:host([data-editing]) .open-site-button,
 :host([data-is-new-login]) .delete-button,
 :host([data-is-new-login]) .origin-saved-value,
-:host([data-is-new-login]) copy-to-clipboard-button,
-:host([data-is-new-login]) .open-site-button,
 :host([data-is-new-login]) .meta-info,
 :host([data-is-new-login]) .login-item-title,
 :host(:not([data-is-new-login])) .new-login-title,
@@ -30,28 +35,37 @@
   display: none;
 }
 
-:host(:not([data-editing])) input[type="password"],
-:host(:not([data-editing])) input[type="text"],
-:host(:not([data-editing])) input[type="url"] {
+input[type="password"][readOnly],
+input[type="text"][readOnly],
+input[type="url"][readOnly] {
   all: unset;
+  font-size: 1.1em;
   display: inline-block;
   width: -moz-available;
   background-color: transparent !important; /* override common.inc.css */
 }
 
+.detail-cell input:not([type="checkbox"]),
+.save-changes-button {
+  margin-inline-start: 0; /* align all elements on the start side */
+}
+
 .header {
   display: flex;
   border-bottom: 1px solid var(--in-content-box-border-color);
+  margin-bottom: 40px;
 }
 
 .title {
-  margin-top: 0;
-  margin-bottom: 0;
-  flex: auto;
+  margin-block: 0;
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .delete-button,
 .edit-button {
+  color: var(--edit-delete-button-color) !important;
   background-repeat: no-repeat;
   background-position: 8px;
   -moz-context-properties: fill;
@@ -61,7 +75,7 @@
 
 .delete-button:dir(rtl),
 .edit-button:dir(rtl) {
-  background-position: right 8px center;
+  background-position-x: right 8px;
 }
 
 .delete-button {
@@ -74,36 +88,33 @@
   padding-inline-start: 32px; /* 8px on each side, and 16px for icon width */
 }
 
-:host(:not([data-editing])) input[type="url"] {
+input[type="url"][readOnly] {
   color: var(--in-content-link-color) !important;
   cursor: pointer;
 }
 
-:host(:not([data-editing])) input[type="url"]:hover {
+input[type="url"][readOnly]:hover {
   color: var(--in-content-link-color-hover) !important;
   text-decoration: underline;
 }
 
-:host(:not([data-editing])) input[type="url"]:hover:active {
+input[type="url"][readOnly]:hover:active {
   color: var(--in-content-link-color-active) !important;
 }
 
-.detail-row,
 .reveal-password-wrapper {
   display: flex;
   align-items: center;
 }
 
 .detail-row {
-  margin-bottom: 20px;
+  display: flex;
+  align-items: end;
+  margin-bottom: 40px;
 }
 
 .detail-cell {
-  flex: auto;
-}
-
-.detail-row > button {
-  align-self: end;
+  flex-grow: 1;
 }
 
 .field-label {
@@ -111,6 +122,10 @@
   font-size: smaller;
   color: var(--in-content-deemphasized-text);
   margin-bottom: 5px;
+}
+
+:host([data-editing]) .detail-cell input:not([type="checkbox"]) {
+  width: 280px;
 }
 
 .copy-button:not([data-copied]) .copied-button-text,
@@ -129,8 +144,17 @@
   box-shadow: none;
 }
 
+.copied-button-text {
+  background-image: url(chrome://global/skin/icons/check.svg);
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  padding-inline-start: 22px;
+}
+
 .meta-info {
   font-size: smaller;
+  color: var(--in-content-deemphasized-text);
 }
 
 .meta-info:first-of-type {
@@ -177,12 +201,4 @@
    * to make the thicker outline corners look smooth */
   -moz-outline-radius: 3px;
   box-shadow: 0 0 0 4px var(--in-content-border-active-shadow);
-}
-
-@media (prefers-color-scheme: dark) {
-  :host {
-    --reveal-checkbox-opacity: .8;
-    --reveal-checkbox-opacity-hover: 1;
-    --reveal-checkbox-opacity-active: .6;
-  }
 }

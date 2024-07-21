@@ -21,7 +21,7 @@ class IPCStreamSource::Callback final : public nsIInputStreamCallback,
  public:
   explicit Callback(IPCStreamSource* aSource)
       : mSource(aSource),
-        mOwningEventTarget(GetCurrentThreadSerialEventTarget()) {
+        mOwningEventTarget(GetCurrentSerialEventTarget()) {
     MOZ_ASSERT(mSource);
   }
 

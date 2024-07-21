@@ -2,20 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "BaseProfilerMarkerPayload.h"
+
+#include <inttypes.h>
+
+#include "mozilla/Maybe.h"
+#include "mozilla/Sprintf.h"
+
 #include "BaseProfiler.h"
-
-#ifdef MOZ_BASE_PROFILER
-
-#  include "BaseProfilerMarkerPayload.h"
-
-#  include "ProfileBufferEntry.h"
-#  include "BaseProfileJSONWriter.h"
-#  include "ProfilerBacktrace.h"
-
-#  include "mozilla/Maybe.h"
-#  include "mozilla/Sprintf.h"
-
-#  include <inttypes.h>
+#include "BaseProfileJSONWriter.h"
+#include "ProfileBufferEntry.h"
+#include "ProfilerBacktrace.h"
 
 namespace mozilla {
 namespace baseprofiler {
@@ -28,8 +25,7 @@ static UniquePtr<ProfilerMarkerPayload> DeserializeNothing(
 // Number of currently-registered deserializers.
 // Starting at 1 for the initial `DeserializeNothing`.
 // static
-Atomic<ProfilerMarkerPayload::DeserializerTagAtomic, ReleaseAcquire,
-       recordreplay::Behavior::DontPreserve>
+Atomic<ProfilerMarkerPayload::DeserializerTagAtomic, ReleaseAcquire>
     ProfilerMarkerPayload::sDeserializerCount{1};
 
 // Initialize `sDeserializers` with `DeserializeNothing` at index 0, all others
@@ -548,5 +544,3 @@ void LongTaskMarkerPayload::StreamPayload(SpliceableJSONWriter& aWriter,
 
 }  // namespace baseprofiler
 }  // namespace mozilla
-
-#endif  // MOZ_BASE_PROFILER

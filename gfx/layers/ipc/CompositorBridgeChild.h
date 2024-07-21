@@ -126,7 +126,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 #ifdef MOZ_BUILD_WEBRENDER
                                wr::MaybeExternalImageId& aExternalImageId,
 #endif
-                               nsIEventTarget* aTarget) override;
+                               nsISerialEventTarget* aTarget) override;
 
   /**
    * Request that the parent tell us when graphics are ready on GPU.
@@ -194,7 +194,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   void HandleMemoryPressure();
 
-  MessageLoop* GetMessageLoop() const override { return mMessageLoop; }
+  nsISerialEventTarget* GetThread() const override { return mThread; }
 
   base::ProcessId GetParentPid() const override { return OtherPid(); }
 
@@ -362,7 +362,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   std::unordered_map<uint64_t, RefPtr<TextureClient>>
       mTexturesWaitingNotifyNotUsed;
 
-  MessageLoop* mMessageLoop;
+  nsCOMPtr<nsISerialEventTarget> mThread;
 
   AutoTArray<RefPtr<TextureClientPool>, 2> mTexturePools;
 

@@ -22,7 +22,7 @@ h1, h3, p {
 }
 
 #toolbar > button {
-  -moz-appearance: none;
+  appearance: none;
   background-color: transparent;
   border-width: 0 1px 0 0;
   border-color: #AAA;

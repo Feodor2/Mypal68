@@ -211,7 +211,7 @@ struct GaussianBlurAttributes {
 
 struct DropShadowAttributes {
   Size mStdDeviation;
-  IntPoint mOffset;
+  Point mOffset;
   Color mColor;
 
   bool operator==(const DropShadowAttributes& aOther) const {

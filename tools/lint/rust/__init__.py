@@ -7,9 +7,10 @@ from collections import namedtuple
 
 import os
 import signal
-import which
 import re
+import subprocess
 
+from mozfile import which
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 from mozprocess import ProcessHandler
@@ -27,6 +28,12 @@ RUSTFMT_INSTALL_ERROR = """
 Unable to install correct version of rustfmt
 Try to install it manually with:
     $ rustup component add rustfmt
+""".strip()
+
+
+RUSTFMT_DEPRECATED_VERSION = """
+You are probably using the old 'rustfmt' program.
+Please use rustfmt-nightly (https://crates.io/crates/rustfmt-nightly)
 """.strip()
 
 
@@ -98,14 +105,32 @@ def get_rustfmt_binary():
     if binary:
         return binary
 
+    return which("rustfmt")
+
+
+def is_old_rustfmt(binary):
+    """
+    Check if we are running the deprecated rustfmt
+    """
     try:
-        return which.which("rustfmt")
-    except which.WhichError:
-        return None
+        output = subprocess.check_output(
+            [binary, " --version"], stderr=subprocess.STDOUT
+        )
+    except subprocess.CalledProcessError as e:
+        output = e.output
+
+    if "This version of rustfmt is deprecated" in output:
+        return True
+
+    return False
 
 
 def run_rustfmt(config, paths, fix=None):
     binary = get_rustfmt_binary()
+
+    if is_old_rustfmt(binary):
+        print(RUSTFMT_DEPRECATED_VERSION)
+        return 1
 
     if not binary:
         print(RUSTFMT_NOT_FOUND)

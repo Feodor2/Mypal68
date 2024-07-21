@@ -184,7 +184,7 @@ DataStorage::DataStorage(const nsString& aFilename)
       mFilename(aFilename) {}
 
 DataStorage::~DataStorage() {
-  Preferences::UnregisterCallback(PREF_CHANGE_METHOD(DataStorage::PrefChanged),
+  Preferences::UnregisterCallback(DataStorage::PrefChanged,
                                   "test.datastorage.write_timer_ms", this);
 }
 
@@ -376,7 +376,7 @@ nsresult DataStorage::Init(
   // For test purposes, we can set the write timer to be very fast.
   mTimerDelay = Preferences::GetInt("test.datastorage.write_timer_ms",
                                     sDataStorageDefaultTimerDelay);
-  Preferences::RegisterCallback(PREF_CHANGE_METHOD(DataStorage::PrefChanged),
+  Preferences::RegisterCallback(DataStorage::PrefChanged,
                                 "test.datastorage.write_timer_ms", this);
 
   return NS_OK;
@@ -1068,6 +1068,11 @@ DataStorage::Observe(nsISupports* /*aSubject*/, const char* aTopic,
   }
 
   return NS_OK;
+}
+
+// static
+void DataStorage::PrefChanged(const char* aPref, void* aSelf) {
+  static_cast<DataStorage*>(aSelf)->PrefChanged(aPref);
 }
 
 void DataStorage::PrefChanged(const char* aPref) {

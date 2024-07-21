@@ -85,11 +85,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "RemoteSettings",
-  "resource://services-settings/remote-settings.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "TestUtils",
   "resource://testing-common/TestUtils.jsm"
 );
@@ -1171,10 +1166,6 @@ async function mockGfxBlocklistItems(items) {
     Ci.nsIUUIDGenerator
   );
   let bsPass = ChromeUtils.import("resource://gre/modules/Blocklist.jsm", null);
-  const client = RemoteSettings(
-    Services.prefs.getCharPref("services.blocklist.gfx.collection"),
-    { bucketNamePref: "services.blocklist.bucket" }
-  );
   const collection = await client.openCollection();
   await collection.clear();
   await collection.loadDump(

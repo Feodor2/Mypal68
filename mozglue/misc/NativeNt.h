@@ -512,7 +512,7 @@ class MOZ_RAII PEHeaders final {
       }
 
       auto base = RVAToPtr<const uint8_t*>(rva);
-      return Some(MakeSpan(base, size));
+      return Some(Span(base, size));
     }
 
     return Nothing();
@@ -557,7 +557,7 @@ class MOZ_RAII PEHeaders final {
     // The Windows loader has an internal limit of 96 sections (per PE spec)
     auto numSections =
         std::min(mPeHeader->FileHeader.NumberOfSections, WORD(96));
-    return MakeSpan(base, numSections);
+    return Span{base, numSections};
   }
 
   PIMAGE_RESOURCE_DIRECTORY_ENTRY

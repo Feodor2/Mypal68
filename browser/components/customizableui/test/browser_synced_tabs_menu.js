@@ -14,12 +14,6 @@ let { SyncedTabs } = ChromeUtils.import(
 );
 let { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "UITour",
-  "resource:///modules/UITour.jsm"
-);
-
 // These are available on the widget implementation, but it seems impossible
 // to grab that impl at runtime.
 const DECKINDEX_TABS = 0;
@@ -97,11 +91,6 @@ async function openPrefsFromMenuPanel(expectedPanelId, entryPoint) {
   // check the button's functionality
   await document.getElementById("nav-bar").overflowable.show();
 
-  if (entryPoint == "uitour") {
-    UITour.tourBrowsersByWindow.set(window, new Set());
-    UITour.tourBrowsersByWindow.get(window).add(gBrowser.selectedBrowser);
-  }
-
   let syncButton = document.getElementById("sync-button");
   ok(syncButton, "The Sync button was added to the Panel Menu");
 
@@ -164,7 +153,6 @@ async function asyncCleanup() {
   // restore the tabs
   BrowserTestUtils.addTab(gBrowser, initialLocation);
   gBrowser.removeTab(newTab);
-  UITour.tourBrowsersByWindow.delete(window);
 }
 
 // When Sync is not setup.

@@ -2,18 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ProfiledThreadData.h"
+
 #include "BaseProfiler.h"
+#include "ProfileBuffer.h"
+#include "BaseProfileJSONWriter.h"
 
-#ifdef MOZ_BASE_PROFILER
-
-#  include "ProfiledThreadData.h"
-
-#  include "ProfileBuffer.h"
-#  include "BaseProfileJSONWriter.h"
-
-#  if defined(GP_OS_darwin)
-#    include <pthread.h>
-#  endif
+#if defined(GP_OS_darwin)
+#  include <pthread.h>
+#endif
 
 namespace mozilla {
 namespace baseprofiler {
@@ -57,6 +54,7 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
         JSONSchemaWriter schema(aWriter);
         schema.WriteField("location");
         schema.WriteField("relevantForJS");
+        schema.WriteField("innerWindowID");
         schema.WriteField("implementation");
         schema.WriteField("optimizations");
         schema.WriteField("line");
@@ -89,9 +87,19 @@ void StreamSamplesAndMarkers(const char* aName, int aThreadId,
                              double aSinceTime, UniqueStacks& aUniqueStacks) {
   aWriter.StringProperty(
       "processType",
-      "(unknown)" /* XRE_ChildProcessTypeToString(XRE_GetProcessType()) */);
+      "(unknown)" /* XRE_GeckoProcessTypeToString(XRE_GetProcessType()) */);
 
-  aWriter.StringProperty("name", aName);
+  {
+    std::string name = aName;
+    // We currently need to distinguish threads output by Base Profiler from
+    // those in Gecko Profiler, as the frontend could get confused and lose
+    // tracks with the same name.
+    // TODO: As part of the profilers de-duplication, thread data from both
+    // profilers should end up in the same track, at which point this won't be
+    // necessary anymore. See meta bug 1557566.
+    name += " (pre-xul)";
+    aWriter.StringProperty("name", name.c_str());
+  }
 
   // Use given process name (if any).
   if (!aProcessName.empty()) {
@@ -123,7 +131,7 @@ void StreamSamplesAndMarkers(const char* aName, int aThreadId,
       JSONSchemaWriter schema(aWriter);
       schema.WriteField("stack");
       schema.WriteField("time");
-      schema.WriteField("responsiveness");
+      schema.WriteField("eventDelay");
     }
 
     aWriter.StartArrayProperty("data");
@@ -157,5 +165,3 @@ void StreamSamplesAndMarkers(const char* aName, int aThreadId,
 
 }  // namespace baseprofiler
 }  // namespace mozilla
-
-#endif  // MOZ_BASE_PROFILER

@@ -517,60 +517,6 @@ def openmax(value):
 set_config('MOZ_OMX', openmax)
 set_define('MOZ_OMX', openmax)
 
-# EME Support
-# ==============================================================
-@depends(target)
-def eme_choices(target):
-    if (target.kernel in ('Darwin', 'WINNT', 'Linux') and
-        target.os not in ('Android', 'iOS') and
-        target.cpu in ('x86', 'x86_64')):
-        return ('widevine',)
-    if target.kernel == 'WINNT' and target.cpu == 'aarch64':
-        return ('widevine',)
-
-
-# Widevine is enabled by default in desktop browser builds, except
-# on aarch64 Windows.
-@depends(build_project, eme_choices, target)
-def eme_default(build_project, choices, target):
-    if build_project == 'browser':
-        if target.kernel != 'WINNT' or target.cpu != 'aarch64':
-            return choices
-
-
-option('--enable-eme',
-       nargs='+',
-       choices=eme_choices,
-       default=eme_default,
-       when=eme_choices,
-       help='{Enable|Disable} support for Encrypted Media Extensions')
-
-
-@depends('--enable-eme', fmp4, when=eme_choices)
-def eme(enabled, fmp4):
-    if enabled and enabled.origin != 'default' and not fmp4:
-        die('Encrypted Media Extension support requires '
-            'Fragmented MP4 support')
-
-
-@depends('--enable-eme', when=eme_choices)
-def eme_modules(value):
-    return value
-
-
-# Fallback to an empty list when eme_choices is empty, setting eme_modules to
-# None.
-set_config('MOZ_EME_MODULES', eme_modules | dependable([]))
-
-
-@depends(eme_modules, target, when=eme_modules)
-def eme_win32_artifact(modules, target):
-    if 'widevine' in modules and target.kernel == 'WINNT' and target.cpu == 'aarch64':
-        return True
-
-
-set_config('MOZ_EME_WIN32_ARTIFACT', eme_win32_artifact)
-
 option(name='--enable-chrome-format',
        help='Select FORMAT of chrome files during packaging.',
        nargs=1,

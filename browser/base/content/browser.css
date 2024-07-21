@@ -78,7 +78,7 @@
 #toolbar-menubar[autohide="true"][inactive="true"]:not([customizing="true"]) {
   min-height: 0 !important;
   height: 0 !important;
-  -moz-appearance: none !important;
+  appearance: none !important;
 }
 %endif
 
@@ -321,7 +321,8 @@ window:not([chromehidden~="toolbar"]) #nav-bar[nonemptyoverflow] > .overflow-but
 }
 
 .titlebar-buttonbox {
-  -moz-appearance: -moz-window-button-box;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-button-box;
   position: relative;
 }
 
@@ -340,7 +341,8 @@ toolbarpaletteitem {
 
 %ifdef XP_MACOSX
 #titlebar-fullscreen-button {
-  -moz-appearance: -moz-mac-fullscreen-button;
+  appearance: auto;
+  -moz-default-appearance: -moz-mac-fullscreen-button;
 }
 
 /**
@@ -541,9 +543,6 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   min-width: 1px;
 }
 
-#urlbar[quantumbar="false"] {
-  -moz-binding: url(chrome://browser/content/urlbarBindings.xml#legacy-urlbar);
-}
 
 #urlbar[quantumbar="true"] {
   -moz-binding: url(chrome://browser/content/urlbarBindings.xml#urlbar);
@@ -624,71 +623,6 @@ html|input.urlbar-input {
   }
 }
 
-/* Always show URLs LTR. */
-.ac-url-text:-moz-locale-dir(rtl),
-.ac-title-text[lookslikeurl]:-moz-locale-dir(rtl) {
-  direction: ltr !important;
-}
-
-/* Never show a scrollbar for the Location Bar popup.  This overrides the
-   richlistbox inline overflow: auto style.*/
-#PopupAutoCompleteRichResult > richlistbox {
-  overflow: hidden !important;
-}
-
-/* For non-action items, hide the action text; for action items, hide the URL
-   text. Don't show the separator for keyword results. */
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-type-icon,
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-site-icon,
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-tags:not([empty]),
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-separator:not([type=keyword]),
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-url:not([actiontype]),
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-action[actiontype],
-#PopupAutoCompleteRichResult > richlistbox > richlistitem[selected] > .ac-url[actiontype=remotetab],
-#PopupAutoCompleteRichResult > richlistbox > richlistitem:hover > .ac-url[actiontype=remotetab]
-{
-  display: -moz-box;
-}
-
-#PopupAutoCompleteRichResult > richlistbox > richlistitem[selected] > .ac-action[actiontype=remotetab],
-#PopupAutoCompleteRichResult > richlistbox > richlistitem:hover > .ac-action[actiontype=remotetab] {
-  display: none;
-}
-
-/* Normally we want to show the "Search with Engine" label only on hover or
-   selection, but we also want to show it for "alias offer" results -- that is,
-   non-heuristic search engine results that have an alias and empty query.
-   These results tell the user that they can be used to search. */
-#PopupAutoCompleteRichResult > richlistbox > richlistitem:not([selected]):not(:hover):not(.aliasOffer) > .ac-action[actiontype=searchengine],
-#PopupAutoCompleteRichResult > richlistbox > richlistitem:not([selected]):not(:hover):not(.aliasOffer) > .ac-separator[actiontype=searchengine] {
-  display: none;
-}
-
-/* Hide the em-dash separator between the search query description (.ac-title)
-   and the "Search with Foo" description (.ac-url) if the search query is the
-   empty string.  Also hide .ac-title itself because it has a margin-inline-end;
-   alternatively we would need to remove that margin in this case. */
-#PopupAutoCompleteRichResult > richlistbox > richlistitem.emptySearchQuery > .ac-separator,
-#PopupAutoCompleteRichResult > richlistbox > richlistitem.emptySearchQuery > .ac-title {
-  display: none;
-}
-
-#PopupAutoCompleteRichResult > richlistbox > richlistitem > .ac-site-icon {
-  margin-inline-start: 0;
-}
-
-/* For action items in a noactions popup, show the URL text and hide the action
-   text and type icon. */
-#PopupAutoCompleteRichResult[noactions] > richlistbox > richlistitem.overridable-action > .ac-url {
-  display: -moz-box;
-}
-#PopupAutoCompleteRichResult[noactions] > richlistbox > richlistitem.overridable-action > .ac-action {
-  display: none;
-}
-#PopupAutoCompleteRichResult[noactions] > richlistbox > richlistitem.overridable-action > .ac-type-icon {
-  list-style-image: none;
-}
-
 #urlbar[actionoverride] > #urlbar-display-box,
 #urlbar:not([actiontype="switchtab"]):not([actiontype="extension"]) > #urlbar-display-box,
 #urlbar:not([actiontype="switchtab"]) > #urlbar-display-box > #switchtab,
@@ -731,31 +665,6 @@ html|input.urlbar-input {
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] > .ac-title > label {
   margin-inline-start: 0;
-}
-
-#PopupAutoCompleteRichResult {
-  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#urlbar-rich-result-popup");
-}
-
-#PopupAutoCompleteRichResult.showSearchSuggestionsNotification {
-  transition: height 100ms;
-}
-
-#PopupAutoCompleteRichResult > deck[anonid="search-suggestions-notification"] {
-  display: none;
-  transition: margin-top 100ms;
-}
-
-#PopupAutoCompleteRichResult.showSearchSuggestionsNotification > deck[anonid="search-suggestions-notification"] {
-  display: -moz-deck;
-}
-
-#PopupAutoCompleteRichResult > richlistbox {
-  transition: height 100ms;
-}
-
-#PopupAutoCompleteRichResult.showSearchSuggestionsNotification > richlistbox {
-  transition: none;
 }
 
 #urlbar[pageproxystate=invalid] > #page-action-buttons > .urlbar-page-action,
@@ -1076,7 +985,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > #downloads-
 
 /* Give this menupopup an arrow panel styling */
 #BMB_bookmarksPopup {
-  -moz-appearance: none;
+  appearance: none;
   -moz-binding: url("chrome://browser/content/places/menu.xml#places-popup-arrow");
   background: transparent;
   border: none;
@@ -1217,8 +1126,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > #downloads-
 }
 
 toolbarpaletteitem[dragover] {
-  border-left-color: transparent;
-  border-right-color: transparent;
+  border-inline-color: transparent;
 }
 
 #customization-palette-container {
@@ -1278,71 +1186,6 @@ toolbarpaletteitem > toolbaritem {
   display: none;
 }
 
-/* UI Tour */
-
-@keyframes uitour-wobble {
-  from {
-    transform: rotate(0deg) translateX(3px) rotate(0deg);
-  }
-  50% {
-    transform: rotate(360deg) translateX(3px) rotate(-360deg);
-  }
-  to {
-    transform: rotate(720deg) translateX(0px) rotate(-720deg);
-  }
-}
-
-@keyframes uitour-zoom {
-  from {
-    transform: scale(0.8);
-  }
-  50% {
-    transform: scale(1.0);
-  }
-  to {
-    transform: scale(0.8);
-  }
-}
-
-@keyframes uitour-color {
-  from {
-    border-color: #5B9CD9;
-  }
-  50% {
-    border-color: #FF0000;
-  }
-  to {
-    border-color: #5B9CD9;
-  }
-}
-
-#UITourHighlightContainer,
-#UITourHighlight {
-  pointer-events: none;
-}
-
-#UITourHighlight[active] {
-  animation-delay: 2s;
-  animation-fill-mode: forwards;
-  animation-iteration-count: infinite;
-  animation-timing-function: linear;
-}
-
-#UITourHighlight[active="wobble"] {
-  animation-name: uitour-wobble;
-  animation-delay: 0s;
-  animation-duration: 1.5s;
-  animation-iteration-count: 1;
-}
-#UITourHighlight[active="zoom"] {
-  animation-name: uitour-zoom;
-  animation-duration: 1s;
-}
-#UITourHighlight[active="color"] {
-  animation-name: uitour-color;
-  animation-duration: 2s;
-}
-
 /* Combined context-menu items */
 #context-navigation > .menuitem-iconic > .menu-iconic-text,
 #context-navigation > .menuitem-iconic > .menu-accel-container {
@@ -1362,7 +1205,7 @@ toolbarpaletteitem > toolbaritem {
 }
 
 .dragfeedback-tab {
-  -moz-appearance: none;
+  appearance: none;
   opacity: 0.65;
   -moz-window-shadow: none;
 }

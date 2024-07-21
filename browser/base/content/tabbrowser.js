@@ -52,10 +52,12 @@
       }
 
       let messageManager = window.getGroupMessageManager("browsers");
+      window.messageManager.addMessageListener("contextmenu", this);
+
       if (gMultiProcessBrowser) {
         messageManager.addMessageListener("DOMTitleChanged", this);
         messageManager.addMessageListener("DOMWindowClose", this);
-        window.messageManager.addMessageListener("contextmenu", this);
+        messageManager.addMessageListener("DOMWindowClose", this);
         messageManager.addMessageListener("Browser:Init", this);
       } else {
         this._outerWindowIDBrowserMap.set(
@@ -1338,9 +1340,7 @@
       // if the tab is a blank one.
       if (newBrowser._urlbarFocused && gURLBar) {
         // Explicitly close the popup if the URL bar retains focus
-        if (!gURLBar.openViewOnFocus) {
-          gURLBar.closePopup();
-        }
+        gURLBar.view.close();
 
         // If the user happened to type into the URL bar for this browser
         // by the time we got here, focusing will cause the text to be

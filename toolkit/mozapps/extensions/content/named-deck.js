@@ -36,7 +36,7 @@ class NamedDeckButton extends HTMLElement {
     let style = document.createElement("style");
     style.textContent = `
       button {
-        -moz-appearance: none;
+        appearance: none;
         border: none;
         border-top: 2px solid transparent;
         border-bottom: 2px solid transparent;

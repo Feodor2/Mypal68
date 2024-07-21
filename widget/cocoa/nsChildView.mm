@@ -2253,16 +2253,6 @@ void nsChildView::UpdateVibrancy(const nsTArray<ThemeGeometry>& aThemeGeometries
                          activeSourceListSelectionRegion);
 }
 
-NSColor* nsChildView::VibrancyFillColorForThemeGeometryType(
-    nsITheme::ThemeGeometryType aThemeGeometryType) {
-  if (VibrancyManager::SystemSupportsVibrancy()) {
-    Maybe<VibrancyType> vibrancyType = ThemeGeometryTypeToVibrancyType(aThemeGeometryType);
-    MOZ_RELEASE_ASSERT(vibrancyType, "should only encounter vibrant theme geometry types here");
-    return EnsureVibrancyManager().VibrancyFillColorForType(*vibrancyType);
-  }
-  return [NSColor whiteColor];
-}
-
 mozilla::VibrancyManager& nsChildView::EnsureVibrancyManager() {
   MOZ_ASSERT(mView, "Only call this once we have a view!");
   if (!mVibrancyManager) {
@@ -3181,13 +3171,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
   if (windowWidget) {
     windowWidget->NotifyLiveResizeStopped();
   }
-}
-
-- (NSColor*)vibrancyFillColorForThemeGeometryType:(nsITheme::ThemeGeometryType)aThemeGeometryType {
-  if (!mGeckoChild) {
-    return [NSColor whiteColor];
-  }
-  return mGeckoChild->VibrancyFillColorForThemeGeometryType(aThemeGeometryType);
 }
 
 - (LayoutDeviceIntRegion)nativeDirtyRegionWithBoundingRect:(NSRect)aRect {

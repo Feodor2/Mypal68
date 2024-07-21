@@ -107,12 +107,17 @@ function tunnelToInnerBrowser(outer, inner) {
         inner._documentContentType = outer._documentContentType;
         inner._contentTitle = outer._contentTitle;
         inner._characterSet = outer._characterSet;
-        inner._contentPrincipal = outer._contentPrincipal;
         inner._imageDocument = outer._imageDocument;
         inner._isSyntheticDocument = outer._isSyntheticDocument;
         inner._innerWindowID = outer._innerWindowID;
         inner._remoteWebNavigationImpl._currentURI =
           outer._remoteWebNavigationImpl._currentURI;
+        // mozbrowser elements do not support the `contentPrincipal` property.
+        // Because of this, we copy the outer browser's (xul:browser)
+        // `contentPrincipal` here. We need to do this because some event
+        // listeners on the browser tab try to access this property
+        // directly off the browser element.
+        inner.contentPrincipal = outer.contentPrincipal;
       }
     },
 
@@ -722,9 +727,9 @@ MessageManagerTunnel.prototype = {
 
     debug(`${name} inner -> outer, sync: ${sync}`);
     if (sync) {
-      return this.outerChildMM.sendSyncMessage(name, data, objects, principal);
+      return this.outerChildMM.sendSyncMessage(name, data);
     }
-    this.outerChildMM.sendAsyncMessage(name, data, objects, principal);
+    this.outerChildMM.sendAsyncMessage(name, data);
     return undefined;
   },
 

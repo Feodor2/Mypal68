@@ -4,9 +4,10 @@
 
 GeckoSimplePrograms([
     'BadCertAndPinningServer',
+    'DelegatedCredentialsServer',
     'GenerateOCSPResponse',
     'OCSPStaplingServer',
-    'SymantecSanctionsServer',
+    'SanctionsTestServer',
 ], linkage=None)
 
 LOCAL_INCLUDES += [

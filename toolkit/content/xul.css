@@ -517,7 +517,7 @@ panel[type="autocomplete-richlistbox"] {
 /********** menulist **********/
 
 menulist[popuponly="true"] {
-  -moz-appearance: none !important;
+  appearance: none !important;
   margin: 0 !important;
   height: 0 !important;
   min-height: 0 !important;
@@ -533,10 +533,6 @@ menulist > menupopup > .popup-internal-box > .scrollbutton-down {
 
 menulist > menupopup > .popup-internal-box > .arrowscrollbox-scrollbox {
   overflow: auto;
-}
-
-dropmarker > .dropmarker-icon {
-  pointer-events: none;
 }
 
 /********** splitter **********/

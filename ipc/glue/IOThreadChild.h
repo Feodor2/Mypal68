@@ -20,7 +20,7 @@ class IOThreadChild : public ChildThread {
                                           0))  // stack size
   {}
 
-  ~IOThreadChild() {}
+  ~IOThreadChild() = default;
 
   static MessageLoop* message_loop() {
     return IOThreadChild::current()->Thread::message_loop();

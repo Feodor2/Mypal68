@@ -322,7 +322,7 @@ Dashboard::RequestSockets(nsINetDashboardCallback* aCallback) {
   RefPtr<SocketData> socketData = new SocketData();
   socketData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  socketData->mEventTarget = GetCurrentThreadEventTarget();
+  socketData->mEventTarget = GetCurrentEventTarget();
   gSocketTransportService->Dispatch(
       NewRunnableMethod<RefPtr<SocketData>>(
           "net::Dashboard::GetSocketsDispatch", this,
@@ -388,7 +388,7 @@ Dashboard::RequestHttpConnections(nsINetDashboardCallback* aCallback) {
   RefPtr<HttpData> httpData = new HttpData();
   httpData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  httpData->mEventTarget = GetCurrentThreadEventTarget();
+  httpData->mEventTarget = GetCurrentEventTarget();
 
   gSocketTransportService->Dispatch(NewRunnableMethod<RefPtr<HttpData>>(
                                         "net::Dashboard::GetHttpDispatch", this,
@@ -553,7 +553,7 @@ Dashboard::RequestWebsocketConnections(nsINetDashboardCallback* aCallback) {
   RefPtr<WebSocketRequest> wsRequest = new WebSocketRequest();
   wsRequest->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  wsRequest->mEventTarget = GetCurrentThreadEventTarget();
+  wsRequest->mEventTarget = GetCurrentEventTarget();
 
   wsRequest->mEventTarget->Dispatch(
       NewRunnableMethod<RefPtr<WebSocketRequest>>(
@@ -606,7 +606,7 @@ Dashboard::RequestDNSInfo(nsINetDashboardCallback* aCallback) {
 
   nsresult rv;
   dnsData->mData.Clear();
-  dnsData->mEventTarget = GetCurrentThreadEventTarget();
+  dnsData->mEventTarget = GetCurrentEventTarget();
 
   if (!mDnsService) {
     mDnsService = do_GetService("@mozilla.org/network/dns-service;1", &rv);
@@ -703,7 +703,7 @@ Dashboard::RequestDNSLookup(const nsACString& aHost,
   RefPtr<LookupHelper> helper = new LookupHelper();
   helper->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  helper->mEventTarget = GetCurrentThreadEventTarget();
+  helper->mEventTarget = GetCurrentEventTarget();
   OriginAttributes attrs;
   rv = mDnsService->AsyncResolveNative(aHost, 0, helper.get(),
                                        NS_GetCurrentThread(), attrs,
@@ -714,7 +714,7 @@ Dashboard::RequestDNSLookup(const nsACString& aHost,
 NS_IMETHODIMP
 Dashboard::RequestRcwnStats(nsINetDashboardCallback* aCallback) {
   RefPtr<RcwnData> rcwnData = new RcwnData();
-  rcwnData->mEventTarget = GetCurrentThreadEventTarget();
+  rcwnData->mEventTarget = GetCurrentEventTarget();
   rcwnData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
 
@@ -812,7 +812,7 @@ Dashboard::RequestConnection(const nsACString& aHost, uint32_t aPort,
   connectionData->mCallback =
       new nsMainThreadPtrHolder<nsINetDashboardCallback>(
           "nsINetDashboardCallback", aCallback, true);
-  connectionData->mEventTarget = GetCurrentThreadEventTarget();
+  connectionData->mEventTarget = GetCurrentEventTarget();
 
   rv = TestNewConnection(connectionData);
   if (NS_FAILED(rv)) {
@@ -867,7 +867,7 @@ nsresult Dashboard::TestNewConnection(ConnectionData* aConnectionData) {
   }
 
   rv = connectionData->mSocket->SetEventSink(connectionData,
-                                             GetCurrentThreadEventTarget());
+                                             GetCurrentEventTarget());
   if (NS_FAILED(rv)) {
     return rv;
   }

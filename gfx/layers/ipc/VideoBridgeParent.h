@@ -11,16 +11,20 @@
 namespace mozilla {
 namespace layers {
 
+enum class VideoBridgeSource : uint8_t;
 class CompositorThreadHolder;
 
 class VideoBridgeParent final : public PVideoBridgeParent,
                                 public HostIPCAllocator,
                                 public ShmemAllocator {
  public:
-  VideoBridgeParent();
   ~VideoBridgeParent();
 
-  static VideoBridgeParent* GetSingleton();
+  static VideoBridgeParent* GetSingleton(Maybe<VideoBridgeSource>& aSource);
+
+  static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint,
+                   VideoBridgeSource aSource);
+
   TextureHost* LookupTexture(uint64_t aSerial);
 
   // PVideoBridgeParent
@@ -54,12 +58,15 @@ class VideoBridgeParent final : public PVideoBridgeParent,
   void DeallocShmem(ipc::Shmem& aShmem) override;
 
  private:
+  explicit VideoBridgeParent(VideoBridgeSource aSource);
+  void Bind(Endpoint<PVideoBridgeParent>&& aEndpoint);
+
   void ActorDealloc() override;
 
   // This keeps us alive until ActorDestroy(), at which point we do a
   // deferred destruction of ourselves.
   RefPtr<VideoBridgeParent> mSelfRef;
-  RefPtr<CompositorThreadHolder> mCompositorThreadRef;
+  RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 
   std::map<uint64_t, PTextureParent*> mTextureMap;
 

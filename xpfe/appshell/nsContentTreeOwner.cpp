@@ -693,8 +693,6 @@ nsContentTreeOwner::ProvideWindow(
   NS_ENSURE_ARG_POINTER(aParent);
 
   auto* parentWin = nsPIDOMWindowOuter::From(aParent);
-  dom::BrowsingContext* parent =
-      parentWin ? parentWin->GetBrowsingContext() : nullptr;
 
   *aReturn = nullptr;
 
@@ -710,43 +708,6 @@ nsContentTreeOwner::ProvideWindow(
       SameCOMIdentity(parentOwner, static_cast<nsIDocShellTreeOwner*>(this)),
       "Parent from wrong docshell tree?");
 #endif
-
-  // If aParent is inside an <iframe mozbrowser> and this isn't a request to
-  // open a modal-type window, we're going to create a new <iframe mozbrowser>
-  // and return its window here.
-  nsCOMPtr<nsIDocShell> docshell = do_GetInterface(aParent);
-  if (docshell && docshell->GetIsInMozBrowser() &&
-      !(aChromeFlags & (nsIWebBrowserChrome::CHROME_MODAL |
-                        nsIWebBrowserChrome::CHROME_OPENAS_DIALOG |
-                        nsIWebBrowserChrome::CHROME_OPENAS_CHROME))) {
-    BrowserElementParent::OpenWindowResult opened =
-        BrowserElementParent::OpenWindowInProcess(
-            parent, aURI, aName, aFeatures, aForceNoOpener, aReturn);
-
-    // If OpenWindowInProcess handled the open (by opening it or blocking the
-    // popup), tell our caller not to proceed trying to create a new window
-    // through other means.
-    if (opened != BrowserElementParent::OPEN_WINDOW_IGNORED) {
-      *aWindowIsNew = opened == BrowserElementParent::OPEN_WINDOW_ADDED;
-      return *aWindowIsNew ? NS_OK : NS_ERROR_ABORT;
-    }
-
-    // If we're in an app and the target is _blank, send the url to the OS
-    if (aName.LowerCaseEqualsLiteral("_blank")) {
-      nsCOMPtr<nsIExternalURLHandlerService> exUrlServ(
-          do_GetService(NS_EXTERNALURLHANDLERSERVICE_CONTRACTID));
-      if (exUrlServ) {
-        nsCOMPtr<nsIHandlerInfo> info;
-        bool found;
-        exUrlServ->GetURLHandlerInfoFromOS(aURI, &found, getter_AddRefs(info));
-
-        if (info && found) {
-          info->LaunchWithURI(aURI, nullptr);
-          return NS_ERROR_ABORT;
-        }
-      }
-    }
-  }
 
   int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
       parentWin, aChromeFlags, aCalledFromJS, aPositionSpecified,

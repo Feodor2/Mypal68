@@ -9,7 +9,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; object-src 'none'; script-src resource: chrome:; img-src data: blob:;"/>
     <title data-l10n-id="about-logins-page-title"></title>
     <link rel="localization" href="preview/aboutLogins.ftl">
-    <script type="module" src="chrome://browser/content/aboutlogins/components/confirm-delete-dialog.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/confirmation-dialog.js"></script>
     <script type="module" src="chrome://browser/content/aboutlogins/components/login-filter.js"></script>
     <script type="module" src="chrome://browser/content/aboutlogins/components/login-item.js"></script>
     <script type="module" src="chrome://browser/content/aboutlogins/components/login-list.js"></script>
@@ -28,24 +28,25 @@
     </header>
     <login-list></login-list>
     <login-item></login-item>
-    <confirm-delete-dialog hidden></confirm-delete-dialog>
+    <confirmation-dialog hidden></confirmation-dialog>
 
-    <template id="confirm-delete-dialog-template">
+    <template id="confirmation-dialog-template">
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
-      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/confirm-delete-dialog.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/confirmation-dialog.css">
       <div class="overlay">
         <div class="container" role="dialog" aria-labelledby="title" aria-describedby="message">
-          <div class="title-bar">
-            <h1 class="title" id="title" data-l10n-id="confirm-delete-dialog-title"></h1>
-            <button class="dismiss-button" data-l10n-id="confirm-delete-dialog-dismiss-button"></button>
-          </div>
+          <button class="dismiss-button" data-l10n-id="confirmation-dialog-dismiss-button">
+            <img class="dismiss-icon" src="chrome://global/skin/icons/close.svg"/>
+          </button>
           <div class="content">
-            <p class="message" id="message" data-l10n-id="confirm-delete-dialog-message"></p>
+            <img class="warning-icon" src="chrome://global/skin/icons/warning.svg"/>
+            <h1 class="title" id="title"></h1>
+            <p class="message" id="message"></p>
           </div>
           <div class="buttons">
-            <button class="cancel-button" data-l10n-id="confirm-delete-dialog-cancel-button"></button>
-            <button class="confirm-button" data-l10n-id="confirm-delete-dialog-confirm-button"></button>
+            <button class="confirm-button danger-button"></button>
+            <button class="cancel-button" data-l10n-id="confirmation-dialog-cancel-button"></button>
           </div>
         </div>
       </div>
@@ -72,7 +73,7 @@
     </template>
 
     <template id="login-list-item-template">
-      <li class="login-list-item">
+      <li class="labels login-list-item" role="option">
         <span class="title"></span>
         <span class="username"></span>
       </li>
@@ -87,23 +88,23 @@
           <span class="login-item-title"></span>
           <span class="new-login-title" data-l10n-id="login-item-new-login-title"></span>
         </h2>
-        <button class="edit-button alternate-button" data-l10n-id="login-item-edit-button"></button>
-        <button class="delete-button alternate-button" data-l10n-id="login-item-delete-button"></button>
+        <button class="edit-button ghost-button" data-l10n-id="login-item-edit-button"></button>
+        <button class="delete-button ghost-button" data-l10n-id="login-item-delete-button"></button>
       </div>
       <form>
         <div class="detail-row">
           <label class="detail-cell">
             <span class="origin-label field-label" data-l10n-id="login-item-origin-label"></span>
-            <input type="url" name="origin" class="origin-input" required data-l10n-id="login-item-origin"/>
+            <input type="url" name="origin" class="origin-input" required data-l10n-id="login-item-origin" dir="auto"/>
           </label>
-          <button class="open-site-button" data-l10n-id="login-item-open-site-button"></button>
+          <button class="open-site-button" data-l10n-id="login-item-open-site-button" type="button"></button>
         </div>
         <div class="detail-row">
           <label class="detail-cell">
             <span class="username-label field-label" data-l10n-id="login-item-username-label"></span>
             <input type="text" name="username" data-l10n-id="login-item-username"/>
           </label>
-          <button class="copy-button copy-username-button" data-copy-login-property="username">
+          <button class="copy-button copy-username-button" data-copy-login-property="username" type="button">
             <span class="copied-button-text" data-l10n-id="login-item-copied-username-button-text"></span>
             <span class="copy-button-text" data-l10n-id="login-item-copy-username-button-text"></span>
           </button>
@@ -118,7 +119,7 @@
                      data-l10n-id="login-item-password-reveal-checkbox"/>
             </div>
           </label>
-          <button class="copy-button copy-password-button" data-copy-login-property="password">
+          <button class="copy-button copy-password-button" data-copy-login-property="password" type="button">
             <span class="copied-button-text" data-l10n-id="login-item-copied-password-button-text"></span>
             <span class="copy-button-text" data-l10n-id="login-item-copy-password-button-text"></span>
           </button>
@@ -126,8 +127,8 @@
         <p class="time-created meta-info" data-l10n-id="login-item-time-created" data-l10n-args='{"timeCreated": 0}'></p>
         <p class="time-changed meta-info" data-l10n-id="login-item-time-changed" data-l10n-args='{"timeChanged": 0}'></p>
         <p class="time-used meta-info" data-l10n-id="login-item-time-used" data-l10n-args='{"timeUsed": 0}'></p>
-        <button class="save-changes-button" data-l10n-id="login-item-save-changes-button"></button>
-        <button class="cancel-button" data-l10n-id="login-item-cancel-button"></button>
+        <button class="save-changes-button" type="submit"></button>
+        <button class="cancel-button" data-l10n-id="login-item-cancel-button" type="button"></button>
       </form>
     </template>
 
@@ -135,17 +136,17 @@
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-filter.css">
-      <input data-l10n-id="login-filter" class="filter" type="text"/>
+      <input data-l10n-id="login-filter" class="filter" type="text" dir="auto"/>
     </template>
 
     <template id="menu-button-template">
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/menu-button.css">
-      <button class="menu-button alternate-button" data-l10n-id="menu"></button>
+      <button class="menu-button ghost-button" data-l10n-id="menu"></button>
       <ul class="menu" role="menu" hidden>
-        <button role="menuitem" class="menuitem-button menuitem-import alternate-button" hidden data-supported-platforms="Win32" data-event-name="AboutLoginsImport" data-l10n-id="menu-menuitem-import"></button>
-        <button role="menuitem" class="menuitem-button menuitem-preferences alternate-button" data-event-name="AboutLoginsOpenPreferences" data-l10n-id="menu-menuitem-preferences"></button>
+        <button role="menuitem" class="menuitem-button menuitem-import ghost-button" hidden data-supported-platforms="Win32" data-event-name="AboutLoginsImport" data-l10n-id="menu-menuitem-import"></button>
+        <button role="menuitem" class="menuitem-button menuitem-preferences ghost-button" data-event-name="AboutLoginsOpenPreferences" data-l10n-id="menu-menuitem-preferences"></button>
       </ul>
     </template>
   </body>

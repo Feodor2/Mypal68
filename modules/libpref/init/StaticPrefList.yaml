@@ -855,6 +855,18 @@
 #endif
   mirror: always
 
+# Whether we should always enable focus rings after focus was moved by keyboard.
+#
+# This behavior matches both historical and GTK / Windows focus behavior.
+#
+# :focus-visible is intended to provide better heuristics than this, so for now
+# we make this false whenever layout.css.focus-visible.enabled is enabled by
+# default.
+- name: browser.display.always_show_rings_after_key_focus
+  type: bool
+  value: false
+  mirror: always
+
 # In theory: 0 = never, 1 = quick, 2 = always, though we always just use it as
 # a bool!
 - name: browser.display.use_document_fonts
@@ -3670,6 +3682,12 @@
 # Prefs starting with "html5."
 #---------------------------------------------------------------------------
 
+# Turn HTML:inert on or off.
+- name: html5.inert.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Toggle which thread the HTML5 parser uses for stream parsing.
 - name: html5.offmainthread
   type: bool
@@ -4600,6 +4618,11 @@
   mirror: once
 #endif
 
+- name: layers.recycle-allocator-rdd
+  type: bool
+  value: true
+  mirror: once
+
 #---------------------------------------------------------------------------
 # Prefs starting with "layout."
 #---------------------------------------------------------------------------
@@ -4745,20 +4768,14 @@
   mirror: always
   rust: true
 
-# Whether `min()` / `max()` / `clamp()` are enabled.
-- name: layout.css.comparison-functions.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
-
 # Whether the `:focus-visible` pseudo-class is enabled.
 #
-# TODO: There are various ambiguities in the spec about this, so we shouldn't
-# ship this until those are sorted out.
+# NOTE: You probably want to change the default value of
+# browser.display.always_show_rings_after_key_focus whenever you change the
+# default value of this pref.
 - name: layout.css.focus-visible.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
   rust: true
 
@@ -5025,6 +5042,17 @@
   value: true
   mirror: always
 
+# Dictates whether or not the prefers contrast media query will be
+# usable.
+#   true: prefers-contrast will toggle based on OS and browser settings.
+#   false: prefers-contrast will only parse and toggle in the browser
+#   chrome and ua.
+- name: layout.css.prefers-contrast.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
 # Is support for -moz-prefixed animation properties enabled?
 - name: layout.css.prefixes.animations
   type: bool
@@ -5087,18 +5115,6 @@
 - name: layout.css.scroll-behavior.damping-ratio
   type: AtomicFloat
   value: 1.0f
-  mirror: always
-
-# Is support for scrollbar-color property enabled?
-- name: layout.css.scrollbar-color.enabled
-  type: bool
-  value: true
-  mirror: always
-
-# Is support for scrollbar-width property enabled?
-- name: layout.css.scrollbar-width.enabled
-  type: bool
-  value: true
   mirror: always
 
 - name: layout.css.supports-selector.enabled
@@ -7613,6 +7629,16 @@
   value: false
   mirror: always
 
+# Preference to disable dark scrollbar implementation.
+# This is mainly for testing because dark scrollbars have to be semi-
+# transparent, but many reftests expect scrollbars to look identical
+# among different backgrounds.
+# However, some users may want to disable this as well.
+- name: widget.disable-dark-scrollbar
+  type: bool
+  value: false
+  mirror: always
+
 - name: widget.window-transforms.disabled
   type: RelaxedAtomicBool
   value: false
@@ -7630,7 +7656,7 @@
 #ifdef MOZ_WIDGET_GTK
   value: false
 #else
-  value: true
+  value: false
 #endif
   mirror: always
 

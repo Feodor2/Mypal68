@@ -170,22 +170,6 @@ bool BackgroundChildImpl::DeallocPBackgroundTestChild(
   return true;
 }
 
-BackgroundChildImpl::PBackgroundIDBFactoryChild*
-BackgroundChildImpl::AllocPBackgroundIDBFactoryChild(
-    const LoggingInfo& aLoggingInfo) {
-  MOZ_CRASH(
-      "PBackgroundIDBFactoryChild actors should be manually "
-      "constructed!");
-}
-
-bool BackgroundChildImpl::DeallocPBackgroundIDBFactoryChild(
-    PBackgroundIDBFactoryChild* aActor) {
-  MOZ_ASSERT(aActor);
-
-  delete aActor;
-  return true;
-}
-
 BackgroundChildImpl::PBackgroundIndexedDBUtilsChild*
 BackgroundChildImpl::AllocPBackgroundIndexedDBUtilsChild() {
   MOZ_CRASH(
@@ -513,14 +497,9 @@ bool BackgroundChildImpl::DeallocPCacheChild(PCacheChild* aActor) {
   return true;
 }
 
-PCacheStreamControlChild* BackgroundChildImpl::AllocPCacheStreamControlChild() {
+already_AddRefed<PCacheStreamControlChild>
+BackgroundChildImpl::AllocPCacheStreamControlChild() {
   return dom::cache::AllocPCacheStreamControlChild();
-}
-
-bool BackgroundChildImpl::DeallocPCacheStreamControlChild(
-    PCacheStreamControlChild* aActor) {
-  dom::cache::DeallocPCacheStreamControlChild(aActor);
-  return true;
 }
 
 // -----------------------------------------------------------------------------

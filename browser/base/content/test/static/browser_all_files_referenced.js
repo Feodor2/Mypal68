@@ -235,9 +235,6 @@ const ignorableWhitelist = new Set([
   // toolkit/mozapps/extensions/nsBlocklistService.js
   "resource://app/blocklist.xml",
 
-  // dom/media/gmp/GMPParent.cpp
-  "resource://gre/gmp-clearkey/0.1/manifest.json",
-
   // Bug 1351669 - obsolete test file
   "resource://gre/res/test.properties",
 

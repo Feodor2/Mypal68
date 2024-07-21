@@ -3,11 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @import "chrome://global/skin/";
+@namespace html url("http://www.w3.org/1999/xhtml");
 
 %include ../../../toolkit/themes/osx/global/shared.inc
 
 #topBar {
-  -moz-appearance: toolbar;
+  appearance: auto;
+  -moz-default-appearance: toolbar;
   -moz-window-dragging: drag;
   -moz-box-align: center;
   -moz-box-pack: center;
@@ -21,7 +23,8 @@
 #viewGroup > toolbarbutton {
   -moz-box-orient: vertical;
   -moz-box-align: center;
-  -moz-appearance: toolbarbutton;
+  appearance: auto;
+  -moz-default-appearance: toolbarbutton;
   font: menu;
   text-shadow: @loweredShadow@;
   margin: 0;
@@ -44,19 +47,13 @@ tree {
   margin: .5em;
 }
 
-.gridSeparator {
-  width: .5em;
-}
-
-textbox {
-  background: transparent !important;
+html|input {
+  background: transparent;
   border: none;
   padding: 0;
-  margin-top: 1px;
-  -moz-appearance: none;
 }
 
-textbox.header {
+html|input.header {
   margin-inline-start: 0;
 }
 
@@ -67,7 +64,7 @@ textbox.header {
   border: 1px solid ThreeDLightShadow;
 }
 
-textbox[disabled] {
+html|input:disabled {
   font-style: italic;
 }
 
@@ -92,8 +89,8 @@ textbox[disabled] {
   background: none;
 }
 
-#mediaGrid {
-  min-height: 9em;
+#mediaTable {
+  margin-bottom: 2em;
 }
 
 #mediaLabelColumn {
@@ -113,7 +110,8 @@ treechildren::-moz-tree-cell-text(broken) {
 #permList {
   margin: .5em;
   overflow: auto;
-  -moz-appearance: listbox;
+  appearance: auto;
+  -moz-default-appearance: listbox;
   color: -moz-fieldtext;
 }
 
@@ -134,10 +132,6 @@ treechildren::-moz-tree-cell-text(broken) {
 
 /* Security Tab */
 
-#securityPanel grid {
+#securityPanel table {
   margin-bottom: 1em;
-}
-
-#securityPanel row {
-  -moz-box-align: center;
 }

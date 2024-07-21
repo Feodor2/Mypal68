@@ -35,16 +35,6 @@ function urlSecurityCheck(aURL, aPrincipal, aFlags) {
   return BrowserUtils.urlSecurityCheck(aURL, aPrincipal, aFlags);
 }
 
-function forbidCPOW(arg, func, argname) {
-  if (
-    arg &&
-    (typeof arg == "object" || typeof arg == "function") &&
-    Cu.isCrossProcessWrapper(arg)
-  ) {
-    throw new Error(`no CPOWs allowed for argument ${argname} to ${func}`);
-  }
-}
-
 // Clientele: (Make sure you don't break any of these)
 //  - File    ->  Save Page/Frame As...
 //  - Context ->  Save Page/Frame As...
@@ -74,10 +64,6 @@ function saveURL(
   aIsContentWindowPrivate,
   aPrincipal
 ) {
-  forbidCPOW(aURL, "saveURL", "aURL");
-  forbidCPOW(aReferrerInfo, "saveURL", "aReferrerInfo");
-  // Allow aSourceDocument to be a CPOW.
-
   internalSave(
     aURL,
     null,
@@ -96,129 +82,7 @@ function saveURL(
   );
 }
 
-// Just like saveURL, but will get some info off the image before
-// calling internalSave
-// Clientele: (Make sure you don't break any of these)
-//  - Context ->  Save Image As...
-const imgICache = Ci.imgICache;
-const nsISupportsCString = Ci.nsISupportsCString;
-
-/**
- * Offers to save an image URL to the file system.
- *
- * @param aURL (string)
- *        The URL of the image to be saved.
- * @param aFileName (string)
- *        The suggested filename for the saved file.
- * @param aFilePickerTitleKey (string, optional)
- *        Localized string key for an alternate title for the file
- *        picker. If set to null, this will default to something sensible.
- * @param aShouldBypassCache (bool)
- *        If true, the image will always be retrieved from the server instead
- *        of the network or image caches.
- * @param aSkipPrompt (bool)
- *        If true, we will attempt to save the file with the suggested
- *        filename to the default downloads folder without showing the
- *        file picker.
- * @param aReferrerInfo (nsIReferrerInfo, optional)
- *        the referrerInfo object to use, or null if no referrer should be sent.
- * @param aDoc (Document, deprecated, optional)
- *        The content document that the save is being initiated from. If this
- *        is omitted, then aIsContentWindowPrivate must be provided.
- * @param aContentType (string, optional)
- *        The content type of the image.
- * @param aContentDisp (string, optional)
- *        The content disposition of the image.
- * @param aIsContentWindowPrivate (bool)
- *        Whether or not the containing window is in private browsing mode.
- *        Does not need to be provided is aDoc is passed.
- */
-function saveImageURL(
-  aURL,
-  aFileName,
-  aFilePickerTitleKey,
-  aShouldBypassCache,
-  aSkipPrompt,
-  aReferrerInfo,
-  aDoc,
-  aContentType,
-  aContentDisp,
-  aIsContentWindowPrivate,
-  aPrincipal
-) {
-  forbidCPOW(aURL, "saveImageURL", "aURL");
-  forbidCPOW(aReferrerInfo, "saveImageURL", "aReferrerInfo");
-
-  if (aDoc && aIsContentWindowPrivate == undefined) {
-    if (Cu.isCrossProcessWrapper(aDoc)) {
-      Deprecated.warning(
-        "saveImageURL should not be passed document CPOWs. " +
-          "The caller should pass in the content type and " +
-          "disposition themselves",
-        "https://bugzilla.mozilla.org/show_bug.cgi?id=1243643"
-      );
-    }
-    // This will definitely not work for in-browser code or multi-process compatible
-    // add-ons due to bug 1233497, which makes unsafe CPOW usage throw by default.
-    Deprecated.warning(
-      "saveImageURL should be passed the private state of " +
-        "the containing window.",
-      "https://bugzilla.mozilla.org/show_bug.cgi?id=1243643"
-    );
-    aIsContentWindowPrivate = PrivateBrowsingUtils.isContentWindowPrivate(
-      aDoc.defaultView
-    );
-  }
-
-  // We'd better have the private state by now.
-  if (aIsContentWindowPrivate == undefined) {
-    throw new Error(
-      "saveImageURL couldn't compute private state of content window"
-    );
-  }
-
-  if (
-    !aShouldBypassCache &&
-    (aDoc && !Cu.isCrossProcessWrapper(aDoc)) &&
-    (!aContentType && !aContentDisp)
-  ) {
-    try {
-      var imageCache = Cc["@mozilla.org/image/tools;1"]
-        .getService(Ci.imgITools)
-        .getImgCacheForDocument(aDoc);
-      var props = imageCache.findEntryProperties(
-        makeURI(aURL, getCharsetforSave(null)),
-        aDoc
-      );
-      if (props) {
-        aContentType = props.get("type", nsISupportsCString);
-        aContentDisp = props.get("content-disposition", nsISupportsCString);
-      }
-    } catch (e) {
-      // Failure to get type and content-disposition off the image is non-fatal
-    }
-  }
-
-  internalSave(
-    aURL,
-    null,
-    aFileName,
-    aContentDisp,
-    aContentType,
-    aShouldBypassCache,
-    aFilePickerTitleKey,
-    null,
-    aReferrerInfo,
-    aDoc,
-    aSkipPrompt,
-    null,
-    aIsContentWindowPrivate,
-    aPrincipal
-  );
-}
-
-// This is like saveDocument, but takes any browser/frame-like element
-// and saves the current document inside it,
+// Save the current document inside any browser/frame-like element,
 // whether in-process or out-of-process.
 function saveBrowser(aBrowser, aSkipPrompt, aOuterWindowID = 0) {
   if (!aBrowser) {
@@ -257,7 +121,24 @@ function saveBrowser(aBrowser, aSkipPrompt, aOuterWindowID = 0) {
   let stack = Components.stack.caller;
   persistable.startPersistence(aOuterWindowID, {
     onDocumentReady(document) {
-      saveDocument(document, aSkipPrompt);
+      if (!document || !(document instanceof Ci.nsIWebBrowserPersistDocument)) {
+        throw new Error("Must have an nsIWebBrowserPersistDocument!");
+      }
+
+      internalSave(
+        document.documentURI,
+        document,
+        null, // file name
+        document.contentDisposition,
+        document.contentType,
+        false, // bypass cache
+        null, // file picker title key
+        null, // chosen file data
+        document.referrerInfo,
+        document,
+        aSkipPrompt,
+        document.cacheKey
+      );
     },
     onError(status) {
       throw new Components.Exception(
@@ -267,65 +148,6 @@ function saveBrowser(aBrowser, aSkipPrompt, aOuterWindowID = 0) {
       );
     },
   });
-}
-
-// Saves a document; aDocument can be an nsIWebBrowserPersistDocument
-// (see saveBrowser, above) or a Document.
-//
-// aDocument can also be a CPOW for a remote Document, in which
-// case "save as" modes that serialize the document's DOM are
-// unavailable.  This is a temporary measure for the "Save Frame As"
-// command (bug 1141337) and pre-e10s add-ons.
-function saveDocument(aDocument, aSkipPrompt) {
-  if (!aDocument) {
-    throw new Error("Must have a document when calling saveDocument");
-  }
-
-  let contentDisposition = null;
-  let cacheKey = 0;
-
-  if (aDocument instanceof Ci.nsIWebBrowserPersistDocument) {
-    // nsIWebBrowserPersistDocument exposes these directly.
-    contentDisposition = aDocument.contentDisposition;
-    cacheKey = aDocument.cacheKey;
-  } else if (aDocument.nodeType == 9 /* DOCUMENT_NODE */) {
-    // Otherwise it's an actual document (and possibly a CPOW).
-    // We want to use cached data because the document is currently visible.
-    let win = aDocument.defaultView;
-
-    try {
-      contentDisposition = win.windowUtils.getDocumentMetadata(
-        "content-disposition"
-      );
-    } catch (ex) {
-      // Failure to get a content-disposition is ok
-    }
-
-    try {
-      let shEntry = win.docShell
-        .QueryInterface(Ci.nsIWebPageDescriptor)
-        .currentDescriptor.QueryInterface(Ci.nsISHEntry);
-
-      cacheKey = shEntry.cacheKey;
-    } catch (ex) {
-      // We might not find it in the cache.  Oh, well.
-    }
-  }
-
-  internalSave(
-    aDocument.documentURI,
-    aDocument,
-    null,
-    contentDisposition,
-    aDocument.contentType,
-    false,
-    null,
-    null,
-    aDocument.referrerInfo,
-    aDocument,
-    aSkipPrompt,
-    cacheKey
-  );
 }
 
 function DownloadListener(win, transfer) {
@@ -449,11 +271,6 @@ function internalSave(
   aIsContentWindowPrivate,
   aPrincipal
 ) {
-  forbidCPOW(aURL, "internalSave", "aURL");
-  forbidCPOW(aReferrerInfo, "internalSave", "aReferrerInfo");
-  forbidCPOW(aCacheKey, "internalSave", "aCacheKey");
-  // Allow aInitiatingDocument to be a CPOW.
-
   if (aSkipPrompt == undefined) {
     aSkipPrompt = false;
   }
@@ -466,6 +283,7 @@ function internalSave(
   var saveMode = GetSaveModeForContentType(aContentType, aDocument);
 
   var file, sourceURI, saveAsType;
+  let contentPolicyType = Ci.nsIContentPolicy.TYPE_SAVEAS_DOWNLOAD;
   // Find the URI object for aURL and the FileName/Extension to use when saving.
   // FileName/Extension will be ignored if aChosenData supplied.
   if (aChosenData) {
@@ -490,6 +308,9 @@ function internalSave(
     );
     sourceURI = fileInfo.uri;
 
+    if (aContentType && aContentType.startsWith("image/")) {
+      contentPolicyType = Ci.nsIContentPolicy.TYPE_IMAGE;
+    }
     var fpParams = {
       fpTitleKey: aFilePickerTitleKey,
       fileInfo,
@@ -528,7 +349,6 @@ function internalSave(
     // If we're saving a document, and are saving either in complete mode or
     // as converted text, pass the document to the web browser persist component.
     // If we're just saving the HTML (second option in the list), send only the URI.
-    let nonCPOWDocument = aDocument && !Cu.isCrossProcessWrapper(aDocument);
 
     let isPrivate = aIsContentWindowPrivate;
     if (isPrivate === undefined) {
@@ -556,8 +376,9 @@ function internalSave(
       targetContentType: saveAsType == kSaveAsType_Text ? "text/plain" : null,
       targetFile: file,
       sourceCacheKey: aCacheKey,
-      sourcePostData: nonCPOWDocument ? getPostData(aDocument) : null,
+      sourcePostData: aDocument ? getPostData(aDocument) : null,
       bypassCache: aShouldBypassCache,
+      contentPolicyType,
       isPrivate,
     };
 
@@ -586,6 +407,9 @@ function internalSave(
  *        must be null if no POST data should be sent.
  * @param persistArgs.targetFile
  *        The nsIFile of the file to create
+ * @param persistArgs.contentPolicyType
+ *        The type of content we're saving. Will be used to determine what
+ *        content is accepted, enforce sniffing restrictions, etc.
  * @param persistArgs.targetContentType
  *        Required and used only when persistArgs.sourceDocument is present,
  *        determines the final content type of the saved file, or null to use
@@ -671,6 +495,7 @@ function internalPersist(persistArgs) {
       persistArgs.sourcePostData,
       null,
       targetFileURL,
+      persistArgs.contentPolicyType || Ci.nsIContentPolicy.TYPE_SAVEAS_DOWNLOAD,
       persistArgs.isPrivate
     );
   }
@@ -1354,8 +1179,7 @@ function getDefaultExtension(aFilename, aURI, aContentType) {
 
 function GetSaveModeForContentType(aContentType, aDocument) {
   // We can only save a complete page if we have a loaded document,
-  // and it's not a CPOW -- nsWebBrowserPersist needs a real document.
-  if (!aDocument || Cu.isCrossProcessWrapper(aDocument)) {
+  if (!aDocument) {
     return SAVEMODE_FILEONLY;
   }
 

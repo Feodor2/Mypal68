@@ -272,7 +272,7 @@ void VRManagerChild::CreateVRServiceTestController(const nsCString& aID,
 }
 
 PVRLayerChild* VRManagerChild::CreateVRLayer(uint32_t aDisplayID,
-                                             nsIEventTarget* aTarget,
+                                             nsISerialEventTarget* aTarget,
                                              uint32_t aGroup) {
   PVRLayerChild* vrLayerChild = AllocPVRLayerChild(aDisplayID, aGroup);
   // Do the DOM labeling.

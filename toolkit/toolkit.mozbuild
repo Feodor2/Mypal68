@@ -71,7 +71,6 @@ if CONFIG['MOZ_UPDATER'] and CONFIG['OS_TARGET'] != 'Android':
 
 DIRS += [
     '/ipc',
-    '/js/ipc',
     '/hal',
     '/js/xpconnect',
     '/intl/chardet',
@@ -172,7 +171,6 @@ if CONFIG['ENABLE_GECKODRIVER'] and not CONFIG['MOZ_TSAN'] and not CONFIG['FUZZI
 
 DIRS += [
     '/tools/quitter',
-    '/media/gmp-clearkey/0.1',
 ]
 
 if CONFIG['ENABLE_TESTS']:

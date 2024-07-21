@@ -70,7 +70,7 @@ void VRDisplayPresentation::CreateLayers() {
       continue;
     }
 
-    nsCOMPtr<nsIEventTarget> target =
+    nsCOMPtr<nsISerialEventTarget> target =
         canvasElement->OwnerDoc()->EventTargetFor(TaskCategory::Other);
 
     if (mLayers.Length() <= iLayer) {

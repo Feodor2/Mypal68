@@ -27,6 +27,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   InlineSpellCheckerContent:
     "resource://gre/modules/InlineSpellCheckerContent.jsm",
+  ContentDOMReference: "resource://gre/modules/ContentDOMReference.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "PageMenuChild", () => {
@@ -188,6 +189,8 @@ const messageListeners = {
     let ctxDraw = canvas.getContext("2d");
     ctxDraw.drawImage(video, 0, 0);
 
+    // Note: if changing the content type, don't forget to update
+    // consumers that also hardcode this content type.
     this.mm.sendAsyncMessage("ContextMenu:SaveVideoFrameAsImage:Result", {
       dataURL: canvas.toDataURL("image/jpeg", ""),
     });
@@ -531,7 +534,7 @@ class ContextMenuChild extends ActorChild {
     // The same-origin check will be done in nsContextMenu.openLinkInTab.
     let parentAllowsMixedContent = !!this.docShell.mixedContentChannel;
 
-    let disableSetDesktopBg = null;
+    let disableSetDesktopBackground = null;
 
     // Media related cache info parent needs for saving
     let contentType = null;
@@ -541,7 +544,7 @@ class ContextMenuChild extends ActorChild {
       aEvent.composedTarget instanceof Ci.nsIImageLoadingContent &&
       aEvent.composedTarget.currentURI
     ) {
-      disableSetDesktopBg = this._disableSetDesktopBackground(
+      disableSetDesktopBackground = this._disableSetDesktopBackground(
         aEvent.composedTarget
       );
 
@@ -587,6 +590,7 @@ class ContextMenuChild extends ActorChild {
       Ci.nsIReferrerInfo
     );
     referrerInfo.initWithElement(aEvent.composedTarget);
+    referrerInfo = E10SUtils.serializeReferrerInfo(referrerInfo);
 
     // In the case "onLink" we may have to send link referrerInfo to use in
     // _openLinkInParameters
@@ -598,45 +602,38 @@ class ContextMenuChild extends ActorChild {
       linkReferrerInfo.initWithElement(context.link);
     }
 
-    let targetAsCPOW = context.target;
-    if (targetAsCPOW) {
+    let target = context.target;
+    if (target) {
       this._cleanContext();
     }
 
-    let isRemote =
-      Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
+    editFlags = SpellCheckHelper.isEditable(
+      aEvent.composedTarget,
+      this.content
+    );
 
-    if (isRemote) {
-      editFlags = SpellCheckHelper.isEditable(
-        aEvent.composedTarget,
-        this.content
+    if (editFlags & SpellCheckHelper.SPELLCHECKABLE) {
+      spellInfo = InlineSpellCheckerContent.initContextMenu(
+        aEvent,
+        editFlags,
+        this
       );
-
-      if (editFlags & SpellCheckHelper.SPELLCHECKABLE) {
-        spellInfo = InlineSpellCheckerContent.initContextMenu(
-          aEvent,
-          editFlags,
-          this.mm
-        );
-      }
-
-      // Set the event target first as the copy image command needs it to
-      // determine what was context-clicked on. Then, update the state of the
-      // commands on the context menu.
-      this.docShell.contentViewer
-        .QueryInterface(Ci.nsIContentViewerEdit)
-        .setCommandNode(aEvent.composedTarget);
-      aEvent.composedTarget.ownerGlobal.updateCommands("contentcontextmenu");
-
-      customMenuItems = PageMenuChild.build(aEvent.composedTarget);
-      principal = doc.nodePrincipal;
     }
+
+    // Set the event target first as the copy image command needs it to
+    // determine what was context-clicked on. Then, update the state of the
+    // commands on the context menu.
+    this.docShell.contentViewer
+      .QueryInterface(Ci.nsIContentViewerEdit)
+      .setCommandNode(aEvent.composedTarget);
+    aEvent.composedTarget.ownerGlobal.updateCommands("contentcontextmenu");
+
+    principal = doc.nodePrincipal;
 
     let data = {
       context,
       charSet,
       baseURI,
-      isRemote,
       referrerInfo,
       editFlags,
       principal,
@@ -650,26 +647,22 @@ class ContextMenuChild extends ActorChild {
       contentDisposition,
       frameOuterWindowID,
       popupNodeSelectors,
-      disableSetDesktopBg,
+      disableSetDesktopBackground,
       parentAllowsMixedContent,
     };
 
     if (context.inFrame && !context.inSrcdocFrame) {
-      if (isRemote) {
-        data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
-          doc.referrerInfo
-        );
-      } else {
-        data.frameReferrerInfo = doc.referrerInfo;
-      }
+      data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
+        doc.referrerInfo
+      );
+    }
+
+    if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
+      data.customMenuItems = PageMenuChild.build(aEvent.composedTarget);
     }
 
     if (linkReferrerInfo) {
-      if (isRemote) {
-        data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
-      } else {
-        data.linkReferrerInfo = linkReferrerInfo;
-      }
+      data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
     }
 
     Services.obs.notifyObservers(
@@ -677,27 +670,14 @@ class ContextMenuChild extends ActorChild {
       "on-prepare-contextmenu"
     );
 
-    if (isRemote) {
-      data.referrerInfo = E10SUtils.serializeReferrerInfo(data.referrerInfo);
-      if (data.frameReferrerInfo) {
-        data.frameReferrerInfo =
-          E10SUtils.serializeReferrerInfo(data.frameReferrerInfo);
-      }
+    // In the event that the content is running in the parent process, we don't
+    // actually want the contextmenu events to reach the parent - we'll dispatch
+    // a new contextmenu event after the async message has reached the parent
+    // instead.
+    aEvent.preventDefault();
+    aEvent.stopPropagation();
 
-      this.mm.sendAsyncMessage("contextmenu", data, {
-        targetAsCPOW,
-      });
-    } else {
-      let browser = this.docShell.chromeEventHandler;
-      let mainWin = browser.ownerGlobal;
-
-      data.documentURIObject = doc.documentURIObject;
-      data.disableSetDesktopBackground = data.disableSetDesktopBg;
-      delete data.disableSetDesktopBg;
-
-      data.context.targetAsCPOW = targetAsCPOW;
-      mainWin.setContextMenuContentData(data);
-    }
+    this.mm.sendAsyncMessage("contextmenu", data);
   }
 
   /**
@@ -869,6 +849,7 @@ class ContextMenuChild extends ActorChild {
     // Remember the node and its owner document that was clicked
     // This may be modifed before sending to nsContextMenu
     context.target = node;
+    context.targetIdentifier = ContentDOMReference.get(node);
 
     context.principal = context.target.ownerDocument.nodePrincipal;
     context.storagePrincipal =

@@ -300,7 +300,8 @@ var E10SUtils = {
         if (flags & Ci.nsIAboutModule.URI_MUST_LOAD_IN_CHILD) {
           if (
             flags & Ci.nsIAboutModule.URI_CAN_LOAD_IN_PRIVILEGED_CHILD &&
-            useSeparatePrivilegedContentProcess
+            (useSeparatePrivilegedContentProcess ||
+              aURI.filePath == "logins")
           ) {
             return PRIVILEGED_REMOTE_TYPE;
           }

@@ -29,6 +29,7 @@
 #include "nsExceptionHandler.h"
 #include "GeckoProfiler.h"
 #include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 #if defined(XP_WIN)
 #  include <windows.h>
@@ -40,6 +41,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/IntentionalCrash.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -173,6 +175,8 @@ void RunWatchdog(void* arg) {
     if (gHeartbeat++ < timeToLive) {
       continue;
     }
+
+    NoteIntentionalCrash(XRE_GeckoProcessTypeToString(XRE_GetProcessType()));
 
     // The shutdown steps are not completed yet. Let's report the last one.
     if (!sShutdownNotified) {

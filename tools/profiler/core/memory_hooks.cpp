@@ -12,6 +12,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/JSONWriter.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/PlatformMutex.h"
 #include "mozilla/ProfilerCounts.h"
 #include "mozilla/ThreadLocal.h"
 
@@ -92,6 +93,154 @@ static void EnsureBernoulliIsInstalled() {
   }
 }
 
+// This class provides infallible allocations (they abort on OOM) like
+// mozalloc's InfallibleAllocPolicy, except that memory hooks are bypassed. This
+// policy is used by the HashSet.
+class InfallibleAllocWithoutHooksPolicy {
+  static void ExitOnFailure(const void* aP) {
+    if (!aP) {
+      MOZ_CRASH("Profiler memory hooks out of memory; aborting");
+    }
+  }
+
+ public:
+  template <typename T>
+  static T* maybe_pod_malloc(size_t aNumElems) {
+    if (aNumElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+      return nullptr;
+    }
+    return (T*)gMallocTable.malloc(aNumElems * sizeof(T));
+  }
+
+  template <typename T>
+  static T* maybe_pod_calloc(size_t aNumElems) {
+    return (T*)gMallocTable.calloc(aNumElems, sizeof(T));
+  }
+
+  template <typename T>
+  static T* maybe_pod_realloc(T* aPtr, size_t aOldSize, size_t aNewSize) {
+    if (aNewSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+      return nullptr;
+    }
+    return (T*)gMallocTable.realloc(aPtr, aNewSize * sizeof(T));
+  }
+
+  template <typename T>
+  static T* pod_malloc(size_t aNumElems) {
+    T* p = maybe_pod_malloc<T>(aNumElems);
+    ExitOnFailure(p);
+    return p;
+  }
+
+  template <typename T>
+  static T* pod_calloc(size_t aNumElems) {
+    T* p = maybe_pod_calloc<T>(aNumElems);
+    ExitOnFailure(p);
+    return p;
+  }
+
+  template <typename T>
+  static T* pod_realloc(T* aPtr, size_t aOldSize, size_t aNewSize) {
+    T* p = maybe_pod_realloc(aPtr, aOldSize, aNewSize);
+    ExitOnFailure(p);
+    return p;
+  }
+
+  template <typename T>
+  static void free_(T* aPtr, size_t aSize = 0) {
+    gMallocTable.free(aPtr);
+  }
+
+  static void reportAllocOverflow() { ExitOnFailure(nullptr); }
+  bool checkSimulatedOOM() const { return true; }
+};
+
+// We can't use mozilla::Mutex because it causes re-entry into the memory hooks.
+// Define a custom implementation here.
+class Mutex : private ::mozilla::detail::MutexImpl {
+ public:
+  Mutex()
+      : ::mozilla::detail::MutexImpl() {}
+
+  void Lock() { ::mozilla::detail::MutexImpl::lock(); }
+  void Unlock() { ::mozilla::detail::MutexImpl::unlock(); }
+};
+
+class MutexAutoLock {
+  MutexAutoLock(const MutexAutoLock&) = delete;
+  void operator=(const MutexAutoLock&) = delete;
+
+  Mutex& mMutex;
+
+ public:
+  explicit MutexAutoLock(Mutex& aMutex) : mMutex(aMutex) { mMutex.Lock(); }
+  ~MutexAutoLock() { mMutex.Unlock(); }
+};
+
+//---------------------------------------------------------------------------
+// Tracked allocations
+//---------------------------------------------------------------------------
+
+// The allocation tracker is shared between multiple threads, and is the
+// coordinator for knowing when allocations have been tracked. The mutable
+// internal state is protected by a mutex, and managed by the methods.
+//
+// The tracker knows about all the allocations that we have added to the
+// profiler. This way, whenever any given piece of memory is freed, we can see
+// if it was previously tracked, and we can track its deallocation.
+
+class AllocationTracker {
+  // This type tracks all of the allocations that we have captured. This way, we
+  // can see if a deallocation is inside of this set. We want to provide a
+  // balanced view into the allocations and deallocations.
+  typedef mozilla::HashSet<const void*, mozilla::DefaultHasher<const void*>,
+                           InfallibleAllocWithoutHooksPolicy>
+      AllocationSet;
+
+ public:
+  AllocationTracker() : mAllocations(), mMutex() {}
+
+  void AddMemoryAddress(const void* memoryAddress) {
+    MutexAutoLock lock(mMutex);
+    if (!mAllocations.put(memoryAddress)) {
+      MOZ_CRASH("Out of memory while tracking native allocations.");
+    };
+  }
+
+  void Reset() {
+    MutexAutoLock lock(mMutex);
+    mAllocations.clearAndCompact();
+  }
+
+  // Returns true when the memory address is found and removed, otherwise that
+  // memory address is not being tracked and it returns false.
+  bool RemoveMemoryAddressIfFound(const void* memoryAddress) {
+    MutexAutoLock lock(mMutex);
+
+    auto ptr = mAllocations.lookup(memoryAddress);
+    if (ptr) {
+      // The memory was present. It no longer needs to be tracked.
+      mAllocations.remove(ptr);
+      return true;
+    }
+
+    return false;
+  }
+
+ private:
+  AllocationSet mAllocations;
+  Mutex mMutex;
+};
+
+static AllocationTracker* gAllocationTracker;
+
+static void EnsureAllocationTrackerIsInstalled() {
+  if (!gAllocationTracker) {
+    // This is only installed once.
+    gAllocationTracker = new AllocationTracker();
+  }
+}
+
 //---------------------------------------------------------------------------
 // Per-thread blocking of intercepts
 //---------------------------------------------------------------------------
@@ -117,12 +266,26 @@ class ThreadIntercept {
   static mozilla::Atomic<bool, mozilla::Relaxed>
       sAllocationsFeatureEnabled;
 
+  // The markers will be stored on the main thread. Retain the id to the main
+  // thread of this process here.
+  static mozilla::Atomic<int, mozilla::Relaxed> sMainThreadId;
+
   ThreadIntercept() = default;
 
   // Only allow consumers to access this information if they run
   // ThreadIntercept::MaybeGet and ask through the non-static version.
   static bool IsBlocked_() {
-    return tlsIsBlocked.get() || profiler_could_be_locked_on_current_thread();
+    // When the native allocations feature is turned on, memory hooks run on
+    // every single allocation. For a subset of these allocations, the stack
+    // gets sampled by running profiler_get_backtrace(), which locks the
+    // profiler mutex.
+    //
+    // An issue arises when allocating while the profiler is locked FOR THE
+    // CURRENT THREAD. In this situation, if profiler_get_backtrace() were to be
+    // run, it would try to re-acquire this lock and deadlock. In order to guard
+    // against this deadlock, we check to see if the mutex is already locked by
+    // this thread.
+    return tlsIsBlocked.get() || profiler_is_locked_on_current_thread();
   }
 
  public:
@@ -153,14 +316,22 @@ class ThreadIntercept {
 
   bool IsBlocked() const { return ThreadIntercept::IsBlocked_(); }
 
-  static void EnableAllocationFeature() { sAllocationsFeatureEnabled = true; }
+  static void EnableAllocationFeature(int aMainThreadId) {
+    sAllocationsFeatureEnabled = true;
+    sMainThreadId = aMainThreadId;
+  }
 
   static void DisableAllocationFeature() { sAllocationsFeatureEnabled = false; }
+
+  static int MainThreadId() { return sMainThreadId; }
 };
 
 PROFILER_THREAD_LOCAL(bool) ThreadIntercept::tlsIsBlocked;
+
 mozilla::Atomic<bool, mozilla::Relaxed>
     ThreadIntercept::sAllocationsFeatureEnabled(false);
+
+mozilla::Atomic<int, mozilla::Relaxed> ThreadIntercept::sMainThreadId(0);
 
 // An object of this class must be created (on the stack) before running any
 // code that might allocate.
@@ -214,8 +385,19 @@ static void AllocCallback(void* aPtr, size_t aReqSize) {
   // larger allocations are weighted heavier than smaller allocations.
   MOZ_ASSERT(gBernoulli,
              "gBernoulli must be properly installed for the memory hooks.");
-  if (gBernoulli->trial(actualSize)) {
-    profiler_add_native_allocation_marker((int64_t)actualSize);
+  if (
+      // First perform the Bernoulli trial.
+      gBernoulli->trial(actualSize) &&
+      // Second, attempt to add a marker if the Bernoulli trial passed.
+      profiler_add_native_allocation_marker(
+          ThreadIntercept::MainThreadId(), static_cast<int64_t>(actualSize),
+          reinterpret_cast<uintptr_t>(aPtr))) {
+    MOZ_ASSERT(gAllocationTracker,
+               "gAllocationTracker must be properly installed for the memory "
+               "hooks.");
+    // Only track the memory if the allocation marker was actually added to the
+    // profiler.
+    gAllocationTracker->AddMemoryAddress(aPtr);
   }
 
   // We're ignoring aReqSize here
@@ -228,7 +410,7 @@ static void FreeCallback(void* aPtr) {
 
   // The first part of this function does not allocate.
   size_t unsignedSize = MallocSizeOf(aPtr);
-  int64_t signedSize = -((int64_t)unsignedSize);
+  int64_t signedSize = -(static_cast<int64_t>(unsignedSize));
   sCounter->Add(signedSize);
 
   auto threadIntercept = ThreadIntercept::MaybeGet();
@@ -246,10 +428,14 @@ static void FreeCallback(void* aPtr) {
   // Perform a bernoulli trial, which will return true or false based on its
   // configured probability. It takes into account the byte size so that
   // larger allocations are weighted heavier than smaller allocations.
-  MOZ_ASSERT(gBernoulli,
-             "gBernoulli must be properly installed for the memory hooks.");
-  if (gBernoulli->trial(unsignedSize)) {
-    profiler_add_native_allocation_marker(signedSize);
+  MOZ_ASSERT(
+      gAllocationTracker,
+      "gAllocationTracker must be properly installed for the memory hooks.");
+  if (gAllocationTracker->RemoveMemoryAddressIfFound(aPtr)) {
+    // This size here is negative, indicating a deallocation.
+    profiler_add_native_allocation_marker(ThreadIntercept::MainThreadId(),
+                                          signedSize,
+                                          reinterpret_cast<uintptr_t>(aPtr));
   }
 }
 
@@ -384,12 +570,12 @@ void install_memory_hooks() {
 // leak these values.
 void remove_memory_hooks() { jemalloc_replace_dynamic(nullptr); }
 
-void enable_native_allocations() {
-  // The bloat log tracks allocations and de-allocations. This can conflict
+void enable_native_allocations(int aMainThreadId) {
+  // The bloat log tracks allocations and deallocations. This can conflict
   // with the memory hook machinery, as the bloat log creates its own
   // allocations. This means we can re-enter inside the bloat log machinery. At
   // this time, the bloat log does not know about cannot handle the native
-  // allocation feature. For now just disable the feature.
+  // allocation feature.
   //
   // At the time of this writing, we hit this assertion:
   // IsIdle(oldState) || IsRead(oldState) in Checker::StartReadOp()
@@ -407,15 +593,21 @@ void enable_native_allocations() {
   //    #11: NS_LogCtor
   //    #12: profiler_get_backtrace()
   //    ...
-  if (!PR_GetEnv("XPCOM_MEM_BLOAT_LOG")) {
-    EnsureBernoulliIsInstalled();
-    ThreadIntercept::EnableAllocationFeature();
-  }
+  MOZ_ASSERT(!PR_GetEnv("XPCOM_MEM_BLOAT_LOG"),
+             "The bloat log feature is not compatible with the native "
+             "allocations instrumentation.");
+
+  EnsureBernoulliIsInstalled();
+  EnsureAllocationTrackerIsInstalled();
+  ThreadIntercept::EnableAllocationFeature(aMainThreadId);
 }
 
 // This is safe to call even if native allocations hasn't been enabled.
 void disable_native_allocations() {
   ThreadIntercept::DisableAllocationFeature();
+  if (gAllocationTracker) {
+    gAllocationTracker->Reset();
+  }
 }
 
 }  // namespace profiler

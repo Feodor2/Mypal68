@@ -45,8 +45,6 @@ const GMP_CHECK_DELAY = 10 * 1000; // milliseconds
 const XHTML = "http://www.w3.org/1999/xhtml";
 
 const NS_GRE_DIR = "GreD";
-const CLEARKEY_PLUGIN_ID = "gmp-clearkey";
-const CLEARKEY_VERSION = "0.1";
 
 const GMP_LICENSE_INFO = "gmp_license_info";
 const GMP_PRIVACY_INFO = "gmp_privacy_info";
@@ -756,23 +754,6 @@ var GMPProvider = {
           );
         }
       }
-    }
-
-    try {
-      let greDir = Services.dirsvc.get(NS_GRE_DIR, Ci.nsIFile);
-      let path = greDir.path;
-      if (GMPUtils._isWindowsOnARM64()) {
-        path = OS.Path.join(path, "i686");
-      }
-      let clearkeyPath = OS.Path.join(
-        path,
-        CLEARKEY_PLUGIN_ID,
-        CLEARKEY_VERSION
-      );
-      this._log.info("startup - adding clearkey CDM directory " + clearkeyPath);
-      gmpService.addPluginDirectory(clearkeyPath);
-    } catch (e) {
-      this._log.warn("startup - adding clearkey CDM failed", e);
     }
   },
 

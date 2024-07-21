@@ -49,8 +49,8 @@
 #include "nsICompressConvStats.h"
 #include "nsIDeprecationWarner.h"
 #include "mozilla/dom/Document.h"
-#include "nsIEventTarget.h"
 #include "nsIScriptError.h"
+#include "nsISerialEventTarget.h"
 #include "nsRedirectHistoryEntry.h"
 #include "nsSocketTransportService2.h"
 #include "nsStreamUtils.h"
@@ -335,7 +335,7 @@ void HttpChannelChild::OnBackgroundChildDestroyed(
   }
 
   if (callback) {
-    nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+    nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
     neckoTarget->Dispatch(callback, NS_DISPATCH_NORMAL);
   }
 }
@@ -717,7 +717,7 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
     DoOnProgress(this, progress, progressMax);
   } else {
     RefPtr<HttpChannelChild> self = this;
-    nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+    nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
     MOZ_ASSERT(neckoTarget);
 
     DebugOnly<nsresult> rv = neckoTarget->Dispatch(
@@ -741,7 +741,7 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   nsCOMPtr<nsIInputStream> stringStream;
   nsresult rv =
       NS_NewByteInputStream(getter_AddRefs(stringStream),
-                            MakeSpan(aData).To(aCount), NS_ASSIGNMENT_DEPEND);
+                            Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND);
   if (NS_FAILED(rv)) {
     Cancel(rv);
     return;
@@ -759,7 +759,7 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
         // PHttpChannel connects to the main thread
         RefPtr<HttpChannelChild> self = this;
         int32_t bytesRead = mUnreportBytesRead;
-        nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+        nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
         MOZ_ASSERT(neckoTarget);
 
         DebugOnly<nsresult> rv = neckoTarget->Dispatch(
@@ -1295,7 +1295,7 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvFinishInterceptedRedirect() {
 
   // The IPDL connection was torn down by a interception logic in
   // CompleteRedirectSetup, and we need to call FinishInterceptedRedirect.
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
 
   Unused << neckoTarget->Dispatch(
@@ -1537,7 +1537,7 @@ void HttpChannelChild::Redirect1Begin(
       mRedirectChannelChild->ConnectParent(registrarId);
     }
 
-    nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
+    nsCOMPtr<nsISerialEventTarget> target = GetNeckoTarget();
     MOZ_ASSERT(target);
 
     rv = gHttpHandler->AsyncOnChannelRedirect(this, newChannel, redirectFlags,
@@ -1594,7 +1594,7 @@ void HttpChannelChild::BeginNonIPCRedirect(
       }
     }
 
-    nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
+    nsCOMPtr<nsISerialEventTarget> target = GetNeckoTarget();
     MOZ_ASSERT(target);
 
     rv = gHttpHandler->AsyncOnChannelRedirect(this, newChannel, redirectFlag,
@@ -1765,7 +1765,7 @@ void HttpChannelChild::ProcessDivertMessages() {
 
   // DivertTo() has been called on parent, so we can now start sending queued
   // IPDL messages back to parent listener.
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
   nsresult rv =
       neckoTarget->Dispatch(NewRunnableMethod("HttpChannelChild::Resume", this,
@@ -2026,7 +2026,7 @@ HttpChannelChild::OnRedirectVerifyCallback(nsresult aResult) {
     RefPtr<InterceptStreamListener> streamListener =
         new InterceptStreamListener(redirectedChannel, nullptr);
 
-    nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+    nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
     MOZ_ASSERT(neckoTarget);
 
     nsCOMPtr<nsIInterceptedBodyCallback> callback =
@@ -2201,7 +2201,7 @@ HttpChannelChild::Resume() {
       SendResume();
     }
     if (mCallOnResume) {
-      nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+      nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
       MOZ_ASSERT(neckoTarget);
 
       RefPtr<HttpChannelChild> self = this;
@@ -2415,12 +2415,12 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
   return rv;
 }
 
-// Assigns an nsIEventTarget to our IPDL actor so that IPC messages are sent to
-// the correct DocGroup/TabGroup.
+// Assigns an nsISerialEventTarget to our IPDL actor so that IPC messages are
+// sent to the correct DocGroup/TabGroup.
 void HttpChannelChild::SetEventTarget() {
   nsCOMPtr<nsILoadInfo> loadInfo = LoadInfo();
 
-  nsCOMPtr<nsIEventTarget> target =
+  nsCOMPtr<nsISerialEventTarget> target =
       nsContentUtils::GetEventTargetByLoadInfo(loadInfo, TaskCategory::Network);
 
   if (!target) {
@@ -2435,15 +2435,15 @@ void HttpChannelChild::SetEventTarget() {
   }
 }
 
-already_AddRefed<nsIEventTarget> HttpChannelChild::GetNeckoTarget() {
-  nsCOMPtr<nsIEventTarget> target;
+already_AddRefed<nsISerialEventTarget> HttpChannelChild::GetNeckoTarget() {
+  nsCOMPtr<nsISerialEventTarget> target;
   {
     MutexAutoLock lock(mEventTargetMutex);
     target = mNeckoTarget;
   }
 
   if (!target) {
-    target = GetMainThreadEventTarget();
+    target = GetMainThreadSerialEventTarget();
   }
   return target.forget();
 }
@@ -2452,7 +2452,11 @@ already_AddRefed<nsIEventTarget> HttpChannelChild::GetODATarget() {
   nsCOMPtr<nsIEventTarget> target;
   {
     MutexAutoLock lock(mEventTargetMutex);
-    target = mODATarget ? mODATarget : mNeckoTarget;
+    if (mODATarget) {
+      target = mODATarget;
+    } else {
+      target = mNeckoTarget;
+    }
   }
 
   if (!target) {
@@ -2952,7 +2956,7 @@ HttpChannelChild::OpenAlternativeOutputStream(const nsACString& aType,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
 
   RefPtr<AltDataOutputStreamChild> stream = new AltDataOutputStreamChild();
@@ -3365,7 +3369,7 @@ HttpChannelChild::GetDeliveryTarget(nsIEventTarget** aEventTarget) {
 
   nsCOMPtr<nsIEventTarget> target = mODATarget;
   if (!mODATarget) {
-    target = GetCurrentThreadEventTarget();
+    target = GetCurrentEventTarget();
   }
   target.forget(aEventTarget);
   return NS_OK;
@@ -3414,7 +3418,7 @@ void HttpChannelChild::TrySendDeletingChannel() {
     return;
   }
 
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
 
   DebugOnly<nsresult> rv = neckoTarget->Dispatch(
@@ -3429,7 +3433,7 @@ void HttpChannelChild::OnCopyComplete(nsresult aStatus) {
   nsCOMPtr<nsIRunnable> runnable = NewRunnableMethod<nsresult>(
       "net::HttpBaseChannel::EnsureUploadStreamIsCloneableComplete", this,
       &HttpChannelChild::EnsureUploadStreamIsCloneableComplete, aStatus);
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
 
   Unused << neckoTarget->Dispatch(runnable, NS_DISPATCH_NORMAL);
@@ -3442,7 +3446,7 @@ nsresult HttpChannelChild::AsyncCallImpl(
 
   RefPtr<nsRunnableMethod<HttpChannelChild>> event =
       NewRunnableMethod("net::HttpChannelChild::AsyncCall", this, funcPtr);
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
 
   rv = neckoTarget->Dispatch(event, NS_DISPATCH_NORMAL);
@@ -3567,7 +3571,7 @@ void HttpChannelChild::OverrideWithSynthesizedResponse(
     mSynthesizedStreamLength = -1;
   }
 
-  nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> neckoTarget = GetNeckoTarget();
   MOZ_ASSERT(neckoTarget);
 
   rv = nsInputStreamPump::Create(getter_AddRefs(mSynthesizedResponsePump),

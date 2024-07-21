@@ -147,15 +147,6 @@ pref("lightweightThemes.getMoreURL", "data:text/plain,");
   pref("browser.eme.ui.enabled", false);
 #endif
 
-// UI tour experience.
-pref("browser.uitour.enabled", false);
-pref("browser.uitour.loglevel", "Error");
-pref("browser.uitour.requireSecure", true);
-pref("browser.uitour.themeOrigin", "data:text/plain,");
-pref("browser.uitour.url", "data:text/plain,");
-// How long to show a Hearbeat survey (two hours, in seconds)
-pref("browser.uitour.surveyDuration", 7200);
-
 pref("keyword.enabled", false);
 pref("browser.fixup.domainwhitelist.localhost", true);
 
@@ -1611,9 +1602,6 @@ pref("dom.ipc.processPrelaunch.enabled", true);
 // See comments in bug 1340115 on how we got to these numbers.
 pref("browser.migrate.chrome.history.limit", 2000);
 pref("browser.migrate.chrome.history.maxAgeInDays", 180);
-
-// Enable browser frames for use on desktop.  Only exposed to chrome callers.
-pref("dom.mozBrowserFramesEnabled", true);
 
 pref("signon.generation.available", true);
 pref("signon.generation.enabled", true);

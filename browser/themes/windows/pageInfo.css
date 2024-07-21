@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @import "chrome://global/skin/";
+@namespace html url("http://www.w3.org/1999/xhtml");
 
 #topBar {
   -moz-window-dragging: drag;
@@ -19,7 +20,7 @@
 
 #viewGroup > radio {
   list-style-image: url("chrome://browser/skin/pageInfo.png");
-  -moz-appearance: none;
+  appearance: none;
   min-width: 4.5em;
   margin: 0;
   padding: 3px;
@@ -85,19 +86,13 @@ tree {
   margin: .5em;
 }
 
-.gridSeparator {
-  width: .5em;
-}
-
-textbox {
-  background: transparent !important;
+html|input {
+  background: transparent;
   border: none;
   padding: 0;
-  margin-top: 1px;
-  -moz-appearance: none;
 }
 
-textbox.header {
+html|input.header {
   margin-inline-start: 0;
 }
 
@@ -108,7 +103,7 @@ textbox.header {
   border: 1px solid ThreeDLightShadow;
 }
 
-textbox[disabled] {
+html|input:disabled {
   font-style: italic;
 }
 
@@ -135,8 +130,8 @@ textbox[disabled] {
   height: .8em;
 }
 
-#mediaGrid {
-  min-height: 9em;
+#mediaTable {
+  margin-bottom: 2em;
 }
 
 #mediaLabelColumn {
@@ -156,7 +151,8 @@ treechildren::-moz-tree-cell-text(broken) {
 #permList {
   margin: .5em;
   overflow: auto;
-  -moz-appearance: listbox;
+  appearance: auto;
+  -moz-default-appearance: listbox;
   color: -moz-fieldtext;
 }
 
@@ -177,10 +173,6 @@ treechildren::-moz-tree-cell-text(broken) {
 
 /* Security Tab */
 
-#securityPanel grid {
+#securityPanel table {
   margin-bottom: 1em;
-}
-
-#securityPanel row {
-  -moz-box-align: center;
 }

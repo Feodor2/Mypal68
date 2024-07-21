@@ -80,7 +80,7 @@
 }
 
 #main-menubar > menu {
-  -moz-appearance: none;
+  appearance: none;
   color: inherit;
 }
 
@@ -134,7 +134,7 @@
 
 #navigator-toolbox,
 .browser-toolbar {
-  -moz-appearance: none;
+  appearance: none;
 }
 
 .browser-toolbar:not(.titlebar-color) {
@@ -288,7 +288,8 @@
 }
 
 #print-preview-toolbar:not(:-moz-lwtheme) {
-  -moz-appearance: toolbox;
+  appearance: auto;
+  -moz-default-appearance: toolbox;
 }
 
 #browser-bottombox:not(:-moz-lwtheme) {
@@ -298,11 +299,13 @@
 /* ::::: titlebar ::::: */
 
 #main-window[tabsintitlebar][sizemode="normal"] > #navigator-toolbox > #titlebar {
-  -moz-appearance: -moz-window-titlebar;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-titlebar;
 }
 
 #main-window[tabsintitlebar][sizemode="maximized"] > #navigator-toolbox > #titlebar {
-  -moz-appearance: -moz-window-titlebar-maximized;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-titlebar-maximized;
 }
 
 @media (-moz-windows-compositor: 0) {
@@ -330,11 +333,11 @@
 
 .titlebar-buttonbox {
   /* For all Windows configurations except for Windows Aero and Windows Aero Basic,
-   * the default -moz-appearance of -moz-window-button-box and
+   * the default -moz-default-appearance of -moz-window-button-box and
    * -moz-window-button-box-maximized adds unwanted margins to the button box. We
    * special case Windows Aero and Windows Aero Basic in browser-aero.css.
    */
-  -moz-appearance: none;
+  appearance: none;
   /* The button box must appear on top of the navigator-toolbox in order for
    * click and hover mouse events to work properly for the button in the restored
    * window state. Otherwise, elements in the navigator-toolbox, like the menubar,
@@ -371,19 +374,23 @@
 /* window control buttons */
 
 .titlebar-min {
-  -moz-appearance: -moz-window-button-minimize;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-button-minimize;
 }
 
 .titlebar-max {
-  -moz-appearance: -moz-window-button-maximize;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-button-maximize;
 }
 
 :root[sizemode="maximized"] .titlebar-max {
-  -moz-appearance: -moz-window-button-restore;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-button-restore;
 }
 
 .titlebar-close {
-  -moz-appearance: -moz-window-button-close;
+  appearance: auto;
+  -moz-default-appearance: -moz-window-button-close;
 }
 
 @media (-moz-windows-classic: 0) {
@@ -406,12 +413,11 @@ menuitem.bookmark-item {
 }
 
 .bookmark-item:not(.subviewbutton) > .menu-iconic-left {
-  margin-top: 0;
-  margin-bottom: 0;
+  margin-block: 0;
 }
 
 .bookmark-item > .menu-iconic-left > .menu-iconic-icon {
-  padding-inline-start: 0px;
+  padding-inline-start: 0;
 }
 
 .bookmark-item[cutting] > .toolbarbutton-icon,
@@ -434,7 +440,7 @@ menuitem.bookmark-item {
 #minimize-button,
 #restore-button,
 #close-button {
-  -moz-appearance: none;
+  appearance: none;
   padding: 6px 12px;
   -moz-context-properties: stroke;
   stroke: currentColor;
@@ -493,7 +499,7 @@ menuitem.bookmark-item {
   #minimize-button,
   #restore-button,
   #close-button {
-    -moz-appearance: none;
+    appearance: none;
     border-style: none;
     margin: 0;
     /* Important to ensure this applies even on toolbar[brighttext] */
@@ -531,7 +537,7 @@ menuitem.bookmark-item {
 
   #close-button {
     -moz-image-region: rect(0, 48px, 16px, 32px);
-    -moz-appearance: none;
+    appearance: none;
     border-style: none;
     margin: 2px;
   }
@@ -587,57 +593,9 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
 }
 
 /* ::::: URL Bar Zoom Reset Button ::::: */
-@keyframes urlbar-zoom-reset-pulse {
-  0% {
-    transform: scale(0);
-  }
-  75% {
-    transform: scale(1.5);
-  }
-  100% {
-    transform: scale(1.0);
-  }
-}
-
-#urlbar-zoom-button {
-  -moz-appearance: none;
-  color: inherit;
-}
-
-#urlbar-search-footer {
-  border-top: 1px solid var(--panel-separator-color);
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings {
-  -moz-appearance: none;
-  -moz-user-focus: ignore;
-  color: GrayText;
-  margin: 0;
-  border: 0;
-  padding: 8px 20px;
-  background: transparent;
-}
-
-#urlbar-search-settings:hover {
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings:hover:active {
-  background-color: var(--arrowpanel-dimmed-further);
-}
 
 .urlbar-display {
-  margin-top: 0;
-  margin-bottom: 0;
   margin-inline-start: 0;
-  color: GrayText;
-}
-
-%include ../shared/urlbarSearchSuggestionsNotification.inc.css
-
-#search-container {
-  min-width: calc(54px + 11ch);
 }
 
 /* identity box */
@@ -657,20 +615,6 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
   border-top: 1px solid ThreeDShadow;
 }
 
-.ac-title {
-  font-size: 14px;
-}
-
-.ac-tags {
-  font-size: 12px;
-}
-
-.ac-separator,
-.ac-url,
-.ac-action {
-  font-size: 12px;
-}
-
 @media (-moz-windows-default-theme) {
   :root {
     --urlbar-popup-url-color: hsl(210, 77%, 47%);
@@ -685,11 +629,11 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
   }
 }
 
-/* bookmarking panel */
+/* Bookmarking panel */
 
 %include ../shared/places/editBookmarkPanel.inc.css
 
-/* ::::: content area ::::: */
+/* ::::: Content area ::::: */
 
 %include ../shared/sidebar.inc.css
 
@@ -753,7 +697,7 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
 }
 
 toolbarbutton.bookmark-item[dragover="true"][open="true"] {
-  -moz-appearance: none;
+  appearance: none;
   background: Highlight !important;
   color: HighlightText !important;
 }
@@ -762,8 +706,7 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 .menupopup-drop-indicator-bar {
   position: relative;
   /* these two margins must together compensate the indicator's height */
-  margin-top: -1px;
-  margin-bottom: -1px;
+  margin-block: -1px;
 }
 
 .menupopup-drop-indicator {
@@ -814,8 +757,7 @@ notification[value="translation"] {
   notification[value="translation"] button,
   notification[value="translation"] menulist,
   notification[value="translation"] menulist > .menulist-label-box {
-    margin-inline-start: 1ch;
-    margin-inline-end: 1ch;
+    margin-inline: 1ch;
   }
 
   notification[value="translation"] button:hover,
@@ -858,7 +800,7 @@ notification[value="translation"] {
 }
 
 .translation-menupopup {
-  -moz-appearance: none;
+  appearance: none;
 }
 
 /* Bookmarks roots menu-items */
@@ -950,18 +892,6 @@ notification[value="translation"] {
 
 /* End private browsing and accessibility indicators */
 
-%include ../shared/UITour.inc.css
-
-#UITourTooltipButtons {
-  /**
-   * Override the --arrowpanel-padding so the background extends
-   * to the sides and bottom of the panel.
-   */
-  margin-left: -10px;
-  margin-right: -10px;
-  margin-bottom: -10px;
-}
-
 %include ../shared/contextmenu.inc.css
 
 /* Make menu items larger when opened through touch. */
@@ -969,19 +899,16 @@ notification[value="translation"] {
 panel[touchmode] .PanelUI-subView .subviewbutton,
 menupopup[touchmode] menu,
 menupopup[touchmode] menuitem {
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-block: 12px;
 }
 
 panel[touchmode] .PanelUI-subView #appMenu-edit-controls > .subviewbutton,
 panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic {
-  padding-inline-start: 12px;
-  padding-inline-end: 12px;
+  padding-inline: 12px;
 }
 
 #contentAreaContextMenu[touchmode] > #context-navigation > menuitem {
-  padding-top: 7px;
-  padding-bottom: 7px;
+  padding-block: 7px;
 }
 
 #context-navigation {
@@ -1021,6 +948,9 @@ panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic
 #ContentSelectDropdown > menupopup > menuitem {
   padding: 0 6px;
   border-width: 0;
+}
+
+#ContentSelectDropdown > menupopup {
   font: -moz-list;
 }
 
@@ -1028,8 +958,7 @@ panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic
 #ContentSelectDropdown > menupopup > menuitem > .menu-iconic-text {
   /* Padding should follow the 4/12 ratio, where 12px is the default font-size
      with 4px being the preferred padding size. */
-  padding-top: .3333em;
-  padding-bottom: .3333em;
+  padding-block: .3333em;
 }
 
 #ContentSelectDropdown > menupopup > menucaption > .menu-iconic-text {
@@ -1053,6 +982,5 @@ panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic
 #ContentSelectDropdown > .isOpenedViaTouch > menuitem > .menu-iconic-text {
   /* Touch padding should follow the 11/12 ratio, where 12px is the default
      font-size with 11px being the preferred padding size. */
-  padding-top: .9167em;
-  padding-bottom: .9167em;
+  padding-block: .9167em;
 }

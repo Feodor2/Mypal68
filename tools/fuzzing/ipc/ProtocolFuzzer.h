@@ -23,12 +23,14 @@ class ProtocolFuzzerHelper {
 
   static void AddShmemToProtocol(IToplevelProtocol* aProtocol,
                                  Shmem::SharedMemory* aSegment, int32_t aId) {
-    aProtocol->mShmemMap.AddWithID(aSegment, aId);
+    MOZ_ASSERT(!aProtocol->mShmemMap.Contains(aId),
+               "Don't insert with an existing ID");
+    aProtocol->mShmemMap.Put(aId, aSegment);
   }
 
   static void RemoveShmemFromProtocol(IToplevelProtocol* aProtocol,
                                       int32_t aId) {
-    aProtocol->mShmemMap.RemoveIfPresent(aId);
+    aProtocol->mShmemMap.Remove(aId);
   }
 };
 

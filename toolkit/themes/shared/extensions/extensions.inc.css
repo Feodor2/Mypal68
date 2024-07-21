@@ -299,7 +299,7 @@ button.warning {
 /*** list ***/
 
 .list {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   border-width: 0 !important;
   background-color: transparent;
@@ -508,7 +508,7 @@ button.warning {
 }
 
 .addon .relnotes-toggle {
-  -moz-appearance: none;
+  appearance: none;
   border: none;
   background: transparent;
   font-weight: bold;
@@ -843,7 +843,7 @@ button.warning {
 .download-progress[complete] .end-cap,
 .download-progress[mode="undetermined"] .end-cap,
 .download-progress .progress .progress-bar {
-  -moz-appearance: none;
+  appearance: none;
   background-color: var(--in-content-border-highlight);
 }
 
@@ -853,7 +853,7 @@ button.warning {
 
 .download-progress .progress {
   -moz-box-flex: 1;
-  -moz-appearance: none;
+  appearance: none;
   background-color: transparent;
   padding: 0;
   margin: 0;
@@ -876,7 +876,7 @@ button.warning {
 }
 
 .download-progress .cancel {
-  -moz-appearance: none;
+  appearance: none;
   padding: 3px;
   min-width: 0;
   width: 20px;
@@ -959,7 +959,7 @@ button.warning {
 }
 
 button.button-link {
-  -moz-appearance: none;
+  appearance: none;
   background: transparent;
   border: none;
   box-shadow: none;
@@ -1024,7 +1024,7 @@ button.button-link:not([disabled="true"]):active:hover {
 /*** Reset PopupAutoComplete richlistbox styles ***/
 
 #PopupAutoComplete richlistbox {
-  -moz-appearance: initial;
+  appearance: none;
   margin-inline-start: 0;
   border: none;
   border-radius: 0;

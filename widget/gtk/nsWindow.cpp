@@ -4017,7 +4017,7 @@ void nsWindow::RefreshWindowClass(void) {
 void nsWindow::SetWindowClass(const nsAString& xulWinType) {
   if (!mShell) return;
 
-  char* res_name = ToNewCString(xulWinType);
+  char* res_name = ToNewCString(xulWinType, mozilla::fallible);
   if (!res_name) return;
 
   const char* role = nullptr;
@@ -7006,9 +7006,10 @@ bool nsWindow::GetTopLevelWindowActiveState(nsIFrame* aFrame) {
 
 static nsIFrame* FindTitlebarFrame(nsIFrame* aFrame) {
   for (nsIFrame* childFrame : aFrame->PrincipalChildList()) {
-    const nsStyleDisplay* frameDisp = childFrame->StyleDisplay();
-    if (frameDisp->mAppearance == StyleAppearance::MozWindowTitlebar ||
-        frameDisp->mAppearance == StyleAppearance::MozWindowTitlebarMaximized) {
+    StyleAppearance appearance =
+        childFrame->StyleDisplay()->EffectiveAppearance();
+    if (appearance == StyleAppearance::MozWindowTitlebar ||
+        appearance == StyleAppearance::MozWindowTitlebarMaximized) {
       return childFrame;
     }
 

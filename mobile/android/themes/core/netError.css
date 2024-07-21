@@ -173,7 +173,7 @@ div[collapsed="true"] > .expander + * {
    oncommand events from unprivileged chrome pages (ErrorPageEventHandler).*/
 #ignoreWarningButton {
   width: calc(100% + 40px);
-  -moz-appearance: none;
+  appearance: none;
   background: #b14646;
   border: none;
   text-decoration: underline;

@@ -73,7 +73,7 @@
 
 arrowscrollbox:not([clicktoscroll="true"]) > .scrollbutton-up,
 arrowscrollbox:not([clicktoscroll="true"]) > .scrollbutton-down {
-  -moz-appearance: none;
+  appearance: none;
   border: 1px solid transparent;
   padding: 1px;
 }

@@ -35,7 +35,7 @@ let whitelist = [
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(minimal-xul|html|mathml|ua)\.css$/i,
+    sourceName: /\b(minimal-xul|html|mathml|ua|forms|svg)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
@@ -55,14 +55,6 @@ let whitelist = [
     sourceName: /(?:res|gre-resources)\/forms\.css$/i,
     errorMessage: /Expected color but found \u2018-moz.*/i,
     platforms: ["linux"],
-    isFromDevTools: false,
-  },
-  // The '-moz-menulist-arrow-button' value is only supported in chrome and UA sheets
-  // but forms.css is loaded as a document sheet by this test.
-  // Maybe bug 1261237 will fix this?
-  {
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Error in parsing value for \u2018-moz-appearance\u2019/iu,
     isFromDevTools: false,
   },
   // These variables are declared somewhere else, and error when we load the
@@ -97,14 +89,6 @@ if (
   whitelist.push({
     sourceName: /(skin\/shared\/Heartbeat|((?:res|gre-resources)\/(ua|html)))\.css$/i,
     errorMessage: /Error in parsing value for .*\bdisplay\b/i,
-    isFromDevTools: false,
-  });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.scrollbar-width.enabled")) {
-  whitelist.push({
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Unknown property .*\bscrollbar-width\b/i,
     isFromDevTools: false,
   });
 }

@@ -12,7 +12,7 @@
 }
 
 .search-box {
-  -moz-appearance: textfield;
+  appearance: textfield;
   cursor: text;
   margin: 4px;
 }

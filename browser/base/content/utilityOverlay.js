@@ -364,7 +364,7 @@ function openLinkIn(url, where, params) {
   var aPostData = params.postData;
   var aCharset = params.charset;
   var aReferrerInfo = params.referrerInfo
-    ? params.referrerInfo
+    ? E10SUtils.deserializeReferrerInfo(params.referrerInfo)
     : new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, null);
   var aRelatedToCurrent = params.relatedToCurrent;
   var aAllowInheritPrincipal = !!params.allowInheritPrincipal;
@@ -390,8 +390,6 @@ function openLinkIn(url, where, params) {
   }
 
   if (where == "save") {
-    // TODO(1073187): propagate referrerPolicy.
-    // ContentClick.jsm passes isContentWindowPrivate for saveURL instead of passing a CPOW initiatingDoc
     if ("isContentWindowPrivate" in params) {
       saveURL(
         url,
@@ -1064,12 +1062,6 @@ function openTroubleshootingPage() {
 function openFeedbackPage() {
   var url = Services.urlFormatter.formatURLPref("app.feedback.baseURL");
   openTrustedLinkIn(url, "tab");
-}
-
-function openTourPage() {
-  let scope = {};
-  ChromeUtils.import("resource:///modules/UITour.jsm", scope);
-  openTrustedLinkIn(scope.UITour.url, "tab");
 }
 
 function buildHelpMenu() {

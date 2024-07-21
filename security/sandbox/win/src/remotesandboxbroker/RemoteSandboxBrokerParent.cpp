@@ -10,7 +10,7 @@
 namespace mozilla {
 
 RefPtr<GenericPromise> RemoteSandboxBrokerParent::Launch(
-    const nsTArray<uint64_t>& aHandlesToShare) {
+    const nsTArray<uint64_t>& aHandlesToShare, nsISerialEventTarget* aThread) {
   MOZ_ASSERT(!mProcess);
   if (mProcess) {
     // Don't re-init.
@@ -43,8 +43,7 @@ RefPtr<GenericPromise> RemoteSandboxBrokerParent::Launch(
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   };
 
-  return mProcess->AsyncLaunch()->Then(GetCurrentThreadSerialEventTarget(),
-                                       __func__, std::move(resolve),
+  return mProcess->AsyncLaunch()->Then(aThread, __func__, std::move(resolve),
                                        std::move(reject));
 }
 

@@ -12,7 +12,8 @@
 /* :::::::::: menulist :::::::::: */
 
 menulist {
-  -moz-appearance: menulist;
+  appearance: auto;
+  -moz-default-appearance: menulist;
   margin: 2px 4px;
   color: -moz-FieldText;
   text-shadow: none;
@@ -59,7 +60,6 @@ menulist[disabled="true"] {
 
   .menulist-dropmarker {
     margin-top: -2px;
-    margin-inline-start: 3px;
-    margin-inline-end: -3px;
+    margin-inline: 3px -3px;
   }
 }

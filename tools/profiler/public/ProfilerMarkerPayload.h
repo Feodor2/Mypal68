@@ -656,20 +656,31 @@ class JsAllocationMarkerPayload : public ProfilerMarkerPayload {
 class NativeAllocationMarkerPayload : public ProfilerMarkerPayload {
  public:
   NativeAllocationMarkerPayload(const mozilla::TimeStamp& aStartTime,
-                                const int64_t aSize,
-                                UniqueProfilerBacktrace aStack)
+                                int64_t aSize, uintptr_t aMemoryAddress,
+                                int aThreadId, UniqueProfilerBacktrace aStack)
       : ProfilerMarkerPayload(aStartTime, aStartTime, mozilla::Nothing(),
                               mozilla::Nothing(), std::move(aStack)),
-        mSize(aSize) {}
+        mSize(aSize),
+        mMemoryAddress(aMemoryAddress),
+        mThreadId(aThreadId) {}
 
   DECL_STREAM_PAYLOAD
 
  private:
-  NativeAllocationMarkerPayload(CommonProps&& aCommonProps, int64_t aSize)
-      : ProfilerMarkerPayload(std::move(aCommonProps)), mSize(aSize) {}
+  NativeAllocationMarkerPayload(CommonProps&& aCommonProps, int64_t aSize,
+                                uintptr_t aMemoryAddress, int aThreadId)
+      : ProfilerMarkerPayload(std::move(aCommonProps)),
+        mSize(aSize),
+        mMemoryAddress(aMemoryAddress),
+        mThreadId(aThreadId) {}
 
-  // The size in bytes of the allocation or de-allocation.
+  // The size in bytes of the allocation. If the number is negative then it
+  // represents a de-allocation.
   int64_t mSize;
+  // The memory address of the allocation or de-allocation.
+  uintptr_t mMemoryAddress;
+
+  int mThreadId;
 };
 
 namespace mozilla {

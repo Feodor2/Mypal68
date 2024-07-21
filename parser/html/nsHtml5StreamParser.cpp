@@ -341,7 +341,7 @@ nsHtml5StreamParser::SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
     mUnicodeDecoder = mEncoding->NewDecoderWithBOMRemoval();
   }
   if (mSniffingBuffer) {
-    rv = WriteStreamBytes(MakeSpan(mSniffingBuffer.get(), mSniffingLength));
+    rv = WriteStreamBytes(Span(mSniffingBuffer.get(), mSniffingLength));
     NS_ENSURE_SUCCESS(rv, rv);
     mSniffingBuffer = nullptr;
   }
@@ -1422,7 +1422,7 @@ nsresult nsHtml5StreamParser::CopySegmentsToParser(
     uint32_t aToOffset, uint32_t aCount, uint32_t* aWriteCount) {
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
 
-  parser->DoDataAvailable(AsBytes(MakeSpan(aFromSegment, aCount)));
+  parser->DoDataAvailable(AsBytes(Span(aFromSegment, aCount)));
   // Assume DoDataAvailable consumed all available bytes.
   *aWriteCount = aCount;
   return NS_OK;

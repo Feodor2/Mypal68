@@ -52,7 +52,7 @@
 
 /* Text input in storage table */
 #storage-table textbox {
-  -moz-appearance: none;
+  appearance: none;
   /* make sure the outline is not cut off */
   position: relative;
   max-width: calc(100% - 1px);

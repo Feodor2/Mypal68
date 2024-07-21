@@ -35,6 +35,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   LightweightThemeConsumer:
     "resource://gre/modules/LightweightThemeConsumer.jsm",
   Log: "resource://gre/modules/Log.jsm",
+  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   LoginManagerParent: "resource://gre/modules/LoginManagerParent.jsm",
   MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
@@ -68,7 +69,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
   Translation: "resource:///modules/translation/Translation.jsm",
-  UITour: "resource:///modules/UITour.jsm",
   UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
   UrlbarInput: "resource:///modules/UrlbarInput.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
@@ -182,7 +182,7 @@ XPCOMUtils.defineLazyScriptGetter(
 );
 XPCOMUtils.defineLazyScriptGetter(
   this,
-  ["setContextMenuContentData", "openContextMenu", "nsContextMenu"],
+  ["openContextMenu", "nsContextMenu"],
   "chrome://browser/content/nsContextMenu.js"
 );
 XPCOMUtils.defineLazyScriptGetter(
@@ -290,27 +290,19 @@ XPCOMUtils.defineLazyGetter(this, "gURLBar", () => gURLBarHandler.urlbar);
 
 /**
  * Tracks the urlbar object, allowing to reinitiate it when necessary, e.g. on
- * customization or when the quantumbar pref changes.
+ * customization.
  */
 var gURLBarHandler = {
-  toggleQuantumBarAttribute() {
-    this.textbox = document.getElementById("urlbar");
-    this.textbox.setAttribute("quantumbar", this.quantumbar);
-  },
-
   /**
    * The urlbar binding or object.
    */
   get urlbar() {
     if (!this._urlbar) {
-      if (this.quantumbar) {
-        this._urlbar = new UrlbarInput({ textbox: this.textbox });
-        if (this._lastValue) {
-          this._urlbar.value = this._lastValue;
-          delete this._lastValue;
-        }
-      } else {
-        this._urlbar = this.textbox;
+      let textbox = document.getElementById("urlbar");
+      this._urlbar = new UrlbarInput({ textbox });
+      if (this._lastValue) {
+        this._urlbar.value = this._lastValue;
+        delete this._lastValue;
       }
       gBrowser.tabContainer.addEventListener("TabSelect", this._urlbar);
     }
@@ -318,32 +310,10 @@ var gURLBarHandler = {
   },
 
   /**
-   * Forwards to gURLBar.formatValue(), if the binding has been applied already.
-   * This is necessary until the Quantum Bar is not the default and we allow
-   * to dynamically switch between it and the legacy implementation, because the
-   * binding is only applied before the initial xul layout.
-   */
-  formatValue() {
-    if (this.quantumbar) {
-      this.urlbar.formatValue();
-    } else if (typeof this.textbox.formatValue == "function") {
-      this.textbox.formatValue();
-    }
-  },
-
-  /**
-   * Invoked when the quantumbar pref changes.
-   */
-  handlePrefChange() {
-    this._updateBinding();
-    this._reset();
-  },
-
-  /**
    * Invoked by CustomizationHandler when a customization starts.
    */
   customizeStart() {
-    if (this._urlbar && this._urlbar.constructor.name == "UrlbarInput") {
+    if (this._urlbar) {
       this._urlbar.removeCopyCutController();
     }
   },
@@ -356,42 +326,18 @@ var gURLBarHandler = {
   },
 
   /**
-   * Rebuilds the textbox binding by detaching the element when necessary.
-   */
-  _updateBinding() {
-    let quantumbarApplied = this.textbox.getAttribute("quantumbar") == "true";
-    if (quantumbarApplied != this.quantumbar) {
-      let placeholder = document.createXULElement("toolbarpaletteitem");
-      let parent = this.textbox.parentNode;
-      parent.replaceChild(placeholder, this.textbox);
-      this.textbox.setAttribute("quantumbar", this.quantumbar);
-      parent.replaceChild(this.textbox, placeholder);
-    }
-  },
-
-  /**
    *  Used to reset the gURLBar value.
    */
   _reset() {
     if (this._urlbar) {
       gBrowser.tabContainer.removeEventListener("TabSelect", this._urlbar);
-      if (this._urlbar.constructor.name == "UrlbarInput") {
-        this._lastValue = this._urlbar.value;
-        this._urlbar.uninit();
-      }
+      this._lastValue = this._urlbar.value;
+      this._urlbar.uninit();
       delete this._urlbar;
       gURLBar = this.urlbar;
     }
   },
 };
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  gURLBarHandler,
-  "quantumbar",
-  "browser.urlbar.quantumbar",
-  false,
-  gURLBarHandler.handlePrefChange.bind(gURLBarHandler)
-);
 
 XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
   Components.Constructor(
@@ -1666,8 +1612,9 @@ var gBrowserInit = {
   },
 
   onBeforeInitialXULLayout() {
-    // Dynamically switch on-off the Quantum Bar based on prefs.
-    gURLBarHandler.toggleQuantumBarAttribute();
+    // Turn on QuantumBar. This can be removed once the quantumbar attribute is gone.
+    let urlbar = document.getElementById("urlbar");
+    urlbar.setAttribute("quantumbar", true);
 
     // Set a sane starting width/height for all resolutions on new profiles.
     if (Services.prefs.getBoolPref("privacy.resistFingerprinting")) {
@@ -2807,29 +2754,17 @@ function loadOneOrMoreURIs(aURIString, aTriggeringPrincipal, aCsp) {
 
 /**
  * Focuses the location bar input field and selects its contents.
- *
- * @param [optional] userInitiatedFocus
- *        Whether this focus is caused by an user interaction whose intention
- *        was to use the location bar. For example, using a shortcut to go to
- *        the location bar, or a contextual menu to search from it.
- *        The default is false and should be used in all those cases where the
- *        code focuses the location bar but that's not the primary user
- *        intention, like when opening a new tab.
  */
-function focusAndSelectUrlBar(userInitiatedFocus = false) {
+function focusAndSelectUrlBar() {
   // In customize mode, the url bar is disabled. If a new tab is opened or the
   // user switches to a different tab, this function gets called before we've
   // finished leaving customize mode, and the url bar will still be disabled.
   // We can't focus it when it's disabled, so we need to re-run ourselves when
   // we've finished leaving customize mode.
-  if (CustomizationHandler.isExitingCustomizeMode) {
-    gNavToolbox.addEventListener(
-      "aftercustomization",
-      function() {
-        focusAndSelectUrlBar(userInitiatedFocus);
-      },
-      { once: true }
-    );
+  if (CustomizationHandler.isCustomizing()) {
+    gNavToolbox.addEventListener("aftercustomization", focusAndSelectUrlBar, {
+      once: true,
+    });
     return;
   }
 
@@ -2837,14 +2772,15 @@ function focusAndSelectUrlBar(userInitiatedFocus = false) {
     FullScreen.showNavToolbox();
   }
 
-  gURLBar.userInitiatedFocus = userInitiatedFocus;
   gURLBar.select();
-  gURLBar.userInitiatedFocus = false;
 }
 
 function openLocation() {
   if (window.location.href == AppConstants.BROWSER_CHROME_URL) {
-    focusAndSelectUrlBar(true);
+    focusAndSelectUrlBar();
+    if (gURLBar.openViewOnFocus && !gURLBar.view.isOpen) {
+      gURLBar.startQuery();
+    }
     return;
   }
 
@@ -3090,13 +3026,8 @@ function readFromClipboard() {
 /**
  * Open the View Source dialog.
  *
- * @param aArgsOrDocument
- *        Either an object or a Document. Passing a Document is deprecated,
- *        and is not supported with e10s. This function will throw if
- *        aArgsOrDocument is a CPOW.
- *
- *        If aArgsOrDocument is an object, that object can take the
- *        following properties:
+ * @param args
+ *        An object with the following properties:
  *
  *        URL (required):
  *          A string URL for the page we'd like to view the source of.
@@ -3111,27 +3042,7 @@ function readFromClipboard() {
  *        lineNumber (optional):
  *          The line number to focus on once the source is loaded.
  */
-async function BrowserViewSourceOfDocument(aArgsOrDocument) {
-  let args;
-
-  if (aArgsOrDocument instanceof Document) {
-    let doc = aArgsOrDocument;
-    // Deprecated API - callers should pass args object instead.
-    if (Cu.isCrossProcessWrapper(doc)) {
-      throw new Error(
-        "BrowserViewSourceOfDocument cannot accept a CPOW as a document."
-      );
-    }
-
-    let win = doc.defaultView;
-    let browser = win.docShell.chromeEventHandler;
-    let outerWindowID = win.windowUtils.outerWindowID;
-    let URL = browser.currentURI.spec;
-    args = { browser, outerWindowID, URL };
-  } else {
-    args = aArgsOrDocument;
-  }
-
+async function BrowserViewSourceOfDocument(args) {
   // Check if external view source is enabled.  If so, try it.  If it fails,
   // fallback to internal view source.
   if (Services.prefs.getBoolPref("view_source.editor.external")) {
@@ -4089,9 +4000,7 @@ function getDetailedCertErrorInfo(location, securityInfo) {
       hasHPKP,
     ]);
 
-  certErrorDetails +=
-    "\r\n\r\n" +
-    gNavigatorBundle.getString("certErrorDetailsCertChain.label");
+  certErrorDetails;
 
   return certErrorDetails;
 }
@@ -5975,7 +5884,7 @@ var XULBrowserWindow = {
 
     // Make sure the "https" part of the URL is striked out or not,
     // depending on the current mixed active content blocking state.
-    gURLBarHandler.formatValue();
+    gURLBar.formatValue();
 
     try {
       uri = Services.io.createExposableURI(uri);
@@ -8917,58 +8826,39 @@ var gPrivateBrowsingUI = {
     // temporary fix until bug 463607 is fixed
     document.getElementById("Tools:Sanitize").setAttribute("disabled", "true");
 
-    if (window.location.href == AppConstants.BROWSER_CHROME_URL) {
-      // Adjust the window's title
-      let docElement = document.documentElement;
-      if (!PrivateBrowsingUtils.permanentPrivateBrowsing) {
-        docElement.setAttribute(
-          "title",
-          docElement.getAttribute("title_privatebrowsing")
-        );
-        docElement.setAttribute(
-          "titlemodifier",
-          docElement.getAttribute("titlemodifier_privatebrowsing")
-        );
-      }
+    if (window.location.href != AppConstants.BROWSER_CHROME_URL) {
+      return;
+    }
+
+    // Adjust the window's title
+    let docElement = document.documentElement;
+    if (!PrivateBrowsingUtils.permanentPrivateBrowsing) {
       docElement.setAttribute(
-        "privatebrowsingmode",
-        PrivateBrowsingUtils.permanentPrivateBrowsing
-          ? "permanent"
-          : "temporary"
+        "title",
+        docElement.getAttribute("title_privatebrowsing")
       );
-      gBrowser.updateTitlebar();
+      docElement.setAttribute(
+        "titlemodifier",
+        docElement.getAttribute("titlemodifier_privatebrowsing")
+      );
+    }
+    docElement.setAttribute(
+      "privatebrowsingmode",
+      PrivateBrowsingUtils.permanentPrivateBrowsing ? "permanent" : "temporary"
+    );
+    gBrowser.updateTitlebar();
 
-      if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
-        // Adjust the New Window menu entries
-        [
-          { normal: "menu_newNavigator", private: "menu_newPrivateWindow" },
-        ].forEach(function(menu) {
-          let newWindow = document.getElementById(menu.normal);
-          let newPrivateWindow = document.getElementById(menu.private);
-          if (newWindow && newPrivateWindow) {
-            newPrivateWindow.hidden = true;
-            newWindow.label = newPrivateWindow.label;
-            newWindow.accessKey = newPrivateWindow.accessKey;
-            newWindow.command = newPrivateWindow.command;
-          }
-        });
+    if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
+      // Adjust the New Window menu entries
+      let newWindow = document.getElementById("menu_newNavigator");
+      let newPrivateWindow = document.getElementById("menu_newPrivateWindow");
+      if (newWindow && newPrivateWindow) {
+        newPrivateWindow.hidden = true;
+        newWindow.label = newPrivateWindow.label;
+        newWindow.accessKey = newPrivateWindow.accessKey;
+        newWindow.command = newPrivateWindow.command;
       }
     }
-
-    let urlBarSearchParam =
-      gURLBar.getAttribute("autocompletesearchparam") || "";
-    if (
-      !PrivateBrowsingUtils.permanentPrivateBrowsing &&
-      !urlBarSearchParam.includes("disable-private-actions")
-    ) {
-      // Disable switch to tab autocompletion for private windows.
-      // We leave it enabled for permanent private browsing mode though.
-      urlBarSearchParam += " disable-private-actions";
-    }
-    if (!urlBarSearchParam.includes("private-window")) {
-      urlBarSearchParam += " private-window";
-    }
-    gURLBar.setAttribute("autocompletesearchparam", urlBarSearchParam);
   },
 };
 

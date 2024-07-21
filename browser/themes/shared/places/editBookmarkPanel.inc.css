@@ -14,7 +14,7 @@
 
 #editBookmarkPanelInfoButton {
   border-radius: var(--toolbarbutton-border-radius);
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 
 #editBookmarkPanelInfoButton[disabled=true] {
@@ -40,7 +40,7 @@
 #editBookmarkPanelInfoArea {
   overflow: hidden;
   position: relative;
-  margin: 6px 8px 0 8px;
+  margin: 6px 8px 0;
 }
 
 #editBookmarkPanelRecommendation {
@@ -87,7 +87,7 @@
 }
 
 #editBookmarkPanelRecommendationCta {
-  -moz-appearance: none;
+  appearance: none;
   background: transparent;
   border: none;
   color: inherit;

@@ -115,25 +115,25 @@ void CompositorVsyncScheduler::Destroy() {
 void CompositorVsyncScheduler::PostCompositeTask(
     VsyncId aId, TimeStamp aCompositeTimestamp) {
   Monitor2AutoLock lock(mCurrentCompositeTaskMonitor);
-  if (mCurrentCompositeTask == nullptr && CompositorThreadHolder::Loop()) {
+  if (mCurrentCompositeTask == nullptr && CompositorThread()) {
     RefPtr<CancelableRunnable> task =
         NewCancelableRunnableMethod<VsyncId, TimeStamp>(
             "layers::CompositorVsyncScheduler::Composite", this,
             &CompositorVsyncScheduler::Composite, aId, aCompositeTimestamp);
     mCurrentCompositeTask = task;
-    ScheduleTask(task.forget());
+    CompositorThread()->Dispatch(task.forget());
   }
 }
 
 #ifdef MOZ_VR
 void CompositorVsyncScheduler::PostVRTask(TimeStamp aTimestamp) {
   Monitor2AutoLock lockVR(mCurrentVRTaskMonitor);
-  if (mCurrentVRTask == nullptr && CompositorThreadHolder::Loop()) {
+  if (mCurrentVRTask == nullptr && CompositorThread()) {
     RefPtr<CancelableRunnable> task = NewCancelableRunnableMethod<TimeStamp>(
         "layers::CompositorVsyncScheduler::DispatchVREvents", this,
         &CompositorVsyncScheduler::DispatchVREvents, aTimestamp);
     mCurrentVRTask = task;
-    CompositorThreadHolder::Loop()->PostDelayedTask(task.forget(), 0);
+    CompositorThread()->Dispatch(task.forget());
   }
 }
 #endif
@@ -343,12 +343,6 @@ void CompositorVsyncScheduler::DispatchVREvents(TimeStamp aVsyncTimestamp) {
   vm->NotifyVsync(aVsyncTimestamp);
 }
 #endif
-
-void CompositorVsyncScheduler::ScheduleTask(
-    already_AddRefed<CancelableRunnable> aTask) {
-  MOZ_ASSERT(CompositorThreadHolder::Loop());
-  CompositorThreadHolder::Loop()->PostDelayedTask(std::move(aTask), 0);
-}
 
 const TimeStamp& CompositorVsyncScheduler::GetLastComposeTime() const {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());

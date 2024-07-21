@@ -164,7 +164,7 @@ Faulty::Faulty()
       mIsValidProcessType(IsValidProcessType()) {
   if (mIsValidProcessType) {
     FAULTY_LOG("Initializing for new process of type '%s' with pid %u.",
-               XRE_ChildProcessTypeToString(XRE_GetProcessType()), getpid());
+               XRE_GeckoProcessTypeToString(XRE_GetProcessType()), getpid());
 
     /* Setup random seed. */
     const char* userSeed = PR_GetEnv("FAULTY_SEED");
@@ -228,7 +228,7 @@ bool Faulty::IsValidProcessType(void) {
 
   if (!isValidProcessType) {
     FAULTY_LOG("Disabled for this process of type '%s' with pid %d.",
-               XRE_ChildProcessTypeToString(XRE_GetProcessType()), getpid());
+               XRE_GeckoProcessTypeToString(XRE_GetProcessType()), getpid());
   }
 
   return isValidProcessType;
@@ -668,14 +668,15 @@ void Faulty::CopyFDs(IPC::Message* aDstMsg, IPC::Message* aSrcMsg) {
 #endif
 }
 
-IPC::Message* Faulty::MutateIPCMessage(const char* aChannel, IPC::Message* aMsg,
-                                       unsigned int aProbability) {
+UniquePtr<IPC::Message> Faulty::MutateIPCMessage(const char* aChannel,
+                                                 UniquePtr<IPC::Message> aMsg,
+                                                 unsigned int aProbability) {
   if (!mIsValidProcessType || !mFuzzMessages) {
     return aMsg;
   }
 
   sMsgCounter += 1;
-  LogMessage(aChannel, aMsg);
+  LogMessage(aChannel, aMsg.get());
 
   /* Skip immediately if we shall not try to fuzz this message. */
   if (!FuzzingTraits::Sometimes(aProbability)) {
@@ -697,7 +698,7 @@ IPC::Message* Faulty::MutateIPCMessage(const char* aChannel, IPC::Message* aMsg,
   }
 
   /* Retrieve BufferLists as data from original message. */
-  std::vector<uint8_t> data(GetDataFromIPCMessage(aMsg));
+  std::vector<uint8_t> data(GetDataFromIPCMessage(aMsg.get()));
 
   /* Check if there is enough data in the message to fuzz. */
   uint32_t headerSize = aMsg->HeaderSizeFromData(nullptr, nullptr);
@@ -730,17 +731,16 @@ IPC::Message* Faulty::MutateIPCMessage(const char* aChannel, IPC::Message* aMsg,
   }
 
   /* Build new message. */
-  auto* mutatedMsg =
-      new IPC::Message(reinterpret_cast<const char*>(data.data()), data.size());
-  CopyFDs(mutatedMsg, aMsg);
+  auto mutatedMsg = MakeUnique<IPC::Message>(
+      reinterpret_cast<const char*>(data.data()), data.size());
+  CopyFDs(mutatedMsg.get(), aMsg.get());
 
   /* Dump original message for diff purposes. */
-  DumpMessage(aChannel, aMsg, nsPrintfCString(".%zu.o", sMsgCounter).get());
+  DumpMessage(aChannel, aMsg.get(),
+              nsPrintfCString(".%zu.o", sMsgCounter).get());
   /* Dump mutated message for diff purposes. */
-  DumpMessage(aChannel, mutatedMsg,
+  DumpMessage(aChannel, mutatedMsg.get(),
               nsPrintfCString(".%zu.m", sMsgCounter).get());
-
-  delete aMsg;
 
   return mutatedMsg;
 }

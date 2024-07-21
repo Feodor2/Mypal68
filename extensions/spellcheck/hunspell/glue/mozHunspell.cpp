@@ -374,7 +374,7 @@ nsresult mozHunspell::ConvertCharset(const nsAString& aStr, std::string& aDst) {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  auto src = MakeSpan(aStr.BeginReading(), aStr.Length());
+  auto src = Span(aStr.BeginReading(), aStr.Length());
   CheckedInt<size_t> needed =
       mEncoder->MaxBufferLengthFromUTF16WithoutReplacement(src.Length());
   if (!needed.isValid()) {
@@ -384,7 +384,7 @@ nsresult mozHunspell::ConvertCharset(const nsAString& aStr, std::string& aDst) {
   aDst.resize(needed.value());
 
   char* dstPtr = &aDst[0];
-  auto dst = MakeSpan(reinterpret_cast<uint8_t*>(dstPtr), needed.value());
+  auto dst = Span(reinterpret_cast<uint8_t*>(dstPtr), needed.value());
 
   uint32_t result;
   size_t read;
@@ -474,7 +474,7 @@ mozHunspell::Suggest(const nsAString& aWord, char16_t*** aSuggestions,
         break;
       }
       (*aSuggestions)[index] = (char16_t*)moz_xmalloc(needed.value());
-      auto dst = MakeSpan((*aSuggestions)[index], dstLen);
+      auto dst = Span((*aSuggestions)[index], dstLen);
       uint32_t result;
       size_t read;
       size_t written;

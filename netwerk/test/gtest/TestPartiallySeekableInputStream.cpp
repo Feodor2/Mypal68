@@ -7,7 +7,7 @@
 #include "nsStringStream.h"
 #include "mozilla/net/PartiallySeekableInputStream.h"
 
-using mozilla::GetCurrentThreadSerialEventTarget;
+using mozilla::GetCurrentSerialEventTarget;
 using mozilla::SpinEventLoopUntil;
 using mozilla::net::PartiallySeekableInputStream;
 
@@ -305,7 +305,7 @@ TEST(TestPartiallySeekableInputStream, AsyncInputStreamLength)
   RefPtr<testing::LengthCallback> callback = new testing::LengthCallback();
 
   nsresult rv =
-      qi->AsyncLengthWait(callback, GetCurrentThreadSerialEventTarget());
+      qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
@@ -330,7 +330,7 @@ TEST(TestPartiallySeekableInputStream, NegativeAsyncInputStreamLength)
   RefPtr<testing::LengthCallback> callback = new testing::LengthCallback();
 
   nsresult rv =
-      qi->AsyncLengthWait(callback, GetCurrentThreadSerialEventTarget());
+      qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
@@ -354,11 +354,11 @@ TEST(TestPartiallySeekableInputStream, AbortLengthCallback)
 
   RefPtr<testing::LengthCallback> callback1 = new testing::LengthCallback();
   nsresult rv =
-      qi->AsyncLengthWait(callback1, GetCurrentThreadSerialEventTarget());
+      qi->AsyncLengthWait(callback1, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   RefPtr<testing::LengthCallback> callback2 = new testing::LengthCallback();
-  rv = qi->AsyncLengthWait(callback2, GetCurrentThreadSerialEventTarget());
+  rv = qi->AsyncLengthWait(callback2, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
   MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback2->Called(); }));

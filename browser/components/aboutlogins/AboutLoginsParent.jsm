@@ -37,18 +37,9 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
 const ABOUT_LOGINS_ORIGIN = "about:logins";
 const MASTER_PASSWORD_NOTIFICATION_ID = "master-password-login-required";
 
-const PRIVILEGED_PROCESS_PREF =
-  "browser.tabs.remote.separatePrivilegedContentProcess";
-const PRIVILEGED_PROCESS_ENABLED = Services.prefs.getBoolPref(
-  PRIVILEGED_PROCESS_PREF,
-  false
-);
-
-// When the privileged content process is enabled, we expect about:logins
-// to load in it. Otherwise, it's in a normal web content process.
-const EXPECTED_ABOUTLOGINS_REMOTE_TYPE = PRIVILEGED_PROCESS_ENABLED
-  ? E10SUtils.PRIVILEGED_REMOTE_TYPE
-  : E10SUtils.DEFAULT_REMOTE_TYPE;
+// about:logins will always use the privileged content process,
+// even if it is disabled for other consumers such as about:newtab.
+const EXPECTED_ABOUTLOGINS_REMOTE_TYPE = E10SUtils.PRIVILEGED_REMOTE_TYPE;
 
 const isValidLogin = login => {
   return !(login.origin || "").startsWith("chrome://");
@@ -146,6 +137,50 @@ var AboutLoginsParent = {
         message.target.ownerGlobal.openWebLinkIn(logins[0].origin, "tab", {
           relatedToCurrent: true,
         });
+        break;
+      }
+      case "AboutLogins:MasterPasswordRequest": {
+        // This doesn't harm if passwords are not encrypted
+        let tokendb = Cc["@mozilla.org/security/pk11tokendb;1"].createInstance(
+          Ci.nsIPK11TokenDB
+        );
+        let token = tokendb.getInternalKeyToken();
+
+        let messageManager = message.target.messageManager;
+
+        // If there is no master password, return as-if authentication succeeded.
+        if (token.checkPassword("")) {
+          messageManager.sendAsyncMessage(
+            "AboutLogins:MasterPasswordResponse",
+            true
+          );
+          return;
+        }
+
+        // If a master password prompt is already open, just exit early and return false.
+        // The user can re-trigger it after responding to the already open dialog.
+        if (Services.logins.uiBusy) {
+          messageManager.sendAsyncMessage(
+            "AboutLogins:MasterPasswordResponse",
+            false
+          );
+          return;
+        }
+
+        // So there's a master password. But since checkPassword didn't succeed, we're logged out (per nsIPK11Token.idl).
+        try {
+          // Relogin and ask for the master password.
+          token.login(true); // 'true' means always prompt for token password. User will be prompted until
+          // clicking 'Cancel' or entering the correct password.
+        } catch (e) {
+          // An exception will be thrown if the user cancels the login prompt dialog.
+          // User is also logged out of Software Security Device.
+        }
+
+        messageManager.sendAsyncMessage(
+          "AboutLogins:MasterPasswordResponse",
+          token.isLoggedIn()
+        );
         break;
       }
       case "AboutLogins:Subscribe": {

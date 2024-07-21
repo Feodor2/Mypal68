@@ -22,6 +22,7 @@
 #endif
 #include "mozilla/layers/SharedRGBImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsISupportsUtils.h"  // for NS_IF_ADDREF
 #include "YCbCrUtils.h"        // for YCbCr conversions
@@ -231,6 +232,9 @@ RefPtr<PlanarYCbCrImage> ImageContainer::CreatePlanarYCbCrImage() {
   if (mImageClient && mImageClient->AsImageClientSingle()) {
     return new SharedPlanarYCbCrImage(mImageClient);
   }
+  if (mRecycleAllocator) {
+    return new SharedPlanarYCbCrImage(mRecycleAllocator);
+  }
   return mImageFactory->CreatePlanarYCbCrImage(mScaleHint, mRecycleBin);
 }
 
@@ -411,6 +415,37 @@ void ImageContainer::NotifyComposite(
 
 void ImageContainer::NotifyDropped(uint32_t aDropped) {
   mDroppedImageCount += aDropped;
+}
+
+void ImageContainer::EnsureRecycleAllocatorForRDD(
+    KnowsCompositor* aKnowsCompositor) {
+  MOZ_ASSERT(!mIsAsync);
+  MOZ_ASSERT(!mImageClient);
+  MOZ_ASSERT(XRE_IsRDDProcess());
+
+  if (mRecycleAllocator &&
+      aKnowsCompositor == mRecycleAllocator->GetKnowsCompositor()) {
+    return;
+  }
+
+  bool useRecycleAllocator =
+      StaticPrefs::layers_recycle_allocator_rdd_AtStartup();
+#ifdef XP_MACOSX
+  // Disable RecycleAllocator for RDD on MacOS without WebRender.
+  // Recycling caused rendering artifact on a MacOS PC with OpenGL compositor.
+  if (!gfxVars::UseWebRender()) {
+    useRecycleAllocator = false;
+  }
+#endif
+  if (!useRecycleAllocator) {
+    return;
+  }
+
+  static const uint32_t MAX_POOLED_VIDEO_COUNT = 5;
+
+  mRecycleAllocator =
+      new layers::TextureClientRecycleAllocator(aKnowsCompositor);
+  mRecycleAllocator->SetMaxPoolSize(MAX_POOLED_VIDEO_COUNT);
 }
 
 #ifdef XP_WIN

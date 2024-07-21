@@ -444,7 +444,7 @@
 
 .pictureInPictureToggleButton {
   display: flex;
-  -moz-appearance: none;
+  appearance: none;
   position: absolute;
   background-color: var(--pip-toggle-bgcolor);
   color: var(--pip-toggle-text-and-icon-color);

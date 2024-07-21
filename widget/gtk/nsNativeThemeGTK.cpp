@@ -314,7 +314,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       if (aAppearance == StyleAppearance::NumberInput ||
           aAppearance == StyleAppearance::Textfield ||
           aAppearance == StyleAppearance::Textarea ||
-          aAppearance == StyleAppearance::MenulistTextfield ||
           aAppearance == StyleAppearance::SpinnerTextfield ||
           aAppearance == StyleAppearance::RadioContainer ||
           aAppearance == StyleAppearance::RadioLabel) {
@@ -506,9 +505,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
     case StyleAppearance::ScrollbarthumbHorizontal:
       aGtkWidgetType = MOZ_GTK_SCROLLBAR_THUMB_HORIZONTAL;
       break;
-    case StyleAppearance::InnerSpinButton:
-      aGtkWidgetType = MOZ_GTK_INNER_SPIN_BUTTON;
-      break;
     case StyleAppearance::Spinner:
       aGtkWidgetType = MOZ_GTK_SPINBUTTON;
       break;
@@ -541,24 +537,8 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       }
       break;
     }
-    case StyleAppearance::ScaleHorizontal:
-      if (aWidgetFlags) *aWidgetFlags = GTK_ORIENTATION_HORIZONTAL;
-      aGtkWidgetType = MOZ_GTK_SCALE_HORIZONTAL;
-      break;
-    case StyleAppearance::ScalethumbHorizontal:
-      if (aWidgetFlags) *aWidgetFlags = GTK_ORIENTATION_HORIZONTAL;
-      aGtkWidgetType = MOZ_GTK_SCALE_THUMB_HORIZONTAL;
-      break;
-    case StyleAppearance::ScaleVertical:
-      if (aWidgetFlags) *aWidgetFlags = GTK_ORIENTATION_VERTICAL;
-      aGtkWidgetType = MOZ_GTK_SCALE_VERTICAL;
-      break;
     case StyleAppearance::Separator:
       aGtkWidgetType = MOZ_GTK_TOOLBAR_SEPARATOR;
-      break;
-    case StyleAppearance::ScalethumbVertical:
-      if (aWidgetFlags) *aWidgetFlags = GTK_ORIENTATION_VERTICAL;
-      aGtkWidgetType = MOZ_GTK_SCALE_THUMB_VERTICAL;
       break;
     case StyleAppearance::Toolbargripper:
       aGtkWidgetType = MOZ_GTK_GRIPPER;
@@ -629,9 +609,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       break;
     case StyleAppearance::MenulistText:
       return false;  // nothing to do, but prevents the bg from being drawn
-    case StyleAppearance::MenulistTextfield:
-      aGtkWidgetType = MOZ_GTK_DROPDOWN_ENTRY;
-      break;
     case StyleAppearance::MozMenulistArrowButton:
       aGtkWidgetType = MOZ_GTK_DROPDOWN_ARROW;
       break;
@@ -675,7 +652,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       aGtkWidgetType = MOZ_GTK_FRAME;
       break;
     case StyleAppearance::ProgressBar:
-    case StyleAppearance::ProgressbarVertical:
       aGtkWidgetType = MOZ_GTK_PROGRESSBAR;
       break;
     case StyleAppearance::Progresschunk: {
@@ -1537,24 +1513,6 @@ nsNativeThemeGTK::GetMinimumWidgetSize(nsPresContext* aPresContext,
 
       *aIsOverridable = false;
     } break;
-    case StyleAppearance::ScalethumbHorizontal:
-    case StyleAppearance::ScalethumbVertical: {
-      gint thumb_length, thumb_height;
-
-      if (aAppearance == StyleAppearance::ScalethumbVertical) {
-        moz_gtk_get_scalethumb_metrics(GTK_ORIENTATION_VERTICAL, &thumb_length,
-                                       &thumb_height);
-        aResult->width = thumb_height;
-        aResult->height = thumb_length;
-      } else {
-        moz_gtk_get_scalethumb_metrics(GTK_ORIENTATION_HORIZONTAL,
-                                       &thumb_length, &thumb_height);
-        aResult->width = thumb_length;
-        aResult->height = thumb_height;
-      }
-
-      *aIsOverridable = false;
-    } break;
     case StyleAppearance::TabScrollArrowBack:
     case StyleAppearance::TabScrollArrowForward: {
       moz_gtk_get_tab_scroll_arrow_size(&aResult->width, &aResult->height);
@@ -1637,7 +1595,6 @@ nsNativeThemeGTK::GetMinimumWidgetSize(nsPresContext* aPresContext,
       aResult->height += border.top + border.bottom;
     } break;
 #ifdef MOZ_WIDGET_GTK
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield: {
       moz_gtk_get_entry_min_height(&aResult->height);
@@ -1650,7 +1607,6 @@ nsNativeThemeGTK::GetMinimumWidgetSize(nsPresContext* aPresContext,
 
       aResult->width = separator_width;
     } break;
-    case StyleAppearance::InnerSpinButton:
     case StyleAppearance::Spinner:
       // hard code these sizes
       aResult->width = 14;
@@ -1698,7 +1654,6 @@ nsNativeThemeGTK::WidgetStateChanged(nsIFrame* aFrame,
       aAppearance == StyleAppearance::Resizerpanel ||
       aAppearance == StyleAppearance::Progresschunk ||
       aAppearance == StyleAppearance::ProgressBar ||
-      aAppearance == StyleAppearance::ProgressbarVertical ||
       aAppearance == StyleAppearance::Menubar ||
       aAppearance == StyleAppearance::Menupopup ||
       aAppearance == StyleAppearance::Tooltip ||
@@ -1831,7 +1786,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Resizerpanel:
     case StyleAppearance::Resizer:
     case StyleAppearance::Listbox:
-      // case StyleAppearance::Listitem:
     case StyleAppearance::Treeview:
       // case StyleAppearance::Treeitem:
     case StyleAppearance::Treetwisty:
@@ -1842,14 +1796,12 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Treetwistyopen:
     case StyleAppearance::ProgressBar:
     case StyleAppearance::Progresschunk:
-    case StyleAppearance::ProgressbarVertical:
     case StyleAppearance::Tab:
     // case StyleAppearance::Tabpanel:
     case StyleAppearance::Tabpanels:
     case StyleAppearance::TabScrollArrowBack:
     case StyleAppearance::TabScrollArrowForward:
     case StyleAppearance::Tooltip:
-    case StyleAppearance::InnerSpinButton:
     case StyleAppearance::Spinner:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
@@ -1866,19 +1818,11 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::ScrollbartrackVertical:
     case StyleAppearance::ScrollbarthumbHorizontal:
     case StyleAppearance::ScrollbarthumbVertical:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Range:
     case StyleAppearance::RangeThumb:
-    case StyleAppearance::ScaleHorizontal:
-    case StyleAppearance::ScalethumbHorizontal:
-    case StyleAppearance::ScaleVertical:
-    case StyleAppearance::ScalethumbVertical:
-      // case StyleAppearance::Scalethumbstart:
-      // case StyleAppearance::Scalethumbend:
-      // case StyleAppearance::Scalethumbtick:
     case StyleAppearance::CheckboxContainer:
     case StyleAppearance::RadioContainer:
     case StyleAppearance::CheckboxLabel:
@@ -1951,7 +1895,6 @@ bool nsNativeThemeGTK::ThemeDrawsFocusForWidget(StyleAppearance aAppearance) {
     case StyleAppearance::Button:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Textfield:
     case StyleAppearance::Treeheadercell:

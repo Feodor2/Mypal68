@@ -188,8 +188,7 @@ class nsNavHistoryResult final
 
   void OnMobilePrefChanged();
 
-  static void OnMobilePrefChangedCallback(const char* prefName,
-                                          nsNavHistoryResult* self);
+  static void OnMobilePrefChangedCallback(const char* prefName, void* self);
 
  protected:
   virtual ~nsNavHistoryResult();

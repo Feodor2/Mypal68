@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "BaseProfileJSONWriter.h"
+
+#include "mozilla/HashFunctions.h"
+
 #include "BaseProfiler.h"
-
-#ifdef MOZ_BASE_PROFILER
-
-#  include "BaseProfileJSONWriter.h"
-
-#  include "mozilla/HashFunctions.h"
 
 namespace mozilla {
 namespace baseprofiler {
@@ -121,5 +119,3 @@ void SpliceableChunkedJSONWriter::TakeAndSplice(ChunkedJSONWriteFunc* aFunc) {
 
 }  // namespace baseprofiler
 }  // namespace mozilla
-
-#endif  // MOZ_BASE_PROFILER

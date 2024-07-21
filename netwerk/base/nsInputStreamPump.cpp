@@ -339,7 +339,7 @@ nsInputStreamPump::AsyncRead(nsIStreamListener* listener, nsISupports* ctxt) {
   if (NS_IsMainThread() && mLabeledMainThreadTarget) {
     mTargetThread = mLabeledMainThreadTarget;
   } else {
-    mTargetThread = GetCurrentThreadEventTarget();
+    mTargetThread = GetCurrentEventTarget();
   }
   NS_ENSURE_STATE(mTargetThread);
 

@@ -33,9 +33,9 @@ function waitForLoginCountToReach(browser, loginCount) {
   return ContentTask.spawn(browser, loginCount, async expectedLoginCount => {
     let loginList = Cu.waiveXrays(content.document.querySelector("login-list"));
     await ContentTaskUtils.waitForCondition(() => {
-      return loginList._logins.length == expectedLoginCount;
+      return loginList._loginGuidsSortedOrder.length == expectedLoginCount;
     });
-    return loginList._logins.length;
+    return loginList._loginGuidsSortedOrder.length;
   });
 }
 
@@ -93,4 +93,79 @@ add_task(async function test() {
 
   logins = await waitForLoginCountToReach(browser, 1);
   is(logins, 1, "Logins should be displayed when MP is set and authenticated");
+
+  // Show MP dialog when Copy Password button clicked
+  mpDialogShown = waitForMPDialog("cancel");
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let copyButton = loginItem.shadowRoot.querySelector(
+      ".copy-password-button"
+    );
+    copyButton.click();
+  });
+  await mpDialogShown;
+  info("Master Password dialog shown and canceled");
+  mpDialogShown = waitForMPDialog("authenticate");
+  info("Clicking copy password button again");
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let copyButton = loginItem.shadowRoot.querySelector(
+      ".copy-password-button"
+    );
+    copyButton.click();
+  });
+  await mpDialogShown;
+  info("Master Password dialog shown and authenticated");
+  await ContentTask.spawn(browser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let copyButton = loginItem.shadowRoot.querySelector(
+      ".copy-password-button"
+    );
+    await ContentTaskUtils.waitForCondition(() => {
+      return copyButton.disabled;
+    }, "Waiting for copy button to be disabled");
+    info("Password was copied to clipboard");
+  });
+
+  // Show MP dialog when Reveal Password checkbox is checked
+  mpDialogShown = waitForMPDialog("cancel");
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let revealCheckbox = loginItem.shadowRoot.querySelector(
+      ".reveal-password-checkbox"
+    );
+    revealCheckbox.click();
+  });
+  await mpDialogShown;
+  info("Master Password dialog shown and canceled");
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let revealCheckbox = loginItem.shadowRoot.querySelector(
+      ".reveal-password-checkbox"
+    );
+    ok(
+      !revealCheckbox.checked,
+      "reveal checkbox should be unchecked if MP dialog canceled"
+    );
+  });
+  mpDialogShown = waitForMPDialog("authenticate");
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let revealCheckbox = loginItem.shadowRoot.querySelector(
+      ".reveal-password-checkbox"
+    );
+    revealCheckbox.click();
+  });
+  await mpDialogShown;
+  info("Master Password dialog shown and authenticated");
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    let loginItem = content.document.querySelector("login-item");
+    let revealCheckbox = loginItem.shadowRoot.querySelector(
+      ".reveal-password-checkbox"
+    );
+    ok(
+      revealCheckbox.checked,
+      "reveal checkbox should be checked if MP dialog authenticated"
+    );
+  });
 });

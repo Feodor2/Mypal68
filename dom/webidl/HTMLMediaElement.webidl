@@ -145,19 +145,6 @@ partial interface HTMLMediaElement {
   void reportCanPlayTelemetry();
 };
 
-// Encrypted Media Extensions
-partial interface HTMLMediaElement {
-  readonly attribute MediaKeys? mediaKeys;
-
-  // void, not any: https://www.w3.org/Bugs/Public/show_bug.cgi?id=26457
-  [NewObject]
-  Promise<void> setMediaKeys(MediaKeys? mediaKeys);
-
-  attribute EventHandler onencrypted;
-
-  attribute EventHandler onwaitingforkey;
-};
-
 // This is just for testing
 partial interface HTMLMediaElement {
   [Pref="media.useAudioChannelService.testing"]

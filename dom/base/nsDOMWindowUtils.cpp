@@ -4122,7 +4122,7 @@ nsDOMWindowUtils::SetCompositionRecording(bool aValue) {
       RefPtr<nsDOMWindowUtils> self = this;
       cbc->SendBeginRecording(TimeStamp::Now())
           ->Then(
-              GetCurrentThreadSerialEventTarget(), __func__,
+              GetCurrentSerialEventTarget(), __func__,
               [self](const bool& aSuccess) {
                 if (!aSuccess) {
                   self->ReportErrorMessageForWindow(

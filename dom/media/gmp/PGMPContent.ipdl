@@ -4,7 +4,6 @@
 
 include protocol PGMPVideoDecoder;
 include protocol PGMPVideoEncoder;
-include protocol PChromiumCDM;
 
 namespace mozilla {
 namespace gmp {
@@ -13,12 +12,10 @@ intr protocol PGMPContent
 {
   manages PGMPVideoDecoder;
   manages PGMPVideoEncoder;
-  manages PChromiumCDM;
 
 child:
   async PGMPVideoDecoder(uint32_t aDecryptorId);
   async PGMPVideoEncoder();
-  async PChromiumCDM();
 };
 
 } // namespace gmp

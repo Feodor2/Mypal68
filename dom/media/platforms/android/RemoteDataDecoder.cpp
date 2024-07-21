@@ -552,8 +552,7 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
 };
 
 already_AddRefed<MediaDataDecoder> RemoteDataDecoder::CreateAudioDecoder(
-    const CreateDecoderParams& aParams, const nsString& aDrmStubId,
-    CDMProxy* aProxy) {
+    const CreateDecoderParams& aParams, const nsString& aDrmStubId) {
   const AudioInfo& config = aParams.AudioConfig();
   MediaFormat::LocalRef format;
   NS_ENSURE_SUCCESS(
@@ -563,15 +562,11 @@ already_AddRefed<MediaDataDecoder> RemoteDataDecoder::CreateAudioDecoder(
 
   RefPtr<MediaDataDecoder> decoder =
       new RemoteAudioDecoder(config, format, aDrmStubId, aParams.mTaskQueue);
-  if (aProxy) {
-    decoder = new EMEMediaDataDecoderProxy(aParams, decoder.forget(), aProxy);
-  }
   return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder> RemoteDataDecoder::CreateVideoDecoder(
-    const CreateDecoderParams& aParams, const nsString& aDrmStubId,
-    CDMProxy* aProxy) {
+    const CreateDecoderParams& aParams, const nsString& aDrmStubId) {
   const VideoInfo& config = aParams.VideoConfig();
   MediaFormat::LocalRef format;
   NS_ENSURE_SUCCESS(MediaFormat::CreateVideoFormat(
@@ -581,9 +576,6 @@ already_AddRefed<MediaDataDecoder> RemoteDataDecoder::CreateVideoDecoder(
 
   RefPtr<MediaDataDecoder> decoder =
       new RemoteVideoDecoder(config, format, aDrmStubId, aParams.mTaskQueue);
-  if (aProxy) {
-    decoder = new EMEMediaDataDecoderProxy(aParams, decoder.forget(), aProxy);
-  }
   return decoder.forget();
 }
 

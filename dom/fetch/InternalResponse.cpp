@@ -36,7 +36,7 @@ InternalResponse::InternalResponse(uint16_t aStatus,
       mErrorCode(NS_OK),
       mCredentialsMode(aCredentialsMode) {}
 
-InternalResponse::~InternalResponse() {}
+InternalResponse::~InternalResponse() = default;
 
 already_AddRefed<InternalResponse> InternalResponse::Clone(
     CloneType aCloneType) {

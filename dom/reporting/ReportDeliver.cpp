@@ -217,8 +217,7 @@ void SendReport(ReportDeliver::ReportData& aReportData,
     return;
   }
 
-  RefPtr<InternalRequest> internalRequest =
-      new InternalRequest(uriSpec, uriFragment);
+  auto internalRequest = MakeSafeRefPtr<InternalRequest>(uriSpec, uriFragment);
 
   internalRequest->SetMethod(NS_LITERAL_CSTRING("POST"));
   internalRequest->SetBody(streamBody, body.Length());
@@ -228,7 +227,8 @@ void SendReport(ReportDeliver::ReportData& aReportData,
   internalRequest->SetMode(RequestMode::Cors);
   internalRequest->SetCredentialsMode(RequestCredentials::Include);
 
-  RefPtr<Request> request = new Request(globalObject, internalRequest, nullptr);
+  RefPtr<Request> request =
+      new Request(globalObject, std::move(internalRequest), nullptr);
 
   RequestOrUSVString fetchInput;
   fetchInput.SetAsRequest() = request;

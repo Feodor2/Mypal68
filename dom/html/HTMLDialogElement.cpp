@@ -42,9 +42,8 @@ void HTMLDialogElement::Close(
   if (aReturnValue.WasPassed()) {
     SetReturnValue(aReturnValue.Value());
   }
-  ErrorResult ignored;
-  SetOpen(false, ignored);
-  ignored.SuppressException();
+
+  SetOpen(false, IgnoreErrors());
 
   RemoveFromTopLayerIfNeeded();
 
@@ -57,14 +56,23 @@ void HTMLDialogElement::Show() {
   if (Open()) {
     return;
   }
-  ErrorResult ignored;
-  SetOpen(true, ignored);
+  SetOpen(true, IgnoreErrors());
   FocusDialog();
-  ignored.SuppressException();
 }
 
 bool HTMLDialogElement::IsInTopLayer() const {
   return State().HasState(NS_EVENT_STATE_MODAL_DIALOG);
+}
+
+void HTMLDialogElement::AddToTopLayerIfNeeded() {
+  if (IsInTopLayer()) {
+    return;
+  }
+
+  Document* doc = OwnerDoc();
+  doc->TopLayerPush(this);
+  doc->SetBlockedByModalDialog(*this);
+  AddStates(NS_EVENT_STATE_MODAL_DIALOG);
 }
 
 void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
@@ -73,9 +81,11 @@ void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
   }
   auto predictFunc = [&](Element* element) { return element == this; };
 
-  DebugOnly<Element*> removedElement = OwnerDoc()->TopLayerPop(predictFunc);
+  Document* doc = OwnerDoc();
+  DebugOnly<Element*> removedElement = doc->TopLayerPop(predictFunc);
   MOZ_ASSERT(removedElement == this);
   RemoveStates(NS_EVENT_STATE_MODAL_DIALOG);
+  doc->UnsetBlockedByModalDialog(*this);
 }
 
 void HTMLDialogElement::UnbindFromTree(bool aNullParent) {
@@ -84,16 +94,21 @@ void HTMLDialogElement::UnbindFromTree(bool aNullParent) {
 }
 
 void HTMLDialogElement::ShowModal(ErrorResult& aError) {
-  if (!IsInComposedDoc() || Open()) {
-    aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  if (!IsInComposedDoc()) {
+    aError.ThrowInvalidStateError("Dialog element is not connected");
     return;
   }
 
-  if (!IsInTopLayer() && OwnerDoc()->TopLayerPush(this)) {
-    AddStates(NS_EVENT_STATE_MODAL_DIALOG);
+  if (Open()) {
+    aError.ThrowInvalidStateError(
+        "Dialog element already has an 'open' attribute");
+    return;
   }
 
+  AddToTopLayerIfNeeded();
+
   SetOpen(true, aError);
+
   FocusDialog();
 
   aError.SuppressException();

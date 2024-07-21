@@ -4,14 +4,11 @@
 
 #include "GMPParent.h"
 
-#include "CDMStorageIdProvider.h"
-#include "ChromiumCDMAdapter.h"
 #include "GMPContentParent.h"
 #include "GMPLog.h"
 #include "GMPTimerParent.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/AbstractThread.h"
-#include "mozilla/dom/WidevineCDMManifestBinding.h"
 #include "mozilla/ipc/CrashReporterHost.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
@@ -161,18 +158,6 @@ nsresult GMPParent::LoadProcess() {
     }
     GMP_PARENT_LOG_DEBUG("%s: Opened channel to new child process",
                          __FUNCTION__);
-
-    // ComputeStorageId may return empty string, we leave the error handling to
-    // CDM. The CDM will reject the promise once we provide a empty string of
-    // storage id.
-    bool ok =
-        SendProvideStorageId(CDMStorageIdProvider::ComputeStorageId(mNodeId));
-    if (!ok) {
-      GMP_PARENT_LOG_DEBUG("%s: Failed to send storage id to child process",
-                           __FUNCTION__);
-      return NS_ERROR_FAILURE;
-    }
-    GMP_PARENT_LOG_DEBUG("%s: Sent storage id to child process", __FUNCTION__);
 
 #if defined(XP_WIN) || defined(XP_LINUX)
     if (!mLibs.IsEmpty()) {
@@ -559,15 +544,7 @@ RefPtr<GenericPromise> GMPParent::ReadGMPMetaData() {
   if (FileExists(infoFile)) {
     return ReadGMPInfoFile(infoFile);
   }
-
-  // Maybe this is the Widevine adapted plugin?
-  nsCOMPtr<nsIFile> manifestFile;
-  rv = mDirectory->Clone(getter_AddRefs(manifestFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return GenericPromise::CreateAndReject(rv, __func__);
-  }
-  manifestFile->AppendRelativePath(NS_LITERAL_STRING("manifest.json"));
-  return ReadChromiumManifestFile(manifestFile);
+  return GenericPromise::CreateAndReject(rv, __func__);
 }
 
 RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
@@ -629,131 +606,6 @@ RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
   if (mCapabilities.IsEmpty()) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
-
-  return GenericPromise::CreateAndResolve(true, __func__);
-}
-
-RefPtr<GenericPromise> GMPParent::ReadChromiumManifestFile(nsIFile* aFile) {
-  nsAutoCString json;
-  if (!ReadIntoString(aFile, json, 5 * 1024)) {
-    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
-  }
-
-  // DOM JSON parsing needs to run on the main thread.
-  return InvokeAsync(mMainThread, this, __func__,
-                     &GMPParent::ParseChromiumManifest,
-                     NS_ConvertUTF8toUTF16(json));
-}
-
-static bool IsCDMAPISupported(
-    const mozilla::dom::WidevineCDMManifest& aManifest) {
-  nsresult ignored;  // Note: ToInteger returns 0 on failure.
-  int32_t moduleVersion = aManifest.mX_cdm_module_versions.ToInteger(&ignored);
-  int32_t interfaceVersion =
-      aManifest.mX_cdm_interface_versions.ToInteger(&ignored);
-  int32_t hostVersion = aManifest.mX_cdm_host_versions.ToInteger(&ignored);
-  return ChromiumCDMAdapter::Supports(moduleVersion, interfaceVersion,
-                                      hostVersion);
-}
-
-RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
-    const nsAString& aJSON) {
-  GMP_PARENT_LOG_DEBUG("%s: for '%s'", __FUNCTION__,
-                       NS_LossyConvertUTF16toASCII(aJSON).get());
-
-  MOZ_ASSERT(NS_IsMainThread());
-  mozilla::dom::WidevineCDMManifest m;
-  if (!m.Init(aJSON)) {
-    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
-  }
-
-  if (!IsCDMAPISupported(m)) {
-    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
-  }
-
-  mDisplayName = NS_ConvertUTF16toUTF8(m.mName);
-  mDescription = NS_ConvertUTF16toUTF8(m.mDescription);
-  mVersion = NS_ConvertUTF16toUTF8(m.mVersion);
-
-#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
-  if (!mozilla::SandboxInfo::Get().CanSandboxMedia()) {
-    nsPrintfCString msg(
-        "GMPParent::ParseChromiumManifest: Plugin \"%s\" is an EME CDM"
-        " but this system can't sandbox it; not loading.",
-        mDisplayName.get());
-    printf_stderr("%s\n", msg.get());
-    GMP_PARENT_LOG_DEBUG("%s", msg.get());
-    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
-  }
-#endif
-
-  nsCString kEMEKeySystem;
-
-  // We hard code a few of the settings because they can't be stored in the
-  // widevine manifest without making our API different to widevine's.
-  if (mDisplayName.EqualsASCII("clearkey")) {
-    kEMEKeySystem.AssignLiteral(EME_KEY_SYSTEM_CLEARKEY);
-#if XP_WIN
-    mLibs = NS_LITERAL_CSTRING(
-        "dxva2.dll, evr.dll, freebl3.dll, mfh264dec.dll, mfplat.dll, "
-        "msmpeg2vdec.dll, nss3.dll, softokn3.dll");
-#elif XP_LINUX
-    mLibs = NS_LITERAL_CSTRING("libfreeblpriv3.so, libsoftokn3.so");
-#endif
-  } else if (mDisplayName.EqualsASCII("WidevineCdm")) {
-    kEMEKeySystem.AssignLiteral(EME_KEY_SYSTEM_WIDEVINE);
-#if XP_WIN
-    // psapi.dll added for GetMappedFileNameW, which could possibly be avoided
-    // in future versions, see bug 1383611 for details.
-    mLibs = NS_LITERAL_CSTRING("dxva2.dll, psapi.dll");
-#endif
-  } else if (mDisplayName.EqualsASCII("fake")) {
-    kEMEKeySystem.AssignLiteral("fake");
-#if XP_WIN
-    mLibs = NS_LITERAL_CSTRING("dxva2.dll");
-#endif
-  } else {
-    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
-  }
-
-  GMPCapability video;
-
-  nsCString codecsString = NS_ConvertUTF16toUTF8(m.mX_cdm_codecs);
-  nsTArray<nsCString> codecs;
-  SplitAt(",", codecsString, codecs);
-
-  // Parse the codec strings in the manifest and map them to strings used
-  // internally by Gecko for capability recognition.
-  //
-  // Google's code to parse manifests can be used as a reference for strings
-  // the manifest may contain
-  // https://cs.chromium.org/chromium/src/chrome/common/media/cdm_manifest.cc?l=73&rcl=393e60bfc2299449db7ef374c0ef1c324716e562
-  //
-  // Gecko's internal strings can be found at
-  // https://searchfox.org/mozilla-central/rev/ea63a0888d406fae720cf24f4727d87569a8cab5/dom/media/eme/MediaKeySystemAccess.cpp#149-155
-  for (const nsCString& chromiumCodec : codecs) {
-    nsCString codec;
-    if (chromiumCodec.EqualsASCII("vp8")) {
-      codec = NS_LITERAL_CSTRING("vp8");
-    } else if (chromiumCodec.EqualsASCII("vp9.0")) {
-      codec = NS_LITERAL_CSTRING("vp9");
-    } else if (chromiumCodec.EqualsASCII("avc1")) {
-      codec = NS_LITERAL_CSTRING("h264");
-    } else if (chromiumCodec.EqualsASCII("av01")) {
-      codec = NS_LITERAL_CSTRING("av1");
-    } else {
-      return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
-    }
-
-    video.mAPITags.AppendElement(codec);
-  }
-
-  video.mAPITags.AppendElement(kEMEKeySystem);
-
-  video.mAPIName = NS_LITERAL_CSTRING(CHROMIUM_CDM_API);
-  mAdapter = NS_LITERAL_STRING("chromium");
-
-  mCapabilities.AppendElement(std::move(video));
 
   return GenericPromise::CreateAndResolve(true, __func__);
 }

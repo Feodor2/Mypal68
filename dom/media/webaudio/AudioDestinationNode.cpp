@@ -653,8 +653,6 @@ void AudioDestinationNode::NotifyAudibleStateChanged(bool aAudible) {
   if (mDurationBeforeFirstTimeAudible.IsZero()) {
     MOZ_ASSERT(aAudible);
     mDurationBeforeFirstTimeAudible = TimeStamp::Now() - mCreatedTime;
-    Telemetry::Accumulate(Telemetry::WEB_AUDIO_BECOMES_AUDIBLE_TIME,
-                          mDurationBeforeFirstTimeAudible.ToSeconds());
   }
 
   nsresult rv = mAudioChannelAgent->NotifyStartedPlaying(mAudible);

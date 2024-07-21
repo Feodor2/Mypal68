@@ -1057,9 +1057,9 @@ CamerasParent::CamerasParent()
     sThreadMonitor = new Monitor2("CamerasParent::sThreadMonitor");
   }
 
-  mPBackgroundEventTarget = GetCurrentThreadSerialEventTarget();
+  mPBackgroundEventTarget = GetCurrentSerialEventTarget();
   MOZ_ASSERT(mPBackgroundEventTarget != nullptr,
-             "GetCurrentThreadEventTarget failed");
+             "GetCurrentEventTarget failed");
 
   LOG(("Spinning up WebRTC Cameras Thread"));
 

@@ -24,18 +24,16 @@ using namespace mozilla::dom;
 using namespace mozilla::dom::ipc;
 
 bool InProcessBrowserChildMessageManager::DoSendBlockingMessage(
-    JSContext* aCx, const nsAString& aMessage, StructuredCloneData& aData,
-    JS::Handle<JSObject*> aCpows, nsIPrincipal* aPrincipal,
-    nsTArray<StructuredCloneData>* aRetVal, bool aIsSync) {
+    const nsAString& aMessage, StructuredCloneData& aData,
+    nsTArray<StructuredCloneData>* aRetVal) {
   SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
   queue->Flush();
 
   if (mChromeMessageManager) {
-    SameProcessCpowHolder cpows(JS::RootingContext::get(aCx), aCpows);
     RefPtr<nsFrameMessageManager> mm = mChromeMessageManager;
     RefPtr<nsFrameLoader> fl = GetFrameLoader();
-    mm->ReceiveMessage(mOwner, fl, aMessage, true, &aData, &cpows, aPrincipal,
-                       aRetVal, IgnoreErrors());
+    mm->ReceiveMessage(mOwner, fl, aMessage, true, &aData, aRetVal,
+                       IgnoreErrors());
   }
   return true;
 }
@@ -43,11 +41,9 @@ bool InProcessBrowserChildMessageManager::DoSendBlockingMessage(
 class nsAsyncMessageToParent : public nsSameProcessAsyncMessageBase,
                                public SameProcessMessageQueue::Runnable {
  public:
-  nsAsyncMessageToParent(JS::RootingContext* aRootingCx,
-                         JS::Handle<JSObject*> aCpows,
-                         InProcessBrowserChildMessageManager* aBrowserChild)
-      : nsSameProcessAsyncMessageBase(aRootingCx, aCpows),
-        mBrowserChild(aBrowserChild) {}
+  explicit nsAsyncMessageToParent(
+      InProcessBrowserChildMessageManager* aBrowserChild)
+      : nsSameProcessAsyncMessageBase(), mBrowserChild(aBrowserChild) {}
 
   virtual nsresult HandleMessage() override {
     RefPtr<nsFrameLoader> fl = mBrowserChild->GetFrameLoader();
@@ -59,14 +55,11 @@ class nsAsyncMessageToParent : public nsSameProcessAsyncMessageBase,
 };
 
 nsresult InProcessBrowserChildMessageManager::DoSendAsyncMessage(
-    JSContext* aCx, const nsAString& aMessage, StructuredCloneData& aData,
-    JS::Handle<JSObject*> aCpows, nsIPrincipal* aPrincipal) {
+    const nsAString& aMessage, StructuredCloneData& aData) {
   SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
-  JS::RootingContext* rcx = JS::RootingContext::get(aCx);
-  RefPtr<nsAsyncMessageToParent> ev =
-      new nsAsyncMessageToParent(rcx, aCpows, this);
+  RefPtr<nsAsyncMessageToParent> ev = new nsAsyncMessageToParent(this);
 
-  nsresult rv = ev->Init(aMessage, aData, aPrincipal);
+  nsresult rv = ev->Init(aMessage, aData);
   if (NS_FAILED(rv)) {
     return rv;
   }

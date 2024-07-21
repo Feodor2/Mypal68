@@ -30,7 +30,7 @@ class GetOrCreateWorkerManagerRunnable final : public Runnable {
                                    uint64_t aWindowID,
                                    const MessagePortIdentifier& aPortIdentifier)
       : Runnable("GetOrCreateWorkerManagerRunnable"),
-        mBackgroundEventTarget(GetCurrentThreadEventTarget()),
+        mBackgroundEventTarget(GetCurrentEventTarget()),
         mService(aService),
         mActor(aActor),
         mData(aData),

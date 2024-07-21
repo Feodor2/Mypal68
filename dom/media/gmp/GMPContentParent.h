@@ -15,7 +15,6 @@ namespace gmp {
 class GMPParent;
 class GMPVideoDecoderParent;
 class GMPVideoEncoderParent;
-class ChromiumCDMParent;
 
 class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
   friend class PGMPContentParent;
@@ -31,9 +30,6 @@ class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
 
   nsresult GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE);
   void VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder);
-
-  already_AddRefed<ChromiumCDMParent> GetChromiumCDM();
-  void ChromiumCDMDestroyed(ChromiumCDMParent* aCDM);
 
   nsCOMPtr<nsISerialEventTarget> GMPEventTarget();
 
@@ -75,7 +71,6 @@ class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
 
   nsTArray<RefPtr<GMPVideoDecoderParent>> mVideoDecoders;
   nsTArray<RefPtr<GMPVideoEncoderParent>> mVideoEncoders;
-  nsTArray<RefPtr<ChromiumCDMParent>> mChromiumCDMs;
   nsCOMPtr<nsISerialEventTarget> mGMPEventTarget;
   RefPtr<GMPParent> mParent;
   nsCString mDisplayName;

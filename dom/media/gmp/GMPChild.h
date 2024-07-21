@@ -66,8 +66,6 @@ class GMPChild : public PGMPChild {
   GMPErr GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
                 uint32_t aDecryptorId = 0);
 
-  nsTArray<std::pair<nsCString, nsCString>> MakeCDMHostVerificationPaths();
-
   nsTArray<UniquePtr<GMPContentChild>> mGMPContentChildren;
 
   RefPtr<GMPTimerChild> mTimerChild;

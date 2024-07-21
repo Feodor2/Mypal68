@@ -174,17 +174,6 @@ const kEventConstructors = {
                                                          return new KeyboardEvent(aName, aProps);
                                                        },
                                              },
-  MediaEncryptedEvent:                       { create (aName, aProps) {
-                                                         return new MediaEncryptedEvent(aName, aProps);
-                                                       },
-                                             },
-  MediaKeyMessageEvent:                      { create (aName, aProps) {
-                                                         return new MediaKeyMessageEvent(aName, {
-                                                           messageType: "license-request",
-                                                           message: new ArrayBuffer(0)
-                                                         });
-                                                       },
-                                             },
   MediaQueryListEvent:                       { create (aName, aProps) {
                                                          return new MediaQueryListEvent(aName, aProps);
                                                        },

@@ -571,7 +571,7 @@ SpeechRecognition::StopRecording() {
     // MTG, as it holds a reference to us, and we reference the world, which we
     // don't want to leak.
     mSpeechListener->mRemovedPromise->Then(
-        GetCurrentThreadSerialEventTarget(), __func__,
+        GetCurrentSerialEventTarget(), __func__,
         [blocker = std::move(mShutdownBlocker)] {
           RefPtr<nsIAsyncShutdownClient> shutdown = media::GetShutdownBarrier();
           nsresult rv = shutdown->RemoveBlocker(blocker);
@@ -715,7 +715,7 @@ void SpeechRecognition::Start(const Optional<NonNull<DOMMediaStream>>& aStream,
     MediaManager::Get()
         ->GetUserMedia(GetOwner(), constraints, aCallerType)
         ->Then(
-            GetCurrentThreadSerialEventTarget(), __func__,
+            GetCurrentSerialEventTarget(), __func__,
             [this, self](RefPtr<DOMMediaStream>&& aStream) {
               mStream = std::move(aStream);
               mStream->RegisterTrackListener(this);

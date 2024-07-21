@@ -62,6 +62,7 @@ class nsNameSpaceManager final {
   bool mSVGDisabled;
 
  private:
+  static void PrefChanged(const char* aPref, void* aSelf);
   void PrefChanged(const char* aPref);
 
   bool Init();

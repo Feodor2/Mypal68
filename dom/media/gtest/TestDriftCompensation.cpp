@@ -15,7 +15,7 @@ class DriftCompensatorTest : public ::testing::Test {
 
   DriftCompensatorTest()
       : mStart(TimeStamp::Now()),
-        mComp(MakeRefPtr<DriftCompensator>(GetCurrentThreadEventTarget(),
+        mComp(MakeRefPtr<DriftCompensator>(GetCurrentEventTarget(),
                                            mRate)) {
     mComp->NotifyAudioStart(mStart);
     // NotifyAudioStart dispatched a runnable to update the audio mStart time on

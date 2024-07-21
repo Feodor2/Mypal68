@@ -56,6 +56,7 @@ namespace mozilla {
 namespace dom {
 class CustomElementReactionsStack;
 class MessageManagerGlobal;
+class DedicatedWorkerGlobalScope;
 template <typename KeyType, typename ValueType>
 class Record;
 class WindowProxyHolder;
@@ -609,16 +610,12 @@ struct VerifyTraceProtoAndIfaceCacheCalledTracer : public JS::CallbackTracer {
   bool ok;
 
   explicit VerifyTraceProtoAndIfaceCacheCalledTracer(JSContext* cx)
-      : JS::CallbackTracer(cx), ok(false) {}
+      : JS::CallbackTracer(cx, JS::TracerKind::VerifyTraceProtoAndIface),
+        ok(false) {}
 
-  bool onChild(const JS::GCCellPtr&) override {
+  void onChild(const JS::GCCellPtr&) override {
     // We don't do anything here, we only want to verify that
     // TraceProtoAndIfaceCache was called.
-    return true;
-  }
-
-  TracerKind getTracerKind() const override {
-    return TracerKind::VerifyTraceProtoAndIface;
   }
 };
 #endif
@@ -627,9 +624,7 @@ inline void TraceProtoAndIfaceCache(JSTracer* trc, JSObject* obj) {
   MOZ_ASSERT(JS::GetClass(obj)->flags & JSCLASS_DOM_GLOBAL);
 
 #ifdef DEBUG
-  if (trc->isCallbackTracer() &&
-      (trc->asCallbackTracer()->getTracerKind() ==
-       JS::CallbackTracer::TracerKind::VerifyTraceProtoAndIface)) {
+  if (trc->kind() == JS::TracerKind::VerifyTraceProtoAndIface) {
     // We don't do anything here, we only want to verify that
     // TraceProtoAndIfaceCache was called.
     static_cast<VerifyTraceProtoAndIfaceCacheCalledTracer*>(trc)->ok = true;
@@ -2823,7 +2818,8 @@ struct CreateGlobalOptionsWithXPConnect {
 
 template <class T>
 using IsGlobalWithXPConnect =
-    IntegralConstant<bool, std::is_base_of<nsGlobalWindowInner, T>::value ||
+    std::integral_constant<bool,
+                           std::is_base_of<nsGlobalWindowInner, T>::value ||
                                std::is_base_of<MessageManagerGlobal, T>::value>;
 
 template <class T>
@@ -2842,6 +2838,10 @@ struct CreateGlobalOptions<nsGlobalWindowInner>
       ProtoAndIfaceCache::WindowLike;
 };
 
+uint64_t GetWindowID(void* aGlobal);
+uint64_t GetWindowID(nsGlobalWindowInner* aGlobal);
+uint64_t GetWindowID(DedicatedWorkerGlobalScope* aGlobal);
+
 // The return value is true if we created and successfully performed our part of
 // the setup for the global, false otherwise.
 //
@@ -2854,7 +2854,9 @@ bool CreateGlobal(JSContext* aCx, T* aNative, nsWrapperCache* aCache,
                   const JSClass* aClass, JS::RealmOptions& aOptions,
                   JSPrincipals* aPrincipal, bool aInitStandardClasses,
                   JS::MutableHandle<JSObject*> aGlobal) {
-  aOptions.creationOptions().setTrace(CreateGlobalOptions<T>::TraceGlobal);
+  aOptions.creationOptions()
+      .setTrace(CreateGlobalOptions<T>::TraceGlobal)
+      .setProfilerRealmID(GetWindowID(aNative));
   xpc::SetPrefableRealmOptions(aOptions);
 
   aGlobal.set(JS_NewGlobalObject(aCx, aClass, aPrincipal,

@@ -85,7 +85,7 @@ class EncodingCompleteEvent : public CancelableRunnable {
         mEncodeCompleteCallback(aEncodeCompleteCallback),
         mFailed(false) {
     if (!NS_IsMainThread() && IsCurrentThreadRunningWorker()) {
-      mCreationEventTarget = GetCurrentThreadEventTarget();
+      mCreationEventTarget = GetCurrentEventTarget();
     } else {
       mCreationEventTarget = GetMainThreadEventTarget();
     }

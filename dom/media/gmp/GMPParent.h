@@ -148,10 +148,6 @@ class GMPParent final
   bool EnsureProcessLoaded();
   RefPtr<GenericPromise> ReadGMPMetaData();
   RefPtr<GenericPromise> ReadGMPInfoFile(nsIFile* aFile);
-  RefPtr<GenericPromise> ParseChromiumManifest(
-      const nsAString& aJSON);  // Main thread.
-  RefPtr<GenericPromise> ReadChromiumManifestFile(
-      nsIFile* aFile);  // GMP thread.
   void AddCrashAnnotations();
   bool GetCrashID(nsString& aResult);
   void ActorDestroy(ActorDestroyReason aWhy) override;

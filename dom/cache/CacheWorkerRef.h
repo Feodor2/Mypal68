@@ -5,6 +5,7 @@
 #ifndef mozilla_dom_cache_CacheWorkerRef_h
 #define mozilla_dom_cache_CacheWorkerRef_h
 
+#include "mozilla/dom/SafeRefPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 
@@ -19,18 +20,18 @@ namespace cache {
 
 class ActorChild;
 
-class CacheWorkerRef final {
+class CacheWorkerRef final : public SafeRefCounted<CacheWorkerRef> {
  public:
   enum Behavior {
     eStrongWorkerRef,
     eIPCWorkerRef,
   };
 
-  static already_AddRefed<CacheWorkerRef> Create(WorkerPrivate* aWorkerPrivate,
-                                                 Behavior aBehavior);
+  static SafeRefPtr<CacheWorkerRef> Create(WorkerPrivate* aWorkerPrivate,
+                                           Behavior aBehavior);
 
-  static already_AddRefed<CacheWorkerRef> PreferBehavior(
-      CacheWorkerRef* aCurrentRef, Behavior aBehavior);
+  static SafeRefPtr<CacheWorkerRef> PreferBehavior(
+      SafeRefPtr<CacheWorkerRef> aCurrentRef, Behavior aBehavior);
 
   void AddActor(ActorChild* aActor);
   void RemoveActor(ActorChild* aActor);
@@ -38,8 +39,7 @@ class CacheWorkerRef final {
   bool Notified() const;
 
  private:
-  explicit CacheWorkerRef(Behavior aBehavior);
-  ~CacheWorkerRef();
+  struct ConstructorGuard {};
 
   void Notify();
 
@@ -52,7 +52,12 @@ class CacheWorkerRef final {
   RefPtr<IPCWorkerRef> mIPCWorkerRef;
 
  public:
-  NS_INLINE_DECL_REFCOUNTING(mozilla::dom::cache::CacheWorkerRef)
+  CacheWorkerRef(Behavior aBehavior, ConstructorGuard);
+
+  ~CacheWorkerRef();
+
+  NS_DECL_OWNINGTHREAD
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(mozilla::dom::cache::CacheWorkerRef)
 };
 
 }  // namespace cache

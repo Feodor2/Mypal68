@@ -9,7 +9,6 @@
 #include "mozilla/dom/PBrowserChild.h"
 #include "nsIWebNavigation.h"
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsIWebBrowserChrome2.h"
 #include "nsIEmbeddingSiteWindow.h"
 #include "nsIWebBrowserChromeFocus.h"
@@ -225,7 +224,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
     return mBrowserChildMessageManager->WrapObject(aCx, aGivenProto);
   }
 
-  nsIPrincipal* GetPrincipal() { return mPrincipal; }
   // Get the Document for the top-level window in this tab.
   already_AddRefed<Document> GetTopLevelDocument() const;
 
@@ -239,17 +237,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   /**
    * MessageManagerCallback methods that we override.
    */
-  virtual bool DoSendBlockingMessage(JSContext* aCx, const nsAString& aMessage,
-                                     StructuredCloneData& aData,
-                                     JS::Handle<JSObject*> aCpows,
-                                     nsIPrincipal* aPrincipal,
-                                     nsTArray<StructuredCloneData>* aRetVal,
-                                     bool aIsSync) override;
+  virtual bool DoSendBlockingMessage(
+      const nsAString& aMessage, StructuredCloneData& aData,
+      nsTArray<StructuredCloneData>* aRetVal) override;
 
-  virtual nsresult DoSendAsyncMessage(JSContext* aCx, const nsAString& aMessage,
-                                      StructuredCloneData& aData,
-                                      JS::Handle<JSObject*> aCpows,
-                                      nsIPrincipal* aPrincipal) override;
+  virtual nsresult DoSendAsyncMessage(const nsAString& aMessage,
+                                      StructuredCloneData& aData) override;
 
   bool DoUpdateZoomConstraints(
       const uint32_t& aPresShellId, const ViewID& aViewId,
@@ -385,8 +378,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                                const bool& aRunInGlobalScope);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMessage,
-                                           nsTArray<CpowEntry>&& aCpows,
-                                           nsIPrincipal* aPrincipal,
                                            const ClonedMessageData& aData);
   mozilla::ipc::IPCResult RecvSwappedWithOtherRemoteLoader(
       const IPCTabContext& aContext);
@@ -716,9 +707,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   //
   // @param aIsPreallocated  true if this is called for Preallocated Tab.
   void NotifyTabContextUpdated(bool aIsPreallocated);
-
-  // Update the frameType on our docshell.
-  void UpdateFrameType();
 
   void ActorDestroy(ActorDestroyReason why) override;
 

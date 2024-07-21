@@ -203,7 +203,7 @@ nsresult nsWindowRoot::GetControllerForCommand(const char* aCommand,
 
 void nsWindowRoot::GetEnabledDisabledCommandsForControllers(
     nsIControllers* aControllers,
-    nsTHashtable<nsCharPtrHashKey>& aCommandsHandled,
+    nsTHashtable<nsCStringHashKey>& aCommandsHandled,
     nsTArray<nsCString>& aEnabledCommands,
     nsTArray<nsCString>& aDisabledCommands) {
   uint32_t controllerCount;
@@ -215,21 +215,20 @@ void nsWindowRoot::GetEnabledDisabledCommandsForControllers(
     nsCOMPtr<nsICommandController> commandController(
         do_QueryInterface(controller));
     if (commandController) {
-      uint32_t commandsCount;
-      char** commands;
-      if (NS_SUCCEEDED(commandController->GetSupportedCommands(&commandsCount,
-                                                               &commands))) {
-        for (uint32_t e = 0; e < commandsCount; e++) {
+      // All of our default command controllers have 20-60 commands.  Let's just
+      // leave enough space here for all of them so we probably don't need to
+      // heap-allocate.
+      AutoTArray<nsCString, 64> commands;
+      if (NS_SUCCEEDED(commandController->GetSupportedCommands(commands))) {
+        for (auto& commandStr : commands) {
           // Use a hash to determine which commands have already been handled by
           // earlier controllers, as the earlier controller's result should get
           // priority.
-          if (aCommandsHandled.EnsureInserted(commands[e])) {
+          if (aCommandsHandled.EnsureInserted(commandStr)) {
             // We inserted a new entry into aCommandsHandled.
             bool enabled = false;
-            controller->IsCommandEnabled(commands[e], &enabled);
+            controller->IsCommandEnabled(commandStr.get(), &enabled);
 
-            const nsDependentCSubstring commandStr(commands[e],
-                                                   strlen(commands[e]));
             if (enabled) {
               aEnabledCommands.AppendElement(commandStr);
             } else {
@@ -237,8 +236,6 @@ void nsWindowRoot::GetEnabledDisabledCommandsForControllers(
             }
           }
         }
-
-        NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(commandsCount, commands);
       }
     }
   }
@@ -247,7 +244,7 @@ void nsWindowRoot::GetEnabledDisabledCommandsForControllers(
 void nsWindowRoot::GetEnabledDisabledCommands(
     nsTArray<nsCString>& aEnabledCommands,
     nsTArray<nsCString>& aDisabledCommands) {
-  nsTHashtable<nsCharPtrHashKey> commandsHandled;
+  nsTHashtable<nsCStringHashKey> commandsHandled;
 
   nsCOMPtr<nsIControllers> controllers;
   GetControllers(false, getter_AddRefs(controllers));

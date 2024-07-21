@@ -152,7 +152,6 @@ void ChannelMediaDecoder::ResourceCallback::NotifySuspendedStatusChanged(
            "suspended_status_changed", aSuspendedByCache);
   MediaDecoderOwner* owner = GetMediaOwner();
   if (owner) {
-    AbstractThread::AutoEnter context(owner->AbstractMainThread());
     owner->NotifySuspendedByCache(aSuspendedByCache);
   }
 }
@@ -209,7 +208,6 @@ MediaDecoderStateMachine* ChannelMediaDecoder::CreateStateMachine() {
   init.mCrashHelper = GetOwner()->CreateGMPCrashHelper();
   init.mFrameStats = mFrameStats;
   init.mResource = mResource;
-  init.mMediaDecoderOwnerID = mOwner;
   mReader = DecoderTraits::CreateReader(ContainerType(), init);
   return new MediaDecoderStateMachine(this, mReader);
 }
@@ -245,7 +243,6 @@ nsresult ChannelMediaDecoder::Load(nsIChannel* aChannel,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mResource);
   MOZ_ASSERT(aStreamListener);
-  AbstractThread::AutoEnter context(AbstractMainThread());
 
   mResource = BaseMediaResource::Create(mResourceCallback, aChannel,
                                         aIsPrivateBrowsing);
@@ -273,7 +270,6 @@ nsresult ChannelMediaDecoder::Load(nsIChannel* aChannel,
 nsresult ChannelMediaDecoder::Load(BaseMediaResource* aOriginal) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mResource);
-  AbstractThread::AutoEnter context(AbstractMainThread());
 
   mResource = aOriginal->CloneData(mResourceCallback);
   if (!mResource) {
@@ -297,7 +293,6 @@ nsresult ChannelMediaDecoder::Load(BaseMediaResource* aOriginal) {
 void ChannelMediaDecoder::NotifyDownloadEnded(nsresult aStatus) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-  AbstractThread::AutoEnter context(AbstractMainThread());
 
   LOG("NotifyDownloadEnded, status=%" PRIx32, static_cast<uint32_t>(aStatus));
 
@@ -364,7 +359,6 @@ void ChannelMediaDecoder::OnPlaybackEvent(MediaPlaybackEvent&& aEvent) {
 
 void ChannelMediaDecoder::DurationChanged() {
   MOZ_ASSERT(NS_IsMainThread());
-  AbstractThread::AutoEnter context(AbstractMainThread());
   MediaDecoder::DurationChanged();
   // Duration has changed so we should recompute playback rate
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(

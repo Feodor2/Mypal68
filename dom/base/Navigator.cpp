@@ -94,8 +94,6 @@
 #  include "mozilla/Hal.h"
 #endif
 
-#include "mozilla/EMEUtils.h"
-#include "mozilla/DetailedPromise.h"
 #include "mozilla/Unused.h"
 
 #ifdef MOZ_WEBGPU
@@ -147,7 +145,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
 #endif
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPresentation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGamepadServiceTest)
 #ifdef MOZ_VR
@@ -198,11 +195,6 @@ void Navigator::Invalidate() {
   }
 
   mServiceWorkerContainer = nullptr;
-
-  if (mMediaKeySystemAccessManager) {
-    mMediaKeySystemAccessManager->Shutdown();
-    mMediaKeySystemAccessManager = nullptr;
-  }
 
   if (mGamepadServiceTest) {
     mGamepadServiceTest->Shutdown();
@@ -1742,64 +1734,6 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
     CopyASCIItoUTF16(userAgent, aUserAgent);
   }
   return NS_OK;
-}
-
-static nsCString RequestKeySystemAccessLogString(
-    const nsAString& aKeySystem,
-    const Sequence<MediaKeySystemConfiguration>& aConfigs,
-    bool aIsSecureContext) {
-  nsCString str;
-  str.AppendPrintf(
-      "Navigator::RequestMediaKeySystemAccess(keySystem='%s' options=",
-      NS_ConvertUTF16toUTF8(aKeySystem).get());
-  str.Append(MediaKeySystemAccess::ToCString(aConfigs));
-  str.AppendLiteral(") secureContext=");
-  str.AppendInt(aIsSecureContext);
-  return str;
-}
-
-already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
-    const nsAString& aKeySystem,
-    const Sequence<MediaKeySystemConfiguration>& aConfigs, ErrorResult& aRv) {
-  EME_LOG("%s", RequestKeySystemAccessLogString(aKeySystem, aConfigs,
-                                                mWindow->IsSecureContext())
-                    .get());
-
-  if (!mWindow->IsSecureContext()) {
-    Document* doc = mWindow->GetExtantDoc();
-    AutoTArray<nsString, 1> params;
-    nsString* uri = params.AppendElement();
-    if (doc) {
-      Unused << doc->GetDocumentURI(*uri);
-    }
-    nsContentUtils::ReportToConsole(
-        nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Media"), doc,
-        nsContentUtils::eDOM_PROPERTIES,
-        "MediaEMEInsecureContextDeprecatedWarning", params);
-  }
-
-  Document* doc = mWindow->GetExtantDoc();
-  if (doc && !FeaturePolicyUtils::IsFeatureAllowed(
-                 doc, NS_LITERAL_STRING("encrypted-media"))) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return nullptr;
-  }
-
-  RefPtr<DetailedPromise> promise = DetailedPromise::Create(
-      mWindow->AsGlobal(), aRv,
-      NS_LITERAL_CSTRING("navigator.requestMediaKeySystemAccess"),
-      Telemetry::VIDEO_EME_REQUEST_SUCCESS_LATENCY_MS,
-      Telemetry::VIDEO_EME_REQUEST_FAILURE_LATENCY_MS);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-
-  if (!mMediaKeySystemAccessManager) {
-    mMediaKeySystemAccessManager = new MediaKeySystemAccessManager(mWindow);
-  }
-
-  mMediaKeySystemAccessManager->Request(promise, aKeySystem, aConfigs);
-  return promise.forget();
 }
 
 Presentation* Navigator::GetPresentation(ErrorResult& aRv) {

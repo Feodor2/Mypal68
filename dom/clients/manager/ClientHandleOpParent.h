@@ -24,7 +24,7 @@ class ClientHandleOpParent final : public PClientHandleOpParent {
   ClientHandleOpParent() = default;
   ~ClientHandleOpParent() = default;
 
-  void Init(const ClientOpConstructorArgs& aArgs);
+  void Init(ClientOpConstructorArgs&& aArgs);
 };
 
 }  // namespace dom

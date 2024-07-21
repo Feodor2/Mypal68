@@ -335,7 +335,7 @@ class FileHandleOp {
 
  protected:
   FileHandleOp(FileHandle* aFileHandle)
-      : mOwningEventTarget(GetCurrentThreadSerialEventTarget()),
+      : mOwningEventTarget(GetCurrentSerialEventTarget()),
         mFileHandle(aFileHandle)
 #ifdef DEBUG
         ,
@@ -593,7 +593,7 @@ FileHandleThreadPool* GetFileHandleThreadPoolFor(FileHandleStorage aStorage) {
  ******************************************************************************/
 
 FileHandleThreadPool::FileHandleThreadPool()
-    : mOwningEventTarget(GetCurrentThreadSerialEventTarget()),
+    : mOwningEventTarget(GetCurrentSerialEventTarget()),
       mShutdownRequested(false),
       mShutdownComplete(false) {
   AssertIsOnBackgroundThread();

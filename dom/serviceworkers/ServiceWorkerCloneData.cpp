@@ -17,7 +17,7 @@ ServiceWorkerCloneData::~ServiceWorkerCloneData() {
 }
 
 ServiceWorkerCloneData::ServiceWorkerCloneData()
-    : mEventTarget(GetCurrentThreadSerialEventTarget()) {
+    : mEventTarget(GetCurrentSerialEventTarget()) {
   MOZ_DIAGNOSTIC_ASSERT(mEventTarget);
 }
 

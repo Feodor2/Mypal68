@@ -276,15 +276,6 @@ void GeckoMediaPluginServiceChild::UpdateGMPCapabilities(
     GMP_LOG_DEBUG("%s::%s {%s}", __CLASS__, __FUNCTION__,
                   GMPCapabilitiesToString().get());
   }
-
-  // Fire a notification so that any MediaKeySystemAccess
-  // requests waiting on a CDM to download will retry.
-  nsCOMPtr<nsIObserverService> obsService =
-      mozilla::services::GetObserverService();
-  MOZ_ASSERT(obsService);
-  if (obsService) {
-    obsService->NotifyObservers(nullptr, "gmp-changed", nullptr);
-  }
 }
 
 void GeckoMediaPluginServiceChild::BeginShutdown() {

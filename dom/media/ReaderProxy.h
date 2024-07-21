@@ -76,8 +76,6 @@ class ReaderProxy {
     return mReader->CanonicalBuffered();
   }
 
-  void SetCDMProxy(CDMProxy* aProxy) { mReader->SetCDMProxy(aProxy); }
-
   void SetVideoBlankDecode(bool aIsBlankDecode);
 
   void SetCanonicalDuration(

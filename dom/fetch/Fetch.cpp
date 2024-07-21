@@ -298,7 +298,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     MOZ_ASSERT(mPromiseProxy);
   }
 
-  ~WorkerFetchResolver() {}
+  ~WorkerFetchResolver() = default;
 
   virtual void FlushConsoleReport() override;
 };
@@ -352,7 +352,7 @@ class MainThreadFetchRunnable : public Runnable {
   const ClientInfo mClientInfo;
   const Maybe<ServiceWorkerDescriptor> mController;
   nsCOMPtr<nsICSPEventListener> mCSPEventListener;
-  RefPtr<InternalRequest> mRequest;
+  SafeRefPtr<InternalRequest> mRequest;
   UniquePtr<SerializedStackHolder> mOriginStack;
 
  public:
@@ -360,14 +360,14 @@ class MainThreadFetchRunnable : public Runnable {
                           const ClientInfo& aClientInfo,
                           const Maybe<ServiceWorkerDescriptor>& aController,
                           nsICSPEventListener* aCSPEventListener,
-                          InternalRequest* aRequest,
+                          SafeRefPtr<InternalRequest> aRequest,
                           UniquePtr<SerializedStackHolder>&& aOriginStack)
       : Runnable("dom::MainThreadFetchRunnable"),
         mResolver(aResolver),
         mClientInfo(aClientInfo),
         mController(aController),
         mCSPEventListener(aCSPEventListener),
-        mRequest(aRequest),
+        mRequest(std::move(aRequest)),
         mOriginStack(std::move(aOriginStack)) {
     MOZ_ASSERT(mResolver);
   }
@@ -394,7 +394,7 @@ class MainThreadFetchRunnable : public Runnable {
       MOZ_ASSERT(loadGroup);
       // We don't track if a worker is spawned from a tracking script for now,
       // so pass false as the last argument to FetchDriver().
-      fetch = new FetchDriver(mRequest, principal, loadGroup,
+      fetch = new FetchDriver(mRequest.clonePtr(), principal, loadGroup,
                               workerPrivate->MainThreadEventTarget(),
                               workerPrivate->CookieSettings(),
                               workerPrivate->GetPerformanceStorage(), false);
@@ -448,12 +448,13 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   JS::Rooted<JSObject*> jsGlobal(cx, aGlobal->GetGlobalJSObject());
   GlobalObject global(cx, jsGlobal);
 
-  RefPtr<Request> request = Request::Constructor(global, aInput, aInit, aRv);
+  SafeRefPtr<Request> request =
+      Request::Constructor(global, aInput, aInit, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
 
-  RefPtr<InternalRequest> r = request->GetInternalRequest();
+  SafeRefPtr<InternalRequest> r = request->GetInternalRequest();
   RefPtr<AbortSignalImpl> signalImpl = request->GetSignalImpl();
 
   if (signalImpl && signalImpl->Aborted()) {
@@ -506,10 +507,11 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
     RefPtr<MainThreadFetchResolver> resolver = new MainThreadFetchResolver(
         p, observer, signalImpl, request->MozErrors());
-    RefPtr<FetchDriver> fetch = new FetchDriver(
-        r, principal, loadGroup, aGlobal->EventTargetFor(TaskCategory::Other),
-        cookieSettings, nullptr,  // PerformanceStorage
-        isTrackingFetch);
+    RefPtr<FetchDriver> fetch =
+        new FetchDriver(std::move(r), principal, loadGroup,
+                        aGlobal->EventTargetFor(TaskCategory::Other),
+                        cookieSettings, nullptr,  // PerformanceStorage
+                        isTrackingFetch);
     fetch->SetDocument(doc);
     resolver->SetLoadGroup(loadGroup);
     aRv = fetch->Fetch(signalImpl, resolver);
@@ -532,7 +534,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       return nullptr;
     }
 
-    Maybe<ClientInfo> clientInfo(worker->GetClientInfo());
+    Maybe<ClientInfo> clientInfo(worker->GlobalScope()->GetClientInfo());
     if (clientInfo.isNothing()) {
       aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
       return nullptr;
@@ -544,8 +546,8 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     }
 
     RefPtr<MainThreadFetchRunnable> run = new MainThreadFetchRunnable(
-        resolver, clientInfo.ref(), worker->GetController(),
-        worker->CSPEventListener(), r, std::move(stack));
+        resolver, clientInfo.ref(), worker->GlobalScope()->GetController(),
+        worker->CSPEventListener(), std::move(r), std::move(stack));
     worker->DispatchToMainThread(run.forget());
   }
 

@@ -110,7 +110,7 @@ void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
     data = buf.GetAsArrayBuffer().Data();
     length = buf.GetAsArrayBuffer().Length();
   }
-  Decode(MakeSpan(data, length), aOptions.mStream, aOutDecodedString, aRv);
+  Decode(Span(data, length), aOptions.mStream, aOutDecodedString, aRv);
 }
 
 void TextDecoder::GetEncoding(nsAString& aEncoding) {

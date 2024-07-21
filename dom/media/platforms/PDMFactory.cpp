@@ -6,15 +6,14 @@
 #include "AgnosticDecoderModule.h"
 #include "AudioTrimmer.h"
 #include "DecoderDoctorDiagnostics.h"
-#include "EMEDecoderModule.h"
 #include "GMPDecoderModule.h"
 #include "H264.h"
 #include "MP4Decoder.h"
 #include "MediaChangeMonitor.h"
 #include "MediaInfo.h"
 #include "nsIXULRuntime.h" // for BrowserTabsRemoteAutostart
+#include "VideoUtils.h"
 #include "VPXDecoder.h"
-#include "mozilla/CDMProxy.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/GpuDecoderModule.h"
 #include "mozilla/RemoteDecoderModule.h"
@@ -196,34 +195,28 @@ already_AddRefed<MediaDataDecoder> PDMFactory::CreateDecoder(
     MOZ_ASSERT(mNullPDM);
     decoder = CreateDecoderWithPDM(mNullPDM, aParams);
   } else {
-    bool isEncrypted = mEMEPDM && config.mCrypto.IsEncrypted();
-
-    if (isEncrypted) {
-      decoder = CreateDecoderWithPDM(mEMEPDM, aParams);
-    } else {
-      DecoderDoctorDiagnostics* diagnostics = aParams.mDiagnostics;
-      if (diagnostics) {
-        // If libraries failed to load, the following loop over mCurrentPDMs
-        // will not even try to use them. So we record failures now.
-        if (mWMFFailedToLoad) {
-          diagnostics->SetWMFFailedToLoad();
-        }
-        if (mFFmpegFailedToLoad) {
-          diagnostics->SetFFmpegFailedToLoad();
-        }
-        if (mGMPPDMFailedToStartup) {
-          diagnostics->SetGMPPDMFailedToStartup();
-        }
+    DecoderDoctorDiagnostics* diagnostics = aParams.mDiagnostics;
+    if (diagnostics) {
+      // If libraries failed to load, the following loop over mCurrentPDMs
+      // will not even try to use them. So we record failures now.
+      if (mWMFFailedToLoad) {
+        diagnostics->SetWMFFailedToLoad();
       }
+      if (mFFmpegFailedToLoad) {
+        diagnostics->SetFFmpegFailedToLoad();
+      }
+      if (mGMPPDMFailedToStartup) {
+        diagnostics->SetGMPPDMFailedToStartup();
+      }
+    }
 
-      for (auto& current : mCurrentPDMs) {
-        if (!current->Supports(config, diagnostics)) {
-          continue;
-        }
-        decoder = CreateDecoderWithPDM(current, aParams);
-        if (decoder) {
-          break;
-        }
+    for (auto& current : mCurrentPDMs) {
+      if (!current->Supports(config, diagnostics)) {
+        continue;
+      }
+      decoder = CreateDecoderWithPDM(current, aParams);
+      if (decoder) {
+        break;
       }
     }
   }
@@ -314,9 +307,6 @@ bool PDMFactory::SupportsMimeType(
 
 bool PDMFactory::Supports(const TrackInfo& aTrackInfo,
                           DecoderDoctorDiagnostics* aDiagnostics) const {
-  if (mEMEPDM) {
-    return mEMEPDM->Supports(aTrackInfo, aDiagnostics);
-  }
   if (VPXDecoder::IsVPX(aTrackInfo.mMimeType,
                         VPXDecoder::VP8 | VPXDecoder::VP9)) {
     // Work around bug 1521370, where trying to instantiate an external decoder
@@ -451,19 +441,6 @@ already_AddRefed<PlatformDecoderModule> PDMFactory::GetDecoder(
     }
   }
   return pdm.forget();
-}
-
-void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
-  MOZ_ASSERT(aProxy);
-
-#ifdef MOZ_WIDGET_ANDROID
-  if (IsWidevineKeySystem(aProxy->KeySystem())) {
-    mEMEPDM = new AndroidDecoderModule(aProxy);
-    return;
-  }
-#endif
-  RefPtr<PDMFactory> m = new PDMFactory();
-  mEMEPDM = new EMEDecoderModule(aProxy, m);
 }
 
 }  // namespace mozilla

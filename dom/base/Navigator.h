@@ -16,7 +16,6 @@
 #include "nsInterfaceHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/dom/MediaKeySystemAccessManager.h"
 
 class nsPluginArray;
 class nsMimeTypeArray;
@@ -230,13 +229,6 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   // any, else null.
   static already_AddRefed<nsPIDOMWindowInner> GetWindowFromGlobal(
       JSObject* aGlobal);
-
-  already_AddRefed<Promise> RequestMediaKeySystemAccess(
-      const nsAString& aKeySystem,
-      const Sequence<MediaKeySystemConfiguration>& aConfig, ErrorResult& aRv);
-
- private:
-  RefPtr<MediaKeySystemAccessManager> mMediaKeySystemAccessManager;
 
 #ifdef MOZ_VR
  public:

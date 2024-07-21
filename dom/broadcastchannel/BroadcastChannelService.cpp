@@ -22,6 +22,15 @@ namespace {
 
 BroadcastChannelService* sInstance = nullptr;
 
+ClonedMessageData CloneClonedMessageData(const ClonedMessageData& aOther) {
+  auto cloneData = SerializedStructuredCloneBuffer{};
+  cloneData.data.initScope(aOther.data().data.scope());
+  const bool res = cloneData.data.Append(aOther.data().data);
+  MOZ_RELEASE_ASSERT(res, "out of memory");
+  return {std::move(cloneData), aOther.blobs(), aOther.inputStreams(),
+          aOther.identifiers()};
+}
+
 }  // namespace
 
 BroadcastChannelService::BroadcastChannelService() {
@@ -125,7 +134,7 @@ void BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
     }
 
     // We need to have a copy of the data for this parent.
-    MessageData newData(aData);
+    MessageData newData = CloneClonedMessageData(aData);
     MOZ_ASSERT(newData.type() == aData.type());
 
     if (!blobImpls.IsEmpty()) {

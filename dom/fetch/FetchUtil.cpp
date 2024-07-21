@@ -4,12 +4,17 @@
 
 #include "FetchUtil.h"
 
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "nsCRT.h"
 #include "nsError.h"
+#include "nsIAsyncInputStream.h"
+#include "nsStreamUtils.h"
 #include "nsString.h"
 #include "mozilla/dom/Document.h"
 
+#include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/InternalRequest.h"
+#include "mozilla/dom/Response.h"
 #include "mozilla/dom/WorkerRef.h"
 
 namespace mozilla {
@@ -110,14 +115,14 @@ bool FetchUtil::ExtractHeader(nsACString::const_iterator& aStart,
 // static
 nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
                                        nsIHttpChannel* aChannel,
-                                       InternalRequest* aRequest) {
+                                       InternalRequest& aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsresult rv = NS_OK;
   nsAutoString referrer;
-  aRequest->GetReferrer(referrer);
+  aRequest.GetReferrer(referrer);
 
-  ReferrerPolicy policy = aRequest->ReferrerPolicy_();
+  ReferrerPolicy policy = aRequest.ReferrerPolicy_();
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
   if (referrer.IsEmpty()) {
     // This is the case request’s referrer is "no-referrer"
@@ -149,7 +154,7 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
   // Step 8 https://fetch.spec.whatwg.org/#main-fetch
   // If request’s referrer is not "no-referrer", set request’s referrer to
   // the result of invoking determine request’s referrer.
-  aRequest->SetReferrer(computedReferrerSpec);
+  aRequest.SetReferrer(computedReferrerSpec);
 
   return NS_OK;
 }

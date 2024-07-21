@@ -1,5 +1,8 @@
+# Canvas Filter Reftests
+include filters/reftest.list
+
 # WebGL Reftests!
-default-preferences pref(webgl.force-enabled,true) pref(media.useAudioChannelAPI,true)
+defaults pref(webgl.force-enabled,true) pref(media.useAudioChannelAPI,true)
 
 # Check that disabling works:
                           == webgl-disable-test.html?nogl wrapper.html?green.png
@@ -156,15 +159,12 @@ fuzzy-if(skiaContent,0-1,0-150) == clip-multiple-move-2.html clip-multiple-move-
 == stroketext-shadow.html stroketext-shadow-ref.html
 
 # focus rings
-pref(canvas.focusring.enabled,true) skip-if(cocoaWidget) skip-if(winWidget) fuzzy-if(skiaContent&&!cocoaWidget&&!winWidget,0-1,0-2) needs-focus == drawFocusIfNeeded.html drawFocusIfNeeded-ref.html
+pref(canvas.focusring.enabled,true) fuzzy-if(skiaContent,0-1,0-2) skip-if(cocoaWidget||winWidget||gtkWidget) needs-focus == drawFocusIfNeeded.html drawFocusIfNeeded-ref.html
 
 # Check that captureStream() displays in a local video element
 == capturestream.html wrapper.html?green.png
 
 fuzzy-if(azureSkia,0-16,0-2) fuzzy-if(Android,0-3,0-40) fuzzy-if(/^Windows\x20NT\x2010\.0/.test(http.oscpu),0-1,0-1) == 1177726-text-stroke-bounds.html 1177726-text-stroke-bounds-ref.html
-
-# Canvas Filter Reftests
-include filters/reftest.list
 
 # Bug 1305963
 == mozCurrentTransform.html mozCurrentTransform-ref.html

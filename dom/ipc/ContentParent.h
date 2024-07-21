@@ -6,7 +6,6 @@
 #define mozilla_dom_ContentParent_h
 
 #include "mozilla/dom/PContentParent.h"
-#include "mozilla/dom/CPOWManagerGetter.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/gfx/gfxVarReceiver.h"
 #include "mozilla/gfx/GPUProcessListener.h"
@@ -89,11 +88,6 @@ class ProtocolFuzzerHelper;
 #endif
 }  // namespace ipc
 
-namespace jsipc {
-class PJavaScriptParent;
-class CpowEntry;
-}  // namespace jsipc
-
 namespace layers {
 struct TextureFactoryIdentifier;
 }  // namespace layers
@@ -127,7 +121,6 @@ class ContentParent final : public PContentParent,
                             public gfx::GPUProcessListener,
                             public mozilla::MemoryReportingProcess,
                             public mozilla::dom::ipc::MessageManagerCallback,
-                            public CPOWManagerGetter,
                             public mozilla::ipc::IShmemAllocator {
   typedef mozilla::ipc::GeckoChildProcessHost GeckoChildProcessHost;
   typedef mozilla::ipc::PFileDescriptorSetParent PFileDescriptorSetParent;
@@ -330,10 +323,8 @@ class ContentParent final : public PContentParent,
   virtual bool DoLoadMessageManagerScript(const nsAString& aURL,
                                           bool aRunInGlobalScope) override;
 
-  virtual nsresult DoSendAsyncMessage(JSContext* aCx, const nsAString& aMessage,
-                                      StructuredCloneData& aData,
-                                      JS::Handle<JSObject*> aCpows,
-                                      nsIPrincipal* aPrincipal) override;
+  virtual nsresult DoSendAsyncMessage(const nsAString& aMessage,
+                                      StructuredCloneData& aData) override;
 
   /** Notify that a tab is beginning its destruction sequence. */
   void NotifyTabDestroying();
@@ -346,8 +337,6 @@ class ContentParent final : public PContentParent,
   bool DestroyTestShell(TestShellParent* aTestShell);
 
   TestShellParent* GetTestShellSingleton();
-
-  jsipc::CPOWManager* GetCPOWManager() override;
 
   // This method can be called on any thread.
   void RegisterRemoteWorkerActor();
@@ -445,13 +434,6 @@ class ContentParent final : public PContentParent,
   }
 
   PHeapSnapshotTempFileHelperParent* AllocPHeapSnapshotTempFileHelperParent();
-
-  PJavaScriptParent* AllocPJavaScriptParent();
-
-  virtual mozilla::ipc::IPCResult RecvPJavaScriptConstructor(
-      PJavaScriptParent* aActor) override {
-    return PContentParent::RecvPJavaScriptConstructor(aActor);
-  }
 
   PRemoteSpellcheckEngineParent* AllocPRemoteSpellcheckEngineParent();
 
@@ -791,8 +773,6 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvAddPerformanceMetrics(
       const nsID& aID, nsTArray<PerformanceInfo>&& aMetrics);
 
-  bool DeallocPJavaScriptParent(mozilla::jsipc::PJavaScriptParent*);
-
   bool DeallocPRemoteSpellcheckEngineParent(PRemoteSpellcheckEngineParent*);
 
   mozilla::ipc::IPCResult RecvConstructPopupBrowser(
@@ -942,17 +922,9 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsString& aMsg, const ClonedMessageData& aData,
-      nsTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
-      nsTArray<StructuredCloneData>* aRetvals);
-
-  mozilla::ipc::IPCResult RecvRpcMessage(
-      const nsString& aMsg, const ClonedMessageData& aData,
-      nsTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
       nsTArray<StructuredCloneData>* aRetvals);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMsg,
-                                           nsTArray<CpowEntry>&& aCpows,
-                                           const IPC::Principal& aPrincipal,
                                            const ClonedMessageData& aData);
 
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY because we don't have MOZ_CAN_RUN_SCRIPT bits

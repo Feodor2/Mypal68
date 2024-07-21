@@ -156,11 +156,6 @@ bool FramingChecker::CheckOneFrameOptionsPolicy(nsIHttpChannel* aHttpChannel,
   while (NS_SUCCEEDED(curDocShellItem->GetInProcessParent(
              getter_AddRefs(parentDocShellItem))) &&
          parentDocShellItem) {
-    nsCOMPtr<nsIDocShell> curDocShell = do_QueryInterface(curDocShellItem);
-    if (curDocShell && curDocShell->GetIsMozBrowser()) {
-      break;
-    }
-
     topDoc = parentDocShellItem->GetDocument();
     if (topDoc) {
       if (topDoc->NodePrincipal()->IsSystemPrincipal()) {

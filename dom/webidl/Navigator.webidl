@@ -291,13 +291,6 @@ partial interface Navigator {
   readonly attribute LegacyMozTCPSocket mozTCPSocket;
 };
 
-partial interface Navigator {
-  [NewObject]
-  Promise<MediaKeySystemAccess>
-  requestMediaKeySystemAccess(DOMString keySystem,
-                              sequence<MediaKeySystemConfiguration> supportedConfigurations);
-};
-
 interface mixin NavigatorConcurrentHardware {
   readonly attribute unsigned long long hardwareConcurrency;
 };

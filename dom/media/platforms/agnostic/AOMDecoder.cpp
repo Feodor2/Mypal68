@@ -5,6 +5,7 @@
 #include "AOMDecoder.h"
 #include "MediaResult.h"
 #include "TimeUnits.h"
+#include "VideoUtils.h"
 #include "aom/aomdx.h"
 #include "aom/aom_image.h"
 #include "gfx2DGlue.h"

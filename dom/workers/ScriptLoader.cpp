@@ -1855,7 +1855,7 @@ class ChannelGetterRunnable final : public WorkerMainThreadRunnable {
         // ClientInfo should always be present since this should not be called
         // if parent's status is greater than Running.
         ,
-        mClientInfo(aParentWorker->GetClientInfo().ref()),
+        mClientInfo(aParentWorker->GlobalScope()->GetClientInfo().ref()),
         mLoadInfo(aLoadInfo),
         mResult(NS_ERROR_FAILURE) {
     MOZ_ASSERT(aParentWorker);
@@ -1911,7 +1911,7 @@ class ChannelGetterRunnable final : public WorkerMainThreadRunnable {
     mResult = mLoadInfo.SetPrincipalsAndCSPFromChannel(channel);
     NS_ENSURE_SUCCESS(mResult, true);
 
-    mLoadInfo.mChannel = channel.forget();
+    mLoadInfo.mChannel = std::move(channel);
     return true;
   }
 
@@ -1958,23 +1958,6 @@ bool ScriptExecutorRunnable::PreRun(WorkerPrivate* aWorkerPrivate) {
   // Move the CSP from the workerLoadInfo in the corresponding Client
   // where the CSP code expects it!
   aWorkerPrivate->StoreCSPOnClient();
-
-  AutoJSAPI jsapi;
-  jsapi.Init();
-
-  WorkerGlobalScope* globalScope =
-      aWorkerPrivate->GetOrCreateGlobalScope(jsapi.cx());
-  if (NS_WARN_IF(!globalScope)) {
-    NS_WARNING("Failed to make global!");
-    // There's no way to report the exception on jsapi right now, because there
-    // is no way to even enter a compartment on this thread anymore.  Just clear
-    // the exception.  We'll report some sort of error to our caller in
-    // ShutdownScriptLoader, but it will get squelched for the same reason we're
-    // squelching here: all the error reporting machinery relies on being able
-    // to enter a compartment to report the error.
-    jsapi.ClearException();
-    return false;
-  }
 
   return true;
 }
@@ -2047,7 +2030,9 @@ bool ScriptExecutorRunnable::WorkerRun(JSContext* aCx,
     // Client execution ready and possible controlled by a service worker.
     if (mIsWorkerScript) {
       if (mScriptLoader.mController.isSome()) {
-        aWorkerPrivate->Control(mScriptLoader.mController.ref());
+        MOZ_ASSERT(mScriptLoader.mWorkerScriptType == WorkerScript,
+                   "Debugger clients can't be controlled.");
+        aWorkerPrivate->GlobalScope()->Control(mScriptLoader.mController.ref());
       }
       aWorkerPrivate->ExecutionReady();
     }
@@ -2213,8 +2198,13 @@ void LoadAllScripts(WorkerPrivate* aWorkerPrivate,
   Maybe<ClientInfo> clientInfo;
   Maybe<ServiceWorkerDescriptor> controller;
   if (!aIsMainScript) {
-    clientInfo = aWorkerPrivate->GetClientInfo();
-    controller = aWorkerPrivate->GetController();
+    nsIGlobalObject* global =
+        aWorkerScriptType == WorkerScript
+            ? static_cast<nsIGlobalObject*>(aWorkerPrivate->GlobalScope())
+            : aWorkerPrivate->DebuggerGlobalScope();
+
+    clientInfo = global->GetClientInfo();
+    controller = global->GetController();
   }
 
   RefPtr<ScriptLoaderRunnable> loader = new ScriptLoaderRunnable(
@@ -2347,7 +2337,12 @@ void LoadMainScript(WorkerPrivate* aWorkerPrivate,
 
   // We are loading the main script, so the worker's Client must be
   // reserved.
-  info->mReservedClientInfo = aWorkerPrivate->GetClientInfo();
+  if (aWorkerScriptType == WorkerScript) {
+    info->mReservedClientInfo = aWorkerPrivate->GlobalScope()->GetClientInfo();
+  } else {
+    info->mReservedClientInfo =
+        aWorkerPrivate->DebuggerGlobalScope()->GetClientInfo();
+  }
 
   LoadAllScripts(aWorkerPrivate, std::move(aOriginStack), loadInfos, true,
                  aWorkerScriptType, aRv);

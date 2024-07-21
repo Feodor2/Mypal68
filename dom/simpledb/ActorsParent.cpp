@@ -221,7 +221,7 @@ class ConnectionOperationBase : public Runnable,
  protected:
   ConnectionOperationBase(Connection* aConnection)
       : Runnable("dom::ConnectionOperationBase"),
-        mOwningEventTarget(GetCurrentThreadEventTarget()),
+        mOwningEventTarget(GetCurrentEventTarget()),
         mConnection(aConnection),
         mResultCode(NS_OK),
         mOperationMayProceed(true),
@@ -552,7 +552,7 @@ already_AddRefed<mozilla::dom::quota::Client> CreateQuotaClient() {
 
 StreamHelper::StreamHelper(nsIFileStream* aFileStream, nsIRunnable* aCallback)
     : Runnable("dom::StreamHelper"),
-      mOwningEventTarget(GetCurrentThreadEventTarget()),
+      mOwningEventTarget(GetCurrentEventTarget()),
       mFileStream(aFileStream),
       mCallback(aCallback) {
   AssertIsOnBackgroundThread();

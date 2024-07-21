@@ -27,8 +27,6 @@ class MockMediaDecoderOwner : public MediaDecoderOwner {
   void DownloadProgressed() override {}
   void UpdateReadyState() override {}
   void FirstFrameLoaded() override {}
-  void DispatchEncrypted(const nsTArray<uint8_t>& aInitData,
-                         const nsAString& aInitDataType) override {}
   void DownloadSuspended() override {}
   void DownloadResumed(bool aForceNetworkLoading) override {}
   void NotifySuspendedByCache(bool aIsSuspended) override {}

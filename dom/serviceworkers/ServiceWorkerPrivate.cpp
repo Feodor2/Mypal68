@@ -1381,7 +1381,7 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
       result.SuppressException();
       return false;
     }
-    RefPtr<InternalRequest> internalReq = new InternalRequest(
+    auto internalReq = MakeSafeRefPtr<InternalRequest>(
         mSpec, mFragment, mMethod, internalHeaders.forget(), mCacheMode,
         mRequestMode, mRequestRedirect, mRequestCredentials, mReferrer,
         mReferrerPolicy, mContentPolicyType, mIntegrity);
@@ -1408,7 +1408,8 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
 
     // TODO This request object should be created with a AbortSignal object
     // which should be aborted if the loading is aborted. See bug 1394102.
-    RefPtr<Request> request = new Request(global, internalReq, nullptr);
+    RefPtr<Request> request =
+        new Request(global, internalReq.clonePtr(), nullptr);
 
     MOZ_ASSERT_IF(internalReq->IsNavigationRequest(),
                   request->Redirect() == RequestRedirect::Manual);

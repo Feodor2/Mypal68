@@ -72,7 +72,7 @@ void ToHeadersEntryList(nsTArray<HeadersEntry>& aOut,
 
 }  // namespace
 
-already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
+SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(
     JSContext* aCx, const RequestOrUSVString& aIn, BodyAction aBodyAction,
     ErrorResult& aRv) {
   if (aIn.IsRequest()) {
@@ -80,7 +80,7 @@ already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
 
     // Check and set bodyUsed flag immediately because its on Request
     // instead of InternalRequest.
-    CheckAndSetBodyUsed(aCx, &request, aBodyAction, aRv);
+    CheckAndSetBodyUsed(aCx, request, aBodyAction, aRv);
     if (aRv.Failed()) {
       return nullptr;
     }
@@ -91,11 +91,11 @@ already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
   return ToInternalRequest(aIn.GetAsUSVString(), aRv);
 }
 
-already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
+SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(
     JSContext* aCx, const OwningRequestOrUSVString& aIn, BodyAction aBodyAction,
     ErrorResult& aRv) {
   if (aIn.IsRequest()) {
-    RefPtr<Request> request = aIn.GetAsRequest().get();
+    Request& request = aIn.GetAsRequest();
 
     // Check and set bodyUsed flag immediately because its on Request
     // instead of InternalRequest.
@@ -104,19 +104,18 @@ already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
       return nullptr;
     }
 
-    return request->GetInternalRequest();
+    return request.GetInternalRequest();
   }
 
   return ToInternalRequest(aIn.GetAsUSVString(), aRv);
 }
 
 void TypeUtils::ToCacheRequest(
-    CacheRequest& aOut, InternalRequest* aIn, BodyAction aBodyAction,
+    CacheRequest& aOut, const InternalRequest& aIn, BodyAction aBodyAction,
     SchemeAction aSchemeAction,
     nsTArray<UniquePtr<AutoIPCStream>>& aStreamCleanupList, ErrorResult& aRv) {
-  MOZ_DIAGNOSTIC_ASSERT(aIn);
-  aIn->GetMethod(aOut.method());
-  nsCString url(aIn->GetURLWithoutFragment());
+  aIn.GetMethod(aOut.method());
+  nsCString url(aIn.GetURLWithoutFragment());
   bool schemeValid;
   ProcessURL(url, &schemeValid, &aOut.urlWithoutQuery(), &aOut.urlQuery(), aRv);
   if (aRv.Failed()) {
@@ -128,21 +127,21 @@ void TypeUtils::ToCacheRequest(
       return;
     }
   }
-  aOut.urlFragment() = aIn->GetFragment();
+  aOut.urlFragment() = aIn.GetFragment();
 
-  aIn->GetReferrer(aOut.referrer());
-  aOut.referrerPolicy() = aIn->ReferrerPolicy_();
-  RefPtr<InternalHeaders> headers = aIn->Headers();
+  aIn.GetReferrer(aOut.referrer());
+  aOut.referrerPolicy() = aIn.ReferrerPolicy_();
+  RefPtr<InternalHeaders> headers = aIn.Headers();
   MOZ_DIAGNOSTIC_ASSERT(headers);
   ToHeadersEntryList(aOut.headers(), headers);
   aOut.headersGuard() = headers->Guard();
-  aOut.mode() = aIn->Mode();
-  aOut.credentials() = aIn->GetCredentialsMode();
-  aOut.contentPolicyType() = aIn->ContentPolicyType();
-  aOut.requestCache() = aIn->GetCacheMode();
-  aOut.requestRedirect() = aIn->GetRedirectMode();
+  aOut.mode() = aIn.Mode();
+  aOut.credentials() = aIn.GetCredentialsMode();
+  aOut.contentPolicyType() = aIn.ContentPolicyType();
+  aOut.requestCache() = aIn.GetCacheMode();
+  aOut.requestRedirect() = aIn.GetRedirectMode();
 
-  aOut.integrity() = aIn->GetIntegrity();
+  aOut.integrity() = aIn.GetIntegrity();
 
   if (aBodyAction == IgnoreBody) {
     aOut.body() = Nothing();
@@ -152,7 +151,7 @@ void TypeUtils::ToCacheRequest(
   // BodyUsed flag is checked and set previously in ToInternalRequest()
 
   nsCOMPtr<nsIInputStream> stream;
-  aIn->GetBody(getter_AddRefs(stream));
+  aIn.GetBody(getter_AddRefs(stream));
   SerializeCacheStream(stream, &aOut.body(), aStreamCleanupList, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
@@ -302,12 +301,12 @@ already_AddRefed<Response> TypeUtils::ToResponse(const CacheResponse& aIn) {
   RefPtr<Response> ref = new Response(GetGlobalObject(), ir, nullptr);
   return ref.forget();
 }
-already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
+SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(
     const CacheRequest& aIn) {
   nsAutoCString url(aIn.urlWithoutQuery());
   url.Append(aIn.urlQuery());
-  RefPtr<InternalRequest> internalRequest =
-      new InternalRequest(url, aIn.urlFragment());
+  auto internalRequest =
+      MakeSafeRefPtr<InternalRequest>(url, aIn.urlFragment());
   internalRequest->SetMethod(aIn.method());
   internalRequest->SetReferrer(aIn.referrer());
   internalRequest->SetReferrerPolicy(aIn.referrerPolicy());
@@ -334,14 +333,12 @@ already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
 
   internalRequest->SetBody(stream, -1);
 
-  return internalRequest.forget();
+  return internalRequest;
 }
 
-already_AddRefed<Request> TypeUtils::ToRequest(const CacheRequest& aIn) {
-  RefPtr<InternalRequest> internalRequest = ToInternalRequest(aIn);
-  RefPtr<Request> request =
-      new Request(GetGlobalObject(), internalRequest, nullptr);
-  return request.forget();
+SafeRefPtr<Request> TypeUtils::ToRequest(const CacheRequest& aIn) {
+  return MakeSafeRefPtr<Request>(GetGlobalObject(), ToInternalRequest(aIn),
+                                 nullptr);
 }
 
 // static
@@ -418,15 +415,13 @@ void TypeUtils::ProcessURL(nsACString& aUrl, bool* aSchemeValidOut,
   *aUrlQueryOut = Substring(aUrl, queryPos - 1, queryLen + 1);
 }
 
-void TypeUtils::CheckAndSetBodyUsed(JSContext* aCx, Request* aRequest,
+void TypeUtils::CheckAndSetBodyUsed(JSContext* aCx, Request& aRequest,
                                     BodyAction aBodyAction, ErrorResult& aRv) {
-  MOZ_DIAGNOSTIC_ASSERT(aRequest);
-
   if (aBodyAction == IgnoreBody) {
     return;
   }
 
-  bool bodyUsed = aRequest->GetBodyUsed(aRv);
+  bool bodyUsed = aRequest.GetBodyUsed(aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -436,17 +431,17 @@ void TypeUtils::CheckAndSetBodyUsed(JSContext* aCx, Request* aRequest,
   }
 
   nsCOMPtr<nsIInputStream> stream;
-  aRequest->GetBody(getter_AddRefs(stream));
+  aRequest.GetBody(getter_AddRefs(stream));
   if (stream) {
-    aRequest->SetBodyUsed(aCx, aRv);
+    aRequest.SetBodyUsed(aCx, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return;
     }
   }
 }
 
-already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
-    const nsAString& aIn, ErrorResult& aRv) {
+SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(const nsAString& aIn,
+                                                         ErrorResult& aRv) {
   RequestOrUSVString requestOrString;
   requestOrString.SetAsUSVString().ShareOrDependUpon(aIn);
 
@@ -460,7 +455,7 @@ already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
   GlobalObject global(cx, GetGlobalObject()->GetGlobalJSObject());
   MOZ_DIAGNOSTIC_ASSERT(!global.Failed());
 
-  RefPtr<Request> request =
+  SafeRefPtr<Request> request =
       Request::Constructor(global, requestOrString, RequestInit(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;

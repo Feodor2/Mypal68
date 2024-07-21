@@ -116,7 +116,7 @@ class CheckPrincipalWithCallbackRunnable final : public Runnable {
         mContentParent(aParent),
         mPrincipalInfo(aPrincipalInfo),
         mCallback(aCallback),
-        mBackgroundEventTarget(GetCurrentThreadEventTarget()) {
+        mBackgroundEventTarget(GetCurrentEventTarget()) {
     AssertIsInMainProcess();
     AssertIsOnBackgroundThread();
 

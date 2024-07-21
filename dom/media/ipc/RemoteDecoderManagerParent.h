@@ -4,6 +4,7 @@
 #ifndef include_dom_media_ipc_RemoteDecoderManagerParent_h
 #define include_dom_media_ipc_RemoteDecoderManagerParent_h
 #include "mozilla/PRemoteDecoderManagerParent.h"
+#include "mozilla/layers/VideoBridgeChild.h"
 
 namespace mozilla {
 
@@ -17,6 +18,9 @@ class RemoteDecoderManagerParent final : public PRemoteDecoderManagerParent {
 
   static bool CreateForContent(
       Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
+
+  static bool CreateVideoBridgeToOtherProcess(
+      Endpoint<layers::PVideoBridgeChild>&& aEndpoint);
 
   // Can be called from any thread
   SurfaceDescriptorGPUVideo StoreImage(layers::Image* aImage,
@@ -33,8 +37,8 @@ class RemoteDecoderManagerParent final : public PRemoteDecoderManagerParent {
   PRemoteDecoderParent* AllocPRemoteDecoderParent(
       const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
       const CreateDecoderParams::OptionSet& aOptions,
-      const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
-      nsCString* aErrorDescription);
+      const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
+      bool* aSuccess, nsCString* aErrorDescription);
   bool DeallocPRemoteDecoderParent(PRemoteDecoderParent* actor);
 
   mozilla::ipc::IPCResult RecvReadback(const SurfaceDescriptorGPUVideo& aSD,
@@ -43,12 +47,10 @@ class RemoteDecoderManagerParent final : public PRemoteDecoderManagerParent {
       const SurfaceDescriptorGPUVideo& aSD);
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;
-
   void ActorDealloc() override;
 
  private:
-  explicit RemoteDecoderManagerParent(
-      RemoteDecoderManagerThreadHolder* aThreadHolder);
+  explicit RemoteDecoderManagerParent(nsISerialEventTarget* aThread);
   ~RemoteDecoderManagerParent();
 
   void Open(Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
@@ -56,7 +58,7 @@ class RemoteDecoderManagerParent final : public PRemoteDecoderManagerParent {
   std::map<uint64_t, RefPtr<layers::Image>> mImageMap;
   std::map<uint64_t, RefPtr<layers::TextureClient>> mTextureMap;
 
-  RefPtr<RemoteDecoderManagerThreadHolder> mThreadHolder;
+  nsCOMPtr<nsISerialEventTarget> mThread;
 };
 
 }  // namespace mozilla

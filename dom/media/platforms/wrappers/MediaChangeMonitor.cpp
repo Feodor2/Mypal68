@@ -167,7 +167,7 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
       return NS_OK;
     }
 
-    auto dataSpan = MakeSpan<const uint8_t>(aSample->Data(), aSample->Size());
+    auto dataSpan = Span<const uint8_t>(aSample->Data(), aSample->Size());
 
     VPXDecoder::VPXStreamInfo info;
     if (!VPXDecoder::GetStreamInfo(dataSpan, info, mCodec)) {
@@ -228,7 +228,6 @@ MediaChangeMonitor::MediaChangeMonitor(PlatformDecoderModule* aPDM,
       mErrorIfNoInitializationData(aParams.mOptions.contains(
           CreateDecoderParams::Option::ErrorIfNoInitializationData)),
       mType(aParams.mType),
-      mOnWaitingForKeyEvent(aParams.mOnWaitingForKeyEvent),
       mDecoderOptions(aParams.mOptions),
       mRate(aParams.mRate) {
   mInConstructor = true;
@@ -456,7 +455,7 @@ MediaResult MediaChangeMonitor::CreateDecoder(
   MediaResult error = NS_OK;
   mDecoder = mPDM->CreateVideoDecoder(
       {mCurrentConfig, mTaskQueue, aDiagnostics, mImageContainer,
-       mKnowsCompositor, mGMPCrashHelper, mType, mOnWaitingForKeyEvent,
+       mKnowsCompositor, mGMPCrashHelper, mType,
        mDecoderOptions, mRate, &error});
 
   if (!mDecoder) {

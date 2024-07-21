@@ -30,7 +30,6 @@
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/Hal.h"
 #include "mozilla/IMEStateManager.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layout/RenderFrame.h"
@@ -127,7 +126,6 @@ using namespace mozilla::layers;
 using namespace mozilla::layout;
 using namespace mozilla::services;
 using namespace mozilla::widget;
-using namespace mozilla::jsipc;
 using namespace mozilla::gfx;
 
 using mozilla::LazyLogModule;
@@ -690,8 +688,7 @@ void BrowserParent::ActorDestroy(ActorDestroyReason why) {
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (frameLoader) {
     nsCOMPtr<Element> frameElement(mFrameElement);
-    ReceiveMessage(CHILD_PROCESS_SHUTDOWN_MESSAGE, false, nullptr, nullptr,
-                   nullptr);
+    ReceiveMessage(CHILD_PROCESS_SHUTDOWN_MESSAGE, false, nullptr);
 
     if (!mBrowsingContext->GetParent()) {
       // If this is a top-level BrowsingContext, tell the frameloader it's time
@@ -1831,7 +1828,6 @@ bool BrowserParent::SendHandleTap(TapType aType,
 
 mozilla::ipc::IPCResult BrowserParent::RecvSyncMessage(
     const nsString& aMessage, const ClonedMessageData& aData,
-    nsTArray<CpowEntry>&& aCpows, nsIPrincipal* aPrincipal,
     nsTArray<StructuredCloneData>* aRetVal) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("BrowserParent::RecvSyncMessage",
                                              OTHER, aMessage);
@@ -1840,34 +1836,14 @@ mozilla::ipc::IPCResult BrowserParent::RecvSyncMessage(
   StructuredCloneData data;
   ipc::UnpackClonedMessageDataForParent(aData, data);
 
-  CrossProcessCpowHolder cpows(Manager(), aCpows);
-  if (!ReceiveMessage(aMessage, true, &data, &cpows, aPrincipal, aRetVal)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult BrowserParent::RecvRpcMessage(
-    const nsString& aMessage, const ClonedMessageData& aData,
-    nsTArray<CpowEntry>&& aCpows, nsIPrincipal* aPrincipal,
-    nsTArray<StructuredCloneData>* aRetVal) {
-  AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("BrowserParent::RecvRpcMessage",
-                                             OTHER, aMessage);
-  MMPrinter::Print("BrowserParent::RecvRpcMessage", aMessage, aData);
-
-  StructuredCloneData data;
-  ipc::UnpackClonedMessageDataForParent(aData, data);
-
-  CrossProcessCpowHolder cpows(Manager(), aCpows);
-  if (!ReceiveMessage(aMessage, true, &data, &cpows, aPrincipal, aRetVal)) {
+  if (!ReceiveMessage(aMessage, true, &data, aRetVal)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult BrowserParent::RecvAsyncMessage(
-    const nsString& aMessage, nsTArray<CpowEntry>&& aCpows,
-    nsIPrincipal* aPrincipal, const ClonedMessageData& aData) {
+    const nsString& aMessage, const ClonedMessageData& aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("BrowserParent::RecvAsyncMessage",
                                              OTHER, aMessage);
   MMPrinter::Print("BrowserParent::RecvAsyncMessage", aMessage, aData);
@@ -1875,8 +1851,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvAsyncMessage(
   StructuredCloneData data;
   ipc::UnpackClonedMessageDataForParent(aData, data);
 
-  CrossProcessCpowHolder cpows(Manager(), aCpows);
-  if (!ReceiveMessage(aMessage, false, &data, &cpows, aPrincipal, nullptr)) {
+  if (!ReceiveMessage(aMessage, false, &data, nullptr)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
@@ -2966,7 +2941,6 @@ mozilla::ipc::IPCResult BrowserParent::RecvDispatchFocusToTopLevelWindow() {
 
 bool BrowserParent::ReceiveMessage(const nsString& aMessage, bool aSync,
                                    StructuredCloneData* aData,
-                                   CpowHolder* aCpows, nsIPrincipal* aPrincipal,
                                    nsTArray<StructuredCloneData>* aRetVal) {
   // If we're for an oop iframe, don't deliver messages to the wrong place.
   if (mBrowserBridgeParent) {
@@ -2979,7 +2953,7 @@ bool BrowserParent::ReceiveMessage(const nsString& aMessage, bool aSync,
         frameLoader->GetFrameMessageManager();
 
     manager->ReceiveMessage(mFrameElement, frameLoader, aMessage, aSync, aData,
-                            aCpows, aPrincipal, aRetVal, IgnoreErrors());
+                            aRetVal, IgnoreErrors());
   }
   return true;
 }

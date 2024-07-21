@@ -18,8 +18,7 @@ namespace mozilla {
 // that instances are destroyed on the main thread.
 class GMPCrashHelper {
  public:
-  NS_METHOD_(MozExternalRefCountType) AddRef(void);
-  NS_METHOD_(MozExternalRefCountType) Release(void);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DESTROY(GMPCrashHelper, Destroy());
 
   // Called on the main thread.
   virtual already_AddRefed<nsPIDOMWindowInner>
@@ -28,8 +27,6 @@ class GMPCrashHelper {
  protected:
   virtual ~GMPCrashHelper() { MOZ_ASSERT(NS_IsMainThread()); }
   void Destroy();
-  mozilla::ThreadSafeAutoRefCnt mRefCnt;
-  NS_DECL_OWNINGTHREAD
 };
 
 }  // namespace mozilla

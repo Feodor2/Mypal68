@@ -20,12 +20,10 @@ class RemoteDataDecoder : public MediaDataDecoder,
                           public DecoderDoctorLifeLogger<RemoteDataDecoder> {
  public:
   static already_AddRefed<MediaDataDecoder> CreateAudioDecoder(
-      const CreateDecoderParams& aParams, const nsString& aDrmStubId,
-      CDMProxy* aProxy);
+      const CreateDecoderParams& aParams, const nsString& aDrmStubId);
 
   static already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
-      const CreateDecoderParams& aParams, const nsString& aDrmStubId,
-      CDMProxy* aProxy);
+      const CreateDecoderParams& aParams, const nsString& aDrmStubId);
 
   RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
   RefPtr<DecodePromise> Drain() override;

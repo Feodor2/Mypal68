@@ -120,7 +120,6 @@ MediaDecoderStateMachine* HLSDecoder::CreateStateMachine() {
   init.mKnowsCompositor = GetCompositor();
   init.mCrashHelper = GetOwner()->CreateGMPCrashHelper();
   init.mFrameStats = mFrameStats;
-  init.mMediaDecoderOwnerID = mOwner;
   mReader = new MediaFormatReader(
       init, new HLSDemuxer(mHLSResourceWrapper->GetPlayerId()));
 
@@ -137,7 +136,6 @@ bool HLSDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
 
 nsresult HLSDecoder::Load(nsIChannel* aChannel) {
   MOZ_ASSERT(NS_IsMainThread());
-  AbstractThread::AutoEnter context(AbstractMainThread());
 
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(mURI));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -231,7 +229,6 @@ void HLSDecoder::Shutdown() {
 void HLSDecoder::NotifyDataArrived() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-  AbstractThread::AutoEnter context(AbstractMainThread());
   NotifyReaderDataArrived();
   GetOwner()->DownloadProgressed();
 }

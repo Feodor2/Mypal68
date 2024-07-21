@@ -55,6 +55,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "BindingUtils.h"
 
 // Used to provide information on the OS

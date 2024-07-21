@@ -94,7 +94,7 @@ void SharedMessageBody::FromSharedToMessageChild(
     ClonedMessageData clonedData;
     aData->mCloneData->BuildClonedMessageDataForBackgroundChild(aManager,
                                                                 clonedData);
-    aMessage = clonedData;
+    aMessage = std::move(clonedData);
     return;
   }
 
@@ -194,7 +194,7 @@ bool SharedMessageBody::FromSharedToMessagesParent(
       ClonedMessageData clonedData;
       data->mCloneData->BuildClonedMessageDataForBackgroundParent(aManager,
                                                                   clonedData);
-      *message = clonedData;
+      *message = std::move(clonedData);
       continue;
     }
 

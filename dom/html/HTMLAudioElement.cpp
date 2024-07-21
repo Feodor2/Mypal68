@@ -17,6 +17,7 @@
 #include "nsIHttpChannel.h"
 #include "mozilla/dom/TimeRanges.h"
 #include "AudioStream.h"
+#include "DecoderDoctorLogger.h"
 
 nsGenericHTMLElement* NS_NewHTMLAudioElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,

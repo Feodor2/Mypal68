@@ -131,12 +131,6 @@ class MediaDecoderOwner {
   // reference to the decoder to prevent further calls into the decoder.
   virtual void NotifyXPCOMShutdown() = 0;
 
-  // Dispatches a "encrypted" event to the HTMLMediaElement, with the
-  // provided init data. Actual dispatch may be delayed until HAVE_METADATA.
-  // Main thread only.
-  virtual void DispatchEncrypted(const nsTArray<uint8_t>& aInitData,
-                                 const nsAString& aInitDataType) = 0;
-
   // Notified by the decoder that a decryption key is required before emitting
   // further output.
   virtual void NotifyWaitingForKey() {}

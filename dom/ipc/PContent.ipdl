@@ -32,7 +32,6 @@ include protocol POfflineCacheUpdate;
 include protocol PSpeechSynthesis;
 #endif
 include protocol PTestShell;
-include protocol PJavaScript;
 include protocol PRemoteSpellcheckEngine;
 include protocol PWebBrowserPersistDocument;
 include protocol PWebrtcGlobal;
@@ -47,7 +46,6 @@ include protocol PProfiler;
 include protocol PScriptCache;
 include protocol PSessionStorageObserver;
 include DOMTypes;
-include JavaScriptTypes;
 include IPCBlob;
 include PTabContext;
 include URIParams;
@@ -348,7 +346,6 @@ nested(upto inside_cpow) sync protocol PContent
     manages PSpeechSynthesis;
 #endif
     manages PTestShell;
-    manages PJavaScript;
     manages PRemoteSpellcheckEngine;
     manages PWebBrowserPersistDocument;
     manages PWebrtcGlobal;
@@ -845,8 +842,6 @@ parent:
     sync LaunchRDDProcess()
         returns (nsresult rv, Endpoint<PRemoteDecoderManagerChild> aEndpoint);
 
-    async PJavaScript();
-
     async PRemoteSpellcheckEngine();
 
     async InitCrashReporter(Shmem shmem, NativeThreadId tid);
@@ -900,12 +895,7 @@ parent:
 
     sync ReadFontList() returns (FontListEntry[] retValue);
 
-    sync SyncMessage(nsString aMessage, ClonedMessageData aData,
-                     CpowEntry[] aCpows, Principal aPrincipal)
-      returns (StructuredCloneData[] retval);
-
-    nested(inside_sync) sync RpcMessage(nsString aMessage, ClonedMessageData aData,
-                                        CpowEntry[] aCpows, Principal aPrincipal)
+    sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
 
     async ShowAlert(nsIAlertNotification alert);
@@ -1394,8 +1384,7 @@ both:
                                            BrowsingContextTransaction aTransaction,
                                            BrowsingContextFieldEpochs aEpochs);
 
-    async AsyncMessage(nsString aMessage, CpowEntry[] aCpows,
-                       Principal aPrincipal, ClonedMessageData aData);
+    async AsyncMessage(nsString aMessage, ClonedMessageData aData);
 
     /**
      * Notify `push-subscription-modified` observers in the parent and child.

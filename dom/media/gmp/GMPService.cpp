@@ -202,57 +202,6 @@ nsresult GeckoMediaPluginService::Init() {
   return GetThread(getter_AddRefs(thread));
 }
 
-RefPtr<GetCDMParentPromise> GeckoMediaPluginService::GetCDM(
-    const NodeId& aNodeId, nsTArray<nsCString> aTags, GMPCrashHelper* aHelper) {
-  MOZ_ASSERT(mGMPThread->EventTarget()->IsOnCurrentThread());
-
-  if (mShuttingDownOnGMPThread || aTags.IsEmpty()) {
-    nsPrintfCString reason(
-        "%s::%s failed, aTags.IsEmpty() = %d, mShuttingDownOnGMPThread = %d.",
-        __CLASS__, __FUNCTION__, aTags.IsEmpty(), mShuttingDownOnGMPThread);
-    return GetCDMParentPromise::CreateAndReject(
-        MediaResult(NS_ERROR_FAILURE, reason.get()), __func__);
-  }
-
-  typedef MozPromiseHolder<GetCDMParentPromise> PromiseHolder;
-  PromiseHolder* rawHolder(new PromiseHolder());
-  RefPtr<GetCDMParentPromise> promise = rawHolder->Ensure(__func__);
-  RefPtr<AbstractThread> thread(GetAbstractGMPThread());
-  RefPtr<GMPCrashHelper> helper(aHelper);
-  GetContentParent(aHelper, aNodeId, NS_LITERAL_CSTRING(CHROMIUM_CDM_API),
-                   aTags)
-      ->Then(
-          thread, __func__,
-          [rawHolder, helper](RefPtr<GMPContentParent::CloseBlocker> wrapper) {
-            RefPtr<GMPContentParent> parent = wrapper->mParent;
-            UniquePtr<PromiseHolder> holder(rawHolder);
-            RefPtr<ChromiumCDMParent> cdm = parent->GetChromiumCDM();
-            if (!parent) {
-              nsPrintfCString reason(
-                  "%s::%s failed since GetChromiumCDM returns nullptr.",
-                  __CLASS__, __FUNCTION__);
-              holder->Reject(MediaResult(NS_ERROR_FAILURE, reason.get()),
-                             __func__);
-              return;
-            }
-            if (helper) {
-              cdm->SetCrashHelper(helper);
-            }
-            holder->Resolve(cdm, __func__);
-          },
-          [rawHolder](MediaResult result) {
-            nsPrintfCString reason(
-                "%s::%s failed since GetContentParent rejects the promise with "
-                "reason %s.",
-                __CLASS__, __FUNCTION__, result.Description().get());
-            UniquePtr<PromiseHolder> holder(rawHolder);
-            holder->Reject(MediaResult(NS_ERROR_FAILURE, reason.get()),
-                           __func__);
-          });
-
-  return promise;
-}
-
 void GeckoMediaPluginService::ShutdownGMPThread() {
   GMP_LOG_DEBUG("%s::%s", __CLASS__, __FUNCTION__);
   nsCOMPtr<nsIThread> gmpThread;

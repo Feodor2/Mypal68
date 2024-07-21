@@ -103,11 +103,6 @@ nsresult GeckoMediaPluginServiceParent::Init() {
   MOZ_ALWAYS_SUCCEEDS(
       obsService->AddObserver(this, "browser:purge-session-history", false));
 
-#ifdef DEBUG
-  MOZ_ALWAYS_SUCCEEDS(
-      obsService->AddObserver(this, "mediakeys-request", false));
-#endif
-
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
   if (prefs) {
     prefs->AddObserver("media.gmp.plugin.crash", this, false);
@@ -584,15 +579,6 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities() {
   }
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
     Unused << cp->SendGMPsChanged(caps);
-  }
-
-  // For non-e10s, we must fire a notification so that any MediaKeySystemAccess
-  // requests waiting on a CDM to download will retry.
-  nsCOMPtr<nsIObserverService> obsService =
-      mozilla::services::GetObserverService();
-  MOZ_ASSERT(obsService);
-  if (obsService) {
-    obsService->NotifyObservers(nullptr, "gmp-changed", nullptr);
   }
 }
 

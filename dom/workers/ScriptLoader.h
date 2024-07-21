@@ -6,14 +6,15 @@
 #define mozilla_dom_workers_scriptloader_h__
 
 #include "mozilla/dom/WorkerCommon.h"
+#include "nsIContentPolicy.h"
 #include "nsStringFwd.h"
 
-class nsIPrincipal;
-class nsIURI;
-
-class nsILoadGroup;
 class nsIChannel;
 class nsICookieSettings;
+class nsILoadGroup;
+class nsIPrincipal;
+class nsIReferrerInfo;
+class nsIURI;
 
 namespace mozilla {
 
@@ -21,6 +22,8 @@ class ErrorResult;
 
 namespace dom {
 
+class ClientInfo;
+class Document;
 struct WorkerLoadInfo;
 class WorkerPrivate;
 class SerializedStackHolder;

@@ -26,10 +26,9 @@ class MessageBroadcaster : public MessageListenerManager {
 
   void BroadcastAsyncMessage(JSContext* aCx, const nsAString& aMessageName,
                              JS::Handle<JS::Value> aObj,
-                             JS::Handle<JSObject*> aObjects,
                              mozilla::ErrorResult& aError) {
-    DispatchAsyncMessage(aCx, aMessageName, aObj, aObjects, nullptr,
-                         JS::UndefinedHandleValue, aError);
+    DispatchAsyncMessage(aCx, aMessageName, aObj, JS::UndefinedHandleValue,
+                         aError);
   }
   uint32_t ChildCount() { return mChildManagers.Length(); }
   MessageListenerManager* GetChildAt(uint32_t aIndex) {

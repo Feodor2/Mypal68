@@ -63,9 +63,8 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
   mIPDLSelfRef = this;
   bool success = false;
   nsCString errorDescription;
-  layers::TextureFactoryIdentifier defaultIdent;
   Unused << manager->SendPRemoteDecoderConstructor(
-      this, aAudioInfo, aOptions, defaultIdent, &success, &errorDescription);
+      this, aAudioInfo, aOptions, Nothing(), &success, &errorDescription);
   return success ? MediaResult(NS_OK)
                  : MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, errorDescription);
 }
@@ -73,9 +72,9 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
 RemoteAudioDecoderParent::RemoteAudioDecoderParent(
     RemoteDecoderManagerParent* aParent, const AudioInfo& aAudioInfo,
     const CreateDecoderParams::OptionSet& aOptions,
-    TaskQueue* aManagerTaskQueue, TaskQueue* aDecodeTaskQueue, bool* aSuccess,
-    nsCString* aErrorDescription)
-    : RemoteDecoderParent(aParent, aManagerTaskQueue, aDecodeTaskQueue),
+    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
+    bool* aSuccess, nsCString* aErrorDescription)
+    : RemoteDecoderParent(aParent, aManagerThread, aDecodeTaskQueue),
       mAudioInfo(aAudioInfo) {
   CreateDecoderParams params(mAudioInfo);
   params.mTaskQueue = mDecodeTaskQueue;

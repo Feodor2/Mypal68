@@ -43,7 +43,7 @@ GamepadEventChannelParent::GamepadEventChannelParent()
       GamepadPlatformService::GetParentService();
   MOZ_ASSERT(service);
 
-  mBackgroundEventTarget = GetCurrentThreadEventTarget();
+  mBackgroundEventTarget = GetCurrentEventTarget();
   service->AddChannelParent(this);
 }
 

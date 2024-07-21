@@ -21,8 +21,10 @@ class ClientSourceOpParent final : public PClientSourceOpParent {
       const ClientOpResult& aResult) override;
 
  public:
-  ClientSourceOpParent(const ClientOpConstructorArgs& aArgs,
+  ClientSourceOpParent(ClientOpConstructorArgs&& aArgs,
                        ClientOpPromise::Private* aPromise);
+
+  const ClientOpConstructorArgs& Args() const { return mArgs; }
 
   ~ClientSourceOpParent();
 };

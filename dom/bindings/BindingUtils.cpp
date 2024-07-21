@@ -70,7 +70,6 @@
 #include "mozilla/dom/XrayExpandoClass.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "ipc/ErrorIPCUtils.h"
 #include "mozilla/dom/DocGroup.h"
 #include "nsXULElement.h"
@@ -777,7 +776,7 @@ static JSObject* CreateConstructor(JSContext* cx, JS::Handle<JSObject*> global,
   JSObject* constructor = JS_GetFunctionObject(fun);
   js::SetFunctionNativeReserved(
       constructor, CONSTRUCTOR_NATIVE_HOLDER_RESERVED_SLOT,
-      js::PrivateValue(const_cast<JSNativeHolder*>(nativeHolder)));
+      JS::PrivateValue(const_cast<JSNativeHolder*>(nativeHolder)));
   return constructor;
 }
 
@@ -2531,16 +2530,6 @@ bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
     return true;
   }
 
-  if (jsipc::IsWrappedCPOW(instance)) {
-    bool boolp = false;
-    if (!jsipc::DOMInstanceOf(cx, js::UncheckedUnwrap(instance),
-                              clasp->mPrototypeID, clasp->mDepth, &boolp)) {
-      return false;
-    }
-    args.rval().setBoolean(boolp);
-    return true;
-  }
-
   return CallOrdinaryHasInstance(cx, args);
 }
 
@@ -2751,7 +2740,7 @@ bool NormalizeUSVString(binding_detail::FakeString<char16_t>& aString) {
   }
 
   char16_t* ptr = aString.BeginWriting();
-  auto span = MakeSpan(ptr, len);
+  auto span = Span(ptr, len);
   span[upTo] = 0xFFFD;
   EnsureUtf16ValiditySpan(span.From(upTo + 1));
   return true;
@@ -3433,6 +3422,16 @@ bool CreateGlobalOptionsWithXPConnect::PostCreateGlobal(
 
   xpc::RealmPrivate::Init(aGlobal, site);
   return true;
+}
+
+uint64_t GetWindowID(void* aGlobal) { return 0; }
+
+uint64_t GetWindowID(nsGlobalWindowInner* aGlobal) {
+  return aGlobal->WindowID();
+}
+
+uint64_t GetWindowID(DedicatedWorkerGlobalScope* aGlobal) {
+  return aGlobal->WindowID();
 }
 
 #ifdef DEBUG

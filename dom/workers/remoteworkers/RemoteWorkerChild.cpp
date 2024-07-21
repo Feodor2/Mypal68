@@ -4,6 +4,7 @@
 
 #include "RemoteWorkerChild.h"
 #include "RemoteWorkerService.h"
+#include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
@@ -153,7 +154,7 @@ RemoteWorkerChild::~RemoteWorkerChild() {
 }
 
 void RemoteWorkerChild::ActorDestroy(ActorDestroyReason aWhy) {
-  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
+  auto data = mLauncherData.Access();
   mIPCActive = false;
   data->mPendingOps.Clear();
 }
@@ -336,7 +337,7 @@ void RemoteWorkerChild::ShutdownOnWorker() {
 }
 
 void RemoteWorkerChild::WorkerTerminated() {
-  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
+  auto data = mLauncherData.Access();
 
   {
     const auto lock = mSharedData.Lock();
@@ -369,16 +370,13 @@ void RemoteWorkerChild::ErrorPropagationOnMainThread(
 
   ErrorValue value;
   if (aIsErrorEvent) {
-    nsTArray<ErrorDataNote> notes;
-    for (size_t i = 0, len = aReport->mNotes.Length(); i < len; i++) {
-      const WorkerErrorNote& note = aReport->mNotes.ElementAt(i);
-      notes.AppendElement(ErrorDataNote(note.mLineNumber, note.mColumnNumber,
-                                        note.mMessage, note.mFilename));
-    }
-
-    ErrorData data(aReport->mIsWarning, aReport->mLineNumber,
-                   aReport->mColumnNumber, aReport->mMessage,
-                   aReport->mFilename, aReport->mLine, notes);
+    ErrorData data(
+        aReport->mIsWarning, aReport->mLineNumber, aReport->mColumnNumber,
+        aReport->mMessage, aReport->mFilename, aReport->mLine,
+        TransformIntoNewArray(aReport->mNotes, [](const WorkerErrorNote& note) {
+          return ErrorDataNote(note.mLineNumber, note.mColumnNumber,
+                               note.mMessage, note.mFilename);
+        }));
     value = data;
   } else {
     value = void_t();
@@ -455,7 +453,7 @@ IPCResult RemoteWorkerChild::RecvExecOp(const RemoteWorkerOp& aOp) {
 template <typename T>
 IPCResult RemoteWorkerChild::ExecuteOperation(const RemoteWorkerOp& aOp,
                                               const T& aLock) {
-  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
+  auto data = mLauncherData.Access();
 
   if (!mIPCActive) {
     return IPC_OK();
@@ -582,7 +580,7 @@ void RemoteWorkerChild::CreationSucceededOnAnyThread() {
 }
 
 void RemoteWorkerChild::CreationSucceeded() {
-  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
+  auto data = mLauncherData.Access();
 
   // The worker is created but we need to terminate it already.
   const auto lock = mSharedData.Lock();
@@ -623,7 +621,7 @@ void RemoteWorkerChild::CreationFailedOnAnyThread() {
 }
 
 void RemoteWorkerChild::CreationFailed() {
-  MOZ_ACCESS_THREAD_BOUND(mLauncherData, data);
+  auto data = mLauncherData.Access();
 
   const auto lock = mSharedData.Lock();
   lock->mWorkerState = eTerminated;

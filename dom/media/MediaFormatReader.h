@@ -22,7 +22,6 @@
 
 namespace mozilla {
 
-class CDMProxy;
 class GMPCrashHelper;
 class MediaResource;
 class VideoFrameContainer;
@@ -60,8 +59,6 @@ struct MOZ_STACK_CLASS MediaFormatReaderInit {
   FrameStatistics* mFrameStats = nullptr;
   already_AddRefed<layers::KnowsCompositor> mKnowsCompositor;
   already_AddRefed<GMPCrashHelper> mCrashHelper;
-  // Used in bug 1393399 for temporary telemetry.
-  MediaDecoderOwnerID mMediaDecoderOwnerID = nullptr;
 };
 
 DDLoggedTypeDeclName(MediaFormatReader);
@@ -173,8 +170,6 @@ class MediaFormatReader final
   // cases like MSE.
   bool UseBufferingHeuristics() const { return mTrackDemuxersMayBlock; }
 
-  RefPtr<SetCDMPromise> SetCDMProxy(CDMProxy* aProxy);
-
   // Returns a string describing the state of the decoder data.
   // Used for debugging purposes.
   void GetMozDebugReaderData(nsACString& aString);
@@ -210,22 +205,6 @@ class MediaFormatReader final
     return mOnMediaNotSeekable;
   }
 
-  // Notified if the reader can't decode a sample due to a missing decryption
-  // key.
-  MediaEventSource<TrackInfo::TrackType>& OnTrackWaitingForKey() {
-    return mOnTrackWaitingForKey;
-  }
-
-  MediaEventProducer<TrackInfo::TrackType>& OnTrackWaitingForKeyProducer() {
-    return mOnTrackWaitingForKey;
-  }
-
-  MediaEventSource<nsTArray<uint8_t>, nsString>& OnEncrypted() {
-    return mOnEncrypted;
-  }
-
-  MediaEventSource<void>& OnWaitingForKey() { return mOnWaitingForKey; }
-
   MediaEventSource<MediaResult>& OnDecodeWarning() { return mOnDecodeWarning; }
 
  private:
@@ -233,8 +212,6 @@ class MediaFormatReader final
 
   bool HasVideo() const { return mVideo.mTrackDemuxer; }
   bool HasAudio() const { return mAudio.mTrackDemuxer; }
-
-  bool IsWaitingOnCDMResource();
 
   bool InitDemuxer();
   // Notify the track demuxers that new data has been received.
@@ -398,11 +375,6 @@ class MediaFormatReader final
     bool IsWaitingForData() const {
       MOZ_ASSERT(mOwner->OnTaskQueue());
       return mWaitingForData;
-    }
-
-    bool IsWaitingForKey() const {
-      MOZ_ASSERT(mOwner->OnTaskQueue());
-      return mWaitingForKey && mDecodeRequest.Exists();
     }
 
     // MediaDataDecoder handler's variables.
@@ -718,8 +690,6 @@ class MediaFormatReader final
   RefPtr<VideoFrameContainer> mVideoFrameContainer;
   layers::ImageContainer* GetImageContainer();
 
-  RefPtr<CDMProxy> mCDMProxy;
-
   RefPtr<GMPCrashHelper> mCrashHelper;
 
   void SetNullDecode(TrackType aTrack, bool aIsNullDecode);
@@ -729,8 +699,6 @@ class MediaFormatReader final
 
   class ShutdownPromisePool;
   UniquePtr<ShutdownPromisePool> mShutdownPromisePool;
-
-  MediaEventListener mOnTrackWaitingForKeyListener;
 
   void OnFirstDemuxCompleted(TrackInfo::TrackType aType,
                              RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples);
@@ -762,25 +730,9 @@ class MediaFormatReader final
   // Notify if this media is not seekable.
   MediaEventProducer<void> mOnMediaNotSeekable;
 
-  // Notify if we are waiting for a decryption key.
-  MediaEventProducer<TrackInfo::TrackType> mOnTrackWaitingForKey;
-
-  MediaEventProducer<nsTArray<uint8_t>, nsString> mOnEncrypted;
-
-  MediaEventProducer<void> mOnWaitingForKey;
-
   MediaEventProducer<MediaResult> mOnDecodeWarning;
 
   RefPtr<FrameStatistics> mFrameStats;
-
-  // Used in bug 1393399 for telemetry.
-  const MediaDecoderOwnerID mMediaDecoderOwnerID;
-
-  bool ResolveSetCDMPromiseIfDone(TrackType aTrack);
-  void PrepareToSetCDMForTrack(TrackType aTrack);
-  MozPromiseHolder<SetCDMPromise> mSetCDMPromise;
-  TrackSet mSetCDMForTracks{};
-  bool IsDecoderWaitingForCDM(TrackType aTrack);
 };
 
 }  // namespace mozilla

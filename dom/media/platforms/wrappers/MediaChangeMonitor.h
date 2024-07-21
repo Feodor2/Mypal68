@@ -114,7 +114,6 @@ class MediaChangeMonitor : public MediaDataDecoder,
   bool mNeedKeyframe = true;
   const bool mErrorIfNoInitializationData;
   const TrackInfo::TrackType mType;
-  MediaEventProducer<TrackInfo::TrackType>* const mOnWaitingForKeyEvent;
   const CreateDecoderParams::OptionSet mDecoderOptions;
   const CreateDecoderParams::VideoFrameRate mRate;
   Maybe<bool> mCanRecycleDecoder;

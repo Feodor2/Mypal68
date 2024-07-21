@@ -23,7 +23,6 @@
 #include "mozilla/MozPromise.h"
 #include "GMPContentParent.h"
 #include "GMPCrashHelper.h"
-#include "ChromiumCDMParent.h"
 #include "MediaResult.h"
 
 template <class>
@@ -51,9 +50,6 @@ struct NodeId {
 typedef MozPromise<RefPtr<GMPContentParent::CloseBlocker>, MediaResult,
                    /* IsExclusive = */ true>
     GetGMPContentParentPromise;
-typedef MozPromise<RefPtr<ChromiumCDMParent>, MediaResult,
-                   /* IsExclusive = */ true>
-    GetCDMParentPromise;
 
 class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
                                 public nsIObserver {
@@ -63,10 +59,6 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
   virtual nsresult Init();
 
   NS_DECL_THREADSAFE_ISUPPORTS
-
-  RefPtr<GetCDMParentPromise> GetCDM(const NodeId& aNodeId,
-                                     nsTArray<nsCString> aTags,
-                                     GMPCrashHelper* aHelper);
 
   // mozIGeckoMediaPluginService
   NS_IMETHOD GetThread(nsIThread** aThread) override;

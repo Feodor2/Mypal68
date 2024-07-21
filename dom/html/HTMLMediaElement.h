@@ -19,7 +19,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/TextTrackManager.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/MediaKeys.h"
 #include "mozilla/StateWatching.h"
 #include "nsGkAtoms.h"
 #include "PrincipalChangeObserver.h"
@@ -58,7 +57,6 @@ class MediaStreamWindowCapturer;
 struct SharedDummyTrack;
 class VideoFrameContainer;
 namespace dom {
-class MediaKeys;
 class TextTrack;
 class TimeRanges;
 class WakeLock;
@@ -614,25 +612,13 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   bool MozPreservesPitch() const { return mPreservesPitch; }
   void SetMozPreservesPitch(bool aPreservesPitch);
 
-  MediaKeys* GetMediaKeys() const;
-
-  already_AddRefed<Promise> SetMediaKeys(MediaKeys* mediaKeys,
-                                         ErrorResult& aRv);
-
   mozilla::dom::EventHandlerNonNull* GetOnencrypted();
   void SetOnencrypted(mozilla::dom::EventHandlerNonNull* aCallback);
 
   mozilla::dom::EventHandlerNonNull* GetOnwaitingforkey();
   void SetOnwaitingforkey(mozilla::dom::EventHandlerNonNull* aCallback);
 
-  void DispatchEncrypted(const nsTArray<uint8_t>& aInitData,
-                         const nsAString& aInitDataType) override;
-
   bool IsEventAttributeNameInternal(nsAtom* aName) override;
-
-  bool ContainsRestrictedContent();
-
-  void NotifyWaitingForKey() override;
 
   already_AddRefed<DOMMediaStream> CaptureAudio(ErrorResult& aRv,
                                                 MediaTrackGraph* aGraph);
@@ -1289,15 +1275,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
                                           const nsAttrValueOrString& aValue,
                                           bool aNotify) override;
 
-  bool DetachExistingMediaKeys();
-  bool TryRemoveMediaKeysAssociation();
-  void RemoveMediaKeys();
-  bool AttachNewMediaKeys();
-  bool TryMakeAssociationWithCDM(CDMProxy* aProxy);
-  void MakeAssociationWithCDMResolved();
-  void SetCDMProxyFailure(const MediaResult& aResult);
-  void ResetSetMediaKeysTempVariables();
-
   void PauseIfShouldNotBePlaying();
 
   WatchManager<HTMLMediaElement> mWatchManager;
@@ -1539,15 +1516,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // Timer used to simulate video-suspend.
   nsCOMPtr<nsITimer> mVideoDecodeSuspendTimer;
 
-  // Encrypted Media Extension media keys.
-  RefPtr<MediaKeys> mMediaKeys;
-  RefPtr<MediaKeys> mIncomingMediaKeys;
-  // The dom promise is used for HTMLMediaElement::SetMediaKeys.
-  RefPtr<DetailedPromise> mSetMediaKeysDOMPromise;
-  // Used to indicate if the MediaKeys attaching operation is on-going or not.
-  bool mAttachingMediaKey = false;
-  MozPromiseRequestHolder<SetCDMPromise> mSetCDMRequest;
-
   // Stores the time at the start of the current 'played' range.
   double mCurrentPlayRangeStart = 1.0;
 
@@ -1673,17 +1641,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
     WAITING_FOR_KEY = 1,
     WAITING_FOR_KEY_DISPATCHED = 2
   };
-
-  // True when the CDM cannot decrypt the current block due to lacking a key.
-  // Note: the "waitingforkey" event is not dispatched until all decoded data
-  // has been rendered.
-  WaitingForKeyState mWaitingForKey = NOT_WAITING_FOR_KEY;
-
-  // Listens for waitingForKey events from the owned decoder.
-  MediaEventListener mWaitingForKeyListener;
-
-  // Init Data that needs to be sent in 'encrypted' events in MetadataLoaded().
-  EncryptionInfo mPendingEncryptedInitData;
 
   // True if the media's channel's download has been suspended.
   Watchable<bool> mDownloadSuspendedByCache = {

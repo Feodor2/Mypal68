@@ -7,6 +7,7 @@
 
 #include "gtest/gtest.h"
 
+#include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/StaticMutex.h"
 #include "nsTArray.h"
 
@@ -22,15 +23,16 @@ struct TestFileManagerStats final {
   size_t mSyncDeleteFileCalls = 0;
 };
 
-class TestFileManager final : public FileManagerBase<TestFileManager> {
+class TestFileManager final : public FileManagerBase<TestFileManager>,
+                              public AtomicSafeRefCounted<TestFileManager> {
  public:
   using FileManagerBase<TestFileManager>::MutexType;
 
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(TestFileManager)
+
   // FileManager functions that are used by FileInfo
 
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TestFileManager)
-
-  MOZ_MUST_USE nsresult AsyncDeleteFile(const int64_t aFileId) {
+  [[nodiscard]] nsresult AsyncDeleteFile(const int64_t aFileId) {
     MOZ_RELEASE_ASSERT(!mFileInfos.Contains(aFileId));
 
     if (mStats) {
@@ -40,7 +42,7 @@ class TestFileManager final : public FileManagerBase<TestFileManager> {
     return NS_OK;
   }
 
-  MOZ_MUST_USE nsresult SyncDeleteFile(const int64_t aFileId) {
+  [[nodiscard]] nsresult SyncDeleteFile(const int64_t aFileId) {
     MOZ_RELEASE_ASSERT(!mFileInfos.Contains(aFileId));
 
     if (mStats) {
@@ -57,10 +59,8 @@ class TestFileManager final : public FileManagerBase<TestFileManager> {
     for (const auto id : kDBOnlyFileInfoIds) {
       // Copied from within FileManager::Init.
 
-      mFileInfos.Put(
-          id, new FileInfo(FileManagerGuard{},
-                           SafeRefPtr{this, AcquireStrongRefFromRawPtr{}}, id,
-                           static_cast<nsrefcnt>(1)));
+      mFileInfos.Put(id, new FileInfo(FileManagerGuard{}, SafeRefPtrFromThis(),
+                                      id, static_cast<nsrefcnt>(1)));
 
       mLastFileId = std::max(id, mLastFileId);
     }
@@ -75,8 +75,6 @@ class TestFileManager final : public FileManagerBase<TestFileManager> {
   inline static MutexType sMutex;
 
   TestFileManagerStats* const mStats;
-
-  ~TestFileManager() = default;
 };
 
 using TestFileInfo = FileInfoT<TestFileManager>;
@@ -86,7 +84,7 @@ using TestFileInfo = FileInfoT<TestFileManager>;
 
 TEST(DOM_IndexedDB_TestFileManager, Invalidate)
 {
-  const auto fileManager = MakeRefPtr<TestFileManager>();
+  const auto fileManager = MakeSafeRefPtr<TestFileManager>();
 
   fileManager->Invalidate();
 
@@ -102,7 +100,7 @@ TEST(DOM_IndexedDB_FileInfo, Create)
   auto stats = TestFileManagerStats{};
 
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
     auto fileInfo = fileManager->CreateFileInfo();
 
     int32_t memRefCnt, dbRefCnt;
@@ -123,7 +121,7 @@ TEST(DOM_IndexedDB_FileInfo, CreateWithInitialDBRefCnt)
   auto stats = TestFileManagerStats{};
 
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
     fileManager->CreateDBOnlyFileInfos();
 
     for (const auto id : TestFileManager::kDBOnlyFileInfoIds) {
@@ -150,13 +148,12 @@ TEST(DOM_IndexedDB_FileInfo, CreateWithInitialDBRefCnt_Invalidate)
   auto stats = TestFileManagerStats{};
 
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
     fileManager->CreateDBOnlyFileInfos();
 
-    auto fileInfos = nsTArray<SafeRefPtr<TestFileInfo>>{};
-    for (const auto id : TestFileManager::kDBOnlyFileInfoIds) {
-      fileInfos.EmplaceBack(fileManager->GetFileInfo(id));
-    }
+    const auto fileInfos = TransformIntoNewArray(
+        TestFileManager::kDBOnlyFileInfoIds,
+        [&fileManager](const auto id) { return fileManager->GetFileInfo(id); });
 
     fileManager->Invalidate();
 
@@ -179,7 +176,7 @@ TEST(DOM_IndexedDB_FileInfo, CreateWithInitialDBRefCnt_UpdateDBRefsToZero)
   auto stats = TestFileManagerStats{};
 
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
     fileManager->CreateDBOnlyFileInfos();
 
     const auto fileInfo =
@@ -201,7 +198,7 @@ TEST(DOM_IndexedDB_FileInfo, ReleaseWithFileManagerCleanup)
 {
   auto stats = TestFileManagerStats{};
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
     fileManager->CreateDBOnlyFileInfos();
 
     auto* fileInfo = fileManager->CreateFileInfo().forget().take();
@@ -221,7 +218,7 @@ TEST(DOM_IndexedDB_FileInfo, Invalidate_CreateFileInfo)
 {
   auto stats = TestFileManagerStats{};
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
 
     fileManager->Invalidate();
 
@@ -240,7 +237,7 @@ TEST(DOM_IndexedDB_FileInfo, Invalidate_Release)
 {
   auto stats = TestFileManagerStats{};
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
 
     const auto fileInfo = fileManager->CreateFileInfo();
     Unused << fileInfo;
@@ -258,7 +255,7 @@ TEST(DOM_IndexedDB_FileInfo, Invalidate_ReleaseWithFileManagerCleanup)
 {
   auto stats = TestFileManagerStats{};
   {
-    const auto fileManager = MakeRefPtr<TestFileManager>(&stats);
+    const auto fileManager = MakeSafeRefPtr<TestFileManager>(&stats);
 
     auto* fileInfo = fileManager->CreateFileInfo().forget().take();
 

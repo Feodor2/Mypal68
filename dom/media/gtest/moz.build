@@ -59,7 +59,6 @@ if CONFIG['MOZ_WEBM_ENCODER']:
 
 if CONFIG['OS_TARGET'] != 'Android':
     UNIFIED_SOURCES += [
-        'TestCDMStorage.cpp',
         'TestGMPCrossOrigin.cpp',
         'TestGMPRemoveAndDelete.cpp',
     ]

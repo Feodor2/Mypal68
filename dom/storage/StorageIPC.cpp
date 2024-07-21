@@ -546,7 +546,7 @@ class StorageDBParent::ObserverSink : public StorageObserverSink {
 
  public:
   explicit ObserverSink(StorageDBParent* aActor)
-      : mOwningEventTarget(GetCurrentThreadEventTarget()), mActor(aActor) {
+      : mOwningEventTarget(GetCurrentEventTarget()), mActor(aActor) {
     AssertIsOnBackgroundThread();
     MOZ_ASSERT(aActor);
   }

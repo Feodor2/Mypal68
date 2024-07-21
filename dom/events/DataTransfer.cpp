@@ -1063,7 +1063,7 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
                                  type.Length() * sizeof(nsString::char_type),
                          "Why is formatLength off?");
               rv = stream->WriteBytes(
-                  AsBytes(MakeSpan(type.BeginReading(), type.Length())));
+                  AsBytes(Span(type.BeginReading(), type.Length())));
               if (NS_WARN_IF(NS_FAILED(rv))) {
                 totalCustomLength = 0;
                 continue;
@@ -1077,9 +1077,9 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
               // length of "data" if the variant contained an nsISupportsString
               // as VTYPE_INTERFACE, say.  We used lengthInBytes above for
               // sizing, so just keep doing that.
-              rv = stream->WriteBytes(MakeSpan(
-                  reinterpret_cast<const uint8_t*>(data.BeginReading()),
-                  lengthInBytes));
+              rv = stream->WriteBytes(
+                  Span(reinterpret_cast<const uint8_t*>(data.BeginReading()),
+                       lengthInBytes));
               if (NS_WARN_IF(NS_FAILED(rv))) {
                 totalCustomLength = 0;
                 continue;
@@ -1494,8 +1494,7 @@ void DataTransfer::FillInExternalCustomTypes(nsIVariant* aData, uint32_t aIndex,
 
   nsCOMPtr<nsIInputStream> stringStream;
   NS_NewByteInputStream(getter_AddRefs(stringStream),
-                        MakeSpan(chrs, checkedLen.value()),
-                        NS_ASSIGNMENT_ADOPT);
+                        Span(chrs, checkedLen.value()), NS_ASSIGNMENT_ADOPT);
 
   nsCOMPtr<nsIObjectInputStream> stream = NS_NewObjectInputStream(stringStream);
 

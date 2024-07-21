@@ -283,8 +283,8 @@ void WorkerDebuggerManager::RegisterDebuggerMainThread(
       listeners = mListeners;
     }
 
-    for (size_t index = 0; index < listeners.Length(); ++index) {
-      listeners[index]->OnRegister(debugger);
+    for (const auto& listener : listeners) {
+      listener->OnRegister(debugger);
     }
   }
 
@@ -314,9 +314,8 @@ void WorkerDebuggerManager::UnregisterDebuggerMainThread(
 
     listeners = mListeners;
   }
-
-  for (size_t index = 0; index < listeners.Length(); ++index) {
-    listeners[index]->OnUnregister(debugger);
+  for (const auto& listener : listeners) {
+    listener->OnUnregister(debugger);
   }
 
   debugger->Close();

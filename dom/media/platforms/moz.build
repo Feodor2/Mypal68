@@ -42,7 +42,7 @@ UNIFIED_SOURCES += [
 
 DIRS += [
     'agnostic/bytestreams',
-    'agnostic/eme',
+#    'agnostic/eme',
     'agnostic/gmp',
     'omx'
 ]

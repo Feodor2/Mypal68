@@ -137,9 +137,6 @@
 #  include "nsIWebBrowserPrint.h"
 #endif
 
-#define BROWSER_ELEMENT_CHILD_SCRIPT \
-  NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js")
-
 #define TABC_LOG(...)
 // #define TABC_LOG(...) printf_stderr("TABC: " __VA_ARGS__)
 
@@ -151,7 +148,6 @@ using namespace mozilla::layers;
 using namespace mozilla::layout;
 using namespace mozilla::docshell;
 using namespace mozilla::widget;
-using namespace mozilla::jsipc;
 using mozilla::layers::GeckoContentController;
 
 NS_IMPL_ISUPPORTS(ContentListener, nsIDOMEventListener)
@@ -570,8 +566,6 @@ void BrowserChild::NotifyTabContextUpdated(bool aIsPreallocated) {
     return;
   }
 
-  UpdateFrameType();
-
   if (aIsPreallocated) {
     nsDocShell::Cast(docShell)->SetOriginAttributes(OriginAttributesRef());
   }
@@ -580,16 +574,6 @@ void BrowserChild::NotifyTabContextUpdated(bool aIsPreallocated) {
   if (!PresentationURL().IsEmpty()) {
     docShell->SetSandboxFlags(SANDBOXED_AUXILIARY_NAVIGATION);
   }
-}
-
-void BrowserChild::UpdateFrameType() {
-  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
-  MOZ_ASSERT(docShell);
-
-  // TODO: Bug 1252794 - remove frameType from nsIDocShell.idl
-  docShell->SetFrameType(IsMozBrowserElement()
-                             ? nsIDocShell::FRAME_TYPE_BROWSER
-                             : nsIDocShell::FRAME_TYPE_REGULAR);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(BrowserChild)
@@ -865,28 +849,16 @@ BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
                             mozIDOMWindowProxy** aReturn) {
   *aReturn = nullptr;
 
-  // If aParent is inside an <iframe mozbrowser> and this isn't a request to
-  // open a modal-type window, we're going to create a new <iframe mozbrowser>
-  // and return its window here.
-  nsCOMPtr<nsIDocShell> docshell = do_GetInterface(aParent);
-  bool iframeMoz =
-      (docshell && docshell->GetIsInMozBrowser() &&
-       !(aChromeFlags & (nsIWebBrowserChrome::CHROME_MODAL |
-                         nsIWebBrowserChrome::CHROME_OPENAS_DIALOG |
-                         nsIWebBrowserChrome::CHROME_OPENAS_CHROME)));
+  int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
+      nsPIDOMWindowOuter::From(aParent), aChromeFlags, aCalledFromJS,
+      aPositionSpecified, aSizeSpecified);
 
-  if (!iframeMoz) {
-    int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
-        nsPIDOMWindowOuter::From(aParent), aChromeFlags, aCalledFromJS,
-        aPositionSpecified, aSizeSpecified);
-
-    // If it turns out we're opening in the current browser, just hand over the
-    // current browser's docshell.
-    if (openLocation == nsIBrowserDOMWindow::OPEN_CURRENTWINDOW) {
-      nsCOMPtr<nsIWebBrowser> browser = do_GetInterface(WebNavigation());
-      *aWindowIsNew = false;
-      return browser->GetContentDOMWindow(aReturn);
-    }
+  // If it turns out we're opening in the current browser, just hand over the
+  // current browser's docshell.
+  if (openLocation == nsIBrowserDOMWindow::OPEN_CURRENTWINDOW) {
+    nsCOMPtr<nsIWebBrowser> browser = do_GetInterface(WebNavigation());
+    *aWindowIsNew = false;
+    return browser->GetContentDOMWindow(aReturn);
   }
 
   // Note that ProvideWindowCommon may return NS_ERROR_ABORT if the
@@ -894,7 +866,7 @@ BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
   // code back to our caller.
   ContentChild* cc = ContentChild::GetSingleton();
   return cc->ProvideWindowCommon(
-      this, aParent, iframeMoz, aChromeFlags, aCalledFromJS, aPositionSpecified,
+      this, aParent, false, aChromeFlags, aCalledFromJS, aPositionSpecified,
       aSizeSpecified, aURI, aName, aFeatures, aForceNoOpener, aForceNoReferrer,
       aLoadState, aWindowIsNew, aReturn);
 }
@@ -1092,16 +1064,6 @@ void BrowserChild::ApplyShowInfo(const ShowInfo& aInfo) {
 
   nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
   if (docShell) {
-    nsCOMPtr<nsIDocShellTreeItem> item = do_GetInterface(docShell);
-    if (IsMozBrowser()) {
-      // B2G allows window.name to be set by changing the name attribute on the
-      // <iframe mozbrowser> element. window.open calls cause this attribute to
-      // be set to the correct value. A normal <xul:browser> element has no such
-      // attribute. The data we get here comes from reading the attribute, so we
-      // shouldn't trust it for <xul:browser> elements.
-      item->SetName(aInfo.name());
-    }
-    docShell->SetFullscreenAllowed(aInfo.fullscreenAllowed());
     if (aInfo.isPrivate()) {
       nsCOMPtr<nsILoadContext> context = do_GetInterface(docShell);
       // No need to re-set private browsing mode.
@@ -2115,13 +2077,11 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadRemoteScript(
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvAsyncMessage(
-    const nsString& aMessage, nsTArray<CpowEntry>&& aCpows,
-    nsIPrincipal* aPrincipal, const ClonedMessageData& aData) {
+    const nsString& aMessage, const ClonedMessageData& aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("BrowserChild::RecvAsyncMessage",
                                              OTHER, aMessage);
   MMPrinter::Print("BrowserChild::RecvAsyncMessage", aMessage, aData);
 
-  CrossProcessCpowHolder cpows(Manager(), aCpows);
   if (!mBrowserChildMessageManager) {
     return IPC_OK();
   }
@@ -2142,8 +2102,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvAsyncMessage(
   StructuredCloneData data;
   UnpackClonedMessageDataForChild(aData, data);
   mm->ReceiveMessage(static_cast<EventTarget*>(mBrowserChildMessageManager),
-                     nullptr, aMessage, false, &data, &cpows, aPrincipal,
-                     nullptr, IgnoreErrors());
+                     nullptr, aMessage, false, &data, nullptr, IgnoreErrors());
   return IPC_OK();
 }
 
@@ -2185,17 +2144,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvSwappedWithOtherRemoteLoader(
     MOZ_CRASH("Update to TabContext after swap was denied.");
   }
 
-  // Since mIsMozBrowserElement may change in UpdateTabContextAfterSwap, so we
-  // call UpdateFrameType here to make sure the frameType on the docshell is
-  // correct.
-  UpdateFrameType();
-
   // Ignore previous value of mTriedBrowserInit since owner content has changed.
   mTriedBrowserInit = true;
-  // Initialize the child side of the browser element machinery, if appropriate.
-  if (IsMozBrowser()) {
-    RecvLoadRemoteScript(BROWSER_ELEMENT_CHILD_SCRIPT, true);
-  }
 
   nsContentUtils::FirePageShowEventForFrameLoaderSwap(
       ourDocShell, ourEventTarget, true, true);
@@ -2575,11 +2525,6 @@ bool BrowserChild::InitBrowserChildMessageManager() {
 
   if (!mTriedBrowserInit) {
     mTriedBrowserInit = true;
-    // Initialize the child side of the browser element machinery,
-    // if appropriate.
-    if (IsMozBrowser()) {
-      RecvLoadRemoteScript(BROWSER_ELEMENT_CHILD_SCRIPT, true);
-    }
   }
 
   return true;
@@ -2831,46 +2776,22 @@ void BrowserChild::SetTabId(const TabId& aTabId) {
 }
 
 bool BrowserChild::DoSendBlockingMessage(
-    JSContext* aCx, const nsAString& aMessage, StructuredCloneData& aData,
-    JS::Handle<JSObject*> aCpows, nsIPrincipal* aPrincipal,
-    nsTArray<StructuredCloneData>* aRetVal, bool aIsSync) {
+    const nsAString& aMessage, StructuredCloneData& aData,
+    nsTArray<StructuredCloneData>* aRetVal) {
   ClonedMessageData data;
   if (!BuildClonedMessageDataForChild(Manager(), aData, data)) {
     return false;
   }
-  nsTArray<CpowEntry> cpows;
-  if (aCpows) {
-    jsipc::CPOWManager* mgr = Manager()->GetCPOWManager();
-    if (!mgr || !mgr->Wrap(aCx, aCpows, &cpows)) {
-      return false;
-    }
-  }
-  if (aIsSync) {
-    return SendSyncMessage(PromiseFlatString(aMessage), data, cpows, aPrincipal,
-                           aRetVal);
-  }
-
-  return SendRpcMessage(PromiseFlatString(aMessage), data, cpows, aPrincipal,
-                        aRetVal);
+  return SendSyncMessage(PromiseFlatString(aMessage), data, aRetVal);
 }
 
-nsresult BrowserChild::DoSendAsyncMessage(JSContext* aCx,
-                                          const nsAString& aMessage,
-                                          StructuredCloneData& aData,
-                                          JS::Handle<JSObject*> aCpows,
-                                          nsIPrincipal* aPrincipal) {
+nsresult BrowserChild::DoSendAsyncMessage(const nsAString& aMessage,
+                                          StructuredCloneData& aData) {
   ClonedMessageData data;
   if (!BuildClonedMessageDataForChild(Manager(), aData, data)) {
     return NS_ERROR_DOM_DATA_CLONE_ERR;
   }
-  nsTArray<CpowEntry> cpows;
-  if (aCpows) {
-    jsipc::CPOWManager* mgr = Manager()->GetCPOWManager();
-    if (!mgr || !mgr->Wrap(aCx, aCpows, &cpows)) {
-      return NS_ERROR_UNEXPECTED;
-    }
-  }
-  if (!SendAsyncMessage(PromiseFlatString(aMessage), cpows, aPrincipal, data)) {
+  if (!SendAsyncMessage(PromiseFlatString(aMessage), data)) {
     return NS_ERROR_UNEXPECTED;
   }
   return NS_OK;

@@ -32,7 +32,7 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
   OriginAttributes attrs;
   attrs.SyncAttributesWithPrivateBrowsing(false);
   MutableTabContext tabContext;
-  tabContext.SetTabContext(false, 0, UIStateChangeType_Set, attrs,
+  tabContext.SetTabContext(0, UIStateChangeType_Set, attrs,
                            aPresentationURL);
 
   ProcessPriority initialPriority = PROCESS_PRIORITY_FOREGROUND;

@@ -108,8 +108,6 @@ function testKeys(browser) {
 
 function testOpen_worker(browser) {
   return ContentTask.spawn(browser, {}, function() {
-    Cu.importGlobalProperties(["Blob"]);
-
     let workerFunctionString = function() {
       caches.open("pb-worker-cache").then(
         function(cacheObject) {

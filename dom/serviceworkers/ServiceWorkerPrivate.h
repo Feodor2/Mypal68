@@ -5,6 +5,8 @@
 #ifndef mozilla_dom_serviceworkerprivate_h
 #define mozilla_dom_serviceworkerprivate_h
 
+#include <type_traits>
+
 #include "nsCOMPtr.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/MozPromise.h"
@@ -78,7 +80,7 @@ class ServiceWorkerPrivate final {
   NS_IMETHOD_(MozExternalRefCountType) Release();
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ServiceWorkerPrivate)
 
-  typedef mozilla::FalseType HasThreadSafeRefCnt;
+  using HasThreadSafeRefCnt = std::false_type;
 
  protected:
   nsCycleCollectingAutoRefCnt mRefCnt;

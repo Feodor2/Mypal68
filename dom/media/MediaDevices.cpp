@@ -64,7 +64,7 @@ already_AddRefed<Promise> MediaDevices::GetUserMedia(
   MediaManager::Get()
       ->GetUserMedia(GetOwner(), aConstraints, aCallerType)
       ->Then(
-          GetCurrentThreadSerialEventTarget(), __func__,
+          GetCurrentSerialEventTarget(), __func__,
           [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
             if (!GetWindowIfCurrent()) {
               return;  // Leave Promise pending after navigation by design.
@@ -93,7 +93,7 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
   MediaManager::Get()
       ->EnumerateDevices(GetOwner(), aCallerType)
       ->Then(
-          GetCurrentThreadSerialEventTarget(), __func__,
+          GetCurrentSerialEventTarget(), __func__,
           [this, self,
            p](RefPtr<MediaManager::MediaDeviceSetRefCnt>&& aDevices) {
             nsPIDOMWindowInner* window = GetWindowIfCurrent();
@@ -144,7 +144,7 @@ already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
   MediaManager::Get()
       ->GetDisplayMedia(GetOwner(), aConstraints, aCallerType)
       ->Then(
-          GetCurrentThreadSerialEventTarget(), __func__,
+          GetCurrentSerialEventTarget(), __func__,
           [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
             if (!GetWindowIfCurrent()) {
               return;  // leave promise pending after navigation.

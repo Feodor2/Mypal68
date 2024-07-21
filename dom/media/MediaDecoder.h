@@ -17,7 +17,6 @@
 #  include "SeekTarget.h"
 #  include "TimeUnits.h"
 #  include "mozilla/Atomics.h"
-#  include "mozilla/CDMProxy.h"
 #  include "mozilla/MozPromise.h"
 #  include "mozilla/ReentrantMonitor.h"
 #  include "mozilla/StateMirroring.h"
@@ -357,8 +356,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   AbstractThread* AbstractMainThread() const { return mAbstractMainThread; }
 
-  RefPtr<SetCDMPromise> SetCDMProxy(CDMProxy* aProxy);
-
   void EnsureTelemetryReported();
 
   static bool IsOggEnabled();
@@ -578,8 +575,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   MediaEventListener mOnPlaybackErrorEvent;
   MediaEventListener mOnDecoderDoctorEvent;
   MediaEventListener mOnMediaNotSeekable;
-  MediaEventListener mOnEncrypted;
-  MediaEventListener mOnWaitingForKey;
   MediaEventListener mOnDecodeWarning;
   MediaEventListener mOnNextFrameStatus;
 

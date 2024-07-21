@@ -268,7 +268,7 @@ class StorageDBParent final : public PBackgroundStorageParent {
     CacheParentBridge(StorageDBParent* aParentDB,
                       const nsACString& aOriginSuffix,
                       const nsACString& aOriginNoSuffix)
-        : mOwningEventTarget(GetCurrentThreadSerialEventTarget()),
+        : mOwningEventTarget(GetCurrentSerialEventTarget()),
           mParent(aParentDB),
           mOriginSuffix(aOriginSuffix),
           mOriginNoSuffix(aOriginNoSuffix),
@@ -310,7 +310,7 @@ class StorageDBParent final : public PBackgroundStorageParent {
    public:
     UsageParentBridge(StorageDBParent* aParentDB,
                       const nsACString& aOriginScope)
-        : mOwningEventTarget(GetCurrentThreadSerialEventTarget()),
+        : mOwningEventTarget(GetCurrentSerialEventTarget()),
           mParent(aParentDB),
           mOriginScope(aOriginScope) {}
     virtual ~UsageParentBridge() = default;

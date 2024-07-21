@@ -561,8 +561,8 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
   MOZ_ASSERT(mState != SHUTDOWN, "No data callback after shutdown");
 
   auto writer = AudioBufferWriter(
-      MakeSpan<AudioDataValue>(reinterpret_cast<AudioDataValue*>(aBuffer),
-                               mOutChannels * aFrames),
+      Span<AudioDataValue>(reinterpret_cast<AudioDataValue*>(aBuffer),
+                           mOutChannels * aFrames),
       mOutChannels, aFrames);
 
   if (mPrefillQuirk) {

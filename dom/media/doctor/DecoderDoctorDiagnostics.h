@@ -47,10 +47,6 @@ class DecoderDoctorDiagnostics {
                               const nsAString& aFormat, bool aCanPlay,
                               const char* aCallSite);
 
-  void StoreMediaKeySystemAccess(dom::Document* aDocument,
-                                 const nsAString& aKeySystem, bool aIsSupported,
-                                 const char* aCallSite);
-
   void StoreEvent(dom::Document* aDocument, const DecoderDoctorEvent& aEvent,
                   const char* aCallSite);
 
@@ -63,7 +59,6 @@ class DecoderDoctorDiagnostics {
   enum DiagnosticsType {
     eUnsaved,
     eFormatSupportCheck,
-    eMediaKeySystemAccessRequest,
     eEvent,
     eDecodeError,
     eDecodeWarning

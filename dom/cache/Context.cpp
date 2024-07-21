@@ -5,6 +5,7 @@
 #include "mozilla/dom/cache/Context.h"
 
 #include "mozilla/AutoRestore.h"
+#include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/cache/Action.h"
 #include "mozilla/dom/cache/FileUtils.h"
 #include "mozilla/dom/cache/Manager.h"
@@ -85,15 +86,16 @@ class Context::Data final : public Action::Data {
 class Context::QuotaInitRunnable final : public nsIRunnable,
                                          public OpenDirectoryListener {
  public:
-  QuotaInitRunnable(Context* aContext, Manager* aManager, Data* aData,
-                    nsISerialEventTarget* aTarget, Action* aInitAction)
-      : mContext(aContext),
-        mThreadsafeHandle(aContext->CreateThreadsafeHandle()),
-        mManager(aManager),
+  QuotaInitRunnable(SafeRefPtr<Context> aContext, SafeRefPtr<Manager> aManager,
+                    Data* aData, nsISerialEventTarget* aTarget,
+                    Action* aInitAction)
+      : mContext(std::move(aContext)),
+        mThreadsafeHandle(mContext->CreateThreadsafeHandle()),
+        mManager(std::move(aManager)),
         mData(aData),
         mTarget(aTarget),
         mInitAction(aInitAction),
-        mInitiatingEventTarget(GetCurrentThreadEventTarget()),
+        mInitiatingEventTarget(GetCurrentEventTarget()),
         mResult(NS_OK),
         mState(STATE_INIT),
         mCanceled(false) {
@@ -194,9 +196,9 @@ class Context::QuotaInitRunnable final : public nsIRunnable,
     mInitAction = nullptr;
   }
 
-  RefPtr<Context> mContext;
-  RefPtr<ThreadsafeHandle> mThreadsafeHandle;
-  RefPtr<Manager> mManager;
+  SafeRefPtr<Context> mContext;
+  SafeRefPtr<ThreadsafeHandle> mThreadsafeHandle;
+  SafeRefPtr<Manager> mManager;
   RefPtr<Data> mData;
   nsCOMPtr<nsISerialEventTarget> mTarget;
   RefPtr<Action> mInitAction;
@@ -333,8 +335,7 @@ Context::QuotaInitRunnable::Run() {
         break;
       }
 
-      RefPtr<ManagerId> managerId = mManager->GetManagerId();
-      nsCOMPtr<nsIPrincipal> principal = managerId->Principal();
+      nsCOMPtr<nsIPrincipal> principal = mManager->GetManagerId().Principal();
       nsresult rv = QuotaManager::GetInfoFromPrincipal(
           principal, &mQuotaInfo.mSuffix, &mQuotaInfo.mGroup,
           &mQuotaInfo.mOrigin);
@@ -458,14 +459,15 @@ class Context::ActionRunnable final : public nsIRunnable,
                                       public Action::Resolver,
                                       public Context::Activity {
  public:
-  ActionRunnable(Context* aContext, Data* aData, nsISerialEventTarget* aTarget,
-                 Action* aAction, const QuotaInfo& aQuotaInfo)
-      : mContext(aContext),
+  ActionRunnable(SafeRefPtr<Context> aContext, Data* aData,
+                 nsISerialEventTarget* aTarget, Action* aAction,
+                 const QuotaInfo& aQuotaInfo)
+      : mContext(std::move(aContext)),
         mData(aData),
         mTarget(aTarget),
         mAction(aAction),
         mQuotaInfo(aQuotaInfo),
-        mInitiatingThread(GetCurrentThreadEventTarget()),
+        mInitiatingThread(GetCurrentEventTarget()),
         mState(STATE_INIT),
         mResult(NS_OK),
         mExecutingRunOnTarget(false) {
@@ -549,7 +551,7 @@ class Context::ActionRunnable final : public nsIRunnable,
     STATE_COMPLETE
   };
 
-  RefPtr<Context> mContext;
+  SafeRefPtr<Context> mContext;
   RefPtr<Data> mData;
   nsCOMPtr<nsISerialEventTarget> mTarget;
   RefPtr<Action> mAction;
@@ -693,10 +695,10 @@ void Context::ThreadsafeHandle::InvalidateAndAllowToClose() {
                                                    nsIThread::DISPATCH_NORMAL));
 }
 
-Context::ThreadsafeHandle::ThreadsafeHandle(Context* aContext)
-    : mStrongRef(aContext),
-      mWeakRef(aContext),
-      mOwningEventTarget(GetCurrentThreadSerialEventTarget()) {}
+Context::ThreadsafeHandle::ThreadsafeHandle(SafeRefPtr<Context> aContext)
+    : mStrongRef(std::move(aContext)),
+      mWeakRef(mStrongRef.unsafeGetRawPtr()),
+      mOwningEventTarget(GetCurrentSerialEventTarget()) {}
 
 Context::ThreadsafeHandle::~ThreadsafeHandle() {
   // Normally we only touch mStrongRef on the owning thread.  This is safe,
@@ -747,27 +749,28 @@ void Context::ThreadsafeHandle::InvalidateAndAllowToCloseOnOwningThread() {
   MOZ_DIAGNOSTIC_ASSERT(!mStrongRef);
 }
 
-void Context::ThreadsafeHandle::ContextDestroyed(Context* aContext) {
+void Context::ThreadsafeHandle::ContextDestroyed(Context& aContext) {
   MOZ_ASSERT(mOwningEventTarget->IsOnCurrentThread());
   MOZ_DIAGNOSTIC_ASSERT(!mStrongRef);
   MOZ_DIAGNOSTIC_ASSERT(mWeakRef);
-  MOZ_DIAGNOSTIC_ASSERT(mWeakRef == aContext);
+  MOZ_DIAGNOSTIC_ASSERT(mWeakRef == &aContext);
   mWeakRef = nullptr;
 }
 
 // static
-already_AddRefed<Context> Context::Create(Manager* aManager,
-                                          nsISerialEventTarget* aTarget,
-                                          Action* aInitAction,
-                                          Context* aOldContext) {
-  RefPtr<Context> context = new Context(aManager, aTarget, aInitAction);
+SafeRefPtr<Context> Context::Create(SafeRefPtr<Manager> aManager,
+                                    nsISerialEventTarget* aTarget,
+                                    Action* aInitAction,
+                                    Maybe<Context&> aOldContext) {
+  auto context =
+      MakeSafeRefPtr<Context>(std::move(aManager), aTarget, aInitAction);
   context->Init(aOldContext);
-  return context.forget();
+  return context;
 }
 
-Context::Context(Manager* aManager, nsISerialEventTarget* aTarget,
+Context::Context(SafeRefPtr<Manager> aManager, nsISerialEventTarget* aTarget,
                  Action* aInitAction)
-    : mManager(aManager),
+    : mManager(std::move(aManager)),
       mTarget(aTarget),
       mData(new Data(aTarget)),
       mState(STATE_CONTEXT_PREINIT),
@@ -865,11 +868,11 @@ Context::~Context() {
   MOZ_DIAGNOSTIC_ASSERT(!mData);
 
   if (mThreadsafeHandle) {
-    mThreadsafeHandle->ContextDestroyed(this);
+    mThreadsafeHandle->ContextDestroyed(*this);
   }
 
   // Note, this may set the mOrphanedData flag.
-  mManager->RemoveContext(this);
+  mManager->RemoveContext(*this);
 
   if (mQuotaInfo.mDir && !mOrphanedData) {
     MOZ_ALWAYS_SUCCEEDS(DeleteMarkerFile(mQuotaInfo));
@@ -880,11 +883,11 @@ Context::~Context() {
   }
 }
 
-void Context::Init(Context* aOldContext) {
+void Context::Init(Maybe<Context&> aOldContext) {
   NS_ASSERT_OWNINGTHREAD(Context);
 
   if (aOldContext) {
-    aOldContext->SetNextContext(this);
+    aOldContext->SetNextContext(SafeRefPtrFromThis());
     return;
   }
 
@@ -910,8 +913,8 @@ void Context::Start() {
   MOZ_DIAGNOSTIC_ASSERT(mState == STATE_CONTEXT_PREINIT);
   MOZ_DIAGNOSTIC_ASSERT(!mInitRunnable);
 
-  mInitRunnable =
-      new QuotaInitRunnable(this, mManager, mData, mTarget, mInitAction);
+  mInitRunnable = new QuotaInitRunnable(
+      SafeRefPtrFromThis(), mManager.clonePtr(), mData, mTarget, mInitAction);
   mInitAction = nullptr;
 
   mState = STATE_CONTEXT_INIT;
@@ -928,8 +931,8 @@ void Context::Start() {
 void Context::DispatchAction(Action* aAction, bool aDoomData) {
   NS_ASSERT_OWNINGTHREAD(Context);
 
-  RefPtr<ActionRunnable> runnable =
-      new ActionRunnable(this, mData, mTarget, aAction, mQuotaInfo);
+  RefPtr<ActionRunnable> runnable = new ActionRunnable(
+      SafeRefPtrFromThis(), mData, mTarget, aAction, mQuotaInfo);
 
   if (aDoomData) {
     mData = nullptr;
@@ -1005,20 +1008,19 @@ void Context::NoteOrphanedData() {
   mOrphanedData = true;
 }
 
-already_AddRefed<Context::ThreadsafeHandle> Context::CreateThreadsafeHandle() {
+SafeRefPtr<Context::ThreadsafeHandle> Context::CreateThreadsafeHandle() {
   NS_ASSERT_OWNINGTHREAD(Context);
   if (!mThreadsafeHandle) {
-    mThreadsafeHandle = new ThreadsafeHandle(this);
+    mThreadsafeHandle = MakeSafeRefPtr<ThreadsafeHandle>(SafeRefPtrFromThis());
   }
-  RefPtr<ThreadsafeHandle> ref = mThreadsafeHandle;
-  return ref.forget();
+  return mThreadsafeHandle.clonePtr();
 }
 
-void Context::SetNextContext(Context* aNextContext) {
+void Context::SetNextContext(SafeRefPtr<Context> aNextContext) {
   NS_ASSERT_OWNINGTHREAD(Context);
   MOZ_DIAGNOSTIC_ASSERT(aNextContext);
   MOZ_DIAGNOSTIC_ASSERT(!mNextContext);
-  mNextContext = aNextContext;
+  mNextContext = std::move(aNextContext);
 }
 
 void Context::DoomTargetData() {

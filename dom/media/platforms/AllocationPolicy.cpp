@@ -204,8 +204,6 @@ AllocationWrapper::CreateDecoder(const CreateDecoderParams& aParams,
   CreateDecoderParams::UseNullDecoder useNullDecoder = aParams.mUseNullDecoder;
   CreateDecoderParams::NoWrapper noWrapper = aParams.mNoWrapper;
   TrackInfo::TrackType type = aParams.mType;
-  MediaEventProducer<TrackInfo::TrackType>* onWaitingForKeyEvent =
-      aParams.mOnWaitingForKeyEvent;
   CreateDecoderParams::OptionSet options = aParams.mOptions;
   CreateDecoderParams::VideoFrameRate rate = aParams.mRate;
 
@@ -234,7 +232,6 @@ AllocationWrapper::CreateDecoder(const CreateDecoderParams& aParams,
                                            useNullDecoder,
                                            noWrapper,
                                            type,
-                                           onWaitingForKeyEvent,
                                            options,
                                            rate};
                 RefPtr<MediaDataDecoder> decoder = pdm->CreateDecoder(params);

@@ -8,13 +8,11 @@
 #include "base/shared_memory.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/PBrowserOrId.h"
 #include "mozilla/dom/PContentChild.h"
-#include "mozilla/dom/CPOWManagerGetter.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ipc/Shmem.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
-#include "nsAutoPtr.h"
 #include "nsHashKeys.h"
 #include "nsIObserver.h"
 #include "nsTHashtable.h"
@@ -71,7 +69,6 @@ enum class MediaControlActions : uint32_t;
 
 class ContentChild final : public PContentChild,
                            public nsIWindowProvider,
-                           public CPOWManagerGetter,
                            public mozilla::ipc::IShmemAllocator {
   typedef mozilla::dom::ClonedMessageData ClonedMessageData;
   typedef mozilla::ipc::FileDescriptor FileDescriptor;
@@ -236,8 +233,6 @@ class ContentChild final : public PContentChild,
       PScriptCacheChild*, const FileDescOrError& cacheFile,
       const bool& wantCacheData) override;
 
-  jsipc::CPOWManager* GetCPOWManager() override;
-
   PNeckoChild* AllocPNeckoChild();
 
   bool DeallocPNeckoChild(PNeckoChild*);
@@ -293,10 +288,6 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvClearImageCache(const bool& privateLoader,
                                               const bool& chrome);
 
-  mozilla::jsipc::PJavaScriptChild* AllocPJavaScriptChild();
-
-  bool DeallocPJavaScriptChild(mozilla::jsipc::PJavaScriptChild*);
-
   PRemoteSpellcheckEngineChild* AllocPRemoteSpellcheckEngineChild();
 
   bool DeallocPRemoteSpellcheckEngineChild(PRemoteSpellcheckEngineChild*);
@@ -333,8 +324,6 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvLoadProcessScript(const nsString& aURL);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMsg,
-                                           nsTArray<CpowEntry>&& aCpows,
-                                           const IPC::Principal& aPrincipal,
                                            const ClonedMessageData& aData);
 
   mozilla::ipc::IPCResult RecvRegisterStringBundles(
@@ -667,7 +656,7 @@ class ContentChild final : public PContentChild,
   virtual void ProcessingError(Result aCode, const char* aReason) override;
 
   virtual already_AddRefed<nsIEventTarget> GetSpecificMessageEventTarget(
-      const Message& aMsg) override;
+      const Message& aMsg);
 
   virtual void OnChannelReceivedMessage(const Message& aMsg) override;
 
@@ -706,7 +695,7 @@ class ContentChild final : public PContentChild,
   virtual PContentChild::Result OnMessageReceived(const Message& aMsg,
                                                   Message*& aReply) override;
 
-  nsTArray<nsAutoPtr<AlertObserver>> mAlertObservers;
+  nsTArray<mozilla::UniquePtr<AlertObserver>> mAlertObservers;
   RefPtr<ConsoleListener> mConsoleListener;
 
   nsTHashtable<nsPtrHashKey<nsIObserver>> mIdleObservers;

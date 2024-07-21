@@ -49,7 +49,7 @@ WebGLContextLossHandler::WebGLContextLossHandler(WebGLContext* webgl)
       mShouldRunTimerAgain(false)
 #ifdef DEBUG
       ,
-      mEventTarget(GetCurrentThreadSerialEventTarget())
+      mEventTarget(GetCurrentSerialEventTarget())
 #endif
 {
   MOZ_ASSERT(mEventTarget);
@@ -57,7 +57,7 @@ WebGLContextLossHandler::WebGLContextLossHandler(WebGLContext* webgl)
 
 WebGLContextLossHandler::~WebGLContextLossHandler() {
   const DebugOnly<nsISerialEventTarget*> callingThread =
-      GetCurrentThreadSerialEventTarget();
+      GetCurrentSerialEventTarget();
   MOZ_ASSERT(!callingThread || mEventTarget->IsOnCurrentThread());
 }
 

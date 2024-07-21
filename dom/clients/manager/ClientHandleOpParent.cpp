@@ -20,7 +20,7 @@ void ClientHandleOpParent::ActorDestroy(ActorDestroyReason aReason) {
   mPromiseRequestHolder.DisconnectIfExists();
 }
 
-void ClientHandleOpParent::Init(const ClientOpConstructorArgs& aArgs) {
+void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
   ClientSourceParent* source = GetSource();
   CopyableErrorResult rv;
   if (!source) {
@@ -50,19 +50,19 @@ void ClientHandleOpParent::Init(const ClientOpConstructorArgs& aArgs) {
       return;
     }
 
-    p = source->StartOp(rebuild);
+    p = source->StartOp(std::move(rebuild));
   }
 
   // Other argument types can just be forwarded straight through.
   else {
-    p = source->StartOp(aArgs);
+    p = source->StartOp(std::move(aArgs));
   }
 
   // Capturing 'this' is safe here because we disconnect the promise in
   // ActorDestroy() which ensures neither lambda is called if the actor
   // is destroyed before the source operation completes.
   p->Then(
-       GetCurrentThreadSerialEventTarget(), __func__,
+       GetCurrentSerialEventTarget(), __func__,
        [this](const ClientOpResult& aResult) {
          mPromiseRequestHolder.Complete();
          Unused << PClientHandleOpParent::Send__delete__(this, aResult);

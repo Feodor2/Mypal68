@@ -14,9 +14,6 @@
 
 namespace mozilla {
 
-NS_IMPL_ADDREF(MediaTimer)
-NS_IMPL_RELEASE_WITH_DESTROY(MediaTimer, DispatchDestroy())
-
 MediaTimer::MediaTimer(bool aFuzzy)
     : mMonitor("MediaTimer Monitor"),
       mCreationTimeStamp(TimeStamp::Now()),

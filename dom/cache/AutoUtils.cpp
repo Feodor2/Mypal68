@@ -122,8 +122,9 @@ AutoChildOpArgs::~AutoChildOpArgs() {
   mStreamCleanupList.Clear();
 }
 
-void AutoChildOpArgs::Add(InternalRequest* aRequest, BodyAction aBodyAction,
-                          SchemeAction aSchemeAction, ErrorResult& aRv) {
+void AutoChildOpArgs::Add(const InternalRequest& aRequest,
+                          BodyAction aBodyAction, SchemeAction aSchemeAction,
+                          ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
 
   switch (mOpArgs.type()) {
@@ -170,10 +171,8 @@ void AutoChildOpArgs::Add(InternalRequest* aRequest, BodyAction aBodyAction,
 
 namespace {
 
-bool MatchInPutList(InternalRequest* aRequest,
+bool MatchInPutList(const InternalRequest& aRequest,
                     const nsTArray<CacheRequestResponse>& aPutList) {
-  MOZ_DIAGNOSTIC_ASSERT(aRequest);
-
   // This method implements the SW spec QueryCache algorithm against an
   // in memory array of Request/Response objects.  This essentially the
   // same algorithm that is implemented in DBSchema.cpp.  Unfortunately
@@ -184,19 +183,19 @@ bool MatchInPutList(InternalRequest* aRequest,
   // Cache should only call into here with a GET or HEAD.
 #ifdef DEBUG
   nsAutoCString method;
-  aRequest->GetMethod(method);
+  aRequest.GetMethod(method);
   MOZ_ASSERT(method.LowerCaseEqualsLiteral("get") ||
              method.LowerCaseEqualsLiteral("head"));
 #endif
 
-  RefPtr<InternalHeaders> requestHeaders = aRequest->Headers();
+  RefPtr<InternalHeaders> requestHeaders = aRequest.Headers();
 
   for (uint32_t i = 0; i < aPutList.Length(); ++i) {
     const CacheRequest& cachedRequest = aPutList[i].request();
     const CacheResponse& cachedResponse = aPutList[i].response();
 
     nsAutoCString url;
-    aRequest->GetURL(url);
+    aRequest.GetURL(url);
 
     nsAutoCString requestUrl(cachedRequest.urlWithoutQuery());
     requestUrl.Append(cachedRequest.urlQuery());
@@ -261,7 +260,7 @@ bool MatchInPutList(InternalRequest* aRequest,
 
 }  // namespace
 
-void AutoChildOpArgs::Add(JSContext* aCx, InternalRequest* aRequest,
+void AutoChildOpArgs::Add(JSContext* aCx, const InternalRequest& aRequest,
                           BodyAction aBodyAction, SchemeAction aSchemeAction,
                           Response& aResponse, ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
@@ -376,17 +375,18 @@ AutoParentOpResult::~AutoParentOpResult() {
   mStreamCleanupList.Clear();
 }
 
-void AutoParentOpResult::Add(CacheId aOpenedCacheId, Manager* aManager) {
+void AutoParentOpResult::Add(CacheId aOpenedCacheId,
+                             SafeRefPtr<Manager> aManager) {
   MOZ_DIAGNOSTIC_ASSERT(mOpResult.type() == CacheOpResult::TStorageOpenResult);
   MOZ_DIAGNOSTIC_ASSERT(mOpResult.get_StorageOpenResult().actorParent() ==
                         nullptr);
   mOpResult.get_StorageOpenResult().actorParent() =
       mManager->SendPCacheConstructor(
-          new CacheParent(aManager, aOpenedCacheId));
+          new CacheParent(std::move(aManager), aOpenedCacheId));
 }
 
 void AutoParentOpResult::Add(const SavedResponse& aSavedResponse,
-                             StreamList* aStreamList) {
+                             StreamList& aStreamList) {
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
 
   switch (mOpResult.type()) {
@@ -425,7 +425,7 @@ void AutoParentOpResult::Add(const SavedResponse& aSavedResponse,
 }
 
 void AutoParentOpResult::Add(const SavedRequest& aSavedRequest,
-                             StreamList* aStreamList) {
+                             StreamList& aStreamList) {
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
 
   switch (mOpResult.type()) {
@@ -465,7 +465,7 @@ const CacheOpResult& AutoParentOpResult::SendAsOpResult() {
 }
 
 void AutoParentOpResult::SerializeResponseBody(
-    const SavedResponse& aSavedResponse, StreamList* aStreamList,
+    const SavedResponse& aSavedResponse, StreamList& aStreamList,
     CacheResponse* aResponseOut) {
   MOZ_DIAGNOSTIC_ASSERT(aResponseOut);
 
@@ -480,13 +480,12 @@ void AutoParentOpResult::SerializeResponseBody(
 }
 
 void AutoParentOpResult::SerializeReadStream(const nsID& aId,
-                                             StreamList* aStreamList,
+                                             StreamList& aStreamList,
                                              CacheReadStream* aReadStreamOut) {
-  MOZ_DIAGNOSTIC_ASSERT(aStreamList);
   MOZ_DIAGNOSTIC_ASSERT(aReadStreamOut);
   MOZ_DIAGNOSTIC_ASSERT(!mSent);
 
-  nsCOMPtr<nsIInputStream> stream = aStreamList->Extract(aId);
+  nsCOMPtr<nsIInputStream> stream = aStreamList.Extract(aId);
 
   if (!mStreamControl) {
     mStreamControl = static_cast<CacheStreamControlParent*>(
@@ -501,7 +500,7 @@ void AutoParentOpResult::SerializeReadStream(const nsID& aId,
     }
   }
 
-  aStreamList->SetStreamControl(mStreamControl);
+  aStreamList.SetStreamControl(mStreamControl);
 
   RefPtr<ReadStream> readStream =
       ReadStream::Create(mStreamControl, aId, stream);

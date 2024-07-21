@@ -63,32 +63,6 @@ static const char* AppendStateToStr(AppendState aState) {
 
 static Atomic<uint32_t> sStreamSourceID(0u);
 
-class DispatchKeyNeededEvent : public Runnable {
- public:
-  DispatchKeyNeededEvent(MediaSourceDecoder* aDecoder,
-                         const nsTArray<uint8_t>& aInitData,
-                         const nsString& aInitDataType)
-      : Runnable("DispatchKeyNeededEvent"),
-        mDecoder(aDecoder),
-        mInitData(aInitData),
-        mInitDataType(aInitDataType) {}
-  NS_IMETHOD Run() override {
-    // Note: Null check the owner, as the decoder could have been shutdown
-    // since this event was dispatched.
-    MediaDecoderOwner* owner = mDecoder->GetOwner();
-    if (owner) {
-      owner->DispatchEncrypted(mInitData, mInitDataType);
-    }
-    mDecoder = nullptr;
-    return NS_OK;
-  }
-
- private:
-  RefPtr<MediaSourceDecoder> mDecoder;
-  nsTArray<uint8_t> mInitData;
-  nsString mInitDataType;
-};
-
 TrackBuffersManager::TrackBuffersManager(MediaSourceDecoder* aParentDecoder,
                                          const MediaContainerType& aType)
     : mBufferFull(false),
@@ -1376,22 +1350,6 @@ void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
       mVideoTracks.mLastInfo = new TrackInfoSharedPtr(info.mVideo, streamID);
     }
 
-    UniquePtr<EncryptionInfo> crypto = mInputDemuxer->GetCrypto();
-    if (crypto && crypto->IsEncrypted()) {
-      // Try and dispatch 'encrypted'. Won't go if ready state still
-      // HAVE_NOTHING.
-      for (uint32_t i = 0; i < crypto->mInitDatas.Length(); i++) {
-        nsCOMPtr<nsIRunnable> r = new DispatchKeyNeededEvent(
-            mParentDecoder, crypto->mInitDatas[i].mInitData,
-            crypto->mInitDatas[i].mType);
-        mAbstractMainThread->Dispatch(r.forget());
-      }
-      info.mCrypto = *crypto;
-      // We clear our crypto init data array, so the MediaFormatReader will
-      // not emit an encrypted event for the same init data again.
-      info.mCrypto.mInitDatas.Clear();
-    }
-
     {
       MutexAutoLock mut(mMutex);
       mInfo = info;
@@ -1509,18 +1467,6 @@ void TrackBuffersManager::DoDemuxVideo() {
       ->Track(mVideoTracks.mDemuxRequest);
 }
 
-void TrackBuffersManager::MaybeDispatchEncryptedEvent(
-    const nsTArray<RefPtr<MediaRawData>>& aSamples) {
-  // Try and dispatch 'encrypted'. Won't go if ready state still HAVE_NOTHING.
-  for (const RefPtr<MediaRawData>& sample : aSamples) {
-    for (const nsTArray<uint8_t>& initData : sample->mCrypto.mInitDatas) {
-      nsCOMPtr<nsIRunnable> r = new DispatchKeyNeededEvent(
-          mParentDecoder, initData, sample->mCrypto.mInitDataType);
-      mAbstractMainThread->Dispatch(r.forget());
-    }
-  }
-}
-
 void TrackBuffersManager::OnVideoDemuxCompleted(
     RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
   MOZ_ASSERT(OnTaskQueue());
@@ -1528,7 +1474,6 @@ void TrackBuffersManager::OnVideoDemuxCompleted(
   mVideoTracks.mDemuxRequest.Complete();
   mVideoTracks.mQueuedSamples.AppendElements(aSamples->GetSamples());
 
-  MaybeDispatchEncryptedEvent(aSamples->GetSamples());
   DoDemuxAudio();
 }
 
@@ -1552,8 +1497,6 @@ void TrackBuffersManager::OnAudioDemuxCompleted(
   mAudioTracks.mDemuxRequest.Complete();
   mAudioTracks.mQueuedSamples.AppendElements(aSamples->GetSamples());
   CompleteCodedFrameProcessing();
-
-  MaybeDispatchEncryptedEvent(aSamples->GetSamples());
 }
 
 void TrackBuffersManager::CompleteCodedFrameProcessing() {

@@ -148,9 +148,9 @@ class BackgroundFactoryChild final : public PBackgroundIDBFactoryChild {
   // reference here?
   IDBFactory* mFactory;
 
-  NS_DECL_OWNINGTHREAD
-
  public:
+  NS_INLINE_DECL_REFCOUNTING(BackgroundFactoryChild, override)
+
   void AssertIsOnOwningThread() const {
     NS_ASSERT_OWNINGTHREAD(BackgroundFactoryChild);
   }
@@ -336,13 +336,7 @@ class BackgroundDatabaseChild final : public PBackgroundIDBDatabaseChild {
   bool DeallocPBackgroundIDBDatabaseRequestChild(
       PBackgroundIDBDatabaseRequestChild* aActor);
 
-  PBackgroundIDBTransactionChild* AllocPBackgroundIDBTransactionChild(
-      const nsTArray<nsString>& aObjectStoreNames, const Mode& aMode);
-
-  bool DeallocPBackgroundIDBTransactionChild(
-      PBackgroundIDBTransactionChild* aActor);
-
-  PBackgroundIDBVersionChangeTransactionChild*
+  already_AddRefed<PBackgroundIDBVersionChangeTransactionChild>
   AllocPBackgroundIDBVersionChangeTransactionChild(uint64_t aCurrentVersion,
                                                    uint64_t aRequestedVersion,
                                                    int64_t aNextObjectStoreId,
@@ -352,9 +346,6 @@ class BackgroundDatabaseChild final : public PBackgroundIDBDatabaseChild {
       PBackgroundIDBVersionChangeTransactionChild* aActor,
       const uint64_t& aCurrentVersion, const uint64_t& aRequestedVersion,
       const int64_t& aNextObjectStoreId, const int64_t& aNextIndexId) override;
-
-  bool DeallocPBackgroundIDBVersionChangeTransactionChild(
-      PBackgroundIDBVersionChangeTransactionChild* aActor);
 
   PBackgroundMutableFileChild* AllocPBackgroundMutableFileChild(
       const nsString& aName, const nsString& aType);
@@ -443,6 +434,8 @@ class BackgroundTransactionChild final : public BackgroundTransactionBase,
   friend IDBDatabase;
 
  public:
+  NS_INLINE_DECL_REFCOUNTING(BackgroundTransactionChild, override)
+
 #ifdef DEBUG
   void AssertIsOnOwningThread() const override;
 #endif
@@ -483,6 +476,8 @@ class BackgroundVersionChangeTransactionChild final
   IDBOpenDBRequest* mOpenDBRequest;
 
  public:
+  NS_INLINE_DECL_REFCOUNTING(BackgroundVersionChangeTransactionChild, override)
+
 #ifdef DEBUG
   void AssertIsOnOwningThread() const override;
 #endif
@@ -643,7 +638,7 @@ class BackgroundCursorChildBase : public PBackgroundIDBCursorChild {
  private:
   NS_DECL_OWNINGTHREAD
  protected:
-  InitializedOnceNotNull<IDBRequest* const> mRequest;
+  InitializedOnce<const NotNull<IDBRequest*>> mRequest;
   Maybe<IDBTransaction&> mTransaction;
 
   // These are only set while a request is in progress.
@@ -688,7 +683,7 @@ class BackgroundCursorChild final : public BackgroundCursorChildBase {
   friend class BackgroundTransactionChild;
   friend class BackgroundVersionChangeTransactionChild;
 
-  InitializedOnceNotNull<SourceType* const> mSource;
+  InitializedOnce<const NotNull<SourceType*>> mSource;
   IDBCursorImpl<CursorType>* mCursor;
 
   std::deque<CursorData<CursorType>> mCachedResponses, mDelayedResponses;
@@ -732,7 +727,7 @@ class BackgroundCursorChild final : public BackgroundCursorChildBase {
                                      const Func& aHandleRecord);
 
   template <typename... Args>
-  MOZ_MUST_USE RefPtr<IDBCursor> HandleIndividualCursorResponse(
+  [[nodiscard]] RefPtr<IDBCursor> HandleIndividualCursorResponse(
       bool aUseAsCurrentResult, Args&&... aArgs);
 
  public:

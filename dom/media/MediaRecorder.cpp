@@ -97,10 +97,10 @@ class MediaRecorderReporter final : public nsIMemoryReporter {
 
     nsCOMPtr<nsIHandleReportCallback> handleReport = aHandleReport;
     nsCOMPtr<nsISupports> data = aData;
-    MediaRecorder::SizeOfPromise::All(GetCurrentThreadSerialEventTarget(),
+    MediaRecorder::SizeOfPromise::All(GetCurrentSerialEventTarget(),
                                       promises)
         ->Then(
-            GetCurrentThreadSerialEventTarget(), __func__,
+            GetCurrentSerialEventTarget(), __func__,
             [handleReport, data](const nsTArray<size_t>& sizes) {
               nsCOMPtr<nsIMemoryReporterManager> manager =
                   do_GetService("@mozilla.org/memory-reporter-manager;1");
@@ -686,13 +686,11 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
         mTimeslice(aTimeslice),
         mVideoBitsPerSecond(aVideoBitsPerSecond),
         mAudioBitsPerSecond(aAudioBitsPerSecond),
-        mStartTime(TimeStamp::Now()),
         mRunningState(RunningState::Idling) {
     MOZ_ASSERT(NS_IsMainThread());
 
     mMaxMemory = Preferences::GetUint("media.recorder.max_memory",
                                       MAX_ALLOW_MEMORY_BUFFER);
-    Telemetry::ScalarAdd(Telemetry::ScalarID::MEDIARECORDER_RECORDING_COUNT, 1);
   }
 
   void PrincipalChanged(MediaStreamTrack* aTrack) override {
@@ -1258,13 +1256,6 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       return mShutdownPromise;
     }
 
-    // This is a coarse calculation and does not reflect the duration of the
-    // final recording for reasons such as pauses. However it allows us an
-    // idea of how long people are running their recorders for.
-    TimeDuration timeDelta = TimeStamp::Now() - mStartTime;
-    Telemetry::Accumulate(Telemetry::MEDIA_RECORDER_RECORDING_DURATION,
-                          timeDelta.ToSeconds());
-
     mShutdownPromise = ShutdownPromise::CreateAndResolve(true, __func__);
 
     if (mEncoder) {
@@ -1375,8 +1366,6 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   const uint32_t mVideoBitsPerSecond;
   // The audio bitrate the recorder was configured with.
   const uint32_t mAudioBitsPerSecond;
-  // The time this session started, for telemetry.
-  const TimeStamp mStartTime;
   // The session's current main thread state. The error type gets set when
   // ending a recording with an error. An NS_OK error is invalid.
   // Main thread only.
@@ -1421,21 +1410,21 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
 
   InitializeDomExceptions();
 
-  // When a MediaRecorder object’s start() method is invoked, the UA MUST run
+  // When a MediaRecorder object???s start() method is invoked, the UA MUST run
   // the following steps:
 
   // 1. Let recorder be the MediaRecorder object on which the method was
   //    invoked.
 
-  // 2. Let timeslice be the method’s first argument, if provided, or undefined.
+  // 2. Let timeslice be the method???s first argument, if provided, or undefined.
   TimeDuration timeslice =
       aTimeslice.WasPassed()
           ? TimeDuration::FromMilliseconds(aTimeslice.Value())
           : TimeDuration::Forever();
 
-  // 3. Let stream be the value of recorder’s stream attribute.
+  // 3. Let stream be the value of recorder???s stream attribute.
 
-  // 4. Let tracks be the set of live tracks in stream’s track set.
+  // 4. Let tracks be the set of live tracks in stream???s track set.
   nsTArray<RefPtr<MediaStreamTrack>> tracks;
   if (mStream) {
     mStream->GetTracks(tracks);
@@ -1446,7 +1435,7 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
     }
   }
 
-  // 5. If the value of recorder’s state attribute is not inactive, throw an
+  // 5. If the value of recorder???s state attribute is not inactive, throw an
   //    InvalidStateError DOMException and abort these steps.
   if (mState != RecordingState::Inactive) {
     aResult.ThrowInvalidStateError(
@@ -1517,12 +1506,12 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
     }
   }
 
-  // 9. If recorder’s [[ConstrainedBitsPerSecond]] slot is not undefined, set
-  //    recorder’s videoBitsPerSecond and audioBitsPerSecond attributes to
+  // 9. If recorder???s [[ConstrainedBitsPerSecond]] slot is not undefined, set
+  //    recorder???s videoBitsPerSecond and audioBitsPerSecond attributes to
   //    values the User Agent deems reasonable for the respective media types,
   //    for recording all tracks in tracks, such that the sum of
   //    videoBitsPerSecond and audioBitsPerSecond is close to the value of
-  //    recorder’s
+  //    recorder???s
   //    [[ConstrainedBitsPerSecond]] slot.
   if (mConstrainedBitsPerSecond) {
     uint8_t numVideoTracks = 0;
@@ -1542,7 +1531,7 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
                    &mVideoBitsPerSecond, numAudioTracks, &mAudioBitsPerSecond);
   }
 
-  // 10. Let videoBitrate be the value of recorder’s videoBitsPerSecond
+  // 10. Let videoBitrate be the value of recorder???s videoBitsPerSecond
   //     attribute, and constrain the configuration of recorder to target an
   //     aggregate bitrate of videoBitrate bits per second for all video tracks
   //     recorder will be recording. videoBitrate is a hint for the encoder and
@@ -1550,7 +1539,7 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
   //     long period of time.
   const uint32_t videoBitrate = mVideoBitsPerSecond;
 
-  // 11. Let audioBitrate be the value of recorder’s audioBitsPerSecond
+  // 11. Let audioBitrate be the value of recorder???s audioBitsPerSecond
   //     attribute, and constrain the configuration of recorder to target an
   //     aggregate bitrate of audioBitrate bits per second for all audio tracks
   //     recorder will be recording. audioBitrate is a hint for the encoder and
@@ -1558,7 +1547,7 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
   //     long period of time.
   const uint32_t audioBitrate = mAudioBitsPerSecond;
 
-  // 12. Set recorder’s state to recording
+  // 12. Set recorder???s state to recording
   mState = RecordingState::Recording;
 
   MediaRecorderReporter::AddMediaRecorder(this);
@@ -1573,13 +1562,13 @@ void MediaRecorder::Stop(ErrorResult& aResult) {
   LOG(LogLevel::Debug, ("MediaRecorder.Stop %p", this));
   MediaRecorderReporter::RemoveMediaRecorder(this);
 
-  // When a MediaRecorder object’s stop() method is invoked, the UA MUST run the
+  // When a MediaRecorder object???s stop() method is invoked, the UA MUST run the
   // following steps:
 
   // 1. Let recorder be the MediaRecorder object on which the method was
   //    invoked.
 
-  // 2. If recorder’s state attribute is inactive, abort these steps.
+  // 2. If recorder???s state attribute is inactive, abort these steps.
   if (mState == RecordingState::Inactive) {
     return;
   }
@@ -1602,7 +1591,7 @@ void MediaRecorder::Stop(ErrorResult& aResult) {
 void MediaRecorder::Pause(ErrorResult& aResult) {
   LOG(LogLevel::Debug, ("MediaRecorder.Pause %p", this));
 
-  // When a MediaRecorder object’s pause() method is invoked, the UA MUST run
+  // When a MediaRecorder object???s pause() method is invoked, the UA MUST run
   // the following steps:
 
   // 1. If state is inactive, throw an InvalidStateError DOMException and abort
@@ -1641,7 +1630,7 @@ void MediaRecorder::Pause(ErrorResult& aResult) {
 void MediaRecorder::Resume(ErrorResult& aResult) {
   LOG(LogLevel::Debug, ("MediaRecorder.Resume %p", this));
 
-  // When a MediaRecorder object’s resume() method is invoked, the UA MUST run
+  // When a MediaRecorder object???s resume() method is invoked, the UA MUST run
   // the following steps:
 
   // 1. If state is inactive, throw an InvalidStateError DOMException and abort
@@ -1679,7 +1668,7 @@ void MediaRecorder::Resume(ErrorResult& aResult) {
 void MediaRecorder::RequestData(ErrorResult& aResult) {
   LOG(LogLevel::Debug, ("MediaRecorder.RequestData %p", this));
 
-  // When a MediaRecorder object’s requestData() method is invoked, the UA MUST
+  // When a MediaRecorder object???s requestData() method is invoked, the UA MUST
   // run the following steps:
 
   // 1. If state is inactive throw an InvalidStateError DOMException and
@@ -1719,11 +1708,11 @@ already_AddRefed<MediaRecorder> MediaRecorder::Constructor(
   // When the MediaRecorder() constructor is invoked, the User Agent MUST run
   // the following steps:
 
-  // 1. Let stream be the constructor’s first argument.
+  // 1. Let stream be the constructor???s first argument.
 
-  // 2. Let options be the constructor’s second argument.
+  // 2. Let options be the constructor???s second argument.
 
-  // 3. If invoking is type supported with options’ mimeType member as its
+  // 3. If invoking is type supported with options??? mimeType member as its
   //    argument returns false, throw a NotSupportedError DOMException and abort
   //    these steps.
   TypeSupport support = IsTypeSupportedImpl(aOptions.mMimeType);
@@ -1743,42 +1732,42 @@ already_AddRefed<MediaRecorder> MediaRecorder::Constructor(
   recorder->mConstrainedMimeType = aOptions.mMimeType;
 
   // 6. Let recorder have a [[ConstrainedBitsPerSecond]] internal slot,
-  //    initialized to the value of options’ bitsPerSecond member, if it is
+  //    initialized to the value of options??? bitsPerSecond member, if it is
   //    present, otherwise undefined.
   recorder->mConstrainedBitsPerSecond =
       aOptions.mBitsPerSecond.WasPassed()
           ? Some(aOptions.mBitsPerSecond.Value())
           : Nothing();
 
-  // 7. Initialize recorder’s stream attribute to stream.
+  // 7. Initialize recorder???s stream attribute to stream.
   recorder->mStream = &aStream;
 
-  // 8. Initialize recorder’s mimeType attribute to the value of recorder’s
+  // 8. Initialize recorder???s mimeType attribute to the value of recorder???s
   //    [[ConstrainedMimeType]] slot.
   recorder->mMimeType = recorder->mConstrainedMimeType;
 
-  // 9. Initialize recorder’s state attribute to inactive.
+  // 9. Initialize recorder???s state attribute to inactive.
   recorder->mState = RecordingState::Inactive;
 
-  // 10. Initialize recorder’s videoBitsPerSecond attribute to the value of
-  //     options’ videoBitsPerSecond member, if it is present. Otherwise, choose
+  // 10. Initialize recorder???s videoBitsPerSecond attribute to the value of
+  //     options??? videoBitsPerSecond member, if it is present. Otherwise, choose
   //     a target value the User Agent deems reasonable for video.
   recorder->mVideoBitsPerSecond = aOptions.mVideoBitsPerSecond.WasPassed()
                                       ? aOptions.mVideoBitsPerSecond.Value()
                                       : DEFAULT_VIDEO_BITRATE_BPS;
 
-  // 11. Initialize recorder’s audioBitsPerSecond attribute to the value of
-  //     options’ audioBitsPerSecond member, if it is present. Otherwise, choose
+  // 11. Initialize recorder???s audioBitsPerSecond attribute to the value of
+  //     options??? audioBitsPerSecond member, if it is present. Otherwise, choose
   //     a target value the User Agent deems reasonable for audio.
   recorder->mAudioBitsPerSecond = aOptions.mAudioBitsPerSecond.WasPassed()
                                       ? aOptions.mAudioBitsPerSecond.Value()
                                       : DEFAULT_AUDIO_BITRATE_BPS;
 
-  // 12. If recorder’s [[ConstrainedBitsPerSecond]] slot is not undefined, set
-  //     recorder’s videoBitsPerSecond and audioBitsPerSecond attributes to
+  // 12. If recorder???s [[ConstrainedBitsPerSecond]] slot is not undefined, set
+  //     recorder???s videoBitsPerSecond and audioBitsPerSecond attributes to
   //     values the User Agent deems reasonable for the respective media types,
   //     such that the sum of videoBitsPerSecond and audioBitsPerSecond is close
-  //     to the value of recorder’s [[ConstrainedBitsPerSecond]] slot.
+  //     to the value of recorder???s [[ConstrainedBitsPerSecond]] slot.
   if (recorder->mConstrainedBitsPerSecond) {
     SelectBitrates(*recorder->mConstrainedBitsPerSecond, 1,
                    &recorder->mVideoBitsPerSecond, 1,
@@ -1820,13 +1809,13 @@ already_AddRefed<MediaRecorder> MediaRecorder::Constructor(
   // When the MediaRecorder() constructor is invoked, the User Agent MUST run
   // the following steps:
 
-  // 1. Let stream be the constructor’s first argument. (we'll let audioNode be
+  // 1. Let stream be the constructor???s first argument. (we'll let audioNode be
   //    the first arg, and audioNodeOutput the second)
 
-  // 2. Let options be the constructor’s second argument. (we'll let options be
+  // 2. Let options be the constructor???s second argument. (we'll let options be
   //    the third arg)
 
-  // 3. If invoking is type supported with options’ mimeType member as its
+  // 3. If invoking is type supported with options??? mimeType member as its
   //    argument returns false, throw a NotSupportedError DOMException and abort
   //    these steps.
   TypeSupport support = IsTypeSupportedImpl(aOptions.mMimeType);
@@ -1846,44 +1835,44 @@ already_AddRefed<MediaRecorder> MediaRecorder::Constructor(
   recorder->mConstrainedMimeType = aOptions.mMimeType;
 
   // 6. Let recorder have a [[ConstrainedBitsPerSecond]] internal slot,
-  //    initialized to the value of options’ bitsPerSecond member, if it is
+  //    initialized to the value of options??? bitsPerSecond member, if it is
   //    present, otherwise undefined.
   recorder->mConstrainedBitsPerSecond =
       aOptions.mBitsPerSecond.WasPassed()
           ? Some(aOptions.mBitsPerSecond.Value())
           : Nothing();
 
-  // 7. Initialize recorder’s stream attribute to stream. (make that the
+  // 7. Initialize recorder???s stream attribute to stream. (make that the
   //    audioNode and audioNodeOutput equivalents)
   recorder->mAudioNode = &aAudioNode;
   recorder->mAudioNodeOutput = aAudioNodeOutput;
 
-  // 8. Initialize recorder’s mimeType attribute to the value of recorder’s
+  // 8. Initialize recorder???s mimeType attribute to the value of recorder???s
   //    [[ConstrainedMimeType]] slot.
   recorder->mMimeType = recorder->mConstrainedMimeType;
 
-  // 9. Initialize recorder’s state attribute to inactive.
+  // 9. Initialize recorder???s state attribute to inactive.
   recorder->mState = RecordingState::Inactive;
 
-  // 10. Initialize recorder’s videoBitsPerSecond attribute to the value of
-  //     options’ videoBitsPerSecond member, if it is present. Otherwise, choose
+  // 10. Initialize recorder???s videoBitsPerSecond attribute to the value of
+  //     options??? videoBitsPerSecond member, if it is present. Otherwise, choose
   //     a target value the User Agent deems reasonable for video.
   recorder->mVideoBitsPerSecond = aOptions.mVideoBitsPerSecond.WasPassed()
                                       ? aOptions.mVideoBitsPerSecond.Value()
                                       : DEFAULT_VIDEO_BITRATE_BPS;
 
-  // 11. Initialize recorder’s audioBitsPerSecond attribute to the value of
-  //     options’ audioBitsPerSecond member, if it is present. Otherwise, choose
+  // 11. Initialize recorder???s audioBitsPerSecond attribute to the value of
+  //     options??? audioBitsPerSecond member, if it is present. Otherwise, choose
   //     a target value the User Agent deems reasonable for audio.
   recorder->mAudioBitsPerSecond = aOptions.mAudioBitsPerSecond.WasPassed()
                                       ? aOptions.mAudioBitsPerSecond.Value()
                                       : DEFAULT_AUDIO_BITRATE_BPS;
 
-  // 12. If recorder’s [[ConstrainedBitsPerSecond]] slot is not undefined, set
-  //     recorder’s videoBitsPerSecond and audioBitsPerSecond attributes to
+  // 12. If recorder???s [[ConstrainedBitsPerSecond]] slot is not undefined, set
+  //     recorder???s videoBitsPerSecond and audioBitsPerSecond attributes to
   //     values the User Agent deems reasonable for the respective media types,
   //     such that the sum of videoBitsPerSecond and audioBitsPerSecond is close
-  //     to the value of recorder’s [[ConstrainedBitsPerSecond]] slot.
+  //     to the value of recorder???s [[ConstrainedBitsPerSecond]] slot.
   if (recorder->mConstrainedBitsPerSecond) {
     SelectBitrates(*recorder->mConstrainedBitsPerSecond, 1,
                    &recorder->mVideoBitsPerSecond, 1,
@@ -2018,18 +2007,18 @@ void MediaRecorder::Inactivate() {
   LOG(LogLevel::Debug, ("MediaRecorder.Inactivate %p", this));
   // The Inactivate the recorder algorithm given a recorder, is as follows:
 
-  // 1. Set recorder’s mimeType attribute to the value of the
+  // 1. Set recorder???s mimeType attribute to the value of the
   //    [[ConstrainedMimeType]] slot.
   mMimeType = mConstrainedMimeType;
 
-  // 2. Set recorder’s state attribute to inactive.
+  // 2. Set recorder???s state attribute to inactive.
   mState = RecordingState::Inactive;
 
-  // 3. If recorder’s [[ConstrainedBitsPerSecond]] slot is not undefined, set
-  //    recorder’s videoBitsPerSecond and audioBitsPerSecond attributes to
+  // 3. If recorder???s [[ConstrainedBitsPerSecond]] slot is not undefined, set
+  //    recorder???s videoBitsPerSecond and audioBitsPerSecond attributes to
   //    values the User Agent deems reasonable for the respective media types,
   //    such that the sum of videoBitsPerSecond and audioBitsPerSecond is close
-  //    to the value of recorder’s [[ConstrainedBitsPerSecond]] slot.
+  //    to the value of recorder???s [[ConstrainedBitsPerSecond]] slot.
   if (mConstrainedBitsPerSecond) {
     SelectBitrates(*mConstrainedBitsPerSecond, 1, &mVideoBitsPerSecond, 1,
                    &mAudioBitsPerSecond);
@@ -2055,9 +2044,9 @@ RefPtr<MediaRecorder::SizeOfPromise> MediaRecorder::SizeOfExcludingThis(
     promises.AppendElement(session->SizeOfExcludingThis(aMallocSizeOf));
   }
 
-  SizeOfPromise::All(GetCurrentThreadSerialEventTarget(), promises)
+  SizeOfPromise::All(GetCurrentSerialEventTarget(), promises)
       ->Then(
-          GetCurrentThreadSerialEventTarget(), __func__,
+          GetCurrentSerialEventTarget(), __func__,
           [holder](const nsTArray<size_t>& sizes) {
             size_t total = 0;
             for (const size_t& size : sizes) {

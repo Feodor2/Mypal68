@@ -6219,22 +6219,6 @@ void Document::SetScopeObject(nsIGlobalObject* aGlobal) {
   }
 }
 
-bool Document::ContainsEMEContent() {
-  bool containsEME = false;
-
-  auto check = [&containsEME](nsISupports* aSupports) {
-    nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
-    if (auto* mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
-      if (mediaElem->GetMediaKeys()) {
-        containsEME = true;
-      }
-    }
-  };
-
-  EnumerateActivityObservers(check);
-  return containsEME;
-}
-
 bool Document::ContainsMSEContent() {
   bool containsMSE = false;
 
@@ -9998,13 +9982,6 @@ bool Document::CanSavePresentation(nsIRequest* aNewRequest,
   }
 #endif  // MOZ_WEBRTC
 
-  // Don't save presentations for documents containing EME content, so that
-  // CDMs reliably shutdown upon user navigation.
-  if (ContainsEMEContent()) {
-    aBFCacheCombo |= BFCacheStatus::CONTAINS_EME_CONTENT;
-    ret = false;
-  }
-
   // Don't save presentations for documents containing MSE content, to
   // reduce memory usage.
   if (ContainsMSEContent()) {
@@ -12940,16 +12917,13 @@ void Document::UnsetFullscreenElement() {
   UpdateViewportScrollbarOverrideForFullscreen(this);
 }
 
-bool Document::SetFullscreenElement(Element* aElement) {
-  if (TopLayerPush(aElement)) {
-    EventStateManager::SetFullscreenState(aElement, true);
-    UpdateViewportScrollbarOverrideForFullscreen(this);
-    return true;
-  }
-  return false;
+void Document::SetFullscreenElement(Element* aElement) {
+  TopLayerPush(aElement);
+  EventStateManager::SetFullscreenState(aElement, true);
+  UpdateViewportScrollbarOverrideForFullscreen(this);
 }
 
-bool Document::TopLayerPush(Element* aElement) {
+void Document::TopLayerPush(Element* aElement) {
   NS_ASSERTION(aElement, "Must pass non-null to TopLayerPush()");
   auto predictFunc = [&aElement](Element* element) {
     return element == aElement;
@@ -12958,7 +12932,60 @@ bool Document::TopLayerPush(Element* aElement) {
 
   mTopLayer.AppendElement(do_GetWeakReference(aElement));
   NS_ASSERTION(GetTopLayerTop() == aElement, "Should match");
-  return true;
+}
+
+void Document::SetBlockedByModalDialog(HTMLDialogElement& aDialogElement) {
+  Element* root = GetRootElement();
+  MOZ_RELEASE_ASSERT(root, "dialog in document without root?");
+
+  // Add inert to the root element so that the inertness is
+  // applied to the entire document. Since the modal dialog
+  // also inherits the inertness, adding
+  // NS_EVENT_STATE_TOPMOST_MODAL_DIALOG to remove the inertness
+  // explicitly.
+  root->AddStates(NS_EVENT_STATE_MOZINERT);
+  aDialogElement.AddStates(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
+
+  // It's possible that there's another modal dialog has opened
+  // previously which doesn't have the inertness (because we've
+  // removed the inertness explicitly). Since a
+  // new modal dialog is opened, we need to grant the inertness
+  // to the previous one.
+  for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
+    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+    if (auto* dialog = HTMLDialogElement::FromNodeOrNull(element)) {
+      if (dialog != &aDialogElement) {
+        dialog->RemoveStates(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
+        // It's ok to exit the loop as only one modal dialog should
+        // have the state
+        break;
+      }
+    }
+  }
+}
+
+void Document::UnsetBlockedByModalDialog(HTMLDialogElement& aDialogElement) {
+  aDialogElement.RemoveStates(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
+
+  // The document could still be blocked by another modal dialog.
+  // We need to remove the inertness from this modal dialog.
+  for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
+    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+    if (auto* dialog = HTMLDialogElement::FromNodeOrNull(element)) {
+      if (dialog != &aDialogElement) {
+        dialog->AddStates(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
+        // Return here because we want to keep the inertness for the
+        // root element as the document is still blocked by a modal
+        // dialog
+        return;
+      }
+    }
+  }
+
+  Element* root = GetRootElement();
+  if (root && !root->GetBoolAttr(nsGkAtoms::inert)) {
+    root->RemoveStates(NS_EVENT_STATE_MOZINERT);
+  }
 }
 
 Element* Document::TopLayerPop(FunctionRef<bool(Element*)> aPredicateFunc) {
@@ -13013,7 +13040,7 @@ Element* Document::GetTopLayerTop() {
 Element* Document::GetUnretargetedFullScreenElement() {
   for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
     nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
-    // Per spec, the fullscreen element is the topmost element in the document’s
+    // Per spec, the fullscreen element is the topmost element in the document???s
     // top layer whose fullscreen flag is set, if any, and null otherwise.
     if (element && element->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
       return element;
@@ -13146,6 +13173,10 @@ bool Document::FullscreenElementReadyCheck(FullscreenRequest& aRequest) {
   }
   if (HasFullscreenSubDocument(*this)) {
     aRequest.Reject("FullscreenDeniedSubDocFullScreen");
+    return false;
+  }
+  if (elem->IsHTMLElement(nsGkAtoms::dialog)) {
+    aRequest.Reject("FullscreenDeniedHTMLDialog");
     return false;
   }
   // XXXsmaug Note, we don't follow the latest fullscreen spec here.
@@ -13312,8 +13343,7 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
   // element, and the fullscreen-ancestor styles on ancestors of the element
   // in this document.
   Element* elem = aRequest->Element();
-  DebugOnly<bool> x = SetFullscreenElement(elem);
-  MOZ_ASSERT(x, "Fullscreen state of requesting doc should always change!");
+  SetFullscreenElement(elem);
   // Set the iframe fullscreen flag.
   if (auto* iframe = HTMLIFrameElement::FromNode(elem)) {
     iframe->SetFullscreenFlag(true);
@@ -13353,16 +13383,14 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
     }
     Document* parent = child->GetInProcessParentDocument();
     Element* element = parent->FindContentForSubDocument(child);
-    if (parent->SetFullscreenElement(element)) {
-      changed.AppendElement(parent);
-      child = parent;
-    } else {
-      // We've reached either the root, or a point in the doctree where the
-      // new fullscreen element container is the same as the previous
-      // fullscreen element's container. No more changes need to be made
-      // to the top layer of documents further up the tree.
+    if (!element) {
+      // We've reached the root.No more changes need to be made
+      // to the top layer stacks of documents further up the tree.
       break;
     }
+    parent->SetFullscreenElement(element);
+    changed.AppendElement(parent);
+    child = parent;
   }
 
   FullscreenRoots::Add(this);
@@ -15031,7 +15059,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
 
 
         self->AutomaticStorageAccessCanBeGranted()->Then(
-            GetCurrentThreadSerialEventTarget(), __func__,
+            GetCurrentSerialEventTarget(), __func__,
             [p, pr, sapr, inner, onAnySite](
                 const AutomaticStorageAccessGrantPromise::ResolveOrRejectValue&
                     aValue) -> void {
@@ -15064,7 +15092,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
                     p->Resolve(choice, __func__);
                   } else {
                     sapr->MaybeDelayAutomaticGrants()->Then(
-                        GetCurrentThreadSerialEventTarget(), __func__,
+                        GetCurrentSerialEventTarget(), __func__,
                         [p, choice] { p->Resolve(choice, __func__); },
                         [p] { p->Reject(false, __func__); });
                   }
@@ -15085,7 +15113,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
           NodePrincipal(), inner, AntiTrackingCommon::eStorageAccessAPI,
           performFinalChecks)
           ->Then(
-              GetCurrentThreadSerialEventTarget(), __func__,
+              GetCurrentSerialEventTarget(), __func__,
               [outer, promise] {
                 // Step 10. Grant the document access to cookies and store
                 // that fact for
@@ -15121,7 +15149,7 @@ Document::AutomaticStorageAccessCanBeGranted() {
         ->SendAutomaticStorageAccessCanBeGranted(
             IPC::Principal(NodePrincipal()))
         ->Then(
-            GetCurrentThreadSerialEventTarget(), __func__,
+            GetCurrentSerialEventTarget(), __func__,
             [](const ContentChild::AutomaticStorageAccessCanBeGrantedPromise::
                    ResolveOrRejectValue& aValue) {
               if (aValue.IsResolve()) {

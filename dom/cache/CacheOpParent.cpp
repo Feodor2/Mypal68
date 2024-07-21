@@ -40,29 +40,27 @@ CacheOpParent::CacheOpParent(PBackgroundParent* aIpcManager,
 
 CacheOpParent::~CacheOpParent() { NS_ASSERT_OWNINGTHREAD(CacheOpParent); }
 
-void CacheOpParent::Execute(ManagerId* aManagerId) {
+void CacheOpParent::Execute(const SafeRefPtr<ManagerId>& aManagerId) {
   NS_ASSERT_OWNINGTHREAD(CacheOpParent);
   MOZ_DIAGNOSTIC_ASSERT(!mManager);
   MOZ_DIAGNOSTIC_ASSERT(!mVerifier);
 
-  RefPtr<cache::Manager> manager;
-  nsresult rv =
-      cache::Manager::GetOrCreate(aManagerId, getter_AddRefs(manager));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    ErrorResult result(rv);
+  auto managerOrErr = cache::Manager::AcquireCreateIfNonExistent(aManagerId);
+  if (NS_WARN_IF(managerOrErr.isErr())) {
+    ErrorResult result(managerOrErr.unwrapErr());
     Unused << Send__delete__(this, std::move(result), void_t());
     return;
   }
 
-  Execute(manager);
+  Execute(managerOrErr.unwrap());
 }
 
-void CacheOpParent::Execute(cache::Manager* aManager) {
+void CacheOpParent::Execute(SafeRefPtr<cache::Manager> aManager) {
   NS_ASSERT_OWNINGTHREAD(CacheOpParent);
   MOZ_DIAGNOSTIC_ASSERT(!mManager);
   MOZ_DIAGNOSTIC_ASSERT(!mVerifier);
 
-  mManager = aManager;
+  mManager = std::move(aManager);
 
   // Handle put op
   if (mOpArgs.type() == CacheOpArgs::TCachePutAllArgs) {
@@ -123,7 +121,8 @@ void CacheOpParent::ActorDestroy(ActorDestroyReason aReason) {
   mIpcManager = nullptr;
 }
 
-void CacheOpParent::OnPrincipalVerified(nsresult aRv, ManagerId* aManagerId) {
+void CacheOpParent::OnPrincipalVerified(
+    nsresult aRv, const SafeRefPtr<ManagerId>& aManagerId) {
   NS_ASSERT_OWNINGTHREAD(CacheOpParent);
 
   mVerifier->RemoveListener(this);
@@ -138,10 +137,10 @@ void CacheOpParent::OnPrincipalVerified(nsresult aRv, ManagerId* aManagerId) {
   Execute(aManagerId);
 }
 
-void CacheOpParent::OnOpComplete(
-    ErrorResult&& aRv, const CacheOpResult& aResult, CacheId aOpenedCacheId,
-    const nsTArray<SavedResponse>& aSavedResponseList,
-    const nsTArray<SavedRequest>& aSavedRequestList, StreamList* aStreamList) {
+void CacheOpParent::OnOpComplete(ErrorResult&& aRv,
+                                 const CacheOpResult& aResult,
+                                 CacheId aOpenedCacheId,
+                                 const Maybe<StreamInfo>& aStreamInfo) {
   NS_ASSERT_OWNINGTHREAD(CacheOpParent);
   MOZ_DIAGNOSTIC_ASSERT(mIpcManager);
   MOZ_DIAGNOSTIC_ASSERT(mManager);
@@ -153,9 +152,11 @@ void CacheOpParent::OnOpComplete(
     return;
   }
 
-  uint32_t entryCount = std::max(
-      1lu, static_cast<unsigned long>(std::max(aSavedResponseList.Length(),
-                                               aSavedRequestList.Length())));
+  uint32_t entryCount =
+      std::max(1lu, aStreamInfo ? static_cast<unsigned long>(std::max(
+                                      aStreamInfo->mSavedResponseList.Length(),
+                                      aStreamInfo->mSavedRequestList.Length()))
+                                : 0lu);
 
   // The result must contain the appropriate type at this point.  It may
   // or may not contain the additional result data yet.  For types that
@@ -166,15 +167,19 @@ void CacheOpParent::OnOpComplete(
   AutoParentOpResult result(mIpcManager, aResult, entryCount);
 
   if (aOpenedCacheId != INVALID_CACHE_ID) {
-    result.Add(aOpenedCacheId, mManager);
+    result.Add(aOpenedCacheId, mManager.clonePtr());
   }
 
-  for (uint32_t i = 0; i < aSavedResponseList.Length(); ++i) {
-    result.Add(aSavedResponseList[i], aStreamList);
-  }
+  if (aStreamInfo) {
+    const auto& streamInfo = *aStreamInfo;
 
-  for (uint32_t i = 0; i < aSavedRequestList.Length(); ++i) {
-    result.Add(aSavedRequestList[i], aStreamList);
+    for (const auto& savedResponse : streamInfo.mSavedResponseList) {
+      result.Add(savedResponse, streamInfo.mStreamList);
+    }
+
+    for (const auto& savedRequest : streamInfo.mSavedRequestList) {
+      result.Add(savedRequest, streamInfo.mStreamList);
+    }
   }
 
   Unused << Send__delete__(this, std::move(aRv), result.SendAsOpResult());

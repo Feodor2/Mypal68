@@ -12,6 +12,7 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/MediaSourceBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TimeRanges.h"
 #include "nsError.h"
 #include "nsIRunnable.h"

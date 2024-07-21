@@ -209,8 +209,6 @@ void AudioTrackEncoder::TryInit(const AudioSegment& aSegment,
                "(default) channels!",
                AUDIO_INIT_FAILED_DURATION, DEFAULT_CHANNELS));
     nsresult rv = Init(DEFAULT_CHANNELS, mTrackRate);
-    Telemetry::Accumulate(
-        Telemetry::MEDIA_RECORDER_TRACK_ENCODER_INIT_TIMEOUT_TYPE, 0);
     if (NS_FAILED(rv)) {
       TRACK_LOG(LogLevel::Error,
                 ("[AudioTrackEncoder %p]: Default-channel-init failed.", this));
@@ -503,8 +501,6 @@ void VideoTrackEncoder::Init(const VideoSegment& aSegment,
     TRACK_LOG(LogLevel::Warning,
               ("[VideoTrackEncoder %p]: No successful init for %ds.", this,
                VIDEO_INIT_FAILED_DURATION));
-    Telemetry::Accumulate(
-        Telemetry::MEDIA_RECORDER_TRACK_ENCODER_INIT_TIMEOUT_TYPE, 1);
     OnError();
     return;
   }

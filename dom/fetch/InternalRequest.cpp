@@ -18,13 +18,13 @@
 namespace mozilla {
 namespace dom {
 // The global is used to extract the principal.
-already_AddRefed<InternalRequest> InternalRequest::GetRequestConstructorCopy(
+SafeRefPtr<InternalRequest> InternalRequest::GetRequestConstructorCopy(
     nsIGlobalObject* aGlobal, ErrorResult& aRv) const {
   MOZ_RELEASE_ASSERT(!mURLList.IsEmpty(),
                      "Internal Request's urlList should not be empty when "
                      "copied from constructor.");
-  RefPtr<InternalRequest> copy =
-      new InternalRequest(mURLList.LastElement(), mFragment);
+  auto copy =
+      MakeSafeRefPtr<InternalRequest>(mURLList.LastElement(), mFragment);
   copy->SetMethod(mMethod);
   copy->mHeaders = new InternalHeaders(*mHeaders);
   copy->SetUnsafeRequest();
@@ -33,8 +33,6 @@ already_AddRefed<InternalRequest> InternalRequest::GetRequestConstructorCopy(
   // The "client" is not stored in our implementation. Fetch API users should
   // use the appropriate window/document/principal and other Gecko security
   // mechanisms as appropriate.
-  copy->mSameOriginDataURL = true;
-  copy->mPreserveContentCodings = true;
   copy->mReferrer = mReferrer;
   copy->mReferrerPolicy = mReferrerPolicy;
   copy->mEnvironmentReferrerPolicy = mEnvironmentReferrerPolicy;
@@ -51,14 +49,14 @@ already_AddRefed<InternalRequest> InternalRequest::GetRequestConstructorCopy(
   copy->mContentPolicyTypeOverridden = mContentPolicyTypeOverridden;
 
   copy->mPreferredAlternativeDataType = mPreferredAlternativeDataType;
-  return copy.forget();
+  return copy;
 }
 
-already_AddRefed<InternalRequest> InternalRequest::Clone() {
-  RefPtr<InternalRequest> clone = new InternalRequest(*this);
+SafeRefPtr<InternalRequest> InternalRequest::Clone() {
+  auto clone = MakeSafeRefPtr<InternalRequest>(*this, ConstructorGuard{});
 
   if (!mBodyStream) {
-    return clone.forget();
+    return clone;
   }
 
   nsCOMPtr<nsIInputStream> clonedBody;
@@ -74,7 +72,7 @@ already_AddRefed<InternalRequest> InternalRequest::Clone() {
   if (replacementBody) {
     mBodyStream.swap(replacementBody);
   }
-  return clone.forget();
+  return clone;
 }
 InternalRequest::InternalRequest(const nsACString& aURL,
                                  const nsACString& aFragment)
@@ -87,22 +85,8 @@ InternalRequest::InternalRequest(const nsACString& aURL,
       mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(RequestMode::No_cors),
       mCredentialsMode(RequestCredentials::Omit),
-      mResponseTainting(LoadTainting::Basic),
       mCacheMode(RequestCache::Default),
-      mRedirectMode(RequestRedirect::Follow),
-      mMozErrors(false),
-      mAuthenticationFlag(false),
-      mPreserveContentCodings(false)
-      // FIXME(nsm): This should be false by default, but will lead to the
-      // algorithm never loading data: URLs right now. See Bug 1018872 about
-      // how certain contexts will override it to set it to true. Fetch
-      // specification does not handle this yet.
-      ,
-      mSameOriginDataURL(true),
-      mSkipServiceWorker(false),
-      mSynchronous(false),
-      mUnsafeRequest(false),
-      mUseURLCredentials(false) {
+      mRedirectMode(RequestRedirect::Follow) {
   MOZ_ASSERT(!aURL.IsEmpty());
   AddURL(aURL, aFragment);
 }
@@ -122,24 +106,14 @@ InternalRequest::InternalRequest(
       mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(aMode),
       mCredentialsMode(aRequestCredentials),
-      mResponseTainting(LoadTainting::Basic),
       mCacheMode(aCacheMode),
       mRedirectMode(aRequestRedirect),
-      mIntegrity(aIntegrity),
-      mMozErrors(false),
-      mAuthenticationFlag(false),
-      mPreserveContentCodings(false)
-      // FIXME See the above comment in the default constructor.
-      ,
-      mSameOriginDataURL(true),
-      mSkipServiceWorker(false),
-      mSynchronous(false),
-      mUnsafeRequest(false),
-      mUseURLCredentials(false) {
+      mIntegrity(aIntegrity) {
   MOZ_ASSERT(!aURL.IsEmpty());
   AddURL(aURL, aFragment);
 }
-InternalRequest::InternalRequest(const InternalRequest& aOther)
+InternalRequest::InternalRequest(const InternalRequest& aOther,
+                                 ConstructorGuard)
     : mMethod(aOther.mMethod),
       mURLList(aOther.mURLList),
       mHeaders(new InternalHeaders(*aOther.mHeaders)),
@@ -156,9 +130,6 @@ InternalRequest::InternalRequest(const InternalRequest& aOther)
       mIntegrity(aOther.mIntegrity),
       mMozErrors(aOther.mMozErrors),
       mFragment(aOther.mFragment),
-      mAuthenticationFlag(aOther.mAuthenticationFlag),
-      mPreserveContentCodings(aOther.mPreserveContentCodings),
-      mSameOriginDataURL(aOther.mSameOriginDataURL),
       mSkipServiceWorker(aOther.mSkipServiceWorker),
       mSynchronous(aOther.mSynchronous),
       mUnsafeRequest(aOther.mUnsafeRequest),
@@ -167,7 +138,7 @@ InternalRequest::InternalRequest(const InternalRequest& aOther)
   // NOTE: does not copy body stream... use the fallible Clone() for that
 }
 
-InternalRequest::~InternalRequest() {}
+InternalRequest::~InternalRequest() = default;
 
 void InternalRequest::SetContentPolicyType(
     nsContentPolicyType aContentPolicyType) {

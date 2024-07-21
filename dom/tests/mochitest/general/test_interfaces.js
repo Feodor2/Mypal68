@@ -94,7 +94,6 @@ var ecmaGlobals = [
   { name: "String", insecureContext: true },
   { name: "Symbol", insecureContext: true },
   { name: "SyntaxError", insecureContext: true },
-  { name: "TypedObject", insecureContext: true, nightly: true },
   { name: "TypeError", insecureContext: true },
   { name: "Uint16Array", insecureContext: true },
   { name: "Uint32Array", insecureContext: true },
@@ -649,20 +648,6 @@ var interfaceNamesInGlobalScope = [
   { name: "MediaElementAudioSourceNode", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaError", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaKeyError", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaEncryptedEvent", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaKeys", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaKeySession", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaKeySystemAccess", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaKeyMessageEvent", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaKeyStatusMap", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaList", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

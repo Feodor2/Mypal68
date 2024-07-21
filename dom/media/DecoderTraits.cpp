@@ -147,10 +147,6 @@ static CanPlayStatus CanHandleMediaType(
   }
 #endif
 
-  if (DecoderTraits::IsMatroskaType(aType)) {
-    Telemetry::Accumulate(Telemetry::MEDIA_MKV_CANPLAY_REQUESTED, true);
-  }
-
   if (aType.ExtendedType().HaveCodecs()) {
     CanPlayStatus result = CanHandleCodecsType(aType, aDiagnostics);
     if (result == CANPLAY_NO || result == CANPLAY_YES) {

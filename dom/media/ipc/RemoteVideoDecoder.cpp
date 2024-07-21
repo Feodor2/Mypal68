@@ -35,13 +35,34 @@ class KnowsCompositorVideo : public layers::KnowsCompositor {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(KnowsCompositorVideo, override)
 
   layers::TextureForwarder* GetTextureForwarder() override {
-    return VideoBridgeChild::GetSingleton();
+    auto* vbc = VideoBridgeChild::GetSingleton();
+    return (vbc && vbc->CanSend()) ? vbc : nullptr;
   }
   layers::LayersIPCActor* GetLayersIPCActor() override {
-    return VideoBridgeChild::GetSingleton();
+    return GetTextureForwarder();
+  }
+
+  static already_AddRefed<KnowsCompositorVideo> TryCreateForIdentifier(
+      const layers::TextureFactoryIdentifier& aIdentifier) {
+    VideoBridgeChild* child = VideoBridgeChild::GetSingleton();
+    if (!child) {
+      return nullptr;
+    }
+
+    // The RDD process will never use hardware decoding since it's
+    // sandboxed, so don't bother trying to create a sync object.
+    TextureFactoryIdentifier ident = aIdentifier;
+    if (XRE_IsRDDProcess()) {
+      ident.mSyncHandle = 0;
+    }
+
+    RefPtr<KnowsCompositorVideo> knowsCompositor = new KnowsCompositorVideo();
+    knowsCompositor->IdentifyTextureHost(ident);
+    return knowsCompositor.forget();
   }
 
  private:
+  KnowsCompositorVideo() = default;
   virtual ~KnowsCompositorVideo() = default;
 };
 
@@ -119,12 +140,21 @@ MediaResult RemoteVideoDecoderChild::ProcessOutput(
   AssertOnManagerThread();
   MOZ_ASSERT(aDecodedData.type() ==
              DecodedOutputIPDL::TArrayOfRemoteVideoDataIPDL);
+
   const nsTArray<RemoteVideoDataIPDL>& arrayData =
       aDecodedData.get_ArrayOfRemoteVideoDataIPDL();
 
   for (auto&& data : arrayData) {
-    RefPtr<Image> image = DeserializeImage(
-        data.sd().get_SurfaceDescriptorBuffer(), data.frameSize());
+    RefPtr<Image> image;
+    if (data.sd().type() == SurfaceDescriptor::TSurfaceDescriptorBuffer) {
+      image = DeserializeImage(data.sd().get_SurfaceDescriptorBuffer(),
+                               data.frameSize());
+    } else {
+      // The Image here creates a TextureData object that takes ownership
+      // of the SurfaceDescriptor, and is responsible for making sure that
+      // it gets deallocated.
+      image = new GPUVideoImage(GetManager(), data.sd(), data.frameSize());
+    }
 
     RefPtr<VideoData> video = VideoData::CreateFromImage(
         data.display(), data.base().offset(), data.base().time(),
@@ -135,7 +165,6 @@ MediaResult RemoteVideoDecoderChild::ProcessOutput(
       // OOM
       return MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
     }
-
     mDecodedData.AppendElement(std::move(video));
   }
   return NS_OK;
@@ -143,7 +172,8 @@ MediaResult RemoteVideoDecoderChild::ProcessOutput(
 
 MediaResult RemoteVideoDecoderChild::InitIPDL(
     const VideoInfo& aVideoInfo, float aFramerate,
-    const CreateDecoderParams::OptionSet& aOptions) {
+    const CreateDecoderParams::OptionSet& aOptions,
+    const layers::TextureFactoryIdentifier* aIdentifier) {
   RefPtr<RemoteDecoderManagerChild> manager =
       RemoteDecoderManagerChild::GetRDDProcessSingleton();
 
@@ -164,9 +194,8 @@ MediaResult RemoteVideoDecoderChild::InitIPDL(
   bool success = false;
   nsCString errorDescription;
   VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
-  TextureFactoryIdentifier defaultIdent;
   Unused << manager->SendPRemoteDecoderConstructor(this, decoderInfo, aOptions,
-                                                   defaultIdent,
+                                                   ToMaybe(aIdentifier),
                                                    &success, &errorDescription);
 
   return success ? MediaResult(NS_OK)
@@ -175,36 +204,6 @@ MediaResult RemoteVideoDecoderChild::InitIPDL(
 
 GpuRemoteVideoDecoderChild::GpuRemoteVideoDecoderChild()
     : RemoteVideoDecoderChild(true) {}
-
-MediaResult GpuRemoteVideoDecoderChild::ProcessOutput(
-    const DecodedOutputIPDL& aDecodedData) {
-  AssertOnManagerThread();
-  MOZ_ASSERT(aDecodedData.type() ==
-             DecodedOutputIPDL::TArrayOfRemoteVideoDataIPDL);
-  const nsTArray<RemoteVideoDataIPDL>& arrayData =
-      aDecodedData.get_ArrayOfRemoteVideoDataIPDL();
-
-  for (auto&& data : arrayData) {
-    // The Image here creates a TextureData object that takes ownership
-    // of the SurfaceDescriptor, and is responsible for making sure that
-    // it gets deallocated.
-    RefPtr<Image> image =
-        new GPUVideoImage(GetManager(), data.sd(), data.frameSize());
-
-    RefPtr<VideoData> video = VideoData::CreateFromImage(
-        data.display(), data.base().offset(), data.base().time(),
-        data.base().duration(), image, data.base().keyframe(),
-        data.base().timecode());
-
-    if (!video) {
-      // OOM
-      return MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
-    }
-
-    mDecodedData.AppendElement(std::move(video));
-  }
-  return NS_OK;
-}
 
 MediaResult GpuRemoteVideoDecoderChild::InitIPDL(
     const VideoInfo& aVideoInfo, float aFramerate,
@@ -236,7 +235,7 @@ MediaResult GpuRemoteVideoDecoderChild::InitIPDL(
   nsCString errorDescription;
   VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
   Unused << manager->SendPRemoteDecoderConstructor(this, decoderInfo, aOptions,
-                                                   aIdentifier, &success,
+                                                   Some(aIdentifier), &success,
                                                    &errorDescription);
 
   return success ? MediaResult(NS_OK)
@@ -246,20 +245,30 @@ MediaResult GpuRemoteVideoDecoderChild::InitIPDL(
 RemoteVideoDecoderParent::RemoteVideoDecoderParent(
     RemoteDecoderManagerParent* aParent, const VideoInfo& aVideoInfo,
     float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
-    const layers::TextureFactoryIdentifier& aIdentifier,
-    TaskQueue* aManagerTaskQueue, TaskQueue* aDecodeTaskQueue, bool* aSuccess,
-    nsCString* aErrorDescription)
-    : RemoteDecoderParent(aParent, aManagerTaskQueue, aDecodeTaskQueue),
+    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
+    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
+    bool* aSuccess, nsCString* aErrorDescription)
+    : RemoteDecoderParent(aParent, aManagerThread, aDecodeTaskQueue),
       mVideoInfo(aVideoInfo) {
-  if (XRE_IsGPUProcess()) {
-    mKnowsCompositor = new KnowsCompositorVideo();
-    mKnowsCompositor->IdentifyTextureHost(aIdentifier);
+  if (aIdentifier) {
+    // Check to see if we have a direct PVideoBridge connection to the
+    // destination process specified in aIdentifier, and create a
+    // KnowsCompositor representing that connection if so. If this fails, then
+    // we fall back to returning the decoded frames directly via Output().
+    mKnowsCompositor =
+        KnowsCompositorVideo::TryCreateForIdentifier(*aIdentifier);
+  }
+
+  RefPtr<layers::ImageContainer> container = new layers::ImageContainer();
+  if (mKnowsCompositor && XRE_IsRDDProcess()) {
+    // Ensure to allocate recycle allocator
+    container->EnsureRecycleAllocatorForRDD(mKnowsCompositor);
   }
 
   CreateDecoderParams params(mVideoInfo);
   params.mTaskQueue = mDecodeTaskQueue;
   params.mKnowsCompositor = mKnowsCompositor;
-  params.mImageContainer = new layers::ImageContainer();
+  params.mImageContainer = container;
   params.mRate = CreateDecoderParams::VideoFrameRate(aFramerate);
   params.mOptions = aOptions;
   MediaResult error(NS_OK);
@@ -305,12 +314,13 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
     DecodedOutputIPDL& aDecodedData) {
   MOZ_ASSERT(OnManagerThread());
 
+  nsTArray<RemoteVideoDataIPDL> array;
+
   // If the video decoder bridge has shut down, stop.
   if (mKnowsCompositor && !mKnowsCompositor->GetTextureForwarder()) {
+    aDecodedData = std::move(array);
     return NS_OK;
   }
-
-  nsTArray<RemoteVideoDataIPDL> array;
 
   for (const auto& data : aData) {
     MOZ_ASSERT(data->mType == MediaData::Type::VIDEO_DATA,

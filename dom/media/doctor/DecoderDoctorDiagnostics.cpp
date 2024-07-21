@@ -527,20 +527,6 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
 #endif
         }
         break;
-      case DecoderDoctorDiagnostics::eMediaKeySystemAccessRequest:
-        if (diag.mDecoderDoctorDiagnostics.IsKeySystemSupported()) {
-          AppendToFormatsList(supportedKeySystems,
-                              diag.mDecoderDoctorDiagnostics.KeySystem());
-        } else {
-          AppendToFormatsList(unsupportedKeySystems,
-                              diag.mDecoderDoctorDiagnostics.KeySystem());
-          DecoderDoctorDiagnostics::KeySystemIssue issue =
-              diag.mDecoderDoctorDiagnostics.GetKeySystemIssue();
-          if (issue != DecoderDoctorDiagnostics::eUnset) {
-            lastKeySystemIssue = issue;
-          }
-        }
-        break;
       case DecoderDoctorDiagnostics::eEvent:
         MOZ_ASSERT_UNREACHABLE("Events shouldn't be stored for processing.");
         break;
@@ -855,53 +841,6 @@ void DecoderDoctorDiagnostics::StoreFormatDiagnostics(dom::Document* aDocument,
   MOZ_ASSERT(mDiagnosticsType == eFormatSupportCheck);
 }
 
-void DecoderDoctorDiagnostics::StoreMediaKeySystemAccess(
-    dom::Document* aDocument, const nsAString& aKeySystem, bool aIsSupported,
-    const char* aCallSite) {
-  MOZ_ASSERT(NS_IsMainThread());
-  // Make sure we only store once.
-  MOZ_ASSERT(mDiagnosticsType == eUnsaved);
-  mDiagnosticsType = eMediaKeySystemAccessRequest;
-
-  if (NS_WARN_IF(!aDocument)) {
-    DD_WARN(
-        "DecoderDoctorDiagnostics[%p]::StoreMediaKeySystemAccess(Document* "
-        "aDocument=nullptr, keysystem='%s', supported=%d, call site '%s')",
-        this, NS_ConvertUTF16toUTF8(aKeySystem).get(), aIsSupported, aCallSite);
-    return;
-  }
-  if (NS_WARN_IF(aKeySystem.IsEmpty())) {
-    DD_WARN(
-        "DecoderDoctorDiagnostics[%p]::StoreMediaKeySystemAccess(Document* "
-        "aDocument=%p, keysystem=<empty>, supported=%d, call site '%s')",
-        this, aDocument, aIsSupported, aCallSite);
-    return;
-  }
-
-  RefPtr<DecoderDoctorDocumentWatcher> watcher =
-      DecoderDoctorDocumentWatcher::RetrieveOrCreate(aDocument);
-
-  if (NS_WARN_IF(!watcher)) {
-    DD_WARN(
-        "DecoderDoctorDiagnostics[%p]::StoreMediaKeySystemAccess(Document* "
-        "aDocument=%p, keysystem='%s', supported=%d, call site '%s') - Could "
-        "not create document watcher",
-        this, aDocument, NS_ConvertUTF16toUTF8(aKeySystem).get(), aIsSupported,
-        aCallSite);
-    return;
-  }
-
-  mKeySystem = aKeySystem;
-  mIsKeySystemSupported = aIsSupported;
-
-  // StoreMediaKeySystemAccess should only be called once, after all data is
-  // available, so it is safe to std::move() from this object.
-  watcher->AddDiagnostics(std::move(*this), aCallSite);
-  // Even though it's moved-from, the type should stay set
-  // (Only used to ensure that we do store only once.)
-  MOZ_ASSERT(mDiagnosticsType == eMediaKeySystemAccessRequest);
-}
-
 void DecoderDoctorDiagnostics::StoreEvent(dom::Document* aDocument,
                                           const DecoderDoctorEvent& aEvent,
                                           const char* aCallSite) {
@@ -1061,18 +1000,6 @@ nsCString DecoderDoctorDiagnostics::GetDescription() const {
         s += ", Using GMP '";
         s += mGMP;
         s += "'";
-      }
-      break;
-    case eMediaKeySystemAccessRequest:
-      s = "key system='";
-      s += NS_ConvertUTF16toUTF8(mKeySystem).get();
-      s += mIsKeySystemSupported ? "', supported" : "', not supported";
-      switch (mKeySystemIssue) {
-        case eUnset:
-          break;
-        case eWidevineWithNoWMF:
-          s += ", Widevine with no WMF";
-          break;
       }
       break;
     case eEvent:

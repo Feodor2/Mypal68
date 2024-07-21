@@ -8,30 +8,37 @@
 
 #include "ContentChild.h"
 
-#include "GeckoProfiler.h"
 #include "BrowserChild.h"
+#include "GeckoProfiler.h"
 #include "HandlerServiceChild.h"
 
+#include "GMPServiceChild.h"
+#include "imgLoader.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BackgroundHangMonitor.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/HangDetails.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/PerformanceMetricsCollector.h"
+#include "mozilla/PerformanceUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcessHangMonitorIPC.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
-#include "mozilla/Unused.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TelemetryIPC.h"
-#include "mozilla/RemoteDecoderManagerChild.h"
+#include "mozilla/Unused.h"
+#include "mozilla/WebBrowserPersistDocumentChild.h"
 #include "mozilla/devtools/HeapSnapshotTempFileHelperChild.h"
 #include "mozilla/docshell/OfflineCacheUpdateChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/ChildProcessMessageManager.h"
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/ClientOpenWindowOpActors.h"
-#include "mozilla/dom/ChildProcessMessageManager.h"
-#include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
@@ -51,49 +58,39 @@
 #include "mozilla/dom/WorkerDebugger.h"
 #include "mozilla/dom/WorkerDebuggerManager.h"
 #include "mozilla/dom/ipc/SharedMap.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/psm/PSMContentListener.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/hal_sandbox/PHalChild.h"
+#include "mozilla/intl/LocaleService.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/FileDescriptorSetChild.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/PChildToParentStreamChild.h"
 #include "mozilla/ipc/PParentToChildStreamChild.h"
-#include "mozilla/intl/LocaleService.h"
+#include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/TestShellChild.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
-#include "mozilla/jsipc/PJavaScript.h"
 #include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/layers/ContentProcessController.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/SynchronousTask.h"  // for LaunchRDDProcess
 #include "mozilla/loader/ScriptCacheActors.h"
-#include "mozilla/net/NeckoChild.h"
-#include "mozilla/net/CookieServiceChild.h"
+#include "mozilla/media/MediaChild.h"
 #include "mozilla/net/CaptivePortalService.h"
-#include "mozilla/PerformanceMetricsCollector.h"
-#include "mozilla/PerformanceUtils.h"
+#include "mozilla/net/CookieServiceChild.h"
+#include "mozilla/net/HttpChannelChild.h"
+#include "mozilla/net/NeckoChild.h"
 #include "mozilla/plugins/PluginInstanceParent.h"
 #include "mozilla/plugins/PluginModuleParent.h"
+#include "mozilla/psm/PSMContentListener.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
 #include "nsBaseDragService.h"
-#include "mozilla/media/MediaChild.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/WebBrowserPersistDocumentChild.h"
-#include "mozilla/HangDetails.h"
-#include "mozilla/LoadInfo.h"
-#include "nsIChildProcessChannelListener.h"
-#include "mozilla/net/HttpChannelChild.h"
-#include "nsQueryObject.h"
-#include "imgLoader.h"
-#include "GMPServiceChild.h"
-#include "nsIStringBundle.h"
 #include "nsGeolocation.h"
+#include "nsIChildProcessChannelListener.h"
+#include "nsIStringBundle.h"
+#include "nsQueryObject.h"
 
 #if !defined(XP_WIN)
 #  include "mozilla/Omnijar.h"
@@ -108,9 +105,9 @@
 #  if defined(XP_WIN)
 #    include "mozilla/sandboxTarget.h"
 #  elif defined(XP_LINUX)
+#    include "CubebUtils.h"
 #    include "mozilla/Sandbox.h"
 #    include "mozilla/SandboxInfo.h"
-#    include "CubebUtils.h"
 #  elif defined(XP_MACOSX)
 #    include "mozilla/Sandbox.h"
 #  elif defined(__OpenBSD__)
@@ -120,43 +117,43 @@
 
 #include "mozilla/Unused.h"
 
+#include "SandboxHal.h"
 #include "mozInlineSpellChecker.h"
+#include "mozilla/GlobalStyleSheetCache.h"
+#include "nsAnonymousTemporaryFile.h"
+#include "nsClipboardProxy.h"
+#include "nsContentPermissionHelper.h"
+#include "nsDebugImpl.h"
+#include "nsDirectoryService.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
+#include "nsHashPropertyBag.h"
 #include "nsIConsoleListener.h"
+#include "nsIConsoleService.h"
 #include "nsIContentViewer.h"
 #include "nsICycleCollectorListener.h"
 #include "nsIDragService.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIMemoryReporter.h"
 #include "nsIMemoryInfoDumper.h"
+#include "nsIMemoryReporter.h"
 #include "nsIObserverService.h"
+#include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
+#include "nsJSEnvironment.h"
 #include "nsMemoryInfoDumper.h"
+#include "nsPluginHost.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStyleSheetService.h"
+#include "nsThreadManager.h"
 #include "nsVariant.h"
 #include "nsXULAppAPI.h"
-#include "nsIScriptError.h"
-#include "nsIConsoleService.h"
-#include "nsJSEnvironment.h"
-#include "SandboxHal.h"
-#include "nsDebugImpl.h"
-#include "nsHashPropertyBag.h"
-#include "mozilla/GlobalStyleSheetCache.h"
-#include "nsThreadManager.h"
-#include "nsAnonymousTemporaryFile.h"
-#include "nsClipboardProxy.h"
-#include "nsDirectoryService.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsContentPermissionHelper.h"
-#include "nsPluginHost.h"
 #ifdef NS_PRINTING
 #  include "nsPrintingProxy.h"
 #endif
-#include "nsWindowMemoryReporter.h"
 #include "ReferrerInfo.h"
+#include "nsWindowMemoryReporter.h"
 
 #include "IHistory.h"
 #include "nsNetUtil.h"
@@ -170,8 +167,8 @@
 
 #include "mozilla/dom/PCycleCollectWithLogsChild.h"
 
-#include "nsIScriptSecurityManager.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "nsIScriptSecurityManager.h"
 
 #ifdef MOZ_WEBRTC
 #  include "signaling/src/peerconnection/WebrtcGlobalChild.h"
@@ -189,8 +186,8 @@
 #ifdef XP_WIN
 #  include <process.h>
 #  define getpid _getpid
-#  include "mozilla/widget/AudioSession.h"
 #  include "mozilla/audio/AudioNotificationReceiver.h"
+#  include "mozilla/widget/AudioSession.h"
 #endif
 
 #if defined(XP_MACOSX)
@@ -212,37 +209,37 @@
 #include "mozilla/dom/MediaController.h"
 #include "mozilla/dom/PPresentationChild.h"
 #include "mozilla/dom/PresentationIPCService.h"
-#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/IPCStreamDestination.h"
 #include "mozilla/ipc/IPCStreamSource.h"
+#include "mozilla/ipc/InputStreamUtils.h"
 
 #ifdef MOZ_WEBSPEECH
 #  include "mozilla/dom/PSpeechSynthesisChild.h"
 #endif
 
 #include "ClearOnShutdown.h"
+#include "DomainPolicy.h"
+#include "GMPServiceChild.h"
+#include "GfxInfoBase.h"
 #include "ProcessUtils.h"
 #include "URIUtils.h"
-#include "nsContentUtils.h"
-#include "nsIPrincipal.h"
-#include "DomainPolicy.h"
+#include "gfxPlatform.h"
+#include "gfxPlatformFontList.h"
+#include "mozilla/RemoteSpellCheckEngineChild.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/net/NeckoMessageUtils.h"
 #include "mozilla/widget/PuppetBidiKeyboard.h"
-#include "mozilla/RemoteSpellCheckEngineChild.h"
-#include "GMPServiceChild.h"
-#include "GfxInfoBase.h"
-#include "gfxPlatform.h"
-#include "gfxPlatformFontList.h"
+#include "nsContentUtils.h"
+#include "nsIPrincipal.h"
 #include "nscore.h"  // for NS_FREE_PERMANENT_DATA
 #ifdef MOZ_VR
 #  include "VRManagerChild.h"
 #endif
-#include "private/pprio.h"
-#include "nsString.h"
 #include "MMPrinter.h"
+#include "nsString.h"
+#include "private/pprio.h"
 
 #ifdef MOZ_WIDGET_GTK
 #  include "nsAppRunner.h"
@@ -264,7 +261,6 @@ using namespace mozilla::intl;
 using namespace mozilla::layers;
 using namespace mozilla::layout;
 using namespace mozilla::net;
-using namespace mozilla::jsipc;
 using namespace mozilla::psm;
 using namespace mozilla::widget;
 using mozilla::loader::PScriptCacheChild;
@@ -831,7 +827,7 @@ nsresult ContentChild::ProvideWindowCommon(
     mozIDOMWindowProxy** aReturn) {
   *aReturn = nullptr;
 
-  nsAutoPtr<IPCTabContext> ipcContext;
+  UniquePtr<IPCTabContext> ipcContext;
   TabId openerTabId = TabId(0);
   nsAutoCString features(aFeatures);
   nsAutoString name(aName);
@@ -903,13 +899,12 @@ nsresult ContentChild::ProvideWindowCommon(
     PopupIPCTabContext context;
     openerTabId = aTabOpener->GetTabId();
     context.opener() = openerTabId;
-    context.isMozBrowserElement() = aTabOpener->IsMozBrowserElement();
-    ipcContext = new IPCTabContext(context);
+    ipcContext = MakeUnique<IPCTabContext>(context);
   } else {
     // It's possible to not have a BrowserChild opener in the case
     // of ServiceWorker::OpenWindow.
     UnsafeIPCTabContext unsafeTabContext;
-    ipcContext = new IPCTabContext(unsafeTabContext);
+    ipcContext = MakeUnique<IPCTabContext>(unsafeTabContext);
   }
 
   MOZ_ASSERT(ipcContext);
@@ -941,7 +936,7 @@ nsresult ContentChild::ProvideWindowCommon(
     ipcContext->get_PopupIPCTabContext().opener() = aTabOpener;
   }
 
-  nsCOMPtr<nsIEventTarget> target =
+  nsCOMPtr<nsISerialEventTarget> target =
       tabGroup->EventTargetFor(TaskCategory::Other);
   SetEventTargetForActor(newChild, target);
 
@@ -1075,46 +1070,27 @@ nsresult ContentChild::ProvideWindowCommon(
   };
 
   // Send down the request to open the window.
-  if (aIframeMoz) {
-    MOZ_ASSERT(aTabOpener);
-    nsAutoCString url;
-    if (aURI) {
-      aURI->GetSpec(url);
-    } else {
-      // We can't actually send a nullptr up as the URI, since IPDL doesn't let
-      // us send nullptr's for primitives. We indicate that the nsString for the
-      // URI should be converted to a nullptr by voiding the string.
-      url.SetIsVoid(true);
-    }
-
-    // NOTE: BrowserFrameOpenWindowPromise is the same type as
-    // CreateWindowPromise, and this code depends on that fact.
-    newChild->SendBrowserFrameOpenWindow(
-        aTabOpener, NS_ConvertUTF8toUTF16(url), name, aForceNoReferrer,
-        NS_ConvertUTF8toUTF16(features), std::move(resolve), std::move(reject));
-  } else {
-    float fullZoom;
-    nsCOMPtr<nsIPrincipal> triggeringPrincipal;
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    nsCOMPtr<nsIReferrerInfo> referrerInfo;
-    rv = GetCreateWindowParams(aParent, aLoadState, aForceNoReferrer, &fullZoom,
-                               getter_AddRefs(referrerInfo),
-                               getter_AddRefs(triggeringPrincipal),
-                               getter_AddRefs(csp));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    Maybe<URIParams> uriToLoad;
-    if (aURI) {
-      SerializeURI(aURI, uriToLoad);
-    }
-
-    SendCreateWindow(aTabOpener, newChild, aChromeFlags, aCalledFromJS,
-                     aPositionSpecified, aSizeSpecified, uriToLoad, features,
-                     fullZoom, Principal(triggeringPrincipal), csp,
-                     referrerInfo, std::move(resolve), std::move(reject));
+  float fullZoom;
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  nsCOMPtr<nsIReferrerInfo> referrerInfo;
+  rv = GetCreateWindowParams(aParent, aLoadState, aForceNoReferrer, &fullZoom,
+                             getter_AddRefs(referrerInfo),
+                             getter_AddRefs(triggeringPrincipal),
+                             getter_AddRefs(csp));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
+
+  Maybe<URIParams> uriToLoad;
+  if (aURI) {
+    SerializeURI(aURI, uriToLoad);
+  }
+
+  SendCreateWindow(aTabOpener, newChild, aChromeFlags, aCalledFromJS,
+                   aPositionSpecified, aSizeSpecified, uriToLoad, features,
+                   fullZoom, Principal(triggeringPrincipal), csp,
+                   referrerInfo, std::move(resolve), std::move(reject));
 
   // =======================
   // Begin Nested Event Loop
@@ -1260,9 +1236,6 @@ void ContentChild::InitXPCOM(
   RecvSetCaptivePortalState(aXPCOMInit.captivePortalState());
   RecvBidiKeyboardNotify(aXPCOMInit.isLangRTL(),
                          aXPCOMInit.haveBidiKeyboards());
-
-  // Create the CPOW manager as soon as possible.
-  SendPJavaScriptConstructor();
 
   if (aXPCOMInit.domainPolicy().active()) {
     nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
@@ -1743,17 +1716,6 @@ static void FirstIdle(void) {
   ContentChild::GetSingleton()->SendFirstIdle();
 }
 
-mozilla::jsipc::PJavaScriptChild* ContentChild::AllocPJavaScriptChild() {
-  MOZ_ASSERT(ManagedPJavaScriptChild().IsEmpty());
-
-  return NewJavaScriptChild();
-}
-
-bool ContentChild::DeallocPJavaScriptChild(PJavaScriptChild* aChild) {
-  ReleaseJavaScriptChild(aChild);
-  return true;
-}
-
 mozilla::ipc::IPCResult ContentChild::RecvConstructBrowser(
     ManagedEndpoint<PBrowserChild>&& aBrowserEp, const TabId& aTabId,
     const TabId& aSameTabGroupAs, const IPCTabContext& aContext,
@@ -1936,14 +1898,6 @@ PTestShellChild* ContentChild::AllocPTestShellChild() {
 bool ContentChild::DeallocPTestShellChild(PTestShellChild* shell) {
   delete shell;
   return true;
-}
-
-jsipc::CPOWManager* ContentChild::GetCPOWManager() {
-  if (PJavaScriptChild* c =
-          LoneManagedOrNullAsserts(ManagedPJavaScriptChild())) {
-    return CPOWManagerFor(c);
-  }
-  return CPOWManagerFor(SendPJavaScriptConstructor());
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvPTestShellConstructor(
@@ -2180,7 +2134,6 @@ mozilla::ipc::IPCResult ContentChild::RecvSetCaptivePortalState(
 }
 
 void ContentChild::ActorDestroy(ActorDestroyReason why) {
-
   gfxPlatform::ShutdownLayersIPC();
 
   if (mForceKillTimer) {
@@ -2224,7 +2177,7 @@ void ContentChild::ActorDestroy(ActorDestroyReason why) {
   CrashReporterClient::DestroySingleton();
 
   XRE_ShutdownChildProcess();
-#endif    // NS_FREE_PERMANENT_DATA
+#endif  // NS_FREE_PERMANENT_DATA
 }
 
 void ContentChild::ProcessingError(Result aCode, const char* aReason) {
@@ -2301,7 +2254,7 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyAlertsObserver(
     const nsCString& aType, const nsString& aData) {
   for (uint32_t i = 0; i < mAlertObservers.Length();
        /*we mutate the array during the loop; ++i iff no mutation*/) {
-    AlertObserver* observer = mAlertObservers[i];
+    const auto& observer = mAlertObservers[i];
     if (observer->Observes(aData) && observer->Notify(aType)) {
       // if aType == alertfinished, this alert is done.  we can
       // remove the observer.
@@ -2340,20 +2293,18 @@ mozilla::ipc::IPCResult ContentChild::RecvLoadProcessScript(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvAsyncMessage(
-    const nsString& aMsg, nsTArray<CpowEntry>&& aCpows,
-    const IPC::Principal& aPrincipal, const ClonedMessageData& aData) {
+    const nsString& aMsg, const ClonedMessageData& aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("ContentChild::RecvAsyncMessage",
                                              OTHER, aMsg);
   MMPrinter::Print("ContentChild::RecvAsyncMessage", aMsg, aData);
 
-  CrossProcessCpowHolder cpows(this, aCpows);
   RefPtr<nsFrameMessageManager> cpm =
       nsFrameMessageManager::GetChildProcessManager();
   if (cpm) {
     StructuredCloneData data;
     ipc::UnpackClonedMessageDataForChild(aData, data);
-    cpm->ReceiveMessage(cpm, nullptr, aMsg, false, &data, &cpows, aPrincipal,
-                        nullptr, IgnoreErrors());
+    cpm->ReceiveMessage(cpm, nullptr, aMsg, false, &data, nullptr,
+                        IgnoreErrors());
   }
   return IPC_OK();
 }
@@ -3523,10 +3474,6 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateMediaAction(
 already_AddRefed<nsIEventTarget> ContentChild::GetSpecificMessageEventTarget(
     const Message& aMsg) {
   switch (aMsg.type()) {
-    // Javascript
-    case PJavaScript::Msg_DropTemporaryStrongReferences__ID:
-    case PJavaScript::Msg_DropObject__ID:
-
     // Navigation
     case PContent::Msg_NotifyVisited__ID:
 
@@ -3584,7 +3531,7 @@ already_AddRefed<nsIEventTarget> ContentChild::GetSpecificMessageEventTarget(
       // process, then there is no opener. Therefore, we create a fresh
       // TabGroup.
       RefPtr<TabGroup> tabGroup = new TabGroup();
-      nsCOMPtr<nsIEventTarget> target =
+      nsCOMPtr<nsISerialEventTarget> target =
           tabGroup->EventTargetFor(TaskCategory::Other);
 
       // Set this event target for our newly created entry, and use it for this

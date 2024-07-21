@@ -78,10 +78,10 @@ FilterPrimitiveDescription SVGFEDropShadowElement::GetPrimitiveDescription(
     return FilterPrimitiveDescription();
   }
 
-  IntPoint offset(int32_t(aInstance->GetPrimitiveNumber(
-                      SVGContentUtils::X, &mNumberAttributes[DX])),
-                  int32_t(aInstance->GetPrimitiveNumber(
-                      SVGContentUtils::Y, &mNumberAttributes[DY])));
+  Point offset(
+      aInstance->GetPrimitiveNumber(SVGContentUtils::X, &mNumberAttributes[DX]),
+      aInstance->GetPrimitiveNumber(SVGContentUtils::Y,
+                                    &mNumberAttributes[DY]));
 
   DropShadowAttributes atts;
   atts.mStdDeviation = Size(stdX, stdY);

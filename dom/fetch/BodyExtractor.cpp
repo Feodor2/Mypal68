@@ -31,7 +31,7 @@ static nsresult GetBufferDataAsStream(
 
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(
-      getter_AddRefs(stream), MakeSpan(data, aDataLength), NS_ASSIGNMENT_COPY);
+      getter_AddRefs(stream), Span(data, aDataLength), NS_ASSIGNMENT_COPY);
   NS_ENSURE_SUCCESS(rv, rv);
 
   stream.forget(aResult);

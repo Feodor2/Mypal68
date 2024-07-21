@@ -127,7 +127,7 @@ IPCBlobInputStreamChild::IPCBlobInputStreamChild(const nsID& aID,
       mID(aID),
       mSize(aSize),
       mState(eActive),
-      mOwningEventTarget(GetCurrentThreadSerialEventTarget()) {
+      mOwningEventTarget(GetCurrentSerialEventTarget()) {
   // If we are running in a worker, we need to send a Close() to the parent side
   // before the thread is released.
   if (!NS_IsMainThread()) {
@@ -406,7 +406,7 @@ void IPCBlobInputStreamChild::Migrated() {
 
   mWorkerRef = nullptr;
 
-  mOwningEventTarget = GetCurrentThreadSerialEventTarget();
+  mOwningEventTarget = GetCurrentSerialEventTarget();
   MOZ_ASSERT(IPCBlobInputStreamThread::IsOnFileEventTarget(mOwningEventTarget));
 
   // Maybe we have no reasons to keep this actor alive.

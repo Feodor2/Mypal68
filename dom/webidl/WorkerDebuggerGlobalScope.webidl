@@ -21,6 +21,8 @@ interface WorkerDebuggerGlobalScope : EventTarget {
 
   attribute EventHandler onmessage;
 
+  attribute EventHandler onmessageerror;
+
   [Throws]
   void setImmediate(Function handler);
 

@@ -30,9 +30,9 @@ class CacheOpParent final : public PCacheOpParent,
                 Namespace aNamespace, const CacheOpArgs& aOpArgs);
   ~CacheOpParent();
 
-  void Execute(ManagerId* aManagerId);
+  void Execute(const SafeRefPtr<ManagerId>& aManagerId);
 
-  void Execute(cache::Manager* aManager);
+  void Execute(SafeRefPtr<cache::Manager> aManager);
 
   void WaitForVerification(PrincipalVerifier* aVerifier);
 
@@ -41,15 +41,13 @@ class CacheOpParent final : public PCacheOpParent,
   virtual void ActorDestroy(ActorDestroyReason aReason) override;
 
   // PrincipalVerifier::Listener methods
-  virtual void OnPrincipalVerified(nsresult aRv,
-                                   ManagerId* aManagerId) override;
+  virtual void OnPrincipalVerified(
+      nsresult aRv, const SafeRefPtr<ManagerId>& aManagerId) override;
 
   // Manager::Listener methods
   virtual void OnOpComplete(ErrorResult&& aRv, const CacheOpResult& aResult,
                             CacheId aOpenedCacheId,
-                            const nsTArray<SavedResponse>& aSavedResponseList,
-                            const nsTArray<SavedRequest>& aSavedRequestList,
-                            StreamList* aStreamList) override;
+                            const Maybe<StreamInfo>& aStreamInfo) override;
 
   // utility methods
   already_AddRefed<nsIInputStream> DeserializeCacheStream(
@@ -59,7 +57,7 @@ class CacheOpParent final : public PCacheOpParent,
   const CacheId mCacheId;
   const Namespace mNamespace;
   const CacheOpArgs mOpArgs;
-  RefPtr<cache::Manager> mManager;
+  SafeRefPtr<cache::Manager> mManager;
   RefPtr<PrincipalVerifier> mVerifier;
 
   NS_DECL_OWNINGTHREAD

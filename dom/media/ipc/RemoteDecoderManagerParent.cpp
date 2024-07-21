@@ -27,8 +27,7 @@ using namespace ipc;
 using namespace layers;
 using namespace gfx;
 
-StaticRefPtr<nsIThread> sRemoteDecoderManagerParentThread;
-StaticRefPtr<TaskQueue> sRemoteDecoderManagerTaskQueue;
+StaticRefPtr<nsISerialEventTarget> sRemoteDecoderManagerParentThread;
 
 SurfaceDescriptorGPUVideo RemoteDecoderManagerParent::StoreImage(
     Image* aImage, TextureClient* aTexture) {
@@ -39,27 +38,6 @@ SurfaceDescriptorGPUVideo RemoteDecoderManagerParent::StoreImage(
   mTextureMap[ret.handle()] = aTexture;
   return ret;
 }
-
-class RemoteDecoderManagerThreadHolder {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderManagerThreadHolder)
-
- public:
-  RemoteDecoderManagerThreadHolder() = default;
-
- private:
-  ~RemoteDecoderManagerThreadHolder() {
-    NS_DispatchToMainThread(
-        NS_NewRunnableFunction("dom::RemoteDecoderManagerThreadHolder::~"
-                               "RemoteDecoderManagerThreadHolder",
-                               []() {
-                                 sRemoteDecoderManagerParentThread->Shutdown();
-                                 sRemoteDecoderManagerParentThread = nullptr;
-                               }));
-  }
-};
-
-StaticRefPtr<RemoteDecoderManagerThreadHolder>
-    sRemoteDecoderManagerParentThreadHolder;
 
 class RemoteDecoderManagerThreadShutdownObserver : public nsIObserver {
   virtual ~RemoteDecoderManagerThreadShutdownObserver() = default;
@@ -73,6 +51,7 @@ class RemoteDecoderManagerThreadShutdownObserver : public nsIObserver {
                      const char16_t* aData) override {
     MOZ_ASSERT(strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0);
 
+    RemoteDecoderManagerParent::ShutdownVideoBridge();
     RemoteDecoderManagerParent::ShutdownThreads();
     return NS_OK;
   }
@@ -91,35 +70,20 @@ bool RemoteDecoderManagerParent::StartupThreads() {
     return false;
   }
 
-  RefPtr<nsIThread> managerThread;
-  nsresult rv =
-      NS_NewNamedThread("RemVidParent", getter_AddRefs(managerThread));
+  nsCOMPtr<nsISerialEventTarget> managerThread;
+  nsresult rv = NS_CreateBackgroundTaskQueue("RemVidParent",
+                                             getter_AddRefs(managerThread));
   if (NS_FAILED(rv)) {
     return false;
   }
   sRemoteDecoderManagerParentThread = managerThread;
-  sRemoteDecoderManagerParentThreadHolder =
-      new RemoteDecoderManagerThreadHolder();
-#if XP_WIN
-  sRemoteDecoderManagerParentThread->Dispatch(
-      NS_NewRunnableFunction("RemoteDecoderManagerParent::StartupThreads",
-                             []() {
-                               DebugOnly<HRESULT> hr =
-                                   CoInitializeEx(0, COINIT_MULTITHREADED);
-                               MOZ_ASSERT(SUCCEEDED(hr));
-                             }),
-      NS_DISPATCH_NORMAL);
-#endif
   if (XRE_IsGPUProcess()) {
     sRemoteDecoderManagerParentThread->Dispatch(
-        NS_NewRunnableFunction("RemoteDecoderManagerParent::StartupThreads",
-                               []() { layers::VideoBridgeChild::Startup(); }),
+        NS_NewRunnableFunction(
+            "RemoteDecoderManagerParent::StartupThreads",
+            []() { layers::VideoBridgeChild::StartupForGPUProcess(); }),
         NS_DISPATCH_NORMAL);
   }
-
-  sRemoteDecoderManagerTaskQueue = new TaskQueue(
-      managerThread.forget(),
-      "RemoteDecoderManagerParent::sRemoteDecoderManagerTaskQueue");
 
   auto* obs = new RemoteDecoderManagerThreadShutdownObserver();
   observerService->AddObserver(obs, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
@@ -127,16 +91,16 @@ bool RemoteDecoderManagerParent::StartupThreads() {
 }
 
 void RemoteDecoderManagerParent::ShutdownThreads() {
-  sRemoteDecoderManagerTaskQueue = nullptr;
-
-  sRemoteDecoderManagerParentThreadHolder = nullptr;
-  while (sRemoteDecoderManagerParentThread) {
-    NS_ProcessNextEvent(nullptr, true);
-  }
+  sRemoteDecoderManagerParentThread = nullptr;
 }
 
 void RemoteDecoderManagerParent::ShutdownVideoBridge() {
   if (sRemoteDecoderManagerParentThread) {
+    if (sRemoteDecoderManagerParentThread->IsOnCurrentThread()) {
+      VideoBridgeChild::Shutdown();
+      return;
+    }
+
     RefPtr<Runnable> task = NS_NewRunnableFunction(
         "RemoteDecoderManagerParent::ShutdownVideoBridge",
         []() { VideoBridgeChild::Shutdown(); });
@@ -145,7 +109,7 @@ void RemoteDecoderManagerParent::ShutdownVideoBridge() {
 }
 
 bool RemoteDecoderManagerParent::OnManagerThread() {
-  return NS_GetCurrentThread() == sRemoteDecoderManagerParentThread;
+  return sRemoteDecoderManagerParentThread->IsOnCurrentThread();
 }
 
 bool RemoteDecoderManagerParent::CreateForContent(
@@ -159,7 +123,7 @@ bool RemoteDecoderManagerParent::CreateForContent(
   }
 
   RefPtr<RemoteDecoderManagerParent> parent =
-      new RemoteDecoderManagerParent(sRemoteDecoderManagerParentThreadHolder);
+      new RemoteDecoderManagerParent(sRemoteDecoderManagerParentThread);
 
   RefPtr<Runnable> task =
       NewRunnableMethod<Endpoint<PRemoteDecoderManagerParent>&&>(
@@ -170,9 +134,28 @@ bool RemoteDecoderManagerParent::CreateForContent(
   return true;
 }
 
+bool RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
+    Endpoint<PVideoBridgeChild>&& aEndpoint) {
+  // We never want to decode in the GPU process, but output
+  // frames to the parent process.
+  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_RDD);
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!StartupThreads()) {
+    return false;
+  }
+
+  RefPtr<Runnable> task =
+      NewRunnableFunction("gfx::VideoBridgeChild::Open",
+                          &VideoBridgeChild::Open, std::move(aEndpoint));
+  sRemoteDecoderManagerParentThread->Dispatch(task.forget(),
+                                              NS_DISPATCH_NORMAL);
+  return true;
+}
+
 RemoteDecoderManagerParent::RemoteDecoderManagerParent(
-    RemoteDecoderManagerThreadHolder* aHolder)
-    : mThreadHolder(aHolder) {
+    nsISerialEventTarget* aThread)
+    : mThread(aThread) {
   MOZ_COUNT_CTOR(RemoteDecoderManagerParent);
 }
 
@@ -182,13 +165,13 @@ RemoteDecoderManagerParent::~RemoteDecoderManagerParent() {
 
 void RemoteDecoderManagerParent::ActorDestroy(
     mozilla::ipc::IProtocol::ActorDestroyReason) {
-  mThreadHolder = nullptr;
+  mThread = nullptr;
 }
 
 PRemoteDecoderParent* RemoteDecoderManagerParent::AllocPRemoteDecoderParent(
     const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
     const CreateDecoderParams::OptionSet& aOptions,
-    const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
+    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier, bool* aSuccess,
     nsCString* aErrorDescription) {
   RefPtr<TaskQueue> decodeTaskQueue =
       new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
@@ -200,12 +183,12 @@ PRemoteDecoderParent* RemoteDecoderManagerParent::AllocPRemoteDecoderParent(
         aRemoteDecoderInfo.get_VideoDecoderInfoIPDL();
     return new RemoteVideoDecoderParent(
         this, decoderInfo.videoInfo(), decoderInfo.framerate(), aOptions,
-        aIdentifier, sRemoteDecoderManagerTaskQueue, decodeTaskQueue, aSuccess,
-        aErrorDescription);
+        aIdentifier, sRemoteDecoderManagerParentThread, decodeTaskQueue,
+        aSuccess, aErrorDescription);
   } else if (aRemoteDecoderInfo.type() == RemoteDecoderInfoIPDL::TAudioInfo) {
     return new RemoteAudioDecoderParent(
         this, aRemoteDecoderInfo.get_AudioInfo(), aOptions,
-        sRemoteDecoderManagerTaskQueue, decodeTaskQueue, aSuccess,
+        sRemoteDecoderManagerParentThread, decodeTaskQueue, aSuccess,
         aErrorDescription);
   }
 

@@ -59,7 +59,7 @@ using namespace mozilla::ipc;
 
 class FileManagerInfo {
  public:
-  MOZ_MUST_USE SafeRefPtr<FileManager> GetFileManager(
+  [[nodiscard]] SafeRefPtr<FileManager> GetFileManager(
       PersistenceType aPersistenceType, const nsAString& aName) const;
 
   void AddFileManager(SafeRefPtr<FileManager> aFileManager);
@@ -157,12 +157,11 @@ Atomic<int32_t> gMaxSerializedMsgSize(0);
 Atomic<bool> gPreprocessingEnabled(false);
 Atomic<int32_t> gMaxPreloadExtraRecords(0);
 
-void AtomicBoolPrefChangedCallback(const char* aPrefName,
-                                   Atomic<bool>* aClosure) {
+void AtomicBoolPrefChangedCallback(const char* aPrefName, void* aBool) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aClosure);
+  MOZ_ASSERT(aBool);
 
-  *aClosure = Preferences::GetBool(aPrefName);
+  *static_cast<Atomic<bool>*>(aBool) = Preferences::GetBool(aPrefName);
 }
 
 void DataThresholdPrefChangedCallback(const char* aPrefName, void* aClosure) {
@@ -710,11 +709,8 @@ void IndexedDatabaseManager::AddFileManager(
 void IndexedDatabaseManager::InvalidateAllFileManagers() {
   AssertIsOnIOThread();
 
-  for (auto iter = mFileManagerInfos.ConstIter(); !iter.Done(); iter.Next()) {
-    auto value = iter.UserData();
-    MOZ_ASSERT(value);
-
-    value->InvalidateAllFileManagers();
+  for (const auto& fileManagerInfo : mFileManagerInfos) {
+    fileManagerInfo.GetData()->InvalidateAllFileManagers();
   }
 
   mFileManagerInfos.Clear();

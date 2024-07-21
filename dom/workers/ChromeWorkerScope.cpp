@@ -5,6 +5,7 @@
 #include "ChromeWorkerScope.h"
 
 #include "jsapi.h"
+#include "js/experimental/CTypes.h"  // JS::InitCTypesClass, JS::CTypesCallbacks, JS::SetCTypesCallbacks
 #include "js/MemoryFunctions.h"
 
 #include "nsXPCOM.h"
@@ -50,14 +51,14 @@ bool DefineChromeWorkerFunctions(JSContext* aCx,
 #ifdef BUILD_CTYPES
   {
     JS::Rooted<JS::Value> ctypes(aCx);
-    if (!JS_InitCTypesClass(aCx, aGlobal) ||
+    if (!JS::InitCTypesClass(aCx, aGlobal) ||
         !JS_GetProperty(aCx, aGlobal, "ctypes", &ctypes)) {
       return false;
     }
 
-    static const JSCTypesCallbacks callbacks = {UnicodeToNative};
+    static const JS::CTypesCallbacks callbacks = {UnicodeToNative};
 
-    JS_SetCTypesCallbacks(ctypes.toObjectOrNull(), &callbacks);
+    JS::SetCTypesCallbacks(ctypes.toObjectOrNull(), &callbacks);
   }
 #endif  // BUILD_CTYPES
 

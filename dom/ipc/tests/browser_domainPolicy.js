@@ -21,11 +21,7 @@ async function test_domainPolicy() {
   let currentTask = outerDeferred.promise;
   SpecialPowers.pushPrefEnv(
     {
-      set: [
-        ["dom.ipc.browser_frames.oop_by_default", false],
-        ["browser.pagethumbnails.capturing_disabled", false],
-        ["dom.mozBrowserFramesEnabled", false],
-      ],
+      set: [["browser.pagethumbnails.capturing_disabled", false]],
     },
     () => {
       return outerDeferred.resolve();

@@ -123,7 +123,7 @@ lazy_static! {
         // Show chrome errors and warnings in the error console
         ("javascript.options.showInConsole", Pref::new(true)),
 
-        // Disable download and usage of OpenH264, and Widevine plugins
+        // Disable download and usage of OpenH264, plugins
         ("media.gmp-manager.updateEnabled", Pref::new(false)),
 
         // Do not prompt with long usernames or passwords in URLs

@@ -55,7 +55,6 @@ external_dirs += [
     'media/libspeex_resampler',
     'media/libsoundtouch',
     'media/mp4parse-rust',
-    'media/psshparser'
 ]
 
 DIRS += ['../../' + i for i in external_dirs]

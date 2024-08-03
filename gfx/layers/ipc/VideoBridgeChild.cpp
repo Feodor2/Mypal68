@@ -46,9 +46,7 @@ void VideoBridgeChild::Shutdown() {
 }
 
 VideoBridgeChild::VideoBridgeChild()
-    : mIPDLSelfRef(this),
-      mThread(GetCurrentSerialEventTarget()),
-      mCanSend(true) {}
+    : mIPDLSelfRef(this), mThread(NS_GetCurrentThread()), mCanSend(true) {}
 
 VideoBridgeChild::~VideoBridgeChild() = default;
 

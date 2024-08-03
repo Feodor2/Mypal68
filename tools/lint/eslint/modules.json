@@ -95,7 +95,7 @@
   "Gestures.jsm": ["GestureSettings", "GestureTracker"],
   "GMPInstallManager.jsm": ["GMPInstallManager", "GMPExtractor", "GMPDownloader", "GMPAddon"],
   "GMPProvider.jsm": [],
-  "GMPUtils.jsm": ["GMP_PLUGIN_IDS", "GMPPrefs", "GMPUtils", "OPEN_H264_ID", "WIDEVINE_ID"],
+  "GMPUtils.jsm": ["GMP_PLUGIN_IDS", "GMPPrefs", "GMPUtils", "OPEN_H264_ID"],
   "hawkclient.js": ["HawkClient"],
   "hawkrequest.js": ["HAWKAuthenticatedRESTRequest", "deriveHawkCredentials"],
   "helper.js": ["workerHelper"],

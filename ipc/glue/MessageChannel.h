@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/message_loop.h"
+
 #include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Monitor.h"
@@ -15,16 +16,16 @@
 #if defined(OS_WIN)
 #  include "mozilla/ipc/Neutering.h"
 #endif  // defined(OS_WIN)
-#include <math.h>
+#include "mozilla/ipc/Transport.h"
+#include "MessageLink.h"
+#include "nsThreadUtils.h"
 
 #include <deque>
 #include <functional>
 #include <map>
+#include <math.h>
 #include <stack>
 #include <vector>
-
-#include "MessageLink.h"
-#include "mozilla/ipc/Transport.h"
 
 class nsIEventTarget;
 
@@ -72,7 +73,7 @@ enum ChannelState {
 
 class AutoEnterTransaction;
 
-class MessageChannel : HasResultCodes {
+class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
   friend class ProcessLink;
   friend class ThreadLink;
 #ifdef FUZZING
@@ -146,7 +147,7 @@ class MessageChannel : HasResultCodes {
   // For more details on the process of opening a channel between
   // threads, see the extended comment on this function
   // in MessageChannel.cpp.
-  bool Open(MessageChannel* aTargetChan, nsISerialEventTarget* aEventTarget,
+  bool Open(MessageChannel* aTargetChan, nsIEventTarget* aEventTarget,
             Side aSide);
 
   // "Open" a connection to an actor on the current thread.
@@ -345,10 +346,8 @@ class MessageChannel : HasResultCodes {
 #endif    // defined(OS_WIN)
 
  private:
-  void CommonThreadOpenInit(MessageChannel* aTargetChan,
-                            nsISerialEventTarget* aThread, Side aSide);
-  void OnOpenAsSlave(MessageChannel* aTargetChan,
-                     nsISerialEventTarget* aThread, Side aSide);
+  void CommonThreadOpenInit(MessageChannel* aTargetChan, Side aSide);
+  void OnOpenAsSlave(MessageChannel* aTargetChan, Side aSide);
 
   void PostErrorNotifyTask();
   void OnNotifyMaybeChannelError();
@@ -520,9 +519,10 @@ class MessageChannel : HasResultCodes {
   void NotifyMaybeChannelError();
 
  private:
+  // Can be run on either thread
   void AssertWorkerThread() const {
     MOZ_ASSERT(mWorkerThread, "Channel hasn't been opened yet");
-    MOZ_RELEASE_ASSERT(mWorkerThread && mWorkerThread->IsOnCurrentThread(),
+    MOZ_RELEASE_ASSERT(mWorkerThread == PR_GetCurrentThread(),
                        "not on worker thread!");
   }
 
@@ -540,7 +540,7 @@ class MessageChannel : HasResultCodes {
     // If we aren't a same-thread channel, our "link" thread is _not_ our
     // worker thread!
     MOZ_ASSERT(mWorkerThread, "Channel hasn't been opened yet");
-    MOZ_RELEASE_ASSERT(mWorkerThread && !mWorkerThread->IsOnCurrentThread(),
+    MOZ_RELEASE_ASSERT(mWorkerThread != PR_GetCurrentThread(),
                        "on worker thread but should not be!");
   }
 
@@ -582,6 +582,8 @@ class MessageChannel : HasResultCodes {
   typedef std::map<size_t, UniquePtr<UntypedCallbackHolder>> CallbackMap;
   typedef IPC::Message::msgid_t msgid_t;
 
+  void WillDestroyCurrentMessageLoop() override;
+
  private:
   // This will be a string literal, so lifetime is not an issue.
   const char* mName;
@@ -594,11 +596,13 @@ class MessageChannel : HasResultCodes {
   Side mSide;
   bool mIsCrossProcess;
   UniquePtr<MessageLink> mLink;
+  MessageLoop* mWorkerLoop;  // thread where work is done
   RefPtr<CancelableRunnable>
       mChannelErrorTask;  // NotifyMaybeChannelError runnable
 
-  // Thread we are allowed to send and receive on.
-  nsCOMPtr<nsISerialEventTarget> mWorkerThread;
+  // Thread we are allowed to send and receive on. This persists even after
+  // mWorkerLoop is cleared during channel shutdown.
+  PRThread* mWorkerThread;
 
   // Timeout periods are broken up in two to prevent system suspension from
   // triggering an abort. This method (called by WaitForEvent with a 'did

@@ -57,12 +57,15 @@ public:
                         const gfx::Matrix4x4 &aTransform,
                         const gfx::Rect &aVisibleRect) override;
 
-  virtual void BeginFrame(const nsIntRegion &aInvalidRegion,
-                          const gfx::IntRect *aClipRectIn,
-                          const gfx::IntRect &aRenderBounds,
-                          const nsIntRegion &aOpaqueRegion,
-                          gfx::IntRect *aClipRectOut = nullptr,
-                          gfx::IntRect *aRenderBoundsOut = nullptr) override;
+  Maybe<gfx::IntRect> BeginFrameForWindow(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds,
+      const nsIntRegion& aOpaqueRegion) override;
+
+  Maybe<gfx::IntRect> BeginFrameForTarget(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+      gfx::DrawTarget* aTarget, const gfx::IntRect& aTargetBounds) override;
 
   virtual void EndFrame() override;
 
@@ -132,6 +135,11 @@ private:
    */
   bool EnsureSwapChain();
 
+  Maybe<gfx::IntRect> BeginFrame(const nsIntRegion& aInvalidRegion,
+                                 const Maybe<gfx::IntRect>& aClipRect,
+                                 const gfx::IntRect& aRenderBounds,
+                                 const nsIntRegion& aOpaqueRegion);
+
   already_AddRefed<IDirect3DTexture9>
   CreateTexture(const gfx::IntRect &aRect,
                 const CompositingRenderTarget *aSource,
@@ -160,6 +168,12 @@ private:
   void FailedToResetDevice();
 
   void ReportFailure(const nsACString &aMsg, HRESULT aCode);
+
+  // The DrawTarget from BeginFrameForTarget, which EndFrame needs to copy the
+  // window contents into.
+  // Only non-null between BeginFrameForTarget and EndFrame.
+  RefPtr<gfx::DrawTarget> mTarget;
+  gfx::IntRect mTargetBounds;
 
   /* Device manager instance for this compositor */
   RefPtr<DeviceManagerD3D9> mDeviceManager;

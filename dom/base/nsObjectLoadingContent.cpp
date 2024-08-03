@@ -3031,16 +3031,6 @@ bool nsObjectLoadingContent::ShouldPlay(FallbackType& aReason) {
   nsCOMPtr<Document> topDoc = topWindow->GetDoc();
   NS_ENSURE_TRUE(topDoc, false);
 
-  // Check the flash blocking status for this page (this applies to Flash only)
-  FlashClassification documentClassification = FlashClassification::Unknown;
-  if (IsFlashMIME(mContentType)) {
-    documentClassification = ownerDoc->DocumentFlashClassification();
-  }
-  if (documentClassification == FlashClassification::Denied) {
-    aReason = eFallbackSuppressed;
-    return false;
-  }
-
   // Check the permission manager for permission based on the principal of
   // the toplevel content.
   nsCOMPtr<nsIPermissionManager> permissionManager =
@@ -3108,16 +3098,10 @@ bool nsObjectLoadingContent::ShouldPlay(FallbackType& aReason) {
     return false;
   }
 
-  // On the following switch we don't need to handle the case where
-  // documentClassification is FlashClassification::Denied because
-  // that's already handled above.
   switch (enabledState) {
     case nsIPluginTag::STATE_ENABLED:
       return true;
     case nsIPluginTag::STATE_CLICKTOPLAY:
-      if (documentClassification == FlashClassification::Allowed) {
-        return true;
-      }
       return false;
   }
   MOZ_CRASH("Unexpected enabledState");

@@ -507,10 +507,7 @@ void PluginModuleChromeParent::OnProcessLaunched(const bool aSucceeded) {
 
 #if defined(XP_WIN) && defined(_X86_)
   // Protected mode only applies to Windows and only to x86.
-  if (!mIsBlocklisted && mIsFlashPlugin &&
-      (Preferences::GetBool("dom.ipc.plugins.flash.disable-protected-mode",
-                            false) ||
-       mSandboxLevel >= 2)) {
+  if (!mIsBlocklisted && mIsFlashPlugin) {
     Unused << SendDisableFlashProtectedMode();
   }
 #endif

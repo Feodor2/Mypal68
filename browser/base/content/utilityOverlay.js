@@ -364,7 +364,7 @@ function openLinkIn(url, where, params) {
   var aPostData = params.postData;
   var aCharset = params.charset;
   var aReferrerInfo = params.referrerInfo
-    ? E10SUtils.deserializeReferrerInfo(params.referrerInfo)
+    ? params.referrerInfo
     : new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, null);
   var aRelatedToCurrent = params.relatedToCurrent;
   var aAllowInheritPrincipal = !!params.allowInheritPrincipal;

@@ -41,7 +41,7 @@ var gPluginHandler = {
           msg.target,
           msg.data.plugins,
           msg.data.showNow,
-          msg.principal,
+          msg.data.principal,
           msg.data.location
         );
         break;
@@ -244,15 +244,6 @@ var gPluginHandler = {
   },
 
   showClickToPlayNotification(browser, plugins, showNow, principal, location) {
-    // It is possible that we've received a message from the frame script to show
-    // a click to play notification for a principal that no longer matches the one
-    // that the browser's content now has assigned (ie, the browser has browsed away
-    // after the message was sent, but before the message was received). In that case,
-    // we should just ignore the message.
-    if (!principal.equals(browser.contentPrincipal)) {
-      return;
-    }
-
     // Data URIs, when linked to from some page, inherit the principal of that
     // page. That means that we also need to compare the actual locations to
     // ensure we aren't getting a message from a Data URI that we're no longer

@@ -234,8 +234,6 @@ EXPORTS.mozilla.layers += [
     'mlgpu/UtilityMLGPU.h',
     'opengl/CompositingRenderTargetOGL.h',
     'opengl/CompositorOGL.h',
-    'opengl/MacIOSurfaceTextureClientOGL.h',
-    'opengl/MacIOSurfaceTextureHostOGL.h',
     'opengl/TextureClientOGL.h',
     'opengl/TextureHostOGL.h',
     'PaintThread.h',
@@ -306,6 +304,10 @@ if CONFIG['MOZ_X11']:
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     EXPORTS.mozilla.layers += [
+        'opengl/MacIOSurfaceTextureClientOGL.h',
+        'opengl/MacIOSurfaceTextureHostOGL.h',
+        'NativeLayer.h',
+        'NativeLayerCA.h',
         'opengl/GLManager.h',
         'TextureSync.h',
     ]
@@ -314,6 +316,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'MacIOSurfaceImage.h',
     ]
     UNIFIED_SOURCES += [
+        'NativeLayerCA.mm',
         'opengl/GLManager.cpp',
         'TextureSync.cpp',
     ]
@@ -321,6 +324,9 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'ipc/ShadowLayerUtilsMac.cpp',
         'MacIOSurfaceHelpers.cpp',
         'MacIOSurfaceImage.cpp',
+    ]
+    OS_LIBS += [
+        '-framework IOSurface',
     ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
@@ -380,7 +386,6 @@ UNIFIED_SOURCES += [
     'AxisPhysicsMSDModel.cpp',
     'basic/BasicCanvasLayer.cpp',
     'basic/BasicColorLayer.cpp',
-    'basic/BasicCompositor.cpp',
     'basic/BasicContainerLayer.cpp',
     'basic/BasicImages.cpp',
     'basic/BasicLayerManager.cpp',
@@ -538,6 +543,7 @@ if CONFIG['MOZ_BUILD_WEBRENDER']:
     ]
 
 SOURCES += [
+    'basic/BasicCompositor.cpp',
     'basic/BasicImageLayer.cpp',
     'ImageContainer.cpp',
     'PersistentBufferProvider.cpp',

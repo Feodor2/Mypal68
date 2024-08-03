@@ -609,12 +609,32 @@ void CompositorD3D9::FailedToResetDevice() {
   }
 }
 
-void CompositorD3D9::BeginFrame(const nsIntRegion &aInvalidRegion,
-                                const IntRect *aClipRectIn,
+Maybe<IntRect> CompositorD3D9::BeginFrameForWindow(
+    const nsIntRegion& aInvalidRegion, const Maybe<IntRect>& aClipRect,
+    const IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion) {
+  return BeginFrame(aInvalidRegion, aClipRect, aRenderBounds, aOpaqueRegion);
+}
+
+Maybe<IntRect> CompositorD3D9::BeginFrameForTarget(
+    const nsIntRegion& aInvalidRegion, const Maybe<IntRect>& aClipRect,
+    const IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+    DrawTarget* aTarget, const IntRect& aTargetBounds) {
+  MOZ_RELEASE_ASSERT(!mTarget, "mTarget not cleared properly");
+  mTarget = aTarget;  // Will be cleared in EndFrame().
+  mTargetBounds = aTargetBounds;
+  Maybe<IntRect> result =
+      BeginFrame(aInvalidRegion, aClipRect, aRenderBounds, aOpaqueRegion);
+  if (!result) {
+    // Composition has been aborted. Reset mTarget.
+    mTarget = nullptr;
+  }
+  return result;
+}
+
+Maybe<IntRect> CompositorD3D9::BeginFrame(const nsIntRegion &aInvalidRegion,
+                                const Maybe<IntRect>& aClipRect,
                                 const IntRect &aRenderBounds,
-                                const nsIntRegion &aOpaqueRegion,
-                                IntRect *aClipRectOut,
-                                IntRect *aRenderBoundsOut) {
+                                const nsIntRegion &aOpaqueRegion) {
   MOZ_ASSERT(mDeviceManager && mSwapChain);
 
   mDeviceManager->SetupRenderState();
@@ -624,19 +644,12 @@ void CompositorD3D9::BeginFrame(const nsIntRegion &aInvalidRegion,
   GetD3D9Device()->Clear(0, nullptr, D3DCLEAR_TARGET, 0x00000000, 0, 0);
   GetD3D9Device()->BeginScene();
 
-  if (aClipRectOut) {
-    *aClipRectOut = IntRect(0, 0, mSize.width, mSize.height);
-  }
-  if (aRenderBoundsOut) {
-    *aRenderBoundsOut = IntRect(0, 0, mSize.width, mSize.height);
-  }
-
   RECT r;
-  if (aClipRectIn) {
-    r.left = (LONG)aClipRectIn->x;
-    r.top = (LONG)aClipRectIn->y;
-    r.right = (LONG)(aClipRectIn->x + aClipRectIn->width);
-    r.bottom = (LONG)(aClipRectIn->y + aClipRectIn->height);
+  if (aClipRect) {
+    r.left = (LONG)aClipRect->x;
+    r.top = (LONG)aClipRect->y;
+    r.right = (LONG)(aClipRect->x + aClipRect->width);
+    r.bottom = (LONG)(aClipRect->y + aClipRect->height);
   } else {
     r.left = r.top = 0;
     r.right = mSize.width;
@@ -648,6 +661,8 @@ void CompositorD3D9::BeginFrame(const nsIntRegion &aInvalidRegion,
   mDefaultRT = new CompositingRenderTargetD3D9(
       backBuffer, INIT_MODE_CLEAR, IntRect(0, 0, mSize.width, mSize.height));
   SetRenderTarget(mDefaultRT);
+
+  return Some(IntRect(0, 0, mSize.width, mSize.height));
 }
 
 void CompositorD3D9::EndFrame() {
@@ -666,6 +681,7 @@ void CompositorD3D9::EndFrame() {
   }
 
   Compositor::EndFrame();
+  mTarget = nullptr;
 
   mCurrentRT = nullptr;
   mDefaultRT = nullptr;

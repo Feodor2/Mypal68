@@ -12,7 +12,10 @@
 #include "apz/src/APZCTreeManager.h"  // for APZCTreeManager
 #include "LayerTransactionParent.h"   // for LayerTransactionParent
 #include "RenderTrace.h"              // for RenderTraceLayers
+#include "base/message_loop.h"        // for MessageLoop
 #include "base/process.h"             // for ProcessId
+#include "base/task.h"                // for CancelableTask, etc
+#include "base/thread.h"              // for Thread
 #include "gfxContext.h"               // for gfxContext
 #include "gfxPlatform.h"              // for gfxPlatform
 #include "TreeTraversal.h"            // for ForEachNode
@@ -76,6 +79,7 @@
 #include "nsIWidget.h"        // for nsIWidget
 #include "nsTArray.h"         // for nsTArray
 #include "nsThreadUtils.h"    // for NS_IsMainThread
+#include "nsXULAppAPI.h"      // for XRE_GetIOMessageLoop
 #ifdef XP_WIN
 #  include "mozilla/layers/CompositorD3D11.h"
 #  include "mozilla/layers/CompositorD3D9.h"
@@ -169,6 +173,10 @@ void CompositorBridgeParentBase::DeallocShmem(ipc::Shmem& aShmem) {
   PCompositorBridgeParent::DeallocShmem(aShmem);
 }
 
+static inline MessageLoop* CompositorLoop() {
+  return CompositorThreadHolder::Loop();
+}
+
 base::ProcessId CompositorBridgeParentBase::RemotePid() { return OtherPid(); }
 
 bool CompositorBridgeParentBase::StartSharingMetrics(
@@ -176,8 +184,8 @@ bool CompositorBridgeParentBase::StartSharingMetrics(
     CrossProcessMutexHandle aMutexHandle, LayersId aLayersId,
     uint32_t aApzcId) {
   if (!CompositorThreadHolder::IsInCompositorThread()) {
-    MOZ_ASSERT(CompositorThread());
-    CompositorThread()->Dispatch(
+    MOZ_ASSERT(CompositorLoop());
+    CompositorLoop()->PostTask(
         NewRunnableMethod<ipc::SharedMemoryBasic::Handle,
                           CrossProcessMutexHandle, LayersId, uint32_t>(
             "layers::CompositorBridgeParent::StartSharingMetrics", this,
@@ -197,8 +205,8 @@ bool CompositorBridgeParentBase::StartSharingMetrics(
 bool CompositorBridgeParentBase::StopSharingMetrics(
     ScrollableLayerGuid::ViewID aScrollId, uint32_t aApzcId) {
   if (!CompositorThreadHolder::IsInCompositorThread()) {
-    MOZ_ASSERT(CompositorThread());
-    CompositorThread()->Dispatch(
+    MOZ_ASSERT(CompositorLoop());
+    CompositorLoop()->PostTask(
         NewRunnableMethod<ScrollableLayerGuid::ViewID, uint32_t>(
             "layers::CompositorBridgeParent::StopSharingMetrics", this,
             &CompositorBridgeParentBase::StopSharingMetrics, aScrollId,
@@ -382,8 +390,8 @@ void CompositorBridgeParent::Initialize() {
   // FIXME: This holds on the the fact that right now the only thing that
   // can destroy this instance is initialized on the compositor thread after
   // this task has been processed.
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(NewRunnableFunction(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(NewRunnableFunction(
       "AddCompositorRunnable", &AddCompositor, this, &mCompositorBridgeID));
 
   {  // scope lock
@@ -506,7 +514,6 @@ void CompositorBridgeParent::StopAndClearResources() {
 #endif
 
   if (mCompositor) {
-    mCompositor->DetachWidget();
     mCompositor->Destroy();
     mCompositor = nullptr;
   }
@@ -671,7 +678,7 @@ void CompositorBridgeParent::ActorDestroy(ActorDestroyReason why) {
   // on this thread. We must keep the compositor parent alive untill the code
   // handling message reception is finished on this thread.
   mSelfRef = this;
-  NS_GetCurrentThread()->Dispatch(
+  MessageLoop::current()->PostTask(
       NewRunnableMethod("layers::CompositorBridgeParent::DeferredDestroy", this,
                         &CompositorBridgeParent::DeferredDestroy));
 }
@@ -681,8 +688,8 @@ void CompositorBridgeParent::ScheduleRenderOnCompositorThread(
     const wr::RenderRootSet& aRenderRoots
 #endif
 ) {
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(
       NewRunnableMethod
 #ifdef MOZ_BUILD_WEBRENDER
       <wr::RenderRootSet>
@@ -697,8 +704,8 @@ void CompositorBridgeParent::ScheduleRenderOnCompositorThread(
 }
 
 void CompositorBridgeParent::InvalidateOnCompositorThread() {
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(
       NewRunnableMethod("layers::CompositorBridgeParent::Invalidate", this,
                         &CompositorBridgeParent::Invalidate));
 }
@@ -805,8 +812,8 @@ void CompositorBridgeParent::ResumeCompositionAndResize(int x, int y, int width,
 void CompositorBridgeParent::SchedulePauseOnCompositorThread() {
   Monitor2AutoLock lock(mPauseCompositionMonitor);
 
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(
       NewRunnableMethod("layers::CompositorBridgeParent::PauseComposition",
                         this, &CompositorBridgeParent::PauseComposition));
 
@@ -817,8 +824,8 @@ void CompositorBridgeParent::SchedulePauseOnCompositorThread() {
 bool CompositorBridgeParent::ScheduleResumeOnCompositorThread() {
   Monitor2AutoLock lock(mResumeCompositionMonitor);
 
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(
       NewRunnableMethod("layers::CompositorBridgeParent::ResumeComposition",
                         this, &CompositorBridgeParent::ResumeComposition));
 
@@ -833,8 +840,8 @@ bool CompositorBridgeParent::ScheduleResumeOnCompositorThread(int x, int y,
                                                               int height) {
   Monitor2AutoLock lock(mResumeCompositionMonitor);
 
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(NewRunnableMethod<int, int, int, int>(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(NewRunnableMethod<int, int, int, int>(
       "layers::CompositorBridgeParent::ResumeCompositionAndResize", this,
       &CompositorBridgeParent::ResumeCompositionAndResize, x, y, width,
       height));
@@ -1272,9 +1279,9 @@ void CompositorBridgeParent::ScheduleRotationOnCompositorThread(
         &CompositorBridgeParent::ForceComposition);
     mForceCompositionTask = task;
     if (StaticPrefs::layers_orientation_sync_timeout() == 0) {
-      CompositorThread()->Dispatch(task.forget());
+      CompositorThreadHolder::Loop()->PostTask(task.forget());
     } else {
-      CompositorThread()->DelayedDispatch(
+      CompositorThreadHolder::Loop()->PostDelayedTask(
           task.forget(), StaticPrefs::layers_orientation_sync_timeout());
     }
   }
@@ -1964,7 +1971,12 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     clonedApis.AppendElement(api->Clone());
   }
 
-  mAsyncImageManager = new AsyncImagePipelineManager(std::move(clonedApis));
+  bool useCompositorWnd = false;
+#ifdef XP_WIN
+  useCompositorWnd = !!mWidget->AsWindows()->GetCompositorHwnd();
+#endif
+  mAsyncImageManager =
+      new AsyncImagePipelineManager(std::move(clonedApis), useCompositorWnd);
   RefPtr<AsyncImagePipelineManager> asyncMgr = mAsyncImageManager;
   RefPtr<CompositorAnimationStorage> animStorage = GetAnimationStorage();
   mWrBridge = new WebRenderBridgeParent(this, aPipelineId, mWidget, nullptr,
@@ -2058,11 +2070,11 @@ void CompositorBridgeParent::DeallocateLayerTreeId(LayersId aId) {
   // Here main thread notifies compositor to remove an element from
   // sIndirectLayerTrees. This removed element might be queried soon.
   // Checking the elements of sIndirectLayerTrees exist or not before using.
-  if (!CompositorThread()) {
-    gfxCriticalError() << "Attempting to post to an invalid Compositor Thread";
+  if (!CompositorLoop()) {
+    gfxCriticalError() << "Attempting to post to a invalid Compositor Loop";
     return;
   }
-  CompositorThread()->Dispatch(
+  CompositorLoop()->PostTask(
       NewRunnableFunction("EraseLayerStateRunnable", &EraseLayerState, aId));
 }
 
@@ -2094,7 +2106,7 @@ void CompositorBridgeParent::SetControllerForLayerTree(
     LayersId aLayersId, GeckoContentController* aController) {
   // This ref is adopted by UpdateControllerForLayersId().
   aController->AddRef();
-  CompositorThread()->Dispatch(NewRunnableFunction(
+  CompositorLoop()->PostTask(NewRunnableFunction(
       "UpdateControllerForLayersIdRunnable", &UpdateControllerForLayersId,
       aLayersId, aController));
 }
@@ -2131,7 +2143,7 @@ void CompositorBridgeParent::PostInsertVsyncProfilerMarker(
 #if defined(MOZ_GECKO_PROFILER)
   // Called in the vsync thread
   if (profiler_is_active() && CompositorThreadHolder::IsActive()) {
-    CompositorThread()->Dispatch(
+    CompositorLoop()->PostTask(
         NewRunnableFunction("InsertVsyncProfilerMarkerRunnable",
                             InsertVsyncProfilerMarker, aVsyncTimestamp));
   }
@@ -2343,7 +2355,7 @@ void CompositorBridgeParent::NotifyDidComposite(TransactionId aTransactionId,
 }
 
 void CompositorBridgeParent::InvalidateRemoteLayers() {
-  MOZ_ASSERT(CompositorThread()->IsOnCurrentThread());
+  MOZ_ASSERT(CompositorLoop() == MessageLoop::current());
 
   Unused << PCompositorBridgeParent::SendInvalidateLayers(LayersId{0});
 
@@ -2465,7 +2477,7 @@ bool CompositorBridgeParent::IsSameProcess() const {
 
 #ifdef MOZ_BUILD_WEBRENDER
 void CompositorBridgeParent::NotifyWebRenderContextPurge() {
-  MOZ_ASSERT(CompositorThread()->IsOnCurrentThread());
+  MOZ_ASSERT(CompositorLoop() == MessageLoop::current());
   RefPtr<wr::WebRenderAPI> api =
       mWrBridge->GetWebRenderAPI(wr::RenderRoot::Default);
   api->ClearAllCaches();
@@ -2598,8 +2610,8 @@ bool CompositorBridgeParent::UpdatePluginWindowState(LayersId aId) {
 }
 
 void CompositorBridgeParent::ScheduleShowAllPluginWindows() {
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(
       NewRunnableMethod("layers::CompositorBridgeParent::ShowAllPluginWindows",
                         this, &CompositorBridgeParent::ShowAllPluginWindows));
 }
@@ -2611,8 +2623,8 @@ void CompositorBridgeParent::ShowAllPluginWindows() {
 }
 
 void CompositorBridgeParent::ScheduleHideAllPluginWindows() {
-  MOZ_ASSERT(CompositorThread());
-  CompositorThread()->Dispatch(
+  MOZ_ASSERT(CompositorLoop());
+  CompositorLoop()->PostTask(
       NewRunnableMethod("layers::CompositorBridgeParent::HideAllPluginWindows",
                         this, &CompositorBridgeParent::HideAllPluginWindows));
 }

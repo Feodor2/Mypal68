@@ -893,9 +893,6 @@ BrowserGlue.prototype = {
           );
         }
         break;
-      case "flash-plugin-hang":
-        this._handleFlashHang();
-        break;
       case "xpi-signature-changed":
         let disabledAddons = JSON.parse(data).disabled;
         let addons = await AddonManager.getAddonsByIDs(disabledAddons);
@@ -948,7 +945,6 @@ BrowserGlue.prototype = {
     os.addObserver(this, "keyword-search");
     os.addObserver(this, "browser-search-engine-modified");
     os.addObserver(this, "restart-in-safe-mode");
-    os.addObserver(this, "flash-plugin-hang");
     os.addObserver(this, "xpi-signature-changed");
     os.addObserver(this, "sync-ui-state:update");
     os.addObserver(this, "handlersvc-store-initialized");
@@ -957,7 +953,6 @@ BrowserGlue.prototype = {
     ActorManagerParent.addLegacyActors(LEGACY_ACTORS);
     ActorManagerParent.flush();
 
-    this._flashHangCount = 0;
     this._firstWindowReady = new Promise(
       resolve => (this._firstWindowLoaded = resolve)
     );
@@ -1012,7 +1007,6 @@ BrowserGlue.prototype = {
     os.removeObserver(this, "profile-before-change");
     os.removeObserver(this, "keyword-search");
     os.removeObserver(this, "browser-search-engine-modified");
-    os.removeObserver(this, "flash-plugin-hang");
     os.removeObserver(this, "xpi-signature-changed");
     os.removeObserver(this, "sync-ui-state:update");
 
@@ -2046,12 +2040,10 @@ BrowserGlue.prototype = {
         ? "tabs.closeWarningMultipleSessionRestore2"
         : "tabs.closeWarningMultiple";
       warningMessage = gTabbrowserBundle.GetStringFromName(stringID);
-      if (pagecount > 1) {
-        warningMessage = PluralForm.get(pagecount, warningMessage).replace(
-          "#1",
-          pagecount
-        );
-      }
+      warningMessage = PluralForm.get(pagecount, warningMessage).replace(
+        "#1",
+        pagecount
+      );
     }
 
     let warnOnClose = { value: true };
@@ -3311,67 +3303,6 @@ BrowserGlue.prototype = {
       true,
       null,
       clickCallback
-    );
-  },
-
-  _handleFlashHang() {
-    ++this._flashHangCount;
-    if (this._flashHangCount < 2) {
-      return;
-    }
-    // protected mode only applies to win32
-    if (Services.appinfo.XPCOMABI != "x86-msvc") {
-      return;
-    }
-
-    if (
-      Services.prefs.getBoolPref("dom.ipc.plugins.flash.disable-protected-mode")
-    ) {
-      return;
-    }
-    if (
-      !Services.prefs.getBoolPref("browser.flash-protected-mode-flip.enable")
-    ) {
-      return;
-    }
-    if (Services.prefs.getBoolPref("browser.flash-protected-mode-flip.done")) {
-      return;
-    }
-    Services.prefs.setBoolPref(
-      "dom.ipc.plugins.flash.disable-protected-mode",
-      true
-    );
-    Services.prefs.setBoolPref("browser.flash-protected-mode-flip.done", true);
-
-    let win = BrowserWindowTracker.getTopWindow();
-    if (!win) {
-      return;
-    }
-    let productName = gBrandBundle.GetStringFromName("brandShortName");
-    let message = win.gNavigatorBundle.getFormattedString("flashHang.message", [
-      productName,
-    ]);
-    let buttons = [
-      {
-        label: win.gNavigatorBundle.getString("flashHang.helpButton.label"),
-        accessKey: win.gNavigatorBundle.getString(
-          "flashHang.helpButton.accesskey"
-        ),
-        callback() {
-          win.openTrustedLinkIn(
-            "https://support.mozilla.org/kb/flash-protected-mode-autodisabled",
-            "tab"
-          );
-        },
-      },
-    ];
-
-    win.gNotificationBox.appendNotification(
-      message,
-      "flash-hang",
-      null,
-      win.gNotificationBox.PRIORITY_INFO_MEDIUM,
-      buttons
     );
   },
 

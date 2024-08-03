@@ -7,6 +7,7 @@
 
 #include "CompositorWidget.h"
 #include "gfxASurface.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/gfx/CriticalSection.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/Mutex.h"
@@ -65,8 +66,8 @@ class WinCompositorWidget : public CompositorWidget,
   bool NeedsToDeferEndRemoteDrawing() override;
   LayoutDeviceIntSize GetClientSize() override;
   already_AddRefed<gfx::DrawTarget> GetBackBufferDrawTarget(
-      gfx::DrawTarget* aScreenTarget, const LayoutDeviceIntRect& aRect,
-      const LayoutDeviceIntRect& aClearRect) override;
+      gfx::DrawTarget* aScreenTarget, const gfx::IntRect& aRect,
+      bool* aOutIsCleared) override;
   already_AddRefed<gfx::SourceSurface> EndBackBufferDrawing() override;
   bool InitCompositor(layers::Compositor* aCompositor) override;
   uintptr_t GetWidgetKey() override;
@@ -103,6 +104,10 @@ class WinCompositorWidget : public CompositorWidget,
     return mTransparentSurfaceLock;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
+  bool HasGlass() const;
+#endif
+
  protected:
  private:
   HDC GetWindowSurface();
@@ -121,7 +126,8 @@ class WinCompositorWidget : public CompositorWidget,
 
   // Transparency handling.
   mozilla::Mutex mTransparentSurfaceLock;
-  nsTransparencyMode mTransparencyMode;
+  mozilla::Atomic<nsTransparencyMode, MemoryOrdering::Relaxed>
+      mTransparencyMode;
   RefPtr<gfxASurface> mTransparentSurface;
   HDC mMemoryDC;
   HDC mCompositeDC;

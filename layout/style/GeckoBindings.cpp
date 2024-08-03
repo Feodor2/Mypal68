@@ -845,13 +845,13 @@ static bool AttrEquals(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
   return DoMatch(aElement, aNS, aName, match);
 }
 
-#define WITH_COMPARATOR(ignore_case_, c_, expr_) \
-  if (ignore_case_) {                            \
-    const nsCaseInsensitiveStringComparator c_;  \
-    return expr_;                                \
-  } else {                                       \
-    const nsDefaultStringComparator c_;          \
-    return expr_;                                \
+#define WITH_COMPARATOR(ignore_case_, c_, expr_)     \
+  if (ignore_case_) {                                \
+    const nsASCIICaseInsensitiveStringComparator c_; \
+    return expr_;                                    \
+  } else {                                           \
+    const nsDefaultStringComparator c_;              \
+    return expr_;                                    \
   }
 
 template <typename Implementor>
@@ -884,10 +884,8 @@ template <typename Implementor>
 static bool AttrHasSubstring(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
                              nsAtom* aStr, bool aIgnoreCase) {
   auto match = [aStr, aIgnoreCase](const nsAttrValue* aValue) {
-    nsAutoString str;
-    aValue->ToString(str);
-    WITH_COMPARATOR(aIgnoreCase, c,
-                    FindInReadable(nsDependentAtomString(aStr), str, c))
+    return aValue->HasSubstring(nsDependentAtomString(aStr),
+                                aIgnoreCase ? eIgnoreCase : eCaseMatters);
   };
   return DoMatch(aElement, aNS, aName, match);
 }
@@ -896,10 +894,8 @@ template <typename Implementor>
 static bool AttrHasPrefix(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
                           nsAtom* aStr, bool aIgnoreCase) {
   auto match = [aStr, aIgnoreCase](const nsAttrValue* aValue) {
-    nsAutoString str;
-    aValue->ToString(str);
-    WITH_COMPARATOR(aIgnoreCase, c,
-                    StringBeginsWith(str, nsDependentAtomString(aStr), c))
+    return aValue->HasPrefix(nsDependentAtomString(aStr),
+                             aIgnoreCase ? eIgnoreCase : eCaseMatters);
   };
   return DoMatch(aElement, aNS, aName, match);
 }
@@ -908,10 +904,8 @@ template <typename Implementor>
 static bool AttrHasSuffix(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
                           nsAtom* aStr, bool aIgnoreCase) {
   auto match = [aStr, aIgnoreCase](const nsAttrValue* aValue) {
-    nsAutoString str;
-    aValue->ToString(str);
-    WITH_COMPARATOR(aIgnoreCase, c,
-                    StringEndsWith(str, nsDependentAtomString(aStr), c))
+    return aValue->HasSuffix(nsDependentAtomString(aStr),
+                             aIgnoreCase ? eIgnoreCase : eCaseMatters);
   };
   return DoMatch(aElement, aNS, aName, match);
 }

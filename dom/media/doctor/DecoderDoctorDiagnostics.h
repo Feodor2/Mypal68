@@ -88,14 +88,6 @@ class DecoderDoctorDiagnostics {
   void SetGMP(const nsACString& aGMP) { mGMP = aGMP; }
   const nsACString& GMP() const { return mGMP; }
 
-  const nsAString& KeySystem() const { return mKeySystem; }
-  bool IsKeySystemSupported() const { return mIsKeySystemSupported; }
-  enum KeySystemIssue { eUnset, eWidevineWithNoWMF };
-  void SetKeySystemIssue(KeySystemIssue aKeySystemIssue) {
-    mKeySystemIssue = aKeySystemIssue;
-  }
-  KeySystemIssue GetKeySystemIssue() const { return mKeySystemIssue; }
-
   DecoderDoctorEvent event() const { return mEvent; }
 
   const MediaResult& DecodeIssue() const { return mDecodeIssue; }
@@ -117,10 +109,6 @@ class DecoderDoctorDiagnostics {
   bool mVideoNotSupported = false;
   bool mAudioNotSupported = false;
   nsCString mGMP;
-
-  nsString mKeySystem;
-  bool mIsKeySystemSupported = false;
-  KeySystemIssue mKeySystemIssue = eUnset;
 
   DecoderDoctorEvent mEvent;
 

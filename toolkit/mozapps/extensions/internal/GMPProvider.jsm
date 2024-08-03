@@ -17,7 +17,7 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 // These symbols are, unfortunately, accessed via the module global from
 // tests, and therefore cannot be lexical definitions.
-var { GMPPrefs, GMPUtils, OPEN_H264_ID, WIDEVINE_ID } = ChromeUtils.import(
+var { GMPPrefs, GMPUtils, OPEN_H264_ID} = ChromeUtils.import(
   "resource://gre/modules/GMPUtils.jsm"
 );
 const { AppConstants } = ChromeUtils.import(
@@ -39,8 +39,6 @@ const URI_EXTENSION_STRINGS =
   "chrome://mozapps/locale/extensions/extensions.properties";
 
 const SEC_IN_A_DAY = 24 * 60 * 60;
-// How long to wait after a user enabled EME before attempting to download CDMs.
-const GMP_CHECK_DELAY = 10 * 1000; // milliseconds
 
 const XHTML = "http://www.w3.org/1999/xhtml";
 
@@ -60,15 +58,6 @@ const GMP_PLUGINS = [
     // localisation.
     licenseURL: "chrome://mozapps/content/extensions/OpenH264-license.txt",
     homepageURL: "https://www.openh264.org/",
-  },
-  {
-    id: WIDEVINE_ID,
-    name: "widevine_description",
-    // Describe the purpose of both CDMs in the same way.
-    description: "cdm_description2",
-    licenseURL: "https://www.google.com/policies/privacy/",
-    homepageURL: "https://www.widevine.com/",
-    isEME: true,
   },
 ];
 XPCOMUtils.defineConstant(this, "GMP_PLUGINS", GMP_PLUGINS);
@@ -125,10 +114,6 @@ function GMPWrapper(aPluginInfo, aRawPluginInfo) {
     this,
     true
   );
-  if (this._plugin.isEME) {
-    Services.prefs.addObserver(GMPPrefs.KEY_EME_ENABLED, this, true);
-    Services.mm.addMessageListener("EMEVideo:ContentMediaKeysRequest", this);
-  }
 }
 
 GMPWrapper.prototype = {
@@ -190,7 +175,7 @@ GMPWrapper.prototype = {
       ["learnMoreURL", GMP_LEARN_MORE],
       [
         "licenseURL",
-        this.id == WIDEVINE_ID ? GMP_PRIVACY_INFO : GMP_LICENSE_INFO,
+        this.id == GMP_LICENSE_INFO,
       ],
     ]) {
       if (plugin[urlProp]) {
@@ -222,20 +207,9 @@ GMPWrapper.prototype = {
 
   get isActive() {
     return (
-      !this.appDisabled &&
       !this.userDisabled &&
       !GMPUtils.isPluginHidden(this._plugin)
     );
-  },
-  get appDisabled() {
-    if (
-      this._plugin.isEME &&
-      !GMPPrefs.getBool(GMPPrefs.KEY_EME_ENABLED, true)
-    ) {
-      // If "media.eme.enabled" is false, all EME plugins are disabled.
-      return true;
-    }
-    return false;
   },
 
   get userDisabled() {
@@ -279,12 +253,10 @@ GMPWrapper.prototype = {
 
   get permissions() {
     let permissions = 0;
-    if (!this.appDisabled) {
-      permissions |= AddonManager.PERM_CAN_UPGRADE;
-      permissions |= this.userDisabled
-        ? AddonManager.PERM_CAN_ENABLE
-        : AddonManager.PERM_CAN_DISABLE;
-    }
+    permissions |= AddonManager.PERM_CAN_UPGRADE;
+    permissions |= this.userDisabled
+      ? AddonManager.PERM_CAN_ENABLE
+      : AddonManager.PERM_CAN_DISABLE;
     return permissions;
   },
 
@@ -476,42 +448,6 @@ GMPWrapper.prototype = {
     );
   },
 
-  onPrefEMEGlobalEnabledChanged() {
-    this._log.info(
-      "onPrefEMEGlobalEnabledChanged() id=" +
-        this._plugin.id +
-        " appDisabled=" +
-        this.appDisabled +
-        " isActive=" +
-        this.isActive +
-        " hidden=" +
-        GMPUtils.isPluginHidden(this._plugin)
-    );
-
-    AddonManagerPrivate.callAddonListeners("onPropertyChanged", this, [
-      "appDisabled",
-    ]);
-    // If EME or the GMP itself are disabled, uninstall the GMP.
-    // Otherwise, check for updates, so we download and install the GMP.
-    if (this.appDisabled) {
-      this.uninstallPlugin();
-    } else if (!GMPUtils.isPluginHidden(this._plugin)) {
-      AddonManagerPrivate.callInstallListeners(
-        "onExternalInstall",
-        null,
-        this,
-        null,
-        false
-      );
-      AddonManagerPrivate.callAddonListeners("onInstalling", this, false);
-      AddonManagerPrivate.callAddonListeners("onInstalled", this);
-      this.checkForUpdates(GMP_CHECK_DELAY);
-    }
-    if (!this.userDisabled) {
-      this._handleEnabledChanged();
-    }
-  },
-
   checkForUpdates(delay) {
     if (this._isUpdateCheckPending) {
       return;
@@ -521,12 +457,10 @@ GMPWrapper.prototype = {
     // Delay this in case the user changes his mind and doesn't want to
     // enable EME after all.
     setTimeout(() => {
-      if (!this.appDisabled) {
-        let gmpInstallManager = new GMPInstallManager();
-        // We don't really care about the results, if someone is interested
-        // they can check the log.
-        gmpInstallManager.simpleCheckAndInstall().catch(() => {});
-      }
+      let gmpInstallManager = new GMPInstallManager();
+      // We don't really care about the results, if someone is interested
+      // they can check the log.
+      gmpInstallManager.simpleCheckAndInstall().catch(() => {});
       this._isUpdateCheckPending = false;
     }, delay);
   },
@@ -547,9 +481,7 @@ GMPWrapper.prototype = {
   },
 
   onPrefEnabledChanged() {
-    if (!this._plugin.isEME || !this.appDisabled) {
-      this._handleEnabledChanged();
-    }
+    this._handleEnabledChanged();
   },
 
   onPrefVersionChanged() {
@@ -602,8 +534,6 @@ GMPWrapper.prototype = {
         GMPPrefs.getPrefKey(GMPPrefs.KEY_PLUGIN_VERSION, this._plugin.id)
       ) {
         this.onPrefVersionChanged();
-      } else if (pref == GMPPrefs.KEY_EME_ENABLED) {
-        this.onPrefEMEGlobalEnabledChanged();
       }
     }
   },
@@ -631,13 +561,6 @@ GMPWrapper.prototype = {
       GMPPrefs.getPrefKey(GMPPrefs.KEY_PLUGIN_VERSION, this._plugin.id),
       this
     );
-    if (this._plugin.isEME) {
-      Services.prefs.removeObserver(GMPPrefs.KEY_EME_ENABLED, this);
-      Services.mm.removeMessageListener(
-        "EMEVideo:ContentMediaKeysRequest",
-        this
-      );
-    }
     return this._updateTask;
   },
 
@@ -652,11 +575,7 @@ GMPWrapper.prototype = {
     let id = this._plugin.id.substring(4);
     let libName = AppConstants.DLL_PREFIX + id + AppConstants.DLL_SUFFIX;
     let infoName;
-    if (this._plugin.id == WIDEVINE_ID) {
-      infoName = "manifest.json";
-    } else {
-      infoName = id + ".info";
-    }
+    infoName = id + ".info";
 
     return (
       fileExists(this.gmpPath, libName) && fileExists(this.gmpPath, infoName)
@@ -711,7 +630,6 @@ var GMPProvider = {
       "GMPProvider."
     );
     this.buildPluginList();
-    this.ensureProperCDMInstallState();
 
     Services.prefs.addObserver(GMPPrefs.KEY_LOG_BASE, configureLogging);
 
@@ -821,21 +739,9 @@ var GMPProvider = {
         homepageURL: aPlugin.homepageURL,
         optionsURL: aPlugin.optionsURL,
         wrapper: null,
-        isEME: aPlugin.isEME,
       };
       plugin.wrapper = new GMPWrapper(plugin, aPlugin);
       this._plugins.set(plugin.id, plugin);
-    }
-  },
-
-  ensureProperCDMInstallState() {
-    if (!GMPPrefs.getBool(GMPPrefs.KEY_EME_ENABLED, true)) {
-      for (let plugin of this._plugins.values()) {
-        if (plugin.isEME && plugin.wrapper.isInstalled) {
-          gmpService.addPluginDirectory(plugin.wrapper.gmpPath);
-          plugin.wrapper.uninstallPlugin();
-        }
-      }
     }
   },
 };

@@ -871,8 +871,6 @@
                          tooltiptext="&urlbar.translateNotificationAnchor.tooltip;"/>
                   <image id="translated-notification-icon" class="notification-anchor-icon translation-icon in-use" role="button"
                          tooltiptext="&urlbar.translatedNotificationAnchor.tooltip;"/>
-                  <image id="eme-notification-icon" class="notification-anchor-icon drm-icon" role="button"
-                         tooltiptext="&urlbar.emeNotificationAnchor.tooltip;"/>
                   <image id="persistent-storage-notification-icon" class="notification-anchor-icon persistent-storage-icon" role="button"
                          tooltiptext="&urlbar.persistentStorageNotificationAnchor.tooltip;"/>
                   <image id="midi-notification-icon" class="notification-anchor-icon midi-icon" role="button"

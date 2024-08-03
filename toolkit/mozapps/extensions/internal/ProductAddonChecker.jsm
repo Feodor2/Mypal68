@@ -11,10 +11,6 @@ const LOCAL_GMP_SOURCES = [
     id: "gmp-gmpopenh264",
     src: "chrome://global/content/gmp-sources/openh264.json",
   },
-  {
-    id: "gmp-widevinecdm",
-    src: "chrome://global/content/gmp-sources/widevinecdm.json",
-  },
 ];
 
 var EXPORTED_SYMBOLS = ["ProductAddonChecker"];

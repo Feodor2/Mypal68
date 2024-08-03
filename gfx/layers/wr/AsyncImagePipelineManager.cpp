@@ -39,8 +39,9 @@ AsyncImagePipelineManager::PipelineUpdates::PipelineUpdates(
       mRendered(aRendered) {}
 
 AsyncImagePipelineManager::AsyncImagePipelineManager(
-    nsTArray<RefPtr<wr::WebRenderAPI>>&& aApis)
+    nsTArray<RefPtr<wr::WebRenderAPI>>&& aApis, bool aUseCompositorWnd)
     : mApis(aApis),
+      mUseCompositorWnd(aUseCompositorWnd),
       mIdNamespace(mApis[0]->GetNamespace()),
       mUseTripleBuffering(mApis[0]->GetUseTripleBuffering()),
       mResourceId(0),
@@ -548,7 +549,7 @@ void AsyncImagePipelineManager::NotifyPipelinesUpdated(
   }
 
   // Queue a runnable on the compositor thread to process the queue
-  layers::CompositorThread()->Dispatch(
+  layers::CompositorThreadHolder::Loop()->PostTask(
       NewRunnableMethod("ProcessPipelineUpdates", this,
                         &AsyncImagePipelineManager::ProcessPipelineUpdates));
 }

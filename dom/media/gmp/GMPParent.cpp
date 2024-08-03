@@ -77,9 +77,6 @@ void GMPParent::CloneFrom(const GMPParent* aOther) {
   mVersion = aOther->mVersion;
   mDescription = aOther->mDescription;
   mDisplayName = aOther->mDisplayName;
-#if defined(XP_WIN) || defined(XP_LINUX)
-  mLibs = aOther->mLibs;
-#endif
   for (const GMPCapability& cap : aOther->mCapabilities) {
     mCapabilities.AppendElement(cap);
   }
@@ -158,19 +155,6 @@ nsresult GMPParent::LoadProcess() {
     }
     GMP_PARENT_LOG_DEBUG("%s: Opened channel to new child process",
                          __FUNCTION__);
-
-#if defined(XP_WIN) || defined(XP_LINUX)
-    if (!mLibs.IsEmpty()) {
-      bool ok = SendPreloadLibs(mLibs);
-      if (!ok) {
-        GMP_PARENT_LOG_DEBUG("%s: Failed to send preload-libs to child process",
-                             __FUNCTION__);
-        return NS_ERROR_FAILURE;
-      }
-      GMP_PARENT_LOG_DEBUG("%s: Sent preload-libs ('%s') to child process",
-                           __FUNCTION__, mLibs.get());
-    }
-#endif
 
     // Intr call to block initialization on plugin load.
     if (!CallStartPlugin(mAdapter)) {
@@ -369,19 +353,6 @@ bool GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
     }
     for (const nsCString& tag : capabilities.mAPITags) {
       if (tag.Equals(aTag)) {
-#ifdef XP_WIN
-        // Clearkey on Windows advertises that it can decode in its GMP info
-        // file, but uses Windows Media Foundation to decode. That's not present
-        // on Windows XP, and on some Vista, Windows N, and KN variants without
-        // certain services packs.
-        if (tag.EqualsLiteral(EME_KEY_SYSTEM_CLEARKEY)) {
-          if (capabilities.mAPIName.EqualsLiteral(GMP_API_VIDEO_DECODER)) {
-            if (!WMFDecoderModule::HasH264()) {
-              continue;
-            }
-          }
-        }
-#endif
         return true;
       }
     }
@@ -560,11 +531,6 @@ RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
       !ReadInfoField(parser, NS_LITERAL_CSTRING("apis"), apis)) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
-
-#if defined(XP_WIN) || defined(XP_LINUX)
-  // "Libraries" field is optional.
-  ReadInfoField(parser, NS_LITERAL_CSTRING("libraries"), mLibs);
-#endif
 
   nsTArray<nsCString> apiTokens;
   SplitAt(", ", apis, apiTokens);

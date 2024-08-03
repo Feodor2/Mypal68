@@ -860,13 +860,7 @@
         "intl.accept_languages": {
           "type": "string"
         },
-        "media.eme.enabled": {
-          "type": "boolean"
-        },
         "media.gmp-gmpopenh264.enabled": {
-          "type": "boolean"
-        },
-        "media.gmp-widevinecdm.enabled": {
           "type": "boolean"
         },
         "media.peerconnection.enabled": {

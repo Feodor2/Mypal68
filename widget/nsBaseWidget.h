@@ -12,6 +12,9 @@
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/CompositorOptions.h"
+#ifdef XP_MACOSX
+#  include "mozilla/layers/NativeLayer.h"
+#endif
 #include "nsRect.h"
 #include "nsIWidget.h"
 #include "nsWidgetsCID.h"
@@ -460,9 +463,11 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return true;
   }
   virtual void PostRender(mozilla::widget::WidgetRenderingContext* aContext) {}
-  virtual void DrawWindowUnderlay(
-      mozilla::widget::WidgetRenderingContext* aContext,
-      LayoutDeviceIntRect aRect) {}
+#ifdef XP_MACOSX
+  virtual RefPtr<mozilla::layers::NativeLayerRoot> GetNativeLayerRoot() {
+    return nullptr;
+  }
+#endif
   virtual void DrawWindowOverlay(
       mozilla::widget::WidgetRenderingContext* aContext,
       LayoutDeviceIntRect aRect) {}
@@ -472,8 +477,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return StartRemoteDrawing();
   }
   virtual void EndRemoteDrawing() {}
-  virtual void EndRemoteDrawingInRegion(DrawTarget* aDrawTarget,
-                                        LayoutDeviceIntRegion& aInvalidRegion) {
+  virtual void EndRemoteDrawingInRegion(
+      DrawTarget* aDrawTarget, const LayoutDeviceIntRegion& aInvalidRegion) {
     EndRemoteDrawing();
   }
   virtual void CleanupRemoteDrawing() {}
@@ -483,6 +488,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   }
   virtual uint32_t GetGLFrameBufferFormat();
   virtual bool CompositorInitiallyPaused() { return false; }
+#ifdef XP_MACOSX
+  virtual LayoutDeviceIntRegion GetOpaqueWidgetRegion() { return {}; }
+#endif
 
  protected:
   void ResolveIconName(const nsAString& aIconName, const nsAString& aIconSuffix,

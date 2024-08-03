@@ -480,6 +480,12 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect& aRect, nsBorderStyle aB
   [mWindow setContentMinSize:NSMakeSize(60, 60)];
   [mWindow disableCursorRects];
 
+  if (StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
+    // Make the window use CoreAnimation from the start, so that we don't
+    // switch from a non-CA window to a CA-window in the middle.
+    [[mWindow contentView] setWantsLayer:YES];
+  }
+
   // Make sure the window starts out not draggable by the background.
   // We will turn it on as necessary.
   [mWindow setMovableByWindowBackground:NO];
@@ -2674,9 +2680,6 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
 // used for a window is determined in the window's frameViewClassForStyleMask:
 // method, so this is where we make sure that we have swizzled the method on
 // all encountered classes.
-// We also override the _wantsFloatingTitlebar method to return NO in order to
-// avoid some glitches in the titlebar that are caused by the way we mess with
-// the window.
 + (Class)frameViewClassForStyleMask:(NSUInteger)styleMask {
   Class frameViewClass = [super frameViewClassForStyleMask:styleMask];
 
@@ -2712,11 +2715,18 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
       nsToolkit::SwizzleMethods(frameViewClass, @selector(_fullScreenButtonOrigin),
                                 @selector(FrameView__fullScreenButtonOrigin));
     }
-    IMP _wantsFloatingTitlebar =
-        class_getMethodImplementation(frameViewClass, @selector(_wantsFloatingTitlebar));
-    if (_wantsFloatingTitlebar && _wantsFloatingTitlebar != our_wantsFloatingTitlebar) {
-      nsToolkit::SwizzleMethods(frameViewClass, @selector(_wantsFloatingTitlebar),
-                                @selector(FrameView__wantsFloatingTitlebar));
+    if (!StaticPrefs::gfx_core_animation_enabled()) {
+      // When we're not using CoreAnimation, we need to override the
+      // _wantsFloatingTitlebar method to return NO, because the "floating
+      // titlebar" overlaps in a glitchy way with the NSOpenGLContext when we're
+      // drawing in the titlebar. These glitches do not appear when we use a
+      // CoreAnimation layer instead of an NSView-attached NSOpenGLContext.
+      IMP _wantsFloatingTitlebar =
+          class_getMethodImplementation(frameViewClass, @selector(_wantsFloatingTitlebar));
+      if (_wantsFloatingTitlebar && _wantsFloatingTitlebar != our_wantsFloatingTitlebar) {
+        nsToolkit::SwizzleMethods(frameViewClass, @selector(_wantsFloatingTitlebar),
+                                  @selector(FrameView__wantsFloatingTitlebar));
+      }
     }
     [gSwizzledFrameViewClasses addObject:frameViewClass];
   }
@@ -2789,6 +2799,9 @@ static NSImage* GetMenuMaskImage() {
   } else if (mUseMenuStyle && !aValue) {
     // Turn off rounded corner masking.
     NSView* wrapper = [[NSView alloc] initWithFrame:NSZeroRect];
+    if (StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
+      [wrapper setWantsLayer:YES];
+    }
     [self swapOutChildViewWrapper:wrapper];
     [wrapper release];
   }
@@ -2831,6 +2844,7 @@ static const NSString* kStateTitleKey = @"title";
 static const NSString* kStateDrawsContentsIntoWindowFrameKey = @"drawsContentsIntoWindowFrame";
 static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
 static const NSString* kStateCollectionBehavior = @"collectionBehavior";
+static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
 
 - (void)importState:(NSDictionary*)aState {
   if (NSString* title = [aState objectForKey:kStateTitleKey]) {
@@ -2840,6 +2854,7 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
                                             boolValue]];
   [self setShowsToolbarButton:[[aState objectForKey:kStateShowsToolbarButton] boolValue]];
   [self setCollectionBehavior:[[aState objectForKey:kStateCollectionBehavior] unsignedIntValue]];
+  [self setWantsTitleDrawn:[[aState objectForKey:kStateWantsTitleDrawn] boolValue]];
 }
 
 - (NSMutableDictionary*)exportState {
@@ -2853,6 +2868,7 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
             forKey:kStateShowsToolbarButton];
   [state setObject:[NSNumber numberWithUnsignedInt:[self collectionBehavior]]
             forKey:kStateCollectionBehavior];
+  [state setObject:[NSNumber numberWithBool:[self wantsTitleDrawn]] forKey:kStateWantsTitleDrawn];
   return state;
 }
 
@@ -3018,6 +3034,8 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
 }
 
 - (NSArray*)titlebarControls {
+  MOZ_RELEASE_ASSERT(!StaticPrefs::gfx_core_animation_enabled_AtStartup());
+
   // Return all subviews of the frameView which are not the content view.
   NSView* frameView = [[self contentView] superview];
   NSMutableArray* array = [[[frameView subviews] mutableCopy] autorelease];
@@ -3110,34 +3128,36 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
   nsNativeThemeCocoa::DrawNativeTitlebar(ctx, NSRectToCGRect([self bounds]),
                                          [window unifiedToolbarHeight], [window isMainWindow], NO);
 
-  // The following is only necessary because we're not using
-  // NSFullSizeContentViewWindowMask yet: We need to mask our drawing to the
-  // rounded top corners of the window, and we need to draw the title string
-  // on top. That's because the title string is drawn as part of the frame view
-  // and this view covers that drawing up.
-  // Once we use NSFullSizeContentViewWindowMask and remove our override of
-  // _wantsFloatingTitlebar, Cocoa will draw the title string as part of a
-  // separate view which sits on top of the window's content view, and we'll be
-  // able to remove the code below.
+  if (!StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
+    // The following is only necessary when we're not using CoreAnimation for
+    // the window: We need to mask our drawing to the rounded top corners of the
+    // window, and we need to draw the title string on top. That's because, if
+    // CoreAnimation isn't used, the title string is drawn as part of the frame
+    // view and this view covers that drawing up.
+    // In a CoreAnimation-driven window, Cocoa will draw the title string in a
+    // separate NSView which sits on top of the window's content view, and we
+    // don't need the code below. It will also clip this view's drawing as part
+    // of the rounded corner clipping on the root CALayer of the window.
 
-  NSView* frameView = [[[self window] contentView] superview];
-  if (!frameView || ![frameView respondsToSelector:@selector(_maskCorners:clipRect:)] ||
-      ![frameView respondsToSelector:@selector(_drawTitleStringInClip:)]) {
-    return;
+    NSView* frameView = [[[self window] contentView] superview];
+    if (!frameView || ![frameView respondsToSelector:@selector(_maskCorners:clipRect:)] ||
+        ![frameView respondsToSelector:@selector(_drawTitleStringInClip:)]) {
+      return;
+    }
+
+    NSPoint offsetToFrameView = [self convertPoint:NSZeroPoint toView:frameView];
+    NSRect clipRect = {offsetToFrameView, [self bounds].size};
+
+    // Both this view and frameView return NO from isFlipped. Switch into
+    // frameView's coordinate system using a translation by the offset.
+    CGContextSaveGState(ctx);
+    CGContextTranslateCTM(ctx, -offsetToFrameView.x, -offsetToFrameView.y);
+
+    [frameView _maskCorners:2 clipRect:clipRect];
+    [frameView _drawTitleStringInClip:clipRect];
+
+    CGContextRestoreGState(ctx);
   }
-
-  NSPoint offsetToFrameView = [self convertPoint:NSZeroPoint toView:frameView];
-  NSRect clipRect = {offsetToFrameView, [self bounds].size};
-
-  // Both this view and frameView return NO from isFlipped. Switch into
-  // frameView's coordinate system using a translation by the offset.
-  CGContextSaveGState(ctx);
-  CGContextTranslateCTM(ctx, -offsetToFrameView.x, -offsetToFrameView.y);
-
-  [frameView _maskCorners:2 clipRect:clipRect];
-  [frameView _drawTitleStringInClip:clipRect];
-
-  CGContextRestoreGState(ctx);
 }
 
 - (BOOL)isOpaque {
@@ -3255,6 +3275,7 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
 
 - (void)windowMainStateChanged {
   [self setTitlebarNeedsDisplay];
+  [[self mainChildView] ensureNextCompositeIsAtomicWithMainThreadPaint];
 }
 
 - (void)setTitlebarNeedsDisplay {

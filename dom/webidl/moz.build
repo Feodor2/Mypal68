@@ -329,9 +329,6 @@ with Files("Webrtc*"):
 with Files("WheelEvent.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
-with Files("WidevineCDMManifest.webidl"):
-    BUG_COMPONENT = ("Core", "Audio/Video: Playback")
-
 with Files("WindowOrWorkerGlobalScope.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Workers")
 
@@ -904,7 +901,6 @@ WEBIDL_FILES = [
     'WebGLRenderingContext.webidl',
     'WebSocket.webidl',
     'WheelEvent.webidl',
-    'WidevineCDMManifest.webidl',
     'WindowOrWorkerGlobalScope.webidl',
     'WindowRoot.webidl',
     'Worker.webidl',

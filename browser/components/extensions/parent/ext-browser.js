@@ -1046,7 +1046,7 @@ class Window extends WindowBase {
     // A new window is being opened and it is adopting an existing tab, we return
     // an empty iterator here because there should be no other tabs to return during
     // that duration (See Bug 1458918 for a rationale).
-    if (this.window.gBrowserInit.isAdoptingTab()) {
+    if (this.window.gBrowserInit && this.window.gBrowserInit.isAdoptingTab()) {
       return;
     }
 
@@ -1065,6 +1065,10 @@ class Window extends WindowBase {
   }
 
   get activeTab() {
+    if (!this.window.gBrowser || !this.window.gBrowserInit) {
+      return null;
+    }
+
     let { tabManager } = this.extension;
 
     // A new window is being opened and it is adopting a tab, and we do not create

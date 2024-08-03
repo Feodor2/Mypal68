@@ -254,64 +254,6 @@ GMPErr GMPChild::GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
   return mGMPLoader->GetAPI(aAPIName, aHostAPI, aPluginAPI, aDecryptorId);
 }
 
-mozilla::ipc::IPCResult GMPChild::RecvPreloadLibs(const nsCString& aLibs) {
-  // Pre-load libraries that may need to be used by the EME plugin but that
-  // can't be loaded after the sandbox has started.
-#ifdef XP_WIN
-  // Items in this must be lowercase!
-  constexpr static const char16_t* whitelist[] = {
-      u"dxva2.dll",        // Get monitor information
-      u"evr.dll",          // MFGetStrideForBitmapInfoHeader
-      u"freebl3.dll",      // NSS for clearkey CDM
-      u"mfplat.dll",       // MFCreateSample, MFCreateAlignedMemoryBuffer,
-                           // MFCreateMediaType
-      u"msmpeg2vdec.dll",  // H.264 decoder
-      u"nss3.dll",         // NSS for clearkey CDM
-      u"psapi.dll",        // For GetMappedFileNameW, see bug 1383611
-      u"softokn3.dll",     // NSS for clearkey CDM
-  };
-  constexpr static bool (*IsASCII)(const char16_t*) =
-      IsAsciiNullTerminated<char16_t>;
-  static_assert(AllOf(std::begin(whitelist), std::end(whitelist), IsASCII),
-                "Items in the whitelist must not contain non-ASCII "
-                "characters!");
-
-  nsTArray<nsCString> libs;
-  SplitAt(", ", aLibs, libs);
-  for (nsCString lib : libs) {
-    ToLowerCase(lib);
-    for (const char16_t* whiteListedLib : whitelist) {
-      if (nsDependentString(whiteListedLib)
-              .EqualsASCII(lib.Data(), lib.Length())) {
-        LoadLibraryW(char16ptr_t(whiteListedLib));
-        break;
-      }
-    }
-  }
-#elif defined(XP_LINUX)
-  constexpr static const char* whitelist[] = {
-      "libfreeblpriv3.so",
-      "libsoftokn3.so",
-  };
-
-  nsTArray<nsCString> libs;
-  SplitAt(", ", aLibs, libs);
-  for (const nsCString& lib : libs) {
-    for (const char* whiteListedLib : whitelist) {
-      if (lib.EqualsASCII(whiteListedLib)) {
-        auto libHandle = dlopen(whiteListedLib, RTLD_NOW | RTLD_GLOBAL);
-        if (libHandle) {
-          mLibHandles.AppendElement(libHandle);
-        } else {
-          MOZ_CRASH("Couldn't load lib needed by NSS");
-        }
-      }
-    }
-  }
-#endif
-  return IPC_OK();
-}
-
 bool GMPChild::GetUTF8LibPath(nsACString& aOutLibPath) {
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   nsAutoCString pluginDirectoryPath, pluginFilePath;

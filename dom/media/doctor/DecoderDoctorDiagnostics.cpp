@@ -238,10 +238,6 @@ struct NotificationAndReportStringId {
 };
 
 // Note: ReportStringIds are limited to alphanumeric only.
-static const NotificationAndReportStringId sMediaWidevineNoWMF = {
-    dom::DecoderDoctorNotificationType::Platform_decoder_not_found,
-    "MediaWidevineNoWMF",
-    {ReportParam::None}};
 static const NotificationAndReportStringId sMediaWMFNeeded = {
     dom::DecoderDoctorNotificationType::Platform_decoder_not_found,
     "MediaWMFNeeded",
@@ -276,8 +272,7 @@ static const NotificationAndReportStringId sMediaDecodeWarning = {
     {ReportParam::ResourceURL, ReportParam::DecodeIssue}};
 
 static const NotificationAndReportStringId* const
-    sAllNotificationsAndReportStringIds[] = {&sMediaWidevineNoWMF,
-                                             &sMediaWMFNeeded,
+    sAllNotificationsAndReportStringIds[] = {&sMediaWMFNeeded,
                                              &sMediaPlatformDecoderNotFound,
                                              &sMediaCannotPlayNoDecoders,
                                              &sMediaNoDecoders,
@@ -493,10 +488,6 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
 #if defined(MOZ_FFMPEG)
   nsAutoString formatsRequiringFFMpeg;
 #endif
-  nsAutoString supportedKeySystems;
-  nsAutoString unsupportedKeySystems;
-  DecoderDoctorDiagnostics::KeySystemIssue lastKeySystemIssue =
-      DecoderDoctorDiagnostics::eUnset;
   // Only deal with one decode error per document (the first one found).
   const MediaResult* firstDecodeError = nullptr;
   const nsString* firstDecodeErrorMediaSrc = nullptr;
@@ -552,15 +543,13 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
 
   // Check if issues have been solved, by finding if some now-playable
   // key systems or formats were previously recorded as having issues.
-  if (!supportedKeySystems.IsEmpty() || !playableFormats.IsEmpty()) {
+  if (!playableFormats.IsEmpty()) {
     DD_DEBUG(
         "DecoderDoctorDocumentWatcher[%p, doc=%p]::SynthesizeAnalysis() - "
-        "supported key systems '%s', playable formats '%s'; See if they show "
+        "playable formats '%s'; See if they show "
         "issues have been solved...",
-        this, mDocument, NS_ConvertUTF16toUTF8(supportedKeySystems).Data(),
-        NS_ConvertUTF16toUTF8(playableFormats).get());
-    const nsAString* workingFormatsArray[] = {&supportedKeySystems,
-                                              &playableFormats};
+        this, mDocument, NS_ConvertUTF16toUTF8(playableFormats).get());
+    const nsAString* workingFormats = &playableFormats;
     // For each type of notification, retrieve the pref that contains formats/
     // key systems with issues.
     for (const NotificationAndReportStringId* id :
@@ -576,23 +565,21 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
       // See if that list of formats-with-issues contains any formats that are
       // now playable/supported.
       bool solved = false;
-      for (const nsAString* workingFormats : workingFormatsArray) {
-        for (const auto& workingFormat : MakeStringListRange(*workingFormats)) {
-          if (FormatsListContains(formatsWithIssues, workingFormat)) {
-            // This now-working format used not to work -> Report solved issue.
-            DD_INFO(
-                "DecoderDoctorDocumentWatcher[%p, "
-                "doc=%p]::SynthesizeAnalysis() - %s solved ('%s' now works, it "
-                "was in pref(%s)='%s')",
-                this, mDocument, id->mReportStringId,
-                NS_ConvertUTF16toUTF8(workingFormat).get(), formatsPref.Data(),
-                NS_ConvertUTF16toUTF8(formatsWithIssues).get());
-            ReportAnalysis(mDocument, *id, true, workingFormat);
-            // This particular Notification&ReportId has been solved, no need
-            // to keep looking at other keysys/formats that might solve it too.
-            solved = true;
-            break;
-          }
+      for (const auto& workingFormat : MakeStringListRange(*workingFormats)) {
+        if (FormatsListContains(formatsWithIssues, workingFormat)) {
+          // This now-working format used not to work -> Report solved issue.
+          DD_INFO(
+              "DecoderDoctorDocumentWatcher[%p, "
+              "doc=%p]::SynthesizeAnalysis() - %s solved ('%s' now works, it "
+              "was in pref(%s)='%s')",
+              this, mDocument, id->mReportStringId,
+              NS_ConvertUTF16toUTF8(workingFormat).get(), formatsPref.Data(),
+              NS_ConvertUTF16toUTF8(formatsWithIssues).get());
+          ReportAnalysis(mDocument, *id, true, workingFormat);
+          // This particular Notification&ReportId has been solved, no need
+          // to keep looking at other keysys/formats that might solve it too.
+          solved = true;
+          break;
         }
         if (solved) {
           break;
@@ -605,25 +592,6 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
             this, mDocument, id->mReportStringId, formatsPref.Data(),
             NS_ConvertUTF16toUTF8(formatsWithIssues).get());
       }
-    }
-  }
-
-  // Look at Key System issues first, as they take precedence over format
-  // checks.
-  if (!unsupportedKeySystems.IsEmpty() && supportedKeySystems.IsEmpty()) {
-    // No supported key systems!
-    switch (lastKeySystemIssue) {
-      case DecoderDoctorDiagnostics::eWidevineWithNoWMF:
-        DD_INFO(
-            "DecoderDoctorDocumentWatcher[%p, doc=%p]::SynthesizeAnalysis() - "
-            "unsupported key systems: %s, Widevine without WMF",
-            this, mDocument,
-            NS_ConvertUTF16toUTF8(unsupportedKeySystems).get());
-        ReportAnalysis(mDocument, sMediaWidevineNoWMF, false,
-                       unsupportedKeySystems);
-        return;
-      default:
-        break;
     }
   }
 

@@ -107,8 +107,6 @@
 
 @BINPATH@/components/extensions.manifest
 
-@BINPATH@/components/antitracking.manifest
-
 #ifndef MOZ_GECKOVIEW_JAR
 @BINPATH@/components/amContentHandler.js
 @BINPATH@/components/amWebAPI.js
@@ -129,7 +127,6 @@
 @BINPATH@/components/HandlerService.manifest
 @BINPATH@/components/HandlerService.js
 @BINPATH@/components/servicesComponents.manifest
-@BINPATH@/components/servicesSettings.manifest
 
 #ifndef MOZ_GECKOVIEW_JAR
 @BINPATH@/components/TelemetryStartup.manifest

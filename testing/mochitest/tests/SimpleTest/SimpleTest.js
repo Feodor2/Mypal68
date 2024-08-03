@@ -892,11 +892,6 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
         browser = targetWindow;
     }
 
-    var isWrapper = Cu.isCrossProcessWrapper(targetWindow);
-    if (isWrapper) {
-        throw new Error("Can't pass CPOW to SimpleTest.focus as the content window.");
-    }
-
     if (browser && browser.isRemoteBrowser) {
         browser.messageManager.addMessageListener("WaitForFocus:ChildFocused", function waitTest(msg) {
             browser.messageManager.removeMessageListener("WaitForFocus:ChildFocused", waitTest);

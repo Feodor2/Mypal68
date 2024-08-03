@@ -190,12 +190,21 @@ CompositorOGL::CompositorOGL(CompositorBridgeParent* aParent,
       mWindowRenderTarget(nullptr),
       mQuadVBO(0),
       mTriangleVBO(0),
+      mPreviousFrameDoneSync(nullptr),
+      mThisFrameDoneSync(nullptr),
       mHasBGRA(0),
       mUseExternalSurfaceSize(aUseExternalSurfaceSize),
       mFrameInProgress(false),
       mDestroyed(false),
       mViewportSize(0, 0),
       mCurrentProgram(nullptr) {
+#ifdef XP_MACOSX
+  if (aWidget->GetNativeLayerRoot()) {
+    // We can only render into native layers, our GLContext won't have a usable
+    // default framebuffer.
+    mCanRenderToDefaultFramebuffer = false;
+  }
+#endif
 #ifdef XP_DARWIN
   TextureSync::RegisterTextureSourceProvider(this);
 #endif
@@ -207,7 +216,6 @@ CompositorOGL::~CompositorOGL() {
   TextureSync::UnregisterTextureSourceProvider(this);
 #endif
   MOZ_COUNT_DTOR(CompositorOGL);
-  Destroy();
 }
 
 already_AddRefed<mozilla::gl::GLContext> CompositorOGL::CreateContext() {
@@ -292,8 +300,14 @@ void CompositorOGL::CleanupResources() {
     // Leak resources!
     mQuadVBO = 0;
     mTriangleVBO = 0;
+    mPreviousFrameDoneSync = nullptr;
+    mThisFrameDoneSync = nullptr;
     mGLContext = nullptr;
     mPrograms.clear();
+#ifdef XP_MACOSX
+    mNativeLayersReferenceRT = nullptr;
+#endif
+    mFullWindowRenderTarget = nullptr;
     return;
   }
 
@@ -303,6 +317,10 @@ void CompositorOGL::CleanupResources() {
     delete iter->second;
   }
   mPrograms.clear();
+#ifdef XP_MACOSX
+  mNativeLayersReferenceRT = nullptr;
+#endif
+  mFullWindowRenderTarget = nullptr;
 
 #ifdef MOZ_WIDGET_GTK
   // TextureSources might hold RefPtr<gl::GLContext>.
@@ -327,6 +345,16 @@ void CompositorOGL::CleanupResources() {
   }
 
   mGLContext->MakeCurrent();
+
+  if (mPreviousFrameDoneSync) {
+    mGLContext->fDeleteSync(mPreviousFrameDoneSync);
+    mPreviousFrameDoneSync = nullptr;
+  }
+
+  if (mThisFrameDoneSync) {
+    mGLContext->fDeleteSync(mThisFrameDoneSync);
+    mThisFrameDoneSync = nullptr;
+  }
 
   mBlitTextureImageHelper = nullptr;
 
@@ -549,9 +577,9 @@ gfx::Rect CompositorOGL::GetTextureCoordinates(gfx::Rect textureRect,
 void CompositorOGL::PrepareViewport(CompositingRenderTargetOGL* aRenderTarget) {
   MOZ_ASSERT(aRenderTarget);
   // Logical surface size.
-  const gfx::IntSize& size = aRenderTarget->mInitParams.mSize;
+  const gfx::IntSize& size = aRenderTarget->GetSize();
   // Physical surface size.
-  const gfx::IntSize& phySize = aRenderTarget->mInitParams.mPhySize;
+  const gfx::IntSize& phySize = aRenderTarget->GetPhysicalSize();
 
   // Set the viewport correctly.
   mGLContext->fViewport(mSurfaceOrigin.x, mSurfaceOrigin.y, phySize.width,
@@ -616,12 +644,11 @@ already_AddRefed<CompositingRenderTarget> CompositorOGL::CreateRenderTarget(
   GLuint tex = 0;
   GLuint fbo = 0;
   IntRect rect = aRect;
-  IntSize FBOSize;
-  CreateFBOWithTexture(rect, false, 0, &fbo, &tex, &FBOSize);
-  RefPtr<CompositingRenderTargetOGL> surface =
-      new CompositingRenderTargetOGL(this, aRect.TopLeft(), tex, fbo);
-  surface->Initialize(aRect.Size(), FBOSize, mFBOTextureTarget, aInit);
-  return surface.forget();
+  IntSize fboSize;
+  CreateFBOWithTexture(rect, false, 0, &fbo, &tex, &fboSize);
+  return CompositingRenderTargetOGL::CreateForNewFBOAndTakeOwnership(
+      this, tex, fbo, aRect, aRect.TopLeft(), aRect.Size(), mFBOTextureTarget,
+      aInit);
 }
 
 already_AddRefed<CompositingRenderTarget>
@@ -630,6 +657,7 @@ CompositorOGL::CreateRenderTargetFromSource(
     const IntPoint& aSourcePoint) {
   MOZ_ASSERT(!aRect.IsZeroArea(),
              "Trying to create a render target of invalid size");
+  MOZ_RELEASE_ASSERT(aSource, "Source needs to be non-null");
 
   if (aRect.IsZeroArea()) {
     return nullptr;
@@ -644,17 +672,11 @@ CompositorOGL::CreateRenderTargetFromSource(
   const CompositingRenderTargetOGL* sourceSurface =
       static_cast<const CompositingRenderTargetOGL*>(aSource);
   IntRect sourceRect(aSourcePoint, aRect.Size());
-  if (aSource) {
-    CreateFBOWithTexture(sourceRect, true, sourceSurface->GetFBO(), &fbo, &tex);
-  } else {
-    CreateFBOWithTexture(sourceRect, true, 0, &fbo, &tex);
-  }
+  CreateFBOWithTexture(sourceRect, true, sourceSurface->GetFBO(), &fbo, &tex);
 
-  RefPtr<CompositingRenderTargetOGL> surface =
-      new CompositingRenderTargetOGL(this, aRect.TopLeft(), tex, fbo);
-  surface->Initialize(aRect.Size(), sourceRect.Size(), mFBOTextureTarget,
-                      INIT_MODE_NONE);
-  return surface.forget();
+  return CompositingRenderTargetOGL::CreateForNewFBOAndTakeOwnership(
+      this, tex, fbo, aRect, aRect.TopLeft(), sourceRect.Size(),
+      mFBOTextureTarget, INIT_MODE_NONE);
 }
 
 void CompositorOGL::SetRenderTarget(CompositingRenderTarget* aSurface) {
@@ -717,7 +739,8 @@ bool CompositorOGL::BlitRenderTarget(CompositingRenderTarget* aSource,
   GLuint srcFBO = source->GetFBO();
   GLuint destFBO = mCurrentRenderTarget->GetFBO();
   mGLContext->BlitHelper()->BlitFramebufferToFramebuffer(
-      srcFBO, destFBO, aSourceSize, aDestSize, LOCAL_GL_LINEAR);
+      srcFBO, destFBO, IntRect(IntPoint(), aSourceSize),
+      IntRect(IntPoint(), aDestSize), LOCAL_GL_LINEAR);
   return true;
 }
 
@@ -741,51 +764,253 @@ void CompositorOGL::ClearRect(const gfx::Rect& aRect) {
   mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
 }
 
-void CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
-                               const IntRect* aClipRectIn,
-                               const IntRect& aRenderBounds,
-                               const nsIntRegion& aOpaqueRegion,
-                               IntRect* aClipRectOut,
-                               IntRect* aRenderBoundsOut) {
+Maybe<IntRect> CompositorOGL::BeginFrameForWindow(
+    const nsIntRegion& aInvalidRegion, const Maybe<IntRect>& aClipRect,
+    const IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion) {
+  MOZ_RELEASE_ASSERT(!mTarget, "mTarget not cleared properly");
+  return BeginFrame(aInvalidRegion, aClipRect, aRenderBounds, aOpaqueRegion);
+}
+
+Maybe<IntRect> CompositorOGL::BeginFrameForTarget(
+    const nsIntRegion& aInvalidRegion, const Maybe<IntRect>& aClipRect,
+    const IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+    DrawTarget* aTarget, const IntRect& aTargetBounds) {
+  MOZ_RELEASE_ASSERT(!mTarget, "mTarget not cleared properly");
+  mTarget = aTarget;  // Will be cleared in EndFrame().
+  mTargetBounds = aTargetBounds;
+  Maybe<IntRect> result =
+      BeginFrame(aInvalidRegion, aClipRect, aRenderBounds, aOpaqueRegion);
+  if (!result) {
+    // Composition has been aborted. Reset mTarget.
+    mTarget = nullptr;
+  }
+  return result;
+}
+
+#ifdef XP_MACOSX
+already_AddRefed<CompositingRenderTargetOGL>
+CompositorOGL::RenderTargetForNativeLayer(NativeLayer* aNativeLayer,
+                                          IntRegion& aInvalidRegion) {
+  if (aInvalidRegion.IsEmpty()) {
+    return nullptr;
+  }
+
+  aNativeLayer->SetSurfaceIsFlipped(true);
+  aNativeLayer->SetGLContext(mGLContext);
+
+  IntRect layerRect = aNativeLayer->GetRect();
+  IntRegion invalidRelativeToLayer =
+      aInvalidRegion.MovedBy(-layerRect.TopLeft());
+  aNativeLayer->InvalidateRegionThroughoutSwapchain(invalidRelativeToLayer);
+  Maybe<GLuint> fbo = aNativeLayer->NextSurfaceAsFramebuffer(false);
+  if (!fbo) {
+    return nullptr;
+  }
+
+  invalidRelativeToLayer = aNativeLayer->CurrentSurfaceInvalidRegion();
+  aInvalidRegion = invalidRelativeToLayer.MovedBy(layerRect.TopLeft());
+
+  RefPtr<CompositingRenderTargetOGL> rt =
+      CompositingRenderTargetOGL::CreateForExternallyOwnedFBO(
+          this, *fbo, layerRect, IntPoint());
+
+  // Clip the render target to the invalid rect. This conserves memory bandwidth
+  // and power.
+  IntRect invalidRect = aInvalidRegion.GetBounds();
+  rt->SetClipRect(invalidRect == layerRect ? Nothing() : Some(invalidRect));
+
+  return rt.forget();
+}
+
+void CompositorOGL::BeginFrameForNativeLayers() {
+  MakeCurrent();
+  mPixelsPerFrame = 0;
+  mPixelsFilled = 0;
+
+  // Default blend function implements "OVER"
+  mGLContext->fBlendFuncSeparate(LOCAL_GL_ONE, LOCAL_GL_ONE_MINUS_SRC_ALPHA,
+                                 LOCAL_GL_ONE, LOCAL_GL_ONE_MINUS_SRC_ALPHA);
+  mGLContext->fEnable(LOCAL_GL_BLEND);
+
+  mFrameInProgress = true;
+  mShouldInvalidateWindow = NeedToRecreateFullWindowRenderTarget();
+
+  // Make a 1x1 dummy render target so that GetCurrentRenderTarget() returns
+  // something non-null even outside of calls to
+  // Begin/EndRenderingToNativeLayer.
+  if (!mNativeLayersReferenceRT) {
+    mNativeLayersReferenceRT =
+        CreateRenderTarget(IntRect(0, 0, 1, 1), INIT_MODE_CLEAR);
+  }
+  SetRenderTarget(mNativeLayersReferenceRT);
+  mWindowRenderTarget = mFullWindowRenderTarget;
+}
+
+Maybe<gfx::IntRect> CompositorOGL::BeginRenderingToNativeLayer(
+    const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+    const nsIntRegion& aOpaqueRegion, NativeLayer* aNativeLayer) {
+  MOZ_RELEASE_ASSERT(aNativeLayer);
+  MOZ_RELEASE_ASSERT(mCurrentRenderTarget == mNativeLayersReferenceRT,
+                     "Please restore the current render target to the one that "
+                     "was in place after the call to BeginFrameForNativeLayers "
+                     "before calling BeginRenderingToNativeLayer.");
+
+  IntRect rect = aNativeLayer->GetRect();
+  IntRegion layerInvalid;
+  if (mShouldInvalidateWindow) {
+    layerInvalid = rect;
+  } else {
+    layerInvalid.And(aInvalidRegion, rect);
+  }
+
+  RefPtr<CompositingRenderTarget> rt =
+      RenderTargetForNativeLayer(aNativeLayer, layerInvalid);
+  if (!rt) {
+    return Nothing();
+  }
+  SetRenderTarget(rt);
+  mCurrentNativeLayer = aNativeLayer;
+
+  mGLContext->fClearColor(mClearColor.r, mClearColor.g, mClearColor.b,
+                          mClearColor.a);
+  if (const Maybe<IntRect>& rtClip = mCurrentRenderTarget->GetClipRect()) {
+    // We need to apply a scissor rect during the clear. And since clears with
+    // scissor rects are usually treated differently by the GPU than regular
+    // clears, let's try to clear as little as possible in order to conserve
+    // memory bandwidth.
+    IntRegion clearRegion;
+    clearRegion.Sub(*rtClip, aOpaqueRegion);
+    if (!clearRegion.IsEmpty()) {
+      IntRect clearRect =
+          clearRegion.GetBounds() - mCurrentRenderTarget->GetOrigin();
+      ScopedGLState scopedScissorTestState(mGLContext, LOCAL_GL_SCISSOR_TEST,
+                                           true);
+      ScopedScissorRect autoScissorRect(mGLContext, clearRect.x,
+                                        FlipY(clearRect.YMost()),
+                                        clearRect.Width(), clearRect.Height());
+      mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
+    }
+    mPixelsPerFrame += rtClip->Area();
+  } else {
+    mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
+    mPixelsPerFrame += rect.Area();
+  }
+
+  return Some(rect);
+}
+#endif
+
+void CompositorOGL::NormalDrawingDone() {
+  // Now is a good time to update mFullWindowRenderTarget.
+#ifdef XP_MACOSX
+  if (!mCurrentNativeLayer) {
+    return;
+  }
+#endif
+
+  if (!mGLContext->IsSupported(GLFeature::framebuffer_blit)) {
+    return;
+  }
+
+  if (!ShouldRecordFrames()) {
+    // If we are no longer recording a profile, we can drop the render target if
+    // it exists.
+    mWindowRenderTarget = nullptr;
+    mFullWindowRenderTarget = nullptr;
+    return;
+  }
+
+  if (NeedToRecreateFullWindowRenderTarget()) {
+    // We have either (1) just started recording and not yet allocated a
+    // buffer or (2) are already recording and have resized the window. In
+    // either case, we need a new render target.
+    IntRect windowRect(IntPoint(0, 0),
+                       mWidget->GetClientSize().ToUnknownSize());
+    RefPtr<CompositingRenderTarget> rt =
+        CreateRenderTarget(windowRect, INIT_MODE_NONE);
+    mFullWindowRenderTarget =
+        static_cast<CompositingRenderTargetOGL*>(rt.get());
+    mWindowRenderTarget = mFullWindowRenderTarget;
+
+    // Initialize the render target by binding it.
+    RefPtr<CompositingRenderTarget> previousTarget = mCurrentRenderTarget;
+    SetRenderTarget(mFullWindowRenderTarget);
+    SetRenderTarget(previousTarget);
+  }
+
+  // Copy the appropriate rectangle from the layer to mFullWindowRenderTarget.
+  RefPtr<CompositingRenderTargetOGL> layerRT = mCurrentRenderTarget;
+  IntRect copyRect = layerRT->GetClipRect().valueOr(layerRT->GetRect());
+  IntRect sourceRect = copyRect - layerRT->GetOrigin();
+  sourceRect.y = layerRT->GetSize().height - sourceRect.YMost();
+  IntRect destRect = copyRect;
+  destRect.y = mFullWindowRenderTarget->GetSize().height - destRect.YMost();
+  GLuint sourceFBO = layerRT->GetFBO();
+  GLuint destFBO = mFullWindowRenderTarget->GetFBO();
+  mGLContext->BlitHelper()->BlitFramebufferToFramebuffer(
+      sourceFBO, destFBO, sourceRect, destRect, LOCAL_GL_NEAREST);
+}
+
+#ifdef XP_MACOSX
+void CompositorOGL::EndRenderingToNativeLayer() {
+  MOZ_RELEASE_ASSERT(mCurrentNativeLayer,
+                     "EndRenderingToNativeLayer not paired with a call to "
+                     "BeginRenderingToNativeLayer?");
+
+  if (StaticPrefs::nglayout_debug_widget_update_flashing()) {
+    float r = float(rand()) / RAND_MAX;
+    float g = float(rand()) / RAND_MAX;
+    float b = float(rand()) / RAND_MAX;
+    EffectChain effectChain;
+    effectChain.mPrimaryEffect = new EffectSolidColor(Color(r, g, b, 0.2f));
+    // If we're clipping the render target to the invalid rect, then the
+    // current render target is still clipped, so just fill the bounds.
+    IntRect rect = mCurrentRenderTarget->GetRect();
+    DrawQuad(Rect(rect), rect - rect.TopLeft(), effectChain, 1.0, Matrix4x4(),
+             Rect(rect));
+  }
+
+  mCurrentRenderTarget->SetClipRect(Nothing());
+  SetRenderTarget(mNativeLayersReferenceRT);
+
+  mCurrentNativeLayer->NotifySurfaceReady();
+  mCurrentNativeLayer = nullptr;
+}
+#endif
+
+Maybe<IntRect> CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
+                                         const Maybe<IntRect>& aClipRect,
+                                         const IntRect& aRenderBounds,
+                                         const nsIntRegion& aOpaqueRegion) {
   AUTO_PROFILER_LABEL("CompositorOGL::BeginFrame", GRAPHICS);
 
   MOZ_ASSERT(!mFrameInProgress,
              "frame still in progress (should have called EndFrame");
 
-  gfx::IntRect rect;
+  IntRect rect;
   if (mUseExternalSurfaceSize) {
-    rect = gfx::IntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
+    rect = IntRect(IntPoint(), mSurfaceSize);
   } else {
-    rect = gfx::IntRect(aRenderBounds.X(), aRenderBounds.Y(),
-                        aRenderBounds.Width(), aRenderBounds.Height());
+    rect = aRenderBounds;
   }
-
-  if (aRenderBoundsOut) {
-    *aRenderBoundsOut = rect;
-  }
-
-  auto width = rect.Width();
-  auto height = rect.Height();
 
   // We can't draw anything to something with no area
   // so just return
-  if (width == 0 || height == 0) return;
-
-  // We're about to actually draw a frame.
-  mFrameInProgress = true;
+  if (rect.IsZeroArea()) {
+    return Nothing();
+  }
 
   // If the widget size changed, we have to force a MakeCurrent
   // to make sure that GL sees the updated widget size.
-  if (mWidgetSize.width != width || mWidgetSize.height != height) {
+  if (mWidgetSize.ToUnknownSize() != rect.Size()) {
     MakeCurrent(ForceMakeCurrent);
 
-    mWidgetSize.width = width;
-    mWidgetSize.height = height;
+    mWidgetSize = LayoutDeviceIntSize::FromUnknownSize(rect.Size());
   } else {
     MakeCurrent();
   }
 
-  mPixelsPerFrame = width * height;
+  mPixelsPerFrame = rect.Area();
   mPixelsFilled = 0;
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -798,15 +1023,24 @@ void CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
                                  LOCAL_GL_ONE, LOCAL_GL_ONE_MINUS_SRC_ALPHA);
   mGLContext->fEnable(LOCAL_GL_BLEND);
 
-  RefPtr<CompositingRenderTargetOGL> rt =
-      CompositingRenderTargetOGL::RenderTargetForWindow(this,
-                                                        IntSize(width, height));
+  RefPtr<CompositingRenderTarget> rt;
+  if (mCanRenderToDefaultFramebuffer) {
+    rt = CompositingRenderTargetOGL::CreateForWindow(this, rect.Size());
+  } else if (mTarget) {
+    rt = CreateRenderTarget(rect, INIT_MODE_CLEAR);
+  } else {
+    MOZ_CRASH("Unexpected call");
+  }
+
+  if (!rt) {
+    return Nothing();
+  }
+
+  // We're about to actually draw a frame.
+  mFrameInProgress = true;
+
   SetRenderTarget(rt);
   mWindowRenderTarget = mCurrentRenderTarget;
-
-  if (aClipRectOut && !aClipRectIn) {
-    aClipRectOut->SetRect(0, 0, width, height);
-  }
 
 #if defined(MOZ_WIDGET_ANDROID)
   if ((mSurfaceOrigin.x > 0) || (mSurfaceOrigin.y > 0)) {
@@ -824,6 +1058,8 @@ void CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
                           mClearColor.a);
 #endif  // defined(MOZ_WIDGET_ANDROID)
   mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
+
+  return Some(rect);
 }
 
 void CompositorOGL::CreateFBOWithTexture(const gfx::IntRect& aRect,
@@ -834,6 +1070,67 @@ void CompositorOGL::CreateFBOWithTexture(const gfx::IntRect& aRect,
   *aTexture =
       CreateTexture(aRect, aCopyFromSource, aSourceFrameBuffer, aAllocSize);
   mGLContext->fGenFramebuffers(1, aFBO);
+}
+
+// Should be called after calls to fReadPixels or fCopyTexImage2D, and other
+// GL read calls.
+static void WorkAroundAppleIntelHD3000GraphicsGLDriverBug(GLContext* aGL) {
+#ifdef XP_MACOSX
+  if (aGL->WorkAroundDriverBugs() &&
+      aGL->Renderer() == GLRenderer::IntelHD3000) {
+    // Work around a bug in the Apple Intel HD Graphics 3000 driver (bug
+    // 1586627, filed with Apple as FB7379358). This bug has been found present
+    // on 10.9.3 and on 10.13.6, so it likely affects all shipped versions of
+    // this driver. (macOS 10.14 does not support this GPU.)
+    // The bug manifests as follows: Reading from a framebuffer puts that
+    // framebuffer into a state such that deleting that framebuffer can break
+    // other framebuffers in certain cases. More specifically, if you have two
+    // framebuffers A and B, the following sequence of events breaks subsequent
+    // drawing to B:
+    //  1. A becomes "most recently read-from framebuffer".
+    //  2. B is drawn to.
+    //  3. A is deleted, and other GL state (such as GL_SCISSOR enabled state)
+    //     is touched.
+    //  4. B is drawn to again.
+    // Now all draws to framebuffer B, including the draw from step 4, will
+    // render at the wrong position and upside down.
+    //
+    // When AfterGLReadCall() is called, the currently bound framebuffer is the
+    // framebuffer that has been read from most recently. So in the presence of
+    // this bug, deleting this framebuffer has now become dangerous. We work
+    // around the bug by creating a new short-lived framebuffer, making that new
+    // framebuffer the most recently read-from framebuffer (using
+    // glCopyTexImage2D), and then deleting it under controlled circumstances.
+    // This deletion is not affected by the bug because our deletion call is not
+    // interleaved with draw calls to another framebuffer and a touching of the
+    // GL scissor enabled state.
+
+    ScopedTexture texForReading(aGL);
+    {
+      // Initialize a 1x1 texture.
+      ScopedBindTexture autoBindTexForReading(aGL, texForReading);
+      aGL->fTexImage2D(LOCAL_GL_TEXTURE_2D, 0, LOCAL_GL_RGBA, 1, 1, 0,
+                       LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, nullptr);
+      aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER,
+                          LOCAL_GL_LINEAR);
+      aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER,
+                          LOCAL_GL_LINEAR);
+    }
+    // Make a framebuffer around the texture.
+    ScopedFramebufferForTexture autoFBForReading(aGL, texForReading);
+    if (autoFBForReading.IsComplete()) {
+      // "Read" from the framebuffer, by initializing a new texture using
+      // glCopyTexImage2D. This flips the bad bit on autoFBForReading.FB().
+      ScopedBindFramebuffer autoFB(aGL, autoFBForReading.FB());
+      ScopedTexture texReadingDest(aGL);
+      ScopedBindTexture autoBindTexReadingDest(aGL, texReadingDest);
+      aGL->fCopyTexImage2D(LOCAL_GL_TEXTURE_2D, 0, LOCAL_GL_RGBA, 0, 0, 1, 1,
+                           0);
+    }
+    // When autoFBForReading goes out of scope, the "poisoned" framebuffer is
+    // deleted, and the bad state seems to go away along with it.
+  }
+#endif
 }
 
 GLuint CompositorOGL::CreateTexture(const IntRect& aRect, bool aCopyFromSource,
@@ -880,6 +1177,7 @@ GLuint CompositorOGL::CreateTexture(const IntRect& aRect, bool aCopyFromSource,
       mGLContext->fCopyTexImage2D(mFBOTextureTarget, 0, LOCAL_GL_RGBA,
                                   clampedRect.X(), FlipY(clampedRect.YMost()),
                                   clampedRectWidth, clampedRectHeight, 0);
+      WorkAroundAppleIntelHD3000GraphicsGLDriverBug(mGLContext);
     } else {
       // Curses, incompatible formats.  Take a slow path.
 
@@ -890,6 +1188,7 @@ GLuint CompositorOGL::CreateTexture(const IntRect& aRect, bool aCopyFromSource,
       mGLContext->fReadPixels(clampedRect.X(), clampedRect.Y(),
                               clampedRectWidth, clampedRectHeight,
                               LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, buf.get());
+      WorkAroundAppleIntelHD3000GraphicsGLDriverBug(mGLContext);
       mGLContext->fTexImage2D(mFBOTextureTarget, 0, LOCAL_GL_RGBA,
                               clampedRectWidth, clampedRectHeight, 0,
                               LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, buf.get());
@@ -1129,31 +1428,24 @@ void CompositorOGL::DrawGeometry(const Geometry& aGeometry,
 
   MakeCurrent();
 
-  IntPoint offset = mCurrentRenderTarget->GetOrigin();
-  IntSize size = mCurrentRenderTarget->GetSize();
+  // Convert aClipRect into render target space, and intersect it with the
+  // render target's clip.
+  IntRect clipRect = aClipRect + mCurrentRenderTarget->GetClipSpaceOrigin();
+  if (Maybe<IntRect> rtClip = mCurrentRenderTarget->GetClipRect()) {
+    clipRect = clipRect.Intersect(*rtClip);
+  }
 
-  Rect renderBound(0, 0, size.width, size.height);
-  renderBound.IntersectRect(renderBound, Rect(aClipRect));
-  renderBound.MoveBy(offset);
-
-  Rect destRect = aTransform.TransformAndClipBounds(aRect, renderBound);
-
-  // XXX: This doesn't handle 3D transforms. It also doesn't handled rotated
-  //      quads. Fix me.
-  mPixelsFilled += destRect.Width() * destRect.Height();
-
-  // Do a simple culling if this rect is out of target buffer.
-  // Inflate a small size to avoid some numerical imprecision issue.
-  destRect.Inflate(1, 1);
-  destRect.MoveBy(-offset);
-  renderBound = Rect(0, 0, size.width, size.height);
-  if (!renderBound.Intersects(destRect)) {
+  Rect destRect = aTransform.TransformAndClipBounds(
+      aRect, Rect(mCurrentRenderTarget->GetRect().Intersect(clipRect)));
+  if (destRect.IsEmpty()) {
     return;
   }
 
-  LayerScope::DrawBegin();
+  // XXX: This doesn't handle 3D transforms. It also doesn't handled rotated
+  //      quads. Fix me.
+  mPixelsFilled += destRect.Area();
 
-  IntRect clipRect = aClipRect;
+  LayerScope::DrawBegin();
 
   EffectMask* effectMask;
   Rect maskBounds;
@@ -1172,10 +1464,14 @@ void CompositorOGL::DrawGeometry(const Geometry& aGeometry,
     maskBounds = Rect(Point(), Size(maskSize));
     maskBounds = maskTransform.As2D().TransformBounds(maskBounds);
 
-    clipRect = clipRect.Intersect(RoundedOut(maskBounds) - offset);
+    clipRect = clipRect.Intersect(RoundedOut(maskBounds));
   }
 
-  // aClipRect is in destination coordinate space (after all
+  // Move clipRect into device space.
+  IntPoint offset = mCurrentRenderTarget->GetOrigin();
+  clipRect -= offset;
+
+  // clipRect is in destination coordinate space (after all
   // transforms and offsets have been applied) so if our
   // drawing is going to be shifted by mRenderOffset then we need
   // to shift the clip rect by the same amount.
@@ -1276,7 +1572,7 @@ void CompositorOGL::DrawGeometry(const Geometry& aGeometry,
       gl()->fTextureBarrier();
       mixBlendBackdrop = mCurrentRenderTarget->GetTextureHandle();
     } else {
-      gfx::IntRect rect = ComputeBackdropCopyRect(aRect, aClipRect, aTransform,
+      gfx::IntRect rect = ComputeBackdropCopyRect(aRect, clipRect, aTransform,
                                                   &backdropTransform);
       mixBlendBackdrop =
           CreateTexture(rect, true, mCurrentRenderTarget->GetFBO());
@@ -1711,9 +2007,6 @@ void CompositorOGL::InitializeVAO(const GLuint aAttrib, const GLint aComponents,
 void CompositorOGL::EndFrame() {
   AUTO_PROFILER_LABEL("CompositorOGL::EndFrame", GRAPHICS);
 
-  MOZ_ASSERT(mCurrentRenderTarget == mWindowRenderTarget,
-             "Rendering target not properly restored");
-
 #ifdef MOZ_DUMP_PAINTING
   if (gfxEnv::DumpCompositorTextures()) {
     LayoutDeviceIntSize size;
@@ -1733,10 +2026,14 @@ void CompositorOGL::EndFrame() {
 #endif
 
   mFrameInProgress = false;
+#ifdef XP_MACOSX
+  mShouldInvalidateWindow = false;
+#endif
 
   if (mTarget) {
     CopyToTarget(mTarget, mTargetBounds.TopLeft(), Matrix());
     mGLContext->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, 0);
+    mTarget = nullptr;
     mWindowRenderTarget = nullptr;
     mCurrentRenderTarget = nullptr;
     Compositor::EndFrame();
@@ -1749,6 +2046,8 @@ void CompositorOGL::EndFrame() {
   if (mTexturePool) {
     mTexturePool->EndFrame();
   }
+
+  InsertFrameDoneSync();
 
   mGLContext->SwapBuffers();
   mGLContext->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, 0);
@@ -1763,6 +2062,43 @@ void CompositorOGL::EndFrame() {
   }
 
   Compositor::EndFrame();
+}
+
+void CompositorOGL::InsertFrameDoneSync() {
+#ifdef XP_MACOSX
+  // Only do this on macOS.
+  // On other platforms, SwapBuffers automatically applies back-pressure.
+  if (StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
+    if (mThisFrameDoneSync) {
+      mGLContext->fDeleteSync(mThisFrameDoneSync);
+    }
+    mThisFrameDoneSync =
+        mGLContext->fFenceSync(LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  }
+#endif
+}
+
+void CompositorOGL::WaitForGPU() {
+  if (mPreviousFrameDoneSync) {
+    AUTO_PROFILER_LABEL("Waiting for GPU to finish previous frame", GRAPHICS);
+    mGLContext->fClientWaitSync(mPreviousFrameDoneSync,
+                                LOCAL_GL_SYNC_FLUSH_COMMANDS_BIT,
+                                LOCAL_GL_TIMEOUT_IGNORED);
+    mGLContext->fDeleteSync(mPreviousFrameDoneSync);
+  }
+  mPreviousFrameDoneSync = mThisFrameDoneSync;
+  mThisFrameDoneSync = nullptr;
+}
+
+bool CompositorOGL::NeedToRecreateFullWindowRenderTarget() const {
+  if (!ShouldRecordFrames()) {
+    return false;
+  }
+  if (!mFullWindowRenderTarget) {
+    return true;
+  }
+  IntSize windowSize = mWidget->GetClientSize().ToUnknownSize();
+  return mFullWindowRenderTarget->GetSize() != windowSize;
 }
 
 void CompositorOGL::SetDestinationSurfaceSize(const IntSize& aSize) {
@@ -1786,14 +2122,6 @@ void CompositorOGL::CopyToTarget(DrawTarget* aTarget,
   if ((int64_t(width) * int64_t(height) * int64_t(4)) > INT32_MAX) {
     NS_ERROR("Widget size too big - integer overflow!");
     return;
-  }
-
-  mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, 0);
-
-  if (!mGLContext->IsGLES()) {
-    // GLES2 promises that binding to any custom FBO will attach
-    // to GL_COLOR_ATTACHMENT0 attachment point.
-    mGLContext->fReadBuffer(LOCAL_GL_BACK);
   }
 
   RefPtr<DataSourceSurface> source = Factory::CreateDataSourceSurface(

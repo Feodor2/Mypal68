@@ -35,7 +35,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   LightweightThemeConsumer:
     "resource://gre/modules/LightweightThemeConsumer.jsm",
   Log: "resource://gre/modules/Log.jsm",
-  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   LoginManagerParent: "resource://gre/modules/LoginManagerParent.jsm",
   MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
@@ -182,7 +181,7 @@ XPCOMUtils.defineLazyScriptGetter(
 );
 XPCOMUtils.defineLazyScriptGetter(
   this,
-  ["openContextMenu", "nsContextMenu"],
+  ["setContextMenuContentData", "openContextMenu", "nsContextMenu"],
   "chrome://browser/content/nsContextMenu.js"
 );
 XPCOMUtils.defineLazyScriptGetter(
@@ -6587,16 +6586,6 @@ nsBrowserAccess.prototype = {
     aTriggeringPrincipal,
     aCsp
   ) {
-    // This function should only ever be called if we're opening a URI
-    // from a non-remote browser window (via nsContentTreeOwner).
-    if (aOpener && Cu.isCrossProcessWrapper(aOpener)) {
-      Cu.reportError(
-        "nsBrowserAccess.openURI was passed a CPOW for aOpener. " +
-          "openURI should only ever be called from non-remote browsers."
-      );
-      throw Cr.NS_ERROR_FAILURE;
-    }
-
     var newWindow = null;
     var isExternal = !!(aFlags & Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL);
 

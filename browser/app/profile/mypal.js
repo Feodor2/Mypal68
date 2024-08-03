@@ -141,12 +141,6 @@ pref("extensions.update.interval", 86400);  // Check for updates to Extensions a
 
 pref("lightweightThemes.getMoreURL", "data:text/plain,");
 
-#if defined(MOZ_WIDEVINE_EME)
-  pref("browser.eme.ui.enabled", true);
-#else
-  pref("browser.eme.ui.enabled", false);
-#endif
-
 pref("keyword.enabled", false);
 pref("browser.fixup.domainwhitelist.localhost", true);
 
@@ -676,9 +670,6 @@ pref("plugin.defaultXpi.state", 2);
   pref("plugin.state.flash", 1);
 #endif
 
-// Enables the download and use of the flash blocklists.
-pref("plugins.flashBlock.enabled", true);
-
 // Prefer HTML5 video over Flash content, and don't
 // load plugin instances with no src declared.
 // These prefs are documented in details on all.js.
@@ -938,14 +929,6 @@ pref("browser.bookmarks.editDialog.showForNewBookmarks", true);
 // bookmarking dialog
 pref("browser.bookmarks.editDialog.firstEditField", "namePicker");
 
-pref("dom.ipc.plugins.flash.disable-protected-mode", false);
-
-// Feature-disable the protected-mode auto-flip
-pref("browser.flash-protected-mode-flip.enable", false);
-
-// Whether we've already flipped protected mode automatically
-pref("browser.flash-protected-mode-flip.done", false);
-
 pref("dom.ipc.shims.enabledWarnings", false);
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
@@ -1156,7 +1139,6 @@ pref("services.sync.prefs.sync.extensions.activeThemeID", true);
 pref("services.sync.prefs.sync.intl.accept_languages", true);
 pref("services.sync.prefs.sync.layout.spellcheckDefault", true);
 pref("services.sync.prefs.sync.media.autoplay.default", true);
-pref("services.sync.prefs.sync.media.eme.enabled", true);
 pref("services.sync.prefs.sync.network.cookie.cookieBehavior", true);
 pref("services.sync.prefs.sync.network.cookie.lifetimePolicy", true);
 pref("services.sync.prefs.sync.network.cookie.thirdparty.sessionOnly", true);
@@ -1388,11 +1370,6 @@ pref("media.gmp.trial-create.enabled", true);
 // and script requests EME. If *.visible is false, we won't show the UI
 // to enable the CDM if its disabled; it's as if the keysystem is completely
 // unsupported.
-
-#ifdef MOZ_WIDEVINE_EME
-  pref("media.gmp-widevinecdm.visible", true);
-  pref("media.gmp-widevinecdm.enabled", true);
-#endif
 
 pref("media.gmp-gmpopenh264.visible", true);
 pref("media.gmp-gmpopenh264.enabled", true);

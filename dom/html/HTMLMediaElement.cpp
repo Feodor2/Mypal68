@@ -5335,15 +5335,6 @@ void HTMLMediaElement::MetadataLoaded(const MediaInfo* aInfo,
     ProcessMediaFragmentURI();
     mDecoder->SetFragmentEndTime(mFragmentEnd);
   }
-  if (mIsEncrypted) {
-    // We only support playback of encrypted content via MSE by default.
-    if (!mMediaSource && Preferences::GetBool("media.eme.mse-only", true)) {
-      DecodeError(
-          MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                      "Encrypted content not supported outside of MSE"));
-      return;
-    }
-  }
 
   if (IsVideo() && aInfo->HasVideo()) {
     // We are a video element playing video so update the screen wakelock

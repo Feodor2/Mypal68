@@ -17,14 +17,20 @@ namespace layers {
 class BasicCompositingRenderTarget : public CompositingRenderTarget {
  public:
   BasicCompositingRenderTarget(gfx::DrawTarget* aDrawTarget,
-                               const gfx::IntRect& aRect)
+                               const gfx::IntRect& aRect,
+                               const gfx::IntPoint& aClipSpaceOrigin)
       : CompositingRenderTarget(aRect.TopLeft()),
         mDrawTarget(aDrawTarget),
-        mSize(aRect.Size()) {}
+        mSize(aRect.Size()),
+        mClipSpaceOrigin(aClipSpaceOrigin) {}
 
   const char* Name() const override { return "BasicCompositingRenderTarget"; }
 
   gfx::IntSize GetSize() const override { return mSize; }
+
+  // The point that DrawGeometry's aClipRect is relative to. Will be (0, 0) for
+  // root render targets and equal to GetOrigin() for non-root render targets.
+  gfx::IntPoint GetClipSpaceOrigin() const { return mClipSpaceOrigin; }
 
   void BindRenderTarget();
 
@@ -35,6 +41,7 @@ class BasicCompositingRenderTarget : public CompositingRenderTarget {
 
   RefPtr<gfx::DrawTarget> mDrawTarget;
   gfx::IntSize mSize;
+  gfx::IntPoint mClipSpaceOrigin;
 };
 
 class BasicCompositor : public Compositor {
@@ -50,7 +57,7 @@ class BasicCompositor : public Compositor {
 
   bool Initialize(nsCString* const out_failureReason) override;
 
-  void DetachWidget() override;
+  void Destroy() override;
 
   TextureFactoryIdentifier GetTextureFactoryIdentifier() override;
 
@@ -61,9 +68,9 @@ class BasicCompositor : public Compositor {
       const gfx::IntRect& aRect, const CompositingRenderTarget* aSource,
       const gfx::IntPoint& aSourcePoint) override;
 
-  virtual already_AddRefed<CompositingRenderTarget> CreateRenderTargetForWindow(
-      const LayoutDeviceIntRect& aRect, const LayoutDeviceIntRect& aClearRect,
-      BufferMode aBufferMode);
+  virtual already_AddRefed<CompositingRenderTarget> CreateRootRenderTarget(
+      gfx::DrawTarget* aDrawTarget, const gfx::IntRect& aDrawTargetRect,
+      const gfx::IntRegion& aClearRegion);
 
   already_AddRefed<DataTextureSource> CreateDataTextureSource(
       TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
@@ -110,12 +117,27 @@ class BasicCompositor : public Compositor {
 
   void ClearRect(const gfx::Rect& aRect) override;
 
-  void BeginFrame(const nsIntRegion& aInvalidRegion,
-                  const gfx::IntRect* aClipRectIn,
-                  const gfx::IntRect& aRenderBounds,
-                  const nsIntRegion& aOpaqueRegion,
-                  gfx::IntRect* aClipRectOut = nullptr,
-                  gfx::IntRect* aRenderBoundsOut = nullptr) override;
+  Maybe<gfx::IntRect> BeginFrameForWindow(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds,
+      const nsIntRegion& aOpaqueRegion) override;
+
+  Maybe<gfx::IntRect> BeginFrameForTarget(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+      gfx::DrawTarget* aTarget, const gfx::IntRect& aTargetBounds) override;
+
+#ifdef XP_MACOSX
+  void BeginFrameForNativeLayers() override;
+
+  Maybe<gfx::IntRect> BeginRenderingToNativeLayer(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const nsIntRegion& aOpaqueRegion, NativeLayer* aNativeLayer) override;
+
+  void EndRenderingToNativeLayer() override;
+#endif
+
+  void NormalDrawingDone() override;
   void EndFrame() override;
 
   bool SupportsPartialTextureUpdate() override { return true; }
@@ -137,15 +159,9 @@ class BasicCompositor : public Compositor {
     return LayersBackend::LAYERS_BASIC;
   }
 
-  gfx::DrawTarget* GetDrawTarget() { return mDrawTarget; }
-
   bool IsPendingComposite() override { return mIsPendingEndRemoteDrawing; }
 
   void FinishPendingComposite() override;
-
-  virtual void RequestAllowFrameRecording(bool aWillRecord) override {
-    mRecordFrames = aWillRecord;
-  }
 
  private:
   template <typename Geometry>
@@ -161,34 +177,48 @@ class BasicCompositor : public Compositor {
                    const gfx::Matrix4x4& aTransform,
                    const gfx::Rect& aVisibleRect) override;
 
-  void TryToEndRemoteDrawing(bool aForceToEnd = false);
+  void TryToEndRemoteDrawing();
+  void EndRemoteDrawing();
 
   bool NeedsToDeferEndRemoteDrawing();
 
-  /**
-   * Whether or not the compositor should be recording frames.
-   *
-   * When this returns true, the BasicCompositor will keep the
-   * |mFullWindowRenderTarget| as an up-to-date copy of the entire rendered
-   * window.
-   *
-   * This will be true when either we are recording a profile with screenshots
-   * enabled or the |LayerManagerComposite| has requested us to record frames
-   * for the |CompositionRecorder|.
-   */
-  bool ShouldRecordFrames() const;
+  bool NeedToRecreateFullWindowRenderTarget() const;
 
-  // The final destination surface
-  RefPtr<gfx::DrawTarget> mDrawTarget;
+  // When rendering to a back buffer, this is the front buffer that the contents
+  // of the back buffer need to be copied to. Only non-null between
+  // BeginFrameForWindow and EndRemoteDrawing, and only when using a back
+  // buffer.
+  RefPtr<gfx::DrawTarget> mFrontBuffer;
+
   // The current render target for drawing
   RefPtr<BasicCompositingRenderTarget> mRenderTarget;
 
-  LayoutDeviceIntRect mInvalidRect;
-  LayoutDeviceIntRegion mInvalidRegion;
+  // The native layer that we're currently rendering to, if any.
+  // Non-null only between BeginFrameForWindow and EndFrame if
+  // BeginFrameForWindow has been called with a non-null aNativeLayer.
+#ifdef XP_MACOSX
+  RefPtr<NativeLayer> mCurrentNativeLayer;
+
+  // The 1x1 dummy render target that's the "current" render target between
+  // BeginFrameForNativeLayers and EndFrame but outside pairs of
+  // Begin/EndRenderingToNativeLayer. Created on demand.
+  RefPtr<CompositingRenderTarget> mNativeLayersReferenceRT;
+#endif
+
+  gfx::IntRegion mInvalidRegion;
 
   uint32_t mMaxTextureSize;
   bool mIsPendingEndRemoteDrawing;
-  bool mRecordFrames;
+  bool mShouldInvalidateWindow = false;
+
+  // Where the current frame is being rendered to.
+  enum class FrameDestination : uint8_t {
+    NO_CURRENT_FRAME,  // before BeginFrameForXYZ or after EndFrame
+    WINDOW,            // between BeginFrameForWindow and EndFrame
+    TARGET,            // between BeginFrameForTarget and EndFrame
+    NATIVE_LAYERS      // between BeginFrameForNativeLayers and EndFrame
+  };
+  FrameDestination mCurrentFrameDest = FrameDestination::NO_CURRENT_FRAME;
 
   // mDrawTarget will not be the full window on all platforms. We therefore need
   // to keep a full window render target around when we are capturing

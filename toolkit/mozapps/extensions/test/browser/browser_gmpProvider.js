@@ -25,9 +25,6 @@ for (let plugin of GMPScope.GMP_PLUGINS) {
     id: plugin.id,
     isValid: true,
     isInstalled: false,
-    isEME: !!(
-      plugin.id == "gmp-widevinecdm" || plugin.id.indexOf("gmp-eme-") == 0
-    ),
   });
   gMockAddons.push(mockAddon);
 }
@@ -118,14 +115,12 @@ async function initializeState({ useHtmlViews }) {
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_LOGGING_DUMP);
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_LOGGING_LEVEL);
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_UPDATE_LAST_CHECK);
-    gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_EME_ENABLED);
     await GMPScope.GMPProvider.shutdown();
     GMPScope.GMPProvider.startup();
   });
 
   // Start out with plugins not being installed, disabled and automatic updates
   // disabled.
-  gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, true);
   for (let addon of gMockAddons) {
     gPrefs.setBoolPref(
       getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id),
@@ -623,31 +618,7 @@ async function testEmeSupport() {
   for (let addon of gMockAddons) {
     await gCategoryUtilities.openType("plugin");
     let item = get_addon_element(gManagerWindow, addon.id);
-    if (addon.id == GMPScope.EME_ADOBE_ID) {
-      if (AppConstants.isPlatformAndVersionAtLeast("win", "6")) {
-        Assert.ok(item, "Adobe EME supported, found add-on element.");
-      } else {
-        Assert.ok(
-          !item,
-          "Adobe EME not supported, couldn't find add-on element."
-        );
-      }
-    } else if (addon.id == GMPScope.WIDEVINE_ID) {
-      if (
-        AppConstants.isPlatformAndVersionAtLeast("win", "6") ||
-        AppConstants.platform == "macosx" ||
-        AppConstants.platform == "linux"
-      ) {
-        Assert.ok(item, "Widevine supported, found add-on element.");
-      } else {
-        Assert.ok(
-          !item,
-          "Widevine not supported, couldn't find add-on element."
-        );
-      }
-    } else {
-      Assert.ok(item, "Found add-on element.");
-    }
+    Assert.ok(item, "Found add-on element.");
   }
 
   for (let addon of gMockAddons) {

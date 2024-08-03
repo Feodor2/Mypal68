@@ -73,7 +73,7 @@ GtkCompositorWidget::StartRemoteDrawingInRegion(
 }
 
 void GtkCompositorWidget::EndRemoteDrawingInRegion(
-    gfx::DrawTarget* aDrawTarget, LayoutDeviceIntRegion& aInvalidRegion) {
+    gfx::DrawTarget* aDrawTarget, const LayoutDeviceIntRegion& aInvalidRegion) {
   mProvider.EndRemoteDrawingInRegion(aDrawTarget, aInvalidRegion);
 }
 

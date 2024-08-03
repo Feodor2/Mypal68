@@ -23915,7 +23915,6 @@ workerlz4_decompress
 ?GetBrowserDOMWindow@nsGlobalWindowInner@@UEAA?AW4nsresult@@PEAPEAVnsIBrowserDOMWindow@@@Z
 ?GetBrowserDOMWindow@nsGlobalWindowInner@@QEAAPEAVnsIBrowserDOMWindow@@AEAVErrorResult@mozilla@@@Z
 ?GetBrowserDOMWindowOuter@nsGlobalWindowOuter@@QEAAPEAVnsIBrowserDOMWindow@@XZ
-?IsCrossProcessWrapper@nsXPCComponents_Utils@@UEAA?AW4nsresult@@V?$Handle@TValue@JS@@@JS@@PEA_N@Z
 ?QueryInterface@ReferrerInfo@dom@mozilla@@UEAA?AW4nsresult@@AEBUnsID@@PEAPEAX@Z
 ?Release@ReferrerInfo@dom@mozilla@@UEAAKXZ
 ?ReferrerInfo_GetInterfacesHelper@dom@mozilla@@YA?AW4nsresult@@AEAV?$nsTArray@UnsID@@@@@Z

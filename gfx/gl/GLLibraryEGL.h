@@ -358,7 +358,7 @@ class GLLibraryEGL final {
 
       ////
 
-      EGLDisplay Display() {
+      EGLDisplay Display() const {
     MOZ_ASSERT(mInitialized);
     return mEGLDisplay;
   }
@@ -540,8 +540,6 @@ class GLLibraryEGL final {
   static StaticMutex sMutex;
   static StaticRefPtr<GLLibraryEGL> sEGLLibrary;
 };
-
-#define EGL_DISPLAY() GLLibraryEGL::Get()->Display()
 
 } /* namespace gl */
 } /* namespace mozilla */

@@ -45,6 +45,7 @@
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/VsyncDispatcher.h"
 
+class MessageLoop;
 class nsIWidget;
 
 namespace mozilla {

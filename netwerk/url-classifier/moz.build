@@ -26,7 +26,6 @@ UNIFIED_SOURCES += [
     'UrlClassifierFeatureFactory.cpp',
     'UrlClassifierFeatureFingerprintingAnnotation.cpp',
     'UrlClassifierFeatureFingerprintingProtection.cpp',
-    'UrlClassifierFeatureFlash.cpp',
     'UrlClassifierFeatureLoginReputation.cpp',
     'UrlClassifierFeaturePhishingProtection.cpp',
     'UrlClassifierFeatureResult.cpp',

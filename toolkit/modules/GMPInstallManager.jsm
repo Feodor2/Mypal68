@@ -163,9 +163,6 @@ GMPInstallManager.prototype = {
     }
     return now - lastCheck;
   },
-  get _isEMEEnabled() {
-    return GMPPrefs.getBool(GMPPrefs.KEY_EME_ENABLED, true);
-  },
   _isAddonEnabled(aAddon) {
     return GMPPrefs.getBool(GMPPrefs.KEY_PLUGIN_ENABLED, true, aAddon);
   },
@@ -191,7 +188,7 @@ GMPInstallManager.prototype = {
   /**
    * Wrapper for checkForAddons and installAddon.
    * Will only install if not already installed and will log the results.
-   * This will only install/update the OpenH264 and EME plugins
+   * This will only install/update the OpenH264 plugins
    * @return a promise which will be resolved if all addons could be installed
    *         successfully, rejected otherwise.
    */
@@ -270,7 +267,7 @@ GMPInstallManager.prototype = {
             addonUpdateEnabled = true;
           }
         } else {
-          // Currently, we only support installs of OpenH264 and EME plugins.
+          // Currently, we only support installs of OpenH264 plugins.
           log.info(
             "Auto-update is off for unknown plugin '" +
               gmpAddon.id +
@@ -391,9 +388,6 @@ GMPAddon.prototype = {
       GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_VERSION, "", this.id) ===
         this.version
     );
-  },
-  get isEME() {
-    return this.id == "gmp-widevinecdm" || this.id.indexOf("gmp-eme-") == 0;
   },
   /**
    * @return true if the addon has been previously installed and this is

@@ -16,7 +16,6 @@ XPCOMUtils.defineLazyGetter(this, "pluginsBundle", () =>
 );
 
 var gMockAddons = new Map();
-var gMockEmeAddons = new Map();
 
 for (let plugin of GMPScope.GMP_PLUGINS) {
   let mockAddon = Object.freeze({
@@ -29,12 +28,6 @@ for (let plugin of GMPScope.GMP_PLUGINS) {
     missingFilesKey: plugin.missingFilesKey,
   });
   gMockAddons.set(mockAddon.id, mockAddon);
-  if (
-    mockAddon.id == "gmp-widevinecdm" ||
-    mockAddon.id.indexOf("gmp-eme-") == 0
-  ) {
-    gMockEmeAddons.set(mockAddon.id, mockAddon);
-  }
 }
 
 var gInstalledAddonId = "";
@@ -62,7 +55,6 @@ add_task(async function setup() {
 
   gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_LOGGING_DUMP, true);
   gPrefs.setIntPref(GMPScope.GMPPrefs.KEY_LOGGING_LEVEL, 0);
-  gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, true);
   for (let addon of gMockAddons.values()) {
     gPrefs.setBoolPref(
       gGetKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id),
@@ -221,25 +213,6 @@ add_task(async function test_enable() {
   }
 });
 
-add_task(async function test_globalEmeDisabled() {
-  let addons = await promiseAddonsByIDs([...gMockEmeAddons.keys()]);
-  Assert.equal(addons.length, gMockEmeAddons.size);
-
-  gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, false);
-  await GMPScope.GMPProvider.shutdown();
-  GMPScope.GMPProvider.startup();
-  for (let addon of addons) {
-    Assert.ok(!addon.isActive);
-    Assert.ok(addon.appDisabled);
-    Assert.ok(!addon.userDisabled);
-
-    Assert.equal(addon.permissions, 0);
-  }
-  gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, true);
-  await GMPScope.GMPProvider.shutdown();
-  GMPScope.GMPProvider.startup();
-});
-
 add_task(async function test_autoUpdatePrefPersistance() {
   let addons = await promiseAddonsByIDs([...gMockAddons.keys()]);
   Assert.equal(addons.length, gMockAddons.size);
@@ -276,14 +249,7 @@ function createMockPluginFilesIfNeeded(aFile, aPluginId) {
   let libName = AppConstants.DLL_PREFIX + id + AppConstants.DLL_SUFFIX;
 
   createFile(libName);
-  if (aPluginId == "gmp-widevinecdm") {
-    createFile("manifest.json");
-  } else {
-    createFile(id + ".info");
-  }
-  if (aPluginId == "gmp-eme-adobe") {
-    createFile(id + ".voucher");
-  }
+  createFile(id + ".info");
 }
 
 // Array.includes() is only in Nightly channel, so polyfill so we don't fail

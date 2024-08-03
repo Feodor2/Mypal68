@@ -15,15 +15,18 @@
 struct ID3D11DeviceContext;
 struct ID3D11Device;
 struct ID3D11Query;
-struct IDCompositionDevice;
-struct IDCompositionTarget;
-struct IDCompositionVisual;
 struct IDXGIFactory2;
 struct IDXGISwapChain;
+struct IDXGISwapChain1;
 
 namespace mozilla {
+namespace gl {
+class GLLibraryEGL;
+}  // namespace gl
 
 namespace wr {
+
+class DCLayerTree;
 
 class RenderCompositorANGLE : public RenderCompositor {
  public:
@@ -46,7 +49,7 @@ class RenderCompositorANGLE : public RenderCompositor {
 
   bool UseANGLE() const override { return true; }
 
-  bool UseDComp() const override { return !!mCompositionDevice; }
+  bool UseDComp() const override { return !!mDCLayerTree; }
 
   bool UseTripleBuffering() const override { return mUseTripleBuffering; }
 
@@ -56,7 +59,22 @@ class RenderCompositorANGLE : public RenderCompositor {
 
   bool SurfaceIsYFlipped() override { return true; }
 
+  bool ShouldUseNativeCompositor() override;
+
+  // Interface for wr::Compositor
+  void CompositorBeginFrame() override;
+  void CompositorEndFrame() override;
+  void Bind(wr::NativeSurfaceId aId, wr::DeviceIntPoint* aOffset,
+            uint32_t* aFboId, wr::DeviceIntRect aDirtyRect) override;
+  void Unbind() override;
+  void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize,
+                     bool aIsOpaque) override;
+  void DestroySurface(NativeSurfaceId aId) override;
+  void AddSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aPosition,
+                  wr::DeviceIntRect aClipRect) override;
+
  protected:
+  bool UseCompositor();
   void InsertPresentWaitQuery();
   bool WaitForPreviousPresentQuery();
   bool ResizeBufferIfNeeded();
@@ -64,21 +82,22 @@ class RenderCompositorANGLE : public RenderCompositor {
   void DestroyEGLSurface();
   ID3D11Device* GetDeviceOfEGLDisplay();
   void CreateSwapChainForDCompIfPossible(IDXGIFactory2* aDXGIFactory2);
+  RefPtr<IDXGISwapChain1> CreateSwapChainForDComp(bool aUseTripleBuffering,
+                                                  bool aUseAlpha);
   bool SutdownEGLLibraryIfNecessary();
   RefPtr<ID3D11Query> GetD3D11Query();
 
   EGLConfig mEGLConfig;
   EGLSurface mEGLSurface;
 
-  int mUseTripleBuffering;
+  bool mUseTripleBuffering;
+  bool mUseAlpha;
 
   RefPtr<ID3D11Device> mDevice;
   RefPtr<ID3D11DeviceContext> mCtx;
   RefPtr<IDXGISwapChain> mSwapChain;
 
-  RefPtr<IDCompositionDevice> mCompositionDevice;
-  RefPtr<IDCompositionTarget> mCompositionTarget;
-  RefPtr<IDCompositionVisual> mVisual;
+  UniquePtr<DCLayerTree> mDCLayerTree;
 
   std::queue<RefPtr<ID3D11Query>> mWaitForPresentQueries;
   RefPtr<ID3D11Query> mRecycledQuery;

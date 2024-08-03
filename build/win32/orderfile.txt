@@ -23356,7 +23356,6 @@ ARGBSetRow_X86
 ?GetBrowserDOMWindow@nsGlobalWindowInner@@UAG?AW4nsresult@@PAPAVnsIBrowserDOMWindow@@@Z
 ?GetBrowserDOMWindow@nsGlobalWindowInner@@QAEPAVnsIBrowserDOMWindow@@AAVErrorResult@mozilla@@@Z
 ?GetBrowserDOMWindowOuter@nsGlobalWindowOuter@@QAEPAVnsIBrowserDOMWindow@@XZ
-?IsCrossProcessWrapper@nsXPCComponents_Utils@@UAG?AW4nsresult@@V?$Handle@TValue@JS@@@JS@@PA_N@Z
 ?Self@nsGlobalWindowInner@@QAEPAVBrowsingContext@dom@mozilla@@XZ
 ?Location@nsGlobalWindowInner@@UAEPAV0dom@mozilla@@XZ
 ??0Location@dom@mozilla@@QAE@PAVnsPIDOMWindowInner@@PAVnsIDocShell@@@Z

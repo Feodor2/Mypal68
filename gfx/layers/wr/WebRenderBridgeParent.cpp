@@ -35,6 +35,10 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 
+#ifdef XP_WIN
+#  include "mozilla/widget/WinCompositorWidget.h"
+#endif
+
 #ifdef MOZ_GECKO_PROFILER
 #  include "ProfilerMarkerPayload.h"
 #endif
@@ -175,7 +179,7 @@ class ScheduleObserveLayersUpdate : public wr::NotificationHandler {
         mIsActive(aIsActive) {}
 
   void Notify(wr::Checkpoint) override {
-    CompositorThread()->Dispatch(
+    CompositorThreadHolder::Loop()->PostTask(
         NewRunnableMethod<LayersId, LayersObserverEpoch, int>(
             "ObserveLayersUpdate", mBridge,
             &CompositorBridgeParentBase::ObserveLayersUpdate, mLayersId,
@@ -199,7 +203,7 @@ class SceneBuiltNotification : public wr::NotificationHandler {
     auto startTime = this->mTxnStartTime;
     RefPtr<WebRenderBridgeParent> parent = mParent;
     wr::Epoch epoch = mEpoch;
-    CompositorThread()->Dispatch(NS_NewRunnableFunction(
+    CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
         "SceneBuiltNotificationRunnable", [parent, epoch, startTime]() {
           auto endTime = TimeStamp::Now();
 #ifdef MOZ_GECKO_PROFILER
@@ -270,7 +274,7 @@ class WebRenderBridgeParent::ScheduleSharedSurfaceRelease final
   }
 
   void Notify(wr::Checkpoint) override {
-    CompositorThread()->Dispatch(
+    CompositorThreadHolder::Loop()->PostTask(
         NewRunnableMethod<nsTArray<wr::ExternalImageKeyPair>>(
             "ObserveSharedSurfaceRelease", mWrBridge,
             &WebRenderBridgeParent::ObserveSharedSurfaceRelease,
@@ -2691,7 +2695,8 @@ TextureFactoryIdentifier WebRenderBridgeParent::GetTextureFactoryIdentifier() {
       LayersBackend::LAYERS_WR, XRE_GetProcessType(),
       mApis[wr::RenderRoot::Default]->GetMaxTextureSize(), false,
       mApis[wr::RenderRoot::Default]->GetUseANGLE(),
-      mApis[wr::RenderRoot::Default]->GetUseDComp(), false, false, false,
+      mApis[wr::RenderRoot::Default]->GetUseDComp(),
+      mAsyncImageManager->UseCompositorWnd(), false, false, false,
       mApis[wr::RenderRoot::Default]->GetSyncHandle());
 }
 

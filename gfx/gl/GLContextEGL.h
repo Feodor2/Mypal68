@@ -20,12 +20,13 @@ class GLContextEGL : public GLContext {
   friend class TextureImageEGL;
 
   static already_AddRefed<GLContextEGL> CreateGLContext(
-      CreateContextFlags flags, const SurfaceCaps& caps, bool isOffscreen,
-      EGLConfig config, EGLSurface surface, nsACString* const out_failureId);
+      GLLibraryEGL*, CreateContextFlags flags, const SurfaceCaps& caps,
+      bool isOffscreen, EGLConfig config, EGLSurface surface,
+      nsACString* const out_failureId);
 
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(GLContextEGL, override)
-  GLContextEGL(CreateContextFlags flags, const SurfaceCaps& caps,
+  GLContextEGL(GLLibraryEGL*, CreateContextFlags flags, const SurfaceCaps& caps,
                bool isOffscreen, EGLConfig config, EGLSurface surface,
                EGLContext context);
 
@@ -46,11 +47,8 @@ class GLContextEGL : public GLContext {
 
   void SetIsDoubleBuffered(bool aIsDB) { mIsDoubleBuffered = aIsDB; }
 
-  virtual bool IsANGLE() const override {
-    return GLLibraryEGL::Get()->IsANGLE();
-  }
-
-  virtual bool IsWARP() const override { return GLLibraryEGL::Get()->IsWARP(); }
+  virtual bool IsANGLE() const override { return mEgl->IsANGLE(); }
+  virtual bool IsWARP() const override { return mEgl->IsWARP(); }
 
   virtual bool BindTexImage() override;
 
@@ -79,8 +77,6 @@ class GLContextEGL : public GLContext {
 
   EGLSurface GetEGLSurface() const { return mSurface; }
 
-  EGLDisplay GetEGLDisplay() const { return GLLibraryEGL::Get()->Display(); }
-
   bool BindTex2DOffscreen(GLContext* aOffscreen);
   void UnbindTex2DOffscreen(GLContext* aOffscreen);
   void BindOffscreenFramebuffer();
@@ -102,17 +98,14 @@ class GLContextEGL : public GLContext {
   virtual void OnMarkDestroyed() override;
 
  public:
-  const EGLConfig mConfig;
-
- protected:
   const RefPtr<GLLibraryEGL> mEgl;
-  EGLSurface mSurface;
-  const EGLSurface mFallbackSurface;
-
- public:
+  const EGLConfig mConfig;
   const EGLContext mContext;
 
  protected:
+  EGLSurface mSurface;
+  const EGLSurface mFallbackSurface;
+
   EGLSurface mSurfaceOverride = EGL_NO_SURFACE;
   RefPtr<gfxASurface> mThebesSurface;
   bool mBound = false;
@@ -124,9 +117,10 @@ class GLContextEGL : public GLContext {
   bool mOwnsContext = true;
 
   static EGLSurface CreatePBufferSurfaceTryingPowerOfTwo(
-      EGLConfig config, EGLenum bindToTextureFormat, gfx::IntSize& pbsize);
+      GLLibraryEGL*, EGLConfig config, EGLenum bindToTextureFormat,
+      gfx::IntSize& pbsize);
 #if defined(MOZ_WAYLAND)
-  static EGLSurface CreateWaylandBufferSurface(EGLConfig config,
+  static EGLSurface CreateWaylandBufferSurface(GLLibraryEGL*, EGLConfig config,
                                                gfx::IntSize& pbsize);
 #endif
 #if defined(MOZ_WIDGET_ANDROID)
@@ -135,7 +129,7 @@ class GLContextEGL : public GLContext {
 #endif  // defined(MOZ_WIDGET_ANDROID)
 };
 
-bool CreateConfig(EGLConfig* config, int32_t depth
+bool CreateConfig(GLLibraryEGL*, EGLConfig* config, int32_t depth
 #ifdef MOZ_BUILD_WEBRENDER
                   ,
                   bool enableDepthBuffer

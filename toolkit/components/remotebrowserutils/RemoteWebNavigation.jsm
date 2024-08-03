@@ -136,7 +136,9 @@ RemoteWebNavigation.prototype = {
     this._sendMessage("WebNavigation:LoadURI", {
       uri: aURI,
       flags: aLoadURIOptions.loadFlags,
-      referrerInfo: aLoadURIOptions.referrerInfo,
+      referrerInfo: E10SUtils.serializeReferrerInfo(
+        aLoadURIOptions.referrerInfo
+      ),
       postData: aLoadURIOptions.postData
         ? Utils.serializeInputStream(aLoadURIOptions.postData)
         : null,

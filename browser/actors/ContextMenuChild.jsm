@@ -534,7 +534,7 @@ class ContextMenuChild extends ActorChild {
     // The same-origin check will be done in nsContextMenu.openLinkInTab.
     let parentAllowsMixedContent = !!this.docShell.mixedContentChannel;
 
-    let disableSetDesktopBackground = null;
+    let disableSetDesktopBg = null;
 
     // Media related cache info parent needs for saving
     let contentType = null;
@@ -544,7 +544,7 @@ class ContextMenuChild extends ActorChild {
       aEvent.composedTarget instanceof Ci.nsIImageLoadingContent &&
       aEvent.composedTarget.currentURI
     ) {
-      disableSetDesktopBackground = this._disableSetDesktopBackground(
+      disableSetDesktopBg = this._disableSetDesktopBackground(
         aEvent.composedTarget
       );
 
@@ -590,7 +590,6 @@ class ContextMenuChild extends ActorChild {
       Ci.nsIReferrerInfo
     );
     referrerInfo.initWithElement(aEvent.composedTarget);
-    referrerInfo = E10SUtils.serializeReferrerInfo(referrerInfo);
 
     // In the case "onLink" we may have to send link referrerInfo to use in
     // _openLinkInParameters
@@ -607,33 +606,40 @@ class ContextMenuChild extends ActorChild {
       this._cleanContext();
     }
 
-    editFlags = SpellCheckHelper.isEditable(
-      aEvent.composedTarget,
-      this.content
-    );
+    let isRemote =
+      Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
 
-    if (editFlags & SpellCheckHelper.SPELLCHECKABLE) {
-      spellInfo = InlineSpellCheckerContent.initContextMenu(
-        aEvent,
-        editFlags,
-        this
+    if (isRemote) {
+      editFlags = SpellCheckHelper.isEditable(
+        aEvent.composedTarget,
+        this.content
       );
+
+      if (editFlags & SpellCheckHelper.SPELLCHECKABLE) {
+        spellInfo = InlineSpellCheckerContent.initContextMenu(
+          aEvent,
+          editFlags,
+          this.mm
+        );
+      }
+
+      // Set the event target first as the copy image command needs it to
+      // determine what was context-clicked on. Then, update the state of the
+      // commands on the context menu.
+      this.docShell.contentViewer
+        .QueryInterface(Ci.nsIContentViewerEdit)
+        .setCommandNode(aEvent.composedTarget);
+      aEvent.composedTarget.ownerGlobal.updateCommands("contentcontextmenu");
+
+      customMenuItems = PageMenuChild.build(aEvent.composedTarget);
+      principal = doc.nodePrincipal;
     }
-
-    // Set the event target first as the copy image command needs it to
-    // determine what was context-clicked on. Then, update the state of the
-    // commands on the context menu.
-    this.docShell.contentViewer
-      .QueryInterface(Ci.nsIContentViewerEdit)
-      .setCommandNode(aEvent.composedTarget);
-    aEvent.composedTarget.ownerGlobal.updateCommands("contentcontextmenu");
-
-    principal = doc.nodePrincipal;
 
     let data = {
       context,
       charSet,
       baseURI,
+      isRemote,
       referrerInfo,
       editFlags,
       principal,
@@ -647,22 +653,26 @@ class ContextMenuChild extends ActorChild {
       contentDisposition,
       frameOuterWindowID,
       popupNodeSelectors,
-      disableSetDesktopBackground,
+      disableSetDesktopBg,
       parentAllowsMixedContent,
     };
 
     if (context.inFrame && !context.inSrcdocFrame) {
-      data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
-        doc.referrerInfo
-      );
-    }
-
-    if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
-      data.customMenuItems = PageMenuChild.build(aEvent.composedTarget);
+      if (isRemote) {
+        data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
+          doc.referrerInfo
+        );
+      } else {
+        data.frameReferrerInfo = doc.referrerInfo;
+      }
     }
 
     if (linkReferrerInfo) {
-      data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
+      if (isRemote) {
+        data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
+      } else {
+        data.linkReferrerInfo = linkReferrerInfo;
+      }
     }
 
     Services.obs.notifyObservers(
@@ -670,14 +680,24 @@ class ContextMenuChild extends ActorChild {
       "on-prepare-contextmenu"
     );
 
-    // In the event that the content is running in the parent process, we don't
-    // actually want the contextmenu events to reach the parent - we'll dispatch
-    // a new contextmenu event after the async message has reached the parent
-    // instead.
-    aEvent.preventDefault();
-    aEvent.stopPropagation();
+    if (isRemote) {
+      data.referrerInfo = E10SUtils.serializeReferrerInfo(data.referrerInfo);
+      if (data.frameReferrerInfo) {
+        data.frameReferrerInfo =
+          E10SUtils.serializeReferrerInfo(data.frameReferrerInfo);
+      }
 
-    this.mm.sendAsyncMessage("contextmenu", data);
+      this.mm.sendAsyncMessage("contextmenu", data);
+    } else {
+      let browser = this.docShell.chromeEventHandler;
+      let mainWin = browser.ownerGlobal;
+
+      data.documentURIObject = doc.documentURIObject;
+      data.disableSetDesktopBackground = data.disableSetDesktopBg;
+      delete data.disableSetDesktopBg;
+
+      mainWin.setContextMenuContentData(data);
+    }
   }
 
   /**

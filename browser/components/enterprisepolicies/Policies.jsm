@@ -761,18 +761,6 @@ var Policies = {
     },
   },
 
-  EncryptedMediaExtensions: {
-    onBeforeAddons(manager, param) {
-      let locked = false;
-      if ("Locked" in param) {
-        locked = param.Locked;
-      }
-      if ("Enabled" in param) {
-        setDefaultPref("media.eme.enabled", param.Enabled, locked);
-      }
-    },
-  },
-
   Extensions: {
     onBeforeUIStartup(manager, param) {
       let uninstallingPromise = Promise.resolve();

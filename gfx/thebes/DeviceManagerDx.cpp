@@ -25,8 +25,10 @@
 #include "nsPrintfCString.h"
 #include "nsString.h"
 
+#undef _WIN32_WINNT
+#define _WIN32_WINNT _WIN32_WINNT_WINBLUE
 #undef NTDDI_VERSION
-#define NTDDI_VERSION NTDDI_WIN8
+#define NTDDI_VERSION NTDDI_WINBLUE
 
 #include <d3d11.h>
 #include <dcomp.h>
@@ -45,9 +47,8 @@ StaticAutoPtr<DeviceManagerDx> DeviceManagerDx::sInstance;
 // be used within InitializeD3D11.
 decltype(D3D11CreateDevice)* sD3D11CreateDeviceFn = nullptr;
 
-typedef HRESULT(WINAPI* PFN_DCOMPOSITION_CREATE_DEVICE)(
-    IDXGIDevice* dxgiDevice, REFIID iid, void** dcompositionDevice);
-PFN_DCOMPOSITION_CREATE_DEVICE sDcompCreateDeviceFn = nullptr;
+// It should only be used within CreateDirectCompositionDevice.
+decltype(DCompositionCreateDevice2)* sDcompCreateDevice2Fn = nullptr;
 
 // We don't have access to the DirectDrawCreateEx type in gfxWindowsPlatform.h,
 // since it doesn't include ddraw.h, so we use a static here. It should only
@@ -110,7 +111,7 @@ bool DeviceManagerDx::LoadDcomp() {
   MOZ_ASSERT(gfxVars::UseWebRenderANGLE());
   MOZ_ASSERT(gfxVars::UseWebRenderDCompWin());
 
-  if (sDcompCreateDeviceFn) {
+  if (sDcompCreateDevice2Fn) {
     return true;
   }
 
@@ -119,9 +120,9 @@ bool DeviceManagerDx::LoadDcomp() {
     return false;
   }
 
-  sDcompCreateDeviceFn = reinterpret_cast<PFN_DCOMPOSITION_CREATE_DEVICE>(
-      ::GetProcAddress(module, "DCompositionCreateDevice"));
-  if (!sDcompCreateDeviceFn) {
+  sDcompCreateDevice2Fn = (decltype(DCompositionCreateDevice2)*)GetProcAddress(
+      module, "DCompositionCreateDevice2");
+  if (!sDcompCreateDevice2Fn) {
     return false;
   }
 
@@ -247,6 +248,9 @@ bool DeviceManagerDx::CreateVRDevice() {
 
 #ifdef MOZ_BUILD_WEBRENDER
 void DeviceManagerDx::CreateDirectCompositionDevice() {
+// Currently, MinGW build environment does not handle IDCompositionDesktopDevice
+// and IDCompositionDevice2
+#if !defined(__MINGW32__)
   if (!gfxVars::UseWebRenderDCompWin()) {
     return;
   }
@@ -266,11 +270,12 @@ void DeviceManagerDx::CreateDirectCompositionDevice() {
   }
 
   HRESULT hr;
-  RefPtr<IDCompositionDevice> compositionDevice;
+  RefPtr<IDCompositionDesktopDevice> desktopDevice;
   MOZ_SEH_TRY {
-    hr = sDcompCreateDeviceFn(
-        dxgiDevice,
-        IID_PPV_ARGS((IDCompositionDevice**)getter_AddRefs(compositionDevice)));
+    hr = sDcompCreateDevice2Fn(
+        dxgiDevice.get(),
+        IID_PPV_ARGS(
+            (IDCompositionDesktopDevice**)getter_AddRefs(desktopDevice)));
   }
   MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { return; }
 
@@ -278,7 +283,14 @@ void DeviceManagerDx::CreateDirectCompositionDevice() {
     return;
   }
 
+  RefPtr<IDCompositionDevice2> compositionDevice;
+  if (desktopDevice->QueryInterface(IID_PPV_ARGS(
+          (IDCompositionDevice2**)getter_AddRefs(compositionDevice))) != S_OK) {
+    return;
+  }
+
   mDirectCompositionDevice = compositionDevice;
+#endif
 }
 #endif
 
@@ -1052,10 +1064,13 @@ RefPtr<ID3D11Device> DeviceManagerDx::GetVRDevice() {
 }
 #endif
 
-RefPtr<IDCompositionDevice> DeviceManagerDx::GetDirectCompositionDevice() {
+// Currently, MinGW build environment does not handle IDCompositionDevice2
+#if !defined(__MINGW32__)
+RefPtr<IDCompositionDevice2> DeviceManagerDx::GetDirectCompositionDevice() {
   MutexAutoLock lock(mDeviceLock);
   return mDirectCompositionDevice;
 }
+#endif
 
 unsigned DeviceManagerDx::GetCompositorFeatureLevel() const {
   if (!mDeviceStatus) {
@@ -1137,7 +1152,12 @@ bool DeviceManagerDx::CanUseP016() {
 
 bool DeviceManagerDx::CanUseDComp() {
   MutexAutoLock lock(mDeviceLock);
+// Currently, MinGW build environment does not handle IDCompositionDevice2
+#if !defined(__MINGW32__)
   return !!mDirectCompositionDevice;
+#else
+  return false;
+#endif
 }
 
 void DeviceManagerDx::InitializeDirectDraw() {
@@ -1231,7 +1251,8 @@ void DeviceManagerDx::GetCompositorDevices(
 
 /* static */
 void DeviceManagerDx::PreloadAttachmentsOnCompositorThread() {
-  if (!CompositorThread()) {
+  MessageLoop* loop = layers::CompositorThreadHolder::Loop();
+  if (!loop) {
     return;
   }
 
@@ -1250,7 +1271,7 @@ void DeviceManagerDx::PreloadAttachmentsOnCompositorThread() {
           }
         }
       });
-  CompositorThread()->Dispatch(task.forget());
+  loop->PostTask(task.forget());
 }
 
 }  // namespace gfx

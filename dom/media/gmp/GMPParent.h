@@ -176,9 +176,6 @@ class GMPParent final
   nsCString mDisplayName;  // name of plugin displayed to users
   nsCString mDescription;  // description of plugin for display to users
   nsCString mVersion;
-#if defined(XP_WIN) || defined(XP_LINUX)
-  nsCString mLibs;
-#endif
   nsString mAdapter;
   uint32_t mPluginId;
   nsTArray<GMPCapability> mCapabilities;

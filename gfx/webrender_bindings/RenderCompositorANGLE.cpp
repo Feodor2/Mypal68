@@ -12,6 +12,8 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/HelpersD3D11.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/webrender/DCLayerTree.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
@@ -30,7 +32,8 @@ namespace wr {
 /* static */
 UniquePtr<RenderCompositor> RenderCompositorANGLE::Create(
     RefPtr<widget::CompositorWidget>&& aWidget) {
-  if (!RenderThread::Get()->SharedGL()) {
+  const auto& gl = RenderThread::Get()->SharedGL();
+  if (!gl) {
     gfxCriticalNote << "Failed to get shared GL context";
     return nullptr;
   }
@@ -48,7 +51,8 @@ RenderCompositorANGLE::RenderCompositorANGLE(
     : RenderCompositor(std::move(aWidget)),
       mEGLConfig(nullptr),
       mEGLSurface(nullptr),
-      mUseTripleBuffering(false) {}
+      mUseTripleBuffering(false),
+      mUseAlpha(false) {}
 
 RenderCompositorANGLE::~RenderCompositorANGLE() {
   DestroyEGLSurface();
@@ -112,10 +116,21 @@ bool RenderCompositorANGLE::Initialize() {
   if (!SutdownEGLLibraryIfNecessary()) {
     return false;
   }
-  if (!RenderThread::Get()->SharedGL()) {
+  const auto gl = RenderThread::Get()->SharedGL();
+  if (!gl) {
     gfxCriticalNote << "[WR] failed to get shared GL context.";
     return false;
   }
+
+  // Force enable alpha channel to make sure ANGLE use correct framebuffer
+  // formart
+  const auto& gle = gl::GLContextEGL::Cast(gl);
+  const auto& egl = gle->mEgl;
+  if (!gl::CreateConfig(egl, &mEGLConfig, /* bpp */ 32,
+                        /* enableDepthBuffer */ true)) {
+    gfxCriticalNote << "Failed to create EGLConfig for WebRender";
+  }
+  MOZ_ASSERT(mEGLConfig);
 
   mDevice = GetDeviceOfEGLDisplay();
 
@@ -230,16 +245,10 @@ bool RenderCompositorANGLE::Initialize() {
     return false;
   }
 
-  // Force enable alpha channel to make sure ANGLE use correct framebuffer
-  // formart
-  if (!gl::CreateConfig(&mEGLConfig, /* bpp */ 32,
-                        /* enableDepthBuffer */ true)) {
-    gfxCriticalNote << "Failed to create EGLConfig for WebRender";
-  }
-  MOZ_ASSERT(mEGLConfig);
-
-  if (!ResizeBufferIfNeeded()) {
-    return false;
+  if (!UseCompositor()) {
+    if (!ResizeBufferIfNeeded()) {
+      return false;
+    }
   }
 
   return true;
@@ -251,13 +260,40 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
     return;
   }
 
-  RefPtr<IDCompositionDevice> dCompDevice =
-      gfx::DeviceManagerDx::Get()->GetDirectCompositionDevice();
-  if (!dCompDevice) {
+  HWND hwnd = mWidget->AsWindows()->GetCompositorHwnd();
+  if (!hwnd) {
+    gfxCriticalNote << "Compositor window was not created ";
+    return;
+  }
+
+  mDCLayerTree = DCLayerTree::Create(gl(), mEGLConfig, mDevice, hwnd);
+  if (!mDCLayerTree) {
     return;
   }
   MOZ_ASSERT(XRE_IsGPUProcess());
 
+  // When compositor is enabled, CompositionSurface is used for rendering.
+  // It does not support triple buffering.
+  bool useTripleBuffering =
+      gfx::gfxVars::UseWebRenderTripleBufferingWin() && !UseCompositor();
+  // Non Glass window is common since Windows 10.
+  bool useAlpha = false;
+  RefPtr<IDXGISwapChain1> swapChain1 =
+      CreateSwapChainForDComp(useTripleBuffering, useAlpha);
+  if (swapChain1) {
+    mSwapChain = swapChain1;
+    mUseTripleBuffering = useTripleBuffering;
+    mUseAlpha = useAlpha;
+    mDCLayerTree->SetDefaultSwapChain(swapChain1);
+  } else {
+    // Clear CLayerTree on falire
+    mDCLayerTree = nullptr;
+  }
+}
+
+RefPtr<IDXGISwapChain1> RenderCompositorANGLE::CreateSwapChainForDComp(
+    bool aUseTripleBuffering, bool aUseAlpha) {
+  HRESULT hr;
   RefPtr<IDXGIDevice> dxgiDevice;
   mDevice->QueryInterface((IDXGIDevice**)getter_AddRefs(dxgiDevice));
 
@@ -265,33 +301,19 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
   {
     RefPtr<IDXGIAdapter> adapter;
     dxgiDevice->GetAdapter(getter_AddRefs(adapter));
+
     adapter->GetParent(
         IID_PPV_ARGS((IDXGIFactory**)getter_AddRefs(dxgiFactory)));
   }
 
-  HWND hwnd = mWidget->AsWindows()->GetCompositorHwnd();
-  if (!hwnd) {
-    gfxCriticalNote << "Compositor window was not created ";
-    return;
-  }
-
-  HRESULT hr = dCompDevice->CreateTargetForHwnd(
-      hwnd, TRUE, getter_AddRefs(mCompositionTarget));
+  RefPtr<IDXGIFactory2> dxgiFactory2;
+  hr = dxgiFactory->QueryInterface(
+      (IDXGIFactory2**)getter_AddRefs(dxgiFactory2));
   if (FAILED(hr)) {
-    gfxCriticalNote << "Could not create DCompositionTarget: " << gfx::hexa(hr);
-    return;
-  }
-
-  hr = dCompDevice->CreateVisual(getter_AddRefs(mVisual));
-  if (FAILED(hr)) {
-    gfxCriticalNote << "Could not create DCompositionVisualt: "
-                    << gfx::hexa(hr);
-    return;
+    return nullptr;
   }
 
   RefPtr<IDXGISwapChain1> swapChain1;
-  bool useTripleBuffering = gfx::gfxVars::UseWebRenderTripleBufferingWin();
-
   DXGI_SWAP_CHAIN_DESC1 desc{};
   // DXGI does not like 0x0 swapchains. Swap chain creation failed when 0x0 was
   // set.
@@ -303,7 +325,7 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
   // DXGI_USAGE_SHADER_INPUT is set for improving performanc of copying from
   // framebuffer to texture on intel gpu.
   desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_SHADER_INPUT;
-  if (useTripleBuffering) {
+  if (aUseTripleBuffering) {
     desc.BufferCount = 3;
   } else {
     desc.BufferCount = 2;
@@ -311,27 +333,54 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
   // DXGI_SCALING_NONE caused swap chain creation failure.
   desc.Scaling = DXGI_SCALING_STRETCH;
   desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-  desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+  if (aUseAlpha) {
+    // This could degrade performance. Use it only when it is necessary.
+    desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+  } else {
+    desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+  }
   desc.Flags = 0;
 
-  hr = aDXGIFactory2->CreateSwapChainForComposition(mDevice, &desc, nullptr,
-                                                    getter_AddRefs(swapChain1));
+  hr = dxgiFactory2->CreateSwapChainForComposition(mDevice, &desc, nullptr,
+                                                   getter_AddRefs(swapChain1));
   if (SUCCEEDED(hr) && swapChain1) {
     DXGI_RGBA color = {1.0f, 1.0f, 1.0f, 1.0f};
     swapChain1->SetBackgroundColor(&color);
-    mSwapChain = swapChain1;
-    mVisual->SetContent(swapChain1);
-    mCompositionTarget->SetRoot(mVisual);
-    mCompositionDevice = dCompDevice;
-    mUseTripleBuffering = useTripleBuffering;
+    return swapChain1;
   }
+
+  return nullptr;
 }
 
 bool RenderCompositorANGLE::BeginFrame() {
   mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
 
-  if (!ResizeBufferIfNeeded()) {
-    return false;
+  if (!UseCompositor()) {
+    if (mDCLayerTree) {
+      bool useAlpha = mWidget->AsWindows()->HasGlass();
+      // When Alpha usage is changed, SwapChain needs to be recreatd.
+      if (useAlpha != mUseAlpha) {
+        DestroyEGLSurface();
+        mBufferSize.reset();
+
+        RefPtr<IDXGISwapChain1> swapChain1 =
+            CreateSwapChainForDComp(mUseTripleBuffering, useAlpha);
+        if (swapChain1) {
+          mSwapChain = swapChain1;
+          mUseAlpha = useAlpha;
+          mDCLayerTree->SetDefaultSwapChain(swapChain1);
+        } else {
+          gfxCriticalNote << "Failed to re-create SwapChain";
+          RenderThread::Get()->HandleWebRenderError(
+              WebRenderError::NEW_SURFACE);
+          return false;
+        }
+      }
+    }
+
+    if (!ResizeBufferIfNeeded()) {
+      return false;
+    }
   }
 
   if (!MakeCurrent()) {
@@ -354,8 +403,8 @@ void RenderCompositorANGLE::EndFrame() {
 
   mSwapChain->Present(0, 0);
 
-  if (mCompositionDevice) {
-    mCompositionDevice->Commit();
+  if (mDCLayerTree) {
+    mDCLayerTree->MaybeUpdateDebug();
   }
 }
 
@@ -445,8 +494,6 @@ bool RenderCompositorANGLE::CreateEGLSurface() {
     }
   }
 
-  auto* egl = gl::GLLibraryEGL::Get();
-
   const EGLint pbuffer_attribs[]{
       LOCAL_EGL_WIDTH,
       size.width,
@@ -458,6 +505,9 @@ bool RenderCompositorANGLE::CreateEGLSurface() {
 
   const auto buffer = reinterpret_cast<EGLClientBuffer>(backBuf.get());
 
+  const auto gl = RenderThread::Get()->SharedGL();
+  const auto& gle = gl::GLContextEGL::Cast(gl);
+  const auto& egl = gle->mEgl;
   const EGLSurface surface = egl->fCreatePbufferFromClientBuffer(
       egl->Display(), LOCAL_EGL_D3D_TEXTURE_ANGLE, buffer, mEGLConfig,
       pbuffer_attribs);
@@ -475,11 +525,11 @@ bool RenderCompositorANGLE::CreateEGLSurface() {
 }
 
 void RenderCompositorANGLE::DestroyEGLSurface() {
-  auto* egl = gl::GLLibraryEGL::Get();
-
   // Release EGLSurface of back buffer before calling ResizeBuffers().
   if (mEGLSurface) {
-    gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(EGL_NO_SURFACE);
+    const auto& gle = gl::GLContextEGL::Cast(gl());
+    const auto& egl = gle->mEgl;
+    gle->SetEGLSurfaceOverride(EGL_NO_SURFACE);
     egl->fDestroySurface(egl->Display(), mEGLSurface);
     mEGLSurface = nullptr;
   }
@@ -495,11 +545,15 @@ bool RenderCompositorANGLE::MakeCurrent() {
 }
 
 LayoutDeviceIntSize RenderCompositorANGLE::GetBufferSize() {
-  MOZ_ASSERT(mBufferSize.isSome());
-  if (mBufferSize.isNothing()) {
-    return LayoutDeviceIntSize();
+  if (!UseCompositor()) {
+    MOZ_ASSERT(mBufferSize.isSome());
+    if (mBufferSize.isNothing()) {
+      return LayoutDeviceIntSize();
+    }
+    return mBufferSize.ref();
+  } else {
+    return mWidget->GetClientSize();
   }
-  return mBufferSize.ref();
 }
 
 RefPtr<ID3D11Query> RenderCompositorANGLE::GetD3D11Query() {
@@ -555,6 +609,49 @@ bool RenderCompositorANGLE::IsContextLost() {
     return true;
   }
   return false;
+}
+
+bool RenderCompositorANGLE::UseCompositor() {
+  if (!mDCLayerTree || !StaticPrefs::gfx_webrender_compositor_AtStartup()) {
+    return false;
+  }
+  return true;
+}
+
+bool RenderCompositorANGLE::ShouldUseNativeCompositor() {
+  return UseCompositor();
+}
+
+void RenderCompositorANGLE::CompositorBeginFrame() {
+  mDCLayerTree->CompositorBeginFrame();
+}
+
+void RenderCompositorANGLE::CompositorEndFrame() {
+  mDCLayerTree->CompositorEndFrame();
+}
+
+void RenderCompositorANGLE::Bind(wr::NativeSurfaceId aId,
+                                 wr::DeviceIntPoint* aOffset, uint32_t* aFboId,
+                                 wr::DeviceIntRect aDirtyRect) {
+  mDCLayerTree->Bind(aId, aOffset, aFboId, aDirtyRect);
+}
+
+void RenderCompositorANGLE::Unbind() { mDCLayerTree->Unbind(); }
+
+void RenderCompositorANGLE::CreateSurface(wr::NativeSurfaceId aId,
+                                          wr::DeviceIntSize aSize,
+                                          bool aIsOpaque) {
+  mDCLayerTree->CreateSurface(aId, aSize, aIsOpaque);
+}
+
+void RenderCompositorANGLE::DestroySurface(NativeSurfaceId aId) {
+  mDCLayerTree->DestroySurface(aId);
+}
+
+void RenderCompositorANGLE::AddSurface(wr::NativeSurfaceId aId,
+                                       wr::DeviceIntPoint aPosition,
+                                       wr::DeviceIntRect aClipRect) {
+  mDCLayerTree->AddSurface(aId, aPosition, aClipRect);
 }
 
 }  // namespace wr

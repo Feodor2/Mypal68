@@ -86,9 +86,10 @@ bool RenderCompositorEGL::BeginFrame() {
     // non-blocking buffer swaps. We need MakeCurrent() to set our current EGL
     // context before we call eglSwapInterval, which is why we do it here rather
     // than where the surface was created.
-    const auto* egl = gl::GLLibraryEGL::Get();
+    const auto& gle = gl::GLContextEGL::Cast(gl());
+    const auto& egl = gle->mEgl;
     // Make eglSwapBuffers() non-blocking on wayland.
-    egl->fSwapInterval(gl::EGL_DISPLAY(), 0);
+    egl->fSwapInterval(egl->Display(), 0);
   }
 #endif
 
@@ -134,11 +135,12 @@ bool RenderCompositorEGL::MakeCurrent() {
 }
 
 void RenderCompositorEGL::DestroyEGLSurface() {
-  auto* egl = gl::GLLibraryEGL::Get();
+  const auto& gle = gl::GLContextEGL::Cast(gl());
+  const auto& egl = gle->mEgl;
 
   // Release EGLSurface of back buffer before calling ResizeBuffers().
   if (mEGLSurface) {
-    gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(EGL_NO_SURFACE);
+    gle->SetEGLSurfaceOverride(EGL_NO_SURFACE);
     egl->fDestroySurface(egl->Display(), mEGLSurface);
     mEGLSurface = nullptr;
   }

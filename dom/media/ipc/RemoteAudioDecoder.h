@@ -26,14 +26,13 @@ class RemoteAudioDecoderParent final : public RemoteDecoderParent {
   RemoteAudioDecoderParent(RemoteDecoderManagerParent* aParent,
                            const AudioInfo& aAudioInfo,
                            const CreateDecoderParams::OptionSet& aOptions,
-                           nsISerialEventTarget* aManagerThread,
+                           TaskQueue* aManagerTaskQueue,
                            TaskQueue* aDecodeTaskQueue, bool* aSuccess,
                            nsCString* aErrorDescription);
 
  protected:
   MediaResult ProcessDecodedData(const MediaDataDecoder::DecodedData& aData,
                                  DecodedOutputIPDL& aDecodedData) override;
-
  private:
   // Can only be accessed from the manager thread
   // Note: we can't keep a reference to the original AudioInfo here

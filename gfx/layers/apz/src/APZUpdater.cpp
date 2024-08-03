@@ -535,8 +535,8 @@ void APZUpdater::RunOnUpdaterThread(
   }
 #endif  // MOZ_BUILD_WEBRENDER
 
-  if (CompositorThread()) {
-    CompositorThread()->Dispatch(task.forget());
+  if (MessageLoop* loop = CompositorThreadHolder::Loop()) {
+    loop->PostTask(task.forget());
   } else {
     // Could happen during startup
     NS_WARNING("Dropping task posted to updater thread");

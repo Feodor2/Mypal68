@@ -6,6 +6,7 @@
 #define MOZILLA_GFX_COMPOSITOROGL_H
 
 #include <map>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "gfx2DGlue.h"
@@ -141,6 +142,15 @@ class CompositorOGL final : public Compositor {
     return result;
   }
 
+  // Returns a render target for the native layer.
+  // aInvalidRegion will be mutated to include existing invalid areas in the
+  // layer. aInvalidRegion is in window coordinates, i.e. in the same space
+  // as aNativeLayer->GetRect().
+#ifdef XP_MACOSX
+  already_AddRefed<CompositingRenderTargetOGL> RenderTargetForNativeLayer(
+      NativeLayer* aNativeLayer, gfx::IntRegion& aInvalidRegion);
+#endif
+
   already_AddRefed<CompositingRenderTarget> CreateRenderTarget(
       const gfx::IntRect& aRect, SurfaceInitMode aInit) override;
 
@@ -177,7 +187,11 @@ class CompositorOGL final : public Compositor {
 
   bool SupportsLayerGeometry() const override;
 
+  void NormalDrawingDone() override;
+
   void EndFrame() override;
+
+  void WaitForGPU() override;
 
   bool SupportsPartialTextureUpdate() override;
 
@@ -274,11 +288,16 @@ class CompositorOGL final : public Compositor {
 
   bool SupportsTextureDirectMapping();
 
+  void InsertFrameDoneSync();
+
+  bool NeedToRecreateFullWindowRenderTarget() const;
+
   /** Widget associated with this compositor */
   LayoutDeviceIntSize mWidgetSize;
   RefPtr<GLContext> mGLContext;
   UniquePtr<GLBlitTextureImageHelper> mBlitTextureImageHelper;
   gfx::Matrix4x4 mProjMatrix;
+  bool mCanRenderToDefaultFramebuffer = true;
 
 #ifdef XP_DARWIN
   nsTArray<RefPtr<BufferTextureHost>> mMaybeUnlockBeforeNextComposition;
@@ -300,7 +319,22 @@ class CompositorOGL final : public Compositor {
   /** Currently bound render target */
   RefPtr<CompositingRenderTargetOGL> mCurrentRenderTarget;
 
-  CompositingRenderTargetOGL* mWindowRenderTarget;
+  // The 1x1 dummy render target that's the "current" render target between
+  // BeginFrameForNativeLayers and EndFrame but outside pairs of
+  // Begin/EndRenderingToNativeLayer. Created on demand.
+#ifdef XP_MACOSX
+  RefPtr<CompositingRenderTarget> mNativeLayersReferenceRT;
+#endif
+
+  // The render target that profiler screenshots / frame recording read from.
+  // This will be the actual window framebuffer when rendering to a window, and
+  // it will be mFullWindowRenderTarget when rendering to native layers.
+  RefPtr<CompositingRenderTargetOGL> mWindowRenderTarget;
+
+  // Non-null when using native layers and frame recording is requested.
+  // EndNormalDrawing() maintains a copy of the entire window contents in this
+  // render target, by copying from the native layer render targets.
+  RefPtr<CompositingRenderTargetOGL> mFullWindowRenderTarget;
 
   /**
    * VBO that has some basics in it for a textured quad, including vertex
@@ -312,6 +346,10 @@ class CompositorOGL final : public Compositor {
    * VBO that stores dynamic triangle geometry.
    */
   GLuint mTriangleVBO;
+
+  // Used to apply back-pressure in WaitForPreviousFrameDoneSync().
+  GLsync mPreviousFrameDoneSync;
+  GLsync mThisFrameDoneSync;
 
   bool mHasBGRA;
 
@@ -327,20 +365,42 @@ class CompositorOGL final : public Compositor {
    */
   bool mFrameInProgress;
 
+  // Only true between BeginFromeForNativeLayers and EndFrame, and only if the
+  // full window render target needed to be recreated in the current frame.
+#ifdef XP_MACOSX
+  bool mShouldInvalidateWindow = false;
+#endif
   /*
    * Clear aRect on current render target.
    */
   void ClearRect(const gfx::Rect& aRect) override;
 
-  /* Start a new frame. If aClipRectIn is null and aClipRectOut is non-null,
-   * sets *aClipRectOut to the screen dimensions.
+  /* Start a new frame.
    */
-  void BeginFrame(const nsIntRegion& aInvalidRegion,
-                  const gfx::IntRect* aClipRectIn,
-                  const gfx::IntRect& aRenderBounds,
-                  const nsIntRegion& aOpaqueRegion,
-                  gfx::IntRect* aClipRectOut = nullptr,
-                  gfx::IntRect* aRenderBoundsOut = nullptr) override;
+  Maybe<gfx::IntRect> BeginFrameForWindow(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds,
+      const nsIntRegion& aOpaqueRegion) override;
+
+  Maybe<gfx::IntRect> BeginFrameForTarget(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+      gfx::DrawTarget* aTarget, const gfx::IntRect& aTargetBounds) override;
+
+#ifdef XP_MACOSX
+  void BeginFrameForNativeLayers() override;
+
+  Maybe<gfx::IntRect> BeginRenderingToNativeLayer(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const nsIntRegion& aOpaqueRegion, NativeLayer* aNativeLayer) override;
+
+  void EndRenderingToNativeLayer() override;
+#endif
+
+  Maybe<gfx::IntRect> BeginFrame(const nsIntRegion& aInvalidRegion,
+                                 const Maybe<gfx::IntRect>& aClipRect,
+                                 const gfx::IntRect& aRenderBounds,
+                                 const nsIntRegion& aOpaqueRegion);
 
   ShaderConfigOGL GetShaderConfigFor(
       Effect* aEffect, TextureSourceOGL* aSourceMask = nullptr,
@@ -424,8 +484,8 @@ class CompositorOGL final : public Compositor {
                     GLenum aTexUnit);
 
   /**
-   * Copies the content of our backbuffer to the set transaction target.
-   * Does not restore the target FBO, so only call from EndFrame.
+   * Copies the content of the current render target to the set transaction
+   * target.
    */
   void CopyToTarget(gfx::DrawTarget* aTarget, const nsIntPoint& aTopLeft,
                     const gfx::Matrix& aWorldMatrix);
@@ -441,7 +501,20 @@ class CompositorOGL final : public Compositor {
    */
   GLint FlipY(GLint y) const { return mViewportSize.height - y; }
 
+  // The DrawTarget from BeginFrameForTarget, which EndFrame needs to copy the
+  // window contents into.
+  // Only non-null between BeginFrameForTarget and EndFrame.
+  RefPtr<gfx::DrawTarget> mTarget;
+  gfx::IntRect mTargetBounds;
+
   RefPtr<CompositorTexturePoolOGL> mTexturePool;
+
+  // The native layer that we're currently rendering to, if any.
+  // Non-null only between BeginFrame and EndFrame if BeginFrame has been called
+  // with a non-null aNativeLayer.
+#ifdef XP_MACOSX
+  RefPtr<NativeLayer> mCurrentNativeLayer;
+#endif
 
 #ifdef MOZ_WIDGET_GTK
   // Hold TextureSources which own device data that have to be deleted before

@@ -13,9 +13,10 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "prenv.h"
 #include "GeckoProfiler.h"
-#include "mozilla/gfx/MacIOSurface.h"
+#include "MozFramebuffer.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
+#include "ScopedGLHelpers.h"
 
 #include <OpenGL/OpenGL.h>
 
@@ -115,6 +116,7 @@ bool GLContextCGL::SwapBuffers() {
   AUTO_PROFILER_LABEL("GLContextCGL::SwapBuffers", GRAPHICS);
 
   [mContext flushBuffer];
+
   return true;
 }
 
@@ -198,11 +200,15 @@ already_AddRefed<GLContext> GLContextProviderCGL::CreateForWindow(nsIWidget* aWi
 #endif
 
   const NSOpenGLPixelFormatAttribute* attribs;
+  SurfaceCaps caps = SurfaceCaps::ForRGBA();
   if (sCGLLibrary.UseDoubleBufferedWindows()) {
 #ifdef MOZ_BUILD_WEBRENDER
     if (aWebRender) {
-      attribs =
-          aForceAccelerated ? kAttribs_doubleBuffered_accel_webrender : kAttribs_doubleBuffered;
+      MOZ_RELEASE_ASSERT(aForceAccelerated,
+                         "At the moment, aForceAccelerated is always true if aWebRender is true. "
+                         "If this changes, please update the code here.");
+      attribs = kAttribs_doubleBuffered_accel_webrender;
+      caps.depth = true;
     } else {
 #endif
       attribs = aForceAccelerated ? kAttribs_doubleBuffered_accel : kAttribs_doubleBuffered;
@@ -220,8 +226,7 @@ already_AddRefed<GLContext> GLContextProviderCGL::CreateForWindow(nsIWidget* aWi
   GLint opaque = StaticPrefs::gfx_compositor_glcontext_opaque();
   [context setValues:&opaque forParameter:NSOpenGLCPSurfaceOpacity];
 
-  RefPtr<GLContextCGL> glContext =
-      new GLContextCGL(CreateContextFlags::NONE, SurfaceCaps::ForRGBA(), context, false);
+  RefPtr<GLContextCGL> glContext = new GLContextCGL(CreateContextFlags::NONE, caps, context, false);
 
   if (!glContext->Init()) {
     glContext = nullptr;

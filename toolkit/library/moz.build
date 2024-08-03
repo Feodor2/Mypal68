@@ -140,7 +140,6 @@ USE_LIBS += [
     'lgpllibs',
     'nspr',
     'nss',
-    'psshparser',
     'sqlite',
     'zlib',
 ]

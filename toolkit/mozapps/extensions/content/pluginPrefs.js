@@ -9,17 +9,6 @@ const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
 
-const PREFS = {
-  pluginFlashBlockingCheckbox: {
-    pref: "plugins.flashBlock.enabled",
-    invert: false,
-  },
-  pluginEnableProtectedModeCheckbox: {
-    pref: "dom.ipc.plugins.flash.disable-protected-mode",
-    invert: true,
-  },
-};
-
 async function renderPluginMetadata(id) {
   let plugin = await AddonManager.getAddonByID(id);
   if (!plugin) {
@@ -38,10 +27,6 @@ async function renderPluginMetadata(id) {
     types.push(type.type + (extras ? " (" + extras + ")" : ""));
   }
   typeLabel.textContent = types.join(",\n");
-  let showProtectedModePref = canDisableFlashProtectedMode(plugin);
-  document
-    .getElementById("pluginEnableProtectedMode")
-    .setAttribute("collapsed", showProtectedModePref ? "" : "true");
 }
 
 function isFlashPlugin(aPlugin) {
@@ -60,18 +45,6 @@ function canDisableFlashProtectedMode(aPlugin) {
 function init() {
   let params = new URLSearchParams(location.hash.slice(1));
   renderPluginMetadata(params.get("id"));
-
-  for (let id of Object.keys(PREFS)) {
-    let checkbox = document.getElementById(id);
-    var prefVal = Services.prefs.getBoolPref(PREFS[id].pref);
-    checkbox.checked = PREFS[id].invert ? !prefVal : prefVal;
-    checkbox.addEventListener("command", () => {
-      Services.prefs.setBoolPref(
-        PREFS[id].pref,
-        PREFS[id].invert ? !checkbox.checked : checkbox.checked
-      );
-    });
-  }
 }
 
 window.addEventListener("load", init, { once: true });

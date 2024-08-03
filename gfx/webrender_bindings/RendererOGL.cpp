@@ -111,6 +111,7 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
     if (mCompositor->IsContextLost()) {
       RenderThread::Get()->HandleDeviceReset("BeginFrame", /* aNotify */ true);
     }
+    mCompositor->GetWidget()->PostRender(&widgetContext);
     return false;
   }
 
@@ -121,6 +122,7 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
                           aOutStats)) {
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
+    mCompositor->GetWidget()->PostRender(&widgetContext);
     return false;
   }
 
@@ -166,7 +168,7 @@ void RendererOGL::CheckGraphicsResetStatus() {
   if (gl->IsSupported(gl::GLFeature::robustness)) {
     GLenum resetStatus = gl->fGetGraphicsResetStatus();
     if (resetStatus == LOCAL_GL_PURGED_CONTEXT_RESET_NV) {
-      layers::CompositorThread()->Dispatch(
+      layers::CompositorThreadHolder::Loop()->PostTask(
           NewRunnableFunction("DoNotifyWebRenderContextPurgeRunnable",
                               &DoNotifyWebRenderContextPurge, mBridge));
     }

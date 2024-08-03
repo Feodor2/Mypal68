@@ -2,6 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
+  LoginManagerContextMenu: "resource://gre/modules/LoginManagerContextMenu.jsm",
+  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
+});
+
+var gContextMenuContentData = null;
+
+function setContextMenuContentData(data) {
+  gContextMenuContentData = data;
+}
+
 function openContextMenu(aMessage) {
   let data = aMessage.data;
   let browser = aMessage.target;
@@ -29,8 +41,9 @@ function openContextMenu(aMessage) {
     }
   }
 
-  nsContextMenu.contentData = {
+  gContextMenuContentData = {
     context: data.context,
+    isRemote: data.isRemote,
     popupNodeSelectors: data.popupNodeSelectors,
     browser,
     editFlags: data.editFlags,
@@ -47,7 +60,7 @@ function openContextMenu(aMessage) {
     contentDisposition: data.contentDisposition,
     frameOuterWindowID: data.frameOuterWindowID,
     selectionInfo: data.selectionInfo,
-    disableSetDesktopBackground: data.disableSetDesktopBackground,
+    disableSetDesktopBackground: data.disableSetDesktopBg,
     loginFillInfo: data.loginFillInfo,
     parentAllowsMixedContent: data.parentAllowsMixedContent,
     userContextId: data.userContextId,
@@ -55,7 +68,7 @@ function openContextMenu(aMessage) {
   };
 
   let popup = browser.ownerDocument.getElementById("contentAreaContextMenu");
-  let context = nsContextMenu.contentData.context;
+  let context = gContextMenuContentData.context;
 
   // We don't have access to the original event here, as that happened in
   // another process. Therefore we synthesize a new MouseEvent to propagate the
@@ -83,8 +96,14 @@ function openContextMenu(aMessage) {
   popup.openPopupAtScreen(newEvent.screenX, newEvent.screenY, true, newEvent);
 }
 
-class nsContextMenu {
-  constructor(aXulMenu, aIsShift) {
+function nsContextMenu(aXulMenu, aIsShift) {
+  this.shouldDisplay = true;
+  this.initMenu(aXulMenu, aIsShift);
+}
+
+// Prototype for nsContextMenu "class."
+nsContextMenu.prototype = {
+  initMenu: function CM_initMenu(aXulMenu, aIsShift) {
     // Get contextual info.
     this.setContext();
 
@@ -95,11 +114,18 @@ class nsContextMenu {
     this.hasPageMenu = false;
     this.isContentSelected = !this.selectionInfo.docSelectionIsCollapsed;
     if (!aIsShift) {
-      this.hasPageMenu = PageMenuParent.addToPopup(
-        this.contentData.customMenuItems,
-        this.browser,
-        aXulMenu
-      );
+      if (this.isRemote) {
+        this.hasPageMenu = PageMenuParent.addToPopup(
+          gContextMenuContentData.customMenuItems,
+          this.browser,
+          aXulMenu
+        );
+      } else {
+        this.hasPageMenu = PageMenuParent.buildAndAddToPopup(
+          this.target,
+          aXulMenu
+        );
+      }
 
       let tab =
         gBrowser && gBrowser.getTabForBrowser
@@ -123,7 +149,9 @@ class nsContextMenu {
         onSpellcheckable: this.onSpellcheckable,
         onPassword: this.onPassword,
         srcUrl: this.mediaURL,
-        frameUrl: this.contentData ? this.contentData.docLocation : undefined,
+        frameUrl: gContextMenuContentData
+          ? gContextMenuContentData.docLocation
+          : undefined,
         pageUrl: this.browser ? this.browser.currentURI.spec : undefined,
         linkText: this.linkTextStr,
         linkUrl: this.linkURL,
@@ -132,8 +160,8 @@ class nsContextMenu {
           : undefined,
         frameId: this.frameOuterWindowID,
         webExtBrowserType: this.webExtBrowserType,
-        webExtContextData: this.contentData
-          ? this.contentData.webExtContextData
+        webExtContextData: gContextMenuContentData
+          ? gContextMenuContentData.webExtContextData
           : undefined,
       };
       subject.wrappedJSObject = subject;
@@ -163,15 +191,16 @@ class nsContextMenu {
 
     // Initialize (disable/remove) menu items.
     this.initItems();
-  }
+  },
 
   setContext() {
     let context = Object.create(null);
+    this.isRemote = false;
 
-    if (nsContextMenu.contentData) {
-      this.contentData = nsContextMenu.contentData;
-      context = this.contentData.context;
-      nsContextMenu.contentData = null;
+    if (gContextMenuContentData) {
+      context = gContextMenuContentData.context;
+      gContextMenuContentData.context = null;
+      this.isRemote = gContextMenuContentData.isRemote;
     }
 
     this.shouldDisplay = context.shouldDisplay;
@@ -222,7 +251,7 @@ class nsContextMenu {
     this.onTextInput = context.onTextInput;
     this.onVideo = context.onVideo;
 
-    this.target = context.target;
+    this.target = this.isRemote ? context.target : document.popupNode;
     this.targetIdentifier = context.targetIdentifier;
 
     this.principal = context.principal;
@@ -236,14 +265,19 @@ class nsContextMenu {
 
     this.csp = E10SUtils.deserializeCSP(context.csp);
 
-    // Remember the CSS selectors corresponding to clicked node. this.contentData
+    // Remember the CSS selectors corresponding to clicked node. gContextMenuContentData
     // can be null if the menu was triggered by tests in which case use an empty array.
-    this.targetSelectors = this.contentData
-      ? this.contentData.popupNodeSelectors
+    this.targetSelectors = gContextMenuContentData
+      ? gContextMenuContentData.popupNodeSelectors
       : [];
 
-    this.browser = this.contentData.browser;
-    this.selectionInfo = this.contentData.selectionInfo;
+    if (this.isRemote) {
+      this.browser = gContextMenuContentData.browser;
+      this.selectionInfo = gContextMenuContentData.selectionInfo;
+    } else {
+      this.browser = this.ownerDoc.defaultView.docShell.chromeEventHandler;
+      this.selectionInfo = BrowserUtils.getSelectionDetails(window);
+    }
 
     const { gBrowser } = this.browser.ownerGlobal;
 
@@ -259,39 +293,59 @@ class nsContextMenu {
         : false;
 
     if (context.shouldInitInlineSpellCheckerUINoChildren) {
-      InlineSpellCheckerUI.initFromRemote(this.contentData.spellInfo);
+      if (this.isRemote) {
+        InlineSpellCheckerUI.initFromRemote(gContextMenuContentData.spellInfo);
+      } else {
+        InlineSpellCheckerUI.init(this.target.editor);
+        InlineSpellCheckerUI.initFromEvent(
+          document.popupRangeParent,
+          document.popupRangeOffset
+        );
+      }
     }
 
     if (context.shouldInitInlineSpellCheckerUIWithChildren) {
-      InlineSpellCheckerUI.initFromRemote(this.contentData.spellInfo);
+      if (this.isRemote) {
+        InlineSpellCheckerUI.initFromRemote(gContextMenuContentData.spellInfo);
+      } else {
+        var targetWin = this.ownerDoc.defaultView;
+        var { editingSession } = targetWin.docShell;
+
+        InlineSpellCheckerUI.init(editingSession.getEditorForWindow(targetWin));
+        InlineSpellCheckerUI.initFromEvent(
+          document.popupRangeParent,
+          document.popupRangeOffset
+        );
+      }
+
       let canSpell = InlineSpellCheckerUI.canSpellCheck && this.canSpellCheck;
       this.showItem("spell-check-enabled", canSpell);
       this.showItem("spell-separator", canSpell);
     }
-  } // setContext
+  }, // setContext
 
-  hiding() {
+  hiding: function CM_hiding() {
     if (this.browser && this.browser.messageManager) {
       this.browser.messageManager.sendAsyncMessage("ContextMenu:Hiding");
     }
 
-    this.contentData = null;
+    gContextMenuContentData = null;
     InlineSpellCheckerUI.clearSuggestionsFromMenu();
     InlineSpellCheckerUI.clearDictionaryListFromMenu();
     InlineSpellCheckerUI.uninit();
     if (
       Cu.isModuleLoaded("resource://gre/modules/LoginManagerContextMenu.jsm")
     ) {
-      nsContextMenu.LoginManagerContextMenu.clearLoginsFromMenu(document);
+      LoginManagerContextMenu.clearLoginsFromMenu(document);
     }
 
     // This handler self-deletes, only run it if it is still there:
     if (this._onPopupHiding) {
       this._onPopupHiding();
     }
-  }
+  },
 
-  initItems() {
+  initItems: function CM_initItems() {
     this.initPageMenuSeparator();
     this.initOpenItems();
     this.initNavigationItems();
@@ -305,13 +359,13 @@ class nsContextMenu {
     this.initClickToPlayItems();
     this.initPasswordManagerItems();
     this.initSyncItems();
-  }
+  },
 
-  initPageMenuSeparator() {
+  initPageMenuSeparator: function CM_initPageMenuSeparator() {
     this.showItem("page-menu-separator", this.hasPageMenu);
-  }
+  },
 
-  initOpenItems() {
+  initOpenItems: function CM_initOpenItems() {
     var isMailtoInternal = false;
     if (this.onMailtoLink) {
       var mailtoHandler = Cc[
@@ -342,14 +396,17 @@ class nsContextMenu {
     }
 
     var inContainer = false;
-    if (this.contentData.userContextId) {
+    if (gContextMenuContentData.userContextId) {
       inContainer = true;
       var item = document.getElementById("context-openlinkincontainertab");
 
-      item.setAttribute("data-usercontextid", this.contentData.userContextId);
+      item.setAttribute(
+        "data-usercontextid",
+        gContextMenuContentData.userContextId
+      );
 
       var label = ContextualIdentityService.getUserContextLabel(
-        this.contentData.userContextId
+        gContextMenuContentData.userContextId
       );
       item.setAttribute(
         "label",
@@ -379,9 +436,9 @@ class nsContextMenu {
     );
     this.showItem("context-openlinkincurrent", this.onPlainTextLink);
     this.showItem("context-sep-open", shouldShow);
-  }
+  },
 
-  initNavigationItems() {
+  initNavigationItems: function CM_initNavigationItems() {
     var shouldShow =
       !(
         this.isContentSelected ||
@@ -405,9 +462,9 @@ class nsContextMenu {
 
     this.showItem("context-reload", stopReloadItem == "reload");
     this.showItem("context-stop", stopReloadItem == "stop");
-  }
+  },
 
-  initLeaveDOMFullScreenItems() {
+  initLeaveDOMFullScreenItems: function CM_initLeaveFullScreenItem() {
     // only show the option if the user is in DOM fullscreen
     var shouldShow = this.target.ownerDocument.fullscreen;
     this.showItem("context-leave-dom-fullscreen", shouldShow);
@@ -416,9 +473,9 @@ class nsContextMenu {
     if (shouldShow) {
       this.showItem("context-media-sep-commands", true);
     }
-  }
+  },
 
-  initSaveItems() {
+  initSaveItems: function CM_initSaveItems() {
     var shouldShow = !(
       this.onTextInput ||
       this.onLink ||
@@ -458,9 +515,9 @@ class nsContextMenu {
       "disabled",
       !this.mediaURL || mediaIsBlob
     );
-  }
+  },
 
-  initViewItems() {
+  initViewItems: function CM_initViewItems() {
     // View source is always OK, unless in directory listing.
     this.showItem(
       "context-viewpartialsource-selection",
@@ -529,9 +586,8 @@ class nsContextMenu {
     );
 
     if (haveSetDesktopBackground && this.onLoadedImage) {
-      document.getElementById(
-        "context-setDesktopBackground"
-      ).disabled = this.contentData.disableSetDesktopBackground;
+      document.getElementById("context-setDesktopBackground").disabled =
+        gContextMenuContentData.disableSetDesktopBackground;
     }
 
     // Reload image depends on an image that's not fully loaded
@@ -578,9 +634,9 @@ class nsContextMenu {
       "context-viewimagedesc",
       this.onImage && this.imageDescURL !== ""
     );
-  }
+  },
 
-  initMiscItems() {
+  initMiscItems: function CM_initMiscItems() {
     // Use "Bookmark This Link" if on a link.
     let bookmarkPage = document.getElementById("context-bookmarkpage");
     this.showItem(
@@ -651,7 +707,7 @@ class nsContextMenu {
       "context-bidi-page-direction-toggle",
       !this.onTextInput && top.gBidiUI
     );
-  }
+  },
 
   initSpellingItems() {
     var canSpell =
@@ -706,7 +762,7 @@ class nsContextMenu {
     } else {
       this.showItem("spell-add-dictionaries-main", false);
     }
-  }
+  },
 
   initClipboardItems() {
     // Copy depends on whether there is selected text.
@@ -767,7 +823,7 @@ class nsContextMenu {
       "context-sep-copyimage",
       this.onImage || this.onVideo || this.onAudio
     );
-  }
+  },
 
   initMediaPlayerItems() {
     var onMedia = this.onVideo || this.onAudio;
@@ -809,8 +865,6 @@ class nsContextMenu {
         !this.target.ownerDocument.fullscreen;
       this.showItem("context-video-pictureinpicture", shouldDisplay);
     }
-    this.showItem("context-media-eme-learnmore", this.onDRMMedia);
-    this.showItem("context-media-eme-separator", this.onDRMMedia);
 
     // Disable them when there isn't a valid media source loaded.
     if (onMedia) {
@@ -878,17 +932,18 @@ class nsContextMenu {
       }
     }
     this.showItem("context-media-sep-commands", onMedia);
-  }
+  },
 
   initClickToPlayItems() {
     this.showItem("context-ctp-play", this.onCTPPlugin);
     this.showItem("context-ctp-hide", this.onCTPPlugin);
     this.showItem("context-sep-ctp", this.onCTPPlugin);
-  }
+  },
 
   initPasswordManagerItems() {
-    let loginFillInfo = this.contentData && this.contentData.loginFillInfo;
-    let documentURI = this.contentData.documentURIObject;
+    let loginFillInfo =
+      gContextMenuContentData && gContextMenuContentData.loginFillInfo;
+    let documentURI = gContextMenuContentData.documentURIObject;
 
     // If we could not find a password field we
     // don't want to show the form fill option.
@@ -932,7 +987,7 @@ class nsContextMenu {
     }
 
     let formOrigin = LoginHelper.getLoginOrigin(documentURI.spec);
-    let fragment = nsContextMenu.LoginManagerContextMenu.addLoginsToMenu(
+    let fragment = LoginManagerContextMenu.addLoginsToMenu(
       this.targetIdentifier,
       this.browser,
       formOrigin
@@ -960,61 +1015,59 @@ class nsContextMenu {
     let popup = document.getElementById("fill-login-popup");
     let insertBeforeElement = document.getElementById("fill-login-no-logins");
     popup.insertBefore(fragment, insertBeforeElement);
-  }
+  },
 
   initSyncItems() {
     gSync.updateContentContextMenu(this);
-  }
+  },
 
   openPasswordManager() {
     LoginHelper.openPasswordManager(window, {
-      filterString: this.contentData.documentURIObject.host,
+      filterString: gContextMenuContentData.documentURIObject.host,
       entryPoint: "contextmenu",
     });
-  }
+  },
 
   fillGeneratedPassword() {
-    nsContextMenu.LoginManagerContextMenu.fillGeneratedPassword(
-      this.targetIdentifier,
-      this.contentData.documentURIObject,
-      this.browser
-    );
-  }
+    LoginManagerContextMenu.fillGeneratedPassword(this.targetIdentifier,
+                                                  gContextMenuContentData.documentURIObject,
+                                                  this.browser);
+  },
 
   inspectNode() {
-    return nsContextMenu.DevToolsShim.inspectNode(
-      gBrowser.selectedTab,
-      this.targetSelectors
-    );
-  }
+    return DevToolsShim.inspectNode(gBrowser.selectedTab, this.targetSelectors);
+  },
 
   inspectA11Y() {
-    return nsContextMenu.DevToolsShim.inspectA11Y(
-      gBrowser.selectedTab,
-      this.targetSelectors
-    );
-  }
+    return DevToolsShim.inspectA11Y(gBrowser.selectedTab, this.targetSelectors);
+  },
 
   _openLinkInParameters(extra) {
     let params = {
-      charset: this.contentData.charSet,
+      charset: gContextMenuContentData.charSet,
       originPrincipal: this.principal,
       triggeringPrincipal: this.principal,
       csp: this.csp,
-      frameOuterWindowID: this.contentData.frameOuterWindowID,
+      frameOuterWindowID: gContextMenuContentData.frameOuterWindowID,
     };
     for (let p in extra) {
       params[p] = extra[p];
     }
 
+    if (!this.isRemote) {
+      // Propagate the frameOuterWindowID value saved when
+      // the context menu has been opened.
+      params.frameOuterWindowID = this.frameOuterWindowID;
+    }
+
     let referrerInfo = this.onLink
-      ? this.contentData.linkReferrerInfo
-      : this.contentData.referrerInfo;
+      ? gContextMenuContentData.linkReferrerInfo
+      : gContextMenuContentData.referrerInfo;
     // If we want to change userContextId, we must be sure that we don't
     // propagate the referrer.
     if (
       ("userContextId" in params &&
-        params.userContextId != this.contentData.userContextId) ||
+        params.userContextId != gContextMenuContentData.userContextId) ||
       this.onPlainTextLink
     ) {
       referrerInfo = new ReferrerInfo(
@@ -1026,12 +1079,12 @@ class nsContextMenu {
 
     params.referrerInfo = referrerInfo;
     return params;
-  }
+  },
 
   // Open linked-to URL in a new window.
   openLink() {
     openLinkIn(this.linkURL, "window", this._openLinkInParameters());
-  }
+  },
 
   // Open linked-to URL in a new private window.
   openLinkInPrivateWindow() {
@@ -1040,18 +1093,18 @@ class nsContextMenu {
       "window",
       this._openLinkInParameters({ private: true })
     );
-  }
+  },
 
   // Open linked-to URL in a new tab.
   openLinkInTab(event) {
-    let referrerURI = this.contentData.documentURIObject;
+    let referrerURI = gContextMenuContentData.documentURIObject;
 
     // if its parent allows mixed content and the referring URI passes
     // a same origin check with the target URI, we can preserve the users
     // decision of disabling MCB on a page for it's child tabs.
     let persistAllowMixedContentInChildTab = false;
 
-    if (this.contentData.parentAllowsMixedContent) {
+    if (gContextMenuContentData.parentAllowsMixedContent) {
       const sm = Services.scriptSecurityManager;
       try {
         let targetURI = this.linkURI;
@@ -1068,22 +1121,22 @@ class nsContextMenu {
     };
 
     openLinkIn(this.linkURL, "tab", this._openLinkInParameters(params));
-  }
+  },
 
   // open URL in current tab
   openLinkInCurrent() {
     openLinkIn(this.linkURL, "current", this._openLinkInParameters());
-  }
+  },
 
   // Open frame in a new tab.
   openFrameInTab() {
-    openLinkIn(this.contentData.docLocation, "tab", {
-      charset: this.contentData.charSet,
+    openLinkIn(gContextMenuContentData.docLocation, "tab", {
+      charset: gContextMenuContentData.charSet,
       triggeringPrincipal: this.browser.contentPrincipal,
       csp: this.browser.csp,
-      referrerInfo: this.contentData.frameReferrerInfo,
+      referrerInfo: gContextMenuContentData.frameReferrerInfo,
     });
-  }
+  },
 
   // Reload clicked-in frame.
   reloadFrame(aEvent) {
@@ -1093,30 +1146,30 @@ class nsContextMenu {
       null,
       { target: this.target, forceReload }
     );
-  }
+  },
 
   // Open clicked-in frame in its own window.
   openFrame() {
-    openLinkIn(this.contentData.docLocation, "window", {
-      charset: this.contentData.charSet,
+    openLinkIn(gContextMenuContentData.docLocation, "window", {
+      charset: gContextMenuContentData.charSet,
       triggeringPrincipal: this.browser.contentPrincipal,
       csp: this.browser.csp,
-      referrerInfo: this.contentData.frameReferrerInfo,
+      referrerInfo: gContextMenuContentData.frameReferrerInfo,
     });
-  }
+  },
 
   // Open clicked-in frame in the same window.
   showOnlyThisFrame() {
     urlSecurityCheck(
-      this.contentData.docLocation,
+      gContextMenuContentData.docLocation,
       this.browser.contentPrincipal,
       Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT
     );
-    openWebLinkIn(this.contentData.docLocation, "current", {
-      referrerInfo: this.contentData.frameReferrerInfo,
+    openWebLinkIn(gContextMenuContentData.docLocation, "current", {
+      referrerInfo: gContextMenuContentData.frameReferrerInfo,
       triggeringPrincipal: this.browser.contentPrincipal,
     });
-  }
+  },
 
   // View Partial Source
   viewPartialSource() {
@@ -1149,36 +1202,36 @@ class nsContextMenu {
     };
 
     top.gViewSourceUtils.viewPartialSourceInBrowser(browser, openSelectionFn);
-  }
+  },
 
   // Open new "view source" window with the frame's URL.
   viewFrameSource() {
     BrowserViewSourceOfDocument({
       browser: this.browser,
-      URL: this.contentData.docLocation,
+      URL: gContextMenuContentData.docLocation,
       outerWindowID: this.frameOuterWindowID,
     });
-  }
+  },
 
   viewInfo() {
     BrowserPageInfo(
-      this.contentData.docLocation,
+      gContextMenuContentData.docLocation,
       null,
       null,
       null,
       this.browser
     );
-  }
+  },
 
   viewImageInfo() {
     BrowserPageInfo(
-      this.contentData.docLocation,
+      gContextMenuContentData.docLocation,
       "mediaTab",
       this.imageInfo,
       null,
       this.browser
     );
-  }
+  },
 
   viewImageDesc(e) {
     urlSecurityCheck(
@@ -1187,21 +1240,21 @@ class nsContextMenu {
       Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT
     );
     openUILink(this.imageDescURL, e, {
-      referrerInfo: this.contentData.referrerInfo,
+      referrerInfo: gContextMenuContentData.referrerInfo,
       triggeringPrincipal: this.principal,
       csp: this.csp,
     });
-  }
+  },
 
   viewFrameInfo() {
     BrowserPageInfo(
-      this.contentData.docLocation,
+      gContextMenuContentData.docLocation,
       null,
       null,
       this.frameOuterWindowID,
       this.browser
     );
-  }
+  },
 
   reloadImage() {
     urlSecurityCheck(
@@ -1215,7 +1268,7 @@ class nsContextMenu {
       null,
       { target: this.target }
     );
-  }
+  },
 
   _canvasToBlobURL(target) {
     let mm = this.browser.messageManager;
@@ -1231,11 +1284,11 @@ class nsContextMenu {
       };
       mm.addMessageListener("ContextMenu:Canvas:ToBlobURL:Result", onMessage);
     });
-  }
+  },
 
   // Change current window to the URL of the image, video, or audio.
   viewMedia(e) {
-    let referrerInfo = this.contentData.referrerInfo;
+    let referrerInfo = gContextMenuContentData.referrerInfo;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     if (this.onCanvas) {
       this._canvasToBlobURL(this.target).then(function(blobURL) {
@@ -1257,7 +1310,7 @@ class nsContextMenu {
         csp: this.csp,
       });
     }
-  }
+  },
 
   saveVideoFrameAsImage() {
     let mm = this.browser.messageManager;
@@ -1286,7 +1339,7 @@ class nsContextMenu {
     );
 
     // Cache this because we fetch the data async
-    let referrerInfo = this.contentData.referrerInfo;
+    let referrerInfo = gContextMenuContentData.referrerInfo;
 
     let onMessage = message => {
       mm.removeMessageListener(
@@ -1316,11 +1369,11 @@ class nsContextMenu {
       "ContextMenu:SaveVideoFrameAsImage:Result",
       onMessage
     );
-  }
+  },
 
   leaveDOMFullScreen() {
     document.exitFullscreen();
-  }
+  },
 
   // Change current window to the URL of the background image.
   viewBGImage(e) {
@@ -1331,11 +1384,11 @@ class nsContextMenu {
     );
 
     openUILink(this.bgImageURL, e, {
-      referrerInfo: this.contentData.referrerInfo,
+      referrerInfo: gContextMenuContentData.referrerInfo,
       triggeringPrincipal: this.principal,
       csp: this.csp,
     });
-  }
+  },
 
   setDesktopBackground() {
     let mm = this.browser.messageManager;
@@ -1402,12 +1455,12 @@ class nsContextMenu {
       "ContextMenu:SetAsDesktopBackground:Result",
       onMessage
     );
-  }
+  },
 
   // Save URL of clicked-on frame.
   saveFrame() {
     saveBrowser(this.browser, false, this.frameOuterWindowID);
-  }
+  },
 
   // Helper function to wait for appropriate MIME-type headers and
   // then prompt the user with a file picker
@@ -1567,7 +1620,7 @@ class nsContextMenu {
     channel.loadFlags |= flags;
 
     if (channel instanceof Ci.nsIHttpChannel) {
-      channel.referrerInfo = E10SUtils.deserializeReferrerInfo(referrerInfo);
+      channel.referrerInfo = referrerInfo;
       if (channel instanceof Ci.nsIHttpChannelInternal) {
         channel.forceAllowThirdPartyCookie = true;
       }
@@ -1586,15 +1639,17 @@ class nsContextMenu {
 
     // kick off the channel with our proxy object as the listener
     channel.asyncOpen(new saveAsListener(this.principal));
-  }
+  },
 
   // Save URL of clicked-on link.
   saveLink() {
     let referrerInfo = this.onLink
-      ? this.contentData.linkReferrerInfo
-      : this.contentData.referrerInfo;
+      ? gContextMenuContentData.linkReferrerInfo
+      : gContextMenuContentData.referrerInfo;
 
-    let isContentWindowPrivate = this.ownerDoc.isPrivate;
+    let isContentWindowPrivate = this.isRemote
+      ? this.ownerDoc.isPrivate
+      : undefined;
     this.saveHelper(
       this.linkURL,
       this.linkTextStr,
@@ -1606,20 +1661,22 @@ class nsContextMenu {
       this.linkDownload,
       isContentWindowPrivate
     );
-  }
+  },
 
   // Backwards-compatibility wrapper
   saveImage() {
     if (this.onCanvas || this.onImage) {
       this.saveMedia();
     }
-  }
+  },
 
   // Save URL of the clicked upon image, video, or audio.
   saveMedia() {
     let doc = this.ownerDoc;
-    let isContentWindowPrivate = this.ownerDoc.isPrivate;
-    let referrerInfo = this.contentData.referrerInfo;
+    let isContentWindowPrivate = this.isRemote
+      ? this.ownerDoc.isPrivate
+      : undefined;
+    let referrerInfo = gContextMenuContentData.referrerInfo;
     let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
     if (this.onCanvas) {
       // Bypass cache, since it's a data: URL.
@@ -1647,8 +1704,8 @@ class nsContextMenu {
         this.mediaURL,
         null, // document
         null, // file name; we'll take it from the URL
-        this.contentData.contentDisposition,
-        this.contentData.contentType,
+        gContextMenuContentData.contentDisposition,
+        gContextMenuContentData.contentType,
         false, // do not bypass the cache
         "SaveImageTitle",
         null, // chosen data
@@ -1673,26 +1730,26 @@ class nsContextMenu {
         isContentWindowPrivate
       );
     }
-  }
+  },
 
   // Backwards-compatibility wrapper
   sendImage() {
     if (this.onCanvas || this.onImage) {
       this.sendMedia();
     }
-  }
+  },
 
   sendMedia() {
     MailIntegration.sendMessage(this.mediaURL, "");
-  }
+  },
 
   playPlugin() {
     gPluginHandler.contextMenuCommand(this.browser, this.target, "play");
-  }
+  },
 
   hidePlugin() {
     gPluginHandler.contextMenuCommand(this.browser, this.target, "hide");
-  }
+  },
 
   // Generate email address and put it on clipboard.
   copyEmail() {
@@ -1718,7 +1775,7 @@ class nsContextMenu {
       Ci.nsIClipboardHelper
     );
     clipboard.copyString(addresses);
-  }
+  },
 
   copyLink() {
     // If we're in a view source tab, remove the view-source: prefix
@@ -1727,7 +1784,7 @@ class nsContextMenu {
       Ci.nsIClipboardHelper
     );
     clipboard.copyString(linkURL);
-  }
+  },
 
   /**
    * Utilities
@@ -1749,7 +1806,7 @@ class nsContextMenu {
     if (item) {
       item.hidden = !aShow;
     }
-  }
+  },
 
   // Set given attribute of specified context-menu item.  If the
   // value is null, then it removes the attribute (which works
@@ -1765,7 +1822,7 @@ class nsContextMenu {
         elem.setAttribute(aAttr, aVal);
       }
     }
-  }
+  },
 
   // Temporary workaround for DOM api not yet implemented by XUL nodes.
   cloneNode(aItem) {
@@ -1781,7 +1838,7 @@ class nsContextMenu {
 
     // Voila!
     return node;
-  }
+  },
 
   getLinkURI() {
     try {
@@ -1791,12 +1848,12 @@ class nsContextMenu {
     }
 
     return null;
-  }
+  },
 
   // Kept for addon compat
   linkText() {
     return this.linkTextStr;
-  }
+  },
 
   // Determines whether or not the separator with the specified ID should be
   // shown or not by determining if there are any non-hidden items between it
@@ -1813,7 +1870,7 @@ class nsContextMenu {
       }
     }
     return false;
-  }
+  },
 
   addDictionaries() {
     var uri = formatURL("browser.dictionaries.download.url", true);
@@ -1839,21 +1896,21 @@ class nsContextMenu {
     var where = newWindowPref == 3 ? "tab" : "window";
 
     openTrustedLinkIn(uri, where);
-  }
+  },
 
-  bookmarkThisPage() {
+  bookmarkThisPage: function CM_bookmarkThisPage() {
     window.top.PlacesCommandHook.bookmarkPage().catch(Cu.reportError);
-  }
+  },
 
-  bookmarkLink() {
+  bookmarkLink: function CM_bookmarkLink() {
     window.top.PlacesCommandHook.bookmarkLink(
       this.linkURL,
       this.linkTextStr
     ).catch(Cu.reportError);
-  }
+  },
 
-  addBookmarkForFrame() {
-    let uri = this.contentData.documentURIObject;
+  addBookmarkForFrame: function CM_addBookmarkForFrame() {
+    let uri = gContextMenuContentData.documentURIObject;
     let mm = this.browser.messageManager;
 
     let onMessage = message => {
@@ -1869,21 +1926,21 @@ class nsContextMenu {
     mm.sendAsyncMessage("ContextMenu:BookmarkFrame", null, {
       target: this.target,
     });
-  }
+  },
 
-  savePageAs() {
+  savePageAs: function CM_savePageAs() {
     saveBrowser(this.browser);
-  }
+  },
 
-  printFrame() {
+  printFrame: function CM_printFrame() {
     PrintUtils.printWindow(this.frameOuterWindowID, this.browser);
-  }
+  },
 
-  switchPageDirection() {
+  switchPageDirection: function CM_switchPageDirection() {
     this.browser.messageManager.sendAsyncMessage("SwitchDocumentDirection");
-  }
+  },
 
-  mediaCommand(command, data) {
+  mediaCommand: function CM_mediaCommand(command, data) {
     let mm = this.browser.messageManager;
     let win = this.browser.ownerGlobal;
     let windowUtils = win.windowUtils;
@@ -1892,14 +1949,14 @@ class nsContextMenu {
       { command, data, handlingUserInput: windowUtils.isHandlingUserInput },
       { element: this.target }
     );
-  }
+  },
 
   copyMediaLocation() {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
       Ci.nsIClipboardHelper
     );
     clipboard.copyString(this.mediaURL);
-  }
+  },
 
   drmLearnMore(aEvent) {
     let drmInfoURL =
@@ -1912,14 +1969,14 @@ class nsContextMenu {
       dest = "tab";
     }
     openTrustedLinkIn(drmInfoURL, dest);
-  }
+  },
 
   get imageURL() {
     if (this.onImage) {
       return this.mediaURL;
     }
     return "";
-  }
+  },
 
   // Formats the 'Search <engine> for "<selection or link text>"' context menu.
   formatSearchContextItem() {
@@ -1955,18 +2012,13 @@ class nsContextMenu {
     menuItem.accessKey = gNavigatorBundle.getString(
       "contextMenuSearch.accesskey"
     );
-  }
+  },
 
   createContainerMenu(aEvent) {
     let createMenuOptions = {
       isContextMenu: true,
-      excludeUserContextId: this.contentData.userContextId,
+      excludeUserContextId: gContextMenuContentData.userContextId,
     };
     return createUserContextMenu(aEvent, createMenuOptions);
-  }
-}
-
-XPCOMUtils.defineLazyModuleGetters(nsContextMenu, {
-  LoginManagerContextMenu: "resource://gre/modules/LoginManagerContextMenu.jsm",
-  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
-});
+  },
+};

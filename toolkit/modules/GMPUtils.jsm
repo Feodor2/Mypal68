@@ -9,7 +9,6 @@ var EXPORTED_SYMBOLS = [
   "GMPPrefs",
   "GMPUtils",
   "OPEN_H264_ID",
-  "WIDEVINE_ID",
 ];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
@@ -22,8 +21,7 @@ const { UpdateUtils } = ChromeUtils.import(
 
 // GMP IDs
 const OPEN_H264_ID = "gmp-gmpopenh264";
-const WIDEVINE_ID = "gmp-widevinecdm";
-const GMP_PLUGIN_IDS = [OPEN_H264_ID, WIDEVINE_ID];
+const GMP_PLUGIN_IDS = [OPEN_H264_ID];
 
 var GMPUtils = {
   /**
@@ -43,14 +41,6 @@ var GMPUtils = {
       return true;
     }
 
-    if (!aPlugin.isEME) {
-      return false;
-    }
-
-    if (!GMPPrefs.getBool(GMPPrefs.KEY_EME_ENABLED, true)) {
-      return true;
-    }
-
     return false;
   },
 
@@ -62,15 +52,6 @@ var GMPUtils = {
   _isPluginSupported(aPlugin) {
     if (this._isPluginForceSupported(aPlugin)) {
       return true;
-    }
-    if (aPlugin.id == WIDEVINE_ID) {
-      // The Widevine plugin is available for Windows versions Vista and later,
-      // Mac OSX, and Linux.
-      return (
-        AppConstants.platform == "win" ||
-        AppConstants.platform == "macosx" ||
-        AppConstants.platform == "linux"
-      );
     }
 
     return true;
@@ -115,11 +96,6 @@ var GMPUtils = {
 
   _expectedABI(aPlugin) {
     let defaultABI = UpdateUtils.ABI;
-    if (aPlugin.id == WIDEVINE_ID && this._isWindowsOnARM64()) {
-      // On Windows on aarch64, we need the x86 plugin,
-      // as there's no native aarch64 plugins yet.
-      defaultABI = defaultABI.replace(/aarch64/g, "x86");
-    }
     return defaultABI;
   },
 };
@@ -128,7 +104,6 @@ var GMPUtils = {
  * Manages preferences for GMP addons
  */
 var GMPPrefs = {
-  KEY_EME_ENABLED: "media.eme.enabled",
   KEY_PLUGIN_ENABLED: "media.{0}.enabled",
   KEY_PLUGIN_LAST_UPDATE: "media.{0}.lastUpdate",
   KEY_PLUGIN_VERSION: "media.{0}.version",

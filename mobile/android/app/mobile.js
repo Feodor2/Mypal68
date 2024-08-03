@@ -510,8 +510,6 @@ pref("media.video-queue.send-to-compositor-size", 1);
 // Enable MSE
 pref("media.mediasource.enabled", true);
 
-pref("media.mediadrm-widevinecdm.visible", true);
-
 // Switch block autoplay logic to v2.
 pref("media.autoplay.enabled.user-gestures-needed", true);
 // Set Fennec to block autoplay by default.

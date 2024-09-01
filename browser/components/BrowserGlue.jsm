@@ -1988,6 +1988,14 @@ BrowserGlue.prototype = {
       }
     }
 
+    const minimumTabs = Services.prefs.getIntPref(
+      "browser.tabs.warnOnClose.minimumTabs", 2
+    );
+
+    if (pagecount < minimumTabs) {
+      return;
+    }
+
     if (!aQuitType) {
       aQuitType = "quit";
     }

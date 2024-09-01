@@ -2938,6 +2938,13 @@
     },
 
     warnAboutClosingTabs(tabsToClose, aCloseTabs) {
+      const minimumTabs = Services.prefs.getIntPref(
+        "browser.tabs.warnOnClose.minimumTabs", 2
+      );
+      if (tabsToClose < minimumTabs) {
+        return true;
+      }
+
       const pref =
         aCloseTabs == this.closingTabsEnum.ALL
           ? "browser.tabs.warnOnClose"

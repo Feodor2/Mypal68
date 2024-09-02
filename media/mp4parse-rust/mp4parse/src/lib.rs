@@ -1730,6 +1730,11 @@ fn read_moov<T: Read>(f: &mut BMFFBox<T>, context: &mut MediaContext) -> Result<
                 let udta = read_udta(&mut b);
                 debug!("{:?}", udta);
                 context.userdata = Some(udta);
+                if let Some(Err(_)) = context.userdata {
+                    // There was an error parsing userdata. Such failures are not fatal to overall
+                    // parsing, just skip the rest of the box.
+                    skip_box_remain(&mut b)?;
+                }
             }
             _ => skip_box_content(&mut b)?,
         };

@@ -189,7 +189,7 @@ mozilla::ipc::IPCResult PluginModuleChild::RecvInitProfiler(
 mozilla::ipc::IPCResult PluginModuleChild::RecvDisableFlashProtectedMode() {
   MOZ_ASSERT(mIsChrome);
 #ifdef XP_WIN
-  FunctionHook::HookProtectedMode();
+  //FunctionHook::HookProtectedMode();
 #else
   MOZ_ASSERT(false, "Should not be called");
 #endif

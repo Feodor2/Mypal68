@@ -514,6 +514,7 @@ void DataTextureSourceD3D9::Reset() {
 int32_t DataTextureSourceD3D9::GetMaxTextureSize() const {
   D3DCAPS9 caps;
   HRESULT hr = mDevice->GetDeviceCaps(&caps);
+  if (FAILED(hr)) return INT32_MAX;
   return std::min(caps.MaxTextureHeight, caps.MaxTextureWidth);
 }
 

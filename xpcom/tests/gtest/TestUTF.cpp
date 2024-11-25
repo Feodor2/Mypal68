@@ -32,11 +32,11 @@ TEST(UTF, Valid)
 
     nsCString tmp8("string ");
     AppendUTF16toUTF8(str16, tmp8);
-    EXPECT_TRUE(tmp8.Equals(NS_LITERAL_CSTRING("string ") + str8));
+    EXPECT_TRUE(tmp8.Equals("string "_ns + str8));
 
-    nsString tmp16(NS_LITERAL_STRING("string "));
+    nsString tmp16(u"string "_ns);
     AppendUTF8toUTF16(str8, tmp16);
-    EXPECT_TRUE(tmp16.Equals(NS_LITERAL_STRING("string ") + str16));
+    EXPECT_TRUE(tmp16.Equals(u"string "_ns + str16));
 
     EXPECT_EQ(CompareUTF8toUTF16(str8, str16), 0);
   }
@@ -52,7 +52,7 @@ TEST(UTF, Invalid16)
 
     nsCString tmp8("string ");
     AppendUTF16toUTF8(str16, tmp8);
-    EXPECT_TRUE(tmp8.Equals(NS_LITERAL_CSTRING("string ") + str8));
+    EXPECT_TRUE(tmp8.Equals("string "_ns + str8));
 
     EXPECT_EQ(CompareUTF8toUTF16(str8, str16), 0);
   }
@@ -66,9 +66,9 @@ TEST(UTF, Invalid8)
 
     EXPECT_TRUE(NS_ConvertUTF8toUTF16(str8).Equals(str16));
 
-    nsString tmp16(NS_LITERAL_STRING("string "));
+    nsString tmp16(u"string "_ns);
     AppendUTF8toUTF16(str8, tmp16);
-    EXPECT_TRUE(tmp16.Equals(NS_LITERAL_STRING("string ") + str16));
+    EXPECT_TRUE(tmp16.Equals(u"string "_ns + str16));
 
     EXPECT_EQ(CompareUTF8toUTF16(str8, str16), 0);
   }
@@ -82,9 +82,9 @@ TEST(UTF, Malformed8)
 
     EXPECT_TRUE(NS_ConvertUTF8toUTF16(str8).Equals(str16));
 
-    nsString tmp16(NS_LITERAL_STRING("string "));
+    nsString tmp16(u"string "_ns);
     AppendUTF8toUTF16(str8, tmp16);
-    EXPECT_TRUE(tmp16.Equals(NS_LITERAL_STRING("string ") + str16));
+    EXPECT_TRUE(tmp16.Equals(u"string "_ns + str16));
 
     EXPECT_EQ(CompareUTF8toUTF16(str8, str16), 0);
   }

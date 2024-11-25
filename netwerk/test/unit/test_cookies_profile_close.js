@@ -63,7 +63,7 @@ function* do_run_test() {
       false,
       0,
       {},
-      Ci.nsICookie.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_NONE
     );
   }, Cr.NS_ERROR_NOT_AVAILABLE);
 

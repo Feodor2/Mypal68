@@ -18,7 +18,7 @@ function test() {
     true,
     Date.now() / 1000 + 60,
     {},
-    Ci.nsICookie.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_NONE
   );
 
   PermissionTestUtils.add(

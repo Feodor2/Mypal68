@@ -139,6 +139,7 @@ interface imgIContainer : nsISupports
     */
   const unsigned short TYPE_RASTER = 0;
   const unsigned short TYPE_VECTOR = 1;
+  const unsigned short TYPE_REQUEST = 2;
 
   /**
    * The type of this image (one of the TYPE_* values above).
@@ -224,6 +225,9 @@ interface imgIContainer : nsISupports
    * FLAG_AVOID_REDECODE_FOR_SIZE: If there is already a raster surface
    * available for this image, but it is not the same size as requested, skip
    * starting a new decode for said size.
+   *
+   * FLAG_DECODE_TO_SRGB_COLORSPACE: Instead of converting the colorspace to
+   * the display's colorspace, use sRGB.
    */
   const unsigned long FLAG_NONE                            = 0x0;
   const unsigned long FLAG_SYNC_DECODE                     = 0x1;
@@ -238,12 +242,20 @@ interface imgIContainer : nsISupports
   const unsigned long FLAG_FORCE_PRESERVEASPECTRATIO_NONE  = 0x200;
   const unsigned long FLAG_FORCE_UNIFORM_SCALING           = 0x400;
   const unsigned long FLAG_AVOID_REDECODE_FOR_SIZE         = 0x800;
+  const unsigned long FLAG_DECODE_TO_SRGB_COLORSPACE       = 0x1000;
 
   /**
    * A constant specifying the default set of decode flags (i.e., the default
    * values for FLAG_DECODE_*).
    */
   const unsigned long DECODE_FLAGS_DEFAULT = 0;
+
+  /**
+   * A constant specifying the decode flags recommended to be used when
+   * re-encoding an image, or with the clipboard.
+   */
+  const unsigned long DECODE_FLAGS_FOR_REENCODE =
+      FLAG_DECODE_NO_PREMULTIPLY_ALPHA | FLAG_DECODE_TO_SRGB_COLORSPACE;
 
   /**
     * Constants for specifying various "special" frames.
@@ -509,13 +521,22 @@ interface imgIContainer : nsISupports
    *
    * @param aFlags Flags of the FLAG_* variety.
    * @param aWhichFrame Frame specifier of the FRAME_* variety.
-   * @return True there is a surface that satisfies the request and it is
-   *         fully decoded, else false.
+   * @return DECODE_SURFACE_AVAILABLE if is a surface that satisfies the
+   *         request and it is fully decoded.
+   *         DECODE_REQUESTED if we requested a decode.
+   *         DECODE_REQUEST_FAILED if we failed to request a decode. This means
+   *         that either there is an error in the image or we cannot allocate a
+   *         surface that big.
    */
-  [noscript, notxpcom] boolean requestDecodeWithResult(in uint32_t aFlags, in uint32_t aWhichFrame);
+   cenum DecodeResult : 8 {
+     DECODE_SURFACE_AVAILABLE = 0,
+     DECODE_REQUESTED = 1,
+     DECODE_REQUEST_FAILED = 2
+   };
+  [noscript, notxpcom] imgIContainer_DecodeResult requestDecodeWithResult(in uint32_t aFlags, in uint32_t aWhichFrame);
 
 %{C++
-  bool RequestDecodeWithResult(uint32_t aFlags) {
+  DecodeResult RequestDecodeWithResult(uint32_t aFlags) {
     return RequestDecodeWithResult(aFlags, FRAME_CURRENT);
   }
 %}
@@ -608,6 +629,12 @@ interface imgIContainer : nsISupports
    * metadata (e.g. EXIF).
    */
   [notxpcom] Orientation getOrientation();
+
+  /*
+   * Returns whether the image handles the orientation returned by
+   * getOrientation() itself.
+   */
+  [notxpcom] bool handledOrientation();
 
   /*
    * Returns the delay, in ms, between the first and second frame. If this

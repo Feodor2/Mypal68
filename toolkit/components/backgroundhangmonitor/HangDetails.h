@@ -5,15 +5,16 @@
 #ifndef mozilla_HangDetails_h
 #define mozilla_HangDetails_h
 
+#include <utility>
+
 #include "ipc/IPCMessageUtils.h"
+#include "mozilla/HangAnnotations.h"
+#include "mozilla/HangTypes.h"
 #include "mozilla/ProcessedStack.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Move.h"
-#include "mozilla/HangTypes.h"
-#include "mozilla/HangAnnotations.h"
-#include "nsTArray.h"
-#include "nsIHangDetails.h"
 #include "mozilla/TimeStamp.h"
+#include "nsIHangDetails.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 

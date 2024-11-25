@@ -108,8 +108,6 @@ nsJPEGDecoder::nsJPEGDecoder(RasterImage* aImage,
   mBackBuffer = nullptr;
   mBackBufferLen = mBackBufferSize = mBackBufferUnreadLen = 0;
 
-  mCMSMode = 0;
-
   MOZ_LOG(sJPEGDecoderAccountingLog, LogLevel::Debug,
           ("nsJPEGDecoder::nsJPEGDecoder: Creating JPEG decoder %p", this));
 }
@@ -133,11 +131,6 @@ Maybe<Telemetry::HistogramID> nsJPEGDecoder::SpeedHistogram() const {
 }
 
 nsresult nsJPEGDecoder::InitInternal() {
-  mCMSMode = gfxPlatform::GetCMSMode();
-  if (GetSurfaceFlags() & SurfaceFlags::NO_COLORSPACE_CONVERSION) {
-    mCMSMode = eCMSMode_Off;
-  }
-
   // We set up the normal JPEG error routines, then override error_exit.
   mInfo.err = jpeg_std_error(&mErr.pub);
   //   mInfo.err = jpeg_std_error(&mErr.pub);
@@ -262,7 +255,20 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
         case JCS_YCbCr:
           // By default, we will output directly to BGRA. If we need to apply
           // special color transforms, this may change.
-          mInfo.out_color_space = MOZ_JCS_EXT_NATIVE_ENDIAN_XRGB;
+          switch (SurfaceFormat::OS_RGBX) {
+            case SurfaceFormat::B8G8R8X8:
+              mInfo.out_color_space = JCS_EXT_BGRX;
+              break;
+            case SurfaceFormat::X8R8G8B8:
+              mInfo.out_color_space = JCS_EXT_XRGB;
+              break;
+            case SurfaceFormat::R8G8B8X8:
+              mInfo.out_color_space = JCS_EXT_RGBX;
+              break;
+            default:
+              mState = JPEG_ERROR;
+              return Transition::TerminateFailure();
+          }
           break;
         case JCS_CMYK:
         case JCS_YCCK:
@@ -278,24 +284,22 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
 
       if (mCMSMode != eCMSMode_Off) {
         if ((mInProfile = GetICCProfile(mInfo)) != nullptr &&
-            gfxPlatform::GetCMSOutputProfile()) {
+            GetCMSOutputProfile()) {
           uint32_t profileSpace = qcms_profile_get_color_space(mInProfile);
 
-#ifdef DEBUG_tor
-          fprintf(stderr, "JPEG profileSpace: 0x%08X\n", profileSpace);
-#endif
-          Maybe<qcms_data_type> type;
+          qcms_data_type outputType = gfxPlatform::GetCMSOSRGBAType();
+          Maybe<qcms_data_type> inputType;
           if (profileSpace == icSigRgbData) {
             // We can always color manage RGB profiles since it happens at the
             // end of the pipeline.
-            type.emplace(QCMS_DATA_BGRA_8);
+            inputType.emplace(outputType);
           } else if (profileSpace == icSigGrayData &&
                      mInfo.jpeg_color_space == JCS_GRAYSCALE) {
             // We can only color manage gray profiles if the original color
             // space is grayscale. This means we must downscale after color
             // management since the downscaler assumes BGRA.
             mInfo.out_color_space = JCS_GRAYSCALE;
-            type.emplace(QCMS_DATA_GRAY_8);
+            inputType.emplace(QCMS_DATA_GRAY_8);
           }
 
 #if 0
@@ -309,7 +313,7 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
           }
 #endif
 
-          if (type) {
+          if (inputType) {
             // Calculate rendering intent.
             int intent = gfxPlatform::GetRenderingIntent();
             if (intent == -1) {
@@ -317,12 +321,12 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
             }
 
             // Create the color management transform.
-            mTransform = qcms_transform_create(
-                mInProfile, *type, gfxPlatform::GetCMSOutputProfile(),
-                QCMS_DATA_BGRA_8, (qcms_intent)intent);
+            mTransform = qcms_transform_create(mInProfile, *inputType,
+                                               GetCMSOutputProfile(),
+                                               outputType, (qcms_intent)intent);
           }
         } else if (mCMSMode == eCMSMode_All) {
-          mTransform = gfxPlatform::GetCMSBGRATransform();
+          mTransform = GetCMSsRGBTransform(SurfaceFormat::OS_RGBX);
         }
       }
 
@@ -355,8 +359,8 @@ LexerTransition<nsJPEGDecoder::State> nsJPEGDecoder::ReadJPEGData(
           mInfo.out_color_space != JCS_GRAYSCALE ? mTransform : nullptr;
 
       Maybe<SurfacePipe> pipe = SurfacePipeFactory::CreateSurfacePipe(
-          this, Size(), OutputSize(), FullFrame(), SurfaceFormat::B8G8R8X8,
-          Nothing(), pipeTransform, SurfacePipeFlags());
+          this, Size(), OutputSize(), FullFrame(), SurfaceFormat::OS_RGBX,
+          SurfaceFormat::OS_RGBX, Nothing(), pipeTransform, SurfacePipeFlags());
       if (!pipe) {
         mState = JPEG_ERROR;
         MOZ_LOG(sJPEGDecoderAccountingLog, LogLevel::Debug,
@@ -860,7 +864,6 @@ term_source(j_decompress_ptr jd) {
 static void cmyk_convert_bgra(uint32_t* aInput, uint32_t* aOutput,
                               int32_t aWidth) {
   uint8_t* input = reinterpret_cast<uint8_t*>(aInput);
-  uint8_t* output = reinterpret_cast<uint8_t*>(aOutput);
 
   for (int32_t i = 0; i < aWidth; ++i) {
     // Source is 'Inverted CMYK', output is RGB.
@@ -886,19 +889,14 @@ static void cmyk_convert_bgra(uint32_t* aInput, uint32_t* aOutput,
     const uint32_t iM = input[1];
     const uint32_t iY = input[2];
     const uint32_t iK = input[3];
-#if MOZ_BIG_ENDIAN
-    output[0] = 0xFF;           // Alpha
-    output[1] = iC * iK / 255;  // Red
-    output[2] = iM * iK / 255;  // Green
-    output[3] = iY * iK / 255;  // Blue
-#else
-    output[0] = iY * iK / 255;  // Blue
-    output[1] = iM * iK / 255;  // Green
-    output[2] = iC * iK / 255;  // Red
-    output[3] = 0xFF;           // Alpha
-#endif
 
+    const uint8_t r = iC * iK / 255;
+    const uint8_t g = iM * iK / 255;
+    const uint8_t b = iY * iK / 255;
+
+    *aOutput++ = (0xFF << SurfaceFormatBit::OS_A) |
+                 (r << SurfaceFormatBit::OS_R) | (g << SurfaceFormatBit::OS_G) |
+                 (b << SurfaceFormatBit::OS_B);
     input += 4;
-    output += 4;
   }
 }

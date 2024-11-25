@@ -12,6 +12,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/BitSet.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/Maybe.h"
@@ -1088,6 +1089,66 @@ template <>
 struct ParamTraits<nsILoadInfo::CrossOriginPolicy>
     : EnumSerializer<nsILoadInfo::CrossOriginPolicy,
                      CrossOriginPolicyValidator> {};
+
+template <size_t N, typename Word>
+struct ParamTraits<mozilla::BitSet<N, Word>> {
+  typedef mozilla::BitSet<N, Word> paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    for (Word word : aParam.Storage()) {
+      WriteParam(aMsg, word);
+    }
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    for (Word& word : aResult->Storage()) {
+      if (!ReadParam(aMsg, aIter, &word)) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+// A couple of recursive helper functions, allows syntax like:
+// WriteParams(aMsg, aParam.foo, aParam.bar, aParam.baz)
+// ReadParams(aMsg, aIter, aParam.foo, aParam.bar, aParam.baz)
+
+template <typename... Ts>
+static void WriteParams(Message* aMsg, const Ts&... aArgs) {
+  (WriteParam(aMsg, aArgs), ...);
+}
+
+template <typename... Ts>
+static bool ReadParams(const Message* aMsg, PickleIterator* aIter,
+                       Ts&... aArgs) {
+  return (ReadParam(aMsg, aIter, &aArgs) && ...);
+}
+
+// Macros that allow syntax like:
+// DEFINE_IPC_SERIALIZER_WITH_FIELDS(SomeType, member1, member2, member3)
+// Makes sure that serialize/deserialize code do the same members in the same
+// order.
+#define ACCESS_PARAM_FIELD(Field) aParam.Field
+
+#define DEFINE_IPC_SERIALIZER_WITH_FIELDS(Type, ...)                         \
+  template <>                                                                \
+  struct ParamTraits<Type> {                                                 \
+    typedef Type paramType;                                                  \
+    static void Write(Message* aMsg, const paramType& aParam) {              \
+      WriteParams(aMsg, MOZ_FOR_EACH_SEPARATED(ACCESS_PARAM_FIELD, (, ), (), \
+                                               (__VA_ARGS__)));              \
+    }                                                                        \
+                                                                             \
+    static bool Read(const Message* aMsg, PickleIterator* aIter,             \
+                     paramType* aResult) {                                   \
+      paramType& aParam = *aResult;                                          \
+      return ReadParams(aMsg, aIter,                                         \
+                        MOZ_FOR_EACH_SEPARATED(ACCESS_PARAM_FIELD, (, ), (), \
+                                               (__VA_ARGS__)));              \
+    }                                                                        \
+  };
 
 } /* namespace IPC */
 

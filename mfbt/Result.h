@@ -7,13 +7,13 @@
 #ifndef mozilla_Result_h
 #define mozilla_Result_h
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <type_traits>
-#include "mozilla/Alignment.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CompactPair.h"
-#include "mozilla/Types.h"
-#include "mozilla/Variant.h"
 
 namespace mozilla {
 
@@ -44,49 +44,28 @@ struct UnusedZero;
 template <typename V, typename E, PackingStrategy Strategy>
 class ResultImplementation;
 
-template <typename V, typename E>
-class ResultImplementation<V, E, PackingStrategy::Variant> {
-  mozilla::Variant<V, E> mStorage;
+// The purpose of AlignedStorageOrEmpty is to make an empty class look like
+// std::aligned_storage_t for the purposes of the PackingStrategy::NullIsOk
+// specializations of ResultImplementation below. We can't use
+// std::aligned_storage_t itself with an empty class, since it would no longer
+// be empty.
+template <typename V, bool IsEmpty = std::is_empty_v<V>>
+struct AlignedStorageOrEmpty;
 
- public:
-  ResultImplementation(ResultImplementation&&) = default;
-  ResultImplementation(const ResultImplementation&) = delete;
-  ResultImplementation& operator=(const ResultImplementation&) = delete;
-  ResultImplementation& operator=(ResultImplementation&&) = default;
-
-  explicit ResultImplementation(V&& aValue)
-      : mStorage(std::forward<V>(aValue)) {}
-  explicit ResultImplementation(const V& aValue) : mStorage(aValue) {}
-  explicit ResultImplementation(const E& aErrorValue) : mStorage(aErrorValue) {}
-  explicit ResultImplementation(E&& aErrorValue)
-      : mStorage(std::forward<E>(aErrorValue)) {}
-
-  bool isOk() const { return mStorage.template is<V>(); }
-
-  // The callers of these functions will assert isOk() has the proper value, so
-  // these functions (in all ResultImplementation specializations) don't need
-  // to do so.
-  V unwrap() { return std::move(mStorage.template as<V>()); }
-  const V& inspect() const { return mStorage.template as<V>(); }
-
-  E unwrapErr() { return std::move(mStorage.template as<E>()); }
-  const E& inspectErr() const { return mStorage.template as<E>(); }
-};
-
-// The purpose of EmptyWrapper is to make an empty class look like
-// AlignedStorage2 for the purposes of the PackingStrategy::NullIsOk
-// specializations of ResultImplementation below. We can't use AlignedStorage2
-// itself with an empty class, since it would no longer be empty, and we want to
-// avoid changing AlignedStorage2 just for this purpose.
 template <typename V>
-struct EmptyWrapper : V {
-  const V* addr() const { return this; }
-  V* addr() { return this; }
+struct AlignedStorageOrEmpty<V, true> : V {
+  constexpr V* addr() { return this; }
+  constexpr const V* addr() const { return this; }
 };
 
 template <typename V>
-using AlignedStorageOrEmpty =
-    std::conditional_t<std::is_empty_v<V>, EmptyWrapper<V>, AlignedStorage2<V>>;
+struct AlignedStorageOrEmpty<V, false> {
+  V* addr() { return reinterpret_cast<V*>(&mData); }
+  const V* addr() const { return reinterpret_cast<const V*>(&mData); }
+
+ private:
+  std::aligned_storage_t<sizeof(V), alignof(V)> mData;
+};
 
 template <typename V, typename E>
 class ResultImplementationNullIsOkBase {
@@ -95,15 +74,11 @@ class ResultImplementationNullIsOkBase {
 
   static constexpr auto kNullValue = UnusedZero<E>::nullValue;
 
-  // This is static function rather than a static data member in order to avoid
-  // that gcc emits lots of static constructors. It may be changed to a static
-  // constexpr data member with C++20.
-  static inline auto GetMovedFromMarker() {
-    return UnusedZero<E>::GetDefaultValue();
-  }
-
   static_assert(std::is_trivially_copyable_v<ErrorStorageType>);
-  static_assert(kNullValue == decltype(kNullValue)(0));
+
+  // XXX This can't be statically asserted in general, if ErrorStorageType is
+  // not a basic type. With C++20 bit_cast, we could probably re-add such as
+  // assertion. static_assert(kNullValue == decltype(kNullValue)(0));
 
   CompactPair<AlignedStorageOrEmpty<V>, ErrorStorageType> mValue;
 
@@ -122,6 +97,14 @@ class ResultImplementationNullIsOkBase {
       new (mValue.first().addr()) V(std::move(aSuccessValue));
     }
   }
+  template <typename... Args>
+  explicit ResultImplementationNullIsOkBase(std::in_place_t, Args&&... aArgs)
+      : mValue(std::piecewise_construct, std::tuple<>(),
+               std::tuple(kNullValue)) {
+    if constexpr (!std::is_empty_v<V>) {
+      new (mValue.first().addr()) V(std::forward<Args>(aArgs)...);
+    }
+  }
   explicit ResultImplementationNullIsOkBase(E aErrorValue)
       : mValue(std::piecewise_construct, std::tuple<>(),
                std::tuple(UnusedZero<E>::Store(std::move(aErrorValue)))) {
@@ -130,12 +113,10 @@ class ResultImplementationNullIsOkBase {
 
   ResultImplementationNullIsOkBase(ResultImplementationNullIsOkBase&& aOther)
       : mValue(std::piecewise_construct, std::tuple<>(),
-               std::tuple(std::move(aOther.mValue.second()))) {
+               std::tuple(aOther.mValue.second())) {
     if constexpr (!std::is_empty_v<V>) {
       if (isOk()) {
         new (mValue.first().addr()) V(std::move(*aOther.mValue.first().addr()));
-        aOther.mValue.first().addr()->~V();
-        aOther.mValue.second() = GetMovedFromMarker();
       }
     }
   }
@@ -150,8 +131,6 @@ class ResultImplementationNullIsOkBase {
     if constexpr (!std::is_empty_v<V>) {
       if (isOk()) {
         new (mValue.first().addr()) V(std::move(*aOther.mValue.first().addr()));
-        aOther.mValue.first().addr()->~V();
-        aOther.mValue.second() = GetMovedFromMarker();
       }
     }
     return *this;
@@ -162,10 +141,10 @@ class ResultImplementationNullIsOkBase {
   const V& inspect() const { return *mValue.first().addr(); }
   V unwrap() { return std::move(*mValue.first().addr()); }
 
-  const E& inspectErr() const {
+  decltype(auto) inspectErr() const {
     return UnusedZero<E>::Inspect(mValue.second());
   }
-  E unwrapErr() { return UnusedZero<E>::Unwrap(std::move(mValue.second())); }
+  E unwrapErr() { return UnusedZero<E>::Unwrap(mValue.second()); }
 };
 
 template <typename V, typename E,
@@ -210,31 +189,76 @@ class ResultImplementation<V, E, PackingStrategy::NullIsOk>
   using ResultImplementationNullIsOk<V, E>::ResultImplementationNullIsOk;
 };
 
+template <size_t S>
+using UnsignedIntType = std::conditional_t<
+    S == 1, std::uint8_t,
+    std::conditional_t<
+        S == 2, std::uint16_t,
+        std::conditional_t<S == 3 || S == 4, std::uint32_t,
+                           std::conditional_t<S <= 8, std::uint64_t, void>>>>;
+
 /**
  * Specialization for when alignment permits using the least significant bit
  * as a tag bit.
  */
 template <typename V, typename E>
-class ResultImplementation<V*, E, PackingStrategy::LowBitTagIsError> {
-  static_assert(sizeof(E) <= sizeof(uintptr_t));
+class ResultImplementation<V, E, PackingStrategy::LowBitTagIsError> {
+  static_assert(std::is_trivially_copyable_v<V> &&
+                std::is_trivially_destructible_v<V>);
+  static_assert(std::is_trivially_copyable_v<E> &&
+                std::is_trivially_destructible_v<E>);
 
-  uintptr_t mBits;
+  static constexpr size_t kRequiredSize = std::max(sizeof(V), sizeof(E));
+
+  using StorageType = UnsignedIntType<kRequiredSize>;
+
+#if defined(__clang__)
+  alignas(std::max(alignof(V), alignof(E))) StorageType mBits;
+#else
+  // Some gcc versions choke on using std::max with alignas, see
+  // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94929 (and this seems to have
+  // regressed in some gcc 9.x version before being fixed again) Keeping the
+  // code above since we would eventually drop this when we no longer support
+  // gcc versions with the bug.
+  alignas(alignof(V) > alignof(E) ? alignof(V) : alignof(E)) StorageType mBits;
+#endif
 
  public:
-  explicit ResultImplementation(V* aValue)
-      : mBits(reinterpret_cast<uintptr_t>(aValue)) {
-    MOZ_ASSERT((uintptr_t(aValue) % MOZ_ALIGNOF(V)) == 0,
-               "Result value pointers must not be misaligned");
+  explicit ResultImplementation(V aValue) {
+    if constexpr (!std::is_empty_v<V>) {
+      std::memcpy(&mBits, &aValue, sizeof(V));
+      MOZ_ASSERT((mBits & 1) == 0);
+    } else {
+      (void)aValue;
+      mBits = 0;
+    }
   }
-  explicit ResultImplementation(E aErrorValue)
-      : mBits(UnusedZero<E>::Store(aErrorValue) | 1) {}
+  explicit ResultImplementation(E aErrorValue) {
+    if constexpr (!std::is_empty_v<E>) {
+      std::memcpy(&mBits, &aErrorValue, sizeof(E));
+      MOZ_ASSERT((mBits & 1) == 0);
+      mBits |= 1;
+    } else {
+      (void)aErrorValue;
+      mBits = 1;
+    }
+  }
 
   bool isOk() const { return (mBits & 1) == 0; }
 
-  V* inspect() const { return reinterpret_cast<V*>(mBits); }
-  V* unwrap() { return inspect(); }
+  V inspect() const {
+    V res;
+    std::memcpy(&res, &mBits, sizeof(V));
+    return res;
+  }
+  V unwrap() { return inspect(); }
 
-  auto inspectErr() const { return UnusedZero<E>::Inspect(mBits ^ 1); }
+  E inspectErr() const {
+    const auto bits = mBits ^ 1;
+    E res;
+    std::memcpy(&res, &bits, sizeof(E));
+    return res;
+  }
   E unwrapErr() { return inspectErr(); }
 };
 
@@ -295,12 +319,41 @@ struct UnusedZero {
   static const bool value = false;
 };
 
+// This template can be used as a helper for specializing UnusedZero for scoped
+// enum types which never use 0 as an error value, e.g.
+//
+// namespace mozilla::detail {
+//
+// template <>
+// struct UnusedZero<MyEnumType> : UnusedZeroEnum<MyEnumType> {};
+//
+// }  // namespace mozilla::detail
+//
+template <typename T>
+struct UnusedZeroEnum {
+  using StorageType = std::underlying_type_t<T>;
+
+  static constexpr bool value = true;
+  static constexpr StorageType nullValue = 0;
+
+  static constexpr T Inspect(const StorageType& aValue) {
+    return static_cast<T>(aValue);
+  }
+  static constexpr T Unwrap(StorageType aValue) {
+    return static_cast<T>(aValue);
+  }
+  static constexpr StorageType Store(T aValue) {
+    return static_cast<StorageType>(aValue);
+  }
+};
+
 // A bit of help figuring out which of the above specializations to use.
 //
-// We begin by safely assuming types don't have a spare bit.
+// We begin by safely assuming types don't have a spare bit, unless they are
+// empty.
 template <typename T>
 struct HasFreeLSB {
-  static const bool value = false;
+  static const bool value = std::is_empty_v<T>;
 };
 
 // As an incomplete type, void* does not have a spare bit.
@@ -324,13 +377,12 @@ struct SelectResultImpl {
   static const PackingStrategy value =
       (HasFreeLSB<V>::value && HasFreeLSB<E>::value)
           ? PackingStrategy::LowBitTagIsError
-          : (UnusedZero<E>::value && sizeof(E) <= sizeof(uintptr_t))
-                ? PackingStrategy::NullIsOk
-                : (std::is_default_constructible_v<V> &&
-                   std::is_default_constructible_v<E> &&
-                   IsPackableVariant<V, E>::value)
-                      ? PackingStrategy::PackedVariant
-                      : PackingStrategy::Variant;
+      : (UnusedZero<E>::value && sizeof(E) <= sizeof(uintptr_t))
+          ? PackingStrategy::NullIsOk
+      : (std::is_default_constructible_v<V> &&
+         std::is_default_constructible_v<E> && IsPackableVariant<V, E>::value)
+          ? PackingStrategy::PackedVariant
+          : PackingStrategy::Variant;
 
   using Type = ResultImplementation<V, E, value>;
 };
@@ -414,10 +466,26 @@ class MOZ_MUST_USE_TYPE Result final {
   /** Create a success result. */
   MOZ_IMPLICIT Result(const V& aValue) : mImpl(aValue) { MOZ_ASSERT(isOk()); }
 
+  /** Create a success result in-place. */
+  template <typename... Args>
+  explicit Result(std::in_place_t, Args&&... aArgs)
+      : mImpl(std::in_place, std::forward<Args>(aArgs)...) {
+    MOZ_ASSERT(isOk());
+  }
+
   /** Create an error result. */
   explicit Result(E aErrorValue) : mImpl(std::move(aErrorValue)) {
     MOZ_ASSERT(isErr());
   }
+
+  /**
+   * Create a (success/error) result from another (success/error) result with a
+   * different but convertible error type. */
+  template <typename E2,
+            typename = std::enable_if_t<std::is_convertible_v<E2, E>>>
+  MOZ_IMPLICIT Result(Result<V, E2>&& aOther)
+      : mImpl(aOther.isOk() ? Impl{aOther.unwrap()}
+                            : Impl{aOther.unwrapErr()}) {}
 
   /**
    * Implementation detail of MOZ_TRY().
@@ -474,10 +542,22 @@ class MOZ_MUST_USE_TYPE Result final {
   }
 
   /** See the success value from this Result, which must be a success result. */
-  const V& inspect() const { return mImpl.inspect(); }
+  decltype(auto) inspect() const {
+    static_assert(!std::is_reference_v<
+                      std::invoke_result_t<decltype(&Impl::inspect), Impl>> ||
+                  std::is_const_v<std::remove_reference_t<
+                      std::invoke_result_t<decltype(&Impl::inspect), Impl>>>);
+    MOZ_ASSERT(isOk());
+    return mImpl.inspect();
+  }
 
   /** See the error value from this Result, which must be an error result. */
-  const E& inspectErr() const {
+  decltype(auto) inspectErr() const {
+    static_assert(
+        !std::is_reference_v<
+            std::invoke_result_t<decltype(&Impl::inspectErr), Impl>> ||
+        std::is_const_v<std::remove_reference_t<
+            std::invoke_result_t<decltype(&Impl::inspectErr), Impl>>>);
     MOZ_ASSERT(isErr());
     return mImpl.inspectErr();
   }
@@ -654,8 +734,8 @@ class MOZ_MUST_USE_TYPE Result final {
    *     MOZ_ASSERT(res.unwrapErr() == res2.unwrapErr());
    */
   template <typename F, typename = std::enable_if_t<detail::IsResult<
-                            decltype((*((F*)nullptr))(*((V*)nullptr)))>::value>>
-  auto andThen(F f) -> decltype(f(*((V*)nullptr))) {
+                            std::invoke_result_t<F, V&&>>::value>>
+  auto andThen(F f) -> std::invoke_result_t<F, V&&> {
     return MOZ_LIKELY(isOk()) ? f(unwrap()) : propagateErr();
   }
 };

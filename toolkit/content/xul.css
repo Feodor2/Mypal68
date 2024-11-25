@@ -86,7 +86,7 @@ iframe {
 
 window,
 page {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   -moz-box-orient: vertical;
 }
 
@@ -129,6 +129,13 @@ toolbar[mode="text"] .toolbarbutton-icon,
 .toolbarbutton-text[wrap="true"] {
   display: none;
   -moz-binding: none;
+}
+
+/********** button **********/
+
+button {
+  -moz-default-appearance: button;
+  appearance: auto;
 }
 
 /******** browser, editor, iframe ********/
@@ -497,7 +504,7 @@ panel[type="autocomplete-richlistbox"] {
   -moz-binding: none;
   -moz-box-orient: vertical;
   -moz-box-align: center;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 %endif

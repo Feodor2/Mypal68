@@ -17,7 +17,7 @@ buildscript {
         maven{ url uri('file:${MOZ_FETCHES_DIR}/android-gradle-dependencies/jcenter') }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.2.1'
+        classpath 'com.android.tools.build:gradle:3.4.2'
     }
 }
 allprojects {

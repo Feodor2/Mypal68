@@ -1548,9 +1548,16 @@ HttpBaseChannel::GetReferrerInfo(nsIReferrerInfo** aReferrerInfo) {
   return NS_OK;
 }
 
-nsresult HttpBaseChannel::SetReferrerInfo(nsIReferrerInfo* aReferrerInfo,
-                                          bool aClone, bool aCompute) {
-  ENSURE_CALLED_BEFORE_CONNECT();
+nsresult HttpBaseChannel::SetReferrerInfoInternal(
+    nsIReferrerInfo* aReferrerInfo, bool aClone, bool aCompute,
+    bool aRespectBeforeConnect) {
+  LOG(
+      ("HttpBaseChannel::SetReferrerInfoInternal [this=%p aClone(%d) "
+       "aCompute(%d)]\n",
+       this, aClone, aCompute));
+  if (aRespectBeforeConnect) {
+    ENSURE_CALLED_BEFORE_CONNECT();
+  }
 
   mReferrerInfo = aReferrerInfo;
 
@@ -1595,17 +1602,17 @@ nsresult HttpBaseChannel::SetReferrerInfo(nsIReferrerInfo* aReferrerInfo,
     return rv;
   }
 
-  return SetReferrerHeader(spec);
+  return SetReferrerHeader(spec, aRespectBeforeConnect);
 }
 
 NS_IMETHODIMP
 HttpBaseChannel::SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
-  return SetReferrerInfo(aReferrerInfo, true, true);
+  return SetReferrerInfoInternal(aReferrerInfo, true, true, true);
 }
 
 NS_IMETHODIMP
 HttpBaseChannel::SetReferrerInfoWithoutClone(nsIReferrerInfo* aReferrerInfo) {
-  return SetReferrerInfo(aReferrerInfo, false, true);
+  return SetReferrerInfoInternal(aReferrerInfo, false, true, true);
 }
 
 // Return the channel's proxy URI, or if it doesn't exist, the

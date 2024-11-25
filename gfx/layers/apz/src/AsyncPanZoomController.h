@@ -366,17 +366,6 @@ class AsyncPanZoomController {
   nsEventStatus HandleGestureEvent(const InputData& aEvent);
 
   /**
-   * Handle movement of the dynamic toolbar by |aDeltaY| over the time
-   * period from |aStartTimestampMs| to |aEndTimestampMs|.
-   * This is used to track velocities accurately in the presence of movement
-   * of the dynamic toolbar, since in such cases the finger can be moving
-   * relative to the screen even though no scrolling is occurring.
-   */
-  void HandleDynamicToolbarMovement(uint32_t aStartTimestampMs,
-                                    uint32_t aEndTimestampMs,
-                                    ParentLayerCoord aDeltaY);
-
-  /**
    * Start autoscrolling this APZC, anchored at the provided location.
    */
   void StartAutoscroll(const ScreenPoint& aAnchorLocation);
@@ -416,17 +405,6 @@ class AsyncPanZoomController {
    * See CancelAnimationFlags.
    */
   void CancelAnimation(CancelAnimationFlags aFlags = Default);
-
-  /**
-   * Adjusts the scroll position to compensate for a shift in the surface, such
-   * that the content appears to remain visually in the same position. i.e. if
-   * the surface moves up by 10 screenpixels, the scroll position should also
-   * move up by 10 pixels so that what used to be at the top of the surface is
-   * now 10 pixels down the surface. Will request that content be repainted
-   * if necessary but will not request a composite. It is assumed the dynamic
-   * toolbar animator will request the composite.
-   */
-  void AdjustScrollForSurfaceShift(const ScreenPoint& aShift);
 
   /**
    * Clear any overscroll on this APZC.
@@ -839,6 +817,17 @@ class AsyncPanZoomController {
    * Does any panning required due to a new touch event.
    */
   void TrackTouch(const MultiTouchInput& aEvent);
+
+  /**
+   * Register the start of a touch or pan gesture at the given position and
+   * time.
+   */
+  void StartTouch(const ParentLayerPoint& aPoint, uint32_t aTimestampMs);
+
+  /**
+   * Register the end of a touch or pan gesture at the given time.
+   */
+  void EndTouch(uint32_t aTimestampMs);
 
   /**
    * Utility function to send updated FrameMetrics to Gecko so that it can paint

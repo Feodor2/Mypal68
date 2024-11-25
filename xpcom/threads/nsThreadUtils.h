@@ -19,6 +19,7 @@
 #include "mozilla/Tuple.h"
 #include "nsCOMPtr.h"
 #include "nsICancelableRunnable.h"
+#include "nsIDiscardableRunnable.h"
 #include "nsIIdlePeriod.h"
 #include "nsIIdleRunnable.h"
 #include "nsINamed.h"
@@ -496,15 +497,44 @@ class Runnable : public nsIRunnable
   Runnable& operator=(const Runnable&&) = delete;
 };
 
-// This class is designed to be subclassed.
-class CancelableRunnable : public Runnable, public nsICancelableRunnable {
+// This is a base class for tasks that might not be run, such as those that may
+// be dispatched to workers.
+// The owner of an event target will call either Run() or OnDiscard()
+// exactly once.
+// Derived classes should override Run().  An OnDiscard() override may
+// provide cleanup when Run() will not be called.
+class DiscardableRunnable : public Runnable, public nsIDiscardableRunnable {
  public:
   NS_DECL_ISUPPORTS_INHERITED
+  // nsIDiscardableRunnable
+  void OnDiscard() override {}
+
+  DiscardableRunnable() = delete;
+  explicit DiscardableRunnable(const char* aName) : Runnable(aName) {}
+
+ protected:
+  virtual ~DiscardableRunnable() = default;
+
+ private:
+  DiscardableRunnable(const DiscardableRunnable&) = delete;
+  DiscardableRunnable& operator=(const DiscardableRunnable&) = delete;
+  DiscardableRunnable& operator=(const DiscardableRunnable&&) = delete;
+};
+
+// This class is designed to be subclassed.
+// Derived classes should override Run() and Cancel() to provide that
+// calling Run() after Cancel() is a no-op.
+class CancelableRunnable : public DiscardableRunnable,
+                           public nsICancelableRunnable {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  // nsIDiscardableRunnable
+  void OnDiscard() override;
   // nsICancelableRunnable
-  virtual nsresult Cancel() override;
+  virtual nsresult Cancel() override = 0;
 
   CancelableRunnable() = delete;
-  explicit CancelableRunnable(const char* aName) : Runnable(aName) {}
+  explicit CancelableRunnable(const char* aName) : DiscardableRunnable(aName) {}
 
  protected:
   virtual ~CancelableRunnable() = default;
@@ -516,12 +546,12 @@ class CancelableRunnable : public Runnable, public nsICancelableRunnable {
 };
 
 // This class is designed to be subclassed.
-class IdleRunnable : public CancelableRunnable, public nsIIdleRunnable {
+class IdleRunnable : public DiscardableRunnable, public nsIIdleRunnable {
  public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  IdleRunnable() : CancelableRunnable("IdleRunnable") {}
-  explicit IdleRunnable(const char* aName) : CancelableRunnable(aName) {}
+  IdleRunnable() : DiscardableRunnable("IdleRunnable") {}
+  explicit IdleRunnable(const char* aName) : DiscardableRunnable(aName) {}
 
  protected:
   virtual ~IdleRunnable() = default;
@@ -530,6 +560,25 @@ class IdleRunnable : public CancelableRunnable, public nsIIdleRunnable {
   IdleRunnable(const IdleRunnable&) = delete;
   IdleRunnable& operator=(const IdleRunnable&) = delete;
   IdleRunnable& operator=(const IdleRunnable&&) = delete;
+};
+
+// This class is designed to be subclassed.
+class CancelableIdleRunnable : public CancelableRunnable,
+                               public nsIIdleRunnable {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  CancelableIdleRunnable() : CancelableRunnable("CancelableIdleRunnable") {}
+  explicit CancelableIdleRunnable(const char* aName)
+      : CancelableRunnable(aName) {}
+
+ protected:
+  virtual ~CancelableIdleRunnable() = default;
+
+ private:
+  CancelableIdleRunnable(const CancelableIdleRunnable&) = delete;
+  CancelableIdleRunnable& operator=(const CancelableIdleRunnable&) = delete;
+  CancelableIdleRunnable& operator=(const CancelableIdleRunnable&&) = delete;
 };
 
 // This class is designed to be a wrapper of a real runnable to support event
@@ -720,12 +769,13 @@ class nsRunnableMethod
           Kind == mozilla::RunnableKind::Standard, mozilla::Runnable,
           std::conditional_t<Kind == mozilla::RunnableKind::Cancelable,
                              mozilla::CancelableRunnable,
-                             mozilla::IdleRunnable>>,
+                             mozilla::CancelableIdleRunnable>>,
       protected mozilla::detail::TimerBehaviour<Kind> {
   using BaseType = std::conditional_t<
       Kind == mozilla::RunnableKind::Standard, mozilla::Runnable,
       std::conditional_t<Kind == mozilla::RunnableKind::Cancelable,
-                         mozilla::CancelableRunnable, mozilla::IdleRunnable>>;
+                         mozilla::CancelableRunnable,
+                         mozilla::CancelableIdleRunnable>>;
 
  public:
   nsRunnableMethod(const char* aName) : BaseType(aName) {}
@@ -1172,7 +1222,8 @@ class RunnableMethodImpl final
   virtual ~RunnableMethodImpl() { Revoke(); };
   static void TimedOut(nsITimer* aTimer, void* aClosure) {
     static_assert(IsIdle(Kind), "Don't use me!");
-    RefPtr<IdleRunnable> r = static_cast<IdleRunnable*>(aClosure);
+    RefPtr<CancelableIdleRunnable> r =
+        static_cast<CancelableIdleRunnable*>(aClosure);
     r->SetDeadline(TimeStamp());
     r->Run();
     r->Cancel();

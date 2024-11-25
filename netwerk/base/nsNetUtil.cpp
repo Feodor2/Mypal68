@@ -1997,6 +1997,10 @@ bool NS_IsSafeTopLevelNav(nsIChannel* aChannel) {
       nsIContentPolicy::TYPE_DOCUMENT) {
     return false;
   }
+  return NS_IsSafeMethodNav(aChannel);
+}
+
+bool NS_IsSafeMethodNav(nsIChannel* aChannel) {
   RefPtr<HttpBaseChannel> baseChan = do_QueryObject(aChannel);
   if (!baseChan) {
     return false;

@@ -5,11 +5,12 @@
 #ifndef mozilla_mscom_ActivationContext_h
 #define mozilla_mscom_ActivationContext_h
 
+#include <utility>
+
 #include "mozilla/Attributes.h"
-#include "mozilla/Move.h"
-#include "mozilla/Result.h"
 
 #if defined(MOZILLA_INTERNAL_API)
+#  include "mozilla/ResultVariant.h"
 #  include "nsString.h"
 #endif  // defined(MOZILLA_INTERNAL_API)
 

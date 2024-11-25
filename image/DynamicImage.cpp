@@ -111,6 +111,9 @@ Maybe<AspectRatio> DynamicImage::GetIntrinsicRatio() {
 NS_IMETHODIMP_(Orientation)
 DynamicImage::GetOrientation() { return Orientation(); }
 
+NS_IMETHODIMP_(bool)
+DynamicImage::HandledOrientation() { return false; }
+
 NS_IMETHODIMP
 DynamicImage::GetType(uint16_t* aType) {
   *aType = imgIContainer::TYPE_RASTER;
@@ -140,7 +143,7 @@ DynamicImage::GetFrameAtSize(const IntSize& aSize, uint32_t aWhichFrame,
                              uint32_t aFlags) {
   RefPtr<DrawTarget> dt =
       gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(
-          aSize, SurfaceFormat::B8G8R8A8);
+          aSize, SurfaceFormat::OS_RGBA);
   if (!dt || !dt->IsValid()) {
     gfxWarning()
         << "DynamicImage::GetFrame failed in CreateOffscreenContentDrawTarget";
@@ -197,8 +200,8 @@ DynamicImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
 
   if (aSize == drawableSize) {
     gfxUtils::DrawPixelSnapped(aContext, mDrawable, SizeDouble(drawableSize),
-                               aRegion, SurfaceFormat::B8G8R8A8,
-                               aSamplingFilter, aOpacity);
+                               aRegion, SurfaceFormat::OS_RGBA, aSamplingFilter,
+                               aOpacity);
     return ImgDrawResult::SUCCESS;
   }
 
@@ -212,7 +215,7 @@ DynamicImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
   aContext->Multiply(gfxMatrix::Scaling(scale.width, scale.height));
 
   gfxUtils::DrawPixelSnapped(aContext, mDrawable, SizeDouble(drawableSize),
-                             region, SurfaceFormat::B8G8R8A8, aSamplingFilter,
+                             region, SurfaceFormat::OS_RGBA, aSamplingFilter,
                              aOpacity);
   return ImgDrawResult::SUCCESS;
 }
@@ -227,9 +230,9 @@ bool DynamicImage::StartDecodingWithResult(uint32_t aFlags,
   return true;
 }
 
-bool DynamicImage::RequestDecodeWithResult(uint32_t aFlags,
-                                           uint32_t aWhichFrame) {
-  return true;
+imgIContainer::DecodeResult DynamicImage::RequestDecodeWithResult(
+    uint32_t aFlags, uint32_t aWhichFrame) {
+  return imgIContainer::DECODE_SURFACE_AVAILABLE;
 }
 
 NS_IMETHODIMP

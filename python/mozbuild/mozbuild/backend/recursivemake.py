@@ -63,12 +63,15 @@ from ..frontend.data import (
     HostSharedLibrary,
     RustProgram,
     RustTests,
+    SandboxedWasmLibrary,
     SharedLibrary,
     SimpleProgram,
     Sources,
     StaticLibrary,
     TestManifest,
     VariablePassthru,
+    WasmGeneratedSources,
+    WasmSources,
     XPIDLModule,
 )
 from ..util import (
@@ -299,6 +302,7 @@ class RecursiveMakeTraversal(object):
         SubDirectories members.
 
         The default filter corresponds to a default recursive traversal.
+
         """
         filter = filter or self.default_filter
 
@@ -511,6 +515,30 @@ class RecursiveMakeBackend(CommonBackend):
                     backend_file.write('%s += %s\n' % (var, p))
             self._compile_graph[mozpath.join(
                 backend_file.relobjdir, 'host-objects')]
+        elif isinstance(obj, (WasmSources, WasmGeneratedSources)):
+            suffix_map = {
+                '.c': 'WASM_CSRCS',
+                '.cpp': 'WASM_CPPSRCS',
+            }
+            variables = [suffix_map[obj.canonical_suffix]]
+            if isinstance(obj, WasmGeneratedSources):
+                variables.append('GARBAGE')
+                base = backend_file.objdir
+                cls = ObjDirPath
+                prefix = '!'
+            else:
+                base = backend_file.srcdir
+                cls = SourcePath
+                prefix = ''
+            for f in sorted(obj.files):
+                p = self._pretty_path(
+                    cls(obj._context, prefix + mozpath.relpath(f, base)),
+                    backend_file,
+                )
+                for var in variables:
+                    backend_file.write('%s += %s\n' % (var, p))
+            self._compile_graph[mozpath.join(
+                backend_file.relobjdir, 'target-objects')]
         elif isinstance(obj, VariablePassthru):
             # Sorted so output is consistent and we don't bump mtimes.
             for k, v in sorted(obj.variables.items()):
@@ -715,6 +743,10 @@ class RecursiveMakeBackend(CommonBackend):
 
         elif isinstance(obj, StaticLibrary):
             self._process_static_library(obj, backend_file)
+            self._process_linked_libraries(obj, backend_file)
+
+        elif isinstance(obj, SandboxedWasmLibrary):
+            self._process_sandboxed_wasm_library(obj, backend_file)
             self._process_linked_libraries(obj, backend_file)
 
         elif isinstance(obj, HostLibrary):
@@ -1373,6 +1405,9 @@ class RecursiveMakeBackend(CommonBackend):
         if libdef.no_expand_lib:
             backend_file.write('NO_EXPAND_LIBS := 1\n')
 
+    def _process_sandboxed_wasm_library(self, libdef, backend_file):
+        backend_file.write('WASM_LIBRARY := %s\n' % libdef.lib_name)
+
     def _process_rust_library(self, libdef, backend_file):
         backend_file.write_once('%s := %s\n' % (libdef.LIB_FILE_VAR, libdef.import_name))
         backend_file.write_once('CARGO_FILE := $(srcdir)/Cargo.toml\n')
@@ -1404,73 +1439,35 @@ class RecursiveMakeBackend(CommonBackend):
             return os.path.normpath(mozpath.join(mozpath.relpath(lib.objdir, obj.objdir),
                                                  name))
 
-        objs, no_pgo_objs, shared_libs, os_libs, static_libs = self._expand_libs(obj)
+        objs, shared_libs, os_libs, static_libs = self._expand_libs(obj)
 
         obj_target = obj.name
         if isinstance(obj, Program):
             obj_target = self._pretty_path(obj.output_path, backend_file)
 
-        profile_gen_objs = []
-
-        if obj.KIND == 'target':
-            is_unit_test = isinstance(obj, BaseProgram) and obj.is_unit_test
-
-            doing_pgo = self.environment.substs.get('MOZ_PGO')
-            obj_suffix_change_needed = (self.environment.substs.get('GNU_CC') or
-                                        self.environment.substs.get('CLANG_CL'))
-            if doing_pgo and obj_suffix_change_needed:
-                # We use a different OBJ_SUFFIX for the profile generate phase on
-                # systems where the pgo generate phase requires instrumentation
-                # that can only be removed by recompiling objects. These get
-                # picked up via OBJS_VAR_SUFFIX in config.mk.
-                if not is_unit_test and not isinstance(obj, SimpleProgram):
-                    profile_gen_objs = [o if o in no_pgo_objs else '%s.%s' %
-                                        (mozpath.splitext(o)[0], 'i_o') for o in objs]
-
-        def write_obj_deps(target, objs_ref, pgo_objs_ref):
-            if pgo_objs_ref:
-                backend_file.write('ifdef MOZ_PROFILE_GENERATE\n')
-                backend_file.write('%s: %s\n' % (target, pgo_objs_ref))
-                backend_file.write('else\n')
-                backend_file.write('%s: %s\n' % (target, objs_ref))
-                backend_file.write('endif\n')
-            else:
-                backend_file.write('%s: %s\n' % (target, objs_ref))
-
         objs_ref = ' \\\n    '.join(os.path.relpath(o, obj.objdir)
                                     for o in objs)
-        pgo_objs_ref = ' \\\n    '.join(os.path.relpath(o, obj.objdir)
-                                        for o in profile_gen_objs)
         # Don't bother with a list file if we're only linking objects built
         # in this directory or building a real static library. This
         # accommodates clang-plugin, where we would otherwise pass an
         # incorrect list file format to the host compiler as well as when
         # creating an archive with AR, which doesn't understand list files.
-        if (objs == obj.objs and not isinstance(obj, (HostLibrary, StaticLibrary)) or
-            isinstance(obj, StaticLibrary) and obj.no_expand_lib):
+        if (objs == obj.objs and not isinstance(obj, (HostLibrary, StaticLibrary,
+                                                      SandboxedWasmLibrary)) or
+            isinstance(obj, (StaticLibrary, SandboxedWasmLibrary)) and
+            obj.no_expand_lib):
             backend_file.write_once('%s_OBJS := %s\n' % (obj.name,
                                                          objs_ref))
-            if profile_gen_objs:
-                backend_file.write_once('%s_PGO_OBJS := %s\n' % (obj.name,
-                                                                 pgo_objs_ref))
-            write_obj_deps(obj_target, objs_ref, pgo_objs_ref)
-        elif not isinstance(obj, (HostLibrary, StaticLibrary)):
+            backend_file.write('%s: %s\n' % (obj_target, objs_ref))
+        elif not isinstance(obj, (HostLibrary, StaticLibrary,
+                                  SandboxedWasmLibrary)):
             list_file_path = '%s.list' % obj.name.replace('.', '_')
             list_file_ref = self._make_list_file(obj.KIND, obj.objdir, objs,
                                                  list_file_path)
             backend_file.write_once('%s_OBJS := %s\n' %
                                     (obj.name, list_file_ref))
             backend_file.write_once('%s: %s\n' % (obj_target, list_file_path))
-            if profile_gen_objs:
-                pgo_list_file_path = '%s_pgo.list' % obj.name.replace('.', '_')
-                pgo_list_file_ref = self._make_list_file(obj.KIND, obj.objdir,
-                                                         profile_gen_objs,
-                                                         pgo_list_file_path)
-                backend_file.write_once('%s_PGO_OBJS := %s\n' %
-                                        (obj.name, pgo_list_file_ref))
-                backend_file.write_once('%s: %s\n' % (obj_target,
-                                                      pgo_list_file_path))
-            write_obj_deps(obj_target, objs_ref, pgo_objs_ref)
+            backend_file.write('%s: %s\n' % (obj_target, objs_ref))
 
         for lib in shared_libs:
             assert obj.KIND != 'host'

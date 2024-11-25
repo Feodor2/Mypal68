@@ -76,7 +76,6 @@ using mozilla::dom::ContentParent;
 #include "AndroidBridge.h"
 #include "AndroidBridgeUtilities.h"
 #include "AndroidUiThread.h"
-#include "FennecJNINatives.h"
 #include "GeneratedJNINatives.h"
 #include "GeckoEditableSupport.h"
 #include "KeyEvent.h"
@@ -276,7 +275,7 @@ class nsWindow::NativePtr<Impl>::Locked final : private MutexAutoLock {
 
 class nsWindow::GeckoViewSupport final
     : public GeckoSession::Window::Natives<GeckoViewSupport>,
-      public SupportsWeakPtr<GeckoViewSupport> {
+      public SupportsWeakPtr {
   nsWindow& window;
 
   // We hold a WeakRef because we want to allow the
@@ -287,9 +286,6 @@ class nsWindow::GeckoViewSupport final
 
  public:
   typedef GeckoSession::Window::Natives<GeckoViewSupport> Base;
-  typedef SupportsWeakPtr<GeckoViewSupport> SupportsWeakPtr;
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(GeckoViewSupport);
 
   template <typename Functor>
   static void OnNativeCall(Functor&& aCall) {
@@ -523,10 +519,10 @@ class nsWindow::NPZCSupport final
 
     switch (button) {
       case java::sdk::MotionEvent::BUTTON_PRIMARY:
-        result = MouseInput::LEFT_BUTTON;
+        result = MouseInput::PRIMARY_BUTTON;
         break;
       case java::sdk::MotionEvent::BUTTON_SECONDARY:
-        result = MouseInput::RIGHT_BUTTON;
+        result = MouseInput::SECONDARY_BUTTON;
         break;
       case java::sdk::MotionEvent::BUTTON_TERTIARY:
         result = MouseInput::MIDDLE_BUTTON;
@@ -542,10 +538,10 @@ class nsWindow::NPZCSupport final
     int16_t result = 0;
 
     if (buttons & java::sdk::MotionEvent::BUTTON_PRIMARY) {
-      result |= MouseButtonsFlag::eLeftFlag;
+      result |= MouseButtonsFlag::ePrimaryFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_SECONDARY) {
-      result |= MouseButtonsFlag::eRightFlag;
+      result |= MouseButtonsFlag::eSecondaryFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_TERTIARY) {
       result |= MouseButtonsFlag::eMiddleFlag;
@@ -1963,9 +1959,9 @@ void nsWindow::SetNativeData(uint32_t aDataType, uintptr_t aVal) {
 void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
   if (aEvent.mMessage == eTouchStart && aEvent.mTouches.Length() == 1) {
     // Since touch events don't get retargeted by PositionedEventTargeting.cpp
-    // code on Fennec, we dispatch a dummy mouse event that *does* get
-    // retargeted. The Fennec browser.js code can use this to activate the
-    // highlight element in case the this touchstart is the start of a tap.
+    // code, we dispatch a dummy mouse event that *does* get retargeted.
+    // Front-end code can use this to activate the highlight element in case
+    // this touchstart is the start of a tap.
     WidgetMouseEvent hittest(true, eMouseHitTest, this,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;

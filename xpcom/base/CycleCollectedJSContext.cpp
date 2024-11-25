@@ -352,8 +352,8 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
         init.mReason = JS::GetPromiseResult(aPromise);
 
         RefPtr<PromiseRejectionEvent> event =
-            PromiseRejectionEvent::Constructor(
-                owner, NS_LITERAL_STRING("rejectionhandled"), init);
+            PromiseRejectionEvent::Constructor(owner, u"rejectionhandled"_ns,
+                                               init);
 
         RefPtr<AsyncEventDispatcher> asyncDispatcher =
             new AsyncEventDispatcher(owner, event);
@@ -499,8 +499,6 @@ void CycleCollectedJSContext::IsIdleGCTaskNeeded() const {
       }
       return NS_OK;
     }
-
-    nsresult Cancel() override { return NS_OK; }
   };
 
   if (Runtime()->IsIdleGCTaskNeeded()) {
@@ -701,8 +699,8 @@ NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
         init.mCancelable = true;
 
         RefPtr<PromiseRejectionEvent> event =
-            PromiseRejectionEvent::Constructor(
-                target, NS_LITERAL_STRING("unhandledrejection"), init);
+            PromiseRejectionEvent::Constructor(target, u"unhandledrejection"_ns,
+                                               init);
         // We don't use the result of dispatching event here to check whether to
         // report the Promise to console.
         target->DispatchEvent(*event);
@@ -736,15 +734,16 @@ nsresult CycleCollectedJSContext::NotifyUnhandledRejections::Cancel() {
   return NS_OK;
 }
 
-class FinalizationRegistryCleanup::CleanupRunnable : public CancelableRunnable {
+class FinalizationRegistryCleanup::CleanupRunnable
+    : public DiscardableRunnable {
  public:
   explicit CleanupRunnable(FinalizationRegistryCleanup* aCleanupWork)
-      : CancelableRunnable("CleanupRunnable"), mCleanupWork(aCleanupWork) {}
+      : DiscardableRunnable("CleanupRunnable"), mCleanupWork(aCleanupWork) {}
 
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
   // bug 1535398.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHODIMP Run() {
+  NS_IMETHOD Run() override {
     mCleanupWork->DoCleanup();
     return NS_OK;
   }

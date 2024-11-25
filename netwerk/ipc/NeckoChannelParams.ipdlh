@@ -337,6 +337,7 @@ struct CookieStruct
   bool      isSession;
   bool      isSecure;
   int32_t   sameSite;
+  int32_t   rawSameSite;
 };
 
 } // namespace ipc

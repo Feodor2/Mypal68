@@ -112,14 +112,6 @@ bool UiCompositorControllerChild::SetFixedBottomOffset(int32_t aOffset) {
   return SendFixedBottomOffset(aOffset);
 }
 
-bool UiCompositorControllerChild::SetPinned(const bool& aPinned,
-                                            const int32_t& aReason) {
-  if (!mIsOpen) {
-    return false;
-  }
-  return SendPinned(aPinned, aReason);
-}
-
 bool UiCompositorControllerChild::ToolbarAnimatorMessageFromUI(
     const int32_t& aMessage) {
   if (!mIsOpen) {
@@ -128,10 +120,9 @@ bool UiCompositorControllerChild::ToolbarAnimatorMessageFromUI(
 
   if (aMessage == IS_COMPOSITOR_CONTROLLER_OPEN) {
     RecvToolbarAnimatorMessageFromCompositor(COMPOSITOR_CONTROLLER_OPEN);
-    return true;
   }
 
-  return SendToolbarAnimatorMessageFromUI(aMessage);
+  return true;
 }
 
 bool UiCompositorControllerChild::SetDefaultClearColor(const uint32_t& aColor) {
@@ -163,15 +154,6 @@ bool UiCompositorControllerChild::EnableLayerUpdateNotifications(
   return SendEnableLayerUpdateNotifications(aEnable);
 }
 
-bool UiCompositorControllerChild::ToolbarPixelsToCompositor(
-    Shmem& aMem, const ScreenIntSize& aSize) {
-  if (!mIsOpen) {
-    return false;
-  }
-
-  return SendToolbarPixelsToCompositor(std::move(aMem), aSize);
-}
-
 void UiCompositorControllerChild::Destroy() {
   if (!IsOnUiThread()) {
     GetUiThread()->Dispatch(
@@ -198,12 +180,6 @@ void UiCompositorControllerChild::Destroy() {
 
 void UiCompositorControllerChild::SetBaseWidget(nsBaseWidget* aWidget) {
   mWidget = aWidget;
-}
-
-bool UiCompositorControllerChild::AllocPixelBuffer(const int32_t aSize,
-                                                   Shmem* aMem) {
-  MOZ_ASSERT(aSize > 0);
-  return AllocShmem(aSize, ipc::SharedMemory::TYPE_BASIC, aMem);
 }
 
 bool UiCompositorControllerChild::DeallocPixelBuffer(Shmem& aMem) {

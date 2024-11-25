@@ -245,9 +245,9 @@ class MouseInput : public InputData {
 
   MOZ_DEFINE_ENUM_AT_CLASS_SCOPE(
     ButtonType, (
-      LEFT_BUTTON,
+      PRIMARY_BUTTON,
       MIDDLE_BUTTON,
-      RIGHT_BUTTON,
+      SECONDARY_BUTTON,
       NONE
   ));
   // clang-format on

@@ -301,6 +301,9 @@ bool SVGDrawingCallback::operator()(gfxContext* aContext,
   if (!(mImageFlags & imgIContainer::FLAG_SYNC_DECODE)) {
     renderDocFlags |= RenderDocumentFlags::AsyncDecodeImages;
   }
+  if (mImageFlags & imgIContainer::FLAG_HIGH_QUALITY_SCALING) {
+    renderDocFlags |= RenderDocumentFlags::UseHighQualityScaling;
+  }
 
   presShell->RenderDocument(svgRect, renderDocFlags,
                             NS_RGBA(0, 0, 0, 0),  // transparent
@@ -648,6 +651,9 @@ Maybe<AspectRatio> VectorImage::GetIntrinsicRatio() {
 
 NS_IMETHODIMP_(Orientation)
 VectorImage::GetOrientation() { return Orientation(); }
+
+NS_IMETHODIMP_(bool)
+VectorImage::HandledOrientation() { return false; }
 
 //******************************************************************************
 NS_IMETHODIMP
@@ -1099,8 +1105,8 @@ already_AddRefed<SourceSurface> VectorImage::CreateSurface(
   // our gfxDrawable into it. (We use FILTER_NEAREST since we never scale here.)
   auto frame = MakeNotNull<RefPtr<imgFrame>>();
   nsresult rv = frame->InitWithDrawable(
-      aSVGDrawable, aParams.size, SurfaceFormat::B8G8R8A8,
-      SamplingFilter::POINT, aParams.flags, backend);
+      aSVGDrawable, aParams.size, SurfaceFormat::OS_RGBA, SamplingFilter::POINT,
+      aParams.flags, backend);
 
   // If we couldn't create the frame, it was probably because it would end
   // up way too big. Generally it also wouldn't fit in the cache, but the prefs
@@ -1129,12 +1135,15 @@ already_AddRefed<SourceSurface> VectorImage::CreateSurface(
   NotNull<RefPtr<ISurfaceProvider>> provider =
       MakeNotNull<SimpleSurfaceProvider*>(ImageKey(this), surfaceKey, frame);
 
-  if (SurfaceCache::Insert(provider) == InsertOutcome::SUCCESS &&
-      aParams.size != aParams.drawSize) {
-    // We created a new surface that wasn't the size we requested, which means
-    // we entered factor-of-2 mode. We should purge any surfaces we no longer
-    // need rather than waiting for the cache to expire them.
-    SurfaceCache::PruneImage(ImageKey(this));
+  if (SurfaceCache::Insert(provider) == InsertOutcome::SUCCESS) {
+    if (aParams.size != aParams.drawSize) {
+      // We created a new surface that wasn't the size we requested, which means
+      // we entered factor-of-2 mode. We should purge any surfaces we no longer
+      // need rather than waiting for the cache to expire them.
+      SurfaceCache::PruneImage(ImageKey(this));
+    }
+  } else {
+    aWillCache = false;
   }
 
   return surface.forget();
@@ -1180,7 +1189,7 @@ void VectorImage::Show(gfxDrawable* aDrawable,
   MOZ_ASSERT(aDrawable, "Should have a gfxDrawable by now");
   gfxUtils::DrawPixelSnapped(aParams.context, aDrawable,
                              SizeDouble(aParams.size), region,
-                             SurfaceFormat::B8G8R8A8, aParams.samplingFilter,
+                             SurfaceFormat::OS_RGBA, aParams.samplingFilter,
                              aParams.flags, aParams.opacity, false);
 
 #ifdef DEBUG
@@ -1210,10 +1219,19 @@ bool VectorImage::StartDecodingWithResult(uint32_t aFlags,
   return mIsFullyLoaded;
 }
 
-bool VectorImage::RequestDecodeWithResult(uint32_t aFlags,
-                                          uint32_t aWhichFrame) {
-  // SVG images are ready to draw when they are loaded
-  return mIsFullyLoaded;
+imgIContainer::DecodeResult VectorImage::RequestDecodeWithResult(
+    uint32_t aFlags, uint32_t aWhichFrame) {
+  // SVG images are ready to draw when they are loaded and don't have an error.
+
+  if (mError) {
+    return imgIContainer::DECODE_REQUEST_FAILED;
+  }
+
+  if (!mIsFullyLoaded) {
+    return imgIContainer::DECODE_REQUESTED;
+  }
+
+  return imgIContainer::DECODE_SURFACE_AVAILABLE;
 }
 
 NS_IMETHODIMP

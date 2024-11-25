@@ -62,6 +62,14 @@
 #define _PR_SI_ARCHITECTURE "riscv64"
 #elif defined(__arc__)
 #define _PR_SI_ARCHITECTURE "arc"
+#elif defined(__nios2__)
+#define _PR_SI_ARCHITECTURE "nios2"
+#elif defined(__microblaze__)
+#define _PR_SI_ARCHITECTURE "microblaze"
+#elif defined(__nds32__)
+#define _PR_SI_ARCHITECTURE "nds32"
+#elif defined(__xtensa__)
+#define _PR_SI_ARCHITECTURE "xtensa"
 #else
 #error "Unknown CPU architecture"
 #endif

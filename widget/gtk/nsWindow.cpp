@@ -63,11 +63,6 @@
 
 #include "nsGkAtoms.h"
 
-#ifdef MOZ_ENABLE_STARTUP_NOTIFICATION
-#  define SN_API_NOT_YET_FROZEN
-#  include <startup-notification-1.0/libsn/sn.h>
-#endif
-
 #include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Preferences.h"
@@ -1389,8 +1384,6 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
 
 typedef void (*SetUserTimeFunc)(GdkWindow* aWindow, guint32 aTimestamp);
 
-// This will become obsolete when new GTK APIs are widely supported,
-// as described here: http://bugzilla.gnome.org/show_bug.cgi?id=347375
 static void SetUserTimeAndStartupIDForActivatedWindow(GtkWidget* aWindow) {
   nsGTKToolkit* GTKToolkit = nsGTKToolkit::GetToolkit();
   if (!GTKToolkit) return;
@@ -1410,35 +1403,7 @@ static void SetUserTimeAndStartupIDForActivatedWindow(GtkWidget* aWindow) {
     return;
   }
 
-#if defined(MOZ_ENABLE_STARTUP_NOTIFICATION)
-  // TODO - Implement for non-X11 Gtk backends (Bug 726479)
-  if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-    GdkWindow* gdkWindow = gtk_widget_get_window(aWindow);
-
-    GdkScreen* screen = gdk_window_get_screen(gdkWindow);
-    SnDisplay* snd = sn_display_new(
-        gdk_x11_display_get_xdisplay(gdk_window_get_display(gdkWindow)),
-        nullptr, nullptr);
-    if (!snd) return;
-    SnLauncheeContext* ctx = sn_launchee_context_new(
-        snd, gdk_screen_get_number(screen), desktopStartupID.get());
-    if (!ctx) {
-      sn_display_unref(snd);
-      return;
-    }
-
-    if (sn_launchee_context_get_id_has_timestamp(ctx)) {
-      gdk_x11_window_set_user_time(gdkWindow,
-                                   sn_launchee_context_get_timestamp(ctx));
-    }
-
-    sn_launchee_context_setup_window(ctx, gdk_x11_window_get_xid(gdkWindow));
-    sn_launchee_context_complete(ctx);
-
-    sn_launchee_context_unref(ctx);
-    sn_display_unref(snd);
-  }
-#endif
+  gtk_window_set_startup_id(GTK_WINDOW(aWindow), desktopStartupID.get());
 
   // If we used the startup ID, that already contains the focus timestamp;
   // we don't want to reuse the timestamp next time we raise the window
@@ -2660,7 +2625,7 @@ void nsWindow::DispatchMissedButtonReleases(GdkEventCrossing* aGdkEvent) {
       int16_t buttonType;
       switch (buttonMask) {
         case GDK_BUTTON1_MASK:
-          buttonType = MouseButton::eLeft;
+          buttonType = MouseButton::ePrimary;
           break;
         case GDK_BUTTON2_MASK:
           buttonType = MouseButton::eMiddle;
@@ -2668,7 +2633,7 @@ void nsWindow::DispatchMissedButtonReleases(GdkEventCrossing* aGdkEvent) {
         default:
           NS_ASSERTION(buttonMask == GDK_BUTTON3_MASK,
                        "Unexpected button mask");
-          buttonType = MouseButton::eRight;
+          buttonType = MouseButton::eSecondary;
       }
 
       LOG(("Synthesized button %u release on %p\n", guint(buttonType + 1),
@@ -2735,7 +2700,7 @@ static guint ButtonMaskFromGDKButton(guint button) {
 
 void nsWindow::DispatchContextMenuEventFromMouseEvent(uint16_t domButton,
                                                       GdkEventButton* aEvent) {
-  if (domButton == MouseButton::eRight && MOZ_LIKELY(!mIsDestroyed)) {
+  if (domButton == MouseButton::eSecondary && MOZ_LIKELY(!mIsDestroyed)) {
     WidgetMouseEvent contextMenuEvent(true, eContextMenu, this,
                                       WidgetMouseEvent::eReal);
     InitButtonEvent(contextMenuEvent, aEvent);
@@ -2775,13 +2740,13 @@ void nsWindow::OnButtonPressEvent(GdkEventButton* aEvent) {
   uint16_t domButton;
   switch (aEvent->button) {
     case 1:
-      domButton = MouseButton::eLeft;
+      domButton = MouseButton::ePrimary;
       break;
     case 2:
       domButton = MouseButton::eMiddle;
       break;
     case 3:
-      domButton = MouseButton::eRight;
+      domButton = MouseButton::eSecondary;
       break;
     // These are mapped to horizontal scroll
     case 6:
@@ -2811,7 +2776,7 @@ void nsWindow::OnButtonPressEvent(GdkEventButton* aEvent) {
   LayoutDeviceIntPoint refPoint =
       GdkEventCoordsToDevicePixels(aEvent->x, aEvent->y);
   if (mDraggableRegion.Contains(refPoint.x, refPoint.y) &&
-      domButton == MouseButton::eLeft &&
+      domButton == MouseButton::ePrimary &&
       eventStatus != nsEventStatus_eConsumeNoDefault) {
     mWindowShouldStartDragging = true;
   }
@@ -2832,13 +2797,13 @@ void nsWindow::OnButtonReleaseEvent(GdkEventButton* aEvent) {
   uint16_t domButton;
   switch (aEvent->button) {
     case 1:
-      domButton = MouseButton::eLeft;
+      domButton = MouseButton::ePrimary;
       break;
     case 2:
       domButton = MouseButton::eMiddle;
       break;
     case 3:
-      domButton = MouseButton::eRight;
+      domButton = MouseButton::eSecondary;
       break;
     default:
       return;
@@ -2863,7 +2828,7 @@ void nsWindow::OnButtonReleaseEvent(GdkEventButton* aEvent) {
   // Check if mouse position in titlebar and doubleclick happened to
   // trigger restore/maximize.
   if (!defaultPrevented && mDrawInTitlebar &&
-      event.mButton == MouseButton::eLeft && event.mClickCount == 2 &&
+      event.mButton == MouseButton::ePrimary && event.mClickCount == 2 &&
       mDraggableRegion.Contains(pos.x, pos.y)) {
     if (mSizeState == nsSizeMode_Maximized) {
       SetSizeMode(nsSizeMode_Normal);
@@ -6168,7 +6133,7 @@ void nsWindow::EndRemoteDrawingInRegion(
 // Code shared begin BeginMoveDrag and BeginResizeDrag
 bool nsWindow::GetDragInfo(WidgetMouseEvent* aMouseEvent, GdkWindow** aWindow,
                            gint* aButton, gint* aRootX, gint* aRootY) {
-  if (aMouseEvent->mButton != MouseButton::eLeft) {
+  if (aMouseEvent->mButton != MouseButton::ePrimary) {
     // we can only begin a move drag with the left mouse button
     return false;
   }

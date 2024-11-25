@@ -26,7 +26,9 @@ _BCJ_OPTIONS = {
 }
 
 
-def repackage_mar(topsrcdir, package, mar, output, mar_format='lzma', arch=None):
+def repackage_mar(
+    topsrcdir, package, mar, output, mar_format="lzma", arch=None, mar_channel_id=None
+):
     if not zipfile.is_zipfile(package) and not tarfile.is_tarfile(package):
         raise Exception("Package file %s is not a valid .zip or .tar file." % package)
     if arch and arch not in _BCJ_OPTIONS:
@@ -60,12 +62,14 @@ def repackage_mar(topsrcdir, package, mar, output, mar_format='lzma', arch=None)
         make_full_update = mozpath.join(topsrcdir, 'tools/update-packaging/make_full_update.sh')
 
         env = os.environ.copy()
-        env['MOZ_FULL_PRODUCT_VERSION'] = get_application_ini_value(tmpdir, 'App', 'Version')
+        env['MOZ_PRODUCT_VERSION'] = get_application_ini_value(tmpdir, 'App', 'Version')
         env['MAR'] = mozpath.normpath(mar)
         if arch:
             env['BCJ_OPTIONS'] = ' '.join(_BCJ_OPTIONS[arch])
         if mar_format == 'bz2':
             env['MAR_OLD_FORMAT'] = '1'
+        if mar_channel_id:
+            env['MAR_CHANNEL_ID'] = mar_channel_id
         # The Windows build systems have xz installed but it isn't in the path
         # like it is on Linux and Mac OS X so just use the XZ env var so the mar
         # generation scripts can find it.

@@ -112,15 +112,12 @@ def check_build_environment(help, dist):
 
 set_config('TOPSRCDIR', check_build_environment.topsrcdir)
 set_config('TOPOBJDIR', check_build_environment.topobjdir)
-set_config('MOZ_BUILD_ROOT', check_build_environment.topobjdir)
 set_config('DIST', check_build_environment.dist)
 
 add_old_configure_assignment(
     '_topsrcdir', check_build_environment.topsrcdir)
 add_old_configure_assignment(
     '_objdir', check_build_environment.topobjdir)
-add_old_configure_assignment(
-    'MOZ_BUILD_ROOT', check_build_environment.topobjdir)
 add_old_configure_assignment(
     'DIST', check_build_environment.dist)
 
@@ -670,9 +667,6 @@ def split_triplet(triplet, allow_unknown=False):
     elif os.startswith('darwin'):
         canonical_kernel = 'Darwin'
         canonical_os = 'OSX'
-    elif os.startswith('ios'):
-        canonical_kernel = 'Darwin'
-        canonical_os = 'iOS'
     elif os.startswith('dragonfly'):
         canonical_os = canonical_kernel = 'DragonFly'
     elif os.startswith('freebsd'):
@@ -916,24 +910,14 @@ set_config('HOST_MAJOR_VERSION', host_os_kernel_major_version)
 
 
 @depends(host)
-def host_for_old_configure(host):
+def host_for_sub_configure(host):
     return '--host=%s' % host.alias
 
 
-add_old_configure_arg(host_for_old_configure)
-
-
 @depends(target)
-def target_for_old_configure(target):
+def target_for_sub_configure(target):
     target_alias = target.alias
-    # old-configure does plenty of tests against $target and $target_os
-    # and expects darwin for iOS, so make it happy.
-    if target.os == 'iOS':
-        target_alias = target_alias.replace('-ios', '-darwin')
     return '--target=%s' % target_alias
-
-
-add_old_configure_arg(target_for_old_configure)
 
 
 # These variables are for compatibility with the current moz.builds and
@@ -1019,15 +1003,6 @@ set_define('XP_DARWIN', target_is_darwin)
 
 
 @depends(target)
-def target_is_ios(target):
-    if target.kernel == 'Darwin' and target.os == 'iOS':
-        return True
-
-
-set_define('XP_IOS', target_is_ios)
-
-
-@depends(target)
 def target_is_osx(target):
     if target.kernel == 'Darwin' and target.os == 'OSX':
         return True
@@ -1043,6 +1018,15 @@ def target_is_linux(target):
 
 
 set_define('XP_LINUX', target_is_linux)
+
+
+@depends(target)
+def target_is_android(target):
+    if target.os == 'Android':
+        return True
+
+
+set_define('ANDROID', target_is_android)
 
 
 @depends(target)
@@ -1107,23 +1091,8 @@ set_define('MOZ_BUILD_APP', build_project)
 add_old_configure_assignment('MOZ_BUILD_APP', build_project)
 
 
-# This is temporary until js/src/configure and configure are merged.
-# Use instead of option() in js/moz.configure and more generally, for
-# options that are shared between configure and js/src/configure.
-@template
-def js_option(*args, **kwargs):
-    opt = option(*args, **kwargs)
-
-    @depends(opt.option, build_project, when=kwargs.get('when'))
-    def js_option(value, build_project):
-        if build_project != 'js':
-            return value.format(opt.option)
-
-    add_old_configure_arg(js_option)
-
-
-js_option(env='MOZILLA_OFFICIAL',
-          help='Build an official release')
+option(env='MOZILLA_OFFICIAL',
+       help='Build an official release')
 
 
 @depends('MOZILLA_OFFICIAL')
@@ -1268,9 +1237,9 @@ set_define('MOZ_UPDATE_CHANNEL', update_channel)
 add_old_configure_assignment('MOZ_UPDATE_CHANNEL', update_channel)
 
 
-js_option(env='MOZBUILD_STATE_PATH', nargs=1,
-          help='Path to a persistent state directory for the build system '
-               'and related tools')
+option(env='MOZBUILD_STATE_PATH', nargs=1,
+       help='Path to a persistent state directory for the build system '
+            'and related tools')
 
 
 @depends('MOZBUILD_STATE_PATH', '--help')
@@ -1314,7 +1283,25 @@ def project_flag(env=None, set_for_old_configure=False,
 
 # milestone.is_nightly corresponds to cases NIGHTLY_BUILD is set.
 
-
 @depends(milestone)
 def enabled_in_nightly(milestone):
     return milestone.is_nightly
+
+# Branding
+# ==============================================================
+option('--with-app-basename', env='MOZ_APP_BASENAME', nargs=1,
+       help='Typically stays consistent for multiple branded versions of a '
+       'given application (e.g. Aurora and Firefox both use "Firefox"), but '
+       'may vary for full rebrandings (e.g. Iceweasel). Used for '
+       'application.ini\'s "Name" field, which controls profile location in '
+       'the absence of a "Profile" field (see below), and various system '
+       'integration hooks (Unix remoting, Windows MessageWindow name, etc.')
+
+@depends('--with-app-basename', target_is_android)
+def moz_app_basename(value, target_is_android):
+    if value:
+        return value[0]
+    return 'Mypal'
+
+set_config('MOZ_APP_BASENAME', moz_app_basename,
+           when=depends(build_project)(lambda p: p != 'js'))

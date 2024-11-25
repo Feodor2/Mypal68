@@ -3529,7 +3529,10 @@ void Preferences::InitializeUserPrefs() {
 
   // Don't set mCurrentFile until we're done so that dirty flags work properly.
   sPreferences->mCurrentFile = prefsFile.forget();
+}
 
+/* static */
+void Preferences::FinishInitializingUserPrefs() {
   sPreferences->NotifyServiceObservers(NS_PREFSERVICE_READ_TOPIC_ID);
 
 }

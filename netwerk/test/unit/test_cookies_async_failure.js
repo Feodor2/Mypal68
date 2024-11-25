@@ -174,7 +174,7 @@ function* run_test_1(generator) {
     cookie.isSession,
     cookie.expiry,
     {},
-    Ci.nsICookie.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_NONE
   );
 
   // Check that the cookie service accepted the new cookie.

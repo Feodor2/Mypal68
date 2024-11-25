@@ -236,7 +236,7 @@ def use_fetches(config, jobs):
 
         env = worker.setdefault('env', {})
         env['MOZ_FETCHES'] = {'task-reference': json.dumps(job_fetches, sort_keys=True)}
-
+        # The path is normalized to an absolute path in run-task
         env.setdefault('MOZ_FETCHES_DIR', 'fetches')
 
         yield job

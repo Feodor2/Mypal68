@@ -54,7 +54,7 @@ TEST(Atoms, 16vs8)
 
 TEST(Atoms, Null)
 {
-  nsAutoString str(NS_LITERAL_STRING("string with a \0 char"));
+  nsAutoString str(u"string with a \0 char"_ns);
   nsDependentString strCut(str.get());
 
   EXPECT_FALSE(str.Equals(strCut));

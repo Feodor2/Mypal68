@@ -14,7 +14,9 @@ libs:: make-package
 endif
 
 ifdef MOZ_AUTOMATION
+# This allows `RUN_{FIND_DUPES,MOZHARNESS_ZIP}=1 ./mach package` to test locally.
 RUN_FIND_DUPES ?= $(MOZ_AUTOMATION)
+RUN_MOZHARNESS_ZIP ?= $(MOZ_AUTOMATION)
 endif
 
 export USE_ELF_HACK ELF_HACK_FLAGS
@@ -37,10 +39,12 @@ ifdef RUN_FIND_DUPES
 	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/find-dupes.py $(DEFINES) $(ACDEFINES) $(MOZ_PKG_DUPEFLAGS) $(DIST)/$(MOZ_PKG_DIR)
 endif # RUN_FIND_DUPES
 ifndef MOZ_IS_COMM_TOPDIR
+ifdef RUN_MOZHARNESS_ZIP
 	# Package mozharness
 	$(call py_action,test_archive, \
 		mozharness \
 		$(ABS_DIST)/$(PKG_PATH)$(MOZHARNESS_PACKAGE))
+endif # RUN_MOZHARNESS_ZIP
 endif # MOZ_IS_COMM_TOPDIR
 ifdef MOZ_PACKAGE_JSSHELL
 	# Package JavaScript Shell
@@ -80,7 +84,7 @@ ifdef ENABLE_MOZSEARCH_PLUGIN
           find . -type d -name save-analysis | xargs zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_ANALYSIS_BASENAME).zip'
 	@echo 'Generating mozsearch rust stdlib analysis tarball ($(RUST_TARGET))...'
 	$(RM) $(MOZSEARCH_RUST_STDLIB_BASENAME).zip
-	cd $(topsrcdir)/rustc/lib && \
+	cd $(MOZ_FETCHES_DIR)/rustc/lib && \
           zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_STDLIB_BASENAME).zip' \
           rustlib/$(RUST_TARGET)/analysis/ rustlib/src/
 	@echo 'Generating mozsearch distinclude map...'
@@ -111,8 +115,10 @@ ifdef MOZ_AUTOMATION
 	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/informulate.py \
 		$(MOZ_BUILDINFO_FILE) $(MOZ_BUILDHUB_JSON) $(MOZ_BUILDID_INFO_TXT_FILE) \
 		$(MOZ_PKG_PLATFORM) \
-		--package=$(DIST)/$(PACKAGE) \
-		--installer=$(INSTALLER_PACKAGE)
+		$(if $(or $(filter-out mobile/android,$(MOZ_BUILD_APP)),$(MOZ_ANDROID_WITH_FENNEC)), \
+		--package=$(DIST)/$(PACKAGE) --installer=$(INSTALLER_PACKAGE), \
+		--no-download \
+	  )
 endif
 	$(TOUCH) $@
 

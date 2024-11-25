@@ -144,11 +144,6 @@ USE_LIBS += [
     'zlib',
 ]
 
-if CONFIG['USE_ICU']:
-    USE_LIBS += [
-        'icu',
-    ]
-
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
     USE_LIBS += [
         'mozgtk_stub',
@@ -286,9 +281,6 @@ if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     OS_LIBS += [
         'gthread-2.0',
     ]
-
-if CONFIG['MOZ_ENABLE_STARTUP_NOTIFICATION']:
-    OS_LIBS += CONFIG['MOZ_STARTUP_NOTIFICATION_LIBS']
 
 if CONFIG['MOZ_ENABLE_LIBPROXY']:
     OS_LIBS += CONFIG['MOZ_LIBPROXY_LIBS']

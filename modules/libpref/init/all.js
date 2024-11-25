@@ -275,8 +275,6 @@ pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
-
-pref("ui.click_hold_context_menus", false);
 // 0 = false, 1 = true, 2 = autodetect.
 pref("ui.android.mouse_as_touch", 1);
 
@@ -538,12 +536,9 @@ pref("media.cubeb.logging_level", "");
 
 // Cubeb sandbox (remoting) control
 #if defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
-  pref("media.cubeb.sandbox", true);
   pref("media.audioipc.pool_size", 1);
   // 64 * 4 kB stack per pool thread.
   pref("media.audioipc.stack_size", 262144);
-#else
-  pref("media.cubeb.sandbox", false);
 #endif
 
 // GraphRunner (fixed MediaTrackGraph thread) control
@@ -711,7 +706,6 @@ pref("accessibility.force_disabled", 0);
 pref("focusmanager.testmode", false);
 
 pref("accessibility.usetexttospeech", "");
-pref("accessibility.accesskeycausesactivation", true);
 pref("accessibility.mouse_focuses_formcontrol", false);
 
 // Type Ahead Find
@@ -929,17 +923,6 @@ pref("dom.storage.client_validation", true);
 
 pref("dom.send_after_paint_to_content", false);
 
-// Don't use new input types
-pref("dom.experimental_forms", false);
-
-// Enable <input type=color> by default. It will be turned off for remaining
-// platforms which don't have a color picker implemented yet.
-pref("dom.forms.color", true);
-
-// Support for input type=month, type=week and type=datetime-local. By default,
-// disabled.
-pref("dom.forms.datetime.others", false);
-
 // Enable time picker UI. By default, disabled.
 pref("dom.forms.datetime.timepicker", false);
 
@@ -997,7 +980,6 @@ pref("javascript.options.baselinejit.threshold", 100);
 pref("javascript.options.ion",              true);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.ion.threshold",    1500);
-pref("javascript.options.ion.full.threshold", 100000);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.ion.frequent_bailout_threshold", 10);
 pref("javascript.options.asmjs",                  true);
@@ -1005,12 +987,6 @@ pref("javascript.options.wasm",                   true);
 pref("javascript.options.wasm_trustedprincipals", true);
 pref("javascript.options.wasm_verbose",           false);
 pref("javascript.options.wasm_baselinejit",       true);
-
-#if defined(MOZ_AARCH64) && !defined(ENABLE_WASM_CRANELIFT)
-  pref("javascript.options.wasm_optimizingjit",   false);
-#else
-  pref("javascript.options.wasm_optimizingjit",   true);
-#endif
 
 #ifdef ENABLE_WASM_REFTYPES
   pref("javascript.options.wasm_gc",              false);
@@ -1166,9 +1142,6 @@ pref("network.notify.changed", true);
 pref("network.tickle-wifi.enabled", false);
 pref("network.tickle-wifi.duration", 400);
 pref("network.tickle-wifi.delay", 16);
-
-// Turn off interprocess security checks. Needed to run xpcshell tests.
-pref("network.disable.ipc.security", true);
 
 // Default action for unlisted external protocol handlers
 pref("network.protocol-handler.external-default", true);      // OK to load
@@ -1905,11 +1878,6 @@ pref("network.ssl_tokens_cache_capacity", 2048);
 
 pref("converter.html2txt.structs",          true); // Output structured phrases (strong, em, code, sub, sup, b, i, u)
 pref("converter.html2txt.header_strategy",  1); // 0 = no indention; 1 = indention, increased with header level; 2 = numbering and slight indention
-// Whether we include ruby annotation in the text despite whether it
-// is requested. This was true because we didn't explicitly strip out
-// annotations. Set false by default to provide a better behavior, but
-// we want to be able to pref-off it if user doesn't like it.
-pref("converter.html2txt.always_include_ruby", false);
 
 pref("intl.accept_languages",               "chrome://global/locale/intl.properties");
 pref("intl.menuitems.alwaysappendaccesskeys","chrome://global/locale/intl.properties");
@@ -2328,30 +2296,6 @@ pref("mousewheel.with_win.delta_multiplier_x", 100);
 pref("mousewheel.with_win.delta_multiplier_y", 100);
 pref("mousewheel.with_win.delta_multiplier_z", 100);
 
-// Auto-dir is a feature which treats any single-wheel scroll as a scroll in the
-// only one scrollable direction if the target has only one scrollable
-// direction. For example, if the user scrolls a vertical wheel inside a target
-// which is horizontally scrollable but vertical unscrollable, then the vertical
-// scroll is converted to a horizontal scroll for that target.
-// Note that auto-dir only takes effect for |mousewheel.*.action|s and
-// |mousewheel.*.action.override_x|s whose values are 1.
-pref("mousewheel.autodir.enabled", false);
-// When a wheel scroll is converted due to auto-dir, which side the converted
-// scroll goes towards is decided by one thing called "honoured target". If the
-// content of the honoured target horizontally starts from right to left, then
-// an upward scroll maps to a rightward scroll and a downward scroll maps to a
-// leftward scroll; otherwise, an upward scroll maps to a leftward scroll and a
-// downward scroll maps to a rightward scroll.
-// If this pref is set to false, then consider the scrolling target as the
-// honoured target.
-// If set to true, then consider the root element in the document where the
-// scrolling target is as the honoured target. But note that there's one
-// exception: for targets in an HTML document, the real root element(I.e. the
-// <html> element) is typically not considered as a root element, but the <body>
-// element is typically considered as a root element. If there is no <body>
-// element, then consider the <html> element instead.
-pref("mousewheel.autodir.honourroot", false);
-
 // These define the smooth scroll behavior (min ms, max ms) for different triggers
 // Some triggers:
 // mouseWheel: Discrete mouse wheel events, Synaptics touchpads on windows (generate wheel events)
@@ -2395,12 +2339,6 @@ pref("bidi.texttype", 1);
 // 5 = persiancontextnumeralBidi
 // 6 = persiannumeralBidi
 pref("bidi.numeral", 0);
-
-// Bidi caret movement style:
-// 0 = logical
-// 1 = visual
-// 2 = visual, but logical during selection
-pref("bidi.edit.caret_movement_style", 2);
 
 // Setting this pref to |true| forces Bidi UI menu items and keyboard shortcuts
 // to be exposed, and enables the directional caret hook. By default, only
@@ -2977,9 +2915,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // Locate plugins by the directories specified in the Windows registry for PLIDs
   // Which is currently HKLM\Software\MozillaPlugins\xxxPLIDxxx\Path
   pref("plugin.scan.plid.all", true);
-
-  // Whether sending WM_MOUSEWHEEL and WM_MOUSEHWHEEL to plugins on Windows.
-  pref("plugin.mousewheel.enabled", true);
 
   // Switch the keyboard layout per window
   pref("intl.keyboard.per_window_layout", false);
@@ -3803,7 +3738,7 @@ pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2
 //
 
 // The default Accept header sent for images loaded over HTTP(S)
-pref("image.http.accept", "image/webp,*/*");
+pref("image.http.accept", "");
 
 //
 // Image memory management prefs
@@ -4448,9 +4383,6 @@ pref("dom.clients.openwindow_favors_same_process", true);
 #else
   pref("toolkit.crashreporter.include_context_heap", true);
 #endif
-
-// Open noopener links in a new process
-pref("dom.noopener.newprocess.enabled", true);
 
 #if defined(XP_WIN) || defined(XP_MACOSX) || defined(MOZ_WIDGET_GTK)
   pref("layers.omtp.enabled", true);

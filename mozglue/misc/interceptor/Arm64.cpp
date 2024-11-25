@@ -4,6 +4,8 @@
 
 #include "Arm64.h"
 
+#include "mozilla/ResultVariant.h"
+
 namespace mozilla {
 namespace interceptor {
 namespace arm64 {

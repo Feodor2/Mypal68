@@ -35,10 +35,6 @@ using namespace gfx;
 
 namespace image {
 
-static void ScopedMapRelease(void* aMap) {
-  delete static_cast<DataSourceSurface::ScopedMap*>(aMap);
-}
-
 static int32_t VolatileSurfaceStride(const IntSize& size,
                                      SurfaceFormat format) {
   // Stride must be a multiple of four or cairo will complain.
@@ -47,25 +43,26 @@ static int32_t VolatileSurfaceStride(const IntSize& size,
 
 static already_AddRefed<DataSourceSurface> CreateLockedSurface(
     DataSourceSurface* aSurface, const IntSize& size, SurfaceFormat format) {
-  // Shared memory is never released until the surface itself is released
-  if (aSurface->GetType() == SurfaceType::DATA_SHARED) {
-    RefPtr<DataSourceSurface> surf(aSurface);
-    return surf.forget();
-  }
-
-  DataSourceSurface::ScopedMap* smap =
-      new DataSourceSurface::ScopedMap(aSurface, DataSourceSurface::READ_WRITE);
-  if (smap->IsMapped()) {
-    // The ScopedMap is held by this DataSourceSurface.
-    RefPtr<DataSourceSurface> surf = Factory::CreateWrappingDataSourceSurface(
-        smap->GetData(), aSurface->Stride(), size, format, &ScopedMapRelease,
-        static_cast<void*>(smap));
-    if (surf) {
+  switch (aSurface->GetType()) {
+    case SurfaceType::DATA_SHARED:
+    case SurfaceType::DATA_ALIGNED: {
+      // Shared memory is never released until the surface itself is released.
+      // Similar for aligned/heap surfaces.
+      RefPtr<DataSourceSurface> surf(aSurface);
       return surf.forget();
+    }
+    default: {
+      // Volatile memory requires us to map it first, and it is fallible.
+      DataSourceSurface::ScopedMap smap(aSurface,
+                                        DataSourceSurface::READ_WRITE);
+      if (smap.IsMapped()) {
+        return MakeAndAddRef<SourceSurfaceMappedData>(std::move(smap), size,
+                                                      format);
+      }
+      break;
     }
   }
 
-  delete smap;
   return nullptr;
 }
 
@@ -159,7 +156,7 @@ static bool ClearSurface(DataSourceSurface* aSurface, const IntSize& aSize,
   uint8_t* data = aSurface->GetData();
   MOZ_ASSERT(data);
 
-  if (aFormat == SurfaceFormat::B8G8R8X8) {
+  if (aFormat == SurfaceFormat::OS_RGBX) {
     // Skia doesn't support RGBX surfaces, so ensure the alpha value is set
     // to opaque white. While it would be nice to only do this for Skia,
     // imgFrame can run off main thread and past shutdown where
@@ -231,7 +228,7 @@ nsresult imgFrame::InitForDecoder(const nsIntSize& aImageSize,
     // surface because if we use BGRX, the next frame composited into the
     // surface could be BGRA and cause rendering problems.
     MOZ_ASSERT(aAnimParams);
-    mFormat = SurfaceFormat::B8G8R8A8;
+    mFormat = SurfaceFormat::OS_RGBA;
   } else {
     mFormat = aFormat;
   }
@@ -555,7 +552,7 @@ imgFrame::SurfaceWithFormat imgFrame::SurfaceForDrawing(
     // transparent pixels in the padding or undecoded area
     RefPtr<DrawTarget> target =
         gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(
-            mImageSize, SurfaceFormat::B8G8R8A8);
+            mImageSize, SurfaceFormat::OS_RGBA);
     if (!target) {
       return SurfaceWithFormat();
     }
@@ -926,21 +923,27 @@ void imgFrame::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
   Monitor2AutoLock lock(mMonitor);
 
   AddSizeOfCbData metadata;
+
+  metadata.mFinished = mFinished;
   if (mLockedSurface) {
-    metadata.heap += aMallocSizeOf(mLockedSurface);
+    // The locked surface should only be present if we have mRawSurface. Hence
+    // we only need to get its allocation size to avoid double counting.
+    metadata.mHeapBytes += aMallocSizeOf(mLockedSurface);
+    metadata.AddType(mLockedSurface->GetType());
   }
   if (mOptSurface) {
-    metadata.heap += aMallocSizeOf(mOptSurface);
+    metadata.mHeapBytes += aMallocSizeOf(mOptSurface);
+
+    SourceSurface::SizeOfInfo info;
+    mOptSurface->SizeOfExcludingThis(aMallocSizeOf, info);
+    metadata.Accumulate(info);
   }
   if (mRawSurface) {
-    metadata.heap += aMallocSizeOf(mRawSurface);
-    mRawSurface->AddSizeOfExcludingThis(aMallocSizeOf, metadata.heap,
-                                        metadata.nonHeap, metadata.handles
-#ifdef MOZ_BUILD_WEBRENDER
-                                        ,
-                                        metadata.externalId
-#endif
-    );
+    metadata.mHeapBytes += aMallocSizeOf(mRawSurface);
+
+    SourceSurface::SizeOfInfo info;
+    mRawSurface->SizeOfExcludingThis(aMallocSizeOf, info);
+    metadata.Accumulate(info);
   }
 
   aCallback(metadata);

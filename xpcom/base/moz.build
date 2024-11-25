@@ -84,7 +84,6 @@ EXPORTS += [
     'nsQueryObject.h',
     'nsSystemInfo.h',
     'nsTraceRefcnt.h',
-    'nsTWeakRef.h',
     'nsVersionComparator.h',
     'nsWeakReference.h',
 ]

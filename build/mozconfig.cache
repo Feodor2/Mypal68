@@ -5,7 +5,7 @@
 # Setup for build cache
 
 # builds where buildprops didn't have the data (eg: taskcluster) and without sccache disabled:
-if test -z "$bucket" -a -z "$SCCACHE_DISABLE" -a -z "$MOZ_PGO"; then
+if test -z "$bucket" -a -z "$SCCACHE_DISABLE"; then
 
     # prevent rerun if az is set, or wget is not available
     if test -z "$availability_zone" -a -x "$(command -v wget)"; then
@@ -60,7 +60,7 @@ if test -n "$bucket"; then
         # instruct sccache to fetch the credentials from the Auth service's awsS3Credentials endpoint, via the Taskcluster proxy.
         mk_add_options "export AWS_IAM_CREDENTIALS_URL=http://taskcluster/auth/v1/aws/s3/read-write/${bucket}/?format=iam-role-compat"
     fi
-    export CCACHE="$topsrcdir/sccache2/sccache"
+    export CCACHE="$MOZ_FETCHES_DIR/sccache/sccache"
     export SCCACHE_VERBOSE_STATS=1
-    mk_add_options MOZBUILD_MANAGE_SCCACHE_DAEMON=${topsrcdir}/sccache2/sccache
+    mk_add_options MOZBUILD_MANAGE_SCCACHE_DAEMON=${MOZ_FETCHES_DIR}/sccache/sccache
 fi

@@ -212,12 +212,11 @@ bool SetupFifo() {
 
   FifoWatcher* fw = FifoWatcher::GetSingleton();
   // Dump our memory reports (but run this on the main thread!).
-  fw->RegisterCallback(NS_LITERAL_CSTRING("memory report"), doMemoryReport);
-  fw->RegisterCallback(NS_LITERAL_CSTRING("minimize memory report"),
-                       doMemoryReport);
+  fw->RegisterCallback("memory report"_ns, doMemoryReport);
+  fw->RegisterCallback("minimize memory report"_ns, doMemoryReport);
   // Dump GC and CC logs (from the main thread).
-  fw->RegisterCallback(NS_LITERAL_CSTRING("gc log"), doGCCCDump);
-  fw->RegisterCallback(NS_LITERAL_CSTRING("abbreviated gc log"), doGCCCDump);
+  fw->RegisterCallback("gc log"_ns, doGCCCDump);
+  fw->RegisterCallback("abbreviated gc log"_ns, doGCCCDump);
 
 #  ifdef DEBUG
   fifoCallbacksRegistered = true;
@@ -510,7 +509,7 @@ class TempDirFinishCallback final : public nsIFinishDumpingCallback {
     }
 
 #ifdef ANDROID
-    rv = reportsFinalFile->AppendNative(NS_LITERAL_CSTRING("memory-reports"));
+    rv = reportsFinalFile->AppendNative("memory-reports"_ns);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -551,7 +550,7 @@ class TempDirFinishCallback final : public nsIFinishDumpingCallback {
       return rv;
     }
 
-    nsString msg = NS_LITERAL_STRING("nsIMemoryInfoDumper dumped reports to ");
+    nsString msg = u"nsIMemoryInfoDumper dumped reports to "_ns;
     msg.Append(path);
     return cs->LogStringMessage(msg.get());
   }
@@ -672,9 +671,9 @@ nsMemoryInfoDumper::DumpMemoryInfoToTempDir(const nsAString& aIdentifier,
   // In Android case, this function will open a file named aFilename under
   // specific folder (/data/local/tmp/memory-reports). Otherwise, it will
   // open a file named aFilename under "NS_OS_TEMP_DIR".
-  rv = nsDumpUtils::OpenTempFile(
-      NS_LITERAL_CSTRING("incomplete-") + reportsFinalFilename,
-      getter_AddRefs(reportsTmpFile), NS_LITERAL_CSTRING("memory-reports"));
+  rv = nsDumpUtils::OpenTempFile("incomplete-"_ns + reportsFinalFilename,
+                                 getter_AddRefs(reportsTmpFile),
+                                 "memory-reports"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -709,7 +708,7 @@ nsresult nsMemoryInfoDumper::OpenDMDFile(const nsAString& aIdentifier, int aPid,
   nsresult rv;
   nsCOMPtr<nsIFile> dmdFile;
   rv = nsDumpUtils::OpenTempFile(dmdFilename, getter_AddRefs(dmdFile),
-                                 NS_LITERAL_CSTRING("memory-reports"));
+                                 "memory-reports"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

@@ -473,19 +473,6 @@ bool DataTextureSourceD3D9::Update(gfx::DataSourceSurface* aSurface,
   return true;
 }
 
-static CompositorD3D9* AssertD3D9Compositor(Compositor* aCompositor) {
-  CompositorD3D9* compositor =
-      aCompositor ? aCompositor->AsCompositorD3D9() : nullptr;
-  if (!compositor) {
-    // We probably had a device reset and this D3D9 texture was already sent but
-    // we are now falling back to a basic compositor. That can happen if a video
-    // is playing while the device reset occurs and it's not too bad if we miss
-    // a few frames.
-    gfxCriticalNote << "[D3D9] Attempt to set an incompatible compositor";
-  }
-  return compositor;
-}
-
 void DataTextureSourceD3D9::SetTextureSourceProvider(
     TextureSourceProvider* aProvider) {
   IDirect3DDevice9* newDevice =
@@ -513,7 +500,7 @@ void DataTextureSourceD3D9::Reset() {
 
 int32_t DataTextureSourceD3D9::GetMaxTextureSize() const {
   D3DCAPS9 caps;
-  HRESULT hr = mDevice->GetDeviceCaps(&caps);
+  mDevice->GetDeviceCaps(&caps);
   return std::min(caps.MaxTextureHeight, caps.MaxTextureWidth);
 }
 

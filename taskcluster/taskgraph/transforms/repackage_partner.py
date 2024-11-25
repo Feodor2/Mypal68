@@ -181,19 +181,8 @@ def make_job_description(config, jobs):
             'skip-artifacts': True,
         }
 
-        if build_platform.startswith('win'):
-            worker_type = 'b-win2012'
-            run['use-magic-mh-args'] = False
-        else:
-            if build_platform.startswith('macosx'):
-                worker_type = 'b-linux'
-            else:
-                raise NotImplementedError(
-                    'Unsupported build_platform: "{}"'.format(build_platform)
-                )
-
-            run['tooltool-downloads'] = 'internal'
-            worker['docker-image'] = {"in-tree": "debian7-amd64-build"}
+        worker_type = 'b-linux'
+        worker['docker-image'] = {"in-tree": "debian7-amd64-build"}
 
         worker['artifacts'] = _generate_task_output_files(
             dep_job, worker_type_implementation(config.graph_config, worker_type),
@@ -231,11 +220,11 @@ def make_job_description(config, jobs):
         if job.get('priority'):
             task['priority'] = job['priority']
         if build_platform.startswith('macosx'):
-            task['toolchains'] = [
+            task.setdefault('fetches', {}).setdefault('toolchain', []).extend([
                 'linux64-libdmg',
                 'linux64-hfsplus',
                 'linux64-node',
-            ]
+            ])
         yield task
 
 

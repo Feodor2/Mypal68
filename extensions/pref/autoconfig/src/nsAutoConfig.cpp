@@ -12,6 +12,7 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIObserverService.h"
 #include "nsLiteralString.h"
+#include "nsIPrefService.h"
 #include "nsIPromptService.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"

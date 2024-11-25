@@ -11,7 +11,7 @@
 class nsAtom;
 
 namespace mozilla {
-typedef nsTArray<RefPtr<nsAtom>> AtomArray;
+typedef AutoTArray<RefPtr<nsAtom>, 4> AtomArray;
 }
 
 #endif  // mozilla_AtomArray_h

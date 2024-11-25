@@ -237,12 +237,8 @@ class RefQueue {
   }
 };
 
-class SurfaceFactory : public SupportsWeakPtr<SurfaceFactory> {
+class SurfaceFactory : public SupportsWeakPtr {
  public:
-  // Should use the VIRTUAL version, but it's currently incompatible
-  // with SupportsWeakPtr. (bug 1049278)
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(SurfaceFactory)
-
   const SharedSurfaceType mType;
   GLContext* const mGL;
   const SurfaceCaps mCaps;

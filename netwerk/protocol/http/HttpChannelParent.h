@@ -127,6 +127,10 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
 
   already_AddRefed<HttpChannelParentListener> GetParentListener();
 
+  // Inform the child actor that our referrer info was modified late during
+  // BeginConnect.
+  void OverrideReferrerInfoDuringBeginConnect(nsIReferrerInfo* aReferrerInfo);
+
  protected:
   // used to connect redirected-to channel in parent with just created
   // ChildChannel.  Used during redirects.

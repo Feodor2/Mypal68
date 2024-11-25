@@ -494,7 +494,7 @@ TEST(TestFile, Unprefixed)
   gTestWithPrefix_Win = false;
 #endif
 
-  SetupAndTestFunctions(NS_LITERAL_STRING("mozfiletests"),
+  SetupAndTestFunctions(u"mozfiletests"_ns,
                         /* aTestCreateUnique */ true,
                         /* aTestNormalize */ true);
 
@@ -507,7 +507,7 @@ TEST(TestFile, Unprefixed)
 // SetUseDOSDevicePathSyntax if it's on Windows for NewFile)
 TEST(TestFile, PrefixedOnWin)
 {
-  SetupAndTestFunctions(NS_LITERAL_STRING("mozfiletests"),
+  SetupAndTestFunctions(u"mozfiletests"_ns,
                         /* aTestCreateUnique */ true,
                         /* aTestNormalize */ true);
 }
@@ -535,7 +535,7 @@ TEST(TestFile, PrefixedOnWin_ComponentEndsWithPeriod)
 {
   // Bypass the normalization for this because it would strip the trailing
   // period.
-  SetupAndTestFunctions(NS_LITERAL_STRING("mozfiletests."),
+  SetupAndTestFunctions(u"mozfiletests."_ns,
                         /* aTestCreateUnique */ true,
                         /* aTestNormalize */ false);
 }

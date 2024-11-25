@@ -11,6 +11,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MruCache.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -753,6 +754,12 @@ bool CheckAntiTrackingPermission(nsIPrincipal* aPrincipal,
               "permission of type %s for %s",
               aType.get(), _spec),
              aPrincipal);
+    if (!permManager->PermissionAvailable(aPrincipal, aType)) {
+      LOG(
+          ("Permission isn't available for this principal in the current "
+           "process"));
+      return false;
+    }
     nsTArray<RefPtr<nsIPermission>> permissions;
     nsresult rv = permManager->GetAllForPrincipal(aPrincipal, permissions);
     if (NS_WARN_IF(NS_FAILED(rv))) {

@@ -4,12 +4,13 @@
 
 #include "FrameAnimator.h"
 
-#include "mozilla/Move.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/StaticPrefs_image.h"
-#include "imgIContainer.h"
+#include <utility>
+
 #include "LookupResult.h"
 #include "RasterImage.h"
+#include "imgIContainer.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/StaticPrefs_image.h"
 
 namespace mozilla {
 
@@ -22,19 +23,18 @@ namespace image {
 ///////////////////////////////////////////////////////////////////////////////
 
 const gfx::IntRect AnimationState::UpdateState(
-    bool aAnimationFinished, RasterImage* aImage, const gfx::IntSize& aSize,
+    RasterImage* aImage, const gfx::IntSize& aSize,
     bool aAllowInvalidation /* = true */) {
   LookupResult result = SurfaceCache::Lookup(
       ImageKey(aImage),
       RasterSurfaceKey(aSize, DefaultSurfaceFlags(), PlaybackType::eAnimated),
       /* aMarkUsed = */ false);
 
-  return UpdateStateInternal(result, aAnimationFinished, aSize,
-                             aAllowInvalidation);
+  return UpdateStateInternal(result, aSize, aAllowInvalidation);
 }
 
 const gfx::IntRect AnimationState::UpdateStateInternal(
-    LookupResult& aResult, bool aAnimationFinished, const gfx::IntSize& aSize,
+    LookupResult& aResult, const gfx::IntSize& aSize,
     bool aAllowInvalidation /* = true */) {
   // Update mDiscarded and mIsCurrentlyDecoded.
   if (aResult.Type() == MatchType::NOT_FOUND) {
@@ -51,39 +51,39 @@ const gfx::IntRect AnimationState::UpdateStateInternal(
     mDiscarded = false;
     mHasRequestedDecode = true;
 
-    // If mHasBeenDecoded is true then we know the true total frame count and
-    // we can use it to determine if we have all the frames now so we know if
-    // we are currently fully decoded.
-    // If mHasBeenDecoded is false then we'll get another UpdateState call
-    // when the decode finishes.
-    if (mHasBeenDecoded) {
-      const DebugOnly<Maybe<uint32_t>> frameCount = FrameCount();
-      MOZ_ASSERT(static_cast<const Maybe<uint32_t>&>(frameCount).isSome());
-      mIsCurrentlyDecoded = aResult.Surface().IsFullyDecoded();
-    }
+    // If we can seek to the current animation frame we consider it decoded.
+    // Animated images are never fully decoded unless very short.
+    // Note that we use GetFrame instead of Seek here. The difference is that
+    // Seek eventually calls AnimationFrameBuffer::Get with aForDisplay == true,
+    // whereas GetFrame calls AnimationFrameBuffer::Get with aForDisplay ==
+    // false. The aForDisplay can change whether those functions succeed or not
+    // (only for the first frame). Since this is not for display we want to pass
+    // aForDisplay == false, but also for consistency with
+    // RequestRefresh/AdvanceFrame, because we want our state to be in sync with
+    // those functions. The user of Seek (GetCompositedFrame) doesn't need to be
+    // in sync with our state.
+    RefPtr<imgFrame> currentFrame =
+        bool(aResult.Surface())
+            ? aResult.Surface().GetFrame(mCurrentAnimationFrameIndex)
+            : nullptr;
+    mIsCurrentlyDecoded = !!currentFrame;
   }
 
   gfx::IntRect ret;
 
   if (aAllowInvalidation) {
     // Update the value of mCompositedFrameInvalid.
-    if (mIsCurrentlyDecoded || aAnimationFinished) {
-      // Animated images that have finished their animation (ie because it is a
-      // finite length animation) don't have RequestRefresh called on them, and
-      // so mCompositedFrameInvalid would never get cleared. We clear it here
-      // (and also in RasterImage::Decode when we create a decoder for an image
-      // that has finished animated so it can display sooner than waiting until
-      // the decode completes). We also do it if we are fully decoded. This is
-      // safe to do for images that aren't finished animating because before we
-      // paint the refresh driver will call into us to advance to the correct
-      // frame, and that will succeed because we have all the frames.
+    if (mIsCurrentlyDecoded) {
+      // It is safe to clear mCompositedFrameInvalid safe to do for images that
+      // are fully decoded but aren't finished animating because before we paint
+      // the refresh driver will call into us to advance to the correct frame,
+      // and that will succeed because we have all the frames.
       if (mCompositedFrameInvalid) {
         // Invalidate if we are marking the composited frame valid.
         ret.SizeTo(aSize);
       }
       mCompositedFrameInvalid = false;
-    } else if (aResult.Type() == MatchType::NOT_FOUND ||
-               aResult.Type() == MatchType::PENDING) {
+    } else {
       if (mHasRequestedDecode) {
         MOZ_ASSERT(StaticPrefs::image_mem_animated_discardable_AtStartup());
         mCompositedFrameInvalid = true;
@@ -340,11 +340,14 @@ void FrameAnimator::ResetAnimation(AnimationState& aState) {
   }
 
   result.Surface().Reset();
+
+  // Calling Reset on the surface of the animation can cause discarding surface
+  // providers to throw out all their frames so refresh our state.
+  aState.UpdateStateInternal(result, mSize);
 }
 
 RefreshResult FrameAnimator::RequestRefresh(AnimationState& aState,
-                                            const TimeStamp& aTime,
-                                            bool aAnimationFinished) {
+                                            const TimeStamp& aTime) {
   // By default, an empty RefreshResult.
   RefreshResult ret;
 
@@ -362,13 +365,9 @@ RefreshResult FrameAnimator::RequestRefresh(AnimationState& aState,
       RasterSurfaceKey(mSize, DefaultSurfaceFlags(), PlaybackType::eAnimated),
       /* aMarkUsed = */ true);
 
-  ret.mDirtyRect =
-      aState.UpdateStateInternal(result, aAnimationFinished, mSize);
+  ret.mDirtyRect = aState.UpdateStateInternal(result, mSize);
   if (aState.IsDiscarded() || !result) {
     aState.MaybeAdvanceAnimationFrameTime(aTime);
-    if (!ret.mDirtyRect.IsEmpty()) {
-      ret.mFrameAdvanced = true;
-    }
     return ret;
   }
 
@@ -453,10 +452,39 @@ LookupResult FrameAnimator::GetCompositedFrame(AnimationState& aState,
     MOZ_ASSERT(StaticPrefs::image_mem_animated_discardable_AtStartup());
     MOZ_ASSERT(aState.GetHasRequestedDecode());
     MOZ_ASSERT(!aState.GetIsCurrentlyDecoded());
-    if (result.Type() == MatchType::NOT_FOUND) {
-      return result;
+
+    if (result.Type() == MatchType::EXACT) {
+      // If our composited frame is marked as invalid but our frames are in the
+      // surface cache we might just have not updated our internal state yet.
+      // This can happen if the image is not in a document so that
+      // RequestRefresh is not getting called to advance the frame.
+      // RequestRefresh would result in our composited frame getting marked as
+      // valid either at the end of RequestRefresh when we are able to advance
+      // to the current time or if advancing frames eventually causes us to
+      // decode all of the frames of the image resulting in DecodeComplete
+      // getting called which calls UpdateState. The reason we care about this
+      // is that img.decode promises won't resolve until GetCompositedFrame
+      // returns a frame.
+      UnorientedIntRect rect = UnorientedIntRect::FromUnknownRect(
+          aState.UpdateStateInternal(result, mSize));
+
+      if (!rect.IsEmpty()) {
+        nsCOMPtr<nsIEventTarget> eventTarget = do_GetMainThread();
+        RefPtr<RasterImage> image = mImage;
+        nsCOMPtr<nsIRunnable> ev = NS_NewRunnableFunction(
+            "FrameAnimator::GetCompositedFrame",
+            [=]() -> void { image->NotifyProgress(NoProgress, rect); });
+        eventTarget->Dispatch(ev.forget(), NS_DISPATCH_NORMAL);
+      }
     }
-    return LookupResult(MatchType::PENDING);
+
+    // If it's still invalid we have to return.
+    if (aState.mCompositedFrameInvalid) {
+      if (result.Type() == MatchType::NOT_FOUND) {
+        return result;
+      }
+      return LookupResult(MatchType::PENDING);
+    }
   }
 
   // Otherwise return the raw frame. DoBlend is required to ensure that we only

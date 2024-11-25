@@ -31,7 +31,6 @@ from io import (
     BytesIO,
 )
 
-
 if sys.version_info[0] == 3:
     str_type = str
 else:

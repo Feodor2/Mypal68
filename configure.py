@@ -5,6 +5,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import codecs
+import errno
 import itertools
 import logging
 import os
@@ -40,10 +41,35 @@ def main(argv):
     if sandbox._help:
         return 0
 
+    logging.getLogger('moz.configure').info('Creating config.status')
+
+    old_js_configure_substs = config.pop('OLD_JS_CONFIGURE_SUBSTS', None)
+    old_js_configure_defines = config.pop('OLD_JS_CONFIGURE_DEFINES', None)
+    if old_js_configure_substs or old_js_configure_defines:
+        js_config = config.copy()
+        pwd = os.getcwd()
+        try:
+            try:
+                os.makedirs('js/src')
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+
+            os.chdir('js/src')
+            js_config['OLD_CONFIGURE_SUBSTS'] = old_js_configure_substs
+            js_config['OLD_CONFIGURE_DEFINES'] = old_js_configure_defines
+            # The build system frontend expects $objdir/js/src/config.status
+            # to have $objdir/js/src as topobjdir.
+            # We want forward slashes on all platforms.
+            js_config['TOPOBJDIR'] += '/js/src'
+            config_status(js_config, execute=False)
+        finally:
+            os.chdir(pwd)
+
     return config_status(config)
 
 
-def config_status(config):
+def config_status(config, execute=True):
     # Sanitize config data to feed config.status
     # Ideally, all the backend and frontend code would handle the booleans, but
     # there are so many things involved, that it's easier to keep config.status
@@ -58,13 +84,16 @@ def config_status(config):
     sanitized_config = {}
     sanitized_config['substs'] = {
         k: sanitized_bools(v) for k, v in config.iteritems()
-        if k not in ('DEFINES', 'non_global_defines', 'TOPSRCDIR', 'TOPOBJDIR',
-                     'CONFIG_STATUS_DEPS')
+        if k not in ('DEFINES', 'TOPSRCDIR', 'TOPOBJDIR', 'CONFIG_STATUS_DEPS',
+                     'OLD_CONFIGURE_SUBSTS', 'OLD_CONFIGURE_DEFINES')
     }
+    for k, v in config['OLD_CONFIGURE_SUBSTS']:
+        sanitized_config['substs'][k] = sanitized_bools(v)
     sanitized_config['defines'] = {
         k: sanitized_bools(v) for k, v in config['DEFINES'].iteritems()
     }
-    sanitized_config['non_global_defines'] = config['non_global_defines']
+    for k, v in config['OLD_CONFIGURE_DEFINES']:
+        sanitized_config['defines'][k] = sanitized_bools(v)
     sanitized_config['topsrcdir'] = config['TOPSRCDIR']
     sanitized_config['topobjdir'] = config['TOPOBJDIR']
     sanitized_config['mozconfig'] = config.get('MOZCONFIG')
@@ -72,7 +101,6 @@ def config_status(config):
     # Create config.status. Eventually, we'll want to just do the work it does
     # here, when we're able to skip configure tests/use cached results/not rely
     # on autoconf.
-    logging.getLogger('moz.configure').info('Creating config.status')
     encoding = 'mbcs' if sys.platform == 'win32' else 'utf-8'
     with codecs.open('config.status', 'w', encoding) as fh:
         fh.write(textwrap.dedent('''\
@@ -87,9 +115,9 @@ def config_status(config):
         for k, v in sanitized_config.iteritems():
             fh.write('%s = encode(%s, encoding)\n' % (k, indented_repr(v)))
         fh.write("__all__ = ['topobjdir', 'topsrcdir', 'defines', "
-                 "'non_global_defines', 'substs', 'mozconfig']")
+                 "'substs', 'mozconfig']")
 
-        if config.get('MOZ_BUILD_APP') != 'js' or config.get('JS_STANDALONE'):
+        if execute:
             fh.write(textwrap.dedent('''
                 if __name__ == '__main__':
                     from mozbuild.util import patch_main
@@ -113,7 +141,7 @@ def config_status(config):
     # Other things than us are going to run this file, so we need to give it
     # executable permissions.
     os.chmod('config.status', 0o755)
-    if config.get('MOZ_BUILD_APP') != 'js' or config.get('JS_STANDALONE'):
+    if execute:
         from mozbuild.config_status import config_status
 
         # Some values in sanitized_config also have more complex types, such as

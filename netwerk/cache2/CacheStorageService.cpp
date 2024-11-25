@@ -27,6 +27,7 @@
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 #include "nsXULAppAPI.h"
+#include "mozilla/AtomicBitfields.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Services.h"
@@ -116,7 +117,12 @@ CacheStorageService::CacheStorageService()
       mForcedValidEntriesLock("CacheStorageService.mForcedValidEntriesLock"),
       mShutdown(false),
       mDiskPool(MemoryPool::DISK),
-      mMemoryPool(MemoryPool::MEMORY) {
+      mMemoryPool(MemoryPool::MEMORY)
+#ifdef MOZ_TSAN
+      ,
+      mPurgeTimerActive(false)
+#endif
+{
   CacheFileIOManager::Init();
 
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -195,10 +201,10 @@ class WalkCacheRunnable : public Runnable,
         mService(CacheStorageService::Self()),
         mCallback(aVisitor),
         mSize(0),
-        mNotifyStorage(true),
-        mVisitEntries(aVisitEntries),
         mCancel(false) {
     MOZ_ASSERT(NS_IsMainThread());
+    StoreNotifyStorage(true);
+    StoreVisitEntries(aVisitEntries);
   }
 
   virtual ~WalkCacheRunnable() {
@@ -212,8 +218,12 @@ class WalkCacheRunnable : public Runnable,
 
   uint64_t mSize;
 
-  bool mNotifyStorage : 1;
-  bool mVisitEntries : 1;
+  // clang-format off
+  MOZ_ATOMIC_BITFIELDS(mAtomicBitfields, 8, (
+    (bool, NotifyStorage, 1),
+    (bool, VisitEntries, 1)
+  ))
+  // clang-format on
 
   Atomic<bool> mCancel;
 };
@@ -266,7 +276,7 @@ class WalkMemoryCacheRunnable : public WalkCacheRunnable {
     } else if (NS_IsMainThread()) {
       LOG(("WalkMemoryCacheRunnable::Run - notifying [this=%p]", this));
 
-      if (mNotifyStorage) {
+      if (LoadNotifyStorage()) {
         LOG(("  storage"));
 
         uint64_t capacity = CacheObserver::MemoryCacheCapacity();
@@ -275,9 +285,9 @@ class WalkMemoryCacheRunnable : public WalkCacheRunnable {
         // Second, notify overall storage info
         mCallback->OnCacheStorageInfo(mEntryArray.Length(), mSize, capacity,
                                       nullptr);
-        if (!mVisitEntries) return NS_OK;  // done
+        if (!LoadVisitEntries()) return NS_OK;  // done
 
-        mNotifyStorage = false;
+        StoreNotifyStorage(false);
 
       } else {
         LOG(("  entry [left=%zu, canceled=%d]", mEntryArray.Length(),
@@ -422,7 +432,7 @@ class WalkDiskCacheRunnable : public WalkCacheRunnable {
           uint32_t size;
           rv = CacheIndex::GetCacheStats(mLoadInfo, &size, &mCount);
           if (NS_FAILED(rv)) {
-            if (mVisitEntries) {
+            if (LoadVisitEntries()) {
               // both onStorageInfo and onCompleted are expected
               NS_DispatchToMainThread(this);
             }
@@ -434,7 +444,7 @@ class WalkDiskCacheRunnable : public WalkCacheRunnable {
           // Invoke onCacheStorageInfo with valid information.
           NS_DispatchToMainThread(this);
 
-          if (!mVisitEntries) {
+          if (!LoadVisitEntries()) {
             return NS_OK;  // done
           }
 
@@ -468,13 +478,13 @@ class WalkDiskCacheRunnable : public WalkCacheRunnable {
           NS_DispatchToMainThread(this);
       }
     } else if (NS_IsMainThread()) {
-      if (mNotifyStorage) {
+      if (LoadNotifyStorage()) {
         nsCOMPtr<nsIFile> dir;
         CacheFileIOManager::GetCacheDirectory(getter_AddRefs(dir));
         uint64_t capacity = CacheObserver::DiskCacheCapacity();
         capacity <<= 10;  // kilobytes to bytes
         mCallback->OnCacheStorageInfo(mCount, mSize, capacity, dir);
-        mNotifyStorage = false;
+        StoreNotifyStorage(false);
       } else {
         mCallback->OnCacheEntryVisitCompleted();
       }
@@ -648,6 +658,52 @@ nsresult CacheStorageService::Dispatch(nsIRunnable* aEvent) {
   return cacheIOThread->Dispatch(aEvent, CacheIOThread::MANAGEMENT);
 }
 
+namespace CacheStorageEvictHelper {
+
+nsresult ClearStorage(bool const aPrivate, bool const aAnonymous,
+                      OriginAttributes& aOa) {
+  nsresult rv;
+
+  aOa.SyncAttributesWithPrivateBrowsing(aPrivate);
+  RefPtr<LoadContextInfo> info = GetLoadContextInfo(aAnonymous, aOa);
+
+  nsCOMPtr<nsICacheStorage> storage;
+  RefPtr<CacheStorageService> service = CacheStorageService::Self();
+  NS_ENSURE_TRUE(service, NS_ERROR_FAILURE);
+
+  // Clear disk storage
+  rv = service->DiskCacheStorage(info, false, getter_AddRefs(storage));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = storage->AsyncEvictStorage(nullptr);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Clear memory storage
+  rv = service->MemoryCacheStorage(info, getter_AddRefs(storage));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = storage->AsyncEvictStorage(nullptr);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult Run(OriginAttributes& aOa) {
+  nsresult rv;
+
+  // Clear all [private X anonymous] combinations
+  rv = ClearStorage(false, false, aOa);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = ClearStorage(false, true, aOa);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = ClearStorage(true, false, aOa);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = ClearStorage(true, true, aOa);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+}  // namespace CacheStorageEvictHelper
+
 // nsICacheStorageService
 
 NS_IMETHODIMP CacheStorageService::MemoryCacheStorage(
@@ -775,6 +831,26 @@ NS_IMETHODIMP CacheStorageService::ClearOrigin(nsIPrincipal* aPrincipal) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = ClearOriginInternal(origin, aPrincipal->OriginAttributesRef(), false);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP CacheStorageService::ClearOriginAttributes(
+    const nsAString& aOriginAttributes) {
+  nsresult rv;
+
+  if (NS_WARN_IF(aOriginAttributes.IsEmpty())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  OriginAttributes oa;
+  if (!oa.Init(aOriginAttributes)) {
+    NS_ERROR("Could not parse the argument for OriginAttributes");
+    return NS_ERROR_FAILURE;
+  }
+
+  rv = CacheStorageEvictHelper::Run(oa);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1205,9 +1281,15 @@ void CacheStorageService::OnMemoryConsumptionChange(
 
   if (!overLimit) return;
 
-  // It's likely the timer has already been set when we get here,
-  // check outside the lock to save resources.
-  if (mPurgeTimer) return;
+    // It's likely the timer has already been set when we get here,
+    // check outside the lock to save resources.
+#ifdef MOZ_TSAN
+  if (mPurgeTimerActive) {
+#else
+  if (mPurgeTimer) {
+#endif
+    return;
+  }
 
   // We don't know if this is called under the service lock or not,
   // hence rather dispatch.
@@ -1253,6 +1335,9 @@ void CacheStorageService::SchedulePurgeOverMemoryLimit() {
 
   mPurgeTimer = NS_NewTimer();
   if (mPurgeTimer) {
+#ifdef MOZ_TSAN
+    mPurgeTimerActive = true;
+#endif
     nsresult rv;
     rv = mPurgeTimer->InitWithCallback(this, 1000, nsITimer::TYPE_ONE_SHOT);
     LOG(("  timer init rv=0x%08" PRIx32, static_cast<uint32_t>(rv)));
@@ -1266,6 +1351,9 @@ CacheStorageService::Notify(nsITimer* aTimer) {
   mozilla::MutexAutoLock lock(mLock);
 
   if (aTimer == mPurgeTimer) {
+#ifdef MOZ_TSAN
+    mPurgeTimerActive = false;
+#endif
     mPurgeTimer = nullptr;
 
     nsCOMPtr<nsIRunnable> event =

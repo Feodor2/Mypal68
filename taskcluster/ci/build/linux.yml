@@ -17,7 +17,7 @@ linux64/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -26,15 +26,16 @@ linux64/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: ['mozilla-central', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-plain/opt:
     description: "Linux64 Opt Plain"
@@ -63,13 +64,14 @@ linux64-plain/opt:
             disable_package_metrics: true
         mozconfig-variant: plain-opt
     run-on-projects: ['mozilla-central', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-nasm
-        - linux64-node
-        - linux64-cbindgen
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-nasm
+            - linux64-node
+            - linux64-cbindgen
 
 linux64-fuzzing/debug:
     description: "Linux64 Fuzzing Debug"
@@ -88,7 +90,7 @@ linux64-fuzzing/debug:
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -98,15 +100,16 @@ linux64-fuzzing/debug:
         mozconfig-variant: debug-fuzzing
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-clang
-        - linux64-gcc
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-gcc
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-nasm
+            - linux64-node
 
 linux64/debug:
     description: "Linux64 Debug"
@@ -123,7 +126,7 @@ linux64/debug:
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -133,15 +136,16 @@ linux64/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-nasm
+            - linux64-node
 
 linux64-plain/debug:
     description: "Linux64 Debug Plain"
@@ -170,13 +174,14 @@ linux64-plain/debug:
         script: mozharness/scripts/fx_desktop_build.py
         tooltool-downloads: public
     run-on-projects: [trunk]
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-nasm
-        - linux64-node
-        - linux64-cbindgen
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-nasm
+            - linux64-node
+            - linux64-cbindgen
 
 linux64-devedition-nightly/opt:
     description: "Linux64 devedition Nightly"
@@ -198,7 +203,7 @@ linux64-devedition-nightly/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -211,14 +216,15 @@ linux64-devedition-nightly/opt:
         need-xvfb: true
         mozconfig-variant: devedition
     run-on-projects: ['mozilla-beta']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node
 
 linux64-base-toolchains/opt:
     description: "Linux64 base toolchains Opt"
@@ -237,7 +243,7 @@ linux64-base-toolchains/opt:
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -245,14 +251,15 @@ linux64-base-toolchains/opt:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-clang-4.0
-        - linux64-gcc-6
-        - linux64-rust-1.35
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm-2.13.02
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-clang-4.0
+            - linux64-gcc-6
+            - linux64-rust-1.36
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm-2.13.02
+            - linux64-node
 
 linux64-base-toolchains/debug:
     description: "Linux64 base toolchains Debug"
@@ -265,13 +272,13 @@ linux64-base-toolchains/debug:
     worker-type: b-linux
     worker:
         docker-image: {in-tree: debian7-amd64-build-base}
-        max-run-time: 5400
+        max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -281,14 +288,15 @@ linux64-base-toolchains/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-clang-4.0
-        - linux64-gcc-6
-        - linux64-rust-1.35
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm-2.13.02
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-clang-4.0
+            - linux64-gcc-6
+            - linux64-rust-1.36
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm-2.13.02
+            - linux64-node
 
 linux64-base-toolchains-clang/opt:
     description: "Linux64 base toolchains clang Opt"
@@ -304,9 +312,10 @@ linux64-base-toolchains-clang/opt:
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
+            DISABLE_CLANG_PLUGIN: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -314,13 +323,14 @@ linux64-base-toolchains-clang/opt:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang-4.0
-        - linux64-rust-1.35
-        - linux64-cbindgen
-        - linux64-nasm-2.13.02
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang-4.0
+            - linux64-rust-1.36
+            - linux64-cbindgen
+            - linux64-nasm-2.13.02
+            - linux64-node
 
 linux64-base-toolchains-clang/debug:
     description: "Linux64 base toolchains clang Debug"
@@ -333,12 +343,13 @@ linux64-base-toolchains-clang/debug:
     worker-type: b-linux
     worker:
         docker-image: {in-tree: debian7-amd64-build-base}
-        max-run-time: 3600
+        max-run-time: 5400
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
+            DISABLE_CLANG_PLUGIN: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -348,13 +359,14 @@ linux64-base-toolchains-clang/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang-4.0
-        - linux64-rust-1.35
-        - linux64-cbindgen
-        - linux64-nasm-2.13.02
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang-4.0
+            - linux64-rust-1.36
+            - linux64-cbindgen
+            - linux64-nasm-2.13.02
+            - linux64-node
 
 linux/opt:
     description: "Linux32 Opt"
@@ -372,7 +384,7 @@ linux/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -381,15 +393,16 @@ linux/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: ['mozilla-central', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux/debug:
     description: "Linux32 Debug"
@@ -407,7 +420,7 @@ linux/debug:
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -417,15 +430,16 @@ linux/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux-rusttests/opt:
     description: "Linux32 Rust Tests Opt"
@@ -454,16 +468,16 @@ linux-rusttests/opt:
         mozconfig-variant: rusttests
         tooltool-downloads: public
         keep-artifacts: false
-        need-xvfb: true
     run-on-projects: ['trunk', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux-rusttests/debug:
     description: "Linux32 Rust Tests Debug"
@@ -492,16 +506,16 @@ linux-rusttests/debug:
         mozconfig-variant: rusttests-debug
         tooltool-downloads: public
         keep-artifacts: false
-        need-xvfb: true
     run-on-projects: ['trunk', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux-devedition-nightly/opt:
     description: "Linux32 devedition Nightly"
@@ -524,7 +538,7 @@ linux-devedition-nightly/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -537,14 +551,15 @@ linux-devedition-nightly/opt:
         need-xvfb: true
         mozconfig-variant: devedition
     run-on-projects: ['mozilla-beta']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node
 
 linux-shippable/opt:
     description: "Linux32 Shippable"
@@ -567,7 +582,7 @@ linux-shippable/opt:
         max-run-time: 9000
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -576,14 +591,15 @@ linux-shippable/opt:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node
 
 linux64-asan/opt:
     description: "Linux64 Opt ASAN"
@@ -597,10 +613,11 @@ linux64-asan/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: "opt asan"
+            ASAN_OPTIONS: "detect_leaks=0"
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -610,15 +627,16 @@ linux64-asan/opt:
         mozconfig-variant: nightly-asan
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-asan-fuzzing/opt:
     description: "Linux64 Fuzzing Opt ASAN"
@@ -632,10 +650,11 @@ linux64-asan-fuzzing/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-fuzzing
+            ASAN_OPTIONS: "detect_leaks=0"
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -645,15 +664,16 @@ linux64-asan-fuzzing/opt:
         mozconfig-variant: nightly-fuzzing-asan
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-asan-fuzzing-ccov/opt:
     description: "Linux64 Fuzzing Opt ASAN w/ Coverage"
@@ -668,10 +688,11 @@ linux64-asan-fuzzing-ccov/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-fuzzing-ccov
+            ASAN_OPTIONS: "detect_leaks=0"
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -680,15 +701,16 @@ linux64-asan-fuzzing-ccov/opt:
         mozconfig-variant: asan-fuzzing-ccov
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-fuzzing-ccov/opt:
     description: "Linux64 Fuzzing Opt w/ Coverage"
@@ -706,9 +728,10 @@ linux64-fuzzing-ccov/opt:
             MOZ_LOW_PARALLELISM_BUILD: '1'
             PERFHERDER_EXTRA_OPTIONS: fuzzing-ccov
             FORCE_GCC: '1'
+            ASAN_OPTIONS: "detect_leaks=0"
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -717,15 +740,16 @@ linux64-fuzzing-ccov/opt:
         mozconfig-variant: fuzzing-ccov
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-clang
-        - linux64-gcc
-        - linux64-cbindgen
-        - linux64-rust-nightly
-        - linux64-rust-size
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-gcc
+            - linux64-cbindgen
+            - linux64-rust-nightly
+            - linux64-rust-size
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-asan-reporter-nightly/opt:
     description: "Linux64 Opt ASAN Reporter Nightly"
@@ -747,10 +771,11 @@ linux64-asan-reporter-nightly/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-reporter
+            ASAN_OPTIONS: "detect_leaks=0"
         max-run-time: 3600
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -761,14 +786,19 @@ linux64-asan-reporter-nightly/opt:
         mozconfig-variant: nightly-asan-reporter
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
+        mar-channel-id:
+            firefox-mozilla-central-asan
+        accepted-mar-channel-ids:
+            firefox-mozilla-central-asan
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node
 
 linux64-asan/debug:
     description: "Linux64 Debug ASAN"
@@ -782,10 +812,11 @@ linux64-asan/debug:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: "debug asan"
+            ASAN_OPTIONS: "detect_leaks=0"
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -795,15 +826,16 @@ linux64-asan/debug:
         mozconfig-variant: debug-asan
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-shippable/opt:
     description: "Linux64 Shippable"
@@ -825,7 +857,7 @@ linux64-shippable/opt:
         max-run-time: 9000
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -834,14 +866,15 @@ linux64-shippable/opt:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node
 
 linux64-noopt/debug:
     description: "Linux64 No-optimize Debug"
@@ -859,7 +892,7 @@ linux64-noopt/debug:
         max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -871,15 +904,16 @@ linux64-noopt/debug:
         keep-artifacts: false
         need-xvfb: true
     run-on-projects: ['trunk', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-rusttests/opt:
     description: "Linux64 Rust Tests Opt"
@@ -907,16 +941,16 @@ linux64-rusttests/opt:
         mozconfig-variant: rusttests
         tooltool-downloads: public
         keep-artifacts: false
-        need-xvfb: true
     run-on-projects: ['trunk', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-rusttests/debug:
     description: "Linux64 Rust Tests Debug"
@@ -944,16 +978,16 @@ linux64-rusttests/debug:
         mozconfig-variant: rusttests-debug
         tooltool-downloads: public
         keep-artifacts: false
-        need-xvfb: true
     run-on-projects: ['trunk', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-tup/opt:
     description: "Linux64 Tup"
@@ -982,15 +1016,16 @@ linux64-tup/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: []
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust-nightly
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-tup
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust-nightly
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-tup
+            - linux64-nasm
+            - linux64-node
 
 linux64-ccov/debug:
     description: "Linux64-CCov Debug"
@@ -1013,7 +1048,7 @@ linux64-ccov/debug:
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -1023,17 +1058,16 @@ linux64-ccov/debug:
         mozconfig-variant: code-coverage-debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-clang-8
-        - linux64-rust-nightly
-        - linux64-gcc
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
     fetches:
         toolchain:
+            - linux64-clang-8
+            - linux64-rust-nightly
+            - linux64-gcc
             - linux64-grcov
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-ccov/opt:
     description: "Linux64-CCov Opt"
@@ -1053,7 +1087,7 @@ linux64-ccov/opt:
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -1063,14 +1097,15 @@ linux64-ccov/opt:
         mozconfig-variant: code-coverage-opt
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-clang-8
-        - linux64-rust-nightly
-        - linux64-gcc
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-clang-8
+            - linux64-rust-nightly
+            - linux64-gcc
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-add-on-devel/opt:
     description: "Linux64 add-on-devel"
@@ -1086,7 +1121,7 @@ linux64-add-on-devel/opt:
         max-run-time: 3600
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -1097,15 +1132,16 @@ linux64-add-on-devel/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: ['mozilla-beta', 'mozilla-release', 'mozilla-esr45']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-aarch64/opt:
     description: "Linux64 aarch64 Opt"
@@ -1135,14 +1171,15 @@ linux64-aarch64/opt:
         mozconfig-variant: opt
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-node
 
 linux-gcp/debug:
     description: "Linux32 Debug - built on GCP"
@@ -1163,7 +1200,7 @@ linux-gcp/debug:
             PERFHERDER_EXTRA_OPTIONS: gcp
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -1173,15 +1210,16 @@ linux-gcp/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux-gcp/opt:
     description: "Linux32 Opt - built on GCP"
@@ -1202,7 +1240,7 @@ linux-gcp/opt:
             PERFHERDER_EXTRA_OPTIONS: gcp
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -1211,15 +1249,16 @@ linux-gcp/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: ['mozilla-central', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
 
 linux64-gcp/debug:
     description: "Linux64 Debug - built on GCP"
@@ -1239,7 +1278,7 @@ linux64-gcp/debug:
             PERFHERDER_EXTRA_OPTIONS: gcp
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -1249,15 +1288,16 @@ linux64-gcp/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
         need-xvfb: true
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-nasm
+            - linux64-node
 
 linux64-gcp/opt:
     description: "Linux64 Opt - built on GCP"
@@ -1277,7 +1317,7 @@ linux64-gcp/opt:
             PERFHERDER_EXTRA_OPTIONS: gcp
     run:
         using: mozharness
-        actions: [get-secrets, build, check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -1286,12 +1326,13 @@ linux64-gcp/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: ['mozilla-central', 'try']
-    toolchains:
-        - linux64-binutils
-        - linux64-clang
-        - linux64-rust
-        - linux64-rust-size
-        - linux64-cbindgen
-        - linux64-sccache
-        - linux64-nasm
-        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node

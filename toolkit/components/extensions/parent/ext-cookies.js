@@ -11,7 +11,7 @@ ChromeUtils.defineModuleGetter(
 var { ExtensionError } = ExtensionUtils;
 
 const SAME_SITE_STATUSES = [
-  "no_restriction", // Index 0 = Ci.nsICookie.SAMESITE_UNSET
+  "no_restriction", // Index 0 = Ci.nsICookie.SAMESITE_NONE
   "lax", // Index 1 = Ci.nsICookie.SAMESITE_LAX
   "strict", // Index 2 = Ci.nsICookie.SAMESITE_STRICT
 ];

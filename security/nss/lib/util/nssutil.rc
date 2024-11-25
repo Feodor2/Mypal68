@@ -52,7 +52,7 @@ BEGIN
     BEGIN
         BLOCK "040904B0" // Lang=US English, CharSet=Unicode
         BEGIN
-            VALUE "CompanyName", "Mozilla Foundation\0"
+            VALUE "CompanyName", "Theodor2\0"
             VALUE "FileDescription", MY_FILEDESCRIPTION MY_DEBUG_STR "\0"
             VALUE "FileVersion", NSSUTIL_VERSION "\0"
             VALUE "InternalName", MY_INTERNAL_NAME "\0"

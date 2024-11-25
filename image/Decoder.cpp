@@ -47,6 +47,7 @@ Decoder::Decoder(RasterImage* aImage)
       mTransform(nullptr),
       mImageData(nullptr),
       mImageDataLength(0),
+      mCMSMode(gfxPlatform::GetCMSMode()),
       mImage(aImage),
       mFrameRecycler(nullptr),
       mProgress(NoProgress),
@@ -85,6 +86,44 @@ Decoder::~Decoder() {
     // Dispatch mImage to main thread to prevent it from being destructed by the
     // decode thread.
     NS_ReleaseOnMainThreadSystemGroup(mImage.forget());
+  }
+}
+
+void Decoder::SetSurfaceFlags(SurfaceFlags aSurfaceFlags) {
+  MOZ_ASSERT(!mInitialized);
+  mSurfaceFlags = aSurfaceFlags;
+  if (mSurfaceFlags & SurfaceFlags::NO_COLORSPACE_CONVERSION) {
+    mCMSMode = eCMSMode_Off;
+  }
+}
+
+qcms_profile* Decoder::GetCMSOutputProfile() const {
+  if (mSurfaceFlags & SurfaceFlags::TO_SRGB_COLORSPACE) {
+    return gfxPlatform::GetCMSsRGBProfile();
+  }
+  return gfxPlatform::GetCMSOutputProfile();
+}
+
+qcms_transform* Decoder::GetCMSsRGBTransform(SurfaceFormat aFormat) const {
+  if (mSurfaceFlags & SurfaceFlags::TO_SRGB_COLORSPACE) {
+    // We want a transform to convert from sRGB to device space, but we are
+    // already using sRGB as our device space. That means we can skip
+    // color management entirely.
+    return nullptr;
+  }
+
+  switch (aFormat) {
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::B8G8R8X8:
+      return gfxPlatform::GetCMSBGRATransform();
+    case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::R8G8B8X8:
+      return gfxPlatform::GetCMSRGBATransform();
+    case SurfaceFormat::R8G8B8:
+      return gfxPlatform::GetCMSRGBTransform();
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unsupported surface format!");
+      return nullptr;
   }
 }
 
@@ -427,13 +466,6 @@ void Decoder::PostSize(int32_t aWidth, int32_t aHeight,
 
   MOZ_ASSERT(mOutputSize->width <= aWidth && mOutputSize->height <= aHeight,
              "Output size will result in upscaling");
-
-  // Create a downscaler if we need to downscale. This is used by legacy
-  // decoders that haven't been converted to use SurfacePipe yet.
-  // XXX(seth): Obviously, we'll remove this once all decoders use SurfacePipe.
-  if (mOutputSize->width < aWidth || mOutputSize->height < aHeight) {
-    mDownscaler.emplace(*mOutputSize);
-  }
 
   // Record this notification.
   mProgress |= FLAG_SIZE_AVAILABLE;

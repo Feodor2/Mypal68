@@ -61,7 +61,7 @@ int main(int argc, char **argv)
         PL_DestroyOptState(opt);
     } /* end block "Get command line options" */
     /* ---------------------------------------------------------------------- */
-    fd = PR_Open( "/tmp/nsprAppend", (PR_APPEND | PR_CREATE_FILE | PR_TRUNCATE | PR_WRONLY), 0666 );
+    fd = PR_Open( "./tmp-nsprAppend", (PR_APPEND | PR_CREATE_FILE | PR_TRUNCATE | PR_WRONLY), 0666 );
     if ( NULL == fd )  {
         if (debug) {
             printf("PR_Open() failed for writing: %d\n", PR_GetError());
@@ -97,7 +97,7 @@ int main(int argc, char **argv)
         goto Finished;
     }
     /* ---------------------------------------------------------------------- */
-    fd = PR_Open( "/tmp/nsprAppend", PR_RDONLY, 0 );
+    fd = PR_Open( "./tmp-nsprAppend", PR_RDONLY, 0 );
     if ( NULL == fd )  {
         if (debug) {
             printf("PR_Open() failed for reading: %d\n", PR_GetError());

@@ -2469,13 +2469,13 @@ nsresult IMMHandler::OnMouseButtonEvent(
 
   BYTE button;
   switch (aIMENotification.mMouseButtonEventData.mButton) {
-    case MouseButton::eLeft:
+    case MouseButton::ePrimary:
       button = IMEMOUSE_LDOWN;
       break;
     case MouseButton::eMiddle:
       button = IMEMOUSE_MDOWN;
       break;
-    case MouseButton::eRight:
+    case MouseButton::eSecondary:
       button = IMEMOUSE_RDOWN;
       break;
     default:

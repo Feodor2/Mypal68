@@ -7,6 +7,7 @@
 
 #include "StreamingLexer.h"
 #include "Decoder.h"
+#include "Downscaler.h"
 #include "imgFrame.h"
 #include "mozilla/gfx/2D.h"
 #include "nsBMPDecoder.h"
@@ -80,6 +81,7 @@ class nsICODecoder : public Decoder {
   };
 
   StreamingLexer<ICOState, 32> mLexer;  // The lexer.
+  Maybe<Downscaler> mDownscaler;        // The downscaler used for the mask.
   RefPtr<Decoder> mContainedDecoder;    // Either a BMP or PNG decoder.
   Maybe<SourceBufferIterator>
       mReturnIterator;               // Iterator to save return point.

@@ -2084,21 +2084,30 @@ void gfxPlatform::TransformPixel(const Color& in, Color& out,
     out = in;
 }
 
-void gfxPlatform::GetPlatformCMSOutputProfile(void*& mem, size_t& size) {
-  mem = nullptr;
-  size = 0;
+nsTArray<uint8_t> gfxPlatform::GetPlatformCMSOutputProfileData() {
+  return nsTArray<uint8_t>();
 }
 
-void gfxPlatform::GetCMSOutputProfileData(void*& mem, size_t& size) {
+nsTArray<uint8_t> gfxPlatform::GetCMSOutputProfileData() {
   nsAutoCString fname;
   Preferences::GetCString("gfx.color_management.display_profile", fname);
-  mem = nullptr;
-  if (!fname.IsEmpty()) {
-    qcms_data_from_path(fname.get(), &mem, &size);
+
+  if (fname.IsEmpty()) {
+    return gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfileData();
   }
+
+  void* mem = nullptr;
+  size_t size = 0;
+  qcms_data_from_path(fname.get(), &mem, &size);
   if (mem == nullptr) {
-    gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfile(mem, size);
+    return gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfileData();
   }
+
+  nsTArray<uint8_t> result;
+  result.AppendElements(static_cast<uint8_t*>(mem), size);
+  free(mem);
+
+  return result;
 }
 
 void gfxPlatform::CreateCMSOutputProfile() {
@@ -2115,13 +2124,10 @@ void gfxPlatform::CreateCMSOutputProfile() {
     }
 
     if (!gCMSOutputProfile) {
-      void* mem = nullptr;
-      size_t size = 0;
-
-      GetCMSOutputProfileData(mem, size);
-      if ((mem != nullptr) && (size > 0)) {
-        gCMSOutputProfile = qcms_profile_from_memory(mem, size);
-        free(mem);
+      nsTArray<uint8_t> outputProfileData = GetCMSOutputProfileData();
+      if (!outputProfileData.IsEmpty()) {
+        gCMSOutputProfile = qcms_profile_from_memory(
+            outputProfileData.Elements(), outputProfileData.Length());
       }
     }
 
@@ -2218,6 +2224,30 @@ qcms_transform* gfxPlatform::GetCMSBGRATransform() {
   }
 
   return gCMSBGRATransform;
+}
+
+qcms_transform* gfxPlatform::GetCMSOSRGBATransform() {
+  switch (SurfaceFormat::OS_RGBA) {
+    case SurfaceFormat::B8G8R8A8:
+      return GetCMSBGRATransform();
+    case SurfaceFormat::R8G8B8A8:
+      return GetCMSRGBATransform();
+    default:
+      // We do not support color management with big endian.
+      return nullptr;
+  }
+}
+
+qcms_data_type gfxPlatform::GetCMSOSRGBAType() {
+  switch (SurfaceFormat::OS_RGBA) {
+    case SurfaceFormat::B8G8R8A8:
+      return QCMS_DATA_BGRA_8;
+    case SurfaceFormat::R8G8B8A8:
+      return QCMS_DATA_RGBA_8;
+    default:
+      // We do not support color management with big endian.
+      return QCMS_DATA_RGBA_8;
+  }
 }
 
 /* Shuts down various transforms and profiles for CMS. */
@@ -3045,15 +3075,6 @@ void gfxPlatform::InitWebRenderConfig() {
     gfxVars::SetUseWebRenderProgramBinaryDisk(
         gfxConfig::IsEnabled(Feature::WEBRENDER));
   }
-
-#  ifdef MOZ_WIDGET_ANDROID
-  if (jni::IsFennec()) {
-    featureWebRender.ForceDisable(
-        FeatureStatus::Unavailable,
-        "WebRender not ready for use on non-e10s Android",
-        NS_LITERAL_CSTRING("FEATURE_FAILURE_ANDROID"));
-  }
-#  endif
 
   // gfxFeature is not usable in the GPU process, so we use gfxVars to transmit
   // this feature

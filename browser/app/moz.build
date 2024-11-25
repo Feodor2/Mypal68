@@ -67,7 +67,6 @@ if CONFIG['CC_TYPE'] == 'clang-cl':
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     RCINCLUDE = 'splash.rc'
-    DEFINES['MOZ_PHOENIX'] = True
     DIRS += [
 #        'winlauncher',
     ]
@@ -117,9 +116,6 @@ if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CC_TYPE'] not in ('clang', 'gcc'):
     LDFLAGS += ['/HEAP:0x40000']
 
 DisableStlWrapping()
-
-if CONFIG['MOZ_LINKER']:
-    OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
 
 if CONFIG['HAVE_CLOCK_MONOTONIC']:
     OS_LIBS += CONFIG['REALTIME_LIBS']

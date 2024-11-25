@@ -543,10 +543,11 @@ bool imgRequestProxy::StartDecodingWithResult(uint32_t aFlags) {
   return false;
 }
 
-bool imgRequestProxy::RequestDecodeWithResult(uint32_t aFlags) {
+imgIContainer::DecodeResult imgRequestProxy::RequestDecodeWithResult(
+    uint32_t aFlags) {
   if (IsValidating()) {
     mDecodeRequested = true;
-    return false;
+    return imgIContainer::DECODE_REQUESTED;
   }
 
   RefPtr<Image> image = GetImage();
@@ -558,7 +559,7 @@ bool imgRequestProxy::RequestDecodeWithResult(uint32_t aFlags) {
     GetOwner()->StartDecoding();
   }
 
-  return false;
+  return imgIContainer::DECODE_REQUESTED;
 }
 
 NS_IMETHODIMP

@@ -27,10 +27,6 @@
 #include "mozilla/UniquePtr.h"               // for UniquePtr
 #include "nsCOMPtr.h"                        // for already_AddRefed
 
-#if defined(MOZ_WIDGET_ANDROID)
-#  include "mozilla/layers/AndroidDynamicToolbarAnimator.h"
-#endif  // defined(MOZ_WIDGET_ANDROID)
-
 namespace mozilla {
 class MultiTouchInput;
 
@@ -304,14 +300,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
       const ScrollableLayerGuid& aGuid,
 #endif
       const Maybe<ZoomConstraints>& aConstraints) override;
-
-  /**
-   * Adjusts the root APZC to compensate for a shift in the surface. See the
-   * documentation on AsyncPanZoomController::AdjustScrollForSurfaceShift for
-   * some more details. This is only currently needed due to surface shifts
-   * caused by the dynamic toolbar on Android.
-   */
-  void AdjustScrollForSurfaceShift(const ScreenPoint& aShift);
 
   /**
    * Calls Destroy() on all APZC instances attached to the tree, and resets the
@@ -655,19 +643,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
                                        AsyncPanZoomController* aApzc);
 
   /**
-   * Process a movement of the dynamic toolbar by |aDeltaY| over the time
-   * period from |aStartTimestampMs| to |aEndTimestampMs|.
-   * This is used to track velocities accurately in the presence of movement
-   * of the dynamic toolbar, since in such cases the finger can be moving
-   * relative to the screen even though no scrolling is occurring.
-   * Note that this function expects "spatial coordinates" (i.e. toolbar
-   * moves up --> negative delta).
-   */
-  void ProcessDynamicToolbarMovement(uint32_t aStartTimestampMs,
-                                     uint32_t aEndTimestampMs,
-                                     ScreenCoord aDeltaY);
-
-  /**
    * Find the zoomable APZC in the same layer subtree (i.e. with the same
    * layers id) as the given APZC.
    */
@@ -706,7 +681,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   AsyncPanZoomController* FindRootApzcForLayersId(LayersId aLayersId) const;
   AsyncPanZoomController* FindRootContentApzcForLayersId(
       LayersId aLayersId) const;
-  AsyncPanZoomController* FindRootContentOrRootApzc() const;
   already_AddRefed<AsyncPanZoomController> GetZoomableTarget(
       AsyncPanZoomController* aApzc1, AsyncPanZoomController* aApzc2) const;
   already_AddRefed<AsyncPanZoomController> CommonAncestor(
@@ -996,11 +970,7 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   float mDPI;
 
 #if defined(MOZ_WIDGET_ANDROID)
- public:
-  AndroidDynamicToolbarAnimator* GetAndroidDynamicToolbarAnimator();
-
  private:
-  RefPtr<AndroidDynamicToolbarAnimator> mToolbarAnimator;
 #endif  // defined(MOZ_WIDGET_ANDROID)
 };
 

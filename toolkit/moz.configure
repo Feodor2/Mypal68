@@ -38,6 +38,12 @@ def all_configure_options():
 
 set_config('MOZ_CONFIGURE_OPTIONS', all_configure_options)
 
+@depends(target)
+def fold_libs(target):
+    return target.os in ('WINNT', 'OSX', 'Android')
+
+set_config('MOZ_FOLD_LIBS', fold_libs)
+
 # Profiling
 # ==============================================================
 # Some of the options here imply an option from js/moz.configure,
@@ -147,7 +153,7 @@ set_define('MOZ_JACK', depends_if(jack)(lambda _: True))
 # ==============================================================
 @depends(target)
 def pulseaudio_default(target):
-    return target.os not in ('WINNT', 'OSX', 'iOS', 'Android', 'OpenBSD')
+    return target.os not in ('WINNT', 'OSX', 'Android', 'OpenBSD')
 
 option('--enable-pulseaudio', env='MOZ_PULSEAUDIO', default=pulseaudio_default,
        help='{Enable|Disable} PulseAudio audio backend.')
@@ -204,8 +210,6 @@ def toolkit_choices(target):
         return ('cairo-windows',)
     elif target.os == 'OSX':
         return ('cairo-cocoa',)
-    elif target.os == 'iOS':
-        return ('cairo-uikit',)
     elif target.os == 'Android':
         return ('cairo-android',)
     else:
@@ -645,15 +649,24 @@ option('--enable-webrender-debugger',
 set_config('MOZ_WEBRENDER_DEBUGGER',
            depends_if('--enable-webrender-debugger')(lambda _: True))
 
+
+# Additional system headers defined at the application level
+# ==============================================================
+
+option('--enable-app-system-headers', env='MOZ_APP_SYSTEM_HEADERS',
+       help='Use additional system headers defined in $MOZ_BUILD_APP/app-system-headers.mozbuild')
+
+@depends('--enable-app-system-headers')
+def app_system_headers(value):
+    if value:
+        return True
+
+set_config('MOZ_APP_SYSTEM_HEADERS', app_system_headers)
+set_define('MOZ_APP_SYSTEM_HEADERS', app_system_headers)
+
+
 # Printing
 # ==============================================================
-@depends(target)
-def ios_disable_printing(target):
-    if target.os == 'iOS':
-        return False
-
-imply_option('--enable-printing', ios_disable_printing, reason='--target')
-
 option('--disable-printing', help='Disable printing support')
 
 @depends('--disable-printing')
@@ -711,8 +724,6 @@ option('--enable-ipdl-tests', help='Enable expensive IPDL tests')
 
 set_config('MOZ_IPDL_TESTS',
            depends_if('--enable-ipdl-tests')(lambda _: True))
-
-include('nss.configure')
 
 # Graphics
 # ==============================================================
@@ -1005,8 +1016,11 @@ with only_when('--enable-compile-environment'):
         return target.kernel == 'Linux' and host.kernel == 'Linux' and \
                target.cpu in ('arm', 'x86', 'x86_64')
 
-    @depends('--enable-release')
-    def default_elfhack(release):
+    @depends('--enable-release', enable_linker)
+    def default_elfhack(release, linker):
+        # Disable elfhack when explicitly building with --enable-linker=lld
+        if linker and linker.origin != 'default' and linker[0] == 'lld':
+            return False
         return bool(release)
 
     with only_when(has_elfhack):
@@ -1637,6 +1651,137 @@ set_config('MOZ_HAS_REMOTE', has_remote)
 set_define('MOZ_HAS_REMOTE', has_remote)
 
 
+# wasm sandboxing support
+# ==============================================================
+
+def wasm_sandboxing_libraries():
+    return ('graphite',)
+
+option('--with-wasm-sandboxed-libraries',
+       help='Enable wasm sandboxing for the selected libraries',
+       nargs='+',
+       choices=dependable(wasm_sandboxing_libraries))
+
+@depends('--with-wasm-sandboxed-libraries')
+def requires_wasm_sandboxing(libraries):
+    if libraries:
+        return True
+
+set_config('MOZ_USING_WASM_SANDBOXING', requires_wasm_sandboxing)
+
+lucetc = check_prog('LUCETC', ['lucetc'],
+                    paths=toolchain_search_path, when=requires_wasm_sandboxing)
+
+option('--with-wasi-sysroot',
+       nargs=1,
+       help='Path to wasi sysroot for wasm sandboxing',
+       when=requires_wasm_sandboxing)
+
+@depends('--with-wasi-sysroot', when=requires_wasm_sandboxing)
+@imports('os')
+def wasi_sysroot(wasi_sysroot):
+    if not wasi_sysroot:
+        return
+
+    wasi_sysroot = wasi_sysroot[0]
+    if not os.path.isdir(wasi_sysroot):
+        die('Argument to --with-wasi-sysroot must be a directory')
+    if not os.path.isabs(wasi_sysroot):
+        die('Argument to --with-wasi-sysroot must be an absolute path')
+
+    return wasi_sysroot
+
+set_config('WASI_SYSROOT', wasi_sysroot)
+
+
+def wasm_compiler_with_flags(wasm_compiler, provided_wasm_compiler, sysroot):
+    if not sysroot:
+        return
+    if provided_wasm_compiler:
+        return ' '.join(
+            provided_wasm_compiler.wrapper + [provided_wasm_compiler.program]
+            + provided_wasm_compiler.flags + ['--sysroot=%s' % sysroot])
+    elif wasm_compiler:
+        return '%s --target=wasm32-wasi --sysroot=%s' % (wasm_compiler, sysroot)
+
+option(env='WASM_CC', nargs=1, help='Path to the C->WASM compiler',
+       when=requires_wasm_sandboxing)
+provided_wasm_cc = provided_program('WASM_CC', when=requires_wasm_sandboxing)
+wasm_cc = check_prog('_WASM_CC', ['clang'], input=provided_wasm_cc.program,
+                     paths=toolchain_search_path, allow_missing=True,
+                     what='the C->WASM compiler', when=requires_wasm_sandboxing)
+@depends(wasm_cc, provided_wasm_cc, wasi_sysroot, when=requires_wasm_sandboxing)
+def wasm_cc_with_flags(wasm_cc, provided_wasm_cc, wasi_sysroot):
+    return wasm_compiler_with_flags(wasm_cc, provided_wasm_cc, wasi_sysroot)
+set_config('WASM_CC', wasm_cc_with_flags, when=requires_wasm_sandboxing)
+
+option(env='WASM_CXX', nargs=1, help='Path to the C++->WASM compiler',
+       when=requires_wasm_sandboxing)
+provided_wasm_cxx = provided_program('WASM_CXX', when=requires_wasm_sandboxing)
+wasm_cxx = check_prog(
+    '_WASM_CXX', ['clang++'], input=provided_wasm_cxx.program,
+    paths=toolchain_search_path, allow_missing=True,
+    what='the C++->WASM compiler', when=requires_wasm_sandboxing)
+@depends(wasm_cxx, provided_wasm_cxx, wasi_sysroot,
+         when=requires_wasm_sandboxing)
+def wasm_cxx_with_flags(wasm_cxx, provided_wasm_cxx, wasi_sysroot):
+    return wasm_compiler_with_flags(wasm_cxx, provided_wasm_cxx, wasi_sysroot)
+set_config('WASM_CXX', wasm_cxx_with_flags, when=requires_wasm_sandboxing)
+
+
+wasm_compile_flags = dependable(['-fno-exceptions', '-fno-strict-aliasing', '-Qunused-arguments'])
+option(env='WASM_CFLAGS', nargs=1, help='Options to pass to WASM_CC',
+       when=requires_wasm_sandboxing)
+@depends('WASM_CFLAGS', wasm_compile_flags, when=requires_wasm_sandboxing)
+def wasm_cflags(value, wasm_compile_flags):
+    if value:
+        return wasm_compile_flags + value
+    else:
+        return wasm_compile_flags
+set_config('WASM_CFLAGS', wasm_cflags, when=requires_wasm_sandboxing)
+
+option(env='WASM_CXXFLAGS', nargs=1, help='Options to pass to WASM_CXX',
+       when=requires_wasm_sandboxing)
+@depends('WASM_CXXFLAGS', wasm_compile_flags, when=requires_wasm_sandboxing)
+def wasm_cxxflags(value, wasm_compile_flags):
+    if value:
+        return wasm_compile_flags + value
+    else:
+        return wasm_compile_flags
+set_config('WASM_CXXFLAGS', wasm_cxxflags, when=requires_wasm_sandboxing)
+
+option(env='WASM_LDFLAGS', nargs=1,
+       help='Options to pass when linking wasm modules',
+       when=requires_wasm_sandboxing)
+@depends('WASM_LDFLAGS', when=requires_wasm_sandboxing)
+def wasm_ldflags(value):
+    if value:
+        return value
+set_config('WASM_LDFLAGS', wasm_ldflags, when=requires_wasm_sandboxing)
+
+
+@depends('--with-wasm-sandboxed-libraries', target)
+def wasm_sandboxing(libraries, target):
+    if not libraries:
+        return
+
+    # Wasm sandboxing is only enabled on specific targets.
+    if not (target.cpu in ('x86_64',) and \
+            target.kernel == 'Linux' and \
+            target.os != 'Android'):
+        die('wasm sandboxing is only enabled on x86-64 Linux')
+
+    return namespace(**{name: True for name in libraries})
+
+@template
+def wasm_sandboxing_config_defines():
+    for lib in wasm_sandboxing_libraries():
+        set_config('MOZ_WASM_SANDBOXING_%s' % lib.upper(), getattr(wasm_sandboxing, lib))
+        set_define('MOZ_WASM_SANDBOXING_%s' % lib.upper(), getattr(wasm_sandboxing, lib))
+
+wasm_sandboxing_config_defines()
+
+
 # new XULStore implementation
 # ==============================================================
 
@@ -1671,3 +1816,83 @@ def new_cert_storage(milestone):
 
 set_config('MOZ_NEW_CERT_STORAGE', True, when=new_cert_storage)
 set_define('MOZ_NEW_CERT_STORAGE', True, when=new_cert_storage)
+
+# NSS
+# ===
+option('--with-system-nss', help='Use system NSS')
+
+imply_option('--with-system-nspr', True, when='--with-system-nss')
+
+nss_pkg = pkg_check_modules('NSS', 'nss >= 3.47', when='--with-system-nss', config=False)
+
+set_config('MOZ_SYSTEM_NSS', True, when='--with-system-nss')
+
+@depends(nss_pkg, check_build_environment)
+def nss_config(nss_pkg, build_env):
+    cflags = ['-I%s' % os.path.join(build_env.dist, 'include', 'nss')]
+    libs = None
+    if nss_pkg:
+        cflags = list(nss_pkg.cflags) + cflags
+        libs = nss_pkg.libs
+    return namespace(cflags=cflags, libs=libs)
+
+set_config('NSS_CFLAGS', nss_config.cflags)
+set_config('NSS_LIBS', nss_config.libs)
+add_old_configure_assignment('NSS_CFLAGS', nss_config.cflags)
+
+# Mobile optimizations
+# ==============================================================
+option('--enable-mobile-optimize', default=target_is_android,
+       help='{Enable|Disable} mobile optimizations')
+
+set_define('MOZ_GFX_OPTIMIZE_MOBILE', True, when='--enable-mobile-optimize')
+# We ignore "paint will resample" on mobile for performance.
+# We may want to revisit this later.
+set_define('MOZ_IGNORE_PAINT_WILL_RESAMPLE', True,
+           when='--enable-mobile-optimize')
+
+# Pref extensions
+# ==============================================================
+option('--disable-pref-extensions',
+       help='Disable pref extensions such as autoconfig')
+set_config('MOZ_PREF_EXTENSIONS', True, when='--enable-pref-extensions')
+
+# Offer a way to disable the startup cache
+# ==============================================================
+option('--disable-startupcache', help='Disable startup cache')
+
+@depends('--enable-startupcache')
+def enable_startupcache(value):
+    if value:
+        return True
+
+set_define('MOZ_DISABLE_STARTUPCACHE', True,
+           when=depends(enable_startupcache)(lambda x: not x))
+
+
+# Branding
+# ==============================================================
+option(env='MOZ_APP_REMOTINGNAME', nargs=1,
+       help='Used for the internal program name, which affects profile name '
+       'and remoting. If not set, defaults to MOZ_APP_NAME.')
+
+@depends('MOZ_APP_REMOTINGNAME', moz_app_name)
+def moz_app_remotingname(value, moz_app_name):
+    if value:
+        return value[0]
+    return moz_app_name
+
+set_config('MOZ_APP_REMOTINGNAME', moz_app_remotingname)
+
+option(env='ANDROID_PACKAGE_NAME', nargs=1,
+       help='Name of the Android package (default org.mozilla.$MOZ_APP_NAME)')
+
+@depends('ANDROID_PACKAGE_NAME', moz_app_name)
+def android_package_name(value, moz_app_name):
+    if value:
+        return value[0]
+    if moz_app_name == 'fennec':
+        return 'org.mozilla.fennec_aurora'
+    return 'org.mozilla.%s' % moz_app_name
+
+set_config('ANDROID_PACKAGE_NAME', android_package_name)

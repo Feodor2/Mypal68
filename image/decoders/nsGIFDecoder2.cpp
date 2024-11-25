@@ -87,9 +87,14 @@ nsGIFDecoder2::nsGIFDecoder2(RasterImage* aImage)
       mColormapSize(0),
       mColorMask('\0'),
       mGIFOpen(false),
-      mSawTransparency(false) {
+      mSawTransparency(false),
+      mSwizzleFn(nullptr) {
   // Clear out the structure, excluding the arrays.
   memset(&mGIFStruct, 0, sizeof(mGIFStruct));
+
+  // Each color table will need to be unpacked.
+  mSwizzleFn = SwizzleRow(SurfaceFormat::R8G8B8, SurfaceFormat::OS_RGBA);
+  MOZ_ASSERT(mSwizzleFn);
 }
 
 nsGIFDecoder2::~nsGIFDecoder2() { free(mGIFStruct.local_colormap); }
@@ -183,15 +188,14 @@ nsresult nsGIFDecoder2::BeginImageFrame(const IntRect& aFrameRect,
     // The first frame may be displayed progressively.
     pipeFlags |= SurfacePipeFlags::PROGRESSIVE_DISPLAY;
 
-    format =
-        hasTransparency ? SurfaceFormat::B8G8R8A8 : SurfaceFormat::B8G8R8X8;
+    format = hasTransparency ? SurfaceFormat::OS_RGBA : SurfaceFormat::OS_RGBX;
   } else {
-    format = SurfaceFormat::B8G8R8A8;
+    format = SurfaceFormat::OS_RGBA;
   }
 
   Maybe<SurfacePipe> pipe = SurfacePipeFactory::CreateSurfacePipe(
-      this, Size(), OutputSize(), aFrameRect, format, animParams, mTransform,
-      pipeFlags);
+      this, Size(), OutputSize(), aFrameRect, format, format, animParams,
+      mTransform, pipeFlags);
   mCurrentFrameIndex = mGIFStruct.images_decoded;
 
   if (!pipe) {
@@ -390,49 +394,22 @@ Tuple<int32_t, Maybe<WriteState>> nsGIFDecoder2::YieldPixels(
 /// Expand the colormap from RGB to Packed ARGB as needed by Cairo.
 /// And apply any LCMS transformation.
 void nsGIFDecoder2::ConvertColormap(uint32_t* aColormap, uint32_t aColors) {
+  if (!aColors) {
+    return;
+  }
+
   // Apply CMS transformation if enabled and available
-  if (!(GetSurfaceFlags() & SurfaceFlags::NO_COLORSPACE_CONVERSION) &&
-      gfxPlatform::GetCMSMode() == eCMSMode_All) {
-    qcms_transform* transform = gfxPlatform::GetCMSRGBTransform();
+  if (mCMSMode == eCMSMode_All) {
+    qcms_transform* transform = GetCMSsRGBTransform(SurfaceFormat::R8G8B8);
     if (transform) {
       qcms_transform_data(transform, aColormap, aColormap, aColors);
     }
   }
 
-  // Convert from the GIF's RGB format to the Cairo format.
-  // Work from end to begin, because of the in-place expansion
-  uint8_t* from = ((uint8_t*)aColormap) + 3 * aColors;
-  uint32_t* to = aColormap + aColors;
-
-  // Convert color entries to Cairo format
-
-  // set up for loops below
-  if (!aColors) {
-    return;
-  }
-  uint32_t c = aColors;
-
-  // copy as bytes until source pointer is 32-bit-aligned
-  // NB: can't use 32-bit reads, they might read off the end of the buffer
-  for (; (NS_PTR_TO_UINT32(from) & 0x3) && c; --c) {
-    from -= 3;
-    *--to = gfxPackedPixel(0xFF, from[0], from[1], from[2]);
-  }
-
-  // bulk copy of pixels.
-  while (c >= 4) {
-    from -= 12;
-    to -= 4;
-    c -= 4;
-    GFX_BLOCK_RGB_TO_FRGB(from, to);
-  }
-
-  // copy remaining pixel(s)
-  // NB: can't use 32-bit reads, they might read off the end of the buffer
-  while (c--) {
-    from -= 3;
-    *--to = gfxPackedPixel(0xFF, from[0], from[1], from[2]);
-  }
+  // Expand color table from RGB to BGRA.
+  MOZ_ASSERT(mSwizzleFn);
+  uint8_t* data = reinterpret_cast<uint8_t*>(aColormap);
+  mSwizzleFn(data, data, aColors);
 }
 
 LexerResult nsGIFDecoder2::DoDecode(SourceBufferIterator& aIterator,

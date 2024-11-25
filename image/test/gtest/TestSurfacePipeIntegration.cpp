@@ -37,7 +37,7 @@ class TestSurfacePipeFactory {
 }  // namespace image
 }  // namespace mozilla
 
-void CheckSurfacePipeMethodResults(SurfacePipe* aPipe, Decoder* aDecoder,
+void CheckSurfacePipeMethodResults(SurfacePipe* aPipe, image::Decoder* aDecoder,
                                    const IntRect& aRect = IntRect(0, 0, 100,
                                                                   100)) {
   // Check that the pipeline ended up in the state we expect.  Note that we're
@@ -91,12 +91,12 @@ TEST_F(ImageSurfacePipeIntegration, SurfacePipe) {
   pipe = TestSurfacePipeFactory::SimpleSurfacePipe();
 
   // Test that SurfacePipe objects can be initialized with a pipeline.
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
   auto sink = MakeUnique<SurfaceSink>();
-  nsresult rv = sink->Configure(SurfaceConfig{decoder, IntSize(100, 100),
-                                              SurfaceFormat::B8G8R8A8, false});
+  nsresult rv = sink->Configure(
+      SurfaceConfig{decoder, IntSize(100, 100), SurfaceFormat::OS_RGBA, false});
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   pipe = TestSurfacePipeFactory::SurfacePipeFromPipeline(sink);
@@ -183,10 +183,10 @@ TEST_F(ImageSurfacePipeIntegration, SurfacePipe) {
 }
 
 TEST_F(ImageSurfacePipeIntegration, DeinterlaceDownscaleWritePixels) {
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
-  auto test = [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+  auto test = [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
     CheckWritePixels(aDecoder, aFilter,
                      /* aOutputRect = */ Some(IntRect(0, 0, 25, 25)));
   };
@@ -194,8 +194,8 @@ TEST_F(ImageSurfacePipeIntegration, DeinterlaceDownscaleWritePixels) {
   WithFilterPipeline(
       decoder, test,
       DeinterlacingConfig<uint32_t>{/* mProgressiveDisplay = */ true},
-      DownscalingConfig{IntSize(100, 100), SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, IntSize(25, 25), SurfaceFormat::B8G8R8A8, false});
+      DownscalingConfig{IntSize(100, 100), SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, IntSize(25, 25), SurfaceFormat::OS_RGBA, false});
 }
 
 TEST_F(ImageSurfacePipeIntegration,
@@ -212,7 +212,7 @@ TEST_F(ImageSurfacePipeIntegration,
   //        +############+
   //        +------------+
 
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
   // Note that aInputWriteRect is 100x50 because RemoveFrameRectFilter ignores
@@ -238,7 +238,7 @@ TEST_F(ImageSurfacePipeIntegration,
   //     Some fuzz, as usual, is necessary when dealing with Lanczos
   //     downscaling.
 
-  auto test = [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+  auto test = [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
     CheckWritePixels(aDecoder, aFilter,
                      /* aOutputRect = */ Some(IntRect(0, 0, 20, 20)),
                      /* aInputRect = */ Some(IntRect(0, 0, 100, 100)),
@@ -249,8 +249,8 @@ TEST_F(ImageSurfacePipeIntegration,
 
   WithFilterPipeline(
       decoder, test, RemoveFrameRectConfig{IntRect(50, 50, 100, 100)},
-      DownscalingConfig{IntSize(100, 100), SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, IntSize(20, 20), SurfaceFormat::B8G8R8A8, false});
+      DownscalingConfig{IntSize(100, 100), SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, IntSize(20, 20), SurfaceFormat::OS_RGBA, false});
 }
 
 TEST_F(ImageSurfacePipeIntegration,
@@ -267,10 +267,10 @@ TEST_F(ImageSurfacePipeIntegration,
   //        +            +
   //        +------------+
 
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
-  auto test = [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+  auto test = [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
     CheckWritePixels(aDecoder, aFilter,
                      /* aOutputRect = */ Some(IntRect(0, 0, 20, 20)),
                      /* aInputRect = */ Some(IntRect(0, 0, 100, 100)),
@@ -281,19 +281,19 @@ TEST_F(ImageSurfacePipeIntegration,
 
   WithFilterPipeline(
       decoder, test, RemoveFrameRectConfig{IntRect(-50, -50, 100, 100)},
-      DownscalingConfig{IntSize(100, 100), SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, IntSize(20, 20), SurfaceFormat::B8G8R8A8, false});
+      DownscalingConfig{IntSize(100, 100), SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, IntSize(20, 20), SurfaceFormat::OS_RGBA, false});
 }
 
 TEST_F(ImageSurfacePipeIntegration, DeinterlaceRemoveFrameRectWritePixels) {
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
   // Note that aInputRect is the full 100x100 size even though
   // RemoveFrameRectFilter is part of this pipeline, because deinterlacing
   // requires reading every row.
 
-  auto test = [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+  auto test = [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
     CheckWritePixels(aDecoder, aFilter,
                      /* aOutputRect = */ Some(IntRect(0, 0, 100, 100)),
                      /* aInputRect = */ Some(IntRect(0, 0, 100, 100)),
@@ -305,16 +305,15 @@ TEST_F(ImageSurfacePipeIntegration, DeinterlaceRemoveFrameRectWritePixels) {
       decoder, test,
       DeinterlacingConfig<uint32_t>{/* mProgressiveDisplay = */ true},
       RemoveFrameRectConfig{IntRect(50, 50, 100, 100)},
-      SurfaceConfig{decoder, IntSize(100, 100), SurfaceFormat::B8G8R8A8,
-                    false});
+      SurfaceConfig{decoder, IntSize(100, 100), SurfaceFormat::OS_RGBA, false});
 }
 
 TEST_F(ImageSurfacePipeIntegration,
        DeinterlaceRemoveFrameRectDownscaleWritePixels) {
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
-  auto test = [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+  auto test = [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
     CheckWritePixels(aDecoder, aFilter,
                      /* aOutputRect = */ Some(IntRect(0, 0, 20, 20)),
                      /* aInputRect = */ Some(IntRect(0, 0, 100, 100)),
@@ -327,12 +326,12 @@ TEST_F(ImageSurfacePipeIntegration,
       decoder, test,
       DeinterlacingConfig<uint32_t>{/* mProgressiveDisplay = */ true},
       RemoveFrameRectConfig{IntRect(50, 50, 100, 100)},
-      DownscalingConfig{IntSize(100, 100), SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, IntSize(20, 20), SurfaceFormat::B8G8R8A8, false});
+      DownscalingConfig{IntSize(100, 100), SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, IntSize(20, 20), SurfaceFormat::OS_RGBA, false});
 }
 
 TEST_F(ImageSurfacePipeIntegration, ConfiguringHugeDeinterlacingBufferFails) {
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
   // When DownscalingFilter is used, we may succeed in allocating an output
@@ -343,7 +342,6 @@ TEST_F(ImageSurfacePipeIntegration, ConfiguringHugeDeinterlacingBufferFails) {
   // test makes sure that we reject such allocations.
   AssertConfiguringPipelineFails(
       decoder, DeinterlacingConfig<uint32_t>{/* mProgressiveDisplay = */ true},
-      DownscalingConfig{IntSize(60000, 60000), SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, IntSize(600, 600), SurfaceFormat::B8G8R8A8,
-                    false});
+      DownscalingConfig{IntSize(60000, 60000), SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, IntSize(600, 600), SurfaceFormat::OS_RGBA, false});
 }

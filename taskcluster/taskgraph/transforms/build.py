@@ -71,13 +71,21 @@ def resolve_shipping_product(config, jobs):
 
 @transforms.add
 def mozharness_extra_config(config, jobs):
+    keys = [
+        'run.update-channel',
+        'run.mar-channel-id',
+        'run.accepted-mar-channel-ids',
+    ]
     for job in jobs:
-        resolve_keyed_by(
-            job, 'run.update-channel', item_name=job['name'],
-            **{
-                'release-type': config.params['release_type'],
-            }
-        )
+        job['worker'].setdefault('env', {})
+        for key in keys:
+            resolve_keyed_by(
+                job, key, item_name=job['name'],
+                **{
+                    'project': config.params['project'],
+                    'release-type': config.params['release_type'],
+                }
+            )
 
         for item_name, should_become_attribute in (
             ('branding', False),
@@ -91,6 +99,15 @@ def mozharness_extra_config(config, jobs):
 
                 if should_become_attribute:
                     job['attributes'][item_name] = item
+
+        mar_channel_id = job['run'].pop('mar-channel-id', None)
+        if mar_channel_id:
+            job['attributes']['mar-channel-id'] = mar_channel_id
+            job['worker']['env']['MAR_CHANNEL_ID'] = mar_channel_id
+        accepted_mar_channel_ids = job['run'].pop('accepted-mar-channel-ids', None)
+        if accepted_mar_channel_ids:
+            job['attributes']['accepted-mar-channel-ids'] = accepted_mar_channel_ids
+            job['worker']['env']['ACCEPTED_MAR_CHANNEL_IDS'] = accepted_mar_channel_ids
 
         yield job
 
@@ -114,7 +131,8 @@ def mozconfig(config, jobs):
 def use_profile_data(config, jobs):
     for job in jobs:
         use_pgo = job.pop('use-pgo', False)
-        if not use_pgo:
+        disable_pgo = config.params['try_task_config'].get('disable-pgo', False)
+        if not use_pgo or disable_pgo:
             yield job
             continue
 
@@ -128,7 +146,7 @@ def use_profile_data(config, jobs):
         dependencies = 'generate-profile-{}'.format(name)
         job.setdefault('dependencies', {})['generate-profile'] = dependencies
         job.setdefault('fetches', {})['generate-profile'] = ['profdata.tar.xz']
-        job['worker']['env'].update({"MOZ_PGO_PROFILE_USE": "1"})
+        job['worker']['env'].update({"TASKCLUSTER_PGO_PROFILE_USE": "1"})
         yield job
 
 

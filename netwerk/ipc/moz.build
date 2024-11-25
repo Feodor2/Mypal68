@@ -20,7 +20,6 @@ EXPORTS.mozilla.net += [
 UNIFIED_SOURCES += [
     'ChannelEventQueue.cpp',
     'NeckoChild.cpp',
-    'NeckoCommon.cpp',
     'NeckoParent.cpp',
     'NeckoTargetHolder.cpp',
     'SocketProcessBridgeChild.cpp',

@@ -92,7 +92,6 @@
 #include "KeyboardScrollAnimation.h"
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "AndroidAPZ.h"
-#  include "mozilla/layers/AndroidDynamicToolbarAnimator.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
 #define ENABLE_APZC_LOGGING 0
@@ -1308,12 +1307,6 @@ nsEventStatus AsyncPanZoomController::HandleGestureEvent(
   return rv;
 }
 
-void AsyncPanZoomController::HandleDynamicToolbarMovement(
-    uint32_t aStartTimestampMs, uint32_t aEndTimestampMs,
-    ParentLayerCoord aDeltaY) {
-  mY.HandleDynamicToolbarMovement(aStartTimestampMs, aEndTimestampMs, aDeltaY);
-}
-
 void AsyncPanZoomController::StartAutoscroll(const ScreenPoint& aPoint) {
   // Cancel any existing animation.
   CancelAnimation();
@@ -1350,8 +1343,7 @@ nsEventStatus AsyncPanZoomController::OnTouchStart(
     case NOTHING: {
       ParentLayerPoint point = GetFirstTouchPoint(aEvent);
       mStartTouch = GetFirstExternalTouchPoint(aEvent);
-      mX.StartTouch(point.x, aEvent.mTime);
-      mY.StartTouch(point.y, aEvent.mTime);
+      StartTouch(point, aEvent.mTime);
       if (RefPtr<GeckoContentController> controller =
               GetGeckoContentController()) {
         MOZ_ASSERT(GetCurrentTouchBlock());
@@ -1507,8 +1499,7 @@ nsEventStatus AsyncPanZoomController::OnTouchEnd(
     case PANNING_LOCKED_Y:
     case PAN_MOMENTUM: {
       MOZ_ASSERT(GetCurrentTouchBlock());
-      mX.EndTouch(aEvent.mTime);
-      mY.EndTouch(aEvent.mTime);
+      EndTouch(aEvent.mTime);
       return HandleEndOfPan();
     }
     case PINCHING:
@@ -1557,8 +1548,7 @@ nsEventStatus AsyncPanZoomController::OnScaleBegin(
   // If zooming is not allowed, this is a two-finger pan.
   // Start tracking panning distance and velocity.
   if (!mZoomConstraints.mAllowZoom) {
-    mX.StartTouch(aEvent.mLocalFocusPoint.x, aEvent.mTime);
-    mY.StartTouch(aEvent.mLocalFocusPoint.y, aEvent.mTime);
+    StartTouch(aEvent.mLocalFocusPoint, aEvent.mTime);
   }
 
   // For platforms that don't support APZ zooming, dispatch a message to the
@@ -1767,8 +1757,7 @@ nsEventStatus AsyncPanZoomController::OnScaleEnd(
   if (aEvent.mLocalFocusPoint != PinchGestureInput::BothFingersLifted()) {
     if (mZoomConstraints.mAllowZoom) {
       mPanDirRestricted = false;
-      mX.StartTouch(aEvent.mLocalFocusPoint.x, aEvent.mTime);
-      mY.StartTouch(aEvent.mLocalFocusPoint.y, aEvent.mTime);
+      StartTouch(aEvent.mLocalFocusPoint, aEvent.mTime);
       SetState(TOUCHING);
     } else {
       // If zooming isn't allowed, StartTouch() was already called
@@ -1807,8 +1796,7 @@ nsEventStatus AsyncPanZoomController::OnScaleEnd(
       ScrollSnap();
     } else {
       // when zoom is not allowed
-      mX.EndTouch(aEvent.mTime);
-      mY.EndTouch(aEvent.mTime);
+      EndTouch(aEvent.mTime);
       if (stateWasPinching) {
         // still pinching
         if (HasReadyTouchBlock()) {
@@ -2462,8 +2450,7 @@ nsEventStatus AsyncPanZoomController::OnPanMayBegin(
     const PanGestureInput& aEvent) {
   APZC_LOG("%p got a pan-maybegin in state %d\n", this, mState);
 
-  mX.StartTouch(aEvent.mLocalPanStartPoint.x, aEvent.mTime);
-  mY.StartTouch(aEvent.mLocalPanStartPoint.y, aEvent.mTime);
+  StartTouch(aEvent.mLocalPanStartPoint, aEvent.mTime);
   MOZ_ASSERT(GetCurrentPanGestureBlock());
   GetCurrentPanGestureBlock()->GetOverscrollHandoffChain()->CancelAnimations();
 
@@ -2489,8 +2476,7 @@ nsEventStatus AsyncPanZoomController::OnPanBegin(
     CancelAnimation();
   }
 
-  mX.StartTouch(aEvent.mLocalPanStartPoint.x, aEvent.mTime);
-  mY.StartTouch(aEvent.mLocalPanStartPoint.y, aEvent.mTime);
+  StartTouch(aEvent.mLocalPanStartPoint, aEvent.mTime);
 
   if (GetAxisLockMode() == FREE) {
     SetState(PANNING);
@@ -2601,8 +2587,7 @@ nsEventStatus AsyncPanZoomController::OnPanEnd(const PanGestureInput& aEvent) {
   // Call into OnPan in order to process any delta included in this event.
   OnPan(aEvent, true);
 
-  mX.EndTouch(aEvent.mTime);
-  mY.EndTouch(aEvent.mTime);
+  EndTouch(aEvent.mTime);
 
   // Drop any velocity on axes where we don't have room to scroll anyways
   // (in this APZC, or an APZC further in the handoff chain).
@@ -3138,17 +3123,6 @@ bool AsyncPanZoomController::AttemptScroll(
     if (!IsZero(adjustedDisplacement)) {
       ScrollBy(adjustedDisplacement / Metrics().GetZoom());
       if (InputBlockState* block = GetCurrentInputBlock()) {
-#if defined(MOZ_WIDGET_ANDROID)
-        if (block->AsTouchBlock() && (block->GetScrolledApzc() != this) &&
-            IsRootContent()) {
-          if (APZCTreeManager* manager = GetApzcTreeManager()) {
-            if (AndroidDynamicToolbarAnimator* animator =
-                    manager->GetAndroidDynamicToolbarAnimator()) {
-              animator->SetScrollingRootContent();
-            }
-          }
-        }
-#endif
         bool displacementIsUserVisible = true;
 
         {  // Release the APZC lock before calling ToScreenCoordinates which
@@ -3457,6 +3431,19 @@ void AsyncPanZoomController::CallDispatchScroll(
                                    aOverscrollHandoffState);
 }
 
+void AsyncPanZoomController::StartTouch(const ParentLayerPoint& aPoint,
+                                        uint32_t aTimestampMs) {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+  mX.StartTouch(aPoint.x, aTimestampMs);
+  mY.StartTouch(aPoint.y, aTimestampMs);
+}
+
+void AsyncPanZoomController::EndTouch(uint32_t aTimestampMs) {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+  mX.EndTouch(aTimestampMs);
+  mY.EndTouch(aTimestampMs);
+}
+
 void AsyncPanZoomController::TrackTouch(const MultiTouchInput& aEvent) {
   ExternalPoint extPoint = GetFirstExternalTouchPoint(aEvent);
   ScreenPoint panVector = PanVector(extPoint);
@@ -3551,33 +3538,6 @@ void AsyncPanZoomController::SetCompositorController(
 void AsyncPanZoomController::SetMetricsSharingController(
     MetricsSharingController* aMetricsSharingController) {
   mMetricsSharingController = aMetricsSharingController;
-}
-
-void AsyncPanZoomController::AdjustScrollForSurfaceShift(
-    const ScreenPoint& aShift) {
-  RecursiveMutexAutoLock lock(mRecursiveMutex);
-  CSSPoint adjustment =
-      ViewAs<ParentLayerPixel>(
-          aShift, PixelCastJustification::ScreenIsParentLayerForRoot) /
-      Metrics().GetZoom();
-  APZC_LOG("%p adjusting scroll position by %s for surface shift\n", this,
-           Stringify(adjustment).c_str());
-  CSSRect scrollRange = Metrics().CalculateScrollRange();
-  // Apply shift to Metrics().mScrollOffset.
-  SetScrollOffset(
-      scrollRange.ClampPoint(Metrics().GetScrollOffset() + adjustment));
-  // Apply shift to mCompositedScrollOffset, since the dynamic toolbar expects
-  // the shift to take effect right away, without the usual frame delay.
-  mCompositedScrollOffset =
-      scrollRange.ClampPoint(mCompositedScrollOffset + adjustment);
-  // For a similar reason, apply the shift to mCompositedLayoutViewport.
-  // mCompositedLayoutViewport also needs to immediately pick up any new
-  // size from Metrics().GetViewport() to make sure it reflects any height
-  // change due to dynamic toolbar movement.
-  mCompositedLayoutViewport.SizeTo(Metrics().GetLayoutViewport().Size());
-  RecalculateCompositedLayoutViewport();
-  RequestContentRepaint();
-  UpdateSharedCompositorFrameMetrics();
 }
 
 void AsyncPanZoomController::SetScrollOffset(const CSSPoint& aOffset) {
@@ -4477,17 +4437,6 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     }
   }
 
-#if defined(MOZ_WIDGET_ANDROID)
-  if (aLayerMetrics.IsRootContent()) {
-    if (APZCTreeManager* manager = GetApzcTreeManager()) {
-      if (AndroidDynamicToolbarAnimator* animator =
-              manager->GetAndroidDynamicToolbarAnimator()) {
-        animator->MaybeUpdateCompositionSizeAndRootFrameMetrics(aLayerMetrics);
-      }
-    }
-  }
-#endif
-
   if ((aIsFirstPaint && aThisLayerTreeUpdated) || isDefault) {
     // Initialize our internal state to something sane when the content
     // that was just painted is something we knew nothing about previously
@@ -4998,19 +4947,6 @@ void AsyncPanZoomController::DispatchStateChangeNotification(
 #endif
     } else if (IsTransformingState(aOldState) &&
                !IsTransformingState(aNewState)) {
-#if defined(MOZ_WIDGET_ANDROID)
-      // The Android UI thread only shows overlay UI elements when the content
-      // is not being panned or zoomed and it is in a steady state. So the
-      // FrameMetrics only need to be updated when the transform ends.
-      if (APZCTreeManager* manager = GetApzcTreeManager()) {
-        if (AndroidDynamicToolbarAnimator* animator =
-                manager->GetAndroidDynamicToolbarAnimator()) {
-          RecursiveMutexAutoLock lock(mRecursiveMutex);
-          animator->UpdateRootFrameMetrics(Metrics());
-        }
-      }
-#endif
-
       controller->NotifyAPZStateChange(GetGuid(),
                                        APZStateChange::eTransformEnd);
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)

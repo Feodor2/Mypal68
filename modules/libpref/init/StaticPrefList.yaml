@@ -165,6 +165,11 @@
 # Prefs starting with "accessibility."
 #---------------------------------------------------------------------------
 
+- name: accessibility.accesskeycausesactivation
+  type: bool
+  value: true
+  mirror: always
+
 - name: accessibility.monoaudio.enable
   type: RelaxedAtomicBool
   value: false
@@ -634,6 +639,15 @@
   value: true
   mirror: always
 
+# Bidi caret movement style:
+# 0 = logical
+# 1 = visual
+# 2 = visual, but logical during selection
+- name: bidi.edit.caret_movement_style
+  type: int32_t
+  value: 2
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "browser."
 #---------------------------------------------------------------------------
@@ -966,11 +980,8 @@
   value: false
   mirror: always
 
-- name: browser.ui.scroll-toolbar-threshold
-  type: RelaxedAtomicInt32
-  value: 10
-  mirror: always
-
+# When true, zooming will be enabled on all sites, even ones that declare
+# user-scalable=no.
 - name: browser.ui.zoom.force-user-scalable
   type: RelaxedAtomicBool
   value: false
@@ -1161,6 +1172,19 @@
 - name: content.sink.enable_perf_mode
   type: int32_t
   value: 0
+  mirror: always
+
+#---------------------------------------------------------------------------
+# Prefs starting with "converter."
+#---------------------------------------------------------------------------
+
+# Whether we include ruby annotation in the text despite whether it
+# is requested. This was true because we didn't explicitly strip out
+# annotations. Set false by default to provide a better behavior, but
+# we want to be able to pref-off it if user doesn't like it.
+- name: converter.html2txt.always_include_ruby
+  type: bool
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -1660,10 +1684,35 @@
   value: 0
   mirror: always
 
+# Don't use new input types.
+- name: dom.experimental_forms
+  type: bool
+  value: false
+  mirror: always
+
+# Enable <input type=color> by default. It will be turned off for remaining
+# platforms which don't have a color picker implemented yet.
+- name: dom.forms.color
+  type: bool
+  value: true
+  mirror: always
 # Is support for input type=date and type=time enabled?
 - name: dom.forms.datetime
   type: bool
   value: true
+  mirror: always
+
+# Support for input type=month, type=week and type=datetime-local. By default,
+# disabled.
+- name: dom.forms.datetime.others
+  type: bool
+  value: @IS_ANDROID@
+  mirror: always
+
+# Is support for HTMLElement.enterKeyHint enabled?
+- name: dom.forms.enterkeyhint
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Is support for HTMLInputElement.inputMode enabled?
@@ -1831,12 +1880,6 @@
   value: true
   mirror: always
 
-# Is support for mozBrowser frames enabled?
-- name: dom.mozBrowserFramesEnabled
-  type: bool
-  value: false
-  mirror: always
-
 # Whether we disable triggering mutation events for changes to style
 # attribute via CSSOM.
 # NOTE: This preference is used in unit tests. If it is removed or its default
@@ -1854,6 +1897,12 @@
 #else
   value: false
 #endif
+  mirror: always
+
+# Whether we should open noopener links in a new process.
+- name: dom.noopener.newprocess.enabled
+  type: bool
+  value: true
   mirror: always
 
 # Is support for Window.paintWorklet enabled?
@@ -3202,6 +3251,7 @@
   value: true
   mirror: once
 
+# Allow 24-bit colour when the hardware supports it.
 - name: gfx.android.rgb16.force
   type: bool
   value: false
@@ -3534,6 +3584,7 @@
   value: false
   mirror: once
 
+# Use SurfaceTextures as preferred backend for TextureClient/Host.
 - name: gfx.use-surfacetexture-textures
   type: bool
   value: false
@@ -3805,6 +3856,22 @@
   value: true
   mirror: always
 
+# Whether to honor orientation metadata (such as JPEG EXIF tags) by default.
+# When this pref is enabled, all images used by the platform will be correctly
+# re-oriented, except for content images (HTML <img> and CSS generated content
+# images) with image-orientation:none.
+- name: image.honor-orientation-metadata
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Honor image orientation metadata in the naturalWidth and naturalHeight
+# APIs on HTMLImageElement.
+- name: image.honor_orientation_metadata.natural_size
+  type: bool
+  value: true
+  mirror: always
+
 # The threshold for inferring that changes to an <img> element's |src|
 # attribute by JavaScript represent an animation, in milliseconds. If the |src|
 # attribute is changing more frequently than this value, then we enter a
@@ -3878,7 +3945,7 @@
 # Maximum size for the surface cache, in kilobytes.
 - name: image.mem.surfacecache.max_size_kb
   type: uint32_t
-  value: 1024 * 1024
+  value: 2024 * 1024
   mirror: once
 
 # Minimum timeout for expiring unused images from the surface cache, in
@@ -4017,6 +4084,12 @@
   value: true
   mirror: always
 
+  # Experimental support for Top-level Await in JavaScript.
+- name: javascript.options.experimental.top_level_await
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # The amount of time we wait between a request to GC (due to leaving a page) and doing the actual GC, in ms.
 - name: javascript.options.gc_delay
   type: uint32_t
@@ -4029,7 +4102,8 @@
   value: 10000
   mirror: always
 
-# Duration of the dom events full gc delay, in ms.
+# After doing a zonal GC, wait this much time (in ms) and then do a full GC,
+# unless one is already pending.
 - name: javascript.options.gc_delay.full
   type: uint32_t
   value: 60000
@@ -4097,8 +4171,42 @@
 # CompilationStencil back to main thread before allocating GC objects.
 - name: javascript.options.off_thread_parse_global
   type: bool
-  value: true
+  value: false
   mirror: once
+
+- name: javascript.options.wasm_optimizingjit
+  type: bool
+#if defined(MOZ_AARCH64) && !defined(ENABLE_WASM_CRANELIFT)
+  value: false
+#else
+  value: true
+#endif
+  mirror: always
+
+#if defined(ENABLE_WASM_SIMD)
+- name: javascript.options.wasm_simd
+  type: bool
+  #if defined(NIGHTLY_BUILD)
+  value: true
+  #else
+  value: false
+  #endif
+  mirror: always
+#endif
+
+#if defined(ENABLE_WASM_SIMD_WORMHOLE)
+# This is x64-only nightly-only and it would break unified macOS builds if
+# it were in all.js
+- name: javascript.options.wasm_simd_wormhole
+  type: bool
+  value: false
+  mirror: always
+#endif
+
+- name: javascript.options.large_arraybuffers
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
 
 #---------------------------------------------------------------------------
 # Prefs starting with "keyword."
@@ -4950,7 +5058,7 @@
 # Is the initial value for the image-orientation property 'from-image'?
 - name: layout.css.image-orientation.initial-from-image
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
   rust: true
 
@@ -5581,6 +5689,16 @@
   type: RelaxedAtomicUint32
   value: 32768   # Measured in KiB
   mirror: always
+
+# Whether cubeb is sandboxed
+- name: media.cubeb.sandbox
+  type: bool
+  mirror: always
+#if defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
+  value: true
+#else
+  value: false
+#endif
 
 # If a resource is known to be smaller than this size (in kilobytes), a
 # memory-backed MediaCache may be used; otherwise the (single shared global)
@@ -6296,6 +6414,37 @@
   value: -1
   mirror: always
 
+# Auto-dir is a feature which treats any single-wheel scroll as a scroll in the
+# only one scrollable direction if the target has only one scrollable
+# direction. For example, if the user scrolls a vertical wheel inside a target
+# which is horizontally scrollable but vertical unscrollable, then the vertical
+# scroll is converted to a horizontal scroll for that target.
+# Note that auto-dir only takes effect for |mousewheel.*.action|s and
+# |mousewheel.*.action.override_x|s whose values are 1.
+- name: mousewheel.autodir.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# When a wheel scroll is converted due to auto-dir, which side the converted
+# scroll goes towards is decided by one thing called "honoured target". If the
+# content of the honoured target horizontally starts from right to left, then
+# an upward scroll maps to a rightward scroll and a downward scroll maps to a
+# leftward scroll; otherwise, an upward scroll maps to a leftward scroll and a
+# downward scroll maps to a rightward scroll.
+# If this pref is set to false, then consider the scrolling target as the
+# honoured target.
+# If set to true, then consider the root element in the document where the
+# scrolling target is as the honoured target. But note that there's one
+# exception: for targets in an HTML document, the real root element(I.e. the
+# <html> element) is typically not considered as a root element, but the <body>
+# element is typically considered as a root element. If there is no <body>
+# element, then consider the <html> element instead.
+- name: mousewheel.autodir.honourroot
+  type: bool
+  value: false
+  mirror: always
+
 # This affects whether events will be routed through APZ or not.
 - name: mousewheel.system_scroll_override_on_root_content.enabled
   type: RelaxedAtomicBool
@@ -6404,6 +6553,22 @@
 - name: network.cookie.lifetimePolicy
   type: RelaxedAtomicInt32
   value: 0
+  mirror: always
+
+- name: network.cookie.sameSite.laxByDefault
+  type: bool
+  value: false
+  mirror: always
+
+# lax-by-default 2 minutes tollerance for unsafe methods. The value is in seconds.
+- name: network.cookie.sameSite.laxPlusPOST.timeout
+  type: uint32_t
+  value: 0
+  mirror: always
+
+- name: network.cookie.sameSite.noneRequiresSecure
+  type: bool
+  value: false
   mirror: always
 
 - name: network.cookie.thirdparty.sessionOnly
@@ -6726,6 +6891,26 @@
   mirror: always
 
 #---------------------------------------------------------------------------
+# Prefs starting with "plugin."
+#---------------------------------------------------------------------------
+
+# Whether sending WM_MOUSEWHEEL and WM_MOUSEHWHEEL to plugins on Windows.
+- name: plugin.mousewheel.enabled
+  type: bool
+  value: true
+  mirror: always
+
+- name: plugin.state.flash
+  type: uint32_t
+  # Flash is Click-to-Activate by default on all channels. Disabled for ARM builds.
+#if defined(_ARM64_) && defined(XP_WIN)
+  value: 0
+#else
+  value: 1
+#endif
+  mirror: always
+
+#---------------------------------------------------------------------------
 # Prefs starting with "plugins."
 #---------------------------------------------------------------------------
 
@@ -6865,6 +7050,9 @@
 
 # Whether to spoof user locale to English (used as part of Resist
 # Fingerprinting).
+# 0 - will prompt
+# 1 - don't spoof
+# 2 - spoof
 - name: privacy.spoof_english
   type: RelaxedAtomicUint32
   value: 0
@@ -7103,6 +7291,15 @@
   type: RelaxedAtomicBool
   value: true
   mirror: always
+
+# The level to which we sandbox the content process. firefox.js sets the
+# default to different values on a per-OS basis, and has documentation
+# on what the defaults are and what the numbers mean.
+- name: security.sandbox.content.level
+  type: int32_t
+  value: 0
+  mirror: always
+  do_not_use_directly: true # Consumers should use SandboxSettings to ask.
 
 # When comparing schemes, if this pref is set, view-source URIs are reachable
 # from same-protocol (so e.g. file: can link to view-source:file). This is
@@ -7361,6 +7558,14 @@
   value: false
   mirror: always
 
+# Whether click-hold context menus are enabled.
+- name: ui.click_hold_context_menus
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# How long to wait for a drag gesture before displaying click-hold context menu,
+# in milliseconds.
 - name: ui.click_hold_context_menus.delay
   type: RelaxedAtomicInt32
   value: 500

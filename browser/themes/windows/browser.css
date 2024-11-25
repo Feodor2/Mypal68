@@ -255,7 +255,7 @@
 
   /* Need to constrain the box shadow fade to avoid overlapping layers, see bug 886281. */
   #main-window[tabsintitlebar]:not([sizemode=fullscreen]) #navigator-toolbox:not(:-moz-lwtheme) {
-    overflow: -moz-hidden-unscrollable;
+    overflow: clip;
   }
 
   #main-window[tabsintitlebar][sizemode="normal"] > #navigator-toolbox:-moz-lwtheme {

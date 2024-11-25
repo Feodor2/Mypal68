@@ -117,8 +117,8 @@ Preferences.addAll([
   - true if display should switch to a new tab which has been opened from a
     link, false if display shouldn't switch
   browser.tabs.warnOnClose
-  - true if when closing a window with multiple tabs the user is warned and
-    allowed to cancel the action, false to just close the window
+  - >0 if when closing a window with multiple tabs the user is warned and
+    allowed to cancel the action, 0 to just close the window
   browser.tabs.warnOnOpen
   - true if the user should be warned if he attempts to open a lot of tabs at
     once (e.g. a large folder of bookmarks), false otherwise
@@ -128,7 +128,7 @@ Preferences.addAll([
 
   { id: "browser.link.open_newwindow", type: "int" },
   { id: "browser.tabs.loadInBackground", type: "bool", inverted: true },
-  { id: "browser.tabs.warnOnClose", type: "bool" },
+  { id: "browser.tabs.warnOnClose", type: "int" },
   { id: "browser.tabs.warnOnOpen", type: "bool" },
   { id: "browser.sessionstore.restore_on_demand", type: "bool" },
   { id: "browser.ctrlTab.recentlyUsedOrder", type: "bool" },
@@ -1038,8 +1038,8 @@ var gMainPane = {
    * browser.tabs.loadInBackground - bool
    *   True - Whether browser should switch to a new tab opened from a link.
    * browser.tabs.warnOnClose - bool
-   *   True - If when closing a window with multiple tabs the user is warned and
-   *          allowed to cancel the action, false to just close the window.
+   *     >0 - If when closing a window with multiple tabs the user is warned and
+   *          allowed to cancel the action, 0 to just close the window.
    * browser.tabs.warnOnOpen - bool
    *   True - Whether the user should be warned when trying to open a lot of
    *          tabs at once (e.g. a large folder of bookmarks), allowing to

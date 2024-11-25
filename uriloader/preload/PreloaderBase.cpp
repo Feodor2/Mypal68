@@ -9,7 +9,6 @@
 #include "nsIChannel.h"
 #include "nsILoadGroup.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsProxyRelease.h"
 
 // Change this if we want to cancel and remove the associated preload on removal
 // of all <link rel=preload> tags from the tree.
@@ -32,7 +31,7 @@ class PreloaderBase::RedirectSink final : public nsIInterfaceRequestor,
   RedirectSink(PreloaderBase* aPreloader, nsIInterfaceRequestor* aCallbacks);
 
  private:
-  WeakPtr<PreloaderBase> mPreloader;
+  MainThreadWeakPtr<PreloaderBase> mPreloader;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIChannel> mRedirectChannel;
 };
@@ -41,10 +40,7 @@ PreloaderBase::RedirectSink::RedirectSink(PreloaderBase* aPreloader,
                                           nsIInterfaceRequestor* aCallbacks)
     : mPreloader(aPreloader), mCallbacks(aCallbacks) {}
 
-PreloaderBase::RedirectSink::~RedirectSink() {
-  NS_ReleaseOnMainThreadSystemGroup("RedirectSink::mPreloader::mRef",
-                                    mPreloader.TakeRef());
-}
+PreloaderBase::RedirectSink::~RedirectSink() = default;
 
 NS_IMPL_ISUPPORTS(PreloaderBase::RedirectSink, nsIInterfaceRequestor,
                   nsIChannelEventSink, nsIRedirectResultListener)

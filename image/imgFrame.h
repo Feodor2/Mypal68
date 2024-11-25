@@ -6,6 +6,7 @@
 #define mozilla_image_imgFrame_h
 
 #include <functional>
+#include <utility>
 
 #include "AnimationParams.h"
 #include "MainThreadUtils.h"
@@ -13,7 +14,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Monitor2.h"
-#include "mozilla/Move.h"
 #include "nsRect.h"
 
 namespace mozilla {
@@ -170,7 +170,7 @@ class imgFrame {
   FrameTimeout GetTimeout() const { return mTimeout; }
   BlendMethod GetBlendMethod() const { return mBlendMethod; }
   DisposalMethod GetDisposalMethod() const { return mDisposalMethod; }
-  bool FormatHasAlpha() const { return mFormat == SurfaceFormat::B8G8R8A8; }
+  bool FormatHasAlpha() const { return mFormat == SurfaceFormat::OS_RGBA; }
   void GetImageData(uint8_t** aData, uint32_t* length) const;
   uint8_t* GetImageData() const;
 
@@ -182,26 +182,12 @@ class imgFrame {
   void FinalizeSurface();
   already_AddRefed<SourceSurface> GetSourceSurface();
 
-  struct AddSizeOfCbData {
+  struct AddSizeOfCbData : public SourceSurface::SizeOfInfo {
     AddSizeOfCbData()
-        : heap(0),
-          nonHeap(0),
-          handles(0),
-          index(0)
-#ifdef MOZ_BUILD_WEBRENDER
-          ,
-          externalId(0)
-#endif
-    {
-    }
+        : SourceSurface::SizeOfInfo(), mIndex(0), mFinished(false) {}
 
-    size_t heap;
-    size_t nonHeap;
-    size_t handles;
-    size_t index;
-#ifdef MOZ_BUILD_WEBRENDER
-    uint64_t externalId;
-#endif
+    size_t mIndex;
+    bool mFinished;
   };
 
   typedef std::function<void(AddSizeOfCbData& aMetadata)> AddSizeOfCb;

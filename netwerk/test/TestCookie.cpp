@@ -855,7 +855,7 @@ TEST(TestCookie, TestCookieMain)
                             true,       // is session
                             INT64_MAX,  // expiry time
                             &attrs,     // originAttributes
-                            nsICookie::SAMESITE_UNSET)));
+                            nsICookie::SAMESITE_NONE)));
   EXPECT_TRUE(NS_SUCCEEDED(
       cookieMgr2->AddNative(NS_LITERAL_CSTRING("cookiemgr.test"),  // domain
                             NS_LITERAL_CSTRING("/foo"),            // path
@@ -866,7 +866,7 @@ TEST(TestCookie, TestCookieMain)
                             true,                            // is session
                             PR_Now() / PR_USEC_PER_SEC + 2,  // expiry time
                             &attrs,                          // originAttributes
-                            nsICookie::SAMESITE_UNSET)));
+                            nsICookie::SAMESITE_NONE)));
   EXPECT_TRUE(NS_SUCCEEDED(
       cookieMgr2->AddNative(NS_LITERAL_CSTRING("new.domain"),  // domain
                             NS_LITERAL_CSTRING("/rabbit"),     // path
@@ -877,7 +877,7 @@ TEST(TestCookie, TestCookieMain)
                             true,                              // is session
                             INT64_MAX,                         // expiry time
                             &attrs,  // originAttributes
-                            nsICookie::SAMESITE_UNSET)));
+                            nsICookie::SAMESITE_NONE)));
   // confirm using enumerator
   nsTArray<RefPtr<nsICookie>> cookies;
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
@@ -1025,13 +1025,13 @@ TEST(TestCookie, TestCookieMain)
     int32_t sameSiteAttr;
     cookie->GetSameSite(&sameSiteAttr);
     if (name.EqualsLiteral("unset")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_NONE);
     } else if (name.EqualsLiteral("unspecified")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_NONE);
     } else if (name.EqualsLiteral("empty")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_NONE);
     } else if (name.EqualsLiteral("bogus")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_NONE);
     } else if (name.EqualsLiteral("strict")) {
       EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_STRICT);
     } else if (name.EqualsLiteral("lax")) {

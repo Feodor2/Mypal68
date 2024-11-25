@@ -1867,9 +1867,6 @@ HttpChannelChild::ConnectParent(uint32_t registrarId) {
     browserChild =
         static_cast<mozilla::dom::BrowserChild*>(iBrowserChild.get());
   }
-  if (MissingRequiredBrowserChild(browserChild, "http")) {
-    return NS_ERROR_ILLEGAL_VALUE;
-  }
 
   if (browserChild && !browserChild->IPCOpen()) {
     return NS_ERROR_FAILURE;
@@ -2495,9 +2492,6 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
     browserChild =
         static_cast<mozilla::dom::BrowserChild*>(iBrowserChild.get());
   }
-  if (MissingRequiredBrowserChild(browserChild, "http")) {
-    return NS_ERROR_ILLEGAL_VALUE;
-  }
 
   // This id identifies the inner window's top-level document,
   // which changes on every new load or navigation.
@@ -3030,6 +3024,19 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvAltDataCacheInputStreamAvailable(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult
+HttpChannelChild::RecvOverrideReferrerInfoDuringBeginConnect(
+    nsIReferrerInfo* aReferrerInfo) {
+  // The arguments passed to SetReferrerInfoInternal here should mirror the
+  // arguments passed in
+  // nsHttpChannel::ReEvaluateReferrerAfterTrackingStatusIsKnown(), except for
+  // aRespectBeforeConnect which we pass false here since we're intentionally
+  // overriding the referrer after BeginConnect().
+  Unused << SetReferrerInfoInternal(aReferrerInfo, false, true, false);
+
+  return IPC_OK();
+}
+
 //-----------------------------------------------------------------------------
 // HttpChannelChild::nsIResumableChannel
 //-----------------------------------------------------------------------------
@@ -3458,11 +3465,14 @@ nsresult HttpChannelChild::AsyncCallImpl(
   return rv;
 }
 
-nsresult HttpChannelChild::SetReferrerHeader(const nsACString& aReferrer) {
+nsresult HttpChannelChild::SetReferrerHeader(const nsACString& aReferrer,
+                                             bool aRespectBeforeConnect) {
   // Normally this would be ENSURE_CALLED_BEFORE_CONNECT, but since the
   // "connect" is done in the main process, and mRequestObserversCalled is never
   // set in the ChannelChild, before connect basically means before asyncOpen.
-  ENSURE_CALLED_BEFORE_ASYNC_OPEN();
+  if (aRespectBeforeConnect) {
+    ENSURE_CALLED_BEFORE_ASYNC_OPEN();
+  }
 
   // remove old referrer if any, loop backwards
   for (int i = mClientSetRequestHeaders.Length() - 1; i >= 0; --i) {
@@ -3472,7 +3482,7 @@ nsresult HttpChannelChild::SetReferrerHeader(const nsACString& aReferrer) {
     }
   }
 
-  return HttpBaseChannel::SetReferrerHeader(aReferrer);
+  return HttpBaseChannel::SetReferrerHeader(aReferrer, aRespectBeforeConnect);
 }
 
 void HttpChannelChild::CancelOnMainThread(nsresult aRv) {

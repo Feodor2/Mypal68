@@ -189,7 +189,6 @@ class nsCookieService final : public nsICookieService,
    * (thus instantiating it, if necessary) and clear all the cookies for that
    * app.
    */
-  static void AppClearDataObserverInit();
   static nsAutoCString GetPathFromURI(nsIURI* aHostURI);
   static nsresult GetBaseDomain(nsIEffectiveTLDService* aTLDService,
                                 nsIURI* aHostURI, nsCString& aBaseDomain,
@@ -297,7 +296,8 @@ class nsCookieService final : public nsICookieService,
                             bool& aEqualsFound);
   static bool ParseAttributes(nsCString& aCookieHeader,
                               mozilla::net::CookieStruct& aCookieData,
-                              nsACString& aExpires, nsACString& aMaxage);
+                              nsACString& aExpires, nsACString& aMaxage,
+                              bool& aAcceptedByParser);
   bool RequireThirdPartyCheck();
   static bool CheckDomain(mozilla::net::CookieStruct& aCookieData,
                           nsIURI* aHostURI, const nsCString& aBaseDomain,

@@ -372,9 +372,20 @@ nsXREDirProvider::GetFile(const char* aProperty, bool* aPersistent,
   *aPersistent = true;
 
   if (!strcmp(aProperty, NS_GRE_DIR)) {
+#if defined(MOZ_WIDGET_ANDROID)
+    // On Android, libraries and other internal files are inside the APK, a zip
+    // file, so this folder doesn't really make sense.
+    return NS_ERROR_FAILURE;
+#else
     return mGREDir->Clone(aFile);
+#endif
   } else if (!strcmp(aProperty, NS_GRE_BIN_DIR)) {
+#if defined(MOZ_WIDGET_ANDROID)
+    // Same as NS_GRE_DIR
+    return NS_ERROR_FAILURE;
+#else
     return mGREBinDir->Clone(aFile);
+#endif
   } else if (!strcmp(aProperty, NS_OS_CURRENT_PROCESS_DIR) ||
              !strcmp(aProperty, NS_APP_INSTALL_CLEANUP_DIR)) {
     return GetAppDir()->Clone(aFile);
@@ -384,6 +395,10 @@ nsXREDirProvider::GetFile(const char* aProperty, bool* aPersistent,
   nsCOMPtr<nsIFile> file;
 
   if (!strcmp(aProperty, NS_APP_PREF_DEFAULTS_50_DIR)) {
+#if defined(MOZ_WIDGET_ANDROID)
+    // Same as NS_GRE_DIR
+    return NS_ERROR_FAILURE;
+#else
     // return the GRE default prefs directory here, and the app default prefs
     // directory (if applicable) in NS_APP_PREFS_DEFAULTS_DIR_LIST.
     rv = mGREDir->Clone(getter_AddRefs(file));
@@ -391,6 +406,7 @@ nsXREDirProvider::GetFile(const char* aProperty, bool* aPersistent,
       rv = file->AppendNative(NS_LITERAL_CSTRING("defaults"));
       if (NS_SUCCEEDED(rv)) rv = file->AppendNative(NS_LITERAL_CSTRING("pref"));
     }
+#endif
   } else if (!strcmp(aProperty, NS_APP_APPLICATION_REGISTRY_DIR) ||
              !strcmp(aProperty, XRE_USER_APP_DATA_DIR)) {
     if (mProfileDir && portable > 0) rv = mProfileDir->Clone(getter_AddRefs(file));
@@ -962,6 +978,17 @@ void nsXREDirProvider::InitializeUserPrefs() {
     mProfileNotified = true;
 
     mozilla::Preferences::InitializeUserPrefs();
+  }
+}
+
+void nsXREDirProvider::FinishInitializingUserPrefs() {
+  if (!mPrefsInitialized) {
+    // See InitializeUserPrefs above.
+    mozilla::AutoRestore<bool> ar(mProfileNotified);
+    mProfileNotified = true;
+
+    mozilla::Preferences::FinishInitializingUserPrefs();
+
     mPrefsInitialized = true;
   }
 }

@@ -32,7 +32,6 @@
 #include "nsISupports.h"
 
 #include "nsTArray.h"
-#include "nsTWeakRef.h"
 
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"

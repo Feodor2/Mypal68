@@ -189,6 +189,8 @@ child:
 
   async AltDataCacheInputStreamAvailable(IPCStream? stream);
 
+  async OverrideReferrerInfoDuringBeginConnect(nsIReferrerInfo referrerInfo);
+
   async OnProgress(int64_t progress, int64_t progressMax);
 
   async OnStatus(nsresult status);

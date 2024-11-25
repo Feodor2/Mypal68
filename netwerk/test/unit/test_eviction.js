@@ -201,7 +201,7 @@ function set_cookies(begin, end, expiry) {
       false,
       expiry,
       {},
-      Ci.nsICookie.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_NONE
     );
 
     if (i == begin) {

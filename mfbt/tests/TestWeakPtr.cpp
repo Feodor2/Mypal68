@@ -7,11 +7,18 @@
 using mozilla::SupportsWeakPtr;
 using mozilla::WeakPtr;
 
-// To have a class C support weak pointers, inherit from SupportsWeakPtr<C>.
-class C : public SupportsWeakPtr<C> {
- public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(C)
+static char IamB[] = "B";
+static char IamC[] = "C";
+static char IamD[] = "D";
 
+class B : public SupportsWeakPtr {
+ public:
+  char const* whoAmI() const { return IamB; }
+};
+
+// To have a class C support weak pointers, inherit from SupportsWeakPtr.
+class C : public SupportsWeakPtr {
+ public:
   int mNum;
 
   C() : mNum(0) {}
@@ -22,11 +29,20 @@ class C : public SupportsWeakPtr<C> {
     mNum = 0xDEAD;
   }
 
+  char const* whoAmI() const { return IamC; }
+
   void act() {}
 
   bool isConst() { return false; }
 
   bool isConst() const { return true; }
+};
+
+// Derived from a class that supports weakptr, but doesn't implement itself
+// To check upcast works as expected
+class D : public B {
+ public:
+  char const* whoAmI() const { return IamD; }
 };
 
 bool isConst(C*) { return false; }
@@ -108,4 +124,20 @@ int main() {
 
   delete c2;
   MOZ_RELEASE_ASSERT(!w2, "Deleting an object should clear WeakPtr's to it.");
+
+  // Check that we correctly upcast to the base class supporting weakptr
+  D* d = new D;
+  WeakPtr<B> db = d;
+
+  // You should be able to use WeakPtr<D> even if it's a base class which
+  // implements SupportsWeakPtr.
+  WeakPtr<D> weakd = d;
+
+  MOZ_RELEASE_ASSERT(db->whoAmI() == IamB);
+  MOZ_RELEASE_ASSERT(weakd.get() == db.get());
+
+  delete d;
+
+  MOZ_RELEASE_ASSERT(!db);
+  MOZ_RELEASE_ASSERT(!weakd);
 }

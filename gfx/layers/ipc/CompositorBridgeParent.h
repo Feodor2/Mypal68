@@ -686,9 +686,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   PAPZParent* AllocPAPZParent(const LayersId& aLayersId) override;
   bool DeallocPAPZParent(PAPZParent* aActor) override;
 
-#if defined(MOZ_WIDGET_ANDROID)
-  AndroidDynamicToolbarAnimator* GetAndroidDynamicToolbarAnimator();
-#endif
   RefPtr<APZSampler> GetAPZSampler();
   RefPtr<APZUpdater> GetAPZUpdater();
 
@@ -720,10 +717,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    */
   static already_AddRefed<IAPZCTreeManager> GetAPZCTreeManager(
       LayersId aLayersId);
-
-#if defined(MOZ_WIDGET_ANDROID)
-  gfx::IntSize GetEGLSurfaceSize() { return mEGLSurfaceSize; }
-#endif  // defined(MOZ_WIDGET_ANDROID)
 
 #ifdef MOZ_BUILD_WEBRENDER
   WebRenderBridgeParent* GetWrBridge() { return mWrBridge; }

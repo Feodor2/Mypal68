@@ -572,9 +572,8 @@ struct DIGroup {
     GP("\n\n");
     GP("Begin EndGroup\n");
 
-    mVisibleRect = mVisibleRect.Intersect(
-            ViewAs<LayerPixel>(mActualBounds,
-                               PixelCastJustification::LayerIsImage));
+    mVisibleRect = mVisibleRect.Intersect(ViewAs<LayerPixel>(
+        mActualBounds, PixelCastJustification::LayerIsImage));
 
     if (mVisibleRect.IsEmpty()) {
       return;
@@ -782,7 +781,8 @@ struct DIGroup {
         dirty = false;
         BlobItemData* data = GetBlobItemData(item);
         if (data->mInvalid) {
-          gfxCriticalError() << "DisplayItem" << item->Name() << "-should be invalid";
+          gfxCriticalError()
+              << "DisplayItem" << item->Name() << "-should be invalid";
         }
         // if the item is invalid it needs to be fully contained
         MOZ_RELEASE_ASSERT(!data->mInvalid);
@@ -1767,8 +1767,8 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
 
       if (dumpEnabled) {
         std::stringstream ss;
-        nsFrame::PrintDisplayItem(aDisplayListBuilder, item, ss,
-                                  static_cast<uint32_t>(mDumpIndent));
+        nsIFrame::PrintDisplayItem(aDisplayListBuilder, item, ss,
+                                   static_cast<uint32_t>(mDumpIndent));
         printf_stderr("%s", ss.str().c_str());
       }
 

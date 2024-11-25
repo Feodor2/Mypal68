@@ -79,7 +79,7 @@ var SessionCookiesInternal = {
             /* isSession = */ true,
             expiry,
             cookie.originAttributes || {},
-            Ci.nsICookie.SAMESITE_UNSET
+            Ci.nsICookie.SAMESITE_NONE
           );
         } catch (ex) {
           Cu.reportError(

@@ -92,7 +92,6 @@ mfbt/double-conversion/double-conversion/
 mfbt/lz4.c
 mfbt/lz4.h
 mobile/android/geckoview/src/thirdparty/
-mobile/android/thirdparty/
 modules/brotli/
 modules/fdlibm/
 modules/freetype2/
@@ -100,6 +99,7 @@ modules/woff2/
 modules/xz-embedded/
 modules/zlib/
 mozglue/misc/decimal/
+mozglue/tests/glibc_printf_tests/
 netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/
 netwerk/srtp/src/

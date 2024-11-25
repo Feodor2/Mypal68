@@ -41,6 +41,11 @@ html|textarea {
   height: 20px;
 }
 
+.close-icon > .button-box > .button-text,
+.close-icon > .toolbarbutton-text {
+  display: none;
+}
+
 /* Autoscroll popup */
 
 .autoscroller {

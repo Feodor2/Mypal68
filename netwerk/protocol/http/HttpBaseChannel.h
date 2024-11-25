@@ -444,8 +444,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
     mUploadStreamHasHeaders = hasHeaders;
   }
 
-  virtual nsresult SetReferrerHeader(const nsACString& aReferrer) {
-    ENSURE_CALLED_BEFORE_CONNECT();
+  virtual nsresult SetReferrerHeader(const nsACString& aReferrer,
+                                     bool aRespectBeforeConnect = true) {
+    if (aRespectBeforeConnect) {
+      ENSURE_CALLED_BEFORE_CONNECT();
+    }
     return mRequestHead.SetHeader(nsHttp::Referer, aReferrer);
   }
 
@@ -461,8 +464,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   }
 
   // Set referrerInfo and compute the referrer header if neccessary.
-  nsresult SetReferrerInfo(nsIReferrerInfo* aReferrerInfo, bool aClone,
-                           bool aCompute);
+  nsresult SetReferrerInfoInternal(nsIReferrerInfo* aReferrerInfo, bool aClone,
+                                   bool aCompute, bool aRespectBeforeConnect);
 
  protected:
   nsresult GetTopWindowURI(nsIURI* aURIBeingLoaded, nsIURI** aTopWindowURI);

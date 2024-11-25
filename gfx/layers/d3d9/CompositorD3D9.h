@@ -104,17 +104,6 @@ public:
    */
   virtual bool Ready() override;
 
-  /**
-   * Declare an offset to use when rendering layers. This will be ignored when
-   * rendering to a target instead of the screen.
-   */
-  virtual void SetScreenRenderOffset(const ScreenPoint &aOffset) override {
-    if (aOffset.x || aOffset.y) {
-      MOZ_CRASH("SetScreenRenderOffset not supported by CompositorD3D9.");
-    }
-    // If the offset is 0, 0 that's okay.
-  }
-
   virtual already_AddRefed<DataTextureSource> CreateDataTextureSource(
       TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
 

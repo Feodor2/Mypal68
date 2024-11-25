@@ -222,13 +222,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_GRAPHENE:
-#ifdef MOZ_GRAPHENE
-  true,
-#else
-  false,
-#endif
-
   MOZ_SYSTEM_NSS:
 #ifdef MOZ_SYSTEM_NSS
   true,
@@ -270,20 +263,6 @@ this.AppConstants = Object.freeze({
 
   MOZ_GECKO_PROFILER:
 #ifdef MOZ_GECKO_PROFILER
-  true,
-#else
-  false,
-#endif
-
-  MOZ_ANDROID_ACTIVITY_STREAM:
-#ifdef MOZ_ANDROID_ACTIVITY_STREAM
-  true,
-#else
-  false,
-#endif
-
-  MOZ_ANDROID_MOZILLA_ONLINE:
-#ifdef MOZ_ANDROID_MOZILLA_ONLINE
   true,
 #else
   false,

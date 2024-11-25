@@ -42,13 +42,8 @@ class SourceSurfaceVolatileData : public DataSourceSurface {
 
   void GuaranteePersistance() override;
 
-  void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut,
-                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut
-#ifdef MOZ_BUILD_WEBRENDER
-                              ,
-                              uint64_t& aExtIdOut
-#endif
-  ) const override;
+  void SizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
+                           SizeOfInfo& aInfo) const override;
 
   bool OnHeap() const override { return mVBuf->OnHeap(); }
 

@@ -9,6 +9,7 @@
 #include "png.h"
 #include "StreamingLexer.h"
 #include "SurfacePipe.h"
+#include "mozilla/gfx/Swizzle.h"
 
 namespace mozilla {
 namespace image {
@@ -45,6 +46,9 @@ class nsPNGDecoder : public Decoder {
 
   nsresult CreateFrame(const FrameInfo& aFrameInfo);
   void EndImageFrame();
+
+  uint32_t ReadColorProfile(png_structp png_ptr, png_infop info_ptr,
+                            int color_type, bool* sRGBTag);
 
   bool HasAlphaChannel() const { return mChannels == 2 || mChannels == 4; }
 
@@ -91,14 +95,12 @@ class nsPNGDecoder : public Decoder {
   uint8_t* interlacebuf;
   gfx::SurfaceFormat mFormat;
 
-  // whether CMS or premultiplied alpha are forced off
-  uint32_t mCMSMode;
-
   uint8_t mChannels;
   uint8_t mPass;
   bool mFrameIsHidden;
   bool mDisablePremultipliedAlpha;
   bool mGotInfoCallback;
+  bool mUsePipeTransform;
 
   struct AnimFrameInfo {
     AnimFrameInfo();

@@ -12,6 +12,7 @@
 #include "nsIPrintSettings.h"
 #include "nsIXULWindow.h"
 #include "nsXPCOM.h"
+#include "nsIObserver.h"
 #include "nsISupportsPrimitives.h"
 #include "nsPIDOMWindow.h"
 #include "nsXULAppAPI.h"

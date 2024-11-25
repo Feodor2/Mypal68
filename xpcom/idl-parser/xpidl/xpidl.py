@@ -680,7 +680,7 @@ class Interface(object):
         if self.attributes.function:
             has_method = False
             for member in self.members:
-                if member.kind is 'method':
+                if member.kind == 'method':
                     if has_method:
                         raise IDLError(
                             "interface '%s' has multiple methods, but marked 'function'" %
@@ -705,6 +705,9 @@ class Interface(object):
                 raise IDLError("interface '%s' is not builtinclass but derives from "
                                "builtinclass '%s'" %
                                (self.name, self.base), self.location)
+        elif self.name != 'nsISupports':
+            raise IDLError("Interface '%s' must inherit from nsISupports" %
+                           self.name, self.location)
 
         for member in self.members:
             member.resolve(self)

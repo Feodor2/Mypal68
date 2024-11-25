@@ -259,8 +259,6 @@
 
       this._loadContext = null;
 
-      this._imageDocument = null;
-
       this._webBrowserFind = null;
 
       this._finder = null;
@@ -511,24 +509,6 @@
       }
 
       return this.docShellIsActive;
-    }
-
-    get imageDocument() {
-      if (this.isRemoteBrowser) {
-        return this._imageDocument;
-      }
-      var document = this.contentDocument;
-      if (!document || !(document instanceof Ci.nsIImageDocument)) {
-        return null;
-      }
-
-      try {
-        return {
-          width: document.imageRequest.image.width,
-          height: document.imageRequest.image.height,
-        };
-      } catch (e) {}
-      return null;
     }
 
     get isRemoteBrowser() {
@@ -925,23 +905,26 @@
     /**
      * throws exception for unknown schemes
      */
-    loadURI(aURI, aParams) {
+    loadURI(aURI, aParams = {}) {
       if (!aURI) {
         aURI = "about:blank";
       }
       let {
-        flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
         referrerInfo,
         triggeringPrincipal,
         postData,
         headers,
         csp,
-      } = aParams || {};
+      } = aParams;
+      let loadFlags =
+        aParams.loadFlags ||
+        aParams.flags ||
+        Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
       let loadURIOptions = {
         triggeringPrincipal,
         csp,
         referrerInfo,
-        loadFlags: flags,
+        loadFlags,
         postData,
         headers,
       };
@@ -1206,7 +1189,6 @@
 
         this.messageManager.addMessageListener("Browser:Init", this);
         this.messageManager.addMessageListener("DOMTitleChanged", this);
-        this.messageManager.addMessageListener("ImageDocumentLoaded", this);
         this.messageManager.addMessageListener("FullZoomChange", this);
         this.messageManager.addMessageListener("TextZoomChange", this);
         this.messageManager.addMessageListener(
@@ -1513,12 +1495,6 @@
         case "DOMTitleChanged":
           this._contentTitle = data.title;
           break;
-        case "ImageDocumentLoaded":
-          this._imageDocument = {
-            width: data.width,
-            height: data.height,
-          };
-          break;
 
         case "FullZoomChange": {
           this._fullZoom = data.value;
@@ -1643,7 +1619,6 @@
         this._remoteWebNavigationImpl._currentURI = aLocation;
         this._documentURI = aDocumentURI;
         this._contentTitle = aTitle;
-        this._imageDocument = null;
         this._contentPrincipal = aContentPrincipal;
         this._contentStoragePrincipal = aContentStoragePrincipal;
         this._contentBlockingAllowListPrincipal = aContentBlockingAllowListPrincipal;
@@ -1982,7 +1957,6 @@
             "_contentPrincipal",
             "_contentStoragePrincipal",
             "_contentBlockingAllowListPrincipal",
-            "_imageDocument",
             "_fullZoom",
             "_textZoom",
             "_isSyntheticDocument",

@@ -36,7 +36,7 @@
   margin: 3px 5px;
   min-height: 30px;
   cursor: default;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 #urlbar:hover,

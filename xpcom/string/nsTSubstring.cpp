@@ -7,6 +7,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Printf.h"
+#include "mozilla/ResultExtensions.h"
 
 #include "nsASCIIMask.h"
 
@@ -61,15 +62,13 @@ inline const nsTAutoString<T>* AsAutoString(const nsTSubstring<T>* aStr) {
 }
 
 template <typename T>
-mozilla::BulkWriteHandle<T> nsTSubstring<T>::BulkWrite(
-    size_type aCapacity, size_type aPrefixToPreserve, bool aAllowShrinking,
-    nsresult& aRv) {
+mozilla::Result<mozilla::BulkWriteHandle<T>, nsresult>
+nsTSubstring<T>::BulkWrite(size_type aCapacity, size_type aPrefixToPreserve,
+                           bool aAllowShrinking) {
   auto r = StartBulkWriteImpl(aCapacity, aPrefixToPreserve, aAllowShrinking);
   if (MOZ_UNLIKELY(r.isErr())) {
-    aRv = r.unwrapErr();
-    return mozilla::BulkWriteHandle<T>(nullptr, 0);
+    return r.propagateErr();
   }
-  aRv = NS_OK;
   return mozilla::BulkWriteHandle<T>(this, r.unwrap());
 }
 
@@ -1054,6 +1053,11 @@ int32_t nsTStringRepr<T>::FindChar(char_type aChar, index_type aOffset) const {
   return -1;
 }
 
+template <typename T>
+bool nsTStringRepr<T>::Contains(char_type aChar) const {
+  return FindChar(aChar) != kNotFound;
+}
+
 }  // namespace detail
 }  // namespace mozilla
 
@@ -1265,64 +1269,13 @@ static int FormatWithoutTrailingZeros(char (&aBuf)[40], double aDouble,
                                       int aPrecision) {
   static const DoubleToStringConverter converter(
       DoubleToStringConverter::UNIQUE_ZERO |
+          DoubleToStringConverter::NO_TRAILING_ZERO |
           DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN,
       "Infinity", "NaN", 'e', -6, 21, 6, 1);
   double_conversion::StringBuilder builder(aBuf, sizeof(aBuf));
-  bool exponential_notation = false;
-  converter.ToPrecision(aDouble, aPrecision, &exponential_notation, &builder);
+  converter.ToPrecision(aDouble, aPrecision, &builder);
   int length = builder.position();
-  char* formattedDouble = builder.Finalize();
-
-  // If we have a shorter string than aPrecision, it means we have a special
-  // value (NaN or Infinity).  All other numbers will be formatted with at
-  // least aPrecision digits.
-  if (length <= aPrecision) {
-    return length;
-  }
-
-  char* end = formattedDouble + length;
-  char* decimalPoint = strchr(aBuf, '.');
-  // No trailing zeros to remove.
-  if (!decimalPoint) {
-    return length;
-  }
-
-  if (MOZ_UNLIKELY(exponential_notation)) {
-    // We need to check for cases like 1.00000e-10 (yes, this is
-    // disgusting).
-    char* exponent = end - 1;
-    for (;; --exponent) {
-      if (*exponent == 'e') {
-        break;
-      }
-    }
-    char* zerosBeforeExponent = exponent - 1;
-    for (; zerosBeforeExponent != decimalPoint; --zerosBeforeExponent) {
-      if (*zerosBeforeExponent != '0') {
-        break;
-      }
-    }
-    if (zerosBeforeExponent == decimalPoint) {
-      --zerosBeforeExponent;
-    }
-    // Slide the exponent to the left over the trailing zeros.  Don't
-    // worry about copying the trailing NUL character.
-    size_t exponentSize = end - exponent;
-    memmove(zerosBeforeExponent + 1, exponent, exponentSize);
-    length -= exponent - (zerosBeforeExponent + 1);
-  } else {
-    char* trailingZeros = end - 1;
-    for (; trailingZeros != decimalPoint; --trailingZeros) {
-      if (*trailingZeros != '0') {
-        break;
-      }
-    }
-    if (trailingZeros == decimalPoint) {
-      --trailingZeros;
-    }
-    length -= end - (trailingZeros + 1);
-  }
-
+  builder.Finalize();
   return length;
 }
 

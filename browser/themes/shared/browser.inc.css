@@ -54,7 +54,7 @@
 /* Bookmark toolbar */
 
 #PersonalToolbar {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   max-height: 4em;
   padding: 0 6px 2px;
 }

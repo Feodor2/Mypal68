@@ -9,6 +9,7 @@
 #include "nsIPrincipal.h"
 #include "nsContentPermissionHelper.h"
 
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_permissions.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"

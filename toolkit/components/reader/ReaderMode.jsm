@@ -123,7 +123,7 @@ var ReaderMode = {
       Cu.reportError(e);
       return;
     }
-    let flags = webNav.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
+    let loadFlags = webNav.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
     let ReferrerInfo = Components.Constructor(
       "@mozilla.org/referrer-info;1",
       "nsIReferrerInfo",
@@ -131,7 +131,7 @@ var ReaderMode = {
     );
     let loadURIOptions = {
       triggeringPrincipal: principal,
-      loadFlags: flags,
+      loadFlags,
       referrerInfo: new ReferrerInfo(
         Ci.nsIReferrerInfo.EMPTY,
         true,

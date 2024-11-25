@@ -136,10 +136,8 @@
 @RESPATH@/update-settings.ini
 #endif
 @RESPATH@/platform.ini
-#ifndef MOZ_SYSTEM_SQLITE
 #ifndef MOZ_FOLD_LIBS
 @BINPATH@/@DLL_PREFIX@mozsqlite3@DLL_SUFFIX@
-#endif
 #endif
 @BINPATH@/@DLL_PREFIX@lgpllibs@DLL_SUFFIX@
 #ifdef MOZ_FFVPX
@@ -184,6 +182,9 @@
 @RESPATH@/components/TelemetryStartup.manifest
 
 @RESPATH@/components/Push.manifest
+
+@RESPATH@/components/l10n-registry.manifest
+@RESPATH@/browser/components/l10n-registry.manifest
 
 ; CDP remote agent
 #ifdef ENABLE_REMOTE_AGENT
@@ -354,9 +355,6 @@
 #endif
 @BINPATH@/@DLL_PREFIX@nss3@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@nssckbi@DLL_SUFFIX@
-#ifndef NSS_DISABLE_DBM
-@BINPATH@/@DLL_PREFIX@nssdbm3@DLL_SUFFIX@
-#endif
 #ifndef MOZ_FOLD_LIBS
 @BINPATH@/@DLL_PREFIX@nssutil3@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@smime3@DLL_SUFFIX@
@@ -416,10 +414,6 @@ bin/libfreebl_32int64_3.so
 @BINPATH@/breakpadinjector.dll
 #endif
 #endif
-
-; [ Ping Sender ]
-;
-@BINPATH@/pingsender@BIN_SUFFIX@
 
 ; Shutdown Terminator
 @RESPATH@/components/terminator.manifest

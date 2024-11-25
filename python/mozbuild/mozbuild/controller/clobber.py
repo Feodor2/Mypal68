@@ -41,7 +41,7 @@ Well, are ya? -- you can ignore this clobber requirement by running:
 
 
 class Clobberer(object):
-    def __init__(self, topsrcdir, topobjdir):
+    def __init__(self, topsrcdir, topobjdir, substs=None):
         """Create a new object to manage clobbering the tree.
 
         It is bound to a top source directory and to a specific object
@@ -54,6 +54,10 @@ class Clobberer(object):
         self.topobjdir = os.path.normpath(topobjdir)
         self.src_clobber = os.path.join(topsrcdir, 'CLOBBER')
         self.obj_clobber = os.path.join(topobjdir, 'CLOBBER')
+        if substs:
+            self.substs = substs
+        else:
+            self.substs = dict()
 
         # Try looking for mozilla/CLOBBER, for comm-central
         if not os.path.isfile(self.src_clobber):
@@ -98,36 +102,24 @@ class Clobberer(object):
         except Exception:
             return False
 
-    def remove_objdir(self, full=True):
-        """Remove the object directory.
+    def collect_subdirs(self, root, exclude):
+        """Gathers a list of subdirectories excluding specified items."""
+        paths = []
+        try:
+            for p in os.listdir(root):
+                if p not in exclude:
+                    paths.append(os.path.join(root, p).encode('utf-8'))
+        except OSError as e:
+            if e.errno != errno.ENOENT:
+                raise
 
-        ``full`` controls whether to fully delete the objdir. If False,
-        some directories (e.g. Visual Studio Project Files) will not be
-        deleted.
-        """
-        # Top-level files and directories to not clobber by default.
-        no_clobber = {
-            '.mozbuild',
-            'msvc',
-        }
+        return paths
 
-        if full:
-            # mozfile doesn't like unicode arguments (bug 818783).
-            paths = [self.topobjdir.encode('utf-8')]
-        else:
-            try:
-                paths = []
-                for p in os.listdir(self.topobjdir):
-                    if p not in no_clobber:
-                        paths.append(os.path.join(self.topobjdir, p).encode('utf-8'))
-            except OSError as e:
-                if e.errno != errno.ENOENT:
-                    raise
-                return
-
+    def delete_dirs(self, root, paths_to_delete):
+        """Deletes the given subdirectories in an optimal way."""
         procs = []
-        for p in sorted(paths):
-            path = os.path.join(self.topobjdir, p)
+        for p in sorted(paths_to_delete):
+            path = os.path.join(root, p)
             if sys.platform.startswith('win') and self.have_winrm() and os.path.isdir(path):
                 procs.append(subprocess.Popen(['winrm', '-rf', path]))
             else:
@@ -136,6 +128,44 @@ class Clobberer(object):
 
         for p in procs:
             p.wait()
+
+    def remove_objdir(self, full=True):
+        """Remove the object directory.
+
+        ``full`` controls whether to fully delete the objdir. If False,
+        some directories (e.g. Visual Studio Project Files) will not be
+        deleted.
+        """
+        # Determine where cargo build artifacts are stored
+        RUST_TARGET_VARS = ('RUST_HOST_TARGET', 'RUST_TARGET')
+        rust_targets = set([self.substs[x] for x in RUST_TARGET_VARS if x in self.substs])
+        rust_build_kind = 'release'
+        if self.substs.get('MOZ_DEBUG_RUST'):
+            rust_build_kind = 'debug'
+
+        # Top-level files and directories to not clobber by default.
+        no_clobber = {
+            '.mozbuild',
+            'msvc',
+        }
+
+        # Hold off on clobbering cargo build artifacts
+        no_clobber |= rust_targets
+
+        if full:
+            # mozfile doesn't like unicode arguments (bug 818783).
+            paths = [self.topobjdir.encode('utf-8')]
+        else:
+            paths = self.collect_subdirs(self.topobjdir, no_clobber)
+
+        self.delete_dirs(self.topobjdir, paths)
+
+        # Now handle cargo's build artifacts and skip removing the incremental
+        # compilation cache.
+        for target in rust_targets:
+            cargo_path = os.path.join(self.topobjdir, target, rust_build_kind)
+            paths = self.collect_subdirs(cargo_path, {'incremental', })
+            self.delete_dirs(cargo_path, paths)
 
     def ensure_objdir_state(self):
         """Ensure the CLOBBER file in the objdir exists.

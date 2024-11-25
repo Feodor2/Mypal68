@@ -214,7 +214,6 @@ def find_program(file, paths=None):
 
 
 @imports('os')
-@imports('subprocess')
 @imports(_from='mozbuild.configure.util', _import='LineIO')
 @imports(_from='tempfile', _import='mkstemp')
 def try_invoke_compiler(compiler, language, source, flags=None, onerror=None):
@@ -421,7 +420,9 @@ def dependable(obj):
         return obj
     if isfunction(obj):
         return depends(when=True)(obj)
-    return depends(when=True)(lambda: obj)
+    # Depend on --help to make lint happy if the dependable is used as an input
+    # to an option().
+    return depends('--help', when=True)(lambda _: obj)
 
 
 always = dependable(True)
@@ -470,11 +471,6 @@ def old_configure_assignments():
     return []
 
 
-@dependable
-def extra_old_configure_args():
-    return []
-
-
 @template
 def add_old_configure_assignment(var, value, when=None):
     var = dependable(var)
@@ -493,11 +489,3 @@ def add_old_configure_assignment(var, value, when=None):
             if isinstance(value, (list, tuple)):
                 value = quote(*value)
             assignments.append((var, str(value)))
-
-
-@template
-def add_old_configure_arg(arg):
-    @depends(extra_old_configure_args, arg)
-    def add_arg(args, arg):
-        if arg:
-            args.append(arg)

@@ -28,6 +28,7 @@
 
 #include "nsExceptionHandler.h"
 
+#include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsPrintfCString.h"
@@ -132,6 +133,13 @@ class BaseProcessLauncher {
     // Compute the serial event target we'll use for launching.
     nsCOMPtr<nsIEventTarget> threadOrPool = GetIPCLauncher();
     mLaunchThread = new TaskQueue(threadOrPool.forget());
+    if (ShouldHaveDirectoryService()) {
+      // "Current process directory" means the app dir, not the current
+      // working dir or similar.
+      mozilla::Unused
+          << nsDirectoryService::gService->GetCurrentProcessDirectory(
+                 getter_AddRefs(mAppDir));
+    }
   }
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(BaseProcessLauncher);
@@ -186,6 +194,7 @@ class BaseProcessLauncher {
   std::wstring mChannelId;
   ScopedPRFileDesc mCrashAnnotationReadPipe;
   ScopedPRFileDesc mCrashAnnotationWritePipe;
+  nsCOMPtr<nsIFile> mAppDir;
 };
 
 #ifdef XP_WIN
@@ -211,12 +220,15 @@ class PosixProcessLauncher : public BaseProcessLauncher {
  public:
   PosixProcessLauncher(GeckoChildProcessHost* aHost,
                        std::vector<std::string>&& aExtraOpts)
-      : BaseProcessLauncher(aHost, std::move(aExtraOpts)) {}
+      : BaseProcessLauncher(aHost, std::move(aExtraOpts)),
+        mProfileDir(aHost->mProfileDir) {}
 
  protected:
   virtual bool DoSetup() override;
   virtual RefPtr<ProcessHandlePromise> DoLaunch() override;
   virtual bool DoFinishLaunch() override;
+
+  nsCOMPtr<nsIFile> mProfileDir;
 
   std::vector<std::string> mChildArgv;
 };
@@ -315,6 +327,17 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
     sGeckoChildProcessHosts = new mozilla::LinkedList<GeckoChildProcessHost>();
   }
   sGeckoChildProcessHosts->insertBack(this);
+#if defined(MOZ_SANDBOX) && defined(XP_LINUX)
+  // The content process needs the content temp dir:
+  if (aProcessType == GeckoProcessType_Content) {
+    nsCOMPtr<nsIFile> contentTempDir;
+    nsresult rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
+                                         getter_AddRefs(contentTempDir));
+    if (NS_SUCCEEDED(rv)) {
+      contentTempDir->GetNativePath(mTmpDirName);
+    }
+  }
+#endif
 }
 
 GeckoChildProcessHost::~GeckoChildProcessHost()
@@ -530,16 +553,12 @@ void GeckoChildProcessHost::PrepareLaunch() {
   mEnableSandboxLogging =
       mEnableSandboxLogging || !!PR_GetEnv("MOZ_SANDBOX_LOGGING");
 #  endif
-#elif defined(XP_LINUX)
+#elif defined(XP_MACOSX)
 #  if defined(MOZ_SANDBOX)
-  // Get and remember the path to the per-content-process tmpdir
-  if (ShouldHaveDirectoryService()) {
-    nsCOMPtr<nsIFile> contentTempDir;
-    nsresult rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
-                                         getter_AddRefs(contentTempDir));
-    if (NS_SUCCEEDED(rv)) {
-      contentTempDir->GetNativePath(mTmpDirName);
-    }
+  if (ShouldHaveDirectoryService() &&
+      mProcessType != GeckoProcessType_GMPlugin) {
+    mozilla::Unused << NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                              getter_AddRefs(mProfileDir));
   }
 #  endif
 #endif
@@ -571,6 +590,13 @@ bool GeckoChildProcessHost::SyncLaunch(std::vector<std::string> aExtraOpts,
   return WaitUntilConnected(aTimeoutMs);
 }
 
+// Note: for most process types, we currently call AsyncLaunch, and therefore
+// the *ProcessLauncher constructor, on the main thread, while the
+// ProcessLauncher methods to actually execute the launch are called on the IO
+// or IPC launcher thread. GMP processes are an exception - the GMP code
+// invokes GeckoChildProcessHost from non-main-threads, and therefore we cannot
+// rely on having access to mainthread-only services (like the directory
+// service) from this code if we're launching that type of process.
 bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
   PrepareLaunch();
 
@@ -833,59 +859,43 @@ nsCOMPtr<nsIEventTarget> BaseProcessLauncher::GetIPCLauncher() {
 
 void
 #if defined(XP_WIN)
-AddAppDirToCommandLine(CommandLine& aCmdLine)
+AddAppDirToCommandLine(CommandLine& aCmdLine, nsIFile* aAppDir)
 #else
-AddAppDirToCommandLine(std::vector<std::string>& aCmdLine)
+AddAppDirToCommandLine(std::vector<std::string>& aCmdLine, nsIFile* aAppDir,
+    nsIFile* aProfileDir)
 #endif
 {
   // Content processes need access to application resources, so pass
   // the full application directory path to the child process.
-  if (ShouldHaveDirectoryService()) {
-    nsCOMPtr<nsIProperties> directoryService(
-        do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID));
-    NS_ASSERTION(directoryService, "Expected XPCOM to be available");
-    if (directoryService) {
-      nsCOMPtr<nsIFile> appDir;
-      // NS_XPCOM_CURRENT_PROCESS_DIR really means the app dir, not the
-      // current process dir.
-      nsresult rv =
-          directoryService->Get(NS_XPCOM_CURRENT_PROCESS_DIR,
-                                NS_GET_IID(nsIFile), getter_AddRefs(appDir));
-      if (NS_SUCCEEDED(rv)) {
+  if (aAppDir) {
 #if defined(XP_WIN)
-        nsString path;
-        MOZ_ALWAYS_SUCCEEDS(appDir->GetPath(path));
-        aCmdLine.AppendLooseValue(UTF8ToWide("-appdir"));
-        std::wstring wpath(path.get());
-        aCmdLine.AppendLooseValue(wpath);
+    nsString path;
+    MOZ_ALWAYS_SUCCEEDS(aAppDir->GetPath(path));
+    aCmdLine.AppendLooseValue(UTF8ToWide("-appdir"));
+    std::wstring wpath(path.get());
+    aCmdLine.AppendLooseValue(wpath);
 #else
-        nsAutoCString path;
-        MOZ_ALWAYS_SUCCEEDS(appDir->GetNativePath(path));
-        aCmdLine.push_back("-appdir");
-        aCmdLine.push_back(path.get());
+    nsAutoCString path;
+    MOZ_ALWAYS_SUCCEEDS(aAppDir->GetNativePath(path));
+    aCmdLine.push_back("-appdir");
+    aCmdLine.push_back(path.get());
 #endif
-      }
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
-      // Full path to the profile dir
-      nsCOMPtr<nsIFile> profileDir;
-      rv =
-          directoryService->Get(NS_APP_USER_PROFILE_50_DIR, NS_GET_IID(nsIFile),
-                                getter_AddRefs(profileDir));
-      if (NS_SUCCEEDED(rv)) {
-        // If the profile doesn't exist, normalization will
-        // fail. But we don't return an error here because some
-        // tests require startup with a missing profile dir.
-        // For users, almost universally, the profile will be in
-        // the home directory and normalization isn't required.
-        mozilla::Unused << profileDir->Normalize();
-        nsAutoCString path;
-        MOZ_ALWAYS_SUCCEEDS(profileDir->GetNativePath(path));
-        aCmdLine.push_back("-profile");
-        aCmdLine.push_back(path.get());
-      }
-#endif
+    // Full path to the profile dir
+    if (aProfileDir) {
+      // If the profile doesn't exist, normalization will
+      // fail. But we don't return an error here because some
+      // tests require startup with a missing profile dir.
+      // For users, almost universally, the profile will be in
+      // the home directory and normalization isn't required.
+      mozilla::Unused << aProfileDir->Normalize();
+      nsAutoCString path;
+      MOZ_ALWAYS_SUCCEEDS(aProfileDir->GetNativePath(path));
+      aCmdLine.push_back("-profile");
+      aCmdLine.push_back(path.get());
     }
+#endif
   }
 }
 
@@ -1063,6 +1073,7 @@ bool PosixProcessLauncher::DoSetup() {
   mChildArgv.insert(mChildArgv.end(), mExtraOpts.begin(), mExtraOpts.end());
 
   if (mProcessType != GeckoProcessType_GMPlugin) {
+#  if defined(MOZ_WIDGET_ANDROID)
     if (Omnijar::IsInitialized()) {
       // Make sure that child processes can find the omnijar
       // See XRE_InitCommandLine in nsAppRunner.cpp
@@ -1072,14 +1083,14 @@ bool PosixProcessLauncher::DoSetup() {
         mChildArgv.push_back("-greomni");
         mChildArgv.push_back(path.get());
       }
-      file = Omnijar::GetPath(Omnijar::APP);
-      if (file && NS_SUCCEEDED(file->GetNativePath(path))) {
-        mChildArgv.push_back("-appomni");
-        mChildArgv.push_back(path.get());
-      }
     }
+#  endif
     // Add the application directory path (-appdir path)
-    AddAppDirToCommandLine(mChildArgv);
+#  ifdef XP_MACOSX
+    AddAppDirToCommandLine(mChildArgv, mAppDir, mProfileDir);
+#  else
+    AddAppDirToCommandLine(mChildArgv, mAppDir, nullptr);
+#  endif
   }
 
   mChildArgv.push_back(mPidString);
@@ -1281,6 +1292,7 @@ bool WindowsProcessLauncher::DoSetup() {
     mCmdLine->AppendLooseValue(UTF8ToWide(*it));
   }
 
+#if defined(MOZ_WIDGET_ANDROID)
   if (Omnijar::IsInitialized()) {
     // Make sure the child process can find the omnijar
     // See XRE_InitCommandLine in nsAppRunner.cpp
@@ -1296,6 +1308,7 @@ bool WindowsProcessLauncher::DoSetup() {
       mCmdLine->AppendLooseValue(path.get());
     }
   }
+#endif
 
 #  if defined(MOZ_SANDBOX)
     mResults.mSandboxBroker = new SandboxBroker();
@@ -1383,7 +1396,7 @@ bool WindowsProcessLauncher::DoSetup() {
 #  endif  // defined(MOZ_SANDBOX)
 
   // Add the application directory path (-appdir path)
-  AddAppDirToCommandLine(mCmdLine.ref());
+  AddAppDirToCommandLine(mCmdLine.ref(), mAppDir);
 
   // XXX Command line params past this point are expected to be at
   // the end of the command line string, and in a specific order.

@@ -19,29 +19,29 @@ using namespace mozilla::image;
 template <typename Func>
 void WithDownscalingFilter(const IntSize& aInputSize,
                            const IntSize& aOutputSize, Func aFunc) {
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
   WithFilterPipeline(
       decoder, std::forward<Func>(aFunc),
-      DownscalingConfig{aInputSize, SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, aOutputSize, SurfaceFormat::B8G8R8A8, false});
+      DownscalingConfig{aInputSize, SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, aOutputSize, SurfaceFormat::OS_RGBA, false});
 }
 
 void AssertConfiguringDownscalingFilterFails(const IntSize& aInputSize,
                                              const IntSize& aOutputSize) {
-  RefPtr<Decoder> decoder = CreateTrivialDecoder();
+  RefPtr<image::Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(decoder != nullptr);
 
   AssertConfiguringPipelineFails(
-      decoder, DownscalingConfig{aInputSize, SurfaceFormat::B8G8R8A8},
-      SurfaceConfig{decoder, aOutputSize, SurfaceFormat::B8G8R8A8, false});
+      decoder, DownscalingConfig{aInputSize, SurfaceFormat::OS_RGBA},
+      SurfaceConfig{decoder, aOutputSize, SurfaceFormat::OS_RGBA, false});
 }
 
 TEST(ImageDownscalingFilter, WritePixels100_100to99_99)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(99, 99),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 99, 99)));
@@ -51,7 +51,7 @@ TEST(ImageDownscalingFilter, WritePixels100_100to99_99)
 TEST(ImageDownscalingFilter, WritePixels100_100to33_33)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(33, 33),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 33, 33)));
@@ -61,7 +61,7 @@ TEST(ImageDownscalingFilter, WritePixels100_100to33_33)
 TEST(ImageDownscalingFilter, WritePixels100_100to1_1)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(1, 1),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 1, 1)));
@@ -71,7 +71,7 @@ TEST(ImageDownscalingFilter, WritePixels100_100to1_1)
 TEST(ImageDownscalingFilter, WritePixels100_100to33_99)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(33, 99),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 33, 99)));
@@ -81,7 +81,7 @@ TEST(ImageDownscalingFilter, WritePixels100_100to33_99)
 TEST(ImageDownscalingFilter, WritePixels100_100to99_33)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(99, 33),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 99, 33)));
@@ -91,7 +91,7 @@ TEST(ImageDownscalingFilter, WritePixels100_100to99_33)
 TEST(ImageDownscalingFilter, WritePixels100_100to99_1)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(99, 1),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 99, 1)));
@@ -101,7 +101,7 @@ TEST(ImageDownscalingFilter, WritePixels100_100to99_1)
 TEST(ImageDownscalingFilter, WritePixels100_100to1_99)
 {
   WithDownscalingFilter(IntSize(100, 100), IntSize(1, 99),
-                        [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+                        [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
                           CheckWritePixels(
                               aDecoder, aFilter,
                               /* aOutputRect = */ Some(IntRect(0, 0, 1, 99)));
@@ -148,7 +148,7 @@ TEST(ImageDownscalingFilter, WritePixelsOutput100_100to20_20)
 {
   WithDownscalingFilter(
       IntSize(100, 100), IntSize(20, 20),
-      [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+      [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
         // Fill the image. It consists of 25 lines of green, followed by 25
         // lines of red, followed by 25 lines of green, followed by 25 more
         // lines of red.
@@ -190,7 +190,7 @@ TEST(ImageDownscalingFilter, WritePixelsOutput100_100to10_20)
 {
   WithDownscalingFilter(
       IntSize(100, 100), IntSize(10, 20),
-      [](Decoder* aDecoder, SurfaceFilter* aFilter) {
+      [](image::Decoder* aDecoder, SurfaceFilter* aFilter) {
         // Fill the image. It consists of 25 lines of green, followed by 25
         // lines of red, followed by 25 lines of green, followed by 25 more
         // lines of red.

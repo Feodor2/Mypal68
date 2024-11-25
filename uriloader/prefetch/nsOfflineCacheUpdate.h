@@ -182,10 +182,8 @@ class nsOfflineManifestItem : public nsOfflineCacheUpdateItem {
   nsCString mOldManifestHashValue;
 };
 
-class nsOfflineCacheUpdateOwner
-    : public mozilla::SupportsWeakPtr<nsOfflineCacheUpdateOwner> {
+class nsOfflineCacheUpdateOwner : public mozilla::SupportsWeakPtr {
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(nsOfflineCacheUpdateOwner)
   virtual ~nsOfflineCacheUpdateOwner() {}
   virtual nsresult UpdateFinished(nsOfflineCacheUpdate* aUpdate) = 0;
 };

@@ -47,10 +47,12 @@ struct BlocksRingBuffer::Deserializer<nsTString<T>> {
     // Note that the stored size is in *bytes*, not in number of characters.
     const auto bytes = aER.ReadULEB128<Length>();
     nsTString<T> s;
-    nsresult rv;
     // BulkWrite is the most efficient way to copy bytes into the target string.
-    auto writer = s.BulkWrite(bytes / sizeof(T), 0, true, rv);
-    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
+    auto writerOrErr = s.BulkWrite(bytes / sizeof(T), 0, true);
+    MOZ_RELEASE_ASSERT(!writerOrErr.isErr());
+
+    auto writer = writerOrErr.unwrap();
+
     aER.Read(reinterpret_cast<char*>(writer.Elements()), bytes);
     writer.Finish(bytes / sizeof(T), true);
     return s;
@@ -92,10 +94,11 @@ struct BlocksRingBuffer::Deserializer<nsTAutoStringN<T, N>> {
     // Note that the stored size is in *bytes*, not in number of characters.
     const auto bytes = aER.ReadULEB128<Length>();
     nsTAutoStringN<T, N> s;
-    nsresult rv;
     // BulkWrite is the most efficient way to copy bytes into the target string.
-    auto writer = s.BulkWrite(bytes / sizeof(T), 0, true, rv);
-    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
+    auto writerOrErr = s.BulkWrite(bytes / sizeof(T), 0, true);
+    MOZ_RELEASE_ASSERT(!writerOrErr.isErr());
+
+    auto writer = writerOrErr.unwrap();
     aER.Read(reinterpret_cast<char*>(writer.Elements()), bytes);
     writer.Finish(bytes / sizeof(T), true);
     return s;

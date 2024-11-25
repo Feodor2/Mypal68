@@ -200,7 +200,7 @@ nsresult EncodeInputStream(nsIInputStream* aInputStream, T& aDest,
   state.c[2] = '\0';
   state.buffer = aOffset + aDest.BeginWriting();
 
-  while (1) {
+  while (true) {
     uint32_t read = 0;
 
     rv = aInputStream->ReadSegments(&EncodeInputStream_Encoder<T>,
@@ -357,37 +357,61 @@ nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
   return NS_OK;
 }
 
-template <typename T>
-static nsresult Base64EncodeHelper(const T& aBinary, T& aBase64) {
-  // Check for overflow.
-  if (aBinary.Length() > (UINT32_MAX / 4) * 3) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (aBinary.IsEmpty()) {
-    aBase64.Truncate();
+template <bool Append = false, typename T, typename U>
+static nsresult Base64EncodeHelper(const T* const aBinary,
+                                   const size_t aBinaryLen, U& aBase64) {
+  if (aBinaryLen == 0) {
+    if (!Append) {
+      aBase64.Truncate();
+    }
     return NS_OK;
   }
 
-  uint32_t base64Len = ((aBinary.Length() + 2) / 3) * 4;
+  const uint32_t prefixLen = Append ? aBase64.Length() : 0;
+  const auto base64LenOrErr = [aBinaryLen,
+                               prefixLen]() -> Result<uint32_t, nsresult> {
+    // XXX(sg) Necessary to silence bad warning about unused lambda capture when
+    // Append is false.
+    (void)prefixLen;
+    CheckedUint32 res = aBinaryLen;
+    // base 64 encoded length is 4/3rds the length of the input data, rounded up
+    res += 2;
+    res /= 3;
+    res *= 4;
+    res += prefixLen;
+    if (!res.isValid()) {
+      return Err(NS_ERROR_FAILURE);
+    }
+    return res.value();
+  }();
+  if (base64LenOrErr.isErr()) {
+    return base64LenOrErr.inspectErr();
+  }
+  const uint32_t base64Len = base64LenOrErr.inspect();
 
-  nsresult rv;
-  auto handle = aBase64.BulkWrite(base64Len, 0, false, rv);
-  if (NS_FAILED(rv)) {
-    return rv;
+  auto handleOrErr = aBase64.BulkWrite(base64Len, prefixLen, false);
+  if (handleOrErr.isErr()) {
+    return handleOrErr.unwrapErr();
   }
 
-  Encode(aBinary.BeginReading(), aBinary.Length(), handle.Elements());
+  auto handle = handleOrErr.unwrap();
+
+  Encode(aBinary, aBinaryLen, handle.Elements() + prefixLen);
   handle.Finish(base64Len, false);
   return NS_OK;
 }
 
+nsresult Base64EncodeAppend(const char* aBinary, uint32_t aBinaryLen,
+                            nsAString& aBase64) {
+  return Base64EncodeHelper<true>(aBinary, aBinaryLen, aBase64);
+}
+
 nsresult Base64Encode(const nsACString& aBinary, nsACString& aBase64) {
-  return Base64EncodeHelper(aBinary, aBase64);
+  return Base64EncodeHelper(aBinary.BeginReading(), aBinary.Length(), aBase64);
 }
 
 nsresult Base64Encode(const nsAString& aBinary, nsAString& aBase64) {
-  return Base64EncodeHelper(aBinary, aBase64);
+  return Base64EncodeHelper(aBinary.BeginReading(), aBinary.Length(), aBase64);
 }
 
 template <typename T, typename U, typename Decoder>
@@ -533,17 +557,18 @@ static nsresult Base64DecodeString(const T& aBase64, T& aBinary) {
 
   uint32_t binaryLen = ((aBase64.Length() * 3) / 4);
 
-  nsresult rv;
-  auto handle = aBinary.BulkWrite(binaryLen, 0, false, rv);
-  if (NS_FAILED(rv)) {
+  auto handleOrErr = aBinary.BulkWrite(binaryLen, 0, false);
+  if (handleOrErr.isErr()) {
     // Must not touch the handle if failing here, but we
     // already truncated the string at the top, so it's
     // unchanged.
-    return rv;
+    return handleOrErr.unwrapErr();
   }
 
-  rv = Base64DecodeHelper(aBase64.BeginReading(), aBase64.Length(),
-                          handle.Elements(), &binaryLen);
+  auto handle = handleOrErr.unwrap();
+
+  nsresult rv = Base64DecodeHelper(aBase64.BeginReading(), aBase64.Length(),
+                                   handle.Elements(), &binaryLen);
   if (NS_FAILED(rv)) {
     // Retruncate to match old semantics of this method.
     handle.Finish(0, true);
@@ -662,11 +687,12 @@ nsresult Base64URLEncode(uint32_t aBinaryLen, const uint8_t* aBinary,
   // Allocate a buffer large enough to hold the encoded string with padding.
   uint32_t base64Len = ((aBinaryLen + 2) / 3) * 4;
 
-  nsresult rv;
-  auto handle = aBase64.BulkWrite(base64Len, 0, false, rv);
-  if (NS_FAILED(rv)) {
-    return rv;
+  auto handleOrErr = aBase64.BulkWrite(base64Len, 0, false);
+  if (handleOrErr.isErr()) {
+    return handleOrErr.unwrapErr();
   }
+
+  auto handle = handleOrErr.unwrap();
 
   char* base64 = handle.Elements();
 

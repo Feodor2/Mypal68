@@ -20,6 +20,7 @@
 #include "mozilla/Attributes.h"
 #include "prtime.h"
 #include "nsICaptivePortalService.h"
+#include "nsWeakReference.h"
 
 #define NS_N(x) (sizeof(x) / sizeof(*x))
 

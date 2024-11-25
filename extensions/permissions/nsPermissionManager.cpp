@@ -29,9 +29,6 @@
 #include "nsContentUtils.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/dom/Document.h"
-#ifdef ANDROID
-#  include "mozilla/jni/Utils.h"  // for jni::IsFennec
-#endif
 #include "mozilla/net/NeckoMessageUtils.h"
 #include "mozilla/Preferences.h"
 #include "nsReadLine.h"
@@ -1028,7 +1025,6 @@ nsresult nsPermissionManager::Init() {
     observerService->AddObserver(this, "profile-do-change", true);
     observerService->AddObserver(this, "testonly-reload-permissions-from-disk",
                                  true);
-    observerService->AddObserver(this, "clear-origin-attributes-data", true);
   }
 
   // ignore failure here, since it's non-fatal (we can run fine without
@@ -2648,8 +2644,6 @@ NS_IMETHODIMP nsPermissionManager::Observe(nsISupports* aSubject,
     RemoveAllFromMemory();
     CloseDB(false);
     InitDB(false);
-  } else if (!nsCRT::strcmp(aTopic, "clear-origin-attributes-data")) {
-    return RemovePermissionsWithAttributes(nsDependentString(someData));
   }
 
   return NS_OK;
@@ -2665,7 +2659,8 @@ nsresult nsPermissionManager::RemoveAllModifiedSince(
       });
 }
 
-nsresult nsPermissionManager::RemovePermissionsWithAttributes(
+NS_IMETHODIMP
+nsPermissionManager::RemovePermissionsWithAttributes(
     const nsAString& aPattern) {
   ENSURE_NOT_CHILD_PROCESS;
   mozilla::OriginAttributesPattern pattern;

@@ -207,6 +207,9 @@ class nsPermissionManager final : public nsIPermissionManager,
    */
   static void Startup();
 
+  nsresult RemovePermissionsWithAttributes(
+      mozilla::OriginAttributesPattern& aAttrs);
+
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on
    * permission keys.
@@ -281,6 +284,15 @@ class nsPermissionManager final : public nsIPermissionManager,
 
   // From ContentChild.
   nsresult RemoveAllFromIPC();
+
+  /**
+   * Returns false if this permission manager wouldn't have the permission
+   * requested available.
+   *
+   * If aType is empty, checks that the permission manager would have all
+   * permissions available for the given principal.
+   */
+  bool PermissionAvailable(nsIPrincipal* aPrincipal, const nsACString& aType);
 
   /**
    * The content process doesn't have access to every permission. Instead, when
@@ -579,19 +591,6 @@ class nsPermissionManager final : public nsIPermissionManager,
 
   template <class T>
   nsresult RemovePermissionEntries(T aCondition);
-
-  nsresult RemovePermissionsWithAttributes(const nsAString& aPattern);
-  nsresult RemovePermissionsWithAttributes(
-      mozilla::OriginAttributesPattern& aAttrs);
-
-  /**
-   * Returns false if this permission manager wouldn't have the permission
-   * requested available.
-   *
-   * If aType is nullptr, checks that the permission manager would have all
-   * permissions available for the given principal.
-   */
-  bool PermissionAvailable(nsIPrincipal* aPrincipal, const nsACString& aType);
 
   nsRefPtrHashtable<nsCStringHashKey, mozilla::GenericPromise::Private>
       mPermissionKeyPromiseMap;

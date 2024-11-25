@@ -4234,9 +4234,9 @@ NSEvent* gLastDragMouseDownEvent = nil;
   geckoEvent.mClickCount = clickCount;
 
   if (modifierFlags & NSControlKeyMask)
-    geckoEvent.mButton = MouseButton::eRight;
+    geckoEvent.mButton = MouseButton::eSecondary;
   else
-    geckoEvent.mButton = MouseButton::eLeft;
+    geckoEvent.mButton = MouseButton::ePrimary;
 
   mGeckoChild->DispatchInputEvent(&geckoEvent);
   mBlockedLastMouseDown = NO;
@@ -4361,7 +4361,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   // The right mouse went down, fire off a right mouse down event to gecko
   WidgetMouseEvent geckoEvent(true, eMouseDown, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.mButton = MouseButton::eRight;
+  geckoEvent.mButton = MouseButton::eSecondary;
   geckoEvent.mClickCount = [theEvent clickCount];
 
   mGeckoChild->DispatchInputEvent(&geckoEvent);
@@ -4385,7 +4385,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseUp, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.mButton = MouseButton::eRight;
+  geckoEvent.mButton = MouseButton::eSecondary;
   geckoEvent.mClickCount = [theEvent clickCount];
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
@@ -4418,7 +4418,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseMove, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.mButton = MouseButton::eRight;
+  geckoEvent.mButton = MouseButton::eSecondary;
 
   // send event into Gecko by going directly to the
   // the widget.
@@ -4716,7 +4716,14 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
   WidgetMouseEvent geckoEvent(true, eContextMenu, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.mButton = MouseButton::eRight;
+  if (StaticPrefs::dom_event_treat_ctrl_click_as_right_click_disabled() &&
+      [theEvent type] == NSLeftMouseDown) {
+    geckoEvent.mContextMenuTrigger = WidgetMouseEvent::eControlClick;
+    geckoEvent.mButton = MouseButton::ePrimary;
+  } else {
+    geckoEvent.mButton = MouseButton::eSecondary;
+  }
+
   mGeckoChild->DispatchInputEvent(&geckoEvent);
   if (!mGeckoChild) return nil;
 
@@ -4760,10 +4767,10 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
   NSUInteger mouseButtons = [NSEvent pressedMouseButtons];
 
   if (mouseButtons & 0x01) {
-    mouseEvent->mButtons |= MouseButtonsFlag::eLeftFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::ePrimaryFlag;
   }
   if (mouseButtons & 0x02) {
-    mouseEvent->mButtons |= MouseButtonsFlag::eRightFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::eSecondaryFlag;
   }
   if (mouseButtons & 0x04) {
     mouseEvent->mButtons |= MouseButtonsFlag::eMiddleFlag;

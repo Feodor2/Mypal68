@@ -12,6 +12,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <utility>
+
 #include "LinuxCapabilities.h"
 #include "LinuxSched.h"
 #include "SandboxChrootProto.h"
@@ -23,11 +25,11 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Move.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SandboxReporter.h"
 #include "mozilla/SandboxSettings.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
@@ -146,7 +148,7 @@ static bool ContentNeedsSysVIPC() {
   // The ALSA dmix plugin uses SysV semaphores and shared memory to
   // coordinate software mixing.
 #ifdef MOZ_ALSA
-  if (!Preferences::GetBool("media.cubeb.sandbox")) {
+  if (!StaticPrefs::media_cubeb_sandbox()) {
     return true;
   }
 #endif

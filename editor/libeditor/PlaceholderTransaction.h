@@ -21,9 +21,8 @@ class EditorBase;
  * transactions it has absorbed.
  */
 
-class PlaceholderTransaction final
-    : public EditAggregateTransaction,
-      public SupportsWeakPtr<PlaceholderTransaction> {
+class PlaceholderTransaction final : public EditAggregateTransaction,
+                                     public SupportsWeakPtr {
  protected:
   PlaceholderTransaction(EditorBase& aEditorBase, nsStaticAtom& aName,
                          Maybe<SelectionState>&& aSelState);
@@ -46,8 +45,6 @@ class PlaceholderTransaction final
         new PlaceholderTransaction(aEditorBase, aName, std::move(selState));
     return transaction.forget();
   }
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(PlaceholderTransaction)
 
   NS_DECL_ISUPPORTS_INHERITED
 

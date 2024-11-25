@@ -426,12 +426,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Corroborate: "resource://gre/modules/Corroborate.jsm",
   DateTimePickerParent: "resource://gre/modules/DateTimePickerParent.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
-  FileSource: "resource://gre/modules/L10nRegistry.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   HybridContentTelemetry: "resource://gre/modules/HybridContentTelemetry.jsm",
   Integration: "resource://gre/modules/Integration.jsm",
-  L10nRegistry: "resource://gre/modules/L10nRegistry.jsm",
   LiveBookmarkMigrator: "resource:///modules/LiveBookmarkMigrator.jsm",
   NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
@@ -1045,22 +1043,6 @@ BrowserGlue.prototype = {
     } else {
       PdfJs.earlyInit();
     }
-
-    // Initialize the default l10n resource sources for L10nRegistry.
-    let locales = Services.locale.packagedLocales;
-    const greSource = new FileSource(
-      "toolkit",
-      locales,
-      "resource://gre/localization/{locale}/"
-    );
-    L10nRegistry.registerSource(greSource);
-
-    const appSource = new FileSource(
-      "app",
-      locales,
-      "resource://app/localization/{locale}/"
-    );
-    L10nRegistry.registerSource(appSource);
 
     // check if we're in safe mode
     if (Services.appinfo.inSafeMode) {
@@ -2009,7 +1991,7 @@ BrowserGlue.prototype = {
         return;
       }
       // Otherwise, we check browser.tabs.warnOnClose
-    } else if (!Services.prefs.getBoolPref("browser.tabs.warnOnClose")) {
+    } else if (Services.prefs.getIntPref("browser.tabs.warnOnClose") >= pagecount) {
       return;
     }
 
@@ -2563,11 +2545,22 @@ BrowserGlue.prototype = {
     }
   },
 
+  _migrateXULStoreForDocument(fromURL, toURL) {
+    Array.from(Services.xulStore.getIDsEnumerator(fromURL)).forEach((id) => {
+      Array.from(Services.xulStore.getAttributeEnumerator(fromURL, id)).forEach(
+        attr => {
+          let value = Services.xulStore.getValue(fromURL, id, attr);
+          Services.xulStore.setValue(toURL, id, attr, value);
+        }
+      );
+    });
+  },
+
   // eslint-disable-next-line complexity
   _migrateUI: function BG__migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 81;
+    const UI_VERSION = 82;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     let currentUIVersion;
@@ -2910,6 +2903,11 @@ BrowserGlue.prototype = {
           }
         }
       }
+    }
+
+    if (currentUIVersion < 82) {
+      this._migrateXULStoreForDocument("chrome://browser/content/browser.xul",
+                                       "chrome://browser/content/browser.xhtml");
     }
 
     // Update the migration version.

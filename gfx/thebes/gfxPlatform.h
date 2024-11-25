@@ -545,9 +545,19 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static qcms_transform* GetCMSRGBATransform();
 
   /**
-   * Return sRGBA -> output device transform.
+   * Return sBGRA -> output device transform.
    */
   static qcms_transform* GetCMSBGRATransform();
+
+  /**
+   * Return OS RGBA -> output device transform.
+   */
+  static qcms_transform* GetCMSOSRGBATransform();
+
+  /**
+   * Return OS RGBA QCMS type.
+   */
+  static qcms_data_type GetCMSOSRGBAType();
 
   virtual void FontsPrefsChanged(const char* aPref);
 
@@ -869,11 +879,11 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void InitOpenGLConfig();
   static void CreateCMSOutputProfile();
 
-  static void GetCMSOutputProfileData(void*& mem, size_t& size);
+  static nsTArray<uint8_t> GetCMSOutputProfileData();
 
   friend void RecordingPrefChanged(const char* aPrefName, void* aClosure);
 
-  virtual void GetPlatformCMSOutputProfile(void*& mem, size_t& size);
+  virtual nsTArray<uint8_t> GetPlatformCMSOutputProfileData();
 
   /**
    * Calling this function will compute and set the ideal tile size for the

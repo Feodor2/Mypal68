@@ -282,8 +282,7 @@ nsContentTreeOwner::SetPersistence(bool aPersistPosition, bool aPersistSize,
 
   ErrorResult rv;
   if (saveString) {
-    docShellElement->SetAttribute(NS_LITERAL_STRING("persist"), persistString,
-                                  rv);
+    docShellElement->SetAttribute(u"persist"_ns, persistString, rv);
   }
 
   return NS_OK;

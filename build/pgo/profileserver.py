@@ -7,8 +7,10 @@
 import json
 import os
 import sys
+import glob
+import subprocess
 
-from buildconfig import substs
+import mozcrash
 from mozbuild.base import MozbuildObject
 from mozfile import TemporaryDirectory
 from mozhttpd import MozHttpd
@@ -20,8 +22,36 @@ from six import string_types
 PORT = 8888
 
 PATH_MAPPINGS = {
-    '/js-input/webkit/PerformanceTests': 'third_party/webkit/PerformanceTests',
+    '/webkit/PerformanceTests': 'third_party/webkit/PerformanceTests',
+    # It is tempting to map to `testing/talos/talos/tests` instead, to avoid
+    # writing `tests/` in every path, but we can't do that because some files
+    # refer to scripts located in `../..`.
+    '/talos': 'testing/talos/talos',
 }
+
+
+def get_crashreports(directory, name=None):
+    rc = 0
+    upload_path = os.environ.get('UPLOAD_PATH')
+    if upload_path:
+        # For automation, log the minidumps with stackwalk and get them moved to
+        # the artifacts directory.
+        fetches_dir = os.environ.get('MOZ_FETCHES_DIR')
+        if not fetches_dir:
+            raise Exception("Unable to process minidump in automation because "
+                            "$MOZ_FETCHES_DIR is not set in the environment")
+        stackwalk_binary = os.path.join(fetches_dir, 'minidump_stackwalk', 'minidump_stackwalk')
+        if sys.platform == 'win32':
+            stackwalk_binary += '.exe'
+        minidump_path = os.path.join(directory, "minidumps")
+        rc = mozcrash.check_for_crashes(
+            minidump_path,
+            symbols_path=fetches_dir,
+            stackwalk_binary=stackwalk_binary,
+            dump_save_path=upload_path,
+            test_name=name,
+        )
+    return rc
 
 
 if __name__ == '__main__':
@@ -49,6 +79,10 @@ if __name__ == '__main__':
     locations.add_host(host='127.0.0.1',
                        port=PORT,
                        options='primary,privileged')
+
+    old_profraw_files = glob.glob('*.profraw')
+    for f in old_profraw_files:
+        os.remove(f)
 
     with TemporaryDirectory() as profilePath:
         # TODO: refactor this into mozprofile
@@ -92,17 +126,6 @@ if __name__ == '__main__':
         # Ensure different pids write to different files
         env["LLVM_PROFILE_FILE"] = "default_%p_random_%m.profraw"
 
-        # For VC12+, make sure we can find the right bitness of pgort1x0.dll
-        if not substs.get('HAVE_64BIT_BUILD'):
-            for e in ('VS140COMNTOOLS', 'VS120COMNTOOLS'):
-                if e not in env:
-                    continue
-
-                vcdir = os.path.abspath(os.path.join(env[e], '../../VC/bin'))
-                if os.path.exists(vcdir):
-                    env['PATH'] = '%s;%s' % (vcdir, env['PATH'])
-                    break
-
         # Write to an output file if we're running in automation
         process_args = {}
         if 'UPLOAD_PATH' in env:
@@ -125,12 +148,15 @@ if __name__ == '__main__':
                 with open(logfile) as f:
                     print(f.read())
             httpd.stop()
+            get_crashreports(profilePath, name='Profile initialization')
             sys.exit(ret)
 
         jarlog = os.getenv("JARLOG_FILE")
         if jarlog:
             env["MOZ_JAR_LOG_FILE"] = os.path.abspath(jarlog)
             print("jarlog: %s" % env["MOZ_JAR_LOG_FILE"])
+            if os.path.exists(jarlog):
+                os.remove(jarlog)
 
         if 'UPLOAD_PATH' in env:
             process_args['logfile'] = os.path.join(env['UPLOAD_PATH'], 'profile-run-2.log')
@@ -150,4 +176,30 @@ if __name__ == '__main__':
                 print("Firefox output (%s):" % logfile)
                 with open(logfile) as f:
                     print(f.read())
+            get_crashreports(profilePath, name='Profiling run')
             sys.exit(ret)
+
+        # Try to move the crash reports to the artifacts even if Firefox appears
+        # to exit successfully, in case there's a crash that doesn't set the
+        # return code to non-zero for some reason.
+        if get_crashreports(profilePath, name='Firefox exited successfully?') != 0:
+            print("Firefox exited successfully, but produced a crashreport")
+            sys.exit(1)
+
+        llvm_profdata = env.get('LLVM_PROFDATA')
+        if llvm_profdata:
+            profraw_files = glob.glob('*.profraw')
+            if not profraw_files:
+                print('Could not find profraw files in the current directory: %s' % os.getcwd())
+                sys.exit(1)
+            merge_cmd = [
+                llvm_profdata,
+                'merge',
+                '-o',
+                'merged.profdata',
+            ] + profraw_files
+            rc = subprocess.call(merge_cmd)
+            if rc != 0:
+                print('INFRA-ERROR: Failed to merge profile data. Corrupt profile?')
+                # exit with TBPL_RETRY
+                sys.exit(4)

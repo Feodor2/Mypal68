@@ -31,23 +31,6 @@ addEventListener(
   false
 );
 
-addEventListener(
-  "ImageContentLoaded",
-  function(aEvent) {
-    if (content.document instanceof Ci.nsIImageDocument) {
-      let req = content.document.imageRequest;
-      if (!req.image) {
-        return;
-      }
-      sendAsyncMessage("ImageDocumentLoaded", {
-        width: req.image.width,
-        height: req.image.height,
-      });
-    }
-  },
-  false
-);
-
 // We may not get any responses to Browser:Init if the browser element
 // is torn down too quickly.
 var outerWindowID = docShell.outerWindowID;

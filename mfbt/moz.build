@@ -19,9 +19,11 @@ EXPORTS.mozilla = [
     'Array.h',
     'ArrayUtils.h',
     'Assertions.h',
+    'AtomicBitfields.h',
     'Atomics.h',
     'Attributes.h',
     'BinarySearch.h',
+    'BitSet.h',
     'BloomFilter.h',
     'Buffer.h',
     'BufferList.h',
@@ -70,7 +72,6 @@ EXPORTS.mozilla = [
     'Move.h',
     'NonDereferenceable.h',
     'NotNull.h',
-    'NullPtr.h',
     'Opaque.h',
     'OperatorNewExtensions.h',
     'Path.h',
@@ -86,6 +87,7 @@ EXPORTS.mozilla = [
     'RefPtr.h',
     'Result.h',
     'ResultExtensions.h',
+    'ResultVariant.h',
     'ReverseIterator.h',
     'RollingMean.h',
     'Saturate.h',
@@ -124,6 +126,8 @@ EXPORTS.mozilla = [
 
 EXPORTS["double-conversion"] = [
     'double-conversion/double-conversion/double-conversion.h',
+    'double-conversion/double-conversion/double-to-string.h',
+    'double-conversion/double-conversion/string-to-double.h',
     'double-conversion/double-conversion/utils.h',
 ]
 
@@ -135,9 +139,10 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     EXPORTS.mozilla += [
         'WindowsVersion.h',
     ]
-elif CONFIG['OS_ARCH'] == 'Linux':
+
+if CONFIG['MOZ_TSAN']:
     EXPORTS.mozilla += [
-        'LinuxSignal.h',
+        'TsanOptions.h',
     ]
 
 UNIFIED_SOURCES += [
@@ -146,10 +151,10 @@ UNIFIED_SOURCES += [
     'double-conversion/double-conversion/bignum-dtoa.cc',
     'double-conversion/double-conversion/bignum.cc',
     'double-conversion/double-conversion/cached-powers.cc',
-    'double-conversion/double-conversion/diy-fp.cc',
-    'double-conversion/double-conversion/double-conversion.cc',
+    'double-conversion/double-conversion/double-to-string.cc',
     'double-conversion/double-conversion/fast-dtoa.cc',
     'double-conversion/double-conversion/fixed-dtoa.cc',
+    'double-conversion/double-conversion/string-to-double.cc',
     'double-conversion/double-conversion/strtod.cc',
     'FloatingPoint.cpp',
     'HashFunctions.cpp',
@@ -163,7 +168,7 @@ UNIFIED_SOURCES += [
     'Utf8.cpp',
 ]
 
-if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter'):
+if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter', 'tools/update-packaging'):
     # Building MFBT tests adds a large overhead when building
     # tools/crashreporter.
     TEST_DIRS += ['tests']

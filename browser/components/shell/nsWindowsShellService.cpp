@@ -13,6 +13,7 @@
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
 #include "nsIOutputStream.h"
+#include "nsIPrefService.h"
 #include "nsIStringBundle.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
@@ -27,6 +28,7 @@
 #include "nsXULAppAPI.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/gfx/2D.h"
 
 #include "windows.h"
 #include "shellapi.h"

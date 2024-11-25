@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <string.h>
-#include "mozilla/Result.h"
+#include "mozilla/ResultVariant.h"
 #include "mozilla/UniquePtr.h"
 
 using mozilla::Err;
@@ -12,27 +12,11 @@ using mozilla::Ok;
 using mozilla::Result;
 using mozilla::UniquePtr;
 
-enum struct UnusedZeroEnum : int32_t { Ok = 0, NotOk = 1 };
+enum struct TestUnusedZeroEnum : int16_t { Ok = 0, NotOk = 1 };
 
 namespace mozilla::detail {
 template <>
-struct UnusedZero<UnusedZeroEnum> {
-  using StorageType = UnusedZeroEnum;
-
-  static constexpr bool value = true;
-  static constexpr StorageType nullValue = UnusedZeroEnum::Ok;
-
-  static constexpr StorageType GetDefaultValue() {
-    return UnusedZeroEnum::NotOk;
-  }
-
-  static constexpr void AssertValid(StorageType aValue) {}
-  static constexpr const UnusedZeroEnum& Inspect(const StorageType& aValue) {
-    return aValue;
-  }
-  static constexpr UnusedZeroEnum Unwrap(StorageType aValue) { return aValue; }
-  static constexpr StorageType Store(UnusedZeroEnum aValue) { return aValue; }
-};
+struct UnusedZero<TestUnusedZeroEnum> : UnusedZeroEnum<TestUnusedZeroEnum> {};
 }  // namespace mozilla::detail
 
 struct Failed {};
@@ -56,24 +40,27 @@ struct UnusedZero<Failed> {
   }
 };
 
-template <>
-struct HasFreeLSB<Failed> {
-  static const bool value = true;
-};
 }  // namespace mozilla::detail
 
 // V is trivially default-constructible, and E has UnusedZero<E>::value == true,
 // for a reference type and for a non-reference type
 static_assert(mozilla::detail::SelectResultImpl<uintptr_t, Failed>::value ==
               mozilla::detail::PackingStrategy::NullIsOk);
-static_assert(mozilla::detail::SelectResultImpl<Ok, UnusedZeroEnum>::value ==
-              mozilla::detail::PackingStrategy::NullIsOk);
+static_assert(
+    mozilla::detail::SelectResultImpl<Ok, TestUnusedZeroEnum>::value ==
+    mozilla::detail::PackingStrategy::NullIsOk);
+static_assert(mozilla::detail::SelectResultImpl<Ok, Failed>::value ==
+              mozilla::detail::PackingStrategy::LowBitTagIsError);
 
 static_assert(std::is_trivially_destructible_v<Result<uintptr_t, Failed>>);
-static_assert(std::is_trivially_destructible_v<Result<Ok, UnusedZeroEnum>>);
+static_assert(std::is_trivially_destructible_v<Result<Ok, TestUnusedZeroEnum>>);
+static_assert(std::is_trivially_destructible_v<Result<Ok, Failed>>);
 
-static_assert(sizeof(Result<Ok, Failed>) == sizeof(uintptr_t),
-              "Result with empty value type should be pointer-sized");
+static_assert(
+    sizeof(Result<bool, TestUnusedZeroEnum>) <= sizeof(uintptr_t),
+    "Result with bool value type should not be larger than pointer-sized");
+static_assert(sizeof(Result<Ok, Failed>) == sizeof(uint8_t),
+              "Result with empty value type should be size 1");
 static_assert(sizeof(Result<int*, Failed>) == sizeof(uintptr_t),
               "Result with two aligned pointer types should be pointer-sized");
 static_assert(
@@ -110,8 +97,8 @@ static GenericErrorResult<Failed> Fail() {
   return Err(failed);
 }
 
-static GenericErrorResult<UnusedZeroEnum> FailUnusedZeroEnum() {
-  return Err(UnusedZeroEnum::NotOk);
+static GenericErrorResult<TestUnusedZeroEnum> FailTestUnusedZeroEnum() {
+  return Err(TestUnusedZeroEnum::NotOk);
 }
 
 static Result<Ok, Failed> Task1(bool pass) {
@@ -121,10 +108,10 @@ static Result<Ok, Failed> Task1(bool pass) {
   return Ok();
 }
 
-static Result<Ok, UnusedZeroEnum> Task1UnusedZeroEnumErr(bool pass) {
+static Result<Ok, TestUnusedZeroEnum> Task1UnusedZeroEnumErr(bool pass) {
   if (!pass) {
-    return FailUnusedZeroEnum();  // implicit conversion from GenericErrorResult
-                                  // to Result
+    return FailTestUnusedZeroEnum();  // implicit conversion from
+                                      // GenericErrorResult to Result
   }
   return Ok();
 }
@@ -135,8 +122,8 @@ static Result<int, Failed> Task2(bool pass, int value) {
   return value;      // implicit conversion from T to Result<T, E>
 }
 
-static Result<int, UnusedZeroEnum> Task2UnusedZeroEnumErr(bool pass,
-                                                          int value) {
+static Result<int, TestUnusedZeroEnum> Task2UnusedZeroEnumErr(bool pass,
+                                                              int value) {
   MOZ_TRY(Task1UnusedZeroEnumErr(
       pass));    // converts one type of result to another in the error case
   return value;  // implicit conversion from T to Result<T, E>
@@ -159,9 +146,9 @@ static void BasicTests() {
   MOZ_RELEASE_ASSERT(!Task1UnusedZeroEnumErr(true).isErr());
   MOZ_RELEASE_ASSERT(!Task1UnusedZeroEnumErr(false).isOk());
   MOZ_RELEASE_ASSERT(Task1UnusedZeroEnumErr(false).isErr());
-  MOZ_RELEASE_ASSERT(UnusedZeroEnum::NotOk ==
+  MOZ_RELEASE_ASSERT(TestUnusedZeroEnum::NotOk ==
                      Task1UnusedZeroEnumErr(false).inspectErr());
-  MOZ_RELEASE_ASSERT(UnusedZeroEnum::NotOk ==
+  MOZ_RELEASE_ASSERT(TestUnusedZeroEnum::NotOk ==
                      Task1UnusedZeroEnumErr(false).unwrapErr());
 
   // MOZ_TRY works.
@@ -220,6 +207,37 @@ static void BasicTests() {
   }
 }
 
+struct NonCopyableNonMovable {
+  explicit NonCopyableNonMovable(uint32_t aValue) : mValue(aValue) {}
+
+  NonCopyableNonMovable(const NonCopyableNonMovable&) = delete;
+  NonCopyableNonMovable(NonCopyableNonMovable&&) = delete;
+  NonCopyableNonMovable& operator=(const NonCopyableNonMovable&) = delete;
+  NonCopyableNonMovable& operator=(NonCopyableNonMovable&&) = delete;
+
+  uint32_t mValue;
+};
+
+static void InPlaceConstructionTests() {
+  {
+    // PackingStrategy == NullIsOk
+    static_assert(mozilla::detail::SelectResultImpl<NonCopyableNonMovable,
+                                                    Failed>::value ==
+                  mozilla::detail::PackingStrategy::NullIsOk);
+    const Result<NonCopyableNonMovable, Failed> result{std::in_place, 42};
+    MOZ_RELEASE_ASSERT(42 == result.inspect().mValue);
+  }
+
+  {
+    // PackingStrategy == Variant
+    static_assert(
+        mozilla::detail::SelectResultImpl<NonCopyableNonMovable, int>::value ==
+        mozilla::detail::PackingStrategy::Variant);
+    const Result<NonCopyableNonMovable, int> result{std::in_place, 42};
+    MOZ_RELEASE_ASSERT(42 == result.inspect().mValue);
+  }
+}
+
 /* * */
 
 struct Snafu : Failed {};
@@ -236,6 +254,16 @@ static Result<Ok, Failed*> ErrorGeneralization() {
 
 static void TypeConversionTests() {
   MOZ_RELEASE_ASSERT(ErrorGeneralization().isErr());
+
+  {
+    const Result<Ok, Failed*> res = Explode();
+    MOZ_RELEASE_ASSERT(res.isErr());
+  }
+
+  {
+    const Result<Ok, Failed*> res = Result<Ok, Snafu*>{Ok{}};
+    MOZ_RELEASE_ASSERT(res.isOk());
+  }
 }
 
 static void EmptyValueTest() {
@@ -243,8 +271,8 @@ static void EmptyValueTest() {
   mozilla::Result<Fine, Failed> res((Fine()));
   res.unwrap();
   MOZ_RELEASE_ASSERT(res.isOk());
-  static_assert(sizeof(res) == sizeof(uintptr_t),
-                "Result with empty value type should be pointer-sized");
+  static_assert(sizeof(res) == sizeof(uint8_t),
+                "Result with empty value and error types should be size 1");
 }
 
 static void MapTest() {
@@ -490,20 +518,33 @@ static void OrElseTest() {
 
 static void AndThenTest() {
   // `andThen`ing over success results.
-  Result<int, const char*> r1(10);
-  Result<int, const char*> r2 =
-      r1.andThen([](int x) { return Result<int, const char*>(x + 1); });
-  MOZ_RELEASE_ASSERT(r2.isOk());
-  MOZ_RELEASE_ASSERT(r2.unwrap() == 11);
+  {
+    Result<int, const char*> r1(10);
+    Result<int, const char*> r2 =
+        r1.andThen([](int x) { return Result<int, const char*>(x + 1); });
+    MOZ_RELEASE_ASSERT(r2.isOk());
+    MOZ_RELEASE_ASSERT(r2.unwrap() == 11);
+  }
 
   // `andThen`ing over error results.
-  Result<int, const char*> r3("error");
-  Result<int, const char*> r4 = r3.andThen([](int x) {
-    MOZ_RELEASE_ASSERT(false);
-    return Result<int, const char*>(1);
-  });
-  MOZ_RELEASE_ASSERT(r4.isErr());
-  MOZ_RELEASE_ASSERT(r3.unwrapErr() == r4.unwrapErr());
+  {
+    Result<int, const char*> r3("error");
+    Result<int, const char*> r4 = r3.andThen([](int x) {
+      MOZ_RELEASE_ASSERT(false);
+      return Result<int, const char*>(1);
+    });
+    MOZ_RELEASE_ASSERT(r4.isErr());
+    MOZ_RELEASE_ASSERT(r3.unwrapErr() == r4.unwrapErr());
+  }
+
+  // andThen with a function accepting an rvalue
+  {
+    Result<int, const char*> r1(10);
+    Result<int, const char*> r2 =
+        r1.andThen([](int&& x) { return Result<int, const char*>(x + 1); });
+    MOZ_RELEASE_ASSERT(r2.isOk());
+    MOZ_RELEASE_ASSERT(r2.unwrap() == 11);
+  }
 }
 
 using UniqueResult = Result<UniquePtr<int>, const char*>;
@@ -574,6 +615,7 @@ static void UniquePtrTest() {
 
 int main() {
   BasicTests();
+  InPlaceConstructionTests();
   TypeConversionTests();
   EmptyValueTest();
   MapTest();

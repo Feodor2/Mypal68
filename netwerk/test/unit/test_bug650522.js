@@ -18,7 +18,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_NONE
   );
   Assert.equal(cm.countCookiesFromHost("e.mail.com"), 1);
   Assert.equal(

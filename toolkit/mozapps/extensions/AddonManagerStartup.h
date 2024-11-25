@@ -13,8 +13,6 @@
 #include "nsIObserver.h"
 #include "nsISupports.h"
 
-#include "jsapi.h"
-
 namespace mozilla {
 
 class Addon;

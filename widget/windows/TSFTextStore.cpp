@@ -529,11 +529,11 @@ static nsCString GetDisplayAttrStr(const TF_DISPLAYATTRIBUTE& aDispAttr) {
 
 static const char* GetMouseButtonName(int16_t aButton) {
   switch (aButton) {
-    case MouseButton::eLeft:
+    case MouseButton::ePrimary:
       return "LeftButton";
     case MouseButton::eMiddle:
       return "MiddleButton";
-    case MouseButton::eRight:
+    case MouseButton::eSecondary:
       return "RightButton";
     default:
       return "UnknownButton";
@@ -550,10 +550,10 @@ static nsCString GetMouseButtonsName(int16_t aButtons) {
     return NS_LITERAL_CSTRING("no buttons");
   }
   nsCString names;
-  if (aButtons & MouseButtonsFlag::eLeftFlag) {
+  if (aButtons & MouseButtonsFlag::ePrimaryFlag) {
     names = "LeftButton";
   }
-  if (aButtons & MouseButtonsFlag::eRightFlag) {
+  if (aButtons & MouseButtonsFlag::eSecondaryFlag) {
     ADD_SEPARATOR_IF_NECESSARY(names);
     names += "RightButton";
   }
@@ -6438,13 +6438,13 @@ nsresult TSFTextStore::OnMouseButtonEventInternal(
       aIMENotification.mMouseButtonEventData.mEventMessage == eMouseUp;
   if (!isMouseUp) {
     switch (aIMENotification.mMouseButtonEventData.mButton) {
-      case MouseButton::eLeft:
+      case MouseButton::ePrimary:
         buttonStatus = MK_LBUTTON;
         break;
       case MouseButton::eMiddle:
         buttonStatus = MK_MBUTTON;
         break;
-      case MouseButton::eRight:
+      case MouseButton::eSecondary:
         buttonStatus = MK_RBUTTON;
         break;
     }

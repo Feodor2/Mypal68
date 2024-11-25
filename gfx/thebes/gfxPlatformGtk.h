@@ -110,7 +110,7 @@ class gfxPlatformGtk : public gfxPlatform {
   int8_t mMaxGenericSubstitutions;
 
  private:
-  void GetPlatformCMSOutputProfile(void*& mem, size_t& size) override;
+  nsTArray<uint8_t> GetPlatformCMSOutputProfileData() override;
 
 #ifdef MOZ_X11
   Display* mCompositorDisplay;

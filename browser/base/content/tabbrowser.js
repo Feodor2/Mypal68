@@ -2938,11 +2938,12 @@
     },
 
     warnAboutClosingTabs(tabsToClose, aCloseTabs) {
-      const pref =
-        aCloseTabs == this.closingTabsEnum.ALL
-          ? "browser.tabs.warnOnClose"
-          : "browser.tabs.warnOnCloseOtherTabs";
-      var shouldPrompt = Services.prefs.getBoolPref(pref);
+      var shouldPrompt;
+      if (aCloseTabs == this.closingTabsEnum.ALL) {
+        shouldPrompt = Services.prefs.getIntPref("browser.tabs.warnOnClose") <= tabsToClose;
+      } else {
+        shouldPrompt = Services.prefs.getBoolPref("browser.tabs.warnOnCloseOtherTabs");
+      }
       if (!shouldPrompt) {
         return true;
       }

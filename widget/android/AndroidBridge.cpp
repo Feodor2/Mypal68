@@ -41,7 +41,7 @@
 #include "nsIObserverService.h"
 #include "WidgetUtils.h"
 
-#include "FennecJNIWrappers.h"
+#include "GeneratedJNIWrappers.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -584,36 +584,14 @@ nsAndroidBridge::Observe(nsISupports* aSubject, const char* aTopic,
                          const char16_t* aData) {
   if (!strcmp(aTopic, "xpcom-shutdown")) {
     RemoveObservers();
-  } else if (!strcmp(aTopic, "audio-playback")) {
-    ALOG_BRIDGE("nsAndroidBridge::Observe, get audio-playback event.");
-
-    nsAutoString activeStr(aData);
-    bool isPlaying = activeStr.EqualsLiteral("active");
-    UpdateAudioPlayingWindows(isPlaying);
   }
   return NS_OK;
-}
-
-void nsAndroidBridge::UpdateAudioPlayingWindows(bool aPlaying) {
-  // Request audio focus for the first audio playing window and abandon focus
-  // for the last audio playing window.
-  MOZ_ASSERT(mAudibleWindowsNum >= 0);
-  if (aPlaying && mAudibleWindowsNum++ == 0) {
-    ALOG_BRIDGE("nsAndroidBridge, request audio focus.");
-    AudioFocusAgent::NotifyStartedPlaying();
-  } else if (!aPlaying && --mAudibleWindowsNum == 0) {
-    ALOG_BRIDGE("nsAndroidBridge, abandon audio focus.");
-    AudioFocusAgent::NotifyStoppedPlaying();
-  }
 }
 
 void nsAndroidBridge::AddObservers() {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
     obs->AddObserver(this, "xpcom-shutdown", false);
-    if (jni::IsFennec()) {  // No AudioFocusAgent in non-Fennec environment.
-      obs->AddObserver(this, "audio-playback", false);
-    }
   }
 }
 
@@ -621,9 +599,6 @@ void nsAndroidBridge::RemoveObservers() {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
     obs->RemoveObserver(this, "xpcom-shutdown");
-    if (jni::IsFennec()) {  // No AudioFocusAgent in non-Fennec environment.
-      obs->RemoveObserver(this, "audio-playback");
-    }
   }
 }
 
@@ -681,7 +656,7 @@ bool AndroidBridge::PumpMessageLoop() {
 }
 
 NS_IMETHODIMP nsAndroidBridge::GetIsFennec(bool* aIsFennec) {
-  *aIsFennec = jni::IsFennec();
+  *aIsFennec = false;
   return NS_OK;
 }
 

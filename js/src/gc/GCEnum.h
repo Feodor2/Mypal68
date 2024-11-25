@@ -11,18 +11,15 @@
 
 #include <stdint.h>
 
-#include "js/MemoryFunctions.h" // JS_FOR_EACH_PUBLIC_MEMORY_USE
+#include "js/MemoryFunctions.h"  // JS_FOR_EACH_PUBLIC_MEMORY_USE
 
 namespace js {
 namespace gc {
 
-// Mark colors. Order is important here: the greater value the 'more marked' a
-// cell is.
-enum class MarkColor : uint8_t { Gray = 1, Black = 2 };
-
 // The phases of an incremental GC.
 #define GCSTATES(D) \
   D(NotActive)      \
+  D(Prepare)        \
   D(MarkRoots)      \
   D(Mark)           \
   D(Sweep)          \
@@ -40,6 +37,7 @@ enum class State {
   D(RootsChange, 1)                    \
   D(Alloc, 2)                          \
   D(VerifierPre, 4)                    \
+  D(YieldBeforeRootMarking, 6)         \
   D(GenerationalGC, 7)                 \
   D(YieldBeforeMarking, 8)             \
   D(YieldBeforeSweeping, 9)            \
@@ -127,6 +125,9 @@ enum class GCAbortReason {
   _(WasmResolveResponseClosure)            \
   _(WasmModule)                            \
   _(WasmTableTable)                        \
+  _(WasmExceptionTag)                      \
+  _(WasmExceptionType)                     \
+  _(WasmRuntimeExceptionTag)               \
   _(FileObjectFile)                        \
   _(Debugger)                              \
   _(DebuggerFrameGeneratorInfo)            \

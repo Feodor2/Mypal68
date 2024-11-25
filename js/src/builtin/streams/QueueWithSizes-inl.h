@@ -55,7 +55,7 @@ inline void QueueRemoveFirstValueAndSize(ListObject* unwrappedQueue,
   unwrappedQueue->popFirstPair(cx);
 }
 
-inline MOZ_MUST_USE bool QueueAppendValueAndSize(
+[[nodiscard]] inline bool QueueAppendValueAndSize(
     JSContext* cx, JS::Handle<ListObject*> unwrappedQueue,
     JS::Handle<JS::Value> value, double size) {
   return unwrappedQueue->appendValueAndSize(cx, value, size);

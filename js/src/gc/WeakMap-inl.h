@@ -111,7 +111,7 @@ WeakMap<K, V>::WeakMap(JSContext* cx, JSObject* memOf)
                 "Object's TraceKind should be added to CC graph.");
 
   zone()->gcWeakMapList().insertFront(this);
-  if (zone()->wasGCStarted()) {
+  if (zone()->gcState() > Zone::Prepare) {
     mapColor = CellColor::Black;
   }
 }

@@ -923,15 +923,22 @@ enum class AutoGCRooterKind : uint8_t {
   Limit
 };
 
-// Our instantiations of Rooted<void*> and PersistentRooted<void*> require an
-// instantiation of MapTypeToRootKind.
+namespace detail {
+// Dummy type to store root list entry pointers as. This code does not just use
+// the actual type, because then eg JSObject* and JSFunction* would be assumed
+// to never alias but they do (they are stored in the same list). Also, do not
+// use `void*` so that `Rooted<void*>` is a compile error.
+struct RootListEntry;
+}  // namespace detail
+
 template <>
-struct MapTypeToRootKind<void*> {
+struct MapTypeToRootKind<detail::RootListEntry*> {
   static const RootKind kind = RootKind::Traceable;
 };
 
 using RootedListHeads =
-    mozilla::EnumeratedArray<RootKind, RootKind::Limit, Rooted<void*>*>;
+    mozilla::EnumeratedArray<RootKind, RootKind::Limit,
+                             Rooted<detail::RootListEntry*>*>;
 
 using AutoRooterListHeads =
     mozilla::EnumeratedArray<AutoGCRooterKind, AutoGCRooterKind::Limit,
@@ -1071,7 +1078,7 @@ class MOZ_RAII Rooted : public js::RootedBase<T, Rooted<T>> {
   inline void registerWithRootLists(RootedListHeads& roots) {
     this->stack = &roots[JS::MapTypeToRootKind<T>::kind];
     this->prev = *stack;
-    *stack = reinterpret_cast<Rooted<void*>*>(this);
+    *stack = reinterpret_cast<Rooted<detail::RootListEntry*>*>(this);
   }
 
   inline RootedListHeads& rootLists(RootingContext* cx) {
@@ -1121,7 +1128,8 @@ class MOZ_RAII Rooted : public js::RootedBase<T, Rooted<T>> {
   }
 
   ~Rooted() {
-    MOZ_ASSERT(*stack == reinterpret_cast<Rooted<void*>*>(this));
+    MOZ_ASSERT(*stack ==
+               reinterpret_cast<Rooted<detail::RootListEntry*>*>(this));
     *stack = prev;
   }
 
@@ -1153,12 +1161,12 @@ class MOZ_RAII Rooted : public js::RootedBase<T, Rooted<T>> {
 
  private:
   /*
-   * These need to be templated on void* to avoid aliasing issues between, for
-   * example, Rooted<JSObject> and Rooted<JSFunction>, which use the same
-   * stack head pointer for different classes.
+   * These need to be templated on RootListEntry* to avoid aliasing issues
+   * between, for example, Rooted<JSObject*> and Rooted<JSFunction*>, which use
+   * the same stack head pointer for different classes.
    */
-  Rooted<void*>** stack;
-  Rooted<void*>* prev;
+  Rooted<detail::RootListEntry*>** stack;
+  Rooted<detail::RootListEntry*>* prev;
 
   Ptr ptr;
 
@@ -1287,11 +1295,13 @@ inline MutableHandle<T>::MutableHandle(PersistentRooted<T>* root) {
   ptr = root->address();
 }
 
-JS_PUBLIC_API void AddPersistentRoot(RootingContext* cx, RootKind kind,
-                                     PersistentRooted<void*>* root);
+JS_PUBLIC_API void AddPersistentRoot(
+    RootingContext* cx, RootKind kind,
+    PersistentRooted<detail::RootListEntry*>* root);
 
-JS_PUBLIC_API void AddPersistentRoot(JSRuntime* rt, RootKind kind,
-                                     PersistentRooted<void*>* root);
+JS_PUBLIC_API void AddPersistentRoot(
+    JSRuntime* rt, RootKind kind,
+    PersistentRooted<detail::RootListEntry*>* root);
 
 /**
  * A copyable, assignable global GC root type with arbitrary lifetime, an
@@ -1340,15 +1350,17 @@ class PersistentRooted
   void registerWithRootLists(RootingContext* cx) {
     MOZ_ASSERT(!initialized());
     JS::RootKind kind = JS::MapTypeToRootKind<T>::kind;
-    AddPersistentRoot(cx, kind,
-                      reinterpret_cast<JS::PersistentRooted<void*>*>(this));
+    AddPersistentRoot(
+        cx, kind,
+        reinterpret_cast<JS::PersistentRooted<detail::RootListEntry*>*>(this));
   }
 
   void registerWithRootLists(JSRuntime* rt) {
     MOZ_ASSERT(!initialized());
     JS::RootKind kind = JS::MapTypeToRootKind<T>::kind;
-    AddPersistentRoot(rt, kind,
-                      reinterpret_cast<JS::PersistentRooted<void*>*>(this));
+    AddPersistentRoot(
+        rt, kind,
+        reinterpret_cast<JS::PersistentRooted<detail::RootListEntry*>*>(this));
   }
 
  public:
@@ -1476,7 +1488,7 @@ class MutableWrappedPtrOperations<UniquePtr<T, D>, Container>
   UniquePtr<T, D>& uniquePtr() { return static_cast<Container*>(this)->get(); }
 
  public:
-  MOZ_MUST_USE typename UniquePtr<T, D>::Pointer release() {
+  [[nodiscard]] typename UniquePtr<T, D>::Pointer release() {
     return uniquePtr().release();
   }
   void reset(T* ptr = T()) { uniquePtr().reset(ptr); }

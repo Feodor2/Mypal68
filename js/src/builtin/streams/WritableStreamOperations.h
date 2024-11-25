@@ -7,8 +7,7 @@
 #ifndef builtin_streams_WritableStreamOperations_h
 #define builtin_streams_WritableStreamOperations_h
 
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
-
+#include "jstypes.h"        // JS_PUBLIC_API
 #include "js/RootingAPI.h"  // JS::Handle
 #include "js/Value.h"       // JS::Value
 
@@ -26,31 +25,31 @@ extern JSObject* WritableStreamAbort(
 extern JSObject* WritableStreamClose(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream);
 
-extern MOZ_MUST_USE PromiseObject* WritableStreamAddWriteRequest(
+[[nodiscard]] extern PromiseObject* WritableStreamAddWriteRequest(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream);
 
-extern MOZ_MUST_USE bool WritableStreamDealWithRejection(
+[[nodiscard]] extern bool WritableStreamDealWithRejection(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream,
     JS::Handle<JS::Value> error);
 
-extern MOZ_MUST_USE bool WritableStreamStartErroring(
+[[nodiscard]] extern bool WritableStreamStartErroring(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream,
     JS::Handle<JS::Value> reason);
 
-extern MOZ_MUST_USE bool WritableStreamFinishErroring(
+[[nodiscard]] extern bool WritableStreamFinishErroring(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream);
 
-extern MOZ_MUST_USE bool WritableStreamFinishInFlightWrite(
+[[nodiscard]] extern bool WritableStreamFinishInFlightWrite(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream);
 
-extern MOZ_MUST_USE bool WritableStreamFinishInFlightWriteWithError(
+[[nodiscard]] extern bool WritableStreamFinishInFlightWriteWithError(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream,
     JS::Handle<JS::Value> error);
 
-extern MOZ_MUST_USE bool WritableStreamFinishInFlightClose(
+[[nodiscard]] extern bool WritableStreamFinishInFlightClose(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream);
 
-extern MOZ_MUST_USE bool WritableStreamFinishInFlightCloseWithError(
+[[nodiscard]] extern bool WritableStreamFinishInFlightCloseWithError(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream,
     JS::Handle<JS::Value> error);
 
@@ -63,10 +62,10 @@ extern void WritableStreamMarkCloseRequestInFlight(
 extern void WritableStreamMarkFirstWriteRequestInFlight(
     WritableStream* unwrappedStream);
 
-extern MOZ_MUST_USE bool WritableStreamRejectCloseAndClosedPromiseIfNeeded(
+[[nodiscard]] extern bool WritableStreamRejectCloseAndClosedPromiseIfNeeded(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream);
 
-extern MOZ_MUST_USE bool WritableStreamUpdateBackpressure(
+[[nodiscard]] extern bool WritableStreamUpdateBackpressure(
     JSContext* cx, JS::Handle<WritableStream*> unwrappedStream,
     bool backpressure);
 

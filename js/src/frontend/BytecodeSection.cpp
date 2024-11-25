@@ -8,7 +8,7 @@
 #include "mozilla/ReverseIterator.h"  // mozilla::Reversed
 
 #include "frontend/AbstractScopePtr.h"  // ScopeIndex
-#include "frontend/CompilationInfo.h"
+#include "frontend/CompilationStencil.h"
 #include "frontend/SharedContext.h"  // FunctionBox
 #include "vm/BytecodeUtil.h"         // INDEX_LIMIT, StackUses, StackDefs
 #include "vm/GlobalObject.h"
@@ -34,12 +34,9 @@ AbstractScopePtr GCThingList::getScope(size_t index) const {
   if (elem.isEmptyGlobalScope()) {
     // The empty enclosing scope should be stored by
     // CompilationInput::initForSelfHostingGlobal.
-    MOZ_ASSERT(compilationInfo.input.enclosingScope);
-    MOZ_ASSERT(
-        !compilationInfo.input.enclosingScope->as<GlobalScope>().hasBindings());
-    return AbstractScopePtr(compilationInfo.input.enclosingScope);
+    return AbstractScopePtr::compilationEnclosingScope(compilationState);
   }
-  return AbstractScopePtr(compilationInfo, elem.toScope());
+  return AbstractScopePtr(compilationState, elem.toScope());
 }
 
 mozilla::Maybe<ScopeIndex> GCThingList::getScopeIndex(size_t index) const {
@@ -51,15 +48,14 @@ mozilla::Maybe<ScopeIndex> GCThingList::getScopeIndex(size_t index) const {
 }
 
 bool js::frontend::EmitScriptThingsVector(
-    JSContext* cx, CompilationInfo& compilationInfo,
-    CompilationGCOutput& gcOutput,
+    JSContext* cx, const CompilationInput& input,
+    const BaseCompilationStencil& stencil, CompilationGCOutput& gcOutput,
     mozilla::Span<const TaggedScriptThingIndex> things,
     mozilla::Span<JS::GCCellPtr> output) {
   MOZ_ASSERT(things.size() <= INDEX_LIMIT);
   MOZ_ASSERT(things.size() == output.size());
 
-  auto& atomCache = compilationInfo.input.atomCache;
-  auto& stencil = compilationInfo.stencil;
+  const auto& atomCache = input.atomCache;
 
   for (uint32_t i = 0; i < things.size(); i++) {
     const auto& thing = things[i];
@@ -75,7 +71,7 @@ bool js::frontend::EmitScriptThingsVector(
         output[i] = JS::GCCellPtr(nullptr);
         break;
       case TaggedScriptThingIndex::Kind::BigInt: {
-        BigIntStencil& data = stencil.bigIntData[thing.toBigInt()];
+        const BigIntStencil& data = stencil.bigIntData[thing.toBigInt()];
         BigInt* bi = data.createBigInt(cx);
         if (!bi) {
           return false;
@@ -84,7 +80,8 @@ bool js::frontend::EmitScriptThingsVector(
         break;
       }
       case TaggedScriptThingIndex::Kind::ObjLiteral: {
-        ObjLiteralStencil& data = stencil.objLiteralData[thing.toObjLiteral()];
+        const ObjLiteralStencil& data =
+            stencil.objLiteralData[thing.toObjLiteral()];
         JSObject* obj = data.create(cx, atomCache);
         if (!obj) {
           return false;
@@ -157,11 +154,6 @@ void CGScopeNoteList::recordEndImpl(uint32_t index, uint32_t offset) {
   list[index].length = offset - list[index].start;
 }
 
-JSObject* ObjLiteralStencil::create(JSContext* cx,
-                                    CompilationAtomCache& atomCache) const {
-  return InterpretObjLiteral(cx, atomCache, atoms_, writer_);
-}
-
 BytecodeSection::BytecodeSection(JSContext* cx, uint32_t lineNum,
                                  uint32_t column)
     : code_(cx),
@@ -189,8 +181,8 @@ void BytecodeSection::updateDepth(BytecodeOffset target) {
 }
 
 PerScriptData::PerScriptData(JSContext* cx,
-                             frontend::CompilationInfo& compilationInfo)
-    : gcThingList_(cx, compilationInfo),
+                             frontend::CompilationState& compilationState)
+    : gcThingList_(cx, compilationState),
       atomIndices_(cx->frontendCollectionPool()) {}
 
 bool PerScriptData::init(JSContext* cx) { return atomIndices_.acquire(cx); }

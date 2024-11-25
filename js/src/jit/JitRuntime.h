@@ -7,7 +7,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/LinkedList.h"
 
@@ -289,11 +288,11 @@ class JitRuntime {
  public:
   JitRuntime() = default;
   ~JitRuntime();
-  MOZ_MUST_USE bool initialize(JSContext* cx);
+  [[nodiscard]] bool initialize(JSContext* cx);
 
   static void TraceAtomZoneRoots(JSTracer* trc,
                                  const js::AutoAccessAtomsZone& access);
-  static MOZ_MUST_USE bool MarkJitcodeGlobalTableIteratively(GCMarker* marker);
+  [[nodiscard]] static bool MarkJitcodeGlobalTableIteratively(GCMarker* marker);
   static void TraceWeakJitcodeGlobalTable(JSRuntime* rt, JSTracer* trc);
 
   const BaselineICFallbackCode& baselineICFallbackCode() const {

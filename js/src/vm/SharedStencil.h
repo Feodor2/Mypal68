@@ -5,14 +5,17 @@
 #ifndef vm_SharedStencil_h
 #define vm_SharedStencil_h
 
-#include "mozilla/HashFunctions.h"    // mozilla::HahNumber, mozilla::HashBytes
-#include "mozilla/HashTable.h"        // mozilla::HashSet
+#include "mozilla/Assertions.h"     // MOZ_ASSERT, MOZ_CRASH
+#include "mozilla/Atomics.h"        // mozilla::{Atomic, SequentiallyConsistent}
+#include "mozilla/CheckedInt.h"     // mozilla::CheckedInt
+#include "mozilla/HashFunctions.h"  // mozilla::HahNumber, mozilla::HashBytes
+#include "mozilla/HashTable.h"      // mozilla::HashSet
 #include "mozilla/MemoryReporting.h"  // mozilla::MallocSizeOf
 #include "mozilla/RefPtr.h"           // RefPtr
 #include "mozilla/Span.h"             // mozilla::Span
 
 #include <stddef.h>  // size_t
-#include <stdint.h>  // uint32_t
+#include <stdint.h>  // uint8_t, uint16_t, uint32_t
 
 #include "frontend/SourceNotes.h"  // js::SrcNote
 #include "frontend/TypedIndex.h"   // js::frontend::TypedIndex
@@ -198,11 +201,6 @@ struct SourceExtent {
     return SourceExtent(0, len, 0, len, lineno, column);
   }
 
-  static SourceExtent makeClassExtent(uint32_t start, uint32_t end,
-                                      uint32_t lineno, uint32_t column) {
-    return SourceExtent(start, end, start, end, lineno, column);
-  }
-
   uint32_t sourceStart = 0;
   uint32_t sourceEnd = 0;
   uint32_t toStringStart = 0;
@@ -226,7 +224,7 @@ class ScriptFlagBase {
   ScriptFlagBase() = default;
   explicit ScriptFlagBase(uint32_t rawFlags) : flags_(rawFlags) {}
 
-  MOZ_MUST_USE bool hasFlag(EnumType flag) const {
+  [[nodiscard]] bool hasFlag(EnumType flag) const {
     return flags_ & static_cast<uint32_t>(flag);
   }
   void setFlag(EnumType flag) { flags_ |= static_cast<uint32_t>(flag); }
@@ -429,6 +427,22 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
       JSContext* cx, uint32_t codeLength, uint32_t noteLength,
       uint32_t numResumeOffsets, uint32_t numScopeNotes, uint32_t numTryNotes);
 
+  static js::UniquePtr<ImmutableScriptData> new_(JSContext* cx,
+                                                 uint32_t totalSize);
+
+#ifdef DEBUG
+  // Validate the content, after XDR decoding.
+  void validate(uint32_t totalSize);
+#endif
+
+ private:
+  static mozilla::CheckedInt<uint32_t> sizeFor(uint32_t codeLength,
+                                               uint32_t noteLength,
+                                               uint32_t numResumeOffsets,
+                                               uint32_t numScopeNotes,
+                                               uint32_t numTryNotes);
+
+ public:
   // The code() and note() arrays together maintain an target alignment by
   // padding the source notes with null. This allows arrays with stricter
   // alignment requirements to follow them.
@@ -593,6 +607,41 @@ struct SharedImmutableScriptData::Hasher {
 using SharedImmutableScriptDataTable =
     mozilla::HashSet<SharedImmutableScriptData*,
                      SharedImmutableScriptData::Hasher, SystemAllocPolicy>;
+
+struct MemberInitializers {
+  static constexpr uint32_t MaxInitializers = INT32_MAX;
+
+#ifdef DEBUG
+  bool valid = false;
+#endif
+
+  // This struct will eventually have a vector of constant values for optimizing
+  // field initializers.
+  uint32_t numMemberInitializers = 0;
+
+  explicit MemberInitializers(uint32_t numMemberInitializers)
+      :
+#ifdef DEBUG
+        valid(true),
+#endif
+        numMemberInitializers(numMemberInitializers) {
+  }
+
+  static MemberInitializers Invalid() { return MemberInitializers(); }
+
+  // Singleton to use for class constructors that do not have to initialize any
+  // fields. This is used when we elide the trivial data but still need a valid
+  // set to stop scope walking.
+  static const MemberInitializers& Empty() {
+    static const MemberInitializers zeroInitializers(0);
+    return zeroInitializers;
+  }
+
+  uint32_t serialize() const { return numMemberInitializers; }
+
+ private:
+  MemberInitializers() = default;
+};
 
 }  // namespace js
 

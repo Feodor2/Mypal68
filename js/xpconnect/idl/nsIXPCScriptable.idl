@@ -12,6 +12,10 @@
 
 #include "js/TypeDecls.h"
 
+namespace JS {
+class CallArgs;
+}
+
 %}
 
 interface nsIXPConnectWrappedNative;

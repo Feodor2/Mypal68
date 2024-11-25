@@ -64,8 +64,11 @@ struct CompiledCode {
   SymbolicAccessVector symbolicAccesses;
   jit::CodeLabelVector codeLabels;
   StackMaps stackMaps;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  WasmTryNoteVector tryNotes;
+#endif
 
-  MOZ_MUST_USE bool swap(jit::MacroAssembler& masm);
+  [[nodiscard]] bool swap(jit::MacroAssembler& masm);
 
   void clear() {
     bytes.clear();
@@ -76,13 +79,21 @@ struct CompiledCode {
     symbolicAccesses.clear();
     codeLabels.clear();
     stackMaps.clear();
+#ifdef ENABLE_WASM_EXCEPTIONS
+    tryNotes.clear();
+#endif
     MOZ_ASSERT(empty());
   }
 
   bool empty() {
     return bytes.empty() && codeRanges.empty() && callSites.empty() &&
            callSiteTargets.empty() && trapSites.empty() &&
-           symbolicAccesses.empty() && codeLabels.empty() && stackMaps.empty();
+           symbolicAccesses.empty() && codeLabels.empty() &&
+#ifdef ENABLE_WASM_EXCEPTIONS
+           tryNotes.empty() && stackMaps.empty();
+#else
+           stackMaps.empty();
+#endif
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -219,19 +230,19 @@ class MOZ_STACK_CLASS ModuleGenerator {
                   CompilerEnvironment* compilerEnv,
                   const Atomic<bool>* cancelled, UniqueChars* error);
   ~ModuleGenerator();
-  MOZ_MUST_USE bool init(Metadata* maybeAsmJSMetadata = nullptr);
+  [[nodiscard]] bool init(Metadata* maybeAsmJSMetadata = nullptr);
 
   // Before finishFuncDefs() is called, compileFuncDef() must be called once
   // for each funcIndex in the range [0, env->numFuncDefs()).
 
-  MOZ_MUST_USE bool compileFuncDef(
+  [[nodiscard]] bool compileFuncDef(
       uint32_t funcIndex, uint32_t lineOrBytecode, const uint8_t* begin,
       const uint8_t* end, Uint32Vector&& callSiteLineNums = Uint32Vector());
 
   // Must be called after the last compileFuncDef() and before finishModule()
   // or finishTier2().
 
-  MOZ_MUST_USE bool finishFuncDefs();
+  [[nodiscard]] bool finishFuncDefs();
 
   // If env->mode is Once or Tier1, finishModule() must be called to generate
   // a new Module. Otherwise, if env->mode is Tier2, finishTier2() must be
@@ -240,7 +251,7 @@ class MOZ_STACK_CLASS ModuleGenerator {
   SharedModule finishModule(
       const ShareableBytes& bytecode,
       JS::OptimizedEncodingListener* maybeTier2Listener = nullptr);
-  MOZ_MUST_USE bool finishTier2(const Module& module);
+  [[nodiscard]] bool finishTier2(const Module& module);
 };
 
 }  // namespace wasm

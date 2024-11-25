@@ -4,7 +4,6 @@
 
 #include "jit/WarpBuilderShared.h"
 
-#include "jit/MIRBuilderShared.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 
@@ -60,10 +59,10 @@ MCall* WarpBuilderShared::makeCall(CallInfo& callInfo, bool needsThisCheck,
   if (isDOMCall) {
     const JSClass* clasp = callInfo.thisArg()->toGuardToClass()->getClass();
     MOZ_ASSERT(clasp->isDOMClass());
-    if (clasp->isNative()) {
+    if (clasp->isNativeObject()) {
       objKind = DOMObjectKind::Native;
     } else {
-      MOZ_ASSERT(clasp->isProxy());
+      MOZ_ASSERT(clasp->isProxyObject());
       objKind = DOMObjectKind::Proxy;
     }
   }

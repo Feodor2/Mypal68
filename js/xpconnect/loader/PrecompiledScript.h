@@ -8,12 +8,17 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/PrecompiledScriptBinding.h"
 
-#include "jsapi.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
 
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
+
+namespace JS {
+class ReadOnlyCompileOptions;
+}
 
 namespace mozilla {
 namespace dom {

@@ -5,9 +5,9 @@
 #ifndef vm_ErrorObject_h_
 #define vm_ErrorObject_h_
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 
+#include <iterator>
 #include <stdint.h>
 
 #include "jspubtd.h"
@@ -50,8 +50,9 @@ class ErrorObject : public NativeObject {
   static const uint32_t COLUMNNUMBER_SLOT = LINENUMBER_SLOT + 1;
   static const uint32_t MESSAGE_SLOT = COLUMNNUMBER_SLOT + 1;
   static const uint32_t SOURCEID_SLOT = MESSAGE_SLOT + 1;
+  static const uint32_t WASM_TRAP_SLOT = SOURCEID_SLOT + 1;
 
-  static const uint32_t RESERVED_SLOTS = SOURCEID_SLOT + 1;
+  static const uint32_t RESERVED_SLOTS = WASM_TRAP_SLOT + 1;
 
  public:
   static const JSClass classes[JSEXN_ERROR_LIMIT];
@@ -62,8 +63,7 @@ class ErrorObject : public NativeObject {
   }
 
   static bool isErrorClass(const JSClass* clasp) {
-    return &classes[0] <= clasp &&
-           clasp < &classes[0] + mozilla::ArrayLength(classes);
+    return &classes[0] <= clasp && clasp < &classes[0] + std::size(classes);
   }
 
   // Create an error of the given type corresponding to the provided location
@@ -103,6 +103,7 @@ class ErrorObject : public NativeObject {
   inline uint32_t lineNumber() const;
   inline uint32_t columnNumber() const;
   inline JSObject* stack() const;
+  inline bool fromWasmTrap() const;
 
   JSString* getMessage() const {
     const HeapSlot& slot = getReservedSlotRef(MESSAGE_SLOT);
@@ -114,6 +115,9 @@ class ErrorObject : public NativeObject {
   static bool getStack_impl(JSContext* cx, const CallArgs& args);
   static bool setStack(JSContext* cx, unsigned argc, Value* vp);
   static bool setStack_impl(JSContext* cx, const CallArgs& args);
+
+  // Used to distinguish errors created from Wasm traps.
+  void setFromWasmTrap();
 };
 
 JSString* ErrorToSource(JSContext* cx, HandleObject obj);

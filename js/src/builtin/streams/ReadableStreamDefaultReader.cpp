@@ -4,8 +4,6 @@
 
 /* Class ReadableStreamDefaultReader. */
 
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
-
 #include "jsapi.h"  // JS_ReportErrorNumberASCII
 
 #include "builtin/streams/ClassSpecMacro.h"  // JS_STREAMS_CLASS_SPEC
@@ -44,9 +42,11 @@ using js::UnwrapAndTypeCheckThis;
  * Stream spec, 3.6.3. new ReadableStreamDefaultReader ( stream )
  * Steps 2-4.
  */
-MOZ_MUST_USE ReadableStreamDefaultReader* js::CreateReadableStreamDefaultReader(
-    JSContext* cx, Handle<ReadableStream*> unwrappedStream,
-    ForAuthorCodeBool forAuthorCode, Handle<JSObject*> proto /* = nullptr */) {
+[[nodiscard]] ReadableStreamDefaultReader*
+js::CreateReadableStreamDefaultReader(JSContext* cx,
+                                      Handle<ReadableStream*> unwrappedStream,
+                                      ForAuthorCodeBool forAuthorCode,
+                                      Handle<JSObject*> proto /* = nullptr */) {
   Rooted<ReadableStreamDefaultReader*> reader(
       cx, NewObjectWithClassProto<ReadableStreamDefaultReader>(cx, proto));
   if (!reader) {
@@ -111,9 +111,9 @@ bool ReadableStreamDefaultReader::constructor(JSContext* cx, unsigned argc,
 /**
  * Streams spec, 3.6.4.1 get closed
  */
-static MOZ_MUST_USE bool ReadableStreamDefaultReader_closed(JSContext* cx,
-                                                            unsigned argc,
-                                                            Value* vp) {
+[[nodiscard]] static bool ReadableStreamDefaultReader_closed(JSContext* cx,
+                                                             unsigned argc,
+                                                             Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise
@@ -138,9 +138,9 @@ static MOZ_MUST_USE bool ReadableStreamDefaultReader_closed(JSContext* cx,
 /**
  * Streams spec, 3.6.4.2. cancel ( reason )
  */
-static MOZ_MUST_USE bool ReadableStreamDefaultReader_cancel(JSContext* cx,
-                                                            unsigned argc,
-                                                            Value* vp) {
+[[nodiscard]] static bool ReadableStreamDefaultReader_cancel(JSContext* cx,
+                                                             unsigned argc,
+                                                             Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise
@@ -173,9 +173,9 @@ static MOZ_MUST_USE bool ReadableStreamDefaultReader_cancel(JSContext* cx,
 /**
  * Streams spec, 3.6.4.3 read ( )
  */
-static MOZ_MUST_USE bool ReadableStreamDefaultReader_read(JSContext* cx,
-                                                          unsigned argc,
-                                                          Value* vp) {
+[[nodiscard]] static bool ReadableStreamDefaultReader_read(JSContext* cx,
+                                                           unsigned argc,
+                                                           Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise

@@ -10,7 +10,7 @@
 
 #include <algorithm>
 
-#include "frontend/ParserAtom.h"  // frontend::ParserAtom, frontend::ParserAtomsTable
+#include "frontend/ParserAtom.h"  // frontend::{ParserAtomsTable, TaggedParserAtomIndex
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "vm/JSObject-inl.h"
 #include "vm/StringType-inl.h"
@@ -74,18 +74,9 @@ bool StringBuffer::inflateChars() {
   return true;
 }
 
-bool StringBuffer::append(const frontend::ParserAtom* ent) {
-  if (isLatin1()) {
-    if (ent->hasLatin1Chars()) {
-      return latin1Chars().append(ent->latin1Chars(), ent->length());
-    }
-    if (!inflateChars()) {
-      return false;
-    }
-  }
-  return ent->hasLatin1Chars()
-             ? twoByteChars().append(ent->latin1Chars(), ent->length())
-             : twoByteChars().append(ent->twoByteChars(), ent->length());
+bool StringBuffer::append(const frontend::ParserAtomsTable& parserAtoms,
+                          frontend::TaggedParserAtomIndex atom) {
+  return parserAtoms.appendTo(*this, atom);
 }
 
 template <typename CharT>
@@ -152,28 +143,22 @@ JSAtom* StringBuffer::finishAtom() {
   return atom;
 }
 
-const frontend::ParserAtom* StringBuffer::finishParserAtom(
+frontend::TaggedParserAtomIndex StringBuffer::finishParserAtom(
     frontend::ParserAtomsTable& parserAtoms) {
   size_t len = length();
   if (len == 0) {
-    return cx_->parserNames().empty;
+    return frontend::TaggedParserAtomIndex::WellKnown::empty();
   }
 
   if (isLatin1()) {
     auto result = parserAtoms.internLatin1(cx_, latin1Chars().begin(), len);
-    if (result.isErr()) {
-      return nullptr;
-    }
     latin1Chars().clear();
-    return result.unwrap();
+    return result;
   }
 
   auto result = parserAtoms.internChar16(cx_, twoByteChars().begin(), len);
-  if (result.isErr()) {
-    return nullptr;
-  }
   twoByteChars().clear();
-  return result.unwrap();
+  return result;
 }
 
 bool js::ValueToStringBufferSlow(JSContext* cx, const Value& arg,

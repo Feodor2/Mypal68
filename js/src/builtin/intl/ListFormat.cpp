@@ -4,7 +4,6 @@
 
 #include "builtin/intl/ListFormat.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/PodOperations.h"
@@ -28,6 +27,7 @@
 #include "vm/SelfHosting.h"
 #include "vm/Stack.h"
 #include "vm/StringType.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"

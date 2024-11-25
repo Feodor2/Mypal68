@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ScopeExit.h"
-
 #include "gc/PublicIterators.h"
 #include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy
 #include "js/Wrapper.h"
@@ -582,7 +580,7 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
     // Now, because we need to maintain object identity, we do a brain
     // transplant on the old object so that it contains the contents of the
     // new one.
-    JSObject::swap(cx, wobj, tobj);
+    JSObject::swap(cx, wobj, tobj, oomUnsafe);
   }
 
   // Before swapping, this wrapper came out of rewrap(), which enforces the

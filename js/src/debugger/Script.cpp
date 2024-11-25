@@ -192,7 +192,7 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
         referent(cx, obj->getReferent()),
         script(cx) {}
 
-  MOZ_MUST_USE bool ensureScriptMaybeLazy() {
+  [[nodiscard]] bool ensureScriptMaybeLazy() {
     if (!referent.is<BaseScript*>()) {
       ReportValueError(cx, JSMSG_DEBUG_BAD_REFERENT, JSDVG_SEARCH_STACK,
                        args.thisv(), nullptr, "a JS script");
@@ -201,7 +201,7 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
     return true;
   }
 
-  MOZ_MUST_USE bool ensureScript() {
+  [[nodiscard]] bool ensureScript() {
     if (!ensureScriptMaybeLazy()) {
       return false;
     }
@@ -217,7 +217,6 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
   bool getIsFunction();
   bool getIsModule();
   bool getDisplayName();
-  bool getParameterNames();
   bool getUrl();
   bool getStartLine();
   bool getStartColumn();
@@ -318,26 +317,6 @@ bool DebuggerScript::CallData::getDisplayName() {
     return false;
   }
   args.rval().set(namev);
-  return true;
-}
-
-bool DebuggerScript::CallData::getParameterNames() {
-  if (!ensureScriptMaybeLazy()) {
-    return false;
-  }
-
-  RootedFunction fun(cx, referent.as<BaseScript*>()->function());
-  if (!fun) {
-    args.rval().setUndefined();
-    return true;
-  }
-
-  ArrayObject* arr = GetFunctionParameterNamesArray(cx, fun);
-  if (!arr) {
-    return false;
-  }
-
-  args.rval().setObject(*arr);
   return true;
 }
 
@@ -1363,10 +1342,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::InitAliasedLexical:
     case JSOp::SetIntrinsic:
     case JSOp::InitGLexical:
-    case JSOp::DefVar:
-    case JSOp::DefLet:
-    case JSOp::DefConst:
-    case JSOp::DefFun:
+    case JSOp::GlobalOrEvalDeclInstantiation:
     case JSOp::SetFunName:
     case JSOp::MutateProto:
     case JSOp::DynamicImport:
@@ -1382,8 +1358,8 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::Lineno:
     case JSOp::JumpTarget:
     case JSOp::Undefined:
-    case JSOp::IfNe:
-    case JSOp::IfEq:
+    case JSOp::JumpIfTrue:
+    case JSOp::JumpIfFalse:
     case JSOp::Return:
     case JSOp::RetRval:
     case JSOp::And:
@@ -1448,10 +1424,8 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::PopN:
     case JSOp::DupAt:
     case JSOp::NewArray:
-    case JSOp::NewArrayCopyOnWrite:
     case JSOp::NewInit:
     case JSOp::NewObject:
-    case JSOp::NewObjectWithGroup:
     case JSOp::InitElem:
     case JSOp::InitHiddenElem:
     case JSOp::InitLockedElem:
@@ -1498,8 +1472,6 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::Int32:
     case JSOp::LoopHead:
     case JSOp::GetElem:
-    case JSOp::CallElem:
-    case JSOp::Length:
     case JSOp::Not:
     case JSOp::FunctionThis:
     case JSOp::GlobalThis:
@@ -1509,16 +1481,13 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::GetPropSuper:
     case JSOp::GetElemSuper:
     case JSOp::GetProp:
-    case JSOp::CallProp:
     case JSOp::RegExp:
     case JSOp::CallSiteObj:
     case JSOp::Object:
-    case JSOp::ClassConstructor:
     case JSOp::Typeof:
     case JSOp::TypeofExpr:
     case JSOp::ToAsyncIter:
     case JSOp::ToPropertyKey:
-    case JSOp::IterNext:
     case JSOp::Lambda:
     case JSOp::LambdaArrow:
     case JSOp::PushLexicalEnv:
@@ -1557,11 +1526,9 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::FunWithProto:
     case JSOp::ObjWithProto:
     case JSOp::BuiltinObject:
-    case JSOp::DerivedConstructor:
     case JSOp::CheckThis:
     case JSOp::CheckReturn:
     case JSOp::CheckThisReinit:
-    case JSOp::CheckGlobalOrEvalDecl:
     case JSOp::SuperFun:
     case JSOp::SpreadSuperCall:
     case JSOp::SuperCall:
@@ -1574,7 +1541,8 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::CheckResumeKind:
     case JSOp::AfterYield:
     case JSOp::Await:
-    case JSOp::TrySkipAwait:
+    case JSOp::CanSkipAwait:
+    case JSOp::MaybeExtractAwaitValue:
     case JSOp::Generator:
     case JSOp::AsyncAwait:
     case JSOp::AsyncResolve:
@@ -2330,7 +2298,6 @@ const JSPropertySpec DebuggerScript::properties_[] = {
     JS_DEBUG_PSG("isFunction", getIsFunction),
     JS_DEBUG_PSG("isModule", getIsModule),
     JS_DEBUG_PSG("displayName", getDisplayName),
-    JS_DEBUG_PSG("parameterNames", getParameterNames),
     JS_DEBUG_PSG("url", getUrl),
     JS_DEBUG_PSG("startLine", getStartLine),
     JS_DEBUG_PSG("startColumn", getStartColumn),

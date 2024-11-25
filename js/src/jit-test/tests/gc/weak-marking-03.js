@@ -20,9 +20,19 @@ function runtest(func) {
   }
 }
 
-function reportMarks(prefix) {
+function reportMarks(prefix = "") {
   const marks = getMarks();
-  print(`${prefix}${marks.join("/")}`);
+  const current = currentgc();
+  const markstr = marks.join("/");
+  print(`${prefix}[${current.incrementalState}/${current.sweepGroup}@${current.queuePos}] ${markstr}`);
+  return markstr;
+}
+
+function startGCMarking() {
+  startgc(100000);
+  while (gcstate() === "Prepare") {
+    gcslice(100000);
+  }
 }
 
 function purgeKey() {
@@ -44,7 +54,7 @@ function purgeKey() {
 
   vals.key = vals.val = null;
 
-  startgc(100000);
+  startGCMarking();
   // getMarks() returns map/key/value
   assertEq(getMarks().join("/"), "black/unmarked/unmarked",
            "marked the map black");
@@ -84,7 +94,7 @@ function removeKey() {
   enqueueMark(m);
   enqueueMark("yield");
 
-  startgc(100000);
+  startGCMarking();
   reportMarks("first: ");
   var marks = getMarks();
   assertEq(marks[0], "black", "map is black");
@@ -103,6 +113,9 @@ function removeKey() {
   m.set(vals.key, vals.val);
   vals.key = vals.val = null;
   startgc(10000);
+  while (gcstate() !== "Mark") {
+    gcslice(100000);
+  }
   marks = getMarks();
   assertEq(marks[0], "black", "map is black");
   assertEq(marks[1], "unmarked", "key not marked yet");
@@ -158,6 +171,9 @@ function nukeMarking() {
 
   // Okay, run through the GC now.
   startgc(1000000);
+  while (gcstate() !== "Mark") {
+    gcslice(100000);
+  }
   assertEq(gcstate(), "Mark", "expected to yield after marking map");
   // We should have marked the map and then yielded back here.
   nukeCCW(vals.key);
@@ -192,6 +208,9 @@ function transplantMarking() {
 
   // Okay, run through the GC now.
   startgc(1000000);
+  while (gcstate() !== "Mark") {
+    gcslice(100000);
+  }
   assertEq(gcstate(), "Mark", "expected to yield after marking map");
   // We should have marked the map and then yielded back here.
   transplant(g1);
@@ -245,7 +264,7 @@ function grayMarkingMapFirst() {
   };
 
   print("Starting incremental GC");
-  startgc(100000);
+  startGCMarking();
   // Checkpoint 1, after marking map
   showmarks();
   var marks = getMarks();
@@ -337,7 +356,7 @@ function grayMarkingMapLast() {
   };
 
   print("Starting incremental GC");
-  startgc(100000);
+  startGCMarking();
   // Checkpoint 1, after marking key
   showmarks();
   var marks = labeledMarks();
@@ -402,13 +421,11 @@ function grayMapKey() {
 
   vals.key = vals.val = null;
 
-  startgc(100000);
-  print("1: " + getMarks().join("/"));
+  startGCMarking();
   assertEq(getMarks().join("/"), "gray/unmarked/unmarked",
            "marked the map gray");
 
   gcslice(100000);
-  print("4: " + getMarks().join("/"));
   assertEq(getMarks().join("/"), "gray/black/unmarked",
            "key is now marked black");
 
@@ -456,22 +473,26 @@ function grayKeyMap() {
   // created additional zones.
   schedulezone(vals);
 
-  startgc(100000);
+  startGCMarking();
   // getMarks() returns map/key/value
+  reportMarks("1: ");
   assertEq(getMarks().join("/"), "unmarked/black/unmarked",
            "marked key black");
 
   // We always yield before sweeping (in the absence of zeal), so we will see
   // the unmarked state another time.
   gcslice(100000);
+  reportMarks("2: ");
   assertEq(getMarks().join("/"), "unmarked/black/unmarked",
            "marked key black, yield before sweeping");
 
   gcslice(100000);
+  reportMarks("3: ");
   assertEq(getMarks().join("/"), "gray/black/gray",
            "marked the map gray, which marked the value when map scanned");
 
   finishgc(); // Finish the GC
+  reportMarks("4: ");
   assertEq(getMarks().join("/"), "black/black/black",
            "further marked the map black, so value should also be blackened");
 
@@ -536,7 +557,7 @@ function blackDuringGray() {
   };
 
   print("Starting incremental GC");
-  startgc(100000);
+  startGCMarking();
   // Checkpoint 1, after marking delegate black
   showmarks();
   var marks = getMarks();

@@ -115,13 +115,6 @@ class BufferSize {
   explicit BufferSize(size_t size) : size_(size) {}
 
   size_t get() const { return size_; }
-
-  // For consumers that still need to be audited or changed to support large
-  // buffers.
-  uint32_t deprecatedGetUint32() const {
-    MOZ_ASSERT(size_ <= INT32_MAX);
-    return size_;
-  }
 };
 
 class ArrayBufferObjectMaybeShared : public NativeObject {
@@ -164,7 +157,6 @@ using MutableHandleArrayBufferObjectMaybeShared =
  */
 class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   static bool byteLengthGetterImpl(JSContext* cx, const CallArgs& args);
-  static bool fun_slice_impl(JSContext* cx, const CallArgs& args);
 
  public:
   static const uint8_t DATA_SLOT = 0;
@@ -182,6 +174,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static bool supportLargeBuffers;
 
+  static constexpr size_t MaxByteLengthForSmallBuffer = INT32_MAX;
+
   // The length of an ArrayBuffer or SharedArrayBuffer can be at most
   // INT32_MAX. Allow a larger limit on 64-bit platforms if the experimental
   // large-buffers flag is used.
@@ -191,7 +185,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
       return size_t(8) * 1024 * 1024 * 1024;  // 8 GB.
     }
 #endif
-    return INT32_MAX;
+    return MaxByteLengthForSmallBuffer;
   }
 
   /** The largest number of bytes that can be stored inline. */
@@ -199,11 +193,6 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
       (NativeObject::MAX_FIXED_SLOTS - RESERVED_SLOTS) * sizeof(JS::Value);
 
  public:
-  enum OwnsState {
-    DoesntOwnData = 0,
-    OwnsData = 1,
-  };
-
   enum BufferKind {
     /** Inline data kept in the repurposed slots of this ArrayBufferObject. */
     INLINE_DATA = 0b000,
@@ -237,7 +226,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     KIND_MASK = 0b111
   };
 
- protected:
+ public:
   enum ArrayBufferFlags {
     // The flags also store the BufferKind
     BUFFER_KIND_MASK = BufferKind::KIND_MASK,
@@ -259,6 +248,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
                 "self-hosted code with burned-in constants must use the "
                 "correct DETACHED bit value");
 
+ protected:
   enum class FillContents { Zero, Uninitialized };
 
   template <FillContents FillType>
@@ -342,13 +332,13 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static bool byteLengthGetter(JSContext* cx, unsigned argc, Value* vp);
 
-  static bool fun_slice(JSContext* cx, unsigned argc, Value* vp);
-
   static bool fun_isView(JSContext* cx, unsigned argc, Value* vp);
 
-  static bool fun_species(JSContext* cx, unsigned argc, Value* vp);
-
   static bool class_constructor(JSContext* cx, unsigned argc, Value* vp);
+
+  static bool isOriginalByteLengthGetter(Native native) {
+    return native == byteLengthGetter;
+  }
 
   static ArrayBufferObject* createForContents(JSContext* cx, BufferSize nbytes,
                                               BufferContents contents);
@@ -373,9 +363,9 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
                                                    WasmArrayRawBuffer* buffer,
                                                    BufferSize initialSize);
 
-  static void copyData(Handle<ArrayBufferObject*> toBuffer, uint32_t toIndex,
-                       Handle<ArrayBufferObject*> fromBuffer,
-                       uint32_t fromIndex, uint32_t count);
+  static void copyData(Handle<ArrayBufferObject*> toBuffer, size_t toIndex,
+                       Handle<ArrayBufferObject*> fromBuffer, size_t fromIndex,
+                       size_t count);
 
   static size_t objectMoved(JSObject* obj, JSObject* old);
 
@@ -404,6 +394,9 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static constexpr size_t offsetOfByteLengthSlot() {
     return getFixedSlotOffset(BYTE_LENGTH_SLOT);
+  }
+  static constexpr size_t offsetOfFlagsSlot() {
+    return getFixedSlotOffset(FLAGS_SLOT);
   }
 
  private:
@@ -455,14 +448,14 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
    * Prepare this ArrayBuffer for use with asm.js.  Returns true on success,
    * false on failure.  This function reports no errors.
    */
-  MOZ_MUST_USE bool prepareForAsmJS();
+  [[nodiscard]] bool prepareForAsmJS();
 
   size_t wasmMappedSize() const;
   mozilla::Maybe<uint64_t> wasmMaxSize() const;
-  static MOZ_MUST_USE bool wasmGrowToSizeInPlace(
+  [[nodiscard]] static bool wasmGrowToSizeInPlace(
       BufferSize newSize, Handle<ArrayBufferObject*> oldBuf,
       MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
-  static MOZ_MUST_USE bool wasmMovingGrowToSize(
+  [[nodiscard]] static bool wasmMovingGrowToSize(
       BufferSize newSize, Handle<ArrayBufferObject*> oldBuf,
       MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
 
@@ -514,20 +507,6 @@ using MutableHandleArrayBufferObject = MutableHandle<ArrayBufferObject*>;
 bool CreateWasmBuffer(JSContext* cx, wasm::MemoryKind memKind,
                       const wasm::Limits& memory,
                       MutableHandleArrayBufferObjectMaybeShared buffer);
-
-/*
- * Tests for ArrayBufferObject, like obj->is<ArrayBufferObject>().
- */
-bool IsArrayBuffer(HandleValue v);
-bool IsArrayBuffer(JSObject* obj);
-ArrayBufferObject& AsArrayBuffer(JSObject* obj);
-
-/*
- * Ditto for ArrayBufferObjectMaybeShared.
- */
-bool IsArrayBufferMaybeShared(HandleValue v);
-bool IsArrayBufferMaybeShared(JSObject* obj);
-ArrayBufferObjectMaybeShared& AsArrayBufferMaybeShared(JSObject* obj);
 
 // Per-compartment table that manages the relationship between array buffers
 // and the views that use their storage.
@@ -640,9 +619,9 @@ class WasmArrayRawBuffer {
 
   BufferSize byteLength() const { return length_; }
 
-  MOZ_MUST_USE bool growToSizeInPlace(BufferSize oldSize, BufferSize newSize);
+  [[nodiscard]] bool growToSizeInPlace(BufferSize oldSize, BufferSize newSize);
 
-  MOZ_MUST_USE bool extendMappedSize(uint64_t maxSize);
+  [[nodiscard]] bool extendMappedSize(uint64_t maxSize);
 
   // Try and grow the mapped region of memory. Does not change current size.
   // Does not move memory if no space to grow.

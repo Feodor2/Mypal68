@@ -1,7 +1,7 @@
-commit 00014894735c3bee62bed234594abf387ea0c57b
-Author: Rick Waldron <waldron.rick@gmail.com>
+commit 516ca9af3938bfe8694cf0998f9193c57e826adb
+Author: Gus Caplan <me@gus.host>
 Date:   Wed Oct 21 20:14:28 2020 -0400
 
-    Update test/built-ins/TypedArray/prototype/forEach/callbackfn-detachbuffer.js
+    Update tests for ECMA262 #2216
 
-    Co-authored-by: Ross Kirsling <rkirsling@gmail.com>
+    https://github.com/tc39/ecma262/pull/2216

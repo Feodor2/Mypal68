@@ -10,7 +10,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Span.h"  // for Span
-#include "mozilla/Variant.h"
 
 #include <algorithm>
 #include <type_traits>
@@ -319,8 +318,6 @@ class InterpreterFrame {
   jsbytecode* prevpc_;
   Value* prevsp_;
 
-  void* unused;
-
   /*
    * For an eval-in-frame DEBUGGER_EVAL frame, the frame in whose scope
    * we're evaluating code. Iteration treats this as our previous frame.
@@ -579,12 +576,15 @@ class InterpreterFrame {
   /*
    * Callee
    *
-   * Only function frames have a callee. An eval frame in a function has the
-   * same callee as its containing function frame.
+   * Only function frames have a true callee. An eval frame in a function has
+   * the same callee as its containing function frame. An async module has to
+   * create a wrapper callee to allow passing the script to generators for
+   * pausing and resuming.
    */
 
   JSFunction& callee() const {
-    MOZ_ASSERT(isFunctionFrame());
+    MOZ_ASSERT(isFunctionFrame() || isModuleFrame());
+    MOZ_ASSERT_IF(isModuleFrame(), script()->isAsync());
     return calleev().toObject().as<JSFunction>();
   }
 
@@ -648,15 +648,15 @@ class InterpreterFrame {
 
   // Copy values from this frame into a private Array, owned by the
   // GeneratorObject, for suspending.
-  MOZ_MUST_USE inline bool saveGeneratorSlots(JSContext* cx, unsigned nslots,
-                                              ArrayObject* dest) const;
+  [[nodiscard]] inline bool saveGeneratorSlots(JSContext* cx, unsigned nslots,
+                                               ArrayObject* dest) const;
 
   // Copy values from the Array into this stack frame, for resuming.
   inline void restoreGeneratorSlots(ArrayObject* src);
 
   void resumeGeneratorFrame(JSObject* envChain) {
     MOZ_ASSERT(script()->isGenerator() || script()->isAsync());
-    MOZ_ASSERT(isFunctionFrame());
+    MOZ_ASSERT_IF(!script()->isModule(), isFunctionFrame());
     flags_ |= HAS_INITIAL_ENV;
     envChain_ = envChain;
   }
@@ -760,7 +760,11 @@ class InterpreterRegs {
     pc = fp_->prevpc();
     unsigned spForNewTarget =
         fp_->isResumedGenerator() ? 0 : fp_->isConstructing();
-    sp = fp_->prevsp() - fp_->numActualArgs() - 1 - spForNewTarget;
+    // This code is called when resuming from async and generator code.
+    // In the case of modules, we don't have arguments, so we can't use
+    // numActualArgs, which asserts 'hasArgs'.
+    unsigned nActualArgs = fp_->isModuleFrame() ? 0 : fp_->numActualArgs();
+    sp = fp_->prevsp() - nActualArgs - 1 - spForNewTarget;
     fp_ = fp_->prev();
     MOZ_ASSERT(fp_);
   }

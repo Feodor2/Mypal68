@@ -210,7 +210,7 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicPossiblyWrappedTypedArrayLength:
     case InlinableNative::IntrinsicTypedArrayLength:
     case InlinableNative::IntrinsicTypedArrayByteOffset:
-    case InlinableNative::IntrinsicTypedArrayElementShift:
+    case InlinableNative::IntrinsicTypedArrayElementSize:
     case InlinableNative::IntrinsicArrayIteratorPrototypeOptimizable:
       MOZ_CRASH("Unexpected cross-realm intrinsic call");
 
@@ -236,6 +236,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::AtomicsOr:
     case InlinableNative::AtomicsXor:
     case InlinableNative::AtomicsIsLockFree:
+    case InlinableNative::BigIntAsIntN:
+    case InlinableNative::BigIntAsUintN:
     case InlinableNative::DataViewGetInt8:
     case InlinableNative::DataViewGetUint8:
     case InlinableNative::DataViewGetInt16:

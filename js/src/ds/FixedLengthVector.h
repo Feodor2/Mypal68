@@ -6,7 +6,6 @@
 #define ds_FixedLengthVector_h
 
 #include "mozilla/Assertions.h"             // MOZ_ASSERT
-#include "mozilla/Attributes.h"             // MOZ_MUST_USE
 #include "mozilla/OperatorNewExtensions.h"  // mozilla::KnownNotNull
 
 #include <stddef.h>  // size_t
@@ -45,7 +44,7 @@ class FixedLengthVector {
   //
   // If the allocation fails, this returns false and sets the
   // pending exception on the given context.
-  MOZ_MUST_USE bool allocateUninitialized(JSContext* cx, size_t length) {
+  [[nodiscard]] bool allocateUninitialized(JSContext* cx, size_t length) {
     MOZ_ASSERT(!initialized());
 
     length_ = length;
@@ -61,7 +60,7 @@ class FixedLengthVector {
   //
   // If the allocation fails, this returns false and sets the
   // pending exception on the given context.
-  MOZ_MUST_USE bool allocate(JSContext* cx, size_t length) {
+  [[nodiscard]] bool allocate(JSContext* cx, size_t length) {
     if (!allocateUninitialized(cx, length)) {
       return false;
     }

@@ -10,7 +10,7 @@
 #ifndef js_ForOfIterator_h
 #define js_ForOfIterator_h
 
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE, MOZ_STACK_CLASS
+#include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
 
 #include <stdint.h>  // UINT32_MAX, uint32_t
 
@@ -85,7 +85,7 @@ class MOZ_STACK_CLASS JS_PUBLIC_API ForOfIterator {
    * return true instead of throwing.  Callers must then check
    * valueIsIterable() before continuing with the iteration.
    */
-  MOZ_MUST_USE bool init(
+  [[nodiscard]] bool init(
       Handle<Value> iterable,
       NonIterableBehavior nonIterableBehavior = ThrowOnNonIterable);
 
@@ -93,7 +93,7 @@ class MOZ_STACK_CLASS JS_PUBLIC_API ForOfIterator {
    * Get the next value from the iterator.  If false *done is true
    * after this call, do not examine val.
    */
-  MOZ_MUST_USE bool next(MutableHandle<Value> val, bool* done);
+  [[nodiscard]] bool next(MutableHandle<Value> val, bool* done);
 
   /**
    * Close the iterator.

@@ -25,6 +25,7 @@
 #include "js/Utility.h"
 #include "js/Value.h"
 #include "vm/BytecodeFormatFlags.h"  // JOF_*
+#include "vm/GeneratorResumeKind.h"
 #include "vm/Opcodes.h"
 #include "vm/SharedStencil.h"  // js::GCThingIndex
 #include "vm/ThrowMsgKind.h"   // ThrowMsgKind, ThrowCondition
@@ -231,7 +232,7 @@ static inline void SetLoopHeadDepthHint(jsbytecode* pc, unsigned loopDepth) {
 static inline bool IsBackedgePC(jsbytecode* pc) {
   switch (JSOp(*pc)) {
     case JSOp::Goto:
-    case JSOp::IfNe:
+    case JSOp::JumpIfTrue:
       return GET_JUMP_OFFSET(pc) < 0;
     default:
       return false;
@@ -241,28 +242,6 @@ static inline bool IsBackedgePC(jsbytecode* pc) {
 static inline bool IsBackedgeForLoopHead(jsbytecode* pc, jsbytecode* loopHead) {
   MOZ_ASSERT(JSOp(*loopHead) == JSOp::LoopHead);
   return IsBackedgePC(pc) && pc + GET_JUMP_OFFSET(pc) == loopHead;
-}
-
-static inline void SetClassConstructorOperands(jsbytecode* pc,
-                                               js::GCThingIndex atomIndex,
-                                               uint32_t sourceStart,
-                                               uint32_t sourceEnd) {
-  MOZ_ASSERT(JSOp(*pc) == JSOp::ClassConstructor ||
-             JSOp(*pc) == JSOp::DerivedConstructor);
-  SET_GCTHING_INDEX(pc, atomIndex);
-  SET_UINT32(pc + 4, sourceStart);
-  SET_UINT32(pc + 8, sourceEnd);
-}
-
-static inline void GetClassConstructorOperands(jsbytecode* pc,
-                                               js::GCThingIndex* atomIndex,
-                                               uint32_t* sourceStart,
-                                               uint32_t* sourceEnd) {
-  MOZ_ASSERT(JSOp(*pc) == JSOp::ClassConstructor ||
-             JSOp(*pc) == JSOp::DerivedConstructor);
-  *atomIndex = GET_GCTHING_INDEX(pc);
-  *sourceStart = GET_UINT32(pc + 4);
-  *sourceEnd = GET_UINT32(pc + 8);
 }
 
 /*
@@ -534,9 +513,7 @@ inline bool IsCheckSloppyOp(JSOp op) {
 
 inline bool IsAtomOp(JSOp op) { return JOF_OPTYPE(op) == JOF_ATOM; }
 
-inline bool IsGetPropOp(JSOp op) {
-  return op == JSOp::Length || op == JSOp::GetProp || op == JSOp::CallProp;
-}
+inline bool IsGetPropOp(JSOp op) { return op == JSOp::GetProp; }
 
 inline bool IsGetPropPC(const jsbytecode* pc) { return IsGetPropOp(JSOp(*pc)); }
 
@@ -561,9 +538,7 @@ inline bool IsSetPropOp(JSOp op) {
 
 inline bool IsSetPropPC(const jsbytecode* pc) { return IsSetPropOp(JSOp(*pc)); }
 
-inline bool IsGetElemOp(JSOp op) {
-  return op == JSOp::GetElem || op == JSOp::CallElem;
-}
+inline bool IsGetElemOp(JSOp op) { return op == JSOp::GetElem; }
 
 inline bool IsGetElemPC(const jsbytecode* pc) { return IsGetElemOp(JSOp(*pc)); }
 
@@ -691,11 +666,21 @@ static inline jsbytecode* GetNextPc(jsbytecode* pc) {
   return pc + GetBytecodeLength(pc);
 }
 
+inline GeneratorResumeKind IntToResumeKind(int32_t value) {
+  MOZ_ASSERT(uint32_t(value) <= uint32_t(GeneratorResumeKind::Return));
+  return static_cast<GeneratorResumeKind>(value);
+}
+
+inline GeneratorResumeKind ResumeKindFromPC(jsbytecode* pc) {
+  MOZ_ASSERT(JSOp(*pc) == JSOp::ResumeKind);
+  return IntToResumeKind(GET_UINT8(pc));
+}
+
 #if defined(DEBUG) || defined(JS_JITSPEW)
 /*
  * Disassemblers, for debugging only.
  */
-extern MOZ_MUST_USE bool Disassemble(JSContext* cx,
+[[nodiscard]] extern bool Disassemble(JSContext* cx,
                                      JS::Handle<JSScript*> script, bool lines,
                                      Sprinter* sp);
 
@@ -704,7 +689,7 @@ unsigned Disassemble1(JSContext* cx, JS::Handle<JSScript*> script,
 
 #endif
 
-extern MOZ_MUST_USE bool DumpRealmPCCounts(JSContext* cx);
+[[nodiscard]] extern bool DumpRealmPCCounts(JSContext* cx);
 
 }  // namespace js
 

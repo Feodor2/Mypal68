@@ -88,7 +88,7 @@ bool ArrayBufferViewObject::init(JSContext* cx,
 
   MOZ_ASSERT_IF(
       is<TypedArrayObject>(),
-      length.get() < TypedArrayObject::maxByteLength() / bytesPerElement);
+      length.get() <= TypedArrayObject::maxByteLength() / bytesPerElement);
 
   // The isSharedMemory property is invariant.  Self-hosting code that
   // sets BUFFER_SLOT or the private slot (if it does) must maintain it by
@@ -129,7 +129,7 @@ bool ArrayBufferViewObject::init(JSContext* cx,
     size_t viewByteOffset = byteOffset.get();
     size_t bufferByteLength = buffer->byteLength().get();
     // Unwraps are safe: both are for the pointer value.
-    MOZ_ASSERT_IF(IsArrayBuffer(buffer),
+    MOZ_ASSERT_IF(buffer->is<ArrayBufferObject>(),
                   buffer->dataPointerEither().unwrap(/*safe*/) <=
                       dataPointerEither().unwrap(/*safe*/));
     MOZ_ASSERT(bufferByteLength - viewByteOffset >= viewByteLength);
@@ -173,6 +173,37 @@ JS_FRIEND_API void* JS_GetArrayBufferViewData(JSObject* obj,
       /*safe - caller sees isSharedMemory flag*/);
 }
 
+JS_FRIEND_API uint8_t* JS_GetArrayBufferViewFixedData(JSObject* obj,
+                                                      uint8_t* buffer,
+                                                      size_t bufSize)
+{
+  ArrayBufferViewObject* view = obj->maybeUnwrapAs<ArrayBufferViewObject>();
+  if (!view) {
+    return nullptr;
+  }
+
+  // Disallow shared memory until it is needed.
+  if (view->isSharedMemory()) {
+    return nullptr;
+  }
+
+  // TypedArrays (but not DataViews) can have inline data, in which case we
+  // need to copy into the given buffer.
+  if (view->is<TypedArrayObject>()) {
+    TypedArrayObject* ta = &view->as<TypedArrayObject>();
+    if (ta->hasInlineElements()) {
+      size_t bytes = ta->byteLength().get();
+      if (bytes > bufSize) {
+        return nullptr; // Does not fit.
+      }
+      memcpy(buffer, view->dataPointerUnshared(), bytes);
+      return buffer;
+    }
+  }
+
+  return static_cast<uint8_t*>(view->dataPointerUnshared());
+}
+
 JS_FRIEND_API JSObject* JS_GetArrayBufferViewBuffer(JSContext* cx,
                                                     HandleObject obj,
                                                     bool* isSharedMemory) {
@@ -205,7 +236,7 @@ JS_FRIEND_API JSObject* JS_GetArrayBufferViewBuffer(JSContext* cx,
   return buffer;
 }
 
-JS_FRIEND_API uint32_t JS_GetArrayBufferViewByteLength(JSObject* obj) {
+JS_FRIEND_API size_t JS_GetArrayBufferViewByteLength(JSObject* obj) {
   obj = obj->maybeUnwrapAs<ArrayBufferViewObject>();
   if (!obj) {
     return 0;
@@ -213,10 +244,10 @@ JS_FRIEND_API uint32_t JS_GetArrayBufferViewByteLength(JSObject* obj) {
   BufferSize length = obj->is<DataViewObject>()
                           ? obj->as<DataViewObject>().byteLength()
                           : obj->as<TypedArrayObject>().byteLength();
-  return length.deprecatedGetUint32();
+  return length.get();
 }
 
-JS_FRIEND_API uint32_t JS_GetArrayBufferViewByteOffset(JSObject* obj) {
+JS_FRIEND_API size_t JS_GetArrayBufferViewByteOffset(JSObject* obj) {
   obj = obj->maybeUnwrapAs<ArrayBufferViewObject>();
   if (!obj) {
     return 0;
@@ -224,11 +255,11 @@ JS_FRIEND_API uint32_t JS_GetArrayBufferViewByteOffset(JSObject* obj) {
   BufferSize offset = obj->is<DataViewObject>()
                           ? obj->as<DataViewObject>().byteOffset()
                           : obj->as<TypedArrayObject>().byteOffset();
-  return offset.deprecatedGetUint32();
+  return offset.get();
 }
 
 JS_FRIEND_API JSObject* JS_GetObjectAsArrayBufferView(JSObject* obj,
-                                                      uint32_t* length,
+                                                      size_t* length,
                                                       bool* isSharedMemory,
                                                       uint8_t** data) {
   obj = obj->maybeUnwrapIf<ArrayBufferViewObject>();
@@ -241,7 +272,7 @@ JS_FRIEND_API JSObject* JS_GetObjectAsArrayBufferView(JSObject* obj,
 }
 
 JS_FRIEND_API void js::GetArrayBufferViewLengthAndData(JSObject* obj,
-                                                       uint32_t* length,
+                                                       size_t* length,
                                                        bool* isSharedMemory,
                                                        uint8_t** data) {
   MOZ_ASSERT(obj->is<ArrayBufferViewObject>());
@@ -249,7 +280,7 @@ JS_FRIEND_API void js::GetArrayBufferViewLengthAndData(JSObject* obj,
   BufferSize byteLength = obj->is<DataViewObject>()
                               ? obj->as<DataViewObject>().byteLength()
                               : obj->as<TypedArrayObject>().byteLength();
-  *length = byteLength.deprecatedGetUint32();
+  *length = byteLength.get();
 
   ArrayBufferViewObject& view = obj->as<ArrayBufferViewObject>();
   *isSharedMemory = view.isSharedMemory();
@@ -263,4 +294,19 @@ JS_PUBLIC_API bool JS::IsArrayBufferViewShared(JSObject* obj) {
     return false;
   }
   return view->isSharedMemory();
+}
+
+JS_FRIEND_API bool JS::IsLargeArrayBufferView(JSObject* obj) {
+#ifdef JS_64BIT
+  obj = &obj->unwrapAs<ArrayBufferViewObject>();
+  BufferSize len = obj->is<DataViewObject>()
+                       ? obj->as<DataViewObject>().byteLength()
+                       : obj->as<TypedArrayObject>().byteLength();
+  return len.get() > ArrayBufferObject::MaxByteLengthForSmallBuffer;
+#else
+  // Large ArrayBuffers are not supported on 32-bit.
+  MOZ_ASSERT(ArrayBufferObject::maxBufferByteLength() ==
+             ArrayBufferObject::MaxByteLengthForSmallBuffer);
+  return false;
+#endif
 }

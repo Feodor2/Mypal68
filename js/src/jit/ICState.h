@@ -33,10 +33,10 @@ class ICState {
   enum class Mode : uint8_t { Specialized = 0, Megamorphic, Generic };
 
  private:
-  uint32_t mode_ : 2;
+  uint8_t mode_ : 2;
 
   // The TrialInliningState for a Baseline IC.
-  uint32_t trialInliningState_ : 2;
+  uint8_t trialInliningState_ : 2;
 
   // Whether WarpOracle created a snapshot based on stubs attached to this
   // Baseline IC.
@@ -89,7 +89,7 @@ class ICState {
 
   // If this returns true, we transitioned to a new mode and the caller
   // should discard all stubs.
-  MOZ_MUST_USE MOZ_ALWAYS_INLINE bool maybeTransition() {
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool maybeTransition() {
     // Note: we cannot assert that numOptimizedStubs_ <= MaxOptimizedStubs
     // because old-style baseline ICs may attach more stubs than
     // MaxOptimizedStubs allows.
@@ -108,8 +108,14 @@ class ICState {
     transition(Mode::Megamorphic);
     return true;
   }
+
   void reset() {
     setMode(Mode::Specialized);
+#ifdef DEBUG
+    if (JitOptions.forceMegamorphicICs) {
+      setMode(Mode::Megamorphic);
+    }
+#endif
     trialInliningState_ = uint32_t(TrialInliningState::Initial);
     usedByTranspiler_ = false;
     numOptimizedStubs_ = 0;

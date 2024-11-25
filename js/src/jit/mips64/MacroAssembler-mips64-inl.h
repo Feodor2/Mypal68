@@ -68,6 +68,8 @@ void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
 // ===============================================================
 // Logical instructions
 
+void MacroAssembler::notPtr(Register reg) { ma_not(reg, reg); }
+
 void MacroAssembler::andPtr(Register src, Register dest) { ma_and(dest, src); }
 
 void MacroAssembler::andPtr(Imm32 imm, Register dest) { ma_and(dest, imm); }
@@ -233,6 +235,15 @@ void MacroAssembler::sub64(Imm64 imm, Register64 dest) {
   as_dsubu(dest.reg, dest.reg, ScratchRegister);
 }
 
+void MacroAssembler::mulPtr(Register rhs, Register srcDest) {
+#ifdef MIPSR6
+  as_dmulu(srcDest, srcDest, rhs);
+#else
+  as_dmultu(srcDest, rhs);
+  as_mflo(srcDest);
+#endif
+}
+
 void MacroAssembler::mul64(Imm64 imm, const Register64& dest) {
   MOZ_ASSERT(dest.reg != ScratchRegister);
   mov(ImmWord(imm.value), ScratchRegister);
@@ -298,6 +309,10 @@ void MacroAssembler::lshiftPtr(Imm32 imm, Register dest) {
   ma_dsll(dest, dest, imm);
 }
 
+void MacroAssembler::lshiftPtr(Register shift, Register dest) {
+  ma_dsll(dest, dest, shift);
+}
+
 void MacroAssembler::lshift64(Imm32 imm, Register64 dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 64);
   ma_dsll(dest.reg, dest.reg, imm);
@@ -310,6 +325,10 @@ void MacroAssembler::lshift64(Register shift, Register64 dest) {
 void MacroAssembler::rshiftPtr(Imm32 imm, Register dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 64);
   ma_dsrl(dest, dest, imm);
+}
+
+void MacroAssembler::rshiftPtr(Register shift, Register dest) {
+  ma_dsrl(dest, dest, shift);
 }
 
 void MacroAssembler::rshift64(Imm32 imm, Register64 dest) {

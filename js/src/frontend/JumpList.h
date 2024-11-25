@@ -18,7 +18,7 @@ namespace frontend {
 // Example:
 //
 //     JumpList brList;
-//     if (!emitJump(JSOp::IfEq, &brList)) {
+//     if (!emitJump(JSOp::JumpIfFalse, &brList)) {
 //         return false;
 //     }
 //     ...
@@ -33,15 +33,16 @@ namespace frontend {
 //     ...
 //     patchJumpsToTarget(brList, label);
 //
-//                 +-> (the delta is END_OF_LIST_DELTA (=0) for the last item)
-//                 |
-//                 |
-//    ifeq ..   <+ +                +-+   ifeq ..
-//    ..         |                  |     ..
-//  label:       |                  +-> label:
-//    jumptarget |                  |     jumptarget
-//    ..         |                  |     ..
-//    goto .. <+ +                  +-+   goto .. <+
+//                      +-> (the delta is END_OF_LIST_DELTA (=0) for the last
+//                      |    item)
+//                      |
+//                      |
+//    JumpIfFalse .. <+ +                +-+   JumpIfFalse ..
+//    ..              |                  |     ..
+//  label:            |                  +-> label:
+//    JumpTarget      |                  |     JumpTarget
+//    ..              |                  |     ..
+//    Goto .. <+ +----+                  +-+   Goto .. <+
 //             |                                   |
 //             |                                   |
 //             +                                   +

@@ -16,13 +16,8 @@ using namespace js::frontend;
 PropOpEmitter::PropOpEmitter(BytecodeEmitter* bce, Kind kind, ObjKind objKind)
     : bce_(bce), kind_(kind), objKind_(objKind) {}
 
-bool PropOpEmitter::prepareAtomIndex(const ParserAtom* prop) {
-  if (!bce_->makeAtomIndex(prop, &propAtomIndex_)) {
-    return false;
-  }
-  isLength_ = prop == bce_->cx->parserNames().length;
-
-  return true;
+bool PropOpEmitter::prepareAtomIndex(TaggedParserAtomIndex prop) {
+  return bce_->makeAtomIndex(prop, &propAtomIndex_);
 }
 
 bool PropOpEmitter::prepareForObj() {
@@ -34,7 +29,7 @@ bool PropOpEmitter::prepareForObj() {
   return true;
 }
 
-bool PropOpEmitter::emitGet(const ParserAtom* prop) {
+bool PropOpEmitter::emitGet(TaggedParserAtomIndex prop) {
   MOZ_ASSERT(state_ == State::Obj);
 
   if (!prepareAtomIndex(prop)) {
@@ -69,14 +64,7 @@ bool PropOpEmitter::emitGet(const ParserAtom* prop) {
     }
   }
 
-  JSOp op;
-  if (isSuper()) {
-    op = JSOp::GetPropSuper;
-  } else if (isCall()) {
-    op = JSOp::CallProp;
-  } else {
-    op = isLength_ ? JSOp::Length : JSOp::GetProp;
-  }
+  JSOp op = isSuper() ? JSOp::GetPropSuper : JSOp::GetProp;
   if (!bce_->emitAtomOp(op, propAtomIndex_, ShouldInstrument::Yes)) {
     //              [stack] # if Get
     //              [stack] PROP
@@ -132,7 +120,7 @@ bool PropOpEmitter::skipObjAndRhs() {
   return true;
 }
 
-bool PropOpEmitter::emitDelete(const ParserAtom* prop) {
+bool PropOpEmitter::emitDelete(TaggedParserAtomIndex prop) {
   MOZ_ASSERT_IF(!isSuper(), state_ == State::Obj);
   MOZ_ASSERT_IF(isSuper(), state_ == State::Start);
   MOZ_ASSERT(isDelete());
@@ -172,7 +160,7 @@ bool PropOpEmitter::emitDelete(const ParserAtom* prop) {
   return true;
 }
 
-bool PropOpEmitter::emitAssignment(const ParserAtom* prop) {
+bool PropOpEmitter::emitAssignment(TaggedParserAtomIndex prop) {
   MOZ_ASSERT(isSimpleAssignment() || isPropInit() || isCompoundAssignment());
   MOZ_ASSERT(state_ == State::Rhs);
 
@@ -199,7 +187,7 @@ bool PropOpEmitter::emitAssignment(const ParserAtom* prop) {
   return true;
 }
 
-bool PropOpEmitter::emitIncDec(const ParserAtom* prop) {
+bool PropOpEmitter::emitIncDec(TaggedParserAtomIndex prop) {
   MOZ_ASSERT(state_ == State::Obj);
   MOZ_ASSERT(isIncDec());
 

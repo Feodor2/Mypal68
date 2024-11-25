@@ -5,15 +5,13 @@
 #ifndef jit_FoldLinearArithConstants_h
 #define jit_FoldLinearArithConstants_h
 
-#include "mozilla/Attributes.h"
-
 namespace js {
 namespace jit {
 
 class MIRGenerator;
 class MIRGraph;
 
-MOZ_MUST_USE bool FoldLinearArithConstants(MIRGenerator* mir, MIRGraph& graph);
+[[nodiscard]] bool FoldLinearArithConstants(MIRGenerator* mir, MIRGraph& graph);
 
 } /* namespace jit */
 } /* namespace js */

@@ -745,9 +745,7 @@ static MOZ_ALWAYS_INLINE Shape* PropertyTreeReadBarrier(JSContext* cx,
   if (zone->needsIncrementalBarrier()) {
     // We need a read barrier for the shape tree, since these are weak
     // pointers.
-    Shape* tmp = shape;
-    TraceManuallyBarrieredEdge(zone->barrierTracer(), &tmp, "read barrier");
-    MOZ_ASSERT(tmp == shape);
+    ReadBarrier(shape);
     return shape;
   }
 
@@ -894,53 +892,6 @@ Shape* NativeObject::addEnumerableDataProperty(JSContext* cx,
   }
 
   return shape;
-}
-
-Shape* js::ReshapeForAllocKind(JSContext* cx, Shape* shape, TaggedProto proto,
-                               gc::AllocKind allocKind) {
-  // Compute the number of fixed slots with the new allocation kind.
-  size_t nfixed = gc::GetGCKindSlots(allocKind, shape->getObjectClass());
-
-  // Get all the ids in the shape, in order.
-  js::RootedIdVector ids(cx);
-  {
-    for (unsigned i = 0; i < shape->slotSpan(); i++) {
-      if (!ids.append(JSID_VOID)) {
-        return nullptr;
-      }
-    }
-    Shape* nshape = shape;
-    while (!nshape->isEmptyShape()) {
-      ids[nshape->slot()].set(nshape->propid());
-      nshape = nshape->previous();
-    }
-  }
-
-  // Construct the new shape, without updating type information.
-  RootedId id(cx);
-  RootedShape newShape(
-      cx, EmptyShape::getInitialShape(cx, shape->getObjectClass(), proto,
-                                      nfixed, shape->getObjectFlags()));
-  if (!newShape) {
-    return nullptr;
-  }
-
-  for (unsigned i = 0; i < ids.length(); i++) {
-    id = ids[i];
-
-    UnownedBaseShape* nbase = GetBaseShapeForNewShape(cx, newShape, id);
-    if (!nbase) {
-      return nullptr;
-    }
-
-    Rooted<StackShape> child(cx, StackShape(nbase, id, i, JSPROP_ENUMERATE));
-    newShape = cx->zone()->propertyTree().getChild(cx, newShape, child);
-    if (!newShape) {
-      return nullptr;
-    }
-  }
-
-  return newShape;
 }
 
 /*
@@ -1388,26 +1339,6 @@ bool NativeObject::removeProperty(JSContext* cx, HandleNativeObject obj,
 }
 
 /* static */
-void NativeObject::clear(JSContext* cx, HandleNativeObject obj) {
-  Shape* shape = obj->lastProperty();
-  MOZ_ASSERT(obj->inDictionaryMode() == shape->inDictionary());
-
-  while (shape->parent) {
-    shape = shape->parent;
-    MOZ_ASSERT(obj->inDictionaryMode() == shape->inDictionary());
-  }
-  MOZ_ASSERT(shape->isEmptyShape());
-
-  if (obj->inDictionaryMode()) {
-    shape->setDictionaryObject(obj);
-  }
-
-  MOZ_ALWAYS_TRUE(obj->setLastProperty(cx, shape));
-
-  obj->checkShapeConsistency();
-}
-
-/* static */
 Shape* NativeObject::replaceWithNewEquivalentShape(JSContext* cx,
                                                    HandleNativeObject obj,
                                                    Shape* oldShape,
@@ -1485,7 +1416,7 @@ bool JSObject::setFlags(JSContext* cx, HandleObject obj, BaseShape::Flag flags,
     return false;
   }
 
-  if (obj->isNative() && obj->as<NativeObject>().inDictionaryMode()) {
+  if (obj->is<NativeObject>() && obj->as<NativeObject>().inDictionaryMode()) {
     if (generateShape == GENERATE_SHAPE) {
       if (!NativeObject::generateOwnShape(cx, obj.as<NativeObject>())) {
         return false;
@@ -2150,21 +2081,12 @@ Shape* EmptyShape::getInitialShape(JSContext* cx, const JSClass* clasp,
                          objectFlags);
 }
 
-void NewObjectCache::invalidateEntriesForShape(JSContext* cx, HandleShape shape,
-                                               HandleObject proto) {
+void NewObjectCache::invalidateEntriesForShape(Shape* shape, JSObject* proto) {
   const JSClass* clasp = shape->getObjectClass();
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
   if (CanChangeToBackgroundAllocKind(kind, clasp)) {
     kind = ForegroundToBackgroundAllocKind(kind);
-  }
-
-  RootedObjectGroup group(
-      cx, ObjectGroup::defaultNewGroup(cx, clasp, TaggedProto(proto)));
-  if (!group) {
-    purge();
-    cx->recoverFromOutOfMemory();
-    return;
   }
 
   EntryIndex entry;
@@ -2176,9 +2098,6 @@ void NewObjectCache::invalidateEntriesForShape(JSContext* cx, HandleShape shape,
     }
   }
   if (!proto->is<GlobalObject>() && lookupProto(clasp, proto, kind, &entry)) {
-    PodZero(&entries[entry]);
-  }
-  if (lookupGroup(group, kind, &entry)) {
     PodZero(&entries[entry]);
   }
 }
@@ -2223,7 +2142,7 @@ void EmptyShape::insertInitialShape(JSContext* cx, HandleShape shape,
    * thread, as it will not use the new object cache for allocations.
    */
   if (!cx->isHelperThreadContext()) {
-    cx->caches().newObjectCache.invalidateEntriesForShape(cx, shape, proto);
+    cx->caches().newObjectCache.invalidateEntriesForShape(shape, proto);
   }
 }
 

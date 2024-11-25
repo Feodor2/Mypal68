@@ -11,6 +11,7 @@
 #include "mozilla/Module.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "nsIMemoryReporter.h"
 #include "nsISupports.h"
 #include "nsIURI.h"
 #include "nsClassHashtable.h"
@@ -31,9 +32,10 @@ class ScriptPreloader;
 #  define STARTUP_RECORDER_ENABLED
 #endif
 
-class mozJSComponentLoader final {
+class mozJSComponentLoader final : public nsIMemoryReporter {
  public:
-  NS_INLINE_DECL_REFCOUNTING(mozJSComponentLoader);
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIMEMORYREPORTER
 
   void GetLoadedModules(nsTArray<nsCString>& aLoadedModules);
   void GetLoadedComponents(nsTArray<nsCString>& aLoadedComponents);
@@ -84,17 +86,9 @@ class mozJSComponentLoader final {
 
   friend class XPCJSRuntime;
 
-  JSObject* CompilationScope(JSContext* aCx) {
-    if (mLoaderGlobal) {
-      return mLoaderGlobal;
-    }
-    return GetSharedGlobal(aCx);
-  }
-
  private:
   static mozilla::StaticRefPtr<mozJSComponentLoader> sSelf;
 
-  nsresult ReallyInit();
   void UnloadModules();
 
   void CreateLoaderGlobal(JSContext* aCx, const nsACString& aLocation,

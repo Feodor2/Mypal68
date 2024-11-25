@@ -31,15 +31,21 @@ function IsPrimitive(o) {
 }
 
 function intlObjects(ctor) {
+    let args = [];
+    if (ctor === Intl.DisplayNames) {
+        // Intl.DisplayNames can't be constructed without any arguments.
+        args = [undefined, {type: "language"}];
+    }
+
     return [
         // Instance of an Intl constructor.
-        new ctor(),
+        new ctor(...args),
 
         // Instance of a subclassed Intl constructor.
-        new class extends ctor {},
+        new class extends ctor {}(...args),
 
         // Intl object not inheriting from its default prototype.
-        Object.setPrototypeOf(new ctor(), Object.prototype),
+        Object.setPrototypeOf(new ctor(...args), Object.prototype),
     ];
 }
 
@@ -115,8 +121,9 @@ for (let {function: dateTimeFormatFunction, unwrap} of dateTimeFormatFunctions) 
     }
 
     // Repeat the test from above, but also change Intl.DateTimeFormat[@@hasInstance]
-    // so it always returns |null|.
+    // so it always returns |true|.
     for (let thisValue of thisValues(Intl.DateTimeFormat).filter(IsObject)) {
+        let isPrototypeOf = Intl.DateTimeFormat.prototype.isPrototypeOf(thisValue);
         let hasInstanceCalled = false, symbolGetterCalled = false;
         Object.defineProperty(Intl.DateTimeFormat, Symbol.hasInstance, {
             value() {
@@ -137,8 +144,8 @@ for (let {function: dateTimeFormatFunction, unwrap} of dateTimeFormatFunctions) 
 
         delete Intl.DateTimeFormat[Symbol.hasInstance];
 
-        assertEq(hasInstanceCalled, unwrap);
-        assertEq(symbolGetterCalled, unwrap);
+        assertEq(hasInstanceCalled, false);
+        assertEq(symbolGetterCalled, unwrap && isPrototypeOf);
     }
 
     // Test with primitive values.

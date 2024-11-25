@@ -123,6 +123,8 @@ struct JSWrapObjectCallbacks {
   JSPreWrapCallback preWrap;
 };
 
+using JSDestroyZoneCallback = void (*)(JSFreeOp*, JS::Zone*);
+
 using JSDestroyCompartmentCallback = void (*)(JSFreeOp*, JS::Compartment*);
 
 using JSSizeOfIncludingThisCompartmentCallback =
@@ -311,6 +313,9 @@ JS_PUBLIC_API void SetHelperThreadTaskCallback(
     bool (*callback)(js::UniquePtr<js::RunnableTask>));
 
 extern JS_PUBLIC_API const char* JS_GetImplementationVersion(void);
+
+extern JS_PUBLIC_API void JS_SetDestroyZoneCallback(
+    JSContext* cx, JSDestroyZoneCallback callback);
 
 extern JS_PUBLIC_API void JS_SetDestroyCompartmentCallback(
     JSContext* cx, JSDestroyCompartmentCallback callback);
@@ -649,21 +654,6 @@ extern JS_PUBLIC_API void SetProfileTimelineRecordingEnabled(bool enabled);
 extern JS_PUBLIC_API bool IsProfileTimelineRecordingEnabled();
 
 }  // namespace JS
-
-/*
- * A replacement for MallocAllocPolicy that allocates in the JS heap and adds no
- * extra behaviours.
- *
- * This is currently used for allocating source buffers for parsing. Since these
- * are temporary and will not be freed by GC, the memory is not tracked by the
- * usual accounting.
- */
-class JS_PUBLIC_API JSMallocAllocPolicy : public js::AllocPolicyBase {
- public:
-  void reportAllocOverflow() const {}
-
-  MOZ_MUST_USE bool checkSimulatedOOM() const { return true; }
-};
 
 /**
  * Set the size of the native stack that should not be exceed. To disable
@@ -1496,13 +1486,6 @@ extern JS_PUBLIC_API bool Construct(JSContext* cx, JS::HandleValue fun,
 
 } /* namespace JS */
 
-/**
- * Invoke a constructor, like the JS expression `new ctor(...args)`. Returns
- * the new object, or null on error.
- */
-extern JS_PUBLIC_API JSObject* JS_New(JSContext* cx, JS::HandleObject ctor,
-                                      const JS::HandleValueArray& args);
-
 /*** Other property-defining functions **************************************/
 
 extern JS_PUBLIC_API JSObject* JS_DefineObject(JSContext* cx,
@@ -2054,19 +2037,19 @@ extern JS_PUBLIC_API JSString* JS_AtomizeAndPinUCString(JSContext* cx,
 extern JS_PUBLIC_API bool JS_CompareStrings(JSContext* cx, JSString* str1,
                                             JSString* str2, int32_t* result);
 
-extern JS_PUBLIC_API MOZ_MUST_USE bool JS_StringEqualsAscii(
+[[nodiscard]] extern JS_PUBLIC_API bool JS_StringEqualsAscii(
     JSContext* cx, JSString* str, const char* asciiBytes, bool* match);
 
 // Same as above, but when the length of asciiBytes (excluding the
 // trailing null, if any) is known.
-extern JS_PUBLIC_API MOZ_MUST_USE bool JS_StringEqualsAscii(
+[[nodiscard]] extern JS_PUBLIC_API bool JS_StringEqualsAscii(
     JSContext* cx, JSString* str, const char* asciiBytes, size_t length,
     bool* match);
 
 template <size_t N>
-MOZ_MUST_USE bool JS_StringEqualsLiteral(JSContext* cx, JSString* str,
-                                         const char (&asciiBytes)[N],
-                                         bool* match) {
+[[nodiscard]] bool JS_StringEqualsLiteral(JSContext* cx, JSString* str,
+                                          const char (&asciiBytes)[N],
+                                          bool* match) {
   MOZ_ASSERT(asciiBytes[N - 1] == '\0');
   return JS_StringEqualsAscii(cx, str, asciiBytes, N - 1, match);
 }
@@ -2234,10 +2217,10 @@ JS_PUBLIC_API size_t JS_GetStringEncodingLength(JSContext* cx, JSString* str);
  * length parameter, the string will be cut and only length bytes will be
  * written into the buffer.
  */
-MOZ_MUST_USE JS_PUBLIC_API bool JS_EncodeStringToBuffer(JSContext* cx,
-                                                        JSString* str,
-                                                        char* buffer,
-                                                        size_t length);
+[[nodiscard]] JS_PUBLIC_API bool JS_EncodeStringToBuffer(JSContext* cx,
+                                                         JSString* str,
+                                                         char* buffer,
+                                                         size_t length);
 
 /**
  * Encode as many scalar values of the string as UTF-8 as can fit
@@ -2497,6 +2480,8 @@ extern JS_PUBLIC_API bool SetForEach(JSContext* cx, HandleObject obj,
 
 extern JS_PUBLIC_API bool JS_IsExceptionPending(JSContext* cx);
 
+extern JS_PUBLIC_API bool JS_IsThrowingOutOfMemory(JSContext* cx);
+
 extern JS_PUBLIC_API bool JS_GetPendingException(JSContext* cx,
                                                  JS::MutableHandleValue vp);
 
@@ -2642,8 +2627,8 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
 #define JIT_COMPILER_OPTIONS(Register) \
   Register(BASELINE_INTERPRETER_WARMUP_TRIGGER, "blinterp.warmup.trigger") \
   Register(BASELINE_WARMUP_TRIGGER, "baseline.warmup.trigger") \
+  Register(IC_FORCE_MEGAMORPHIC, "ic.force-megamorphic") \
   Register(ION_NORMAL_WARMUP_TRIGGER, "ion.warmup.trigger") \
-  Register(ION_FULL_WARMUP_TRIGGER, "ion.full.warmup.trigger") \
   Register(ION_GVN_ENABLE, "ion.gvn.enable") \
   Register(ION_FORCE_IC, "ion.forceinlineCaches") \
   Register(ION_ENABLE, "ion.enable") \
@@ -2809,7 +2794,7 @@ namespace JS {
  * Wasm module or memory is created in this process, or else this function will
  * fail.
  */
-extern JS_PUBLIC_API MOZ_MUST_USE bool DisableWasmHugeMemory();
+[[nodiscard]] extern JS_PUBLIC_API bool DisableWasmHugeMemory();
 
 /**
  * If a large allocation fails when calling pod_{calloc,realloc}CanGC, the JS
@@ -3034,5 +3019,13 @@ namespace js {
 enum class CompletionKind { Normal, Return, Throw };
 
 } /* namespace js */
+
+#ifdef DEBUG
+namespace JS {
+
+extern JS_PUBLIC_API void SetSupportDifferentialTesting(bool value);
+
+}
+#endif /* DEBUG */
 
 #endif /* jsapi_h */

@@ -15,8 +15,8 @@ namespace jit {
 //{{{ check_macroassembler_style
 
 void MacroAssembler::move64(Imm64 imm, Register64 dest) {
-  movl(Imm32(imm.value & 0xFFFFFFFFL), dest.low);
-  movl(Imm32((imm.value >> 32) & 0xFFFFFFFFL), dest.high);
+  move32(Imm32(imm.value & 0xFFFFFFFFL), dest.low);
+  move32(Imm32((imm.value >> 32) & 0xFFFFFFFFL), dest.high);
 }
 
 void MacroAssembler::move64(Register64 src, Register64 dest) {
@@ -64,26 +64,39 @@ void MacroAssembler::move32To64ZeroExtend(Register src, Register64 dest) {
 }
 
 void MacroAssembler::move8To64SignExtend(Register src, Register64 dest) {
-  MOZ_ASSERT(dest.low == eax);
-  MOZ_ASSERT(dest.high == edx);
-  move8SignExtend(src, eax);
-  masm.cdq();
+  move8SignExtend(src, dest.low);
+  if (dest.low == eax && dest.high == edx) {
+    masm.cdq();
+  } else {
+    movl(dest.low, dest.high);
+    sarl(Imm32(31), dest.high);
+  }
 }
 
 void MacroAssembler::move16To64SignExtend(Register src, Register64 dest) {
-  MOZ_ASSERT(dest.low == eax);
-  MOZ_ASSERT(dest.high == edx);
-  move16SignExtend(src, eax);
-  masm.cdq();
+  move16SignExtend(src, dest.low);
+  if (dest.low == eax && dest.high == edx) {
+    masm.cdq();
+  } else {
+    movl(dest.low, dest.high);
+    sarl(Imm32(31), dest.high);
+  }
 }
 
 void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
-  MOZ_ASSERT(dest.low == eax);
-  MOZ_ASSERT(dest.high == edx);
-  if (src != eax) {
-    movl(src, eax);
+  if (src != dest.low) {
+    movl(src, dest.low);
   }
-  masm.cdq();
+  if (dest.low == eax && dest.high == edx) {
+    masm.cdq();
+  } else {
+    movl(dest.low, dest.high);
+    sarl(Imm32(31), dest.high);
+  }
+}
+
+void MacroAssembler::move32SignExtendToPtr(Register src, Register dest) {
+  movl(src, dest);
 }
 
 void MacroAssembler::move32ZeroExtendToPtr(Register src, Register dest) {
@@ -99,6 +112,8 @@ void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
 
 // ===============================================================
 // Logical functions
+
+void MacroAssembler::notPtr(Register reg) { notl(reg); }
 
 void MacroAssembler::andPtr(Register src, Register dest) { andl(src, dest); }
 
@@ -250,6 +265,10 @@ void MacroAssembler::sub64(Imm64 imm, Register64 dest) {
   sbbl(imm.hi(), dest.high);
 }
 
+void MacroAssembler::mulPtr(Register rhs, Register srcDest) {
+  imull(rhs, srcDest);
+}
+
 // Note: this function clobbers eax and edx.
 void MacroAssembler::mul64(Imm64 imm, const Register64& dest) {
   // LOW32  = LOW(LOW(dest) * LOW(imm));
@@ -364,6 +383,11 @@ void MacroAssembler::lshiftPtr(Imm32 imm, Register dest) {
   shll(imm, dest);
 }
 
+void MacroAssembler::lshiftPtr(Register shift, Register srcDest) {
+  MOZ_ASSERT(shift == ecx);
+  shll_cl(srcDest);
+}
+
 void MacroAssembler::lshift64(Imm32 imm, Register64 dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 64);
   if (imm.value < 32) {
@@ -399,6 +423,11 @@ void MacroAssembler::lshift64(Register shift, Register64 srcDest) {
 void MacroAssembler::rshiftPtr(Imm32 imm, Register dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 32);
   shrl(imm, dest);
+}
+
+void MacroAssembler::rshiftPtr(Register shift, Register srcDest) {
+  MOZ_ASSERT(shift == ecx);
+  shrl_cl(srcDest);
 }
 
 void MacroAssembler::rshift64(Imm32 imm, Register64 dest) {
@@ -866,6 +895,8 @@ void MacroAssembler::branchTest64(Condition cond, Register64 lhs,
     movl(lhs.low, temp);
     orl(lhs.high, temp);
     branchTestPtr(cond, temp, temp, label);
+  } else if (cond == Assembler::Signed || cond == Assembler::NotSigned) {
+    branchTest32(cond, lhs.high, rhs.high, label);
   } else {
     MOZ_CRASH("Unsupported condition");
   }
@@ -907,6 +938,17 @@ void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,
                                   const Address& src, Register dest) {
   cmp32(lhs, rhs);
   cmovCCl(cond, Operand(src), dest);
+}
+
+void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Register rhs,
+                                   Register src, Register dest) {
+  cmp32Move32(cond, lhs, rhs, src, dest);
+}
+
+void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs,
+                                   const Address& rhs, Register src,
+                                   Register dest) {
+  cmp32Move32(cond, lhs, rhs, src, dest);
 }
 
 void MacroAssembler::test32LoadPtr(Condition cond, const Address& addr,
@@ -983,6 +1025,66 @@ void MacroAssembler::spectreBoundsCheck32(Register index, const Address& length,
   spectreBoundsCheck32(index, Operand(length), maybeScratch, failure);
 }
 
+void MacroAssembler::spectreBoundsCheckPtr(Register index, Register length,
+                                           Register maybeScratch,
+                                           Label* failure) {
+  spectreBoundsCheck32(index, length, maybeScratch, failure);
+}
+
+void MacroAssembler::spectreBoundsCheckPtr(Register index,
+                                           const Address& length,
+                                           Register maybeScratch,
+                                           Label* failure) {
+  spectreBoundsCheck32(index, length, maybeScratch, failure);
+}
+
+// ========================================================================
+// SIMD
+#ifdef ENABLE_WASM_SIMD
+void MacroAssembler::anyTrueSimd128(FloatRegister src, Register dest) {
+  Label done;
+  movl(Imm32(1), dest);
+  vptest(src, src);  // SSE4.1
+  j(NonZero, &done);
+  movl(Imm32(0), dest);
+  bind(&done);
+}
+
+void MacroAssembler::mulInt64x2(FloatRegister rhs, FloatRegister lhsDest,
+                                Register64 temp1, Register64 temp2,
+                                Register temp3) {
+  extractLaneInt64x2(0, lhsDest, temp1);
+  extractLaneInt64x2(0, rhs, temp2);
+  mul64(temp2, temp1, temp3);
+  replaceLaneInt64x2(0, temp1, lhsDest);
+  extractLaneInt64x2(1, lhsDest, temp1);
+  extractLaneInt64x2(1, rhs, temp2);
+  mul64(temp2, temp1, temp3);
+  replaceLaneInt64x2(1, temp1, lhsDest);
+}
+
+void MacroAssembler::extractLaneInt64x2(uint32_t lane, FloatRegister src,
+                                        Register64 dest) {
+  vpextrd(2 * lane, src, dest.low);
+  vpextrd(2 * lane + 1, src, dest.high);
+}
+
+void MacroAssembler::replaceLaneInt64x2(unsigned lane, Register64 rhs,
+                                        FloatRegister lhsDest) {
+  vpinsrd(2 * lane, rhs.low, lhsDest, lhsDest);
+  vpinsrd(2 * lane + 1, rhs.high, lhsDest, lhsDest);
+}
+
+void MacroAssembler::splatX2(Register64 src, FloatRegister dest) {
+  replaceLaneInt64x2(0, src, dest);
+  replaceLaneInt64x2(1, src, dest);
+}
+
+void MacroAssembler::bitwiseAndSimd128(const SimdConstant& rhs,
+                                       FloatRegister lhsDest) {
+  vpandSimd128(rhs, lhsDest);
+}
+#endif  // ENABLE_WASM_SIMD
 // ========================================================================
 // Truncate floating point.
 

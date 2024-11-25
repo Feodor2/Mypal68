@@ -7,7 +7,6 @@
 #include "builtin/streams/WritableStreamDefaultControllerOperations.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
 #include "jsapi.h"  // JS_ReportErrorASCII
 
@@ -27,7 +26,7 @@
 #include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseResolvedWithUndefined
 #include "vm/Runtime.h"        // JSAtomState
 
-#include "builtin/streams/HandlerFunction-inl.h"  // js::TargetFromHandler
+#include "builtin/HandlerFunction-inl.h"  // js::TargetFromHandler
 #include "builtin/streams/MiscellaneousOperations-inl.h"  // js::PromiseCall
 #include "builtin/streams/QueueWithSizes-inl.h"           // js::PeekQueueValue
 #include "vm/Compartment-inl.h"  // JS::Compartment::wrap
@@ -127,7 +126,7 @@ bool js::WritableStreamControllerErrorSteps(
 
 /*** 4.8. Writable stream default controller abstract operations ************/
 
-static MOZ_MUST_USE bool WritableStreamDefaultControllerAdvanceQueueIfNeeded(
+[[nodiscard]] static bool WritableStreamDefaultControllerAdvanceQueueIfNeeded(
     JSContext* cx,
     Handle<WritableStreamDefaultController*> unwrappedController);
 
@@ -229,7 +228,7 @@ bool js::WritableStreamControllerStartFailedHandler(JSContext* cx,
  * Note: All arguments must be same-compartment with cx.  WritableStream
  * controllers are always created in the same compartment as the stream.
  */
-MOZ_MUST_USE bool js::SetUpWritableStreamDefaultController(
+[[nodiscard]] bool js::SetUpWritableStreamDefaultController(
     JSContext* cx, Handle<WritableStream*> stream,
     SinkAlgorithms sinkAlgorithms, Handle<Value> underlyingSink,
     Handle<Value> writeMethod, Handle<Value> closeMethod,
@@ -347,7 +346,7 @@ MOZ_MUST_USE bool js::SetUpWritableStreamDefaultController(
  *      SetUpWritableStreamDefaultControllerFromUnderlyingSink( stream,
  *          underlyingSink, highWaterMark, sizeAlgorithm )
  */
-MOZ_MUST_USE bool js::SetUpWritableStreamDefaultControllerFromUnderlyingSink(
+[[nodiscard]] bool js::SetUpWritableStreamDefaultControllerFromUnderlyingSink(
     JSContext* cx, Handle<WritableStream*> stream, Handle<Value> underlyingSink,
     double highWaterMark, Handle<Value> sizeAlgorithm) {
   cx->check(stream);
@@ -593,7 +592,7 @@ bool js::WritableStreamDefaultControllerWrite(
       cx, unwrappedController);
 }
 
-static MOZ_MUST_USE bool WritableStreamDefaultControllerProcessIfNeeded(
+[[nodiscard]] static bool WritableStreamDefaultControllerProcessIfNeeded(
     JSContext* cx,
     Handle<WritableStreamDefaultController*> unwrappedController);
 
@@ -601,7 +600,7 @@ static MOZ_MUST_USE bool WritableStreamDefaultControllerProcessIfNeeded(
  * Streams spec, 4.8.9.
  *      WritableStreamDefaultControllerAdvanceQueueIfNeeded ( controller )
  */
-MOZ_MUST_USE bool WritableStreamDefaultControllerAdvanceQueueIfNeeded(
+[[nodiscard]] bool WritableStreamDefaultControllerAdvanceQueueIfNeeded(
     JSContext* cx,
     Handle<WritableStreamDefaultController*> unwrappedController) {
   // Step 2: If controller.[[started]] is false, return.
@@ -661,7 +660,7 @@ bool js::WritableStreamDefaultControllerErrorIfNeeded(
 
 // 4.8.11 step 5: Let sinkClosePromise be the result of performing
 //                controller.[[closeAlgorithm]].
-static MOZ_MUST_USE JSObject* PerformCloseAlgorithm(
+[[nodiscard]] static JSObject* PerformCloseAlgorithm(
     JSContext* cx,
     Handle<WritableStreamDefaultController*> unwrappedController) {
   // 4.8.3 step 5: Let closeAlgorithm be
@@ -708,7 +707,7 @@ static MOZ_MUST_USE JSObject* PerformCloseAlgorithm(
 
 // 4.8.12 step 3: Let sinkWritePromise be the result of performing
 //                controller.[[writeAlgorithm]], passing in chunk.
-static MOZ_MUST_USE JSObject* PerformWriteAlgorithm(
+[[nodiscard]] static JSObject* PerformWriteAlgorithm(
     JSContext* cx, Handle<WritableStreamDefaultController*> unwrappedController,
     Handle<Value> chunk) {
   cx->check(chunk);
@@ -767,8 +766,8 @@ static MOZ_MUST_USE JSObject* PerformWriteAlgorithm(
  * Streams spec, 4.8.11 step 7:
  * Upon fulfillment of sinkClosePromise,
  */
-static MOZ_MUST_USE bool WritableStreamCloseHandler(JSContext* cx,
-                                                    unsigned argc, Value* vp) {
+[[nodiscard]] static bool WritableStreamCloseHandler(JSContext* cx,
+                                                     unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   Rooted<WritableStream*> unwrappedStream(
@@ -787,9 +786,9 @@ static MOZ_MUST_USE bool WritableStreamCloseHandler(JSContext* cx,
  * Streams spec, 4.8.11 step 8:
  * Upon rejection of sinkClosePromise with reason reason,
  */
-static MOZ_MUST_USE bool WritableStreamCloseFailedHandler(JSContext* cx,
-                                                          unsigned argc,
-                                                          Value* vp) {
+[[nodiscard]] static bool WritableStreamCloseFailedHandler(JSContext* cx,
+                                                           unsigned argc,
+                                                           Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   Rooted<WritableStream*> unwrappedStream(
@@ -810,8 +809,8 @@ static MOZ_MUST_USE bool WritableStreamCloseFailedHandler(JSContext* cx,
  * Streams spec, 4.8.12 step 4:
  * Upon fulfillment of sinkWritePromise,
  */
-static MOZ_MUST_USE bool WritableStreamWriteHandler(JSContext* cx,
-                                                    unsigned argc, Value* vp) {
+[[nodiscard]] static bool WritableStreamWriteHandler(JSContext* cx,
+                                                     unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   Rooted<WritableStream*> unwrappedStream(
@@ -864,9 +863,9 @@ static MOZ_MUST_USE bool WritableStreamWriteHandler(JSContext* cx,
  * Streams spec, 4.8.12 step 5:
  * Upon rejection of sinkWritePromise with reason,
  */
-static MOZ_MUST_USE bool WritableStreamWriteFailedHandler(JSContext* cx,
-                                                          unsigned argc,
-                                                          Value* vp) {
+[[nodiscard]] static bool WritableStreamWriteFailedHandler(JSContext* cx,
+                                                           unsigned argc,
+                                                           Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   Rooted<WritableStream*> unwrappedStream(

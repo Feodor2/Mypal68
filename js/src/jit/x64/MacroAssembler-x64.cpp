@@ -151,6 +151,7 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail) {
   Label return_;
   Label bailout;
   Label wasm;
+  Label wasmCatch;
 
   load32(Address(rsp, offsetof(ResumeFromException, kind)), rax);
   asMasm().branch32(Assembler::Equal, rax,
@@ -166,6 +167,8 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail) {
                     Imm32(ResumeFromException::RESUME_BAILOUT), &bailout);
   asMasm().branch32(Assembler::Equal, rax,
                     Imm32(ResumeFromException::RESUME_WASM), &wasm);
+  asMasm().branch32(Assembler::Equal, rax,
+                    Imm32(ResumeFromException::RESUME_WASM_CATCH), &wasmCatch);
 
   breakpoint();  // Invalid kind.
 
@@ -236,6 +239,13 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail) {
   loadPtr(Address(rsp, offsetof(ResumeFromException, framePointer)), rbp);
   loadPtr(Address(rsp, offsetof(ResumeFromException, stackPointer)), rsp);
   masm.ret();
+
+  // Found a wasm catch handler, restore state and jump to it.
+  bind(&wasmCatch);
+  loadPtr(Address(rsp, offsetof(ResumeFromException, target)), rax);
+  loadPtr(Address(rsp, offsetof(ResumeFromException, framePointer)), rbp);
+  loadPtr(Address(rsp, offsetof(ResumeFromException, stackPointer)), rsp);
+  jmp(Operand(rax));
 }
 
 void MacroAssemblerX64::profilerEnterFrame(Register framePtr,
@@ -296,6 +306,22 @@ void MacroAssembler::subFromStackPtr(Imm32 imm32) {
       }
     }
   }
+}
+
+void MacroAssemblerX64::convertDoubleToPtr(FloatRegister src, Register dest,
+                                           Label* fail,
+                                           bool negativeZeroCheck) {
+  // Check for -0.0
+  if (negativeZeroCheck) {
+    branchNegativeZero(src, dest, fail);
+  }
+
+  ScratchDoubleScope scratch(asMasm());
+  vcvttsd2sq(src, dest);
+  asMasm().convertInt64ToDouble(Register64(dest), scratch);
+  vucomisd(scratch, src);
+  j(Assembler::Parity, fail);
+  j(Assembler::NotEqual, fail);
 }
 
 //{{{ check_macroassembler_style
@@ -464,8 +490,9 @@ void MacroAssembler::branchPtrInNurseryChunk(Condition cond, Register ptr,
 
   movePtr(ptr, scratch);
   orPtr(Imm32(gc::ChunkMask), scratch);
-  branch32(cond, Address(scratch, gc::ChunkLocationOffsetFromLastByte),
-           Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
+  branchPtr(InvertCondition(cond),
+            Address(scratch, gc::ChunkStoreBufferOffsetFromLastByte),
+            ImmWord(0), label);
 }
 
 template <typename T>
@@ -481,8 +508,9 @@ void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
 
   unboxGCThingForGCBarrier(value, temp);
   orPtr(Imm32(gc::ChunkMask), temp);
-  branch32(cond, Address(temp, gc::ChunkLocationOffsetFromLastByte),
-           Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
+  branchPtr(InvertCondition(cond),
+            Address(temp, gc::ChunkStoreBufferOffsetFromLastByte), ImmWord(0),
+            label);
 
   bind(&done);
 }
@@ -865,6 +893,10 @@ void MacroAssembler::convertUInt64ToFloat32(Register64 input,
   bind(&done);
 }
 
+void MacroAssembler::convertIntPtrToDouble(Register src, FloatRegister dest) {
+  convertInt64ToDouble(Register64(src), dest);
+}
+
 // ========================================================================
 // Primitive atomic operations.
 
@@ -939,6 +971,9 @@ static void AtomicFetchOp64(MacroAssembler& masm,
   } else {
     Label again;
     MOZ_ASSERT(output == rax);
+    MOZ_ASSERT(value != output);
+    MOZ_ASSERT(value != temp);
+    MOZ_ASSERT(temp != output);
     if (access) {
       masm.append(*access, masm.size());
     }
@@ -977,33 +1012,54 @@ void MacroAssembler::wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access,
   AtomicFetchOp64(*this, &access, op, value.reg, mem, temp.reg, output.reg);
 }
 
-void MacroAssembler::wasmAtomicEffectOp64(const wasm::MemoryAccessDesc& access,
-                                          AtomicOp op, Register64 value,
-                                          const BaseIndex& mem) {
-  append(access, size());
+template <typename T>
+static void AtomicEffectOp64(MacroAssembler& masm,
+                             const wasm::MemoryAccessDesc* access, AtomicOp op,
+                             Register value, const T& mem) {
+  if (access) {
+    masm.append(*access, masm.size());
+  }
   switch (op) {
     case AtomicFetchAddOp:
-      lock_addq(value.reg, Operand(mem));
+      masm.lock_addq(value, Operand(mem));
       break;
     case AtomicFetchSubOp:
-      lock_subq(value.reg, Operand(mem));
+      masm.lock_subq(value, Operand(mem));
       break;
     case AtomicFetchAndOp:
-      lock_andq(value.reg, Operand(mem));
+      masm.lock_andq(value, Operand(mem));
       break;
     case AtomicFetchOrOp:
-      lock_orq(value.reg, Operand(mem));
+      masm.lock_orq(value, Operand(mem));
       break;
     case AtomicFetchXorOp:
-      lock_xorq(value.reg, Operand(mem));
+      masm.lock_xorq(value, Operand(mem));
       break;
     default:
       MOZ_CRASH();
   }
 }
 
+void MacroAssembler::wasmAtomicEffectOp64(const wasm::MemoryAccessDesc& access,
+                                          AtomicOp op, Register64 value,
+                                          const BaseIndex& mem) {
+  AtomicEffectOp64(*this, &access, op, value.reg, mem);
+}
+
 void MacroAssembler::compareExchange64(const Synchronization&,
                                        const Address& mem, Register64 expected,
+                                       Register64 replacement,
+                                       Register64 output) {
+  MOZ_ASSERT(output.reg == rax);
+  if (expected != output) {
+    movq(expected.reg, output.reg);
+  }
+  lock_cmpxchgq(replacement.reg, Operand(mem));
+}
+
+void MacroAssembler::compareExchange64(const Synchronization&,
+                                       const BaseIndex& mem,
+                                       Register64 expected,
                                        Register64 replacement,
                                        Register64 output) {
   MOZ_ASSERT(output.reg == rax);
@@ -1022,10 +1078,35 @@ void MacroAssembler::atomicExchange64(const Synchronization&,
   xchgq(output.reg, Operand(mem));
 }
 
+void MacroAssembler::atomicExchange64(const Synchronization&,
+                                      const BaseIndex& mem, Register64 value,
+                                      Register64 output) {
+  if (value != output) {
+    movq(value.reg, output.reg);
+  }
+  xchgq(output.reg, Operand(mem));
+}
+
 void MacroAssembler::atomicFetchOp64(const Synchronization& sync, AtomicOp op,
                                      Register64 value, const Address& mem,
                                      Register64 temp, Register64 output) {
   AtomicFetchOp64(*this, nullptr, op, value.reg, mem, temp.reg, output.reg);
+}
+
+void MacroAssembler::atomicFetchOp64(const Synchronization& sync, AtomicOp op,
+                                     Register64 value, const BaseIndex& mem,
+                                     Register64 temp, Register64 output) {
+  AtomicFetchOp64(*this, nullptr, op, value.reg, mem, temp.reg, output.reg);
+}
+
+void MacroAssembler::atomicEffectOp64(const Synchronization& sync, AtomicOp op,
+                                      Register64 value, const Address& mem) {
+  AtomicEffectOp64(*this, nullptr, op, value.reg, mem);
+}
+
+void MacroAssembler::atomicEffectOp64(const Synchronization& sync, AtomicOp op,
+                                      Register64 value, const BaseIndex& mem) {
+  AtomicEffectOp64(*this, nullptr, op, value.reg, mem);
 }
 
 CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {

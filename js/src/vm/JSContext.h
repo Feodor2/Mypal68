@@ -28,6 +28,7 @@
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
 #include "vm/SharedStencil.h"  // js::SharedImmutableScriptDataTable
+#include "wasm/WasmContext.h"
 
 struct JS_PUBLIC_API JSContext;
 
@@ -270,9 +271,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   // Accessors for immutable runtime data.
   JSAtomState& names() { return *runtime_->commonNames; }
-  js::frontend::WellKnownParserAtoms& parserNames() {
-    return *runtime_->commonParserNames;
-  }
   js::StaticStrings& staticStrings() { return *runtime_->staticStrings; }
   js::SharedImmutableStringsCache& sharedImmutableStrings() {
     return runtime_->sharedImmutableStrings();
@@ -509,12 +507,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::ContextData<DtoaState*> dtoaState;
 
   /*
-   * When this flag is non-zero, any attempt to GC will be skipped. It is used
-   * to suppress GC when reporting an OOM (see ReportOutOfMemory) and in
-   * debugging facilities that cannot tolerate a GC and would rather OOM
-   * immediately, such as utilities exposed to GDB. Setting this flag is
-   * extremely dangerous and should only be used when in an OOM situation or
-   * in non-exposed debugging facilities.
+   * When this flag is non-zero, any attempt to GC will be skipped. See the
+   * AutoSuppressGC class for for details.
    */
   js::ContextData<int32_t> suppressGC;
 
@@ -633,10 +627,11 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void disableProfilerSampling() { suppressProfilerSampling = true; }
   void enableProfilerSampling() { suppressProfilerSampling = false; }
 
-  // Used by wasm::EnsureThreadSignalHandlers(cx) to install thread signal
-  // handlers once per JSContext/thread.
-  bool wasmTriedToInstallSignalHandlers;
-  bool wasmHaveSignalHandlers;
+ private:
+  js::wasm::Context wasm_;
+
+ public:
+  js::wasm::Context& wasm() { return wasm_; }
 
   /* Temporary arena pool used while compiling and decompiling. */
   static const size_t TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 4 * 1024;
@@ -680,6 +675,17 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // ReportOverRecursed. See Debugger::slowPathOnExceptionUnwind.
   js::ContextData<bool> overRecursed_;
 
+#ifdef DEBUG
+  // True if this context has ever called ReportOverRecursed.
+  js::ContextData<bool> hadOverRecursed_;
+
+ public:
+  bool hadNondeterministicException() const {
+    return hadOverRecursed_ || runtime()->hadOutOfMemory;
+  }
+#endif
+
+ private:
   // True if propagating a forced return from an interrupt handler during
   // debug mode.
   js::ContextData<bool> propagatingForcedReturn_;
@@ -779,8 +785,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
  public:
   bool isExceptionPending() const { return throwing; }
 
-  MOZ_MUST_USE
-  bool getPendingException(JS::MutableHandleValue rval);
+  [[nodiscard]] bool getPendingException(JS::MutableHandleValue rval);
 
   js::SavedFrame* getPendingExceptionStack();
 
@@ -1182,22 +1187,18 @@ class MOZ_RAII AutoUnsafeCallWithABI {
 
 namespace gc {
 
-// Set/unset the performing GC flag for the current thread.
+// Set/restore the performing GC flag for the current thread.
 class MOZ_RAII AutoSetThreadIsPerformingGC {
   JSContext* cx;
+  bool prev;
 
  public:
-  AutoSetThreadIsPerformingGC() : cx(TlsContext.get()) {
-    JSFreeOp* fop = cx->defaultFreeOp();
-    MOZ_ASSERT(!fop->isCollecting());
-    fop->isCollecting_ = true;
+  AutoSetThreadIsPerformingGC()
+      : cx(TlsContext.get()), prev(cx->defaultFreeOp()->isCollecting_) {
+    cx->defaultFreeOp()->isCollecting_ = true;
   }
 
-  ~AutoSetThreadIsPerformingGC() {
-    JSFreeOp* fop = cx->defaultFreeOp();
-    MOZ_ASSERT(fop->isCollecting());
-    fop->isCollecting_ = false;
-  }
+  ~AutoSetThreadIsPerformingGC() { cx->defaultFreeOp()->isCollecting_ = prev; }
 };
 
 struct MOZ_RAII AutoSetThreadGCUse {

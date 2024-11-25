@@ -41,11 +41,6 @@ class ProxyObject : public JSObject {
                           HandleValue priv, TaggedProto proto_,
                           const JSClass* clasp);
 
-  static ProxyObject* NewSingleton(JSContext* cx,
-                                   const BaseProxyHandler* handler,
-                                   HandleValue priv, TaggedProto proto_,
-                                   const JSClass* clasp);
-
   void init(const BaseProxyHandler* handler, HandleValue priv, JSContext* cx);
 
   // Proxies usually store their ProxyValueArray inline in the object.
@@ -63,8 +58,8 @@ class ProxyObject : public JSObject {
              ->reservedSlots;
   }
 
-  MOZ_MUST_USE bool initExternalValueArrayAfterSwap(JSContext* cx,
-                                                    HandleValueVector values);
+  [[nodiscard]] bool initExternalValueArrayAfterSwap(JSContext* cx,
+                                                     HandleValueVector values);
 
   const Value& private_() const { return GetProxyPrivate(this); }
   const Value& expando() const { return GetProxyExpando(this); }
@@ -125,7 +120,7 @@ class ProxyObject : public JSObject {
 
     // Proxy classes are not allowed to have call or construct hooks directly.
     // Their callability is instead decided by handler()->isCallable().
-    return clasp->isProxy() && clasp->isTrace(ProxyObject::trace) &&
+    return clasp->isProxyObject() && clasp->isTrace(ProxyObject::trace) &&
            !clasp->getCall() && !clasp->getConstruct();
   }
 
@@ -140,8 +135,6 @@ class ProxyObject : public JSObject {
 
   void nuke();
 };
-
-inline bool IsProxyClass(const JSClass* clasp) { return clasp->isProxy(); }
 
 bool IsDerivedProxyObject(const JSObject* obj,
                           const js::BaseProxyHandler* handler);

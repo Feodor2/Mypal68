@@ -20,6 +20,7 @@ static const size_t MaxInstructionSize = 16;
 // Operand size/types as listed in the Appendix A.2.  Tables of the instructions
 // and their operands can be found in the Appendix A.3.
 //
+// B = reg (VEX.vvvv of VEX prefix)
 // E = reg/mem
 // G = reg (reg field of ModR/M)
 // U = xmm (R/M field of ModR/M)
@@ -37,6 +38,7 @@ static const size_t MaxInstructionSize = 16;
 // ps = packed float 32 (xmm)
 // sd = scalar double (xmm)
 // pd = packed double (xmm)
+// y = 32/64-bit
 // z = 16/32/64-bit
 // vqp = (*)
 //
@@ -246,7 +248,9 @@ enum TwoByteOpcodeID {
   OP2_CMPXCHG_GvEw = 0xB1,
   OP2_POPCNT_GvEv = 0xB8,
   OP2_BSF_GvEv = 0xBC,
+  OP2_TZCNT_GvEv = 0xBC,
   OP2_BSR_GvEv = 0xBD,
+  OP2_LZCNT_GvEv = 0xBD,
   OP2_MOVSX_GvEb = 0xBE,
   OP2_MOVSX_GvEw = 0xBF,
   OP2_MOVZX_GvEb = 0xB6,
@@ -302,7 +306,10 @@ enum ThreeByteOpcodeID {
   OP3_INSERTPS_VpsUps = 0x21,
   OP3_PINSRD_VdqEdIb = 0x22,
   OP3_PMULLD_VdqWdq = 0x40,
-  OP3_VBLENDVPS_VdqWdq = 0x4A
+  OP3_VBLENDVPS_VdqWdq = 0x4A,
+  OP3_SHLX_GyEyBy = 0xF7,
+  OP3_SARX_GyEyBy = 0xF7,
+  OP3_SHRX_GyEyBy = 0xF7,
 };
 
 // Test whether the given opcode should be printed with its operands reversed.

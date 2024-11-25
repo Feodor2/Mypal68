@@ -1693,7 +1693,7 @@ static nsresult AssembleSandboxMemoryReporterName(JSContext* cx,
                                                   nsCString& sandboxName) {
   // Use a default name when the caller did not provide a sandboxName.
   if (sandboxName.IsEmpty()) {
-    sandboxName = NS_LITERAL_CSTRING("[anonymous sandbox]");
+    sandboxName = "[anonymous sandbox]"_ns;
   } else {
 #ifndef DEBUG
     // Adding the caller location is fairly expensive, so in non-debug

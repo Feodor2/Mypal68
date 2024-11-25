@@ -57,17 +57,6 @@ void LIRGenerator::visitBox(MBox* box) {
 
 void LIRGenerator::visitUnbox(MUnbox* unbox) {
   MDefinition* box = unbox->getOperand(0);
-
-  if (box->type() == MIRType::ObjectOrNull) {
-    LUnboxObjectOrNull* lir =
-        new (alloc()) LUnboxObjectOrNull(useRegisterAtStart(box));
-    if (unbox->fallible()) {
-      assignSnapshot(lir, unbox->bailoutKind());
-    }
-    defineReuseInput(lir, unbox, 0);
-    return;
-  }
-
   MOZ_ASSERT(box->type() == MIRType::Value);
 
   LUnboxBase* lir;
@@ -92,11 +81,10 @@ void LIRGenerator::visitUnbox(MUnbox* unbox) {
   define(lir, unbox);
 }
 
-void LIRGenerator::visitReturn(MReturn* ret) {
-  MDefinition* opd = ret->getOperand(0);
+void LIRGenerator::visitReturnImpl(MDefinition* opd, bool isGenerator) {
   MOZ_ASSERT(opd->type() == MIRType::Value);
 
-  LReturn* ins = new (alloc()) LReturn;
+  LReturn* ins = new (alloc()) LReturn(isGenerator);
   ins->setOperand(0, useFixed(opd, JSReturnReg));
   add(ins);
 }
@@ -334,6 +322,34 @@ void LIRGeneratorARM64::lowerPowOfTwoI(MPow* mir) {
   define(lir, mir);
 }
 
+void LIRGeneratorARM64::lowerBigIntLsh(MBigIntLsh* ins) {
+  auto* lir = new (alloc()) LBigIntLsh(
+      useRegister(ins->lhs()), useRegister(ins->rhs()), temp(), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorARM64::lowerBigIntRsh(MBigIntRsh* ins) {
+  auto* lir = new (alloc()) LBigIntRsh(
+      useRegister(ins->lhs()), useRegister(ins->rhs()), temp(), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorARM64::lowerBigIntDiv(MBigIntDiv* ins) {
+  auto* lir = new (alloc()) LBigIntDiv(useRegister(ins->lhs()),
+                                       useRegister(ins->rhs()), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorARM64::lowerBigIntMod(MBigIntMod* ins) {
+  auto* lir = new (alloc()) LBigIntMod(useRegister(ins->lhs()),
+                                       useRegister(ins->rhs()), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
 void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
   switch (ins->type()) {
     case MIRType::Int32:
@@ -447,12 +463,44 @@ void LIRGenerator::visitAtomicTypedArrayElementBinop(
   MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
 
   LAllocation value = useRegister(ins->value());
+
+  if (Scalar::isBigIntType(ins->arrayType())) {
+    LInt64Definition temp1 = tempInt64();
+    LInt64Definition temp2 = tempInt64();
+
+    // Case 1: the result of the operation is not used.
+    //
+    // We can omit allocating the result BigInt.
+
+    if (ins->isForEffect()) {
+      auto* lir = new (alloc()) LAtomicTypedArrayElementBinopForEffect64(
+          elements, index, value, temp1, temp2);
+      add(lir, ins);
+      return;
+    }
+
+    // Case 2: the result of the operation is used.
+
+    auto* lir = new (alloc())
+        LAtomicTypedArrayElementBinop64(elements, index, value, temp1, temp2);
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+    return;
+  }
+
+  if (ins->isForEffect()) {
+    auto* lir = new (alloc())
+        LAtomicTypedArrayElementBinopForEffect(elements, index, value, temp());
+    add(lir, ins);
+    return;
+  }
 
   LDefinition tempDef1 = temp();
   LDefinition tempDef2 = LDefinition::BogusTemp();
@@ -472,16 +520,28 @@ void LIRGenerator::visitCompareExchangeTypedArrayElement(
   MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
-
-  // If the target is an FPReg then we need a temporary at the CodeGenerator
-  // level for creating the result.
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
 
   const LAllocation newval = useRegister(ins->newval());
   const LAllocation oldval = useRegister(ins->oldval());
+
+  if (Scalar::isBigIntType(ins->arrayType())) {
+    LInt64Definition temp1 = tempInt64();
+    LInt64Definition temp2 = tempInt64();
+
+    auto* lir = new (alloc()) LCompareExchangeTypedArrayElement64(
+        elements, index, oldval, newval, temp1, temp2);
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+    return;
+  }
+
+  // If the target is an FPReg then we need a temporary at the CodeGenerator
+  // level for creating the result.
 
   LDefinition outTemp = LDefinition::BogusTemp();
   if (ins->arrayType() == Scalar::Uint32) {
@@ -497,14 +557,27 @@ void LIRGenerator::visitCompareExchangeTypedArrayElement(
 
 void LIRGenerator::visitAtomicExchangeTypedArrayElement(
     MAtomicExchangeTypedArrayElement* ins) {
-  MOZ_ASSERT(ins->arrayType() <= Scalar::Uint32);
-
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
+
   const LAllocation value = useRegister(ins->value());
+
+  if (Scalar::isBigIntType(ins->arrayType())) {
+    LInt64Definition temp1 = tempInt64();
+    LDefinition temp2 = temp();
+
+    auto* lir = new (alloc()) LAtomicExchangeTypedArrayElement64(
+        elements, index, value, temp1, temp2);
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+    return;
+  }
+
+  MOZ_ASSERT(ins->arrayType() <= Scalar::Uint32);
 
   LDefinition tempDef = LDefinition::BogusTemp();
   if (ins->arrayType() == Scalar::Uint32) {
@@ -515,6 +588,25 @@ void LIRGenerator::visitAtomicExchangeTypedArrayElement(
       LAtomicExchangeTypedArrayElement(elements, index, value, tempDef);
 
   define(lir, ins);
+}
+
+void LIRGeneratorARM64::lowerAtomicLoad64(MLoadUnboxedScalar* ins) {
+  const LUse elements = useRegister(ins->elements());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->storageType());
+
+  auto* lir = new (alloc()) LAtomicLoad64(elements, index, temp(), tempInt64());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorARM64::lowerAtomicStore64(MStoreUnboxedScalar* ins) {
+  LUse elements = useRegister(ins->elements());
+  LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->writeType());
+  LAllocation value = useRegister(ins->value());
+
+  add(new (alloc()) LAtomicStore64(elements, index, value, tempInt64()), ins);
 }
 
 void LIRGenerator::visitSubstr(MSubstr* ins) {

@@ -36,18 +36,21 @@ void SafepointWriter::writeOsiCallPointOffset(uint32_t osiCallPointOffset) {
   stream_.writeUnsigned(osiCallPointOffset);
 }
 
-static void WriteRegisterMask(CompactBufferWriter& stream, uint32_t bits) {
+static void WriteRegisterMask(CompactBufferWriter& stream,
+                              PackedRegisterMask bits) {
   if (sizeof(PackedRegisterMask) == 1) {
     stream.writeByte(bits);
   } else {
+    MOZ_ASSERT(sizeof(PackedRegisterMask) <= 4);
     stream.writeUnsigned(bits);
   }
 }
 
-static int32_t ReadRegisterMask(CompactBufferReader& stream) {
+static PackedRegisterMask ReadRegisterMask(CompactBufferReader& stream) {
   if (sizeof(PackedRegisterMask) == 1) {
     return stream.readByte();
   }
+  MOZ_ASSERT(sizeof(PackedRegisterMask) <= 4);
   return stream.readUnsigned();
 }
 
@@ -171,17 +174,19 @@ void SafepointWriter::writeSlotsOrElementsSlots(LSafepoint* safepoint) {
   }
 }
 
+#ifdef JS_PUNBOX64
 void SafepointWriter::writeValueSlots(LSafepoint* safepoint) {
   LSafepoint::SlotList& slots = safepoint->valueSlots();
 
-#ifdef JS_JITSPEW
+#  ifdef JS_JITSPEW
   for (uint32_t i = 0; i < slots.length(); i++) {
     JitSpew(JitSpew_Safepoints, "    gc value: %u", slots[i].slot);
   }
-#endif
+#  endif
 
   MapSlotsToBitset(frameSlots_, argumentSlots_, stream_, slots);
 }
+#endif
 
 #if defined(JS_JITSPEW) && defined(JS_NUNBOX32)
 static void DumpNunboxPart(const LAllocation& a) {
@@ -351,9 +356,10 @@ void SafepointWriter::encode(LSafepoint* safepoint) {
   writeOsiCallPointOffset(safepoint->osiCallPointOffset());
   writeGcRegs(safepoint);
   writeGcSlots(safepoint);
-  writeValueSlots(safepoint);
 
-#ifdef JS_NUNBOX32
+#ifdef JS_PUNBOX64
+  writeValueSlots(safepoint);
+#else
   writeNunboxParts(safepoint);
 #endif
 
@@ -459,23 +465,20 @@ void SafepointReader::advanceFromGcSlots() {
   currentSlotChunk_ = 0;
   nextSlotChunkNumber_ = 0;
   currentSlotsAreStack_ = true;
+#ifdef JS_NUNBOX32
+  // Nunbox slots are next.
+  nunboxSlotsRemaining_ = stream_.readUnsigned();
+#else
+  // Value slots are next.
+#endif
 }
 
 bool SafepointReader::getValueSlot(SafepointSlotEntry* entry) {
   if (getSlotFromBitmap(entry)) {
     return true;
   }
-  advanceFromValueSlots();
+  advanceFromNunboxOrValueSlots();
   return false;
-}
-
-void SafepointReader::advanceFromValueSlots() {
-#ifdef JS_NUNBOX32
-  nunboxSlotsRemaining_ = stream_.readUnsigned();
-#else
-  nunboxSlotsRemaining_ = 0;
-  advanceFromNunboxSlots();
-#endif
 }
 
 static inline LAllocation PartFromStream(CompactBufferReader& stream,
@@ -498,7 +501,7 @@ static inline LAllocation PartFromStream(CompactBufferReader& stream,
 
 bool SafepointReader::getNunboxSlot(LAllocation* type, LAllocation* payload) {
   if (!nunboxSlotsRemaining_--) {
-    advanceFromNunboxSlots();
+    advanceFromNunboxOrValueSlots();
     return false;
   }
 
@@ -515,7 +518,7 @@ bool SafepointReader::getNunboxSlot(LAllocation* type, LAllocation* payload) {
   return true;
 }
 
-void SafepointReader::advanceFromNunboxSlots() {
+void SafepointReader::advanceFromNunboxOrValueSlots() {
   slotsOrElementsSlotsRemaining_ = stream_.readUnsigned();
 }
 

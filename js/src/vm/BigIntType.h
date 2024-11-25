@@ -237,8 +237,10 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   void dump(js::GenericPrinter& out) const;
 #endif
 
- private:
+ public:
   static constexpr size_t DigitBits = sizeof(Digit) * CHAR_BIT;
+
+ private:
   static constexpr size_t HalfDigitBits = DigitBits / 2;
   static constexpr Digit HalfDigitMask = (1ull << HalfDigitBits) - 1;
 
@@ -264,10 +266,10 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
   static size_t calculateMaximumCharactersRequired(HandleBigInt x,
                                                    unsigned radix);
-  static MOZ_MUST_USE bool calculateMaximumDigitsRequired(JSContext* cx,
-                                                          uint8_t radix,
-                                                          size_t charCount,
-                                                          size_t* result);
+  [[nodiscard]] static bool calculateMaximumDigitsRequired(JSContext* cx,
+                                                           uint8_t radix,
+                                                           size_t charCount,
+                                                           size_t* result);
 
   static bool absoluteDivWithDigitDivisor(
       JSContext* cx, Handle<BigInt*> x, Digit divisor,
@@ -409,13 +411,16 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   BigInt(const BigInt& other) = delete;
   void operator=(const BigInt& other) = delete;
 
+ public:
+  static constexpr size_t offsetOfFlags() { return offsetOfHeaderFlags(); }
+  static constexpr size_t offsetOfLength() { return offsetOfHeaderLength(); }
+
+  static constexpr size_t signBitMask() { return SignBit; }
+
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler to
   // call the methods below.
   friend class js::jit::MacroAssembler;
-
-  static constexpr size_t offsetOfFlags() { return offsetOfHeaderFlags(); }
-  static constexpr size_t offsetOfLength() { return offsetOfHeaderLength(); }
 
   static size_t offsetOfInlineDigits() {
     return offsetof(BigInt, inlineDigits_);
@@ -424,8 +429,6 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   static size_t offsetOfHeapDigits() { return offsetof(BigInt, heapDigits_); }
 
   static constexpr size_t inlineDigitsLength() { return InlineDigitsLength; }
-
-  static constexpr size_t signBitMask() { return SignBit; }
 
  private:
   friend class js::TenuringTracer;

@@ -52,8 +52,8 @@ enum Stat {
   // Number of strings tenured.
   STAT_STRINGS_TENURED,
 
-  // Number of object types pretenured this minor GC.
-  STAT_OBJECT_GROUPS_PRETENURED,
+  // Number of strings deduplicated.
+  STAT_STRINGS_DEDUPLICATED,
 
   // Number of realms that had nursery strings disabled due to large numbers
   // being tenured.
@@ -143,10 +143,12 @@ struct Statistics {
   using TimeDuration = mozilla::TimeDuration;
   using TimeStamp = mozilla::TimeStamp;
 
-  // Create a convenient type for referring to tables of phase times.
-  using PhaseTimeTable = EnumeratedArray<Phase, Phase::LIMIT, TimeDuration>;
+  // Create types for tables of times, by phase and phase kind.
+  using PhaseTimes = EnumeratedArray<Phase, Phase::LIMIT, TimeDuration>;
+  using PhaseKindTimes =
+      EnumeratedArray<PhaseKind, PhaseKind::LIMIT, TimeDuration>;
 
-  static MOZ_MUST_USE bool initialize();
+  [[nodiscard]] static bool initialize();
 
   explicit Statistics(gc::GCRuntime* gc);
   ~Statistics();
@@ -174,11 +176,11 @@ struct Statistics {
   void resumePhases();
 
   void beginSlice(const ZoneGCStats& zoneStats, JSGCInvocationKind gckind,
-                  SliceBudget budget, JS::GCReason reason);
+                  const SliceBudget& budget, JS::GCReason reason);
   void endSlice();
 
-  MOZ_MUST_USE bool startTimingMutator();
-  MOZ_MUST_USE bool stopTimingMutator(double& mutator_ms, double& gc_ms);
+  [[nodiscard]] bool startTimingMutator();
+  [[nodiscard]] bool stopTimingMutator(double& mutator_ms, double& gc_ms);
 
   // Note when we sweep a zone or compartment.
   void sweptZone() { ++zoneStats.sweptZoneCount; }
@@ -194,7 +196,7 @@ struct Statistics {
   void nonincremental(GCAbortReason reason) {
     MOZ_ASSERT(reason != GCAbortReason::None);
     nonincrementalReason_ = reason;
-    writeLogMessage("Non-incremental reason: %s", nonincrementalReason());
+    log("Non-incremental reason: %s", nonincrementalReason());
   }
 
   bool nonincremental() const {
@@ -255,7 +257,7 @@ struct Statistics {
   static const size_t MAX_SUSPENDED_PHASES = MAX_PHASE_NESTING * 3;
 
   struct SliceData {
-    SliceData(SliceBudget budget, mozilla::Maybe<Trigger> trigger,
+    SliceData(const SliceBudget& budget, mozilla::Maybe<Trigger> trigger,
               JS::GCReason reason, TimeStamp start, size_t startFaults,
               gc::State initialState);
 
@@ -269,8 +271,8 @@ struct Statistics {
     TimeStamp end;
     size_t startFaults = 0;
     size_t endFaults = 0;
-    PhaseTimeTable phaseTimes;
-    PhaseTimeTable maxParallelTimes;
+    PhaseTimes phaseTimes;
+    PhaseKindTimes maxParallelTimes;
 
     TimeDuration duration() const { return end - start; }
     bool wasReset() const { return resetReason != GCAbortReason::None; }
@@ -283,6 +285,8 @@ struct Statistics {
   TimeStamp start() const { return slices_[0].start; }
 
   TimeStamp end() const { return slices_.back().end; }
+
+  TimeStamp creationTime() const { return creationTime_; }
 
   // Occasionally print header lines for profiling information.
   void maybePrintProfileHeaders();
@@ -307,9 +311,9 @@ struct Statistics {
 
 #ifdef DEBUG
   // Print a logging message.
-  void writeLogMessage(const char* fmt, ...);
+  void log(const char* fmt, ...);
 #else
-  void writeLogMessage(const char* fmt, ...){};
+  void log(const char* fmt, ...){};
 #endif
 
  private:
@@ -337,12 +341,14 @@ struct Statistics {
   EnumeratedArray<Phase, Phase::LIMIT, TimeStamp> phaseEndTimes;
 #endif
 
+  TimeStamp creationTime_;
+
   /* Bookkeeping for GC timings when timingMutator is true */
   TimeStamp timedGCStart;
   TimeDuration timedGCTime;
 
   /* Total time in a given phase for this GC. */
-  PhaseTimeTable phaseTimes;
+  PhaseTimes phaseTimes;
 
   /* Number of events of this type for this GC. */
   EnumeratedArray<Count, COUNT_LIMIT,
@@ -437,22 +443,18 @@ struct Statistics {
   void sccDurations(TimeDuration* total, TimeDuration* maxPause) const;
   void printStats();
 
-  void reportLongestPhaseInMajorGC(PhaseKind longest, int telemetryId);
-
-  UniqueChars formatCompactSlicePhaseTimes(
-      const PhaseTimeTable& phaseTimes) const;
+  UniqueChars formatCompactSlicePhaseTimes(const PhaseTimes& phaseTimes) const;
 
   UniqueChars formatDetailedDescription() const;
   UniqueChars formatDetailedSliceDescription(unsigned i,
                                              const SliceData& slice) const;
-  UniqueChars formatDetailedPhaseTimes(const PhaseTimeTable& phaseTimes) const;
+  UniqueChars formatDetailedPhaseTimes(const PhaseTimes& phaseTimes) const;
   UniqueChars formatDetailedTotals() const;
 
   void formatJsonDescription(JSONPrinter&) const;
   void formatJsonSliceDescription(unsigned i, const SliceData& slice,
                                   JSONPrinter&) const;
-  void formatJsonPhaseTimes(const PhaseTimeTable& phaseTimes,
-                            JSONPrinter&) const;
+  void formatJsonPhaseTimes(const PhaseTimes& phaseTimes, JSONPrinter&) const;
   void formatJsonSlice(size_t sliceNum, JSONPrinter&) const;
 
   double computeMMU(TimeDuration resolution) const;
@@ -463,7 +465,7 @@ struct Statistics {
 
 struct MOZ_RAII AutoGCSlice {
   AutoGCSlice(Statistics& stats, const ZoneGCStats& zoneStats,
-              JSGCInvocationKind gckind, SliceBudget budget,
+              JSGCInvocationKind gckind, const SliceBudget& budget,
               JS::GCReason reason)
       : stats(stats) {
     stats.beginSlice(zoneStats, gckind, budget, reason);
@@ -509,6 +511,53 @@ struct MOZ_RAII AutoSCC {
 };
 
 } /* namespace gcstats */
+
+struct StringStats {
+  // number of strings that were deduplicated, and their sizes in characters
+  // and bytes
+  uint64_t deduplicatedStrings = 0;
+  uint64_t deduplicatedChars = 0;
+  uint64_t deduplicatedBytes = 0;
+
+  // number of live nursery strings at the start of a nursery collection
+  uint64_t liveNurseryStrings = 0;
+
+  // number of new strings added to the tenured heap
+  uint64_t tenuredStrings = 0;
+
+  // Currently, liveNurseryStrings = tenuredStrings + deduplicatedStrings (but
+  // in the future we may do more transformation during tenuring, eg
+  // atomizing.)
+
+  // number of malloced bytes associated with tenured strings (the actual
+  // malloc will have happened when the strings were allocated in the nursery;
+  // the ownership of the bytes will be transferred to the tenured strings)
+  uint64_t tenuredBytes = 0;
+
+  StringStats& operator+=(const StringStats& other) {
+    deduplicatedStrings += other.deduplicatedStrings;
+    deduplicatedChars += other.deduplicatedChars;
+    deduplicatedBytes += other.deduplicatedBytes;
+    liveNurseryStrings += other.liveNurseryStrings;
+    tenuredStrings += other.tenuredStrings;
+    tenuredBytes += other.tenuredBytes;
+    return *this;
+  }
+
+  void noteTenured(size_t mallocBytes) {
+    liveNurseryStrings++;
+    tenuredStrings++;
+    tenuredBytes += mallocBytes;
+  }
+
+  void noteDeduplicated(size_t numChars, size_t mallocBytes) {
+    liveNurseryStrings++;
+    deduplicatedStrings++;
+    deduplicatedChars += numChars;
+    deduplicatedBytes += mallocBytes;
+  }
+};
+
 } /* namespace js */
 
 #endif /* gc_Statistics_h */

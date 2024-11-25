@@ -875,44 +875,44 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   // Extended unboxing API. If the payload is already in a register, returns
   // that register. Otherwise, provides a move to the given scratch register,
   // and returns that.
-  MOZ_MUST_USE Register extractObject(const Address& address,
-                                      Register scratch) {
+  [[nodiscard]] Register extractObject(const Address& address,
+                                       Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxObject(address, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractObject(const ValueOperand& value,
-                                      Register scratch) {
+  [[nodiscard]] Register extractObject(const ValueOperand& value,
+                                       Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxObject(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractSymbol(const ValueOperand& value,
-                                      Register scratch) {
+  [[nodiscard]] Register extractSymbol(const ValueOperand& value,
+                                       Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxSymbol(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractInt32(const ValueOperand& value,
-                                     Register scratch) {
+  [[nodiscard]] Register extractInt32(const ValueOperand& value,
+                                      Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxInt32(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractBoolean(const ValueOperand& value,
-                                       Register scratch) {
+  [[nodiscard]] Register extractBoolean(const ValueOperand& value,
+                                        Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxBoolean(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractTag(const Address& address, Register scratch) {
+  [[nodiscard]] Register extractTag(const Address& address, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     loadPtr(address, scratch);
     splitTag(scratch, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractTag(const ValueOperand& value,
-                                   Register scratch) {
+  [[nodiscard]] Register extractTag(const ValueOperand& value,
+                                    Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     splitTag(value, scratch);
     return scratch;
@@ -976,8 +976,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void loadUnboxedValue(const T& src, MIRType type, AnyRegister dest) {
     if (dest.isFloat()) {
       loadInt32OrDouble(src, dest.fpu());
-    } else if (type == MIRType::ObjectOrNull) {
-      unboxObjectOrNull(src, dest.gpr());
     } else {
       unboxNonDouble(Operand(src), dest.gpr(), ValueTypeFromMIRType(type));
     }
@@ -1014,6 +1012,12 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void loadInstructionPointerAfterCall(Register dest) {
     loadPtr(Address(StackPointer, 0x0), dest);
   }
+
+  // Checks whether a double is representable as a 64-bit integer. If so, the
+  // integer is written to the output register. Otherwise, a bailout is taken to
+  // the given snapshot. This function overwrites the scratch float register.
+  void convertDoubleToPtr(FloatRegister src, Register dest, Label* fail,
+                          bool negativeZeroCheck = true);
 
   void convertUInt32ToDouble(Register src, FloatRegister dest) {
     // Zero the output register to break dependencies, see convertInt32ToDouble.

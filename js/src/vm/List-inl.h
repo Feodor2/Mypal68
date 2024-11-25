@@ -8,7 +8,6 @@
 #include "vm/List.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
 #include <stdint.h>  // uint32_t
 
@@ -33,9 +32,7 @@ inline bool js::ListObject::append(JSContext* cx, JS::Handle<JS::Value> value) {
     return false;
   }
 
-  // Note: we can use setDenseElement instead of setDenseElementWithType because
-  // ListObject::create gave the object unknown properties.
-  ensureDenseInitializedLength(cx, len, 1);
+  ensureDenseInitializedLength(len, 1);
   setDenseElement(len, value);
   return true;
 }
@@ -49,9 +46,7 @@ inline bool js::ListObject::appendValueAndSize(JSContext* cx,
     return false;
   }
 
-  // Note: we can use setDenseElement instead of setDenseElementWithType because
-  // ListObject::create gave the object unknown properties.
-  ensureDenseInitializedLength(cx, len, 2);
+  ensureDenseInitializedLength(len, 2);
   setDenseElement(len, value);
   setDenseElement(len + 1, JS::DoubleValue(size));
   return true;
@@ -96,9 +91,9 @@ namespace js {
 /**
  * Stores an empty ListObject in the given fixed slot of |obj|.
  */
-inline MOZ_MUST_USE bool StoreNewListInFixedSlot(JSContext* cx,
-                                                 JS::Handle<NativeObject*> obj,
-                                                 uint32_t slot) {
+[[nodiscard]] inline bool StoreNewListInFixedSlot(JSContext* cx,
+                                                  JS::Handle<NativeObject*> obj,
+                                                  uint32_t slot) {
   AutoRealm ar(cx, obj);
   ListObject* list = ListObject::create(cx);
   if (!list) {
@@ -113,7 +108,7 @@ inline MOZ_MUST_USE bool StoreNewListInFixedSlot(JSContext* cx,
  * Given an object |obj| whose fixed slot |slot| contains a ListObject, append
  * |toAppend| to that list.
  */
-inline MOZ_MUST_USE bool AppendToListInFixedSlot(
+[[nodiscard]] inline bool AppendToListInFixedSlot(
     JSContext* cx, JS::Handle<NativeObject*> obj, uint32_t slot,
     JS::Handle<JSObject*> toAppend) {
   JS::Rooted<ListObject*> list(

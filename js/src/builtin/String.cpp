@@ -4,7 +4,6 @@
 
 #include "builtin/String.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
@@ -57,7 +56,8 @@
 #include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/SelfHosting.h"
-#include "vm/ToSource.h"  // js::ValueToSource
+#include "vm/ToSource.h"       // js::ValueToSource
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/InlineCharBuffer-inl.h"
 #include "vm/Interpreter-inl.h"
@@ -1998,7 +1998,7 @@ class StringSegmentRange {
   explicit StringSegmentRange(JSContext* cx)
       : stack(cx, StackVector(cx)), cur(cx) {}
 
-  MOZ_MUST_USE bool init(JSString* str) {
+  [[nodiscard]] bool init(JSString* str) {
     MOZ_ASSERT(stack.empty());
     return settle(str);
   }
@@ -2010,7 +2010,7 @@ class StringSegmentRange {
     return cur;
   }
 
-  MOZ_MUST_USE bool popFront() {
+  [[nodiscard]] bool popFront() {
     MOZ_ASSERT(!empty());
     if (stack.empty()) {
       cur = nullptr;
@@ -3296,21 +3296,9 @@ JSString* js::str_replaceAll_string_raw(JSContext* cx, HandleString string,
   return ReplaceAll<Latin1Char, Latin1Char>(cx, str, search, repl);
 }
 
-static ArrayObject* NewFullyAllocatedStringArray(JSContext* cx,
-                                                 HandleObjectGroup group,
-                                                 uint32_t length) {
-  ArrayObject* array = NewFullyAllocatedArrayTryUseGroup(cx, group, length);
-  if (!array) {
-    return nullptr;
-  }
-
-  return array;
-}
-
 static ArrayObject* SingleElementStringArray(JSContext* cx,
-                                             HandleObjectGroup group,
                                              HandleLinearString str) {
-  ArrayObject* array = NewFullyAllocatedStringArray(cx, group, 1);
+  ArrayObject* array = NewDenseFullyAllocatedArray(cx, 1);
   if (!array) {
     return nullptr;
   }
@@ -3321,8 +3309,7 @@ static ArrayObject* SingleElementStringArray(JSContext* cx,
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.
 static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
-                                uint32_t limit, HandleLinearString sep,
-                                HandleObjectGroup group) {
+                                uint32_t limit, HandleLinearString sep) {
   size_t strLength = str->length();
   size_t sepLength = sep->length();
   MOZ_ASSERT(sepLength != 0);
@@ -3334,11 +3321,11 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
 
     // Step 12.b.
     if (match != -1) {
-      return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
+      return NewDenseEmptyArray(cx);
     }
 
     // Steps 12.c-e.
-    return SingleElementStringArray(cx, group, str);
+    return SingleElementStringArray(cx, str);
   }
 
   // Step 3 (reordered).
@@ -3397,8 +3384,7 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
 
     // Step 14.c.ii.5.
     if (splits.length() == limit) {
-      return NewCopiedArrayTryUseGroup(cx, group, splits.begin(),
-                                       splits.length());
+      return NewDenseCopiedArray(cx, splits.length(), splits.begin());
     }
 
     // Step 14.c.ii.6.
@@ -3418,15 +3404,15 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
   }
 
   // Step 18.
-  return NewCopiedArrayTryUseGroup(cx, group, splits.begin(), splits.length());
+  return NewDenseCopiedArray(cx, splits.length(), splits.begin());
 }
 
 // Fast-path for splitting a string into a character array via split("").
 static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
-                                    uint32_t limit, HandleObjectGroup group) {
+                                    uint32_t limit) {
   size_t strLength = str->length();
   if (strLength == 0) {
-    return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
+    return NewDenseEmptyArray(cx);
   }
 
   js::StaticStrings& staticStrings = cx->staticStrings();
@@ -3435,8 +3421,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
              "Neither limit nor strLength is zero, so resultlen is greater "
              "than zero.");
 
-  RootedArrayObject splits(cx,
-                           NewFullyAllocatedStringArray(cx, group, resultlen));
+  RootedArrayObject splits(cx, NewDenseFullyAllocatedArray(cx, resultlen));
   if (!splits) {
     return nullptr;
   }
@@ -3452,7 +3437,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
       splits->initDenseElement(i, StringValue(staticStrings.getUnit(c)));
     }
   } else {
-    splits->ensureDenseInitializedLength(cx, 0, resultlen);
+    splits->ensureDenseInitializedLength(0, resultlen);
 
     for (size_t i = 0; i < resultlen; ++i) {
       JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
@@ -3469,7 +3454,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
 template <typename TextChar>
 static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
     JSContext* cx, HandleLinearString str, const TextChar* text,
-    uint32_t textLen, char16_t patCh, HandleObjectGroup group) {
+    uint32_t textLen, char16_t patCh) {
   // Count the number of occurrences of patCh within text.
   uint32_t count = 0;
   for (size_t index = 0; index < textLen; index++) {
@@ -3480,16 +3465,15 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
 
   // Handle zero-occurrence case - return input string in an array.
   if (count == 0) {
-    return SingleElementStringArray(cx, group, str);
+    return SingleElementStringArray(cx, str);
   }
 
   // Create the result array for the substring values.
-  RootedArrayObject splits(cx,
-                           NewFullyAllocatedStringArray(cx, group, count + 1));
+  RootedArrayObject splits(cx, NewDenseFullyAllocatedArray(cx, count + 1));
   if (!splits) {
     return nullptr;
   }
-  splits->ensureDenseInitializedLength(cx, 0, count + 1);
+  splits->ensureDenseInitializedLength(0, count + 1);
 
   // Add substrings.
   uint32_t splitsIndex = 0;
@@ -3519,8 +3503,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.
 static ArrayObject* SplitSingleCharHelper(JSContext* cx, HandleLinearString str,
-                                          char16_t ch,
-                                          HandleObjectGroup group) {
+                                          char16_t ch) {
   // Step 12.
   size_t strLength = str->length();
 
@@ -3531,17 +3514,16 @@ static ArrayObject* SplitSingleCharHelper(JSContext* cx, HandleLinearString str,
 
   if (linearChars.isLatin1()) {
     return SplitSingleCharHelper(cx, str, linearChars.latin1Chars(), strLength,
-                                 ch, group);
+                                 ch);
   }
 
   return SplitSingleCharHelper(cx, str, linearChars.twoByteChars(), strLength,
-                               ch, group);
+                               ch);
 }
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.
-ArrayObject* js::StringSplitString(JSContext* cx, HandleObjectGroup group,
-                                   HandleString str, HandleString sep,
-                                   uint32_t limit) {
+ArrayObject* js::StringSplitString(JSContext* cx, HandleString str,
+                                   HandleString sep, uint32_t limit) {
   MOZ_ASSERT(limit > 0, "Only called for strictly positive limit.");
 
   RootedLinearString linearStr(cx, str->ensureLinear(cx));
@@ -3555,15 +3537,15 @@ ArrayObject* js::StringSplitString(JSContext* cx, HandleObjectGroup group,
   }
 
   if (linearSep->length() == 0) {
-    return CharSplitHelper(cx, linearStr, limit, group);
+    return CharSplitHelper(cx, linearStr, limit);
   }
 
   if (linearSep->length() == 1 && limit >= static_cast<uint32_t>(INT32_MAX)) {
     char16_t ch = linearSep->latin1OrTwoByteChar(0);
-    return SplitSingleCharHelper(cx, linearStr, ch, group);
+    return SplitSingleCharHelper(cx, linearStr, ch);
   }
 
-  return SplitHelper(cx, linearStr, limit, linearSep, group);
+  return SplitHelper(cx, linearStr, limit, linearSep);
 }
 
 static const JSFunctionSpec string_methods[] = {

@@ -5,8 +5,6 @@
 #ifndef jit_EdgeCaseAnalysis_h
 #define jit_EdgeCaseAnalysis_h
 
-#include "mozilla/Attributes.h"
-
 namespace js {
 namespace jit {
 
@@ -19,7 +17,7 @@ class EdgeCaseAnalysis {
 
  public:
   EdgeCaseAnalysis(MIRGenerator* mir, MIRGraph& graph);
-  MOZ_MUST_USE bool analyzeLate();
+  [[nodiscard]] bool analyzeLate();
 };
 
 }  // namespace jit

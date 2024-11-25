@@ -7,7 +7,6 @@
 #include "builtin/streams/WritableStreamWriterOperations.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
 #include "jsapi.h"  // JS_ReportErrorNumberASCII, JS_ReportErrorASCII
 
@@ -231,7 +230,7 @@ static bool EnsurePromiseRejected(
  * Streams spec, 4.6.5.
  *  WritableStreamDefaultWriterEnsureClosedPromiseRejected( writer, error )
  */
-MOZ_MUST_USE bool js::WritableStreamDefaultWriterEnsureClosedPromiseRejected(
+[[nodiscard]] bool js::WritableStreamDefaultWriterEnsureClosedPromiseRejected(
     JSContext* cx, Handle<WritableStreamDefaultWriter*> unwrappedWriter,
     Handle<Value> error) {
   return EnsurePromiseRejected(
@@ -243,7 +242,7 @@ MOZ_MUST_USE bool js::WritableStreamDefaultWriterEnsureClosedPromiseRejected(
  * Streams spec, 4.6.6.
  *  WritableStreamDefaultWriterEnsureReadyPromiseRejected( writer, error )
  */
-MOZ_MUST_USE bool js::WritableStreamDefaultWriterEnsureReadyPromiseRejected(
+[[nodiscard]] bool js::WritableStreamDefaultWriterEnsureReadyPromiseRejected(
     JSContext* cx, Handle<WritableStreamDefaultWriter*> unwrappedWriter,
     Handle<Value> error) {
   return EnsurePromiseRejected(

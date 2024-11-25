@@ -5,10 +5,10 @@
 #ifndef jsapi_tests_tests_h
 #define jsapi_tests_tests_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Sprintf.h"
 
 #include <errno.h>
+#include <iterator>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,7 +75,13 @@ class JSAPITest {
   bool knownFail;
   JSAPITestString msgs;
 
-  JSAPITest() : cx(nullptr), knownFail(false) {
+  // Whether this test is willing to skip its init() and reuse a global (and
+  // JSContext etc.) from a previous test that also has reuseGlobal=true. It
+  // also means this test is willing to skip its uninit() if it is followed by
+  // another reuseGlobal test.
+  bool reuseGlobal;
+
+  JSAPITest() : cx(nullptr), knownFail(false), reuseGlobal(false) {
     next = list;
     list = this;
   }
@@ -85,7 +91,19 @@ class JSAPITest {
     MOZ_RELEASE_ASSERT(!global);
   }
 
-  virtual bool init();
+  // Initialize this test, possibly with the cx from a previously run test.
+  bool init(JSContext* maybeReusedContext);
+
+  // If this test is ok with its cx and global being reused, release this
+  // test's cx to be reused by another test.
+  JSContext* maybeForgetContext();
+
+  static void MaybeFreeContext(JSContext* maybeCx);
+
+  // The real initialization happens in init(JSContext*), above, but this
+  // method may be overridden to perform additional initialization after the
+  // JSContext and global have been created.
+  virtual bool init() { return true; }
   virtual void uninit();
 
   virtual const char* name() = 0;
@@ -166,6 +184,9 @@ class JSAPITest {
 
   JSAPITestString toSource(JS::RegExpFlags flags) {
     JSAPITestString str;
+    if (flags.hasIndices()) {
+      str += "d";
+    }
     if (flags.global()) {
       str += "g";
     }
@@ -262,8 +283,7 @@ class JSAPITest {
   bool fail(const JSAPITestString& msg = JSAPITestString(),
             const char* filename = "-", int lineno = 0) {
     char location[256];
-    snprintf(location, mozilla::ArrayLength(location), "%s:%d:", filename,
-             lineno);
+    snprintf(location, std::size(location), "%s:%d:", filename, lineno);
 
     JSAPITestString message(location);
     message += msg;
@@ -351,12 +371,6 @@ class JSAPITest {
     return cx;
   }
 
-  virtual void destroyContext() {
-    MOZ_RELEASE_ASSERT(cx);
-    JS_DestroyContext(cx);
-    cx = nullptr;
-  }
-
   static void reportWarning(JSContext* cx, JSErrorReport* report) {
     MOZ_RELEASE_ASSERT(report->isWarning());
 
@@ -370,13 +384,21 @@ class JSAPITest {
   virtual JSObject* createGlobal(JSPrincipals* principals = nullptr);
 };
 
-#define BEGIN_TEST_WITH_ATTRIBUTES(testname, attrs)           \
-  class cls_##testname : public JSAPITest {                   \
-   public:                                                    \
-    virtual const char* name() override { return #testname; } \
-    virtual bool run(JS::HandleObject global) override attrs
+#define BEGIN_TEST_WITH_ATTRIBUTES_AND_EXTRA(testname, attrs, extra) \
+  class cls_##testname : public JSAPITest {                          \
+   public:                                                           \
+    virtual const char* name() override { return #testname; }        \
+    extra virtual bool run(JS::HandleObject global) override attrs
+
+#define BEGIN_TEST_WITH_ATTRIBUTES(testname, attrs) \
+  BEGIN_TEST_WITH_ATTRIBUTES_AND_EXTRA(testname, attrs, )
 
 #define BEGIN_TEST(testname) BEGIN_TEST_WITH_ATTRIBUTES(testname, )
+
+#define BEGIN_REUSABLE_TEST(testname)   \
+  BEGIN_TEST_WITH_ATTRIBUTES_AND_EXTRA( \
+      testname, , cls_##testname()      \
+      : JSAPITest() { reuseGlobal = true; })
 
 #define END_TEST(testname) \
   }                        \

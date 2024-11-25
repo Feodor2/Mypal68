@@ -10,9 +10,11 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/EndianUtils.h"
+#include "mozilla/HashFunctions.h"  // mozilla::HashStringKnownLength
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Unused.h"
 
+#include <iterator>
 #include <string.h>
 
 #include "jstypes.h"
@@ -26,6 +28,7 @@
 #include "util/Text.h"
 #include "vm/JSContext.h"
 #include "vm/SymbolType.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 #include "vm/Xdr.h"
 
 #include "gc/AtomMarking-inl.h"
@@ -36,8 +39,6 @@
 
 using namespace js;
 
-using mozilla::ArrayEnd;
-using mozilla::ArrayLength;
 using mozilla::Maybe;
 using mozilla::Nothing;
 using mozilla::RangedPtr;
@@ -212,14 +213,6 @@ UniqueChars js::AtomToPrintableString(JSContext* cx, JSAtom* atom) {
   return QuoteString(cx, atom);
 }
 
-#define DEFINE_PROTO_STRING(name, clasp) const char js_##name##_str[] = #name;
-JS_FOR_EACH_PROTOTYPE(DEFINE_PROTO_STRING)
-#undef DEFINE_PROTO_STRING
-
-#define CONST_CHAR_STR(idpart, id, text) const char js_##idpart##_str[] = text;
-FOR_EACH_COMMON_PROPERTYNAME(CONST_CHAR_STR)
-#undef CONST_CHAR_STR
-
 // Use a low initial capacity for the permanent atoms table to avoid penalizing
 // runtimes that create a small number of atoms.
 static const uint32_t JS_PERMANENT_ATOM_SIZE = 64;
@@ -228,11 +221,6 @@ MOZ_ALWAYS_INLINE AtomSet::Ptr js::FrozenAtomSet::readonlyThreadsafeLookup(
     const AtomSet::Lookup& l) const {
   return mSet->readonlyThreadsafeLookup(l);
 }
-
-struct CommonNameInfo {
-  const char* str;
-  size_t length;
-};
 
 bool JSRuntime::initializeAtoms(JSContext* cx) {
   MOZ_ASSERT(!atoms_);
@@ -265,19 +253,18 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
     return false;
   }
 
-  static const CommonNameInfo cachedNames[] = {
-#define COMMON_NAME_INFO(idpart, id, text) \
-  {js_##idpart##_str, sizeof(text) - 1},
-      FOR_EACH_COMMON_PROPERTYNAME(COMMON_NAME_INFO)
+  static const WellKnownAtomInfo symbolInfo[] = {
+#define COMMON_NAME_INFO(NAME)  \
+  {uint32_t(sizeof(#NAME) - 1), \
+   mozilla::HashStringKnownLength(#NAME, sizeof(#NAME) - 1), #NAME},
+      JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
 #undef COMMON_NAME_INFO
-#define COMMON_NAME_INFO(name, clasp) {js_##name##_str, sizeof(#name) - 1},
-          JS_FOR_EACH_PROTOTYPE(COMMON_NAME_INFO)
-#undef COMMON_NAME_INFO
-#define COMMON_NAME_INFO(name) {#name, sizeof(#name) - 1},
-              JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
-#undef COMMON_NAME_INFO
-#define COMMON_NAME_INFO(name) {"Symbol." #name, sizeof("Symbol." #name) - 1},
-                  JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
+#define COMMON_NAME_INFO(NAME)                                  \
+  {uint32_t(sizeof("Symbol." #NAME) - 1),                       \
+   mozilla::HashStringKnownLength("Symbol." #NAME,              \
+                                  sizeof("Symbol." #NAME) - 1), \
+   "Symbol." #NAME},
+          JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
 #undef COMMON_NAME_INFO
   };
 
@@ -288,13 +275,23 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
 
   ImmutablePropertyNamePtr* names =
       reinterpret_cast<ImmutablePropertyNamePtr*>(commonNames.ref());
-  for (size_t i = 0; i < ArrayLength(cachedNames); i++, names++) {
-    JSAtom* atom =
-        Atomize(cx, cachedNames[i].str, cachedNames[i].length, PinAtom);
+  for (size_t i = 0; i < uint32_t(WellKnownAtomId::Limit); i++) {
+    const auto& info = wellKnownAtomInfos[i];
+    JSAtom* atom = Atomize(cx, info.hash, info.content, info.length, PinAtom);
     if (!atom) {
       return false;
     }
     names->init(atom->asPropertyName());
+    names++;
+  }
+
+  for (const auto& info : symbolInfo) {
+    JSAtom* atom = Atomize(cx, info.hash, info.content, info.length, PinAtom);
+    if (!atom) {
+      return false;
+    }
+    names->init(atom->asPropertyName());
+    names++;
   }
   MOZ_ASSERT(uintptr_t(names) == uintptr_t(commonNames + 1));
 
@@ -1071,6 +1068,18 @@ JSAtom* js::Atomize(JSContext* cx, const char* bytes, size_t length,
   return AtomizeAndCopyChars(cx, chars, length, pin, indexValue);
 }
 
+JSAtom* js::Atomize(JSContext* cx, HashNumber hash, const char* bytes,
+                    size_t length, PinningBehavior pin) {
+  const Latin1Char* chars = reinterpret_cast<const Latin1Char*>(bytes);
+  if (JSAtom* s = cx->staticStrings().lookup(chars, length)) {
+    return s;
+  }
+
+  AtomHasher::Lookup lookup(hash, chars, length);
+  return AtomizeAndCopyCharsFromLookup(cx, chars, length, lookup, pin,
+                                       Nothing());
+}
+
 template <typename CharT>
 JSAtom* js::AtomizeChars(JSContext* cx, const CharT* chars, size_t length,
                          PinningBehavior pin) {
@@ -1173,7 +1182,7 @@ bool js::IndexToIdSlow(JSContext* cx, uint32_t index, MutableHandleId idp) {
   MOZ_ASSERT(index > JSID_INT_MAX);
 
   char16_t buf[UINT32_CHAR_BUFFER_LENGTH];
-  RangedPtr<char16_t> end(ArrayEnd(buf), buf, ArrayEnd(buf));
+  RangedPtr<char16_t> end(std::end(buf), buf, std::end(buf));
   RangedPtr<char16_t> start = BackfillIndexInCharBuffer(index, end);
 
   JSAtom* atom = AtomizeChars(cx, start.get(), end - start);
@@ -1321,41 +1330,16 @@ static XDRResult XDRAtomIndex(XDRState<mode>* xdr, uint32_t* index) {
 
 template <XDRMode mode>
 XDRResult js::XDRAtom(XDRState<mode>* xdr, MutableHandleAtom atomp) {
-  if (!xdr->hasAtomMap() && !xdr->hasAtomTable()) {
+  if (!xdr->hasAtomTable()) {
     return XDRAtomData(xdr, atomp);
   }
 
-  if (mode == XDR_ENCODE) {
-    MOZ_ASSERT(xdr->hasAtomMap());
-
-    // Atom contents are encoded in a separate buffer, which is joined to the
-    // final result in XDRIncrementalEncoder::linearize. References to atoms
-    // are encoded as indices into the atom stream.
-    uint32_t atomIndex;
-    XDRAtomMap::AddPtr p = xdr->atomMap().lookupForAdd(atomp.get());
-    if (p) {
-      atomIndex = p->value();
-    } else {
-      xdr->switchToAtomBuf();
-      MOZ_TRY(XDRAtomData(xdr, atomp));
-      xdr->switchToMainBuf();
-
-      atomIndex = xdr->natoms();
-      xdr->natoms() += 1;
-      if (!xdr->atomMap().add(p, atomp.get(), atomIndex)) {
-        return xdr->fail(JS::TranscodeResult_Throw);
-      }
-    }
-    MOZ_TRY(XDRAtomIndex(xdr, &atomIndex));
-    return Ok();
-  }
-
-  MOZ_ASSERT(mode == XDR_DECODE && xdr->hasAtomTable());
+  MOZ_ASSERT(mode == XDR_DECODE);
 
   uint32_t atomIndex;
   MOZ_TRY(XDRAtomIndex(xdr, &atomIndex));
   if (atomIndex >= xdr->atomTable().length()) {
-    return xdr->fail(JS::TranscodeResult_Failure_BadDecode);
+    return xdr->fail(JS::TranscodeResult::Failure_BadDecode);
   }
   JSAtom* atom = xdr->atomTable()[atomIndex];
 
@@ -1404,7 +1388,7 @@ XDRResult js::XDRAtomData(XDRState<mode>* xdr, MutableHandleAtom atomp) {
     if (length) {
       const uint8_t* ptr;
       size_t nbyte = length * sizeof(Latin1Char);
-      MOZ_TRY(xdr->peekData(&ptr, nbyte));
+      MOZ_TRY(xdr->readData(&ptr, nbyte));
       chars = reinterpret_cast<const Latin1Char*>(ptr);
     }
     atom = AtomizeChars(cx, chars, length);
@@ -1412,13 +1396,13 @@ XDRResult js::XDRAtomData(XDRState<mode>* xdr, MutableHandleAtom atomp) {
     const uint8_t* twoByteCharsLE = nullptr;
     if (length) {
       size_t nbyte = length * sizeof(char16_t);
-      MOZ_TRY(xdr->peekData(&twoByteCharsLE, nbyte));
+      MOZ_TRY(xdr->readData(&twoByteCharsLE, nbyte));
     }
     atom = AtomizeLittleEndianTwoByteChars(cx, twoByteCharsLE, length);
   }
 
   if (!atom) {
-    return xdr->fail(JS::TranscodeResult_Throw);
+    return xdr->fail(JS::TranscodeResult::Throw);
   }
   atomp.set(atom);
   return Ok();

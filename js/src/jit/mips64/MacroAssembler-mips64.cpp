@@ -159,6 +159,10 @@ void MacroAssemblerMIPS64Compat::convertInt32ToFloat32(const Address& src,
   as_cvtsw(dest, dest);
 }
 
+void MacroAssembler::convertIntPtrToDouble(Register src, FloatRegister dest) {
+  convertInt64ToDouble(Register64(src), dest);
+}
+
 void MacroAssemblerMIPS64Compat::movq(Register rs, Register rd) {
   ma_move(rd, rs);
 }
@@ -1628,6 +1632,7 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
   Label return_;
   Label bailout;
   Label wasm;
+  Label wasmCatch;
 
   // Already clobbered a0, so use it...
   load32(Address(StackPointer, offsetof(ResumeFromException, kind)), a0);
@@ -1644,6 +1649,8 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
                     Imm32(ResumeFromException::RESUME_BAILOUT), &bailout);
   asMasm().branch32(Assembler::Equal, a0,
                     Imm32(ResumeFromException::RESUME_WASM), &wasm);
+  asMasm().branch32(Assembler::Equal, a0,
+                    Imm32(ResumeFromException::RESUME_WASM_CATCH), &wasmCatch);
 
   breakpoint();  // Invalid kind.
 
@@ -1730,6 +1737,15 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
   loadPtr(Address(StackPointer, offsetof(ResumeFromException, stackPointer)),
           StackPointer);
   ret();
+
+  // Found a wasm catch handler, restore state and jump to it.
+  bind(&wasmCatch);
+  loadPtr(Address(sp, offsetof(ResumeFromException, target)), a1);
+  loadPtr(Address(StackPointer, offsetof(ResumeFromException, framePointer)),
+          FramePointer);
+  loadPtr(Address(StackPointer, offsetof(ResumeFromException, stackPointer)),
+          StackPointer);
+  jump(a1);
 }
 
 CodeOffset MacroAssemblerMIPS64Compat::toggledJump(Label* label) {
@@ -2023,8 +2039,8 @@ void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
 
   unboxGCThingForGCBarrier(value, scratch2);
   orPtr(Imm32(gc::ChunkMask), scratch2);
-  load32(Address(scratch2, gc::ChunkLocationOffsetFromLastByte), scratch2);
-  branch32(cond, scratch2, Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
+  loadPtr(Address(scratch2, gc::ChunkStoreBufferOffsetFromLastByte), scratch2);
+  branchPtr(InvertCondition(cond), scratch2, ImmWord(0), label);
 
   bind(&done);
 }
@@ -2263,7 +2279,7 @@ void MacroAssemblerMIPS64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
+  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2322,7 +2338,7 @@ void MacroAssemblerMIPS64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
+  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.

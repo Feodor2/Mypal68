@@ -330,8 +330,6 @@ bool MapIteratorObject::next(MapIteratorObject* mapIterator,
     return true;
   }
 
-  // Note: we don't need to call setDenseElementWithType because
-  // MapIteratorObject::createResultPair gave the elements unknown-types.
   switch (mapIterator->kind()) {
     case MapObject::Keys:
       resultPairObj->setDenseElement(0, range->front().key.get());
@@ -358,14 +356,6 @@ JSObject* MapIteratorObject::createResultPair(JSContext* cx) {
   if (!resultPairObj) {
     return nullptr;
   }
-
-  Rooted<TaggedProto> proto(cx, resultPairObj->taggedProto());
-  ObjectGroup* group = ObjectGroupRealm::makeGroup(
-      cx, resultPairObj->realm(), resultPairObj->getClass(), proto);
-  if (!group) {
-    return nullptr;
-  }
-  resultPairObj->setGroup(group);
 
   resultPairObj->setDenseInitializedLength(2);
   resultPairObj->initDenseElement(0, NullValue());
@@ -544,8 +534,8 @@ class js::OrderedHashTableRef : public gc::BufferableRef {
 };
 
 template <typename ObjectT>
-inline static MOZ_MUST_USE bool PostWriteBarrierImpl(ObjectT* obj,
-                                                     const Value& keyValue) {
+[[nodiscard]] inline static bool PostWriteBarrierImpl(ObjectT* obj,
+                                                      const Value& keyValue) {
   if (MOZ_LIKELY(!keyValue.isObject() && !keyValue.isBigInt())) {
     MOZ_ASSERT_IF(keyValue.isGCThing(), !IsInsideNursery(keyValue.toGCThing()));
     return true;
@@ -573,13 +563,13 @@ inline static MOZ_MUST_USE bool PostWriteBarrierImpl(ObjectT* obj,
   return keys->append(keyValue);
 }
 
-inline static MOZ_MUST_USE bool PostWriteBarrier(MapObject* map,
-                                                 const Value& key) {
+[[nodiscard]] inline static bool PostWriteBarrier(MapObject* map,
+                                                  const Value& key) {
   return PostWriteBarrierImpl(map, key);
 }
 
-inline static MOZ_MUST_USE bool PostWriteBarrier(SetObject* set,
-                                                 const Value& key) {
+[[nodiscard]] inline static bool PostWriteBarrier(SetObject* set,
+                                                  const Value& key) {
   return PostWriteBarrierImpl(set, key);
 }
 
@@ -1128,8 +1118,6 @@ bool SetIteratorObject::next(SetIteratorObject* setIterator,
     return true;
   }
 
-  // Note: we don't need to call setDenseElementWithType because
-  // SetIteratorObject::createResult gave the elements unknown-types.
   resultObj->setDenseElement(0, range->front().get());
   range->popFront();
   return false;
@@ -1142,14 +1130,6 @@ JSObject* SetIteratorObject::createResult(JSContext* cx) {
   if (!resultObj) {
     return nullptr;
   }
-
-  Rooted<TaggedProto> proto(cx, resultObj->taggedProto());
-  ObjectGroup* group = ObjectGroupRealm::makeGroup(
-      cx, resultObj->realm(), resultObj->getClass(), proto);
-  if (!group) {
-    return nullptr;
-  }
-  resultObj->setGroup(group);
 
   resultObj->setDenseInitializedLength(1);
   resultObj->initDenseElement(0, NullValue());

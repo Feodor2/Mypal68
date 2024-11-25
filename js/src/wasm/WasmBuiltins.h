@@ -19,6 +19,9 @@
 #include "wasm/WasmTypes.h"
 
 namespace js {
+namespace jit {
+struct ResumeFromException;
+}
 namespace wasm {
 
 class WasmFrameIter;
@@ -69,6 +72,11 @@ extern const SymbolicAddressSignature SASigPostBarrier;
 extern const SymbolicAddressSignature SASigPostBarrierFiltering;
 extern const SymbolicAddressSignature SASigStructNew;
 extern const SymbolicAddressSignature SASigStructNarrow;
+#ifdef ENABLE_WASM_EXCEPTIONS
+extern const SymbolicAddressSignature SASigExceptionNew;
+extern const SymbolicAddressSignature SASigThrowException;
+extern const SymbolicAddressSignature SASigGetLocalExceptionIndex;
+#endif
 
 // A SymbolicAddress that NeedsBuiltinThunk() will call through a thunk to the
 // C++ function. This will be true for all normal calls from normal wasm
@@ -91,9 +99,12 @@ bool LookupBuiltinThunk(void* pc, const CodeRange** codeRange,
 
 bool EnsureBuiltinThunksInitialized();
 
-void* HandleThrow(JSContext* cx, WasmFrameIter& iter);
+bool HandleThrow(JSContext* cx, WasmFrameIter& iter,
+                 jit::ResumeFromException* rfe);
 
 void* SymbolicAddressTarget(SymbolicAddress sym);
+
+void* ProvisionalJitEntryStub();
 
 void* MaybeGetBuiltinThunk(JSFunction* f, const FuncType& funcType);
 

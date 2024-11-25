@@ -5,28 +5,25 @@
 # We give js/src/debugger its own moz.build file, separate from
 # js/src/moz.build, so that the object file names don't conflict with those from
 # other directories. For example, js/src/debugger/Object.cpp and
-# js/src/builtin/Object.cpp had better not smash each other's  .o files when
+# js/src/builtin/Object.cpp had better not smash each other's .o files when
 # unified sources are disabled.
 
-FINAL_LIBRARY = 'js'
+FINAL_LIBRARY = "js"
 
 # Includes should be relative to parent path
-LOCAL_INCLUDES += [
-    '!..',
-    '..'
-]
+LOCAL_INCLUDES += ["!..", ".."]
 
-include('../js-config.mozbuild')
-include('../js-cxxflags.mozbuild')
+include("../js-config.mozbuild")
+include("../js-cxxflags.mozbuild")
 
-SOURCES = [
-    'Debugger.cpp',
-    'DebuggerMemory.cpp',
-    'DebugScript.cpp',
-    'Environment.cpp',
-    'Frame.cpp',
-    'NoExecute.cpp',
-    'Object.cpp',
-    'Script.cpp',
-    'Source.cpp',
+UNIFIED_SOURCES = [
+    "Debugger.cpp",
+    "DebuggerMemory.cpp",
+    "DebugScript.cpp",
+    "Environment.cpp",
+    "Frame.cpp",
+    "NoExecute.cpp",
+    "Object.cpp",
+    "Script.cpp",
+    "Source.cpp",
 ]

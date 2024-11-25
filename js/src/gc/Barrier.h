@@ -303,12 +303,6 @@ void CellPtrPreWriteBarrier(JS::GCCellPtr thing);
 
 #ifdef DEBUG
 
-// Barriers can't be triggered during backend Ion compilation, which may run on
-// a helper thread.
-bool CurrentThreadIsIonCompiling();
-
-bool CurrentThreadIsGCSweeping();
-bool CurrentThreadIsGCFinalizing();
 bool CurrentThreadIsTouchingGrayThings();
 
 bool IsMarkedBlack(JSObject* obj);
@@ -852,11 +846,6 @@ struct DefineComparisonOps<js::WeakHeapPtr<T>> : std::true_type {
 
 namespace js {
 
-// A WeakRef pointer does not hold its target live and is automatically nulled
-// out when the GC discovers that it is not reachable from any other path.
-template <typename T>
-using WeakRef = WeakHeapPtr<T>;
-
 // A pre- and post-barriered Value that is specialized to be aware that it
 // resides in a slots or elements vector. This allows it to be relocated in
 // memory, but with substantially less overhead than a HeapPtr.
@@ -922,26 +911,10 @@ namespace js {
 class HeapSlotArray {
   HeapSlot* array;
 
-  // Whether writes may be performed to the slots in this array. This helps
-  // to control how object elements which may be copy on write are used.
-#ifdef DEBUG
-  bool allowWrite_;
-#endif
-
  public:
-  explicit HeapSlotArray(HeapSlot* array, bool allowWrite)
-      : array(array)
-#ifdef DEBUG
-        ,
-        allowWrite_(allowWrite)
-#endif
-  {
-  }
+  explicit HeapSlotArray(HeapSlot* array) : array(array) {}
 
-  HeapSlot* begin() const {
-    MOZ_ASSERT(allowWrite());
-    return array;
-  }
+  HeapSlot* begin() const { return array; }
 
   operator const Value*() const {
     static_assert(sizeof(GCPtr<Value>) == sizeof(Value));
@@ -951,19 +924,10 @@ class HeapSlotArray {
   operator HeapSlot*() const { return begin(); }
 
   HeapSlotArray operator+(int offset) const {
-    return HeapSlotArray(array + offset, allowWrite());
+    return HeapSlotArray(array + offset);
   }
   HeapSlotArray operator+(uint32_t offset) const {
-    return HeapSlotArray(array + offset, allowWrite());
-  }
-
- private:
-  bool allowWrite() const {
-#ifdef DEBUG
-    return allowWrite_;
-#else
-    return true;
-#endif
+    return HeapSlotArray(array + offset);
   }
 };
 

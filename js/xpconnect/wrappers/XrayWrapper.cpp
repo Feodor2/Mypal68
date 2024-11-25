@@ -271,8 +271,8 @@ bool ReportWrapperDenial(JSContext* cx, HandleId id, WrapperDenialType type,
   }
   nsString filenameStr(NS_ConvertASCIItoUTF16(filename.get()));
   nsresult rv = errorObject->InitWithWindowID(
-      NS_ConvertASCIItoUTF16(errorMessage.ref()), filenameStr, EmptyString(),
-      line, column, nsIScriptError::warningFlag, "XPConnect", windowId);
+      NS_ConvertASCIItoUTF16(errorMessage.ref()), filenameStr, u""_ns, line,
+      column, nsIScriptError::warningFlag, "XPConnect", windowId);
   NS_ENSURE_SUCCESS(rv, true);
   rv = consoleService->LogMessage(errorObject);
   NS_ENSURE_SUCCESS(rv, true);
@@ -928,13 +928,23 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
       return true;
     }
     if (IsTypedArrayKey(key)) {
-      uint32_t length = JS_GetTypedArrayLength(target);
+      size_t length = JS_GetTypedArrayLength(target);
       // TypedArrays enumerate every indexed property in range, but
       // |length| is a getter that lives on the proto, like it should be.
+
+      // Fail early if the typed array is enormous, because this will be very
+      // slow and will likely report OOM. This also means we don't need to
+      // handle indices greater than JSID_INT_MAX in the loop below.
+      static_assert(JSID_INT_MAX >= INT32_MAX);
+      if (length > INT32_MAX) {
+        JS_ReportOutOfMemory(cx);
+        return false;
+      }
+
       if (!props.reserve(length)) {
         return false;
       }
-      for (int32_t i = 0; i <= int32_t(length - 1); ++i) {
+      for (int32_t i = 0; i < int32_t(length); ++i) {
         props.infallibleAppend(INT_TO_JSID(i));
       }
     } else if (key == JSProto_Function) {

@@ -281,6 +281,7 @@ class FrameIter {
   inline bool isPhysicalJitFrame() const;
 
   bool isEvalFrame() const;
+  bool isModuleFrame() const;
   bool isFunctionFrame() const;
   bool hasArgs() const { return isFunctionFrame(); }
 

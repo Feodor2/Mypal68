@@ -70,7 +70,7 @@ namespace JS {
  *
  * Users don't have to call `result.report()`; another possible ending is:
  *
- *     argv.rval().setBoolean(result.reallyOk());
+ *     argv.rval().setBoolean(result.ok());
  *     return true;
  */
 class ObjectOpResult {
@@ -89,24 +89,15 @@ class ObjectOpResult {
  public:
   enum SpecialCodes : uintptr_t { OkCode = 0, Uninitialized = uintptr_t(-1) };
 
-  static const uintptr_t SoftFailBit = uintptr_t(1)
-                                       << (sizeof(uintptr_t) * 8 - 1);
-
   ObjectOpResult() : code_(Uninitialized) {}
 
-  /* Return true if succeed() or failSoft() was called. */
-  bool ok() const {
-    MOZ_ASSERT(code_ != Uninitialized);
-    return code_ == OkCode || (code_ & SoftFailBit);
-  }
-
-  explicit operator bool() const { return ok(); }
-
   /* Return true if succeed() was called. */
-  bool reallyOk() const {
+  bool ok() const {
     MOZ_ASSERT(code_ != Uninitialized);
     return code_ == OkCode;
   }
+
+  explicit operator bool() const { return ok(); }
 
   /* Set this ObjectOpResult to true and return true. */
   bool succeed() {
@@ -128,23 +119,7 @@ class ObjectOpResult {
    */
   bool fail(uint32_t msg) {
     MOZ_ASSERT(msg != OkCode);
-    MOZ_ASSERT((msg & SoftFailBit) == 0);
     code_ = msg;
-    return true;
-  }
-
-  /*
-   * DEPRECATED: This is a non-standard compatibility hack.
-   *
-   * Set this ObjectOpResult to true, but remembers an error code.
-   * This is used for situations where we really want to fail,
-   * but can't for legacy reasons.
-   *
-   * Always returns true, as a convenience.
-   */
-  bool failSoft(uint32_t msg) {
-    // The msg code is currently never extracted again.
-    code_ = msg | SoftFailBit;
     return true;
   }
 
@@ -813,7 +788,19 @@ struct alignas(js::gc::JSClassAlignBytes) JSClass {
    */
   static const uint32_t NON_NATIVE = JSCLASS_INTERNAL_FLAG2;
 
-  bool isNative() const { return !(flags & NON_NATIVE); }
+  // A JSObject created from a JSClass extends from one of:
+  //  - js::NativeObject
+  //  - js::ProxyObject
+  //
+  // While it is possible to introduce new families of objects, it is strongly
+  // discouraged. The JITs would be entirely unable to optimize them and testing
+  // coverage is low. The existing NativeObject and ProxyObject are extremely
+  // flexible and are able to represent the entire Gecko embedding requirements.
+  //
+  // NOTE: Internal to SpiderMonkey, there is an experimental js::TypedObject
+  //       object family for future WASM features.
+  bool isNativeObject() const { return !(flags & NON_NATIVE); }
+  bool isProxyObject() const { return flags & JSCLASS_IS_PROXY; }
 
   bool hasPrivate() const { return !!(flags & JSCLASS_HAS_PRIVATE); }
 
@@ -822,13 +809,11 @@ struct alignas(js::gc::JSClassAlignBytes) JSClass {
   bool isJSFunction() const { return this == js::FunctionClassPtr; }
 
   bool nonProxyCallable() const {
-    MOZ_ASSERT(!isProxy());
+    MOZ_ASSERT(!isProxyObject());
     return isJSFunction() || getCall();
   }
 
   bool isGlobal() const { return flags & JSCLASS_IS_GLOBAL; }
-
-  bool isProxy() const { return flags & JSCLASS_IS_PROXY; }
 
   bool isDOMClass() const { return flags & JSCLASS_IS_DOMJSCLASS; }
 

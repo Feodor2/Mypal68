@@ -55,7 +55,7 @@ bool ForInEmitter::emitInitialize() {
     //              [stack] ITER NEXTITERVAL? ISNOITER
     return false;
   }
-  if (!bce_->emitJump(JSOp::IfNe, &loopInfo_->breaks)) {
+  if (!bce_->emitJump(JSOp::JumpIfTrue, &loopInfo_->breaks)) {
     //              [stack] ITER NEXTITERVAL?
     return false;
   }
@@ -90,11 +90,6 @@ bool ForInEmitter::emitInitialize() {
   loopDepth_ = bce_->bytecodeSection().stackDepth();
 #endif
   MOZ_ASSERT(loopDepth_ >= 2);
-
-  if (!bce_->emit1(JSOp::IterNext)) {
-    //              [stack] ITER ITERVAL
-    return false;
-  }
 
 #ifdef DEBUG
   state_ = State::Initialize;

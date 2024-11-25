@@ -4,8 +4,6 @@
 
 #include "vm/GeckoProfiler-inl.h"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Sprintf.h"
 
 #include "jsnum.h"
@@ -27,8 +25,6 @@
 #include "vm/JSScript-inl.h"
 
 using namespace js;
-
-using mozilla::DebugOnly;
 
 GeckoProfilerThread::GeckoProfilerThread()
     : profilingStack_(nullptr), profilingStackIfEnabled_(nullptr) {}

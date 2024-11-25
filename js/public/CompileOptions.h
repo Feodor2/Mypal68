@@ -51,7 +51,6 @@
 #ifndef js_CompileOptions_h
 #define js_CompileOptions_h
 
-#include "mozilla/Attributes.h"       // MOZ_MUST_USE
 #include "mozilla/MemoryReporting.h"  // mozilla::MallocSizeOf
 
 #include <stddef.h>  // size_t
@@ -131,6 +130,7 @@ class JS_PUBLIC_API TransitiveCompileOptions {
   bool nonSyntacticScope = false;
   bool privateClassFields = false;
   bool privateClassMethods = false;
+  bool topLevelAwait = false;
 
   // True if transcoding to XDR should use Stencil instead of JSScripts.
   bool useStencilXDR = false;

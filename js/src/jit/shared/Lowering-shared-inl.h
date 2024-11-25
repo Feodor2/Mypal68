@@ -226,7 +226,12 @@ void LIRGeneratorShared::defineInt64(
     LDefinition::Policy policy) {
   // Call instructions should use defineReturn.
   MOZ_ASSERT(!lir->isCall());
+
+#ifdef JS_64BIT
+  MOZ_ASSERT(mir->type() == MIRType::Int64 || mir->type() == MIRType::IntPtr);
+#else
   MOZ_ASSERT(mir->type() == MIRType::Int64);
+#endif
 
   uint32_t vreg = getVirtualRegister();
 
@@ -313,20 +318,29 @@ void LIRGeneratorShared::defineReturn(LInstruction* lir, MDefinition* mir) {
   add(lir);
 }
 
-// In LIR, we treat booleans and integers as the same low-level type (INTEGER).
-// When snapshotting, we recover the actual JS type from MIR. This function
-// checks that when making redefinitions, we don't accidentally coerce two
-// incompatible types.
+#ifdef DEBUG
+// This function checks that when making redefinitions, we don't accidentally
+// coerce two incompatible types.
 static inline bool IsCompatibleLIRCoercion(MIRType to, MIRType from) {
   if (to == from) {
     return true;
   }
+  // In LIR, we treat boolean and int32 as the same low-level type (INTEGER).
+  // When snapshotting, we recover the actual JS type from MIR.
   if ((to == MIRType::Int32 || to == MIRType::Boolean) &&
       (from == MIRType::Int32 || from == MIRType::Boolean)) {
     return true;
   }
+#  ifndef JS_64BIT
+  // On 32-bit platforms Int32 can be redefined as IntPtr and vice versa.
+  if ((to == MIRType::Int32 || to == MIRType::IntPtr) &&
+      (from == MIRType::IntPtr || from == MIRType::Int32)) {
+    return true;
+  }
+#  endif
   return false;
 }
+#endif
 
 void LIRGeneratorShared::redefine(MDefinition* def, MDefinition* as) {
   MOZ_ASSERT(IsCompatibleLIRCoercion(def->type(), as->type()));
@@ -432,6 +446,32 @@ LAllocation LIRGeneratorShared::useRegisterOrConstantAtStart(MDefinition* mir) {
   return useRegisterAtStart(mir);
 }
 
+inline bool CanUseInt32Constant(MDefinition* mir) {
+  if (!mir->isConstant()) {
+    return false;
+  }
+  MConstant* cst = mir->toConstant();
+  if (cst->type() == MIRType::IntPtr) {
+    return INT32_MIN <= cst->toIntPtr() && cst->toIntPtr() <= INT32_MAX;
+  }
+  MOZ_ASSERT(cst->type() == MIRType::Int32);
+  return true;
+}
+
+LAllocation LIRGeneratorShared::useRegisterOrInt32Constant(MDefinition* mir) {
+  if (CanUseInt32Constant(mir)) {
+    return LAllocation(mir->toConstant());
+  }
+  return useRegister(mir);
+}
+
+LAllocation LIRGeneratorShared::useAnyOrInt32Constant(MDefinition* mir) {
+  if (CanUseInt32Constant(mir)) {
+    return LAllocation(mir->toConstant());
+  }
+  return useAny(mir);
+}
+
 LAllocation LIRGeneratorShared::useRegisterOrZero(MDefinition* mir) {
   if (mir->isConstant() && mir->toConstant()->isInt32(0)) {
     return LAllocation();
@@ -469,12 +509,18 @@ LAllocation LIRGeneratorShared::useStorableAtStart(MDefinition* mir) {
 LAllocation LIRGeneratorShared::useAny(MDefinition* mir) {
   return useRegister(mir);
 }
+LAllocation LIRGeneratorShared::useAnyAtStart(MDefinition* mir) {
+  return useRegisterAtStart(mir);
+}
 #else
 LAllocation LIRGeneratorShared::useAnyOrConstant(MDefinition* mir) {
   return useOrConstant(mir);
 }
 
 LAllocation LIRGeneratorShared::useAny(MDefinition* mir) { return use(mir); }
+LAllocation LIRGeneratorShared::useAnyAtStart(MDefinition* mir) {
+  return useAtStart(mir);
+}
 LAllocation LIRGeneratorShared::useStorable(MDefinition* mir) {
   return useRegisterOrConstant(mir);
 }
@@ -537,6 +583,20 @@ LDefinition LIRGeneratorShared::tempFixed(Register reg) {
   return t;
 }
 
+LInt64Definition LIRGeneratorShared::tempInt64Fixed(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+  LDefinition high = temp(LDefinition::GENERAL);
+  LDefinition low = temp(LDefinition::GENERAL);
+  high.setOutput(LGeneralReg(reg.high));
+  low.setOutput(LGeneralReg(reg.low));
+  return LInt64Definition(high, low);
+#else
+  LDefinition t = temp(LDefinition::GENERAL);
+  t.setOutput(LGeneralReg(reg.reg));
+  return LInt64Definition(t);
+#endif
+}
+
 LDefinition LIRGeneratorShared::tempFixed(FloatRegister reg) {
   LDefinition t = temp(LDefinition::DOUBLE);
   t.setOutput(LFloatReg(reg));
@@ -550,6 +610,12 @@ LDefinition LIRGeneratorShared::tempFloat32() {
 LDefinition LIRGeneratorShared::tempDouble() {
   return temp(LDefinition::DOUBLE);
 }
+
+#ifdef ENABLE_WASM_SIMD
+LDefinition LIRGeneratorShared::tempSimd128() {
+  return temp(LDefinition::SIMD128);
+}
+#endif
 
 LDefinition LIRGeneratorShared::tempCopy(MDefinition* input,
                                          uint32_t reusedInput) {

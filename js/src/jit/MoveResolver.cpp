@@ -4,7 +4,6 @@
 
 #include "jit/MoveResolver.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ScopeExit.h"
 
 #include "jit/MacroAssembler.h"

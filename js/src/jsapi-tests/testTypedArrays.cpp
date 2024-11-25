@@ -108,12 +108,12 @@ BEGIN_TEST(testTypedArrays) {
 // Shared memory can only be mapped by a TypedArray by creating the
 // TypedArray with a SharedArrayBuffer explicitly, so no tests here.
 
-template <JSObject* Create(JSContext*, uint32_t), typename Element,
+template <JSObject* Create(JSContext*, size_t), typename Element,
           Element* GetData(JSObject*, bool* isShared,
                            const JS::AutoRequireNoGC&)>
 bool TestPlainTypedArray(JSContext* cx) {
   {
-    RootedObject notArray(cx, Create(cx, UINT32_MAX));
+    RootedObject notArray(cx, Create(cx, SIZE_MAX));
     CHECK(!notArray);
   }
 
@@ -143,7 +143,7 @@ bool TestPlainTypedArray(JSContext* cx) {
 }
 
 template <
-    JSObject* CreateWithBuffer(JSContext*, JS::HandleObject, uint32_t, int32_t),
+    JSObject* CreateWithBuffer(JSContext*, JS::HandleObject, size_t, int64_t),
     JSObject* CreateFromArray(JSContext*, JS::HandleObject), typename Element,
     bool Shared, Element* GetData(JSObject*, bool*, const JS::AutoRequireNoGC&)>
 bool TestArrayFromBuffer(JSContext* cx) {

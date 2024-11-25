@@ -6,6 +6,7 @@
 #define gc_Cell_h
 
 #include "mozilla/Atomics.h"
+#include "mozilla/EndianUtils.h"
 
 #include <type_traits>
 
@@ -34,6 +35,9 @@ extern bool RuntimeFromMainThreadIsHeapMajorCollecting(
 extern bool CurrentThreadIsIonCompiling();
 
 extern bool CurrentThreadIsGCMarking();
+extern bool CurrentThreadIsGCSweeping();
+extern bool CurrentThreadIsGCFinalizing();
+extern bool RuntimeIsVerifyingPreBarriers(JSRuntime* runtime);
 
 #endif
 
@@ -45,7 +49,6 @@ namespace gc {
 
 class Arena;
 enum class AllocKind : uint8_t;
-struct Chunk;
 class StoreBuffer;
 class TenuredCell;
 
@@ -214,7 +217,7 @@ struct Cell {
 
  protected:
   uintptr_t address() const;
-  inline Chunk* chunk() const;
+  inline TenuredChunk* chunk() const;
 
  private:
   // Cells are destroyed by the GC. Do not delete them directly.
@@ -324,32 +327,30 @@ MOZ_ALWAYS_INLINE bool Cell::isMarkedAtLeast(gc::MarkColor color) const {
 }
 
 inline JSRuntime* Cell::runtimeFromMainThread() const {
-  JSRuntime* rt = chunk()->trailer.runtime;
+  JSRuntime* rt = chunk()->runtime;
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
   return rt;
 }
 
 inline JSRuntime* Cell::runtimeFromAnyThread() const {
-  return chunk()->trailer.runtime;
+  return chunk()->runtime;
 }
 
 inline uintptr_t Cell::address() const {
   uintptr_t addr = uintptr_t(this);
   MOZ_ASSERT(addr % CellAlignBytes == 0);
-  MOZ_ASSERT(Chunk::withinValidRange(addr));
+  MOZ_ASSERT(TenuredChunk::withinValidRange(addr));
   return addr;
 }
 
-Chunk* Cell::chunk() const {
+TenuredChunk* Cell::chunk() const {
   uintptr_t addr = uintptr_t(this);
   MOZ_ASSERT(addr % CellAlignBytes == 0);
   addr &= ~ChunkMask;
-  return reinterpret_cast<Chunk*>(addr);
+  return reinterpret_cast<TenuredChunk*>(addr);
 }
 
-inline StoreBuffer* Cell::storeBuffer() const {
-  return chunk()->trailer.storeBuffer;
-}
+inline StoreBuffer* Cell::storeBuffer() const { return chunk()->storeBuffer; }
 
 JS::Zone* Cell::zone() const {
   if (isTenured()) {
@@ -397,32 +398,32 @@ inline JS::TraceKind Cell::getTraceKind() const {
 
 bool TenuredCell::isMarkedAny() const {
   MOZ_ASSERT(arena()->allocated());
-  return chunk()->bitmap.isMarkedAny(this);
+  return chunk()->markBits.isMarkedAny(this);
 }
 
 bool TenuredCell::isMarkedBlack() const {
   MOZ_ASSERT(arena()->allocated());
-  return chunk()->bitmap.isMarkedBlack(this);
+  return chunk()->markBits.isMarkedBlack(this);
 }
 
 bool TenuredCell::isMarkedGray() const {
   MOZ_ASSERT(arena()->allocated());
-  return chunk()->bitmap.isMarkedGray(this);
+  return chunk()->markBits.isMarkedGray(this);
 }
 
 bool TenuredCell::markIfUnmarked(MarkColor color /* = Black */) const {
-  return chunk()->bitmap.markIfUnmarked(this, color);
+  return chunk()->markBits.markIfUnmarked(this, color);
 }
 
-void TenuredCell::markBlack() const { chunk()->bitmap.markBlack(this); }
+void TenuredCell::markBlack() const { chunk()->markBits.markBlack(this); }
 
 void TenuredCell::copyMarkBitsFrom(const TenuredCell* src) {
-  ChunkBitmap& bitmap = chunk()->bitmap;
-  bitmap.copyMarkBit(this, src, ColorBit::BlackBit);
-  bitmap.copyMarkBit(this, src, ColorBit::GrayOrBlackBit);
+  MarkBitmap& markBits = chunk()->markBits;
+  markBits.copyMarkBit(this, src, ColorBit::BlackBit);
+  markBits.copyMarkBit(this, src, ColorBit::GrayOrBlackBit);
 }
 
-void TenuredCell::unmark() { chunk()->bitmap.unmark(this); }
+void TenuredCell::unmark() { chunk()->markBits.unmark(this); }
 
 inline Arena* TenuredCell::arena() const {
   MOZ_ASSERT(isTenured());
@@ -497,8 +498,6 @@ MOZ_ALWAYS_INLINE void ReadBarrierImpl(Cell* thing) {
   }
 }
 
-void AssertSafeToSkipPreWriteBarrier(TenuredCell* thing);
-
 MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(TenuredCell* thing) {
   MOZ_ASSERT(!CurrentThreadIsIonCompiling());
   MOZ_ASSERT(!CurrentThreadIsGCMarking());
@@ -507,33 +506,35 @@ MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(TenuredCell* thing) {
     return;
   }
 
-#ifdef JS_GC_ZEAL
-  // When verifying pre barriers we need to switch on all barriers, even
-  // those on the Atoms Zone. Normally, we never enter a parse task when
-  // collecting in the atoms zone, so will filter out atoms below.
-  // Unfortuantely, If we try that when verifying pre-barriers, we'd never be
-  // able to handle off thread parse tasks at all as we switch on the verifier
-  // any time we're not doing GC. This would cause us to deadlock, as off thread
-  // parsing is meant to resume after GC work completes. Instead we filter out
-  // any off thread barriers that reach us and assert that they would normally
-  // not be possible.
-  if (!CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread())) {
-    AssertSafeToSkipPreWriteBarrier(thing);
-    return;
-  }
-#endif
-
   // Barriers can be triggered on the main thread while collecting, but are
   // disabled. For example, this happens when destroying HeapPtr wrappers.
 
-  JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
-  if (shadowZone->needsIncrementalBarrier()) {
-    MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
-    Cell* tmp = thing;
-    TraceManuallyBarrieredGenericPointerEdge(shadowZone->barrierTracer(), &tmp,
-                                             "pre barrier");
-    MOZ_ASSERT(tmp == thing);
+  JS::shadow::Zone* zone = thing->shadowZoneFromAnyThread();
+  if (!zone->needsIncrementalBarrier()) {
+    return;
   }
+
+  // Barriers can be triggered on off the main thread in two situations:
+  //  - background finalization of HeapPtrs to the atoms zone
+  //  - while we are verifying pre-barriers for a worker runtime
+  // The barrier is not required in either case.
+  bool checkThread = zone->isAtomsZone();
+#ifdef JS_GC_ZEAL
+  checkThread = checkThread || zone->isSelfHostingZone();
+#endif
+  JSRuntime* runtime = thing->runtimeFromAnyThread();
+  if (checkThread && !CurrentThreadCanAccessRuntime(runtime)) {
+    MOZ_ASSERT(CurrentThreadIsGCFinalizing() ||
+               RuntimeIsVerifyingPreBarriers(runtime));
+    return;
+  }
+
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime));
+  MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(zone));
+  Cell* tmp = thing;
+  TraceManuallyBarrieredGenericPointerEdge(zone->barrierTracer(), &tmp,
+                                           "pre barrier");
+  MOZ_ASSERT(tmp == thing);
 }
 
 MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(Cell* thing) {
@@ -551,6 +552,32 @@ MOZ_ALWAYS_INLINE void PreWriteBarrier(T* thing) {
   if (thing && !thing->isPermanentAndMayBeShared()) {
     PreWriteBarrierImpl(thing);
   }
+}
+
+// Pre-write barrier implementation for structures containing GC cells, taking a
+// functor to trace the structure.
+template <typename T, typename F>
+MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data,
+                                       const F& traceFn) {
+  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+
+  auto* shadowZone = JS::shadow::Zone::from(zone);
+  if (!shadowZone->needsIncrementalBarrier()) {
+    return;
+  }
+
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(shadowZone->runtimeFromAnyThread()));
+  MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
+
+  traceFn(shadowZone->barrierTracer(), data);
+}
+
+// Pre-write barrier implementation for structures containing GC cells. T must
+// support a |trace| method.
+template <typename T>
+MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data) {
+  PreWriteBarrier(zone, data, [](JSTracer* trc, T* data) { data->trace(trc); });
 }
 
 #ifdef DEBUG

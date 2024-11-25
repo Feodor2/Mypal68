@@ -4,6 +4,7 @@
 
 #include "PrecompiledScript.h"
 
+#include "nsIIncrementalStreamLoader.h"
 #include "nsIURI.h"
 #include "nsIChannel.h"
 #include "nsNetUtil.h"
@@ -48,9 +49,9 @@ class AsyncScriptCompiler final : public nsIIncrementalStreamLoaderObserver,
         mToken(nullptr),
         mScriptLength(0) {}
 
-  MOZ_MUST_USE nsresult Start(JSContext* aCx,
-                              const CompileScriptOptionsDictionary& aOptions,
-                              nsIPrincipal* aPrincipal);
+  [[nodiscard]] nsresult Start(JSContext* aCx,
+                               const CompileScriptOptionsDictionary& aOptions,
+                               nsIPrincipal* aPrincipal);
 
   inline void SetToken(JS::OffThreadToken* aToken) { mToken = aToken; }
 

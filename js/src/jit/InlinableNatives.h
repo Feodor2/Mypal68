@@ -7,8 +7,6 @@
 
 #include <stdint.h>  // For uint16_t
 
-#include "jspubtd.h"  // For JSClass
-
 #define INLINABLE_NATIVE_LIST(_)                   \
   _(Array)                                         \
   _(ArrayIsArray)                                  \
@@ -28,6 +26,9 @@
   _(AtomicsOr)                                     \
   _(AtomicsXor)                                    \
   _(AtomicsIsLockFree)                             \
+                                                   \
+  _(BigIntAsIntN)                                  \
+  _(BigIntAsUintN)                                 \
                                                    \
   _(Boolean)                                       \
                                                    \
@@ -187,8 +188,9 @@
   _(IntrinsicTypedArrayLength)                     \
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
   _(IntrinsicTypedArrayByteOffset)                 \
-  _(IntrinsicTypedArrayElementShift)
+  _(IntrinsicTypedArrayElementSize)
 
+struct JSClass;
 class JSJitInfo;
 
 namespace js {

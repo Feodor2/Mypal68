@@ -31,6 +31,7 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/RangedPtr.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Unused.h"
 
 #include <algorithm>
@@ -102,19 +103,19 @@ enum StructuredDataType : uint32_t {
   SCTAG_REGEXP_OBJECT,
   SCTAG_ARRAY_OBJECT,
   SCTAG_OBJECT_OBJECT,
-  SCTAG_ARRAY_BUFFER_OBJECT,
+  SCTAG_ARRAY_BUFFER_OBJECT_V2,  // Old version, for backwards compatibility.
   SCTAG_BOOLEAN_OBJECT,
   SCTAG_STRING_OBJECT,
   SCTAG_NUMBER_OBJECT,
   SCTAG_BACK_REFERENCE_OBJECT,
-  SCTAG_DO_NOT_USE_1,  // Required for backwards compatibility
-  SCTAG_DO_NOT_USE_2,  // Required for backwards compatibility
-  SCTAG_TYPED_ARRAY_OBJECT,
+  SCTAG_DO_NOT_USE_1,           // Required for backwards compatibility
+  SCTAG_DO_NOT_USE_2,           // Required for backwards compatibility
+  SCTAG_TYPED_ARRAY_OBJECT_V2,  // Old version, for backwards compatibility.
   SCTAG_MAP_OBJECT,
   SCTAG_SET_OBJECT,
   SCTAG_END_OF_KEYS,
-  SCTAG_DO_NOT_USE_3,  // Required for backwards compatibility
-  SCTAG_DATA_VIEW_OBJECT,
+  SCTAG_DO_NOT_USE_3,         // Required for backwards compatibility
+  SCTAG_DATA_VIEW_OBJECT_V2,  // Old version, for backwards compatibility.
   SCTAG_SAVED_FRAME_OBJECT,
 
   // No new tags before principals.
@@ -128,6 +129,10 @@ enum StructuredDataType : uint32_t {
 
   SCTAG_BIGINT,
   SCTAG_BIGINT_OBJECT,
+
+  SCTAG_ARRAY_BUFFER_OBJECT,
+  SCTAG_TYPED_ARRAY_OBJECT,
+  SCTAG_DATA_VIEW_OBJECT,
 
   SCTAG_TYPED_ARRAY_V1_MIN = 0xFFFF0100,
   SCTAG_TYPED_ARRAY_V1_INT8 = SCTAG_TYPED_ARRAY_V1_MIN + Scalar::Int8,
@@ -193,7 +198,7 @@ struct BufferIterator {
     return *this;
   }
 
-  MOZ_MUST_USE bool advance(size_t size = sizeof(T)) {
+  [[nodiscard]] bool advance(size_t size = sizeof(T)) {
     return mIter.AdvanceAcrossSegments(mBuffer, size);
   }
 
@@ -219,7 +224,7 @@ struct BufferIterator {
 
   bool done() const { return mIter.Done(); }
 
-  MOZ_MUST_USE bool readBytes(char* outData, size_t size) {
+  [[nodiscard]] bool readBytes(char* outData, size_t size) {
     return mBuffer.ReadBytes(mIter, outData, size);
   }
 
@@ -313,15 +318,15 @@ struct SCOutput {
   JS::StructuredCloneScope scope() const { return buf.scope(); }
   void sameProcessScopeRequired() { buf.sameProcessScopeRequired(); }
 
-  MOZ_MUST_USE bool write(uint64_t u);
-  MOZ_MUST_USE bool writePair(uint32_t tag, uint32_t data);
-  MOZ_MUST_USE bool writeDouble(double d);
-  MOZ_MUST_USE bool writeBytes(const void* p, size_t nbytes);
-  MOZ_MUST_USE bool writeChars(const Latin1Char* p, size_t nchars);
-  MOZ_MUST_USE bool writeChars(const char16_t* p, size_t nchars);
+  [[nodiscard]] bool write(uint64_t u);
+  [[nodiscard]] bool writePair(uint32_t tag, uint32_t data);
+  [[nodiscard]] bool writeDouble(double d);
+  [[nodiscard]] bool writeBytes(const void* p, size_t nbytes);
+  [[nodiscard]] bool writeChars(const Latin1Char* p, size_t nchars);
+  [[nodiscard]] bool writeChars(const char16_t* p, size_t nchars);
 
   template <class T>
-  MOZ_MUST_USE bool writeArray(const T* p, size_t nelems);
+  [[nodiscard]] bool writeArray(const T* p, size_t nelems);
 
   void setCallbacks(const JSStructuredCloneCallbacks* callbacks, void* closure,
                     OwnTransferablePolicy policy) {
@@ -351,20 +356,20 @@ class SCInput {
   static void getPtr(uint64_t data, void** ptr);
   static void getPair(uint64_t data, uint32_t* tagp, uint32_t* datap);
 
-  MOZ_MUST_USE bool read(uint64_t* p);
-  MOZ_MUST_USE bool readPair(uint32_t* tagp, uint32_t* datap);
-  MOZ_MUST_USE bool readDouble(double* p);
-  MOZ_MUST_USE bool readBytes(void* p, size_t nbytes);
-  MOZ_MUST_USE bool readChars(Latin1Char* p, size_t nchars);
-  MOZ_MUST_USE bool readChars(char16_t* p, size_t nchars);
-  MOZ_MUST_USE bool readPtr(void**);
+  [[nodiscard]] bool read(uint64_t* p);
+  [[nodiscard]] bool readPair(uint32_t* tagp, uint32_t* datap);
+  [[nodiscard]] bool readDouble(double* p);
+  [[nodiscard]] bool readBytes(void* p, size_t nbytes);
+  [[nodiscard]] bool readChars(Latin1Char* p, size_t nchars);
+  [[nodiscard]] bool readChars(char16_t* p, size_t nchars);
+  [[nodiscard]] bool readPtr(void**);
 
-  MOZ_MUST_USE bool get(uint64_t* p);
-  MOZ_MUST_USE bool getPair(uint32_t* tagp, uint32_t* datap);
+  [[nodiscard]] bool get(uint64_t* p);
+  [[nodiscard]] bool getPair(uint32_t* tagp, uint32_t* datap);
 
   const BufferIterator& tell() const { return point; }
   void seekTo(const BufferIterator& pos) { point = pos; }
-  MOZ_MUST_USE bool seekBy(size_t pos) {
+  [[nodiscard]] bool seekBy(size_t pos) {
     if (!point.advance(pos)) {
       reportTruncated();
       return false;
@@ -373,7 +378,7 @@ class SCInput {
   }
 
   template <class T>
-  MOZ_MUST_USE bool readArray(T* p, size_t nelems);
+  [[nodiscard]] bool readArray(T* p, size_t nelems);
 
   bool reportTruncated() {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -420,18 +425,19 @@ struct JSStructuredCloneReader {
 
   BigInt* readBigInt(uint32_t data);
 
-  MOZ_MUST_USE bool readTypedArray(uint32_t arrayType, uint32_t nelems,
-                                   MutableHandleValue vp, bool v1Read = false);
-  MOZ_MUST_USE bool readDataView(uint32_t byteLength, MutableHandleValue vp);
-  MOZ_MUST_USE bool readArrayBuffer(uint32_t nbytes, MutableHandleValue vp);
-  MOZ_MUST_USE bool readSharedArrayBuffer(MutableHandleValue vp);
-  MOZ_MUST_USE bool readSharedWasmMemory(uint32_t nbytes,
-                                         MutableHandleValue vp);
-  MOZ_MUST_USE bool readV1ArrayBuffer(uint32_t arrayType, uint32_t nelems,
-                                      MutableHandleValue vp);
+  [[nodiscard]] bool readTypedArray(uint32_t arrayType, uint64_t nelems,
+                                    MutableHandleValue vp, bool v1Read = false);
+  [[nodiscard]] bool readDataView(uint64_t byteLength, MutableHandleValue vp);
+  [[nodiscard]] bool readArrayBuffer(StructuredDataType type, uint32_t data,
+                                     MutableHandleValue vp);
+  [[nodiscard]] bool readSharedArrayBuffer(MutableHandleValue vp);
+  [[nodiscard]] bool readSharedWasmMemory(uint32_t nbytes,
+                                          MutableHandleValue vp);
+  [[nodiscard]] bool readV1ArrayBuffer(uint32_t arrayType, uint32_t nelems,
+                                       MutableHandleValue vp);
   JSObject* readSavedFrame(uint32_t principalsTag);
-  MOZ_MUST_USE bool startRead(MutableHandleValue vp,
-                              gc::InitialHeap strHeap = gc::DefaultHeap);
+  [[nodiscard]] bool startRead(MutableHandleValue vp,
+                               gc::InitialHeap strHeap = gc::DefaultHeap);
 
   SCInput& in;
 
@@ -1240,12 +1246,12 @@ bool JSStructuredCloneWriter::writeTypedArray(HandleObject obj) {
     return false;
   }
 
-  if (!out.writePair(SCTAG_TYPED_ARRAY_OBJECT,
-                     tarr->length().deprecatedGetUint32())) {
+  if (!out.writePair(SCTAG_TYPED_ARRAY_OBJECT, uint32_t(tarr->type()))) {
     return false;
   }
-  uint64_t type = tarr->type();
-  if (!out.write(type)) {
+
+  uint64_t nelems = tarr->length().get();
+  if (!out.write(nelems)) {
     return false;
   }
 
@@ -1255,15 +1261,20 @@ bool JSStructuredCloneWriter::writeTypedArray(HandleObject obj) {
     return false;
   }
 
-  return out.write(tarr->byteOffset().deprecatedGetUint32());
+  uint64_t byteOffset = tarr->byteOffset().get();
+  return out.write(byteOffset);
 }
 
 bool JSStructuredCloneWriter::writeDataView(HandleObject obj) {
   Rooted<DataViewObject*> view(context(), obj->maybeUnwrapAs<DataViewObject>());
   JSAutoRealm ar(context(), view);
 
-  if (!out.writePair(SCTAG_DATA_VIEW_OBJECT,
-                     view->byteLength().deprecatedGetUint32())) {
+  if (!out.writePair(SCTAG_DATA_VIEW_OBJECT, 0)) {
+    return false;
+  }
+
+  uint64_t byteLength = view->byteLength().get();
+  if (!out.write(byteLength)) {
     return false;
   }
 
@@ -1273,7 +1284,8 @@ bool JSStructuredCloneWriter::writeDataView(HandleObject obj) {
     return false;
   }
 
-  return out.write(view->byteOffset().deprecatedGetUint32());
+  uint64_t byteOffset = view->byteOffset().get();
+  return out.write(byteOffset);
 }
 
 bool JSStructuredCloneWriter::writeArrayBuffer(HandleObject obj) {
@@ -1281,9 +1293,16 @@ bool JSStructuredCloneWriter::writeArrayBuffer(HandleObject obj) {
                                     obj->maybeUnwrapAs<ArrayBufferObject>());
   JSAutoRealm ar(context(), buffer);
 
-  size_t byteLength = buffer->byteLength().deprecatedGetUint32();
-  return out.writePair(SCTAG_ARRAY_BUFFER_OBJECT, byteLength) &&
-         out.writeBytes(buffer->dataPointer(), byteLength);
+  if (!out.writePair(SCTAG_ARRAY_BUFFER_OBJECT, 0)) {
+    return false;
+  }
+
+  uint64_t byteLength = buffer->byteLength().get();
+  if (!out.write(byteLength)) {
+    return false;
+  }
+
+  return out.writeBytes(buffer->dataPointer(), byteLength);
 }
 
 bool JSStructuredCloneWriter::writeSharedArrayBuffer(HandleObject obj) {
@@ -1320,7 +1339,7 @@ bool JSStructuredCloneWriter::writeSharedArrayBuffer(HandleObject obj) {
   // rawbuf - that length can be different, and it can change at any time.
 
   intptr_t p = reinterpret_cast<intptr_t>(rawbuf);
-  uint32_t byteLength = sharedArrayBuffer->byteLength().deprecatedGetUint32();
+  uint64_t byteLength = sharedArrayBuffer->byteLength().get();
   if (!(out.writePair(SCTAG_SHARED_ARRAY_BUFFER_OBJECT,
                       static_cast<uint32_t>(sizeof(p))) &&
         out.writeBytes(&byteLength, sizeof(byteLength)) &&
@@ -1383,7 +1402,7 @@ static bool TryAppendNativeProperties(JSContext* cx, HandleObject obj,
                                       size_t* properties, bool* optimized) {
   *optimized = false;
 
-  if (!obj->isNative()) {
+  if (!obj->is<NativeObject>()) {
     return true;
   }
 
@@ -1967,7 +1986,7 @@ bool JSStructuredCloneWriter::transferOwnership() {
           return false;
         }
       } else {
-        size_t nbytes = arrayBuffer->byteLength().deprecatedGetUint32();
+        size_t nbytes = arrayBuffer->byteLength().get();
 
         using BufferContents = ArrayBufferObject::BufferContents;
 
@@ -2149,7 +2168,7 @@ static uint32_t TagToV1ArrayType(uint32_t tag) {
 }
 
 bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
-                                             uint32_t nelems,
+                                             uint64_t nelems,
                                              MutableHandleValue vp,
                                              bool v1Read) {
   if (arrayType > (v1Read ? Scalar::Uint8Clamped : Scalar::BigUint64)) {
@@ -2168,7 +2187,7 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
 
   // Read the ArrayBuffer object and its contents (but no properties)
   RootedValue v(context());
-  uint32_t byteOffset;
+  uint64_t byteOffset;
   if (v1Read) {
     if (!readV1ArrayBuffer(arrayType, nelems, &v)) {
       return false;
@@ -2178,12 +2197,20 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
     if (!startRead(&v)) {
       return false;
     }
-    uint64_t n;
-    if (!in.read(&n)) {
+    if (!in.read(&byteOffset)) {
       return false;
     }
-    byteOffset = n;
   }
+
+  // Ensure invalid 64-bit values won't be truncated below.
+  if (nelems > ArrayBufferObject::maxBufferByteLength() ||
+      byteOffset > ArrayBufferObject::maxBufferByteLength()) {
+    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                              JSMSG_SC_BAD_SERIALIZED_DATA,
+                              "invalid typed array length or offset");
+    return false;
+  }
+
   if (!v.isObject() || !v.toObject().is<ArrayBufferObjectMaybeShared>()) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
@@ -2245,7 +2272,7 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
   return true;
 }
 
-bool JSStructuredCloneReader::readDataView(uint32_t byteLength,
+bool JSStructuredCloneReader::readDataView(uint64_t byteLength,
                                            MutableHandleValue vp) {
   // Push a placeholder onto the allObjs list to stand in for the DataView.
   uint32_t placeholderIndex = allObjs.length();
@@ -2267,11 +2294,19 @@ bool JSStructuredCloneReader::readDataView(uint32_t byteLength,
   }
 
   // Read byteOffset.
-  uint64_t n;
-  if (!in.read(&n)) {
+  uint64_t byteOffset;
+  if (!in.read(&byteOffset)) {
     return false;
   }
-  uint32_t byteOffset = n;
+
+  // Ensure invalid 64-bit values won't be truncated below.
+  if (byteLength > ArrayBufferObject::maxBufferByteLength() ||
+      byteOffset > ArrayBufferObject::maxBufferByteLength()) {
+    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                              JSMSG_SC_BAD_SERIALIZED_DATA,
+                              "invalid DataView length or offset");
+    return false;
+  }
 
   RootedObject buffer(context(), &v.toObject());
   RootedObject obj(context(),
@@ -2286,8 +2321,29 @@ bool JSStructuredCloneReader::readDataView(uint32_t byteLength,
   return true;
 }
 
-bool JSStructuredCloneReader::readArrayBuffer(uint32_t nbytes,
+bool JSStructuredCloneReader::readArrayBuffer(StructuredDataType type,
+                                              uint32_t data,
                                               MutableHandleValue vp) {
+  // V2 stores the length in |data|. The current version stores the
+  // length separately to allow larger length values.
+  uint64_t nbytes = 0;
+  if (type == SCTAG_ARRAY_BUFFER_OBJECT) {
+    if (!in.read(&nbytes)) {
+      return false;
+    }
+  } else {
+    MOZ_ASSERT(type == SCTAG_ARRAY_BUFFER_OBJECT_V2);
+    nbytes = data;
+  }
+
+  // The maximum ArrayBuffer size depends on the platform and prefs, and we cast
+  // to BufferSize/size_t below, so we have to check this here.
+  if (nbytes > ArrayBufferObject::maxBufferByteLength()) {
+    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                              JSMSG_BAD_ARRAY_LENGTH);
+    return false;
+  }
+
   JSObject* obj =
       ArrayBufferObject::createZeroed(context(), BufferSize(nbytes));
   if (!obj) {
@@ -2295,14 +2351,22 @@ bool JSStructuredCloneReader::readArrayBuffer(uint32_t nbytes,
   }
   vp.setObject(*obj);
   ArrayBufferObject& buffer = obj->as<ArrayBufferObject>();
-  MOZ_ASSERT(buffer.byteLength().deprecatedGetUint32() == nbytes);
+  MOZ_ASSERT(buffer.byteLength().get() == nbytes);
   return in.readArray(buffer.dataPointer(), nbytes);
 }
 
 bool JSStructuredCloneReader::readSharedArrayBuffer(MutableHandleValue vp) {
-  uint32_t byteLength;
+  uint64_t byteLength;
   if (!in.readBytes(&byteLength, sizeof(byteLength))) {
     return in.reportTruncated();
+  }
+
+  // The maximum ArrayBuffer size depends on the platform and prefs, and we cast
+  // to BufferSize/size_t below, so we have to check this here.
+  if (byteLength > ArrayBufferObject::maxBufferByteLength()) {
+    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                              JSMSG_BAD_ARRAY_LENGTH);
+    return false;
   }
 
   intptr_t p;
@@ -2422,7 +2486,7 @@ bool JSStructuredCloneReader::readV1ArrayBuffer(uint32_t arrayType,
   }
   vp.setObject(*obj);
   ArrayBufferObject& buffer = obj->as<ArrayBufferObject>();
-  MOZ_ASSERT(buffer.byteLength().deprecatedGetUint32() == nbytes);
+  MOZ_ASSERT(buffer.byteLength().get() == nbytes);
 
   switch (arrayType) {
     case Scalar::Int8:
@@ -2612,8 +2676,9 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp,
                                 JSMSG_SC_BAD_SERIALIZED_DATA, "invalid input");
       return false;
 
+    case SCTAG_ARRAY_BUFFER_OBJECT_V2:
     case SCTAG_ARRAY_BUFFER_OBJECT:
-      if (!readArrayBuffer(data, vp)) {
+      if (!readArrayBuffer(StructuredDataType(tag), data, vp)) {
         return false;
       }
       break;
@@ -2630,18 +2695,42 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp,
       }
       break;
 
-    case SCTAG_TYPED_ARRAY_OBJECT: {
+    case SCTAG_TYPED_ARRAY_OBJECT_V2: {
       // readTypedArray adds the array to allObjs.
+      // V2 stores the length (nelems) in |data| and the arrayType separately.
       uint64_t arrayType;
       if (!in.read(&arrayType)) {
         return false;
       }
-      return readTypedArray(arrayType, data, vp);
+      uint64_t nelems = data;
+      return readTypedArray(arrayType, nelems, vp);
+    }
+
+    case SCTAG_TYPED_ARRAY_OBJECT: {
+      // readTypedArray adds the array to allObjs.
+      // The current version stores the array type in |data| and the length
+      // (nelems) separately to support large TypedArrays.
+      uint32_t arrayType = data;
+      uint64_t nelems;
+      if (!in.read(&nelems)) {
+        return false;
+      }
+      return readTypedArray(arrayType, nelems, vp);
+    }
+
+    case SCTAG_DATA_VIEW_OBJECT_V2: {
+      // readDataView adds the array to allObjs.
+      uint64_t byteLength = data;
+      return readDataView(byteLength, vp);
     }
 
     case SCTAG_DATA_VIEW_OBJECT: {
       // readDataView adds the array to allObjs.
-      return readDataView(data, vp);
+      uint64_t byteLength;
+      if (!in.read(&byteLength)) {
+        return false;
+      }
+      return readDataView(byteLength, vp);
     }
 
     case SCTAG_MAP_OBJECT: {
@@ -2818,7 +2907,9 @@ bool JSStructuredCloneReader::readTransferMap() {
         return false;
       }
 
+      MOZ_RELEASE_ASSERT(extraData <= ArrayBufferObject::maxBufferByteLength());
       size_t nbytes = extraData;
+
       MOZ_ASSERT(data == JS::SCTAG_TMO_ALLOC_DATA ||
                  data == JS::SCTAG_TMO_MAPPED_DATA);
       if (data == JS::SCTAG_TMO_ALLOC_DATA) {
@@ -2838,12 +2929,13 @@ bool JSStructuredCloneReader::readTransferMap() {
       if (!in.readPair(&tag, &data)) {
         return false;
       }
-      if (tag != SCTAG_ARRAY_BUFFER_OBJECT) {
+      if (tag != SCTAG_ARRAY_BUFFER_OBJECT_V2 &&
+          tag != SCTAG_ARRAY_BUFFER_OBJECT) {
         ReportDataCloneError(cx, callbacks, JS_SCERR_TRANSFERABLE, closure);
         return false;
       }
       RootedValue val(cx);
-      if (!readArrayBuffer(data, &val)) {
+      if (!readArrayBuffer(StructuredDataType(tag), data, &val)) {
         return false;
       }
       obj = &val.toObject();
@@ -3419,24 +3511,40 @@ JS_PUBLIC_API bool JS_ReadBytes(JSStructuredCloneReader* r, void* p,
 
 JS_PUBLIC_API bool JS_ReadTypedArray(JSStructuredCloneReader* r,
                                      MutableHandleValue vp) {
-  uint32_t tag, nelems;
-  if (!r->input().readPair(&tag, &nelems)) {
+  uint32_t tag, data;
+  if (!r->input().readPair(&tag, &data)) {
     return false;
   }
+
   if (tag >= SCTAG_TYPED_ARRAY_V1_MIN && tag <= SCTAG_TYPED_ARRAY_V1_MAX) {
-    return r->readTypedArray(TagToV1ArrayType(tag), nelems, vp, true);
-  } else if (tag == SCTAG_TYPED_ARRAY_OBJECT) {
+    return r->readTypedArray(TagToV1ArrayType(tag), data, vp, true);
+  }
+
+  if (tag == SCTAG_TYPED_ARRAY_OBJECT_V2) {
+    // V2 stores the length (nelems) in |data| and the arrayType separately.
     uint64_t arrayType;
     if (!r->input().read(&arrayType)) {
       return false;
     }
+    uint64_t nelems = data;
     return r->readTypedArray(arrayType, nelems, vp);
-  } else {
-    JS_ReportErrorNumberASCII(r->context(), GetErrorMessage, nullptr,
-                              JSMSG_SC_BAD_SERIALIZED_DATA,
-                              "expected type array");
-    return false;
   }
+
+  if (tag == SCTAG_TYPED_ARRAY_OBJECT) {
+    // The current version stores the array type in |data| and the length
+    // (nelems) separately to support large TypedArrays.
+    uint32_t arrayType = data;
+    uint64_t nelems;
+    if (!r->input().read(&nelems)) {
+      return false;
+    }
+    return r->readTypedArray(arrayType, nelems, vp);
+  }
+
+  JS_ReportErrorNumberASCII(r->context(), GetErrorMessage, nullptr,
+                            JSMSG_SC_BAD_SERIALIZED_DATA,
+                            "expected type array");
+  return false;
 }
 
 JS_PUBLIC_API bool JS_WriteUint32Pair(JSStructuredCloneWriter* w, uint32_t tag,

@@ -49,7 +49,7 @@
 #include "vm/GlobalObject.h"             // for JSObject::is, GlobalObject
 #include "vm/Instrumentation.h"          // for RealmInstrumentation
 #include "vm/Interpreter.h"              // for Call
-#include "vm/JSAtom.h"                   // for Atomize, js_apply_str
+#include "vm/JSAtom.h"                   // for Atomize
 #include "vm/JSContext.h"                // for JSContext, ReportValueError
 #include "vm/JSFunction.h"               // for JSFunction
 #include "vm/JSScript.h"                 // for JSScript
@@ -66,6 +66,7 @@
 #include "vm/Shape.h"                    // for Shape
 #include "vm/Stack.h"                    // for InvokeArgs
 #include "vm/StringType.h"               // for JSAtom, PropertyName
+#include "vm/WellKnownAtom.h"            // for js_apply_str
 #include "vm/WrapperObject.h"            // for JSObject::is, WrapperObject
 
 #include "vm/Compartment-inl.h"  // for Compartment::wrap
@@ -352,14 +353,28 @@ bool DebuggerObject::CallData::parameterNamesGetter() {
     return true;
   }
 
-  RootedFunction referent(cx, &object->referent()->as<JSFunction>());
-
-  ArrayObject* arr = GetFunctionParameterNamesArray(cx, referent);
-  if (!arr) {
+  Rooted<StringVector> names(cx, StringVector(cx));
+  if (!DebuggerObject::getParameterNames(cx, object, &names)) {
     return false;
   }
 
-  args.rval().setObject(*arr);
+  RootedArrayObject obj(cx, NewDenseFullyAllocatedArray(cx, names.length()));
+  if (!obj) {
+    return false;
+  }
+
+  obj->ensureDenseInitializedLength(0, names.length());
+  for (size_t i = 0; i < names.length(); ++i) {
+    Value v;
+    if (names[i]) {
+      v = StringValue(names[i]);
+    } else {
+      v = UndefinedValue();
+    }
+    obj->setDenseElement(i, v);
+  }
+
+  args.rval().setObject(*obj);
   return true;
 }
 
@@ -1175,6 +1190,14 @@ bool DebuggerObject::CallData::createSource() {
     return false;
   }
 
+  Debugger* dbg = object->owner();
+  if (!dbg->isDebuggeeUnbarriered(referent->as<GlobalObject>().realm())) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_DEBUG_NOT_DEBUGGEE, "Debugger.Object",
+                              "global");
+    return false;
+  }
+
   RootedObject options(cx, ToObject(cx, args[0]));
   if (!options) {
     return false;
@@ -1266,7 +1289,7 @@ bool DebuggerObject::CallData::createSource() {
 
   RootedScript script(cx);
   {
-    AutoRealm ar(cx, object->referent());
+    AutoRealm ar(cx, referent);
     script = JS::Compile(cx, compileOptions, srcBuf);
     if (!script) {
       return false;
@@ -1274,7 +1297,7 @@ bool DebuggerObject::CallData::createSource() {
   }
 
   RootedScriptSourceObject sso(cx, script->sourceObject());
-  RootedObject wrapped(cx, object->owner()->wrapSource(cx, sso));
+  RootedObject wrapped(cx, dbg->wrapSource(cx, sso));
   if (!wrapped) {
     return false;
   }
@@ -1749,6 +1772,45 @@ double DebuggerObject::promiseTimeToResolution() const {
   MOZ_ASSERT(promiseState() != JS::PromiseState::Pending);
 
   return promise()->timeToResolution();
+}
+
+/* static */
+bool DebuggerObject::getParameterNames(JSContext* cx,
+                                       HandleDebuggerObject object,
+                                       MutableHandle<StringVector> result) {
+  MOZ_ASSERT(object->isDebuggeeFunction());
+
+  RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+  if (!result.growBy(referent->nargs())) {
+    return false;
+  }
+  if (IsInterpretedNonSelfHostedFunction(referent)) {
+    RootedScript script(cx, GetOrCreateFunctionScript(cx, referent));
+    if (!script) {
+      return false;
+    }
+
+    MOZ_ASSERT(referent->nargs() == script->numArgs());
+
+    if (referent->nargs() > 0) {
+      PositionalFormalParameterIter fi(script);
+      for (size_t i = 0; i < referent->nargs(); i++, fi++) {
+        MOZ_ASSERT(fi.argumentSlot() == i);
+        JSAtom* atom = fi.name();
+        if (atom) {
+          cx->markAtom(atom);
+        }
+        result[i].set(atom);
+      }
+    }
+  } else {
+    for (size_t i = 0; i < referent->nargs(); i++) {
+      result[i].set(nullptr);
+    }
+  }
+
+  return true;
 }
 
 /* static */
@@ -2286,8 +2348,7 @@ Result<Completion> DebuggerObject::setProperty(JSContext* cx,
   ObjectOpResult opResult;
   bool ok = SetProperty(cx, referent, id, value, receiver, opResult);
 
-  return Completion::fromJSResult(cx, ok,
-                                  BooleanValue(ok && opResult.reallyOk()));
+  return Completion::fromJSResult(cx, ok, BooleanValue(ok && opResult.ok()));
 }
 
 /* static */
@@ -2376,6 +2437,11 @@ bool DebuggerObject::forceLexicalInitializationByName(
 
   Rooted<GlobalObject*> referent(cx, &object->referent()->as<GlobalObject>());
 
+  // Shape::search can end up allocating a new BaseShape in Shape::cachify so
+  // we need to be in the right compartment here.
+  Maybe<AutoRealm> ar;
+  EnterDebuggeeObjectRealm(cx, ar, referent);
+
   RootedObject globalLexical(cx, &referent->lexicalEnvironment());
   RootedObject pobj(cx);
   Rooted<PropertyResult> prop(cx);
@@ -2454,7 +2520,7 @@ static JSFunction* EnsureNativeFunction(const Value& value,
   }
 
   JSFunction* fun = &value.toObject().as<JSFunction>();
-  if (!fun->isNative() || (fun->isExtended() && !allowExtended)) {
+  if (!fun->isNativeFun() || (fun->isExtended() && !allowExtended)) {
     return nullptr;
   }
 

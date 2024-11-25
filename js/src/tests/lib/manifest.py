@@ -5,11 +5,12 @@
 from __future__ import print_function
 
 import os
+import posixpath
 import re
-import six
 import sys
 from subprocess import Popen, PIPE
 
+from .remote import init_device
 from .tests import RefTestCase
 
 
@@ -57,7 +58,7 @@ class XULInfo:
 
         path = None
         for dir in dirs:
-            _path = os.path.join(dir, 'config/autoconf.mk')
+            _path = posixpath.join(dir, 'config', 'autoconf.mk')
             if os.path.isfile(_path):
                 path = _path
                 break
@@ -85,20 +86,78 @@ class XULInfo:
 
 
 class XULInfoTester:
-    def __init__(self, xulinfo, js_bin, js_args):
+    def __init__(self, xulinfo, options, js_args):
         self.js_prologue = xulinfo.as_js()
-        self.js_bin = js_bin
+        self.js_bin = options.js_shell
         self.js_args = js_args
+        # options here are the command line options
+        self.options = options
         # Maps JS expr to evaluation result.
         self.cache = {}
 
-    def test(self, cond):
+        if not self.options.remote:
+            return
+        self.device = init_device(options)
+        self.js_bin = posixpath.join(options.remote_test_root, 'bin', 'js')
+
+    def test(self, cond, options=[]):
+        if self.options.remote:
+            return self._test_remote(cond, options=options)
+        return self._test_local(cond, options=options)
+
+    def _test_remote(self, cond, options=[]):
+        from mozdevice import ADBDevice, ADBProcessError
+
+        ans = self.cache.get(cond, None)
+        if ans is not None:
+            return ans
+
+        env = {
+            'LD_LIBRARY_PATH': posixpath.join(self.options.remote_test_root, 'bin'),
+        }
+
+        cmd = [
+            self.js_bin
+        ] + self.js_args + options + [
+            # run in safe configuration, since it is hard to debug
+            # crashes when running code here. In particular, msan will
+            # error out if the jit is active.
+            '--no-baseline',
+            '--no-blinterp',
+            '-e', self.js_prologue,
+            '-e', 'print(!!({}))'.format(cond)
+        ]
+        cmd = ADBDevice._escape_command_line(cmd)
+        try:
+            # Allow ADBError or ADBTimeoutError to terminate the test run,
+            # but handle ADBProcessError in order to support the use of
+            # non-zero exit codes in the JavaScript shell tests.
+            out = self.device.shell_output(cmd, env=env,
+                                           cwd=self.options.remote_test_root,
+                                           timeout=None)
+            err = ''
+        except ADBProcessError as e:
+            out = ''
+            err = str(e.adb_process.stdout)
+
+        if out == 'true':
+            ans = True
+        elif out == 'false':
+            ans = False
+        else:
+            raise Exception("Failed to test XUL condition {!r};"
+                            " output was {!r}, stderr was {!r}".format(
+                                cond, out, err))
+        self.cache[cond] = ans
+        return ans
+
+    def _test_local(self, cond, options=[]):
         """Test a XUL predicate condition against this local info."""
         ans = self.cache.get(cond, None)
         if ans is None:
             cmd = [
                 self.js_bin
-            ] + self.js_args + [
+            ] + self.js_args + options + [
                 # run in safe configuration, since it is hard to debug
                 # crashes when running code here. In particular, msan will
                 # error out if the jit is active.
@@ -124,7 +183,7 @@ class XULInfoTester:
 class NullXULInfoTester:
     """Can be used to parse manifests without a JS shell."""
 
-    def test(self, cond):
+    def test(self, cond, options=[]):
         return False
 
 
@@ -141,9 +200,14 @@ def _parse_one(testcase, terms, xul_tester):
         elif parts[pos] == 'random':
             testcase.random = True
             pos += 1
+        elif parts[pos].startswith('shell-option('):
+            # This directive adds an extra option to pass to the shell.
+            option = parts[pos][len('shell-option('):-1]
+            testcase.options.append(option)
+            pos += 1
         elif parts[pos].startswith('fails-if'):
             cond = parts[pos][len('fails-if('):-1]
-            if xul_tester.test(cond):
+            if xul_tester.test(cond, testcase.options):
                 testcase.expect = False
             pos += 1
         elif parts[pos].startswith('asserts-if'):
@@ -152,7 +216,7 @@ def _parse_one(testcase, terms, xul_tester):
             pos += 1
         elif parts[pos].startswith('skip-if'):
             cond = parts[pos][len('skip-if('):-1]
-            if xul_tester.test(cond):
+            if xul_tester.test(cond, testcase.options):
                 testcase.expect = testcase.enable = False
             pos += 1
         elif parts[pos].startswith('ignore-flag'):
@@ -161,7 +225,7 @@ def _parse_one(testcase, terms, xul_tester):
             pos += 1
         elif parts[pos].startswith('random-if'):
             cond = parts[pos][len('random-if('):-1]
-            if xul_tester.test(cond):
+            if xul_tester.test(cond, testcase.options):
                 testcase.random = True
             pos += 1
         elif parts[pos] == 'slow':
@@ -169,12 +233,12 @@ def _parse_one(testcase, terms, xul_tester):
             pos += 1
         elif parts[pos].startswith('slow-if'):
             cond = parts[pos][len('slow-if('):-1]
-            if xul_tester.test(cond):
+            if xul_tester.test(cond, testcase.options):
                 testcase.slow = True
             pos += 1
         elif parts[pos] == 'silentfail':
             # silentfails use tons of memory, and Darwin doesn't support ulimit.
-            if xul_tester.test("xulRuntime.OS == 'Darwin'"):
+            if xul_tester.test("xulRuntime.OS == 'Darwin'", testcase.options):
                 testcase.expect = testcase.enable = False
             pos += 1
         elif parts[pos].startswith('error:'):
@@ -205,7 +269,8 @@ def _build_manifest_script_entry(script_name, test):
                           if not (term == "module" or
                                   term == "async" or
                                   term.startswith("error:") or
-                                  term.startswith("ignore-flag("))])
+                                  term.startswith("ignore-flag(") or
+                                  term.startswith("shell-option("))])
         if terms:
             line.append(terms)
     if test.error:
@@ -253,7 +318,7 @@ def _emit_manifest_at(location, relative, test_gen, depth):
     filename = os.path.join(location, 'jstests.list')
     manifest = []
     numTestFiles = 0
-    for k, test_list in six.iteritems(manifests):
+    for k, test_list in manifests.items():
         fullpath = os.path.join(location, k)
         if os.path.isdir(fullpath):
             manifest.append("include " + k + "/jstests.list")

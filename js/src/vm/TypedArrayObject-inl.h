@@ -24,6 +24,7 @@
 #include "js/Conversions.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/Value.h"
+#include "util/DifferentialTesting.h"
 #include "util/Memory.h"
 #include "vm/BigIntType.h"
 #include "vm/JSContext.h"
@@ -292,7 +293,7 @@ class ElementSpecific {
    */
   static bool setFromTypedArray(Handle<TypedArrayObject*> target,
                                 Handle<TypedArrayObject*> source,
-                                uint32_t offset) {
+                                size_t offset) {
     // WARNING: |source| may be an unwrapped typed array from a different
     // compartment. Proceed with caution!
 
@@ -301,9 +302,8 @@ class ElementSpecific {
     MOZ_ASSERT(!target->hasDetachedBuffer(), "target isn't detached");
     MOZ_ASSERT(!source->hasDetachedBuffer(), "source isn't detached");
 
-    MOZ_ASSERT(offset <= target->length().deprecatedGetUint32());
-    MOZ_ASSERT(source->length().deprecatedGetUint32() <=
-               target->length().deprecatedGetUint32() - offset);
+    MOZ_ASSERT(offset <= target->length().get());
+    MOZ_ASSERT(source->length().get() <= target->length().get() - offset);
 
     if (TypedArrayObject::sameBuffer(target, source)) {
       return setFromOverlappingTypedArray(target, source, offset);
@@ -415,7 +415,7 @@ class ElementSpecific {
                "use setFromTypedArray instead of this method");
 
     size_t i = 0;
-    if (source->isNative()) {
+    if (source->is<NativeObject>()) {
       // Attempt fast-path infallible conversion of dense elements up to
       // the first potentially side-effectful lookup or conversion.
       size_t bound = std::min<size_t>(
@@ -717,14 +717,14 @@ class ElementSpecific {
 
   static T doubleToNative(double d) {
     if (TypeIsFloatingPoint<T>()) {
-#ifdef JS_MORE_DETERMINISTIC
       // The JS spec doesn't distinguish among different NaN values, and
       // it deliberately doesn't specify the bit pattern written to a
       // typed array when NaN is written into it.  This bit-pattern
-      // inconsistency could confuse deterministic testing, so always
-      // canonicalize NaN values in more-deterministic builds.
-      d = JS::CanonicalizeNaN(d);
-#endif
+      // inconsistency could confuse differential testing, so always
+      // canonicalize NaN values in differential testing.
+      if (js::SupportDifferentialTesting()) {
+        d = JS::CanonicalizeNaN(d);
+      }
       return T(d);
     }
     if (MOZ_UNLIKELY(mozilla::IsNaN(d))) {

@@ -369,7 +369,7 @@ class JS_FRIEND_API BaseProxyHandler {
 extern JS_FRIEND_DATA const JSClass ProxyClass;
 
 inline bool IsProxy(const JSObject* obj) {
-  return JS::GetClass(obj)->isProxy();
+  return JS::GetClass(obj)->isProxyObject();
 }
 
 namespace detail {
@@ -578,10 +578,6 @@ class MOZ_STACK_CLASS ProxyOptions {
 };
 
 JS_FRIEND_API JSObject* NewProxyObject(
-    JSContext* cx, const BaseProxyHandler* handler, JS::HandleValue priv,
-    JSObject* proto, const ProxyOptions& options = ProxyOptions());
-
-JS_FRIEND_API JSObject* NewSingletonProxyObject(
     JSContext* cx, const BaseProxyHandler* handler, JS::HandleValue priv,
     JSObject* proto, const ProxyOptions& options = ProxyOptions());
 

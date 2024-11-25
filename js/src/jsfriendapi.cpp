@@ -20,7 +20,7 @@
 #include "js/CharacterEncoding.h"
 #include "js/experimental/CodeCoverage.h"
 #include "js/experimental/CTypes.h"  // JS::AutoCTypesActivityCallback, JS::SetCTypesActivityCallback
-#include "js/experimental/Intl.h"  // JS::Add{,Moz}DisplayNamesConstructor, JS::AddMozDateTimeFormatConstructor
+#include "js/experimental/Intl.h"  // JS::AddMoz{DateTimeFormat,DisplayNames}Constructor
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // JS_STACK_GROWTH_DIRECTION
 #include "js/friend/WindowProxy.h"    // js::ToWindowIfWindowProxy
@@ -108,45 +108,15 @@ JS_FRIEND_API JSFunction* JS_GetObjectFunction(JSObject* obj) {
   return nullptr;
 }
 
-JS_FRIEND_API bool JS_SplicePrototype(JSContext* cx, HandleObject obj,
+JS_FRIEND_API bool JS_SplicePrototype(JSContext* cx, HandleObject global,
                                       HandleObject proto) {
-  /*
-   * Change the prototype of an object which hasn't been used anywhere
-   * and does not share its type with another object. Unlike JS_SetPrototype,
-   * does not nuke type information for the object.
-   */
   CHECK_THREAD(cx);
-  cx->check(obj, proto);
+  cx->check(global, proto);
 
-  if (!obj->isSingleton()) {
-    /*
-     * We can see non-singleton objects when trying to splice prototypes
-     * due to mutable __proto__ (ugh).
-     */
-    return JS_SetPrototype(cx, obj, proto);
-  }
+  MOZ_ASSERT(global->is<GlobalObject>());
 
   Rooted<TaggedProto> tagged(cx, TaggedProto(proto));
-  return JSObject::splicePrototype(cx, obj, tagged);
-}
-
-JS_FRIEND_API JSObject* JS_NewObjectWithUniqueType(JSContext* cx,
-                                                   const JSClass* clasp,
-                                                   HandleObject proto) {
-  /*
-   * Create our object with a null proto and then splice in the correct proto
-   * after we setSingleton, so that we don't pollute the default
-   * ObjectGroup attached to our proto with information about our object, since
-   * we're not going to be using that ObjectGroup anyway.
-   */
-  RootedObject obj(cx, NewSingletonObjectWithGivenProto(cx, clasp, nullptr));
-  if (!obj) {
-    return nullptr;
-  }
-  if (!JS_SplicePrototype(cx, obj, proto)) {
-    return nullptr;
-  }
-  return obj;
+  return GlobalObject::splicePrototype(cx, global.as<GlobalObject>(), tagged);
 }
 
 JS_FRIEND_API JSObject* JS_NewObjectWithoutMetadata(
@@ -435,20 +405,20 @@ JS_FRIEND_API JSFunction* js::NewFunctionByIdWithReserved(
 
 JS_FRIEND_API const Value& js::GetFunctionNativeReserved(JSObject* fun,
                                                          size_t which) {
-  MOZ_ASSERT(fun->as<JSFunction>().isNative());
+  MOZ_ASSERT(fun->as<JSFunction>().isNativeFun());
   return fun->as<JSFunction>().getExtendedSlot(which);
 }
 
 JS_FRIEND_API void js::SetFunctionNativeReserved(JSObject* fun, size_t which,
                                                  const Value& val) {
-  MOZ_ASSERT(fun->as<JSFunction>().isNative());
+  MOZ_ASSERT(fun->as<JSFunction>().isNativeFun());
   MOZ_ASSERT_IF(val.isObject(),
                 val.toObject().compartment() == fun->compartment());
   fun->as<JSFunction>().setExtendedSlot(which, val);
 }
 
 JS_FRIEND_API bool js::FunctionHasNativeReserved(JSObject* fun) {
-  MOZ_ASSERT(fun->as<JSFunction>().isNative());
+  MOZ_ASSERT(fun->as<JSFunction>().isNativeFun());
   return fun->as<JSFunction>().isExtended();
 }
 
@@ -456,7 +426,7 @@ bool js::GetObjectProto(JSContext* cx, JS::Handle<JSObject*> obj,
                         JS::MutableHandle<JSObject*> proto) {
   cx->check(obj);
 
-  if (IsProxy(obj)) {
+  if (obj->is<ProxyObject>()) {
     return JS_GetPrototype(cx, obj, proto);
   }
 
@@ -477,7 +447,7 @@ JS_FRIEND_API bool js::GetRealmOriginalEval(JSContext* cx,
 
 void JS::detail::SetReservedSlotWithBarrier(JSObject* obj, size_t slot,
                                             const Value& value) {
-  if (IsProxy(obj)) {
+  if (obj->is<ProxyObject>()) {
     obj->as<ProxyObject>().setReservedSlot(slot, value);
   } else {
     obj->as<NativeObject>().setSlot(slot, value);
@@ -581,14 +551,14 @@ JS_FRIEND_API JSObject* JS_CloneObject(JSContext* cx, HandleObject obj,
   // |obj| might be in a different compartment.
   cx->check(proto);
 
-  if (!obj->isNative() && !obj->is<ProxyObject>()) {
+  if (!obj->is<NativeObject>() && !obj->is<ProxyObject>()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_CANT_CLONE_OBJECT);
     return nullptr;
   }
 
   RootedObject clone(cx);
-  if (obj->isNative()) {
+  if (obj->is<NativeObject>()) {
     // JS_CloneObject is used to create the target object for JSObject::swap().
     // swap() requires its arguments are tenured, so ensure tenure allocation.
     clone = NewTenuredObjectWithGivenProto(cx, obj->getClass(), proto);
@@ -836,10 +806,6 @@ bool JS::AddMozDateTimeFormatConstructor(JSContext* cx, JS::HandleObject intl) {
 }
 
 bool JS::AddMozDisplayNamesConstructor(JSContext* cx, JS::HandleObject intl) {
-  return IntlNotEnabled(cx);
-}
-
-bool JS::AddDisplayNamesConstructor(JSContext* cx, JS::HandleObject intl) {
   return IntlNotEnabled(cx);
 }
 

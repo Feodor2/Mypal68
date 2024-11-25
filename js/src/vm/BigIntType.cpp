@@ -2584,7 +2584,11 @@ BigInt* BigInt::asUintN(JSContext* cx, HandleBigInt x, uint64_t bits) {
   if (bits <= 64) {
     uint64_t u64 = toUint64(x);
     uint64_t mask = uint64_t(-1) >> (64 - bits);
-    return createFromUint64(cx, u64 & mask);
+    uint64_t n = u64 & mask;
+    if (u64 == n && x->absFitsInUint64()) {
+      return x;
+    }
+    return createFromUint64(cx, n);
   }
 
   if (bits >= MaxBitLength) {
@@ -2641,7 +2645,11 @@ BigInt* BigInt::asIntN(JSContext* cx, HandleBigInt x, uint64_t bits) {
   }
 
   if (bits == 64) {
-    return createFromInt64(cx, toInt64(x));
+    int64_t n = toInt64(x);
+    if (((n < 0) == x->isNegative()) && x->absFitsInUint64()) {
+      return x;
+    }
+    return createFromInt64(cx, n);
   }
 
   if (bits > MaxBitLength) {
@@ -3700,7 +3708,7 @@ XDRResult js::XDRBigInt(XDRState<mode>* xdr, MutableHandleBigInt bi) {
   uint32_t digitLength = length / sizeof(BigInt::Digit);
   auto buf = cx->make_pod_array<BigInt::Digit>(digitLength);
   if (!buf) {
-    return xdr->fail(JS::TranscodeResult_Throw);
+    return xdr->fail(JS::TranscodeResult::Throw);
   }
 
   if (mode == XDR_ENCODE) {
@@ -3713,7 +3721,7 @@ XDRResult js::XDRBigInt(XDRState<mode>* xdr, MutableHandleBigInt bi) {
     BigInt* res =
         BigInt::createUninitialized(cx, digitLength, sign, gc::TenuredHeap);
     if (!res) {
-      return xdr->fail(JS::TranscodeResult_Throw);
+      return xdr->fail(JS::TranscodeResult::Throw);
     }
     std::uninitialized_copy_n(buf.get(), digitLength, res->digits().Elements());
     bi.set(res);

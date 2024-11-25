@@ -29,7 +29,7 @@ void* hidePointerValue(void* p) {
 //
 // Lock-freedom predicates
 
-BEGIN_TEST(testAtomicLockFree8) {
+BEGIN_REUSABLE_TEST(testAtomicLockFree8) {
   // isLockfree8() must not return true if there are no 8-byte atomics
 
   CHECK(!jit::AtomicOperations::isLockfree8() ||
@@ -45,16 +45,16 @@ END_TEST(testAtomicLockFree8)
 
 // The JS spec requires specific behavior for all but 1 and 2.
 
-BEGIN_TEST(testAtomicLockFreeJS) {
-  CHECK(jit::AtomicOperations::isLockfreeJS(1) ==
-        true);  // false is allowed by spec but not in SpiderMonkey
-  CHECK(jit::AtomicOperations::isLockfreeJS(2) == true);   // ditto
-  CHECK(jit::AtomicOperations::isLockfreeJS(3) == false);  // required
-  CHECK(jit::AtomicOperations::isLockfreeJS(4) == true);   // required
-  CHECK(jit::AtomicOperations::isLockfreeJS(5) == false);  // required
-  CHECK(jit::AtomicOperations::isLockfreeJS(6) == false);  // required
-  CHECK(jit::AtomicOperations::isLockfreeJS(7) == false);  // required
-  CHECK(jit::AtomicOperations::isLockfreeJS(8) == false);  // required
+BEGIN_REUSABLE_TEST(testAtomicLockFreeJS) {
+  static_assert(jit::AtomicOperations::isLockfreeJS(1) ==
+                true);  // false is allowed by spec but not in SpiderMonkey
+  static_assert(jit::AtomicOperations::isLockfreeJS(2) == true);   // ditto
+  static_assert(jit::AtomicOperations::isLockfreeJS(8) == true);   // ditto
+  static_assert(jit::AtomicOperations::isLockfreeJS(3) == false);  // required
+  static_assert(jit::AtomicOperations::isLockfreeJS(4) == true);   // required
+  static_assert(jit::AtomicOperations::isLockfreeJS(5) == false);  // required
+  static_assert(jit::AtomicOperations::isLockfreeJS(6) == false);  // required
+  static_assert(jit::AtomicOperations::isLockfreeJS(7) == false);  // required
   return true;
 }
 END_TEST(testAtomicLockFreeJS)
@@ -66,7 +66,7 @@ END_TEST(testAtomicLockFreeJS)
 // This only tests that fenceSeqCst is defined and that it doesn't crash if we
 // call it, but it has no return value and its effect is not observable here.
 
-BEGIN_TEST(testAtomicFence) {
+BEGIN_REUSABLE_TEST(testAtomicFence) {
   jit::AtomicOperations::fenceSeqCst();
   return true;
 }
@@ -157,49 +157,49 @@ MOZ_ALIGNED_DECL(static uint8_t atomicMem2[8], 8);
   CHECK(*q2 == A);                                                      \
   return true
 
-BEGIN_TEST(testAtomicOperationsU8) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsU8) {
   const uint8_t A = 0xab;
   const uint8_t B = 0x37;
   ATOMIC_TESTS(uint8_t, A, B);
 }
 END_TEST(testAtomicOperationsU8)
 
-BEGIN_TEST(testAtomicOperationsI8) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsI8) {
   const int8_t A = 0x3b;
   const int8_t B = 0x27;
   ATOMIC_TESTS(int8_t, A, B);
 }
 END_TEST(testAtomicOperationsI8)
 
-BEGIN_TEST(testAtomicOperationsU16) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsU16) {
   const uint16_t A = 0xabdc;
   const uint16_t B = 0x3789;
   ATOMIC_TESTS(uint16_t, A, B);
 }
 END_TEST(testAtomicOperationsU16)
 
-BEGIN_TEST(testAtomicOperationsI16) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsI16) {
   const int16_t A = 0x3bdc;
   const int16_t B = 0x2737;
   ATOMIC_TESTS(int16_t, A, B);
 }
 END_TEST(testAtomicOperationsI16)
 
-BEGIN_TEST(testAtomicOperationsU32) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsU32) {
   const uint32_t A = 0xabdc0588;
   const uint32_t B = 0x37891942;
   ATOMIC_TESTS(uint32_t, A, B);
 }
 END_TEST(testAtomicOperationsU32)
 
-BEGIN_TEST(testAtomicOperationsI32) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsI32) {
   const int32_t A = 0x3bdc0588;
   const int32_t B = 0x27371843;
   ATOMIC_TESTS(int32_t, A, B);
 }
 END_TEST(testAtomicOperationsI32)
 
-BEGIN_TEST(testAtomicOperationsU64) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsU64) {
   if (!jit::AtomicOperations::hasAtomic8()) {
     return true;
   }
@@ -210,7 +210,7 @@ BEGIN_TEST(testAtomicOperationsU64) {
 }
 END_TEST(testAtomicOperationsU64)
 
-BEGIN_TEST(testAtomicOperationsI64) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsI64) {
   if (!jit::AtomicOperations::hasAtomic8()) {
     return true;
   }
@@ -264,14 +264,14 @@ END_TEST(testAtomicOperationsI64)
   CHECK(*q2 == A);                                                      \
   return true
 
-BEGIN_TEST(testAtomicOperationsF32) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsF32) {
   const float A(123.25);
   const float B(-987.75);
   ATOMIC_FLOAT_TESTS(float, A, B);
 }
 END_TEST(testAtomicOperationsF32)
 
-BEGIN_TEST(testAtomicOperationsF64) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsF64) {
   const double A(123.25);
   const double B(-987.75);
   ATOMIC_FLOAT_TESTS(double, A, B);
@@ -289,7 +289,7 @@ END_TEST(testAtomicOperationsF64)
   CHECK(*q == B);                                                 \
   return true
 
-BEGIN_TEST(testAtomicOperationsU8Clamped) {
+BEGIN_REUSABLE_TEST(testAtomicOperationsU8Clamped) {
   const uint8_clamped A(0xab);
   const uint8_clamped B(0x37);
   ATOMIC_CLAMPED_TESTS(uint8_clamped, A, B);

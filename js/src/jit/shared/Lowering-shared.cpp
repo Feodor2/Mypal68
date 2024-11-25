@@ -7,6 +7,7 @@
 #include "jit/LIR.h"
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
+#include "jit/ScalarTypeUtils.h"
 
 #include "vm/SymbolType.h"
 
@@ -136,9 +137,22 @@ bool LRecoverInfo::OperandIter::canOptimizeOutIfUnused() {
 }
 #endif
 
+LAllocation LIRGeneratorShared::useRegisterOrIndexConstant(
+    MDefinition* mir, Scalar::Type type, int32_t offsetAdjustment) {
+  if (CanUseInt32Constant(mir)) {
+    MConstant* cst = mir->toConstant();
+    int32_t val =
+        cst->type() == MIRType::Int32 ? cst->toInt32() : cst->toIntPtr();
+    int32_t offset;
+    if (ArrayOffsetFitsInInt32(val, type, offsetAdjustment, &offset)) {
+      return LAllocation(mir->toConstant());
+    }
+  }
+  return useRegister(mir);
+}
+
 #ifdef JS_NUNBOX32
-LSnapshot* LIRGeneratorShared::buildSnapshot(LInstruction* ins,
-                                             MResumePoint* rp,
+LSnapshot* LIRGeneratorShared::buildSnapshot(MResumePoint* rp,
                                              BailoutKind kind) {
   LRecoverInfo* recoverInfo = getRecoverInfo(rp);
   if (!recoverInfo) {
@@ -199,8 +213,7 @@ LSnapshot* LIRGeneratorShared::buildSnapshot(LInstruction* ins,
 
 #elif JS_PUNBOX64
 
-LSnapshot* LIRGeneratorShared::buildSnapshot(LInstruction* ins,
-                                             MResumePoint* rp,
+LSnapshot* LIRGeneratorShared::buildSnapshot(MResumePoint* rp,
                                              BailoutKind kind) {
   LRecoverInfo* recoverInfo = getRecoverInfo(rp);
   if (!recoverInfo) {
@@ -253,12 +266,9 @@ void LIRGeneratorShared::assignSnapshot(LInstruction* ins, BailoutKind kind) {
   // assignSnapshot must be called before define/add, since
   // it may add new instructions for emitted-at-use operands.
   MOZ_ASSERT(ins->id() == 0);
-  if (kind == BailoutKind::Unknown) {
-    MOZ_ASSERT(!JitOptions.warpBuilder);
-    kind = BailoutKind::GenericIon;
-  }
+  MOZ_ASSERT(kind != BailoutKind::Unknown);
 
-  LSnapshot* snapshot = buildSnapshot(ins, lastResumePoint_, kind);
+  LSnapshot* snapshot = buildSnapshot(lastResumePoint_, kind);
   if (!snapshot) {
     abort(AbortReason::Alloc, "buildSnapshot failed");
     return;
@@ -276,7 +286,7 @@ void LIRGeneratorShared::assignSafepoint(LInstruction* ins, MInstruction* mir,
 
   MResumePoint* mrp =
       mir->resumePoint() ? mir->resumePoint() : lastResumePoint_;
-  LSnapshot* postSnapshot = buildSnapshot(ins, mrp, kind);
+  LSnapshot* postSnapshot = buildSnapshot(mrp, kind);
   if (!postSnapshot) {
     abort(AbortReason::Alloc, "buildSnapshot failed");
     return;

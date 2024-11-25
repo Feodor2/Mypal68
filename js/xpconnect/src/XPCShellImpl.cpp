@@ -52,6 +52,7 @@
 //#  include "mozilla/WinDllServices.h"
 #  include <windows.h>
 #  if defined(MOZ_SANDBOX)
+#    include "XREShellData.h"
 #    include "sandboxBroker.h"
 #  endif
 #endif
@@ -1108,7 +1109,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       XRE_GetFileFromPath(argv[0], getter_AddRefs(greDir));
       greDir->GetParent(getter_AddRefs(tmpDir));
       tmpDir->Clone(getter_AddRefs(greDir));
-      tmpDir->SetNativeLeafName(NS_LITERAL_CSTRING("Resources"));
+      tmpDir->SetNativeLeafName("Resources"_ns);
       bool dirExists = false;
       tmpDir->Exists(&dirExists);
       if (dirExists) {
@@ -1177,17 +1178,8 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
 
     if (argc > 1 && !strcmp(argv[1], "--greomni")) {
       nsCOMPtr<nsIFile> greOmni;
-      nsCOMPtr<nsIFile> appOmni;
       XRE_GetFileFromPath(argv[2], getter_AddRefs(greOmni));
-      if (argc > 3 && !strcmp(argv[3], "--appomni")) {
-        XRE_GetFileFromPath(argv[4], getter_AddRefs(appOmni));
-        argc -= 2;
-        argv += 2;
-      } else {
-        appOmni = greOmni;
-      }
-
-      XRE_InitOmnijar(greOmni, appOmni);
+      XRE_InitOmnijar(greOmni, greOmni);
       argc -= 2;
       argv += 2;
     }
@@ -1252,19 +1244,18 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
     shellSecurityCallbacks = *scb;
     JS_SetSecurityCallbacks(cx, &shellSecurityCallbacks);
 
-    RefPtr<BackstagePass> backstagePass;
-    rv = NS_NewBackstagePass(getter_AddRefs(backstagePass));
-    if (NS_FAILED(rv)) {
-      fprintf(gErrFile, "+++ Failed to create BackstagePass: %8x\n",
-              static_cast<uint32_t>(rv));
-      return 1;
-    }
+    auto backstagePass = MakeRefPtr<BackstagePass>();
 
     // Make the default XPCShell global use a fresh zone (rather than the
     // System Zone) to improve cross-zone test coverage.
     JS::RealmOptions options;
     options.creationOptions().setNewCompartmentAndZone();
     xpc::SetPrefableRealmOptions(options);
+
+    // Even if we're building in a configuration where source is
+    // discarded, there's no reason to do that on XPCShell, and doing so
+    // might break various automation scripts.
+    options.behaviors().setDiscardSource(false);
 
     JS::Rooted<JSObject*> glob(cx);
     rv = xpc::InitClassesWithNewWrappedGlobal(
@@ -1311,11 +1302,6 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       backstagePass->SetGlobalObject(glob);
 
       JSAutoRealm ar(cx, glob);
-
-      // Even if we're building in a configuration where source is
-      // discarded, there's no reason to do that on XPCShell, and doing so
-      // might break various automation scripts.
-      JS::RealmBehaviorsRef(cx).setDiscardSource(false);
 
       if (!JS_InitReflectParse(cx, glob)) {
         return 1;
@@ -1399,7 +1385,7 @@ void XPCShellDirProvider::SetGREDirs(nsIFile* greDir) {
   nsAutoCString leafName;
   mGREDir->GetNativeLeafName(leafName);
   if (leafName.EqualsLiteral("Resources")) {
-    mGREBinDir->SetNativeLeafName(NS_LITERAL_CSTRING("MacOS"));
+    mGREBinDir->SetNativeLeafName("MacOS"_ns);
   }
 #endif
 }
@@ -1437,8 +1423,8 @@ XPCShellDirProvider::GetFile(const char* prop, bool* persistent,
     nsCOMPtr<nsIFile> file;
     *persistent = true;
     if (NS_FAILED(mGREDir->Clone(getter_AddRefs(file))) ||
-        NS_FAILED(file->AppendNative(NS_LITERAL_CSTRING("defaults"))) ||
-        NS_FAILED(file->AppendNative(NS_LITERAL_CSTRING("pref"))))
+        NS_FAILED(file->AppendNative("defaults"_ns)) ||
+        NS_FAILED(file->AppendNative("pref"_ns)))
       return NS_ERROR_FAILURE;
     file.forget(result);
     return NS_OK;
@@ -1454,7 +1440,7 @@ XPCShellDirProvider::GetFiles(const char* prop, nsISimpleEnumerator** result) {
 
     nsCOMPtr<nsIFile> file;
     mGREDir->Clone(getter_AddRefs(file));
-    file->AppendNative(NS_LITERAL_CSTRING("chrome"));
+    file->AppendNative("chrome"_ns);
     dirs.AppendObject(file);
 
     nsresult rv =
@@ -1469,8 +1455,8 @@ XPCShellDirProvider::GetFiles(const char* prop, nsISimpleEnumerator** result) {
     nsCOMPtr<nsIFile> appDir;
     bool exists;
     if (mAppDir && NS_SUCCEEDED(mAppDir->Clone(getter_AddRefs(appDir))) &&
-        NS_SUCCEEDED(appDir->AppendNative(NS_LITERAL_CSTRING("defaults"))) &&
-        NS_SUCCEEDED(appDir->AppendNative(NS_LITERAL_CSTRING("preferences"))) &&
+        NS_SUCCEEDED(appDir->AppendNative("defaults"_ns)) &&
+        NS_SUCCEEDED(appDir->AppendNative("preferences"_ns)) &&
         NS_SUCCEEDED(appDir->Exists(&exists)) && exists) {
       dirs.AppendObject(appDir);
       return NS_NewArrayEnumerator(result, dirs, NS_GET_IID(nsIFile));
@@ -1491,7 +1477,7 @@ XPCShellDirProvider::GetFiles(const char* prop, nsISimpleEnumerator** result) {
       if (mGREDir) {
         mGREDir->Clone(getter_AddRefs(file));
         if (NS_SUCCEEDED(mGREDir->Clone(getter_AddRefs(file)))) {
-          file->AppendNative(NS_LITERAL_CSTRING("plugins"));
+          file->AppendNative("plugins"_ns);
           if (NS_SUCCEEDED(file->Exists(&exists)) && exists) {
             dirs.AppendObject(file);
           }

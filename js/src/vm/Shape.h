@@ -115,7 +115,7 @@
 MOZ_ALWAYS_INLINE size_t JSSLOT_FREE(const JSClass* clasp) {
   // Proxy classes have reserved slots, but proxies manage their own slot
   // layout.
-  MOZ_ASSERT(!clasp->isProxy());
+  MOZ_ASSERT(!clasp->isProxyObject());
   return JSCLASS_RESERVED_SLOTS(clasp);
 }
 
@@ -1007,10 +1007,10 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   static MOZ_ALWAYS_INLINE Shape* search(JSContext* cx, Shape* start, jsid id);
 
   template <MaybeAdding Adding = MaybeAdding::NotAdding>
-  static inline MOZ_MUST_USE bool search(JSContext* cx, Shape* start, jsid id,
-                                         const AutoKeepShapeCaches&,
-                                         Shape** pshape, ShapeTable** ptable,
-                                         ShapeTable::Entry** pentry);
+  [[nodiscard]] static inline bool search(JSContext* cx, Shape* start, jsid id,
+                                          const AutoKeepShapeCaches&,
+                                          Shape** pshape, ShapeTable** ptable,
+                                          ShapeTable::Entry** pentry);
 
   static inline Shape* searchNoHashify(Shape* start, jsid id);
 
@@ -1051,7 +1051,7 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
 
   bool makeOwnBaseShape(JSContext* cx);
 
-  MOZ_ALWAYS_INLINE MOZ_MUST_USE bool maybeCreateCacheForLookup(JSContext* cx);
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool maybeCreateCacheForLookup(JSContext* cx);
 
   MOZ_ALWAYS_INLINE void updateDictionaryTable(ShapeTable* table,
                                                ShapeTable::Entry* entry,
@@ -1088,8 +1088,8 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   }
 
   template <typename T>
-  MOZ_MUST_USE ShapeTable* ensureTableForDictionary(JSContext* cx,
-                                                    const T& nogc) {
+  [[nodiscard]] ShapeTable* ensureTableForDictionary(JSContext* cx,
+                                                     const T& nogc) {
     MOZ_ASSERT(inDictionary());
     if (ShapeTable* table = maybeTable(nogc)) {
       return table;
@@ -1282,7 +1282,7 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
     // Proxy classes have reserved slots, but proxies manage their own slot
     // layout. This means all non-native object shapes have nfixed == 0 and
     // slotSpan == 0.
-    uint32_t free = clasp->isProxy() ? 0 : JSSLOT_FREE(clasp);
+    uint32_t free = clasp->isProxyObject() ? 0 : JSSLOT_FREE(clasp);
     return hasMissingSlot() ? free : std::max(free, maybeSlot() + 1);
   }
 
@@ -1806,9 +1806,6 @@ MOZ_ALWAYS_INLINE bool ShapeIC::search(jsid id, Shape** foundShape) {
 
   return false;
 }
-
-Shape* ReshapeForAllocKind(JSContext* cx, Shape* shape, TaggedProto proto,
-                           gc::AllocKind allocKind);
 
 }  // namespace js
 

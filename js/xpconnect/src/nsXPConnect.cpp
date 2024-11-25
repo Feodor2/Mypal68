@@ -4,6 +4,7 @@
 
 /* High level class and public functions implementation. */
 
+#include "js/Transcoding.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Likely.h"
@@ -28,6 +29,7 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/ScriptPreloader.h"
 
 #include "nsDOMMutationObserver.h"
 #include "nsICycleCollectorListener.h"
@@ -60,28 +62,36 @@ const char XPC_SCRIPT_ERROR_CONTRACTID[] = "@mozilla.org/scripterror;1";
 
 /***************************************************************************/
 
-// This global should be used very sparingly: only to create and destroy
-// nsXPConnect.
-static XPCJSContext* gContext;
-
 nsXPConnect::nsXPConnect() : mShuttingDown(false) {
-  XPCJSContext::InitTLS();
-
 #ifdef MOZ_GECKO_PROFILER
   JS::SetProfilingThreadCallbacks(profiler_register_thread,
                                   profiler_unregister_thread);
 #endif
+}
+
+// static
+void nsXPConnect::InitJSContext() {
+  MOZ_ASSERT(!gSelf->mContext);
 
   XPCJSContext* xpccx = XPCJSContext::NewXPCJSContext();
   if (!xpccx) {
     MOZ_CRASH("Couldn't create XPCJSContext.");
   }
-  gContext = xpccx;
-  mRuntime = xpccx->Runtime();
+  gSelf->mContext = xpccx;
+  gSelf->mRuntime = xpccx->Runtime();
+
+  mozJSComponentLoader::InitStatics();
+
+  // Initialize the script preloader cache.
+  Unused << mozilla::ScriptPreloader::GetSingleton();
+
+  nsJSContext::EnsureStatics();
 }
 
+void xpc::InitializeJSContext() { nsXPConnect::InitJSContext(); }
+
 nsXPConnect::~nsXPConnect() {
-  MOZ_ASSERT(XPCJSContext::Get() == gContext);
+  MOZ_ASSERT(mRuntime);
 
   mRuntime->DeleteSingletonScopes();
 
@@ -109,7 +119,7 @@ nsXPConnect::~nsXPConnect() {
   // shutdown the logging system
   XPC_LOG_FINISH();
 
-  delete gContext;
+  delete mContext;
 
   MOZ_ASSERT(gSelf == this);
   gSelf = nullptr;
@@ -136,16 +146,6 @@ void nsXPConnect::InitStatics() {
   gScriptSecurityManager = nsScriptSecurityManager::GetScriptSecurityManager();
   gScriptSecurityManager->GetSystemPrincipal(&gSystemPrincipal);
   MOZ_RELEASE_ASSERT(gSystemPrincipal);
-
-  JSContext* cx = XPCJSContext::Get()->Context();
-  if (!JS::InitSelfHostedCode(cx)) {
-    MOZ_CRASH("InitSelfHostedCode failed");
-  }
-  if (!gSelf->mRuntime->InitializeStrings(cx)) {
-    MOZ_CRASH("InitializeStrings failed");
-  }
-
-  mozJSComponentLoader::InitStatics();
 }
 
 // static
@@ -163,11 +163,6 @@ void nsXPConnect::ReleaseXPConnectSingleton() {
 XPCJSRuntime* nsXPConnect::GetRuntimeInstance() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   return gSelf->mRuntime;
-}
-
-// static
-bool nsXPConnect::IsISupportsDescendant(const nsXPTInterfaceInfo* info) {
-  return info && info->HasAncestor(NS_GET_IID(nsISupports));
 }
 
 void xpc::ErrorBase::Init(JSErrorBase* aReport) {
@@ -191,8 +186,7 @@ void xpc::ErrorNote::Init(JSErrorNotes::Note* aNote) {
 void xpc::ErrorReport::Init(JSErrorReport* aReport, const char* aToStringResult,
                             bool aIsChrome, uint64_t aWindowID) {
   xpc::ErrorBase::Init(aReport);
-  mCategory = aIsChrome ? NS_LITERAL_CSTRING("chrome javascript")
-                        : NS_LITERAL_CSTRING("content javascript");
+  mCategory = aIsChrome ? "chrome javascript"_ns : "content javascript"_ns;
   mWindowID = aWindowID;
 
   if (aToStringResult) {
@@ -231,8 +225,7 @@ void xpc::ErrorReport::Init(JSErrorReport* aReport, const char* aToStringResult,
 
 void xpc::ErrorReport::Init(JSContext* aCx, mozilla::dom::Exception* aException,
                             bool aIsChrome, uint64_t aWindowID) {
-  mCategory = aIsChrome ? NS_LITERAL_CSTRING("chrome javascript")
-                        : NS_LITERAL_CSTRING("content javascript");
+  mCategory = aIsChrome ? "chrome javascript"_ns : "content javascript"_ns;
   mWindowID = aWindowID;
 
   aException->GetErrorMessage(mErrorMsg);
@@ -328,7 +321,7 @@ void xpc::ErrorReport::LogToConsoleWithStack(
       mIsWarning ? nsIScriptError::warningFlag : nsIScriptError::errorFlag;
   nsresult rv = errorObject->InitWithWindowID(
       mErrorMsg, mFileName, mSourceLine, mLineNumber, mColumn, flags, mCategory,
-      mWindowID, mCategory.Equals(NS_LITERAL_CSTRING("chrome javascript")));
+      mWindowID, mCategory.Equals("chrome javascript"_ns));
   NS_ENSURE_SUCCESS_VOID(rv);
 
   rv = errorObject->InitSourceId(mSourceId);
@@ -756,7 +749,7 @@ nsXPConnect::EvalInSandboxObject(const nsAString& source, const char* filename,
   if (filename) {
     filenameStr.Assign(filename);
   } else {
-    filenameStr = NS_LITERAL_CSTRING("x-bogus://XPConnect/Sandbox");
+    filenameStr = "x-bogus://XPConnect/Sandbox"_ns;
   }
   return EvalInSandbox(cx, sandbox, source, filenameStr, 1, rval);
 }
@@ -944,13 +937,14 @@ static nsresult WriteScriptOrFunction(nsIObjectOutputStream* stream,
     }
   }
 
-  if (code != TranscodeResult_Ok) {
-    if ((code & TranscodeResult_Failure) != 0) {
-      return NS_ERROR_FAILURE;
+  if (code != TranscodeResult::Ok) {
+    if (code == TranscodeResult::Throw) {
+      JS_ClearPendingException(cx);
+      return NS_ERROR_OUT_OF_MEMORY;
     }
-    MOZ_ASSERT((code & TranscodeResult_Throw) != 0);
-    JS_ClearPendingException(cx);
-    return NS_ERROR_OUT_OF_MEMORY;
+
+    MOZ_ASSERT(IsTranscodeFailureResult(code));
+    return NS_ERROR_FAILURE;
   }
 
   size_t size = buffer.length();
@@ -1010,25 +1004,29 @@ static nsresult ReadScriptOrFunction(nsIObjectInputStream* stream,
     if (scriptp) {
       Rooted<JSScript*> script(cx);
       code = DecodeScript(cx, options, buffer, &script);
-      if (code == TranscodeResult_Ok) {
+      if (code == TranscodeResult::Ok) {
         *scriptp = script.get();
+      } else {
+        if (code == TranscodeResult::Throw) {
+          JS_ClearPendingException(cx);
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
       }
     } else {
       Rooted<JSFunction*> funobj(cx);
       code = DecodeInterpretedFunction(cx, options, buffer, &funobj);
-      if (code == TranscodeResult_Ok) {
+      if (code == TranscodeResult::Ok) {
         *functionObjp = JS_GetFunctionObject(funobj.get());
+      } else {
+        if (code == TranscodeResult::Throw) {
+          JS_ClearPendingException(cx);
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
       }
     }
 
-    if (code != TranscodeResult_Ok) {
-      if ((code & TranscodeResult_Failure) != 0) {
-        return NS_ERROR_FAILURE;
-      }
-      MOZ_ASSERT((code & TranscodeResult_Throw) != 0);
-      JS_ClearPendingException(cx);
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    MOZ_ASSERT(IsTranscodeFailureResult(code));
+    return NS_ERROR_FAILURE;
   }
 
   return rv;

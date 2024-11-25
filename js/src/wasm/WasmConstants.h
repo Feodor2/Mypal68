@@ -36,6 +36,9 @@ enum class SectionId {
   Code = 10,
   Data = 11,
   DataCount = 12,
+#ifdef ENABLE_WASM_EXCEPTIONS
+  Event = 13,
+#endif
   GcFeatureOptIn = 42  // Arbitrary, but fits in 7 bits
 };
 
@@ -98,7 +101,7 @@ static constexpr TypeCode AbstractReferenceTypeCode = TypeCode::ExternRef;
 
 static constexpr TypeCode AbstractReferenceTypeIndexCode = TypeCode::Ref;
 
-enum class FuncTypeIdDescKind { None, Immediate, Global };
+enum class TypeIdDescKind { None, Immediate, Global };
 
 // A wasm::Trap represents a wasm-defined trap that can occur during execution
 // which triggers a WebAssembly.RuntimeError. Generated code may jump to a Trap
@@ -149,7 +152,10 @@ enum class DefinitionKind {
   Function = 0x00,
   Table = 0x01,
   Memory = 0x02,
-  Global = 0x03
+  Global = 0x03,
+#ifdef ENABLE_WASM_EXCEPTIONS
+  Event = 0x04,
+#endif
 };
 
 enum class GlobalTypeImmediate { IsMutable = 0x1, AllowedMask = 0x1 };
@@ -180,6 +186,12 @@ enum class ElemSegmentPayload : uint32_t {
   ElemExpression = 0x4,
 };
 
+#ifdef ENABLE_WASM_EXCEPTIONS
+enum class EventKind {
+  Exception = 0x0,
+};
+#endif
+
 enum class Op {
   // Control flow operators
   Unreachable = 0x00,
@@ -188,6 +200,11 @@ enum class Op {
   Loop = 0x03,
   If = 0x04,
   Else = 0x05,
+#ifdef ENABLE_WASM_EXCEPTIONS
+  Try = 0x06,
+  Catch = 0x07,
+  Throw = 0x08,
+#endif
   End = 0x0b,
   Br = 0x0c,
   BrIf = 0x0d,
@@ -608,6 +625,10 @@ static const unsigned MaxTables = 100000;
 static const unsigned MaxImports = 100000;
 static const unsigned MaxExports = 100000;
 static const unsigned MaxGlobals = 1000000;
+#ifdef ENABLE_WASM_EXCEPTIONS
+static const unsigned MaxEvents =
+    1000000;  // TODO: get this into the shared limits spec
+#endif
 static const unsigned MaxDataSegments = 100000;
 static const unsigned MaxDataSegmentLengthPages = 16384;
 static const unsigned MaxElemSegments = 10000000;

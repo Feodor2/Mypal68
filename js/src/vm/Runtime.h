@@ -16,6 +16,7 @@
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Vector.h"
+#include "mozilla/XorShift128PlusRNG.h"
 
 #include <algorithm>
 #include <setjmp.h>
@@ -89,7 +90,7 @@ namespace js {
 
 extern MOZ_COLD void ReportOutOfMemory(JSContext* cx);
 
-/* Different signature because the return type has MOZ_MUST_USE_TYPE. */
+/* Different signature because the return type has [[nodiscard]]_TYPE. */
 extern MOZ_COLD mozilla::GenericErrorResult<OOM> ReportOutOfMemoryResult(
     JSContext* cx);
 
@@ -331,6 +332,9 @@ struct JSRuntime {
    */
   js::MainThreadData<bool> allowRelazificationForTesting;
 
+  /* Zone destroy callback. */
+  js::MainThreadData<JSDestroyZoneCallback> destroyZoneCallback;
+
   /* Compartment destroy callback. */
   js::MainThreadData<JSDestroyCompartmentCallback> destroyCompartmentCallback;
 
@@ -375,7 +379,7 @@ struct JSRuntime {
   // Heap GC roots for PersistentRooted pointers.
   js::MainThreadData<mozilla::EnumeratedArray<
       JS::RootKind, JS::RootKind::Limit,
-      mozilla::LinkedList<JS::PersistentRooted<void*>>>>
+      mozilla::LinkedList<JS::PersistentRooted<JS::detail::RootListEntry*>>>>
       heapRoots;
 
   void tracePersistentRoots(JSTracer* trc);
@@ -410,14 +414,14 @@ struct JSRuntime {
   js::WriteOnceData<JS::AbortSignalIsAborted> abortSignalIsAborted_;
 
  public:
-  void initAbortSignalHandling(const JSClass* clasp,
-                               JS::AbortSignalIsAborted isAborted) {
-    MOZ_ASSERT(clasp != nullptr,
+  void initPipeToHandling(const JSClass* abortSignalClass,
+                          JS::AbortSignalIsAborted isAborted) {
+    MOZ_ASSERT(abortSignalClass != nullptr,
                "doesn't make sense for an embedder to provide a null class "
-               "when specifying AbortSignal handling");
+               "when specifying pipeTo handling");
     MOZ_ASSERT(isAborted != nullptr, "must pass a valid function pointer");
 
-    abortSignalClass_ = clasp;
+    abortSignalClass_ = abortSignalClass;
     abortSignalIsAborted_ = isAborted;
   }
 
@@ -425,7 +429,7 @@ struct JSRuntime {
 
   bool abortSignalIsAborted(JSObject* obj) {
     MOZ_ASSERT(abortSignalIsAborted_ != nullptr,
-               "must call initAbortSignalHandling first");
+               "must call initPipeToHandling first");
     return abortSignalIsAborted_(obj);
   }
 
@@ -530,13 +534,14 @@ struct JSRuntime {
   void decParseTaskRef() { numParseTasks--; }
 
 #ifdef DEBUG
-  bool currentThreadHasScriptDataAccess() const {
+  void assertCurrentThreadHasScriptDataAccess() const {
     if (!hasParseTasks()) {
-      return js::CurrentThreadCanAccessRuntime(this) &&
-             activeThreadHasScriptDataAccess;
+      MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(this) &&
+                 activeThreadHasScriptDataAccess);
+      return;
     }
 
-    return scriptDataLock.ownedByCurrentThread();
+    scriptDataLock.assertOwnedByCurrentThread();
   }
 
   bool currentThreadHasAtomsTableAccess() const {
@@ -607,13 +612,23 @@ struct JSRuntime {
    */
   js::WriteOnceData<js::NativeObject*> selfHostingGlobal_;
 
+  // Optional reference to an array which contains the XDR content to be used
+  // instead of parsing the self-hosted source text. It is cleared once the
+  // self-hosted global is initialized.
+  JS::TranscodeRange selfHostedXDR = {};
+
+  // Callback to copy the XDR content of the self-hosted code.
+  using TranscodeBufferWriter = bool (*)(JSContext* cx,
+                                         const JS::TranscodeBuffer&);
+  TranscodeBufferWriter selfHostedXDRWriter = nullptr;
+
   static js::GlobalObject* createSelfHostingGlobal(JSContext* cx);
 
  public:
   void getUnclonedSelfHostedValue(js::PropertyName* name, JS::Value* vp);
   JSFunction* getUnclonedSelfHostedFunction(js::PropertyName* name);
 
-  MOZ_MUST_USE bool createJitRuntime(JSContext* cx);
+  [[nodiscard]] bool createJitRuntime(JSContext* cx);
   js::jit::JitRuntime* jitRuntime() const { return jitRuntime_.ref(); }
   bool hasJitRuntime() const { return !!jitRuntime_; }
 
@@ -635,6 +650,24 @@ struct JSRuntime {
   //-------------------------------------------------------------------------
   // Self-hosting support
   //-------------------------------------------------------------------------
+
+  // Optional XDR compiled data for self-hosting. If set this, will be used to
+  // parse the self-hosting code instead of from source code.
+  //
+  // This field is cleared internally after self-hosting is initialized.
+  void setSelfHostedXDR(JS::TranscodeRange enctext) {
+    MOZ_RELEASE_ASSERT(!hasInitializedSelfHosting());
+    MOZ_RELEASE_ASSERT(enctext.length() > 0);
+    new (&selfHostedXDR) mozilla::Range(enctext);
+  }
+
+  // Register a callback which would be used to return a buffer if the
+  // self-hosted code should be serialized and stored in the returned buffer.
+  void setSelfHostedXDRWriterCallback(TranscodeBufferWriter writer) {
+    MOZ_RELEASE_ASSERT(!hasInitializedSelfHosting());
+    MOZ_RELEASE_ASSERT(!selfHostedXDRWriter);
+    selfHostedXDRWriter = writer;
+  }
 
   bool hasInitializedSelfHosting() const { return selfHostingGlobal_; }
 

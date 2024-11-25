@@ -26,8 +26,6 @@
 #define jit_ExecutableAllocator_h
 
 #include "mozilla/EnumeratedArray.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/XorShift128PlusRNG.h"
 
 #include <limits>
 #include <stddef.h>  // for ptrdiff_t
@@ -48,7 +46,6 @@ namespace jit {
 enum class CodeKind : uint8_t { Ion, Baseline, RegExp, Other, Count };
 
 class ExecutableAllocator;
-class JitRuntime;
 
 // These are reference-counted. A new one starts with a count of 1.
 class ExecutablePool {
@@ -167,13 +164,12 @@ class ExecutableAllocator {
                             MustFlushICache flushICache);
 
  public:
-  MOZ_MUST_USE
-  static bool makeWritable(void* start, size_t size) {
+  [[nodiscard]] static bool makeWritable(void* start, size_t size) {
     return ReprotectRegion(start, size, ProtectionSetting::Writable,
                            MustFlushICache::No);
   }
 
-  MOZ_MUST_USE
+  [[nodiscard]]
   static bool makeExecutableAndFlushICache(void* start, size_t size) {
     return ReprotectRegion(start, size, ProtectionSetting::Executable,
                            MustFlushICache::Yes);

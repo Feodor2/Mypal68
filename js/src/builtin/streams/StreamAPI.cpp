@@ -5,13 +5,12 @@
 /* Public and friend stream APIs for external use. */
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT{,_IF}
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
 #include <stdint.h>  // uint32_t, uintptr_t
 
-#include "jsapi.h"  // js::AssertHeapIsIdle, JS_ReportErrorNumberASCII
+#include "jsapi.h"        // js::AssertHeapIsIdle, JS_ReportErrorNumberASCII
 #include "jsfriendapi.h"  // js::IsObjectInContextCompartment
-#include "jstypes.h"  // JS_{FRIEND,PUBLIC}_API
+#include "jstypes.h"      // JS_{FRIEND,PUBLIC}_API
 
 #include "builtin/Stream.h"  // js::ReadableByteStreamController{,Close}, js::ReadableStreamDefaultController{,Close}, js::StreamController
 #include "builtin/streams/ReadableStream.h"  // js::ReadableStream
@@ -138,7 +137,7 @@ JS_PUBLIC_API bool JS::IsReadableStreamDefaultReader(JSObject* obj) {
 }
 
 template <class T>
-static MOZ_MUST_USE T* APIUnwrapAndDowncast(JSContext* cx, JSObject* obj) {
+[[nodiscard]] static T* APIUnwrapAndDowncast(JSContext* cx, JSObject* obj) {
   cx->check(obj);
   return UnwrapAndDowncastObject<T>(cx, obj);
 }
@@ -604,8 +603,7 @@ JS_PUBLIC_API JSObject* JS::ReadableStreamDefaultReaderRead(
   return js::ReadableStreamDefaultReaderRead(cx, unwrappedReader);
 }
 
-void JS::InitAbortSignalHandling(const JSClass* clasp,
-                                 AbortSignalIsAborted isAborted,
-                                 JSContext* cx) {
-  cx->runtime()->initAbortSignalHandling(clasp, isAborted);
+void JS::InitPipeToHandling(const JSClass* abortSignalClass,
+                            AbortSignalIsAborted isAborted, JSContext* cx) {
+  cx->runtime()->initPipeToHandling(abortSignalClass, isAborted);
 }

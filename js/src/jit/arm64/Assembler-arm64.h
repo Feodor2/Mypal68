@@ -5,6 +5,8 @@
 #ifndef A64_ASSEMBLER_A64_H_
 #define A64_ASSEMBLER_A64_H_
 
+#include <iterator>
+
 #include "jit/arm64/vixl/Assembler-vixl.h"
 
 #include "jit/CompactBuffer.h"
@@ -146,8 +148,7 @@ static constexpr FloatRegister NANReg = {FloatRegisters::d14,
 // because we never use return-structs.
 static constexpr Register CallTempNonArgRegs[] = {r8,  r9,  r10, r11,
                                                   r12, r13, r14, r15};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static const uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 static constexpr uint32_t JitStackAlignment = 16;
 
@@ -463,6 +464,10 @@ static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 // code.  This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg.  It
 // must be a volatile register.
 static constexpr Register WasmJitEntryReturnScratch = r9;
+
+// Register used to store a reference to an exception thrown by Wasm to an
+// exception handling block. Should not overlap with WasmTlsReg.
+static constexpr Register WasmExceptionReg = ABINonArgReg2;
 
 static inline bool GetIntArgReg(uint32_t usedIntArgs, uint32_t usedFloatArgs,
                                 Register* out) {

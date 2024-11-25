@@ -40,7 +40,7 @@ void MaybeMallocTriggerZoneGC(JSRuntime* rt, ZoneAllocator* zoneAlloc,
 class ZoneAllocator : public JS::shadow::Zone,
                       public js::MallocProvider<JS::Zone> {
  protected:
-  explicit ZoneAllocator(JSRuntime* rt);
+  explicit ZoneAllocator(JSRuntime* rt, Kind kind);
   ~ZoneAllocator();
   void fixupAfterMovingGC();
 
@@ -50,9 +50,9 @@ class ZoneAllocator : public JS::shadow::Zone,
     return reinterpret_cast<ZoneAllocator*>(zone);
   }
 
-  MOZ_MUST_USE void* onOutOfMemory(js::AllocFunction allocFunc,
-                                   arena_id_t arena, size_t nbytes,
-                                   void* reallocPtr = nullptr);
+  [[nodiscard]] void* onOutOfMemory(js::AllocFunction allocFunc,
+                                    arena_id_t arena, size_t nbytes,
+                                    void* reallocPtr = nullptr);
   void reportAllocationOverflow() const;
 
   void adoptMallocBytes(ZoneAllocator* other) {
@@ -246,7 +246,9 @@ class ZoneAllocPolicy : public MallocProvider<ZoneAllocPolicy> {
     return *this;
   }
   ZoneAllocPolicy& operator=(ZoneAllocPolicy&& other) {
+    MOZ_ASSERT(this != &other);
     zone()->unregisterNonGCMemory(this, MemoryUse::ZoneAllocPolicy);
+    zone_ = other.zone();
     zone()->moveOtherMemory(this, &other, MemoryUse::ZoneAllocPolicy);
     other.zone_ = nullptr;
     return *this;
@@ -262,7 +264,7 @@ class ZoneAllocPolicy : public MallocProvider<ZoneAllocPolicy> {
     }
   }
 
-  MOZ_MUST_USE bool checkSimulatedOOM() const {
+  [[nodiscard]] bool checkSimulatedOOM() const {
     return !js::oom::ShouldFailWithOOM();
   }
 
@@ -270,9 +272,9 @@ class ZoneAllocPolicy : public MallocProvider<ZoneAllocPolicy> {
 
   // Internal methods called by the MallocProvider implementation.
 
-  MOZ_MUST_USE void* onOutOfMemory(js::AllocFunction allocFunc,
-                                   arena_id_t arena, size_t nbytes,
-                                   void* reallocPtr = nullptr) {
+  [[nodiscard]] void* onOutOfMemory(js::AllocFunction allocFunc,
+                                    arena_id_t arena, size_t nbytes,
+                                    void* reallocPtr = nullptr) {
     return zone()->onOutOfMemory(allocFunc, arena, nbytes, reallocPtr);
   }
   void reportAllocationOverflow() const { zone()->reportAllocationOverflow(); }

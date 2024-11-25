@@ -7,7 +7,9 @@
 #  error "Wrong architecture. Only x86 and x64 should build this file!"
 #endif
 
-#include "jit/JitRuntime.h"
+#include <iterator>
+
+#include "jit/JitContext.h"
 #include "jit/RegisterSets.h"
 
 const char* js::jit::FloatRegister::name() const {
@@ -32,7 +34,7 @@ const char* js::jit::FloatRegister::name() const {
 #undef FLOAT_REGS_
 
   };
-  MOZ_ASSERT(size_t(code()) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(code()) < std::size(names));
   return names[size_t(code())];
 }
 

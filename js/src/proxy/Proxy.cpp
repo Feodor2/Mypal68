@@ -276,7 +276,7 @@ JS_FRIEND_API bool js::AppendUnique(JSContext* cx, MutableHandleIdVector base,
       }
     }
   }
-  return base.appendAll(uniqueOthers);
+  return base.appendAll(std::move(uniqueOthers));
 }
 
 /* static */
@@ -832,7 +832,6 @@ static inline void CheckProxyIsInCCWMap(ProxyObject* proxy) {
 void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   ProxyObject* proxy = &obj->as<ProxyObject>();
 
-  TraceEdge(trc, proxy->shapePtr(), "ProxyObject_shape");
   TraceNullableEdge(trc, proxy->slotOfExpando(), "expando");
 
 #ifdef DEBUG
@@ -955,30 +954,6 @@ JS_FRIEND_API JSObject* js::NewProxyObject(JSContext* cx,
 
   return ProxyObject::New(cx, handler, priv, TaggedProto(proto_),
                           options.clasp());
-}
-
-JS_FRIEND_API JSObject* js::NewSingletonProxyObject(
-    JSContext* cx, const BaseProxyHandler* handler, HandleValue priv,
-    JSObject* proto_, const ProxyOptions& options) {
-  AssertHeapIsIdle();
-  CHECK_THREAD(cx);
-
-  // This can be called from the compartment wrap hooks while in a realm with a
-  // gray global. Trigger the read barrier on the global to ensure this is
-  // unmarked.
-  cx->realm()->maybeGlobal();
-
-  if (proto_ != TaggedProto::LazyProto) {
-    cx->check(proto_);  // |priv| might be cross-compartment.
-  }
-
-  if (options.lazyProto()) {
-    MOZ_ASSERT(!proto_);
-    proto_ = TaggedProto::LazyProto;
-  }
-
-  return ProxyObject::NewSingleton(cx, handler, priv, TaggedProto(proto_),
-                                   options.clasp());
 }
 
 void ProxyObject::renew(const BaseProxyHandler* handler, const Value& priv) {

@@ -5,18 +5,26 @@
 #ifndef jit_CompileInfo_h
 #define jit_CompileInfo_h
 
-#include "mozilla/Maybe.h"
+#include "mozilla/Assertions.h"  // MOZ_ASSERT
+#include "mozilla/Maybe.h"       // mozilla::Maybe, mozilla::Some
 
-#include <algorithm>
+#include <algorithm>  // std::max
+#include <stdint.h>   // uint32_t
 
-#include "jit/CompileWrappers.h"
-#include "jit/JitAllocPolicy.h"
-#include "jit/JitFrames.h"
-#include "jit/Registers.h"
-#include "vm/JSAtomState.h"
-#include "vm/JSFunction.h"
+#include "jit/CompileWrappers.h"  // CompileRuntime
+#include "jit/JitFrames.h"        // MinJITStackSize
+#include "js/TypeDecls.h"         // jsbytecode
+#include "vm/BindingKind.h"       // BindingLocation
+#include "vm/BytecodeUtil.h"      // JSOp
+#include "vm/JSAtomState.h"       // JSAtomState
+#include "vm/JSFunction.h"        // JSFunction
+#include "vm/JSScript.h"          // JSScript
+#include "vm/Scope.h"             // BindingIter
 
 namespace js {
+
+class ModuleObject;
+
 namespace jit {
 
 class InlineScriptTree;
@@ -67,11 +75,13 @@ class CompileInfo {
         osrPc_(osrPc),
         analysisMode_(analysisMode),
         scriptNeedsArgsObj_(scriptNeedsArgsObj),
-        hadOverflowBailout_(script->hadOverflowBailout()),
+        hadEagerTruncationBailout_(script->hadEagerTruncationBailout()),
         hadSpeculativePhiBailout_(script->hadSpeculativePhiBailout()),
-        hadLICMBailout_(script->hadLICMBailout()),
+        hadLICMInvalidation_(script->hadLICMInvalidation()),
         hadBoundsCheckBailout_(script->failedBoundsCheck()),
+        hadUnboxFoldingBailout_(script->hadUnboxFoldingBailout()),
         mayReadFrameArgsDirectly_(script->mayReadFrameArgsDirectly()),
+        anyFormalIsAliased_(script->anyFormalIsAliased()),
         isDerivedClassConstructor_(script->isDerivedClassConstructor()),
         inlineScriptTree_(inlineScriptTree) {
     MOZ_ASSERT_IF(osrPc, JSOp(*osrPc) == JSOp::LoopHead);
@@ -130,11 +140,13 @@ class CompileInfo {
         osrPc_(nullptr),
         analysisMode_(Analysis_None),
         scriptNeedsArgsObj_(false),
-        hadOverflowBailout_(false),
+        hadEagerTruncationBailout_(false),
         hadSpeculativePhiBailout_(false),
-        hadLICMBailout_(false),
+        hadLICMInvalidation_(false),
         hadBoundsCheckBailout_(false),
+        hadUnboxFoldingBailout_(false),
         mayReadFrameArgsDirectly_(false),
+        anyFormalIsAliased_(false),
         inlineScriptTree_(nullptr),
         needsBodyEnvironmentObject_(false),
         funNeedsSomeEnvironmentObject_(false) {
@@ -152,29 +164,9 @@ class CompileInfo {
   jsbytecode* osrPc() const { return osrPc_; }
   InlineScriptTree* inlineScriptTree() const { return inlineScriptTree_; }
 
-  bool hasOsrAt(jsbytecode* pc) const {
-    MOZ_ASSERT(JSOp(*pc) == JSOp::LoopHead);
-    return pc == osrPc();
-  }
-
   const char* filename() const { return script_->filename(); }
 
   unsigned lineno() const { return script_->lineno(); }
-  unsigned lineno(jsbytecode* pc) const { return PCToLineNumber(script_, pc); }
-
-  // Script accessors based on PC.
-
-  JSAtom* getAtom(jsbytecode* pc) const { return script_->getAtom(pc); }
-
-  PropertyName* getName(jsbytecode* pc) const { return script_->getName(pc); }
-
-  inline RegExpObject* getRegExp(jsbytecode* pc) const;
-
-  JSObject* getObject(jsbytecode* pc) const { return script_->getObject(pc); }
-
-  inline JSFunction* getFunction(jsbytecode* pc) const;
-
-  BigInt* getBigInt(jsbytecode* pc) const { return script_->getBigInt(pc); }
 
   // Total number of slots: args, locals, and stack.
   unsigned nslots() const { return nslots_; }
@@ -225,27 +217,9 @@ class CompileInfo {
   uint32_t firstStackSlot() const { return firstLocalSlot() + nlocals(); }
   uint32_t stackSlot(uint32_t i) const { return firstStackSlot() + i; }
 
-  uint32_t startArgSlot() const {
-    MOZ_ASSERT(script());
-    return StartArgSlot(script());
-  }
-  uint32_t endArgSlot() const {
-    MOZ_ASSERT(script());
-    return CountArgSlots(script(), funMaybeLazy());
-  }
-
   uint32_t totalSlots() const {
     MOZ_ASSERT(script() && funMaybeLazy());
     return nimplicit() + nargs() + nlocals();
-  }
-
-  bool isSlotAliased(uint32_t index) const {
-    MOZ_ASSERT(index >= startArgSlot());
-    uint32_t arg = index - firstArgSlot();
-    if (arg < nargs()) {
-      return script()->formalIsAliased(arg);
-    }
-    return false;
   }
 
   bool hasArguments() const { return script()->argumentsHasVarBinding(); }
@@ -329,10 +303,11 @@ class CompileInfo {
       return SlotObservableKind::NotObservable;
     }
 
-    // The arguments object is observable and not recoverable.
+    // The arguments object is observable. If it does not escape, it can
+    // be recovered.
     if (hasArguments() && slot == argsObjSlot()) {
       MOZ_ASSERT(funMaybeLazy());
-      return SlotObservableKind::ObservableNotRecoverable;
+      return SlotObservableKind::ObservableRecoverable;
     }
 
     MOZ_ASSERT(slot == returnValueSlot());
@@ -360,11 +335,14 @@ class CompileInfo {
 
   // Check previous bailout states to prevent doing the same bailout in the
   // next compilation.
-  bool hadOverflowBailout() const { return hadOverflowBailout_; }
+  bool hadEagerTruncationBailout() const { return hadEagerTruncationBailout_; }
   bool hadSpeculativePhiBailout() const { return hadSpeculativePhiBailout_; }
-  bool hadLICMBailout() const { return hadLICMBailout_; }
+  bool hadLICMInvalidation() const { return hadLICMInvalidation_; }
   bool hadBoundsCheckBailout() const { return hadBoundsCheckBailout_; }
+  bool hadUnboxFoldingBailout() const { return hadUnboxFoldingBailout_; }
+
   bool mayReadFrameArgsDirectly() const { return mayReadFrameArgsDirectly_; }
+  bool anyFormalIsAliased() const { return anyFormalIsAliased_; }
 
   bool isDerivedClassConstructor() const { return isDerivedClassConstructor_; }
 
@@ -387,12 +365,14 @@ class CompileInfo {
 
   // Record the state of previous bailouts in order to prevent compiling the
   // same function identically the next time.
-  bool hadOverflowBailout_;
+  bool hadEagerTruncationBailout_;
   bool hadSpeculativePhiBailout_;
-  bool hadLICMBailout_;
+  bool hadLICMInvalidation_;
   bool hadBoundsCheckBailout_;
+  bool hadUnboxFoldingBailout_;
 
   bool mayReadFrameArgsDirectly_;
+  bool anyFormalIsAliased_;
 
   bool isDerivedClassConstructor_;
 

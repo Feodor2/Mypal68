@@ -126,18 +126,6 @@ class CodeGeneratorShared : public LElementVisitor {
     return *osrEntryOffset_;
   }
 
-  // The offset of the first instruction of the body.
-  // This skips the arguments type checks.
-  size_t skipArgCheckEntryOffset_;
-
-  inline void setSkipArgCheckEntryOffset(size_t offset) {
-    MOZ_ASSERT(skipArgCheckEntryOffset_ == 0);
-    skipArgCheckEntryOffset_ = offset;
-  }
-  inline size_t getSkipArgCheckEntryOffset() const {
-    return skipArgCheckEntryOffset_;
-  }
-
   typedef js::Vector<CodegenSafepointIndex, 8, SystemAllocPolicy>
       SafepointIndices;
 
@@ -171,6 +159,10 @@ class CodeGeneratorShared : public LElementVisitor {
 
   inline Address ToAddress(const LAllocation& a) const;
   inline Address ToAddress(const LAllocation* a) const;
+
+  static inline Address ToAddress(Register elements, const LAllocation* index,
+                                  Scalar::Type type,
+                                  int32_t offsetAdjustment = 0);
 
   // Returns the offset from FP to address incoming stack arguments
   // when we use wasm stack argument abi (useWasmStackArgumentAbi()).
@@ -213,8 +205,7 @@ class CodeGeneratorShared : public LElementVisitor {
   };
 
  protected:
-  MOZ_MUST_USE
-  bool allocateData(size_t size, size_t* offset) {
+  [[nodiscard]] bool allocateData(size_t size, size_t* offset) {
     MOZ_ASSERT(size % sizeof(void*) == 0);
     *offset = runtimeData_.length();
     masm.propagateOOM(runtimeData_.appendN(0, size));
@@ -512,8 +503,6 @@ class OutOfLineCode : public TempObject {
   uint32_t framePushed() const { return framePushed_; }
   void setBytecodeSite(const BytecodeSite* site) { site_ = site; }
   const BytecodeSite* bytecodeSite() const { return site_; }
-  jsbytecode* pc() const { return site_->pc(); }
-  JSScript* script() const { return site_->script(); }
 };
 
 // For OOL paths that want a specific-typed code generator.

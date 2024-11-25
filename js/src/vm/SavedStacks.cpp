@@ -4,7 +4,6 @@
 
 #include "vm/SavedStacks.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 
@@ -27,6 +26,7 @@
 #include "js/PropertySpec.h"
 #include "js/SavedFrameAPI.h"
 #include "js/Vector.h"
+#include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/JSScript.h"
@@ -191,9 +191,9 @@ struct MOZ_STACK_CLASS SavedFrame::Lookup {
         activation(activation) {
     MOZ_ASSERT(source);
     MOZ_ASSERT_IF(framePtr.isSome(), activation);
-#ifdef JS_MORE_DETERMINISTIC
-    column = 0;
-#endif
+    if (js::SupportDifferentialTesting()) {
+      column = 0;
+    }
   }
 
   explicit Lookup(SavedFrame& savedFrame)
@@ -480,9 +480,9 @@ void SavedFrame::initLine(uint32_t line) {
 }
 
 void SavedFrame::initColumn(uint32_t column) {
-#ifdef JS_MORE_DETERMINISTIC
-  column = 0;
-#endif
+  if (js::SupportDifferentialTesting()) {
+    column = 0;
+  }
   initReservedSlot(JSSLOT_COLUMN, PrivateUint32Value(column));
 }
 
@@ -682,9 +682,9 @@ JS_FRIEND_API JSObject* GetFirstSubsumedSavedFrame(
                               skippedAsync);
 }
 
-static MOZ_MUST_USE bool SavedFrame_checkThis(JSContext* cx, CallArgs& args,
-                                              const char* fnName,
-                                              MutableHandleObject frame) {
+[[nodiscard]] static bool SavedFrame_checkThis(JSContext* cx, CallArgs& args,
+                                               const char* fnName,
+                                               MutableHandleObject frame) {
   const Value& thisValue = args.thisv();
 
   if (!thisValue.isObject()) {

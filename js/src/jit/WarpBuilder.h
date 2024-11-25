@@ -10,7 +10,6 @@
 #include "ds/InlineTable.h"
 #include "jit/JitContext.h"
 #include "jit/MIR.h"
-#include "jit/MIRBuilderShared.h"
 #include "jit/WarpBuilderShared.h"
 #include "jit/WarpSnapshot.h"
 #include "vm/Opcodes.h"
@@ -41,27 +40,14 @@ namespace jit {
   _(GetBoundName)                        \
   /* Generators / Async (bug 1317690) */ \
   _(IsGenClosing)                        \
-  _(InitialYield)                        \
-  _(Yield)                               \
-  _(FinalYieldRval)                      \
   _(Resume)                              \
-  _(ResumeKind)                          \
-  _(CheckResumeKind)                     \
-  _(AfterYield)                          \
-  _(Await)                               \
-  _(TrySkipAwait)                        \
-  _(Generator)                           \
-  _(AsyncAwait)                          \
-  _(AsyncResolve)                        \
   /* try-finally */                      \
   _(Finally)                             \
   _(Gosub)                               \
   _(Retsub)                              \
   /* Misc */                             \
   _(DelName)                             \
-  _(GetRval)                             \
   _(SetIntrinsic)                        \
-  _(ThrowMsg)                            \
   /* Private Fields */                   \
   _(InitLockedElem)                      \
   // === !! WARNING WARNING WARNING !! ===
@@ -258,33 +244,35 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
   }
 
   void initBlock(MBasicBlock* block);
-  MOZ_MUST_USE bool startNewEntryBlock(size_t stackDepth, BytecodeLocation loc);
-  MOZ_MUST_USE bool startNewBlock(MBasicBlock* predecessor,
-                                  BytecodeLocation loc, size_t numToPop = 0);
-  MOZ_MUST_USE bool startNewLoopHeaderBlock(BytecodeLocation loopHead);
-  MOZ_MUST_USE bool startNewOsrPreHeaderBlock(BytecodeLocation loopHead);
+  [[nodiscard]] bool startNewEntryBlock(size_t stackDepth,
+                                        BytecodeLocation loc);
+  [[nodiscard]] bool startNewBlock(MBasicBlock* predecessor,
+                                   BytecodeLocation loc, size_t numToPop = 0);
+  [[nodiscard]] bool startNewLoopHeaderBlock(BytecodeLocation loopHead);
+  [[nodiscard]] bool startNewOsrPreHeaderBlock(BytecodeLocation loopHead);
 
   bool hasTerminatedBlock() const { return current == nullptr; }
   void setTerminatedBlock() { current = nullptr; }
 
-  MOZ_MUST_USE bool addPendingEdge(const PendingEdge& edge,
-                                   BytecodeLocation target);
-  MOZ_MUST_USE bool buildForwardGoto(BytecodeLocation target);
-  MOZ_MUST_USE bool buildBackedge();
-  MOZ_MUST_USE bool buildTestBackedge(BytecodeLocation loc);
+  [[nodiscard]] bool addPendingEdge(const PendingEdge& edge,
+                                    BytecodeLocation target);
+  [[nodiscard]] bool buildForwardGoto(BytecodeLocation target);
+  [[nodiscard]] bool buildBackedge();
+  [[nodiscard]] bool buildTestBackedge(BytecodeLocation loc);
 
-  MOZ_MUST_USE bool addIteratorLoopPhis(BytecodeLocation loopHead);
+  [[nodiscard]] bool addIteratorLoopPhis(BytecodeLocation loopHead);
 
-  MOZ_MUST_USE bool buildPrologue();
-  MOZ_MUST_USE bool buildBody();
+  [[nodiscard]] bool buildPrologue();
+  [[nodiscard]] bool buildBody();
 
-  MOZ_MUST_USE bool buildInlinePrologue();
+  [[nodiscard]] bool buildInlinePrologue();
 
-  MOZ_MUST_USE bool buildIC(BytecodeLocation loc, CacheKind kind,
-                            std::initializer_list<MDefinition*> inputs);
-  MOZ_MUST_USE bool buildBailoutForColdIC(BytecodeLocation loc, CacheKind kind);
+  [[nodiscard]] bool buildIC(BytecodeLocation loc, CacheKind kind,
+                             std::initializer_list<MDefinition*> inputs);
+  [[nodiscard]] bool buildBailoutForColdIC(BytecodeLocation loc,
+                                           CacheKind kind);
 
-  MOZ_MUST_USE bool buildEnvironmentChain();
+  [[nodiscard]] bool buildEnvironmentChain();
   MInstruction* buildNamedLambdaEnv(MDefinition* callee, MDefinition* env,
                                     LexicalEnvironmentObject* templateObj);
   MInstruction* buildCallObject(MDefinition* callee, MDefinition* env,
@@ -297,15 +285,17 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
 
   MDefinition* maybeGuardNotOptimizedArguments(MDefinition* def);
 
-  MOZ_MUST_USE bool buildUnaryOp(BytecodeLocation loc);
-  MOZ_MUST_USE bool buildBinaryOp(BytecodeLocation loc);
-  MOZ_MUST_USE bool buildCompareOp(BytecodeLocation loc);
-  MOZ_MUST_USE bool buildTestOp(BytecodeLocation loc);
-  MOZ_MUST_USE bool buildDefLexicalOp(BytecodeLocation loc);
-  MOZ_MUST_USE bool buildCallOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildUnaryOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildBinaryOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildCompareOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildTestOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildCallOp(BytecodeLocation loc);
 
-  MOZ_MUST_USE bool buildInitPropGetterSetterOp(BytecodeLocation loc);
-  MOZ_MUST_USE bool buildInitElemGetterSetterOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildInitPropGetterSetterOp(BytecodeLocation loc);
+  [[nodiscard]] bool buildInitElemGetterSetterOp(BytecodeLocation loc);
+
+  [[nodiscard]] bool buildSuspend(BytecodeLocation loc, MDefinition* gen,
+                                  MDefinition* retVal);
 
   void buildCopyLexicalEnvOp(bool copySlots);
   void buildCheckLexicalOp(BytecodeLocation loc);
@@ -313,13 +303,13 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
   bool usesEnvironmentChain() const;
   MDefinition* walkEnvironmentChain(uint32_t numHops);
 
-  MOZ_MUST_USE bool transpileCall(BytecodeLocation loc,
-                                  const WarpCacheIR* cacheIRSnapshot,
-                                  CallInfo* callInfo);
+  [[nodiscard]] bool transpileCall(BytecodeLocation loc,
+                                   const WarpCacheIR* cacheIRSnapshot,
+                                   CallInfo* callInfo);
 
-  MOZ_MUST_USE bool buildInlinedCall(BytecodeLocation loc,
-                                     const WarpInlinedCall* snapshot,
-                                     CallInfo& callInfo);
+  [[nodiscard]] bool buildInlinedCall(BytecodeLocation loc,
+                                      const WarpInlinedCall* snapshot,
+                                      CallInfo& callInfo);
 
   MDefinition* patchInlinedReturns(CompileInfo* calleeCompileInfo,
                                    CallInfo& callInfo, MIRGraphReturns& exits,
@@ -328,7 +318,7 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
                                   CallInfo& callInfo, MBasicBlock* exit,
                                   MBasicBlock* returnBlock);
 
-#define BUILD_OP(OP, ...) MOZ_MUST_USE bool build_##OP(BytecodeLocation loc);
+#define BUILD_OP(OP, ...) [[nodiscard]] bool build_##OP(BytecodeLocation loc);
   FOR_EACH_OPCODE(BUILD_OP)
 #undef BUILD_OP
 
@@ -339,8 +329,8 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
               CompileInfo& compileInfo, CallInfo* inlineCallInfo,
               MResumePoint* callerResumePoint);
 
-  MOZ_MUST_USE bool build();
-  MOZ_MUST_USE bool buildInline();
+  [[nodiscard]] bool build();
+  [[nodiscard]] bool buildInline();
 
   CallInfo* inlineCallInfo() const { return inlineCallInfo_; }
 };

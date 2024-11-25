@@ -29,6 +29,7 @@
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 #include "vm/Time.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
 
@@ -1040,7 +1041,7 @@ static JSObject* CreateMathObject(JSContext* cx, JSProtoKey key) {
   if (!proto) {
     return nullptr;
   }
-  return NewSingletonObjectWithGivenProto(cx, &MathClass, proto);
+  return NewTenuredObjectWithGivenProto(cx, &MathClass, proto);
 }
 
 static const ClassSpec MathClassSpec = {CreateMathObject,

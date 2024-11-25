@@ -17,8 +17,8 @@ namespace jit {
 // current inline path (the sequence of scripts and call-pcs that lead to the
 // current function being inlined).
 //
-// To support this, the top-level IonBuilder keeps a tree that records the
-// inlinings done during compilation.
+// To support this, use a tree that records the inlinings done during
+// compilation.
 class InlineScriptTree {
   // InlineScriptTree for the caller
   InlineScriptTree* caller_;
@@ -55,12 +55,6 @@ class InlineScriptTree {
 
   bool isOutermostCaller() const { return caller_ == nullptr; }
   bool hasCaller() const { return caller_ != nullptr; }
-  InlineScriptTree* outermostCaller() {
-    if (isOutermostCaller()) {
-      return this;
-    }
-    return caller_->outermostCaller();
-  }
 
   jsbytecode* callerPc() const { return callerPc_; }
 
@@ -94,8 +88,10 @@ class BytecodeSite : public TempObject {
   jsbytecode* pc_;
 
  public:
+  // Wasm compilation leaves both fields null.
   BytecodeSite() : tree_(nullptr), pc_(nullptr) {}
 
+  // Warp compilation sets both fields to non-null values.
   BytecodeSite(InlineScriptTree* tree, jsbytecode* pc) : tree_(tree), pc_(pc) {
     MOZ_ASSERT(tree_ != nullptr);
     MOZ_ASSERT(pc_ != nullptr);

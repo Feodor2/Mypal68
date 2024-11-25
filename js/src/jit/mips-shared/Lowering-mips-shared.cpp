@@ -328,6 +328,20 @@ void LIRGeneratorMIPSShared::lowerPowOfTwoI(MPow* mir) {
   define(lir, mir);
 }
 
+void LIRGeneratorMIPSShared::lowerBigIntLsh(MBigIntLsh* ins) {
+  auto* lir = new (alloc()) LBigIntLsh(
+      useRegister(ins->lhs()), useRegister(ins->rhs()), temp(), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorMIPSShared::lowerBigIntRsh(MBigIntRsh* ins) {
+  auto* lir = new (alloc()) LBigIntRsh(
+      useRegister(ins->lhs()), useRegister(ins->rhs()), temp(), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
 void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
   if (ins->type() == MIRType::Int32) {
     define(new (alloc()) LNegI(useRegisterAtStart(ins->input())), ins);
@@ -571,10 +585,15 @@ void LIRGenerator::visitCompareExchangeTypedArrayElement(
   MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
+
+  if (Scalar::isBigIntType(ins->arrayType())) {
+    MOZ_CRASH("NYI");
+  }
 
   // If the target is a floating register then we need a temp at the
   // CodeGenerator level for creating the result.
@@ -610,10 +629,15 @@ void LIRGenerator::visitAtomicExchangeTypedArrayElement(
   MOZ_ASSERT(ins->arrayType() <= Scalar::Uint32);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
+
+  if (Scalar::isBigIntType(ins->arrayType())) {
+    MOZ_CRASH("NYI");
+  }
 
   // If the target is a floating register then we need a temp at the
   // CodeGenerator level for creating the result.
@@ -640,6 +664,14 @@ void LIRGenerator::visitAtomicExchangeTypedArrayElement(
           elements, index, value, outTemp, valueTemp, offsetTemp, maskTemp);
 
   define(lir, ins);
+}
+
+void LIRGeneratorMIPSShared::lowerAtomicLoad64(MLoadUnboxedScalar* ins) {
+  MOZ_CRASH("NYI");
+}
+
+void LIRGeneratorMIPSShared::lowerAtomicStore64(MStoreUnboxedScalar* ins) {
+  MOZ_CRASH("NYI");
 }
 
 void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
@@ -743,11 +775,16 @@ void LIRGenerator::visitAtomicTypedArrayElementBinop(
   MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
   const LAllocation value = useRegister(ins->value());
+
+  if (Scalar::isBigIntType(ins->arrayType())) {
+    MOZ_CRASH("NYI");
+  }
 
   LDefinition valueTemp = LDefinition::BogusTemp();
   LDefinition offsetTemp = LDefinition::BogusTemp();
@@ -759,7 +796,7 @@ void LIRGenerator::visitAtomicTypedArrayElementBinop(
     maskTemp = temp();
   }
 
-  if (!ins->hasUses()) {
+  if (ins->isForEffect()) {
     LAtomicTypedArrayElementBinopForEffect* lir =
         new (alloc()) LAtomicTypedArrayElementBinopForEffect(
             elements, index, value, valueTemp, offsetTemp, maskTemp);

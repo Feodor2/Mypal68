@@ -5,11 +5,18 @@
 #ifndef frontend_NameAnalysisTypes_h
 #define frontend_NameAnalysisTypes_h
 
+#include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
+#include "mozilla/Casting.h"     // mozilla::AssertedCast
+
+#include <stdint.h>  // uint8_t, uint16_t, uint32_t
 #include <type_traits>
 
-#include "frontend/ParserAtom.h"
-#include "vm/BytecodeUtil.h"
-#include "vm/Scope.h"
+#include "frontend/ParserAtom.h"     // TrivialTaggedParserAtomIndex
+#include "js/AllocPolicy.h"          // SystemAllocPolicy
+#include "js/Vector.h"               // Vector
+#include "vm/BindingKind.h"          // BindingKind, BindingLocation
+#include "vm/BytecodeFormatFlags.h"  // JOF_ENVCOORD
+#include "vm/BytecodeUtil.h"  // ENVCOORD_HOPS_BITS, ENVCOORD_SLOT_BITS, GET_ENVCOORD_HOPS, GET_ENVCOORD_SLOT, ENVCOORD_HOPS_LEN, JOF_OPTYPE, JSOp, LOCALNO_LIMIT
 
 namespace js {
 
@@ -355,12 +362,12 @@ class NameLocation {
 };
 
 // These types are declared here for BaseScript::CreateLazy.
-using AtomVector = Vector<const ParserAtom*, 24, SystemAllocPolicy>;
+using AtomVector = Vector<TrivialTaggedParserAtomIndex, 24, SystemAllocPolicy>;
 
 class FunctionBox;
 // FunctionBoxes stored in this type are required to be rooted
 // by the parser
-using FunctionBoxVector = Vector<const FunctionBox*, 8>;
+using FunctionBoxVector = Vector<FunctionBox*, 24, SystemAllocPolicy>;
 
 }  // namespace frontend
 }  // namespace js

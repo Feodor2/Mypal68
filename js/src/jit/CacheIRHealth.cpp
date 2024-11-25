@@ -7,6 +7,7 @@
 
 #  include "mozilla/Maybe.h"
 
+#  include "gc/Zone.h"
 #  include "jit/JitScript.h"
 
 using namespace js;
@@ -31,8 +32,8 @@ CacheIRHealth::Happiness CacheIRHealth::determineStubHappiness(
 }
 
 CacheIRHealth::Happiness CacheIRHealth::spewStubHealth(
-    AutoStructuredSpewer& spew, ICStub* stub) {
-  const CacheIRStubInfo* stubInfo = stub->cacheIRStubInfo();
+    AutoStructuredSpewer& spew, ICCacheIRStub* stub) {
+  const CacheIRStubInfo* stubInfo = stub->stubInfo();
   CacheIRReader stubReader(stubInfo);
   uint32_t totalStubHealth = 0;
 
@@ -77,27 +78,25 @@ CacheIRHealth::Happiness CacheIRHealth::spewHealthForStubsInCacheIREntry(
   while (stub && !stub->isFallback()) {
     spew->beginObject();
     {
-      uint32_t count;
-      if (js::jit::GetStubEnteredCount(stub, &count)) {
-        Happiness stubHappiness = spewStubHealth(spew, stub);
-        if (stubHappiness < entryHappiness) {
-          entryHappiness = stubHappiness;
-        }
-
-        if (count > 0 && sawNonZeroCount) {
-          // More than one stub has a hit count greater than zero.
-          // This is sad because we do not Warp transpile in this case.
-          entryHappiness = Sad;
-        } else if (count > 0 && !sawNonZeroCount) {
-          sawNonZeroCount = true;
-        }
-
-        spew->property("hitCount", count);
+      uint32_t count = stub->enteredCount();
+      Happiness stubHappiness = spewStubHealth(spew, stub->toCacheIRStub());
+      if (stubHappiness < entryHappiness) {
+        entryHappiness = stubHappiness;
       }
+
+      if (count > 0 && sawNonZeroCount) {
+        // More than one stub has a hit count greater than zero.
+        // This is sad because we do not Warp transpile in this case.
+        entryHappiness = Sad;
+      } else if (count > 0 && !sawNonZeroCount) {
+        sawNonZeroCount = true;
+      }
+
+      spew->property("hitCount", count);
     }
 
     spew->endObject();
-    stub = stub->next();
+    stub = stub->toCacheIRStub()->next();
   }
   spew->endList();  // stubs
 
@@ -136,7 +135,71 @@ CacheIRHealth::Happiness CacheIRHealth::spewJSOpAndCacheIRHealth(
   return entryHappiness;
 }
 
-void CacheIRHealth::rateMyCacheIR(JSContext* cx, HandleScript script) {
+void CacheIRHealth::spewScriptFinalWarmUpCount(JSContext* cx,
+                                               const char* filename,
+                                               JSScript* script,
+                                               uint32_t warmUpCount) {
+  AutoStructuredSpewer spew(cx, SpewChannel::RateMyCacheIR, nullptr);
+  if (!spew) {
+    return;
+  }
+
+  spew->property("filename", filename);
+  spew->property("line", script->lineno());
+  spew->property("column", script->column());
+  spew->property("finalWarmUpCount", warmUpCount);
+}
+
+static bool addScriptToFinalWarmUpCountMap(JSContext* cx, HandleScript script) {
+  // Create Zone::scriptFilenameMap if necessary.
+  JS::Zone* zone = script->zone();
+  if (!zone->scriptFinalWarmUpCountMap) {
+    auto map = MakeUnique<ScriptFinalWarmUpCountMap>();
+    if (!map) {
+      return false;
+    }
+
+    zone->scriptFinalWarmUpCountMap = std::move(map);
+  }
+
+  auto* filename = js_pod_malloc<char>(strlen(script->filename()) + 1);
+  if (!filename) {
+    return false;
+  }
+  strcpy(filename, script->filename());
+
+  if (!zone->scriptFinalWarmUpCountMap->put(
+          script, mozilla::MakeTuple(uint32_t(0), filename))) {
+    js_free(filename);
+    return false;
+  }
+
+  script->setNeedsFinalWarmUpCount();
+  return true;
+}
+
+void CacheIRHealth::rateIC(JSContext* cx, ICEntry* entry, HandleScript script,
+                           SpewContext context) {
+  AutoStructuredSpewer spew(cx, SpewChannel::RateMyCacheIR, script);
+  if (!spew) {
+    return;
+  }
+
+  if (!addScriptToFinalWarmUpCountMap(cx, script)) {
+    cx->recoverFromOutOfMemory();
+    return;
+  }
+  spew->property("spewContext", uint8_t(context));
+
+  jsbytecode* op = entry->pc(script);
+  JSOp jsOp = JSOp(*op);
+  spew->property("op", CodeName(jsOp));
+
+  spewHealthForStubsInCacheIREntry(spew, entry);
+}
+
+void CacheIRHealth::rateScript(JSContext* cx, HandleScript script,
+                               SpewContext context) {
   jit::JitScript* jitScript = script->maybeJitScript();
   if (!jitScript) {
     return;
@@ -146,6 +209,13 @@ void CacheIRHealth::rateMyCacheIR(JSContext* cx, HandleScript script) {
   if (!spew) {
     return;
   }
+
+  if (!addScriptToFinalWarmUpCountMap(cx, script)) {
+    cx->recoverFromOutOfMemory();
+    return;
+  }
+
+  spew->property("spewContext", uint8_t(context));
 
   jsbytecode* next = script->code();
   jsbytecode* end = script->codeEnd();
@@ -168,8 +238,7 @@ void CacheIRHealth::rateMyCacheIR(JSContext* cx, HandleScript script) {
     len = cs.length;
     MOZ_ASSERT(len);
 
-    if (entry && (entry->firstStub()->isFallback() ||
-                  ICStub::IsCacheIRKind(entry->firstStub()->kind()))) {
+    if (entry) {
       Happiness entryHappiness =
           spewJSOpAndCacheIRHealth(spew, script, entry, next, op);
 

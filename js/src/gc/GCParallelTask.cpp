@@ -35,6 +35,11 @@ void js::GCParallelTask::startWithLockHeld(AutoLockHelperThreadState& lock) {
 }
 
 void js::GCParallelTask::start() {
+  if (!CanUseExtraThreads()) {
+    runFromMainThread();
+    return;
+  }
+
   AutoLockHelperThreadState lock;
   startWithLockHeld(lock);
 }
@@ -55,6 +60,13 @@ void js::GCParallelTask::startOrRunIfIdle(AutoLockHelperThreadState& lock) {
   }
 
   startWithLockHeld(lock);
+}
+
+void js::GCParallelTask::cancelAndWait() {
+  MOZ_ASSERT(!isCancelled());
+  cancel_ = true;
+  join();
+  cancel_ = false;
 }
 
 void js::GCParallelTask::join() {
@@ -91,7 +103,6 @@ void js::GCParallelTask::joinRunningOrFinishedTask(
   }
 
   setIdle(lock);
-  cancel_ = false;
 }
 
 void js::GCParallelTask::cancelDispatchedTask(AutoLockHelperThreadState& lock) {

@@ -11,6 +11,7 @@
 #include "js/CompilationAndEvaluation.h"  // JS::CompileFunction
 #include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
+#include "util/Text.h"
 
 using namespace js;
 
@@ -27,7 +28,7 @@ BEGIN_TEST(test_functionBinding) {
     static const char s1chars[] = "return (typeof s1) == 'undefined';";
 
     JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, s1chars, mozilla::ArrayLength(s1chars) - 1,
+    CHECK(srcBuf.init(cx, s1chars, js_strlen(s1chars),
                       JS::SourceOwnership::Borrowed));
 
     fun = JS::CompileFunction(cx, emptyScopeChain, options, "s1", 0, nullptr,
@@ -46,7 +47,7 @@ BEGIN_TEST(test_functionBinding) {
     static const char s2chars[] = "return (typeof anonymous) == 'undefined';";
 
     JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, s2chars, mozilla::ArrayLength(s2chars) - 1,
+    CHECK(srcBuf.init(cx, s2chars, js_strlen(s2chars),
                       JS::SourceOwnership::Borrowed));
 
     fun = JS::CompileFunction(cx, emptyScopeChain, options, "s2", 0, nullptr,
@@ -63,7 +64,7 @@ BEGIN_TEST(test_functionBinding) {
     static const char s3chars[] = "return (typeof anonymous) == 'undefined';";
 
     JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, s3chars, mozilla::ArrayLength(s3chars) - 1,
+    CHECK(srcBuf.init(cx, s3chars, js_strlen(s3chars),
                       JS::SourceOwnership::Borrowed));
 
     fun = JS::CompileFunction(cx, emptyScopeChain, options, nullptr, 0, nullptr,

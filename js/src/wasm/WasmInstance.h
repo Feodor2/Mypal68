@@ -49,14 +49,15 @@ class Instance {
   const SharedCode code_;
   const UniqueTlsData tlsData_;
   const GCPtrWasmMemoryObject memory_;
+  const SharedExceptionTagVector exceptionTags_;
   const SharedTableVector tables_;
   DataSegmentVector passiveDataSegments_;
   ElemSegmentVector passiveElemSegments_;
   const UniqueDebugState maybeDebug_;
-  StructTypeDescrVector structTypeDescrs_;
+  bool hasGcTypes_;
 
   // Internal helpers:
-  const void** addressOfFuncTypeId(const FuncTypeIdDesc& funcTypeId) const;
+  const void** addressOfTypeId(const TypeIdDesc& typeId) const;
   FuncImportTls& funcImportTls(const FuncImport& fi);
   TableTls& tableTls(const TableDesc& td) const;
 
@@ -70,7 +71,7 @@ class Instance {
  public:
   Instance(JSContext* cx, HandleWasmInstanceObject object, SharedCode code,
            UniqueTlsData tlsData, HandleWasmMemoryObject memory,
-           SharedTableVector&& tables, StructTypeDescrVector&& structTypeDescrs,
+           SharedExceptionTagVector&& exceptionTags, SharedTableVector&& tables,
            UniqueDebugState maybeDebug);
   ~Instance();
   bool init(JSContext* cx, const JSFunctionVector& funcImports,
@@ -110,7 +111,9 @@ class Instance {
   SharedArrayRawBuffer* sharedMemoryBuffer() const;  // never null
   bool memoryAccessInGuardRegion(uint8_t* addr, unsigned numBytes) const;
   bool memoryAccessInBounds(uint8_t* addr, unsigned numBytes) const;
-  const StructTypeVector& structTypes() const { return code_->structTypes(); }
+  const SharedExceptionTagVector& exceptionTags() const {
+    return exceptionTags_;
+  }
 
   static constexpr size_t offsetOfJSJitArgsRectifier() {
     return offsetof(Instance, jsJitArgsRectifier_);
@@ -133,8 +136,8 @@ class Instance {
   // Execute the given export given the JS call arguments, storing the return
   // value in args.rval.
 
-  MOZ_MUST_USE bool callExport(JSContext* cx, uint32_t funcIndex,
-                               CallArgs args);
+  [[nodiscard]] bool callExport(JSContext* cx, uint32_t funcIndex,
+                                CallArgs args);
 
   // Return the name associated with a given function index, or generate one
   // if none was given by the module.
@@ -150,9 +153,9 @@ class Instance {
   // Called to apply a single ElemSegment at a given offset, assuming
   // that all bounds validation has already been performed.
 
-  MOZ_MUST_USE bool initElems(uint32_t tableIndex, const ElemSegment& seg,
-                              uint32_t dstOffset, uint32_t srcOffset,
-                              uint32_t len);
+  [[nodiscard]] bool initElems(uint32_t tableIndex, const ElemSegment& seg,
+                               uint32_t dstOffset, uint32_t srcOffset,
+                               uint32_t len);
 
   // Debugger support:
 
@@ -214,9 +217,15 @@ class Instance {
   static void preBarrierFiltering(Instance* instance, gc::Cell** location);
   static void postBarrier(Instance* instance, gc::Cell** location);
   static void postBarrierFiltering(Instance* instance, gc::Cell** location);
-  static void* structNew(Instance* instance, uint32_t typeIndex);
-  static void* structNarrow(Instance* instance, uint32_t outputTypeIndex,
+  static void* structNew(Instance* instance, void* structDescr);
+  static void* structNarrow(Instance* instance, void* outputStructDescr,
                             void* maybeNullPtr);
+#ifdef ENABLE_WASM_EXCEPTIONS
+  static void* exceptionNew(Instance* instance, uint32_t exnIndex,
+                            uint32_t nbytes);
+  static void* throwException(Instance* instance, JSObject* exn);
+  static uint32_t getLocalExceptionIndex(Instance* instance, JSObject* exn);
+#endif
 };
 
 using UniqueInstance = UniquePtr<Instance>;

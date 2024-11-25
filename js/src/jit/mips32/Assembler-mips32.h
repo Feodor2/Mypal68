@@ -5,6 +5,8 @@
 #ifndef jit_mips32_Assembler_mips32_h
 #define jit_mips32_Assembler_mips32_h
 
+#include <iterator>
+
 #include "jit/mips-shared/Assembler-mips-shared.h"
 
 #include "jit/mips32/Architecture-mips32.h"
@@ -16,8 +18,7 @@ static constexpr Register CallTempReg4 = t4;
 static constexpr Register CallTempReg5 = t5;
 
 static constexpr Register CallTempNonArgRegs[] = {t0, t1, t2, t3, t4};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static const uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 class ABIArgGenerator {
   unsigned usedArgSlots_;
@@ -83,6 +84,10 @@ static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 // code. This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg. It
 // must be a volatile register.
 static constexpr Register WasmJitEntryReturnScratch = t1;
+
+// Register used to store a reference to an exception thrown by Wasm to an
+// exception handling block. Should not overlap with WasmTlsReg.
+static constexpr Register WasmExceptionReg = ABINonArgReg0;
 
 static constexpr Register JSReturnReg_Type = a3;
 static constexpr Register JSReturnReg_Data = a2;

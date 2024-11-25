@@ -114,11 +114,7 @@ class FunctionFlags {
     // Flags that XDR ignores. See also: js::BaseScript::MutableFlags.
     MUTABLE_FLAGS = RESOLVED_NAME | RESOLVED_LENGTH,
 
-    // Flags preserved when cloning a function. (Exception:
-    // js::MakeDefaultConstructor produces default constructors for ECMAScript
-    // classes by cloning self-hosted functions, and then clearing their
-    // SELF_HOSTED bit, setting their CONSTRUCTOR bit, and otherwise munging
-    // them to look like they originated with the class definition.) */
+    // Flags preserved when cloning a function.
     STABLE_ACROSS_CLONES =
         CONSTRUCTOR | LAMBDA | SELF_HOSTED | FUNCTION_KIND_MASK
   };
@@ -165,7 +161,7 @@ class FunctionFlags {
   bool isInterpreted() const {
     return hasFlags(BASESCRIPT) || hasFlags(SELFHOSTLAZY);
   }
-  bool isNative() const { return !isInterpreted(); }
+  bool isNativeFun() const { return !isInterpreted(); }
 
   bool isConstructor() const { return hasFlags(CONSTRUCTOR); }
 
@@ -178,11 +174,11 @@ class FunctionFlags {
 
   /* Possible attributes of a native function: */
   bool isAsmJSNative() const {
-    MOZ_ASSERT_IF(kind() == AsmJS, isNative());
+    MOZ_ASSERT_IF(kind() == AsmJS, isNativeFun());
     return kind() == AsmJS;
   }
   bool isWasm() const {
-    MOZ_ASSERT_IF(kind() == Wasm, isNative());
+    MOZ_ASSERT_IF(kind() == Wasm, isNativeFun());
     return kind() == Wasm;
   }
   bool isWasmWithJitEntry() const {
@@ -190,11 +186,11 @@ class FunctionFlags {
     return hasFlags(WASM_JIT_ENTRY);
   }
   bool isNativeWithoutJitEntry() const {
-    MOZ_ASSERT_IF(!hasJitEntry(), isNative());
+    MOZ_ASSERT_IF(!hasJitEntry(), isNativeFun());
     return !hasJitEntry();
   }
   bool isBuiltinNative() const {
-    return isNative() && !isAsmJSNative() && !isWasm();
+    return isNativeFun() && !isAsmJSNative() && !isWasm();
   }
   bool hasJitEntry() const {
     return hasBaseScript() || hasSelfHostedLazyScript() || isWasmWithJitEntry();
@@ -250,9 +246,11 @@ class FunctionFlags {
 
   bool isSelfHostedOrIntrinsic() const { return hasFlags(SELF_HOSTED); }
   bool isSelfHostedBuiltin() const {
-    return isSelfHostedOrIntrinsic() && !isNative();
+    return isSelfHostedOrIntrinsic() && !isNativeFun();
   }
-  bool isIntrinsic() const { return isSelfHostedOrIntrinsic() && isNative(); }
+  bool isIntrinsic() const {
+    return isSelfHostedOrIntrinsic() && isNativeFun();
+  }
 
   void setKind(FunctionKind kind) {
     this->flags_ &= ~FUNCTION_KIND_MASK;
@@ -286,7 +284,7 @@ class FunctionFlags {
     clearFlags(CONSTRUCTOR);
   }
   void setIsIntrinsic() {
-    MOZ_ASSERT(isNative());
+    MOZ_ASSERT(isNativeFun());
     MOZ_ASSERT(!isIntrinsic());
     setFlags(SELF_HOSTED);
   }
@@ -295,7 +293,6 @@ class FunctionFlags {
   void setResolvedName() { setFlags(RESOLVED_NAME); }
 
   void setInferredName() { setFlags(HAS_INFERRED_NAME); }
-  void clearInferredName() { clearFlags(HAS_INFERRED_NAME); }
 
   void setGuessedAtom() { setFlags(HAS_GUESSED_ATOM); }
 

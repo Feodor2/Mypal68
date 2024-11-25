@@ -543,7 +543,7 @@ static void EnsureOffset(MacroAssembler& masm, uint32_t base,
 }
 
 void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
-                                    const FuncTypeIdDesc& funcTypeId,
+                                    const TypeIdDesc& funcTypeId,
                                     const Maybe<uint32_t>& tier1FuncIndex,
                                     FuncOffsets* offsets) {
   // These constants reflect statically-determined offsets
@@ -585,7 +585,7 @@ void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
 
   EnsureOffset(masm, offsets->begin, WasmCheckedTailEntryOffset);
   switch (funcTypeId.kind()) {
-    case FuncTypeIdDescKind::Global: {
+    case TypeIdDescKind::Global: {
       Register scratch = WasmTableCallScratchReg0;
       masm.loadWasmGlobalPtr(funcTypeId.globalDataOffset(), scratch);
       masm.branchPtr(Assembler::Condition::Equal, WasmTableCallSigReg, scratch,
@@ -593,13 +593,13 @@ void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
       masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
       break;
     }
-    case FuncTypeIdDescKind::Immediate: {
+    case TypeIdDescKind::Immediate: {
       masm.branch32(Assembler::Condition::Equal, WasmTableCallSigReg,
                     Imm32(funcTypeId.immediate()), &functionBody);
       masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
       break;
     }
-    case FuncTypeIdDescKind::None:
+    case TypeIdDescKind::None:
       masm.jump(&functionBody);
       break;
   }
@@ -1417,6 +1417,8 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native wake (in wasm)";
     case SymbolicAddress::CoerceInPlace_JitEntry:
       return "out-of-line coercion for jit entry arguments (in wasm)";
+    case SymbolicAddress::ReportV128JSCall:
+      return "jit call to v128 wasm function";
     case SymbolicAddress::MemCopy:
     case SymbolicAddress::MemCopyShared:
       return "call to native memory.copy function";
@@ -1455,6 +1457,14 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native struct.new (in wasm)";
     case SymbolicAddress::StructNarrow:
       return "call to native struct.narrow (in wasm)";
+#if defined(ENABLE_WASM_EXCEPTIONS)
+    case SymbolicAddress::ExceptionNew:
+      return "call to native exception new (in wasm)";
+    case SymbolicAddress::ThrowException:
+      return "call to native throw exception (in wasm)";
+    case SymbolicAddress::GetLocalExceptionIndex:
+      return "call to native get the local index of an exn's tag (in wasm)";
+#endif
 #if defined(JS_CODEGEN_MIPS32)
     case SymbolicAddress::js_jit_gAtomic64Lock:
       MOZ_CRASH();

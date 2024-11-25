@@ -143,22 +143,24 @@ class MarkStack {
   size_t position() const { return topIndex_; }
 
   enum StackType { MainStack, AuxiliaryStack };
-  MOZ_MUST_USE bool init(JSGCMode gcMode, StackType which);
+  [[nodiscard]] bool init(StackType which, bool incrementalGCEnabled);
 
-  MOZ_MUST_USE bool setCapacityForMode(JSGCMode mode, StackType which);
+  [[nodiscard]] bool setStackCapacity(StackType which,
+                                      bool incrementalGCEnabled);
 
   size_t maxCapacity() const { return maxCapacity_; }
   void setMaxCapacity(size_t maxCapacity);
 
   template <typename T>
-  MOZ_MUST_USE bool push(T* ptr);
+  [[nodiscard]] bool push(T* ptr);
 
-  MOZ_MUST_USE bool push(JSObject* obj, SlotsOrElementsKind kind, size_t start);
-  MOZ_MUST_USE bool push(const SlotsOrElementsRange& array);
+  [[nodiscard]] bool push(JSObject* obj, SlotsOrElementsKind kind,
+                          size_t start);
+  [[nodiscard]] bool push(const SlotsOrElementsRange& array);
 
   // GCMarker::eagerlyMarkChildren uses unused marking stack as temporary
   // storage to hold rope pointers.
-  MOZ_MUST_USE bool pushTempRope(JSRope* ptr);
+  [[nodiscard]] bool pushTempRope(JSRope* ptr);
 
   bool isEmpty() const { return topIndex_ == 0; }
 
@@ -174,8 +176,6 @@ class MarkStack {
     topIndex_ = 0;
   }
 
-  void setGCMode(JSGCMode gcMode);
-
   void poisonUnused();
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -185,17 +185,17 @@ class MarkStack {
   const StackVector& stack() const { return stack_.ref(); }
   StackVector& stack() { return stack_.ref(); }
 
-  MOZ_MUST_USE bool ensureSpace(size_t count);
+  [[nodiscard]] bool ensureSpace(size_t count);
 
   /* Grow the stack, ensuring there is space for at least count elements. */
-  MOZ_MUST_USE bool enlarge(size_t count);
+  [[nodiscard]] bool enlarge(size_t count);
 
-  MOZ_MUST_USE bool resize(size_t newCapacity);
+  [[nodiscard]] bool resize(size_t newCapacity);
 
   TaggedPtr* topPtr();
 
   const TaggedPtr& peekPtr() const;
-  MOZ_MUST_USE bool pushTaggedPtr(Tag tag, Cell* ptr);
+  [[nodiscard]] bool pushTaggedPtr(Tag tag, Cell* ptr);
 
   // Index of the top of the stack.
   MainThreadOrGCTaskData<size_t> topIndex_;
@@ -255,13 +255,15 @@ enum MarkingState : uint8_t {
   IterativeMarking
 };
 
-class GCMarker : public JSTracer {
+class GCMarker final : public JSTracer {
  public:
   explicit GCMarker(JSRuntime* rt);
-  MOZ_MUST_USE bool init(JSGCMode gcMode);
+  [[nodiscard]] bool init();
 
   void setMaxCapacity(size_t maxCap) { stack.setMaxCapacity(maxCap); }
   size_t maxCapacity() const { return stack.maxCapacity(); }
+
+  bool isActive() const { return state != MarkingState::NotActive; }
 
   void start();
   void stop();
@@ -287,6 +289,15 @@ class GCMarker : public JSTracer {
   void traverseStringEdge(S source, JSString* target) {
     traverseEdge(source, target);
   }
+
+  template <typename S, typename T>
+  void checkTraversedEdge(S source, T* target);
+
+#ifdef DEBUG
+  // We can't check atom marking if the helper thread lock is already held by
+  // the current thread. This allows us to disable the check.
+  void setCheckAtomMarking(bool check);
+#endif
 
   /*
    * Care must be taken changing the mark color from gray to black. The cycle
@@ -346,12 +357,13 @@ class GCMarker : public JSTracer {
     ReportMarkTime = true,
     DontReportMarkTime = false
   };
-  MOZ_MUST_USE bool markUntilBudgetExhausted(
+  [[nodiscard]] bool markUntilBudgetExhausted(
       SliceBudget& budget, ShouldReportMarkTime reportTime = ReportMarkTime);
 
-  void setGCMode(JSGCMode mode) {
+  void setIncrementalGCEnabled(bool enabled) {
     // Ignore failure to resize the stack and keep using the existing stack.
-    mozilla::Unused << stack.setCapacityForMode(mode, gc::MarkStack::MainStack);
+    mozilla::Unused << stack.setStackCapacity(gc::MarkStack::MainStack,
+                                              enabled);
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -408,7 +420,7 @@ class GCMarker : public JSTracer {
   // Mark the given GC thing, but do not trace its children. Return true
   // if the thing became marked.
   template <typename T>
-  MOZ_MUST_USE bool mark(T* thing);
+  [[nodiscard]] bool mark(T* thing);
 
   template <typename T>
   inline void pushTaggedPtr(T* ptr);
@@ -429,7 +441,8 @@ class GCMarker : public JSTracer {
   inline void processMarkStackTop(SliceBudget& budget);
 
   void markDelayedChildren(gc::Arena* arena, gc::MarkColor color);
-  MOZ_MUST_USE bool markAllDelayedChildren(SliceBudget& budget);
+  [[nodiscard]] bool markAllDelayedChildren(SliceBudget& budget,
+                                            ShouldReportMarkTime reportTime);
   bool processDelayedMarkingList(gc::MarkColor color, SliceBudget& budget);
   bool hasDelayedChildren() const { return !!delayedMarkingList; }
   void rebuildDelayedMarkingList();
@@ -498,6 +511,12 @@ class GCMarker : public JSTracer {
 
   /* Assert that start and stop are called with correct ordering. */
   MainThreadOrGCTaskData<bool> started;
+
+  /*
+   * Whether to check that atoms traversed are present in atom marking
+   * bitmap.
+   */
+  MainThreadOrGCTaskData<bool> checkAtomMarking;
 
   /* The test marking queue might want to be marking a particular color. */
   mozilla::Maybe<js::gc::MarkColor> queueMarkColor;

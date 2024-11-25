@@ -905,7 +905,7 @@ bool ScriptedProxyHandler::ownPropertyKeys(JSContext* cx, HandleObject proxy,
 
   // Step 17.
   if (extensibleTarget && targetNonconfigurableKeys.empty()) {
-    return props.appendAll(trapResult);
+    return props.appendAll(std::move(trapResult));
   }
 
   // Step 19.
@@ -925,7 +925,7 @@ bool ScriptedProxyHandler::ownPropertyKeys(JSContext* cx, HandleObject proxy,
 
   // Step 20.
   if (extensibleTarget) {
-    return props.appendAll(trapResult);
+    return props.appendAll(std::move(trapResult));
   }
 
   // Step 21.
@@ -951,7 +951,7 @@ bool ScriptedProxyHandler::ownPropertyKeys(JSContext* cx, HandleObject proxy,
   }
 
   // Step 23.
-  return props.appendAll(trapResult);
+  return props.appendAll(std::move(trapResult));
 }
 
 // ES8 rev 0c1bd3004329336774cbc90de727cd0cf5f11e93

@@ -77,13 +77,7 @@ inline bool IsAboutToBeFinalizedUnbarriered(T* thingp) {
 }
 
 template <typename T>
-inline bool IsAboutToBeFinalized(const WriteBarriered<T>* thingp) {
-  return IsAboutToBeFinalizedInternal(
-      ConvertToBase(thingp->unbarrieredAddress()));
-}
-
-template <typename T>
-inline bool IsAboutToBeFinalized(ReadBarriered<T>* thingp) {
+inline bool IsAboutToBeFinalized(const BarrieredBase<T>* thingp) {
   return IsAboutToBeFinalizedInternal(
       ConvertToBase(thingp->unbarrieredAddress()));
 }
@@ -106,12 +100,6 @@ bool UnmarkGrayGCThingUnchecked(JSRuntime* rt, JS::GCCellPtr thing);
 // The return value indicates if anything was unmarked.
 bool UnmarkGrayShapeRecursively(Shape* shape);
 
-template <typename T>
-void CheckTracedThing(JSTracer* trc, T* thing);
-
-template <typename T>
-void CheckTracedThing(JSTracer* trc, T thing);
-
 namespace gc {
 
 // Functions for checking and updating GC thing pointers that might have been
@@ -130,7 +118,6 @@ namespace gc {
 
 template <typename T>
 inline bool IsForwarded(const T* t);
-inline bool IsForwarded(const JS::Value& value);
 
 template <typename T>
 inline T* Forwarded(const T* t);
@@ -167,11 +154,23 @@ inline void CheckGCThingAfterMovingGC(T* t);
 template <typename T>
 inline void CheckGCThingAfterMovingGC(const WeakHeapPtr<T*>& t);
 
-inline void CheckValueAfterMovingGC(const JS::Value& value);
-
 #endif  // JSGC_HASH_TABLE_CHECKS
 
 } /* namespace gc */
+
+// Debugging functions to check tracing invariants.
+#ifdef DEBUG
+template <typename T>
+void CheckTracedThing(JSTracer* trc, T* thing);
+template <typename T>
+void CheckTracedThing(JSTracer* trc, const T& thing);
+#else
+template <typename T>
+inline void CheckTracedThing(JSTracer* trc, T* thing) {}
+template <typename T>
+inline void CheckTracedThing(JSTracer* trc, const T& thing) {}
+#endif
+
 } /* namespace js */
 
 #endif /* gc_Marking_h */

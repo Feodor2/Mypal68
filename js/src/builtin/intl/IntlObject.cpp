@@ -42,6 +42,7 @@
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/StringType.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -420,7 +421,7 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
   if (!result) {
     return false;
   }
-  result->ensureDenseInitializedLength(cx, 0, keys->length());
+  result->ensureDenseInitializedLength(0, keys->length());
 
   UErrorCode status = U_ZERO_ERROR;
 
@@ -805,7 +806,7 @@ static JSObject* CreateIntlObject(JSContext* cx, JSProtoKey key) {
 
   // The |Intl| object is just a plain object with some "static" function
   // properties and some constructor properties.
-  return NewSingletonObjectWithGivenProto(cx, &IntlClass, proto);
+  return NewTenuredObjectWithGivenProto(cx, &IntlClass, proto);
 }
 
 /**
@@ -818,9 +819,9 @@ static bool IntlClassFinish(JSContext* cx, HandleObject intl,
   RootedId ctorId(cx);
   RootedValue ctorValue(cx);
   for (const auto& protoKey :
-       {JSProto_Collator, JSProto_DateTimeFormat, JSProto_ListFormat,
-        JSProto_Locale, JSProto_NumberFormat, JSProto_PluralRules,
-        JSProto_RelativeTimeFormat}) {
+       {JSProto_Collator, JSProto_DateTimeFormat, JSProto_DisplayNames,
+        JSProto_ListFormat, JSProto_Locale, JSProto_NumberFormat,
+        JSProto_PluralRules, JSProto_RelativeTimeFormat}) {
     JSObject* ctor = GlobalObject::getOrCreateConstructor(cx, protoKey);
     if (!ctor) {
       return false;

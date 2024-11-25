@@ -237,7 +237,8 @@ class FuncExport {
   }
 
   bool canHaveJitEntry() const {
-    return !funcType_.temporarilyUnsupportedReftypeForEntry() &&
+    return !funcType_.hasUnexposableArgOrRet() &&
+           !funcType_.temporarilyUnsupportedReftypeForEntry() &&
            !funcType_.temporarilyUnsupportedResultCountForJitEntry() &&
            JitOptions.enableWasmJitEntry;
   }
@@ -337,9 +338,12 @@ typedef Vector<ValTypeVector, 0, SystemAllocPolicy> FuncArgTypesVector;
 typedef Vector<ValTypeVector, 0, SystemAllocPolicy> FuncReturnTypesVector;
 
 struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
-  FuncTypeWithIdVector funcTypeIds;
+  TypeDefWithIdVector types;
   GlobalDescVector globals;
   TableDescVector tables;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  EventDescVector events;
+#endif
   CacheableChars filename;
   CacheableChars sourceMapURL;
 
@@ -422,6 +426,9 @@ struct MetadataTier {
   FuncImportVector funcImports;
   FuncExportVector funcExports;
   StackMaps stackMaps;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  WasmTryNoteVector tryNotes;
+#endif
 
   // Debug information, not serialized.
   Uint32Vector debugTrapFarJumpOffsets;
@@ -585,6 +592,9 @@ class CodeTier {
   }
 
   const CodeRange* lookupRange(const void* pc) const;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  const WasmTryNote* lookupWasmTryNote(const void* pc) const;
+#endif
 
   size_t serializedSize() const;
   uint8_t* serialize(uint8_t* cursor, const LinkData& linkData) const;
@@ -615,6 +625,15 @@ class JumpTables {
     // to that effect.
     MOZ_ASSERT(i < numFuncs_);
     jit_.get()[i] = target;
+  }
+  void setJitEntryIfNull(size_t i, void* target) const {
+    // Make sure that compare-and-write is atomic; see comment in
+    // wasm::Module::finishTier2 to that effect.
+    MOZ_ASSERT(i < numFuncs_);
+    void* expected = nullptr;
+    (void)__atomic_compare_exchange_n(&jit_.get()[i], &expected, target,
+                                      /*weak=*/false, __ATOMIC_RELAXED,
+                                      __ATOMIC_RELAXED);
   }
   void** getAddressOfJitEntry(size_t i) const {
     MOZ_ASSERT(i < numFuncs_);
@@ -658,11 +677,10 @@ class Code : public ShareableBase<Code> {
   SharedMetadata metadata_;
   ExclusiveData<CacheableCharsVector> profilingLabels_;
   JumpTables jumpTables_;
-  StructTypeVector structTypes_;
 
  public:
   Code(UniqueCodeTier tier1, const Metadata& metadata,
-       JumpTables&& maybeJumpTables, StructTypeVector&& structTypes);
+       JumpTables&& maybeJumpTables);
   bool initialized() const { return tier1_->initialized(); }
 
   bool initialize(const LinkData& linkData);
@@ -674,6 +692,9 @@ class Code : public ShareableBase<Code> {
 
   void setJitEntry(size_t i, void* target) const {
     jumpTables_.setJitEntry(i, target);
+  }
+  void setJitEntryIfNull(size_t i, void* target) const {
+    jumpTables_.setJitEntryIfNull(i, target);
   }
   void** getAddressOfJitEntry(size_t i) const {
     return jumpTables_.getAddressOfJitEntry(i);
@@ -693,7 +714,6 @@ class Code : public ShareableBase<Code> {
 
   const CodeTier& codeTier(Tier tier) const;
   const Metadata& metadata() const { return *metadata_; }
-  const StructTypeVector& structTypes() const { return structTypes_; }
 
   const ModuleSegment& segment(Tier iter) const {
     return codeTier(iter).segment();
@@ -707,6 +727,9 @@ class Code : public ShareableBase<Code> {
   const CallSite* lookupCallSite(void* returnAddress) const;
   const CodeRange* lookupFuncRange(void* pc) const;
   const StackMap* lookupStackMap(uint8_t* nextPC) const;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  const WasmTryNote* lookupWasmTryNote(void* pc, Tier* tier) const;
+#endif
   bool containsCodePC(const void* pc) const;
   bool lookupTrap(void* pc, Trap* trap, BytecodeOffset* bytecode) const;
 

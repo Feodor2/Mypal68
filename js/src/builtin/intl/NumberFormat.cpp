@@ -6,7 +6,6 @@
 
 #include "builtin/intl/NumberFormat.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
 #include "mozilla/FloatingPoint.h"
@@ -48,6 +47,7 @@
 #include "vm/SelfHosting.h"
 #include "vm/Stack.h"
 #include "vm/StringType.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
 
@@ -344,16 +344,11 @@ static const MeasureUnit& FindSimpleMeasureUnit(const char* name) {
 }
 
 static constexpr size_t MaxUnitLength() {
-  // Enable by default when libstdc++ 7 is the minimal version expected
-#if _GLIBCXX_RELEASE >= 7
   size_t length = 0;
   for (const auto& unit : simpleMeasureUnits) {
     length = std::max(length, std::char_traits<char>::length(unit.name));
   }
   return length * 2 + std::char_traits<char>::length("-per-");
-#else
-  return mozilla::ArrayLength("mile-scandinavian-per-mile-scandinavian") - 1;
-#endif
 }
 
 bool js::intl::NumberFormatterSkeleton::unit(JSLinearString* unit) {
@@ -1020,11 +1015,11 @@ class NumberFormatFields {
  public:
   explicit NumberFormatFields(JSContext* cx) : fields_(cx) {}
 
-  MOZ_MUST_USE bool append(FieldType type, int32_t begin, int32_t end);
+  [[nodiscard]] bool append(FieldType type, int32_t begin, int32_t end);
 
-  MOZ_MUST_USE ArrayObject* toArray(JSContext* cx,
-                                    JS::HandleString overallResult,
-                                    FieldType unitType);
+  [[nodiscard]] ArrayObject* toArray(JSContext* cx,
+                                     JS::HandleString overallResult,
+                                     FieldType unitType);
 };
 
 bool NumberFormatFields::append(FieldType type, int32_t begin, int32_t end) {

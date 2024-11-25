@@ -5,11 +5,11 @@
 #ifndef jit_arm_Assembler_arm_h
 #define jit_arm_Assembler_arm_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
+#include <iterator>
 
 #include "jit/arm/Architecture-arm.h"
 #include "jit/arm/disasm/Disasm-arm.h"
@@ -78,8 +78,7 @@ static constexpr Register IntArgReg2 = r2;
 static constexpr Register IntArgReg3 = r3;
 static constexpr Register HeapReg = r10;
 static constexpr Register CallTempNonArgRegs[] = {r5, r6, r7, r8};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static const uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 // These register assignments for the 64-bit atomic ops are frequently too
 // constraining, but we have no way of expressing looser constraints to the
@@ -98,6 +97,8 @@ static constexpr Register64 CmpXchgNew64 =
     Register64(CmpXchgNewHi, CmpXchgNewLo);
 static constexpr Register CmpXchgOutLo = IntArgReg0;
 static constexpr Register CmpXchgOutHi = IntArgReg1;
+static constexpr Register64 CmpXchgOut64 =
+    Register64(CmpXchgOutHi, CmpXchgOutLo);
 
 // Exchange: Any two non-equal odd/even pairs would do for `new` and `out`.
 
@@ -116,8 +117,12 @@ static constexpr Register64 FetchOpVal64 =
     Register64(FetchOpValHi, FetchOpValLo);
 static constexpr Register FetchOpTmpLo = IntArgReg2;
 static constexpr Register FetchOpTmpHi = IntArgReg3;
+static constexpr Register64 FetchOpTmp64 =
+    Register64(FetchOpTmpHi, FetchOpTmpLo);
 static constexpr Register FetchOpOutLo = IntArgReg0;
 static constexpr Register FetchOpOutHi = IntArgReg1;
+static constexpr Register64 FetchOpOut64 =
+    Register64(FetchOpOutHi, FetchOpOutLo);
 
 class ABIArgGenerator {
   unsigned intRegIndex_;
@@ -188,6 +193,10 @@ static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 // code.  This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg.  It
 // must be a volatile register.
 static constexpr Register WasmJitEntryReturnScratch = r5;
+
+// Register used to store a reference to an exception thrown by Wasm to an
+// exception handling block. Should not overlap with WasmTlsReg.
+static constexpr Register WasmExceptionReg = ABINonArgReg2;
 
 static constexpr Register PreBarrierReg = r1;
 

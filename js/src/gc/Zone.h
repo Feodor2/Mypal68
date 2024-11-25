@@ -15,6 +15,7 @@
 #include "gc/FindSCCs.h"
 #include "gc/GCMarker.h"
 #include "gc/NurseryAwareHashMap.h"
+#include "gc/Statistics.h"
 #include "gc/ZoneAllocator.h"
 #include "js/GCHashTable.h"
 #include "vm/AtomsTable.h"
@@ -176,10 +177,6 @@ namespace JS {
 // to delete the last compartment in a live zone.
 class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
  private:
-  js::WriteOnceData<bool> isAtomsZone_;
-  js::WriteOnceData<bool> isSelfHostingZone_;
-  js::WriteOnceData<bool> isSystemZone_;
-
   enum class HelperThreadUse : uint32_t { None, Pending, Active };
   mozilla::Atomic<HelperThreadUse, mozilla::SequentiallyConsistent>
       helperThreadUse_;
@@ -194,10 +191,13 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   // Per-zone data for use by an embedder.
   js::ZoneData<void*> data;
 
-  js::ZoneData<uint32_t> tenuredStrings;
   js::ZoneData<uint32_t> tenuredBigInts;
 
   js::ZoneOrIonCompileData<uint64_t> nurseryAllocatedStrings;
+
+  // Number of marked/finalzied JSString/JSFatInlineString during major GC.
+  js::ZoneOrGCTaskData<size_t> markedStrings;
+  js::ZoneOrGCTaskData<size_t> finalizedStrings;
 
   js::ZoneData<bool> allocNurseryStrings;
   js::ZoneData<bool> allocNurseryBigInts;
@@ -221,6 +221,12 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 #ifdef MOZ_VTUNE
   js::UniquePtr<js::ScriptVTuneIdMap> scriptVTuneIdMap;
 #endif
+#ifdef JS_CACHEIR_SPEW
+  js::UniquePtr<js::ScriptFinalWarmUpCountMap> scriptFinalWarmUpCountMap;
+#endif
+
+  js::ZoneData<js::StringStats> previousGCStringStats;
+  js::ZoneData<js::StringStats> stringStats;
 
 #ifdef DEBUG
   js::MainThreadData<unsigned> gcSweepGroupIndex;
@@ -344,10 +350,10 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     return static_cast<Zone*>(zoneAlloc);
   }
 
-  explicit Zone(JSRuntime* rt);
+  explicit Zone(JSRuntime* rt, Kind kind = NormalZone);
   ~Zone();
 
-  MOZ_MUST_USE bool init();
+  [[nodiscard]] bool init();
 
   void destroy(JSFreeOp* fop);
 
@@ -376,7 +382,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     helperThreadUse_ = HelperThreadUse::None;
   }
 
-  MOZ_MUST_USE bool findSweepGroupEdges(Zone* atomsZone);
+  [[nodiscard]] bool findSweepGroupEdges(Zone* atomsZone);
 
   enum ShouldDiscardBaselineCode : bool {
     KeepBaselineCode = false,
@@ -394,7 +400,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
       ShouldDiscardJitScripts discardJitScripts = KeepJitScripts);
 
   void addSizeOfIncludingThis(
-      mozilla::MallocSizeOf mallocSizeOf, JS::CodeSizes* code, size_t* typePool,
+      mozilla::MallocSizeOf mallocSizeOf, JS::CodeSizes* code,
       size_t* regexpZone, size_t* jitZone, size_t* baselineStubsOptimized,
       size_t* uniqueIdMap, size_t* shapeCaches, size_t* atomsMarkBitmaps,
       size_t* compartmentObjects, size_t* crossCompartmentWrappersTables,
@@ -470,14 +476,6 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     return jitZone_ ? jitZone_ : createJitZone(cx);
   }
   js::jit::JitZone* jitZone() { return jitZone_; }
-
-  bool isAtomsZone() const { return isAtomsZone_; }
-  bool isSelfHostingZone() const { return isSelfHostingZone_; }
-  bool isSystemZone() const { return isSystemZone_; }
-
-  void setIsAtomsZone();
-  void setIsSelfHostingZone();
-  void setIsSystemZone();
 
   void prepareForCompacting();
 
@@ -562,7 +560,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   bool hasSweepGroupEdgeTo(Zone* otherZone) const {
     return gcGraphEdges.has(otherZone);
   }
-  MOZ_MUST_USE bool addSweepGroupEdgeTo(Zone* otherZone) {
+  [[nodiscard]] bool addSweepGroupEdgeTo(Zone* otherZone) {
     MOZ_ASSERT(otherZone->isGCMarking());
     return gcSweepGroupEdges().put(otherZone);
   }
@@ -605,20 +603,20 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   static js::HashNumber UniqueIdToHash(uint64_t uid);
 
   // Creates a HashNumber based on getUniqueId. Returns false on OOM.
-  MOZ_MUST_USE bool getHashCode(js::gc::Cell* cell, js::HashNumber* hashp);
+  [[nodiscard]] bool getHashCode(js::gc::Cell* cell, js::HashNumber* hashp);
 
   // Gets an existing UID in |uidp| if one exists.
-  MOZ_MUST_USE bool maybeGetUniqueId(js::gc::Cell* cell, uint64_t* uidp);
+  [[nodiscard]] bool maybeGetUniqueId(js::gc::Cell* cell, uint64_t* uidp);
 
   // Puts an existing UID in |uidp|, or creates a new UID for this Cell and
   // puts that into |uidp|. Returns false on OOM.
-  MOZ_MUST_USE bool getOrCreateUniqueId(js::gc::Cell* cell, uint64_t* uidp);
+  [[nodiscard]] bool getOrCreateUniqueId(js::gc::Cell* cell, uint64_t* uidp);
 
   js::HashNumber getHashCodeInfallible(js::gc::Cell* cell);
   uint64_t getUniqueIdInfallible(js::gc::Cell* cell);
 
   // Return true if this cell has a UID associated with it.
-  MOZ_MUST_USE bool hasUniqueId(js::gc::Cell* cell);
+  [[nodiscard]] bool hasUniqueId(js::gc::Cell* cell);
 
   // Transfer an id from another cell. This must only be called on behalf of a
   // moving GC. This method is infallible.

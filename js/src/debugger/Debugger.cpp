@@ -26,31 +26,32 @@
 #include "jsapi.h"    // for CallArgs, CallArgsFromVp
 #include "jstypes.h"  // for JS_PUBLIC_API
 
-#include "builtin/Array.h"               // for NewDenseFullyAllocatedArray
-#include "debugger/DebugAPI.h"           // for ResumeMode, DebugAPI
-#include "debugger/DebuggerMemory.h"     // for DebuggerMemory
-#include "debugger/DebugScript.h"        // for DebugScript
-#include "debugger/Environment.h"        // for DebuggerEnvironment
-#include "debugger/Frame.h"              // for DebuggerFrame
-#include "debugger/NoExecute.h"          // for EnterDebuggeeNoExecute
-#include "debugger/Object.h"             // for DebuggerObject
-#include "debugger/Script.h"             // for DebuggerScript
-#include "debugger/Source.h"             // for DebuggerSource
-#include "frontend/NameAnalysisTypes.h"  // for ParseGoal, ParseGoal::Script
-#include "frontend/ParseContext.h"       // for UsedNameTracker
-#include "frontend/Parser.h"             // for Parser
-#include "gc/FreeOp.h"                   // for JSFreeOp
-#include "gc/GC.h"                       // for IterateScripts
-#include "gc/GCMarker.h"                 // for GCMarker
-#include "gc/GCRuntime.h"                // for GCRuntime, AutoEnterIteration
-#include "gc/HashUtil.h"                 // for DependentAddPtr
-#include "gc/Marking.h"                  // for IsMarkedUnbarriered, IsMarked
-#include "gc/PublicIterators.h"          // for RealmsIter, CompartmentsIter
-#include "gc/Rooting.h"                  // for RootedNativeObject
-#include "gc/Statistics.h"               // for Statistics::SliceData
-#include "gc/Tracer.h"                   // for TraceEdge
-#include "gc/Zone.h"                     // for Zone
-#include "gc/ZoneAllocator.h"            // for ZoneAllocPolicy
+#include "builtin/Array.h"                // for NewDenseFullyAllocatedArray
+#include "debugger/DebugAPI.h"            // for ResumeMode, DebugAPI
+#include "debugger/DebuggerMemory.h"      // for DebuggerMemory
+#include "debugger/DebugScript.h"         // for DebugScript
+#include "debugger/Environment.h"         // for DebuggerEnvironment
+#include "debugger/Frame.h"               // for DebuggerFrame
+#include "debugger/NoExecute.h"           // for EnterDebuggeeNoExecute
+#include "debugger/Object.h"              // for DebuggerObject
+#include "debugger/Script.h"              // for DebuggerScript
+#include "debugger/Source.h"              // for DebuggerSource
+#include "frontend/CompilationStencil.h"  // for CompilationStencil
+#include "frontend/NameAnalysisTypes.h"   // for ParseGoal, ParseGoal::Script
+#include "frontend/ParseContext.h"        // for UsedNameTracker
+#include "frontend/Parser.h"              // for Parser
+#include "gc/FreeOp.h"                    // for JSFreeOp
+#include "gc/GC.h"                        // for IterateScripts
+#include "gc/GCMarker.h"                  // for GCMarker
+#include "gc/GCRuntime.h"                 // for GCRuntime, AutoEnterIteration
+#include "gc/HashUtil.h"                  // for DependentAddPtr
+#include "gc/Marking.h"                   // for IsMarkedUnbarriered, IsMarked
+#include "gc/PublicIterators.h"           // for RealmsIter, CompartmentsIter
+#include "gc/Rooting.h"                   // for RootedNativeObject
+#include "gc/Statistics.h"                // for Statistics::SliceData
+#include "gc/Tracer.h"                    // for TraceEdge
+#include "gc/Zone.h"                      // for Zone
+#include "gc/ZoneAllocator.h"             // for ZoneAllocPolicy
 #include "jit/BaselineDebugModeOSR.h"  // for RecompileOnStackBaselineScriptsForDebugMode
 #include "jit/BaselineJIT.h"           // for FinishDiscardBaselineScript
 #include "jit/Invalidation.h"         // for RecompileInfoVector
@@ -171,36 +172,6 @@ JSScript* js::GetOrCreateFunctionScript(JSContext* cx, HandleFunction fun) {
   return JSFunction::getOrCreateScript(cx, fun);
 }
 
-ArrayObject* js::GetFunctionParameterNamesArray(JSContext* cx,
-                                                HandleFunction fun) {
-  RootedValueVector names(cx);
-
-  // The default value for each argument is |undefined|.
-  if (!names.growBy(fun->nargs())) {
-    return nullptr;
-  }
-
-  if (IsInterpretedNonSelfHostedFunction(fun) && fun->nargs() > 0) {
-    RootedScript script(cx, GetOrCreateFunctionScript(cx, fun));
-    if (!script) {
-      return nullptr;
-    }
-
-    MOZ_ASSERT(fun->nargs() == script->numArgs());
-
-    PositionalFormalParameterIter fi(script);
-    for (size_t i = 0; i < fun->nargs(); i++, fi++) {
-      MOZ_ASSERT(fi.argumentSlot() == i);
-      if (JSAtom* atom = fi.name()) {
-        cx->markAtom(atom);
-        names[i].setString(atom);
-      }
-    }
-  }
-
-  return NewDenseCopiedArray(cx, names.length(), names.begin());
-}
-
 bool js::ValueToIdentifier(JSContext* cx, HandleValue v, MutableHandleId id) {
   if (!ToPropertyKey(cx, v, id)) {
     return false;
@@ -261,20 +232,20 @@ static void PropagateForcedReturn(JSContext* cx, AbstractFramePtr frame,
   frame.setReturnValue(rval);
 }
 
-static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
-                                                        AbstractFramePtr frame,
-                                                        ResumeMode& resumeMode,
-                                                        MutableHandleValue vp);
+[[nodiscard]] static bool AdjustGeneratorResumptionValue(JSContext* cx,
+                                                         AbstractFramePtr frame,
+                                                         ResumeMode& resumeMode,
+                                                         MutableHandleValue vp);
 
-static MOZ_MUST_USE bool ApplyFrameResumeMode(JSContext* cx,
-                                              AbstractFramePtr frame,
-                                              ResumeMode resumeMode,
-                                              HandleValue rv,
-                                              HandleSavedFrame exnStack) {
+[[nodiscard]] static bool ApplyFrameResumeMode(JSContext* cx,
+                                               AbstractFramePtr frame,
+                                               ResumeMode resumeMode,
+                                               HandleValue rv,
+                                               HandleSavedFrame exnStack) {
   RootedValue rval(cx, rv);
 
-  // The value passed in here is unwrapped had has no guarantees about what
-  // compartment it may be associated with, so we explcitly wrap it into the
+  // The value passed in here is unwrapped and has no guarantees about what
+  // compartment it may be associated with, so we explicitly wrap it into the
   // debuggee compartment.
   if (!cx->compartment()->wrap(cx, &rval)) {
     return false;
@@ -630,8 +601,14 @@ bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
   if (!p) {
     Rooted<AbstractGeneratorObject*> genObj(cx);
     if (referent.isGeneratorFrame()) {
-      AutoRealm ar(cx, referent.callee());
-      genObj = GetGeneratorObjectForFrame(cx, referent);
+      if (referent.isFunctionFrame()) {
+        AutoRealm ar(cx, referent.callee());
+        genObj = GetGeneratorObjectForFrame(cx, referent);
+      } else {
+        MOZ_ASSERT(referent.isModuleFrame());
+        AutoRealm ar(cx, referent.script()->module());
+        genObj = GetGeneratorObjectForFrame(cx, referent);
+      }
 
       // If this frame has a generator associated with it, but no on-stack
       // Debugger.Frame object was found, there should not be a suspended
@@ -1675,10 +1652,9 @@ static bool CheckResumptionValue(JSContext* cx, AbstractFramePtr frame,
 // control of the uncaughtExceptionHook, because this code assumes we won't
 // change our minds and continue execution--we must not close the generator
 // object unless we're really going to force-return.
-static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
-                                                        AbstractFramePtr frame,
-                                                        ResumeMode& resumeMode,
-                                                        MutableHandleValue vp) {
+[[nodiscard]] static bool AdjustGeneratorResumptionValue(
+    JSContext* cx, AbstractFramePtr frame, ResumeMode& resumeMode,
+    MutableHandleValue vp) {
   if (resumeMode != ResumeMode::Return && resumeMode != ResumeMode::Throw) {
     return true;
   }
@@ -3605,6 +3581,8 @@ void Debugger::traceCrossCompartmentEdges(JSTracer* trc) {
  */
 /* static */
 void DebugAPI::traceCrossCompartmentEdges(JSTracer* trc) {
+  MOZ_ASSERT(JS::RuntimeHeapIsMajorCollecting());
+
   JSRuntime* rt = trc->runtime();
   gc::State state = rt->gc.state();
 
@@ -4485,7 +4463,7 @@ bool Debugger::CallData::getDebuggees() {
   if (!arrobj) {
     return false;
   }
-  arrobj->ensureDenseInitializedLength(cx, 0, count);
+  arrobj->ensureDenseInitializedLength(0, count);
   for (i = 0; i < count; i++) {
     RootedValue v(cx, debuggees[i]);
     if (!dbg->wrapDebuggeeValue(cx, &v)) {
@@ -5361,7 +5339,7 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
   }
 
   template <typename T>
-  MOZ_MUST_USE bool commonFilter(T script, const JS::AutoRequireNoGC& nogc) {
+  [[nodiscard]] bool commonFilter(T script, const JS::AutoRequireNoGC& nogc) {
     if (urlCString) {
       bool gotFilename = false;
       if (script->filename() &&
@@ -5495,7 +5473,7 @@ bool Debugger::CallData::findScripts() {
     return false;
   }
 
-  result->ensureDenseInitializedLength(cx, 0, resultLength);
+  result->ensureDenseInitializedLength(0, resultLength);
 
   for (size_t i = 0; i < scripts.length(); i++) {
     JSObject* scriptObject = dbg->wrapScript(cx, scripts[i]);
@@ -5623,7 +5601,7 @@ bool Debugger::CallData::findSources() {
     return false;
   }
 
-  result->ensureDenseInitializedLength(cx, 0, resultLength);
+  result->ensureDenseInitializedLength(0, resultLength);
 
   size_t i = 0;
   for (auto iter = sources.get().iter(); !iter.done(); iter.next()) {
@@ -5844,7 +5822,7 @@ bool Debugger::CallData::findObjects() {
     return false;
   }
 
-  result->ensureDenseInitializedLength(cx, 0, length);
+  result->ensureDenseInitializedLength(0, length);
 
   for (size_t i = 0; i < length; i++) {
     RootedValue debuggeeVal(cx, ObjectValue(*query.objects[i]));
@@ -5994,21 +5972,23 @@ bool Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp) {
   bool result = true;
 
   CompileOptions options(cx);
-  Rooted<frontend::CompilationInfo> compilationInfo(
-      cx, frontend::CompilationInfo(cx, options));
-  if (!compilationInfo.get().input.initForGlobal(cx)) {
+  Rooted<frontend::CompilationInput> input(cx,
+                                           frontend::CompilationInput(options));
+  if (!input.get().initForGlobal(cx)) {
     return false;
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  frontend::CompilationState compilationState(cx, allocScope, options,
-                                              compilationInfo.get().stencil);
+  frontend::CompilationState compilationState(cx, allocScope, input.get());
+  if (!compilationState.init(cx)) {
+    return false;
+  }
 
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   frontend::Parser<frontend::FullParseHandler, char16_t> parser(
       cx, options, chars.twoByteChars(), length,
-      /* foldConstants = */ true, compilationInfo.get(), compilationState,
-      nullptr, nullptr);
+      /* foldConstants = */ true, compilationState,
+      /* syntaxParser = */ nullptr);
   if (!parser.checkOptions() || !parser.parse()) {
     // We ran into an error. If it was because we ran out of memory we report
     // it in the usual way.

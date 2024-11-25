@@ -178,7 +178,7 @@ class StoreBuffer {
           nonStringHead_(nullptr),
           owner_(owner) {}
 
-    MOZ_MUST_USE bool init();
+    [[nodiscard]] bool init();
 
     void clear();
 
@@ -215,7 +215,7 @@ class StoreBuffer {
     explicit GenericBuffer(StoreBuffer* owner)
         : storage_(nullptr), owner_(owner) {}
 
-    MOZ_MUST_USE bool init();
+    [[nodiscard]] bool init();
 
     void clear() {
       if (storage_) {
@@ -418,7 +418,7 @@ class StoreBuffer {
 #ifdef DEBUG
     if (JS::RuntimeHeapIsBusy()) {
       MOZ_ASSERT(!CurrentThreadIsGCMarking());
-      MOZ_ASSERT(lock_.ownedByCurrentThread());
+      lock_.assertOwnedByCurrentThread();
     } else {
       MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
     }
@@ -473,11 +473,12 @@ class StoreBuffer {
 #endif
 
   explicit StoreBuffer(JSRuntime* rt, const Nursery& nursery);
-  MOZ_MUST_USE bool enable();
+  [[nodiscard]] bool enable();
 
   void disable();
   bool isEnabled() const { return enabled_; }
 
+  bool isEmpty() const;
   void clear();
 
   const Nursery& nursery() const { return nursery_; }

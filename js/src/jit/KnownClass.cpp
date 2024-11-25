@@ -19,7 +19,7 @@ KnownClass jit::GetObjectKnownClass(const MDefinition* def) {
 
   switch (def->op()) {
     case MDefinition::Opcode::NewArray:
-    case MDefinition::Opcode::NewArrayCopyOnWrite:
+    case MDefinition::Opcode::NewArrayDynamicLength:
       return KnownClass::Array;
 
     case MDefinition::Opcode::NewObject:

@@ -6,7 +6,6 @@
 #define jit_BitSet_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include <stddef.h>
@@ -51,7 +50,7 @@ class BitSet {
 
   explicit BitSet(unsigned int numBits) : bits_(nullptr), numBits_(numBits) {}
 
-  MOZ_MUST_USE bool init(TempAllocator& alloc);
+  [[nodiscard]] bool init(TempAllocator& alloc);
 
   unsigned int getNumBits() const { return numBits_; }
 

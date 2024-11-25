@@ -38,8 +38,8 @@ class BaselineFrame;
 bool CanIonCompileScript(JSContext* cx, JSScript* script);
 bool CanIonInlineScript(JSScript* script);
 
-MOZ_MUST_USE bool IonCompileScriptForBaselineAtEntry(JSContext* cx,
-                                                     BaselineFrame* frame);
+[[nodiscard]] bool IonCompileScriptForBaselineAtEntry(JSContext* cx,
+                                                      BaselineFrame* frame);
 
 struct IonOsrTempData {
   void* jitcode;
@@ -53,15 +53,13 @@ struct IonOsrTempData {
   }
 };
 
-MOZ_MUST_USE bool IonCompileScriptForBaselineOSR(JSContext* cx,
-                                                 BaselineFrame* frame,
-                                                 uint32_t frameSize,
-                                                 jsbytecode* pc,
-                                                 IonOsrTempData** infoPtr);
+[[nodiscard]] bool IonCompileScriptForBaselineOSR(JSContext* cx,
+                                                  BaselineFrame* frame,
+                                                  uint32_t frameSize,
+                                                  jsbytecode* pc,
+                                                  IonOsrTempData** infoPtr);
 
 MethodStatus CanEnterIon(JSContext* cx, RunState& state);
-
-MethodStatus Recompile(JSContext* cx, HandleScript script, bool force);
 
 class MIRGenerator;
 class LIRGraph;
@@ -69,7 +67,7 @@ class CodeGenerator;
 class LazyLinkExitFrameLayout;
 class WarpSnapshot;
 
-MOZ_MUST_USE bool OptimizeMIR(MIRGenerator* mir);
+[[nodiscard]] bool OptimizeMIR(MIRGenerator* mir);
 LIRGraph* GenerateLIR(MIRGenerator* mir);
 CodeGenerator* GenerateCode(MIRGenerator* mir, LIRGraph* lir);
 CodeGenerator* CompileBackEnd(MIRGenerator* mir, WarpSnapshot* snapshot);
@@ -133,10 +131,6 @@ size_t SizeOfIonData(JSScript* script, mozilla::MallocSizeOf mallocSizeOf);
 
 inline bool IsIonEnabled(JSContext* cx) {
   if (MOZ_UNLIKELY(!IsBaselineJitEnabled(cx) || cx->options().disableIon())) {
-    return false;
-  }
-
-  if (!JitOptions.warpBuilder) {
     return false;
   }
 

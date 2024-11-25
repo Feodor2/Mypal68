@@ -599,7 +599,7 @@ void Realm::updateDebuggerObservesCoverage() {
   runtime_->decrementNumDebuggeeRealmsObservingCoverage();
 
   // If code coverage is enabled by any other means, keep it.
-  if (collectCoverage()) {
+  if (collectCoverageForDebug()) {
     return;
   }
 
@@ -612,14 +612,6 @@ coverage::LCovRealm* Realm::lcovRealm() {
     lcovRealm_ = js::MakeUnique<coverage::LCovRealm>(this);
   }
   return lcovRealm_.get();
-}
-
-bool Realm::collectCoverage() const {
-  return collectCoverageForPGO() || collectCoverageForDebug();
-}
-
-bool Realm::collectCoverageForPGO() const {
-  return !jit::JitOptions.disablePgo;
 }
 
 bool Realm::collectCoverageForDebug() const {
@@ -647,16 +639,15 @@ void ObjectRealm::addSizeOfExcludingThis(
   }
 }
 
-void Realm::addSizeOfIncludingThis(
-    mozilla::MallocSizeOf mallocSizeOf, size_t* tiAllocationSiteTables,
-    size_t* tiArrayTypeTables, size_t* tiObjectTypeTables, size_t* realmObject,
-    size_t* realmTables, size_t* innerViewsArg, size_t* objectMetadataTablesArg,
-    size_t* savedStacksSet, size_t* varNamesSet,
-    size_t* nonSyntacticLexicalEnvironmentsArg, size_t* jitRealm) {
+void Realm::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
+                                   size_t* realmObject, size_t* realmTables,
+                                   size_t* innerViewsArg,
+                                   size_t* objectMetadataTablesArg,
+                                   size_t* savedStacksSet, size_t* varNamesSet,
+                                   size_t* nonSyntacticLexicalEnvironmentsArg,
+                                   size_t* jitRealm) {
   *realmObject += mallocSizeOf(this);
-  objectGroups_.addSizeOfExcludingThis(mallocSizeOf, tiAllocationSiteTables,
-                                       tiArrayTypeTables, tiObjectTypeTables,
-                                       realmTables);
+  objectGroups_.addSizeOfExcludingThis(mallocSizeOf, realmTables);
   wasm.addSizeOfExcludingThis(mallocSizeOf, realmTables);
 
   objects_.addSizeOfExcludingThis(mallocSizeOf, innerViewsArg,

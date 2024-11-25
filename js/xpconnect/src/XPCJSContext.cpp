@@ -34,6 +34,7 @@
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollector.h"
 #include "jsapi.h"
+#include "js/ArrayBuffer.h"
 #include "js/ContextOptions.h"
 #include "js/MemoryMetrics.h"
 #include "js/OffThreadScriptCompilation.h"
@@ -70,8 +71,6 @@
 #  include <algorithm>
 #  include <windows.h>
 #endif
-
-static MOZ_THREAD_LOCAL(XPCJSContext*) gTlsContext;
 
 using namespace mozilla;
 using namespace xpc;
@@ -795,8 +794,6 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
       Preferences::GetInt(JS_OPTIONS_DOT_STR "baselinejit.threshold", -1);
   int32_t normalIonThreshold =
       Preferences::GetInt(JS_OPTIONS_DOT_STR "ion.threshold", -1);
-  int32_t fullIonThreshold =
-      Preferences::GetInt(JS_OPTIONS_DOT_STR "ion.full.threshold", -1);
   int32_t ionFrequentBailoutThreshold = Preferences::GetInt(
       JS_OPTIONS_DOT_STR "ion.frequent_bailout_threshold", -1);
 
@@ -850,8 +847,6 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
                                 useBaselineEager ? 0 : baselineThreshold);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_NORMAL_WARMUP_TRIGGER,
                                 useIonEager ? 0 : normalIonThreshold);
-  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_FULL_WARMUP_TRIGGER,
-                                useIonEager ? 0 : fullIonThreshold);
   JS_SetGlobalJitCompilerOption(cx,
                                 JSJITCOMPILER_ION_FREQUENT_BAILOUT_THRESHOLD,
                                 ionFrequentBailoutThreshold);
@@ -881,6 +876,9 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   }
 
   JS::SetUseOffThreadParseGlobal(useOffThreadParseGlobal);
+
+  JS::SetLargeArrayBuffersEnabled(
+      StaticPrefs::javascript_options_large_arraybuffers());
 }
 
 static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
@@ -907,6 +905,13 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
 #ifdef ENABLE_WASM_MULTI_VALUE
   bool useWasmMultiValue =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_multi_value");
+#endif
+#ifdef ENABLE_WASM_SIMD
+  bool useWasmSimd = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_simd");
+#endif
+#ifdef ENABLE_WASM_SIMD_WORMHOLE
+  bool useWasmSimdWormhole =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_simd_wormhole");
 #endif
   bool useWasmVerbose = Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_verbose");
   bool throwOnAsmJSValidationFailure = Preferences::GetBool(
@@ -950,6 +955,13 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.iterator_helpers");
 #endif
 
+  // Require top level await disabled outside of nightly.
+  bool topLevelAwaitEnabled = false;
+#ifdef NIGHTLY_BUILD
+  topLevelAwaitEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.top_level_await");
+#endif
+
 #ifdef JS_GC_ZEAL
   int32_t zeal = Preferences::GetInt(JS_OPTIONS_DOT_STR "gczeal", -1);
   int32_t zeal_frequency = Preferences::GetInt(
@@ -985,6 +997,12 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
 #ifdef ENABLE_WASM_MULTI_VALUE
       .setWasmMultiValue(useWasmMultiValue)
 #endif
+#ifdef ENABLE_WASM_SIMD
+      .setWasmSimd(useWasmSimd)
+#endif
+#ifdef ENABLE_WASM_SIMD_WORMHOLE
+      .setWasmSimdWormhole(useWasmSimdWormhole)
+#endif
       .setWasmVerbose(useWasmVerbose)
       .setThrowOnAsmJSValidationFailure(throwOnAsmJSValidationFailure)
       .setSourcePragmas(useSourcePragmas)
@@ -993,7 +1011,8 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
       .setThrowOnDebuggeeWouldRun(throwOnDebuggeeWouldRun)
       .setDumpStackOnDebuggeeWouldRun(dumpStackOnDebuggeeWouldRun)
       .setPrivateClassFields(privateFieldsEnabled)
-      .setPrivateClassMethods(privateMethodsEnabled);
+      .setPrivateClassMethods(privateMethodsEnabled)
+      .setTopLevelAwait(topLevelAwaitEnabled);
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
   if (xr) {
@@ -1043,8 +1062,6 @@ XPCJSContext::~XPCJSContext() {
   }
 
   PROFILER_CLEAR_JS_CONTEXT();
-
-  gTlsContext.set(nullptr);
 }
 
 XPCJSContext::XPCJSContext()
@@ -1060,15 +1077,18 @@ XPCJSContext::XPCJSContext()
       mActive(CONTEXT_INACTIVE),
       mLastStateChange(PR_Now()) {
   MOZ_COUNT_CTOR_INHERITED(XPCJSContext, CycleCollectedJSContext);
-  MOZ_RELEASE_ASSERT(!gTlsContext.get());
   MOZ_ASSERT(mWatchdogManager);
   ++sInstanceCount;
   mWatchdogManager->RegisterContext(this);
-  gTlsContext.set(this);
 }
 
 /* static */
-XPCJSContext* XPCJSContext::Get() { return gTlsContext.get(); }
+XPCJSContext* XPCJSContext::Get() {
+  // Do an explicit null check, because this can get called from a process that
+  // does not run JS.
+  nsXPConnect* xpc = static_cast<nsXPConnect*>(nsXPConnect::XPConnect());
+  return xpc ? xpc->GetContext() : nullptr;
+}
 
 #ifdef XP_WIN
 static size_t GetWindowsStackSize() {
@@ -1281,6 +1301,19 @@ nsresult XPCJSContext::Initialize() {
     NS_ABORT_OOM(0);  // Size is unknown.
   }
 
+  if (!JS::InitSelfHostedCode(cx)) {
+    // Note: If no exception is pending, failure is due to OOM.
+    if (!JS_IsExceptionPending(cx) || JS_IsThrowingOutOfMemory(cx)) {
+      NS_ABORT_OOM(0);  // Size is unknown.
+    }
+
+    // Failed to execute self-hosted JavaScript! Uh oh.
+    MOZ_CRASH("InitSelfHostedCode failed");
+  }
+
+  MOZ_RELEASE_ASSERT(Runtime()->InitializeStrings(cx),
+                     "InitializeStrings failed");
+
   return NS_OK;
 }
 
@@ -1300,9 +1333,6 @@ WatchdogManager* XPCJSContext::GetWatchdogManager() {
   sWatchdogInstance = new WatchdogManager();
   return sWatchdogInstance;
 }
-
-// static
-void XPCJSContext::InitTLS() { MOZ_RELEASE_ASSERT(gTlsContext.init()); }
 
 // static
 XPCJSContext* XPCJSContext::NewXPCJSContext() {

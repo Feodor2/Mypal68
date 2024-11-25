@@ -4,11 +4,13 @@
 
 #include "vm/Instrumentation.h"
 
+#include <iterator>
+
 #include "jsapi.h"
 
 #include "debugger/DebugAPI.h"
-#include "frontend/ParserAtom.h"
-#include "js/Object.h"  // JS::GetReservedSlot
+#include "frontend/ParserAtom.h"  // ParserAtomsTable, TaggedParserAtomIndex
+#include "js/Object.h"            // JS::GetReservedSlot
 #include "proxy/DeadObjectProxy.h"
 
 #include "vm/JSObject-inl.h"
@@ -76,7 +78,7 @@ static const char* instrumentationNames[] = {
 
 static bool StringToInstrumentationKind(JSContext* cx, HandleString str,
                                         InstrumentationKind* result) {
-  for (size_t i = 0; i < mozilla::ArrayLength(instrumentationNames); i++) {
+  for (size_t i = 0; i < std::size(instrumentationNames); i++) {
     bool match;
     if (!JS_StringEqualsAscii(cx, str, instrumentationNames[i], &match)) {
       return false;
@@ -92,15 +94,14 @@ static bool StringToInstrumentationKind(JSContext* cx, HandleString str,
 }
 
 /* static */
-const frontend::ParserAtom* RealmInstrumentation::getInstrumentationKindName(
+frontend::TaggedParserAtomIndex
+RealmInstrumentation::getInstrumentationKindName(
     JSContext* cx, frontend::ParserAtomsTable& parserAtoms,
     InstrumentationKind kind) {
-  for (size_t i = 0; i < mozilla::ArrayLength(instrumentationNames); i++) {
+  for (size_t i = 0; i < std::size(instrumentationNames); i++) {
     if (kind == (InstrumentationKind)(1 << i)) {
-      return parserAtoms
-          .internAscii(cx, instrumentationNames[i],
-                       strlen(instrumentationNames[i]))
-          .unwrapOr(nullptr);
+      return parserAtoms.internAscii(cx, instrumentationNames[i],
+                                     strlen(instrumentationNames[i]));
     }
   }
   MOZ_CRASH("Unexpected instrumentation kind");

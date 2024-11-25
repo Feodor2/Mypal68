@@ -686,6 +686,25 @@ bool IonCacheIRCompiler::emitGuardGroup(ObjOperandId objId,
   return true;
 }
 
+bool IonCacheIRCompiler::emitGuardTypeDescr(ObjOperandId objId,
+                                            uint32_t descrOffset) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  Register obj = allocator.useRegister(masm, objId);
+  AutoScratchRegister scratch(allocator, masm);
+
+  TypeDescr* descr = &objectStubField(descrOffset)->as<TypeDescr>();
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  masm.branchTestObjTypeDescr(Assembler::NotEqual, obj, descr, scratch, obj,
+                              failure->label());
+  return true;
+}
+
 bool IonCacheIRCompiler::emitGuardProto(ObjOperandId objId,
                                         uint32_t protoOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -950,7 +969,7 @@ bool IonCacheIRCompiler::emitCallNativeGetterResult(
   ValueOperand receiver = allocator.useValueRegister(masm, receiverId);
 
   JSFunction* target = &objectStubField(getterOffset)->as<JSFunction>();
-  MOZ_ASSERT(target->isNative());
+  MOZ_ASSERT(target->isNativeFun());
 
   AutoScratchRegisterMaybeOutput argJSContext(allocator, masm, output);
   AutoScratchRegister argUintN(allocator, masm);
@@ -1285,8 +1304,7 @@ bool IonCacheIRCompiler::emitStoreDynamicSlot(ObjOperandId objId,
 
 bool IonCacheIRCompiler::emitAddAndStoreSlotShared(
     CacheOp op, ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
-    bool changeGroup, uint32_t newGroupOffset, uint32_t newShapeOffset,
-    Maybe<uint32_t> numNewSlotsOffset) {
+    uint32_t newShapeOffset, Maybe<uint32_t> numNewSlotsOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, objId);
   int32_t offset = int32StubField(offsetOffset);
@@ -1299,7 +1317,6 @@ bool IonCacheIRCompiler::emitAddAndStoreSlotShared(
     scratch2.emplace(allocator, masm);
   }
 
-  ObjectGroup* newGroup = groupStubField(newGroupOffset);
   Shape* newShape = shapeStubField(newShapeOffset);
 
   if (op == CacheOp::AllocateAndStoreDynamicSlot) {
@@ -1336,22 +1353,6 @@ bool IonCacheIRCompiler::emitAddAndStoreSlotShared(
     masm.branchIfFalseBool(scratch1, failure->label());
   }
 
-  if (changeGroup) {
-    // Changing object's group from a partially to fully initialized group,
-    // per the acquired properties analysis. Only change the group if the
-    // old group still has a newScript. This only applies to PlainObjects.
-    Label noGroupChange;
-    masm.branchIfObjGroupHasNoAddendum(obj, scratch1, &noGroupChange);
-
-    // Update the object's group.
-    masm.storeObjGroup(newGroup, obj,
-                       [](MacroAssembler& masm, const Address& addr) {
-                         EmitPreBarrier(masm, addr, MIRType::ObjectGroup);
-                       });
-
-    masm.bind(&noGroupChange);
-  }
-
   // Update the object's shape.
   masm.storeObjShape(newShape, obj,
                      [](MacroAssembler& masm, const Address& addr) {
@@ -1376,228 +1377,35 @@ bool IonCacheIRCompiler::emitAddAndStoreSlotShared(
   return true;
 }
 
-bool IonCacheIRCompiler::emitAddAndStoreFixedSlot(
-    ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
-    bool changeGroup, uint32_t newGroupOffset, uint32_t newShapeOffset) {
+bool IonCacheIRCompiler::emitAddAndStoreFixedSlot(ObjOperandId objId,
+                                                  uint32_t offsetOffset,
+                                                  ValOperandId rhsId,
+                                                  uint32_t newShapeOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Maybe<uint32_t> numNewSlotsOffset = mozilla::Nothing();
-  return emitAddAndStoreSlotShared(
-      CacheOp::AddAndStoreFixedSlot, objId, offsetOffset, rhsId, changeGroup,
-      newGroupOffset, newShapeOffset, numNewSlotsOffset);
+  return emitAddAndStoreSlotShared(CacheOp::AddAndStoreFixedSlot, objId,
+                                   offsetOffset, rhsId, newShapeOffset,
+                                   numNewSlotsOffset);
 }
 
-bool IonCacheIRCompiler::emitAddAndStoreDynamicSlot(
-    ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
-    bool changeGroup, uint32_t newGroupOffset, uint32_t newShapeOffset) {
+bool IonCacheIRCompiler::emitAddAndStoreDynamicSlot(ObjOperandId objId,
+                                                    uint32_t offsetOffset,
+                                                    ValOperandId rhsId,
+                                                    uint32_t newShapeOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Maybe<uint32_t> numNewSlotsOffset = mozilla::Nothing();
-  return emitAddAndStoreSlotShared(
-      CacheOp::AddAndStoreDynamicSlot, objId, offsetOffset, rhsId, changeGroup,
-      newGroupOffset, newShapeOffset, numNewSlotsOffset);
+  return emitAddAndStoreSlotShared(CacheOp::AddAndStoreDynamicSlot, objId,
+                                   offsetOffset, rhsId, newShapeOffset,
+                                   numNewSlotsOffset);
 }
 
 bool IonCacheIRCompiler::emitAllocateAndStoreDynamicSlot(
     ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
-    bool changeGroup, uint32_t newGroupOffset, uint32_t newShapeOffset,
-    uint32_t numNewSlotsOffset) {
+    uint32_t newShapeOffset, uint32_t numNewSlotsOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitAddAndStoreSlotShared(CacheOp::AllocateAndStoreDynamicSlot, objId,
-                                   offsetOffset, rhsId, changeGroup,
-                                   newGroupOffset, newShapeOffset,
+                                   offsetOffset, rhsId, newShapeOffset,
                                    mozilla::Some(numNewSlotsOffset));
-}
-
-static void EmitStoreDenseElement(MacroAssembler& masm,
-                                  const ConstantOrRegister& value,
-                                  BaseObjectElementIndex target) {
-  if (value.constant()) {
-    Value v = value.value();
-    masm.storeValue(v, target);
-    return;
-  }
-
-  TypedOrValueRegister reg = value.reg();
-  masm.storeTypedOrValue(reg, target);
-}
-
-static void EmitAssertNoCopyOnWriteElements(MacroAssembler& masm,
-                                            Register elementsReg) {
-#ifdef DEBUG
-  // IonBuilder::initOrSetElemTryCache ensures we have no copy-on-write
-  // elements. Assert this in debug builds.
-  Address elementsFlags(elementsReg, ObjectElements::offsetOfFlags());
-  Label ok;
-  masm.branchTest32(Assembler::Zero, elementsFlags,
-                    Imm32(ObjectElements::COPY_ON_WRITE), &ok);
-  masm.assumeUnreachable("Unexpected copy-on-write elements in Ion IC!");
-  masm.bind(&ok);
-#endif
-}
-
-static void EmitAssertExtensibleElements(MacroAssembler& masm,
-                                         Register elementsReg) {
-#ifdef DEBUG
-  // Preceding shape guards ensure the object elements are extensible.
-  Address elementsFlags(elementsReg, ObjectElements::offsetOfFlags());
-  Label ok;
-  masm.branchTest32(Assembler::Zero, elementsFlags,
-                    Imm32(ObjectElements::Flags::NOT_EXTENSIBLE),
-                    &ok);
-  masm.assumeUnreachable("Unexpected non-extensible elements");
-  masm.bind(&ok);
-#endif
-}
-
-static void EmitAssertWritableArrayLengthElements(MacroAssembler& masm,
-                                                  Register elementsReg) {
-#ifdef DEBUG
-  // Preceding shape guards ensure the array length is writable.
-  Address elementsFlags(elementsReg, ObjectElements::offsetOfFlags());
-  Label ok;
-  masm.branchTest32(Assembler::Zero, elementsFlags,
-                    Imm32(ObjectElements::Flags::NONWRITABLE_ARRAY_LENGTH),
-                    &ok);
-  masm.assumeUnreachable("Unexpected non-writable array length elements");
-  masm.bind(&ok);
-#endif
-}
-
-bool IonCacheIRCompiler::emitStoreDenseElement(ObjOperandId objId,
-                                               Int32OperandId indexId,
-                                               ValOperandId rhsId) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  Register obj = allocator.useRegister(masm, objId);
-  Register index = allocator.useRegister(masm, indexId);
-  ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
-
-  AutoScratchRegister scratch1(allocator, masm);
-  AutoSpectreBoundsScratchRegister spectreScratch(allocator, masm);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  // Load obj->elements in scratch1.
-  masm.loadPtr(Address(obj, NativeObject::offsetOfElements()), scratch1);
-
-  EmitAssertNoCopyOnWriteElements(masm, scratch1);
-
-  // Bounds check.
-  Address initLength(scratch1, ObjectElements::offsetOfInitializedLength());
-  masm.spectreBoundsCheck32(index, initLength, spectreScratch,
-                            failure->label());
-
-  // Hole check.
-  BaseObjectElementIndex element(scratch1, index);
-  masm.branchTestMagic(Assembler::Equal, element, failure->label());
-
-  EmitPreBarrier(masm, element, MIRType::Value);
-  EmitStoreDenseElement(masm, val, element);
-  emitPostBarrierElement(obj, val, scratch1, index);
-  return true;
-}
-
-bool IonCacheIRCompiler::emitStoreDenseElementHole(ObjOperandId objId,
-                                                   Int32OperandId indexId,
-                                                   ValOperandId rhsId,
-                                                   bool handleAdd) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  Register obj = allocator.useRegister(masm, objId);
-  Register index = allocator.useRegister(masm, indexId);
-  ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
-
-  // handleAdd boolean is only relevant for Baseline. Ion ICs can always
-  // handle adds as we don't have to set any flags on the fallback stub to
-  // track this.
-
-  AutoScratchRegister scratch1(allocator, masm);
-  AutoSpectreBoundsScratchRegister spectreScratch(allocator, masm);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  // Load obj->elements in scratch1.
-  masm.loadPtr(Address(obj, NativeObject::offsetOfElements()), scratch1);
-
-  EmitAssertNoCopyOnWriteElements(masm, scratch1);
-
-  EmitAssertExtensibleElements(masm, scratch1);
-  if (handleAdd) {
-    EmitAssertWritableArrayLengthElements(masm, scratch1);
-  }
-
-  Address initLength(scratch1, ObjectElements::offsetOfInitializedLength());
-  BaseObjectElementIndex element(scratch1, index);
-
-  Label inBounds, outOfBounds;
-  masm.spectreBoundsCheck32(index, initLength, spectreScratch, &outOfBounds);
-  masm.jump(&inBounds);
-
-  masm.bind(&outOfBounds);
-  masm.branch32(Assembler::NotEqual, initLength, index, failure->label());
-
-  // If index < capacity, we can add a dense element inline. If not we
-  // need to allocate more elements.
-  Label capacityOk, allocElement;
-  Address capacity(scratch1, ObjectElements::offsetOfCapacity());
-  masm.spectreBoundsCheck32(index, capacity, spectreScratch, &allocElement);
-  masm.jump(&capacityOk);
-
-  // Check for non-writable array length. We only have to do this if
-  // index >= capacity and handleAdd is false.
-  masm.bind(&allocElement);
-  if (!handleAdd) {
-    Address elementsFlags(scratch1, ObjectElements::offsetOfFlags());
-    masm.branchTest32(Assembler::NonZero, elementsFlags,
-                      Imm32(ObjectElements::NONWRITABLE_ARRAY_LENGTH),
-                      failure->label());
-  }
-
-  LiveRegisterSet save(GeneralRegisterSet::Volatile(), liveVolatileFloatRegs());
-  save.takeUnchecked(scratch1);
-  masm.PushRegsInMask(save);
-
-  using Fn = bool (*)(JSContext * cx, NativeObject * obj);
-  masm.setupUnalignedABICall(scratch1);
-  masm.loadJSContext(scratch1);
-  masm.passABIArg(scratch1);
-  masm.passABIArg(obj);
-  masm.callWithABI<Fn, NativeObject::addDenseElementPure>();
-  masm.mov(ReturnReg, scratch1);
-
-  masm.PopRegsInMask(save);
-  masm.branchIfFalseBool(scratch1, failure->label());
-
-  // Load the reallocated elements pointer.
-  masm.loadPtr(Address(obj, NativeObject::offsetOfElements()), scratch1);
-
-  masm.bind(&capacityOk);
-
-  // Increment initLength.
-  masm.add32(Imm32(1), initLength);
-
-  // If length is now <= index, increment length too.
-  Label skipIncrementLength;
-  Address length(scratch1, ObjectElements::offsetOfLength());
-  masm.branch32(Assembler::Above, length, index, &skipIncrementLength);
-  masm.add32(Imm32(1), length);
-  masm.bind(&skipIncrementLength);
-
-  // Skip EmitPreBarrier as the memory is uninitialized.
-  Label doStore;
-  masm.jump(&doStore);
-
-  masm.bind(&inBounds);
-
-  EmitPreBarrier(masm, element, MIRType::Value);
-
-  masm.bind(&doStore);
-  EmitStoreDenseElement(masm, val, element);
-  emitPostBarrierElement(obj, val, scratch1, index);
-  return true;
 }
 
 bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
@@ -1671,7 +1479,7 @@ bool IonCacheIRCompiler::emitCallNativeSetter(ObjOperandId receiverId,
 
   Register receiver = allocator.useRegister(masm, receiverId);
   JSFunction* target = &objectStubField(setterOffset)->as<JSFunction>();
-  MOZ_ASSERT(target->isNative());
+  MOZ_ASSERT(target->isNativeFun());
   ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
 
   AutoScratchRegister argJSContext(allocator, masm);
@@ -2218,10 +2026,6 @@ bool IonCacheIRCompiler::emitLoadArgumentFixedSlot(ValOperandId resultId,
 bool IonCacheIRCompiler::emitLoadArgumentDynamicSlot(ValOperandId resultId,
                                                      Int32OperandId argcId,
                                                      uint8_t slotIndex) {
-  MOZ_CRASH("Call ICs not used in ion");
-}
-
-bool IonCacheIRCompiler::emitArrayPush(ObjOperandId objId, ValOperandId rhsId) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 

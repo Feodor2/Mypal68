@@ -6,7 +6,6 @@
 #define jit_JitZone_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
@@ -128,7 +127,7 @@ class JitZone {
     *stubInfo = nullptr;
     return nullptr;
   }
-  MOZ_MUST_USE bool putBaselineCacheIRStubCode(
+  [[nodiscard]] bool putBaselineCacheIRStubCode(
       const CacheIRStubKey::Lookup& lookup, CacheIRStubKey& key,
       JitCode* stubCode) {
     auto p = baselineCacheIRStubCodes_.lookupForAdd(lookup);
@@ -140,8 +139,8 @@ class JitZone {
     IonCacheIRStubInfoSet::Ptr p = ionCacheIRStubInfoSet_.lookup(key);
     return p ? p->stubInfo.get() : nullptr;
   }
-  MOZ_MUST_USE bool putIonCacheIRStubInfo(const CacheIRStubKey::Lookup& lookup,
-                                          CacheIRStubKey& key) {
+  [[nodiscard]] bool putIonCacheIRStubInfo(const CacheIRStubKey::Lookup& lookup,
+                                           CacheIRStubKey& key) {
     IonCacheIRStubInfoSet::AddPtr p =
         ionCacheIRStubInfoSet_.lookupForAdd(lookup);
     MOZ_ASSERT(!p);
@@ -152,8 +151,8 @@ class JitZone {
   ExecutableAllocator& execAlloc() { return execAlloc_.ref(); }
   const ExecutableAllocator& execAlloc() const { return execAlloc_.ref(); }
 
-  MOZ_MUST_USE bool addInlinedCompilation(const RecompileInfo& info,
-                                          JSScript* inlined);
+  [[nodiscard]] bool addInlinedCompilation(const RecompileInfo& info,
+                                           JSScript* inlined);
 
   RecompileInfoVector* maybeInlinedCompilations(JSScript* inlined) {
     auto p = inlinedCompilations_.lookup(inlined);

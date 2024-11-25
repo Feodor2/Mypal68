@@ -29,6 +29,7 @@ var resetterMethods = {
     'mozilla::UniquePtr': new Set(["reset"]),
     'js::UniquePtr': new Set(["reset"]),
     'mozilla::dom::Nullable': new Set(["SetNull"]),
+    'mozilla::dom::TypedArray_base': new Set(["Reset"]),
 };
 
 function indirectCallCannotGC(fullCaller, fullVariable)
@@ -293,6 +294,10 @@ var ignoreFunctions = {
 
     // Calls MergeSort
     "uint8 v8::internal::RegExpDisjunction::SortConsecutiveAtoms(v8::internal::RegExpCompiler*)": true,
+
+    // nsIEventTarget.IsOnCurrentThreadInfallible does not get resolved, and
+    // this is called on non-JS threads so cannot use AutoSuppressGCAnalysis.
+    "uint8 nsAutoOwningEventTarget::IsCurrentThread() const": true,
 };
 
 function extraGCFunctions() {

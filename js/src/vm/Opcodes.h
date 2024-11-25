@@ -5,9 +5,9 @@
 #ifndef vm_Opcodes_h
 #define vm_Opcodes_h
 
-#include "mozilla/Attributes.h"
-
 #include <stddef.h>
+
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 // clang-format off
 /*
@@ -816,18 +816,12 @@
      * must fill in all slots of the new object before it is used in any other
      * way.
      *
-     * For `JSOp::NewObject`, the new object has a group based on the allocation
-     * site (or a new group if the template's group is a singleton). For
-     * `JSOp::NewObjectWithGroup`, the new object has the same group as the
-     * template object.
-     *
      *   Category: Objects
      *   Type: Creating objects
      *   Operands: uint32_t baseobjIndex
      *   Stack: => obj
      */ \
     MACRO(NewObject, new_object, NULL, 5, 0, 1, JOF_OBJECT|JOF_IC) \
-    MACRO(NewObjectWithGroup, new_object_with_group, NULL, 5, 0, 1, JOF_OBJECT|JOF_IC) \
     /*
      * Push a preconstructed object.
      *
@@ -1007,9 +1001,6 @@
      * Get the value of the property `obj.name`. This can call getters and
      * proxy traps.
      *
-     * `JSOp::CallProp` is exactly like `JSOp::GetProp` but hints to the VM that we're
-     * getting a method in order to call it.
-     *
      * Implements: [GetV][1], [GetValue][2] step 5.
      *
      * [1]: https://tc39.es/ecma262/#sec-getv
@@ -1021,12 +1012,8 @@
      *   Stack: obj => obj[name]
      */ \
     MACRO(GetProp, get_prop, NULL, 5, 1, 1, JOF_ATOM|JOF_PROP|JOF_IC) \
-    MACRO(CallProp, call_prop, NULL, 5, 1, 1, JOF_ATOM|JOF_PROP|JOF_IC) \
     /*
      * Get the value of the property `obj[key]`.
-     *
-     * `JSOp::CallElem` is exactly like `JSOp::GetElem` but hints to the VM that
-     * we're getting a method in order to call it.
      *
      * Implements: [GetV][1], [GetValue][2] step 5.
      *
@@ -1039,19 +1026,6 @@
      *   Stack: obj, key => obj[key]
      */ \
     MACRO(GetElem, get_elem, NULL, 1, 2, 1, JOF_BYTE|JOF_ELEM|JOF_IC) \
-    MACRO(CallElem, call_elem, NULL, 1, 2, 1, JOF_BYTE|JOF_ELEM|JOF_IC) \
-    /*
-     * Push the value of `obj.length`.
-     *
-     * `nameIndex` must be the index of the atom `"length"`. This then behaves
-     * exactly like `JSOp::GetProp`.
-     *
-     *   Category: Objects
-     *   Type: Accessing properties
-     *   Operands: uint32_t nameIndex
-     *   Stack: obj => obj.length
-     */ \
-    MACRO(Length, length, NULL, 5, 1, 1, JOF_ATOM|JOF_PROP|JOF_IC) \
     /*
      * Non-strict assignment to a property, `obj.name = val`.
      *
@@ -1363,16 +1337,6 @@
      */ \
     MACRO(IsNoIter, is_no_iter, NULL, 1, 1, 2, JOF_BYTE) \
     /*
-     * No-op instruction to hint to IonBuilder that the value on top of the
-     * stack is the string key in a for-in loop.
-     *
-     *   Category: Objects
-     *   Type: Enumeration
-     *   Operands:
-     *   Stack: val => val
-     */ \
-    MACRO(IterNext, iter_next, NULL, 1, 1, 1, JOF_BYTE) \
-    /*
      * Exit a for-in loop, closing the iterator.
      *
      * `iter` must be a `PropertyIteratorObject` pushed by `JSOp::Iter`.
@@ -1465,7 +1429,7 @@
     /*
      * Initialize an array element `array[index]` with value `val`.
      *
-     * `val` may be `MagicValue(JS_ELEMENTS_HOLE)`. If it is, this does nothing.
+     * `val` may be `MagicValue(JS_ELEMENTS_HOLE)` pushed by `JSOp::Hole`.
      *
      * This never calls setters or proxy traps.
      *
@@ -1482,13 +1446,13 @@
      *   Operands: uint32_t index
      *   Stack: array, val => array
      */ \
-    MACRO(InitElemArray, init_elem_array, NULL, 5, 2, 1, JOF_UINT32|JOF_ELEM|JOF_PROPINIT|JOF_IC) \
+    MACRO(InitElemArray, init_elem_array, NULL, 5, 2, 1, JOF_UINT32|JOF_ELEM|JOF_PROPINIT) \
     /*
      * Initialize an array element `array[index++]` with value `val`.
      *
-     * `val` may be `MagicValue(JS_ELEMENTS_HOLE)`. If it is, no element is
-     * defined, but the array length and the stack value `index` are still
-     * incremented.
+     * `val` may be `MagicValue(JS_ELEMENTS_HOLE)` pushed by `JSOp::Hole`. If it
+     * is, no element is defined, but the array length and the stack value
+     * `index` are still incremented.
      *
      * This never calls setters or proxy traps.
      *
@@ -1528,23 +1492,6 @@
      */ \
     MACRO(Hole, hole, NULL, 1, 0, 1, JOF_BYTE) \
     /*
-     * Create and push a new array that shares the elements of a template
-     * object.
-     *
-     * `script->getObject(objectIndex)` must be a copy-on-write array whose
-     * elements are all primitive values.
-     *
-     * This is an optimization. This single instruction implements an entire
-     * array literal, saving run time, code, and memory compared to
-     * `JSOp::NewArray` and a series of `JSOp::InitElem` instructions.
-     *
-     *   Category: Objects
-     *   Type: Array literals
-     *   Operands: uint32_t objectIndex
-     *   Stack: => array
-     */ \
-    MACRO(NewArrayCopyOnWrite, new_array_copy_on_write, NULL, 5, 0, 1, JOF_OBJECT) \
-    /*
      * Clone and push a new RegExp object.
      *
      * Implements: [Evaluation for *RegularExpressionLiteral*][1].
@@ -1558,11 +1505,9 @@
      */ \
     MACRO(RegExp, reg_exp, NULL, 5, 0, 1, JOF_REGEXP) \
     /*
-     * Push a function object.
+     * Push a new function object.
      *
-     * This clones the function unless it's a singleton; see
-     * `CanReuseFunctionForClone`. The new function inherits the current
-     * environment chain.
+     * The new function inherits the current environment chain.
      *
      * Used to create most JS functions. Notable exceptions are arrow functions
      * and derived or default class constructors.
@@ -1660,47 +1605,6 @@
      *   Stack: proto => obj
      */ \
     MACRO(FunWithProto, fun_with_proto, NULL, 5, 1, 1, JOF_OBJECT) \
-    /*
-     * Create and push a default constructor for a base class.
-     *
-     * A default constructor behaves like `constructor() {}`.
-     *
-     * Implements: [ClassDefinitionEvaluation for *ClassTail*][1], steps
-     * 10.b. and 12-17.
-     *
-     * The `sourceStart`/`sourceEnd` offsets are the start/end offsets of the
-     * class definition in the source buffer, used for `toString()`. They must
-     * be valid offsets into the source buffer, measured in code units, such
-     * that `scriptSource->substring(cx, start, end)` is valid.
-     *
-     * [1]: https://tc39.es/ecma262/#sec-runtime-semantics-classdefinitionevaluation
-     *
-     *   Category: Functions
-     *   Type: Creating constructors
-     *   Operands: uint32_t nameIndex, uint32_t sourceStart, uint32_t sourceEnd
-     *   Stack: => constructor
-     */ \
-    MACRO(ClassConstructor, class_constructor, NULL, 13, 0, 1, JOF_CLASS_CTOR) \
-    /*
-     * Create and push a default constructor for a derived class.
-     *
-     * A default derived-class constructor behaves like
-     * `constructor(...args) { super(...args); }`.
-     *
-     * Implements: [ClassDefinitionEvaluation for *ClassTail*][1], steps
-     * 10.a. and 12-17.
-     *
-     * `sourceStart` and `sourceEnd` follow the same rules as for
-     * `JSOp::ClassConstructor`.
-     *
-     * [1]: https://tc39.es/ecma262/#sec-runtime-semantics-classdefinitionevaluation
-     *
-     *   Category: Functions
-     *   Type: Creating constructors
-     *   Operands: uint32_t nameIndex, uint32_t sourceStart, uint32_t sourceEnd
-     *   Stack: proto => constructor
-     */ \
-    MACRO(DerivedConstructor, derived_constructor, NULL, 13, 1, 1, JOF_CLASS_CTOR) \
     /*
      * Pushes the current global's %BuiltinObject%.
      *
@@ -2210,22 +2114,37 @@
      */ \
     MACRO(Await, await, NULL, 4, 2, 3, JOF_RESUMEINDEX) \
     /*
-     * Decide whether awaiting 'value' can be skipped.
+     * Test if the re-entry to the microtask loop may be skipped.
      *
      * This is part of an optimization for `await` expressions. Programs very
      * often await values that aren't promises, or promises that are already
      * resolved. We can then sometimes skip suspending the current frame and
      * returning to the microtask loop. If the circumstances permit the
-     * optimization, `TrySkipAwait` replaces `value` with the result of the
-     * `await` expression (unwrapping the resolved promise, if any) and pushes
-     * `true`. Otherwise, it leaves `value` unchanged and pushes 'false'.
+     * optimization, `CanSkipAwait` pushes true if the optimization is allowed,
+     * and false otherwise.
      *
      *   Category: Functions
      *   Type: Generators and async functions
      *   Operands:
-     *   Stack: value => value_or_resolved, can_skip
+     *   Stack: value => value, can_skip
      */ \
-    MACRO(TrySkipAwait, try_skip_await, NULL, 1, 1, 2, JOF_BYTE) \
+    MACRO(CanSkipAwait, can_skip_await, NULL, 1, 1, 2, JOF_BYTE) \
+    /*
+     * Potentially extract an awaited value, if the await is skippable
+     *
+     * If re-entering the microtask loop is skippable (as checked by CanSkipAwait)
+     * if can_skip is true,  `MaybeExtractAwaitValue` replaces `value` with the result of the
+     * `await` expression (unwrapping the resolved promise, if any). Otherwise, value remains
+     * as is.
+     *
+     * In both cases, can_skip remains the same.
+     *
+     *   Category: Functions
+     *   Type: Generators and async functions
+     *   Operands:
+     *   Stack: value, can_skip => value_or_resolved, can_skip
+     */ \
+    MACRO(MaybeExtractAwaitValue, maybe_extract_await_value, NULL, 1, 2, 2, JOF_BYTE) \
     /*
      * Pushes one of the GeneratorResumeKind values as Int32Value.
      *
@@ -2323,7 +2242,7 @@
      *   Operands: int32_t forwardOffset
      *   Stack: cond =>
      */ \
-    MACRO(IfEq, if_eq, NULL, 5, 1, 0, JOF_JUMP|JOF_IC) \
+    MACRO(JumpIfFalse, jump_if_false, NULL, 5, 1, 0, JOF_JUMP|JOF_IC) \
     /*
      * If ToBoolean(`cond`) is true, jump to a 32-bit offset from the current
      * instruction.
@@ -2336,7 +2255,7 @@
      *   Operands: int32_t offset
      *   Stack: cond =>
      */ \
-    MACRO(IfNe, if_ne, NULL, 5, 1, 0, JOF_JUMP|JOF_IC) \
+    MACRO(JumpIfTrue, jump_if_true, NULL, 5, 1, 0, JOF_JUMP|JOF_IC) \
     /*
      * Short-circuit for logical AND.
      *
@@ -2374,8 +2293,8 @@
      */ \
     MACRO(Coalesce, coalesce, NULL, 5, 1, 1, JOF_JUMP) \
      /*
-     * Like `JSOp::IfNe` ("jump if true"), but if the branch is taken,
-     * pop and discard an additional stack value.
+     * Like `JSOp::JumpIfTrue`, but if the branch is taken, pop and discard an
+     * additional stack value.
      *
      * This is used to implement `switch` statements when the
      * `JSOp::TableSwitch` optimization is not possible. The switch statement
@@ -2401,8 +2320,8 @@
      *
      * This opcode is weird: it's the only one whose ndefs varies depending on
      * which way a conditional branch goes. We could implement switch
-     * statements using `JSOp::IfNe` and `JSOp::Pop`, but that would also be
-     * awkward--putting the `JSOp::Pop` inside the `switch` body would
+     * statements using `JSOp::JumpIfTrue` and `JSOp::Pop`, but that would also
+     * be awkward--putting the `JSOp::Pop` inside the `switch` body would
      * complicate fallthrough.
      *
      *   Category: Control flow
@@ -2745,8 +2664,8 @@
     /*
      * Initialize a global lexical binding.
      *
-     * The binding must already have been created by `DefLet` or `DefConst` and
-     * must be uninitialized.
+     * The binding must already have been created by
+     * `GlobalOrEvalDeclInstantiation` and must be uninitialized.
      *
      * Like `JSOp::InitLexical` but for global lexicals. Unlike `InitLexical`
      * this can't be used to mark a binding as uninitialized.
@@ -3324,87 +3243,27 @@
      */ \
     MACRO(BindVar, bind_var, NULL, 1, 0, 1, JOF_BYTE) \
     /*
-     * Create a new binding on the current VariableEnvironment (the environment
-     * on the environment chain designated to receive new variables).
+     * Check for conflicting bindings and then initialize them in global or
+     * sloppy eval scripts. This is required for global scripts with any
+     * top-level bindings, or any sloppy-eval scripts with any non-lexical
+     * top-level bindings.
      *
-     * `JSOp::Def{Var,Let,Const,Fun}` instructions must appear in the script
-     * before anything else that might add bindings to the environment, and
-     * only once per binding. There must be a correct entry for the new binding
-     * in `script->bodyScope()`. (All this ensures that at run time, there is
-     * no existing conflicting binding. This is checked by the
-     * `JSOp::CheckGlobalOrEvalDecl` bytecode instruction that must appear
-     * before `JSOp::Def{Var,Let,Const,Fun}`.)
+     * Implements: [GlobalDeclarationInstantiation][1] and
+     *             [EvalDeclarationInstantiation][2] (except step 12).
      *
-     * Throw a SyntaxError if the current VariableEnvironment is the global
-     * environment and a binding with the same name exists on the global
-     * lexical environment.
-     *
-     * This is used for global scripts and also in some cases for function
-     * scripts where use of dynamic scoping inhibits optimization.
-     *
-     *   Category: Variables and scopes
-     *   Type: Creating and deleting bindings
-     *   Operands: uint32_t nameIndex
-     *   Stack: =>
-     */ \
-    MACRO(DefVar, def_var, NULL, 5, 0, 0, JOF_ATOM) \
-    /*
-     * Create a new binding for the given function on the current scope.
-     *
-     * `fun` must be a function object with an explicit name. The new
-     * variable's name is `fun->explicitName()`, and its value is `fun`. In
-     * global scope, this creates a new property on the global object.
-     *
-     * Implements: The body of the loop in [GlobalDeclarationInstantiation][1]
-     * step 17 ("For each Parse Node *f* in *functionsToInitialize*...") and
-     * the corresponding loop in [EvalDeclarationInstantiation][2].
+     * The `lastFun` argument is a GCThingIndex of the last hoisted top-level
+     * function that is part of top-level script initialization. The gcthings
+     * from index `0` thru `lastFun` contain only scopes and hoisted functions.
      *
      * [1]: https://tc39.es/ecma262/#sec-globaldeclarationinstantiation
      * [2]: https://tc39.es/ecma262/#sec-evaldeclarationinstantiation
      *
      *   Category: Variables and scopes
      *   Type: Creating and deleting bindings
-     *   Operands:
-     *   Stack: fun =>
-     */ \
-    MACRO(DefFun, def_fun, NULL, 1, 1, 0, JOF_BYTE) \
-    /*
-     * Create a new uninitialized mutable binding in the global lexical
-     * environment. Throw a SyntaxError if a binding with the same name already
-     * exists on that environment, or if a var binding with the same name
-     * exists on the global.
-     *
-     *   Category: Variables and scopes
-     *   Type: Creating and deleting bindings
-     *   Operands: uint32_t nameIndex
+     *   Operands: uint32_t lastFun
      *   Stack: =>
      */ \
-    MACRO(DefLet, def_let, NULL, 5, 0, 0, JOF_ATOM) \
-    /*
-     * Like `DefLet`, but create an uninitialized constant binding.
-     *
-     *   Category: Variables and scopes
-     *   Type: Creating and deleting bindings
-     *   Operands: uint32_t nameIndex
-     *   Stack: =>
-     */ \
-    MACRO(DefConst, def_const, NULL, 5, 0, 0, JOF_ATOM) \
-    /*
-     * Check for conflicting bindings before `JSOp::Def{Var,Let,Const,Fun}` in
-     * global or sloppy eval scripts.
-     *
-     * Implements: [GlobalDeclarationInstantiation][1] steps 5, 6, 10 and 12,
-     * and [EvalDeclarationInstantiation][2] steps 5 and 8.
-     *
-     * [1]: https://tc39.es/ecma262/#sec-globaldeclarationinstantiation
-     * [2]: https://tc39.es/ecma262/#sec-evaldeclarationinstantiation
-     *
-     *   Category: Variables and scopes
-     *   Type: Creating and deleting bindings
-     *   Operands:
-     *   Stack: =>
-     */ \
-    MACRO(CheckGlobalOrEvalDecl, check_global_or_eval_decl, NULL, 1, 0, 0, JOF_BYTE) \
+    MACRO(GlobalOrEvalDeclInstantiation, global_or_eval_decl_instantiation, NULL, 5, 0, 0, JOF_GCTHING) \
     /*
      * Look up a variable on the environment chain and delete it. Push `true`
      * on success (if a binding was deleted, or if no such binding existed in
@@ -3451,7 +3310,7 @@
      *
      * Example 1: `arguments[0]` is supported; therefore the interpreter's
      * implementation of `JSOp::GetElem` checks for optimized arguments (see
-     * `GetElemOptimizedArguments`).
+     * `MaybeGetElemOptimizedArguments`).
      *
      * Example 2: `f.apply(this, arguments)` is supported; therefore our
      * implementation of `Function.prototype.apply` checks for optimized
@@ -3672,6 +3531,17 @@
  * a power of two.  Use this macro to do so.
  */
 #define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+  MACRO(228)                                   \
+  MACRO(229)                                   \
+  MACRO(230)                                   \
+  MACRO(231)                                   \
+  MACRO(232)                                   \
+  MACRO(233)                                   \
+  MACRO(234)                                   \
+  MACRO(235)                                   \
+  MACRO(236)                                   \
+  MACRO(237)                                   \
+  MACRO(238)                                   \
   MACRO(239)                                   \
   MACRO(240)                                   \
   MACRO(241)                                   \

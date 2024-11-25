@@ -40,8 +40,8 @@ class MOZ_STACK_CLASS WarpOracle {
   MIRGenerator& mirGen() { return mirGen_; }
   WarpBailoutInfo& bailoutInfo() { return bailoutInfo_; }
 
-  MOZ_MUST_USE bool registerNurseryObject(JSObject* obj,
-                                          uint32_t* nurseryIndex);
+  [[nodiscard]] bool registerNurseryObject(JSObject* obj,
+                                           uint32_t* nurseryIndex);
 
   AbortReasonOr<WarpSnapshot*> createSnapshot();
 

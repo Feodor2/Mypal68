@@ -7,6 +7,7 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Proxy.h"
 #include "vm/ProxyObject.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"

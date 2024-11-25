@@ -5,8 +5,6 @@
 #ifndef jit_WarpCacheIRTranspiler_h
 #define jit_WarpCacheIRTranspiler_h
 
-#include "mozilla/Attributes.h"
-
 #include <initializer_list>
 
 namespace js {
@@ -21,7 +19,7 @@ class WarpBuilder;
 class WarpCacheIR;
 
 // Generate MIR from a Baseline ICStub's CacheIR.
-MOZ_MUST_USE bool TranspileCacheIRToMIR(
+[[nodiscard]] bool TranspileCacheIRToMIR(
     WarpBuilder* builder, BytecodeLocation loc,
     const WarpCacheIR* cacheIRSnapshot,
     std::initializer_list<MDefinition*> inputs,

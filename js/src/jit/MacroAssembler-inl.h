@@ -15,6 +15,7 @@
 #include "jit/CompileWrappers.h"
 #include "jit/JitFrames.h"
 #include "jit/JSJitFrameIter.h"
+#include "util/DifferentialTesting.h"
 #include "vm/ProxyObject.h"
 #include "vm/Runtime.h"
 
@@ -48,27 +49,27 @@ DynFn DynamicFunction(Sig fun) {
 }
 
 // Helper for generatePreBarrier.
-inline DynFn JitMarkFunction(MIRType type) {
+inline DynFn JitPreWriteBarrier(MIRType type) {
   switch (type) {
     case MIRType::Value: {
       using Fn = void (*)(JSRuntime * rt, Value * vp);
-      return DynamicFunction<Fn>(MarkValueFromJit);
+      return DynamicFunction<Fn>(JitValuePreWriteBarrier);
     }
     case MIRType::String: {
       using Fn = void (*)(JSRuntime * rt, JSString * *stringp);
-      return DynamicFunction<Fn>(MarkStringFromJit);
+      return DynamicFunction<Fn>(JitStringPreWriteBarrier);
     }
     case MIRType::Object: {
       using Fn = void (*)(JSRuntime * rt, JSObject * *objp);
-      return DynamicFunction<Fn>(MarkObjectFromJit);
+      return DynamicFunction<Fn>(JitObjectPreWriteBarrier);
     }
     case MIRType::Shape: {
       using Fn = void (*)(JSRuntime * rt, Shape * *shapep);
-      return DynamicFunction<Fn>(MarkShapeFromJit);
+      return DynamicFunction<Fn>(JitShapePreWriteBarrier);
     }
     case MIRType::ObjectGroup: {
       using Fn = void (*)(JSRuntime * rt, ObjectGroup * *groupp);
-      return DynamicFunction<Fn>(MarkObjectGroupFromJit);
+      return DynamicFunction<Fn>(JitObjectGroupPreWriteBarrier);
     }
     default:
       MOZ_CRASH();
@@ -390,9 +391,25 @@ void MacroAssembler::branchTwoByteString(Register string, Label* label) {
                Imm32(JSString::LATIN1_CHARS_BIT), label);
 }
 
-void MacroAssembler::branchIfNegativeBigInt(Register bigInt, Label* label) {
+void MacroAssembler::branchIfBigIntIsNegative(Register bigInt, Label* label) {
   branchTest32(Assembler::NonZero, Address(bigInt, BigInt::offsetOfFlags()),
                Imm32(BigInt::signBitMask()), label);
+}
+
+void MacroAssembler::branchIfBigIntIsNonNegative(Register bigInt,
+                                                 Label* label) {
+  branchTest32(Assembler::Zero, Address(bigInt, BigInt::offsetOfFlags()),
+               Imm32(BigInt::signBitMask()), label);
+}
+
+void MacroAssembler::branchIfBigIntIsZero(Register bigInt, Label* label) {
+  branch32(Assembler::Equal, Address(bigInt, BigInt::offsetOfLength()),
+           Imm32(0), label);
+}
+
+void MacroAssembler::branchIfBigIntIsNonZero(Register bigInt, Label* label) {
+  branch32(Assembler::NotEqual, Address(bigInt, BigInt::offsetOfLength()),
+           Imm32(0), label);
 }
 
 void MacroAssembler::branchTestFunctionFlags(Register fun, uint32_t flags,
@@ -807,10 +824,10 @@ void MacroAssembler::canonicalizeFloat(FloatRegister reg) {
 }
 
 void MacroAssembler::canonicalizeFloatIfDeterministic(FloatRegister reg) {
-#ifdef JS_MORE_DETERMINISTIC
   // See the comment in TypedArrayObjectTemplate::getElement.
-  canonicalizeFloat(reg);
-#endif  // JS_MORE_DETERMINISTIC
+  if (js::SupportDifferentialTesting()) {
+    canonicalizeFloat(reg);
+  }
 }
 
 void MacroAssembler::canonicalizeDouble(FloatRegister reg) {
@@ -821,10 +838,10 @@ void MacroAssembler::canonicalizeDouble(FloatRegister reg) {
 }
 
 void MacroAssembler::canonicalizeDoubleIfDeterministic(FloatRegister reg) {
-#ifdef JS_MORE_DETERMINISTIC
   // See the comment in TypedArrayObjectTemplate::getElement.
-  canonicalizeDouble(reg);
-#endif  // JS_MORE_DETERMINISTIC
+  if (js::SupportDifferentialTesting()) {
+    canonicalizeDouble(reg);
+  }
 }
 
 // ========================================================================
@@ -931,23 +948,6 @@ void MacroAssembler::reserveStack(uint32_t amount) {
   adjustFrame(amount);
 }
 #endif  // !JS_CODEGEN_ARM64
-
-template <typename EmitPreBarrier>
-void MacroAssembler::storeObjGroup(Register group, Register obj,
-                                   EmitPreBarrier emitPreBarrier) {
-  MOZ_ASSERT(group != obj);
-  Address groupAddr(obj, JSObject::offsetOfGroup());
-  emitPreBarrier(*this, groupAddr);
-  storePtr(group, groupAddr);
-}
-
-template <typename EmitPreBarrier>
-void MacroAssembler::storeObjGroup(ObjectGroup* group, Register obj,
-                                   EmitPreBarrier emitPreBarrier) {
-  Address groupAddr(obj, JSObject::offsetOfGroup());
-  emitPreBarrier(*this, groupAddr);
-  storePtr(ImmGCPtr(group), groupAddr);
-}
 
 template <typename EmitPreBarrier>
 void MacroAssembler::storeObjShape(Register shape, Register obj,

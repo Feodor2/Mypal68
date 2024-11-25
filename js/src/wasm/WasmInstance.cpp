@@ -38,6 +38,7 @@
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
 #include "wasm/WasmStubs.h"
+#include "wasm/WasmTypes.h"
 
 #include "gc/StoreBuffer-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
@@ -81,7 +82,7 @@ class FuncTypeIdSet {
     }
 
     *funcTypeId = clone.release();
-    MOZ_ASSERT(!(uintptr_t(*funcTypeId) & FuncTypeIdDesc::ImmediateBit));
+    MOZ_ASSERT(!(uintptr_t(*funcTypeId) & TypeIdDesc::ImmediateBit));
     return true;
   }
 
@@ -99,9 +100,8 @@ class FuncTypeIdSet {
 
 ExclusiveData<FuncTypeIdSet> funcTypeIdSet(mutexid::WasmFuncTypeIdSet);
 
-const void** Instance::addressOfFuncTypeId(
-    const FuncTypeIdDesc& funcTypeId) const {
-  return (const void**)(globalData() + funcTypeId.globalDataOffset());
+const void** Instance::addressOfTypeId(const TypeIdDesc& typeId) const {
+  return (const void**)(globalData() + typeId.globalDataOffset());
 }
 
 FuncImportTls& Instance::funcImportTls(const FuncImport& fi) {
@@ -110,216 +110,6 @@ FuncImportTls& Instance::funcImportTls(const FuncImport& fi) {
 
 TableTls& Instance::tableTls(const TableDesc& td) const {
   return *(TableTls*)(globalData() + td.globalDataOffset);
-}
-
-class NoDebug {
- public:
-  template <typename T>
-  static void print(T v) {}
-};
-
-class DebugCodegenVal {
-  template <typename T>
-  static void print(const char* fmt, T v) {
-    DebugCodegen(DebugChannel::Function, fmt, v);
-  }
-
- public:
-  static void print(int32_t v) { print(" i32(%d)", v); }
-  static void print(int64_t v) { print(" i64(%" PRId64 ")", v); }
-  static void print(float v) { print(" f32(%f)", v); }
-  static void print(double v) { print(" f64(%lf)", v); }
-  static void print(void* v) { print(" ptr(%p)", v); }
-};
-
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_i32(JSContext* cx, HandleValue val,
-                                   int32_t* loc) {
-  bool ok = ToInt32(cx, val, loc);
-  Debug::print(*loc);
-  return ok;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_i64(JSContext* cx, HandleValue val,
-                                   int64_t* loc) {
-  JS_TRY_VAR_OR_RETURN_FALSE(cx, *loc, ToBigInt64(cx, val));
-  Debug::print(*loc);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_f32(JSContext* cx, HandleValue val, float* loc) {
-  bool ok = RoundFloat32(cx, val, loc);
-  Debug::print(*loc);
-  return ok;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_f64(JSContext* cx, HandleValue val,
-                                   double* loc) {
-  bool ok = ToNumber(cx, val, loc);
-  Debug::print(*loc);
-  return ok;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_externref(JSContext* cx, HandleValue val,
-                                         void** loc) {
-  RootedAnyRef result(cx, AnyRef::null());
-  if (!BoxAnyRef(cx, val, &result)) {
-    return false;
-  }
-  *loc = result.get().forCompiledCode();
-  Debug::print(*loc);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_eqref(JSContext* cx, HandleValue val,
-                                     void** loc) {
-  RootedAnyRef result(cx, AnyRef::null());
-  if (!CheckEqRefValue(cx, val, &result)) {
-    return false;
-  }
-  *loc = result.get().forCompiledCode();
-  Debug::print(*loc);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_funcref(JSContext* cx, HandleValue val,
-                                       void** loc) {
-  RootedFunction fun(cx);
-  if (!CheckFuncRefValue(cx, val, &fun)) {
-    return false;
-  }
-  *loc = fun;
-  Debug::print(*loc);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue_typeref(JSContext* cx, HandleValue val,
-                                       void** loc) {
-  JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                           JSMSG_WASM_TYPEREF_FROM_JS);
-  return false;
-}
-
-template <typename Debug = NoDebug>
-static bool ToWebAssemblyValue(JSContext* cx, HandleValue val, ValType type,
-                               void* loc) {
-  switch (type.kind()) {
-    case ValType::I32:
-      return ToWebAssemblyValue_i32<Debug>(cx, val, (int32_t*)loc);
-    case ValType::I64:
-      return ToWebAssemblyValue_i64<Debug>(cx, val, (int64_t*)loc);
-    case ValType::F32:
-      return ToWebAssemblyValue_f32<Debug>(cx, val, (float*)loc);
-    case ValType::F64:
-      return ToWebAssemblyValue_f64<Debug>(cx, val, (double*)loc);
-    case ValType::Ref:
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
-      if (!type.isNullable() && val.isNull()) {
-        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_WASM_BAD_REF_NONNULLABLE_VALUE);
-        return false;
-      }
-#else
-      MOZ_ASSERT(type.isNullable());
-#endif
-      switch (type.refTypeKind()) {
-        case RefType::Func:
-          return ToWebAssemblyValue_funcref<Debug>(cx, val, (void**)loc);
-        case RefType::Extern:
-          return ToWebAssemblyValue_externref<Debug>(cx, val, (void**)loc);
-        case RefType::Eq:
-          return ToWebAssemblyValue_eqref<Debug>(cx, val, (void**)loc);
-        case RefType::TypeIndex:
-          return ToWebAssemblyValue_typeref<Debug>(cx, val, (void**)loc);
-      }
-  }
-  MOZ_CRASH("unreachable");
-}
-
-template <typename Debug = NoDebug>
-static bool ToJSValue_i32(JSContext* cx, int32_t src, MutableHandleValue dst) {
-  dst.set(Int32Value(src));
-  Debug::print(src);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToJSValue_i64(JSContext* cx, int64_t src, MutableHandleValue dst) {
-  // If bi is manipulated other than test & storing, it would need
-  // to be rooted here.
-  BigInt* bi = BigInt::createFromInt64(cx, src);
-  if (!bi) {
-    return false;
-  }
-  dst.set(BigIntValue(bi));
-  Debug::print(src);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToJSValue_f32(JSContext* cx, float src, MutableHandleValue dst) {
-  dst.set(JS::CanonicalizedDoubleValue(src));
-  Debug::print(src);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToJSValue_f64(JSContext* cx, double src, MutableHandleValue dst) {
-  dst.set(JS::CanonicalizedDoubleValue(src));
-  Debug::print(src);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToJSValue_funcref(JSContext* cx, void* src,
-                              MutableHandleValue dst) {
-  dst.set(UnboxFuncRef(FuncRef::fromCompiledCode(src)));
-  Debug::print(src);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToJSValue_anyref(JSContext* cx, void* src, MutableHandleValue dst) {
-  dst.set(UnboxAnyRef(AnyRef::fromCompiledCode(src)));
-  Debug::print(src);
-  return true;
-}
-template <typename Debug = NoDebug>
-static bool ToJSValue_typeref(JSContext* cx, void* src,
-                              MutableHandleValue dst) {
-  JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                           JSMSG_WASM_TYPEREF_TO_JS);
-  return false;
-}
-
-template <typename Debug = NoDebug>
-static bool ToJSValue(JSContext* cx, const void* src, ValType type,
-                      MutableHandleValue dst) {
-  switch (type.kind()) {
-    case ValType::I32:
-      return ToJSValue_i32<Debug>(cx, *reinterpret_cast<const int32_t*>(src),
-                                  dst);
-    case ValType::I64:
-      return ToJSValue_i64<Debug>(cx, *reinterpret_cast<const int64_t*>(src),
-                                  dst);
-    case ValType::F32:
-      return ToJSValue_f32<Debug>(cx, *reinterpret_cast<const float*>(src),
-                                  dst);
-    case ValType::F64:
-      return ToJSValue_f64<Debug>(cx, *reinterpret_cast<const double*>(src),
-                                  dst);
-    case ValType::Ref:
-      switch (type.refTypeKind()) {
-        case RefType::Func:
-          return ToJSValue_funcref<Debug>(
-              cx, *reinterpret_cast<void* const*>(src), dst);
-        case RefType::Extern:
-          return ToJSValue_anyref<Debug>(
-              cx, *reinterpret_cast<void* const*>(src), dst);
-        case RefType::Eq:
-          return ToJSValue_anyref<Debug>(
-              cx, *reinterpret_cast<void* const*>(src), dst);
-        case RefType::TypeIndex:
-          return ToJSValue_typeref<Debug>(
-              cx, *reinterpret_cast<void* const*>(src), dst);
-      }
-  }
-  MOZ_CRASH("unreachable");
 }
 
 // TODO(1626251): Consolidate definitions into Iterable.h
@@ -360,7 +150,7 @@ static bool UnpackResults(JSContext* cx, const ValTypeVector& resultTypes,
     // Result is either one scalar value to unpack to a wasm value, or
     // an ignored value for a zero-valued function.
     if (resultTypes.length() == 1) {
-      return ToWebAssemblyValue(cx, rval, resultTypes[0], argv);
+      return ToWebAssemblyValue(cx, rval, resultTypes[0], argv, true);
     }
     return true;
   }
@@ -380,6 +170,8 @@ static bool UnpackResults(JSContext* cx, const ValTypeVector& resultTypes,
                              got.get());
     return false;
   }
+
+  DebugOnly<uint64_t> previousOffset = ~(uint64_t)0;
 
   ABIResultIter iter(ResultType::Vector(resultTypes));
   // The values are converted in the order they are pushed on the
@@ -401,14 +193,25 @@ static bool UnpackResults(JSContext* cx, const ValTypeVector& resultTypes,
       // and set `argv[0]` set to the extracted result, to be returned by
       // register in the stub.  The register result follows any stack
       // results, so this preserves conversion order.
-      if (!ToWebAssemblyValue(cx, rval, result.type(), argv)) {
+      if (!ToWebAssemblyValue(cx, rval, result.type(), argv, true)) {
         return false;
       }
       seenRegisterResult = true;
       continue;
     }
+    uint32_t result_size = result.size();
+    MOZ_ASSERT(result_size == 4 || result_size == 8);
+#ifdef DEBUG
+    if (previousOffset == ~(uint64_t)0) {
+      previousOffset = (uint64_t)result.stackOffset();
+    } else {
+      MOZ_ASSERT(previousOffset - (uint64_t)result_size ==
+                 (uint64_t)result.stackOffset());
+      previousOffset -= (uint64_t)result_size;
+    }
+#endif
     char* loc = stackResultsArea.value() + result.stackOffset();
-    if (!ToWebAssemblyValue(cx, rval, result.type(), loc)) {
+    if (!ToWebAssemblyValue(cx, rval, result.type(), loc, result_size == 8)) {
       return false;
     }
   }
@@ -427,6 +230,12 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
   ArgTypeVector argTypes(fi.funcType());
   InvokeArgs args(cx);
   if (!args.init(cx, argTypes.lengthWithoutStackResults())) {
+    return false;
+  }
+
+  if (fi.funcType().hasUnexposableArgOrRet()) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_BAD_VAL_TYPE);
     return false;
   }
 
@@ -485,6 +294,9 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
   if (!script->hasJitScript()) {
     return true;
   }
+
+  // Should have been guarded earlier
+  MOZ_ASSERT(!fi.funcType().hasUnexposableArgOrRet());
 
   // Functions with unsupported reference types in signature don't have a jit
   // exit at the moment.
@@ -1150,28 +962,35 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
       reinterpret_cast<JSObject**>(location));
 }
 
-// The typeIndex is an index into the structTypeDescrs_ table in the instance.
+// The typeIndex is an index into the typeDescrs_ table in the instance.
 // That table holds TypeDescr objects.
 //
 // When we fail to allocate we return a nullptr; the wasm side must check this
 // and propagate it as an error.
 
-/* static */ void* Instance::structNew(Instance* instance, uint32_t typeIndex) {
+/* static */ void* Instance::structNew(Instance* instance, void* structDescr) {
   MOZ_ASSERT(SASigStructNew.failureMode == FailureMode::FailOnNullPtr);
   JSContext* cx = TlsContext.get();
-  Rooted<TypeDescr*> typeDescr(cx, instance->structTypeDescrs_[typeIndex]);
+  Rooted<TypeDescr*> typeDescr(cx, (TypeDescr*)structDescr);
+  MOZ_ASSERT(typeDescr);
   return TypedObject::createZeroed(cx, typeDescr);
 }
 
+static const StructType* GetDescrStructType(JSContext* cx,
+                                            HandleTypeDescr typeDescr) {
+  const TypeDef& typeDef = typeDescr->getType(cx);
+  return typeDef.isStructType() ? &typeDef.structType() : nullptr;
+}
+
 /* static */ void* Instance::structNarrow(Instance* instance,
-                                          uint32_t outputTypeIndex,
+                                          void* outputStructDescr,
                                           void* maybeNullPtr) {
   MOZ_ASSERT(SASigStructNarrow.failureMode == FailureMode::Infallible);
 
   JSContext* cx = TlsContext.get();
 
   Rooted<TypedObject*> obj(cx);
-  Rooted<StructTypeDescr*> typeDescr(cx);
+  Rooted<TypeDescr*> typeDescr(cx);
 
   if (maybeNullPtr == nullptr) {
     return maybeNullPtr;
@@ -1179,42 +998,84 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
 
   void* nonnullPtr = maybeNullPtr;
   obj = static_cast<TypedObject*>(nonnullPtr);
-  typeDescr = &obj->typeDescr().as<StructTypeDescr>();
+  typeDescr = &obj->typeDescr();
 
-  // Optimization opportunity: instead of this loop we could perhaps load an
-  // index from `typeDescr` and use that to index into the structTypes table
-  // of the instance.  If the index is in bounds and the desc at that index is
-  // the desc we have then we know the index is good, and we can use that for
-  // the prefix check.
-
-  uint32_t found = UINT32_MAX;
-  for (uint32_t i = 0; i < instance->structTypeDescrs_.length(); i++) {
-    if (instance->structTypeDescrs_[i] == typeDescr) {
-      found = i;
-      break;
-    }
-  }
-
-  if (found == UINT32_MAX) {
+  const StructType* inputStructType = GetDescrStructType(cx, typeDescr);
+  if (inputStructType == nullptr) {
     return nullptr;
   }
-
-  // Also asserted in constructor; let's just be double sure.
-
-  MOZ_ASSERT(instance->structTypeDescrs_.length() ==
-             instance->structTypes().length());
+  Rooted<TypeDescr*> outputTypeDescr(cx, (TypeDescr*)outputStructDescr);
+  const StructType* outputStructType = GetDescrStructType(cx, outputTypeDescr);
+  MOZ_ASSERT(outputStructType);
 
   // Now we know that the object was created by the instance, and we know its
   // concrete type.  We need to check that its type is an extension of the
   // type of outputTypeIndex.
 
-  if (!instance->structTypes()[found].hasPrefix(
-          instance->structTypes()[outputTypeIndex])) {
+  if (!inputStructType->hasPrefix(*outputStructType)) {
+    return nullptr;
+  }
+  return nonnullPtr;
+}
+
+#ifdef ENABLE_WASM_EXCEPTIONS
+/* static */ void* Instance::exceptionNew(Instance* instance, uint32_t exnIndex,
+                                          uint32_t nbytes) {
+  MOZ_ASSERT(SASigExceptionNew.failureMode == FailureMode::FailOnNullPtr);
+
+  JSContext* cx = TlsContext.get();
+
+  SharedExceptionTag tag = instance->exceptionTags()[exnIndex];
+  RootedArrayBufferObject buf(
+      cx, ArrayBufferObject::createZeroed(cx, BufferSize(nbytes)));
+
+  if (!buf) {
     return nullptr;
   }
 
-  return nonnullPtr;
+  return AnyRef::fromJSObject(WasmRuntimeExceptionObject::create(cx, tag, buf))
+      .forCompiledCode();
 }
+
+/* static */ void* Instance::throwException(Instance* instance, JSObject* exn) {
+  MOZ_ASSERT(SASigThrowException.failureMode == FailureMode::FailOnNullPtr);
+
+  JSContext* cx = TlsContext.get();
+  RootedObject exnObj(cx, exn);
+  RootedValue exnVal(cx);
+
+  if (exnObj->is<WasmJSExceptionObject>()) {
+    exnVal.set(exnObj.as<WasmJSExceptionObject>()->value());
+  } else {
+    exnVal.set(ObjectValue(*exnObj));
+  }
+  cx->setPendingException(exnVal, nullptr);
+
+  // By always returning a nullptr, we trigger a wasmTrap(Trap::ThrowReported),
+  // and use that to trigger the stack walking for this exception.
+  return nullptr;
+}
+
+/* static */ uint32_t Instance::getLocalExceptionIndex(Instance* instance,
+                                                       JSObject* exn) {
+  MOZ_ASSERT(SASigGetLocalExceptionIndex.failureMode ==
+             FailureMode::Infallible);
+
+  if (exn->is<WasmRuntimeExceptionObject>()) {
+    ExceptionTag& exnTag = exn->as<WasmRuntimeExceptionObject>().tag();
+    for (size_t i = 0; i < instance->exceptionTags().length(); i++) {
+      ExceptionTag& tag = *instance->exceptionTags()[i];
+      if (&tag == &exnTag) {
+        return i;
+      }
+    }
+  }
+
+  // Signal an unknown exception tag, e.g., for a non-imported exception or
+  // JS value.
+  return UINT32_MAX;
+}
+#endif
 
 // Note, dst must point into nonmoveable storage that is not in the nursery,
 // this matters for the write barriers.  Furthermore, for pointer types the
@@ -1271,9 +1132,9 @@ void CopyValPostBarriered(uint8_t* dst, const Val& src) {
 
 Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
                    SharedCode code, UniqueTlsData tlsDataIn,
-                   HandleWasmMemoryObject memory, SharedTableVector&& tables,
-                   StructTypeDescrVector&& structTypeDescrs,
-                   UniqueDebugState maybeDebug)
+                   HandleWasmMemoryObject memory,
+                   SharedExceptionTagVector&& exceptionTags,
+                   SharedTableVector&& tables, UniqueDebugState maybeDebug)
     : realm_(cx->realm()),
       object_(object),
       jsJitArgsRectifier_(
@@ -1285,9 +1146,10 @@ Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
       code_(code),
       tlsData_(std::move(tlsDataIn)),
       memory_(memory),
+      exceptionTags_(std::move(exceptionTags)),
       tables_(std::move(tables)),
       maybeDebug_(std::move(maybeDebug)),
-      structTypeDescrs_(std::move(structTypeDescrs)) {}
+      hasGcTypes_(false) {}
 
 bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
                     const ValVector& globalImportValues,
@@ -1295,7 +1157,12 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
                     const DataSegmentVector& dataSegments,
                     const ElemSegmentVector& elemSegments) {
   MOZ_ASSERT(!!maybeDebug_ == metadata().debugEnabled);
-  MOZ_ASSERT(structTypeDescrs_.length() == structTypes().length());
+#ifdef ENABLE_WASM_EXCEPTIONS
+  // Currently the only events are exceptions.
+  MOZ_ASSERT(exceptionTags_.length() == metadata().events.length());
+#else
+  MOZ_ASSERT(exceptionTags_.length() == 0);
+#endif
 
 #ifdef DEBUG
   for (auto t : code_->tiers()) {
@@ -1367,7 +1234,8 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
       case GlobalKind::Import: {
         size_t imported = global.importIndex();
         if (global.isIndirect()) {
-          *(void**)globalAddr = globalObjs[imported]->cell();
+          *(void**)globalAddr =
+              (void*)&globalObjs[imported]->val().get().cell();
         } else {
           CopyValPostBarriered(globalAddr, globalImportValues[imported]);
         }
@@ -1404,7 +1272,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
         }
 
         if (global.isIndirect()) {
-          void* address = globalObjs[i]->cell();
+          void* address = (void*)&globalObjs[i]->val().get().cell();
           *(void**)globalAddr = address;
           CopyValPostBarriered((uint8_t*)address, val.get());
         } else {
@@ -1431,18 +1299,59 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
     }
   }
 
-  // Allocate in the global function type set for structural signature checks
-  if (!metadata().funcTypeIds.empty()) {
-    ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
-        funcTypeIdSet.lock();
-
-    for (const FuncTypeWithId& funcType : metadata().funcTypeIds) {
-      const void* funcTypeId;
-      if (!lockedFuncTypeIdSet->allocateFuncTypeId(cx, funcType, &funcTypeId)) {
+  // Allocate in the global type sets for structural type checks
+  if (!metadata().types.empty()) {
+    // Transfer and allocate type objects for the struct types in the module
+    if (GcTypesAvailable(cx)) {
+      uint32_t baseIndex = 0;
+      if (!cx->wasm().typeContext->transferTypes(metadata().types,
+                                                 &baseIndex)) {
         return false;
       }
 
-      *addressOfFuncTypeId(funcType.id) = funcTypeId;
+      for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
+           typeIndex++) {
+        const TypeDefWithId& typeDef = metadata().types[typeIndex];
+        if (!typeDef.isStructType()) {
+          continue;
+        }
+#ifndef ENABLE_WASM_GC
+        MOZ_CRASH("Should not have seen any struct types");
+#else
+        uint32_t globalTypeIndex = baseIndex + typeIndex;
+        Rooted<TypeDescr*> typeDescr(
+            cx, TypeDescr::createFromHandle(cx, TypeHandle(globalTypeIndex)));
+
+        if (!typeDescr) {
+          return false;
+        }
+        *((GCPtrObject*)addressOfTypeId(typeDef.id)) = typeDescr;
+        hasGcTypes_ = true;
+#endif
+      }
+    }
+
+    // Handle functions specially (for now) as they're guaranteed to be
+    // acyclical and can use simpler hash-consing logic.
+    ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
+        funcTypeIdSet.lock();
+
+    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
+         typeIndex++) {
+      const TypeDefWithId& typeDef = metadata().types[typeIndex];
+      if (!typeDef.isFuncType()) {
+        continue;
+      } else if (typeDef.isFuncType()) {
+        const FuncType& funcType = typeDef.funcType();
+        const void* funcTypeId;
+        if (!lockedFuncTypeIdSet->allocateFuncTypeId(cx, funcType,
+                                                     &funcTypeId)) {
+          return false;
+        }
+        *addressOfTypeId(typeDef.id) = funcTypeId;
+      } else {
+        MOZ_CRASH();
+      }
     }
   }
 
@@ -1472,12 +1381,16 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
 Instance::~Instance() {
   realm_->wasm.unregisterInstance(*this);
 
-  if (!metadata().funcTypeIds.empty()) {
+  if (!metadata().types.empty()) {
     ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
         funcTypeIdSet.lock();
 
-    for (const FuncTypeWithId& funcType : metadata().funcTypeIds) {
-      if (const void* funcTypeId = *addressOfFuncTypeId(funcType.id)) {
+    for (const TypeDefWithId& typeDef : metadata().types) {
+      if (!typeDef.isFuncType()) {
+        continue;
+      }
+      const FuncType& funcType = typeDef.funcType();
+      if (const void* funcTypeId = *addressOfTypeId(typeDef.id)) {
         lockedFuncTypeIdSet->deallocateFuncTypeId(funcType, funcTypeId);
       }
     }
@@ -1563,7 +1476,17 @@ void Instance::tracePrivate(JSTracer* trc) {
   }
 
   TraceNullableEdge(trc, &memory_, "wasm buffer");
-  structTypeDescrs_.trace(trc);
+#ifdef ENABLE_WASM_GC
+  if (hasGcTypes_) {
+    for (const TypeDefWithId& typeDef : metadata().types) {
+      if (!typeDef.isStructType()) {
+        continue;
+      }
+      TraceNullableEdge(trc, ((GCPtrObject*)addressOfTypeId(typeDef.id)),
+                        "wasm typedescr");
+    }
+  }
+#endif
 
   if (maybeDebug_) {
     maybeDebug_->trace(trc);
@@ -1769,24 +1692,28 @@ static bool EnsureEntryStubs(const Instance& instance, uint32_t funcIndex,
   return true;
 }
 
-static bool GetInterpEntry(Instance& instance, uint32_t funcIndex,
-                           CallArgs args, void** interpEntry,
-                           const FuncType** funcType) {
+static bool GetInterpEntry(JSContext* cx, Instance& instance,
+                           uint32_t funcIndex, CallArgs args,
+                           void** interpEntry, const FuncType** funcType) {
   const FuncExport* funcExport;
   if (!EnsureEntryStubs(instance, funcIndex, &funcExport, interpEntry)) {
     return false;
   }
 
+#ifdef DEBUG
   // EnsureEntryStubs() has ensured jit-entry stubs have been created and
-  // installed in funcIndex's JumpTable entry, so we can now set the
-  // JSFunction's jit-entry. See WasmInstanceObject::getExportedFunction().
+  // installed in funcIndex's JumpTable entry.
   if (!funcExport->hasEagerStubs() && funcExport->canHaveJitEntry()) {
-    JSFunction& callee = args.callee().as<JSFunction>();
-    MOZ_ASSERT(!callee.isAsmJSNative(), "asm.js only has eager stubs");
-    if (!callee.isWasmWithJitEntry()) {
-      callee.setWasmJitEntry(instance.code().getAddressOfJitEntry(funcIndex));
+    if (!EnsureBuiltinThunksInitialized()) {
+      return false;
     }
+    JSFunction& callee = args.callee().as<JSFunction>();
+    void* provisionalJitEntryStub = ProvisionalJitEntryStub();
+    MOZ_ASSERT(provisionalJitEntryStub);
+    MOZ_ASSERT(callee.isWasmWithJitEntry());
+    MOZ_ASSERT(*callee.wasmJitEntry() != provisionalJitEntryStub);
   }
+#endif
 
   *funcType = &funcExport->funcType();
   return true;
@@ -1933,7 +1860,13 @@ bool Instance::callExport(JSContext* cx, uint32_t funcIndex, CallArgs args) {
 
   void* interpEntry;
   const FuncType* funcType;
-  if (!GetInterpEntry(*this, funcIndex, args, &interpEntry, &funcType)) {
+  if (!GetInterpEntry(cx, *this, funcIndex, args, &interpEntry, &funcType)) {
+    return false;
+  }
+
+  if (funcType->hasUnexposableArgOrRet()) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_BAD_VAL_TYPE);
     return false;
   }
 
@@ -1973,7 +1906,7 @@ bool Instance::callExport(JSContext* cx, uint32_t funcIndex, CallArgs args) {
     size_t naturalIdx = argTypes.naturalIndex(i);
     v = naturalIdx < args.length() ? args[naturalIdx] : UndefinedValue();
     ValType type = funcType->arg(naturalIdx);
-    if (!ToWebAssemblyValue<DebugCodegenVal>(cx, v, type, rawArgLoc)) {
+    if (!ToWebAssemblyValue<DebugCodegenVal>(cx, v, type, rawArgLoc, true)) {
       return false;
     }
     if (type.isReference()) {

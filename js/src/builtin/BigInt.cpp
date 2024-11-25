@@ -7,6 +7,7 @@
 #include "jsapi.h"
 
 #include "gc/Tracer.h"
+#include "jit/InlinableNatives.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/TracingAPI.h"
@@ -229,4 +230,5 @@ const JSFunctionSpec BigIntObject::methods[] = {
     JS_FS_END};
 
 const JSFunctionSpec BigIntObject::staticMethods[] = {
-    JS_FN("asUintN", asUintN, 2, 0), JS_FN("asIntN", asIntN, 2, 0), JS_FS_END};
+    JS_INLINABLE_FN("asUintN", asUintN, 2, 0, BigIntAsUintN),
+    JS_INLINABLE_FN("asIntN", asIntN, 2, 0, BigIntAsIntN), JS_FS_END};

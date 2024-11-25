@@ -4,147 +4,234 @@
 
 #include "frontend/ObjLiteral.h"
 
-#include "mozilla/DebugOnly.h"
+#include "mozilla/HashTable.h"  // mozilla::HashSet
 
-#include "frontend/CompilationInfo.h"  // frontend::CompilationAtomCache
-#include "frontend/ParserAtom.h"  // frontend::ParserAtom, frontend::ParserAtomTable
-#include "js/RootingAPI.h"
-#include "vm/JSAtom.h"
-#include "vm/JSObject.h"
-#include "vm/JSONPrinter.h"  // js::JSONPrinter
-#include "vm/ObjectGroup.h"
-#include "vm/Printer.h"  // js::Fprinter
+#include "NamespaceImports.h"  // ValueVector
 
-#include "gc/ObjectKind-inl.h"
-#include "vm/JSAtom-inl.h"
-#include "vm/JSObject-inl.h"
+#include "builtin/Array.h"                // NewDenseCopiedArray
+#include "frontend/CompilationStencil.h"  // frontend::CompilationAtomCache
+#include "frontend/ParserAtom.h"          // frontend::ParserAtomTable
+#include "frontend/TaggedParserAtomIndexHasher.h"  // TaggedParserAtomIndexHasher
+#include "gc/AllocKind.h"                          // gc::AllocKind
+#include "gc/Rooting.h"                            // RootedPlainObject
+#include "js/Id.h"                                 // INT_TO_JSID
+#include "js/RootingAPI.h"                         // Rooted
+#include "js/TypeDecls.h"                          // RootedId, RootedValue
+#include "vm/JSAtom.h"                             // JSAtom
+#include "vm/JSONPrinter.h"                        // js::JSONPrinter
+#include "vm/NativeObject.h"                       // NativeDefineDataProperty
+#include "vm/ObjectGroup.h"                        // TenuredObject
+#include "vm/PlainObject.h"                        // PlainObject
+#include "vm/Printer.h"                            // js::Fprinter
+
+#include "gc/ObjectKind-inl.h"    // gc::GetGCObjectKind
+#include "vm/JSAtom-inl.h"        // AtomToId
+#include "vm/JSObject-inl.h"      // NewBuiltinClassInstance
+#include "vm/NativeObject-inl.h"  // AddDataPropertyNonDelegate
 
 namespace js {
 
-static void InterpretObjLiteralValue(JSContext* cx,
-                                     const ObjLiteralAtomVector& atoms,
-                                     frontend::CompilationAtomCache& atomCache,
-                                     const ObjLiteralInsn& insn,
-                                     JS::Value* valOut) {
+bool ObjLiteralWriter::checkForDuplicatedNames(JSContext* cx) {
+  if (!mightContainDuplicatePropertyNames_) {
+    return true;
+  }
+
+  // If possible duplicate property names are detected by bloom-filter,
+  // check again with hash-set.
+
+  mozilla::HashSet<frontend::TaggedParserAtomIndex,
+                   frontend::TaggedParserAtomIndexHasher>
+      propNameSet;
+
+  if (!propNameSet.reserve(propertyCount_)) {
+    js::ReportOutOfMemory(cx);
+    return false;
+  }
+
+  ObjLiteralReader reader(getCode());
+
+  while (true) {
+    ObjLiteralInsn insn;
+    if (!reader.readInsn(&insn)) {
+      break;
+    }
+
+    if (insn.getKey().isArrayIndex()) {
+      continue;
+    }
+
+    auto propName = insn.getKey().getAtomIndex();
+
+    auto p = propNameSet.lookupForAdd(propName);
+    if (p) {
+      flags_ += ObjLiteralFlag::HasIndexOrDuplicatePropName;
+      break;
+    }
+
+    // Already reserved above and doesn't fail.
+    MOZ_ALWAYS_TRUE(propNameSet.add(p, propName));
+  }
+
+  return true;
+}
+
+static void InterpretObjLiteralValue(
+    JSContext* cx, const frontend::CompilationAtomCache& atomCache,
+    const ObjLiteralInsn& insn, MutableHandleValue valOut) {
   switch (insn.getOp()) {
     case ObjLiteralOpcode::ConstValue:
-      *valOut = insn.getConstValue();
+      valOut.set(insn.getConstValue());
       return;
     case ObjLiteralOpcode::ConstAtom: {
-      uint32_t index = insn.getAtomIndex();
-      JSAtom* jsatom = atomCache.getExistingAtomAt(cx, atoms[index]);
+      frontend::TaggedParserAtomIndex index = insn.getAtomIndex();
+      JSAtom* jsatom = atomCache.getExistingAtomAt(cx, index);
       MOZ_ASSERT(jsatom);
-      *valOut = StringValue(jsatom);
+      valOut.setString(jsatom);
       return;
     }
     case ObjLiteralOpcode::Null:
-      *valOut = NullValue();
+      valOut.setNull();
       return;
     case ObjLiteralOpcode::Undefined:
-      *valOut = UndefinedValue();
+      valOut.setUndefined();
       return;
     case ObjLiteralOpcode::True:
-      *valOut = BooleanValue(true);
+      valOut.setBoolean(true);
       return;
     case ObjLiteralOpcode::False:
-      *valOut = BooleanValue(false);
+      valOut.setBoolean(false);
       return;
     default:
       MOZ_CRASH("Unexpected object-literal instruction opcode");
   }
 }
 
-static JSObject* InterpretObjLiteralObj(
-    JSContext* cx, frontend::CompilationAtomCache& atomCache,
-    const ObjLiteralAtomVector& atoms,
-    const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags) {
-  bool specificGroup = flags.contains(ObjLiteralFlag::SpecificGroup);
+enum class PropertySetKind {
+  UniqueNames,
+  Normal,
+};
+
+template <PropertySetKind kind>
+bool InterpretObjLiteralObj(JSContext* cx, HandlePlainObject obj,
+                            const frontend::CompilationAtomCache& atomCache,
+                            const mozilla::Span<const uint8_t> literalInsns,
+                            ObjLiteralFlags flags) {
   bool singleton = flags.contains(ObjLiteralFlag::Singleton);
-  bool noValues = flags.contains(ObjLiteralFlag::NoValues);
 
   ObjLiteralReader reader(literalInsns);
-  ObjLiteralInsn insn;
 
-  Rooted<IdValueVector> properties(cx, IdValueVector(cx));
-
-  // Compute property values and build the key/value-pair list.
-  while (reader.readInsn(&insn)) {
+  RootedId propId(cx);
+  RootedValue propVal(cx);
+  while (true) {
+    // Make sure `insn` doesn't live across GC.
+    ObjLiteralInsn insn;
+    if (!reader.readInsn(&insn)) {
+      break;
+    }
     MOZ_ASSERT(insn.isValid());
+    MOZ_ASSERT_IF(kind == PropertySetKind::UniqueNames,
+                  !insn.getKey().isArrayIndex());
 
-    jsid propId;
-    if (insn.getKey().isArrayIndex()) {
+    if (kind == PropertySetKind::Normal && insn.getKey().isArrayIndex()) {
       propId = INT_TO_JSID(insn.getKey().getArrayIndex());
     } else {
       JSAtom* jsatom =
-          atomCache.getExistingAtomAt(cx, atoms[insn.getKey().getAtomIndex()]);
+          atomCache.getExistingAtomAt(cx, insn.getKey().getAtomIndex());
       MOZ_ASSERT(jsatom);
       propId = AtomToId(jsatom);
     }
 
-    JS::Value propVal;
-    if (!noValues) {
-      InterpretObjLiteralValue(cx, atoms, atomCache, insn, &propVal);
+    if (singleton) {
+      InterpretObjLiteralValue(cx, atomCache, insn, &propVal);
+    } else {
+      propVal.setUndefined();
     }
 
-    if (!properties.emplaceBack(propId, propVal)) {
+    if (kind == PropertySetKind::UniqueNames) {
+      if (!AddDataPropertyNonDelegate(cx, obj, propId, propVal)) {
+        return false;
+      }
+    } else {
+      if (!NativeDefineDataProperty(cx, obj, propId, propVal,
+                                    JSPROP_ENUMERATE)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+static JSObject* InterpretObjLiteralObj(
+    JSContext* cx, const frontend::CompilationAtomCache& atomCache,
+    const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags,
+    uint32_t propertyCount) {
+  gc::AllocKind allocKind = gc::GetGCObjectKind(propertyCount);
+  RootedPlainObject obj(
+      cx, NewBuiltinClassInstance<PlainObject>(cx, allocKind, TenuredObject));
+  if (!obj) {
+    return nullptr;
+  }
+
+  if (!flags.contains(ObjLiteralFlag::HasIndexOrDuplicatePropName)) {
+    if (!InterpretObjLiteralObj<PropertySetKind::UniqueNames>(
+            cx, obj, atomCache, literalInsns, flags)) {
+      return nullptr;
+    }
+  } else {
+    if (!InterpretObjLiteralObj<PropertySetKind::Normal>(cx, obj, atomCache,
+                                                         literalInsns, flags)) {
       return nullptr;
     }
   }
-
-  if (specificGroup) {
-    return ObjectGroup::newPlainObject(
-        cx, properties.begin(), properties.length(),
-        singleton ? SingletonObject : TenuredObject);
-  }
-
-  return NewPlainObjectWithProperties(cx, properties.begin(),
-                                      properties.length(), TenuredObject);
+  return obj;
 }
 
 static JSObject* InterpretObjLiteralArray(
-    JSContext* cx, frontend::CompilationAtomCache& atomCache,
-    const ObjLiteralAtomVector& atoms,
-    const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags) {
-  bool isCow = flags.contains(ObjLiteralFlag::ArrayCOW);
+    JSContext* cx, const frontend::CompilationAtomCache& atomCache,
+    const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags,
+    uint32_t propertyCount) {
   ObjLiteralReader reader(literalInsns);
   ObjLiteralInsn insn;
 
   Rooted<ValueVector> elements(cx, ValueVector(cx));
-
-  while (reader.readInsn(&insn)) {
-    MOZ_ASSERT(insn.isValid());
-
-    JS::Value propVal;
-    InterpretObjLiteralValue(cx, atoms, atomCache, insn, &propVal);
-    if (!elements.append(propVal)) {
-      return nullptr;
-    }
-  }
-
-  ObjectGroup::NewArrayKind arrayKind =
-      isCow ? ObjectGroup::NewArrayKind::CopyOnWrite
-            : ObjectGroup::NewArrayKind::Normal;
-  RootedObject result(
-      cx, ObjectGroup::newArrayObject(cx, elements.begin(), elements.length(),
-                                      NewObjectKind::TenuredObject, arrayKind));
-  if (!result) {
+  if (!elements.reserve(propertyCount)) {
     return nullptr;
   }
 
-  return result;
+  RootedValue propVal(cx);
+  while (reader.readInsn(&insn)) {
+    MOZ_ASSERT(insn.isValid());
+
+    InterpretObjLiteralValue(cx, atomCache, insn, &propVal);
+    elements.infallibleAppend(propVal);
+  }
+
+  return NewDenseCopiedArray(cx, elements.length(), elements.begin(),
+                             /* proto = */ nullptr,
+                             NewObjectKind::TenuredObject);
 }
 
-JSObject* InterpretObjLiteral(JSContext* cx,
-                              frontend::CompilationAtomCache& atomCache,
-                              const ObjLiteralAtomVector& atoms,
-                              const mozilla::Span<const uint8_t> literalInsns,
-                              ObjLiteralFlags flags) {
+static JSObject* InterpretObjLiteral(
+    JSContext* cx, const frontend::CompilationAtomCache& atomCache,
+    const mozilla::Span<const uint8_t> literalInsns, ObjLiteralFlags flags,
+    uint32_t propertyCount) {
   return flags.contains(ObjLiteralFlag::Array)
-             ? InterpretObjLiteralArray(cx, atomCache, atoms, literalInsns,
-                                        flags)
-             : InterpretObjLiteralObj(cx, atomCache, atoms, literalInsns,
-                                      flags);
+             ? InterpretObjLiteralArray(cx, atomCache, literalInsns, flags,
+                                        propertyCount)
+             : InterpretObjLiteralObj(cx, atomCache, literalInsns, flags,
+                                      propertyCount);
 }
+
+JSObject* ObjLiteralStencil::create(
+    JSContext* cx, const frontend::CompilationAtomCache& atomCache) const {
+  return InterpretObjLiteral(cx, atomCache, code_, flags_, propertyCount_);
+}
+
+#ifdef DEBUG
+bool ObjLiteralStencil::isContainedIn(const LifoAlloc& alloc) const {
+  return alloc.contains(code_.data());
+}
+#endif
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
 
@@ -154,25 +241,13 @@ static void DumpObjLiteralFlagsItems(js::JSONPrinter& json,
     json.value("Array");
     flags -= ObjLiteralFlag::Array;
   }
-  if (flags.contains(ObjLiteralFlag::SpecificGroup)) {
-    json.value("SpecificGroup");
-    flags -= ObjLiteralFlag::SpecificGroup;
-  }
   if (flags.contains(ObjLiteralFlag::Singleton)) {
     json.value("Singleton");
     flags -= ObjLiteralFlag::Singleton;
   }
-  if (flags.contains(ObjLiteralFlag::ArrayCOW)) {
-    json.value("ArrayCOW");
-    flags -= ObjLiteralFlag::ArrayCOW;
-  }
-  if (flags.contains(ObjLiteralFlag::NoValues)) {
-    json.value("NoValues");
-    flags -= ObjLiteralFlag::NoValues;
-  }
-  if (flags.contains(ObjLiteralFlag::IsInnerSingleton)) {
-    json.value("IsInnerSingleton");
-    flags -= ObjLiteralFlag::IsInnerSingleton;
+  if (flags.contains(ObjLiteralFlag::HasIndexOrDuplicatePropName)) {
+    json.value("HasIndexOrDuplicatePropName");
+    flags -= ObjLiteralFlag::HasIndexOrDuplicatePropName;
   }
 
   if (!flags.isEmpty()) {
@@ -180,25 +255,17 @@ static void DumpObjLiteralFlagsItems(js::JSONPrinter& json,
   }
 }
 
-void ObjLiteralWriter::dump() {
-  js::Fprinter out(stderr);
-  js::JSONPrinter json(out);
-  dump(json);
-}
-
-void ObjLiteralWriter::dump(js::JSONPrinter& json) {
-  json.beginObject();
-  dumpFields(json);
-  json.endObject();
-}
-
-void ObjLiteralWriter::dumpFields(js::JSONPrinter& json) {
+static void DumpObjLiteral(js::JSONPrinter& json,
+                           const frontend::BaseCompilationStencil* stencil,
+                           mozilla::Span<const uint8_t> code,
+                           const ObjLiteralFlags& flags,
+                           uint32_t propertyCount) {
   json.beginListProperty("flags");
-  DumpObjLiteralFlagsItems(json, flags_);
+  DumpObjLiteralFlagsItems(json, flags);
   json.endList();
 
   json.beginListProperty("code");
-  ObjLiteralReader reader(getCode());
+  ObjLiteralReader reader(code);
   ObjLiteralInsn insn;
   while (reader.readInsn(&insn)) {
     json.beginObject();
@@ -206,8 +273,10 @@ void ObjLiteralWriter::dumpFields(js::JSONPrinter& json) {
     if (insn.getKey().isNone()) {
       json.nullProperty("key");
     } else if (insn.getKey().isAtomIndex()) {
-      uint32_t index = insn.getKey().getAtomIndex();
-      json.formatProperty("key", "ConstAtom(%u)", index);
+      frontend::TaggedParserAtomIndex index = insn.getKey().getAtomIndex();
+      json.beginObjectProperty("key");
+      DumpTaggedParserAtomIndex(json, index, stencil);
+      json.endObject();
     } else if (insn.getKey().isArrayIndex()) {
       uint32_t index = insn.getKey().getArrayIndex();
       json.formatProperty("key", "ArrayIndex(%u)", index);
@@ -220,8 +289,10 @@ void ObjLiteralWriter::dumpFields(js::JSONPrinter& json) {
         break;
       }
       case ObjLiteralOpcode::ConstAtom: {
-        uint32_t index = insn.getAtomIndex();
-        json.formatProperty("op", "ConstAtom(%u)", index);
+        frontend::TaggedParserAtomIndex index = insn.getAtomIndex();
+        json.beginObjectProperty("op");
+        DumpTaggedParserAtomIndex(json, index, stencil);
+        json.endObject();
         break;
       }
       case ObjLiteralOpcode::Null:
@@ -244,32 +315,48 @@ void ObjLiteralWriter::dumpFields(js::JSONPrinter& json) {
     json.endObject();
   }
   json.endList();
+
+  json.property("propertyCount", propertyCount);
 }
 
-void ObjLiteralStencil::dump() {
+void ObjLiteralWriter::dump() const {
   js::Fprinter out(stderr);
   js::JSONPrinter json(out);
   dump(json, nullptr);
 }
 
-void ObjLiteralStencil::dump(js::JSONPrinter& json,
-                             frontend::CompilationStencil* compilationStencil) {
+void ObjLiteralWriter::dump(
+    js::JSONPrinter& json,
+    const frontend::BaseCompilationStencil* stencil) const {
   json.beginObject();
-  dumpFields(json, compilationStencil);
+  dumpFields(json, stencil);
+  json.endObject();
+}
+
+void ObjLiteralWriter::dumpFields(
+    js::JSONPrinter& json,
+    const frontend::BaseCompilationStencil* stencil) const {
+  DumpObjLiteral(json, stencil, getCode(), flags_, propertyCount_);
+}
+
+void ObjLiteralStencil::dump() const {
+  js::Fprinter out(stderr);
+  js::JSONPrinter json(out);
+  dump(json, nullptr);
+}
+
+void ObjLiteralStencil::dump(
+    js::JSONPrinter& json,
+    const frontend::BaseCompilationStencil* stencil) const {
+  json.beginObject();
+  dumpFields(json, stencil);
   json.endObject();
 }
 
 void ObjLiteralStencil::dumpFields(
-    js::JSONPrinter& json, frontend::CompilationStencil* compilationStencil) {
-  writer_.dumpFields(json);
-
-  json.beginListProperty("atoms");
-  for (auto& atom : atoms_) {
-    json.beginObject();
-    frontend::DumpTaggedParserAtomIndex(json, atom, compilationStencil);
-    json.endObject();
-  }
-  json.endList();
+    js::JSONPrinter& json,
+    const frontend::BaseCompilationStencil* stencil) const {
+  DumpObjLiteral(json, stencil, code_, flags_, propertyCount_);
 }
 
 #endif  // defined(DEBUG) || defined(JS_JITSPEW)

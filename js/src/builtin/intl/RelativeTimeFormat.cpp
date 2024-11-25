@@ -26,6 +26,7 @@
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Printer.h"
 #include "vm/StringType.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/NativeObject-inl.h"
 

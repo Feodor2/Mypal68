@@ -444,6 +444,28 @@ void LIRGeneratorX86Shared::lowerPowOfTwoI(MPow* mir) {
   define(lir, mir);
 }
 
+void LIRGeneratorX86Shared::lowerBigIntLsh(MBigIntLsh* ins) {
+  // Shift operand should be in register ecx, unless BMI2 is available.
+  // x86 can't shift a non-ecx register.
+  LDefinition shiftAlloc = Assembler::HasBMI2() ? temp() : tempFixed(ecx);
+  auto* lir =
+      new (alloc()) LBigIntLsh(useRegister(ins->lhs()), useRegister(ins->rhs()),
+                               temp(), shiftAlloc, temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorX86Shared::lowerBigIntRsh(MBigIntRsh* ins) {
+  // Shift operand should be in register ecx, unless BMI2 is available.
+  // x86 can't shift a non-ecx register.
+  LDefinition shiftAlloc = Assembler::HasBMI2() ? temp() : tempFixed(ecx);
+  auto* lir =
+      new (alloc()) LBigIntRsh(useRegister(ins->lhs()), useRegister(ins->rhs()),
+                               temp(), shiftAlloc, temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
 void LIRGeneratorX86Shared::lowerWasmBuiltinTruncateToInt32(
     MWasmBuiltinTruncateToInt32* ins) {
   MDefinition* opd = ins->input();
@@ -487,10 +509,11 @@ void LIRGeneratorX86Shared::lowerCompareExchangeTypedArrayElement(
   MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
 
   // If the target is a floating register then we need a temp at the
   // lower level; that temp must be eax.
@@ -540,10 +563,11 @@ void LIRGeneratorX86Shared::lowerAtomicExchangeTypedArrayElement(
   MOZ_ASSERT(ins->arrayType() <= Scalar::Uint32);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
   const LAllocation value = useRegister(ins->value());
 
   // The underlying instruction is XCHG, which can operate on any
@@ -579,17 +603,18 @@ void LIRGeneratorX86Shared::lowerAtomicTypedArrayElementBinop(
   MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
 
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
-  MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+  MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   const LUse elements = useRegister(ins->elements());
-  const LAllocation index = useRegisterOrConstant(ins->index());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->arrayType());
 
   // Case 1: the result of the operation is not used.
   //
   // We'll emit a single instruction: LOCK ADD, LOCK SUB, LOCK AND,
   // LOCK OR, or LOCK XOR.  We can do this even for the Uint32 case.
 
-  if (!ins->hasUses()) {
+  if (ins->isForEffect()) {
     LAllocation value;
     if (useI386ByteRegisters && ins->isByteArray() &&
         !ins->value()->isConstant()) {

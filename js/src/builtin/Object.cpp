@@ -32,7 +32,8 @@
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
 #include "vm/StringObject.h"
-#include "vm/ToSource.h"  // js::ValueToSource
+#include "vm/ToSource.h"       // js::ValueToSource
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -93,8 +94,9 @@ bool js::obj_propertyIsEnumerable(JSContext* cx, unsigned argc, Value* vp) {
 
     /* Step 3. */
     PropertyResult prop;
-    if (obj->isNative() && NativeLookupOwnProperty<NoGC>(
-                               cx, &obj->as<NativeObject>(), id, &prop)) {
+    if (obj->is<NativeObject>() &&
+        NativeLookupOwnProperty<NoGC>(cx, &obj->as<NativeObject>(), id,
+                                      &prop)) {
       /* Step 4. */
       if (!prop) {
         args.rval().setBoolean(false);
@@ -493,59 +495,48 @@ JSString* js::ObjectToSource(JSContext* cx, HandleObject obj) {
   return buf.finishString();
 }
 
-static bool GetBuiltinTagSlow(JSContext* cx, HandleObject obj,
-                              MutableHandleString builtinTag) {
+static JSString* GetBuiltinTagSlow(JSContext* cx, HandleObject obj) {
   // Step 4.
   bool isArray;
   if (!IsArray(cx, obj, &isArray)) {
-    return false;
+    return nullptr;
   }
 
   // Step 5.
   if (isArray) {
-    builtinTag.set(cx->names().objectArray);
-    return true;
+    return cx->names().objectArray;
   }
 
-  // Steps 6-13.
+  // Steps 6-14.
   ESClass cls;
   if (!JS::GetBuiltinClass(cx, obj, &cls)) {
-    return false;
+    return nullptr;
   }
 
   switch (cls) {
     case ESClass::String:
-      builtinTag.set(cx->names().objectString);
-      return true;
+      return cx->names().objectString;
     case ESClass::Arguments:
-      builtinTag.set(cx->names().objectArguments);
-      return true;
+      return cx->names().objectArguments;
     case ESClass::Error:
-      builtinTag.set(cx->names().objectError);
-      return true;
+      return cx->names().objectError;
     case ESClass::Boolean:
-      builtinTag.set(cx->names().objectBoolean);
-      return true;
+      return cx->names().objectBoolean;
     case ESClass::Number:
-      builtinTag.set(cx->names().objectNumber);
-      return true;
+      return cx->names().objectNumber;
     case ESClass::Date:
-      builtinTag.set(cx->names().objectDate);
-      return true;
+      return cx->names().objectDate;
     case ESClass::RegExp:
-      builtinTag.set(cx->names().objectRegExp);
-      return true;
+      return cx->names().objectRegExp;
     default:
       if (obj->isCallable()) {
         // Non-standard: Prevent <object> from showing up as Function.
-        RootedObject unwrapped(cx, CheckedUnwrapDynamic(obj, cx));
+        JSObject* unwrapped = CheckedUnwrapDynamic(obj, cx);
         if (!unwrapped || !unwrapped->getClass()->isDOMClass()) {
-          builtinTag.set(cx->names().objectFunction);
-          return true;
+          return cx->names().objectFunction;
         }
       }
-      builtinTag.set(nullptr);
-      return true;
+      return cx->names().objectObject;
   }
 }
 
@@ -553,12 +544,11 @@ static MOZ_ALWAYS_INLINE JSString* GetBuiltinTagFast(JSObject* obj,
                                                      const JSClass* clasp,
                                                      JSContext* cx) {
   MOZ_ASSERT(clasp == obj->getClass());
-  MOZ_ASSERT(!clasp->isProxy());
+  MOZ_ASSERT(!clasp->isProxyObject());
 
   // Optimize the non-proxy case to bypass GetBuiltinClass.
   if (clasp == &PlainObject::class_) {
-    // This is not handled by GetBuiltinTagSlow, but this case is by far
-    // the most common so we optimize it here.
+    // This case is by far the most common so we handle it first.
     return cx->names().objectObject;
   }
 
@@ -603,7 +593,7 @@ static MOZ_ALWAYS_INLINE JSString* GetBuiltinTagFast(JSObject* obj,
     return cx->names().objectFunction;
   }
 
-  return nullptr;
+  return cx->names().objectObject;
 }
 
 // For primitive values we try to avoid allocating the object if we can
@@ -679,33 +669,14 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
     obj = &args.thisv().toObject();
   }
 
+  // When |obj| is a non-proxy object, compute |builtinTag| only when needed.
   RootedString builtinTag(cx);
   const JSClass* clasp = obj->getClass();
-  if (MOZ_UNLIKELY(clasp->isProxy())) {
-    if (!GetBuiltinTagSlow(cx, obj, &builtinTag)) {
+  if (MOZ_UNLIKELY(clasp->isProxyObject())) {
+    builtinTag = GetBuiltinTagSlow(cx, obj);
+    if (!builtinTag) {
       return false;
     }
-  } else {
-    builtinTag = GetBuiltinTagFast(obj, clasp, cx);
-#ifdef DEBUG
-    // Assert this fast path is correct and matches BuiltinTagSlow. The
-    // only exception is the PlainObject case: we special-case it here
-    // because it's so common, but BuiltinTagSlow doesn't handle this.
-    RootedString builtinTagSlow(cx);
-    if (!GetBuiltinTagSlow(cx, obj, &builtinTagSlow)) {
-      return false;
-    }
-    if (clasp == &PlainObject::class_) {
-      MOZ_ASSERT(!builtinTagSlow);
-    } else {
-      MOZ_ASSERT(builtinTagSlow == builtinTag);
-    }
-#endif
-  }
-
-  // Step 14.
-  if (!builtinTag) {
-    builtinTag = cx->names().objectObject;
   }
 
   // Step 15.
@@ -717,6 +688,18 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 16.
   if (!tag.isString()) {
+    if (!builtinTag) {
+      builtinTag = GetBuiltinTagFast(obj, clasp, cx);
+#ifdef DEBUG
+      // Assert this fast path is correct and matches BuiltinTagSlow.
+      JSString* builtinTagSlow = GetBuiltinTagSlow(cx, obj);
+      if (!builtinTagSlow) {
+        return false;
+      }
+      MOZ_ASSERT(builtinTagSlow == builtinTag);
+#endif
+    }
+
     args.rval().setString(builtinTag);
     return true;
   }
@@ -736,21 +719,14 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-JSString* js::ObjectClassToString(JSContext* cx, HandleObject obj) {
-  const JSClass* clasp = obj->getClass();
+JSString* js::ObjectClassToString(JSContext* cx, JSObject* obj) {
+  AutoUnsafeCallWithABI unsafe;
 
-  if (JSString* tag = GetBuiltinTagFast(obj, clasp, cx)) {
-    return tag;
-  }
-
-  const char* className = clasp->name;
-  StringBuffer sb(cx);
-  if (!sb.append("[object ") || !sb.append(className, strlen(className)) ||
-      !sb.append(']')) {
+  if (MaybeHasInterestingSymbolProperty(cx, obj,
+                                        cx->wellKnownSymbols().toStringTag)) {
     return nullptr;
   }
-
-  return sb.finishAtom();
+  return GetBuiltinTagFast(obj, obj->getClass(), cx);
 }
 
 static bool obj_setPrototypeOf(JSContext* cx, unsigned argc, Value* vp) {
@@ -798,7 +774,7 @@ static bool obj_setPrototypeOf(JSContext* cx, unsigned argc, Value* vp) {
 static bool PropertyIsEnumerable(JSContext* cx, HandleObject obj, HandleId id,
                                  bool* enumerable) {
   PropertyResult prop;
-  if (obj->isNative() &&
+  if (obj->is<NativeObject>() &&
       NativeLookupOwnProperty<NoGC>(cx, &obj->as<NativeObject>(), id, &prop)) {
     if (!prop) {
       *enumerable = false;
@@ -823,7 +799,7 @@ static bool TryAssignNative(JSContext* cx, HandleObject to, HandleObject from,
                             bool* optimized) {
   *optimized = false;
 
-  if (!from->isNative() || !to->isNative()) {
+  if (!from->is<NativeObject>() || !to->is<NativeObject>()) {
     return true;
   }
 
@@ -868,7 +844,7 @@ static bool TryAssignNative(JSContext* cx, HandleObject to, HandleObject from,
 
     // Ensure |from| is still native: a getter/setter might have been swapped
     // with a non-native object.
-    if (MOZ_LIKELY(from->isNative() &&
+    if (MOZ_LIKELY(from->is<NativeObject>() &&
                    from->as<NativeObject>().lastProperty() == fromShape &&
                    shape->isDataProperty())) {
       if (!shape->enumerable()) {
@@ -993,7 +969,7 @@ static bool obj_assign(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 /* ES5 15.2.4.6. */
-static bool obj_isPrototypeOf(JSContext* cx, unsigned argc, Value* vp) {
+bool js::obj_isPrototypeOf(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   /* Step 1. */
@@ -1018,30 +994,10 @@ static bool obj_isPrototypeOf(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 PlainObject* js::ObjectCreateImpl(JSContext* cx, HandleObject proto,
-                                  NewObjectKind newKind,
-                                  HandleObjectGroup group) {
+                                  NewObjectKind newKind) {
   // Give the new object a small number of fixed slots, like we do for empty
   // object literals ({}).
   gc::AllocKind allocKind = GuessObjectGCKind(0);
-
-  if (!proto) {
-    // Object.create(null) is common, optimize it by using an allocation
-    // site specific ObjectGroup. Because GetCallerInitGroup is pretty
-    // slow, the caller can pass in the group if it's known and we use that
-    // instead.
-    RootedObjectGroup ngroup(cx, group);
-    if (!ngroup) {
-      ngroup = ObjectGroup::callingAllocationSiteGroup(cx, JSProto_Null);
-      if (!ngroup) {
-        return nullptr;
-      }
-    }
-
-    MOZ_ASSERT(!ngroup->proto().toObjectOrNull());
-
-    return NewObjectWithGroup<PlainObject>(cx, ngroup, allocKind, newKind);
-  }
-
   return NewObjectWithGivenProtoAndKinds<PlainObject>(cx, proto, allocKind,
                                                       newKind);
 }
@@ -1049,8 +1005,7 @@ PlainObject* js::ObjectCreateImpl(JSContext* cx, HandleObject proto,
 PlainObject* js::ObjectCreateWithTemplate(JSContext* cx,
                                           HandlePlainObject templateObj) {
   RootedObject proto(cx, templateObj->staticPrototype());
-  RootedObjectGroup group(cx, templateObj->group());
-  return ObjectCreateImpl(cx, proto, GenericObject, group);
+  return ObjectCreateImpl(cx, proto, GenericObject);
 }
 
 // ES 2017 draft 19.1.2.3.1
@@ -1309,7 +1264,7 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
   // they're only marked as indexed after their enumerate hook ran. And
   // because their enumerate hook is slowish, it's more performant to
   // exclude them directly instead of executing the hook first.
-  if (!obj->isNative() || obj->as<NativeObject>().isIndexed() ||
+  if (!obj->is<NativeObject>() || obj->as<NativeObject>().isIndexed() ||
       obj->getClass()->getNewEnumerate() || obj->is<StringObject>()) {
     return true;
   }
@@ -1371,7 +1326,7 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
 
   if (obj->is<TypedArrayObject>()) {
     Handle<TypedArrayObject*> tobj = obj.as<TypedArrayObject>();
-    uint32_t len = tobj->length().deprecatedGetUint32();
+    size_t len = tobj->length().get();
 
     // Fail early if the typed array contains too many elements for a
     // dense array, because we likely OOM anyway when trying to allocate
@@ -1421,7 +1376,7 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
 
   // Up to this point no side-effects through accessor properties are
   // possible which could have replaced |obj| with a non-native object.
-  MOZ_ASSERT(obj->isNative());
+  MOZ_ASSERT(obj->is<NativeObject>());
 
   if (kind == EnumerableOwnPropertiesKind::Keys ||
       kind == EnumerableOwnPropertiesKind::Names ||
@@ -1507,7 +1462,7 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
 
       // Ensure |obj| is still native: a getter might have been swapped with a
       // non-native object.
-      if (obj->isNative() &&
+      if (obj->is<NativeObject>() &&
           obj->as<NativeObject>().lastProperty() == objShape &&
           shape->isDataProperty()) {
         if (!shape->enumerable()) {
@@ -1761,7 +1716,7 @@ bool js::GetOwnPropertyKeys(JSContext* cx, HandleObject obj, unsigned flags,
     return false;
   }
 
-  array->ensureDenseInitializedLength(cx, 0, keys.length());
+  array->ensureDenseInitializedLength(0, keys.length());
 
   RootedValue val(cx);
   for (size_t i = 0, len = keys.length(); i < len; i++) {
@@ -2015,7 +1970,7 @@ static JSObject* CreateObjectConstructor(JSContext* cx, JSProtoKey key) {
   /* Create the Object function now that we have a [[Prototype]] for it. */
   JSFunction* fun = NewNativeConstructor(
       cx, obj_construct, 1, HandlePropertyName(cx->names().Object),
-      gc::AllocKind::FUNCTION, SingletonObject);
+      gc::AllocKind::FUNCTION, TenuredObject);
   if (!fun) {
     return nullptr;
   }
@@ -2026,14 +1981,14 @@ static JSObject* CreateObjectConstructor(JSContext* cx, JSProtoKey key) {
 
 static JSObject* CreateObjectPrototype(JSContext* cx, JSProtoKey key) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  MOZ_ASSERT(cx->global()->isNative());
+  MOZ_ASSERT(cx->global()->is<NativeObject>());
 
   /*
    * Create |Object.prototype| first, mirroring CreateBlankProto but for the
    * prototype of the created object.
    */
   RootedPlainObject objectProto(
-      cx, NewSingletonObjectWithGivenProto<PlainObject>(cx, nullptr));
+      cx, NewTenuredObjectWithGivenProto<PlainObject>(cx, nullptr));
   if (!objectProto) {
     return nullptr;
   }
@@ -2087,7 +2042,7 @@ static bool FinishObjectClassInit(JSContext* cx, JS::HandleObject ctor,
    */
   Rooted<TaggedProto> tagged(cx, TaggedProto(proto));
   if (global->shouldSplicePrototype()) {
-    if (!JSObject::splicePrototype(cx, global, tagged)) {
+    if (!GlobalObject::splicePrototype(cx, global, tagged)) {
       return false;
     }
   }

@@ -25,7 +25,6 @@
 #include "vm/NativeObject.h"
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/PromiseLookup.h"  // js::PromiseLookup
-#include "vm/ReceiverGuard.h"
 #include "vm/RegExpShared.h"
 #include "vm/SavedStacks.h"
 #include "vm/Time.h"
@@ -205,16 +204,16 @@ class PropertyIteratorObject;
 
 struct IteratorHashPolicy {
   struct Lookup {
-    ReceiverGuard* guards;
-    size_t numGuards;
-    uint32_t key;
+    Shape** shapes;
+    size_t numShapes;
+    HashNumber shapesHash;
 
-    Lookup(ReceiverGuard* guards, size_t numGuards, uint32_t key)
-        : guards(guards), numGuards(numGuards), key(key) {
-      MOZ_ASSERT(numGuards > 0);
+    Lookup(Shape** shapes, size_t numShapes, HashNumber shapesHash)
+        : shapes(shapes), numShapes(numShapes), shapesHash(shapesHash) {
+      MOZ_ASSERT(numShapes > 0);
     }
   };
-  static HashNumber hash(const Lookup& lookup) { return lookup.key; }
+  static HashNumber hash(const Lookup& lookup) { return lookup.shapesHash; }
   static bool match(PropertyIteratorObject* obj, const Lookup& lookup);
 };
 
@@ -260,7 +259,7 @@ class ObjectRealm {
   explicit ObjectRealm(JS::Zone* zone);
   ~ObjectRealm();
 
-  MOZ_MUST_USE bool init(JSContext* cx);
+  [[nodiscard]] bool init(JSContext* cx);
 
   void finishRoots();
   void trace(JSTracer* trc);
@@ -313,10 +312,8 @@ class JS::Realm : public JS::shadow::Realm {
   friend js::ObjectRealm& js::ObjectRealm::get(const JSObject*);
 
   // Object group tables and other state in the realm. This is private to
-  // enforce use of ObjectGroupRealm::get(group)/getForNewObject(cx).
+  // enforce use of ObjectGroupRealm::getForNewObject(cx).
   js::ObjectGroupRealm objectGroups_;
-  friend js::ObjectGroupRealm& js::ObjectGroupRealm::get(
-      const js::ObjectGroup* group);
   friend js::ObjectGroupRealm& js::ObjectGroupRealm::getForNewObject(
       JSContext* cx);
 
@@ -469,15 +466,13 @@ class JS::Realm : public JS::shadow::Realm {
   Realm(JS::Compartment* comp, const JS::RealmOptions& options);
   ~Realm();
 
-  MOZ_MUST_USE bool init(JSContext* cx, JSPrincipals* principals);
+  [[nodiscard]] bool init(JSContext* cx, JSPrincipals* principals);
   void destroy(JSFreeOp* fop);
   void clearTables();
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
-                              size_t* tiAllocationSiteTables,
-                              size_t* tiArrayTypeTables,
-                              size_t* tiObjectTypeTables, size_t* realmObject,
-                              size_t* realmTables, size_t* innerViewsArg,
+                              size_t* realmObject, size_t* realmTables,
+                              size_t* innerViewsArg,
                               size_t* objectMetadataTablesArg,
                               size_t* savedStacksSet, size_t* varNamesSet,
                               size_t* nonSyntacticLexicalEnvironmentsArg,
@@ -498,8 +493,13 @@ class JS::Realm : public JS::shadow::Realm {
   const JS::RealmCreationOptions& creationOptions() const {
     return creationOptions_;
   }
-  JS::RealmBehaviors& behaviors() { return behaviors_; }
+
+  // NOTE: Do not provide accessor for mutable reference.
+  // Modifying RealmBehaviors after creating a realm can result in
+  // inconsistency.
   const JS::RealmBehaviors& behaviors() const { return behaviors_; }
+
+  void setNonLive() { behaviors_.setNonLive(); }
 
   /* Whether to preserve JIT code on non-shrinking GCs. */
   bool preserveJitCode() { return creationOptions_.preserveJitCode(); }
@@ -561,8 +561,6 @@ class JS::Realm : public JS::shadow::Realm {
   void traceWeakSelfHostingScriptSource(JSTracer* trc);
   void traceWeakTemplateObjects(JSTracer* trc);
 
-  void traceWeakObjectGroups(JSTracer* trc) { objectGroups_.traceWeak(trc); }
-
   void clearScriptCounts();
   void clearScriptLCov();
 
@@ -577,7 +575,7 @@ class JS::Realm : public JS::shadow::Realm {
 #endif
 
   // Add a name to [[VarNames]].  Reports OOM on failure.
-  MOZ_MUST_USE bool addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name);
+  [[nodiscard]] bool addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name);
   void tracekWeakVarNames(JSTracer* trc);
 
   void removeFromVarNames(JS::Handle<JSAtom*> name) { varNames_.remove(name); }
@@ -752,11 +750,9 @@ class JS::Realm : public JS::shadow::Realm {
   }
   void updateDebuggerObservesCoverage();
 
-  // The code coverage can be enabled either for each realm, with the
-  // Debugger API, or for the entire runtime.
-  bool collectCoverage() const;
+  // Returns true if the Debugger API is collecting code coverage data for this
+  // realm or if the process-wide LCov option is enabled.
   bool collectCoverageForDebug() const;
-  bool collectCoverageForPGO() const;
 
   // Get or allocate the associated LCovRealm.
   js::coverage::LCovRealm* lcovRealm();

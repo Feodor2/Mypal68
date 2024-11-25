@@ -11,30 +11,23 @@
 namespace js {
 namespace jit {
 
-class NativeTemplateObject;
+class TemplateNativeObject;
 
 // Wrapper for template objects. This should only expose methods that can be
 // safely called off-thread without racing with the main thread.
 class TemplateObject {
  protected:
   JSObject* obj_;
-  bool denseElementsAreCopyOnWrite_;
-  bool convertDoubleElements_;
 
  public:
-  explicit TemplateObject(JSObject* obj)
-      : obj_(obj),
-        denseElementsAreCopyOnWrite_(false),
-        convertDoubleElements_(false) {}
-  void setDenseElementsAreCopyOnWrite() { denseElementsAreCopyOnWrite_ = true; }
-  void setConvertDoubleElements() { convertDoubleElements_ = true; }
+  explicit TemplateObject(JSObject* obj) : obj_(obj) {}
 
   inline gc::AllocKind getAllocKind() const;
 
   // The following methods rely on the object's group->clasp. This is safe
   // to read off-thread for template objects.
-  inline bool isNative() const;
-  inline const NativeTemplateObject& asNativeTemplateObject() const;
+  inline bool isNativeObject() const;
+  inline const TemplateNativeObject& asTemplateNativeObject() const;
   inline bool isArrayObject() const;
   inline bool isArgumentsObject() const;
   inline bool isTypedArrayObject() const;
@@ -48,9 +41,9 @@ class TemplateObject {
   inline gc::Cell* shape() const;
 };
 
-class NativeTemplateObject : public TemplateObject {
+class TemplateNativeObject : public TemplateObject {
  protected:
-  NativeObject& asNative() const { return obj_->as<NativeObject>(); }
+  NativeObject& asNativeObject() const { return obj_->as<NativeObject>(); }
 
  public:
   // Reading slot counts and object slots is safe, as long as we don't touch
@@ -62,13 +55,8 @@ class NativeTemplateObject : public TemplateObject {
   inline uint32_t slotSpan() const;
   inline Value getSlot(uint32_t i) const;
 
-  // Reading ObjectElements fields is safe, except for the flags (we can set
-  // the convert-double-elements flag on the main thread for COW elements).
+  // Reading ObjectElements fields is safe, except for the flags.
   // isSharedMemory is an exception: it's debug-only and not called on arrays.
-  bool denseElementsAreCopyOnWrite() const {
-    return denseElementsAreCopyOnWrite_;
-  }
-  bool convertDoubleElements() const { return convertDoubleElements_; }
 #ifdef DEBUG
   inline bool isSharedMemory() const;
 #endif

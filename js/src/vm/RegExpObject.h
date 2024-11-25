@@ -7,7 +7,6 @@
 #ifndef vm_RegExpObject_h
 #define vm_RegExpObject_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 
 #include "builtin/SelfHostingDefines.h"
@@ -38,10 +37,6 @@ namespace js {
 struct MatchPair;
 class MatchPairs;
 class RegExpStatics;
-
-namespace frontend {
-class TokenStreamAnyChars;
-}
 
 extern RegExpObject* RegExpAlloc(JSContext* cx, NewObjectKind newKind,
                                  HandleObject proto = nullptr);
@@ -80,19 +75,8 @@ class RegExpObject : public NativeObject {
                                            JS::RegExpFlags flags,
                                            NewObjectKind newKind);
 
-  template <typename CharT>
-  static RegExpObject* create(JSContext* cx, const CharT* chars, size_t length,
-                              JS::RegExpFlags flags,
-                              frontend::TokenStreamAnyChars& ts,
-                              NewObjectKind kind);
-
   static RegExpObject* create(JSContext* cx, HandleAtom source,
                               JS::RegExpFlags flags, NewObjectKind newKind);
-
-  static RegExpObject* create(JSContext* cx, HandleAtom source,
-                              JS::RegExpFlags flags,
-                              frontend::TokenStreamAnyChars& ts,
-                              NewObjectKind newKind);
 
   /*
    * Compute the initial shape to associate with fresh RegExp objects,
@@ -127,7 +111,7 @@ class RegExpObject : public NativeObject {
     setSlot(LAST_INDEX_SLOT, Int32Value(0));
   }
 
-  JSLinearString* toString(JSContext* cx) const;
+  static JSLinearString* toString(JSContext* cx, Handle<RegExpObject*> obj);
 
   JSAtom* getSource() const {
     return &getSlot(SOURCE_SLOT).toString()->asAtom();
@@ -146,6 +130,7 @@ class RegExpObject : public NativeObject {
     setFixedSlot(FLAGS_SLOT, Int32Value(flags.value()));
   }
 
+  bool hasIndices() const { return getFlags().hasIndices(); }
   bool global() const { return getFlags().global(); }
   bool ignoreCase() const { return getFlags().ignoreCase(); }
   bool multiline() const { return getFlags().multiline(); }
@@ -179,9 +164,9 @@ class RegExpObject : public NativeObject {
                             JSContext* cx);
 
 #ifdef DEBUG
-  static MOZ_MUST_USE bool dumpBytecode(JSContext* cx,
-                                        Handle<RegExpObject*> regexp,
-                                        HandleLinearString input);
+  [[nodiscard]] static bool dumpBytecode(JSContext* cx,
+                                         Handle<RegExpObject*> regexp,
+                                         HandleLinearString input);
 #endif
 
  private:
@@ -222,7 +207,7 @@ XDRResult XDRScriptRegExpObject(XDRState<mode>* xdr,
 extern JSObject* CloneScriptRegExpObject(JSContext* cx, RegExpObject& re);
 
 /* Escape all slashes and newlines in the given string. */
-extern JSAtom* EscapeRegExpPattern(JSContext* cx, HandleAtom src);
+extern JSLinearString* EscapeRegExpPattern(JSContext* cx, HandleAtom src);
 
 template <typename CharT>
 extern bool HasRegExpMetaChars(const CharT* chars, size_t length);

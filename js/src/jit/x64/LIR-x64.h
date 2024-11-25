@@ -162,6 +162,14 @@ class LWasmTruncateToInt64 : public LInstructionHelper<1, 1, 1> {
   const LDefinition* temp() { return getTemp(0); }
 };
 
+// Wasm SIMD.
+//
+// These nodes are really x86-shared, but as some Masm APIs are not yet
+// available on x86 we keep them here.
+#ifdef ENABLE_WASM_SIMD
+#endif
+// End Wasm SIMD
+
 }  // namespace jit
 }  // namespace js
 

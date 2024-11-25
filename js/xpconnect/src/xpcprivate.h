@@ -71,6 +71,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/DebugOnly.h"
@@ -210,8 +211,7 @@ class nsXPConnect final : public nsIXPConnect {
   // non-interface implementation
  public:
   static XPCJSRuntime* GetRuntimeInstance();
-
-  static bool IsISupportsDescendant(const nsXPTInterfaceInfo* info);
+  XPCJSContext* GetContext() { return mContext; }
 
   static nsIScriptSecurityManager* SecurityManager() {
     MOZ_ASSERT(NS_IsMainThread());
@@ -230,6 +230,8 @@ class nsXPConnect final : public nsIXPConnect {
   // Called by module code on dll shutdown.
   static void ReleaseXPConnectSingleton();
 
+  static void InitJSContext();
+
   void RecordTraversal(void* p, nsISupports* s);
 
  protected:
@@ -242,7 +244,8 @@ class nsXPConnect final : public nsIXPConnect {
   static nsXPConnect* gSelf;
   static bool gOnceAliveNowDead;
 
-  XPCJSRuntime* mRuntime;
+  XPCJSContext* mContext = nullptr;
+  XPCJSRuntime* mRuntime = nullptr;
   bool mShuttingDown;
 
   friend class nsIXPConnect;
@@ -296,7 +299,6 @@ using XPCWrappedNativeScopeList = mozilla::LinkedList<XPCWrappedNativeScope>;
 class XPCJSContext final : public mozilla::CycleCollectedJSContext,
                            public mozilla::LinkedListElement<XPCJSContext> {
  public:
-  static void InitTLS();
   static XPCJSContext* NewXPCJSContext();
   static XPCJSContext* Get();
 
@@ -2767,9 +2769,9 @@ class RealmPrivate {
       if (jsLocationURI) {
         // We cannot call into JS-implemented nsIURI objects, because
         // we are iterating over the JS heap at this point.
-        location = NS_LITERAL_CSTRING("<JS-implemented nsIURI location>");
+        location = "<JS-implemented nsIURI location>"_ns;
       } else if (NS_FAILED(locationURI->GetSpec(location))) {
-        location = NS_LITERAL_CSTRING("<unknown location>");
+        location = "<unknown location>"_ns;
       }
     }
     return location;

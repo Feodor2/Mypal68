@@ -5,7 +5,7 @@
 #ifndef jit_x86_Assembler_x86_h
 #define jit_x86_Assembler_x86_h
 
-#include "mozilla/ArrayUtils.h"
+#include <iterator>
 
 #include "jit/CompactBuffer.h"
 #include "jit/JitCode.h"
@@ -73,8 +73,7 @@ static constexpr Register CallTempReg5 = edx;
 
 // We have no arg regs, so our NonArgRegs are just our CallTempReg*
 static constexpr Register CallTempNonArgRegs[] = {edi, eax, ebx, ecx, esi, edx};
-static constexpr uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static constexpr uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 class ABIArgGenerator {
   uint32_t stackOffset_;
@@ -126,6 +125,10 @@ static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 // code.  This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg. It
 // must be a volatile register.
 static constexpr Register WasmJitEntryReturnScratch = ebx;
+
+// Register used to store a reference to an exception thrown by Wasm to an
+// exception handling block. Should not overlap with WasmTlsReg.
+static constexpr Register WasmExceptionReg = ABINonArgReg0;
 
 static constexpr Register OsrFrameReg = edx;
 static constexpr Register PreBarrierReg = edx;

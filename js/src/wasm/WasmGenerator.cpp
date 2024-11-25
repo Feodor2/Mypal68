@@ -54,6 +54,9 @@ bool CompiledCode::swap(MacroAssembler& masm) {
   callSiteTargets.swap(masm.callSiteTargets());
   trapSites.swap(masm.trapSites());
   symbolicAccesses.swap(masm.symbolicAccesses());
+#ifdef ENABLE_WASM_EXCEPTIONS
+  tryNotes.swap(masm.tryNotes());
+#endif
   codeLabels.swap(masm.codeLabels());
   return true;
 }
@@ -79,7 +82,7 @@ ModuleGenerator::ModuleGenerator(const CompileArgs& args,
       metadataTier_(nullptr),
       lifo_(GENERATOR_LIFO_DEFAULT_CHUNK_SIZE),
       masmAlloc_(&lifo_),
-      masm_(masmAlloc_, /* limitedSize= */ false),
+      masm_(masmAlloc_, *moduleEnv, /* limitedSize= */ false),
       debugTrapCodeOffset_(),
       lastPatchedCallSite_(0),
       startOfUnpatchedCallsites_(0),
@@ -199,7 +202,7 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
   // elements will be initialized by the time module generation is finished.
 
   if (!metadataTier_->funcToCodeRange.appendN(BAD_CODE_RANGE,
-                                              moduleEnv_->funcTypes.length())) {
+                                              moduleEnv_->funcs.length())) {
     return false;
   }
 
@@ -241,7 +244,7 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
     moduleEnv_->funcImportGlobalDataOffsets[i] = globalDataOffset;
 
     FuncType copy;
-    if (!copy.clone(*moduleEnv_->funcTypes[i])) {
+    if (!copy.clone(*moduleEnv_->funcs[i].type)) {
       return false;
     }
     if (!metadataTier_->funcImports.emplaceBack(std::move(copy),
@@ -258,31 +261,56 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
   }
 
   if (!isAsmJS()) {
-    for (TypeDef& td : moduleEnv_->types) {
-      if (!td.isFuncType()) {
-        continue;
-      }
+    // Copy type definitions to metadata that are required at runtime,
+    // allocating global data so that codegen can find the type id's at
+    // runtime.
+    for (uint32_t typeIndex = 0; typeIndex < moduleEnv_->types.length();
+         typeIndex++) {
+      const TypeDef& typeDef = moduleEnv_->types[typeIndex];
+      TypeIdDesc& typeId = moduleEnv_->typeIds[typeIndex];
 
-      FuncTypeWithId& funcType = td.funcType();
-      if (FuncTypeIdDesc::isGlobal(funcType)) {
+      if (TypeIdDesc::isGlobal(typeDef)) {
         uint32_t globalDataOffset;
         if (!allocateGlobalBytes(sizeof(void*), sizeof(void*),
                                  &globalDataOffset)) {
           return false;
         }
 
-        funcType.id = FuncTypeIdDesc::global(funcType, globalDataOffset);
+        typeId = TypeIdDesc::global(typeDef, globalDataOffset);
 
-        FuncType copy;
-        if (!copy.clone(funcType)) {
+        TypeDef copy;
+        if (!copy.clone(typeDef)) {
           return false;
         }
 
-        if (!metadata_->funcTypeIds.emplaceBack(std::move(copy), funcType.id)) {
+        if (!metadata_->types.emplaceBack(std::move(copy), typeId)) {
           return false;
         }
       } else {
-        funcType.id = FuncTypeIdDesc::immediate(funcType);
+        typeId = TypeIdDesc::immediate(typeDef);
+      }
+    }
+
+    // If we allow type indices, then we need to rewrite the index space to
+    // account for types that are omitted from metadata, such as function
+    // types that fit in an immediate.
+    if (moduleEnv_->functionReferencesEnabled()) {
+      // Do a linear pass to create a map from src index to dest index.
+      RenumberMap map;
+      for (uint32_t srcIndex = 0, destIndex = 0;
+           srcIndex < moduleEnv_->types.length(); srcIndex++) {
+        const TypeDef& typeDef = moduleEnv_->types[srcIndex];
+        if (!TypeIdDesc::isGlobal(typeDef)) {
+          continue;
+        }
+        if (!map.put(srcIndex, destIndex++)) {
+          return false;
+        }
+      }
+
+      // Apply the map
+      for (TypeDefWithId& typeDef : metadata_->types) {
+        typeDef.renumber(map);
       }
     }
   }
@@ -398,7 +426,7 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
 
   for (const ExportedFunc& funcIndex : exportedFuncs) {
     FuncType funcType;
-    if (!funcType.clone(*moduleEnv_->funcTypes[funcIndex.index()])) {
+    if (!funcType.clone(*moduleEnv_->funcs[funcIndex.index()].type)) {
       return false;
     }
     metadataTier_->funcExports.infallibleEmplaceBack(
@@ -711,6 +739,15 @@ bool ModuleGenerator::linkCompiledCode(CompiledCode& code) {
     }
   }
 
+#ifdef ENABLE_WASM_EXCEPTIONS
+  auto tryNoteOp = [=](uint32_t, WasmTryNote* tn) {
+    tn->offsetBy(offsetInModule);
+  };
+  if (!AppendForEach(&metadataTier_->tryNotes, code.tryNotes, tryNoteOp)) {
+    return false;
+  }
+#endif
+
   return true;
 }
 
@@ -948,6 +985,9 @@ bool ModuleGenerator::finishCodegen() {
   MOZ_ASSERT(masm_.callSiteTargets().empty());
   MOZ_ASSERT(masm_.trapSites().empty());
   MOZ_ASSERT(masm_.symbolicAccesses().empty());
+#ifdef ENABLE_WASM_EXCEPTIONS
+  MOZ_ASSERT(masm_.tryNotes().empty());
+#endif
   MOZ_ASSERT(masm_.codeLabels().empty());
 
   masm_.finish();
@@ -958,6 +998,11 @@ bool ModuleGenerator::finishMetadataTier() {
   // The stack maps aren't yet sorted.  Do so now, since we'll need to
   // binary-search them at GC time.
   metadataTier_->stackMaps.sort();
+
+  // The try notes also need to be sorted to simplify lookup.
+#ifdef ENABLE_WASM_EXCEPTIONS
+  std::sort(metadataTier_->tryNotes.begin(), metadataTier_->tryNotes.end());
+#endif
 
 #ifdef DEBUG
   // Check that the stack map contains no duplicates, since that could lead to
@@ -997,6 +1042,17 @@ bool ModuleGenerator::finishMetadataTier() {
     MOZ_ASSERT(debugTrapFarJumpOffset >= last);
     last = debugTrapFarJumpOffset;
   }
+
+  // Try notes should be sorted so that the end of ranges are in rising order
+  // so that the innermost catch handler is chosen.
+#  ifdef ENABLE_WASM_EXCEPTIONS
+  last = 0;
+  for (const WasmTryNote& tryNote : metadataTier_->tryNotes) {
+    MOZ_ASSERT(tryNote.end >= last);
+    MOZ_ASSERT(tryNote.end > tryNote.begin);
+    last = tryNote.end;
+  }
+#  endif
 #endif
 
   // These Vectors can get large and the excess capacity can be significant,
@@ -1007,6 +1063,9 @@ bool ModuleGenerator::finishMetadataTier() {
   metadataTier_->callSites.shrinkStorageToFit();
   metadataTier_->trapSites.shrinkStorageToFit();
   metadataTier_->debugTrapFarJumpOffsets.shrinkStorageToFit();
+#ifdef ENABLE_WASM_EXCEPTIONS
+  metadataTier_->tryNotes.shrinkStorageToFit();
+#endif
   for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
     metadataTier_->trapSites[trap].shrinkStorageToFit();
   }
@@ -1087,6 +1146,9 @@ SharedMetadata ModuleGenerator::finishMetadata(const Bytes& bytecode) {
   metadata_->startFuncIndex = moduleEnv_->startFuncIndex;
   metadata_->tables = std::move(moduleEnv_->tables);
   metadata_->globals = std::move(moduleEnv_->globals);
+#ifdef ENABLE_WASM_EXCEPTIONS
+  metadata_->events = std::move(moduleEnv_->events);
+#endif
   metadata_->nameCustomSectionIndex = moduleEnv_->nameCustomSectionIndex;
   metadata_->moduleName = moduleEnv_->moduleName;
   metadata_->funcNames = std::move(moduleEnv_->funcNames);
@@ -1097,20 +1159,20 @@ SharedMetadata ModuleGenerator::finishMetadata(const Bytes& bytecode) {
   if (compilerEnv_->debugEnabled()) {
     metadata_->debugEnabled = true;
 
-    const size_t numFuncTypes = moduleEnv_->funcTypes.length();
-    if (!metadata_->debugFuncArgTypes.resize(numFuncTypes)) {
+    const size_t numFuncs = moduleEnv_->funcs.length();
+    if (!metadata_->debugFuncArgTypes.resize(numFuncs)) {
       return nullptr;
     }
-    if (!metadata_->debugFuncReturnTypes.resize(numFuncTypes)) {
+    if (!metadata_->debugFuncReturnTypes.resize(numFuncs)) {
       return nullptr;
     }
-    for (size_t i = 0; i < numFuncTypes; i++) {
+    for (size_t i = 0; i < numFuncs; i++) {
       if (!metadata_->debugFuncArgTypes[i].appendAll(
-              moduleEnv_->funcTypes[i]->args())) {
+              moduleEnv_->funcs[i].type->args())) {
         return nullptr;
       }
       if (!metadata_->debugFuncReturnTypes[i].appendAll(
-              moduleEnv_->funcTypes[i]->results())) {
+              moduleEnv_->funcs[i].type->results())) {
         return nullptr;
       }
     }
@@ -1199,16 +1261,8 @@ SharedModule ModuleGenerator::finishModule(
     return nullptr;
   }
 
-  StructTypeVector structTypes;
-  for (TypeDef& td : moduleEnv_->types) {
-    if (td.isStructType() && !structTypes.append(std::move(td.structType()))) {
-      return nullptr;
-    }
-  }
-
   MutableCode code =
-      js_new<Code>(std::move(codeTier), *metadata, std::move(jumpTables),
-                   std::move(structTypes));
+      js_new<Code>(std::move(codeTier), *metadata, std::move(jumpTables));
   if (!code || !code->initialize(*linkData_)) {
     return nullptr;
   }
@@ -1290,6 +1344,9 @@ size_t CompiledCode::sizeOfExcludingThis(
          callSites.sizeOfExcludingThis(mallocSizeOf) +
          callSiteTargets.sizeOfExcludingThis(mallocSizeOf) + trapSitesSize +
          symbolicAccesses.sizeOfExcludingThis(mallocSizeOf) +
+#ifdef ENABLE_WASM_EXCEPTIONS
+         tryNotes.sizeOfExcludingThis(mallocSizeOf) +
+#endif
          codeLabels.sizeOfExcludingThis(mallocSizeOf);
 }
 

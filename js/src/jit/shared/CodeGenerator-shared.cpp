@@ -67,7 +67,6 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
       nativeToBytecodeNumRegions_(0),
       nativeToBytecodeScriptList_(nullptr),
       nativeToBytecodeScriptListLength_(0),
-      skipArgCheckEntryOffset_(0),
 #ifdef CHECK_OSIPOINT_REGISTERS
       checkOsiPointRegisters(JitOptions.checkOsiPointRegisters),
 #endif
@@ -176,7 +175,6 @@ bool CodeGeneratorShared::generateOutOfLineCode() {
     JitSpew(JitSpew_Codegen, "# Emitting out of line code");
 
     masm.setFramePushed(outOfLineCode_[i]->framePushed());
-    lastPC_ = outOfLineCode_[i]->pc();
     outOfLineCode_[i]->bind(&masm);
 
     outOfLineCode_[i]->generate(this);
@@ -193,13 +191,17 @@ void CodeGeneratorShared::addOutOfLineCode(OutOfLineCode* code,
 
 void CodeGeneratorShared::addOutOfLineCode(OutOfLineCode* code,
                                            const BytecodeSite* site) {
+  MOZ_ASSERT_IF(!gen->compilingWasm(), site->script()->containsPC(site->pc()));
   code->setFramePushed(masm.framePushed());
   code->setBytecodeSite(site);
-  MOZ_ASSERT_IF(!gen->compilingWasm(), code->script()->containsPC(code->pc()));
   masm.propagateOOM(outOfLineCode_.append(code));
 }
 
 bool CodeGeneratorShared::addNativeToBytecodeEntry(const BytecodeSite* site) {
+  MOZ_ASSERT(site);
+  MOZ_ASSERT(site->tree());
+  MOZ_ASSERT(site->pc());
+
   // Skip the table entirely if profiling is not enabled.
   if (!isProfilerInstrumentationEnabled()) {
     return true;
@@ -210,10 +212,6 @@ bool CodeGeneratorShared::addNativeToBytecodeEntry(const BytecodeSite* site) {
   if (masm.oom()) {
     return false;
   }
-
-  MOZ_ASSERT(site);
-  MOZ_ASSERT(site->tree());
-  MOZ_ASSERT(site->pc());
 
   InlineScriptTree* tree = site->tree();
   jsbytecode* pc = site->pc();
@@ -387,7 +385,6 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
     case MIRType::Symbol:
     case MIRType::BigInt:
     case MIRType::Object:
-    case MIRType::ObjectOrNull:
     case MIRType::Boolean:
     case MIRType::Double: {
       LAllocation* payload = snapshot->payloadOfSlot(*allocIndex);
@@ -400,9 +397,7 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
         break;
       }
 
-      JSValueType valueType = (type == MIRType::ObjectOrNull)
-                                  ? JSVAL_TYPE_OBJECT
-                                  : ValueTypeFromMIRType(type);
+      JSValueType valueType = ValueTypeFromMIRType(type);
 
       MOZ_DIAGNOSTIC_ASSERT(payload->isMemory() || payload->isRegister());
       if (payload->isMemory()) {
@@ -565,14 +560,14 @@ void CodeGeneratorShared::encode(LSnapshot* snapshot) {
   uint32_t mirOpcode = 0;
   uint32_t mirId = 0;
 
-  if (LNode* ins = instruction()) {
+  if (LInstruction* ins = instruction()) {
     lirOpcode = uint32_t(ins->op());
     lirId = ins->id();
-    if (ins->mirRaw()) {
-      mirOpcode = uint32_t(ins->mirRaw()->op());
-      mirId = ins->mirRaw()->id();
-      if (ins->mirRaw()->trackedPc()) {
-        pcOpcode = *ins->mirRaw()->trackedPc();
+    if (MDefinition* mir = ins->mirRaw()) {
+      mirOpcode = uint32_t(mir->op());
+      mirId = mir->id();
+      if (jsbytecode* pc = mir->trackedSite()->pc()) {
+        pcOpcode = *pc;
       }
     }
   }

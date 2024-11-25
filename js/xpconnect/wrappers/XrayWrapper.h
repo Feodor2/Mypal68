@@ -10,6 +10,7 @@
 #include "WrapperFactory.h"
 
 #include "jsapi.h"
+#include "jsfriendapi.h"
 #include "js/friend/XrayJitInfo.h"  // JS::XrayJitInfo
 #include "js/Object.h"              // JS::GetReservedSlot
 #include "js/Proxy.h"

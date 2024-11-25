@@ -401,35 +401,33 @@ void JitScript::purgeOptimizedStubs(JSScript* script) {
   if (hasInliningRoot()) {
     inliningRoot()->purgeOptimizedStubs(zone);
   }
+#ifdef DEBUG
+  failedICHash_.reset();
+#endif
 }
 
 void ICScript::purgeOptimizedStubs(Zone* zone) {
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& entry = icEntry(i);
     ICStub* lastStub = entry.firstStub();
-    while (lastStub->next()) {
-      lastStub = lastStub->next();
+    while (!lastStub->isFallback()) {
+      lastStub = lastStub->toCacheIRStub()->next();
     }
-
-    MOZ_ASSERT(lastStub->isFallback());
 
     // Unlink all stubs allocated in the optimized space.
     ICStub* stub = entry.firstStub();
-    ICStub* prev = nullptr;
+    ICCacheIRStub* prev = nullptr;
 
-    while (stub->next()) {
-      if (!stub->allocatedInFallbackSpace()) {
-        // Note: this is called when discarding JIT code, after invalidating
-        // all Warp code, so we don't need to check for that here.
-        lastStub->toFallbackStub()->clearUsedByTranspiler();
-        lastStub->toFallbackStub()->unlinkStubDontInvalidateWarp(zone, prev,
-                                                                 stub);
-        stub = stub->next();
+    while (stub != lastStub) {
+      if (!stub->toCacheIRStub()->allocatedInFallbackSpace()) {
+        lastStub->toFallbackStub()->unlinkStub(zone, prev,
+                                               stub->toCacheIRStub());
+        stub = stub->toCacheIRStub()->next();
         continue;
       }
 
-      prev = stub;
-      stub = stub->next();
+      prev = stub->toCacheIRStub();
+      stub = stub->toCacheIRStub()->next();
     }
   }
 
@@ -438,9 +436,9 @@ void ICScript::purgeOptimizedStubs(Zone* zone) {
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& entry = icEntry(i);
     ICStub* stub = entry.firstStub();
-    while (stub->next()) {
-      MOZ_ASSERT(stub->allocatedInFallbackSpace());
-      stub = stub->next();
+    while (!stub->isFallback()) {
+      MOZ_ASSERT(stub->toCacheIRStub()->allocatedInFallbackSpace());
+      stub = stub->toCacheIRStub()->next();
     }
   }
 #endif
@@ -543,25 +541,11 @@ void JitScript::setIonScriptImpl(JSFreeOp* fop, JSScript* script,
   script->updateJitCodeRaw(fop->runtime());
 }
 
-#if defined(JS_STRUCTURED_SPEW) || defined(JS_CACHEIR_SPEW)
-bool jit::GetStubEnteredCount(ICStub* stub, uint32_t* count) {
-  if (ICStub::IsCacheIRKind(stub->kind())) {
-    *count = stub->getEnteredCount();
-    return true;
-  }
-  return false;
-}
-#endif  // JS_STRUCTURED_SPEW || JS_CACHEIR_SPEW
-
 #ifdef JS_STRUCTURED_SPEW
 static bool HasEnteredCounters(ICEntry& entry) {
   ICStub* stub = entry.firstStub();
-  while (stub && !stub->isFallback()) {
-    uint32_t count;
-    if (GetStubEnteredCount(stub, &count)) {
-      return true;
-    }
-    stub = stub->next();
+  if (stub && !stub->isFallback()) {
+    return true;
   }
   return false;
 }
@@ -598,13 +582,9 @@ void jit::JitSpewBaselineICStats(JSScript* script, const char* dumpReason) {
     spew->beginListProperty("counts");
     ICStub* stub = entry.firstStub();
     while (stub && !stub->isFallback()) {
-      uint32_t count;
-      if (GetStubEnteredCount(stub, &count)) {
-        spew->value(count);
-      } else {
-        spew->value("?");
-      }
-      stub = stub->next();
+      uint32_t count = stub->enteredCount();
+      spew->value(count);
+      stub = stub->toCacheIRStub()->next();
     }
     spew->endList();
     spew->property("fallback_count", entry.fallbackStub()->enteredCount());
@@ -684,3 +664,49 @@ JitScript* ICScript::outerJitScript() {
   uint8_t* ptr = reinterpret_cast<uint8_t*>(this);
   return reinterpret_cast<JitScript*>(ptr - JitScript::offsetOfICScript());
 }
+
+#ifdef DEBUG
+// This hash is used to verify that we do not recompile after a
+// TranspiledCacheIR invalidation with the exact same ICs.
+//
+// It should change iff an ICEntry in this ICScript (or an ICScript
+// inlined into this ICScript) is modified such that we will make a
+// different decision in WarpScriptOracle::maybeInlineIC. This means:
+//
+// 1. The hash will change if we attach a new stub.
+// 2. The hash will change if we increment the entered count of any
+//    CacheIR stub other than the first.
+// 3. The hash will change if we increment the entered count of the
+//    fallback stub.
+//
+HashNumber ICScript::hash() {
+  HashNumber h = 0;
+  for (size_t i = 0; i < numICEntries(); i++) {
+    ICStub* stub = icEntry(i).firstStub();
+
+    // Hash the address of the first stub.
+    h = mozilla::AddToHash(h, stub);
+
+    // Hash the entered count of each subsequent CacheIRStub.
+    if (!stub->isFallback()) {
+      stub = stub->toCacheIRStub()->next();
+      while (!stub->isFallback()) {
+        h = mozilla::AddToHash(h, stub->enteredCount());
+        stub = stub->toCacheIRStub()->next();
+      }
+    }
+
+    // Hash the enteredCount of the fallback stub.
+    MOZ_ASSERT(stub->isFallback());
+    h = mozilla::AddToHash(h, stub->enteredCount());
+  }
+
+  if (inlinedChildren_) {
+    for (auto& callsite : *inlinedChildren_) {
+      h = mozilla::AddToHash(h, callsite.callee_->hash());
+    }
+  }
+  return h;
+}
+
+#endif

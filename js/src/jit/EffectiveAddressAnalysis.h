@@ -5,8 +5,6 @@
 #ifndef jit_EffectiveAddressAnalysis_h
 #define jit_EffectiveAddressAnalysis_h
 
-#include "mozilla/Attributes.h"
-
 namespace js {
 namespace jit {
 
@@ -24,7 +22,7 @@ class EffectiveAddressAnalysis {
   EffectiveAddressAnalysis(MIRGenerator* mir, MIRGraph& graph)
       : mir_(mir), graph_(graph) {}
 
-  MOZ_MUST_USE bool analyze();
+  [[nodiscard]] bool analyze();
 };
 
 } /* namespace jit */

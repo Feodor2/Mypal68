@@ -29,14 +29,11 @@ namespace js {
 using PropertyDescriptorVector = JS::GCVector<JS::PropertyDescriptor>;
 class GCMarker;
 class Nursery;
+struct AutoEnterOOMUnsafeRegion;
 
 namespace gc {
 class RelocationOverlay;
 }  // namespace gc
-
-namespace jit {
-class CacheIRCompiler;
-}
 
 /****************************************************************************/
 
@@ -66,7 +63,7 @@ bool SetImmutablePrototype(JSContext* cx, JS::HandleObject obj,
  * The members common to all objects are as follows:
  *
  * - The |group_| member stores the group of the object, which contains its
- *   prototype object, its class and the possible types of its properties.
+ *   prototype object, its class, and its realm.
  *
  * - The |shape_| member stores the current 'shape' of the object, which
  *   describes the current layout and set of property keys of the object. The
@@ -86,7 +83,7 @@ class JSObject
     : public js::gc::CellWithTenuredGCPointer<js::gc::Cell, js::ObjectGroup> {
  public:
   // The ObjectGroup is stored in the cell header.
-  js::ObjectGroup* groupRaw() const { return headerPtr(); }
+  js::ObjectGroup* group() const { return headerPtr(); }
 
  protected:
   js::GCPtrShape shape_;
@@ -94,6 +91,7 @@ class JSObject
  private:
   friend class js::DictionaryShapeLink;
   friend class js::GCMarker;
+  friend class js::GlobalObject;
   friend class js::NewObjectCache;
   friend class js::Nursery;
   friend class js::gc::RelocationOverlay;
@@ -102,15 +100,10 @@ class JSObject
   friend bool js::SetImmutablePrototype(JSContext* cx, JS::HandleObject obj,
                                         bool* succeeded);
 
-  // Make a new group to use for a singleton object.
-  static js::ObjectGroup* makeLazyGroup(JSContext* cx, js::HandleObject obj);
-
   void setGroupRaw(js::ObjectGroup* group) { setHeaderPtr(group); }
 
  public:
-  bool isNative() const { return getClass()->isNative(); }
-
-  const JSClass* getClass() const { return groupRaw()->clasp(); }
+  const JSClass* getClass() const { return group()->clasp(); }
   bool hasClass(const JSClass* c) const { return getClass() == c; }
 
   js::LookupPropertyOp getOpsLookupProperty() const {
@@ -141,26 +134,9 @@ class JSObject
     return getClass()->getOpsFunToString();
   }
 
-  js::ObjectGroup* group() const {
-    MOZ_ASSERT(!hasLazyGroup());
-    return groupRaw();
-  }
-
   void initGroup(js::ObjectGroup* group) { initHeaderPtr(group); }
 
-  /*
-   * Whether this is the only object which has its specified group. This
-   * object will have its group constructed lazily as needed by analysis.
-   */
-  bool isSingleton() const { return groupRaw()->singleton(); }
-
-  /*
-   * Whether the object's group has not been constructed yet. If an object
-   * might have a lazy group, use getGroup() below, otherwise group().
-   */
-  bool hasLazyGroup() const { return groupRaw()->lazy(); }
-
-  JS::Compartment* compartment() const { return groupRaw()->compartment(); }
+  JS::Compartment* compartment() const { return group()->compartment(); }
   JS::Compartment* maybeCompartment() const { return compartment(); }
 
   void initShape(js::Shape* shape) {
@@ -174,8 +150,6 @@ class JSObject
     shape_ = shape;
   }
   js::Shape* shape() const { return shape_; }
-
-  void traceShape(JSTracer* trc) { TraceEdge(trc, shapePtr(), "shape"); }
 
   static JSObject* fromShapeFieldPointer(uintptr_t p) {
     return reinterpret_cast<JSObject*>(p - JSObject::offsetOfShape());
@@ -230,9 +204,7 @@ class JSObject
 
   // Objects with an uncacheable proto can have their prototype mutated
   // without inducing a shape change on the object. JIT inline caches should
-  // do an explicit group guard to guard against this. Singletons always
-  // generate a new shape when their prototype changes, regardless of this
-  // hasUncacheableProto flag.
+  // do an explicit group guard to guard against this.
   inline bool hasUncacheableProto() const;
   static bool setUncacheableProto(JSContext* cx, JS::HandleObject obj) {
     MOZ_ASSERT(obj->hasStaticPrototype(),
@@ -257,16 +229,16 @@ class JSObject
   static const JS::TraceKind TraceKind = JS::TraceKind::Object;
 
   MOZ_ALWAYS_INLINE JS::Zone* zone() const {
-    MOZ_ASSERT_IF(!isTenured(), nurseryZone() == groupRaw()->zone());
-    return groupRaw()->zone();
+    MOZ_ASSERT_IF(!isTenured(), nurseryZone() == group()->zone());
+    return group()->zone();
   }
   MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZone() const {
     return JS::shadow::Zone::from(zone());
   }
   MOZ_ALWAYS_INLINE JS::Zone* zoneFromAnyThread() const {
-    MOZ_ASSERT_IF(!isTenured(), nurseryZoneFromAnyThread() ==
-                                    groupRaw()->zoneFromAnyThread());
-    return groupRaw()->zoneFromAnyThread();
+    MOZ_ASSERT_IF(!isTenured(),
+                  nurseryZoneFromAnyThread() == group()->zoneFromAnyThread());
+    return group()->zoneFromAnyThread();
   }
   MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZoneFromAnyThread() const {
     return JS::shadow::Zone::from(zoneFromAnyThread());
@@ -292,13 +264,6 @@ class JSObject
   // in the nursery may have those bits and pieces allocated in the nursery
   // along with them, and are not each their own malloc blocks.
   size_t sizeOfIncludingThisInNursery() const;
-
-  // Marks this object as having a singleton group, and leave the group lazy.
-  // Constructs a new, unique shape for the object. This should only be
-  // called for an object that was just created.
-  static inline bool setSingleton(JSContext* cx, js::HandleObject obj);
-
-  static inline js::ObjectGroup* getGroup(JSContext* cx, js::HandleObject obj);
 
 #ifdef DEBUG
   static void debugCheckNewObject(js::ObjectGroup* group, js::Shape* shape,
@@ -330,9 +295,9 @@ class JSObject
    *    the proto.
    */
 
-  js::TaggedProto taggedProto() const { return groupRaw()->proto(); }
+  js::TaggedProto taggedProto() const { return group()->proto(); }
 
-  bool uninlinedIsProxy() const;
+  bool uninlinedIsProxyObject() const;
 
   JSObject* staticPrototype() const {
     MOZ_ASSERT(hasStaticPrototype());
@@ -343,7 +308,7 @@ class JSObject
   // (albeit perhaps mutable) [[Prototype]].  For such objects the
   // [[Prototype]] is just a value returned when needed for accesses, or
   // modified in response to requests.  These objects store the
-  // [[Prototype]] directly within |obj->groupRaw()|.
+  // [[Prototype]] directly within |obj->group()|.
   bool hasStaticPrototype() const { return !hasDynamicPrototype(); }
 
   // The remaining proxies have a [[Prototype]] requiring dynamic computation
@@ -352,8 +317,7 @@ class JSObject
   // the wrapper/wrappee [[Prototype]]s consistent.)
   bool hasDynamicPrototype() const {
     bool dynamic = taggedProto().isDynamic();
-    MOZ_ASSERT_IF(dynamic, uninlinedIsProxy());
-    MOZ_ASSERT_IF(dynamic, !isNative());
+    MOZ_ASSERT_IF(dynamic, uninlinedIsProxyObject());
     return dynamic;
   }
 
@@ -362,10 +326,6 @@ class JSObject
   inline bool staticPrototypeIsImmutable() const;
 
   inline void setGroup(js::ObjectGroup* group);
-
-  /* Set a new prototype for an object with a singleton type. */
-  static bool splicePrototype(JSContext* cx, js::HandleObject obj,
-                              js::Handle<js::TaggedProto> proto);
 
   /*
    * Environment chains.
@@ -399,14 +359,14 @@ class JSObject
 
   JS::Realm* nonCCWRealm() const {
     MOZ_ASSERT(!js::UninlinedIsCrossCompartmentWrapper(this));
-    return groupRaw()->realm();
+    return group()->realm();
   }
   bool hasSameRealmAs(JSContext* cx) const;
 
   // Returns the object's realm even if the object is a CCW (be careful, in
   // this case the realm is not very meaningful because wrappers are shared by
   // all realms in the compartment).
-  JS::Realm* maybeCCWRealm() const { return groupRaw()->realm(); }
+  JS::Realm* maybeCCWRealm() const { return group()->realm(); }
 
   /*
    * ES5 meta-object properties and operations.
@@ -441,7 +401,8 @@ class JSObject
                                   js::HandleValue receiver,
                                   JS::ObjectOpResult& result);
 
-  static void swap(JSContext* cx, JS::HandleObject a, JS::HandleObject b);
+  static void swap(JSContext* cx, JS::HandleObject a, JS::HandleObject b,
+                   js::AutoEnterOOMUnsafeRegion& oomUnsafe);
 
  private:
   void fixDictionaryShapeAfterSwap();
@@ -550,7 +511,6 @@ class JSObject
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler
   // to call the method below.
   friend class js::jit::MacroAssembler;
-  friend class js::jit::CacheIRCompiler;
 
   static constexpr size_t offsetOfGroup() { return offsetOfHeaderPtr(); }
   static constexpr size_t offsetOfShape() { return offsetof(JSObject, shape_); }
@@ -1056,11 +1016,11 @@ inline bool FreezeObject(JSContext* cx, HandleObject obj) {
 extern bool TestIntegrityLevel(JSContext* cx, HandleObject obj,
                                IntegrityLevel level, bool* resultp);
 
-extern MOZ_MUST_USE JSObject* SpeciesConstructor(
+[[nodiscard]] extern JSObject* SpeciesConstructor(
     JSContext* cx, HandleObject obj, HandleObject defaultCtor,
     bool (*isDefaultSpecies)(JSContext*, JSFunction*));
 
-extern MOZ_MUST_USE JSObject* SpeciesConstructor(
+[[nodiscard]] extern JSObject* SpeciesConstructor(
     JSContext* cx, HandleObject obj, JSProtoKey ctorKey,
     bool (*isDefaultSpecies)(JSContext*, JSFunction*));
 

@@ -82,6 +82,7 @@ static void AnalyzeAdd(TempAllocator& alloc, MAdd* add) {
 }
 
 bool FoldLinearArithConstants(MIRGenerator* mir, MIRGraph& graph) {
+  JitSpew(JitSpew_FLAC, "Begin");
   for (PostorderIterator block(graph.poBegin()); block != graph.poEnd();
        block++) {
     if (mir->shouldCancel("Fold Linear Arithmetic Constants (main loop)")) {

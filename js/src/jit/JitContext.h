@@ -28,14 +28,33 @@ enum MethodStatus {
   Method_Compiled
 };
 
+// Use only even, non-zero values for errors, to allow using the UnusedZero and
+// HasFreeLSB optimizations for mozilla::Result (see specializations of
+// UnusedZero/HasFreeLSB below).
 enum class AbortReason : uint8_t {
-  Alloc,
-  Inlining,
-  PreliminaryObjects,
-  Disable,
-  Error,
-  NoAbort
+  NoAbort,
+  Alloc = 2,
+  Disable = 4,
+  Error = 6,
 };
+}  // namespace jit
+}  // namespace js
+
+namespace mozilla::detail {
+
+template <>
+struct UnusedZero<js::jit::AbortReason> : UnusedZeroEnum<js::jit::AbortReason> {
+};
+
+template <>
+struct HasFreeLSB<js::jit::AbortReason> {
+  static const bool value = true;
+};
+
+}  // namespace mozilla::detail
+
+namespace js {
+namespace jit {
 
 template <typename V>
 using AbortReasonOr = mozilla::Result<V, AbortReason>;
@@ -44,8 +63,12 @@ using mozilla::Ok;
 
 static_assert(sizeof(AbortReasonOr<Ok>) <= sizeof(uintptr_t),
               "Unexpected size of AbortReasonOr<Ok>");
+static_assert(mozilla::detail::SelectResultImpl<bool, AbortReason>::value ==
+              mozilla::detail::PackingStrategy::NullIsOk);
 static_assert(sizeof(AbortReasonOr<bool>) <= sizeof(uintptr_t),
               "Unexpected size of AbortReasonOr<bool>");
+static_assert(sizeof(AbortReasonOr<uint16_t*>) == sizeof(uintptr_t),
+              "Unexpected size of AbortReasonOr<uint16_t*>");
 
 // A JIT context is needed to enter into either an JIT method or an instance
 // of a JIT compiler. It points to a temporary allocator and the active
@@ -59,8 +82,7 @@ class JitContext {
 
 #ifdef DEBUG
   // Whether this thread is actively Ion compiling (does not include Wasm or
-  // IonBuilder).
-  // TODO(no-TI): fix IonBuilder references in comments.
+  // WarpOracle).
   bool inIonBackend_ = false;
 
   bool isCompilingWasm_ = false;
@@ -101,6 +123,11 @@ class JitContext {
 
 #ifdef DEBUG
   bool isCompilingWasm() { return isCompilingWasm_; }
+  bool setIsCompilingWasm(bool flag) {
+    bool oldFlag = isCompilingWasm_;
+    isCompilingWasm_ = flag;
+    return oldFlag;
+  }
   bool hasOOM() { return oom_; }
   void setOOM() { oom_ = true; }
 
@@ -118,7 +145,7 @@ class JitContext {
 };
 
 // Process-wide initialization of JIT data structures.
-MOZ_MUST_USE bool InitializeJit();
+[[nodiscard]] bool InitializeJit();
 
 // Call this after changing hardware parameters via command line flags (on
 // platforms that support that).

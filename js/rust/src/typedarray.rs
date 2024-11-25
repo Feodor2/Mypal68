@@ -23,14 +23,14 @@ use std::ptr;
 use std::slice;
 
 pub enum CreateWith<'a, T: 'a> {
-    Length(u32),
+    Length(usize),
     Slice(&'a [T]),
 }
 
 /// A rooted typed array.
 pub struct TypedArray<'a, T: 'a + TypedArrayElement> {
     object: RootedGuard<'a, *mut JSObject>,
-    computed: Option<(*mut T::Element, u32)>,
+    computed: Option<(*mut T::Element, usize)>,
 }
 
 impl<'a, T: TypedArrayElement> TypedArray<'a, T> {
@@ -60,7 +60,7 @@ impl<'a, T: TypedArrayElement> TypedArray<'a, T> {
         }
     }
 
-    fn data(&mut self) -> (*mut T::Element, u32) {
+    fn data(&mut self) -> (*mut T::Element, usize) {
         if let Some(data) = self.computed {
             return data;
         }
@@ -102,7 +102,7 @@ impl<'a, T: TypedArrayElementCreator + TypedArrayElement> TypedArray<'a, T> {
     ) -> Result<(), ()> {
         let length = match with {
             CreateWith::Length(len) => len,
-            CreateWith::Slice(slice) => slice.len() as u32,
+            CreateWith::Slice(slice) => slice.len(),
         };
 
         result.set(T::create_new(cx, length));
@@ -137,13 +137,13 @@ pub trait TypedArrayElement {
     /// Unwrap a typed array JS reflector for this element type.
     unsafe fn unwrap_array(obj: *mut JSObject) -> *mut JSObject;
     /// Retrieve the length and data of a typed array's buffer for this element type.
-    unsafe fn length_and_data(obj: *mut JSObject) -> (*mut Self::Element, u32);
+    unsafe fn length_and_data(obj: *mut JSObject) -> (*mut Self::Element, usize);
 }
 
 /// Internal trait for creating new typed arrays.
 pub trait TypedArrayElementCreator: TypedArrayElement {
     /// Create a new typed array.
-    unsafe fn create_new(cx: *mut JSContext, length: u32) -> *mut JSObject;
+    unsafe fn create_new(cx: *mut JSContext, length: usize) -> *mut JSObject;
     /// Get the data.
     unsafe fn get_data(obj: *mut JSObject) -> *mut Self::Element;
 }
@@ -162,7 +162,7 @@ macro_rules! typed_array_element {
                 $unwrap(obj)
             }
 
-            unsafe fn length_and_data(obj: *mut JSObject) -> (*mut Self::Element, u32) {
+            unsafe fn length_and_data(obj: *mut JSObject) -> (*mut Self::Element, usize) {
                 let mut len = 0;
                 let mut shared = false;
                 let mut data = ptr::null_mut();
@@ -182,7 +182,7 @@ macro_rules! typed_array_element {
         typed_array_element!($t, $element, $unwrap, $length_and_data);
 
         impl TypedArrayElementCreator for $t {
-            unsafe fn create_new(cx: *mut JSContext, length: u32) -> *mut JSObject {
+            unsafe fn create_new(cx: *mut JSContext, length: usize) -> *mut JSObject {
                 $create_new(cx, length)
             }
 

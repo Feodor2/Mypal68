@@ -306,8 +306,8 @@ static DWORD ProtectionSettingToFlags(ProtectionSetting protection) {
   MOZ_CRASH();
 }
 
-static MOZ_MUST_USE bool CommitPages(void* addr, size_t bytes,
-                                     ProtectionSetting protection) {
+[[nodiscard]] static bool CommitPages(void* addr, size_t bytes,
+                                      ProtectionSetting protection) {
   void* p = VirtualAlloc(addr, bytes, MEM_COMMIT,
                          ProtectionSettingToFlags(protection));
   if (!p) {
@@ -405,8 +405,8 @@ static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
   MOZ_CRASH();
 }
 
-static MOZ_MUST_USE bool CommitPages(void* addr, size_t bytes,
-                                     ProtectionSetting protection) {
+[[nodiscard]] static bool CommitPages(void* addr, size_t bytes,
+                                      ProtectionSetting protection) {
   void* p = MozTaggedAnonymousMmap(
       addr, bytes, ProtectionSettingToFlags(protection),
       MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0, "js-executable-memory");
@@ -525,7 +525,7 @@ class ProcessExecutableMemory {
         rng_(),
         pages_() {}
 
-  MOZ_MUST_USE bool init() {
+  [[nodiscard]] bool init() {
     pages_.init();
 
     MOZ_RELEASE_ASSERT(!initialized());

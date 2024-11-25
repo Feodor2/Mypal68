@@ -56,8 +56,8 @@ class ErrorReportMixin : public StrictModeGetter {
   //   * offset is uint32_t if methods ending with "At" is called
   //   * offset is NoOffset if methods ending with "NoOffset" is called
   //   * offset is Current otherwise
-  virtual MOZ_MUST_USE bool computeErrorMetadata(ErrorMetadata* err,
-                                                 const ErrorOffset& offset) = 0;
+  [[nodiscard]] virtual bool computeErrorMetadata(
+      ErrorMetadata* err, const ErrorOffset& offset) = 0;
 
   // ==== error ====
   //
@@ -157,7 +157,7 @@ class ErrorReportMixin : public StrictModeGetter {
   // See the comment on the error section for details on what the arguments
   // and function names indicate for all these functions.
 
-  MOZ_MUST_USE bool warning(unsigned errorNumber, ...) {
+  [[nodiscard]] bool warning(unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -168,19 +168,7 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool warningWithNotes(UniquePtr<JSErrorNotes> notes,
-                                     unsigned errorNumber, ...) {
-    va_list args;
-    va_start(args, errorNumber);
-
-    bool result = warningWithNotesAtVA(
-        std::move(notes), mozilla::AsVariant(Current()), errorNumber, &args);
-
-    va_end(args);
-
-    return result;
-  }
-  MOZ_MUST_USE bool warningAt(uint32_t offset, unsigned errorNumber, ...) {
+  [[nodiscard]] bool warningAt(uint32_t offset, unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -191,20 +179,7 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool warningWithNotesAt(UniquePtr<JSErrorNotes> notes,
-                                       uint32_t offset, unsigned errorNumber,
-                                       ...) {
-    va_list args;
-    va_start(args, errorNumber);
-
-    bool result = warningWithNotesAtVA(
-        std::move(notes), mozilla::AsVariant(offset), errorNumber, &args);
-
-    va_end(args);
-
-    return result;
-  }
-  MOZ_MUST_USE bool warningNoOffset(unsigned errorNumber, ...) {
+  [[nodiscard]] bool warningNoOffset(unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -215,21 +190,9 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool warningWithNotesNoOffset(UniquePtr<JSErrorNotes> notes,
-                                             unsigned errorNumber, ...) {
-    va_list args;
-    va_start(args, errorNumber);
-
-    bool result = warningWithNotesAtVA(
-        std::move(notes), mozilla::AsVariant(NoOffset()), errorNumber, &args);
-
-    va_end(args);
-
-    return result;
-  }
-  MOZ_MUST_USE bool warningWithNotesAtVA(UniquePtr<JSErrorNotes> notes,
-                                         const ErrorOffset& offset,
-                                         unsigned errorNumber, va_list* args) {
+  [[nodiscard]] bool warningWithNotesAtVA(UniquePtr<JSErrorNotes> notes,
+                                          const ErrorOffset& offset,
+                                          unsigned errorNumber, va_list* args) {
     ErrorMetadata metadata;
     if (!computeErrorMetadata(&metadata, offset)) {
       return false;
@@ -249,7 +212,7 @@ class ErrorReportMixin : public StrictModeGetter {
   // See the comment on the error section for details on what the arguments
   // and function names indicate for all these functions.
 
-  MOZ_MUST_USE bool strictModeError(unsigned errorNumber, ...) {
+  [[nodiscard]] bool strictModeError(unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -260,8 +223,8 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool strictModeErrorWithNotes(UniquePtr<JSErrorNotes> notes,
-                                             unsigned errorNumber, ...) {
+  [[nodiscard]] bool strictModeErrorWithNotes(UniquePtr<JSErrorNotes> notes,
+                                              unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -272,8 +235,8 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool strictModeErrorAt(uint32_t offset, unsigned errorNumber,
-                                      ...) {
+  [[nodiscard]] bool strictModeErrorAt(uint32_t offset, unsigned errorNumber,
+                                       ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -284,9 +247,9 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool strictModeErrorWithNotesAt(UniquePtr<JSErrorNotes> notes,
-                                               uint32_t offset,
-                                               unsigned errorNumber, ...) {
+  [[nodiscard]] bool strictModeErrorWithNotesAt(UniquePtr<JSErrorNotes> notes,
+                                                uint32_t offset,
+                                                unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -297,7 +260,7 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool strictModeErrorNoOffset(unsigned errorNumber, ...) {
+  [[nodiscard]] bool strictModeErrorNoOffset(unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
 
@@ -308,7 +271,7 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool strictModeErrorWithNotesNoOffset(
+  [[nodiscard]] bool strictModeErrorWithNotesNoOffset(
       UniquePtr<JSErrorNotes> notes, unsigned errorNumber, ...) {
     va_list args;
     va_start(args, errorNumber);
@@ -320,10 +283,10 @@ class ErrorReportMixin : public StrictModeGetter {
 
     return result;
   }
-  MOZ_MUST_USE bool strictModeErrorWithNotesAtVA(UniquePtr<JSErrorNotes> notes,
-                                                 const ErrorOffset& offset,
-                                                 unsigned errorNumber,
-                                                 va_list* args) {
+  [[nodiscard]] bool strictModeErrorWithNotesAtVA(UniquePtr<JSErrorNotes> notes,
+                                                  const ErrorOffset& offset,
+                                                  unsigned errorNumber,
+                                                  va_list* args) {
     if (!strictMode()) {
       return true;
     }
@@ -339,9 +302,9 @@ class ErrorReportMixin : public StrictModeGetter {
   }
 
   // Reports a warning, or an error if the warning is treated as an error.
-  MOZ_MUST_USE bool compileWarning(ErrorMetadata&& metadata,
-                                   UniquePtr<JSErrorNotes> notes,
-                                   unsigned errorNumber, va_list* args) {
+  [[nodiscard]] bool compileWarning(ErrorMetadata&& metadata,
+                                    UniquePtr<JSErrorNotes> notes,
+                                    unsigned errorNumber, va_list* args) {
     return ReportCompileWarning(getContext(), std::move(metadata),
                                 std::move(notes), errorNumber, args);
   }

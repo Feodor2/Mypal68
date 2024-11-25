@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScriptPreloader-inl.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/ScriptPreloader.h"
 #include "mozilla/loader/ScriptCacheActors.h"
 
@@ -19,8 +20,10 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
 
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
+#include "js/Transcoding.h"
 #include "MainThreadUtils.h"
 #include "nsDebug.h"
 #include "nsDirectoryServiceUtils.h"
@@ -143,7 +146,7 @@ ScriptPreloader& ScriptPreloader::GetChildSingleton() {
   if (!singleton) {
     singleton = new ScriptPreloader();
     if (XRE_IsParentProcess()) {
-      Unused << singleton->InitCache(NS_LITERAL_STRING("scriptCache-child"));
+      Unused << singleton->InitCache(u"scriptCache-child"_ns);
     }
     ClearOnShutdown(&singleton);
   }
@@ -205,8 +208,7 @@ static void TraceOp(JSTracer* trc, void* data) {
 
 void ScriptPreloader::Trace(JSTracer* trc) {
   for (auto& script : IterHash(mScripts)) {
-    JS::TraceEdge(trc, &script->mScript,
-                  "ScriptPreloader::CachedScript.mScript");
+    script->mScript.Trace(trc);
   }
 }
 
@@ -254,46 +256,56 @@ void ScriptPreloader::Cleanup() {
 }
 
 void ScriptPreloader::StartCacheWrite() {
-  MOZ_ASSERT(!mSaveThread);
+  MOZ_DIAGNOSTIC_ASSERT(!mSaveThread);
 
   Unused << NS_NewNamedThread("SaveScripts", getter_AddRefs(mSaveThread), this);
 
   nsCOMPtr<nsIAsyncShutdownClient> barrier = GetShutdownBarrier();
-  barrier->AddBlocker(this, NS_LITERAL_STRING(__FILE__), __LINE__,
-                      EmptyString());
+  barrier->AddBlocker(this, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
+                      u""_ns);
 }
 
 void ScriptPreloader::InvalidateCache() {
-  mMonitor.AssertNotCurrentThreadOwns();
-  Monitor2AutoLock mal(mMonitor);
+  {
+    mMonitor.AssertNotCurrentThreadOwns();
+    Monitor2AutoLock mal(mMonitor);
 
-  mCacheInvalidated = true;
+    // Wait for pending off-thread parses to finish, since they depend on the
+    // memory allocated by our CachedScripts, and can't be canceled
+    // asynchronously.
+    FinishPendingParses(mal);
 
-  // Wait for pending off-thread parses to finish, since they depend on the
-  // memory allocated by our CachedScripts, and can't be canceled
-  // asynchronously.
-  FinishPendingParses(mal);
+    // Pending scripts should have been cleared by the above, and new parses
+    // should not have been queued.
+    MOZ_ASSERT(mParsingScripts.empty());
+    MOZ_ASSERT(mParsingSources.empty());
+    MOZ_ASSERT(mPendingScripts.isEmpty());
 
-  // Pending scripts should have been cleared by the above, and new parses
-  // should not have been queued.
-  MOZ_ASSERT(mParsingScripts.empty());
-  MOZ_ASSERT(mParsingSources.empty());
-  MOZ_ASSERT(mPendingScripts.isEmpty());
+    for (auto& script : IterHash(mScripts)) {
+      script.Remove();
+    }
 
-  for (auto& script : IterHash(mScripts)) {
-    script.Remove();
+    // If we've already finished saving the cache at this point, start a new
+    // delayed save operation. This will write out an empty cache file in place
+    // of any cache file we've already written out this session, which will
+    // prevent us from falling back to the current session's cache file on the
+    // next startup.
+    if (mSaveComplete && mChildCache) {
+      mSaveComplete = false;
+
+      StartCacheWrite();
+    }
   }
 
-  // If we've already finished saving the cache at this point, start a new
-  // delayed save operation. This will write out an empty cache file in place
-  // of any cache file we've already written out this session, which will
-  // prevent us from falling back to the current session's cache file on the
-  // next startup.
-  if (mSaveComplete && mChildCache) {
-    mSaveComplete = false;
+  {
+    Monitor2AutoLock saveMonitorAutoLock(mSaveMonitor);
 
-    StartCacheWrite();
+    mCacheInvalidated = true;
   }
+
+  // If we're waiting on a timeout to finish saving, interrupt it and just save
+  // immediately.
+  mSaveMonitor.Broadcast();
 }
 
 nsresult ScriptPreloader::Observe(nsISupports* subject, const char* topic,
@@ -311,7 +323,7 @@ nsresult ScriptPreloader::Observe(nsISupports* subject, const char* topic,
     MOZ_ASSERT(mStartupFinished);
     MOZ_ASSERT(XRE_IsParentProcess());
 
-    if (mChildCache) {
+    if (mChildCache && !mSaveComplete && !mSaveThread) {
       StartCacheWrite();
     }
   } else if (mContentStartupFinishedTopic.Equals(topic)) {
@@ -360,15 +372,6 @@ void ScriptPreloader::FinishContentStartup() {
   if (mChildActor) {
     mChildActor->SendScriptsAndFinalize(mScripts);
   }
-
-#ifdef XP_WIN
-  // Record the amount of USS at startup. This is Windows-only for now,
-  // we could turn it on for Linux relatively cheaply. On macOS it can have
-  // a perf impact.
-  mozilla::Telemetry::Accumulate(
-      mozilla::Telemetry::MEMORY_UNIQUE_CONTENT_STARTUP,
-      nsMemoryReporterManager::ResidentUnique() / 1024);
-#endif
 }
 
 bool ScriptPreloader::WillWriteScripts() {
@@ -382,7 +385,7 @@ Result<nsCOMPtr<nsIFile>, nsresult> ScriptPreloader::GetCacheFile(
   nsCOMPtr<nsIFile> cacheFile;
   MOZ_TRY(mProfD->Clone(getter_AddRefs(cacheFile)));
 
-  MOZ_TRY(cacheFile->AppendNative(NS_LITERAL_CSTRING("startupCache")));
+  MOZ_TRY(cacheFile->AppendNative("startupCache"_ns));
   Unused << cacheFile->Create(nsIFile::DIRECTORY_TYPE, 0777);
 
   MOZ_TRY(cacheFile->Append(mBaseName + suffix));
@@ -396,16 +399,14 @@ Result<Ok, nsresult> ScriptPreloader::OpenCache() {
   MOZ_TRY(NS_GetSpecialDirectory("ProfLDS", getter_AddRefs(mProfD)));
 
   nsCOMPtr<nsIFile> cacheFile;
-  MOZ_TRY_VAR(cacheFile, GetCacheFile(NS_LITERAL_STRING(".bin")));
+  MOZ_TRY_VAR(cacheFile, GetCacheFile(u".bin"_ns));
 
   bool exists;
   MOZ_TRY(cacheFile->Exists(&exists));
   if (exists) {
-    MOZ_TRY(cacheFile->MoveTo(nullptr,
-                              mBaseName + NS_LITERAL_STRING("-current.bin")));
+    MOZ_TRY(cacheFile->MoveTo(nullptr, mBaseName + u"-current.bin"_ns));
   } else {
-    MOZ_TRY(
-        cacheFile->SetLeafName(mBaseName + NS_LITERAL_STRING("-current.bin")));
+    MOZ_TRY(cacheFile->SetLeafName(mBaseName + u"-current.bin"_ns));
     MOZ_TRY(cacheFile->Exists(&exists));
     if (!exists) {
       return Err(NS_ERROR_FILE_NOT_FOUND);
@@ -658,7 +659,7 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
   }
 
   nsCOMPtr<nsIFile> cacheFile;
-  MOZ_TRY_VAR(cacheFile, GetCacheFile(NS_LITERAL_STRING("-new.bin")));
+  MOZ_TRY_VAR(cacheFile, GetCacheFile(u"-new.bin"_ns));
 
   bool exists;
   MOZ_TRY(cacheFile->Exists(&exists));
@@ -710,7 +711,7 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
     }
   }
 
-  MOZ_TRY(cacheFile->MoveTo(nullptr, mBaseName + NS_LITERAL_STRING(".bin")));
+  MOZ_TRY(cacheFile->MoveTo(nullptr, mBaseName + u".bin"_ns));
 
   return Ok();
 }
@@ -773,7 +774,7 @@ void ScriptPreloader::NoteScript(const nsCString& url,
   }
 
   // Don't bother caching files that belong to the mochitest harness.
-  NS_NAMED_LITERAL_CSTRING(mochikitPrefix, "chrome://mochikit/");
+  constexpr auto mochikitPrefix = "chrome://mochikit/"_ns;
   if (StringHead(url, mochikitPrefix.Length()) == mochikitPrefix) {
     return;
   }
@@ -786,7 +787,7 @@ void ScriptPreloader::NoteScript(const nsCString& url,
 
   if (!script->MaybeDropScript() && !script->mScript) {
     MOZ_ASSERT(jsscript);
-    script->mScript = jsscript;
+    script->mScript.Set(jsscript);
     script->mReadyToExecute = true;
   }
 
@@ -843,15 +844,27 @@ void ScriptPreloader::NoteScript(const nsCString& url,
 /* static */
 void ScriptPreloader::FillCompileOptionsForCachedScript(
     JS::CompileOptions& options) {
-  // See IsMultiDecodeCompileOptionsMatching in js/src/vm/JSScript.cpp.
+  // Users of the cache do not require return values, so inform the JS parser in
+  // order for it to generate simpler bytecode.
   options.setNoScriptRval(true);
-  MOZ_ASSERT(!options.selfHostingMode);
-  MOZ_ASSERT(!options.isRunOnce);
+
+  // The ScriptPreloader trades off having bytecode available but not source
+  // text. This means the JS syntax-only parser is not used. If `toString` is
+  // called on functions in these scripts, the source-hook will fetch it over,
+  // so using `toString` of functions should be avoided in chrome js.
+  options.setSourceIsLazy(true);
 }
 
 JSScript* ScriptPreloader::GetCachedScript(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     const nsCString& path) {
+  // Users of ScriptPreloader must agree on a standard set of compile options so
+  // that bytecode data can safely saved from one context and loaded in another.
+  MOZ_ASSERT(options.noScriptRval);
+  MOZ_ASSERT(!options.selfHostingMode);
+  MOZ_ASSERT(!options.isRunOnce);
+  MOZ_ASSERT(options.sourceIsLazy);
+
   // If a script is used by both the parent and the child, it's stored only
   // in the child cache.
   if (mChildCache) {
@@ -885,38 +898,40 @@ JSScript* ScriptPreloader::GetCachedScriptInternal(
 JSScript* ScriptPreloader::WaitForCachedScript(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     CachedScript* script) {
-  // Check for finished operations before locking so that we can move onto
-  // decoding the next batch as soon as possible after the pending batch is
-  // ready. If we wait until we hit an unfinished script, we wind up having at
-  // most one batch of buffered scripts, and occasionally under-running that
-  // buffer.
-  MaybeFinishOffThreadDecode();
+  // Always check for finished operations so that we can move on to decoding the
+  // next batch as soon as possible after the pending batch is ready. If we wait
+  // until we hit an unfinished script, we wind up having at most one batch of
+  // buffered scripts, and occasionally under-running that buffer.
+  if (JS::OffThreadToken* token = mToken.exchange(nullptr)) {
+    FinishOffThreadDecode(token);
+  }
 
   if (!script->mReadyToExecute) {
     LOG(Info, "Must wait for async script load: %s\n", script->mURL.get());
     auto start = TimeStamp::Now();
 
-    mMonitor.AssertNotCurrentThreadOwns();
-    Monitor2AutoLock mal(mMonitor);
-
-    // Check for finished operations again *after* locking, or we may race
-    // against mToken being set between our last check and the time we
-    // entered the mutex.
-    MaybeFinishOffThreadDecode();
-
-    if (!script->mReadyToExecute &&
-        script->mSize < MAX_MAINTHREAD_DECODE_SIZE) {
+    // If script is small enough, we'd rather recompile on main-thread than wait
+    // for a decode task to complete.
+    if (script->mSize < MAX_MAINTHREAD_DECODE_SIZE) {
       LOG(Info, "Script is small enough to recompile on main thread\n");
 
       script->mReadyToExecute = true;
       Telemetry::ScalarAdd(
           Telemetry::ScalarID::SCRIPT_PRELOADER_MAINTHREAD_RECOMPILE, 1);
     } else {
-      while (!script->mReadyToExecute) {
-        mal.Wait();
+      Monitor2AutoLock mal(mMonitor);
 
-        Monitor2AutoUnlock mau(mMonitor);
-        MaybeFinishOffThreadDecode();
+      // Process script batches until our target is found.
+      while (!script->mReadyToExecute) {
+        if (JS::OffThreadToken* token = mToken.exchange(nullptr)) {
+          Monitor2AutoUnlock mau(mMonitor);
+          FinishOffThreadDecode(token);
+        } else {
+          MOZ_ASSERT(!mParsingScripts.empty());
+          mWaitingForDecode = true;
+          mal.Wait();
+          mWaitingForDecode = false;
+        }
       }
     }
 
@@ -933,18 +948,19 @@ void ScriptPreloader::OffThreadDecodeCallback(JS::OffThreadToken* token,
                                               void* context) {
   auto cache = static_cast<ScriptPreloader*>(context);
 
+  // Make the token available to main-thread asynchronously. The lock below is
+  // used for Wait/Notify machinery and isn't needed to update the token itself.
+  MOZ_ALWAYS_FALSE(cache->mToken.exchange(token));
+
   cache->mMonitor.AssertNotCurrentThreadOwns();
   Monitor2AutoLock mal(cache->mMonitor);
 
-  // First notify any tasks that are already waiting on scripts, since they'll
-  // be blocking the main thread, and prevent any runnables from executing.
-  cache->mToken = token;
-  mal.Broadcast();
-
-  // If nothing processed the token, and we don't already have a pending
-  // runnable, then dispatch a new one to finish the processing on the main
-  // thread as soon as possible.
-  if (cache->mToken && !cache->mFinishDecodeRunnablePending) {
+  if (cache->mWaitingForDecode) {
+    // Wake up the blocked main thread.
+    mal.Signal();
+  } else if (!cache->mFinishDecodeRunnablePending) {
+    // Issue a Runnable to ensure batches continue to decode even if the next
+    // WaitForCachedScript call has not happened yet.
     cache->mFinishDecodeRunnablePending = true;
     NS_DispatchToMainThread(
         NewRunnableMethod("ScriptPreloader::DoFinishOffThreadDecode", cache,
@@ -955,29 +971,38 @@ void ScriptPreloader::OffThreadDecodeCallback(JS::OffThreadToken* token,
 void ScriptPreloader::FinishPendingParses(Monitor2AutoLock& aMal) {
   mMonitor.AssertCurrentThreadOwns();
 
+  // Clear out scripts that we have not issued batch for yet.
   mPendingScripts.clear();
 
-  MaybeFinishOffThreadDecode();
-
-  // Loop until all pending decode operations finish.
+  // Process any pending decodes that are in flight.
   while (!mParsingScripts.empty()) {
-    aMal.Wait();
-    MaybeFinishOffThreadDecode();
+    if (JS::OffThreadToken* token = mToken.exchange(nullptr)) {
+      Monitor2AutoUnlock mau(mMonitor);
+      FinishOffThreadDecode(token);
+    } else {
+      mWaitingForDecode = true;
+      aMal.Wait();
+      mWaitingForDecode = false;
+    }
   }
 }
 
 void ScriptPreloader::DoFinishOffThreadDecode() {
-  mFinishDecodeRunnablePending = false;
-  MaybeFinishOffThreadDecode();
-}
-
-void ScriptPreloader::MaybeFinishOffThreadDecode() {
-  if (!mToken) {
-    return;
+  {
+    Monitor2AutoLock mal(mMonitor);
+    mFinishDecodeRunnablePending = false;
   }
 
+  if (JS::OffThreadToken* token = mToken.exchange(nullptr)) {
+    FinishOffThreadDecode(token);
+  }
+}
+
+void ScriptPreloader::FinishOffThreadDecode(JS::OffThreadToken* token) {
+  mMonitor.AssertNotCurrentThreadOwns();
+  MOZ_ASSERT(token);
+
   auto cleanup = MakeScopeExit([&]() {
-    mToken = nullptr;
     mParsingSources.clear();
     mParsingScripts.clear();
 
@@ -997,13 +1022,13 @@ void ScriptPreloader::MaybeFinishOffThreadDecode() {
   //
   // The exception from the off-thread decode operation will be reported when
   // we pop the AutoJSAPI off the stack.
-  Unused << JS::FinishMultiOffThreadScriptsDecoder(cx, mToken, &jsScripts);
+  Unused << JS::FinishMultiOffThreadScriptsDecoder(cx, token, &jsScripts);
 
   unsigned i = 0;
   for (auto script : mParsingScripts) {
     LOG(Debug, "Finished off-thread decode of %s\n", script->mURL.get());
     if (i < jsScripts.length()) {
-      script->mScript = jsScripts[i++];
+      script->mScript.Set(jsScripts[i++]);
     }
     script->mReadyToExecute = true;
   }
@@ -1061,7 +1086,6 @@ void ScriptPreloader::DecodeNextBatch(size_t chunkSize,
 
   JS::CompileOptions options(cx);
   FillCompileOptionsForCachedScript(options);
-  options.setSourceIsLazy(true);
 
   if (!JS::CanCompileOffThread(cx, options, size) ||
       !JS::DecodeMultiOffThreadScripts(cx, options, mParsingSources,
@@ -1101,16 +1125,35 @@ ScriptPreloader::CachedScript::CachedScript(ScriptPreloader& cache,
   mProcessTypes = {};
 }
 
+// JS::TraceEdge() can change the value of mScript, but not whether it is
+// null, so we don't update mHasScript to avoid a race.
+void ScriptPreloader::CachedScript::ScriptHolder::Trace(JSTracer* trc) {
+  JS::TraceEdge(trc, &mScript, "ScriptPreloader::CachedScript.mScript");
+}
+
+void ScriptPreloader::CachedScript::ScriptHolder::Set(
+    JS::HandleScript jsscript) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mScript = jsscript;
+  mHasScript = mScript;
+}
+
+void ScriptPreloader::CachedScript::ScriptHolder::Clear() {
+  MOZ_ASSERT(NS_IsMainThread());
+  mScript = nullptr;
+  mHasScript = false;
+}
+
 bool ScriptPreloader::CachedScript::XDREncode(JSContext* cx) {
   auto cleanup = MakeScopeExit([&]() { MaybeDropScript(); });
 
-  JSAutoRealm ar(cx, mScript);
-  JS::RootedScript jsscript(cx, mScript);
+  JSAutoRealm ar(cx, mScript.Get());
+  JS::RootedScript jsscript(cx, mScript.Get());
 
   mXDRData.construct<JS::TranscodeBuffer>();
 
   JS::TranscodeResult code = JS::EncodeScript(cx, Buffer(), jsscript);
-  if (code == JS::TranscodeResult_Ok) {
+  if (code == JS::TranscodeResult::Ok) {
     mXDRRange.emplace(Buffer().begin(), Buffer().length());
     mSize = Range().length();
     return true;
@@ -1124,8 +1167,8 @@ JSScript* ScriptPreloader::CachedScript::GetJSScript(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options) {
   MOZ_ASSERT(mReadyToExecute);
   if (mScript) {
-    if (JS::CheckCompileOptionsMatch(options, mScript)) {
-      return mScript;
+    if (JS::CheckCompileOptionsMatch(options, mScript.Get())) {
+      return mScript.Get();
     }
     LOG(Error, "Cached script %s has different options\n", mURL.get());
     MOZ_DIAGNOSTIC_ASSERT(false, "Cached script has different options");
@@ -1148,8 +1191,20 @@ JSScript* ScriptPreloader::CachedScript::GetJSScript(
   LOG(Info, "Decoding script %s on main thread...\n", mURL.get());
 
   JS::RootedScript script(cx);
-  if (JS::DecodeScript(cx, options, Range(), &script)) {
-    mScript = script;
+  if (JS::DecodeScript(cx, options, Range(), &script) ==
+      JS::TranscodeResult::Ok) {
+    // Lock the monitor here to avoid data races on mScript
+    // from other threads like the cache writing thread.
+    //
+    // It is possible that we could end up decoding the same
+    // script twice, because DecodeScript isn't being guarded
+    // by the monitor; however, to encourage off-thread decode
+    // to proceed for other scripts we don't hold the monitor
+    // while doing main thread decode, merely while updating
+    // mScript.
+    mCache.mMonitor.AssertNotCurrentThreadOwns();
+    Monitor2AutoLock mal(mCache.mMonitor);
+    mScript.Set(script);
 
     if (mCache.mSaveComplete) {
       FreeData();
@@ -1159,7 +1214,7 @@ JSScript* ScriptPreloader::CachedScript::GetJSScript(
   LOG(Debug, "Finished decoding in %fms",
       (TimeStamp::Now() - start).ToMilliseconds());
 
-  return mScript;
+  return mScript.Get();
 }
 
 // nsIAsyncShutdownBlocker

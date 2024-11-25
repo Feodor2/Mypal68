@@ -52,6 +52,7 @@
 #include "vm/Stack.h"
 #include "vm/StringType.h"
 #include "vm/SymbolType.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/ErrorObject-inl.h"
 #include "vm/JSContext-inl.h"
@@ -600,6 +601,9 @@ bool JS::ErrorReportBuilder::init(JSContext* cx,
   if (str) {
     toStringResultBytesStorage = JS_EncodeStringToUTF8(cx, str);
     utf8Message = toStringResultBytesStorage.get();
+    if (!utf8Message) {
+      cx->clearPendingException();
+    }
   }
   if (!utf8Message) {
     utf8Message = "unknown (can't convert to string)";

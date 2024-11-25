@@ -4,6 +4,7 @@
 
 #include "jit/Bailouts.h"
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/ScopeExit.h"
 
 #include "jit/BaselineJIT.h"
@@ -145,7 +146,11 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
                                       bailoutInfo, /*exceptionInfo=*/nullptr);
   MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
 
-  if (!success) {
+  if (success) {
+    // Update the bailout kind.
+    (*bailoutInfo)->bailoutKind =
+        mozilla::Some(BailoutKind::OnStackInvalidation);
+  } else {
     MOZ_ASSERT(cx->isExceptionPending());
 
     // If the bailout failed, then bailout trampoline will pop the
@@ -270,31 +275,6 @@ bool jit::EnsureHasEnvironmentObjects(JSContext* cx, AbstractFramePtr fp) {
   }
 
   return true;
-}
-
-void jit::CheckFrequentBailouts(JSContext* cx, JSScript* script,
-                                BailoutKind bailoutKind) {
-  if (script->hasIonScript()) {
-    // Invalidate if this script keeps bailing out without invalidation. Next
-    // time we compile this script LICM will be disabled.
-    IonScript* ionScript = script->ionScript();
-
-    if (ionScript->bailoutExpected()) {
-      // If we bailout because of the first execution of a basic block,
-      // then we should record which basic block we are returning in,
-      // which should prevent this from happening again.  Also note that
-      // the first execution bailout can be related to an inlined script,
-      // so there is no need to penalize the caller.
-      if (bailoutKind != BailoutKind::FirstExecution &&
-          !script->hadLICMBailout()) {
-        script->setHadLICMBailout();
-      }
-
-      JitSpew(JitSpew_IonInvalidate, "Invalidating due to too many bailouts");
-
-      Invalidate(cx, script);
-    }
-  }
 }
 
 void BailoutFrameInfo::attachOnJitActivation(

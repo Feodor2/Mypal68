@@ -171,7 +171,7 @@ BEGIN_TEST(testArrayBuffer_customFreeFunc) {
   CHECK(buffer);
   CHECK(!data.wasFreed());
 
-  uint32_t len;
+  size_t len;
   bool isShared;
   uint8_t* bufferData;
   JS::GetArrayBufferLengthAndData(buffer, &len, &isShared, &bufferData);
@@ -197,7 +197,7 @@ BEGIN_TEST(testArrayBuffer_staticContents) {
   CHECK(buffer);
   CHECK(!data.wasFreed());
 
-  uint32_t len;
+  size_t len;
   bool isShared;
   uint8_t* bufferData;
   JS::GetArrayBufferLengthAndData(buffer, &len, &isShared, &bufferData);

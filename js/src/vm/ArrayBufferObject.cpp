@@ -133,8 +133,8 @@ int32_t js::LiveMappedBufferCount() { return liveBufferCount; }
 
 bool js::ArrayBufferObject::supportLargeBuffers = false;
 
-static MOZ_MUST_USE bool CheckArrayBufferTooLarge(JSContext* cx,
-                                                  uint64_t nbytes) {
+[[nodiscard]] static bool CheckArrayBufferTooLarge(JSContext* cx,
+                                                   uint64_t nbytes) {
   // Refuse to allocate too large buffers.
   if (MOZ_UNLIKELY(nbytes > ArrayBufferObject::maxBufferByteLength())) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -339,28 +339,8 @@ const JSClass ArrayBufferObject::protoClass_ = {
     "ArrayBuffer.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_ArrayBuffer),
     JS_NULL_CLASS_OPS, &ArrayBufferObjectClassSpec};
 
-bool js::IsArrayBuffer(HandleValue v) {
+static bool IsArrayBuffer(HandleValue v) {
   return v.isObject() && v.toObject().is<ArrayBufferObject>();
-}
-
-bool js::IsArrayBuffer(JSObject* obj) { return obj->is<ArrayBufferObject>(); }
-
-ArrayBufferObject& js::AsArrayBuffer(JSObject* obj) {
-  MOZ_ASSERT(IsArrayBuffer(obj));
-  return obj->as<ArrayBufferObject>();
-}
-
-bool js::IsArrayBufferMaybeShared(HandleValue v) {
-  return v.isObject() && v.toObject().is<ArrayBufferObjectMaybeShared>();
-}
-
-bool js::IsArrayBufferMaybeShared(JSObject* obj) {
-  return obj->is<ArrayBufferObjectMaybeShared>();
-}
-
-ArrayBufferObjectMaybeShared& js::AsArrayBufferMaybeShared(JSObject* obj) {
-  MOZ_ASSERT(IsArrayBufferMaybeShared(obj));
-  return obj->as<ArrayBufferObjectMaybeShared>();
 }
 
 MOZ_ALWAYS_INLINE bool ArrayBufferObject::byteLengthGetterImpl(
@@ -580,8 +560,8 @@ void ArrayBufferObject::detach(JSContext* cx,
  *
  */
 
-MOZ_MUST_USE bool WasmArrayRawBuffer::growToSizeInPlace(BufferSize oldSize,
-                                                        BufferSize newSize) {
+[[nodiscard]] bool WasmArrayRawBuffer::growToSizeInPlace(BufferSize oldSize,
+                                                         BufferSize newSize) {
   MOZ_ASSERT(newSize.get() >= oldSize.get());
   MOZ_ASSERT_IF(maxSize(), newSize.get() <= maxSize().value());
   MOZ_ASSERT(newSize.get() <= mappedSize());
@@ -819,7 +799,7 @@ bool js::CreateWasmBuffer(JSContext* cx, wasm::MemoryKind memKind,
                           const wasm::Limits& memory,
                           MutableHandleArrayBufferObjectMaybeShared buffer) {
   MOZ_ASSERT(memory.initial % wasm::PageSize == 0);
-  MOZ_RELEASE_ASSERT(cx->wasmHaveSignalHandlers);
+  MOZ_RELEASE_ASSERT(cx->wasm().haveSignalHandlers);
   MOZ_RELEASE_ASSERT(memory.initial <=
                      ArrayBufferObject::maxBufferByteLength());
 
@@ -983,7 +963,7 @@ size_t ArrayBufferObject::wasmMappedSize() const {
   if (isWasm()) {
     return contents().wasmBuffer()->mappedSize();
   }
-  return byteLength().deprecatedGetUint32();
+  return byteLength().get();
 }
 
 size_t js::WasmArrayBufferMappedSize(const ArrayBufferObjectMaybeShared* buf) {
@@ -997,7 +977,7 @@ Maybe<uint64_t> ArrayBufferObject::wasmMaxSize() const {
   if (isWasm()) {
     return contents().wasmBuffer()->maxSize();
   }
-  return Some<uint64_t>(byteLength().deprecatedGetUint32());
+  return Some<uint64_t>(byteLength().get());
 }
 
 Maybe<uint64_t> js::WasmArrayBufferMaxSize(
@@ -1440,7 +1420,7 @@ ArrayBufferObject::extractStructuredCloneContents(
 /* static */
 void ArrayBufferObject::addSizeOfExcludingThis(
     JSObject* obj, mozilla::MallocSizeOf mallocSizeOf, JS::ClassInfo* info) {
-  ArrayBufferObject& buffer = AsArrayBuffer(obj);
+  auto& buffer = obj->as<ArrayBufferObject>();
   switch (buffer.bufferKind()) {
     case INLINE_DATA:
       // Inline data's size should be reported by this object's size-class
@@ -1462,6 +1442,10 @@ void ArrayBufferObject::addSizeOfExcludingThis(
     case USER_OWNED:
       // User-owned data should be accounted for by the user.
       break;
+    case EXTERNAL:
+      // External data will be accounted for by the owner of the buffer,
+      // not this view.
+      break;
     case MAPPED:
       info->objectsNonHeapElementsNormal += buffer.byteLength().get();
       break;
@@ -1470,9 +1454,6 @@ void ArrayBufferObject::addSizeOfExcludingThis(
       MOZ_ASSERT(buffer.wasmMappedSize() >= buffer.byteLength().get());
       info->wasmGuardPages +=
           buffer.wasmMappedSize() - buffer.byteLength().get();
-      break;
-    case EXTERNAL:
-      MOZ_CRASH("external buffers not currently supported");
       break;
     case BAD1:
       MOZ_CRASH("bad bufferKind()");
@@ -1486,9 +1467,9 @@ void ArrayBufferObject::finalize(JSFreeOp* fop, JSObject* obj) {
 
 /* static */
 void ArrayBufferObject::copyData(Handle<ArrayBufferObject*> toBuffer,
-                                 uint32_t toIndex,
+                                 size_t toIndex,
                                  Handle<ArrayBufferObject*> fromBuffer,
-                                 uint32_t fromIndex, uint32_t count) {
+                                 size_t fromIndex, size_t count) {
   MOZ_ASSERT(toBuffer->byteLength().get() >= count);
   MOZ_ASSERT(toBuffer->byteLength().get() >= toIndex + count);
   MOZ_ASSERT(fromBuffer->byteLength().get() >= fromIndex);
@@ -1669,9 +1650,9 @@ bool JSObject::is<js::ArrayBufferObjectMaybeShared>() const {
   return is<ArrayBufferObject>() || is<SharedArrayBufferObject>();
 }
 
-JS_FRIEND_API uint32_t JS::GetArrayBufferByteLength(JSObject* obj) {
+JS_FRIEND_API size_t JS::GetArrayBufferByteLength(JSObject* obj) {
   ArrayBufferObject* aobj = obj->maybeUnwrapAs<ArrayBufferObject>();
-  return aobj ? aobj->byteLength().deprecatedGetUint32() : 0;
+  return aobj ? aobj->byteLength().get() : 0;
 }
 
 JS_FRIEND_API uint8_t* JS::GetArrayBufferData(JSObject* obj,
@@ -1732,7 +1713,7 @@ JS_FRIEND_API bool JS::IsDetachedArrayBufferObject(JSObject* obj) {
   return aobj->isDetached();
 }
 
-JS_FRIEND_API JSObject* JS::NewArrayBuffer(JSContext* cx, uint32_t nbytes) {
+JS_FRIEND_API JSObject* JS::NewArrayBuffer(JSContext* cx, size_t nbytes) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
@@ -1846,6 +1827,10 @@ JS_PUBLIC_API void* JS::StealArrayBufferContents(JSContext* cx,
   return ArrayBufferObject::stealMallocedContents(cx, unwrappedBuffer);
 }
 
+JS_PUBLIC_API void JS::SetLargeArrayBuffersEnabled(bool enable) {
+  ArrayBufferObject::supportLargeBuffers = enable;
+}
+
 JS_PUBLIC_API JSObject* JS::NewMappedArrayBufferWithContents(JSContext* cx,
                                                              size_t nbytes,
                                                              void* data) {
@@ -1880,25 +1865,25 @@ JS_FRIEND_API bool JS::IsMappedArrayBufferObject(JSObject* obj) {
 }
 
 JS_FRIEND_API JSObject* JS::GetObjectAsArrayBuffer(JSObject* obj,
-                                                   uint32_t* length,
+                                                   size_t* length,
                                                    uint8_t** data) {
   ArrayBufferObject* aobj = obj->maybeUnwrapIf<ArrayBufferObject>();
   if (!aobj) {
     return nullptr;
   }
 
-  *length = aobj->byteLength().deprecatedGetUint32();
+  *length = aobj->byteLength().get();
   *data = aobj->dataPointer();
 
   return aobj;
 }
 
 JS_FRIEND_API void JS::GetArrayBufferLengthAndData(JSObject* obj,
-                                                   uint32_t* length,
+                                                   size_t* length,
                                                    bool* isSharedMemory,
                                                    uint8_t** data) {
-  MOZ_ASSERT(IsArrayBuffer(obj));
-  *length = AsArrayBuffer(obj).byteLength().deprecatedGetUint32();
-  *data = AsArrayBuffer(obj).dataPointer();
+  auto& aobj = obj->as<ArrayBufferObject>();
+  *length = aobj.byteLength().get();
+  *data = aobj.dataPointer();
   *isSharedMemory = false;
 }

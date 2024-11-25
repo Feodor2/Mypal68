@@ -41,11 +41,6 @@ _SUBDIR_HOST_CXXFLAGS="$HOST_CXXFLAGS"
 _SUBDIR_HOST_LDFLAGS="$HOST_LDFLAGS"
 _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 
-dnl Set the version number of the libs included with mozilla
-dnl ========================================================
-NSPR_VERSION=4
-NSPR_MINVER=4.9.2
-
 dnl Set the minimum version of toolkit libs used by mozilla
 dnl ========================================================
 W32API_VERSION=3.14
@@ -67,19 +62,9 @@ if test -z "$JS_STANDALONE"; then
 fi
 AC_SUBST(autoconfmk)
 
-if test -n "$JS_STANDALONE"; then
-  jsconfdefs=$_objdir/js/src/js-confdefs.h
-else
-  jsconfdefs=$_objdir/js-confdefs.h
-fi
+jsconfdefs=$_objdir/js/src/js-confdefs.h
 
 MOZ_ANDROID_NDK
-
-case "$target" in
-*-apple-darwin*)
-    MOZ_IOS_SDK
-    ;;
-esac
 
 dnl ========================================================
 dnl Checks for compilers.
@@ -332,7 +317,6 @@ if test "$GNU_CC"; then
             DSO_LDOPTS="$DSO_LDOPTS -Wl,-z,defs"
         fi
     fi
-    WARNINGS_AS_ERRORS='-Werror'
     DSO_CFLAGS=''
 
     if test "$OS_ARCH" != "WINNT"; then
@@ -390,12 +374,10 @@ if test "$GNU_CC"; then
                   LDFLAGS=$_SAVE_LDFLAGS)
 
     _DEFINES_CFLAGS="-include $jsconfdefs -DMOZILLA_CLIENT"
-    _USE_CPP_INCLUDE_FLAG=1
 fi
 
 if test "$GNU_CXX"; then
     _DEFINES_CXXFLAGS="-DMOZILLA_CLIENT -include $jsconfdefs"
-    _USE_CPP_INCLUDE_FLAG=1
 fi
 
 dnl ========================================================
@@ -442,15 +424,6 @@ case "$host" in
     HOST_OPTIMIZE_FLAGS="${HOST_OPTIMIZE_FLAGS=-O2}"
     ;;
 esac
-
-dnl ========================================================
-dnl Add optional and non-optional hardening flags from toolchain.configure
-dnl ========================================================
-
-CFLAGS="$CFLAGS $MOZ_HARDENING_CFLAGS_JS"
-CPPFLAGS="$CPPFLAGS $MOZ_HARDENING_CFLAGS_JS"
-CXXFLAGS="$CXXFLAGS $MOZ_HARDENING_CFLAGS_JS"
-LDFLAGS="$LDFLAGS $MOZ_HARDENING_LDFLAGS_JS"
 
 dnl ========================================================
 dnl System overrides of the defaults for target
@@ -502,8 +475,6 @@ case "$target" in
     ;;
 
 *-android*|*-linuxandroid*)
-    AC_DEFINE(NO_PW_GECOS)
-    MOZ_GFX_OPTIMIZE_MOBILE=1
     MOZ_OPTIMIZE_FLAGS="-O3"
     if test -z "$CLANG_CC"; then
        MOZ_OPTIMIZE_FLAGS="-freorder-blocks -fno-reorder-functions $MOZ_OPTIMIZE_FLAGS"
@@ -531,11 +502,14 @@ case "$target" in
     DSO_CFLAGS=
     DSO_PIC_CFLAGS=
     if test -n "$GNU_CC" -o -n "$CLANG_CC"; then
+        # $GNU_CC will match gcc and clang; while $CLANG_CC will match only clang
+        if test -z "$CLANG_CC"; then
+            AC_MSG_ERROR(Firefox cannot be built with mingw-gcc and requires a mingw-clang toolchain to work)
+        fi
+
         CC="$CC -mwindows"
         CXX="$CXX -mwindows"
         CPP="$CPP -mwindows"
-        CFLAGS="$CFLAGS -mms-bitfields"
-        CXXFLAGS="$CXXFLAGS -mms-bitfields"
         DSO_LDOPTS='-shared'
         # Use temp file for windres (bug 213281)
         RCFLAGS='-O coff --use-temp-file'
@@ -543,13 +517,9 @@ case "$target" in
         LIBS="$LIBS -lusp10 -lgdi32 -lwinmm -lwsock32"
         MOZ_FIX_LINK_PATHS=
 
-        if test -z "$CLANG_CC"; then
-            # Use static libgcc and libstdc++
-            LDFLAGS="$LDFLAGS -static"
-        else
-            # Silence problematic clang warnings
-            CXXFLAGS="$CXXFLAGS -Wno-incompatible-ms-struct"
-        fi
+        # Silence problematic clang warnings
+        CXXFLAGS="$CXXFLAGS -Wno-incompatible-ms-struct"
+        LDFLAGS="$LDFLAGS -Wl,--no-insert-timestamp"
 
         MOZ_OPTIMIZE_FLAGS="-O2"
 
@@ -559,7 +529,6 @@ case "$target" in
         TARGET_COMPILER_ABI=msvc
         RANLIB='echo not_ranlib'
         STRIP='echo not_strip'
-        PKG_SKIP_STRIP=1
         # aarch64 doesn't support subsystems below 6.02
         if test "$CPU_ARCH" = "aarch64"; then
             WIN32_SUBSYSTEM_VERSION=6.02
@@ -569,7 +538,6 @@ case "$target" in
         WIN32_CONSOLE_EXE_LDFLAGS=-SUBSYSTEM:CONSOLE,$WIN32_SUBSYSTEM_VERSION
         WIN32_GUI_EXE_LDFLAGS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
         DSO_LDOPTS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
-        _USE_CPP_INCLUDE_FLAG=1
         _DEFINES_CFLAGS="-FI $jsconfdefs -DMOZILLA_CLIENT"
         _DEFINES_CXXFLAGS="-FI $jsconfdefs -DMOZILLA_CLIENT"
         CFLAGS="$CFLAGS -W3 -Gy -Zc:inline"
@@ -673,7 +641,6 @@ case "$target" in
         fi
         LIBS="$LIBS kernel32.lib user32.lib gdi32.lib winmm.lib wsock32.lib advapi32.lib"
         MOZ_DEBUG_LDFLAGS='-DEBUG'
-        WARNINGS_AS_ERRORS='-WX'
         MOZ_OPTIMIZE_FLAGS="-O2"
         MOZ_FIX_LINK_PATHS=
         LDFLAGS="$LDFLAGS -LARGEADDRESSAWARE"
@@ -823,19 +790,6 @@ freebsd*)
     CPPFLAGS="${CPPFLAGS} ${X_CFLAGS}"
     ;;
 esac
-
-MOZ_ARG_ENABLE_BOOL(dtrace,
-              [  --enable-dtrace         build with dtrace support if available (default=no)],
-              [enable_dtrace="yes"],)
-if test "x$enable_dtrace" = "xyes"; then
-  MOZ_CHECK_HEADER(sys/sdt.h, HAVE_DTRACE=1)
-  if test -n "$HAVE_DTRACE"; then
-      AC_DEFINE(INCLUDE_MOZILLA_DTRACE)
-  else
-      AC_MSG_ERROR([dtrace enabled but sys/sdt.h not found]);
-  fi
-fi
-AC_SUBST(HAVE_DTRACE)
 
 dnl Checks for libraries.
 dnl ========================================================
@@ -1184,18 +1138,6 @@ dnl =
 dnl ========================================================
 MOZ_ARG_HEADER(External Packages)
 
-MOZ_CONFIG_NSPR(js)
-
-dnl ========================================================
-dnl system zlib Support
-dnl ========================================================
-dnl Standalone js defaults to system zlib
-if test -n "$JS_STANDALONE"; then
-    ZLIB_DIR=yes
-fi
-
-MOZ_ZLIB_CHECK([1.2.3])
-
 if test -n "$ZLIB_IN_MOZGLUE"; then
     AC_DEFINE(ZLIB_IN_MOZGLUE)
 fi
@@ -1273,13 +1215,6 @@ AC_SUBST_LIST(MOZ_OPTIMIZE_LDFLAGS)
 AC_SUBST_LIST(MOZ_PGO_OPTIMIZE_FLAGS)
 
 dnl ========================================================
-dnl = Disable treating compiler warnings as errors
-dnl ========================================================
-if test -z "$MOZ_ENABLE_WARNINGS_AS_ERRORS"; then
-   WARNINGS_AS_ERRORS=''
-fi
-
-dnl ========================================================
 dnl = Enable jemalloc
 dnl ========================================================
 
@@ -1333,39 +1268,6 @@ MOZ_CONFIG_CLANG_PLUGIN
 fi # COMPILE_ENVIRONMENT
 
 dnl ========================================================
-dnl = Enable static checking using sixgill
-dnl ========================================================
-
-MOZ_ARG_WITH_STRING(sixgill,
-[  --with-sixgill=path/to/sixgill
-                          Enable static checking of code using sixgill],
-    SIXGILL_PATH=$withval,
-    SIXGILL_PATH= )
-
-if test -n "$SIXGILL_PATH"; then
-    if test ! -x "$SIXGILL_PATH/bin/xdbfind" || test ! -f "$SIXGILL_PATH/gcc/xgill.so" || test ! -x "$SIXGILL_PATH/scripts/wrap_gcc/g++"; then
-        AC_MSG_ERROR([The sixgill plugin and binaries are not at the specified path.])
-    fi
-fi
-AC_SUBST(SIXGILL_PATH)
-
-dnl ========================================================
-dnl = Enable stripping of libs & executables
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(strip,
-[  --enable-strip          Enable stripping of libs & executables ],
-    ENABLE_STRIP=1,
-    ENABLE_STRIP= )
-
-dnl ========================================================
-dnl = Enable stripping of libs & executables when packaging
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(install-strip,
-[  --enable-install-strip  Enable stripping of libs & executables when packaging ],
-    PKG_SKIP_STRIP= ,
-    PKG_SKIP_STRIP=1)
-
-dnl ========================================================
 dnl =
 dnl = Profiling and Instrumenting
 dnl =
@@ -1381,23 +1283,6 @@ if test -z "$SKIP_LIBRARY_CHECKS"; then
     AC_CHECK_FUNCS(__cxa_demangle, HAVE_DEMANGLE=1, HAVE_DEMANGLE=)
     AC_LANG_RESTORE
 fi
-
-dnl ========================================================
-dnl JIT observers
-dnl ========================================================
-
-MOZ_ARG_WITH_STRING(jitreport-granularity,
-[  --jitreport-granularity=N
-                           Default granularity at which to report JIT code
-                           to external tools
-                             0 - no info
-                             1 - code ranges for whole functions only
-                             2 - per-line information
-                             3 - per-op information],
-  JITREPORT_GRANULARITY=$withval,
-  JITREPORT_GRANULARITY=3)
-
-AC_DEFINE_UNQUOTED(JS_DEFAULT_JITREPORT_GRANULARITY, $JITREPORT_GRANULARITY)
 
 dnl ========================================================
 dnl =
@@ -1449,62 +1334,12 @@ AC_LANG_C
 MOZ_EXPAND_LIBS
 
 dnl ========================================================
-dnl = Link js shell to system readline
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(readline,
-[  --enable-readline       Link js shell to system readline library],
-    JS_WANT_READLINE=1,
-    JS_WANT_READLINE= )
-
-JS_BUNDLED_EDITLINE=
-EDITLINE_LIBS=
-
-case "$target" in
-*-mingw*)
-    NO_EDITLINE=1
-    ;;
-*)
-    ;;
-esac
-
-if test -z "$SKIP_LIBRARY_CHECKS" -a -z "$NO_EDITLINE"; then
-  if test -n "$JS_WANT_READLINE"; then
-    AC_CHECK_LIB(readline, readline,
-                 EDITLINE_LIBS="-lreadline",
-                 AC_MSG_ERROR([No system readline library found.]))
-  else
-    dnl By default, we use editline
-    JS_BUNDLED_EDITLINE=1
-  fi
-
-  dnl Either way, we want to build with line editing support.
-  AC_DEFINE(EDITLINE)
-fi
-AC_SUBST(JS_BUNDLED_EDITLINE)
-AC_SUBST_LIST(EDITLINE_LIBS)
-
-dnl ========================================================
 dnl =
 dnl = Standalone module options
 dnl =
 dnl ========================================================
 MOZ_ARG_HEADER(Standalone module options (Not for building Mozilla))
 
-dnl ========================================================
-dnl =
-dnl = Options for generating the shell as a script
-dnl =
-dnl ========================================================
-
-MOZ_ARG_WITH_STRING(qemu-exe,
-[  --with-qemu-exe=path   Use path as an arm emulator on host platforms],
-    QEMU_EXE=$withval)
-AC_SUBST(QEMU_EXE)
-MOZ_ARG_WITH_STRING(cross-lib,
-[  --with-cross-lib=dir   Use dir as the location for arm libraries],
-    CROSS_LIB=$withval,
-    CROSS_LIB=/usr/$target)
-AC_SUBST(CROSS_LIB)
 dnl ========================================================
 dnl =
 dnl = Maintainer debug option (no --enable equivalent)
@@ -1518,31 +1353,18 @@ AC_SUBST(WINDRES)
 AC_SUBST(IMPLIB)
 AC_SUBST(FILTER)
 AC_SUBST_LIST(MOZ_DEBUG_LDFLAGS)
-AC_SUBST(WARNINGS_AS_ERRORS)
 AC_SUBST_LIST(WARNINGS_CFLAGS)
 AC_SUBST(LIBICONV)
 
-AC_SUBST(ENABLE_STRIP)
-AC_SUBST(PKG_SKIP_STRIP)
 AC_SUBST(INCREMENTAL_LINKER)
 
 AC_SUBST_LIST(MOZ_FIX_LINK_PATHS)
 
 AC_SUBST(MOZ_POST_PROGRAM_COMMAND)
 
-AC_SUBST(MOZ_APP_NAME)
 AC_SUBST(MOZ_APP_DISPLAYNAME)
 
 AC_SUBST(MOZ_PKG_SPECIAL)
-
-dnl ========================================================
-dnl ECMAScript Internationalization API Support (uses ICU)
-dnl ========================================================
-
-dnl top-level configure may override this with --without-intl-api
-_INTL_API=yes
-
-MOZ_CONFIG_ICU()
 
 dnl Echo the CFLAGS to remove extra whitespace.
 CFLAGS=`echo \
@@ -1571,8 +1393,6 @@ HOST_CXXFLAGS=`echo \
     $_WARNINGS_HOST_CXXFLAGS \
     $_COMPILATION_HOST_CXXFLAGS \
     $HOST_CXXFLAGS`
-
-AC_SUBST(MOZ_SYSTEM_NSPR)
 
 OS_CFLAGS="$CFLAGS"
 OS_CXXFLAGS="$CXXFLAGS"
@@ -1644,7 +1464,6 @@ MOZ_CHECK_ALLOCATOR
 AC_SUBST(ac_configure_args)
 
 if test -n "$JS_STANDALONE"; then
-MOZ_APP_NAME="mozjs"
 JS_LIBRARY_NAME="mozjs-$MOZILLA_SYMBOLVERSION"
 else
 JS_LIBRARY_NAME="mozjs"

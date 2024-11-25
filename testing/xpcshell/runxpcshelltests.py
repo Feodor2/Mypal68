@@ -1217,6 +1217,7 @@ class XPCShellTests(object):
 
         self.mozInfo['serviceworker_e10s'] = prefs.get(
             'dom.serviceWorkers.parent_intercept', False)
+        self.mozInfo['webrender'] = self.enable_webrender
 
         mozinfo.update(self.mozInfo)
 

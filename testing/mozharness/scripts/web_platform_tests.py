@@ -26,7 +26,7 @@ from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options
 )
-from mozharness.mozilla.testing.errors import HarnessErrorList
+from mozharness.mozilla.testing.errors import WptHarnessErrorList
 
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozharness.base.log import INFO
@@ -66,7 +66,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             "action": "store_true",
             "dest": "enable_webrender",
             "default": False,
-            "help": "Tries to enable the WebRender compositor."}
+            "help": "Enable the WebRender compositor in Gecko."}
          ],
         [["--headless"], {
             "action": "store_true",
@@ -246,6 +246,8 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         if not c["e10s"]:
             cmd.append("--disable-e10s")
+        if c["enable_webrender"]:
+            cmd.append("--enable-webrender")
 
         if c["single_stylo_traversal"]:
             cmd.append("--stylo-threads=1")
@@ -342,7 +344,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         parser = StructuredOutputParser(config=self.config,
                                         log_obj=self.log_obj,
                                         log_compact=True,
-                                        error_list=BaseErrorList + HarnessErrorList,
+                                        error_list=BaseErrorList + WptHarnessErrorList,
                                         allow_crashes=True)
 
         env = {'MINIDUMP_SAVE_PATH': dirs['abs_blob_upload_dir']}
@@ -350,9 +352,6 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         if self.config['allow_software_gl_layers']:
             env['MOZ_LAYERS_ALLOW_SOFTWARE_GL'] = '1'
-        if self.config['enable_webrender']:
-            env['MOZ_WEBRENDER'] = '1'
-            env['MOZ_ACCELERATED'] = '1'
         if self.config['headless']:
             env['MOZ_HEADLESS'] = '1'
             env['MOZ_HEADLESS_WIDTH'] = self.config['headless_width']

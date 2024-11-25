@@ -184,7 +184,7 @@ cookie.add = function(newCookie, { restrictToHost = null } = {}) {
       newCookie.session,
       newCookie.expiry,
       {} /* origin attributes */,
-      Ci.nsICookie.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_NONE
     );
   } catch (e) {
     throw new UnableToSetCookieError(e);

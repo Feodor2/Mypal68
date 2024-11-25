@@ -102,6 +102,12 @@ class TTest(object):
         if browser_config.get('stylothreads', 0) > 0:
             setup.env['STYLO_THREADS'] = str(browser_config['stylothreads'])
 
+        if browser_config['enable_webrender']:
+            setup.env['MOZ_WEBRENDER'] = '1'
+            setup.env['MOZ_ACCELERATED'] = '1'
+        else:
+            setup.env['MOZ_WEBRENDER'] = '0'
+
         # set url if there is one (i.e. receiving a test page, not a manifest/pageloader test)
         if test_config.get('url', None) is not None:
             test_config['url'] = utils.interpolate(
@@ -128,11 +134,6 @@ class TTest(object):
 
         setup.env['JSGC_DISABLE_POISONING'] = '1'
         setup.env['MOZ_DISABLE_NONLOCAL_CONNECTIONS'] = '1'
-
-        # if using mitmproxy we must allow access to 'external' sites
-        if browser_config.get('mitmproxy', False):
-            LOG.info('Using mitmproxy so setting MOZ_DISABLE_NONLOCAL_CONNECTIONS to 0')
-            setup.env['MOZ_DISABLE_NONLOCAL_CONNECTIONS'] = '0'
 
         # instantiate an object to hold test results
         test_results = results.TestResults(

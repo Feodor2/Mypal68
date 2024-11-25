@@ -245,9 +245,9 @@ Consider installing certutil via your OS package manager or directly.""")
         kwargs["extra_prefs"].append("media.navigator.streams.fake=true")
 
 
-class Fennec(BrowserSetup):
-    name = "fennec"
-    browser_cls = browser.Fennec
+class FirefoxAndroid(BrowserSetup):
+    name = "firefox_android"
+    browser_cls = browser.FirefoxAndroid
 
     def setup_kwargs(self, kwargs):
         pass
@@ -332,6 +332,29 @@ class Opera(BrowserSetup):
                 kwargs["webdriver_binary"] = webdriver_binary
             else:
                 raise WptrunError("Unable to locate or install operadriver binary")
+
+
+class EdgeChromium(BrowserSetup):
+    name = "MicrosoftEdge"
+    browser_cls = browser.EdgeChromium
+
+    def setup_kwargs(self, kwargs):
+        if kwargs["webdriver_binary"] is None:
+            webdriver_binary = self.browser.find_webdriver()
+
+            if webdriver_binary is None:
+                install = self.prompt_install("msedgedriver")
+
+                if install:
+                    logger.info("Downloading msedgedriver")
+                    webdriver_binary = self.browser.install_webdriver(dest=self.venv.bin_path)
+            else:
+                logger.info("Using webdriver binary %s" % webdriver_binary)
+
+            if webdriver_binary:
+                kwargs["webdriver_binary"] = webdriver_binary
+            else:
+                raise WptrunError("Unable to locate or install msedgedriver binary")
 
 
 class Edge(BrowserSetup):
@@ -468,10 +491,11 @@ class Epiphany(BrowserSetup):
 
 
 product_setup = {
-    "fennec": Fennec,
     "firefox": Firefox,
+    "firefox_android": FirefoxAndroid,
     "chrome": Chrome,
     "chrome_android": ChromeAndroid,
+    "edgechromium": EdgeChromium,
     "edge": Edge,
     "edge_webdriver": EdgeWebDriver,
     "ie": InternetExplorer,

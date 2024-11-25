@@ -35,7 +35,6 @@ class FxDesktopBuild(BuildScript, TryToolsMixin, object):
                 'clobber',
                 'build',
                 'static-analysis-autotest',
-                'check-test',
                 'valgrind-test',
                 'multi-l10n',
                 'package-source',
@@ -44,9 +43,7 @@ class FxDesktopBuild(BuildScript, TryToolsMixin, object):
             # Default configuration
             'config': {
                 'is_automation': True,
-                "pgo_build": False,
                 "debug_build": False,
-                "pgo_platforms": ['linux', 'linux64', 'win32', 'win64'],
                 # nightly stuff
                 "nightly_build": False,
                 # hg tool stuff

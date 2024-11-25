@@ -1616,21 +1616,15 @@ toolbar#nav-bar {
     def buildBrowserEnv(self, options, debugger=False, env=None):
         """build the environment variables for the specific test and operating system"""
         if mozinfo.info["asan"] and mozinfo.isLinux and mozinfo.bits == 64:
-            lsanPath = SCRIPT_DIR
+            useLSan = True
         else:
-            lsanPath = None
-
-        if mozinfo.info["ubsan"]:
-            ubsanPath = SCRIPT_DIR
-        else:
-            ubsanPath = None
+            useLSan = False
 
         browserEnv = self.environment(
             xrePath=options.xrePath,
             env=env,
             debugger=debugger,
-            lsanPath=lsanPath,
-            ubsanPath=ubsanPath)
+            useLSan=useLSan)
 
         if hasattr(options, "topsrcdir"):
             browserEnv["MOZ_DEVELOPER_REPO_DIR"] = options.topsrcdir
@@ -2575,6 +2569,7 @@ toolbar#nav-bar {
                 'dom.serviceWorkers.parent_intercept', False),
             "socketprocess_e10s": self.extraPrefs.get(
                 'network.process.enabled', False),
+            "webrender": options.enable_webrender,
         })
 
         self.setTestRoot(options)
@@ -3112,13 +3107,6 @@ def run_test_harness(parser, options):
 
     if hasattr(options, 'log'):
         delattr(options, 'log')
-
-    # windows10-aarch64 does not yet support crashreporter testing.
-    # see https://bugzilla.mozilla.org/show_bug.cgi?id=1536221
-    if mozinfo.os == "win" and mozinfo.processor == "aarch64":
-        # manually override the mozinfo.crashreporter value after MochitestDesktop
-        # is instantiated.
-        mozinfo.update({u"crashreporter": False})
 
     options.runByManifest = False
     if options.flavor in ('plain', 'browser', 'chrome'):

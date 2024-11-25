@@ -14,6 +14,11 @@
     - context.2d.extraargs
   code: |
     @assert canvas.getContext('2d', false, {}, [], 1, "2") !== null;
+    @assert canvas.getContext('2d', 123) !== null;
+    @assert canvas.getContext('2d', "test") !== null;
+    @assert canvas.getContext('2d', undefined) !== null;
+    @assert canvas.getContext('2d', null) !== null;
+    @assert canvas.getContext('2d', Symbol.hasInstance) !== null;
 
 - name: 2d.type.exists
   desc: The 2D context interface is a property of 'window'
@@ -2835,7 +2840,6 @@
 - name: 2d.pattern.image.incomplete.nosrc
   testing:
     - 2d.pattern.incomplete.image
-  mozilla: { throws }
   code: |
     var img = new Image();
     @assert ctx.createPattern(img, 'repeat') === null;
@@ -2894,12 +2898,86 @@
 
 - name: 2d.pattern.image.broken
   testing:
-    - 2d.pattern.incomplete.image
+    - 2d.pattern.broken.image
   images:
     - broken.png
   code: |
     var img = document.getElementById('broken.png');
+    @assert ctx.createPattern(img, 'repeat') === null;
+
+- name: 2d.pattern.image.nonexistent
+  testing:
+    - 2d.pattern.nonexistent.image
+  images:
+    - no-such-image-really.png
+  code: |
+    var img = document.getElementById('no-such-image-really.png');
     @assert throws INVALID_STATE_ERR ctx.createPattern(img, 'repeat');
+
+- name: 2d.pattern.svgimage.nonexistent
+  testing:
+    - 2d.pattern.nonexistent.svgimage
+  svgimages:
+    - no-such-image-really.png
+  code: |
+    var img = document.getElementById('no-such-image-really.png');
+    @assert throws INVALID_STATE_ERR ctx.createPattern(img, 'repeat');
+
+- name: 2d.pattern.image.nonexistent-but-loading
+  testing:
+    - 2d.pattern.nonexistent-but-loading.image
+  code: |
+    var img = document.createElement("img");
+    img.src = "/images/no-such-image-really.png";
+    @assert ctx.createPattern(img, 'repeat') === null;
+    var img = document.createElementNS("http://www.w3.org/2000/svg", "image");
+    img.src = "/images/no-such-image-really.png";
+    @assert ctx.createPattern(img, 'repeat') === null;
+
+- name: 2d.pattern.image.nosrc
+  testing:
+    - 2d.pattern.nosrc.image
+  code: |
+    var img = document.createElement("img");
+    @assert ctx.createPattern(img, 'repeat') === null;
+    var img = document.createElementNS("http://www.w3.org/2000/svg", "image");
+    @assert ctx.createPattern(img, 'repeat') === null;
+
+- name: 2d.pattern.image.zerowidth
+  testing:
+    - 2d.pattern.zerowidth.image
+  images:
+    - red-zerowidth.svg
+  code: |
+    var img = document.getElementById('red-zerowidth.svg');
+    @assert ctx.createPattern(img, 'repeat') === null;
+
+- name: 2d.pattern.image.zeroheight
+  testing:
+    - 2d.pattern.zeroheight.image
+  images:
+    - red-zeroheight.svg
+  code: |
+    var img = document.getElementById('red-zeroheight.svg');
+    @assert ctx.createPattern(img, 'repeat') === null;
+
+- name: 2d.pattern.svgimage.zerowidth
+  testing:
+    - 2d.pattern.zerowidth.svgimage
+  svgimages:
+    - red-zerowidth.svg
+  code: |
+    var img = document.getElementById('red-zerowidth.svg');
+    @assert ctx.createPattern(img, 'repeat') === null;
+
+- name: 2d.pattern.svgimage.zeroheight
+  testing:
+    - 2d.pattern.zeroheight.svgimage
+  svgimages:
+    - red-zeroheight.svg
+  code: |
+    var img = document.getElementById('red-zeroheight.svg');
+    @assert ctx.createPattern(img, 'repeat') === null;
 
 - name: 2d.pattern.repeat.empty
   testing:
@@ -3684,6 +3762,18 @@
     ctx.lineWidth = NaN;
     @assert ctx.lineWidth === 1.5;
 
+    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 'string';
+    @assert ctx.lineWidth === 1.5;
+
+    ctx.lineWidth = 1.5;
+    ctx.lineWidth = true;
+    @assert ctx.lineWidth === 1;
+
+    ctx.lineWidth = 1.5;
+    ctx.lineWidth = false;
+    @assert ctx.lineWidth === 1.5;
+
 - name: 2d.line.cap.butt
   desc: lineCap 'butt' is rendered correctly
   testing:
@@ -4434,6 +4524,18 @@
     ctx.miterLimit = NaN;
     @assert ctx.miterLimit === 1.5;
 
+    ctx.miterLimit = 1.5;
+    ctx.miterLimit = 'string';
+    @assert ctx.miterLimit === 1.5;
+
+    ctx.miterLimit = 1.5;
+    ctx.miterLimit = true;
+    @assert ctx.miterLimit === 1;
+
+    ctx.miterLimit = 1.5;
+    ctx.miterLimit = false;
+    @assert ctx.miterLimit === 1.5;
+
 - name: 2d.line.cross
   code: |
     ctx.fillStyle = '#0f0';
@@ -4529,6 +4631,18 @@
     ctx.shadowBlur = NaN;
     @assert ctx.shadowBlur === 1;
 
+    ctx.shadowBlur = 1;
+    ctx.shadowBlur = 'string';
+    @assert ctx.shadowBlur === 1;
+
+    ctx.shadowBlur = 1;
+    ctx.shadowBlur = true;
+    @assert ctx.shadowBlur === 1;
+
+    ctx.shadowBlur = 1;
+    ctx.shadowBlur = false;
+    @assert ctx.shadowBlur === 0;
+
 - name: 2d.shadow.attributes.shadowOffset.initial
   testing:
     - 2d.shadow.offset.initial
@@ -4590,6 +4704,27 @@
     ctx.shadowOffsetY = NaN;
     @assert ctx.shadowOffsetX === 1;
     @assert ctx.shadowOffsetY === 2;
+
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 2;
+    ctx.shadowOffsetX = 'string';
+    ctx.shadowOffsetY = 'string';
+    @assert ctx.shadowOffsetX === 1;
+    @assert ctx.shadowOffsetY === 2;
+
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 2;
+    ctx.shadowOffsetX = true;
+    ctx.shadowOffsetY = true;
+    @assert ctx.shadowOffsetX === 1;
+    @assert ctx.shadowOffsetY === 1;
+
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 2;
+    ctx.shadowOffsetX = false;
+    ctx.shadowOffsetY = false;
+    @assert ctx.shadowOffsetX === 0;
+    @assert ctx.shadowOffsetY === 0;
 
 - name: 2d.shadow.attributes.shadowColor.initial
   testing:
@@ -8568,6 +8703,27 @@
     @assert ctx.isPointInPath(NaN, NaN) === false;
 
 
+- name: 2d.path.isPointInStroke.scaleddashes
+  desc: isPointInStroke() should return correct results on dashed paths at high scale factors
+  testing:
+    - 2d.path.isPointInStroke
+  code: |
+    var scale = 20;
+    ctx.setLineDash([10, 21.4159]); // dash from t=0 to t=10 along the circle
+    ctx.scale(scale, scale);
+    ctx.ellipse(6, 10, 5, 5, 0, 2*Math.PI, false);
+    ctx.stroke();
+
+    // hit-test the beginning of the dash (t=0)
+    @assert ctx.isPointInStroke(11*scale, 10*scale) === true;
+    // hit-test the middle of the dash (t=5)
+    @assert ctx.isPointInStroke(8.70*scale, 14.21*scale) === true;
+    // hit-test the end of the dash (t=9.8)
+    @assert ctx.isPointInStroke(4.10*scale, 14.63*scale) === true;
+    // hit-test past the end of the dash (t=10.2)
+    @assert ctx.isPointInStroke(3.74*scale, 14.46*scale) === false;
+
+
 - name: 2d.drawImage.3arg
   testing:
     - 2d.drawImage.defaultsource
@@ -9633,6 +9789,38 @@
   expected: green
 
 
+- name: 2d.imageData.get.large.crash
+  desc: Test that canvas crash when image data cannot be allocated.
+  testing:
+    - 2d.getImageData
+  code: |
+    @assert throws TypeError ctx.getImageData(10, 0xffffffff, 2147483647, 10);
+
+- name: 2d.imageData.get.rounding
+  desc: Test the handling of non-integer source coordinates in getImageData().
+  testing:
+    - 2d.getImageData
+  code: |
+    function testDimensions(sx, sy, sw, sh, width, height)
+    {
+        imageData = ctx.getImageData(sx, sy, sw, sh);
+        @assert imageData.width == width;
+        @assert imageData.height == height;
+    }
+
+    testDimensions(0, 0, 20, 10, 20, 10);
+
+    testDimensions(.1, .2, 20, 10, 20, 10);
+    testDimensions(.9, .8, 20, 10, 20, 10);
+
+    testDimensions(0, 0, 20.9, 10.9, 20, 10);
+    testDimensions(0, 0, 20.1, 10.1, 20, 10);
+
+    testDimensions(-1, -1, 20, 10, 20, 10);
+
+    testDimensions(-1.1, 0, 20, 10, 20, 10);
+    testDimensions(-1.9,  0, 20, 10, 20, 10);
+
 - name: 2d.imageData.object.properties
   desc: ImageData objects have the right properties
   testing:
@@ -10229,3 +10417,67 @@
     var rect = canvas.getBoundingClientRect();
     @assert Math.round(rect.top) === -8;
     @assert Math.round(rect.left) === 200;
+
+- name: 2d.shadow.filter.value
+  desc: test if ctx.filter works correctly
+  testing:
+    - 2d.filter.value
+  code: |
+    @assert ctx.filter == 'none';
+    ctx.filter = 'blur(5px)';
+    @assert ctx.filter == 'blur(5px)';
+    ctx.save();
+    ctx.filter = 'none';
+    @assert ctx.filter == 'none';
+    ctx.restore();
+    @assert ctx.filter == 'blur(5px)';
+
+    ctx.filter = 'blur(10)';
+    @assert ctx.filter == 'blur(5px)';
+    ctx.filter = 'blur 10px';
+    @assert ctx.filter == 'blur(5px)';
+
+    ctx.filter = 'inherit';
+    @assert ctx.filter == 'blur(5px)';
+    ctx.filter = 'initial';
+    @assert ctx.filter == 'blur(5px)';
+    ctx.filter = 'unset';
+    @assert ctx.filter == 'blur(5px)';
+
+    ctx.filter = '';
+    @assert ctx.filter == 'blur(5px)';
+    ctx.filter = null;
+    @assert ctx.filter == 'blur(5px)';
+    ctx.filter = undefined;
+    @assert ctx.filter == 'blur(5px)';
+
+    ctx.filter = 'blur(  5px)';
+    assert_equals(ctx.filter, 'blur(  5px)');
+
+- name: 2d.line.invalid.strokestyle
+  desc: Verify correct behavior of canvas on an invalid strokeStyle()
+  testing:
+    - 2d.strokestyle.invalid
+  code: |
+    ctx.strokeStyle = 'rgb(0, 255, 0)';
+    ctx.strokeStyle = 'nonsense';
+    ctx.lineWidth = 200;
+    ctx.moveTo(0,100);
+    ctx.lineTo(200,100);
+    ctx.stroke();
+    var imageData = ctx.getImageData(0, 0, 200, 200);
+    var imgdata = imageData.data;
+    @assert imgdata[4] == 0;
+    @assert imgdata[5] == 255;
+    @assert imgdata[6] == 0;
+
+- name: 2d.video.invalid
+  desc: Verify test doesn't crash with invalid video.
+  testing:
+    - 2d.video.invalid
+  code: |
+    var v = document.createElement('video');
+    v.play();
+    // Test is deliberately not waiting for the 'playing' event to fire.
+    ctx.createPattern(v, 'repeat-x');
+    ctx.drawImage(v, 0, 0);

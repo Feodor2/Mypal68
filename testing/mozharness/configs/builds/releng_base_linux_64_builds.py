@@ -11,7 +11,6 @@ config = {
     'default_actions': [
         'clobber',
         'build',
-        'check-test',
     ],
     'app_ini_path': '%(obj_dir)s/dist/bin/application.ini',
     'secret_files': [
@@ -23,12 +22,6 @@ config = {
          'min_scm_level': 1},
         {'filename': '/builds/mozilla-desktop-geoloc-api.key',
          'secret_name': 'project/releng/gecko/build/level-%(scm-level)s/mozilla-desktop-geoloc-api.key',
-         'min_scm_level': 2, 'default': 'try-build-has-no-secrets'},
-        {'filename': '/builds/adjust-sdk.token',
-         'secret_name': 'project/releng/gecko/build/level-%(scm-level)s/adjust-sdk.token',
-         'min_scm_level': 2, 'default': 'try-build-has-no-secrets'},
-        {'filename': '/builds/adjust-sdk-beta.token',
-         'secret_name': 'project/releng/gecko/build/level-%(scm-level)s/adjust-sdk-beta.token',
          'min_scm_level': 2, 'default': 'try-build-has-no-secrets'},
     ],
     'vcs_share_base': '/builds/hg-shared',

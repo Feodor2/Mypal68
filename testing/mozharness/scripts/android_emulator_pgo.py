@@ -8,6 +8,7 @@
 import copy
 import json
 import time
+import glob
 import os
 import sys
 import posixpath
@@ -148,7 +149,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin,
         """
         from mozhttpd import MozHttpd
         from mozprofile import Preferences
-        from mozdevice import ADBDevice, ADBProcessError, ADBTimeoutError
+        from mozdevice import ADBDevice, ADBTimeoutError
         from six import string_types
         from marionette_driver.marionette import Marionette
 
@@ -201,9 +202,9 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin,
         # bool pref.
         prefs["browser.tabs.remote.autostart"] = False
 
-        outputdir = self.config.get('output_directory', '/sdcard')
+        outputdir = self.config.get('output_directory', '/sdcard/pgo_profile')
         jarlog = posixpath.join(outputdir, 'en-US.log')
-        profdata = posixpath.join(outputdir, 'default.profraw')
+        profdata = posixpath.join(outputdir, 'default_%p_random_%m.profraw')
 
         env = {}
         env["XPCOM_DEBUG_BREAK"] = "warn"
@@ -213,6 +214,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin,
 
         adbdevice = ADBDevice(adb=adb,
                               device='emulator-5554')
+        adbdevice.mkdir(outputdir)
 
         try:
             # Run Fennec a first time to initialize its profile
@@ -220,7 +222,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin,
                 app='fennec',
                 package_name=app,
                 adb_path=adb,
-                bin="target.apk",
+                bin="geckoview-androidTest.apk",
                 prefs=prefs,
                 connect_to_running_emulator=True,
                 startup_timeout=1000,
@@ -256,38 +258,27 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin,
             # There is a delay between execute_script() returning and the profile data
             # actually getting written out, so poll the device until we get a profile.
             for i in range(50):
-                try:
-                    localprof = '/builds/worker/workspace/default.profraw'
-                    adbdevice.pull(profdata, localprof)
-                    stats = os.stat(localprof)
-                    if stats.st_size == 0:
-                        # The file may not have been fully written yet, so retry until we
-                        # get actual data.
-                        time.sleep(2)
-                    else:
-                        break
-                except ADBProcessError:
-                    # The file may not exist at all yet, which would raise an
-                    # ADBProcessError, so retry.
-                    time.sleep(2)
+                if not adbdevice.process_exist(app):
+                    break
+                time.sleep(2)
             else:
-                raise Exception("Unable to pull default.profraw")
-            adbdevice.pull(jarlog, '/builds/worker/workspace/en-US.log')
+                raise Exception("Android App (%s) never quit" % app)
+
+            # Pull all the profraw files and en-US.log
+            adbdevice.pull(outputdir, '/builds/worker/workspace/')
         except ADBTimeoutError:
             self.fatal('INFRA-ERROR: Failed with an ADBTimeoutError',
                        EXIT_STATUS_DICT[TBPL_RETRY])
 
-        # We normally merge as part of a GENERATED_FILES step in the profile-use
-        # build, but Android runs sometimes result in a truncated profile. We do
-        # a merge here to make sure the data isn't corrupt so we can retry the
-        # 'run' task if necessary.
+        profraw_files = glob.glob('/builds/worker/workspace/*.profraw')
+        if not profraw_files:
+            self.fatal('Could not find any profraw files in /builds/worker/workspace')
         merge_cmd = [
-            '/builds/worker/workspace/build/clang/bin/llvm-profdata',
+            os.path.join(os.environ['MOZ_FETCHES_DIR'], 'clang/bin/llvm-profdata'),
             'merge',
-            '/builds/worker/workspace/default.profraw',
             '-o',
-            '/builds/worker/workspace/merged.profraw',
-        ]
+            '/builds/worker/workspace/merged.profdata',
+        ] + profraw_files
         rc = subprocess.call(merge_cmd)
         if rc != 0:
             self.fatal('INFRA-ERROR: Failed to merge profile data. Corrupt profile?',
@@ -299,7 +290,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin,
             '-acvf',
             '/builds/worker/artifacts/profdata.tar.xz',
             '-C', '/builds/worker/workspace',
-            'merged.profraw',
+            'merged.profdata',
             'en-US.log',
         ]
         subprocess.check_call(tar_cmd)

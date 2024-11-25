@@ -40,8 +40,6 @@ from mozharness.mozilla.automation import (
     TBPL_WORST_LEVEL_TUPLE,
 )
 from mozharness.mozilla.secrets import SecretsMixin
-from mozharness.mozilla.testing.errors import TinderBoxPrintRe
-from mozharness.mozilla.testing.unittest import tbox_print_summary
 from mozharness.base.python import (
     PerfherderResourceOptionsMixin,
     VirtualenvMixin,
@@ -100,69 +98,6 @@ class MakeUploadOutputParser(OutputParser):
                 break
         else:
             self.info(line)
-
-
-class CheckTestCompleteParser(OutputParser):
-    tbpl_error_list = TBPL_UPLOAD_ERRORS
-
-    def __init__(self, **kwargs):
-        self.matches = {}
-        super(CheckTestCompleteParser, self).__init__(**kwargs)
-        self.pass_count = 0
-        self.fail_count = 0
-        self.leaked = False
-        self.harness_err_re = TinderBoxPrintRe['harness_error']['full_regex']
-        self.tbpl_status = TBPL_SUCCESS
-
-    def parse_single_line(self, line):
-        # Counts and flags.
-        # Regular expression for crash and leak detections.
-        if "TEST-PASS" in line:
-            self.pass_count += 1
-            return self.info(line)
-        if "TEST-UNEXPECTED-" in line:
-            # Set the error flags.
-            # Or set the failure count.
-            m = self.harness_err_re.match(line)
-            if m:
-                r = m.group(1)
-                if r == "missing output line for total leaks!":
-                    self.leaked = None
-                else:
-                    self.leaked = True
-            self.fail_count += 1
-            return self.warning(line)
-        self.info(line)  # else
-
-    def evaluate_parser(self, return_code,  success_codes=None):
-        success_codes = success_codes or [0]
-
-        if self.num_errors:  # ran into a script error
-            self.tbpl_status = self.worst_level(TBPL_FAILURE, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        if self.fail_count > 0:
-            self.tbpl_status = self.worst_level(TBPL_WARNING, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        # Account for the possibility that no test summary was output.
-        if (self.pass_count == 0 and self.fail_count == 0 and
-            os.environ.get('TRY_SELECTOR') != 'coverage'):
-            self.error('No tests run or test summary not found')
-            self.tbpl_status = self.worst_level(TBPL_WARNING, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        if return_code not in success_codes:
-            self.tbpl_status = self.worst_level(TBPL_FAILURE, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        # Print the summary.
-        summary = tbox_print_summary(self.pass_count,
-                                     self.fail_count,
-                                     self.leaked)
-        self.info("TinderboxPrint: check<br/>%s\n" % summary)
-
-        return self.tbpl_status
 
 
 class MozconfigPathError(Exception):
@@ -358,8 +293,6 @@ class BuildOptionParser(object):
         'api-16-debug-searchfox': 'builds/releng_sub_%s_configs/%s_api_16_debug_searchfox.py',
         'api-16-gradle': 'builds/releng_sub_%s_configs/%s_api_16_gradle.py',
         'api-16-profile-generate': 'builds/releng_sub_%s_configs/%s_api_16_profile_generate.py',
-        'api-16-without-google-play-services':
-            'builds/releng_sub_%s_configs/%s_api_16_without_google_play_services.py',
         'rusttests': 'builds/releng_sub_%s_configs/%s_rusttests.py',
         'rusttests-debug': 'builds/releng_sub_%s_configs/%s_rusttests_debug.py',
         'x86': 'builds/releng_sub_%s_configs/%s_x86.py',
@@ -558,19 +491,6 @@ BUILD_BASE_CONFIG_OPTIONS = [
         "type": "string",
         "dest": "branch",
         "help": "This sets the branch we will be building this for."}],
-    [['--scm-level'], {
-        "action": "store",
-        "type": "int",
-        "dest": "scm_level",
-        "default": 1,
-        "help": "This sets the SCM level for the branch being built."
-                " See https://www.mozilla.org/en-US/about/"
-                "governance/policies/commit/access-policy/"}],
-    [['--enable-pgo'], {
-        "action": "store_true",
-        "dest": "pgo_build",
-        "default": False,
-        "help": "Sets the build to run in PGO mode"}],
     [['--enable-nightly'], {
         "action": "store_true",
         "dest": "nightly_build",
@@ -756,9 +676,6 @@ items from that key's value."
         if c.get('version_file'):
             env['MOZ_VERSION_FILE'] = c['version_file']
 
-        if self.config.get('pgo_build') or self._compile_against_pgo():
-            env['MOZ_PGO'] = '1'
-
         return env
 
     def query_mach_build_env(self, multiLocale=None):
@@ -777,34 +694,6 @@ items from that key's value."
                 mach_env['UPLOAD_PATH'] = os.path.join(mach_env['UPLOAD_PATH'],
                                                        'en-US')
         return mach_env
-
-    def _compile_against_pgo(self):
-        """determines whether a build should be run with pgo even if it is
-        not a classified as a 'pgo build'.
-
-        requirements:
-        1) must be a platform that can run against pgo
-        2) must be a nightly build
-        """
-        c = self.config
-        if self.stage_platform in c['pgo_platforms']:
-            if self.query_is_nightly():
-                return True
-        return False
-
-    def query_check_test_env(self):
-        c = self.config
-        dirs = self.query_abs_dirs()
-        check_test_env = {}
-        if c.get('check_test_env'):
-            for env_var, env_value in c['check_test_env'].iteritems():
-                check_test_env[env_var] = env_value % dirs
-        # Check tests don't upload anything, however our mozconfigs depend on
-        # UPLOAD_PATH, so we prevent configure from re-running by keeping the
-        # environments consistent.
-        if c.get('upload_env'):
-            check_test_env.update(c['upload_env'])
-        return check_test_env
 
     def _rm_old_package(self):
         """rm the old package."""
@@ -1173,41 +1062,6 @@ items from that key's value."
             env=env, output_timeout=60*45, halt_on_failure=True,
         )
 
-    def check_test(self):
-        if os.environ.get('USE_ARTIFACT'):
-            self.info('Skipping due to forced artifact build.')
-            return
-        c = self.config
-        dirs = self.query_abs_dirs()
-
-        env = self.query_build_env()
-        env.update(self.query_check_test_env())
-
-        cmd = self._query_mach() + [
-            '--log-no-times',
-            'build',
-            '-v',
-            '--keep-going',
-            'check',
-        ]
-
-        parser = CheckTestCompleteParser(config=c,
-                                         log_obj=self.log_obj)
-        return_code = self.run_command(command=cmd,
-                                       cwd=dirs['abs_src_dir'],
-                                       env=env,
-                                       output_parser=parser)
-        tbpl_status = parser.evaluate_parser(return_code)
-        return_code = EXIT_STATUS_DICT[tbpl_status]
-
-        if return_code:
-            self.return_code = self.worst_level(
-                return_code,  self.return_code,
-                AUTOMATION_EXIT_CODES[::-1]
-            )
-            self.error("'mach build check' did not run successfully. Please "
-                       "check log for errors.")
-
     def _is_configuration_shipped(self):
         """Determine if the current build configuration is shipped to users.
 
@@ -1219,10 +1073,6 @@ items from that key's value."
         # one-off configs for variants isn't conducive to this since derived
         # configs we need to be reset and we don't like requiring boilerplate
         # in derived configs.
-
-        # All PGO builds are shipped. This takes care of Linux and Windows.
-        if self.config.get('pgo_build'):
-            return True
 
         # Debug builds are never shipped.
         if self.config.get('debug_build'):
@@ -1297,7 +1147,6 @@ items from that key's value."
         yield {
             'name': 'sccache hit rate',
             'value': hits,
-            'extraOptions': self.perfherder_resource_options(),
             'subtests': [],
             'lowerIsBetter': False
         }
@@ -1305,7 +1154,6 @@ items from that key's value."
         yield {
             'name': 'sccache cache_write_errors',
             'value': stats['stats']['cache_write_errors'],
-            'extraOptions': self.perfherder_resource_options(),
             'alertThreshold': 50.0,
             'subtests': [],
         }
@@ -1313,7 +1161,6 @@ items from that key's value."
         yield {
             'name': 'sccache requests_not_cacheable',
             'value': stats['stats']['requests_not_cacheable'],
-            'extraOptions': self.perfherder_resource_options(),
             'alertThreshold': 50.0,
             'subtests': [],
         }
@@ -1410,8 +1257,8 @@ items from that key's value."
         Returns a dictionary of sections and their sizes.
         """
         # Check for `rust_size`, our cross platform version of size. It should
-        # be installed by tooltool in $abs_src_dir/rust-size/rust-size
-        rust_size = os.path.join(self.query_abs_dirs()['abs_src_dir'],
+        # be fetched by run-task in $MOZ_FETCHES_DIR/rust-size/rust-size
+        rust_size = os.path.join(os.environ['MOZ_FETCHES_DIR'],
                                  'rust-size', 'rust-size')
         size_prog = self.which(rust_size)
         if not size_prog:
@@ -1604,7 +1451,8 @@ items from that key's value."
         '''If sccache was in use for this build, shut down the sccache server.'''
         if os.environ.get('USE_SCCACHE') == '1':
             topsrcdir = self.query_abs_dirs()['abs_src_dir']
-            sccache = os.path.join(topsrcdir, 'sccache2', 'sccache')
+            sccache_base = os.environ['MOZ_FETCHES_DIR']
+            sccache = os.path.join(sccache_base, 'sccache', 'sccache')
             if self._is_windows():
                 sccache += '.exe'
             self.run_command([sccache, '--stop-server'], cwd=topsrcdir)

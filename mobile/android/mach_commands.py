@@ -9,8 +9,6 @@ import logging
 import os
 import json
 
-from zipfile import ZipFile
-
 import mozpack.path as mozpath
 
 from mozbuild.base import (
@@ -182,20 +180,14 @@ class MachCommands(MachCommandBase):
                 tree = ET.parse(f)
                 root = tree.getroot()
 
-                # Log reports for Tree Herder "Job Details".
-                print('TinderboxPrint: report<br/><a href="{}/{}/index.html">HTML {} report</a>, visit "Inspect Task" link for details'.format(root_url, report, report))  # NOQA: E501
-
                 # And make the report display as soon as possible.
                 failed = root.findall('testcase/error') or root.findall('testcase/failure')
                 if failed:
                     print(
                         'TEST-UNEXPECTED-FAIL | android-test | There were failing tests. See the reports at: {}/{}/index.html'.format(root_url, report))  # NOQA: E501
 
-                print('SUITE-START | android-test | {} {}'.format(report, root.get('name')))
-
                 for testcase in root.findall('testcase'):
                     name = testcase.get('name')
-                    print('TEST-START | {}'.format(name))
 
                     # Schema cribbed from
                     # http://llg.cubic.org/docs/junit/.  There's no
@@ -205,22 +197,11 @@ class MachCommands(MachCommandBase):
                     error_count = 0
                     for unexpected in itertools.chain(testcase.findall('error'),
                                                       testcase.findall('failure')):
+                        print('TEST-START | {}'.format(name))
                         for line in ET.tostring(unexpected).strip().splitlines():
                             print('TEST-UNEXPECTED-FAIL | {} | {}'.format(name, line))
                         error_count += 1
                         ret |= 1
-
-                    # Skipped tests aren't unexpected at this time; we
-                    # disable some tests that require live remote
-                    # endpoints.
-                    for skipped in testcase.findall('skipped'):
-                        for line in ET.tostring(skipped).strip().splitlines():
-                            print('TEST-INFO | {} | {}'.format(name, line))
-
-                    if not error_count:
-                        print('TEST-PASS | {}'.format(name))
-
-                print('SUITE-END | android-test | {} {}'.format(report, root.get('name')))
 
         if not found_reports:
             print('TEST-UNEXPECTED-FAIL | android-test | No reports found under {}'.format(gradledir))  # NOQA: E501
@@ -249,7 +230,7 @@ class MachCommands(MachCommandBase):
         for report in reports:
             f = open(os.path.join(
                 self.topobjdir,
-                'gradle/build/mobile/android/app/reports/lint-results-{}.xml'.format(report)),
+                'gradle/build/mobile/android/geckoview/reports/lint-results-{}.xml'.format(report)),  # NOQA: E501
                      'rt')
             tree = ET.parse(f)
             root = tree.getroot()
@@ -416,13 +397,7 @@ class MachCommands(MachCommandBase):
             self.substs['GRADLE_ANDROID_ARCHIVE_GECKOVIEW_TASKS'] + args,
             verbose=True)
 
-        if ret != 0:
-            return ret
-
-        # The zip archive is passed along in CI to ship geckoview onto a maven repo
-        _craft_maven_zip_archive(self.topobjdir)
-
-        return 0
+        return ret
 
     @SubCommand('android', 'build-geckoview_example',
                 """Build geckoview_example """)
@@ -610,7 +585,19 @@ class MachCommands(MachCommandBase):
     @Command('run-android', category='post-build',
              conditional_name='run',
              conditions=[conditions.is_android],
-             description='Run Fennec on an Android device or an emulator.')
+             description='Run an application on an Android device or an emulator.')
+    @CommandArgument('--app', help='Android package to run '
+                     '(default: org.mozilla.geckoview_example)',
+                     default='org.mozilla.geckoview_example')
+    @CommandArgument('--intent', help='Android intent action to launch with '
+                     '(default: android.intent.action.VIEW)',
+                     default='android.intent.action.VIEW')
+    @CommandArgument('--setenv', dest='env', action='append',
+                     help='Set target environment variable, like FOO=BAR',
+                     default=[])
+    @CommandArgument('--profile', '-P', help='Path to Gecko profile, like /path/to/host/profile '
+                     'or /path/to/target/profile',
+                     default=None)
     @CommandArgument('--url', help='URL to open',
                      default=None)
     @CommandArgument('--no-install', help='Do not try to install application on device before ' +
@@ -625,35 +612,87 @@ class MachCommands(MachCommandBase):
                      '(default: False)',
                      action='store_true',
                      default=False)
-    def run(self, url=None, no_install=None, no_wait=None, fail_if_running=None):
-        from mozrunner.devices.android_device import verify_android_device, run_firefox_for_android
+    @CommandArgument('--restart', help='Stop the application if it is already running ' +
+                     '(default: False)',
+                     action='store_true',
+                     default=False)
+    def run(self, app='org.mozilla.geckoview_example', intent=None,
+            env=[], profile=None,
+            url=None, no_install=None, no_wait=None, fail_if_running=None, restart=None):
+        from mozrunner.devices.android_device import verify_android_device, _get_device
+        from six.moves import shlex_quote
 
-        verify_android_device(self, install=not no_install)
-        return run_firefox_for_android(self,
-                                       [],
-                                       url=url,
-                                       wait=not no_wait,
-                                       fail_if_running=fail_if_running)
+        if app == 'org.mozilla.geckoview_example':
+            activity_name = 'org.mozilla.geckoview_example.GeckoViewActivity'
+        elif app == 'org.mozilla.geckoview.test':
+            activity_name = 'org.mozilla.geckoview.test.TestRunnerActivity'
+        elif 'fennec' in app or 'firefox' in app:
+            activity_name = 'org.mozilla.gecko.BrowserApp'
+        else:
+            raise RuntimeError('Application not recognized: {}'.format(app))
 
+        # `verify_android_device` respects `DEVICE_SERIAL` if it is set and sets it otherwise.
+        verify_android_device(self, app=app, install=not no_install)
+        device_serial = os.environ.get('DEVICE_SERIAL')
+        if not device_serial:
+            print('No ADB devices connected.')
+            return 1
 
-def _get_maven_archive_abs_and_relative_paths(maven_folder):
-    for subdir, _, files in os.walk(maven_folder):
-        for file in files:
-            full_path = os.path.join(subdir, file)
-            relative_path = os.path.relpath(full_path, maven_folder)
+        device = _get_device(self.substs, device_serial=device_serial)
 
-            # maven-metadata is intended to be generated on the real maven server
-            if 'maven-metadata.xml' not in relative_path:
-                yield full_path, relative_path
+        args = []
+        if profile:
+            if os.path.isdir(profile):
+                host_profile = profile
+                # Always /data/local/tmp, rather than `device.test_root`, because GeckoView only
+                # takes its configuration file from /data/local/tmp, and we want to follow suit.
+                target_profile = '/data/local/tmp/{}-profile'.format(app)
+                device.rm(target_profile, recursive=True, force=True)
+                device.push(host_profile, target_profile)
+                self.log(logging.INFO, "run",
+                         {'host_profile': host_profile, 'target_profile': target_profile},
+                         'Pushed profile from host "{host_profile}" to target "{target_profile}"')
+            else:
+                target_profile = profile
+                self.log(logging.INFO, "run",
+                         {'target_profile': target_profile},
+                         'Using profile from target "{target_profile}"')
 
+            args = ['--profile', shlex_quote(target_profile)]
 
-def _craft_maven_zip_archive(topobjdir):
-    geckoview_folder = os.path.join(topobjdir, 'gradle/build/mobile/android/geckoview')
-    maven_folder = os.path.join(geckoview_folder, 'maven')
+        extras = {}
+        for i, e in enumerate(env):
+            extras['env{}'.format(i)] = e
+        if args:
+            extras['args'] = " ".join(args)
+        extras['use_multiprocess'] = True  # Only GVE and TRA process this extra.
 
-    with ZipFile(os.path.join(geckoview_folder, 'target.maven.zip'), 'w') as target_zip:
-        for abs, rel in _get_maven_archive_abs_and_relative_paths(maven_folder):
-            target_zip.write(abs, arcname=rel)
+        if env or args:
+            restart = True
+
+        if restart:
+            fail_if_running = False
+            self.log(logging.INFO, "run",
+                     {'app': app},
+                     'Stopping {app} to ensure clean restart.')
+            device.stop_application(app)
+
+        # We'd prefer to log the actual `am start ...` command, but it's not trivial to wire the
+        # device's logger to mach's logger.
+        self.log(logging.INFO, "run",
+                 {'app': app, 'activity_name': activity_name},
+                 'Starting {app}/{activity_name}.')
+
+        device.launch_application(
+            app_name=app,
+            activity_name=activity_name,
+            intent=intent,
+            extras=extras,
+            url=url,
+            wait=not no_wait,
+            fail_if_running=fail_if_running)
+
+        return 0
 
 
 @CommandProvider

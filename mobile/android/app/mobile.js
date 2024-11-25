@@ -54,7 +54,6 @@ pref("toolkit.storage.synchronous", 0);
 // thus we can't use exclusive locking on it.
 pref("storage.multiProcessAccess.enabled", true);
 
-pref("browser.viewport.desktopWidth", 980);
 // The default fallback zoom level to render pages at. Set to -1 to fit page; otherwise
 // the value is divided by 1000 and clamped to hard-coded min/max scale values.
 pref("browser.viewport.defaultZoom", -1);
@@ -101,7 +100,6 @@ pref("network.buffer.cache.count", 24);
 pref("network.buffer.cache.size",  16384);
 
 // predictive actions
-pref("network.predictor.enabled", true);
 pref("network.predictor.max-db-size", 2097152); // bytes
 pref("network.predictor.preserve", 50); // percentage of predictor data to keep when cleaning up
 
@@ -163,9 +161,6 @@ pref("browser.formfill.enable", true);
 
 /* spellcheck */
 pref("layout.spellcheckDefault", 0);
-
-/* new html5 forms */
-pref("dom.forms.datetime.others", true);
 
 /* extension manager and xpinstall */
 pref("xpinstall.whitelist.directRequest", false);
@@ -278,12 +273,6 @@ pref("gfx.displayport.strategy_vb.danger_y_incr", -1); // additional danger zone
 // prediction bias strategy options
 pref("gfx.displayport.strategy_pb.threshold", -1); // velocity threshold in inches/frame
 
-// Allow 24-bit colour when the hardware supports it
-pref("gfx.android.rgb16.force", false);
-
-// Use SurfaceTextures as preferred backend for TextureClient/Host
-pref("gfx.use-surfacetexture-textures", false);
-
 // don't allow JS to move and resize existing windows
 pref("dom.disable_window_move_resize", true);
 
@@ -334,9 +323,6 @@ pref("devtools.debugger.unix-domain-socket", "@ANDROID_PACKAGE_NAME@/firefox-deb
 pref("devtools.remote.usb.enabled", false);
 pref("devtools.remote.wifi.enabled", false);
 
-// When true, zooming will be enabled on all sites, even ones that declare user-scalable=no.
-pref("browser.ui.zoom.force-user-scalable", false);
-
 // With the typical screen sizes on mobile devices, we want to wrap page sources by default.
 pref("view_source.wrap_long_lines", true);
 
@@ -358,10 +344,6 @@ pref("ui.mouse.radius.rightmm", 3);
 pref("ui.mouse.radius.bottommm", 2);
 pref("ui.mouse.radius.visitedWeight", 120);
 pref("ui.mouse.radius.reposition", true);
-
-// The percentage of the screen that needs to be scrolled before toolbar
-// manipulation is allowed.
-pref("browser.ui.scroll-toolbar-threshold", 10);
 
 // Maximum distance from the point where the user pressed where we still
 // look for text to select
@@ -445,7 +427,6 @@ pref("ui.windowframe", "#efebe7");
 pref("ui.dragThresholdX", 25);
 pref("ui.dragThresholdY", 25);
 
-pref("layers.acceleration.disabled", false);
 pref("layers.async-video.enabled", true);
 
 // APZ physics settings (fling acceleration, fling curving and axis lock) have
@@ -463,7 +444,6 @@ pref("apz.fling_curve_threshold_inches_per_ms", "0.01");
 // apz.fling_friction and apz.fling_stopped_threshold are currently ignored by Fennec.
 pref("apz.fling_friction", "0.004");
 pref("apz.fling_stopped_threshold", "0.0");
-pref("apz.frame_delay.enabled", true);
 pref("apz.max_velocity_inches_per_ms", "0.07");
 pref("apz.overscroll.enabled", true);
 pref("apz.second_tap_tolerance", "0.3");
@@ -472,8 +452,6 @@ pref("apz.touch_start_tolerance", "0.06");
 
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
-pref("layers.low-precision-resolution", "0.25");
-pref("layers.low-precision-opacity", "1.0");
 // We want to limit layers for two reasons:
 // 1) We can't scroll smoothly if we have to many draw calls
 // 2) Pages that have too many layers consume too much memory and crash.
@@ -482,7 +460,6 @@ pref("layers.low-precision-opacity", "1.0");
 pref("layers.max-active", 20);
 
 pref("notification.feature.enabled", true);
-pref("dom.webnotifications.enabled", true);
 
 // prevent tooltips from showing up
 pref("browser.chrome.toolbar_tips", false);
@@ -507,9 +484,6 @@ pref("media.video-queue.default-size", 3);
 // (the most recent) image data.
 pref("media.video-queue.send-to-compositor-size", 1);
 
-// Enable MSE
-pref("media.mediasource.enabled", true);
-
 // Switch block autoplay logic to v2.
 pref("media.autoplay.enabled.user-gestures-needed", true);
 // Set Fennec to block autoplay by default.
@@ -524,9 +498,6 @@ pref("media.gmp-gmpopenh264.enabled", true);
 
 // Disable future downloads of OpenH264 on Android
 pref("media.gmp-gmpopenh264.autoupdate", false);
-
-// optimize images memory usage
-pref("image.downscale-during-decode.enabled", true);
 
 // The download protection UI is not implemented yet (bug 1239094).
 pref("browser.safebrowsing.downloads.enabled", false);
@@ -741,14 +712,7 @@ pref("dom.serviceWorkers.enabled", true);
 pref("dom.serviceWorkers.disable_open_click_delay", 5000);
 
 pref("dom.push.debug", false);
-// The upstream autopush endpoint must have the Google API key corresponding to
-// the App's sender ID; we bake this assumption directly into the URL.
-pref("dom.push.serverURL", "https://updates.push.services.mozilla.com/v1/gcm/@MOZ_ANDROID_GCM_SENDERID@");
 pref("dom.push.maxRecentMessageIDsPerSubscription", 0);
-
-#ifdef MOZ_ANDROID_GCM
-  pref("dom.push.enabled", true);
-#endif
 
 // The remote content URL where FxAccountsWebChannel messages originate.  Must use HTTPS.
 pref("identity.fxaccounts.remote.webchannel.uri", "https://accounts.firefox.com");

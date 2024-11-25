@@ -7,6 +7,8 @@ package org.mozilla.geckoview;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
+import android.os.Parcelable;
+import android.os.Parcel;
 import android.support.annotation.AnyThread;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
@@ -207,6 +209,20 @@ public class ContentBlocking {
             return this;
         }
 
+        public static final Parcelable.Creator<Settings> CREATOR
+                = new Parcelable.Creator<Settings>() {
+                    @Override
+                    public Settings createFromParcel(final Parcel in) {
+                        final Settings settings = new Settings();
+                        settings.readFromParcel(in);
+                        return settings;
+                    }
+
+                    @Override
+                    public Settings[] newArray(final int size) {
+                        return new Settings[size];
+                    }
+                };
     }
 
     @Retention(RetentionPolicy.SOURCE)

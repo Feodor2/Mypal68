@@ -8,49 +8,49 @@
 #include "mozilla/Attributes.h"
 #include "gfxMatrix.h"
 #include "gfxRect.h"
-#include "nsFrame.h"
+#include "nsDisplayList.h"
+#include "nsIFrame.h"
 #include "nsSVGDisplayableFrame.h"
 #include "nsLiteralString.h"
 #include "nsQueryFrame.h"
 #include "nsSVGUtils.h"
 
 namespace mozilla {
+
+class PresShell;
 class SVGGeometryFrame;
 class SVGMarkerObserver;
+
 namespace gfx {
 class DrawTarget;
 }  // namespace gfx
+
 }  // namespace mozilla
 
 class gfxContext;
-class nsDisplaySVGGeometry;
 class nsAtom;
 class nsIFrame;
 class nsSVGMarkerFrame;
 
 struct nsRect;
 
-namespace mozilla {
-class PresShell;
-}  // namespace mozilla
-
 nsIFrame* NS_NewSVGGeometryFrame(mozilla::PresShell* aPresShell,
                                  mozilla::ComputedStyle* aStyle);
 
 namespace mozilla {
 
-class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
+class SVGGeometryFrame : public nsIFrame, public nsSVGDisplayableFrame {
   typedef mozilla::gfx::DrawTarget DrawTarget;
 
   friend nsIFrame* ::NS_NewSVGGeometryFrame(mozilla::PresShell* aPresShell,
                                             ComputedStyle* aStyle);
 
-  friend class ::nsDisplaySVGGeometry;
+  friend class DisplaySVGGeometry;
 
  protected:
   SVGGeometryFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
                    nsIFrame::ClassID aID = kClassID)
-      : nsFrame(aStyle, aPresContext, aID) {
+      : nsIFrame(aStyle, aPresContext, aID) {
     AddStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_MAY_BE_TRANSFORMED);
   }
 
@@ -67,7 +67,7 @@ class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
       return false;
     }
 
-    return nsFrame::IsFrameOfType(aFlags & ~nsIFrame::eSVG);
+    return nsIFrame::IsFrameOfType(aFlags & ~nsIFrame::eSVG);
   }
 
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
@@ -81,7 +81,7 @@ class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGGeometry"), aResult);
+    return MakeFrameName(u"SVGGeometry"_ns, aResult);
   }
 #endif
 
@@ -122,6 +122,39 @@ class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
    */
   void PaintMarkers(gfxContext& aContext, const gfxMatrix& aTransform,
                     imgDrawingParams& aImgParams);
+};
+
+//----------------------------------------------------------------------
+// Display list item:
+
+class DisplaySVGGeometry final : public nsPaintedDisplayItem {
+  typedef mozilla::image::imgDrawingParams imgDrawingParams;
+
+ public:
+  DisplaySVGGeometry(nsDisplayListBuilder* aBuilder, SVGGeometryFrame* aFrame)
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
+    MOZ_COUNT_CTOR(DisplaySVGGeometry);
+    MOZ_ASSERT(aFrame, "Must have a frame!");
+  }
+#ifdef NS_BUILD_REFCNT_LOGGING
+  MOZ_COUNTED_DTOR_OVERRIDE(DisplaySVGGeometry)
+#endif
+
+  NS_DISPLAY_DECL_NAME("DisplaySVGGeometry", TYPE_SVG_GEOMETRY)
+
+  virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
+                       HitTestState* aState,
+                       nsTArray<nsIFrame*>* aOutFrames) override;
+  virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+
+  nsDisplayItemGeometry* AllocateGeometry(
+      nsDisplayListBuilder* aBuilder) override {
+    return new nsDisplayItemGenericImageGeometry(this, aBuilder);
+  }
+
+  void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
+                                 const nsDisplayItemGeometry* aGeometry,
+                                 nsRegion* aInvalidRegion) const override;
 };
 }  // namespace mozilla
 

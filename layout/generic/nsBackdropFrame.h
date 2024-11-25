@@ -7,14 +7,14 @@
 #ifndef nsBackdropFrame_h___
 #define nsBackdropFrame_h___
 
-#include "nsFrame.h"
+#include "nsIFrame.h"
 
-class nsBackdropFrame final : public nsFrame {
+class nsBackdropFrame final : public nsIFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsBackdropFrame)
 
   explicit nsBackdropFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsFrame(aStyle, aPresContext, kClassID) {}
+      : nsIFrame(aStyle, aPresContext, kClassID) {}
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;

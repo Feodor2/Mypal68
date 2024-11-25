@@ -260,7 +260,7 @@ void nsSplitterFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 NS_IMETHODIMP
 nsSplitterFrame::DoXULLayout(nsBoxLayoutState& aState) {
-  if (GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     mInner->mParentBox = nsIFrame::GetParentXULBox(this);
     mInner->UpdateState();
   }
@@ -332,7 +332,7 @@ nsresult nsSplitterFrame::HandleEvent(nsPresContext* aPresContext,
       break;
 
     case eMouseUp:
-      if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
+      if (aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary) {
         inner->MouseUp(aPresContext, aEvent);
       }
       break;
@@ -781,7 +781,7 @@ void nsSplitterFrameInner::UpdateState() {
 }
 
 void nsSplitterFrameInner::EnsureOrient() {
-  bool isHorizontal = !(mParentBox->GetStateBits() & NS_STATE_IS_HORIZONTAL);
+  bool isHorizontal = !mParentBox->HasAnyStateBits(NS_STATE_IS_HORIZONTAL);
   if (isHorizontal)
     mOuter->AddStateBits(NS_STATE_IS_HORIZONTAL);
   else

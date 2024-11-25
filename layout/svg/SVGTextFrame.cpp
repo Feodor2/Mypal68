@@ -52,11 +52,12 @@
 #include <cmath>
 #include <limits>
 
-using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGTextContentElement_Binding;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
+
+namespace mozilla {
 
 // ============================================================================
 // Utility functions
@@ -375,8 +376,6 @@ static double GetContextScale(const gfxMatrix& aMatrix) {
 
 // ============================================================================
 // Utility classes
-
-namespace mozilla {
 
 // ----------------------------------------------------------------------------
 // TextRenderedRun
@@ -1287,7 +1286,7 @@ class TextNodeCorrespondenceRecorder {
 
 /* static */
 void TextNodeCorrespondenceRecorder::RecordCorrespondence(SVGTextFrame* aRoot) {
-  if (aRoot->GetStateBits() & NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY) {
+  if (aRoot->HasAnyStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY)) {
     // Resolve bidi so that continuation frames are created if necessary:
     aRoot->MaybeResolveBidiForAnonymousBlockChild();
     TextNodeCorrespondenceRecorder recorder(aRoot);
@@ -1599,7 +1598,7 @@ class TextFrameIterator {
 
 uint32_t TextFrameIterator::UndisplayedCharacters() const {
   MOZ_ASSERT(
-      !(mRootFrame->GetStateBits() & NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY),
+      !mRootFrame->HasAnyStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY),
       "Text correspondence must be up to date");
 
   if (!mCurrentFrame) {
@@ -2693,26 +2692,24 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
   }
 }
 
-}  // namespace mozilla
-
 // ============================================================================
 // SVGTextFrame
 
 // ----------------------------------------------------------------------------
 // Display list item
 
-class nsDisplaySVGText final : public nsPaintedDisplayItem {
+class DisplaySVGText final : public nsPaintedDisplayItem {
  public:
-  nsDisplaySVGText(nsDisplayListBuilder* aBuilder, SVGTextFrame* aFrame)
+  DisplaySVGText(nsDisplayListBuilder* aBuilder, SVGTextFrame* aFrame)
       : nsPaintedDisplayItem(aBuilder, aFrame) {
-    MOZ_COUNT_CTOR(nsDisplaySVGText);
+    MOZ_COUNT_CTOR(DisplaySVGText);
     MOZ_ASSERT(aFrame, "Must have a frame!");
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplaySVGText)
+  MOZ_COUNTED_DTOR_OVERRIDE(DisplaySVGText)
 #endif
 
-  NS_DISPLAY_DECL_NAME("nsDisplaySVGText", TYPE_SVG_TEXT)
+  NS_DISPLAY_DECL_NAME("DisplaySVGText", TYPE_SVG_TEXT)
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
@@ -2730,9 +2727,9 @@ class nsDisplaySVGText final : public nsPaintedDisplayItem {
   }
 };
 
-void nsDisplaySVGText::HitTest(nsDisplayListBuilder* aBuilder,
-                               const nsRect& aRect, HitTestState* aState,
-                               nsTArray<nsIFrame*>* aOutFrames) {
+void DisplaySVGText::HitTest(nsDisplayListBuilder* aBuilder,
+                             const nsRect& aRect, HitTestState* aState,
+                             nsTArray<nsIFrame*>* aOutFrames) {
   SVGTextFrame* frame = static_cast<SVGTextFrame*>(mFrame);
   nsPoint pointRelativeToReferenceFrame = aRect.Center();
   // ToReferenceFrame() includes frame->GetPosition(), our user space position.
@@ -2749,7 +2746,7 @@ void nsDisplaySVGText::HitTest(nsDisplayListBuilder* aBuilder,
   }
 }
 
-void nsDisplaySVGText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
+void DisplaySVGText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   DrawTargetAutoDisableSubpixelAntialiasing disable(aCtx->GetDrawTarget(),
                                                     IsSubpixelAADisabled());
 
@@ -2779,12 +2776,18 @@ NS_QUERYFRAME_HEAD(SVGTextFrame)
   NS_QUERYFRAME_ENTRY(SVGTextFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsSVGDisplayContainerFrame)
 
+}  // namespace mozilla
+
 // ---------------------------------------------------------------------
 // Implementation
 
-nsIFrame* NS_NewSVGTextFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) SVGTextFrame(aStyle, aPresShell->GetPresContext());
+nsIFrame* NS_NewSVGTextFrame(mozilla::PresShell* aPresShell,
+                             mozilla::ComputedStyle* aStyle) {
+  return new (aPresShell)
+      mozilla::SVGTextFrame(aStyle, aPresShell->GetPresContext());
 }
+
+namespace mozilla {
 
 NS_IMPL_FRAMEARENA_HELPERS(SVGTextFrame)
 
@@ -2821,7 +2824,7 @@ void SVGTextFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     return;
   }
   DisplayOutline(aBuilder, aLists);
-  aLists.Content()->AppendNewToTop<nsDisplaySVGText>(aBuilder, this);
+  aLists.Content()->AppendNewToTop<DisplaySVGText>(aBuilder, this);
 }
 
 nsresult SVGTextFrame::AttributeChanged(int32_t aNameSpaceID,
@@ -2896,7 +2899,7 @@ void SVGTextFrame::ScheduleReflowSVGNonDisplayText(IntrinsicDirty aReason) {
 
   nsIFrame* f = this;
   while (f) {
-    if (!(f->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
+    if (!f->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
       if (NS_SUBTREE_DIRTY(f)) {
         // This is a displayed frame, so if it is already dirty, we will be
         // reflowed soon anyway.  No need to call FrameNeedsReflow again, then.
@@ -2980,7 +2983,7 @@ void SVGTextFrame::HandleAttributeChangeInDescendant(Element* aElement,
 
 void SVGTextFrame::FindCloserFrameForSelection(
     const nsPoint& aPoint, FrameWithDistance* aCurrentBestFrame) {
-  if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
+  if (HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     return;
   }
 
@@ -3311,7 +3314,7 @@ void SVGTextFrame::ReflowSVG() {
   NS_ASSERTION(nsSVGUtils::OuterSVGIsCallingReflowSVG(this),
                "This call is probaby a wasteful mistake");
 
-  MOZ_ASSERT(!(GetStateBits() & NS_FRAME_IS_NONDISPLAY),
+  MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
              "ReflowSVG mechanism not designed for this");
 
   if (!nsSVGUtils::NeedsReflowSVG(this)) {
@@ -5045,7 +5048,7 @@ void SVGTextFrame::UpdateGlyphPositioning() {
 void SVGTextFrame::MaybeResolveBidiForAnonymousBlockChild() {
   nsIFrame* kid = PrincipalChildList().FirstChild();
 
-  if (kid && kid->GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION &&
+  if (kid && kid->HasAnyStateBits(NS_BLOCK_NEEDS_BIDI_RESOLUTION) &&
       PresContext()->BidiEnabled()) {
     MOZ_ASSERT(static_cast<nsBlockFrame*>(do_QueryFrame(kid)),
                "Expect anonymous child to be an nsBlockFrame");
@@ -5059,7 +5062,7 @@ void SVGTextFrame::MaybeReflowAnonymousBlockChild() {
     return;
   }
 
-  NS_ASSERTION(!(kid->GetStateBits() & NS_FRAME_IN_REFLOW),
+  NS_ASSERTION(!kid->HasAnyStateBits(NS_FRAME_IN_REFLOW),
                "should not be in reflow when about to reflow again");
 
   if (NS_SUBTREE_DIRTY(this)) {
@@ -5074,7 +5077,7 @@ void SVGTextFrame::MaybeReflowAnonymousBlockChild() {
     // The RecordCorrespondence and DoReflow calls can result in new text frames
     // being created (due to bidi resolution or reflow).  We set this bit to
     // guard against unnecessarily calling back in to
-    // ScheduleReflowSVGNonDisplayText from nsFrame::DidSetComputedStyle on
+    // ScheduleReflowSVGNonDisplayText from nsIFrame::DidSetComputedStyle on
     // those new text frames.
     AddStateBits(NS_STATE_SVG_TEXT_IN_REFLOW);
 
@@ -5391,3 +5394,5 @@ void SVGTextFrame::AppendDirectlyOwnedAnonBoxes(
   MOZ_ASSERT(PrincipalChildList().FirstChild(), "Must have our anon box");
   aResult.AppendElement(OwnedAnonBox(PrincipalChildList().FirstChild()));
 }
+
+}  // namespace mozilla

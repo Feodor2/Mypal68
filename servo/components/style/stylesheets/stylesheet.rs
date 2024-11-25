@@ -240,7 +240,12 @@ pub trait StylesheetInDocument: ::std::fmt::Debug {
     where
         C: NestedRuleIterationCondition,
     {
-        RulesIterator::new(device, self.quirks_mode(guard), guard, self.rules(guard))
+        RulesIterator::new(
+            device,
+            self.quirks_mode(guard),
+            guard,
+            self.rules(guard).iter(),
+        )
     }
 
     /// Returns whether the style-sheet applies for the current device.

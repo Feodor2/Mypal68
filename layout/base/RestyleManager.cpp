@@ -1104,7 +1104,7 @@ static void SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
 
   for (const auto& [list, listID] : aFrame->ChildLists()) {
     for (nsIFrame* child : list) {
-      if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
+      if (!child->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
         // only do frames that don't have placeholders
         if (child->IsPlaceholderFrame()) {
           // do the out-of-flow frame and its continuations
@@ -1207,7 +1207,7 @@ static void StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint) {
   }
 
   nsFrameState dirtyBits;
-  if (aFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     dirtyBits = nsFrameState(0);
   } else if ((aHint & nsChangeHint_NeedDirtyReflow) ||
              dirtyType == IntrinsicDirty::StyleChange) {
@@ -1434,7 +1434,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
           // descendants).
           if (cont->IsAbsPosContainingBlock()) {
             if (!cont->IsAbsoluteContainer() &&
-                (cont->GetStateBits() & NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
+                cont->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
               cont->MarkAsAbsoluteContainingBlock();
             }
           } else {
@@ -1495,7 +1495,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
               nsChangeHint_UpdateSubtreeOverflow);
       }
 
-      if (!(frame->GetStateBits() & NS_FRAME_MAY_BE_TRANSFORMED)) {
+      if (!frame->HasAnyStateBits(NS_FRAME_MAY_BE_TRANSFORMED)) {
         // Frame can not be transformed, and thus a change in transform will
         // have no effect and we should not use the
         // nsChangeHint_UpdatePostTransformOverflow hint.
@@ -1656,8 +1656,8 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
 
             // If |hintFrame| is dirty or has dirty children, we don't bother
             // updating overflows since that will happen when it's reflowed.
-            if (!(hintFrame->GetStateBits() &
-                  (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN))) {
+            if (!hintFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
+                                            NS_FRAME_HAS_DIRTY_CHILDREN)) {
               mOverflowChangedTracker.AddFrame(
                   hintFrame, OverflowChangedTracker::CHILDREN_CHANGED);
             }
@@ -1670,8 +1670,8 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
                          "Not expecting non-SVG children");
               // If |childFrame| is dirty or has dirty children, we don't bother
               // updating overflows since that will happen when it's reflowed.
-              if (!(childFrame->GetStateBits() &
-                    (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN))) {
+              if (!childFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
+                                               NS_FRAME_HAS_DIRTY_CHILDREN)) {
                 mOverflowChangedTracker.AddFrame(
                     childFrame, OverflowChangedTracker::CHILDREN_CHANGED);
               }
@@ -1687,8 +1687,8 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
         }
         // If |frame| is dirty or has dirty children, we don't bother updating
         // overflows since that will happen when it's reflowed.
-        if (!(frame->GetStateBits() &
-              (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN))) {
+        if (!frame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
+                                    NS_FRAME_HAS_DIRTY_CHILDREN)) {
           if (hint & (nsChangeHint_UpdateOverflow |
                       nsChangeHint_UpdatePostTransformOverflow)) {
             OverflowChangedTracker::ChangeKind changeKind;
@@ -3485,8 +3485,8 @@ void RestyleManager::DoReparentComputedStyleForFirstLine(
     // correct it for our pseudo as needed (e.g. stepping out of anon boxes).
     // Use the resulting style for the "parent style ignoring ::first-line".
     nsIFrame* blockFrame = providerFrame->GetParent();
-    nsIFrame* correctedFrame =
-        nsFrame::CorrectStyleParentFrame(blockFrame, oldStyle->GetPseudoType());
+    nsIFrame* correctedFrame = nsIFrame::CorrectStyleParentFrame(
+        blockFrame, oldStyle->GetPseudoType());
     newParentIgnoringFirstLine = correctedFrame->Style();
   } else {
     newParentIgnoringFirstLine = newParent;
@@ -3502,7 +3502,7 @@ void RestyleManager::DoReparentComputedStyleForFirstLine(
           ->GetPlaceholderFrame()
           ->GetLayoutParentStyleForOutOfFlow(&providerFrame);
     } else {
-      providerFrame = nsFrame::CorrectStyleParentFrame(
+      providerFrame = nsIFrame::CorrectStyleParentFrame(
           aFrame->GetParent(), oldStyle->GetPseudoType());
     }
   }
@@ -3559,7 +3559,7 @@ void RestyleManager::ReparentFrameDescendants(nsIFrame* aFrame,
   for (const auto& childList : aFrame->ChildLists()) {
     for (nsIFrame* child : childList.mList) {
       // only do frames that are in flow
-      if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
+      if (!child->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
           child != aProviderChild) {
         DoReparentComputedStyleForFirstLine(child, aStyleSet);
       }

@@ -40,7 +40,7 @@ class nsRubyTextFrame final : public nsRubyContentFrame {
                       nsReflowStatus& aStatus) override;
 
   bool IsAutoHidden() const {
-    return GetStateBits() & NS_RUBY_TEXT_FRAME_AUTOHIDE;
+    return HasAnyStateBits(NS_RUBY_TEXT_FRAME_AUTOHIDE);
   }
 
  protected:

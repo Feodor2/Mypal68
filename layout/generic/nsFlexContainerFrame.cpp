@@ -1372,7 +1372,7 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
 // Indicates whether the cross-size property is set to something definite,
 // for the purpose of intrinsic ratio calculations.
 // The logic here should be similar to the logic for isAutoISize/isAutoBSize
-// in nsFrame::ComputeSizeWithIntrinsicDimensions().
+// in nsIFrame::ComputeSizeWithIntrinsicDimensions().
 static bool IsCrossSizeDefinite(const ReflowInput& aItemReflowInput,
                                 const FlexboxAxisTracker& aAxisTracker) {
   const nsStylePosition* pos = aItemReflowInput.mStylePosition;
@@ -1677,7 +1677,7 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
  * won't change unless one of the pieces of the "key" change, or the flex
  * item's intrinsic size is marked as dirty (due to a style or DOM change).
  * (The latter will cause the cached value to be discarded, in
- * nsFrame::MarkIntrinsicISizesDirty.)
+ * nsIFrame::MarkIntrinsicISizesDirty.)
  *
  * Note that the components of "Key" (mComputed{MinB,MaxB,}Size and
  * mAvailableBSize) are sufficient to catch any changes to the flex container's
@@ -1930,7 +1930,7 @@ FlexItem::FlexItem(ReflowInput& aFlexItemReflowInput, float aFlexGrow,
   MOZ_ASSERT(mFrame, "expecting a non-null child frame");
   MOZ_ASSERT(!mFrame->IsPlaceholderFrame(),
              "placeholder frames should not be treated as flex items");
-  MOZ_ASSERT(!(mFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW),
+  MOZ_ASSERT(!mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW),
              "out-of-flow frames should not be treated as flex items");
   MOZ_ASSERT(mIsInlineAxisMainAxis ==
                  nsFlexContainerFrame::IsItemInlineAxisMainAxis(mFrame),
@@ -2071,7 +2071,7 @@ FlexItem::FlexItem(nsIFrame* aChildFrame, nscoord aCrossSize,
              "Should only make struts for children with 'visibility:collapse'");
   MOZ_ASSERT(!mFrame->IsPlaceholderFrame(),
              "placeholder frames should not be treated as flex items");
-  MOZ_ASSERT(!(mFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW),
+  MOZ_ASSERT(!mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW),
              "out-of-flow frames should not be treated as flex items");
 }
 
@@ -2457,7 +2457,7 @@ void nsFlexContainerFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                                 nsIFrame* aPrevInFlow) {
   nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
-  if (GetStateBits() & NS_FRAME_FONT_INFLATION_CONTAINER) {
+  if (HasAnyStateBits(NS_FRAME_FONT_INFLATION_CONTAINER)) {
     AddStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT);
   }
 
@@ -4251,6 +4251,7 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
     }
   } else {
     auto* data = FirstInFlow()->GetProperty(SharedFlexData::Prop());
+    MOZ_ASSERT(data, "SharedFlexData should be set by our first-in-flow!");
 
     GenerateFlexLines(*data, lines);
     contentBoxMainSize = data->mContentBoxMainSize;
@@ -4335,7 +4336,7 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
 
 // Class to let us temporarily provide an override value for the the main-size
 // CSS property ('width' or 'height') on a flex item, for use in
-// nsFrame::ComputeSizeWithIntrinsicDimensions.
+// nsIFrame::ComputeSizeWithIntrinsicDimensions.
 // (We could use this overridden size more broadly, too, but it's probably
 // better to avoid property-table accesses.  So, where possible, we communicate
 // the resolved main-size to the child via modifying its reflow input directly,
@@ -4425,13 +4426,13 @@ void nsFlexContainerFrame::CalculatePackingSpace(
 
 ComputedFlexContainerInfo*
 nsFlexContainerFrame::CreateOrClearFlexContainerInfo() {
-  if (!HasAnyStateBits(NS_STATE_FLEX_GENERATE_COMPUTED_VALUES)) {
+  if (!ShouldGenerateComputedInfo()) {
     return nullptr;
   }
 
-  // NS_STATE_FLEX_GENERATE_COMPUTED_VALUES will never be cleared. That's
-  // acceptable because it's only set in a Chrome API invoked by devtools, and
-  // won't impact normal browsing.
+  // The flag that sets ShouldGenerateComputedInfo() will never be cleared.
+  // That's acceptable because it's only set in a Chrome API invoked by
+  // devtools, and won't impact normal browsing.
 
   // Re-use the ComputedFlexContainerInfo, if it exists.
   ComputedFlexContainerInfo* info = GetProperty(FlexContainerInfo());
@@ -4576,7 +4577,7 @@ nsFlexContainerFrame* nsFlexContainerFrame::GetFlexFrameWithComputedInfo(
       AutoWeakFrame weakFrameRef(aFrame);
 
       RefPtr<mozilla::PresShell> presShell = flexFrame->PresShell();
-      flexFrame->AddStateBits(NS_STATE_FLEX_GENERATE_COMPUTED_VALUES);
+      flexFrame->SetShouldGenerateComputedInfo(true);
       presShell->FrameNeedsReflow(flexFrame, IntrinsicDirty::Resize,
                                   NS_FRAME_IS_DIRTY);
       presShell->FlushPendingNotifications(FlushType::Layout);
@@ -4678,9 +4679,9 @@ void nsFlexContainerFrame::DoFlexLayout(
   // size adjustments). We'll later fix up the line properties,
   // because the correct values aren't available yet.
   if (aContainerInfo) {
-    MOZ_ASSERT(HasAnyStateBits(NS_STATE_FLEX_GENERATE_COMPUTED_VALUES),
+    MOZ_ASSERT(ShouldGenerateComputedInfo(),
                "We should only have the info struct if "
-               "NS_STATE_FLEX_GENERATE_COMPUTED_VALUES state bit is set!");
+               "ShouldGenerateComputedInfo() is true!");
 
     if (!aStruts.IsEmpty()) {
       // We restarted DoFlexLayout, and may have stale mLines to clear:

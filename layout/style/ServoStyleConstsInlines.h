@@ -614,9 +614,7 @@ LengthPercentage LengthPercentage::FromPercentage(float aPercentage) {
   return l;
 }
 
-bool LengthPercentage::HasPercent() const {
-  return IsPercentage() || IsCalc();
-}
+bool LengthPercentage::HasPercent() const { return IsPercentage() || IsCalc(); }
 
 bool LengthPercentage::ConvertsToLength() const { return IsLength(); }
 
@@ -630,9 +628,7 @@ CSSCoord LengthPercentage::ToLengthInCSSPixels() const {
   return AsLength().ToCSSPixels();
 }
 
-bool LengthPercentage::ConvertsToPercentage() const {
-  return IsPercentage();
-}
+bool LengthPercentage::ConvertsToPercentage() const { return IsPercentage(); }
 
 float LengthPercentage::ToPercentage() const {
   MOZ_ASSERT(ConvertsToPercentage());
@@ -689,9 +685,8 @@ template <typename T, typename U>
 nscoord LengthPercentage::Resolve(T aPercentageGetter, U aRounder) const {
   static_assert(std::is_same<decltype(aPercentageGetter()), nscoord>::value,
                 "Should return app units");
-  static_assert(
-      std::is_same<decltype(aRounder(1.0f)), nscoord>::value,
-      "Should return app units");
+  static_assert(std::is_same<decltype(aRounder(1.0f)), nscoord>::value,
+                "Should return app units");
   if (ConvertsToLength()) {
     return ToLength();
   }
@@ -960,14 +955,17 @@ template <>
 void StyleImage::ResolveImage(dom::Document&, const StyleImage*);
 
 template <>
-inline AspectRatio StyleRatio<StyleNonNegativeNumber>::ToLayoutRatio()
-    const {
+inline AspectRatio StyleRatio<StyleNonNegativeNumber>::ToLayoutRatio() const {
   // The Ratio may be 0/1 (zero) or 1/0 (infinity). There is a spec issue
   // related to these special cases:
   // https://github.com/w3c/csswg-drafts/issues/4572.
   //
   // For now, we accept these values, but layout AspectRatio makes these values
   // 0.0.
+  //
+  // Note: a ratio of 0/0 behaves as the ratio 1/0 instead. So ToLayoutRatio()
+  //       also makes it as 0.0 for now.
+  // https://drafts.csswg.org/css-values-4/#ratios
   return AspectRatio::FromSize(_0, _1);
 }
 

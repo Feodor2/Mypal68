@@ -45,7 +45,7 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
-#include "SVGImageContext.h"
+#include "mozilla/SVGImageContext.h"
 #include "Units.h"
 #ifdef MOZ_BUILD_WEBRENDER
 #  include "mozilla/layers/RenderRootStateManager.h"
@@ -418,7 +418,8 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
   }
 
   uint32_t containerFlags = imgIContainer::FLAG_ASYNC_NOTIFY;
-  if (aFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) {
+  if (aFlags & (nsImageRenderer::FLAG_PAINTING_TO_WINDOW |
+                nsImageRenderer::FLAG_HIGH_QUALITY_SCALING)) {
     containerFlags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
   }
   if (aFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES) {
@@ -512,7 +513,7 @@ void nsDisplayXULImage::Paint(nsDisplayListBuilder* aBuilder,
   uint32_t flags = imgIContainer::FLAG_SYNC_DECODE_IF_FAST;
   if (aBuilder->ShouldSyncDecodeImages())
     flags |= imgIContainer::FLAG_SYNC_DECODE;
-  if (aBuilder->IsPaintingToWindow())
+  if (aBuilder->UseHighQualityScaling())
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
 
   ImgDrawResult result = static_cast<nsImageBoxFrame*>(mFrame)->PaintImage(
@@ -811,7 +812,7 @@ void nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
   mIntrinsicSize.SizeTo(nsPresContext::CSSPixelsToAppUnits(w),
                         nsPresContext::CSSPixelsToAppUnits(h));
 
-  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                   NS_FRAME_IS_DIRTY);
   }

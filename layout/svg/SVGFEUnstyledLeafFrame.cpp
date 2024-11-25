@@ -5,21 +5,24 @@
 // Keep in (case-insensitive) order:
 #include "mozilla/PresShell.h"
 #include "nsContainerFrame.h"
-#include "nsFrame.h"
+#include "nsIFrame.h"
 #include "nsGkAtoms.h"
 #include "SVGObserverUtils.h"
 #include "SVGFilters.h"
 
-using namespace mozilla;
+nsIFrame* NS_NewSVGFEUnstyledLeafFrame(mozilla::PresShell* aPresShell,
+                                       mozilla::ComputedStyle* aStyle);
 
-class SVGFEUnstyledLeafFrame final : public nsFrame {
-  friend nsIFrame* NS_NewSVGFEUnstyledLeafFrame(mozilla::PresShell* aPresShell,
-                                                ComputedStyle* aStyle);
+namespace mozilla {
+
+class SVGFEUnstyledLeafFrame final : public nsIFrame {
+  friend nsIFrame* ::NS_NewSVGFEUnstyledLeafFrame(
+      mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
 
  protected:
   explicit SVGFEUnstyledLeafFrame(ComputedStyle* aStyle,
                                   nsPresContext* aPresContext)
-      : nsFrame(aStyle, aPresContext, kClassID) {
+      : nsIFrame(aStyle, aPresContext, kClassID) {
     AddStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_IS_NONDISPLAY);
   }
 
@@ -34,12 +37,12 @@ class SVGFEUnstyledLeafFrame final : public nsFrame {
       return false;
     }
 
-    return nsFrame::IsFrameOfType(aFlags & ~(nsIFrame::eSVG));
+    return nsIFrame::IsFrameOfType(aFlags & ~(nsIFrame::eSVG));
   }
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGFEUnstyledLeaf"), aResult);
+    return MakeFrameName(u"SVGFEUnstyledLeaf"_ns, aResult);
   }
 #endif
 
@@ -52,11 +55,15 @@ class SVGFEUnstyledLeafFrame final : public nsFrame {
   }
 };
 
-nsIFrame* NS_NewSVGFEUnstyledLeafFrame(PresShell* aPresShell,
-                                       ComputedStyle* aStyle) {
+}  // namespace mozilla
+
+nsIFrame* NS_NewSVGFEUnstyledLeafFrame(mozilla::PresShell* aPresShell,
+                                       mozilla::ComputedStyle* aStyle) {
   return new (aPresShell)
-      SVGFEUnstyledLeafFrame(aStyle, aPresShell->GetPresContext());
+      mozilla::SVGFEUnstyledLeafFrame(aStyle, aPresShell->GetPresContext());
 }
+
+namespace mozilla {
 
 NS_IMPL_FRAMEARENA_HELPERS(SVGFEUnstyledLeafFrame)
 
@@ -73,5 +80,7 @@ nsresult SVGFEUnstyledLeafFrame::AttributeChanged(int32_t aNameSpaceID,
         GetParent()->GetParent());
   }
 
-  return nsFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
+  return nsIFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 }
+
+}  // namespace mozilla

@@ -21,7 +21,7 @@ void nsSplittableFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     SetPrevInFlow(aPrevInFlow);
     aPrevInFlow->SetNextInFlow(this);
   }
-  nsFrame::Init(aContent, aParent, aPrevInFlow);
+  nsIFrame::Init(aContent, aParent, aPrevInFlow);
 }
 
 void nsSplittableFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -32,7 +32,7 @@ void nsSplittableFrame::DestroyFrom(nsIFrame* aDestructRoot,
   }
 
   // Let the base class destroy the frame
-  nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsIFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 nsIFrame* nsSplittableFrame::GetPrevContinuation() const {
@@ -108,8 +108,8 @@ bool nsSplittableFrame::IsInNextContinuationChain(nsIFrame* aFrame1,
 #endif
 
 nsIFrame* nsSplittableFrame::GetPrevInFlow() const {
-  return (GetStateBits() & NS_FRAME_IS_FLUID_CONTINUATION) ? mPrevContinuation
-                                                           : nullptr;
+  return HasAnyStateBits(NS_FRAME_IS_FLUID_CONTINUATION) ? mPrevContinuation
+                                                         : nullptr;
 }
 
 void nsSplittableFrame::SetPrevInFlow(nsIFrame* aFrame) {
@@ -122,8 +122,8 @@ void nsSplittableFrame::SetPrevInFlow(nsIFrame* aFrame) {
 }
 
 nsIFrame* nsSplittableFrame::GetNextInFlow() const {
-  return mNextContinuation && (mNextContinuation->GetStateBits() &
-                               NS_FRAME_IS_FLUID_CONTINUATION)
+  return mNextContinuation && mNextContinuation->HasAnyStateBits(
+                                  NS_FRAME_IS_FLUID_CONTINUATION)
              ? mNextContinuation
              : nullptr;
 }

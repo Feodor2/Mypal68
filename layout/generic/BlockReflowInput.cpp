@@ -298,7 +298,7 @@ nsFlowAreaRect BlockReflowInput::GetFloatAvailableSpaceWithState(
 
 #ifdef DEBUG
   if (nsBlockFrame::gNoisyReflow) {
-    nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+    nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
     printf("%s: band=%d,%d,%d,%d hasfloats=%d\n", __func__,
            result.mRect.IStart(wm), result.mRect.BStart(wm),
            result.mRect.ISize(wm), result.mRect.BSize(wm), result.HasFloats());
@@ -328,7 +328,7 @@ nsFlowAreaRect BlockReflowInput::GetFloatAvailableSpaceForBSize(
 
 #ifdef DEBUG
   if (nsBlockFrame::gNoisyReflow) {
-    nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+    nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
     printf("%s: space=%d,%d,%d,%d hasfloats=%d\n", __func__,
            result.mRect.IStart(wm), result.mRect.BStart(wm),
            result.mRect.ISize(wm), result.mRect.BSize(wm), result.HasFloats());
@@ -431,7 +431,7 @@ void BlockReflowInput::RecoverFloats(nsLineList::iterator aLine,
       if (nsBlockFrame::gNoisyReflow || nsBlockFrame::gNoisyFloatManager) {
         nscoord tI, tB;
         FloatManager()->GetTranslation(tI, tB);
-        nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+        nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
         printf("RecoverFloats: tIB=%d,%d (%d,%d) ", tI, tB, mFloatManagerI,
                mFloatManagerB);
         floatFrame->ListTag(stdout);
@@ -497,7 +497,7 @@ bool BlockReflowInput::AddFloat(nsLineLayout* aLineLayout, nsIFrame* aFloat,
                                 nscoord aAvailableISize) {
   MOZ_ASSERT(aLineLayout, "must have line layout");
   MOZ_ASSERT(mBlock->LinesEnd() != mCurrentLine, "null ptr");
-  MOZ_ASSERT(aFloat->GetStateBits() & NS_FRAME_OUT_OF_FLOW,
+  MOZ_ASSERT(aFloat->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW),
              "aFloat must be an out-of-flow frame");
 
   MOZ_ASSERT(aFloat->GetParent(), "float must have parent");
@@ -993,7 +993,7 @@ bool BlockReflowInput::FlowAndPlaceFloat(nsIFrame* aFloat) {
 
   if (nsBlockFrame::gNoisyReflow) {
     nsRect r = aFloat->GetRect();
-    nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+    nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
     printf("placed float: ");
     aFloat->ListTag(stdout);
     printf(" %d,%d,%d,%d\n", r.x, r.y, r.width, r.height);
@@ -1034,7 +1034,7 @@ void BlockReflowInput::PlaceBelowCurrentLineFloats(nsLineBox* aLine) {
   while (fc) {
 #ifdef DEBUG
     if (nsBlockFrame::gNoisyReflow) {
-      nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+      nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
       printf("placing bcl float: ");
       fc->mFloat->ListTag(stdout);
       printf("\n");
@@ -1058,7 +1058,7 @@ BlockReflowInput::ClearFloats(nscoord aBCoord, StyleClear aBreakType,
                               nsIFrame* aReplacedBlock) {
 #ifdef DEBUG
   if (nsBlockFrame::gNoisyReflow) {
-    nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+    nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
     printf("clear floats: in: aBCoord=%d\n", aBCoord);
   }
 #endif
@@ -1101,7 +1101,7 @@ BlockReflowInput::ClearFloats(nscoord aBCoord, StyleClear aBreakType,
 
 #ifdef DEBUG
   if (nsBlockFrame::gNoisyReflow) {
-    nsFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
+    nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent);
     printf("clear floats: out: y=%d\n", newBCoord);
   }
 #endif

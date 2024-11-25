@@ -557,7 +557,7 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
           StopDrag();
           // we MUST call nsFrame HandleEvent for mouse ups to maintain the
           // selection state and capture state.
-          return nsFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
+          return nsIFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
         }
         break;
 
@@ -565,7 +565,7 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
         break;
     }
 
-    // return nsFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
+    // return nsIFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
     return NS_OK;
   }
 
@@ -611,9 +611,9 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
   }
 #ifdef MOZ_WIDGET_GTK
   else if (ShouldScrollForEvent(aEvent) && aEvent->mClass == eMouseEventClass &&
-           aEvent->AsMouseEvent()->mButton == MouseButton::eRight) {
+           aEvent->AsMouseEvent()->mButton == MouseButton::eSecondary) {
     // HandlePress and HandleRelease are usually called via
-    // nsFrame::HandleEvent, but only for the left mouse button.
+    // nsIFrame::HandleEvent, but only for the left mouse button.
     if (aEvent->mMessage == eMouseDown) {
       HandlePress(aPresContext, aEvent, aEventStatus);
     } else if (aEvent->mMessage == eMouseUp) {
@@ -634,7 +634,7 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
   if (aEvent->mMessage == eMouseOut && mChange)
     HandleRelease(aPresContext, aEvent, aEventStatus);
 
-  return nsFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
+  return nsIFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
 }
 
 // Helper function to collect the "scroll to click" metric. Beware of
@@ -1179,12 +1179,12 @@ bool nsSliderFrame::ShouldScrollForEvent(WidgetGUIEvent* aEvent) {
     case eMouseUp: {
       uint16_t button = aEvent->AsMouseEvent()->mButton;
 #ifdef MOZ_WIDGET_GTK
-      return (button == MouseButton::eLeft) ||
-             (button == MouseButton::eRight && GetScrollToClick()) ||
+      return (button == MouseButton::ePrimary) ||
+             (button == MouseButton::eSecondary && GetScrollToClick()) ||
              (button == MouseButton::eMiddle && gMiddlePref &&
               !GetScrollToClick());
 #else
-      return (button == MouseButton::eLeft) ||
+      return (button == MouseButton::ePrimary) ||
              (button == MouseButton::eMiddle && gMiddlePref);
 #endif
     }
@@ -1215,7 +1215,7 @@ bool nsSliderFrame::ShouldScrollToClickForEvent(WidgetGUIEvent* aEvent) {
   }
 
   WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
-  if (mouseEvent->mButton == MouseButton::eLeft) {
+  if (mouseEvent->mButton == MouseButton::ePrimary) {
 #ifdef XP_MACOSX
     bool invertPref = mouseEvent->IsAlt();
 #else
@@ -1225,7 +1225,7 @@ bool nsSliderFrame::ShouldScrollToClickForEvent(WidgetGUIEvent* aEvent) {
   }
 
 #ifdef MOZ_WIDGET_GTK
-  if (mouseEvent->mButton == MouseButton::eRight) {
+  if (mouseEvent->mButton == MouseButton::eSecondary) {
     return !GetScrollToClick();
   }
 #endif
@@ -1368,8 +1368,7 @@ nsSize nsSliderFrame::GetXULMaxSize(nsBoxLayoutState& aState) {
 void nsSliderFrame::EnsureOrient() {
   nsIFrame* scrollbarBox = GetScrollbar();
 
-  bool isHorizontal =
-      (scrollbarBox->GetStateBits() & NS_STATE_IS_HORIZONTAL) != 0;
+  bool isHorizontal = scrollbarBox->HasAnyStateBits(NS_STATE_IS_HORIZONTAL);
   if (isHorizontal)
     AddStateBits(NS_STATE_IS_HORIZONTAL);
   else

@@ -28,6 +28,8 @@ class CSSCounterStyleRule final : public css::Rule {
  public:
   bool IsCCLeaf() const final;
 
+  const RawServoCounterStyleRule* Raw() const { return mRawRule.get(); }
+
 #ifdef DEBUG
   void List(FILE* out = stdout, int32_t aIndent = 0) const final;
 #endif

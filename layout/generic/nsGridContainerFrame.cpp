@@ -2807,7 +2807,7 @@ struct MOZ_STACK_CLASS nsGridContainerFrame::GridReflowInput {
 
     // Copy in the computed grid info state bit
     if (mSharedGridData->mGenerateComputedGridInfo) {
-      aGridContainerFrame->AddStateBits(NS_STATE_GRID_GENERATE_COMPUTED_VALUES);
+      aGridContainerFrame->SetShouldGenerateComputedInfo(true);
     }
   }
 
@@ -3843,7 +3843,7 @@ nsContainerFrame* NS_NewGridContainerFrame(PresShell* aPresShell,
 // ===========================================
 
 /*static*/ const nsRect& nsGridContainerFrame::GridItemCB(nsIFrame* aChild) {
-  MOZ_ASSERT((aChild->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
+  MOZ_ASSERT(aChild->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
              aChild->IsAbsolutelyPositioned());
   nsRect* cb = aChild->GetProperty(GridItemContainingBlockRect());
   MOZ_ASSERT(cb,
@@ -4850,8 +4850,7 @@ void nsGridContainerFrame::Grid::PlaceGridItems(
   }
 
   // Update the line boundaries of the implicit grid areas, if needed.
-  if (mAreas &&
-      aState.mFrame->HasAnyStateBits(NS_STATE_GRID_GENERATE_COMPUTED_VALUES)) {
+  if (mAreas && aState.mFrame->ShouldGenerateComputedInfo()) {
     for (auto iter = mAreas->iter(); !iter.done(); iter.next()) {
       auto& areaInfo = iter.get().value();
 
@@ -8387,8 +8386,8 @@ void nsGridContainerFrame::Reflow(nsPresContext* aPresContext,
   if (MOZ_LIKELY(!prevInFlow)) {
     InitImplicitNamedAreas(stylePos);
   } else {
-    MOZ_ASSERT((prevInFlow->GetStateBits() & kIsSubgridBits) ==
-                   (GetStateBits() & kIsSubgridBits),
+    MOZ_ASSERT(prevInFlow->HasAnyStateBits(kIsSubgridBits) ==
+                   HasAnyStateBits(kIsSubgridBits),
                "continuations should have same kIsSubgridBits");
   }
   GridReflowInput gridReflowInput(this, aReflowInput);
@@ -8628,7 +8627,7 @@ void nsGridContainerFrame::Reflow(nsPresContext* aPresContext,
                        bp.BStart(wm), bp.BEnd(wm), desiredSize.BSize(wm));
   }
 
-  if (HasAnyStateBits(NS_STATE_GRID_GENERATE_COMPUTED_VALUES)) {
+  if (ShouldGenerateComputedInfo()) {
     // This state bit will never be cleared, since reflow can be called
     // multiple times in fragmented grids, and it's challenging to scope
     // the bit to only that sequence of calls. This is relatively harmless
@@ -8894,8 +8893,7 @@ void nsGridContainerFrame::Reflow(nsPresContext* aPresContext,
       sharedGridData->mAbsPosItems.Clear();
       sharedGridData->mAbsPosItems.SwapElements(gridReflowInput.mAbsPosItems);
 
-      sharedGridData->mGenerateComputedGridInfo =
-          HasAnyStateBits(NS_STATE_GRID_GENERATE_COMPUTED_VALUES);
+      sharedGridData->mGenerateComputedGridInfo = ShouldGenerateComputedInfo();
     } else if (sharedGridData && !GetNextInFlow()) {
       RemoveProperty(SharedGridData::Prop());
     }
@@ -9040,7 +9038,7 @@ void nsGridContainerFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                                 nsIFrame* aPrevInFlow) {
   nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
-  if (GetStateBits() & NS_FRAME_FONT_INFLATION_CONTAINER) {
+  if (HasAnyStateBits(NS_FRAME_FONT_INFLATION_CONTAINER)) {
     AddStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT);
   }
 
@@ -9581,7 +9579,7 @@ nsGridContainerFrame* nsGridContainerFrame::GetGridFrameWithComputedInfo(
   AutoWeakFrame weakFrameRef(gridFrame);
 
   RefPtr<mozilla::PresShell> presShell = gridFrame->PresShell();
-  gridFrame->AddStateBits(NS_STATE_GRID_GENERATE_COMPUTED_VALUES);
+  gridFrame->SetShouldGenerateComputedInfo(true);
   presShell->FrameNeedsReflow(gridFrame, IntrinsicDirty::Resize,
                               NS_FRAME_IS_DIRTY);
   presShell->FlushPendingNotifications(FlushType::Layout);

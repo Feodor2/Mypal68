@@ -13,6 +13,7 @@ use crate::font_metrics::FontMetricsProvider;
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
 use crate::invalidation::element::invalidation_map::InvalidationMap;
 use crate::invalidation::media_queries::{EffectiveMediaQueryResults, ToMediaListKey};
+use crate::invalidation::stylesheets::RuleChangeKind;
 use crate::media_queries::Device;
 use crate::properties::{self, CascadeMode, ComputedValues};
 use crate::properties::{AnimationDeclarations, PropertyDeclarationBlock};
@@ -603,6 +604,18 @@ impl Stylist {
     pub fn remove_stylesheet(&mut self, sheet: StylistSheet, guard: &SharedRwLockReadGuard) {
         self.stylesheets
             .remove_stylesheet(Some(&self.device), sheet, guard)
+    }
+
+    /// Notify of a change of a given rule.
+    pub fn rule_changed(
+        &mut self,
+        sheet: &StylistSheet,
+        rule: &CssRule,
+        guard: &SharedRwLockReadGuard,
+        change_kind: RuleChangeKind,
+    ) {
+        self.stylesheets
+            .rule_changed(Some(&self.device), sheet, rule, guard, change_kind)
     }
 
     /// Appends a new stylesheet to the current set.
@@ -1638,7 +1651,7 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
                 //
                 // NOTE(emilio): See the comment regarding on when this may
                 // break in visit_complex_selector.
-                self.mapped_ids.insert(id.clone());
+                self.mapped_ids.insert(id.0.clone());
             },
             _ => {},
         }
@@ -2050,7 +2063,7 @@ impl CascadeData {
                             self.part_rules
                                 .get_or_insert_with(|| Box::new(Default::default()))
                                 .for_insertion(pseudo_element)
-                                .try_entry(parts.last().unwrap().clone())?
+                                .try_entry(parts.last().unwrap().clone().0)?
                                 .or_insert_with(SmallVec::new)
                                 .try_push(rule)?;
                         } else {

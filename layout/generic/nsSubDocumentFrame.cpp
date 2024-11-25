@@ -193,7 +193,7 @@ void nsSubDocumentFrame::ShowViewer() {
       mCallingShow = false;
       mDidCreateDoc = didCreateDoc;
 
-      if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+      if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
         frameloader->UpdatePositionAndSize(this);
       }
     }
@@ -256,7 +256,7 @@ mozilla::PresShell* nsSubDocumentFrame::GetSubdocumentPresShellForPainting(
 }
 
 ScreenIntSize nsSubDocumentFrame::GetSubdocumentSize() {
-  if (GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     RefPtr<nsFrameLoader> frameloader = FrameLoader();
     if (frameloader) {
       nsCOMPtr<Document> oldContainerDoc;
@@ -688,9 +688,9 @@ LogicalSize nsSubDocumentFrame::ComputeAutoSize(
     const LogicalSize& aBorder, const LogicalSize& aPadding,
     ComputeSizeFlags aFlags) {
   if (!IsInline()) {
-    return nsFrame::ComputeAutoSize(aRenderingContext, aWM, aCBSize,
-                                    aAvailableISize, aMargin, aBorder, aPadding,
-                                    aFlags);
+    return nsIFrame::ComputeAutoSize(aRenderingContext, aWM, aCBSize,
+                                     aAvailableISize, aMargin, aBorder,
+                                     aPadding, aFlags);
   }
 
   const WritingMode wm = GetWritingMode();

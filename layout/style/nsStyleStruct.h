@@ -1219,7 +1219,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
  public:
   mozilla::StyleAppearance mDefaultAppearance;
-  mozilla::StyleButtonAppearance mButtonAppearance;
   mozilla::StylePositionProperty mPosition;
 
   mozilla::StyleFloat mFloat;
@@ -1329,6 +1328,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleAppearance EffectiveAppearance() const {
     switch (mAppearance) {
       case mozilla::StyleAppearance::Auto:
+      case mozilla::StyleAppearance::Button:
       case mozilla::StyleAppearance::Searchfield:
       case mozilla::StyleAppearance::Textarea:
       case mozilla::StyleAppearance::Checkbox:
@@ -1361,14 +1361,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
         // difference between menulist and menulist-button handling, we don't
         // bother.
         return mDefaultAppearance;
-      case mozilla::StyleAppearance::Button:
-        // `appearance: button` should behave like `auto` for a specific list
-        // of widget elements, and we encode that using the internal
-        // -moz-button-appearance property.
-        if (mButtonAppearance == mozilla::StyleButtonAppearance::Disallow) {
-          return mDefaultAppearance;
-        }
-        return mAppearance;
       default:
         return mAppearance;
     }
@@ -1494,10 +1486,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   }
 
   bool IsScrollableOverflow() const {
-    // mOverflowX and mOverflowY always match when one of them is
-    // Visible or MozHiddenUnscrollable.
+    // Visible and Clip can be combined but not with other values,
+    // so checking mOverflowX is enough.
     return mOverflowX != mozilla::StyleOverflow::Visible &&
-           mOverflowX != mozilla::StyleOverflow::MozHiddenUnscrollable;
+           mOverflowX != mozilla::StyleOverflow::Clip;
+  }
+
+  bool OverflowIsVisibleInBothAxis() const {
+    return mOverflowX == mozilla::StyleOverflow::Visible &&
+           mOverflowY == mozilla::StyleOverflow::Visible;
   }
 
   bool IsContainPaint() const {

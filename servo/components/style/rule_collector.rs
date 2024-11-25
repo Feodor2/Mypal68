@@ -13,7 +13,6 @@ use crate::selector_parser::PseudoElement;
 use crate::shared_lock::Locked;
 use crate::stylesheets::Origin;
 use crate::stylist::{AuthorStylesEnabled, Rule, RuleInclusion, Stylist};
-use crate::Atom;
 use selectors::matching::{ElementSelectorFlags, MatchingContext, MatchingMode};
 use servo_arc::ArcBorrow;
 use smallvec::SmallVec;
@@ -43,7 +42,7 @@ pub fn containing_shadow_ignoring_svg_use<E: TElement>(
     loop {
         let host = shadow.host();
         let host_is_svg_use_element =
-            host.is_svg_element() && host.local_name() == &*local_name!("use");
+            host.is_svg_element() && host.local_name() == &**local_name!("use");
         if !host_is_svg_use_element {
             return Some(shadow);
         }
@@ -53,11 +52,6 @@ pub fn containing_shadow_ignoring_svg_use<E: TElement>(
         );
         shadow = host.containing_shadow()?;
     }
-}
-
-#[inline]
-fn sort_rules_from(rules: &mut ApplicableDeclarationList, start: usize) {
-    rules[start..].sort_unstable_by_key(|block| (block.specificity, block.source_order()));
 }
 
 /// An object that we use with all the intermediate state needed for the
@@ -82,6 +76,7 @@ where
     flags_setter: &'a mut F,
     matches_user_and_author_rules: bool,
     matches_document_author_rules: bool,
+    in_sort_scope: bool,
 }
 
 impl<'a, 'b: 'a, E, F: 'a> RuleCollector<'a, 'b, E, F>
@@ -134,7 +129,34 @@ where
             rules,
             matches_user_and_author_rules,
             matches_document_author_rules: matches_user_and_author_rules,
+            in_sort_scope: false,
         }
+    }
+
+    /// Sets up the state necessary to collect rules from a given DOM tree
+    /// (either the document tree, or a shadow tree).
+    ///
+    /// All rules in the same tree need to be matched together, and this
+    /// function takes care of sorting them by specificity and source order.
+    #[inline]
+    fn in_tree(&mut self, host: Option<E>, f: impl FnOnce(&mut Self)) {
+        debug_assert!(!self.in_sort_scope, "Nested sorting makes no sense");
+        let start = self.rules.len();
+        self.in_sort_scope = true;
+        let old_host = self.context.current_host.take();
+        self.context.current_host = host.map(|e| e.opaque());
+        f(self);
+        if start != self.rules.len() {
+            self.rules[start..]
+                .sort_unstable_by_key(|block| (block.specificity, block.source_order()));
+        }
+        self.context.current_host = old_host;
+        self.in_sort_scope = false;
+    }
+
+    #[inline]
+    fn in_shadow_tree(&mut self, host: E, f: impl FnOnce(&mut Self)) {
+        self.in_tree(Some(host), f);
     }
 
     fn collect_stylist_rules(&mut self, origin: Origin) {
@@ -150,7 +172,9 @@ where
             None => return,
         };
 
-        self.collect_rules_internal(None, map, cascade_level);
+        self.in_tree(None, |collector| {
+            collector.collect_rules_in_map(map, cascade_level);
+        });
     }
 
     fn collect_user_agent_rules(&mut self) {
@@ -189,39 +213,30 @@ where
         }
     }
 
-    fn collect_rules_in_shadow_tree(
-        &mut self,
-        shadow_host: E,
-        map: &SelectorMap<Rule>,
-        cascade_level: CascadeLevel,
-    ) {
-        debug_assert!(shadow_host.shadow_root().is_some());
-        self.collect_rules_internal(Some(shadow_host), map, cascade_level);
+    #[inline]
+    fn collect_rules_in_list(&mut self, part_rules: &[Rule], cascade_level: CascadeLevel) {
+        debug_assert!(self.in_sort_scope, "Rules gotta be sorted");
+        SelectorMap::get_matching_rules(
+            self.element,
+            part_rules,
+            &mut self.rules,
+            &mut self.context,
+            &mut self.flags_setter,
+            cascade_level,
+        );
     }
 
     #[inline]
-    fn collect_rules_internal(
-        &mut self,
-        shadow_host: Option<E>,
-        map: &SelectorMap<Rule>,
-        cascade_level: CascadeLevel,
-    ) {
-        let element = self.element;
-        let rule_hash_target = self.rule_hash_target;
-        let rules = &mut self.rules;
-        let flags_setter = &mut self.flags_setter;
-        let start = rules.len();
-        self.context.with_shadow_host(shadow_host, |context| {
-            map.get_all_matching_rules(
-                element,
-                rule_hash_target,
-                rules,
-                context,
-                flags_setter,
-                cascade_level,
-            );
-        });
-        sort_rules_from(rules, start);
+    fn collect_rules_in_map(&mut self, map: &SelectorMap<Rule>, cascade_level: CascadeLevel) {
+        debug_assert!(self.in_sort_scope, "Rules gotta be sorted");
+        map.get_all_matching_rules(
+            self.element,
+            self.rule_hash_target,
+            &mut self.rules,
+            &mut self.context,
+            &mut self.flags_setter,
+            cascade_level,
+        );
     }
 
     /// Collects the rules for the ::slotted pseudo-element and the :host
@@ -258,17 +273,16 @@ where
                 None => continue,
             };
 
-            self.collect_rules_in_shadow_tree(
-                shadow.host(),
-                slotted_rules,
-                CascadeLevel::AuthorNormal {
+            self.in_shadow_tree(shadow.host(), |collector| {
+                let cascade_level = CascadeLevel::AuthorNormal {
                     shadow_cascade_order,
-                },
-            );
+                };
+                collector.collect_rules_in_map(slotted_rules, cascade_level);
+            });
         }
     }
 
-    fn collect_normal_rules_from_containing_shadow_tree(&mut self) {
+    fn collect_rules_from_containing_shadow_tree(&mut self) {
         if !self.matches_user_and_author_rules {
             return;
         }
@@ -281,11 +295,34 @@ where
 
         self.matches_document_author_rules = false;
 
-        let cascade_data = containing_shadow.style_data();
-        let host = containing_shadow.host();
-        if let Some(map) = cascade_data.and_then(|data| data.normal_rules(self.pseudo_element)) {
-            self.collect_rules_in_shadow_tree(host, map, CascadeLevel::same_tree_author_normal());
-        }
+        let cascade_data = match containing_shadow.style_data() {
+            Some(c) => c,
+            None => return,
+        };
+
+        let cascade_level = CascadeLevel::same_tree_author_normal();
+        self.in_shadow_tree(containing_shadow.host(), |collector| {
+            if let Some(map) = cascade_data.normal_rules(collector.pseudo_element) {
+                collector.collect_rules_in_map(map, cascade_level);
+            }
+
+            // Collect rules from :host::part() and such
+            let hash_target = collector.rule_hash_target;
+            if !hash_target.has_part_attr() {
+                return;
+            }
+
+            let part_rules = match cascade_data.part_rules(collector.pseudo_element) {
+                Some(p) => p,
+                None => return,
+            };
+
+            hash_target.each_part(|part| {
+                if let Some(part_rules) = part_rules.get(&part.0) {
+                    collector.collect_rules_in_list(part_rules, cascade_level);
+                }
+            });
+        });
     }
 
     /// Collects the rules for the :host pseudo-class.
@@ -311,13 +348,12 @@ where
         };
 
         let rule_hash_target = self.rule_hash_target;
-        self.collect_rules_in_shadow_tree(
-            rule_hash_target,
-            host_rules,
-            CascadeLevel::AuthorNormal {
+        self.in_shadow_tree(rule_hash_target, |collector| {
+            let cascade_level = CascadeLevel::AuthorNormal {
                 shadow_cascade_order,
-            },
-        );
+            };
+            collector.collect_rules_in_map(host_rules, cascade_level);
+        });
     }
 
     fn collect_document_author_rules(&mut self) {
@@ -328,7 +364,7 @@ where
         self.collect_stylist_rules(Origin::Author);
     }
 
-    fn collect_part_rules(&mut self) {
+    fn collect_part_rules_from_outer_trees(&mut self) {
         if !self.rule_hash_target.has_part_attr() {
             return;
         }
@@ -340,7 +376,7 @@ where
 
         let mut shadow_cascade_order = ShadowCascadeOrder::for_innermost_containing_tree();
 
-        let mut parts = SmallVec::<[Atom; 3]>::new();
+        let mut parts = SmallVec::<[_; 3]>::new();
         self.rule_hash_target.each_part(|p| parts.push(p.clone()));
 
         loop {
@@ -362,28 +398,16 @@ where
 
             if let Some(part_rules) = part_rules {
                 let containing_host = outer_shadow.map(|s| s.host());
-                let element = self.element;
-                let rules = &mut self.rules;
-                let flags_setter = &mut self.flags_setter;
                 let cascade_level = CascadeLevel::AuthorNormal {
                     shadow_cascade_order,
                 };
-                let start = rules.len();
-                self.context.with_shadow_host(containing_host, |context| {
+                self.in_tree(containing_host, |collector| {
                     for p in &parts {
-                        if let Some(part_rules) = part_rules.get(p) {
-                            SelectorMap::get_matching_rules(
-                                element,
-                                &part_rules,
-                                rules,
-                                context,
-                                flags_setter,
-                                cascade_level,
-                            );
+                        if let Some(part_rules) = part_rules.get(&p.0) {
+                            collector.collect_rules_in_list(part_rules, cascade_level);
                         }
                     }
                 });
-                sort_rules_from(rules, start);
                 shadow_cascade_order.inc();
             }
 
@@ -461,10 +485,10 @@ where
             return;
         }
         self.collect_host_and_slotted_rules();
-        self.collect_normal_rules_from_containing_shadow_tree();
+        self.collect_rules_from_containing_shadow_tree();
         self.collect_document_author_rules();
         self.collect_style_attribute();
-        self.collect_part_rules();
+        self.collect_part_rules_from_outer_trees();
         self.collect_animation_rules();
     }
 }

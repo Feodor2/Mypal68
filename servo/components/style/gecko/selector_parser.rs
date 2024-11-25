@@ -5,16 +5,16 @@
 //! Gecko-specific bits for selector-parsing.
 
 use crate::element_state::{DocumentState, ElementState};
-use crate::gecko_bindings::structs::{self, RawServoSelectorList};
+use crate::gecko_bindings::structs::RawServoSelectorList;
 use crate::gecko_bindings::sugar::ownership::{HasBoxFFI, HasFFI, HasSimpleFFI};
 use crate::invalidation::element::document_state::InvalidationMatchingData;
 use crate::selector_parser::{Direction, SelectorParser};
 use crate::str::starts_with_ignore_ascii_case;
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
-use crate::values::serialize_atom_identifier;
+use crate::values::{AtomIdent, AtomString};
 use cssparser::{BasicParseError, BasicParseErrorKind, Parser};
 use cssparser::{CowRcStr, SourceLocation, ToCss, Token};
-use selectors::parser::{SelectorParseErrorKind, ParseErrorRecovery};
+use selectors::parser::{ParseErrorRecovery, SelectorParseErrorKind};
 use selectors::SelectorList;
 use std::fmt;
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss as ToCss_};
@@ -36,7 +36,7 @@ bitflags! {
 }
 
 /// The type used to store the language argument to the `:lang` pseudo-class.
-pub type Lang = Atom;
+pub type Lang = AtomIdent;
 
 macro_rules! pseudo_class_name {
     ([$(($css:expr, $name:ident, $state:tt, $flags:tt),)*]) => {
@@ -69,7 +69,7 @@ impl ToCss for NonTSPseudoClass {
                     $(NonTSPseudoClass::$name => concat!(":", $css),)*
                     NonTSPseudoClass::Lang(ref s) => {
                         dest.write_str(":lang(")?;
-                        serialize_atom_identifier(s, dest)?;
+                        s.to_css(dest)?;
                         return dest.write_char(')');
                     },
                     NonTSPseudoClass::MozLocaleDir(ref dir) => {
@@ -229,12 +229,10 @@ pub struct SelectorImpl;
 
 impl ::selectors::SelectorImpl for SelectorImpl {
     type ExtraMatchingData = InvalidationMatchingData;
-    type AttrValue = Atom;
-    type Identifier = Atom;
-    type ClassName = Atom;
-    type PartName = Atom;
-    type LocalName = Atom;
-    type NamespacePrefix = Atom;
+    type AttrValue = AtomString;
+    type Identifier = AtomIdent;
+    type LocalName = AtomIdent;
+    type NamespacePrefix = AtomIdent;
     type NamespaceUrl = Namespace;
     type BorrowedNamespaceUrl = WeakNamespace;
     type BorrowedLocalName = WeakAtom;
@@ -344,7 +342,7 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
         let pseudo_class = match_ignore_ascii_case! { &name,
             "lang" => {
                 let name = parser.expect_ident_or_string()?;
-                NonTSPseudoClass::Lang(Atom::from(name.as_ref()))
+                NonTSPseudoClass::Lang(Lang::from(name.as_ref()))
             },
             "-moz-locale-dir" => {
                 NonTSPseudoClass::MozLocaleDir(Direction::parse(parser)?)
@@ -422,10 +420,10 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
     }
 
     fn default_namespace(&self) -> Option<Namespace> {
-        self.namespaces.default.as_ref().map(|ns| ns.clone())
+        self.namespaces.default.clone()
     }
 
-    fn namespace_for_prefix(&self, prefix: &Atom) -> Option<Namespace> {
+    fn namespace_for_prefix(&self, prefix: &AtomIdent) -> Option<Namespace> {
         self.namespaces.prefixes.get(prefix).cloned()
     }
 }

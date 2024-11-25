@@ -4,6 +4,7 @@
 
 //! Gecko's media-query device and expression representation.
 
+use crate::context::QuirksMode;
 use crate::custom_properties::CssEnvironment;
 use crate::gecko::values::{convert_nscolor_to_rgba, convert_rgba_to_nscolor};
 use crate::gecko_bindings::bindings;
@@ -18,8 +19,8 @@ use cssparser::RGBA;
 use euclid::default::Size2D;
 use euclid::Scale;
 use servo_arc::Arc;
-use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
+use std::fmt;
 use style_traits::viewport::ViewportConstraints;
 use style_traits::{CSSPixel, DevicePixel};
 
@@ -140,6 +141,11 @@ impl Device {
     pub fn set_root_font_size(&self, size: Au) {
         self.root_font_size
             .store(size.0 as isize, Ordering::Relaxed)
+    }
+
+    /// The quirks mode of the document.
+    pub fn quirks_mode(&self) -> QuirksMode {
+        self.document().mCompatMode.into()
     }
 
     /// Sets the body text color for the "inherit color from body" quirk.

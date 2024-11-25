@@ -466,14 +466,16 @@ bool nsHTMLScrollFrame::TryLayout(ScrollReflowInput* aState,
   nsSize visualViewportSize = scrollPortSize;
   mozilla::PresShell* presShell = PresShell();
   if (mHelper.mIsRoot && presShell->IsVisualViewportSizeSet()) {
-    nsSize compositionSize =
-        nsLayoutUtils::CalculateCompositionSizeForFrame(this, false);
+    visualViewportSize = nsLayoutUtils::CalculateCompositionSizeForFrame(
+        this, false, &layoutSize);
+
+    visualViewportSize = nsSize(
+        std::max(0, visualViewportSize.width - vScrollbarDesiredWidth),
+        std::max(0, visualViewportSize.height - hScrollbarDesiredHeight));
+
     float resolution = presShell->GetResolution();
-    compositionSize.width /= resolution;
-    compositionSize.height /= resolution;
-    visualViewportSize =
-        nsSize(std::max(0, compositionSize.width - vScrollbarDesiredWidth),
-               std::max(0, compositionSize.height - hScrollbarDesiredHeight));
+    visualViewportSize.width /= resolution;
+    visualViewportSize.height /= resolution;
   }
 
   nsRect overflowRect = aState->mContentsOverflowAreas.ScrollableOverflow();
@@ -756,7 +758,7 @@ bool nsHTMLScrollFrame::InInitialReflow() const {
   // end up auto-sizing so they don't overflow, and that the root basically
   // always needs a scrollbar if it did last time we loaded this page (good
   // assumption, because our initial reflow is no longer synchronous).
-  return !mHelper.mIsRoot && (GetStateBits() & NS_FRAME_FIRST_REFLOW);
+  return !mHelper.mIsRoot && HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
 }
 
 void nsHTMLScrollFrame::ReflowContents(ScrollReflowInput* aState,
@@ -863,10 +865,9 @@ void nsHTMLScrollFrame::PlaceScrollArea(ScrollReflowInput& aState,
   // Store the new overflow area. Note that this changes where an outline
   // of the scrolled frame would be painted, but scrolled frames can't have
   // outlines (the outline would go on this scrollframe instead).
-  // Using FinishAndStoreOverflow is needed so the overflow rect
-  // gets set correctly.  It also messes with the overflow rect in the
-  // -moz-hidden-unscrollable case, but scrolled frames can't have
-  // 'overflow' either.
+  // Using FinishAndStoreOverflow is needed so the overflow rect gets set
+  // correctly.  It also messes with the overflow rect in the 'clip' case, but
+  // scrolled frames can't have 'overflow' either.
   // This needs to happen before SyncFrameViewAfterReflow so
   // HasOverflowRect() will return the correct value.
   nsOverflowAreas overflow(scrolledArea, scrolledArea);
@@ -1180,7 +1181,7 @@ void nsHTMLScrollFrame::Reflow(nsPresContext* aPresContext,
   nsRect newScrolledAreaBounds =
       mHelper.mScrolledFrame->GetScrollableOverflowRectRelativeToParent();
   if (mHelper.mSkippedScrollbarLayout || reflowHScrollbar || reflowVScrollbar ||
-      reflowScrollCorner || (GetStateBits() & NS_FRAME_IS_DIRTY) ||
+      reflowScrollCorner || HasAnyStateBits(NS_FRAME_IS_DIRTY) ||
       didHaveHScrollbar != state.mShowHScrollbar ||
       didHaveVScrollbar != state.mShowVScrollbar ||
       !oldScrollAreaBounds.IsEqualEdges(newScrollAreaBounds) ||
@@ -2412,7 +2413,7 @@ static void AdjustViews(nsIFrame* aFrame) {
     return;
   }
 
-  if (!(aFrame->GetStateBits() & NS_FRAME_HAS_CHILD_WITH_VIEW)) {
+  if (!aFrame->HasAnyStateBits(NS_FRAME_HAS_CHILD_WITH_VIEW)) {
     return;
   }
 
@@ -4113,7 +4114,8 @@ ScrollStyles ScrollFrameHelper::GetScrollStylesFromFrame() const {
   }
 
   if (!mIsRoot) {
-    return ScrollStyles(*mOuter->StyleDisplay());
+    return ScrollStyles(*mOuter->StyleDisplay(),
+                        ScrollStyles::MapOverflowToValidScrollStyle);
   }
 
   ScrollStyles result = presContext->GetViewportScrollStylesOverride();
@@ -5721,7 +5723,7 @@ nsresult nsXULScrollFrame::XULLayout(nsBoxLayoutState& aState) {
     PresShell()->PostReflowCallback(&mHelper);
     mHelper.mPostedReflowCallback = true;
   }
-  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     mHelper.mHadNonInitialReflow = true;
   }
 
@@ -6278,7 +6280,7 @@ void ScrollFrameHelper::LayoutScrollbars(nsBoxLayoutState& aState,
   // reflow of a descendant.  (If the outer frame is dirty, the fixed
   // children will be re-laid out anyway)
   if (aOldScrollArea.Size() != mScrollPort.Size() &&
-      !(mOuter->GetStateBits() & NS_FRAME_IS_DIRTY) && mIsRoot) {
+      !mOuter->HasAnyStateBits(NS_FRAME_IS_DIRTY) && mIsRoot) {
     mMayHaveDirtyFixedChildren = true;
   }
 

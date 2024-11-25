@@ -99,8 +99,6 @@ enum class StyleDisplay : uint16_t {
       StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozStack),
   MozDeck =
       StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozDeck),
-  MozGroupbox = StyleDisplayFrom(StyleDisplayOutside::XUL,
-                                 StyleDisplayInside::MozGroupbox),
   MozPopup =
       StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozPopup),
 };

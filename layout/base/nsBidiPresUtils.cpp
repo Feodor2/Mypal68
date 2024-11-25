@@ -1195,7 +1195,7 @@ void nsBidiPresUtils::TraverseFrames(nsIFrame* aCurrentFrame,
     LayoutFrameType frameType = frame->Type();
     if (frame->IsFrameOfType(nsIFrame::eBidiInlineContainer) ||
         frameType == LayoutFrameType::Ruby) {
-      if (!(frame->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+      if (!frame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
         nsContainerFrame* c = static_cast<nsContainerFrame*>(frame);
         MOZ_ASSERT(c == do_QueryFrame(frame),
                    "eBidiInlineContainer and ruby frame must be"
@@ -1593,7 +1593,7 @@ void nsBidiPresUtils::IsFirstOrLast(nsIFrame* aFrame,
   }
 
   if ((aIsFirst || aIsLast) &&
-      (aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT)) {
+      aFrame->HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT)) {
     // For ib splits, don't treat anything except the last part as
     // endmost or anything except the first part as startmost.
     // As an optimization, only get the first continuation once.

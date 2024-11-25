@@ -12,7 +12,7 @@
 #include "mozilla/Unused.h"
 #include "nsDisplayList.h"
 #include "nsITheme.h"
-#include "nsFrame.h"
+#include "nsIFrame.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/Element.h"
 #include "Layers.h"
@@ -38,7 +38,7 @@ nsButtonFrameRenderer::~nsButtonFrameRenderer() {
   MOZ_COUNT_DTOR(nsButtonFrameRenderer);
 }
 
-void nsButtonFrameRenderer::SetFrame(nsFrame* aFrame,
+void nsButtonFrameRenderer::SetFrame(nsIFrame* aFrame,
                                      nsPresContext* aPresContext) {
   mFrame = aFrame;
   ReResolveStyles(aPresContext);

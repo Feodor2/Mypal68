@@ -17,7 +17,6 @@
 #include "nsCSSClipPathInstance.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsDisplayList.h"
-#include "nsFilterInstance.h"
 #include "nsFrameList.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
@@ -30,22 +29,22 @@
 #include "SVGAnimatedLength.h"
 #include "nsSVGClipPathFrame.h"
 #include "nsSVGContainerFrame.h"
-#include "SVGContentUtils.h"
 #include "nsSVGDisplayableFrame.h"
-#include "nsSVGFilterPaintCallback.h"
-#include "nsSVGForeignObjectFrame.h"
-#include "SVGGeometryFrame.h"
-#include "nsSVGInnerSVGFrame.h"
+#include "SVGFilterPaintCallback.h"
 #include "nsSVGIntegrationUtils.h"
-#include "nsSVGMaskFrame.h"
-#include "SVGObserverUtils.h"
 #include "nsSVGOuterSVGFrame.h"
 #include "nsSVGPaintServerFrame.h"
-#include "SVGTextFrame.h"
 #include "nsTextFrame.h"
+#include "mozilla/FilterInstance.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_svg.h"
+#include "mozilla/SVGContentUtils.h"
 #include "mozilla/SVGContextPaint.h"
+#include "mozilla/SVGForeignObjectFrame.h"
+#include "mozilla/SVGGeometryFrame.h"
+#include "mozilla/SVGMaskFrame.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGTextFrame.h"
 #include "mozilla/Unused.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PatternHelpers.h"
@@ -112,7 +111,7 @@ bool SVGAutoRenderState::IsPaintingToWindow(DrawTarget* aDrawTarget) {
 
 nsRect nsSVGUtils::GetPostFilterVisualOverflowRect(
     nsIFrame* aFrame, const nsRect& aPreFilterRect) {
-  MOZ_ASSERT(aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT,
+  MOZ_ASSERT(aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT),
              "Called on invalid frame type");
 
   // Note: we do not return here for eHasNoRefs since we must still handle any
@@ -128,8 +127,7 @@ nsRect nsSVGUtils::GetPostFilterVisualOverflowRect(
     return aPreFilterRect;
   }
 
-  return nsFilterInstance::GetPostFilterBounds(aFrame, nullptr,
-                                               &aPreFilterRect);
+  return FilterInstance::GetPostFilterBounds(aFrame, nullptr, &aPreFilterRect);
 }
 
 bool nsSVGUtils::OuterSVGIsCallingReflowSVG(nsIFrame* aFrame) {
@@ -161,11 +159,11 @@ void nsSVGUtils::ScheduleReflowSVG(nsIFrame* aFrame) {
   // calls InvalidateBounds) or nsSVGDisplayContainerFrame::InsertFrames
   // (at which point the frame has no observers).
 
-  if (aFrame->GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     return;
   }
 
-  if (aFrame->GetStateBits() & (NS_FRAME_IS_DIRTY | NS_FRAME_FIRST_REFLOW)) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_FIRST_REFLOW)) {
     // Nothing to do if we're already dirty, or if the outer-<svg>
     // hasn't yet had its initial reflow.
     return;
@@ -182,8 +180,7 @@ void nsSVGUtils::ScheduleReflowSVG(nsIFrame* aFrame) {
 
     nsIFrame* f = aFrame->GetParent();
     while (f && !f->IsSVGOuterSVGFrame()) {
-      if (f->GetStateBits() &
-          (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN)) {
+      if (f->HasAnyStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN)) {
         return;
       }
       f->AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
@@ -198,7 +195,7 @@ void nsSVGUtils::ScheduleReflowSVG(nsIFrame* aFrame) {
                "Did not find nsSVGOuterSVGFrame!");
   }
 
-  if (outerSVGFrame->GetStateBits() & NS_FRAME_IN_REFLOW) {
+  if (outerSVGFrame->HasAnyStateBits(NS_FRAME_IN_REFLOW)) {
     // We're currently under an nsSVGOuterSVGFrame::Reflow call so there is no
     // need to call PresShell::FrameNeedsReflow, since we have an
     // nsSVGOuterSVGFrame::DidReflow call pending.
@@ -301,7 +298,7 @@ nsIFrame* nsSVGUtils::GetOuterSVGFrameAndCoveredRegion(nsIFrame* aFrame,
     return nullptr;
   }
 
-  if (aFrame->GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     *aRect = nsRect(0, 0, 0, 0);
   } else {
     uint32_t flags =
@@ -349,7 +346,7 @@ gfxMatrix nsSVGUtils::GetCanvasTM(nsIFrame* aFrame) {
 
   LayoutFrameType type = aFrame->Type();
   if (type == LayoutFrameType::SVGForeignObject) {
-    return static_cast<nsSVGForeignObjectFrame*>(aFrame)->GetCanvasTM();
+    return static_cast<SVGForeignObjectFrame*>(aFrame)->GetCanvasTM();
   }
   if (type == LayoutFrameType::SVGOuterSVG) {
     return GetCSSPxToDevPxMatrix(aFrame);
@@ -383,7 +380,7 @@ void nsSVGUtils::NotifyChildrenOfSVGChange(nsIFrame* aFrame, uint32_t aFlags) {
 
 // ************************************************************
 
-class SVGPaintCallback : public nsSVGFilterPaintCallback {
+class SVGPaintCallback : public SVGFilterPaintCallback {
  public:
   virtual void Paint(gfxContext& aContext, nsIFrame* aTarget,
                      const gfxMatrix& aTransform, const nsIntRect* aDirtyRect,
@@ -436,7 +433,7 @@ void nsSVGUtils::DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
 
   const nsStyleSVGReset* svgReset = firstFrame->StyleSVGReset();
 
-  nsTArray<nsSVGMaskFrame*> maskFrames;
+  nsTArray<SVGMaskFrame*> maskFrames;
   // XXX check return value?
   SVGObserverUtils::GetAndObserveMasks(firstFrame, &maskFrames);
   aUsage.shouldGenerateMaskLayer = (maskFrames.Length() > 0);
@@ -537,7 +534,7 @@ class MixModeBlender {
     // SetupContextMatrix, a pair of save/restore is needed.)
     gfxContextAutoSaveRestore saver(mSourceCtx);
 
-    if (!(mFrame->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
+    if (!mFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
       // aFrame has a valid visual overflow rect, so clip to it before calling
       // PushGroup() to minimize the size of the surfaces we'll composite:
       gfxContextMatrixAutoSaveRestore matrixAutoSaveRestore(mSourceCtx);
@@ -576,7 +573,7 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
                                        imgDrawingParams& aImgParams,
                                        const nsIntRect* aDirtyRect) {
   NS_ASSERTION(!NS_SVGDisplayListPaintingEnabled() ||
-                   (aFrame->GetStateBits() & NS_FRAME_IS_NONDISPLAY) ||
+                   aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
                    aFrame->PresContext()->Document()->IsSVGGlyphsDocument(),
                "If display lists are enabled, only painting of non-display "
                "SVG should take this code path");
@@ -598,7 +595,7 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     return;
   }
 
-  if (aDirtyRect && !(aFrame->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
+  if (aDirtyRect && !aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     // Here we convert aFrame's paint bounds to outer-<svg> device space,
     // compare it to aDirtyRect, and return early if they don't intersect.
     // We don't do this optimization for nondisplay SVG since nondisplay
@@ -650,7 +647,7 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
   /* Properties are added lazily and may have been removed by a restyle,
      so make sure all applicable ones are set again. */
   nsSVGClipPathFrame* clipPathFrame;
-  nsTArray<nsSVGMaskFrame*> maskFrames;
+  nsTArray<SVGMaskFrame*> maskFrames;
   // TODO: We currently pass nullptr instead of an nsTArray* here, but we
   // actually should get the filter frames and then pass them into
   // PaintFilteredFrame below!  See bug 1494263.
@@ -664,7 +661,7 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     return;
   }
 
-  nsSVGMaskFrame* maskFrame = maskFrames.IsEmpty() ? nullptr : maskFrames[0];
+  SVGMaskFrame* maskFrame = maskFrames.IsEmpty() ? nullptr : maskFrames[0];
 
   MixModeBlender blender(aFrame, &aContext);
   gfxContext* target = blender.ShouldCreateDrawTargetForBlend()
@@ -695,9 +692,8 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     if (maskUsage.shouldGenerateMaskLayer && maskFrame) {
       StyleMaskMode maskMode =
           aFrame->StyleSVGReset()->mMask.mLayers[0].mMaskMode;
-      nsSVGMaskFrame::MaskParams params(&aContext, aFrame, aTransform,
-                                        maskUsage.opacity, maskMode,
-                                        aImgParams);
+      SVGMaskFrame::MaskParams params(&aContext, aFrame, aTransform,
+                                      maskUsage.opacity, maskMode, aImgParams);
       // We want the mask to be untransformed so use the inverse of the current
       // transform as the maskTransform to compensate.
       maskTransform = aContext.CurrentMatrix();
@@ -707,7 +703,7 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
 
       if (!maskSurface) {
         // Either entire surface is clipped out, or gfx buffer allocation
-        // failure in nsSVGMaskFrame::GetMaskForMaskedFrame.
+        // failure in SVGMaskFrame::GetMaskForMaskedFrame.
         return;
       }
       shouldPushMask = true;
@@ -793,8 +789,8 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
                             target->CurrentMatrixDouble());
 
     SVGPaintCallback paintCallback;
-    nsFilterInstance::PaintFilteredFrame(aFrame, target, &paintCallback,
-                                         dirtyRegion, aImgParams);
+    FilterInstance::PaintFilteredFrame(aFrame, target, &paintCallback,
+                                       dirtyRegion, aImgParams);
   } else {
     svgFrame->PaintSVG(*target, aTransform, aImgParams, aDirtyRect);
   }
@@ -990,7 +986,7 @@ gfxRect nsSVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
   }
 
   nsSVGDisplayableFrame* svg = do_QueryFrame(aFrame);
-  const bool hasSVGLayout = aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT;
+  const bool hasSVGLayout = aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT);
   if (hasSVGLayout && !svg) {
     // An SVG frame, but not one that can be displayed directly (for
     // example, nsGradientFrame). These can't contribute to the bbox.
@@ -1114,7 +1110,7 @@ gfxRect nsSVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
 }
 
 gfxPoint nsSVGUtils::FrameSpaceInCSSPxToUserSpaceOffset(nsIFrame* aFrame) {
-  if (!(aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT)) {
+  if (!aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     // The user space for non-SVG frames is defined as the bounding box of the
     // frame's border-box rects over all continuations.
     return gfxPoint();
@@ -1178,7 +1174,7 @@ gfxRect nsSVGUtils::GetRelativeRect(uint16_t aUnits,
 }
 
 bool nsSVGUtils::CanOptimizeOpacity(nsIFrame* aFrame) {
-  if (!(aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT)) {
+  if (!aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     return false;
   }
   LayoutFrameType type = aFrame->Type();

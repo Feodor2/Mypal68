@@ -186,7 +186,7 @@ nsresult nsRootBoxFrame::HandleEvent(nsPresContext* aPresContext,
   }
 
   if (aEvent->mMessage == eMouseUp) {
-    nsFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
+    nsIFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
   }
 
   return NS_OK;

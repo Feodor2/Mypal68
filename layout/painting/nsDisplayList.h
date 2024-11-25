@@ -395,7 +395,7 @@ class nsDisplayListBuilder {
    * wrong result, being different from the result of appling with
    * effective transform directly.
    *
-   * nsFrame::BuildDisplayListForStackingContext() uses
+   * nsIFrame::BuildDisplayListForStackingContext() uses
    * AutoPreserves3DContext to install an instance on the builder.
    *
    * \see AutoAccumulateTransform, AutoAccumulateRect,
@@ -657,6 +657,16 @@ class nsDisplayListBuilder {
    */
   void SetPaintingToWindow(bool aToWindow) { mIsPaintingToWindow = aToWindow; }
   bool IsPaintingToWindow() const { return mIsPaintingToWindow; }
+  /**
+   * Call this if we're using high quality scaling for image decoding.
+   * It is also implied by IsPaintingToWindow.
+   */
+  void SetUseHighQualityScaling(bool aUseHighQualityScaling) {
+    mUseHighQualityScaling = aUseHighQualityScaling;
+  }
+  bool UseHighQualityScaling() const {
+    return mIsPaintingToWindow || mUseHighQualityScaling;
+  }
 #ifdef MOZ_BUILD_WEBRENDER
   /**
    * Call this if we're doing painting for WebRender
@@ -970,8 +980,7 @@ class nsDisplayListBuilder {
    * rect, because it may have out-of-flows that do so.
    */
   bool ShouldDescendIntoFrame(nsIFrame* aFrame, bool aVisible) const {
-    return (aFrame->GetStateBits() &
-            NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO) ||
+    return aFrame->HasAnyStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO) ||
            (aVisible && aFrame->ForceDescendIntoIfVisible()) ||
            GetIncludeAllOutOfFlows();
   }
@@ -1994,6 +2003,7 @@ class nsDisplayListBuilder {
   bool mIsInChromePresContext;
   bool mSyncDecodeImages;
   bool mIsPaintingToWindow;
+  bool mUseHighQualityScaling;
 #ifdef MOZ_BUILD_WEBRENDER
   bool mIsPaintingForWebRender;
 #endif
@@ -4135,7 +4145,7 @@ class nsDisplayGeneric : public nsPaintedDisplayItem {
 #if defined(MOZ_REFLOW_PERF_DSP) && defined(MOZ_REFLOW_PERF)
 /**
  * This class implements painting of reflow counts.  Ideally, we would simply
- * make all the frame names be those returned by nsFrame::GetFrameName
+ * make all the frame names be those returned by nsIFrame::GetFrameName
  * (except that tosses in the content tag name!)  and support only one color
  * and eliminate this class altogether in favor of nsDisplayGeneric, but for
  * the time being we can't pass args to a PaintCallback, so just have a

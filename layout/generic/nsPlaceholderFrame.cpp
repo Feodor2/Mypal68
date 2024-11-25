@@ -39,7 +39,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsPlaceholderFrame)
 #ifdef DEBUG
 NS_QUERYFRAME_HEAD(nsPlaceholderFrame)
   NS_QUERYFRAME_ENTRY(nsPlaceholderFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
 #endif
 
 /* virtual */
@@ -111,8 +111,8 @@ void nsPlaceholderFrame::Reflow(nsPresContext* aPresContext,
   // We should be getting reflowed before our out-of-flow.
   // If this is our first reflow, and our out-of-flow has already received its
   // first reflow (before us), complain.
-  if ((GetStateBits() & NS_FRAME_FIRST_REFLOW) &&
-      !(mOutOfFlowFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW) &&
+      !mOutOfFlowFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // Unfortunately, this can currently happen when the placeholder is in a
     // later continuation or later IB-split sibling than its out-of-flow (as
     // is the case in some of our existing unit tests). So for now, in that
@@ -172,7 +172,7 @@ void nsPlaceholderFrame::DestroyFrom(nsIFrame* aDestructRoot,
     // If aDestructRoot is not an ancestor of the out-of-flow frame,
     // then call RemoveFrame on it here.
     // Also destroy it here if it's a popup frame. (Bug 96291)
-    if ((GetStateBits() & PLACEHOLDER_FOR_POPUP) ||
+    if (HasAnyStateBits(PLACEHOLDER_FOR_POPUP) ||
         !nsLayoutUtils::IsProperAncestorFrame(aDestructRoot, oof)) {
       ChildListID listId = ChildListIDForOutOfFlow(GetStateBits(), oof);
       nsFrameManager* fm = PresContext()->FrameConstructor();
@@ -181,7 +181,7 @@ void nsPlaceholderFrame::DestroyFrom(nsIFrame* aDestructRoot,
     // else oof will be destroyed by its parent
   }
 
-  nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsIFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 /* virtual */

@@ -425,7 +425,7 @@ void nsComboboxControlFrame::ReflowDropdown(nsPresContext* aPresContext,
       std::max(kidReflowInput.ComputedISize(), forcedISize));
 
   // ensure we start off hidden
-  if (!mDroppedDown && GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (!mDroppedDown && HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     nsView* view = mDropdownFrame->GetView();
     nsViewManager* viewManager = view->GetViewManager();
     viewManager->SetViewVisibility(view, nsViewVisibility_kHide);
@@ -664,7 +664,7 @@ void nsComboboxControlFrame::NotifyGeometryChange() {
   // We don't need to resize if we're not dropped down since ShowDropDown
   // does that, or if we're dirty then the reflow callback does it,
   // or if we have a delayed ShowDropDown pending.
-  if (IsDroppedDown() && !(GetStateBits() & NS_FRAME_IS_DIRTY) &&
+  if (IsDroppedDown() && !HasAnyStateBits(NS_FRAME_IS_DIRTY) &&
       !mDelayedShowDropDown) {
     // Async because we're likely in a middle of a scroll here so
     // frame/view positions are in flux.
@@ -1097,7 +1097,7 @@ nsresult nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
 #endif
 
   // If we have style that affects how we are selected, feed event down to
-  // nsFrame::HandleEvent so that selection takes place when appropriate.
+  // nsIFrame::HandleEvent so that selection takes place when appropriate.
   if (IsContentDisabled()) {
     return nsBlockFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
   }

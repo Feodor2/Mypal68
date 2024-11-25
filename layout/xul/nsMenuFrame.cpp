@@ -381,7 +381,7 @@ nsresult nsMenuFrame::HandleEvent(nsPresContext* aPresContext,
     }
 #endif
   } else if (aEvent->mMessage == eMouseDown &&
-             aEvent->AsMouseEvent()->mButton == MouseButton::eLeft &&
+             aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary &&
              !IsDisabled() && IsMenu()) {
     // The menu item was selected. Bring up the menu.
     // We have children.
@@ -398,7 +398,7 @@ nsresult nsMenuFrame::HandleEvent(nsPresContext* aPresContext,
   } else if (
 #ifndef NSCONTEXTMENUISMOUSEUP
       (aEvent->mMessage == eMouseUp &&
-       aEvent->AsMouseEvent()->mButton == MouseButton::eRight) &&
+       aEvent->AsMouseEvent()->mButton == MouseButton::eSecondary) &&
 #else
       aEvent->mMessage == eContextMenu &&
 #endif
@@ -418,7 +418,7 @@ nsresult nsMenuFrame::HandleEvent(nsPresContext* aPresContext,
       Execute(aEvent);
     }
   } else if (aEvent->mMessage == eMouseUp &&
-             aEvent->AsMouseEvent()->mButton == MouseButton::eLeft &&
+             aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary &&
              !IsMenu() && !IsDisabled()) {
     // Execute the execute event handler.
     *aEventStatus = nsEventStatus_eConsumeNoDefault;

@@ -229,8 +229,6 @@ nsIFrame* NS_NewImageBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsIFrame* NS_NewTextBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
-nsIFrame* NS_NewGroupBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
-
 nsIFrame* NS_NewButtonBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsIFrame* NS_NewSplitterFrame(PresShell* aPresShell, ComputedStyle* aStyle);
@@ -452,7 +450,7 @@ static void ReparentFrames(nsCSSFrameConstructor* aFrameConstructor,
 // more easily.
 
 static inline bool IsFramePartOfIBSplit(nsIFrame* aFrame) {
-  bool result = (aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) != 0;
+  bool result = aFrame->HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT);
   MOZ_ASSERT(!result || static_cast<nsBlockFrame*>(do_QueryFrame(aFrame)) ||
                  static_cast<nsInlineFrame*>(do_QueryFrame(aFrame)),
              "only block/inline frames can have NS_FRAME_PART_OF_IBSPLIT");
@@ -1263,7 +1261,7 @@ MOZ_NEVER_INLINE void nsFrameConstructorState::ProcessFrameInsertions(
   // is set) and doesn't have any frames in the aChildListID child list yet.
   const nsFrameList& childList = containingBlock->GetChildList(aChildListID);
   if (childList.IsEmpty() &&
-      (containingBlock->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+      containingBlock->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // If we're injecting absolutely positioned frames, inject them on the
     // absolute containing block
     if (aChildListID == containingBlock->GetAbsoluteListID()) {
@@ -1397,7 +1395,7 @@ nsFrameConstructorSaveState::~nsFrameConstructorSaveState() {
 /**
  * Moves aFrameList from aOldParent to aNewParent.  This updates the parent
  * pointer of the frames in the list, and reparents their views as needed.
- * nsFrame::SetParent sets the NS_FRAME_HAS_VIEW bit on aNewParent and its
+ * nsIFrame::SetParent sets the NS_FRAME_HAS_VIEW bit on aNewParent and its
  * ancestors as needed. Then it sets the list as the initial child list
  * on aNewParent, unless aNewParent either already has kids or has been
  * reflowed; in that case it appends the new frames.  Note that this
@@ -1424,7 +1422,7 @@ static void MoveChildrenTo(nsIFrame* aOldParent, nsContainerFrame* aNewParent,
   }
 
   if (aNewParent->PrincipalChildList().IsEmpty() &&
-      (aNewParent->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+      aNewParent->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     aNewParent->SetInitialChildList(kPrincipalList, aFrameList);
   } else {
     aNewParent->AppendFrames(kPrincipalList, aFrameList);
@@ -1514,7 +1512,7 @@ nsCSSFrameConstructor::nsCSSFrameConstructor(Document* aDocument,
 }
 
 void nsCSSFrameConstructor::NotifyDestroyingFrame(nsIFrame* aFrame) {
-  if (aFrame->GetStateBits() & NS_FRAME_GENERATED_CONTENT) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT)) {
     if (mQuoteList.DestroyNodesFor(aFrame)) QuotesDirty();
   }
 
@@ -2317,7 +2315,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
     // We need to copy <body>'s WritingMode to mDocElementContainingBlock before
     // construct mRootElementFrame so that anonymous internal frames such as
     // <html> with table style can copy their parent frame's mWritingMode in
-    // nsFrame::Init().
+    // nsIFrame::Init().
     MOZ_ASSERT(!mRootElementFrame,
                "We need to copy <body>'s principal writing-mode before "
                "constructing mRootElementFrame.");
@@ -2732,7 +2730,7 @@ void nsCSSFrameConstructor::SetUpDocElementContainingBlock(
     mHasRootAbsPosContainingBlock = true;
   }
 
-  if (viewportFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (viewportFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     SetInitialSingleChild(viewportFrame, newFrame);
   } else {
     nsFrameList newFrameList(newFrame, newFrame);
@@ -4044,8 +4042,7 @@ static bool IsXULDisplayType(const nsStyleDisplay* aDisplay) {
           aDisplay->mDisplay == StyleDisplay::MozGridGroup ||
           aDisplay->mDisplay == StyleDisplay::MozGridLine ||
           aDisplay->mDisplay == StyleDisplay::MozDeck ||
-          aDisplay->mDisplay == StyleDisplay::MozPopup ||
-          aDisplay->mDisplay == StyleDisplay::MozGroupbox);
+          aDisplay->mDisplay == StyleDisplay::MozPopup);
 #else
   return false;
 #endif
@@ -4586,11 +4583,6 @@ nsCSSFrameConstructor::FindDisplayData(const nsStyleDisplay& aDisplay,
           SIMPLE_XUL_FCDATA(NS_NewDeckFrame);
       return &data;
     }
-    case StyleDisplayInside::MozGroupbox: {
-      static const FrameConstructionData data =
-          SCROLLABLE_XUL_FCDATA(NS_NewGroupBoxFrame);
-      return &data;
-    }
     case StyleDisplayInside::MozPopup: {
       static const FrameConstructionData data =
           FCDATA_DECL(FCDATA_DISALLOW_OUT_OF_FLOW | FCDATA_IS_POPUP |
@@ -4666,7 +4658,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructNonScrollableBlockWithConstructor(
   // We want a block formatting context root in paginated contexts for
   // every block that would be scrollable in a non-paginated context.
   // We mark our blocks with a bit here if this condition is true, so
-  // we can check it later in nsFrame::ApplyPaginatedOverflowClipping.
+  // we can check it later in nsIFrame::ApplyPaginatedOverflowClipping.
   bool clipPaginatedOverflow =
       (aItem.mFCData->mBits & FCDATA_FORCED_NON_SCROLLABLE_BLOCK) != 0;
   nsFrameState flags = nsFrameState(0);
@@ -4754,7 +4746,7 @@ void nsCSSFrameConstructor::FlushAccumulatedBlock(
   auto anonPseudo = PseudoStyleType::mozMathMLAnonymousBlock;
 
   ComputedStyle* parentContext =
-      nsFrame::CorrectStyleParentFrame(aParentFrame, anonPseudo)->Style();
+      nsIFrame::CorrectStyleParentFrame(aParentFrame, anonPseudo)->Style();
   ServoStyleSet* styleSet = mPresShell->StyleSet();
   RefPtr<ComputedStyle> blockContext;
   blockContext =
@@ -6233,7 +6225,7 @@ nsIFrame* nsCSSFrameConstructor::AdjustSiblingFrame(
     return nullptr;
   }
 
-  if (aSibling->GetStateBits() & NS_FRAME_OUT_OF_FLOW) {
+  if (aSibling->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
     aSibling = aSibling->GetPlaceholderFrame();
     MOZ_ASSERT(aSibling);
   }
@@ -7239,7 +7231,7 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
       if (insertion.mParentFrame->IsLetterFrame()) {
         // If insertion.mParentFrame is out of flow, then we actually want the
         // parent of the placeholder frame.
-        if (insertion.mParentFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) {
+        if (insertion.mParentFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
           nsPlaceholderFrame* placeholderFrame =
               insertion.mParentFrame->GetPlaceholderFrame();
           NS_ASSERTION(placeholderFrame, "No placeholder for out-of-flow?");
@@ -7635,7 +7627,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
     // wrapper frame.)
     nsIFrame* grandparentFrame = parentFrame->GetParent();
     if (grandparentFrame && grandparentFrame->IsXULBoxFrame() &&
-        (grandparentFrame->GetStateBits() & NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK) &&
+        grandparentFrame->HasAnyStateBits(NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK) &&
         // check if this frame is the only one needing wrapping
         aChild == AnyKidsNeedBlockParent(
                       parentFrame->PrincipalChildList().FirstChild()) &&
@@ -7657,7 +7649,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
     // Examine the containing-block for the removed content and see if
     // :first-letter style applies.
     nsIFrame* inflowChild = childFrame;
-    if (childFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) {
+    if (childFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
       inflowChild = childFrame->GetPlaceholderFrame();
       NS_ASSERTION(inflowChild, "No placeholder for out-of-flow?");
     }
@@ -7711,7 +7703,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
 #endif
 
     // Notify the parent frame that it should delete the frame
-    if (childFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) {
+    if (childFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
       childFrame = childFrame->GetPlaceholderFrame();
       NS_ASSERTION(childFrame, "Missing placeholder frame for out of flow.");
       parentFrame = childFrame->GetParent();
@@ -8111,14 +8103,14 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
   } else if (LayoutFrameType::TableRowGroup == frameType) {
     newFrame = NS_NewTableRowGroupFrame(mPresShell, computedStyle);
     newFrame->Init(content, aParentFrame, aFrame);
-    if (newFrame->GetStateBits() & NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN) {
+    if (newFrame->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
       nsTableFrame::RegisterPositionedTablePart(newFrame);
     }
   } else if (LayoutFrameType::TableRow == frameType) {
     nsTableRowFrame* rowFrame = NS_NewTableRowFrame(mPresShell, computedStyle);
 
     rowFrame->Init(content, aParentFrame, aFrame);
-    if (rowFrame->GetStateBits() & NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN) {
+    if (rowFrame->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
       nsTableFrame::RegisterPositionedTablePart(rowFrame);
     }
 
@@ -8148,7 +8140,7 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
         NS_NewTableCellFrame(mPresShell, computedStyle, tableFrame);
 
     cellFrame->Init(content, aParentFrame, aFrame);
-    if (cellFrame->GetStateBits() & NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN) {
+    if (cellFrame->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
       nsTableFrame::RegisterPositionedTablePart(cellFrame);
     }
 
@@ -8208,7 +8200,7 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
   }
 
   // If a continuing frame needs to carry frame state bits from its previous
-  // continuation or parent, set them in nsFrame::Init(), or in any derived
+  // continuation or parent, set them in nsIFrame::Init(), or in any derived
   // frame class's Init() if the bits are belong to specific group.
 
   if (nextInFlow) {
@@ -8218,6 +8210,9 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
     nextContinuation->SetPrevContinuation(newFrame);
     newFrame->SetNextContinuation(nextContinuation);
   }
+
+  // aFrame cannot be a dynamic reflow root because it has a continuation now.
+  aFrame->RemoveStateBits(NS_FRAME_DYNAMIC_REFLOW_ROOT);
 
   MOZ_ASSERT(!newFrame->GetNextSibling(), "unexpected sibling");
   return newFrame;
@@ -8365,7 +8360,7 @@ bool nsCSSFrameConstructor::MaybeRecreateContainerForFrameRemoval(
   MOZ_ASSERT(aFrame == aFrame->FirstContinuation(),
              "aFrame not the result of GetPrimaryFrame()?");
 
-  nsIFrame* inFlowFrame = (aFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW)
+  nsIFrame* inFlowFrame = aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)
                               ? aFrame->GetPlaceholderFrame()
                               : aFrame;
   MOZ_ASSERT(inFlowFrame, "How did that happen?");
@@ -8763,7 +8758,7 @@ bool nsCSSFrameConstructor::HasFirstLetterStyle(nsIFrame* aBlockFrame) {
   MOZ_ASSERT(aBlockFrame, "Need a frame");
   NS_ASSERTION(aBlockFrame->IsBlockFrameOrSubclass(), "Not a block frame?");
 
-  return (aBlockFrame->GetStateBits() & NS_BLOCK_HAS_FIRST_LETTER_STYLE) != 0;
+  return aBlockFrame->HasAnyStateBits(NS_BLOCK_HAS_FIRST_LETTER_STYLE);
 }
 
 bool nsCSSFrameConstructor::ShouldHaveFirstLineStyle(
@@ -9693,7 +9688,7 @@ void nsCSSFrameConstructor::ProcessChildren(
 
     if (aCanHaveGeneratedContent) {
       auto* styleParentFrame =
-          nsFrame::CorrectStyleParentFrame(aFrame, PseudoStyleType::NotPseudo);
+          nsIFrame::CorrectStyleParentFrame(aFrame, PseudoStyleType::NotPseudo);
       computedStyle = styleParentFrame->Style();
       if (computedStyle->StyleDisplay()->IsListItem() &&
           (listItem = do_QueryFrame(aFrame)) &&
@@ -9868,7 +9863,7 @@ void nsCSSFrameConstructor::WrapFramesInFirstLineFrame(
 
   if (!aLineFrame) {
     // Create line frame
-    ComputedStyle* parentStyle = nsFrame::CorrectStyleParentFrame(
+    ComputedStyle* parentStyle = nsIFrame::CorrectStyleParentFrame(
                                      aBlockFrame, PseudoStyleType::firstLine)
                                      ->Style();
     RefPtr<ComputedStyle> firstLineStyle =
@@ -9891,7 +9886,7 @@ void nsCSSFrameConstructor::WrapFramesInFirstLineFrame(
   // Give the inline frames to the lineFrame <b>after</b> reparenting them
   ReparentFrames(this, aLineFrame, firstLineChildren, true);
   if (aLineFrame->PrincipalChildList().IsEmpty() &&
-      (aLineFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+      aLineFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     aLineFrame->SetInitialChildList(kPrincipalList, firstLineChildren);
   } else {
     AppendFrames(aLineFrame, kPrincipalList, firstLineChildren);
@@ -10095,7 +10090,7 @@ void nsCSSFrameConstructor::CreateLetterFrame(
   // Get a ComputedStyle for the first-letter-frame.
   //
   // Keep this in sync with nsBlockFrame::UpdatePseudoElementStyles.
-  nsIFrame* parentFrame = nsFrame::CorrectStyleParentFrame(
+  nsIFrame* parentFrame = nsIFrame::CorrectStyleParentFrame(
       aParentFrame, PseudoStyleType::firstLetter);
 
   ComputedStyle* parentComputedStyle = parentFrame->Style();
@@ -10110,7 +10105,7 @@ void nsCSSFrameConstructor::CreateLetterFrame(
 
   if (sc) {
     if (parentFrame->IsLineFrame()) {
-      nsIFrame* parentIgnoringFirstLine = nsFrame::CorrectStyleParentFrame(
+      nsIFrame* parentIgnoringFirstLine = nsIFrame::CorrectStyleParentFrame(
           aBlockFrame, PseudoStyleType::firstLetter);
 
       sc = mPresShell->StyleSet()->ReparentComputedStyle(
@@ -11135,7 +11130,7 @@ void nsCSSFrameConstructor::CreateIBSiblings(nsFrameConstructorState& aState,
         // blockFrame later, we manually add the bit earlier here to make all
         // the continuations of blockFrame created in
         // CreateColumnSpanSiblings(), i.e. non-column-span wrappers, have the
-        // bit via nsFrame::Init().
+        // bit via nsIFrame::Init().
         blockFrame->AddStateBits(NS_FRAME_PART_OF_IBSPLIT);
 
         nsFrameList columnSpanSiblings =
@@ -11343,7 +11338,7 @@ bool nsCSSFrameConstructor::WipeContainingBlock(
   // Situation #1 is a XUL frame that contains frames that are required
   // to be wrapped in blocks.
   if (aFrame->IsXULBoxFrame() &&
-      !(aFrame->GetStateBits() & NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK) &&
+      !aFrame->HasAnyStateBits(NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK) &&
       aItems.AnyItemsNeedBlockParent()) {
     TRACE("XUL with block-wrapped kids");
     RecreateFramesForContent(aFrame->GetContent(), InsertionKind::Async);

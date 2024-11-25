@@ -150,7 +150,7 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
 
   // Don't do incremental reflow until we've taught tables how to do
   // it right in paginated mode.
-  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // Return our desired size
     SetDesiredSize(aDesiredSize, aReflowInput, mSize.width, mSize.height);
     aDesiredSize.SetOverflowAreasToDesiredBounds();

@@ -2354,6 +2354,8 @@ void nsRefreshDriver::SetThrottled(bool aThrottled) {
   }
 }
 
+nsPresContext* nsRefreshDriver::GetPresContext() const { return mPresContext; }
+
 /*static*/
 void nsRefreshDriver::PVsyncActorCreated(VsyncChild* aVsyncChild) {
   MOZ_ASSERT(NS_IsMainThread());

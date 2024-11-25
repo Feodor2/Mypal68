@@ -1000,7 +1000,7 @@ void nsTableRowFrame::Reflow(nsPresContext* aPresContext,
   }
 
   // Any absolutely-positioned children will get reflowed in
-  // nsFrame::FixupPositionedTableParts in another pass, so propagate our
+  // nsIFrame::FixupPositionedTableParts in another pass, so propagate our
   // dirtiness to them before our parent clears our dirty bits.
   PushDirtyBitToAbsoluteFrames();
 

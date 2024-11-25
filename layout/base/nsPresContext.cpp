@@ -1026,16 +1026,14 @@ static bool CheckOverflow(const ComputedStyle* aComputedStyle,
     return false;
   }
 
-  if (display->mOverflowX == StyleOverflow::Visible) {
-    MOZ_ASSERT(display->mOverflowY == StyleOverflow::Visible);
+  // NOTE(emilio): This check needs to match the one in
+  // Document::IsPotentiallyScrollable.
+  if (display->OverflowIsVisibleInBothAxis()) {
     return false;
   }
 
-  if (display->mOverflowX == StyleOverflow::MozHiddenUnscrollable) {
-    *aStyles = ScrollStyles(StyleOverflow::Hidden, StyleOverflow::Hidden);
-  } else {
-    *aStyles = ScrollStyles(*display);
-  }
+  *aStyles =
+      ScrollStyles(*display, ScrollStyles::MapOverflowToValidScrollStyle);
   return true;
 }
 
@@ -1116,7 +1114,6 @@ Element* nsPresContext::UpdateViewportScrollStylesOverride() {
 }
 
 bool nsPresContext::ElementWouldPropagateScrollStyles(const Element& aElement) {
-  MOZ_ASSERT(IsPaginated(), "Should only be called on paginated contexts");
   if (aElement.GetParent() && !aElement.IsHTMLElement(nsGkAtoms::body)) {
     // We certainly won't be propagating from this element.
     return false;

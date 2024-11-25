@@ -71,7 +71,7 @@ nsresult CSSStyleRuleDeclaration::SetCSSDeclaration(
       mDecls = std::move(decls);
       mDecls->SetOwningRule(rule);
     }
-    sheet->RuleChanged(rule);
+    sheet->RuleChanged(rule, StyleRuleChangeKind::StyleRuleDeclarations);
   }
   return NS_OK;
 }
@@ -81,7 +81,7 @@ Document* CSSStyleRuleDeclaration::DocToUpdate() { return nullptr; }
 nsDOMCSSDeclaration::ParsingEnvironment
 CSSStyleRuleDeclaration::GetParsingEnvironment(
     nsIPrincipal* aSubjectPrincipal) const {
-  return GetParsingEnvironmentForRule(Rule());
+  return GetParsingEnvironmentForRule(Rule(), CSSRule_Binding::STYLE_RULE);
 }
 
 // -- CSSStyleRule --------------------------------------------------
@@ -174,9 +174,11 @@ void CSSStyleRule::SetSelectorText(const nsAString& aSelectorText) {
     sheet->AssertHasUniqueInner();
     sheet->WillDirty();
 
+    // TODO(emilio): May actually be more efficient to handle this as rule
+    // removal + addition, from the point of view of invalidation...
     const RawServoStyleSheetContents* contents = sheet->RawContents();
     if (Servo_StyleRule_SetSelectorText(contents, mRawRule, &aSelectorText)) {
-      sheet->RuleChanged(this);
+      sheet->RuleChanged(this, StyleRuleChangeKind::Generic);
     }
   }
 }
@@ -202,6 +204,7 @@ nsresult CSSStyleRule::GetSpecificity(uint32_t aSelectorIndex,
 nsresult CSSStyleRule::SelectorMatchesElement(Element* aElement,
                                               uint32_t aSelectorIndex,
                                               const nsAString& aPseudo,
+                                              bool aRelevantLinkVisited,
                                               bool* aMatches) {
   PseudoStyleType pseudoType = PseudoStyleType::NotPseudo;
   if (!aPseudo.IsEmpty()) {
@@ -216,7 +219,7 @@ nsresult CSSStyleRule::SelectorMatchesElement(Element* aElement,
   }
 
   *aMatches = Servo_StyleRule_SelectorMatchesElement(
-      mRawRule, aElement, aSelectorIndex, pseudoType);
+      mRawRule, aElement, aSelectorIndex, pseudoType, aRelevantLinkVisited);
 
   return NS_OK;
 }

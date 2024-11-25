@@ -19,6 +19,7 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/StaticPresData.h"
+#include "mozilla/SVGTextFrame.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/BinarySearch.h"
@@ -38,7 +39,6 @@
 #include "nsStyleConsts.h"
 #include "nsStyleStruct.h"
 #include "nsStyleStructInlines.h"
-#include "SVGTextFrame.h"
 #include "nsCoord.h"
 #include "gfxContext.h"
 #include "nsTArray.h"
@@ -48,7 +48,7 @@
 #include "nsCSSColorUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
-#include "nsFrame.h"
+#include "nsIFrame.h"
 #include "nsIMathMLFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsTextFrameUtils.h"
@@ -608,7 +608,7 @@ static void UnhookTextRunFromFrames(gfxTextRun* aTextRun,
         userDataFrame, aTextRun, aStartContinuation, whichTextRunState);
     NS_ASSERTION(!aStartContinuation || found,
                  "aStartContinuation wasn't found in simple flow text run");
-    if (!(userDataFrame->GetStateBits() & whichTextRunState)) {
+    if (!userDataFrame->HasAnyStateBits(whichTextRunState)) {
       DestroyTextRunUserData(aTextRun);
     }
   } else {
@@ -624,7 +624,7 @@ static void UnhookTextRunFromFrames(gfxTextRun* aTextRun,
       bool found = ClearAllTextRunReferences(
           userDataFrame, aTextRun, aStartContinuation, whichTextRunState);
       if (found) {
-        if (userDataFrame->GetStateBits() & whichTextRunState) {
+        if (userDataFrame->HasAnyStateBits(whichTextRunState)) {
           destroyFromIndex = i + 1;
         } else {
           destroyFromIndex = i;
@@ -658,7 +658,7 @@ static void InvalidateFrameDueToGlyphsChanged(nsIFrame* aFrame) {
     // SVGTextFrame in response to style changes, in
     // SVGTextFrame::DidSetComputedStyle.)
     if (nsSVGUtils::IsInSVGTextSubtree(f) &&
-        f->GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
+        f->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
       auto svgTextFrame = static_cast<SVGTextFrame*>(
           nsLayoutUtils::GetClosestFrameOfType(f, LayoutFrameType::SVGText));
       svgTextFrame->ScheduleReflowSVGNonDisplayText(IntrinsicDirty::Resize);
@@ -1983,7 +1983,7 @@ void BuildTextRunsScanner::ScanFrame(nsIFrame* aFrame) {
   if (mMappedFlows.Length() > 0) {
     MappedFlow* mappedFlow = &mMappedFlows[mMappedFlows.Length() - 1];
     if (mappedFlow->mEndFrame == aFrame &&
-        (aFrame->GetStateBits() & NS_FRAME_IS_FLUID_CONTINUATION)) {
+        aFrame->HasAnyStateBits(NS_FRAME_IS_FLUID_CONTINUATION)) {
       NS_ASSERTION(frameType == LayoutFrameType::Text,
                    "Flow-sibling of a text frame is not a text frame?");
 
@@ -2220,7 +2220,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
       if (NS_MATHML_MATHVARIANT_NORMAL != fontStyle->mMathVariant) {
         anyMathMLStyling = true;
       }
-    } else if (mLineContainer->GetStateBits() & NS_FRAME_IS_IN_SINGLE_CHAR_MI) {
+    } else if (mLineContainer->HasAnyStateBits(NS_FRAME_IS_IN_SINGLE_CHAR_MI)) {
       flags2 |= nsTextFrameUtils::Flags::IsSingleCharMi;
       anyMathMLStyling = true;
       // Test for fontstyle attribute as StyleFont() may not be accurate
@@ -2966,7 +2966,7 @@ void BuildTextRunsScanner::AssignTextRun(gfxTextRun* aTextRun,
 
 NS_QUERYFRAME_HEAD(nsTextFrame)
   NS_QUERYFRAME_ENTRY(nsTextFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
 
 gfxSkipCharsIterator nsTextFrame::EnsureTextRun(
     TextRunType aWhichTextRun, DrawTarget* aRefDrawTarget,
@@ -3051,10 +3051,10 @@ nsTextFrame::TrimmedOffsets nsTextFrame::GetTrimmedOffsets(
     // to be set correctly.  If our parent wasn't reflowed due to the frame
     // tree being too deep then the return value doesn't matter.
     NS_ASSERTION(
-        !(GetStateBits() & NS_FRAME_FIRST_REFLOW) ||
-            (GetParent()->GetStateBits() & NS_FRAME_TOO_DEEP_IN_FRAME_TREE),
+        !HasAnyStateBits(NS_FRAME_FIRST_REFLOW) ||
+            GetParent()->HasAnyStateBits(NS_FRAME_TOO_DEEP_IN_FRAME_TREE),
         "Can only call this on frames that have been reflowed");
-    NS_ASSERTION(!(GetStateBits() & NS_FRAME_IN_REFLOW),
+    NS_ASSERTION(!HasAnyStateBits(NS_FRAME_IN_REFLOW),
                  "Can only call this on frames that are not being reflowed");
   }
 
@@ -3066,7 +3066,7 @@ nsTextFrame::TrimmedOffsets nsTextFrame::GetTrimmedOffsets(
 
   if (!(aFlags & TrimmedOffsetFlags::NoTrimBefore) &&
       ((aFlags & TrimmedOffsetFlags::NotPostReflow) ||
-       (GetStateBits() & TEXT_START_OF_LINE))) {
+       HasAnyStateBits(TEXT_START_OF_LINE))) {
     int32_t whitespaceCount =
         GetTrimmableWhitespaceCount(aFrag, offsets.mStart, offsets.mLength, 1);
     offsets.mStart += whitespaceCount;
@@ -3075,7 +3075,7 @@ nsTextFrame::TrimmedOffsets nsTextFrame::GetTrimmedOffsets(
 
   if (!(aFlags & TrimmedOffsetFlags::NoTrimAfter) &&
       ((aFlags & TrimmedOffsetFlags::NotPostReflow) ||
-       (GetStateBits() & TEXT_END_OF_LINE))) {
+       HasAnyStateBits(TEXT_END_OF_LINE))) {
     // This treats a trailing 'pre-line' newline as trimmable. That's fine,
     // it's actually what we want since we want whitespace before it to
     // be trimmed.
@@ -3660,7 +3660,7 @@ void nsTextFrame::PropertyProvider::GetHyphenationBreaks(
       // Don't allow hyphen breaks at the start of the line
       aBreakBefore[runOffsetInSubstring] =
           allowHyphenBreakBeforeNextChar &&
-                  (!(mFrame->GetStateBits() & TEXT_START_OF_LINE) ||
+                  (!mFrame->HasAnyStateBits(TEXT_START_OF_LINE) ||
                    run.GetSkippedOffset() > mStart.GetSkippedOffset())
               ? HyphenType::Soft
               : HyphenType::None;
@@ -3708,7 +3708,7 @@ void nsTextFrame::PropertyProvider::SetupJustificationSpacing(
     bool aPostReflow) {
   MOZ_ASSERT(mLength != INT32_MAX, "Can't call this with undefined length");
 
-  if (!(mFrame->GetStateBits() & TEXT_JUSTIFICATION_ENABLED)) {
+  if (!mFrame->HasAnyStateBits(TEXT_JUSTIFICATION_ENABLED)) {
     return;
   }
 
@@ -3740,7 +3740,7 @@ void nsTextFrame::PropertyProvider::SetupJustificationSpacing(
   // corresponding to the inline-direction of the frame.
   gfxFloat naturalWidth = mTextRun->GetAdvanceWidth(
       Range(mStart.GetSkippedOffset(), realEnd.GetSkippedOffset()), this);
-  if (mFrame->GetStateBits() & TEXT_HYPHEN_BREAK) {
+  if (mFrame->HasAnyStateBits(TEXT_HYPHEN_BREAK)) {
     naturalWidth += GetHyphenWidth();
   }
   nscoord totalSpacing = mFrame->ISize() - naturalWidth;
@@ -4317,12 +4317,12 @@ void nsTextFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   // We're not a continuing frame.
   // mContentOffset = 0; not necessary since we get zeroed out at init
-  nsFrame::Init(aContent, aParent, aPrevInFlow);
+  nsIFrame::Init(aContent, aParent, aPrevInFlow);
 }
 
 void nsTextFrame::ClearFrameOffsetCache() {
   // See if we need to remove ourselves from the offset cache
-  if (GetStateBits() & TEXT_IN_OFFSET_CACHE) {
+  if (HasAnyStateBits(TEXT_IN_OFFSET_CACHE)) {
     nsIFrame* primaryFrame = mContent->GetPrimaryFrame();
     if (primaryFrame) {
       // The primary frame might be null here.  For example,
@@ -4348,7 +4348,7 @@ void nsTextFrame::DestroyFrom(nsIFrame* aDestructRoot,
     mNextContinuation->SetPrevInFlow(nullptr);
   }
   // Let the base class destroy the frame
-  nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsIFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 class nsContinuingTextFrame final : public nsTextFrame {
@@ -4375,8 +4375,8 @@ class nsContinuingTextFrame final : public nsTextFrame {
     RemoveStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
   }
   nsTextFrame* GetPrevInFlow() const final {
-    return (GetStateBits() & NS_FRAME_IS_FLUID_CONTINUATION) ? mPrevContinuation
-                                                             : nullptr;
+    return HasAnyStateBits(NS_FRAME_IS_FLUID_CONTINUATION) ? mPrevContinuation
+                                                           : nullptr;
   }
   void SetPrevInFlow(nsIFrame* aPrevInFlow) final {
     NS_ASSERTION(!aPrevInFlow || Type() == aPrevInFlow->Type(),
@@ -4415,7 +4415,7 @@ void nsContinuingTextFrame::Init(nsIContent* aContent,
   aPrevInFlow->SetNextInFlow(this);
 
   // NOTE: bypassing nsTextFrame::Init!!!
-  nsFrame::Init(aContent, aParent, aPrevInFlow);
+  nsIFrame::Init(aContent, aParent, aPrevInFlow);
 
   mContentOffset = prev->GetContentOffset() + prev->GetContentLengthHint();
   NS_ASSERTION(mContentOffset < int32_t(aContent->GetText()->GetLength()),
@@ -4436,7 +4436,7 @@ void nsContinuingTextFrame::Init(nsIContent* aContent,
       }
     }
   }
-  if (aPrevInFlow->GetStateBits() & NS_FRAME_IS_BIDI) {
+  if (aPrevInFlow->HasAnyStateBits(NS_FRAME_IS_BIDI)) {
     FrameBidiData bidiData = aPrevInFlow->GetBidiData();
     bidiData.precedingControl = kBidiLevelNone;
     SetProperty(BidiDataProperty(), bidiData);
@@ -4488,7 +4488,7 @@ void nsContinuingTextFrame::DestroyFrom(nsIFrame* aDestructRoot,
   }
   nsSplittableFrame::RemoveFromFlow(this);
   // Let the base class destroy the frame
-  nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsIFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 nsIFrame* nsContinuingTextFrame::FirstInFlow() const {
@@ -4622,7 +4622,7 @@ void nsTextFrame::InvalidateFrame(uint32_t aDisplayItemKey,
     svgTextFrame->InvalidateFrame();
     return;
   }
-  nsFrame::InvalidateFrame(aDisplayItemKey, aRebuildDisplayItems);
+  nsIFrame::InvalidateFrame(aDisplayItemKey, aRebuildDisplayItems);
 }
 
 void nsTextFrame::InvalidateFrameWithRect(const nsRect& aRect,
@@ -4634,8 +4634,8 @@ void nsTextFrame::InvalidateFrameWithRect(const nsRect& aRect,
     svgTextFrame->InvalidateFrame();
     return;
   }
-  nsFrame::InvalidateFrameWithRect(aRect, aDisplayItemKey,
-                                   aRebuildDisplayItems);
+  nsIFrame::InvalidateFrameWithRect(aRect, aDisplayItemKey,
+                                    aRebuildDisplayItems);
 }
 
 gfxTextRun* nsTextFrame::GetUninflatedTextRun() const {
@@ -4682,7 +4682,7 @@ bool nsTextFrame::RemoveTextRun(gfxTextRun* aTextRun) {
     mFontMetrics = nullptr;
     return true;
   }
-  if ((GetStateBits() & TEXT_HAS_FONT_INFLATION) &&
+  if (HasAnyStateBits(TEXT_HAS_FONT_INFLATION) &&
       GetProperty(UninflatedTextRunProperty()) == aTextRun) {
     RemoveProperty(UninflatedTextRunProperty());
     return true;
@@ -4712,7 +4712,7 @@ void nsTextFrame::DisconnectTextRuns() {
              "Textrun mentions this frame in its user data so we can't just "
              "disconnect");
   mTextRun = nullptr;
-  if ((GetStateBits() & TEXT_HAS_FONT_INFLATION)) {
+  if (HasAnyStateBits(TEXT_HAS_FONT_INFLATION)) {
     RemoveProperty(UninflatedTextRunProperty());
   }
 }
@@ -4861,7 +4861,7 @@ void nsTextFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       NS_GET_A(st->mWebkitTextFillColor.CalcColor(this)) == 0 &&
       NS_GET_A(st->mWebkitTextStrokeColor.CalcColor(this)) == 0;
   Maybe<bool> isSelected;
-  if (((GetStateBits() & TEXT_NO_RENDERED_GLYPHS) ||
+  if ((HasAnyStateBits(TEXT_NO_RENDERED_GLYPHS) ||
        (isTextTransparent && !StyleText()->HasTextShadow())) &&
       aBuilder->IsForPainting() && !nsSVGUtils::IsInSVGTextSubtree(this)) {
     isSelected.emplace(IsSelected());
@@ -6030,7 +6030,7 @@ bool SelectionIterator::GetNextSegment(gfxFloat* aXOffset,
   }
 
   bool haveHyphenBreak =
-      (mProvider.GetFrame()->GetStateBits() & TEXT_HYPHEN_BREAK) != 0;
+      mProvider.GetFrame()->HasAnyStateBits(TEXT_HYPHEN_BREAK);
   aRange->start = runOffset;
   aRange->end = mIterator.GetSkippedOffset();
   *aXOffset = mXOffset;
@@ -6144,7 +6144,7 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
   params.textColor =
       aParams.context == shadowContext ? shadowColor : NS_RGB(0, 0, 0);
   params.clipEdges = aParams.clipEdges;
-  params.drawSoftHyphen = (GetStateBits() & TEXT_HYPHEN_BREAK) != 0;
+  params.drawSoftHyphen = HasAnyStateBits(TEXT_HYPHEN_BREAK);
   // Multi-color shadow is not allowed, so we use the same color of the text
   // color.
   params.decorationOverrideColor = &params.textColor;
@@ -6520,7 +6520,7 @@ void nsTextFrame::DrawEmphasisMarks(gfxContext* aContext, WritingMode aWM,
 nscolor nsTextFrame::GetCaretColorAt(int32_t aOffset) {
   MOZ_ASSERT(aOffset >= 0, "aOffset must be positive");
 
-  nscolor result = nsFrame::GetCaretColorAt(aOffset);
+  nscolor result = nsIFrame::GetCaretColorAt(aOffset);
   gfxSkipCharsIterator iter = EnsureTextRun(nsTextFrame::eInflated);
   PropertyProvider provider(this, iter, nsTextFrame::eInflated, mFontMetrics);
   int32_t contentOffset = provider.GetStart().GetOriginalOffset();
@@ -6687,7 +6687,7 @@ void nsTextFrame::PaintShadows(Span<const StyleSimpleShadow> aShadows,
     std::swap(shadowMetrics.mAscent, shadowMetrics.mDescent);
     shadowMetrics.mBoundingBox.y = -shadowMetrics.mBoundingBox.YMost();
   }
-  if (GetStateBits() & TEXT_HYPHEN_BREAK) {
+  if (HasAnyStateBits(TEXT_HYPHEN_BREAK)) {
     AddHyphenToMetrics(this, mTextRun, &shadowMetrics,
                        gfxFont::LOOSE_INK_EXTENTS,
                        aParams.context->GetDrawTarget());
@@ -6845,7 +6845,7 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
   params.textStrokeColor = textStrokeColor;
   params.textStrokeWidth = textPaintStyle.GetWebkitTextStrokeWidth();
   params.clipEdges = &clipEdges;
-  params.drawSoftHyphen = (GetStateBits() & TEXT_HYPHEN_BREAK) != 0;
+  params.drawSoftHyphen = HasAnyStateBits(TEXT_HYPHEN_BREAK);
   params.contextPaint = aParams.contextPaint;
   params.callbacks = aParams.callbacks;
   params.glyphRange = range;
@@ -7461,7 +7461,7 @@ void nsTextFrame::SelectionStateChanged(uint32_t aStart, uint32_t aEnd,
     // the normal decoration line.
     if (ToSelectionTypeMask(aSelectionType) & kSelectionTypesWithDecorations) {
       bool didHaveOverflowingSelection =
-          (f->GetStateBits() & TEXT_SELECTION_UNDERLINE_OVERFLOWED) != 0;
+          f->HasAnyStateBits(TEXT_SELECTION_UNDERLINE_OVERFLOWED);
       nsRect r(nsPoint(0, 0), GetSize());
       if (didHaveOverflowingSelection ||
           (aSelected && f->CombineSelectionUnderlineRect(presContext, r))) {
@@ -8302,7 +8302,7 @@ void nsTextFrame::SetFontSizeInflation(float aInflation) {
 /* virtual */
 void nsTextFrame::MarkIntrinsicISizesDirty() {
   ClearTextRuns();
-  nsFrame::MarkIntrinsicISizesDirty();
+  nsIFrame::MarkIntrinsicISizesDirty();
 }
 
 // XXX this doesn't handle characters shaped by line endings. We need to
@@ -8672,8 +8672,7 @@ static nsRect RoundOut(const gfxRect& aRect) {
 }
 
 nsRect nsTextFrame::ComputeTightBounds(DrawTarget* aDrawTarget) const {
-  if (Style()->HasTextDecorationLines() ||
-      (GetStateBits() & TEXT_HYPHEN_BREAK)) {
+  if (Style()->HasTextDecorationLines() || HasAnyStateBits(TEXT_HYPHEN_BREAK)) {
     // This is conservative, but OK.
     return GetVisualOverflowRect();
   }
@@ -8822,7 +8821,7 @@ void nsTextFrame::SetLength(int32_t aLength, nsLineLayout* aLineLayout,
   // CharacterDataChanged. This is ugly but teaching FrameNeedsReflow
   // and ChildIsDirty to handle a range of frames would be worse.
   if (aLineLayout &&
-      (end != f->mContentOffset || (f->GetStateBits() & NS_FRAME_IS_DIRTY))) {
+      (end != f->mContentOffset || f->HasAnyStateBits(NS_FRAME_IS_DIRTY))) {
     aLineLayout->SetDirtyNextLine();
   }
 
@@ -9087,7 +9086,7 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
     }
   }
   if ((atStartOfLine && !textStyle->WhiteSpaceIsSignificant()) ||
-      (GetStateBits() & TEXT_IS_IN_TOKEN_MATHML)) {
+      HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
     // Skip leading whitespace. Make sure we don't skip a 'pre-line'
     // newline if there is one.
     int32_t skipLength = newLineOffset >= 0 ? length - 1 : length;
@@ -9262,7 +9261,7 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
     availWidth = std::numeric_limits<gfxFloat>::infinity();
   }
   bool canTrimTrailingWhitespace = !textStyle->WhiteSpaceIsSignificant() ||
-                                   (GetStateBits() & TEXT_IS_IN_TOKEN_MATHML);
+                                   HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML);
 
   bool isBreakSpaces = textStyle->mWhiteSpace == StyleWhiteSpace::BreakSpaces;
   // allow whitespace to overflow the container
@@ -9278,12 +9277,12 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
     suppressBreak = gfxTextRun::eSuppressInitialBreak;
   }
   uint32_t transformedCharsFit = mTextRun->BreakAndMeasureText(
-      transformedOffset, transformedLength,
-      (GetStateBits() & TEXT_START_OF_LINE) != 0, availWidth, &provider,
-      suppressBreak, canTrimTrailingWhitespace ? &trimmedWidth : nullptr,
-      whitespaceCanHang, &textMetrics, boundingBoxType, aDrawTarget,
-      &usedHyphenation, &transformedLastBreak, textStyle->WordCanWrap(this),
-      isBreakSpaces, &breakPriority);
+      transformedOffset, transformedLength, HasAnyStateBits(TEXT_START_OF_LINE),
+      availWidth, &provider, suppressBreak,
+      canTrimTrailingWhitespace ? &trimmedWidth : nullptr, whitespaceCanHang,
+      &textMetrics, boundingBoxType, aDrawTarget, &usedHyphenation,
+      &transformedLastBreak, textStyle->WordCanWrap(this), isBreakSpaces,
+      &breakPriority);
   if (!length && !textMetrics.mAscent && !textMetrics.mDescent) {
     // If we're measuring a zero-length piece of text, update
     // the height manually.
@@ -9349,11 +9348,11 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
     // the line. (If we actually do end up at the end of the line, we'll have
     // to trim it off again in TrimTrailingWhiteSpace, and we'd like to avoid
     // having to re-do it.)
-    if (brokeText || (GetStateBits() & TEXT_IS_IN_TOKEN_MATHML)) {
+    if (brokeText || HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
       // We're definitely going to break so our trailing whitespace should
       // definitely be trimmed. Record that we've already done it.
       AddStateBits(TEXT_TRIMMED_TRAILING_WHITESPACE);
-    } else if (!(GetStateBits() & TEXT_IS_IN_TOKEN_MATHML)) {
+    } else if (!HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
       // We might not be at the end of the line. (Note that even if this frame
       // ends in breakable whitespace, it might not be at the end of the line
       // because it might be followed by breakable, but preformatted,
@@ -9387,7 +9386,7 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
 
   // first-letter frames should use the tight bounding box metrics for
   // ascent/descent for good drop-cap effects
-  if (GetStateBits() & TEXT_FIRST_LETTER) {
+  if (HasAnyStateBits(TEXT_FIRST_LETTER)) {
     textMetrics.mAscent =
         std::max(gfxFloat(0.0), -textMetrics.mBoundingBox.Y());
     textMetrics.mDescent =
@@ -9633,7 +9632,7 @@ nsTextFrame::TrimOutput nsTextFrame::TrimTrailingWhiteSpace(
   uint32_t trimmedEnd =
       trimmedEndIter.ConvertOriginalToSkipped(trimmed.GetEnd());
 
-  if (!(GetStateBits() & TEXT_TRIMMED_TRAILING_WHITESPACE) &&
+  if (!HasAnyStateBits(TEXT_TRIMMED_TRAILING_WHITESPACE) &&
       trimmed.GetEnd() < GetContentEnd()) {
     gfxSkipCharsIterator end = trimmedEndIter;
     uint32_t endOffset =
@@ -9652,7 +9651,7 @@ nsTextFrame::TrimOutput nsTextFrame::TrimTrailingWhiteSpace(
 
   gfxFloat advanceDelta;
   mTextRun->SetLineBreaks(Range(trimmedStart, trimmedEnd),
-                          (GetStateBits() & TEXT_START_OF_LINE) != 0, true,
+                          HasAnyStateBits(TEXT_START_OF_LINE), true,
                           &advanceDelta);
   if (advanceDelta != 0) {
     result.mChanged = true;
@@ -9812,7 +9811,7 @@ nsIFrame::RenderedText nsTextFrame::GetRenderedText(
   Maybe<nsBlockFrame::AutoLineCursorSetup> autoLineCursor;
   for (textFrame = this; textFrame;
        textFrame = textFrame->GetNextContinuation()) {
-    if (textFrame->GetStateBits() & NS_FRAME_IS_DIRTY) {
+    if (textFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
       // We don't trust dirty frames, especially when computing rendered text.
       break;
     }
@@ -9828,7 +9827,7 @@ nsIFrame::RenderedText nsTextFrame::GetRenderedText(
     // Check if the frame starts/ends at a hard line break, to determine
     // whether whitespace should be trimmed.
     bool startsAtHardBreak, endsAtHardBreak;
-    if (!(GetStateBits() & (TEXT_START_OF_LINE | TEXT_END_OF_LINE))) {
+    if (!HasAnyStateBits(TEXT_START_OF_LINE | TEXT_END_OF_LINE)) {
       startsAtHardBreak = endsAtHardBreak = false;
     } else if (nsBlockFrame* thisLc =
                    do_QueryFrame(FindLineContainer(textFrame))) {
@@ -10104,7 +10103,7 @@ bool nsTextFrame::HasSignificantTerminalNewline() const {
 }
 
 bool nsTextFrame::IsAtEndOfLine() const {
-  return (GetStateBits() & TEXT_END_OF_LINE) != 0;
+  return HasAnyStateBits(TEXT_END_OF_LINE);
 }
 
 nscoord nsTextFrame::GetLogicalBaseline(WritingMode aWM) const {
@@ -10139,7 +10138,7 @@ bool nsTextFrame::ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) {
 
 bool nsTextFrame::ComputeCustomOverflowInternal(nsOverflowAreas& aOverflowAreas,
                                                 bool aIncludeShadows) {
-  if (GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     return true;
   }
 
@@ -10158,13 +10157,13 @@ bool nsTextFrame::ComputeCustomOverflowInternal(nsOverflowAreas& aOverflowAreas,
       f = f->GetParent();
       if (!f) {
         NS_ERROR("Couldn't find any block ancestor (for text decorations)");
-        return nsFrame::ComputeCustomOverflow(aOverflowAreas);
+        return nsIFrame::ComputeCustomOverflow(aOverflowAreas);
       }
     }
   }
 
   aOverflowAreas = RecomputeOverflow(decorationsBlock, aIncludeShadows);
-  return nsFrame::ComputeCustomOverflow(aOverflowAreas);
+  return nsIFrame::ComputeCustomOverflow(aOverflowAreas);
 }
 
 NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(JustificationAssignmentProperty, int32_t)

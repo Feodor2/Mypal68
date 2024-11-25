@@ -925,7 +925,7 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
   SetDesiredSize(aDesiredSize);
 
   // Any absolutely-positioned children will get reflowed in
-  // nsFrame::FixupPositionedTableParts in another pass, so propagate our
+  // nsIFrame::FixupPositionedTableParts in another pass, so propagate our
   // dirtiness to them before our parent clears our dirty bits.
   PushDirtyBitToAbsoluteFrames();
 
@@ -979,7 +979,7 @@ void nsTableCellFrame::AppendDirectlyOwnedAnonBoxes(
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsTableCellFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("TableCell"), aResult);
+  return MakeFrameName(u"TableCell"_ns, aResult);
 }
 #endif
 
@@ -1001,7 +1001,7 @@ nsMargin nsBCTableCellFrame::GetUsedBorder() const {
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsBCTableCellFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("BCTableCell"), aResult);
+  return MakeFrameName(u"BCTableCell"_ns, aResult);
 }
 #endif
 

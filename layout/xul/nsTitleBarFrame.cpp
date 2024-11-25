@@ -62,7 +62,7 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
 
   switch (aEvent->mMessage) {
     case eMouseDown: {
-      if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
+      if (aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary) {
         // titlebar has no effect in non-chrome shells
         nsCOMPtr<nsIDocShellTreeItem> dsti = aPresContext->GetDocShell();
         if (dsti) {
@@ -86,7 +86,7 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
 
     case eMouseUp: {
       if (mTrackingMouseMove &&
-          aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
+          aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary) {
         // we're done tracking.
         mTrackingMouseMove = false;
 

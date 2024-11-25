@@ -1,0 +1,53 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef NSSVGGFRAME_H
+#define NSSVGGFRAME_H
+
+#include "mozilla/Attributes.h"
+#include "gfxMatrix.h"
+#include "nsSVGContainerFrame.h"
+
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+nsIFrame* NS_NewSVGGFrame(mozilla::PresShell* aPresShell,
+                          mozilla::ComputedStyle* aStyle);
+
+namespace mozilla {
+
+class SVGGFrame : public nsSVGDisplayContainerFrame {
+  friend nsIFrame* ::NS_NewSVGGFrame(mozilla::PresShell* aPresShell,
+                                     mozilla::ComputedStyle* aStyle);
+  explicit SVGGFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+      : SVGGFrame(aStyle, aPresContext, kClassID) {}
+
+ protected:
+  SVGGFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
+            nsIFrame::ClassID aID)
+      : nsSVGDisplayContainerFrame(aStyle, aPresContext, aID) {}
+
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(SVGGFrame)
+
+#ifdef DEBUG
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
+#endif
+
+#ifdef DEBUG_FRAME_DUMP
+  virtual nsresult GetFrameName(nsAString& aResult) const override {
+    return MakeFrameName(u"SVGG"_ns, aResult);
+  }
+#endif
+
+  // nsIFrame interface:
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                    int32_t aModType) override;
+};
+
+}  // namespace mozilla
+
+#endif

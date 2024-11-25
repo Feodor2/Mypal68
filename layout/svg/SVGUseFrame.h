@@ -1,0 +1,64 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef __NS_SVGUSEFRAME_H__
+#define __NS_SVGUSEFRAME_H__
+
+// Keep in (case-insensitive) order:
+#include "SVGGFrame.h"
+
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+nsIFrame* NS_NewSVGUseFrame(mozilla::PresShell* aPresShell,
+                            mozilla::ComputedStyle* aStyle);
+
+namespace mozilla {
+
+class SVGUseFrame final : public SVGGFrame {
+  friend nsIFrame* ::NS_NewSVGUseFrame(mozilla::PresShell* aPresShell,
+                                       ComputedStyle* aStyle);
+
+ protected:
+  explicit SVGUseFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+      : SVGGFrame(aStyle, aPresContext, kClassID), mHasValidDimensions(true) {}
+
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(SVGUseFrame)
+
+  // nsIFrame interface:
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
+
+  // Called when the x or y attributes changed.
+  void PositionAttributeChanged();
+
+  // Called when the href attributes changed.
+  void HrefChanged();
+
+  // Called when the width or height attributes changed.
+  void DimensionAttributeChanged(bool aHadValidDimensions,
+                                 bool aAttributeIsUsed);
+
+  nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
+                            int32_t aModType) final;
+
+#ifdef DEBUG_FRAME_DUMP
+  nsresult GetFrameName(nsAString& aResult) const override {
+    return MakeFrameName(u"SVGUse"_ns, aResult);
+  }
+#endif
+
+  // nsSVGDisplayableFrame interface:
+  void ReflowSVG() override;
+  void NotifySVGChanged(uint32_t aFlags) override;
+
+ private:
+  bool mHasValidDimensions;
+};
+
+}  // namespace mozilla
+
+#endif  // __NS_SVGUSEFRAME_H__

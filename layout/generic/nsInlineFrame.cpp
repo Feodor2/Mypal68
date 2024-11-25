@@ -115,7 +115,7 @@ bool nsInlineFrame::IsSelfEmpty() {
   if (haveStart || haveEnd) {
     // We skip this block and return false for box-decoration-break:clone since
     // in that case all the continuations will have the border/padding/margin.
-    if ((GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) &&
+    if (HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT) &&
         StyleBorder()->mBoxDecorationBreak == StyleBoxDecorationBreak::Slice) {
       // When direction=rtl, we need to consider logical rather than visual
       // start and end, so swap the flags.
@@ -303,7 +303,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
       // first time, nothing (e.g. bidi resolution) has already given
       // us children, and there's no next-in-flow, so all our frames
       // will be taken from prevOverflowFrames.
-      if ((GetStateBits() & NS_FRAME_FIRST_REFLOW) && mFrames.IsEmpty() &&
+      if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW) && mFrames.IsEmpty() &&
           !GetNextInFlow()) {
         // If our child list is empty, just put the new frames into it.
         // Note that we don't set the parent pointer for the new frames. Instead
@@ -331,7 +331,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
 
   // It's also possible that we have an overflow list for ourselves
 #ifdef DEBUG
-  if (GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // If it's our initial reflow, then we should not have an overflow list.
     // However, add an assertion in case we get reflowed more than once with
     // the initial reflow reason
@@ -340,7 +340,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                  "overflow list is not empty for initial reflow");
   }
 #endif
-  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     DrainSelfOverflowListInternal(aReflowInput.mLineLayout->GetInFirstLine());
   }
 
@@ -800,7 +800,7 @@ nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
 
   if (!IsFirst()) {
     nsInlineFrame* prev = (nsInlineFrame*)GetPrevContinuation();
-    if ((GetStateBits() & NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
+    if (HasAnyStateBits(NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
         (prev && (prev->mRect.height || prev->mRect.width))) {
       // Prev continuation is not empty therefore we don't render our start
       // border edge.
@@ -812,7 +812,7 @@ nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
   }
   if (!IsLast()) {
     nsInlineFrame* next = (nsInlineFrame*)GetNextContinuation();
-    if ((GetStateBits() & NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
+    if (HasAnyStateBits(NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
         (next && (next->mRect.height || next->mRect.width))) {
       // Next continuation is not empty therefore we don't render our end
       // border edge.
@@ -823,7 +823,7 @@ nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
     }
   }
 
-  if (GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) {
+  if (HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT)) {
     // All but the last part of an {ib} split should skip the "end" side (as
     // determined by this frame's direction) and all but the first part of such
     // a split should skip the "start" side.  But figuring out which part of
@@ -864,9 +864,9 @@ a11y::AccType nsInlineFrame::AccessibleType() {
 
 void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
     ServoRestyleState& aRestyleState) {
-  MOZ_ASSERT(GetStateBits() & NS_FRAME_OWNS_ANON_BOXES,
+  MOZ_ASSERT(HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES),
              "Why did we get called?");
-  MOZ_ASSERT(GetStateBits() & NS_FRAME_PART_OF_IBSPLIT,
+  MOZ_ASSERT(HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT),
              "Why did we have the NS_FRAME_OWNS_ANON_BOXES bit set?");
   // Note: this assert _looks_ expensive, but it's cheap in all the cases when
   // it passes!

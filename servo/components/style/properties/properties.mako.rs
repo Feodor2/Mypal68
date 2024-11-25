@@ -533,10 +533,12 @@ impl NonCustomPropertyId {
         false
     }
 
-    fn allowed_in(self, context: &ParserContext) -> bool {
+    /// Returns whether a given rule allows a given property.
+    #[inline]
+    pub fn allowed_in_rule(self, rule_type: CssRuleType) -> bool {
         debug_assert!(
             matches!(
-                context.rule_type(),
+                rule_type,
                 CssRuleType::Keyframe | CssRuleType::Page | CssRuleType::Style
             ),
             "Declarations are only expected inside a keyframe, page, or style rule."
@@ -550,14 +552,16 @@ impl NonCustomPropertyId {
             "DISALLOWED_IN_PAGE_RULE",
             lambda p: not p.allowed_in_page_rule
         )}
-        match context.rule_type() {
-            CssRuleType::Keyframe if DISALLOWED_IN_KEYFRAME_BLOCK.contains(self) => {
-                return false;
-            }
-            CssRuleType::Page if DISALLOWED_IN_PAGE_RULE.contains(self) => {
-                return false;
-            }
-            _ => {}
+        match rule_type {
+            CssRuleType::Keyframe => !DISALLOWED_IN_KEYFRAME_BLOCK.contains(self),
+            CssRuleType::Page => !DISALLOWED_IN_PAGE_RULE.contains(self),
+            _ => true
+        }
+    }
+
+    fn allowed_in(self, context: &ParserContext) -> bool {
+        if !self.allowed_in_rule(context.rule_type()) {
+            return false;
         }
 
         self.allowed_in_ignoring_rule_type(context)
@@ -1921,7 +1925,8 @@ impl PropertyId {
         }
     }
 
-    fn non_custom_id(&self) -> Option<NonCustomPropertyId> {
+    /// Returns the `NonCustomPropertyId` corresponding to this property id.
+    pub fn non_custom_id(&self) -> Option<NonCustomPropertyId> {
         Some(match *self {
             PropertyId::Custom(_) => return None,
             PropertyId::Shorthand(shorthand_id) => shorthand_id.into(),
@@ -2858,7 +2863,7 @@ impl ComputedValues {
 
     /// Returns the visited style, if any.
     pub fn visited_style(&self) -> Option<<&ComputedValues> {
-        self.visited_style.as_ref().map(|s| &**s)
+        self.visited_style.as_deref()
     }
 
     /// Returns the visited rules, if applicable.
@@ -3521,11 +3526,11 @@ impl<'a> StyleBuilder<'a> {
         self.add_flags(ComputedValueFlags::INHERITS_RESET_STYLE);
 
         % if property.ident == "content":
-        self.add_flags(ComputedValueFlags::INHERITS_CONTENT);
+        self.add_flags(ComputedValueFlags::CONTENT_DEPENDS_ON_INHERITED_STYLE);
         % endif
 
         % if property.ident == "display":
-        self.add_flags(ComputedValueFlags::INHERITS_DISPLAY);
+        self.add_flags(ComputedValueFlags::DISPLAY_DEPENDS_ON_INHERITED_STYLE);
         % endif
 
         if self.${property.style_struct.ident}.ptr_eq(inherited_struct) {

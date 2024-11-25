@@ -36,14 +36,15 @@ already_AddRefed<RawServoDeclarationBlock> ServoCSSParser::ParseProperty(
   NS_ConvertUTF16toUTF8 value(aValue);
   return Servo_ParseProperty(
              aProperty, &value, aParsingEnvironment.mUrlExtraData, aParsingMode,
-             aParsingEnvironment.mCompatMode, aParsingEnvironment.mLoader)
+             aParsingEnvironment.mCompatMode, aParsingEnvironment.mLoader,
+             aParsingEnvironment.mRuleType)
       .Consume();
 }
 
 /* static */
-bool ServoCSSParser::ParseEasing(const nsAString& aValue, URLExtraData* aUrl,
+bool ServoCSSParser::ParseEasing(const nsAString& aValue,
                                  nsTimingFunction& aResult) {
-  return Servo_ParseEasing(&aValue, aUrl, &aResult);
+  return Servo_ParseEasing(&aValue, &aResult);
 }
 
 /* static */
@@ -78,7 +79,6 @@ already_AddRefed<URLExtraData> ServoCSSParser::GetURLExtraData(
 
 /* static */ ServoCSSParser::ParsingEnvironment
 ServoCSSParser::GetParsingEnvironment(Document* aDocument) {
-  return ParsingEnvironment(GetURLExtraData(aDocument),
-                            aDocument->GetCompatibilityMode(),
-                            aDocument->CSSLoader());
+  return {GetURLExtraData(aDocument), aDocument->GetCompatibilityMode(),
+          aDocument->CSSLoader()};
 }

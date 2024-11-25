@@ -261,7 +261,7 @@ void nsCanvasFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
                  "invalid child list");
     }
   }
-  nsFrame::VerifyDirtyBitSet(aFrameList);
+  nsIFrame::VerifyDirtyBitSet(aFrameList);
 #endif
   nsContainerFrame::AppendFrames(aListID, aFrameList);
 }
@@ -470,7 +470,7 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   // Force a background to be shown. We may have a background propagated to us,
   // in which case StyleBackground wouldn't have the right background
-  // and the code in nsFrame::DisplayBorderBackgroundOutline might not give us
+  // and the code in nsIFrame::DisplayBorderBackgroundOutline might not give us
   // a background.
   // We don't have any border or outline, and our background draws over
   // the overflow area, so just add nsDisplayCanvasBackground instead of
@@ -714,14 +714,14 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     aDesiredSize.Width() = aDesiredSize.Height() = 0;
   } else if (mFrames.FirstChild() != mPopupSetFrame) {
     nsIFrame* kidFrame = mFrames.FirstChild();
-    bool kidDirty = (kidFrame->GetStateBits() & NS_FRAME_IS_DIRTY) != 0;
+    bool kidDirty = kidFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY);
 
     ReflowInput kidReflowInput(
         aPresContext, aReflowInput, kidFrame,
         aReflowInput.AvailableSize(kidFrame->GetWritingMode()));
 
     if (aReflowInput.IsBResizeForWM(kidReflowInput.GetWritingMode()) &&
-        (kidFrame->GetStateBits() & NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
+        kidFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
       // Tell our kid it's being block-dir resized too.  Bit of a
       // hack for framesets.
       kidReflowInput.SetBResize(true);
@@ -830,7 +830,7 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
 nsresult nsCanvasFrame::GetContentForEvent(WidgetEvent* aEvent,
                                            nsIContent** aContent) {
   NS_ENSURE_ARG_POINTER(aContent);
-  nsresult rv = nsFrame::GetContentForEvent(aEvent, aContent);
+  nsresult rv = nsIFrame::GetContentForEvent(aEvent, aContent);
   if (NS_FAILED(rv) || !*aContent) {
     nsIFrame* kid = mFrames.FirstChild();
     if (kid) {

@@ -74,6 +74,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/SVGMaskFrame.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
@@ -89,7 +90,6 @@
 #include "nsCaret.h"
 #include "nsDOMTokenList.h"
 #include "nsCSSProps.h"
-#include "nsSVGMaskFrame.h"
 #include "nsTableCellFrame.h"
 #include "nsTableColFrame.h"
 #include "nsTextFrame.h"
@@ -539,6 +539,7 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mIsInChromePresContext(false),
       mSyncDecodeImages(false),
       mIsPaintingToWindow(false),
+      mUseHighQualityScaling(false),
 #ifdef MOZ_BUILD_WEBRENDER
       mIsPaintingForWebRender(false),
 #endif
@@ -595,6 +596,7 @@ void nsDisplayListBuilder::BeginFrame() {
   mFrameToAnimatedGeometryRootMap.Put(mReferenceFrame, mRootAGR);
 
   mIsPaintingToWindow = false;
+  mUseHighQualityScaling = false;
   mIgnoreSuppression = false;
   mInTransform = false;
   mInFilter = false;
@@ -647,7 +649,7 @@ void nsDisplayListBuilder::MarkFrameForDisplay(nsIFrame* aFrame,
   mFramesMarkedForDisplay.AppendElement(aFrame);
   for (nsIFrame* f = aFrame; f;
        f = nsLayoutUtils::GetParentOrPlaceholderForCrossDoc(f)) {
-    if (f->GetStateBits() & NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO) {
+    if (f->HasAnyStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO)) {
       return;
     }
     f->AddStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO);
@@ -818,7 +820,7 @@ bool nsDisplayListBuilder::MarkOutOfFlowFrameForDisplay(nsIFrame* aDirtyFrame,
   nsRect dirty;
   nsRect visible = OutOfFlowDisplayData::ComputeVisibleRectForFrame(
       this, aFrame, GetVisibleRect(), GetDirtyRect(), &dirty);
-  if (!(aFrame->GetStateBits() & NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO) &&
+  if (!aFrame->HasAnyStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO) &&
       visible.IsEmpty()) {
     return false;
   }
@@ -837,7 +839,7 @@ static void UnmarkFrameForDisplay(nsIFrame* aFrame,
                                   const nsIFrame* aStopAtFrame) {
   for (nsIFrame* f = aFrame; f;
        f = nsLayoutUtils::GetParentOrPlaceholderForCrossDoc(f)) {
-    if (!(f->GetStateBits() & NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO)) {
+    if (!f->HasAnyStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO)) {
       return;
     }
     f->RemoveStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO);
@@ -883,6 +885,9 @@ uint32_t nsDisplayListBuilder::GetBackgroundPaintFlags() {
   if (mIsPaintingToWindow) {
     flags |= nsCSSRendering::PAINTBG_TO_WINDOW;
   }
+  if (mUseHighQualityScaling) {
+    flags |= nsCSSRendering::PAINTBG_HIGH_QUALITY_SCALING;
+  }
   return flags;
 }
 
@@ -893,7 +898,7 @@ uint32_t nsDisplayListBuilder::GetImageDecodeFlags() const {
   } else {
     flags |= imgIContainer::FLAG_SYNC_DECODE_IF_FAST;
   }
-  if (mIsPaintingToWindow) {
+  if (mIsPaintingToWindow || mUseHighQualityScaling) {
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
   }
   return flags;
@@ -1225,7 +1230,7 @@ void nsDisplayListBuilder::MarkFramesForDisplayList(
 /**
  * Mark all preserve-3d children with
  * NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO to make sure
- * nsFrame::BuildDisplayListForChild() would visit them.  Also compute
+ * nsIFrame::BuildDisplayListForChild() would visit them.  Also compute
  * dirty rect for preserve-3d children.
  *
  * @param aDirtyFrame is the frame to mark children extending context.
@@ -7377,7 +7382,7 @@ Point3D nsDisplayTransform::GetDeltaToTransformOrigin(
   CSSPoint origin = nsStyleTransformMatrix::Convert2DPosition(
       transformOrigin.horizontal, transformOrigin.vertical, aRefBox);
 
-  if (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     // SVG frames (unlike other frames) have a reference box that can be (and
     // typically is) offset from the TopLeft() of the frame. We need to account
     // for that here.
@@ -8952,7 +8957,7 @@ void nsDisplayEffectsBase::ComputeInvalidationRegion(
 
 bool nsDisplayEffectsBase::ValidateSVGFrame() {
   const nsIContent* content = mFrame->GetContent();
-  bool hasSVGLayout = (mFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT);
+  bool hasSVGLayout = mFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT);
   if (hasSVGLayout) {
     nsSVGDisplayableFrame* svgFrame = do_QueryFrame(mFrame);
     if (!svgFrame || !mFrame->GetContent()->IsSVGElement()) {
@@ -8977,7 +8982,7 @@ static void ComputeMaskGeometry(PaintFramesParams& aParams) {
 
   const nsStyleSVGReset* svgReset = firstFrame->StyleSVGReset();
 
-  nsTArray<nsSVGMaskFrame*> maskFrames;
+  nsTArray<SVGMaskFrame*> maskFrames;
   // XXX check return value?
   SVGObserverUtils::GetAndObserveMasks(firstFrame, &maskFrames);
 
@@ -9006,7 +9011,7 @@ static void ComputeMaskGeometry(PaintFramesParams& aParams) {
   // Union all mask layer rectangles in user space.
   gfxRect maskInUserSpace;
   for (size_t i = 0; i < maskFrames.Length(); i++) {
-    nsSVGMaskFrame* maskFrame = maskFrames[i];
+    SVGMaskFrame* maskFrame = maskFrames[i];
     gfxRect currentMaskSurfaceRect;
 
     if (maskFrame) {
@@ -9481,7 +9486,7 @@ void nsDisplayMasksAndClipPaths::PrintEffects(nsACString& aTo) {
     first = false;
   }
 
-  nsTArray<nsSVGMaskFrame*> masks;
+  nsTArray<SVGMaskFrame*> masks;
   // XXX check return value?
   SVGObserverUtils::GetAndObserveMasks(firstFrame, &masks);
   if (!masks.IsEmpty() && masks[0]) {
@@ -10002,11 +10007,11 @@ PaintTelemetry::AutoRecord::~AutoRecord() {
 }  // namespace mozilla
 
 static nsIFrame* GetSelfOrPlaceholderFor(nsIFrame* aFrame) {
-  if (aFrame->GetStateBits() & NS_FRAME_IS_PUSHED_FLOAT) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_IS_PUSHED_FLOAT)) {
     return aFrame;
   }
 
-  if ((aFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
+  if (aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
       !aFrame->GetPrevInFlow()) {
     return aFrame->GetPlaceholderFrame();
   }

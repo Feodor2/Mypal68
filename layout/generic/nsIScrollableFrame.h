@@ -10,6 +10,7 @@
 #define nsIScrollFrame_h___
 
 #include "nsCoord.h"
+#include "mozilla/dom/WindowBinding.h"  // for mozilla::dom::ScrollBehavior
 #include "mozilla/Maybe.h"
 #include "mozilla/ScrollStyles.h"
 #include "mozilla/ScrollTypes.h"

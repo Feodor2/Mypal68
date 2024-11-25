@@ -15,43 +15,29 @@
 #include "TouchManager.h"
 #include "Units.h"
 #include "Visibility.h"
-#include "ZoomConstraintsClient.h"
-#include "gfxPoint.h"
 #include "mozilla/ArenaObjectID.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/EventForwards.h"
 #include "mozilla/FlushType.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ScrollTypes.h"
-#include "mozilla/ServoStyleSet.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/StyleSheet.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/HTMLDocumentBinding.h"
 #include "mozilla/layers/FocusTarget.h"
-#include "nsChangeHint.h"
-#include "nsClassHashtable.h"
 #include "nsColor.h"
 #include "nsCOMArray.h"
 #include "nsCoord.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsFrameManager.h"
 #include "nsFrameState.h"
-#include "nsHashKeys.h"
 #include "nsIContent.h"
 #include "nsIObserver.h"
 #include "nsISelectionController.h"
-#include "nsIWidget.h"
 #include "nsQueryFrame.h"
-#include "nsMargin.h"
 #include "nsPresArena.h"
 #include "nsPresContext.h"
 #include "nsRect.h"
-#include "nsRefPtrHashtable.h"
 #include "nsRefreshDriver.h"
-#include "nsRegionFwd.h"
 #include "nsStringFwd.h"
 #include "nsStubDocumentObserver.h"
 #include "nsTHashtable.h"
@@ -65,7 +51,6 @@ class MobileViewportManager;
 #ifdef ACCESSIBILITY
 class nsAccessibilityService;
 #endif
-class nsARefreshObserver;
 class nsAutoCauseReflowNotifier;
 class nsCanvasFrame;
 class nsCaret;
@@ -83,10 +68,8 @@ class nsIReflowCallback;
 class nsIScrollableFrame;
 class nsITimer;
 class nsPIDOMWindowOuter;
-class nsAPostRefreshObserver;
 class nsPresShellEventCB;
 class nsRange;
-class nsRefreshDriver;
 class nsRegion;
 class nsView;
 class nsViewManager;
@@ -96,13 +79,9 @@ struct RangePaintInfo;
 class ReflowCountMgr;
 #endif
 class WeakFrame;
-
-template <class E>
-class nsCOMArray;
+class ZoomConstraintsClient;
 
 struct nsCallbackEventRequest;
-struct nsPoint;
-struct nsRect;
 
 namespace mozilla {
 class AccessibleCaretEventHub;
@@ -118,7 +97,6 @@ class DocAccessible;
 #endif
 
 namespace dom {
-class Document;
 class Element;
 class Event;
 class HTMLSlotElement;
@@ -806,6 +784,8 @@ class PresShell final : public nsStubDocumentObserver,
    * RenderDocumentFlags::IgnoreViewportScrolling is set or the document is in
    * ignore viewport scrolling mode
    * (PresShell::SetIgnoreViewportScrolling/IgnoringViewportScrolling).
+   *   set RenderDocumentFlags::UseHighQualityScaling to enable downscale on
+   *   decode for images.
    * @param aBackgroundColor a background color to render onto
    * @param aRenderedContext the gfxContext to render to. We render so that
    * one CSS pixel in the source document is rendered to one unit in the current

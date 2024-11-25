@@ -10,7 +10,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Text.h"
-#include "nsFrame.h"
+#include "nsIFrame.h"
 #include "nsFrameSelection.h"
 #include "nsSplittableFrame.h"
 #include "nsLineBox.h"
@@ -29,13 +29,13 @@
 class nsTextPaintStyle;
 struct SelectionDetails;
 class nsTextFragment;
-class SVGTextFrame;
 
 namespace mozilla {
 class SVGContextPaint;
-};
+class SVGTextFrame;
+}  // namespace mozilla
 
-class nsTextFrame : public nsFrame {
+class nsTextFrame : public nsIFrame {
   typedef mozilla::LayoutDeviceRect LayoutDeviceRect;
   typedef mozilla::SelectionTypeMask SelectionTypeMask;
   typedef mozilla::SelectionType SelectionType;
@@ -212,7 +212,7 @@ class nsTextFrame : public nsFrame {
 
   explicit nsTextFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
                        ClassID aID = kClassID)
-      : nsFrame(aStyle, aPresContext, aID),
+      : nsIFrame(aStyle, aPresContext, aID),
         mNextContinuation(nullptr),
         mContentOffset(0),
         mContentLengthHint(0),
@@ -258,8 +258,8 @@ class nsTextFrame : public nsFrame {
     }
   }
   nsTextFrame* GetNextInFlow() const final {
-    return mNextContinuation && (mNextContinuation->GetStateBits() &
-                                 NS_FRAME_IS_FLUID_CONTINUATION)
+    return mNextContinuation && mNextContinuation->HasAnyStateBits(
+                                    NS_FRAME_IS_FLUID_CONTINUATION)
                ? mNextContinuation
                : nullptr;
   }
@@ -289,7 +289,7 @@ class nsTextFrame : public nsFrame {
   bool IsFrameOfType(uint32_t aFlags) const final {
     // Set the frame state bit for text frames to mark them as replaced.
     // XXX kipp: temporary
-    return nsFrame::IsFrameOfType(
+    return nsIFrame::IsFrameOfType(
         aFlags & ~(nsIFrame::eReplaced | nsIFrame::eLineParticipant));
   }
 
@@ -389,7 +389,7 @@ class nsTextFrame : public nsFrame {
    * characters are present.
    */
   bool HasNoncollapsedCharacters() const {
-    return (GetStateBits() & TEXT_HAS_NONCOLLAPSED_CHARACTERS) != 0;
+    return HasAnyStateBits(TEXT_HAS_NONCOLLAPSED_CHARACTERS);
   }
 
 #ifdef ACCESSIBILITY
@@ -399,7 +399,7 @@ class nsTextFrame : public nsFrame {
   float GetFontSizeInflation() const;
   bool IsCurrentFontInflation(float aInflation) const;
   bool HasFontSizeInflation() const {
-    return (GetStateBits() & TEXT_HAS_FONT_INFLATION) != 0;
+    return HasAnyStateBits(TEXT_HAS_FONT_INFLATION);
   }
   void SetFontSizeInflation(float aInflation);
 
@@ -703,8 +703,8 @@ class nsTextFrame : public nsFrame {
   void SetTextRun(gfxTextRun* aTextRun, TextRunType aWhichTextRun,
                   float aInflation);
   bool IsInTextRunUserData() const {
-    return GetStateBits() &
-           (TEXT_IN_TEXTRUN_USER_DATA | TEXT_IN_UNINFLATED_TEXTRUN_USER_DATA);
+    return HasAnyStateBits(TEXT_IN_TEXTRUN_USER_DATA |
+                           TEXT_IN_UNINFLATED_TEXTRUN_USER_DATA);
   }
   /**
    * Notify the frame that it should drop its pointer to a text run.

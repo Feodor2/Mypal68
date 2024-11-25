@@ -1217,7 +1217,7 @@ bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
 
 /* static */
 void nsTableFrame::GenericTraversal(nsDisplayListBuilder* aBuilder,
-                                    nsFrame* aFrame,
+                                    nsIFrame* aFrame,
                                     const nsDisplayListSet& aLists) {
   // This is similar to what
   // nsContainerFrame::BuildDisplayListForNonBlockChildren does, except that we
@@ -1386,7 +1386,7 @@ void nsTableFrame::CalcHasBCBorders() {
 
 /* static */
 void nsTableFrame::DisplayGenericTablePart(
-    nsDisplayListBuilder* aBuilder, nsFrame* aFrame,
+    nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
     const nsDisplayListSet& aLists,
     DisplayGenericTablePartTraversal aTraversal) {
   bool isVisible = aFrame->IsVisibleForPainting();
@@ -1725,7 +1725,7 @@ nscoord nsTableFrame::TableShrinkISizeToFit(gfxContext* aRenderingContext,
     // Tables shrink inline-size to fit with a slightly different algorithm
     // from the one they use for their intrinsic isize (the difference
     // relates to handling of percentage isizes on columns).  So this
-    // function differs from nsFrame::ShrinkWidthToFit by only the
+    // function differs from nsIFrame::ShrinkWidthToFit by only the
     // following line.
     // Since we've already called GetMinISize, we don't need to do any
     // of the other stuff GetPrefISize does.
@@ -2104,7 +2104,8 @@ void nsTableFrame::Reflow(nsPresContext* aPresContext,
   // make sure the table overflow area does include the table rect.
   nsRect tableRect(0, 0, aDesiredSize.Width(), aDesiredSize.Height());
 
-  if (!ShouldApplyOverflowClipping(this, aReflowInput.mStyleDisplay)) {
+  if (ShouldApplyOverflowClipping(aReflowInput.mStyleDisplay) !=
+      PhysicalAxes::Both) {
     // collapsed border may leak out
     LogicalMargin bcMargin = GetExcludedOuterBCBorder(wm);
     tableRect.Inflate(bcMargin.GetPhysicalMargin(wm));
@@ -2154,8 +2155,7 @@ void nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
     // FIXME: Unconditionally using NS_UNCONSTRAINEDSIZE for the bsize and
     // ignoring any change to the reflow status aren't correct. We'll never
     // paginate absolutely positioned frames.
-    nsFrame* positionedFrame = static_cast<nsFrame*>(positionedPart);
-    positionedFrame->FinishReflowWithAbsoluteFrames(
+    positionedPart->FinishReflowWithAbsoluteFrames(
         PresContext(), desiredSize, reflowInput, reflowStatus, true);
 
     // FinishReflowWithAbsoluteFrames has updated overflow on
@@ -2180,7 +2180,7 @@ void nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
 bool nsTableFrame::ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) {
   // As above in Reflow, make sure the table overflow area includes the table
   // rect, and check for collapsed borders leaking out.
-  if (!ShouldApplyOverflowClipping(this, StyleDisplay())) {
+  if (ShouldApplyOverflowClipping(StyleDisplay()) != PhysicalAxes::Both) {
     nsRect bounds(nsPoint(0, 0), GetSize());
     WritingMode wm = GetWritingMode();
     LogicalMargin bcMargin = GetExcludedOuterBCBorder(wm);
@@ -7695,6 +7695,6 @@ void nsTableFrame::UpdateStyleOfOwnedAnonBoxesForTableWrapper(
     cur->SetComputedStyle(newStyle);
   }
 
-  MOZ_ASSERT(!(aWrapperFrame->GetStateBits() & NS_FRAME_OWNS_ANON_BOXES),
+  MOZ_ASSERT(!aWrapperFrame->HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES),
              "Wrapper frame doesn't have any anon boxes of its own!");
 }

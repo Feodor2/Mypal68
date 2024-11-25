@@ -2224,7 +2224,6 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mContain(StyleContain::NONE),
       mAppearance(StyleAppearance::None),
       mDefaultAppearance(StyleAppearance::None),
-      mButtonAppearance(StyleButtonAppearance::Allow),
       mPosition(StylePositionProperty::Static),
       mFloat(StyleFloat::None),
       mBreakType(StyleClear::None),
@@ -2296,7 +2295,6 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mContain(aSource.mContain),
       mAppearance(aSource.mAppearance),
       mDefaultAppearance(aSource.mDefaultAppearance),
-      mButtonAppearance(aSource.mButtonAppearance),
       mPosition(aSource.mPosition),
       mFloat(aSource.mFloat),
       mBreakType(aSource.mBreakType),
@@ -2505,9 +2503,9 @@ nsChangeHint nsStyleDisplay::CalcDifference(
         hint |= nsChangeHint_ReflowHintsForScrollbarChange;
       }
     } else {
-      // Otherwise this is a change between visible and
-      // -moz-hidden-unscrollable. Here only whether we have a clip changes, so
-      // just repaint and update our overflow areas in that case.
+      // Otherwise this is a change between 'visible' and 'clip'.
+      // Here only whether we have a 'clip' changes, so just repaint and
+      // update our overflow areas in that case.
       hint |= nsChangeHint_UpdateOverflow | nsChangeHint_RepaintFrame;
     }
   }
@@ -2569,7 +2567,6 @@ nsChangeHint nsStyleDisplay::CalcDifference(
       mBreakAfter != aNewData.mBreakAfter ||
       mAppearance != aNewData.mAppearance ||
       mDefaultAppearance != aNewData.mDefaultAppearance ||
-      mButtonAppearance != aNewData.mButtonAppearance ||
       mOrient != aNewData.mOrient ||
       mOverflowClipBoxBlock != aNewData.mOverflowClipBoxBlock ||
       mOverflowClipBoxInline != aNewData.mOverflowClipBoxInline) {

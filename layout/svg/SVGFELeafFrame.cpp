@@ -6,24 +6,26 @@
 #include "ComputedStyle.h"
 #include "mozilla/PresShell.h"
 #include "nsContainerFrame.h"
-#include "nsFrame.h"
+#include "nsIFrame.h"
 #include "nsGkAtoms.h"
 #include "SVGObserverUtils.h"
 #include "SVGFilters.h"
 
-using namespace mozilla;
+nsIFrame* NS_NewSVGFELeafFrame(mozilla::PresShell* aPresShell,
+                               mozilla::ComputedStyle* aStyle);
+namespace mozilla {
 
 /*
  * This frame is used by filter primitive elements that don't
  * have special child elements that provide parameters.
  */
-class SVGFELeafFrame final : public nsFrame {
-  friend nsIFrame* NS_NewSVGFELeafFrame(mozilla::PresShell* aPresShell,
-                                        ComputedStyle* aStyle);
+class SVGFELeafFrame final : public nsIFrame {
+  friend nsIFrame* ::NS_NewSVGFELeafFrame(mozilla::PresShell* aPresShell,
+                                          ComputedStyle* aStyle);
 
  protected:
   explicit SVGFELeafFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsFrame(aStyle, aPresContext, kClassID) {
+      : nsIFrame(aStyle, aPresContext, kClassID) {
     AddStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_IS_NONDISPLAY);
   }
 
@@ -40,12 +42,12 @@ class SVGFELeafFrame final : public nsFrame {
       return false;
     }
 
-    return nsFrame::IsFrameOfType(aFlags & ~(nsIFrame::eSVG));
+    return nsIFrame::IsFrameOfType(aFlags & ~(nsIFrame::eSVG));
   }
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGFELeaf"), aResult);
+    return MakeFrameName(u"SVGFELeaf"_ns, aResult);
   }
 #endif
 
@@ -58,9 +60,15 @@ class SVGFELeafFrame final : public nsFrame {
   }
 };
 
-nsIFrame* NS_NewSVGFELeafFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
-  return new (aPresShell) SVGFELeafFrame(aStyle, aPresShell->GetPresContext());
+}  // namespace mozilla
+
+nsIFrame* NS_NewSVGFELeafFrame(mozilla::PresShell* aPresShell,
+                               mozilla::ComputedStyle* aStyle) {
+  return new (aPresShell)
+      mozilla::SVGFELeafFrame(aStyle, aPresShell->GetPresContext());
 }
+
+namespace mozilla {
 
 NS_IMPL_FRAMEARENA_HELPERS(SVGFELeafFrame)
 
@@ -71,7 +79,7 @@ void SVGFELeafFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                "Trying to construct an SVGFELeafFrame for a "
                "content element that doesn't support the right interfaces");
 
-  nsFrame::Init(aContent, aParent, aPrevInFlow);
+  nsIFrame::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
 
@@ -86,5 +94,7 @@ nsresult SVGFELeafFrame::AttributeChanged(int32_t aNameSpaceID,
     SVGObserverUtils::InvalidateDirectRenderingObservers(GetParent());
   }
 
-  return nsFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
+  return nsIFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 }
+
+}  // namespace mozilla

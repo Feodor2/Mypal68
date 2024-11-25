@@ -121,7 +121,7 @@ class nsSVGClipPathFrame final : public nsSVGContainerFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGClipPath"), aResult);
+    return MakeFrameName(u"SVGClipPath"_ns, aResult);
   }
 #endif
 

@@ -251,8 +251,7 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
       bool keepLinked = aKeepLinked;
       nsIFrame* invalid = item->FrameForInvalidation();
       if (!invalid->ForceDescendIntoIfVisible() &&
-          !(invalid->GetStateBits() &
-            NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO)) {
+          !invalid->HasAnyStateBits(NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO)) {
         keepLinked = true;
       }
 
@@ -1466,7 +1465,7 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
   // printf_stderr("Painting --- Modified list (dirty %d,%d,%d,%d):\n",
   //              modifiedDirty.x, modifiedDirty.y, modifiedDirty.width,
   //              modifiedDirty.height);
-  // nsFrame::PrintDisplayList(&mBuilder, modifiedDL);
+  // nsIFrame::PrintDisplayList(&mBuilder, modifiedDL);
 
   // |modifiedDL| can sometimes be empty here. We still perform the
   // display list merging to prune unused items (for example, items that
@@ -1483,7 +1482,7 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
   }
 
   // printf_stderr("Painting --- Merged list:\n");
-  // nsFrame::PrintDisplayList(&mBuilder, mList);
+  // nsIFrame::PrintDisplayList(&mBuilder, mList);
 
   mBuilder.LeavePresShell(mBuilder.RootReferenceFrame(), List());
   return result;

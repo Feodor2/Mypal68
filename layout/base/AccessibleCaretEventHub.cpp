@@ -429,7 +429,7 @@ nsEventStatus AccessibleCaretEventHub::HandleMouseEvent(
     WidgetMouseEvent* aEvent) {
   nsEventStatus rv = nsEventStatus_eIgnore;
 
-  if (aEvent->mButton != MouseButton::eLeft) {
+  if (aEvent->mButton != MouseButton::ePrimary) {
     return rv;
   }
 

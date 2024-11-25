@@ -30,7 +30,7 @@ nsresult nsIFrame::BeginXULLayout(nsBoxLayoutState& aState) {
   // XXXldb Is this still needed?
   AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
 
-  if (GetStateBits() & NS_FRAME_IS_DIRTY) {
+  if (HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
     // If the parent is dirty, all the children are dirty (ReflowInput
     // does this too).
     nsIFrame* box;
@@ -271,13 +271,10 @@ nsresult nsIFrame::XULLayout(nsBoxLayoutState& aState) {
   return NS_OK;
 }
 
-bool nsIFrame::DoesClipChildren() {
+bool nsIFrame::DoesClipChildrenInBothAxes() {
   const nsStyleDisplay* display = StyleDisplay();
-  NS_ASSERTION(
-      (display->mOverflowY == StyleOverflow::MozHiddenUnscrollable) ==
-          (display->mOverflowX == StyleOverflow::MozHiddenUnscrollable),
-      "If one overflow is -moz-hidden-unscrollable, the other should be too");
-  return display->mOverflowX == StyleOverflow::MozHiddenUnscrollable;
+  return display->mOverflowX == StyleOverflow::Clip &&
+         display->mOverflowY == StyleOverflow::Clip;
 }
 
 nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
@@ -288,7 +285,7 @@ nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
   }
   */
 
-  if (GetStateBits() & NS_FRAME_IS_DIRTY) {
+  if (HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
     XULRedraw(aBoxLayoutState);
   }
 
@@ -306,7 +303,7 @@ nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
   } else {
     nsRect rect(nsPoint(0, 0), GetSize());
     nsOverflowAreas overflowAreas(rect, rect);
-    if (!DoesClipChildren() && !IsXULCollapsed()) {
+    if (!DoesClipChildrenInBothAxes() && !IsXULCollapsed()) {
       // See if our child frames caused us to overflow after being laid
       // out. If so, store the overflow area.  This normally can't happen
       // in XUL, but it can happen with the CSS 'outline' property and

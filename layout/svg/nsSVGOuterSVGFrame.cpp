@@ -8,16 +8,16 @@
 // Keep others in (case-insensitive) order:
 #include "gfxContext.h"
 #include "nsDisplayList.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIObjectLoadingContent.h"
+#include "nsSubDocumentFrame.h"
 #include "nsSVGIntegrationUtils.h"
-#include "nsSVGForeignObjectFrame.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/SVGForeignObjectFrame.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGViewElement.h"
-#include "nsSubDocumentFrame.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -27,29 +27,28 @@ using namespace mozilla::image;
 //----------------------------------------------------------------------
 // Implementation helpers
 
-void nsSVGOuterSVGFrame::RegisterForeignObject(
-    nsSVGForeignObjectFrame* aFrame) {
+void nsSVGOuterSVGFrame::RegisterForeignObject(SVGForeignObjectFrame* aFrame) {
   NS_ASSERTION(aFrame, "Who on earth is calling us?!");
 
   if (!mForeignObjectHash) {
     mForeignObjectHash =
-        MakeUnique<nsTHashtable<nsPtrHashKey<nsSVGForeignObjectFrame>>>();
+        MakeUnique<nsTHashtable<nsPtrHashKey<SVGForeignObjectFrame>>>();
   }
 
   NS_ASSERTION(!mForeignObjectHash->GetEntry(aFrame),
-               "nsSVGForeignObjectFrame already registered!");
+               "SVGForeignObjectFrame already registered!");
 
   mForeignObjectHash->PutEntry(aFrame);
 
   NS_ASSERTION(mForeignObjectHash->GetEntry(aFrame),
-               "Failed to register nsSVGForeignObjectFrame!");
+               "Failed to register SVGForeignObjectFrame!");
 }
 
 void nsSVGOuterSVGFrame::UnregisterForeignObject(
-    nsSVGForeignObjectFrame* aFrame) {
+    SVGForeignObjectFrame* aFrame) {
   NS_ASSERTION(aFrame, "Who on earth is calling us?!");
   NS_ASSERTION(mForeignObjectHash && mForeignObjectHash->GetEntry(aFrame),
-               "nsSVGForeignObjectFrame not in registry!");
+               "SVGForeignObjectFrame not in registry!");
   return mForeignObjectHash->RemoveEntry(aFrame);
 }
 
@@ -449,7 +448,7 @@ void nsSVGOuterSVGFrame::Reflow(nsPresContext* aPresContext,
   // ReflowSVG() or ReflowSVGNonDisplayText() on them, depending
   // on whether we are non-display.
   mCallingReflowSVG = true;
-  if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
+  if (HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     ReflowSVGNonDisplayText(this);
   } else {
     // Update the mRects and visual overflow rects of all our descendants,
@@ -676,7 +675,7 @@ nsresult nsSVGOuterSVGFrame::AttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
                                               int32_t aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
-      !(GetStateBits() & (NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_NONDISPLAY))) {
+      !HasAnyStateBits(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_NONDISPLAY)) {
     if (aAttribute == nsGkAtoms::viewBox ||
         aAttribute == nsGkAtoms::preserveAspectRatio ||
         aAttribute == nsGkAtoms::transform) {
@@ -754,18 +753,26 @@ bool nsSVGOuterSVGFrame::IsSVGTransformed(Matrix* aOwnTransform,
 
 void nsSVGOuterSVGFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                           const nsDisplayListSet& aLists) {
-  if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
+  if (HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     return;
   }
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  nsRect visibleRect = aBuilder->GetVisibleRect();
+  nsRect dirtyRect = aBuilder->GetDirtyRect();
 
   // Per-spec, we always clip root-<svg> even when 'overflow' has its initial
   // value of 'visible'. See also the "visual overflow" comments in Reflow.
   DisplayListClipState::AutoSaveRestore autoSR(aBuilder);
   if (mIsRootContent || StyleDisplay()->IsScrollableOverflow()) {
     autoSR.ClipContainingBlockDescendantsToContentBox(aBuilder, this);
+    visibleRect = visibleRect.Intersect(GetContentRectRelativeToSelf());
+    dirtyRect = dirtyRect.Intersect(GetContentRectRelativeToSelf());
   }
+
+  nsDisplayListBuilder::AutoBuildingDisplayList building(
+      aBuilder, this, visibleRect, dirtyRect);
 
   if ((aBuilder->IsForEventDelivery() &&
        NS_SVGDisplayListHitTestingEnabled()) ||

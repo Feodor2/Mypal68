@@ -691,6 +691,7 @@ load 1401709.html
 load 1401807.html
 load 1404222-empty-shape.html
 load 1405443.html
+load 1405813.html
 load 1405896.html
 load 1406252-1.html
 load 1415185.html
@@ -780,3 +781,4 @@ load 1633737-2.html
 load 1633737-3.html
 load 1633737-4.html
 load 1633737-5.html
+pref(layout.accessiblecaret.enabled,true) load 1644819.html

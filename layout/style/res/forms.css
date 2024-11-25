@@ -86,7 +86,6 @@ input {
   display: inline-block;
   appearance: auto;
   -moz-default-appearance: textfield;
-  -moz-button-appearance: disallow;
   /* The sum of border and padding on block-start and block-end
      must be the same here, for buttons, and for <select> (including its
      internal padding magic) */
@@ -110,7 +109,6 @@ input::placeholder {
 textarea {
   appearance: auto;
   -moz-default-appearance: textarea;
-  -moz-button-appearance: disallow;
   margin-block: 1px;
   border: 2px inset ThreeDLightShadow;
   /* The 1px inline padding is for parity with Win/IE */
@@ -228,7 +226,7 @@ select {
   user-select: none;
   border-width: 2px;
   border-style: inset;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   /* No text-decoration reaching inside, by default */
   display: inline-block;
   page-break-inside: avoid;
@@ -242,10 +240,10 @@ select {
   padding-block: 0;
   appearance: auto;
   -moz-default-appearance: menulist;
-  -moz-button-appearance: allow;
 }
 
 select:-moz-select-list-box {
+  overflow: auto;
   background-color: -moz-Field;
   color: -moz-FieldText;
   vertical-align: text-bottom;
@@ -297,7 +295,7 @@ select > button[orientation="right"]:active {
 }
 
 *|*::-moz-display-comboboxcontrol-frame {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   /* This block-start/end padding plus the combobox block-start/end border need to
      add up to the block-start/end borderpadding of text inputs and buttons */
   padding-block: 1px;
@@ -724,7 +722,6 @@ optgroup:before {
 progress {
   appearance: auto;
   -moz-default-appearance: progress-bar;
-  -moz-button-appearance: disallow;
   display: inline-block;
   vertical-align: -0.2em;
 
@@ -756,7 +753,6 @@ progress {
 meter {
   appearance: auto;
   -moz-default-appearance: meter;
-  -moz-button-appearance: disallow;
   display: inline-block;
   vertical-align: -0.2em;
   background: linear-gradient(#e6e6e6, #e6e6e6, #eeeeee 20%, #cccccc 45%, #cccccc 55%);
@@ -796,7 +792,7 @@ input[type=range] {
   cursor: default;
   padding: unset;
   border: unset;
-  /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
+  /* Prevent nsIFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
 }
 
@@ -817,7 +813,7 @@ input[type=range]::-moz-range-track {
   writing-mode: unset !important;
   direction: unset !important;
   block-size: 0.2em; /* same as inline-size below */
-  /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
+  /* Prevent nsIFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
 }
 
@@ -846,7 +842,7 @@ input[type=range]::-moz-range-progress {
    */
   width: 0.2em;
   height: 0.2em;
-  /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
+  /* Prevent nsIFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
 }
 
@@ -874,7 +870,7 @@ input[type=range]::-moz-range-thumb {
   border: 0.1em solid #999;
   border-radius: 0.5em;
   background-color: #F0F0F0;
-  /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
+  /* Prevent nsIFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
 }
 
@@ -891,7 +887,7 @@ input[type=number]::-moz-number-wrapper {
   block-size: 100%;
   /* The align-self: center bit below allows the editor to be potentially
    * bigger than us. Clip it to match other text fields. */
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 input[type=number]::-moz-text-control-editing-root {

@@ -7,15 +7,20 @@
 #ifndef nsPresContext_h___
 #define nsPresContext_h___
 
+#include "mozilla/AppUnits.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/MediaFeatureChange.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/NotNull.h"
-#include "mozilla/ScrollStyles.h"
 #include "mozilla/PreferenceSheet.h"
+#include "mozilla/ScrollStyles.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsColor.h"
+#include "nsCompatibility.h"
 #include "nsCoord.h"
 #include "nsCOMPtr.h"
 #include "nsRect.h"
@@ -31,9 +36,7 @@
 #include "gfxTypes.h"
 #include "gfxRect.h"
 #include "nsTArray.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/AppUnits.h"
+#include "nsTHashtable.h"
 #include "prclist.h"
 #include "nsThreadUtils.h"
 #include "Units.h"
@@ -121,18 +124,18 @@ class nsRootPresContext;
 // An interface for presentation contexts. Presentation contexts are
 // objects that provide an outer context for a presentation shell.
 
-class nsPresContext : public nsISupports,
-                      public mozilla::SupportsWeakPtr<nsPresContext> {
+class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
  public:
   using Encoding = mozilla::Encoding;
   template <typename T>
   using NotNull = mozilla::NotNull<T>;
+  template <typename T>
+  using Maybe = mozilla::Maybe<T>;
   typedef mozilla::ScrollStyles ScrollStyles;
   using TransactionId = mozilla::layers::TransactionId;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(nsPresContext)
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(nsPresContext)
 
   enum nsPresContextType {
     eContext_Galley,        // unpaginated screen presentation
@@ -634,7 +637,7 @@ class nsPresContext : public nsISupports,
 
   /**
    * Check whether the given element would propagate its scrollbar styles to the
-   * viewport in non-paginated mode.  Must only be called if IsPaginated().
+   * viewport in non-paginated mode.
    */
   bool ElementWouldPropagateScrollStyles(const mozilla::dom::Element&);
 
@@ -1160,7 +1163,7 @@ class nsPresContext : public nsISupports,
 
   mozilla::TimeStamp mReflowStartTime;
 
-  mozilla::Maybe<TransactionId> mFirstContentfulPaintTransactionId;
+  Maybe<TransactionId> mFirstContentfulPaintTransactionId;
 
   // Time of various first interaction types, used to report time from
   // first paint of the top level content pres shell to first interaction.

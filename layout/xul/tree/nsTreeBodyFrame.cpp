@@ -2469,7 +2469,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
 
 class nsDisplayTreeBody final : public nsPaintedDisplayItem {
  public:
-  nsDisplayTreeBody(nsDisplayListBuilder* aBuilder, nsFrame* aFrame)
+  nsDisplayTreeBody(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTreeBody);
   }
@@ -3363,7 +3363,7 @@ ImgDrawResult nsTreeBodyFrame::PaintImage(
                                               opacity);
     }
 
-    uint32_t drawFlags = aBuilder && aBuilder->IsPaintingToWindow()
+    uint32_t drawFlags = aBuilder && aBuilder->UseHighQualityScaling()
                              ? imgIContainer::FLAG_HIGH_QUALITY_SCALING
                              : imgIContainer::FLAG_NONE;
     result &= nsLayoutUtils::DrawImage(

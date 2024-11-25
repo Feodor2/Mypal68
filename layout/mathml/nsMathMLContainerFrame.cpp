@@ -516,7 +516,7 @@ nsresult nsMathMLContainerFrame::FinalizeReflow(DrawTarget* aDrawTarget,
         // The Place() call above didn't request FinishReflowChild(),
         // so let's check that we eventually did through Stretch().
         for (nsIFrame* childFrame : PrincipalChildList()) {
-          NS_ASSERTION(!(childFrame->GetStateBits() & NS_FRAME_IN_REFLOW),
+          NS_ASSERTION(!childFrame->HasAnyStateBits(NS_FRAME_IN_REFLOW),
                        "DidReflow() was never called");
         }
       }
@@ -793,7 +793,7 @@ void nsMathMLContainerFrame::ReflowChild(nsIFrame* aChildFrame,
     if (!nsLayoutUtils::GetLastLineBaseline(wm, aChildFrame, &ascent)) {
       // We don't expect any other block children so just place the frame on
       // the baseline instead of going through DidReflow() and
-      // GetBaseline().  This is what nsFrame::GetBaseline() will do anyway.
+      // GetBaseline().  This is what nsIFrame::GetBaseline() will do anyway.
       aDesiredSize.SetBlockStartAscent(aDesiredSize.BSize(wm));
     } else {
       aDesiredSize.SetBlockStartAscent(ascent);
@@ -1335,7 +1335,7 @@ void nsMathMLContainerFrame::DidReflowChildren(nsIFrame* aFirst,
   for (nsIFrame* frame = aFirst; frame != aStop;
        frame = frame->GetNextSibling()) {
     NS_ASSERTION(frame, "aStop isn't a sibling");
-    if (frame->GetStateBits() & NS_FRAME_IN_REFLOW) {
+    if (frame->HasAnyStateBits(NS_FRAME_IN_REFLOW)) {
       // finish off principal descendants, too
       nsIFrame* grandchild = frame->PrincipalChildList().FirstChild();
       if (grandchild) DidReflowChildren(grandchild, nullptr);

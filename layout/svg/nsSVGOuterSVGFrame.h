@@ -12,9 +12,9 @@
 #include "nsRegion.h"
 
 class gfxContext;
-class nsSVGForeignObjectFrame;
 
 namespace mozilla {
+class SVGForeignObjectFrame;
 class PresShell;
 }  // namespace mozilla
 
@@ -79,7 +79,7 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGOuterSVG"), aResult);
+    return MakeFrameName(u"SVGOuterSVG"_ns, aResult);
   }
 #endif
 
@@ -114,7 +114,7 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
   // nsSVGContainerFrame methods:
   virtual gfxMatrix GetCanvasTM() override;
 
-  /* Methods to allow descendant nsSVGForeignObjectFrame frames to register and
+  /* Methods to allow descendant SVGForeignObjectFrame frames to register and
    * unregister themselves with their nearest nsSVGOuterSVGFrame ancestor. This
    * is temporary until display list based invalidation is impleented for SVG.
    * Maintaining a list of our foreignObject descendants allows us to search
@@ -123,8 +123,8 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
    * does not slow down SVG in general (only foreignObjects, until bug 614732 is
    * fixed).
    */
-  void RegisterForeignObject(nsSVGForeignObjectFrame* aFrame);
-  void UnregisterForeignObject(nsSVGForeignObjectFrame* aFrame);
+  void RegisterForeignObject(mozilla::SVGForeignObjectFrame* aFrame);
+  void UnregisterForeignObject(mozilla::SVGForeignObjectFrame* aFrame);
 
   virtual bool HasChildrenOnlyTransform(Matrix* aTransform) const override {
     // Our anonymous wrapper child must claim our children-only transforms as
@@ -177,10 +177,10 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
 
   // This is temporary until display list based invalidation is implemented for
   // SVG.
-  // A hash-set containing our nsSVGForeignObjectFrame descendants. Note we use
+  // A hash-set containing our SVGForeignObjectFrame descendants. Note we use
   // a hash-set to avoid the O(N^2) behavior we'd get tearing down an SVG frame
   // subtree if we were to use a list (see bug 381285 comment 20).
-  mozilla::UniquePtr<nsTHashtable<nsPtrHashKey<nsSVGForeignObjectFrame>>>
+  mozilla::UniquePtr<nsTHashtable<nsPtrHashKey<mozilla::SVGForeignObjectFrame>>>
       mForeignObjectHash;
 
   nsRegion mInvalidRegion;
@@ -243,7 +243,7 @@ class nsSVGOuterSVGAnonChildFrame final : public nsSVGDisplayContainerFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGOuterSVGAnonChild"), aResult);
+    return MakeFrameName(u"SVGOuterSVGAnonChild"_ns, aResult);
   }
 #endif
 

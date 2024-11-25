@@ -395,7 +395,7 @@ trait PrivateMatchMethods: TElement {
         if context.shared.traversal_flags.for_animation_only() {
             self.handle_display_change_for_smil_if_needed(
                 context,
-                old_values.as_ref().map(|v| &**v),
+                old_values.as_deref(),
                 new_values,
                 restyle_hint,
             );
@@ -408,7 +408,7 @@ trait PrivateMatchMethods: TElement {
         let mut tasks = UpdateAnimationsTasks::empty();
         if self.needs_animations_update(
             context,
-            old_values.as_ref().map(|s| &**s),
+            old_values.as_deref(),
             new_values,
             /* pseudo_element = */ None,
         ) {
@@ -417,15 +417,16 @@ trait PrivateMatchMethods: TElement {
 
         let before_change_style = if self.might_need_transitions_update(
             context,
-            old_values.as_ref().map(|s| &**s),
+            old_values.as_deref(),
             new_values,
             /* pseudo_element = */ None,
         ) {
-            let after_change_style = if self.has_css_transitions(context.shared, /* pseudo_element = */ None) {
-                self.after_change_style(context, new_values)
-            } else {
-                None
-            };
+            let after_change_style =
+                if self.has_css_transitions(context.shared, /* pseudo_element = */ None) {
+                    self.after_change_style(context, new_values)
+                } else {
+                    None
+                };
 
             // In order to avoid creating a SequentialTask for transitions which
             // may not be updated, we check it per property to make sure Gecko
@@ -459,7 +460,7 @@ trait PrivateMatchMethods: TElement {
             if important_rules_changed {
                 tasks.insert(UpdateAnimationsTasks::CASCADE_RESULTS);
             }
-            if new_values.is_display_property_changed_from_none(old_values.as_ref().map(|s| &**s)) {
+            if new_values.is_display_property_changed_from_none(old_values.as_deref()) {
                 tasks.insert(UpdateAnimationsTasks::DISPLAY_CHANGED_FROM_NONE);
             }
         }
@@ -637,14 +638,14 @@ trait PrivateMatchMethods: TElement {
         // map because this call will do a RwLock::read().
         let needs_animations_update = self.needs_animations_update(
             context,
-            old_values.as_ref().map(|s| &**s),
+            old_values.as_deref(),
             new_values,
             pseudo_element,
         );
 
         let might_need_transitions_update = self.might_need_transitions_update(
             context,
-            old_values.as_ref().map(|s| &**s),
+            old_values.as_deref(),
             new_values,
             pseudo_element,
         );

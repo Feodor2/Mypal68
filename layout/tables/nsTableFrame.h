@@ -182,9 +182,9 @@ class nsTableFrame : public nsContainerFrame {
                                                    bool* aDidPassThrough);
 
   typedef void (*DisplayGenericTablePartTraversal)(
-      nsDisplayListBuilder* aBuilder, nsFrame* aFrame,
+      nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
       const nsDisplayListSet& aLists);
-  static void GenericTraversal(nsDisplayListBuilder* aBuilder, nsFrame* aFrame,
+  static void GenericTraversal(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                const nsDisplayListSet& aLists);
 
   /**
@@ -199,7 +199,7 @@ class nsTableFrame : public nsContainerFrame {
    * display list set.
    */
   static void DisplayGenericTablePart(
-      nsDisplayListBuilder* aBuilder, nsFrame* aFrame,
+      nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
       const nsDisplayListSet& aLists,
       DisplayGenericTablePartTraversal aTraversal = GenericTraversal);
 
@@ -285,7 +285,7 @@ class nsTableFrame : public nsContainerFrame {
       const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
 
   /**
-   * A copy of nsFrame::ShrinkWidthToFit that calls a different
+   * A copy of nsIFrame::ShrinkWidthToFit that calls a different
    * GetPrefISize, since tables have two different ones.
    */
   nscoord TableShrinkISizeToFit(gfxContext* aRenderingContext,

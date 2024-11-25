@@ -99,10 +99,10 @@ bool nsSVGContainerFrame::ComputeCustomOverflow(
  */
 /* static */
 void nsSVGContainerFrame::ReflowSVGNonDisplayText(nsIFrame* aContainer) {
-  if (!(aContainer->GetStateBits() & NS_FRAME_IS_DIRTY)) {
+  if (!aContainer->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
     return;
   }
-  MOZ_ASSERT((aContainer->GetStateBits() & NS_FRAME_IS_NONDISPLAY) ||
+  MOZ_ASSERT(aContainer->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
                  !aContainer->IsFrameOfType(nsIFrame::eSVG),
              "it is wasteful to call ReflowSVGNonDisplayText on a container "
              "frame that is not NS_FRAME_IS_NONDISPLAY or not SVG");
@@ -156,15 +156,15 @@ void nsSVGDisplayContainerFrame::InsertFrames(
 
   // If we are not a non-display SVG frame and we do not have a bounds update
   // pending, then we need to schedule one for our new children:
-  if (!(GetStateBits() & (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN |
-                          NS_FRAME_IS_NONDISPLAY))) {
+  if (!HasAnyStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN |
+                       NS_FRAME_IS_NONDISPLAY)) {
     for (nsIFrame* kid = firstNewFrame; kid != nextFrame;
          kid = kid->GetNextSibling()) {
       nsSVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
       if (SVGFrame) {
-        MOZ_ASSERT(!(kid->GetStateBits() & NS_FRAME_IS_NONDISPLAY),
+        MOZ_ASSERT(!kid->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
                    "Check for this explicitly in the |if|, then");
-        bool isFirstReflow = (kid->GetStateBits() & NS_FRAME_FIRST_REFLOW);
+        bool isFirstReflow = kid->HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
         // Remove bits so that ScheduleBoundsUpdate will work:
         kid->RemoveStateBits(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY |
                              NS_FRAME_HAS_DIRTY_CHILDREN);
@@ -282,7 +282,7 @@ void nsSVGDisplayContainerFrame::ReflowSVG() {
   NS_ASSERTION(nsSVGUtils::OuterSVGIsCallingReflowSVG(this),
                "This call is probably a wasteful mistake");
 
-  MOZ_ASSERT(!(GetStateBits() & NS_FRAME_IS_NONDISPLAY),
+  MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
              "ReflowSVG mechanism not designed for this");
 
   MOZ_ASSERT(!IsSVGOuterSVGFrame(), "Do not call on outer-<svg>");
@@ -301,7 +301,7 @@ void nsSVGDisplayContainerFrame::ReflowSVG() {
   bool isFirstReflow = (mState & NS_FRAME_FIRST_REFLOW);
 
   bool outerSVGHasHadFirstReflow =
-      (GetParent()->GetStateBits() & NS_FRAME_FIRST_REFLOW) == 0;
+      !GetParent()->HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
 
   if (outerSVGHasHadFirstReflow) {
     RemoveStateBits(NS_FRAME_FIRST_REFLOW);  // tell our children
@@ -312,7 +312,7 @@ void nsSVGDisplayContainerFrame::ReflowSVG() {
   for (nsIFrame* kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
     nsSVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
     if (SVGFrame) {
-      MOZ_ASSERT(!(kid->GetStateBits() & NS_FRAME_IS_NONDISPLAY),
+      MOZ_ASSERT(!kid->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
                  "Check for this explicitly in the |if|, then");
       SVGFrame->ReflowSVG();
 
@@ -325,10 +325,10 @@ void nsSVGDisplayContainerFrame::ReflowSVG() {
       // SVGTextFrames.  We need to cause those to get reflowed in
       // case they are the target of a rendering observer.
       MOZ_ASSERT(
-          kid->GetStateBits() & NS_FRAME_IS_NONDISPLAY ||
+          kid->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
               !kid->IsFrameOfType(nsIFrame::eSVG),
           "expected kid to be a NS_FRAME_IS_NONDISPLAY frame or not SVG");
-      if (kid->GetStateBits() & NS_FRAME_IS_DIRTY) {
+      if (kid->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
         nsSVGContainerFrame* container = do_QueryFrame(kid);
         if (container && container->GetContent()->IsSVGElement()) {
           ReflowSVGNonDisplayText(container);

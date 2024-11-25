@@ -13,6 +13,7 @@ use std::slice;
 impl<T> Deref for nsTArray<T> {
     type Target = [T];
 
+    #[inline]
     fn deref<'a>(&'a self) -> &'a [T] {
         unsafe { slice::from_raw_parts(self.slice_begin(), self.header().mLength as usize) }
     }
@@ -89,9 +90,11 @@ impl<T> nsTArray<T> {
     pub unsafe fn set_len(&mut self, len: u32) {
         // this can leak
         debug_assert!(len >= self.len() as u32);
+        if self.len() == len as usize {
+            return;
+        }
         self.ensure_capacity(len as usize);
-        let header = self.header_mut();
-        header.mLength = len;
+        self.header_mut().mLength = len;
     }
 
     /// Resizes an array containing only POD elements
@@ -103,6 +106,9 @@ impl<T> nsTArray<T> {
     where
         T: Copy,
     {
+        if self.len() == len as usize {
+            return;
+        }
         self.ensure_capacity(len as usize);
         let header = self.header_mut();
         header.mLength = len;

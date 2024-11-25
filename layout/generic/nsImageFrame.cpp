@@ -1072,7 +1072,7 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   }
   FinishAndStoreOverflow(&aMetrics, aReflowInput.mStyleDisplay);
 
-  if ((GetStateBits() & NS_FRAME_FIRST_REFLOW) && !mReflowCallbackPosted) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW) && !mReflowCallbackPosted) {
     mReflowCallbackPosted = true;
     PresShell()->PostReflowCallback(this);
   }
@@ -1729,17 +1729,55 @@ static void PaintDebugImageMap(nsIFrame* aFrame, DrawTarget* aDrawTarget,
 }
 #endif
 
+// We want to sync-decode in this case, as otherwise we either need to flash
+// white while waiting to decode the new image, or paint the old image with a
+// different aspect-ratio, which would be bad as it'd be stretched.
+//
+// See bug 1589955.
+static bool OldImageHasDifferentRatio(const nsImageFrame& aFrame,
+                                      imgIContainer& aImage,
+                                      imgIContainer* aPrevImage) {
+  if (!aPrevImage || aPrevImage == &aImage) {
+    return false;
+  }
+
+  // If we don't depend on our intrinsic image size / ratio, we're good.
+  //
+  // FIXME(emilio): There's the case of the old image being painted
+  // intrinsically, and src and styles changing at the same time... Maybe we
+  // should keep track of the old GetPaintRect()'s ratio and the image's ratio,
+  // instead of checking this bit?
+  if (aFrame.HasAnyStateBits(IMAGE_SIZECONSTRAINED)) {
+    return false;
+  }
+
+  auto currentRatio = aFrame.GetComputedIntrinsicRatio();
+  // If we have an image, we need to have a current request.
+  // Same if we had an image.
+  const bool hasRequest = true;
+  MOZ_ASSERT(currentRatio == ComputeAspectRatio(&aImage, hasRequest, aFrame),
+             "aspect-ratio got out of sync during paint? How?");
+  auto oldRatio = ComputeAspectRatio(aPrevImage, hasRequest, aFrame);
+  return oldRatio != currentRatio;
+}
+
 void nsDisplayImage::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
+  MOZ_ASSERT(mImage);
+  auto* frame = static_cast<nsImageFrame*>(mFrame);
+
+  const bool oldImageIsDifferent =
+      OldImageHasDifferentRatio(*frame, *mImage, mPrevImage);
+
   uint32_t flags = imgIContainer::FLAG_NONE;
-  if (aBuilder->ShouldSyncDecodeImages()) {
+  if (aBuilder->ShouldSyncDecodeImages() || oldImageIsDifferent) {
     flags |= imgIContainer::FLAG_SYNC_DECODE;
   }
-  if (aBuilder->IsPaintingToWindow()) {
+  if (aBuilder->UseHighQualityScaling()) {
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
   }
 
-  ImgDrawResult result = static_cast<nsImageFrame*>(mFrame)->PaintImage(
-      *aCtx, ToReferenceFrame(), GetPaintRect(), mImage, flags);
+  ImgDrawResult result = frame->PaintImage(*aCtx, ToReferenceFrame(),
+                                           GetPaintRect(), mImage, flags);
 
   if (result == ImgDrawResult::NOT_READY ||
       result == ImgDrawResult::INCOMPLETE ||
@@ -1747,8 +1785,8 @@ void nsDisplayImage::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
     // If the current image failed to paint because it's still loading or
     // decoding, try painting the previous image.
     if (mPrevImage) {
-      result = static_cast<nsImageFrame*>(mFrame)->PaintImage(
-          *aCtx, ToReferenceFrame(), GetPaintRect(), mPrevImage, flags);
+      result = frame->PaintImage(*aCtx, ToReferenceFrame(), GetPaintRect(),
+                                 mPrevImage, flags);
     }
   }
 
@@ -1891,17 +1929,20 @@ bool nsDisplayImage::CreateWebRenderCommands(
 
   MOZ_ASSERT(mFrame->IsImageFrame() || mFrame->IsImageControlFrame());
   // Image layer doesn't support draw focus ring for image map.
-  nsImageFrame* frame = static_cast<nsImageFrame*>(mFrame);
+  auto* frame = static_cast<nsImageFrame*>(mFrame);
   if (frame->HasImageMap()) {
     return false;
   }
 
+  const bool oldImageIsDifferent =
+      OldImageHasDifferentRatio(*frame, *mImage, mPrevImage);
+
   uint32_t flags = imgIContainer::FLAG_ASYNC_NOTIFY;
-  if (aDisplayListBuilder->IsPaintingToWindow()) {
-    flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
-  }
-  if (aDisplayListBuilder->ShouldSyncDecodeImages()) {
+  if (aDisplayListBuilder->ShouldSyncDecodeImages() || oldImageIsDifferent) {
     flags |= imgIContainer::FLAG_SYNC_DECODE;
+  }
+  if (aDisplayListBuilder->UseHighQualityScaling()) {
+    flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
   }
 
   const int32_t factor = mFrame->PresContext()->AppUnitsPerDevPixel();
@@ -2237,7 +2278,7 @@ nsresult nsImageFrame::HandleEvent(nsPresContext* aPresContext,
   NS_ENSURE_ARG_POINTER(aEventStatus);
 
   if ((aEvent->mMessage == eMouseClick &&
-       aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) ||
+       aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary) ||
       aEvent->mMessage == eMouseMove) {
     nsImageMap* map = GetImageMap();
     bool isServerMap = IsServerImageMap();
@@ -2297,13 +2338,13 @@ nsresult nsImageFrame::HandleEvent(nsPresContext* aPresContext,
 Maybe<nsIFrame::Cursor> nsImageFrame::GetCursor(const nsPoint& aPoint) {
   nsImageMap* map = GetImageMap();
   if (!map) {
-    return nsFrame::GetCursor(aPoint);
+    return nsIFrame::GetCursor(aPoint);
   }
   nsIntPoint p;
   TranslateEventCoords(aPoint, p);
   HTMLAreaElement* area = map->GetArea(p.x, p.y);
   if (!area) {
-    return nsFrame::GetCursor(aPoint);
+    return nsIFrame::GetCursor(aPoint);
   }
 
   // Use the cursor from the style of the *area* element.
@@ -2630,7 +2671,7 @@ static bool IsInAutoWidthTableCellForQuirk(nsIFrame* aFrame) {
   nsBlockFrame* ancestor = nsLayoutUtils::FindNearestBlockAncestor(aFrame);
   if (ancestor->Style()->GetPseudoType() == PseudoStyleType::cellContent) {
     // Assume direct parent is a table cell frame.
-    nsFrame* grandAncestor = static_cast<nsFrame*>(ancestor->GetParent());
+    nsIFrame* grandAncestor = static_cast<nsIFrame*>(ancestor->GetParent());
     return grandAncestor && grandAncestor->StylePosition()->mWidth.IsAuto();
   }
   return false;

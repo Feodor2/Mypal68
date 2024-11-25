@@ -35,6 +35,8 @@ typedef MozPromise</* Dummy */ bool,
                    /* IsExclusive = */ true>
     StyleSheetParsePromise;
 
+enum class StyleRuleChangeKind : uint32_t;
+
 namespace css {
 class GroupRule;
 class Loader;
@@ -152,21 +154,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Returns the stylesheet's Servo origin as a StyleOrigin value.
   StyleOrigin GetOrigin() const;
-
-  /**
-   * The different changes that a stylesheet may go through.
-   *
-   * Used by the StyleSets in order to handle more efficiently some kinds of
-   * changes.
-   */
-  enum class ChangeType {
-    Added,
-    Removed,
-    ApplicableStateChanged,
-    RuleAdded,
-    RuleRemoved,
-    RuleChanged,
-  };
 
   void SetOwningNode(nsINode* aOwningNode) { mOwningNode = aOwningNode; }
 
@@ -420,8 +407,8 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // Called when a rule changes from CSSOM.
   //
   // FIXME(emilio): This shouldn't allow null, but MediaList doesn't know about
-  // it's owning media rule, plus it's used for the stylesheet media itself.
-  void RuleChanged(css::Rule*);
+  // its owning media rule, plus it's used for the stylesheet media itself.
+  void RuleChanged(css::Rule*, StyleRuleChangeKind);
 
   void AddStyleSet(ServoStyleSet* aStyleSet);
   void DropStyleSet(ServoStyleSet* aStyleSet);
@@ -520,8 +507,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // aApplicable is the value that we expect to get from IsApplicable().
   // assertion will fail if the expectation does not match reality.
   void ApplicableStateChanged(bool aApplicable);
-
-  void UnparentChildren();
 
   void LastRelease();
 

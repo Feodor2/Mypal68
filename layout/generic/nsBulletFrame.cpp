@@ -66,7 +66,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsBulletFrame)
 #ifdef DEBUG
 NS_QUERYFRAME_HEAD(nsBulletFrame)
   NS_QUERYFRAME_ENTRY(nsBulletFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
 #endif
 
 nsBulletFrame::~nsBulletFrame() = default;
@@ -86,12 +86,12 @@ void nsBulletFrame::DestroyFrom(nsIFrame* aDestructRoot,
   }
 
   // Let base class do the rest
-  nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsIFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsBulletFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Bullet"), aResult);
+  return MakeFrameName(u"Bullet"_ns, aResult);
 }
 #endif
 
@@ -103,7 +103,7 @@ bool nsBulletFrame::IsSelfEmpty() {
 
 /* virtual */
 void nsBulletFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
-  nsFrame::DidSetComputedStyle(aOldComputedStyle);
+  nsIFrame::DidSetComputedStyle(aOldComputedStyle);
 
   imgRequestProxy* newRequest = StyleList()->GetListStyleImage();
 
@@ -442,7 +442,7 @@ ImgDrawResult BulletRenderer::CreateWebRenderCommandsForImage(
   MOZ_RELEASE_ASSERT(mImage);
 
   uint32_t flags = imgIContainer::FLAG_ASYNC_NOTIFY;
-  if (aDisplayListBuilder->IsPaintingToWindow()) {
+  if (aDisplayListBuilder->UseHighQualityScaling()) {
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
   }
   if (aDisplayListBuilder->ShouldSyncDecodeImages()) {
@@ -1233,7 +1233,7 @@ nscoord nsBulletFrame::GetListStyleAscent() const {
 
 nscoord nsBulletFrame::GetLogicalBaseline(WritingMode aWritingMode) const {
   nscoord ascent = 0;
-  if (GetStateBits() & BULLET_FRAME_IMAGE_LOADING) {
+  if (HasAnyStateBits(BULLET_FRAME_IMAGE_LOADING)) {
     ascent = BSize(aWritingMode);
   } else {
     ascent = GetListStyleAscent();
@@ -1245,7 +1245,7 @@ bool nsBulletFrame::GetNaturalBaselineBOffset(WritingMode aWM,
                                               BaselineSharingGroup,
                                               nscoord* aBaseline) const {
   nscoord ascent = 0;
-  if (GetStateBits() & BULLET_FRAME_IMAGE_LOADING) {
+  if (HasAnyStateBits(BULLET_FRAME_IMAGE_LOADING)) {
     ascent = BSize(aWM);
   } else {
     ascent = GetListStyleAscent();

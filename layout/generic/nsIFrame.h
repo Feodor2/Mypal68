@@ -53,13 +53,15 @@
 #include "mozilla/layout/FrameChildList.h"
 #include "mozilla/AspectRatio.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Result.h"
 #include "mozilla/SmallPointerArray.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/WritingModes.h"
 #include "nsDirection.h"
 #include "nsFrameList.h"
 #include "nsFrameState.h"
-#include "mozilla/ReflowOutput.h"
+#include "mozilla/ReflowInput.h"
+#include "nsHTMLParts.h"
 #include "nsITheme.h"
 #include "nsLayoutUtils.h"
 #include "nsQueryFrame.h"
@@ -158,8 +160,7 @@ class Selection;
 //----------------------------------------------------------------------
 
 #define NS_SUBTREE_DIRTY(_frame) \
-  (((_frame)->GetStateBits() &   \
-    (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN)) != 0)
+  (_frame)->HasAnyStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN)
 
 // 1 million CSS pixels less than our max app unit measure.
 // For reflowing with an "infinite" available inline space per [css-sizing].
@@ -516,6 +517,62 @@ static void ReleaseValue(T* aPropertyValue) {
 
 //----------------------------------------------------------------------
 
+/**
+ * nsIFrame logging constants. We redefine the nspr
+ * PRLogModuleInfo.level field to be a bitfield.  Each bit controls a
+ * specific type of logging. Each logging operation has associated
+ * inline methods defined below.
+ *
+ * Due to the redefinition of the level field we cannot use MOZ_LOG directly
+ * as that will cause assertions due to invalid log levels.
+ */
+#define NS_FRAME_TRACE_CALLS 0x1
+#define NS_FRAME_TRACE_PUSH_PULL 0x2
+#define NS_FRAME_TRACE_CHILD_REFLOW 0x4
+#define NS_FRAME_TRACE_NEW_FRAMES 0x8
+
+#define NS_FRAME_LOG_TEST(_lm, _bit) \
+  (int(((mozilla::LogModule*)(_lm))->Level()) & (_bit))
+
+#ifdef DEBUG
+#  define NS_FRAME_LOG(_bit, _args)                           \
+    PR_BEGIN_MACRO                                            \
+    if (NS_FRAME_LOG_TEST(nsIFrame::sFrameLogModule, _bit)) { \
+      printf_stderr _args;                                    \
+    }                                                         \
+    PR_END_MACRO
+#else
+#  define NS_FRAME_LOG(_bit, _args)
+#endif
+
+// XXX Need to rework this so that logging is free when it's off
+#ifdef DEBUG
+#  define NS_FRAME_TRACE_IN(_method) Trace(_method, true)
+
+#  define NS_FRAME_TRACE_OUT(_method) Trace(_method, false)
+
+#  define NS_FRAME_TRACE(_bit, _args)                         \
+    PR_BEGIN_MACRO                                            \
+    if (NS_FRAME_LOG_TEST(nsIFrame::sFrameLogModule, _bit)) { \
+      TraceMsg _args;                                         \
+    }                                                         \
+    PR_END_MACRO
+
+#  define NS_FRAME_TRACE_REFLOW_IN(_method) Trace(_method, true)
+
+#  define NS_FRAME_TRACE_REFLOW_OUT(_method, _status) \
+    Trace(_method, false, _status)
+
+#else
+#  define NS_FRAME_TRACE(_bits, _args)
+#  define NS_FRAME_TRACE_IN(_method)
+#  define NS_FRAME_TRACE_OUT(_method)
+#  define NS_FRAME_TRACE_REFLOW_IN(_method)
+#  define NS_FRAME_TRACE_REFLOW_OUT(_method, _status)
+#endif
+
+//----------------------------------------------------------------------
+
 // Frame allocation boilerplate macros. Every subclass of nsFrame must
 // either use NS_{DECL,IMPL}_FRAMEARENA_HELPERS pair for allocating
 // memory correctly, or use NS_DECL_ABSTRACT_FRAME to declare a frame
@@ -571,6 +628,8 @@ class nsIFrame : public nsQueryFrame {
   using BaselineSharingGroup = mozilla::BaselineSharingGroup;
   template <typename T>
   using Maybe = mozilla::Maybe<T>;
+  template <typename T, typename E>
+  using Result = mozilla::Result<T, E>;
   using Nothing = mozilla::Nothing;
   using OnNonvisible = mozilla::OnNonvisible;
   template <typename T = void>
@@ -600,6 +659,8 @@ class nsIFrame : public nsQueryFrame {
       DisplayItemDataArray;
   typedef nsQueryFrame::ClassID ClassID;
 
+  // nsQueryFrame
+  NS_DECL_QUERYFRAME
   NS_DECL_QUERYFRAME_TARGET(nsIFrame)
 
   explicit nsIFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
@@ -632,11 +693,15 @@ class nsIFrame : public nsQueryFrame {
         mHasBSizeChange(false),
         mInScrollAnchorChain(false),
         mHasColumnSpanSiblings(false),
-        mDescendantMayDependOnItsStaticPosition(false) {
+        mDescendantMayDependOnItsStaticPosition(false),
+        mShouldGenerateComputedInfo(false) {
     MOZ_ASSERT(mComputedStyle);
     MOZ_ASSERT(mPresContext);
     mozilla::PodZero(&mOverflow);
+    MOZ_COUNT_CTOR(nsIFrame);
   }
+  explicit nsIFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
+      : nsIFrame(aStyle, aPresContext, ClassID::nsIFrame_id) {}
 
   nsPresContext* PresContext() const { return mPresContext; }
 
@@ -661,7 +726,9 @@ class nsIFrame : public nsQueryFrame {
    * @param   aPrevInFlow the prev-in-flow frame
    */
   virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) = 0;
+                    nsIFrame* aPrevInFlow);
+
+  void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE;
 
   using PostDestroyData = mozilla::layout::PostFrameDestroyData;
   struct MOZ_RAII AutoPostDestroyData {
@@ -740,14 +807,38 @@ class nsIFrame : public nsQueryFrame {
    * @param  aDestructRoot is the root of the subtree being destroyed
    */
   virtual void DestroyFrom(nsIFrame* aDestructRoot,
-                           PostDestroyData& aPostDestroyData) = 0;
+                           PostDestroyData& aPostDestroyData);
   friend class nsFrameList;  // needed to pass aDestructRoot through to children
   friend class nsLineBox;    // needed to pass aDestructRoot through to children
   friend class nsContainerFrame;  // needed to pass aDestructRoot through to
                                   // children
-  friend class nsFrame;           // need to assign mParent
   template <class Source>
   friend class do_QueryFrameHelper;  // to read mClass
+
+  virtual ~nsIFrame();
+
+  // Overridden to prevent the global delete from being called, since
+  // the memory came out of an arena instead of the heap.
+  //
+  // Ideally this would be private and undefined, like the normal
+  // operator new.  Unfortunately, the C++ standard requires an
+  // overridden operator delete to be accessible to any subclass that
+  // defines a virtual destructor, so we can only make it protected;
+  // worse, some C++ compilers will synthesize calls to this function
+  // from the "deleting destructors" that they emit in case of
+  // delete-expressions, so it can't even be undefined.
+  void operator delete(void* aPtr, size_t sz);
+
+ private:
+  // Left undefined; nsFrame objects are never allocated from the heap.
+  void* operator new(size_t sz) noexcept(true);
+
+  // Returns true if this frame has any kind of CSS animations.
+  bool HasCSSAnimations();
+
+  // Returns true if this frame has any kind of CSS transitions.
+  bool HasCSSTransitions();
+
  public:
   /**
    * Get the content object associated with this frame. Does not add a
@@ -939,7 +1030,7 @@ class nsIFrame : public nsQueryFrame {
    *     (@see nsCSSFrameConstructor::ConstructDocElementFrame)
    *   * the internal anonymous frames of the root element copy their value
    *     from the parent.
-   *     (@see nsFrame::Init)
+   *     (@see nsIFrame::Init)
    *   * a scrolled frame propagates its value to its ancestor scroll frame
    *     (@see nsHTMLScrollFrame::ReloadChildFrames)
    */
@@ -972,8 +1063,8 @@ class nsIFrame : public nsQueryFrame {
    *
    *   - nsSVGInnerSVGFrame
    *   - SVGGeometryFrame (used for <path>, <circle>, etc.)
-   *   - nsSVGImageFrame
-   *   - nsSVGForeignObjectFrame
+   *   - SVGImageFrame
+   *   - SVGForeignObjectFrame
    *
    * For these frames the frame rect contains the frame's element's userspace
    * bounds including fill, stroke and markers, but converted to app units
@@ -1579,7 +1670,7 @@ class nsIFrame : public nsQueryFrame {
 
   /// @return true if we're tracking visibility for this frame.
   bool TrackingVisibility() const {
-    return bool(GetStateBits() & NS_FRAME_VISIBILITY_IS_TRACKED);
+    return HasAnyStateBits(NS_FRAME_VISIBILITY_IS_TRACKED);
   }
 
   /// @return the visibility state of this frame. See the Visibility enum
@@ -2059,6 +2150,11 @@ class nsIFrame : public nsQueryFrame {
                                nsSelectionAmount aBeginAmountType,
                                nsSelectionAmount aEndAmountType,
                                uint32_t aSelectFlags);
+
+  nsresult PeekBackwardAndForward(nsSelectionAmount aAmountBack,
+                                  nsSelectionAmount aAmountForward,
+                                  int32_t aStartPos, bool aJumpLines,
+                                  uint32_t aSelectFlags);
 
   enum { SELECT_ACCUMULATE = 0x01 };
 
@@ -2678,7 +2774,7 @@ class nsIFrame : public nsQueryFrame {
 
  protected:
   /**
-   * A helper, used by |nsFrame::ComputeSize| (for frames that need to
+   * A helper, used by |nsIFrame::ComputeSize| (for frames that need to
    * override only this part of ComputeSize), that computes the size
    * that should be returned when 'width', 'height', and
    * min/max-width/height are all 'auto' or equivalent.
@@ -2847,7 +2943,13 @@ class nsIFrame : public nsQueryFrame {
    * a given reflow?
    */
   virtual void DidReflow(nsPresContext* aPresContext,
-                         const ReflowInput* aReflowInput) = 0;
+                         const ReflowInput* aReflowInput);
+
+  void FinishReflowWithAbsoluteFrames(nsPresContext* aPresContext,
+                                      ReflowOutput& aDesiredSize,
+                                      const ReflowInput& aReflowInput,
+                                      nsReflowStatus& aStatus,
+                                      bool aConstrainBSize = true);
 
   /**
    * Updates the overflow areas of the frame. This can be called if an
@@ -2872,11 +2974,18 @@ class nsIFrame : public nsQueryFrame {
    */
   virtual void UnionChildOverflow(nsOverflowAreas& aOverflowAreas);
 
+  // Represents zero or more physical axes.
+  enum class PhysicalAxes : uint8_t {
+    None = 0x0,
+    Horizontal = 0x1,
+    Vertical = 0x2,
+    Both = Horizontal | Vertical,
+  };
+
   /**
-   * Returns true if aFrame should apply overflow clipping.
+   * Returns true if this frame should apply overflow clipping.
    */
-  static bool ShouldApplyOverflowClipping(const nsIFrame* aFrame,
-                                          const nsStyleDisplay* aDisp);
+  PhysicalAxes ShouldApplyOverflowClipping(const nsStyleDisplay* aDisp) const;
 
   /**
    * Helper method used by block reflow to identify runs of text so
@@ -2946,6 +3055,12 @@ class nsIFrame : public nsQueryFrame {
   // Accessor functions to an associated view object:
   //
   bool HasView() const { return !!(mState & NS_FRAME_HAS_VIEW); }
+
+  /**
+   * Helper method to create a view for a frame.  Only used by a few sub-classes
+   * that need a view.
+   */
+  void CreateView();
 
  protected:
   virtual nsView* GetViewInternal() const {
@@ -3171,7 +3286,7 @@ class nsIFrame : public nsQueryFrame {
     // other).
     eSupportsContainLayoutAndPaint = 1 << 13,
 
-    // These are to allow nsFrame::Init to assert that IsFrameOfType
+    // These are to allow nsIFrame::Init to assert that IsFrameOfType
     // implementations all call the base class method.  They are only
     // meaningful in DEBUG builds.
     eDEBUGAllFrames = 1 << 30,
@@ -3645,8 +3760,8 @@ class nsIFrame : public nsQueryFrame {
 
   // given a frame five me the first/last leaf available
   // XXX Robert O'Callahan wants to move these elsewhere
-  static void GetLastLeaf(nsPresContext* aPresContext, nsIFrame** aFrame);
-  static void GetFirstLeaf(nsPresContext* aPresContext, nsIFrame** aFrame);
+  static void GetLastLeaf(nsIFrame** aFrame);
+  static void GetFirstLeaf(nsIFrame** aFrame);
 
   static nsresult GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
                                                  nsPeekOffsetStruct* aPos,
@@ -3689,13 +3804,22 @@ class nsIFrame : public nsQueryFrame {
                                  bool* aOutJumpedLine,
                                  bool* aOutMovedOverNonSelectableText);
 
+ private:
+  Result<bool, nsresult> IsVisuallyAtLineEdge(nsILineIterator* aLineIterator,
+                                              int32_t aLine,
+                                              nsDirection aDirection);
+  Result<bool, nsresult> IsLogicallyAtLineEdge(nsILineIterator* aLineIterator,
+                                               int32_t aLine,
+                                               nsDirection aDirection);
+
   // Return the line number of the aFrame, and (optionally) the containing block
   // frame.
   // If aScrollLock is true, don't break outside scrollframes when looking for a
   // containing block frame.
-  static int32_t GetLineNumber(nsIFrame* aFrame, bool aLockScroll,
-                               nsIFrame** aContainingBlock = nullptr);
+  Result<int32_t, nsresult> GetLineNumber(
+      bool aLockScroll, nsIFrame** aContainingBlock = nullptr);
 
+ public:
   /**
    * Called to see if the children of the frame are visible from indexstart to
    * index end. This does not change any state. Returns true only if the indexes
@@ -3773,6 +3897,18 @@ class nsIFrame : public nsQueryFrame {
   ComputedStyle* DoGetParentComputedStyle(nsIFrame** aProviderFrame) const;
 
   /**
+   * Adjust the given parent frame to the right ComputedStyle parent frame for
+   * the child, given the pseudo-type of the prospective child.  This handles
+   * things like walking out of table pseudos and so forth.
+   *
+   * @param aProspectiveParent what GetParent() on the child returns.
+   *                           Must not be null.
+   * @param aChildPseudo the child's pseudo type, if any.
+   */
+  static nsIFrame* CorrectStyleParentFrame(
+      nsIFrame* aProspectiveParent, mozilla::PseudoStyleType aChildPseudo);
+
+  /**
    * Called by RestyleManager to update the style of anonymous boxes
    * directly associated with this frame.
    *
@@ -3787,7 +3923,7 @@ class nsIFrame : public nsQueryFrame {
    * NS_FRAME_OWNS_ANON_BOXES bit set.
    */
   void UpdateStyleOfOwnedAnonBoxes(mozilla::ServoRestyleState& aRestyleState) {
-    if (GetStateBits() & NS_FRAME_OWNS_ANON_BOXES) {
+    if (HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES)) {
       DoUpdateStyleOfOwnedAnonBoxes(aRestyleState);
     }
   }
@@ -3842,7 +3978,7 @@ class nsIFrame : public nsQueryFrame {
    * directly.
    */
   void AppendOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) {
-    if (GetStateBits() & NS_FRAME_OWNS_ANON_BOXES) {
+    if (HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES)) {
       if (IsInlineFrame()) {
         // See comment in nsIFrame::DoUpdateStyleOfOwnedAnonBoxes for why
         // we skip nsInlineFrames.
@@ -4136,7 +4272,7 @@ class nsIFrame : public nsQueryFrame {
    * Returns true if this box clips its children, e.g., if this box is an
    * scrollbox.
    */
-  virtual bool DoesClipChildren();
+  virtual bool DoesClipChildrenInBothAxes();
 
   // We compute and store the HTML content's overflow area. So don't
   // try to compute it in the box code.
@@ -4422,7 +4558,7 @@ class nsIFrame : public nsQueryFrame {
    * continuations of the first inline in it.
    */
   bool FrameIsNonFirstInIBSplit() const {
-    return (GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) &&
+    return HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT) &&
            FirstContinuation()->GetProperty(nsIFrame::IBSplitPrevSibling());
   }
 
@@ -4431,7 +4567,7 @@ class nsIFrame : public nsQueryFrame {
    * continuations of the last inline in it.
    */
   bool FrameIsNonLastInIBSplit() const {
-    return (GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) &&
+    return HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT) &&
            FirstContinuation()->GetProperty(nsIFrame::IBSplitSibling());
   }
 
@@ -4440,7 +4576,7 @@ class nsIFrame : public nsQueryFrame {
    * the font size inflation of its descendants.
    */
   bool IsContainerForFontSizeInflation() const {
-    return GetStateBits() & NS_FRAME_FONT_INFLATION_CONTAINER;
+    return HasAnyStateBits(NS_FRAME_FONT_INFLATION_CONTAINER);
   }
 
   /**
@@ -4609,6 +4745,42 @@ class nsIFrame : public nsQueryFrame {
                                   bool aDumpHtml = false);
 #endif
 
+  /**
+   * Adds display items for standard CSS background if necessary.
+   * Does not check IsVisibleForPainting.
+   * @param aForceBackground draw the background even if the frame
+   * background style appears to have no background --- this is useful
+   * for frames that might receive a propagated background via
+   * nsCSSRendering::FindBackground
+   * @return whether a themed background item was created.
+   */
+  bool DisplayBackgroundUnconditional(nsDisplayListBuilder* aBuilder,
+                                      const nsDisplayListSet& aLists,
+                                      bool aForceBackground);
+  /**
+   * Adds display items for standard CSS borders, background and outline for
+   * for this frame, as necessary. Checks IsVisibleForPainting and won't
+   * display anything if the frame is not visible.
+   * @param aForceBackground draw the background even if the frame
+   * background style appears to have no background --- this is useful
+   * for frames that might receive a propagated background via
+   * nsCSSRendering::FindBackground
+   */
+  void DisplayBorderBackgroundOutline(nsDisplayListBuilder* aBuilder,
+                                      const nsDisplayListSet& aLists,
+                                      bool aForceBackground = false);
+  /**
+   * Add a display item for the CSS outline. Does not check visibility.
+   */
+  void DisplayOutlineUnconditional(nsDisplayListBuilder* aBuilder,
+                                   const nsDisplayListSet& aLists);
+  /**
+   * Add a display item for the CSS outline, after calling
+   * IsVisibleForPainting to confirm we are visible.
+   */
+  void DisplayOutline(nsDisplayListBuilder* aBuilder,
+                      const nsDisplayListSet& aLists);
+
   bool ForceDescendIntoIfVisible() const { return mForceDescendIntoIfVisible; }
   void SetForceDescendIntoIfVisible(bool aForce) {
     mForceDescendIntoIfVisible = aForce;
@@ -4647,6 +4819,13 @@ class nsIFrame : public nsQueryFrame {
   }
   void SetDescendantMayDependOnItsStaticPosition(bool aValue) {
     mDescendantMayDependOnItsStaticPosition = aValue;
+  }
+
+  bool ShouldGenerateComputedInfo() const {
+    return mShouldGenerateComputedInfo;
+  }
+  void SetShouldGenerateComputedInfo(bool aValue) {
+    mShouldGenerateComputedInfo = aValue;
   }
 
   /**
@@ -4896,6 +5075,13 @@ class nsIFrame : public nsQueryFrame {
    */
   bool mDescendantMayDependOnItsStaticPosition : 1;
 
+  /**
+   * True if the next reflow of this frame should generate computed info
+   * metrics. These are used by devtools to reveal details of the layout
+   * process.
+   */
+  bool mShouldGenerateComputedInfo : 1;
+
  protected:
   // Helpers
   /**
@@ -5128,6 +5314,39 @@ class nsIFrame : public nsQueryFrame {
 #endif
 
 #ifdef DEBUG
+  /**
+   * Tracing method that writes a method enter/exit routine to the
+   * nspr log using the nsIFrame log module. The tracing is only
+   * done when the NS_FRAME_TRACE_CALLS bit is set in the log module's
+   * level field.
+   */
+  void Trace(const char* aMethod, bool aEnter);
+  void Trace(const char* aMethod, bool aEnter, const nsReflowStatus& aStatus);
+  void TraceMsg(const char* aFormatString, ...) MOZ_FORMAT_PRINTF(2, 3);
+
+  // Helper function that verifies that each frame in the list has the
+  // NS_FRAME_IS_DIRTY bit set
+  static void VerifyDirtyBitSet(const nsFrameList& aFrameList);
+
+  // Display Reflow Debugging
+  static void* DisplayReflowEnter(nsPresContext* aPresContext, nsIFrame* aFrame,
+                                  const ReflowInput& aReflowInput);
+  static void* DisplayLayoutEnter(nsIFrame* aFrame);
+  static void* DisplayIntrinsicISizeEnter(nsIFrame* aFrame, const char* aType);
+  static void* DisplayIntrinsicSizeEnter(nsIFrame* aFrame, const char* aType);
+  static void DisplayReflowExit(nsPresContext* aPresContext, nsIFrame* aFrame,
+                                ReflowOutput& aMetrics,
+                                const nsReflowStatus& aStatus,
+                                void* aFrameTreeNode);
+  static void DisplayLayoutExit(nsIFrame* aFrame, void* aFrameTreeNode);
+  static void DisplayIntrinsicISizeExit(nsIFrame* aFrame, const char* aType,
+                                        nscoord aResult, void* aFrameTreeNode);
+  static void DisplayIntrinsicSizeExit(nsIFrame* aFrame, const char* aType,
+                                       nsSize aResult, void* aFrameTreeNode);
+
+  static void DisplayReflowStartup();
+  static void DisplayReflowShutdown();
+
   static mozilla::LazyLogModule sFrameLogModule;
 
   // Show frame borders when rendering
@@ -5140,6 +5359,7 @@ class nsIFrame : public nsQueryFrame {
 #endif
 };
 
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsIFrame::PhysicalAxes)
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsIFrame::ReflowChildFlags)
 
 //----------------------------------------------------------------------

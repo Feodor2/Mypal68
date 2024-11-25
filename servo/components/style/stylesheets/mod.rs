@@ -56,7 +56,9 @@ pub use self::page_rule::PageRule;
 pub use self::rule_list::{CssRules, CssRulesHelpers};
 pub use self::rule_parser::{InsertRuleContext, State, TopLevelRuleParser};
 pub use self::rules_iterator::{AllRules, EffectiveRules};
-pub use self::rules_iterator::{NestedRuleIterationCondition, RulesIterator};
+pub use self::rules_iterator::{
+    EffectiveRulesIterator, NestedRuleIterationCondition, RulesIterator,
+};
 pub use self::style_rule::StyleRule;
 pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind};
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
@@ -299,7 +301,7 @@ impl CssRule {
 }
 
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum CssRuleType {
     // https://drafts.csswg.org/cssom/#the-cssrule-interface
     Style = 1,

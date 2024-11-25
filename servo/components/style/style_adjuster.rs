@@ -170,14 +170,14 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     /// NOTE: If this or the pointer-events tweak is removed, then
     /// minimal-xul.css and the scrollbar style caching need to be tweaked.
     fn adjust_for_inert(&mut self) {
+        use crate::values::specified::ui::CursorKind;
+        use crate::values::specified::ui::UserSelect;
         use properties::longhands::_moz_inert::computed_value::T as Inert;
         use properties::longhands::_moz_user_focus::computed_value::T as UserFocus;
         use properties::longhands::_moz_user_input::computed_value::T as UserInput;
         use properties::longhands::_moz_user_modify::computed_value::T as UserModify;
-        use properties::longhands::pointer_events::computed_value::T as PointerEvents;
         use properties::longhands::cursor::computed_value::T as Cursor;
-        use crate::values::specified::ui::CursorKind;
-        use crate::values::specified::ui::UserSelect;
+        use properties::longhands::pointer_events::computed_value::T as PointerEvents;
 
         let needs_update = {
             let ui = self.style.get_inherited_ui();
@@ -474,48 +474,22 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         }
     }
 
-    /// CSS3 overflow-x and overflow-y require some fixup as well in some
-    /// cases.
-    ///
-    /// overflow: clip and overflow: visible are meaningful only when used in
-    /// both dimensions.
+    /// CSS overflow-x and overflow-y require some fixup as well in some cases.
+    /// https://drafts.csswg.org/css-overflow-3/#overflow-properties
+    /// "Computed value: as specified, except with `visible`/`clip` computing to
+    /// `auto`/`hidden` (respectively) if one of `overflow-x` or `overflow-y` is
+    /// neither `visible` nor `clip`."
     fn adjust_for_overflow(&mut self) {
-        let original_overflow_x = self.style.get_box().clone_overflow_x();
-        let original_overflow_y = self.style.get_box().clone_overflow_y();
-
-        let mut overflow_x = original_overflow_x;
-        let mut overflow_y = original_overflow_y;
-
+        let overflow_x = self.style.get_box().clone_overflow_x();
+        let overflow_y = self.style.get_box().clone_overflow_y();
         if overflow_x == overflow_y {
-            return;
+            return; // optimization for the common case
         }
 
-        // If 'visible' is specified but doesn't match the other dimension,
-        // it turns into 'auto'.
-        if overflow_x == Overflow::Visible {
-            overflow_x = Overflow::Auto;
-        }
-
-        if overflow_y == Overflow::Visible {
-            overflow_y = Overflow::Auto;
-        }
-
-        #[cfg(feature = "gecko")]
-        {
-            // overflow: clip is deprecated, so convert to hidden if it's
-            // specified in only one dimension.
-            if overflow_x == Overflow::MozHiddenUnscrollable {
-                overflow_x = Overflow::Hidden;
-            }
-            if overflow_y == Overflow::MozHiddenUnscrollable {
-                overflow_y = Overflow::Hidden;
-            }
-        }
-
-        if overflow_x != original_overflow_x || overflow_y != original_overflow_y {
+        if overflow_x.is_scrollable() != overflow_y.is_scrollable() {
             let box_style = self.style.mutate_box();
-            box_style.set_overflow_x(overflow_x);
-            box_style.set_overflow_y(overflow_y);
+            box_style.set_overflow_x(overflow_x.to_scrollable());
+            box_style.set_overflow_y(overflow_y.to_scrollable());
         }
     }
 
@@ -565,7 +539,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         let overflow_y = box_style.clone_overflow_y();
 
         fn scrollable(v: Overflow) -> bool {
-            v != Overflow::MozHiddenUnscrollable && v != Overflow::Visible
+            v != Overflow::Clip && v != Overflow::Visible
         }
 
         // If at least one is scrollable we'll adjust the other one in
@@ -835,7 +809,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
                 return;
             }
             let is_html_select_element = element.map_or(false, |e| {
-                e.is_html_element() && e.local_name() == &*local_name!("select")
+                e.is_html_element() && e.local_name() == &*atom!("select")
             });
             if !is_html_select_element {
                 return;

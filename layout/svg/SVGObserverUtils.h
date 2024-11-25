@@ -23,11 +23,13 @@
 class nsAtom;
 class nsIURI;
 class nsSVGClipPathFrame;
-class nsSVGMarkerFrame;
 class nsSVGPaintServerFrame;
-class nsSVGFilterFrame;
-class nsSVGMaskFrame;
+
 namespace mozilla {
+class SVGFilterFrame;
+class SVGMarkerFrame;
+class SVGMaskFrame;
+
 namespace dom {
 class CanvasRenderingContext2D;
 class SVGGeometryElement;
@@ -213,7 +215,7 @@ class SVGObserverUtils {
    * MutationObservers::AttributeChanged which walks up the content node tree
    * all the way to the root node (not stopping if it encounters a non-container
    * SVG node) invalidating all mutation observers (not just
-   * nsSVGRenderingObservers) on all nodes along the way (not just the first
+   * SVGRenderingObservers) on all nodes along the way (not just the first
    * node it finds with observers). In other words, by doing all the
    * things in parentheses in the preceding sentence, this method uses
    * knowledge about our implementation and what can be affected by SVG effects
@@ -251,7 +253,7 @@ class SVGObserverUtils {
    * found, false otherwise.
    */
   static bool GetAndObserveMarkers(nsIFrame* aMarkedFrame,
-                                   nsSVGMarkerFrame* (*aFrames)[3]);
+                                   SVGMarkerFrame* (*aFrames)[3]);
 
   /**
    * Get the frames of the SVG filters applied to the given frame, and add the
@@ -269,7 +271,7 @@ class SVGObserverUtils {
    * that behavior just yet due to the regression potential.
    */
   static ReferenceState GetAndObserveFilters(
-      nsIFrame* aFilteredFrame, nsTArray<nsSVGFilterFrame*>* aFilterFrames);
+      nsIFrame* aFilteredFrame, nsTArray<SVGFilterFrame*>* aFilterFrames);
 
   /**
    * If the given frame is already observing SVG filters, this function gets
@@ -277,7 +279,7 @@ class SVGObserverUtils {
    * function assumes that it doesn't have anything to observe.
    */
   static ReferenceState GetFiltersIfObserving(
-      nsIFrame* aFilteredFrame, nsTArray<nsSVGFilterFrame*>* aFilterFrames);
+      nsIFrame* aFilteredFrame, nsTArray<SVGFilterFrame*>* aFilterFrames);
 
   /**
    * Starts observing filters for a <canvas> element's CanvasRenderingContext2D.
@@ -342,7 +344,7 @@ class SVGObserverUtils {
    * case.
    */
   static ReferenceState GetAndObserveMasks(
-      nsIFrame* aMaskedFrame, nsTArray<nsSVGMaskFrame*>* aMaskFrames);
+      nsIFrame* aMaskedFrame, nsTArray<SVGMaskFrame*>* aMaskFrames);
 
   /**
    * Get the SVGGeometryElement that is referenced by aTextPathFrame, and make

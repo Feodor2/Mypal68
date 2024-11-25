@@ -4,6 +4,7 @@
 
 #include "mozilla/dom/ConsoleInstance.h"
 #include "mozilla/dom/ConsoleBinding.h"
+#include "mozilla/Preferences.h"
 #include "ConsoleCommon.h"
 #include "ConsoleUtils.h"
 

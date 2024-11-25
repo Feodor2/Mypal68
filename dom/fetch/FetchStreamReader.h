@@ -5,10 +5,12 @@
 #ifndef mozilla_dom_FetchStreamReader_h
 #define mozilla_dom_FetchStreamReader_h
 
-#include "jsapi.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
 #include "mozilla/dom/FetchBinding.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla {
 namespace dom {

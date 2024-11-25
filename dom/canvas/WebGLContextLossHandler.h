@@ -14,8 +14,7 @@ class nsITimer;
 namespace mozilla {
 class WebGLContext;
 
-class WebGLContextLossHandler final
-    : public SupportsWeakPtr<WebGLContextLossHandler> {
+class WebGLContextLossHandler final : public SupportsWeakPtr {
   WebGLContext* const mWebGL;
   const nsCOMPtr<nsITimer>
       mTimer;          // If we don't hold a ref to the timer, it will think
@@ -28,8 +27,6 @@ class WebGLContextLossHandler final
   friend class WatchdogTimerEvent;
 
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(WebGLContextLossHandler)
-
   explicit WebGLContextLossHandler(WebGLContext* webgl);
   ~WebGLContextLossHandler();
 

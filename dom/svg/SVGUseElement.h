@@ -16,7 +16,6 @@
 #include "nsTArray.h"
 
 class nsIContent;
-class nsSVGUseFrame;
 
 nsresult NS_NewSVGSVGElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -25,6 +24,7 @@ nsresult NS_NewSVGUseElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
+class SVGUseFrame;
 struct URLExtraData;
 
 namespace dom {
@@ -33,7 +33,7 @@ typedef SVGGraphicsElement SVGUseElementBase;
 
 class SVGUseElement final : public SVGUseElementBase,
                             public nsStubMutationObserver {
-  friend class ::nsSVGUseFrame;
+  friend class mozilla::SVGUseFrame;
 
  protected:
   friend nsresult(::NS_NewSVGUseElement(
@@ -79,13 +79,14 @@ class SVGUseElement final : public SVGUseElementBase,
   already_AddRefed<DOMSVGAnimatedLength> Height();
 
   nsIURI* GetSourceDocURI();
+  const Encoding* GetSourceDocCharacterSet();
   URLExtraData* GetContentURLData() const { return mContentURLData; }
 
   // Updates the internal shadow tree to be an up-to-date clone of the
   // referenced element.
   void UpdateShadowTree();
 
-  // Shared code between AfterSetAttr and nsSVGUseFrame::AttributeChanged.
+  // Shared code between AfterSetAttr and SVGUseFrame::AttributeChanged.
   //
   // This is needed because SMIL doesn't go through AfterSetAttr unfortunately.
   void ProcessAttributeChange(int32_t aNamespaceID, nsAtom* aAttribute);
@@ -95,7 +96,21 @@ class SVGUseElement final : public SVGUseElementBase,
                         nsIPrincipal* aSubjectPrincipal, bool aNotify) final;
 
  protected:
-  bool IsCyclicReferenceTo(const Element& aTarget) const;
+  // Information from walking our ancestors and a given target.
+  enum class ScanResult {
+    // Nothing that should stop us from rendering the shadow tree.
+    Ok,
+    // We're never going to be displayed, so no point in updating the shadow
+    // tree.
+    //
+    // However if we're referenced from another tree that tree may need to be
+    // rendered.
+    Invisible,
+    // We're a cyclic reference to either an ancestor or another shadow tree. We
+    // shouldn't render this <use> element.
+    CyclicReference,
+  };
+  ScanResult ScanAncestors(const Element& aTarget) const;
 
   /**
    * Helper that provides a reference to the element with the ID that is
@@ -120,7 +135,7 @@ class SVGUseElement final : public SVGUseElementBase,
     SVGUseElement* mOwningUseElement;
   };
 
-  nsSVGUseFrame* GetFrame() const;
+  SVGUseFrame* GetFrame() const;
 
   virtual LengthAttributesInfo GetLengthInfo() override;
   virtual StringAttributesInfo GetStringInfo() override;

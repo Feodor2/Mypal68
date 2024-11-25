@@ -35,6 +35,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
@@ -43,7 +44,6 @@
 #include "nsIGfxInfo.h"
 #include "nsIWidget.h"
 #include "nsServiceManagerUtils.h"
-#include "SVGObserverUtils.h"
 #include "prenv.h"
 #include "ScopedGLHelpers.h"
 #ifdef MOZ_VR

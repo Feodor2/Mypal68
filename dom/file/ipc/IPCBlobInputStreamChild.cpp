@@ -16,10 +16,10 @@ namespace {
 
 // This runnable is used in case the last stream is forgotten on the 'wrong'
 // thread.
-class ShutdownRunnable final : public CancelableRunnable {
+class ShutdownRunnable final : public DiscardableRunnable {
  public:
   explicit ShutdownRunnable(IPCBlobInputStreamChild* aActor)
-      : CancelableRunnable("dom::ShutdownRunnable"), mActor(aActor) {}
+      : DiscardableRunnable("dom::ShutdownRunnable"), mActor(aActor) {}
 
   NS_IMETHOD
   Run() override {
@@ -33,10 +33,10 @@ class ShutdownRunnable final : public CancelableRunnable {
 
 // This runnable is used in case StreamNeeded() has been called on a non-owning
 // thread.
-class StreamNeededRunnable final : public CancelableRunnable {
+class StreamNeededRunnable final : public DiscardableRunnable {
  public:
   explicit StreamNeededRunnable(IPCBlobInputStreamChild* aActor)
-      : CancelableRunnable("dom::StreamNeededRunnable"), mActor(aActor) {}
+      : DiscardableRunnable("dom::StreamNeededRunnable"), mActor(aActor) {}
 
   NS_IMETHOD
   Run() override {
@@ -54,11 +54,11 @@ class StreamNeededRunnable final : public CancelableRunnable {
 
 // When the stream has been received from the parent, we inform the
 // IPCBlobInputStream.
-class StreamReadyRunnable final : public CancelableRunnable {
+class StreamReadyRunnable final : public DiscardableRunnable {
  public:
   StreamReadyRunnable(IPCBlobInputStream* aDestinationStream,
                       already_AddRefed<nsIInputStream> aCreatedStream)
-      : CancelableRunnable("dom::StreamReadyRunnable"),
+      : DiscardableRunnable("dom::StreamReadyRunnable"),
         mDestinationStream(aDestinationStream),
         mCreatedStream(std::move(aCreatedStream)) {
     MOZ_ASSERT(mDestinationStream);
@@ -78,10 +78,10 @@ class StreamReadyRunnable final : public CancelableRunnable {
 
 // This runnable is used in case LengthNeeded() has been called on a non-owning
 // thread.
-class LengthNeededRunnable final : public CancelableRunnable {
+class LengthNeededRunnable final : public DiscardableRunnable {
  public:
   explicit LengthNeededRunnable(IPCBlobInputStreamChild* aActor)
-      : CancelableRunnable("dom::LengthNeededRunnable"), mActor(aActor) {}
+      : DiscardableRunnable("dom::LengthNeededRunnable"), mActor(aActor) {}
 
   NS_IMETHOD
   Run() override {
@@ -99,10 +99,10 @@ class LengthNeededRunnable final : public CancelableRunnable {
 
 // When the stream has been received from the parent, we inform the
 // IPCBlobInputStream.
-class LengthReadyRunnable final : public CancelableRunnable {
+class LengthReadyRunnable final : public DiscardableRunnable {
  public:
   LengthReadyRunnable(IPCBlobInputStream* aDestinationStream, int64_t aSize)
-      : CancelableRunnable("dom::LengthReadyRunnable"),
+      : DiscardableRunnable("dom::LengthReadyRunnable"),
         mDestinationStream(aDestinationStream),
         mSize(aSize) {
     MOZ_ASSERT(mDestinationStream);

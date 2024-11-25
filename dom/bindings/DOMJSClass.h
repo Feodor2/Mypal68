@@ -8,7 +8,6 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
-#include "js/PropertySpec.h"
 #include "js/Wrapper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -17,10 +16,10 @@
 #include "mozilla/dom/PrototypeList.h"  // auto-generated
 #include "mozilla/dom/WebIDLPrefs.h"    // auto-generated
 
-#include "mozilla/dom/JSSlots.h"
-
 class nsCycleCollectionParticipant;
 class nsWrapperCache;
+struct JSFunctionSpec;
+struct JSPropertySpec;
 struct JSStructuredCloneReader;
 struct JSStructuredCloneWriter;
 class nsIGlobalObject;

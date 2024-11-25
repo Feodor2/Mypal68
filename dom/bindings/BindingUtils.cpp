@@ -799,8 +799,8 @@ static JSObject* CreateInterfaceObject(
     unsigned ctorNargs, const NamedConstructor* namedConstructors,
     JS::Handle<JSObject*> proto, const NativeProperties* properties,
     const NativeProperties* chromeOnlyProperties, const char* name,
-    bool isChrome, bool defineOnGlobal,
-    const char* const* legacyWindowAliases) {
+    bool isChrome, bool defineOnGlobal, const char* const* legacyWindowAliases,
+    bool isNamespace) {
   JS::Rooted<JSObject*> constructor(cx);
   MOZ_ASSERT(constructorProto);
   MOZ_ASSERT(constructorClass);
@@ -810,21 +810,23 @@ static JSObject* CreateInterfaceObject(
     return nullptr;
   }
 
-  if (!JS_DefineProperty(cx, constructor, "length", ctorNargs,
-                         JSPROP_READONLY)) {
-    return nullptr;
-  }
+  if (!isNamespace) {
+    if (!JS_DefineProperty(cx, constructor, "length", ctorNargs,
+                           JSPROP_READONLY)) {
+      return nullptr;
+    }
 
-  // Might as well intern, since we're going to need an atomized
-  // version of name anyway when we stick our constructor on the
-  // global.
-  JS::Rooted<JSString*> nameStr(cx, JS_AtomizeAndPinString(cx, name));
-  if (!nameStr) {
-    return nullptr;
-  }
+    // Might as well intern, since we're going to need an atomized
+    // version of name anyway when we stick our constructor on the
+    // global.
+    JS::Rooted<JSString*> nameStr(cx, JS_AtomizeAndPinString(cx, name));
+    if (!nameStr) {
+      return nullptr;
+    }
 
-  if (!JS_DefineProperty(cx, constructor, "name", nameStr, JSPROP_READONLY)) {
-    return nullptr;
+    if (!JS_DefineProperty(cx, constructor, "name", nameStr, JSPROP_READONLY)) {
+      return nullptr;
+    }
   }
 
   if (DOMIfaceAndProtoJSClass::FromJSClass(constructorClass)
@@ -929,7 +931,7 @@ static JSObject* CreateInterfacePrototypeObject(
     const NativeProperties* chromeOnlyProperties,
     const char* const* unscopableNames, bool isGlobal) {
   JS::Rooted<JSObject*> ourProto(
-      cx, JS_NewObjectWithUniqueType(cx, protoClass, parentProto));
+      cx, JS_NewObjectWithGivenProto(cx, protoClass, parentProto));
   if (!ourProto ||
       // We don't try to define properties on the global's prototype; those
       // properties go on the global itself.
@@ -1013,7 +1015,7 @@ void CreateInterfaceObjects(
     JS::Heap<JSObject*>* constructorCache, const NativeProperties* properties,
     const NativeProperties* chromeOnlyProperties, const char* name,
     bool defineOnGlobal, const char* const* unscopableNames, bool isGlobal,
-    const char* const* legacyWindowAliases) {
+    const char* const* legacyWindowAliases, bool isNamespace) {
   MOZ_ASSERT(protoClass || constructorClass, "Need at least one class!");
   MOZ_ASSERT(
       !((properties &&
@@ -1062,7 +1064,7 @@ void CreateInterfaceObjects(
     interface = CreateInterfaceObject(
         cx, global, constructorProto, constructorClass, ctorNargs,
         namedConstructors, proto, properties, chromeOnlyProperties, name,
-        isChrome, defineOnGlobal, legacyWindowAliases);
+        isChrome, defineOnGlobal, legacyWindowAliases, isNamespace);
     if (!interface) {
       if (protoCache) {
         // If we fail we need to make sure to clear the value of protoCache we
@@ -1136,14 +1138,15 @@ bool TryPreserveWrapper(JS::Handle<JSObject*> obj) {
 
   // The addProperty hook for WebIDL classes does wrapper preservation, and
   // nothing else, so call it, if present.
-  const DOMJSClass* domClass = GetDOMClass(obj);
-  const JSClass* clasp = domClass->ToJSClass();
-  JSAddPropertyOp addProperty = clasp->getAddProperty();
+
+  const JSClass* clasp = JS::GetClass(obj);
+  const DOMJSClass* domClass = GetDOMClass(clasp);
 
   // We expect all proxies to be nsISupports.
-  MOZ_RELEASE_ASSERT(!clasp->isProxy(),
+  MOZ_RELEASE_ASSERT(clasp->isNativeObject(),
                      "Should not call addProperty for proxies.");
 
+  JSAddPropertyOp addProperty = clasp->getAddProperty();
   if (!addProperty) {
     return true;
   }
@@ -1164,10 +1167,11 @@ bool HasReleasedWrapper(JS::Handle<JSObject*> obj) {
   if (nsISupports* native = UnwrapDOMObjectToISupports(obj)) {
     CallQueryInterface(native, &cache);
   } else {
-    const DOMJSClass* domClass = GetDOMClass(obj);
+    const JSClass* clasp = JS::GetClass(obj);
+    const DOMJSClass* domClass = GetDOMClass(clasp);
 
     // We expect all proxies to be nsISupports.
-    MOZ_RELEASE_ASSERT(!domClass->ToJSClass()->isProxy(),
+    MOZ_RELEASE_ASSERT(clasp->isNativeObject(),
                        "Should not call getWrapperCache for proxies.");
 
     WrapperCacheGetter getter = domClass->mWrapperCacheGetter;

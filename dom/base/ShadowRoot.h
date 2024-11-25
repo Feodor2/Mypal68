@@ -26,6 +26,8 @@ namespace mozilla {
 class EventChainPreVisitor;
 class ServoStyleRuleMap;
 
+enum class StyleRuleChangeKind : uint32_t;
+
 namespace css {
 class Rule;
 }
@@ -75,7 +77,7 @@ class ShadowRoot final : public DocumentFragment,
   void RemoveSheetFromStyles(StyleSheet&);
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
-  void RuleChanged(StyleSheet&, css::Rule*);
+  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
   void ImportRuleLoaded(CSSImportRule&, StyleSheet&);
   void SheetCloned(StyleSheet&);
   void StyleSheetApplicableStateChanged(StyleSheet&);

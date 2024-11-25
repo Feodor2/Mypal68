@@ -53,10 +53,8 @@ class MediaStreamTrackSource : public nsISupports {
   NS_DECL_CYCLE_COLLECTION_CLASS(MediaStreamTrackSource)
 
  public:
-  class Sink : public SupportsWeakPtr<Sink> {
+  class Sink : public SupportsWeakPtr {
    public:
-    MOZ_DECLARE_WEAKREFERENCE_TYPENAME(MediaStreamTrackSource::Sink)
-
     /**
      * Must be constant throughout the Sink's lifetime.
      *
@@ -347,11 +345,8 @@ class BasicTrackSource : public MediaStreamTrackSource {
  * Base class that consumers of a MediaStreamTrack can use to get notifications
  * about state changes in the track.
  */
-class MediaStreamTrackConsumer
-    : public SupportsWeakPtr<MediaStreamTrackConsumer> {
+class MediaStreamTrackConsumer : public SupportsWeakPtr {
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(MediaStreamTrackConsumer)
-
   /**
    * Called when the track's readyState transitions to "ended".
    * Unlike the "ended" event exposed to script this is called for any reason,
@@ -402,8 +397,7 @@ class MediaStreamTrackConsumer
  *   (*) is a copy of A's mInputTrack
  */
 // clang-format on
-class MediaStreamTrack : public DOMEventTargetHelper,
-                         public SupportsWeakPtr<MediaStreamTrack> {
+class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
   // PeerConnection and friends need to know our owning DOMStream and track id.
   friend class mozilla::PeerConnectionImpl;
   friend class mozilla::PeerConnectionMedia;
@@ -424,8 +418,6 @@ class MediaStreamTrack : public DOMEventTargetHelper,
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaStreamTrack,
                                            DOMEventTargetHelper)
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(MediaStreamTrack)
 
   nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
   JSObject* WrapObject(JSContext* aCx,

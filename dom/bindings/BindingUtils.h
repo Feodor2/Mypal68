@@ -28,6 +28,7 @@
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
 #include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrototypeList.h"
@@ -83,7 +84,7 @@ inline bool IsDOMClass(const JSClass* clasp) {
 
 // Return true if the JSClass is used for non-proxy DOM objects.
 inline bool IsNonProxyDOMClass(const JSClass* clasp) {
-  return IsDOMClass(clasp) && !clasp->isProxy();
+  return IsDOMClass(clasp) && clasp->isNativeObject();
 }
 
 // Returns true if the JSClass is used for DOM interface and interface
@@ -720,19 +721,16 @@ struct NamedConstructor {
  * |name|, which must also be non-null.
  */
 // clang-format on
-void CreateInterfaceObjects(JSContext* cx, JS::Handle<JSObject*> global,
-                            JS::Handle<JSObject*> protoProto,
-                            const JSClass* protoClass,
-                            JS::Heap<JSObject*>* protoCache,
-                            JS::Handle<JSObject*> interfaceProto,
-                            const JSClass* constructorClass, unsigned ctorNargs,
-                            const NamedConstructor* namedConstructors,
-                            JS::Heap<JSObject*>* constructorCache,
-                            const NativeProperties* regularProperties,
-                            const NativeProperties* chromeOnlyProperties,
-                            const char* name, bool defineOnGlobal,
-                            const char* const* unscopableNames, bool isGlobal,
-                            const char* const* legacyWindowAliases);
+void CreateInterfaceObjects(
+    JSContext* cx, JS::Handle<JSObject*> global,
+    JS::Handle<JSObject*> protoProto, const JSClass* protoClass,
+    JS::Heap<JSObject*>* protoCache, JS::Handle<JSObject*> constructorProto,
+    const JSClass* constructorClass, unsigned ctorNargs,
+    const NamedConstructor* namedConstructors,
+    JS::Heap<JSObject*>* constructorCache, const NativeProperties* properties,
+    const NativeProperties* chromeOnlyProperties, const char* name,
+    bool defineOnGlobal, const char* const* unscopableNames, bool isGlobal,
+    const char* const* legacyWindowAliases, bool isNamespace);
 
 /**
  * Define the properties (regular and chrome-only) on obj.

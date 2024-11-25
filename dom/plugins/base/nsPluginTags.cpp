@@ -18,6 +18,7 @@
 #include <cctype>
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/FakePluginTagInitBinding.h"
+#include "mozilla/StaticPrefs_plugin.h"
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxSettings.h"
@@ -39,7 +40,6 @@ using namespace mozilla;
 #define NS_PLUGIN_FLAG_CLICKTOPLAY 0x0020  // this is a click-to-play plugin
 
 static const char kPrefDefaultEnabledState[] = "plugin.default.state";
-static const char kPrefDefaultEnabledStateXpi[] = "plugin.defaultXpi.state";
 
 // check comma delimited extensions
 static bool ExtensionInList(const nsCString& aExtensionList,
@@ -512,18 +512,23 @@ nsPluginTag::GetClicktoplay(bool* aClicktoplay) {
 NS_IMETHODIMP
 nsPluginTag::GetEnabledState(uint32_t* aEnabledState) {
   int32_t enabledState;
-  nsresult rv =
-      Preferences::GetInt(GetStatePrefNameForPlugin(this).get(), &enabledState);
+  nsresult rv = NS_OK;
+  if (mIsFlashPlugin) {
+    enabledState = StaticPrefs::plugin_state_flash();
+  } else {
+    rv = Preferences::GetInt(GetStatePrefNameForPlugin(this).get(),
+                             &enabledState);
+  }
   if (NS_SUCCEEDED(rv) && enabledState >= nsIPluginTag::STATE_DISABLED &&
       enabledState <= nsIPluginTag::STATE_ENABLED) {
     *aEnabledState = (uint32_t)enabledState;
     return rv;
   }
 
-  const char* const pref =
-      mIsFromExtension ? kPrefDefaultEnabledStateXpi : kPrefDefaultEnabledState;
-
-  enabledState = Preferences::GetInt(pref, nsIPluginTag::STATE_ENABLED);
+  // Something went wrong fetching the plugin's state (e.g. it wasn't flash
+  // and the preference was not present) - use the default state:
+  enabledState = Preferences::GetInt(kPrefDefaultEnabledState,
+                                     nsIPluginTag::STATE_ENABLED);
   if (enabledState >= nsIPluginTag::STATE_DISABLED &&
       enabledState <= nsIPluginTag::STATE_ENABLED) {
     *aEnabledState = (uint32_t)enabledState;

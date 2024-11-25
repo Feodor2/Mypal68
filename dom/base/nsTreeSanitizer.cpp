@@ -1200,7 +1200,7 @@ void nsTreeSanitizer::SanitizeAttributes(mozilla::dom::Element* aElement,
         RefPtr<URLExtraData> urlExtra(aElement->GetURLDataForStyleAttr());
         RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
             value, urlExtra, document->GetCompatibilityMode(),
-            document->CSSLoader());
+            document->CSSLoader(), dom::CSSRule_Binding::STYLE_RULE);
         if (decl) {
           if (SanitizeStyleDeclaration(decl)) {
             nsAutoString cleanValue;
@@ -1294,8 +1294,7 @@ void nsTreeSanitizer::SanitizeAttributes(mozilla::dom::Element* aElement,
   // If we've got HTML audio or video, add the controls attribute, because
   // otherwise the content is unplayable with scripts removed.
   if (aElement->IsAnyOfHTMLElements(nsGkAtoms::video, nsGkAtoms::audio)) {
-    aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::controls, EmptyString(),
-                      false);
+    aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::controls, u""_ns, false);
   }
 }
 
@@ -1501,16 +1500,14 @@ void nsTreeSanitizer::LogMessage(const char* aMessage, Document* aDoc,
     nsAutoString msg;
     msg.Assign(NS_ConvertASCIItoUTF16(aMessage));
     if (aElement) {
-      msg.Append(NS_LITERAL_STRING(" Element: ") + aElement->LocalName() +
-                 NS_LITERAL_STRING("."));
+      msg.Append(u" Element: "_ns + aElement->LocalName() + u"."_ns);
     }
     if (aAttr) {
-      msg.Append(NS_LITERAL_STRING(" Attribute: ") +
-                 nsDependentAtomString(aAttr) + NS_LITERAL_STRING("."));
+      msg.Append(u" Attribute: "_ns + nsDependentAtomString(aAttr) + u"."_ns);
     }
 
     nsContentUtils::ReportToConsoleNonLocalized(
-        msg, nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), aDoc);
+        msg, nsIScriptError::warningFlag, "DOM"_ns, aDoc);
   }
 }
 

@@ -2,34 +2,141 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 
-#include <algorithm>
-
-#include "mozilla/MemoryReporting.h"
-
-// Local Includes
+#include <inttypes.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <cstdint>
+#include <new>
+#include <type_traits>
+#include <utility>
+#include "AudioChannelService.h"
+#include "Crypto.h"
+#include "GeckoProfiler.h"
+#include "MainThreadUtils.h"
 #include "Navigator.h"
-#include "nsContentSecurityManager.h"
-#include "nsScreen.h"
-#include "nsHistory.h"
-#include "nsDOMNavigationTiming.h"
-#include "nsIDOMStorageManager.h"
-#include "mozilla/dom/CallbackDebuggerNotification.h"
-#include "mozilla/dom/ContentFrameMessageManager.h"
+#include "PaintWorkletImpl.h"
+#include "SessionStorageCache.h"
+#include "Units.h"
+#include "WindowDestroyedEvent.h"
+#include "WindowNamedPropertiesHandler.h"
+#include "js/ComparisonOperators.h"
+#include "js/CompileOptions.h"
+#include "js/Id.h"
+#include "js/PropertyDescriptor.h"
+#include "js/RealmOptions.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
+#include "js/Warnings.h"
+#include "js/shadow/String.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
+#include "mozIDOMWindow.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/ArrayIterator.h"
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/BasicEvents.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/EventListenerManager.h"
+#include "mozilla/EventQueue.h"
+#include "mozilla/FloatingPoint.h"
+#include "mozilla/FlushType.h"
+#include "mozilla/Likely.h"
+#include "mozilla/LinkedList.h"
+#include "mozilla/Logging.h"
+#include "mozilla/MacroForEach.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/OwningNonNull.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ProcessHangMonitor.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/ScrollTypes.h"
+#include "mozilla/Services.h"
+#include "mozilla/SizeOfState.h"
+#include "mozilla/Span.h"
+#include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StorageAccess.h"
+#include "mozilla/TaskCategory.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryHistogramEnums.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/AudioContext.h"
+#include "mozilla/dom/BarProps.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CSPEvalChecker.h"
-#include "mozilla/dom/DebuggerNotification.h"
-#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/CallbackDebuggerNotification.h"
+#include "mozilla/dom/ChromeMessageBroadcaster.h"
+#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/ClientManager.h"
+#include "mozilla/dom/ClientSource.h"
+#include "mozilla/dom/ClientState.h"
+#include "mozilla/dom/ClientsBinding.h"
+#include "mozilla/dom/Console.h"
+#include "mozilla/dom/ContentFrameMessageManager.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
+#include "mozilla/dom/DebuggerNotification.h"
+#include "mozilla/dom/DebuggerNotificationBinding.h"
+#include "mozilla/dom/DebuggerNotificationManager.h"
+#include "mozilla/dom/DispatcherTrait.h"
+#include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/Fetch.h"
+#include "mozilla/dom/Gamepad.h"
+#include "mozilla/dom/GamepadManager.h"
+#include "mozilla/dom/HashChangeEvent.h"
+#include "mozilla/dom/HashChangeEventBinding.h"
+#include "mozilla/dom/IDBFactory.h"
+#include "mozilla/dom/IdleRequest.h"
+#include "mozilla/dom/ImageBitmap.h"
+#include "mozilla/dom/ImageBitmapSource.h"
+#include "mozilla/dom/InstallTriggerBinding.h"
+#include "mozilla/dom/IntlUtils.h"
+#include "mozilla/dom/JSExecutionContext.h"
+#include "mozilla/dom/LSObject.h"
+#include "mozilla/dom/LoadedScript.h"
 #include "mozilla/dom/LocalStorage.h"
 #include "mozilla/dom/LocalStorageCommon.h"
-#include "mozilla/dom/LSObject.h"
+#include "mozilla/dom/Location.h"
+#include "mozilla/dom/NavigatorBinding.h"
+#include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PartitionedLocalStorage.h"
-#include "mozilla/dom/Storage.h"
-#include "mozilla/dom/IdleRequest.h"
 #include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PopStateEvent.h"
+#include "mozilla/dom/PopStateEventBinding.h"
+#include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/dom/PrimitiveConversions.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Report.h"
+#include "mozilla/dom/ReportingObserver.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ServiceWorker.h"
+#include "mozilla/dom/ServiceWorkerDescriptor.h"
+#include "mozilla/dom/ServiceWorkerRegistration.h"
+#include "mozilla/dom/SharedWorker.h"
+#include "mozilla/dom/Storage.h"
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/StorageEventBinding.h"
 #include "mozilla/dom/StorageNotifierService.h"
@@ -37,125 +144,149 @@
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
-#include "mozilla/dom/VisualViewport.h"
-#include "mozilla/dom/WindowProxyHolder.h"
-#include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Result.h"
-#if defined(MOZ_WIDGET_ANDROID)
-#  include "mozilla/dom/WindowOrientationObserver.h"
+#include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/U2F.h"
+#ifdef MOZ_VR
+#  include "mozilla/dom/VRDisplay.h"
+#  include "mozilla/dom/VRDisplayEvent.h"
+#  include "mozilla/dom/VRDisplayEventBinding.h"
+#  include "mozilla/dom/VREventObserver.h"
 #endif
-#include "nsDOMOfflineResourceList.h"
-#include "nsICookieService.h"
-#include "nsError.h"
-#include "nsISizeOfEventTarget.h"
-#include "nsDOMJSUtils.h"
-#include "nsArrayUtils.h"
-#include "nsDOMWindowList.h"
+#include "mozilla/dom/VisualViewport.h"
 #include "mozilla/dom/WakeLock.h"
-#include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/dom/WebIDLGlobalNameHash.h"
+#include "mozilla/dom/WindowBinding.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/Worklet.h"
+#include "mozilla/dom/cache/CacheStorage.h"
+#include "mozilla/dom/cache/Types.h"
+#include "mozilla/fallible.h"
+#include "mozilla/gfx/BasePoint.h"
+#include "mozilla/gfx/BaseRect.h"
+#include "mozilla/gfx/BaseSize.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/gfx/Types.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/net/CookieSettings.h"
+#include "nsAtom.h"
+#include "nsBaseHashtable.h"
+#include "nsCCUncollectableMarker.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsCRTGlue.h"
+#include "nsCanvasFrame.h"
+#include "nsCharTraits.h"
+#include "nsCheapSets.h"
+#include "nsContentUtils.h"
+#include "nsCoord.h"
+#include "nsCycleCollectionNoteChild.h"
+#include "nsCycleCollectionTraversalCallback.h"
+#include "nsDOMNavigationTiming.h"
+#include "nsDOMOfflineResourceList.h"
+#include "nsDebug.h"
+#include "nsDocShell.h"
+#include "nsFocusManager.h"
+#include "nsFrameMessageManager.h"
+#include "nsGkAtoms.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsHashKeys.h"
+#include "nsHistory.h"
+#include "nsIAddonPolicyService.h"
+#include "nsIArray.h"
+#include "nsIBaseWindow.h"
+#include "nsIBrowserChild.h"
+#include "nsICancelableRunnable.h"
+#include "nsIChannel.h"
 #include "nsIContentSecurityPolicy.h"
+#include "nsIControllers.h"
+#include "nsICookieService.h"
+#include "nsID.h"
+#include "nsIDOMStorageManager.h"
+#include "nsIDeviceSensors.h"
+#include "nsIDocShell.h"
+#include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIDocumentLoader.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIScriptContext.h"
-#include "nsIController.h"
-#include "nsISlowScriptDebug.h"
-#include "nsWindowMemoryReporter.h"
-#include "nsWindowSizes.h"
-#include "WindowNamedPropertiesHandler.h"
-#include "nsFrameSelection.h"
-#include "nsNetUtil.h"
-#include "nsVariant.h"
-#include "nsPrintfCString.h"
-#include "mozilla/intl/LocaleService.h"
-#include "WindowDestroyedEvent.h"
-
-// Helper Classes
-#include "nsJSUtils.h"
-#include "jsapi.h"
-#include "jsfriendapi.h"
-#include "js/Warnings.h"  // JS::WarnASCII
-#include "js/Wrapper.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsReadableUtils.h"
-#include "nsJSEnvironment.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/Likely.h"
-#include "mozilla/Sprintf.h"
-#include "mozilla/StorageAccess.h"
-#include "mozilla/Unused.h"
-
-// Other Classes
-#include "mozilla/dom/BarProps.h"
-#include "nsContentCID.h"
-#include "nsLayoutStatics.h"
-#include "nsCCUncollectableMarker.h"
-#include "mozilla/dom/WorkerCommon.h"
-#include "mozilla/dom/ToJSValue.h"
-#include "nsJSPrincipals.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Debug.h"
-#include "mozilla/EventListenerManager.h"
-#include "mozilla/EventStates.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/ProcessHangMonitor.h"
-#include "mozilla/ScrollTypes.h"
-#include "mozilla/ThrottledEventQueue.h"
-#include "AudioChannelService.h"
-#include "nsAboutProtocolUtils.h"
-#include "nsCharTraits.h"  // NS_IS_HIGH/LOW_SURROGATE
-#include "PostMessageEvent.h"
-#include "mozilla/dom/DocGroup.h"
-#include "mozilla/dom/TabGroup.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "PaintWorkletImpl.h"
-
-// Interfaces Needed
+#include "nsIDragService.h"
+#include "nsIFocusManager.h"
 #include "nsIFrame.h"
-#include "nsCanvasFrame.h"
+#include "nsIGlobalObject.h"
+#include "nsIIOService.h"
+#include "nsIIdleRunnable.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsILoadContext.h"
+#include "nsILoadGroup.h"
+#include "nsILoadInfo.h"
+#include "nsINamed.h"
+#include "nsINode.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "nsIPermissionManager.h"
+#include "nsIPrefBranch.h"
+#include "nsIPrincipal.h"
+#include "nsIPrompt.h"
+#include "nsIRunnable.h"
+#include "nsIScreen.h"
+#include "nsIScreenManager.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsIScrollableFrame.h"
+#include "nsISerialEventTarget.h"
+#include "nsISimpleEnumerator.h"
+#include "nsISizeOfEventTarget.h"
+#include "nsISlowScriptDebug.h"
+#include "nsISupportsUtils.h"
+#include "nsIThread.h"
+#include "nsITimedChannel.h"
+#include "nsIURI.h"
+#include "nsIVariant.h"
+#include "nsIWeakReference.h"
+#include "nsIWebBrowserChrome.h"
+#include "nsIWebNavigation.h"
+#include "nsIWebProgressListener.h"
 #include "nsIWidget.h"
 #include "nsIWidgetListener.h"
-#include "nsIBaseWindow.h"
-#include "nsIDeviceSensors.h"
-#include "nsIContent.h"
-#include "nsIDocShell.h"
-#include "mozilla/dom/Document.h"
-#include "Crypto.h"
-#include "nsDOMString.h"
-#include "nsThreadUtils.h"
-#include "nsILoadContext.h"
-#include "nsIScrollableFrame.h"
-#include "nsView.h"
-#include "nsViewManager.h"
-#include "nsIPrompt.h"
-#include "nsIAddonPolicyService.h"
-#include "nsIWebNavigation.h"
-#include "nsIWebBrowserChrome.h"
-#include "nsDOMCID.h"
-#include "nsDOMWindowUtils.h"
-#include "nsIControllers.h"
-#include "nsGlobalWindowCommands.h"
+#include "nsJSPrincipals.h"
+#include "nsJSUtils.h"
+#include "nsLayoutStatics.h"
+#include "nsLiteralString.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
+#include "nsPoint.h"
+#include "nsPresContext.h"
 #include "nsQueryObject.h"
-#include "nsContentUtils.h"
-#include "nsCSSProps.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStateManager.h"
-#include "nsIObserverService.h"
-#include "nsFocusManager.h"
-#include "nsITimedChannel.h"
+#include "nsRefPtrHashtable.h"
+#include "nsSandboxFlags.h"
+#include "nsScreen.h"
 #include "nsServiceManagerUtils.h"
+#include "nsString.h"
+#include "nsStringFlags.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nsTLiteralString.h"
+#include "nsTObserverArray.h"
+#include "nsTStringRepr.h"
+#include "nsThreadUtils.h"
+#include "nsWeakReference.h"
+#include "nsWindowMemoryReporter.h"
+#include "nsWindowSizes.h"
+#include "nsWrapperCache.h"
+#include "nsWrapperCacheInlines.h"
+#include "nsXULAppAPI.h"
+#include "nsrootidl.h"
+#include "prclist.h"
+#include "prtypes.h"
+#include "xpcprivate.h"
+#include "xpcpublic.h"
+
 #ifdef MOZ_XUL
 #  include "nsIDOMXULControlElement.h"
 #  include "nsMenuPopupFrame.h"
 #endif
-#include "mozilla/dom/CustomEvent.h"
-#include "nsIScreenManager.h"
-#include "nsICSSDeclaration.h"
-
-#include "xpcprivate.h"
 
 #ifdef NS_PRINTING
 #  include "nsIPrintSettings.h"
@@ -163,78 +294,9 @@
 #  include "nsIWebBrowserPrint.h"
 #endif
 
-#include "nsWindowRoot.h"
-#include "nsNetCID.h"
-#include "nsIArray.h"
-
 #include "nsBindingManager.h"
 #include "nsXBLService.h"
 
-#include "nsIDragService.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Selection.h"
-#include "nsFrameLoader.h"
-#include "nsXPCOMCID.h"
-#include "mozilla/Logging.h"
-#include "prenv.h"
-
-#include "mozilla/dom/IDBFactory.h"
-#include "mozilla/dom/MessageChannel.h"
-#include "mozilla/dom/Promise.h"
-
-#include "mozilla/dom/Gamepad.h"
-#include "mozilla/dom/GamepadManager.h"
-
-#ifdef MOZ_VR
-#  include "gfxVR.h"
-#  include "mozilla/dom/VRDisplay.h"
-#  include "mozilla/dom/VRDisplayEvent.h"
-#  include "mozilla/dom/VRDisplayEventBinding.h"
-#  include "mozilla/dom/VREventObserver.h"
-#endif
-
-#include "nsRefreshDriver.h"
-#include "Layers.h"
-
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/Services.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/dom/Location.h"
-#include "nsHTMLDocument.h"
-#include "nsWrapperCacheInlines.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "prrng.h"
-#include "nsSandboxFlags.h"
-#include "mozilla/dom/AudioContext.h"
-#include "mozilla/dom/BrowserElementDictionariesBinding.h"
-#include "mozilla/dom/cache/CacheStorage.h"
-#include "mozilla/dom/Console.h"
-#include "mozilla/dom/Fetch.h"
-#include "mozilla/dom/FunctionBinding.h"
-#include "mozilla/dom/HashChangeEvent.h"
-#include "mozilla/dom/IntlUtils.h"
-#include "mozilla/dom/PopStateEvent.h"
-#include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/dom/PopupBlockedEvent.h"
-#include "mozilla/dom/PrimitiveConversions.h"
-#include "mozilla/dom/WindowBinding.h"
-#include "nsIBrowserChild.h"
-#include "mozilla/dom/LoadedScript.h"
-#include "mozilla/dom/MediaQueryList.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/NavigatorBinding.h"
-#include "mozilla/dom/ImageBitmap.h"
-#include "mozilla/dom/ImageBitmapBinding.h"
-#include "mozilla/dom/InstallTriggerBinding.h"
-#include "mozilla/dom/Report.h"
-#include "mozilla/dom/ReportingObserver.h"
-#include "mozilla/dom/SharedWorker.h"
-#include "mozilla/dom/ServiceWorker.h"
-#include "mozilla/dom/ServiceWorkerRegistration.h"
-#include "mozilla/dom/ServiceWorkerRegistrationDescriptor.h"
-#include "mozilla/dom/U2F.h"
-#include "mozilla/dom/WebIDLGlobalNameHash.h"
-#include "mozilla/dom/Worklet.h"
 #ifdef HAVE_SIDEBAR
 #  include "mozilla/dom/ExternalBinding.h"
 #endif
@@ -243,22 +305,16 @@
 #  include "mozilla/dom/SpeechSynthesis.h"
 #endif
 
-#include "mozilla/dom/ClientManager.h"
-#include "mozilla/dom/ClientSource.h"
-#include "mozilla/dom/ClientState.h"
-
-#include "mozilla/dom/WindowGlobalChild.h"
-
-#include "mozilla/net/CookieSettings.h"
-
-#include "AccessCheck.h"
-#include "SessionStorageCache.h"
-
 #ifdef ANDROID
 #  include <android/log.h>
 #endif
 
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/dom/WindowOrientationObserver.h"
+#endif
+
 #ifdef XP_WIN
+#  include "mozilla/Debug.h"
 #  include <process.h>
 #  define getpid _getpid
 #else
@@ -1385,8 +1441,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChromeFields.mMessageManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChromeFields.mGroupMessageManagers)
 
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingPromises)
-
   for (size_t i = 0; i < tmp->mDocumentFlushedResolvers.Length(); i++) {
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentFlushedResolvers[i]->mPromise);
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentFlushedResolvers[i]->mCallback);
@@ -1408,7 +1462,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   if (wrapper) {
     // Mark our realm as dead, so the JS engine won't hand out our
     // global after this point.
-    JS::RealmBehaviorsRef(js::GetNonCCWObjectRealm(wrapper)).setNonLive();
+    JS::SetRealmNonLive(js::GetNonCCWObjectRealm(wrapper));
   }
 
   tmp->CleanupCachedXBLHandlers();
@@ -1511,7 +1565,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mChromeFields.mGroupMessageManagers)
   }
 
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingPromises)
   for (size_t i = 0; i < tmp->mDocumentFlushedResolvers.Length(); i++) {
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentFlushedResolvers[i]->mPromise);
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentFlushedResolvers[i]->mCallback);
@@ -3427,7 +3480,7 @@ void nsGlobalWindowInner::Dump(const nsAString& aStr) {
 
 void nsGlobalWindowInner::Alert(nsIPrincipal& aSubjectPrincipal,
                                 ErrorResult& aError) {
-  Alert(EmptyString(), aSubjectPrincipal, aError);
+  Alert(u""_ns, aSubjectPrincipal, aError);
 }
 
 void nsGlobalWindowInner::Alert(const nsAString& aMessage,
@@ -5674,7 +5727,7 @@ bool WindowScriptTimeoutHandler::Call(const char* aExecutionReason) {
   options.setNoScriptRval(true);
   JS::Rooted<JSObject*> global(aes.cx(), mGlobal->GetGlobalJSObject());
   {
-    nsJSUtils::ExecutionContext exec(aes.cx(), global);
+    JSExecutionContext exec(aes.cx(), global);
     nsresult rv = exec.Compile(options, mExpr);
 
     JS::Rooted<JSScript*> script(aes.cx(), exec.MaybeGetScript());
@@ -5841,12 +5894,8 @@ bool nsGlobalWindowInner::RunTimeoutHandler(Timeout* aTimeout,
   // timeouts from repeatedly opening poups.
   timeout->mPopupState = PopupBlocker::openAbused;
 
-  bool trackNestingLevel = !timeout->mIsInterval;
-  uint32_t nestingLevel;
-  if (trackNestingLevel) {
-    nestingLevel = TimeoutManager::GetNestingLevel();
-    TimeoutManager::SetNestingLevel(timeout->mNestingLevel);
-  }
+  uint32_t nestingLevel = TimeoutManager::GetNestingLevel();
+  TimeoutManager::SetNestingLevel(timeout->mNestingLevel);
 
   const char* reason;
   if (timeout->mIsInterval) {
@@ -5885,9 +5934,7 @@ bool nsGlobalWindowInner::RunTimeoutHandler(Timeout* aTimeout,
   // point anyway, and the script context should have already reported
   // the script error in the usual way - so we just drop it.
 
-  if (trackNestingLevel) {
-    TimeoutManager::SetNestingLevel(nestingLevel);
-  }
+  TimeoutManager::SetNestingLevel(nestingLevel);
 
   mTimeoutManager->EndRunningTimeout(last_running_timeout);
   timeout->mRunning = false;
@@ -6125,9 +6172,6 @@ void nsGlobalWindowInner::AddSizeOfIncludingThis(
     aWindowSizes.mDOMPerformanceResourceEntries =
         mPerformance->SizeOfResourceEntries(aWindowSizes.mState.mMallocSizeOf);
   }
-
-  aWindowSizes.mDOMOtherSize += mPendingPromises.ShallowSizeOfExcludingThis(
-      aWindowSizes.mState.mMallocSizeOf);
 }
 
 void nsGlobalWindowInner::AddGamepad(uint32_t aIndex, Gamepad* aGamepad) {

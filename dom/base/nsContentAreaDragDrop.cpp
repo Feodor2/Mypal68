@@ -175,7 +175,7 @@ nsresult CheckAndGetExtensionForMime(const nsCString& aExtension,
   }
 
   nsCOMPtr<nsIMIMEInfo> mimeInfo;
-  rv = mimeService->GetFromTypeAndExtension(aMimeType, EmptyCString(),
+  rv = mimeService->GetFromTypeAndExtension(aMimeType, ""_ns,
                                             getter_AddRefs(mimeInfo));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -390,9 +390,8 @@ void DragDataProducer::CreateLinkText(const nsAString& inURL,
   // use a temp var in case |inText| is the same string as
   // |outLinkText| to avoid overwriting it while building up the
   // string in pieces.
-  nsAutoString linkText(NS_LITERAL_STRING("<a href=\"") + inURL +
-                        NS_LITERAL_STRING("\">") + inText +
-                        NS_LITERAL_STRING("</a>"));
+  nsAutoString linkText(u"<a href=\""_ns + inURL + u"\">"_ns + inText +
+                        u"</a>"_ns);
 
   outLinkText = linkText;
 }
@@ -447,7 +446,7 @@ nsresult DragDataProducer::GetImageData(imgIContainer* aImage,
     }
 
     nsCOMPtr<nsIMIMEInfo> mimeInfo;
-    mimeService->GetFromTypeAndExtension(mimeType, EmptyCString(),
+    mimeService->GetFromTypeAndExtension(mimeType, ""_ns,
                                          getter_AddRefs(mimeInfo));
     if (mimeInfo) {
       nsAutoCString extension;
@@ -814,34 +813,35 @@ nsresult DragDataProducer::AddStringsToDataTransfer(
     title.ReplaceChar("\r\n", ' ');
     dragData += title;
 
-    AddString(aDataTransfer, NS_LITERAL_STRING(kURLMime), dragData, principal);
-    AddString(aDataTransfer, NS_LITERAL_STRING(kURLDataMime), mUrlString,
+    AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kURLMime), dragData,
               principal);
-    AddString(aDataTransfer, NS_LITERAL_STRING(kURLDescriptionMime),
-              mTitleString, principal);
-    AddString(aDataTransfer, NS_LITERAL_STRING("text/uri-list"), mUrlString,
+    AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kURLDataMime),
+              mUrlString, principal);
+    AddString(aDataTransfer,
+              NS_LITERAL_STRING_FROM_CSTRING(kURLDescriptionMime), mTitleString,
               principal);
+    AddString(aDataTransfer, u"text/uri-list"_ns, mUrlString, principal);
   }
 
   // add a special flavor for the html context data
   if (!mContextString.IsEmpty())
-    AddString(aDataTransfer, NS_LITERAL_STRING(kHTMLContext), mContextString,
-              principal);
+    AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kHTMLContext),
+              mContextString, principal);
 
   // add a special flavor if we have html info data
   if (!mInfoString.IsEmpty())
-    AddString(aDataTransfer, NS_LITERAL_STRING(kHTMLInfo), mInfoString,
-              principal);
+    AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kHTMLInfo),
+              mInfoString, principal);
 
   // add the full html
   if (!mHtmlString.IsEmpty())
-    AddString(aDataTransfer, NS_LITERAL_STRING(kHTMLMime), mHtmlString,
-              principal);
+    AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kHTMLMime),
+              mHtmlString, principal);
 
   // add the plain text. we use the url for text/plain data if an anchor is
   // being dragged, rather than the title text of the link or the alt text for
   // an anchor image.
-  AddString(aDataTransfer, NS_LITERAL_STRING(kTextMime),
+  AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kTextMime),
             mIsAnchor ? mUrlString : mTitleString, principal);
 
   // add image data, if present. For now, all we're going to do with
@@ -851,8 +851,9 @@ nsresult DragDataProducer::AddStringsToDataTransfer(
   if (mImage) {
     RefPtr<nsVariantCC> variant = new nsVariantCC();
     variant->SetAsISupports(mImage);
-    aDataTransfer->SetDataWithPrincipal(NS_LITERAL_STRING(kNativeImageMime),
-                                        variant, 0, principal);
+    aDataTransfer->SetDataWithPrincipal(
+        NS_LITERAL_STRING_FROM_CSTRING(kNativeImageMime), variant, 0,
+        principal);
 
     // assume the image comes from a file, and add a file promise. We
     // register ourselves as a nsIFlavorDataProvider, and will use the
@@ -863,25 +864,27 @@ nsresult DragDataProducer::AddStringsToDataTransfer(
     if (dataProvider) {
       RefPtr<nsVariantCC> variant = new nsVariantCC();
       variant->SetAsISupports(dataProvider);
-      aDataTransfer->SetDataWithPrincipal(NS_LITERAL_STRING(kFilePromiseMime),
-                                          variant, 0, principal);
+      aDataTransfer->SetDataWithPrincipal(
+          NS_LITERAL_STRING_FROM_CSTRING(kFilePromiseMime), variant, 0,
+          principal);
     }
 
-    AddString(aDataTransfer, NS_LITERAL_STRING(kFilePromiseURLMime),
+    AddString(aDataTransfer,
+              NS_LITERAL_STRING_FROM_CSTRING(kFilePromiseURLMime),
               mImageSourceString, principal);
-    AddString(aDataTransfer, NS_LITERAL_STRING(kFilePromiseDestFilename),
+    AddString(aDataTransfer,
+              NS_LITERAL_STRING_FROM_CSTRING(kFilePromiseDestFilename),
               mImageDestFileName, principal);
 #if defined(XP_MACOSX)
-    AddString(aDataTransfer, NS_LITERAL_STRING(kImageRequestMime),
+    AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kImageRequestMime),
               mImageRequestMime, principal, /* aHidden= */ true);
 #endif
 
     // if not an anchor, add the image url
     if (!mIsAnchor) {
-      AddString(aDataTransfer, NS_LITERAL_STRING(kURLDataMime), mUrlString,
-                principal);
-      AddString(aDataTransfer, NS_LITERAL_STRING("text/uri-list"), mUrlString,
-                principal);
+      AddString(aDataTransfer, NS_LITERAL_STRING_FROM_CSTRING(kURLDataMime),
+                mUrlString, principal);
+      AddString(aDataTransfer, u"text/uri-list"_ns, mUrlString, principal);
     }
   }
 

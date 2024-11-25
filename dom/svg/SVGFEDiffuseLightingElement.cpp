@@ -4,8 +4,8 @@
 
 #include "mozilla/dom/SVGFEDiffuseLightingElement.h"
 #include "mozilla/dom/SVGFEDiffuseLightingElementBinding.h"
+#include "mozilla/SVGFilterInstance.h"
 #include "nsSVGUtils.h"
-#include "nsSVGFilterInstance.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEDiffuseLighting)
 
@@ -53,7 +53,7 @@ SVGFEDiffuseLightingElement::KernelUnitLengthY() {
 }
 
 FilterPrimitiveDescription SVGFEDiffuseLightingElement::GetPrimitiveDescription(
-    nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+    SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
     const nsTArray<bool>& aInputsAreTainted,
     nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   float diffuseConstant = mNumberAttributes[DIFFUSE_CONSTANT].GetAnimValue();

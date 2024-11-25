@@ -37,7 +37,6 @@
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/StorageEventBinding.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
@@ -94,6 +93,8 @@ class PromiseDocumentFlushedResolver;
 
 namespace mozilla {
 class AbstractThread;
+class ErrorResult;
+
 namespace dom {
 class BarProp;
 class BrowsingContext;
@@ -1433,8 +1434,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::dom::IntlUtils> mIntlUtils;
 
   mozilla::UniquePtr<mozilla::dom::ClientSource> mClientSource;
-
-  nsTArray<RefPtr<mozilla::dom::Promise>> mPendingPromises;
 
   nsTArray<mozilla::UniquePtr<PromiseDocumentFlushedResolver>>
       mDocumentFlushedResolvers;

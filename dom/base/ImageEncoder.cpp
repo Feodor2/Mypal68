@@ -72,13 +72,13 @@ already_AddRefed<DataSourceSurface> GetBRGADataSourceSurfaceSync(
   return helper->GetDataSurfaceSafe();
 }
 
-class EncodingCompleteEvent : public CancelableRunnable {
+class EncodingCompleteEvent : public Runnable {
   virtual ~EncodingCompleteEvent() = default;
 
  public:
   explicit EncodingCompleteEvent(
       EncodeCompleteCallback* aEncodeCompleteCallback)
-      : CancelableRunnable("EncodingCompleteEvent"),
+      : Runnable("EncodingCompleteEvent"),
         mImgSize(0),
         mType(),
         mImgData(nullptr),
@@ -165,9 +165,8 @@ class EncodingRunnable : public Runnable {
     // the default values for the encoder without any options at all.
     if (rv == NS_ERROR_INVALID_ARG && mUsingCustomOptions) {
       rv = ImageEncoder::ExtractDataInternal(
-          mType, EmptyString(), mImageBuffer.get(), mFormat, mSize,
-          mUsePlaceholder, mImage, nullptr, nullptr, getter_AddRefs(stream),
-          mEncoder);
+          mType, u""_ns, mImageBuffer.get(), mFormat, mSize, mUsePlaceholder,
+          mImage, nullptr, nullptr, getter_AddRefs(stream), mEncoder);
     }
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -407,7 +406,7 @@ already_AddRefed<imgIEncoder> ImageEncoder::GetImageEncoder(nsAString& aType) {
   encoderCID += encoderType;
   nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(encoderCID.get());
 
-  if (!encoder && aType != NS_LITERAL_STRING("image/png")) {
+  if (!encoder && aType != u"image/png"_ns) {
     // Unable to create an encoder instance of the specified type. Falling back
     // to PNG.
     aType.AssignLiteral("image/png");

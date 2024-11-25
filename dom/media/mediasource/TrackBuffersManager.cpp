@@ -23,21 +23,20 @@
 
 extern mozilla::LogModule* GetMediaSourceLog();
 
-#define MSE_DEBUG(arg, ...)                                                  \
-  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, "(%s)::%s: " arg, \
-            mType.OriginalString().Data(), __func__, ##__VA_ARGS__)
-#define MSE_DEBUGV(arg, ...)                                                   \
-  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Verbose, "(%s)::%s: " arg, \
-            mType.OriginalString().Data(), __func__, ##__VA_ARGS__)
+#define MSE_DEBUG(arg, ...)                                              \
+  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, "::%s: " arg, \
+            __func__, ##__VA_ARGS__)
+#define MSE_DEBUGV(arg, ...)                                               \
+  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Verbose, "::%s: " arg, \
+            __func__, ##__VA_ARGS__)
 
 mozilla::LogModule* GetMediaSourceSamplesLog() {
   static mozilla::LazyLogModule sLogModule("MediaSourceSamples");
   return sLogModule;
 }
-#define SAMPLE_DEBUG(arg, ...)                                         \
-  DDMOZ_LOG(GetMediaSourceSamplesLog(), mozilla::LogLevel::Debug,      \
-            "(%s)::%s: " arg, mType.OriginalString().Data(), __func__, \
-            ##__VA_ARGS__)
+#define SAMPLE_DEBUG(arg, ...)                                    \
+  DDMOZ_LOG(GetMediaSourceSamplesLog(), mozilla::LogLevel::Debug, \
+            "::%s: " arg, __func__, ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -243,6 +242,9 @@ void TrackBuffersManager::ProcessTasks() {
       return;
     case Type::ChangeType:
       MOZ_RELEASE_ASSERT(!mCurrentTask);
+      MSE_DEBUG("Processing type change from %s -> %s",
+                mType.OriginalString().get(),
+                task->As<ChangeTypeTask>()->mType.OriginalString().get());
       mType = task->As<ChangeTypeTask>()->mType;
       mChangeTypeReceived = true;
       mInitData = nullptr;
@@ -858,7 +860,10 @@ void TrackBuffersManager::SegmentParserLoop() {
       if (mNewMediaSegmentStarted) {
         if (NS_SUCCEEDED(newData) && mLastParsedEndTime.isSome() &&
             start < mLastParsedEndTime.ref().ToMicroseconds()) {
-          MSE_DEBUG("Re-creating demuxer");
+          MSE_DEBUG("Re-creating demuxer, new start (%" PRId64
+                    ") is smaller than last parsed end time (%" PRId64 ")",
+                    start, mLastParsedEndTime->ToMicroseconds());
+          mFrameEndTimeBeforeRecreateDemuxer = Some(end);
           ResetDemuxingState();
           return;
         }
@@ -966,12 +971,21 @@ void TrackBuffersManager::ShutdownDemuxers() {
 }
 
 void TrackBuffersManager::CreateDemuxerforMIMEType() {
+  MOZ_ASSERT(OnTaskQueue());
+  MSE_DEBUG("mType.OriginalString=%s", mType.OriginalString().get());
   ShutdownDemuxers();
 
   if (mType.Type() == MEDIAMIMETYPE(VIDEO_WEBM) ||
       mType.Type() == MEDIAMIMETYPE(AUDIO_WEBM)) {
-    mInputDemuxer =
-        new WebMDemuxer(mCurrentInputBuffer, true /* IsMediaSource*/);
+    if (mFrameEndTimeBeforeRecreateDemuxer) {
+      MSE_DEBUG(
+          "CreateDemuxerFromMimeType: "
+          "mFrameEndTimeBeforeRecreateDemuxer=%" PRId64,
+          mFrameEndTimeBeforeRecreateDemuxer.ref());
+    }
+    mInputDemuxer = new WebMDemuxer(mCurrentInputBuffer, true,
+                                    mFrameEndTimeBeforeRecreateDemuxer);
+    mFrameEndTimeBeforeRecreateDemuxer.reset();
     DDLINKCHILD("demuxer", mInputDemuxer.get());
     return;
   }
@@ -980,6 +994,7 @@ void TrackBuffersManager::CreateDemuxerforMIMEType() {
   if (mType.Type() == MEDIAMIMETYPE(VIDEO_MP4) ||
       mType.Type() == MEDIAMIMETYPE(AUDIO_MP4)) {
     mInputDemuxer = new MP4Demuxer(mCurrentInputBuffer);
+    mFrameEndTimeBeforeRecreateDemuxer.reset();
     DDLINKCHILD("demuxer", mInputDemuxer.get());
     return;
   }
@@ -1470,9 +1485,11 @@ void TrackBuffersManager::DoDemuxVideo() {
 void TrackBuffersManager::OnVideoDemuxCompleted(
     RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
   MOZ_ASSERT(OnTaskQueue());
-  MSE_DEBUG("%zu video samples demuxed", aSamples->GetSamples().Length());
   mVideoTracks.mDemuxRequest.Complete();
   mVideoTracks.mQueuedSamples.AppendElements(aSamples->GetSamples());
+  MSE_DEBUG("%zu video samples demuxed, queued-sz=%zu",
+            aSamples->GetSamples().Length(),
+            mVideoTracks.mQueuedSamples.Length());
 
   DoDemuxAudio();
 }
@@ -1680,6 +1697,7 @@ void TrackBuffersManager::ProcessFrames(TrackBuffer& aSamples,
     aSample->mTime = aInterval.mStart;
     aSample->mDuration = aInterval.Length();
     aSample->mTrackInfo = trackBuffer.mLastInfo;
+    MOZ_DIAGNOSTIC_ASSERT(aSample->HasValidTime());
     samplesRange += aInterval;
     sizeNewSamples += aSample->ComputedSizeOfIncludingThis();
     samples.AppendElement(aSample);
@@ -1710,6 +1728,9 @@ void TrackBuffersManager::ProcessFrames(TrackBuffer& aSamples,
       // coded frame.
       if (!sample->mKeyframe) {
         previouslyDroppedSample = nullptr;
+        SAMPLE_DEBUG("skipping sample [%" PRId64 ",%" PRId64 "]",
+                     sample->mTime.ToMicroseconds(),
+                     sample->GetEndTime().ToMicroseconds());
         continue;
       }
       // 2. Set the need random access point flag on track buffer to false.
@@ -1785,6 +1806,7 @@ void TrackBuffersManager::ProcessFrames(TrackBuffer& aSamples,
         // 4. Unset the highest end timestamp on all track buffers.
         // 5. Set the need random access point flag on all track buffers to
         // true.
+        MSE_DEBUG("Resetting append state");
         track->ResetAppendState();
       }
       // 6. Jump to the Loop Top step above to restart processing of the current
@@ -2158,6 +2180,7 @@ uint32_t TrackBuffersManager::RemoveFrames(const TimeIntervals& aIntervals,
       }
       MOZ_ASSERT(startTime > sample->mTime);
       sample->mDuration = startTime - sample->mTime;
+      MOZ_DIAGNOSTIC_ASSERT(sample->mDuration.IsValid());
       MSE_DEBUGV("partial overwrite of frame [%" PRId64 ",%" PRId64
                  "] with [%" PRId64 ",%" PRId64
                  "] trim to "
@@ -2287,10 +2310,12 @@ void TrackBuffersManager::RecreateParser(bool aReuseInitData) {
   mParser = ContainerParser::CreateForMIMEType(mType);
   DDLINKCHILD("parser", mParser.get());
   if (aReuseInitData && mInitData) {
+    MSE_DEBUG("Using existing init data to reset parser");
     int64_t start, end;
     mParser->ParseStartAndEndTimestamps(MediaSpan(mInitData), start, end);
     mProcessedInput = mInitData->Length();
   } else {
+    MSE_DEBUG("Resetting parser, not reusing init data");
     mProcessedInput = 0;
   }
 }
@@ -2572,20 +2597,35 @@ const MediaRawData* TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
   const TrackBuffer& track = GetTrackBuffer(aTrack);
 
   if (aIndex >= track.Length()) {
+    MSE_DEBUGV(
+        "Can't get sample due to reaching to the end, index=%u, "
+        "length=%zu",
+        aIndex, track.Length());
     // reached the end.
     return nullptr;
   }
 
   if (!(aExpectedDts + aFuzz).IsValid() || !(aExpectedPts + aFuzz).IsValid()) {
     // Time overflow, it seems like we also reached the end.
+    MSE_DEBUGV("Can't get sample due to time overflow, expectedPts=%" PRId64
+               ", aExpectedDts=%" PRId64 ", fuzz=%" PRId64,
+               aExpectedPts.ToMicroseconds(), aExpectedPts.ToMicroseconds(),
+               aFuzz.ToMicroseconds());
     return nullptr;
   }
 
   const RefPtr<MediaRawData>& sample = track[aIndex];
   if (!aIndex || sample->mTimecode <= aExpectedDts + aFuzz ||
       sample->mTime <= aExpectedPts + aFuzz) {
+    MOZ_DIAGNOSTIC_ASSERT(sample->HasValidTime());
     return sample;
   }
+
+  MSE_DEBUGV("Can't get sample due to big gap, sample=%" PRId64
+             ", expectedPts=%" PRId64 ", aExpectedDts=%" PRId64
+             ", fuzz=%" PRId64,
+             sample->mTime.ToMicroseconds(), aExpectedPts.ToMicroseconds(),
+             aExpectedPts.ToMicroseconds(), aFuzz.ToMicroseconds());
 
   // Gap is too big. End of Stream or Waiting for Data.
   // TODO, check that we have continuous data based on the sanitized buffered
@@ -2657,6 +2697,7 @@ already_AddRefed<MediaRawData> TrackBuffersManager::GetSample(
     aResult = MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
     return nullptr;
   }
+  MOZ_DIAGNOSTIC_ASSERT(p->HasValidTime());
 
   // Find the previous keyframe to calculate the evictable amount.
   uint32_t i = trackData.mNextGetSampleIndex.ref();

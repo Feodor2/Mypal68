@@ -176,7 +176,6 @@ static HANDLE WINAPI CreateFileAHookFn(LPCSTR aFname, DWORD aAccess,
                                        LPSECURITY_ATTRIBUTES aSecurity,
                                        DWORD aCreation, DWORD aFlags,
                                        HANDLE aFTemplate) {
-  return INVALID_HANDLE_VALUE;
   while (true) {  // goto out
     // Our hook is for mms.cfg into \Windows\System32\Macromed\Flash
     // We don't require supporting too long path.
@@ -228,7 +227,6 @@ HANDLE WINAPI CreateFileWHookFn(LPCWSTR aFname, DWORD aAccess, DWORD aShare,
                                 LPSECURITY_ATTRIBUTES aSecurity,
                                 DWORD aCreation, DWORD aFlags,
                                 HANDLE aFTemplate) {
-  return INVALID_HANDLE_VALUE;
   static const WCHAR kConfigFile[] = L"mms.cfg";
   static const size_t kConfigLength = ArrayLength(kConfigFile) - 1;
 

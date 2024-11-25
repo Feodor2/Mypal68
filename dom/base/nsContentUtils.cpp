@@ -5981,7 +5981,7 @@ nsresult nsContentUtils::CreateArrayBuffer(JSContext* aCx,
     return NS_ERROR_FAILURE;
   }
 
-  int32_t dataLen = aData.Length();
+  size_t dataLen = aData.Length();
   *aResult = JS::NewArrayBuffer(aCx, dataLen);
   if (!*aResult) {
     return NS_ERROR_FAILURE;
@@ -6125,27 +6125,6 @@ bool nsContentUtils::IsSubDocumentTabbable(nsIContent* aContent) {
   }
 
   return true;
-}
-
-bool nsContentUtils::IsUserFocusIgnored(nsINode* aNode) {
-  if (!StaticPrefs::dom_mozBrowserFramesEnabled()) {
-    return false;
-  }
-
-  // Check if our mozbrowser iframe ancestors has ignoreuserfocus attribute.
-  while (aNode) {
-    nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(aNode);
-    if (browserFrame &&
-        aNode->AsElement()->HasAttr(kNameSpaceID_None,
-                                    nsGkAtoms::ignoreuserfocus) &&
-        browserFrame->GetReallyIsBrowser()) {
-      return true;
-    }
-    nsPIDOMWindowOuter* win = aNode->OwnerDoc()->GetWindow();
-    aNode = win ? win->GetFrameElementInternal() : nullptr;
-  }
-
-  return false;
 }
 
 bool nsContentUtils::HasScrollgrab(nsIContent* aContent) {
@@ -7758,12 +7737,12 @@ int16_t nsContentUtils::GetButtonsFlagForButton(int32_t aButton) {
   switch (aButton) {
     case -1:
       return MouseButtonsFlag::eNoButtons;
-    case MouseButton::eLeft:
-      return MouseButtonsFlag::eLeftFlag;
+    case MouseButton::ePrimary:
+      return MouseButtonsFlag::ePrimaryFlag;
     case MouseButton::eMiddle:
       return MouseButtonsFlag::eMiddleFlag;
-    case MouseButton::eRight:
-      return MouseButtonsFlag::eRightFlag;
+    case MouseButton::eSecondary:
+      return MouseButtonsFlag::eSecondaryFlag;
     case 4:
       return MouseButtonsFlag::e4thFlag;
     case 5:
@@ -8270,11 +8249,12 @@ class StringBuilder {
     if (!mLength.isValid()) {
       return false;
     }
-    nsresult rv;
-    BulkAppender appender(aOut.BulkWrite(mLength.value(), 0, true, rv));
-    if (NS_FAILED(rv)) {
+    auto appenderOrErr = aOut.BulkWrite(mLength.value(), 0, true);
+    if (appenderOrErr.isErr()) {
       return false;
     }
+
+    BulkAppender appender{appenderOrErr.unwrap()};
 
     for (StringBuilder* current = this; current;
          current = current->mNext.get()) {
@@ -8598,14 +8578,10 @@ static inline bool ShouldEscape(nsIContent* aParent) {
   }
 
   static const nsAtom* nonEscapingElements[] = {
-      nsGkAtoms::style, nsGkAtoms::script, nsGkAtoms::xmp, nsGkAtoms::iframe,
-      nsGkAtoms::noembed, nsGkAtoms::noframes, nsGkAtoms::plaintext,
-      // Per the current spec noscript should be escaped in case
-      // scripts are disabled or if document doesn't have
-      // browsing context. However the latter seems to be a spec bug
-      // and Gecko hasn't traditionally done the former.
-      nsGkAtoms::noscript};
-  static mozilla::BloomFilter<12, nsAtom> sFilter;
+      nsGkAtoms::style,     nsGkAtoms::script,  nsGkAtoms::xmp,
+      nsGkAtoms::iframe,    nsGkAtoms::noembed, nsGkAtoms::noframes,
+      nsGkAtoms::plaintext, nsGkAtoms::noscript};
+  static mozilla::BitBloomFilter<12, nsAtom> sFilter;
   static bool sInitialized = false;
   if (!sInitialized) {
     sInitialized = true;
@@ -8618,6 +8594,10 @@ static inline bool ShouldEscape(nsIContent* aParent) {
   if (sFilter.mightContain(tag)) {
     for (auto& nonEscapingElement : nonEscapingElements) {
       if (tag == nonEscapingElement) {
+        if (MOZ_UNLIKELY(tag == nsGkAtoms::noscript) &&
+            MOZ_UNLIKELY(!aParent->OwnerDoc()->IsScriptEnabled())) {
+          return true;
+        }
         return false;
       }
     }

@@ -11,8 +11,6 @@
 #include "nsImageLoadingContent.h"
 #include "nsError.h"
 #include "nsIContent.h"
-#include "mozilla/dom/BindContext.h"
-#include "mozilla/dom/Document.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsServiceManagerUtils.h"
 #include "nsContentList.h"
@@ -24,7 +22,6 @@
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsImageFrame.h"
-#include "nsSVGImageFrame.h"
 
 #include "nsIChannel.h"
 #include "nsIStreamListener.h"
@@ -34,7 +31,6 @@
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsIContentPolicy.h"
-#include "SVGObserverUtils.h"
 
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
@@ -42,13 +38,17 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_image.h"
+#include "mozilla/SVGImageFrame.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ImageTracker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_image.h"
 
 #ifdef LoadImage
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -430,9 +430,16 @@ void nsImageLoadingContent::MaybeResolveDecodePromises() {
   // before LOAD_COMPLETE because we want to start as soon as possible.
   uint32_t flags = imgIContainer::FLAG_HIGH_QUALITY_SCALING |
                    imgIContainer::FLAG_AVOID_REDECODE_FOR_SIZE;
-  if (!mCurrentRequest->RequestDecodeWithResult(flags)) {
+  imgIContainer::DecodeResult decodeResult =
+      mCurrentRequest->RequestDecodeWithResult(flags);
+  if (decodeResult == imgIContainer::DECODE_REQUESTED) {
     return;
   }
+  if (decodeResult == imgIContainer::DECODE_REQUEST_FAILED) {
+    RejectDecodePromises(NS_ERROR_DOM_IMAGE_BROKEN);
+    return;
+  }
+  MOZ_ASSERT(decodeResult == imgIContainer::DECODE_SURFACE_AVAILABLE);
 
   // We can only fulfill the promises once we have all the data.
   if (!(status & imgIRequest::STATUS_LOAD_COMPLETE)) {
@@ -507,7 +514,7 @@ void nsImageLoadingContent::MaybeForceSyncDecoding(
     bool aPrepareNextRequest, nsIFrame* aFrame /* = nullptr */) {
   nsIFrame* frame = aFrame ? aFrame : GetOurPrimaryFrame();
   nsImageFrame* imageFrame = do_QueryFrame(frame);
-  nsSVGImageFrame* svgImageFrame = do_QueryFrame(frame);
+  SVGImageFrame* svgImageFrame = do_QueryFrame(frame);
   if (!imageFrame && !svgImageFrame) {
     return;
   }
@@ -1210,12 +1217,17 @@ uint32_t nsImageLoadingContent::NaturalWidth() {
     mCurrentRequest->GetImage(getter_AddRefs(image));
   }
 
-  int32_t width;
-  if (image && NS_SUCCEEDED(image->GetWidth(&width))) {
-    return width;
+  int32_t size = 0;
+  if (image) {
+    if (image->GetOrientation().SwapsWidthAndHeight() &&
+        !image->HandledOrientation() &&
+        StaticPrefs::image_honor_orientation_metadata_natural_size()) {
+      Unused << image->GetHeight(&size);
+    } else {
+      Unused << image->GetWidth(&size);
+    }
   }
-
-  return 0;
+  return size;
 }
 
 uint32_t nsImageLoadingContent::NaturalHeight() {
@@ -1224,12 +1236,17 @@ uint32_t nsImageLoadingContent::NaturalHeight() {
     mCurrentRequest->GetImage(getter_AddRefs(image));
   }
 
-  int32_t height;
-  if (image && NS_SUCCEEDED(image->GetHeight(&height))) {
-    return height;
+  int32_t size = 0;
+  if (image) {
+    if (image->GetOrientation().SwapsWidthAndHeight() &&
+        !image->HandledOrientation() &&
+        StaticPrefs::image_honor_orientation_metadata_natural_size()) {
+      Unused << image->GetWidth(&size);
+    } else {
+      Unused << image->GetHeight(&size);
+    }
   }
-
-  return 0;
+  return size;
 }
 
 EventStates nsImageLoadingContent::ImageState() const {

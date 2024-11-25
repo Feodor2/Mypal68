@@ -4,7 +4,7 @@
 
 #include "mozilla/dom/SVGFESpotLightElement.h"
 #include "mozilla/dom/SVGFESpotLightElementBinding.h"
-#include "nsSVGFilterInstance.h"
+#include "mozilla/SVGFilterInstance.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FESpotLight)
 
@@ -50,7 +50,7 @@ bool SVGFESpotLightElement::AttributeAffectsRendering(
 //----------------------------------------------------------------------
 
 LightType SVGFESpotLightElement::ComputeLightAttributes(
-    nsSVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) {
+    SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) {
   aFloatAttributes.SetLength(kSpotLightNumAttributes);
   GetAnimatedNumberValues(&aFloatAttributes[kSpotLightPositionXIndex],
                           &aFloatAttributes[kSpotLightPositionYIndex],

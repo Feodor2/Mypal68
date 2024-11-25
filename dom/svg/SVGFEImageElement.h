@@ -8,19 +8,19 @@
 #include "SVGFilters.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 
-class SVGFEImageFrame;
-
 nsresult NS_NewSVGFEImageElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
+class SVGFEImageFrame;
+
 namespace dom {
 
 typedef SVGFE SVGFEImageElementBase;
 
 class SVGFEImageElement final : public SVGFEImageElementBase,
                                 public nsImageLoadingContent {
-  friend class ::SVGFEImageFrame;
+  friend class mozilla::SVGFEImageFrame;
 
  protected:
   friend nsresult(::NS_NewSVGFEImageElement(
@@ -42,7 +42,7 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
   virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
   virtual FilterPrimitiveDescription GetPrimitiveDescription(
-      nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+      SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
   virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,

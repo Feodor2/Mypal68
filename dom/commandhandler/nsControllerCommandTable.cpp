@@ -15,7 +15,7 @@
 nsControllerCommandTable::nsControllerCommandTable()
     : mCommandsTable(NUM_COMMANDS_LENGTH), mMutable(true) {}
 
-nsControllerCommandTable::~nsControllerCommandTable() {}
+nsControllerCommandTable::~nsControllerCommandTable() = default;
 
 NS_IMPL_ISUPPORTS(nsControllerCommandTable, nsIControllerCommandTable,
                   nsISupportsWeakReference)

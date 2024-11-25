@@ -42,7 +42,7 @@ namespace {
 static bool HasVaryStar(mozilla::dom::InternalHeaders* aHeaders) {
   nsCString varyHeaders;
   ErrorResult rv;
-  aHeaders->Get(NS_LITERAL_CSTRING("vary"), varyHeaders, rv);
+  aHeaders->Get("vary"_ns, varyHeaders, rv);
   MOZ_ALWAYS_TRUE(!rv.Failed());
 
   char* rawBuffer = varyHeaders.BeginWriting();
@@ -238,7 +238,7 @@ void TypeUtils::ToCacheQueryParams(CacheQueryParams& aOut,
   if (aOut.cacheNameSet()) {
     aOut.cacheName() = aIn.mCacheName.Value();
   } else {
-    aOut.cacheName() = NS_LITERAL_STRING("");
+    aOut.cacheName() = u""_ns;
   }
 }
 

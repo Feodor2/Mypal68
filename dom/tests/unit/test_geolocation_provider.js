@@ -73,7 +73,6 @@ function run_test() {
     "geo.wifi.uri",
     "http://localhost:" + httpserver.identity.primaryPort + "/geo"
   );
-  Services.prefs.setBoolPref("dom.testing.ignore_ipc_principal", true);
   Services.prefs.setBoolPref("geo.wifi.scan", false);
 
   var obs = Cc["@mozilla.org/observer-service;1"].getService();

@@ -18,6 +18,8 @@
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsHTMLTags.h"
 #include "jsapi.h"
 #include "js/ForOfIterator.h"  // JS::ForOfIterator

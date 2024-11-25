@@ -13,8 +13,6 @@
 #include "mozilla/Unused.h"
 #include "nsPrintfCString.h"
 
-using namespace mozilla::java;
-
 namespace mozilla {
 
 static Atomic<uint32_t> sStreamSourceID(0u);
@@ -59,11 +57,12 @@ static mozilla::StereoMode getStereoMode(int aMode) {
 // We ensure the callback will never be invoked after
 // HLSDemuxerCallbacksSupport::DisposeNative has been called in ~HLSDemuxer.
 class HLSDemuxer::HLSDemuxerCallbacksSupport
-    : public GeckoHLSDemuxerWrapper::Callbacks::Natives<
+    : public java::GeckoHLSDemuxerWrapper::Callbacks::Natives<
           HLSDemuxerCallbacksSupport> {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(HLSDemuxerCallbacksSupport)
  public:
-  typedef GeckoHLSDemuxerWrapper::Callbacks::Natives<HLSDemuxerCallbacksSupport>
+  typedef java::GeckoHLSDemuxerWrapper::Callbacks::Natives<
+      HLSDemuxerCallbacksSupport>
       NativeCallbacks;
   using NativeCallbacks::AttachNative;
   using NativeCallbacks::DisposeNative;
@@ -127,14 +126,14 @@ HLSDemuxer::HLSDemuxer(int aPlayerId)
                                /* aSupportsTailDispatch = */ false)) {
   MOZ_ASSERT(NS_IsMainThread());
   HLSDemuxerCallbacksSupport::Init();
-  mJavaCallbacks = GeckoHLSDemuxerWrapper::Callbacks::New();
+  mJavaCallbacks = java::GeckoHLSDemuxerWrapper::Callbacks::New();
   MOZ_ASSERT(mJavaCallbacks);
 
   mCallbackSupport = new HLSDemuxerCallbacksSupport(this);
   HLSDemuxerCallbacksSupport::AttachNative(mJavaCallbacks, mCallbackSupport);
 
   mHLSDemuxerWrapper =
-      GeckoHLSDemuxerWrapper::Create(aPlayerId, mJavaCallbacks);
+      java::GeckoHLSDemuxerWrapper::Create(aPlayerId, mJavaCallbacks);
   MOZ_ASSERT(mHLSDemuxerWrapper);
 }
 

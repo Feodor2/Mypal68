@@ -6,6 +6,7 @@
 
 #include "nsStringStream.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_telemetry.h"

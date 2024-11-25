@@ -48,7 +48,7 @@ class OverlayImage;
  */
 class DOMMediaStream : public DOMEventTargetHelper,
                        public RelativeTimeline,
-                       public SupportsWeakPtr<DOMMediaStream> {
+                       public SupportsWeakPtr {
   typedef dom::MediaStreamTrack MediaStreamTrack;
   typedef dom::AudioStreamTrack AudioStreamTrack;
   typedef dom::VideoStreamTrack VideoStreamTrack;
@@ -56,8 +56,6 @@ class DOMMediaStream : public DOMEventTargetHelper,
 
  public:
   typedef dom::MediaTrackConstraints MediaTrackConstraints;
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(DOMMediaStream)
 
   class TrackListener {
    public:

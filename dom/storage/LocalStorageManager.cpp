@@ -282,7 +282,7 @@ LocalStorageManager::GetNextGenLocalStorageEnabled(bool* aResult) {
 
 NS_IMETHODIMP
 LocalStorageManager::Preload(nsIPrincipal* aPrincipal, JSContext* aContext,
-                             nsISupports** _retval) {
+                             Promise** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(_retval);
@@ -292,7 +292,7 @@ LocalStorageManager::Preload(nsIPrincipal* aPrincipal, JSContext* aContext,
 
 NS_IMETHODIMP
 LocalStorageManager::IsPreloaded(nsIPrincipal* aPrincipal, JSContext* aContext,
-                                 nsISupports** _retval) {
+                                 Promise** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(_retval);

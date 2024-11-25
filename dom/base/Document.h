@@ -148,6 +148,7 @@ enum class StyleOrigin : uint8_t;
 class SMILAnimationController;
 enum class StyleCursorKind : uint8_t;
 enum class StylePrefersColorScheme : uint8_t;
+enum class StyleRuleChangeKind : uint32_t;
 template <typename>
 class OwningNonNull;
 struct URLExtraData;
@@ -468,7 +469,7 @@ class Document : public nsINode,
                  public nsIApplicationCacheContainer,
                  public nsStubMutationObserver,
                  public DispatcherTrait,
-                 public SupportsWeakPtr<Document> {
+                 public SupportsWeakPtr {
   friend class DocumentOrShadowRoot;
 
  protected:
@@ -492,8 +493,6 @@ class Document : public nsINode,
    * Called when XPCOM shutdown.
    */
   static void Shutdown();
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(Document)
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IDOCUMENT_IID)
 
@@ -2268,7 +2267,7 @@ class Document : public nsINode,
 
   // Observation hooks for style data to propagate notifications
   // to document observers
-  void RuleChanged(StyleSheet&, css::Rule*);
+  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
   void SheetCloned(StyleSheet&) {}

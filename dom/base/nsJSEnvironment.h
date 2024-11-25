@@ -69,6 +69,9 @@ class nsJSContext : public nsIScriptContext {
 
   static void CycleCollectNow(nsICycleCollectorListener* aListener = nullptr);
 
+  // Finish up any in-progress incremental GC.
+  static void PrepareForCycleCollectionSlice(mozilla::TimeStamp aDeadline);
+
   // Run a cycle collector slice, using a heuristic to decide how long to run
   // it.
   static void RunCycleCollectorSlice(mozilla::TimeStamp aDeadline);
@@ -103,15 +106,16 @@ class nsJSContext : public nsIScriptContext {
   static void KillShrinkingGCTimer();
 
   static void MaybePokeCC();
+  static void EnsureCCRunner(mozilla::TimeDuration aDelay,
+                             mozilla::TimeDuration aBudget);
   static void KillCCRunner();
-  static void KillICCRunner();
   static void KillFullGCTimer();
   static void KillInterSliceGCRunner();
 
   // Calling LikelyShortLivingObjectCreated() makes a GC more likely.
   static void LikelyShortLivingObjectCreated();
 
-  static uint32_t CleanupsSinceLastGC();
+  static bool HasHadCleanupSinceLastGC();
 
   nsIScriptGlobalObject* GetCachedGlobalObject() {
     // Verify that we have a global so that this

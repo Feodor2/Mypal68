@@ -4,6 +4,7 @@
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/WeakPtr.h"
 
 #include "windows.h"
 #include "windowsx.h"
@@ -20,7 +21,6 @@
 #include "nsWindowsDllInterceptor.h"
 #include "nsPluginNativeWindow.h"
 #include "nsThreadUtils.h"
-#include "nsTWeakRef.h"
 #include "nsCrashOnException.h"
 
 using namespace mozilla;
@@ -39,7 +39,7 @@ using namespace mozilla;
 #define WM_USER_FLASH WM_USER + 1
 static UINT sWM_FLASHBOUNCEMSG = 0;
 
-typedef nsTWeakRef<class nsPluginNativeWindowWin> PluginWindowWeakRef;
+class nsPluginNativeWindowWin;
 
 /**
  *  PLEvent handling code
@@ -47,8 +47,8 @@ typedef nsTWeakRef<class nsPluginNativeWindowWin> PluginWindowWeakRef;
 class PluginWindowEvent : public Runnable {
  public:
   PluginWindowEvent();
-  void Init(const PluginWindowWeakRef& ref, HWND hWnd, UINT msg, WPARAM wParam,
-            LPARAM lParam);
+  void Init(WeakPtr<nsPluginNativeWindowWin> aRef, HWND aWnd, UINT aMsg,
+            WPARAM aParam, LPARAM aLParam);
   void Clear();
   HWND GetWnd() { return mWnd; };
   UINT GetMsg() { return mMsg; };
@@ -59,7 +59,7 @@ class PluginWindowEvent : public Runnable {
   NS_DECL_NSIRUNNABLE
 
  protected:
-  PluginWindowWeakRef mPluginWindowRef;
+  WeakPtr<nsPluginNativeWindowWin> mPluginWindowRef;
   HWND mWnd;
   UINT mMsg;
   WPARAM mWParam;
@@ -77,11 +77,11 @@ void PluginWindowEvent::Clear() {
   mLParam = 0;
 }
 
-void PluginWindowEvent::Init(const PluginWindowWeakRef& ref, HWND aWnd,
+void PluginWindowEvent::Init(WeakPtr<nsPluginNativeWindowWin> aRef, HWND aWnd,
                              UINT aMsg, WPARAM aWParam, LPARAM aLParam) {
   NS_ASSERTION(aWnd != nullptr, "invalid plugin event value");
   NS_ASSERTION(mWnd == nullptr, "event already in use");
-  mPluginWindowRef = ref;
+  mPluginWindowRef = aRef;
   mWnd = aWnd;
   mMsg = aMsg;
   mWParam = aWParam;
@@ -92,10 +92,10 @@ void PluginWindowEvent::Init(const PluginWindowWeakRef& ref, HWND aWnd,
  *  nsPluginNativeWindow Windows specific class declaration
  */
 
-class nsPluginNativeWindowWin : public nsPluginNativeWindow {
+class nsPluginNativeWindowWin : public nsPluginNativeWindow,
+                                public SupportsWeakPtr {
  public:
   nsPluginNativeWindowWin();
-  virtual ~nsPluginNativeWindowWin();
 
   virtual nsresult CallSetWindow(
       RefPtr<nsNPAPIPluginInstance>& aPluginInstance);
@@ -115,7 +115,7 @@ class nsPluginNativeWindowWin : public nsPluginNativeWindow {
  private:
   WNDPROC mPluginWinProc;
   WNDPROC mPrevWinProc;
-  PluginWindowWeakRef mWeakRef;
+  WeakPtr<nsPluginNativeWindowWin> mWeakRef;
   RefPtr<PluginWindowEvent> mCachedPluginWindowEvent;
 
   HWND mParentWnd;
@@ -457,18 +457,12 @@ nsPluginNativeWindowWin::nsPluginNativeWindowWin() : nsPluginNativeWindow() {
   }
 }
 
-nsPluginNativeWindowWin::~nsPluginNativeWindowWin() {
-  // clear weak reference to self to prevent any pending events from
-  // dereferencing this.
-  mWeakRef.forget();
-}
-
 WNDPROC nsPluginNativeWindowWin::GetPrevWindowProc() { return mPrevWinProc; }
 
 WNDPROC nsPluginNativeWindowWin::GetWindowProc() { return mPluginWinProc; }
 
 NS_IMETHODIMP PluginWindowEvent::Run() {
-  nsPluginNativeWindowWin* win = mPluginWindowRef.get();
+  nsPluginNativeWindowWin* win = mPluginWindowRef;
   if (!win) return NS_OK;
 
   HWND hWnd = GetWnd();

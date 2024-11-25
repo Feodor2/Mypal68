@@ -125,10 +125,9 @@ class WebGLFBAttachPoint final {
 class WebGLFramebuffer final : public nsWrapperCache,
                                public WebGLRefCountedObject<WebGLFramebuffer>,
                                public LinkedListElement<WebGLFramebuffer>,
-                               public SupportsWeakPtr<WebGLFramebuffer>,
+                               public SupportsWeakPtr,
                                public CacheInvalidator {
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(WebGLFramebuffer)
 
   const GLuint mGLName;
   bool mHasBeenBound = false;

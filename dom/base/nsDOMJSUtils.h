@@ -5,8 +5,8 @@
 #ifndef nsDOMJSUtils_h__
 #define nsDOMJSUtils_h__
 
-#include "nsIScriptContext.h"
-#include "jsapi.h"
+#include "js/TypeDecls.h"
+#include "nscore.h"
 
 class nsIJSArgArray;
 

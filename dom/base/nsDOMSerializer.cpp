@@ -31,7 +31,7 @@ static already_AddRefed<nsIDocumentEncoder> SetUpEncoder(
 
   // This method will fail if no document
   nsresult rv = encoder->NativeInit(
-      doc, NS_LITERAL_STRING("application/xhtml+xml"),
+      doc, u"application/xhtml+xml"_ns,
       nsIDocumentEncoder::OutputRaw |
           nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration);
 
@@ -73,8 +73,7 @@ void nsDOMSerializer::SerializeToString(nsINode& aRoot, nsAString& aStr,
     return;
   }
 
-  nsCOMPtr<nsIDocumentEncoder> encoder =
-      SetUpEncoder(aRoot, EmptyString(), aRv);
+  nsCOMPtr<nsIDocumentEncoder> encoder = SetUpEncoder(aRoot, u""_ns, aRv);
   if (aRv.Failed()) {
     return;
   }

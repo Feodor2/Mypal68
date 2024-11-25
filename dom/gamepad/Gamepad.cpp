@@ -8,6 +8,7 @@
 #include "nsVariant.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/GamepadBinding.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 namespace dom {

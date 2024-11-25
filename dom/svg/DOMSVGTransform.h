@@ -20,6 +20,7 @@
 namespace mozilla {
 namespace dom {
 
+struct DOMMatrix2DInit;
 class SVGElement;
 class SVGMatrix;
 
@@ -42,12 +43,13 @@ class DOMSVGTransform final : public nsWrapperCache {
   /**
    * Ctors for creating the objects returned by:
    *   SVGSVGElement.createSVGTransform(),
-   *   SVGSVGElement.createSVGTransformFromMatrix(in SVGMatrix matrix),
-   *   SVGTransformList.createSVGTransformFromMatrix(in SVGMatrix matrix)
+   *   SVGSVGElement.createSVGTransformFromMatrix(in DOMMatrix2DInit  matrix),
+   *   SVGTransformList.createSVGTransformFromMatrix(in DOMMatrix2DInit  matrix)
    * which do not initially belong to an attribute.
    */
   explicit DOMSVGTransform();
   explicit DOMSVGTransform(const gfxMatrix& aMatrix);
+  explicit DOMSVGTransform(const DOMMatrix2DInit& aMatrix, ErrorResult& rv);
 
   /**
    * Ctor for creating an unowned copy. Used with Clone().
@@ -108,7 +110,7 @@ class DOMSVGTransform final : public nsWrapperCache {
   uint16_t Type() const;
   dom::SVGMatrix* GetMatrix();
   float Angle() const;
-  void SetMatrix(dom::SVGMatrix& matrix, ErrorResult& rv);
+  void SetMatrix(const DOMMatrix2DInit& matrix, ErrorResult& rv);
   void SetTranslate(float tx, float ty, ErrorResult& rv);
   void SetScale(float sx, float sy, ErrorResult& rv);
   void SetRotate(float angle, float cx, float cy, ErrorResult& rv);

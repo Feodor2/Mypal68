@@ -70,7 +70,6 @@ Response::Response(nsIGlobalObject* aGlobal,
   MOZ_ASSERT(
       aInternalResponse->Headers()->Guard() == HeadersGuardEnum::Immutable ||
       aInternalResponse->Headers()->Guard() == HeadersGuardEnum::Response);
-  SetMimeType();
 
   mozilla::HoldJSObjects(this);
 }
@@ -156,8 +155,8 @@ already_AddRefed<Response> Response::Redirect(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  r->GetInternalHeaders()->Set(NS_LITERAL_CSTRING("Location"),
-                               NS_ConvertUTF16toUTF8(parsedURL), aRv);
+  r->GetInternalHeaders()->Set("Location"_ns, NS_ConvertUTF16toUTF8(parsedURL),
+                               aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -352,11 +351,10 @@ already_AddRefed<Response> Response::Constructor(
     internalResponse->SetBody(bodyStream, bodySize);
 
     if (!contentTypeWithCharset.IsVoid() &&
-        !internalResponse->Headers()->Has(NS_LITERAL_CSTRING("Content-Type"),
-                                          aRv)) {
+        !internalResponse->Headers()->Has("Content-Type"_ns, aRv)) {
       // Ignore Append() failing here.
       ErrorResult error;
-      internalResponse->Headers()->Append(NS_LITERAL_CSTRING("Content-Type"),
+      internalResponse->Headers()->Append("Content-Type"_ns,
                                           contentTypeWithCharset, error);
       error.SuppressException();
     }
@@ -366,7 +364,6 @@ already_AddRefed<Response> Response::Constructor(
     }
   }
 
-  r->SetMimeType();
   return r.forget();
 }
 

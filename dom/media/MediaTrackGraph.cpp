@@ -27,6 +27,7 @@
 #include "VideoFrameContainer.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "mtransport/runnable_utils.h"
 #include "VideoUtils.h"

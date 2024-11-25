@@ -29,7 +29,7 @@ namespace dom {
  * or array buffer object.
  */
 template <typename T, JSObject* UnwrapArray(JSObject*),
-          void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**)>
+          void GetLengthAndDataAndSharedness(JSObject*, size_t*, bool*, T**)>
 struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
                          AllTypedArraysBase {
   typedef T element_type;
@@ -43,10 +43,7 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
         mLength(aOther.mLength),
         mShared(aOther.mShared),
         mComputed(aOther.mComputed) {
-    aOther.mData = nullptr;
-    aOther.mLength = 0;
-    aOther.mShared = false;
-    aOther.mComputed = false;
+    aOther.Reset();
   }
 
  private:
@@ -113,6 +110,18 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
     return mData;
   }
 
+  // Return a pointer to data that will not move during a GC.
+  //
+  // For some smaller views, this will copy the data into the provided buffer
+  // and return that buffer as the pointer. Otherwise, this will return a
+  // direct pointer to the actual data with no copying. If the provided buffer
+  // is not large enough, nullptr will be returned. If bufSize is at least
+  // JS_MaxMovableTypedArraySize(), the data is guaranteed to fit.
+  inline T* FixedData(uint8_t* buffer, size_t bufSize) const {
+    MOZ_ASSERT(mComputed);
+    return JS_GetArrayBufferViewFixedData(mImplObj, buffer, bufSize);
+  }
+
   inline uint32_t Length() const {
     MOZ_ASSERT(mComputed);
     return mLength;
@@ -121,8 +130,22 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
   inline void ComputeState() const {
     MOZ_ASSERT(inited());
     MOZ_ASSERT(!mComputed);
-    GetLengthAndDataAndSharedness(mImplObj, &mLength, &mShared, &mData);
+    size_t length;
+    GetLengthAndDataAndSharedness(mImplObj, &length, &mShared, &mData);
+    MOZ_RELEASE_ASSERT(length <= INT32_MAX,
+                       "Bindings must have checked ArrayBuffer{View} length");
+    mLength = length;
     mComputed = true;
+  }
+
+  inline void Reset() {
+    // This method mostly exists to inform the GC rooting hazard analysis that
+    // the variable can be considered dead, at least until you do anything else
+    // with it.
+    mData = nullptr;
+    mLength = 0;
+    mShared = false;
+    mComputed = false;
   }
 
  private:
@@ -131,8 +154,8 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
 
 template <typename T, JSObject* UnwrapArray(JSObject*),
           T* GetData(JSObject*, bool* isShared, const JS::AutoRequireNoGC&),
-          void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**),
-          JSObject* CreateNew(JSContext*, uint32_t)>
+          void GetLengthAndDataAndSharedness(JSObject*, size_t*, bool*, T**),
+          JSObject* CreateNew(JSContext*, size_t)>
 struct TypedArray
     : public TypedArray_base<T, UnwrapArray, GetLengthAndDataAndSharedness> {
  private:
@@ -182,7 +205,7 @@ struct TypedArray
 };
 
 template <JSObject* UnwrapArray(JSObject*),
-          void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*,
+          void GetLengthAndDataAndSharedness(JSObject*, size_t*, bool*,
                                              uint8_t**),
           js::Scalar::Type GetViewType(JSObject*)>
 struct ArrayBufferView_base

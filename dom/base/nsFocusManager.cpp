@@ -1509,8 +1509,7 @@ bool nsFocusManager::IsNonFocusableRoot(nsIContent* aContent) {
   Document* doc = aContent->GetComposedDoc();
   NS_ASSERTION(doc, "aContent must have current document");
   return aContent == doc->GetRootElement() &&
-         (doc->HasFlag(NODE_IS_EDITABLE) || !aContent->IsEditable() ||
-          nsContentUtils::IsUserFocusIgnored(aContent));
+         (doc->HasFlag(NODE_IS_EDITABLE) || !aContent->IsEditable());
 }
 
 Element* nsFocusManager::FlushAndCheckIfFocusable(Element* aElement,
@@ -1543,7 +1542,7 @@ Element* nsFocusManager::FlushAndCheckIfFocusable(Element* aElement,
   // the root content can always be focused,
   // except in userfocusignored context.
   if (aElement == doc->GetRootElement()) {
-    return nsContentUtils::IsUserFocusIgnored(aElement) ? nullptr : aElement;
+    return aElement;
   }
 
   // cannot focus content in print preview mode. Only the root can be focused.
@@ -2101,10 +2100,7 @@ void nsFocusManager::SendFocusOrBlurEvent(
     aRelatedTarget = nullptr;
   }
 
-  bool dontDispatchEvent =
-      eventTargetDoc && nsContentUtils::IsUserFocusIgnored(eventTargetDoc);
-
-  if (!dontDispatchEvent && aDocument && aDocument->EventHandlingSuppressed()) {
+  if (aDocument && aDocument->EventHandlingSuppressed()) {
     for (uint32_t i = mDelayedBlurFocusEvents.Length(); i > 0; --i) {
       // if this event was already queued, remove it and append it to the end
       if (mDelayedBlurFocusEvents[i - 1].mEventMessage == aEventMessage &&
@@ -2137,16 +2133,11 @@ void nsFocusManager::FireFocusOrBlurEvent(EventMessage aEventMessage,
                                           nsISupports* aTarget,
                                           bool aWindowRaised, bool aIsRefocus,
                                           EventTarget* aRelatedTarget) {
-  nsCOMPtr<EventTarget> eventTarget = do_QueryInterface(aTarget);
-  nsCOMPtr<Document> eventTargetDoc = GetDocumentHelper(eventTarget);
   nsCOMPtr<nsPIDOMWindowOuter> currentWindow = mFocusedWindow;
   nsCOMPtr<nsPIDOMWindowInner> targetWindow = do_QueryInterface(aTarget);
   nsCOMPtr<Document> targetDocument = do_QueryInterface(aTarget);
   nsCOMPtr<nsIContent> currentFocusedContent =
       currentWindow ? currentWindow->GetFocusedElement() : nullptr;
-
-  bool dontDispatchEvent =
-      eventTargetDoc && nsContentUtils::IsUserFocusIgnored(eventTargetDoc);
 
 #ifdef ACCESSIBILITY
   nsAccessibilityService* accService = GetAccService();
@@ -2159,25 +2150,23 @@ void nsFocusManager::FireFocusOrBlurEvent(EventMessage aEventMessage,
   }
 #endif
 
-  if (!dontDispatchEvent) {
-    nsContentUtils::AddScriptRunner(
-        new FocusBlurEvent(aTarget, aEventMessage, aPresShell->GetPresContext(),
-                           aWindowRaised, aIsRefocus, aRelatedTarget));
+  nsContentUtils::AddScriptRunner(
+      new FocusBlurEvent(aTarget, aEventMessage, aPresShell->GetPresContext(),
+                         aWindowRaised, aIsRefocus, aRelatedTarget));
 
-    // Check that the target is not a window or document before firing
-    // focusin/focusout. Other browsers do not fire focusin/focusout on window,
-    // despite being required in the spec, so follow their behavior.
-    //
-    // As for document, we should not even fire focus/blur, but until then, we
-    // need this check. targetDocument should be removed once bug 1228802 is
-    // resolved.
-    if (!targetWindow && !targetDocument) {
-      EventMessage focusInOrOutMessage =
-          aEventMessage == eFocus ? eFocusIn : eFocusOut;
-      FireFocusInOrOutEvent(focusInOrOutMessage, aPresShell, aTarget,
-                            currentWindow, currentFocusedContent,
-                            aRelatedTarget);
-    }
+  // Check that the target is not a window or document before firing
+  // focusin/focusout. Other browsers do not fire focusin/focusout on window,
+  // despite being required in the spec, so follow their behavior.
+  //
+  // As for document, we should not even fire focus/blur, but until then, we
+  // need this check. targetDocument should be removed once bug 1228802 is
+  // resolved.
+  if (!targetWindow && !targetDocument) {
+    EventMessage focusInOrOutMessage =
+        aEventMessage == eFocus ? eFocusIn : eFocusOut;
+    FireFocusInOrOutEvent(focusInOrOutMessage, aPresShell, aTarget,
+                          currentWindow, currentFocusedContent,
+                          aRelatedTarget);
   }
 }
 
@@ -3397,20 +3386,14 @@ nsresult nsFocusManager::GetNextTabbableContent(
         } else if (aRootContent->IsFocusable()) {
           frameTraversal->Next();
         }
-        frame = static_cast<nsIFrame*>(frameTraversal->CurrentItem());
+        frame = frameTraversal->CurrentItem();
       } else if (getNextFrame &&
                  (!iterStartContent ||
                   !iterStartContent->IsHTMLElement(nsGkAtoms::area))) {
         // Need to do special check in case we're in an imagemap which has
         // multiple content nodes per frame, so don't skip over the starting
         // frame.
-        if (aForward) {
-          frameTraversal->Next();
-        } else {
-          frameTraversal->Prev();
-        }
-
-        frame = static_cast<nsIFrame*>(frameTraversal->CurrentItem());
+        frame = frameTraversal->Traverse(aForward);
       }
     }
 

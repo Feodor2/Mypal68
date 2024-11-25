@@ -4,7 +4,7 @@
 
 #include "mozilla/dom/SVGFEOffsetElement.h"
 #include "mozilla/dom/SVGFEOffsetElementBinding.h"
-#include "nsSVGFilterInstance.h"
+#include "mozilla/SVGFilterInstance.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEOffset)
 
@@ -45,7 +45,7 @@ already_AddRefed<DOMSVGAnimatedNumber> SVGFEOffsetElement::Dy() {
 }
 
 FilterPrimitiveDescription SVGFEOffsetElement::GetPrimitiveDescription(
-    nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+    SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
     const nsTArray<bool>& aInputsAreTainted,
     nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   OffsetAttributes atts;

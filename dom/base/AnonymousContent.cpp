@@ -190,9 +190,8 @@ void AnonymousContent::GetComputedStylePropertyValue(
     return;
   }
 
-  RefPtr<nsComputedDOMStyle> cs =
-      new nsComputedDOMStyle(element, NS_LITERAL_STRING(""),
-                             element->OwnerDoc(), nsComputedDOMStyle::eAll);
+  RefPtr<nsComputedDOMStyle> cs = new nsComputedDOMStyle(
+      element, u""_ns, element->OwnerDoc(), nsComputedDOMStyle::eAll);
   aRv = cs->GetPropertyValue(aPropertyName, aResult);
 }
 
@@ -215,7 +214,7 @@ void AnonymousContent::SetStyle(const nsACString& aProperty,
 
   nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(mContentNode);
   nsCOMPtr<nsICSSDeclaration> declaration = element->Style();
-  declaration->SetProperty(aProperty, aValue, EmptyString(), IgnoreErrors());
+  declaration->SetProperty(aProperty, aValue, u""_ns, IgnoreErrors());
 }
 
 }  // namespace dom

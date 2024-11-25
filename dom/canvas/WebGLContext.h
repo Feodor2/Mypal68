@@ -270,7 +270,7 @@ class AvailabilityRunnable final : public Runnable {
 class WebGLContext : public nsICanvasRenderingContextInternal,
                      public nsSupportsWeakReference,
                      public nsWrapperCache,
-                     public SupportsWeakPtr<WebGLContext> {
+                     public SupportsWeakPtr {
   friend class ScopedDrawCallWrapper;
   friend class ScopedDrawWithTransformFeedback;
   friend class ScopedFakeVertexAttrib0;
@@ -347,8 +347,6 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(
       WebGLContext, nsICanvasRenderingContextInternal)
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(WebGLContext)
-
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> givenProto) override = 0;
 

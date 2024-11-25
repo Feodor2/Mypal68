@@ -502,8 +502,7 @@ void Animation::Cancel(PostRestyleMode aPostRestyle) {
     }
     ResetFinishedPromise();
 
-    QueuePlaybackEvent(NS_LITERAL_STRING("cancel"),
-                       GetTimelineCurrentTimeAsTimeStamp());
+    QueuePlaybackEvent(u"cancel"_ns, GetTimelineCurrentTimeAsTimeStamp());
   }
 
   StickyTimeDuration activeTime =
@@ -1107,8 +1106,7 @@ void Animation::Remove() {
   UpdateEffect(PostRestyleMode::IfNeeded);
   PostUpdate();
 
-  QueuePlaybackEvent(NS_LITERAL_STRING("remove"),
-                     GetTimelineCurrentTimeAsTimeStamp());
+  QueuePlaybackEvent(u"remove"_ns, GetTimelineCurrentTimeAsTimeStamp());
 }
 
 bool Animation::HasLowerCompositeOrderThan(const Animation& aOther) const {
@@ -1764,8 +1762,7 @@ void Animation::DoFinishNotificationImmediately(MicroTaskRunnable* aAsync) {
 
   MaybeResolveFinishedPromise();
 
-  QueuePlaybackEvent(NS_LITERAL_STRING("finish"),
-                     AnimationTimeToTimeStamp(EffectEnd()));
+  QueuePlaybackEvent(u"finish"_ns, AnimationTimeToTimeStamp(EffectEnd()));
 }
 
 void Animation::QueuePlaybackEvent(const nsAString& aName,

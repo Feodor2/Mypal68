@@ -761,7 +761,7 @@ IDBResult<void, IDBSpecialValue::Invalid> Key::EncodeBinary(JSObject* aObject,
                                                             uint8_t aTypeOffset,
                                                             ErrorResult& aRv) {
   uint8_t* bufferData;
-  uint32_t bufferLength;
+  size_t bufferLength;
 
   // We must use JS::GetObjectAsArrayBuffer()/JS_GetObjectAsArrayBufferView()
   // instead of js::GetArrayBufferLengthAndData(). The object might be wrapped,

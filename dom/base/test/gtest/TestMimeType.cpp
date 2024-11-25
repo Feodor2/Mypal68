@@ -11,7 +11,7 @@ using mozilla::UniquePtr;
 
 TEST(MimeType, EmptyString)
 {
-  const auto in = NS_LITERAL_STRING("");
+  const auto in = u""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Empty string";
@@ -19,7 +19,7 @@ TEST(MimeType, EmptyString)
 
 TEST(MimeType, JustWhitespace)
 {
-  const auto in = NS_LITERAL_STRING(" \t\r\n ");
+  const auto in = u" \t\r\n "_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Just whitespace";
@@ -27,7 +27,7 @@ TEST(MimeType, JustWhitespace)
 
 TEST(MimeType, JustBackslash)
 {
-  const auto in = NS_LITERAL_STRING("\\");
+  const auto in = u"\\"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Just backslash";
@@ -35,7 +35,7 @@ TEST(MimeType, JustBackslash)
 
 TEST(MimeType, JustForwardslash)
 {
-  const auto in = NS_LITERAL_STRING("/");
+  const auto in = u"/"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Just forward slash";
@@ -43,7 +43,7 @@ TEST(MimeType, JustForwardslash)
 
 TEST(MimeType, MissingType1)
 {
-  const auto in = NS_LITERAL_STRING("/bogus");
+  const auto in = u"/bogus"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Missing type #1";
@@ -51,7 +51,7 @@ TEST(MimeType, MissingType1)
 
 TEST(MimeType, MissingType2)
 {
-  const auto in = NS_LITERAL_STRING(" \r\n\t/bogus");
+  const auto in = u" \r\n\t/bogus"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Missing type #2";
@@ -59,7 +59,7 @@ TEST(MimeType, MissingType2)
 
 TEST(MimeType, MissingSubtype1)
 {
-  const auto in = NS_LITERAL_STRING("bogus");
+  const auto in = u"bogus"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Missing subtype #1";
@@ -67,7 +67,7 @@ TEST(MimeType, MissingSubtype1)
 
 TEST(MimeType, MissingSubType2)
 {
-  const auto in = NS_LITERAL_STRING("bogus/");
+  const auto in = u"bogus/"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Missing subtype #2";
@@ -75,7 +75,7 @@ TEST(MimeType, MissingSubType2)
 
 TEST(MimeType, MissingSubType3)
 {
-  const auto in = NS_LITERAL_STRING("bogus;");
+  const auto in = u"bogus;"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Missing subtype #3";
@@ -83,7 +83,7 @@ TEST(MimeType, MissingSubType3)
 
 TEST(MimeType, MissingSubType4)
 {
-  const auto in = NS_LITERAL_STRING("bogus; \r\n\t");
+  const auto in = u"bogus; \r\n\t"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Missing subtype #3";
@@ -91,7 +91,7 @@ TEST(MimeType, MissingSubType4)
 
 TEST(MimeType, ExtraForwardSlash)
 {
-  const auto in = NS_LITERAL_STRING("bogus/bogus/;");
+  const auto in = u"bogus/bogus/;"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Extra forward slash";
@@ -99,7 +99,7 @@ TEST(MimeType, ExtraForwardSlash)
 
 TEST(MimeType, WhitespaceInType)
 {
-  const auto in = NS_LITERAL_STRING("t\re\nx\tt /html");
+  const auto in = u"t\re\nx\tt /html"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Type with whitespace";
@@ -107,7 +107,7 @@ TEST(MimeType, WhitespaceInType)
 
 TEST(MimeType, WhitespaceInSubtype)
 {
-  const auto in = NS_LITERAL_STRING("text/ h\rt\nm\tl");
+  const auto in = u"text/ h\rt\nm\tl"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Subtype with whitespace";
@@ -115,7 +115,7 @@ TEST(MimeType, WhitespaceInSubtype)
 
 TEST(MimeType, NonAlphanumericMediaType1)
 {
-  const auto in = NS_LITERAL_STRING("</>");
+  const auto in = u"</>"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-alphanumeric media type #1";
@@ -123,7 +123,7 @@ TEST(MimeType, NonAlphanumericMediaType1)
 
 TEST(MimeType, NonAlphanumericMediaType2)
 {
-  const auto in = NS_LITERAL_STRING("(/)");
+  const auto in = u"(/)"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-alphanumeric media type #2";
@@ -131,7 +131,7 @@ TEST(MimeType, NonAlphanumericMediaType2)
 
 TEST(MimeType, NonAlphanumericMediaType3)
 {
-  const auto in = NS_LITERAL_STRING("{/}");
+  const auto in = u"{/}"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-alphanumeric media type #3";
@@ -139,7 +139,7 @@ TEST(MimeType, NonAlphanumericMediaType3)
 
 TEST(MimeType, NonAlphanumericMediaType4)
 {
-  const auto in = NS_LITERAL_STRING("\"/\"");
+  const auto in = u"\"/\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-alphanumeric media type #4";
@@ -147,7 +147,7 @@ TEST(MimeType, NonAlphanumericMediaType4)
 
 TEST(MimeType, NonAlphanumericMediaType5)
 {
-  const auto in = NS_LITERAL_STRING("\0/\0");
+  const auto in = u"\0/\0"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-alphanumeric media type #5";
@@ -155,7 +155,7 @@ TEST(MimeType, NonAlphanumericMediaType5)
 
 TEST(MimeType, NonAlphanumericMediaType6)
 {
-  const auto in = NS_LITERAL_STRING("text/html(;doesnot=matter");
+  const auto in = u"text/html(;doesnot=matter"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-alphanumeric media type #6";
@@ -163,7 +163,7 @@ TEST(MimeType, NonAlphanumericMediaType6)
 
 TEST(MimeType, NonLatin1MediaType1)
 {
-  const auto in = NS_LITERAL_STRING("ÿ/ÿ");
+  const auto in = u"ÿ/ÿ"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-latin1 media type #1";
@@ -171,7 +171,7 @@ TEST(MimeType, NonLatin1MediaType1)
 
 TEST(MimeType, NonLatin1MediaType2)
 {
-  const auto in = NS_LITERAL_STRING(u"\x0100/\x0100");
+  const auto in = u"\x0100/\x0100"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_FALSE(parsed)
   << "Non-latin1 media type #2";
@@ -179,52 +179,49 @@ TEST(MimeType, NonLatin1MediaType2)
 
 TEST(MimeType, MultipleParameters)
 {
-  const auto in =
-      NS_LITERAL_STRING("text/html;charset=gbk;no=1;charset_=gbk_;yes=2");
+  const auto in = u"text/html;charset=gbk;no=1;charset_=gbk_;yes=2"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
   nsString out;
   parsed->Serialize(out);
-  ASSERT_TRUE(out.Equals(
-      NS_LITERAL_STRING("text/html;charset=gbk;no=1;charset_=gbk_;yes=2")))
+  ASSERT_TRUE(out.Equals(u"text/html;charset=gbk;no=1;charset_=gbk_;yes=2"_ns))
   << "Multiple parameters";
 }
 
 TEST(MimeType, DuplicateParameter1)
 {
-  const auto in =
-      NS_LITERAL_STRING("text/html;charset=gbk;charset=windows-1255");
+  const auto in = u"text/html;charset=gbk;charset=windows-1255"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
   nsString out;
   parsed->Serialize(out);
-  ASSERT_TRUE(out.Equals(NS_LITERAL_STRING("text/html;charset=gbk")))
+  ASSERT_TRUE(out.Equals(u"text/html;charset=gbk"_ns))
   << "Duplicate parameter #1";
 }
 
 TEST(MimeType, DuplicateParameter2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=();charset=GBK");
+  const auto in = u"text/html;charset=();charset=GBK"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
   nsString out;
   parsed->Serialize(out);
-  ASSERT_TRUE(out.Equals(NS_LITERAL_STRING("text/html;charset=\"()\"")))
+  ASSERT_TRUE(out.Equals(u"text/html;charset=\"()\""_ns))
   << "Duplicate parameter #2";
 }
 
 TEST(MimeType, CString)
 {
-  const auto in = NS_LITERAL_CSTRING("text/html;charset=();charset=GBK");
+  const auto in = "text/html;charset=();charset=GBK"_ns;
   UniquePtr<CMimeType> parsed = CMimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
   nsCString out;
   parsed->Serialize(out);
-  ASSERT_TRUE(out.Equals(NS_LITERAL_CSTRING("text/html;charset=\"()\"")))
+  ASSERT_TRUE(out.Equals("text/html;charset=\"()\""_ns))
   << "Duplicate parameter #2";
 }
 
@@ -234,14 +231,13 @@ TEST(MimeType, CString)
 #endif
 TEST(MimeType, NonAlphanumericParametersAreQuoted)
 {
-  const auto in = NS_LITERAL_STRING("text/html;test=\x00FF\\;charset=gbk");
+  const auto in = u"text/html;test=\x00FF\\;charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
   nsString out;
   parsed->Serialize(out);
-  ASSERT_TRUE(out.Equals(
-      NS_LITERAL_STRING("text/html;test=\"\x00FF\\\\\";charset=gbk")))
+  ASSERT_TRUE(out.Equals(u"text/html;test=\"\x00FF\\\\\";charset=gbk"_ns))
   << "Non-alphanumeric parameters are quoted";
 }
 #ifdef _MSC_VER
@@ -250,7 +246,7 @@ TEST(MimeType, NonAlphanumericParametersAreQuoted)
 
 TEST(MimeType, ParameterQuotedIfHasLeadingWhitespace1)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset= g\\\"bk");
+  const auto in = u"text/html;charset= g\\\"bk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -262,7 +258,7 @@ TEST(MimeType, ParameterQuotedIfHasLeadingWhitespace1)
 
 TEST(MimeType, ParameterQuotedIfHasLeadingWhitespace2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset= \"g\\bk\"");
+  const auto in = u"text/html;charset= \"g\\bk\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -274,7 +270,7 @@ TEST(MimeType, ParameterQuotedIfHasLeadingWhitespace2)
 
 TEST(MimeType, ParameterQuotedIfHasInternalWhitespace)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=g \\b\"k");
+  const auto in = u"text/html;charset=g \\b\"k"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -286,7 +282,7 @@ TEST(MimeType, ParameterQuotedIfHasInternalWhitespace)
 
 TEST(MimeType, ImproperlyQuotedParameter1)
 {
-  const auto in = NS_LITERAL_STRING("x/x;test=\"");
+  const auto in = u"x/x;test=\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -298,7 +294,7 @@ TEST(MimeType, ImproperlyQuotedParameter1)
 
 TEST(MimeType, ImproperlyQuotedParameter2)
 {
-  const auto in = NS_LITERAL_STRING("x/x;test=\"\\");
+  const auto in = u"x/x;test=\"\\"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -310,7 +306,7 @@ TEST(MimeType, ImproperlyQuotedParameter2)
 
 TEST(MimeType, NonLatin1ParameterIgnored)
 {
-  const auto in = NS_LITERAL_STRING(u"x/x;test=\xFFFD;x=x");
+  const auto in = u"x/x;test=\xFFFD;x=x"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -322,7 +318,7 @@ TEST(MimeType, NonLatin1ParameterIgnored)
 
 TEST(MimeType, ParameterIgnoredIfWhitespaceInName1)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset =gbk;charset=123");
+  const auto in = u"text/html;charset =gbk;charset=123"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -334,7 +330,7 @@ TEST(MimeType, ParameterIgnoredIfWhitespaceInName1)
 
 TEST(MimeType, ParameterIgnoredIfWhitespaceInName2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;cha rset =gbk;charset=123");
+  const auto in = u"text/html;cha rset =gbk;charset=123"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -346,8 +342,7 @@ TEST(MimeType, ParameterIgnoredIfWhitespaceInName2)
 
 TEST(MimeType, WhitespaceTrimmed)
 {
-  const auto in = NS_LITERAL_STRING(
-      "\n\r\t  text/plain\n\r\t  ;\n\r\t  charset=123\n\r\t ");
+  const auto in = u"\n\r\t  text/plain\n\r\t  ;\n\r\t  charset=123\n\r\t "_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -359,7 +354,7 @@ TEST(MimeType, WhitespaceTrimmed)
 
 TEST(MimeType, WhitespaceOnlyParameterIgnored)
 {
-  const auto in = NS_LITERAL_STRING("x/x;x= \r\n\t");
+  const auto in = u"x/x;x= \r\n\t"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -371,7 +366,7 @@ TEST(MimeType, WhitespaceOnlyParameterIgnored)
 
 TEST(MimeType, IncompleteParameterIgnored1)
 {
-  const auto in = NS_LITERAL_STRING("x/x;test");
+  const auto in = u"x/x;test"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -383,7 +378,7 @@ TEST(MimeType, IncompleteParameterIgnored1)
 
 TEST(MimeType, IncompleteParameterIgnored2)
 {
-  const auto in = NS_LITERAL_STRING("x/x;test=");
+  const auto in = u"x/x;test="_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -395,7 +390,7 @@ TEST(MimeType, IncompleteParameterIgnored2)
 
 TEST(MimeType, IncompleteParameterIgnored3)
 {
-  const auto in = NS_LITERAL_STRING("x/x;test= \r\n\t");
+  const auto in = u"x/x;test= \r\n\t"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -407,7 +402,7 @@ TEST(MimeType, IncompleteParameterIgnored3)
 
 TEST(MimeType, IncompleteParameterIgnored4)
 {
-  const auto in = NS_LITERAL_STRING("text/html;test;charset=gbk");
+  const auto in = u"text/html;test;charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -419,7 +414,7 @@ TEST(MimeType, IncompleteParameterIgnored4)
 
 TEST(MimeType, IncompleteParameterIgnored5)
 {
-  const auto in = NS_LITERAL_STRING("text/html;test=;charset=gbk");
+  const auto in = u"text/html;test=;charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -431,7 +426,7 @@ TEST(MimeType, IncompleteParameterIgnored5)
 
 TEST(MimeType, EmptyParameterIgnored1)
 {
-  const auto in = NS_LITERAL_STRING("text/html ; ; charset=gbk");
+  const auto in = u"text/html ; ; charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -443,7 +438,7 @@ TEST(MimeType, EmptyParameterIgnored1)
 
 TEST(MimeType, EmptyParameterIgnored2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;;;;charset=gbk");
+  const auto in = u"text/html;;;;charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -455,7 +450,7 @@ TEST(MimeType, EmptyParameterIgnored2)
 
 TEST(MimeType, InvalidParameterIgnored1)
 {
-  const auto in = NS_LITERAL_STRING("text/html;';charset=gbk");
+  const auto in = u"text/html;';charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -467,7 +462,7 @@ TEST(MimeType, InvalidParameterIgnored1)
 
 TEST(MimeType, InvalidParameterIgnored2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;\";charset=gbk;=123; =321");
+  const auto in = u"text/html;\";charset=gbk;=123; =321"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -479,7 +474,7 @@ TEST(MimeType, InvalidParameterIgnored2)
 
 TEST(MimeType, InvalidParameterIgnored3)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset= \"\u007F;charset=GBK");
+  const auto in = u"text/html;charset= \"\u007F;charset=GBK"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -491,8 +486,8 @@ TEST(MimeType, InvalidParameterIgnored3)
 
 TEST(MimeType, InvalidParameterIgnored4)
 {
-  const auto in = NS_LITERAL_STRING(
-      "text/html;charset=\"\u007F;charset=foo\";charset=GBK;charset=");
+  const auto in = nsLiteralString(
+      u"text/html;charset=\"\u007F;charset=foo\";charset=GBK;charset=");
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -504,7 +499,7 @@ TEST(MimeType, InvalidParameterIgnored4)
 
 TEST(MimeType, SingleQuotes1)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset='gbk'");
+  const auto in = u"text/html;charset='gbk'"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -516,7 +511,7 @@ TEST(MimeType, SingleQuotes1)
 
 TEST(MimeType, SingleQuotes2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset='gbk");
+  const auto in = u"text/html;charset='gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -528,7 +523,7 @@ TEST(MimeType, SingleQuotes2)
 
 TEST(MimeType, SingleQuotes3)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=gbk'");
+  const auto in = u"text/html;charset=gbk'"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -540,7 +535,7 @@ TEST(MimeType, SingleQuotes3)
 
 TEST(MimeType, SingleQuotes4)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=';charset=GBK");
+  const auto in = u"text/html;charset=';charset=GBK"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -552,7 +547,7 @@ TEST(MimeType, SingleQuotes4)
 
 TEST(MimeType, SingleQuotes5)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=''';charset=GBK");
+  const auto in = u"text/html;charset=''';charset=GBK"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -564,7 +559,7 @@ TEST(MimeType, SingleQuotes5)
 
 TEST(MimeType, DoubleQuotes1)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"gbk\"");
+  const auto in = u"text/html;charset=\"gbk\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -576,7 +571,7 @@ TEST(MimeType, DoubleQuotes1)
 
 TEST(MimeType, DoubleQuotes2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"gbk");
+  const auto in = u"text/html;charset=\"gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -588,7 +583,7 @@ TEST(MimeType, DoubleQuotes2)
 
 TEST(MimeType, DoubleQuotes3)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=gbk\"");
+  const auto in = u"text/html;charset=gbk\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -600,7 +595,7 @@ TEST(MimeType, DoubleQuotes3)
 
 TEST(MimeType, DoubleQuotes4)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\" gbk\"");
+  const auto in = u"text/html;charset=\" gbk\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -612,7 +607,7 @@ TEST(MimeType, DoubleQuotes4)
 
 TEST(MimeType, DoubleQuotes5)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"gbk \"");
+  const auto in = u"text/html;charset=\"gbk \""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -624,7 +619,7 @@ TEST(MimeType, DoubleQuotes5)
 
 TEST(MimeType, DoubleQuotes6)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"\\ gbk\"");
+  const auto in = u"text/html;charset=\"\\ gbk\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -636,7 +631,7 @@ TEST(MimeType, DoubleQuotes6)
 
 TEST(MimeType, DoubleQuotes7)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"\\g\\b\\k\"");
+  const auto in = u"text/html;charset=\"\\g\\b\\k\""_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -648,7 +643,7 @@ TEST(MimeType, DoubleQuotes7)
 
 TEST(MimeType, DoubleQuotes8)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"gbk\"x");
+  const auto in = u"text/html;charset=\"gbk\"x"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -660,7 +655,7 @@ TEST(MimeType, DoubleQuotes8)
 
 TEST(MimeType, DoubleQuotes9)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\"\";charset=GBK");
+  const auto in = u"text/html;charset=\"\";charset=GBK"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -672,7 +667,7 @@ TEST(MimeType, DoubleQuotes9)
 
 TEST(MimeType, DoubleQuotes10)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=\";charset=GBK");
+  const auto in = u"text/html;charset=\";charset=GBK"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -684,7 +679,7 @@ TEST(MimeType, DoubleQuotes10)
 
 TEST(MimeType, UnexpectedCodePoints)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset={gbk}");
+  const auto in = u"text/html;charset={gbk}"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -696,8 +691,9 @@ TEST(MimeType, UnexpectedCodePoints)
 
 TEST(MimeType, LongTypesSubtypesAccepted)
 {
-  const auto in = NS_LITERAL_STRING(
-      "012345678901234567890123456789012345678901234567890123456789012345678901"
+  const auto in = nsLiteralString(
+      u"01234567890123456789012345678901234567890123456789012345678901234567890"
+      u"1"
       "2345678901234567890123456789012345678901234567890123456789/"
       "012345678901234567890123456789012345678901234567890123456789012345678901"
       "2345678901234567890123456789012345678901234567890123456789");
@@ -712,8 +708,8 @@ TEST(MimeType, LongTypesSubtypesAccepted)
 
 TEST(MimeType, LongParametersAccepted)
 {
-  const auto in = NS_LITERAL_STRING(
-      "text/"
+  const auto in = nsLiteralString(
+      u"text/"
       "html;"
       "012345678901234567890123456789012345678901234567890123456789012345678901"
       "2345678901234567890123456789012345678901234567890123456789=x;charset="
@@ -729,7 +725,7 @@ TEST(MimeType, LongParametersAccepted)
 
 TEST(MimeType, AllValidCharactersAccepted1)
 {
-  const auto in = NS_LITERAL_STRING(
+  const auto in = nsLiteralString(
       u"x/x;x=\"\t "
       u"!\\\"#$%&'()*+,-./"
       u"0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\\\]^_`"
@@ -757,7 +753,7 @@ TEST(MimeType, AllValidCharactersAccepted1)
 
 TEST(MimeType, CaseNormalization1)
 {
-  const auto in = NS_LITERAL_STRING("TEXT/PLAIN;CHARSET=TEST");
+  const auto in = u"TEXT/PLAIN;CHARSET=TEST"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -769,8 +765,8 @@ TEST(MimeType, CaseNormalization1)
 
 TEST(MimeType, CaseNormalization2)
 {
-  const auto in = NS_LITERAL_STRING(
-      "!#$%&'*+-.^_`|~"
+  const auto in = nsLiteralString(
+      u"!#$%&'*+-.^_`|~"
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz/"
       "!#$%&'*+-.^_`|~"
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz;!#$%&'*+-"
@@ -795,7 +791,7 @@ TEST(MimeType, CaseNormalization2)
 
 TEST(MimeType, LegacyCommentSyntax1)
 {
-  const auto in = NS_LITERAL_STRING("text/html;charset=gbk(");
+  const auto in = u"text/html;charset=gbk("_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";
@@ -807,7 +803,7 @@ TEST(MimeType, LegacyCommentSyntax1)
 
 TEST(MimeType, LegacyCommentSyntax2)
 {
-  const auto in = NS_LITERAL_STRING("text/html;x=(;charset=gbk");
+  const auto in = u"text/html;x=(;charset=gbk"_ns;
   UniquePtr<MimeType> parsed = MimeType::Parse(in);
   ASSERT_TRUE(parsed)
   << "Parsing succeeded";

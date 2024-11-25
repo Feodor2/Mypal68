@@ -14,9 +14,9 @@
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
 
-class nsSVGFilterInstance;
-
 namespace mozilla {
+class SVGFilterInstance;
+
 namespace dom {
 
 struct SVGStringInfo {
@@ -42,7 +42,7 @@ typedef SVGElement SVGFEBase;
  * derive from SVGFEUnstyledElement instead
  */
 class SVGFE : public SVGFEBase {
-  friend class ::nsSVGFilterInstance;
+  friend class mozilla::SVGFilterInstance;
 
  protected:
   typedef mozilla::gfx::SourceSurface SourceSurface;
@@ -99,7 +99,7 @@ class SVGFE : public SVGFEBase {
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources);
 
   virtual FilterPrimitiveDescription GetPrimitiveDescription(
-      nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+      SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) = 0;
 
@@ -143,7 +143,7 @@ class SVGFE : public SVGFEBase {
   // SVGElement specializations:
   virtual LengthAttributesInfo GetLengthInfo() override;
 
-  Size GetKernelUnitLength(nsSVGFilterInstance* aInstance,
+  Size GetKernelUnitLength(SVGFilterInstance* aInstance,
                            SVGAnimatedNumberPair* aKernelUnitLength);
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
@@ -207,11 +207,11 @@ class SVGFELightingElement : public SVGFELightingElementBase {
   virtual StringAttributesInfo GetStringInfo() override;
 
   mozilla::gfx::LightType ComputeLightAttributes(
-      nsSVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes);
+      SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes);
 
   bool AddLightingAttributes(
       mozilla::gfx::DiffuseLightingAttributes* aAttributes,
-      nsSVGFilterInstance* aInstance);
+      SVGFilterInstance* aInstance);
 
   enum {
     SURFACE_SCALE,
@@ -243,7 +243,7 @@ class SVGFELightElement : public SVGFELightElementBase {
   typedef gfx::PrimitiveAttributes PrimitiveAttributes;
 
   virtual mozilla::gfx::LightType ComputeLightAttributes(
-      nsSVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) = 0;
+      SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) = 0;
 };
 
 }  // namespace dom

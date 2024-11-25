@@ -5,13 +5,13 @@
 #ifndef mozilla_dom_SVGGeometryProperty_SVGGeometryProperty_h
 #define mozilla_dom_SVGGeometryProperty_SVGGeometryProperty_h
 
+#include "mozilla/SVGImageFrame.h"
 #include "mozilla/dom/SVGElement.h"
 #include "ComputedStyle.h"
 #include "SVGAnimatedLength.h"
 #include "nsComputedDOMStyle.h"
 #include "nsGkAtoms.h"
 #include "nsIFrame.h"
-#include "nsSVGImageFrame.h"
 #include <type_traits>
 
 namespace mozilla {
@@ -124,7 +124,7 @@ float ResolveImpl(ComputedStyle const& aStyle, SVGElement* aElement,
     // specified in:
     // https://svgwg.org/svg2-draft/embedded.html#ImageElement
 
-    nsSVGImageFrame* imgf = do_QueryFrame(aElement->GetPrimaryFrame());
+    SVGImageFrame* imgf = do_QueryFrame(aElement->GetPrimaryFrame());
     MOZ_ASSERT(imgf);
 
     using Other = typename Tag::CounterPart;

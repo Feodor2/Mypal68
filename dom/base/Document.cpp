@@ -269,7 +269,7 @@
 #include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/DocumentL10n.h"
 #include "mozilla/ExtensionPolicyService.h"
-#include "nsFrame.h"
+#include "nsIFrame.h"
 #include "nsDOMCaretPosition.h"
 #include "nsViewportInfo.h"
 #include "mozilla/StaticPtr.h"
@@ -331,6 +331,7 @@
 #include "ThirdPartyUtil.h"
 #include "nsHtml5Module.h"
 #include "nsHtml5Parser.h"
+#include "nsTableWrapperFrame.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS (1 << 1)
@@ -1759,6 +1760,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
     }
   }
 
+  if (tmp->mResizeObserverController) {
+    tmp->mResizeObserverController->Traverse(cb);
+  }
   for (size_t i = 0; i < tmp->mMetaViewports.Length(); i++) {
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMetaViewports[i].mElement);
   }
@@ -1884,6 +1888,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
 
   tmp->mInUnlinkOrDeletion = false;
 
+  if (tmp->mResizeObserverController) {
+    tmp->mResizeObserverController->Unlink();
+  }
   tmp->mMetaViewports.Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mL10nProtoElements)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -3318,9 +3325,10 @@ void Document::InitializeLocalization(nsTArray<nsString>& aResourceIds) {
 DocumentL10n* Document::GetL10n() { return mDocumentL10n; }
 
 bool Document::DocumentSupportsL10n(JSContext* aCx, JSObject* aObject) {
+  JS::Rooted<JSObject*> object(aCx, aObject);
   nsCOMPtr<nsIPrincipal> callerPrincipal =
       nsContentUtils::SubjectPrincipal(aCx);
-  nsGlobalWindowInner* win = xpc::WindowOrNull(aObject);
+  nsGlobalWindowInner* win = xpc::WindowOrNull(object);
   bool allowed = false;
   callerPrincipal->IsL10nAllowed(win ? win->GetDocumentURI() : nullptr,
                                  &allowed);
@@ -6877,7 +6885,8 @@ void Document::ContentStateChanged(nsIContent* aContent,
                                (this, aContent, aStateMask));
 }
 
-void Document::RuleChanged(StyleSheet& aSheet, css::Rule* aRule) {
+void Document::RuleChanged(StyleSheet& aSheet, css::Rule*,
+                           StyleRuleChangeKind) {
   if (aSheet.IsApplicable()) {
     ApplicableStylesChanged();
   }
@@ -8127,6 +8136,7 @@ void Document::TryCancelFrameLoaderInitialization(nsIDocShell* aShell) {
 
 void Document::SetPrototypeDocument(nsXULPrototypeDocument* aPrototype) {
   mPrototypeDocument = aPrototype;
+  mSynchronousDOMContentLoaded = true;
 }
 
 Document* Document::RequestExternalResource(
@@ -8658,7 +8668,7 @@ void Document::WriteCommon(const nsAString& aText, bool aNewlineTerminate,
     }
   }
 
-  static NS_NAMED_LITERAL_STRING(new_line, "\n");
+  static constexpr auto new_line = u"\n"_ns;
 
   ++mWriteLevel;
 
@@ -11921,7 +11931,7 @@ already_AddRefed<nsDOMCaretPosition> Document::CaretPositionFromPoint(
   nsPoint adjustedPoint =
       nsLayoutUtils::GetEventCoordinatesRelativeTo(widget, refPoint, ptFrame);
 
-  nsFrame::ContentOffsets offsets =
+  nsIFrame::ContentOffsets offsets =
       ptFrame->GetContentOffsetsFromPoint(adjustedPoint);
 
   nsCOMPtr<nsIContent> node = offsets.content;
@@ -11965,33 +11975,27 @@ bool Document::IsPotentiallyScrollable(HTMLBodyElement* aBody) {
   // We rely on correct frame information here, so need to flush frames.
   FlushPendingNotifications(FlushType::Frames);
 
-  // An element is potentially scrollable if all of the following conditions are
-  // true:
+  // An element that is the HTML body element is potentially scrollable if all
+  // of the following conditions are true:
 
   // The element has an associated CSS layout box.
-  nsIFrame* bodyFrame = aBody->GetPrimaryFrame();
+  nsIFrame* bodyFrame = nsLayoutUtils::GetStyleFrame(aBody);
   if (!bodyFrame) {
     return false;
   }
 
-  // The element is not the HTML body element, or it is and the root element's
-  // used value of the overflow-x or overflow-y properties is not visible.
+  // The element's parent element's computed value of the overflow-x and
+  // overflow-y properties are visible.
   MOZ_ASSERT(aBody->GetParent() == aBody->OwnerDoc()->GetRootElement());
-  nsIFrame* parentFrame = aBody->GetParent()->GetPrimaryFrame();
+  nsIFrame* parentFrame = nsLayoutUtils::GetStyleFrame(aBody->GetParent());
   if (parentFrame &&
-      parentFrame->StyleDisplay()->mOverflowX == StyleOverflow::Visible &&
-      parentFrame->StyleDisplay()->mOverflowY == StyleOverflow::Visible) {
+      parentFrame->StyleDisplay()->OverflowIsVisibleInBothAxis()) {
     return false;
   }
 
-  // The element's used value of the overflow-x or overflow-y properties is not
-  // visible.
-  if (bodyFrame->StyleDisplay()->mOverflowX == StyleOverflow::Visible &&
-      bodyFrame->StyleDisplay()->mOverflowY == StyleOverflow::Visible) {
-    return false;
-  }
-
-  return true;
+  // The element's computed value of the overflow-x or overflow-y properties is
+  // not visible.
+  return !bodyFrame->StyleDisplay()->OverflowIsVisibleInBothAxis();
 }
 
 Element* Document::GetScrollingElement() {

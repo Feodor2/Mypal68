@@ -14,6 +14,7 @@
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength
 #include "js/CompilationAndEvaluation.h"
+#include "js/ContextOptions.h"        // JS::ContextOptionsRef
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/MemoryFunctions.h"
 #include "js/Modules.h"  // JS::FinishDynamicModuleImport, JS::{G,S}etModuleResolveHook, JS::Get{ModulePrivate,ModuleScript,RequestedModule{s,Specifier,SourcePos}}, JS::SetModule{DynamicImport,Metadata}Hook
@@ -27,10 +28,12 @@
 #include "nsJSUtils.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/JSExecutionContext.h"
 #include "mozilla/dom/ScriptDecoding.h"  // mozilla::dom::ScriptDecoding
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsAboutProtocolUtils.h"
@@ -65,6 +68,7 @@
 #include "nsINetworkPredictor.h"
 #include "nsMimeTypes.h"
 #include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/LoadInfo.h"
 #include "ReferrerInfo.h"
 
@@ -89,33 +93,6 @@ using mozilla::Telemetry::LABELS_DOM_SCRIPT_PRELOAD_RESULT;
 
 namespace mozilla {
 namespace dom {
-
-JSObject* GetElementCallback(JSContext* aCx, JS::HandleValue aValue) {
-  JS::RootedValue privateValue(aCx, aValue);
-  MOZ_ASSERT(!privateValue.isObjectOrNull() && !privateValue.isUndefined());
-  LoadedScript* script = static_cast<LoadedScript*>(privateValue.toPrivate());
-
-  if (!script->GetFetchOptions()) {
-    return nullptr;
-  }
-
-  nsCOMPtr<Element> domElement = script->GetFetchOptions()->mElement;
-  if (!domElement) {
-    return nullptr;
-  }
-
-  JSObject* globalObject =
-      domElement->OwnerDoc()->GetScopeObject()->GetGlobalJSObject();
-  JSAutoRealm ar(aCx, globalObject);
-
-  JS::Rooted<JS::Value> elementValue(aCx);
-  nsresult rv = nsContentUtils::WrapNative(aCx, domElement, &elementValue,
-                                           /* aAllowWrapping = */ true);
-  if (NS_FAILED(rv)) {
-    return nullptr;
-  }
-  return elementValue.toObjectOrNull();
-}
 
 LazyLogModule ScriptLoader::gCspPRLog("CSP");
 LazyLogModule ScriptLoader::gScriptLoaderLog("ScriptLoader");
@@ -212,7 +189,7 @@ ScriptLoader::~ScriptLoader() {
 
   for (ScriptLoadRequest* req = mDynamicImportRequests.getFirst(); req;
        req = req->getNext()) {
-    FinishDynamicImport(req->AsModuleRequest(), NS_ERROR_ABORT);
+    FinishDynamicImportAndReject(req->AsModuleRequest(), NS_ERROR_ABORT);
   }
 
   for (ScriptLoadRequest* req =
@@ -1037,20 +1014,30 @@ void ScriptLoader::StartDynamicImport(ModuleLoadRequest* aRequest) {
 
   nsresult rv = StartLoad(aRequest);
   if (NS_FAILED(rv)) {
-    FinishDynamicImport(aRequest, rv);
+    FinishDynamicImportAndReject(aRequest, rv);
   }
 }
 
-void ScriptLoader::FinishDynamicImport(ModuleLoadRequest* aRequest,
-                                       nsresult aResult) {
+void ScriptLoader::FinishDynamicImportAndReject(ModuleLoadRequest* aRequest,
+                                                nsresult aResult) {
   AutoJSAPI jsapi;
+  MOZ_ASSERT(NS_FAILED(aResult));
   MOZ_ALWAYS_TRUE(jsapi.Init(aRequest->mDynamicPromise));
-  FinishDynamicImport(jsapi.cx(), aRequest, aResult);
+  if (!JS::ContextOptionsRef(jsapi.cx()).topLevelAwait()) {
+    // This is used so that Top Level Await functionality can be turned off
+    // entirely. It will be removed in bug#1676612.
+    FinishDynamicImport_NoTLA(jsapi.cx(), aRequest, aResult);
+  } else {
+    // Path for when Top Level Await is enabled.
+    FinishDynamicImport(jsapi.cx(), aRequest, aResult, nullptr);
+  }
 }
 
-void ScriptLoader::FinishDynamicImport(JSContext* aCx,
-                                       ModuleLoadRequest* aRequest,
-                                       nsresult aResult) {
+// This is used so that Top Level Await functionality can be turned off
+// entirely. It will be removed in bug#1676612.
+void ScriptLoader::FinishDynamicImport_NoTLA(JSContext* aCx,
+                                             ModuleLoadRequest* aRequest,
+                                             nsresult aResult) {
   LOG(("ScriptLoadRequest (%p): Finish dynamic import %x %d", aRequest,
        unsigned(aResult), JS_IsExceptionPending(aCx)));
 
@@ -1074,8 +1061,42 @@ void ScriptLoader::FinishDynamicImport(JSContext* aCx,
   JS::Rooted<JSString*> specifier(aCx, aRequest->mDynamicSpecifier);
   JS::Rooted<JSObject*> promise(aCx, aRequest->mDynamicPromise);
 
-  JS::FinishDynamicModuleImport(aCx, status, referencingScript, specifier,
-                                promise);
+  JS::FinishDynamicModuleImport_NoTLA(aCx, status, referencingScript, specifier,
+                                      promise);
+
+  // FinishDynamicModuleImport clears any pending exception.
+  MOZ_ASSERT(!JS_IsExceptionPending(aCx));
+
+  aRequest->ClearDynamicImport();
+}
+
+void ScriptLoader::FinishDynamicImport(
+    JSContext* aCx, ModuleLoadRequest* aRequest, nsresult aResult,
+    JS::Handle<JSObject*> aEvaluationPromise) {
+  // If aResult is a failed result, we don't have an EvaluationPromise. If it
+  // succeeded, evaluationPromise may still be null, but in this case it will
+  // be handled by rejecting the dynamic module import promise in the JSAPI.
+  MOZ_ASSERT_IF(NS_FAILED(aResult), !aEvaluationPromise);
+  LOG(("ScriptLoadRequest (%p): Finish dynamic import %x %d", aRequest,
+       unsigned(aResult), JS_IsExceptionPending(aCx)));
+
+  // Complete the dynamic import, report failures indicated by aResult or as a
+  // pending exception on the context.
+
+  if (NS_FAILED(aResult) &&
+      aResult != NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW_UNCATCHABLE) {
+    MOZ_ASSERT(!JS_IsExceptionPending(aCx));
+    JS_ReportErrorNumberUC(aCx, js::GetErrorMessage, nullptr,
+                           JSMSG_DYNAMIC_IMPORT_FAILED);
+  }
+
+  JS::Rooted<JS::Value> referencingScript(aCx,
+                                          aRequest->mDynamicReferencingPrivate);
+  JS::Rooted<JSString*> specifier(aCx, aRequest->mDynamicSpecifier);
+  JS::Rooted<JSObject*> promise(aCx, aRequest->mDynamicPromise);
+
+  JS::FinishDynamicModuleImport(aCx, aEvaluationPromise, referencingScript,
+                                specifier, promise);
 
   // FinishDynamicModuleImport clears any pending exception.
   MOZ_ASSERT(!JS_IsExceptionPending(aCx));
@@ -2292,6 +2313,11 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
     }
   } else {
     MOZ_ASSERT(aRequest->IsBytecode());
+
+    // NOTE: Regardless of using stencil XDR or not, we use off-thread parse
+    //       global and instantiate off-thread, to avoid regressing performance.
+    options.useOffThreadParseGlobal = true;
+
     size_t length =
         aRequest->mScriptBytecode.length() - aRequest->mBytecodeOffset;
     if (!JS::CanDecodeOffThread(cx, options, length)) {
@@ -2317,22 +2343,22 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
     nsresult rv = GetScriptSource(cx, aRequest, &maybeSource);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (maybeSource.constructed<SourceText<char16_t>>()
-            ? !JS::CompileOffThreadModule(
+    aRequest->mOffThreadToken =
+        maybeSource.constructed<SourceText<char16_t>>()
+            ? JS::CompileOffThreadModule(
                   cx, options, maybeSource.ref<SourceText<char16_t>>(),
-                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable),
-                  &aRequest->mOffThreadToken)
-            : !JS::CompileOffThreadModule(
+                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable))
+            : JS::CompileOffThreadModule(
                   cx, options, maybeSource.ref<SourceText<Utf8Unit>>(),
-                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable),
-                  &aRequest->mOffThreadToken)) {
+                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable));
+    if (!aRequest->mOffThreadToken) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   } else if (aRequest->IsBytecode()) {
-    if (!JS::DecodeOffThreadScript(
-            cx, options, aRequest->mScriptBytecode, aRequest->mBytecodeOffset,
-            OffThreadScriptLoaderCallback, static_cast<void*>(runnable),
-            &aRequest->mOffThreadToken)) {
+    aRequest->mOffThreadToken = JS::DecodeOffThreadScript(
+        cx, options, aRequest->mScriptBytecode, aRequest->mBytecodeOffset,
+        OffThreadScriptLoaderCallback, static_cast<void*>(runnable));
+    if (!aRequest->mOffThreadToken) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   } else {
@@ -2341,15 +2367,15 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
     nsresult rv = GetScriptSource(cx, aRequest, &maybeSource);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (maybeSource.constructed<SourceText<char16_t>>()
-            ? !JS::CompileOffThread(
+    aRequest->mOffThreadToken =
+        maybeSource.constructed<SourceText<char16_t>>()
+            ? JS::CompileOffThread(
                   cx, options, maybeSource.ref<SourceText<char16_t>>(),
-                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable),
-                  &aRequest->mOffThreadToken)
-            : !JS::CompileOffThread(
+                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable))
+            : JS::CompileOffThread(
                   cx, options, maybeSource.ref<SourceText<Utf8Unit>>(),
-                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable),
-                  &aRequest->mOffThreadToken)) {
+                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable));
+    if (!aRequest->mOffThreadToken) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
@@ -2578,7 +2604,7 @@ void ScriptLoader::ProcessDynamicImport(ModuleLoadRequest* aRequest) {
   }
 
   if (NS_FAILED(rv)) {
-    FinishDynamicImport(aRequest, rv);
+    FinishDynamicImportAndReject(aRequest, rv);
   }
 }
 
@@ -2774,12 +2800,17 @@ class MOZ_RAII AutoSetProcessingScriptTag {
 
 static nsresult ExecuteCompiledScript(JSContext* aCx,
                                       ScriptLoadRequest* aRequest,
-                                      nsJSUtils::ExecutionContext& aExec) {
-  JS::Rooted<JSScript*> script(aCx, aExec.MaybeGetScript());
+                                      JSExecutionContext& aExec,
+                                      ClassicScript* aLoaderScript) {
+  JS::Rooted<JSScript*> script(aCx, aExec.GetScript());
   if (!script) {
     // Compilation succeeds without producing a script if scripting is
     // disabled for the global.
     return NS_OK;
+  }
+
+  if (JS::GetScriptPrivate(script).isUndefined()) {
+    aLoaderScript->AssociateWithScript(script);
   }
 
   return aExec.ExecScript();
@@ -2858,12 +2889,30 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
         LOG(("ScriptLoadRequest (%p):   module has error to rethrow",
              aRequest));
         JS::Rooted<JS::Value> error(cx, moduleScript->ErrorToRethrow());
-        JS_SetPendingException(cx, error);
-
-        // For a dynamic import, the promise is rejected.  Otherwise an error is
-        // either reported by AutoEntryScript.
-        if (request->IsDynamicImport()) {
-          FinishDynamicImport(cx, request, NS_OK);
+        if (!JS::ContextOptionsRef(cx).topLevelAwait()) {
+          JS_SetPendingException(cx, error);
+          // For a dynamic import, the promise is rejected.  Otherwise an error
+          // is either reported by AutoEntryScript.
+          if (request->IsDynamicImport()) {
+            FinishDynamicImport_NoTLA(cx, request, NS_OK);
+          }
+        } else {
+          ErrorResult err;
+          RefPtr<Promise> aPromise = Promise::Create(globalObject, err);
+          if (NS_WARN_IF(err.Failed())) {
+            return err.StealNSResult();
+          }
+          aPromise->MaybeReject(error);
+          JS::Rooted<JSObject*> aEvaluationPromise(cx, aPromise->PromiseObj());
+          if (request->IsDynamicImport()) {
+            FinishDynamicImport(cx, request, NS_OK, aEvaluationPromise);
+          } else {
+            if (!JS::ThrowOnModuleEvaluationFailure(cx, aEvaluationPromise)) {
+              LOG(("ScriptLoadRequest (%p):   evaluation failed", aRequest));
+              // For a dynamic import, the promise is rejected.  Otherwise an
+              // error is either reported by AutoEntryScript.
+            }
+          }
         }
         return NS_OK;
       }
@@ -2876,8 +2925,17 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
 
       TRACE_FOR_TEST(aRequest->GetScriptElement(),
                      "scriptloader_evaluate_module");
-      rv = nsJSUtils::ModuleEvaluate(cx, module);
-      MOZ_ASSERT(NS_FAILED(rv) == aes.HasException());
+
+      JS::Rooted<JS::Value> rval(cx);
+
+      rv = nsJSUtils::ModuleEvaluate(cx, module, &rval);
+
+      if (NS_SUCCEEDED(rv)) {
+        // If we have an infinite loop in a module, which is stopped by the
+        // user, the module evaluation will fail, but we will not have an
+        // AutoEntryScript exception.
+        MOZ_ASSERT(!aes.HasException());
+      }
 
       if (NS_FAILED(rv)) {
         LOG(("ScriptLoadRequest (%p):   evaluation failed", aRequest));
@@ -2886,8 +2944,33 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
         rv = NS_OK;
       }
 
-      if (request->IsDynamicImport()) {
-        FinishDynamicImport(cx, request, rv);
+      if (!JS::ContextOptionsRef(cx).topLevelAwait()) {
+        if (request->IsDynamicImport()) {
+          FinishDynamicImport_NoTLA(cx, request, rv);
+        }
+      } else {
+        // Path for when Top Level Await is enabled
+        JS::Rooted<JSObject*> aEvaluationPromise(cx);
+        if (rval.isObject()) {
+          // If the user cancels the evaluation on an infinite loop, we need
+          // to skip this step. In that case, ModuleEvaluate will not return a
+          // promise, rval will be undefined. We should treat it as a failed
+          // evaluation, and reject appropriately.
+          aEvaluationPromise.set(&rval.toObject());
+        }
+        if (request->IsDynamicImport()) {
+          FinishDynamicImport(cx, request, rv, aEvaluationPromise);
+        } else {
+          // If this is not a dynamic import, and if the promise is rejected,
+          // the value is unwrapped from the promise value.
+          if (!JS::ThrowOnModuleEvaluationFailure(cx, aEvaluationPromise)) {
+            LOG(("ScriptLoadRequest (%p):   evaluation failed on throw",
+                 aRequest));
+            // For a dynamic import, the promise is rejected.  Otherwise an
+            // error is either reported by AutoEntryScript.
+            rv = NS_OK;
+          }
+        }
       }
 
       TRACE_FOR_TEST_NONE(aRequest->GetScriptElement(),
@@ -2909,7 +2992,7 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
       if (NS_SUCCEEDED(rv)) {
         if (aRequest->IsBytecode()) {
           TRACE_FOR_TEST(aRequest->GetScriptElement(), "scriptloader_execute");
-          nsJSUtils::ExecutionContext exec(cx, global);
+          JSExecutionContext exec(cx, global);
           if (aRequest->mOffThreadToken) {
             LOG(("ScriptLoadRequest (%p): Decode Bytecode & Join and Execute",
                  aRequest));
@@ -2927,8 +3010,7 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
           if (rv == NS_OK) {
             AUTO_PROFILER_TEXT_MARKER_DOCSHELL(
                 "ScriptExecution", profilerLabelString, JS, docShell);
-
-            rv = ExecuteCompiledScript(cx, aRequest, exec);
+            rv = ExecuteCompiledScript(cx, aRequest, exec, classicScript);
           }
 
           // We do not expect to be saving anything when we already have some
@@ -2940,7 +3022,7 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
           bool encodeBytecode = ShouldCacheBytecode(aRequest);
 
           {
-            nsJSUtils::ExecutionContext exec(cx, global);
+            JSExecutionContext exec(cx, global);
             exec.SetEncodeBytecode(encodeBytecode);
             TRACE_FOR_TEST(aRequest->GetScriptElement(),
                            "scriptloader_execute");
@@ -2989,12 +3071,9 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
 
             if (rv == NS_OK) {
               script = exec.GetScript();
-              if (script && JS::GetScriptPrivate(script).isUndefined()) {
-                classicScript->AssociateWithScript(script);
-              }
               AUTO_PROFILER_TEXT_MARKER_DOCSHELL(
                   "ScriptExecution", profilerLabelString, JS, docShell);
-              rv = ExecuteCompiledScript(cx, aRequest, exec);
+              rv = ExecuteCompiledScript(cx, aRequest, exec, classicScript);
             }
           }
 
@@ -3460,7 +3539,18 @@ nsresult ScriptLoader::OnStreamComplete(
     // hash in case we are going to save the bytecode of this script in the
     // cache.
     if (aRequest->IsSource()) {
-      rv = SaveSRIHash(aRequest, aSRIDataVerifier);
+      uint32_t sriLength = 0;
+      rv = SaveSRIHash(aRequest, aSRIDataVerifier, &sriLength);
+      MOZ_ASSERT_IF(NS_SUCCEEDED(rv),
+                    aRequest->mScriptBytecode.length() == sriLength);
+
+      aRequest->mBytecodeOffset = JS::AlignTranscodingBytecodeOffset(sriLength);
+      if (aRequest->mBytecodeOffset != sriLength) {
+        // We need extra padding after SRI hash.
+        if (!aRequest->mScriptBytecode.resize(aRequest->mBytecodeOffset)) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+      }
     }
 
     if (NS_SUCCEEDED(rv)) {
@@ -3522,43 +3612,51 @@ nsresult ScriptLoader::VerifySRI(ScriptLoadRequest* aRequest,
   return rv;
 }
 
-nsresult ScriptLoader::SaveSRIHash(
-    ScriptLoadRequest* aRequest, SRICheckDataVerifier* aSRIDataVerifier) const {
+nsresult ScriptLoader::SaveSRIHash(ScriptLoadRequest* aRequest,
+                                   SRICheckDataVerifier* aSRIDataVerifier,
+                                   uint32_t* sriLength) const {
   MOZ_ASSERT(aRequest->IsSource());
   MOZ_ASSERT(aRequest->mScriptBytecode.empty());
+
+  uint32_t len;
 
   // If the integrity metadata does not correspond to a valid hash function,
   // IsComplete would be false.
   if (!aRequest->mIntegrity.IsEmpty() && aSRIDataVerifier->IsComplete()) {
+    MOZ_ASSERT(aRequest->mScriptBytecode.length() == 0);
+
     // Encode the SRI computed hash.
-    uint32_t len = aSRIDataVerifier->DataSummaryLength();
-    if (!aRequest->mScriptBytecode.growBy(len)) {
+    len = aSRIDataVerifier->DataSummaryLength();
+
+    if (!aRequest->mScriptBytecode.resize(len)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    aRequest->mBytecodeOffset = len;
 
     DebugOnly<nsresult> res = aSRIDataVerifier->ExportDataSummary(
-        aRequest->mScriptBytecode.length(), aRequest->mScriptBytecode.begin());
+        len, aRequest->mScriptBytecode.begin());
     MOZ_ASSERT(NS_SUCCEEDED(res));
   } else {
+    MOZ_ASSERT(aRequest->mScriptBytecode.length() == 0);
+
     // Encode a dummy SRI hash.
-    uint32_t len = SRICheckDataVerifier::EmptyDataSummaryLength();
-    if (!aRequest->mScriptBytecode.growBy(len)) {
+    len = SRICheckDataVerifier::EmptyDataSummaryLength();
+
+    if (!aRequest->mScriptBytecode.resize(len)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    aRequest->mBytecodeOffset = len;
 
     DebugOnly<nsresult> res = SRICheckDataVerifier::ExportEmptyDataSummary(
-        aRequest->mScriptBytecode.length(), aRequest->mScriptBytecode.begin());
+        len, aRequest->mScriptBytecode.begin());
     MOZ_ASSERT(NS_SUCCEEDED(res));
   }
 
   // Verify that the exported and predicted length correspond.
   mozilla::DebugOnly<uint32_t> srilen;
   MOZ_ASSERT(NS_SUCCEEDED(SRICheckDataVerifier::DataSummaryLength(
-      aRequest->mScriptBytecode.length(), aRequest->mScriptBytecode.begin(),
-      &srilen)));
-  MOZ_ASSERT(srilen == aRequest->mBytecodeOffset);
+      len, aRequest->mScriptBytecode.begin(), &srilen)));
+  MOZ_ASSERT(srilen == len);
+
+  *sriLength = len;
 
   return NS_OK;
 }
@@ -3678,7 +3776,7 @@ void ScriptLoader::HandleLoadError(ScriptLoadRequest* aRequest,
         // FinishDynamicImport must happen exactly once for each dynamic import
         // request. If the load is aborted we do it when we remove the request
         // from mDynamicImportRequests.
-        FinishDynamicImport(modReq, aResult);
+        FinishDynamicImportAndReject(modReq, aResult);
       }
     } else {
       MOZ_ASSERT(!modReq->IsTopLevel());
@@ -3923,7 +4021,7 @@ void ScriptLoader::ParsingComplete(bool aTerminated) {
     // FinishDynamicImport must happen exactly once for each dynamic import
     // request. If the load is aborted we do it when we remove the request
     // from mDynamicImportRequests.
-    FinishDynamicImport(req->AsModuleRequest(), NS_ERROR_ABORT);
+    FinishDynamicImportAndReject(req->AsModuleRequest(), NS_ERROR_ABORT);
   }
   mDynamicImportRequests.Clear();
 
@@ -4054,6 +4152,41 @@ bool ScriptLoader::MaybeRemovedDeferRequests() {
     return true;
   }
   return false;
+}
+
+DocGroup* ScriptLoader::GetDocGroup() const { return mDocument->GetDocGroup(); }
+
+void ScriptLoader::BeginDeferringScripts() {
+  mDeferEnabled = true;
+  if (mDeferCheckpointReached) {
+    // We already completed a parse and were just waiting for some async
+    // scripts to load (and were already blocking the load event waiting for
+    // that to happen), when document.open() happened and now we're doing a
+    // new parse.  We shouldn't block the load event again, but _should_ reset
+    // mDeferCheckpointReached to false.  It'll get set to true again when the
+    // DeferCheckpointReached call that corresponds to this
+    // BeginDeferringScripts call happens (on document.close()), since we just
+    // set mDeferEnabled to true.
+    mDeferCheckpointReached = false;
+  } else {
+    if (mDocument) {
+      mDocument->BlockOnload();
+    }
+  }
+}
+
+nsAutoScriptLoaderDisabler::nsAutoScriptLoaderDisabler(Document* aDoc) {
+  mLoader = aDoc->ScriptLoader();
+  mWasEnabled = mLoader->GetEnabled();
+  if (mWasEnabled) {
+    mLoader->SetEnabled(false);
+  }
+}
+
+nsAutoScriptLoaderDisabler::~nsAutoScriptLoaderDisabler() {
+  if (mWasEnabled) {
+    mLoader->SetEnabled(true);
+  }
 }
 
 #undef TRACE_FOR_TEST

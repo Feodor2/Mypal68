@@ -50,27 +50,7 @@ const nsAttrValue* nsDOMTokenList::GetParsedAttr() {
   return mElement->GetAttrInfo(kNameSpaceID_None, mAttrAtom).mValue;
 }
 
-void nsDOMTokenList::RemoveDuplicates(const nsAttrValue* aAttr) {
-  if (!aAttr || aAttr->Type() != nsAttrValue::eAtomArray) {
-    return;
-  }
-
-  BloomFilter<8, nsAtom> filter;
-  AtomArray* array = aAttr->GetAtomArrayValue();
-  for (uint32_t i = 0; i < array->Length(); i++) {
-    nsAtom* atom = array->ElementAt(i);
-    if (filter.mightContain(atom)) {
-      // Start again, with a hashtable
-      RemoveDuplicatesInternal(array, i);
-      return;
-    } else {
-      filter.add(atom);
-    }
-  }
-}
-
-void nsDOMTokenList::RemoveDuplicatesInternal(AtomArray* aArray,
-                                              uint32_t aStart) {
+static void RemoveDuplicatesInternal(AtomArray* aArray, uint32_t aStart) {
   nsDataHashtable<nsPtrHashKey<nsAtom>, bool> tokens;
 
   for (uint32_t i = 0; i < aArray->Length(); i++) {
@@ -81,6 +61,25 @@ void nsDOMTokenList::RemoveDuplicatesInternal(AtomArray* aArray,
       i--;
     } else {
       tokens.Put(atom, true);
+    }
+  }
+}
+
+void nsDOMTokenList::RemoveDuplicates(const nsAttrValue* aAttr) {
+  if (!aAttr || aAttr->Type() != nsAttrValue::eAtomArray) {
+    return;
+  }
+
+  BitBloomFilter<8, nsAtom> filter;
+  AtomArray* array = aAttr->GetAtomArrayValue();
+  for (uint32_t i = 0; i < array->Length(); i++) {
+    nsAtom* atom = array->ElementAt(i);
+    if (filter.mightContain(atom)) {
+      // Start again, with a hashtable
+      RemoveDuplicatesInternal(array, i);
+      return;
+    } else {
+      filter.add(atom);
     }
   }
 }

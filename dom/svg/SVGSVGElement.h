@@ -19,6 +19,7 @@ class SVGFragmentIdentifier;
 class EventChainPreVisitor;
 
 namespace dom {
+struct DOMMatrix2DInit;
 class DOMSVGAngle;
 class DOMSVGLength;
 class DOMSVGNumber;
@@ -56,7 +57,7 @@ class DOMSVGTranslatePoint final : public nsISVGPoint {
   virtual void SetX(float aValue, ErrorResult& rv) override;
   virtual void SetY(float aValue, ErrorResult& rv) override;
   virtual already_AddRefed<nsISVGPoint> MatrixTransform(
-      SVGMatrix& matrix) override;
+      const DOMMatrix2DInit& aMatrix, ErrorResult& aRv) override;
 
   virtual nsISupports* GetParentObject() override;
 
@@ -138,7 +139,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
   already_AddRefed<SVGRect> CreateSVGRect();
   already_AddRefed<DOMSVGTransform> CreateSVGTransform();
   already_AddRefed<DOMSVGTransform> CreateSVGTransformFromMatrix(
-      SVGMatrix& matrix);
+      const DOMMatrix2DInit& matrix, ErrorResult& rv);
   using nsINode::GetElementById;  // This does what we want
   uint16_t ZoomAndPan();
   void SetZoomAndPan(uint16_t aZoomAndPan, ErrorResult& rv);

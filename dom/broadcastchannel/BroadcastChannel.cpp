@@ -60,12 +60,14 @@ nsIPrincipal* GetStoragePrincipalFromThreadSafeWorkerRef(
 class InitializeRunnable final : public WorkerMainThreadRunnable {
  public:
   InitializeRunnable(ThreadSafeWorkerRef* aWorkerRef, nsACString& aOrigin,
+                     nsACString& aOriginNoSuffix,
                      PrincipalInfo& aStoragePrincipalInfo, ErrorResult& aRv)
       : WorkerMainThreadRunnable(
             aWorkerRef->Private(),
             NS_LITERAL_CSTRING("BroadcastChannel :: Initialize")),
         mWorkerRef(aWorkerRef),
         mOrigin(aOrigin),
+        mOriginNoSuffix(aOriginNoSuffix),
         mStoragePrincipalInfo(aStoragePrincipalInfo),
         mRv(aRv) {
     MOZ_ASSERT(mWorkerRef);
@@ -91,6 +93,11 @@ class InitializeRunnable final : public WorkerMainThreadRunnable {
       return true;
     }
 
+    mRv = storagePrincipal->GetOriginNoSuffix(mOriginNoSuffix);
+    if (NS_WARN_IF(mRv.Failed())) {
+      return true;
+    }
+
     // Walk up to our containing page
     WorkerPrivate* wp = mWorkerRef->Private();
     while (wp->GetParent()) {
@@ -109,30 +116,28 @@ class InitializeRunnable final : public WorkerMainThreadRunnable {
  private:
   RefPtr<ThreadSafeWorkerRef> mWorkerRef;
   nsACString& mOrigin;
+  nsACString& mOriginNoSuffix;
   PrincipalInfo& mStoragePrincipalInfo;
   ErrorResult& mRv;
 };
 
-class CloseRunnable final : public nsIRunnable, public nsICancelableRunnable {
+class CloseRunnable final : public DiscardableRunnable {
  public:
-  NS_DECL_ISUPPORTS
-
-  explicit CloseRunnable(BroadcastChannel* aBC) : mBC(aBC) { MOZ_ASSERT(mBC); }
+  explicit CloseRunnable(BroadcastChannel* aBC)
+      : DiscardableRunnable("BroadcastChannel CloseRunnable"), mBC(aBC) {
+    MOZ_ASSERT(mBC);
+  }
 
   NS_IMETHOD Run() override {
     mBC->Shutdown();
     return NS_OK;
   }
 
-  nsresult Cancel() override { return NS_OK; }
-
  private:
-  ~CloseRunnable() {}
+  ~CloseRunnable() = default;
 
   RefPtr<BroadcastChannel> mBC;
 };
-
-NS_IMPL_ISUPPORTS(CloseRunnable, nsICancelableRunnable, nsIRunnable)
 
 class TeardownRunnable {
  protected:
@@ -201,7 +206,7 @@ BroadcastChannel::BroadcastChannel(nsIGlobalObject* aGlobal,
       mState(StateActive),
       mPortUUID(aPortUUID) {
   MOZ_ASSERT(aGlobal);
-  KeepAliveIfHasListenersFor(NS_LITERAL_STRING("message"));
+  KeepAliveIfHasListenersFor(u"message"_ns);
 }
 
 BroadcastChannel::~BroadcastChannel() {
@@ -233,6 +238,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
       new BroadcastChannel(global, aChannel, portUUID);
 
   nsAutoCString origin;
+  nsAutoCString originNoSuffix;
   PrincipalInfo storagePrincipalInfo;
 
   StorageAccess storageAccess;
@@ -269,6 +275,11 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
       return nullptr;
     }
 
+    aRv = storagePrincipal->GetOriginNoSuffix(originNoSuffix);
+    if (NS_WARN_IF(aRv.Failed())) {
+      return nullptr;
+    }
+
     aRv = PrincipalToPrincipalInfo(storagePrincipal, &storagePrincipalInfo);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
@@ -297,8 +308,8 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
 
     RefPtr<ThreadSafeWorkerRef> tsr = new ThreadSafeWorkerRef(workerRef);
 
-    RefPtr<InitializeRunnable> runnable =
-        new InitializeRunnable(tsr, origin, storagePrincipalInfo, aRv);
+    RefPtr<InitializeRunnable> runnable = new InitializeRunnable(
+        tsr, origin, originNoSuffix, storagePrincipalInfo, aRv);
     runnable->Dispatch(Canceling, aRv);
     if (aRv.Failed()) {
       return nullptr;
@@ -334,7 +345,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
   MOZ_ASSERT(bc->mActor);
 
   bc->mActor->SetParent(bc);
-  CopyUTF8toUTF16(origin, bc->mOrigin);
+  CopyUTF8toUTF16(originNoSuffix, bc->mOriginNoSuffix);
 
   return bc.forget();
 }
@@ -405,7 +416,7 @@ void BroadcastChannel::Shutdown() {
     mActor = nullptr;
   }
 
-  IgnoreKeepAliveIfHasListenersFor(NS_LITERAL_STRING("message"));
+  IgnoreKeepAliveIfHasListenersFor(u"message"_ns);
 }
 
 void BroadcastChannel::RemoveDocFromBFCache() {
@@ -481,11 +492,11 @@ void BroadcastChannel::MessageReceived(const MessageData& aData) {
   RootedDictionary<MessageEventInit> init(cx);
   init.mBubbles = false;
   init.mCancelable = false;
-  init.mOrigin = mOrigin;
+  init.mOrigin = mOriginNoSuffix;
   init.mData = value;
 
   RefPtr<MessageEvent> event =
-      MessageEvent::Constructor(this, NS_LITERAL_STRING("message"), init);
+      MessageEvent::Constructor(this, u"message"_ns, init);
 
   event->SetTrusted(true);
 
@@ -501,10 +512,10 @@ void BroadcastChannel::DispatchError(JSContext* aCx) {
   RootedDictionary<MessageEventInit> init(aCx);
   init.mBubbles = false;
   init.mCancelable = false;
-  init.mOrigin = mOrigin;
+  init.mOrigin = mOriginNoSuffix;
 
   RefPtr<Event> event =
-      MessageEvent::Constructor(this, NS_LITERAL_STRING("messageerror"), init);
+      MessageEvent::Constructor(this, u"messageerror"_ns, init);
   event->SetTrusted(true);
 
   DispatchEvent(*event);

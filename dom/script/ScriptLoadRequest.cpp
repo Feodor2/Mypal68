@@ -4,12 +4,15 @@
 
 #include "ScriptLoadRequest.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
+#include "ModuleLoadRequest.h"
 #include "nsContentUtils.h"
+#include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
 #include "nsISupportsPriority.h"
 #include "ScriptLoadRequest.h"
@@ -120,6 +123,19 @@ ScriptLoadRequest::~ScriptLoadRequest() {
 
   MaybeUnblockOnload();
   DropJSObjects(this);
+}
+
+void ScriptLoadRequest::BlockOnload(Document* aDocument) {
+  MOZ_ASSERT(!mLoadBlockedDocument);
+  aDocument->BlockOnload();
+  mLoadBlockedDocument = aDocument;
+}
+
+void ScriptLoadRequest::MaybeUnblockOnload() {
+  if (mLoadBlockedDocument) {
+    mLoadBlockedDocument->UnblockOnload(false);
+    mLoadBlockedDocument = nullptr;
+  }
 }
 
 void ScriptLoadRequest::SetReady() {
@@ -240,6 +256,20 @@ void ScriptLoadRequest::PrioritizeAsPreload() {
     // as a preload.
     PrioritizeAsPreload(Channel());
   }
+}
+
+nsIScriptElement* ScriptLoadRequest::GetScriptElement() const {
+  nsCOMPtr<nsIScriptElement> scriptElement =
+      do_QueryInterface(mFetchOptions->mElement);
+  return scriptElement;
+}
+
+void ScriptLoadRequest::SetIsLoadRequest(nsIScriptElement* aElement) {
+  MOZ_ASSERT(aElement);
+  MOZ_ASSERT(!GetScriptElement());
+  MOZ_ASSERT(IsPreload());
+  mFetchOptions->mElement = do_QueryInterface(aElement);
+  mFetchOptions->mIsPreload = false;
 }
 
 //////////////////////////////////////////////////////////////

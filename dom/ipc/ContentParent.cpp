@@ -113,6 +113,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
 #include "mozilla/WebBrowserPersistDocumentParent.h"
@@ -574,6 +575,9 @@ static bool sHasSeenPrivateDocShell = false;
 // This is true when subprocess launching is enabled.  This is the
 // case between StartUp() and ShutDown().
 static bool sCanLaunchSubprocesses;
+
+// Set to true when the first content process gets created.
+static bool sCreatedFirstContentProcess = false;
 
 // The first content child has ID 1, so the chrome process can have ID 0.
 static uint64_t gContentChildID = 1;
@@ -1770,7 +1774,7 @@ static void CacheSandboxParams(std::vector<std::string>& aCachedParams) {
   }
 
   // Audio access
-  if (!Preferences::GetBool("media.cubeb.sandbox")) {
+  if (!StaticPrefs::media_cubeb_sandbox()) {
     info.hasAudio = true;
   }
 
@@ -1950,6 +1954,14 @@ void ContentParent::LaunchSubprocessInternal(
     AUTO_PROFILER_LABEL("ContentParent::LaunchSubprocess::resolve", OTHER);
     const auto launchResumeTS = TimeStamp::Now();
 
+    if (!sCreatedFirstContentProcess) {
+      nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService();
+      obs->NotifyObservers(nullptr, "ipc:first-content-process-created",
+                           nullptr);
+      sCreatedFirstContentProcess = true;
+    }
+
     base::ProcessId procId = base::GetProcId(handle);
     Open(mSubprocess->TakeChannel(), procId);
 #ifdef MOZ_CODE_COVERAGE
@@ -2126,6 +2138,14 @@ ContentParent::~ContentParent() {
 }
 
 bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
+  // We can't access the locale service after shutdown has started. Since we
+  // can't init the process without it, and since we're going to be canceling
+  // whatever load attempt that initiated this process creation anyway, just
+  // bail out now if shutdown has already started.
+  if (PastShutdownPhase(ShutdownPhase::Shutdown)) {
+    return false;
+  }
+
   XPCOMInitData xpcomInit;
 
   nsCOMPtr<nsIIOService> io(do_GetIOService());
@@ -4162,17 +4182,6 @@ bool ContentParent::DeallocPFileDescriptorSetParent(
   return true;
 }
 
-bool ContentParent::IgnoreIPCPrincipal() {
-  static bool sDidAddVarCache = false;
-  static bool sIgnoreIPCPrincipal = false;
-  if (!sDidAddVarCache) {
-    sDidAddVarCache = true;
-    Preferences::AddBoolVarCache(&sIgnoreIPCPrincipal,
-                                 "dom.testing.ignore_ipc_principal", false);
-  }
-  return sIgnoreIPCPrincipal;
-}
-
 void ContentParent::NotifyUpdatedDictionaries() {
   RefPtr<mozSpellChecker> spellChecker(mozSpellChecker::Create());
   MOZ_ASSERT(spellChecker, "No spell checker?");
@@ -5052,7 +5061,7 @@ nsresult ContentParent::AboutToLoadHttpFtpDocumentForChild(
         aChannel, getter_AddRefs(storagePrincipal));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCOMPtr<nsISupports> dummy;
+    RefPtr<Promise> dummy;
     rv = lsm->Preload(storagePrincipal, nullptr, getter_AddRefs(dummy));
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to preload local storage!");

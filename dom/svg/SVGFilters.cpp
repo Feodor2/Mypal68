@@ -14,11 +14,11 @@
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
-#include "nsSVGFilterInstance.h"
 #include "SVGNumberList.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/SVGContentUtils.h"
+#include "mozilla/SVGFilterInstance.h"
 #include "nsSVGUtils.h"
 #include "mozilla/dom/SVGComponentTransferFunctionElement.h"
 #include "mozilla/dom/SVGElement.h"
@@ -140,7 +140,7 @@ bool SVGFE::HasValidDimensions() const {
           mLengthAttributes[ATTR_HEIGHT].GetAnimValInSpecifiedUnits() > 0);
 }
 
-Size SVGFE::GetKernelUnitLength(nsSVGFilterInstance* aInstance,
+Size SVGFE::GetKernelUnitLength(SVGFilterInstance* aInstance,
                                 SVGAnimatedNumberPair* aKernelUnitLength) {
   if (!aKernelUnitLength->IsExplicitlySet()) {
     return Size(1, 1);
@@ -400,7 +400,7 @@ void SVGFELightingElement::GetSourceImageNames(
 }
 
 LightType SVGFELightingElement::ComputeLightAttributes(
-    nsSVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) {
+    SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) {
   // find specified light
   for (nsCOMPtr<nsIContent> child = nsINode::GetFirstChild(); child;
        child = child->GetNextSibling()) {
@@ -417,7 +417,7 @@ LightType SVGFELightingElement::ComputeLightAttributes(
 
 bool SVGFELightingElement::AddLightingAttributes(
     mozilla::gfx::DiffuseLightingAttributes* aAttributes,
-    nsSVGFilterInstance* aInstance) {
+    SVGFilterInstance* aInstance) {
   nsIFrame* frame = GetPrimaryFrame();
   if (!frame) {
     return false;

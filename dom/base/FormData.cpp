@@ -37,7 +37,7 @@ already_AddRefed<File> GetOrCreateFileCalledBlob(Blob& aBlob,
   }
 
   // Forcing 'blob' as filename
-  file = aBlob.ToFile(NS_LITERAL_STRING("blob"), aRv);
+  file = aBlob.ToFile(u"blob"_ns, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }

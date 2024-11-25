@@ -283,8 +283,8 @@ void Selection::Stringify(nsAString& aResult, FlushFrames aFlushFrames) {
   }
 
   IgnoredErrorResult rv;
-  ToStringWithFormat(NS_LITERAL_STRING("text/plain"),
-                     nsIDocumentEncoder::SkipInvisibleContent, 0, aResult, rv);
+  ToStringWithFormat(u"text/plain"_ns, nsIDocumentEncoder::SkipInvisibleContent,
+                     0, aResult, rv);
   if (rv.Failed()) {
     aResult.Truncate();
   }
@@ -402,20 +402,20 @@ void Selection::SetCaretBidiLevel(const Nullable<int16_t>& aCaretBidiLevel,
  * a table element isn't selected.
  */
 // TODO: Figure out TableSelectionMode::Column and TableSelectionMode::AllCells
-static nsresult GetTableSelectionType(const nsRange* aRange,
+static nsresult GetTableSelectionMode(const nsRange& aRange,
                                       TableSelectionMode* aTableSelectionType) {
-  if (!aRange || !aTableSelectionType) {
+  if (!aTableSelectionType) {
     return NS_ERROR_NULL_POINTER;
   }
 
   *aTableSelectionType = TableSelectionMode::None;
 
-  nsINode* startNode = aRange->GetStartContainer();
+  nsINode* startNode = aRange.GetStartContainer();
   if (!startNode) {
     return NS_ERROR_FAILURE;
   }
 
-  nsINode* endNode = aRange->GetEndContainer();
+  nsINode* endNode = aRange.GetEndContainer();
   if (!endNode) {
     return NS_ERROR_FAILURE;
   }
@@ -425,10 +425,10 @@ static nsresult GetTableSelectionType(const nsRange* aRange,
     return NS_OK;
   }
 
-  nsIContent* child = aRange->GetChildAtStartOffset();
+  nsIContent* child = aRange.GetChildAtStartOffset();
 
   // Not a single selected node
-  if (!child || child->GetNextSibling() != aRange->GetChildAtEndOffset()) {
+  if (!child || child->GetNextSibling() != aRange.GetChildAtEndOffset()) {
     return NS_OK;
   }
 
@@ -454,45 +454,6 @@ static nsresult GetTableSelectionType(const nsRange* aRange,
   return NS_OK;
 }
 
-MOZ_CAN_RUN_SCRIPT static nsresult GetTableCellLocationFromRange(
-    const nsRange* aRange, TableSelectionMode* aSelectionType, int32_t* aRow,
-    int32_t* aCol) {
-  if (!aRange || !aSelectionType || !aRow || !aCol) {
-    return NS_ERROR_NULL_POINTER;
-  }
-
-  *aSelectionType = TableSelectionMode::None;
-  *aRow = 0;
-  *aCol = 0;
-
-  nsresult result = GetTableSelectionType(aRange, aSelectionType);
-  if (NS_FAILED(result)) return result;
-
-  // Don't fail if range does not point to a single table cell,
-  // let aSelectionType tell user if we don't have a cell
-  if (*aSelectionType != TableSelectionMode::Cell) {
-    return NS_OK;
-  }
-
-  // Get the child content (the cell) pointed to by starting node of range
-  // We do minimal checking since GetTableSelectionType assures
-  // us that this really is a table cell
-  nsCOMPtr<nsIContent> child = aRange->GetChildAtStartOffset();
-  if (!child) return NS_ERROR_FAILURE;
-
-  // GetCellLayout depends on current frame, we need flush frame to get
-  // nsITableCellLayout
-  if (RefPtr<PresShell> presShell = child->OwnerDoc()->GetPresShell()) {
-    presShell->FlushPendingNotifications(FlushType::Frames);
-  }
-
-  // Note: This is a non-ref-counted pointer to the frame
-  nsITableCellLayout* cellLayout = nsFrameSelection::GetCellLayout(child);
-  if (!cellLayout) return NS_ERROR_FAILURE;
-
-  return cellLayout->GetCellIndexes(*aRow, *aCol);
-}
-
 nsresult Selection::MaybeAddTableCellRange(nsRange& aRange, bool* aDidAddRange,
                                            int32_t* aOutIndex) {
   if (!aDidAddRange || !aOutIndex) {
@@ -504,12 +465,9 @@ nsresult Selection::MaybeAddTableCellRange(nsRange& aRange, bool* aDidAddRange,
 
   if (!mFrameSelection) return NS_OK;
 
-  nsresult result;
-
   // Get if we are adding a cell selection and the row, col of cell if we are
-  int32_t newRow, newCol;
   TableSelectionMode tableMode;
-  result = GetTableCellLocationFromRange(&aRange, &tableMode, &newRow, &newCol);
+  nsresult result = GetTableSelectionMode(aRange, &tableMode);
   if (NS_FAILED(result)) return result;
 
   // If not adding a cell range, we are done here
@@ -527,9 +485,11 @@ nsresult Selection::MaybeAddTableCellRange(nsRange& aRange, bool* aDidAddRange,
     mFrameSelection->mTableSelection.mMode = tableMode;
   }
 
-  *aDidAddRange = true;
-  return AddRangesForSelectableNodes(&aRange, aOutIndex,
-                                     DispatchSelectstartEvent::Maybe);
+  result = AddRangesForSelectableNodes(&aRange, aOutIndex,
+                                       DispatchSelectstartEvent::Maybe);
+
+  *aDidAddRange = *aOutIndex != -1;
+  return result;
 }
 
 Selection::Selection(SelectionType aSelectionType,
@@ -842,8 +802,8 @@ static bool MaybeDispatchSelectstartEvent(
 
   if (selectstartEventTarget) {
     nsContentUtils::DispatchTrustedEvent(
-        aDocument, selectstartEventTarget, NS_LITERAL_STRING("selectstart"),
-        CanBubble::eYes, Cancelable::eYes, &executeDefaultAction);
+        aDocument, selectstartEventTarget, u"selectstart"_ns, CanBubble::eYes,
+        Cancelable::eYes, &executeDefaultAction);
   }
 
   return executeDefaultAction;
@@ -2127,7 +2087,7 @@ void Selection::Collapse(const RawRangeBoundary& aPoint, ErrorResult& aRv) {
   }
 
   RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
-  frameSelection->InvalidateDesiredPos();
+  frameSelection->InvalidateDesiredCaretPos();
   if (!frameSelection->IsValidSelectionPoint(aPoint.Container())) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
@@ -3560,7 +3520,7 @@ nsresult Selection::SelectionLanguageChange(bool aLangRTL) {
 
   // The caret might have moved, so invalidate the desired position
   // for future usages of up-arrow or down-arrow
-  frameSelection->InvalidateDesiredPos();
+  frameSelection->InvalidateDesiredCaretPos();
 
   return NS_OK;
 }
@@ -3577,8 +3537,8 @@ void Selection::SetColors(const nsAString& aForegroundColor,
 
   mCustomColors.reset(new SelectionCustomColors);
 
-  NS_NAMED_LITERAL_STRING(currentColorStr, "currentColor");
-  NS_NAMED_LITERAL_STRING(transparentStr, "transparent");
+  constexpr auto currentColorStr = u"currentColor"_ns;
+  constexpr auto transparentStr = u"transparent"_ns;
 
   if (!aForegroundColor.Equals(currentColorStr)) {
     nscolor foregroundColor;

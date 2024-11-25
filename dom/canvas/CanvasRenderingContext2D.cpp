@@ -7,17 +7,16 @@
 #include "mozilla/gfx/Helpers.h"
 #include "nsXULElement.h"
 
-#include "nsAutoPtr.h"
 #include "nsMathUtils.h"
-#include "SVGImageContext.h"
 
 #include "nsContentUtils.h"
 
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/SVGImageContext.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
-#include "SVGObserverUtils.h"
 #include "nsPresContext.h"
 
 #include "nsIInterfaceRequestorUtils.h"
@@ -81,6 +80,7 @@
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/EndianUtils.h"
+#include "mozilla/FilterInstance.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/Tools.h"
@@ -104,12 +104,9 @@
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/SVGImageElement.h"
-#include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/TextMetrics.h"
-#include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/FloatingPoint.h"
 #include "nsGlobalWindow.h"
-#include "nsFilterInstance.h"
 #include "nsDeviceContext.h"
 #include "nsFontMetrics.h"
 #include "Units.h"
@@ -685,8 +682,18 @@ class AdjustedTarget {
   UniquePtr<AdjustedTargetForFilter> mFilterTarget;
 };
 
-void CanvasPattern::SetTransform(SVGMatrix& aMatrix) {
-  mTransform = ToMatrix(aMatrix.GetMatrix());
+void CanvasPattern::SetTransform(const DOMMatrix2DInit& aInit,
+                                 ErrorResult& aError) {
+  RefPtr<DOMMatrixReadOnly> matrix =
+      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aInit, aError);
+  if (aError.Failed()) {
+    return;
+  }
+  const auto* matrix2D = matrix->GetInternal2D();
+  if (!matrix2D->IsFinite()) {
+    return;
+  }
+  mTransform = Matrix(*matrix2D);
 }
 
 void CanvasGradient::AddColorStop(float aOffset, const nsACString& aColorstr,
@@ -2052,8 +2059,13 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     element = canvas;
 
     nsIntSize size = canvas->GetSize();
-    if (size.width == 0 || size.height == 0) {
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    if (size.width == 0) {
+      aError.ThrowInvalidStateError("Passed-in canvas has width 0");
+      return nullptr;
+    }
+
+    if (size.height == 0) {
+      aError.ThrowInvalidStateError("Passed-in canvas has height 0");
       return nullptr;
     }
 
@@ -2081,19 +2093,9 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     }
   } else if (aSource.IsHTMLImageElement()) {
     HTMLImageElement* img = &aSource.GetAsHTMLImageElement();
-    if (img->IntrinsicState().HasState(NS_EVENT_STATE_BROKEN)) {
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return nullptr;
-    }
-
     element = img;
   } else if (aSource.IsSVGImageElement()) {
     SVGImageElement* img = &aSource.GetAsSVGImageElement();
-    if (img->IntrinsicState().HasState(NS_EVENT_STATE_BROKEN)) {
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return nullptr;
-    }
-
     element = img;
   } else if (aSource.IsHTMLVideoElement()) {
     auto& video = aSource.GetAsHTMLVideoElement();
@@ -2110,13 +2112,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     }
     RefPtr<SourceSurface> srcSurf = imgBitmap.PrepareForDrawTarget(mTarget);
     if (!srcSurf) {
-      JSContext* context = nsContentUtils::GetCurrentJSContext();
-      if (context) {
-        JS::WarnASCII(context,
-                      "CanvasRenderingContext2D.createPattern() failed to "
-                      "prepare source ImageBitmap.");
-      }
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+      aError.ThrowInvalidStateError(
+          "Passed-in ImageBitmap has been transferred");
       return nullptr;
     }
 
@@ -2140,6 +2137,25 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
   nsLayoutUtils::SurfaceFromElementResult res =
       nsLayoutUtils::SurfaceFromElement(
           element, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE, mTarget);
+
+  // Per spec, we should throw here for the HTMLImageElement and SVGImageElement
+  // cases if the image request state is "broken".  In terms of the infromation
+  // in "res", the "broken" state corresponds to not having a size and not being
+  // still-loading (so there is no size forthcoming).
+  if (aSource.IsHTMLImageElement() || aSource.IsSVGImageElement()) {
+    if (!res.mIsStillLoading && !res.mHasSize) {
+      aError.ThrowInvalidStateError(
+          "Passed-in image's current request's state is \"broken\"");
+      return nullptr;
+    }
+
+    if (res.mSize.width == 0 || res.mSize.height == 0) {
+      return nullptr;
+    }
+
+    // Is the "fully decodable" check already done in SurfaceFromElement?  It's
+    // not clear how to do it from here, exactly.
+  }
 
   RefPtr<SourceSurface> surface = res.GetSourceSurface();
   if (!surface) {
@@ -2171,14 +2187,9 @@ void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
 static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
     nsCSSPropertyID aProperty, const nsAString& aPropertyValue,
     Document* aDocument) {
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForInternalCSSResources(aDocument);
-
-  RefPtr<URLExtraData> data = new URLExtraData(
-      aDocument->GetDocBaseURI(), referrerInfo, aDocument->NodePrincipal());
-
-  ServoCSSParser::ParsingEnvironment env(
-      data, aDocument->GetCompatibilityMode(), aDocument->CSSLoader());
+  ServoCSSParser::ParsingEnvironment env{aDocument->DefaultStyleAttrURLData(),
+                                         aDocument->GetCompatibilityMode(),
+                                         aDocument->CSSLoader()};
   RefPtr<RawServoDeclarationBlock> servoDeclarations =
       ServoCSSParser::ParseProperty(aProperty, aPropertyValue, env);
 
@@ -2190,11 +2201,11 @@ static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
   // From canvas spec, force to set line-height property to 'normal' font
   // property.
   if (aProperty == eCSSProperty_font) {
-    const nsCString normalString = NS_LITERAL_CSTRING("normal");
+    const nsCString normalString = "normal"_ns;
     Servo_DeclarationBlock_SetPropertyById(
-        servoDeclarations, eCSSProperty_line_height, &normalString, false, data,
-        ParsingMode::Default, aDocument->GetCompatibilityMode(),
-        aDocument->CSSLoader(), {});
+        servoDeclarations, eCSSProperty_line_height, &normalString, false,
+        env.mUrlExtraData, ParsingMode::Default, env.mCompatMode, env.mLoader,
+        env.mRuleType, {});
   }
 
   return servoDeclarations.forget();
@@ -2238,7 +2249,7 @@ static already_AddRefed<ComputedStyle> GetFontStyleForServo(
     }
   } else {
     RefPtr<RawServoDeclarationBlock> declarations =
-        CreateFontDeclarationForServo(NS_LITERAL_STRING("10px sans-serif"),
+        CreateFontDeclarationForServo(u"10px sans-serif"_ns,
                                       aPresShell->GetDocument());
     MOZ_ASSERT(declarations);
 
@@ -2401,7 +2412,7 @@ void CanvasRenderingContext2D::UpdateFilter() {
   bool sourceGraphicIsTainted =
       (mCanvasElement && mCanvasElement->IsWriteOnly());
 
-  CurrentState().filter = nsFilterInstance::GetFilterDescription(
+  CurrentState().filter = FilterInstance::GetFilterDescription(
       mCanvasElement, CurrentState().filterChain.AsSpan(),
       sourceGraphicIsTainted,
       CanvasUserSpaceMetrics(
@@ -3431,7 +3442,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor
         mTextRunFlags(),
         mDoMeasureBoundingBox(false) {
     if (Preferences::GetBool(GFX_MISSING_FONTS_NOTIFY_PREF)) {
-      mMissingFonts = new gfxMissingFontRecorder();
+      mMissingFonts = MakeUnique<gfxMissingFontRecorder>();
     }
   }
 
@@ -3454,9 +3465,10 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor
     } else {
       flags &= ~gfx::ShapedTextFlags::TEXT_IS_RTL;
     }
-    mTextRun =
-        mFontgrp->MakeTextRun(aText, aLength, mDrawTarget, mAppUnitsPerDevPixel,
-                              flags, nsTextFrameUtils::Flags(), mMissingFonts);
+    mTextRun = mFontgrp->MakeTextRun(
+        aText, aLength, mDrawTarget, mAppUnitsPerDevPixel, flags,
+        nsTextFrameUtils::Flags::DontSkipDrawingForPendingUserFonts,
+        mMissingFonts.get());
   }
 
   virtual nscoord GetWidth() override {
@@ -3651,7 +3663,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor
 
   // to record any unsupported characters found in the text,
   // and notify front-end if it is interested
-  nsAutoPtr<gfxMissingFontRecorder> mMissingFonts;
+  UniquePtr<gfxMissingFontRecorder> mMissingFonts;
 
   // dev pixel conversion factor
   int32_t mAppUnitsPerDevPixel;
@@ -3966,7 +3978,7 @@ gfxFontGroup* CanvasRenderingContext2D::GetCurrentFontStyle() {
   // use lazy initilization for the font group since it's rather expensive
   if (!CurrentState().fontGroup) {
     ErrorResult err;
-    NS_NAMED_LITERAL_STRING(kDefaultFontStyle, "10px sans-serif");
+    constexpr auto kDefaultFontStyle = u"10px sans-serif"_ns;
     static float kDefaultFontSize = 10.0;
     RefPtr<PresShell> presShell = GetPresShell();
     bool fontUpdated = SetFontInternal(kDefaultFontStyle, err);

@@ -533,8 +533,8 @@ class WorkerPrivate : public RelativeTimeline {
 
   void CopyJSRealmOptions(JS::RealmOptions& aOptions) {
     AutoLock lock(mMutex);
-    aOptions = IsChromeWorker() ? mJSSettings.chrome.realmOptions
-                                : mJSSettings.content.realmOptions;
+    aOptions = IsChromeWorker() ? mJSSettings.chromeRealmOptions
+                                : mJSSettings.contentRealmOptions;
   }
 
   // The ability to be a chrome worker is orthogonal to the type of

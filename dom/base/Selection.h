@@ -54,7 +54,7 @@ namespace dom {
 // is never deleted before its Selections.
 class Selection final : public nsSupportsWeakReference,
                         public nsWrapperCache,
-                        public SupportsWeakPtr<Selection> {
+                        public SupportsWeakPtr {
  protected:
   virtual ~Selection();
 
@@ -64,8 +64,6 @@ class Selection final : public nsSupportsWeakReference,
    */
   explicit Selection(SelectionType aSelectionType,
                      nsFrameSelection* aFrameSelection);
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(Selection)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Selection)

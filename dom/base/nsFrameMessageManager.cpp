@@ -389,12 +389,12 @@ bool nsFrameMessageManager::GetParamsForMessage(JSContext* aCx,
     nsJSUtils::GetCallingLocation(aCx, filename, &lineno, &column);
     nsCOMPtr<nsIScriptError> error(
         do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
-    error->Init(NS_LITERAL_STRING("Sending message that cannot be cloned. Are "
-                                  "you trying to send an XPCOM object?"),
-                filename, EmptyString(), lineno, column,
-                nsIScriptError::warningFlag, "chrome javascript",
-                false /* from private window */,
-                true /* from chrome context */);
+    error->Init(
+        u"Sending message that cannot be cloned. Are "
+        "you trying to send an XPCOM object?"_ns,
+        filename, u""_ns, lineno, column, nsIScriptError::warningFlag,
+        "chrome javascript", false /* from private window */,
+        true /* from chrome context */);
     console->LogMessage(error);
   }
 
@@ -740,18 +740,18 @@ void nsFrameMessageManager::ReceiveMessage(
         data->Write(cx, rval, aError);
         if (NS_WARN_IF(aError.Failed())) {
           aRetVal->RemoveLastElement();
-          nsString msg = aMessage + NS_LITERAL_STRING(
-                                        ": message reply cannot be cloned. Are "
-                                        "you trying to send an XPCOM object?");
+          nsString msg =
+              aMessage + nsLiteralString(
+                             u": message reply cannot be cloned. Are "
+                             "you trying to send an XPCOM object?");
 
           nsCOMPtr<nsIConsoleService> console(
               do_GetService(NS_CONSOLESERVICE_CONTRACTID));
           if (console) {
             nsCOMPtr<nsIScriptError> error(
                 do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
-            error->Init(msg, EmptyString(), EmptyString(), 0, 0,
-                        nsIScriptError::warningFlag, "chrome javascript",
-                        false /* from private window */,
+            error->Init(msg, u""_ns, u""_ns, 0, 0, nsIScriptError::warningFlag,
+                        "chrome javascript", false /* from private window */,
                         true /* from chrome context */);
             console->LogMessage(error);
           }
@@ -996,11 +996,11 @@ void MessageManagerReporter::CountReferents(
 static void ReportReferentCount(
     const char* aManagerType, const MessageManagerReferentCount& aReferentCount,
     nsIHandleReportCallback* aHandleReport, nsISupports* aData) {
-#define REPORT(_path, _amount, _desc)                           \
-  do {                                                          \
-    aHandleReport->Callback(                                    \
-        EmptyCString(), _path, nsIMemoryReporter::KIND_OTHER,   \
-        nsIMemoryReporter::UNITS_COUNT, _amount, _desc, aData); \
+#define REPORT(_path, _amount, _desc)                                       \
+  do {                                                                      \
+    aHandleReport->Callback(""_ns, _path, nsIMemoryReporter::KIND_OTHER,    \
+                            nsIMemoryReporter::UNITS_COUNT, _amount, _desc, \
+                            aData);                                         \
   } while (0)
 
   REPORT(nsPrintfCString("message-manager/referent/%s/strong", aManagerType),
@@ -1186,7 +1186,16 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
   // message manager per process, treat this script as run-once. Run-once
   // scripts can be compiled directly for the target global, and will be dropped
   // from the preloader cache after they're executed and serialized.
+  //
+  // NOTE: This does not affect the JS::CompileOptions. We generate the same
+  // bytecode as though it were run multiple times. This is required for the
+  // batch decoding from ScriptPreloader to work.
   bool isRunOnce = !aShouldCache || IsProcessScoped();
+
+  // We don't cache data: scripts!
+  nsAutoCString scheme;
+  uri->GetScheme(scheme);
+  bool useScriptPreloader = aShouldCache && !scheme.EqualsLiteral("data");
 
   // If the script will be reused in this session, compile it in the compilation
   // scope instead of the current global to avoid keeping the current
@@ -1232,12 +1241,18 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
 
       uint32_t size = (uint32_t)std::min(written, (uint64_t)UINT32_MAX);
       ScriptLoader::ConvertToUTF16(channel, (uint8_t*)buffer.get(), size,
-                                   EmptyString(), nullptr, dataStringBuf,
+                                   u""_ns, nullptr, dataStringBuf,
                                    dataStringLength);
     }
 
     if (!dataStringBuf || dataStringLength == 0) {
       return;
+    }
+
+    // If we are not encoding to the ScriptPreloader cache, we can now relax the
+    // compile options and use the JS syntax-parser for lower latency.
+    if (!useScriptPreloader || !ScriptPreloader::GetChildSingleton().Active()) {
+      options.setSourceIsLazy(false);
     }
 
     JS::UniqueTwoByteChars srcChars(dataStringBuf);
@@ -1256,10 +1271,7 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
   MOZ_ASSERT(script);
   aScriptp.set(script);
 
-  nsAutoCString scheme;
-  uri->GetScheme(scheme);
-  // We don't cache data: scripts!
-  if (aShouldCache && !scheme.EqualsLiteral("data")) {
+  if (useScriptPreloader) {
     ScriptPreloader::GetChildSingleton().NoteScript(url, url, script,
                                                     isRunOnce);
 

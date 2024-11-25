@@ -142,6 +142,7 @@
 #ifdef MOZ_VR
 #  include "mozilla/dom/VRDisplay.h"
 #endif
+#include "mozilla/dom/Exceptions.h" //XBL
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "nsComputedDOMStyle.h"
@@ -1401,8 +1402,8 @@ bool Element::ToggleAttribute(const nsAString& aName,
       aError.Throw(NS_ERROR_OUT_OF_MEMORY);
       return false;
     }
-    aError = SetAttr(kNameSpaceID_None, nameAtom, EmptyString(),
-                     aTriggeringPrincipal, true);
+    aError = SetAttr(kNameSpaceID_None, nameAtom, u""_ns, aTriggeringPrincipal,
+                     true);
     return true;
   }
   if (aForce.WasPassed() && aForce.Value()) {
@@ -3158,7 +3159,7 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
 
   switch (aVisitor.mEvent->mMessage) {
     case eMouseDown: {
-      if (aVisitor.mEvent->AsMouseEvent()->mButton == MouseButton::eLeft &&
+      if (aVisitor.mEvent->AsMouseEvent()->mButton == MouseButton::ePrimary &&
           OwnerDoc()->LinkHandlingEnabled()) {
         aVisitor.mEvent->mFlags.mMultipleActionsPrevented = true;
 
@@ -3387,7 +3388,7 @@ static const char* GetFullscreenError(CallerType aCallerType) {
   // button
   if (StaticPrefs::full_screen_api_mouse_event_allow_left_button_only() &&
       (EventStateManager::sCurrentMouseBtn == MouseButton::eMiddle ||
-       EventStateManager::sCurrentMouseBtn == MouseButton::eRight)) {
+       EventStateManager::sCurrentMouseBtn == MouseButton::eSecondary)) {
     return "FullscreenDeniedMouseEventOnlyLeftBtn";
   }
 
@@ -3867,7 +3868,7 @@ TextEditor* Element::GetTextEditorInternal() {
 
 nsresult Element::SetBoolAttr(nsAtom* aAttr, bool aValue) {
   if (aValue) {
-    return SetAttr(kNameSpaceID_None, aAttr, EmptyString(), true);
+    return SetAttr(kNameSpaceID_None, aAttr, u""_ns, true);
   }
 
   return UnsetAttr(kNameSpaceID_None, aAttr, true);

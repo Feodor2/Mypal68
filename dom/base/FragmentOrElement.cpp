@@ -1051,12 +1051,6 @@ bool nsIContent::IsFocusable(int32_t* aTabIndex, bool aWithMouse) {
   // Ensure that the return value and aTabIndex are consistent in the case
   // we're in userfocusignored context.
   if (focusable || (aTabIndex && *aTabIndex != -1)) {
-    if (nsContentUtils::IsUserFocusIgnored(this)) {
-      if (aTabIndex) {
-        *aTabIndex = -1;
-      }
-      return false;
-    }
     return focusable;
   }
   return false;
@@ -1896,7 +1890,7 @@ static inline bool IsVoidTag(nsAtom* aTag) {
       nsGkAtoms::link,    nsGkAtoms::meta,  nsGkAtoms::param,
       nsGkAtoms::source,  nsGkAtoms::track, nsGkAtoms::wbr};
 
-  static mozilla::BloomFilter<12, nsAtom> sFilter;
+  static mozilla::BitBloomFilter<12, nsAtom> sFilter;
   static bool sInitialized = false;
   if (!sInitialized) {
     sInitialized = true;

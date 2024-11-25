@@ -6,12 +6,16 @@
 #include "mozilla/RDDProcessHost.h"
 
 #include "mozilla/ipc/TaskFactory.h"
+#include "nsIObserver.h"
 
 namespace mozilla {
 
 class MemoryReportingProcess;
 class PRemoteDecoderManagerChild;
 class RDDChild;
+namespace dom {
+class Pref;
+}  // namespace dom
 
 // The RDDProcessManager is a singleton responsible for creating RDD-bound
 // objects that may live in another process. Currently, it provides access

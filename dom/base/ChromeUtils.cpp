@@ -164,7 +164,7 @@ void ChromeUtils::ReleaseAssert(GlobalObject& aGlobal, bool aCondition,
     location->GetFilename(aGlobal.Context(), filename);
     lineNo = location->GetLineNumber(aGlobal.Context());
   } else {
-    filename.Assign(NS_LITERAL_STRING("<unknown>"));
+    filename.Assign(u"<unknown>"_ns);
   }
 
   // Convert to utf-8 for adding as the MozCrashReason.

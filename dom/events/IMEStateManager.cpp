@@ -1225,10 +1225,17 @@ static bool IsNextFocusableElementTextControl(Element* aInputContent) {
 }
 
 static void GetActionHint(nsIContent& aContent, nsAString& aActionHint) {
+  // If enterkeyhint is set, we don't infer action hint.
+  if (!aActionHint.IsEmpty()) {
+    return;
+  }
+
+  // XXX This is old compatibility, but we might be able to remove this.
   aContent.AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::moz_action_hint,
                                 aActionHint);
 
   if (!aActionHint.IsEmpty()) {
+    ToLowerCase(aActionHint);
     return;
   }
 
@@ -1240,7 +1247,7 @@ static void GetActionHint(nsIContent& aContent, nsAString& aActionHint) {
   }
 
   // If we don't have an action hint and
-  // return won't submit the form, use "next".
+  // return won't submit the form, use "maybenext".
   bool willSubmit = false;
   bool isLastElement = false;
   nsCOMPtr<nsIFormControl> control(do_QueryInterface(inputContent));
@@ -1277,7 +1284,7 @@ static void GetActionHint(nsIContent& aContent, nsAString& aActionHint) {
       if (IsNextFocusableElementTextControl(inputContent->AsElement())) {
         // This is focusable text control
         // XXX What good hint for read only field?
-        aActionHint.AssignLiteral("next");
+        aActionHint.AssignLiteral("maybenext");
         return;
       }
     }
@@ -1330,7 +1337,12 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
       aPresContext &&
       nsContentUtils::IsInPrivateBrowsing(aPresContext->Document());
 
-  if (aContent) {
+  if (aContent && aContent->IsHTMLElement()) {
+    if (aState.IsEditable() && StaticPrefs::dom_forms_enterkeyhint()) {
+      nsGenericHTMLElement::FromNode(aContent)->GetEnterKeyHint(
+          context.mActionHint);
+    }
+
     if (aContent->IsHTMLElement(nsGkAtoms::input)) {
       HTMLInputElement::FromNode(aContent)->GetType(context.mHTMLInputType);
       GetActionHint(*aContent, context.mActionHint);
@@ -1339,7 +1351,7 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
       GetActionHint(*aContent, context.mActionHint);
     }
 
-    if (aContent->IsHTMLElement() && aState.IsEditable() &&
+    if (aState.IsEditable() &&
         (StaticPrefs::dom_forms_inputmode() ||
          nsContentUtils::IsChromeDoc(aContent->OwnerDoc()))) {
       aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,

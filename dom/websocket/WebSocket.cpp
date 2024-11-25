@@ -222,6 +222,9 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
  private:
   ~WebSocketImpl() {
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread() == mIsMainThread ||
+                          mDisconnectingOrDisconnected);
+
     // If we threw during Init we never called disconnect
     if (!mDisconnectingOrDisconnected) {
       Disconnect();
@@ -229,47 +232,14 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
   }
 };
 
-NS_IMPL_ADDREF(WebSocketImpl)
-NS_IMPL_QUERY_INTERFACE(WebSocketImpl, nsIInterfaceRequestor,
-                        nsIWebSocketListener, nsIObserver,
-                        nsISupportsWeakReference, nsIRequest, nsIEventTarget)
+NS_IMPL_ISUPPORTS(WebSocketImpl, nsIInterfaceRequestor, nsIWebSocketListener,
+                  nsIObserver, nsISupportsWeakReference, nsIRequest,
+                  nsIEventTarget)
 
-NS_IMETHODIMP_(MozExternalRefCountType) WebSocketImpl::Release(void) {
-  MOZ_ASSERT(int32_t(mRefCnt) > 0, "dup release");
-
-  if (!mRefCnt.isThreadSafe) {
-    NS_ASSERT_OWNINGTHREAD(WebSocketImpl);
-  }
-
-  nsrefcnt count = mRefCnt - 1;
-  // If WebSocketImpl::Disconnect is not called, the last release of
-  // WebSocketImpl should be on the right thread.
-  if (count == 0 && !IsTargetThread() && !mDisconnectingOrDisconnected) {
-    DebugOnly<nsresult> rv = Dispatch(NewNonOwningRunnableMethod(
-        "dom::WebSocketImpl::Release", this, &WebSocketImpl::Release));
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    return count;
-  }
-
-  count = --mRefCnt;
-  NS_LOG_RELEASE(this, count, "WebSocketImpl");
-
-  if (count == 0) {
-    if (!mRefCnt.isThreadSafe) {
-      NS_ASSERT_OWNINGTHREAD(WebSocketImpl);
-    }
-
-    mRefCnt = 1; /* stabilize */
-    delete (this);
-    return 0;
-  }
-  return count;
-}
-
-class CallDispatchConnectionCloseEvents final : public CancelableRunnable {
+class CallDispatchConnectionCloseEvents final : public DiscardableRunnable {
  public:
   explicit CallDispatchConnectionCloseEvents(WebSocketImpl* aWebSocketImpl)
-      : CancelableRunnable("dom::CallDispatchConnectionCloseEvents"),
+      : DiscardableRunnable("dom::CallDispatchConnectionCloseEvents"),
         mWebSocketImpl(aWebSocketImpl) {
     aWebSocketImpl->AssertIsOnTargetThread();
   }
@@ -569,11 +539,11 @@ class DisconnectInternalRunnable final : public WorkerMainThreadRunnable {
 }  // namespace
 
 void WebSocketImpl::Disconnect() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread() == mIsMainThread);
+
   if (mDisconnectingOrDisconnected) {
     return;
   }
-
-  AssertIsOnTargetThread();
 
   // DontKeepAliveAnyMore() and DisconnectInternal() can release the object. So
   // hold a reference to this until the end of the method.
@@ -2399,13 +2369,14 @@ void WebSocket::Close(const Optional<uint16_t>& aCode,
     return;
   }
 
+  RefPtr<WebSocketImpl> impl = mImpl;
   if (readyState == CONNECTING) {
-    mImpl->FailConnection(closeCode, closeReason);
+    impl->FailConnection(closeCode, closeReason);
     return;
   }
 
   MOZ_ASSERT(readyState == OPEN);
-  mImpl->CloseConnection(closeCode, closeReason);
+  impl->CloseConnection(closeCode, closeReason);
 }
 
 //-----------------------------------------------------------------------------

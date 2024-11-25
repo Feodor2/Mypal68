@@ -1161,6 +1161,9 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
     return nullptr;
   }
 
+  nsAutoCString mimeType;
+  DerivedClass()->GetMimeType(mimeType);
+
   // Null bodies are a special-case in the fetch spec.  The Body mix-in can only
   // be "disturbed" or "locked" if its associated "body" is non-null.
   // Additionally, the Body min-in's "consume body" algorithm explicitly creates
@@ -1175,7 +1178,7 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
   if (!bodyStream) {
     RefPtr<EmptyBody> emptyBody = EmptyBody::Create(
         DerivedClass()->GetParentObject(),
-        DerivedClass()->GetPrincipalInfo().get(), signalImpl, mMimeType, aRv);
+        DerivedClass()->GetPrincipalInfo().get(), signalImpl, mimeType, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
@@ -1208,7 +1211,7 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
 
   RefPtr<Promise> promise = BodyConsumer::Create(
       global, mMainThreadEventTarget, bodyStream, signalImpl, aType,
-      BodyBlobURISpec(), BodyLocalPath(), MimeType(), blobStorageType, aRv);
+      BodyBlobURISpec(), BodyLocalPath(), mimeType, blobStorageType, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1226,12 +1229,12 @@ template already_AddRefed<Promise> FetchBody<EmptyBody>::ConsumeBody(
     JSContext* aCx, BodyConsumer::ConsumeType aType, ErrorResult& aRv);
 
 template <class Derived>
-void FetchBody<Derived>::SetMimeType() {
+void FetchBody<Derived>::GetMimeType(nsACString& aMimeType) {
   // Extract mime type.
   ErrorResult result;
   nsCString contentTypeValues;
   MOZ_ASSERT(DerivedClass()->GetInternalHeaders());
-  DerivedClass()->GetInternalHeaders()->Get(NS_LITERAL_CSTRING("Content-Type"),
+  DerivedClass()->GetInternalHeaders()->Get("Content-Type"_ns,
                                             contentTypeValues, result);
   MOZ_ALWAYS_TRUE(!result.Failed());
 
@@ -1239,19 +1242,13 @@ void FetchBody<Derived>::SetMimeType() {
   // This is from the "parse a header value" of the fetch spec.
   if (!contentTypeValues.IsVoid() && contentTypeValues.Find(",") == -1) {
     // Convert from a bytestring to a UTF8 CString.
-    CopyLatin1toUTF8(contentTypeValues, mMimeType);
-    ToLowerCase(mMimeType);
+    CopyLatin1toUTF8(contentTypeValues, aMimeType);
+    ToLowerCase(aMimeType);
   }
 }
 
-template void FetchBody<Request>::SetMimeType();
-
-template void FetchBody<Response>::SetMimeType();
-
-template <class Derived>
-void FetchBody<Derived>::OverrideMimeType(const nsACString& aMimeType) {
-  mMimeType = aMimeType;
-}
+template void FetchBody<Request>::GetMimeType(nsACString& aMimeType);
+template void FetchBody<Response>::GetMimeType(nsACString& aMimeType);
 
 template <class Derived>
 const nsACString& FetchBody<Derived>::BodyBlobURISpec() const {

@@ -359,7 +359,7 @@ static bool PrepareBufferArrays(JSContext* aCx, Span<const AudioBlock> aBlocks,
 
     auto& float32ArraysRef = portRef.mFloat32Arrays;
     for (auto& channelRef : float32ArraysRef) {
-      uint32_t length = JS_GetTypedArrayLength(channelRef);
+      size_t length = JS_GetTypedArrayLength(channelRef);
       if (length != WEBAUDIO_BLOCK_SIZE) {
         // Script has detached array buffers.  Create new objects.
         JSObject* array = JS_NewFloat32Array(aCx, WEBAUDIO_BLOCK_SIZE);
@@ -489,6 +489,10 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
 
   AutoEntryScript aes(mGlobal, "Worklet Process");
   JSContext* cx = aes.cx();
+  auto produceSilenceWithError = MakeScopeExit([this, aTrack, cx, &aOutput] {
+    SendProcessorError(aTrack, cx);
+    ProduceSilence(aTrack, aOutput);
+  });
 
   JS::Rooted<JS::Value> process(cx);
   if (!JS_GetProperty(cx, mProcessor, "process", &process) ||
@@ -496,8 +500,6 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
       !PrepareBufferArrays(cx, aInput, &mInputs, ArrayElementInit::None) ||
       !PrepareBufferArrays(cx, aOutput, &mOutputs, ArrayElementInit::Zero)) {
     // process() not callable or OOM.
-    SendProcessorError(aTrack, cx);
-    ProduceSilence(aTrack, aOutput);
     return;
   }
 
@@ -526,15 +528,13 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
   // Compute and copy parameter values to JS objects.
   for (size_t i = 0; i < mParamTimelines.Length(); ++i) {
     const auto& float32Arrays = mParameters.mFloat32Arrays[i];
-    uint32_t length = JS_GetTypedArrayLength(float32Arrays);
+    size_t length = JS_GetTypedArrayLength(float32Arrays);
 
     // If the Float32Array that is supposed to hold the values for a particular
     // AudioParam has been detached, error out. This is being worked on in
     // https://github.com/WebAudio/web-audio-api/issues/1933 and
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1619486
     if (length != WEBAUDIO_BLOCK_SIZE) {
-      SendProcessorError(aTrack, cx);
-      ProduceSilence(aTrack, aOutput);
       return;
     }
     JS::AutoCheckCannotGC nogc;
@@ -553,13 +553,11 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
 
   if (!CallProcess(aTrack, cx, process)) {
     // An exception occurred.
-    SendProcessorError(aTrack, cx);
     /**
      * https://webaudio.github.io/web-audio-api/#dom-audioworkletnode-onprocessorerror
      * Note that once an exception is thrown, the processor will output silence
      * throughout its lifetime.
      */
-    ProduceSilence(aTrack, aOutput);
     return;
   }
 
@@ -568,8 +566,15 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
     AudioBlock* output = &aOutput[o];
     size_t channelCount = output->ChannelCount();
     const auto& float32Arrays = mOutputs.mPorts[o].mFloat32Arrays;
-    JS::AutoCheckCannotGC nogc;
     for (size_t c = 0; c < channelCount; ++c) {
+      size_t length = JS_GetTypedArrayLength(float32Arrays[c]);
+      if (length != WEBAUDIO_BLOCK_SIZE) {
+        // ArrayBuffer has been detached.  Behavior is unspecified.
+        // https://github.com/WebAudio/web-audio-api/issues/1933 and
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1619486
+        return;
+      }
+      JS::AutoCheckCannotGC nogc;
       bool isShared;
       const float* src =
           JS_GetFloat32ArrayData(float32Arrays[c], &isShared, nogc);
@@ -577,6 +582,8 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
       PodCopy(output->ChannelFloatsForWrite(c), src, WEBAUDIO_BLOCK_SIZE);
     }
   }
+
+  produceSilenceWithError.release();  // have output and no error
 }
 
 AudioWorkletNode::AudioWorkletNode(AudioContext* aAudioContext,

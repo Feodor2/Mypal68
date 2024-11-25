@@ -27,6 +27,7 @@
 #include "mozilla/ProcessHangMonitorIPC.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TelemetryIPC.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WebBrowserPersistDocumentChild.h"
@@ -837,20 +838,11 @@ nsresult ContentChild::ProvideWindowCommon(
   MOZ_ASSERT(!aParent || aTabOpener,
              "If aParent is non-null, we should have an aTabOpener");
 
-  // Cache the boolean preference for allowing noopener windows to open in a
-  // separate process.
-  static bool sNoopenerNewProcess = false;
-  static bool sNoopenerNewProcessInited = false;
-  if (!sNoopenerNewProcessInited) {
-    Preferences::AddBoolVarCache(&sNoopenerNewProcess,
-                                 "dom.noopener.newprocess.enabled");
-    sNoopenerNewProcessInited = true;
-  }
-
   // Check if we should load in a different process. We always want to load in a
   // different process if we have noopener set, but we also might if we can't
   // load in the current process.
-  bool loadInDifferentProcess = aForceNoOpener && sNoopenerNewProcess;
+  bool loadInDifferentProcess = aForceNoOpener &&
+      StaticPrefs::dom_noopener_newprocess_enabled();
   if (aTabOpener && !loadInDifferentProcess && aURI) {
     nsCOMPtr<nsIWebBrowserChrome3> browserChrome3;
     rv = aTabOpener->GetWebBrowserChrome(getter_AddRefs(browserChrome3));
@@ -1577,7 +1569,7 @@ static bool StartMacOSContentSandbox() {
   info.shouldLog = Preferences::GetBool("security.sandbox.logging.enabled") ||
                    PR_GetEnv("MOZ_SANDBOX_LOGGING");
   info.appPath.assign(appPath.get());
-  info.hasAudio = !Preferences::GetBool("media.cubeb.sandbox");
+  info.hasAudio = !StaticPrefs::media_cubeb_sandbox();
   info.hasWindowServer = !Preferences::GetBool(
       "security.sandbox.content.mac.disconnect-windowserver");
 
@@ -1657,7 +1649,7 @@ mozilla::ipc::IPCResult ContentChild::RecvSetProcessSandbox(
     sandboxEnabled = false;
   } else {
     // Pre-start audio before sandboxing; see bug 1443612.
-    if (!Preferences::GetBool("media.cubeb.sandbox")) {
+    if (!StaticPrefs::media_cubeb_sandbox()) {
       Unused << CubebUtils::GetCubebContext();
     }
   }

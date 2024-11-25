@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObservers.h"
+#include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/SVGElementBinding.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
@@ -1164,12 +1165,13 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
     nsCOMPtr<nsIReferrerInfo> referrerInfo =
         ReferrerInfo::CreateForSVGResources(mElement->OwnerDoc());
 
-    RefPtr<URLExtraData> data =
-        new URLExtraData(mBaseURI, referrerInfo, mElement->NodePrincipal());
+    auto data = MakeRefPtr<URLExtraData>(mBaseURI, referrerInfo,
+                                         mElement->NodePrincipal());
     changed = Servo_DeclarationBlock_SetPropertyById(
         mDecl->Raw(), propertyID, &value, false, data,
         ParsingMode::AllowUnitlessLength,
-        mElement->OwnerDoc()->GetCompatibilityMode(), mLoader, {});
+        mElement->OwnerDoc()->GetCompatibilityMode(), mLoader,
+        CSSRule_Binding::STYLE_RULE, {});
 
     return;
   }

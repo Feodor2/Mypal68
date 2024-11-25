@@ -32,10 +32,8 @@ class nsXBLProtoImplField;
 // by XBLDocumentInfo().  Consumers who want to refcount things should refcount
 // that.
 class nsXBLPrototypeBinding final
-    : public mozilla::SupportsWeakPtr<nsXBLPrototypeBinding> {
+    : public mozilla::SupportsWeakPtr {
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(nsXBLPrototypeBinding)
-
   mozilla::dom::Element* GetBindingElement() const { return mBinding; }
   void SetBindingElement(mozilla::dom::Element* aElement);
 

@@ -123,7 +123,7 @@ bool PopupBlocker::CanShowPopupByPermission(nsIPrincipal* aPrincipal) {
 
   if (permissionManager &&
       NS_SUCCEEDED(permissionManager->TestPermissionFromPrincipal(
-          aPrincipal, NS_LITERAL_CSTRING("popup"), &permit))) {
+          aPrincipal, "popup"_ns, &permit))) {
     if (permit == nsIPermissionManager::ALLOW_ACTION) {
       return true;
     }
@@ -293,7 +293,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       break;
     case eMouseEventClass:
       if (aEvent->IsTrusted()) {
-        if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
+        if (aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary) {
           abuse = PopupBlocker::openBlocked;
           switch (aEvent->mMessage) {
             case eMouseUp:
@@ -350,7 +350,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       break;
     case ePointerEventClass:
       if (aEvent->IsTrusted() &&
-          aEvent->AsPointerEvent()->mButton == MouseButton::eLeft) {
+          aEvent->AsPointerEvent()->mButton == MouseButton::ePrimary) {
         switch (aEvent->mMessage) {
           case ePointerUp:
             if (PopupAllowedForEvent("pointerup")) {

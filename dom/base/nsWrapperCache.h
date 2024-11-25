@@ -7,11 +7,11 @@
 
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/Assertions.h"
-#include "js/Id.h"     // must come before js/RootingAPI.h
-#include "js/Value.h"  // must come before js/RootingAPI.h
-#include "js/RootingAPI.h"
+#include "js/HeapAPI.h"
 #include "js/TracingAPI.h"
-#include "jsfriendapi.h"
+#include "js/TypeDecls.h"
+#include "nsISupports.h"
+#include "nsISupportsUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -135,13 +135,14 @@ class nsWrapperCache {
    * anywhere or pass it into JSAPI functions that may cause the value to
    * escape.
    */
-  JSObject* GetWrapperMaybeDead() const {
-    return mWrapper;
-  }
+  JSObject* GetWrapperMaybeDead() const { return mWrapper; }
 
 #ifdef DEBUG
  private:
   static bool HasJSObjectMovedOp(JSObject* aWrapper);
+
+  static void AssertUpdatedWrapperZone(const JSObject* aNewObject,
+                                       const JSObject* aOldObject);
 
  public:
 #endif
@@ -191,8 +192,9 @@ class nsWrapperCache {
    * any wrapper cached object.
    */
   void UpdateWrapper(JSObject* aNewObject, const JSObject* aOldObject) {
-    MOZ_ASSERT(js::GetObjectZoneFromAnyThread(aNewObject) ==
-               js::GetObjectZoneFromAnyThread(aOldObject));
+#ifdef DEBUG
+    AssertUpdatedWrapperZone(aNewObject, aOldObject);
+#endif
     if (mWrapper) {
       MOZ_ASSERT(mWrapper == aOldObject);
       mWrapper = aNewObject;

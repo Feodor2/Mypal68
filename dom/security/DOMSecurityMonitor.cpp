@@ -5,6 +5,7 @@
 #include "DOMSecurityMonitor.h"
 #include "nsContentUtils.h"
 
+#include "mozilla/Preferences.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
 

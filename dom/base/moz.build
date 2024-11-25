@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('*Selection*'):
-    BUG_COMPONENT = ('Core', 'Selection')
+    BUG_COMPONENT = ('Core', 'DOM: Selection')
 
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -141,6 +141,7 @@ EXPORTS.mozilla.dom += [
     'BodyStream.h',
     'BodyUtil.h',
     'BorrowedAttrInfo.h',
+    'CCGCScheduler.h',
     'CharacterData.h',
     'ChildIterator.h',
     'ChildProcessMessageManager.h',
@@ -188,6 +189,7 @@ EXPORTS.mozilla.dom += [
     'ImageEncoder.h',
     'ImageTracker.h',
     'IntlUtils.h',
+    'JSExecutionContext.h',
     'Link.h',
     'LinkStyle.h',
     'Location.h',
@@ -307,6 +309,7 @@ UNIFIED_SOURCES += [
     'ImageTracker.cpp',
     'InProcessBrowserChildMessageManager.cpp',
     'IntlUtils.cpp',
+    'JSExecutionContext.cpp',
     'Link.cpp',
     'LinkStyle.cpp',
     'Location.cpp',

@@ -10,9 +10,9 @@
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
 
-class SVGTextFrame;
-
 namespace mozilla {
+
+class SVGTextFrame;
 
 namespace dom {
 
@@ -23,7 +23,7 @@ class SVGRect;
 typedef SVGGraphicsElement SVGTextContentElementBase;
 
 class SVGTextContentElement : public SVGTextContentElementBase {
-  friend class ::SVGTextFrame;
+  friend class mozilla::SVGTextFrame;
 
  public:
   using FragmentOrElement::TextLength;

@@ -47,6 +47,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsParserConstants.h"
 #include "nsSandboxFlags.h"
 #include "Link.h"

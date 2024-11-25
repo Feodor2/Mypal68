@@ -1318,10 +1318,10 @@ void HTMLCanvasElement::OnVisibilityChange() {
   }
 
   if (mOffscreenCanvas) {
-    class Runnable final : public CancelableRunnable {
+    class Runnable final : public DiscardableRunnable {
      public:
       explicit Runnable(AsyncCanvasRenderer* aRenderer)
-          : mozilla::CancelableRunnable("Runnable"), mRenderer(aRenderer) {}
+          : mozilla::DiscardableRunnable("Runnable"), mRenderer(aRenderer) {}
 
       NS_IMETHOD Run() override {
         if (mRenderer && mRenderer->mContext) {
@@ -1351,10 +1351,10 @@ void HTMLCanvasElement::OnVisibilityChange() {
 
 void HTMLCanvasElement::OnMemoryPressure() {
   if (mOffscreenCanvas) {
-    class Runnable final : public CancelableRunnable {
+    class Runnable final : public DiscardableRunnable {
      public:
       explicit Runnable(AsyncCanvasRenderer* aRenderer)
-          : mozilla::CancelableRunnable("Runnable"), mRenderer(aRenderer) {}
+          : mozilla::DiscardableRunnable("Runnable"), mRenderer(aRenderer) {}
 
       NS_IMETHOD Run() override {
         if (mRenderer && mRenderer->mContext) {

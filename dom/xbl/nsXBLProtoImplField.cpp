@@ -18,6 +18,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ElementBinding.h"
+#include "mozilla/dom/JSExecutionContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsGlobalWindow.h"
 #include "xpcpublic.h"
@@ -414,7 +415,7 @@ nsresult nsXBLProtoImplField::InstallField(
   }
   rv = NS_OK;
   {
-    nsJSUtils::ExecutionContext exec(cx, scopeObject);
+    JSExecutionContext exec(cx, scopeObject);
     exec.SetScopeChain(scopeChain);
     exec.Compile(options, nsDependentString(mFieldText, mFieldTextLength));
     rv = exec.ExecScript(&result);

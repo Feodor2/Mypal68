@@ -790,8 +790,7 @@ already_AddRefed<KeyframeEffect> KeyframeEffect::ConstructKeyframeEffect(
     return nullptr;
   }
 
-  TimingParams timingParams =
-      TimingParams::FromOptionsUnion(aOptions, doc, aRv);
+  TimingParams timingParams = TimingParams::FromOptionsUnion(aOptions, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }

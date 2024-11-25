@@ -36,7 +36,6 @@ const dom::EffectTiming& GetTimingProperties(
 template <class OptionsType>
 /* static */
 TimingParams TimingParams::FromOptionsType(const OptionsType& aOptions,
-                                           dom::Document* aDocument,
                                            ErrorResult& aRv) {
   TimingParams result;
 
@@ -53,7 +52,7 @@ TimingParams TimingParams::FromOptionsType(const OptionsType& aOptions,
     result.Update();
   } else {
     const dom::EffectTiming& timing = GetTimingProperties(aOptions);
-    result = FromEffectTiming(timing, aDocument, aRv);
+    result = FromEffectTiming(timing, aRv);
   }
 
   return result;
@@ -62,21 +61,20 @@ TimingParams TimingParams::FromOptionsType(const OptionsType& aOptions,
 /* static */
 TimingParams TimingParams::FromOptionsUnion(
     const dom::UnrestrictedDoubleOrKeyframeEffectOptions& aOptions,
-    dom::Document* aDocument, ErrorResult& aRv) {
-  return FromOptionsType(aOptions, aDocument, aRv);
+    ErrorResult& aRv) {
+  return FromOptionsType(aOptions, aRv);
 }
 
 /* static */
 TimingParams TimingParams::FromOptionsUnion(
     const dom::UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
-    dom::Document* aDocument, ErrorResult& aRv) {
-  return FromOptionsType(aOptions, aDocument, aRv);
+    ErrorResult& aRv) {
+  return FromOptionsType(aOptions, aRv);
 }
 
 /* static */
 TimingParams TimingParams::FromEffectTiming(
-    const dom::EffectTiming& aEffectTiming, dom::Document* aDocument,
-    ErrorResult& aRv) {
+    const dom::EffectTiming& aEffectTiming, ErrorResult& aRv) {
   TimingParams result;
 
   Maybe<StickyTimeDuration> duration =
@@ -93,7 +91,7 @@ TimingParams TimingParams::FromEffectTiming(
     return result;
   }
   Maybe<ComputedTimingFunction> easing =
-      TimingParams::ParseEasing(aEffectTiming.mEasing, aDocument, aRv);
+      TimingParams::ParseEasing(aEffectTiming.mEasing, aRv);
   if (aRv.Failed()) {
     return result;
   }
@@ -115,7 +113,7 @@ TimingParams TimingParams::FromEffectTiming(
 /* static */
 TimingParams TimingParams::MergeOptionalEffectTiming(
     const TimingParams& aSource, const dom::OptionalEffectTiming& aEffectTiming,
-    dom::Document* aDocument, ErrorResult& aRv) {
+    ErrorResult& aRv) {
   MOZ_ASSERT(!aRv.Failed(), "Initially return value should be ok");
 
   TimingParams result = aSource;
@@ -148,8 +146,7 @@ TimingParams TimingParams::MergeOptionalEffectTiming(
 
   Maybe<ComputedTimingFunction> easing;
   if (aEffectTiming.mEasing.WasPassed()) {
-    easing = TimingParams::ParseEasing(aEffectTiming.mEasing.Value(), aDocument,
-                                       aRv);
+    easing = TimingParams::ParseEasing(aEffectTiming.mEasing.Value(), aRv);
     if (aRv.Failed()) {
       return result;
     }
@@ -191,12 +188,9 @@ TimingParams TimingParams::MergeOptionalEffectTiming(
 
 /* static */
 Maybe<ComputedTimingFunction> TimingParams::ParseEasing(
-    const nsAString& aEasing, dom::Document* aDocument, ErrorResult& aRv) {
-  MOZ_ASSERT(aDocument);
-
+    const nsAString& aEasing, ErrorResult& aRv) {
   nsTimingFunction timingFunction;
-  RefPtr<URLExtraData> url = ServoCSSParser::GetURLExtraData(aDocument);
-  if (!ServoCSSParser::ParseEasing(aEasing, url, timingFunction)) {
+  if (!ServoCSSParser::ParseEasing(aEasing, timingFunction)) {
     aRv.ThrowTypeError<dom::MSG_INVALID_EASING_ERROR>(
         NS_ConvertUTF16toUTF8(aEasing));
     return Nothing();

@@ -86,10 +86,8 @@ class HTMLCanvasElementObserver final : public nsIObserver,
  * will be given a copy of the just-painted canvas.
  * All FrameCaptureListeners get the same copy.
  */
-class FrameCaptureListener : public SupportsWeakPtr<FrameCaptureListener> {
+class FrameCaptureListener : public SupportsWeakPtr {
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(FrameCaptureListener)
-
   FrameCaptureListener() : mFrameCaptureRequested(false) {}
 
   /*

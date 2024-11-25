@@ -6,17 +6,17 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/SVGLengthBinding.h"
-#include "mozilla/dom/SVGUseElementBinding.h"
-#include "nsGkAtoms.h"
-#include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGUseFrame.h"
+#include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/SVGLengthBinding.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/dom/SVGUseElementBinding.h"
+#include "nsGkAtoms.h"
 #include "nsContentUtils.h"
 #include "nsIURI.h"
-#include "mozilla/URLExtraData.h"
-#include "SVGObserverUtils.h"
-#include "nsSVGUseFrame.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
@@ -231,25 +231,47 @@ void SVGUseElement::NodeWillBeDestroyed(const nsINode* aNode) {
   UnlinkSource();
 }
 
-bool SVGUseElement::IsCyclicReferenceTo(const Element& aTarget) const {
+// Returns whether this node could ever be displayed.
+static bool NodeCouldBeRendered(const nsINode& aNode) {
+  if (aNode.IsSVGElement(nsGkAtoms::symbol)) {
+    // Only <symbol> elements in the root of a <svg:use> shadow tree are
+    // displayed.
+    auto* shadowRoot = ShadowRoot::FromNodeOrNull(aNode.GetParentNode());
+    return shadowRoot && shadowRoot->Host()->IsSVGElement(nsGkAtoms::use);
+  }
+  // TODO: Do we have other cases we can optimize out easily?
+  return true;
+}
+
+// Circular loop detection, plus detection of whether this shadow tree is
+// rendered at all.
+auto SVGUseElement::ScanAncestors(const Element& aTarget) const -> ScanResult {
   if (&aTarget == this) {
-    return true;
+    return ScanResult::CyclicReference;
   }
-  if (mOriginal && mOriginal->IsCyclicReferenceTo(aTarget)) {
-    return true;
+  if (mOriginal &&
+      mOriginal->ScanAncestors(aTarget) == ScanResult::CyclicReference) {
+    return ScanResult::CyclicReference;
   }
+  auto result = ScanResult::Ok;
   for (nsINode* parent = GetParentOrShadowHostNode(); parent;
        parent = parent->GetParentOrShadowHostNode()) {
     if (parent == &aTarget) {
-      return true;
+      return ScanResult::CyclicReference;
     }
     if (auto* use = SVGUseElement::FromNode(*parent)) {
       if (mOriginal && use->mOriginal == mOriginal) {
-        return true;
+        return ScanResult::CyclicReference;
       }
     }
+    // Do we have other similar cases we can optimize out easily?
+    if (!NodeCouldBeRendered(*parent)) {
+      // NOTE(emilio): We can't just return here. If we're cyclic, we need to
+      // know.
+      result = ScanResult::Invisible;
+    }
   }
-  return false;
+  return result;
 }
 
 //----------------------------------------------------------------------
@@ -295,9 +317,7 @@ void SVGUseElement::UpdateShadowTree() {
     return;
   }
 
-  // circular loop detection
-
-  if (IsCyclicReferenceTo(*targetElement)) {
+  if (ScanAncestors(*targetElement) != ScanResult::Ok) {
     return;
   }
 
@@ -346,6 +366,15 @@ nsIURI* SVGUseElement::GetSourceDocURI() {
   }
 
   return targetElement->OwnerDoc()->GetDocumentURI();
+}
+
+const Encoding* SVGUseElement::GetSourceDocCharacterSet() {
+  nsIContent* targetElement = mReferencedElementTracker.get();
+  if (!targetElement) {
+    return nullptr;
+  }
+
+  return targetElement->OwnerDoc()->GetDocumentCharacterSet();
 }
 
 static nsINode* GetClonedChild(const SVGUseElement& aUseElement) {
@@ -492,7 +521,7 @@ SVGElement::StringAttributesInfo SVGUseElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-nsSVGUseFrame* SVGUseElement::GetFrame() const {
+SVGUseFrame* SVGUseElement::GetFrame() const {
   nsIFrame* frame = GetPrimaryFrame();
   // We might be a plain nsSVGContainerFrame if we didn't pass the conditional
   // processing checks.
@@ -500,7 +529,7 @@ nsSVGUseFrame* SVGUseElement::GetFrame() const {
     MOZ_ASSERT_IF(frame, frame->Type() == LayoutFrameType::None);
     return nullptr;
   }
-  return static_cast<nsSVGUseFrame*>(frame);
+  return static_cast<SVGUseFrame*>(frame);
 }
 
 //----------------------------------------------------------------------

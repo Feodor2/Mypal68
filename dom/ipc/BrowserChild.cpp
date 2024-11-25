@@ -1143,9 +1143,10 @@ mozilla::ipc::IPCResult BrowserChild::RecvUpdateDimensions(
   ScreenIntSize screenSize = GetInnerSize();
   ScreenIntRect screenRect = GetOuterRect();
 
-  // Set the size on the document viewer before we update the widget and
-  // trigger a reflow. Otherwise the MobileViewportManager reads the stale
-  // size from the content viewer when it computes a new CSS viewport.
+  // Make sure to set the size on the document viewer first.  The
+  // MobileViewportManager needs the content viewer size to be updated before
+  // the reflow, otherwise it gets a stale size when it computes a new CSS
+  // viewport.
   nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(WebNavigation());
   baseWin->SetPositionAndSize(0, 0, screenSize.width, screenSize.height,
                               nsIBaseWindow::eRepaint);
@@ -3010,13 +3011,15 @@ mozilla::ipc::IPCResult BrowserChild::RecvUIResolutionChanged(
   ScreenIntSize screenSize = GetInnerSize();
   if (mHasValidInnerSize && oldScreenSize != screenSize) {
     ScreenIntRect screenRect = GetOuterRect();
-    mPuppetWidget->Resize(screenRect.x + mClientOffset.x + mChromeOffset.x,
-                          screenRect.y + mClientOffset.y + mChromeOffset.y,
-                          screenSize.width, screenSize.height, true);
 
+    // See RecvUpdateDimensions for the order of these operations.
     nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(WebNavigation());
     baseWin->SetPositionAndSize(0, 0, screenSize.width, screenSize.height,
                                 nsIBaseWindow::eRepaint);
+
+    mPuppetWidget->Resize(screenRect.x + mClientOffset.x + mChromeOffset.x,
+                          screenRect.y + mClientOffset.y + mChromeOffset.y,
+                          screenSize.width, screenSize.height, true);
   }
 
   return IPC_OK();

@@ -25,7 +25,7 @@
 #include "mozilla/dom/nsCSPContext.h"
 
 #ifdef MOZ_WIDGET_ANDROID
-#  include "FennecJNIWrappers.h"
+#  include "GeneratedJNIWrappers.h"
 #endif
 
 namespace mozilla {

@@ -1048,7 +1048,7 @@ class nsContentUtils {
    *   @param aCategory Name of module reporting error.
    *   @param aDocument Reference to the document which triggered the message.
    *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
               containing error.
@@ -1067,7 +1067,7 @@ class nsContentUtils {
   static nsresult ReportToConsoleNonLocalized(
       const nsAString& aErrorText, uint32_t aErrorFlags,
       const nsACString& aCategory, const Document* aDocument,
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = EmptyString(),
+      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
       uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0,
       MissingErrorLocationMode aLocationMode = eUSE_CALLING_LOCATION);
 
@@ -1080,7 +1080,7 @@ class nsContentUtils {
    *   @param [aInnerWindowID] Inner window ID for document which triggered the
    *          message.
    *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
               containing error.
@@ -1093,7 +1093,7 @@ class nsContentUtils {
   static nsresult ReportToConsoleByWindowID(
       const nsAString& aErrorText, uint32_t aErrorFlags,
       const nsACString& aCategory, uint64_t aInnerWindowID,
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = EmptyString(),
+      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
       uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0,
       MissingErrorLocationMode aLocationMode = eUSE_CALLING_LOCATION);
 
@@ -1107,7 +1107,7 @@ class nsContentUtils {
    *   @param [aParams=empty-array] (Optional) Parameters to be substituted into
               localized message.
    *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
               containing error.
@@ -1138,7 +1138,7 @@ class nsContentUtils {
       uint32_t aErrorFlags, const nsACString& aCategory,
       const Document* aDocument, PropertiesFile aFile, const char* aMessageName,
       const nsTArray<nsString>& aParams = nsTArray<nsString>(),
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = EmptyString(),
+      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
       uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0);
 
   static void ReportEmptyGetElementByIdArg(const Document* aDoc);
@@ -2466,15 +2466,6 @@ class nsContentUtils {
    * @return Whether the subdocument is tabbable.
    */
   static bool IsSubDocumentTabbable(nsIContent* aContent);
-
-  /**
-   * Returns if aNode ignores user focus.
-   *
-   * @param aNode node to test
-   *
-   * @return Whether the node ignores user focus.
-   */
-  static bool IsUserFocusIgnored(nsINode* aNode);
 
   /**
    * Returns if aContent has the 'scrollgrab' property.

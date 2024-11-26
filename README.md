@@ -9,7 +9,9 @@ A browser for Windows XP based on Firefox 68.
 
 This browser does not run well on winxp SP2 and lower. If you do not want to install SP3, be ready for crashes and blue screens.
 If you are on SP2 and lower, there is no need to post a screenshot from blue_screen_view. And i suggest to apply postready updates of 2019.
-Some say that it runs fine on sp2 but it is no accurate data what to do.
+Some say that it runs fine on sp2 but there's no accurate data on 
+what to do.
+You can also try this on vista and later which in case of 7 is useless outside of non-sse2 computers. You'd better use 115esr when supported.
 
 ## IF YOU GOT A BLUE SCREEN
 

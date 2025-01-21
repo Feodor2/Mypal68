@@ -51,8 +51,7 @@
 #include "nsFocusManager.h"
 #include "nsListControlFrame.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "SVGElementFactory.h"
-#include "nsSVGUtils.h"
+#include "mozilla/dom/SVGElementFactory.h"
 #include "nsMathMLAtoms.h"
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
@@ -123,6 +122,7 @@
 #include "mozilla/dom/quota/ActorsParent.h"
 #include "mozilla/dom/localstorage/ActorsParent.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "nsLayoutUtils.h"
 #include "nsThreadManager.h"
 #include "mozilla/css/ImageLoader.h"
 #include "gfxUserFontSet.h"
@@ -305,7 +305,6 @@ void nsLayoutStatics::Shutdown() {
 
   if (XRE_IsParentProcess() || XRE_IsContentProcess()) {
     ShutdownServo();
-    URLExtraData::ReleaseDummy();
   }
 
   mozilla::dom::AbstractRange::Shutdown();

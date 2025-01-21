@@ -6,7 +6,7 @@
 
 use crate::custom_properties::Name as CustomPropertyName;
 use crate::parser::{Parse, ParserContext};
-use crate::properties::{LonghandId, PropertyDeclarationId, PropertyFlags};
+use crate::properties::{LonghandId, PropertyDeclarationId};
 use crate::properties::{PropertyId, ShorthandId};
 use crate::values::generics::box_::AnimationIterationCount as GenericAnimationIterationCount;
 use crate::values::generics::box_::Perspective as GenericPerspective;
@@ -34,16 +34,17 @@ fn moz_box_display_values_enabled(context: &ParserContext) -> bool {
         static_prefs::pref!("layout.css.xul-box-display-values.content.enabled")
 }
 
+#[cfg(not(feature = "servo-layout-2020"))]
 fn flexbox_enabled() -> bool {
-    #[cfg(feature = "servo-layout-2020")]
-    {
-        return servo_config::prefs::pref_map()
-            .get("layout.flexbox.enabled")
-            .as_bool()
-            .unwrap_or(false);
-    }
-
     true
+}
+
+#[cfg(feature = "servo-layout-2020")]
+fn flexbox_enabled() -> bool {
+    servo_config::prefs::pref_map()
+        .get("layout.flexbox.enabled")
+        .as_bool()
+        .unwrap_or(false)
 }
 
 /// Defines an element’s display type, which consists of
@@ -277,6 +278,12 @@ impl Display {
             (self.0 >> Self::DISPLAY_INSIDE_BITS) & ((1 << Self::DISPLAY_OUTSIDE_BITS) - 1),
         )
         .unwrap()
+    }
+
+    /// Returns the raw underlying u16 value.
+    #[inline]
+    pub const fn to_u16(&self) -> u16 {
+        self.0
     }
 
     /// Whether this is `display: inline` (or `inline list-item`).
@@ -526,9 +533,7 @@ fn is_valid_inside_for_list_item<'i>(inside: &Result<DisplayInside, ParseError<'
 
 /// Parse `list-item`.
 fn parse_list_item<'i, 't>(input: &mut Parser<'i, 't>) -> Result<(), ParseError<'i>> {
-    Ok(try_match_ident_ignore_ascii_case! { input,
-        "list-item" => (),
-    })
+    Ok(input.expect_ident_matching("list-item")?)
 }
 
 impl Parse for Display {
@@ -1097,44 +1102,54 @@ bitflags! {
     /// The change bits that we care about.
     #[derive(Default, MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
     #[repr(C)]
-    pub struct WillChangeBits: u8 {
-        /// Whether the stacking context will change.
-        const STACKING_CONTEXT = 1 << 0;
-        /// Whether `transform` will change.
+    pub struct WillChangeBits: u16 {
+        /// Whether a property which can create a stacking context **on any
+        /// box** will change.
+        const STACKING_CONTEXT_UNCONDITIONAL = 1 << 0;
+        /// Whether `transform` or related properties will change.
         const TRANSFORM = 1 << 1;
         /// Whether `scroll-position` will change.
         const SCROLL = 1 << 2;
+        /// Whether `contain` will change.
+        const CONTAIN = 1 << 3;
         /// Whether `opacity` will change.
-        const OPACITY = 1 << 3;
-        /// Fixed pos containing block.
-        const FIXPOS_CB = 1 << 4;
-        /// Abs pos containing block.
-        const ABSPOS_CB = 1 << 5;
+        const OPACITY = 1 << 4;
+        /// Whether `perspective` will change.
+        const PERSPECTIVE = 1 << 5;
+        /// Whether `z-index` will change.
+        const Z_INDEX = 1 << 6;
+        /// Whether any property which creates a containing block for non-svg
+        /// text frames will change.
+        const FIXPOS_CB_NON_SVG = 1 << 7;
+        /// Whether the position property will change.
+        const POSITION = 1 << 8;
     }
 }
 
 fn change_bits_for_longhand(longhand: LonghandId) -> WillChangeBits {
-    let mut flags = match longhand {
+    match longhand {
         LonghandId::Opacity => WillChangeBits::OPACITY,
-        LonghandId::Transform => WillChangeBits::TRANSFORM,
-        #[cfg(feature = "gecko")]
-        LonghandId::Translate | LonghandId::Rotate | LonghandId::Scale | LonghandId::OffsetPath => {
-            WillChangeBits::TRANSFORM
+        LonghandId::Contain => WillChangeBits::CONTAIN,
+        LonghandId::Perspective => WillChangeBits::PERSPECTIVE,
+        LonghandId::Position => {
+            WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL | WillChangeBits::POSITION
         },
+        LonghandId::ZIndex => WillChangeBits::Z_INDEX,
+        LonghandId::Transform |
+        LonghandId::TransformStyle |
+        LonghandId::Translate |
+        LonghandId::Rotate |
+        LonghandId::Scale |
+        LonghandId::OffsetPath => WillChangeBits::TRANSFORM,
+        LonghandId::BackdropFilter | LonghandId::Filter => {
+            WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL | WillChangeBits::FIXPOS_CB_NON_SVG
+        },
+        LonghandId::MixBlendMode |
+        LonghandId::Isolation |
+        LonghandId::MaskImage |
+        LonghandId::ClipPath => WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL,
         _ => WillChangeBits::empty(),
-    };
-
-    let property_flags = longhand.flags();
-    if property_flags.contains(PropertyFlags::CREATES_STACKING_CONTEXT) {
-        flags |= WillChangeBits::STACKING_CONTEXT;
     }
-    if property_flags.contains(PropertyFlags::FIXPOS_CB) {
-        flags |= WillChangeBits::FIXPOS_CB;
-    }
-    if property_flags.contains(PropertyFlags::ABSPOS_CB) {
-        flags |= WillChangeBits::ABSPOS_CB;
-    }
-    flags
 }
 
 fn change_bits_for_maybe_property(ident: &str, context: &ParserContext) -> WillChangeBits {
@@ -1648,12 +1663,6 @@ pub enum Appearance {
     /// The resizer itself.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Resizer,
-    /// A scrollbar.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Scrollbar,
-    /// A small scrollbar.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    ScrollbarSmall,
     /// The scrollbar slider
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     ScrollbarHorizontal,
@@ -1882,28 +1891,19 @@ pub enum BreakBetween {
 }
 
 impl BreakBetween {
-    /// Parse a legacy break-between value for `page-break-*`.
+    /// Parse a legacy break-between value for `page-break-{before,after}`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
     #[inline]
-    pub fn parse_legacy<'i>(input: &mut Parser<'i, '_>) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
-        let ident = input.expect_ident()?;
-        let break_value = match BreakBetween::from_ident(ident) {
-            Ok(v) => v,
-            Err(()) => {
-                return Err(location
-                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())));
-            },
-        };
+    pub(crate) fn parse_legacy<'i>(_: &ParserContext, input: &mut Parser<'i, '_>) -> Result<Self, ParseError<'i>> {
+        let break_value = BreakBetween::parse(input)?;
         match break_value {
             BreakBetween::Always => Ok(BreakBetween::Page),
             BreakBetween::Auto | BreakBetween::Avoid | BreakBetween::Left | BreakBetween::Right => {
                 Ok(break_value)
             },
             BreakBetween::Page => {
-                Err(location
-                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())))
+                Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
             },
         }
     }
@@ -1911,7 +1911,7 @@ impl BreakBetween {
     /// Serialize a legacy break-between value for `page-break-*`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
-    pub fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    pub(crate) fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
@@ -1948,6 +1948,37 @@ impl BreakBetween {
 pub enum BreakWithin {
     Auto,
     Avoid,
+    AvoidPage,
+    AvoidColumn,
+}
+
+impl BreakWithin {
+    /// Parse a legacy break-between value for `page-break-inside`.
+    ///
+    /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    #[inline]
+    pub(crate) fn parse_legacy<'i>(_: &ParserContext, input: &mut Parser<'i, '_>) -> Result<Self, ParseError<'i>> {
+        let break_value = BreakWithin::parse(input)?;
+        match break_value {
+            BreakWithin::Auto | BreakWithin::Avoid => Ok(break_value),
+            BreakWithin::AvoidPage | BreakWithin::AvoidColumn => {
+                Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+            },
+        }
+    }
+
+    /// Serialize a legacy break-between value for `page-break-inside`.
+    ///
+    /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    pub(crate) fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        match *self {
+            BreakWithin::Auto | BreakWithin::Avoid => self.to_css(dest),
+            BreakWithin::AvoidPage | BreakWithin::AvoidColumn => Ok(()),
+        }
+    }
 }
 
 /// The value for the `overflow-x` / `overflow-y` properties.

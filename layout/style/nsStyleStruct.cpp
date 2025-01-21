@@ -116,21 +116,6 @@ void StyleComputedUrl::ResolveImage(Document& aDocument,
 
   data.flags |= StyleLoadDataFlags::TRIED_TO_RESOLVE_IMAGE;
 
-  nsIURI* docURI = aDocument.GetDocumentURI();
-  if (HasRef()) {
-    bool isEqualExceptRef = false;
-    nsIURI* imageURI = GetURI();
-    if (!imageURI) {
-      return;
-    }
-
-    if (NS_SUCCEEDED(imageURI->EqualsExceptRef(docURI, &isEqualExceptRef)) &&
-        isEqualExceptRef) {
-      // Prevent loading an internal resource.
-      return;
-    }
-  }
-
   MOZ_ASSERT(NS_IsMainThread());
 
   // TODO(emilio, bug 1440442): This is a hackaround to avoid flickering due the
@@ -512,6 +497,9 @@ nsChangeHint nsStyleBorder::CalcDifference(
     }
   }
 
+  // Note that border radius also controls the outline radius if the
+  // layout.css.outline-follows-border-radius.enabled pref is set. Any
+  // optimizations here should apply to both.
   if (mBorderRadius != aNewData.mBorderRadius) {
     return nsChangeHint_RepaintFrame;
   }
@@ -603,7 +591,7 @@ nsChangeHint nsStyleOutline::CalcDifference(
 nsStyleList::nsStyleList(const Document& aDocument)
     : mListStylePosition(NS_STYLE_LIST_STYLE_POSITION_OUTSIDE),
       mQuotes(StyleQuotes::Auto()),
-      mListStyleImage(StyleImageUrlOrNone::None()),
+      mListStyleImage(StyleImage::None()),
       mImageRegion(StyleClipRectOrAuto::Auto()),
       mMozListReversed(StyleMozListReversed::False) {
   MOZ_COUNT_CTOR(nsStyleList);
@@ -627,14 +615,8 @@ nsStyleList::nsStyleList(const nsStyleList& aSource)
 void nsStyleList::TriggerImageLoads(Document& aDocument,
                                     const nsStyleList* aOldStyle) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  if (mListStyleImage.IsUrl() && !mListStyleImage.AsUrl().IsImageResolved()) {
-    auto* oldUrl = aOldStyle && aOldStyle->mListStyleImage.IsUrl()
-                       ? &aOldStyle->mListStyleImage.AsUrl()
-                       : nullptr;
-    const_cast<StyleComputedImageUrl&>(mListStyleImage.AsUrl())
-        .ResolveImage(aDocument, oldUrl);
-  }
+  mListStyleImage.ResolveImage(
+      aDocument, aOldStyle ? &aOldStyle->mListStyleImage : nullptr);
 }
 
 nsChangeHint nsStyleList::CalcDifference(
@@ -688,8 +670,7 @@ already_AddRefed<nsIURI> nsStyleList::GetListStyleImageURI() const {
     return nullptr;
   }
 
-  nsCOMPtr<nsIURI> uri = mListStyleImage.AsUrl().GetURI();
-  return uri.forget();
+  return do_AddRef(mListStyleImage.AsUrl().GetURI());
 }
 
 // --------------------
@@ -1070,6 +1051,18 @@ bool nsStyleSVGReset::HasMask() const {
 }
 
 // --------------------
+// nsStylePage
+//
+
+nsChangeHint nsStylePage::CalcDifference(const nsStylePage& aNewData) const {
+  // Page rule styling only matters when printing or using print preview.
+  if (aNewData.mSize != mSize) {
+    return nsChangeHint_NeutralChange;
+  }
+  return nsChangeHint_Empty;
+}
+
+// --------------------
 // nsStylePosition
 //
 nsStylePosition::nsStylePosition(const Document& aDocument)
@@ -1288,8 +1281,8 @@ nsChangeHint nsStylePosition::CalcDifference(
   // It doesn't matter whether we're looking at the old or new visibility
   // struct, since a change between vertical and horizontal writing-mode will
   // cause a reframe.
-  bool isVertical =
-      aOldStyleVisibility.mWritingMode != NS_STYLE_WRITING_MODE_HORIZONTAL_TB;
+  bool isVertical = aOldStyleVisibility.mWritingMode !=
+                    StyleWritingModeProperty::HorizontalTb;
   if (isVertical ? widthChanged : heightChanged) {
     hint |= nsChangeHint_ReflowHintsForBSizeChange;
   }
@@ -1380,7 +1373,7 @@ nsStyleTableBorder::nsStyleTableBorder(const Document& aDocument)
     : mBorderSpacingCol(0),
       mBorderSpacingRow(0),
       mBorderCollapse(StyleBorderCollapse::Separate),
-      mCaptionSide(NS_STYLE_CAPTION_SIDE_TOP),
+      mCaptionSide(StyleCaptionSide::Top),
       mEmptyCells(StyleEmptyCells::Show) {
   MOZ_COUNT_CTOR(nsStyleTableBorder);
 }
@@ -1515,18 +1508,11 @@ Maybe<StyleImage::ActualCropRect> StyleImage::ComputeActualCropRect() const {
 }
 
 template <>
-bool StyleImage::StartDecoding() const {
-  if (IsImageRequestType()) {
-    imgRequestProxy* req = GetImageRequest();
-    return req &&
-           req->StartDecodingWithResult(imgIContainer::FLAG_ASYNC_NOTIFY);
-  }
-  // None always returns false from IsComplete, so we do the same here.
-  return !IsNone();
-}
-
-template <>
 bool StyleImage::IsOpaque() const {
+  if (IsImageSet()) {
+    return FinalImage().IsOpaque();
+  }
+
   if (!IsComplete()) {
     return false;
   }
@@ -1583,10 +1569,14 @@ bool StyleImage::IsComplete() const {
              (status & imgIRequest::STATUS_SIZE_AVAILABLE) &&
              (status & imgIRequest::STATUS_FRAME_COMPLETE);
     }
-    default:
-      MOZ_ASSERT_UNREACHABLE("unexpected image type");
-      return false;
+    case Tag::ImageSet:
+      return FinalImage().IsComplete();
+    // Bug 546052 cross-fade not yet implemented.
+    case Tag::CrossFade:
+      return true;
   }
+  MOZ_ASSERT_UNREACHABLE("unexpected image type");
+  return false;
 }
 
 template <>
@@ -1608,10 +1598,14 @@ bool StyleImage::IsSizeAvailable() const {
              !(status & imgIRequest::STATUS_ERROR) &&
              (status & imgIRequest::STATUS_SIZE_AVAILABLE);
     }
-    default:
-      MOZ_ASSERT_UNREACHABLE("unexpected image type");
-      return false;
+    case Tag::ImageSet:
+      return FinalImage().IsSizeAvailable();
+    case Tag::CrossFade:
+      // TODO: Bug 546052 cross-fade not yet implemented.
+      return true;
   }
+  MOZ_ASSERT_UNREACHABLE("unexpected image type");
+  return false;
 }
 
 template <>
@@ -1714,7 +1708,7 @@ nsStyleImageLayers::nsStyleImageLayers(const nsStyleImageLayers& aSource)
 
 static bool AnyLayerIsElementImage(const nsStyleImageLayers& aLayers) {
   NS_FOR_VISIBLE_IMAGE_LAYERS_BACK_TO_FRONT(i, aLayers) {
-    if (aLayers.mLayers[i].mImage.IsElement()) {
+    if (aLayers.mLayers[i].mImage.FinalImage().IsElement()) {
       return true;
     }
   }
@@ -1747,8 +1741,9 @@ nsChangeHint nsStyleImageLayers::CalcDifference(
       const Layer& lessLayersLayer = lessLayers.mLayers[i];
       nsChangeHint layerDifference =
           moreLayersLayer.CalcDifference(lessLayersLayer);
-      if (layerDifference && (moreLayersLayer.mImage.IsElement() ||
-                              lessLayersLayer.mImage.IsElement())) {
+      if (layerDifference &&
+          (moreLayersLayer.mImage.FinalImage().IsElement() ||
+           lessLayersLayer.mImage.FinalImage().IsElement())) {
         layerDifference |=
             nsChangeHint_UpdateEffects | nsChangeHint_RepaintFrame;
       }
@@ -1906,6 +1901,7 @@ bool nsStyleImageLayers::operator==(const nsStyleImageLayers& aOther) const {
 static bool SizeDependsOnPositioningAreaSize(const StyleBackgroundSize& aSize,
                                              const StyleImage& aImage) {
   MOZ_ASSERT(!aImage.IsNone(), "caller should have handled this");
+  MOZ_ASSERT(!aImage.IsImageSet(), "caller should have handled this");
 
   // Contain and cover straightforwardly depend on frame size.
   if (aSize.IsCover() || aSize.IsContain()) {
@@ -2009,7 +2005,7 @@ bool nsStyleImageLayers::Layer::
   }
 
   return mPosition.DependsOnPositioningAreaSize() ||
-         SizeDependsOnPositioningAreaSize(mSize, mImage) ||
+         SizeDependsOnPositioningAreaSize(mSize, mImage.FinalImage()) ||
          mRepeat.DependsOnPositioningAreaSize();
 }
 
@@ -2146,7 +2142,7 @@ nscolor nsStyleBackground::BackgroundColor(const nsIFrame* aFrame) const {
   return mBackgroundColor.CalcColor(aFrame);
 }
 
-nscolor nsStyleBackground::BackgroundColor(ComputedStyle* aStyle) const {
+nscolor nsStyleBackground::BackgroundColor(const ComputedStyle* aStyle) const {
   return mBackgroundColor.CalcColor(*aStyle);
 }
 
@@ -2641,13 +2637,17 @@ nsChangeHint nsStyleDisplay::CalcDifference(
   auto willChangeBitsChanged = mWillChange.bits ^ aNewData.mWillChange.bits;
 
   if (willChangeBitsChanged &
-      (StyleWillChangeBits::STACKING_CONTEXT | StyleWillChangeBits::SCROLL |
-       StyleWillChangeBits::OPACITY)) {
+      (StyleWillChangeBits::STACKING_CONTEXT_UNCONDITIONAL |
+       StyleWillChangeBits::SCROLL | StyleWillChangeBits::OPACITY |
+       StyleWillChangeBits::PERSPECTIVE | StyleWillChangeBits::TRANSFORM |
+       StyleWillChangeBits::Z_INDEX)) {
     hint |= nsChangeHint_RepaintFrame;
   }
 
   if (willChangeBitsChanged &
-      (StyleWillChangeBits::FIXPOS_CB | StyleWillChangeBits::ABSPOS_CB)) {
+      (StyleWillChangeBits::FIXPOS_CB_NON_SVG | StyleWillChangeBits::TRANSFORM |
+       StyleWillChangeBits::PERSPECTIVE | StyleWillChangeBits::POSITION |
+       StyleWillChangeBits::CONTAIN)) {
     hint |= nsChangeHint_UpdateContainingBlock;
   }
 
@@ -2726,16 +2726,13 @@ nsChangeHint nsStyleDisplay::CalcDifference(
 //
 
 nsStyleVisibility::nsStyleVisibility(const Document& aDocument)
-    : mImageOrientation(
-          StaticPrefs::layout_css_image_orientation_initial_from_image()
-              ? StyleImageOrientation::FromImage
-              : StyleImageOrientation::None),
+    : mImageOrientation(StyleImageOrientation::FromImage),
       mDirection(aDocument.GetBidiOptions() == IBMBIDI_TEXTDIRECTION_RTL
                      ? StyleDirection::Rtl
                      : StyleDirection::Ltr),
       mVisible(StyleVisibility::Visible),
       mImageRendering(StyleImageRendering::Auto),
-      mWritingMode(NS_STYLE_WRITING_MODE_HORIZONTAL_TB),
+      mWritingMode(StyleWritingModeProperty::HorizontalTb),
       mTextOrientation(StyleTextOrientation::Mixed),
       mColorAdjust(StyleColorAdjust::Economy) {
   MOZ_COUNT_CTOR(nsStyleVisibility);
@@ -2843,17 +2840,14 @@ void nsStyleContent::TriggerImageLoads(Document& aDoc,
 
   for (size_t i = 0; i < items.Length(); ++i) {
     auto& item = items[i];
-    if (!item.IsUrl()) {
+    if (!item.IsImage()) {
       continue;
     }
-    auto& url = item.AsUrl();
-    if (url.IsImageResolved()) {
-      continue;
-    }
-    auto* oldUrl = i < oldItems.Length() && oldItems[i].IsUrl()
-                       ? &oldItems[i].AsUrl()
-                       : nullptr;
-    const_cast<StyleComputedImageUrl&>(url).ResolveImage(aDoc, oldUrl);
+    auto& image = item.AsImage();
+    auto* oldImage = i < oldItems.Length() && oldItems[i].IsImage()
+                         ? &oldItems[i].AsImage()
+                         : nullptr;
+    const_cast<StyleImage&>(image).ResolveImage(aDoc, oldImage);
   }
 }
 
@@ -2935,11 +2929,13 @@ nsStyleText::nsStyleText(const Document& aDocument)
       mWhiteSpace(StyleWhiteSpace::Normal),
       mHyphens(StyleHyphens::Manual),
       mRubyAlign(StyleRubyAlign::SpaceAround),
-      mRubyPosition(StyleRubyPosition::Over),
+      mRubyPosition(StyleRubyPosition::AlternateOver),
       mTextSizeAdjust(StyleTextSizeAdjust::Auto),
       mTextCombineUpright(NS_STYLE_TEXT_COMBINE_UPRIGHT_NONE),
-      mControlCharacterVisibility(
-          nsLayoutUtils::ControlCharVisibilityDefault()),
+      mMozControlCharacterVisibility(
+          StaticPrefs::layout_css_control_characters_visible()
+              ? StyleMozControlCharacterVisibility::Visible
+              : StyleMozControlCharacterVisibility::Hidden),
       mTextRendering(StyleTextRendering::Auto),
       mTextEmphasisColor(StyleColor::CurrentColor()),
       mWebkitTextFillColor(StyleColor::CurrentColor()),
@@ -2978,7 +2974,7 @@ nsStyleText::nsStyleText(const nsStyleText& aSource)
       mRubyPosition(aSource.mRubyPosition),
       mTextSizeAdjust(aSource.mTextSizeAdjust),
       mTextCombineUpright(aSource.mTextCombineUpright),
-      mControlCharacterVisibility(aSource.mControlCharacterVisibility),
+      mMozControlCharacterVisibility(aSource.mMozControlCharacterVisibility),
       mTextEmphasisPosition(aSource.mTextEmphasisPosition),
       mTextRendering(aSource.mTextRendering),
       mTextEmphasisColor(aSource.mTextEmphasisColor),
@@ -3008,7 +3004,8 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
   }
 
   if (mTextCombineUpright != aNewData.mTextCombineUpright ||
-      mControlCharacterVisibility != aNewData.mControlCharacterVisibility) {
+      mMozControlCharacterVisibility !=
+          aNewData.mMozControlCharacterVisibility) {
     return nsChangeHint_ReconstructFrame;
   }
 
@@ -3112,6 +3109,7 @@ nsStyleUI::nsStyleUI(const Document& aDocument)
       mUserFocus(StyleUserFocus::None),
       mPointerEvents(StylePointerEvents::Auto),
       mCursor{{}, StyleCursorKind::Auto},
+      mAccentColor(StyleColorOrAuto::Auto()),
       mCaretColor(StyleColorOrAuto::Auto()),
       mScrollbarColor(StyleScrollbarColor::Auto()) {
   MOZ_COUNT_CTOR(nsStyleUI);
@@ -3124,6 +3122,7 @@ nsStyleUI::nsStyleUI(const nsStyleUI& aSource)
       mUserFocus(aSource.mUserFocus),
       mPointerEvents(aSource.mPointerEvents),
       mCursor(aSource.mCursor),
+      mAccentColor(aSource.mAccentColor),
       mCaretColor(aSource.mCaretColor),
       mScrollbarColor(aSource.mScrollbarColor) {
   MOZ_COUNT_CTOR(nsStyleUI);
@@ -3140,13 +3139,10 @@ void nsStyleUI::TriggerImageLoads(Document& aDocument,
                                    : Span<const StyleCursorImage>();
   for (size_t i = 0; i < cursorImages.Length(); ++i) {
     auto& cursor = cursorImages[i];
-
-    if (!cursor.url.IsImageResolved()) {
-      const auto* oldCursor =
-          oldCursorImages.Length() > i ? &oldCursorImages[i] : nullptr;
-      const_cast<StyleComputedImageUrl&>(cursor.url)
-          .ResolveImage(aDocument, oldCursor ? &oldCursor->url : nullptr);
-    }
+    const auto* oldCursorImage =
+        oldCursorImages.Length() > i ? &oldCursorImages[i].image : nullptr;
+    const_cast<StyleCursorImage&>(cursor).image.ResolveImage(aDocument,
+                                                             oldCursorImage);
   }
 }
 
@@ -3185,6 +3181,7 @@ nsChangeHint nsStyleUI::CalcDifference(const nsStyleUI& aNewData) const {
   }
 
   if (mCaretColor != aNewData.mCaretColor ||
+      mAccentColor != aNewData.mAccentColor ||
       mScrollbarColor != aNewData.mScrollbarColor) {
     hint |= nsChangeHint_RepaintFrame;
   }
@@ -3526,7 +3523,12 @@ ResultT StyleCalcNode::ResolveInternal(ResultT aPercentageBasis,
 
 template <>
 CSSCoord StyleCalcNode::ResolveToCSSPixels(CSSCoord aBasis) const {
-  return ResolveInternal(aBasis, [](CSSCoord aPercent) { return aPercent; });
+  CSSCoord result =
+      ResolveInternal(aBasis, [](CSSCoord aPercent) { return aPercent; });
+  if (IsNaN(float(result))) {
+    return 0.0f;  // This matches style::values::normalize
+  }
+  return result;
 }
 
 template <>

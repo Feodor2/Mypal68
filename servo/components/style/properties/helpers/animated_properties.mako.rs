@@ -248,7 +248,7 @@ impl AnimationValue {
         decl: &PropertyDeclaration,
         context: &mut Context,
         extra_custom_properties: Option<<&Arc<crate::custom_properties::CustomPropertiesMap>>,
-        initial: &ComputedValues
+        initial: &ComputedValues,
     ) -> Option<Self> {
         use super::PropertyDeclarationVariantRepr;
 
@@ -311,9 +311,9 @@ impl AnimationValue {
                     % for prop in data.longhands:
                     % if prop.animatable:
                     LonghandId::${prop.camel_case} => {
-                        // FIXME(emilio, bug 1533327): I think
-                        // CSSWideKeyword::Revert handling is not fine here, but
-                        // what to do instead?
+                        // FIXME(emilio, bug 1533327): I think revert (and
+                        // revert-layer) handling is not fine here, but what to
+                        // do instead?
                         //
                         // Seems we'd need the computed value as if it was
                         // revert, somehow. Treating it as `unset` seems fine
@@ -321,6 +321,7 @@ impl AnimationValue {
                         let style_struct = match declaration.keyword {
                             % if not prop.style_struct.inherited:
                             CSSWideKeyword::Revert |
+                            CSSWideKeyword::RevertLayer |
                             CSSWideKeyword::Unset |
                             % endif
                             CSSWideKeyword::Initial => {
@@ -328,6 +329,7 @@ impl AnimationValue {
                             },
                             % if prop.style_struct.inherited:
                             CSSWideKeyword::Revert |
+                            CSSWideKeyword::RevertLayer |
                             CSSWideKeyword::Unset |
                             % endif
                             CSSWideKeyword::Inherit => {
@@ -367,15 +369,18 @@ impl AnimationValue {
                 }
             },
             PropertyDeclaration::WithVariables(ref declaration) => {
+                let mut cache = Default::default();
                 let substituted = {
                     let custom_properties =
                         extra_custom_properties.or_else(|| context.style().custom_properties());
 
                     declaration.value.substitute_variables(
                         declaration.id,
+                        context.builder.writing_mode,
                         custom_properties,
                         context.quirks_mode,
                         context.device().environment(),
+                        &mut cache,
                     )
                 };
                 return AnimationValue::from_declaration(

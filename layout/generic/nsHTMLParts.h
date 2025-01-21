@@ -8,8 +8,10 @@
 #define nsHTMLParts_h___
 
 #include "nscore.h"
+#include "nsFrameState.h"
 #include "nsISupports.h"
-#include "nsIFrame.h"
+
+class nsContainerFrame;
 class nsComboboxControlFrame;
 class nsCheckboxRadioFrame;
 class nsAtom;
@@ -23,8 +25,14 @@ class nsIURI;
 class nsIChannel;
 class nsTableColFrame;
 namespace mozilla {
+class ComputedStyle;
 class PresShell;
+class PrintedSheetFrame;
 class ViewportFrame;
+
+namespace dom {
+class Document;
+}
 }  // namespace mozilla
 
 // Factory methods for creating html layout objects
@@ -96,6 +104,10 @@ nsContainerFrame* NS_NewColumnSetFrame(mozilla::PresShell* aPresShell,
 class nsPageSequenceFrame;
 nsPageSequenceFrame* NS_NewPageSequenceFrame(mozilla::PresShell* aPresShell,
                                              mozilla::ComputedStyle* aStyle);
+
+mozilla::PrintedSheetFrame* NS_NewPrintedSheetFrame(
+    mozilla::PresShell* aPresShell, mozilla::ComputedStyle* aStyle);
+
 class nsPageFrame;
 nsPageFrame* NS_NewPageFrame(mozilla::PresShell* aPresShell,
                              mozilla::ComputedStyle* aStyle);
@@ -126,8 +138,6 @@ nsIFrame* NS_NewFileControlFrame(mozilla::PresShell* aPresShell,
                                  mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewColorControlFrame(mozilla::PresShell* aPresShell,
                                   mozilla::ComputedStyle* aStyle);
-nsIFrame* NS_NewLegendFrame(mozilla::PresShell* aPresShell,
-                            mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewTextControlFrame(mozilla::PresShell* aPresShell,
                                  mozilla::ComputedStyle* aStyle);
 nsContainerFrame* NS_NewListControlFrame(mozilla::PresShell* aPresShell,

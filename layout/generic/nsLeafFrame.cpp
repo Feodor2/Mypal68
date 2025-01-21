@@ -31,7 +31,7 @@ nscoord nsLeafFrame::GetPrefISize(gfxContext* aRenderingContext) {
 LogicalSize nsLeafFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   const WritingMode wm = GetWritingMode();
   LogicalSize result(wm, GetIntrinsicISize(), GetIntrinsicBSize());

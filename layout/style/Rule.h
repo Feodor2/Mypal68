@@ -20,6 +20,9 @@ struct already_AddRefed;
 class nsHTMLCSSStyleSheet;
 
 namespace mozilla {
+
+enum class StyleCssRuleType : uint8_t;
+
 namespace css {
 class GroupRule;
 
@@ -32,18 +35,13 @@ class Rule : public nsISupports, public nsWrapperCache {
         mLineNumber(aLineNumber),
         mColumnNumber(aColumnNumber) {
 #ifdef DEBUG
-    // Would be nice to check that this->Type() is KEYFRAME_RULE when
-    // mParentRule->Tye() is KEYFRAMES_RULE, but we can't call
-    // this->Type() here since it's virtual.
-    if (mParentRule) {
-      int16_t type = mParentRule->Type();
-      MOZ_ASSERT(type == dom::CSSRule_Binding::MEDIA_RULE ||
-                 type == dom::CSSRule_Binding::DOCUMENT_RULE ||
-                 type == dom::CSSRule_Binding::SUPPORTS_RULE ||
-                 type == dom::CSSRule_Binding::KEYFRAMES_RULE);
-    }
+    AssertParentRuleType();
 #endif
   }
+
+#ifdef DEBUG
+  void AssertParentRuleType();
+#endif
 
   Rule(const Rule& aCopy)
       : mSheet(aCopy.mSheet),
@@ -91,18 +89,28 @@ class Rule : public nsISupports, public nsWrapperCache {
   // thus measured elsewhere.
   virtual size_t SizeOfIncludingThis(MallocSizeOf) const MOZ_MUST_OVERRIDE = 0;
 
+  virtual StyleCssRuleType Type() const = 0;
+
   // WebIDL interface
-  virtual uint16_t Type() const = 0;
-  virtual void GetCssText(nsAString& aCssText) const = 0;
-  void SetCssText(const nsAString& aCssText);
+  uint16_t TypeForBindings() const {
+    auto type = uint16_t(Type());
+    // Per https://drafts.csswg.org/cssom/#dom-cssrule-type for constants > 15
+    // we return 0.
+    return type > 15 ? 0 : type;
+  }
+  virtual void GetCssText(nsACString& aCssText) const = 0;
+  void SetCssText(const nsACString& aCssText);
   Rule* GetParentRule() const;
   StyleSheet* GetParentStyleSheet() const { return GetStyleSheet(); }
-  nsINode* GetParentObject() const {
+  nsINode* GetAssociatedDocumentOrShadowRoot() const {
     if (!mSheet) {
       return nullptr;
     }
     auto* associated = mSheet->GetAssociatedDocumentOrShadowRoot();
     return associated ? &associated->AsNode() : nullptr;
+  }
+  nsISupports* GetParentObject() const {
+    return mSheet ? mSheet->GetRelevantGlobal() : nullptr;
   }
 
  protected:

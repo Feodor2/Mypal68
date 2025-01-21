@@ -4,11 +4,12 @@
 
 // Keep in (case-insensitive) order:
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGOuterSVGFrame.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGViewElement.h"
 #include "nsIFrame.h"
 #include "nsGkAtoms.h"
-#include "nsSVGOuterSVGFrame.h"
 
 using namespace mozilla::dom;
 
@@ -58,8 +59,8 @@ class SVGViewFrame final : public nsIFrame {
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override {
-    // We don't maintain a visual overflow rect
+  virtual bool ComputeCustomOverflow(OverflowAreas& aOverflowAreas) override {
+    // We don't maintain a ink overflow rect
     return false;
   }
 };
@@ -93,7 +94,7 @@ nsresult SVGViewFrame::AttributeChanged(int32_t aNameSpaceID,
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::preserveAspectRatio ||
        aAttribute == nsGkAtoms::viewBox)) {
-    nsSVGOuterSVGFrame* outerSVGFrame = nsSVGUtils::GetOuterSVGFrame(this);
+    SVGOuterSVGFrame* outerSVGFrame = SVGUtils::GetOuterSVGFrame(this);
     NS_ASSERTION(outerSVGFrame->GetContent()->IsSVGElement(nsGkAtoms::svg),
                  "Expecting an <svg> element");
 

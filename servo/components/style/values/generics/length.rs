@@ -6,7 +6,6 @@
 
 use crate::parser::{Parse, ParserContext};
 #[cfg(feature = "gecko")]
-use crate::values::computed::ExtremumLength;
 use crate::Zero;
 use cssparser::Parser;
 use style_traits::ParseError;
@@ -75,7 +74,7 @@ where
 {
     /// Resolves `auto` values by calling `f`.
     #[inline]
-    pub fn auto_is(&self, f: impl Fn() -> LengthPercentage) -> LengthPercentage {
+    pub fn auto_is(&self, f: impl FnOnce() -> LengthPercentage) -> LengthPercentage {
         match self {
             LengthPercentageOrAuto::LengthPercentage(length) => length.clone(),
             LengthPercentageOrAuto::Auto => f(),
@@ -151,9 +150,17 @@ impl<LengthPercentage: Parse> Parse for LengthPercentageOrAuto<LengthPercentage>
 pub enum GenericSize<LengthPercent> {
     LengthPercentage(LengthPercent),
     Auto,
-    #[cfg(feature = "gecko")]
     #[animation(error)]
-    ExtremumLength(ExtremumLength),
+    MaxContent,
+    #[animation(error)]
+    MinContent,
+    #[animation(error)]
+    FitContent,
+    #[animation(error)]
+    MozAvailable,
+    #[animation(error)]
+    #[css(function = "fit-content")]
+    FitContentFunction(LengthPercent),
 }
 
 pub use self::GenericSize as Size;
@@ -194,9 +201,17 @@ impl<LengthPercentage> Size<LengthPercentage> {
 pub enum GenericMaxSize<LengthPercent> {
     LengthPercentage(LengthPercent),
     None,
-    #[cfg(feature = "gecko")]
     #[animation(error)]
-    ExtremumLength(ExtremumLength),
+    MaxContent,
+    #[animation(error)]
+    MinContent,
+    #[animation(error)]
+    FitContent,
+    #[animation(error)]
+    MozAvailable,
+    #[animation(error)]
+    #[css(function = "fit-content")]
+    FitContentFunction(LengthPercent),
 }
 
 pub use self::GenericMaxSize as MaxSize;

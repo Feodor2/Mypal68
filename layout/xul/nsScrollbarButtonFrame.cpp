@@ -15,6 +15,7 @@
 #include "nsCOMPtr.h"
 #include "nsNameSpaceManager.h"
 #include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
 #include "nsSliderFrame.h"
 #include "nsScrollbarFrame.h"
 #include "nsIScrollbarMediator.h"
@@ -66,8 +67,8 @@ nsresult nsScrollbarButtonFrame::HandleEvent(nsPresContext* aPresContext,
       mCursorOnThis = false;
       break;
     case eMouseMove: {
-      nsPoint cursor =
-          nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, this);
+      nsPoint cursor = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+          aEvent, RelativeTo{this});
       nsRect frameRect(nsPoint(0, 0), GetSize());
       mCursorOnThis = frameRect.Contains(cursor);
       break;
@@ -123,7 +124,7 @@ bool nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   // set this attribute so we can style it later
   AutoWeakFrame weakFrame(this);
   mContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::active,
-                                 NS_LITERAL_STRING("true"), true);
+                                 u"true"_ns, true);
 
   PresShell::SetCapturingContent(mContent, CaptureFlags::IgnoreAllowedState);
 

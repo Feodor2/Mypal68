@@ -27,7 +27,7 @@ class MediaQueryList final : public DOMEventTargetHelper,
  public:
   // The caller who constructs is responsible for calling Evaluate
   // before calling any other methods.
-  MediaQueryList(Document* aDocument, const nsAString& aMediaQueryList,
+  MediaQueryList(Document* aDocument, const nsACString& aMediaQueryList,
                  CallerType aCallerType);
 
  private:
@@ -39,13 +39,16 @@ class MediaQueryList final : public DOMEventTargetHelper,
 
   nsISupports* GetParentObject() const;
 
-  void MaybeNotify();
+  // Returns whether we need to notify of the change event using
+  // FireChangeEvent().
+  [[nodiscard]] bool MediaFeatureValuesChanged();
+  void FireChangeEvent();
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL methods
-  void GetMedia(nsAString& aMedia);
+  void GetMedia(nsACString& aMedia);
   bool Matches();
   void AddListener(EventListener* aListener, ErrorResult& aRv);
   void RemoveListener(EventListener* aListener, ErrorResult& aRv);

@@ -84,23 +84,6 @@ nsMathMLFrame::UpdatePresentationData(uint32_t aFlagsValues,
   return NS_OK;
 }
 
-// Helper to give a ComputedStyle suitable for doing the stretching of
-// a MathMLChar. Frame classes that use this should ensure that the
-// extra leaf ComputedStyle given to the MathMLChars are accessible to
-// the Style System via the Get/Set AdditionalComputedStyle() APIs.
-/* static */
-void nsMathMLFrame::ResolveMathMLCharStyle(nsPresContext* aPresContext,
-                                           nsIContent* aContent,
-                                           ComputedStyle* aParentComputedStyle,
-                                           nsMathMLChar* aMathMLChar) {
-  PseudoStyleType pseudoType = PseudoStyleType::mozMathAnonymous;  // savings
-  RefPtr<ComputedStyle> newComputedStyle;
-  newComputedStyle = aPresContext->StyleSet()->ResolvePseudoElementStyle(
-      *aContent->AsElement(), pseudoType, aParentComputedStyle);
-
-  aMathMLChar->SetComputedStyle(newComputedStyle);
-}
-
 /* static */
 void nsMathMLFrame::GetEmbellishDataFrom(nsIFrame* aFrame,
                                          nsEmbellishData& aEmbellishData) {
@@ -221,6 +204,22 @@ nscoord nsMathMLFrame::CalcLength(nsPresContext* aPresContext,
   // MathML doesn't specify other CSS units such as rem or ch
   NS_ERROR("Unsupported unit");
   return 0;
+}
+
+/* static */
+void nsMathMLFrame::GetSubDropFromChild(nsIFrame* aChild, nscoord& aSubDrop,
+                                        float aFontSizeInflation) {
+  RefPtr<nsFontMetrics> fm =
+      nsLayoutUtils::GetFontMetricsForFrame(aChild, aFontSizeInflation);
+  GetSubDrop(fm, aSubDrop);
+}
+
+/* static */
+void nsMathMLFrame::GetSupDropFromChild(nsIFrame* aChild, nscoord& aSupDrop,
+                                        float aFontSizeInflation) {
+  RefPtr<nsFontMetrics> fm =
+      nsLayoutUtils::GetFontMetricsForFrame(aChild, aFontSizeInflation);
+  GetSupDrop(fm, aSupDrop);
 }
 
 /* static */

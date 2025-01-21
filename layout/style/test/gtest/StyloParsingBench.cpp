@@ -48,7 +48,7 @@ static void ServoParsingBench() {
   }
 }
 
-static constexpr uint16_t STYLE_RULE = 1;
+static constexpr auto STYLE_RULE = StyleCssRuleType::Style;
 
 static void ServoSetPropertyByIdBench(const nsACString& css) {
   RefPtr<RawServoDeclarationBlock> block =
@@ -85,8 +85,7 @@ static void ServoGetPropertyValueById() {
       eCompatibility_FullStandards, nullptr, STYLE_RULE, {});
 
   for (int i = 0; i < GETPROPERTY_REPETITIONS; i++) {
-    DOMString value_;
-    nsAString& value = value_;
+    nsAutoCString value;
     Servo_DeclarationBlock_GetPropertyValueById(block, eCSSProperty_width,
                                                 &value);
     ASSERT_TRUE(value.EqualsLiteral("10px"));

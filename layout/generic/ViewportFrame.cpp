@@ -280,7 +280,7 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
     // Deal with a non-incremental reflow or an incremental reflow
     // targeted at our one-and-only principal child frame.
     if (aReflowInput.ShouldReflowAllKids() || aReflowInput.IsBResize() ||
-        NS_SUBTREE_DIRTY(mFrames.FirstChild())) {
+        mFrames.FirstChild()->IsSubtreeDirty()) {
       // Reflow our one-and-only principal child frame
       nsIFrame* kidFrame = mFrames.FirstChild();
       ReflowOutput kidDesiredSize(aReflowInput);
@@ -397,6 +397,6 @@ nsSize ViewportFrame::AdjustViewportSizeForFixedPosition(
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult ViewportFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Viewport"), aResult);
+  return MakeFrameName(u"Viewport"_ns, aResult);
 }
 #endif

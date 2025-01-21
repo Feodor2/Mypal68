@@ -12,13 +12,13 @@
 #include "nsPresContext.h"
 #include "mozilla/dom/Document.h"
 
-#define ONCHANGE_STRING NS_LITERAL_STRING("change")
+#define ONCHANGE_STRING u"change"_ns
 
 namespace mozilla {
 namespace dom {
 
 MediaQueryList::MediaQueryList(Document* aDocument,
-                               const nsAString& aMediaQueryList,
+                               const nsACString& aMediaQueryList,
                                CallerType aCallerType)
     : DOMEventTargetHelper(aDocument->GetInnerWindow()),
       mDocument(aDocument),
@@ -54,7 +54,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(MediaQueryList, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(MediaQueryList, DOMEventTargetHelper)
 
-void MediaQueryList::GetMedia(nsAString& aMedia) {
+void MediaQueryList::GetMedia(nsACString& aMedia) {
   mMediaList->GetText(aMedia);
 }
 
@@ -129,21 +129,20 @@ JSObject* MediaQueryList::WrapObject(JSContext* aCx,
   return MediaQueryList_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void MediaQueryList::MaybeNotify() {
+bool MediaQueryList::MediaFeatureValuesChanged() {
   mMatchesValid = false;
 
   if (!HasListeners()) {
-    return;
+    return false;  // No need to recompute or notify if we have no listeners.
   }
 
   bool oldMatches = mMatches;
   RecomputeMatches();
 
-  // No need to notify the change.
-  if (mMatches == oldMatches) {
-    return;
-  }
+  return mMatches != oldMatches;
+}
 
+void MediaQueryList::FireChangeEvent() {
   MediaQueryListEventInit init;
   init.mBubbles = false;
   init.mCancelable = false;

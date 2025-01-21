@@ -19,7 +19,7 @@ use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::media_queries::MediaList;
 use style::parser::ParserContext;
 use style::shared_lock::{Locked, SharedRwLock};
-use style::stylesheets::import_rule::ImportSheet;
+use style::stylesheets::import_rule::{ImportSheet, ImportLayer};
 use style::stylesheets::AllowImportRules;
 use style::stylesheets::{ImportRule, Origin, StylesheetLoader as StyleStylesheetLoader};
 use style::stylesheets::{StylesheetContents, UrlExtraData};
@@ -51,6 +51,7 @@ impl StyleStylesheetLoader for StylesheetLoader {
         _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
+        layer: Option<ImportLayer>,
     ) -> Arc<Locked<ImportRule>> {
         // After we get this raw pointer ImportRule will be moved into a lock and Arc
         // and so the Arc<Url> pointer inside will also move,
@@ -69,8 +70,9 @@ impl StyleStylesheetLoader for StylesheetLoader {
         let stylesheet = ImportSheet::new(sheet);
         Arc::new(lock.wrap(ImportRule {
             url,
-            source_location,
             stylesheet,
+            layer,
+            source_location,
         }))
     }
 }
@@ -113,7 +115,7 @@ impl AsyncStylesheetParser {
         // Note: Parallel CSS parsing doesn't report CSS errors. When errors
         // are being logged, Gecko prevents the parallel parsing path from
         // running.
-        let sheet = Arc::new(StylesheetContents::from_str(
+        let sheet = StylesheetContents::from_str(
             input,
             self.extra_data.clone(),
             self.origin,
@@ -124,7 +126,7 @@ impl AsyncStylesheetParser {
             self.line_number_offset,
             self.allow_import_rules,
             /* sanitized_output = */ None,
-        ));
+        );
 
         unsafe {
             bindings::Gecko_StyleSheet_FinishAsyncParse(
@@ -143,12 +145,14 @@ impl StyleStylesheetLoader for AsyncStylesheetParser {
         _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
+        layer: Option<ImportLayer>,
     ) -> Arc<Locked<ImportRule>> {
-        let stylesheet = ImportSheet::new_pending(self.origin, self.quirks_mode);
+        let stylesheet = ImportSheet::new_pending();
         let rule = Arc::new(lock.wrap(ImportRule {
             url: url.clone(),
-            source_location,
             stylesheet,
+            layer,
+            source_location,
         }));
 
         unsafe {

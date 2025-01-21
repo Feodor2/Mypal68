@@ -48,9 +48,7 @@ static IntrinsicSize IntrinsicSizeFromCanvasSize(
  * "GetCanvasSize()" as a parameter, which may help avoid redundant
  * indirect calls to GetCanvasSize().
  *
- * @param aCanvasSizeInPx The canvas's size in CSS pixels, as returned
- *                        by GetCanvasSize().
- * @return The canvas's intrinsic ratio, as a nsSize.
+ * @return The canvas's intrinsic ratio.
  */
 static AspectRatio IntrinsicRatioFromCanvasSize(
     const nsIntSize& aCanvasSizeInPx) {
@@ -243,7 +241,7 @@ void nsHTMLCanvasFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 nsHTMLCanvasFrame::~nsHTMLCanvasFrame() = default;
 
-nsIntSize nsHTMLCanvasFrame::GetCanvasSize() {
+nsIntSize nsHTMLCanvasFrame::GetCanvasSize() const {
   nsIntSize size(0, 0);
   HTMLCanvasElement* canvas = HTMLCanvasElement::FromNodeOrNull(GetContent());
   if (canvas) {
@@ -299,33 +297,24 @@ IntrinsicSize nsHTMLCanvasFrame::GetIntrinsicSize() {
 }
 
 /* virtual */
-AspectRatio nsHTMLCanvasFrame::GetIntrinsicRatio() {
+AspectRatio nsHTMLCanvasFrame::GetIntrinsicRatio() const {
   if (StyleDisplay()->IsContainSize()) {
     return AspectRatio();
   }
+
   return IntrinsicRatioFromCanvasSize(GetCanvasSize());
 }
 
 /* virtual */
-LogicalSize nsHTMLCanvasFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsHTMLCanvasFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
-  IntrinsicSize intrinsicSize;
-  AspectRatio intrinsicRatio;
-  if (StyleDisplay()->IsContainSize()) {
-    intrinsicSize = IntrinsicSize(0, 0);
-    // intrinsicRatio is already implicitly zero via default ctor.
-  } else {
-    nsIntSize canvasSizeInPx = GetCanvasSize();
-    intrinsicSize = IntrinsicSizeFromCanvasSize(canvasSizeInPx);
-    intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
-  }
-
-  return ComputeSizeWithIntrinsicDimensions(
-      aRenderingContext, aWM, intrinsicSize, intrinsicRatio, aCBSize, aMargin,
-      aBorder, aPadding, aFlags);
+  return {ComputeSizeWithIntrinsicDimensions(
+              aRenderingContext, aWM, GetIntrinsicSize(), GetAspectRatio(),
+              aCBSize, aMargin, aBorderPadding, aSizeOverrides, aFlags),
+          AspectRatioUsage::None};
 }
 
 void nsHTMLCanvasFrame::Reflow(nsPresContext* aPresContext,
@@ -347,7 +336,7 @@ void nsHTMLCanvasFrame::Reflow(nsPresContext* aPresContext,
   LogicalSize finalSize = aReflowInput.ComputedSize();
 
   // stash this away so we can compute our inner area later
-  mBorderPadding = aReflowInput.ComputedLogicalBorderPadding();
+  mBorderPadding = aReflowInput.ComputedLogicalBorderPadding(wm);
 
   finalSize.ISize(wm) += mBorderPadding.IStartEnd(wm);
   finalSize.BSize(wm) += mBorderPadding.BStartEnd(wm);
@@ -513,6 +502,6 @@ a11y::AccType nsHTMLCanvasFrame::AccessibleType() {
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsHTMLCanvasFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("HTMLCanvas"), aResult);
+  return MakeFrameName(u"HTMLCanvas"_ns, aResult);
 }
 #endif

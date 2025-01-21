@@ -191,7 +191,7 @@ class nsTableColGroupFrame final : public nsContainerFrame {
                                   BCPixelSize aPixelValue);
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & eSupportsContainLayoutAndPaint) {
+    if (aFlags & (eSupportsContainLayoutAndPaint | eSupportsAspectRatio)) {
       return false;
     }
 
@@ -213,8 +213,8 @@ class nsTableColGroupFrame final : public nsContainerFrame {
 
   void InsertColsReflow(int32_t aColIndex, const nsFrameList::Slice& aCols);
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides(
+      const Maybe<SkipSidesDuringReflow>& = Nothing()) const override;
 
   // data members
   int32_t mColCount;

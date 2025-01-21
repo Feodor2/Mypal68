@@ -8,10 +8,8 @@ ${helpers.two_properties_shorthand(
     "overflow",
     "overflow-x",
     "overflow-y",
-    "specified::Overflow::parse",
     engines="gecko servo-2013 servo-2020",
     flags="SHORTHAND_IN_GETCS",
-    needs_context=False,
     spec="https://drafts.csswg.org/css-overflow/#propdef-overflow",
 )}
 
@@ -19,10 +17,8 @@ ${helpers.two_properties_shorthand(
     "overflow-clip-box",
     "overflow-clip-box-block",
     "overflow-clip-box-inline",
-    "specified::OverflowClipBox::parse",
     engines="gecko",
     enabled_in="ua",
-    needs_context=False,
     gecko_pref="layout.css.overflow-clip-box.enabled",
     spec="Internal, may be standardized in the future "
          "(https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-clip-box)",
@@ -194,7 +190,7 @@ macro_rules! try_parse_one {
                                     animation-timing-function animation-delay
                                     animation-iteration-count animation-direction
                                     animation-fill-mode animation-play-state"
-                    allowed_in_keyframe_block="False"
+                    rule_types_allowed="Style"
                     spec="https://drafts.csswg.org/css-animations/#propdef-animation">
     <%
         props = "name duration timing_function delay iteration_count \
@@ -310,9 +306,7 @@ ${helpers.two_properties_shorthand(
     "overscroll-behavior",
     "overscroll-behavior-x",
     "overscroll-behavior-y",
-    "specified::OverscrollBehavior::parse",
     engines="gecko",
-    needs_context=False,
     gecko_pref="layout.css.overscroll-behavior.enabled",
     spec="https://wicg.github.io/overscroll-behavior/#overscroll-behavior-properties",
 )}
@@ -322,15 +316,15 @@ ${helpers.two_properties_shorthand(
     name="page-break-before"
     flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
     sub_properties="break-before"
-    spec="https://drafts.csswg.org/css2/page.html#propdef-page-break-before"
+    spec="https://drafts.csswg.org/css-break-3/#page-break-properties"
 >
     pub fn parse_value<'i>(
-        _: &ParserContext,
+        context: &ParserContext,
         input: &mut Parser<'i, '_>,
     ) -> Result<Longhands, ParseError<'i>> {
         use crate::values::specified::box_::BreakBetween;
         Ok(expanded! {
-            break_before: BreakBetween::parse_legacy(input)?,
+            break_before: BreakBetween::parse_legacy(context, input)?,
         })
     }
 
@@ -346,21 +340,45 @@ ${helpers.two_properties_shorthand(
     name="page-break-after"
     flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
     sub_properties="break-after"
-    spec="https://drafts.csswg.org/css2/page.html#propdef-page-break-after"
+    spec="https://drafts.csswg.org/css-break-3/#page-break-properties"
 >
     pub fn parse_value<'i>(
-        _: &ParserContext,
+        context: &ParserContext,
         input: &mut Parser<'i, '_>,
     ) -> Result<Longhands, ParseError<'i>> {
         use crate::values::specified::box_::BreakBetween;
         Ok(expanded! {
-            break_after: BreakBetween::parse_legacy(input)?,
+            break_after: BreakBetween::parse_legacy(context, input)?,
         })
     }
 
     impl<'a> ToCss for LonghandsToSerialize<'a> {
         fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
             self.break_after.to_css_legacy(dest)
+        }
+    }
+</%helpers:shorthand>
+
+<%helpers:shorthand
+    engines="gecko"
+    name="page-break-inside"
+    flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
+    sub_properties="break-inside"
+    spec="https://drafts.csswg.org/css-break-3/#page-break-properties"
+>
+    pub fn parse_value<'i>(
+        context: &ParserContext,
+        input: &mut Parser<'i, '_>,
+    ) -> Result<Longhands, ParseError<'i>> {
+        use crate::values::specified::box_::BreakWithin;
+        Ok(expanded! {
+            break_inside: BreakWithin::parse_legacy(context, input)?,
+        })
+    }
+
+    impl<'a> ToCss for LonghandsToSerialize<'a> {
+        fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
+            self.break_inside.to_css_legacy(dest)
         }
     }
 </%helpers:shorthand>

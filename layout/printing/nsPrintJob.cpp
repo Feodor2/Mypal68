@@ -8,10 +8,12 @@
 #include "nsCRT.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/ResultExtensions.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/StaticPrefs_print.h"
 #include "nsIOService.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
@@ -160,33 +162,26 @@ static void DumpPrintObjectsTreeLayout(const UniquePtr<nsPrintObject>& aPO,
 #  define DUMP_DOC_TREELAYOUT
 #endif
 
-class nsScriptSuppressor {
- public:
-  explicit nsScriptSuppressor(nsPrintJob* aPrintJob)
-      : mPrintJob(aPrintJob), mSuppressed(false) {}
+static bool CollectDocuments(Document& aDoc,
+                                  nsTArray<nsCOMPtr<Document>>& aDocs) {
+  aDocs.AppendElement(&aDoc);
+  auto recurse = [&aDocs](Document& aSubDoc) {
+    return CollectDocuments(aSubDoc, aDocs);
+  };
+  aDoc.EnumerateSubDocuments(recurse);
+  return true;
+}
 
-  ~nsScriptSuppressor() { Unsuppress(); }
-
-  void Suppress() {
-    if (mPrintJob) {
-      mSuppressed = true;
-      mPrintJob->TurnScriptingOn(false);
-    }
+MOZ_CAN_RUN_SCRIPT
+static void DispatchEventToWindowTree(Document& aDoc, const nsAString& aEvent) {
+  nsTArray<nsCOMPtr<Document>> targets;
+  CollectDocuments(aDoc, targets);
+  for (nsCOMPtr<Document>& doc : targets) {
+    nsContentUtils::DispatchTrustedEvent(doc, doc->GetWindow(), aEvent,
+                                         CanBubble::eNo, Cancelable::eNo,
+                                         nullptr);
   }
-
-  void Unsuppress() {
-    if (mPrintJob && mSuppressed) {
-      mPrintJob->TurnScriptingOn(true);
-    }
-    mSuppressed = false;
-  }
-
-  void Disconnect() { mPrintJob = nullptr; }
-
- protected:
-  RefPtr<nsPrintJob> mPrintJob;
-  bool mSuppressed;
-};
+}
 
 // -------------------------------------------------------
 // Helpers
@@ -262,10 +257,11 @@ static nsPrintObject* FindPrintObjectByDOMWin(nsPrintObject* aPO,
   return nullptr;
 }
 
-static nsresult GetSeqFrameAndCountPagesInternal(
-    const UniquePtr<nsPrintObject>& aPO, nsIFrame*& aSeqFrame,
-    int32_t& aCount) {
-  NS_ENSURE_ARG_POINTER(aPO);
+static std::tuple<nsPageSequenceFrame*, int32_t>
+GetSeqFrameAndCountPagesInternal(const UniquePtr<nsPrintObject>& aPO) {
+  if (!aPO) {
+    return {nullptr, 0};
+  }
 
   // This is sometimes incorrectly called before the pres shell has been created
   // (bug 1141756). MOZ_DIAGNOSTIC_ASSERT so we'll still see the crash in
@@ -273,130 +269,16 @@ static nsresult GetSeqFrameAndCountPagesInternal(
   if (!aPO->mPresShell) {
     MOZ_DIAGNOSTIC_ASSERT(
         false, "GetSeqFrameAndCountPages needs a non-null pres shell");
-    return NS_ERROR_FAILURE;
+    return {nullptr, 0};
   }
 
-  aSeqFrame = aPO->mPresShell->GetPageSequenceFrame();
-  if (!aSeqFrame) {
-    return NS_ERROR_FAILURE;
+  nsPageSequenceFrame* seqFrame = aPO->mPresShell->GetPageSequenceFrame();
+  if (!seqFrame) {
+    return {nullptr, 0};
   }
 
   // count the total number of pages
-  aCount = aSeqFrame->PrincipalChildList().GetLength();
-
-  return NS_OK;
-}
-
-/**
- * Recursively sets the PO items to be printed "As Is"
- * from the given item down into the treei
- */
-static void SetPrintAsIs(nsPrintObject* aPO, bool aAsIs = true) {
-  NS_ASSERTION(aPO, "Pointer is null!");
-
-  aPO->mPrintAsIs = aAsIs;
-  for (const UniquePtr<nsPrintObject>& kid : aPO->mKids) {
-    SetPrintAsIs(kid.get(), aAsIs);
-  }
-}
-
-/**
- * This method is key to the entire print mechanism.
- *
- * This "maps" or figures out which sub-doc represents a
- * given Frame or IFrame in its parent sub-doc.
- *
- * So the Mcontent pointer in the child sub-doc points to the
- * content in the its parent document, that caused it to be printed.
- * This is used later to (after reflow) to find the absolute location
- * of the sub-doc on its parent's page frame so it can be
- * printed in the correct location.
- *
- * This method recursvely "walks" the content for a document finding
- * all the Frames and IFrames, then sets the "mFrameType" data member
- * which tells us what type of PO we have
- */
-static void MapContentForPO(const UniquePtr<nsPrintObject>& aPO,
-                            nsIContent* aContent) {
-  MOZ_ASSERT(aPO && aContent, "Null argument");
-
-  Document* doc = aContent->GetComposedDoc();
-
-  NS_ASSERTION(doc, "Content without a document from a document tree?");
-
-  Document* subDoc = doc->GetSubDocumentFor(aContent);
-
-  if (subDoc) {
-    nsCOMPtr<nsIDocShell> docShell(subDoc->GetDocShell());
-
-    if (docShell) {
-      nsPrintObject* po = nullptr;
-      for (const UniquePtr<nsPrintObject>& kid : aPO->mKids) {
-        if (kid->mDocument == subDoc) {
-          po = kid.get();
-          break;
-        }
-      }
-
-      // XXX If a subdocument has no onscreen presentation, there will be no PO
-      //     This is even if there should be a print presentation
-      if (po) {
-        // "frame" elements not in a frameset context should be treated
-        // as iframes
-        if (aContent->IsHTMLElement(nsGkAtoms::frame) &&
-            po->mParent->mFrameType == eFrameSet) {
-          po->mFrameType = eFrame;
-        } else {
-          // Assume something iframe-like, i.e. iframe, object, or embed
-          po->mFrameType = eIFrame;
-          SetPrintAsIs(po, true);
-          NS_ASSERTION(po->mParent, "The root must be a parent");
-          po->mParent->mPrintAsIs = true;
-        }
-      }
-    }
-  }
-
-  // walk children content
-  for (nsIContent* child = aContent->GetFirstChild(); child;
-       child = child->GetNextSibling()) {
-    MapContentForPO(aPO, child);
-  }
-}
-
-/**
- * The walks the PO tree and for each document it walks the content
- * tree looking for any content that are sub-shells
- *
- * It then sets the mContent pointer in the "found" PO object back to the
- * the document that contained it.
- */
-static void MapContentToWebShells(const UniquePtr<nsPrintObject>& aRootPO,
-                                  const UniquePtr<nsPrintObject>& aPO) {
-  NS_ASSERTION(aRootPO, "Pointer is null!");
-  NS_ASSERTION(aPO, "Pointer is null!");
-
-  // Recursively walk the content from the root item
-  // XXX Would be faster to enumerate the subdocuments, although right now
-  //     Document doesn't expose quite what would be needed.
-  nsCOMPtr<nsIContentViewer> viewer;
-  aPO->mDocShell->GetContentViewer(getter_AddRefs(viewer));
-  if (!viewer) return;
-
-  nsCOMPtr<Document> doc = viewer->GetDocument();
-  if (!doc) return;
-
-  Element* rootElement = doc->GetRootElement();
-  if (rootElement) {
-    MapContentForPO(aPO, rootElement);
-  } else {
-    NS_WARNING("Null root content on (sub)document.");
-  }
-
-  // Continue recursively walking the chilren of this PO
-  for (const UniquePtr<nsPrintObject>& kid : aPO->mKids) {
-    MapContentToWebShells(aRootPO, kid);
-  }
+  return {seqFrame, seqFrame->PrincipalChildList().GetLength()};
 }
 
 /**
@@ -440,37 +322,6 @@ static nsresult EnsureSettingsHasPrinterNameSet(
   }
   return rv;
 #endif
-}
-
-static bool DocHasPrintCallbackCanvas(Document& aDoc) {
-  Element* root = aDoc.GetRootElement();
-  if (!root) {
-    return false;
-  }
-  // FIXME(emilio): This doesn't account for shadow dom and it's unnecessarily
-  // inefficient. Though I guess it doesn't really matter.
-  RefPtr<nsContentList> canvases =
-      NS_GetContentList(root, kNameSpaceID_XHTML, NS_LITERAL_STRING("canvas"));
-  uint32_t canvasCount = canvases->Length(true);
-  for (uint32_t i = 0; i < canvasCount; ++i) {
-    auto* canvas = HTMLCanvasElement::FromNodeOrNull(canvases->Item(i, false));
-    if (canvas && canvas->GetMozPrintCallback()) {
-      return true;
-    }
-  }
-
-  bool result = false;
-
-  auto checkSubDoc = [&result](Document& aSubDoc) {
-    if (DocHasPrintCallbackCanvas(aSubDoc)) {
-      result = true;
-      return false;
-    }
-    return true;
-  };
-
-  aDoc.EnumerateSubDocuments(checkSubDoc);
-  return result;
 }
 
 //-------------------------------------------------------
@@ -540,8 +391,6 @@ nsresult nsPrintJob::Initialize(nsIDocumentViewerPrint* aDocViewerPrint,
     browserChrome->IsWindowModal(&mIsForModalWindow);
   }
 
-  mHasMozPrintCallback = DocHasPrintCallbackCanvas(*aOriginalDoc);
-
   return NS_OK;
 }
 
@@ -573,14 +422,14 @@ void nsPrintJob::SuppressPrintPreviewUserEvents() {
 }
 
 //-----------------------------------------------------------------
-nsresult nsPrintJob::GetSeqFrameAndCountPages(nsIFrame*& aSeqFrame,
-                                              int32_t& aCount) {
+std::tuple<nsPageSequenceFrame*, int32_t>
+nsPrintJob::GetSeqFrameAndCountPages() {
   MOZ_ASSERT(mPrtPreview);
   // Guarantee that mPrintPreview->mPrintObject won't be deleted during a call
   // of GetSeqFrameAndCountPagesInternal().
   RefPtr<nsPrintData> printDataForPrintPreview = mPrtPreview;
   return GetSeqFrameAndCountPagesInternal(
-      printDataForPrintPreview->mPrintObject, aSeqFrame, aCount);
+      printDataForPrintPreview->mPrintObject);
 }
 //---------------------------------------------------------------------------------
 //-- Done: Methods needed by the DocViewer
@@ -644,49 +493,110 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
                                    Document* aSourceDoc) {
   nsresult rv;
 
+  // Grab the new instance with local variable to guarantee that it won't be
+  // deleted during this method.
+  // Note: Methods we call early below rely on mPrt being set.
+  mPrt = new nsPrintData(aIsPrintPreview ? nsPrintData::eIsPrintPreview
+                                         : nsPrintData::eIsPrinting);
+  RefPtr<nsPrintData> printData = mPrt;
+
   if (aIsPrintPreview) {
     // The WebProgressListener can be QI'ed to nsIPrintingPromptService
     // then that means the progress dialog is already being shown.
     nsCOMPtr<nsIPrintingPromptService> pps(
         do_QueryInterface(aWebProgressListener));
     mProgressDialogIsShown = pps != nullptr;
-  } else {
-    mProgressDialogIsShown = false;
-  }
 
-  // Grab the new instance with local variable to guarantee that it won't be
-  // deleted during this method.
-  mPrt = new nsPrintData(aIsPrintPreview ? nsPrintData::eIsPrintPreview
-                                         : nsPrintData::eIsPrinting);
-  RefPtr<nsPrintData> printData = mPrt;
+    mIsCreatingPrintPreview = true;
 
-  // if they don't pass in a PrintSettings, then get the Global PS
-  printData->mPrintSettings = aPrintSettings;
-  if (!printData->mPrintSettings) {
-    rv = GetGlobalPrintSettings(getter_AddRefs(printData->mPrintSettings));
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  rv = EnsureSettingsHasPrinterNameSet(printData->mPrintSettings);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  printData->mPrintSettings->SetIsCancelled(false);
-  printData->mPrintSettings->GetShrinkToFit(&printData->mShrinkToFit);
-
-  if (aIsPrintPreview) {
     // Our new print preview nsPrintData is stored in mPtr until we move it
     // to mPrtPreview once we've finish creating the print preview. We must
     // clear mPtrPreview so that code will use mPtr until that happens.
     mPrtPreview = nullptr;
-
-    mIsCreatingPrintPreview = true;
-    SetIsPrintPreview(true);
     nsCOMPtr<nsIContentViewer> viewer = do_QueryInterface(mDocViewerPrint);
     if (viewer) {
       viewer->SetTextZoom(1.0f);
       viewer->SetFullZoom(1.0f);
     }
+
+    // ensures docShell tree navigation in frozen
+    SetIsPrintPreview(true);
+  } else {
+    mProgressDialogIsShown = false;
+
+    // ensures docShell tree navigation in frozen
+    SetIsPrinting(true);
   }
+
+  if (aWebProgressListener) {
+    printData->mPrintProgressListeners.AppendObject(aWebProgressListener);
+  }
+
+  // Get the currently focused window and cache it
+  // because the Print Dialog will "steal" focus and later when you try
+  // to get the currently focused windows it will be nullptr
+  printData->mCurrentFocusWin = FindFocusedDOMWindow();
+
+  // Get the docshell for this documentviewer
+  nsCOMPtr<nsIDocShell> docShell(do_QueryReferent(mDocShell, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!aSourceDoc->IsStaticDocument()) {
+    // This is the original document.  We must send 'beforeprint' and
+    // 'afterprint' events to give the document the chance to make changes
+    // for print output.  (Obviously if `aSourceDoc` is a clone, it already
+    // has these changes.)
+    DispatchEventToWindowTree(*aSourceDoc, u"beforeprint"_ns);
+    if (mIsDestroying) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  {
+    nsAutoScriptBlocker scriptBlocker;
+    printData->mPrintObject = MakeUnique<nsPrintObject>();
+    rv = printData->mPrintObject->InitAsRootObject(docShell, aSourceDoc,
+                                                   mIsCreatingPrintPreview);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    printData->mPrintDocList.AppendElement(printData->mPrintObject.get());
+
+    printData->mIsParentAFrameSet = IsParentAFrameSet(docShell);
+    printData->mPrintObject->mFrameType =
+        printData->mIsParentAFrameSet ? eFrameSet : eDoc;
+
+    // Build the "tree" of PrintObjects
+    BuildDocTree(printData->mPrintObject->mDocShell, &printData->mPrintDocList,
+                 printData->mPrintObject);
+  }
+
+  if (!aSourceDoc->IsStaticDocument()) {
+    DispatchEventToWindowTree(*aSourceDoc, u"afterprint"_ns);
+  }
+
+  // The nsAutoScriptBlocker above will now have been destroyed, which may
+  // cause our print/print-preview operation to finish. In this case, we
+  // should immediately return an error code so that the root caller knows
+  // it shouldn't continue to do anything with this instance.
+  if (mIsDestroying) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // XXX This isn't really correct...
+  if (!printData->mPrintObject->mDocument ||
+      !printData->mPrintObject->mDocument->GetRootElement())
+    return NS_ERROR_GFX_PRINTER_STARTDOC;
+
+  // if they don't pass in a PrintSettings, then get the Global PS
+  printData->mPrintSettings = aPrintSettings;
+  if (!printData->mPrintSettings) {
+    MOZ_TRY(GetGlobalPrintSettings(getter_AddRefs(printData->mPrintSettings)));
+  }
+
+  MOZ_TRY(EnsureSettingsHasPrinterNameSet(printData->mPrintSettings));
+
+  printData->mPrintSettings->SetIsCancelled(false);
+  printData->mPrintSettings->GetShrinkToFit(&printData->mShrinkToFit);
 
   // Create a print session and let the print settings know about it.
   // Don't overwrite an existing print session.
@@ -695,7 +605,7 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
   // XXX What lifetime does the printSession need to have?
   nsCOMPtr<nsIPrintSession> printSession;
   bool remotePrintJobListening = false;
-  if (!aIsPrintPreview) {
+  if (!mIsCreatingPrintPreview) {
     rv = printData->mPrintSettings->GetPrintSession(
         getter_AddRefs(printSession));
     if (NS_FAILED(rv) || !printSession) {
@@ -714,68 +624,12 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
     }
   }
 
-  if (aWebProgressListener != nullptr) {
-    printData->mPrintProgressListeners.AppendObject(aWebProgressListener);
-  }
-
-  // Get the currently focused window and cache it
-  // because the Print Dialog will "steal" focus and later when you try
-  // to get the currently focused windows it will be nullptr
-  printData->mCurrentFocusWin = FindFocusedDOMWindow();
-
-  // Check to see if there is a "regular" selection
-  bool isSelection = IsThereARangeSelection(printData->mCurrentFocusWin);
-
-  // Get the docshell for this documentviewer
-  nsCOMPtr<nsIDocShell> docShell(do_QueryReferent(mDocShell, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  {
-    nsAutoScriptBlocker scriptBlocker;
-    printData->mPrintObject = MakeUnique<nsPrintObject>();
-    rv = printData->mPrintObject->InitAsRootObject(docShell, aSourceDoc,
-                                                   aIsPrintPreview);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    printData->mPrintDocList.AppendElement(printData->mPrintObject.get());
-
-    printData->mIsParentAFrameSet = IsParentAFrameSet(docShell);
-    printData->mPrintObject->mFrameType =
-        printData->mIsParentAFrameSet ? eFrameSet : eDoc;
-
-    // Build the "tree" of PrintObjects
-    BuildDocTree(printData->mPrintObject->mDocShell, &printData->mPrintDocList,
-                 printData->mPrintObject);
-  }
-
-  // The nsAutoScriptBlocker above will now have been destroyed, which may
-  // cause our print/print-preview operation to finish. In this case, we
-  // should immediately return an error code so that the root caller knows
-  // it shouldn't continue to do anything with this instance.
-  if (mIsDestroying || (aIsPrintPreview && !mIsCreatingPrintPreview)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!aIsPrintPreview) {
-    SetIsPrinting(true);
-  }
-
-  // XXX This isn't really correct...
-  if (!printData->mPrintObject->mDocument ||
-      !printData->mPrintObject->mDocument->GetRootElement())
-    return NS_ERROR_GFX_PRINTER_STARTDOC;
-
-  // Create the linkage from the sub-docs back to the content element
-  // in the parent document
-  MapContentToWebShells(printData->mPrintObject, printData->mPrintObject);
-
-  printData->mIsIFrameSelected = IsThereAnIFrameSelected(
-      docShell, printData->mCurrentFocusWin, printData->mIsParentAFrameSet);
-
   // Now determine how to set up the Frame print UI
+  bool isSelection = IsThereARangeSelection(printData->mCurrentFocusWin);
+  bool isIFrameSelected = IsThereAnIFrameSelected(
+      docShell, printData->mCurrentFocusWin, printData->mIsParentAFrameSet);
   printData->mPrintSettings->SetPrintOptions(
-      nsIPrintSettings::kEnableSelectionRB,
-      isSelection || printData->mIsIFrameSelected);
+      nsIPrintSettings::kEnableSelectionRB, isSelection || isIFrameSelected);
 
   bool printingViaParent =
       XRE_IsContentProcess() && Preferences::GetBool("print.print_via_parent");
@@ -787,19 +641,16 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  nsScriptSuppressor scriptSuppressor(this);
   // If printing via parent we still call ShowPrintDialog even for print preview
   // because we use that to retrieve the print settings from the printer.
   // The dialog is not shown, but this means we don't need to access the printer
   // driver from the child, which causes sandboxing issues.
-  if (!aIsPrintPreview || printingViaParent) {
-    scriptSuppressor.Suppress();
-    bool printSilently;
+  if (!mIsCreatingPrintPreview || printingViaParent) {
+    bool printSilently = false;
     printData->mPrintSettings->GetPrintSilent(&printSilently);
-
-    // Check prefs for a default setting as to whether we should print silently
-    printSilently =
-        Preferences::GetBool("print.always_print_silent", printSilently);
+    if (StaticPrefs::print_always_print_silent()) {
+      printSilently = true;
+    }
 
     // Ask dialog to be Print Shown via the Plugable Printing Dialog Service
     // This service is for the Print Dialog and the Print Progress Dialog
@@ -812,7 +663,7 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
       if (printPromptService) {
         nsPIDOMWindowOuter* domWin = nullptr;
         // We leave domWin as nullptr to indicate a call for print preview.
-        if (!aIsPrintPreview) {
+        if (!mIsCreatingPrintPreview) {
           domWin = mOriginalDoc->GetWindow();
           NS_ENSURE_TRUE(domWin, NS_ERROR_FAILURE);
         }
@@ -838,7 +689,7 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
           // are telling GFX we want to print silent
           printSilently = true;
 
-          if (printData->mPrintSettings && !aIsPrintPreview) {
+          if (printData->mPrintSettings && !mIsCreatingPrintPreview) {
             // The user might have changed shrink-to-fit in the print dialog, so
             // update our copy of its state
             printData->mPrintSettings->GetShrinkToFit(&printData->mShrinkToFit);
@@ -874,12 +725,11 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  rv = devspec->Init(nullptr, printData->mPrintSettings, aIsPrintPreview);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(devspec->Init(nullptr, printData->mPrintSettings,
+                        mIsCreatingPrintPreview));
 
   printData->mPrintDC = new nsDeviceContext();
-  rv = printData->mPrintDC->InitForPrinting(devspec);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(printData->mPrintDC->InitForPrinting(devspec));
 
   if (XRE_IsParentProcess() && !printData->mPrintDC->IsSyncPagePrinting()) {
     RefPtr<nsPrintJob> self(this);
@@ -887,15 +737,14 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
         [self](nsresult aResult) { self->PageDone(aResult); });
   }
 
-  if (aIsPrintPreview) {
-    // override any UI that wants to PrintPreview any selection or page range
-    // we want to view every page in PrintPreview each time
+  if (mIsCreatingPrintPreview) {
+    // In legacy print-preview mode, override any UI that wants to PrintPreview
+    // any selection or page range.  The legacy print-preview intends to view
+    // every page in PrintPreview each time.
     printData->mPrintSettings->SetPrintRange(nsIPrintSettings::kRangeAllPages);
   }
 
-  if (NS_FAILED(EnablePOsForPrinting())) {
-    return NS_ERROR_FAILURE;
-  }
+  MOZ_TRY(EnablePOsForPrinting());
 
   // Attach progressListener to catch network requests.
   nsCOMPtr<nsIWebProgress> webProgress =
@@ -906,12 +755,9 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
   mLoadCounter = 0;
   mDidLoadDataForPrinting = false;
 
-  if (aIsPrintPreview) {
+  if (mIsCreatingPrintPreview) {
     bool notifyOnInit = false;
     ShowPrintProgress(false, notifyOnInit);
-
-    // Very important! Turn Off scripting
-    TurnScriptingOn(false);
 
     if (!notifyOnInit) {
       SuppressPrintPreviewUserEvents();
@@ -929,9 +775,6 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
       rv = InitPrintDocConstruction(false);
     }
   }
-
-  // We will enable scripting later after printing has finished.
-  scriptSuppressor.Disconnect();
 
   return NS_OK;
 }
@@ -970,29 +813,6 @@ nsresult nsPrintJob::PrintPreview(
 }
 
 //----------------------------------------------------------------------------------
-bool nsPrintJob::IsIFrameSelected() {
-  // Get the docshell for this documentviewer
-  nsCOMPtr<nsIDocShell> docShell(do_QueryReferent(mDocShell));
-  // Get the currently focused window
-  nsCOMPtr<nsPIDOMWindowOuter> currentFocusWin = FindFocusedDOMWindow();
-  if (currentFocusWin && docShell) {
-    // Get whether the doc contains a frameset
-    // Also, check to see if the currently focus docshell
-    // is a child of this docshell
-    bool isParentFrameSet;
-    return IsThereAnIFrameSelected(docShell, currentFocusWin, isParentFrameSet);
-  }
-  return false;
-}
-
-//----------------------------------------------------------------------------------
-bool nsPrintJob::IsRangeSelection() {
-  // Get the currently focused window
-  nsCOMPtr<nsPIDOMWindowOuter> currentFocusWin = FindFocusedDOMWindow();
-  return IsThereARangeSelection(currentFocusWin);
-}
-
-//----------------------------------------------------------------------------------
 int32_t nsPrintJob::GetPrintPreviewNumPages() {
   // When calling this function, the FinishPrintPreview() function might not
   // been called as there are still some
@@ -1000,13 +820,9 @@ int32_t nsPrintJob::GetPrintPreviewNumPages() {
   if (NS_WARN_IF(!printData)) {
     return 0;
   }
-  nsIFrame* seqFrame = nullptr;
-  int32_t numPages = 0;
-  nsresult rv = GetSeqFrameAndCountPagesInternal(printData->mPrintObject,
-                                                 seqFrame, numPages);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return 0;
-  }
+  auto [seqFrame, numPages] =
+      GetSeqFrameAndCountPagesInternal(printData->mPrintObject);
+  Unused << seqFrame;
   return numPages;
 }
 
@@ -1199,20 +1015,6 @@ bool nsPrintJob::IsThereAnIFrameSelected(nsIDocShell* aDocShell,
   return iFrameIsSelected;
 }
 
-//---------------------------------------------------------------------
-// Recursively sets all the PO items to be printed
-// from the given item down into the tree
-void nsPrintJob::SetPrintPO(nsPrintObject* aPO, bool aPrint) {
-  NS_ASSERTION(aPO, "Pointer is null!");
-
-  // Set whether to print flag
-  aPO->mDontPrint = !aPrint;
-
-  for (const UniquePtr<nsPrintObject>& kid : aPO->mKids) {
-    SetPrintPO(kid.get(), aPrint);
-  }
-}
-
 // static
 void nsPrintJob::GetDisplayTitleAndURL(Document& aDoc,
                                        nsIPrintSettings* aSettings,
@@ -1341,8 +1143,7 @@ void nsPrintJob::FirePrintingErrorEvent(nsresult aPrintError) {
 
   JS::Rooted<JS::Value> detail(
       cx, JS::NumberValue(static_cast<double>(aPrintError)));
-  event->InitCustomEvent(cx, NS_LITERAL_STRING("PrintingError"), false, false,
-                         detail);
+  event->InitCustomEvent(cx, u"PrintingError"_ns, false, false, detail);
   event->SetTrusted(true);
 
   RefPtr<AsyncEventDispatcher> asyncDispatcher =
@@ -1672,7 +1473,7 @@ nsresult nsPrintJob::ReflowDocList(const UniquePtr<nsPrintObject>& aPO,
     nsIFrame* frame =
         aPO->mContent ? aPO->mContent->GetPrimaryFrame() : nullptr;
     if (!frame || !frame->StyleVisibility()->IsVisible()) {
-      SetPrintPO(aPO.get(), false);
+      aPO->EnablePrinting(false);
       aPO->mInvisible = true;
       return NS_OK;
     }
@@ -1680,14 +1481,11 @@ nsresult nsPrintJob::ReflowDocList(const UniquePtr<nsPrintObject>& aPO,
 
   UpdateZoomRatio(aPO.get(), aSetPixelScale);
 
-  nsresult rv;
   // Reflow the PO
-  rv = ReflowPrintObject(aPO);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(ReflowPrintObject(aPO));
 
   for (const UniquePtr<nsPrintObject>& kid : aPO->mKids) {
-    rv = ReflowDocList(kid, aSetPixelScale);
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(ReflowDocList(kid, aSetPixelScale));
   }
   return NS_OK;
 }
@@ -1697,27 +1495,25 @@ void nsPrintJob::FirePrintPreviewUpdateEvent() {
   // listener bound to this event and therefore no need to dispatch it.
   if (mIsDoingPrintPreview && !mIsDoingPrinting) {
     nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint);
-    (new AsyncEventDispatcher(cv->GetDocument(),
-                              NS_LITERAL_STRING("printPreviewUpdate"),
+    (new AsyncEventDispatcher(cv->GetDocument(), u"printPreviewUpdate"_ns,
                               CanBubble::eYes, ChromeOnlyDispatch::eYes))
         ->RunDOMEventWhenSafe();
   }
 }
 
 nsresult nsPrintJob::InitPrintDocConstruction(bool aHandleError) {
-  nsresult rv;
   // Guarantee that mPrt->mPrintObject won't be deleted.  It's owned by mPrt.
   // So, we should grab it with local variable.
   RefPtr<nsPrintData> printData = mPrt;
-  rv = ReflowDocList(printData->mPrintObject, DoSetPixelScale());
-  NS_ENSURE_SUCCESS(rv, rv);
+
+  MOZ_TRY(ReflowDocList(printData->mPrintObject, DoSetPixelScale()));
 
   FirePrintPreviewUpdateEvent();
 
   if (mLoadCounter == 0) {
     ResumePrintAfterResourcesLoaded(aHandleError);
   }
-  return rv;
+  return NS_OK;
 }
 
 nsresult nsPrintJob::ResumePrintAfterResourcesLoaded(bool aCleanupOnError) {
@@ -1880,7 +1676,7 @@ nsresult nsPrintJob::UpdateSelectionAndShrinkPrintObject(
     nsAutoString contentType;
     aPO->mPresShell->GetDocument()->GetContentType(contentType);
     if (contentType.EqualsLiteral("application/xhtml+xml") ||
-        StringBeginsWith(contentType, NS_LITERAL_STRING("text/"))) {
+        StringBeginsWith(contentType, u"text/"_ns)) {
       int32_t limitPercent =
           Preferences::GetInt("print.shrink-to-fit.scale-limit-percent", 20);
       limitPercent = std::max(0, limitPercent);
@@ -1934,7 +1730,7 @@ nsresult nsPrintJob::SetRootView(nsPrintObject* aPO, bool& doReturn,
     // Without a frame, this document can't be displayed; therefore, there is no
     // point to reflowing it
     if (!frame) {
-      SetPrintPO(aPO, false);
+      aPO->EnablePrinting(false);
       doReturn = true;
       return NS_OK;
     }
@@ -2021,13 +1817,11 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   aPO->mPresContext->SetBackgroundImageDraw(printBGColors);
 
   // init it with the DC
-  nsresult rv = aPO->mPresContext->Init(printData->mPrintDC);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(aPO->mPresContext->Init(printData->mPrintDC));
 
   aPO->mViewManager = new nsViewManager();
 
-  rv = aPO->mViewManager->Init(printData->mPrintDC);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(aPO->mViewManager->Init(printData->mPrintDC));
 
   aPO->mPresShell =
       aPO->mDocument->CreatePresShell(aPO->mPresContext, aPO->mViewManager);
@@ -2051,7 +1845,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   bool documentIsTopLevel = false;
   nsSize adjSize;
 
-  rv = SetRootView(aPO.get(), doReturn, documentIsTopLevel, adjSize);
+  nsresult rv = SetRootView(aPO.get(), doReturn, documentIsTopLevel, adjSize);
 
   if (NS_FAILED(rv) || doReturn) {
     return rv;
@@ -2078,17 +1872,14 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
         aPO->mViewManager, aPO->mPresContext, aPO->mPresShell.get());
   }
 
-  rv = aPO->mPresShell->Initialize();
-
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(aPO->mPresShell->Initialize());
   NS_ASSERTION(aPO->mPresShell, "Presshell should still be here");
 
   // Process the reflow event Initialize posted
   RefPtr<PresShell> presShell = aPO->mPresShell;
   presShell->FlushPendingNotifications(FlushType::Layout);
 
-  rv = UpdateSelectionAndShrinkPrintObject(aPO.get(), documentIsTopLevel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(UpdateSelectionAndShrinkPrintObject(aPO.get(), documentIsTopLevel));
 
 #ifdef EXTENDED_DEBUG_PRINTING
   if (MOZ_LOG_TEST(gPrintingLog, DUMP_LAYOUT_LEVEL)) {
@@ -2679,7 +2470,6 @@ bool nsPrintJob::DonePrintingPages(nsPrintObject* aPO, nsresult aResult) {
     //     do nothing due to no proper nsPrintData instance.
   }
 
-  TurnScriptingOn(true);
   SetIsPrinting(false);
 
   // Release reference to mPagePrintTimer; the timer object destroys itself
@@ -2709,13 +2499,14 @@ nsresult nsPrintJob::EnablePOsForPrinting() {
   PR_PL(("PrintRange:         %s \n", gPrintRangeStr[printRangeType]));
   PR_PL(("----\n"));
 
-  bool treatAsNonFrameset = !printData->mIsParentAFrameSet ||
-                            printRangeType == nsIPrintSettings::kRangeSelection;
+  if (printRangeType == nsIPrintSettings::kRangeAllPages ||
+      printRangeType == nsIPrintSettings::kRangeSpecifiedPageRange) {
+    printData->mPrintObject->EnablePrinting(true);
 
-  if (treatAsNonFrameset &&
-      (printRangeType == nsIPrintSettings::kRangeAllPages ||
-       printRangeType == nsIPrintSettings::kRangeSpecifiedPageRange)) {
-    SetPrintPO(printData->mPrintObject.get(), true);
+    if (printData->mIsParentAFrameSet) {
+      printData->mPrintObject->SetPrintAsIs(true);
+      return NS_OK;
+    }
 
     // Set the children so they are PrinAsIs
     // In this case, the children are probably IFrames
@@ -2723,7 +2514,7 @@ nsresult nsPrintJob::EnablePOsForPrinting() {
       for (const UniquePtr<nsPrintObject>& po :
            printData->mPrintObject->mKids) {
         NS_ASSERTION(po, "nsPrintObject can't be null!");
-        SetPrintAsIs(po.get());
+        po->SetPrintAsIs(true);
       }
     }
     PR_PL(("PrintRange:         %s \n", gPrintRangeStr[printRangeType]));
@@ -2732,74 +2523,51 @@ nsresult nsPrintJob::EnablePOsForPrinting() {
 
   // This means we are either printed a selected IFrame or
   // we are printing the current selection
-  if (printRangeType == nsIPrintSettings::kRangeSelection) {
-    // If the currentFocusDOMWin can'r be null if something is selected
-    if (printData->mCurrentFocusWin) {
-      // Find the selected IFrame
-      nsPrintObject* po = FindPrintObjectByDOMWin(printData->mPrintObject.get(),
-                                                  printData->mCurrentFocusWin);
-      if (po) {
-        // Makes sure all of its children are be printed "AsIs"
-        SetPrintAsIs(po);
 
-        // Now, only enable this POs (the selected PO) and all of its children
-        SetPrintPO(po, true);
+  MOZ_ASSERT(printRangeType == nsIPrintSettings::kRangeSelection);
 
-        // check to see if we have a range selection,
-        // as oppose to a insert selection
-        // this means if the user just clicked on the IFrame then
-        // there will not be a selection so we want the entire page to print
-        //
-        // XXX this is sort of a hack right here to make the page
-        // not try to reposition itself when printing selection
-        nsPIDOMWindowOuter* domWin =
-            po->mDocument->GetOriginalDocument()->GetWindow();
-        if (!IsThereARangeSelection(domWin)) {
-          printRangeType = nsIPrintSettings::kRangeAllPages;
-          printData->mPrintSettings->SetPrintRange(printRangeType);
-        }
-        PR_PL(("PrintRange:         %s \n", gPrintRangeStr[printRangeType]));
-        return NS_OK;
+  // If the currentFocusDOMWin can'r be null if something is selected
+  if (!printData->mCurrentFocusWin) {
+    for (uint32_t i = 0; i < printData->mPrintDocList.Length(); i++) {
+      nsPrintObject* po = printData->mPrintDocList.ElementAt(i);
+      NS_ASSERTION(po, "nsPrintObject can't be null!");
+      nsCOMPtr<nsPIDOMWindowOuter> domWin = po->mDocShell->GetWindow();
+      if (IsThereARangeSelection(domWin)) {
+        printData->mCurrentFocusWin = std::move(domWin);
+        po->EnablePrinting(true);
+        break;
       }
-    } else if (treatAsNonFrameset) {
-      for (uint32_t i = 0; i < printData->mPrintDocList.Length(); i++) {
-        nsPrintObject* po = printData->mPrintDocList.ElementAt(i);
-        NS_ASSERTION(po, "nsPrintObject can't be null!");
-        nsCOMPtr<nsPIDOMWindowOuter> domWin = po->mDocShell->GetWindow();
-        if (IsThereARangeSelection(domWin)) {
-          printData->mCurrentFocusWin = std::move(domWin);
-          SetPrintPO(po, true);
-          break;
-        }
-      }
-      return NS_OK;
     }
-  }
-
-  if (printRangeType != nsIPrintSettings::kRangeSelection) {
-    SetPrintAsIs(printData->mPrintObject.get());
-    SetPrintPO(printData->mPrintObject.get(), true);
     return NS_OK;
   }
 
-  if ((printData->mIsParentAFrameSet && printData->mCurrentFocusWin) ||
-      printData->mIsIFrameSelected) {
-    nsPrintObject* po = FindPrintObjectByDOMWin(printData->mPrintObject.get(),
-                                                printData->mCurrentFocusWin);
-    if (po) {
-      // NOTE: Calling this sets the "po" and
-      // we don't want to do this for documents that have no children,
-      // because then the "DoEndPage" gets called and it shouldn't
-      if (po->mKids.Length() > 0) {
-        // Makes sure that itself, and all of its children are printed "AsIs"
-        SetPrintAsIs(po);
-      }
-
-      // Now, only enable this POs (the selected PO) and all of its children
-      SetPrintPO(po, true);
-    }
+  // Find the selected IFrame
+  nsPrintObject* po = FindPrintObjectByDOMWin(printData->mPrintObject.get(),
+                                              printData->mCurrentFocusWin);
+  if (!po) {
+    return NS_OK;
   }
 
+  // Makes sure all of its children are be printed "AsIs"
+  po->SetPrintAsIs(true);
+
+  // Now, only enable this POs (the selected PO) and all of its children
+  po->EnablePrinting(true);
+
+  // check to see if we have a range selection,
+  // as oppose to a insert selection
+  // this means if the user just clicked on the IFrame then
+  // there will not be a selection so we want the entire page to print
+  //
+  // XXX this is sort of a hack right here to make the page
+  // not try to reposition itself when printing selection
+  nsPIDOMWindowOuter* domWin =
+      po->mDocument->GetOriginalDocument()->GetWindow();
+  if (!IsThereARangeSelection(domWin)) {
+    printRangeType = nsIPrintSettings::kRangeAllPages;
+    printData->mPrintSettings->SetPrintRange(printRangeType);
+  }
+  PR_PL(("PrintRange:         %s \n", gPrintRangeStr[printRangeType]));
   return NS_OK;
 }
 
@@ -2827,69 +2595,6 @@ nsPrintObject* nsPrintJob::FindSmallestSTF() {
            smallestPO->mShrinkRatio);
 #endif
   return smallestPO;
-}
-
-//-------------------------------------------------------
-void nsPrintJob::TurnScriptingOn(bool aDoTurnOn) {
-  if (mIsDoingPrinting && aDoTurnOn && mDocViewerPrint &&
-      mDocViewerPrint->GetIsPrintPreview()) {
-    // We don't want to turn scripting on if print preview is shown still after
-    // printing.
-    return;
-  }
-
-  // The following for loop uses nsPrintObject instances that are owned by
-  // mPrt or mPrtPreview.  Therefore, this method needs to guarantee that
-  // they won't be deleted in this method.
-  RefPtr<nsPrintData> printData = mPrt ? mPrt : mPrtPreview;
-  if (!printData) {
-    return;
-  }
-
-  // First, get the script global object from the document...
-
-  for (uint32_t i = 0; i < printData->mPrintDocList.Length(); i++) {
-    nsPrintObject* po = printData->mPrintDocList.ElementAt(i);
-    MOZ_ASSERT(po);
-
-    Document* doc = po->mDocument;
-    if (!doc) {
-      continue;
-    }
-
-    if (nsCOMPtr<nsPIDOMWindowInner> window = doc->GetInnerWindow()) {
-      nsCOMPtr<nsIGlobalObject> go = window->AsGlobal();
-      NS_WARNING_ASSERTION(go->HasJSGlobal(), "Window has no global");
-      nsresult propThere = NS_PROPTABLE_PROP_NOT_THERE;
-      doc->GetProperty(nsGkAtoms::scriptEnabledBeforePrintOrPreview,
-                       &propThere);
-      if (aDoTurnOn) {
-        if (propThere != NS_PROPTABLE_PROP_NOT_THERE) {
-          doc->RemoveProperty(nsGkAtoms::scriptEnabledBeforePrintOrPreview);
-          if (go->HasJSGlobal()) {
-            xpc::Scriptability::Get(go->GetGlobalJSObjectPreserveColor())
-                .Unblock();
-          }
-          window->Resume();
-        }
-      } else {
-        // Have to be careful, because people call us over and over again with
-        // aDoTurnOn == false.  So don't set the property if it's already
-        // set, since in that case we'd set it to the wrong value.
-        if (propThere == NS_PROPTABLE_PROP_NOT_THERE) {
-          // Stash the current value of IsScriptEnabled on the document, so
-          // that layout code running in print preview doesn't get confused.
-          doc->SetProperty(nsGkAtoms::scriptEnabledBeforePrintOrPreview,
-                           NS_INT32_TO_PTR(doc->IsScriptEnabled()));
-          if (go && go->HasJSGlobal()) {
-            xpc::Scriptability::Get(go->GetGlobalJSObjectPreserveColor())
-                .Block();
-          }
-          window->Suspend();
-        }
-      }
-    }
-  }
 }
 
 //-----------------------------------------------------------------
@@ -2942,9 +2647,6 @@ nsresult nsPrintJob::FinishPrintPreview() {
      * what went wrong...
      */
     printData->OnEndPrinting();
-    // XXX mPrt may be nullptr here.  So, Shouldn't TurnScriptingOn() take
-    //     nsPrintData as an argument?
-    TurnScriptingOn(true);
 
     return rv;
   }

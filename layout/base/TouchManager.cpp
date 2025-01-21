@@ -8,6 +8,7 @@
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/PresShell.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsView.h"
 #include "PositionedEventTargeting.h"
 
@@ -107,15 +108,6 @@ nsIFrame* TouchManager::SetupTarget(WidgetTouchEvent* aEvent,
     return aFrame;
   }
 
-  uint32_t flags = 0;
-  // Setting this flag will skip the scrollbars on the root frame from
-  // participating in hit-testing, and we only want that to happen on
-  // zoomable platforms (for now).
-  dom::Document* doc = aFrame->PresContext()->Document();
-  if (nsLayoutUtils::AllowZoomingForDocument(doc)) {
-    flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
-  }
-
   nsIFrame* target = aFrame;
   for (int32_t i = aEvent->mTouches.Length(); i;) {
     --i;
@@ -124,9 +116,10 @@ nsIFrame* TouchManager::SetupTarget(WidgetTouchEvent* aEvent,
     int32_t id = touch->Identifier();
     if (!TouchManager::HasCapturedTouch(id)) {
       // find the target for this touch
+      RelativeTo relativeTo{aFrame};
       nsPoint eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-          aEvent, touch->mRefPoint, aFrame);
-      target = FindFrameTargetedByInputEvent(aEvent, aFrame, eventPoint, flags);
+          aEvent, touch->mRefPoint, relativeTo);
+      target = FindFrameTargetedByInputEvent(aEvent, relativeTo, eventPoint);
       if (target) {
         nsCOMPtr<nsIContent> targetContent;
         target->GetContentForEvent(aEvent, getter_AddRefs(targetContent));

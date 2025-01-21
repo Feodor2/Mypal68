@@ -126,11 +126,7 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
   // columns.
   if (iSize.ConvertsToLength()) {
     hasSpecifiedISize = true;
-    // Note: since ComputeISizeValue was designed to return content-box
-    // isize, it will (in some cases) subtract the box-sizing edges.
-    // We prevent this unwanted behavior by calling it with
-    // aContentEdgeToBoxSizing and aBoxSizingToMarginEdge set to 0.
-    nscoord c = aFrame->ComputeISizeValue(aRenderingContext, 0, 0, 0, iSize);
+    nscoord c = iSize.ToLength();
     // Quirk: A cell with "nowrap" set and a coord value for the
     // isize which is bigger than the intrinsic minimum isize uses
     // that coord value as the minimum isize.
@@ -144,38 +140,43 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
     prefCoord = std::max(c, minCoord);
   } else if (iSize.ConvertsToPercentage()) {
     prefPercent = iSize.ToPercentage();
-  } else if (iSize.IsExtremumLength() && aIsCell) {
-    switch (iSize.AsExtremumLength()) {
-      case StyleExtremumLength::MaxContent:
+  } else if (aIsCell) {
+    switch (iSize.tag) {
+      case StyleSize::Tag::MaxContent:
         // 'inline-size' only affects pref isize, not min
         // isize, so don't change anything
         break;
-      case StyleExtremumLength::MinContent:
+      case StyleSize::Tag::MinContent:
         prefCoord = minCoord;
         break;
-      case StyleExtremumLength::MozFitContent:
-      case StyleExtremumLength::MozAvailable:
+      case StyleSize::Tag::MozAvailable:
+      case StyleSize::Tag::FitContent:
+      case StyleSize::Tag::FitContentFunction:
+        // TODO: Bug 1708310: Make sure fit-content() work properly in table.
+      case StyleSize::Tag::Auto:
+      case StyleSize::Tag::LengthPercentage:
         break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("unexpected enumerated value");
     }
   }
 
   StyleMaxSize maxISize = stylePos->MaxISize(aWM);
-  if (maxISize.IsExtremumLength()) {
-    if (!aIsCell ||
-        maxISize.AsExtremumLength() == StyleExtremumLength::MozAvailable) {
+  if (nsIFrame::ToExtremumLength(maxISize)) {
+    if (!aIsCell || maxISize.IsMozAvailable()) {
       maxISize = StyleMaxSize::None();
-    } else if (maxISize.AsExtremumLength() ==
-               StyleExtremumLength::MozFitContent) {
+    } else if (maxISize.IsFitContent() || maxISize.IsFitContentFunction()) {
+      // TODO: Bug 1708310: Make sure fit-content() work properly in table.
       // for 'max-inline-size', '-moz-fit-content' is like 'max-content'
-      maxISize = StyleMaxSize::ExtremumLength(StyleExtremumLength::MaxContent);
+      maxISize = StyleMaxSize::MaxContent();
     }
   }
   // XXX To really implement 'max-inline-size' well, we'd need to store
   // it separately on the columns.
-  if (maxISize.ConvertsToLength() || maxISize.IsExtremumLength()) {
-    nscoord c = aFrame->ComputeISizeValue(aRenderingContext, 0, 0, 0, maxISize);
+  const LogicalSize zeroSize(aWM);
+  if (maxISize.ConvertsToLength() || nsIFrame::ToExtremumLength(maxISize)) {
+    nscoord c = aFrame
+                    ->ComputeISizeValue(aRenderingContext, aWM, zeroSize,
+                                        zeroSize, 0, maxISize)
+                    .mISize;
     minCoord = std::min(c, minCoord);
     prefCoord = std::min(c, prefCoord);
   } else if (maxISize.ConvertsToPercentage()) {
@@ -186,18 +187,21 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
   }
 
   StyleSize minISize = stylePos->MinISize(aWM);
-  if (minISize.IsExtremumLength()) {
-    if (!aIsCell ||
-        minISize.AsExtremumLength() == StyleExtremumLength::MozAvailable) {
+  if (nsIFrame::ToExtremumLength(maxISize)) {
+    if (!aIsCell || minISize.IsMozAvailable()) {
       minISize = StyleSize::LengthPercentage(LengthPercentage::Zero());
-    } else if (minISize.AsExtremumLength() ==
-               StyleExtremumLength::MozFitContent) {
+    } else if (minISize.IsFitContent() || minISize.IsFitContentFunction()) {
+      // TODO: Bug 1708310: Make sure fit-content() work properly in table.
       // for 'min-inline-size', '-moz-fit-content' is like 'min-content'
-      minISize = StyleSize::ExtremumLength(StyleExtremumLength::MinContent);
+      minISize = StyleSize::MinContent();
     }
   }
-  if (minISize.ConvertsToLength() || minISize.IsExtremumLength()) {
-    nscoord c = aFrame->ComputeISizeValue(aRenderingContext, 0, 0, 0, minISize);
+
+  if (minISize.ConvertsToLength() || nsIFrame::ToExtremumLength(minISize)) {
+    nscoord c = aFrame
+                    ->ComputeISizeValue(aRenderingContext, aWM, zeroSize,
+                                        zeroSize, 0, minISize)
+                    .mISize;
     minCoord = std::max(c, minCoord);
     prefCoord = std::max(c, prefCoord);
   } else if (minISize.ConvertsToPercentage()) {

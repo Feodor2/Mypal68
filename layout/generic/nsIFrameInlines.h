@@ -7,6 +7,7 @@
 
 #include "mozilla/dom/ElementInlines.h"
 #include "nsContainerFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPlaceholderFrame.h"
 #include "nsStyleStructInlines.h"
 #include "nsCSSAnonBoxes.h"
@@ -48,7 +49,10 @@ bool nsIFrame::IsTableCaption() const {
              mozilla::PseudoStyleType::tableWrapper;
 }
 
-bool nsIFrame::IsFloating() const { return StyleDisplay()->IsFloating(this); }
+bool nsIFrame::IsFloating() const {
+  return HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
+         StyleDisplay()->IsFloating(this);
+}
 
 bool nsIFrame::IsAbsPosContainingBlock() const {
   return StyleDisplay()->IsAbsPosContainingBlock(this);
@@ -68,8 +72,18 @@ bool nsIFrame::IsStickyPositioned() const {
 
 bool nsIFrame::IsAbsolutelyPositioned(
     const nsStyleDisplay* aStyleDisplay) const {
-  const nsStyleDisplay* disp = StyleDisplayWithOptionalParam(aStyleDisplay);
-  return disp->IsAbsolutelyPositioned(this);
+  return HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
+         StyleDisplayWithOptionalParam(aStyleDisplay)
+             ->IsAbsolutelyPositioned(this);
+}
+
+inline bool nsIFrame::IsTrueOverflowContainer() const {
+  return HasAnyStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER) &&
+         !IsAbsolutelyPositioned();
+  // XXXfr This check isn't quite correct, because it doesn't handle cases
+  //      where the out-of-flow has overflow.. but that's rare.
+  //      We'll need to revisit the way abspos continuations are handled later
+  //      for various reasons, this detail is one of them. See bug 154892
 }
 
 bool nsIFrame::IsBlockOutside() const {
@@ -191,7 +205,6 @@ void nsIFrame::PropagateWritingModeToSelfAndAncestors(
     f->mWritingMode = aWM;
   }
 }
-
 nsContainerFrame* nsIFrame::GetInFlowParent() const {
   if (HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
     nsIFrame* ph =
@@ -260,6 +273,15 @@ mozilla::LogicalPoint nsIFrame::GetLogicalNormalPosition(
   // right instead of the left
   return mozilla::LogicalPoint(aWritingMode, GetNormalPosition(),
                                aContainerSize - mRect.Size());
+}
+
+template <bool IsLessThanOrEqual(nsIFrame*, nsIFrame*)>
+/* static */ void nsIFrame::SortFrameList(nsFrameList& aFrameList) {
+  nsIFrame* head = MergeSort<IsLessThanOrEqual>(aFrameList.FirstChild());
+  aFrameList.Clear();
+  aFrameList = nsFrameList(head, nsLayoutUtils::GetLastSibling(head));
+  MOZ_ASSERT(IsFrameListSorted<IsLessThanOrEqual>(aFrameList),
+             "After we sort a frame list, it should be in sorted order...");
 }
 
 #endif

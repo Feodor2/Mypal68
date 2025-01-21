@@ -139,10 +139,10 @@ random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == flexbox-align-self-vert-
 == flexbox-intrinsic-ratio-001v.html flexbox-intrinsic-ratio-001-ref.html
 == flexbox-intrinsic-ratio-002.html flexbox-intrinsic-ratio-001-ref.html
 == flexbox-intrinsic-ratio-002v.html flexbox-intrinsic-ratio-001-ref.html
-== flexbox-intrinsic-ratio-003.html flexbox-intrinsic-ratio-003-ref.html
-== flexbox-intrinsic-ratio-003v.html flexbox-intrinsic-ratio-003-ref.html
-== flexbox-intrinsic-ratio-004.html flexbox-intrinsic-ratio-004-ref.html
-== flexbox-intrinsic-ratio-004v.html flexbox-intrinsic-ratio-004-ref.html
+fails == flexbox-intrinsic-ratio-003.html flexbox-intrinsic-ratio-003-ref.html # Bug 1664938
+fails == flexbox-intrinsic-ratio-003v.html flexbox-intrinsic-ratio-003-ref.html # Bug 1664938
+fails == flexbox-intrinsic-ratio-004.html flexbox-intrinsic-ratio-004-ref.html # Bug 1664938
+fails == flexbox-intrinsic-ratio-004v.html flexbox-intrinsic-ratio-004-ref.html # Bug 1664938
 == flexbox-intrinsic-ratio-005.html flexbox-intrinsic-ratio-005-ref.html
 == flexbox-intrinsic-ratio-005v.html flexbox-intrinsic-ratio-005-ref.html
 == flexbox-intrinsic-ratio-006.html flexbox-intrinsic-ratio-006-ref.html
@@ -202,9 +202,9 @@ fails == flexbox-min-height-auto-002b.html flexbox-min-height-auto-002-ref.html 
 == flexbox-min-height-auto-003.html flexbox-min-height-auto-003-ref.html
 == flexbox-min-height-auto-004.html flexbox-min-height-auto-004-ref.html
 == flexbox-min-width-auto-001.html flexbox-min-width-auto-001-ref.html
-== flexbox-min-width-auto-002a.html flexbox-min-width-auto-002-ref.html
+fails == flexbox-min-width-auto-002a.html flexbox-min-width-auto-002-ref.html # bug 1665532
 == flexbox-min-width-auto-002b.html flexbox-min-width-auto-002-ref.html
-== flexbox-min-width-auto-002c.html flexbox-min-width-auto-002-ref.html
+fails == flexbox-min-width-auto-002c.html flexbox-min-width-auto-002-ref.html # bug 1665532
 == flexbox-min-width-auto-003.html flexbox-min-width-auto-003-ref.html
 == flexbox-min-width-auto-004.html flexbox-min-width-auto-004-ref.html
 

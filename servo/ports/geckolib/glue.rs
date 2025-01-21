@@ -87,8 +87,9 @@ use style::gecko_bindings::structs::{nsINode as RawGeckoNode, Element as RawGeck
 use style::gecko_bindings::structs::{
     RawServoAnimationValue, RawServoAuthorStyles, RawServoCounterStyleRule,
     RawServoDeclarationBlock, RawServoFontFaceRule, RawServoFontFeatureValuesRule,
-    RawServoImportRule, RawServoKeyframe, RawServoKeyframesRule, RawServoMediaList,
-    RawServoMediaRule, RawServoMozDocumentRule, RawServoNamespaceRule, RawServoPageRule,
+    RawServoImportRule, RawServoKeyframe, RawServoKeyframesRule, RawServoLayerBlockRule,
+    RawServoLayerStatementRule, RawServoMediaList, RawServoMediaRule, RawServoMozDocumentRule,
+    RawServoNamespaceRule, RawServoPageRule,
     RawServoSharedMemoryBuilder, RawServoStyleSet, RawServoStyleSheetContents,
     RawServoSupportsRule, ServoCssRules,
 };
@@ -119,13 +120,15 @@ use style::string_cache::{Atom, WeakAtom};
 use style::style_adjuster::StyleAdjuster;
 use style::stylesheets::import_rule::ImportSheet;
 use style::stylesheets::keyframes_rule::{Keyframe, KeyframeSelector, KeyframesStepValue};
+use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
-use style::stylesheets::StylesheetLoader as StyleStylesheetLoader;
-use style::stylesheets::{AllowImportRules, SanitizationData, SanitizationKind};
-use style::stylesheets::{CounterStyleRule, CssRule, CssRuleType, CssRules, CssRulesHelpers};
-use style::stylesheets::{DocumentRule, FontFaceRule, FontFeatureValuesRule, ImportRule};
-use style::stylesheets::{KeyframesRule, MediaRule, NamespaceRule, Origin, OriginSet, PageRule};
-use style::stylesheets::{StyleRule, StylesheetContents, SupportsRule, UrlExtraData};
+use style::stylesheets::{
+    AllowImportRules, CounterStyleRule, CssRule, CssRuleType, CssRules, CssRulesHelpers,
+    DocumentRule, FontFaceRule, FontFeatureValuesRule, ImportRule, KeyframesRule, LayerBlockRule,
+    LayerStatementRule, MediaRule, NamespaceRule, Origin, OriginSet, PageRule, SanitizationData,
+    SanitizationKind, StyleRule, StylesheetContents,
+    StylesheetLoader as StyleStylesheetLoader, SupportsRule, UrlExtraData,
+};
 use style::stylist::{add_size_of_ua_cache, AuthorStylesEnabled, RuleInclusion, Stylist};
 use style::thread_state;
 use style::traversal::resolve_style;
@@ -162,11 +165,14 @@ impl ClosureHelper for DeclarationBlockMutationClosure {
  */
 
 // A dummy url data for where we don't pass url data in.
-// We need to get rid of this sooner than later.
 static mut DUMMY_URL_DATA: *mut URLExtraData = 0 as *mut _;
+static mut DUMMY_CHROME_URL_DATA: *mut URLExtraData = 0 as *mut _;
 
 #[no_mangle]
-pub unsafe extern "C" fn Servo_Initialize(dummy_url_data: *mut URLExtraData) {
+pub unsafe extern "C" fn Servo_Initialize(
+    dummy_url_data: *mut URLExtraData,
+    dummy_chrome_url_data: *mut URLExtraData,
+) {
     use style::gecko_bindings::sugar::origin_flags;
 
     // Pretend that we're a Servo Layout thread, to make some assertions happy.
@@ -180,11 +186,13 @@ pub unsafe extern "C" fn Servo_Initialize(dummy_url_data: *mut URLExtraData) {
     specified::font::assert_variant_ligatures_matches();
 
     DUMMY_URL_DATA = dummy_url_data;
+    DUMMY_CHROME_URL_DATA = dummy_chrome_url_data;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn Servo_Shutdown() {
     DUMMY_URL_DATA = ptr::null_mut();
+    DUMMY_CHROME_URL_DATA = ptr::null_mut();
     Stylist::shutdown();
     url::shutdown();
 }
@@ -704,7 +712,7 @@ macro_rules! get_property_id_from_nscsspropertyid {
 pub extern "C" fn Servo_AnimationValue_Serialize(
     value: &RawServoAnimationValue,
     property: nsCSSPropertyID,
-    buffer: &mut nsAString,
+    buffer: &mut nsACString,
 ) {
     let uncomputed_value = AnimationValue::as_arc(&value).uncompute();
     let rv = PropertyDeclarationBlock::with_one(uncomputed_value, Importance::Normal)
@@ -1480,7 +1488,7 @@ pub extern "C" fn Servo_StyleSheet_Empty(
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let origin = mode_to_origin(mode);
     let shared_lock = &global_style_data.shared_lock;
-    Arc::new(StylesheetContents::from_str(
+    StylesheetContents::from_str(
         "",
         unsafe { dummy_url_data() }.clone(),
         origin,
@@ -1491,7 +1499,7 @@ pub extern "C" fn Servo_StyleSheet_Empty(
         0,
         AllowImportRules::Yes,
         /* sanitization_data = */ None,
-    ))
+    )
     .into_strong()
 }
 
@@ -1541,7 +1549,7 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromUTF8Bytes(
 
     let mut sanitization_data = SanitizationData::new(sanitization_kind);
 
-    let contents = Arc::new(StylesheetContents::from_str(
+    let contents = StylesheetContents::from_str(
         input,
         url_data.clone(),
         mode_to_origin(mode),
@@ -1552,7 +1560,7 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromUTF8Bytes(
         line_number_offset,
         allow_import_rules,
         sanitization_data.as_mut(),
-    ));
+    );
 
     if let Some(data) = sanitization_data {
         sanitized_output
@@ -1611,12 +1619,12 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromSharedData(
     shared_rules: &ServoCssRules,
 ) -> Strong<RawServoStyleSheetContents> {
     let shared_rules = Locked::<CssRules>::as_arc(&shared_rules);
-    Arc::new(StylesheetContents::from_shared_data(
+    StylesheetContents::from_shared_data(
         shared_rules.clone_arc(),
         Origin::UserAgent,
         UrlExtraData::new(extra_data),
         QuirksMode::NoQuirks,
-    ))
+    )
     .into_strong()
 }
 
@@ -1689,19 +1697,19 @@ pub unsafe extern "C" fn Servo_AuthorStyles_RemoveStyleSheet(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Servo_AuthorStyles_ForceDirty(styles: &mut RawServoAuthorStyles) {
+pub extern "C" fn Servo_AuthorStyles_ForceDirty(styles: &mut RawServoAuthorStyles) {
     let styles = AuthorStyles::<GeckoStyleSheet>::from_ffi_mut(styles);
     styles.stylesheets.force_dirty();
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Servo_AuthorStyles_IsDirty(styles: &RawServoAuthorStyles) -> bool {
+pub extern "C" fn Servo_AuthorStyles_IsDirty(styles: &RawServoAuthorStyles) -> bool {
     let styles = AuthorStyles::<GeckoStyleSheet>::from_ffi(styles);
     styles.stylesheets.dirty()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Servo_AuthorStyles_Flush(
+pub extern "C" fn Servo_AuthorStyles_Flush(
     styles: &mut RawServoAuthorStyles,
     document_set: &RawServoStyleSet,
 ) {
@@ -1714,13 +1722,21 @@ pub unsafe extern "C" fn Servo_AuthorStyles_Flush(
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
 
-    let document_data = PerDocumentStyleData::from_ffi(document_set).borrow();
-
-    let stylist = &document_data.stylist;
+    let mut document_data = PerDocumentStyleData::from_ffi(document_set).borrow_mut();
 
     // TODO(emilio): This is going to need an element or something to do proper
     // invalidation in Shadow roots.
-    styles.flush::<GeckoElement>(stylist.device(), stylist.quirks_mode(), &guard);
+    styles.flush::<GeckoElement>(&mut document_data.stylist, &guard);
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_RemoveUniqueEntriesFromAuthorStylesCache(
+    document_set: &RawServoStyleSet,
+) {
+    let mut document_data = PerDocumentStyleData::from_ffi(document_set).borrow_mut();
+    document_data
+        .stylist
+        .remove_unique_author_data_cache_entries();
 }
 
 #[no_mangle]
@@ -2067,7 +2083,7 @@ pub extern "C" fn Servo_CssRules_InsertRule(
     loader: *mut Loader,
     allow_import_rules: AllowImportRules,
     gecko_stylesheet: *mut DomStyleSheet,
-    rule_type: *mut u16,
+    rule_type: &mut CssRuleType,
 ) -> nsresult {
     let loader = if loader.is_null() {
         None
@@ -2098,7 +2114,7 @@ pub extern "C" fn Servo_CssRules_InsertRule(
 
     match result {
         Ok(new_rule) => {
-            *unsafe { rule_type.as_mut().unwrap() } = new_rule.rule_type() as u16;
+            *rule_type = new_rule.rule_type();
             nsresult::NS_OK
         },
         Err(err) => err.into(),
@@ -2135,7 +2151,7 @@ macro_rules! impl_basic_rule_funcs_without_getter {
         }
 
         #[no_mangle]
-        pub extern "C" fn $to_css(rule: &$raw_type, result: &mut nsAString) {
+        pub extern "C" fn $to_css(rule: &$raw_type, result: &mut nsACString) {
             let global_style_data = &*GLOBAL_STYLE_DATA;
             let guard = global_style_data.shared_lock.read();
             let rule = Locked::<$rule_type>::as_arc(&rule);
@@ -2278,6 +2294,21 @@ impl_group_rule_funcs! { (Supports, SupportsRule, RawServoSupportsRule),
     changed: Servo_StyleSet_SupportsRuleChanged,
 }
 
+impl_group_rule_funcs! { (LayerBlock, LayerBlockRule, RawServoLayerBlockRule),
+    get_rules: Servo_LayerBlockRule_GetRules,
+    getter: Servo_CssRules_GetLayerBlockRuleAt,
+    debug: Servo_LayerBlockRule_Debug,
+    to_css: Servo_LayerBlockRule_GetCssText,
+    changed: Servo_StyleSet_LayerBlockRuleChanged,
+}
+
+impl_basic_rule_funcs! { (LayerStatement, LayerStatementRule, RawServoLayerStatementRule),
+    getter: Servo_CssRules_GetLayerStatementRuleAt,
+    debug: Servo_LayerStatementRule_Debug,
+    to_css: Servo_LayerStatementRule_GetCssText,
+    changed: Servo_StyleSet_LayerStatementRuleChanged,
+}
+
 impl_group_rule_funcs! { (Document, DocumentRule, RawServoMozDocumentRule),
     get_rules: Servo_MozDocumentRule_GetRules,
     getter: Servo_CssRules_GetMozDocumentRuleAt,
@@ -2328,7 +2359,7 @@ pub extern "C" fn Servo_StyleRule_SetStyle(
 #[no_mangle]
 pub extern "C" fn Servo_StyleRule_GetSelectorText(
     rule: &RawServoStyleRule,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &StyleRule| {
         rule.selectors.to_css(result).unwrap();
@@ -2339,7 +2370,7 @@ pub extern "C" fn Servo_StyleRule_GetSelectorText(
 pub extern "C" fn Servo_StyleRule_GetSelectorTextAtIndex(
     rule: &RawServoStyleRule,
     index: u32,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &StyleRule| {
         let index = index as usize;
@@ -2428,9 +2459,9 @@ pub extern "C" fn Servo_StyleRule_SelectorMatchesElement(
 pub extern "C" fn Servo_StyleRule_SetSelectorText(
     sheet: &RawServoStyleSheetContents,
     rule: &RawServoStyleRule,
-    text: &nsAString,
+    text: &nsACString,
 ) -> bool {
-    let value_str = text.to_string();
+    let value_str = unsafe { text.as_str_unchecked() };
 
     write_locked_arc(rule, |rule: &mut StyleRule| {
         use style::selector_parser::SelectorParser;
@@ -2559,6 +2590,17 @@ pub extern "C" fn Servo_ImportRule_GetHref(rule: &RawServoImportRule, result: &m
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_ImportRule_GetLayerName(
+    rule: &RawServoImportRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &ImportRule| match rule.layer {
+        Some(ref layer) => layer.name.to_css(&mut CssWriter::new(result)).unwrap(),
+        None => result.set_is_void(true),
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_ImportRule_GetSheet(rule: &RawServoImportRule) -> *const DomStyleSheet {
     read_locked_arc(rule, |rule: &ImportRule| {
         rule.stylesheet.as_sheet().unwrap().raw() as *const DomStyleSheet
@@ -2566,15 +2608,17 @@ pub extern "C" fn Servo_ImportRule_GetSheet(rule: &RawServoImportRule) -> *const
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_ImportRule_SetSheet(rule: &RawServoImportRule, sheet: *mut DomStyleSheet) {
+pub unsafe extern "C" fn Servo_ImportRule_SetSheet(
+    rule: &RawServoImportRule,
+    sheet: *mut DomStyleSheet,
+) {
     write_locked_arc(rule, |rule: &mut ImportRule| {
-        let sheet = unsafe { GeckoStyleSheet::new(sheet) };
-        rule.stylesheet = ImportSheet::new(sheet);
+        rule.stylesheet = ImportSheet::new(GeckoStyleSheet::new(sheet));
     })
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_Keyframe_GetKeyText(keyframe: &RawServoKeyframe, result: &mut nsAString) {
+pub extern "C" fn Servo_Keyframe_GetKeyText(keyframe: &RawServoKeyframe, result: &mut nsACString) {
     read_locked_arc(keyframe, |keyframe: &Keyframe| {
         keyframe
             .selector
@@ -2744,7 +2788,7 @@ pub extern "C" fn Servo_PageRule_SetStyle(
 #[no_mangle]
 pub extern "C" fn Servo_SupportsRule_GetConditionText(
     rule: &RawServoSupportsRule,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &SupportsRule| {
         rule.condition.to_css(&mut CssWriter::new(result)).unwrap();
@@ -2754,7 +2798,7 @@ pub extern "C" fn Servo_SupportsRule_GetConditionText(
 #[no_mangle]
 pub extern "C" fn Servo_MozDocumentRule_GetConditionText(
     rule: &RawServoMozDocumentRule,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &DocumentRule| {
         rule.condition.to_css(&mut CssWriter::new(result)).unwrap();
@@ -2764,7 +2808,7 @@ pub extern "C" fn Servo_MozDocumentRule_GetConditionText(
 #[no_mangle]
 pub extern "C" fn Servo_FontFeatureValuesRule_GetFontFamily(
     rule: &RawServoFontFeatureValuesRule,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &FontFeatureValuesRule| {
         rule.font_family_to_css(&mut CssWriter::new(result))
@@ -2775,7 +2819,7 @@ pub extern "C" fn Servo_FontFeatureValuesRule_GetFontFamily(
 #[no_mangle]
 pub extern "C" fn Servo_FontFeatureValuesRule_GetValueText(
     rule: &RawServoFontFeatureValuesRule,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &FontFeatureValuesRule| {
         rule.value_to_css(&mut CssWriter::new(result)).unwrap();
@@ -2889,7 +2933,7 @@ pub unsafe extern "C" fn Servo_FontFaceRule_IndexGetter(
 #[no_mangle]
 pub unsafe extern "C" fn Servo_FontFaceRule_GetDeclCssText(
     rule: &RawServoFontFaceRule,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &FontFaceRule| {
         rule.decl_to_css(result).unwrap();
@@ -3073,7 +3117,7 @@ pub unsafe extern "C" fn Servo_FontFaceRule_GetFeatureSettings(
 pub unsafe extern "C" fn Servo_FontFaceRule_GetDescriptorCssText(
     rule: &RawServoFontFaceRule,
     desc: nsCSSFontDesc,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &FontFaceRule| {
         let mut writer = CssWriter::new(result);
@@ -3482,7 +3526,7 @@ macro_rules! counter_style_descriptors {
         pub unsafe extern "C" fn Servo_CounterStyleRule_GetDescriptorCssText(
             rule: &RawServoCounterStyleRule,
             desc: nsCSSCounterDesc,
-            result: &mut nsAString,
+            result: &mut nsACString,
         ) {
             let mut writer = CssWriter::new(result);
             read_locked_arc(rule, |rule: &CounterStyleRule| {
@@ -3565,33 +3609,33 @@ pub unsafe extern "C" fn Servo_ComputedValues_GetForAnonymousBox(
 
     let metrics = get_metrics_provider_for_product();
 
-    // If the pseudo element is PageContent, we should append the precomputed
-    // pseudo element declerations with specified page rules.
-    let page_decls = match pseudo {
-        PseudoElement::PageContent => {
-            let mut declarations = vec![];
-            let iter = data.stylist.iter_extra_data_origins_rev();
-            for (data, origin) in iter {
-                let level = match origin {
-                    Origin::UserAgent => CascadeLevel::UANormal,
-                    Origin::User => CascadeLevel::UserNormal,
-                    Origin::Author => CascadeLevel::same_tree_author_normal(),
-                };
-                for rule in data.pages.iter() {
-                    declarations.push(ApplicableDeclarationBlock::from_declarations(
-                        rule.read_with(level.guard(&guards)).block.clone(),
-                        level,
-                    ));
-                }
+    // If the pseudo element is PageContent, we should append @page rules to the
+    // precomputed pseudo.
+    //
+    // TODO(emilio): We'll need a separate code path or extra arguments for
+    // named pages, etc.
+    let mut extra_declarations = vec![];
+    if pseudo == PseudoElement::PageContent {
+        let iter = data.stylist.iter_extra_data_origins_rev();
+        for (data, origin) in iter {
+            let level = match origin {
+                Origin::UserAgent => CascadeLevel::UANormal,
+                Origin::User => CascadeLevel::UserNormal,
+                Origin::Author => CascadeLevel::same_tree_author_normal(),
+            };
+            for &(ref rule, _layer_id) in data.pages.iter() {
+                extra_declarations.push(ApplicableDeclarationBlock::from_declarations(
+                    rule.read_with(level.guard(&guards)).block.clone(),
+                    level,
+                    LayerOrder::root(),
+                ));
             }
-            Some(declarations)
-        },
-        _ => None,
-    };
+        }
+    }
 
-    let rule_node = data
-        .stylist
-        .rule_node_for_precomputed_pseudo(&guards, &pseudo, page_decls);
+    let rule_node =
+        data.stylist
+            .rule_node_for_precomputed_pseudo(&guards, &pseudo, extra_declarations);
 
     data.stylist
         .precomputed_values_for_pseudo_with_rule_node::<GeckoElement>(
@@ -3948,7 +3992,7 @@ fn dump_properties_and_rules(cv: &ComputedValues, properties: &LonghandIdSet) {
             println_stderr!("    [DeclarationBlock: {:?}]", d);
         }
         if let Some(r) = rn.style_source().and_then(|s| s.as_rule()) {
-            let mut s = nsString::new();
+            let mut s = nsCString::new();
             r.read_with(&guard).to_css(&guard, &mut s).unwrap();
             println_stderr!("    {}", s);
         }
@@ -3997,6 +4041,16 @@ pub extern "C" fn Servo_ComputedValues_EqualForCachedAnonymousContentStyle(
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_ComputedValues_BlockifiedDisplay(
+    style: &ComputedValues,
+    is_root_element: bool,
+) -> u16 {
+    let display = style.get_box().clone_display();
+    let blockified_display = display.equivalent_block_display(is_root_element);
+    blockified_display.to_u16()
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_StyleSet_Init(doc: &structs::Document) -> *mut RawServoStyleSet {
     let data = Box::new(PerDocumentStyleData::new(doc));
 
@@ -4029,14 +4083,14 @@ fn parse_property_into(
     declarations: &mut SourcePropertyDeclaration,
     property_id: PropertyId,
     value: &nsACString,
-    data: *mut URLExtraData,
+    origin: Origin,
+    url_data: &UrlExtraData,
     parsing_mode: structs::ParsingMode,
     quirks_mode: QuirksMode,
     rule_type: CssRuleType,
     reporter: Option<&dyn ParseErrorReporter>,
 ) -> Result<(), ()> {
     let value = unsafe { value.as_str_unchecked() };
-    let url_data = unsafe { UrlExtraData::from_ptr_ref(&data) };
     let parsing_mode = ParsingMode::from_bits_truncate(parsing_mode);
 
     if let Some(non_custom) = property_id.non_custom_id() {
@@ -4049,6 +4103,7 @@ fn parse_property_into(
         declarations,
         property_id,
         value,
+        origin,
         url_data,
         reporter,
         parsing_mode,
@@ -4058,26 +4113,28 @@ fn parse_property_into(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_ParseProperty(
+pub unsafe extern "C" fn Servo_ParseProperty(
     property: nsCSSPropertyID,
     value: &nsACString,
     data: *mut URLExtraData,
     parsing_mode: structs::ParsingMode,
     quirks_mode: nsCompatibility,
     loader: *mut Loader,
-    rule_type: u16,
+    rule_type: CssRuleType,
 ) -> Strong<RawServoDeclarationBlock> {
     let id = get_property_id_from_nscsspropertyid!(property, Strong::null());
     let mut declarations = SourcePropertyDeclaration::new();
     let reporter = ErrorReporter::new(ptr::null_mut(), loader, data);
+    let data = UrlExtraData::from_ptr_ref(&data);
     let result = parse_property_into(
         &mut declarations,
         id,
         value,
+        Origin::Author,
         data,
         parsing_mode,
         quirks_mode.into(),
-        to_rule_type(rule_type),
+        rule_type,
         reporter.as_ref().map(|r| r as &dyn ParseErrorReporter),
     );
 
@@ -4093,7 +4150,7 @@ pub extern "C" fn Servo_ParseProperty(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_ParseEasing(easing: &nsAString, output: &mut nsTimingFunction) -> bool {
+pub extern "C" fn Servo_ParseEasing(easing: &nsACString, output: &mut nsTimingFunction) -> bool {
     use style::properties::longhands::transition_timing_function;
 
     let context = ParserContext::new(
@@ -4120,7 +4177,7 @@ pub extern "C" fn Servo_ParseEasing(easing: &nsAString, output: &mut nsTimingFun
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_SerializeEasing(easing: &nsTimingFunction, output: &mut nsAString) {
+pub extern "C" fn Servo_SerializeEasing(easing: &nsTimingFunction, output: &mut nsACString) {
     easing.mTiming.to_css(&mut CssWriter::new(output)).unwrap();
 }
 
@@ -4200,7 +4257,7 @@ pub unsafe extern "C" fn Servo_ParseStyleAttribute(
     raw_extra_data: *mut URLExtraData,
     quirks_mode: nsCompatibility,
     loader: *mut Loader,
-    rule_type: u16,
+    rule_type: CssRuleType,
 ) -> Strong<RawServoDeclarationBlock> {
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let value = data.as_str_unchecked();
@@ -4211,7 +4268,7 @@ pub unsafe extern "C" fn Servo_ParseStyleAttribute(
         url_data,
         reporter.as_ref().map(|r| r as &dyn ParseErrorReporter),
         quirks_mode.into(),
-        to_rule_type(rule_type),
+        rule_type,
     )))
     .into_strong()
 }
@@ -4260,7 +4317,7 @@ pub extern "C" fn Servo_DeclarationBlock_Equals(
 #[no_mangle]
 pub extern "C" fn Servo_DeclarationBlock_GetCssText(
     declarations: &RawServoDeclarationBlock,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     read_locked_arc(declarations, |decls: &PropertyDeclarationBlock| {
         decls.to_css(result).unwrap()
@@ -4271,7 +4328,7 @@ pub extern "C" fn Servo_DeclarationBlock_GetCssText(
 pub extern "C" fn Servo_DeclarationBlock_SerializeOneValue(
     declarations: &RawServoDeclarationBlock,
     property_id: nsCSSPropertyID,
-    buffer: &mut nsAString,
+    buffer: &mut nsACString,
     computed_values: Option<&ComputedValues>,
     custom_properties: Option<&RawServoDeclarationBlock>,
 ) {
@@ -4291,7 +4348,7 @@ pub extern "C" fn Servo_DeclarationBlock_SerializeOneValue(
 #[no_mangle]
 pub unsafe extern "C" fn Servo_SerializeFontValueForCanvas(
     declarations: &RawServoDeclarationBlock,
-    buffer: &mut nsAString,
+    buffer: &mut nsACString,
 ) {
     use style::properties::shorthands::font;
     read_locked_arc(declarations, |decls: &PropertyDeclarationBlock| {
@@ -4344,7 +4401,7 @@ macro_rules! get_property_id_from_property {
 unsafe fn get_property_value(
     declarations: &RawServoDeclarationBlock,
     property_id: PropertyId,
-    value: &mut nsAString,
+    value: &mut nsACString,
 ) {
     // This callsite is hot enough that the lock acquisition shows up in profiles.
     // Using an unchecked read here improves our performance by ~10% on the
@@ -4358,7 +4415,7 @@ unsafe fn get_property_value(
 pub unsafe extern "C" fn Servo_DeclarationBlock_GetPropertyValue(
     declarations: &RawServoDeclarationBlock,
     property: &nsACString,
-    value: &mut nsAString,
+    value: &mut nsACString,
 ) {
     get_property_value(
         declarations,
@@ -4371,7 +4428,7 @@ pub unsafe extern "C" fn Servo_DeclarationBlock_GetPropertyValue(
 pub unsafe extern "C" fn Servo_DeclarationBlock_GetPropertyValueById(
     declarations: &RawServoDeclarationBlock,
     property: nsCSSPropertyID,
-    value: &mut nsAString,
+    value: &mut nsACString,
 ) {
     get_property_value(
         declarations,
@@ -4418,7 +4475,7 @@ fn set_property(
     property_id: PropertyId,
     value: &nsACString,
     is_important: bool,
-    data: *mut URLExtraData,
+    data: &UrlExtraData,
     parsing_mode: structs::ParsingMode,
     quirks_mode: QuirksMode,
     loader: *mut Loader,
@@ -4426,11 +4483,12 @@ fn set_property(
     before_change_closure: DeclarationBlockMutationClosure,
 ) -> bool {
     let mut source_declarations = SourcePropertyDeclaration::new();
-    let reporter = ErrorReporter::new(ptr::null_mut(), loader, data);
+    let reporter = ErrorReporter::new(ptr::null_mut(), loader, data.ptr());
     let result = parse_property_into(
         &mut source_declarations,
         property_id,
         value,
+        Origin::Author,
         data,
         parsing_mode,
         quirks_mode,
@@ -4456,12 +4514,6 @@ fn set_property(
     )
 }
 
-#[inline]
-fn to_rule_type(ty: u16) -> CssRuleType {
-    use num_traits::FromPrimitive;
-    CssRuleType::from_u16(ty).unwrap_or(CssRuleType::Style)
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn Servo_DeclarationBlock_SetProperty(
     declarations: &RawServoDeclarationBlock,
@@ -4472,7 +4524,7 @@ pub unsafe extern "C" fn Servo_DeclarationBlock_SetProperty(
     parsing_mode: structs::ParsingMode,
     quirks_mode: nsCompatibility,
     loader: *mut Loader,
-    rule_type: u16,
+    rule_type: CssRuleType,
     before_change_closure: DeclarationBlockMutationClosure,
 ) -> bool {
     set_property(
@@ -4480,11 +4532,11 @@ pub unsafe extern "C" fn Servo_DeclarationBlock_SetProperty(
         get_property_id_from_property!(property, false),
         value,
         is_important,
-        data,
+        UrlExtraData::from_ptr_ref(&data),
         parsing_mode,
         quirks_mode.into(),
         loader,
-        to_rule_type(rule_type),
+        rule_type,
         before_change_closure,
     )
 }
@@ -4516,7 +4568,7 @@ pub unsafe extern "C" fn Servo_DeclarationBlock_SetPropertyById(
     parsing_mode: structs::ParsingMode,
     quirks_mode: nsCompatibility,
     loader: *mut Loader,
-    rule_type: u16,
+    rule_type: CssRuleType,
     before_change_closure: DeclarationBlockMutationClosure,
 ) -> bool {
     set_property(
@@ -4524,11 +4576,11 @@ pub unsafe extern "C" fn Servo_DeclarationBlock_SetPropertyById(
         get_property_id_from_nscsspropertyid!(property, false),
         value,
         is_important,
-        data,
+        UrlExtraData::from_ptr_ref(&data),
         parsing_mode,
         quirks_mode.into(),
         loader,
-        to_rule_type(rule_type),
+        rule_type,
         before_change_closure,
     )
 }
@@ -4621,7 +4673,7 @@ pub extern "C" fn Servo_DeclarationBlock_HasCSSWideKeyword(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_MediaList_GetText(list: &RawServoMediaList, result: &mut nsAString) {
+pub extern "C" fn Servo_MediaList_GetText(list: &RawServoMediaList, result: &mut nsACString) {
     read_locked_arc(list, |list: &MediaList| {
         list.to_css(&mut CssWriter::new(result)).unwrap();
     })
@@ -4673,7 +4725,7 @@ pub extern "C" fn Servo_MediaList_GetLength(list: &RawServoMediaList) -> u32 {
 pub extern "C" fn Servo_MediaList_GetMediumAt(
     list: &RawServoMediaList,
     index: u32,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) -> bool {
     read_locked_arc(list, |list: &MediaList| {
         let media_query = match list.media_queries.get(index as usize) {
@@ -4686,13 +4738,11 @@ pub extern "C" fn Servo_MediaList_GetMediumAt(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_MediaList_AppendMedium(
-    list: &RawServoMediaList,
-    new_medium: &nsACString,
-) {
+pub extern "C" fn Servo_MediaList_AppendMedium(list: &RawServoMediaList, new_medium: &nsACString) {
     let new_medium = unsafe { new_medium.as_str_unchecked() };
     let url_data = unsafe { dummy_url_data() };
-    let context = ParserContext::new_for_cssom(
+    let context = ParserContext::new(
+        Origin::Author,
         url_data,
         Some(CssRuleType::Media),
         ParsingMode::DEFAULT,
@@ -4711,7 +4761,8 @@ pub extern "C" fn Servo_MediaList_DeleteMedium(
 ) -> bool {
     let old_medium = unsafe { old_medium.as_str_unchecked() };
     let url_data = unsafe { dummy_url_data() };
-    let context = ParserContext::new_for_cssom(
+    let context = ParserContext::new(
+        Origin::Author,
         url_data,
         Some(CssRuleType::Media),
         ParsingMode::DEFAULT,
@@ -4813,7 +4864,9 @@ pub extern "C" fn Servo_DeclarationBlock_SetKeywordValue(
     use style::properties::PropertyDeclaration;
     use style::values::generics::box_::{VerticalAlign, VerticalAlignKeyword};
     use style::values::generics::font::FontStyle;
-    use style::values::specified::{BorderStyle, Clear, Display, Float, TextAlign};
+    use style::values::specified::{
+        table::CaptionSide, BorderStyle, Clear, Display, Float, TextAlign,
+    };
 
     fn get_from_computed<T>(value: u32) -> T
     where
@@ -4853,7 +4906,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetKeywordValue(
         ListStyleType => Box::new(longhands::list_style_type::SpecifiedValue::from_gecko_keyword(value)),
         MozMathVariant => longhands::_moz_math_variant::SpecifiedValue::from_gecko_keyword(value),
         WhiteSpace => longhands::white_space::SpecifiedValue::from_gecko_keyword(value),
-        CaptionSide => longhands::caption_side::SpecifiedValue::from_gecko_keyword(value),
+        CaptionSide => get_from_computed::<CaptionSide>(value),
         BorderTopStyle => get_from_computed::<BorderStyle>(value),
         BorderRightStyle => get_from_computed::<BorderStyle>(value),
         BorderBottomStyle => get_from_computed::<BorderStyle>(value),
@@ -5171,14 +5224,14 @@ pub extern "C" fn Servo_DeclarationBlock_SetColorValue(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_DeclarationBlock_SetFontFamily(
+pub unsafe extern "C" fn Servo_DeclarationBlock_SetFontFamily(
     declarations: &RawServoDeclarationBlock,
-    value: &nsAString,
+    value: &nsACString,
 ) {
     use style::properties::longhands::font_family::SpecifiedValue as FontFamily;
     use style::properties::PropertyDeclaration;
 
-    let string = value.to_string();
+    let string = value.as_str_unchecked();
     let mut input = ParserInput::new(&string);
     let mut parser = Parser::new(&mut input);
     let result = FontFamily::parse_specified(&mut parser);
@@ -5193,9 +5246,9 @@ pub extern "C" fn Servo_DeclarationBlock_SetFontFamily(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_DeclarationBlock_SetBackgroundImage(
+pub unsafe extern "C" fn Servo_DeclarationBlock_SetBackgroundImage(
     declarations: &RawServoDeclarationBlock,
-    value: &nsAString,
+    value: &nsACString,
     raw_extra_data: *mut URLExtraData,
 ) {
     use style::properties::longhands::background_image::SpecifiedValue as BackgroundImage;
@@ -5204,8 +5257,8 @@ pub extern "C" fn Servo_DeclarationBlock_SetBackgroundImage(
     use style::values::generics::image::Image;
     use style::values::specified::url::SpecifiedImageUrl;
 
-    let url_data = unsafe { UrlExtraData::from_ptr_ref(&raw_extra_data) };
-    let string = value.to_string();
+    let url_data = UrlExtraData::from_ptr_ref(&raw_extra_data);
+    let string = value.as_str_unchecked();
     let context = ParserContext::new(
         Origin::Author,
         url_data,
@@ -5251,18 +5304,16 @@ pub extern "C" fn Servo_DeclarationBlock_SetAspectRatio(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Servo_CSSSupports2(
-    property: &nsACString,
-    value: &nsACString,
-) -> bool {
-    let id = get_property_id_from_property!(property, false);
+pub extern "C" fn Servo_CSSSupports2(property: &nsACString, value: &nsACString) -> bool {
+    let id = unsafe { get_property_id_from_property!(property, false) };
 
     let mut declarations = SourcePropertyDeclaration::new();
     parse_property_into(
         &mut declarations,
         id,
         value,
-        DUMMY_URL_DATA,
+        Origin::Author,
+        unsafe { dummy_url_data() },
         structs::ParsingMode_Default,
         QuirksMode::NoQuirks,
         CssRuleType::Style,
@@ -5272,7 +5323,12 @@ pub unsafe extern "C" fn Servo_CSSSupports2(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_CSSSupports(cond: &nsACString) -> bool {
+pub extern "C" fn Servo_CSSSupports(
+    cond: &nsACString,
+    ua_origin: bool,
+    chrome_sheet: bool,
+    quirks: bool,
+) -> bool {
     let condition = unsafe { cond.as_str_unchecked() };
     let mut input = ParserInput::new(&condition);
     let mut input = Parser::new(&mut input);
@@ -5281,15 +5337,32 @@ pub extern "C" fn Servo_CSSSupports(cond: &nsACString) -> bool {
         Err(..) => return false,
     };
 
-    let url_data = unsafe { dummy_url_data() };
+    let origin = if ua_origin {
+        Origin::UserAgent
+    } else {
+        Origin::Author
+    };
+    let url_data = unsafe {
+        UrlExtraData::from_ptr_ref(if chrome_sheet {
+            &DUMMY_CHROME_URL_DATA
+        } else {
+            &DUMMY_URL_DATA
+        })
+    };
+    let quirks_mode = if quirks {
+        QuirksMode::Quirks
+    } else {
+        QuirksMode::NoQuirks
+    };
 
     // NOTE(emilio): The supports API is not associated to any stylesheet,
     // so the fact that there are no namespace map here is fine.
-    let context = ParserContext::new_for_cssom(
+    let context = ParserContext::new(
+        origin,
         url_data,
         Some(CssRuleType::Style),
         ParsingMode::DEFAULT,
-        QuirksMode::NoQuirks,
+        quirks_mode,
         None,
     );
 
@@ -6041,7 +6114,7 @@ pub extern "C" fn Servo_StyleSet_GetFontFaceRules(
         .flat_map(|(d, o)| d.font_faces.iter().zip(iter::repeat(o)));
 
     unsafe { rules.set_len(len) };
-    for ((rule, origin), dest) in font_face_iter.zip(rules.iter_mut()) {
+    for ((&(ref rule, _), origin), dest) in font_face_iter.zip(rules.iter_mut()) {
         dest.mRule.set_arc_leaky(rule.clone());
         dest.mOrigin = origin;
     }
@@ -6090,7 +6163,7 @@ pub extern "C" fn Servo_StyleSet_BuildFontFeatureValueSet(
         .flat_map(|(d, _)| d.font_feature_values.iter());
 
     let set = unsafe { Gecko_ConstructFontFeatureValueSet() };
-    for src in font_feature_values_iter {
+    for &(ref src, _) in font_feature_values_iter {
         let rule = src.read_with(&guard);
         rule.set_at_rules(set);
     }
@@ -6201,7 +6274,7 @@ pub extern "C" fn Servo_StyleSet_HasDocumentStateDependency(
 pub unsafe extern "C" fn Servo_GetPropertyValue(
     style: &ComputedValues,
     prop: nsCSSPropertyID,
-    value: &mut nsAString,
+    value: &mut nsACString,
 ) {
     if let Ok(longhand) = LonghandId::from_nscsspropertyid(prop) {
         style
@@ -6237,7 +6310,7 @@ pub unsafe extern "C" fn Servo_GetPropertyValue(
 pub unsafe extern "C" fn Servo_GetCustomPropertyValue(
     computed_values: &ComputedValues,
     name: &nsACString,
-    value: &mut nsAString,
+    value: &mut nsACString,
 ) -> bool {
     let custom_properties = match computed_values.custom_properties() {
         Some(p) => p,
@@ -6508,10 +6581,10 @@ pub unsafe extern "C" fn Servo_ComputeColor(
 
 #[no_mangle]
 pub unsafe extern "C" fn Servo_IntersectionObserverRootMargin_Parse(
-    value: &nsAString,
+    value: &nsACString,
     result: *mut IntersectionObserverRootMargin,
 ) -> bool {
-    let value = value.to_string();
+    let value = value.as_str_unchecked();
     let result = result.as_mut().unwrap();
 
     let mut input = ParserInput::new(&value);
@@ -6540,7 +6613,7 @@ pub unsafe extern "C" fn Servo_IntersectionObserverRootMargin_Parse(
 #[no_mangle]
 pub extern "C" fn Servo_IntersectionObserverRootMargin_ToString(
     root_margin: &IntersectionObserverRootMargin,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     let mut writer = CssWriter::new(result);
     root_margin.to_css(&mut writer).unwrap();
@@ -6583,7 +6656,7 @@ pub extern "C" fn Servo_ParseTransformIntoMatrix(
 
 #[no_mangle]
 pub unsafe extern "C" fn Servo_ParseFontShorthandForMatching(
-    value: &nsAString,
+    value: &nsACString,
     data: *mut URLExtraData,
     family: &mut structs::RefPtr<structs::SharedFontList>,
     style: &mut ComputedFontStyleDescriptor,
@@ -6598,7 +6671,7 @@ pub unsafe extern "C" fn Servo_ParseFontShorthandForMatching(
         FontFamily, FontStretch, FontStyle, FontWeight, SpecifiedFontStyle,
     };
 
-    let string = value.to_string();
+    let string = value.as_str_unchecked();
     let mut input = ParserInput::new(&string);
     let mut parser = Parser::new(&mut input);
     let url_data = UrlExtraData::from_ptr_ref(&data);
@@ -6717,7 +6790,7 @@ pub unsafe extern "C" fn Servo_InvalidateStyleForDocStateChanges(
         .map(|(data, _origin)| data)
         .chain(non_document_styles.iter().map(|author_styles| {
             let styles: &_ = AuthorStyles::<GeckoStyleSheet>::from_ffi(author_styles);
-            &styles.data
+            &*styles.data
         }));
 
     let root = GeckoElement(root);
@@ -6831,7 +6904,7 @@ pub unsafe extern "C" fn Servo_LoadData_GetLazy(
 #[no_mangle]
 pub extern "C" fn Servo_LengthPercentage_ToCss(
     lp: &computed::LengthPercentage,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     lp.to_css(&mut CssWriter::new(result)).unwrap();
 }
@@ -6848,4 +6921,36 @@ pub unsafe extern "C" fn Servo_CursorKind_Parse(
         },
         Err(..) => false,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_LayerBlockRule_GetName(
+    rule: &RawServoLayerBlockRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &LayerBlockRule| {
+        if let Some(ref name) = rule.name {
+            name.to_css(&mut CssWriter::new(result)).unwrap()
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_LayerStatementRule_GetNameCount(
+    rule: &RawServoLayerStatementRule,
+) -> usize {
+    read_locked_arc(rule, |rule: &LayerStatementRule| rule.names.len())
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_LayerStatementRule_GetNameAt(
+    rule: &RawServoLayerStatementRule,
+    index: usize,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &LayerStatementRule| {
+        if let Some(ref name) = rule.names.get(index) {
+            name.to_css(&mut CssWriter::new(result)).unwrap()
+        }
+    })
 }

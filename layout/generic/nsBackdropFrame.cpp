@@ -14,7 +14,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsBackdropFrame)
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsBackdropFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Backdrop"), aResult);
+  return MakeFrameName(u"Backdrop"_ns, aResult);
 }
 #endif
 
@@ -47,15 +47,15 @@ void nsBackdropFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 LogicalSize nsBackdropFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   // Note that this frame is a child of the viewport frame.
   LogicalSize result(aWM, 0xdeadbeef, NS_UNCONSTRAINEDSIZE);
-  if (aFlags & ComputeSizeFlags::eShrinkWrap) {
+  if (aFlags.contains(ComputeSizeFlag::ShrinkWrap)) {
     result.ISize(aWM) = 0;
   } else {
-    result.ISize(aWM) = aAvailableISize - aMargin.ISize(aWM) -
-                        aBorder.ISize(aWM) - aPadding.ISize(aWM);
+    result.ISize(aWM) =
+        aAvailableISize - aMargin.ISize(aWM) - aBorderPadding.ISize(aWM);
   }
   return result;
 }
@@ -72,8 +72,5 @@ void nsBackdropFrame::Reflow(nsPresContext* aPresContext,
 
   // Note that this frame is a child of the viewport frame.
   WritingMode wm = aReflowInput.GetWritingMode();
-  LogicalMargin borderPadding = aReflowInput.ComputedLogicalBorderPadding();
-  nscoord isize = aReflowInput.ComputedISize() + borderPadding.IStartEnd(wm);
-  nscoord bsize = aReflowInput.ComputedBSize() + borderPadding.BStartEnd(wm);
-  aDesiredSize.SetSize(wm, LogicalSize(wm, isize, bsize));
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 }

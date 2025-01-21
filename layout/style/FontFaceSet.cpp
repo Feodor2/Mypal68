@@ -33,6 +33,7 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/LoadInfo.h"
 #include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
 #include "nsDeviceContext.h"
 #include "nsFontFaceLoader.h"
 #include "nsIConsoleService.h"
@@ -145,8 +146,8 @@ FontFaceSet::FontFaceSet(nsPIDOMWindowInner* aWindow, dom::Document* aDocument)
   }
 
   if (!mDocument->DidFireDOMContentLoaded()) {
-    mDocument->AddSystemEventListener(NS_LITERAL_STRING("DOMContentLoaded"),
-                                      this, false, false);
+    mDocument->AddSystemEventListener(u"DOMContentLoaded"_ns, this, false,
+                                      false);
   } else {
     // In some cases we can't rely on CheckLoadingFinished being called from
     // the refresh driver.  For example, documents in display:none iframes.
@@ -192,13 +193,12 @@ void FontFaceSet::Disconnect() {
 
 void FontFaceSet::RemoveDOMContentLoadedListener() {
   if (mDocument) {
-    mDocument->RemoveSystemEventListener(NS_LITERAL_STRING("DOMContentLoaded"),
-                                         this, false);
+    mDocument->RemoveSystemEventListener(u"DOMContentLoaded"_ns, this, false);
   }
 }
 
 void FontFaceSet::ParseFontShorthandForMatching(
-    const nsAString& aFont, RefPtr<SharedFontList>& aFamilyList,
+    const nsACString& aFont, RefPtr<SharedFontList>& aFamilyList,
     FontWeight& aWeight, FontStretch& aStretch, FontSlantStyle& aStyle,
     ErrorResult& aRv) {
   auto style = StyleComputedFontStyleDescriptor::Normal();
@@ -245,7 +245,7 @@ static bool HasAnyCharacterInUnicodeRange(gfxUserFontEntry* aEntry,
   return false;
 }
 
-void FontFaceSet::FindMatchingFontFaces(const nsAString& aFont,
+void FontFaceSet::FindMatchingFontFaces(const nsACString& aFont,
                                         const nsAString& aText,
                                         nsTArray<FontFace*>& aFontFaces,
                                         ErrorResult& aRv) {
@@ -318,7 +318,7 @@ TimeStamp FontFaceSet::GetNavigationStartTimeStamp() {
 }
 
 already_AddRefed<Promise> FontFaceSet::Load(JSContext* aCx,
-                                            const nsAString& aFont,
+                                            const nsACString& aFont,
                                             const nsAString& aText,
                                             ErrorResult& aRv) {
   FlushUserFontSet();
@@ -345,7 +345,7 @@ already_AddRefed<Promise> FontFaceSet::Load(JSContext* aCx,
   return Promise::All(aCx, promises, aRv);
 }
 
-bool FontFaceSet::Check(const nsAString& aFont, const nsAString& aText,
+bool FontFaceSet::Check(const nsACString& aFont, const nsAString& aText,
                         ErrorResult& aRv) {
   FlushUserFontSet();
 
@@ -412,16 +412,6 @@ bool FontFaceSet::HasRuleFontFace(FontFace* aFontFace) {
 }
 #endif
 
-static bool IsPdfJs(nsIPrincipal* aPrincipal) {
-  if (!aPrincipal) {
-    return false;
-  }
-  nsCOMPtr<nsIURI> uri;
-  aPrincipal->GetURI(getter_AddRefs(uri));
-  return uri && uri->GetSpecOrDefault().EqualsLiteral(
-                    "resource://pdf.js/web/viewer.html");
-}
-
 void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
   FlushUserFontSet();
 
@@ -459,7 +449,7 @@ void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
   if (clonedDoc) {
     // The document is printing, copy the font to the static clone as well.
     nsCOMPtr<nsIPrincipal> principal = mDocument->GetPrincipal();
-    if (principal->IsSystemPrincipal() || IsPdfJs(principal)) {
+    if (principal->IsSystemPrincipal() || nsContentUtils::IsPDFJS(principal)) {
       ErrorResult rv;
       clonedDoc->Fonts()->Add(aFontFace, rv);
       MOZ_ASSERT(!rv.Failed());
@@ -1225,14 +1215,12 @@ nsresult FontFaceSet::LogMessage(gfxUserFontEntry* aUserFontEntry,
   message.AppendLiteral(" source: ");
   message.Append(fontURI);
 
-  if (LOG_ENABLED()) {
-    LOG(("userfonts (%p) %s", mUserFontSet.get(), message.get()));
-  }
+  LOG(("userfonts (%p) %s", mUserFontSet.get(), message.get()));
 
   // try to give the user an indication of where the rule came from
   RawServoFontFaceRule* rule = FindRuleForUserFontEntry(aUserFontEntry);
   nsString href;
-  nsString text;
+  nsAutoCString text;
   uint32_t line = 0;
   uint32_t column = 0;
   if (rule) {
@@ -1261,8 +1249,8 @@ nsresult FontFaceSet::LogMessage(gfxUserFontEntry* aUserFontEntry,
 
   uint64_t innerWindowID = mDocument->InnerWindowID();
   rv = scriptError->InitWithWindowID(NS_ConvertUTF8toUTF16(message),
-                                     href,  // file
-                                     text,  // src line
+                                     href,                         // file
+                                     NS_ConvertUTF8toUTF16(text),  // src line
                                      line, column,
                                      aFlags,        // flags
                                      "CSS Loader",  // category (make separate?)
@@ -1329,7 +1317,7 @@ bool FontFaceSet::IsFontLoadAllowed(const gfxFontFaceSrc& aSrc) {
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
   nsresult rv = NS_CheckContentLoadPolicy(aSrc.mURI->get(), secCheckLoadInfo,
-                                          EmptyCString(),  // mime type
+                                          ""_ns,  // mime type
                                           &shouldLoad,
                                           nsContentUtils::GetContentPolicy());
 
@@ -1515,7 +1503,7 @@ void FontFaceSet::DispatchLoadingEventAndReplaceReadyPromise() {
     return;
   }
 
-  (new AsyncEventDispatcher(this, NS_LITERAL_STRING("loading"), CanBubble::eNo))
+  (new AsyncEventDispatcher(this, u"loading"_ns, CanBubble::eNo))
       ->PostDOMEvent();
 
   if (PrefEnabled()) {
@@ -1646,12 +1634,10 @@ void FontFaceSet::CheckLoadingFinished() {
     }
   }
 
-  DispatchLoadingFinishedEvent(NS_LITERAL_STRING("loadingdone"),
-                               std::move(loaded));
+  DispatchLoadingFinishedEvent(u"loadingdone"_ns, std::move(loaded));
 
   if (!failed.IsEmpty()) {
-    DispatchLoadingFinishedEvent(NS_LITERAL_STRING("loadingerror"),
-                                 std::move(failed));
+    DispatchLoadingFinishedEvent(u"loadingerror"_ns, std::move(failed));
   }
 }
 

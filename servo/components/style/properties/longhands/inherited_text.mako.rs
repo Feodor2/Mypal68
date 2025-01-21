@@ -57,7 +57,7 @@ ${helpers.single_keyword(
     gecko_ffi_name="mTextSizeAdjust",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-size-adjust/#adjustment-control",
-    alias="-webkit-text-size-adjust",
+    aliases="-webkit-text-size-adjust",
 )}
 
 ${helpers.predefined_type(
@@ -82,9 +82,7 @@ ${helpers.predefined_type(
     servo_2020_pref="layout.2020.unimplemented",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-overflow-wrap",
-    flags="APPLIES_TO_CUE",
-    alias="word-wrap",
-    needs_context=False,
+    aliases="word-wrap",
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
@@ -96,57 +94,24 @@ ${helpers.predefined_type(
     servo_2020_pref="layout.2020.unimplemented",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-word-break",
-    needs_context=False,
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
-// TODO(pcwalton): Support `text-justify: distribute`.
-<%helpers:single_keyword
-    name="text-justify"
-    values="auto none inter-word"
+${helpers.predefined_type(
+    "text-justify",
+    "TextJustify",
+    "computed::TextJustify::Auto",
     engines="gecko servo-2013 servo-2020",
     servo_2020_pref="layout.2020.unimplemented",
-    extra_gecko_values="inter-character"
-    extra_specified="${'distribute' if engine == 'gecko' else ''}"
-    gecko_enum_prefix="StyleTextJustify"
-    animation_value_type="discrete"
-    gecko_pref="layout.css.text-justify.enabled"
-    has_effect_on_gecko_scrollbars="False"
-    spec="https://drafts.csswg.org/css-text/#propdef-text-justify"
-    servo_restyle_damage="rebuild_and_reflow"
->
-    % if engine == 'gecko':
-    impl ToComputedValue for SpecifiedValue {
-        type ComputedValue = computed_value::T;
-
-        #[inline]
-        fn to_computed_value(&self, _: &Context) -> computed_value::T {
-            match *self {
-                % for value in "Auto None InterCharacter InterWord".split():
-                SpecifiedValue::${value} => computed_value::T::${value},
-                % endfor
-                // https://drafts.csswg.org/css-text-3/#valdef-text-justify-distribute
-                SpecifiedValue::Distribute => computed_value::T::InterCharacter,
-            }
-        }
-
-        #[inline]
-        fn from_computed_value(computed: &computed_value::T) -> SpecifiedValue {
-            match *computed {
-                % for value in "Auto None InterCharacter InterWord".split():
-                computed_value::T::${value} => SpecifiedValue::${value},
-                % endfor
-            }
-        }
-    }
-    % endif
-</%helpers:single_keyword>
+    animation_value_type="discrete",
+    spec="https://drafts.csswg.org/css-text/#propdef-text-justify",
+    servo_restyle_damage="rebuild_and_reflow",
+)}
 
 ${helpers.predefined_type(
     "text-align-last",
     "TextAlignLast",
     "computed::text::TextAlignLast::Auto",
-    needs_context=False,
     engines="gecko",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-text-align-last",
@@ -187,7 +152,6 @@ ${helpers.predefined_type(
     name="white-space"
     values="normal pre nowrap pre-wrap pre-line"
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     extra_gecko_values="break-spaces -moz-pre-space"
     gecko_enum_prefix="StyleWhiteSpace"
     needs_conversion="True"
@@ -290,7 +254,6 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text-3/#line-break-property",
-    needs_context=False,
 )}
 
 // CSS Compatibility
@@ -338,13 +301,13 @@ ${helpers.single_keyword(
     spec="https://drafts.csswg.org/css-ruby/#ruby-align-property",
 )}
 
-${helpers.single_keyword(
+${helpers.predefined_type(
     "ruby-position",
-    "over under",
+    "RubyPosition",
+    "computed::RubyPosition::AlternateOver",
     engines="gecko",
-    animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-ruby/#ruby-position-property",
-    gecko_enum_prefix="StyleRubyPosition",
+    animation_value_type="discrete",
 )}
 
 // CSS Writing Modes Module Level 3
@@ -354,7 +317,7 @@ ${helpers.single_keyword(
     "text-combine-upright",
     "none all",
     engines="gecko",
-    animation_value_type="discrete",
+    animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes-3/#text-combine-upright",
 )}
 
@@ -369,15 +332,16 @@ ${helpers.single_keyword(
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
-${helpers.single_keyword(
+${helpers.predefined_type(
     "-moz-control-character-visibility",
-    "hidden visible",
+    "text::MozControlCharacterVisibility",
+    "Default::default()",
     engines="gecko",
-    gecko_enum_prefix="StyleControlCharacterVisibility",
-    gecko_pref_controlled_initial_value="layout.css.control-characters.visible=visible",
+    enabled_in="chrome",
+    gecko_pref="layout.css.moz-control-character-visibility.enabled",
+    has_effect_on_gecko_scrollbars=False,
     animation_value_type="none",
-    gecko_ffi_name="mControlCharacterVisibility",
-    spec="Nonstandard",
+    spec="Nonstandard"
 )}
 
 // text underline offset
@@ -387,8 +351,6 @@ ${helpers.predefined_type(
     "computed::LengthPercentageOrAuto::auto()",
     engines="gecko",
     animation_value_type="ComputedValue",
-    gecko_pref="layout.css.text-underline-offset.enabled",
-    has_effect_on_gecko_scrollbars=False,
     spec="https://drafts.csswg.org/css-text-decor-4/#underline-offset",
 )}
 
@@ -399,8 +361,6 @@ ${helpers.predefined_type(
     "computed::TextUnderlinePosition::AUTO",
     engines="gecko",
     animation_value_type="discrete",
-    gecko_pref="layout.css.text-underline-position.enabled",
-    has_effect_on_gecko_scrollbars=False,
     spec="https://drafts.csswg.org/css-text-decor-3/#text-underline-position-property",
 )}
 
@@ -410,9 +370,6 @@ ${helpers.predefined_type(
     "TextDecorationSkipInk",
     "computed::TextDecorationSkipInk::Auto",
     engines="gecko",
-    needs_context=False,
     animation_value_type="discrete",
-    gecko_pref="layout.css.text-decoration-skip-ink.enabled",
-    has_effect_on_gecko_scrollbars=False,
     spec="https://drafts.csswg.org/css-text-decor-4/#text-decoration-skip-ink-property",
 )}

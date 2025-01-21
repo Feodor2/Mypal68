@@ -20,10 +20,11 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 
-using mozilla::PresShell;
+using namespace mozilla;
 using mozilla::dom::BrowsingContext;
 using mozilla::dom::Document;
 using mozilla::dom::Element;
+using mozilla::dom::Selection;
 
 //---------------------------------------------------
 //-- nsPrintObject Class Impl
@@ -121,6 +122,18 @@ nsresult nsPrintObject::InitAsNestedObject(nsIDocShell* aDocShell,
   nsCOMPtr<nsPIDOMWindowOuter> window = aDoc->GetWindow();
   mContent = window->GetFrameElementInternal();
 
+  // "frame" elements not in a frameset context should be treated
+  // as iframes
+  if (mContent->IsHTMLElement(nsGkAtoms::frame) &&
+      mParent->mFrameType == eFrameSet) {
+    mFrameType = eFrame;
+  } else {
+    // Assume something iframe-like, i.e. iframe, object, or embed
+    mFrameType = eIFrame;
+    mParent->mPrintAsIs = true;
+    SetPrintAsIs(true);
+  }
+
   return NS_OK;
 }
 
@@ -136,4 +149,20 @@ void nsPrintObject::DestroyPresentation() {
   }
   mPresContext = nullptr;
   mViewManager = nullptr;
+}
+
+void nsPrintObject::SetPrintAsIs(bool aAsIs) {
+  mPrintAsIs = aAsIs;
+  for (const UniquePtr<nsPrintObject>& kid : mKids) {
+    kid->SetPrintAsIs(aAsIs);
+  }
+}
+
+void nsPrintObject::EnablePrinting(bool aEnable) {
+  // Set whether to print flag
+  mDontPrint = !aEnable;
+
+  for (const UniquePtr<nsPrintObject>& kid : mKids) {
+    kid->EnablePrinting(aEnable);
+  }
 }

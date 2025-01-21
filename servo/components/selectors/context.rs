@@ -295,6 +295,6 @@ where
     /// against.
     #[inline]
     pub fn shadow_host(&self) -> Option<OpaqueElement> {
-        self.current_host.clone()
+        self.current_host
     }
 }

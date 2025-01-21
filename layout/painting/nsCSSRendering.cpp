@@ -18,6 +18,7 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGImageContext.h"
 #include "gfxFont.h"
 #include "ScaledFontBase.h"
 #include "SkTextBlob.h"
@@ -50,8 +51,6 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSProps.h"
 #include "nsContentUtils.h"
-#include "SVGObserverUtils.h"
-#include "nsSVGIntegrationUtils.h"
 #include "gfxDrawable.h"
 #include "GeckoProfiler.h"
 #include "nsCSSRenderingBorders.h"
@@ -64,7 +63,6 @@
 #include "nsInlineFrame.h"
 #include "nsRubyTextContainerFrame.h"
 #include <algorithm>
-#include "SVGImageContext.h"
 #ifdef MOZ_BUILD_WEBRENDER
 #  include "TextDrawTarget.h"
 #endif
@@ -530,22 +528,23 @@ static nsRect JoinBoxesForBlockAxisSlice(nsIFrame* aFrame,
                                          const nsRect& aBorderArea) {
   // Inflate the block-axis size as if our continuations were laid out
   // adjacent in that axis.  Note that we don't touch the inline size.
-  nsRect borderArea = aBorderArea;
+  const auto wm = aFrame->GetWritingMode();
+  const nsSize dummyContainerSize;
+  LogicalRect borderArea(wm, aBorderArea, dummyContainerSize);
   nscoord bSize = 0;
-  auto wm = aFrame->GetWritingMode();
   nsIFrame* f = aFrame->GetNextContinuation();
   for (; f; f = f->GetNextContinuation()) {
     bSize += f->BSize(wm);
   }
-  (wm.IsVertical() ? borderArea.width : borderArea.height) += bSize;
+  borderArea.BSize(wm) += bSize;
   bSize = 0;
   f = aFrame->GetPrevContinuation();
   for (; f; f = f->GetPrevContinuation()) {
     bSize += f->BSize(wm);
   }
-  (wm.IsVertical() ? borderArea.x : borderArea.y) -= bSize;
-  (wm.IsVertical() ? borderArea.width : borderArea.height) += bSize;
-  return borderArea;
+  borderArea.BStart(wm) -= bSize;
+  borderArea.BSize(wm) += bSize;
+  return borderArea.GetPhysicalRect(wm, dummyContainerSize);
 }
 
 /**
@@ -787,7 +786,7 @@ static nsCSSBorderRenderer ConstructBorderRenderer(
                "Should use aBorderArea for box-decoration-break:clone");
     MOZ_ASSERT(
         aForFrame->GetSkipSides().IsEmpty() ||
-            IS_TRUE_OVERFLOW_CONTAINER(aForFrame) ||
+            aForFrame->IsTrueOverflowContainer() ||
             aForFrame->IsColumnSetFrame(),  // a little broader than column-rule
         "Should not skip sides for box-decoration-break:clone except "
         "::first-letter/line continuations or other frame types that "
@@ -819,16 +818,9 @@ static nsCSSBorderRenderer ConstructBorderRenderer(
       static_cast<int>(borderStyles[1]), static_cast<int>(borderStyles[2]),
       static_cast<int>(borderStyles[3]));
 
-  Document* document = nullptr;
-  nsIContent* content = aForFrame->GetContent();
-  if (content) {
-    document = content->OwnerDoc();
-  }
-
   return nsCSSBorderRenderer(
-      aPresContext, document, aDrawTarget, dirtyRect, joinedBorderAreaPx,
-      borderStyles, borderWidths, bgRadii, borderColors,
-      !aForFrame->BackfaceIsHidden(),
+      aPresContext, aDrawTarget, dirtyRect, joinedBorderAreaPx, borderStyles,
+      borderWidths, bgRadii, borderColors, !aForFrame->BackfaceIsHidden(),
       *aNeedsClip ? Some(NSRectToRect(aBorderArea, oneDevPixel)) : Nothing());
 }
 
@@ -972,8 +964,6 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
     nsPresContext* aPresContext, gfxContext* aRenderingContext,
     nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
     ComputedStyle* aStyle) {
-  nscoord twipsRadii[8];
-
   // Get our ComputedStyle's color struct.
   const nsStyleOutline* ourOutline = aStyle->StyleOutline();
 
@@ -1005,24 +995,6 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
 
   nscoord width = ourOutline->GetOutlineWidth();
 
-  nsRect outerRect = innerRect;
-  outerRect.Inflate(width);
-
-  // get the radius for our outline
-  nsIFrame::ComputeBorderRadii(ourOutline->mOutlineRadius, aBorderArea.Size(),
-                               outerRect.Size(), Sides(), twipsRadii);
-
-  // Get our conversion values
-  nscoord oneDevPixel = aPresContext->DevPixelsToAppUnits(1);
-
-  // get the outer rectangles
-  Rect oRect(NSRectToRect(outerRect, oneDevPixel));
-
-  // convert the radii
-  nsMargin outlineMargin(width, width, width, width);
-  RectCornerRadii outlineRadii;
-  ComputePixelRadii(twipsRadii, oneDevPixel, &outlineRadii);
-
   StyleBorderStyle outlineStyle;
   if (ourOutline->mOutlineStyle.IsAuto()) {
     if (StaticPrefs::layout_css_outline_style_auto_enabled()) {
@@ -1045,6 +1017,38 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
     outlineStyle = ourOutline->mOutlineStyle.AsBorderStyle();
   }
 
+  RectCornerRadii outlineRadii;
+  nsRect outerRect = innerRect;
+  outerRect.Inflate(width);
+
+  const nscoord oneDevPixel = aPresContext->AppUnitsPerDevPixel();
+  Rect oRect(NSRectToRect(outerRect, oneDevPixel));
+
+  const Float outlineWidths[4] = {
+      Float(width) / oneDevPixel, Float(width) / oneDevPixel,
+      Float(width) / oneDevPixel, Float(width) / oneDevPixel};
+
+  // convert the radii
+  nscoord twipsRadii[8];
+
+  // get the radius for our outline
+  if (StaticPrefs::layout_css_outline_follows_border_radius_enabled()) {
+    if (aForFrame->GetBorderRadii(twipsRadii)) {
+      RectCornerRadii innerRadii;
+      ComputePixelRadii(twipsRadii, oneDevPixel, &innerRadii);
+
+      Float devPixelOffset = aPresContext->AppUnitsToFloatDevPixels(offset);
+      const Float widths[4] = {
+          outlineWidths[0] + devPixelOffset, outlineWidths[1] + devPixelOffset,
+          outlineWidths[2] + devPixelOffset, outlineWidths[3] + devPixelOffset};
+      nsCSSBorderRenderer::ComputeOuterRadii(innerRadii, widths, &outlineRadii);
+    }
+  } else {
+    nsIFrame::ComputeBorderRadii(ourOutline->mOutlineRadius, aBorderArea.Size(),
+                                 outerRect.Size(), Sides(), twipsRadii);
+    ComputePixelRadii(twipsRadii, oneDevPixel, &outlineRadii);
+  }
+
   StyleBorderStyle outlineStyles[4] = {outlineStyle, outlineStyle, outlineStyle,
                                        outlineStyle};
 
@@ -1055,26 +1059,13 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
   nscolor outlineColors[4] = {outlineColor, outlineColor, outlineColor,
                               outlineColor};
 
-  // convert the border widths
-  Float outlineWidths[4] = {
-      Float(width) / oneDevPixel, Float(width) / oneDevPixel,
-      Float(width) / oneDevPixel, Float(width) / oneDevPixel};
   Rect dirtyRect = NSRectToRect(aDirtyRect, oneDevPixel);
-
-  Document* document = nullptr;
-  nsIContent* content = aForFrame->GetContent();
-  if (content) {
-    document = content->OwnerDoc();
-  }
 
   DrawTarget* dt =
       aRenderingContext ? aRenderingContext->GetDrawTarget() : nullptr;
-  nsCSSBorderRenderer br(aPresContext, document, dt, dirtyRect, oRect,
-                         outlineStyles, outlineWidths, outlineRadii,
-                         outlineColors, !aForFrame->BackfaceIsHidden(),
-                         Nothing());
-
-  return Some(br);
+  return Some(nsCSSBorderRenderer(
+      aPresContext, dt, dirtyRect, oRect, outlineStyles, outlineWidths,
+      outlineRadii, outlineColors, !aForFrame->BackfaceIsHidden(), Nothing()));
 }
 
 void nsCSSRendering::PaintOutline(nsPresContext* aPresContext,
@@ -1126,9 +1117,9 @@ void nsCSSRendering::PaintFocus(nsPresContext* aPresContext,
   //
   // WebRender layers-free mode don't use PaintFocus function. Just assign
   // the backface-visibility to true for this case.
-  nsCSSBorderRenderer br(aPresContext, nullptr, aDrawTarget, focusRect,
-                         focusRect, focusStyles, focusWidths, focusRadii,
-                         focusColors, true, Nothing());
+  nsCSSBorderRenderer br(aPresContext, aDrawTarget, focusRect, focusRect,
+                         focusStyles, focusWidths, focusRadii, focusColors,
+                         true, Nothing());
   br.DrawBorders();
 
   PrintAsStringNewline();
@@ -1208,7 +1199,7 @@ nsIFrame* nsCSSRendering::FindNonTransparentBackgroundFrame(
 // We need to treat the viewport as canvas because, even though
 // it does not actually paint a background, we need to get the right
 // background style so we correctly detect transparent documents.
-bool nsCSSRendering::IsCanvasFrame(nsIFrame* aFrame) {
+bool nsCSSRendering::IsCanvasFrame(const nsIFrame* aFrame) {
   LayoutFrameType frameType = aFrame->Type();
   return frameType == LayoutFrameType::Canvas ||
          frameType == LayoutFrameType::Root ||
@@ -1287,7 +1278,7 @@ ComputedStyle* nsCSSRendering::FindRootFrameBackground(nsIFrame* aForFrame) {
   return FindBackgroundStyleFrame(aForFrame)->Style();
 }
 
-inline bool FindElementBackground(nsIFrame* aForFrame,
+inline bool FindElementBackground(const nsIFrame* aForFrame,
                                   nsIFrame* aRootElementFrame) {
   if (aForFrame == aRootElementFrame) {
     // We must have propagated our background to the viewport or canvas. Abort.
@@ -1325,7 +1316,7 @@ inline bool FindElementBackground(nsIFrame* aForFrame,
   return !htmlBG->IsTransparent(aRootElementFrame);
 }
 
-bool nsCSSRendering::FindBackgroundFrame(nsIFrame* aForFrame,
+bool nsCSSRendering::FindBackgroundFrame(const nsIFrame* aForFrame,
                                          nsIFrame** aBackgroundFrame) {
   nsIFrame* rootElementFrame =
       aForFrame->PresShell()->FrameConstructor()->GetRootElementStyleFrame();
@@ -1334,11 +1325,11 @@ bool nsCSSRendering::FindBackgroundFrame(nsIFrame* aForFrame,
     return true;
   }
 
-  *aBackgroundFrame = aForFrame;
+  *aBackgroundFrame = const_cast<nsIFrame*>(aForFrame);
   return FindElementBackground(aForFrame, rootElementFrame);
 }
 
-bool nsCSSRendering::FindBackground(nsIFrame* aForFrame,
+bool nsCSSRendering::FindBackground(const nsIFrame* aForFrame,
                                     ComputedStyle** aBackgroundSC) {
   nsIFrame* backgroundFrame = nullptr;
   if (FindBackgroundFrame(aForFrame, &backgroundFrame)) {
@@ -1384,10 +1375,9 @@ gfx::Color nsCSSRendering::GetShadowColor(const StyleSimpleShadow& aShadow,
 
 nsRect nsCSSRendering::GetShadowRect(const nsRect& aFrameArea,
                                      bool aNativeTheme, nsIFrame* aForFrame) {
-  nsRect frameRect = aNativeTheme
-                         ? aForFrame->GetVisualOverflowRectRelativeToSelf() +
-                               aFrameArea.TopLeft()
-                         : aFrameArea;
+  nsRect frameRect = aNativeTheme ? aForFrame->InkOverflowRectRelativeToSelf() +
+                                        aFrameArea.TopLeft()
+                                  : aFrameArea;
   Sides skipSides = aForFrame->GetSkipSides();
   frameRect = BoxDecorationRectForBorder(aForFrame, frameRect, skipSides);
 
@@ -1889,7 +1879,8 @@ bool nsCSSRendering::CanBuildWebRenderDisplayItemsForStyleImageLayer(
 
   // We only support painting gradients and image for a single style image
   // layer, and we don't support crop-rects.
-  const auto& styleImage = aBackgroundStyle->mImage.mLayers[aLayer].mImage;
+  const auto& styleImage =
+      aBackgroundStyle->mImage.mLayers[aLayer].mImage.FinalImage();
   if (styleImage.IsImageRequestType()) {
     if (styleImage.IsRect()) {
       return false;
@@ -4023,8 +4014,7 @@ void nsCSSRendering::PaintDecorationLine(
       aFrame->StyleText()->mTextDecorationSkipInk;
   bool skipInkEnabled =
       skipInk != mozilla::StyleTextDecorationSkipInk::None &&
-      aParams.decoration != StyleTextDecorationLine::LINE_THROUGH &&
-      StaticPrefs::layout_css_text_decoration_skip_ink_enabled();
+      aParams.decoration != StyleTextDecorationLine::LINE_THROUGH;
 
   if (!skipInkEnabled || aParams.glyphRange.Length() == 0) {
     PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
@@ -4074,6 +4064,16 @@ void nsCSSRendering::PaintDecorationLine(
   int32_t spacingOffset = isRTL ? aParams.glyphRange.Length() - 1 : 0;
   gfxTextRun::GlyphRunIterator iter(textRun, aParams.glyphRange, isRTL);
 
+  // For any glyph run where we don't actually do skipping, we'll need to
+  // advance the current position by its width.
+  // (For runs we do process, CreateTextBlob will update the position.)
+  auto currentGlyphRunAdvance = [&]() {
+    return textRun->GetAdvanceWidth(
+               gfxTextRun::Range(iter.GetStringStart(), iter.GetStringEnd()),
+               aParams.provider) /
+           appUnitsPerDevPixel;
+  };
+
   while (iter.NextRun()) {
     if (iter.GetGlyphRun()->mOrientation ==
             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT ||
@@ -4087,17 +4087,22 @@ void nsCSSRendering::PaintDecorationLine(
       // have an underline that looks really bad if this is done
       // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1573249),
       // when skip-ink is set to 'auto'.
-      textPos.fX +=
-          textRun->GetAdvanceWidth(
-              gfxTextRun::Range(iter.GetStringStart(), iter.GetStringEnd()),
-              aParams.provider) /
-          appUnitsPerDevPixel;
+      textPos.fX += currentGlyphRunAdvance();
       continue;
     }
 
-    // get the glyph run's font
-    SkFont font;
-    if (!GetSkFontFromGfxFont(aDrawTarget, iter.GetGlyphRun()->mFont, font)) {
+    gfxFont* font = iter.GetGlyphRun()->mFont;
+    // Don't try to apply skip-ink to 'sbix' fonts like Apple Color Emoji,
+    // because old macOS (10.9) may crash trying to retrieve glyph paths
+    // that don't exist.
+    if (font->GetFontEntry()->HasFontTable(TRUETYPE_TAG('s', 'b', 'i', 'x'))) {
+      textPos.fX += currentGlyphRunAdvance();
+      continue;
+    }
+
+    // get a Skia version of the glyph run's font
+    SkFont skiafont;
+    if (!GetSkFontFromGfxFont(aDrawTarget, font, skiafont)) {
       PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
       return;
     }
@@ -4105,11 +4110,12 @@ void nsCSSRendering::PaintDecorationLine(
     // Create a text blob with correctly positioned glyphs. This also updates
     // textPos.fX with the advance of the glyphs.
     sk_sp<const SkTextBlob> textBlob =
-        CreateTextBlob(textRun, characterGlyphs, font, spacing.Elements(),
+        CreateTextBlob(textRun, characterGlyphs, skiafont, spacing.Elements(),
                        iter.GetStringStart(), iter.GetStringEnd(),
                        (float)appUnitsPerDevPixel, textPos, spacingOffset);
 
     if (!textBlob) {
+      textPos.fX += currentGlyphRunAdvance();
       continue;
     }
 
@@ -4118,8 +4124,7 @@ void nsCSSRendering::PaintDecorationLine(
       // font-by-font basis since Skia lines up the text on a alphabetic
       // baseline, but for some vertical-* writing modes the offset is from the
       // center.
-      gfxFont::Metrics metrics =
-          iter.GetGlyphRun()->mFont->GetMetrics(nsFontMetrics::eHorizontal);
+      gfxFont::Metrics metrics = font->GetMetrics(nsFontMetrics::eHorizontal);
       Float centerToBaseline = (metrics.emAscent - metrics.emDescent) / 2.0f;
       GetPositioning(aParams, rect, oneCSSPixel, centerToBaseline, bounds);
     }
@@ -4877,7 +4882,7 @@ bool nsContextBoxBlur::InsetBoxBlur(
   // input data to the blur. This way, we don't have to scale the min
   // inset blur to the invert of the dest context, then rescale it back
   // when we draw to the destination surface.
-  gfx::Size scale = aDestinationCtx->CurrentMatrix().ScaleFactors(true);
+  gfx::Size scale = aDestinationCtx->CurrentMatrix().ScaleFactors();
   Matrix transform = aDestinationCtx->CurrentMatrix();
 
   // XXX: we could probably handle negative scales but for now it's easier just

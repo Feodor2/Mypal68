@@ -23,6 +23,7 @@
 #include "nsFocusManager.h"
 #include "nsFrameSelection.h"
 #include "nsITimer.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 
 using namespace mozilla;
@@ -686,8 +687,8 @@ nsPoint AccessibleCaretEventHub::GetTouchEventPosition(
 
       // Get event coordinate relative to root frame.
       nsIFrame* rootFrame = mPresShell->GetRootFrame();
-      return nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, touchIntPoint,
-                                                          rootFrame);
+      return nsLayoutUtils::GetEventCoordinatesRelativeTo(
+          aEvent, touchIntPoint, RelativeTo{rootFrame});
     }
   }
   return nsPoint(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
@@ -700,7 +701,7 @@ nsPoint AccessibleCaretEventHub::GetMouseEventPosition(
   // Get event coordinate relative to root frame.
   nsIFrame* rootFrame = mPresShell->GetRootFrame();
   return nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, mouseIntPoint,
-                                                      rootFrame);
+                                                      RelativeTo{rootFrame});
 }
 
 }  // namespace mozilla

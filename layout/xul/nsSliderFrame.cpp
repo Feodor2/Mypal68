@@ -30,13 +30,14 @@
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
-#include "nsRefreshDriver.h"  // for nsAPostRefreshObserver
-#include "nsSVGIntegrationUtils.h"
+#include "nsRefreshDriver.h"     // for nsAPostRefreshObserver
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT
+#include "mozilla/DisplayPortUtils.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGIntegrationUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
@@ -309,7 +310,7 @@ void nsSliderFrame::BuildDisplayListForChildren(
       const CSSCoord thumbStart = NSAppUnitsToFloatPixels(
           isHorizontal ? thumbRect.x : thumbRect.y, appUnitsPerCss);
 
-      const nsRect overflow = thumb->GetVisualOverflowRectRelativeToParent();
+      const nsRect overflow = thumb->InkOverflowRectRelativeToParent();
       nsSize refSize = aBuilder->RootReferenceFrame()->GetSize();
       nsRect dirty = aBuilder->GetVisibleRect().Intersect(thumbRect);
       dirty = nsLayoutUtils::ComputePartialPrerenderArea(
@@ -594,8 +595,7 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
 
 #ifdef MOZ_WIDGET_GTK
     RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
-    thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active,
-                   NS_LITERAL_STRING("true"), true);
+    thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active, u"true"_ns, true);
 #endif
 
     if (aEvent->mClass == eTouchEventClass) {
@@ -771,8 +771,8 @@ static void UpdateAttribute(dom::Element* aScrollbar, nscoord aNewPos,
   str.AppendInt(aNewPos);
 
   if (aIsSmooth) {
-    aScrollbar->SetAttr(kNameSpaceID_None, nsGkAtoms::smooth,
-                        NS_LITERAL_STRING("true"), false);
+    aScrollbar->SetAttr(kNameSpaceID_None, nsGkAtoms::smooth, u"true"_ns,
+                        false);
   }
   aScrollbar->SetAttr(kNameSpaceID_None, nsGkAtoms::curpos, str, aNotify);
   if (aIsSmooth) {
@@ -930,8 +930,7 @@ static bool ScrollFrameWillBuildScrollInfoLayer(nsIFrame* aScrollFrame) {
    */
   nsIFrame* current = aScrollFrame;
   while (current) {
-    if (nsSVGIntegrationUtils::UsesSVGEffectsNotSupportedInCompositor(
-            current)) {
+    if (SVGIntegrationUtils::UsesSVGEffectsNotSupportedInCompositor(current)) {
       return true;
     }
     current = nsLayoutUtils::GetParentOrPlaceholderForCrossDoc(current);
@@ -996,7 +995,7 @@ void nsSliderFrame::StartAPZDrag(WidgetGUIEvent* aEvent) {
     return;
   }
 
-  if (!nsLayoutUtils::HasDisplayPort(scrollableContent)) {
+  if (!DisplayPortUtils::HasDisplayPort(scrollableContent)) {
     return;
   }
 
@@ -1082,8 +1081,7 @@ nsresult nsSliderFrame::StartDrag(Event* aEvent) {
 
 #ifdef MOZ_WIDGET_GTK
   RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
-  thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active,
-                 NS_LITERAL_STRING("true"), true);
+  thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active, u"true"_ns, true);
 #endif
 
   if (isHorizontal)
@@ -1154,10 +1152,10 @@ void nsSliderFrame::AddListener() {
   if (!thumbFrame) {
     return;
   }
-  thumbFrame->GetContent()->AddSystemEventListener(
-      NS_LITERAL_STRING("mousedown"), mMediator, false, false);
-  thumbFrame->GetContent()->AddSystemEventListener(
-      NS_LITERAL_STRING("touchstart"), mMediator, false, false);
+  thumbFrame->GetContent()->AddSystemEventListener(u"mousedown"_ns, mMediator,
+                                                   false, false);
+  thumbFrame->GetContent()->AddSystemEventListener(u"touchstart"_ns, mMediator,
+                                                   false, false);
 }
 
 void nsSliderFrame::RemoveListener() {
@@ -1166,8 +1164,10 @@ void nsSliderFrame::RemoveListener() {
   nsIFrame* thumbFrame = mFrames.FirstChild();
   if (!thumbFrame) return;
 
-  thumbFrame->GetContent()->RemoveSystemEventListener(
-      NS_LITERAL_STRING("mousedown"), mMediator, false);
+  thumbFrame->GetContent()->RemoveSystemEventListener(u"mousedown"_ns,
+                                                      mMediator, false);
+  thumbFrame->GetContent()->RemoveSystemEventListener(u"touchstart"_ns,
+                                                      mMediator, false);
 }
 
 bool nsSliderFrame::ShouldScrollForEvent(WidgetGUIEvent* aEvent) {

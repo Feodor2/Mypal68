@@ -259,8 +259,7 @@ int32_t nsScrollbarFrame::MoveToNewPosition() {
 
   AutoWeakFrame weakFrame(this);
   if (mSmoothScroll) {
-    content->SetAttr(kNameSpaceID_None, nsGkAtoms::smooth,
-                     NS_LITERAL_STRING("true"), false);
+    content->SetAttr(kNameSpaceID_None, nsGkAtoms::smooth, u"true"_ns, false);
   }
   content->SetAttr(kNameSpaceID_None, nsGkAtoms::curpos, curposStr, false);
   // notify the nsScrollbarFrame of the change
@@ -295,18 +294,18 @@ static already_AddRefed<Element> MakeScrollbarButton(
 
   static constexpr nsLiteralString kSbattrValues[2][2] = {
       {
-          NS_LITERAL_STRING("scrollbar-up-top"),
-          NS_LITERAL_STRING("scrollbar-up-bottom"),
+          u"scrollbar-up-top"_ns,
+          u"scrollbar-up-bottom"_ns,
       },
       {
-          NS_LITERAL_STRING("scrollbar-down-top"),
-          NS_LITERAL_STRING("scrollbar-down-bottom"),
+          u"scrollbar-down-top"_ns,
+          u"scrollbar-down-bottom"_ns,
       },
   };
 
   static constexpr nsLiteralString kTypeValues[2] = {
-      NS_LITERAL_STRING("decrement"),
-      NS_LITERAL_STRING("increment"),
+      u"decrement"_ns,
+      u"increment"_ns,
   };
 
   aKey = AnonymousContentKey::Type_ScrollbarButton;
@@ -375,8 +374,7 @@ nsresult nsScrollbarFrame::CreateAnonymousContent(
         nodeInfoManager->GetNodeInfo(nsGkAtoms::slider, nullptr,
                                      kNameSpaceID_XUL, nsINode::ELEMENT_NODE));
     mSlider->SetAttr(kNameSpaceID_None, nsGkAtoms::orient, orient, false);
-    mSlider->SetAttr(kNameSpaceID_None, nsGkAtoms::flex, NS_LITERAL_STRING("1"),
-                     false);
+    mSlider->SetAttr(kNameSpaceID_None, nsGkAtoms::flex, u"1"_ns, false);
 
     aElements.AppendElement(ContentInfo(mSlider, key));
 

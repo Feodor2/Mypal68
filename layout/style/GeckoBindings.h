@@ -457,6 +457,10 @@ void Gecko_GetComputedURLSpec(const mozilla::StyleComputedUrl* url,
 void Gecko_GetComputedImageURLSpec(const mozilla::StyleComputedUrl* url,
                                    nsCString* spec);
 
+// Return true if the given image MIME type is supported
+bool Gecko_IsSupportedImageMimeType(const uint8_t* mime_type,
+                                    const uint32_t len);
+
 void Gecko_nsIURI_Debug(nsIURI*, nsCString* spec);
 
 void Gecko_nsIReferrerInfo_Debug(nsIReferrerInfo* aReferrerInfo,
@@ -620,8 +624,8 @@ void Gecko_MediaFeatures_GetDeviceSize(const mozilla::dom::Document*,
 
 float Gecko_MediaFeatures_GetResolution(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_PrefersReducedMotion(const mozilla::dom::Document*);
-mozilla::StyleContrastPref Gecko_MediaFeatures_PrefersContrast(
-    const mozilla::dom::Document*, const bool aForcedColors);
+mozilla::StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
+    const mozilla::dom::Document*);
 mozilla::StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
     const mozilla::dom::Document*);
 

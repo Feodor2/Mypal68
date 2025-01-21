@@ -5,12 +5,12 @@
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
 <%helpers:shorthand name="list-style"
-                    engines="gecko servo-2013"
+                    engines="gecko servo-2013 servo-2020"
                     sub_properties="list-style-position list-style-image list-style-type"
                     derive_serialize="True"
                     spec="https://drafts.csswg.org/css-lists/#propdef-list-style">
     use crate::properties::longhands::{list_style_image, list_style_position, list_style_type};
-    use crate::values::specified::url::ImageUrlOrNone;
+    use crate::values::specified::Image;
 
     pub fn parse_value<'i, 't>(
         context: &ParserContext,
@@ -69,7 +69,7 @@
             (true, 2, None, None) => {
                 Ok(expanded! {
                     list_style_position: position,
-                    list_style_image: ImageUrlOrNone::none(),
+                    list_style_image: Image::None,
                     list_style_type: ListStyleType::None,
                 })
             }
@@ -83,14 +83,14 @@
             (true, 1, Some(list_style_type), None) => {
                 Ok(expanded! {
                     list_style_position: position,
-                    list_style_image: ImageUrlOrNone::none(),
+                    list_style_image: Image::None,
                     list_style_type: list_style_type,
                 })
             }
             (true, 1, None, None) => {
                 Ok(expanded! {
                     list_style_position: position,
-                    list_style_image: ImageUrlOrNone::none(),
+                    list_style_image: Image::None,
                     list_style_type: ListStyleType::None,
                 })
             }

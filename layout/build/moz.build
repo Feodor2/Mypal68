@@ -39,7 +39,6 @@ LOCAL_INCLUDES += [
     '/dom/media',
     '/dom/offline',
     '/dom/storage',
-    '/dom/svg',
     '/dom/xbl',
     '/dom/xslt/base',
     '/dom/xslt/xml',

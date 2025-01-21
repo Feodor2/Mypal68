@@ -239,7 +239,7 @@ class Loader final {
   Result<RefPtr<StyleSheet>, nsresult> LoadSheet(
       nsIURI* aURI, IsPreload, const Encoding* aPreloadEncoding,
       nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
-      CORSMode = CORS_NONE, const nsAString& aIntegrity = EmptyString());
+      CORSMode = CORS_NONE, const nsAString& aIntegrity = u""_ns);
 
   /**
    * As above, but without caring for a couple things.
@@ -333,8 +333,7 @@ class Loader final {
                               const nsAString& aNonce, IsPreload);
 
   enum class SheetState : uint8_t {
-    Unknown = 0,
-    NeedsParser,
+    NeedsParser = 0,
     Pending,
     Loading,
     Complete

@@ -11,6 +11,7 @@
 #include "nsArray.h"
 #include "nsString.h"
 #include "nsIContentInlines.h"
+#include "nsIScrollableFrame.h"
 #include "mozilla/dom/Document.h"
 #include "nsXBLBinding.h"
 #include "nsXBLPrototypeBinding.h"
@@ -298,7 +299,7 @@ uint32_t InspectorUtils::GetSelectorCount(GlobalObject& aGlobal,
 /* static */
 void InspectorUtils::GetSelectorText(GlobalObject& aGlobal,
                                      BindingStyleRule& aRule,
-                                     uint32_t aSelectorIndex, nsString& aText,
+                                     uint32_t aSelectorIndex, nsACString& aText,
                                      ErrorResult& aRv) {
   aRv = aRule.GetSelectorText(aSelectorIndex, aText);
 }
@@ -439,6 +440,12 @@ static uint8_t ToServoCssType(InspectorPropertyType aType) {
       MOZ_ASSERT_UNREACHABLE("Unknown property type?");
       return 0;
   }
+}
+
+bool InspectorUtils::Supports(GlobalObject&, const nsACString& aDeclaration,
+                              const SupportsOptions& aOptions) {
+  return Servo_CSSSupports(&aDeclaration, aOptions.mUserAgent, aOptions.mChrome,
+                           aOptions.mQuirks);
 }
 
 bool InspectorUtils::CssPropertySupportsType(GlobalObject& aGlobalObject,

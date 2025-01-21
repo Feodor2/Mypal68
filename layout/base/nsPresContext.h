@@ -179,10 +179,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   nsPresContext* GetParentPresContext();
 
   /**
-   * Returns the prescontext of the toplevel content document that contains
-   * this presentation, or null if there isn't one.
+   * Returns the prescontext of the root content document in the same process
+   * that contains this presentation, or null if there isn't one.
    */
-  nsPresContext* GetToplevelContentDocumentPresContext();
+  nsPresContext* GetInProcessRootContentDocumentPresContext();
 
   /**
    * Returns the nearest widget for the root frame or view of this.
@@ -398,7 +398,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Get/set the size of a page
    */
-  nsSize GetPageSize() { return mPageSize; }
+  const nsSize& GetPageSize() const { return mPageSize; }
+  const nsMargin& GetDefaultPageMargin() const { return mDefaultPageMargin; }
   void SetPageSize(nsSize aSize) { mPageSize = aSize; }
 
   /**
@@ -421,14 +422,19 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void SetPageScale(float aScale) { mPageScale = aScale; }
 
   /**
-   * Get/set the scaling facor to use when rendering the pages for print
+   * Get/set the scaling factor to use when rendering the pages for print
    * preview. Only safe to get after print preview set up; safe to set anytime.
    * This is a scaling factor for the display of the print preview.  It
    * does not affect layout.  It only affects the size of the onscreen pages
    * in print preview.
+   *
+   * The getter should only be used by the page sequence frame, which is the
+   * frame responsible for applying the scaling. Other callers should use
+   * nsPageSequenceFrame::GetPrintPreviewScale() if needed, instead of this API.
+   *
    * XXX Temporary: see http://wiki.mozilla.org/Gecko:PrintPreview
    */
-  float GetPrintPreviewScale() { return mPPScale; }
+  float GetPrintPreviewScaleForSequenceFrame() { return mPPScale; }
   void SetPrintPreviewScale(float aScale) { mPPScale = aScale; }
 
   nsDeviceContext* DeviceContext() const { return mDeviceContext; }
@@ -1132,6 +1138,16 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   nsRect mVisibleArea;
   nsSize mPageSize;
+
+  // The computed page margins from the print settings.
+  //
+  // This margin will be used for each page in the current print operation, by
+  // default (i.e. unless overridden by @page rules).
+  //
+  // FIXME(emilio): Maybe we could let a global @page rule do that, though it's
+  // sketchy at best, see https://github.com/w3c/csswg-drafts/issues/5437 for
+  // discussion.
+  nsMargin mDefaultPageMargin;
   float mPageScale;
   float mPPScale;
 

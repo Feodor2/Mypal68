@@ -9,6 +9,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/DocumentStyleRootIterator.h"
+#include "mozilla/EffectSet.h"
 #include "mozilla/GeckoBindings.h"
 #include "mozilla/LayerAnimationInfo.h"
 #include "mozilla/layers/AnimationInfo.h"
@@ -18,8 +19,13 @@
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/SVGIntegrationUtils.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGTextFrame.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ViewportFrame.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -43,12 +49,7 @@
 #include "nsStyleUtil.h"
 #include "nsTransitionManager.h"
 #include "StickyScrollContainer.h"
-#include "mozilla/EffectSet.h"
-#include "mozilla/IntegerRange.h"
-#include "SVGObserverUtils.h"
-#include "SVGTextFrame.h"
 #include "ActiveLayerTracker.h"
-#include "nsSVGIntegrationUtils.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -465,11 +466,8 @@ static bool StateChangeMayAffectFrame(const Element& aElement,
     return false;
   }
 
-  const bool brokenChanged = aStates.HasAtLeastOneOfStates(
-      NS_EVENT_STATE_BROKEN | NS_EVENT_STATE_USERDISABLED |
-      NS_EVENT_STATE_SUPPRESSED);
-  const bool loadingChanged =
-      aStates.HasAtLeastOneOfStates(NS_EVENT_STATE_LOADING);
+  const bool brokenChanged = aStates.HasState(NS_EVENT_STATE_BROKEN);
+  const bool loadingChanged = aStates.HasState(NS_EVENT_STATE_LOADING);
 
   if (!brokenChanged && !loadingChanged) {
     return false;
@@ -653,7 +651,7 @@ static nsIFrame* GetFrameForChildrenOnlyTransformHint(nsIFrame* aFrame) {
   if (aFrame->IsSVGOuterSVGFrame()) {
     aFrame = aFrame->PrincipalChildList().FirstChild();
     MOZ_ASSERT(aFrame->IsSVGOuterSVGAnonChildFrame(),
-               "Where is the nsSVGOuterSVGFrame's anon child??");
+               "Where is the SVGOuterSVGFrame's anon child??");
   }
   MOZ_ASSERT(aFrame->IsFrameOfType(nsIFrame::eSVG | nsIFrame::eSVGContainer),
              "Children-only transforms only expected on SVG frames");
@@ -693,9 +691,23 @@ static bool RecomputePosition(nsIFrame* aFrame) {
     return false;
   }
 
-  // Flexbox and Grid layout supports CSS Align and the optimizations below
-  // don't support that yet.
   if (aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
+    // If the frame has an intrinsic block-size, we resolve its 'auto' margins
+    // after doing layout, since we need to know the frame's block size. See
+    // nsAbsoluteContainingBlock::ResolveAutoMarginsAfterLayout().
+    //
+    // Since the size of the frame doesn't change, we could modify the below
+    // computation to compute the margin correctly without doing a full reflow,
+    // however we decided to try doing a full reflow for now.
+    if (aFrame->HasIntrinsicKeywordForBSize()) {
+      WritingMode wm = aFrame->GetWritingMode();
+      const auto* styleMargin = aFrame->StyleMargin();
+      if (styleMargin->HasBlockAxisAuto(wm)) {
+        return false;
+      }
+    }
+    // Flexbox and Grid layout supports CSS Align and the optimizations below
+    // don't support that yet.
     nsIFrame* ph = aFrame->GetPlaceholderFrame();
     if (ph && ph->HasAnyStateBits(PLACEHOLDER_STATICPOS_NEEDS_CSSALIGN)) {
       return false;
@@ -744,14 +756,11 @@ static bool RecomputePosition(nsIFrame* aFrame) {
       for (nsIFrame* cont = aFrame; cont;
            cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
         nsIFrame* cb = cont->GetContainingBlock();
-        nsMargin newOffsets;
         WritingMode wm = cb->GetWritingMode();
-        const LogicalSize size = cb->ContentSize();
-
-        ReflowInput::ComputeRelativeOffsets(wm, cont, size, newOffsets);
-        NS_ASSERTION(newOffsets.left == -newOffsets.right &&
-                         newOffsets.top == -newOffsets.bottom,
-                     "ComputeRelativeOffsets should return valid results");
+        const LogicalSize cbSize = cb->ContentSize();
+        const LogicalMargin newLogicalOffsets =
+            ReflowInput::ComputeRelativeOffsets(wm, cont, cbSize);
+        const nsMargin newOffsets = newLogicalOffsets.GetPhysicalMargin(wm);
 
         // ReflowInput::ApplyRelativePositioning would work here, but
         // since we've already checked mPosition and aren't changing the frame's
@@ -803,12 +812,15 @@ static bool RecomputePosition(nsIFrame* aFrame) {
   nsIFrame* cbFrame = parentFrame->GetContainingBlock();
   if (cbFrame && (aFrame->GetContainingBlock() != parentFrame ||
                   parentFrame->IsTableFrame())) {
+    const auto cbWM = cbFrame->GetWritingMode();
     LogicalSize cbSize = cbFrame->GetLogicalSize();
     cbReflowInput.emplace(cbFrame->PresContext(), cbFrame, rc, cbSize);
-    cbReflowInput->ComputedPhysicalMargin() = cbFrame->GetUsedMargin();
-    cbReflowInput->ComputedPhysicalPadding() = cbFrame->GetUsedPadding();
-    cbReflowInput->ComputedPhysicalBorderPadding() =
-        cbFrame->GetUsedBorderAndPadding();
+    cbReflowInput->SetComputedLogicalMargin(
+        cbWM, cbFrame->GetLogicalUsedMargin(cbWM));
+    cbReflowInput->SetComputedLogicalPadding(
+        cbWM, cbFrame->GetLogicalUsedPadding(cbWM));
+    cbReflowInput->SetComputedLogicalBorderPadding(
+        cbWM, cbFrame->GetLogicalUsedBorderAndPadding(cbWM));
     parentReflowInput.mCBReflowInput = cbReflowInput.ptr();
   }
 
@@ -817,11 +829,12 @@ static bool RecomputePosition(nsIFrame* aFrame) {
                        "parentSize should be valid");
   parentReflowInput.SetComputedISize(std::max(parentSize.ISize(parentWM), 0));
   parentReflowInput.SetComputedBSize(std::max(parentSize.BSize(parentWM), 0));
-  parentReflowInput.ComputedPhysicalMargin().SizeTo(0, 0, 0, 0);
+  parentReflowInput.SetComputedLogicalMargin(parentWM, LogicalMargin(parentWM));
 
-  parentReflowInput.ComputedPhysicalPadding() = parentFrame->GetUsedPadding();
-  parentReflowInput.ComputedPhysicalBorderPadding() =
-      parentFrame->GetUsedBorderAndPadding();
+  parentReflowInput.SetComputedLogicalPadding(
+      parentWM, parentFrame->GetLogicalUsedPadding(parentWM));
+  parentReflowInput.SetComputedLogicalBorderPadding(
+      parentWM, parentFrame->GetLogicalUsedBorderAndPadding(parentWM));
   LogicalSize availSize = parentSize.ConvertTo(frameWM, parentWM);
   availSize.BSize(frameWM) = NS_UNCONSTRAINEDSIZE;
 
@@ -839,11 +852,10 @@ static bool RecomputePosition(nsIFrame* aFrame) {
                           availSize, Some(lcbSize));
   nscoord computedISize = reflowInput.ComputedISize();
   nscoord computedBSize = reflowInput.ComputedBSize();
-  computedISize +=
-      reflowInput.ComputedLogicalBorderPadding().IStartEnd(frameWM);
+  const auto frameBP = reflowInput.ComputedLogicalBorderPadding(frameWM);
+  computedISize += frameBP.IStartEnd(frameWM);
   if (computedBSize != NS_UNCONSTRAINEDSIZE) {
-    computedBSize +=
-        reflowInput.ComputedLogicalBorderPadding().BStartEnd(frameWM);
+    computedBSize += frameBP.BStartEnd(frameWM);
   }
   LogicalSize logicalSize = aFrame->GetLogicalSize(frameWM);
   nsSize size = aFrame->GetSize();
@@ -860,26 +872,26 @@ static bool RecomputePosition(nsIFrame* aFrame) {
     // match the reflow code path.
     //
     // TODO(emilio): It'd be nice if this did logical math instead, but it seems
-    // to me the math should work out on vertical writing modes as well.
-    if (NS_AUTOOFFSET == reflowInput.ComputedPhysicalOffsets().left) {
-      reflowInput.ComputedPhysicalOffsets().left =
-          cbSize.width - reflowInput.ComputedPhysicalOffsets().right -
-          reflowInput.ComputedPhysicalMargin().right - size.width -
-          reflowInput.ComputedPhysicalMargin().left;
+    // to me the math should work out on vertical writing modes as well. See Bug
+    // 1675861 for some hints.
+    const nsMargin offset = reflowInput.ComputedPhysicalOffsets();
+    const nsMargin margin = reflowInput.ComputedPhysicalMargin();
+
+    nscoord left = offset.left;
+    if (left == NS_AUTOOFFSET) {
+      left =
+          cbSize.width - offset.right - margin.right - size.width - margin.left;
     }
 
-    if (NS_AUTOOFFSET == reflowInput.ComputedPhysicalOffsets().top) {
-      reflowInput.ComputedPhysicalOffsets().top =
-          cbSize.height - reflowInput.ComputedPhysicalOffsets().bottom -
-          reflowInput.ComputedPhysicalMargin().bottom - size.height -
-          reflowInput.ComputedPhysicalMargin().top;
+    nscoord top = offset.top;
+    if (top == NS_AUTOOFFSET) {
+      top = cbSize.height - offset.bottom - margin.bottom - size.height -
+            margin.top;
     }
 
     // Move the frame
-    nsPoint pos(parentBorder.left + reflowInput.ComputedPhysicalOffsets().left +
-                    reflowInput.ComputedPhysicalMargin().left,
-                parentBorder.top + reflowInput.ComputedPhysicalOffsets().top +
-                    reflowInput.ComputedPhysicalMargin().top);
+    nsPoint pos(parentBorder.left + left + margin.left,
+                parentBorder.top + top + margin.top);
     aFrame->SetPosition(pos);
 
     if (aFrame->IsInScrollAnchorChain()) {
@@ -928,7 +940,7 @@ static bool ContainingBlockChangeAffectsDescendants(
         nsIFrame* outOfFlow = nsPlaceholderFrame::GetRealFrameForPlaceholder(f);
         // If SVG text frames could appear here, they could confuse us since
         // they ignore their position style ... but they can't.
-        NS_ASSERTION(!nsSVGUtils::IsInSVGTextSubtree(outOfFlow),
+        NS_ASSERTION(!SVGUtils::IsInSVGTextSubtree(outOfFlow),
                      "SVG text frames can't be out of flow");
         auto* display = outOfFlow->StyleDisplay();
         if (display->IsAbsolutelyPositionedStyle()) {
@@ -1028,7 +1040,7 @@ static void DoApplyRenderingChangeToTree(nsIFrame* aFrame,
           aFrame->IsFrameOfType(nsIFrame::eSVG) &&
           !aFrame->IsSVGOuterSVGFrame()) {
         // Need to update our overflow rects:
-        nsSVGUtils::ScheduleReflowSVG(aFrame);
+        SVGUtils::ScheduleReflowSVG(aFrame);
       }
 
       ActiveLayerTracker::NotifyNeedsRepaint(aFrame);
@@ -1039,7 +1051,7 @@ static void DoApplyRenderingChangeToTree(nsIFrame* aFrame,
       needInvalidatingPaint = true;
 
       ActiveLayerTracker::NotifyRestyle(aFrame, eCSSProperty_opacity);
-      if (nsSVGIntegrationUtils::UsingEffectsForFrame(aFrame)) {
+      if (SVGIntegrationUtils::UsingEffectsForFrame(aFrame)) {
         // SVG effects paints the opacity without using
         // nsDisplayOpacity. We need to invalidate manually.
         aFrame->InvalidateFrameSubtree();
@@ -1559,9 +1571,9 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       // opacity layer change hint when we do opacity optimization for SVG.
       // We can't do it in nsStyleEffects::CalcDifference() just like we do
       // for the optimization for 0.99 over opacity values since we have no way
-      // to call nsSVGUtils::CanOptimizeOpacity() there.
+      // to call SVGUtils::CanOptimizeOpacity() there.
       if ((hint & nsChangeHint_UpdateOpacityLayer) &&
-          nsSVGUtils::CanOptimizeOpacity(frame)) {
+          SVGUtils::CanOptimizeOpacity(frame)) {
         hint &= ~nsChangeHint_UpdateOpacityLayer;
         hint |= nsChangeHint_RepaintFrame;
       }

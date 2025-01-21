@@ -49,7 +49,8 @@ class nsRubyFrame final : public nsInlineFrame {
       : nsInlineFrame(aStyle, aPresContext, kClassID) {}
 
   void ReflowSegment(nsPresContext* aPresContext,
-                     const ReflowInput& aReflowInput,
+                     const ReflowInput& aReflowInput, nscoord aBlockStartAscent,
+                     nscoord aBlockSize,
                      nsRubyBaseContainerFrame* aBaseContainer,
                      nsReflowStatus& aStatus);
 

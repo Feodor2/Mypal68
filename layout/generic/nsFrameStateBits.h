@@ -231,7 +231,7 @@ FRAME_STATE_BIT(Generic, 42, NS_FRAME_FONT_INFLATION_FLOW_ROOT)
 
 // This bit is set on SVG frames that are laid out using SVG's coordinate
 // system based layout (as opposed to any of the CSS layout models). Note that
-// this does not include nsSVGOuterSVGFrame since it takes part is CSS layout.
+// this does not include SVGOuterSVGFrame since it takes part in CSS layout.
 FRAME_STATE_BIT(Generic, 43, NS_FRAME_SVG_LAYOUT)
 
 // This bit is set if a frame has a multi-column ancestor (i.e.
@@ -402,8 +402,8 @@ FRAME_STATE_BIT(GridContainer, 29, NS_STATE_GRID_IS_ROW_MASONRY)
 // == Frame state bits that apply to SVG frames ===============================
 
 FRAME_STATE_GROUP_NAME(SVG)
-FRAME_STATE_GROUP_CLASS(SVG, nsSVGDisplayableFrame)
-FRAME_STATE_GROUP_CLASS(SVG, nsSVGContainerFrame)
+FRAME_STATE_GROUP_CLASS(SVG, ISVGDisplayableFrame)
+FRAME_STATE_GROUP_CLASS(SVG, SVGContainerFrame)
 
 // If this bit is set, we are a <clipPath> element or descendant.
 FRAME_STATE_BIT(SVG, 20, NS_STATE_SVG_CLIPPATH_CHILD)
@@ -722,6 +722,13 @@ FRAME_STATE_BIT(TableRowGroup, 31, NS_ROWGROUP_REPEATABLE)
 FRAME_STATE_GROUP(Table, nsTableFrame)
 
 FRAME_STATE_BIT(Table, 28, NS_TABLE_PART_HAS_FIXED_BACKGROUND)
+
+// == Frame state bits that apply to page frames ==============================
+FRAME_STATE_GROUP(Page, nsPageFrame)
+
+// If set, this bit indicates that the given nsPageFrame has been skipped
+// via the user's custom-page-range choice, and should not be rendered.
+FRAME_STATE_BIT(Page, 20, NS_PAGE_SKIPPED_BY_CUSTOM_RANGE)
 
 #undef FRAME_STATE_GROUP
 

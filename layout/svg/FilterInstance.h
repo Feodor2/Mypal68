@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NS_FILTERINSTANCE_H__
-#define __NS_FILTERINSTANCE_H__
+#ifndef LAYOUT_SVG_FILTERINSTANCE_H_
+#define LAYOUT_SVG_FILTERINSTANCE_H_
 
 #include "gfxMatrix.h"
 #include "gfxPoint.h"
@@ -15,7 +15,6 @@
 #include "nsRect.h"
 #include "nsSize.h"
 #include "nsTArray.h"
-#include "nsIFrame.h"
 #include "mozilla/gfx/2D.h"
 #ifdef MOZ_BUILD_WEBRENDER
 #  include "mozilla/webrender/WebRenderTypes.h"
@@ -49,13 +48,13 @@ class UserSpaceMetrics;
  * http://www.w3.org/TR/SVG11/filters.html#FilterEffectsRegion
  */
 class FilterInstance {
-  typedef gfx::IntRect IntRect;
-  typedef gfx::SourceSurface SourceSurface;
-  typedef gfx::DrawTarget DrawTarget;
-  typedef gfx::FilterPrimitiveDescription FilterPrimitiveDescription;
-  typedef gfx::FilterDescription FilterDescription;
-  typedef dom::UserSpaceMetrics UserSpaceMetrics;
-  typedef image::imgDrawingParams imgDrawingParams;
+  using IntRect = gfx::IntRect;
+  using SourceSurface = gfx::SourceSurface;
+  using DrawTarget = gfx::DrawTarget;
+  using FilterPrimitiveDescription = gfx::FilterPrimitiveDescription;
+  using FilterDescription = gfx::FilterDescription;
+  using UserSpaceMetrics = dom::UserSpaceMetrics;
+  using imgDrawingParams = image::imgDrawingParams;
 
  public:
   /**
@@ -108,11 +107,11 @@ class FilterInstance {
       nsIFrame* aFilteredFrame, const nsRegion& aPostFilterDirtyRegion);
 
   /**
-   * Returns the post-filter visual overflow rect (paint bounds) of
+   * Returns the post-filter ink overflow rect (paint bounds) of
    * aFilteredFrame.
    * @param aOverrideBBox A user space rect, in user units, that should be used
    *   as aFilteredFrame's bbox ('bbox' is a specific SVG term), if non-null.
-   * @param aPreFilterBounds The pre-filter visual overflow rect of
+   * @param aPreFilterBounds The pre-filter ink overflow rect of
    *   aFilteredFrame, if non-null.
    */
   static nsRect GetPostFilterBounds(nsIFrame* aFilteredFrame,
@@ -150,8 +149,8 @@ class FilterInstance {
    * @param aPreFilterDirtyRegion [optional] The pre-filter area of
    *   the filtered element that changed, in app units. Only required if you
    *   will call ComputePostFilterDirtyRegion().
-   * @param aPreFilterVisualOverflowRectOverride [optional] Use a different
-   *   visual overflow rect for the target element.
+   * @param aPreFilterInkOverflowRectOverride [optional] Use a different
+   *   ink overflow rect for the target element.
    * @param aOverrideBBox [optional] Use a different SVG bbox for the target
    *   element. Must be non-null if aTargetFrame is null.
    */
@@ -163,7 +162,7 @@ class FilterInstance {
                  const gfxMatrix& aPaintTransform,
                  const nsRegion* aPostFilterDirtyRegion = nullptr,
                  const nsRegion* aPreFilterDirtyRegion = nullptr,
-                 const nsRect* aPreFilterVisualOverflowRectOverride = nullptr,
+                 const nsRect* aPreFilterInkOverflowRectOverride = nullptr,
                  const gfxRect* aOverrideBBox = nullptr);
 
   /**
@@ -389,4 +388,4 @@ class FilterInstance {
 
 }  // namespace mozilla
 
-#endif
+#endif  // LAYOUT_SVG_FILTERINSTANCE_H_

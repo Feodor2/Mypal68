@@ -11,11 +11,9 @@ use crate::values::computed::{Integer, LengthPercentage, NonNegativeNumber, Perc
 use crate::values::generics::position::AspectRatio as GenericAspectRatio;
 use crate::values::generics::position::Position as GenericPosition;
 use crate::values::generics::position::PositionOrAuto as GenericPositionOrAuto;
-use crate::values::generics::position::Ratio as GenericRatio;
 use crate::values::generics::position::ZIndex as GenericZIndex;
 pub use crate::values::specified::position::{GridAutoFlow, GridTemplateAreas, MasonryAutoFlow};
-use crate::{One, Zero};
-use std::cmp::{Ordering, PartialOrd};
+use crate::Zero;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
 
@@ -61,35 +59,6 @@ impl ToCss for Position {
 
 /// A computed value for the `z-index` property.
 pub type ZIndex = GenericZIndex<Integer>;
-
-/// A computed <ratio> value.
-pub type Ratio = GenericRatio<NonNegativeNumber>;
-
-impl PartialOrd for Ratio {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        f64::partial_cmp(
-            &((self.0).0 as f64 * (other.1).0 as f64),
-            &((self.1).0 as f64 * (other.0).0 as f64),
-        )
-    }
-}
-
-impl Ratio {
-    /// Returns a new Ratio.
-    pub fn new(a: f32, b: f32) -> Self {
-        GenericRatio(a.into(), b.into())
-    }
-
-    /// Returns the used value. A ratio of 0/0 behaves as the ratio 1/0.
-    /// https://drafts.csswg.org/css-values-4/#ratios
-    pub fn used_value(self) -> Self {
-        if self.0.is_zero() && self.1.is_zero() {
-            Ratio::new(One::one(), Zero::zero())
-        } else {
-            self
-        }
-    }
-}
 
 /// A computed value for the `aspect-ratio` property.
 pub type AspectRatio = GenericAspectRatio<NonNegativeNumber>;

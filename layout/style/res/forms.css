@@ -55,10 +55,6 @@
 
 /* Miscellaneous form elements */
 
-fieldset > legend {
-  inline-size: -moz-fit-content;
-}
-
 legend {
   display: block;
   padding-inline: 2px;
@@ -126,7 +122,7 @@ textarea {
 }
 
 /* A few properties that we don't want to inherit by default: */
-input, textarea, select, button, ::file-chooser-button {
+input, textarea, select, button, ::file-selector-button {
   text-align: initial;
   text-indent: initial;
   text-shadow: initial;
@@ -310,6 +306,10 @@ select > button[orientation="right"]:active {
   min-inline-size: max-content;
   box-sizing: border-box;
   line-height: -moz-block-height;
+}
+
+option[label]::before {
+  content: attr(label);
 }
 
 option {
@@ -505,7 +505,7 @@ input[type="search"] {
 /* Non text-related properties for buttons: these ones are shared with
    input[type="color"] */
 button,
-::file-chooser-button,
+::file-selector-button,
 input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
   appearance: auto;
   -moz-default-appearance: button;
@@ -524,7 +524,7 @@ input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
 /* Text-related properties for buttons: these ones are not shared with
    input[type="color"] */
 button,
-::file-chooser-button,
+::file-selector-button,
 input:is([type="reset"], [type="button"], [type="submit"]) {
   color: ButtonText;
   font: -moz-button;
@@ -539,7 +539,7 @@ input[type="color"] {
 }
 
 button,
-::file-chooser-button {
+::file-selector-button {
   /* Buttons should lay out like "normal" html, mostly */
   white-space: unset;
   text-indent: 0;
@@ -581,19 +581,19 @@ button,
   justify-items: inherit;
 }
 
-::file-chooser-button:hover,
+::file-selector-button:hover,
 button:hover,
 input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):hover {
   background-color: -moz-buttonhoverface;
 }
 
-::file-chooser-button:hover,
+::file-selector-button:hover,
 button:hover,
 input:is([type="reset"], [type="button"], [type="submit"]):hover {
   color: -moz-buttonhovertext;
 }
 
-::file-chooser-button:active:hover,
+::file-selector-button:active:hover,
 button:active:hover,
 input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):active:hover {
 %ifndef XP_MACOSX
@@ -604,7 +604,7 @@ input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):activ
   background-color: ButtonFace;
 }
 
-::file-chooser-button:active:hover,
+::file-selector-button:active:hover,
 button:active:hover,
 input:is([type="reset"], [type="button"], [type="submit"]):active:hover {
 %ifdef MOZ_WIDGET_GTK
@@ -625,7 +625,7 @@ input:is([type="reset"], [type="button"], [type="submit"]):active:hover {
   border-color: currentColor;
 }
 
-:is(:disabled, :disabled:active)::file-chooser-button,
+:is(:disabled, :disabled:active)::file-selector-button,
 button:is(:disabled, :disabled:active),
 input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):is(:disabled, :disabled:active),
 select:is(:disabled, :disabled:active) > button {
@@ -637,7 +637,7 @@ select:is(:disabled, :disabled:active) > button {
   cursor: unset;
 }
 
-:is(:disabled, :disabled:active)::file-chooser-button,
+:is(:disabled, :disabled:active)::file-selector-button,
 button:is(:disabled, :disabled:active),
 input:is([type="reset"], [type="button"], [type="submit"]):is(:disabled, :disabled:active),
 select:is(:disabled, :disabled:active) > button {
@@ -676,7 +676,7 @@ input[type="file"] > label {
 }
 
 /* button part of file selector */
-::file-chooser-button {
+::file-selector-button {
   font-size: unset;
   letter-spacing: unset;
   cursor: unset;
@@ -734,11 +734,8 @@ progress {
 }
 
 ::-moz-progress-bar {
-  /* Prevent styling that would change the type of frame we construct. */
-  display: inline-block !important;
-  float: none !important;
-  position: static !important;
-  overflow: visible !important;
+  display: inline-block;
+
   box-sizing: border-box !important;
 
   appearance: auto;
@@ -759,11 +756,7 @@ meter {
 }
 
 ::-moz-meter-bar {
-  /* Block styles that would change the type of frame we construct. */
-  display: inline-block !important;
-  float: none !important;
-  position: static !important;
-  overflow: visible !important;
+  display: inline-block;
 
   appearance: auto;
   -moz-default-appearance: meterchunk;
@@ -806,12 +799,7 @@ input[type=range] {
  * set the width/height of this pseudo-element.
  */
 input[type=range]::-moz-range-track {
-  /* Prevent styling that would change the type of frame we construct. */
-  display: block !important;
-  float: none !important;
-  position: static !important;
-  writing-mode: unset !important;
-  direction: unset !important;
+  display: block;
   block-size: 0.2em; /* same as inline-size below */
   /* Prevent nsIFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
@@ -831,12 +819,7 @@ input[type=range][orient=vertical]::-moz-range-track {
  * is ignored.
  */
 input[type=range]::-moz-range-progress {
-  /* Prevent styling that would change the type of frame we construct. */
-  display: block !important;
-  float: none !important;
-  position: static !important;
-  writing-mode: unset !important;
-  direction: unset !important;
+  display: block;
   /* Since one of width/height will be ignored, this just sets the "other"
      dimension.
    */
@@ -858,12 +841,7 @@ input[type=range]::-moz-range-thumb {
    */
   appearance: auto !important;
   -moz-default-appearance: range-thumb !important;
-  /* Prevent styling that would change the type of frame we construct. */
-  display: block !important;
-  float: none !important;
-  position: static !important;
-  writing-mode: unset !important;
-  direction: unset !important;
+  display: block;
 
   width: 1em;
   height: 1em;
@@ -880,10 +858,7 @@ input[type="number"] {
 }
 
 input[type=number]::-moz-number-wrapper {
-  /* Prevent styling that would change the type of frame we construct. */
   display: flex;
-  float: none !important;
-  position: static !important;
   block-size: 100%;
   /* The align-self: center bit below allows the editor to be potentially
    * bigger than us. Clip it to match other text fields. */
@@ -980,9 +955,10 @@ input:is([type="date"], [type="time"]):is(:disabled, :read-only) {
   color: GrayText;
 }
 
-:-moz-autofill, :-moz-autofill-preview {
+input:autofill, input:-moz-autofill-preview {
   filter: grayscale(21%) brightness(88%) contrast(161%) invert(10%) sepia(40%) saturate(206%);
 }
-:-moz-autofill-preview {
+
+input:-moz-autofill-preview {
   color: GrayText;
 }

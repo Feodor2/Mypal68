@@ -14,12 +14,12 @@
 #include "nsLayoutUtils.h"
 #include "imgINotificationObserver.h"
 #include "SVGGeometryProperty.h"
-#include "SVGObserverUtils.h"
-#include "nsSVGUtils.h"
-#include "SVGContentUtils.h"
 #include "SVGGeometryFrame.h"
-#include "SVGImageContext.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGContentUtils.h"
+#include "mozilla/SVGImageContext.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGImageElement.h"
 #include "nsIReflowCallback.h"
@@ -287,7 +287,7 @@ bool SVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
 }
 
 //----------------------------------------------------------------------
-// nsSVGDisplayableFrame methods:
+// ISVGDisplayableFrame methods:
 void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                              imgDrawingParams& aImgParams,
                              const nsIntRect* aDirtyRect) {
@@ -319,8 +319,8 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
 
     if (StyleDisplay()->IsScrollableOverflow()) {
       gfxRect clipRect =
-          nsSVGUtils::GetClipRectForFrame(this, x, y, width, height);
-      nsSVGUtils::SetClipRect(&aContext, aTransform, clipRect);
+          SVGUtils::GetClipRectForFrame(this, x, y, width, height);
+      SVGUtils::SetClipRect(&aContext, aTransform, clipRect);
     }
 
     if (!TransformContextForPainting(&aContext, aTransform)) {
@@ -331,7 +331,7 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
     // optimize group opacity, the opacity used for compositing the
     // image into the current canvas is just the group opacity.
     float opacity = 1.0f;
-    if (nsSVGUtils::CanOptimizeOpacity(this)) {
+    if (SVGUtils::CanOptimizeOpacity(this)) {
       opacity = StyleEffects()->mOpacity;
     }
 
@@ -451,8 +451,8 @@ nsIFrame* SVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint) {
       Matrix viewBoxTM = SVGContentUtils::GetViewBoxTransform(
           rect.width, rect.height, 0, 0, nativeWidth, nativeHeight,
           element->mPreserveAspectRatio);
-      if (!nsSVGUtils::HitTestRect(viewBoxTM, 0, 0, nativeWidth, nativeHeight,
-                                   aPoint.x - rect.x, aPoint.y - rect.y)) {
+      if (!SVGUtils::HitTestRect(viewBoxTM, 0, 0, nativeWidth, nativeHeight,
+                                 aPoint.x - rect.x, aPoint.y - rect.y)) {
         return nullptr;
       }
     }
@@ -468,13 +468,13 @@ nsIFrame* SVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint) {
 // properly
 
 void SVGImageFrame::ReflowSVG() {
-  NS_ASSERTION(nsSVGUtils::OuterSVGIsCallingReflowSVG(this),
+  NS_ASSERTION(SVGUtils::OuterSVGIsCallingReflowSVG(this),
                "This call is probably a wasteful mistake");
 
   MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
              "ReflowSVG mechanism not designed for this");
 
-  if (!nsSVGUtils::NeedsReflowSVG(this)) {
+  if (!SVGUtils::NeedsReflowSVG(this)) {
     return;
   }
 
@@ -504,7 +504,7 @@ void SVGImageFrame::ReflowSVG() {
   }
 
   nsRect overflow = nsRect(nsPoint(0, 0), mRect.Size());
-  nsOverflowAreas overflowAreas(overflow, overflow);
+  OverflowAreas overflowAreas(overflow, overflow);
   FinishAndStoreOverflow(overflowAreas, mRect.Size());
 
   RemoveStateBits(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY |
@@ -591,12 +591,12 @@ void SVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
                                     RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
-    nsSVGUtils::ScheduleReflowSVG(mFrame);
+    SVGUtils::ScheduleReflowSVG(mFrame);
   }
 
   if (aType == imgINotificationObserver::FRAME_UPDATE) {
     // No new dimensions, so we don't need to call
-    // nsSVGUtils::InvalidateAndScheduleBoundsUpdate.
+    // SVGUtils::InvalidateAndScheduleBoundsUpdate.
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
                                     RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
@@ -617,7 +617,7 @@ void SVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
                                     RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
-    nsSVGUtils::ScheduleReflowSVG(mFrame);
+    SVGUtils::ScheduleReflowSVG(mFrame);
   }
 }
 

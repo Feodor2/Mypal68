@@ -12,6 +12,7 @@
 #include "gfxFontFamilyList.h"
 #include "gfxFontFeatures.h"
 #include "gfxTextRun.h"
+#include "imgLoader.h"
 #include "nsAnimationManager.h"
 #include "nsAttrValueInlines.h"
 #include "nsCSSFrameConstructor.h"
@@ -417,8 +418,7 @@ StyleSheet* Gecko_StyleSheet_Clone(const StyleSheet* aSheet,
   MOZ_ASSERT(aSheet->GetParentSheet(), "Should only be used for @import");
   MOZ_ASSERT(aNewParentSheet, "Wat");
 
-  RefPtr<StyleSheet> newSheet =
-      aSheet->Clone(nullptr, nullptr, nullptr, nullptr);
+  RefPtr<StyleSheet> newSheet = aSheet->Clone(nullptr, nullptr);
 
   // NOTE(emilio): This code runs in the StylesheetInner constructor, which
   // means that the inner pointer of `aNewParentSheet` still points to the old
@@ -720,7 +720,7 @@ bool Gecko_MatchLang(const Element* aElement, nsAtom* aOverrideLang,
   if (auto* language = aHasOverrideLang ? aOverrideLang : aElement->GetLang()) {
     return nsStyleUtil::DashMatchCompare(
         nsDependentAtomString(language), nsDependentString(aValue),
-        nsASCIICaseInsensitiveStringComparator());
+        nsASCIICaseInsensitiveStringComparator);
   }
 
   // Try to get the language from the HTTP header or if this
@@ -733,8 +733,8 @@ bool Gecko_MatchLang(const Element* aElement, nsAtom* aOverrideLang,
   nsDependentString langString(aValue);
   language.StripWhitespace();
   for (auto const& lang : language.Split(char16_t(','))) {
-    if (nsStyleUtil::DashMatchCompare(
-            lang, langString, nsASCIICaseInsensitiveStringComparator())) {
+    if (nsStyleUtil::DashMatchCompare(lang, langString,
+                                      nsASCIICaseInsensitiveStringComparator)) {
       return true;
     }
   }
@@ -845,14 +845,10 @@ static bool AttrEquals(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
   return DoMatch(aElement, aNS, aName, match);
 }
 
-#define WITH_COMPARATOR(ignore_case_, c_, expr_)     \
-  if (ignore_case_) {                                \
-    const nsASCIICaseInsensitiveStringComparator c_; \
-    return expr_;                                    \
-  } else {                                           \
-    const nsDefaultStringComparator c_;              \
-    return expr_;                                    \
-  }
+#define WITH_COMPARATOR(ignore_case_, c_, expr_)                  \
+  auto c_ = ignore_case_ ? nsASCIICaseInsensitiveStringComparator \
+                         : nsTDefaultStringComparator<char16_t>;  \
+  return expr_;
 
 template <typename Implementor>
 static bool AttrDashEquals(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
@@ -1034,8 +1030,8 @@ nsTArray<uint32_t>* Gecko_AppendFeatureValueHashEntry(
     gfxFontFeatureValueSet* aFontFeatureValues, nsAtom* aFamily,
     uint32_t aAlternate, nsAtom* aName) {
   MOZ_ASSERT(NS_IsMainThread());
-  return aFontFeatureValues->AppendFeatureValueHashEntry(
-      nsAtomCString(aFamily), aName, aAlternate);
+  return aFontFeatureValues->AppendFeatureValueHashEntry(nsAtomCString(aFamily),
+                                                         aName, aAlternate);
 }
 
 float Gecko_FontStretch_ToFloat(FontStretch aStretch) {
@@ -1274,6 +1270,13 @@ void Gecko_GetComputedImageURLSpec(const StyleComputedUrl* aURL,
   aOut->AssignLiteral("about:invalid");
 }
 
+bool Gecko_IsSupportedImageMimeType(const uint8_t* aMimeType,
+                                    const uint32_t aLen) {
+  nsDependentCSubstring mime(reinterpret_cast<const char*>(aMimeType), aLen);
+  return imgLoader::SupportImageWithMimeType(
+      mime, AcceptedMimeTypes::IMAGES_AND_DOCUMENTS);
+}
+
 void Gecko_nsIURI_Debug(nsIURI* aURI, nsCString* aOut) {
   // TODO(emilio): Do we have more useful stuff to put here, maybe?
   if (aURI) {
@@ -1417,8 +1420,8 @@ static StaticRefPtr<UACacheReporter> gUACacheReporter;
 namespace mozilla {
 
 void InitializeServo() {
-  URLExtraData::InitDummy();
-  Servo_Initialize(URLExtraData::Dummy());
+  URLExtraData::Init();
+  Servo_Initialize(URLExtraData::Dummy(), URLExtraData::DummyChrome());
 
   gUACacheReporter = new UACacheReporter();
   RegisterWeakMemoryReporter(gUACacheReporter);
@@ -1433,7 +1436,10 @@ void ShutdownServo() {
   gUACacheReporter = nullptr;
 
   delete sServoFFILock;
+  sServoFFILock = nullptr;
   Servo_Shutdown();
+
+  URLExtraData::Shutdown();
 }
 
 void AssertIsMainThreadOrServoFontMetricsLocked() {
@@ -1526,7 +1532,7 @@ static already_AddRefed<StyleSheet> LoadImportSheet(
     // Make a dummy URI if we don't have one because some methods assume
     // non-null URIs.
     if (!uri) {
-      NS_NewURI(getter_AddRefs(uri), NS_LITERAL_CSTRING("about:invalid"));
+      NS_NewURI(getter_AddRefs(uri), "about:invalid"_ns);
     }
     emptySheet->SetURIs(uri, uri, uri);
     emptySheet->SetPrincipal(aURL.ExtraData().Principal());

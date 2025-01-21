@@ -65,7 +65,7 @@ nscoord nsCheckboxRadioFrame::GetPrefISize(gfxContext* aRenderingContext) {
 LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
     gfxContext* aRC, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   LogicalSize size(aWM, 0, 0);
   if (!StyleDisplay()->HasAppearance()) {
@@ -74,14 +74,15 @@ LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
 
   // Note: this call always set the BSize to NS_UNCONSTRAINEDSIZE.
   size = nsAtomicContainerFrame::ComputeAutoSize(
-      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorder, aPadding, aFlags);
+      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+      aSizeOverrides, aFlags);
   size.BSize(aWM) = DefaultSize();
   return size;
 }
 
 nscoord nsCheckboxRadioFrame::GetLogicalBaseline(
     WritingMode aWritingMode) const {
-  NS_ASSERTION(!NS_SUBTREE_DIRTY(this), "frame must not be dirty");
+  NS_ASSERTION(!IsSubtreeDirty(), "frame must not be dirty");
 
   // For appearance:none we use a standard CSS baseline, i.e. synthesized from
   // our margin-box.
@@ -119,8 +120,8 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
     RegUnRegAccessKey(static_cast<nsIFrame*>(this), true);
   }
 
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   if (nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
     float inflation = nsLayoutUtils::FontSizeInflationFor(this);

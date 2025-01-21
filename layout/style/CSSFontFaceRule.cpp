@@ -32,19 +32,23 @@ NS_INTERFACE_MAP_END
 NS_IMPL_ADDREF_USING_AGGREGATOR(CSSFontFaceRuleDecl, ContainingRule())
 NS_IMPL_RELEASE_USING_AGGREGATOR(CSSFontFaceRuleDecl, ContainingRule())
 
+void CSSFontFaceRuleDecl::SetRawAfterClone(RefPtr<RawServoFontFaceRule> aRaw) {
+  mRawRule = std::move(aRaw);
+}
+
 // helper for string GetPropertyValue and RemovePropertyValue
 void CSSFontFaceRuleDecl::GetPropertyValue(nsCSSFontDesc aFontDescID,
-                                           nsAString& aResult) const {
+                                           nsACString& aResult) const {
   MOZ_ASSERT(aResult.IsEmpty());
   Servo_FontFaceRule_GetDescriptorCssText(mRawRule, aFontDescID, &aResult);
 }
 
-void CSSFontFaceRuleDecl::GetCssText(nsAString& aCssText) {
-  aCssText.Truncate();
+void CSSFontFaceRuleDecl::GetCssText(nsACString& aCssText) {
+  MOZ_ASSERT(aCssText.IsEmpty());
   Servo_FontFaceRule_GetDeclCssText(mRawRule, &aCssText);
 }
 
-void CSSFontFaceRuleDecl::SetCssText(const nsAString& aCssText,
+void CSSFontFaceRuleDecl::SetCssText(const nsACString& aCssText,
                                      nsIPrincipal* aSubjectPrincipal,
                                      ErrorResult& aRv) {
   if (ContainingRule()->IsReadOnly()) {
@@ -57,7 +61,7 @@ void CSSFontFaceRuleDecl::SetCssText(const nsAString& aCssText,
 
 NS_IMETHODIMP
 CSSFontFaceRuleDecl::GetPropertyValue(const nsACString& aPropName,
-                                      nsAString& aResult) {
+                                      nsACString& aResult) {
   aResult.Truncate();
   nsCSSFontDesc descID = nsCSSProps::LookupFontDesc(aPropName);
   if (descID != eCSSFontDesc_UNKNOWN) {
@@ -67,7 +71,8 @@ CSSFontFaceRuleDecl::GetPropertyValue(const nsACString& aPropName,
 }
 
 void CSSFontFaceRuleDecl::RemoveProperty(const nsACString& aPropName,
-                                         nsAString& aResult, ErrorResult& aRv) {
+                                         nsACString& aResult,
+                                         ErrorResult& aRv) {
   nsCSSFontDesc descID = nsCSSProps::LookupFontDesc(aPropName);
   NS_ASSERTION(descID >= eCSSFontDesc_UNKNOWN && descID < eCSSFontDesc_COUNT,
                "LookupFontDesc returned value out of range");
@@ -84,14 +89,14 @@ void CSSFontFaceRuleDecl::RemoveProperty(const nsACString& aPropName,
 }
 
 void CSSFontFaceRuleDecl::GetPropertyPriority(const nsACString& aPropName,
-                                              nsAString& aResult) {
+                                              nsACString& aResult) {
   // font descriptors do not have priorities at present
   aResult.Truncate();
 }
 
 void CSSFontFaceRuleDecl::SetProperty(const nsACString& aPropName,
                                       const nsACString& aValue,
-                                      const nsAString& aPriority,
+                                      const nsACString& aPriority,
                                       nsIPrincipal* aSubjectPrincipal,
                                       ErrorResult& aRv) {
   // FIXME(heycam): If we are changing unicode-range, then a FontFace object
@@ -123,7 +128,11 @@ void CSSFontFaceRuleDecl::IndexedGetter(uint32_t aIndex, bool& aFound,
 
 css::Rule* CSSFontFaceRuleDecl::GetParentRule() { return ContainingRule(); }
 
-nsINode* CSSFontFaceRuleDecl::GetParentObject() {
+nsINode* CSSFontFaceRuleDecl::GetAssociatedNode() const {
+  return ContainingRule()->GetAssociatedDocumentOrShadowRoot();
+}
+
+nsISupports* CSSFontFaceRuleDecl::GetParentObject() const {
   return ContainingRule()->GetParentObject();
 }
 
@@ -186,11 +195,15 @@ void CSSFontFaceRule::List(FILE* out, int32_t aIndent) const {
 }
 #endif
 
-uint16_t CSSFontFaceRule::Type() const {
-  return CSSRule_Binding::FONT_FACE_RULE;
+StyleCssRuleType CSSFontFaceRule::Type() const {
+  return StyleCssRuleType::FontFace;
 }
 
-void CSSFontFaceRule::GetCssText(nsAString& aCssText) const {
+void CSSFontFaceRule::SetRawAfterClone(RefPtr<RawServoFontFaceRule> aRaw) {
+  mDecl.SetRawAfterClone(std::move(aRaw));
+}
+
+void CSSFontFaceRule::GetCssText(nsACString& aCssText) const {
   aCssText.Truncate();
   Servo_FontFaceRule_GetCssText(Raw(), &aCssText);
 }

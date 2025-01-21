@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NS_CSSFILTERINSTANCE_H__
-#define __NS_CSSFILTERINSTANCE_H__
+#ifndef LAYOUT_SVG_CSSFILTERINSTANCE_H_
+#define LAYOUT_SVG_CSSFILTERINSTANCE_H_
 
 #include "FilterSupport.h"
 #include "gfxMatrix.h"
@@ -33,7 +33,7 @@ class CSSFilterInstance {
    *   aFilter during the lifetime of CSSFilterInstance.
    * @param aShadowFallbackColor The color that should be used for
    *   drop-shadow() filters that don't specify a shadow color.
-   * @param aTargetBoundsInFilterSpace The pre-filter visual overflow rect of
+   * @param aTargetBoundsInFilterSpace The pre-filter ink overflow rect of
    *   the frame being filtered, in filter space.
    * @param aFrameSpaceInCSSPxToFilterSpaceTransform The transformation from
    *   the filtered element's frame space in CSS pixels to filter space.
@@ -141,4 +141,4 @@ class CSSFilterInstance {
 
 }  // namespace mozilla
 
-#endif
+#endif  // LAYOUT_SVG_CSSFILTERINSTANCE_H_

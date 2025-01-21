@@ -10,24 +10,12 @@ use crate::media_queries::media_feature::{AllowsRanges, ParsingRequirements};
 use crate::media_queries::media_feature::{Evaluator, MediaFeatureDescription};
 use crate::media_queries::media_feature_expression::RangeOrOperator;
 use crate::media_queries::{Device, MediaType};
-use crate::values::computed::position::Ratio;
 use crate::values::computed::CSSPixelLength;
+use crate::values::computed::Ratio;
 use crate::values::computed::Resolution;
 use crate::Atom;
 use app_units::Au;
 use euclid::default::Size2D;
-
-fn viewport_size(device: &Device) -> Size2D<Au> {
-    if let Some(pc) = device.pres_context() {
-        if pc.mIsRootPaginatedDocument() != 0 {
-            // We want the page size, including unprintable areas and margins.
-            // FIXME(emilio, bug 1414600): Not quite!
-            let area = &pc.mPageSize;
-            return Size2D::new(Au(area.width), Au(area.height));
-        }
-    }
-    device.au_viewport_size()
-}
 
 fn device_size(device: &Device) -> Size2D<Au> {
     let mut width = 0;
@@ -47,7 +35,7 @@ fn eval_width(
     RangeOrOperator::evaluate(
         range_or_operator,
         value.map(Au::from),
-        viewport_size(device).width,
+        device.au_viewport_size().width,
     )
 }
 
@@ -73,7 +61,7 @@ fn eval_height(
     RangeOrOperator::evaluate(
         range_or_operator,
         value.map(Au::from),
-        viewport_size(device).height,
+        device.au_viewport_size().height,
     )
 }
 
@@ -119,7 +107,7 @@ fn eval_aspect_ratio(
     query_value: Option<Ratio>,
     range_or_operator: Option<RangeOrOperator>,
 ) -> bool {
-    eval_aspect_ratio_for(device, query_value, range_or_operator, viewport_size)
+    eval_aspect_ratio_for(device, query_value, range_or_operator, Device::au_viewport_size)
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#device-aspect-ratio
@@ -172,7 +160,7 @@ where
 
 /// https://drafts.csswg.org/mediaqueries-4/#orientation
 fn eval_orientation(device: &Device, value: Option<Orientation>) -> bool {
-    eval_orientation_for(device, value, viewport_size)
+    eval_orientation_for(device, value, Device::au_viewport_size)
 }
 
 /// FIXME: There's no spec for `-moz-device-orientation`.
@@ -309,27 +297,13 @@ fn eval_prefers_reduced_motion(device: &Device, query_value: Option<PrefersReduc
 
 /// Possible values for prefers-contrast media query.
 /// https://drafts.csswg.org/mediaqueries-5/#prefers-contrast
-#[derive(Clone, Copy, Debug, FromPrimitive, PartialEq, Parse, ToCss)]
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
 #[repr(u8)]
-#[allow(missing_docs)]
-enum PrefersContrast {
+pub enum PrefersContrast {
+    /// More contrast is preferred. Corresponds to an accessibility theme
+    /// being enabled or Firefox forcing high contrast colors.
     More,
-    Less,
-    NoPreference,
-    Forced,
-}
-
-/// Represents the parts of prefers-contrast that explicitly deal with
-/// contrast. Used in combination with information about rather or not
-/// forced colors are active this allows for evaluation of the
-/// prefers-contrast media query.
-#[derive(Clone, Copy, Debug, FromPrimitive, PartialEq)]
-#[repr(u8)]
-pub enum ContrastPref {
-    /// More contrast is prefered. Corresponds to an accessibility theme
-    /// being enabled or firefox forcing high contrast colors.
-    More,
-    /// Low contrast is prefered.
+    /// Low contrast is preferred.
     Less,
     /// The default value if neither high or low contrast is enabled.
     NoPreference,
@@ -337,19 +311,31 @@ pub enum ContrastPref {
 
 /// https://drafts.csswg.org/mediaqueries-5/#prefers-contrast
 fn eval_prefers_contrast(device: &Device, query_value: Option<PrefersContrast>) -> bool {
-    let forced_colors = !device.use_document_colors();
-    let contrast_pref =
-        unsafe { bindings::Gecko_MediaFeatures_PrefersContrast(device.document(), forced_colors) };
-    if let Some(query_value) = query_value {
-        match query_value {
-            PrefersContrast::Forced => forced_colors,
-            PrefersContrast::More => contrast_pref == ContrastPref::More,
-            PrefersContrast::Less => contrast_pref == ContrastPref::Less,
-            PrefersContrast::NoPreference => contrast_pref == ContrastPref::NoPreference,
-        }
-    } else {
-        // Only prefers-contrast: no-preference evaluates to false.
-        forced_colors || (contrast_pref != ContrastPref::NoPreference)
+    let prefers_contrast =
+        unsafe { bindings::Gecko_MediaFeatures_PrefersContrast(device.document()) };
+    match query_value {
+        Some(v) => v == prefers_contrast,
+        None => prefers_contrast != PrefersContrast::NoPreference,
+    }
+}
+
+/// Possible values for the forced-colors media query.
+/// https://drafts.csswg.org/mediaqueries-5/#forced-colors
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
+#[repr(u8)]
+pub enum ForcedColors {
+    /// Page colors are not being forced.
+    None,
+    /// Page colors are being forced.
+    Active,
+}
+
+/// https://drafts.csswg.org/mediaqueries-5/#forced-colors
+fn eval_forced_colors(device: &Device, query_value: Option<ForcedColors>) -> bool {
+    let forced = !device.use_document_colors();
+    match query_value {
+        Some(query_value) => forced == (query_value == ForcedColors::Active),
+        None => forced,
     }
 }
 
@@ -539,19 +525,6 @@ fn eval_system_metric(
     query_value.map_or(supports_metric, |v| v == supports_metric)
 }
 
-fn eval_moz_touch_enabled(
-    device: &Device,
-    query_value: Option<bool>,
-    _: Option<RangeOrOperator>,
-) -> bool {
-    eval_system_metric(
-        device,
-        query_value,
-        atom!("-moz-touch-enabled"),
-        /* accessible_from_content = */ true,
-    )
-}
-
 fn eval_moz_os_version(
     device: &Device,
     query_value: Option<Atom>,
@@ -723,6 +696,12 @@ pub static MEDIA_FEATURES: [MediaFeatureDescription; 54] = [
         ParsingRequirements::empty(),
     ),
     feature!(
+        atom!("forced-colors"),
+        AllowsRanges::No,
+        keyword_evaluator!(eval_forced_colors, ForcedColors),
+        ParsingRequirements::empty(),
+    ),
+    feature!(
         atom!("overflow-block"),
         AllowsRanges::No,
         keyword_evaluator!(eval_overflow_block, OverflowBlock),
@@ -808,13 +787,4 @@ pub static MEDIA_FEATURES: [MediaFeatureDescription; 54] = [
     system_metric_feature!(atom!("-moz-gtk-csd-close-button")),
     system_metric_feature!(atom!("-moz-gtk-csd-reversed-placement")),
     system_metric_feature!(atom!("-moz-system-dark-theme")),
-    // This is the only system-metric media feature that's accessible to
-    // content as of today.
-    // FIXME(emilio): Restrict (or remove?) when bug 1035774 lands.
-    feature!(
-        atom!("-moz-touch-enabled"),
-        AllowsRanges::No,
-        Evaluator::BoolInteger(eval_moz_touch_enabled),
-        ParsingRequirements::empty(),
-    ),
 ];

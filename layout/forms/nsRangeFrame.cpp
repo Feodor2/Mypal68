@@ -67,8 +67,7 @@ void nsRangeFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   if (!mDummyTouchListener) {
     mDummyTouchListener = new DummyTouchListener();
   }
-  aContent->AddEventListener(NS_LITERAL_STRING("touchstart"),
-                             mDummyTouchListener, false);
+  aContent->AddEventListener(u"touchstart"_ns, mDummyTouchListener, false);
 
   return nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 }
@@ -79,8 +78,7 @@ void nsRangeFrame::DestroyFrom(nsIFrame* aDestructRoot,
                "nsRangeFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
 
-  mContent->RemoveEventListener(NS_LITERAL_STRING("touchstart"),
-                                mDummyTouchListener, false);
+  mContent->RemoveEventListener(u"touchstart"_ns, mDummyTouchListener, false);
 
   nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   aPostDestroyData.AddAnonymousContent(mTrackDiv.forget());
@@ -188,12 +186,10 @@ void nsRangeFrame::Reflow(nsPresContext* aPresContext,
   if (computedBSize == NS_UNCONSTRAINEDSIZE) {
     computedBSize = 0;
   }
+  const auto borderPadding = aReflowInput.ComputedLogicalBorderPadding(wm);
   LogicalSize finalSize(
-      wm,
-      aReflowInput.ComputedISize() +
-          aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm),
-      computedBSize +
-          aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm));
+      wm, aReflowInput.ComputedISize() + borderPadding.IStartEnd(wm),
+      computedBSize + borderPadding.BStartEnd(wm));
   aDesiredSize.SetSize(wm, finalSize);
 
   ReflowAnonymousContent(aPresContext, aDesiredSize, aReflowInput);
@@ -391,8 +387,8 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
   } else {
     absPoint = aEvent->mRefPoint;
   }
-  nsPoint point =
-      nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, absPoint, this);
+  nsPoint point = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+      aEvent, absPoint, RelativeTo{this});
 
   if (point == nsPoint(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE)) {
     // We don't want to change the current value for this error state.
@@ -460,7 +456,7 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
 }
 
 void nsRangeFrame::UpdateForValueChange() {
-  if (NS_SUBTREE_DIRTY(this)) {
+  if (IsSubtreeDirty()) {
     return;  // we're going to be updated when we reflow
   }
   nsIFrame* rangeProgressFrame = mProgressDiv->GetPrimaryFrame();
@@ -628,7 +624,7 @@ nscoord nsRangeFrame::AutoCrossSize(nscoord aEm) {
 LogicalSize nsRangeFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   bool isInlineOriented = IsInlineOriented();
   auto em = StyleFont()->mFont.size * nsLayoutUtils::FontSizeInflationFor(this);

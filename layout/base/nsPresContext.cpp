@@ -495,7 +495,7 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
       mMissingFonts = nullptr;
     }
   }
-  if (StringBeginsWith(prefName, NS_LITERAL_CSTRING("font.")) ||
+  if (StringBeginsWith(prefName, "font."_ns) ||
       prefName.EqualsLiteral("intl.accept_languages")) {
     // Changes to font family preferences don't change anything in the
     // computed style data, so the style system won't generate a reflow
@@ -507,14 +507,14 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
     // bother (yet, anyway).
     mPrefChangePendingNeedsReflow = true;
   }
-  if (StringBeginsWith(prefName, NS_LITERAL_CSTRING("bidi."))) {
+  if (StringBeginsWith(prefName, "bidi."_ns)) {
     // Changes to bidi prefs need to trigger a reflow (see bug 443629)
     mPrefChangePendingNeedsReflow = true;
 
     // Changes to bidi.numeral also needs to empty the text run cache.
     // This is handled in gfxTextRunWordCache.cpp.
   }
-  if (StringBeginsWith(prefName, NS_LITERAL_CSTRING("gfx.font_rendering."))) {
+  if (StringBeginsWith(prefName, "gfx.font_rendering."_ns)) {
     // Changes to font_rendering prefs need to trigger a reflow
     mPrefChangePendingNeedsReflow = true;
   }
@@ -803,7 +803,7 @@ nsPresContext* nsPresContext::GetParentPresContext() {
   return nullptr;
 }
 
-nsPresContext* nsPresContext::GetToplevelContentDocumentPresContext() {
+nsPresContext* nsPresContext::GetInProcessRootContentDocumentPresContext() {
   if (IsChrome()) return nullptr;
   nsPresContext* pc = this;
   for (;;) {
@@ -1191,7 +1191,7 @@ void nsPresContext::RecordInteractionTime(InteractionType aType,
   // Record the interaction time if it occurs after the first paint
   // of the top level content document.
   nsPresContext* topContentPresContext =
-      GetToplevelContentDocumentPresContext();
+      GetInProcessRootContentDocumentPresContext();
 
   if (!topContentPresContext) {
     // There is no top content pres context so we don't care
@@ -1259,11 +1259,6 @@ void nsPresContext::ThemeChanged() {
   }
 }
 
-static bool NotifyThemeChanged(BrowserParent* aBrowserParent, void* aArg) {
-  aBrowserParent->ThemeChanged();
-  return false;
-}
-
 void nsPresContext::ThemeChangedInternal() {
   mPendingThemeChanged = false;
 
@@ -1291,8 +1286,11 @@ void nsPresContext::ThemeChangedInternal() {
   // Recursively notify all remote leaf descendants that the
   // system theme has changed.
   if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
-    nsContentUtils::CallOnAllRemoteChildren(window, NotifyThemeChanged,
-                                            nullptr);
+    nsContentUtils::CallOnAllRemoteChildren(
+        window, [](BrowserParent* aBrowserParent) -> bool {
+          aBrowserParent->ThemeChanged();
+          return false;
+        });
   }
 }
 
@@ -1506,10 +1504,6 @@ void nsPresContext::FlushPendingMediaFeatureValuesChanged() {
     RebuildAllStyleData(change.mChangeHint, change.mRestyleHint);
   }
 
-  if (!mPresShell || !mPresShell->DidInitialize()) {
-    return;
-  }
-
   if (mDocument->IsBeingUsedAsImage()) {
     MOZ_ASSERT(mDocument->MediaQueryLists().isEmpty());
     return;
@@ -1517,11 +1511,14 @@ void nsPresContext::FlushPendingMediaFeatureValuesChanged() {
 
   mDocument->NotifyMediaFeatureValuesChanged();
 
-  MOZ_DIAGNOSTIC_ASSERT(nsContentUtils::IsSafeToRunScript());
-
+  // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
+  //
   // Media query list listeners should be notified from a queued task
   // (in HTML5 terms), although we also want to notify them on certain
   // flushes.  (We're already running off an event.)
+  //
+  // TODO: This should be better integrated into the "update the rendering"
+  // steps: https://html.spec.whatwg.org/#update-the-rendering
   //
   // Note that we do this after the new style from media queries in
   // style sheets has been computed.
@@ -1532,32 +1529,31 @@ void nsPresContext::FlushPendingMediaFeatureValuesChanged() {
 
   // We build a list of all the notifications we're going to send
   // before we send any of them.
-
-  // Copy pointers to all the lists into a new array, in case one of our
-  // notifications modifies the list.
-  nsTArray<RefPtr<mozilla::dom::MediaQueryList>> localMediaQueryLists;
+  nsTArray<RefPtr<mozilla::dom::MediaQueryList>> listsToNotify;
   for (MediaQueryList* mql = mDocument->MediaQueryLists().getFirst(); mql;
        mql = static_cast<LinkedListElement<MediaQueryList>*>(mql)->getNext()) {
-    localMediaQueryLists.AppendElement(mql);
+    if (mql->MediaFeatureValuesChanged()) {
+      listsToNotify.AppendElement(mql);
+    }
   }
 
-  // Now iterate our local array of the lists.
-  for (const auto& mql : localMediaQueryLists) {
-    nsAutoMicroTask mt;
-    mql->MaybeNotify();
-  }
-}
-
-static bool NotifyTabSizeModeChanged(BrowserParent* aTab, void* aArg) {
-  nsSizeMode* sizeMode = static_cast<nsSizeMode*>(aArg);
-  aTab->SizeModeChanged(*sizeMode);
-  return false;
+  nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+      "nsPresContext::FlushPendingMediaFeatureValuesChanged",
+      [list = std::move(listsToNotify)] {
+        for (const auto& mql : list) {
+          nsAutoMicroTask mt;
+          mql->FireChangeEvent();
+        }
+      }));
 }
 
 void nsPresContext::SizeModeChanged(nsSizeMode aSizeMode) {
   if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
-    nsContentUtils::CallOnAllRemoteChildren(window, NotifyTabSizeModeChanged,
-                                            &aSizeMode);
+    nsContentUtils::CallOnAllRemoteChildren(
+        window, [&aSizeMode](BrowserParent* aBrowserParent) -> bool {
+          aBrowserParent->SizeModeChanged(aSizeMode);
+          return false;
+        });
   }
   MediaFeatureValuesChangedAllDocuments(
       {MediaFeatureChangeReason::SizeModeChange});
@@ -1573,7 +1569,24 @@ void nsPresContext::SetPaginatedScrolling(bool aPaginated) {
 }
 
 void nsPresContext::SetPrintSettings(nsIPrintSettings* aPrintSettings) {
-  if (mMedium == nsGkAtoms::print) mPrintSettings = aPrintSettings;
+  if (mMedium != nsGkAtoms::print) {
+    return;
+  }
+
+  mPrintSettings = aPrintSettings;
+  mDefaultPageMargin = nsMargin();
+  if (!mPrintSettings) {
+    return;
+  }
+
+  nsIntMargin unwriteableTwips = mPrintSettings->GetUnwriteableMarginInTwips();
+  NS_ASSERTION(unwriteableTwips.top >= 0 && unwriteableTwips.right >= 0 &&
+                   unwriteableTwips.bottom >= 0 && unwriteableTwips.left >= 0,
+               "Unwriteable twips should be non-negative");
+
+  nsIntMargin marginTwips = mPrintSettings->GetMarginInTwips();
+  marginTwips.EnsureAtLeast(unwriteableTwips);
+  mDefaultPageMargin = nsPresContext::CSSTwipsToAppUnits(marginTwips);
 }
 
 bool nsPresContext::EnsureVisible() {
@@ -2442,7 +2455,7 @@ void nsRootPresContext::ComputePluginGeometryUpdates(
       // again. nsDisplayScroll(Info)Layer doesn't support trying to flatten
       // again.
       aBuilder->SetAllowMergingAndFlattening(false);
-      nsRegion region = rootFrame->GetVisualOverflowRectRelativeToSelf();
+      nsRegion region = rootFrame->InkOverflowRectRelativeToSelf();
       // nsDisplayPlugin::ComputeVisibility will automatically set a non-hidden
       // widget configuration for the plugin, if it's visible.
       aList->ComputeVisibilityForRoot(aBuilder, &region);

@@ -235,7 +235,7 @@ void nsLineBox::List(FILE* out, const char* aPrefix,
                      nsIFrame::ListFlags aFlags) const {
   nsCString str(aPrefix);
   char cbuf[100];
-  str += nsPrintfCString("line %p: count=%d state=%s ",
+  str += nsPrintfCString("line@%p count=%d state=%s ",
                          static_cast<const void*>(this), GetChildCount(),
                          StateToString(cbuf, sizeof(cbuf)));
   if (IsBlock() && !GetCarriedOutBEndMargin().IsZero()) {
@@ -249,11 +249,11 @@ void nsLineBox::List(FILE* out, const char* aPrefix,
         ToString(mContainerSize).c_str(), ToString(mBounds).c_str());
   }
   if (mData &&
-      (!mData->mOverflowAreas.VisualOverflow().IsEqualEdges(bounds) ||
+      (!mData->mOverflowAreas.InkOverflow().IsEqualEdges(bounds) ||
        !mData->mOverflowAreas.ScrollableOverflow().IsEqualEdges(bounds))) {
     str += nsPrintfCString(
-        "vis-overflow=%s scr-overflow=%s ",
-        ToString(mData->mOverflowAreas.VisualOverflow()).c_str(),
+        "ink-overflow=%s scr-overflow=%s ",
+        ToString(mData->mOverflowAreas.InkOverflow()).c_str(),
         ToString(mData->mOverflowAreas.ScrollableOverflow()).c_str());
   }
   fprintf_stderr(out, "%s<\n", str.get());
@@ -446,7 +446,7 @@ bool nsLineBox::SetCarriedOutBEndMargin(nsCollapsingMargin aValue) {
 
 void nsLineBox::MaybeFreeData() {
   nsRect bounds = GetPhysicalBounds();
-  if (mData && mData->mOverflowAreas == nsOverflowAreas(bounds, bounds)) {
+  if (mData && mData->mOverflowAreas == OverflowAreas(bounds, bounds)) {
     if (IsInline()) {
       if (mInlineData->mFloats.IsEmpty()) {
         delete mInlineData;
@@ -521,15 +521,18 @@ void nsLineBox::ClearFloatEdges() {
   }
 }
 
-void nsLineBox::SetOverflowAreas(const nsOverflowAreas& aOverflowAreas) {
-  NS_FOR_FRAME_OVERFLOW_TYPES(otype) {
+void nsLineBox::SetOverflowAreas(const OverflowAreas& aOverflowAreas) {
+#ifdef DEBUG
+  for (const auto otype : mozilla::AllOverflowTypes()) {
     NS_ASSERTION(aOverflowAreas.Overflow(otype).width >= 0,
-                 "illegal width for combined area");
+                 "Illegal width for an overflow area!");
     NS_ASSERTION(aOverflowAreas.Overflow(otype).height >= 0,
-                 "illegal height for combined area");
+                 "Illegal height for an overflow area!");
   }
+#endif
+
   nsRect bounds = GetPhysicalBounds();
-  if (!aOverflowAreas.VisualOverflow().IsEqualInterior(bounds) ||
+  if (!aOverflowAreas.InkOverflow().IsEqualInterior(bounds) ||
       !aOverflowAreas.ScrollableOverflow().IsEqualEdges(bounds)) {
     if (!mData) {
       if (IsInline()) {
@@ -600,24 +603,18 @@ int32_t nsLineIterator::GetNumLines() const { return mNumLines; }
 
 bool nsLineIterator::GetDirection() { return mRightToLeft; }
 
-NS_IMETHODIMP
-nsLineIterator::GetLine(int32_t aLineNumber, nsIFrame** aFirstFrameOnLine,
-                        int32_t* aNumFramesOnLine, nsRect& aLineBounds) const {
-  NS_ENSURE_ARG_POINTER(aFirstFrameOnLine);
-  NS_ENSURE_ARG_POINTER(aNumFramesOnLine);
-
+Result<nsILineIterator::LineInfo, nsresult> nsLineIterator::GetLine(
+    int32_t aLineNumber) const {
   if ((aLineNumber < 0) || (aLineNumber >= mNumLines)) {
-    *aFirstFrameOnLine = nullptr;
-    *aNumFramesOnLine = 0;
-    aLineBounds.SetRect(0, 0, 0, 0);
-    return NS_OK;
+    return Err(NS_ERROR_FAILURE);
   }
+  LineInfo structure;
   nsLineBox* line = mLines[aLineNumber];
-  *aFirstFrameOnLine = line->mFirstChild;
-  *aNumFramesOnLine = line->GetChildCount();
-  aLineBounds = line->GetPhysicalBounds();
-
-  return NS_OK;
+  structure.mFirstFrameOnLine = line->mFirstChild;
+  structure.mNumFramesOnLine = line->GetChildCount();
+  structure.mLineBounds = line->GetPhysicalBounds();
+  structure.mIsWrapped = line->IsLineWrapped();
+  return structure;
 }
 
 int32_t nsLineIterator::FindLineContaining(nsIFrame* aFrame,

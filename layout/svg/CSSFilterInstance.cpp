@@ -278,7 +278,7 @@ Size CSSFilterInstance::BlurRadiusToFilterSpace(nscoord aRadiusInFrameSpace) {
   Size radiusInFilterSpace(radiusInFrameSpaceInCSSPx,
                            radiusInFrameSpaceInCSSPx);
   gfxSize frameSpaceInCSSPxToFilterSpaceScale =
-      mFrameSpaceInCSSPxToFilterSpaceTransform.ScaleFactors(true);
+      mFrameSpaceInCSSPxToFilterSpaceTransform.ScaleFactors();
   radiusInFilterSpace.Scale(frameSpaceInCSSPxToFilterSpaceScale.width,
                             frameSpaceInCSSPxToFilterSpaceScale.height);
 
@@ -307,7 +307,7 @@ IntPoint CSSFilterInstance::OffsetToFilterSpace(nscoord aXOffsetInFrameSpace,
 
   // Convert the radius to filter space.
   gfxSize frameSpaceInCSSPxToFilterSpaceScale =
-      mFrameSpaceInCSSPxToFilterSpaceTransform.ScaleFactors(true);
+      mFrameSpaceInCSSPxToFilterSpaceTransform.ScaleFactors();
   offsetInFilterSpace.x *= frameSpaceInCSSPxToFilterSpaceScale.width;
   offsetInFilterSpace.y *= frameSpaceInCSSPxToFilterSpaceScale.height;
 

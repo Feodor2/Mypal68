@@ -56,16 +56,14 @@
 #include "mozilla/Result.h"
 #include "mozilla/SmallPointerArray.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ToString.h"
 #include "mozilla/WritingModes.h"
 #include "nsDirection.h"
 #include "nsFrameList.h"
 #include "nsFrameState.h"
 #include "mozilla/ReflowInput.h"
-#include "nsHTMLParts.h"
 #include "nsITheme.h"
-#include "nsLayoutUtils.h"
 #include "nsQueryFrame.h"
-#include "nsString.h"
 #include "mozilla/ComputedStyle.h"
 #include "nsStyleStruct.h"
 #include "Visibility.h"
@@ -99,7 +97,6 @@
  */
 
 class nsAtom;
-class nsPresContext;
 class nsView;
 class nsFrameSelection;
 class nsIWidget;
@@ -107,6 +104,7 @@ class nsISelectionController;
 class nsBoxLayoutState;
 class nsBoxLayout;
 class nsILineIterator;
+class nsDisplayItem;
 class nsDisplayItemBase;
 class nsDisplayListBuilder;
 class nsDisplayListSet;
@@ -116,7 +114,6 @@ class gfxSkipCharsIterator;
 class gfxContext;
 class nsLineList_iterator;
 class nsAbsoluteContainingBlock;
-class nsIContent;
 class nsContainerFrame;
 class nsPlaceholderFrame;
 class nsStyleChangeList;
@@ -124,10 +121,6 @@ class nsWindowSizes;
 
 struct nsBoxLayoutMetrics;
 struct nsPeekOffsetStruct;
-struct nsPoint;
-struct nsRect;
-struct nsSize;
-struct nsMargin;
 struct CharacterDataChangeInfo;
 
 namespace mozilla {
@@ -135,9 +128,6 @@ namespace mozilla {
 enum class PseudoStyleType : uint8_t;
 enum class TableSelectionMode : uint32_t;
 class EventStates;
-class PresShell;
-struct ReflowInput;
-class ReflowOutput;
 class ServoRestyleState;
 class DisplayItemData;
 class EffectSet;
@@ -151,16 +141,9 @@ namespace layout {
 class ScrollAnchorContainer;
 }  // namespace layout
 
-namespace dom {
-class Selection;
-}  // namespace dom
-
 }  // namespace mozilla
 
 //----------------------------------------------------------------------
-
-#define NS_SUBTREE_DIRTY(_frame) \
-  (_frame)->HasAnyStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN)
 
 // 1 million CSS pixels less than our max app unit measure.
 // For reflowing with an "infinite" available inline space per [css-sizing].
@@ -365,7 +348,7 @@ std::ostream& operator<<(std::ostream& aStream, const nsReflowStatus& aStatus);
 //----------------------------------------------------------------------
 
 /**
- * When there is no scrollable overflow rect, the visual overflow rect
+ * When there is no scrollable overflow rect, the ink overflow rect
  * may be stored as four 1-byte deltas each strictly LESS THAN 0xff, for
  * the four edges of the rectangle, or the four bytes may be read as a
  * single 32-bit "overflow-rect type" value including at least one 0xff
@@ -482,6 +465,13 @@ struct IntrinsicSize {
 
   IntrinsicSize(nscoord aWidth, nscoord aHeight)
       : width(Some(aWidth)), height(Some(aHeight)) {}
+
+  explicit IntrinsicSize(const nsSize& aSize)
+      : IntrinsicSize(aSize.Width(), aSize.Height()) {}
+
+  Maybe<nsSize> ToSize() const {
+    return width && height ? Some(nsSize(*width, *height)) : Nothing();
+  }
 
   bool operator==(const IntrinsicSize& rhs) {
     return width == rhs.width && height == rhs.height;
@@ -632,15 +622,10 @@ class nsIFrame : public nsQueryFrame {
   using Result = mozilla::Result<T, E>;
   using Nothing = mozilla::Nothing;
   using OnNonvisible = mozilla::OnNonvisible;
-  template <typename T = void>
-  using PropertyDescriptor = const mozilla::FramePropertyDescriptor<T>*;
   using ReflowInput = mozilla::ReflowInput;
   using ReflowOutput = mozilla::ReflowOutput;
   using Visibility = mozilla::Visibility;
-  using StyleFlexBasis = mozilla::StyleFlexBasis;
-  using StyleSize = mozilla::StyleSize;
   using LengthPercentage = mozilla::LengthPercentage;
-  using StyleExtremumLength = mozilla::StyleExtremumLength;
 
   typedef mozilla::ComputedStyle ComputedStyle;
   typedef mozilla::FrameProperties FrameProperties;
@@ -657,6 +642,8 @@ class nsIFrame : public nsQueryFrame {
   typedef mozilla::LogicalSides LogicalSides;
   typedef mozilla::SmallPointerArray<mozilla::DisplayItemData>
       DisplayItemDataArray;
+  typedef mozilla::SmallPointerArray<nsDisplayItemBase> DisplayItemArray;
+
   typedef nsQueryFrame::ClassID ClassID;
 
   // nsQueryFrame
@@ -865,7 +852,7 @@ class nsIFrame : public nsQueryFrame {
    * like nsTextControlFrame that contain a scrollframe, will return
    * that scrollframe.
    */
-  virtual nsIScrollableFrame* GetScrollTargetFrame() { return nullptr; }
+  virtual nsIScrollableFrame* GetScrollTargetFrame() const { return nullptr; }
 
   /**
    * Get the offsets of the frame. most will be 0,0
@@ -1058,10 +1045,10 @@ class nsIFrame : public nsQueryFrame {
    *
    * Frames that are laid out according to SVG's coordinate space based rules
    * (frames with the NS_FRAME_SVG_LAYOUT bit set, which *excludes*
-   * nsSVGOuterSVGFrame) are different.  Many frames of this type do not set or
+   * SVGOuterSVGFrame) are different.  Many frames of this type do not set or
    * use mRect, in which case the frame rect is undefined.  The exceptions are:
    *
-   *   - nsSVGInnerSVGFrame
+   *   - SVGInnerSVGFrame
    *   - SVGGeometryFrame (used for <path>, <circle>, etc.)
    *   - SVGImageFrame
    *   - SVGForeignObjectFrame
@@ -1172,7 +1159,7 @@ class nsIFrame : public nsQueryFrame {
     }
     if (mOverflow.mType != NS_FRAME_OVERFLOW_LARGE &&
         mOverflow.mType != NS_FRAME_OVERFLOW_NONE) {
-      nsOverflowAreas overflow = GetOverflowAreas();
+      mozilla::OverflowAreas overflow = GetOverflowAreas();
       mRect = aRect;
       SetOverflowAreas(overflow);
     } else {
@@ -1299,8 +1286,6 @@ class nsIFrame : public nsQueryFrame {
 
   nsPoint GetPositionIgnoringScrolling() const;
 
-  typedef AutoTArray<nsDisplayItemBase*, 4> DisplayItemArray;
-
 #define NS_DECLARE_FRAME_PROPERTY_WITH_DTOR(prop, type, dtor)              \
   static const mozilla::FramePropertyDescriptor<type>* prop() {            \
     /* Use of constexpr caused startup crashes with MSVC2015u1 PGO. */     \
@@ -1353,17 +1338,19 @@ class nsIFrame : public nsQueryFrame {
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(OutlineInnerRectProperty, nsRect)
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(PreEffectsBBoxProperty, nsRect)
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(PreTransformOverflowAreasProperty,
-                                      nsOverflowAreas)
+                                      mozilla::OverflowAreas)
 
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(CachedBorderImageDataProperty,
                                       CachedBorderImageData)
 
-  NS_DECLARE_FRAME_PROPERTY_DELETABLE(OverflowAreasProperty, nsOverflowAreas)
+  NS_DECLARE_FRAME_PROPERTY_DELETABLE(OverflowAreasProperty,
+                                      mozilla::OverflowAreas)
 
   // The initial overflow area passed to FinishAndStoreOverflow. This is only
   // set on frames that Preserve3D() or HasPerspective() or IsTransformed(), and
   // when at least one of the overflow areas differs from the frame bound rect.
-  NS_DECLARE_FRAME_PROPERTY_DELETABLE(InitialOverflowProperty, nsOverflowAreas)
+  NS_DECLARE_FRAME_PROPERTY_DELETABLE(InitialOverflowProperty,
+                                      mozilla::OverflowAreas)
 
 #ifdef DEBUG
   // InitialOverflowPropertyDebug is added to the frame to indicate that either
@@ -1379,10 +1366,6 @@ class nsIFrame : public nsQueryFrame {
 
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(LineBaselineOffset, nscoord)
 
-  // Temporary override for a flex item's main-size property (either width
-  // or height), imposed by its flex container.
-  NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(FlexItemMainSizeOverride, nscoord)
-
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(InvalidationRect, nsRect)
 
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(RefusedAsyncAnimationProperty, bool)
@@ -1395,8 +1378,6 @@ class nsIFrame : public nsQueryFrame {
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(IBaselinePadProperty, nscoord)
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(BBaselinePadProperty, nscoord)
 
-  NS_DECLARE_FRAME_PROPERTY_DELETABLE(DisplayItems, DisplayItemArray)
-
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(BidiDataProperty,
                                         mozilla::FrameBidiData)
 
@@ -1404,6 +1385,9 @@ class nsIFrame : public nsQueryFrame {
                                          nsPlaceholderFrame)
 
   NS_DECLARE_FRAME_PROPERTY_RELEASABLE(OffsetPathCache, mozilla::gfx::Path)
+
+  NS_DECLARE_FRAME_PROPERTY_DELETABLE(DisplayItemDataProperty,
+                                      DisplayItemDataArray)
 
   mozilla::FrameBidiData GetBidiData() const {
     bool exists;
@@ -1929,22 +1913,18 @@ class nsIFrame : public nsQueryFrame {
   }
 
   /**
-   * Returns true if this frame is transformed (e.g. has CSS or SVG transforms)
-   * or if its parent is an SVG frame that has children-only transforms (e.g.
-   * an SVG viewBox attribute) or if its transform-style is preserve-3d or
-   * the frame has transform animations.
-   *
-   * @param aStyleDisplay:  If the caller has this->StyleDisplay(), providing
-   *   it here will improve performance.
+   * Returns true if this frame is transformed (e.g. has CSS, SVG, or custom
+   * transforms) or if its parent is an SVG frame that has children-only
+   * transforms (e.g.  an SVG viewBox attribute) or if its transform-style is
+   * preserve-3d or the frame has transform animations.
    */
-  bool IsTransformed(const nsStyleDisplay* aStyleDisplay) const;
-  bool IsTransformed() const { return IsTransformed(StyleDisplay()); }
+  bool IsTransformed() const;
 
   /**
    * Same as IsTransformed, except that it doesn't take SVG transforms
    * into account.
    */
-  bool IsCSSTransformed(const nsStyleDisplay* aStyleDisplay) const;
+  bool IsCSSTransformed() const;
 
   /**
    * True if this frame has any animation of transform in effect.
@@ -2051,15 +2031,8 @@ class nsIFrame : public nsQueryFrame {
    * Returns whether this frame has a parent that Extend3DContext() and has
    * its own transform (or hidden backface) to be combined with the parent's
    * transform.
-   *
-   * @param aStyleDisplay:  If the caller has this->StyleDisplay(), providing
-   *   it here will improve performance.
    */
-  bool Combines3DTransformWithAncestors(
-      const nsStyleDisplay* aStyleDisplay) const;
-  bool Combines3DTransformWithAncestors() const {
-    return Combines3DTransformWithAncestors(StyleDisplay());
-  }
+  bool Combines3DTransformWithAncestors() const;
 
   /**
    * Returns whether this frame has a hidden backface and has a parent that
@@ -2071,7 +2044,7 @@ class nsIFrame : public nsQueryFrame {
 
   bool IsPreserve3DLeaf(const nsStyleDisplay* aStyleDisplay,
                         mozilla::EffectSet* aEffectSet = nullptr) const {
-    return Combines3DTransformWithAncestors(aStyleDisplay) &&
+    return Combines3DTransformWithAncestors() &&
            !Extend3DContext(aStyleDisplay, StyleEffects(), aEffectSet);
   }
   bool IsPreserve3DLeaf(mozilla::EffectSet* aEffectSet = nullptr) const {
@@ -2090,15 +2063,21 @@ class nsIFrame : public nsQueryFrame {
    * Includes the overflow area of all descendants that participate in the
    * current 3d context into aOverflowAreas.
    */
-  void ComputePreserve3DChildrenOverflow(nsOverflowAreas& aOverflowAreas);
+  void ComputePreserve3DChildrenOverflow(
+      mozilla::OverflowAreas& aOverflowAreas);
 
   void RecomputePerspectiveChildrenOverflow(const nsIFrame* aStartFrame);
 
   /**
-   * Returns the computed z-index for this frame, returning 0 for z-index:auto
-   * and frames that don't support z-index.
+   * Returns whether z-index applies to this frame.
    */
-  int32_t ZIndex() const;
+  bool ZIndexApplies() const;
+
+  /**
+   * Returns the computed z-index for this frame, returning Nothing() for
+   * z-index: auto, and for frames that don't support z-index.
+   */
+  Maybe<int32_t> ZIndex() const;
 
   /**
    * Returns whether this frame is the anchor of some ancestor scroll frame. As
@@ -2307,7 +2286,7 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Get the cursor for a given frame.
    */
-  virtual mozilla::Maybe<Cursor> GetCursor(const nsPoint&);
+  virtual Maybe<Cursor> GetCursor(const nsPoint&);
 
   /**
    * Get a point (in the frame's coordinate space) given an offset into
@@ -2371,6 +2350,11 @@ class nsIFrame : public nsQueryFrame {
   void SetIsPrimaryFrame(bool aIsPrimary) { mIsPrimaryFrame = aIsPrimary; }
 
   bool IsPrimaryFrameOfRootOrBodyElement() const;
+
+  /**
+   * @return true if this frame is used as a fieldset's rendered legend.
+   */
+  bool IsRenderedLegend() const;
 
   /**
    * This call is invoked on the primary frame for a character data content
@@ -2659,6 +2643,7 @@ class nsIFrame : public nsQueryFrame {
     nscoord padding = 0;
     nscoord border = 0;
     nscoord margin = 0;
+    nscoord BorderPadding() const { return border + padding; };
   };
 
   /**
@@ -2682,49 +2667,23 @@ class nsIFrame : public nsQueryFrame {
   virtual mozilla::IntrinsicSize GetIntrinsicSize();
 
   /**
-   * Get the intrinsic ratio of this element, or a default-constructed
+   * Get the preferred aspect ratio of this frame, or a default-constructed
+   * AspectRatio if it has none.
+   *
+   * https://drafts.csswg.org/css-sizing-4/#preferred-aspect-ratio
+   */
+  mozilla::AspectRatio GetAspectRatio() const;
+
+  /**
+   * Get the intrinsic aspect ratio of this frame, or a default-constructed
    * AspectRatio if it has no intrinsic ratio.
    *
    * The intrinsic ratio is the ratio of the width/height of a box with an
    * intrinsic size or the intrinsic aspect ratio of a scalable vector image
-   * without an intrinsic size.
+   * without an intrinsic size. A frame class implementing a replaced element
+   * should override this method if it has a intrinsic ratio.
    */
-  virtual mozilla::AspectRatio GetIntrinsicRatio();
-
-  /**
-   * Bit-flags to pass to ComputeSize in |aFlags| parameter.
-   */
-  enum ComputeSizeFlags {
-    eDefault = 0,
-    /**
-     * Set if the frame is in a context where non-replaced blocks should
-     * shrink-wrap (e.g., it's floating, absolutely positioned, or
-     * inline-block).
-     */
-    eShrinkWrap = 1 << 0,
-    /**
-     * Set if we'd like to compute our 'auto' bsize, regardless of our actual
-     * corresponding computed value. (e.g. to get an intrinsic height for flex
-     * items with "min-height: auto" to use during flexbox layout.)
-     */
-    eUseAutoBSize = 1 << 1,
-    /**
-     * Indicates that we should clamp the margin-box min-size to the given CB
-     * size.  This is used for implementing the grid area clamping here:
-     * https://drafts.csswg.org/css-grid/#min-size-auto
-     */
-    eIClampMarginBoxMinSize = 1 << 2,  // clamp in our inline axis
-    eBClampMarginBoxMinSize = 1 << 3,  // clamp in our block axis
-    /**
-     * The frame is stretching (per CSS Box Alignment) and doesn't have an
-     * Automatic Minimum Size in the indicated axis.
-     * (may be used for both flex/grid items, but currently only used for Grid)
-     * https://drafts.csswg.org/css-grid/#min-size-auto
-     * https://drafts.csswg.org/css-align-3/#valdef-justify-self-stretch
-     */
-    eIApplyAutoMinSize = 1 << 4,  // only has an effect when eShrinkWrap is
-                                  // false
-  };
+  virtual mozilla::AspectRatio GetIntrinsicRatio() const;
 
   /**
    * Compute the size that a frame will occupy.  Called while
@@ -2732,74 +2691,98 @@ class nsIFrame : public nsQueryFrame {
    * in order to fill its mComputedWidth and mComputedHeight member
    * variables.
    *
-   * The |height| member of the return value may be
-   * NS_UNCONSTRAINEDSIZE, but the |width| member must not be.
-   *
    * Note that the reason that border and padding need to be passed
    * separately is so that the 'box-sizing' property can be handled.
    * Thus aMargin includes absolute positioning offsets as well.
    *
-   * @param aWritingMode  The writing mode to use for the returned size
-   *                      (need not match this frame's writing mode).
-   *                      This is also the writing mode of the passed-in
-   *                      LogicalSize parameters.
+   * @param aWM  The writing mode to use for the returned size (need not match
+   *             this frame's writing mode). This is also the writing mode of
+   *             the passed-in LogicalSize parameters.
    * @param aCBSize  The size of the element's containing block.  (Well,
-   *                 the |height| component isn't really.)
-   * @param aAvailableWidth  The available width for 'auto' widths.
-   *                         This is usually the same as aCBSize.width,
+   *                 the BSize() component isn't really.)
+   * @param aAvailableISize  The available inline-size for 'auto' inline-size.
+   *                         This is usually the same as aCBSize.ISize(),
    *                         but differs in cases such as block
    *                         formatting context roots next to floats, or
    *                         in some cases of float reflow in quirks
    *                         mode.
-   * @param aMargin  The sum of the vertical / horizontal margins
-   *                 ***AND*** absolute positioning offsets (top, right,
-   *                 bottom, left) of the frame, including actual values
+   * @param aMargin  The sum of the inline / block margins ***AND***
+   *                 absolute positioning offsets (inset-block and
+   *                 inset-inline) of the frame, including actual values
    *                 resulting from percentages and from the
    *                 "hypothetical box" for absolute positioning, but
    *                 not including actual values resulting from 'auto'
    *                 margins or ignored 'auto' values in absolute
    *                 positioning.
-   * @param aBorder  The sum of the vertical / horizontal border widths
-   *                 of the frame.
-   * @param aPadding The sum of the vertical / horizontal margins of
-   *                 the frame, including actual values resulting from
-   *                 percentages.
-   * @param aFlags   Flags to further customize behavior (definitions above).
+   * @param aBorderPadding  The sum of the frame's inline / block border-widths
+   *                        and padding (including actual values resulting from
+   *                        percentage padding values).
+   * @param aSizeOverride Optional override values for size properties, which
+   *                      this function will use internally instead of the
+   *                      actual property values.
+   * @param aFlags   Flags to further customize behavior (definitions in
+   *                 LayoutConstants.h).
+   *
+   * The return value includes the computed LogicalSize and AspectRatioUsage
+   * which indicates whether the inline/block size is affected by aspect-ratio
+   * or not. The BSize() of the returned LogicalSize may be
+   * NS_UNCONSTRAINEDSIZE, but the ISize() must not be. We need AspectRatioUsage
+   * during reflow because the final size may be affected by the content size
+   * after applying aspect-ratio.
+   * https://drafts.csswg.org/css-sizing-4/#aspect-ratio-minimum
+   *
    */
-  virtual mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  enum class AspectRatioUsage : uint8_t {
+    None,
+    ToComputeISize,
+    ToComputeBSize,
+  };
+  struct SizeComputationResult {
+    mozilla::LogicalSize mLogicalSize;
+    AspectRatioUsage mAspectRatioUsage = AspectRatioUsage::None;
+  };
+  virtual SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags);
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags);
 
  protected:
   /**
    * A helper, used by |nsIFrame::ComputeSize| (for frames that need to
    * override only this part of ComputeSize), that computes the size
-   * that should be returned when 'width', 'height', and
-   * min/max-width/height are all 'auto' or equivalent.
+   * that should be returned when inline-size, block-size, and
+   * [min|max]-[inline-size|block-size] are all 'auto' or equivalent.
    *
-   * In general, frames that can accept any computed width/height should
-   * override only ComputeAutoSize, and frames that cannot do so need to
-   * override ComputeSize to enforce their width/height invariants.
+   * In general, frames that can accept any computed inline-size/block-size
+   * should override only ComputeAutoSize, and frames that cannot do so need to
+   * override ComputeSize to enforce their inline-size/block-size invariants.
    *
-   * Implementations may optimize by returning a garbage width if
-   * StylePosition()->mWidth.GetUnit() != eStyleUnit_Auto, and
-   * likewise for height, since in such cases the result is guaranteed
-   * to be unused.
+   * Implementations may optimize by returning a garbage inline-size if
+   * StylePosition()->ISize() is not 'auto' (or inline-size override in
+   * aSizeOverrides is not 'auto' if provided), and likewise for BSize(), since
+   * in such cases the result is guaranteed to be unused.
+   *
+   * Most of the frame are not expected to check the aSizeOverrides parameter
+   * apart from checking the inline size override for 'auto' if they want to
+   * optimize and return garbage inline-size.
    */
   virtual mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags);
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags);
 
   /**
    * Utility function for ComputeAutoSize implementations.  Return
    * max(GetMinISize(), min(aISizeInCB, GetPrefISize()))
    */
   nscoord ShrinkWidthToFit(gfxContext* aRenderingContext, nscoord aISizeInCB,
-                           ComputeSizeFlags aFlags);
+                           mozilla::ComputeSizeFlags aFlags);
 
  public:
   /**
@@ -2810,7 +2793,7 @@ class nsIFrame : public nsQueryFrame {
    *
    * This probably only needs to include frame bounds, glyph bounds, and
    * text decorations, but today it sometimes includes other things that
-   * contribute to visual overflow.
+   * contribute to ink overflow.
    *
    * @param aDrawTarget a draw target that can be used if we need
    * to do measurement
@@ -2966,13 +2949,13 @@ class nsIFrame : public nsQueryFrame {
    * If the frame requires a reflow instead, then it is responsible
    * for scheduling one.
    */
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas);
+  virtual bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas);
 
   /**
    * Computes any overflow area created by children of this frame and
    * includes it into aOverflowAreas.
    */
-  virtual void UnionChildOverflow(nsOverflowAreas& aOverflowAreas);
+  virtual void UnionChildOverflow(mozilla::OverflowAreas& aOverflowAreas);
 
   // Represents zero or more physical axes.
   enum class PhysicalAxes : uint8_t {
@@ -3056,6 +3039,13 @@ class nsIFrame : public nsQueryFrame {
   //
   bool HasView() const { return !!(mState & NS_FRAME_HAS_VIEW); }
 
+  // Returns true iff this frame's computed block-size property is one of the
+  // intrinsic-sizing keywords.
+  bool HasIntrinsicKeywordForBSize() const {
+    const auto& bSize = StylePosition()->BSize(GetWritingMode());
+    return bSize.IsFitContent() || bSize.IsMinContent() ||
+           bSize.IsMaxContent() || bSize.IsFitContentFunction();
+  }
   /**
    * Helper method to create a view for a frame.  Only used by a few sub-classes
    * that need a view.
@@ -3235,6 +3225,8 @@ class nsIFrame : public nsQueryFrame {
    * The frame decides which ancestor it will use as a reference point.
    * If this frame has no ancestor, aOutAncestor will be set to null.
    *
+   * @param aViewportType specifies whether the starting point is layout
+   *   or visual coordinates
    * @param aStopAtAncestor don't look further than aStopAtAncestor. If null,
    *   all ancestors (including across documents) will be traversed.
    * @param aOutAncestor [out] The ancestor frame the frame has chosen.  If
@@ -3243,14 +3235,16 @@ class nsIFrame : public nsQueryFrame {
    * document as this frame. If this frame IsTransformed(), then *aOutAncestor
    * will be the parent frame (if not preserve-3d) or the nearest
    * non-transformed ancestor (if preserve-3d).
-   * @return A Matrix4x4 that converts points in this frame's coordinate space
-   *   into points in aOutAncestor's coordinate space.
+   * @return A Matrix4x4 that converts points in the coordinate space
+   *   RelativeTo{this, aViewportType} into points in aOutAncestor's
+   *   coordinate space.
    */
   enum {
     IN_CSS_UNITS = 1 << 0,
     STOP_AT_STACKING_CONTEXT_AND_DISPLAY_PORT = 1 << 1
   };
-  Matrix4x4Flagged GetTransformMatrix(const nsIFrame* aStopAtAncestor,
+  Matrix4x4Flagged GetTransformMatrix(mozilla::ViewportType aViewportType,
+                                      mozilla::RelativeTo aStopAtAncestor,
                                       nsIFrame** aOutAncestor,
                                       uint32_t aFlags = 0) const;
 
@@ -3261,30 +3255,32 @@ class nsIFrame : public nsQueryFrame {
     eMathML = 1 << 0,
     eSVG = 1 << 1,
     eSVGContainer = 1 << 2,
-    eSVGPaintServer = 1 << 3,
-    eBidiInlineContainer = 1 << 4,
+    eBidiInlineContainer = 1 << 3,
     // the frame is for a replaced element, such as an image
-    eReplaced = 1 << 5,
+    eReplaced = 1 << 4,
     // Frame that contains a block but looks like a replaced element
     // from the outside
-    eReplacedContainsBlock = 1 << 6,
+    eReplacedContainsBlock = 1 << 5,
     // A frame that participates in inline reflow, i.e., one that
     // requires ReflowInput::mLineLayout.
-    eLineParticipant = 1 << 7,
-    eXULBox = 1 << 8,
-    eCanContainOverflowContainers = 1 << 9,
-    eTablePart = 1 << 10,
-    eSupportsCSSTransforms = 1 << 11,
+    eLineParticipant = 1 << 6,
+    eXULBox = 1 << 7,
+    eCanContainOverflowContainers = 1 << 8,
+    eTablePart = 1 << 9,
+    eSupportsCSSTransforms = 1 << 10,
 
     // A replaced element that has replaced-element sizing
     // characteristics (i.e., like images or iframes), as opposed to
     // inline-block sizing characteristics (like form controls).
-    eReplacedSizing = 1 << 12,
+    eReplacedSizing = 1 << 11,
 
     // Does this frame class support 'contain: layout' and
     // 'contain:paint' (supporting one is equivalent to supporting the
     // other).
-    eSupportsContainLayoutAndPaint = 1 << 13,
+    eSupportsContainLayoutAndPaint = 1 << 12,
+
+    // Does this frame class support `aspect-ratio` property.
+    eSupportsAspectRatio = 1 << 13,
 
     // These are to allow nsIFrame::Init to assert that IsFrameOfType
     // implementations all call the base class method.  They are only
@@ -3306,8 +3302,38 @@ class nsIFrame : public nsQueryFrame {
                           nsIFrame::eDEBUGAllFrames |
 #endif
                           nsIFrame::eSupportsCSSTransforms |
-                          nsIFrame::eSupportsContainLayoutAndPaint));
+                          nsIFrame::eSupportsContainLayoutAndPaint |
+                          nsIFrame::eSupportsAspectRatio));
   }
+
+  /**
+   * Return true if this frame's preferred size property or max size property
+   * contains a percentage value that should be resolved against zero when
+   * calculating its min-content contribution in the corresponding axis.
+   *
+   * This is a special case for webcompat required by CSS Sizing 3 §5.2.1c
+   * https://drafts.csswg.org/css-sizing-3/#replaced-percentage-min-contribution,
+   * and applies only to some replaced elements and form control elements. See
+   * CSS Sizing 3 §5.2.2 for the list of elements this rule applies to.
+   * https://drafts.csswg.org/css-sizing-3/#min-content-zero
+   *
+   * Bug 1463700: some callers may not match the spec by resolving the entire
+   * preferred size property or max size property against zero.
+   */
+  bool IsPercentageResolvedAgainstZero(
+      const mozilla::StyleSize& aStyleSize,
+      const mozilla::StyleMaxSize& aStyleMaxSize) const;
+
+  // Type of preferred size/min size/max size.
+  enum class SizeProperty { Size, MinSize, MaxSize };
+  /**
+   * This is simliar to the above method but accepts LengthPercentage. Return
+   * true if the frame's preferred size property or max size property contains
+   * a percentage value that should be resolved against zero. For min size, it
+   * always returns true.
+   */
+  bool IsPercentageResolvedAgainstZero(const mozilla::LengthPercentage& aSize,
+                                       SizeProperty aProperty) const;
 
   /**
    * Returns true if the frame is a block wrapper.
@@ -3321,7 +3347,7 @@ class nsIFrame : public nsQueryFrame {
   bool IsBlockFrameOrSubclass() const;
 
   /**
-   * Returns true if the frame is an instance of nsSVGGeometryFrame or one
+   * Returns true if the frame is an instance of SVGGeometryFrame or one
    * of its subclasses.
    */
   inline bool IsSVGGeometryFrameOrSubclass() const;
@@ -3549,7 +3575,7 @@ class nsIFrame : public nsQueryFrame {
    * FinishAndStoreOverflow has been called but mRect hasn't yet been
    * updated yet.  FIXME: This actually isn't true, but it should be.
    *
-   * The visual overflow rect should NEVER be used for things that
+   * The ink overflow rect should NEVER be used for things that
    * affect layout.  The scrollable overflow rect is permitted to affect
    * layout.
    *
@@ -3558,15 +3584,15 @@ class nsIFrame : public nsQueryFrame {
    * system, and may not contain the frame's border-box, e.g. if there
    * is a CSS transform scaling it down)
    */
-  nsRect GetVisualOverflowRect() const {
-    return GetOverflowRect(eVisualOverflow);
+  nsRect InkOverflowRect() const {
+    return GetOverflowRect(mozilla::OverflowType::Ink);
   }
 
   /**
    * Returns a rect that encompasses the area of this frame that the
    * user should be able to scroll to reach.  This is similar to
-   * GetVisualOverflowRect, but does not include outline or shadows, and
-   * may in the future include more margins than visual overflow does.
+   * InkOverflowRect, but does not include outline or shadows, and
+   * may in the future include more margins than ink overflow does.
    * It does not include areas clipped out by the CSS "overflow" and
    * "clip" properties.
    *
@@ -3582,13 +3608,13 @@ class nsIFrame : public nsQueryFrame {
    * system, and may not contain the frame's border-box, e.g. if there
    * is a CSS transform scaling it down)
    */
-  nsRect GetScrollableOverflowRect() const {
-    return GetOverflowRect(eScrollableOverflow);
+  nsRect ScrollableOverflowRect() const {
+    return GetOverflowRect(mozilla::OverflowType::Scrollable);
   }
 
-  nsRect GetOverflowRect(nsOverflowType aType) const;
+  nsRect GetOverflowRect(mozilla::OverflowType aType) const;
 
-  nsOverflowAreas GetOverflowAreas() const;
+  mozilla::OverflowAreas GetOverflowAreas() const;
 
   /**
    * Same as GetOverflowAreas, except in this frame's coordinate
@@ -3597,50 +3623,50 @@ class nsIFrame : public nsQueryFrame {
    * @return the overflow areas relative to this frame, before any CSS
    * transforms have been applied, i.e. in this frame's coordinate system
    */
-  nsOverflowAreas GetOverflowAreasRelativeToSelf() const;
+  mozilla::OverflowAreas GetOverflowAreasRelativeToSelf() const;
 
   /**
-   * Same as GetScrollableOverflowRect, except relative to the parent
+   * Same as ScrollableOverflowRect, except relative to the parent
    * frame.
    *
    * @return the rect relative to the parent frame, in the parent frame's
    * coordinate system
    */
-  nsRect GetScrollableOverflowRectRelativeToParent() const;
+  nsRect ScrollableOverflowRectRelativeToParent() const;
 
   /**
-   * Same as GetScrollableOverflowRect, except in this frame's coordinate
+   * Same as ScrollableOverflowRect, except in this frame's coordinate
    * system (before transforms are applied).
    *
    * @return the rect relative to this frame, before any CSS transforms have
    * been applied, i.e. in this frame's coordinate system
    */
-  nsRect GetScrollableOverflowRectRelativeToSelf() const;
+  nsRect ScrollableOverflowRectRelativeToSelf() const;
 
   /**
-   * Like GetVisualOverflowRect, except in this frame's
+   * Like InkOverflowRect, except in this frame's
    * coordinate system (before transforms are applied).
    *
    * @return the rect relative to this frame, before any CSS transforms have
    * been applied, i.e. in this frame's coordinate system
    */
-  nsRect GetVisualOverflowRectRelativeToSelf() const;
+  nsRect InkOverflowRectRelativeToSelf() const;
 
   /**
-   * Same as GetVisualOverflowRect, except relative to the parent
+   * Same as InkOverflowRect, except relative to the parent
    * frame.
    *
    * @return the rect relative to the parent frame, in the parent frame's
    * coordinate system
    */
-  nsRect GetVisualOverflowRectRelativeToParent() const;
+  nsRect InkOverflowRectRelativeToParent() const;
 
   /**
-   * Returns this frame's visual overflow rect as it would be before taking
+   * Returns this frame's ink overflow rect as it would be before taking
    * account of SVG effects or transforms. The rect returned is relative to
    * this frame.
    */
-  nsRect GetPreEffectsVisualOverflowRect() const;
+  nsRect PreEffectsInkOverflowRect() const;
 
   /**
    * Store the overflow area in the frame's mOverflow.mVisualDeltas
@@ -3648,8 +3674,8 @@ class nsIFrame : public nsQueryFrame {
    * be retrieved later without reflowing the frame. Returns true if either of
    * the overflow areas changed.
    */
-  bool FinishAndStoreOverflow(nsOverflowAreas& aOverflowAreas, nsSize aNewSize,
-                              nsSize* aOldSize = nullptr,
+  bool FinishAndStoreOverflow(mozilla::OverflowAreas& aOverflowAreas,
+                              nsSize aNewSize, nsSize* aOldSize = nullptr,
                               const nsStyleDisplay* aStyleDisplay = nullptr);
 
   bool FinishAndStoreOverflow(ReflowOutput* aMetrics,
@@ -3683,13 +3709,22 @@ class nsIFrame : public nsQueryFrame {
    *       if this frame has a previous or next continuation to determine
    *       if a side should be skipped.
    *       Unfortunately, this only works after reflow has been completed. In
-   *       lieu of this, during reflow, an ReflowInput parameter can be
-   *       passed in, indicating that it should be used to determine if sides
+   *       lieu of this, during reflow, a SkipSidesDuringReflow parameter can
+   *       be passed in, indicating that it should be used to determine if sides
    *       should be skipped during reflow.
+   *
+   * FIXME(emilio, bug 1677917): That's wrong, fix BlockReflowInput and remove
+   * SkipSidesDuringReflow and related code.
    */
-  Sides GetSkipSides(const ReflowInput* aReflowInput = nullptr) const;
+  Sides GetSkipSides() const;
+
+  struct SkipSidesDuringReflow {
+    const ReflowInput& mReflowInput;
+    const nscoord mConsumedBSize = NS_UNCONSTRAINEDSIZE;
+  };
+
   virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const {
+      const Maybe<SkipSidesDuringReflow>& = Nothing()) const {
     return LogicalSides(mWritingMode);
   }
 
@@ -3754,10 +3789,26 @@ class nsIFrame : public nsQueryFrame {
    * Uses frame's begin selection state to start. If no selection on this frame
    * will return NS_ERROR_FAILURE.
    *
-   * @param aPOS is defined in nsFrameSelection
+   * @param aPos is defined in nsFrameSelection
    */
   virtual nsresult PeekOffset(nsPeekOffsetStruct* aPos);
 
+ private:
+  nsresult PeekOffsetForCharacter(nsPeekOffsetStruct* aPos, int32_t aOffset);
+  nsresult PeekOffsetForWord(nsPeekOffsetStruct* aPos, int32_t aOffset);
+  nsresult PeekOffsetForLine(nsPeekOffsetStruct* aPos);
+  nsresult PeekOffsetForLineEdge(nsPeekOffsetStruct* aPos);
+
+  /**
+   * Search for the first paragraph boundary before or after the given position
+   * @param  aPos See description in nsFrameSelection.h. The following fields
+   *              are used by this method:
+   *              Input: mDirection
+   *              Output: mResultContent, mContentOffset
+   */
+  nsresult PeekOffsetForParagraph(nsPeekOffsetStruct* aPos);
+
+ public:
   // given a frame five me the first/last leaf available
   // XXX Robert O'Callahan wants to move these elsewhere
   static void GetLastLeaf(nsIFrame** aFrame);
@@ -3769,40 +3820,59 @@ class nsIFrame : public nsQueryFrame {
                                                  int32_t aLineStart,
                                                  int8_t aOutSideLimit);
 
+  struct SelectablePeekReport {
+    /** the previous/next selectable leaf frame */
+    nsIFrame* mFrame = nullptr;
+    /**
+     * 0 indicates that we arrived at the beginning of the output frame; -1
+     * indicates that we arrived at its end.
+     */
+    int32_t mOffset = 0;
+    /** whether the input frame and the returned frame are on different lines */
+    bool mJumpedLine = false;
+    /** whether we met a hard break between the input and the returned frame */
+    bool mJumpedHardBreak = false;
+    /** whether we jumped over a non-selectable frame during the search */
+    bool mMovedOverNonSelectableText = false;
+    /** whether we met selectable text frame that isn't editable during the
+     *  search */
+    bool mHasSelectableFrame = false;
+
+    FrameSearchResult PeekOffsetNoAmount(bool aForward) {
+      return mFrame->PeekOffsetNoAmount(aForward, &mOffset);
+    }
+    FrameSearchResult PeekOffsetCharacter(bool aForward,
+                                          PeekOffsetCharacterOptions aOptions) {
+      return mFrame->PeekOffsetCharacter(aForward, &mOffset, aOptions);
+    };
+
+    /** Transfers frame and offset info for PeekOffset() result */
+    void TransferTo(nsPeekOffsetStruct& aPos) const;
+    bool Failed() { return !mFrame; }
+
+    explicit SelectablePeekReport(nsIFrame* aFrame = nullptr,
+                                  int32_t aOffset = 0)
+        : mFrame(aFrame), mOffset(aOffset) {}
+    MOZ_IMPLICIT SelectablePeekReport(
+        const mozilla::GenericErrorResult<nsresult>&& aErr);
+  };
+
   /**
    * Called to find the previous/next non-anonymous selectable leaf frame.
    *
-   * @param aDirection [in] the direction to move in (eDirPrevious or eDirNext)
-   *
-   * @param aVisual [in] whether bidi caret behavior is visual (true) or
-   * logical (false)
-   *
-   * @param aJumpLines [in] whether to allow jumping across line boundaries
-   * @param aScrollViewStop [in] whether to stop when reaching a scroll frame
+   * @param aDirection the direction to move in (eDirPrevious or eDirNext)
+   * @param aVisual whether bidi caret behavior is visual (true) or logical
+   * (false)
+   * @param aJumpLines whether to allow jumping across line boundaries
+   * @param aScrollViewStop whether to stop when reaching a scroll frame
    * boundary
-   *
-   * @param aOutFrame [out] the previous/next selectable leaf frame
-   *
-   * @param aOutOffset [out] 0 indicates that we arrived at the beginning of
-   * the output frame; -1 indicates that we arrived at its end.
-   *
-   * @param aOutJumpedLine [out] whether this frame and the returned frame are
-   * on different lines
-   *
-   * @param aOutMovedOverNonSelectableText [out] whether we jumped over a
-   * non-selectable frame during the search
    */
-  nsresult GetFrameFromDirection(nsDirection aDirection, bool aVisual,
-                                 bool aJumpLines, bool aScrollViewStop,
-                                 bool aForceEditableRegion,
-                                 nsIFrame** aOutFrame, int32_t* aOutOffset,
-                                 bool* aOutJumpedLine,
-                                 bool* aOutMovedOverNonSelectableText);
+  SelectablePeekReport GetFrameFromDirection(nsDirection aDirection,
+                                             bool aVisual, bool aJumpLines,
+                                             bool aScrollViewStop,
+                                             bool aForceEditableRegion);
 
-  nsresult GetFrameFromDirection(const nsPeekOffsetStruct& aPos,
-                                 nsIFrame** aOutFrame, int32_t* aOutOffset,
-                                 bool* aOutJumpedLine,
-                                 bool* aOutMovedOverNonSelectableText);
+  SelectablePeekReport GetFrameFromDirection(const nsPeekOffsetStruct& aPos);
 
  private:
   Result<bool, nsresult> IsVisuallyAtLineEdge(nsILineIterator* aLineIterator,
@@ -4016,14 +4086,8 @@ class nsIFrame : public nsQueryFrame {
 
   /**
    * Determines if this frame is a stacking context.
-   *
-   * @param aIsPositioned The precomputed result of IsAbsPosContainingBlock
-   * on the StyleDisplay().
    */
-  bool IsStackingContext(const nsStyleDisplay* aStyleDisplay,
-                         const nsStylePosition* aStylePosition,
-                         const nsStyleEffects* aStyleEffects,
-                         bool aIsPositioned);
+  bool IsStackingContext(const nsStyleDisplay*, const nsStyleEffects*);
   bool IsStackingContext();
 
   virtual bool HonorPrintBackgroundSettings() { return true; }
@@ -4088,10 +4152,19 @@ class nsIFrame : public nsQueryFrame {
     return mProperties.Has(aProperty);
   }
 
-  // Add a property, or update an existing property for the given descriptor.
+  /**
+   * Add a property, or update an existing property for the given descriptor.
+   *
+   * Note: This function asserts if updating an existing nsFrameList property.
+   */
   template <typename T>
   void SetProperty(FrameProperties::Descriptor<T> aProperty,
                    FrameProperties::PropertyType<T> aValue) {
+    if constexpr (std::is_same_v<T, nsFrameList>) {
+      MOZ_ASSERT(aValue, "Shouldn't set nullptr to a nsFrameList property!");
+      MOZ_ASSERT(!HasProperty(aProperty),
+                 "Shouldn't update an existing nsFrameList property!");
+    }
     mProperties.Set(aProperty, aValue, this);
   }
 
@@ -4103,6 +4176,13 @@ class nsIFrame : public nsQueryFrame {
     mProperties.Add(aProperty, aValue);
   }
 
+  /**
+   * Remove a property and return its value without destroying it. May return
+   * nullptr.
+   *
+   * Note: The caller is responsible for handling the life cycle of the returned
+   * value.
+   */
   template <typename T>
   [[nodiscard]] FrameProperties::PropertyType<T> TakeProperty(
       FrameProperties::Descriptor<T> aProperty, bool* aFoundResult = nullptr) {
@@ -4318,6 +4398,12 @@ class nsIFrame : public nsQueryFrame {
 
   NS_IMETHODIMP RefreshSizeCache(nsBoxLayoutState& aState);
 
+  Maybe<nscoord> ComputeInlineSizeFromAspectRatio(
+      mozilla::WritingMode aWM, const mozilla::LogicalSize& aCBSize,
+      const mozilla::LogicalSize& aContentEdgeToBoxSizing,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) const;
+
  public:
   /**
    * @return true if this text frame ends with a newline character.  It
@@ -4498,6 +4584,7 @@ class nsIFrame : public nsQueryFrame {
   inline bool IsStickyPositioned() const;
   inline bool IsAbsolutelyPositioned(
       const nsStyleDisplay* aStyleDisplay = nullptr) const;
+  inline bool IsTrueOverflowContainer() const;
 
   // Does this frame have "column-span: all" style.
   //
@@ -4577,6 +4664,13 @@ class nsIFrame : public nsQueryFrame {
    */
   bool IsContainerForFontSizeInflation() const {
     return HasAnyStateBits(NS_FRAME_FONT_INFLATION_CONTAINER);
+  }
+
+  /**
+   * Return whether this frame or any of its children is dirty.
+   */
+  bool IsSubtreeDirty() const {
+    return HasAnyStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN);
   }
 
   /**
@@ -4680,45 +4774,94 @@ class nsIFrame : public nsQueryFrame {
     return false;
   }
 
-  /**
-   * Helper function - computes the content-box inline size for aSize.
-   */
-  nscoord ComputeISizeValue(gfxContext* aRenderingContext,
-                            nscoord aContainingBlockISize,
-                            nscoord aContentEdgeToBoxSizing,
-                            nscoord aBoxSizingToMarginEdge,
-                            StyleExtremumLength aSize, ComputeSizeFlags aFlags);
-
-  nscoord ComputeISizeValue(gfxContext* aRenderingContext,
-                            nscoord aContainingBlockISize,
-                            nscoord aContentEdgeToBoxSizing,
-                            nscoord aBoxSizingToMarginEdge,
-                            const LengthPercentage& aSize,
-                            ComputeSizeFlags aFlags);
+  enum class ExtremumLength {
+    MinContent,
+    MaxContent,
+    MozAvailable,
+    FitContent,
+    FitContentFunction,
+  };
 
   template <typename SizeOrMaxSize>
-  nscoord ComputeISizeValue(gfxContext* aRenderingContext,
-                            nscoord aContainingBlockISize,
-                            nscoord aContentEdgeToBoxSizing,
-                            nscoord aBoxSizingToMarginEdge,
-                            const SizeOrMaxSize& aSize,
-                            ComputeSizeFlags aFlags = eDefault) {
-    MOZ_ASSERT(aSize.IsExtremumLength() || aSize.IsLengthPercentage(),
-               "This doesn't handle auto / none");
-    if (aSize.IsLengthPercentage()) {
-      return ComputeISizeValue(aRenderingContext, aContainingBlockISize,
-                               aContentEdgeToBoxSizing, aBoxSizingToMarginEdge,
-                               aSize.AsLengthPercentage(), aFlags);
+  static Maybe<ExtremumLength> ToExtremumLength(const SizeOrMaxSize& aSize) {
+    switch (aSize.tag) {
+      case SizeOrMaxSize::Tag::MinContent:
+        return mozilla::Some(ExtremumLength::MinContent);
+      case SizeOrMaxSize::Tag::MaxContent:
+        return mozilla::Some(ExtremumLength::MaxContent);
+      case SizeOrMaxSize::Tag::MozAvailable:
+        return mozilla::Some(ExtremumLength::MozAvailable);
+      case SizeOrMaxSize::Tag::FitContent:
+        return mozilla::Some(ExtremumLength::FitContent);
+      case SizeOrMaxSize::Tag::FitContentFunction:
+        return mozilla::Some(ExtremumLength::FitContentFunction);
+      default:
+        return mozilla::Nothing();
     }
-    return ComputeISizeValue(aRenderingContext, aContainingBlockISize,
-                             aContentEdgeToBoxSizing, aBoxSizingToMarginEdge,
-                             aSize.AsExtremumLength(), aFlags);
   }
 
-  DisplayItemDataArray& DisplayItemData() { return mDisplayItemData; }
-  const DisplayItemDataArray& DisplayItemData() const {
-    return mDisplayItemData;
+  /**
+   * Helper function - computes the content-box inline size for aSize, which is
+   * a more complex version to resolve a StyleExtremumLength.
+   * @param aAvailableISizeOverride If this has a value, it is used as the
+   *                                available inline-size instead of
+   *                                aContainingBlockSize.ISize(aWM) when
+   *                                resolving fit-content.
+   */
+  struct ISizeComputationResult {
+    nscoord mISize = 0;
+    AspectRatioUsage mAspectRatioUsage = AspectRatioUsage::None;
+  };
+  ISizeComputationResult ComputeISizeValue(
+      gfxContext* aRenderingContext, const mozilla::WritingMode aWM,
+      const mozilla::LogicalSize& aContainingBlockSize,
+      const mozilla::LogicalSize& aContentEdgeToBoxSizing,
+      nscoord aBoxSizingToMarginEdge, ExtremumLength aSize,
+      Maybe<nscoord> aAvailableISizeOverride,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags);
+
+  /**
+   * Helper function - computes the content-box inline size for aSize, which is
+   * a simpler version to resolve a LengthPercentage.
+   */
+  nscoord ComputeISizeValue(const mozilla::WritingMode aWM,
+                            const mozilla::LogicalSize& aContainingBlockSize,
+                            const mozilla::LogicalSize& aContentEdgeToBoxSizing,
+                            const LengthPercentage& aSize);
+
+  template <typename SizeOrMaxSize>
+  ISizeComputationResult ComputeISizeValue(
+      gfxContext* aRenderingContext, const mozilla::WritingMode aWM,
+      const mozilla::LogicalSize& aContainingBlockSize,
+      const mozilla::LogicalSize& aContentEdgeToBoxSizing,
+      nscoord aBoxSizingToMarginEdge, const SizeOrMaxSize& aSize,
+      const mozilla::StyleSizeOverrides& aSizeOverrides = {},
+      mozilla::ComputeSizeFlags aFlags = {}) {
+    if (aSize.IsLengthPercentage()) {
+      return {ComputeISizeValue(aWM, aContainingBlockSize,
+                                aContentEdgeToBoxSizing,
+                                aSize.AsLengthPercentage())};
+    }
+    auto length = ToExtremumLength(aSize);
+    MOZ_ASSERT(length, "This doesn't handle none / auto");
+    Maybe<nscoord> availbleISizeOverride;
+    if (aSize.IsFitContentFunction()) {
+      availbleISizeOverride.emplace(aSize.AsFitContentFunction().Resolve(
+          aContainingBlockSize.ISize(aWM)));
+    }
+    return ComputeISizeValue(aRenderingContext, aWM, aContainingBlockSize,
+                             aContentEdgeToBoxSizing, aBoxSizingToMarginEdge,
+                             length.valueOr(ExtremumLength::MinContent),
+                             availbleISizeOverride, aSizeOverrides, aFlags);
   }
+
+  DisplayItemDataArray* DisplayItemData() const {
+    return GetProperty(nsIFrame::DisplayItemDataProperty());
+  }
+
+  DisplayItemArray& DisplayItems() { return mDisplayItems; }
+  const DisplayItemArray& DisplayItems() const { return mDisplayItems; }
 
   void AddDisplayItem(nsDisplayItemBase* aItem);
   bool RemoveDisplayItem(nsDisplayItemBase* aItem);
@@ -4876,7 +5019,7 @@ class nsIFrame : public nsQueryFrame {
   nsIFrame* mNextSibling;  // doubly-linked list of frames
   nsIFrame* mPrevSibling;  // Do not touch outside SetNextSibling!
 
-  DisplayItemDataArray mDisplayItemData;
+  DisplayItemArray mDisplayItems;
 
   void MarkAbsoluteFramesForDisplayList(nsDisplayListBuilder* aBuilder);
 
@@ -5128,10 +5271,17 @@ class nsIFrame : public nsQueryFrame {
     // true when we're still at the start of the search, i.e., we can't return
     // this point as a valid offset!
     bool mAtStart;
-    // true when we've encountered at least one character of the pre-boundary
-    // type (whitespace if aWordSelectEatSpace is true, non-whitespace
-    // otherwise)
+    // true when we've encountered at least one character of the type before the
+    // boundary we're looking for:
+    // 1. If we're moving forward and eating whitepace, looking for a word
+    //    beginning (i.e. a boundary between whitespace and non-whitespace),
+    //    then mSawBeforeType==true means "we already saw some whitespace".
+    // 2. Otherwise, looking for a word beginning (i.e. a boundary between
+    //    non-whitespace and whitespace), then mSawBeforeType==true means "we
+    //    already saw some non-whitespace".
     bool mSawBeforeType;
+    // true when we've encountered at least one non-newline character
+    bool mSawInlineCharacter;
     // true when the last character encountered was punctuation
     bool mLastCharWasPunctuation;
     // true when the last character encountered was whitespace
@@ -5146,10 +5296,12 @@ class nsIFrame : public nsQueryFrame {
     PeekWordState()
         : mAtStart(true),
           mSawBeforeType(false),
+          mSawInlineCharacter(false),
           mLastCharWasPunctuation(false),
           mLastCharWasWhitespace(false),
           mSeenNonPunctuationSinceWhitespace(false) {}
     void SetSawBeforeType() { mSawBeforeType = true; }
+    void SetSawInlineCharacter() { mSawInlineCharacter = true; }
     void Update(bool aAfterPunctuation, bool aAfterWhitespace) {
       mLastCharWasPunctuation = aAfterPunctuation;
       mLastCharWasWhitespace = aAfterWhitespace;
@@ -5196,25 +5348,16 @@ class nsIFrame : public nsQueryFrame {
                                           bool aWhitespaceAfter,
                                           bool aIsKeyboardSelect);
 
-  /**
-   * Search for the first paragraph boundary before or after the given position
-   * @param  aPos See description in nsFrameSelection.h. The following fields
-   *              are used by this method:
-   *              Input: mDirection
-   *              Output: mResultContent, mContentOffset
-   */
-  nsresult PeekOffsetParagraph(nsPeekOffsetStruct* aPos);
-
  private:
   // Get a pointer to the overflow areas property attached to the frame.
-  nsOverflowAreas* GetOverflowAreasProperty() const {
+  mozilla::OverflowAreas* GetOverflowAreasProperty() const {
     MOZ_ASSERT(mOverflow.mType == NS_FRAME_OVERFLOW_LARGE);
-    nsOverflowAreas* overflow = GetProperty(OverflowAreasProperty());
+    mozilla::OverflowAreas* overflow = GetProperty(OverflowAreasProperty());
     MOZ_ASSERT(overflow);
     return overflow;
   }
 
-  nsRect GetVisualOverflowFromDeltas() const {
+  nsRect InkOverflowFromDeltas() const {
     MOZ_ASSERT(mOverflow.mType != NS_FRAME_OVERFLOW_LARGE,
                "should not be called when overflow is in a property");
     // Calculate the rect using deltas from the frame's border rect.
@@ -5231,7 +5374,7 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Returns true if any overflow changed.
    */
-  bool SetOverflowAreas(const nsOverflowAreas& aOverflowAreas);
+  bool SetOverflowAreas(const mozilla::OverflowAreas& aOverflowAreas);
 
   // Helper-functions for SortFrameList():
   template <bool IsLessThanOrEqual(nsIFrame*, nsIFrame*)>
@@ -5670,14 +5813,6 @@ template <bool IsLessThanOrEqual(nsIFrame*, nsIFrame*)>
     }
   }
   return result;
-}
-
-template <bool IsLessThanOrEqual(nsIFrame*, nsIFrame*)>
-/* static */ void nsIFrame::SortFrameList(nsFrameList& aFrameList) {
-  nsIFrame* head = MergeSort<IsLessThanOrEqual>(aFrameList.FirstChild());
-  aFrameList = nsFrameList(head, nsLayoutUtils::GetLastSibling(head));
-  MOZ_ASSERT(IsFrameListSorted<IsLessThanOrEqual>(aFrameList),
-             "After we sort a frame list, it should be in sorted order...");
 }
 
 template <bool IsLessThanOrEqual(nsIFrame*, nsIFrame*)>

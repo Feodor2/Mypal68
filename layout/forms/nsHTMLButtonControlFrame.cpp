@@ -131,7 +131,7 @@ nscoord nsHTMLButtonControlFrame::GetMinISize(gfxContext* aRenderingContext) {
   } else {
     nsIFrame* kid = mFrames.FirstChild();
     result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                                  nsLayoutUtils::MIN_ISIZE);
+                                                  IntrinsicISizeType::MinISize);
   }
   return result;
 }
@@ -143,8 +143,8 @@ nscoord nsHTMLButtonControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
     result = 0;
   } else {
     nsIFrame* kid = mFrames.FirstChild();
-    result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                                  nsLayoutUtils::PREF_ISIZE);
+    result = nsLayoutUtils::IntrinsicForContainer(
+        aRenderingContext, kid, IntrinsicISizeType::PrefISize);
   }
   return result;
 }
@@ -174,7 +174,7 @@ void nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,
 
   // XXXbz Eventually we may want to check-and-bail if
   // !aReflowInput.ShouldReflowAllKids() &&
-  // !NS_SUBTREE_DIRTY(firstKid).
+  // !firstKid->IsSubtreeDirty().
   // We'd need to cache our ascent for that, of course.
 
   // Reflow the contents of the button.
@@ -206,7 +206,8 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
 
   // shorthand for a value we need to use in a bunch of places
-  const LogicalMargin& clbp = aButtonReflowInput.ComputedLogicalBorderPadding();
+  const LogicalMargin& clbp =
+      aButtonReflowInput.ComputedLogicalBorderPadding(wm);
 
   LogicalPoint childPos(wm);
   childPos.I(wm) = clbp.IStart(wm);

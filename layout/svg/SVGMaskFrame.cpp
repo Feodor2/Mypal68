@@ -11,10 +11,11 @@
 #include "gfxContext.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/SVGMaskElement.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
 #include "mozilla/gfx/2D.h"
-#include "SVGObserverUtils.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGUnitTypes_Binding;
@@ -87,13 +88,13 @@ already_AddRefed<SourceSurface> SVGMaskFrame::GetMaskForMaskedFrame(
     gfxMatrix m = mMatrixForChildren;
 
     // The CTM of each frame referencing us can be different
-    nsSVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
+    ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
     if (SVGFrame) {
-      SVGFrame->NotifySVGChanged(nsSVGDisplayableFrame::TRANSFORM_CHANGED);
-      m = nsSVGUtils::GetTransformMatrixInUserSpace(kid) * m;
+      SVGFrame->NotifySVGChanged(ISVGDisplayableFrame::TRANSFORM_CHANGED);
+      m = SVGUtils::GetTransformMatrixInUserSpace(kid) * m;
     }
 
-    nsSVGUtils::PaintFrameWithEffects(kid, *tmpCtx, m, aParams.imgParams);
+    SVGUtils::PaintFrameWithEffects(kid, *tmpCtx, m, aParams.imgParams);
   }
 
   RefPtr<SourceSurface> surface;
@@ -130,13 +131,13 @@ gfxRect SVGMaskFrame::GetMaskArea(nsIFrame* aMaskedFrame) {
       maskElem->mEnumAttributes[SVGMaskElement::MASKUNITS].GetAnimValue();
   gfxRect bbox;
   if (units == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
-    bbox = nsSVGUtils::GetBBox(aMaskedFrame,
-                               nsSVGUtils::eUseFrameBoundsForOuterSVG |
-                                   nsSVGUtils::eBBoxIncludeFillGeometry);
+    bbox =
+        SVGUtils::GetBBox(aMaskedFrame, SVGUtils::eUseFrameBoundsForOuterSVG |
+                                            SVGUtils::eBBoxIncludeFillGeometry);
   }
 
   // Bounds in the user space of aMaskedFrame
-  gfxRect maskArea = nsSVGUtils::GetRelativeRect(
+  gfxRect maskArea = SVGUtils::GetRelativeRect(
       units, &maskElem->mLengthAttributes[SVGMaskElement::ATTR_X], bbox,
       aMaskedFrame);
 
@@ -153,8 +154,8 @@ nsresult SVGMaskFrame::AttributeChanged(int32_t aNameSpaceID,
     SVGObserverUtils::InvalidateDirectRenderingObservers(this);
   }
 
-  return nsSVGContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,
-                                               aModType);
+  return SVGContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,
+                                             aModType);
 }
 
 #ifdef DEBUG
@@ -163,7 +164,7 @@ void SVGMaskFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   NS_ASSERTION(aContent->IsSVGElement(nsGkAtoms::mask),
                "Content is not an SVG mask");
 
-  nsSVGContainerFrame::Init(aContent, aParent, aPrevInFlow);
+  SVGContainerFrame::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
 
@@ -175,14 +176,14 @@ gfxMatrix SVGMaskFrame::GetMaskTransform(nsIFrame* aMaskedFrame) {
   SVGAnimatedEnumeration* maskContentUnits =
       &content->mEnumAttributes[SVGMaskElement::MASKCONTENTUNITS];
 
-  uint32_t flags = nsSVGUtils::eBBoxIncludeFillGeometry |
+  uint32_t flags = SVGUtils::eBBoxIncludeFillGeometry |
                    (aMaskedFrame->StyleBorder()->mBoxDecorationBreak ==
                             StyleBoxDecorationBreak::Clone
-                        ? nsSVGUtils::eIncludeOnlyCurrentFrameForNonSVGElement
+                        ? SVGUtils::eIncludeOnlyCurrentFrameForNonSVGElement
                         : 0);
 
-  return nsSVGUtils::AdjustMatrixForUnits(gfxMatrix(), maskContentUnits,
-                                          aMaskedFrame, flags);
+  return SVGUtils::AdjustMatrixForUnits(gfxMatrix(), maskContentUnits,
+                                        aMaskedFrame, flags);
 }
 
 }  // namespace mozilla

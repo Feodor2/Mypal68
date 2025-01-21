@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NS_AUTOREFERENCELIMITER_H
-#define NS_AUTOREFERENCELIMITER_H
+#ifndef LAYOUT_SVG_AUTOREFERENCECHAINGUARD_H_
+#define LAYOUT_SVG_AUTOREFERENCECHAINGUARD_H_
 
 #include "Element.h"
 #include "mozilla/Assertions.h"
@@ -75,14 +75,12 @@ class MOZ_RAII AutoReferenceChainGuard {
    */
   AutoReferenceChainGuard(nsIFrame* aFrame, bool* aFrameInUse,
                           int16_t* aChainCounter,
-                          int16_t aMaxChainLength = sDefaultMaxChainLength
-                              MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+                          int16_t aMaxChainLength = sDefaultMaxChainLength)
       : mFrame(aFrame),
         mFrameInUse(aFrameInUse),
         mChainCounter(aChainCounter),
         mMaxChainLength(aMaxChainLength),
         mBrokeReference(false) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(aFrame && aFrameInUse && aChainCounter);
     MOZ_ASSERT(aMaxChainLength > 0);
     MOZ_ASSERT(*aChainCounter == noChain ||
@@ -162,9 +160,8 @@ class MOZ_RAII AutoReferenceChainGuard {
   int16_t* mChainCounter;
   const int16_t mMaxChainLength;
   bool mBrokeReference;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 }  // namespace mozilla
 
-#endif  // NS_AUTOREFERENCELIMITER_H
+#endif  // LAYOUT_SVG_AUTOREFERENCECHAINGUARD_H_

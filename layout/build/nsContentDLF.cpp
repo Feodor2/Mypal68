@@ -128,15 +128,14 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
 
     if (knownType) {
       viewSourceChannel->SetContentType(type);
-    } else if (IsImageContentType(type.get())) {
+    } else if (IsImageContentType(type)) {
       // If it's an image, we want to display it the same way we normally would.
-      // Also note the lifetime of "type" allows us to safely use "get()" here.
       contentType = type;
     } else {
-      viewSourceChannel->SetContentType(NS_LITERAL_CSTRING(TEXT_PLAIN));
+      viewSourceChannel->SetContentType(nsLiteralCString(TEXT_PLAIN));
     }
   } else if (aContentType.EqualsLiteral(VIEWSOURCE_CONTENT_TYPE)) {
-    aChannel->SetContentType(NS_LITERAL_CSTRING(TEXT_PLAIN));
+    aChannel->SetContentType(nsLiteralCString(TEXT_PLAIN));
     contentType = TEXT_PLAIN;
   }
 
@@ -205,7 +204,7 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
   }
 
   // Try image types
-  if (IsImageContentType(contentType.get())) {
+  if (IsImageContentType(contentType)) {
     return CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
@@ -266,7 +265,7 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
 
   // initialize
   nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), NS_LITERAL_CSTRING("about:blank"));
+  NS_NewURI(getter_AddRefs(uri), "about:blank"_ns);
   if (!uri) {
     return nullptr;
   }
@@ -390,6 +389,6 @@ nsresult nsContentDLF::CreateXULDocument(
   return NS_OK;
 }
 
-bool nsContentDLF::IsImageContentType(const char* aContentType) {
+bool nsContentDLF::IsImageContentType(const nsACString& aContentType) {
   return imgLoader::SupportImageWithMimeType(aContentType);
 }

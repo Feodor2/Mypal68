@@ -21,6 +21,7 @@ struct JSContext;
 class JSObject;
 
 namespace mozilla {
+enum class StyleCssRuleType : uint8_t;
 class DeclarationBlock;
 struct DeclarationBlockMutationClosure;
 namespace css {
@@ -64,7 +65,7 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
    * which obeys all the same restrictions.
    */
   virtual nsresult GetPropertyValue(const nsCSSPropertyID aPropID,
-                                    nsAString& aValue);
+                                    nsACString& aValue);
 
   /**
    * Method analogous to CSSStyleDeclaration::SetProperty.  This
@@ -78,36 +79,34 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
 
   // Require subclasses to implement |GetParentRule|.
   // NS_DECL_NSIDOMCSSSTYLEDECLARATION
-  void GetCssText(nsAString& aCssText) override;
-  void SetCssText(const nsAString& aCssText, nsIPrincipal* aSubjectPrincipal,
+  void GetCssText(nsACString& aCssText) override;
+  void SetCssText(const nsACString& aCssText, nsIPrincipal* aSubjectPrincipal,
                   mozilla::ErrorResult& aRv) override;
   NS_IMETHOD GetPropertyValue(const nsACString& propertyName,
-                              nsAString& _retval) override;
-  void RemoveProperty(const nsACString& propertyName, nsAString& _retval,
+                              nsACString& _retval) override;
+  void RemoveProperty(const nsACString& propertyName, nsACString& _retval,
                       mozilla::ErrorResult& aRv) override;
   void GetPropertyPriority(const nsACString& propertyName,
-                           nsAString& aPriority) override;
+                           nsACString& aPriority) override;
   void SetProperty(const nsACString& propertyName, const nsACString& value,
-                   const nsAString& priority, nsIPrincipal* aSubjectPrincipal,
+                   const nsACString& priority, nsIPrincipal* aSubjectPrincipal,
                    mozilla::ErrorResult& aRv) override;
   uint32_t Length() override;
 
   // WebIDL interface for CSS2Properties
 #define CSS_PROP_PUBLIC_OR_PRIVATE(publicname_, privatename_) publicname_
-#define CSS_PROP(id_, method_)                                                \
-  void Get##method_(nsAString& aValue, mozilla::ErrorResult& rv) {            \
-    rv = GetPropertyValue(eCSSProperty_##id_, aValue);                        \
-  }                                                                           \
-                                                                              \
-  void Set##method_(const nsAString& aValue, nsIPrincipal* aSubjectPrincipal, \
-                    mozilla::ErrorResult& aRv) {                              \
-    /* FIXME: Should switch to UTF8String in the IDL, either by switching the \
-     * serialization code to it too, or by something like bug 862800. */      \
-    NS_ConvertUTF16toUTF8 v(aValue);                                          \
-    SetPropertyValue(eCSSProperty_##id_, v, aSubjectPrincipal, aRv);          \
+#define CSS_PROP(id_, method_)                                                 \
+  void Get##method_(nsACString& aValue, mozilla::ErrorResult& rv) {            \
+    rv = GetPropertyValue(eCSSProperty_##id_, aValue);                         \
+  }                                                                            \
+                                                                               \
+  void Set##method_(const nsACString& aValue, nsIPrincipal* aSubjectPrincipal, \
+                    mozilla::ErrorResult& aRv) {                               \
+    SetPropertyValue(eCSSProperty_##id_, aValue, aSubjectPrincipal, aRv);      \
   }
 
 #define CSS_PROP_LIST_EXCLUDE_INTERNAL
+#define CSS_PROP_LIST_EXCLUDE_NOT_IN_STYLE
 #define CSS_PROP_LONGHAND(name_, id_, method_, ...) CSS_PROP(id_, method_)
 #define CSS_PROP_SHORTHAND(name_, id_, method_, ...) CSS_PROP(id_, method_)
 #define CSS_PROP_ALIAS(name_, aliasid_, id_, method_, ...) \
@@ -117,6 +116,7 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
 #undef CSS_PROP_SHORTHAND
 #undef CSS_PROP_LONGHAND
 #undef CSS_PROP_LIST_EXCLUDE_INTERNAL
+#undef CSS_PROP_LIST_EXCLUDE_NOT_IN_STYLE
 #undef CSS_PROP
 #undef CSS_PROP_PUBLIC_OR_PRIVATE
 
@@ -131,31 +131,31 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
     RefPtr<mozilla::URLExtraData> mUrlExtraData;
     nsCompatibility mCompatMode = eCompatibility_FullStandards;
     mozilla::css::Loader* mLoader = nullptr;
-    uint16_t mRuleType{0};
+    mozilla::StyleCssRuleType mRuleType{1 /* Style */};
   };
 
  protected:
   // The reason for calling GetOrCreateCSSDeclaration.
-  enum Operation {
+  enum class Operation {
     // We are calling GetOrCreateCSSDeclaration so that we can read from it.
     // Does not allocate a new declaration if we don't have one yet; returns
     // nullptr in this case.
-    eOperation_Read,
+    Read,
 
     // We are calling GetOrCreateCSSDeclaration so that we can set a property on
     // it or re-parse the whole declaration.  Allocates a new declaration if we
     // don't have one yet. A nullptr return value indicates an error allocating
     // the declaration.
-    eOperation_Modify,
+    Modify,
 
     // We are calling GetOrCreateCSSDeclaration so that we can remove a property
     // from it. Does not allocate a new declaration if we don't have one yet;
     // returns nullptr in this case.
-    eOperation_RemoveProperty
+    RemoveProperty,
   };
 
-  // If aOperation is eOperation_Modify, aCreated must be non-null and
-  // the call may set it to point to the newly created object.
+  // If aOperation is Modify, aCreated must be non-null and the call may set it
+  // to point to the newly created object.
   virtual mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
       Operation aOperation, mozilla::DeclarationBlock** aCreated) = 0;
 
@@ -181,7 +181,7 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
   // The RuleType argument is just to avoid a virtual call, since all callers
   // know it statically. Should be equal to aRule->Type().
   static ParsingEnvironment GetParsingEnvironmentForRule(
-      const mozilla::css::Rule* aRule, uint16_t aRuleType);
+      const mozilla::css::Rule* aRule, mozilla::StyleCssRuleType);
 
   nsresult ParsePropertyValue(const nsCSSPropertyID aPropID,
                               const nsACString& aPropValue, bool aIsImportant,

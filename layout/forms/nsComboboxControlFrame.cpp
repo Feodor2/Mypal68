@@ -15,6 +15,7 @@
 #include "nsCSSAnonBoxes.h"
 #include "nsHTMLParts.h"
 #include "nsIFormControl.h"
+#include "nsILayoutHistoryState.h"
 #include "nsNameSpaceManager.h"
 #include "nsListControlFrame.h"
 #include "nsPIDOMWindow.h"
@@ -400,7 +401,7 @@ void nsComboboxControlFrame::ReflowDropdown(nsPresContext* aPresContext,
   // don't even need to cache mDropdownFrame's ascent or anything.  If we don't
   // need to reflow it, just bail out here.
   if (!aReflowInput.ShouldReflowAllKids() &&
-      !NS_SUBTREE_DIRTY(mDropdownFrame)) {
+      !mDropdownFrame->IsSubtreeDirty()) {
     return;
   }
 
@@ -419,8 +420,8 @@ void nsComboboxControlFrame::ReflowDropdown(nsPresContext* aPresContext,
   // both sets of mComputedBorderPadding.
   nscoord forcedISize =
       aReflowInput.ComputedISize() +
-      aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm) -
-      kidReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm);
+      aReflowInput.ComputedLogicalBorderPadding(wm).IStartEnd(wm) -
+      kidReflowInput.ComputedLogicalBorderPadding(wm).IStartEnd(wm);
   kidReflowInput.SetComputedISize(
       std::max(kidReflowInput.ComputedISize(), forcedISize));
 
@@ -463,7 +464,8 @@ nsPoint nsComboboxControlFrame::GetCSSTransformTranslation() {
   Matrix transform;
   while (frame) {
     nsIFrame* parent;
-    Matrix4x4Flagged ctm = frame->GetTransformMatrix(nullptr, &parent);
+    Matrix4x4Flagged ctm = frame->GetTransformMatrix(
+        ViewportType::Layout, RelativeTo{nullptr}, &parent);
     Matrix matrix;
     if (ctm.Is2D(&matrix)) {
       transform = transform * matrix;
@@ -566,7 +568,7 @@ void nsComboboxControlFrame::GetAvailableDropdownSpace(
   }
 
   nscoord minBCoord;
-  nsPresContext* pc = PresContext()->GetToplevelContentDocumentPresContext();
+  nsPresContext* pc = PresContext()->GetInProcessRootContentDocumentPresContext();
   nsIFrame* root = pc ? pc->PresShell()->GetRootFrame() : nullptr;
   if (root) {
     minBCoord = LogicalRect(aWM, root->GetScreenRectInAppUnits(), containerSize)
@@ -703,8 +705,8 @@ bool nsComboboxControlFrame::HasDropDownButton() const {
           PresContext()->Theme()->ThemeNeedsComboboxDropmarker());
 }
 
-nscoord nsComboboxControlFrame::GetIntrinsicISize(
-    gfxContext* aRenderingContext, nsLayoutUtils::IntrinsicISizeType aType) {
+nscoord nsComboboxControlFrame::GetIntrinsicISize(gfxContext* aRenderingContext,
+                                                  IntrinsicISizeType aType) {
   // get the scrollbar width, we'll use this later
   nscoord scrollbarWidth = 0;
   nsPresContext* presContext = PresContext();
@@ -731,14 +733,14 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
     nscoord dropdownContentISize;
     bool isUsingOverlayScrollbars =
         LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0;
-    if (aType == nsLayoutUtils::MIN_ISIZE) {
+    if (aType == IntrinsicISizeType::MinISize) {
       dropdownContentISize =
           isContainSize ? 0 : mDropdownFrame->GetMinISize(aRenderingContext);
       if (isUsingOverlayScrollbars) {
         dropdownContentISize += scrollbarWidth;
       }
     } else {
-      NS_ASSERTION(aType == nsLayoutUtils::PREF_ISIZE, "Unexpected type");
+      NS_ASSERTION(aType == IntrinsicISizeType::PrefISize, "Unexpected type");
       dropdownContentISize =
           isContainSize ? 0 : mDropdownFrame->GetPrefISize(aRenderingContext);
       if (isUsingOverlayScrollbars) {
@@ -762,14 +764,15 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
 nscoord nsComboboxControlFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord minISize;
   DISPLAY_MIN_INLINE_SIZE(this, minISize);
-  minISize = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::MIN_ISIZE);
+  minISize = GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::MinISize);
   return minISize;
 }
 
 nscoord nsComboboxControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord prefISize;
   DISPLAY_PREF_INLINE_SIZE(this, prefISize);
-  prefISize = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::PREF_ISIZE);
+  prefISize =
+      GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::PrefISize);
   return prefISize;
 }
 
@@ -833,19 +836,18 @@ void nsComboboxControlFrame::Reflow(nsPresContext* aPresContext,
   mDisplayISize = aReflowInput.ComputedISize() - buttonISize;
 
   mMaxDisplayISize =
-      mDisplayISize + aReflowInput.ComputedLogicalPadding().IEnd(wm);
+      mDisplayISize + aReflowInput.ComputedLogicalPadding(wm).IEnd(wm);
 
   nsBlockFrame::Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 
   // The button should occupy the same space as a scrollbar
   nsSize containerSize = aDesiredSize.PhysicalSize();
   LogicalRect buttonRect = mButtonFrame->GetLogicalRect(containerSize);
+  const auto borderPadding = aReflowInput.ComputedLogicalBorderPadding(wm);
 
-  buttonRect.IStart(wm) =
-      aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm) +
-      mDisplayISize -
-      (aReflowInput.ComputedLogicalBorderPadding().IEnd(wm) -
-       aReflowInput.ComputedLogicalPadding().IEnd(wm));
+  buttonRect.IStart(wm) = borderPadding.IStartEnd(wm) + mDisplayISize -
+                          (borderPadding.IEnd(wm) -
+                           aReflowInput.ComputedLogicalPadding(wm).IEnd(wm));
   buttonRect.ISize(wm) = buttonISize;
 
   buttonRect.BStart(wm) = this->GetLogicalUsedBorder(wm).BStart(wm);
@@ -865,7 +867,7 @@ void nsComboboxControlFrame::Reflow(nsPresContext* aPresContext,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsComboboxControlFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("ComboboxControl"), aResult);
+  return MakeFrameName(u"ComboboxControl"_ns, aResult);
 }
 #endif
 
@@ -1170,20 +1172,18 @@ nsresult nsComboboxControlFrame::CreateAnonymousContent(
   // make someone to listen to the button. If its pressed by someone like
   // Accessibility then open or close the combo box.
   mButtonListener = new nsComboButtonListener(this);
-  mButtonContent->AddEventListener(NS_LITERAL_STRING("click"), mButtonListener,
-                                   false, false);
+  mButtonContent->AddEventListener(u"click"_ns, mButtonListener, false, false);
 
-  mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::type,
-                          NS_LITERAL_STRING("button"), false);
+  mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::type, u"button"_ns,
+                          false);
   // Set tabindex="-1" so that the button is not tabbable
-  mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex,
-                          NS_LITERAL_STRING("-1"), false);
+  mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex, u"-1"_ns,
+                          false);
 
   WritingMode wm = GetWritingMode();
   if (wm.IsVertical()) {
     mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::orientation,
-                            wm.IsVerticalRL() ? NS_LITERAL_STRING("left")
-                                              : NS_LITERAL_STRING("right"),
+                            wm.IsVerticalRL() ? u"left"_ns : u"right"_ns,
                             false);
   }
 
@@ -1222,7 +1222,7 @@ class nsComboboxDisplayFrame final : public nsBlockFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("ComboboxDisplay"), aResult);
+    return MakeFrameName(u"ComboboxDisplay"_ns, aResult);
   }
 #endif
 
@@ -1252,7 +1252,7 @@ void nsComboboxDisplayFrame::Reflow(nsPresContext* aPresContext,
 
   ReflowInput state(aReflowInput);
   WritingMode wm = aReflowInput.GetWritingMode();
-  LogicalMargin bp = state.ComputedLogicalBorderPadding();
+  LogicalMargin bp = state.ComputedLogicalBorderPadding(wm);
   if (state.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
     float inflation = nsLayoutUtils::FontSizeInflationFor(mComboBox);
     // We intentionally use the combobox frame's style here, which has
@@ -1337,6 +1337,10 @@ nsIFrame* nsComboboxControlFrame::CreateFrameForDisplayNode() {
   nsFrameList textList(textFrame, textFrame);
   mDisplayFrame->SetInitialChildList(kPrincipalList, textList);
   return mDisplayFrame;
+}
+
+nsIScrollableFrame* nsComboboxControlFrame::GetScrollTargetFrame() const {
+  return do_QueryFrame(mDropdownFrame);
 }
 
 void nsComboboxControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -1570,9 +1574,8 @@ nsComboboxControlFrame::OnOptionSelected(int32_t aIndex, bool aSelected) {
 
 void nsComboboxControlFrame::FireValueChangeEvent() {
   // Fire ValueChange event to indicate data value of combo box has changed
-  nsContentUtils::AddScriptRunner(
-      new AsyncEventDispatcher(mContent, NS_LITERAL_STRING("ValueChange"),
-                               CanBubble::eYes, ChromeOnlyDispatch::eNo));
+  nsContentUtils::AddScriptRunner(new AsyncEventDispatcher(
+      mContent, u"ValueChange"_ns, CanBubble::eYes, ChromeOnlyDispatch::eNo));
 }
 
 void nsComboboxControlFrame::OnContentReset() {

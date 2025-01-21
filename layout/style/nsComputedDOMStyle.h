@@ -51,12 +51,8 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   using StyleGeometryBox = mozilla::StyleGeometryBox;
   using Element = mozilla::dom::Element;
   using Document = mozilla::dom::Document;
-  using StyleFlexBasis = mozilla::StyleFlexBasis;
-  using StyleSize = mozilla::StyleSize;
-  using StyleMaxSize = mozilla::StyleMaxSize;
   using LengthPercentage = mozilla::LengthPercentage;
   using LengthPercentageOrAuto = mozilla::LengthPercentageOrAuto;
-  using StyleExtremumLength = mozilla::StyleExtremumLength;
   using ComputedStyle = mozilla::ComputedStyle;
 
  public:
@@ -66,7 +62,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   NS_DECL_NSIDOMCSSSTYLEDECLARATION_HELPER
   nsresult GetPropertyValue(const nsCSSPropertyID aPropID,
-                            nsAString& aValue) override;
+                            nsACString& aValue) override;
   void SetPropertyValue(const nsCSSPropertyID aPropID, const nsACString& aValue,
                         nsIPrincipal* aSubjectPrincipal,
                         mozilla::ErrorResult& aRv) override;
@@ -82,13 +78,14 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   nsComputedDOMStyle(Element* aElement, const nsAString& aPseudoElt,
                      Document* aDocument, StyleType aStyleType);
 
-  nsINode* GetParentObject() override { return mElement; }
+  nsINode* GetAssociatedNode() const override { return mElement; }
+  nsINode* GetParentObject() const override { return mElement; }
 
   static already_AddRefed<ComputedStyle> GetComputedStyle(
       Element* aElement, nsAtom* aPseudo, StyleType aStyleType = eAll);
 
   static already_AddRefed<ComputedStyle> GetComputedStyleNoFlush(
-      Element* aElement, nsAtom* aPseudo, StyleType aStyleType = eAll) {
+      const Element* aElement, nsAtom* aPseudo, StyleType aStyleType = eAll) {
     return DoGetComputedStyleNoFlush(
         aElement, aPseudo, nsContentUtils::GetPresShellForContent(aElement),
         aStyleType);
@@ -130,6 +127,10 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
 
  private:
+  nsresult GetPropertyValue(const nsCSSPropertyID aPropID,
+                            const nsACString& aMaybeCustomPropertyNme,
+                            nsACString& aValue);
+
   virtual ~nsComputedDOMStyle();
 
   void AssertFlushedPendingReflows() {
@@ -150,7 +151,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   void SetFrameComputedStyle(ComputedStyle* aStyle, uint64_t aGeneration);
 
   static already_AddRefed<ComputedStyle> DoGetComputedStyleNoFlush(
-      Element* aElement, nsAtom* aPseudo, mozilla::PresShell* aPresShell,
+      const Element* aElement, nsAtom* aPseudo, mozilla::PresShell* aPresShell,
       StyleType aStyleType);
 
 #define STYLE_STRUCT(name_)                \
@@ -177,11 +178,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   already_AddRefed<CSSValue> GetPaddingWidthFor(mozilla::Side aSide);
 
-  already_AddRefed<CSSValue> GetBorderStyleFor(mozilla::Side aSide);
-
   already_AddRefed<CSSValue> GetBorderWidthFor(mozilla::Side aSide);
-
-  already_AddRefed<CSSValue> GetBorderColorFor(mozilla::Side aSide);
 
   already_AddRefed<CSSValue> GetMarginWidthFor(mozilla::Side aSide);
 
@@ -278,6 +275,9 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   void SetValueToURLValue(const mozilla::StyleComputedUrl* aURL,
                           nsROCSSPrimitiveValue* aValue);
 
+  void SetValueFromFitContentFunction(nsROCSSPrimitiveValue* aValue,
+                                      const mozilla::LengthPercentage&);
+
   void SetValueToSize(nsROCSSPrimitiveValue* aValue, const mozilla::StyleSize&);
 
   void SetValueToLengthPercentageOrAuto(nsROCSSPrimitiveValue* aValue,
@@ -288,31 +288,8 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
                                   const LengthPercentage&,
                                   bool aClampNegativeCalc);
 
-  void SetValueToMaxSize(nsROCSSPrimitiveValue* aValue, const StyleMaxSize&);
-
-  void SetValueToExtremumLength(nsROCSSPrimitiveValue* aValue,
-                                StyleExtremumLength);
-
-  /**
-   * If aCoord is a eStyleUnit_Coord returns the nscoord.  If it's
-   * eStyleUnit_Percent, attempts to resolve the percentage base and returns
-   * the resulting nscoord.  If it's some other unit or a percentage base can't
-   * be determined, returns aDefaultValue.
-   */
-  nscoord StyleCoordToNSCoord(const LengthPercentage& aCoord,
-                              PercentageBaseGetter aPercentageBaseGetter,
-                              nscoord aDefaultValue, bool aClampNegativeCalc);
-  template <typename LengthPercentageLike>
-  nscoord StyleCoordToNSCoord(const LengthPercentageLike& aCoord,
-                              PercentageBaseGetter aPercentageBaseGetter,
-                              nscoord aDefaultValue, bool aClampNegativeCalc) {
-    if (aCoord.IsLengthPercentage()) {
-      return StyleCoordToNSCoord(aCoord.AsLengthPercentage(),
-                                 aPercentageBaseGetter, aDefaultValue,
-                                 aClampNegativeCalc);
-    }
-    return aDefaultValue;
-  }
+  void SetValueToMaxSize(nsROCSSPrimitiveValue* aValue,
+                         const mozilla::StyleMaxSize&);
 
   bool GetCBContentWidth(nscoord& aWidth);
   bool GetCBContentHeight(nscoord& aHeight);

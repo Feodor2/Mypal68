@@ -57,10 +57,7 @@ class nsTextControlFrame : public nsContainerFrame,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DestroyFrom(nsIFrame* aDestructRoot,
                                                PostDestroyData&) override;
 
-  nsIScrollableFrame* GetScrollTargetFrame() override;
-  nsIScrollableFrame* GetScrollTargetFrame() const {
-    return const_cast<nsTextControlFrame*>(this)->GetScrollTargetFrame();
-  }
+  nsIScrollableFrame* GetScrollTargetFrame() const override;
 
   nscoord GetMinISize(gfxContext* aRenderingContext) override;
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
@@ -68,8 +65,10 @@ class nsTextControlFrame : public nsContainerFrame,
   mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput,

@@ -525,9 +525,7 @@ already_AddRefed<gfxTextRun> nsOpenTypeTable::MakeTextRun(
   detailedGlyph.mAdvance = NSToCoordRound(
       aAppUnitsPerDevPixel * aFontGroup->GetFirstValidFont()->GetGlyphHAdvance(
                                  aDrawTarget, aGlyph.glyphID));
-  textRun->SetGlyphs(0,
-                     gfxShapedText::CompressedGlyph::MakeComplex(true, true, 1),
-                     &detailedGlyph);
+  textRun->SetDetailedGlyphs(0, 1, &detailedGlyph);
 
   return textRun.forget();
 }
@@ -546,7 +544,7 @@ class nsGlyphTableList final : public nsIObserver {
 
   nsPropertiesTable mUnicodeTable;
 
-  nsGlyphTableList() : mUnicodeTable(NS_LITERAL_CSTRING("Unicode")) {}
+  nsGlyphTableList() : mUnicodeTable("Unicode"_ns) {}
 
   nsresult Initialize();
   nsresult Finalize();
@@ -630,7 +628,7 @@ nsGlyphTable* nsGlyphTableList::GetGlyphTableFor(const nsACString& aFamily) {
     primaryFontName.AppendToString(primaryFontNameStr);
     // TODO: would be nice to consider StripWhitespace and other aliasing
     if (primaryFontNameStr.Equals(aFamily,
-                                  nsCaseInsensitiveCStringComparator())) {
+                                  nsCaseInsensitiveCStringComparator)) {
       return glyphTable;
     }
   }
@@ -657,7 +655,7 @@ static nsresult InitCharGlobals() {
   // observer and will be deleted at shutdown. We now add some private
   // per font-family tables for stretchy operators, in order of preference.
   // Do not include the Unicode table in this list.
-  if (!glyphTableList->AddGlyphTable(NS_LITERAL_CSTRING("STIXGeneral"))) {
+  if (!glyphTableList->AddGlyphTable("STIXGeneral"_ns)) {
     rv = NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -1273,7 +1271,8 @@ bool nsMathMLChar::StretchEnumContext::TryParts(
   return IsSizeOK(computedSize, mTargetSize, mStretchHint);
 }
 
-// This is called for each family, whether it exists or not
+// Returns true iff stretching succeeded with the given family.
+// This is called for each family, whether it exists or not.
 bool nsMathMLChar::StretchEnumContext::EnumCallback(
     const FontFamilyName& aFamily, bool aGeneric, void* aData) {
   StretchEnumContext* context = static_cast<StretchEnumContext*>(aData);
@@ -1294,7 +1293,7 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
   if (!aGeneric &&
       !context->mChar->SetFontFamily(context->mPresContext, nullptr, kNullGlyph,
                                      family, font, &fontGroup))
-    return true;  // Could not set the family
+    return false;  // Could not set the family
 
   // Determine the glyph table to use for this font.
   UniquePtr<nsOpenTypeTable> openTypeTable;
@@ -1318,7 +1317,7 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
 
   if (!openTypeTable) {
     if (context->mTablesTried.Contains(glyphTable))
-      return true;  // already tried this one
+      return false;  // already tried this one
 
     // Only try this table once.
     context->mTablesTried.AppendElement(glyphTable);
@@ -1331,13 +1330,10 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
       glyphTable == &gGlyphTableList->mUnicodeTable ? context->mFamilyList
                                                     : family;
 
-  if ((context->mTryVariants &&
-       context->TryVariants(glyphTable, &fontGroup, familyList)) ||
-      (context->mTryParts &&
-       context->TryParts(glyphTable, &fontGroup, familyList)))
-    return false;  // no need to continue
-
-  return true;  // true means continue
+  return (context->mTryVariants &&
+          context->TryVariants(glyphTable, &fontGroup, familyList)) ||
+         (context->mTryParts &&
+          context->TryParts(glyphTable, &fontGroup, familyList));
 }
 
 static void AppendFallbacks(nsTArray<FontFamilyName>& aNames,
@@ -1523,12 +1519,10 @@ nsresult nsMathMLChar::StretchInternal(
 
     const nsTArray<FontFamilyName>& fontlist =
         font.fontlist.GetFontlist()->mNames;
-    uint32_t i, num = fontlist.Length();
-    bool next = true;
-    for (i = 0; i < num && next; i++) {
-      const FontFamilyName& name = fontlist[i];
-      next =
-          StretchEnumContext::EnumCallback(name, name.IsGeneric(), &enumData);
+    for (const FontFamilyName& name : fontlist) {
+      if (StretchEnumContext::EnumCallback(name, name.IsGeneric(), &enumData)) {
+        break;
+      }
     }
   }
 
@@ -1795,40 +1789,17 @@ void nsDisplayMathMLCharDebug::Paint(nsDisplayListBuilder* aBuilder,
 void nsMathMLChar::Display(nsDisplayListBuilder* aBuilder, nsIFrame* aForFrame,
                            const nsDisplayListSet& aLists, uint32_t aIndex,
                            const nsRect* aSelectedRect) {
-  bool usingParentStyle = false;
   ComputedStyle* computedStyle = mComputedStyle;
-
-  if (mDraw == DRAW_NORMAL) {
-    // normal drawing if there is nothing special about this char
-    // Use our parent element's style
-    usingParentStyle = true;
-    computedStyle = aForFrame->Style();
-  }
-
   if (!computedStyle->StyleVisibility()->IsVisible()) {
     return;
   }
 
   const bool isSelected = aSelectedRect && !aSelectedRect->IsEmpty();
 
-  // if the leaf computed style that we use for stretchy chars has a background
-  // color we use it -- this feature is mostly used for testing and debugging
-  // purposes. Normally, users will set the background on the container frame.
-  // paint the selection background -- beware MathML frames overlap a lot
   if (isSelected) {
     aLists.BorderBackground()->AppendNewToTop<nsDisplayMathMLSelectionRect>(
         aBuilder, aForFrame, *aSelectedRect);
   } else if (mRect.width && mRect.height) {
-    if (!usingParentStyle &&
-        NS_GET_A(computedStyle->StyleBackground()->BackgroundColor(
-            computedStyle)) > 0) {
-      nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-          aBuilder, aForFrame, mRect, aLists.BorderBackground(),
-          /* aAllowWillPaintBorderOptimization */ true, computedStyle);
-    }
-    // else
-    //  our container frame will take care of painting its background
-
 #if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
     // for visual debug
     aLists.BorderBackground()->AppendNewToTop<nsDisplayMathMLCharDebug>(

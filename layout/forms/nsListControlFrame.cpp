@@ -133,20 +133,15 @@ void nsListControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   mEventListener->SetFrame(nullptr);
 
-  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("keydown"),
-                                      mEventListener, false);
-  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("keypress"),
-                                      mEventListener, false);
-  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("mousedown"),
-                                      mEventListener, false);
-  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("mouseup"),
-                                      mEventListener, false);
-  mContent->RemoveSystemEventListener(NS_LITERAL_STRING("mousemove"),
-                                      mEventListener, false);
+  mContent->RemoveSystemEventListener(u"keydown"_ns, mEventListener, false);
+  mContent->RemoveSystemEventListener(u"keypress"_ns, mEventListener, false);
+  mContent->RemoveSystemEventListener(u"mousedown"_ns, mEventListener, false);
+  mContent->RemoveSystemEventListener(u"mouseup"_ns, mEventListener, false);
+  mContent->RemoveSystemEventListener(u"mousemove"_ns, mEventListener, false);
 
   if (ShouldFireDropDownEvent()) {
     nsContentUtils::AddScriptRunner(
-        new AsyncEventDispatcher(mContent, NS_LITERAL_STRING("mozhidedropdown"),
+        new AsyncEventDispatcher(mContent, u"mozhidedropdown"_ns,
                                  CanBubble::eYes, ChromeOnlyDispatch::eYes));
   }
 
@@ -399,8 +394,8 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
 
   bool autoBSize = (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE);
 
-  mMightNeedSecondPass = autoBSize && (NS_SUBTREE_DIRTY(this) ||
-                                       aReflowInput.ShouldReflowAllKids());
+  mMightNeedSecondPass =
+      autoBSize && (IsSubtreeDirty() || aReflowInput.ShouldReflowAllKids());
 
   ReflowInput state(aReflowInput);
   int32_t length = GetNumberOfRows();
@@ -482,8 +477,7 @@ void nsListControlFrame::ReflowAsDropdown(nsPresContext* aPresContext,
   MOZ_ASSERT(aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE,
              "We should not have a computed block size here!");
 
-  mMightNeedSecondPass =
-      NS_SUBTREE_DIRTY(this) || aReflowInput.ShouldReflowAllKids();
+  mMightNeedSecondPass = IsSubtreeDirty() || aReflowInput.ShouldReflowAllKids();
 
   WritingMode wm = aReflowInput.GetWritingMode();
 #ifdef DEBUG
@@ -565,7 +559,7 @@ void nsListControlFrame::ReflowAsDropdown(nsPresContext* aPresContext,
       mNumDisplayRows = 1;
       mDropdownCanGrow = GetNumberOfRows() > 1;
     } else {
-      nscoord bp = aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm);
+      nscoord bp = aReflowInput.ComputedLogicalBorderPadding(wm).BStartEnd(wm);
       nscoord availableBSize = std::max(before, after) - bp;
       nscoord newBSize;
       uint32_t rows;
@@ -928,16 +922,14 @@ void nsListControlFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // we need to hook up our listeners before the editor is initialized
   mEventListener = new nsListEventListener(this);
 
-  mContent->AddSystemEventListener(NS_LITERAL_STRING("keydown"), mEventListener,
-                                   false, false);
-  mContent->AddSystemEventListener(NS_LITERAL_STRING("keypress"),
-                                   mEventListener, false, false);
-  mContent->AddSystemEventListener(NS_LITERAL_STRING("mousedown"),
-                                   mEventListener, false, false);
-  mContent->AddSystemEventListener(NS_LITERAL_STRING("mouseup"), mEventListener,
-                                   false, false);
-  mContent->AddSystemEventListener(NS_LITERAL_STRING("mousemove"),
-                                   mEventListener, false, false);
+  mContent->AddSystemEventListener(u"keydown"_ns, mEventListener, false, false);
+  mContent->AddSystemEventListener(u"keypress"_ns, mEventListener, false,
+                                   false);
+  mContent->AddSystemEventListener(u"mousedown"_ns, mEventListener, false,
+                                   false);
+  mContent->AddSystemEventListener(u"mouseup"_ns, mEventListener, false, false);
+  mContent->AddSystemEventListener(u"mousemove"_ns, mEventListener, false,
+                                   false);
 
   mStartSelectionIndex = kNothingSelected;
   mEndSelectionIndex = kNothingSelected;
@@ -1025,7 +1017,7 @@ void nsListControlFrame::SetComboboxFrame(nsIFrame* aComboboxFrame) {
 void nsListControlFrame::GetOptionText(uint32_t aIndex, nsAString& aStr) {
   aStr.Truncate();
   if (dom::HTMLOptionElement* optionElement = GetOption(aIndex)) {
-    optionElement->GetText(aStr);
+    optionElement->GetRenderedLabel(aStr);
   }
 }
 
@@ -1290,8 +1282,8 @@ void nsListControlFrame::FireOnInputAndOnChange() {
 
   // Dispatch the change event.
   nsContentUtils::DispatchTrustedEvent(element->OwnerDoc(), element,
-                                       NS_LITERAL_STRING("change"),
-                                       CanBubble::eYes, Cancelable::eNo);
+                                       u"change"_ns, CanBubble::eYes,
+                                       Cancelable::eNo);
 }
 
 NS_IMETHODIMP_(void)
@@ -1418,7 +1410,7 @@ void nsListControlFrame::DidReflow(nsPresContext* aPresContext,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsListControlFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("ListControl"), aResult);
+  return MakeFrameName(u"ListControl"_ns, aResult);
 }
 #endif
 
@@ -1602,7 +1594,7 @@ void nsListControlFrame::FireMenuItemActiveEvent() {
     return;
   }
 
-  FireDOMEvent(NS_LITERAL_STRING("DOMMenuItemActive"), optionContent);
+  FireDOMEvent(u"DOMMenuItemActive"_ns, optionContent);
 }
 #endif
 
@@ -1641,11 +1633,10 @@ static bool FireShowDropDownEvent(nsIContent* aContent, bool aShow,
   if (ShouldFireDropDownEvent()) {
     nsString eventName;
     if (aShow) {
-      eventName = aIsSourceTouchEvent
-                      ? NS_LITERAL_STRING("mozshowdropdown-sourcetouch")
-                      : NS_LITERAL_STRING("mozshowdropdown");
+      eventName = aIsSourceTouchEvent ? u"mozshowdropdown-sourcetouch"_ns
+                                      : u"mozshowdropdown"_ns;
     } else {
-      eventName = NS_LITERAL_STRING("mozhidedropdown");
+      eventName = u"mozhidedropdown"_ns;
     }
     nsContentUtils::DispatchChromeEvent(aContent->OwnerDoc(), aContent,
                                         eventName, CanBubble::eYes,
@@ -2275,11 +2266,11 @@ nsresult nsListControlFrame::KeyPress(dom::Event* aKeyEvent) {
     }
 
     nsAutoString text;
-    optionElement->GetText(text);
+    optionElement->GetRenderedLabel(text);
     if (!StringBeginsWith(
             nsContentUtils::TrimWhitespace<
                 nsContentUtils::IsHTMLWhitespaceOrNBSP>(text, false),
-            incrementalString, nsCaseInsensitiveStringComparator())) {
+            incrementalString, nsCaseInsensitiveStringComparator)) {
       continue;
     }
 

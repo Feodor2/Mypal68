@@ -13,6 +13,7 @@
 
 class nsPresContext;
 class nsCSSPropertyIDSet;
+struct nsStyleDisplay;
 
 namespace mozilla {
 class ComputedStyle;

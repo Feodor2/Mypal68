@@ -8,7 +8,10 @@
 #include "mozilla/Attributes.h"
 #include "nsBoxLayout.h"
 #include "nsCOMPtr.h"
-#include "nsIFrame.h"
+#include "nsFrameState.h"
+
+class nsIFrame;
+struct nsRect;
 
 class nsBoxSize {
  public:

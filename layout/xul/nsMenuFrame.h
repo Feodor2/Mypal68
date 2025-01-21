@@ -120,7 +120,7 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
 
   NS_IMETHOD SelectMenu(bool aActivateFlag);
 
-  virtual nsIScrollableFrame* GetScrollTargetFrame() override;
+  virtual nsIScrollableFrame* GetScrollTargetFrame() const override;
 
   // Retrieve the element that the menu should be anchored to. By default this
   // is the menu itself. However, the anchor attribute may refer to the value of
@@ -151,7 +151,7 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
 
   const nsAString& GetRadioGroupName() { return mGroupName; }
   nsMenuType GetMenuType() { return mType; }
-  nsMenuPopupFrame* GetPopup();
+  nsMenuPopupFrame* GetPopup() const;
 
   /**
    * @return true if this frame has a popup child frame.
@@ -196,7 +196,7 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("Menu"), aResult);
+    return MakeFrameName(u"Menu"_ns, aResult);
   }
 #endif
 

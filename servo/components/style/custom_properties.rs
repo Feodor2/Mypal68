@@ -6,10 +6,10 @@
 //!
 //! [custom]: https://drafts.csswg.org/css-variables/
 
+use crate::applicable_declarations::CascadePriority;
 use crate::hash::map::Entry;
 use crate::properties::{CSSWideKeyword, CustomDeclaration, CustomDeclarationValue};
 use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, PrecomputedHasher};
-use crate::stylesheets::{Origin, PerOrigin};
 use crate::Atom;
 use cssparser::{Delimiter, Parser, ParserInput, SourcePosition, Token, TokenSerializationType};
 use indexmap::IndexMap;
@@ -85,7 +85,7 @@ pub type Name = Atom;
 ///
 /// <https://drafts.csswg.org/css-variables/#typedef-custom-property-name>
 pub fn parse_name(s: &str) -> Result<&str, ()> {
-    if s.starts_with("--") {
+    if s.starts_with("--") && s.len() > 2 {
         Ok(&s[2..])
     } else {
         Err(())
@@ -171,11 +171,11 @@ impl VariableValue {
         /// Prevent values from getting terribly big since you can use custom
         /// properties exponentially.
         ///
-        /// This number (1MB) is somewhat arbitrary, but silly enough that no
-        /// sane page would hit it. We could limit by number of total
+        /// This number (2MB) is somewhat arbitrary, but silly enough that no
+        /// reasonable page should hit it. We could limit by number of total
         /// substitutions, but that was very easy to work around in practice
         /// (just choose a larger initial value and boom).
-        const MAX_VALUE_LENGTH_IN_BYTES: usize = 1024 * 1024;
+        const MAX_VALUE_LENGTH_IN_BYTES: usize = 2 * 1024 * 1024;
 
         if self.css.len() + css.len() > MAX_VALUE_LENGTH_IN_BYTES {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
@@ -244,8 +244,11 @@ impl VariableValue {
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
+        let mut css = css.into_owned();
+        css.shrink_to_fit();
+
         Ok(Arc::new(VariableValue {
-            css: css.into_owned(),
+            css,
             first_token_type,
             last_token_type,
             references: custom_property_references,
@@ -288,11 +291,6 @@ fn parse_declaration_value<'i, 't>(
     missing_closing_characters: &mut String,
 ) -> Result<(TokenSerializationType, TokenSerializationType), ParseError<'i>> {
     input.parse_until_before(Delimiter::Bang | Delimiter::Semicolon, |input| {
-        // Need at least one token
-        let start = input.state();
-        input.next_including_whitespace()?;
-        input.reset(&start);
-
         parse_declaration_value_block(input, references, missing_closing_characters)
     })
 }
@@ -304,6 +302,7 @@ fn parse_declaration_value_block<'i, 't>(
     mut references: Option<&mut VarOrEnvReferences>,
     missing_closing_characters: &mut String,
 ) -> Result<(TokenSerializationType, TokenSerializationType), ParseError<'i>> {
+    input.skip_whitespace();
     let mut token_start = input.position();
     let mut token = match input.next_including_whitespace_and_comments() {
         Ok(token) => token,
@@ -447,10 +446,8 @@ fn parse_fallback<'i, 't>(input: &mut Parser<'i, 't>) -> Result<(), ParseError<'
     // Exclude `!` and `;` at the top level
     // https://drafts.csswg.org/css-syntax/#typedef-declaration-value
     input.parse_until_before(Delimiter::Bang | Delimiter::Semicolon, |input| {
-        // At least one non-comment token.
-        input.next_including_whitespace()?;
         // Skip until the end.
-        while let Ok(_) = input.next_including_whitespace_and_comments() {}
+        while input.next_including_whitespace_and_comments().is_ok() {}
         Ok(())
     })
 }
@@ -493,10 +490,10 @@ fn parse_env_function<'i, 't>(
 /// properties.
 pub struct CustomPropertiesBuilder<'a> {
     seen: PrecomputedHashSet<&'a Name>,
-    reverted: PerOrigin<PrecomputedHashSet<&'a Name>>,
     may_have_cycles: bool,
     custom_properties: Option<CustomPropertiesMap>,
     inherited: Option<&'a Arc<CustomPropertiesMap>>,
+    reverted: PrecomputedHashMap<&'a Name, (CascadePriority, bool)>,
     environment: &'a CssEnvironment,
 }
 
@@ -517,14 +514,16 @@ impl<'a> CustomPropertiesBuilder<'a> {
     }
 
     /// Cascade a given custom property declaration.
-    pub fn cascade(&mut self, declaration: &'a CustomDeclaration, origin: Origin) {
+    pub fn cascade(&mut self, declaration: &'a CustomDeclaration, priority: CascadePriority) {
         let CustomDeclaration {
             ref name,
             ref value,
         } = *declaration;
 
-        if self.reverted.borrow_for_origin(&origin).contains(&name) {
-            return;
+        if let Some(&(reverted_priority, is_origin_revert)) = self.reverted.get(&name) {
+            if !reverted_priority.allows_when_reverted(&priority, is_origin_revert) {
+                return;
+            }
         }
 
         let was_already_present = !self.seen.insert(name);
@@ -556,7 +555,7 @@ impl<'a> CustomPropertiesBuilder<'a> {
                     let result =
                         substitute_references_in_value(unparsed_value, &map, &self.environment);
                     match result {
-                        Ok(new_value) => Arc::new(new_value),
+                        Ok(new_value) => new_value,
                         Err(..) => {
                             // Don't touch the map, this has the same effect as
                             // making it compute to the inherited one.
@@ -569,11 +568,10 @@ impl<'a> CustomPropertiesBuilder<'a> {
                 map.insert(name.clone(), value);
             },
             CustomDeclarationValue::CSSWideKeyword(keyword) => match keyword {
-                CSSWideKeyword::Revert => {
+                CSSWideKeyword::RevertLayer | CSSWideKeyword::Revert => {
+                    let origin_revert = keyword == CSSWideKeyword::Revert;
                     self.seen.remove(name);
-                    for origin in origin.following_including() {
-                        self.reverted.borrow_mut_for_origin(&origin).insert(name);
-                    }
+                    self.reverted.insert(name, (priority, origin_revert));
                 },
                 CSSWideKeyword::Initial => {
                     map.remove(name);
@@ -636,6 +634,7 @@ impl<'a> CustomPropertiesBuilder<'a> {
             let inherited = self.inherited.as_ref().map(|m| &***m);
             substitute_all(&mut map, inherited, self.environment);
         }
+        map.shrink_to_fit();
         Some(Arc::new(map))
     }
 }
@@ -826,7 +825,7 @@ fn substitute_all(
         let result = substitute_references_in_value(&value, &context.map, &context.environment);
         match result {
             Ok(computed_value) => {
-                context.map.insert(name, Arc::new(computed_value));
+                context.map.insert(name, computed_value);
             },
             Err(..) => {
                 // This is invalid, reset it to the unset (inherited) value.
@@ -868,7 +867,7 @@ fn substitute_references_in_value<'i>(
     value: &'i VariableValue,
     custom_properties: &CustomPropertiesMap,
     environment: &CssEnvironment,
-) -> Result<ComputedValue, ParseError<'i>> {
+) -> Result<Arc<ComputedValue>, ParseError<'i>> {
     debug_assert!(!value.references.is_empty() || value.references_environment);
 
     let mut input = ParserInput::new(&value.css);
@@ -885,7 +884,8 @@ fn substitute_references_in_value<'i>(
     )?;
 
     computed_value.push_from(&input, position, last_token_type)?;
-    Ok(computed_value)
+    computed_value.css.shrink_to_fit();
+    Ok(Arc::new(computed_value))
 }
 
 /// Replace `var()` functions in an arbitrary bit of input.
@@ -962,12 +962,12 @@ fn substitute_block<'i>(
                         while input.next().is_ok() {}
                     } else {
                         input.expect_comma()?;
+                        input.skip_whitespace();
                         let after_comma = input.state();
                         let first_token_type = input
                             .next_including_whitespace_and_comments()
-                            // parse_var_function() ensures that .unwrap() will not fail.
-                            .unwrap()
-                            .serialization_type();
+                            .ok()
+                            .map_or_else(TokenSerializationType::nothing, |t| t.serialization_type());
                         input.reset(&after_comma);
                         let mut position = (after_comma.position(), first_token_type);
                         last_token_type = substitute_block(

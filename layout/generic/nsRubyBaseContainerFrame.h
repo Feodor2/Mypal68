@@ -33,11 +33,13 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
                                  InlineMinISizeData* aData) override;
   virtual void AddInlinePrefISize(gfxContext* aRenderingContext,
                                   InlinePrefISizeData* aData) override;
-  virtual mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
   virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
@@ -66,11 +68,11 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
 
   struct RubyReflowInput;
   nscoord ReflowColumns(const RubyReflowInput& aReflowInput,
-                        nsReflowStatus& aStatus);
+                        ReflowOutput& aDesiredSize, nsReflowStatus& aStatus);
   nscoord ReflowOneColumn(const RubyReflowInput& aReflowInput,
                           uint32_t aColumnIndex,
                           const mozilla::RubyColumn& aColumn,
-                          nsReflowStatus& aStatus);
+                          ReflowOutput& aDesiredSize, nsReflowStatus& aStatus);
   nscoord ReflowSpans(const RubyReflowInput& aReflowInput);
 
   struct PullFrameState;

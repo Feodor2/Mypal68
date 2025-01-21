@@ -55,7 +55,7 @@ already_AddRefed<Element> nsNumberControlFrame::MakeAnonymousElement(
   if (aPseudoType == PseudoStyleType::mozNumberSpinDown ||
       aPseudoType == PseudoStyleType::mozNumberSpinUp) {
     resultElement->SetAttr(kNameSpaceID_None, nsGkAtoms::aria_hidden,
-                           NS_LITERAL_STRING("true"), false);
+                           u"true"_ns, false);
   }
 
   if (aParent) {
@@ -194,7 +194,7 @@ int32_t nsNumberControlFrame::GetSpinButtonForPointerEvent(
     // default UA style sheet. See the comment in forms.css for why.
     LayoutDeviceIntPoint absPoint = aEvent->mRefPoint;
     nsPoint point = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-        aEvent, absPoint, mSpinBox->GetPrimaryFrame());
+        aEvent, absPoint, RelativeTo{mSpinBox->GetPrimaryFrame()});
     if (point != nsPoint(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE)) {
       if (point.y < mSpinBox->GetPrimaryFrame()->GetSize().height / 2) {
         return eSpinButtonUp;

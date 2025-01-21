@@ -28,6 +28,7 @@
 struct nsStyleDisplay;
 struct nsGenConInitializer;
 
+class nsBlockFrame;
 class nsContainerFrame;
 class nsFirstLineFrame;
 class nsFirstLetterFrame;
@@ -43,6 +44,7 @@ namespace mozilla {
 
 class ComputedStyle;
 class PresShell;
+class PrintedSheetFrame;
 
 namespace dom {
 
@@ -365,6 +367,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
       nsContainerFrame* aRootElementFrame, nsFrameConstructorState&,
       nsFrameList&);
 
+  mozilla::PrintedSheetFrame* ConstructPrintedSheetFrame(
+      PresShell* aPresShell, nsContainerFrame* aParentFrame,
+      nsIFrame* aPrevSheetFrame);
+
   nsContainerFrame* ConstructPageFrame(PresShell* aPresShell,
                                        nsContainerFrame* aParentFrame,
                                        nsIFrame* aPrevPageFrame,
@@ -386,6 +392,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     AllowTextPathChild,
     // The item is content created by an nsIAnonymousContentCreator frame.
     IsAnonymousContentCreatorContent,
+    // The item will be the rendered legend of a <fieldset>.
+    IsForRenderedLegend,
   };
 
   using ItemFlags = mozilla::EnumSet<ItemFlag>;
@@ -1118,7 +1126,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
           mIsAllInline(false),
           mIsBlock(false),
           mIsPopup(false),
-          mIsLineParticipant(false) {
+          mIsLineParticipant(false),
+          mIsRenderedLegend(false) {
       MOZ_COUNT_CTOR(FrameConstructionItem);
     }
 
@@ -1201,6 +1210,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     bool mIsPopup : 1;
     // Whether this item should be treated as a line participant
     bool mIsLineParticipant : 1;
+    // Whether this item is the rendered legend of a <fieldset>
+    bool mIsRenderedLegend : 1;
 
    private:
     // Not allocated from the general heap - instead, use the new/Delete APIs
@@ -1516,7 +1527,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
       mozilla::PseudoStyleType aInnerPseudo, bool aCandidateRootFrame);
 
   /**
-   * Construct an nsSVGOuterSVGFrame.
+   * Construct an SVGOuterSVGFrame.
    */
   nsIFrame* ConstructOuterSVG(nsFrameConstructorState& aState,
                               FrameConstructionItem& aItem,
@@ -1525,7 +1536,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                               nsFrameList& aFrameList);
 
   /**
-   * Construct an nsSVGMarkerFrame.
+   * Construct an SVGMarkerFrame.
    */
   nsIFrame* ConstructMarker(nsFrameConstructorState& aState,
                             FrameConstructionItem& aItem,

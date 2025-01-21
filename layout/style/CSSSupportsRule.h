@@ -23,12 +23,13 @@ class CSSSupportsRule : public css::ConditionRule {
 #endif
 
   RawServoSupportsRule* Raw() const { return mRawRule; }
+  void SetRawAfterClone(RefPtr<RawServoSupportsRule>);
 
   // WebIDL interface
-  uint16_t Type() const override { return CSSRule_Binding::SUPPORTS_RULE; }
-  void GetCssText(nsAString& aCssText) const final;
-  void GetConditionText(nsAString& aConditionText) final;
-  void SetConditionText(const nsAString& aConditionText,
+  StyleCssRuleType Type() const final;
+  void GetCssText(nsACString& aCssText) const final;
+  void GetConditionText(nsACString& aConditionText) final;
+  void SetConditionText(const nsACString& aConditionText,
                         ErrorResult& aRv) final;
 
   size_t SizeOfIncludingThis(MallocSizeOf) const override;

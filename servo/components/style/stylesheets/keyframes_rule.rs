@@ -17,7 +17,9 @@ use crate::str::CssStringWriter;
 use crate::stylesheets::rule_parser::VendorPrefix;
 use crate::stylesheets::{CssRuleType, StylesheetContents};
 use crate::values::{serialize_percentage, KeyframesName};
-use cssparser::{parse_one_rule, DeclarationListParser, DeclarationParser, ParserState, SourceLocation, Token};
+use cssparser::{
+    parse_one_rule, DeclarationListParser, DeclarationParser, ParserState, SourceLocation, Token,
+};
 use cssparser::{AtRuleParser, CowRcStr, Parser, ParserInput, QualifiedRuleParser, RuleListParser};
 use servo_arc::Arc;
 use std::fmt::{self, Write};
@@ -149,8 +151,8 @@ impl KeyframePercentage {
 
 /// A keyframes selector is a list of percentages or from/to symbols, which are
 /// converted at parse time to percentages.
-#[css(comma)]
 #[derive(Clone, Debug, Eq, PartialEq, ToCss, ToShmem)]
+#[css(comma)]
 pub struct KeyframeSelector(#[css(iterable)] Vec<KeyframePercentage>);
 
 impl KeyframeSelector {
@@ -492,8 +494,8 @@ pub fn parse_keyframe_list(
     RuleListParser::new_for_nested_rule(
         input,
         KeyframeListParser {
-            context: context,
-            shared_lock: shared_lock,
+            context,
+            shared_lock,
             declarations: &mut declarations,
         },
     )
@@ -502,8 +504,7 @@ pub fn parse_keyframe_list(
 }
 
 impl<'a, 'i> AtRuleParser<'i> for KeyframeListParser<'a> {
-    type PreludeNoBlock = ();
-    type PreludeBlock = ();
+    type Prelude = ();
     type AtRule = Arc<Locked<Keyframe>>;
     type Error = StyleParseErrorKind<'i>;
 }
@@ -577,8 +578,7 @@ struct KeyframeDeclarationParser<'a, 'b: 'a> {
 
 /// Default methods reject all at rules.
 impl<'a, 'b, 'i> AtRuleParser<'i> for KeyframeDeclarationParser<'a, 'b> {
-    type PreludeNoBlock = ();
-    type PreludeBlock = ();
+    type Prelude = ();
     type AtRule = ();
     type Error = StyleParseErrorKind<'i>;
 }

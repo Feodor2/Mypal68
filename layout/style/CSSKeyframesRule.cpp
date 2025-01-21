@@ -11,8 +11,7 @@
 
 #include <limits>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // -------------------------------------------
 // CSSKeyframeList
@@ -28,6 +27,22 @@ class CSSKeyframeList : public dom::CSSRuleList {
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(CSSKeyframeList, dom::CSSRuleList)
+
+  void SetRawAfterClone(RefPtr<RawServoKeyframesRule> aRaw) {
+    mRawRule = std::move(aRaw);
+    uint32_t index = 0;
+    for (css::Rule* rule : mRules) {
+      if (rule) {
+        uint32_t line = 0, column = 0;
+        RefPtr<RawServoKeyframe> keyframe =
+            Servo_KeyframesRule_GetKeyframeAt(mRawRule, index, &line, &column)
+                .Consume();
+        static_cast<CSSKeyframeRule*>(rule)->SetRawAfterClone(
+            std::move(keyframe));
+      }
+      index++;
+    }
+  }
 
   void DropSheetReference() {
     if (!mStyleSheet) {
@@ -189,6 +204,17 @@ bool CSSKeyframesRule::IsCCLeaf() const {
   return Rule::IsCCLeaf() && !mKeyframeList;
 }
 
+StyleCssRuleType CSSKeyframesRule::Type() const {
+  return StyleCssRuleType::Keyframes;
+}
+
+void CSSKeyframesRule::SetRawAfterClone(RefPtr<RawServoKeyframesRule> aRaw) {
+  mRawRule = std::move(aRaw);
+  if (mKeyframeList) {
+    mKeyframeList->SetRawAfterClone(mRawRule);
+  }
+}
+
 #ifdef DEBUG
 /* virtual */
 void CSSKeyframesRule::List(FILE* out, int32_t aIndent) const {
@@ -222,8 +248,14 @@ nsresult CSSKeyframesRule::UpdateRule(Func aCallback) {
     return NS_OK;
   }
 
+  StyleSheet* sheet = GetStyleSheet();
+  if (sheet) {
+    sheet->WillDirty();
+  }
+
   aCallback();
-  if (StyleSheet* sheet = GetStyleSheet()) {
+
+  if (sheet) {
     sheet->RuleChanged(this, StyleRuleChangeKind::Generic);
   }
 
@@ -279,7 +311,7 @@ void CSSKeyframesRule::DeleteRule(const nsAString& aKey) {
 }
 
 /* virtual */
-void CSSKeyframesRule::GetCssText(nsAString& aCssText) const {
+void CSSKeyframesRule::GetCssText(nsACString& aCssText) const {
   Servo_KeyframesRule_GetCssText(mRawRule, &aCssText);
 }
 
@@ -316,5 +348,4 @@ JSObject* CSSKeyframesRule::WrapObject(JSContext* aCx,
   return CSSKeyframesRule_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

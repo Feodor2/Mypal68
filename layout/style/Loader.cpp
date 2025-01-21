@@ -122,7 +122,7 @@ static mozilla::LazyLogModule gSriPRLog("SRI");
   PR_END_MACRO
 
 // And some convenience strings...
-static const char* const gStateStrings[] = {"Unknown", "NeedsParser", "Pending",
+static const char* const gStateStrings[] = {"NeedsParser", "Pending",
                                             "Loading", "Complete"};
 
 namespace mozilla {
@@ -443,10 +443,9 @@ void SheetLoadData::FireLoadEvent(nsIThreadInternal* aThread) {
   nsCOMPtr<nsINode> node = mOwningNode;
   MOZ_ASSERT(node, "How did that happen???");
 
-  nsContentUtils::DispatchTrustedEvent(
-      node->OwnerDoc(), node,
-      mLoadFailed ? NS_LITERAL_STRING("error") : NS_LITERAL_STRING("load"),
-      CanBubble::eNo, Cancelable::eNo);
+  nsContentUtils::DispatchTrustedEvent(node->OwnerDoc(), node,
+                                       mLoadFailed ? u"error"_ns : u"load"_ns,
+                                       CanBubble::eNo, Cancelable::eNo);
 
   // And unblock onload
   mLoader->UnblockOnload(true);
@@ -470,7 +469,7 @@ void SheetLoadData::ScheduleLoadEventIfNeeded() {
  *********************/
 
 static RefPtr<StyleSheet> CloneSheet(StyleSheet& aSheet) {
-  return aSheet.Clone(nullptr, nullptr, nullptr, nullptr);
+  return aSheet.Clone(nullptr, nullptr);
 }
 
 bool LoaderReusableStyleSheets::FindReusableStyleSheet(
@@ -523,7 +522,7 @@ RefPtr<StyleSheet> Loader::Sheets::LookupInline(const nsAString& aBuffer) {
     result.Remove();
     return nullptr;
   }
-  return result.Data()->Clone(nullptr, nullptr, nullptr, nullptr);
+  return result.Data()->Clone(nullptr, nullptr);
 }
 
 static void AssertComplete(const StyleSheet& aSheet) {
@@ -999,7 +998,7 @@ nsresult SheetLoadData::VerifySheetReadyToParse(nsresult aStatus,
 
     nsCOMPtr<nsIURI> referrer = ReferrerInfo()->GetOriginalReferrer();
     nsContentUtils::ReportToConsole(
-        errorFlag, NS_LITERAL_CSTRING("CSS Loader"), mLoader->mDocument,
+        errorFlag, "CSS Loader"_ns, mLoader->mDocument,
         nsContentUtils::eCSS_PROPERTIES, errorMessage, strings, referrer);
 
     if (errorFlag == nsIScriptError::errorFlag) {
@@ -1109,9 +1108,9 @@ nsresult Loader::CheckContentPolicy(nsIPrincipal* aLoadingPrincipal,
   }
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(
-      aTargetURI, secCheckLoadInfo, NS_LITERAL_CSTRING("text/css"), &shouldLoad,
-      nsContentUtils::GetContentPolicy());
+  nsresult rv = NS_CheckContentLoadPolicy(aTargetURI, secCheckLoadInfo,
+                                          "text/css"_ns, &shouldLoad,
+                                          nsContentUtils::GetContentPolicy());
   if (NS_FAILED(rv) || NS_CP_REJECTED(shouldLoad)) {
     return NS_ERROR_CONTENT_BLOCKED;
   }
@@ -1198,7 +1197,7 @@ Loader::MediaMatched Loader::PrepareSheet(
   if (!aMediaString.IsEmpty()) {
     NS_ASSERTION(!aMediaList,
                  "must not provide both aMediaString and aMediaList");
-    mediaList = MediaList::Create(aMediaString);
+    mediaList = MediaList::Create(NS_ConvertUTF16toUTF8(aMediaString));
   }
 
   aSheet.SetMedia(do_AddRef(mediaList));
@@ -1438,7 +1437,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState) {
     // Force UA sheets to be UTF-8.
     // XXX this is only necessary because the default in
     // SheetLoadData::OnDetermineCharset is wrong (bug 521039).
-    channel->SetContentCharset(NS_LITERAL_CSTRING("UTF-8"));
+    channel->SetContentCharset("UTF-8"_ns);
 
     // Manually feed the streamloader the contents of the stream.
     // This will call back into OnStreamComplete
@@ -1586,7 +1585,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState) {
     if (nsCOMPtr<nsITimedChannel> timedChannel =
             do_QueryInterface(httpChannel)) {
       if (aLoadData.mParentData) {
-        timedChannel->SetInitiatorType(NS_LITERAL_STRING("css"));
+        timedChannel->SetInitiatorType(u"css"_ns);
 
         // This is a child sheet load.
         //
@@ -1621,14 +1620,14 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState) {
         }
 
       } else {
-        timedChannel->SetInitiatorType(NS_LITERAL_STRING("link"));
+        timedChannel->SetInitiatorType(u"link"_ns);
       }
     }
   }
 
   // Now tell the channel we expect text/css data back....  We do
   // this before opening it, so it's only treated as a hint.
-  channel->SetContentType(NS_LITERAL_CSTRING("text/css"));
+  channel->SetContentType("text/css"_ns);
 
   // We don't have to hold on to the stream loader.  The ownership
   // model is: Necko owns the stream loader, which owns the load data,
@@ -2056,9 +2055,9 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
     if (aInfo.mContent && !mDocument->IsLoadedAsData()) {
       // Fire an async error event on it.
       RefPtr<AsyncEventDispatcher> loadBlockingAsyncDispatcher =
-          new LoadBlockingAsyncEventDispatcher(
-              aInfo.mContent, NS_LITERAL_STRING("error"), CanBubble::eNo,
-              ChromeOnlyDispatch::eNo);
+          new LoadBlockingAsyncEventDispatcher(aInfo.mContent, u"error"_ns,
+                                               CanBubble::eNo,
+                                               ChromeOnlyDispatch::eNo);
       loadBlockingAsyncDispatcher->PostDOMEvent();
     }
     return Err(rv);
@@ -2198,7 +2197,7 @@ nsresult Loader::LoadChildSheet(StyleSheet& aParentSheet,
 
   nsIPrincipal* principal = aParentSheet.Principal();
   nsresult rv = CheckContentPolicy(loadingPrincipal, principal, aURL, context,
-                                   EmptyString(), IsPreload::No);
+                                   u""_ns, IsPreload::No);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     if (aParentData) {
       MarkLoadTreeFailed(*aParentData);
@@ -2238,9 +2237,9 @@ nsresult Loader::LoadChildSheet(StyleSheet& aParentSheet,
     std::tie(sheet, state) =
         CreateSheet(aURL, nullptr, principal, aParentSheet.ParsingMode(),
                     CORS_NONE, aParentSheet.GetReferrerInfo(),
-                    EmptyString(),  // integrity is only checked on main sheet
+                    u""_ns,  // integrity is only checked on main sheet
                     aParentData && aParentData->mSyncLoad, IsPreload::No);
-    PrepareSheet(*sheet, EmptyString(), EmptyString(), aMedia, IsAlternate::No,
+    PrepareSheet(*sheet, u""_ns, u""_ns, aMedia, IsAlternate::No,
                  IsExplicitlyEnabled::No);
   }
 
@@ -2276,9 +2275,9 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheetSync(
     UseSystemPrincipal aUseSystemPrincipal) {
   LOG(("css::Loader::LoadSheetSync"));
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
-  return InternalLoadNonDocumentSheet(
-      aURL, IsPreload::No, aParsingMode, aUseSystemPrincipal, nullptr,
-      referrerInfo, nullptr, CORS_NONE, EmptyString());
+  return InternalLoadNonDocumentSheet(aURL, IsPreload::No, aParsingMode,
+                                      aUseSystemPrincipal, nullptr,
+                                      referrerInfo, nullptr, CORS_NONE, u""_ns);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
@@ -2287,7 +2286,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   return InternalLoadNonDocumentSheet(
       aURI, IsPreload::No, aParsingMode, aUseSystemPrincipal, nullptr,
-      referrerInfo, aObserver, CORS_NONE, EmptyString());
+      referrerInfo, aObserver, CORS_NONE, u""_ns);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
@@ -2320,7 +2319,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
   nsCOMPtr<nsIPrincipal> loadingPrincipal =
       mDocument ? mDocument->NodePrincipal() : nullptr;
   nsresult rv = CheckContentPolicy(loadingPrincipal, loadingPrincipal, aURL,
-                                   mDocument, EmptyString(), aIsPreload);
+                                   mDocument, u""_ns, aIsPreload);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
@@ -2330,7 +2329,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
       CreateSheet(aURL, nullptr, loadingPrincipal, aParsingMode, aCORSMode,
                   aReferrerInfo, aIntegrity, syncLoad, aIsPreload);
 
-  PrepareSheet(*sheet, EmptyString(), EmptyString(), nullptr, IsAlternate::No,
+  PrepareSheet(*sheet, u""_ns, u""_ns, nullptr, IsAlternate::No,
                IsExplicitlyEnabled::No);
 
   auto data = MakeRefPtr<SheetLoadData>(

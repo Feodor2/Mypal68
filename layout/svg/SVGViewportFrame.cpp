@@ -9,9 +9,9 @@
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "nsIFrame.h"
-#include "nsSVGDisplayableFrame.h"
-#include "nsSVGContainerFrame.h"
-#include "nsSVGIntegrationUtils.h"
+#include "mozilla/ISVGDisplayableFrame.h"
+#include "mozilla/SVGContainerFrame.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/SVGViewportElement.h"
 
 using namespace mozilla::dom;
@@ -21,7 +21,7 @@ using namespace mozilla::image;
 namespace mozilla {
 
 //----------------------------------------------------------------------
-// nsSVGDisplayableFrame methods
+// ISVGDisplayableFrame methods
 
 void SVGViewportFrame::PaintSVG(gfxContext& aContext,
                                 const gfxMatrix& aTransform,
@@ -44,13 +44,12 @@ void SVGViewportFrame::PaintSVG(gfxContext& aContext,
     }
 
     autoSR.SetContext(&aContext);
-    gfxRect clipRect =
-        nsSVGUtils::GetClipRectForFrame(this, x, y, width, height);
-    nsSVGUtils::SetClipRect(&aContext, aTransform, clipRect);
+    gfxRect clipRect = SVGUtils::GetClipRectForFrame(this, x, y, width, height);
+    SVGUtils::SetClipRect(&aContext, aTransform, clipRect);
   }
 
-  nsSVGDisplayContainerFrame::PaintSVG(aContext, aTransform, aImgParams,
-                                       aDirtyRect);
+  SVGDisplayContainerFrame::PaintSVG(aContext, aTransform, aImgParams,
+                                     aDirtyRect);
 }
 
 void SVGViewportFrame::ReflowSVG() {
@@ -68,7 +67,7 @@ void SVGViewportFrame::ReflowSVG() {
     InvalidateFrame();
   }
 
-  nsSVGDisplayContainerFrame::ReflowSVG();
+  SVGDisplayContainerFrame::ReflowSVG();
 }
 
 void SVGViewportFrame::NotifySVGChanged(uint32_t aFlags) {
@@ -92,7 +91,7 @@ void SVGViewportFrame::NotifySVGChanged(uint32_t aFlags) {
       // changed ancestor will have invalidated its entire area, which includes
       // our area.
       // For perf reasons we call this before calling NotifySVGChanged() below.
-      nsSVGUtils::ScheduleReflowSVG(this);
+      SVGUtils::ScheduleReflowSVG(this);
     }
 
     // Coordinate context changes affect mCanvasTM if we have a
@@ -117,7 +116,7 @@ void SVGViewportFrame::NotifySVGChanged(uint32_t aFlags) {
     }
   }
 
-  nsSVGDisplayContainerFrame::NotifySVGChanged(aFlags);
+  SVGDisplayContainerFrame::NotifySVGChanged(aFlags);
 }
 
 SVGBBox SVGViewportFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
@@ -128,7 +127,7 @@ SVGBBox SVGViewportFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
 
   SVGBBox bbox;
 
-  if (aFlags & nsSVGUtils::eForGetClientRects) {
+  if (aFlags & SVGUtils::eForGetClientRects) {
     // XXXjwatt For consistency with the old code this code includes the
     // viewport we establish in the result, but only includes the bounds of our
     // descendants if they are not clipped to that viewport.  However, this is
@@ -150,7 +149,7 @@ SVGBBox SVGViewportFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
   }
 
   SVGBBox descendantsBbox =
-      nsSVGDisplayContainerFrame::GetBBoxContribution(aToBBoxUserspace, aFlags);
+      SVGDisplayContainerFrame::GetBBoxContribution(aToBBoxUserspace, aFlags);
 
   bbox.UnionEdges(descendantsBbox);
 
@@ -169,20 +168,20 @@ nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
       nsLayoutUtils::PostRestyleEvent(
           mContent->AsElement(), RestyleHint{0},
           nsChangeHint_InvalidateRenderingObservers);
-      nsSVGUtils::ScheduleReflowSVG(this);
+      SVGUtils::ScheduleReflowSVG(this);
 
       if (content->HasViewBoxOrSyntheticViewBox()) {
         // make sure our cached transform matrix gets (lazily) updated
         mCanvasTM = nullptr;
         content->ChildrenOnlyTransformChanged();
-        nsSVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
+        SVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
       } else {
         uint32_t flags = COORD_CONTEXT_CHANGED;
         if (mCanvasTM && mCanvasTM->IsSingular()) {
           mCanvasTM = nullptr;
           flags |= TRANSFORM_CHANGED;
         }
-        nsSVGUtils::NotifyChildrenOfSVGChange(this, flags);
+        SVGUtils::NotifyChildrenOfSVGChange(this, flags);
       }
 
     } else if (aAttribute == nsGkAtoms::transform ||
@@ -192,7 +191,7 @@ nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
       // make sure our cached transform matrix gets (lazily) updated
       mCanvasTM = nullptr;
 
-      nsSVGUtils::NotifyChildrenOfSVGChange(
+      SVGUtils::NotifyChildrenOfSVGChange(
           this, aAttribute == nsGkAtoms::viewBox
                     ? TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED
                     : TRANSFORM_CHANGED);
@@ -206,7 +205,7 @@ nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
         nsLayoutUtils::PostRestyleEvent(
             mContent->AsElement(), RestyleHint{0},
             nsChangeHint_InvalidateRenderingObservers);
-        nsSVGUtils::ScheduleReflowSVG(this);
+        SVGUtils::ScheduleReflowSVG(this);
       } else if (aAttribute == nsGkAtoms::viewBox ||
                  (aAttribute == nsGkAtoms::preserveAspectRatio &&
                   content->HasViewBoxOrSyntheticViewBox())) {
@@ -238,11 +237,11 @@ nsIFrame* SVGViewportFrame::GetFrameForPoint(const gfxPoint& aPoint) {
     }
   }
 
-  return nsSVGDisplayContainerFrame::GetFrameForPoint(aPoint);
+  return SVGDisplayContainerFrame::GetFrameForPoint(aPoint);
 }
 
 //----------------------------------------------------------------------
-// nsISVGSVGFrame methods:
+// ISVGSVGFrame methods:
 
 void SVGViewportFrame::NotifyViewportOrTransformChanged(uint32_t aFlags) {
   // The dimensions of inner-<svg> frames are purely defined by their "width"
@@ -254,7 +253,7 @@ void SVGViewportFrame::NotifyViewportOrTransformChanged(uint32_t aFlags) {
 }
 
 //----------------------------------------------------------------------
-// nsSVGContainerFrame methods:
+// SVGContainerFrame methods:
 
 bool SVGViewportFrame::HasChildrenOnlyTransform(gfx::Matrix* aTransform) const {
   SVGViewportElement* content = static_cast<SVGViewportElement*>(GetContent());

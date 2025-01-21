@@ -170,6 +170,11 @@ class nsCounterList : public nsGenConList {
  public:
   nsCounterList() : nsGenConList(), mDirty(false) {}
 
+  // Return the first node for aFrame on this list, or nullptr.
+  nsCounterNode* GetFirstNodeFor(nsIFrame* aFrame) const {
+    return static_cast<nsCounterNode*>(nsGenConList::GetFirstNodeFor(aFrame));
+  }
+
   void Insert(nsCounterNode* aNode) {
     nsGenConList::Insert(aNode);
     // Don't SetScope if we're dirty -- we'll reset all the scopes anyway,

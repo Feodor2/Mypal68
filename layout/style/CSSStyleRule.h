@@ -24,7 +24,8 @@ class CSSStyleRuleDeclaration final : public nsDOMCSSDeclaration {
   NS_DECL_ISUPPORTS_INHERITED
 
   css::Rule* GetParentRule() final;
-  nsINode* GetParentObject() final;
+  nsINode* GetAssociatedNode() const final;
+  nsISupports* GetParentObject() const final;
 
  protected:
   mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
@@ -46,6 +47,8 @@ class CSSStyleRuleDeclaration final : public nsDOMCSSDeclaration {
   inline CSSStyleRule* Rule();
   inline const CSSStyleRule* Rule() const;
 
+  void SetRawAfterClone(RefPtr<RawServoDeclarationBlock>);
+
   RefPtr<DeclarationBlock> mDecls;
 };
 
@@ -60,7 +63,7 @@ class CSSStyleRule final : public BindingStyleRule, public SupportsWeakPtr {
   bool IsCCLeaf() const final MOZ_MUST_OVERRIDE;
 
   uint32_t GetSelectorCount() override;
-  nsresult GetSelectorText(uint32_t aSelectorIndex, nsAString& aText) override;
+  nsresult GetSelectorText(uint32_t aSelectorIndex, nsACString& aText) override;
   nsresult GetSpecificity(uint32_t aSelectorIndex,
                           uint64_t* aSpecificity) override;
   nsresult SelectorMatchesElement(dom::Element* aElement,
@@ -71,13 +74,14 @@ class CSSStyleRule final : public BindingStyleRule, public SupportsWeakPtr {
   NotNull<DeclarationBlock*> GetDeclarationBlock() const override;
 
   // WebIDL interface
-  uint16_t Type() const final { return dom::CSSRule_Binding::STYLE_RULE; }
-  void GetCssText(nsAString& aCssText) const final;
-  void GetSelectorText(nsAString& aSelectorText) final;
-  void SetSelectorText(const nsAString& aSelectorText) final;
+  StyleCssRuleType Type() const final;
+  void GetCssText(nsACString& aCssText) const final;
+  void GetSelectorText(nsACString& aSelectorText) final;
+  void SetSelectorText(const nsACString& aSelectorText) final;
   nsICSSDeclaration* Style() final;
 
   RawServoStyleRule* Raw() const { return mRawRule; }
+  void SetRawAfterClone(RefPtr<RawServoStyleRule>);
 
   // Methods of mozilla::css::Rule
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const final;

@@ -49,8 +49,7 @@ nsIFrame* nsButtonFrameRenderer::GetFrame() { return mFrame; }
 void nsButtonFrameRenderer::SetDisabled(bool aDisabled, bool aNotify) {
   dom::Element* element = mFrame->GetContent()->AsElement();
   if (aDisabled)
-    element->SetAttr(kNameSpaceID_None, nsGkAtoms::disabled, EmptyString(),
-                     aNotify);
+    element->SetAttr(kNameSpaceID_None, nsGkAtoms::disabled, u""_ns, aNotify);
   else
     element->UnsetAttr(kNameSpaceID_None, nsGkAtoms::disabled, aNotify);
 }
@@ -89,7 +88,7 @@ class nsDisplayButtonBoxShadowOuter : public nsPaintedDisplayItem {
 nsRect nsDisplayButtonBoxShadowOuter::GetBounds(nsDisplayListBuilder* aBuilder,
                                                 bool* aSnap) const {
   *aSnap = false;
-  return mFrame->GetVisualOverflowRectRelativeToSelf() + ToReferenceFrame();
+  return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
 }
 
 void nsDisplayButtonBoxShadowOuter::Paint(nsDisplayListBuilder* aBuilder,
@@ -293,8 +292,7 @@ nsRect nsDisplayButtonBorder::GetBounds(nsDisplayListBuilder* aBuilder,
   *aSnap = false;
   return aBuilder->IsForEventDelivery()
              ? nsRect(ToReferenceFrame(), mFrame->GetSize())
-             : mFrame->GetVisualOverflowRectRelativeToSelf() +
-                   ToReferenceFrame();
+             : mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
 }
 
 class nsDisplayButtonForeground final : public nsPaintedDisplayItem {

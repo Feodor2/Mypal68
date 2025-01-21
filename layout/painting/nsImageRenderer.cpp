@@ -21,10 +21,12 @@
 #include "nsCSSRenderingGradients.h"
 #include "nsDeviceContext.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsStyleStructInlines.h"
-#include "nsSVGDisplayableFrame.h"
-#include "SVGObserverUtils.h"
-#include "nsSVGIntegrationUtils.h"
+#include "mozilla/ISVGDisplayableFrame.h"
+#include "mozilla/SVGIntegrationUtils.h"
+#include "mozilla/SVGPaintServerFrame.h"
+#include "mozilla/SVGObserverUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -44,11 +46,11 @@ nsSize CSSSizeOrRatio::ComputeConcreteSize() const {
   return nsSize(mRatio.ApplyTo(mHeight), mHeight);
 }
 
-nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame,
-                                 const StyleImage* aImage, uint32_t aFlags)
+nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame, const StyleImage* aImage,
+                                 uint32_t aFlags)
     : mForFrame(aForFrame),
-      mImage(aImage),
-      mType(aImage->tag),
+      mImage(&aImage->FinalImage()),
+      mType(mImage->tag),
       mImageContainer(nullptr),
       mGradientData(nullptr),
       mPaintServerFrame(nullptr),
@@ -58,80 +60,71 @@ nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame,
       mExtendMode(ExtendMode::CLAMP),
       mMaskOp(StyleMaskMode::MatchSource) {}
 
-static bool ShouldTreatAsCompleteDueToSyncDecode(const StyleImage* aImage,
-                                                 uint32_t aFlags) {
-  if (!(aFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES)) {
-    return false;
-  }
-
-  imgRequestProxy* req = aImage->GetImageRequest();
-  if (!req) {
-    return false;
-  }
-
-  uint32_t status = 0;
-  if (NS_FAILED(req->GetImageStatus(&status))) {
-    return false;
-  }
-
-  if (status & imgIRequest::STATUS_ERROR) {
-    // The image is "complete" since it's a corrupt image. If we created an
-    // imgIContainer at all, return true.
-    nsCOMPtr<imgIContainer> image;
-    req->GetImage(getter_AddRefs(image));
-    return bool(image);
-  }
-
-  if (!(status & imgIRequest::STATUS_LOAD_COMPLETE)) {
-    // We must have loaded all of the image's data and the size must be
-    // available, or else sync decoding won't be able to decode the image.
-    return false;
-  }
-
-  return true;
-}
-
 bool nsImageRenderer::PrepareImage() {
-  if (mImage->IsNone() ||
-      (mImage->IsImageRequestType() && !mImage->GetImageRequest())) {
-    // mImage->GetImageRequest() could be null here if the StyleImage refused
-    // to load a same-document URL, or the url was invalid, for example.
+  if (mImage->IsNone()) {
     mPrepareResult = ImgDrawResult::BAD_IMAGE;
     return false;
   }
 
-  if (!mImage->IsComplete()) {
-    // Make sure the image is actually decoding.
-    bool frameComplete = mImage->StartDecoding();
-
-    // Boost the loading priority since we know we want to draw the image.
-    if ((mFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) &&
-        mImage->IsImageRequestType()) {
-      MOZ_ASSERT(mImage->GetImageRequest(),
-                 "must have image data, since we checked above");
-      mImage->GetImageRequest()->BoostPriority(imgIRequest::CATEGORY_DISPLAY);
-    }
-
-    // Check again to see if we finished.
-    // We cannot prepare the image for rendering if it is not fully loaded.
-    // Special case: If we requested a sync decode and the image has loaded,
-    // push on through because the Draw() will do a sync decode then.
-    if (!(frameComplete || mImage->IsComplete()) &&
-        !ShouldTreatAsCompleteDueToSyncDecode(mImage, mFlags)) {
-      mPrepareResult = ImgDrawResult::NOT_READY;
+  const bool isImageRequest = mImage->IsImageRequestType();
+  MOZ_ASSERT_IF(!isImageRequest, !mImage->GetImageRequest());
+  imgRequestProxy* request = nullptr;
+  if (isImageRequest) {
+    request = mImage->GetImageRequest();
+    if (!request) {
+      // request could be null here if the StyleImage refused
+      // to load a same-document URL, or the url was invalid, for example.
+      mPrepareResult = ImgDrawResult::BAD_IMAGE;
       return false;
     }
   }
 
-  if (mImage->IsImageRequestType()) {
-    MOZ_ASSERT(mImage->GetImageRequest(),
-               "must have image data, since we checked above");
+  if (!mImage->IsComplete()) {
+    MOZ_DIAGNOSTIC_ASSERT(isImageRequest);
+
+    // Make sure the image is actually decoding.
+    bool frameComplete =
+        request->StartDecodingWithResult(imgIContainer::FLAG_ASYNC_NOTIFY);
+
+    // Boost the loading priority since we know we want to draw the image.
+    if (mFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) {
+      request->BoostPriority(imgIRequest::CATEGORY_DISPLAY);
+    }
+
+    // Check again to see if we finished.
+    // We cannot prepare the image for rendering if it is not fully loaded.
+    if (!frameComplete && !mImage->IsComplete()) {
+      uint32_t imageStatus = 0;
+      request->GetImageStatus(&imageStatus);
+      if (imageStatus & imgIRequest::STATUS_ERROR) {
+        mPrepareResult = ImgDrawResult::BAD_IMAGE;
+        return false;
+      }
+
+      // Special case: If not errored, and we requested a sync decode, and the
+      // image has loaded, push on through because the Draw() will do a sync
+      // decode then.
+      const bool syncDecodeWillComplete =
+          (mFlags & FLAG_SYNC_DECODE_IMAGES) &&
+          (imageStatus & imgIRequest::STATUS_LOAD_COMPLETE);
+      if (!syncDecodeWillComplete) {
+        mPrepareResult = ImgDrawResult::NOT_READY;
+        return false;
+      }
+    }
+  }
+
+  if (isImageRequest) {
     nsCOMPtr<imgIContainer> srcImage;
-    DebugOnly<nsresult> rv =
-        mImage->GetImageRequest()->GetImage(getter_AddRefs(srcImage));
-      MOZ_ASSERT(NS_SUCCEEDED(rv) && srcImage,
-                 "If GetImage() is failing, mImage->IsComplete() "
-                 "should have returned false");
+    DebugOnly<nsresult> rv = request->GetImage(getter_AddRefs(srcImage));
+    MOZ_ASSERT(NS_SUCCEEDED(rv) && srcImage,
+               "If GetImage() is failing, mImage->IsComplete() "
+               "should have returned false");
+
+    if (srcImage) {
+      srcImage = nsLayoutUtils::OrientImage(
+          srcImage, mForFrame->StyleVisibility()->mImageOrientation);
+    }
 
     if (!mImage->IsRect()) {
       mImageContainer.swap(srcImage);
@@ -170,8 +163,9 @@ bool nsImageRenderer::PrepareImage() {
       // non-displayable SVG, then we have nothing valid to paint.
       if (!paintServerFrame ||
           (paintServerFrame->IsFrameOfType(nsIFrame::eSVG) &&
-           !paintServerFrame->IsFrameOfType(nsIFrame::eSVGPaintServer) &&
-           !static_cast<nsSVGDisplayableFrame*>(
+           !static_cast<SVGPaintServerFrame*>(
+               do_QueryFrame(paintServerFrame)) &&
+           !static_cast<ISVGDisplayableFrame*>(
                do_QueryFrame(paintServerFrame)))) {
         mPrepareResult = ImgDrawResult::BAD_IMAGE;
         return false;
@@ -180,6 +174,11 @@ bool nsImageRenderer::PrepareImage() {
     }
 
     mPrepareResult = ImgDrawResult::SUCCESS;
+  } else if (mImage->IsCrossFade()) {
+    // See bug 546052 - cross-fade implementation still being worked
+    // on.
+    mPrepareResult = ImgDrawResult::BAD_IMAGE;
+    return false;
   } else {
     MOZ_ASSERT(mImage->IsNone(), "Unknown image type?");
   }
@@ -237,7 +236,7 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
           int32_t appUnitsPerDevPixel =
               mForFrame->PresContext()->AppUnitsPerDevPixel();
           result.SetSize(IntSizeToAppUnits(
-              nsSVGIntegrationUtils::GetContinuationUnionSize(mPaintServerFrame)
+              SVGIntegrationUtils::GetContinuationUnionSize(mPaintServerFrame)
                   .ToNearestPixels(appUnitsPerDevPixel),
               appUnitsPerDevPixel));
         }
@@ -251,6 +250,10 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
       }
       break;
     }
+    case StyleImage::Tag::ImageSet:
+      MOZ_FALLTHROUGH_ASSERT("image-set should be resolved already");
+    // Bug 546052 cross-fade not yet implemented.
+    case StyleImage::Tag::CrossFade:
     // Per <http://dev.w3.org/csswg/css3-images/#gradients>, gradients have no
     // intrinsic dimensions.
     case StyleImage::Tag::Gradient:
@@ -503,6 +506,11 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
           aOpacity);
       break;
     }
+    case StyleImage::Tag::ImageSet:
+      MOZ_FALLTHROUGH_ASSERT("image-set should be resolved already");
+    // See bug 546052 - cross-fade implementation still being worked
+    // on.
+    case StyleImage::Tag::CrossFade:
     case StyleImage::Tag::None:
       break;
   }
@@ -695,10 +703,10 @@ already_AddRefed<gfxDrawable> nsImageRenderer::DrawableForElement(
     // Don't allow creating images that are too big
     if (aContext.GetDrawTarget()->CanCreateSimilarDrawTarget(imageSize,
                                                              format)) {
-      drawable = nsSVGIntegrationUtils::DrawableFromPaintServer(
+      drawable = SVGIntegrationUtils::DrawableFromPaintServer(
           mPaintServerFrame, mForFrame, mSize, imageSize,
           aContext.GetDrawTarget(), aContext.CurrentMatrixDouble(),
-          nsSVGIntegrationUtils::FLAG_SYNC_DECODE_IMAGES);
+          SVGIntegrationUtils::FLAG_SYNC_DECODE_IMAGES);
     }
 
     return drawable.forget();
@@ -870,8 +878,8 @@ ImgDrawResult nsImageRenderer::DrawBorderImageComponent(
     return ImgDrawResult::SUCCESS;
   }
 
-  const bool isRequestBacked = mType == StyleImage::Tag::Url ||
-                               mType == StyleImage::Tag::Rect;
+  const bool isRequestBacked =
+      mType == StyleImage::Tag::Url || mType == StyleImage::Tag::Rect;
   MOZ_ASSERT(isRequestBacked == mImage->IsImageRequestType());
 
   if (isRequestBacked || mType == StyleImage::Tag::Element) {
@@ -1003,9 +1011,8 @@ ImgDrawResult nsImageRenderer::DrawShapeImage(nsPresContext* aPresContext,
     // rendered pixel has an alpha that precisely matches the alpha of the
     // closest pixel in the image.
     return nsLayoutUtils::DrawSingleImage(
-        aRenderingContext, aPresContext, mImageContainer,
-        SamplingFilter::POINT, dest, dest, Nothing(), drawFlags, nullptr,
-        nullptr);
+        aRenderingContext, aPresContext, mImageContainer, SamplingFilter::POINT,
+        dest, dest, Nothing(), drawFlags, nullptr, nullptr);
   }
 
   if (mImage->IsGradient()) {

@@ -146,12 +146,12 @@ nscoord nsLeafBoxFrame::GetIntrinsicISize() {
 LogicalSize nsLeafBoxFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   // Important: NOT calling our direct superclass here!
   return nsIFrame::ComputeAutoSize(aRenderingContext, aWM, aCBSize,
-                                   aAvailableISize, aMargin, aBorder, aPadding,
-                                   aFlags);
+                                   aAvailableISize, aMargin, aBorderPadding,
+                                   aSizeOverrides, aFlags);
 }
 
 void nsLeafBoxFrame::Reflow(nsPresContext* aPresContext,
@@ -299,7 +299,7 @@ void nsLeafBoxFrame::Reflow(nsPresContext* aPresContext,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsLeafBoxFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("LeafBox"), aResult);
+  return MakeFrameName(u"LeafBox"_ns, aResult);
 }
 #endif
 

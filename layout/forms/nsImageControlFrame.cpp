@@ -41,7 +41,7 @@ class nsImageControlFrame final : public nsImageFrame,
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const final {
-    return MakeFrameName(NS_LITERAL_STRING("ImageControl"), aResult);
+    return MakeFrameName(u"ImageControl"_ns, aResult);
   }
 #endif
 
@@ -138,7 +138,8 @@ nsresult nsImageControlFrame::HandleEvent(nsPresContext* aPresContext,
         mContent->GetProperty(nsGkAtoms::imageClickedPoint));
     if (lastClickPoint) {
       // normally lastClickedPoint is not null, as it's allocated in Init()
-      nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, this);
+      nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+          aEvent, RelativeTo{this});
       TranslateEventCoords(pt, *lastClickPoint);
     }
   }

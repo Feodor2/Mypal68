@@ -37,7 +37,7 @@
 #include "nsPresArena.h"
 #include "nsPresContext.h"
 #include "nsRect.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 #include "nsStringFwd.h"
 #include "nsStubDocumentObserver.h"
 #include "nsTHashtable.h"
@@ -70,6 +70,7 @@ class nsITimer;
 class nsPIDOMWindowOuter;
 class nsPresShellEventCB;
 class nsRange;
+class nsRefreshDriver;
 class nsRegion;
 class nsView;
 class nsViewManager;
@@ -82,6 +83,8 @@ class WeakFrame;
 class ZoomConstraintsClient;
 
 struct nsCallbackEventRequest;
+
+enum class ScrollableDirection;
 
 namespace mozilla {
 class AccessibleCaretEventHub;
@@ -369,9 +372,7 @@ class PresShell final : public nsStubDocumentObserver,
   /**
    * Return true if the presshell expects layout flush.
    */
-  bool IsLayoutFlushObserver() {
-    return GetPresContext()->RefreshDriver()->IsLayoutFlushObserver(this);
-  }
+  bool IsLayoutFlushObserver();
 
   /**
    * Called when document load completes.
@@ -422,15 +423,6 @@ class PresShell final : public nsStubDocumentObserver,
    */
   nsIScrollableFrame* GetScrollableFrameToScroll(
       ScrollableDirection aDirection);
-
-  /**
-   * Gets nearest ancestor scrollable frame from aFrame.  The frame is
-   * scrollable with overflow:scroll or overflow:auto in some direction when
-   * aDirection is eEither.  Otherwise, this returns a nearest frame that is
-   * scrollable in the specified direction.
-   */
-  nsIScrollableFrame* GetNearestScrollableFrame(nsIFrame* aFrame,
-                                                ScrollableDirection aDirection);
 
   /**
    * Returns the page sequence frame associated with the frame hierarchy.
@@ -544,7 +536,8 @@ class PresShell final : public nsStubDocumentObserver,
    * Scrolls the view of the document so that the given area of a frame
    * is visible, if possible. Layout is not flushed before scrolling.
    *
-   * @param aRect relative to aFrame
+   * @param aRect Relative to aFrame. The rect edges will be respected even if
+   * the rect is empty.
    * @param aVertical see ScrollContentIntoView and ScrollAxis
    * @param aHorizontal see ScrollContentIntoView and ScrollAxis
    * @param aScrollFlags if SCROLL_FIRST_ANCESTOR_ONLY is set, only the
@@ -717,12 +710,13 @@ class PresShell final : public nsStubDocumentObserver,
   bool IsPaintingFrameCounts();
 #endif  // #ifdef MOZ_REFLOW_PERF
 
-#ifdef DEBUG
   // Debugging hooks
+#ifdef DEBUG
   void ListComputedStyles(FILE* out, int32_t aIndent = 0);
-
+#endif
+#if defined(DEBUG) || defined(MOZ_LAYOUT_DEBUGGER)
   void ListStyleSheets(FILE* out, int32_t aIndent = 0);
-#endif  // #ifdef DEBUG
+#endif
 
   /**
    * Stop all active elements (plugins and the caret) in this presentation and
@@ -931,7 +925,7 @@ class PresShell final : public nsStubDocumentObserver,
   }
 
   float GetResolution() const { return mResolution.valueOr(1.0); }
-  float GetCumulativeResolution();
+  float GetCumulativeResolution() const;
 
   /**
    * Accessors for a flag that tracks whether the most recent change to
@@ -944,12 +938,6 @@ class PresShell final : public nsStubDocumentObserver,
    * Returns true if the resolution has ever been changed by APZ.
    */
   bool IsResolutionUpdatedByApz() const { return mResolutionUpdatedByApz; }
-
-  /**
-   * Calculate the cumulative scale resolution from this document up to
-   * but not including the root document.
-   */
-  float GetCumulativeNonRootScaleResolution();
 
   /**
    * Used by session restore code to restore a resolution before the first
@@ -1664,6 +1652,8 @@ class PresShell final : public nsStubDocumentObserver,
   nsIFrame* GetDrawEventTargetFrame() { return mDrawEventTargetFrame; }
 #endif
 
+  bool GetZoomableByAPZ() const;
+
  private:
   ~PresShell();
 
@@ -1894,13 +1884,8 @@ class PresShell final : public nsStubDocumentObserver,
    public:
     NS_INLINE_DECL_REFCOUNTING(nsSynthMouseMoveEvent, override)
 
-    void Revoke() {
-      if (mPresShell) {
-        mPresShell->GetPresContext()->RefreshDriver()->RemoveRefreshObserver(
-            this, FlushType::Display);
-        mPresShell = nullptr;
-      }
-    }
+    void Revoke();
+
     MOZ_CAN_RUN_SCRIPT
     void WillRefresh(TimeStamp aTime) override {
       if (mPresShell) {
@@ -2906,10 +2891,10 @@ class PresShell final : public nsStubDocumentObserver,
   // the mouse pointer may have changed without the mouse moving (eg scrolling,
   // change to the document contents).
   // It is set only on a presshell for a root document, this value represents
-  // the last observed location of the mouse relative to that root document. It
-  // is set to (NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE) if the mouse isn't
-  // over our window or there is no last observed mouse location for some
-  // reason.
+  // the last observed location of the mouse relative to that root document,
+  // in visual coordinates. It is set to (NS_UNCONSTRAINEDSIZE,
+  // NS_UNCONSTRAINEDSIZE) if the mouse isn't over our window or there is no
+  // last observed mouse location for some reason.
   nsPoint mMouseLocation;
   // This is an APZ state variable that tracks the target guid for the last
   // mouse event that was processed (corresponding to mMouseLocation). This is

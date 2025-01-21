@@ -6,11 +6,13 @@
 
 #include "mozilla/PresShell.h"
 
+#include "Units.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ContentIterator.h"
+#include "mozilla/DisplayPortUtils.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
@@ -33,6 +35,7 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
+#include "mozilla/ViewportUtils.h"
 #include "MobileViewportManager.h"
 #include <algorithm>
 
@@ -116,9 +119,9 @@
 #include "nsStyleSheetService.h"
 #include "gfxUtils.h"
 #include "mozilla/SMILAnimationController.h"
-#include "SVGContentUtils.h"
-#include "SVGObserverUtils.h"
-#include "SVGFragmentIdentifier.h"
+#include "mozilla/dom/SVGAnimationElement.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGFragmentIdentifier.h"
 #include "nsFrameSelection.h"
 
 #include "mozilla/dom/Performance.h"
@@ -229,6 +232,11 @@ struct RangePaintInfo {
 
   // offset of builder's reference frame to the root frame
   nsPoint mRootOffset;
+
+  // Resolution at which the items are normally painted. So if we're painting
+  // these items in a range separately from the "full display list", we may want
+  // to paint them at this resolution.
+  float mResolution = 1.0;
 
   RangePaintInfo(nsRange* aRange, nsIFrame* aFrame)
       : mRange(aRange),
@@ -2304,10 +2312,10 @@ PresShell::ScrollPage(bool aForward) {
   nsIScrollableFrame* scrollFrame =
       GetScrollableFrameToScroll(ScrollableDirection::Vertical);
   if (scrollFrame) {
-    scrollFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1), ScrollUnit::PAGES,
-                          ScrollMode::Smooth, nullptr, nullptr,
-                          nsIScrollableFrame::NOT_MOMENTUM,
-                          nsIScrollableFrame::ENABLE_SNAP);
+    scrollFrame->ScrollBy(
+        nsIntPoint(0, aForward ? 1 : -1), ScrollUnit::PAGES, ScrollMode::Smooth,
+        nullptr, mozilla::ScrollOrigin::NotSpecified,
+        nsIScrollableFrame::NOT_MOMENTUM, nsIScrollableFrame::ENABLE_SNAP);
   }
   return NS_OK;
 }
@@ -2320,10 +2328,10 @@ PresShell::ScrollLine(bool aForward) {
     int32_t lineCount =
         Preferences::GetInt("toolkit.scrollbox.verticalScrollDistance",
                             NS_DEFAULT_VERTICAL_SCROLL_DISTANCE);
-    scrollFrame->ScrollBy(nsIntPoint(0, aForward ? lineCount : -lineCount),
-                          ScrollUnit::LINES, ScrollMode::Smooth, nullptr,
-                          nullptr, nsIScrollableFrame::NOT_MOMENTUM,
-                          nsIScrollableFrame::ENABLE_SNAP);
+    scrollFrame->ScrollBy(
+        nsIntPoint(0, aForward ? lineCount : -lineCount), ScrollUnit::LINES,
+        ScrollMode::Smooth, nullptr, mozilla::ScrollOrigin::NotSpecified,
+        nsIScrollableFrame::NOT_MOMENTUM, nsIScrollableFrame::ENABLE_SNAP);
   }
   return NS_OK;
 }
@@ -2336,10 +2344,10 @@ PresShell::ScrollCharacter(bool aRight) {
     int32_t h =
         Preferences::GetInt("toolkit.scrollbox.horizontalScrollDistance",
                             NS_DEFAULT_HORIZONTAL_SCROLL_DISTANCE);
-    scrollFrame->ScrollBy(nsIntPoint(aRight ? h : -h, 0), ScrollUnit::LINES,
-                          ScrollMode::Smooth, nullptr, nullptr,
-                          nsIScrollableFrame::NOT_MOMENTUM,
-                          nsIScrollableFrame::ENABLE_SNAP);
+    scrollFrame->ScrollBy(
+        nsIntPoint(aRight ? h : -h, 0), ScrollUnit::LINES, ScrollMode::Smooth,
+        nullptr, mozilla::ScrollOrigin::NotSpecified,
+        nsIScrollableFrame::NOT_MOMENTUM, nsIScrollableFrame::ENABLE_SNAP);
   }
   return NS_OK;
 }
@@ -2349,10 +2357,10 @@ PresShell::CompleteScroll(bool aForward) {
   nsIScrollableFrame* scrollFrame =
       GetScrollableFrameToScroll(ScrollableDirection::Vertical);
   if (scrollFrame) {
-    scrollFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1), ScrollUnit::WHOLE,
-                          ScrollMode::Smooth, nullptr, nullptr,
-                          nsIScrollableFrame::NOT_MOMENTUM,
-                          nsIScrollableFrame::ENABLE_SNAP);
+    scrollFrame->ScrollBy(
+        nsIntPoint(0, aForward ? 1 : -1), ScrollUnit::WHOLE, ScrollMode::Smooth,
+        nullptr, mozilla::ScrollOrigin::NotSpecified,
+        nsIScrollableFrame::NOT_MOMENTUM, nsIScrollableFrame::ENABLE_SNAP);
   }
   return NS_OK;
 }
@@ -2508,6 +2516,10 @@ void PresShell::EndLoad(Document* aDocument) {
   mDocumentLoading = false;
 }
 
+bool PresShell::IsLayoutFlushObserver() {
+  return GetPresContext()->RefreshDriver()->IsLayoutFlushObserver(this);
+}
+
 void PresShell::LoadComplete() {
   gfxTextPerfMetrics* tp = nullptr;
   if (mPresContext) {
@@ -2644,7 +2656,7 @@ void PresShell::FrameNeedsReflow(nsIFrame* aFrame,
 
     // Grab |wasDirty| now so we can go ahead and update the bits on
     // subtreeRoot.
-    bool wasDirty = NS_SUBTREE_DIRTY(subtreeRoot);
+    bool wasDirty = subtreeRoot->IsSubtreeDirty();
     subtreeRoot->AddStateBits(aBitToAdd);
 
     // Determine whether we need to keep looking for the next ancestor
@@ -2685,8 +2697,7 @@ void PresShell::FrameNeedsReflow(nsIFrame* aFrame,
       for (nsIFrame* a = subtreeRoot;
            a && !CanStopClearingAncestorIntrinsics(a); a = a->GetParent()) {
         a->MarkIntrinsicISizesDirty();
-        if (a->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
-            a->IsAbsolutelyPositioned()) {
+        if (a->IsAbsolutelyPositioned()) {
           // If we get here, 'a' is abspos, so its subtree's intrinsic sizing
           // has no effect on its ancestors' intrinsic sizing. So, don't loop
           // upwards any further.
@@ -2761,7 +2772,7 @@ void PresShell::FrameNeedsReflow(nsIFrame* aFrame,
 
       nsIFrame* child = f;
       f = f->GetParent();
-      wasDirty = NS_SUBTREE_DIRTY(f);
+      wasDirty = f->IsSubtreeDirty();
       f->ChildIsDirty(child);
       NS_ASSERTION(f->HasAnyStateBits(NS_FRAME_HAS_DIRTY_CHILDREN),
                    "ChildIsDirty didn't do its job");
@@ -2810,18 +2821,6 @@ already_AddRefed<nsIContent> PresShell::GetSelectedContentForScrolling() const {
   return selectedContent.forget();
 }
 
-nsIScrollableFrame* PresShell::GetNearestScrollableFrame(
-    nsIFrame* aFrame, ScrollableDirection aDirection) {
-  if (aDirection == ScrollableDirection::Either) {
-    return nsLayoutUtils::GetNearestScrollableFrame(aFrame);
-  }
-
-  return nsLayoutUtils::GetNearestScrollableFrameForDirection(
-      aFrame, aDirection == ScrollableDirection::Vertical
-                  ? nsLayoutUtils::eVertical
-                  : nsLayoutUtils::eHorizontal);
-}
-
 nsIScrollableFrame* PresShell::GetScrollableFrameToScrollForContent(
     nsIContent* aContent, ScrollableDirection aDirection) {
   nsIScrollableFrame* scrollFrame = nullptr;
@@ -2832,7 +2831,8 @@ nsIScrollableFrame* PresShell::GetScrollableFrameToScrollForContent(
       if (scrollFrame) {
         startFrame = scrollFrame->GetScrolledFrame();
       }
-      scrollFrame = GetNearestScrollableFrame(startFrame, aDirection);
+      scrollFrame = nsLayoutUtils::GetNearestScrollableFrameForDirection(
+          startFrame, aDirection);
     }
   }
   if (!scrollFrame) {
@@ -2840,8 +2840,8 @@ nsIScrollableFrame* PresShell::GetScrollableFrameToScrollForContent(
     if (!scrollFrame || !scrollFrame->GetScrolledFrame()) {
       return nullptr;
     }
-    scrollFrame =
-        GetNearestScrollableFrame(scrollFrame->GetScrolledFrame(), aDirection);
+    scrollFrame = nsLayoutUtils::GetNearestScrollableFrameForDirection(
+        scrollFrame->GetScrolledFrame(), aDirection);
   }
   return scrollFrame;
 }
@@ -3089,10 +3089,10 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll,
 
   // Search for anchor in the HTML namespace with a matching name
   if (!content && !mDocument->IsHTMLDocument()) {
-    NS_NAMED_LITERAL_STRING(nameSpace, "http://www.w3.org/1999/xhtml");
+    constexpr auto nameSpace = u"http://www.w3.org/1999/xhtml"_ns;
     // Get the list of anchor elements
     nsCOMPtr<nsINodeList> list =
-        mDocument->GetElementsByTagNameNS(nameSpace, NS_LITERAL_STRING("a"));
+        mDocument->GetElementsByTagNameNS(nameSpace, u"a"_ns);
     // Loop through the anchors looking for the first one with the given name.
     for (uint32_t i = 0; true; i++) {
       nsIContent* node = list->Item(i);
@@ -3174,12 +3174,13 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll,
     }
 
     // If the target is an animation element, activate the animation
-    if (content->IsNodeOfType(nsINode::eANIMATION)) {
-      SVGContentUtils::ActivateByHyperlink(content.get());
+    nsCOMPtr<SVGAnimationElement> animationElement = do_QueryInterface(content);
+    if (animationElement) {
+      animationElement->ActivateByHyperlink();
     }
   } else {
     rv = NS_ERROR_FAILURE;
-    NS_NAMED_LITERAL_STRING(top, "top");
+    constexpr auto top = u"top"_ns;
     if (nsContentUtils::EqualsIgnoreASCIICase(aAnchorName, top)) {
       // Scroll to the top/left if aAnchorName is "top" and there is no element
       // with such a name or id.
@@ -3267,19 +3268,12 @@ static void AccumulateFrameBounds(nsIFrame* aContainerFrame, nsIFrame* aFrame,
       if (aLines) {
         int32_t index = aLines->FindLineContaining(prevFrame, aCurLine);
         if (index >= 0) {
-          aCurLine = index;
-          nsIFrame* trash1;
-          int32_t trash2;
-          nsRect lineBounds;
-
-          if (NS_SUCCEEDED(
-                  aLines->GetLine(index, &trash1, &trash2, lineBounds))) {
-            frameBounds += frame->GetOffsetTo(f);
-            frame = f;
-            if (lineBounds.y < frameBounds.y) {
-              frameBounds.height = frameBounds.YMost() - lineBounds.y;
-              frameBounds.y = lineBounds.y;
-            }
+          auto line = aLines->GetLine(index).unwrap();
+          frameBounds += frame->GetOffsetTo(f);
+          frame = f;
+          if (line.mLineBounds.y < frameBounds.y) {
+            frameBounds.height = frameBounds.YMost() - line.mLineBounds.y;
+            frameBounds.y = line.mLineBounds.y;
           }
         }
       }
@@ -3624,7 +3618,8 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
     }
     nsIFrame* parent;
     if (container->IsTransformed()) {
-      container->GetTransformMatrix(nullptr, &parent);
+      container->GetTransformMatrix(ViewportType::Layout, RelativeTo{nullptr},
+                                    &parent);
       rect =
           nsLayoutUtils::TransformFrameRectToAncestor(container, rect, parent);
     } else {
@@ -4716,8 +4711,8 @@ UniquePtr<RangePaintInfo> PresShell::CreateRangePaintInfo(
     // XXX deal with frame being null due to display:contents
     for (; frame;
          frame = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(frame)) {
-      info->mBuilder.SetVisibleRect(frame->GetVisualOverflowRect());
-      info->mBuilder.SetDirtyRect(frame->GetVisualOverflowRect());
+      info->mBuilder.SetVisibleRect(frame->InkOverflowRect());
+      info->mBuilder.SetDirtyRect(frame->InkOverflowRect());
       frame->BuildDisplayListForStackingContext(&info->mBuilder, &info->mList);
     }
   };
@@ -4731,6 +4726,32 @@ UniquePtr<RangePaintInfo> PresShell::CreateRangePaintInfo(
   if (endContainer != startContainer &&
       endContainer->NodeType() == nsINode::TEXT_NODE) {
     BuildDisplayListForNode(endContainer);
+  }
+
+  // If one of the ancestor presShells (including this one) has a resolution
+  // set, we may have some APZ zoom applied. That means we may want to rasterize
+  // the nodes at that zoom level. Populate `info` with the relevant information
+  // so that the caller can decide what to do. Also wrap the display list in
+  // appropriate nsDisplayAsyncZoom display items. This code handles the general
+  // case with nested async zooms (even though that never actually happens),
+  // because it fell out of the implementation for free.
+  for (nsPresContext* ctx = GetPresContext(); ctx;
+       ctx = ctx->GetParentPresContext()) {
+    PresShell* shell = ctx->PresShell();
+    float resolution = shell->GetResolution();
+    if (resolution == 1.0) {
+      continue;
+    }
+
+    info->mResolution *= resolution;
+    nsIFrame* rootScrollFrame = shell->GetRootScrollFrame();
+    ViewID zoomedId =
+        nsLayoutUtils::FindOrCreateIDFor(rootScrollFrame->GetContent());
+
+    nsDisplayList wrapped;
+    wrapped.AppendNewToTop<nsDisplayAsyncZoom>(&info->mBuilder, rootScrollFrame,
+                                               &info->mList, nullptr, zoomedId);
+    info->mList.AppendToTop(&wrapped);
   }
 
 #ifdef DEBUG
@@ -4770,13 +4791,11 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
   if (!pc || aArea.width == 0 || aArea.height == 0) return nullptr;
 
   // use the rectangle to create the surface
-  nsIntRect pixelArea = aArea.ToOutsidePixels(pc->AppUnitsPerDevPixel());
+  LayoutDeviceIntRect pixelArea = LayoutDeviceIntRect::FromAppUnitsToOutside(
+      aArea, pc->AppUnitsPerDevPixel());
 
   // if the image should not be resized, scale must be 1
   float scale = 1.0;
-  nsIntRect rootScreenRect =
-      GetRootFrame()->GetScreenRectInAppUnits().ToNearestPixels(
-          pc->AppUnitsPerDevPixel());
 
   nsRect maxSize;
   pc->DeviceContext()->GetClientRect(maxSize);
@@ -4788,8 +4807,8 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
     // check if image-resizing-algorithm should be used
     if (aFlags & RenderImageFlags::IsImage) {
       // get max screensize
-      nscoord maxWidth = pc->AppUnitsToDevPixels(maxSize.width);
-      nscoord maxHeight = pc->AppUnitsToDevPixels(maxSize.height);
+      int32_t maxWidth = pc->AppUnitsToDevPixels(maxSize.width);
+      int32_t maxHeight = pc->AppUnitsToDevPixels(maxSize.height);
       // resize image relative to the screensize
       // get best height/width relative to screensize
       float bestHeight = float(maxHeight) * RELATIVE_SCALEFACTOR;
@@ -4808,8 +4827,8 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
       scale = std::min(scale, adjustedScale);
     } else {
       // get half of max screensize
-      nscoord maxWidth = pc->AppUnitsToDevPixels(maxSize.width >> 1);
-      nscoord maxHeight = pc->AppUnitsToDevPixels(maxSize.height >> 1);
+      int32_t maxWidth = pc->AppUnitsToDevPixels(maxSize.width >> 1);
+      int32_t maxHeight = pc->AppUnitsToDevPixels(maxSize.height >> 1);
       if (pixelArea.width > maxWidth || pixelArea.height > maxHeight) {
         // divide the maximum size by the image size in both directions.
         // Whichever direction produces the smallest result determines how much
@@ -4821,19 +4840,65 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
       }
     }
 
+    // Pick a resolution scale factor that is the highest we need for any of
+    // the items. This means some items may get rendered at a higher-than-needed
+    // resolution but at least nothing will be avoidably blurry.
+    float resolutionScale = 1.0;
+    for (const UniquePtr<RangePaintInfo>& rangeInfo : aItems) {
+      resolutionScale = std::max(resolutionScale, rangeInfo->mResolution);
+    }
+    float unclampedResolution = resolutionScale;
+    // Clamp the resolution scale so that `pixelArea` when scaled by `scale` and
+    // `resolutionScale` isn't bigger than `maxSize`. This prevents creating
+    // giant/unbounded images.
+    resolutionScale =
+        std::min(resolutionScale, maxSize.width / (scale * pixelArea.width));
+    resolutionScale =
+        std::min(resolutionScale, maxSize.height / (scale * pixelArea.height));
+    // The following assert should only get hit if pixelArea scaled by `scale`
+    // alone would already have been bigger than `maxSize`, which should never
+    // be the case. For release builds we handle gracefully by reverting
+    // resolutionScale to 1.0 to avoid unexpected consequences.
+    MOZ_ASSERT(resolutionScale >= 1.0);
+    resolutionScale = std::max(1.0f, resolutionScale);
+
+    scale *= resolutionScale;
+
+    // Now we need adjust the output screen position of the surface based on the
+    // scaling factor and any APZ zoom that may be in effect. The goal is here
+    // to set `aScreenRect`'s top-left corner (in screen-relative LD pixels)
+    // such that the scaling effect on the surface appears anchored  at `aPoint`
+    // ("anchor" here is like "transform-origin"). When this code is e.g. used
+    // to generate a drag image for dragging operations, `aPoint` refers to the
+    // position of the mouse cursor (also in screen-relative LD pixels), and the
+    // user-visible effect of doing this is that the point at which the user
+    // clicked to start the drag remains under the mouse during the drag.
+
+    // In order to do this we first compute the top-left corner of the
+    // pixelArea is screen-relative LD pixels.
+    LayoutDevicePoint visualPoint = ViewportUtils::ToScreenRelativeVisual(
+        LayoutDevicePoint(pixelArea.TopLeft()), pc);
+    // And then adjust the output screen position based on that, which we can do
+    // since everything here is screen-relative LD pixels. Note that the scale
+    // factor we use here is the effective "transform" scale applied to the
+    // content we're painting, relative to the scale at which it would normally
+    // get painted at as part of page rendering (`unclampedResolution`).
+    float scaleRelativeToNormalContent = scale / unclampedResolution;
+    aScreenRect->x = NSToIntFloor(aPoint.x - float(aPoint.x - visualPoint.x) *
+                                                 scaleRelativeToNormalContent);
+    aScreenRect->y = NSToIntFloor(aPoint.y - float(aPoint.y - visualPoint.y) *
+                                                 scaleRelativeToNormalContent);
+
     pixelArea.width = NSToIntFloor(float(pixelArea.width) * scale);
     pixelArea.height = NSToIntFloor(float(pixelArea.height) * scale);
-    if (!pixelArea.width || !pixelArea.height) return nullptr;
-
-    // adjust the screen position based on the rescaled size
-    nscoord left = rootScreenRect.x + pixelArea.x;
-    nscoord top = rootScreenRect.y + pixelArea.y;
-    aScreenRect->x = NSToIntFloor(aPoint.x - float(aPoint.x - left) * scale);
-    aScreenRect->y = NSToIntFloor(aPoint.y - float(aPoint.y - top) * scale);
+    if (!pixelArea.width || !pixelArea.height) {
+      return nullptr;
+    }
   } else {
     // move aScreenRect to the position of the surface in screen coordinates
-    aScreenRect->MoveTo(rootScreenRect.x + pixelArea.x,
-                        rootScreenRect.y + pixelArea.y);
+    LayoutDevicePoint visualPoint = ViewportUtils::ToScreenRelativeVisual(
+        LayoutDevicePoint(pixelArea.TopLeft()), pc);
+    aScreenRect->MoveTo(RoundedToInt(visualPoint));
   }
   aScreenRect->width = pixelArea.width;
   aScreenRect->height = pixelArea.height;
@@ -4870,7 +4935,9 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
 
   gfxMatrix initialTM = ctx->CurrentMatrixDouble();
 
-  if (resize) initialTM.PreScale(scale, scale);
+  if (resize) {
+    initialTM.PreScale(scale, scale);
+  }
 
   // translate so that points are relative to the surface area
   gfxPoint surfaceOffset = nsLayoutUtils::PointToGfxPoint(
@@ -5239,29 +5306,11 @@ nsresult PresShell::SetResolutionAndScaleTo(float aResolution,
   return NS_OK;
 }
 
-float PresShell::GetCumulativeResolution() {
+float PresShell::GetCumulativeResolution() const {
   float resolution = GetResolution();
   nsPresContext* parentCtx = GetPresContext()->GetParentPresContext();
   if (parentCtx) {
     resolution *= parentCtx->PresShell()->GetCumulativeResolution();
-  }
-  return resolution;
-}
-
-float PresShell::GetCumulativeNonRootScaleResolution() {
-  float resolution = 1.0;
-  PresShell* currentPresShell = this;
-  while (currentPresShell) {
-    nsPresContext* currentCtx = currentPresShell->GetPresContext();
-    if (currentCtx != currentCtx->GetRootPresContext()) {
-      resolution *= currentPresShell->GetResolution();
-    }
-    nsPresContext* parentCtx = currentCtx->GetParentPresContext();
-    if (parentCtx) {
-      currentPresShell = parentCtx->PresShell();
-    } else {
-      currentPresShell = nullptr;
-    }
   }
   return resolution;
 }
@@ -5638,7 +5687,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
   nsIScrollableFrame* scrollFrame = do_QueryFrame(aFrame);
   if (scrollFrame) {
     bool ignoreDisplayPort = false;
-    if (nsLayoutUtils::IsMissingDisplayPortBaseRect(aFrame->GetContent())) {
+    if (DisplayPortUtils::IsMissingDisplayPortBaseRect(aFrame->GetContent())) {
       // We can properly set the base rect for root scroll frames on top level
       // and root content documents. Otherwise the base rect we compute might
       // be way too big without the limiting that
@@ -5650,7 +5699,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
         nsRect baseRect =
             nsRect(nsPoint(0, 0),
                    nsLayoutUtils::CalculateCompositionSizeForFrame(aFrame));
-        nsLayoutUtils::SetDisplayPortBase(aFrame->GetContent(), baseRect);
+        DisplayPortUtils::SetDisplayPortBase(aFrame->GetContent(), baseRect);
       } else {
         ignoreDisplayPort = true;
       }
@@ -5659,8 +5708,8 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
     nsRect displayPort;
     bool usingDisplayport =
         !ignoreDisplayPort &&
-        nsLayoutUtils::GetDisplayPortForVisibilityTesting(
-            aFrame->GetContent(), &displayPort, RelativeTo::ScrollFrame);
+        DisplayPortUtils::GetDisplayPortForVisibilityTesting(
+            aFrame->GetContent(), &displayPort);
 
     scrollFrame->NotifyApproximateFrameVisibilityUpdate(!usingDisplayport);
 
@@ -5684,7 +5733,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
 
     for (nsIFrame* child : list) {
       nsRect r = rect - child->GetPosition();
-      if (!r.IntersectRect(r, child->GetVisualOverflowRect())) {
+      if (!r.IntersectRect(r, child->InkOverflowRect())) {
         continue;
       }
       if (child->IsTransformed()) {
@@ -5692,7 +5741,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
         // rect
         if (!preserves3DChildren ||
             !child->Combines3DTransformWithAncestors()) {
-          const nsRect overflow = child->GetVisualOverflowRectRelativeToSelf();
+          const nsRect overflow = child->InkOverflowRectRelativeToSelf();
           nsRect out;
           if (nsDisplayTransform::UntransformRect(r, overflow, child, &out)) {
             r = out;
@@ -5817,7 +5866,7 @@ bool PresShell::AssumeAllFramesVisible() {
   if (!mHaveShutDown && !mIsDestroying &&
       !mPresContext->IsRootContentDocument()) {
     nsPresContext* presContext =
-        mPresContext->GetToplevelContentDocumentPresContext();
+        mPresContext->GetInProcessRootContentDocumentPresContext();
     if (presContext && presContext->PresShell()->AssumeAllFramesVisible()) {
       return true;
     }
@@ -5851,11 +5900,11 @@ void PresShell::ScheduleApproximateFrameVisibilityUpdateNow() {
 
   if (!mPresContext->IsRootContentDocument()) {
     nsPresContext* presContext =
-        mPresContext->GetToplevelContentDocumentPresContext();
+        mPresContext->GetInProcessRootContentDocumentPresContext();
     if (!presContext) return;
     MOZ_ASSERT(presContext->IsRootContentDocument(),
                "Didn't get a root prescontext from "
-               "GetToplevelContentDocumentPresContext?");
+               "GetInProcessRootContentDocumentPresContext?");
     presContext->PresShell()->ScheduleApproximateFrameVisibilityUpdateNow();
     return;
   }
@@ -5950,7 +5999,7 @@ void PresShell::Paint(nsView* aViewToPaint, const nsRegion& aDirtyRegion,
   if (contentRoot) {
     uri = contentRoot->GetDocumentURI();
   }
-  url = uri ? uri->GetSpecOrDefault() : NS_LITERAL_CSTRING("N/A");
+  url = uri ? uri->GetSpecOrDefault() : "N/A"_ns;
 #ifdef MOZ_GECKO_PROFILER
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("PresShell::Paint", GRAPHICS, url);
 #endif
@@ -6360,8 +6409,8 @@ void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
           mPresContext, aEvent->mWidget, aEvent->mRefPoint, rootView);
       mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
     } else {
-      mMouseLocation =
-          nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, rootFrame);
+      mMouseLocation = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+          aEvent, RelativeTo{rootFrame, ViewportType::Visual});
       mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
     }
 #ifdef DEBUG_MOUSE_LOCATION
@@ -6386,6 +6435,14 @@ void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
     printf("[ps=%p]got mouse exit for %p\n", this, aEvent->mWidget);
     printf("[ps=%p]clearing mouse location\n", this);
 #endif
+  }
+}
+
+void PresShell::nsSynthMouseMoveEvent::Revoke() {
+  if (mPresShell) {
+    mPresShell->GetPresContext()->RefreshDriver()->RemoveRefreshObserver(
+        this, FlushType::Display);
+    mPresShell = nullptr;
   }
 }
 
@@ -6701,7 +6758,7 @@ nsresult PresShell::EventHandler::HandleEventUsingCoordinates(
            eventTargetData.mFrame->GetContent(), capturingContent))) {
     // A check was already done above to ensure that capturingContent is
     // in this presshell.
-    NS_ASSERTION(capturingContent->GetComposedDoc() == GetDocument(),
+    NS_ASSERTION(capturingContent->OwnerDoc() == GetDocument(),
                  "Unexpected document");
     nsIFrame* capturingFrame = capturingContent->GetPrimaryFrame();
     if (capturingFrame) {
@@ -6791,13 +6848,41 @@ bool PresShell::EventHandler::MaybeFlushPendingNotifications(
   }
 }
 
+// The type of coordinates to use for hit-testing input events
+// that are relative to the RCD's viewport frame.
+// On most platforms, use visual coordinates so that scrollbars
+// can be targeted.
+// On mobile, use layout coordinates because hit-testing in
+// visual coordinates clashes with mobile viewport sizing, where
+// the ViewportFrame is sized to the initial containing block
+// (ICB) size, which is in layout coordinates. This is fine
+// because we don't need to be able to target scrollbars on mobile
+// (scrollbar dragging isn't supported).
+static ViewportType ViewportTypeForInputEventsRelativeToRoot() {
+#ifdef MOZ_WIDGET_ANDROID
+  return ViewportType::Layout;
+#else
+  return ViewportType::Visual;
+#endif
+}
+
 nsIFrame* PresShell::EventHandler::GetFrameToHandleNonTouchEvent(
     nsIFrame* aRootFrameToHandleEvent, WidgetGUIEvent* aGUIEvent) {
   MOZ_ASSERT(aGUIEvent);
   MOZ_ASSERT(aGUIEvent->mClass != eTouchEventClass);
 
-  nsPoint eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-      aGUIEvent, aRootFrameToHandleEvent);
+  ViewportType viewportType = ViewportType::Layout;
+  if (aRootFrameToHandleEvent->Type() == LayoutFrameType::Viewport) {
+    nsPresContext* pc = aRootFrameToHandleEvent->PresContext();
+    if (pc->IsChrome()) {
+      viewportType = ViewportType::Visual;
+    } else if (pc->IsRootContentDocument()) {
+      viewportType = ViewportTypeForInputEventsRelativeToRoot();
+    }
+  }
+  RelativeTo relativeTo{aRootFrameToHandleEvent, viewportType};
+  nsPoint eventPoint =
+      nsLayoutUtils::GetEventCoordinatesRelativeTo(aGUIEvent, relativeTo);
 
   uint32_t flags = 0;
   if (aGUIEvent->mClass == eMouseEventClass) {
@@ -6807,8 +6892,8 @@ nsIFrame* PresShell::EventHandler::GetFrameToHandleNonTouchEvent(
     }
   }
 
-  nsIFrame* targetFrame = FindFrameTargetedByInputEvent(
-      aGUIEvent, aRootFrameToHandleEvent, eventPoint, flags);
+  nsIFrame* targetFrame =
+      FindFrameTargetedByInputEvent(aGUIEvent, relativeTo, eventPoint, flags);
   if (!targetFrame) {
     return aRootFrameToHandleEvent;
   }
@@ -6837,8 +6922,8 @@ nsIFrame* PresShell::EventHandler::GetFrameToHandleNonTouchEvent(
   }
 
   // Finally, we need to recompute the target with the latest layout.
-  targetFrame = FindFrameTargetedByInputEvent(
-      aGUIEvent, aRootFrameToHandleEvent, eventPoint, flags);
+  targetFrame =
+      FindFrameTargetedByInputEvent(aGUIEvent, relativeTo, eventPoint, flags);
 
   return targetFrame ? targetFrame : aRootFrameToHandleEvent;
 }
@@ -7294,8 +7379,7 @@ bool PresShell::EventHandler::MaybeDiscardOrDelayMouseEvent(
 
   nsCOMPtr<EventTarget> eventTarget = aGUIEvent->mTarget;
   RefPtr<Event> event = EventDispatcher::CreateEvent(
-      eventTarget, aFrameToHandleEvent->PresContext(), aGUIEvent,
-      EmptyString());
+      eventTarget, aFrameToHandleEvent->PresContext(), aGUIEvent, u""_ns);
 
   suppressedListener->HandleEvent(*event);
   return true;
@@ -7450,7 +7534,7 @@ PresShell::EventHandler::ComputeRootFrameToHandleEventWithCapturingContent(
 
   // A check was already done above to ensure that aCapturingContent is
   // in this presshell.
-  NS_ASSERTION(aCapturingContent->GetComposedDoc() == GetDocument(),
+  NS_ASSERTION(aCapturingContent->OwnerDoc() == GetDocument(),
                "Unexpected document");
   nsIFrame* captureFrame = aCapturingContent->GetPrimaryFrame();
   if (!captureFrame) {
@@ -8568,6 +8652,12 @@ bool PresShell::EventHandler::AdjustContextMenuKeyEvent(
   if (PrepareToUseCaretPosition(MOZ_KnownLive(aMouseEvent->mWidget),
                                 caretPoint)) {
     // caret position is good
+    int32_t devPixelRatio = GetPresContext()->AppUnitsPerDevPixel();
+    caretPoint = LayoutDeviceIntPoint::FromAppUnitsToNearest(
+        ViewportUtils::LayoutToVisual(
+            LayoutDeviceIntPoint::ToAppUnits(caretPoint, devPixelRatio),
+            GetPresContext()->PresShell()),
+        devPixelRatio);
     aMouseEvent->mRefPoint = caretPoint;
     return true;
   }
@@ -9172,8 +9262,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
 #ifdef MOZ_GECKO_PROFILER
   nsIURI* uri = mDocument->GetDocumentURI();
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING(
-      "Reflow", LAYOUT_Reflow,
-      uri ? uri->GetSpecOrDefault() : NS_LITERAL_CSTRING("N/A"));
+      "Reflow", LAYOUT_Reflow, uri ? uri->GetSpecOrDefault() : "N/A"_ns);
 #endif
 
   gfxTextPerfMetrics* tp = mPresContext->GetTextPerfMetrics();
@@ -9239,7 +9328,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
     size = target->GetLogicalSize();
   }
 
-  nsOverflowAreas oldOverflow;  // initialized and used only when !isRoot
+  OverflowAreas oldOverflow;  // initialized and used only when !isRoot
   if (!isRoot) {
     oldOverflow = target->GetOverflowAreas();
   }
@@ -9251,7 +9340,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
   // constrained height implies page/column breaking.
   LogicalSize reflowSize(wm, size.ISize(wm), NS_UNCONSTRAINEDSIZE);
   ReflowInput reflowInput(mPresContext, target, rcx, reflowSize,
-                          ReflowInput::CALLER_WILL_INIT);
+                          ReflowInput::InitFlag::CallerWillInit);
   reflowInput.mOrthogonalLimit = size.BSize(wm);
 
   if (isRoot) {
@@ -9275,9 +9364,9 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
     // Initialize reflow input with current used border and padding,
     // in case this was set specially by the parent frame when the reflow root
     // was reflowed by its parent.
-    nsMargin currentBorder = target->GetUsedBorder();
-    nsMargin currentPadding = target->GetUsedPadding();
-    reflowInput.Init(mPresContext, Nothing(), &currentBorder, &currentPadding);
+    reflowInput.Init(mPresContext, Nothing(),
+                     Some(target->GetLogicalUsedBorder(wm)),
+                     Some(target->GetLogicalUsedPadding(wm)));
   }
 
   // fix the computed height
@@ -9286,14 +9375,15 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
   if (size.BSize(wm) != NS_UNCONSTRAINEDSIZE) {
     nscoord computedBSize =
         size.BSize(wm) -
-        reflowInput.ComputedLogicalBorderPadding().BStartEnd(wm);
+        reflowInput.ComputedLogicalBorderPadding(wm).BStartEnd(wm);
     computedBSize = std::max(computedBSize, 0);
     reflowInput.SetComputedBSize(computedBSize);
   }
-  NS_ASSERTION(reflowInput.ComputedISize() ==
-                   size.ISize(wm) -
-                       reflowInput.ComputedLogicalBorderPadding().IStartEnd(wm),
-               "reflow input computed incorrect inline size");
+  NS_ASSERTION(
+      reflowInput.ComputedISize() ==
+          size.ISize(wm) -
+              reflowInput.ComputedLogicalBorderPadding(wm).IStartEnd(wm),
+      "reflow input computed incorrect inline size");
 
   mPresContext->ReflowStarted(aInterruptible);
   mIsReflowing = true;
@@ -9318,7 +9408,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
   target->SetSize(boundsRelativeToTarget.Size());
 
   // Always use boundsRelativeToTarget here, not
-  // desiredSize.GetVisualOverflowArea(), because for root frames (where they
+  // desiredSize.InkOverflowRect(), because for root frames (where they
   // could be different, since root frames are allowed to have overflow) the
   // root view bounds need to match the viewport bounds; the view manager
   // "window dimensions" code depends on it.
@@ -9358,7 +9448,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
     for (auto iter = mFramesToDirty.Iter(); !iter.Done(); iter.Next()) {
       // Mark frames dirty until target frame.
       nsPtrHashKey<nsIFrame>* p = iter.Get();
-      for (nsIFrame* f = p->GetKey(); f && !NS_SUBTREE_DIRTY(f);
+      for (nsIFrame* f = p->GetKey(); f && !f->IsSubtreeDirty();
            f = f->GetParent()) {
         f->AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
         if (f->IsFlexItem()) {
@@ -9371,11 +9461,11 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
       }
     }
 
-    NS_ASSERTION(NS_SUBTREE_DIRTY(target), "Why is the target not dirty?");
+    NS_ASSERTION(target->IsSubtreeDirty(), "Why is the target not dirty?");
     mDirtyRoots.Add(target);
     SetNeedLayoutFlush();
 
-    // Clear mFramesToDirty after we've done the NS_SUBTREE_DIRTY(target)
+    // Clear mFramesToDirty after we've done the target->IsSubtreeDirty()
     // assertion so that if it fails it's easier to see what's going on.
 #ifdef NOISY_INTERRUPTIBLE_REFLOW
     printf("mFramesToDirty.Count() == %u\n", mFramesToDirty.Count());
@@ -9466,7 +9556,7 @@ bool PresShell::ProcessReflowCommands(bool aInterruptible) {
         // Send an incremental reflow notification to the target frame.
         nsIFrame* target = mDirtyRoots.PopShallowestRoot();
 
-        if (!NS_SUBTREE_DIRTY(target)) {
+        if (!target->IsSubtreeDirty()) {
           // It's not dirty anymore, which probably means the notification
           // was posted in the middle of a reflow (perhaps with a reflow
           // root in the middle).  Don't do anything.
@@ -10036,13 +10126,20 @@ void PresShell::ListComputedStyles(FILE* out, int32_t aIndent) {
     }
   }
 }
+#endif
 
+#if defined(DEBUG) || defined(MOZ_LAYOUT_DEBUGGER)
 void PresShell::ListStyleSheets(FILE* out, int32_t aIndent) {
-  int32_t sheetCount = StyleSet()->SheetCount(StyleOrigin::Author);
-  for (int32_t i = 0; i < sheetCount; ++i) {
-    StyleSet()->SheetAt(StyleOrigin::Author, i)->List(out, aIndent);
-    fputs("\n", out);
-  }
+  auto ListStyleSheetsAtOrigin = [this, out, aIndent](StyleOrigin origin) {
+    int32_t sheetCount = StyleSet()->SheetCount(origin);
+    for (int32_t i = 0; i < sheetCount; ++i) {
+      StyleSet()->SheetAt(origin, i)->List(out, aIndent);
+    }
+  };
+
+  ListStyleSheetsAtOrigin(StyleOrigin::UserAgent);
+  ListStyleSheetsAtOrigin(StyleOrigin::User);
+  ListStyleSheetsAtOrigin(StyleOrigin::Author);
 }
 #endif
 
@@ -10768,21 +10865,39 @@ void PresShell::ResetVisualViewportSize() {
 
 bool PresShell::SetVisualViewportOffset(const nsPoint& aScrollOffset,
                                         const nsPoint& aPrevLayoutScrollPos) {
+  nsPoint newOffset = aScrollOffset;
+  nsIScrollableFrame* rootScrollFrame = GetRootScrollFrameAsScrollable();
+  if (rootScrollFrame) {
+    // See the comment in nsHTMLScrollFrame::Reflow above the call to
+    // SetVisualViewportOffset for why we need to do this.
+    nsRect scrollRange = rootScrollFrame->GetScrollRangeForUserInputEvents();
+    if (!scrollRange.Contains(newOffset)) {
+      newOffset.x = std::min(newOffset.x, scrollRange.XMost());
+      newOffset.x = std::max(newOffset.x, scrollRange.x);
+      newOffset.y = std::min(newOffset.y, scrollRange.YMost());
+      newOffset.y = std::max(newOffset.y, scrollRange.y);
+    }
+  }
+
   nsPoint prevOffset = GetVisualViewportOffset();
-  if (prevOffset == aScrollOffset) {
+  if (prevOffset == newOffset) {
     return false;
   }
 
-  mVisualViewportOffset = Some(aScrollOffset);
+  mVisualViewportOffset = Some(newOffset);
 
   if (auto* window = nsGlobalWindowInner::Cast(mDocument->GetInnerWindow())) {
     window->VisualViewport()->PostScrollEvent(prevOffset, aPrevLayoutScrollPos);
   }
 
-  if (IsVisualViewportSizeSet()) {
+  if (IsVisualViewportSizeSet() && rootScrollFrame) {
+    rootScrollFrame->Anchor()->UserScrolled();
+  }
+
+  if (gfxPlatform::UseDesktopZoomingScrollbars()) {
     if (nsIScrollableFrame* rootScrollFrame =
             GetRootScrollFrameAsScrollable()) {
-      rootScrollFrame->Anchor()->UserScrolled();
+      rootScrollFrame->UpdateScrollbarPosition();
     }
   }
 
@@ -11048,14 +11163,15 @@ nsIContent* PresShell::EventHandler::GetOverrideClickTarget(
   WidgetMouseEvent* mouseEvent = aGUIEvent->AsMouseEvent();
 
   uint32_t flags = 0;
+  RelativeTo relativeTo{aFrame};
   nsPoint eventPoint =
-      nsLayoutUtils::GetEventCoordinatesRelativeTo(aGUIEvent, aFrame);
+      nsLayoutUtils::GetEventCoordinatesRelativeTo(aGUIEvent, relativeTo);
   if (mouseEvent->mIgnoreRootScrollFrame) {
     flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
   }
 
   nsIFrame* target =
-      FindFrameTargetedByInputEvent(aGUIEvent, aFrame, eventPoint, flags);
+      FindFrameTargetedByInputEvent(aGUIEvent, relativeTo, eventPoint, flags);
   if (!target) {
     return nullptr;
   }
@@ -11278,4 +11394,8 @@ void PresShell::EndPaint() {
       return true;
     });
   }
+}
+
+bool PresShell::GetZoomableByAPZ() const {
+  return mZoomConstraintsClient && mZoomConstraintsClient->GetAllowZoom();
 }

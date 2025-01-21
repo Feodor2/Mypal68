@@ -88,12 +88,14 @@ skip-if(!asyncPan) == checkerboard-3.html checkerboard-3-ref.html
 skip-if(!asyncPan) == position-sticky-in-checkerboard-land-1.html position-sticky-in-checkerboard-land-1-ref.html
 default-preferences
 
-skip-if(!Android) pref(apz.allow_zooming,true) fails-if(geckoview&&webrender) == position-fixed-async-zoom-1.html position-fixed-async-zoom-1-ref.html
+skip-if(!Android) pref(apz.allow_zooming,true) == position-fixed-async-zoom-1.html position-fixed-async-zoom-1-ref.html
 skip-if(!Android) pref(apz.allow_zooming,true) == position-fixed-async-zoom-2.html position-fixed-async-zoom-2-ref.html
 skip-if(!Android) pref(apz.allow_zooming,true) == position-fixed-async-zoom-3.html position-fixed-async-zoom-3-ref.html
 skip-if(!Android) pref(apz.allow_zooming,true) == position-fixed-async-zoom-4.html position-fixed-async-zoom-4-ref.html
-skip-if(!Android) pref(apz.allow_zooming,true) fails-if(geckoview&&webrender) == position-sticky-async-zoom-1.html position-sticky-async-zoom-1-ref.html
+skip-if(!Android) pref(apz.allow_zooming,true) == position-sticky-async-zoom-1.html position-sticky-async-zoom-1-ref.html
 skip-if(!Android) pref(apz.allow_zooming,true) == position-sticky-async-zoom-2.html position-sticky-async-zoom-2-ref.html
+
+fuzzy-if(!webrender,111-112,600-600) pref(apz.allow_zooming,true) == async-scroll-and-zoom.html async-scroll-and-zoom-ref.html
 
 # for this test, apz.allow_zooming is needed to ensure we take the containerless scrolling codepath that creates
 # an async zoom container (since we are testing a regression in that codepath)

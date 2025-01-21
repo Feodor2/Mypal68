@@ -159,23 +159,7 @@ class nsTextFrame : public nsIFrame {
    protected:
     void SetupJustificationSpacing(bool aPostReflow);
 
-    void InitFontGroupAndFontMetrics() const {
-      if (!mFontMetrics) {
-        if (mWhichTextRun == nsTextFrame::eInflated) {
-          if (!mFrame->InflatedFontMetrics()) {
-            float inflation = mFrame->GetFontSizeInflation();
-            mFontMetrics =
-                nsLayoutUtils::GetFontMetricsForFrame(mFrame, inflation);
-            mFrame->SetInflatedFontMetrics(mFontMetrics);
-          } else {
-            mFontMetrics = mFrame->InflatedFontMetrics();
-          }
-        } else {
-          mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(mFrame, 1.0f);
-        }
-      }
-      mFontGroup = mFontMetrics->GetThebesFontGroup();
-    }
+    void InitFontGroupAndFontMetrics() const;
 
     const RefPtr<gfxTextRun> mTextRun;
     mutable gfxFontGroup* mFontGroup;
@@ -410,11 +394,13 @@ class nsTextFrame : public nsIFrame {
                          InlineMinISizeData* aData) override;
   void AddInlinePrefISize(gfxContext* aRenderingContext,
                           InlinePrefISizeData* aData) override;
-  mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) final;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) final;
   nsRect ComputeTightBounds(DrawTarget* aDrawTarget) const final;
   nsresult GetPrefWidthTightBounds(gfxContext* aContext, nscoord* aX,
                                    nscoord* aXMost) final;
@@ -438,8 +424,8 @@ class nsTextFrame : public nsIFrame {
       TrailingWhitespace aTrimTrailingWhitespace =
           TrailingWhitespace::Trim) final;
 
-  nsOverflowAreas RecomputeOverflow(nsIFrame* aBlockFrame,
-                                    bool aIncludeShadows = true);
+  mozilla::OverflowAreas RecomputeOverflow(nsIFrame* aBlockFrame,
+                                           bool aIncludeShadows = true);
 
   enum TextRunType : uint8_t {
     // Anything in reflow (but not intrinsic width calculation) or
@@ -761,8 +747,8 @@ class nsTextFrame : public nsIFrame {
 
   bool IsInitialLetterChild() const;
 
-  bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) final;
-  bool ComputeCustomOverflowInternal(nsOverflowAreas& aOverflowAreas,
+  bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) final;
+  bool ComputeCustomOverflowInternal(mozilla::OverflowAreas& aOverflowAreas,
                                      bool aIncludeShadows);
 
   void AssignJustificationGaps(const mozilla::JustificationAssignment& aAssign);
@@ -824,7 +810,7 @@ class nsTextFrame : public nsIFrame {
 
   void UnionAdditionalOverflow(nsPresContext* aPresContext, nsIFrame* aBlock,
                                PropertyProvider& aProvider,
-                               nsRect* aVisualOverflowRect,
+                               nsRect* aInkOverflowRect,
                                bool aIncludeTextDecorations,
                                bool aIncludeShadows);
 

@@ -40,39 +40,41 @@
 
 #include "nsBoxFrame.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "gfxUtils.h"
-#include "mozilla/gfx/2D.h"
-#include "nsBoxLayoutState.h"
-#include "mozilla/dom/Touch.h"
-#include "mozilla/Move.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/EventStateManager.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/Touch.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "nsBoxLayout.h"
+#include "nsBoxLayoutState.h"
+#include "nsCOMPtr.h"
+#include "nsCSSAnonBoxes.h"
+#include "nsCSSRendering.h"
+#include "nsContainerFrame.h"
+#include "nsDisplayList.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLParts.h"
+#include "nsIContent.h"
+#include "nsIFrameInlines.h"
+#include "nsIScrollableFrame.h"
+#include "nsITheme.h"
+#include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
 #include "nsPlaceholderFrame.h"
 #include "nsPresContext.h"
-#include "nsCOMPtr.h"
-#include "nsNameSpaceManager.h"
-#include "nsGkAtoms.h"
-#include "nsIContent.h"
-#include "nsHTMLParts.h"
-#include "nsViewManager.h"
-#include "nsView.h"
-#include "nsCSSRendering.h"
-#include "nsBoxLayout.h"
-#include "nsSprocketLayout.h"
-#include "nsIScrollableFrame.h"
-#include "nsWidgetsCID.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsContainerFrame.h"
-#include "nsITheme.h"
-#include "nsTransform2D.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "nsDisplayList.h"
-#include "mozilla/Preferences.h"
-#include "nsStyleConsts.h"
-#include "nsLayoutUtils.h"
 #include "nsSliderFrame.h"
-#include <algorithm>
+#include "nsSprocketLayout.h"
+#include "nsStyleConsts.h"
+#include "nsTransform2D.h"
+#include "nsView.h"
+#include "nsViewManager.h"
+#include "nsWidgetsCID.h"
 
 // Needed for Print Preview
 
@@ -590,7 +592,7 @@ void nsBoxFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
   WritingMode wm = aReflowInput.GetWritingMode();
   LogicalSize computedSize = aReflowInput.ComputedSize();
 
-  LogicalMargin m = aReflowInput.ComputedLogicalBorderPadding();
+  LogicalMargin m = aReflowInput.ComputedLogicalBorderPadding(wm);
   // GetXULBorderAndPadding(m);
 
   LogicalSize prefSize(wm);
@@ -614,7 +616,7 @@ void nsBoxFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
     computedSize.BSize(wm) = prefSize.BSize(wm);
     // prefSize is border-box but min/max constraints are content-box.
     nscoord blockDirBorderPadding =
-        aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm);
+        aReflowInput.ComputedLogicalBorderPadding(wm).BStartEnd(wm);
     nscoord contentBSize = computedSize.BSize(wm) - blockDirBorderPadding;
     // Note: contentHeight might be negative, but that's OK because min-height
     // is never negative.
@@ -1051,15 +1053,6 @@ nsresult nsBoxFrame::AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
 void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                   const nsDisplayListSet& aLists) {
   bool forceLayer = false;
-  // We check the renderroot attribute here in nsBoxFrame for lack of a better
-  // place. This roughly mirrors the pre-existing "layer" attribute. In the
-  // long term we may want to add a specific element in which we can wrap
-  // alternate renderroot content, but we're electing to not go down that
-  // rabbit hole today.
-#ifdef MOZ_BUILD_WEBRENDER
-  wr::RenderRoot renderRoot =
-      gfxUtils::GetRenderRootForFrame(this).valueOr(wr::RenderRoot::Default);
-#endif
 
   if (GetContent()->IsXULElement()) {
     // forcelayer is only supported on XUL elements with box layout
@@ -1078,23 +1071,12 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   nsDisplayListCollection tempLists(aBuilder);
-  const nsDisplayListSet& destination =
-      (forceLayer
-#ifdef MOZ_BUILD_WEBRENDER
-       || renderRoot != wr::RenderRoot::Default
-#endif
-       )
-          ? tempLists
-          : aLists;
+  const nsDisplayListSet& destination = (forceLayer) ? tempLists : aLists;
 
   DisplayBorderBackgroundOutline(aBuilder, destination);
 
   Maybe<nsDisplayListBuilder::AutoContainerASRTracker> contASRTracker;
-  if (forceLayer
-#ifdef MOZ_BUILD_WEBRENDER
-      || renderRoot != wr::RenderRoot::Default
-#endif
-  ) {
+  if (forceLayer) {
     contASRTracker.emplace(aBuilder);
   }
 
@@ -1103,11 +1085,7 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // see if we have to draw a selection frame around this container
   DisplaySelectionOverlay(aBuilder, destination.Content());
 
-  if (forceLayer
-#ifdef MOZ_BUILD_WEBRENDER
-      || renderRoot != wr::RenderRoot::Default
-#endif
-  ) {
+  if (forceLayer) {
     // This is a bit of a hack. Collect up all descendant display items
     // and merge them into a single Content() list. This can cause us
     // to violate CSS stacking order, but forceLayer is a magic
@@ -1122,22 +1100,11 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     const ActiveScrolledRoot* ownLayerASR = contASRTracker->GetContainerASR();
     DisplayListClipState::AutoSaveRestore ownLayerClipState(aBuilder);
 
-#ifdef MOZ_BUILD_WEBRENDER
-    if (forceLayer) {
-      MOZ_ASSERT(renderRoot == wr::RenderRoot::Default);
-#endif
-      // Wrap the list to make it its own layer
-      aLists.Content()->AppendNewToTopWithIndex<nsDisplayOwnLayer>(
-          aBuilder, this, /* aIndex = */ nsDisplayOwnLayer::OwnLayerForBoxFrame,
-          &masterList, ownLayerASR, nsDisplayOwnLayerFlags::None,
-          mozilla::layers::ScrollbarData{}, true, true);
-#ifdef MOZ_BUILD_WEBRENDER
-    } else {
-      MOZ_ASSERT(!XRE_IsContentProcess());
-      aLists.Content()->AppendNewToTop<nsDisplayRenderRoot>(
-          aBuilder, this, &masterList, ownLayerASR, renderRoot);
-    }
-#endif
+    // Wrap the list to make it its own layer
+    aLists.Content()->AppendNewToTopWithIndex<nsDisplayOwnLayer>(
+        aBuilder, this, /* aIndex = */ nsDisplayOwnLayer::OwnLayerForBoxFrame,
+        &masterList, ownLayerASR, nsDisplayOwnLayerFlags::None,
+        mozilla::layers::ScrollbarData{}, true, true);
   }
 }
 
@@ -1156,7 +1123,7 @@ void nsBoxFrame::BuildDisplayListForChildren(nsDisplayListBuilder* aBuilder,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsBoxFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Box"), aResult);
+  return MakeFrameName(u"Box"_ns, aResult);
 }
 #endif
 
@@ -1216,7 +1183,7 @@ nsresult nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox,
   nsRect oldRect(aBox->GetRect());
   aBox->SetXULBounds(aState, aRect);
 
-  bool layout = NS_SUBTREE_DIRTY(aBox);
+  bool layout = aBox->IsSubtreeDirty();
 
   if (layout ||
       (oldRect.width != aRect.width || oldRect.height != aRect.height)) {
@@ -1366,7 +1333,8 @@ void nsBoxFrame::WrapListsInRedirector(nsDisplayListBuilder* aBuilder,
 bool nsBoxFrame::GetEventPoint(WidgetGUIEvent* aEvent, nsPoint& aPoint) {
   LayoutDeviceIntPoint refPoint;
   bool res = GetEventPoint(aEvent, refPoint);
-  aPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, refPoint, this);
+  aPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, refPoint,
+                                                        RelativeTo{this});
   return res;
 }
 

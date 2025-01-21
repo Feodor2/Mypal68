@@ -5,7 +5,14 @@
 #ifndef NSSUBDOCUMENTFRAME_H_
 #define NSSUBDOCUMENTFRAME_H_
 
+#include "Layers.h"
+#include "LayerState.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/ipc/IdType.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderScrollData.h"
+#endif
+#include "nsDisplayList.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsIReflowCallback.h"
 #include "nsFrameLoader.h"
@@ -53,19 +60,23 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
   mozilla::IntrinsicSize GetIntrinsicSize() override;
-  mozilla::AspectRatio GetIntrinsicRatio() override;
+  mozilla::AspectRatio GetIntrinsicRatio() const override;
 
   mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
-  mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput,
@@ -89,7 +100,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   mozilla::a11y::AccType AccessibleType() override;
 #endif
 
-  nsIDocShell* GetDocShell();
+  nsIDocShell* GetDocShell() const;
   nsresult BeginSwapDocShells(nsIFrame* aOther);
   void EndSwapDocShells(nsIFrame* aOther);
   nsView* EnsureInnerView();
@@ -125,13 +136,21 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
  protected:
   friend class AsyncFrameInit;
 
-  // Helper method to look up the HTML marginwidth & marginheight attributes.
-  mozilla::CSSIntSize GetMarginAttributes();
-
   bool IsInline() { return mIsInline; }
 
-  nscoord GetIntrinsicISize();
-  nscoord GetIntrinsicBSize();
+  nscoord GetIntrinsicBSize() {
+    auto size = GetIntrinsicSize();
+    Maybe<nscoord> bSize =
+        GetWritingMode().IsVertical() ? size.width : size.height;
+    return bSize.valueOr(0);
+  }
+
+  nscoord GetIntrinsicISize() {
+    auto size = GetIntrinsicSize();
+    Maybe<nscoord> iSize =
+        GetWritingMode().IsVertical() ? size.height : size.width;
+    return iSize.valueOr(0);
+  }
 
   // Show our document viewer. The document viewer is hidden via a script
   // runner, so that we can save and restore the presentation if we're
@@ -146,7 +165,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
    * Called "Obtain*" and not "Get*" because of comment on GetDocShell that
    * says it should be called ObtainDocShell because of its side effects.
    */
-  nsIFrame* ObtainIntrinsicSizeFrame();
+  nsIFrame* ObtainIntrinsicSizeFrame() const;
 
   nsView* GetViewInternal() const override { return mOuterView; }
   void SetViewInternal(nsView* aView) override { mOuterView = aView; }
@@ -159,6 +178,60 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   bool mPostedReflowCallback;
   bool mDidCreateDoc;
   bool mCallingShow;
+};
+
+/**
+ * A nsDisplayRemote will graft a remote frame's shadow layer tree (for a given
+ * nsFrameLoader) into its parent frame's layer tree.
+ */
+class nsDisplayRemote final : public nsPaintedDisplayItem {
+  typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
+  typedef mozilla::dom::TabId TabId;
+  typedef mozilla::gfx::Matrix4x4 Matrix4x4;
+  typedef mozilla::layers::EventRegionsOverride EventRegionsOverride;
+  typedef mozilla::layers::Layer Layer;
+  typedef mozilla::layers::LayersId LayersId;
+  typedef mozilla::layers::RefLayer RefLayer;
+  typedef mozilla::layers::StackingContextHelper StackingContextHelper;
+  typedef mozilla::LayerState LayerState;
+  typedef mozilla::LayoutDeviceRect LayoutDeviceRect;
+  typedef mozilla::LayoutDeviceIntPoint LayoutDeviceIntPoint;
+
+ public:
+  nsDisplayRemote(nsDisplayListBuilder* aBuilder, nsSubDocumentFrame* aFrame);
+
+  LayerState GetLayerState(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aParameters) override;
+
+  already_AddRefed<Layer> BuildLayer(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aContainerParameters) override;
+
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+
+#ifdef MOZ_BUILD_WEBRENDER
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+  bool UpdateScrollData(
+      mozilla::layers::WebRenderScrollData* aData,
+      mozilla::layers::WebRenderLayerScrollData* aLayerData) override;
+#endif
+
+  NS_DISPLAY_DECL_NAME("Remote", TYPE_REMOTE)
+
+ private:
+  friend class nsDisplayItemBase;
+  nsFrameLoader* GetFrameLoader() const;
+
+  TabId mTabId;
+  LayersId mLayersId;
+  LayoutDeviceIntPoint mOffset;
+  EventRegionsOverride mEventRegionsOverride;
 };
 
 #endif /* NSSUBDOCUMENTFRAME_H_ */

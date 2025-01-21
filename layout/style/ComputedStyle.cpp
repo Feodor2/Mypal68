@@ -53,14 +53,14 @@ static bool ContainingBlockMayHaveChanged(const ComputedStyle& aOldStyle,
   auto* oldDisp = aOldStyle.StyleDisplay();
   auto* newDisp = aNewStyle.StyleDisplay();
 
-  if (oldDisp->IsAbsPosContainingBlockForNonSVGTextFrames() !=
-        newDisp->IsAbsPosContainingBlockForNonSVGTextFrames()) {
+  if (oldDisp->IsPositionedStyle() != newDisp->IsPositionedStyle()) {
     return true;
   }
 
   bool fixedCB =
       oldDisp->IsFixedPosContainingBlockForNonSVGTextFrames(aOldStyle);
-  if (fixedCB != newDisp->IsFixedPosContainingBlockForNonSVGTextFrames(aNewStyle)) {
+  if (fixedCB !=
+      newDisp->IsFixedPosContainingBlockForNonSVGTextFrames(aNewStyle)) {
     return true;
   }
   // If we were both before and after a fixed-pos containing-block that means
@@ -76,12 +76,13 @@ static bool ContainingBlockMayHaveChanged(const ComputedStyle& aOldStyle,
   // few frame types support transforms but not contain: layout/paint (e.g.,
   // table rows and row groups, many SVG frames).
   if (oldDisp->IsFixedPosContainingBlockForTransformSupportingFrames() !=
-        newDisp->IsFixedPosContainingBlockForTransformSupportingFrames()) {
+      newDisp->IsFixedPosContainingBlockForTransformSupportingFrames()) {
     return true;
   }
-  if (oldDisp->IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames() !=
-        newDisp
-        ->IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames()) {
+  if (oldDisp
+          ->IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames() !=
+      newDisp
+          ->IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames()) {
     return true;
   }
   return false;
@@ -170,6 +171,7 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   DO_STRUCT_DIFFERENCE(TextReset);
   DO_STRUCT_DIFFERENCE(Effects);
   DO_STRUCT_DIFFERENCE(Background);
+  DO_STRUCT_DIFFERENCE(Page);
 
 #undef DO_STRUCT_DIFFERENCE
 #undef DO_STRUCT_DIFFERENCE_WITH_ARGS

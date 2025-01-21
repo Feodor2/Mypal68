@@ -47,10 +47,18 @@ class GroupRule : public Rule {
   void DropSheetReference() override;
 
  public:
-  int32_t StyleRuleCount() const { return mRuleList->Length(); }
+  int32_t StyleRuleCount() const { return mRuleList ? mRuleList->Length() : 0; }
 
   Rule* GetStyleRuleAt(int32_t aIndex) const {
-    return mRuleList->GetRule(aIndex);
+    return mRuleList ? mRuleList->GetRule(aIndex) : nullptr;
+  }
+
+  void SetRawAfterClone(RefPtr<ServoCssRules> aRules) {
+    if (mRuleList) {
+      mRuleList->SetRawAfterClone(std::move(aRules));
+    } else {
+      MOZ_ASSERT(!aRules, "Can't move from having no rules to having rules");
+    }
   }
 
   /*
@@ -58,6 +66,9 @@ class GroupRule : public Rule {
    * WillDirty() on the parent stylesheet.
    */
   nsresult DeleteStyleRuleAt(uint32_t aIndex) {
+    if (!mRuleList) {
+      return NS_OK;
+    }
     return mRuleList->DeleteRule(aIndex);
   }
 
@@ -66,8 +77,8 @@ class GroupRule : public Rule {
   size_t SizeOfIncludingThis(MallocSizeOf) const override = 0;
 
   // WebIDL API
-  dom::CSSRuleList* CssRules() { return mRuleList; }
-  uint32_t InsertRule(const nsAString& aRule, uint32_t aIndex,
+  ServoCSSRuleList* GetCssRules() { return mRuleList; }
+  uint32_t InsertRule(const nsACString& aRule, uint32_t aIndex,
                       ErrorResult& aRv);
   void DeleteRule(uint32_t aIndex, ErrorResult& aRv);
 
@@ -81,8 +92,8 @@ class ConditionRule : public GroupRule {
   using GroupRule::GroupRule;
 
  public:
-  virtual void GetConditionText(nsAString& aConditionText) = 0;
-  virtual void SetConditionText(const nsAString& aConditionText,
+  virtual void GetConditionText(nsACString& aConditionText) = 0;
+  virtual void SetConditionText(const nsACString& aConditionText,
                                 ErrorResult& aRv) = 0;
 };
 

@@ -517,11 +517,6 @@ static EnumSet<nsLayoutUtils::FrameForPointOption> GetHitTestOptions() {
   EnumSet<nsLayoutUtils::FrameForPointOption> options = {
       nsLayoutUtils::FrameForPointOption::IgnorePaintSuppression,
       nsLayoutUtils::FrameForPointOption::IgnoreCrossDoc};
-#ifdef MOZ_WIDGET_ANDROID
-  // On Android, we need IgnoreRootScrollFrame for correct hit testing when
-  // zoomed in or out.
-  options += nsLayoutUtils::FrameForPointOption::IgnoreRootScrollFrame;
-#endif
   return options;
 }
 
@@ -547,8 +542,8 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
   }
 
   // Find the frame under point.
-  AutoWeakFrame ptFrame =
-      nsLayoutUtils::GetFrameForPoint(rootFrame, aPoint, GetHitTestOptions());
+  AutoWeakFrame ptFrame = nsLayoutUtils::GetFrameForPoint(
+      RelativeTo{rootFrame}, aPoint, GetHitTestOptions());
   if (!ptFrame.GetFrame()) {
     return NS_ERROR_FAILURE;
   }
@@ -568,7 +563,8 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
   // something under the original point will be selected, which may not be the
   // original text the user wants to select.
   nsPoint ptInFrame = aPoint;
-  nsLayoutUtils::TransformPoint(rootFrame, ptFrame, ptInFrame);
+  nsLayoutUtils::TransformPoint(RelativeTo{rootFrame}, RelativeTo{ptFrame},
+                                ptInFrame);
 
   // Firstly check long press on an empty editable content.
   Element* newFocusEditingHost = GetEditingHostForFrame(ptFrame);
@@ -927,8 +923,7 @@ void AccessibleCaretManager::SetSelectionDragState(bool aState) const {
 
 bool AccessibleCaretManager::IsPhoneNumber(nsAString& aCandidate) const {
   RefPtr<Document> doc = mPresShell->GetDocument();
-  nsAutoString phoneNumberRegex(
-      NS_LITERAL_STRING("(^\\+)?[0-9 ,\\-.()*#pw]{1,30}$"));
+  nsAutoString phoneNumberRegex(u"(^\\+)?[0-9 ,\\-.()*#pw]{1,30}$"_ns);
   return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc)
       .valueOr(false);
 }
@@ -938,10 +933,10 @@ void AccessibleCaretManager::SelectMoreIfPhoneNumber() const {
 
   if (IsPhoneNumber(selectedText)) {
     SetSelectionDirection(eDirNext);
-    ExtendPhoneNumberSelection(NS_LITERAL_STRING("forward"));
+    ExtendPhoneNumberSelection(u"forward"_ns);
 
     SetSelectionDirection(eDirPrevious);
-    ExtendPhoneNumberSelection(NS_LITERAL_STRING("backward"));
+    ExtendPhoneNumberSelection(u"backward"_ns);
 
     SetSelectionDirection(eDirNext);
   }
@@ -973,8 +968,8 @@ void AccessibleCaretManager::ExtendPhoneNumberSelection(
     nsAutoString oldSelectedText = StringifiedSelection();
 
     // Extend the selection by one char.
-    selection->Modify(NS_LITERAL_STRING("extend"), aDirection,
-                      NS_LITERAL_STRING("character"), IgnoreErrors());
+    selection->Modify(u"extend"_ns, aDirection, u"character"_ns,
+                      IgnoreErrors());
     if (IsTerminated()) {
       return;
     }
@@ -1218,8 +1213,8 @@ nsresult AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint) {
 
   // Find out which content we point to
 
-  nsIFrame* ptFrame =
-      nsLayoutUtils::GetFrameForPoint(rootFrame, point, GetHitTestOptions());
+  nsIFrame* ptFrame = nsLayoutUtils::GetFrameForPoint(
+      RelativeTo{rootFrame}, point, GetHitTestOptions());
   if (!ptFrame) {
     return NS_ERROR_FAILURE;
   }
@@ -1231,7 +1226,8 @@ nsresult AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint) {
   nsIFrame* newFrame = nullptr;
   nsPoint newPoint;
   nsPoint ptInFrame = point;
-  nsLayoutUtils::TransformPoint(rootFrame, ptFrame, ptInFrame);
+  nsLayoutUtils::TransformPoint(RelativeTo{rootFrame}, RelativeTo{ptFrame},
+                                ptInFrame);
   result = fs->ConstrainFrameAndPointToAnchorSubtree(ptFrame, ptInFrame,
                                                      &newFrame, newPoint);
   if (NS_FAILED(result) || !newFrame) {
@@ -1277,7 +1273,7 @@ nsRect AccessibleCaretManager::GetAllChildFrameRectsUnion(
     for (const auto& childList : frame->ChildLists()) {
       // Loop all children to union their scrollable overflow rect.
       for (nsIFrame* child : childList.mList) {
-        nsRect childRect = child->GetScrollableOverflowRectRelativeToSelf();
+        nsRect childRect = child->ScrollableOverflowRectRelativeToSelf();
         nsLayoutUtils::TransformRect(child, frame, childRect);
 
         // A TextFrame containing only '\n' has positive height and width 0, or
@@ -1379,7 +1375,8 @@ void AccessibleCaretManager::StartSelectionAutoScrollTimer(
   nsIFrame* rootFrame = mPresShell->GetRootFrame();
   MOZ_ASSERT(rootFrame);
   nsPoint ptInScrolled = aPoint;
-  nsLayoutUtils::TransformPoint(rootFrame, capturingFrame, ptInScrolled);
+  nsLayoutUtils::TransformPoint(RelativeTo{rootFrame},
+                                RelativeTo{capturingFrame}, ptInScrolled);
 
   RefPtr<nsFrameSelection> fs = GetFrameSelection();
   MOZ_ASSERT(fs);
@@ -1463,7 +1460,7 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
   init.mSelectedTextContent = StringifiedSelection();
 
   RefPtr<CaretStateChangedEvent> event = CaretStateChangedEvent::Constructor(
-      doc, NS_LITERAL_STRING("mozcaretstatechanged"), init);
+      doc, u"mozcaretstatechanged"_ns, init);
 
   event->SetTrusted(true);
   event->WidgetEventPtr()->mFlags.mOnlyChromeDispatch = true;

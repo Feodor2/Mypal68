@@ -161,6 +161,10 @@ impl FontRelativeLength {
         }
 
         let reference_font_size = base_size.resolve(context);
+        let font_metrics_flag = match base_size {
+            FontBaseSize::CurrentStyle => ComputedValueFlags::DEPENDS_ON_SELF_FONT_METRICS,
+            FontBaseSize::InheritedStyle => ComputedValueFlags::DEPENDS_ON_INHERITED_FONT_METRICS,
+        };
         match *self {
             FontRelativeLength::Em(length) => {
                 if context.for_non_inherited_property.is_some() {
@@ -178,9 +182,7 @@ impl FontRelativeLength {
                 if context.for_non_inherited_property.is_some() {
                     context.rule_cache_conditions.borrow_mut().set_uncacheable();
                 }
-                context
-                    .builder
-                    .add_flags(ComputedValueFlags::DEPENDS_ON_FONT_METRICS);
+                context.builder.add_flags(font_metrics_flag);
                 // The x-height is an intrinsically horizontal metric.
                 let metrics =
                     query_font_metrics(context, base_size, FontMetricsOrientation::Horizontal);
@@ -199,9 +201,7 @@ impl FontRelativeLength {
                 if context.for_non_inherited_property.is_some() {
                     context.rule_cache_conditions.borrow_mut().set_uncacheable();
                 }
-                context
-                    .builder
-                    .add_flags(ComputedValueFlags::DEPENDS_ON_FONT_METRICS);
+                context.builder.add_flags(font_metrics_flag);
                 // https://drafts.csswg.org/css-values/#ch:
                 //
                 //     Equal to the used advance measure of the “0” (ZERO,
@@ -1217,6 +1217,51 @@ impl Parse for Size {
     }
 }
 
+macro_rules! parse_size_non_length {
+    ($size:ident, $input:expr, $auto_or_none:expr => $auto_or_none_ident:ident) => {{
+        let size = $input.try_parse(|input| {
+            Ok(try_match_ident_ignore_ascii_case! { input,
+                #[cfg(feature = "gecko")]
+                "min-content" | "-moz-min-content" => $size::MinContent,
+                #[cfg(feature = "gecko")]
+                "max-content" | "-moz-max-content" => $size::MaxContent,
+                #[cfg(feature = "gecko")]
+                "fit-content" | "-moz-fit-content" => $size::FitContent,
+                #[cfg(feature = "gecko")]
+                "-moz-available" => $size::MozAvailable,
+                $auto_or_none => $size::$auto_or_none_ident,
+            })
+        });
+        if size.is_ok() {
+            return size;
+        }
+    }};
+}
+
+#[cfg(feature = "gecko")]
+fn is_fit_content_function_enabled() -> bool {
+    static_prefs::pref!("layout.css.fit-content-function.enabled")
+}
+#[cfg(feature = "servo")]
+fn is_fit_content_function_enabled() -> bool {
+    false
+}
+
+macro_rules! parse_fit_content_function {
+    ($size:ident, $input:expr, $context:expr, $allow_quirks:expr) => {
+        if is_fit_content_function_enabled() {
+            if let Ok(length) = $input.try_parse(|input| {
+                input.expect_function_matching("fit-content")?;
+                input.parse_nested_block(|i| {
+                    NonNegativeLengthPercentage::parse_quirky($context, i, $allow_quirks)
+                })
+            }) {
+                return Ok($size::FitContentFunction(length));
+            }
+        }
+    };
+}
+
 impl Size {
     /// Parses, with quirks.
     pub fn parse_quirky<'i, 't>(
@@ -1224,16 +1269,8 @@ impl Size {
         input: &mut Parser<'i, 't>,
         allow_quirks: AllowQuirks,
     ) -> Result<Self, ParseError<'i>> {
-        #[cfg(feature = "gecko")]
-        {
-            if let Ok(l) = input.try_parse(computed::ExtremumLength::parse) {
-                return Ok(GenericSize::ExtremumLength(l));
-            }
-        }
-
-        if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
-            return Ok(GenericSize::Auto);
-        }
+        parse_size_non_length!(Size, input, "auto" => Auto);
+        parse_fit_content_function!(Size, input, context, allow_quirks);
 
         let length = NonNegativeLengthPercentage::parse_quirky(context, input, allow_quirks)?;
         Ok(GenericSize::LengthPercentage(length))
@@ -1265,16 +1302,8 @@ impl MaxSize {
         input: &mut Parser<'i, 't>,
         allow_quirks: AllowQuirks,
     ) -> Result<Self, ParseError<'i>> {
-        #[cfg(feature = "gecko")]
-        {
-            if let Ok(l) = input.try_parse(computed::ExtremumLength::parse) {
-                return Ok(GenericMaxSize::ExtremumLength(l));
-            }
-        }
-
-        if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
-            return Ok(GenericMaxSize::None);
-        }
+        parse_size_non_length!(MaxSize, input, "none" => None);
+        parse_fit_content_function!(MaxSize, input, context, allow_quirks);
 
         let length = NonNegativeLengthPercentage::parse_quirky(context, input, allow_quirks)?;
         Ok(GenericMaxSize::LengthPercentage(length))

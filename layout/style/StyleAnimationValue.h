@@ -83,7 +83,7 @@ struct AnimationValue {
 
   // Uncompute this AnimationValue and then serialize it.
   void SerializeSpecifiedValue(nsCSSPropertyID aProperty,
-                               nsAString& aString) const;
+                               nsACString& aString) const;
 
   // Check if |*this| and |aToValue| can be interpolated.
   bool IsInterpolableWith(nsCSSPropertyID aProperty,
@@ -97,7 +97,7 @@ struct AnimationValue {
   // should use this carefully. Now, it is only used by
   // nsDOMWindowUtils::ComputeAnimationDistance.
   static AnimationValue FromString(nsCSSPropertyID aProperty,
-                                   const nsAString& aValue,
+                                   const nsACString& aValue,
                                    dom::Element* aElement);
 
   // Create an already_AddRefed<RawServoAnimationValue> from a

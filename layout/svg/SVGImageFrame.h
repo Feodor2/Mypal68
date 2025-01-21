@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NS_SVGIMAGEFRAME_H__
-#define __NS_SVGIMAGEFRAME_H__
+#ifndef LAYOUT_SVG_SVGIMAGEFRAME_H_
+#define LAYOUT_SVG_SVGIMAGEFRAME_H_
 
 // Keep in (case-insensitive) order:
 #include "gfxContext.h"
@@ -11,14 +11,8 @@
 #include "mozilla/gfx/2D.h"
 #include "imgIContainer.h"
 #include "nsContainerFrame.h"
-#include "nsLayoutUtils.h"
 #include "imgINotificationObserver.h"
-#include "SVGObserverUtils.h"
-#include "nsSVGUtils.h"
-#include "SVGContentUtils.h"
-#include "SVGGeometryFrame.h"
-#include "SVGImageContext.h"
-#include "mozilla/dom/SVGImageElement.h"
+#include "mozilla/SVGGeometryFrame.h"
 #include "nsIReflowCallback.h"
 #include "mozilla/Unused.h"
 
@@ -49,7 +43,7 @@ class SVGImageFrame final : public SVGGeometryFrame, public nsIReflowCallback {
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(SVGImageFrame)
 
-  // nsSVGDisplayableFrame interface:
+  // ISVGDisplayableFrame interface:
   virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                         imgDrawingParams& aImgParams,
                         const nsIntRect* aDirtyRect = nullptr) override;
@@ -108,4 +102,4 @@ class SVGImageFrame final : public SVGGeometryFrame, public nsIReflowCallback {
 
 }  // namespace mozilla
 
-#endif  // __NS_SVGIMAGEFRAME_H__
+#endif  // LAYOUT_SVG_SVGIMAGEFRAME_H_

@@ -249,7 +249,7 @@ void nsImageBoxFrame::UpdateImage() {
       auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mContent->AsElement());
       nsresult rv = nsContentUtils::LoadImage(
           uri, mContent, doc, triggeringPrincipal, requestContextID,
-          referrerInfo, mListener, mLoadFlags, EmptyString(),
+          referrerInfo, mListener, mLoadFlags, u""_ns,
           getter_AddRefs(mImageRequest), contentPolicyType);
 
       if (NS_SUCCEEDED(rv) && mImageRequest) {
@@ -272,7 +272,7 @@ void nsImageBoxFrame::UpdateImage() {
           pc->Theme()->ThemeSupportsWidget(nullptr, this,
                                            display->mDefaultAppearance))) {
       // get the list-style-image
-      imgRequestProxy* styleRequest = StyleList()->GetListStyleImage();
+      imgRequestProxy* styleRequest = StyleList()->mListStyleImage.GetImageRequest();
       if (styleRequest) {
         styleRequest->SyncClone(mListener, mContent->GetComposedDoc(),
                                 getter_AddRefs(mImageRequest));
@@ -642,8 +642,8 @@ void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   // If list-style-image changes, we have a new image.
   nsCOMPtr<nsIURI> oldURI, newURI;
   if (mImageRequest) mImageRequest->GetURI(getter_AddRefs(oldURI));
-  if (myList->GetListStyleImage())
-    myList->GetListStyleImage()->GetURI(getter_AddRefs(newURI));
+  if (myList->mListStyleImage.GetImageRequest())
+    myList->mListStyleImage.GetImageRequest()->GetURI(getter_AddRefs(newURI));
   bool equal;
   if (newURI == oldURI ||  // handles null==null
       (newURI && oldURI && NS_SUCCEEDED(newURI->Equals(oldURI, &equal)) &&
@@ -759,7 +759,7 @@ nscoord nsImageBoxFrame::GetXULBoxAscent(nsBoxLayoutState& aState) {
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsImageBoxFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("ImageBox"), aResult);
+  return MakeFrameName(u"ImageBox"_ns, aResult);
 }
 #endif
 

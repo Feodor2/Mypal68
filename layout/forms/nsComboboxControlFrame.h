@@ -100,9 +100,7 @@ class nsComboboxControlFrame final : public nsBlockFrame,
         aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
 
-  virtual nsIScrollableFrame* GetScrollTargetFrame() override {
-    return do_QueryFrame(mDropdownFrame);
-  }
+  virtual nsIScrollableFrame* GetScrollTargetFrame() const override;
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
@@ -238,7 +236,7 @@ class nsComboboxControlFrame final : public nsBlockFrame,
 
   // Helper for GetMinISize/GetPrefISize
   nscoord GetIntrinsicISize(gfxContext* aRenderingContext,
-                            nsLayoutUtils::IntrinsicISizeType aType);
+                            mozilla::IntrinsicISizeType aType);
 
   class RedisplayTextEvent : public mozilla::Runnable {
    public:

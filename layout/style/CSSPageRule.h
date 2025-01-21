@@ -23,7 +23,8 @@ class CSSPageRuleDeclaration final : public nsDOMCSSDeclaration {
   NS_DECL_ISUPPORTS_INHERITED
 
   css::Rule* GetParentRule() final;
-  nsINode* GetParentObject() final;
+  nsINode* GetAssociatedNode() const final;
+  nsISupports* GetParentObject() const final;
 
  protected:
   DeclarationBlock* GetOrCreateCSSDeclaration(
@@ -40,6 +41,8 @@ class CSSPageRuleDeclaration final : public nsDOMCSSDeclaration {
 
   explicit CSSPageRuleDeclaration(
       already_AddRefed<RawServoDeclarationBlock> aDecls);
+  void SetRawAfterClone(RefPtr<RawServoDeclarationBlock>);
+
   ~CSSPageRuleDeclaration();
 
   inline CSSPageRule* Rule();
@@ -59,10 +62,11 @@ class CSSPageRule final : public css::Rule {
   bool IsCCLeaf() const final;
 
   RawServoPageRule* Raw() const { return mRawRule; }
+  void SetRawAfterClone(RefPtr<RawServoPageRule>);
 
   // WebIDL interfaces
-  uint16_t Type() const final { return CSSRule_Binding::PAGE_RULE; }
-  void GetCssText(nsAString& aCssText) const final;
+  StyleCssRuleType Type() const final;
+  void GetCssText(nsACString& aCssText) const final;
   nsICSSDeclaration* Style();
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const final;

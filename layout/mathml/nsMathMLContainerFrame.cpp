@@ -94,7 +94,7 @@ void nsDisplayMathMLError::Paint(nsDisplayListBuilder* aBuilder,
 
   aCtx->SetColor(Color(1.f, 1.f, 1.f));
   nscoord ascent = fm->MaxAscent();
-  NS_NAMED_LITERAL_STRING(errorMsg, "invalid-markup");
+  constexpr auto errorMsg = u"invalid-markup"_ns;
   nsLayoutUtils::DrawUniDirString(errorMsg.get(), uint32_t(errorMsg.Length()),
                                   nsPoint(pt.x, pt.y + ascent), *fm, *aCtx);
 }
@@ -747,7 +747,7 @@ void nsMathMLContainerFrame::GatherAndStoreOverflow(ReflowOutput* aMetrics) {
 }
 
 bool nsMathMLContainerFrame::ComputeCustomOverflow(
-    nsOverflowAreas& aOverflowAreas) {
+    OverflowAreas& aOverflowAreas) {
   // All non-child-frame content such as nsMathMLChars (and most child-frame
   // content) is included in mBoundingMetrics.
   nsRect boundingBox(
@@ -755,7 +755,7 @@ bool nsMathMLContainerFrame::ComputeCustomOverflow(
       mBoundingMetrics.rightBearing - mBoundingMetrics.leftBearing,
       mBoundingMetrics.ascent + mBoundingMetrics.descent);
 
-  // REVIEW: Maybe this should contribute only to visual overflow
+  // REVIEW: Maybe this should contribute only to ink overflow
   // and not scrollable?
   aOverflowAreas.UnionAllWith(boundingBox);
   return nsContainerFrame::ComputeCustomOverflow(aOverflowAreas);
@@ -958,7 +958,7 @@ void nsMathMLContainerFrame::GetIntrinsicISizeMetrics(
       // margin, so we may end up with too much space, but, with stretchy
       // characters, this is an approximation anyway.
       nscoord width = nsLayoutUtils::IntrinsicForContainer(
-          aRenderingContext, childFrame, nsLayoutUtils::PREF_ISIZE);
+          aRenderingContext, childFrame, IntrinsicISizeType::PrefISize);
 
       childDesiredSize.Width() = width;
       childDesiredSize.mBoundingMetrics.width = width;
@@ -1430,9 +1430,8 @@ void nsMathMLContainerFrame::PropagateFrameFlagFor(nsIFrame* aFrame,
 nsresult nsMathMLContainerFrame::ReportErrorToConsole(
     const char* errorMsgId, const nsTArray<nsString>& aParams) {
   return nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Layout: MathML"),
-      mContent->OwnerDoc(), nsContentUtils::eMATHML_PROPERTIES, errorMsgId,
-      aParams);
+      nsIScriptError::errorFlag, "Layout: MathML"_ns, mContent->OwnerDoc(),
+      nsContentUtils::eMATHML_PROPERTIES, errorMsgId, aParams);
 }
 
 nsresult nsMathMLContainerFrame::ReportParseError(const char16_t* aAttribute,

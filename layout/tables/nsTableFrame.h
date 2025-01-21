@@ -239,6 +239,14 @@ class nsTableFrame : public nsContainerFrame {
   LogicalMargin GetExcludedOuterBCBorder(const WritingMode aWM) const;
 
   /**
+   * Emplace our border and padding in aBorder and aPadding if we are
+   * border-collapsed. Otherwise, do nothing.
+   */
+  void GetCollapsedBorderPadding(
+      mozilla::Maybe<mozilla::LogicalMargin>& aBorder,
+      mozilla::Maybe<mozilla::LogicalMargin>& aPadding) const;
+
+  /**
    * In quirks mode, the size of the table background is reduced
    * by the outer BC border. Compute the reduction needed.
    */
@@ -272,17 +280,21 @@ class nsTableFrame : public nsContainerFrame {
   IntrinsicSizeOffsetData IntrinsicISizeOffsets(
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE) override;
 
-  virtual mozilla::LogicalSize ComputeSize(
+  SizeComputationResult ComputeSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
-  virtual mozilla::LogicalSize ComputeAutoSize(
+  mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   /**
    * A copy of nsIFrame::ShrinkWidthToFit that calls a different
@@ -515,15 +527,15 @@ class nsTableFrame : public nsContainerFrame {
    *
    * @param aFrame The frame to invalidate
    * @param aOrigRect The original rect of aFrame (before the change).
-   * @param aOrigVisualOverflow The original overflow rect of aFrame.
+   * @param aOrigInkOverflow The original overflow rect of aFrame.
    * @param aIsFirstReflow True if the size/position change is due to the
    *                       first reflow of aFrame.
    */
   static void InvalidateTableFrame(nsIFrame* aFrame, const nsRect& aOrigRect,
-                                   const nsRect& aOrigVisualOverflow,
+                                   const nsRect& aOrigInkOverflow,
                                    bool aIsFirstReflow);
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override;
+  bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
   // Return our wrapper frame.
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
@@ -544,8 +556,8 @@ class nsTableFrame : public nsContainerFrame {
 
   void InitChildReflowInput(ReflowInput& aReflowInput);
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides(
+      const Maybe<SkipSidesDuringReflow>& = Nothing()) const override;
 
   void IterateBCBorders(BCPaintBorderAction& aAction, const nsRect& aDirtyRect);
 
@@ -563,7 +575,7 @@ class nsTableFrame : public nsContainerFrame {
 
   void ReflowChildren(TableReflowInput& aReflowInput, nsReflowStatus& aStatus,
                       nsIFrame*& aLastChildReflowed,
-                      nsOverflowAreas& aOverflowAreas);
+                      mozilla::OverflowAreas& aOverflowAreas);
 
   // This calls the col group and column reflow methods, which do two things:
   //  (1) set all the dimensions to 0
@@ -616,7 +628,9 @@ class nsTableFrame : public nsContainerFrame {
  public:
   // calculate the computed block-size of aFrame including its border and
   // padding given its reflow input.
-  nscoord CalcBorderBoxBSize(const ReflowInput& aReflowInput);
+  nscoord CalcBorderBoxBSize(const ReflowInput& aReflowInput,
+                             const LogicalMargin& aBorderPadding,
+                             nscoord aIntrinsicBorderBoxBSize);
 
  protected:
   // update the  desired block-size of this table taking into account the
@@ -634,7 +648,7 @@ class nsTableFrame : public nsContainerFrame {
                   const mozilla::LogicalPoint& aKidPosition,
                   const nsSize& aContainerSize, ReflowOutput& aKidDesiredSize,
                   const nsRect& aOriginalKidRect,
-                  const nsRect& aOriginalKidVisualOverflow);
+                  const nsRect& aOriginalKidInkOverflow);
   void PlaceRepeatedFooter(TableReflowInput& aReflowInput,
                            nsTableRowGroupFrame* aTfoot, nscoord aFooterHeight);
 

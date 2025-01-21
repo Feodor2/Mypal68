@@ -72,7 +72,6 @@ ${helpers.predefined_type(
     "FillRule",
     "Default::default()",
     engines="gecko",
-    needs_context=False,
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#FillRuleProperty",
 )}
@@ -165,7 +164,6 @@ ${helpers.predefined_type(
     "FillRule",
     "Default::default()",
     engines="gecko",
-    needs_context=False,
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/masking.html#ClipRuleProperty",
 )}
@@ -211,6 +209,9 @@ ${helpers.predefined_type(
     "MozContextProperties",
     "computed::MozContextProperties::default()",
     engines="gecko",
+    enabled_in="chrome",
+    gecko_pref="svg.context-properties.content.enabled",
+    has_effect_on_gecko_scrollbars=False,
     animation_value_type="none",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-context-properties)",
 )}

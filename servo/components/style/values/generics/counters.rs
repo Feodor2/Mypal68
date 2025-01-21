@@ -4,7 +4,7 @@
 
 //! Generic types for counters-related CSS values.
 
-#[cfg(feature = "servo")]
+#[cfg(feature = "servo-layout-2013")]
 use crate::computed_values::list_style_type::T as ListStyleType;
 #[cfg(feature = "gecko")]
 use crate::values::generics::CounterStyle;
@@ -118,16 +118,18 @@ impl<I> Deref for CounterSetOrReset<I> {
     ToShmem,
 )]
 #[repr(transparent)]
-pub struct GenericCounters<I>(#[css(iterable, if_empty = "none")] crate::OwnedSlice<GenericCounterPair<I>>);
+pub struct GenericCounters<I>(
+    #[css(iterable, if_empty = "none")] crate::OwnedSlice<GenericCounterPair<I>>,
+);
 pub use self::GenericCounters as Counters;
 
-#[cfg(feature = "servo")]
+#[cfg(feature = "servo-layout-2013")]
 type CounterStyleType = ListStyleType;
 
 #[cfg(feature = "gecko")]
 type CounterStyleType = CounterStyle;
 
-#[cfg(feature = "servo")]
+#[cfg(feature = "servo-layout-2013")]
 #[inline]
 fn is_decimal(counter_type: &CounterStyleType) -> bool {
     *counter_type == ListStyleType::Decimal
@@ -146,18 +148,18 @@ fn is_decimal(counter_type: &CounterStyleType) -> bool {
     Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToShmem,
 )]
 #[repr(u8)]
-pub enum GenericContent<ImageUrl> {
+pub enum GenericContent<Image> {
     /// `normal` reserved keyword.
     Normal,
     /// `none` reserved keyword.
     None,
     /// Content items.
-    Items(#[css(iterable)] crate::OwnedSlice<GenericContentItem<ImageUrl>>),
+    Items(#[css(iterable)] crate::OwnedSlice<GenericContentItem<Image>>),
 }
 
 pub use self::GenericContent as Content;
 
-impl<ImageUrl> Content<ImageUrl> {
+impl<Image> Content<Image> {
     /// Whether `self` represents list of items.
     #[inline]
     pub fn is_items(&self) -> bool {
@@ -178,20 +180,21 @@ impl<ImageUrl> Content<ImageUrl> {
     Eq,
     MallocSizeOf,
     PartialEq,
-    SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
     ToShmem,
 )]
 #[repr(u8)]
-pub enum GenericContentItem<ImageUrl> {
+pub enum GenericContentItem<I> {
     /// Literal string content.
     String(crate::OwnedStr),
     /// `counter(name, style)`.
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     #[css(comma, function)]
     Counter(CustomIdent, #[css(skip_if = "is_decimal")] CounterStyleType),
     /// `counters(name, separator, style)`.
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     #[css(comma, function)]
     Counters(
         CustomIdent,
@@ -199,12 +202,16 @@ pub enum GenericContentItem<ImageUrl> {
         #[css(skip_if = "is_decimal")] CounterStyleType,
     ),
     /// `open-quote`.
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     OpenQuote,
     /// `close-quote`.
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     CloseQuote,
     /// `no-open-quote`.
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     NoOpenQuote,
     /// `no-close-quote`.
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     NoCloseQuote,
     /// `-moz-alt-content`.
     #[cfg(feature = "gecko")]
@@ -212,8 +219,8 @@ pub enum GenericContentItem<ImageUrl> {
     /// `attr([namespace? `|`]? ident)`
     #[cfg(any(feature = "gecko", feature = "servo-layout-2020"))]
     Attr(Attr),
-    /// `url(url)`
-    Url(ImageUrl),
+    /// image-set(url) | url(url)
+    Image(I),
 }
 
 pub use self::GenericContentItem as ContentItem;

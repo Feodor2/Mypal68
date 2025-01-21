@@ -5,7 +5,8 @@
 #define NSIFRAMETRAVERSAL_H
 
 #include "nsISupports.h"
-#include "nsIFrame.h"
+
+class nsIFrame;
 
 #define NS_IFRAMEENUMERATOR_IID                      \
   {                                                  \

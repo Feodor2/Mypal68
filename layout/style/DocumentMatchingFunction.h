@@ -18,6 +18,8 @@ enum class DocumentMatchingFunction {
   Domain,
   RegExp,
   MediaDocument,
+  PlainTextDocument,
+  UnobservableDocument,
 };
 
 }  // namespace css

@@ -85,8 +85,6 @@ class DisplayItemData final {
   const DisplayItemClip& GetClip() const { return mClip; }
   void Invalidate() { mIsInvalid = true; }
   void ClearAnimationCompositorState();
-  void SetItem(nsPaintedDisplayItem* aItem) { mItem = aItem; }
-  nsPaintedDisplayItem* GetItem() const { return mItem; }
   nsIFrame* FirstFrame() const { return mFrameList[0]; }
   layers::BasicLayerManager* InactiveManager() const {
     return mInactiveManager;
@@ -491,7 +489,7 @@ class FrameLayerBuilder : public layers::LayerUserData {
   static Layer* GetDedicatedLayer(nsIFrame* aFrame,
                                   DisplayItemType aDisplayItemType);
 
-  using AnimationGenerationCallback = std::function<bool(
+  using AnimationGenerationCallback = FunctionRef<bool(
       const Maybe<uint64_t>& aGeneration, DisplayItemType aDisplayItemType)>;
   /**
    * Enumerates layers for the all display item types that correspond to
@@ -503,7 +501,7 @@ class FrameLayerBuilder : public layers::LayerUserData {
    * The enumeration stops if |aCallback| returns false.
    */
   static void EnumerateGenerationForDedicatedLayers(
-      const nsIFrame* aFrame, const AnimationGenerationCallback& aCallback);
+      const nsIFrame* aFrame, AnimationGenerationCallback);
 
   /**
    * This callback must be provided to EndTransaction. The callback data
@@ -574,10 +572,14 @@ class FrameLayerBuilder : public layers::LayerUserData {
    */
   template <class T>
   static T* GetDebugSingleOldLayerForFrame(nsIFrame* aFrame) {
-    SmallPointerArray<DisplayItemData>& array = aFrame->DisplayItemData();
+    SmallPointerArray<DisplayItemData>* array = aFrame->DisplayItemData();
+
+    if (!array) {
+      return nullptr;
+    }
 
     Layer* layer = nullptr;
-    for (DisplayItemData* data : array) {
+    for (DisplayItemData* data : *array) {
       DisplayItemData::AssertDisplayItemData(data);
       if (data->mLayer->GetType() != T::Type()) {
         continue;
@@ -587,10 +589,6 @@ class FrameLayerBuilder : public layers::LayerUserData {
         return nullptr;
       }
       layer = data->mLayer;
-    }
-
-    if (!layer) {
-      return nullptr;
     }
 
     return static_cast<T*>(layer);
@@ -608,17 +606,8 @@ class FrameLayerBuilder : public layers::LayerUserData {
    * Returns true if the given display item was rendered during the previous
    * paint. Returns false otherwise.
    */
-  static bool HasRetainedDataFor(nsIFrame* aFrame, uint32_t aDisplayItemKey);
-
-  typedef void (*DisplayItemDataCallback)(nsIFrame* aFrame,
-                                          DisplayItemData* aItem);
-
-  /**
-   * Get the translation transform that was in aLayer when we last painted. It's
-   * either the transform saved by SaveLastPaintTransform, or else the transform
-   * that's currently in the layer (which must be an integer translation).
-   */
-  nsIntPoint GetLastPaintOffset(PaintedLayer* aLayer);
+  static bool HasRetainedDataFor(const nsIFrame* aFrame,
+                                 uint32_t aDisplayItemKey);
 
   /**
    * Return the resolution at which we expect to render aFrame's contents,
@@ -629,8 +618,7 @@ class FrameLayerBuilder : public layers::LayerUserData {
    */
   static gfxSize GetPaintedLayerScaleForFrame(nsIFrame* aFrame);
 
-  static void RemoveFrameFromLayerManager(
-      const nsIFrame* aFrame, SmallPointerArray<DisplayItemData>& aArray);
+  static void RemoveFrameFromLayerManager(nsIFrame* aFrame);
 
   /**
    * Given a frame and a display item key that uniquely identifies a
@@ -703,7 +691,7 @@ class FrameLayerBuilder : public layers::LayerUserData {
  public:
   /**
    * Add the PaintedDisplayItemLayerUserData object as being used in this
-   * transaction so that we clean it up afterwards.
+   * transaction so that we do some end-of-paint maintenance on it.
    */
   void AddPaintedLayerItemsEntry(PaintedDisplayItemLayerUserData* aData);
 

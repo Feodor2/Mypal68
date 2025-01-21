@@ -146,7 +146,7 @@ static nsRect FindScrollAnchoringBoundingRect(const nsIFrame* aScrollFrame,
     for (nsIFrame* continuation = aCandidate->FirstContinuation(); continuation;
          continuation = continuation->GetNextContinuation()) {
       nsRect overflowRect =
-          continuation->GetScrollableOverflowRectRelativeToSelf();
+          continuation->ScrollableOverflowRectRelativeToSelf();
       overflowRect += continuation->GetOffsetTo(blockAncestor);
       bounding = bounding.Union(overflowRect);
     }
@@ -155,7 +155,7 @@ static nsRect FindScrollAnchoringBoundingRect(const nsIFrame* aScrollFrame,
   }
 
   nsRect borderRect = aCandidate->GetRectRelativeToSelf();
-  nsRect overflowRect = aCandidate->GetScrollableOverflowRectRelativeToSelf();
+  nsRect overflowRect = aCandidate->ScrollableOverflowRectRelativeToSelf();
 
   NS_ASSERTION(overflowRect.Contains(borderRect),
                "overflow rect must include border rect, and the clamping logic "
@@ -401,19 +401,17 @@ void ScrollAnchorContainer::ApplyAdjustments() {
   if (!mAnchorNode || mAnchorNodeIsDirty || mDisabled ||
       mScrollFrame->HasPendingScrollRestoration() ||
       mScrollFrame->IsProcessingScrollEvent() ||
-      mScrollFrame->IsProcessingAsyncScroll() ||
-      mScrollFrame->mApzSmoothScrollDestination.isSome() ||
+      mScrollFrame->IsScrollAnimating() ||
       mScrollFrame->GetScrollPosition() == nsPoint()) {
     ANCHOR_LOG(
         "Ignoring post-reflow (anchor=%p, dirty=%d, disabled=%d, "
-        "pendingRestoration=%d, scrollevent=%d, asyncScroll=%d, "
-        "apzSmoothDestination=%d, zeroScrollPos=%d pendingSuppression=%d, "
+        "pendingRestoration=%d, scrollevent=%d, animating=%d, "
+        "zeroScrollPos=%d pendingSuppression=%d, "
         "container=%p).\n",
         mAnchorNode, mAnchorNodeIsDirty, mDisabled,
         mScrollFrame->HasPendingScrollRestoration(),
         mScrollFrame->IsProcessingScrollEvent(),
-        mScrollFrame->IsProcessingAsyncScroll(),
-        mScrollFrame->mApzSmoothScrollDestination.isSome(),
+        mScrollFrame->IsScrollAnimating(),
         mScrollFrame->GetScrollPosition() == nsPoint(),
         mSuppressAnchorAdjustment, this);
     if (mSuppressAnchorAdjustment) {
@@ -468,7 +466,7 @@ void ScrollAnchorContainer::ApplyAdjustments() {
   // We should use AutoRestore here, but that doesn't work with bitfields
   mApplyingAnchorAdjustment = true;
   mScrollFrame->ScrollTo(mScrollFrame->GetScrollPosition() + physicalAdjustment,
-                         ScrollMode::Instant, nsGkAtoms::relative);
+                         ScrollMode::Instant, ScrollOrigin::Relative);
   mApplyingAnchorAdjustment = false;
 
   nsPresContext* pc = Frame()->PresContext();

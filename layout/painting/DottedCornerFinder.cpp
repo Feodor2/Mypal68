@@ -4,7 +4,8 @@
 
 #include "DottedCornerFinder.h"
 
-#include "mozilla/Move.h"
+#include <utility>
+
 #include "BorderCache.h"
 #include "BorderConsts.h"
 

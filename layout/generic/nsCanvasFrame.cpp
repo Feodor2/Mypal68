@@ -65,7 +65,7 @@ void nsCanvasFrame::ShowCustomContentContainer() {
 void nsCanvasFrame::HideCustomContentContainer() {
   if (mCustomContentContainer) {
     mCustomContentContainer->SetAttr(kNameSpaceID_None, nsGkAtoms::hidden,
-                                     NS_LITERAL_STRING("true"), true);
+                                     u"true"_ns, true);
   }
 }
 
@@ -116,11 +116,10 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
 
   // Do not create an accessible object for the container.
   mCustomContentContainer->SetAttr(kNameSpaceID_None, nsGkAtoms::role,
-                                   NS_LITERAL_STRING("presentation"), false);
+                                   u"presentation"_ns, false);
 
-  mCustomContentContainer->SetAttr(
-      kNameSpaceID_None, nsGkAtoms::_class,
-      NS_LITERAL_STRING("moz-custom-content-container"), false);
+  mCustomContentContainer->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
+                                   u"moz-custom-content-container"_ns, false);
 
   // Only create a frame for mCustomContentContainer if it has some children.
   if (doc->GetAnonymousContents().IsEmpty()) {
@@ -169,12 +168,12 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
                           dom::NOT_FROM_PARSER);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_default,
-                             NS_LITERAL_STRING("true"), false);
+    mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_default, u"true"_ns,
+                             false);
     // Set the page attribute so the XBL binding will find the text for the
     // tooltip from the currently hovered element.
-    mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::page,
-                             NS_LITERAL_STRING("true"), false);
+    mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::page, u"true"_ns,
+                             false);
 
     aElements.AppendElement(mTooltipContent);
   }
@@ -285,7 +284,7 @@ void nsCanvasFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 nsRect nsCanvasFrame::CanvasArea() const {
   // Not clear which overflow rect we want here, but it probably doesn't
   // matter.
-  nsRect result(GetVisualOverflowRect());
+  nsRect result(InkOverflowRect());
 
   nsIScrollableFrame* scrollableFrame = do_QueryFrame(GetParent());
   if (scrollableFrame) {
@@ -716,79 +715,113 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     nsIFrame* kidFrame = mFrames.FirstChild();
     bool kidDirty = kidFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY);
 
-    ReflowInput kidReflowInput(
-        aPresContext, aReflowInput, kidFrame,
-        aReflowInput.AvailableSize(kidFrame->GetWritingMode()));
-
-    if (aReflowInput.IsBResizeForWM(kidReflowInput.GetWritingMode()) &&
-        kidFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
-      // Tell our kid it's being block-dir resized too.  Bit of a
-      // hack for framesets.
-      kidReflowInput.SetBResize(true);
-    }
-
+    WritingMode kidWM = kidFrame->GetWritingMode();
+    auto availableSize = aReflowInput.AvailableSize(kidWM);
+    nscoord bOffset = 0;
+    nscoord canvasBSizeSum = 0;
     WritingMode wm = aReflowInput.GetWritingMode();
-    WritingMode kidWM = kidReflowInput.GetWritingMode();
-    nsSize containerSize = aReflowInput.ComputedPhysicalSize();
-
-    LogicalMargin margin = kidReflowInput.ComputedLogicalMargin();
-    LogicalPoint kidPt(kidWM, margin.IStart(kidWM), margin.BStart(kidWM));
-
-    // Reflow the frame
-    ReflowChild(kidFrame, aPresContext, kidDesiredSize, kidReflowInput, kidWM,
-                kidPt, containerSize, ReflowChildFlags::Default, aStatus);
-
-    // Complete the reflow and position and size the child frame
-    FinishReflowChild(kidFrame, aPresContext, kidDesiredSize, &kidReflowInput,
-                      kidWM, kidPt, containerSize,
-                      ReflowChildFlags::ApplyRelativePositioning);
-
-    if (!aStatus.IsFullyComplete()) {
-      nsIFrame* nextFrame = kidFrame->GetNextInFlow();
-      NS_ASSERTION(
-          nextFrame || aStatus.NextInFlowNeedsReflow(),
-          "If it's incomplete and has no nif yet, it must flag a nif reflow.");
-      if (!nextFrame) {
-        nextFrame = aPresContext->PresShell()
-                        ->FrameConstructor()
-                        ->CreateContinuingFrame(kidFrame, this);
-        SetOverflowFrames(nsFrameList(nextFrame, nextFrame));
-        // Root overflow containers will be normal children of
-        // the canvas frame, but that's ok because there
-        // aren't any other frames we need to isolate them from
-        // during reflow.
+    if (prevCanvasFrame && availableSize.BSize(kidWM) != NS_UNCONSTRAINEDSIZE &&
+        StaticPrefs::layout_display_list_improve_fragmentation()) {
+      for (auto* pif = prevCanvasFrame; pif;
+           pif = static_cast<nsCanvasFrame*>(pif->GetPrevInFlow())) {
+        canvasBSizeSum += pif->BSize(kidWM);
+        auto* pifChild = pif->PrincipalChildList().FirstChild();
+        if (pifChild) {
+          nscoord layoutOverflow = pifChild->BSize(kidWM) - canvasBSizeSum;
+          // A negative value means that the :root frame does not fill
+          // the canvas.  In this case we can't determine the offset exactly
+          // so we use the end edge of the scrollable overflow as the offset
+          // instead.  This will likely push down the content below where it
+          // should be placed, creating a gap.  That's preferred over making
+          // content overlap which would otherwise occur.
+          // See layout/reftests/pagination/inline-block-slice-7.html for an
+          // example of this.
+          if (layoutOverflow < 0) {
+            LogicalRect so(kidWM, pifChild->ScrollableOverflowRect(),
+                           pifChild->GetSize());
+            layoutOverflow = so.BEnd(kidWM) - canvasBSizeSum;
+          }
+          bOffset = std::max(bOffset, layoutOverflow);
+        }
       }
-      if (aStatus.IsOverflowIncomplete()) {
-        nextFrame->AddStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER);
-      }
+      availableSize.BSize(kidWM) -= bOffset;
     }
 
-    // If the child frame was just inserted, then we're responsible for making
-    // sure it repaints
-    if (kidDirty) {
-      // But we have a new child, which will affect our background, so
-      // invalidate our whole rect.
-      // Note: Even though we request to be sized to our child's size, our
-      // scroll frame ensures that we are always the size of the viewport.
-      // Also note: GetPosition() on a CanvasFrame is always going to return
-      // (0, 0). We only want to invalidate GetRect() since Get*OverflowRect()
-      // could also include overflow to our top and left (out of the viewport)
-      // which doesn't need to be painted.
-      nsIFrame* viewport = PresContext()->GetPresShell()->GetRootFrame();
-      viewport->InvalidateFrame();
-    }
+    LogicalSize finalSize = aReflowInput.ComputedSize();
+    if (MOZ_LIKELY(availableSize.BSize(kidWM) > 0)) {
+      ReflowInput kidReflowInput(aPresContext, aReflowInput, kidFrame,
+                                 availableSize);
 
-    // Return our desired size. Normally it's what we're told, but
-    // sometimes we can be given an unconstrained height (when a window
-    // is sizing-to-content), and we should compute our desired height.
-    LogicalSize finalSize(wm);
-    finalSize.ISize(wm) = aReflowInput.ComputedISize();
-    if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
-      finalSize.BSize(wm) =
-          kidFrame->GetLogicalSize(wm).BSize(wm) +
-          kidReflowInput.ComputedLogicalMargin().BStartEnd(wm);
+      if (aReflowInput.IsBResizeForWM(kidReflowInput.GetWritingMode()) &&
+          kidFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
+        // Tell our kid it's being block-dir resized too.  Bit of a
+        // hack for framesets.
+        kidReflowInput.SetBResize(true);
+      }
+
+      nsSize containerSize = aReflowInput.ComputedPhysicalSize();
+      LogicalMargin margin = kidReflowInput.ComputedLogicalMargin(kidWM);
+      LogicalPoint kidPt(kidWM, margin.IStart(kidWM), margin.BStart(kidWM));
+      (kidWM.IsOrthogonalTo(wm) ? kidPt.I(kidWM) : kidPt.B(kidWM)) += bOffset;
+
+      // Reflow the frame
+      ReflowChild(kidFrame, aPresContext, kidDesiredSize, kidReflowInput, kidWM,
+                  kidPt, containerSize, ReflowChildFlags::Default, aStatus);
+
+      // Complete the reflow and position and size the child frame
+      FinishReflowChild(kidFrame, aPresContext, kidDesiredSize, &kidReflowInput,
+                        kidWM, kidPt, containerSize,
+                        ReflowChildFlags::ApplyRelativePositioning);
+
+      if (!aStatus.IsFullyComplete()) {
+        nsIFrame* nextFrame = kidFrame->GetNextInFlow();
+        NS_ASSERTION(nextFrame || aStatus.NextInFlowNeedsReflow(),
+                     "If it's incomplete and has no nif yet, it must flag a "
+                     "nif reflow.");
+        if (!nextFrame) {
+          nextFrame = aPresContext->PresShell()
+                          ->FrameConstructor()
+                          ->CreateContinuingFrame(kidFrame, this);
+          SetOverflowFrames(nsFrameList(nextFrame, nextFrame));
+          // Root overflow containers will be normal children of
+          // the canvas frame, but that's ok because there
+          // aren't any other frames we need to isolate them from
+          // during reflow.
+        }
+        if (aStatus.IsOverflowIncomplete()) {
+          nextFrame->AddStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER);
+        }
+      }
+
+      // If the child frame was just inserted, then we're responsible for making
+      // sure it repaints
+      if (kidDirty) {
+        // But we have a new child, which will affect our background, so
+        // invalidate our whole rect.
+        // Note: Even though we request to be sized to our child's size, our
+        // scroll frame ensures that we are always the size of the viewport.
+        // Also note: GetPosition() on a CanvasFrame is always going to return
+        // (0, 0). We only want to invalidate GetRect() since Get*OverflowRect()
+        // could also include overflow to our top and left (out of the viewport)
+        // which doesn't need to be painted.
+        nsIFrame* viewport = PresContext()->GetPresShell()->GetRootFrame();
+        viewport->InvalidateFrame();
+      }
+
+      // Return our desired size. Normally it's what we're told, but
+      // sometimes we can be given an unconstrained height (when a window
+      // is sizing-to-content), and we should compute our desired height.
+      if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
+        finalSize.BSize(wm) =
+            kidFrame->GetLogicalSize(wm).BSize(wm) +
+            kidReflowInput.ComputedLogicalMargin(wm).BStartEnd(wm);
+      }
     } else {
-      finalSize.BSize(wm) = aReflowInput.ComputedBSize();
+      // This only occurs in paginated mode.  There is no available space on
+      // this page due to reserving space for overflow from a previous page,
+      // so we push our child to the next page.
+      SetOverflowFrames(std::move(mFrames));
+      aStatus.SetIncomplete();
     }
 
     aDesiredSize.SetSize(wm, finalSize);
@@ -843,6 +876,6 @@ nsresult nsCanvasFrame::GetContentForEvent(WidgetEvent* aEvent,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsCanvasFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Canvas"), aResult);
+  return MakeFrameName(u"Canvas"_ns, aResult);
 }
 #endif

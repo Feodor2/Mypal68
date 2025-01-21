@@ -8,12 +8,12 @@
 #define nsGenConList_h___
 
 #include "mozilla/LinkedList.h"
-#include "nsIFrame.h"
 #include "nsStyleStruct.h"
 #include "nsCSSPseudoElements.h"
 #include "nsTextNode.h"
 
 class nsGenConList;
+class nsIFrame;
 
 struct nsGenConNode : public mozilla::LinkedListElement<nsGenConNode> {
   using StyleContentType = mozilla::StyleContentItem::Tag;
@@ -109,6 +109,11 @@ class nsGenConList {
   // Destroy all nodes with aFrame as parent. Returns true if some nodes
   // have been destroyed; otherwise false.
   bool DestroyNodesFor(nsIFrame* aFrame);
+
+  // Return the first node for aFrame on this list, or nullptr.
+  nsGenConNode* GetFirstNodeFor(nsIFrame* aFrame) const {
+    return mNodes.Get(aFrame);
+  }
 
   // Return true if |aNode1| is after |aNode2|.
   static bool NodeAfter(const nsGenConNode* aNode1, const nsGenConNode* aNode2);

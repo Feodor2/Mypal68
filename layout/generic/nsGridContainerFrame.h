@@ -7,6 +7,7 @@
 #ifndef nsGridContainerFrame_h___
 #define nsGridContainerFrame_h___
 
+#include "mozilla/CSSOrderAwareFrameIterator.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/HashTable.h"
 #include "nsContainerFrame.h"
@@ -23,14 +24,6 @@ nsContainerFrame* NS_NewGridContainerFrame(mozilla::PresShell* aPresShell,
                                            mozilla::ComputedStyle* aStyle);
 
 namespace mozilla {
-
-// Forward-declare typedefs for grid item iterator helper-class:
-template <typename Iterator>
-class CSSOrderAwareFrameIteratorT;
-typedef CSSOrderAwareFrameIteratorT<nsFrameList::iterator>
-    CSSOrderAwareFrameIterator;
-typedef CSSOrderAwareFrameIteratorT<nsFrameList::reverse_iterator>
-    ReverseCSSOrderAwareFrameIterator;
 
 /**
  * The number of implicit / explicit tracks and their sizes.
@@ -316,12 +309,7 @@ class nsGridContainerFrame final : public nsContainerFrame {
   typedef mozilla::LogicalPoint LogicalPoint;
   typedef mozilla::LogicalRect LogicalRect;
   typedef mozilla::LogicalSize LogicalSize;
-  typedef mozilla::CSSOrderAwareFrameIterator CSSOrderAwareFrameIterator;
-  typedef mozilla::ReverseCSSOrderAwareFrameIterator
-      ReverseCSSOrderAwareFrameIterator;
   typedef mozilla::WritingMode WritingMode;
-  typedef mozilla::layout::AutoFrameListPtr AutoFrameListPtr;
-  typedef nsLayoutUtils::IntrinsicISizeType IntrinsicISizeType;
   struct Grid;
   struct GridArea;
   class LineNameMap;
@@ -371,7 +359,7 @@ class nsGridContainerFrame final : public nsContainerFrame {
    * Helper for GetMinISize / GetPrefISize.
    */
   nscoord IntrinsicISize(gfxContext* aRenderingContext,
-                         IntrinsicISizeType aConstraint);
+                         mozilla::IntrinsicISizeType aConstraint);
 
   bool GetBBaseline(BaselineSharingGroup aBaselineGroup,
                     nscoord* aResult) const {
@@ -401,7 +389,7 @@ class nsGridContainerFrame final : public nsContainerFrame {
     eBoth = eFirst | eLast,
   };
   void CalculateBaselines(BaselineSet aBaselineSet,
-                          CSSOrderAwareFrameIterator* aIter,
+                          mozilla::CSSOrderAwareFrameIterator* aIter,
                           const nsTArray<GridItemInfo>* aGridItems,
                           const Tracks& aTracks, uint32_t aFragmentStartTrack,
                           uint32_t aFirstExcludedTrack, WritingMode aWM,
@@ -423,7 +411,7 @@ class nsGridContainerFrame final : public nsContainerFrame {
    * axis as aMajor.  Pass zero if that's not the axis we're fragmenting in.
    */
   static FindItemInGridOrderResult FindFirstItemInGridOrder(
-      CSSOrderAwareFrameIterator& aIter,
+      mozilla::CSSOrderAwareFrameIterator& aIter,
       const nsTArray<GridItemInfo>& aGridItems, LineRange GridArea::*aMajor,
       LineRange GridArea::*aMinor, uint32_t aFragmentStartTrack);
   /**
@@ -435,7 +423,7 @@ class nsGridContainerFrame final : public nsContainerFrame {
    * Pass the number of tracks if that's not the axis we're fragmenting in.
    */
   static FindItemInGridOrderResult FindLastItemInGridOrder(
-      ReverseCSSOrderAwareFrameIterator& aIter,
+      mozilla::ReverseCSSOrderAwareFrameIterator& aIter,
       const nsTArray<GridItemInfo>& aGridItems, LineRange GridArea::*aMajor,
       LineRange GridArea::*aMinor, uint32_t aFragmentStartTrack,
       uint32_t aFirstExcludedTrack);

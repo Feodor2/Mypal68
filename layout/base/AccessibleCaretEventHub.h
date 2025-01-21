@@ -5,12 +5,12 @@
 #ifndef mozilla_AccessibleCaretEventHub_h
 #define mozilla_AccessibleCaretEventHub_h
 
+#include "LayoutConstants.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDocShell.h"
-#include "nsIFrame.h"
 #include "nsIReflowObserver.h"
 #include "nsIScrollObserver.h"
 #include "nsPoint.h"

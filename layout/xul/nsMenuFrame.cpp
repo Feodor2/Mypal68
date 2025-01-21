@@ -42,6 +42,7 @@
 #include <algorithm>
 
 using namespace mozilla;
+using dom::Element;
 
 #define NS_MENU_POPUP_LIST_INDEX 0
 
@@ -73,8 +74,8 @@ class nsMenuActivateEvent : public Runnable {
 
     if (mIsActivate) {
       // Highlight the menu.
-      mMenu->SetAttr(kNameSpaceID_None, nsGkAtoms::menuactive,
-                     NS_LITERAL_STRING("true"), true);
+      mMenu->SetAttr(kNameSpaceID_None, nsGkAtoms::menuactive, u"true"_ns,
+                     true);
       // The menuactivated event is used by accessibility to track the user's
       // movements through menus
       domEventToFire.AssignLiteral("DOMMenuItemActive");
@@ -219,7 +220,7 @@ void nsMenuFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
   }
 }
 
-nsMenuPopupFrame* nsMenuFrame::GetPopup() {
+nsMenuPopupFrame* nsMenuFrame::GetPopup() const {
   nsFrameList* popupList = GetPopupList();
   return popupList ? static_cast<nsMenuPopupFrame*>(popupList->FirstChild())
                    : nullptr;
@@ -501,8 +502,8 @@ void nsMenuFrame::PopupOpened() {
   gMenuJustOpenedOrClosed = true;
 
   AutoWeakFrame weakFrame(this);
-  mContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::open,
-                                 NS_LITERAL_STRING("true"), true);
+  mContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::open, u"true"_ns,
+                                 true);
   if (!weakFrame.IsAlive()) return;
 
   nsMenuParent* menuParent = GetMenuParent();
@@ -777,7 +778,7 @@ nsresult nsMenuFrame::Notify(nsITimer* aTimer) {
         // menu.
         AutoWeakFrame weakFrame(this);
         mContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::menuactive,
-                                       NS_LITERAL_STRING("true"), true);
+                                       u"true"_ns, true);
         if (weakFrame.IsAlive()) {
           aTimer->InitWithCallback(mTimerMediator, kBlinkDelay,
                                    nsITimer::TYPE_ONE_SHOT);
@@ -920,7 +921,7 @@ void nsMenuFrame::BuildAcceleratorText(bool aNotify) {
   if (keyValue.IsEmpty()) return;
 
   // Turn the document into a DOM document so we can use getElementById
-  Document* document = mContent->GetUncomposedDoc();
+  dom::Document* document = mContent->GetUncomposedDoc();
   if (!document) return;
 
   // XXXsmaug If mContent is in shadow dom, should we use
@@ -1130,7 +1131,7 @@ void nsMenuFrame::CreateMenuCommandEvent(WidgetGUIEvent* aEvent,
   // Because the command event is firing asynchronously, a flag is needed to
   // indicate whether user input is being handled. This ensures that a popup
   // window won't get blocked.
-  bool userinput = UserActivation::IsHandlingUserInput();
+  bool userinput = dom::UserActivation::IsHandlingUserInput();
 
   mDelayedMenuCommandEvent =
       new nsXULMenuCommandEvent(mContent->AsElement(), isTrusted, shift,
@@ -1287,7 +1288,7 @@ nsMenuFrame::SetActiveChild(dom::Element* aChild) {
   return NS_OK;
 }
 
-nsIScrollableFrame* nsMenuFrame::GetScrollTargetFrame() {
+nsIScrollableFrame* nsMenuFrame::GetScrollTargetFrame() const {
   nsMenuPopupFrame* popupFrame = GetPopup();
   if (!popupFrame) return nullptr;
   nsIFrame* childFrame = popupFrame->PrincipalChildList().FirstChild();

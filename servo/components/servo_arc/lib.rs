@@ -227,6 +227,14 @@ impl<T> Arc<T> {
         }
     }
 
+    /// Like from_raw, but returns an addrefed arc instead.
+    #[inline]
+    pub unsafe fn from_raw_addrefed(ptr: *const T) -> Self {
+        let arc = Self::from_raw(ptr);
+        mem::forget(arc.clone());
+        arc
+    }
+
     /// Create a new static Arc<T> (one that won't reference count the object)
     /// and place it in the allocation provided by the specified `alloc`
     /// function.
@@ -712,7 +720,7 @@ impl<H, T> Arc<HeaderSlice<H, [T]>> {
                 // We should have consumed the buffer exactly, maybe accounting
                 // for some padding from the alignment.
                 debug_assert!(
-                    (buffer.offset(size as isize) as usize - current as *mut u8 as usize) <
+                    (buffer.add(size) as usize - current as *mut u8 as usize) <
                         inner_align
                 );
             }
@@ -790,8 +798,8 @@ impl<H> HeaderWithLength<H> {
     /// Creates a new HeaderWithLength.
     pub fn new(header: H, length: usize) -> Self {
         HeaderWithLength {
-            header: header,
-            length: length,
+            header,
+            length,
         }
     }
 }
@@ -1034,7 +1042,7 @@ impl<T> Clone for RawOffsetArc<T> {
 impl<T> Drop for RawOffsetArc<T> {
     fn drop(&mut self) {
         let _ = Arc::from_raw_offset(RawOffsetArc {
-            ptr: self.ptr.clone(),
+            ptr: self.ptr,
         });
     }
 }

@@ -2,33 +2,34 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NSSVGEFFECTS_H_
-#define NSSVGEFFECTS_H_
+#ifndef LAYOUT_SVG_SVGOBSERVERUTILS_H_
+#define LAYOUT_SVG_SVGOBSERVERUTILS_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/IDTracker.h"
 #include "FrameProperties.h"
 #include "mozilla/dom/Element.h"
 #include "nsID.h"
-#include "nsIFrame.h"
+#include "nsIFrame.h"  // only for LayoutFrameType
 #include "nsIMutationObserver.h"
 #include "nsISupportsBase.h"
 #include "nsISupportsImpl.h"
 #include "nsIReferrerInfo.h"
 #include "nsStringFwd.h"
 #include "nsStubMutationObserver.h"
-#include "nsSVGUtils.h"
+#include "nsStyleStruct.h"
 #include "nsCycleCollectionParticipant.h"
 
 class nsAtom;
+class nsIFrame;
 class nsIURI;
-class nsSVGClipPathFrame;
-class nsSVGPaintServerFrame;
 
 namespace mozilla {
+class SVGClipPathFrame;
 class SVGFilterFrame;
 class SVGMarkerFrame;
 class SVGMaskFrame;
+class SVGPaintServerFrame;
 
 namespace dom {
 class CanvasRenderingContext2D;
@@ -95,7 +96,7 @@ class SVGRenderingObserver : public nsStubMutationObserver {
   virtual ~SVGRenderingObserver() = default;
 
  public:
-  typedef mozilla::dom::Element Element;
+  using Element = dom::Element;
 
   SVGRenderingObserver() : mInObserverSet(false) {}
 
@@ -162,9 +163,9 @@ class SVGRenderingObserver : public nsStubMutationObserver {
 
 class SVGObserverUtils {
  public:
-  typedef mozilla::dom::CanvasRenderingContext2D CanvasRenderingContext2D;
-  typedef mozilla::dom::Element Element;
-  typedef dom::SVGGeometryElement SVGGeometryElement;
+  using CanvasRenderingContext2D = dom::CanvasRenderingContext2D;
+  using Element = dom::Element;
+  using SVGGeometryElement = dom::SVGGeometryElement;
   using HrefToTemplateCallback = const std::function<void(nsAString&)>&;
 
   /**
@@ -244,7 +245,7 @@ class SVGObserverUtils {
   /**
    * Get the paint server for aPaintedFrame.
    */
-  static nsSVGPaintServerFrame* GetAndObservePaintServer(
+  static SVGPaintServerFrame* GetAndObservePaintServer(
       nsIFrame* aPaintedFrame, mozilla::StyleSVGPaint nsStyleSVG::*aPaint);
 
   /**
@@ -262,8 +263,8 @@ class SVGObserverUtils {
    * NOTE! A return value of eHasNoRefs does NOT mean that there are no filters
    * to be applied, only that there are no references to SVG filter elements.
    *
-   * XXX Callers other than ComputePostEffectsVisualOverflowRect and
-   * nsSVGUtils::GetPostFilterVisualOverflowRect should not need to initiate
+   * XXX Callers other than ComputePostEffectsInkOverflowRect and
+   * SVGUtils::GetPostFilterInkOverflowRect should not need to initiate
    * observing.  If we have a bug that causes invalidation (which would remove
    * observers) between reflow and painting, then we don't really want to
    * re-add abservers during painting.  That has the potential to hide logic
@@ -329,7 +330,7 @@ class SVGObserverUtils {
    * case.
    */
   static ReferenceState GetAndObserveClipPath(
-      nsIFrame* aClippedFrame, nsSVGClipPathFrame** aClipPathFrame);
+      nsIFrame* aClippedFrame, SVGClipPathFrame** aClipPathFrame);
 
   /**
    * If masking is applied to aMaskedFrame, gets an array of any SVG masks
@@ -414,4 +415,4 @@ class SVGObserverUtils {
 
 }  // namespace mozilla
 
-#endif /*NSSVGEFFECTS_H_*/
+#endif  // LAYOUT_SVG_SVGOBSERVERUTILS_H_

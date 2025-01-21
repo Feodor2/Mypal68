@@ -14,6 +14,7 @@
 #include "mozilla/ServoBindings.h"
 
 #include "nsCSSPropertyID.h"
+#include "nsString.h"
 
 class nsHTMLCSSStyleSheet;
 
@@ -142,13 +143,20 @@ class DeclarationBlock final {
   size_t SizeofIncludingThis(MallocSizeOf);
 
   static already_AddRefed<DeclarationBlock> FromCssText(
-      const nsAString& aCssText, URLExtraData* aExtraData,
-      nsCompatibility aMode, css::Loader* aLoader, uint16_t aRuleType) {
-    NS_ConvertUTF16toUTF8 value(aCssText);
+      const nsACString& aCssText, URLExtraData* aExtraData,
+      nsCompatibility aMode, css::Loader* aLoader, StyleCssRuleType aRuleType) {
     RefPtr<RawServoDeclarationBlock> raw =
-        Servo_ParseStyleAttribute(&value, aExtraData, aMode, aLoader, aRuleType)
+        Servo_ParseStyleAttribute(&aCssText, aExtraData, aMode, aLoader,
+                                  aRuleType)
             .Consume();
     return MakeAndAddRef<DeclarationBlock>(raw.forget());
+  }
+
+  static already_AddRefed<DeclarationBlock> FromCssText(
+      const nsAString& aCssText, URLExtraData* aExtraData,
+      nsCompatibility aMode, css::Loader* aLoader, StyleCssRuleType aRuleType) {
+    NS_ConvertUTF16toUTF8 value(aCssText);
+    return FromCssText(value, aExtraData, aMode, aLoader, aRuleType);
   }
 
   RawServoDeclarationBlock* Raw() const { return mRaw; }
@@ -171,7 +179,7 @@ class DeclarationBlock final {
         &mRaw);
   }
 
-  void ToString(nsAString& aResult) const {
+  void ToString(nsACString& aResult) const {
     Servo_DeclarationBlock_GetCssText(mRaw, &aResult);
   }
 
@@ -182,11 +190,11 @@ class DeclarationBlock final {
     return Servo_DeclarationBlock_GetNthProperty(mRaw, aIndex, &aReturn);
   }
 
-  void GetPropertyValue(const nsACString& aProperty, nsAString& aValue) const {
+  void GetPropertyValue(const nsACString& aProperty, nsACString& aValue) const {
     Servo_DeclarationBlock_GetPropertyValue(mRaw, &aProperty, &aValue);
   }
 
-  void GetPropertyValueByID(nsCSSPropertyID aPropID, nsAString& aValue) const {
+  void GetPropertyValueByID(nsCSSPropertyID aPropID, nsACString& aValue) const {
     Servo_DeclarationBlock_GetPropertyValueById(mRaw, aPropID, &aValue);
   }
 

@@ -31,7 +31,7 @@ ${helpers.single_keyword(
     servo_2020_pref="layout.writing-mode.enabled",
     animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-writing-mode",
-    flags="APPLIES_TO_CUE",
+    gecko_enum_prefix="StyleWritingModeProperty",
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
@@ -84,8 +84,7 @@ ${helpers.single_keyword(
 
 ${helpers.single_keyword(
     "image-orientation",
-    "none from-image",
-    gecko_pref_controlled_initial_value="layout.css.image-orientation.initial-from-image=from-image",
+    "from-image none",
     engines="gecko",
     gecko_enum_prefix="StyleImageOrientation",
     animation_value_type="discrete",

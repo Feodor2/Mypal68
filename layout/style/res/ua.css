@@ -132,6 +132,7 @@
 /* https://drafts.csswg.org/css-lists-3/#ua-stylesheet */
 *|*::marker {
   text-align: end;
+  text-transform: none;
   unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
 }
@@ -300,22 +301,23 @@
   height: 100%;
 }
 
-*|*::-moz-page {
-  /* Individual page in print/print preview. Visual styles may only appear
-   * in print preview. */
+*|*::-moz-printed-sheet {
+  /* Individual sheet of paper in print/print preview. Visual styles may only
+   * appear in print preview. */
   display: block;
   background: white;
   box-shadow: 5px 5px 8px #202020;
   box-decoration-break: clone;
+  /* TODO: Remove margin if viewport is small or something? */
   margin: 0.125in 0.25in;
 }
 
-*|*::-moz-pagecontent {
+*|*::-moz-page-content {
   display: block;
   margin: auto;
 }
 
-*|*::-moz-pagebreak {
+*|*::-moz-page-break {
   display: block;
 }
 

@@ -75,7 +75,7 @@ void nsPlaceholderFrame::AddInlineMinISize(
   // ...but push floats onto the list
   if (mOutOfFlowFrame->IsFloating()) {
     nscoord floatWidth = nsLayoutUtils::IntrinsicForContainer(
-        aRenderingContext, mOutOfFlowFrame, nsLayoutUtils::MIN_ISIZE);
+        aRenderingContext, mOutOfFlowFrame, IntrinsicISizeType::MinISize);
     aData->mFloats.AppendElement(
         InlineIntrinsicISizeData::FloatInfo(mOutOfFlowFrame, floatWidth));
   }
@@ -93,7 +93,7 @@ void nsPlaceholderFrame::AddInlinePrefISize(
   // ...but push floats onto the list
   if (mOutOfFlowFrame->IsFloating()) {
     nscoord floatWidth = nsLayoutUtils::IntrinsicForContainer(
-        aRenderingContext, mOutOfFlowFrame, nsLayoutUtils::PREF_ISIZE);
+        aRenderingContext, mOutOfFlowFrame, IntrinsicISizeType::PrefISize);
     aData->mFloats.AppendElement(
         InlineIntrinsicISizeData::FloatInfo(mOutOfFlowFrame, floatWidth));
   }
@@ -200,7 +200,9 @@ ComputedStyle* nsPlaceholderFrame::GetParentComputedStyleForOutOfFlow(
 
   Element* parentElement =
       mContent ? mContent->GetFlattenedTreeParentElement() : nullptr;
-  if (parentElement && Servo_Element_IsDisplayContents(parentElement)) {
+  // See the similar code in nsIFrame::DoGetParentComputedStyle.
+  if (parentElement && MOZ_LIKELY(parentElement->HasServoData()) &&
+      Servo_Element_IsDisplayContents(parentElement)) {
     RefPtr<ComputedStyle> style =
         ServoStyleSet::ResolveServoStyle(*parentElement);
     *aProviderFrame = nullptr;
@@ -259,7 +261,7 @@ void nsPlaceholderFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsPlaceholderFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Placeholder"), aResult);
+  return MakeFrameName(u"Placeholder"_ns, aResult);
 }
 
 void nsPlaceholderFrame::List(FILE* out, const char* aPrefix,

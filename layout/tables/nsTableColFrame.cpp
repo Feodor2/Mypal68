@@ -174,7 +174,7 @@ nsTableColFrame* nsTableColFrame::GetNextCol() const {
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsTableColFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("TableCol"), aResult);
+  return MakeFrameName(u"TableCol"_ns, aResult);
 }
 #endif
 
@@ -182,8 +182,8 @@ void nsTableColFrame::InvalidateFrame(uint32_t aDisplayItemKey,
                                       bool aRebuildDisplayItems) {
   nsIFrame::InvalidateFrame(aDisplayItemKey, aRebuildDisplayItems);
   if (GetTableFrame()->IsBorderCollapse()) {
-    GetParent()->InvalidateFrameWithRect(
-        GetVisualOverflowRect() + GetPosition(), aDisplayItemKey, false);
+    GetParent()->InvalidateFrameWithRect(InkOverflowRect() + GetPosition(),
+                                         aDisplayItemKey, false);
   }
 }
 

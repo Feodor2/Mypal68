@@ -1,12 +1,13 @@
 # This pref enables high-contrast mode in the testcases here:
-defaults test-pref(browser.display.document_color_use,2) test-pref(browser.display.permit_backplate,true) test-pref(layout.css.prefers-contrast.enabled,true)
+defaults test-pref(browser.display.document_color_use,2) test-pref(browser.display.permit_backplate,true) test-pref(layout.css.prefers-contrast.enabled,true) test-pref(layout.css.forced-colors.enabled,true) test-pref(browser.display.foreground_color,"#000000") test-pref(browser.display.background_color,"#FFFFFF")
 
 # There are several platform-specific fuzzy-if notations below due to
-# anti-aliasing, extra visual overflow, and slightly inacurate reftest
+# anti-aliasing, extra ink overflow, and slightly inacurate reftest
 # mocking. You can read more about the annotations and their specifics here:
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1539212#c25
 
 == backplate-select-001.html backplate-select-001-ref.html
+
 fuzzy-if(cocoaWidget,255-255,20-20) == backplate-bg-image-001.html backplate-bg-image-001-ref.html # bug 1577028
 fuzzy-if(cocoaWidget,255-255,20-20) == backplate-bg-image-002.html backplate-bg-image-002-ref.html
 fuzzy-if(cocoaWidget,255-255,4-4) == backplate-bg-image-003.html backplate-bg-image-003-ref.html
@@ -45,27 +46,22 @@ pref(browser.display.document_color_use,2) == background-transparent-form-contro
 
 # prefers-contrast media query:
 
-# a prefers-contrast value of forced or high should evaluate to true
-== prefers-contrast-001.html prefers-contrast-black-ref.html
+# Forced colors doesn't affect prefers-contrast.
+!= prefers-contrast-001.html prefers-contrast-black-ref.html
+# high should match when an accessibility theme is used
 test-pref(ui.windowForeground,"black") test-pref(ui.windowBackground,"white") test-pref(ui.useAccessibilityTheme,1) == prefers-contrast-001.html prefers-contrast-black-ref.html
 
 # high should match when an accessibility theme is being used
 test-pref(ui.windowForeground,"black") test-pref(ui.windowBackground,"white") test-pref(ui.useAccessibilityTheme,1) == prefers-contrast-002.html prefers-contrast-black-ref.html
 
-# If RFP is on the media query stops evaluating contrast preferences
-# and defaults to no-preference. The media query will still evaluate
-# to forced though when RFP is on. The idea being that there are other
-# ways to detect if forced colors are enabled so might as well not lie
-# about it.
-test-pref(privacy.resistFingerprinting,true) == prefers-contrast-003.html prefers-contrast-black-ref.html
+# If RFP is on the media query stops evaluating contrast preferences and
+# defaults to no-preference.
+test-pref(privacy.resistFingerprinting,true) != prefers-contrast-001.html prefers-contrast-black-ref.html
 # high should not match when RFP is enabled.
 test-pref(ui.windowForeground,"black") test-pref(ui.windowBackground,"white") test-pref(privacy.resistFingerprinting,true) test-pref(ui.useAccessibilityTheme,1) != prefers-contrast-002.html prefers-contrast-black-ref.html
 
 # Should only be enabled behind preference.
 test-pref(layout.css.prefers-contrast.enabled,false) != prefers-contrast-001.html prefers-contrast-black-ref.html
-
-# prefers-contrast forced matching forced
-== prefers-contrast-003.html prefers-contrast-black-ref.html
 
 # a prefers-contrast value of no-preference should evaluate to false
 # in the boolean context
@@ -73,3 +69,17 @@ test-pref(browser.display.document_color_use,0) != prefers-contrast-001.html pre
 
 # a prefers-contrast value of no-preference should match no-preference
 test-pref(browser.display.document_color_use,0) == prefers-contrast-005.html prefers-contrast-black-ref.html
+
+# forced-colors media query
+
+# active
+== forced-colors-000.html prefers-contrast-black-ref.html
+test-pref(browser.display.document_color_use,0) != forced-colors-000.html prefers-contrast-black-ref.html
+
+# none
+test-pref(browser.display.document_color_use,0) == forced-colors-002.html prefers-contrast-black-ref.html
+!= forced-colors-002.html prefers-contrast-black-ref.html
+
+# boolean context
+== forced-colors-001.html prefers-contrast-black-ref.html
+test-pref(browser.display.document_color_use,0) != forced-colors-001.html prefers-contrast-black-ref.html

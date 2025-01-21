@@ -37,8 +37,12 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
       mContentArea(aReflowInput.GetWritingMode()),
       mPushedFloats(nullptr),
       mOverflowTracker(nullptr),
-      mBorderPadding(mReflowInput.ComputedLogicalBorderPadding().ApplySkipSides(
-          aFrame->GetLogicalSkipSides(&aReflowInput))),
+      mBorderPadding(
+          mReflowInput
+              .ComputedLogicalBorderPadding(mReflowInput.GetWritingMode())
+              .ApplySkipSides(aFrame->GetLogicalSkipSides(
+                  Some(nsIFrame::SkipSidesDuringReflow{aReflowInput,
+                                                       aConsumedBSize})))),
       mPrevBEndMargin(),
       mLineNumber(0),
       mFloatBreakType(StyleClear::None),
@@ -153,8 +157,7 @@ void BlockReflowInput::ComputeReplacedBlockOffsetsForFloats(
     LogicalMargin frameMargin(wm);
     SizeComputationInput os(aFrame, mReflowInput.mRenderingContext, wm,
                             mContentArea.ISize(wm));
-    frameMargin =
-        os.ComputedLogicalMargin().ConvertTo(wm, aFrame->GetWritingMode());
+    frameMargin = os.ComputedLogicalMargin(wm);
 
     nscoord iStartFloatIOffset =
         aFloatAvailableSpace.IStart(wm) - mContentArea.IStart(wm);
@@ -200,8 +203,8 @@ void BlockReflowInput::ComputeBlockAvailSpace(
   // If we did that, then for those frames where the condition below is
   // true but nsBlockFrame::BlockCanIntersectFloats is false,
   // nsBlockFrame::ISizeToClearPastFloats would need to use the
-  // shrink-wrap formula, max(MIN_ISIZE, min(avail width, PREF_ISIZE))
-  // rather than just using MIN_ISIZE.
+  // shrink-wrap formula, max(MinISize, min(avail width, PrefISize))
+  // rather than just using MinISize.
   NS_ASSERTION(
       nsBlockFrame::BlockCanIntersectFloats(aFrame) == !aBlockAvoidsFloats,
       "unexpected replaced width");
@@ -400,8 +403,7 @@ void BlockReflowInput::AppendPushedFloatChain(nsIFrame* aFloatCont) {
     if (!aFloatCont || aFloatCont->GetParent() != mBlock) {
       break;
     }
-    DebugOnly<nsresult> rv = mBlock->StealFrame(aFloatCont);
-    NS_ASSERTION(NS_SUCCEEDED(rv), "StealFrame should succeed");
+    mBlock->StealFrame(aFloatCont);
   }
 }
 
@@ -612,29 +614,22 @@ static nscoord FloatMarginISize(const ReflowInput& aCBReflowInput,
   AutoMaybeDisableFontInflation an(aFloat);
   WritingMode wm = aFloatOffsetState.GetWritingMode();
 
-  LogicalSize floatSize = aFloat->ComputeSize(
+  auto floatSize = aFloat->ComputeSize(
       aCBReflowInput.mRenderingContext, wm, aCBReflowInput.ComputedSize(wm),
-      aFloatAvailableISize, aFloatOffsetState.ComputedLogicalMargin().Size(wm),
-      aFloatOffsetState.ComputedLogicalBorderPadding().Size(wm) -
-          aFloatOffsetState.ComputedLogicalPadding().Size(wm),
-      aFloatOffsetState.ComputedLogicalPadding().Size(wm),
-      nsIFrame::ComputeSizeFlags::eShrinkWrap);
+      aFloatAvailableISize,
+      aFloatOffsetState.ComputedLogicalMargin(wm).Size(wm),
+      aFloatOffsetState.ComputedLogicalBorderPadding(wm).Size(wm), {},
+      ComputeSizeFlag::ShrinkWrap);
 
   WritingMode cbwm = aCBReflowInput.GetWritingMode();
-  nscoord floatISize = floatSize.ConvertTo(cbwm, wm).ISize(cbwm);
+  nscoord floatISize = floatSize.mLogicalSize.ConvertTo(cbwm, wm).ISize(cbwm);
   if (floatISize == NS_UNCONSTRAINEDSIZE) {
     return NS_UNCONSTRAINEDSIZE;  // reflow is needed to get the true size
   }
 
   return floatISize +
-         aFloatOffsetState.ComputedLogicalMargin()
-             .Size(wm)
-             .ConvertTo(cbwm, wm)
-             .ISize(cbwm) +
-         aFloatOffsetState.ComputedLogicalBorderPadding()
-             .Size(wm)
-             .ConvertTo(cbwm, wm)
-             .ISize(cbwm);
+         aFloatOffsetState.ComputedLogicalMargin(cbwm).IStartEnd(cbwm) +
+         aFloatOffsetState.ComputedLogicalBorderPadding(cbwm).IStartEnd(cbwm);
 }
 
 // A frame property that stores the last shape source / margin / etc. if there's
@@ -719,8 +714,8 @@ bool BlockReflowInput::FlowAndPlaceFloat(nsIFrame* aFloat) {
   // Get the band of available space with respect to margin box.
   nsFlowAreaRect floatAvailableSpace =
       GetFloatAvailableSpaceForPlacingFloat(mBCoord);
-  LogicalRect adjustedAvailableSpace = mBlock->AdjustFloatAvailableSpace(
-      *this, floatAvailableSpace.mRect, aFloat);
+  LogicalRect adjustedAvailableSpace =
+      mBlock->AdjustFloatAvailableSpace(*this, floatAvailableSpace.mRect);
 
   NS_ASSERTION(aFloat->GetParent() == mBlock, "Float frame has wrong parent");
 
@@ -759,9 +754,6 @@ bool BlockReflowInput::FlowAndPlaceFloat(nsIFrame* aFloat) {
   MOZ_ASSERT(StyleFloat::Left == floatStyle || StyleFloat::Right == floatStyle,
              "Invalid float type!");
 
-  // Can the float fit here?
-  bool keepFloatOnSameLine = false;
-
   // Are we required to place at least part of the float because we're
   // at the top of the page (to avoid an infinite loop of pushing and
   // breaking).
@@ -781,63 +773,11 @@ bool BlockReflowInput::FlowAndPlaceFloat(nsIFrame* aFloat) {
     }
 
     // Nope. try to advance to the next band.
-    if (StyleDisplay::Table != floatDisplay->mDisplay ||
-        eCompatibility_NavQuirks != mPresContext->CompatibilityMode()) {
-      mBCoord += floatAvailableSpace.mRect.BSize(wm);
-      if (adjustedAvailableSpace.BSize(wm) != NS_UNCONSTRAINEDSIZE) {
-        adjustedAvailableSpace.BSize(wm) -= floatAvailableSpace.mRect.BSize(wm);
-      }
-      floatAvailableSpace = GetFloatAvailableSpaceForPlacingFloat(mBCoord);
-    } else {
-      // This quirk matches the one in nsBlockFrame::AdjustFloatAvailableSpace
-      // IE handles float tables in a very special way
-
-      // see if the previous float is also a table and has "align"
-      nsFloatCache* fc = mCurrentLineFloats.Head();
-      nsIFrame* prevFrame = nullptr;
-      while (fc) {
-        if (fc->mFloat == aFloat) {
-          break;
-        }
-        prevFrame = fc->mFloat;
-        fc = fc->Next();
-      }
-
-      if (prevFrame) {
-        // get the frame type
-        if (prevFrame->IsTableWrapperFrame()) {
-          // see if it has "align="
-          // IE makes a difference between align and the float property.
-          //
-          // We're interested only if previous frame is align=left IE messes
-          // things up when "right" (overlapping frames).
-          //
-          // FIXME(emilio, bug 1426747): This looks fishy.
-          nsIContent* content = prevFrame->GetContent();
-          if (content && content->IsElement() &&
-              content->AsElement()->AttrValueIs(
-                  kNameSpaceID_None, nsGkAtoms::align,
-                  NS_LITERAL_STRING("left"), eIgnoreCase)) {
-            keepFloatOnSameLine = true;
-            // don't advance to next line (IE quirkie behaviour)
-            // it breaks rule CSS2/9.5.1/1, but what the hell
-            // since we cannot evangelize the world
-            break;
-          }
-        }
-      }
-
-      // the table does not fit anymore in this line so advance to next band
-      mBCoord += floatAvailableSpace.mRect.BSize(wm);
-      // To match nsBlockFrame::AdjustFloatAvailableSpace, we have to
-      // get a new width for the new band.
-      floatAvailableSpace = GetFloatAvailableSpaceForPlacingFloat(mBCoord);
-      adjustedAvailableSpace = mBlock->AdjustFloatAvailableSpace(
-          *this, floatAvailableSpace.mRect, aFloat);
-      floatMarginISize = FloatMarginISize(
-          mReflowInput, adjustedAvailableSpace.ISize(wm), aFloat, offsets);
+    mBCoord += floatAvailableSpace.mRect.BSize(wm);
+    if (adjustedAvailableSpace.BSize(wm) != NS_UNCONSTRAINEDSIZE) {
+      adjustedAvailableSpace.BSize(wm) -= floatAvailableSpace.mRect.BSize(wm);
     }
-
+    floatAvailableSpace = GetFloatAvailableSpaceForPlacingFloat(mBCoord);
     mustPlaceFloat = false;
   }
 
@@ -856,14 +796,7 @@ bool BlockReflowInput::FlowAndPlaceFloat(nsIFrame* aFloat) {
   if (leftFloat == wm.IsBidiLTR()) {
     floatPos.I(wm) = floatAvailableSpace.mRect.IStart(wm);
   } else {
-    if (!keepFloatOnSameLine) {
-      floatPos.I(wm) = floatAvailableSpace.mRect.IEnd(wm) - floatMarginISize;
-    } else {
-      // this is the IE quirk (see few lines above)
-      // the table is kept in the same line: don't let it overlap the
-      // previous float
-      floatPos.I(wm) = floatAvailableSpace.mRect.IStart(wm);
-    }
+    floatPos.I(wm) = floatAvailableSpace.mRect.IEnd(wm) - floatMarginISize;
   }
   // CSS2 spec, 9.5.1 rule [4]: "A floating box's outer top may not
   // be higher than the top of its containing block."  (Since the
@@ -1019,8 +952,7 @@ void BlockReflowInput::PushFloatPastBreak(nsIFrame* aFloat) {
 
   // Put the float on the pushed floats list, even though it
   // isn't actually a continuation.
-  DebugOnly<nsresult> rv = mBlock->StealFrame(aFloat);
-  NS_ASSERTION(NS_SUCCEEDED(rv), "StealFrame should succeed");
+  mBlock->StealFrame(aFloat);
   AppendPushedFloatChain(aFloat);
   mReflowStatus.SetOverflowIncomplete();
 }

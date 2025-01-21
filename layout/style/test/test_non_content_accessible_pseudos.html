@@ -9,7 +9,6 @@ const NON_CONTENT_ACCESIBLE_PSEUDOS = [
   "::-moz-number-spin-down",
   "::-moz-number-spin-box",
   "::-moz-number-text",
-  "::-moz-math-anonymous",
 
   ":-moz-native-anonymous",
   ":-moz-use-shadow-tree-root",
@@ -17,7 +16,6 @@ const NON_CONTENT_ACCESIBLE_PSEUDOS = [
   ":-moz-browser-frame",
   ":-moz-devtools-highlighted",
   ":-moz-styleeditor-transitioning",
-  ":-moz-user-disabled",
   ":-moz-handler-clicktoplay",
   ":-moz-handler-vulnerable-updatable",
   ":-moz-handler-vulnerable-no-update",
@@ -28,12 +26,14 @@ const NON_CONTENT_ACCESIBLE_PSEUDOS = [
   ":-moz-dir-attr-ltr",
   ":-moz-dir-attr-rtl",
   ":-moz-dir-attr-like-auto",
-  ":-moz-autofill",
   ":-moz-autofill-preview",
+
+  "::-moz-tree-row",
+  "::-moz-tree-row(foo)",
 ];
 
-if (!SpecialPowers.getBoolPref("layout.css.xul-tree-pseudos.content.enabled")) {
-  NON_CONTENT_ACCESIBLE_PSEUDOS.push("::-moz-tree-row", "::-moz-tree-row(foo)");
+if (!SpecialPowers.getBoolPref("layout.css.autofill.enabled")) {
+  NON_CONTENT_ACCESIBLE_PSEUDOS.push(":autofill", ":-webkit-autofill");
 }
 
 test(function() {

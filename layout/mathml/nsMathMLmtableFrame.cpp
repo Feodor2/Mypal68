@@ -20,6 +20,7 @@
 
 #include "nsIScriptError.h"
 #include "nsContentUtils.h"
+#include "nsLayoutUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::image;
@@ -125,9 +126,8 @@ static nsresult ReportParseError(nsIFrame* aFrame, const char16_t* aAttribute,
   params.AppendElement(nsDependentAtomString(content->NodeInfo()->NameAtom()));
 
   return nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Layout: MathML"),
-      content->OwnerDoc(), nsContentUtils::eMATHML_PROPERTIES,
-      "AttributeParsingError", params);
+      nsIScriptError::errorFlag, "Layout: MathML"_ns, content->OwnerDoc(),
+      nsContentUtils::eMATHML_PROPERTIES, "AttributeParsingError", params);
 }
 
 // Each rowalign='top bottom' or columnalign='left right center' (from

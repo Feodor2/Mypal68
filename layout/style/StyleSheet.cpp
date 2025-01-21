@@ -36,8 +36,6 @@ StyleSheet::StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
       mRelevantGlobal(nullptr),
       mConstructorDocument(nullptr),
       mDocumentOrShadowRoot(nullptr),
-      mOwningNode(nullptr),
-      mOwnerRule(nullptr),
       mParsingMode(aParsingMode),
       mState(static_cast<State>(0)),
       mInner(new StyleSheetInfo(aCORSMode, aIntegrity, aParsingMode)) {
@@ -45,17 +43,13 @@ StyleSheet::StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
 }
 
 StyleSheet::StyleSheet(const StyleSheet& aCopy, StyleSheet* aParentSheetToUse,
-                       dom::CSSImportRule* aOwnerRuleToUse,
                        dom::DocumentOrShadowRoot* aDocOrShadowRootToUse,
-                       dom::Document* aConstructorDocToUse,
-                       nsINode* aOwningNodeToUse)
+                       dom::Document* aConstructorDocToUse)
     : mParentSheet(aParentSheetToUse),
       mRelevantGlobal(nullptr),
       mConstructorDocument(aConstructorDocToUse),
       mTitle(aCopy.mTitle),
       mDocumentOrShadowRoot(aDocOrShadowRootToUse),
-      mOwningNode(aOwningNodeToUse),
-      mOwnerRule(aOwnerRuleToUse),
       mParsingMode(aCopy.mParsingMode),
       mState(aCopy.mState),
       // Shallow copy, but concrete subclasses will fix up.
@@ -126,10 +120,13 @@ already_AddRefed<StyleSheet> StyleSheet::Constructor(
   sheet->SetPrincipal(constructorDocument->NodePrincipal());
   sheet->SetReferrerInfo(constructorDocument->GetReferrerInfo());
   sheet->mConstructorDocument = constructorDocument;
+  if (constructorDocument) {
+    sheet->mRelevantGlobal = constructorDocument->GetParentObject();
+  }
 
   // 2. Set the sheet's media according to aOptions.
-  if (aOptions.mMedia.IsString()) {
-    sheet->SetMedia(MediaList::Create(aOptions.mMedia.GetAsString()));
+  if (aOptions.mMedia.IsUTF8String()) {
+    sheet->SetMedia(MediaList::Create(aOptions.mMedia.GetAsUTF8String()));
   } else {
     sheet->SetMedia(aOptions.mMedia.GetAsMediaList()->Clone());
   }
@@ -184,22 +181,29 @@ Document* StyleSheet::GetKeptAliveByDocument() const {
 }
 
 void StyleSheet::LastRelease() {
-  MOZ_ASSERT(mInner, "Should have an mInner at time of destruction.");
-  MOZ_ASSERT(mInner->mSheets.Contains(this), "Our mInner should include us.");
   MOZ_DIAGNOSTIC_ASSERT(mAdopters.IsEmpty(),
                         "Should have no adopters at time of destruction.");
 
-  mInner->RemoveSheet(this);
-  mInner = nullptr;
+  if (mInner) {
+    MOZ_ASSERT(mInner->mSheets.Contains(this), "Our mInner should include us.");
+    mInner->RemoveSheet(this);
+    mInner = nullptr;
+  }
 
   DropMedia();
   DropRuleList();
 }
 
 void StyleSheet::UnlinkInner() {
+  if (!mInner) {
+    return;
+  }
+
   // We can only have a cycle through our inner if we have a unique inner,
   // because otherwise there are no JS wrappers for anything in the inner.
   if (mInner->mSheets.Length() != 1) {
+    mInner->RemoveSheet(this);
+    mInner = nullptr;
     return;
   }
 
@@ -211,15 +215,15 @@ void StyleSheet::UnlinkInner() {
 }
 
 void StyleSheet::TraverseInner(nsCycleCollectionTraversalCallback& cb) {
-  // We can only have a cycle through our inner if we have a unique inner,
-  // because otherwise there are no JS wrappers for anything in the inner.
-  if (mInner->mSheets.Length() != 1) {
+  if (!mInner) {
     return;
   }
 
   for (StyleSheet* child : ChildSheets()) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "child sheet");
-    cb.NoteXPCOMChild(child);
+    if (child->mParentSheet == this) {
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "child sheet");
+      cb.NoteXPCOMChild(child);
+    }
   }
 }
 
@@ -336,6 +340,11 @@ void StyleSheet::SetDisabled(bool aDisabled) {
 void StyleSheet::SetURLExtraData() {
   Inner().mURLData =
       new URLExtraData(GetBaseURI(), GetReferrerInfo(), Principal());
+}
+
+nsISupports* StyleSheet::GetRelevantGlobal() const {
+  const StyleSheet& outer = OutermostSheet();
+  return outer.mRelevantGlobal;
 }
 
 StyleSheetInfo::StyleSheetInfo(CORSMode aCORSMode,
@@ -523,13 +532,14 @@ void StyleSheet::EnsureUniqueInner() {
 
   StyleSheetInfo* clone = mInner->CloneFor(this);
   MOZ_ASSERT(clone);
+
   mInner->RemoveSheet(this);
   mInner = clone;
 
   // Fixup the child lists and parent links in the Servo sheet. This is done
   // here instead of in StyleSheetInner::CloneFor, because it's just more
   // convenient to do so instead.
-  BuildChildListAfterInnerClone();
+  FixUpAfterInnerClone();
 
   // let our containing style sets know that if we call
   // nsPresContext::EnsureSafeToHandOutCSSRules we will need to restyle the
@@ -572,11 +582,11 @@ void StyleSheet::SetSourceURL(const nsAString& aSourceURL) {
   mInner->mSourceURL = aSourceURL;
 }
 
-css::Rule* StyleSheet::GetDOMOwnerRule() const { return mOwnerRule; }
+css::Rule* StyleSheet::GetDOMOwnerRule() const { return GetOwnerRule(); }
 
 // https://drafts.csswg.org/cssom/#dom-cssstylesheet-insertrule
 // https://wicg.github.io/construct-stylesheets/#dom-cssstylesheet-insertrule
-uint32_t StyleSheet::InsertRule(const nsAString& aRule, uint32_t aIndex,
+uint32_t StyleSheet::InsertRule(const nsACString& aRule, uint32_t aIndex,
                                 nsIPrincipal& aSubjectPrincipal,
                                 ErrorResult& aRv) {
   if (IsReadOnly() || !AreRulesAvailable(aSubjectPrincipal, aRv)) {
@@ -610,14 +620,15 @@ void StyleSheet::DeleteRule(uint32_t aIndex, nsIPrincipal& aSubjectPrincipal,
   return DeleteRuleInternal(aIndex, aRv);
 }
 
-int32_t StyleSheet::AddRule(const nsAString& aSelector, const nsAString& aBlock,
+int32_t StyleSheet::AddRule(const nsACString& aSelector,
+                            const nsACString& aBlock,
                             const Optional<uint32_t>& aIndex,
                             nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (IsReadOnly() || !AreRulesAvailable(aSubjectPrincipal, aRv)) {
     return -1;
   }
 
-  nsAutoString rule;
+  nsAutoCString rule;
   rule.Append(aSelector);
   rule.AppendLiteral(" { ");
   if (!aBlock.IsEmpty()) {
@@ -798,6 +809,8 @@ void StyleSheet::RuleRemoved(css::Rule& aRule) {
 }
 
 void StyleSheet::RuleChanged(css::Rule* aRule, StyleRuleChangeKind aKind) {
+  MOZ_ASSERT(!aRule || HasUniqueInner(),
+             "Shouldn't have mutated a shared sheet");
   mState |= State::ModifiedRules;
   NOTIFY(RuleChanged, (*this, aRule, aKind));
 }
@@ -823,7 +836,7 @@ StyleSheet::StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
 
 #undef NOTIFY
 
-nsresult StyleSheet::InsertRuleIntoGroup(const nsAString& aRule,
+nsresult StyleSheet::InsertRuleIntoGroup(const nsACString& aRule,
                                          css::GroupRule* aGroup,
                                          uint32_t aIndex) {
   NS_ASSERTION(IsComplete(), "No inserting into an incomplete sheet!");
@@ -925,7 +938,7 @@ bool StyleSheet::AreRulesAvailable(nsIPrincipal& aSubjectPrincipal,
   // Rules are not available on incomplete sheets.
   if (!IsComplete()) {
     aRv.ThrowInvalidAccessError(
-        "Can't access rules of still-loading stylsheet");
+        "Can't access rules of still-loading style sheet");
     return false;
   }
   //-- Security check: Only scripts whose principal subsumes that of the
@@ -987,34 +1000,73 @@ size_t StyleSheet::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   return n;
 }
 
-#ifdef DEBUG
-void StyleSheet::List(FILE* out, int32_t aIndent) const {
-  int32_t index;
-
-  // Indent
-  nsAutoCString str;
-  for (index = aIndent; --index >= 0;) {
-    str.AppendLiteral("  ");
+#if defined(DEBUG) || defined(MOZ_LAYOUT_DEBUGGER)
+void StyleSheet::List(FILE* aOut, int32_t aIndent) {
+  for (StyleSheet* child : ChildSheets()) {
+    child->List(aOut, aIndent);
   }
 
-  str.AppendLiteral("CSS Style Sheet: ");
-  nsAutoCString urlSpec;
-  nsresult rv = GetSheetURI()->GetSpec(urlSpec);
-  if (NS_SUCCEEDED(rv) && !urlSpec.IsEmpty()) {
-    str.Append(urlSpec);
+  nsCString line;
+  for (int i = 0; i < aIndent; ++i) {
+    line.AppendLiteral("  ");
+  }
+
+  line.AppendLiteral("/* ");
+
+  nsCString url;
+  GetSheetURI()->GetSpec(url);
+  if (url.IsEmpty()) {
+    line.AppendLiteral("(no URL)");
+  } else {
+    line.Append(url);
+  }
+
+  line.AppendLiteral(" (");
+
+  switch (GetOrigin()) {
+    case StyleOrigin::UserAgent:
+      line.AppendLiteral("User Agent");
+      break;
+    case StyleOrigin::User:
+      line.AppendLiteral("User");
+      break;
+    case StyleOrigin::Author:
+      line.AppendLiteral("Author");
+      break;
   }
 
   if (mMedia) {
-    str.AppendLiteral(" media: ");
-    nsAutoString buffer;
+    nsAutoCString buffer;
     mMedia->GetText(buffer);
-    AppendUTF16toUTF8(buffer, str);
-  }
-  str.Append('\n');
-  fprintf_stderr(out, "%s", str.get());
 
-  for (const StyleSheet* child : ChildSheets()) {
-    child->List(out, aIndent + 1);
+    if (!buffer.IsEmpty()) {
+      line.AppendLiteral(", ");
+      line.Append(buffer);
+    }
+  }
+
+  line.AppendLiteral(") */");
+
+  fprintf_stderr(aOut, "%s\n\n", line.get());
+
+  nsCString newlineIndent;
+  newlineIndent.Append('\n');
+  for (int i = 0; i < aIndent; ++i) {
+    newlineIndent.AppendLiteral("  ");
+  }
+
+  ServoCSSRuleList* ruleList = GetCssRulesInternal();
+  for (uint32_t i = 0, len = ruleList->Length(); i < len; ++i) {
+    css::Rule* rule = ruleList->GetRule(i);
+
+    nsAutoCString cssText;
+    rule->GetCssText(cssText);
+    cssText.ReplaceSubstring("\n"_ns, newlineIndent);
+    fprintf_stderr(aOut, "%s\n", cssText.get());
+  }
+
+  if (ruleList->Length() != 0) {
+    fprintf_stderr(aOut, "\n");
   }
 }
 #endif
@@ -1035,7 +1087,7 @@ void StyleSheet::DropMedia() {
 
 dom::MediaList* StyleSheet::Media() {
   if (!mMedia) {
-    mMedia = dom::MediaList::Create(nsString());
+    mMedia = dom::MediaList::Create(EmptyCString());
     mMedia->SetStyleSheet(this);
   }
 
@@ -1049,13 +1101,17 @@ JSObject* StyleSheet::WrapObject(JSContext* aCx,
   return dom::CSSStyleSheet_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void StyleSheet::BuildChildListAfterInnerClone() {
+void StyleSheet::FixUpAfterInnerClone() {
   MOZ_ASSERT(Inner().mSheets.Length() == 1, "Should've just cloned");
   MOZ_ASSERT(Inner().mSheets[0] == this);
   MOZ_ASSERT(Inner().mChildren.IsEmpty());
 
   auto* contents = Inner().mContents.get();
   RefPtr<ServoCssRules> rules = Servo_StyleSheet_GetRules(contents).Consume();
+
+  if (mRuleList) {
+    mRuleList->SetRawAfterClone(rules);
+  }
 
   uint32_t index = 0;
   while (true) {
@@ -1093,7 +1149,7 @@ already_AddRefed<StyleSheet> StyleSheet::CreateEmptyChildSheet(
 // (3) The stylesheet is a chrome stylesheet, since those can use
 //     -moz-bool-pref, which needs to access the pref service, which is not
 //     threadsafe.
-static bool AllowParallelParse(css::Loader& aLoader, nsIURI* aSheetURI) {
+static bool AllowParallelParse(css::Loader& aLoader, URLExtraData* aUrlData) {
   // If the browser is recording CSS errors, we need to use the sequential path
   // because the parallel path doesn't support that.
   Document* doc = aLoader.GetDocument();
@@ -1108,7 +1164,7 @@ static bool AllowParallelParse(css::Loader& aLoader, nsIURI* aSheetURI) {
   //
   // Note that UA stylesheets can also use -moz-bool-pref, but those are always
   // parsed sync.
-  if (dom::IsChromeURI(aSheetURI)) {
+  if (aUrlData->ChromeRulesEnabled()) {
     return false;
   }
 
@@ -1128,7 +1184,7 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
   auto allowImportRules = SelfOrAncestorIsConstructed()
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
-  if (!AllowParallelParse(aLoader, GetSheetURI())) {
+  if (!AllowParallelParse(aLoader, Inner().mURLData)) {
     RefPtr<RawServoStyleSheetContents> contents =
         Servo_StyleSheet_FromUTF8Bytes(
             &aLoader, this, &aLoadData, &aBytes, mParsingMode, Inner().mURLData,
@@ -1278,14 +1334,13 @@ void StyleSheet::DropRuleList() {
 }
 
 already_AddRefed<StyleSheet> StyleSheet::Clone(
-    StyleSheet* aCloneParent, dom::CSSImportRule* aCloneOwnerRule,
-    dom::DocumentOrShadowRoot* aCloneDocumentOrShadowRoot,
-    nsINode* aCloneOwningNode) const {
+    StyleSheet* aCloneParent,
+    dom::DocumentOrShadowRoot* aCloneDocumentOrShadowRoot) const {
   MOZ_ASSERT(!IsConstructed(),
              "Cannot create a non-constructed sheet from a constructed sheet");
-  RefPtr<StyleSheet> clone = new StyleSheet(
-      *this, aCloneParent, aCloneOwnerRule, aCloneDocumentOrShadowRoot,
-      /* aConstructorDocToUse */ nullptr, aCloneOwningNode);
+  RefPtr<StyleSheet> clone =
+      new StyleSheet(*this, aCloneParent, aCloneDocumentOrShadowRoot,
+                     /* aConstructorDocToUse */ nullptr);
   return clone.forget();
 }
 
@@ -1295,17 +1350,17 @@ already_AddRefed<StyleSheet> StyleSheet::CloneAdoptedSheet(
              "Cannot create a constructed sheet from a non-constructed sheet");
   MOZ_ASSERT(aConstructorDocument.IsStaticDocument(),
              "Should never clone adopted sheets for a non-static document");
-  RefPtr<StyleSheet> clone =
-      new StyleSheet(*this,
-                     /* aParentSheetToUse */ nullptr,
-                     /* aOwnerRuleToUse */ nullptr,
-                     /* aDocOrShadowRootToUse */ nullptr, &aConstructorDocument,
-                     /* aOwningNodeToUse */ nullptr);
+  RefPtr<StyleSheet> clone = new StyleSheet(*this,
+                                            /* aParentSheetToUse */ nullptr,
+                                            /* aDocOrShadowRootToUse */ nullptr,
+                                            &aConstructorDocument);
   return clone.forget();
 }
 
 ServoCSSRuleList* StyleSheet::GetCssRulesInternal() {
   if (!mRuleList) {
+    // TODO(emilio): This should go away, but we need to fix the CC setup for
+    // @import rules first, see bug 1719963.
     EnsureUniqueInner();
 
     RefPtr<ServoCssRules> rawRules =
@@ -1316,8 +1371,8 @@ ServoCSSRuleList* StyleSheet::GetCssRulesInternal() {
   return mRuleList;
 }
 
-uint32_t StyleSheet::InsertRuleInternal(const nsAString& aRule, uint32_t aIndex,
-                                        ErrorResult& aRv) {
+uint32_t StyleSheet::InsertRuleInternal(const nsACString& aRule,
+                                        uint32_t aIndex, ErrorResult& aRv) {
   MOZ_ASSERT(!IsReadOnly());
   MOZ_ASSERT(!ModificationDisallowed());
 
@@ -1361,13 +1416,13 @@ void StyleSheet::DeleteRuleInternal(uint32_t aIndex, ErrorResult& aRv) {
   }
 }
 
-nsresult StyleSheet::InsertRuleIntoGroupInternal(const nsAString& aRule,
+nsresult StyleSheet::InsertRuleIntoGroupInternal(const nsACString& aRule,
                                                  css::GroupRule* aGroup,
                                                  uint32_t aIndex) {
   MOZ_ASSERT(!IsReadOnly());
 
-  auto rules = static_cast<ServoCSSRuleList*>(aGroup->CssRules());
-  MOZ_ASSERT(rules->GetParentRule() == aGroup);
+  ServoCSSRuleList* rules = aGroup->GetCssRules();
+  MOZ_ASSERT(rules && rules->GetParentRule() == aGroup);
   return rules->InsertRule(aRule, aIndex);
 }
 

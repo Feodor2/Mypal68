@@ -6,8 +6,10 @@
 
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/MutationEvent.h"
 #include "mozilla/dom/SVGUseElement.h"
+#include "nsLayoutUtils.h"
 
 using namespace mozilla::dom;
 
@@ -56,8 +58,8 @@ void SVGUseFrame::PositionAttributeChanged() {
   mCanvasTM = nullptr;
   nsLayoutUtils::PostRestyleEvent(GetContent()->AsElement(), RestyleHint{0},
                                   nsChangeHint_InvalidateRenderingObservers);
-  nsSVGUtils::ScheduleReflowSVG(this);
-  nsSVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
+  SVGUtils::ScheduleReflowSVG(this);
+  SVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
 }
 
 void SVGUseFrame::DimensionAttributeChanged(bool aHadValidDimensions,
@@ -71,22 +73,22 @@ void SVGUseFrame::DimensionAttributeChanged(bool aHadValidDimensions,
   if (invalidate) {
     nsLayoutUtils::PostRestyleEvent(GetContent()->AsElement(), RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
-    nsSVGUtils::ScheduleReflowSVG(this);
+    SVGUtils::ScheduleReflowSVG(this);
   }
 }
 
 void SVGUseFrame::HrefChanged() {
   nsLayoutUtils::PostRestyleEvent(GetContent()->AsElement(), RestyleHint{0},
                                   nsChangeHint_InvalidateRenderingObservers);
-  nsSVGUtils::ScheduleReflowSVG(this);
+  SVGUtils::ScheduleReflowSVG(this);
 }
 
 //----------------------------------------------------------------------
-// nsSVGDisplayableFrame methods
+// ISVGDisplayableFrame methods
 
 void SVGUseFrame::ReflowSVG() {
   // We only handle x/y offset here, since any width/height that is in force is
-  // handled by the nsSVGOuterSVGFrame for the anonymous <svg> that will be
+  // handled by the SVGOuterSVGFrame for the anonymous <svg> that will be
   // created for that purpose.
   float x, y;
   static_cast<SVGUseElement*>(GetContent())
@@ -118,13 +120,13 @@ void SVGUseFrame::NotifySVGChanged(uint32_t aFlags) {
       // changed ancestor will have invalidated its entire area, which includes
       // our area.
       // For perf reasons we call this before calling NotifySVGChanged() below.
-      nsSVGUtils::ScheduleReflowSVG(this);
+      SVGUtils::ScheduleReflowSVG(this);
     }
   }
 
   // We don't remove the TRANSFORM_CHANGED flag here if we have a viewBox or
   // non-percentage width/height, since if they're set then they are cloned to
-  // an anonymous child <svg>, and its nsSVGInnerSVGFrame will do that.
+  // an anonymous child <svg>, and its SVGInnerSVGFrame will do that.
 
   SVGGFrame::NotifySVGChanged(aFlags);
 }

@@ -9,10 +9,12 @@
 #include "mozilla/Likely.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WritingModes.h"
 #include "nsBulletFrame.h"  // legacy location for list style type to text code
 #include "nsContentUtils.h"
 #include "nsIContent.h"
+#include "nsContainerFrame.h"
 #include "nsTArray.h"
 #include "mozilla/dom/Text.h"
 
@@ -126,6 +128,42 @@ void nsCounterList::SetScope(nsCounterNode* aNode) {
     return;
   }
 
+  // If there exist an explicit RESET scope created by an ancestor or
+  // the element itself, then we use that scope.
+  // Otherwise, fall through to consider scopes created by siblings (and
+  // their descendants) in reverse document order.
+  if (aNode->mType != nsCounterNode::USE &&
+      StaticPrefs::layout_css_counter_ancestor_scope_enabled()) {
+    for (auto* p = aNode->mPseudoFrame; p; p = p->GetParent()) {
+      // This relies on the fact that a RESET node is always the first
+      // CounterNode for a frame if it has any.
+      auto* counter = GetFirstNodeFor(p);
+      if (!counter || counter->mType != nsCounterNode::RESET) {
+        continue;
+      }
+      if (p == aNode->mPseudoFrame) {
+        break;
+      }
+      aNode->mScopeStart = counter;
+      aNode->mScopePrev = counter;
+      for (nsCounterNode* prev = Prev(aNode); prev;
+           prev = prev->mScopePrev) {
+        if (prev->mScopeStart == counter) {
+          aNode->mScopePrev =
+              prev->mType == nsCounterNode::RESET ? prev->mScopePrev : prev;
+          break;
+        }
+        if (prev->mType != nsCounterNode::RESET) {
+          prev = prev->mScopeStart;
+          if (!prev) {
+            break;
+          }
+        }
+      }
+      return;
+    }
+  }
+
   // Get the content node for aNode's rendering object's *parent*,
   // since scope includes siblings, so we want a descendant check on
   // parents.
@@ -155,6 +193,7 @@ void nsCounterList::SetScope(nsCounterNode* aNode) {
           nodeContent == startContent) &&
         // everything is inside the root (except the case above,
         // a second reset on the root)
+        // FIXME(bug 1477524): should use flattened tree here:
         (!startContent || nodeContent->IsInclusiveDescendantOf(startContent))) {
       aNode->mScopeStart = start;
       aNode->mScopePrev = prev;
@@ -249,8 +288,10 @@ bool nsCounterManager::AddCounterChanges(nsIFrame* aFrame) {
     int32_t i = 0;
     for (const auto& pair : styleContent->mCounterIncrement.AsSpan()) {
       hasListItemIncrement |= pair.name.AsAtom() == nsGkAtoms::list_item;
-      dirty |= AddCounterChangeNode(*this, aFrame, i++, pair,
-                                    nsCounterChangeNode::INCREMENT);
+      if (pair.value != 0) {
+        dirty |= AddCounterChangeNode(*this, aFrame, i++, pair,
+                                      nsCounterChangeNode::INCREMENT);
+      }
     }
   }
 
@@ -320,7 +361,7 @@ void nsCounterManager::Dump() {
     nsCounterList* list = iter.UserData();
     int32_t i = 0;
     for (nsCounterNode* node = list->First(); node; node = list->Next(node)) {
-      const char* types[] = {"RESET", "SET", "INCREMENT", "USE"};
+      const char* types[] = {"RESET", "INCREMENT", "SET", "USE"};
       printf(
           "  Node #%d @%p frame=%p index=%d type=%s valAfter=%d\n"
           "       scope-start=%p scope-prev=%p",

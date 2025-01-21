@@ -31,6 +31,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/DisplayPortUtils.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/FontTableURIProtocolHandler.h"
@@ -1867,7 +1868,7 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
   // in the queue. This will prevent us from spending precious time
   // painting a stale displayport.
   if (StaticPrefs::apz_peek_messages_enabled()) {
-    nsLayoutUtils::UpdateDisplayPortMarginsFromPendingMessages();
+    DisplayPortUtils::UpdateDisplayPortMarginsFromPendingMessages();
   }
 
   AutoTArray<nsCOMPtr<nsIRunnable>, 16> earlyRunners = std::move(mEarlyRunners);

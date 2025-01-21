@@ -647,34 +647,19 @@ hr[size="1"] {
   border-style: solid none none none;
 }
 
-input:is(:-moz-broken, :-moz-user-disabled)::before,
-img:is(:-moz-broken, :-moz-user-disabled)::before {
+input:-moz-broken::before,
+img:-moz-broken::before {
   content: -moz-alt-content !important;
   unicode-bidi: isolate;
 }
 
-object:is(:-moz-broken,:-moz-user-disabled) > *|* {
+object:-moz-broken > *|* {
   /*
     Inherit in the object's alignment so that if we aren't aligned explicitly
     we'll end up in the right place vertically.  See bug 36997.  Note that this
     is not !important because we _might_ be aligned explicitly.
   */
   vertical-align: inherit;
-}
-
-img:-moz-suppressed,
-input:-moz-suppressed,
-object:-moz-suppressed,
-embed:-moz-suppressed {
-  /*
-    Set visibility too in case the page changes display.  Note that we _may_
-    want to just set visibility and not display, in general, if we find that
-    display:none breaks too many layouts.  And if we decide we really do want
-    people to be able to right-click blocked images, etc, we need to set
-    neither one, and hack the painting code.... :(
-   */
-  display: none !important;
-  visibility: hidden !important;
 }
 
 img[usemap], object[usemap] {

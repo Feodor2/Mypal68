@@ -9,6 +9,7 @@
 #include "nsFontMetrics.h"
 #include "nsTextControlFrame.h"
 #include "nsIEditor.h"
+#include "nsIScrollableFrame.h"
 #include "nsCaret.h"
 #include "nsCSSPseudoElements.h"
 #include "nsGenericHTMLElement.h"
@@ -123,7 +124,7 @@ nsTextControlFrame::nsTextControlFrame(ComputedStyle* aStyle,
 
 nsTextControlFrame::~nsTextControlFrame() = default;
 
-nsIScrollableFrame* nsTextControlFrame::GetScrollTargetFrame() {
+nsIScrollableFrame* nsTextControlFrame::GetScrollTargetFrame() const {
   if (!mRootNode) {
     return nullptr;
   }
@@ -530,30 +531,32 @@ nscoord nsTextControlFrame::GetMinISize(gfxContext* aRenderingContext) {
 LogicalSize nsTextControlFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   float inflation = nsLayoutUtils::FontSizeInflationFor(this);
   LogicalSize autoSize = CalcIntrinsicSize(aRenderingContext, aWM, inflation);
 
   // Note: nsContainerFrame::ComputeAutoSize only computes the inline-size (and
   // only for 'auto'), the block-size it returns is always NS_UNCONSTRAINEDSIZE.
-  const auto& iSizeCoord = StylePosition()->ISize(aWM);
-  if (iSizeCoord.IsAuto()) {
-    if (aFlags & ComputeSizeFlags::eIClampMarginBoxMinSize) {
+  const auto& styleISize = aSizeOverrides.mStyleISize
+                               ? *aSizeOverrides.mStyleISize
+                               : StylePosition()->ISize(aWM);
+  if (styleISize.IsAuto()) {
+    if (aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize)) {
       // CalcIntrinsicSize isn't aware of grid-item margin-box clamping, so we
       // fall back to nsContainerFrame's ComputeAutoSize to handle that.
       // XXX maybe a font-inflation issue here? (per the assertion below).
       autoSize.ISize(aWM) =
-          nsContainerFrame::ComputeAutoSize(aRenderingContext, aWM, aCBSize,
-                                            aAvailableISize, aMargin, aBorder,
-                                            aPadding, aFlags)
+          nsContainerFrame::ComputeAutoSize(
+              aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin,
+              aBorderPadding, aSizeOverrides, aFlags)
               .ISize(aWM);
     }
 #ifdef DEBUG
     else {
       LogicalSize ancestorAutoSize = nsContainerFrame::ComputeAutoSize(
-          aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin, aBorder,
-          aPadding, aFlags);
+          aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin,
+          aBorderPadding, aSizeOverrides, aFlags);
       // Disabled when there's inflation; see comment in GetXULPrefSize.
       MOZ_ASSERT(inflation != 1.0f ||
                      ancestorAutoSize.ISize(aWM) == autoSize.ISize(aWM),
@@ -584,7 +587,7 @@ void nsTextControlFrame::ComputeBaseline(const ReflowInput& aReflowInput,
       nsLayoutUtils::GetFontMetricsForFrame(this, inflation);
   mFirstBaseline = nsLayoutUtils::GetCenteredFontBaseline(fontMet, lineHeight,
                                                           wm.IsLineInverted()) +
-                   aReflowInput.ComputedLogicalBorderPadding().BStart(wm);
+                   aReflowInput.ComputedLogicalBorderPadding(wm).BStart(wm);
   aDesiredSize.SetBlockStartAscent(mFirstBaseline);
 }
 
@@ -604,13 +607,7 @@ void nsTextControlFrame::Reflow(nsPresContext* aPresContext,
 
   // set values of reflow's out parameters
   WritingMode wm = aReflowInput.GetWritingMode();
-  LogicalSize finalSize(
-      wm,
-      aReflowInput.ComputedISize() +
-          aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm),
-      aReflowInput.ComputedBSize() +
-          aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm));
-  aDesiredSize.SetSize(wm, finalSize);
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   ComputeBaseline(aReflowInput, aDesiredSize);
 
@@ -641,11 +638,11 @@ void nsTextControlFrame::ReflowTextControlChild(
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
 
   ReflowInput kidReflowInput(aPresContext, aReflowInput, aKid, availSize,
-                             Nothing(), ReflowInput::CALLER_WILL_INIT);
+                             Nothing(), ReflowInput::InitFlag::CallerWillInit);
   // Override padding with our computed padding in case we got it from theming
   // or percentage.
-  kidReflowInput.Init(aPresContext, Nothing(), nullptr,
-                      &aReflowInput.ComputedPhysicalPadding());
+  kidReflowInput.Init(aPresContext, Nothing(), Nothing(),
+                      Some(aReflowInput.ComputedLogicalPadding(wm)));
 
   // Set computed width and computed height for the child
   kidReflowInput.SetComputedWidth(aReflowInput.ComputedWidth());

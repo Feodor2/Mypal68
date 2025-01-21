@@ -83,9 +83,8 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(StyleSheetState)
 
 class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   StyleSheet(const StyleSheet& aCopy, StyleSheet* aParentSheetToUse,
-             dom::CSSImportRule* aOwnerRuleToUse,
              dom::DocumentOrShadowRoot* aDocOrShadowRootToUse,
-             dom::Document* aConstructorDocToUse, nsINode* aOwningNodeToUse);
+             dom::Document* aConstructorDocToUse);
 
   virtual ~StyleSheet();
 
@@ -200,9 +199,8 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   bool IsApplicable() const { return !Disabled() && IsComplete(); }
 
   already_AddRefed<StyleSheet> Clone(
-      StyleSheet* aCloneParent, dom::CSSImportRule* aCloneOwnerRule,
-      dom::DocumentOrShadowRoot* aCloneDocumentOrShadowRoot,
-      nsINode* aCloneOwningNode) const;
+      StyleSheet* aCloneParent,
+      dom::DocumentOrShadowRoot* aCloneDocumentOrShadowRoot) const;
 
   /**
    * Creates a clone of the adopted style sheet as though it were constructed
@@ -252,10 +250,21 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   StyleSheet* GetParentSheet() const { return mParentSheet; }
 
-  void SetOwnerRule(dom::CSSImportRule* aOwnerRule) {
-    mOwnerRule = aOwnerRule; /* Not ref counted */
+  void AddReferencingRule(dom::CSSImportRule& aRule) {
+    MOZ_ASSERT(!mReferencingRules.Contains(&aRule));
+    mReferencingRules.AppendElement(&aRule);
   }
-  dom::CSSImportRule* GetOwnerRule() const { return mOwnerRule; }
+
+  void RemoveReferencingRule(dom::CSSImportRule& aRule) {
+    MOZ_ASSERT(mReferencingRules.Contains(&aRule));
+    mReferencingRules.RemoveElement(&aRule);
+  }
+
+  // Note that when exposed to script, this should always have a <= 1 length.
+  // CSSImportRule::GetStyleSheetForBindings takes care of that.
+  dom::CSSImportRule* GetOwnerRule() const {
+    return mReferencingRules.SafeElementAt(0);
+  }
 
   void AppendStyleSheet(StyleSheet&);
 
@@ -314,8 +323,8 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   }
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
-#ifdef DEBUG
-  void List(FILE* aOut = stdout, int32_t aIndex = 0) const;
+#if defined(DEBUG) || defined(MOZ_LAYOUT_DEBUGGER)
+  void List(FILE* aOut = stdout, int32_t aIndex = 0);
 #endif
 
   // WebIDL StyleSheet API
@@ -339,11 +348,11 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // version.
   css::Rule* GetDOMOwnerRule() const;
   dom::CSSRuleList* GetCssRules(nsIPrincipal& aSubjectPrincipal, ErrorResult&);
-  uint32_t InsertRule(const nsAString& aRule, uint32_t aIndex,
+  uint32_t InsertRule(const nsACString& aRule, uint32_t aIndex,
                       nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
   void DeleteRule(uint32_t aIndex, nsIPrincipal& aSubjectPrincipal,
                   ErrorResult& aRv);
-  int32_t AddRule(const nsAString& aSelector, const nsAString& aBlock,
+  int32_t AddRule(const nsACString& aSelector, const nsACString& aBlock,
                   const dom::Optional<uint32_t>& aIndex,
                   nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
   already_AddRefed<dom::Promise> Replace(const nsACString& aText, ErrorResult&);
@@ -414,7 +423,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   void DropStyleSet(ServoStyleSet* aStyleSet);
 
   nsresult DeleteRuleFromGroup(css::GroupRule* aGroup, uint32_t aIndex);
-  nsresult InsertRuleIntoGroup(const nsAString& aRule, css::GroupRule* aGroup,
+  nsresult InsertRuleIntoGroup(const nsACString& aRule, css::GroupRule* aGroup,
                                uint32_t aIndex);
 
   // Find the ID of the owner inner window.
@@ -445,6 +454,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Rejects mReplacePromise with a NetworkError.
   void MaybeRejectReplacePromise();
+
+  // Gets the relevant global if exists.
+  nsISupports* GetRelevantGlobal() const;
 
  private:
   const StyleSheet& OutermostSheet() const {
@@ -479,10 +491,10 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
  protected:
   // Internal methods which do not have security check and completeness check.
-  uint32_t InsertRuleInternal(const nsAString& aRule, uint32_t aIndex,
+  uint32_t InsertRuleInternal(const nsACString& aRule, uint32_t aIndex,
                               ErrorResult&);
   void DeleteRuleInternal(uint32_t aIndex, ErrorResult&);
-  nsresult InsertRuleIntoGroupInternal(const nsAString& aRule,
+  nsresult InsertRuleIntoGroupInternal(const nsACString& aRule,
                                        css::GroupRule* aGroup, uint32_t aIndex);
 
   // Common tail routine for the synchronous and asynchronous parsing paths.
@@ -490,7 +502,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Take the recently cloned sheets from the `@import` rules, and reparent them
   // correctly to `aPrimarySheet`.
-  void BuildChildListAfterInnerClone();
+  void FixUpAfterInnerClone();
 
   void DropRuleList();
 
@@ -546,8 +558,8 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // weak ref; parents maintain this for their children
   dom::DocumentOrShadowRoot* mDocumentOrShadowRoot;
-  nsINode* mOwningNode;            // weak ref
-  dom::CSSImportRule* mOwnerRule;  // weak ref
+  nsINode* mOwningNode = nullptr;                   // weak ref
+  nsTArray<dom::CSSImportRule*> mReferencingRules;  // weak ref
 
   RefPtr<dom::MediaList> mMedia;
 

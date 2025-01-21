@@ -24,37 +24,35 @@ class nsPageFrame final : public nsContainerFrame {
   friend nsPageFrame* NS_NewPageFrame(mozilla::PresShell* aPresShell,
                                       ComputedStyle* aStyle);
 
-  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus& aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aReflowOutput,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override;
+  nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
   //////////////////
   // For Printing
   //////////////////
 
-  // Tell the page which page number it is out of how many
-  virtual void SetPageNumInfo(int32_t aPageNumber, int32_t aTotalPages);
+  // Determine this page's page-number, based on its previous continuation
+  // (whose page number is presumed to already be known).
+  void DeterminePageNum();
+  int32_t GetPageNum() { return mPageNum; }
 
-  virtual void SetSharedPageData(nsSharedPageData* aPD);
+  void SetSharedPageData(nsSharedPageData* aPD);
+  nsSharedPageData* GetSharedPageData() const { return mPD; }
 
   // We must allow Print Preview UI to have a background, no matter what the
   // user's settings
-  virtual bool HonorPrintBackgroundSettings() override { return false; }
+  bool HonorPrintBackgroundSettings() override { return false; }
 
   void PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
                          bool aSubpixelAA);
-
-  /**
-   * Return our page content frame.
-   */
-  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
 
  protected:
   explicit nsPageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
@@ -65,6 +63,9 @@ class nsPageFrame final : public nsContainerFrame {
   nscoord GetXPosition(gfxContext& aRenderingContext,
                        nsFontMetrics& aFontMetrics, const nsRect& aRect,
                        int32_t aJust, const nsString& aStr);
+
+  nsReflowStatus ReflowPageContent(nsPresContext*,
+                                   const ReflowInput& aPageReflowInput);
 
   void DrawHeaderFooter(gfxContext& aRenderingContext,
                         nsFontMetrics& aFontMetrics,
@@ -81,10 +82,13 @@ class nsPageFrame final : public nsContainerFrame {
 
   void ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr);
 
-  int32_t mPageNum;
-  int32_t mTotNumPages;
+  static constexpr int32_t kPageNumUnset = -1;
+  int32_t mPageNum = kPageNumUnset;
 
-  nsSharedPageData* mPD;
+  // Note: this will be set before reflow, and it's strongly owned by our
+  // nsPageSequenceFrame, which outlives us.
+  nsSharedPageData* mPD = nullptr;
+
   nsMargin mPageContentMargin;
 };
 
@@ -94,17 +98,17 @@ class nsPageBreakFrame final : public nsLeafFrame {
   explicit nsPageBreakFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
   ~nsPageBreakFrame();
 
-  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus& aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aReflowOutput,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override;
+  nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
  protected:
-  virtual nscoord GetIntrinsicISize() override;
-  virtual nscoord GetIntrinsicBSize() override;
+  nscoord GetIntrinsicISize() override;
+  nscoord GetIntrinsicBSize() override;
 
   bool mHaveReflowed;
 

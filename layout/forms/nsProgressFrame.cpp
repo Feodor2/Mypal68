@@ -100,8 +100,8 @@ void nsProgressFrame::Reflow(nsPresContext* aPresContext,
     nsCheckboxRadioFrame::RegUnRegAccessKey(this, true);
   }
 
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   for (auto childFrame : PrincipalChildList()) {
@@ -202,7 +202,7 @@ nsresult nsProgressFrame::AttributeChanged(int32_t aNameSpaceID,
 LogicalSize nsProgressFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   const WritingMode wm = GetWritingMode();
   LogicalSize autoSize(wm);

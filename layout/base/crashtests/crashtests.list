@@ -223,7 +223,7 @@ load 412651-1.html
 load 413587-1.svg
 load 414058-1.html
 load 415503.xhtml
-load 416107.xhtml
+asserts(1-1) load 416107.xhtml # bug 489100, ASSERTION: Out-of-flow frame got reflowed before its placeholder
 HTTP load 419985.html
 load 420031-1.html
 load 420213-1.html
@@ -401,7 +401,7 @@ load 709536-1.xhtml
 load 722137.html
 load 725535.html
 load 727601.html
-skip-if(Android) asserts(0-2) pref(dom.disable_open_during_load,false) load 735943.html # the assertion is bug 735966, for android bug 760271
+asserts(0-2) pref(dom.disable_open_during_load,false) load 735943.html # the assertion is bug 735966
 asserts(0-2) load 736389-1.xhtml # sometimes the above assertions are delayed and is reported on this test instead
 load 736924-1.html
 load 749816-1.html
@@ -482,7 +482,7 @@ load 1308848-2.html
 load 1338772-1.html
 load 1340571.html
 pref(dom.animations-api.implicit-keyframes.enabled,true) load 1343139-1.html
-asserts(0-1) asserts-if(Android,1-4) load 1343606.html # bug 1343948
+asserts-if(Android,0-3) load 1343606.html # bug 1642521
 load 1343937.html
 load 1352380.html
 load 1362423-1.html
@@ -511,6 +511,7 @@ load 1414303.html
 load 1419762.html
 load 1419802.html
 load 1420533.html
+load 1422908.html
 load 1423216.html
 load 1425893.html
 load 1425959.html
@@ -587,3 +588,4 @@ load 1586600.html
 load 1599518.html
 load 1599532.html
 pref(layout.accessiblecaret.enabled,true) load 1606492.html
+load 1690163.html

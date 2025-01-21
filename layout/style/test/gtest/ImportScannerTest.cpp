@@ -18,21 +18,23 @@ static nsTArray<nsString> Scan(const char* aCssCode) {
 
 TEST(ImportScanner, Simple)
 {
-  auto urls = Scan("/* Something something */ "
+  auto urls = Scan(
+      "/* Something something */ "
       "@charset \"utf-8\";"
       "@import url(bar);"
       "@import uRL( baz );"
       "@import \"bazz)\"");
 
   ASSERT_EQ(urls.Length(), 3u);
-  ASSERT_EQ(urls[0], NS_LITERAL_STRING("bar"));
-  ASSERT_EQ(urls[1], NS_LITERAL_STRING("baz"));
-  ASSERT_EQ(urls[2], NS_LITERAL_STRING("bazz)"));
+  ASSERT_EQ(urls[0], u"bar"_ns);
+  ASSERT_EQ(urls[1], u"baz"_ns);
+  ASSERT_EQ(urls[2], u"bazz)"_ns);
 }
 
 TEST(ImportScanner, UrlWithQuotes)
 {
-  auto urls = Scan("/* Something something */ "
+  auto urls = Scan(
+      "/* Something something */ "
       "@import url(\"bar\");"
       "@import\tuRL( \"baz\" );"
       "@imPort\turL( 'bazz' );"
@@ -40,9 +42,9 @@ TEST(ImportScanner, UrlWithQuotes)
       "@import\turL( 'bazz' ); ");
 
   ASSERT_EQ(urls.Length(), 3u);
-  ASSERT_EQ(urls[0], NS_LITERAL_STRING("bar"));
-  ASSERT_EQ(urls[1], NS_LITERAL_STRING("baz"));
-  ASSERT_EQ(urls[2], NS_LITERAL_STRING("bazz"));
+  ASSERT_EQ(urls[0], u"bar"_ns);
+  ASSERT_EQ(urls[1], u"baz"_ns);
+  ASSERT_EQ(urls[2], u"bazz"_ns);
 }
 
 TEST(ImportScanner, MediaIsIgnored)
@@ -55,7 +57,24 @@ TEST(ImportScanner, MediaIsIgnored)
       "@import\turL( bazz ) (max-width: 100px);");
 
   ASSERT_EQ(urls.Length(), 3u);
-  ASSERT_EQ(urls[0], NS_LITERAL_STRING("bar"));
-  ASSERT_EQ(urls[1], NS_LITERAL_STRING("baz"));
-  ASSERT_EQ(urls[2], NS_LITERAL_STRING("bazz"));
+  ASSERT_EQ(urls[0], u"bar"_ns);
+  ASSERT_EQ(urls[1], u"baz"_ns);
+  ASSERT_EQ(urls[2], u"bazz"_ns);
+}
+
+TEST(ImportScanner, Layers)
+{
+  auto urls = Scan(
+      "@layer foo, bar;\n"
+      "@import url(\"bar\") layer(foo);"
+      "@import url(\"baz\");"
+      "@import url(bazz);"
+      "@layer block {}"
+      // This one below is invalid now and shouldn't be scanned.
+      "@import\turL( 'bazzz' ); ");
+
+  ASSERT_EQ(urls.Length(), 3u);
+  ASSERT_EQ(urls[0], u"bar"_ns);
+  ASSERT_EQ(urls[1], u"baz"_ns);
+  ASSERT_EQ(urls[2], u"bazz"_ns);
 }

@@ -66,7 +66,7 @@ impl Invalidation {
 
 /// Whether we should invalidate just the element, or the whole subtree within
 /// it.
-#[derive(Copy, Clone, Debug, Eq, MallocSizeOf, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Ord, PartialEq, PartialOrd)]
 enum InvalidationKind {
     None = 0,
     Element,
@@ -541,6 +541,7 @@ impl StylesheetInvalidationSet {
             Page(..) |
             Viewport(..) |
             FontFeatureValues(..) |
+            LayerStatement(..) |
             FontFace(..) |
             Keyframes(..) |
             Style(..) => {
@@ -555,7 +556,7 @@ impl StylesheetInvalidationSet {
 
                 self.collect_invalidations_for_rule(rule, guard, device, quirks_mode)
             },
-            Document(..) | Import(..) | Media(..) | Supports(..) => {
+            Document(..) | Import(..) | Media(..) | Supports(..) | LayerBlock(..) => {
                 if !is_generic_change &&
                     !EffectiveRules::is_effective(guard, device, quirks_mode, rule)
                 {
@@ -596,7 +597,8 @@ impl StylesheetInvalidationSet {
                     }
                 }
             },
-            Document(..) | Namespace(..) | Import(..) | Media(..) | Supports(..) => {
+            Document(..) | Namespace(..) | Import(..) | Media(..) | Supports(..) |
+            LayerStatement(..) | LayerBlock(..) => {
                 // Do nothing, relevant nested rules are visited as part of the
                 // iteration.
             },

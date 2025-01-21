@@ -92,7 +92,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override;
+  bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
@@ -201,20 +201,8 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    */
   virtual bool GetDirection() override;
 
-  /** Return structural information about a line.
-   * @param aLineNumber       - the index of the row relative to the row group
-   *                            If the line-number is invalid then
-   *                            aFirstFrameOnLine will be nullptr and
-   *                            aNumFramesOnLine will be zero.
-   * @param aFirstFrameOnLine - the first cell frame that originates in row
-   *                            with a rowindex that matches a line number
-   * @param aNumFramesOnLine  - return the numbers of cells originating in
-   *                            this row
-   * @param aLineBounds       - rect of the row
-   */
-  NS_IMETHOD GetLine(int32_t aLineNumber, nsIFrame** aFirstFrameOnLine,
-                     int32_t* aNumFramesOnLine,
-                     nsRect& aLineBounds) const override;
+  /** Return structural information about a line. */
+  Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) const override;
 
   /** Given a frame that's a child of the rowgroup, find which line its on.
    * @param aFrame       - frame, should be a row
@@ -316,7 +304,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   virtual nsILineIterator* GetLineIterator() override { return this; }
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & eSupportsContainLayoutAndPaint) {
+    if (aFlags & (eSupportsContainLayoutAndPaint | eSupportsAspectRatio)) {
       return false;
     }
 
@@ -339,8 +327,8 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   void InitChildReflowInput(nsPresContext& aPresContext, bool aBorderCollapse,
                             ReflowInput& aReflowInput);
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides(
+      const Maybe<SkipSidesDuringReflow>&) const override;
 
   void PlaceChild(nsPresContext* aPresContext,
                   TableRowGroupReflowInput& aReflowInput, nsIFrame* aKidFrame,
@@ -348,7 +336,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
                   const mozilla::LogicalPoint& aKidPosition,
                   const nsSize& aContainerSize, ReflowOutput& aDesiredSize,
                   const nsRect& aOriginalKidRect,
-                  const nsRect& aOriginalKidVisualOverflow);
+                  const nsRect& aOriginalKidInkOverflow);
 
   void CalculateRowBSizes(nsPresContext* aPresContext,
                           ReflowOutput& aDesiredSize,

@@ -9,7 +9,7 @@
 #include "nsCSSRendering.h"
 #include "nsMargin.h"
 #include "nsStyleStruct.h"
-#include "SVGContentUtils.h"
+#include "mozilla/SVGContentUtils.h"
 
 namespace mozilla {
 

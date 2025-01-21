@@ -34,7 +34,7 @@ extern "C" {
 
 #define BASIC_RULE_FUNCS_WITHOUT_GETTER(type_)                            \
   void Servo_##type_##_Debug(const RawServo##type_*, nsACString* result); \
-  void Servo_##type_##_GetCssText(const RawServo##type_*, nsAString* result);
+  void Servo_##type_##_GetCssText(const RawServo##type_*, nsACString* result);
 
 #define BASIC_RULE_FUNCS(type_)                                         \
   StyleStrong<RawServo##type_##Rule> Servo_CssRules_Get##type_##RuleAt( \
@@ -59,6 +59,8 @@ GROUP_RULE_FUNCS(MozDocument)
 BASIC_RULE_FUNCS(Namespace)
 BASIC_RULE_FUNCS(Page)
 GROUP_RULE_FUNCS(Supports)
+GROUP_RULE_FUNCS(LayerBlock)
+BASIC_RULE_FUNCS(LayerStatement)
 BASIC_RULE_FUNCS(FontFeatureValues)
 BASIC_RULE_FUNCS(FontFace)
 BASIC_RULE_FUNCS(CounterStyle)
@@ -85,7 +87,7 @@ BASIC_SERDE_FUNCS(StylePositionOrAuto)
 
 void Servo_CounterStyleRule_GetDescriptorCssText(
     const RawServoCounterStyleRule* rule, nsCSSCounterDesc desc,
-    nsAString* result);
+    nsACString* result);
 
 bool Servo_CounterStyleRule_SetDescriptor(const RawServoCounterStyleRule* rule,
                                           nsCSSCounterDesc desc,

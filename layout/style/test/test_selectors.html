@@ -1103,16 +1103,16 @@ function runTests() {
     test_parseable(":-moz-lwtheme-darktext");
 
     test_balanced_unparseable(":-moz-tree-row(selected)");
-    test_parseable("::-moz-tree-row(selected)");
-    test_parseable("::-MoZ-trEE-RoW(sElEcTeD)");
+    test_balanced_unparseable("::-moz-tree-row(selected)");
+    test_balanced_unparseable("::-MoZ-trEE-RoW(sElEcTeD)");
     test_balanced_unparseable(":-moz-tree-row(selected focus)");
     test_balanced_unparseable(":-moz-tree-row(selected , focus)");
-    test_parseable("::-moz-tree-row(selected ,focus)");
+    test_balanced_unparseable("::-moz-tree-row(selected ,focus)");
     test_balanced_unparseable(":-moz-tree-row(selected, focus)");
-    test_parseable("::-moz-tree-row(selected,focus)");
+    test_balanced_unparseable("::-moz-tree-row(selected,focus)");
     test_balanced_unparseable(":-moz-tree-row(selected     focus)");
-    test_parseable("::-moz-tree-row(selected    ,   focus)");
-    test_parseable("::-moz-tree-twisty(  hover open  )");
+    test_balanced_unparseable("::-moz-tree-row(selected    ,   focus)");
+    test_balanced_unparseable("::-moz-tree-twisty(  hover open  )");
     test_balanced_unparseable("::-moz-tree-row(selected {[]} )");
     test_balanced_unparseable(":-moz-tree-twisty(open())");
     test_balanced_unparseable("::-moz-tree-twisty(hover ())");
@@ -1124,9 +1124,6 @@ function runTests() {
     test_unbalanced_unparseable(":-moz-browser-frame");
 
     // Plugin pseudoclasses are chrome-only:
-    test_unbalanced_unparseable(":-moz-type-unsupported");
-    test_unbalanced_unparseable(":-moz-user-disabled");
-    test_unbalanced_unparseable(":-moz-suppressed");
     test_unbalanced_unparseable(":-moz-type-unsupported");
     test_unbalanced_unparseable(":-moz-type-unsupported-platform");
     test_unbalanced_unparseable(":-moz-handler-clicktoplay");

@@ -86,7 +86,7 @@ class InspectorUtils {
 
   // For all three functions below, aSelectorIndex is 0-based
   static void GetSelectorText(GlobalObject& aGlobal, BindingStyleRule& aRule,
-                              uint32_t aSelectorIndex, nsString& aText,
+                              uint32_t aSelectorIndex, nsACString& aText,
                               ErrorResult& aRv);
   static uint64_t GetSpecificity(GlobalObject& aGlobal, BindingStyleRule& aRule,
                                  uint32_t aSelectorIndex, ErrorResult& aRv);
@@ -161,6 +161,9 @@ class InspectorUtils {
   static bool CssPropertySupportsType(GlobalObject& aGlobal,
                                       const nsACString& aProperty,
                                       InspectorPropertyType, ErrorResult& aRv);
+
+  static bool Supports(GlobalObject&, const nsACString& aDeclaration,
+                       const SupportsOptions&);
 
   static bool IsIgnorableWhitespace(GlobalObject& aGlobalObject,
                                     CharacterData& aDataNode) {

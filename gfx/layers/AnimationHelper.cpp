@@ -16,6 +16,7 @@
 #include "mozilla/StyleAnimationValue.h"  // for StyleAnimationValue, etc
 #include "nsDeviceContext.h"              // for AppUnitsPerCSSPixel
 #include "nsDisplayList.h"                // for nsDisplayTransform, etc
+#include "nsLayoutUtils.h"                // MY68 WR
 
 namespace mozilla {
 namespace layers {

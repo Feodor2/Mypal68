@@ -212,7 +212,7 @@ void VRManager::StartTasks() {
   if (!mTaskTimer) {
     mTaskInterval = GetOptimalTaskInterval();
     mTaskTimer = NS_NewTimer();
-    mTaskTimer->SetTarget(CompositorThreadHolder::Loop()->SerialEventTarget());
+    mTaskTimer->SetTarget(CompositorThread());
     mTaskTimer->InitWithNamedFuncCallback(
         TaskTimerCallback, this, mTaskInterval,
         nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,

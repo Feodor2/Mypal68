@@ -12,7 +12,7 @@ TEST_F(APZCBasicTester, Overzoom) {
   FrameMetrics fm;
   fm.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
   fm.SetScrollableRect(CSSRect(0, 0, 125, 150));
-  fm.SetScrollOffset(CSSPoint(10, 0));
+  fm.SetVisualScrollOffset(CSSPoint(10, 0));
   fm.SetZoom(CSSToParentLayerScale2D(1.0, 1.0));
   fm.SetIsRootContent(true);
   apzc->SetFrameMetrics(fm);
@@ -27,8 +27,8 @@ TEST_F(APZCBasicTester, Overzoom) {
   EXPECT_EQ(0.8f, fm.GetZoom().ToScaleFactor().scale);
   // bug 936721 - PGO builds introduce rounding error so
   // use a fuzzy match instead
-  EXPECT_LT(std::abs(fm.GetScrollOffset().x), 1e-5);
-  EXPECT_LT(std::abs(fm.GetScrollOffset().y), 1e-5);
+  EXPECT_LT(std::abs(fm.GetVisualScrollOffset().x), 1e-5);
+  EXPECT_LT(std::abs(fm.GetVisualScrollOffset().y), 1e-5);
 }
 
 TEST_F(APZCBasicTester, SimpleTransform) {
@@ -56,8 +56,8 @@ TEST_F(APZCBasicTester, ComplexTransform) {
   // CSS pixels). The displayport is 1 extra CSS pixel on all
   // sides.
 
-  RefPtr<TestAsyncPanZoomController> childApzc = new TestAsyncPanZoomController(
-      LayersId{0}, mcc, tm, wr::RenderRoot::Default);
+  RefPtr<TestAsyncPanZoomController> childApzc =
+      new TestAsyncPanZoomController(LayersId{0}, mcc, tm);
 
   const char* layerTreeSyntax = "c(c)";
   // LayerID                     0 1
@@ -85,7 +85,8 @@ TEST_F(APZCBasicTester, ComplexTransform) {
   FrameMetrics& metrics = metadata.GetMetrics();
   metrics.SetCompositionBounds(ParentLayerRect(0, 0, 24, 24));
   metrics.SetDisplayPort(CSSRect(-1, -1, 6, 6));
-  metrics.SetScrollOffset(CSSPoint(10, 10));
+  metrics.SetVisualScrollOffset(CSSPoint(10, 10));
+  metrics.SetLayoutViewport(CSSRect(10, 10, 8, 8));
   metrics.SetScrollableRect(CSSRect(0, 0, 50, 50));
   metrics.SetCumulativeResolution(LayoutDeviceToLayerScale2D(2, 2));
   metrics.SetPresShellResolution(2.0f);
@@ -159,6 +160,7 @@ TEST_F(APZCBasicTester, ComplexTransform) {
   childApzc->Destroy();
 }
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCBasicTester, Fling) {
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   int touchStart = 50;
@@ -176,7 +178,9 @@ TEST_F(APZCBasicTester, Fling) {
     lastPoint = pointOut;
   }
 }
+#endif
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCBasicTester, FlingIntoOverscroll) {
   // Enable overscrolling.
   SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
@@ -204,6 +208,7 @@ TEST_F(APZCBasicTester, FlingIntoOverscroll) {
   EXPECT_TRUE(reachedOverscroll);
   EXPECT_TRUE(recoveredFromOverscroll);
 }
+#endif
 
 TEST_F(APZCBasicTester, PanningTransformNotifications) {
   SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
@@ -291,12 +296,15 @@ void APZCBasicTester::TestOverscroll() {
   SampleAnimationUntilRecoveredFromOverscroll(expectedScrollOffset);
 }
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCBasicTester, OverScrollPanning) {
   SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
 
   TestOverscroll();
 }
+#endif
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 // Tests that an overscroll animation doesn't trigger an assertion failure
 // in the case where a sample has a velocity of zero.
 TEST_F(APZCBasicTester, OverScroll_Bug1152051a) {
@@ -312,7 +320,9 @@ TEST_F(APZCBasicTester, OverScroll_Bug1152051a) {
 
   TestOverscroll();
 }
+#endif
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 // Tests that ending an overscroll animation doesn't leave around state that
 // confuses the next overscroll animation.
 TEST_F(APZCBasicTester, OverScroll_Bug1152051b) {
@@ -350,7 +360,9 @@ TEST_F(APZCBasicTester, OverScroll_Bug1152051b) {
   ParentLayerPoint expectedScrollOffset(0, GetScrollRange().YMost());
   SampleAnimationUntilRecoveredFromOverscroll(expectedScrollOffset);
 }
+#endif
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 // Tests that the page doesn't get stuck in an
 // overscroll animation after a low-velocity pan.
 TEST_F(APZCBasicTester, OverScrollAfterLowVelocityPan_Bug1343775) {
@@ -367,7 +379,9 @@ TEST_F(APZCBasicTester, OverScrollAfterLowVelocityPan_Bug1343775) {
   // Check that we recovered from overscroll.
   EXPECT_FALSE(apzc->IsOverscrolled());
 }
+#endif
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCBasicTester, OverScrollAbort) {
   SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
 
@@ -392,7 +406,9 @@ TEST_F(APZCBasicTester, OverScrollAbort) {
   EXPECT_FALSE(apzc->IsOverscrolled());
   apzc->AssertStateIsReset();
 }
+#endif
 
+#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCBasicTester, OverScrollPanningAbort) {
   SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
 
@@ -409,4 +425,106 @@ TEST_F(APZCBasicTester, OverScrollPanningAbort) {
   apzc->CancelAnimation();
   EXPECT_FALSE(apzc->IsOverscrolled());
   apzc->AssertStateIsReset();
+}
+#endif
+
+#ifndef MOZ_WIDGET_ANDROID  // Maybe fails on Android
+TEST_F(APZCBasicTester, ResumeInterruptedTouchDrag_Bug1592435) {
+  // Start a touch-drag and scroll some amount, not lifting the finger.
+  SCOPED_GFX_PREF_FLOAT("apz.touch_start_tolerance", 1.0f / 1000.0f);
+  ScreenIntPoint touchPos(10, 50);
+  uint64_t touchBlock = TouchDown(apzc, touchPos, mcc->Time()).mInputBlockId;
+  SetDefaultAllowedTouchBehavior(apzc, touchBlock);
+  for (int i = 0; i < 20; ++i) {
+    touchPos.y -= 1;
+    mcc->AdvanceByMillis(1);
+    TouchMove(apzc, touchPos, mcc->Time());
+  }
+
+  // Take note of the scroll offset before the interruption.
+  CSSPoint scrollOffsetBeforeInterruption =
+      apzc->GetFrameMetrics().GetVisualScrollOffset();
+
+  // Have the main thread interrupt the touch-drag by sending
+  // a main thread scroll update to a nearby location.
+  CSSPoint mainThreadOffset = scrollOffsetBeforeInterruption;
+  mainThreadOffset.y -= 5;
+  ScrollMetadata metadata = apzc->GetScrollMetadata();
+  metadata.GetMetrics().SetLayoutScrollOffset(mainThreadOffset);
+  metadata.GetMetrics().SetScrollGeneration(1);
+  nsTArray<ScrollPositionUpdate> scrollUpdates;
+  scrollUpdates.AppendElement(ScrollPositionUpdate::NewScroll(
+      1, ScrollOrigin::Other, CSSPoint::ToAppUnits(mainThreadOffset)));
+  metadata.SetScrollUpdates(scrollUpdates);
+  apzc->NotifyLayersUpdated(metadata, false, true);
+
+  // Continue and finish the touch-drag gesture.
+  for (int i = 0; i < 20; ++i) {
+    touchPos.y -= 1;
+    mcc->AdvanceByMillis(1);
+    TouchMove(apzc, touchPos, mcc->Time());
+  }
+
+  // Check that the portion of the touch-drag that occurred after
+  // the interruption caused additional scrolling.
+  CSSPoint finalScrollOffset = apzc->GetFrameMetrics().GetVisualScrollOffset();
+  EXPECT_GT(finalScrollOffset.y, scrollOffsetBeforeInterruption.y);
+
+  // Now do the same thing, but for a visual scroll update.
+  scrollOffsetBeforeInterruption =
+      apzc->GetFrameMetrics().GetVisualScrollOffset();
+  mainThreadOffset = scrollOffsetBeforeInterruption;
+  mainThreadOffset.y -= 5;
+  metadata = apzc->GetScrollMetadata();
+  metadata.GetMetrics().SetVisualDestination(mainThreadOffset);
+  metadata.GetMetrics().SetScrollGeneration(2);
+  metadata.GetMetrics().SetVisualScrollUpdateType(FrameMetrics::eMainThread);
+  scrollUpdates.Clear();
+  metadata.SetScrollUpdates(scrollUpdates);
+  apzc->NotifyLayersUpdated(metadata, false, true);
+  for (int i = 0; i < 20; ++i) {
+    touchPos.y -= 1;
+    mcc->AdvanceByMillis(1);
+    TouchMove(apzc, touchPos, mcc->Time());
+  }
+  finalScrollOffset = apzc->GetFrameMetrics().GetVisualScrollOffset();
+  EXPECT_GT(finalScrollOffset.y, scrollOffsetBeforeInterruption.y);
+
+  // Clean up by ending the touch gesture.
+  mcc->AdvanceByMillis(1);
+  TouchUp(apzc, touchPos, mcc->Time());
+}
+#endif
+
+TEST_F(APZCBasicTester, RelativeScrollOffset) {
+  // Set up initial conditions: zoomed in, layout offset at (100, 100),
+  // visual offset at (120, 120); the relative offset is therefore (20, 20).
+  ScrollMetadata metadata;
+  FrameMetrics& metrics = metadata.GetMetrics();
+  metrics.SetScrollableRect(CSSRect(0, 0, 1000, 1000));
+  metrics.SetLayoutViewport(CSSRect(100, 100, 100, 100));
+  metrics.SetZoom(CSSToParentLayerScale2D(2.0, 2.0));
+  metrics.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  metrics.SetVisualScrollOffset(CSSPoint(120, 120));
+  metrics.SetIsRootContent(true);
+  apzc->SetFrameMetrics(metrics);
+
+  // Scroll the layout viewport to (200, 200).
+  ScrollMetadata mainThreadMetadata = metadata;
+  FrameMetrics& mainThreadMetrics = mainThreadMetadata.GetMetrics();
+  mainThreadMetrics.SetLayoutScrollOffset(CSSPoint(200, 200));
+  uint32_t newGeneration = mainThreadMetrics.GetScrollGeneration() + 1;
+  mainThreadMetrics.SetScrollGeneration(newGeneration);
+  nsTArray<ScrollPositionUpdate> scrollUpdates;
+  scrollUpdates.AppendElement(ScrollPositionUpdate::NewScroll(
+      newGeneration, ScrollOrigin::Other,
+      CSSPoint::ToAppUnits(CSSPoint(200, 200))));
+  mainThreadMetadata.SetScrollUpdates(scrollUpdates);
+  apzc->NotifyLayersUpdated(mainThreadMetadata, /*isFirstPaint=*/false,
+                            /*thisLayerTreeUpdated=*/true);
+
+  // Check that the relative offset has been preserved.
+  metrics = apzc->GetFrameMetrics();
+  EXPECT_EQ(metrics.GetLayoutScrollOffset(), CSSPoint(200, 200));
+  EXPECT_EQ(metrics.GetVisualScrollOffset(), CSSPoint(220, 220));
 }

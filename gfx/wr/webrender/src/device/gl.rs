@@ -1130,15 +1130,15 @@ impl DrawTarget {
     /// Returns the dimensions of this draw-target.
     pub fn dimensions(&self) -> DeviceIntSize {
         match *self {
-            DrawTarget::Default { total_size, .. } => DeviceIntSize::from_untyped(total_size.to_untyped()),
+            DrawTarget::Default { total_size, .. } => total_size.cast_unit(),
             DrawTarget::Texture { dimensions, .. } => dimensions,
-            DrawTarget::External { size, .. } => DeviceIntSize::from_untyped(size.to_untyped()),
+            DrawTarget::External { size, .. } => size.cast_unit(),
             DrawTarget::NativeSurface { dimensions, .. } => dimensions,
         }
     }
 
     pub fn to_framebuffer_rect(&self, device_rect: DeviceIntRect) -> FramebufferIntRect {
-        let mut fb_rect = FramebufferIntRect::from_untyped(&device_rect.to_untyped());
+        let mut fb_rect = device_rect_as_framebuffer_rect(&device_rect);
         match *self {
             DrawTarget::Default { ref rect, surface_is_y_flipped, .. } => {
                 // perform a Y-flip here
@@ -1173,16 +1173,16 @@ impl DrawTarget {
                         .unwrap_or_else(FramebufferIntRect::zero)
                 }
                 DrawTarget::NativeSurface { offset, .. } => {
-                    FramebufferIntRect::from_untyped(&scissor_rect.translate(offset.to_vector()).to_untyped())
+                    device_rect_as_framebuffer_rect(&scissor_rect.translate(offset.to_vector()))
                 }
                 DrawTarget::Texture { .. } | DrawTarget::External { .. } => {
-                    FramebufferIntRect::from_untyped(&scissor_rect.to_untyped())
+                    device_rect_as_framebuffer_rect(&scissor_rect)
                 }
             }
             None => {
                 FramebufferIntRect::new(
                     FramebufferIntPoint::zero(),
-                    FramebufferIntSize::from_untyped(dimensions.to_untyped()),
+                    device_size_as_framebuffer_size(dimensions),
                 )
             }
         }
@@ -1735,7 +1735,7 @@ impl Device {
             DrawTarget::Texture { dimensions, fbo_id, with_depth, .. } => {
                 let rect = FramebufferIntRect::new(
                     FramebufferIntPoint::zero(),
-                    FramebufferIntSize::from_untyped(dimensions.to_untyped()),
+                    device_size_as_framebuffer_size(dimensions),
                 );
                 (fbo_id, rect, with_depth)
             },
@@ -1745,10 +1745,7 @@ impl Device {
             DrawTarget::NativeSurface { external_fbo_id, offset, dimensions, .. } => {
                 (
                     FBOId(external_fbo_id),
-                    FramebufferIntRect::new(
-                        FramebufferIntPoint::from_untyped(offset.to_untyped()),
-                        FramebufferIntSize::from_untyped(dimensions.to_untyped()),
-                    ),
+                    device_rect_as_framebuffer_rect(&DeviceIntRect::new(offset, dimensions)),
                     true
                 )
             }
@@ -2153,7 +2150,7 @@ impl Device {
         } else {
             let rect = FramebufferIntRect::new(
                 FramebufferIntPoint::zero(),
-                FramebufferIntSize::from_untyped(src.get_dimensions().to_untyped()),
+                device_size_as_framebuffer_size(src.get_dimensions()),
             );
             for layer in 0..src.layer_count.min(dst.layer_count) as LayerIndex {
                 self.blit_render_target(

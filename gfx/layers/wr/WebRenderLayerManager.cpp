@@ -19,6 +19,7 @@
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/UpdateImageHelper.h"
 #include "nsDisplayList.h"
+#include "nsLayoutUtils.h"
 #include "WebRenderCanvasRenderer.h"
 
 #ifdef XP_WIN
@@ -207,14 +208,7 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
 
   if (aFlags & EndTransactionFlags::END_NO_COMPOSITE &&
       !mWebRenderCommandBuilder.NeedsEmptyTransaction()) {
-    bool haveScrollUpdates = false;
-    for (auto renderRoot : wr::kRenderRoots) {
-      if (!mPendingScrollUpdates[renderRoot].IsEmpty()) {
-        haveScrollUpdates = true;
-        break;
-      }
-    }
-    if (!haveScrollUpdates) {
+    if (mPendingScrollUpdates.IsEmpty()) {
       MOZ_ASSERT(!mTarget);
       WrBridge()->SendSetFocusTarget(mFocusTarget);
       // Revoke TransactionId to trigger next paint.
@@ -248,8 +242,9 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
   AutoTArray<RenderRootUpdates, wr::kRenderRootCount> renderRootUpdates;
   for (auto& stateManager : mStateManagers) {
     auto renderRoot = stateManager.GetRenderRoot();
+    MOZ_ASSERT(renderRoot == wr::RenderRoot::Default);
     if (stateManager.mAsyncResourceUpdates ||
-        !mPendingScrollUpdates[renderRoot].IsEmpty() ||
+        !mPendingScrollUpdates.IsEmpty() ||
         WrBridge()->HasWebRenderParentCommands(renderRoot)) {
       auto updates = renderRootUpdates.AppendElement();
       updates->mRenderRoot = renderRoot;
@@ -259,7 +254,7 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
                                                   updates->mSmallShmems,
                                                   updates->mLargeShmems);
       }
-      updates->mScrollUpdates = std::move(mPendingScrollUpdates[renderRoot]);
+      updates->mScrollUpdates = std::move(mPendingScrollUpdates);
       for (auto it = updates->mScrollUpdates.Iter(); !it.Done(); it.Next()) {
         nsLayoutUtils::NotifyPaintSkipTransaction(/*scroll id=*/it.Key());
       }
@@ -297,32 +292,10 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
   WrBridge()->BeginTransaction();
 
   LayoutDeviceIntSize size = mWidget->GetClientSize();
-  if (aDisplayListBuilder) {
-    aDisplayListBuilder->ComputeDefaultRenderRootRect(size);
-  }
+  wr::LayoutSize contentSize{(float)size.width, (float)size.height};
 
-  wr::RenderRootArray<LayoutDeviceRect> rects;
-  wr::RenderRootArray<wr::LayoutRect> wrRects;
-  for (auto renderRoot : wr::kRenderRoots) {
-    rects[renderRoot] =
-        aDisplayListBuilder
-            ? aDisplayListBuilder->GetRenderRootRect(renderRoot)
-            : LayoutDeviceRect(LayoutDevicePoint(),
-                               renderRoot == wr::RenderRoot::Default
-                                   ? LayoutDeviceSize(size)
-                                   : LayoutDeviceSize());
-    wrRects[renderRoot] = wr::ToLayoutRect(rects[renderRoot]);
-  }
-
-  wr::DisplayListBuilder builder(
-      WrBridge()->GetPipeline(), wrRects[wr::RenderRoot::Default].size,
-      mLastDisplayListSizes[wr::RenderRoot::Default]);
-  for (auto renderRoot : wr::kNonDefaultRenderRoots) {
-    if (!rects[renderRoot].IsEmpty()) {
-      builder.CreateSubBuilder(wrRects[renderRoot].size,
-                               mLastDisplayListSizes[renderRoot], renderRoot);
-    }
-  }
+  wr::DisplayListBuilder builder(WrBridge()->GetPipeline(), contentSize,
+                                 mLastDisplayListSizes[wr::RenderRoot::Default]);
 
   wr::IpcResourceUpdateQueue resourceUpdates(WrBridge());
   wr::usize builderDumpIndex = 0;
@@ -341,7 +314,8 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
 
     mWebRenderCommandBuilder.BuildWebRenderCommands(
         builder, resourceUpdates, aDisplayList, aDisplayListBuilder,
-        mScrollDatas, std::move(aFilters));
+        mScrollData, std::move(aFilters));
+
     builderDumpIndex =
         mWebRenderCommandBuilder.GetBuilderDumpIndex(builder.GetRenderRoot());
     containsSVGGroup = mWebRenderCommandBuilder.GetContainsSVGGroup();
@@ -364,20 +338,13 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     Unused << builder.Dump(/*indent*/ 1, Some(builderDumpIndex), Nothing());
   }
 
-  for (auto& stateManager : mStateManagers) {
-    if (AsyncPanZoomEnabled()) {
-      auto& scrollData = mScrollDatas[stateManager.GetRenderRoot()];
-
-      if (mIsFirstPaint) {
-        // Set the same flag on each scrollData instance (one per render root).
-        // We need to duplicate this because they will get processed by APZ at
-        // separate times and the flag state is relevant each time.
-        scrollData.SetIsFirstPaint();
-      }
-      scrollData.SetPaintSequenceNumber(mPaintSequenceNumber);
+  if (AsyncPanZoomEnabled()) {
+    if (mIsFirstPaint) {
+      mScrollData.SetIsFirstPaint();
+      mIsFirstPaint = false;
     }
+    mScrollData.SetPaintSequenceNumber(mPaintSequenceNumber);
   }
-  mIsFirstPaint = false;
 
   // Since we're sending a full mScrollData that will include the new scroll
   // offsets, and we can throw away the pending scroll updates we had kept for
@@ -434,20 +401,16 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     AUTO_PROFILER_TRACING("Paint", "ForwardDPTransaction", GRAPHICS);
     InfallibleTArray<RenderRootDisplayListData> renderRootDLs;
     for (auto renderRoot : wr::kRenderRoots) {
-      if (builder.GetSendSubBuilderDisplayList(renderRoot)) {
-        auto renderRootDL = renderRootDLs.AppendElement();
-        renderRootDL->mRenderRoot = renderRoot;
-        builder.Finalize(*renderRootDL);
-        mLastDisplayListSizes[renderRoot] = renderRootDL->mDL->mCapacity;
-        resourceUpdates.SubQueue(renderRoot)
-            .Flush(renderRootDL->mResourceUpdates, renderRootDL->mSmallShmems,
-                   renderRootDL->mLargeShmems);
-        renderRootDL->mRect = rects[renderRoot];
-        renderRootDL->mScrollData.emplace(std::move(mScrollDatas[renderRoot]));
-      } else if (WrBridge()->HasWebRenderParentCommands(renderRoot)) {
-        auto renderRootDL = renderRootDLs.AppendElement();
-        renderRootDL->mRenderRoot = renderRoot;
-      }
+      auto renderRootDL = renderRootDLs.AppendElement();
+      renderRootDL->mRenderRoot = renderRoot;
+      builder.Finalize(*renderRootDL);
+      mLastDisplayListSizes[renderRoot] = renderRootDL->mDL->mCapacity;
+      resourceUpdates.SubQueue(renderRoot)
+          .Flush(renderRootDL->mResourceUpdates, renderRootDL->mSmallShmems,
+                 renderRootDL->mLargeShmems);
+      renderRootDL->mRect =
+          LayoutDeviceRect(LayoutDevicePoint(), LayoutDeviceSize(size));
+      renderRootDL->mScrollData.emplace(std::move(mScrollData));
     }
 
     WrBridge()->EndTransaction(renderRootDLs, mLatestTransactionId,

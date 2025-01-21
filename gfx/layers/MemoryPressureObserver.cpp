@@ -4,6 +4,12 @@
 
 #include "MemoryPressureObserver.h"
 
+#include "mozilla/Services.h"
+#include "nsCOMPtr.h"
+#include "nsDependentString.h"
+#include "nsIObserverService.h"
+#include "nsLiteralString.h"
+
 namespace mozilla {
 namespace layers {
 

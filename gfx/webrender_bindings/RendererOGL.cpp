@@ -86,11 +86,11 @@ static void DoNotifyWebRenderContextPurge(
   aBridge->NotifyWebRenderContextPurge();
 }
 
-bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
-                                  const Maybe<wr::ImageFormat>& aReadbackFormat,
-                                  const Maybe<Range<uint8_t>>& aReadbackBuffer,
-                                  bool aHadSlowFrame,
-                                  RendererStats* aOutStats) {
+RenderedFrameId RendererOGL::UpdateAndRender(
+    const Maybe<gfx::IntSize>& aReadbackSize,
+    const Maybe<wr::ImageFormat>& aReadbackFormat,
+    const Maybe<Range<uint8_t>>& aReadbackBuffer, bool aHadSlowFrame,
+    RendererStats* aOutStats) {
   mozilla::widget::WidgetRenderingContext widgetContext;
 
 #if defined(XP_MACOSX)
@@ -103,7 +103,8 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   if (!mCompositor->GetWidget()->PreRender(&widgetContext)) {
     // XXX This could cause oom in webrender since pending_texture_updates is
     // not handled. It needs to be addressed.
-    return false;
+    return RenderedFrameId();
+    ;
   }
   // XXX set clear color if MOZ_WIDGET_ANDROID is defined.
 
@@ -112,18 +113,24 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
       RenderThread::Get()->HandleDeviceReset("BeginFrame", /* aNotify */ true);
     }
     mCompositor->GetWidget()->PostRender(&widgetContext);
-    return false;
+    return RenderedFrameId();
+    ;
   }
 
   wr_renderer_update(mRenderer);
 
+  if (mCompositor->RequestFullRender()) {
+    wr_renderer_force_redraw(mRenderer);
+  }
+
   auto size = mCompositor->GetBufferSize();
 
+  nsTArray<DeviceIntRect> dirtyRects;
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
-                          aOutStats)) {
+                          aOutStats, &dirtyRects)) {
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
     mCompositor->GetWidget()->PostRender(&widgetContext);
-    return false;
+    return RenderedFrameId();
   }
 
   if (aReadbackBuffer.isSome()) {
@@ -137,7 +144,7 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
 
   mScreenshotGrabber.MaybeGrabScreenshot(mRenderer, size.ToUnknownSize());
 
-  mCompositor->EndFrame();
+  RenderedFrameId frameId = mCompositor->EndFrame(dirtyRects);
 
   mCompositor->GetWidget()->PostRender(&widgetContext);
 
@@ -156,7 +163,7 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   // TODO: Flush pending actions such as texture deletions/unlocks and
   //       textureHosts recycling.
 
-  return true;
+  return frameId;
 }
 
 void RendererOGL::CheckGraphicsResetStatus() {
@@ -168,7 +175,7 @@ void RendererOGL::CheckGraphicsResetStatus() {
   if (gl->IsSupported(gl::GLFeature::robustness)) {
     GLenum resetStatus = gl->fGetGraphicsResetStatus();
     if (resetStatus == LOCAL_GL_PURGED_CONTEXT_RESET_NV) {
-      layers::CompositorThreadHolder::Loop()->PostTask(
+      layers::CompositorThread()->Dispatch(
           NewRunnableFunction("DoNotifyWebRenderContextPurgeRunnable",
                               &DoNotifyWebRenderContextPurge, mBridge));
     }
@@ -181,6 +188,14 @@ void RendererOGL::WaitForGPU() {
       RenderThread::Get()->HandleDeviceReset("WaitForGPU", /* aNotify */ true);
     }
   }
+}
+
+RenderedFrameId RendererOGL::GetLastCompletedFrameId() {
+  return mCompositor->GetLastCompletedFrameId();
+}
+
+RenderedFrameId RendererOGL::UpdateFrameId() {
+  return mCompositor->UpdateFrameId();
 }
 
 void RendererOGL::Pause() { mCompositor->Pause(); }
@@ -203,8 +218,9 @@ void RendererOGL::SetFrameStartTime(const TimeStamp& aTime) {
 }
 
 RefPtr<WebRenderPipelineInfo> RendererOGL::FlushPipelineInfo() {
-  auto info = wr_renderer_flush_pipeline_info(mRenderer);
-  return new WebRenderPipelineInfo(info);
+  RefPtr<WebRenderPipelineInfo> info = new WebRenderPipelineInfo();
+  wr_renderer_flush_pipeline_info(mRenderer, &info->Raw());
+  return info;
 }
 
 RenderTextureHost* RendererOGL::GetRenderTexture(

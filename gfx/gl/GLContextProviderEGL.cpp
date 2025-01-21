@@ -62,6 +62,7 @@
 #include "LayersLogging.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
@@ -245,8 +246,8 @@ class GLContextEGLFactory {
   );
 
  private:
-  GLContextEGLFactory() {}
-  ~GLContextEGLFactory() {}
+  GLContextEGLFactory() = default;
+  ~GLContextEGLFactory() = default;
 };
 
 already_AddRefed<GLContext> GLContextEGLFactory::Create(

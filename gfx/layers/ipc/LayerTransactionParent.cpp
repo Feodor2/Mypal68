@@ -748,13 +748,8 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvSetAsyncScrollOffset(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  mCompositorBridge->SetTestAsyncScrollOffset(
-#ifdef MOZ_BUILD_WEBRENDER
-      WRRootId::NonWebRender(GetId()),
-#else
-      GetId(),
-#endif
-      aScrollID, CSSPoint(aX, aY));
+  mCompositorBridge->SetTestAsyncScrollOffset(GetId(), aScrollID,
+                                              CSSPoint(aX, aY));
   return IPC_OK();
 }
 
@@ -764,36 +759,19 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvSetAsyncZoom(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  mCompositorBridge->SetTestAsyncZoom(
-#ifdef MOZ_BUILD_WEBRENDER
-      WRRootId::NonWebRender(GetId()),
-#else
-      GetId(),
-#endif
-      aScrollID, LayerToParentLayerScale(aValue));
+  mCompositorBridge->SetTestAsyncZoom(GetId(), aScrollID,
+                                      LayerToParentLayerScale(aValue));
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvFlushApzRepaints() {
-  mCompositorBridge->FlushApzRepaints(
-#ifdef MOZ_BUILD_WEBRENDER
-      WRRootId::NonWebRender(GetId())
-#else
-      GetId()
-#endif
-  );
+  mCompositorBridge->FlushApzRepaints(GetId());
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvGetAPZTestData(
     APZTestData* aOutData) {
-  mCompositorBridge->GetAPZTestData(
-#ifdef MOZ_BUILD_WEBRENDER
-      WRRootId::NonWebRender(GetId()),
-#else
-      GetId(),
-#endif
-      aOutData);
+  mCompositorBridge->GetAPZTestData(GetId(), aOutData);
   return IPC_OK();
 }
 
@@ -804,33 +782,18 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvRequestProperty(
 }
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvSetConfirmedTargetAPZC(
-    const uint64_t& aBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-    nsTArray<SLGuidAndRenderRoot>&& aTargets
-#else
-    nsTArray<ScrollableLayerGuid>&& aTargets
-#endif
-) {
+    const uint64_t& aBlockId, nsTArray<ScrollableLayerGuid>&& aTargets) {
   for (size_t i = 0; i < aTargets.Length(); i++) {
     // Guard against bad data from hijacked child processes
-#ifdef MOZ_BUILD_WEBRENDER
-    if (aTargets[i].mRenderRoot != wr::RenderRoot::Default) {
-      NS_ERROR(
-          "Unexpected render root in RecvSetConfirmedTargetAPZC; dropping "
-          "message...");
-      return IPC_FAIL(this, "Bad render root");
-    }
-    if (aTargets[i].mScrollableLayerGuid.mLayersId != GetId()) {
-#else
     if (aTargets[i].mLayersId != GetId()) {
-#endif
       NS_ERROR(
           "Unexpected layers id in RecvSetConfirmedTargetAPZC; dropping "
           "message...");
       return IPC_FAIL(this, "Bad layers id");
     }
   }
-  mCompositorBridge->SetConfirmedTargetAPZC(GetId(), aBlockId, aTargets);
+  mCompositorBridge->SetConfirmedTargetAPZC(GetId(), aBlockId,
+                                            std::move(aTargets));
   return IPC_OK();
 }
 

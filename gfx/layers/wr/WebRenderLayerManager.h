@@ -13,6 +13,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/SVGIntegrationUtils.h"  // for WrFiltersHolder
 #include "mozilla/layers/APZTestData.h"
 #include "mozilla/layers/FocusTarget.h"
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
@@ -169,9 +170,7 @@ class WebRenderLayerManager final : public LayerManager {
   WebRenderUserDataRefTable* GetWebRenderUserDataTable() {
     return mWebRenderCommandBuilder.GetWebRenderUserDataTable();
   }
-  WebRenderScrollData& GetScrollData(wr::RenderRoot aRenderRoot) {
-    return mScrollDatas[aRenderRoot];
-  }
+  WebRenderScrollData& GetScrollData() { return mScrollData; }
 
   void WrUpdated();
   void WindowOverlayChanged() { mWindowOverlayChanged = true; }
@@ -211,7 +210,7 @@ class WebRenderLayerManager final : public LayerManager {
 
   // This holds the scroll data that we need to send to the compositor for
   // APZ to do it's job
-  wr::RenderRootArray<WebRenderScrollData> mScrollDatas;
+  WebRenderScrollData mScrollData;
 
   bool mWindowOverlayChanged;
   bool mNeedsComposite;

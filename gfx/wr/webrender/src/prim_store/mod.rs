@@ -301,7 +301,7 @@ impl<F, T> SpaceMapper<F, T> where F: fmt::Debug {
     pub fn unmap(&self, rect: &Rect<f32, T>) -> Option<Rect<f32, F>> {
         match self.kind {
             CoordinateSpaceMapping::Local => {
-                Some(Rect::from_untyped(&rect.to_untyped()))
+                Some(rect.cast_unit())
             }
             CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => {
                 Some(scale_offset.unmap_rect(rect))
@@ -315,7 +315,7 @@ impl<F, T> SpaceMapper<F, T> where F: fmt::Debug {
     pub fn map(&self, rect: &Rect<f32, F>) -> Option<Rect<f32, T>> {
         match self.kind {
             CoordinateSpaceMapping::Local => {
-                Some(Rect::from_untyped(&rect.to_untyped()))
+                Some(rect.cast_unit())
             }
             CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => {
                 Some(scale_offset.map_rect(rect))
@@ -1892,7 +1892,7 @@ impl PrimitiveStore {
                     // relative transforms have changed, which means we need to
                     // re-map the dependencies of any child primitives.
                     world_culling_rect = tile_cache.pre_update(
-                        PictureRect::from_untyped(&pic.estimated_local_rect.to_untyped()),
+                        layout_rect_as_picture_rect(&pic.estimated_local_rect),
                         surface_index,
                         frame_context,
                         frame_state,
@@ -4075,7 +4075,8 @@ fn get_clipped_device_rect(
     let unclipped_raster_rect = {
         let world_rect = *unclipped * Scale::new(1.0);
         let raster_rect = world_rect * device_pixel_scale.inv();
-        Rect::from_untyped(&raster_rect.to_untyped())
+
+        raster_rect.cast_unit()
     };
 
     let unclipped_world_rect = map_to_world.map(&unclipped_raster_rect)?;

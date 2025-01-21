@@ -8,7 +8,7 @@
 #include "mozilla/dom/EventTarget.h"         // for EventTarget
 #include "mozilla/dom/BrowserParent.h"       // for BrowserParent
 #include "mozilla/EventDispatcher.h"         // for EventDispatcher
-#include "mozilla/layout/RenderFrame.h"      // For RenderFrame
+#include "mozilla/layout/RemoteLayerTreeOwner.h"  // For RemoteLayerTreeOwner
 #include "mozilla/PresShell.h"               // For PresShell
 #include "mozilla/StaticPrefs_apz.h"
 #include "nsIContentInlines.h"  // for nsINode::IsEditable()
@@ -157,7 +157,7 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
 
   // Check if the key event target is a remote browser
   if (BrowserParent* browserParent = BrowserParent::GetFrom(keyEventTarget)) {
-    RenderFrame* rf = browserParent->GetRenderFrame();
+    RemoteLayerTreeOwner* rf = browserParent->GetRenderFrame();
 
     // The globally focused element for scrolling is in a remote layer tree
     if (rf) {
@@ -218,21 +218,6 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
   ScrollTargets target;
   target.mHorizontal = nsLayoutUtils::FindIDForScrollableFrame(horizontal);
   target.mVertical = nsLayoutUtils::FindIDForScrollableFrame(vertical);
-#ifdef MOZ_BUILD_WEBRENDER
-  if (XRE_IsContentProcess()) {
-    target.mHorizontalRenderRoot = gfxUtils::GetContentRenderRoot();
-    target.mVerticalRenderRoot = gfxUtils::GetContentRenderRoot();
-  } else {
-    target.mHorizontalRenderRoot =
-        horizontal ? gfxUtils::RecursivelyGetRenderRootForFrame(
-                         horizontal->GetScrolledFrame())
-                   : wr::RenderRoot::Default;
-    target.mVerticalRenderRoot =
-        vertical ? gfxUtils::RecursivelyGetRenderRootForFrame(
-                       vertical->GetScrolledFrame())
-                 : wr::RenderRoot::Default;
-  }
-#endif
   mData = AsVariant(target);
 
   FT_LOG("Creating scroll target with seq=%" PRIu64 ", kl=%d, h=%" PRIu64

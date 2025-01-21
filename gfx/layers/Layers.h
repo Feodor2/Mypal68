@@ -803,24 +803,16 @@ class LayerManager : public FrameRecorder {
    * per-scrollid basis. This is used for empty transactions that push over
    * scroll position updates to the APZ code.
    */
-  virtual bool SetPendingScrollUpdateForNextTransaction(
-      ScrollableLayerGuid::ViewID aScrollId, const ScrollUpdateInfo& aUpdateInfo
-#ifdef MOZ_BUILD_WEBRENDER
-      ,
-      wr::RenderRoot aRenderRoot
-#endif
-  );
-  Maybe<ScrollUpdateInfo> GetPendingScrollInfoUpdate(
+  virtual bool AddPendingScrollUpdateForNextTransaction(
+      ScrollableLayerGuid::ViewID aScrollId,
+      const ScrollPositionUpdate& aUpdateInfo);
+  Maybe<nsTArray<ScrollPositionUpdate>> GetPendingScrollInfoUpdate(
       ScrollableLayerGuid::ViewID aScrollId);
   std::unordered_set<ScrollableLayerGuid::ViewID>
   ClearPendingScrollInfoUpdate();
 
  protected:
-#ifdef MOZ_BUILD_WEBRENDER
-  wr::RenderRootArray<ScrollUpdatesMap> mPendingScrollUpdates;
-#else
   ScrollUpdatesMap mPendingScrollUpdates;
-#endif
 };
 
 /**

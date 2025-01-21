@@ -206,6 +206,7 @@ void AppendToString(std::stringstream& aStream, const ScrollMetadata& m,
       AppendToString(aStream, overscrollY, "] [overscroll-y=");
     }
   }
+  aStream << "] [" << m.GetScrollUpdates().Length() << " scrollupdates";
   aStream << "] }" << sfx;
 }
 
@@ -214,9 +215,9 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
   aStream << pfx;
   AppendToString(aStream, m.GetCompositionBounds(), "{ [cb=");
   AppendToString(aStream, m.GetScrollableRect(), "] [sr=");
-  AppendToString(aStream, m.GetScrollOffset(), "] [s=");
-  if (m.GetDoSmoothScroll()) {
-    AppendToString(aStream, m.GetSmoothScrollOffset(), "] [ss=");
+  AppendToString(aStream, m.GetVisualScrollOffset(), "] [s=");
+  if (m.GetVisualScrollUpdateType() != FrameMetrics::eNone) {
+    AppendToString(aStream, m.GetVisualDestination(), "] [vd=");
   }
   AppendToString(aStream, m.GetDisplayPort(), "] [dp=");
   AppendToString(aStream, m.GetCriticalDisplayPort(), "] [cdp=");
@@ -227,7 +228,6 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
     }
     AppendToString(aStream, m.GetZoom(), "] [z=", "] }");
   } else {
-    AppendToString(aStream, m.GetDisplayPortMargins(), " [dpm=");
     AppendToString(aStream, m.GetRootCompositionSize(), "] [rcs=");
     AppendToString(aStream, m.GetLayoutViewport(), "] [v=");
     aStream << nsPrintfCString("] [z=(ld=%.3f r=%.3f",
@@ -237,8 +237,8 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
     AppendToString(aStream, m.GetCumulativeResolution(), " cr=");
     AppendToString(aStream, m.GetZoom(), " z=");
     AppendToString(aStream, m.GetExtraResolution(), " er=");
-    aStream << nsPrintfCString(")] [u=(%d %d %" PRIu32 ")",
-                               m.GetScrollUpdateType(), m.GetDoSmoothScroll(),
+    aStream << nsPrintfCString(")] [u=(%d %" PRIu32 ")",
+                               m.GetVisualScrollUpdateType(),
                                m.GetScrollGeneration())
                    .get();
     aStream << nsPrintfCString("] [i=(%" PRIu32 " %" PRIu64 " %d)] }",
@@ -257,15 +257,6 @@ void AppendToString(std::stringstream& aStream, const ScrollableLayerGuid& s,
                  .get()
           << sfx;
 }
-
-#ifdef MOZ_BUILD_WEBRENDER
-void AppendToString(std::stringstream& aStream, const SLGuidAndRenderRoot& s,
-                    const char* pfx, const char* sfx) {
-  aStream << pfx << "{ ";
-  AppendToString(aStream, s.mScrollableLayerGuid, "s=");
-  aStream << nsPrintfCString(", r=%d }", (int)s.mRenderRoot).get() << sfx;
-}
-#endif
 
 void AppendToString(std::stringstream& aStream, const ZoomConstraints& z,
                     const char* pfx, const char* sfx) {
@@ -488,6 +479,14 @@ void AppendToString(std::stringstream& aStream, ImageFormat format,
       aStream << "???";
   }
 
+  aStream << sfx;
+}
+
+void AppendToString(std::stringstream& aStream,
+                    const mozilla::ScrollPositionUpdate& aUpdate,
+                    const char* pfx, const char* sfx) {
+  aStream << pfx;
+  aUpdate.AppendToString(aStream);
   aStream << sfx;
 }
 

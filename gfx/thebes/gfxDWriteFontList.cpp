@@ -705,7 +705,7 @@ FontFamily gfxDWriteFontList::GetDefaultFontForPlatform(
     const gfxFontStyle* aStyle) {
   // try Arial first
   FontFamily ff;
-  ff = FindFamily(NS_LITERAL_CSTRING("Arial"));
+  ff = FindFamily("Arial"_ns);
   if (!ff.IsNull()) {
     return ff;
   }
@@ -1198,7 +1198,7 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
     bool allUltraBold = true;
     for (i = 0; i < faces.Length(); i++) {
       // does the face have 'Ultra Bold' in the name?
-      if (faces[i]->Name().Find(NS_LITERAL_CSTRING("Ultra Bold")) == -1) {
+      if (faces[i]->Name().Find("Ultra Bold"_ns) == -1) {
         allUltraBold = false;
         break;
       }
@@ -2020,7 +2020,7 @@ gfxDWriteFontList::CreateBundledFontsCollection(IDWriteFactory* aFactory) {
   if (NS_FAILED(rv)) {
     return nullptr;
   }
-  if (NS_FAILED(localDir->Append(NS_LITERAL_STRING("fonts")))) {
+  if (NS_FAILED(localDir->Append(u"fonts"_ns))) {
     return nullptr;
   }
   bool isDir;

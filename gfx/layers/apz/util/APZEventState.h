@@ -9,7 +9,7 @@
 
 #include "Units.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/layers/GeckoContentController.h"  // for APZStateChange
+#include "mozilla/layers/GeckoContentControllerTypes.h"  // for APZStateChange
 #include "mozilla/layers/ScrollableLayerGuid.h"     // for ScrollableLayerGuid
 #include "mozilla/layers/TouchCounter.h"            // for TouchCounter
 #include "mozilla/RefPtr.h"
@@ -41,7 +41,7 @@ typedef std::function<void(uint64_t /* input block id */,
  * gestures and sending APZ notifications.
  */
 class APZEventState final {
-  typedef GeckoContentController::APZStateChange APZStateChange;
+  typedef GeckoContentController_APZStateChange APZStateChange;
   typedef ScrollableLayerGuid::ViewID ViewID;
 
  public:

@@ -717,7 +717,7 @@ void FontList::SetLocalNames(
   header.mLocalFaceCount.store(count);
 }
 
-Family* FontList::FindFamily(const nsCString& aName) {
+Family* FontList::FindFamily(const nsCString& aName, bool aAllowHidden) {
   struct FamilyNameComparator {
     FamilyNameComparator(FontList* aList, const nsCString& aTarget)
         : mList(aList), mTarget(aTarget) {}
@@ -737,7 +737,8 @@ Family* FontList::FindFamily(const nsCString& aName) {
   size_t match;
   if (BinarySearchIf(families, 0, header.mFamilyCount,
                      FamilyNameComparator(this, aName), &match)) {
-    return &families[match];
+    return !aAllowHidden && families[match].IsHidden() ? nullptr
+                                                       : &families[match];
   }
 
   if (header.mAliasCount) {
@@ -745,7 +746,8 @@ Family* FontList::FindFamily(const nsCString& aName) {
     size_t match;
     if (BinarySearchIf(families, 0, header.mAliasCount,
                        FamilyNameComparator(this, aName), &match)) {
-      return &families[match];
+      return !aAllowHidden && families[match].IsHidden() ? nullptr
+                                                         : &families[match];
     }
   }
 
@@ -767,10 +769,9 @@ Family* FontList::FindFamily(const nsCString& aName) {
       pfl->mLocalNameTable.Clear();
       return nullptr;
     }
-    const nsLiteralCString kStyleSuffixes[] = {
-        nsLiteralCString(" book"),   nsLiteralCString(" medium"),
-        nsLiteralCString(" normal"), nsLiteralCString(" regular"),
-        nsLiteralCString(" roman"),  nsLiteralCString(" upright")};
+    const nsLiteralCString kStyleSuffixes[] = {" book"_ns,   " medium"_ns,
+                                               " normal"_ns, " regular"_ns,
+                                               " roman"_ns,  " upright"_ns};
     for (const auto& styleName : kStyleSuffixes) {
       if (StringEndsWith(aName, styleName)) {
         // See if we have a known family that matches the "base" family name

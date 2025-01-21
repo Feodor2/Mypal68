@@ -12,7 +12,6 @@
 #include "mozilla/gfx/Types.h"        // for SamplingFilter, SurfaceFormat
 #include "mozilla/layers/CompositorTypes.h"  // for TextureFlags
 #ifdef MOZ_BUILD_WEBRENDER
-#  include "mozilla/layers/APZTypes.h"  // for SLGuidAndRenderRoot
 #  include "mozilla/layers/WebRenderLayersLogging.h"
 #endif
 #include "mozilla/layers/ZoomConstraints.h"
@@ -184,11 +183,6 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
 void AppendToString(std::stringstream& aStream, const ScrollableLayerGuid& s,
                     const char* pfx = "", const char* sfx = "");
 
-#ifdef MOZ_BUILD_WEBRENDER
-void AppendToString(std::stringstream& aStream, const SLGuidAndRenderRoot& s,
-                    const char* pfx = "", const char* sfx = "");
-#endif
-
 void AppendToString(std::stringstream& aStream, const ZoomConstraints& z,
                     const char* pfx = "", const char* sfx = "");
 
@@ -279,6 +273,10 @@ void AppendToString(std::stringstream& aStream, gfx::SurfaceType format,
                     const char* pfx = "", const char* sfx = "");
 
 void AppendToString(std::stringstream& aStream, ImageFormat format,
+                    const char* pfx = "", const char* sfx = "");
+
+void AppendToString(std::stringstream& aStream,
+                    const mozilla::ScrollPositionUpdate& aUpdate,
                     const char* pfx = "", const char* sfx = "");
 
 // Sometimes, you just want a string from a single value.

@@ -5,11 +5,13 @@
 
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "apz/src/APZCTreeManager.h"
+#  include "mozilla/layers/AsyncCompositionManager.h"
 #endif
 #include "mozilla/layers/Compositor.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayerManagerComposite.h"
+#include "mozilla/layers/UiCompositorControllerMessageTypes.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/Move.h"
 #include "mozilla/Unused.h"
@@ -45,7 +47,7 @@ RefPtr<UiCompositorControllerParent> UiCompositorControllerParent::Start(
       NewRunnableMethod<Endpoint<PUiCompositorControllerParent>&&>(
           "layers::UiCompositorControllerParent::Open", parent,
           &UiCompositorControllerParent::Open, std::move(aEndpoint));
-  CompositorThreadHolder::Loop()->PostTask(task.forget());
+  CompositorThread()->Dispatch(task.forget());
 
   return parent;
 }
@@ -172,7 +174,7 @@ void UiCompositorControllerParent::ToolbarAnimatorMessageFromCompositor(
     int32_t aMessage) {
   // This function can be call from ether compositor or controller thread.
   if (!CompositorThreadHolder::IsInCompositorThread()) {
-    CompositorThreadHolder::Loop()->PostTask(NewRunnableMethod<int32_t>(
+    CompositorThread()->Dispatch(NewRunnableMethod<int32_t>(
         "layers::UiCompositorControllerParent::"
         "ToolbarAnimatorMessageFromCompositor",
         this,
@@ -208,12 +210,11 @@ void UiCompositorControllerParent::NotifyUpdateScreenMetrics(
   CSSToScreenScale scale = ViewTargetAs<ScreenPixel>(
       aMetrics.GetZoom().ToScaleFactor(),
       PixelCastJustification::ScreenIsParentLayerForRoot);
-  ScreenPoint scrollOffset = aMetrics.GetScrollOffset() * scale;
-  CompositorThreadHolder::Loop()->PostTask(
-      NewRunnableMethod<ScreenPoint, CSSToScreenScale>(
-          "UiCompositorControllerParent::SendRootFrameMetrics", this,
-          &UiCompositorControllerParent::SendRootFrameMetrics, scrollOffset,
-          scale));
+  ScreenPoint scrollOffset = aMetrics.GetVisualScrollOffset() * scale;
+  CompositorThread()->Dispatch(NewRunnableMethod<ScreenPoint, CSSToScreenScale>(
+      "UiCompositorControllerParent::SendRootFrameMetrics", this,
+      &UiCompositorControllerParent::SendRootFrameMetrics, scrollOffset,
+      scale));
 #endif
 }
 
@@ -240,7 +241,7 @@ void UiCompositorControllerParent::InitializeForSameProcess() {
     SynchronousTask task(
         "UiCompositorControllerParent::InitializeForSameProcess");
 
-    CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
+    CompositorThread()->Dispatch(NS_NewRunnableFunction(
         "UiCompositorControllerParent::InitializeForSameProcess", [&]() {
           AutoCompleteTask complete(&task);
           InitializeForSameProcess();

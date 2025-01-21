@@ -198,6 +198,30 @@ function isLayerized(elementId) {
   return false;
 }
 
+// Return a rect (or null) that holds the last known content-side displayport
+// for a given element. (The element selection works the same way, and with
+// the same assumptions as the isLayerized function above).
+function getLastContentDisplayportFor(elementId) {
+  var contentTestData = SpecialPowers.getDOMWindowUtils(
+    window
+  ).getContentAPZTestData();
+  var nonEmptyBucket = getLastNonemptyBucket(contentTestData.paints);
+  ok(nonEmptyBucket != null, "expected at least one nonempty paint");
+  var seqno = nonEmptyBucket.sequenceNumber;
+  contentTestData = convertTestData(contentTestData);
+  var paint = contentTestData.paints[seqno];
+  for (var scrollId in paint) {
+    if ("contentDescription" in paint[scrollId]) {
+      if (paint[scrollId].contentDescription.includes(elementId)) {
+        if ("displayport" in paint[scrollId]) {
+          return parseRect(paint[scrollId].displayport);
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function promiseApzRepaintsFlushed(aWindow = window) {
   return new Promise(function(resolve, reject) {
     var repaintDone = function() {
@@ -249,6 +273,13 @@ function waitForApzFlushedRepaints(aCallback) {
     .then(promiseAllPaintsDone)
     // Then allow the callback to be triggered.
     .then(aCallback);
+}
+
+// Same as waitForApzFlushedRepaints, but in async form.
+async function promiseApzFlushedRepaints() {
+  await promiseAllPaintsDone();
+  await promiseApzRepaintsFlushed();
+  await promiseAllPaintsDone();
 }
 
 // This function takes a set of subtests to run one at a time in new top-level
@@ -997,3 +1028,74 @@ var ApzCleanup = {
     }
   },
 };
+
+/**
+ * Returns a promise that will resolve if `eventTarget` receives an event of the
+ * given type that passes the given filter. Only the first matching message is
+ * used. The filter must be a function (or null); it is called with the event
+ * object and the call must return true to resolve the promise.
+ */
+function promiseOneEvent(eventTarget, eventType, filter) {
+  return new Promise((resolve, reject) => {
+    eventTarget.addEventListener(eventType, function listener(e) {
+      let success = false;
+      if (filter == null) {
+        success = true;
+      } else if (typeof filter == "function") {
+        try {
+          success = filter(e);
+        } catch (ex) {
+          dump(
+            `ERROR: Filter passed to promiseOneEvent threw exception: ${ex}\n`
+          );
+          reject();
+          return;
+        }
+      } else {
+        dump(
+          "ERROR: Filter passed to promiseOneEvent was neither null nor a function\n"
+        );
+        reject();
+        return;
+      }
+      if (success) {
+        eventTarget.removeEventListener(eventType, listener);
+        resolve(e);
+      }
+    });
+  });
+}
+
+function visualViewportAsZoomedRect() {
+  let vv = window.visualViewport;
+  return {
+    x: vv.pageLeft,
+    y: vv.pageTop,
+    w: vv.width,
+    h: vv.height,
+    z: vv.scale,
+  };
+}
+
+// Pulls the latest compositor APZ test data and checks to see if the
+// scroller with id `scrollerId` was checkerboarding. It also ensures that
+// a scroller with id `scrollerId` was actually found in the test data.
+// This function requires that "apz.test.logging_enabled" be set to true,
+// in order for the test data to be logged.
+function assertNotCheckerboarded(utils, scrollerId, msgPrefix) {
+  utils.advanceTimeAndRefresh(0);
+  var data = utils.getCompositorAPZTestData();
+  //dump(JSON.stringify(data, null, 4));
+  var found = false;
+  for (apzcData of data.additionalData) {
+    if (apzcData.key == scrollerId) {
+      var checkerboarding = apzcData.value
+        .split(",")
+        .includes("checkerboarding");
+      ok(!checkerboarding, `${msgPrefix}: scroller is not checkerboarding`);
+      found = true;
+    }
+  }
+  ok(found, `${msgPrefix}: Found the scroller in the APZ data`);
+  utils.restoreNormalRefresh();
+}

@@ -4,9 +4,11 @@
 
 #include "FrameMetrics.h"
 
+#include "gfxUtils.h"
 #include "nsStyleConsts.h"
 #include "nsStyleStruct.h"
 #include "mozilla/WritingModes.h"
+#include "mozilla/gfx/Types.h"
 
 namespace mozilla {
 namespace layers {
@@ -14,9 +16,14 @@ namespace layers {
 const ScrollableLayerGuid::ViewID ScrollableLayerGuid::NULL_SCROLL_ID = 0;
 
 void FrameMetrics::RecalculateLayoutViewportOffset() {
+  // For subframes, the visual and layout viewports coincide, so just
+  // keep the layout viewport offset in sync with the visual one.
   if (!mIsRootContent) {
+    mLayoutViewport.MoveTo(GetVisualScrollOffset());
     return;
   }
+  // For the root, the two viewports can diverge, but the layout
+  // viewport needs to keep enclosing the visual viewport.
   KeepLayoutViewportEnclosingVisualViewport(GetVisualViewport(),
                                             mScrollableRect, mLayoutViewport);
 }
@@ -82,6 +89,53 @@ void FrameMetrics::KeepLayoutViewportEnclosingVisualViewport(
   // Regardless of any adjustment above, the layout viewport is not allowed
   // to go outside the scrollable rect.
   aLayoutViewport = aLayoutViewport.MoveInsideAndClamp(aScrollableRect);
+}
+
+void FrameMetrics::ApplyScrollUpdateFrom(const ScrollPositionUpdate& aUpdate) {
+  // In applying a main-thread scroll update, try to preserve the relative
+  // offset between the visual and layout viewports.
+  CSSPoint relativeOffset = GetVisualScrollOffset() - GetLayoutScrollOffset();
+  MOZ_ASSERT(IsRootContent() || relativeOffset == CSSPoint());
+  // We need to set the two offsets together, otherwise a subsequent
+  // RecalculateLayoutViewportOffset() could see divergent layout and
+  // visual offsets.
+  SetLayoutScrollOffset(aUpdate.GetDestination());
+  ClampAndSetVisualScrollOffset(aUpdate.GetDestination() + relativeOffset);
+}
+
+CSSPoint FrameMetrics::ApplyRelativeScrollUpdateFrom(
+    const ScrollPositionUpdate& aUpdate) {
+  MOZ_ASSERT(aUpdate.GetType() == ScrollUpdateType::Relative);
+  CSSPoint origin = GetVisualScrollOffset();
+  CSSPoint delta = (aUpdate.GetDestination() - aUpdate.GetSource());
+  ClampAndSetVisualScrollOffset(origin + delta);
+  return GetVisualScrollOffset() - origin;
+}
+
+CSSPoint FrameMetrics::ApplyPureRelativeScrollUpdateFrom(
+    const ScrollPositionUpdate& aUpdate) {
+  MOZ_ASSERT(aUpdate.GetType() == ScrollUpdateType::PureRelative);
+  CSSPoint origin = GetVisualScrollOffset();
+  ClampAndSetVisualScrollOffset(origin + aUpdate.GetDelta());
+  return GetVisualScrollOffset() - origin;
+}
+
+void FrameMetrics::UpdatePendingScrollInfo(const ScrollPositionUpdate& aInfo) {
+  // We only get this "pending scroll info" for paint-skip transactions,
+  // but PureRelative position updates always trigger a full paint, so
+  // we should never enter this code with a PureRelative update type. For
+  // the other types, the destination field on the ScrollPositionUpdate will
+  // tell us the final layout scroll position on the main thread.
+  MOZ_ASSERT(aInfo.GetType() != ScrollUpdateType::PureRelative);
+
+  // In applying a main-thread scroll update, try to preserve the relative
+  // offset between the visual and layout viewports.
+  CSSPoint relativeOffset = GetVisualScrollOffset() - GetLayoutScrollOffset();
+  MOZ_ASSERT(IsRootContent() || relativeOffset == CSSPoint());
+
+  SetLayoutScrollOffset(aInfo.GetDestination());
+  ClampAndSetVisualScrollOffset(aInfo.GetDestination() + relativeOffset);
+  mScrollGeneration = aInfo.GetGeneration();
 }
 
 ScrollSnapInfo::ScrollSnapInfo()

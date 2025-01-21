@@ -9,6 +9,7 @@
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/gfx/StackArray.h"
 #include "mozilla/layers/DiagnosticsD3D11.h"
+#include "mozilla/layers/HelpersD3D11.h"
 #include "mozilla/layers/LayerMLGPU.h"
 #include "mozilla/layers/MemoryReportingMLGPU.h"
 #include "mozilla/layers/ShaderDefinitionsMLGPU.h"
@@ -16,6 +17,7 @@
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 #include "MLGShaders.h"
+#include "LayersLogging.h"
 #include "TextureD3D11.h"
 #include "gfxConfig.h"
 #include "mozilla/StaticPrefs_layers.h"
@@ -1827,7 +1829,7 @@ void MLGDeviceD3D11::HandleDeviceReset(const char* aWhere) {
     return;
   }
 
-  Fail(NS_LITERAL_CSTRING("FEATURE_FAILURE_DEVICE_RESET"), nullptr);
+  Fail("FEATURE_FAILURE_DEVICE_RESET"_ns, nullptr);
 
   gfxCriticalNote << "GFX: D3D11 detected a device reset in " << aWhere;
   if (XRE_IsGPUProcess()) {

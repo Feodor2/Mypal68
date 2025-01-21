@@ -597,10 +597,11 @@ void Layer::ApplyPendingUpdatesForThisTransaction() {
   for (size_t i = 0; i < mScrollMetadata.Length(); i++) {
     FrameMetrics& fm = mScrollMetadata[i].GetMetrics();
     ScrollableLayerGuid::ViewID scrollId = fm.GetScrollId();
-    Maybe<ScrollUpdateInfo> update =
+    Maybe<nsTArray<ScrollPositionUpdate>> update =
         Manager()->GetPendingScrollInfoUpdate(scrollId);
     if (update) {
-      fm.UpdatePendingScrollInfo(update.value());
+      nsTArray<ScrollPositionUpdate> infos = update.extract();
+      mScrollMetadata[i].UpdatePendingScrollInfo(std::move(infos));
       Mutated();
     }
   }
@@ -2212,61 +2213,40 @@ bool LayerManager::IsLogEnabled() {
   return MOZ_LOG_TEST(GetLog(), LogLevel::Debug);
 }
 
-bool LayerManager::SetPendingScrollUpdateForNextTransaction(
-    ScrollableLayerGuid::ViewID aScrollId, const ScrollUpdateInfo& aUpdateInfo
-#ifdef MOZ_BUILD_WEBRENDER
-    ,
-    wr::RenderRoot aRenderRoot
-#endif
-) {
+bool LayerManager::AddPendingScrollUpdateForNextTransaction(
+    ScrollableLayerGuid::ViewID aScrollId,
+    const ScrollPositionUpdate& aUpdateInfo) {
   Layer* withPendingTransform = DepthFirstSearch<ForwardIterator>(
       GetRoot(), [](Layer* aLayer) { return aLayer->HasPendingTransform(); });
   if (withPendingTransform) {
     return false;
   }
 
-#ifdef MOZ_BUILD_WEBRENDER
-  // If this is called on a LayerManager that's not a WebRenderLayerManager,
-  // then we don't actually need the aRenderRoot information. We force it to
-  // RenderRoot::Default so that we can make assumptions in
-  // GetPendingScrollInfoUpdate.
-  wr::RenderRoot renderRoot = (GetBackendType() == LayersBackend::LAYERS_WR)
-                                  ? aRenderRoot
-                                  : wr::RenderRoot::Default;
-  mPendingScrollUpdates[renderRoot].Put(aScrollId, aUpdateInfo);
-#else
-  mPendingScrollUpdates.Put(aScrollId, aUpdateInfo);
-#endif
+  mPendingScrollUpdates.GetOrInsert(aScrollId).AppendElement(aUpdateInfo);
   return true;
 }
 
-Maybe<ScrollUpdateInfo> LayerManager::GetPendingScrollInfoUpdate(
+Maybe<nsTArray<ScrollPositionUpdate>> LayerManager::GetPendingScrollInfoUpdate(
     ScrollableLayerGuid::ViewID aScrollId) {
-#ifdef MOZ_BUILD_WEBRENDER
-  // This never gets called for WebRenderLayerManager, so we assume that all
-  // pending scroll info updates are stored under the default RenderRoot.
-  MOZ_ASSERT(GetBackendType() != LayersBackend::LAYERS_WR);
-  auto p = mPendingScrollUpdates[wr::RenderRoot::Default].Lookup(aScrollId);
-#else
   auto p = mPendingScrollUpdates.Lookup(aScrollId);
-#endif
-  return p ? Some(p.Data()) : Nothing();
+  if (!p) {
+    return Nothing();
+  }
+  // We could have this function return a CopyableTArray or something, but it
+  // seems better to avoid implicit copies and just do the one explicit copy
+  // where we need it, here.
+  nsTArray<ScrollPositionUpdate> copy;
+  copy.AppendElements(p.Data());
+  return Some(std::move(copy));
 }
 
 std::unordered_set<ScrollableLayerGuid::ViewID>
 LayerManager::ClearPendingScrollInfoUpdate() {
   std::unordered_set<ScrollableLayerGuid::ViewID> scrollIds;
-#ifdef MOZ_BUILD_WEBRENDER
-  for (auto renderRoot : wr::kRenderRoots) {
-    auto& updates = mPendingScrollUpdates[renderRoot];
-    for (auto it = updates.Iter(); !it.Done(); it.Next()) {
-      scrollIds.insert(it.Key());
-    }
-    updates.Clear();
+  for (auto it = mPendingScrollUpdates.Iter(); !it.Done(); it.Next()) {
+    scrollIds.insert(it.Key());
   }
-#else
   mPendingScrollUpdates.Clear();
-#endif
   return scrollIds;
 }
 

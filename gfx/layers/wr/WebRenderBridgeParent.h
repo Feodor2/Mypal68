@@ -152,7 +152,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
 
   mozilla::ipc::IPCResult RecvSetConfirmedTargetAPZC(
       const uint64_t& aBlockId,
-      nsTArray<SLGuidAndRenderRoot>&& aTargets) override;
+      nsTArray<ScrollableLayerGuid>&& aTargets) override;
 
   mozilla::ipc::IPCResult RecvSetTestSampleTime(
       const TimeStamp& aTime) override;
@@ -246,7 +246,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   void ScheduleForcedGenerateFrame();
 
   void NotifyDidSceneBuild(const nsTArray<wr::RenderRoot>& aRenderRoots,
-                           RefPtr<wr::WebRenderPipelineInfo> aInfo);
+                           RefPtr<const wr::WebRenderPipelineInfo> aInfo);
 
   wr::Epoch UpdateWebRender(
       CompositorVsyncScheduler* aScheduler,
@@ -292,7 +292,6 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
 
   bool IsRootWebRenderBridgeParent() const;
   LayersId GetLayersId() const;
-  WRRootId GetWRRootId() const;
 
   void SetCompositionRecorder(
       UniquePtr<layers::WebRenderCompositionRecorder> aRecorder);
@@ -551,7 +550,6 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   // Kind of clunky, but I can't sort out a more elegant way of getting this to
   // work.
   Mutex mRenderRootRectMutex;
-  wr::NonDefaultRenderRootArray<ScreenRect> mRenderRootRects;
 
   Maybe<wr::RenderRoot> mRenderRoot;
   bool mPaused;

@@ -30,15 +30,19 @@ InputBlockState::InputBlockState(
     const RefPtr<AsyncPanZoomController>& aTargetApzc,
     TargetConfirmationFlags aFlags)
     : mTargetApzc(aTargetApzc),
-      mTargetConfirmed(aFlags.mTargetConfirmed
-                           ? TargetConfirmationState::eConfirmed
-                           : TargetConfirmationState::eUnconfirmed),
       mRequiresTargetConfirmation(aFlags.mRequiresTargetConfirmation),
       mBlockId(sBlockCounter++),
       mTransformToApzc(aTargetApzc->GetTransformToThis()) {
   // We should never be constructed with a nullptr target.
   MOZ_ASSERT(mTargetApzc);
   mOverscrollHandoffChain = mTargetApzc->BuildOverscrollHandoffChain();
+  // If a new block starts on a scrollthumb and we have APZ scrollbar
+  // dragging enabled, defer confirmation until we get the drag metrics
+  // for the thumb.
+  bool startingDrag = StaticPrefs::apz_drag_enabled() && aFlags.mHitScrollThumb;
+  mTargetConfirmed = aFlags.mTargetConfirmed && !startingDrag
+                         ? TargetConfirmationState::eConfirmed
+                         : TargetConfirmationState::eUnconfirmed;
 }
 
 bool InputBlockState::SetConfirmedTargetApzc(
@@ -572,6 +576,47 @@ bool PanGestureBlockState::IsReadyForHandling() const {
 bool PanGestureBlockState::AllowScrollHandoff() const { return false; }
 
 void PanGestureBlockState::SetNeedsToWaitForContentResponse(
+    bool aWaitForContentResponse) {
+  mWaitingForContentResponse = aWaitForContentResponse;
+}
+
+PinchGestureBlockState::PinchGestureBlockState(
+    const RefPtr<AsyncPanZoomController>& aTargetApzc,
+    TargetConfirmationFlags aFlags)
+    : CancelableBlockState(aTargetApzc, aFlags),
+      mInterrupted(false),
+      mWaitingForContentResponse(false) {}
+
+bool PinchGestureBlockState::MustStayActive() { return true; }
+
+const char* PinchGestureBlockState::Type() { return "pinch gesture"; }
+
+bool PinchGestureBlockState::SetContentResponse(bool aPreventDefault) {
+  if (aPreventDefault) {
+    TBS_LOG("%p setting interrupted flag\n", this);
+    mInterrupted = true;
+  }
+  bool stateChanged = CancelableBlockState::SetContentResponse(aPreventDefault);
+  if (mWaitingForContentResponse) {
+    mWaitingForContentResponse = false;
+    stateChanged = true;
+  }
+  return stateChanged;
+}
+
+bool PinchGestureBlockState::HasReceivedAllContentNotifications() const {
+  return CancelableBlockState::HasReceivedAllContentNotifications() &&
+         !mWaitingForContentResponse;
+}
+
+bool PinchGestureBlockState::IsReadyForHandling() const {
+  if (!CancelableBlockState::IsReadyForHandling()) {
+    return false;
+  }
+  return !mWaitingForContentResponse || IsContentResponseTimerExpired();
+}
+
+void PinchGestureBlockState::SetNeedsToWaitForContentResponse(
     bool aWaitForContentResponse) {
   mWaitingForContentResponse = aWaitForContentResponse;
 }

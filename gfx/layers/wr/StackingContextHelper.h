@@ -10,7 +10,6 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "Units.h"
-#include "nsSVGIntegrationUtils.h"  // for WrFiltersHolder
 
 class nsDisplayTransform;
 

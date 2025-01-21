@@ -335,10 +335,6 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     return Nothing();
   }
 
-#ifdef MOZ_BUILD_WEBRENDER
-  Maybe<wr::RenderRoot> GetReferentRenderRoot() const { return Nothing(); }
-#endif
-
   Maybe<ParentLayerIntRect> GetClipRect() const {
     MOZ_ASSERT(IsValid());
 

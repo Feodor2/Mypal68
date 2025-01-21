@@ -35,10 +35,25 @@ class RenderCompositor {
   virtual ~RenderCompositor();
 
   virtual bool BeginFrame() = 0;
-  virtual void EndFrame() = 0;
+
+  // Called to notify the RenderCompositor that all of the commands for a frame
+  // have been pushed to the queue.
+  // @return a RenderedFrameId for the frame
+  virtual RenderedFrameId EndFrame(
+      const nsTArray<DeviceIntRect>& aDirtyRects) = 0;
   // Returns false when waiting gpu tasks is failed.
   // It might happen when rendering context is lost.
   virtual bool WaitForGPU() { return true; }
+
+  // Check for and return the last completed frame.
+  // @return the last (highest) completed RenderedFrameId
+  virtual RenderedFrameId GetLastCompletedFrameId() {
+    return mLatestRenderFrameId.Prev();
+  }
+
+  // Update FrameId when WR rendering does not happen.
+  virtual RenderedFrameId UpdateFrameId() { return GetNextRenderFrameId(); }
+
   virtual void Pause() = 0;
   virtual bool Resume() = 0;
 
@@ -74,10 +89,21 @@ class RenderCompositor {
   virtual void AddSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aPosition,
                           wr::DeviceIntRect aClipRect) {}
 
+  // Interface for partial present
+  virtual bool RequestFullRender() { return false; }
+  virtual uint32_t GetMaxPartialPresentRects() { return 0; }
+
   // Whether the surface contents are flipped vertically
   virtual bool SurfaceIsYFlipped() { return false; }
 
  protected:
+  // We default this to 2, so that mLatestRenderFrameId.Prev() is always valid.
+  RenderedFrameId mLatestRenderFrameId = RenderedFrameId{2};
+  RenderedFrameId GetNextRenderFrameId() {
+    mLatestRenderFrameId = mLatestRenderFrameId.Next();
+    return mLatestRenderFrameId;
+  }
+
   RefPtr<widget::CompositorWidget> mWidget;
   RefPtr<layers::SyncObjectHost> mSyncObject;
 };

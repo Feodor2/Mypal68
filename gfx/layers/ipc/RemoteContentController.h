@@ -36,8 +36,7 @@ class RemoteContentController : public GeckoContentController,
 
   virtual ~RemoteContentController();
 
-  void NotifyLayerTransforms(
-      const nsTArray<MatrixMessage>& aTransforms) override;
+  void NotifyLayerTransforms(nsTArray<MatrixMessage>&& aTransforms) override;
 
   void RequestContentRepaint(const RepaintRequest& aRequest) override;
 
@@ -47,10 +46,9 @@ class RemoteContentController : public GeckoContentController,
 
   void NotifyPinchGesture(PinchGestureInput::PinchGestureType aType,
                           const ScrollableLayerGuid& aGuid,
+                          const LayoutDevicePoint& aFocusPoint,
                           LayoutDeviceCoord aSpanChange,
                           Modifiers aModifiers) override;
-
-  void PostDelayedTask(already_AddRefed<Runnable> aTask, int aDelayMs) override;
 
   bool IsRepaintThread() override;
 
@@ -88,7 +86,7 @@ class RemoteContentController : public GeckoContentController,
   bool IsRemote() override;
 
  private:
-  MessageLoop* mCompositorThread;
+  nsCOMPtr<nsISerialEventTarget> mCompositorThread;
   bool mCanSend;
 
   void HandleTapOnMainThread(TapType aType, LayoutDevicePoint aPoint,
@@ -100,8 +98,8 @@ class RemoteContentController : public GeckoContentController,
                                    uint64_t aInputBlockId);
   void NotifyPinchGestureOnCompositorThread(
       PinchGestureInput::PinchGestureType aType,
-      const ScrollableLayerGuid& aGuid, LayoutDeviceCoord aSpanChange,
-      Modifiers aModifiers);
+      const ScrollableLayerGuid& aGuid, const LayoutDevicePoint& aFocusPoint,
+      LayoutDeviceCoord aSpanChange, Modifiers aModifiers);
 
   void CancelAutoscrollInProcess(const ScrollableLayerGuid& aScrollId);
   void CancelAutoscrollCrossProcess(const ScrollableLayerGuid& aScrollId);

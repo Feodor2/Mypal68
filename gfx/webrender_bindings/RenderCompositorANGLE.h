@@ -38,8 +38,10 @@ class RenderCompositorANGLE : public RenderCompositor {
   bool Initialize();
 
   bool BeginFrame() override;
-  void EndFrame() override;
+  RenderedFrameId EndFrame(const nsTArray<DeviceIntRect>& aDirtyRects) final;
   bool WaitForGPU() override;
+  RenderedFrameId GetLastCompletedFrameId() final;
+  RenderedFrameId UpdateFrameId() final;
   void Pause() override;
   bool Resume() override;
 
@@ -73,10 +75,16 @@ class RenderCompositorANGLE : public RenderCompositor {
   void AddSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aPosition,
                   wr::DeviceIntRect aClipRect) override;
 
+  // Interface for partial present
+  bool RequestFullRender() override;
+  uint32_t GetMaxPartialPresentRects() override;
+
  protected:
   bool UseCompositor();
-  void InsertPresentWaitQuery();
-  bool WaitForPreviousPresentQuery();
+  void InitializeUsePartialPresent();
+  void InsertGraphicsCommandsFinishedWaitQuery(
+      RenderedFrameId aRenderedFrameId);
+  bool WaitForPreviousGraphicsCommandsFinishedQuery();
   bool ResizeBufferIfNeeded();
   bool CreateEGLSurface();
   void DestroyEGLSurface();
@@ -96,13 +104,18 @@ class RenderCompositorANGLE : public RenderCompositor {
   RefPtr<ID3D11Device> mDevice;
   RefPtr<ID3D11DeviceContext> mCtx;
   RefPtr<IDXGISwapChain> mSwapChain;
+  RefPtr<IDXGISwapChain1> mSwapChain1;
 
   UniquePtr<DCLayerTree> mDCLayerTree;
 
-  std::queue<RefPtr<ID3D11Query>> mWaitForPresentQueries;
+  std::queue<std::pair<RenderedFrameId, RefPtr<ID3D11Query>>>
+      mWaitForPresentQueries;
   RefPtr<ID3D11Query> mRecycledQuery;
+  RenderedFrameId mLastCompletedFrameId;
 
   Maybe<LayoutDeviceIntSize> mBufferSize;
+  bool mUsePartialPresent;
+  bool mFullRender;
 };
 
 }  // namespace wr

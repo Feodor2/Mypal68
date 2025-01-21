@@ -667,19 +667,19 @@ struct WebRenderMemoryReporterHelper {
 
   void Report(size_t aBytes, const char* aName) const {
     nsPrintfCString path("explicit/gfx/webrender/%s", aName);
-    nsCString desc(NS_LITERAL_CSTRING("CPU heap memory used by WebRender"));
+    nsCString desc("CPU heap memory used by WebRender"_ns);
     ReportInternal(aBytes, path, desc, nsIMemoryReporter::KIND_HEAP);
   }
 
   void ReportTexture(size_t aBytes, const char* aName) const {
     nsPrintfCString path("gfx/webrender/textures/%s", aName);
-    nsCString desc(NS_LITERAL_CSTRING("GPU texture memory used by WebRender"));
+    nsCString desc("GPU texture memory used by WebRender"_ns);
     ReportInternal(aBytes, path, desc, nsIMemoryReporter::KIND_OTHER);
   }
 
   void ReportTotalGPUBytes(size_t aBytes) const {
-    nsCString path(NS_LITERAL_CSTRING("gfx/webrender/total-gpu-bytes"));
-    nsCString desc(NS_LITERAL_CSTRING(
+    nsCString path("gfx/webrender/total-gpu-bytes"_ns);
+    nsCString desc(nsLiteralCString(
         "Total GPU bytes used by WebRender (should match textures/ sum)"));
     ReportInternal(aBytes, path, desc, nsIMemoryReporter::KIND_OTHER);
   }
@@ -2530,7 +2530,7 @@ void gfxPlatform::InitGPUProcessPrefs() {
   if (!BrowserTabsRemoteAutostart()) {
     gpuProc.DisableByDefault(FeatureStatus::Unavailable,
                              "Multi-process mode is not enabled",
-                             NS_LITERAL_CSTRING("FEATURE_FAILURE_NO_E10S"));
+                             "FEATURE_FAILURE_NO_E10S"_ns);
   } else {
     gpuProc.SetDefaultFromPref(
         StaticPrefs::GetPrefName_layers_gpu_process_enabled(), true,
@@ -2543,18 +2543,18 @@ void gfxPlatform::InitGPUProcessPrefs() {
 
   if (IsHeadless()) {
     gpuProc.ForceDisable(FeatureStatus::Blocked, "Headless mode is enabled",
-                         NS_LITERAL_CSTRING("FEATURE_FAILURE_HEADLESS_MODE"));
+                         "FEATURE_FAILURE_HEADLESS_MODE"_ns);
     return;
   }
   if (InSafeMode()) {
     gpuProc.ForceDisable(FeatureStatus::Blocked, "Safe-mode is enabled",
-                         NS_LITERAL_CSTRING("FEATURE_FAILURE_SAFE_MODE"));
+                         "FEATURE_FAILURE_SAFE_MODE"_ns);
     return;
   }
   if (StaticPrefs::gfx_layerscope_enabled()) {
     gpuProc.ForceDisable(FeatureStatus::Blocked,
                          "LayerScope does not work in the GPU process",
-                         NS_LITERAL_CSTRING("FEATURE_FAILURE_LAYERSCOPE"));
+                         "FEATURE_FAILURE_LAYERSCOPE"_ns);
     return;
   }
 }
@@ -2569,11 +2569,9 @@ void gfxPlatform::InitCompositorAccelerationPrefs() {
                          "Acceleration blocked by platform")) {
     if (StaticPrefs::
             layers_acceleration_disabled_AtStartup_DoNotUseDirectly()) {
-      feature.UserDisable("Disabled by pref",
-                          NS_LITERAL_CSTRING("FEATURE_FAILURE_COMP_PREF"));
+      feature.UserDisable("Disabled by pref", "FEATURE_FAILURE_COMP_PREF"_ns);
     } else if (acceleratedEnv && *acceleratedEnv == '0') {
-      feature.UserDisable("Disabled by envvar",
-                          NS_LITERAL_CSTRING("FEATURE_FAILURE_COMP_ENV"));
+      feature.UserDisable("Disabled by envvar", "FEATURE_FAILURE_COMP_ENV"_ns);
     }
   } else {
     if (acceleratedEnv && *acceleratedEnv == '1') {
@@ -2591,12 +2589,12 @@ void gfxPlatform::InitCompositorAccelerationPrefs() {
   if (InSafeMode()) {
     feature.ForceDisable(FeatureStatus::Blocked,
                          "Acceleration blocked by safe-mode",
-                         NS_LITERAL_CSTRING("FEATURE_FAILURE_COMP_SAFEMODE"));
+                         "FEATURE_FAILURE_COMP_SAFEMODE"_ns);
   }
   if (IsHeadless()) {
-    feature.ForceDisable(
-        FeatureStatus::Blocked, "Acceleration blocked by headless mode",
-        NS_LITERAL_CSTRING("FEATURE_FAILURE_COMP_HEADLESSMODE"));
+    feature.ForceDisable(FeatureStatus::Blocked,
+                         "Acceleration blocked by headless mode",
+                         "FEATURE_FAILURE_COMP_HEADLESSMODE"_ns);
   }
 }
 
@@ -3450,6 +3448,13 @@ uint32_t gfxPlatform::TargetFrameRate() {
   return 0;
 }
 
+/* static */
+bool gfxPlatform::UseDesktopZoomingScrollbars() {
+  // bug 1657822 to enable this by default
+  return StaticPrefs::apz_allow_zooming() &&
+         !StaticPrefs::apz_force_disable_desktop_zooming_scrollbars();
+}
+
 /*static*/
 bool gfxPlatform::AsyncPanZoomEnabled() {
 #if !defined(MOZ_WIDGET_ANDROID) && !defined(MOZ_WIDGET_UIKIT)
@@ -3528,9 +3533,8 @@ void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
 void gfxPlatform::NotifyGPUProcessDisabled() {
   if (gfxConfig::IsEnabled(Feature::WEBRENDER)) {
     gfxConfig::GetFeature(Feature::WEBRENDER)
-        .ForceDisable(
-            FeatureStatus::Unavailable, "GPU Process is disabled",
-            NS_LITERAL_CSTRING("FEATURE_FAILURE_GPU_PROCESS_DISABLED"));
+        .ForceDisable(FeatureStatus::Unavailable, "GPU Process is disabled",
+                      "FEATURE_FAILURE_GPU_PROCESS_DISABLED"_ns);
     gfxVars::SetUseWebRender(false);
   }
 }
@@ -3611,9 +3615,9 @@ void gfxPlatform::InitOpenGLConfig() {
 
   // Check to see hw comp supported
   if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
-    openGLFeature.DisableByDefault(
-        FeatureStatus::Unavailable, "Hardware compositing is disabled",
-        NS_LITERAL_CSTRING("FEATURE_FAILURE_OPENGL_NEED_HWCOMP"));
+    openGLFeature.DisableByDefault(FeatureStatus::Unavailable,
+                                   "Hardware compositing is disabled",
+                                   "FEATURE_FAILURE_OPENGL_NEED_HWCOMP"_ns);
     return;
   }
 

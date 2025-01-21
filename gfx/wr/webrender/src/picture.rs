@@ -1437,7 +1437,7 @@ impl TileCacheInstance {
 
         self.map_local_to_surface = SpaceMapper::new(
             self.spatial_node_index,
-            PictureRect::from_untyped(&pic_rect.to_untyped()),
+            pic_rect,
         );
 
         let pic_to_world_mapper = SpaceMapper::new_with_target(
@@ -1468,7 +1468,7 @@ impl TileCacheInstance {
             );
 
             let clip_chain_instance = frame_state.clip_store.build_clip_chain_instance(
-                LayoutRect::from_untyped(&pic_rect.to_untyped()),
+                pic_rect.cast_unit(),
                 &self.map_local_to_surface,
                 &pic_to_world_mapper,
                 frame_context.clip_scroll_tree,
@@ -3040,7 +3040,7 @@ impl PicturePrimitive {
 
         match self.raster_config {
             Some(ref raster_config) => {
-                let pic_rect = PictureRect::from_untyped(&self.precise_local_rect.to_untyped());
+                let pic_rect = self.precise_local_rect.cast_unit();
 
                 let device_pixel_scale = frame_state
                     .surfaces[raster_config.surface_index.0]

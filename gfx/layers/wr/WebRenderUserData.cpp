@@ -370,22 +370,6 @@ WebRenderCanvasRendererAsync* WebRenderCanvasData::CreateCanvasRenderer() {
   return mCanvasRenderer.get();
 }
 
-WebRenderRenderRootData::WebRenderRenderRootData(
-    RenderRootStateManager* aManager, nsDisplayItem* aItem)
-    : WebRenderUserData(aManager, aItem) {}
-
-RenderRootBoundary& WebRenderRenderRootData::EnsureHasBoundary(
-    wr::RenderRoot aChildType) {
-  if (mBoundary) {
-    MOZ_ASSERT(mBoundary->GetChildType() == aChildType);
-  } else {
-    mBoundary.emplace(aChildType);
-  }
-  return mBoundary.ref();
-}
-
-WebRenderRenderRootData::~WebRenderRenderRootData() = default;
-
 void DestroyWebRenderUserDataTable(WebRenderUserDataTable* aTable) {
   for (auto iter = aTable->Iter(); !iter.Done(); iter.Next()) {
     iter.UserData()->RemoveFromTable();

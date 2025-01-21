@@ -1485,7 +1485,7 @@ gfxFontEntry* gfxFT2FontList::LookupLocalFont(const nsACString& aFontName,
         Substring(aFontName, 0, family.Length()));
 
     // if so, iterate over faces in this family to see if there is a match
-    if (family.Equals(fullNameFamily, nsCaseInsensitiveCStringComparator())) {
+    if (family.Equals(fullNameFamily, nsCaseInsensitiveCStringComparator)) {
       nsTArray<RefPtr<gfxFontEntry> >& fontList = fontFamily->GetFontList();
       int index, len = fontList.Length();
       for (index = 0; index < len; index++) {
@@ -1493,8 +1493,7 @@ gfxFontEntry* gfxFT2FontList::LookupLocalFont(const nsACString& aFontName,
         if (!fe) {
           continue;
         }
-        if (fe->Name().Equals(aFontName,
-                              nsCaseInsensitiveCStringComparator())) {
+        if (fe->Name().Equals(aFontName, nsCaseInsensitiveCStringComparator)) {
           fontEntry = static_cast<FT2FontEntry*>(fe);
           goto searchDone;
         }
@@ -1533,9 +1532,9 @@ FontFamily gfxFT2FontList::GetDefaultFontForPlatform(
     const gfxFontStyle* aStyle) {
   FontFamily ff;
 #if defined(MOZ_WIDGET_ANDROID)
-  ff = FindFamily(NS_LITERAL_CSTRING("Roboto"));
+  ff = FindFamily("Roboto"_ns);
   if (ff.IsNull()) {
-    ff = FindFamily(NS_LITERAL_CSTRING("Droid Sans"));
+    ff = FindFamily("Droid Sans"_ns);
   }
 #endif
   /* TODO: what about Qt or other platforms that may use this? */

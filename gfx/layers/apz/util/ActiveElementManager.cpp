@@ -7,8 +7,6 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_ui.h"
-#include "base/message_loop.h"
-#include "base/task.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Document.h"
 
@@ -19,10 +17,9 @@ namespace mozilla {
 namespace layers {
 
 ActiveElementManager::ActiveElementManager()
-    : mCanBePan(false), mCanBePanSet(false), mSetActiveTask(nullptr) {
-}
+    : mCanBePan(false), mCanBePanSet(false), mSetActiveTask(nullptr) {}
 
-ActiveElementManager::~ActiveElementManager() {}
+ActiveElementManager::~ActiveElementManager() = default;
 
 void ActiveElementManager::SetTargetElement(dom::EventTarget* aTarget) {
   if (mTarget) {
@@ -77,7 +74,7 @@ void ActiveElementManager::TriggerElementActivation() {
             "layers::ActiveElementManager::SetActiveTask", this,
             &ActiveElementManager::SetActiveTask, mTarget);
     mSetActiveTask = task;
-    MessageLoop::current()->PostDelayedTask(
+    NS_GetCurrentThread()->DelayedDispatch(
         task.forget(), StaticPrefs::ui_touch_activation_delay_ms());
     AEM_LOG("Scheduling mSetActiveTask %p\n", mSetActiveTask);
   }

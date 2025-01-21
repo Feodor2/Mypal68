@@ -16,6 +16,7 @@
 #include "mozilla/layers/SyncObject.h"
 #include "mozilla/layers/WebRenderCompositionRecorder.h"
 #include "mozilla/Range.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "GLTypes.h"
@@ -197,7 +198,7 @@ class TransactionWrapper final {
       const layers::ScrollableLayerGuid::ViewID& aScrollId,
       const wr::LayoutPoint& aScrollPosition);
   void UpdatePinchZoom(float aZoom);
-  void UpdateIsTransformPinchZooming(uint64_t aAnimationId, bool aIsZooming);
+  void UpdateIsTransformAsyncZooming(uint64_t aAnimationId, bool aIsZooming);
 
  private:
   Transaction* mTxn;
@@ -387,23 +388,6 @@ class DisplayListBuilder final {
   void Finalize(layers::RenderRootDisplayListData& aOutTransaction);
 
   RenderRoot GetRenderRoot() const { return mRenderRoot; }
-  bool HasSubBuilder(RenderRoot aRenderRoot);
-  DisplayListBuilder& CreateSubBuilder(const wr::LayoutSize& aContentSize,
-                                       size_t aCapacity,
-                                       RenderRoot aRenderRoot);
-  DisplayListBuilder& SubBuilder(RenderRoot aRenderRoot);
-
-  bool GetSendSubBuilderDisplayList(RenderRoot aRenderRoot) {
-    if (aRenderRoot == RenderRoot::Default) {
-      return true;
-    }
-    return mSubBuilders[aRenderRoot] &&
-           mSubBuilders[aRenderRoot]->mSendSubBuilderDisplayList;
-  }
-
-  void SetSendSubBuilderDisplayList(RenderRoot aRenderRoot) {
-    mSubBuilders[aRenderRoot]->mSendSubBuilderDisplayList = true;
-  }
 
   Maybe<wr::WrSpatialId> PushStackingContext(
       const StackingContextParams& aParams, const wr::LayoutRect& aBounds,
@@ -648,13 +632,11 @@ class DisplayListBuilder final {
 
   FixedPosScrollTargetTracker* mActiveFixedPosTracker;
 
-  NonDefaultRenderRootArray<UniquePtr<DisplayListBuilder>> mSubBuilders;
   wr::PipelineId mPipelineId;
   wr::LayoutSize mContentSize;
 
   nsTArray<wr::PipelineId> mRemotePipelineIds;
   RenderRoot mRenderRoot;
-  bool mSendSubBuilderDisplayList;
 
   friend class WebRenderAPI;
   friend class SpaceAndClipChainHelper;

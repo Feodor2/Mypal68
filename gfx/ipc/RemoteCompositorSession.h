@@ -8,8 +8,12 @@
 #include "mozilla/gfx/Point.h"
 #include "Units.h"
 
+class nsIWidget;
+
 namespace mozilla {
 namespace layers {
+
+class APZCTreeManagerChild;
 
 class RemoteCompositorSession final : public CompositorSession {
  public:

@@ -179,7 +179,7 @@ class ScheduleObserveLayersUpdate : public wr::NotificationHandler {
         mIsActive(aIsActive) {}
 
   void Notify(wr::Checkpoint) override {
-    CompositorThreadHolder::Loop()->PostTask(
+    CompositorThread()->Dispatch(
         NewRunnableMethod<LayersId, LayersObserverEpoch, int>(
             "ObserveLayersUpdate", mBridge,
             &CompositorBridgeParentBase::ObserveLayersUpdate, mLayersId,
@@ -203,7 +203,7 @@ class SceneBuiltNotification : public wr::NotificationHandler {
     auto startTime = this->mTxnStartTime;
     RefPtr<WebRenderBridgeParent> parent = mParent;
     wr::Epoch epoch = mEpoch;
-    CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
+    CompositorThread()->Dispatch(NS_NewRunnableFunction(
         "SceneBuiltNotificationRunnable", [parent, epoch, startTime]() {
           auto endTime = TimeStamp::Now();
 #ifdef MOZ_GECKO_PROFILER
@@ -274,7 +274,7 @@ class WebRenderBridgeParent::ScheduleSharedSurfaceRelease final
   }
 
   void Notify(wr::Checkpoint) override {
-    CompositorThreadHolder::Loop()->PostTask(
+    CompositorThread()->Dispatch(
         NewRunnableMethod<nsTArray<wr::ExternalImageKeyPair>>(
             "ObserveSharedSurfaceRelease", mWrBridge,
             &WebRenderBridgeParent::ObserveSharedSurfaceRelease,
@@ -344,10 +344,7 @@ WebRenderBridgeParent::WebRenderBridgeParent(
     mCompositorScheduler = new CompositorVsyncScheduler(this, mWidget);
   }
 
-  if (IsRootWebRenderBridgeParent() ||
-      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    mRenderRoot = Some(wr::RenderRoot::Default);
-  }
+  mRenderRoot = Some(wr::RenderRoot::Default);
 
   for (auto& api : aApis) {
     MOZ_ASSERT(api);
@@ -376,12 +373,7 @@ WebRenderBridgeParent::~WebRenderBridgeParent() {
 }
 
 bool WebRenderBridgeParent::RenderRootIsValid(wr::RenderRoot aRenderRoot) {
-  if (StaticPrefs::gfx_webrender_split_render_roots_AtStartup() &&
-      IsRootWebRenderBridgeParent()) {
-    return aRenderRoot <= wr::kHighestRenderRoot;
-  } else {
-    return aRenderRoot == wr::RenderRoot::Default;
-  }
+  return aRenderRoot == wr::RenderRoot::Default;
 }
 
 void WebRenderBridgeParent::RemoveDeferredPipeline(wr::PipelineId aPipelineId) {
@@ -534,16 +526,6 @@ bool WebRenderBridgeParent::MaybeHandleDeferredPipelineData(
     wr::RenderRoot aRenderRoot, const nsTArray<wr::PipelineId>& aPipelineIds,
     const TimeStamp& aTxnStartTime) {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
-  if (!StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    return true;
-  }
-  for (wr::PipelineId pipelineId : aPipelineIds) {
-    if (!MaybeHandleDeferredPipelineDataForPipeline(aRenderRoot, pipelineId,
-                                                    aTxnStartTime)) {
-      return false;
-    }
-  }
-
   return true;
 }
 
@@ -1063,8 +1045,7 @@ void WebRenderBridgeParent::UpdateAPZFocusState(const FocusTarget& aFocus) {
   }
   LayersId rootLayersId = cbp->RootLayerTreeId();
   if (RefPtr<APZUpdater> apz = cbp->GetAPZUpdater()) {
-    apz->UpdateFocusState(rootLayersId, WRRootId(GetLayersId(), *mRenderRoot),
-                          aFocus);
+    apz->UpdateFocusState(rootLayersId, GetLayersId(), aFocus);
   }
 }
 
@@ -1077,10 +1058,8 @@ void WebRenderBridgeParent::UpdateAPZScrollData(const wr::Epoch& aEpoch,
   }
   LayersId rootLayersId = cbp->RootLayerTreeId();
   if (RefPtr<APZUpdater> apz = cbp->GetAPZUpdater()) {
-    apz->UpdateScrollDataAndTreeState(
-        WRRootId(rootLayersId, wr::RenderRoot::Default),
-        WRRootId(GetLayersId(), RenderRootForExternal(aRenderRoot)), aEpoch,
-        std::move(aData));
+    apz->UpdateScrollDataAndTreeState(rootLayersId, GetLayersId(), aEpoch,
+                                      std::move(aData));
   }
 }
 
@@ -1093,10 +1072,8 @@ void WebRenderBridgeParent::UpdateAPZScrollOffsets(
   }
   LayersId rootLayersId = cbp->RootLayerTreeId();
   if (RefPtr<APZUpdater> apz = cbp->GetAPZUpdater()) {
-    apz->UpdateScrollOffsets(
-        WRRootId(rootLayersId, wr::RenderRoot::Default),
-        WRRootId(GetLayersId(), RenderRootForExternal(aRenderRoot)),
-        std::move(aUpdates), aPaintSequenceNumber);
+    apz->UpdateScrollOffsets(rootLayersId, GetLayersId(), std::move(aUpdates),
+                             aPaintSequenceNumber);
   }
 }
 
@@ -1138,26 +1115,10 @@ bool WebRenderBridgeParent::SetDisplayList(
     if (IsRootWebRenderBridgeParent()) {
       if (aRenderRoot != wr::RenderRoot::Default) {
         MutexAutoLock lock(mRenderRootRectMutex);
-        mRenderRootRects[aRenderRoot] = ViewAs<ScreenPixel>(
-            aRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
       }
       LayoutDeviceIntSize widgetSize = mWidget->GetClientSize();
-      LayoutDeviceIntRect rect;
-      if (StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-        rect = RoundedToInt(aRect);
-        rect.SetWidth(
-            std::max(0, std::min(widgetSize.width - rect.X(), rect.Width())));
-        rect.SetHeight(
-            std::max(0, std::min(widgetSize.height - rect.Y(), rect.Height())));
-      } else {
-        // XXX: If we can't have multiple documents, just use the
-        // pre-document- splitting behavior of directly applying the client
-        // size. This is a speculative and temporary attempt to address bug
-        // 1538540, as an incorrect rect supplied to SetDocumentView can cause
-        // us to not build a frame and potentially render with stale texture
-        // cache items.
-        rect = LayoutDeviceIntRect(LayoutDeviceIntPoint(), widgetSize);
-      }
+      LayoutDeviceIntRect rect =
+          LayoutDeviceIntRect(LayoutDeviceIntPoint(), widgetSize);
       aTxn.SetDocumentView(rect);
     }
     gfx::Color clearColor(0.f, 0.f, 0.f, 0.f);
@@ -1789,7 +1750,7 @@ void WebRenderBridgeParent::AddPipelineIdForCompositable(
     return;
   }
 
-  wrHost->SetWrBridge(this);
+  wrHost->SetWrBridge(aPipelineId, this);
   asyncCompositables.emplace(wr::AsUint64(aPipelineId), wrHost);
   mAsyncImageManager->AddAsyncImagePipeline(aPipelineId, wrHost,
                                             RenderRootForExternal(aRenderRoot));
@@ -1821,7 +1782,7 @@ void WebRenderBridgeParent::RemovePipelineIdForCompositable(
   }
   RefPtr<WebRenderImageHost>& wrHost = it->second;
 
-  wrHost->ClearWrBridge(this);
+  wrHost->ClearWrBridge(aPipelineId, this);
   mAsyncImageManager->RemoveAsyncImagePipeline(aPipelineId, aTxn);
   aTxn.RemovePipeline(aPipelineId);
   asyncCompositables.erase(wr::AsUint64(aPipelineId));
@@ -1877,9 +1838,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvClearCachedResources() {
   }
 
   for (auto renderRoot : wr::kRenderRoots) {
-    if (renderRoot == wr::RenderRoot::Default ||
-        (IsRootWebRenderBridgeParent() &&
-         StaticPrefs::gfx_webrender_split_render_roots_AtStartup())) {
+    if (renderRoot == wr::RenderRoot::Default) {
       if (mRenderRoot) {
         // Clear resources
         wr::TransactionBuilder txn;
@@ -1971,9 +1930,7 @@ void WebRenderBridgeParent::ScheduleForcedGenerateFrame() {
   }
 
   for (auto renderRoot : wr::kRenderRoots) {
-    if (renderRoot == wr::RenderRoot::Default ||
-        (IsRootWebRenderBridgeParent() &&
-         StaticPrefs::gfx_webrender_split_render_roots_AtStartup())) {
+    if (renderRoot == wr::RenderRoot::Default) {
       wr::TransactionBuilder fastTxn(/* aUseSceneBuilderThread */ false);
       fastTxn.InvalidateRenderedFrame();
       Api(renderRoot)->SendTransaction(fastTxn);
@@ -2006,18 +1963,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSyncWithCompositor() {
 }
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetConfirmedTargetAPZC(
-    const uint64_t& aBlockId, nsTArray<SLGuidAndRenderRoot>&& aTargets) {
+    const uint64_t& aBlockId, nsTArray<ScrollableLayerGuid>&& aTargets) {
   for (size_t i = 0; i < aTargets.Length(); i++) {
     // Guard against bad data from hijacked child processes
-    if (aTargets[i].mRenderRoot > wr::kHighestRenderRoot ||
-        (!StaticPrefs::gfx_webrender_split_render_roots_AtStartup() &&
-         aTargets[i].mRenderRoot != wr::RenderRoot::Default)) {
-      NS_ERROR(
-          "Unexpected render root in RecvSetConfirmedTargetAPZC; dropping "
-          "message...");
-      return IPC_FAIL(this, "Bad render root");
-    }
-    if (aTargets[i].mScrollableLayerGuid.mLayersId != GetLayersId()) {
+    if (aTargets[i].mLayersId != GetLayersId()) {
       NS_ERROR(
           "Unexpected layers id in RecvSetConfirmedTargetAPZC; dropping "
           "message...");
@@ -2028,7 +1977,8 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetConfirmedTargetAPZC(
   if (mDestroyed) {
     return IPC_OK();
   }
-  mCompositorBridge->SetConfirmedTargetAPZC(GetLayersId(), aBlockId, aTargets);
+  mCompositorBridge->SetConfirmedTargetAPZC(GetLayersId(), aBlockId,
+                                            std::move(aTargets));
   return IPC_OK();
 }
 
@@ -2072,8 +2022,8 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetAsyncScrollOffset(
   if (mDestroyed) {
     return IPC_OK();
   }
-  mCompositorBridge->SetTestAsyncScrollOffset(
-      WRRootId(GetLayersId(), *mRenderRoot), aScrollId, CSSPoint(aX, aY));
+  mCompositorBridge->SetTestAsyncScrollOffset(GetLayersId(), aScrollId,
+                                              CSSPoint(aX, aY));
   return IPC_OK();
 }
 
@@ -2082,8 +2032,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetAsyncZoom(
   if (mDestroyed) {
     return IPC_OK();
   }
-  mCompositorBridge->SetTestAsyncZoom(WRRootId(GetLayersId(), *mRenderRoot),
-                                      aScrollId,
+  mCompositorBridge->SetTestAsyncZoom(GetLayersId(), aScrollId,
                                       LayerToParentLayerScale(aZoom));
   return IPC_OK();
 }
@@ -2092,14 +2041,13 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvFlushApzRepaints() {
   if (mDestroyed) {
     return IPC_OK();
   }
-  mCompositorBridge->FlushApzRepaints(WRRootId(GetLayersId(), *mRenderRoot));
+  mCompositorBridge->FlushApzRepaints(GetLayersId());
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetAPZTestData(
     APZTestData* aOutData) {
-  mCompositorBridge->GetAPZTestData(WRRootId(GetLayersId(), *mRenderRoot),
-                                    aOutData);
+  mCompositorBridge->GetAPZTestData(GetLayersId(), aOutData);
   return IPC_OK();
 }
 
@@ -2340,11 +2288,6 @@ void WebRenderBridgeParent::HoldPendingTransactionId(
 already_AddRefed<wr::WebRenderAPI>
 WebRenderBridgeParent::GetWebRenderAPIAtPoint(const ScreenPoint& aPoint) {
   MutexAutoLock lock(mRenderRootRectMutex);
-  for (auto renderRoot : wr::kNonDefaultRenderRoots) {
-    if (mRenderRootRects[renderRoot].Contains(aPoint)) {
-      return do_AddRef(Api(renderRoot));
-    }
-  }
   return do_AddRef(Api(wr::RenderRoot::Default));
 }
 
@@ -2368,7 +2311,7 @@ void WebRenderBridgeParent::NotifySceneBuiltForEpoch(
 
 void WebRenderBridgeParent::NotifyDidSceneBuild(
     const nsTArray<wr::RenderRoot>& aRenderRoots,
-    RefPtr<wr::WebRenderPipelineInfo> aInfo) {
+    RefPtr<const wr::WebRenderPipelineInfo> aInfo) {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
   if (!mCompositorScheduler) {
     return;
@@ -2393,10 +2336,8 @@ void WebRenderBridgeParent::NotifyDidSceneBuild(
 
   // Look through all the pipelines contained within the built scene
   // and check which vsync they initiated from.
-  auto info = aInfo->Raw();
-  for (uintptr_t i = 0; i < info.epochs.length; i++) {
-    auto epoch = info.epochs.data[i];
-
+  const auto& info = aInfo->Raw();
+  for (const auto& epoch : info.epochs) {
     WebRenderBridgeParent* wrBridge = this;
     if (!(epoch.pipeline_id == PipelineId())) {
       wrBridge = mAsyncImageManager->GetWrBridge(epoch.pipeline_id);
@@ -2602,7 +2543,7 @@ void WebRenderBridgeParent::ClearResources() {
     for (const auto& entry : mAsyncCompositables[renderRoot]) {
       wr::PipelineId pipelineId = wr::AsPipelineId(entry.first);
       RefPtr<WebRenderImageHost> host = entry.second;
-      host->ClearWrBridge(this);
+      host->ClearWrBridge(pipelineId, this);
       mAsyncImageManager->RemoveAsyncImagePipeline(pipelineId, txn);
       txn.RemovePipeline(pipelineId);
     }

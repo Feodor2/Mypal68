@@ -99,7 +99,9 @@ bool RenderCompositorOGL::BeginFrame() {
   return true;
 }
 
-void RenderCompositorOGL::EndFrame() {
+RenderedFrameId RenderCompositorOGL::EndFrame(
+    const nsTArray<DeviceIntRect>& aDirtyRects) {
+  RenderedFrameId frameId = GetNextRenderFrameId();
   InsertFrameDoneSync();
   mGL->SwapBuffers();
 
@@ -108,6 +110,8 @@ void RenderCompositorOGL::EndFrame() {
     mNativeLayerForEntireWindow->NotifySurfaceReady();
   }
 #endif
+
+  return frameId;
 }
 
 void RenderCompositorOGL::InsertFrameDoneSync() {

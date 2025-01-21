@@ -11,6 +11,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/ClipManager.h"
 #include "mozilla/layers/ImageClient.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -25,6 +26,7 @@
 #include "UnitTransforms.h"
 #include "gfxEnv.h"
 #include "nsDisplayListInvalidation.h"
+#include "nsLayoutUtils.h"
 #include "WebRenderCanvasRenderer.h"
 #include "LayersLogging.h"
 #include "LayerTreeInvalidation.h"
@@ -1015,74 +1017,6 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
   }
 }
 
-size_t WebRenderScrollDataCollection::GetLayerCount(
-    wr::RenderRoot aRoot) const {
-  return mInternalScrollDatas[aRoot].size();
-}
-
-void WebRenderScrollDataCollection::AppendRoot(
-    Maybe<ScrollMetadata>& aRootMetadata,
-    wr::RenderRootArray<WebRenderScrollData>& aScrollDatas) {
-  mSeenRenderRoot[wr::RenderRoot::Default] = true;
-
-  for (auto renderRoot : wr::kRenderRoots) {
-    if (mSeenRenderRoot[renderRoot]) {
-      auto& layerScrollData = mInternalScrollDatas[renderRoot];
-      layerScrollData.emplace_back();
-      layerScrollData.back().InitializeRoot(layerScrollData.size() - 1);
-
-      if (aRootMetadata) {
-        // Put the fallback root metadata on the rootmost layer that is
-        // a matching async zoom container, or the root layer that we just
-        // created above.
-        size_t rootMetadataTarget = layerScrollData.size() - 1;
-        for (size_t i = rootMetadataTarget; i > 0; i--) {
-          if (auto zoomContainerId = layerScrollData[i - 1].GetAsyncZoomContainerId()) {
-            if (*zoomContainerId == aRootMetadata->GetMetrics().GetScrollId()) {
-              rootMetadataTarget = i - 1;
-              break;
-            }
-          }
-        }
-        layerScrollData[rootMetadataTarget].AppendScrollMetadata(
-            aScrollDatas[renderRoot], aRootMetadata.ref());
-      }
-    }
-  }
-}
-
-void WebRenderScrollDataCollection::AppendWrapper(
-    const RenderRootBoundary& aBoundary, size_t aLayerCountBeforeRecursing) {
-  wr::RenderRoot root = aBoundary.GetChildType();
-  size_t layerCountAfterRecursing = GetLayerCount(root);
-  MOZ_ASSERT(layerCountAfterRecursing >= aLayerCountBeforeRecursing);
-  if (layerCountAfterRecursing == aLayerCountBeforeRecursing) {
-    // nothing to wrap
-    return;
-  }
-  mInternalScrollDatas[root].emplace_back();
-  mInternalScrollDatas[root].back().InitializeRoot(layerCountAfterRecursing -
-                                                   aLayerCountBeforeRecursing);
-  mInternalScrollDatas[root].back().SetBoundaryRoot(aBoundary);
-}
-
-void WebRenderScrollDataCollection::AppendScrollData(
-    const wr::DisplayListBuilder& aBuilder, WebRenderLayerManager* aManager,
-    nsDisplayItem* aItem, size_t aLayerCountBeforeRecursing,
-    const ActiveScrolledRoot* aStopAtAsr,
-    const Maybe<gfx::Matrix4x4>& aAncestorTransform) {
-  wr::RenderRoot renderRoot = aBuilder.GetRenderRoot();
-  mSeenRenderRoot[renderRoot] = true;
-
-  int descendants =
-      mInternalScrollDatas[renderRoot].size() - aLayerCountBeforeRecursing;
-
-  mInternalScrollDatas[renderRoot].emplace_back();
-  mInternalScrollDatas[renderRoot].back().Initialize(
-      aManager->GetScrollData(renderRoot), aItem, descendants, aStopAtAsr,
-      aAncestorTransform, renderRoot);
-}
-
 class WebRenderGroupData : public WebRenderUserData {
  public:
   WebRenderGroupData(RenderRootStateManager* aWRManager, nsDisplayItem* aItem);
@@ -1241,7 +1175,6 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
                              item);
 
       {
-        MOZ_ASSERT(item->GetType() != DisplayItemType::TYPE_RENDER_ROOT);
         auto spaceAndClipChain = mClipManager.SwitchItem(item);
         wr::SpaceAndClipChainHelper saccHelper(aBuilder, spaceAndClipChain);
 
@@ -1551,22 +1484,18 @@ bool WebRenderCommandBuilder::NeedsEmptyTransaction() {
 void WebRenderCommandBuilder::BuildWebRenderCommands(
     wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResourceUpdates, nsDisplayList* aDisplayList,
-    nsDisplayListBuilder* aDisplayListBuilder,
-    wr::RenderRootArray<WebRenderScrollData>& aScrollDatas,
+    nsDisplayListBuilder* aDisplayListBuilder, WebRenderScrollData& aScrollData,
     WrFiltersHolder&& aFilters) {
   AUTO_PROFILER_LABEL_CATEGORY_PAIR(GRAPHICS_WRDisplayList);
   wr::RenderRootArray<StackingContextHelper> rootScs;
   MOZ_ASSERT(aBuilder.GetRenderRoot() == wr::RenderRoot::Default);
 
+  aScrollData = WebRenderScrollData(mManager);
+  MOZ_ASSERT(mLayerScrollData.empty());
   for (auto renderRoot : wr::kRenderRoots) {
-    aScrollDatas[renderRoot] = WebRenderScrollData(mManager);
-    if (aBuilder.HasSubBuilder(renderRoot)) {
-      mClipManagers[renderRoot].BeginBuild(mManager,
-                                           aBuilder.SubBuilder(renderRoot));
-    }
+    mClipManagers[renderRoot].BeginBuild(mManager, aBuilder);
     mBuilderDumpIndex[renderRoot] = 0;
   }
-  MOZ_ASSERT(mLayerScrollDatas.IsEmpty());
   mLastCanvasDatas.Clear();
   mLastAsr = nullptr;
   mContainsSVGGroup = false;
@@ -1580,21 +1509,18 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
 
     wr::RenderRootArray<Maybe<StackingContextHelper>> pageRootScs;
     for (auto renderRoot : wr::kRenderRoots) {
-      if (aBuilder.HasSubBuilder(renderRoot)) {
-        wr::StackingContextParams params;
-        // Just making this explicit - we assume that we do not want any
-        // filters traversing a RenderRoot boundary
-        if (renderRoot == wr::RenderRoot::Default) {
-          params.mFilters = std::move(aFilters.filters);
-          params.mFilterDatas = std::move(aFilters.filter_datas);
-        }
-        params.cache_tiles = isTopLevelContent;
-        params.clip = wr::WrStackingContextClip::ClipChain(
-            aBuilder.SubBuilder(renderRoot).CurrentClipChainId());
-        pageRootScs[renderRoot].emplace(
-            rootScs[renderRoot], nullptr, nullptr, nullptr,
-            aBuilder.SubBuilder(renderRoot), params);
+      wr::StackingContextParams params;
+      // Just making this explicit - we assume that we do not want any
+      // filters traversing a RenderRoot boundary
+      if (renderRoot == wr::RenderRoot::Default) {
+        params.mFilters = std::move(aFilters.filters);
+        params.mFilterDatas = std::move(aFilters.filter_datas);
       }
+      params.cache_tiles = isTopLevelContent;
+      params.clip =
+          wr::WrStackingContextClip::ClipChain(aBuilder.CurrentClipChainId());
+      pageRootScs[renderRoot].emplace(rootScs[renderRoot], nullptr, nullptr,
+                                      nullptr, aBuilder, params);
     }
     if (ShouldDumpDisplayList(aDisplayListBuilder)) {
       mBuilderDumpIndex[aBuilder.GetRenderRoot()] = aBuilder.Dump(
@@ -1610,33 +1536,45 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
         *pageRootScs[wr::RenderRoot::Default], aBuilder, aResourceUpdates);
   }
 
+  // Make a "root" layer data that has everything else as descendants
+  mLayerScrollData.emplace_back();
+  mLayerScrollData.back().InitializeRoot(mLayerScrollData.size() - 1);
   auto callback =
-      [&aScrollDatas](ScrollableLayerGuid::ViewID aScrollId) -> bool {
-    for (auto renderRoot : wr::kRenderRoots) {
-      if (aScrollDatas[renderRoot].HasMetadataFor(aScrollId).isSome()) {
-        return true;
-      }
-    }
-    return false;
+      [&aScrollData](ScrollableLayerGuid::ViewID aScrollId) -> bool {
+    return aScrollData.HasMetadataFor(aScrollId).isSome();
   };
   Maybe<ScrollMetadata> rootMetadata = nsLayoutUtils::GetRootMetadata(
       aDisplayListBuilder, mManager, ContainerLayerParameters(), callback);
+  if (rootMetadata) {
+    // Put the fallback root metadata on the rootmost layer that is
+    // a matching async zoom container, or the root layer that we just
+    // created above.
+    size_t rootMetadataTarget = mLayerScrollData.size() - 1;
+    for (size_t i = rootMetadataTarget; i > 0; i--) {
+      if (auto zoomContainerId =
+              mLayerScrollData[i - 1].GetAsyncZoomContainerId()) {
+        if (*zoomContainerId == rootMetadata->GetMetrics().GetScrollId()) {
+          rootMetadataTarget = i - 1;
+          break;
+        }
+      }
+    }
+    mLayerScrollData[rootMetadataTarget].AppendScrollMetadata(
+        aScrollData, rootMetadata.ref());
+  }
 
-  mLayerScrollDatas.AppendRoot(rootMetadata, aScrollDatas);
+  // Append the WebRenderLayerScrollData items into WebRenderScrollData
+  // in reverse order, from topmost to bottommost. This is in keeping with
+  // the semantics of WebRenderScrollData.
+  for (auto it = mLayerScrollData.crbegin(); it != mLayerScrollData.crend();
+       it++) {
+    aScrollData.AddLayerData(*it);
+  }
+  mLayerScrollData.clear();
 
   for (auto renderRoot : wr::kRenderRoots) {
-    // Append the WebRenderLayerScrollData items into WebRenderScrollData
-    // in reverse order, from topmost to bottommost. This is in keeping with
-    // the semantics of WebRenderScrollData.
-    for (auto it = mLayerScrollDatas[renderRoot].crbegin();
-         it != mLayerScrollDatas[renderRoot].crend(); it++) {
-      aScrollDatas[renderRoot].AddLayerData(*it);
-    }
-    if (aBuilder.HasSubBuilder(renderRoot)) {
-      mClipManagers[renderRoot].EndBuild();
-    }
+    mClipManagers[renderRoot].EndBuild();
   }
-  mLayerScrollDatas.Clear();
 
   // Remove the user data those are not displayed on the screen and
   // also reset the data to unused for next transaction.
@@ -1690,8 +1628,7 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
     DisplayItemType itemType = item->GetType();
 
     bool forceNewLayerData = false;
-    size_t layerCountBeforeRecursing =
-        mLayerScrollDatas.GetLayerCount(aBuilder.GetRenderRoot());
+    size_t layerCountBeforeRecursing = mLayerScrollData.size();
     if (apzEnabled) {
       // For some types of display items we want to force a new
       // WebRenderLayerScrollData object, to ensure we preserve the APZ-relevant
@@ -1798,6 +1735,9 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
         const ActiveScrolledRoot* stopAtAsr =
             mAsrStack.empty() ? nullptr : mAsrStack.back();
 
+        int32_t descendants =
+            mLayerScrollData.size() - layerCountBeforeRecursing;
+
         // See the comments on StackingContextHelper::mDeferredTransformItem
         // for an overview of what deferred transforms are.
         // In the case where we deferred a transform, but have a child display
@@ -1817,28 +1757,35 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
                             item->GetActiveScrolledRoot()) {
           // This creates the child WebRenderLayerScrollData for |item|, but
           // omits the transform (hence the Nothing() as the last argument to
-          // AppendScrollData(...)). We also need to make sure that the ASR from
+          // Initialize(...)). We also need to make sure that the ASR from
           // the deferred transform item is not on this node, so we use that
           // ASR as the "stop at" ASR for this WebRenderLayerScrollData.
-          mLayerScrollDatas.AppendScrollData(
-              aBuilder, mManager, item, layerCountBeforeRecursing,
+          mLayerScrollData.emplace_back();
+          mLayerScrollData.back().Initialize(
+              mManager->GetScrollData(), item, descendants,
               (*deferred)->GetActiveScrolledRoot(), Nothing());
+
+          // The above WebRenderLayerScrollData will also be a descendant of
+          // the transform-holding WebRenderLayerScrollData we create below.
+          descendants++;
 
           // This creates the WebRenderLayerScrollData for the deferred
           // transform item. This holds the transform matrix and the remaining
           // ASRs needed to complete the ASR chain (i.e. the ones from the
           // stopAtAsr down to the deferred transform item's ASR, which must be
           // "between" stopAtAsr and |item|'s ASR in the ASR tree).
-          mLayerScrollDatas.AppendScrollData(
-              aBuilder, mManager, *deferred, layerCountBeforeRecursing,
-              stopAtAsr, aSc.GetDeferredTransformMatrix());
+          mLayerScrollData.emplace_back();
+          mLayerScrollData.back().Initialize(mManager->GetScrollData(),
+                                             *deferred, descendants, stopAtAsr,
+                                             aSc.GetDeferredTransformMatrix());
         } else {
           // This is the "simple" case where we don't need to create two
           // WebRenderLayerScrollData items; we can just create one that also
           // holds the deferred transform matrix, if any.
-          mLayerScrollDatas.AppendScrollData(
-              aBuilder, mManager, item, layerCountBeforeRecursing, stopAtAsr,
-              aSc.GetDeferredTransformMatrix());
+          mLayerScrollData.emplace_back();
+          mLayerScrollData.back().Initialize(mManager->GetScrollData(), item,
+                                             descendants, stopAtAsr,
+                                             aSc.GetDeferredTransformMatrix());
         }
       }
     }
@@ -2274,7 +2221,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
       RefPtr<gfx::DrawTarget> dummyDt = gfx::Factory::CreateDrawTarget(
           gfx::BackendType::SKIA, gfx::IntSize(1, 1), format);
       RefPtr<gfx::DrawTarget> dt = gfx::Factory::CreateRecordingDrawTarget(
-          recorder, dummyDt, visibleRect.ToUnknownRect());
+          recorder, dummyDt, (dtRect - dtRect.TopLeft()).ToUnknownRect());
       if (!fallbackData->mBasicLayerManager) {
         fallbackData->mBasicLayerManager =
             new BasicLayerManager(BasicLayerManager::BLM_INACTIVE);
@@ -2634,19 +2581,6 @@ WebRenderGroupData::~WebRenderGroupData() {
   GP("Group data destruct\n");
   mSubGroup.ClearImageKey(mManager, true);
   mFollowingGroup.ClearImageKey(mManager, true);
-}
-
-WebRenderCommandBuilder::ScrollDataBoundaryWrapper::ScrollDataBoundaryWrapper(
-    WebRenderCommandBuilder& aBuilder, RenderRootBoundary& aBoundary)
-    : mBuilder(aBuilder), mBoundary(aBoundary) {
-  mLayerCountBeforeRecursing =
-      mBuilder.mLayerScrollDatas.GetLayerCount(mBoundary.GetChildType());
-}
-
-WebRenderCommandBuilder::ScrollDataBoundaryWrapper::
-    ~ScrollDataBoundaryWrapper() {
-  mBuilder.mLayerScrollDatas.AppendWrapper(mBoundary,
-                                           mLayerCountBeforeRecursing);
 }
 
 }  // namespace layers

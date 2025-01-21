@@ -452,7 +452,7 @@ nsresult gfxPlatformFontList::InitFontList() {
     for (auto i = mFontEntries.Iter(); !i.Done(); i.Next()) {
       i.Data()->mShmemCharacterMap = nullptr;
       i.Data()->mShmemFace = nullptr;
-      i.Data()->mFamilyName = NS_LITERAL_CSTRING("");
+      i.Data()->mFamilyName = ""_ns;
     }
     mFontEntries.Clear();
     mShmemCharMaps.Clear();
@@ -983,7 +983,8 @@ bool gfxPlatformFontList::FindAndAddFamilies(
   GenerateFontListKey(aFamily, key);
 
   if (SharedFontList()) {
-    fontlist::Family* family = SharedFontList()->FindFamily(key);
+    bool allowHidden = bool(aFlags & FindFamiliesFlags::eSearchHiddenFamilies);
+    fontlist::Family* family = SharedFontList()->FindFamily(key, allowHidden);
     if (family) {
       aOutput->AppendElement(FamilyAndGeneric(family, aGeneric));
       return true;
@@ -1614,43 +1615,29 @@ void gfxPlatformFontList::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[],
     uint32_t tempLen = 0;
 
     // Add the CJK pref fonts from accept languages, the order should be same
-    // order
-    nsAutoCString list;
-    Preferences::GetLocalizedCString("intl.accept_languages", list);
-    if (!list.IsEmpty()) {
-      const char kComma = ',';
-      const char *p, *p_end;
-      list.BeginReading(p);
-      list.EndReading(p_end);
-      while (p < p_end) {
-        while (nsCRT::IsAsciiSpace(*p)) {
-          if (++p == p_end) break;
-        }
-        if (p == p_end) break;
-        const char* start = p;
-        while (++p != p_end && *p != kComma) /* nothing */
-          ;
-        nsAutoCString lang(Substring(start, p));
-        lang.CompressWhitespace(false, true);
-        eFontPrefLang fpl = gfxPlatformFontList::GetFontPrefLangFor(lang.get());
-        switch (fpl) {
-          case eFontPrefLang_Japanese:
-          case eFontPrefLang_Korean:
-          case eFontPrefLang_ChineseCN:
-          case eFontPrefLang_ChineseHK:
-          case eFontPrefLang_ChineseTW:
-            AppendPrefLang(tempPrefLangs, tempLen, fpl);
-            break;
-          default:
-            break;
-        }
-        p++;
+    // order. We use gfxFontUtils::GetPrefsFontList to read the list even
+    // though it's not actually a list of fonts but of lang codes; the format
+    // is the same.
+    AutoTArray<nsCString, 5> list;
+    gfxFontUtils::GetPrefsFontList("intl.accept_languages", list, true);
+    for (const auto& lang : list) {
+      eFontPrefLang fpl = GetFontPrefLangFor(lang.get());
+      switch (fpl) {
+        case eFontPrefLang_Japanese:
+        case eFontPrefLang_Korean:
+        case eFontPrefLang_ChineseCN:
+        case eFontPrefLang_ChineseHK:
+        case eFontPrefLang_ChineseTW:
+          AppendPrefLang(tempPrefLangs, tempLen, fpl);
+          break;
+        default:
+          break;
       }
     }
 
     // Try using app's locale
     nsAutoCString localeStr;
-    LocaleService::GetInstance()->GetAppLocaleAsLangTag(localeStr);
+    LocaleService::GetInstance()->GetAppLocaleAsBCP47(localeStr);
 
     {
       Locale locale(localeStr);
@@ -1671,18 +1658,18 @@ void gfxPlatformFontList::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[],
 
     // Then add the known CJK prefs in order of system preferred locales
     AutoTArray<nsCString, 5> prefLocales;
-    prefLocales.AppendElement(NS_LITERAL_CSTRING("ja"));
-    prefLocales.AppendElement(NS_LITERAL_CSTRING("zh-CN"));
-    prefLocales.AppendElement(NS_LITERAL_CSTRING("zh-TW"));
-    prefLocales.AppendElement(NS_LITERAL_CSTRING("zh-HK"));
-    prefLocales.AppendElement(NS_LITERAL_CSTRING("ko"));
+    prefLocales.AppendElement("ja"_ns);
+    prefLocales.AppendElement("zh-CN"_ns);
+    prefLocales.AppendElement("zh-TW"_ns);
+    prefLocales.AppendElement("zh-HK"_ns);
+    prefLocales.AppendElement("ko"_ns);
 
     AutoTArray<nsCString, 16> sysLocales;
     AutoTArray<nsCString, 16> negLocales;
     if (NS_SUCCEEDED(
             OSPreferences::GetInstance()->GetSystemLocales(sysLocales))) {
       LocaleService::GetInstance()->NegotiateLanguages(
-          sysLocales, prefLocales, NS_LITERAL_CSTRING(""),
+          sysLocales, prefLocales, ""_ns,
           LocaleService::kLangNegStrategyFiltering, negLocales);
       for (const auto& localeStr : negLocales) {
         Locale locale(localeStr);
@@ -1711,35 +1698,32 @@ void gfxPlatformFontList::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[],
     AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_ChineseTW);
 
     // copy into the cached array
-    uint32_t j;
-    for (j = 0; j < tempLen; j++) {
-      mCJKPrefLangs.AppendElement(tempPrefLangs[j]);
+    for (const auto lang : Span<eFontPrefLang>(tempPrefLangs, tempLen)) {
+      mCJKPrefLangs.AppendElement(lang);
     }
   }
 
   // append in cached CJK langs
-  uint32_t i, numCJKlangs = mCJKPrefLangs.Length();
-
-  for (i = 0; i < numCJKlangs; i++) {
-    AppendPrefLang(aPrefLangs, aLen, (eFontPrefLang)(mCJKPrefLangs[i]));
+  for (const auto lang : mCJKPrefLangs) {
+    AppendPrefLang(aPrefLangs, aLen, eFontPrefLang(lang));
   }
 }
 
 void gfxPlatformFontList::AppendPrefLang(eFontPrefLang aPrefLangs[],
                                          uint32_t& aLen,
                                          eFontPrefLang aAddLang) {
-  if (aLen >= kMaxLenPrefLangList) return;
-
-  // make sure
-  uint32_t i = 0;
-  while (i < aLen && aPrefLangs[i] != aAddLang) {
-    i++;
+  if (aLen >= kMaxLenPrefLangList) {
+    return;
   }
 
-  if (i == aLen) {
-    aPrefLangs[aLen] = aAddLang;
-    aLen++;
+  // If the lang is already present, just ignore the addition.
+  for (const auto lang : Span<eFontPrefLang>(aPrefLangs, aLen)) {
+    if (lang == aAddLang) {
+      return;
+    }
   }
+
+  aPrefLangs[aLen++] = aAddLang;
 }
 
 StyleGenericFontFamily gfxPlatformFontList::GetDefaultGeneric(

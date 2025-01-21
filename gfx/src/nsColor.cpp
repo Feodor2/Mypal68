@@ -13,6 +13,7 @@
 #include "nsStaticNameTable.h"
 #include "nsString.h"  // for nsAutoCString, nsString, etc
 #include "nscore.h"    // for nsAString, etc
+#include "prtypes.h"   // for PR_BEGIN_MACRO, etc
 
 using namespace mozilla;
 

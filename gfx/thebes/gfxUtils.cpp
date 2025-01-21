@@ -420,7 +420,7 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
                                     const SamplingFilter aSamplingFilter,
                                     const SurfaceFormat aFormat,
                                     gfxFloat aOpacity, ExtendMode aExtendMode) {
-  Size scaleFactor = aContext->CurrentMatrix().ScaleFactors(true);
+  Size scaleFactor = aContext->CurrentMatrix().ScaleFactors();
   Matrix scaleMatrix = Matrix::Scaling(scaleFactor.width, scaleFactor.height);
   const float fuzzFactor = 0.01;
 
@@ -1362,8 +1362,7 @@ class GetFeatureStatusRunnable final : public dom::WorkerMainThreadRunnable {
   GetFeatureStatusRunnable(dom::WorkerPrivate* workerPrivate,
                            const nsCOMPtr<nsIGfxInfo>& gfxInfo, int32_t feature,
                            nsACString& failureId, int32_t* status)
-      : WorkerMainThreadRunnable(workerPrivate,
-                                 NS_LITERAL_CSTRING("GFX :: GetFeatureStatus")),
+      : WorkerMainThreadRunnable(workerPrivate, "GFX :: GetFeatureStatus"_ns),
         mGfxInfo(gfxInfo),
         mFeature(feature),
         mStatus(status),
@@ -1471,82 +1470,6 @@ bool gfxUtils::DumpDisplayList() {
          (StaticPrefs::layout_display_list_dump_content() &&
           XRE_IsContentProcess());
 }
-
-#ifdef MOZ_BUILD_WEBRENDER
-wr::RenderRoot gfxUtils::GetContentRenderRoot() {
-  if (gfx::gfxVars::UseWebRender() &&
-      StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    return wr::RenderRoot::Content;
-  }
-  return wr::RenderRoot::Default;
-}
-
-Maybe<wr::RenderRoot> gfxUtils::GetRenderRootForFrame(const nsIFrame* aFrame) {
-  if (!gfxVars::UseWebRender() ||
-      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    return Nothing();
-  }
-  if (!aFrame->GetContent()) {
-    return Nothing();
-  }
-  return gfxUtils::GetRenderRootForElement(aFrame->GetContent()->AsElement());
-}
-
-Maybe<wr::RenderRoot> gfxUtils::GetRenderRootForElement(
-    const dom::Element* aElement) {
-  if (!aElement) {
-    return Nothing();
-  }
-  if (!gfxVars::UseWebRender() ||
-      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    return Nothing();
-  }
-  if (!aElement->IsXULElement()) {
-    return Nothing();
-  }
-  if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::renderroot,
-                            NS_LITERAL_STRING("content"), eCaseMatters)) {
-    return Some(wr::RenderRoot::Content);
-  }
-  return Nothing();
-}
-
-wr::RenderRoot gfxUtils::RecursivelyGetRenderRootForFrame(
-    const nsIFrame* aFrame) {
-  if (!gfxVars::UseWebRender() ||
-      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    return wr::RenderRoot::Default;
-  }
-
-  for (const nsIFrame* current = aFrame; current;
-       current = current->GetParent()) {
-    auto renderRoot = gfxUtils::GetRenderRootForFrame(current);
-    if (renderRoot) {
-      return *renderRoot;
-    }
-  }
-
-  return wr::RenderRoot::Default;
-}
-
-wr::RenderRoot gfxUtils::RecursivelyGetRenderRootForElement(
-    const dom::Element* aElement) {
-  if (!gfxVars::UseWebRender() ||
-      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
-    return wr::RenderRoot::Default;
-  }
-
-  for (const dom::Element* current = aElement; current;
-       current = current->GetParentElement()) {
-    auto renderRoot = gfxUtils::GetRenderRootForElement(current);
-    if (renderRoot) {
-      return *renderRoot;
-    }
-  }
-
-  return wr::RenderRoot::Default;
-}
-#endif  // MOZ_BUILD_WEBRENDER
 
 FILE* gfxUtils::sDumpPaintFile = stderr;
 

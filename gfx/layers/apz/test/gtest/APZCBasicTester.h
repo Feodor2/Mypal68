@@ -23,8 +23,9 @@ class APZCBasicTester : public APZCTesterBase {
 
  protected:
   virtual void SetUp() {
+    APZCTesterBase::SetUp();
     APZThreadUtils::SetThreadAssertionsEnabled(false);
-    APZThreadUtils::SetControllerThread(MessageLoop::current());
+    APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
 
     tm = new TestAPZCTreeManager(mcc);
 #ifdef MOZ_BUILD_WEBRENDER
@@ -34,8 +35,8 @@ class APZCBasicTester : public APZCTesterBase {
     updater = new APZUpdater(tm);
     sampler = new APZSampler(tm);
 #endif
-    apzc = new TestAsyncPanZoomController(
-        LayersId{0}, mcc, tm, wr::RenderRoot::Default, mGestureBehavior);
+    apzc =
+        new TestAsyncPanZoomController(LayersId{0}, mcc, tm, mGestureBehavior);
     apzc->SetFrameMetrics(TestFrameMetrics());
     apzc->GetScrollMetadata().SetIsLayersIdRoot(true);
   }

@@ -8,6 +8,7 @@
 #include "mozilla/dom/BrowserParent.h"               // for BrowserParent
 #include "mozilla/layers/APZCCallbackHelper.h"       // for APZCCallbackHelper
 #include "mozilla/layers/APZInputBridgeChild.h"      // for APZInputBridgeChild
+#include "mozilla/layers/GeckoContentController.h"   // for GeckoContentController
 #include "mozilla/layers/RemoteCompositorSession.h"  // for RemoteCompositorSession
 
 namespace mozilla {
@@ -46,13 +47,9 @@ void APZCTreeManagerChild::SetKeyboardMap(const KeyboardMap& aKeyboardMap) {
   SendSetKeyboardMap(aKeyboardMap);
 }
 
-void APZCTreeManagerChild::ZoomToRect(
-#ifdef MOZ_BUILD_WEBRENDER
-    const SLGuidAndRenderRoot& aGuid,
-#else
-    const ScrollableLayerGuid& aGuid,
-#endif
-    const CSSRect& aRect, const uint32_t aFlags) {
+void APZCTreeManagerChild::ZoomToRect(const ScrollableLayerGuid& aGuid,
+                                      const CSSRect& aRect,
+                                      const uint32_t aFlags) {
   SendZoomToRect(aGuid, aRect, aFlags);
 }
 
@@ -62,22 +59,12 @@ void APZCTreeManagerChild::ContentReceivedInputBlock(uint64_t aInputBlockId,
 }
 
 void APZCTreeManagerChild::SetTargetAPZC(
-    uint64_t aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-    const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-    const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-) {
+    uint64_t aInputBlockId, const nsTArray<ScrollableLayerGuid>& aTargets) {
   SendSetTargetAPZC(aInputBlockId, aTargets);
 }
 
 void APZCTreeManagerChild::UpdateZoomConstraints(
-#ifdef MOZ_BUILD_WEBRENDER
-    const SLGuidAndRenderRoot& aGuid,
-#else
     const ScrollableLayerGuid& aGuid,
-#endif
     const Maybe<ZoomConstraints>& aConstraints) {
   if (mIPCOpen) {
     SendUpdateZoomConstraints(aGuid, aConstraints);
@@ -92,32 +79,16 @@ void APZCTreeManagerChild::SetAllowedTouchBehavior(
 }
 
 void APZCTreeManagerChild::StartScrollbarDrag(
-#ifdef MOZ_BUILD_WEBRENDER
-    const SLGuidAndRenderRoot& aGuid,
-#else
-    const ScrollableLayerGuid& aGuid,
-#endif
-    const AsyncDragMetrics& aDragMetrics) {
+    const ScrollableLayerGuid& aGuid, const AsyncDragMetrics& aDragMetrics) {
   SendStartScrollbarDrag(aGuid, aDragMetrics);
 }
 
-bool APZCTreeManagerChild::StartAutoscroll(
-#ifdef MOZ_BUILD_WEBRENDER
-    const SLGuidAndRenderRoot& aGuid,
-#else
-    const ScrollableLayerGuid& aGuid,
-#endif
-    const ScreenPoint& aAnchorLocation) {
+bool APZCTreeManagerChild::StartAutoscroll(const ScrollableLayerGuid& aGuid,
+                                           const ScreenPoint& aAnchorLocation) {
   return SendStartAutoscroll(aGuid, aAnchorLocation);
 }
 
-void APZCTreeManagerChild::StopAutoscroll(
-#ifdef MOZ_BUILD_WEBRENDER
-    const SLGuidAndRenderRoot& aGuid
-#else
-    const ScrollableLayerGuid& aGuid
-#endif
-) {
+void APZCTreeManagerChild::StopAutoscroll(const ScrollableLayerGuid& aGuid) {
   SendStopAutoscroll(aGuid);
 }
 
@@ -170,7 +141,8 @@ mozilla::ipc::IPCResult APZCTreeManagerChild::RecvHandleTap(
 
 mozilla::ipc::IPCResult APZCTreeManagerChild::RecvNotifyPinchGesture(
     const PinchGestureType& aType, const ScrollableLayerGuid& aGuid,
-    const LayoutDeviceCoord& aSpanChange, const Modifiers& aModifiers) {
+    const LayoutDevicePoint& aFocusPoint, const LayoutDeviceCoord& aSpanChange,
+    const Modifiers& aModifiers) {
   // This will only get sent from the GPU process to the parent process, so
   // this function should never get called in the content process.
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -179,7 +151,8 @@ mozilla::ipc::IPCResult APZCTreeManagerChild::RecvNotifyPinchGesture(
   // We want to handle it in this process regardless of what the target guid
   // of the pinch is. This may change in the future.
   if (mCompositorSession && mCompositorSession->GetWidget()) {
-    APZCCallbackHelper::NotifyPinchGesture(aType, aSpanChange, aModifiers,
+    APZCCallbackHelper::NotifyPinchGesture(aType, aFocusPoint, aSpanChange,
+                                           aModifiers,
                                            mCompositorSession->GetWidget());
   }
   return IPC_OK();

@@ -29,7 +29,6 @@
 #include "mozilla/layers/CompositorController.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorVsyncSchedulerOwner.h"
-#include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for ShmemAllocator
 #include "mozilla/layers/LayersMessages.h"     // for TargetConfig
 #include "mozilla/layers/MetricsSharingController.h"
@@ -45,7 +44,6 @@
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/VsyncDispatcher.h"
 
-class MessageLoop;
 class nsIWidget;
 
 namespace mozilla {
@@ -77,6 +75,7 @@ class CompositorAnimationStorage;
 class CompositorBridgeParent;
 class CompositorManagerParent;
 class CompositorVsyncScheduler;
+class GeckoContentController;
 class HostLayerManager;
 class IAPZCTreeManager;
 class LayerTransactionParent;
@@ -128,43 +127,17 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
                                     TransformsToSkip aSkip) = 0;
   virtual void SetTestAsyncScrollOffset(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      const ScrollableLayerGuid::ViewID& aScrollId, const CSSPoint& aPoint) = 0;
-  virtual void SetTestAsyncZoom(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      const ScrollableLayerGuid::ViewID& aScrollId,
-      const LayerToParentLayerScale& aZoom) = 0;
-  virtual void FlushApzRepaints(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId
-#else
-      const LayersId& aLayersId
-#endif
-      ) = 0;
-  virtual void GetAPZTestData(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      APZTestData* aOutData) {
-  }
+      const LayersId& aLayersId, const ScrollableLayerGuid::ViewID& aScrollId,
+      const CSSPoint& aPoint) = 0;
+  virtual void SetTestAsyncZoom(const LayersId& aLayersId,
+                                const ScrollableLayerGuid::ViewID& aScrollId,
+                                const LayerToParentLayerScale& aZoom) = 0;
+  virtual void FlushApzRepaints(const LayersId& aLayersId) = 0;
+  virtual void GetAPZTestData(const LayersId& aLayersId,
+                              APZTestData* aOutData) {}
   virtual void SetConfirmedTargetAPZC(
       const LayersId& aLayersId, const uint64_t& aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-      const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-      const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-      ) = 0;
+      const nsTArray<ScrollableLayerGuid>& aTargets) = 0;
   virtual void UpdatePaintTime(LayerTransactionParent* aLayerTree,
                                const TimeDuration& aPaintTime) {}
   virtual void RegisterPayloads(LayerTransactionParent* aLayerTree,
@@ -407,44 +380,18 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
                             TransformsToSkip aSkip) override;
   CompositorAnimationStorage* GetAnimationStorage();
-  void SetTestAsyncScrollOffset(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      const ScrollableLayerGuid::ViewID& aScrollId,
-      const CSSPoint& aPoint) override;
-  void SetTestAsyncZoom(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      const ScrollableLayerGuid::ViewID& aScrollId,
-      const LayerToParentLayerScale& aZoom) override;
-  void FlushApzRepaints(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId
-#else
-      const LayersId& aLayersId
-#endif
-      ) override;
-  void GetAPZTestData(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-          APZTestData* aOutData) override;
-  void SetConfirmedTargetAPZC(const LayersId& aLayersId,
-                              const uint64_t& aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-                              const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-                              const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-                              ) override;
+  void SetTestAsyncScrollOffset(const LayersId& aLayersId,
+                                const ScrollableLayerGuid::ViewID& aScrollId,
+                                const CSSPoint& aPoint) override;
+  void SetTestAsyncZoom(const LayersId& aLayersId,
+                        const ScrollableLayerGuid::ViewID& aScrollId,
+                        const LayerToParentLayerScale& aZoom) override;
+  void FlushApzRepaints(const LayersId& aLayersId) override;
+  void GetAPZTestData(const LayersId& aLayersId,
+                      APZTestData* aOutData) override;
+  void SetConfirmedTargetAPZC(
+      const LayersId& aLayersId, const uint64_t& aInputBlockId,
+      const nsTArray<ScrollableLayerGuid>& aTargets) override;
   AsyncCompositionManager* GetCompositionManager(
       LayerTransactionParent* aLayerTree) override {
     return mCompositionManager;
@@ -473,7 +420,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
                               TimeStamp& aRenderStart, TimeStamp& aCompositeEnd,
                               wr::RendererStats* aStats = nullptr);
   void NotifyDidSceneBuild(const nsTArray<wr::RenderRoot>& aRenderRoots,
-                           RefPtr<wr::WebRenderPipelineInfo> aInfo);
+                           RefPtr<const wr::WebRenderPipelineInfo> aInfo);
   RefPtr<AsyncImagePipelineManager> GetAsyncImagePipelineManager() const;
 #endif
 
@@ -676,12 +623,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   // ContentCompositorBridgeParent.
   void AllocateAPZCTreeManagerParent(
       const Monitor2AutoLock& aProofOfLayerTreeStateLock,
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      LayerTreeState& aLayerTreeStateToUpdate);
+      const LayersId& aLayersId, LayerTreeState& aLayerTreeStateToUpdate);
 
   PAPZParent* AllocPAPZParent(const LayersId& aLayersId) override;
   bool DeallocPAPZParent(PAPZParent* aActor) override;

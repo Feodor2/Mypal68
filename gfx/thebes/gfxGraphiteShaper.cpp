@@ -321,18 +321,15 @@ nsresult gfxGraphiteShaper::SetGlyphsFromSegment(
           d->mAdvance = 0;
         }
       }
-      bool isClusterStart = charGlyphs[offs].IsClusterStart();
-      aShapedText->SetGlyphs(
-          aOffset + offs,
-          CompressedGlyph::MakeComplex(isClusterStart, true, details.Length()),
-          details.Elements());
+      aShapedText->SetDetailedGlyphs(aOffset + offs, details.Length(),
+                                     details.Elements());
     }
 
     for (uint32_t j = c.baseChar + 1; j < c.baseChar + c.nChars; ++j) {
       NS_ASSERTION(j < aLength, "unexpected offset");
       CompressedGlyph& g = charGlyphs[j];
       NS_ASSERTION(!g.IsSimpleGlyph(), "overwriting a simple glyph");
-      g.SetComplex(g.IsClusterStart(), false, 0);
+      g.SetComplex(g.IsClusterStart(), false);
     }
   }
 

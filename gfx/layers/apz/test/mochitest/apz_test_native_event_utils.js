@@ -56,7 +56,7 @@ function nativeHorizontalWheelEventMsg() {
 
 // Given an event target which may be a window or an element, get the associated window.
 function windowForTarget(aTarget) {
-  if (aTarget instanceof Window) {
+  if (aTarget.Window && aTarget instanceof aTarget.Window) {
     return aTarget;
   }
   return aTarget.ownerDocument.defaultView;
@@ -64,7 +64,7 @@ function windowForTarget(aTarget) {
 
 // Given an event target which may be a window or an element, get the associated element.
 function elementForTarget(aTarget) {
-  if (aTarget instanceof Window) {
+  if (aTarget.Window && aTarget instanceof aTarget.Window) {
     return aTarget.document.documentElement;
   }
   return aTarget;
@@ -531,6 +531,30 @@ function synthesizeNativeClick(aElement, aX, aY, aObserver = null) {
   return true;
 }
 
+// Promise-returning variant of synthesizeNativeClick.
+function promiseNativeClick(aElement, aX, aY) {
+  return new Promise(resolve => {
+    synthesizeNativeClick(aElement, aX, aY, resolve);
+  });
+}
+
+function synthesizeNativeClickAndWaitForClickEvent(
+  aElement,
+  aX,
+  aY,
+  aCallback
+) {
+  var targetWindow = windowForTarget(aElement);
+  targetWindow.addEventListener(
+    "click",
+    function(e) {
+      setTimeout(aCallback, 0);
+    },
+    { capture: true, once: true }
+  );
+  return synthesizeNativeClick(aElement, aX, aY);
+}
+
 // Move the mouse to (dx, dy) relative to |target|, and scroll the wheel
 // at that location.
 // Moving the mouse is necessary to avoid wheel events from two consecutive
@@ -655,4 +679,62 @@ function* dragVerticalScrollbar(
       testDriver
     );
   };
+}
+
+// Synthesizes a native touch sequence of events corresponding to a pinch-zoom-in
+// at the given focus point.
+function* pinchZoomInTouchSequence(focusX, focusY) {
+  // prettier-ignore
+  var zoom_in = [
+      [ { x: focusX - 25, y: focusY - 50 }, { x: focusX + 25, y: focusY + 50 } ],
+      [ { x: focusX - 30, y: focusY - 80 }, { x: focusX + 30, y: focusY + 80 } ],
+      [ { x: focusX - 35, y: focusY - 110 }, { x: focusX + 40, y: focusY + 110 } ],
+      [ { x: focusX - 40, y: focusY - 140 }, { x: focusX + 45, y: focusY + 140 } ],
+      [ { x: focusX - 45, y: focusY - 170 }, { x: focusX + 50, y: focusY + 170 } ],
+      [ { x: focusX - 50, y: focusY - 200 }, { x: focusX + 55, y: focusY + 200 } ],
+  ];
+
+  var touchIds = [0, 1];
+  yield* synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
+}
+
+// Returns a promise that is resolved when the observer service dispatches a
+// message with the given topic.
+function promiseTopic(aTopic) {
+  return new Promise((resolve, reject) => {
+    SpecialPowers.Services.obs.addObserver(function observer(
+      subject,
+      topic,
+      data
+    ) {
+      try {
+        SpecialPowers.Services.obs.removeObserver(observer, topic);
+        resolve([subject, data]);
+      } catch (ex) {
+        SpecialPowers.Services.obs.removeObserver(observer, topic);
+        reject(ex);
+      }
+    },
+    aTopic);
+  });
+}
+
+// This generates a touch-based pinch zoom-in gesture that is expected
+// to succeed. It returns after APZ has completed the zoom and reaches the end
+// of the transform.
+async function pinchZoomInWithTouch(focusX, focusY) {
+  // Register the listener for the TransformEnd observer topic
+  let transformEndPromise = promiseTopic("APZ:TransformEnd");
+
+  // Dispatch all the touch events
+  let generator = pinchZoomInTouchSequence(focusX, focusY);
+  while (true) {
+    let yieldResult = generator.next();
+    if (yieldResult.done) {
+      break;
+    }
+  }
+
+  // Wait for TransformEnd to fire.
+  await transformEndPromise;
 }

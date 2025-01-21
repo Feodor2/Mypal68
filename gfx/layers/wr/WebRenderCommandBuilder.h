@@ -7,10 +7,10 @@
 
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/layers/ClipManager.h"
-#include "mozilla/layers/RenderRootBoundary.h"
 #include "mozilla/layers/WebRenderMessages.h"
 #include "mozilla/layers/WebRenderScrollData.h"
 #include "mozilla/layers/WebRenderUserData.h"
+#include "mozilla/SVGIntegrationUtils.h"  // for WrFiltersHolder
 #include "nsDisplayList.h"
 #include "nsIFrame.h"
 
@@ -49,9 +49,6 @@ class WebRenderScrollDataCollection {
 
   void AppendRoot(Maybe<ScrollMetadata>& aRootMetadata,
                   wr::RenderRootArray<WebRenderScrollData>& aScrollDatas);
-
-  void AppendWrapper(const RenderRootBoundary& aBoundary,
-                     size_t aLayerCountBeforeRecursing);
 
   void AppendScrollData(const wr::DisplayListBuilder& aBuilder,
                         WebRenderLayerManager* aManager, nsDisplayItem* aItem,
@@ -95,12 +92,12 @@ class WebRenderCommandBuilder final {
 
   bool NeedsEmptyTransaction();
 
-  void BuildWebRenderCommands(
-      wr::DisplayListBuilder& aBuilder,
-      wr::IpcResourceUpdateQueue& aResourceUpdates, nsDisplayList* aDisplayList,
-      nsDisplayListBuilder* aDisplayListBuilder,
-      wr::RenderRootArray<WebRenderScrollData>& aScrollDatas,
-      WrFiltersHolder&& aFilters);
+  void BuildWebRenderCommands(wr::DisplayListBuilder& aBuilder,
+                              wr::IpcResourceUpdateQueue& aResourceUpdates,
+                              nsDisplayList* aDisplayList,
+                              nsDisplayListBuilder* aDisplayListBuilder,
+                              WebRenderScrollData& aScrollData,
+                              WrFiltersHolder&& aFilters);
 
   void PushOverrideForASR(const ActiveScrolledRoot* aASR,
                           const wr::WrSpatialId& aSpatialId);
@@ -216,19 +213,6 @@ class WebRenderCommandBuilder final {
 
   WebRenderLayerManager* mManager;
 
-  class MOZ_RAII ScrollDataBoundaryWrapper {
-   public:
-    ScrollDataBoundaryWrapper(WebRenderCommandBuilder& aBuilder,
-                              RenderRootBoundary& aBoundary);
-    ~ScrollDataBoundaryWrapper();
-
-   private:
-    WebRenderCommandBuilder& mBuilder;
-    RenderRootBoundary mBoundary;
-    size_t mLayerCountBeforeRecursing;
-  };
-  friend class ScrollDataBoundaryWrapper;
-
  private:
   RenderRootStateManager* GetRenderRootStateManager(wr::RenderRoot aRenderRoot);
 
@@ -238,7 +222,7 @@ class WebRenderCommandBuilder final {
 
   // We use this as a temporary data structure while building the mScrollData
   // inside a layers-free transaction.
-  WebRenderScrollDataCollection mLayerScrollDatas;
+  std::vector<WebRenderLayerScrollData> mLayerScrollData;
   // We use this as a temporary data structure to track the current display
   // item's ASR as we recurse in CreateWebRenderCommandsFromDisplayList. We
   // need this so that WebRenderLayerScrollData items that deeper in the

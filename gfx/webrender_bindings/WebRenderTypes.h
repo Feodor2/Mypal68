@@ -45,6 +45,9 @@ typedef wr::WrFontKey FontKey;
 typedef wr::WrFontInstanceKey FontInstanceKey;
 typedef wr::WrEpoch Epoch;
 
+class RenderedFrameIdType {};
+typedef layers::BaseTransactionId<RenderedFrameIdType> RenderedFrameId;
+
 typedef mozilla::Maybe<mozilla::wr::IdNamespace> MaybeIdNamespace;
 typedef mozilla::Maybe<mozilla::wr::ImageMask> MaybeImageMask;
 typedef Maybe<ExternalImageId> MaybeExternalImageId;
@@ -68,24 +71,13 @@ MOZ_DEFINE_ENUM_CLASS_WITH_BASE(
         // Within the content process, this refers to the content area. Any
         // system that multiplexes data streams from different processes is
         // responsible for converting RenderRoot::Default into
-        // RenderRoot::Content (or whatever value is appropriate)
-        Default,
-
-        // Everything below the chrome - even if it is not coming from a content
-        // process. For example. the devtools, sidebars, and status panel are
-        // traditionally part of the "chrome," but are assigned a renderroot of
-        // RenderRoot::Content because they occupy screen space in the "content"
-        // area of the browser (visually situated below the "chrome" area).
-        Content));
+        // whatever value is appropriate
+        Default));
 
 typedef EnumSet<RenderRoot, uint8_t> RenderRootSet;
 
 // For simple iteration of all render roots
-const Array<RenderRoot, kRenderRootCount> kRenderRoots(RenderRoot::Default,
-                                                       RenderRoot::Content);
-
-const Array<RenderRoot, kRenderRootCount - 1> kNonDefaultRenderRoots(
-    RenderRoot::Content);
+const Array<RenderRoot, kRenderRootCount> kRenderRoots(RenderRoot::Default);
 
 template <typename T>
 class RenderRootArray : public Array<T, kRenderRootCount> {
@@ -105,30 +97,6 @@ class RenderRootArray : public Array<T, kRenderRootCount> {
 
   const T& operator[](wr::RenderRoot aIndex) const {
     return (*(Super*)this)[(size_t)aIndex];
-  }
-
-  T& operator[](size_t aIndex) = delete;
-  const T& operator[](size_t aIndex) const = delete;
-};
-
-template <typename T>
-class NonDefaultRenderRootArray : public Array<T, kRenderRootCount - 1> {
-  typedef Array<T, kRenderRootCount - 1> Super;
-
- public:
-  NonDefaultRenderRootArray() {
-    // See RenderRootArray constructor
-    if (IsPod<T>::value) {
-      PodArrayZero(*this);
-    }
-  }
-
-  T& operator[](wr::RenderRoot aIndex) {
-    return (*(Super*)this)[(size_t)aIndex - 1];
-  }
-
-  const T& operator[](wr::RenderRoot aIndex) const {
-    return (*(Super*)this)[(size_t)aIndex - 1];
   }
 
   T& operator[](size_t aIndex) = delete;

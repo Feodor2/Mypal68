@@ -254,9 +254,6 @@ IpcResourceUpdateQueue::IpcResourceUpdateQueue(
     : mWriter(std::move(aOther.mWriter)),
       mUpdates(std::move(aOther.mUpdates)),
       mRenderRoot(aOther.mRenderRoot) {
-  for (auto renderRoot : wr::kNonDefaultRenderRoots) {
-    mSubQueues[renderRoot] = std::move(aOther.mSubQueues[renderRoot]);
-  }
 }
 
 IpcResourceUpdateQueue& IpcResourceUpdateQueue::operator=(
@@ -265,9 +262,6 @@ IpcResourceUpdateQueue& IpcResourceUpdateQueue::operator=(
   mWriter = std::move(aOther.mWriter);
   mUpdates = std::move(aOther.mUpdates);
   mRenderRoot = aOther.mRenderRoot;
-  for (auto renderRoot : wr::kNonDefaultRenderRoots) {
-    mSubQueues[renderRoot] = std::move(aOther.mSubQueues[renderRoot]);
-  }
   return *this;
 }
 
@@ -427,12 +421,6 @@ bool IpcResourceUpdateQueue::IsEmpty() const {
 void IpcResourceUpdateQueue::Clear() {
   mWriter.Clear();
   mUpdates.Clear();
-
-  for (auto& subQueue : mSubQueues) {
-    if (subQueue) {
-      subQueue->Clear();
-    }
-  }
 }
 
 // static

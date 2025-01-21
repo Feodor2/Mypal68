@@ -22,8 +22,8 @@
 #include "mozilla/layers/CompositorTypes.h"  // for DiagnosticFlags::CONTAINER
 #include "mozilla/layers/Effects.h"          // for Effect, EffectChain, etc
 #include "mozilla/layers/TextureHost.h"      // for CompositingRenderTarget
-#include "mozilla/layers/AsyncCompositionManager.h"  // for ViewTransform
-#include "mozilla/layers/LayerMetricsWrapper.h"      // for LayerMetricsWrapper
+#include "mozilla/layers/APZUtils.h"         // for AsyncTransform
+#include "mozilla/layers/LayerMetricsWrapper.h"  // for LayerMetricsWrapper
 #include "mozilla/layers/LayersHelpers.h"
 #include "mozilla/mozalloc.h"  // for operator delete, etc
 #include "mozilla/RefPtr.h"    // for nsRefPtr
@@ -41,8 +41,8 @@
 #  include "ProfilerMarkerPayload.h"  // for LayerTranslationMarkerPayload
 #endif
 
-#define CULLING_LOG(...)
-// #define CULLING_LOG(...) printf_stderr("CULLING: " __VA_ARGS__)
+static mozilla::LazyLogModule sGfxCullLog("gfx.culling");
+#define CULLING_LOG(...) MOZ_LOG(sGfxCullLog, LogLevel::Debug, (__VA_ARGS__))
 
 #define DUMP(...)                 \
   do {                            \
@@ -322,7 +322,7 @@ void RenderMinimap(ContainerT* aContainer, const RefPtr<APZSampler>& aSampler,
   LayerRect visualRect =
       ParentLayerRect(scrollOffset, compositionBounds.Size()) /
       LayerToParentLayerScale(1);
-  LayerRect dp = (fm.GetDisplayPort() + fm.GetScrollOffset()) *
+  LayerRect dp = (fm.GetDisplayPort() + fm.GetLayoutScrollOffset()) *
                  fm.LayersPixelsPerCSSPixel();
   Maybe<LayerRect> layoutRect;
   Maybe<LayerRect> cdp;
@@ -331,7 +331,7 @@ void RenderMinimap(ContainerT* aContainer, const RefPtr<APZSampler>& aSampler,
     layoutRect = Some(viewport * fm.LayersPixelsPerCSSPixel());
   }
   if (!fm.GetCriticalDisplayPort().IsEmpty()) {
-    cdp = Some((fm.GetCriticalDisplayPort() + fm.GetScrollOffset()) *
+    cdp = Some((fm.GetCriticalDisplayPort() + fm.GetLayoutScrollOffset()) *
                fm.LayersPixelsPerCSSPixel());
   }
 

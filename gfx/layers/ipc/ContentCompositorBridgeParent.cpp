@@ -11,6 +11,7 @@
 #include "base/message_loop.h"        // for MessageLoop
 #include "base/task.h"                // for CancelableTask, etc
 #include "base/thread.h"              // for Thread
+#include "gfxUtils.h"
 #ifdef XP_WIN
 #  include "mozilla/gfx/DeviceManagerDx.h"  // for DeviceManagerDx
 #endif
@@ -29,14 +30,16 @@
 #  include "mozilla/layers/WebRenderBridgeParent.h"
 #  include "mozilla/layers/AsyncImagePipelineManager.h"
 #endif
-
 #include "mozilla/mozalloc.h"  // for operator new, etc
 #include "nsDebug.h"           // for NS_ASSERTION, etc
 #include "nsTArray.h"          // for nsTArray
 #include "nsXULAppAPI.h"       // for XRE_GetIOMessageLoop
 #include "mozilla/Unused.h"
 #include "mozilla/StaticPtr.h"
-#include "gfxUtils.h"
+#include "mozilla/Telemetry.h"
+#ifdef MOZ_GECKO_PROFILER
+#  include "ProfilerMarkerPayload.h"
+#endif
 
 namespace mozilla {
 
@@ -151,23 +154,10 @@ ContentCompositorBridgeParent::AllocPAPZCTreeManagerParent(
         dummyId
 #endif
     );
-    return new APZCTreeManagerParent(
-#ifdef MOZ_BUILD_WEBRENDER
-        WRRootId(aLayersId, gfxUtils::GetContentRenderRoot()),
-#else
-        aLayersId,
-#endif
-        temp, tempUpdater);
+    return new APZCTreeManagerParent(aLayersId, temp, tempUpdater);
   }
 
-  state.mParent->AllocateAPZCTreeManagerParent(
-      lock,
-#ifdef MOZ_BUILD_WEBRENDER
-      WRRootId(aLayersId, gfxUtils::GetContentRenderRoot()),
-#else
-      aLayersId,
-#endif
-      state);
+  state.mParent->AllocateAPZCTreeManagerParent(lock, aLayersId, state);
   return state.mApzcTreeManagerParent;
 }
 bool ContentCompositorBridgeParent::DeallocPAPZCTreeManagerParent(
@@ -316,12 +306,12 @@ mozilla::ipc::IPCResult ContentCompositorBridgeParent::RecvCheckContentOnlyTDR(
     const uint32_t& sequenceNum, bool* isContentOnlyTDR) {
   *isContentOnlyTDR = false;
 #ifdef XP_WIN
-  ContentDeviceData compositor;
+  gfx::ContentDeviceData compositor;
 
-  DeviceManagerDx* dm = DeviceManagerDx::Get();
+  gfx::DeviceManagerDx* dm = gfx::DeviceManagerDx::Get();
 
   // Check that the D3D11 device sequence numbers match.
-  D3D11DeviceStatus status;
+  gfx::D3D11DeviceStatus status;
   dm->ExportDeviceInfo(&status);
 
   if (sequenceNum == status.sequenceNumber() && !dm->HasDeviceReset()) {
@@ -518,21 +508,11 @@ void ContentCompositorBridgeParent::ApplyAsyncProperties(
 }
 
 void ContentCompositorBridgeParent::SetTestAsyncScrollOffset(
-#ifdef MOZ_BUILD_WEBRENDER
-    const WRRootId& aLayersId,
-#else
-    const LayersId& aLayersId,
-#endif
-    const ScrollableLayerGuid::ViewID& aScrollId, const CSSPoint& aPoint) {
+    const LayersId& aLayersId, const ScrollableLayerGuid::ViewID& aScrollId,
+    const CSSPoint& aPoint) {
   MOZ_ASSERT(aLayersId.IsValid());
   const CompositorBridgeParent::LayerTreeState* state =
-      CompositorBridgeParent::GetIndirectShadowTree(
-#ifdef MOZ_BUILD_WEBRENDER
-          aLayersId.mLayersId
-#else
-          aLayersId
-#endif
-      );
+      CompositorBridgeParent::GetIndirectShadowTree(aLayersId);
   if (!state) {
     return;
   }
@@ -542,22 +522,11 @@ void ContentCompositorBridgeParent::SetTestAsyncScrollOffset(
 }
 
 void ContentCompositorBridgeParent::SetTestAsyncZoom(
-#ifdef MOZ_BUILD_WEBRENDER
-    const WRRootId& aLayersId,
-#else
-    const LayersId& aLayersId,
-#endif
-    const ScrollableLayerGuid::ViewID& aScrollId,
+    const LayersId& aLayersId, const ScrollableLayerGuid::ViewID& aScrollId,
     const LayerToParentLayerScale& aZoom) {
   MOZ_ASSERT(aLayersId.IsValid());
   const CompositorBridgeParent::LayerTreeState* state =
-      CompositorBridgeParent::GetIndirectShadowTree(
-#ifdef MOZ_BUILD_WEBRENDER
-          aLayersId.mLayersId
-#else
-          aLayersId
-#endif
-      );
+      CompositorBridgeParent::GetIndirectShadowTree(aLayersId);
   if (!state) {
     return;
   }
@@ -567,21 +536,10 @@ void ContentCompositorBridgeParent::SetTestAsyncZoom(
 }
 
 void ContentCompositorBridgeParent::FlushApzRepaints(
-#ifdef MOZ_BUILD_WEBRENDER
-    const WRRootId& aLayersId
-#else
-    const LayersId& aLayersId
-#endif
-) {
+    const LayersId& aLayersId) {
   MOZ_ASSERT(aLayersId.IsValid());
   const CompositorBridgeParent::LayerTreeState* state =
-      CompositorBridgeParent::GetIndirectShadowTree(
-#ifdef MOZ_BUILD_WEBRENDER
-          aLayersId.mLayersId
-#else
-          aLayersId
-#endif
-      );
+      CompositorBridgeParent::GetIndirectShadowTree(aLayersId);
   if (!state || !state->mParent) {
     return;
   }
@@ -589,22 +547,11 @@ void ContentCompositorBridgeParent::FlushApzRepaints(
   state->mParent->FlushApzRepaints(aLayersId);
 }
 
-void ContentCompositorBridgeParent::GetAPZTestData(
-#ifdef MOZ_BUILD_WEBRENDER
-    const WRRootId& aLayersId,
-#else
-    const LayersId& aLayersId,
-#endif
-    APZTestData* aOutData) {
+void ContentCompositorBridgeParent::GetAPZTestData(const LayersId& aLayersId,
+                                                   APZTestData* aOutData) {
   MOZ_ASSERT(aLayersId.IsValid());
   const CompositorBridgeParent::LayerTreeState* state =
-      CompositorBridgeParent::GetIndirectShadowTree(
-#ifdef MOZ_BUILD_WEBRENDER
-          aLayersId.mLayersId
-#else
-          aLayersId
-#endif
-      );
+      CompositorBridgeParent::GetIndirectShadowTree(aLayersId);
   if (!state || !state->mParent) {
     return;
   }
@@ -614,12 +561,7 @@ void ContentCompositorBridgeParent::GetAPZTestData(
 
 void ContentCompositorBridgeParent::SetConfirmedTargetAPZC(
     const LayersId& aLayersId, const uint64_t& aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-    const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-    const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-) {
+    const nsTArray<ScrollableLayerGuid>& aTargets) {
   MOZ_ASSERT(aLayersId.IsValid());
   const CompositorBridgeParent::LayerTreeState* state =
       CompositorBridgeParent::GetIndirectShadowTree(aLayersId);
@@ -627,7 +569,8 @@ void ContentCompositorBridgeParent::SetConfirmedTargetAPZC(
     return;
   }
 
-  state->mParent->SetConfirmedTargetAPZC(aLayersId, aInputBlockId, aTargets);
+  state->mParent->SetConfirmedTargetAPZC(aLayersId, aInputBlockId,
+                                         std::move(aTargets));
 }
 
 AsyncCompositionManager* ContentCompositorBridgeParent::GetCompositionManager(

@@ -4,7 +4,6 @@
 
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "ClientLayerManager.h"  // for ClientLayerManager
-#include "base/message_loop.h"   // for MessageLoop
 #include "base/task.h"           // for NewRunnableMethod, etc
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/TabGroup.h"
@@ -40,7 +39,6 @@
 #include "nsDebug.h"                    // for NS_WARNING
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 #include "nsTArray.h"                   // for nsTArray, nsTArray_Impl
-#include "nsXULAppAPI.h"      // for XRE_GetIOMessageLoop, etc
 #if defined(XP_WIN)
 #  include "WinUtils.h"
 #endif
@@ -82,7 +80,7 @@ CompositorBridgeChild::CompositorBridgeChild(CompositorManagerChild* aManager)
       mCanSend(false),
       mActorDestroyed(false),
       mFwdTransactionId(0),
-      mMessageLoop(MessageLoop::current()),
+      mThread(NS_GetCurrentThread()),
       mProcessToken(0),
       mSectionAllocator(nullptr),
       mPaintLock("CompositorBridgeChild.mPaintLock"),
@@ -150,7 +148,7 @@ void CompositorBridgeChild::Destroy() {
     // We may have already called destroy but still have lingering references
     // or CompositorBridgeChild::ActorDestroy was called. Ensure that we do our
     // post destroy clean up no matter what. It is safe to call multiple times.
-    MessageLoop::current()->PostTask(
+    NS_GetCurrentThread()->Dispatch(
         NewRunnableMethod("CompositorBridgeChild::AfterDestroy", selfRef,
                           &CompositorBridgeChild::AfterDestroy));
     return;
@@ -203,12 +201,12 @@ void CompositorBridgeChild::Destroy() {
   // CompositorBridgeParent to the CompositorBridgeChild (e.g. caused by the
   // destruction of shared memory). We need to ensure this gets processed by the
   // CompositorBridgeChild before it gets destroyed. It suffices to ensure that
-  // events already in the MessageLoop get processed before the
-  // CompositorBridgeChild is destroyed, so we add a task to the MessageLoop to
+  // events already in the thread get processed before the
+  // CompositorBridgeChild is destroyed, so we add a task to the thread to
   // handle compositor destruction.
 
   // From now on we can't send any message message.
-  MessageLoop::current()->PostTask(
+  NS_GetCurrentThread()->Dispatch(
       NewRunnableMethod("CompositorBridgeChild::AfterDestroy", selfRef,
                         &CompositorBridgeChild::AfterDestroy));
 }
@@ -457,8 +455,8 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvUpdatePluginConfigurations(
 
 #if defined(XP_WIN)
 static void ScheduleSendAllPluginsCaptured(CompositorBridgeChild* aThis,
-                                           MessageLoop* aLoop) {
-  aLoop->PostTask(NewNonOwningRunnableMethod(
+                                           nsISerialEventTarget* aThread) {
+  aThread->Dispatch(NewNonOwningRunnableMethod(
       "CompositorBridgeChild::SendAllPluginsCaptured", aThis,
       &CompositorBridgeChild::SendAllPluginsCaptured));
 }
@@ -470,12 +468,11 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvCaptureAllPlugins(
   MOZ_ASSERT(NS_IsMainThread());
   nsIWidget::CaptureRegisteredPlugins(aParentWidget);
 
-  // Bounce the call to SendAllPluginsCaptured off the ImageBridgeChild loop,
+  // Bounce the call to SendAllPluginsCaptured off the ImageBridgeChild thread,
   // to make sure that the image updates on that thread have been processed.
-  ImageBridgeChild::GetSingleton()->GetMessageLoop()->PostTask(
-      NewRunnableFunction("ScheduleSendAllPluginsCapturedRunnable",
-                          &ScheduleSendAllPluginsCaptured, this,
-                          MessageLoop::current()));
+  ImageBridgeChild::GetSingleton()->GetThread()->Dispatch(NewRunnableFunction(
+      "ScheduleSendAllPluginsCapturedRunnable", &ScheduleSendAllPluginsCaptured,
+      this, NS_GetCurrentThread()));
   return IPC_OK();
 #else
   MOZ_ASSERT_UNREACHABLE(
@@ -825,6 +822,18 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvObserveLayersUpdate(
   if (RefPtr<dom::BrowserParent> tab =
           dom::BrowserParent::GetBrowserParentFromLayersId(aLayersId)) {
     tab->LayerTreeUpdate(aEpoch, aActive);
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult CompositorBridgeChild::RecvCompositorOptionsChanged(
+    const LayersId& aLayersId, const CompositorOptions& aNewOptions) {
+  MOZ_ASSERT(aLayersId.IsValid());
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (RefPtr<dom::BrowserParent> tab =
+          dom::BrowserParent::GetBrowserParentFromLayersId(aLayersId)) {
+    Unused << tab->SendCompositorOptionsChanged(aNewOptions);
   }
   return IPC_OK();
 }

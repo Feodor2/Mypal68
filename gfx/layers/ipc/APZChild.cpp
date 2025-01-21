@@ -26,8 +26,8 @@ APZChild::~APZChild() {
 }
 
 mozilla::ipc::IPCResult APZChild::RecvLayerTransforms(
-    const nsTArray<MatrixMessage>& aTransforms) {
-  mController->NotifyLayerTransforms(aTransforms);
+    nsTArray<MatrixMessage>&& aTransforms) {
+  mController->NotifyLayerTransforms(std::move(aTransforms));
   return IPC_OK();
 }
 

@@ -27,6 +27,7 @@
 #include "nsDebug.h"                 // for NS_ASSERTION, etc
 #include "nsDeviceContext.h"         // for nsDeviceContext
 #include "nsDisplayList.h"           // for nsDisplayTransform, etc
+#include "nsLayoutUtils.h"           // 1646263 Move the non WebRender
 #include "nsMathUtils.h"             // for NS_round
 #include "nsPoint.h"                 // for nsPoint
 #include "nsRect.h"                  // for mozilla::gfx::IntRect
@@ -1049,8 +1050,11 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
                 Compositor* compositor = mLayerManager->GetCompositor();
                 if (CompositorBridgeParent* bridge =
                         compositor->GetCompositorBridgeParent()) {
-
                   LayersId rootLayerTreeId = bridge->RootLayerTreeId();
+                  // XXX: This should be using the APZ metrics, not the
+                  // layer tree metrics. (And possibly, both this code and
+                  // the WR equivalent should be using the "effective"
+                  // metrics matching the values being composited.)
                   if (mIsFirstPaint || FrameMetricsHaveUpdated(metrics)) {
                     if (RefPtr<UiCompositorControllerParent> uiController =
                             UiCompositorControllerParent::
@@ -1246,10 +1250,9 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
 #if defined(MOZ_WIDGET_ANDROID)
 bool AsyncCompositionManager::FrameMetricsHaveUpdated(
     const FrameMetrics& aMetrics) {
-  return RoundedToInt(mLastMetrics.GetScrollOffset()) !=
-             RoundedToInt(aMetrics.GetScrollOffset()) ||
+  return RoundedToInt(mLastMetrics.GetVisualScrollOffset()) !=
+             RoundedToInt(aMetrics.GetVisualScrollOffset()) ||
          mLastMetrics.GetZoom() != aMetrics.GetZoom();
-  ;
 }
 #endif
 
@@ -1394,6 +1397,13 @@ bool AsyncCompositionManager::TransformShadowTree(
   mPreviousFrameTimeStamp = wantNextFrame ? aCurrentFrame : TimeStamp();
 
   if (!(aSkip & CompositorBridgeParentBase::TransformsToSkip::APZ)) {
+    bool apzAnimating = false;
+    if (RefPtr<APZSampler> apz = mCompositorBridge->GetAPZSampler()) {
+      apzAnimating =
+          apz->SampleAnimations(LayerMetricsWrapper(root), nextFrame);
+    }
+    wantNextFrame |= apzAnimating;
+
     // Apply an async content transform to any layer that has
     // an async pan zoom controller.
     bool foundRoot = false;
@@ -1406,13 +1416,6 @@ bool AsyncCompositionManager::TransformShadowTree(
       }
 #endif
     }
-
-    bool apzAnimating = false;
-    if (RefPtr<APZSampler> apz = mCompositorBridge->GetAPZSampler()) {
-      apzAnimating =
-          apz->SampleAnimations(LayerMetricsWrapper(root), nextFrame);
-    }
-    wantNextFrame |= apzAnimating;
   }
 
   HostLayer* rootComposite = root->AsHostLayer();

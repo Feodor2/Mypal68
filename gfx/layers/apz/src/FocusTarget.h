@@ -31,24 +31,9 @@ class FocusTarget final {
   struct ScrollTargets {
     ScrollableLayerGuid::ViewID mHorizontal;
     ScrollableLayerGuid::ViewID mVertical;
-#ifdef MOZ_BUILD_WEBRENDER
-    wr::RenderRoot mHorizontalRenderRoot;
-    wr::RenderRoot mVerticalRenderRoot;
-#endif
 
     bool operator==(const ScrollTargets& aRhs) const {
-      bool ret =
-          (mHorizontal == aRhs.mHorizontal && mVertical == aRhs.mVertical);
-#ifdef MOZ_BUILD_WEBRENDER
-      if (ret) {
-        // The render root is a function of where the scrollable frame is in
-        // the DOM/layout tree, so if the ViewIDs match then the render roots
-        // should also match.
-        MOZ_ASSERT(mHorizontalRenderRoot == aRhs.mHorizontalRenderRoot &&
-                   mVerticalRenderRoot == aRhs.mVerticalRenderRoot);
-      }
-#endif
-      return ret;
+      return (mHorizontal == aRhs.mHorizontal && mVertical == aRhs.mVertical);
     }
   };
 

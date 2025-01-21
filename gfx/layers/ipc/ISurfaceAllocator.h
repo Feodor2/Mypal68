@@ -68,7 +68,7 @@ class ISurfaceAllocator {
   MOZ_DECLARE_REFCOUNTED_TYPENAME(ISurfaceAllocator)
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ISurfaceAllocator)
 
-  ISurfaceAllocator() {}
+  ISurfaceAllocator() = default;
 
   // down-casting
 
@@ -114,7 +114,7 @@ class ISurfaceAllocator {
 /// Methods that are specific to the client/child side.
 class ClientIPCAllocator : public ISurfaceAllocator {
  public:
-  ClientIPCAllocator() {}
+  ClientIPCAllocator() = default;
 
   ClientIPCAllocator* AsClientAllocator() override { return this; }
 
@@ -128,7 +128,7 @@ class ClientIPCAllocator : public ISurfaceAllocator {
 /// Methods that are specific to the host/parent side.
 class HostIPCAllocator : public ISurfaceAllocator {
  public:
-  HostIPCAllocator() {}
+  HostIPCAllocator() = default;
 
   HostIPCAllocator* AsHostIPCAllocator() override { return this; }
 
@@ -216,7 +216,7 @@ void DestroySurfaceDescriptor(mozilla::ipc::IShmemAllocator* aAllocator,
                               SurfaceDescriptor* aSurface);
 
 class GfxMemoryImageReporter final : public nsIMemoryReporter {
-  ~GfxMemoryImageReporter() {}
+  ~GfxMemoryImageReporter() = default;
 
  public:
   NS_DECL_ISUPPORTS

@@ -180,7 +180,7 @@ CrossProcessPaint::CrossProcessPaint(dom::Promise* aPromise, float aScale,
       mBackgroundColor{aBackgroundColor},
       mPendingFragments{1} {}
 
-CrossProcessPaint::~CrossProcessPaint() {}
+CrossProcessPaint::~CrossProcessPaint() = default;
 
 void CrossProcessPaint::ReceiveFragment(dom::TabId aId,
                                         PaintFragment&& aFragment) {

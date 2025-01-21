@@ -126,44 +126,18 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   void LeaveTestMode(const LayersId& aId) override;
   void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
                             TransformsToSkip aSkip) override;
-  void SetTestAsyncScrollOffset(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      const ScrollableLayerGuid::ViewID& aScrollId,
-      const CSSPoint& aPoint) override;
-  void SetTestAsyncZoom(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aWrRootId,
-#else
-      const LayersId& aLayersId,
-#endif
-      const ScrollableLayerGuid::ViewID& aScrollId,
-      const LayerToParentLayerScale& aZoom) override;
-  void FlushApzRepaints(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aLayersId
-#else
-      const LayersId& aLayersId
-#endif
-      ) override;
-  void GetAPZTestData(
-#ifdef MOZ_BUILD_WEBRENDER
-      const WRRootId& aLayersId,
-#else
-      const LayersId& aLayersId,
-#endif
-      APZTestData* aOutData) override;
-  void SetConfirmedTargetAPZC(const LayersId& aLayersId,
-                              const uint64_t& aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-                              const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-                              const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-                              ) override;
+  void SetTestAsyncScrollOffset(const LayersId& aLayersId,
+                                const ScrollableLayerGuid::ViewID& aScrollId,
+                                const CSSPoint& aPoint) override;
+  void SetTestAsyncZoom(const LayersId& aLayersId,
+                        const ScrollableLayerGuid::ViewID& aScrollId,
+                        const LayerToParentLayerScale& aZoom) override;
+  void FlushApzRepaints(const LayersId& aLayersId) override;
+  void GetAPZTestData(const LayersId& aLayersId,
+                      APZTestData* aOutData) override;
+  void SetConfirmedTargetAPZC(
+      const LayersId& aLayersId, const uint64_t& aInputBlockId,
+      const nsTArray<ScrollableLayerGuid>& aTargets) override;
 
   AsyncCompositionManager* GetCompositionManager(
       LayerTransactionParent* aParent) override;

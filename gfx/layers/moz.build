@@ -106,11 +106,14 @@ EXPORTS.mozilla.dom += [
 EXPORTS.mozilla.layers += [
     'AnimationHelper.h',
     'AnimationInfo.h',
+    'AnimationStorageData.h',
     'apz/public/APZInputBridge.h',
+    'apz/public/APZPublicUtils.h',
     'apz/public/APZSampler.h',
     'apz/public/APZUpdater.h',
     'apz/public/CompositorController.h',
     'apz/public/GeckoContentController.h',
+    'apz/public/GeckoContentControllerTypes.h',
     'apz/public/IAPZCTreeManager.h',
     'apz/public/MatrixMessage.h',
     'apz/public/MetricsSharingController.h',
@@ -257,7 +260,6 @@ EXPORTS.mozilla.layers += [
 
 if CONFIG['MOZ_BUILD_WEBRENDER']:
     EXPORTS.mozilla.layers += [
-       'apz/public/APZTypes.h',
        'ipc/RefCountedShmem.h',
        'ipc/SharedSurfacesChild.h',
        'ipc/SharedSurfacesMemoryReport.h',
@@ -265,7 +267,6 @@ if CONFIG['MOZ_BUILD_WEBRENDER']:
         'wr/AsyncImagePipelineManager.h',
         'wr/ClipManager.h',
         'wr/IpcResourceUpdateQueue.h',
-        'wr/RenderRootBoundary.h',
         'wr/RenderRootStateManager.h',
         'wr/RenderRootTypes.h',
         'wr/StackingContextHelper.h',
@@ -341,6 +342,7 @@ UNIFIED_SOURCES += [
     'AnimationInfo.cpp',
     'apz/src/APZCTreeManager.cpp',
     'apz/src/APZInputBridge.cpp',
+    'apz/src/APZPublicUtils.cpp',
     'apz/src/APZSampler.cpp',
     'apz/src/APZUpdater.cpp',
     'apz/src/APZUtils.cpp',
@@ -349,6 +351,7 @@ UNIFIED_SOURCES += [
     'apz/src/Axis.cpp',
     'apz/src/CheckerboardEvent.cpp',
     'apz/src/DragTracker.cpp',
+    'apz/src/ExpectedGeckoMetrics.cpp',
     'apz/src/FocusState.cpp',
     'apz/src/FocusTarget.cpp',
     'apz/src/GenericScrollAnimation.cpp',
@@ -362,7 +365,10 @@ UNIFIED_SOURCES += [
     'apz/src/OverscrollHandoffState.cpp',
     'apz/src/PotentialCheckerboardDurationTracker.cpp',
     'apz/src/QueuedInput.cpp',
+    'apz/src/SampledAPZCState.cpp',
     'apz/src/SimpleVelocityTracker.cpp',
+    'apz/src/SmoothMsdScrollAnimation.cpp',
+    'apz/src/SmoothScrollAnimation.cpp',
     'apz/src/WheelScrollAnimation.cpp',
     'apz/testutil/APZTestData.cpp',
     'apz/util/ActiveElementManager.cpp',
@@ -504,6 +510,7 @@ UNIFIED_SOURCES += [
     'ReadbackProcessor.cpp',
     'RenderTrace.cpp',
     'RotatedBuffer.cpp',
+    'ScrollableLayerGuid.cpp',
     'ShareableCanvasRenderer.cpp',
     'SourceSurfaceSharedData.cpp',
     'SourceSurfaceVolatileData.cpp',
@@ -566,6 +573,7 @@ IPDL_SOURCES += [
     'ipc/LayersSurfaces.ipdlh',
     'ipc/PAPZ.ipdl',
     'ipc/PAPZInputBridge.ipdl',
+    'ipc/PLayerTransaction.ipdl',
     'ipc/PTexture.ipdl',
     'ipc/PUiCompositorController.ipdl',
     'ipc/PVideoBridge.ipdl',
@@ -576,7 +584,6 @@ PREPROCESSED_IPDL_SOURCES += [
     'ipc/PCompositorBridge.ipdl',
     'ipc/PCompositorManager.ipdl',
     'ipc/PImageBridge.ipdl',
-    'ipc/PLayerTransaction.ipdl',
 ]
 
 if CONFIG['MOZ_BUILD_WEBRENDER']:

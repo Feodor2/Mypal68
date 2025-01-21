@@ -1201,10 +1201,15 @@ gfxFloat gfxTextRun::GetMinAdvanceWidth(Range aRange) {
                ComputePartialLigatureWidth(Range(ligatureRange.end, aRange.end),
                                            nullptr));
 
-  // XXX Do we need to take spacing into account? When each grapheme cluster
-  // takes its own line, we shouldn't be adding spacings around them.
+  // Compute min advance width by assuming each grapheme cluster takes its own
+  // line.
   gfxFloat clusterAdvance = 0;
   for (uint32_t i = ligatureRange.start; i < ligatureRange.end; ++i) {
+    if (mCharacterGlyphs[i].CharIsSpace()) {
+      // Skip space char to prevent its advance width contributing to the
+      // result. That is, don't consider a space can be in its own line.
+      continue;
+    }
     clusterAdvance += GetAdvanceForGlyph(i);
     if (i + 1 == ligatureRange.end || IsClusterStart(i + 1)) {
       result = std::max(result, clusterAdvance);
@@ -1417,13 +1422,12 @@ void gfxTextRun::CopyGlyphDataFrom(gfxShapedWord* aShapedWord,
   if (aShapedWord->HasDetailedGlyphs()) {
     for (uint32_t i = 0; i < wordLen; ++i, ++aOffset) {
       const CompressedGlyph& g = wordGlyphs[i];
-      if (g.IsSimpleGlyph()) {
-        charGlyphs[aOffset] = g;
-      } else {
+      if (!g.IsSimpleGlyph()) {
         const DetailedGlyph* details =
             g.GetGlyphCount() > 0 ? aShapedWord->GetDetailedGlyphs(i) : nullptr;
-        SetGlyphs(aOffset, g, details);
+        SetDetailedGlyphs(aOffset, g.GetGlyphCount(), details);
       }
+      charGlyphs[aOffset] = g;
     }
   } else {
     memcpy(charGlyphs + aOffset, wordGlyphs, wordLen * sizeof(CompressedGlyph));
@@ -1452,16 +1456,15 @@ void gfxTextRun::CopyGlyphDataFrom(gfxTextRun* aSource, Range aRange,
     if (!g.IsSimpleGlyph()) {
       uint32_t count = g.GetGlyphCount();
       if (count > 0) {
-        DetailedGlyph* dst = AllocateDetailedGlyphs(i + aDest, count);
-        if (dst) {
-          DetailedGlyph* src = aSource->GetDetailedGlyphs(i + aRange.start);
-          if (src) {
-            ::memcpy(dst, src, count * sizeof(DetailedGlyph));
-          } else {
-            g.SetMissing(0);
-          }
+        // DetailedGlyphs allocation is infallible, so this should never be
+        // null unless the source textrun is somehow broken.
+        DetailedGlyph* src = aSource->GetDetailedGlyphs(i + aRange.start);
+        MOZ_ASSERT(src, "missing DetailedGlyphs?");
+        if (src) {
+          DetailedGlyph* dst = AllocateDetailedGlyphs(i + aDest, count);
+          ::memcpy(dst, src, count * sizeof(DetailedGlyph));
         } else {
-          g.SetMissing(0);
+          g.SetMissing();
         }
       }
     }
@@ -2664,8 +2667,7 @@ void gfxFontGroup::InitScriptRun(DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
               gfxTextRun::DetailedGlyph detailedGlyph;
               detailedGlyph.mGlyphID = mainFont->GetSpaceGlyph();
               detailedGlyph.mAdvance = advance;
-              CompressedGlyph g = CompressedGlyph::MakeComplex(true, true, 1);
-              aTextRun->SetGlyphs(aOffset + index, g, &detailedGlyph);
+              aTextRun->SetDetailedGlyphs(aOffset + index, 1, &detailedGlyph);
             }
             continue;
           }

@@ -11,11 +11,13 @@
 #include "gfxContext.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "gfxWindowsPlatform.h"
+#include "MainThreadUtils.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
+#include "mozilla/Telemetry.h"
 #ifdef MOZ_BUILD_WEBRENDER
 #  include "mozilla/webrender/RenderD3D11TextureHostOGL.h"
 #  include "mozilla/webrender/RenderThread.h"

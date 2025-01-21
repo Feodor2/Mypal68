@@ -5,7 +5,6 @@
 #include "ImageBridgeParent.h"
 #include <stdint.h>             // for uint64_t, uint32_t
 #include "CompositableHost.h"   // for CompositableParent, Create
-#include "base/message_loop.h"  // for MessageLoop
 #include "base/process.h"       // for ProcessId
 #include "base/task.h"          // for CancelableTask, DeleteTask, etc
 #include "mozilla/ClearOnShutdown.h"
@@ -55,9 +54,9 @@ void ImageBridgeParent::Setup() {
   }
 }
 
-ImageBridgeParent::ImageBridgeParent(MessageLoop* aLoop,
+ImageBridgeParent::ImageBridgeParent(nsISerialEventTarget* aThread,
                                      ProcessId aChildProcessId)
-    : mMessageLoop(aLoop),
+    : mThread(aThread),
       mClosed(false),
       mCompositorThreadHolder(CompositorThreadHolder::GetSingleton()) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -70,7 +69,7 @@ ImageBridgeParent::~ImageBridgeParent() = default;
 ImageBridgeParent* ImageBridgeParent::CreateSameProcess() {
   base::ProcessId pid = base::GetCurrentProcId();
   RefPtr<ImageBridgeParent> parent =
-      new ImageBridgeParent(CompositorThreadHolder::Loop(), pid);
+      new ImageBridgeParent(CompositorThread(), pid);
   parent->mSelfRef = parent;
 
   {
@@ -88,15 +87,15 @@ bool ImageBridgeParent::CreateForGPUProcess(
     Endpoint<PImageBridgeParent>&& aEndpoint) {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_GPU);
 
-  MessageLoop* loop = CompositorThreadHolder::Loop();
-  if (!loop) {
+  nsCOMPtr<nsISerialEventTarget> compositorThread = CompositorThread();
+  if (!compositorThread) {
     return false;
   }
 
   RefPtr<ImageBridgeParent> parent =
-      new ImageBridgeParent(loop, aEndpoint.OtherPid());
+      new ImageBridgeParent(compositorThread, aEndpoint.OtherPid());
 
-  loop->PostTask(NewRunnableMethod<Endpoint<PImageBridgeParent>&&>(
+  compositorThread->Dispatch(NewRunnableMethod<Endpoint<PImageBridgeParent>&&>(
       "layers::ImageBridgeParent::Bind", parent, &ImageBridgeParent::Bind,
       std::move(aEndpoint)));
 
@@ -126,7 +125,7 @@ void ImageBridgeParent::ShutdownInternal() {
 
 /* static */
 void ImageBridgeParent::Shutdown() {
-  CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
+  CompositorThread()->Dispatch(NS_NewRunnableFunction(
       "ImageBridgeParent::Shutdown",
       []() -> void { ImageBridgeParent::ShutdownInternal(); }));
 }
@@ -139,7 +138,7 @@ void ImageBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
     Monitor2AutoLock lock(*sImageBridgesLock);
     sImageBridges.erase(OtherPid());
   }
-  MessageLoop::current()->PostTask(
+  GetThread()->Dispatch(
       NewRunnableMethod("layers::ImageBridgeParent::DeferredDestroy", this,
                         &ImageBridgeParent::DeferredDestroy));
 
@@ -212,14 +211,14 @@ mozilla::ipc::IPCResult ImageBridgeParent::RecvUpdate(
 /* static */
 bool ImageBridgeParent::CreateForContent(
     Endpoint<PImageBridgeParent>&& aEndpoint) {
-  MessageLoop* loop = CompositorThreadHolder::Loop();
-  if (!loop) {
+  nsCOMPtr<nsISerialEventTarget> compositorThread = CompositorThread();
+  if (!compositorThread) {
     return false;
   }
 
   RefPtr<ImageBridgeParent> bridge =
-      new ImageBridgeParent(loop, aEndpoint.OtherPid());
-  loop->PostTask(NewRunnableMethod<Endpoint<PImageBridgeParent>&&>(
+      new ImageBridgeParent(compositorThread, aEndpoint.OtherPid());
+  compositorThread->Dispatch(NewRunnableMethod<Endpoint<PImageBridgeParent>&&>(
       "layers::ImageBridgeParent::Bind", bridge, &ImageBridgeParent::Bind,
       std::move(aEndpoint)));
 

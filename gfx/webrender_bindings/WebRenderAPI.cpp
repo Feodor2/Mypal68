@@ -94,7 +94,8 @@ class NewRenderer : public RendererEvent {
             &WebRenderMallocEnclosingSizeOf, (uint32_t)wr::RenderRoot::Default,
             compositor->ShouldUseNativeCompositor() ? compositor.get()
                                                     : nullptr,
-            mDocHandle, &wrRenderer, mMaxTextureSize)) {
+            compositor->GetMaxPartialPresentRects(), mDocHandle, &wrRenderer,
+            mMaxTextureSize)) {
       // wr_window_new puts a message into gfxCriticalNote if it returns false
       return;
     }
@@ -253,9 +254,9 @@ void TransactionWrapper::UpdatePinchZoom(float aZoom) {
   wr_transaction_pinch_zoom(mTxn, aZoom);
 }
 
-void TransactionWrapper::UpdateIsTransformPinchZooming(uint64_t aAnimationId,
+void TransactionWrapper::UpdateIsTransformAsyncZooming(uint64_t aAnimationId,
                                                        bool aIsZooming) {
-  wr_transaction_set_is_transform_pinch_zooming(mTxn, aAnimationId, aIsZooming);
+  wr_transaction_set_is_transform_async_zooming(mTxn, aAnimationId, aIsZooming);
 }
 
 /*static*/
@@ -808,8 +809,7 @@ DisplayListBuilder::DisplayListBuilder(PipelineId aId,
       mActiveFixedPosTracker(nullptr),
       mPipelineId(aId),
       mContentSize(aContentSize),
-      mRenderRoot(aRenderRoot),
-      mSendSubBuilderDisplayList(aRenderRoot == wr::RenderRoot::Default) {
+      mRenderRoot(aRenderRoot) {
   MOZ_COUNT_CTOR(DisplayListBuilder);
   mWrState = wr_state_new(aId, aContentSize, aCapacity);
 }
@@ -822,31 +822,6 @@ DisplayListBuilder::~DisplayListBuilder() {
 void DisplayListBuilder::Save() { wr_dp_save(mWrState); }
 void DisplayListBuilder::Restore() { wr_dp_restore(mWrState); }
 void DisplayListBuilder::ClearSave() { wr_dp_clear_save(mWrState); }
-
-DisplayListBuilder& DisplayListBuilder::CreateSubBuilder(
-    const wr::LayoutSize& aContentSize, size_t aCapacity,
-    wr::RenderRoot aRenderRoot) {
-  MOZ_ASSERT(mRenderRoot == wr::RenderRoot::Default);
-  MOZ_ASSERT(!mSubBuilders[aRenderRoot]);
-  mSubBuilders[aRenderRoot] = MakeUnique<DisplayListBuilder>(
-      mPipelineId, aContentSize, aCapacity, aRenderRoot);
-  return *mSubBuilders[aRenderRoot];
-}
-
-DisplayListBuilder& DisplayListBuilder::SubBuilder(RenderRoot aRenderRoot) {
-  if (aRenderRoot == mRenderRoot) {
-    return *this;
-  }
-  return *mSubBuilders[aRenderRoot];
-}
-
-bool DisplayListBuilder::HasSubBuilder(RenderRoot aRenderRoot) {
-  if (aRenderRoot == RenderRoot::Default) {
-    MOZ_ASSERT(mRenderRoot == RenderRoot::Default);
-    return true;
-  }
-  return !!mSubBuilders[aRenderRoot];
-}
 
 usize DisplayListBuilder::Dump(usize aIndent, const Maybe<usize>& aStart,
                                const Maybe<usize>& aEnd) {
@@ -864,13 +839,11 @@ void DisplayListBuilder::Finalize(
     layers::RenderRootDisplayListData& aOutTransaction) {
   MOZ_ASSERT(mRenderRoot == wr::RenderRoot::Default);
   wr::VecU8 dl;
-  wr_api_finalize_builder(SubBuilder(aOutTransaction.mRenderRoot).mWrState,
-                          &aOutTransaction.mContentSize,
+  wr_api_finalize_builder(mWrState, &aOutTransaction.mContentSize,
                           &aOutTransaction.mDLDesc, &dl.inner);
   aOutTransaction.mDL.emplace(dl.inner.data, dl.inner.length,
                               dl.inner.capacity);
-  aOutTransaction.mRemotePipelineIds =
-      std::move(SubBuilder(aOutTransaction.mRenderRoot).mRemotePipelineIds);
+  aOutTransaction.mRemotePipelineIds = std::move(mRemotePipelineIds);
   dl.inner.capacity = 0;
   dl.inner.data = nullptr;
 }

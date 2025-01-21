@@ -19,6 +19,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
@@ -37,8 +38,7 @@
 #include "nsPIWindowRoot.h"
 #include "nsRFPService.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 Event::Event(EventTarget* aOwner, nsPresContext* aPresContext,
              WidgetEvent* aEvent) {
@@ -547,9 +547,8 @@ CSSIntPoint Event::GetScreenCoords(nsPresContext* aPresContext,
       rounded,
       aPresContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
 
-  if (PresShell* presShell = aPresContext->GetPresShell()) {
-    pt = pt.RemoveResolution(
-        nsLayoutUtils::GetCurrentAPZResolutionScale(presShell));
+  if (PresShell* shell = aPresContext->GetPresShell()) {
+    pt = ViewportUtils::VisualToLayout(pt, shell);
   }
 
   pt += LayoutDevicePixel::ToAppUnits(
@@ -610,8 +609,8 @@ CSSIntPoint Event::GetClientCoords(nsPresContext* aPresContext,
   if (!rootFrame) {
     return CSSIntPoint(0, 0);
   }
-  nsPoint pt =
-      nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, aPoint, rootFrame);
+  nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+      aEvent, aPoint, RelativeTo{rootFrame});
 
   return CSSIntPoint::FromAppUnitsRounded(pt);
 }
@@ -644,8 +643,8 @@ CSSIntPoint Event::GetOffsetCoords(nsPresContext* aPresContext,
   CSSIntPoint clientCoords =
       GetClientCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
   nsPoint pt = CSSPixel::ToAppUnits(clientCoords);
-  if (nsLayoutUtils::TransformPoint(rootFrame, frame, pt) ==
-      nsLayoutUtils::TRANSFORM_SUCCEEDED) {
+  if (nsLayoutUtils::TransformPoint(RelativeTo{rootFrame}, RelativeTo{frame},
+                                    pt) == nsLayoutUtils::TRANSFORM_SUCCEEDED) {
     pt -= frame->GetPaddingRectRelativeToSelf().TopLeft();
     return CSSPixel::FromAppUnitsRounded(pt);
   }
@@ -830,8 +829,7 @@ void Event::GetWidgetEventType(WidgetEvent* aEvent, nsAString& aType) {
   aType.Truncate();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

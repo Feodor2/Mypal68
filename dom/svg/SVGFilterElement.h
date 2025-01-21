@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFilterElement_h
-#define mozilla_dom_SVGFilterElement_h
+#ifndef DOM_SVG_SVGFILTERELEMENT_H_
+#define DOM_SVG_SVGFILTERELEMENT_H_
 
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
@@ -20,7 +20,7 @@ class SVGFilterInstance;
 namespace dom {
 class DOMSVGAnimatedLength;
 
-typedef SVGElement SVGFilterElementBase;
+using SVGFilterElementBase = SVGElement;
 
 class SVGFilterElement : public SVGFilterElementBase {
   friend class mozilla::SVGFilterFrame;
@@ -40,7 +40,7 @@ class SVGFilterElement : public SVGFilterElementBase {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  // nsSVGSVGElement methods:
+  // SVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
   // WebIDL
@@ -73,4 +73,4 @@ class SVGFilterElement : public SVGFilterElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFilterElement_h
+#endif  // DOM_SVG_SVGFILTERELEMENT_H_

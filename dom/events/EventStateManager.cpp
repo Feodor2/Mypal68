@@ -976,7 +976,7 @@ static bool IsAccessKeyTarget(nsIContent* aContent, nsIFrame* aFrame,
   if (!aContent->IsElement() ||
       !aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::accesskey,
                                       contentKey) ||
-      !contentKey.Equals(aKey, nsCaseInsensitiveStringComparator()))
+      !contentKey.Equals(aKey, nsCaseInsensitiveStringComparator))
     return false;
 
   if (!aContent->OwnerDoc()->IsXULDocument() && !aContent->IsXULElement())
@@ -1132,29 +1132,6 @@ struct MOZ_STACK_CLASS AccessKeyInfo {
       : event(aEvent), charCodes(aCharCodes) {}
 };
 
-static bool HandleAccessKeyInRemoteChild(BrowserParent* aBrowserParent,
-                                         void* aArg) {
-  AccessKeyInfo* accessKeyInfo = static_cast<AccessKeyInfo*>(aArg);
-
-  // Only forward accesskeys for the active tab.
-  bool active;
-  aBrowserParent->GetDocShellIsActive(&active);
-  if (active) {
-    // Even if there is no target for the accesskey in this process,
-    // the event may match with a content accesskey.  If so, the keyboard
-    // event should be handled with reply event for preventing double action.
-    // (e.g., Alt+Shift+F on Windows may focus a content in remote and open
-    // "File" menu.)
-    accessKeyInfo->event->StopPropagation();
-    accessKeyInfo->event->MarkAsWaitingReplyFromRemoteProcess();
-    aBrowserParent->HandleAccessKey(*accessKeyInfo->event,
-                                    accessKeyInfo->charCodes);
-    return true;
-  }
-
-  return false;
-}
-
 bool EventStateManager::WalkESMTreeToHandleAccessKey(
     WidgetKeyboardEvent* aEvent, nsPresContext* aPresContext,
     nsTArray<uint32_t>& aAccessCharCodes, nsIDocShellTreeItem* aBubbledFrom,
@@ -1265,7 +1242,26 @@ bool EventStateManager::WalkESMTreeToHandleAccessKey(
     else if (!aEvent->IsHandledInRemoteProcess()) {
       AccessKeyInfo accessKeyInfo(aEvent, aAccessCharCodes);
       nsContentUtils::CallOnAllRemoteChildren(
-          mDocument->GetWindow(), HandleAccessKeyInRemoteChild, &accessKeyInfo);
+          mDocument->GetWindow(),
+          [&accessKeyInfo](BrowserParent* aBrowserParent) -> bool {
+            // Only forward accesskeys for the active tab.
+            bool active;
+            aBrowserParent->GetDocShellIsActive(&active);
+            if (active) {
+              // Even if there is no target for the accesskey in this process,
+              // the event may match with a content accesskey.  If so, the
+              // keyboard event should be handled with reply event for
+              // preventing double action. (e.g., Alt+Shift+F on Windows may
+              // focus a content in remote and open "File" menu.)
+              accessKeyInfo.event->StopPropagation();
+              accessKeyInfo.event->MarkAsWaitingReplyFromRemoteProcess();
+              aBrowserParent->HandleAccessKey(*accessKeyInfo.event,
+                                              accessKeyInfo.charCodes);
+              return true;
+            }
+
+            return false;
+          });
     }
   }
 
@@ -2737,18 +2733,18 @@ void EventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
 
   nsIScrollbarMediator::ScrollSnapMode snapMode =
       nsIScrollbarMediator::DISABLE_SNAP;
-  nsAtom* origin = nullptr;
+  mozilla::ScrollOrigin origin = mozilla::ScrollOrigin::NotSpecified;
   switch (aEvent->mDeltaMode) {
     case WheelEvent_Binding::DOM_DELTA_LINE:
-      origin = nsGkAtoms::mouseWheel;
+      origin = mozilla::ScrollOrigin::MouseWheel;
       snapMode = nsIScrollableFrame::ENABLE_SNAP;
       break;
     case WheelEvent_Binding::DOM_DELTA_PAGE:
-      origin = nsGkAtoms::pages;
+      origin = mozilla::ScrollOrigin::Pages;
       snapMode = nsIScrollableFrame::ENABLE_SNAP;
       break;
     case WheelEvent_Binding::DOM_DELTA_PIXEL:
-      origin = nsGkAtoms::pixels;
+      origin = mozilla::ScrollOrigin::Pixels;
       break;
     default:
       MOZ_CRASH("Invalid deltaMode value comes");
@@ -3799,13 +3795,13 @@ static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
   // TODO(emilio, bug 1525561): In a fission world, we should have a better way
   // to find the event coordinates relative to the content area.
   nsPresContext* topLevel =
-      aPresContext->GetToplevelContentDocumentPresContext();
+      aPresContext->GetInProcessRootContentDocumentPresContext();
   if (!topLevel) {
     return false;
   }
 
   nsPoint point = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-      aEvent, topLevel->PresShell()->GetRootFrame());
+      aEvent, RelativeTo{topLevel->PresShell()->GetRootFrame()});
 
   nsSize size(CSSPixel::ToAppUnits(width), CSSPixel::ToAppUnits(height));
   nsPoint hotspot(CSSPixel::ToAppUnits(aCursor.mHotspot.x),
@@ -3851,8 +3847,10 @@ static CursorImage ComputeCustomCursor(nsPresContext* aPresContext,
   // consumer know.
   bool loading = false;
   for (const auto& image : style.StyleUI()->mCursor.images.AsSpan()) {
+    MOZ_ASSERT(image.image.IsImageRequestType(),
+               "Cursor image should only parse url() type");
     uint32_t status;
-    imgRequestProxy* req = image.url.GetImage();
+    imgRequestProxy* req = image.image.GetImageRequest();
     if (!req || NS_FAILED(req->GetImageStatus(&status))) {
       continue;
     }
@@ -3868,6 +3866,8 @@ static CursorImage ComputeCustomCursor(nsPresContext* aPresContext,
     if (!container) {
       continue;
     }
+    container = nsLayoutUtils::OrientImage(
+        container, aFrame.StyleVisibility()->mImageOrientation);
     Maybe<gfx::Point> specifiedHotspot =
         image.has_hotspot ? Some(gfx::Point{image.hotspot_x, image.hotspot_y})
                           : Nothing();
@@ -3900,8 +3900,8 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
   }
   // If not locked, look for correct cursor
   else if (aTargetFrame) {
-    nsPoint pt =
-        nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, aTargetFrame);
+    nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+        aEvent, RelativeTo{aTargetFrame});
     Maybe<nsIFrame::Cursor> framecursor = aTargetFrame->GetCursor(pt);
     // Avoid setting cursor when the mouse is over a windowless plugin.
     if (!framecursor) {

@@ -640,7 +640,7 @@ nsObjectLoadingContent::~nsObjectLoadingContent() {
         "Should not be tearing down a plugin at this point!");
     StopPluginInstance();
   }
-  DestroyImageLoadingContent();
+  nsImageLoadingContent::Destroy();
 }
 
 nsresult nsObjectLoadingContent::InstantiatePluginInstance(bool aIsLoading) {
@@ -1216,10 +1216,6 @@ EventStates nsObjectLoadingContent::ObjectState() const {
       return EventStates();
     case eType_Null:
       switch (mFallbackType) {
-        case eFallbackSuppressed:
-          return NS_EVENT_STATE_SUPPRESSED;
-        case eFallbackUserDisabled:
-          return NS_EVENT_STATE_USERDISABLED;
         case eFallbackClickToPlay:
         case eFallbackClickToPlayQuiet:
           return NS_EVENT_STATE_TYPE_CLICK_TO_PLAY;
@@ -1960,18 +1956,11 @@ nsresult nsObjectLoadingContent::LoadObject(bool aNotify, bool aForceLoad,
       return NS_OK;
     }
 
-    // Load denied, switch to fallback and set disabled/suppressed if applicable
+    // Load denied, switch to fallback and set disabled if applicable
     if (!allowLoad) {
       LOG(("OBJLC [%p]: Load denied by policy", this));
       mType = eType_Null;
-      if (contentPolicy == nsIContentPolicy::REJECT_TYPE) {
-        // XXX(johns) This is assuming that we were rejected by
-        //            nsContentBlocker, which rejects by type if permissions
-        //            reject plugins
-        fallbackType = eFallbackUserDisabled;
-      } else {
-        fallbackType = eFallbackSuppressed;
-      }
+      fallbackType = eFallbackDisabled;
     }
   }
 
@@ -2358,7 +2347,7 @@ uint32_t nsObjectLoadingContent::GetCapabilities() const {
   return eSupportImages | eSupportPlugins | eSupportDocuments;
 }
 
-void nsObjectLoadingContent::DestroyContent() {
+void nsObjectLoadingContent::Destroy() {
   if (mFrameLoader) {
     mFrameLoader->Destroy();
     mFrameLoader = nullptr;
@@ -2367,6 +2356,12 @@ void nsObjectLoadingContent::DestroyContent() {
   if (mInstanceOwner || mInstantiating) {
     QueueCheckPluginStopEvent();
   }
+
+  // Reset state so that if the element is re-appended to tree again (e.g.
+  // adopting to another document), it will reload resource again.
+  UnloadObject();
+
+  nsImageLoadingContent::Destroy();
 }
 
 /* static */
@@ -2477,7 +2472,6 @@ void nsObjectLoadingContent::NotifyStateChanged(ObjectType aOldType,
       thisEl->NotifyUAWidgetTeardown();
     } else if (!hadProblemState && hasProblemState) {
       thisEl->AttachAndSetUAShadowRoot();
-      thisEl->NotifyUAWidgetSetupOrChange();
     }
   } else if (aOldType != mType) {
     // If our state changed, then we already recreated frames

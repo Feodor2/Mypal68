@@ -4,7 +4,9 @@
 
 #include "FlexItemValues.h"
 
+#include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/FlexBinding.h"
+#include "mozilla/dom/FlexLineValues.h"
 #include "nsFlexContainerFrame.h"
 
 namespace mozilla {

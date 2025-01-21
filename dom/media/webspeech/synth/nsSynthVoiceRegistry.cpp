@@ -569,7 +569,7 @@ VoiceData* nsSynthVoiceRegistry::FindBestMatch(const nsAString& aUri,
 
   // Try UI language.
   nsAutoCString uiLang;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(uiLang);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(uiLang);
 
   if (FindVoiceByLang(NS_ConvertASCIItoUTF16(uiLang), &retval)) {
     LOG(LogLevel::Debug,

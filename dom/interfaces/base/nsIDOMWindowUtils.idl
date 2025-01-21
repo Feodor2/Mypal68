@@ -860,6 +860,13 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void getVisualViewportOffset(out long aOffsetX, out long aOffsetY);
 
+  /**
+   * Transforms the passed in rect from layout relative coords (relative to
+   * this document) to be is visual coords.
+   */
+  DOMRect transformRectLayoutToVisual(in float aX, in float aY,
+                                      in float aWidth, in float aHeight);
+
   const long FLUSH_NONE = -1;
   const long FLUSH_STYLE = 0;
   const long FLUSH_LAYOUT = 1;
@@ -1422,6 +1429,15 @@ interface nsIDOMWindowUtils : nsISupports {
    * will not fire. This is intended to be used by test code only!
    */
   bool flushApzRepaints();
+
+  /**
+   * Sets a flag on the element to forcibly disable APZ on it. This affects
+   * the result of nsLayoutUtils::ShouldDisableApzForElement when called on
+   * this element. This function also schedules a repaint to ensure that the
+   * change takes effect. Note that this is not reversible; it is intended for
+   * use by test code only.
+   */
+  void disableApzForElement(in Element aElement);
 
   /**
    * Ask APZ to pan and zoom to the focused input element.

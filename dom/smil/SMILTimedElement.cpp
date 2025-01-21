@@ -308,7 +308,7 @@ nsresult SMILTimedElement::EndElementAt(double aOffsetSeconds) {
 }
 
 //----------------------------------------------------------------------
-// nsSVGAnimationElement methods
+// SVGAnimationElement methods
 
 SMILTimeValue SMILTimedElement::GetStartTime() const {
   return mElementState == STATE_WAITING || mElementState == STATE_ACTIVE
@@ -1618,11 +1618,9 @@ bool SMILTimedElement::GetNextInterval(const SMILInterval* aPrevInterval,
     // it by searching for the next interval that starts AFTER our current
     // zero-duration interval.
     if (prevIntervalWasZeroDur && tempEnd->Time() == beginAfter) {
-      if (prevIntervalWasZeroDur) {
-        beginAfter.SetMillis(tempBegin->Time().GetMillis() + 1);
-        prevIntervalWasZeroDur = false;
-        continue;
-      }
+      beginAfter.SetMillis(tempBegin->Time().GetMillis() + 1);
+      prevIntervalWasZeroDur = false;
+      continue;
     }
     prevIntervalWasZeroDur = tempBegin->Time() == tempEnd->Time();
 

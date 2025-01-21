@@ -47,7 +47,7 @@ HTMLObjectElement::~HTMLObjectElement() {
   OnFocusBlurPlugin(this, false);
 #endif
   UnregisterActivityObserver();
-  DestroyImageLoadingContent();
+  nsImageLoadingContent::Destroy();
 }
 
 bool HTMLObjectElement::IsInteractiveHTMLContent() const {
@@ -451,7 +451,7 @@ uint32_t HTMLObjectElement::GetCapabilities() const {
 }
 
 void HTMLObjectElement::DestroyContent() {
-  nsObjectLoadingContent::DestroyContent();
+  nsObjectLoadingContent::Destroy();
   nsGenericHTMLFormElement::DestroyContent();
 }
 

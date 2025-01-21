@@ -97,7 +97,7 @@ function makeTest(id, expectedJSON, useReportOnlyPolicy, callback) {
     selfuri,
     {}
   );
-  csp.setRequestContext(null, principal);
+  csp.setRequestContextWithPrincipal(principal, selfuri, "", 0);
 
   // Load up the policy
   // set as report-only if that's the case

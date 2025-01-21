@@ -4,11 +4,12 @@
 
 #include "SVGAnimatedNumberList.h"
 
-#include "mozilla/dom/SVGElement.h"
-#include "mozilla/Move.h"
-#include "mozilla/SMILValue.h"
+#include <utility>
+
 #include "DOMSVGAnimatedNumberList.h"
 #include "SVGNumberListSMILType.h"
+#include "mozilla/SMILValue.h"
+#include "mozilla/dom/SVGElement.h"
 
 using namespace mozilla::dom;
 

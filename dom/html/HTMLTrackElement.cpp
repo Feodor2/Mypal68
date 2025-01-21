@@ -409,7 +409,7 @@ void HTMLTrackElement::UnbindFromTree(bool aNullParent) {
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
-uint16_t HTMLTrackElement::ReadyState() const {
+TextTrackReadyState HTMLTrackElement::ReadyState() const {
   if (!mTrack) {
     return TextTrackReadyState::NotLoaded;
   }
@@ -417,7 +417,7 @@ uint16_t HTMLTrackElement::ReadyState() const {
   return mTrack->ReadyState();
 }
 
-void HTMLTrackElement::SetReadyState(uint16_t aReadyState) {
+void HTMLTrackElement::SetReadyState(TextTrackReadyState aReadyState) {
   if (ReadyState() == aReadyState) {
     return;
   }
@@ -426,11 +426,13 @@ void HTMLTrackElement::SetReadyState(uint16_t aReadyState) {
     switch (aReadyState) {
       case TextTrackReadyState::Loaded:
         LOG("dispatch 'load' event");
-        DispatchTrackRunnable(NS_LITERAL_STRING("load"));
+        DispatchTrackRunnable(u"load"_ns);
         break;
       case TextTrackReadyState::FailedToLoad:
         LOG("dispatch 'error' event");
-        DispatchTrackRunnable(NS_LITERAL_STRING("error"));
+        DispatchTrackRunnable(u"error"_ns);
+        break;
+      default:
         break;
     }
     mTrack->SetReadyState(aReadyState);

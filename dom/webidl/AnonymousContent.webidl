@@ -82,7 +82,7 @@ interface AnonymousContent {
    * anonymous content.
    */
   [Throws]
-  DOMString? getComputedStylePropertyValue(DOMString elementId,
+  UTF8String? getComputedStylePropertyValue(DOMString elementId,
                                            UTF8String propertyName);
 
   /**

@@ -109,6 +109,7 @@
 #include "nsGlobalWindow.h"
 #include "nsDeviceContext.h"
 #include "nsFontMetrics.h"
+#include "nsLayoutUtils.h"
 #include "Units.h"
 #include "CanvasUtils.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
@@ -1058,12 +1059,12 @@ void CanvasRenderingContext2D::RemoveShutdownObserver() {
   }
 }
 
-void CanvasRenderingContext2D::SetStyleFromString(const nsAString& aStr,
+void CanvasRenderingContext2D::SetStyleFromString(const nsACString& aStr,
                                                   Style aWhichStyle) {
   MOZ_ASSERT(!aStr.IsVoid());
 
   nscolor color;
-  if (!ParseColor(NS_ConvertUTF16toUTF8(aStr), &color)) {
+  if (!ParseColor(aStr, &color)) {
     return;
   }
 
@@ -1071,30 +1072,31 @@ void CanvasRenderingContext2D::SetStyleFromString(const nsAString& aStr,
 }
 
 void CanvasRenderingContext2D::GetStyleAsUnion(
-    OwningStringOrCanvasGradientOrCanvasPattern& aValue, Style aWhichStyle) {
+    OwningUTF8StringOrCanvasGradientOrCanvasPattern& aValue,
+    Style aWhichStyle) {
   const ContextState& state = CurrentState();
   if (state.patternStyles[aWhichStyle]) {
     aValue.SetAsCanvasPattern() = state.patternStyles[aWhichStyle];
   } else if (state.gradientStyles[aWhichStyle]) {
     aValue.SetAsCanvasGradient() = state.gradientStyles[aWhichStyle];
   } else {
-    StyleColorToString(state.colorStyles[aWhichStyle], aValue.SetAsString());
+    StyleColorToString(state.colorStyles[aWhichStyle],
+                       aValue.SetAsUTF8String());
   }
 }
 
 // static
 void CanvasRenderingContext2D::StyleColorToString(const nscolor& aColor,
-                                                  nsAString& aStr) {
+                                                  nsACString& aStr) {
+  aStr.Truncate();
   // We can't reuse the normal CSS color stringification code,
   // because the spec calls for a different algorithm for canvas.
   if (NS_GET_A(aColor) == 255) {
-    CopyUTF8toUTF16(nsPrintfCString("#%02x%02x%02x", NS_GET_R(aColor),
-                                    NS_GET_G(aColor), NS_GET_B(aColor)),
-                    aStr);
+    aStr.AppendPrintf("#%02x%02x%02x", NS_GET_R(aColor), NS_GET_G(aColor),
+                      NS_GET_B(aColor));
   } else {
-    CopyUTF8toUTF16(nsPrintfCString("rgba(%d, %d, %d, ", NS_GET_R(aColor),
-                                    NS_GET_G(aColor), NS_GET_B(aColor)),
-                    aStr);
+    aStr.AppendPrintf("rgba(%d, %d, %d, ", NS_GET_R(aColor), NS_GET_G(aColor),
+                      NS_GET_B(aColor));
     aStr.AppendFloat(nsStyleUtil::ColorComponentToFloat(NS_GET_A(aColor)));
     aStr.Append(')');
   }
@@ -1964,9 +1966,10 @@ void CanvasRenderingContext2D::GetMozCurrentTransformInverse(
 //
 
 void CanvasRenderingContext2D::SetStyleFromUnion(
-    const StringOrCanvasGradientOrCanvasPattern& aValue, Style aWhichStyle) {
-  if (aValue.IsString()) {
-    SetStyleFromString(aValue.GetAsString(), aWhichStyle);
+    const UTF8StringOrCanvasGradientOrCanvasPattern& aValue,
+    Style aWhichStyle) {
+  if (aValue.IsUTF8String()) {
+    SetStyleFromString(aValue.GetAsUTF8String(), aWhichStyle);
     return;
   }
 
@@ -2134,9 +2137,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
 
   // The canvas spec says that createPattern should use the first frame
   // of animated images
-  nsLayoutUtils::SurfaceFromElementResult res =
-      nsLayoutUtils::SurfaceFromElement(
-          element, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE, mTarget);
+  SurfaceFromElementResult res = nsLayoutUtils::SurfaceFromElement(
+      element, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE, mTarget);
 
   // Per spec, we should throw here for the HTMLImageElement and SVGImageElement
   // cases if the image request state is "broken".  In terms of the infromation
@@ -2171,9 +2173,9 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
 //
 // shadows
 //
-void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
+void CanvasRenderingContext2D::SetShadowColor(const nsACString& aShadowColor) {
   nscolor color;
-  if (!ParseColor(NS_ConvertUTF16toUTF8(aShadowColor), &color)) {
+  if (!ParseColor(aShadowColor, &color)) {
     return;
   }
 
@@ -2185,7 +2187,7 @@ void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
 //
 
 static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
-    nsCSSPropertyID aProperty, const nsAString& aPropertyValue,
+    nsCSSPropertyID aProperty, const nsACString& aPropertyValue,
     Document* aDocument) {
   ServoCSSParser::ParsingEnvironment env{aDocument->DefaultStyleAttrURLData(),
                                          aDocument->GetCompatibilityMode(),
@@ -2212,13 +2214,13 @@ static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
 }
 
 static already_AddRefed<RawServoDeclarationBlock> CreateFontDeclarationForServo(
-    const nsAString& aFont, Document* aDocument) {
+    const nsACString& aFont, Document* aDocument) {
   return CreateDeclarationForServo(eCSSProperty_font, aFont, aDocument);
 }
 
 static already_AddRefed<ComputedStyle> GetFontStyleForServo(
-    Element* aElement, const nsAString& aFont, PresShell* aPresShell,
-    nsAString& aOutUsedFont, ErrorResult& aError) {
+    Element* aElement, const nsACString& aFont, PresShell* aPresShell,
+    nsACString& aOutUsedFont, ErrorResult& aError) {
   RefPtr<RawServoDeclarationBlock> declarations =
       CreateFontDeclarationForServo(aFont, aPresShell->GetDocument());
   if (!declarations) {
@@ -2249,7 +2251,7 @@ static already_AddRefed<ComputedStyle> GetFontStyleForServo(
     }
   } else {
     RefPtr<RawServoDeclarationBlock> declarations =
-        CreateFontDeclarationForServo(u"10px sans-serif"_ns,
+        CreateFontDeclarationForServo("10px sans-serif"_ns,
                                       aPresShell->GetDocument());
     MOZ_ASSERT(declarations);
 
@@ -2275,12 +2277,13 @@ static already_AddRefed<ComputedStyle> GetFontStyleForServo(
 }
 
 static already_AddRefed<RawServoDeclarationBlock>
-CreateFilterDeclarationForServo(const nsAString& aFilter, Document* aDocument) {
+CreateFilterDeclarationForServo(const nsACString& aFilter,
+                                Document* aDocument) {
   return CreateDeclarationForServo(eCSSProperty_filter, aFilter, aDocument);
 }
 
 static already_AddRefed<ComputedStyle> ResolveFilterStyleForServo(
-    const nsAString& aFilterString, const ComputedStyle* aParentStyle,
+    const nsACString& aFilterString, const ComputedStyle* aParentStyle,
     PresShell* aPresShell, ErrorResult& aError) {
   RefPtr<RawServoDeclarationBlock> declarations =
       CreateFilterDeclarationForServo(aFilterString, aPresShell->GetDocument());
@@ -2304,7 +2307,7 @@ static already_AddRefed<ComputedStyle> ResolveFilterStyleForServo(
 }
 
 bool CanvasRenderingContext2D::ParseFilter(
-    const nsAString& aString, StyleOwnedSlice<StyleFilter>& aFilterChain,
+    const nsACString& aString, StyleOwnedSlice<StyleFilter>& aFilterChain,
     ErrorResult& aError) {
   if (!mCanvasElement && !mDocShell) {
     NS_WARNING(
@@ -2319,7 +2322,7 @@ bool CanvasRenderingContext2D::ParseFilter(
     return false;
   }
 
-  nsAutoString usedFont;  // unused
+  nsAutoCString usedFont;  // unused
 
   RefPtr<ComputedStyle> parentStyle = GetFontStyleForServo(
       mCanvasElement, GetFont(), presShell, usedFont, aError);
@@ -2337,7 +2340,7 @@ bool CanvasRenderingContext2D::ParseFilter(
   return true;
 }
 
-void CanvasRenderingContext2D::SetFilter(const nsAString& aFilter,
+void CanvasRenderingContext2D::SetFilter(const nsACString& aFilter,
                                          ErrorResult& aError) {
   StyleOwnedSlice<StyleFilter> filterChain;
   if (ParseFilter(aFilter, filterChain, aError)) {
@@ -3150,12 +3153,12 @@ void CanvasRenderingContext2D::TransformWillUpdate() {
 // text
 //
 
-void CanvasRenderingContext2D::SetFont(const nsAString& aFont,
+void CanvasRenderingContext2D::SetFont(const nsACString& aFont,
                                        ErrorResult& aError) {
   SetFontInternal(aFont, aError);
 }
 
-bool CanvasRenderingContext2D::SetFontInternal(const nsAString& aFont,
+bool CanvasRenderingContext2D::SetFontInternal(const nsACString& aFont,
                                                ErrorResult& aError) {
   /*
    * If font is defined with relative units (e.g. ems) and the parent
@@ -3178,7 +3181,7 @@ bool CanvasRenderingContext2D::SetFontInternal(const nsAString& aFont,
     return false;
   }
 
-  nsString usedFont;
+  nsCString usedFont;
   RefPtr<ComputedStyle> sc =
       GetFontStyleForServo(mCanvasElement, aFont, presShell, usedFont, aError);
   if (!sc) {
@@ -3978,7 +3981,7 @@ gfxFontGroup* CanvasRenderingContext2D::GetCurrentFontStyle() {
   // use lazy initilization for the font group since it's rather expensive
   if (!CurrentState().fontGroup) {
     ErrorResult err;
-    constexpr auto kDefaultFontStyle = u"10px sans-serif"_ns;
+    constexpr auto kDefaultFontStyle = "10px sans-serif"_ns;
     static float kDefaultFontSize = 10.0;
     RefPtr<PresShell> presShell = GetPresShell();
     bool fontUpdated = SetFontInternal(kDefaultFontStyle, err);
@@ -4290,9 +4293,9 @@ static void ClipImageDimension(double& aSourceCoord, double& aSourceSize,
 // Acts like nsLayoutUtils::SurfaceFromElement, but it'll attempt
 // to pull a SourceSurface from our cache. This allows us to avoid
 // reoptimizing surfaces if content and canvas backends are different.
-nsLayoutUtils::SurfaceFromElementResult
-CanvasRenderingContext2D::CachedSurfaceFromElement(Element* aElement) {
-  nsLayoutUtils::SurfaceFromElementResult res;
+SurfaceFromElementResult CanvasRenderingContext2D::CachedSurfaceFromElement(
+    Element* aElement) {
+  SurfaceFromElementResult res;
   nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(aElement);
   if (!imageLoader) {
     return res;
@@ -4428,7 +4431,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
                                              &intrinsicImgSize);
   }
 
-  nsLayoutUtils::DirectDrawInfo drawInfo;
+  DirectDrawInfo drawInfo;
 
   if (!srcSurf) {
     // The canvas spec says that drawImage should draw the first frame
@@ -4436,7 +4439,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     uint32_t sfeFlags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
                         nsLayoutUtils::SFE_NO_RASTERIZING_VECTORS;
 
-    nsLayoutUtils::SurfaceFromElementResult res =
+    SurfaceFromElementResult res =
         CanvasRenderingContext2D::CachedSurfaceFromElement(element);
 
     if (!res.mSourceSurface) {
@@ -4504,7 +4507,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
   // the image. Nearest sampling when down-scaling is rarely desirable and
   // smoothing when down-scaling matches chromium's behavior.
   // If any dimension is up-scaled, we consider the image as being up-scaled.
-  auto scale = mTarget->GetTransform().ScaleFactors(true);
+  auto scale = mTarget->GetTransform().ScaleFactors();
   bool isDownScale =
       aDw * Abs(scale.width) < aSw && aDh * Abs(scale.height) < aSh;
 
@@ -4571,8 +4574,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 }
 
 void CanvasRenderingContext2D::DrawDirectlyToCanvas(
-    const nsLayoutUtils::DirectDrawInfo& aImage, gfx::Rect* aBounds,
-    gfx::Rect aDest, gfx::Rect aSrc, gfx::IntSize aImgSize) {
+    const DirectDrawInfo& aImage, gfx::Rect* aBounds, gfx::Rect aDest,
+    gfx::Rect aSrc, gfx::IntSize aImgSize) {
   MOZ_ASSERT(aSrc.width > 0 && aSrc.height > 0,
              "Need positive source width and height");
 
@@ -4585,7 +4588,7 @@ void CanvasRenderingContext2D::DrawDirectlyToCanvas(
   // for context shadow.
   Matrix matrix = tempTarget->GetTransform();
   gfxMatrix contextMatrix = ThebesMatrix(matrix);
-  gfxSize contextScale(contextMatrix.ScaleFactors(true));
+  gfxSize contextScale(contextMatrix.ScaleFactors());
 
   // Scale the dest rect to include the context scale.
   aDest.Scale(contextScale.width, contextScale.height);
@@ -5457,6 +5460,31 @@ bool CanvasRenderingContext2D::IsContextCleanForFrameCapture() {
 bool CanvasRenderingContext2D::ShouldForceInactiveLayer(
     LayerManager* aManager) {
   return !aManager->CanUseCanvasLayerForSize(GetSize());
+}
+
+void CanvasRenderingContext2D::GetAppUnitsValues(int32_t* aPerDevPixel,
+                                                 int32_t* aPerCSSPixel) {
+  // If we don't have a canvas element, we just return something generic.
+  if (aPerDevPixel) {
+    *aPerDevPixel = 60;
+  }
+  if (aPerCSSPixel) {
+    *aPerCSSPixel = 60;
+  }
+  PresShell* presShell = GetPresShell();
+  if (!presShell) {
+    return;
+  }
+  nsPresContext* presContext = presShell->GetPresContext();
+  if (!presContext) {
+    return;
+  }
+  if (aPerDevPixel) {
+    *aPerDevPixel = presContext->AppUnitsPerDevPixel();
+  }
+  if (aPerCSSPixel) {
+    *aPerCSSPixel = AppUnitsPerCSSPixel();
+  }
 }
 
 void CanvasRenderingContext2D::SetWriteOnly() {

@@ -2,18 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEBlendElement_h
-#define mozilla_dom_SVGFEBlendElement_h
+#ifndef DOM_SVG_SVGFEBLENDELEMENT_H_
+#define DOM_SVG_SVGFEBLENDELEMENT_H_
 
 #include "SVGAnimatedEnumeration.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEBlendElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 namespace mozilla {
 namespace dom {
 
-typedef SVGFE SVGFEBlendElementBase;
+using SVGFEBlendElementBase = SVGFE;
 
 class SVGFEBlendElement : public SVGFEBlendElementBase {
   friend nsresult(::NS_NewSVGFEBlendElement(
@@ -63,4 +63,4 @@ class SVGFEBlendElement : public SVGFEBlendElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFEBlendElement_h
+#endif  // DOM_SVG_SVGFEBLENDELEMENT_H_

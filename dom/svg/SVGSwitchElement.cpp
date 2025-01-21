@@ -5,8 +5,8 @@
 #include "mozilla/dom/SVGSwitchElement.h"
 
 #include "nsLayoutUtils.h"
-#include "nsSVGUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/SVGSwitchElementBinding.h"
 
 class nsIFrame;
@@ -55,7 +55,7 @@ void SVGSwitchElement::MaybeInvalidate() {
   if (frame) {
     nsLayoutUtils::PostRestyleEvent(this, RestyleHint{0},
                                     nsChangeHint_InvalidateRenderingObservers);
-    nsSVGUtils::ScheduleReflowSVG(frame);
+    SVGUtils::ScheduleReflowSVG(frame);
   }
 
   mActiveChild = newActiveChild;

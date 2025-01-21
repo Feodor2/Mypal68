@@ -10,8 +10,6 @@
 #include "nsUnicharUtils.h"
 #include "nsContentUtils.h"  // For ASCIIToLower().
 
-typedef nsCaseInsensitiveStringComparator txCaseInsensitiveStringComparator;
-
 /**
  * Check equality between a string and an atom containing ASCII.
  */

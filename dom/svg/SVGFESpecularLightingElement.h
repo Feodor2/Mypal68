@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFESpecularLightingElement_h
-#define mozilla_dom_SVGFESpecularLightingElement_h
+#ifndef DOM_SVG_SVGFESPECULARLIGHTINGELEMENT_H_
+#define DOM_SVG_SVGFESPECULARLIGHTINGELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFESpecularLightingElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -15,7 +15,7 @@ namespace dom {
 
 //---------------------SpecularLighting------------------------
 
-typedef SVGFELightingElement SVGFESpecularLightingElementBase;
+using SVGFESpecularLightingElementBase = SVGFELightingElement;
 
 class SVGFESpecularLightingElement : public SVGFESpecularLightingElementBase {
   friend nsresult(::NS_NewSVGFESpecularLightingElement(
@@ -51,4 +51,4 @@ class SVGFESpecularLightingElement : public SVGFESpecularLightingElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFESpecularLightingElement_h
+#endif  // DOM_SVG_SVGFESPECULARLIGHTINGELEMENT_H_

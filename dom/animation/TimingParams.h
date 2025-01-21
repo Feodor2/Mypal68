@@ -115,7 +115,7 @@ struct TimingParams {
     }
   }
 
-  static Maybe<ComputedTimingFunction> ParseEasing(const nsAString& aEasing,
+  static Maybe<ComputedTimingFunction> ParseEasing(const nsACString& aEasing,
                                                    ErrorResult& aRv);
 
   static StickyTimeDuration CalcActiveDuration(

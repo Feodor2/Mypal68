@@ -9,7 +9,7 @@
 #include "mozilla/dom/PBrowserChild.h"
 #include "nsIWebNavigation.h"
 #include "nsCOMPtr.h"
-#include "nsIWebBrowserChrome2.h"
+#include "nsIWebBrowserChrome.h"
 #include "nsIEmbeddingSiteWindow.h"
 #include "nsIWebBrowserChromeFocus.h"
 #include "nsIDOMEventListener.h"
@@ -34,11 +34,11 @@
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/CompositorOptions.h"
+#include "mozilla/layers/GeckoContentControllerTypes.h"
 #include "nsIWebBrowserChrome3.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "AudioChannelService.h"
 #include "PuppetWidget.h"
-#include "mozilla/layers/GeckoContentController.h"
 #include "nsDeque.h"
 
 class nsBrowserStatusFilter;
@@ -145,7 +145,7 @@ class ContentListener final : public nsIDOMEventListener {
 class BrowserChild final : public nsMessageManagerScriptExecutor,
                            public ipc::MessageManagerCallback,
                            public PBrowserChild,
-                           public nsIWebBrowserChrome2,
+                           public nsIWebBrowserChrome,
                            public nsIEmbeddingSiteWindow,
                            public nsIWebBrowserChromeFocus,
                            public nsIInterfaceRequestor,
@@ -204,7 +204,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIWEBBROWSERCHROME
-  NS_DECL_NSIWEBBROWSERCHROME2
   NS_DECL_NSIEMBEDDINGSITEWINDOW
   NS_DECL_NSIWEBBROWSERCHROMEFOCUS
   NS_DECL_NSIINTERFACEREQUESTOR
@@ -249,15 +248,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const Maybe<ZoomConstraints>& aConstraints);
 
   mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aURI,
-                                      const ShowInfo& aInfo);
+                                      const ParentShowInfo&);
 
   mozilla::ipc::IPCResult RecvResumeLoad(const uint64_t& aPendingSwitchID,
-                                         const ShowInfo& aInfo);
+                                         const ParentShowInfo&);
 
-  mozilla::ipc::IPCResult RecvShow(const ScreenIntSize& aSize,
-                                   const ShowInfo& aInfo,
-                                   const bool& aParentIsActive,
-                                   const nsSizeMode& aSizeMode);
+  mozilla::ipc::IPCResult RecvShow(const ParentShowInfo&, const OwnerShowInfo&);
 
   mozilla::ipc::IPCResult RecvInitRendering(
       const TextureFactoryIdentifier& aTextureFactoryIdentifier,
@@ -265,12 +261,15 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const mozilla::layers::CompositorOptions& aCompositorOptions,
       const bool& aLayersConnected);
 
+  mozilla::ipc::IPCResult RecvCompositorOptionsChanged(
+      const mozilla::layers::CompositorOptions& aNewOptions);
+
   mozilla::ipc::IPCResult RecvUpdateDimensions(
       const mozilla::dom::DimensionInfo& aDimensionInfo);
   mozilla::ipc::IPCResult RecvSizeModeChanged(const nsSizeMode& aSizeMode);
 
   mozilla::ipc::IPCResult RecvChildToParentMatrix(
-      const mozilla::gfx::Matrix4x4& aMatrix);
+      const mozilla::Maybe<mozilla::gfx::Matrix4x4>& aMatrix);
 
   mozilla::ipc::IPCResult RecvActivate();
 
@@ -281,8 +280,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                          const float& aY,
                                          const int32_t& aButton,
                                          const int32_t& aClickCount,
-                                         const int32_t& aModifiers,
-                                         const bool& aIgnoreRootScrollFrame);
+                                         const int32_t& aModifiers);
 
   mozilla::ipc::IPCResult RecvRealMouseMoveEvent(
       const mozilla::WidgetMouseEvent& aEvent, const ScrollableLayerGuid& aGuid,
@@ -345,6 +343,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvFlushTabState(const uint32_t& aFlushId,
                                             const bool& aIsFinal);
+
+  mozilla::ipc::IPCResult RecvUpdateEpoch(const uint32_t& aEpoch);
 
   mozilla::ipc::IPCResult RecvNativeSynthesisResponse(
       const uint64_t& aObserverId, const nsCString& aResponse);
@@ -527,26 +527,22 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   ScreenIntSize GetInnerSize();
 
   // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
-  void DoFakeShow(const ShowInfo& aShowInfo);
+  void DoFakeShow(const ParentShowInfo&);
 
   void ContentReceivedInputBlock(uint64_t aInputBlockId,
                                  bool aPreventDefault) const;
-  void SetTargetAPZC(uint64_t aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-                     const nsTArray<layers::SLGuidAndRenderRoot>& aTargets
-#else
-                     const nsTArray<layers::ScrollableLayerGuid>& aTargets
-#endif
-  ) const;
+  void SetTargetAPZC(
+      uint64_t aInputBlockId,
+      const nsTArray<layers::ScrollableLayerGuid>& aTargets) const;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvHandleTap(
-      const layers::GeckoContentController::TapType& aType,
+      const layers::GeckoContentController_TapType& aType,
       const LayoutDevicePoint& aPoint, const Modifiers& aModifiers,
       const ScrollableLayerGuid& aGuid, const uint64_t& aInputBlockId);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvNormalPriorityHandleTap(
-      const layers::GeckoContentController::TapType& aType,
+      const layers::GeckoContentController_TapType& aType,
       const LayoutDevicePoint& aPoint, const Modifiers& aModifiers,
       const ScrollableLayerGuid& aGuid, const uint64_t& aInputBlockId);
 
@@ -556,7 +552,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   bool UpdateFrame(const layers::RepaintRequest& aRequest);
   bool NotifyAPZStateChange(
       const ViewID& aViewId,
-      const layers::GeckoContentController::APZStateChange& aChange,
+      const layers::GeckoContentController_APZStateChange& aChange,
       const int& aArg);
   void StartScrollbarDrag(const layers::AsyncDragMetrics& aDragMetrics);
   void ZoomToRect(const uint32_t& aPresShellId,
@@ -720,7 +716,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   void DestroyWindow();
 
-  void ApplyShowInfo(const ShowInfo& aInfo);
+  void ApplyParentShowInfo(const ParentShowInfo&);
 
   bool HasValidInnerSize();
 

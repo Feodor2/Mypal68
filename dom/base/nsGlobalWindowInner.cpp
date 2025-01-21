@@ -375,6 +375,14 @@ static nsGlobalWindowOuter* GetOuterWindowForForwarding(
   return;                                                            \
   PR_END_MACRO
 
+#define ENSURE_ACTIVE_DOCUMENT(errorresult, err_rval) \
+  PR_BEGIN_MACRO                                      \
+  if (MOZ_UNLIKELY(!HasActiveDocument())) {           \
+    aError.Throw(NS_ERROR_XPC_SECURITY_MANAGER_VETO); \
+    return err_rval;                                  \
+  }                                                   \
+  PR_END_MACRO
+
 #define DOM_TOUCH_LISTENER_ADDED "dom-touch-listener-added"
 #define MEMORY_PRESSURE_OBSERVER_TOPIC "memory-pressure"
 
@@ -2947,7 +2955,7 @@ void nsGlobalWindowInner::GetOwnPropertyNames(
   }
 
   // "Components" is marked as enumerable but only resolved on demand :-/.
-  // aNames.AppendElement(NS_LITERAL_STRING("Components"));
+  // aNames.AppendElement(u"Components"_ns);
 
   JS::Rooted<JSObject*> wrapper(aCx, GetWrapper());
 
@@ -3323,14 +3331,10 @@ void nsGlobalWindowInner::CancelAnimationFrame(int32_t aHandle,
 }
 
 already_AddRefed<MediaQueryList> nsGlobalWindowInner::MatchMedia(
-    const nsAString& aMediaQueryList, CallerType aCallerType,
+    const nsACString& aMediaQueryList, CallerType aCallerType,
     ErrorResult& aError) {
-  // FIXME: This whole forward-to-outer and then get a pres
-  // shell/context off the docshell dance is sort of silly; it'd make
-  // more sense to forward to the inner, but it's what everyone else
-  // (GetSelection, GetScrollXY, etc.) does around here.
-  FORWARD_TO_OUTER_OR_THROW(MatchMediaOuter, (aMediaQueryList, aCallerType),
-                            aError, nullptr);
+  ENSURE_ACTIVE_DOCUMENT(aError, nullptr);
+  return mDoc->MatchMedia(aMediaQueryList, aCallerType);
 }
 
 void nsGlobalWindowInner::SetScreenX(int32_t aScreenX, CallerType aCallerType,
@@ -3687,7 +3691,8 @@ void nsGlobalWindowInner::ScrollBy(const ScrollToOptions& aOptions) {
                                 ? ScrollMode::SmoothMsd
                                 : ScrollMode::Instant;
 
-    sf->ScrollByCSSPixels(scrollDelta, scrollMode, nsGkAtoms::relative);
+    sf->ScrollByCSSPixels(scrollDelta, scrollMode,
+                          mozilla::ScrollOrigin::Relative);
   }
 }
 
@@ -4254,7 +4259,7 @@ nsresult nsGlobalWindowInner::FireHashchange(const nsAString& aOldURL,
   init.mOldURL = aOldURL;
 
   RefPtr<HashChangeEvent> event =
-      HashChangeEvent::Constructor(this, NS_LITERAL_STRING("hashchange"), init);
+      HashChangeEvent::Constructor(this, u"hashchange"_ns, init);
 
   event->SetTrusted(true);
 
@@ -4292,7 +4297,7 @@ nsresult nsGlobalWindowInner::DispatchSyncPopState() {
   init.mState = stateJSValue;
 
   RefPtr<PopStateEvent> event =
-      PopStateEvent::Constructor(this, NS_LITERAL_STRING("popstate"), init);
+      PopStateEvent::Constructor(this, u"popstate"_ns, init);
   event->SetTrusted(true);
   event->SetTarget(this);
 
@@ -4986,7 +4991,7 @@ nsresult nsGlobalWindowInner::Observe(nsISupports* aSubject, const char* aTopic,
     }
 
     RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
-    event->InitEvent(NS_LITERAL_STRING("languagechange"), false, false);
+    event->InitEvent(u"languagechange"_ns, false, false);
     event->SetTrusted(true);
 
     ErrorResult rv;
@@ -6293,8 +6298,8 @@ void nsGlobalWindowInner::DispatchVRDisplayActivate(
       init.mDisplay = display;
       init.mReason.Construct(aReason);
 
-      RefPtr<VRDisplayEvent> event = VRDisplayEvent::Constructor(
-          this, NS_LITERAL_STRING("vrdisplayactivate"), init);
+      RefPtr<VRDisplayEvent> event =
+          VRDisplayEvent::Constructor(this, u"vrdisplayactivate"_ns, init);
       // vrdisplayactivate is a trusted event, allowing VRDisplay.requestPresent
       // to be used in response to link traversal, user request (chrome UX), and
       // HMD mounting detection sensors.
@@ -6330,8 +6335,8 @@ void nsGlobalWindowInner::DispatchVRDisplayDeactivate(
       init.mDisplay = display;
       init.mReason.Construct(aReason);
 
-      RefPtr<VRDisplayEvent> event = VRDisplayEvent::Constructor(
-          this, NS_LITERAL_STRING("vrdisplaydeactivate"), init);
+      RefPtr<VRDisplayEvent> event =
+          VRDisplayEvent::Constructor(this, u"vrdisplaydeactivate"_ns, init);
       event->SetTrusted(true);
       DispatchEvent(*event);
       // Once we dispatch the event, we must not access any members as an event
@@ -6356,8 +6361,8 @@ void nsGlobalWindowInner::DispatchVRDisplayConnect(uint32_t aDisplayID) {
       init.mDisplay = display;
       // VRDisplayEvent.reason is not set for vrdisplayconnect
 
-      RefPtr<VRDisplayEvent> event = VRDisplayEvent::Constructor(
-          this, NS_LITERAL_STRING("vrdisplayconnect"), init);
+      RefPtr<VRDisplayEvent> event =
+          VRDisplayEvent::Constructor(this, u"vrdisplayconnect"_ns, init);
       event->SetTrusted(true);
       DispatchEvent(*event);
       // Once we dispatch the event, we must not access any members as an event
@@ -6382,8 +6387,8 @@ void nsGlobalWindowInner::DispatchVRDisplayDisconnect(uint32_t aDisplayID) {
       init.mDisplay = display;
       // VRDisplayEvent.reason is not set for vrdisplaydisconnect
 
-      RefPtr<VRDisplayEvent> event = VRDisplayEvent::Constructor(
-          this, NS_LITERAL_STRING("vrdisplaydisconnect"), init);
+      RefPtr<VRDisplayEvent> event =
+          VRDisplayEvent::Constructor(this, u"vrdisplaydisconnect"_ns, init);
       event->SetTrusted(true);
       DispatchEvent(*event);
       // Once we dispatch the event, we must not access any members as an event
@@ -6407,8 +6412,8 @@ void nsGlobalWindowInner::DispatchVRDisplayPresentChange(uint32_t aDisplayID) {
       init.mCancelable = false;
       init.mDisplay = display;
       // VRDisplayEvent.reason is not set for vrdisplaypresentchange
-      RefPtr<VRDisplayEvent> event = VRDisplayEvent::Constructor(
-          this, NS_LITERAL_STRING("vrdisplaypresentchange"), init);
+      RefPtr<VRDisplayEvent> event =
+          VRDisplayEvent::Constructor(this, u"vrdisplaypresentchange"_ns, init);
       event->SetTrusted(true);
       DispatchEvent(*event);
       // Once we dispatch the event, we must not access any members as an event
@@ -6786,8 +6791,7 @@ void nsGlobalWindowInner::GetSidebar(OwningExternalOrWindowProxy& aResult,
                                      ErrorResult& aRv) {
 #ifdef HAVE_SIDEBAR
   // First check for a named frame named "sidebar"
-  RefPtr<BrowsingContext> domWindow =
-      GetChildWindow(NS_LITERAL_STRING("sidebar"));
+  RefPtr<BrowsingContext> domWindow = GetChildWindow(u"sidebar"_ns);
   if (domWindow) {
     aResult.SetAsWindowProxy() = std::move(domWindow);
     return;

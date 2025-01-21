@@ -5,33 +5,33 @@
 #ifndef mozilla_dom_BrowserParent_h
 #define mozilla_dom_BrowserParent_h
 
-#include "js/TypeDecls.h"
+#include <utility>
+
 #include "LiveResizeListener.h"
+#include "Units.h"
+#include "js/TypeDecls.h"
 #include "mozilla/ContentCache.h"
-#include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/dom/PFilePickerParent.h"
 #include "mozilla/dom/TabContext.h"
-#include "mozilla/EventForwards.h"
-#include "mozilla/dom/File.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/gfx/CrossProcessPaint.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
-#include "mozilla/layout/RenderFrame.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Move.h"
+#include "mozilla/layout/RemoteLayerTreeOwner.h"
 #include "nsCOMPtr.h"
 #include "nsIAuthPromptProvider.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDOMEventListener.h"
 #include "nsIKeyEventInPluginCallback.h"
 #include "nsIRemoteTab.h"
-#include "nsIXULBrowserWindow.h"
-#include "nsRefreshDriver.h"
-#include "nsWeakReference.h"
-#include "Units.h"
 #include "nsIWidget.h"
+#include "nsIXULBrowserWindow.h"
+#include "nsWeakReference.h"
 
 class nsFrameLoader;
 class nsIContent;
@@ -85,6 +85,7 @@ class BrowserParent final : public PBrowserParent,
                             public TabContext,
                             public LiveResizeListener {
   typedef mozilla::dom::ClonedMessageData ClonedMessageData;
+  using TapType = GeckoContentController_TapType;
 
   friend class PBrowserParent;
   friend class BrowserBridgeParent;  // for clearing mBrowserBridgeParent
@@ -173,9 +174,9 @@ class BrowserParent final : public PBrowserParent,
    */
   a11y::DocAccessibleParent* GetTopLevelDocAccessible() const;
 
-  layout::RenderFrame* GetRenderFrame();
+  layout::RemoteLayerTreeOwner* GetRenderFrame();
 
-  ShowInfo GetShowInfo();
+  ParentShowInfo GetShowInfo();
 
   /**
    * Let managees query if Destroy() is already called so they don't send out
@@ -320,9 +321,14 @@ class BrowserParent final : public PBrowserParent,
 
   mozilla::ipc::IPCResult RecvSessionStoreUpdate(
       const Maybe<nsCString>& aDocShellCaps, const Maybe<bool>& aPrivatedMode,
-      const nsTArray<nsCString>& aPositions,
-      const nsTArray<int32_t>& aPositionDescendants, const uint32_t& aFlushId,
-      const bool& aIsFinal);
+      nsTArray<nsCString>&& aPositions,
+      nsTArray<int32_t>&& aPositionDescendants,
+      const nsTArray<InputFormData>& aInputs,
+      const nsTArray<CollectedInputDataValue>& aIdVals,
+      const nsTArray<CollectedInputDataValue>& aXPathVals,
+      nsTArray<nsCString>&& aOrigins, nsTArray<nsString>&& aKeys,
+      nsTArray<nsString>&& aValues, const bool aIsFullStorage,
+      const uint32_t& aFlushId, const bool& aIsFinal, const uint32_t& aEpoch);
 
   mozilla::ipc::IPCResult RecvBrowserFrameOpenWindow(
       PBrowserParent* aOpener, const nsString& aURL, const nsString& aName,
@@ -411,8 +417,7 @@ class BrowserParent final : public PBrowserParent,
       const uint32_t& aStride, const gfx::SurfaceFormat& aFormat,
       const uint32_t& aHotspotX, const uint32_t& aHotspotY, const bool& aForce);
 
-  mozilla::ipc::IPCResult RecvSetStatus(const uint32_t& aType,
-                                        const nsString& aStatus);
+  mozilla::ipc::IPCResult RecvSetLinkStatus(const nsString& aStatus);
 
   mozilla::ipc::IPCResult RecvShowTooltip(const uint32_t& aX,
                                           const uint32_t& aY,
@@ -548,8 +553,7 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvResetPrefersReducedMotionOverrideForTest();
 
   void SendMouseEvent(const nsAString& aType, float aX, float aY,
-                      int32_t aButton, int32_t aClickCount, int32_t aModifiers,
-                      bool aIgnoreRootScrollFrame);
+                      int32_t aButton, int32_t aClickCount, int32_t aModifiers);
 
   /**
    * The following Send*Event() marks aEvent as posted to remote process if
@@ -631,7 +635,7 @@ class BrowserParent final : public PBrowserParent,
   LayoutDeviceToLayoutDeviceMatrix4x4 GetChildToParentConversionMatrix();
 
   void SetChildToParentConversionMatrix(
-      const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix);
+      const Maybe<LayoutDeviceToLayoutDeviceMatrix4x4>& aMatrix);
 
   // Returns the offset from the origin of our frameloader's nearest widget to
   // the origin of its layout frame. This offset is used to translate event
@@ -808,7 +812,7 @@ class BrowserParent final : public PBrowserParent,
 
   ContentCacheInParent mContentCache;
 
-  layout::RenderFrame mRenderFrame;
+  layout::RemoteLayerTreeOwner mRemoteLayerTreeOwner;
   LayersObserverEpoch mLayerTreeEpoch;
 
   Maybe<LayoutDeviceToLayoutDeviceMatrix4x4> mChildToParentConversionMatrix;

@@ -16,5 +16,11 @@ interface CSSImportRule : CSSRule {
   [SameObject, PutForwards=mediaText] readonly attribute MediaList? media;
   // Per spec, the .styleSheet is never null, but in our implementation it can
   // be.  See <https://bugzilla.mozilla.org/show_bug.cgi?id=1326509>.
-  [SameObject] readonly attribute CSSStyleSheet? styleSheet;
+  [SameObject, BinaryName="styleSheetForBindings"] readonly attribute CSSStyleSheet? styleSheet;
+};
+
+// https://drafts.csswg.org/css-cascade-5/#extensions-to-cssimportrule-interface
+partial interface CSSImportRule {
+  [Pref="layout.css.cascade-layers.enabled"]
+  readonly attribute UTF8String? layerName;
 };

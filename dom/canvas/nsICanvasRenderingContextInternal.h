@@ -5,14 +5,14 @@
 #ifndef nsICanvasRenderingContextInternal_h___
 #define nsICanvasRenderingContextInternal_h___
 
+#include "gfxRect.h"
 #include "mozilla/gfx/2D.h"
 #include "nsISupports.h"
 #include "nsIInputStream.h"
 #include "nsIDocShell.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/OffscreenCanvas.h"
-#include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/NotNull.h"
@@ -25,6 +25,7 @@
   }
 
 class nsDisplayListBuilder;
+class nsRefreshDriver;
 
 namespace mozilla {
 class PresShell;
@@ -68,21 +69,9 @@ class nsICanvasRenderingContextInternal : public nsISupports,
     return nullptr;
   }
 
-  void RemovePostRefreshObserver() {
-    if (mRefreshDriver) {
-      mRefreshDriver->RemovePostRefreshObserver(this);
-      mRefreshDriver = nullptr;
-    }
-  }
+  void RemovePostRefreshObserver();
 
-  void AddPostRefreshObserverIfNecessary() {
-    if (!GetPresShell() || !GetPresShell()->GetPresContext() ||
-        !GetPresShell()->GetPresContext()->RefreshDriver()) {
-      return;
-    }
-    mRefreshDriver = GetPresShell()->GetPresContext()->RefreshDriver();
-    mRefreshDriver->AddPostRefreshObserver(this);
-  }
+  void AddPostRefreshObserverIfNecessary();
 
   mozilla::dom::HTMLCanvasElement* GetParentObject() const {
     return mCanvasElement;

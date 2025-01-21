@@ -32,7 +32,7 @@ dictionary EffectTiming {
   unrestricted double                 iterations = 1.0;
   (unrestricted double or DOMString)  duration = "auto";
   PlaybackDirection                   direction = "normal";
-  DOMString                           easing = "linear";
+  UTF8String                          easing = "linear";
 };
 
 dictionary OptionalEffectTiming {
@@ -43,7 +43,7 @@ dictionary OptionalEffectTiming {
   unrestricted double                 iterations;
   (unrestricted double or DOMString)  duration;
   PlaybackDirection                   direction;
-  DOMString                           easing;
+  UTF8String                          easing;
 };
 
 dictionary ComputedEffectTiming : EffectTiming {

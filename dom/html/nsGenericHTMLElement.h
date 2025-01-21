@@ -101,10 +101,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
                        nsGkAtoms::_true, eIgnoreCase);
   }
   void SetDraggable(bool aDraggable, mozilla::ErrorResult& aError) {
-    SetHTMLAttr(
-        nsGkAtoms::draggable,
-        aDraggable ? NS_LITERAL_STRING("true") : NS_LITERAL_STRING("false"),
-        aError);
+    SetHTMLAttr(nsGkAtoms::draggable, aDraggable ? u"true"_ns : u"false"_ns,
+                aError);
   }
   void GetContentEditable(nsString& aContentEditable) {
     ContentEditableTristate value = GetContentEditableValue();
@@ -121,11 +119,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     if (aContentEditable.LowerCaseEqualsLiteral("inherit")) {
       UnsetHTMLAttr(nsGkAtoms::contenteditable, aError);
     } else if (aContentEditable.LowerCaseEqualsLiteral("true")) {
-      SetHTMLAttr(nsGkAtoms::contenteditable, NS_LITERAL_STRING("true"),
-                  aError);
+      SetHTMLAttr(nsGkAtoms::contenteditable, u"true"_ns, aError);
     } else if (aContentEditable.LowerCaseEqualsLiteral("false")) {
-      SetHTMLAttr(nsGkAtoms::contenteditable, NS_LITERAL_STRING("false"),
-                  aError);
+      SetHTMLAttr(nsGkAtoms::contenteditable, u"false"_ns, aError);
     } else {
       aError.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     }
@@ -164,10 +160,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError) {
-    SetHTMLAttr(
-        nsGkAtoms::spellcheck,
-        aSpellcheck ? NS_LITERAL_STRING("true") : NS_LITERAL_STRING("false"),
-        aError);
+    SetHTMLAttr(nsGkAtoms::spellcheck, aSpellcheck ? u"true"_ns : u"false"_ns,
+                aError);
   }
 
   MOZ_CAN_RUN_SCRIPT
@@ -262,15 +256,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
  protected:
   virtual ~nsGenericHTMLElement() = default;
-
- public:
-  /**
-   * Get width and height, using given image request if attributes are unset.
-   * Pass a reference to the image request, since the method may change the
-   * value and we want to use the updated value.
-   */
-  MOZ_CAN_RUN_SCRIPT
-  nsSize GetWidthHeightForImage(RefPtr<imgRequestProxy>& aImageRequest);
 
  public:
   // Implementation for nsIContent

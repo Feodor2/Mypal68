@@ -17,8 +17,7 @@
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/NodeIteratorBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /*
  * NodePointer implementation
@@ -208,5 +207,4 @@ bool NodeIterator::WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto,
   return NodeIterator_Binding::Wrap(cx, this, aGivenProto, aReflector);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

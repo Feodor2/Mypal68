@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEMorphologyElement_h
-#define mozilla_dom_SVGFEMorphologyElement_h
+#ifndef DOM_SVG_SVGFEMORPHOLOGYELEMENT_H_
+#define DOM_SVG_SVGFEMORPHOLOGYELEMENT_H_
 
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEMorphologyElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -16,7 +16,7 @@ nsresult NS_NewSVGFEMorphologyElement(
 namespace mozilla {
 namespace dom {
 
-typedef SVGFE SVGFEMorphologyElementBase;
+using SVGFEMorphologyElementBase = SVGFE;
 
 class SVGFEMorphologyElement : public SVGFEMorphologyElementBase {
   friend nsresult(::NS_NewSVGFEMorphologyElement(
@@ -75,4 +75,4 @@ class SVGFEMorphologyElement : public SVGFEMorphologyElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFEMorphologyElement_h
+#endif  // DOM_SVG_SVGFEMORPHOLOGYELEMENT_H_

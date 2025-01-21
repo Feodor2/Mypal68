@@ -40,7 +40,7 @@ HTMLEmbedElement::~HTMLEmbedElement() {
   HTMLObjectElement::OnFocusBlurPlugin(this, false);
 #endif
   UnregisterActivityObserver();
-  DestroyImageLoadingContent();
+  nsImageLoadingContent::Destroy();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLEmbedElement)
@@ -251,7 +251,7 @@ uint32_t HTMLEmbedElement::GetCapabilities() const {
 }
 
 void HTMLEmbedElement::DestroyContent() {
-  nsObjectLoadingContent::DestroyContent();
+  nsObjectLoadingContent::Destroy();
   nsGenericHTMLElement::DestroyContent();
 }
 

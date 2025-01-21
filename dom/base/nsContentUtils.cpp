@@ -114,6 +114,7 @@
 #include "mozilla/TextControlState.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/ViewportUtils.h"
 #include "nsArrayUtils.h"
 #include "nsAString.h"
 #include "nsAttrName.h"
@@ -209,6 +210,7 @@
 #include "nsIWindowMediator.h"
 #include "nsIXPConnect.h"
 #include "nsJSUtils.h"
+#include "nsLayoutUtils.h"
 #include "nsMappedAttributes.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -1041,8 +1043,8 @@ nsContentUtils::InternalSerializeAutocompleteAttribute(
       enumValue.ParseEnumValue(tokenString, kAutocompleteFieldNameTable, false);
   if (result) {
     // Off/Automatic/Normal categories.
-    if (enumValue.Equals(NS_LITERAL_STRING("off"), eIgnoreCase) ||
-        enumValue.Equals(NS_LITERAL_STRING("on"), eIgnoreCase)) {
+    if (enumValue.Equals(u"off"_ns, eIgnoreCase) ||
+        enumValue.Equals(u"on"_ns, eIgnoreCase)) {
       if (numTokens > 1) {
         return eAutocompleteAttrState_Invalid;
       }
@@ -1050,7 +1052,7 @@ nsContentUtils::InternalSerializeAutocompleteAttribute(
       ASCIIToLower(str);
       aInfo.mFieldName.Assign(str);
       aInfo.mCanAutomaticallyPersist =
-          !enumValue.Equals(NS_LITERAL_STRING("off"), eIgnoreCase);
+          !enumValue.Equals(u"off"_ns, eIgnoreCase);
       return eAutocompleteAttrState_Valid;
     }
 
@@ -2662,9 +2664,9 @@ static inline void KeyAppendInt(int32_t aInt, nsACString& aKey) {
 
 static inline bool IsAutocompleteOff(const nsIContent* aContent) {
   return aContent->IsElement() &&
-         aContent->AsElement()->AttrValueIs(
-             kNameSpaceID_None, nsGkAtoms::autocomplete,
-             NS_LITERAL_STRING("off"), eIgnoreCase);
+         aContent->AsElement()->AttrValueIs(kNameSpaceID_None,
+                                            nsGkAtoms::autocomplete, u"off"_ns,
+                                            eIgnoreCase);
 }
 
 /*static*/
@@ -2726,7 +2728,7 @@ nsresult nsContentUtils::GenerateStateKey(nsIContent* aContent,
           return NS_OK;
         }
 
-        KeyAppendString(NS_LITERAL_CSTRING("f"), aKey);
+        KeyAppendString("f"_ns, aKey);
 
         // Append the index of the form in the document
         int32_t index = htmlForms->IndexOf(formElement, false);
@@ -2759,7 +2761,7 @@ nsresult nsContentUtils::GenerateStateKey(nsIContent* aContent,
         KeyAppendString(formName, aKey);
 
       } else {
-        KeyAppendString(NS_LITERAL_CSTRING("d"), aKey);
+        KeyAppendString("d"_ns, aKey);
 
         // If not in a form, add index of control in document
         // Less desirable than indexing by form info.
@@ -2793,7 +2795,7 @@ nsresult nsContentUtils::GenerateStateKey(nsIContent* aContent,
     } else {
       // Append a character that is not "d" or "f" to disambiguate from
       // the case when we were a form control in an HTML document.
-      KeyAppendString(NS_LITERAL_CSTRING("o"), aKey);
+      KeyAppendString("o"_ns, aKey);
     }
 
     // Now start at aContent and append the indices of it and all its ancestors
@@ -3177,7 +3179,7 @@ bool nsContentUtils::CanLoadImage(nsIURI* aURI, nsINode* aNode,
   int16_t decision = nsIContentPolicy::ACCEPT;
 
   rv = NS_CheckContentLoadPolicy(aURI, secCheckLoadInfo,
-                                 EmptyCString(),  // mime guess
+                                 ""_ns,  // mime guess
                                  &decision, GetContentPolicy());
 
   return NS_SUCCEEDED(rv) && NS_CP_ACCEPTED(decision);
@@ -3685,17 +3687,17 @@ nsresult nsContentUtils::FormatLocalizedString(
 
 /* static */
 void nsContentUtils::LogSimpleConsoleError(const nsAString& aErrorText,
-                                           const char* classification,
+                                           const char* aCategory,
                                            bool aFromPrivateWindow,
-                                           bool aFromChromeContext) {
+                                           bool aFromChromeContext,
+                                           uint32_t aErrorFlags) {
   nsCOMPtr<nsIScriptError> scriptError =
       do_CreateInstance(NS_SCRIPTERROR_CONTRACTID);
   if (scriptError) {
     nsCOMPtr<nsIConsoleService> console =
         do_GetService(NS_CONSOLESERVICE_CONTRACTID);
     if (console && NS_SUCCEEDED(scriptError->Init(
-                       aErrorText, EmptyString(), EmptyString(), 0, 0,
-                       nsIScriptError::errorFlag, classification,
+                       aErrorText, u""_ns, u""_ns, 0, 0, aErrorFlags, aCategory,
                        aFromPrivateWindow, aFromChromeContext))) {
       console->LogMessage(scriptError);
     }
@@ -3724,7 +3726,7 @@ nsresult nsContentUtils::ReportToConsole(
 
 /* static */
 void nsContentUtils::ReportEmptyGetElementByIdArg(const Document* aDoc) {
-  ReportToConsole(nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), aDoc,
+  ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns, aDoc,
                   nsContentUtils::eDOM_PROPERTIES, "EmptyGetElementByIdParam");
 }
 
@@ -3896,7 +3898,7 @@ nsAtom* nsContentUtils::GetEventMessageAndAtom(
   }
 
   *aEventMessage = eUnidentifiedEvent;
-  RefPtr<nsAtom> atom = NS_AtomizeMainThread(NS_LITERAL_STRING("on") + aName);
+  RefPtr<nsAtom> atom = NS_AtomizeMainThread(u"on"_ns + aName);
   sUserDefinedEvents->AppendElement(atom);
   mapping.mAtom = atom;
   mapping.mMessage = eUnidentifiedEvent;
@@ -3929,7 +3931,7 @@ EventMessage nsContentUtils::GetEventMessageAndAtomForListener(
     if (mapping.mMaybeSpecialSVGorSMILEvent) {
       // Try the atom version so that we should get the right message for
       // SVG/SMIL.
-      atom = NS_AtomizeMainThread(NS_LITERAL_STRING("on") + aName);
+      atom = NS_AtomizeMainThread(u"on"_ns + aName);
       msg = GetEventMessage(atom);
     } else {
       atom = mapping.mAtom;
@@ -3957,7 +3959,7 @@ static nsresult GetEventAndTarget(Document* aDoc, nsISupports* aTarget,
 
   ErrorResult err;
   RefPtr<Event> event =
-      aDoc->CreateEvent(NS_LITERAL_STRING("Events"), CallerType::System, err);
+      aDoc->CreateEvent(u"Events"_ns, CallerType::System, err);
   if (NS_WARN_IF(err.Failed())) {
     return err.StealNSResult();
   }
@@ -4260,9 +4262,9 @@ void nsContentUtils::RequestFrameFocus(Element& aFrameElement, bool aCanRaise) {
   RefPtr<Element> target = &aFrameElement;
   bool defaultAction = true;
   if (aCanRaise) {
-    DispatchEventOnlyToChrome(
-        target->OwnerDoc(), target, NS_LITERAL_STRING("framefocusrequested"),
-        CanBubble::eYes, Cancelable::eYes, &defaultAction);
+    DispatchEventOnlyToChrome(target->OwnerDoc(), target,
+                              u"framefocusrequested"_ns, CanBubble::eYes,
+                              Cancelable::eYes, &defaultAction);
   }
   if (!defaultAction) {
     return;
@@ -4795,6 +4797,7 @@ nsresult nsContentUtils::ParseFragmentHTML(
 
   nsIContent* target = aTargetNode;
 
+  RefPtr<Document> doc = aTargetNode->OwnerDoc();
   RefPtr<DocumentFragment> fragment;
   // We sanitize if the fragment occurs in a system privileged
   // context, an about: page, or if there are explicit sanitization flags.
@@ -4804,8 +4807,14 @@ nsresult nsContentUtils::ParseFragmentHTML(
   bool shouldSanitize = nodePrincipal->IsSystemPrincipal() ||
                         nodePrincipal->SchemeIs("about") || aFlags >= 0;
   if (shouldSanitize) {
-    fragment = new (aTargetNode->OwnerDoc()->NodeInfoManager())
-        DocumentFragment(aTargetNode->OwnerDoc()->NodeInfoManager());
+    if (!doc->IsLoadedAsData()) {
+      doc = nsContentUtils::CreateInertHTMLDocument(doc);
+      if (!doc) {
+        return NS_ERROR_FAILURE;
+      }
+    }
+    fragment =
+        new (doc->NodeInfoManager()) DocumentFragment(doc->NodeInfoManager());
     target = fragment;
   }
 
@@ -4879,22 +4888,7 @@ nsresult nsContentUtils::ParseFragmentXML(const nsAString& aSourceBuffer,
   MOZ_ASSERT(contentsink, "Sink doesn't QI to nsIContentSink!");
   sXMLFragmentParser->SetContentSink(contentsink);
 
-  sXMLFragmentSink->SetTargetDocument(aDocument);
-  sXMLFragmentSink->SetPreventScriptExecution(aPreventScriptExecution);
-
-  nsresult rv = sXMLFragmentParser->ParseFragment(aSourceBuffer, aTagStack);
-  if (NS_FAILED(rv)) {
-    // Drop the fragment parser and sink that might be in an inconsistent state
-    NS_IF_RELEASE(sXMLFragmentParser);
-    NS_IF_RELEASE(sXMLFragmentSink);
-    return rv;
-  }
-
-  rv = sXMLFragmentSink->FinishFragmentParsing(aReturn);
-
-  sXMLFragmentParser->Reset();
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  RefPtr<Document> doc;
   nsCOMPtr<nsIPrincipal> nodePrincipal = aDocument->NodePrincipal();
 
 #ifdef DEBUG
@@ -4915,6 +4909,27 @@ nsresult nsContentUtils::ParseFragmentXML(const nsAString& aSourceBuffer,
   // an about: scheme principal.
   bool shouldSanitize = nodePrincipal->IsSystemPrincipal() ||
                         nodePrincipal->SchemeIs("about") || aFlags >= 0;
+  if (shouldSanitize && !aDocument->IsLoadedAsData()) {
+    doc = nsContentUtils::CreateInertXMLDocument(aDocument);
+  } else {
+    doc = aDocument;
+  }
+
+  sXMLFragmentSink->SetTargetDocument(doc);
+  sXMLFragmentSink->SetPreventScriptExecution(aPreventScriptExecution);
+
+  nsresult rv = sXMLFragmentParser->ParseFragment(aSourceBuffer, aTagStack);
+  if (NS_FAILED(rv)) {
+    // Drop the fragment parser and sink that might be in an inconsistent state
+    NS_IF_RELEASE(sXMLFragmentParser);
+    NS_IF_RELEASE(sXMLFragmentSink);
+    return rv;
+  }
+
+  rv = sXMLFragmentSink->FinishFragmentParsing(aReturn);
+
+  sXMLFragmentParser->Reset();
+  NS_ENSURE_SUCCESS(rv, rv);
 
   if (shouldSanitize) {
     uint32_t sanitizationFlags =
@@ -4933,29 +4948,76 @@ nsresult nsContentUtils::ConvertToPlainText(const nsAString& aSourceBuffer,
                                             nsAString& aResultBuffer,
                                             uint32_t aFlags,
                                             uint32_t aWrapCol) {
-  nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), "about:blank");
-  nsCOMPtr<nsIPrincipal> principal =
-      NullPrincipal::CreateWithoutOriginAttributes();
-  RefPtr<Document> document;
-  nsresult rv = NS_NewDOMDocument(getter_AddRefs(document), EmptyString(),
-                                  EmptyString(), nullptr, uri, uri, principal,
-                                  true, nullptr, DocumentFlavorHTML);
-  NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<Document> document = nsContentUtils::CreateInertHTMLDocument(nullptr);
+  if (!document) {
+    return NS_ERROR_FAILURE;
+  }
 
-  rv = nsContentUtils::ParseDocumentHTML(
+  nsresult rv = nsContentUtils::ParseDocumentHTML(
       aSourceBuffer, document,
       !(aFlags & nsIDocumentEncoder::OutputNoScriptContent));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDocumentEncoder> encoder = do_createDocumentEncoder("text/plain");
 
-  rv = encoder->Init(document, NS_LITERAL_STRING("text/plain"), aFlags);
+  rv = encoder->Init(document, u"text/plain"_ns, aFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
   encoder->SetWrapColumn(aWrapCol);
 
   return encoder->EncodeToString(aResultBuffer);
+}
+
+/* static */
+already_AddRefed<Document> nsContentUtils::CreateInertXMLDocument(
+    const Document* aTemplate) {
+  return nsContentUtils::CreateInertDocument(aTemplate, DocumentFlavorXML);
+}
+
+/* static */
+already_AddRefed<Document> nsContentUtils::CreateInertHTMLDocument(
+    const Document* aTemplate) {
+  return nsContentUtils::CreateInertDocument(aTemplate, DocumentFlavorHTML);
+}
+
+/* static */
+already_AddRefed<Document> nsContentUtils::CreateInertDocument(
+    const Document* aTemplate, DocumentFlavor aFlavor) {
+  if (aTemplate) {
+    bool hasHad = true;
+    nsIScriptGlobalObject* sgo = aTemplate->GetScriptHandlingObject(hasHad);
+    NS_ENSURE_TRUE(sgo || !hasHad, nullptr);
+
+    nsCOMPtr<Document> doc;
+    nsresult rv = NS_NewDOMDocument(
+        getter_AddRefs(doc), u""_ns, u""_ns, nullptr,
+        aTemplate->GetDocumentURI(), aTemplate->GetDocBaseURI(),
+        aTemplate->NodePrincipal(), true, sgo, aFlavor);
+    if (NS_FAILED(rv)) {
+      return nullptr;
+    }
+    return doc.forget();
+  }
+  nsCOMPtr<nsIURI> uri;
+  NS_NewURI(getter_AddRefs(uri), "about:blank"_ns);
+  if (!uri) {
+    return nullptr;
+  }
+
+  RefPtr<NullPrincipal> nullPrincipal =
+      NullPrincipal::CreateWithoutOriginAttributes();
+  if (!nullPrincipal) {
+    return nullptr;
+  }
+
+  nsCOMPtr<Document> doc;
+  nsresult rv =
+      NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, nullptr, uri, uri,
+                        nullPrincipal, true, nullptr, aFlavor);
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
+  return doc.forget();
 }
 
 /* static */
@@ -5233,10 +5295,15 @@ void nsContentUtils::TriggerLink(nsIContent* aContent, nsIURI* aLinkURI,
     nsCOMPtr<nsIPrincipal> triggeringPrincipal = aContent->NodePrincipal();
     nsCOMPtr<nsIContentSecurityPolicy> csp = aContent->GetCsp();
 
+    // Sanitize fileNames containing null characters by replacing them with
+    // underscores.
+    if (!fileName.IsVoid()) {
+      fileName.ReplaceChar(char16_t(0), '_');
+    }
     nsDocShell::Cast(docShell)->OnLinkClick(
-        aContent, aLinkURI, fileName.IsVoid() ? aTargetSpec : EmptyString(),
-        fileName, nullptr, nullptr, UserActivation::IsHandlingUserInput(),
-        aIsTrusted, triggeringPrincipal, csp);
+        aContent, aLinkURI, fileName.IsVoid() ? aTargetSpec : u""_ns, fileName,
+        nullptr, nullptr, UserActivation::IsHandlingUserInput(), aIsTrusted,
+        triggeringPrincipal, csp);
   }
 }
 
@@ -5842,7 +5909,7 @@ nsresult nsContentUtils::GetASCIIOrigin(nsIURI* aURI, nsACString& aOrigin) {
 
     nsAutoCString prePath;
     if (!userPass.IsEmpty()) {
-      rv = NS_MutateURI(uri).SetUserPass(EmptyCString()).Finalize(uri);
+      rv = NS_MutateURI(uri).SetUserPass(""_ns).Finalize(uri);
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -5929,7 +5996,7 @@ nsresult nsContentUtils::DispatchXULCommand(nsIContent* aTarget, bool aTrusted,
 
   RefPtr<XULCommandEvent> xulCommand =
       new XULCommandEvent(doc, presContext, nullptr);
-  xulCommand->InitCommandEvent(NS_LITERAL_STRING("command"), true, true,
+  xulCommand->InitCommandEvent(u"command"_ns, true, true,
                                nsGlobalWindowInner::Cast(doc->GetInnerWindow()),
                                0, aCtrl, aAlt, aShift, aMeta, aSourceEvent,
                                aInputSource, IgnoreErrors());
@@ -6315,13 +6382,23 @@ bool nsContentUtils::AllowXULXBLForPrincipal(nsIPrincipal* aPrincipal) {
 
   return (StaticPrefs::dom_allow_XUL_XBL_for_file() &&
           aPrincipal->SchemeIs("file")) ||
-         IsSitePermAllow(aPrincipal, NS_LITERAL_CSTRING("allowXULXBL"));
+         IsSitePermAllow(aPrincipal, "allowXULXBL"_ns);
 }
 
 bool nsContentUtils::IsPDFJSEnabled() {
   nsCOMPtr<nsIStreamConverter> conv = do_CreateInstance(
       "@mozilla.org/streamconv;1?from=application/pdf&to=text/html");
   return conv;
+}
+
+bool nsContentUtils::IsPDFJS(nsIPrincipal* aPrincipal) {
+  if (!aPrincipal) {
+    return false;
+  }
+  nsCOMPtr<nsIURI> uri;
+  aPrincipal->GetURI(getter_AddRefs(uri));
+  return uri && uri->GetSpecOrDefault().EqualsLiteral(
+                    "resource://pdf.js/web/viewer.html");
 }
 
 already_AddRefed<nsIDocumentLoaderFactory>
@@ -6385,9 +6462,8 @@ static void ReportPatternCompileFailure(nsAString& aPattern,
     return;
   }
 
-  nsContentUtils::ReportToConsole(nsIScriptError::errorFlag,
-                                  NS_LITERAL_CSTRING("DOM"), aDocument,
-                                  nsContentUtils::eDOM_PROPERTIES,
+  nsContentUtils::ReportToConsole(nsIScriptError::errorFlag, "DOM"_ns,
+                                  aDocument, nsContentUtils::eDOM_PROPERTIES,
                                   "PatternAttributeCompileFailure", strings);
   savedExc.drop();
 }
@@ -6787,10 +6863,10 @@ bool nsContentUtils::IsForbiddenRequestHeader(const nsACString& aHeader) {
     return true;
   }
 
-  return StringBeginsWith(aHeader, NS_LITERAL_CSTRING("proxy-"),
-                          nsCaseInsensitiveCStringComparator()) ||
-         StringBeginsWith(aHeader, NS_LITERAL_CSTRING("sec-"),
-                          nsCaseInsensitiveCStringComparator());
+  return StringBeginsWith(aHeader, "proxy-"_ns,
+                          nsCaseInsensitiveCStringComparator) ||
+         StringBeginsWith(aHeader, "sec-"_ns,
+                          nsCaseInsensitiveCStringComparator);
 }
 
 // static
@@ -7089,8 +7165,8 @@ nsresult nsContentUtils::GetHostOrIPv6WithBrackets(nsIURI* aURI,
 }
 
 bool nsContentUtils::CallOnAllRemoteChildren(
-    MessageBroadcaster* aManager, CallOnRemoteChildFunction aCallback,
-    void* aArg) {
+    MessageBroadcaster* aManager,
+    const std::function<bool(BrowserParent*)>& aCallback) {
   uint32_t browserChildCount = aManager->ChildCount();
   for (uint32_t j = 0; j < browserChildCount; ++j) {
     RefPtr<MessageListenerManager> childMM = aManager->GetChildAt(j);
@@ -7100,7 +7176,7 @@ bool nsContentUtils::CallOnAllRemoteChildren(
 
     RefPtr<MessageBroadcaster> nonLeafMM = MessageBroadcaster::From(childMM);
     if (nonLeafMM) {
-      if (CallOnAllRemoteChildren(nonLeafMM, aCallback, aArg)) {
+      if (CallOnAllRemoteChildren(nonLeafMM, aCallback)) {
         return true;
       }
       continue;
@@ -7111,7 +7187,7 @@ bool nsContentUtils::CallOnAllRemoteChildren(
       nsFrameLoader* fl = static_cast<nsFrameLoader*>(cb);
       BrowserParent* remote = BrowserParent::GetFrom(fl);
       if (remote && aCallback) {
-        if (aCallback(remote, aArg)) {
+        if (aCallback(remote)) {
           return true;
         }
       }
@@ -7122,13 +7198,13 @@ bool nsContentUtils::CallOnAllRemoteChildren(
 }
 
 void nsContentUtils::CallOnAllRemoteChildren(
-    nsPIDOMWindowOuter* aWindow, CallOnRemoteChildFunction aCallback,
-    void* aArg) {
+    nsPIDOMWindowOuter* aWindow,
+    const std::function<bool(BrowserParent*)>& aCallback) {
   nsGlobalWindowOuter* window = nsGlobalWindowOuter::Cast(aWindow);
   if (window->IsChromeWindow()) {
     RefPtr<MessageBroadcaster> windowMM = window->GetMessageManager();
     if (windowMM) {
-      CallOnAllRemoteChildren(windowMM, aCallback, aArg);
+      CallOnAllRemoteChildren(windowMM, aCallback);
     }
   }
 }
@@ -7140,17 +7216,14 @@ struct UIStateChangeInfo {
       : mShowFocusRings(aShowFocusRings) {}
 };
 
-bool SetKeyboardIndicatorsChild(BrowserParent* aParent, void* aArg) {
-  UIStateChangeInfo* stateInfo = static_cast<UIStateChangeInfo*>(aArg);
-  Unused << aParent->SendSetKeyboardIndicators(stateInfo->mShowFocusRings);
-  return false;
-}
-
 void nsContentUtils::SetKeyboardIndicatorsOnRemoteChildren(
     nsPIDOMWindowOuter* aWindow, UIStateChangeType aShowFocusRings) {
   UIStateChangeInfo stateInfo(aShowFocusRings);
-  CallOnAllRemoteChildren(aWindow, SetKeyboardIndicatorsChild,
-                          (void*)&stateInfo);
+  CallOnAllRemoteChildren(aWindow, [&stateInfo](BrowserParent* aBrowserParent) {
+    Unused << aBrowserParent->SendSetKeyboardIndicators(
+        stateInfo.mShowFocusRings);
+    return false;
+  });
 }
 
 nsresult nsContentUtils::IPCTransferableToTransferable(
@@ -7284,7 +7357,7 @@ bool nsContentUtils::IsFileImage(nsIFile* aFile, nsACString& aType) {
     return false;
   }
 
-  return StringBeginsWith(aType, NS_LITERAL_CSTRING("image/"));
+  return StringBeginsWith(aType, "image/"_ns);
 }
 
 nsresult nsContentUtils::CalculateBufferSizeForImage(
@@ -7756,11 +7829,11 @@ int16_t nsContentUtils::GetButtonsFlagForButton(int32_t aButton) {
 LayoutDeviceIntPoint nsContentUtils::ToWidgetPoint(
     const CSSPoint& aPoint, const nsPoint& aOffset,
     nsPresContext* aPresContext) {
+  nsPoint layoutRelative = CSSPoint::ToAppUnits(aPoint) + aOffset;
+  nsPoint visualRelative =
+      ViewportUtils::LayoutToVisual(layoutRelative, aPresContext->PresShell());
   return LayoutDeviceIntPoint::FromAppUnitsRounded(
-      (CSSPoint::ToAppUnits(aPoint) + aOffset)
-          .ApplyResolution(nsLayoutUtils::GetCurrentAPZResolutionScale(
-              aPresContext->PresShell())),
-      aPresContext->AppUnitsPerDevPixel());
+      visualRelative, aPresContext->AppUnitsPerDevPixel());
 }
 
 nsView* nsContentUtils::GetViewToDispatchEvent(nsPresContext* aPresContext,
@@ -7965,8 +8038,7 @@ ReferrerPolicy nsContentUtils::GetReferrerPolicyFromChannel(
 
   nsresult rv;
   nsAutoCString headerValue;
-  rv = httpChannel->GetResponseHeader(NS_LITERAL_CSTRING("referrer-policy"),
-                                      headerValue);
+  rv = httpChannel->GetResponseHeader("referrer-policy"_ns, headerValue);
   if (NS_FAILED(rv) || headerValue.IsEmpty()) {
     return ReferrerPolicy::_empty;
   }
@@ -8507,8 +8579,8 @@ static void StartElement(Element* aContent, StringBuilder& aBuilder) {
 
     // Filter out any attribute starting with [-|_]moz
     nsDependentAtomString attrNameStr(attName);
-    if (StringBeginsWith(attrNameStr, NS_LITERAL_STRING("_moz")) ||
-        StringBeginsWith(attrNameStr, NS_LITERAL_STRING("-moz"))) {
+    if (StringBeginsWith(attrNameStr, u"_moz"_ns) ||
+        StringBeginsWith(attrNameStr, u"-moz"_ns)) {
       continue;
     }
 
@@ -8519,7 +8591,7 @@ static void StartElement(Element* aContent, StringBuilder& aBuilder) {
     // Bug 16988.  Yuck.
     if (localName == nsGkAtoms::br && tagNS == kNameSpaceID_XHTML &&
         attName == nsGkAtoms::type && attNs == kNameSpaceID_None &&
-        StringBeginsWith(*attValue, NS_LITERAL_STRING("_moz"))) {
+        StringBeginsWith(*attValue, u"_moz"_ns)) {
       delete attValue;
       continue;
     }
@@ -9625,8 +9697,7 @@ bool nsContentUtils::ShouldBlockReservedKeys(WidgetKeyboardEvent* aKeyEvent) {
   }
 
   if (principal) {
-    return nsContentUtils::IsSitePermDeny(principal,
-                                          NS_LITERAL_CSTRING("shortcuts"));
+    return nsContentUtils::IsSitePermDeny(principal, "shortcuts"_ns);
   }
 
   return false;
@@ -9703,7 +9774,7 @@ uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
     return nsIObjectLoadingContent::TYPE_NULL;
   }
 
-  if (imgLoader::SupportImageWithMimeType(aMIMEType.get())) {
+  if (imgLoader::SupportImageWithMimeType(aMIMEType)) {
     return nsIObjectLoadingContent::TYPE_IMAGE;
   }
 
@@ -9818,11 +9889,9 @@ bool nsContentUtils::GetUserIsInteracting() {
 /* static */
 bool nsContentUtils::GetSourceMapURL(nsIHttpChannel* aChannel,
                                      nsACString& aResult) {
-  nsresult rv =
-      aChannel->GetResponseHeader(NS_LITERAL_CSTRING("SourceMap"), aResult);
+  nsresult rv = aChannel->GetResponseHeader("SourceMap"_ns, aResult);
   if (NS_FAILED(rv)) {
-    rv =
-        aChannel->GetResponseHeader(NS_LITERAL_CSTRING("X-SourceMap"), aResult);
+    rv = aChannel->GetResponseHeader("X-SourceMap"_ns, aResult);
   }
   return NS_SUCCEEDED(rv);
 }
@@ -9885,7 +9954,7 @@ void nsContentUtils::UserInteractionObserver::AnnotateHang(
     BackgroundHangAnnotations& aAnnotations) {
   // NOTE: Only annotate the hang report if the user is known to be interacting.
   if (sUserActive) {
-    aAnnotations.AddAnnotation(NS_LITERAL_STRING("UserInteracting"), true);
+    aAnnotations.AddAnnotation(u"UserInteracting"_ns, true);
   }
 }
 
@@ -10180,7 +10249,6 @@ bool nsContentUtils::IsURIInList(nsIURI* aURI, const nsCString& aBlackList) {
     if (startIndexOfNextLevel <= 0) {
       return false;
     }
-    host = NS_LITERAL_CSTRING("*") +
-           nsDependentCSubstring(host, startIndexOfNextLevel);
+    host = "*"_ns + nsDependentCSubstring(host, startIndexOfNextLevel);
   }
 }

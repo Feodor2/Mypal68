@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEFloodElement_h
-#define mozilla_dom_SVGFEFloodElement_h
+#ifndef DOM_SVG_SVGFEFLOODELEMENT_H_
+#define DOM_SVG_SVGFEFLOODELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEFloodElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -13,7 +13,7 @@ nsresult NS_NewSVGFEFloodElement(
 namespace mozilla {
 namespace dom {
 
-typedef SVGFE SVGFEFloodElementBase;
+using SVGFEFloodElementBase = SVGFE;
 
 class SVGFEFloodElement : public SVGFEFloodElementBase {
   friend nsresult(::NS_NewSVGFEFloodElement(
@@ -56,4 +56,4 @@ class SVGFEFloodElement : public SVGFEFloodElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFEFloodElement_h
+#endif  // DOM_SVG_SVGFEFLOODELEMENT_H_

@@ -83,7 +83,7 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
   mBrowserParent->SetOwnerElement(Manager()->GetOwnerElement());
   mBrowserParent->InitRendering();
 
-  RenderFrame* rf = mBrowserParent->GetRenderFrame();
+  RemoteLayerTreeOwner* rf = mBrowserParent->GetRenderFrame();
   if (NS_WARN_IF(!rf)) {
     MOZ_ASSERT(false, "No RenderFrame");
     return NS_ERROR_FAILURE;
@@ -110,16 +110,13 @@ void BrowserBridgeParent::Destroy() {
   }
 }
 
-IPCResult BrowserBridgeParent::RecvShow(const ScreenIntSize& aSize,
-                                        const bool& aParentIsActive,
-                                        const nsSizeMode& aSizeMode) {
-  RenderFrame* rf = mBrowserParent->GetRenderFrame();
+IPCResult BrowserBridgeParent::RecvShow(const OwnerShowInfo& aOwnerInfo) {
+  RemoteLayerTreeOwner* rf = mBrowserParent->GetRenderFrame();
   if (!rf->AttachLayerManager()) {
     MOZ_CRASH();
   }
 
-  Unused << mBrowserParent->SendShow(aSize, mBrowserParent->GetShowInfo(),
-                                     aParentIsActive, aSizeMode);
+  Unused << mBrowserParent->SendShow(mBrowserParent->GetShowInfo(), aOwnerInfo);
   return IPC_OK();
 }
 

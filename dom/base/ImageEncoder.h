@@ -10,7 +10,6 @@
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
 #include "mozilla/UniquePtr.h"
-#include "nsLayoutUtils.h"
 #include "nsSize.h"
 
 class nsICanvasRenderingContextInternal;

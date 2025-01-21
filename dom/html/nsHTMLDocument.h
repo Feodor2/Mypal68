@@ -66,6 +66,8 @@ class nsHTMLDocument : public mozilla::dom::Document {
 
   nsContentList* GetExistingForms() const { return mForms; }
 
+  bool IsPlainText() const { return mIsPlainText; }
+
   // Returns whether an object was found for aName.
   bool ResolveName(JSContext* aCx, const nsAString& aName,
                    JS::MutableHandle<JS::Value> aRetval,
@@ -197,6 +199,11 @@ namespace dom {
 inline nsHTMLDocument* Document::AsHTMLDocument() {
   MOZ_ASSERT(IsHTMLOrXHTML());
   return static_cast<nsHTMLDocument*>(this);
+}
+
+inline const nsHTMLDocument* Document::AsHTMLDocument() const {
+  MOZ_ASSERT(IsHTMLOrXHTML());
+  return static_cast<const nsHTMLDocument*>(this);
 }
 
 }  // namespace dom

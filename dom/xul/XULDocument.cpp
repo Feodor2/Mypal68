@@ -262,6 +262,7 @@ nsresult XULDocument::StartDocumentLoad(const char* aCommand,
 }
 
 void XULDocument::EndLoad() {
+  mSynchronousDOMContentLoaded = true;
   Document::EndLoad();
 }
 

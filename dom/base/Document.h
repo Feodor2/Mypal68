@@ -2636,7 +2636,7 @@ class Document : public nsINode,
    * Support for window.matchMedia()
    */
 
-  already_AddRefed<MediaQueryList> MatchMedia(const nsAString& aMediaQueryList,
+  already_AddRefed<MediaQueryList> MatchMedia(const nsACString& aMediaQueryList,
                                               CallerType aCallerType);
 
   LinkedList<MediaQueryList>& MediaQueryLists() { return mDOMMediaQueryLists; }
@@ -3717,12 +3717,14 @@ class Document : public nsINode,
    * Defined inline in nsHTMLDocument.h
    */
   inline nsHTMLDocument* AsHTMLDocument();
+  inline const nsHTMLDocument* AsHTMLDocument() const;
 
   /**
    * Asserts IsSVGDocument, and can't return null.
    * Defined inline in SVGDocument.h
    */
   inline SVGDocument* AsSVGDocument();
+  inline const SVGDocument* AsSVGDocument() const;
 
   /**
    * Asserts IsXULDocument, and can't return null.
@@ -4243,8 +4245,7 @@ class Document : public nsINode,
    *                            sInternalCommandDataHashtable.
    */
   static InternalCommandData ConvertToInternalCommand(
-      const nsAString& aHTMLCommandName,
-      const nsAString& aValue = EmptyString(),
+      const nsAString& aHTMLCommandName, const nsAString& aValue = u""_ns,
       nsAString* aAdjustedValue = nullptr);
 
   // Mapping table from HTML command name to internal command.
@@ -5294,6 +5295,7 @@ enum DocumentFlavor {
   DocumentFlavorLegacyGuess,  // compat with old code until made HTML5-compliant
   DocumentFlavorHTML,         // HTMLDocument with HTMLness bit set to true
   DocumentFlavorSVG,          // SVGDocument
+  DocumentFlavorXML,          // XMLDocument
   DocumentFlavorPlain,        // Just a Document
 };
 

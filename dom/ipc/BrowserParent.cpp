@@ -11,9 +11,11 @@
 #  include "nsAccessibilityService.h"
 #endif
 #include "mozilla/BrowserElementParent.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
 #include "mozilla/dom/ChromeMessageSender.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentProcessManager.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/Event.h"
@@ -23,6 +25,8 @@
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/RemoteWebProgress.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
+#include "mozilla/dom/SessionStoreUtils.h"
+#include "mozilla/dom/SessionStoreUtilsBinding.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/gfx/2D.h"
@@ -32,7 +36,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/InputAPZContext.h"
-#include "mozilla/layout/RenderFrame.h"
+#include "mozilla/layout/RemoteLayerTreeOwner.h"
 #include "mozilla/plugins/PPluginWidgetParent.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
@@ -58,12 +62,15 @@
 #include "nsIContent.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsImportModule.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadInfo.h"
 #include "nsIPromptFactory.h"
 #include "nsIURI.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsIWebProtocolHandlerRegistrar.h"
+#include "nsIWindowWatcher.h"
+#include "nsIXPConnect.h"
 #include "nsIXULBrowserWindow.h"
 #include "nsIXULWindow.h"
 #include "nsViewManager.h"
@@ -105,6 +112,7 @@
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "MMPrinter.h"
+#include "SessionStoreFunctions.h"
 
 #ifdef XP_WIN
 #  include "mozilla/plugins/PluginWidgetParent.h"
@@ -177,7 +185,7 @@ BrowserParent::BrowserParent(ContentParent* aManager, const TabId& aTabId,
       mChromeFlags(aChromeFlags),
       mBrowserBridgeParent(aBrowserBridgeParent),
       mContentCache(*this),
-      mRenderFrame{},
+      mRemoteLayerTreeOwner{},
       mLayerTreeEpoch{1},
       mChildToParentConversionMatrix{},
       mRect(0, 0, 0, 0),
@@ -442,18 +450,20 @@ a11y::DocAccessibleParent* BrowserParent::GetTopLevelDocAccessible() const {
   return nullptr;
 }
 
-RenderFrame* BrowserParent::GetRenderFrame() {
-  if (!mRenderFrame.IsInitialized()) {
+RemoteLayerTreeOwner* BrowserParent::GetRenderFrame() {
+  if (!mRemoteLayerTreeOwner.IsInitialized()) {
     return nullptr;
   }
-  return &mRenderFrame;
+  return &mRemoteLayerTreeOwner;
 }
 
-ShowInfo BrowserParent::GetShowInfo() {
+ParentShowInfo BrowserParent::GetShowInfo() {
   TryCacheDPIAndScale();
   if (mFrameElement) {
     nsAutoString name;
     mFrameElement->GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    // FIXME(emilio, bug 1606660): allowfullscreen should probably move to
+    // OwnerShowInfo.
     bool allowFullscreen =
         mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::allowfullscreen) ||
         mFrameElement->HasAttr(kNameSpaceID_None,
@@ -463,12 +473,12 @@ ShowInfo BrowserParent::GetShowInfo() {
     bool isTransparent =
         nsContentUtils::IsChromeDoc(mFrameElement->OwnerDoc()) &&
         mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::transparent);
-    return ShowInfo(name, allowFullscreen, isPrivate, false, isTransparent,
-                    mDPI, mRounding, mDefaultScale.scale);
+    return ParentShowInfo(name, allowFullscreen, isPrivate, false,
+                          isTransparent, mDPI, mRounding, mDefaultScale.scale);
   }
 
-  return ShowInfo(EmptyString(), false, false, false, false, mDPI, mRounding,
-                  mDefaultScale.scale);
+  return ParentShowInfo(EmptyString(), false, false, false, false, mDPI,
+                        mRounding, mDefaultScale.scale);
 }
 
 void BrowserParent::SetOwnerElement(Element* aElement) {
@@ -537,8 +547,8 @@ void BrowserParent::SetOwnerElement(Element* aElement) {
     }
   }
 
-  if (mRenderFrame.IsInitialized()) {
-    mRenderFrame.OwnerContentChanged();
+  if (mRemoteLayerTreeOwner.IsInitialized()) {
+    mRemoteLayerTreeOwner.OwnerContentChanged();
   }
 
   // Set our BrowsingContext's embedder if we're not embedded within a
@@ -567,10 +577,10 @@ void BrowserParent::AddWindowListeners() {
             mFrameElement->OwnerDoc()->GetWindow()) {
       nsCOMPtr<EventTarget> eventTarget = window->GetTopWindowRoot();
       if (eventTarget) {
-        eventTarget->AddEventListener(NS_LITERAL_STRING("MozUpdateWindowPos"),
-                                      this, false, false);
-        eventTarget->AddEventListener(NS_LITERAL_STRING("fullscreenchange"),
-                                      this, false, false);
+        eventTarget->AddEventListener(u"MozUpdateWindowPos"_ns, this, false,
+                                      false);
+        eventTarget->AddEventListener(u"fullscreenchange"_ns, this, false,
+                                      false);
       }
     }
   }
@@ -582,10 +592,8 @@ void BrowserParent::RemoveWindowListeners() {
         mFrameElement->OwnerDoc()->GetWindow();
     nsCOMPtr<EventTarget> eventTarget = window->GetTopWindowRoot();
     if (eventTarget) {
-      eventTarget->RemoveEventListener(NS_LITERAL_STRING("MozUpdateWindowPos"),
-                                       this, false);
-      eventTarget->RemoveEventListener(NS_LITERAL_STRING("fullscreenchange"),
-                                       this, false);
+      eventTarget->RemoveEventListener(u"MozUpdateWindowPos"_ns, this, false);
+      eventTarget->RemoveEventListener(u"fullscreenchange"_ns, this, false);
     }
   }
 }
@@ -639,8 +647,8 @@ void BrowserParent::Destroy() {
 
 mozilla::ipc::IPCResult BrowserParent::RecvEnsureLayersConnected(
     CompositorOptions* aCompositorOptions) {
-  if (mRenderFrame.IsInitialized()) {
-    mRenderFrame.EnsureLayersConnected(aCompositorOptions);
+  if (mRemoteLayerTreeOwner.IsInitialized()) {
+    mRemoteLayerTreeOwner.EnsureLayersConnected(aCompositorOptions);
   }
   return IPC_OK();
 }
@@ -654,12 +662,12 @@ mozilla::ipc::IPCResult BrowserParent::Recv__delete__() {
 void BrowserParent::ActorDestroy(ActorDestroyReason why) {
   ContentProcessManager::GetSingleton()->UnregisterRemoteFrame(mTabId);
 
-  if (mRenderFrame.IsInitialized()) {
+  if (mRemoteLayerTreeOwner.IsInitialized()) {
     // It's important to unmap layers after the remote browser has been
     // destroyed, otherwise it may still send messages to the compositor which
     // will reject them, causing assertions.
-    RemoveBrowserParentFromTable(mRenderFrame.GetLayersId());
-    mRenderFrame.Destroy();
+    RemoveBrowserParentFromTable(mRemoteLayerTreeOwner.GetLayersId());
+    mRemoteLayerTreeOwner.Destroy();
   }
 
   // Even though BrowserParent::Destroy calls this, we need to do it here too in
@@ -891,18 +899,18 @@ void BrowserParent::ResumeLoad(uint64_t aPendingSwitchID) {
 }
 
 void BrowserParent::InitRendering() {
-  MOZ_ASSERT(!mRenderFrame.IsInitialized());
-  mRenderFrame.Initialize(this);
-  MOZ_ASSERT(mRenderFrame.IsInitialized());
+  MOZ_ASSERT(!mRemoteLayerTreeOwner.IsInitialized());
+  mRemoteLayerTreeOwner.Initialize(this);
+  MOZ_ASSERT(mRemoteLayerTreeOwner.IsInitialized());
 
-  layers::LayersId layersId = mRenderFrame.GetLayersId();
+  layers::LayersId layersId = mRemoteLayerTreeOwner.GetLayersId();
   AddBrowserParentToTable(layersId, this);
 
   TextureFactoryIdentifier textureFactoryIdentifier;
-  mRenderFrame.GetTextureFactoryIdentifier(&textureFactoryIdentifier);
+  mRemoteLayerTreeOwner.GetTextureFactoryIdentifier(&textureFactoryIdentifier);
   Unused << SendInitRendering(textureFactoryIdentifier, layersId,
-                              mRenderFrame.GetCompositorOptions(),
-                              mRenderFrame.IsLayersConnected());
+                              mRemoteLayerTreeOwner.GetCompositorOptions(),
+                              mRemoteLayerTreeOwner.IsLayersConnected());
 }
 
 void BrowserParent::MaybeShowFrame() {
@@ -919,7 +927,7 @@ void BrowserParent::Show(const ScreenIntSize& size, bool aParentIsActive) {
     return;
   }
 
-  MOZ_ASSERT(mRenderFrame.IsInitialized());
+  MOZ_ASSERT(mRemoteLayerTreeOwner.IsInitialized());
 
   nsCOMPtr<nsISupports> container = mFrameElement->OwnerDoc()->GetContainer();
   nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(container);
@@ -927,7 +935,8 @@ void BrowserParent::Show(const ScreenIntSize& size, bool aParentIsActive) {
   baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
   mSizeMode = mainWidget ? mainWidget->SizeMode() : nsSizeMode_Normal;
 
-  Unused << SendShow(size, GetShowInfo(), aParentIsActive, mSizeMode);
+  OwnerShowInfo ownerInfo(size, aParentIsActive, mSizeMode);
+  Unused << SendShow(GetShowInfo(), ownerInfo);
 }
 
 mozilla::ipc::IPCResult BrowserParent::RecvSetDimensions(const uint32_t& aFlags,
@@ -1269,12 +1278,10 @@ already_AddRefed<PBrowserBridgeParent> BrowserParent::AllocPBrowserBridgeParent(
 
 void BrowserParent::SendMouseEvent(const nsAString& aType, float aX, float aY,
                                    int32_t aButton, int32_t aClickCount,
-                                   int32_t aModifiers,
-                                   bool aIgnoreRootScrollFrame) {
+                                   int32_t aModifiers) {
   if (!mIsDestroyed) {
     Unused << PBrowserParent::SendMouseEvent(nsString(aType), aX, aY, aButton,
-                                             aClickCount, aModifiers,
-                                             aIgnoreRootScrollFrame);
+                                             aClickCount, aModifiers);
   }
 }
 
@@ -1902,18 +1909,15 @@ mozilla::ipc::IPCResult BrowserParent::RecvSetCursor(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult BrowserParent::RecvSetStatus(const uint32_t& aType,
-                                                     const nsString& aStatus) {
+mozilla::ipc::IPCResult BrowserParent::RecvSetLinkStatus(
+    const nsString& aStatus) {
   nsCOMPtr<nsIXULBrowserWindow> xulBrowserWindow = GetXULBrowserWindow();
   if (!xulBrowserWindow) {
     return IPC_OK();
   }
 
-  switch (aType) {
-    case nsIWebBrowserChrome::STATUS_LINK:
-      xulBrowserWindow->SetOverLink(aStatus, nullptr);
-      break;
-  }
+  xulBrowserWindow->SetOverLink(aStatus, nullptr);
+
   return IPC_OK();
 }
 
@@ -2196,12 +2200,12 @@ BrowserParent::GetChildToParentConversionMatrix() {
 }
 
 void BrowserParent::SetChildToParentConversionMatrix(
-    const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix) {
-  mChildToParentConversionMatrix = Some(aMatrix);
+    const Maybe<LayoutDeviceToLayoutDeviceMatrix4x4>& aMatrix) {
+  mChildToParentConversionMatrix = aMatrix;
   if (mIsDestroyed) {
     return;
   }
-  mozilla::Unused << SendChildToParentMatrix(aMatrix.ToUnknownMatrix());
+  mozilla::Unused << SendChildToParentMatrix(ToUnknownMatrix(aMatrix));
 }
 
 LayoutDeviceIntPoint BrowserParent::GetChildProcessOffset() {
@@ -2247,9 +2251,14 @@ LayoutDeviceIntPoint BrowserParent::GetChildProcessOffset() {
   // any events we send to the child, and reverse them for any screen
   // coordinates that we retrieve from the child.
 
+  // TODO: Once we take into account transforms here, set viewportType
+  // correctly. For now we use Visual as this means we don't apply
+  // the layout-to-visual transform in TranslateViewToWidget().
+  ViewportType viewportType = ViewportType::Visual;
+
   nsPoint pt = targetFrame->GetOffsetTo(rootFrame);
   return -nsLayoutUtils::TranslateViewToWidget(presContext, rootView, pt,
-                                               widget);
+                                               viewportType, widget);
 }
 
 LayoutDeviceIntPoint BrowserParent::GetClientOffset() {
@@ -2644,27 +2653,75 @@ void BrowserParent::ReconstructWebProgressAndRequest(
 
 mozilla::ipc::IPCResult BrowserParent::RecvSessionStoreUpdate(
     const Maybe<nsCString>& aDocShellCaps, const Maybe<bool>& aPrivatedMode,
-    const nsTArray<nsCString>& aPositions,
-    const nsTArray<int32_t>& aPositionDescendants, const uint32_t& aFlushId,
-    const bool& aIsFinal) {
-  nsCOMPtr<nsIXULBrowserWindow> xulBrowserWindow = GetXULBrowserWindow();
-  if (!xulBrowserWindow) {
-    return IPC_OK();
-  }
-
+    nsTArray<nsCString>&& aPositions,
+    nsTArray<int32_t>&& aPositionDescendants,
+    const nsTArray<InputFormData>& aInputs,
+    const nsTArray<CollectedInputDataValue>& aIdVals,
+    const nsTArray<CollectedInputDataValue>& aXPathVals,
+    nsTArray<nsCString>&& aOrigins, nsTArray<nsString>&& aKeys,
+    nsTArray<nsString>&& aValues, const bool aIsFullStorage,
+    const uint32_t& aFlushId, const bool& aIsFinal, const uint32_t& aEpoch) {
+  UpdateSessionStoreData data;
   if (aDocShellCaps.isSome()) {
-    xulBrowserWindow->UpdateDocShellCaps(aDocShellCaps.value());
+    data.mDocShellCaps.Construct() = aDocShellCaps.value();
   }
-
   if (aPrivatedMode.isSome()) {
-    xulBrowserWindow->UpdateIsPrivate(aPrivatedMode.value());
+    data.mIsPrivate.Construct() = aPrivatedMode.value();
   }
-
   if (aPositions.Length() != 0) {
-    xulBrowserWindow->UpdateScrollPositions(aPositions, aPositionDescendants);
+    data.mPositions.Construct().Assign(std::move(aPositions));
+    data.mPositionDescendants.Construct().Assign(
+        std::move(aPositionDescendants));
+  }
+  if (aIdVals.Length() != 0) {
+    SessionStoreUtils::ComposeInputData(aIdVals, data.mId.Construct());
+  }
+  if (aXPathVals.Length() != 0) {
+    SessionStoreUtils::ComposeInputData(aXPathVals, data.mXpath.Construct());
+  }
+  if (aInputs.Length() != 0) {
+    nsTArray<int> descendants, numId, numXPath;
+    nsTArray<nsString> innerHTML;
+    nsTArray<nsCString> url;
+    for (const InputFormData& input : aInputs) {
+      descendants.AppendElement(input.descendants);
+      numId.AppendElement(input.numId);
+      numXPath.AppendElement(input.numXPath);
+      innerHTML.AppendElement(input.innerHTML);
+      url.AppendElement(input.url);
+    }
+
+    data.mInputDescendants.Construct().Assign(std::move(descendants));
+    data.mNumId.Construct().Assign(std::move(numId));
+    data.mNumXPath.Construct().Assign(std::move(numXPath));
+    data.mInnerHTML.Construct().Assign(std::move(innerHTML));
+    data.mUrl.Construct().Assign(std::move(url));
+  }
+  // In normal case, we only update the storage when needed.
+  // However, we need to reset the session storage(aOrigins.Length() will be 0)
+  //   if the usage is over the "browser_sessionstore_dom_storage_limit".
+  // In this case, aIsFullStorage is true.
+  if (aOrigins.Length() != 0 || aIsFullStorage) {
+    data.mStorageOrigins.Construct().Assign(std::move(aOrigins));
+    data.mStorageKeys.Construct().Assign(std::move(aKeys));
+    data.mStorageValues.Construct().Assign(std::move(aValues));
+    data.mIsFullStorage.Construct() = aIsFullStorage;
   }
 
-  xulBrowserWindow->UpdateSessionStore(mFrameElement, aFlushId, aIsFinal);
+  nsCOMPtr<nsISessionStoreFunctions> funcs =
+      do_ImportModule("resource://gre/modules/SessionStoreFunctions.jsm");
+  NS_ENSURE_TRUE(funcs, IPC_OK());
+  nsCOMPtr<nsIXPConnectWrappedJS> wrapped = do_QueryInterface(funcs);
+  AutoJSAPI jsapi;
+  MOZ_ALWAYS_TRUE(jsapi.Init(wrapped->GetJSObjectGlobal()));
+  JS::Rooted<JS::Value> dataVal(jsapi.cx());
+  bool ok = ToJSValue(jsapi.cx(), data, &dataVal);
+  NS_ENSURE_TRUE(ok, IPC_OK());
+
+  nsresult rv = funcs->UpdateSessionStore(mFrameElement, aFlushId, aIsFinal,
+                                          aEpoch, dataVal);
+  NS_ENSURE_SUCCESS(rv, IPC_OK());
+
   return IPC_OK();
 }
 
@@ -3044,12 +3101,13 @@ void BrowserParent::ApzAwareEventRoutingToChild(
       // There may be cases where the APZ hit-testing code came to a different
       // conclusion than the main-thread hit-testing code as to where the event
       // is destined. In such cases the layersId of the APZ result may not match
-      // the layersId of this renderframe. In such cases the main-thread hit-
-      // testing code "wins" so we need to update the guid to reflect this.
-      if (mRenderFrame.IsInitialized()) {
-        if (aOutTargetGuid->mLayersId != mRenderFrame.GetLayersId()) {
+      // the layersId of this RemoteLayerTreeOwner. In such cases the
+      // main-thread hit- testing code "wins" so we need to update the guid to
+      // reflect this.
+      if (mRemoteLayerTreeOwner.IsInitialized()) {
+        if (aOutTargetGuid->mLayersId != mRemoteLayerTreeOwner.GetLayersId()) {
           *aOutTargetGuid =
-              ScrollableLayerGuid(mRenderFrame.GetLayersId(), 0,
+              ScrollableLayerGuid(mRemoteLayerTreeOwner.GetLayersId(), 0,
                                   ScrollableLayerGuid::NULL_SCROLL_ID);
         }
       }
@@ -3380,9 +3438,9 @@ void BrowserParent::LayerTreeUpdate(const LayersObserverEpoch& aEpoch,
   RefPtr<Event> event = NS_NewDOMEvent(mFrameElement, nullptr, nullptr);
   if (aActive) {
     mHasPresented = true;
-    event->InitEvent(NS_LITERAL_STRING("MozLayerTreeReady"), true, false);
+    event->InitEvent(u"MozLayerTreeReady"_ns, true, false);
   } else {
-    event->InitEvent(NS_LITERAL_STRING("MozLayerTreeCleared"), true, false);
+    event->InitEvent(u"MozLayerTreeCleared"_ns, true, false);
   }
   event->SetTrusted(true);
   event->WidgetEventPtr()->mFlags.mOnlyChromeDispatch = true;
@@ -3439,7 +3497,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvRemotePaintIsReady() {
   }
 
   RefPtr<Event> event = NS_NewDOMEvent(mFrameElement, nullptr, nullptr);
-  event->InitEvent(NS_LITERAL_STRING("MozAfterRemotePaint"), false, false);
+  event->InitEvent(u"MozAfterRemotePaint"_ns, false, false);
   event->SetTrusted(true);
   event->WidgetEventPtr()->mFlags.mOnlyChromeDispatch = true;
   mFrameElement->DispatchEvent(*event);
@@ -3778,15 +3836,10 @@ BrowserParent::StartApzAutoscroll(float aAnchorX, float aAnchorY,
   }
 
   bool success = false;
-  if (mRenderFrame.IsInitialized()) {
-    layers::LayersId layersId = mRenderFrame.GetLayersId();
+  if (mRemoteLayerTreeOwner.IsInitialized()) {
+    layers::LayersId layersId = mRemoteLayerTreeOwner.GetLayersId();
     if (nsCOMPtr<nsIWidget> widget = GetWidget()) {
-#ifdef MOZ_BUILD_WEBRENDER
-      SLGuidAndRenderRoot guid(layersId, aPresShellId, aScrollId,
-                               gfxUtils::GetContentRenderRoot());
-#else
       ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
-#endif
 
       // The anchor coordinates that are passed in are relative to the origin
       // of the screen, but we are sending them to APZ which only knows about
@@ -3812,15 +3865,10 @@ BrowserParent::StopApzAutoscroll(nsViewID aScrollId, uint32_t aPresShellId) {
     return NS_OK;
   }
 
-  if (mRenderFrame.IsInitialized()) {
-    layers::LayersId layersId = mRenderFrame.GetLayersId();
+  if (mRemoteLayerTreeOwner.IsInitialized()) {
+    layers::LayersId layersId = mRemoteLayerTreeOwner.GetLayersId();
     if (nsCOMPtr<nsIWidget> widget = GetWidget()) {
-#ifdef MOZ_BUILD_WEBRENDER
-      SLGuidAndRenderRoot guid(layersId, aPresShellId, aScrollId,
-                               gfxUtils::GetContentRenderRoot());
-#else
       ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
-#endif
 
       widget->StopAsyncAutoscroll(guid);
     }

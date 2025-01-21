@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZILLA_SVGPATHSEGUTILS_H__
-#define MOZILLA_SVGPATHSEGUTILS_H__
+#ifndef DOM_SVG_SVGPATHSEGUTILS_H_
+#define DOM_SVG_SVGPATHSEGUTILS_H_
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGPathSegBinding.h"
@@ -25,7 +25,7 @@ namespace mozilla {
  * last path segment (if any).
  */
 struct SVGPathTraversalState {
-  typedef gfx::Point Point;
+  using Point = gfx::Point;
 
   enum TraversalMode { eUpdateAll, eUpdateOnlyStartAndCurrentPos };
 
@@ -257,4 +257,4 @@ class SVGPathSegUtils {
 
 }  // namespace mozilla
 
-#endif  // MOZILLA_SVGPATHSEGUTILS_H__
+#endif  // DOM_SVG_SVGPATHSEGUTILS_H_

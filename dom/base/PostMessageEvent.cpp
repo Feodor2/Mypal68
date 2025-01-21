@@ -134,14 +134,14 @@ PostMessageEvent::Run() {
 
       if (mCallerWindowID.isSome()) {
         rv = errorObject->InitWithSourceURI(
-            errorText, callerDocumentURI, EmptyString(), 0, 0,
-            nsIScriptError::errorFlag, "DOM Window", mCallerWindowID.value());
+            errorText, callerDocumentURI, u""_ns, 0, 0, nsIScriptError::errorFlag,
+            "DOM Window", mCallerWindowID.value());
       } else {
         nsString uriSpec;
         rv = NS_GetSanitizedURIStringFromURI(callerDocumentURI, uriSpec);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        rv = errorObject->Init(errorText, uriSpec, EmptyString(), 0, 0,
+        rv = errorObject->Init(errorText, uriSpec, u""_ns, 0, 0,
                                nsIScriptError::errorFlag, "DOM Window",
                                mIsFromPrivateWindow,
                                mProvidedPrincipal->IsSystemPrincipal());
@@ -191,8 +191,8 @@ PostMessageEvent::Run() {
   }
 
   event->InitMessageEvent(nullptr, u"message"_ns, CanBubble::eNo,
-                          Cancelable::eNo, messageData, mCallerOrigin,
-                          EmptyString(), source, ports);
+                          Cancelable::eNo, messageData, mCallerOrigin, u""_ns,
+                          source, ports);
 
   Dispatch(targetWindow, event);
   return NS_OK;

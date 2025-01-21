@@ -83,6 +83,10 @@ SVGUseElement::~SVGUseElement() {
 //----------------------------------------------------------------------
 // nsINode methods
 
+bool SVGUseElement::IsNodeOfType(uint32_t aFlags) const {
+  return !(aFlags & ~eUSE_TARGET);
+}
+
 void SVGUseElement::ProcessAttributeChange(int32_t aNamespaceID,
                                            nsAtom* aAttribute) {
   if (aNamespaceID == kNameSpaceID_None) {
@@ -307,13 +311,7 @@ void SVGUseElement::UpdateShadowTree() {
   });
 
   // make sure target is valid type for <use>
-  // QIable nsSVGGraphicsElement would eliminate enumerating all elements
-  if (!targetElement ||
-      !targetElement->IsAnyOfSVGElements(
-          nsGkAtoms::svg, nsGkAtoms::symbol, nsGkAtoms::g, nsGkAtoms::path,
-          nsGkAtoms::text, nsGkAtoms::rect, nsGkAtoms::circle,
-          nsGkAtoms::ellipse, nsGkAtoms::line, nsGkAtoms::polyline,
-          nsGkAtoms::polygon, nsGkAtoms::image, nsGkAtoms::use)) {
+  if (!targetElement || !targetElement->IsNodeOfType(nsINode::eUSE_TARGET)) {
     return;
   }
 
@@ -523,7 +521,7 @@ SVGElement::StringAttributesInfo SVGUseElement::GetStringInfo() {
 
 SVGUseFrame* SVGUseElement::GetFrame() const {
   nsIFrame* frame = GetPrimaryFrame();
-  // We might be a plain nsSVGContainerFrame if we didn't pass the conditional
+  // We might be a plain SVGContainerFrame if we didn't pass the conditional
   // processing checks.
   if (!frame || !frame->IsSVGUseFrame()) {
     MOZ_ASSERT_IF(frame, frame->Type() == LayoutFrameType::None);

@@ -6,12 +6,13 @@
 
 #include "mozAutoDocUpdate.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
+#include <utility>
+
+#include "SVGViewBoxSMILType.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/dom/SVGRect.h"
 #include "nsCharSeparatedTokenizer.h"
-#include "SVGViewBoxSMILType.h"
 #include "nsTextFormatter.h"
 
 using namespace mozilla::dom;
@@ -69,6 +70,41 @@ static SVGAttrTearoffTable<SVGAnimatedViewBox, SVGRect>
 SVGAttrTearoffTable<SVGAnimatedViewBox, SVGAnimatedRect>
     SVGAnimatedViewBox::sSVGAnimatedRectTearoffTable;
 
+//----------------------------------------------------------------------
+// Helper class: AutoChangeViewBoxNotifier
+// Stack-based helper class to pair calls to WillChangeViewBox and
+// DidChangeViewBox.
+class MOZ_RAII AutoChangeViewBoxNotifier {
+ public:
+  AutoChangeViewBoxNotifier(SVGAnimatedViewBox* aViewBox,
+                            SVGElement* aSVGElement, bool aDoSetAttr = true)
+      : mViewBox(aViewBox), mSVGElement(aSVGElement), mDoSetAttr(aDoSetAttr) {
+    MOZ_ASSERT(mViewBox, "Expecting non-null viewBox");
+    MOZ_ASSERT(mSVGElement, "Expecting non-null element");
+
+    if (mDoSetAttr) {
+      mUpdateBatch.emplace(aSVGElement->GetComposedDoc(), true);
+      mEmptyOrOldValue = mSVGElement->WillChangeViewBox(mUpdateBatch.ref());
+    }
+  }
+
+  ~AutoChangeViewBoxNotifier() {
+    if (mDoSetAttr) {
+      mSVGElement->DidChangeViewBox(mEmptyOrOldValue, mUpdateBatch.ref());
+    }
+    if (mViewBox->mAnimVal) {
+      mSVGElement->AnimationNeedsResample();
+    }
+  }
+
+ private:
+  SVGAnimatedViewBox* const mViewBox;
+  SVGElement* const mSVGElement;
+  Maybe<mozAutoDocUpdate> mUpdateBatch;
+  nsAttrValue mEmptyOrOldValue;
+  bool mDoSetAttr;
+};
+
 /* Implementation of SVGAnimatedViewBox methods */
 
 void SVGAnimatedViewBox::Init() {
@@ -121,16 +157,10 @@ void SVGAnimatedViewBox::SetBaseValue(const SVGViewBox& aRect,
     return;
   }
 
-  mozAutoDocUpdate updateBatch(aSVGElement->GetComposedDoc(), true);
-  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeViewBox(updateBatch);
+  AutoChangeViewBoxNotifier notifier(this, aSVGElement);
 
   mBaseVal = aRect;
   mHasBaseVal = true;
-
-  aSVGElement->DidChangeViewBox(emptyOrOldValue, updateBatch);
-  if (mAnimVal) {
-    aSVGElement->AnimationNeedsResample();
-  }
 }
 
 nsresult SVGAnimatedViewBox::SetBaseValueString(const nsAString& aValue,
@@ -147,21 +177,10 @@ nsresult SVGAnimatedViewBox::SetBaseValueString(const nsAString& aValue,
     return NS_OK;
   }
 
-  Maybe<mozAutoDocUpdate> updateBatch;
-  nsAttrValue emptyOrOldValue;
-  if (aDoSetAttr) {
-    updateBatch.emplace(aSVGElement->GetComposedDoc(), true);
-    emptyOrOldValue = aSVGElement->WillChangeViewBox(updateBatch.ref());
-  }
+  AutoChangeViewBoxNotifier notifier(this, aSVGElement, aDoSetAttr);
   mHasBaseVal = true;
   mBaseVal = viewBox;
 
-  if (aDoSetAttr) {
-    aSVGElement->DidChangeViewBox(emptyOrOldValue, updateBatch.ref());
-  }
-  if (mAnimVal) {
-    aSVGElement->AnimationNeedsResample();
-  }
   return NS_OK;
 }
 

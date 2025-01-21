@@ -8,8 +8,10 @@
 #  include <dwrite.h>
 #endif
 
+#include "chrome/common/ipc_channel.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/HangDetails.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/RemoteDecoderManagerParent.h"
 #include "mozilla/TimeStamp.h"

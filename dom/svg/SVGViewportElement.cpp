@@ -23,7 +23,6 @@
 #include "nsError.h"
 #include "nsGkAtoms.h"
 #include "nsIFrame.h"
-#include "nsISVGSVGFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleUtil.h"
 
@@ -65,6 +64,10 @@ already_AddRefed<SVGAnimatedRect> SVGViewportElement::ViewBox() {
 already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
 SVGViewportElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
+}
+
+bool SVGViewportElement::IsNodeOfType(uint32_t aFlags) const {
+  return !(aFlags & ~eUSE_TARGET);
 }
 
 //----------------------------------------------------------------------
@@ -128,8 +131,8 @@ inline float ComputeSynthesizedViewBoxDimension(
 void SVGViewportElement::UpdateHasChildrenOnlyTransform() {
   bool hasChildrenOnlyTransform =
       HasViewBoxOrSyntheticViewBox() ||
-      (IsRoot() && (GetCurrentTranslate() != SVGPoint(0.0f, 0.0f) ||
-                    GetCurrentScale() != 1.0f));
+      (IsRootSVGSVGElement() &&
+       static_cast<SVGSVGElement*>(this)->IsScaledOrTranslated());
   mHasChildrenOnlyTransform = hasChildrenOnlyTransform;
 }
 
@@ -156,7 +159,7 @@ void SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags) {
 
   // If we're not reconstructing the frame tree, then we only call
   // PostRestyleEvent if we're not being called under reflow to avoid recursing
-  // to death. See bug 767056 comments 10 and 12. Since our nsSVGOuterSVGFrame
+  // to death. See bug 767056 comments 10 and 12. Since our SVGOuterSVGFrame
   // is being reflowed we're going to invalidate and repaint its entire area
   // anyway (which will include our children).
   if ((changeHint & nsChangeHint_ReconstructFrame) ||
@@ -270,9 +273,10 @@ gfxMatrix SVGViewportElement::PrependLocalTransformsTo(
     const_cast<SVGViewportElement*>(this)->GetAnimatedLengthValues(&x, &y,
                                                                    nullptr);
     childToUser = ThebesMatrix(GetViewBoxTransform().PostTranslate(x, y));
-  } else if (IsRoot()) {
-    SVGPoint translate = GetCurrentTranslate();
-    float scale = GetCurrentScale();
+  } else if (IsRootSVGSVGElement()) {
+    const SVGSVGElement* svg = static_cast<const SVGSVGElement*>(this);
+    const SVGPoint& translate = svg->GetCurrentTranslate();
+    float scale = svg->CurrentScale();
     childToUser =
         ThebesMatrix(GetViewBoxTransform()
                          .PostScale(scale, scale)
@@ -319,7 +323,7 @@ SVGViewportElement::GetAnimatedPreserveAspectRatio() {
 bool SVGViewportElement::ShouldSynthesizeViewBox() const {
   MOZ_ASSERT(!HasViewBox(), "Should only be called if we lack a viewBox");
 
-  return IsRoot() && OwnerDoc()->IsBeingUsedAsImage();
+  return IsRootSVGSVGElement() && OwnerDoc()->IsBeingUsedAsImage();
 }
 
 //----------------------------------------------------------------------

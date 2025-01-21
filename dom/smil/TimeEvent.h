@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_TimeEvent_h
-#define mozilla_dom_TimeEvent_h
+#ifndef DOM_SMIL_TIMEEVENT_H_
+#define DOM_SMIL_TIMEEVENT_H_
 
 #include "nsDocShell.h"
 #include "mozilla/dom/Event.h"
@@ -45,7 +45,7 @@ class TimeEvent final : public Event {
   TimeEvent* AsTimeEvent() final { return this; }
 
  private:
-  ~TimeEvent() {}
+  ~TimeEvent() = default;
 
   nsCOMPtr<nsPIDOMWindowOuter> mView;
   int32_t mDetail;
@@ -58,4 +58,4 @@ already_AddRefed<mozilla::dom::TimeEvent> NS_NewDOMTimeEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
     mozilla::InternalSMILTimeEvent* aEvent);
 
-#endif  // mozilla_dom_TimeEvent_h
+#endif  // DOM_SMIL_TIMEEVENT_H_

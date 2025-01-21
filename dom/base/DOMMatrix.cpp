@@ -20,8 +20,7 @@
 #include "js/Conversions.h"  // JS::NumberToString
 #include "js/Equality.h"     // JS::SameValueZero
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 template <typename T>
 static void SetDataInMatrix(DOMMatrixReadOnly* aMatrix, const T* aData,
@@ -1019,5 +1018,4 @@ JSObject* DOMMatrix::WrapObject(JSContext* aCx,
   return DOMMatrix_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

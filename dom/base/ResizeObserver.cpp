@@ -6,13 +6,12 @@
 
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/SVGUtils.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include "nsSVGUtils.h"
 #include <limits>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * Returns the length of the parent-traversal path (in terms of the number of
@@ -60,7 +59,7 @@ static nsSize GetTargetSize(Element* aTarget, ResizeObserverBoxOptions aBox) {
     // Per the spec, SVG size is always its bounding box size no matter what
     // box option you choose, because SVG elements do not use standard CSS box
     // model.
-    gfxRect bbox = nsSVGUtils::GetBBox(frame);
+    gfxRect bbox = SVGUtils::GetBBox(frame);
     size.width = NSFloatPixelsToAppUnits(bbox.width, AppUnitsPerCSSPixel());
     size.height = NSFloatPixelsToAppUnits(bbox.height, AppUnitsPerCSSPixel());
   } else {
@@ -343,5 +342,4 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ResizeObserverSize)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

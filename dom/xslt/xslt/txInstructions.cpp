@@ -286,7 +286,7 @@ nsresult txCopy::execute(txExecutionState& aEs) {
   switch (txXPathNodeUtils::getNodeType(node)) {
     case txXPathNodeType::DOCUMENT_NODE:
     case txXPathNodeType::DOCUMENT_FRAGMENT_NODE: {
-      const nsString& empty = EmptyString();
+      const nsString& empty = u""_ns;
 
       // "close" current element to ensure that no attributes are added
       rv = aEs.mResultHandler->characters(empty, false);
@@ -450,7 +450,7 @@ nsresult txMessage::execute(txExecutionState& aEs) {
   nsCOMPtr<nsIConsoleService> consoleSvc =
       do_GetService("@mozilla.org/consoleservice;1");
   if (consoleSvc) {
-    nsAutoString logString(NS_LITERAL_STRING("xsl:message - "));
+    nsAutoString logString(u"xsl:message - "_ns);
     logString.Append(handler->mValue);
     consoleSvc->LogStringMessage(logString.get());
   }
@@ -727,7 +727,7 @@ nsresult txStartElement::execute(txExecutionState& aEs) {
     success = false;
     // we call characters with an empty string to "close" any element to
     // make sure that no attributes are added
-    rv = aEs.mResultHandler->characters(EmptyString(), false);
+    rv = aEs.mResultHandler->characters(u""_ns, false);
   }
   NS_ENSURE_SUCCESS(rv, rv);
 

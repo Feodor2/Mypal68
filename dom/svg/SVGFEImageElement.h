@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEImageElement_h
-#define mozilla_dom_SVGFEImageElement_h
+#ifndef DOM_SVG_SVGFEIMAGEELEMENT_H_
+#define DOM_SVG_SVGFEIMAGEELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 
 nsresult NS_NewSVGFEImageElement(
@@ -16,7 +16,7 @@ class SVGFEImageFrame;
 
 namespace dom {
 
-typedef SVGFE SVGFEImageElementBase;
+using SVGFEImageElementBase = SVGFE;
 
 class SVGFEImageElement final : public SVGFEImageElementBase,
                                 public nsImageLoadingContent {
@@ -66,6 +66,7 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
   virtual void UnbindFromTree(bool aNullParent) override;
   virtual EventStates IntrinsicState() const override;
+  virtual void DestroyContent() override;
 
   void Notify(imgIRequest* aRequest, int32_t aType,
               const nsIntRect* aData) override;
@@ -103,4 +104,4 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
 }  // namespace dom
 }  // namespace mozilla
 
-#endif
+#endif  // DOM_SVG_SVGFEIMAGEELEMENT_H_

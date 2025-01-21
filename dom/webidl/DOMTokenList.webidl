@@ -11,8 +11,11 @@
 
 [Exposed=Window]
 interface DOMTokenList {
+  [Pure]
   readonly attribute unsigned long length;
+  [Pure]
   getter DOMString? item(unsigned long index);
+  [Pure]
   boolean contains(DOMString token);
   [CEReactions, Throws]
   void add(DOMString... tokens);
@@ -24,7 +27,7 @@ interface DOMTokenList {
   boolean toggle(DOMString token, optional boolean force);
   [Throws]
   boolean supports(DOMString token);
-  [CEReactions, SetterThrows]
+  [CEReactions, SetterThrows, Pure]
   stringifier attribute DOMString value;
   iterable<DOMString?>;
 };

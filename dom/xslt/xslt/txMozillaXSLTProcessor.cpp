@@ -80,7 +80,7 @@ nsresult txToDocHandlerFactory::createHandlerWith(
           new txMozillaXMLOutput(aFormat, mObserver));
 
       nsresult rv = handler->createResultDocument(
-          EmptyString(), kNameSpaceID_None, mSourceDocument, mDocumentIsData);
+          u""_ns, kNameSpaceID_None, mSourceDocument, mDocumentIsData);
       if (NS_SUCCEEDED(rv)) {
         *aHandler = handler.release();
       }
@@ -934,7 +934,7 @@ void txMozillaXSLTProcessor::reportError(nsresult aResult,
         mozilla::services::GetStringBundleService();
     if (sbs) {
       nsString errorText;
-      sbs->FormatStatusMessage(aResult, EmptyString().get(), errorText);
+      sbs->FormatStatusMessage(aResult, u"", errorText);
 
       nsAutoString errorMessage;
       nsCOMPtr<nsIStringBundle> bundle;
@@ -975,15 +975,15 @@ void txMozillaXSLTProcessor::notifyError() {
       "Bad readyState.");
   document->SetReadyStateInternal(Document::READYSTATE_LOADING);
 
-  NS_NAMED_LITERAL_STRING(
-      ns, "http://www.mozilla.org/newlayout/xml/parsererror.xml");
+  constexpr auto ns =
+      u"http://www.mozilla.org/newlayout/xml/parsererror.xml"_ns;
 
   IgnoredErrorResult rv;
   ElementCreationOptionsOrString options;
   options.SetAsString();
 
-  nsCOMPtr<Element> element = document->CreateElementNS(
-      ns, NS_LITERAL_STRING("parsererror"), options, rv);
+  nsCOMPtr<Element> element =
+      document->CreateElementNS(ns, u"parsererror"_ns, options, rv);
   if (rv.Failed()) {
     return;
   }
@@ -1004,8 +1004,8 @@ void txMozillaXSLTProcessor::notifyError() {
     ElementCreationOptionsOrString options;
     options.SetAsString();
 
-    nsCOMPtr<Element> sourceElement = document->CreateElementNS(
-        ns, NS_LITERAL_STRING("sourcetext"), options, rv);
+    nsCOMPtr<Element> sourceElement =
+        document->CreateElementNS(ns, u"sourcetext"_ns, options, rv);
     if (rv.Failed()) {
       return;
     }

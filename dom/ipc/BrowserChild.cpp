@@ -9,125 +9,128 @@
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/DocAccessibleChild.h"
 #endif
-#include "Layers.h"
-#include "ContentChild.h"
+#include <algorithm>
+#include <utility>
+
 #include "BrowserParent.h"
+#include "ClientLayerManager.h"
+#include "ContentChild.h"
+#include "DocumentInlines.h"
+#include "EventStateManager.h"
+#include "FrameLayerBuilder.h"
+#include "Layers.h"
+#include "LayersLogging.h"
+#include "MMPrinter.h"
+#include "PermissionMessageUtils.h"
+#include "PuppetWidget.h"
+#include "StructuredCloneData.h"
+#include "UnitTransforms.h"
+#include "ipc/nsGUIEventIPC.h"
 #include "js/JSON.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/BrowserElementParent.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/IMEStateManager.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ProcessHangMonitor.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/TouchEvents.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PBrowser.h"
-#include "mozilla/dom/WindowProxyHolder.h"
-#include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/SessionStoreListener.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/gfx/CrossProcessPaint.h"
+#include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/IMEStateManager.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZCTreeManagerChild.h"
+#include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/APZEventState.h"
-#include "mozilla/layers/ContentProcessController.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
+#include "mozilla/layers/ContentProcessController.h"
 #include "mozilla/layers/DoubleTapToZoom.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "mozilla/layers/ShadowLayers.h"
-#ifdef MOZ_BUILD_WEBRENDER
-#  include "mozilla/layers/WebRenderLayerManager.h"
-#endif
 #include "mozilla/plugins/PPluginWidgetChild.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/Move.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/ProcessHangMonitor.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TouchEvents.h"
-#include "mozilla/Unused.h"
 #include "nsBrowserStatusFilter.h"
+#include "nsColorPickerProxy.h"
+#include "nsCommandParams.h"
+#include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
+#include "nsDeviceContext.h"
 #include "nsDocShell.h"
+#include "nsDocShellLoadState.h"
 #include "nsEmbedCID.h"
-#include "nsGlobalWindow.h"
-#include <algorithm>
 #include "nsExceptionHandler.h"
 #include "nsFilePickerProxy.h"
-#include "mozilla/dom/Element.h"
+#include "nsFocusManager.h"
 #include "nsGlobalWindow.h"
 #include "nsIBaseWindow.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIClassifiedChannel.h"
-#include "DocumentInlines.h"
-#include "nsFocusManager.h"
-#include "EventStateManager.h"
 #include "nsIDocShell.h"
 #include "nsIFrame.h"
+#include "nsILoadContext.h"
+#include "nsISHEntry.h"
+#include "nsISHistory.h"
+#include "nsIScriptError.h"
 #include "nsISecureBrowserUI.h"
 #include "nsIURI.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsIWebBrowser.h"
 #include "nsIWebProgress.h"
+#include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
 #include "nsPointerHashKeys.h"
-#include "nsLayoutUtils.h"
 #include "nsPrintfCString.h"
+#include "nsQueryObject.h"
+#include "nsRefreshDriver.h"
+#include "nsSandboxFlags.h"
+#include "nsString.h"
 #include "nsTHashtable.h"
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #include "nsViewManager.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsWindowWatcher.h"
-#include "PermissionMessageUtils.h"
-#include "PuppetWidget.h"
-#include "StructuredCloneData.h"
 #include "nsViewportInfo.h"
-#include "nsILoadContext.h"
-#include "ipc/nsGUIEventIPC.h"
-#include "mozilla/gfx/Matrix.h"
-#include "UnitTransforms.h"
-#include "ClientLayerManager.h"
-#include "nsColorPickerProxy.h"
-#include "nsContentPermissionHelper.h"
-#include "nsNetUtil.h"
-#include "nsIScriptError.h"
-#include "mozilla/EventForwards.h"
-#include "nsDeviceContext.h"
-#include "nsSandboxFlags.h"
-#include "FrameLayerBuilder.h"
-#ifdef MOZ_VR
-#  include "VRManagerChild.h"
-#endif
-#include "nsCommandParams.h"
-#include "nsISHEntry.h"
-#include "nsISHistory.h"
-#include "nsQueryObject.h"
-#include "mozilla/dom/DocGroup.h"
-#include "nsString.h"
-#include "mozilla/Telemetry.h"
-#include "nsDocShellLoadState.h"
 #include "nsWebBrowser.h"
-#include "mozilla/dom/WindowGlobalChild.h"
-#include "MMPrinter.h"
-#include "mozilla/ResultExtensions.h"
+#include "nsWindowWatcher.h"
 
 #ifdef XP_WIN
 #  include "mozilla/plugins/PluginWidgetChild.h"
+#endif
+
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
+
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
 #endif
 
 #ifdef NS_PRINTING
@@ -137,8 +140,7 @@
 #  include "nsIWebBrowserPrint.h"
 #endif
 
-#define TABC_LOG(...)
-// #define TABC_LOG(...) printf_stderr("TABC: " __VA_ARGS__)
+static mozilla::LazyLogModule sApzChildLog("apz.child");
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -415,13 +417,9 @@ void BrowserChild::ContentReceivedInputBlock(uint64_t aInputBlockId,
   }
 }
 
-void BrowserChild::SetTargetAPZC(uint64_t aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-                                 const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-                                 const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-) const {
+void BrowserChild::SetTargetAPZC(
+    uint64_t aInputBlockId,
+    const nsTArray<ScrollableLayerGuid>& aTargets) const {
   if (mApzcTreeManager) {
     mApzcTreeManager->SetTargetAPZC(aInputBlockId, aTargets);
   }
@@ -442,13 +440,8 @@ bool BrowserChild::DoUpdateZoomConstraints(
     return false;
   }
 
-#ifdef MOZ_BUILD_WEBRENDER
-  SLGuidAndRenderRoot guid = SLGuidAndRenderRoot(
-      mLayersId, aPresShellId, aViewId, gfxUtils::GetContentRenderRoot());
-#else
   ScrollableLayerGuid guid =
       ScrollableLayerGuid(mLayersId, aPresShellId, aViewId);
-#endif
 
   mApzcTreeManager->UpdateZoomConstraints(guid, aConstraints);
   return true;
@@ -551,10 +544,11 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
 
   mIPCOpen = true;
 
+#if !defined(MOZ_WIDGET_ANDROID)
   mSessionStoreListener = new TabListener(docShell, nullptr);
   rv = mSessionStoreListener->Init();
   NS_ENSURE_SUCCESS(rv, rv);
-
+#endif
   return NS_OK;
 }
 
@@ -601,7 +595,6 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserChild)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome)
-  NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome2)
   NS_INTERFACE_MAP_ENTRY(nsIEmbeddingSiteWindow)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChromeFocus)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
@@ -617,15 +610,6 @@ NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(BrowserChild)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(BrowserChild)
-
-NS_IMETHODIMP
-BrowserChild::SetStatus(uint32_t aStatusType, const char16_t* aStatus) {
-  return SetStatusWithContext(
-      aStatusType,
-      aStatus ? static_cast<const nsString&>(nsDependentString(aStatus))
-              : EmptyString(),
-      nullptr);
-}
 
 NS_IMETHODIMP
 BrowserChild::GetChromeFlags(uint32_t* aChromeFlags) {
@@ -710,12 +694,10 @@ BrowserChild::IsWindowModal(bool* aRetVal) {
 }
 
 NS_IMETHODIMP
-BrowserChild::SetStatusWithContext(uint32_t aStatusType,
-                                   const nsAString& aStatusText,
-                                   nsISupports* aStatusContext) {
+BrowserChild::SetLinkStatus(const nsAString& aStatusText) {
   // We can only send the status after the ipc machinery is set up
   if (IPCOpen()) {
-    SendSetStatus(aStatusType, nsString(aStatusText));
+    SendSetLinkStatus(nsString(aStatusText));
   }
   return NS_OK;
 }
@@ -985,14 +967,14 @@ mozilla::ipc::IPCResult BrowserChild::RecvSkipBrowsingContextDetach() {
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvLoadURL(const nsCString& aURI,
-                                                  const ShowInfo& aInfo) {
+                                                  const ParentShowInfo& aInfo) {
   if (!mDidLoadURLInit) {
     mDidLoadURLInit = true;
     if (!InitBrowserChildMessageManager()) {
       return IPC_FAIL_NO_REASON(this);
     }
 
-    ApplyShowInfo(aInfo);
+    ApplyParentShowInfo(aInfo);
   }
 
   LoadURIOptions loadURIOptions;
@@ -1020,14 +1002,14 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadURL(const nsCString& aURI,
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvResumeLoad(
-    const uint64_t& aPendingSwitchID, const ShowInfo& aInfo) {
+    const uint64_t& aPendingSwitchID, const ParentShowInfo& aInfo) {
   if (!mDidLoadURLInit) {
     mDidLoadURLInit = true;
     if (!InitBrowserChildMessageManager()) {
       return IPC_FAIL_NO_REASON(this);
     }
 
-    ApplyShowInfo(aInfo);
+    ApplyParentShowInfo(aInfo);
   }
 
   nsresult rv = WebNavigation()->ResumeRedirectedLoad(aPendingSwitchID, -1);
@@ -1038,12 +1020,13 @@ mozilla::ipc::IPCResult BrowserChild::RecvResumeLoad(
   return IPC_OK();
 }
 
-void BrowserChild::DoFakeShow(const ShowInfo& aShowInfo) {
-  RecvShow(ScreenIntSize(0, 0), aShowInfo, mParentIsActive, nsSizeMode_Normal);
+void BrowserChild::DoFakeShow(const ParentShowInfo& aParentShowInfo) {
+  OwnerShowInfo ownerInfo{ScreenIntSize(), mParentIsActive, nsSizeMode_Normal};
+  RecvShow(aParentShowInfo, ownerInfo);
   mDidFakeShow = true;
 }
 
-void BrowserChild::ApplyShowInfo(const ShowInfo& aInfo) {
+void BrowserChild::ApplyParentShowInfo(const ParentShowInfo& aInfo) {
   // Even if we already set real show info, the dpi / rounding & scale may still
   // be invalid (if BrowserParent wasn't able to get widget it would just send
   // 0). So better to always set up-to-date values here.
@@ -1086,13 +1069,11 @@ void BrowserChild::ApplyShowInfo(const ShowInfo& aInfo) {
   mIsTransparent = aInfo.isTransparent();
 }
 
-mozilla::ipc::IPCResult BrowserChild::RecvShow(const ScreenIntSize& aSize,
-                                               const ShowInfo& aInfo,
-                                               const bool& aParentIsActive,
-                                               const nsSizeMode& aSizeMode) {
+mozilla::ipc::IPCResult BrowserChild::RecvShow(
+    const ParentShowInfo& aParentInfo, const OwnerShowInfo& aOwnerInfo) {
   bool res = true;
 
-  mPuppetWidget->SetSizeMode(aSizeMode);
+  mPuppetWidget->SetSizeMode(aOwnerInfo.sizeMode());
   if (!mDidFakeShow) {
     nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(WebNavigation());
     if (!baseWindow) {
@@ -1104,8 +1085,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvShow(const ScreenIntSize& aSize,
     res = InitBrowserChildMessageManager();
   }
 
-  ApplyShowInfo(aInfo);
-  RecvParentActivated(aParentIsActive);
+  ApplyParentShowInfo(aParentInfo);
+  RecvParentActivated(aOwnerInfo.parentWindowIsActive());
 
   if (!res) {
     return IPC_FAIL_NO_REASON(this);
@@ -1120,6 +1101,27 @@ mozilla::ipc::IPCResult BrowserChild::RecvInitRendering(
     const CompositorOptions& aCompositorOptions, const bool& aLayersConnected) {
   mLayersConnected = Some(aLayersConnected);
   InitRenderingState(aTextureFactoryIdentifier, aLayersId, aCompositorOptions);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserChild::RecvCompositorOptionsChanged(
+    const CompositorOptions& aNewOptions) {
+  MOZ_ASSERT(mCompositorOptions);
+
+  // The only compositor option we currently support changing is APZ
+  // enablement. Even that is only partially supported for now:
+  //   * Going from APZ to non-APZ is fine - we just flip the stored flag.
+  //     Note that we keep the actors (mApzcTreeManager, and the APZChild
+  //     created in InitAPZState()) around (read on for why).
+  //   * Going from non-APZ to APZ is only supported if we were using
+  //     APZ initially (at InitRendering() time) and we are transitioning
+  //     back. In this case, we just reuse the actors which we kept around.
+  //     Fully supporting a non-APZ to APZ transition (i.e. even in cases
+  //     where we initialized as non-APZ) would require setting up the actors
+  //     here. (In that case, we would also have the options of destroying
+  //     the actors in the APZ --> non-APZ case, and always re-creating them
+  //     during a non-APZ --> APZ transition).
+  mCompositorOptions->SetUseAPZ(aNewOptions.UseAPZ());
   return IPC_OK();
 }
 
@@ -1173,9 +1175,9 @@ mozilla::ipc::IPCResult BrowserChild::RecvSizeModeChanged(
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvChildToParentMatrix(
-    const mozilla::gfx::Matrix4x4& aMatrix) {
+    const mozilla::Maybe<mozilla::gfx::Matrix4x4>& aMatrix) {
   mChildToParentConversionMatrix =
-      Some(LayoutDeviceToLayoutDeviceMatrix4x4::FromUnknownMatrix(aMatrix));
+      LayoutDeviceToLayoutDeviceMatrix4x4::FromUnknownMatrix(aMatrix);
   return IPC_OK();
 }
 
@@ -1198,11 +1200,12 @@ mozilla::ipc::IPCResult BrowserChild::RecvSuppressDisplayport(
 void BrowserChild::HandleDoubleTap(const CSSPoint& aPoint,
                                    const Modifiers& aModifiers,
                                    const ScrollableLayerGuid& aGuid) {
-  TABC_LOG("Handling double tap at %s with %p %p\n", Stringify(aPoint).c_str(),
-           mBrowserChildMessageManager
-               ? mBrowserChildMessageManager->GetWrapper()
-               : nullptr,
-           mBrowserChildMessageManager.get());
+  MOZ_LOG(
+      sApzChildLog, LogLevel::Debug,
+      ("Handling double tap at %s with %p %p\n", Stringify(aPoint).c_str(),
+       mBrowserChildMessageManager ? mBrowserChildMessageManager->GetWrapper()
+                                   : nullptr,
+       mBrowserChildMessageManager.get()));
 
   if (!mBrowserChildMessageManager) {
     return;
@@ -1221,12 +1224,7 @@ void BrowserChild::HandleDoubleTap(const CSSPoint& aPoint,
   if (APZCCallbackHelper::GetOrCreateScrollIdentifiers(
           document->GetDocumentElement(), &presShellId, &viewId) &&
       mApzcTreeManager) {
-#ifdef MOZ_BUILD_WEBRENDER
-    SLGuidAndRenderRoot guid(mLayersId, presShellId, viewId,
-                             gfxUtils::GetContentRenderRoot());
-#else
     ScrollableLayerGuid guid(mLayersId, presShellId, viewId);
-#endif
 
     mApzcTreeManager->ZoomToRect(guid, zoomToRect, DEFAULT_BEHAVIOR);
   }
@@ -1249,8 +1247,13 @@ mozilla::ipc::IPCResult BrowserChild::RecvHandleTap(
   }
   CSSToLayoutDeviceScale scale(
       presShell->GetPresContext()->CSSToDevPixelScale());
-  CSSPoint point =
-      APZCCallbackHelper::ApplyCallbackTransform(aPoint / scale, aGuid);
+  CSSPoint point = aPoint / scale;
+
+  // Stash the guid in InputAPZContext so that when the visual-to-layout
+  // transform is applied to the event's coordinates, we use the right transform
+  // based on the scroll frame being targeted.
+  // The other values don't really matter.
+  InputAPZContext context(aGuid, aInputBlockId, nsEventStatus_eSentinel);
 
   switch (aType) {
     case GeckoContentController::TapType::eSingleTap:
@@ -1312,14 +1315,8 @@ bool BrowserChild::NotifyAPZStateChange(
 
 void BrowserChild::StartScrollbarDrag(
     const layers::AsyncDragMetrics& aDragMetrics) {
-#ifdef MOZ_BUILD_WEBRENDER
-  SLGuidAndRenderRoot guid(mLayersId, aDragMetrics.mPresShellId,
-                           aDragMetrics.mViewId,
-                           gfxUtils::GetContentRenderRoot());
-#else
   ScrollableLayerGuid guid(mLayersId, aDragMetrics.mPresShellId,
                            aDragMetrics.mViewId);
-#endif
 
   if (mApzcTreeManager) {
     mApzcTreeManager->StartScrollbarDrag(guid, aDragMetrics);
@@ -1329,12 +1326,7 @@ void BrowserChild::StartScrollbarDrag(
 void BrowserChild::ZoomToRect(const uint32_t& aPresShellId,
                               const ScrollableLayerGuid::ViewID& aViewId,
                               const CSSRect& aRect, const uint32_t& aFlags) {
-#ifdef MOZ_BUILD_WEBRENDER
-  SLGuidAndRenderRoot guid(mLayersId, aPresShellId, aViewId,
-                           gfxUtils::GetContentRenderRoot());
-#else
   ScrollableLayerGuid guid(mLayersId, aPresShellId, aViewId);
-#endif
 
   if (mApzcTreeManager) {
     mApzcTreeManager->ZoomToRect(guid, aRect, aFlags);
@@ -1388,16 +1380,16 @@ mozilla::ipc::IPCResult BrowserChild::RecvStopIMEStateManagement() {
 mozilla::ipc::IPCResult BrowserChild::RecvMouseEvent(
     const nsString& aType, const float& aX, const float& aY,
     const int32_t& aButton, const int32_t& aClickCount,
-    const int32_t& aModifiers, const bool& aIgnoreRootScrollFrame) {
+    const int32_t& aModifiers) {
   // IPDL doesn't hold a strong reference to protocols as they're not required
   // to be refcounted. This function can run script, which may trigger a nested
   // event loop, which may release this, so we hold a strong reference here.
   RefPtr<BrowserChild> kungFuDeathGrip(this);
   RefPtr<PresShell> presShell = GetTopLevelPresShell();
-  APZCCallbackHelper::DispatchMouseEvent(
-      presShell, aType, CSSPoint(aX, aY), aButton, aClickCount, aModifiers,
-      aIgnoreRootScrollFrame, MouseEvent_Binding::MOZ_SOURCE_UNKNOWN,
-      0 /* Use the default value here. */);
+  APZCCallbackHelper::DispatchMouseEvent(presShell, aType, CSSPoint(aX, aY),
+                                         aButton, aClickCount, aModifiers,
+                                         MouseEvent_Binding::MOZ_SOURCE_UNKNOWN,
+                                         0 /* Use the default value here. */);
   return IPC_OK();
 }
 
@@ -1550,6 +1542,16 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealMouseButtonEvent(
 void BrowserChild::HandleRealMouseButtonEvent(const WidgetMouseEvent& aEvent,
                                               const ScrollableLayerGuid& aGuid,
                                               const uint64_t& aInputBlockId) {
+  WidgetMouseEvent localEvent(aEvent);
+  localEvent.mWidget = mPuppetWidget;
+
+  // We need one InputAPZContext here to propagate |aGuid| to places in
+  // SendSetTargetAPZCNotification() which apply the visual-to-layout transform,
+  // and another below to propagate the |postLayerization| flag (whose value
+  // we don't know until SendSetTargetAPZCNotification() returns) into
+  // the event dispatch code.
+  InputAPZContext context1(aGuid, aInputBlockId, nsEventStatus_eSentinel);
+
   // Mouse events like eMouseEnterIntoWidget, that are created in the parent
   // process EventStateManager code, have an input block id which they get from
   // the InputAPZContext in the parent process stack. However, they did not
@@ -1557,23 +1559,19 @@ void BrowserChild::HandleRealMouseButtonEvent(const WidgetMouseEvent& aEvent,
   // Since thos events didn't go through APZ, we don't need to send
   // notifications for them.
   UniquePtr<DisplayportSetListener> postLayerization;
-  if (aInputBlockId && aEvent.mFlags.mHandledByAPZ) {
+  if (aInputBlockId && localEvent.mFlags.mHandledByAPZ) {
     nsCOMPtr<Document> document(GetTopLevelDocument());
     postLayerization = APZCCallbackHelper::SendSetTargetAPZCNotification(
-        mPuppetWidget, document, aEvent, aGuid.mLayersId, aInputBlockId);
+        mPuppetWidget, document, localEvent, aGuid.mLayersId, aInputBlockId);
   }
 
-  InputAPZContext context(aGuid, aInputBlockId, nsEventStatus_eIgnore,
-                          postLayerization != nullptr);
+  InputAPZContext context2(aGuid, aInputBlockId, nsEventStatus_eSentinel,
+                           postLayerization != nullptr);
 
-  WidgetMouseEvent localEvent(aEvent);
-  localEvent.mWidget = mPuppetWidget;
-  APZCCallbackHelper::ApplyCallbackTransform(localEvent, aGuid,
-                                             mPuppetWidget->GetDefaultScale());
   DispatchWidgetEventViaAPZ(localEvent);
 
-  if (aInputBlockId && aEvent.mFlags.mHandledByAPZ) {
-    mAPZEventState->ProcessMouseEvent(aEvent, aInputBlockId);
+  if (aInputBlockId && localEvent.mFlags.mHandledByAPZ) {
+    mAPZEventState->ProcessMouseEvent(localEvent, aInputBlockId);
   }
 
   // Do this after the DispatchWidgetEventViaAPZ call above, so that if the
@@ -1660,8 +1658,13 @@ void BrowserChild::DispatchWheelEvent(const WidgetWheelEvent& aEvent,
   }
 
   localEvent.mWidget = mPuppetWidget;
-  APZCCallbackHelper::ApplyCallbackTransform(localEvent, aGuid,
-                                             mPuppetWidget->GetDefaultScale());
+
+  // Stash the guid in InputAPZContext so that when the visual-to-layout
+  // transform is applied to the event's coordinates, we use the right transform
+  // based on the scroll frame being targeted.
+  // The other values don't really matter.
+  InputAPZContext context(aGuid, aInputBlockId, nsEventStatus_eSentinel);
+
   DispatchWidgetEventViaAPZ(localEvent);
 
   if (localEvent.mCanTriggerSwipe) {
@@ -1709,13 +1712,17 @@ mozilla::ipc::IPCResult BrowserChild::RecvNormalPriorityMouseWheelEvent(
 mozilla::ipc::IPCResult BrowserChild::RecvRealTouchEvent(
     const WidgetTouchEvent& aEvent, const ScrollableLayerGuid& aGuid,
     const uint64_t& aInputBlockId, const nsEventStatus& aApzResponse) {
-  TABC_LOG("Receiving touch event of type %d\n", aEvent.mMessage);
+  MOZ_LOG(sApzChildLog, LogLevel::Debug,
+          ("Receiving touch event of type %d\n", aEvent.mMessage));
 
   WidgetTouchEvent localEvent(aEvent);
   localEvent.mWidget = mPuppetWidget;
 
-  APZCCallbackHelper::ApplyCallbackTransform(localEvent, aGuid,
-                                             mPuppetWidget->GetDefaultScale());
+  // Stash the guid in InputAPZContext so that when the visual-to-layout
+  // transform is applied to the event's coordinates, we use the right transform
+  // based on the scroll frame being targeted.
+  // The other values don't really matter.
+  InputAPZContext context(aGuid, aInputBlockId, aApzResponse);
 
   if (localEvent.mMessage == eTouchStart && AsyncPanZoomEnabled()) {
     nsCOMPtr<Document> document = GetTopLevelDocument();
@@ -1852,6 +1859,11 @@ mozilla::ipc::IPCResult BrowserChild::RecvNativeSynthesisResponse(
 mozilla::ipc::IPCResult BrowserChild::RecvFlushTabState(
     const uint32_t& aFlushId, const bool& aIsFinal) {
   UpdateSessionStore(aFlushId, aIsFinal);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserChild::RecvUpdateEpoch(const uint32_t& aEpoch) {
+  mSessionStoreListener->SetEpoch(aEpoch);
   return IPC_OK();
 }
 
@@ -2267,8 +2279,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvDestroy() {
     // Message handlers are called from the event loop, so it better be safe to
     // run script.
     MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
-    mBrowserChildMessageManager->DispatchTrustedEvent(
-        NS_LITERAL_STRING("unload"));
+    mBrowserChildMessageManager->DispatchTrustedEvent(u"unload"_ns);
   }
 
   nsCOMPtr<nsIObserverService> observerService =
@@ -3189,7 +3200,6 @@ nsresult BrowserChild::CanCancelContentJS(
   if (aEpoch <= mCancelContentJSEpoch) {
     // The next page loaded before we got here, so we shouldn't try to cancel
     // the content JS.
-    TABC_LOG("Unable to cancel content JS; the next page is already loaded!\n");
     return NS_OK;
   }
 
@@ -3694,8 +3704,23 @@ bool BrowserChild::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
     store->GetScrollPositions(positions, positionDescendants);
   }
 
-  Unused << SendSessionStoreUpdate(docShellCaps, privatedMode, positions,
-                                   positionDescendants, aFlushId, aIsFinal);
+  nsTArray<InputFormData> inputs;
+  nsTArray<CollectedInputDataValue> idVals, xPathVals;
+  if (store->IsFormDataChanged()) {
+    inputs = store->GetInputs(idVals, xPathVals);
+  }
+
+  nsTArray<nsCString> origins;
+  nsTArray<nsString> keys, values;
+  bool isFullStorage = false;
+  if (store->IsStorageUpdated()) {
+    isFullStorage = store->GetAndClearStorageChanges(origins, keys, values);
+  }
+
+  Unused << SendSessionStoreUpdate(
+      docShellCaps, privatedMode, positions, positionDescendants, inputs,
+      idVals, xPathVals, origins, keys, values, isFullStorage, aFlushId,
+      aIsFinal, mSessionStoreListener->GetEpoch());
   return true;
 }
 

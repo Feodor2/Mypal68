@@ -7,8 +7,7 @@
 #include "mozilla/dom/TimeoutManager.h"
 #include "nsGlobalWindowInner.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 Timeout::Timeout()
     : mTimeoutId(0),
@@ -80,5 +79,4 @@ const TimeDuration& Timeout::TimeRemaining() const {
   return mTimeRemaining;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

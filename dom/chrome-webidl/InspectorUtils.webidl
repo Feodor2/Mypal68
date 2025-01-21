@@ -22,8 +22,8 @@ namespace InspectorUtils {
   unsigned long getRelativeRuleLine(CSSRule rule);
   boolean hasRulesModifiedByCSSOM(CSSStyleSheet sheet);
   unsigned long getSelectorCount(CSSStyleRule rule);
-  [Throws] DOMString getSelectorText(CSSStyleRule rule,
-                                     unsigned long selectorIndex);
+  [Throws] UTF8String getSelectorText(CSSStyleRule rule,
+                                      unsigned long selectorIndex);
   [Throws] unsigned long long getSpecificity(CSSStyleRule rule,
                                              unsigned long selectorIndex);
   [Throws] boolean selectorMatchesElement(
@@ -43,6 +43,9 @@ namespace InspectorUtils {
   [Throws] boolean cssPropertyIsShorthand(UTF8String property);
 
   [Throws] boolean cssPropertySupportsType(UTF8String property, InspectorPropertyType type);
+
+  // A version of CSS.supports that allows you to set UA or chrome context.
+  boolean supports(UTF8String conditionText, optional SupportsOptions options = {});
 
   boolean isIgnorableWhitespace(CharacterData dataNode);
   Node? getParentForNode(Node node, boolean showingAnonymousContent);
@@ -77,6 +80,12 @@ namespace InspectorUtils {
   [Throws] void parseStyleSheet(CSSStyleSheet sheet, UTF8String input);
   boolean isCustomElementName([TreatNullAs=EmptyString] DOMString name,
                               DOMString? namespaceURI);
+};
+
+dictionary SupportsOptions {
+  boolean userAgent = false;
+  boolean chrome = false;
+  boolean quirks = false;
 };
 
 dictionary PropertyNamesOptions {

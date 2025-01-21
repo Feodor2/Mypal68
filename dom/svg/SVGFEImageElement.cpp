@@ -5,6 +5,7 @@
 #include "mozilla/dom/SVGFEImageElement.h"
 
 #include "mozilla/EventStates.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/dom/SVGFEImageElementBinding.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "mozilla/dom/UserActivation.h"
@@ -12,9 +13,7 @@
 #include "mozilla/RefPtr.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
-#include "nsSVGUtils.h"
 #include "nsNetUtil.h"
-#include "SVGObserverUtils.h"
 #include "imgIContainer.h"
 #include "gfx2DGlue.h"
 
@@ -51,7 +50,7 @@ SVGFEImageElement::SVGFEImageElement(
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
 }
 
-SVGFEImageElement::~SVGFEImageElement() { DestroyImageLoadingContent(); }
+SVGFEImageElement::~SVGFEImageElement() { nsImageLoadingContent::Destroy(); }
 
 //----------------------------------------------------------------------
 
@@ -155,6 +154,11 @@ void SVGFEImageElement::UnbindFromTree(bool aNullParent) {
 EventStates SVGFEImageElement::IntrinsicState() const {
   return SVGFEImageElementBase::IntrinsicState() |
          nsImageLoadingContent::ImageState();
+}
+
+void SVGFEImageElement::DestroyContent() {
+  nsImageLoadingContent::Destroy();
+  SVGFEImageElementBase::DestroyContent();
 }
 
 //----------------------------------------------------------------------

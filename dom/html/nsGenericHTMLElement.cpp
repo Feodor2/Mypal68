@@ -228,7 +228,7 @@ static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
     parent = frame;
   } else {
     const bool isPositioned = styleFrame->IsAbsPosContainingBlock();
-    const bool isAbsolutelyPositioned = styleFrame->IsAbsolutelyPositioned();
+    const bool isAbsolutelyPositioned = frame->IsAbsolutelyPositioned();
     origin += frame->GetPositionIgnoringScrolling();
 
     for (; parent; parent = parent->GetParent()) {
@@ -677,12 +677,11 @@ nsresult nsGenericHTMLElement::AfterSetAttr(
       SetDirectionalityOnDescendants(this, dir, aNotify);
     } else if (aName == nsGkAtoms::contenteditable) {
       int32_t editableCountDelta = 0;
-      if (aOldValue &&
-          (aOldValue->Equals(NS_LITERAL_STRING("true"), eIgnoreCase) ||
-           aOldValue->Equals(EmptyString(), eIgnoreCase))) {
+      if (aOldValue && (aOldValue->Equals(u"true"_ns, eIgnoreCase) ||
+                        aOldValue->Equals(EmptyString(), eIgnoreCase))) {
         editableCountDelta = -1;
       }
-      if (aValue && (aValue->Equals(NS_LITERAL_STRING("true"), eIgnoreCase) ||
+      if (aValue && (aValue->Equals(u"true"_ns, eIgnoreCase) ||
                      aValue->Equals(EmptyString(), eIgnoreCase))) {
         ++editableCountDelta;
       }
@@ -2680,44 +2679,6 @@ bool nsGenericHTMLFormElementWithState::RestoreFormControlState() {
 void nsGenericHTMLFormElementWithState::NodeInfoChanged(Document* aOldDoc) {
   nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
   mStateKey.SetIsVoid(true);
-}
-
-nsSize nsGenericHTMLElement::GetWidthHeightForImage(
-    RefPtr<imgRequestProxy>& aImageRequest) {
-  nsSize size(0, 0);
-
-  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
-
-  if (frame) {
-    size = frame->GetContentRect().Size();
-
-    size.width = nsPresContext::AppUnitsToIntCSSPixels(size.width);
-    size.height = nsPresContext::AppUnitsToIntCSSPixels(size.height);
-  } else {
-    const nsAttrValue* value;
-    nsCOMPtr<imgIContainer> image;
-    if (aImageRequest) {
-      aImageRequest->GetImage(getter_AddRefs(image));
-    }
-
-    if ((value = GetParsedAttr(nsGkAtoms::width)) &&
-        value->Type() == nsAttrValue::eInteger) {
-      size.width = value->GetIntegerValue();
-    } else if (image) {
-      image->GetWidth(&size.width);
-    }
-
-    if ((value = GetParsedAttr(nsGkAtoms::height)) &&
-        value->Type() == nsAttrValue::eInteger) {
-      size.height = value->GetIntegerValue();
-    } else if (image) {
-      image->GetHeight(&size.height);
-    }
-  }
-
-  NS_ASSERTION(size.width >= 0, "negative width");
-  NS_ASSERTION(size.height >= 0, "negative height");
-  return size;
 }
 
 bool nsGenericHTMLElement::IsEventAttributeNameInternal(nsAtom* aName) {

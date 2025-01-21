@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGRectElement_h
-#define mozilla_dom_SVGRectElement_h
+#ifndef DOM_SVG_SVGRECTELEMENT_H_
+#define DOM_SVG_SVGRECTELEMENT_H_
 
 #include "nsCSSPropertyID.h"
 #include "SVGAnimatedLength.h"
@@ -17,7 +17,7 @@ class ComputedStyle;
 
 namespace dom {
 
-typedef SVGGeometryElement SVGRectElementBase;
+using SVGRectElementBase = SVGGeometryElement;
 
 class SVGRectElement final : public SVGRectElementBase {
  protected:
@@ -31,7 +31,7 @@ class SVGRectElement final : public SVGRectElementBase {
  public:
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  // nsSVGSVGElement methods:
+  // SVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
   // SVGGeometryElement methods:
@@ -68,4 +68,4 @@ class SVGRectElement final : public SVGRectElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGRectElement_h
+#endif  // DOM_SVG_SVGRECTELEMENT_H_

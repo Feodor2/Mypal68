@@ -113,16 +113,6 @@ namespace SessionStoreUtils {
   boolean restoreFormData(Document document, optional CollectedData data = {});
 
   /**
-   * Updates all sessionStorage "super cookies"
-   * @param content
-   *        A tab's global, i.e. the root frame we want to collect for.
-   * @return Returns a nested object that will have hosts as keys and per-origin
-   *         session storage data as strings. For example:
-   *         {"https://example.com^userContextId=1": {"key": "value", "my_number": "123"}}
-   */
-  record<DOMString, record<DOMString, DOMString>> collectSessionStorage(WindowProxy window);
-
-  /**
    * Restores all sessionStorage "super cookies".
    * @param aDocShell
    *        A tab's docshell (containing the sessionStorage)
@@ -160,4 +150,35 @@ dictionary CollectedData
   ByteString url;
   // mChildren contains CollectedData instances
   sequence<object?> children;
+};
+
+dictionary InputElementData {
+  sequence<DOMString> id;
+  sequence<DOMString> type;
+  sequence<long> valueIdx;
+  sequence<long> selectedIndex;
+  sequence<DOMString> selectVal;
+  sequence<DOMString> strVal;
+  sequence<boolean> boolVal;
+};
+
+[GenerateConversionToJS]
+dictionary UpdateSessionStoreData {
+  ByteString docShellCaps;
+  boolean isPrivate;
+  sequence<ByteString> positions;
+  sequence<long> positionDescendants;
+  // The following are for input data
+  InputElementData id;
+  InputElementData xpath;
+  sequence<long> inputDescendants;
+  sequence<long> numId;
+  sequence<long> numXPath;
+  sequence<DOMString> innerHTML;
+  sequence<ByteString> url;
+  // for sessionStorage
+  sequence<ByteString> storageOrigins;
+  sequence<DOMString> storageKeys;
+  sequence<DOMString> storageValues;
+  boolean isFullStorage;
 };

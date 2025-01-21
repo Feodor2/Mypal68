@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGEllipseElement_h
-#define mozilla_dom_SVGEllipseElement_h
+#ifndef DOM_SVG_SVGELLIPSEELEMENT_H_
+#define DOM_SVG_SVGELLIPSEELEMENT_H_
 
 #include "nsCSSPropertyID.h"
 #include "SVGAnimatedLength.h"
@@ -17,7 +17,7 @@ class ComputedStyle;
 
 namespace dom {
 
-typedef SVGGeometryElement SVGEllipseElementBase;
+using SVGEllipseElementBase = SVGGeometryElement;
 
 class SVGEllipseElement final : public SVGEllipseElementBase {
  protected:
@@ -32,7 +32,7 @@ class SVGEllipseElement final : public SVGEllipseElementBase {
  public:
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  // nsSVGSVGElement methods:
+  // SVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
   // SVGGeometryElement methods:
@@ -65,4 +65,4 @@ class SVGEllipseElement final : public SVGEllipseElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGEllipseElement_h
+#endif  // DOM_SVG_SVGELLIPSEELEMENT_H_

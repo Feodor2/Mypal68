@@ -76,8 +76,7 @@ interface FrameLoader {
                                   float aY,
                                   long aButton,
                                   long aClickCount,
-                                  long aModifiers,
-                                  optional boolean aIgnoreRootScrollFrame = false);
+                                  long aModifiers);
 
   /**
    * Activate event forwarding from client (remote frame) to parent.
@@ -106,6 +105,11 @@ interface FrameLoader {
    * Return true if the flush requires async ipc call.
    */
   boolean requestTabStateFlush(unsigned long aFlushId);
+
+  /**
+   * Force Epoch update in native sessionStoreListeners.
+   */
+  void requestEpochUpdate(unsigned long aEpoch);
 
   /**
    * Print the current document.

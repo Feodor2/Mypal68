@@ -7,6 +7,7 @@
 #include "nsExpirationTracker.h"
 #include "imgIRequest.h"
 #include "mozilla/dom/Element.h"
+#include "nsRefreshDriver.h"
 #include "nsTHashtable.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsContentUtils.h"

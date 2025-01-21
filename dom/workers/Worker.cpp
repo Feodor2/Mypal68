@@ -5,6 +5,7 @@
 #include "Worker.h"
 
 #include "MessageEventRunnable.h"
+#include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/Unused.h"

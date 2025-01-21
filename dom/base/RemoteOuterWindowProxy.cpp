@@ -9,8 +9,7 @@
 #include "mozilla/dom/WindowBinding.h"
 #include "xpcprivate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * RemoteOuterWindowProxy is the proxy handler for the WindowProxy objects for
@@ -97,13 +96,19 @@ bool RemoteOuterWindowProxy::getOwnPropertyDescriptor(
       return WrapResult(aCx, aProxy, children[index],
                         JSPROP_READONLY | JSPROP_ENUMERATE, aDesc);
     }
-    return ReportCrossOriginDenial(aCx, aId, NS_LITERAL_CSTRING("access"));
+    return ReportCrossOriginDenial(aCx, aId, "access"_ns);
   }
 
   bool ok = CrossOriginGetOwnPropertyHelper(aCx, aProxy, aId, aDesc);
   if (!ok || aDesc.object()) {
     return ok;
   }
+
+  // We don't need the "print" hack that nsOuterWindowProxy has, because pdf
+  // documents are placed in a process based on their principal before the PDF
+  // viewer changes principals around, so are always same-process with things
+  // that are same-origin with their original principal and won't reach this
+  // code in the cases when "print" should be accessible.
 
   if (JSID_IS_STRING(aId)) {
     nsAutoJSString str;
@@ -156,5 +161,4 @@ bool RemoteOuterWindowProxy::getOwnEnumerablePropertyKeys(
   return AppendIndexedPropertyNames(aCx, GetBrowsingContext(aProxy), aProps);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

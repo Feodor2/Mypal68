@@ -443,6 +443,8 @@ WEBIDL_FILES = [
     'CSSImportRule.webidl',
     'CSSKeyframeRule.webidl',
     'CSSKeyframesRule.webidl',
+    'CSSLayerBlockRule.webidl',
+    'CSSLayerStatementRule.webidl',
     'CSSMediaRule.webidl',
     'CSSMozDocumentRule.webidl',
     'CSSNamespaceRule.webidl',

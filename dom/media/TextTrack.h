@@ -21,10 +21,14 @@ class TextTrackCueList;
 class HTMLTrackElement;
 class HTMLMediaElement;
 
-enum TextTrackSource { Track, AddTextTrack, MediaResourceSpecific };
+enum class TextTrackSource : uint8_t {
+  Track,
+  AddTextTrack,
+  MediaResourceSpecific,
+};
 
 // Constants for numeric readyState property values.
-enum TextTrackReadyState {
+enum class TextTrackReadyState : uint8_t {
   NotLoaded = 0U,
   Loading = 1U,
   Loaded = 2U,
@@ -73,7 +77,6 @@ class TextTrack final : public DOMEventTargetHelper {
 
   TextTrackReadyState ReadyState() const;
   void SetReadyState(TextTrackReadyState aState);
-  void SetReadyState(uint32_t aReadyState);
 
   void AddCue(TextTrackCue& aCue);
   void RemoveCue(TextTrackCue& aCue, ErrorResult& aRv);

@@ -27,8 +27,7 @@
 #include "nsTransitionManager.h"      // For CSSTransition
 #include "PendingAnimationTracker.h"  // For PendingAnimationTracker
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Static members
 uint64_t Animation::sNextAnimationIndex = 0;
@@ -655,16 +654,21 @@ void Animation::CommitStyles(ErrorResult& aRv) {
   }
 
   // Check it is an element with a style attribute
-  nsCOMPtr<nsStyledElement> styledElement = do_QueryInterface(target.mElement);
+  RefPtr<nsStyledElement> styledElement =
+      nsStyledElement::FromNodeOrNull(target.mElement);
   if (!styledElement) {
     aRv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
   }
 
-  // Flush style before checking if the target element is rendered since the
-  // result could depend on pending style changes.
-  if (Document* doc = target.mElement->GetComposedDoc()) {
-    doc->FlushPendingNotifications(FlushType::Style);
+  // Hold onto a strong reference to the doc in case the flush destroys it.
+  RefPtr<Document> doc = target.mElement->GetComposedDoc();
+
+  // Flush frames before checking if the target element is rendered since the
+  // result could depend on pending style changes, and IsRendered() looks at the
+  // primary frame.
+  if (doc) {
+    doc->FlushPendingNotifications(FlushType::Frames);
   }
   if (!target.mElement->IsRendered()) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
@@ -1801,5 +1805,4 @@ bool Animation::IsRunningOnCompositor() const {
          mEffect->AsKeyframeEffect()->IsRunningOnCompositor();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

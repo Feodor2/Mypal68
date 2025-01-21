@@ -41,6 +41,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/RangeBoundary.h"
 #include "nsIContentPolicy.h"
+#include "nsIScriptError.h"
 #include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
 #include "nsRFPService.h"
@@ -204,9 +205,6 @@ struct EventNameMapping {
   // mMessage is eUnidentifiedEvent. See EventNameList.h
   bool mMaybeSpecialSVGorSMILEvent;
 };
-
-typedef bool (*CallOnRemoteChildFunction)(
-    mozilla::dom::BrowserParent* aBrowserParent, void* aArg);
 
 class nsContentUtils {
   friend class nsAutoScriptBlockerSuppressNodeRemoved;
@@ -1034,12 +1032,15 @@ class nsContentUtils {
   /**
    * Report simple error message to the browser console
    *   @param aErrorText the error message
-   *   @param classification Name of the module reporting error
+   *   @param aCategory Name of the module reporting error
+   *   @param aFromPrivateWindow Whether from private window or not
+   *   @param aFromChromeContext Whether from chrome context or not
+   *   @param [aErrorFlags] See nsIScriptError.
    */
-  static void LogSimpleConsoleError(const nsAString& aErrorText,
-                                    const char* classification,
-                                    bool aFromPrivateWindow,
-                                    bool aFromChromeContext);
+  static void LogSimpleConsoleError(
+      const nsAString& aErrorText, const char* aCategory,
+      bool aFromPrivateWindow, bool aFromChromeContext,
+      uint32_t aErrorFlags = nsIScriptError::errorFlag);
 
   /**
    * Report a non-localized error message to the error console.
@@ -1822,6 +1823,25 @@ class nsContentUtils {
                                      uint32_t aWrapCol);
 
   /**
+   * Creates a 'loaded-as-data' HTML document that takes that principal,
+   * script global, and URL from the argument, which may be null.
+   */
+  static already_AddRefed<Document> CreateInertHTMLDocument(
+      const Document* aTemplate);
+
+  /**
+   * Creates a 'loaded-as-data' XML document that takes that principal,
+   * script global, and URL from the argument, which may be null.
+   */
+  static already_AddRefed<Document> CreateInertXMLDocument(
+      const Document* aTemplate);
+
+ private:
+  static already_AddRefed<Document> CreateInertDocument(
+      const Document* aTemplate, DocumentFlavor aFlavor);
+
+ public:
+  /**
    * Sets the text contents of a node by replacing all existing children
    * with a single text child.
    *
@@ -2498,6 +2518,12 @@ class nsContentUtils {
   static bool IsPDFJSEnabled();
 
   /**
+   * Checks to see whether the given principal is the internal PDF
+   * viewer principal.
+   */
+  static bool IsPDFJS(nsIPrincipal* aPrincipal);
+
+  /**
    * Checks if internal SWF player is enabled.
    */
   static bool IsSWFPlayerEnabled();
@@ -2789,9 +2815,9 @@ class nsContentUtils {
    * Call the given callback on all remote children of the given top-level
    * window. Return true from the callback to stop calling further children.
    */
-  static void CallOnAllRemoteChildren(nsPIDOMWindowOuter* aWindow,
-                                      CallOnRemoteChildFunction aCallback,
-                                      void* aArg);
+  static void CallOnAllRemoteChildren(
+      nsPIDOMWindowOuter* aWindow,
+      const std::function<bool(mozilla::dom::BrowserParent*)>& aCallback);
 
   /*
    * Call nsPIDOMWindow::SetKeyboardIndicators all all remote children. This is
@@ -3250,7 +3276,7 @@ class nsContentUtils {
 
   static bool CallOnAllRemoteChildren(
       mozilla::dom::MessageBroadcaster* aManager,
-      CallOnRemoteChildFunction aCallback, void* aArg);
+      const std::function<bool(mozilla::dom::BrowserParent*)>& aCallback);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(

@@ -161,7 +161,7 @@ nsresult txMozillaTextOutput::createResultDocument(Document* aSourceDocument,
   if (!observer) {
     int32_t namespaceID;
     rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-        NS_LITERAL_STRING(kTXNameSpaceURI), namespaceID);
+        nsLiteralString(kTXNameSpaceURI), namespaceID);
     NS_ENSURE_SUCCESS(rv, rv);
 
     mTextParent =
@@ -194,9 +194,8 @@ nsresult txMozillaTextOutput::createResultDocument(Document* aSourceDocument,
       mTextParent = std::move(textParent);
     }
 
-    rv = mTextParent->AsElement()->SetAttr(
-        kNameSpaceID_None, nsGkAtoms::id,
-        NS_LITERAL_STRING("transformiixResult"), false);
+    rv = mTextParent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::id,
+                                           u"transformiixResult"_ns, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = body->AppendChildTo(mTextParent, false);

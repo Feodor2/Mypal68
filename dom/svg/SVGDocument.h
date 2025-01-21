@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGDocument_h
-#define mozilla_dom_SVGDocument_h
+#ifndef DOM_SVG_SVGDOCUMENT_H_
+#define DOM_SVG_SVGDOCUMENT_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/XMLDocument.h"
@@ -41,7 +41,12 @@ inline SVGDocument* Document::AsSVGDocument() {
   return static_cast<SVGDocument*>(this);
 }
 
+inline const SVGDocument* Document::AsSVGDocument() const {
+  MOZ_ASSERT(IsSVGDocument());
+  return static_cast<const SVGDocument*>(this);
+}
+
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGDocument_h
+#endif  // DOM_SVG_SVGDOCUMENT_H_

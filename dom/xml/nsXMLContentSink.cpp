@@ -1215,8 +1215,8 @@ nsXMLContentSink::HandleProcessingInstruction(const char16_t* aTarget,
 
   // <?xml-stylesheet?> processing instructions don't have a referrerpolicy
   // pseudo-attribute, so we pass in an empty string
-  rv = MaybeProcessXSLTLink(node, href, isAlternate, title, type, media,
-                            EmptyString());
+  rv =
+      MaybeProcessXSLTLink(node, href, isAlternate, title, type, media, u""_ns);
   return NS_SUCCEEDED(rv) ? DidProcessATokenImpl() : rv;
 }
 
@@ -1307,8 +1307,8 @@ nsXMLContentSink::ReportError(const char16_t* aErrorText,
 
   const char16_t* noAtts[] = {0, 0};
 
-  NS_NAMED_LITERAL_STRING(
-      errorNs, "http://www.mozilla.org/newlayout/xml/parsererror.xml");
+  constexpr auto errorNs =
+      u"http://www.mozilla.org/newlayout/xml/parsererror.xml"_ns;
 
   nsAutoString parsererror(errorNs);
   parsererror.Append((char16_t)0xFFFF);

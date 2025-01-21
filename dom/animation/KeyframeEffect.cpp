@@ -34,6 +34,7 @@
 #include "nsDOMMutationObserver.h"  // For nsAutoAnimationMutationBatch
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
+#include "nsIScrollableFrame.h"
 #include "nsPresContextInlines.h"
 #include "nsRefreshDriver.h"
 
@@ -986,12 +987,11 @@ void DumpAnimationProperties(
   for (auto& p : aAnimationProperties) {
     printf("%s\n", nsCString(nsCSSProps::GetStringValue(p.mProperty)).get());
     for (auto& s : p.mSegments) {
-      nsString fromValue, toValue;
+      nsAutoCString fromValue, toValue;
       s.mFromValue.SerializeSpecifiedValue(p.mProperty, fromValue);
       s.mToValue.SerializeSpecifiedValue(p.mProperty, toValue);
-      printf("  %f..%f: %s..%s\n", s.mFromKey, s.mToKey,
-             NS_ConvertUTF16toUTF8(fromValue).get(),
-             NS_ConvertUTF16toUTF8(toValue).get());
+      printf("  %f..%f: %s..%s\n", s.mFromKey, s.mToKey, fromValue.get(),
+             toValue.get());
     }
   }
 }
@@ -1091,7 +1091,7 @@ static void CreatePropertyValue(
   aResult.mOffset = aOffset;
 
   if (!aValue.IsNull()) {
-    nsString stringValue;
+    nsAutoCString stringValue;
     aValue.SerializeSpecifiedValue(aProperty, stringValue);
     aResult.mValue.Construct(stringValue);
   }
@@ -1100,7 +1100,7 @@ static void CreatePropertyValue(
     aResult.mEasing.Construct();
     aTimingFunction->AppendToString(aResult.mEasing.Value());
   } else {
-    aResult.mEasing.Construct(NS_LITERAL_STRING("linear"));
+    aResult.mEasing.Construct("linear"_ns);
   }
 
   aResult.mComposite = aComposite;
@@ -1251,7 +1251,7 @@ void KeyframeEffect::GetKeyframes(JSContext* aCx, nsTArray<JSObject*>& aResult,
 
     JS::Rooted<JSObject*> keyframeObject(aCx, &keyframeJSValue.toObject());
     for (const PropertyValuePair& propertyValue : keyframe.mPropertyValues) {
-      nsAutoString stringValue;
+      nsAutoCString stringValue;
       // Don't serialize the custom properties for this keyframe.
       if (propertyValue.mProperty ==
           nsCSSPropertyID::eCSSPropertyExtra_variable) {
@@ -1291,7 +1291,7 @@ void KeyframeEffect::GetKeyframes(JSContext* aCx, nsTArray<JSObject*>& aResult,
       }
 
       JS::Rooted<JS::Value> value(aCx);
-      if (!ToJSValue(aCx, stringValue, &value) ||
+      if (!NonVoidUTF8StringToJsval(aCx, stringValue, &value) ||
           !JS_DefineProperty(aCx, keyframeObject, name, value,
                              JSPROP_ENUMERATE)) {
         aRv.Throw(NS_ERROR_FAILURE);

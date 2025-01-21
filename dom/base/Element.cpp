@@ -98,7 +98,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsPIBoxObject.h"
 #include "mozilla/dom/DOMRect.h"
-#include "nsSVGUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
 #include "ChildIterator.h"
@@ -878,7 +877,8 @@ void Element::ScrollBy(const ScrollToOptions& aOptions) {
                                 ? ScrollMode::SmoothMsd
                                 : ScrollMode::Instant;
 
-    sf->ScrollByCSSPixels(scrollDelta, scrollMode, nsGkAtoms::relative);
+    sf->ScrollByCSSPixels(scrollDelta, scrollMode,
+                          mozilla::ScrollOrigin::Relative);
   }
 }
 
@@ -934,13 +934,45 @@ void Element::MozScrollSnap() {
   }
 }
 
+int32_t Element::ScrollTopMin() {
+  nsIScrollableFrame* sf = GetScrollFrame();
+  if (!sf) {
+    return 0;
+  }
+  return CSSPixel::FromAppUnits(sf->GetScrollRange().y).Rounded();
+}
+
+int32_t Element::ScrollTopMax() {
+  nsIScrollableFrame* sf = GetScrollFrame();
+  if (!sf) {
+    return 0;
+  }
+  return CSSPixel::FromAppUnits(sf->GetScrollRange().YMost()).Rounded();
+}
+
+int32_t Element::ScrollLeftMin() {
+  nsIScrollableFrame* sf = GetScrollFrame();
+  if (!sf) {
+    return 0;
+  }
+  return CSSPixel::FromAppUnits(sf->GetScrollRange().x).Rounded();
+}
+
+int32_t Element::ScrollLeftMax() {
+  nsIScrollableFrame* sf = GetScrollFrame();
+  if (!sf) {
+    return 0;
+  }
+  return CSSPixel::FromAppUnits(sf->GetScrollRange().XMost()).Rounded();
+}
+
 static nsSize GetScrollRectSizeForOverflowVisibleFrame(nsIFrame* aFrame) {
   if (!aFrame || aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     return nsSize(0, 0);
   }
 
   nsRect paddingRect = aFrame->GetPaddingRectRelativeToSelf();
-  nsOverflowAreas overflowAreas(paddingRect, paddingRect);
+  OverflowAreas overflowAreas(paddingRect, paddingRect);
   // Add the scrollable overflow areas of children (if any) to the paddingRect.
   // It's important to start with the paddingRect, otherwise if there are no
   // children the overflow rect will be 0,0,0,0 which will force the point 0,0
@@ -1258,7 +1290,7 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
   // Dispatch a "shadowrootattached" event for devtools.
   {
     AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
-        this, NS_LITERAL_STRING("shadowrootattached"), CanBubble::eYes,
+        this, u"shadowrootattached"_ns, CanBubble::eYes,
         ChromeOnlyDispatch::eYes, Composed::eYes);
     dispatcher->PostDOMEvent();
   }
@@ -1269,24 +1301,20 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
   return shadowRoot.forget();
 }
 
-void Element::AttachAndSetUAShadowRoot() {
+void Element::AttachAndSetUAShadowRoot(NotifyUAWidgetSetup aNotify) {
   MOZ_DIAGNOSTIC_ASSERT(!CanAttachShadowDOM(),
                         "Cannot be used to attach UI shadow DOM");
 
-  // Attach the UA Widget Shadow Root in a runnable so that the code runs
-  // in the same order of NotifyUAWidget* calls.
-  nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-      "Element::AttachAndSetUAShadowRoot::Runnable",
-      [self = RefPtr<Element>(this)]() {
-        if (self->GetShadowRoot()) {
-          MOZ_ASSERT(self->GetShadowRoot()->IsUAWidget());
-          return;
-        }
+  if (!GetShadowRoot()) {
+    RefPtr<ShadowRoot> shadowRoot =
+        AttachShadowWithoutNameChecks(ShadowRootMode::Closed);
+    shadowRoot->SetIsUAWidget();
+  }
 
-        RefPtr<ShadowRoot> shadowRoot =
-            self->AttachShadowWithoutNameChecks(ShadowRootMode::Closed);
-        shadowRoot->SetIsUAWidget();
-      }));
+  MOZ_ASSERT(GetShadowRoot()->IsUAWidget());
+  if (aNotify == NotifyUAWidgetSetup::Yes) {
+    NotifyUAWidgetSetupOrChange();
+  }
 }
 
 void Element::NotifyUAWidgetSetupOrChange() {
@@ -1300,29 +1328,28 @@ void Element::NotifyUAWidgetSetupOrChange() {
       "Element::NotifyUAWidgetSetupOrChange::UAWidgetSetupOrChange",
       [self = RefPtr<Element>(this),
        ownerDoc = RefPtr<Document>(OwnerDoc())]() {
-        MOZ_ASSERT(self->GetShadowRoot() &&
-                   self->GetShadowRoot()->IsUAWidget());
-
-        nsContentUtils::DispatchChromeEvent(
-            ownerDoc, self, NS_LITERAL_STRING("UAWidgetSetupOrChange"),
-            CanBubble::eYes, Cancelable::eNo);
+        nsContentUtils::DispatchChromeEvent(ownerDoc, self,
+                                            u"UAWidgetSetupOrChange"_ns,
+                                            CanBubble::eYes, Cancelable::eNo);
       }));
 }
 
 void Element::NotifyUAWidgetTeardown(UnattachShadowRoot aUnattachShadowRoot) {
   MOZ_ASSERT(IsInComposedDoc());
+  if (!GetShadowRoot()) {
+    return;
+  }
+  MOZ_ASSERT(GetShadowRoot()->IsUAWidget());
+  if (aUnattachShadowRoot == UnattachShadowRoot::Yes) {
+    UnattachShadow();
+  }
+
   // The runnable will dispatch an event to tear down UA Widget,
   // and unattach the Shadow Root.
   nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
       "Element::NotifyUAWidgetTeardownAndUnattachShadow::UAWidgetTeardown",
-      [aUnattachShadowRoot, self = RefPtr<Element>(this),
+      [self = RefPtr<Element>(this),
        ownerDoc = RefPtr<Document>(OwnerDoc())]() {
-        if (!self->GetShadowRoot()) {
-          // No UA Widget Shadow Root was ever attached.
-          return;
-        }
-        MOZ_ASSERT(self->GetShadowRoot()->IsUAWidget());
-
         // Bail out if the element is being collected by CC
         bool hasHadScriptObject = true;
         nsIScriptGlobalObject* scriptObject =
@@ -1331,16 +1358,9 @@ void Element::NotifyUAWidgetTeardown(UnattachShadowRoot aUnattachShadowRoot) {
           return;
         }
 
-        nsresult rv = nsContentUtils::DispatchChromeEvent(
-            ownerDoc, self, NS_LITERAL_STRING("UAWidgetTeardown"),
-            CanBubble::eYes, Cancelable::eNo);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return;
-        }
-
-        if (aUnattachShadowRoot == UnattachShadowRoot::Yes) {
-          self->UnattachShadow();
-        }
+        Unused << nsContentUtils::DispatchChromeEvent(
+            ownerDoc, self, u"UAWidgetTeardown"_ns, CanBubble::eYes,
+            Cancelable::eNo);
       }));
 }
 
@@ -1355,6 +1375,17 @@ void Element::UnattachShadow() {
   if (Document* doc = GetComposedDoc()) {
     if (PresShell* presShell = doc->GetPresShell()) {
       presShell->DestroyFramesForAndRestyle(this);
+#ifdef ACCESSIBILITY
+      // We need to notify the accessibility service here explicitly because,
+      // even though we're going to reconstruct the _host_, the shadow root and
+      // its children are never really going to come back. We could plumb that
+      // further down to DestroyFramesForAndRestyle and add a new flag to
+      // nsCSSFrameConstructor::ContentRemoved or such, but this seems simpler
+      // instead.
+      if (nsAccessibilityService* accService = GetAccService()) {
+        accService->ContentRemoved(presShell, shadowRoot);
+      }
+#endif
     }
   }
   MOZ_ASSERT(!GetPrimaryFrame());
@@ -1880,9 +1911,9 @@ void Element::UnbindFromTree(bool aNullParent) {
   if (mState.HasState(NS_EVENT_STATE_FULLSCREEN)) {
     // The element being removed is an ancestor of the fullscreen element,
     // exit fullscreen state.
-    nsContentUtils::ReportToConsole(
-        nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), OwnerDoc(),
-        nsContentUtils::eDOM_PROPERTIES, "RemovedFullscreenElement");
+    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
+                                    OwnerDoc(), nsContentUtils::eDOM_PROPERTIES,
+                                    "RemovedFullscreenElement");
     // Fully exit fullscreen.
     Document::ExitFullscreenInDocTree(OwnerDoc());
   }
@@ -3481,8 +3512,9 @@ already_AddRefed<DOMMatrixReadOnly> Element::GetTransformToAncestor(
     // If aAncestor is not actually an ancestor of this (including nullptr),
     // then the call to GetTransformToAncestor will return the transform
     // all the way up through the parent chain.
-    transform = nsLayoutUtils::GetTransformToAncestor(
-                    primaryFrame, ancestorFrame, nsIFrame::IN_CSS_UNITS)
+    transform = nsLayoutUtils::GetTransformToAncestor(RelativeTo{primaryFrame},
+                                                      RelativeTo{ancestorFrame},
+                                                      nsIFrame::IN_CSS_UNITS)
                     .GetMatrix();
   }
 
@@ -3497,7 +3529,8 @@ already_AddRefed<DOMMatrixReadOnly> Element::GetTransformToParent() {
   Matrix4x4 transform;
   if (primaryFrame) {
     nsIFrame* parentFrame = primaryFrame->GetParent();
-    transform = nsLayoutUtils::GetTransformToAncestor(primaryFrame, parentFrame,
+    transform = nsLayoutUtils::GetTransformToAncestor(RelativeTo{primaryFrame},
+                                                      RelativeTo{parentFrame},
                                                       nsIFrame::IN_CSS_UNITS)
                     .GetMatrix();
   }
@@ -3513,7 +3546,8 @@ already_AddRefed<DOMMatrixReadOnly> Element::GetTransformToViewport() {
   if (primaryFrame) {
     transform =
         nsLayoutUtils::GetTransformToAncestor(
-            primaryFrame, nsLayoutUtils::GetDisplayRootFrame(primaryFrame),
+            RelativeTo{primaryFrame},
+            RelativeTo{nsLayoutUtils::GetDisplayRootFrame(primaryFrame)},
             nsIFrame::IN_CSS_UNITS)
             .GetMatrix();
   }

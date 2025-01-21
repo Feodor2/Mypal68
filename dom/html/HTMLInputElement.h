@@ -192,6 +192,8 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual void DoneCreatingElement() override;
 
+  virtual void DestroyContent() override;
+
   virtual EventStates IntrinsicState() const override;
 
  public:
@@ -646,6 +648,10 @@ class HTMLInputElement final : public TextControlElement,
    * @return the current step value.
    */
   Decimal GetStep() const;
+
+  // Returns whether the given keyboard event steps up or down the value of an
+  // <input> element.
+  bool StepsInputValue(const WidgetKeyboardEvent&) const;
 
   already_AddRefed<nsINodeList> GetLabels();
 
@@ -1349,7 +1355,7 @@ class HTMLInputElement final : public TextControlElement,
 
   /*
    * Returns if the current type is one of the date/time input types: date,
-   * time and month. TODO: week and datetime-local.
+   * time, month, week and datetime-local.
    */
   static bool IsDateTimeInputType(uint8_t aType);
 
@@ -1570,10 +1576,14 @@ class HTMLInputElement final : public TextControlElement,
   }
 
   /**
-   * Checks if aDateTimeInputType should be supported based on
-   * "dom.forms.datetime", and "dom.experimental_forms".
+   * Checks if aDateTimeInputType should be supported.
    */
   static bool IsDateTimeTypeSupported(uint8_t aDateTimeInputType);
+
+  static bool CreatesDateTimeWidget(uint8_t aType) {
+    return aType == NS_FORM_INPUT_TIME || aType == NS_FORM_INPUT_DATE;
+  }
+  bool CreatesDateTimeWidget() const { return CreatesDateTimeWidget(mType); }
 
   struct nsFilePickerFilter {
     nsFilePickerFilter() : mFilterMask(0) {}

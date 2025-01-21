@@ -5,8 +5,7 @@
 #include "mozilla/dom/ChromeMessageSender.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* ChromeMessageSender::WrapObject(JSContext* aCx,
                                           JS::Handle<JSObject*> aGivenProto) {
@@ -15,5 +14,4 @@ JSObject* ChromeMessageSender::WrapObject(JSContext* aCx,
   return ChromeMessageSender_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -12,8 +12,7 @@
 #include "nsDOMNavigationTiming.h"
 #include "nsPIDOMWindow.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(IdleDeadline, mWindow, mGlobal)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(IdleDeadline)
@@ -68,5 +67,4 @@ DOMHighResTimeStamp IdleDeadline::TimeRemaining() {
 
 bool IdleDeadline::DidTimeout() const { return mDidTimeout; }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

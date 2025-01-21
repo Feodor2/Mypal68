@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGTextPathElement_h
-#define mozilla_dom_SVGTextPathElement_h
+#ifndef DOM_SVG_SVGTEXTPATHELEMENT_H_
+#define DOM_SVG_SVGTEXTPATHELEMENT_H_
 
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
@@ -24,7 +24,7 @@ namespace dom {
 static const uint16_t TEXTPATH_SIDETYPE_LEFT = 1;
 static const uint16_t TEXTPATH_SIDETYPE_RIGHT = 2;
 
-typedef SVGTextContentElement SVGTextPathElementBase;
+using SVGTextPathElementBase = SVGTextContentElement;
 
 class SVGTextPathElement final : public SVGTextPathElementBase {
   friend class mozilla::SVGTextFrame;
@@ -89,4 +89,4 @@ class SVGTextPathElement final : public SVGTextPathElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGTextPathElement_h
+#endif  // DOM_SVG_SVGTEXTPATHELEMENT_H_

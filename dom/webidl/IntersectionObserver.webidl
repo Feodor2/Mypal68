@@ -35,16 +35,13 @@ interface IntersectionObserver {
   [Constant]
   readonly attribute Element? root;
   [Constant]
-  readonly attribute DOMString rootMargin;
+  readonly attribute UTF8String rootMargin;
   [Constant,Cached]
   readonly attribute sequence<double> thresholds;
   void observe(Element target);
   void unobserve(Element target);
   void disconnect();
   sequence<IntersectionObserverEntry> takeRecords();
-
-  [ChromeOnly]
-  readonly attribute IntersectionCallback intersectionCallback;
 };
 
 callback IntersectionCallback =
@@ -59,7 +56,7 @@ dictionary IntersectionObserverEntryInit {
 };
 
 dictionary IntersectionObserverInit {
-  Element?  root = null;
-  DOMString rootMargin = "0px";
+  Element? root = null;
+  UTF8String rootMargin = "0px";
   (double or sequence<double>) threshold = 0;
 };

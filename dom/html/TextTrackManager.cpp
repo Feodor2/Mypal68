@@ -72,10 +72,11 @@ bool CompareTextTracks::LessThan(TextTrack* aOne, TextTrack* aTwo) const {
   TextTrackSource sourceTwo = aTwo->GetTextTrackSource();
   if (sourceOne != sourceTwo) {
     return sourceOne == TextTrackSource::Track ||
-           (sourceOne == AddTextTrack && sourceTwo == MediaResourceSpecific);
+           (sourceOne == TextTrackSource::AddTextTrack &&
+            sourceTwo == TextTrackSource::MediaResourceSpecific);
   }
   switch (sourceOne) {
-    case Track: {
+    case TextTrackSource::Track: {
       int32_t positionOne = TrackChildPosition(aOne);
       int32_t positionTwo = TrackChildPosition(aTwo);
       // If either position one or positiontwo are -1 then something has gone
@@ -83,13 +84,13 @@ bool CompareTextTracks::LessThan(TextTrack* aOne, TextTrack* aTwo) const {
       return positionOne != -1 && positionTwo != -1 &&
              positionOne < positionTwo;
     }
-    case AddTextTrack:
+    case TextTrackSource::AddTextTrack:
       // For AddTextTrack sources the tracks will already be in the correct
       // relative order in the source array. Assume we're called in iteration
       // order and can therefore always report aOne < aTwo to maintain the
       // original temporal ordering.
       return true;
-    case MediaResourceSpecific:
+    case TextTrackSource::MediaResourceSpecific:
       // No rules for Media Resource Specific tracks yet.
       break;
   }
@@ -307,14 +308,11 @@ void TextTrackManager::PopulatePendingList() {
 
 void TextTrackManager::AddListeners() {
   if (mMediaElement) {
-    mMediaElement->AddEventListener(NS_LITERAL_STRING("resizecaption"), this,
-                                    false, false);
-    mMediaElement->AddEventListener(NS_LITERAL_STRING("resizevideocontrols"),
-                                    this, false, false);
-    mMediaElement->AddEventListener(NS_LITERAL_STRING("seeked"), this, false,
+    mMediaElement->AddEventListener(u"resizecaption"_ns, this, false, false);
+    mMediaElement->AddEventListener(u"resizevideocontrols"_ns, this, false,
                                     false);
-    mMediaElement->AddEventListener(NS_LITERAL_STRING("controlbarchange"), this,
-                                    false, true);
+    mMediaElement->AddEventListener(u"seeked"_ns, this, false, false);
+    mMediaElement->AddEventListener(u"controlbarchange"_ns, this, false, true);
   }
 }
 
@@ -754,7 +752,7 @@ void TextTrackManager::TimeMarchesOn() {
       WEBVTT_LOG("Prepare 'enter' event for cue %p [%f, %f] in missing cues",
                  cue, cue->StartTime(), cue->EndTime());
       SimpleTextTrackEvent* event = new SimpleTextTrackEvent(
-          NS_LITERAL_STRING("enter"), cue->StartTime(), cue->GetTrack(), cue);
+          u"enter"_ns, cue->StartTime(), cue->GetTrack(), cue);
       eventList.InsertElementSorted(
           event, CompareSimpleTextTrackEvents(mMediaElement));
       affectedTracks.AddTextTrack(cue->GetTrack(),
@@ -770,8 +768,8 @@ void TextTrackManager::TimeMarchesOn() {
           cue->StartTime() > cue->EndTime() ? cue->StartTime() : cue->EndTime();
       WEBVTT_LOG("Prepare 'exit' event for cue %p [%f, %f] in other cues", cue,
                  cue->StartTime(), cue->EndTime());
-      SimpleTextTrackEvent* event = new SimpleTextTrackEvent(
-          NS_LITERAL_STRING("exit"), time, cue->GetTrack(), cue);
+      SimpleTextTrackEvent* event =
+          new SimpleTextTrackEvent(u"exit"_ns, time, cue->GetTrack(), cue);
       eventList.InsertElementSorted(
           event, CompareSimpleTextTrackEvents(mMediaElement));
       affectedTracks.AddTextTrack(cue->GetTrack(),
@@ -787,7 +785,7 @@ void TextTrackManager::TimeMarchesOn() {
       WEBVTT_LOG("Prepare 'enter' event for cue %p [%f, %f] in current cues",
                  cue, cue->StartTime(), cue->EndTime());
       SimpleTextTrackEvent* event = new SimpleTextTrackEvent(
-          NS_LITERAL_STRING("enter"), cue->StartTime(), cue->GetTrack(), cue);
+          u"enter"_ns, cue->StartTime(), cue->GetTrack(), cue);
       eventList.InsertElementSorted(
           event, CompareSimpleTextTrackEvents(mMediaElement));
       affectedTracks.AddTextTrack(cue->GetTrack(),
@@ -805,10 +803,10 @@ void TextTrackManager::TimeMarchesOn() {
   for (uint32_t i = 0; i < affectedTracks.Length(); ++i) {
     TextTrack* ttrack = affectedTracks[i];
     if (ttrack) {
-      ttrack->DispatchAsyncTrustedEvent(NS_LITERAL_STRING("cuechange"));
+      ttrack->DispatchAsyncTrustedEvent(u"cuechange"_ns);
       HTMLTrackElement* trackElement = ttrack->GetTrackElement();
       if (trackElement) {
-        trackElement->DispatchTrackRunnable(NS_LITERAL_STRING("cuechange"));
+        trackElement->DispatchTrackRunnable(u"cuechange"_ns);
       }
     }
   }

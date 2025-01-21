@@ -103,8 +103,7 @@
 namespace mozilla {
 namespace dom {
 
-static const nsLiteralCString kVibrationPermissionType =
-    NS_LITERAL_CSTRING("vibration");
+static const nsLiteralCString kVibrationPermissionType = "vibration"_ns;
 
 Navigator::Navigator(nsPIDOMWindowInner* aWindow) : mWindow(aWindow) {}
 
@@ -819,7 +818,7 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
   aHandlerURI->GetSpec(spec);
   // If the uri doesn't contain '%s', it won't be a good handler - the %s
   // gets replaced with the handled URI.
-  if (!FindInReadable(NS_LITERAL_CSTRING("%s"), spec)) {
+  if (!FindInReadable("%s"_ns, spec)) {
     aRv.ThrowSyntaxError("Handler URI does not contain \"%s\".");
     return;
   }
@@ -849,7 +848,7 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
   // Having checked the handler URI, check the scheme:
   nsAutoCString scheme;
   ToLowerCase(NS_ConvertUTF16toUTF8(aScheme), scheme);
-  if (StringBeginsWith(scheme, NS_LITERAL_CSTRING("web+"))) {
+  if (StringBeginsWith(scheme, "web+"_ns)) {
     // Check for non-ascii
     nsReadingIterator<char> iter;
     nsReadingIterator<char> iterEnd;
@@ -922,8 +921,8 @@ void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
     // If we're a private window, don't alert the user or webpage. We log to the
     // console so that web developers have some way to tell what's going wrong.
     nsContentUtils::ReportToConsole(
-        nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"),
-        mWindow->GetDoc(), nsContentUtils::eDOM_PROPERTIES,
+        nsIScriptError::warningFlag, "DOM"_ns, mWindow->GetDoc(),
+        nsContentUtils::eDOM_PROPERTIES,
         "RegisterProtocolHandlerPrivateBrowsingWarning");
     return;
   }
@@ -1145,9 +1144,9 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
     }
 
     uploadChannel->ExplicitSetUploadStream(in, contentTypeWithCharset, length,
-                                           NS_LITERAL_CSTRING("POST"), false);
+                                           "POST"_ns, false);
   } else {
-    rv = httpChannel->SetRequestMethod(NS_LITERAL_CSTRING("POST"));
+    rv = httpChannel->SetRequestMethod("POST"_ns);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
@@ -1314,7 +1313,7 @@ already_AddRefed<Promise> Navigator::GetVRDisplays(ErrorResult& aRv) {
   }
 
   if (!FeaturePolicyUtils::IsFeatureAllowed(mWindow->GetExtantDoc(),
-                                            NS_LITERAL_STRING("vr"))) {
+                                            u"vr"_ns)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }
@@ -1726,8 +1725,7 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(doc->GetChannel());
   if (httpChannel) {
     nsAutoCString userAgent;
-    rv = httpChannel->GetRequestHeader(NS_LITERAL_CSTRING("User-Agent"),
-                                       userAgent);
+    rv = httpChannel->GetRequestHeader("User-Agent"_ns, userAgent);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }

@@ -231,7 +231,7 @@ bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const {
 
 static bool CompareWebGLExtensionName(const nsACString& name,
                                       const char* other) {
-  return name.Equals(other, nsCaseInsensitiveCStringComparator());
+  return name.Equals(other, nsCaseInsensitiveCStringComparator);
 }
 
 WebGLExtensionBase* WebGLContext::EnableSupportedExtension(

@@ -224,8 +224,7 @@ nsresult nsContentSink::ProcessHTTPHeaders(nsIChannel* aChannel) {
 
   nsAutoCString linkHeader;
 
-  nsresult rv =
-      httpchannel->GetResponseHeader(NS_LITERAL_CSTRING("link"), linkHeader);
+  nsresult rv = httpchannel->GetResponseHeader("link"_ns, linkHeader);
   if (NS_SUCCEEDED(rv) && !linkHeader.IsEmpty()) {
     mDocument->SetHeaderData(nsGkAtoms::link,
                              NS_ConvertASCIItoUTF16(linkHeader));
@@ -743,7 +742,7 @@ nsresult nsContentSink::ProcessStyleLinkFromHeader(
       aTitle,
       aMedia,
       aIntegrity,
-      /* nonce = */ EmptyString(),
+      /* nonce = */ u""_ns,
       aAlternate ? Loader::HasAlternateRel::Yes : Loader::HasAlternateRel::No,
       Loader::IsInline::No,
       Loader::IsExplicitlyEnabled::No,
@@ -868,7 +867,7 @@ void nsContentSink::PrefetchDNS(const nsAString& aHref) {
   nsAutoString hostname;
   bool isHttps = false;
 
-  if (StringBeginsWith(aHref, NS_LITERAL_STRING("//"))) {
+  if (StringBeginsWith(aHref, u"//"_ns)) {
     hostname = Substring(aHref, 2);
   } else {
     nsCOMPtr<nsIURI> uri;
@@ -1579,15 +1578,14 @@ void nsContentSink::NotifyDocElementCreated(Document* aDoc) {
   }
   if (fireInitialInsertion) {
     observerService->NotifyObservers(ToSupports(aDoc),
-                                     "initial-document-element-inserted",
-                                     EmptyString().get());
+                                     "initial-document-element-inserted", u"");
   }
-  observerService->NotifyObservers(
-      ToSupports(aDoc), "document-element-inserted", EmptyString().get());
+  observerService->NotifyObservers(ToSupports(aDoc),
+                                   "document-element-inserted", u"");
 
-  nsContentUtils::DispatchChromeEvent(
-      aDoc, ToSupports(aDoc), NS_LITERAL_STRING("DOMDocElementInserted"),
-      CanBubble::eYes, Cancelable::eNo);
+  nsContentUtils::DispatchChromeEvent(aDoc, ToSupports(aDoc),
+                                      u"DOMDocElementInserted"_ns,
+                                      CanBubble::eYes, Cancelable::eNo);
 }
 
 NS_IMETHODIMP

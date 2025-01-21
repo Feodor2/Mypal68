@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NS_SVGFILTERSELEMENT_H__
-#define __NS_SVGFILTERSELEMENT_H__
+#ifndef DOM_SVG_SVGFILTERS_H_
+#define DOM_SVG_SVGFILTERS_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGElement.h"
@@ -27,7 +27,7 @@ struct SVGStringInfo {
   SVGElement* mElement;
 };
 
-typedef SVGElement SVGFEBase;
+using SVGFEBase = SVGElement;
 
 #define NS_SVG_FE_CID                                \
   {                                                  \
@@ -45,18 +45,18 @@ class SVGFE : public SVGFEBase {
   friend class mozilla::SVGFilterInstance;
 
  protected:
-  typedef mozilla::gfx::SourceSurface SourceSurface;
-  typedef mozilla::gfx::Size Size;
-  typedef mozilla::gfx::IntRect IntRect;
-  typedef mozilla::gfx::ColorSpace ColorSpace;
-  typedef mozilla::gfx::FilterPrimitiveDescription FilterPrimitiveDescription;
+  using SourceSurface = mozilla::gfx::SourceSurface;
+  using Size = mozilla::gfx::Size;
+  using IntRect = mozilla::gfx::IntRect;
+  using ColorSpace = mozilla::gfx::ColorSpace;
+  using FilterPrimitiveDescription = mozilla::gfx::FilterPrimitiveDescription;
 
   explicit SVGFE(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGFEBase(std::move(aNodeInfo)) {}
   virtual ~SVGFE() = default;
 
  public:
-  typedef mozilla::gfx::PrimitiveAttributes PrimitiveAttributes;
+  using PrimitiveAttributes = mozilla::gfx::PrimitiveAttributes;
 
   ColorSpace GetInputColorSpace(int32_t aInputIndex,
                                 ColorSpace aUnchangedInputColorSpace) {
@@ -89,10 +89,6 @@ class SVGFE : public SVGFEBase {
 
   virtual bool HasValidDimensions() const override;
 
-  bool IsNodeOfType(uint32_t aFlags) const override {
-    return !(aFlags & ~eFILTER);
-  }
-
   virtual SVGAnimatedString& GetResultImageName() = 0;
   // Return a list of all image names used as sources. Default is to
   // return no sources.
@@ -124,11 +120,11 @@ class SVGFE : public SVGFEBase {
   operator nsISupports*() { return static_cast<nsIContent*>(this); }
 
   // WebIDL
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedLength> X();
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedLength> Y();
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedLength> Width();
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedLength> Height();
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedString> Result();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedString> Result();
 
  protected:
   virtual bool OperatesOnSRGB(int32_t aInputIndex, bool aInputIsAlreadySRGB) {
@@ -153,7 +149,7 @@ class SVGFE : public SVGFEBase {
 
 NS_DEFINE_STATIC_IID_ACCESSOR(SVGFE, NS_SVG_FE_CID)
 
-typedef SVGElement SVGFEUnstyledElementBase;
+using SVGFEUnstyledElementBase = SVGElement;
 
 class SVGFEUnstyledElement : public SVGFEUnstyledElementBase {
  protected:
@@ -173,7 +169,7 @@ class SVGFEUnstyledElement : public SVGFEUnstyledElementBase {
 
 //------------------------------------------------------------
 
-typedef SVGFE SVGFELightingElementBase;
+using SVGFELightingElementBase = SVGFE;
 
 class SVGFELightingElement : public SVGFELightingElementBase {
  protected:
@@ -231,7 +227,7 @@ class SVGFELightingElement : public SVGFELightingElementBase {
   static StringInfo sStringInfo[2];
 };
 
-typedef SVGFEUnstyledElement SVGFELightElementBase;
+using SVGFELightElementBase = SVGFEUnstyledElement;
 
 class SVGFELightElement : public SVGFELightElementBase {
  protected:
@@ -240,7 +236,7 @@ class SVGFELightElement : public SVGFELightElementBase {
       : SVGFELightElementBase(std::move(aNodeInfo)) {}
 
  public:
-  typedef gfx::PrimitiveAttributes PrimitiveAttributes;
+  using PrimitiveAttributes = gfx::PrimitiveAttributes;
 
   virtual mozilla::gfx::LightType ComputeLightAttributes(
       SVGFilterInstance* aInstance, nsTArray<float>& aFloatAttributes) = 0;
@@ -249,4 +245,4 @@ class SVGFELightElement : public SVGFELightElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif
+#endif  // DOM_SVG_SVGFILTERS_H_

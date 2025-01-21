@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEPointLightElement_h
-#define mozilla_dom_SVGFEPointLightElement_h
+#ifndef DOM_SVG_SVGFEPOINTLIGHTELEMENT_H_
+#define DOM_SVG_SVGFEPOINTLIGHTELEMENT_H_
 
 #include "SVGAnimatedNumber.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEPointLightElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -14,7 +14,7 @@ nsresult NS_NewSVGFEPointLightElement(
 namespace mozilla {
 namespace dom {
 
-typedef SVGFELightElement SVGFEPointLightElementBase;
+using SVGFEPointLightElementBase = SVGFELightElement;
 
 class SVGFEPointLightElement : public SVGFEPointLightElementBase {
   friend nsresult(::NS_NewSVGFEPointLightElement(
@@ -52,4 +52,4 @@ class SVGFEPointLightElement : public SVGFEPointLightElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFEPointLightElement_h
+#endif  // DOM_SVG_SVGFEPOINTLIGHTELEMENT_H_

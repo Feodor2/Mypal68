@@ -559,7 +559,9 @@ void nsAttrValue::ToString(nsAString& aResult) const {
       aResult.Truncate();
       MiscContainer* container = GetMiscContainer();
       if (DeclarationBlock* decl = container->mValue.mCSSDeclaration) {
-        decl->ToString(aResult);
+        nsAutoCString result;
+        decl->ToString(result);
+        CopyUTF8toUTF16(result, aResult);
       }
 
       // This can be reached during parallel selector matching with attribute
@@ -993,7 +995,7 @@ struct HasPrefixFn {
     }
     return StringBeginsWith(nsDependentString(aAttrValue, aAttrLen),
                             aSearchValue,
-                            nsASCIICaseInsensitiveStringComparator());
+                            nsASCIICaseInsensitiveStringComparator);
   }
 };
 
@@ -1010,7 +1012,7 @@ struct HasSuffixFn {
                      aSearchValue.Length() * sizeof(char16_t));
     }
     return StringEndsWith(nsDependentString(aAttrValue, aAttrLen), aSearchValue,
-                          nsASCIICaseInsensitiveStringComparator());
+                          nsASCIICaseInsensitiveStringComparator);
   }
 };
 
@@ -1027,7 +1029,7 @@ struct HasSubstringFn {
                          aSearchValue.EndReading()) != end;
     }
     return FindInReadable(aSearchValue, nsDependentString(aAttrValue, aAttrLen),
-                          nsASCIICaseInsensitiveStringComparator());
+                          nsASCIICaseInsensitiveStringComparator);
   }
 };
 
@@ -1734,7 +1736,7 @@ bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
   auto data = MakeRefPtr<URLExtraData>(baseURI, referrerInfo, principal);
   RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
       aString, data, ownerDoc->GetCompatibilityMode(), ownerDoc->CSSLoader(),
-      dom::CSSRule_Binding::STYLE_RULE);
+      StyleCssRuleType::Style);
   if (!decl) {
     return false;
   }

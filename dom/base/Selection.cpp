@@ -2715,7 +2715,7 @@ bool Selection::ContainsNode(nsINode& aNode, bool aAllowPartial,
   return false;
 }
 
-class PointInRectChecker : public nsLayoutUtils::RectCallback {
+class PointInRectChecker : public mozilla::RectCallback {
  public:
   explicit PointInRectChecker(const nsPoint& aPoint)
       : mPoint(aPoint), mMatchFound(false) {}

@@ -7,12 +7,12 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/PointerEvent.h"
 #include "mozilla/dom/PointerEventBinding.h"
+#include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/MouseEvents.h"
 #include "nsContentUtils.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 PointerEvent::PointerEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                            WidgetPointerEvent* aEvent)
@@ -269,8 +269,7 @@ bool PointerEvent::ShouldResistFingerprinting(CallerType aCallerType) {
   return doc && !nsContentUtils::IsChromeDoc(doc);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

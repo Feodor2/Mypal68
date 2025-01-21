@@ -10,7 +10,7 @@
 #include "SVGOrientSMILType.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
+#include <utility>
 #include "mozilla/SMILValue.h"
 #include "mozilla/dom/SVGMarkerElement.h"
 #include "mozAutoDocUpdate.h"
@@ -46,9 +46,9 @@ static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
 // DidChangeOrient with mozAutoDocUpdate.
 class MOZ_RAII AutoChangeOrientNotifier {
  public:
-  explicit AutoChangeOrientNotifier(SVGAnimatedOrient* aOrient,
-                                    SVGElement* aSVGElement,
-                                    bool aDoSetAttr = true)
+  AutoChangeOrientNotifier(
+      SVGAnimatedOrient* aOrient, SVGElement* aSVGElement,
+      bool aDoSetAttr = true)
       : mOrient(aOrient), mSVGElement(aSVGElement), mDoSetAttr(aDoSetAttr) {
     MOZ_ASSERT(mOrient, "Expecting non-null orient");
     if (mSVGElement && mDoSetAttr) {

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZILLA_SVGPATHDATA_H__
-#define MOZILLA_SVGPATHDATA_H__
+#ifndef DOM_SVG_SVGPATHDATA_H_
+#define DOM_SVG_SVGPATHDATA_H_
 
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
@@ -86,15 +86,15 @@ class SVGPathData {
   // SVGPathDataParser will not keep wrappers in sync, so consumers
   // are responsible for that!
 
-  typedef gfx::DrawTarget DrawTarget;
-  typedef gfx::Path Path;
-  typedef gfx::PathBuilder PathBuilder;
-  typedef gfx::FillRule FillRule;
-  typedef gfx::Float Float;
-  typedef gfx::CapStyle CapStyle;
+  using DrawTarget = gfx::DrawTarget;
+  using Path = gfx::Path;
+  using PathBuilder = gfx::PathBuilder;
+  using FillRule = gfx::FillRule;
+  using Float = gfx::Float;
+  using CapStyle = gfx::CapStyle;
 
  public:
-  typedef const float* const_iterator;
+  using const_iterator = const float*;
 
   SVGPathData() = default;
   ~SVGPathData() = default;
@@ -293,4 +293,4 @@ class SVGPathDataAndInfo final : public SVGPathData {
 
 }  // namespace mozilla
 
-#endif  // MOZILLA_SVGPATHDATA_H__
+#endif  // DOM_SVG_SVGPATHDATA_H_

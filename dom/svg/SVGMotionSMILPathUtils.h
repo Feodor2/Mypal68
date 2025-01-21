@@ -5,8 +5,8 @@
 /* Helper class to help with generating anonymous path elements for
    <animateMotion> elements to use. */
 
-#ifndef MOZILLA_SVGMOTIONSMILPATHUTILS_H_
-#define MOZILLA_SVGMOTIONSMILPATHUTILS_H_
+#ifndef DOM_SVG_SVGMOTIONSMILPATHUTILS_H_
+#define DOM_SVG_SVGMOTIONSMILPATHUTILS_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
@@ -24,9 +24,9 @@ class SVGElement;
 }
 
 class SVGMotionSMILPathUtils {
-  typedef mozilla::gfx::DrawTarget DrawTarget;
-  typedef mozilla::gfx::Path Path;
-  typedef mozilla::gfx::PathBuilder PathBuilder;
+  using DrawTarget = mozilla::gfx::DrawTarget;
+  using Path = mozilla::gfx::Path;
+  using PathBuilder = mozilla::gfx::PathBuilder;
 
  public:
   // Class to assist in generating a Path, based on
@@ -99,4 +99,4 @@ class SVGMotionSMILPathUtils {
 
 }  // namespace mozilla
 
-#endif  // MOZILLA_SVGMOTIONSMILPATHUTILS_H_
+#endif  // DOM_SVG_SVGMOTIONSMILPATHUTILS_H_

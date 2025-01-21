@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGTextContentElement_h
-#define mozilla_dom_SVGTextContentElement_h
+#ifndef DOM_SVG_SVGTEXTCONTENTELEMENT_H_
+#define DOM_SVG_SVGTEXTCONTENTELEMENT_H_
 
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "DOMSVGAnimatedEnumeration.h"
@@ -17,10 +17,10 @@ class SVGTextFrame;
 namespace dom {
 
 struct DOMPointInit;
-class nsISVGPoint;
+class DOMSVGPoint;
 class SVGRect;
 
-typedef SVGGraphicsElement SVGTextContentElementBase;
+using SVGTextContentElementBase = SVGGraphicsElement;
 
 class SVGTextContentElement : public SVGTextContentElementBase {
   friend class mozilla::SVGTextFrame;
@@ -38,10 +38,10 @@ class SVGTextContentElement : public SVGTextContentElementBase {
   MOZ_CAN_RUN_SCRIPT
   float GetSubStringLength(uint32_t charnum, uint32_t nchars, ErrorResult& rv);
   MOZ_CAN_RUN_SCRIPT
-  already_AddRefed<nsISVGPoint> GetStartPositionOfChar(uint32_t charnum,
+  already_AddRefed<DOMSVGPoint> GetStartPositionOfChar(uint32_t charnum,
                                                        ErrorResult& rv);
   MOZ_CAN_RUN_SCRIPT
-  already_AddRefed<nsISVGPoint> GetEndPositionOfChar(uint32_t charnum,
+  already_AddRefed<DOMSVGPoint> GetEndPositionOfChar(uint32_t charnum,
                                                      ErrorResult& rv);
   MOZ_CAN_RUN_SCRIPT
   already_AddRefed<SVGRect> GetExtentOfChar(uint32_t charnum, ErrorResult& rv);
@@ -71,4 +71,4 @@ class SVGTextContentElement : public SVGTextContentElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGTextContentElement_h
+#endif  // DOM_SVG_SVGTEXTCONTENTELEMENT_H_

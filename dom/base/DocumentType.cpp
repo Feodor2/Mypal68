@@ -31,8 +31,7 @@ already_AddRefed<mozilla::dom::DocumentType> NS_NewDOMDocumentType(
   return docType.forget();
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* DocumentType::WrapNode(JSContext* cx,
                                  JS::Handle<JSObject*> aGivenProto) {
@@ -78,5 +77,4 @@ already_AddRefed<CharacterData> DocumentType::CloneDataNode(
       do_AddRef(aNodeInfo), mPublicId, mSystemId, mInternalSubset));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

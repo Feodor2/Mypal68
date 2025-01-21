@@ -15,6 +15,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContextPaint.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/TextUtils.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContainerFrame.h"
@@ -23,9 +24,7 @@
 #include "nsIScriptError.h"
 #include "nsLayoutUtils.h"
 #include "nsMathUtils.h"
-#include "nsSVGUtils.h"
 #include "nsWhitespaceTokenizer.h"
-#include "SVGAnimationElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGGeometryProperty.h"
 #include "nsContentUtils.h"
@@ -142,13 +141,6 @@ SVGSVGElement* SVGContentUtils::GetOuterSVGElement(SVGElement* aSVGElement) {
     return static_cast<SVGSVGElement*>(element);
   }
   return nullptr;
-}
-
-void SVGContentUtils::ActivateByHyperlink(nsIContent* aContent) {
-  MOZ_ASSERT(aContent->IsNodeOfType(nsINode::eANIMATION),
-             "Expecting an animation element");
-
-  static_cast<SVGAnimationElement*>(aContent)->ActivateByHyperlink();
 }
 
 enum DashState {
@@ -440,9 +432,9 @@ float SVGContentUtils::GetFontXHeight(ComputedStyle* aComputedStyle,
 }
 nsresult SVGContentUtils::ReportToConsole(Document* doc, const char* aWarning,
                                           const nsTArray<nsString>& aParams) {
-  return nsContentUtils::ReportToConsole(
-      nsIScriptError::warningFlag, NS_LITERAL_CSTRING("SVG"), doc,
-      nsContentUtils::eSVG_PROPERTIES, aWarning, aParams);
+  return nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "SVG"_ns,
+                                         doc, nsContentUtils::eSVG_PROPERTIES,
+                                         aWarning, aParams);
 }
 
 bool SVGContentUtils::EstablishesViewport(nsIContent* aContent) {
@@ -480,7 +472,7 @@ static gfx::Matrix GetCTMInternal(SVGElement* aElement, bool aScreenCTM,
     gfxMatrix ret;
 
     if (auto* f = e->GetPrimaryFrame()) {
-      ret = nsSVGUtils::GetTransformMatrixInUserSpace(f);
+      ret = SVGUtils::GetTransformMatrixInUserSpace(f);
     } else {
       // FIXME: Ideally we should also return the correct matrix
       // for display:none, but currently transform related code relies

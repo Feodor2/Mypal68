@@ -55,7 +55,7 @@
 #include "nsCheapSets.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/UniquePtr.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 #include "nsThreadUtils.h"
 
 class nsIArray;
@@ -741,7 +741,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
       mozilla::ErrorResult& aError) override;
   mozilla::dom::VisualViewport* VisualViewport();
   already_AddRefed<mozilla::dom::MediaQueryList> MatchMedia(
-      const nsAString& aQuery, mozilla::dom::CallerType aCallerType,
+      const nsACString& aQuery, mozilla::dom::CallerType aCallerType,
       mozilla::ErrorResult& aError);
   nsScreen* GetScreen(mozilla::ErrorResult& aError);
   void MoveTo(int32_t aXPos, int32_t aYPos,

@@ -5,6 +5,7 @@
 #include "Flex.h"
 
 #include "FlexLineValues.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/FlexBinding.h"
 #include "nsFlexContainerFrame.h"
 

@@ -90,8 +90,8 @@ bool DateTimeInputTypeBase::HasBadInput() const {
     return false;
   }
 
-  Element* editWrapperElement = mInputElement->GetShadowRoot()->GetElementById(
-      NS_LITERAL_STRING("edit-wrapper"));
+  Element* editWrapperElement =
+      mInputElement->GetShadowRoot()->GetElementById(u"edit-wrapper"_ns);
 
   if (!editWrapperElement) {
     return false;
@@ -100,8 +100,7 @@ bool DateTimeInputTypeBase::HasBadInput() const {
   // Incomplete field does not imply bad input.
   for (Element* child = editWrapperElement->GetFirstElementChild(); child;
        child = child->GetNextElementSibling()) {
-    if (child->ClassList()->Contains(
-            NS_LITERAL_STRING("datetime-edit-field"))) {
+    if (child->ClassList()->Contains(u"datetime-edit-field"_ns)) {
       nsAutoString value;
       child->GetAttr(kNameSpaceID_None, nsGkAtoms::value, value);
       if (value.IsEmpty()) {
@@ -140,7 +139,7 @@ nsresult DateTimeInputTypeBase::GetRangeUnderflowMessage(nsAString& aMessage) {
 nsresult DateTimeInputTypeBase::MinMaxStepAttrChanged() {
   if (Element* dateTimeBoxElement = mInputElement->GetDateTimeBoxElement()) {
     AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
-        dateTimeBoxElement, NS_LITERAL_STRING("MozNotifyMinMaxStepAttrChanged"),
+        dateTimeBoxElement, u"MozNotifyMinMaxStepAttrChanged"_ns,
         CanBubble::eNo, ChromeOnlyDispatch::eNo);
     dispatcher->RunDOMEventWhenSafe();
   }
@@ -174,10 +173,6 @@ bool DateTimeInputTypeBase::GetTimeFromMs(double aValue, uint16_t* aHours,
 // input type=date
 
 nsresult DateInputType::GetBadInputMessage(nsAString& aMessage) {
-  if (!StaticPrefs::dom_forms_datetime()) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
   return nsContentUtils::GetMaybeLocalizedString(
       nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidDate",
       mInputElement->OwnerDoc(), aMessage);

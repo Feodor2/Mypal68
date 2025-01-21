@@ -4,15 +4,16 @@
 
 #include "SVGAnimatedTransformList.h"
 
-#include "mozilla/dom/MutationEventBinding.h"
-#include "mozilla/dom/SVGAnimationElement.h"
-#include "mozilla/Move.h"
-#include "mozilla/SMILValue.h"
-#include "mozilla/SVGContentUtils.h"
-#include "nsCharSeparatedTokenizer.h"
+#include <utility>
+
 #include "DOMSVGAnimatedTransformList.h"
 #include "SVGTransform.h"
 #include "SVGTransformListSMILType.h"
+#include "mozilla/SMILValue.h"
+#include "mozilla/SVGContentUtils.h"
+#include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/SVGAnimationElement.h"
+#include "nsCharSeparatedTokenizer.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGTransform_Binding;
@@ -197,7 +198,7 @@ void SVGAnimatedTransformList::SMILAnimatedTransformList::ParseValue(
   MOZ_ASSERT(aResult.IsNull(), "Unexpected type for SMIL value");
 
   static_assert(SVGTransformSMILData::NUM_SIMPLE_PARAMS == 3,
-                "nsSVGSMILTransform constructor should be expecting array "
+                "SVGSMILTransform constructor should be expecting array "
                 "with 3 params");
 
   float params[3] = {0.f};

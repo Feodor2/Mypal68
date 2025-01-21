@@ -11,6 +11,7 @@
 #define nsFrameLoader_h_
 
 #include "nsDocShell.h"
+#include "nsIFrame.h"
 #include "nsStringFwd.h"
 #include "nsPoint.h"
 #include "nsSize.h"
@@ -26,7 +27,6 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "nsStubMutationObserver.h"
 #include "Units.h"
-#include "nsIFrame.h"
 #include "nsPluginTags.h"
 
 class nsIURI;
@@ -60,7 +60,6 @@ class Promise;
 class BrowserParent;
 class MutableTabContext;
 class BrowserBridgeChild;
-class RemoteFrameChild;
 struct RemotenessOptions;
 
 namespace ipc {
@@ -184,7 +183,6 @@ class nsFrameLoader final : public nsStubMutationObserver,
   void SendCrossProcessMouseEvent(const nsAString& aType, float aX, float aY,
                                   int32_t aButton, int32_t aClickCount,
                                   int32_t aModifiers,
-                                  bool aIgnoreRootScrollFrame,
                                   mozilla::ErrorResult& aRv);
 
   void ActivateFrameEvent(const nsAString& aType, bool aCapture,
@@ -195,6 +193,8 @@ class nsFrameLoader final : public nsStubMutationObserver,
   void RequestUpdatePosition(mozilla::ErrorResult& aRv);
 
   bool RequestTabStateFlush(uint32_t aFlushId, bool aIsFinal = false);
+
+  void RequestEpochUpdate(uint32_t aEpoch);
 
   void Print(uint64_t aOuterWindowID, nsIPrintSettings* aPrintSettings,
              nsIWebProgressListener* aProgressListener,
@@ -245,17 +245,14 @@ class nsFrameLoader final : public nsStubMutationObserver,
    * Called from the layout frame associated with this frame loader;
    * this notifies us to hook up with the widget and view.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool Show(int32_t marginWidth,
-                                        int32_t marginHeight,
-                                        mozilla::ScrollbarPreference,
-                                        nsSubDocumentFrame*);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool Show(nsSubDocumentFrame*);
 
   void MaybeShowFrame();
 
   /**
    * Called when the margin properties of the containing frame are changed.
    */
-  void MarginsChanged(uint32_t aMarginWidth, uint32_t aMarginHeight);
+  void MarginsChanged();
 
   /**
    * Called from the layout frame associated with this frame loader, when

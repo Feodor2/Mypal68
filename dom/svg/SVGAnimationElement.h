@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGAnimationElement_h
-#define mozilla_dom_SVGAnimationElement_h
+#ifndef DOM_SVG_SVGANIMATIONELEMENT_H_
+#define DOM_SVG_SVGANIMATIONELEMENT_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILTimedElement.h"
@@ -11,10 +11,18 @@
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGTests.h"
 
+// {f80ef85f-ef48-401a-8aed-1652312326b0}
+#define MOZILLA_SVGANIMATIONELEMENT_IID              \
+  {                                                  \
+    0xf80ef85f, 0xef48, 0x401a, {                    \
+      0x8a, 0xed, 0x16, 0x52, 0x31, 0x23, 0x26, 0xb0 \
+    }                                                \
+  }
+
 namespace mozilla {
 namespace dom {
 
-typedef SVGElement SVGAnimationElementBase;
+using SVGAnimationElementBase = SVGElement;
 
 class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
  protected:
@@ -27,6 +35,7 @@ class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
 
+  NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_SVGANIMATIONELEMENT_IID)
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGAnimationElement,
                                            SVGAnimationElementBase)
 
@@ -35,8 +44,6 @@ class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
   // nsIContent specializations
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
   virtual void UnbindFromTree(bool aNullParent) override;
-
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
 
   // Element specializations
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -114,7 +121,10 @@ class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
   mozilla::SMILTimedElement mTimedElement;
 };
 
+NS_DEFINE_STATIC_IID_ACCESSOR(SVGAnimationElement,
+                              MOZILLA_SVGANIMATIONELEMENT_IID)
+
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGAnimationElement_h
+#endif  // DOM_SVG_SVGANIMATIONELEMENT_H_

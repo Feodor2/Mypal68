@@ -24,7 +24,6 @@
 #include "mozilla/WeakPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsICanvasRenderingContextInternal.h"
-#include "nsLayoutUtils.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 #include "SurfaceTypes.h"
@@ -41,7 +40,6 @@
 #include "nsICanvasRenderingContextInternal.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsWrapperCache.h"
-#include "nsLayoutUtils.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
 

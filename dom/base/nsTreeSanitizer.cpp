@@ -1110,15 +1110,15 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
           didSanitize = true;
           // Ignore these rule types.
           break;
-        case CSSRule_Binding::NAMESPACE_RULE:
-        case CSSRule_Binding::FONT_FACE_RULE: {
+        case StyleCssRuleType::Namespace:
+        case StyleCssRuleType::FontFace: {
           // Append @namespace and @font-face rules verbatim.
-          nsAutoString cssText;
+          nsAutoCString cssText;
           rule->GetCssText(cssText);
-          aSanitized.Append(cssText);
+          aSanitized.Append(NS_ConvertUTF8toUTF16(cssText).get());
           break;
         }
-        case CSSRule_Binding::STYLE_RULE: {
+        case StyleCssRuleType::Style: {
           // For style rules, we will just look for and remove the
           // -moz-binding properties.
           auto styleRule = static_cast<BindingStyleRule*>(rule);
@@ -1127,9 +1127,9 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
           if (SanitizeStyleDeclaration(styleDecl)) {
             didSanitize = true;
           }
-          nsAutoString decl;
+          nsAutoCString decl;
           styleRule->GetCssText(decl);
-          aSanitized.Append(decl);
+          aSanitized.Append(NS_ConvertUTF8toUTF16(decl).get());
         }
       }
     }
@@ -1200,13 +1200,13 @@ void nsTreeSanitizer::SanitizeAttributes(mozilla::dom::Element* aElement,
         RefPtr<URLExtraData> urlExtra(aElement->GetURLDataForStyleAttr());
         RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
             value, urlExtra, document->GetCompatibilityMode(),
-            document->CSSLoader(), dom::CSSRule_Binding::STYLE_RULE);
+            document->CSSLoader(), StyleCssRuleType::Style);
         if (decl) {
           if (SanitizeStyleDeclaration(decl)) {
-            nsAutoString cleanValue;
+            nsAutoCString cleanValue;
             decl->ToString(cleanValue);
-            aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style, cleanValue,
-                              false);
+            aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style,
+                              NS_ConvertUTF8toUTF16(cleanValue), false);
             if (mLogRemovals) {
               LogMessage(
                   "Removed -moz-binding styling from element style attribute.",
@@ -1413,6 +1413,7 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
         nsAutoString sanitizedStyle;
         SanitizeStyleSheet(styleText, sanitizedStyle, aRoot->OwnerDoc(),
                            node->GetBaseURI());
+        RemoveAllAttributesFromDescendants(elt);
         nsContentUtils::SetNodeTextContent(node, sanitizedStyle, true);
 
         AllowedAttributes allowed;
@@ -1491,6 +1492,18 @@ void nsTreeSanitizer::RemoveAllAttributes(Element* aElement) {
     int32_t attrNs = attrName->NamespaceID();
     RefPtr<nsAtom> attrLocal = attrName->LocalName();
     aElement->UnsetAttr(attrNs, attrLocal, false);
+  }
+}
+
+void nsTreeSanitizer::RemoveAllAttributesFromDescendants(
+    mozilla::dom::Element* aElement) {
+  nsIContent* node = aElement->GetFirstChild();
+  while (node) {
+    if (node->IsElement()) {
+      mozilla::dom::Element* elt = node->AsElement();
+      RemoveAllAttributes(elt);
+    }
+    node = node->GetNextNode(aElement);
   }
 }
 

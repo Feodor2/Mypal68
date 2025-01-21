@@ -391,11 +391,9 @@ class nsINode : public mozilla::dom::EventTarget {
   enum {
     /** form control elements */
     eHTML_FORM_CONTROL = 1 << 6,
-    /** animation elements */
-    eANIMATION = 1 << 10,
-    /** filter elements that implement SVGFilterPrimitiveStandardAttributes */
-    eFILTER = 1 << 11,
-    /** SVGGeometryElement */
+    /** SVG use targets */
+    eUSE_TARGET = 1 << 9,
+    /** SVG shapes such as lines and polygons, but not images */
     eSHAPE = 1 << 12
   };
 
@@ -533,6 +531,11 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   inline mozilla::dom::Element* AsElement();
   inline const mozilla::dom::Element* AsElement() const;
+
+  /**
+   * Return whether the node is an nsStyledElement instance or not.
+   */
+  virtual bool IsStyledElement() const { return false; }
 
   /**
    * Return this node as nsIContent.  Should only be used for nodes for which

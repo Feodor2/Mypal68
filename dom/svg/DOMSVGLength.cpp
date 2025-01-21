@@ -6,7 +6,6 @@
 
 #include "DOMSVGLengthList.h"
 #include "DOMSVGAnimatedLengthList.h"
-#include "mozAutoDocUpdate.h"
 #include "nsError.h"
 #include "nsMathUtils.h"
 #include "SVGAnimatedLength.h"
@@ -57,37 +56,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLength)
   NS_INTERFACE_MAP_ENTRY(DOMSVGLength)  // pseudo-interface
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
-
-//----------------------------------------------------------------------
-// Helper class: AutoChangeLengthNotifier
-// Stack-based helper class to pair calls to WillChangeLengthList and
-// DidChangeLengthList.
-class MOZ_RAII AutoChangeLengthNotifier : public mozAutoDocUpdate {
- public:
-  explicit AutoChangeLengthNotifier(DOMSVGLength* aLength)
-      : mozAutoDocUpdate(aLength->Element()->GetComposedDoc(), true),
-        mLength(aLength) {
-    MOZ_ASSERT(mLength, "Expecting non-null length");
-    MOZ_ASSERT(mLength->HasOwner(),
-               "Expecting list to have an owner for notification");
-    mEmptyOrOldValue =
-        mLength->Element()->WillChangeLengthList(mLength->mAttrEnum, *this);
-  }
-
-  ~AutoChangeLengthNotifier() {
-    mLength->Element()->DidChangeLengthList(mLength->mAttrEnum,
-                                            mEmptyOrOldValue, *this);
-    // Null check mLength->mList, since DidChangeLengthList can run script,
-    // potentially removing mLength from its list.
-    if (mLength->mList && mLength->mList->IsAnimating()) {
-      mLength->Element()->AnimationNeedsResample();
-    }
-  }
-
- private:
-  DOMSVGLength* const mLength;
-  nsAttrValue mEmptyOrOldValue;
-};
 
 DOMSVGLength::DOMSVGLength(DOMSVGLengthList* aList, uint8_t aAttrEnum,
                            uint32_t aListIndex, bool aIsAnimValItem)
@@ -245,7 +213,7 @@ void DOMSVGLength::SetValue(float aUserUnitValue, ErrorResult& aRv) {
     if (uuPerUnit > 0) {
       float newValue = aUserUnitValue / uuPerUnit;
       if (IsFinite(newValue)) {
-        AutoChangeLengthNotifier notifier(this);
+        AutoChangeLengthListNotifier notifier(this);
         InternalItem().SetValueAndUnit(newValue, InternalItem().GetUnit());
         return;
       }
@@ -282,9 +250,7 @@ void DOMSVGLength::SetValueInSpecifiedUnits(float aValue, ErrorResult& aRv) {
   }
 
   if (mVal) {
-    MOZ_ASSERT(mSVGElement);
-    mozAutoDocUpdate updateBatch(mSVGElement->GetComposedDoc(), true);
-    mVal->SetBaseValueInSpecifiedUnits(aValue, mSVGElement, true, updateBatch);
+    mVal->SetBaseValueInSpecifiedUnits(aValue, mSVGElement, true);
     return;
   }
 
@@ -292,7 +258,7 @@ void DOMSVGLength::SetValueInSpecifiedUnits(float aValue, ErrorResult& aRv) {
     if (InternalItem().GetValueInCurrentUnits() == aValue) {
       return;
     }
-    AutoChangeLengthNotifier notifier(this);
+    AutoChangeLengthListNotifier notifier(this);
     InternalItem().SetValueInCurrentUnits(aValue);
     return;
   }
@@ -319,7 +285,7 @@ void DOMSVGLength::SetValueAsString(const nsAString& aValue, ErrorResult& aRv) {
     if (InternalItem() == value) {
       return;
     }
-    AutoChangeLengthNotifier notifier(this);
+    AutoChangeLengthListNotifier notifier(this);
     InternalItem() = value;
     return;
   }
@@ -369,7 +335,7 @@ void DOMSVGLength::NewValueSpecifiedUnits(uint16_t aUnit, float aValue,
         InternalItem().GetValueInCurrentUnits() == aValue) {
       return;
     }
-    AutoChangeLengthNotifier notifier(this);
+    AutoChangeLengthListNotifier notifier(this);
     InternalItem().SetValueAndUnit(aValue, uint8_t(aUnit));
     return;
   }
@@ -399,7 +365,7 @@ void DOMSVGLength::ConvertToSpecifiedUnits(uint16_t aUnit, ErrorResult& aRv) {
     float val =
         InternalItem().GetValueInSpecifiedUnit(aUnit, Element(), Axis());
     if (IsFinite(val)) {
-      AutoChangeLengthNotifier notifier(this);
+      AutoChangeLengthListNotifier notifier(this);
       InternalItem().SetValueAndUnit(val, aUnit);
       return;
     }

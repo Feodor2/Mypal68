@@ -6,7 +6,6 @@
 
 #include "SVGElement.h"
 #include "DOMSVGLength.h"
-#include "mozAutoDocUpdate.h"
 #include "nsError.h"
 #include "SVGAnimatedLengthList.h"
 #include "nsCOMPtr.h"
@@ -68,37 +67,17 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLengthList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+void DOMSVGLengthList::IndexedSetter(uint32_t index, DOMSVGLength& newValue,
+                                     ErrorResult& error) {
+  // Need to take a ref to the return value so it does not leak.
+  RefPtr<DOMSVGLength> ignored = ReplaceItem(newValue, index, error);
+  Unused << ignored;
+}
+
 JSObject* DOMSVGLengthList::WrapObject(JSContext* cx,
                                        JS::Handle<JSObject*> aGivenProto) {
   return mozilla::dom::SVGLengthList_Binding::Wrap(cx, this, aGivenProto);
 }
-
-//----------------------------------------------------------------------
-// Helper class: AutoChangeLengthListNotifier
-// Stack-based helper class to pair calls to WillChangeLengthList and
-// DidChangeLengthList.
-class MOZ_RAII AutoChangeLengthListNotifier : public mozAutoDocUpdate {
- public:
-  explicit AutoChangeLengthListNotifier(DOMSVGLengthList* aLengthList)
-      : mozAutoDocUpdate(aLengthList->Element()->GetComposedDoc(), true),
-        mLengthList(aLengthList) {
-    MOZ_ASSERT(mLengthList, "Expecting non-null lengthList");
-    mEmptyOrOldValue = mLengthList->Element()->WillChangeLengthList(
-        mLengthList->AttrEnum(), *this);
-  }
-
-  ~AutoChangeLengthListNotifier() {
-    mLengthList->Element()->DidChangeLengthList(mLengthList->AttrEnum(),
-                                                mEmptyOrOldValue, *this);
-    if (mLengthList->IsAnimating()) {
-      mLengthList->Element()->AnimationNeedsResample();
-    }
-  }
-
- private:
-  DOMSVGLengthList* const mLengthList;
-  nsAttrValue mEmptyOrOldValue;
-};
 
 void DOMSVGLengthList::InternalListLengthWillChange(uint32_t aNewLength) {
   uint32_t oldLength = mItems.Length();

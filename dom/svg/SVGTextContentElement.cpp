@@ -8,7 +8,8 @@
 #include "mozilla/dom/SVGTextContentElementBinding.h"
 #include "mozilla/dom/SVGRect.h"
 #include "nsBidiUtils.h"
-#include "nsISVGPoint.h"
+#include "DOMSVGPoint.h"
+#include "nsLayoutUtils.h"
 #include "nsTextFragment.h"
 #include "nsTextFrameUtils.h"
 #include "nsTextNode.h"
@@ -133,7 +134,7 @@ float SVGTextContentElement::GetSubStringLength(uint32_t charnum,
   return textFrame->GetSubStringLength(this, charnum, nchars, rv);
 }
 
-already_AddRefed<nsISVGPoint> SVGTextContentElement::GetStartPositionOfChar(
+already_AddRefed<DOMSVGPoint> SVGTextContentElement::GetStartPositionOfChar(
     uint32_t charnum, ErrorResult& rv) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
   if (!textFrame) {
@@ -144,7 +145,7 @@ already_AddRefed<nsISVGPoint> SVGTextContentElement::GetStartPositionOfChar(
   return textFrame->GetStartPositionOfChar(this, charnum, rv);
 }
 
-already_AddRefed<nsISVGPoint> SVGTextContentElement::GetEndPositionOfChar(
+already_AddRefed<DOMSVGPoint> SVGTextContentElement::GetEndPositionOfChar(
     uint32_t charnum, ErrorResult& rv) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
   if (!textFrame) {

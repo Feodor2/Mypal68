@@ -4,8 +4,7 @@
 
 #include "mozilla/dom/BeforeUnloadEvent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void BeforeUnloadEvent::SetReturnValue(const nsAString& aReturnValue) {
   mText = aReturnValue;
@@ -15,8 +14,7 @@ void BeforeUnloadEvent::GetReturnValue(nsAString& aReturnValue) {
   aReturnValue = mText;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

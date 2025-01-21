@@ -78,7 +78,7 @@
 #include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
 #include "mozilla/dom/SessionStoreListener.h"
 #include "mozilla/gfx/CrossProcessPaint.h"
-#include "mozilla/layout/RenderFrame.h"
+#include "mozilla/layout/RemoteLayerTreeOwner.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsGenericHTMLFrameElement.h"
@@ -440,8 +440,7 @@ void nsFrameLoader::LoadFrame(bool aOriginalSrc) {
 
   // If the URI was malformed, try to recover by loading about:blank.
   if (rv == NS_ERROR_MALFORMED_URI) {
-    rv = NS_NewURI(getter_AddRefs(uri), NS_LITERAL_STRING("about:blank"),
-                   encoding, base_uri);
+    rv = NS_NewURI(getter_AddRefs(uri), u"about:blank"_ns, encoding, base_uri);
   }
 
   if (NS_SUCCEEDED(rv)) {
@@ -459,8 +458,7 @@ void nsFrameLoader::FireErrorEvent() {
   }
   RefPtr<AsyncEventDispatcher> loadBlockingAsyncDispatcher =
       new LoadBlockingAsyncEventDispatcher(
-          mOwnerContent, NS_LITERAL_STRING("error"), CanBubble::eNo,
-          ChromeOnlyDispatch::eNo);
+          mOwnerContent, u"error"_ns, CanBubble::eNo, ChromeOnlyDispatch::eNo);
   loadBlockingAsyncDispatcher->PostDOMEvent();
 }
 
@@ -846,9 +844,32 @@ void nsFrameLoader::MaybeShowFrame() {
   }
 }
 
-bool nsFrameLoader::Show(int32_t marginWidth, int32_t marginHeight,
-                         ScrollbarPreference aScrollbarPref,
-                         nsSubDocumentFrame* frame) {
+static ScrollbarPreference GetScrollbarPreference(const Element* aOwner) {
+  if (!aOwner) {
+    return ScrollbarPreference::Auto;
+  }
+  const nsAttrValue* attrValue = aOwner->GetParsedAttr(nsGkAtoms::scrolling);
+  return nsGenericHTMLFrameElement::MapScrollingAttribute(attrValue);
+}
+
+static CSSIntSize GetMarginAttributes(const Element* aOwner) {
+  CSSIntSize result(-1, -1);
+  auto* content = nsGenericHTMLElement::FromNodeOrNull(aOwner);
+  if (!content) {
+    return result;
+  }
+  const nsAttrValue* attr = content->GetParsedAttr(nsGkAtoms::marginwidth);
+  if (attr && attr->Type() == nsAttrValue::eInteger) {
+    result.width = attr->GetIntegerValue();
+  }
+  attr = content->GetParsedAttr(nsGkAtoms::marginheight);
+  if (attr && attr->Type() == nsAttrValue::eInteger) {
+    result.height = attr->GetIntegerValue();
+  }
+  return result;
+}
+
+bool nsFrameLoader::Show(nsSubDocumentFrame* frame) {
   if (mInShow) {
     return false;
   }
@@ -865,22 +886,22 @@ bool nsFrameLoader::Show(int32_t marginWidth, int32_t marginHeight,
   if (NS_FAILED(rv)) {
     return false;
   }
-  MOZ_ASSERT(GetDocShell(), "MaybeCreateDocShell succeeded, but null docShell");
-  if (!GetDocShell()) {
+  nsDocShell* ds = GetDocShell();
+  MOZ_ASSERT(ds, "MaybeCreateDocShell succeeded, but null docShell");
+  if (!ds) {
     return false;
   }
 
-  GetDocShell()->SetMarginWidth(marginWidth);
-  GetDocShell()->SetMarginHeight(marginHeight);
-  GetDocShell()->SetScrollbarPreference(aScrollbarPref);
-
-  if (PresShell* presShell = GetDocShell()->GetPresShell()) {
-    // Ensure root scroll frame is reflowed in case scroll preferences or
-    // margins have changed
-    nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
-    if (rootScrollFrame) {
-      presShell->FrameNeedsReflow(rootScrollFrame, IntrinsicDirty::Resize,
-                                  NS_FRAME_IS_DIRTY);
+  ds->SetScrollbarPreference(GetScrollbarPreference(mOwnerContent));
+  const bool marginsChanged =
+    ds->UpdateFrameMargins(GetMarginAttributes(mOwnerContent));
+  if (PresShell* presShell = ds->GetPresShell()) {
+    // Ensure root scroll frame is reflowed in case margins have changed
+    if (marginsChanged) {
+      if (nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame()) {
+        presShell->FrameNeedsReflow(rootScrollFrame, IntrinsicDirty::Resize,
+                                    NS_FRAME_IS_DIRTY);
+      }
     }
     return true;
   }
@@ -916,11 +937,9 @@ bool nsFrameLoader::Show(int32_t marginWidth, int32_t marginHeight,
         // same editor object, instead of creating a new one.
         RefPtr<HTMLEditor> htmlEditor = GetDocShell()->GetHTMLEditor();
         Unused << htmlEditor;
-        htmlDoc->SetDesignMode(NS_LITERAL_STRING("off"), Nothing(),
-                               IgnoreErrors());
+        htmlDoc->SetDesignMode(u"off"_ns, Nothing(), IgnoreErrors());
 
-        htmlDoc->SetDesignMode(NS_LITERAL_STRING("on"), Nothing(),
-                               IgnoreErrors());
+        htmlDoc->SetDesignMode(u"on"_ns, Nothing(), IgnoreErrors());
       } else {
         // Re-initialize the presentation for contenteditable documents
         bool editable = false, hasEditingSession = false;
@@ -943,27 +962,27 @@ bool nsFrameLoader::Show(int32_t marginWidth, int32_t marginHeight,
   return true;
 }
 
-void nsFrameLoader::MarginsChanged(uint32_t aMarginWidth,
-                                   uint32_t aMarginHeight) {
+void nsFrameLoader::MarginsChanged() {
   // We assume that the margins are always zero for remote frames.
   if (IsRemoteFrame()) {
     return;
   }
 
+  nsDocShell* docShell = GetDocShell();
   // If there's no docshell, we're probably not up and running yet.
   // nsFrameLoader::Show() will take care of setting the right
   // margins.
-  if (!GetDocShell()) {
+  if (!docShell) {
     return;
   }
 
-  // Set the margins
-  GetDocShell()->SetMarginWidth(aMarginWidth);
-  GetDocShell()->SetMarginHeight(aMarginHeight);
+  if (!docShell->UpdateFrameMargins(GetMarginAttributes(mOwnerContent))) {
+    return;
+  }
 
   // There's a cached property declaration block
   // that needs to be updated
-  if (Document* doc = GetDocShell()->GetDocument()) {
+  if (Document* doc = docShell->GetDocument()) {
     for (nsINode* cur = doc; cur; cur = cur->GetNextNode()) {
       if (cur->IsHTMLElement(nsGkAtoms::body)) {
         static_cast<HTMLBodyElement*>(cur)->ClearMappedServoStyle();
@@ -973,7 +992,7 @@ void nsFrameLoader::MarginsChanged(uint32_t aMarginWidth,
 
   // Trigger a restyle if there's a prescontext
   // FIXME: This could do something much less expensive.
-  if (nsPresContext* presContext = GetDocShell()->GetPresContext()) {
+  if (nsPresContext* presContext = docShell->GetPresContext()) {
     // rebuild, because now the same nsMappedAttributes* will produce
     // a different style
     presContext->RebuildAllStyleData(nsChangeHint(0),
@@ -1014,14 +1033,14 @@ bool nsFrameLoader::ShowRemoteFrame(const ScreenIntSize& size,
       baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
       nsSizeMode sizeMode =
           mainWidget ? mainWidget->SizeMode() : nsSizeMode_Normal;
-
-      Unused << mBrowserBridgeChild->SendShow(
-          size, ParentWindowIsActive(mOwnerContent->OwnerDoc()), sizeMode);
+      OwnerShowInfo info(size, ParentWindowIsActive(mOwnerContent->OwnerDoc()),
+                         sizeMode);
+      Unused << mBrowserBridgeChild->SendShow(info);
       mRemoteBrowserShown = true;
       return true;
     }
 
-    RenderFrame* rf =
+    RemoteLayerTreeOwner* rf =
         mBrowserParent ? mBrowserParent->GetRenderFrame() : nullptr;
 
     if (!rf || !rf->AttachLayerManager()) {
@@ -2661,7 +2680,7 @@ bool nsFrameLoader::TryRemoteBrowser() {
   // The remoteType can be queried by asking the message manager instead.
   ownerElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::RemoteType, false);
 
-  // Now that mBrowserParent is set, we can initialize the RenderFrame
+  // Now that mBrowserParent is set, we can initialize the RemoteLayerTreeOwner
   mBrowserParent->InitRendering();
 
   MaybeUpdatePrimaryBrowserParent(eBrowserParentChanged);
@@ -2758,7 +2777,6 @@ void nsFrameLoader::SendCrossProcessMouseEvent(const nsAString& aType, float aX,
                                                float aY, int32_t aButton,
                                                int32_t aClickCount,
                                                int32_t aModifiers,
-                                               bool aIgnoreRootScrollFrame,
                                                ErrorResult& aRv) {
   if (!mBrowserParent) {
     aRv.Throw(NS_ERROR_FAILURE);
@@ -2766,7 +2784,7 @@ void nsFrameLoader::SendCrossProcessMouseEvent(const nsAString& aType, float aX,
   }
 
   mBrowserParent->SendMouseEvent(aType, aX, aY, aButton, aClickCount,
-                                 aModifiers, aIgnoreRootScrollFrame);
+                                 aModifiers);
 }
 
 void nsFrameLoader::ActivateFrameEvent(const nsAString& aType, bool aCapture,
@@ -2934,12 +2952,14 @@ nsresult nsFrameLoader::EnsureMessageManager() {
         GetDocShell(), mOwnerContent, mMessageManager);
     NS_ENSURE_TRUE(mChildMessageManager, NS_ERROR_UNEXPECTED);
 
+#if !defined(MOZ_WIDGET_ANDROID)
     // Set up a TabListener for sessionStore
     if (XRE_IsParentProcess()) {
       mSessionStoreListener = new TabListener(GetDocShell(), mOwnerContent);
       rv = mSessionStoreListener->Init();
       NS_ENSURE_SUCCESS(rv, rv);
     }
+#endif
   }
   return NS_OK;
 }
@@ -3102,6 +3122,18 @@ bool nsFrameLoader::RequestTabStateFlush(uint32_t aFlushId, bool aIsFinal) {
   return false;
 }
 
+void nsFrameLoader::RequestEpochUpdate(uint32_t aEpoch) {
+  if (mSessionStoreListener) {
+    mSessionStoreListener->SetEpoch(aEpoch);
+    return;
+  }
+
+  // If remote browsing (e10s), handle this with the BrowserParent.
+  if (mBrowserParent) {
+    Unused << mBrowserParent->SendUpdateEpoch(aEpoch);
+  }
+}
+
 void nsFrameLoader::Print(uint64_t aOuterWindowID,
                           nsIPrintSettings* aPrintSettings,
                           nsIWebProgressListener* aProgressListener,
@@ -3234,7 +3266,7 @@ void nsFrameLoader::InitializeBrowserAPI() {
     return;
   }
   mMessageManager->LoadFrameScript(
-      NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js"),
+      u"chrome://global/content/BrowserElementChild.js"_ns,
       /* allowDelayedLoad = */ true,
       /* aRunInGlobalScope */ true, IgnoreErrors());
 

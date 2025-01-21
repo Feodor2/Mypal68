@@ -5,8 +5,10 @@
 #include "DOMIntersectionObserver.h"
 #include "nsCSSPropertyID.h"
 #include "nsIFrame.h"
+#include "nsIScrollableFrame.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
+#include "nsRefreshDriver.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -108,13 +110,12 @@ already_AddRefed<DOMIntersectionObserver> DOMIntersectionObserver::Constructor(
   return observer.forget();
 }
 
-bool DOMIntersectionObserver::SetRootMargin(const nsAString& aString) {
+bool DOMIntersectionObserver::SetRootMargin(const nsACString& aString) {
   return Servo_IntersectionObserverRootMargin_Parse(&aString, &mRootMargin);
 }
 
-void DOMIntersectionObserver::GetRootMargin(DOMString& aRetVal) {
-  nsString& retVal = aRetVal;
-  Servo_IntersectionObserverRootMargin_ToString(&mRootMargin, &retVal);
+void DOMIntersectionObserver::GetRootMargin(nsACString& aRetVal) {
+  Servo_IntersectionObserverRootMargin_ToString(&mRootMargin, &aRetVal);
 }
 
 void DOMIntersectionObserver::GetThresholds(nsTArray<double>& aRetVal) {
@@ -130,7 +131,7 @@ void DOMIntersectionObserver::Observe(Element& aTarget) {
   Connect();
   if (mDocument) {
     if (nsPresContext* pc = mDocument->GetPresContext()) {
-      pc->RefreshDriver()->IntersectionObservationAdded();
+      pc->RefreshDriver()->EnsureIntersectionObservationsUpdateHappens();
     }
   }
 }
@@ -244,11 +245,9 @@ static Maybe<nsRect> ComputeTheIntersection(nsIFrame* aTarget, nsIFrame* aRoot,
   // 1. Let intersectionRect be the result of running the
   // getBoundingClientRect() algorithm on the target.
   //
-  // FIXME(emilio, mstange): Spec uses `getBoundingClientRect()` (which is the
-  // union of all continuations), but this code doesn't handle continuations.
-  //
   // `intersectionRect` is kept relative to `target` during the loop.
-  Maybe<nsRect> intersectionRect = Some(target->GetRectRelativeToSelf());
+  Maybe<nsRect> intersectionRect = Some(nsLayoutUtils::GetAllInFlowRectsUnion(
+      target, target, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS));
 
   // 2. Let container be the containing block of the target.
   // (We go through the parent chain and only look at scroll frames)

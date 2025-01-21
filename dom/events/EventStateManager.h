@@ -13,8 +13,7 @@
 #include "nsCOMArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/layers/APZUtils.h"
-#include "nsIFrame.h"
+#include "mozilla/layers/APZPublicUtils.h"
 #include "Units.h"
 #include "WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 
@@ -22,6 +21,7 @@ class nsFrameLoader;
 class nsIContent;
 class nsIDocShell;
 class nsIDocShellTreeItem;
+class nsIFrame;
 class imgIContainer;
 class nsIContentViewer;
 class nsIScrollableFrame;

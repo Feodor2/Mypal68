@@ -4,6 +4,7 @@
 
 #include "L10nMutations.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "nsRefreshDriver.h"
 
 using namespace mozilla::dom;
 
@@ -30,6 +31,12 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(L10nMutations)
 L10nMutations::L10nMutations(DOMLocalization* aDOMLocalization)
     : mDOMLocalization(aDOMLocalization) {
   mObserving = true;
+}
+
+L10nMutations::~L10nMutations() {
+  StopRefreshObserver();
+  MOZ_ASSERT(!mDOMLocalization,
+             "DOMLocalization<-->L10nMutations cycle should be broken.");
 }
 
 void L10nMutations::AttributeChanged(Element* aElement, int32_t aNameSpaceID,

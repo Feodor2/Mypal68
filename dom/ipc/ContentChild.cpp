@@ -512,7 +512,7 @@ class PendingInputEventHangAnnotator final : public BackgroundHangAnnotator {
   virtual void AnnotateHang(BackgroundHangAnnotations& aAnnotations) override {
     int32_t pending = ContentChild::GetSingleton()->GetPendingInputEvents();
     if (pending > 0) {
-      aAnnotations.AddAnnotation(NS_LITERAL_STRING("PendingInput"), pending);
+      aAnnotations.AddAnnotation(u"PendingInput"_ns, pending);
     }
   }
 
@@ -692,7 +692,7 @@ bool ContentChild::Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
   RefPtr<nsPrintingProxy> printingProxy = nsPrintingProxy::GetInstance();
 #endif
 
-  SetProcessName(NS_LITERAL_STRING("Web Content"));
+  SetProcessName(u"Web Content"_ns);
 
 #ifdef NIGHTLY_BUILD
   // NOTE: We have to register the annotator on the main thread, as annotators
@@ -1003,15 +1003,16 @@ nsresult ContentChild::ProvideWindowCommon(
       return;
     }
 
-    ShowInfo showInfo(EmptyString(), false, false, true, false, 0, 0, 0);
+    ParentShowInfo showInfo(EmptyString(), false, false, true, false, 0, 0, 0);
     auto* opener = nsPIDOMWindowOuter::From(aParent);
     nsIDocShell* openerShell;
     if (opener && (openerShell = opener->GetDocShell())) {
       nsCOMPtr<nsILoadContext> context = do_QueryInterface(openerShell);
-      showInfo = ShowInfo(EmptyString(), false, context->UsePrivateBrowsing(),
-                          true, false, aTabOpener->WebWidget()->GetDPI(),
-                          aTabOpener->WebWidget()->RoundsWidgetCoordinatesTo(),
-                          aTabOpener->WebWidget()->GetDefaultScale().scale);
+      showInfo =
+          ParentShowInfo(EmptyString(), false, context->UsePrivateBrowsing(),
+                         true, false, aTabOpener->WebWidget()->GetDPI(),
+                         aTabOpener->WebWidget()->RoundsWidgetCoordinatesTo(),
+                         aTabOpener->WebWidget()->GetDefaultScale().scale);
     }
 
     newChild->SetMaxTouchPoints(maxTouchPoints);
@@ -2596,8 +2597,7 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyProcessPriorityChanged(
   NS_ENSURE_TRUE(os, IPC_OK());
 
   RefPtr<nsHashPropertyBag> props = new nsHashPropertyBag();
-  props->SetPropertyAsInt32(NS_LITERAL_STRING("priority"),
-                            static_cast<int32_t>(aPriority));
+  props->SetPropertyAsInt32(u"priority"_ns, static_cast<int32_t>(aPriority));
 
   os->NotifyObservers(static_cast<nsIPropertyBag2*>(props),
                       "ipc:process-priority-changed", nullptr);
@@ -2781,8 +2781,7 @@ void ContentChild::ShutdownInternal() {
   // terminate an "unload" or "pagehide" event handler (which might be doing a
   // sync XHR, for example).
   CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::IPCShutdownState,
-      NS_LITERAL_CSTRING("RecvShutdown"));
+      CrashReporter::Annotation::IPCShutdownState, "RecvShutdown"_ns);
 
   MOZ_ASSERT(NS_IsMainThread());
   RefPtr<nsThread> mainThread = nsThreadManager::get().GetCurrentThread();
@@ -2842,12 +2841,11 @@ void ContentChild::ShutdownInternal() {
 
   CrashReporter::AnnotateCrashReport(
       CrashReporter::Annotation::IPCShutdownState,
-      NS_LITERAL_CSTRING("SendFinishShutdown (sending)"));
+      "SendFinishShutdown (sending)"_ns);
   bool sent = SendFinishShutdown();
   CrashReporter::AnnotateCrashReport(
       CrashReporter::Annotation::IPCShutdownState,
-      sent ? NS_LITERAL_CSTRING("SendFinishShutdown (sent)")
-           : NS_LITERAL_CSTRING("SendFinishShutdown (failed)"));
+      sent ? "SendFinishShutdown (sent)"_ns : "SendFinishShutdown (failed)"_ns);
 }
 
 PBrowserOrId ContentChild::GetBrowserOrId(BrowserChild* aBrowserChild) {

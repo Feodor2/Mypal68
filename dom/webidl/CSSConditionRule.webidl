@@ -10,5 +10,5 @@
 [Exposed=Window]
 interface CSSConditionRule : CSSGroupingRule {
   [SetterThrows]
-  attribute DOMString conditionText;
+  attribute UTF8String conditionText;
 };

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZILLA_DOMSVGLENGTH_H__
-#define MOZILLA_DOMSVGLENGTH_H__
+#ifndef DOM_SVG_DOMSVGLENGTH_H_
+#define DOM_SVG_DOMSVGLENGTH_H_
 
 #include "DOMSVGLengthList.h"
 #include "nsCycleCollectionParticipant.h"
@@ -77,7 +77,8 @@ class SVGElement;
  * https://bugzilla.mozilla.org/show_bug.cgi?id=571734
  */
 class DOMSVGLength final : public nsISupports, public nsWrapperCache {
-  friend class AutoChangeLengthNotifier;
+  template <class T>
+  friend class AutoChangeLengthListNotifier;
 
   /**
    * Ctor for creating the object returned by
@@ -116,6 +117,11 @@ class DOMSVGLength final : public nsISupports, public nsWrapperCache {
   DOMSVGLength* Copy();
 
   bool IsInList() const { return !!mList; }
+
+  /**
+   * Returns true if our attribute is animating.
+   */
+  bool IsAnimating() const { return mList && mList->IsAnimating(); }
 
   /**
    * In future, if this class is used for non-list lengths, this will be
@@ -238,4 +244,4 @@ NS_DEFINE_STATIC_IID_ACCESSOR(DOMSVGLength, MOZILLA_DOMSVGLENGTH_IID)
 
 #undef MOZ_SVG_LIST_INDEX_BIT_COUNT
 
-#endif  // MOZILLA_DOMSVGLENGTH_H__
+#endif  // DOM_SVG_DOMSVGLENGTH_H_

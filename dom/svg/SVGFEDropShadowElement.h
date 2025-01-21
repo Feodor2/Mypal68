@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEDropShadowElement_h
-#define mozilla_dom_SVGFEDropShadowElement_h
+#ifndef DOM_SVG_SVGFEDROPSHADOWELEMENT_H_
+#define DOM_SVG_SVGFEDROPSHADOWELEMENT_H_
 
 #include "SVGAnimatedNumber.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEDropShadowElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -16,7 +16,7 @@ nsresult NS_NewSVGFEDropShadowElement(
 namespace mozilla {
 namespace dom {
 
-typedef SVGFE SVGFEDropShadowElementBase;
+using SVGFEDropShadowElementBase = SVGFE;
 
 class SVGFEDropShadowElement : public SVGFEDropShadowElementBase {
   friend nsresult(::NS_NewSVGFEDropShadowElement(
@@ -76,4 +76,4 @@ class SVGFEDropShadowElement : public SVGFEDropShadowElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFEDropShadowElement_h
+#endif  // DOM_SVG_SVGFEDROPSHADOWELEMENT_H_

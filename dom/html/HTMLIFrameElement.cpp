@@ -273,7 +273,7 @@ void HTMLIFrameElement::RefreshFeaturePolicy(bool aParseAllowAttribute) {
   }
 
   if (AllowFullscreen()) {
-    mFeaturePolicy->MaybeSetAllowedPolicy(NS_LITERAL_STRING("fullscreen"));
+    mFeaturePolicy->MaybeSetAllowedPolicy(u"fullscreen"_ns);
   }
 }
 

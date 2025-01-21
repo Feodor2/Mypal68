@@ -96,8 +96,6 @@ interface mixin MozImageLoadingContent {
 
   [ChromeOnly]
   attribute boolean loadingEnabled;
-  [ChromeOnly]
-  readonly attribute short imageBlockingStatus;
   /**
    * Same as addNativeObserver but intended for scripted observers or observers
    * from another or without a document.
@@ -114,7 +112,7 @@ interface mixin MozImageLoadingContent {
   imgIRequest? getRequest(long aRequestType);
   [ChromeOnly,Throws]
   long getRequestType(imgIRequest aRequest);
-  [ChromeOnly,Throws]
+  [ChromeOnly]
   readonly attribute URI? currentURI;
   // Gets the final URI of the current request, if available.
   // Otherwise, returns null.

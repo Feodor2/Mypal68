@@ -11,8 +11,7 @@
 #include "nsIGlobalObject.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 already_AddRefed<EventTarget> EventTarget::Constructor(
@@ -191,5 +190,4 @@ Nullable<WindowProxyHolder> EventTarget::GetOwnerGlobalForBindings() {
   return WindowProxyHolder(win->GetBrowsingContext());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

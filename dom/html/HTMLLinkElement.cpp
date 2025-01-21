@@ -146,11 +146,11 @@ nsresult HTMLLinkElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 }
 
 void HTMLLinkElement::LinkAdded() {
-  CreateAndDispatchEvent(OwnerDoc(), NS_LITERAL_STRING("DOMLinkAdded"));
+  CreateAndDispatchEvent(OwnerDoc(), u"DOMLinkAdded"_ns);
 }
 
 void HTMLLinkElement::LinkRemoved() {
-  CreateAndDispatchEvent(OwnerDoc(), NS_LITERAL_STRING("DOMLinkRemoved"));
+  CreateAndDispatchEvent(OwnerDoc(), u"DOMLinkRemoved"_ns);
 }
 
 void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
@@ -180,7 +180,7 @@ void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
     oldDoc->LocalizationLinkRemoved(this);
   }
 
-  CreateAndDispatchEvent(oldDoc, NS_LITERAL_STRING("DOMLinkRemoved"));
+  CreateAndDispatchEvent(oldDoc, u"DOMLinkRemoved"_ns);
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
 
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
@@ -270,7 +270,7 @@ nsresult HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     bool hasHref = aValue;
     Link::ResetLinkState(!!aNotify, hasHref);
     if (IsInUncomposedDoc()) {
-      CreateAndDispatchEvent(OwnerDoc(), NS_LITERAL_STRING("DOMLinkChanged"));
+      CreateAndDispatchEvent(OwnerDoc(), u"DOMLinkChanged"_ns);
     }
   }
 
@@ -815,7 +815,8 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
 
   // Check if media attribute is valid.
   if (!aMedia.IsEmpty()) {
-    RefPtr<MediaList> mediaList = MediaList::Create(aMedia);
+    RefPtr<MediaList> mediaList =
+        MediaList::Create(NS_ConvertUTF16toUTF8(aMedia));
     if (!mediaList->Matches(*aDocument)) {
       return false;
     }
@@ -862,7 +863,7 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
 
   } else if (policyType == nsIContentPolicy::TYPE_IMAGE) {
     if (imgLoader::SupportImageWithMimeType(
-            NS_ConvertUTF16toUTF8(type).get(),
+            NS_ConvertUTF16toUTF8(type),
             AcceptedMimeTypes::IMAGES_AND_DOCUMENTS)) {
       return true;
     } else {

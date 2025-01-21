@@ -62,7 +62,7 @@ SVGImageElement::SVGImageElement(
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
 }
 
-SVGImageElement::~SVGImageElement() { DestroyImageLoadingContent(); }
+SVGImageElement::~SVGImageElement() { nsImageLoadingContent::Destroy(); }
 
 nsCSSPropertyID SVGImageElement::GetCSSPropertyIdForAttrEnum(
     uint8_t aAttrEnum) {
@@ -225,6 +225,11 @@ void SVGImageElement::UnbindFromTree(bool aNullParent) {
 EventStates SVGImageElement::IntrinsicState() const {
   return SVGImageElementBase::IntrinsicState() |
          nsImageLoadingContent::ImageState();
+}
+
+void SVGImageElement::DestroyContent() {
+  nsImageLoadingContent::Destroy();
+  SVGImageElementBase::DestroyContent();
 }
 
 NS_IMETHODIMP_(bool)

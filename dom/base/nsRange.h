@@ -11,7 +11,6 @@
 
 #include "nsCOMPtr.h"
 #include "mozilla/dom/AbstractRange.h"
-#include "nsLayoutUtils.h"
 #include "prmon.h"
 #include "nsStubMutationObserver.h"
 #include "nsWrapperCache.h"
@@ -21,6 +20,7 @@
 #include "mozilla/RangeBoundary.h"
 
 namespace mozilla {
+class RectCallback;
 namespace dom {
 struct ClientRectsAndTexts;
 class DocGroup;
@@ -319,7 +319,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
    * @param aTextList optional where nullptr = don't retrieve text
    */
   static void CollectClientRectsAndText(
-      nsLayoutUtils::RectCallback* aCollector,
+      mozilla::RectCallback* aCollector,
       mozilla::dom::Sequence<nsString>* aTextList, nsRange* aRange,
       nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
       uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout);

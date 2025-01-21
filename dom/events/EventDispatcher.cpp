@@ -13,6 +13,7 @@
 #include "nsINode.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsPIDOMWindow.h"
+#include "nsRefreshDriver.h"
 #include "AnimationEvent.h"
 #include "BeforeUnloadEvent.h"
 #include "ClipboardEvent.h"

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_SMILTimeValueSpec_h
-#define mozilla_SMILTimeValueSpec_h
+#ifndef DOM_SMIL_SMILTIMEVALUESPEC_H_
+#define DOM_SMIL_SMILTIMEVALUESPEC_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILTimeValueSpecParams.h"
@@ -37,9 +37,9 @@ class Event;
 
 class SMILTimeValueSpec {
  public:
-  typedef mozilla::dom::Element Element;
-  typedef mozilla::dom::Event Event;
-  typedef mozilla::dom::IDTracker IDTracker;
+  using Element = dom::Element;
+  using Event = dom::Event;
+  using IDTracker = dom::IDTracker;
 
   SMILTimeValueSpec(SMILTimedElement& aOwner, bool aIsBegin);
   ~SMILTimeValueSpec();
@@ -135,4 +135,4 @@ class SMILTimeValueSpec {
 
 }  // namespace mozilla
 
-#endif  // mozilla_SMILTimeValueSpec_h
+#endif  // DOM_SMIL_SMILTIMEVALUESPEC_H_

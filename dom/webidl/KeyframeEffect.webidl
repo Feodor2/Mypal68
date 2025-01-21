@@ -48,8 +48,8 @@ interface KeyframeEffect : AnimationEffect {
 // Non-standard extensions
 dictionary AnimationPropertyValueDetails {
   required double             offset;
-           DOMString          value;
-           DOMString          easing;
+           UTF8String         value;
+           UTF8String         easing;
   required CompositeOperation composite;
 };
 

@@ -5,6 +5,7 @@
 #include "WebGL2Context.h"
 #include "GLContext.h"
 #include "WebGLQuery.h"
+#include "nsRefreshDriver.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {

@@ -12,9 +12,11 @@
 #include "mozilla/dom/SVGRect.h"
 #include "mozilla/dom/SVGViewElement.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILTimeContainer.h"
+#include "mozilla/SVGUtils.h"
 
 #include "DOMSVGAngle.h"
 #include "DOMSVGLength.h"
@@ -22,9 +24,7 @@
 #include "DOMSVGPoint.h"
 #include "nsFrameSelection.h"
 #include "nsIFrame.h"
-#include "nsISVGSVGFrame.h"
-#include "nsSVGDisplayableFrame.h"
-#include "nsSVGUtils.h"
+#include "ISVGSVGFrame.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT_CHECK_PARSER(SVG)
 
@@ -43,54 +43,6 @@ SVGEnumMapping SVGSVGElement::sZoomAndPanMap[] = {
 
 SVGElement::EnumInfo SVGSVGElement::sEnumInfo[1] = {
     {nsGkAtoms::zoomAndPan, sZoomAndPanMap, SVG_ZOOMANDPAN_MAGNIFY}};
-
-NS_IMPL_CYCLE_COLLECTION_INHERITED(DOMSVGTranslatePoint, nsISVGPoint, mElement)
-
-NS_IMPL_ADDREF_INHERITED(DOMSVGTranslatePoint, nsISVGPoint)
-NS_IMPL_RELEASE_INHERITED(DOMSVGTranslatePoint, nsISVGPoint)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGTranslatePoint)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  // We have to qualify nsISVGPoint because NS_GET_IID looks for a class in the
-  // global namespace
-  NS_INTERFACE_MAP_ENTRY(nsISVGPoint)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
-
-DOMSVGPoint* DOMSVGTranslatePoint::Copy() {
-  return new DOMSVGPoint(ToPoint(mPt));
-}
-
-nsISupports* DOMSVGTranslatePoint::GetParentObject() {
-  return ToSupports(mElement);
-}
-
-void DOMSVGTranslatePoint::SetX(float aValue, ErrorResult& rv) {
-  mElement->SetCurrentTranslate(aValue, mPt.GetY());
-}
-
-void DOMSVGTranslatePoint::SetY(float aValue, ErrorResult& rv) {
-  mElement->SetCurrentTranslate(mPt.GetX(), aValue);
-}
-
-already_AddRefed<nsISVGPoint> DOMSVGTranslatePoint::MatrixTransform(
-    const DOMMatrix2DInit& aMatrix, ErrorResult& aRv) {
-  RefPtr<DOMMatrixReadOnly> matrix =
-      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aMatrix, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-
-  const auto* matrix2D = matrix->GetInternal2D();
-  if (!matrix2D->IsFinite()) {
-    aRv.ThrowTypeError<MSG_NOT_FINITE>("MatrixTransform matrix");
-    return nullptr;
-  }
-
-  nsCOMPtr<nsISVGPoint> point =
-      new DOMSVGPoint(ToPoint(matrix2D->TransformPoint(mPt)));
-  return point.forget();
-}
 
 JSObject* SVGSVGElement::WrapNode(JSContext* aCx,
                                   JS::Handle<JSObject*> aGivenProto) {
@@ -132,8 +84,6 @@ SVGSVGElement::SVGSVGElement(
     : SVGSVGElementBase(std::move(aNodeInfo)),
       mCurrentTranslate(0.0f, 0.0f),
       mCurrentScale(1.0f),
-      mPreviousTranslate(0.0f, 0.0f),
-      mPreviousScale(1.0f),
       mStartAnimationOnBindToTree(aFromParser == NOT_FROM_PARSER ||
                                   aFromParser == FROM_PARSER_FRAGMENT ||
                                   aFromParser == FROM_PARSER_XSLT),
@@ -163,22 +113,31 @@ already_AddRefed<DOMSVGAnimatedLength> SVGSVGElement::Height() {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
 }
 
-bool SVGSVGElement::UseCurrentView() { return mSVGView || mCurrentViewID; }
+bool SVGSVGElement::UseCurrentView() const {
+  return mSVGView || mCurrentViewID;
+}
 
-float SVGSVGElement::CurrentScale() { return mCurrentScale; }
+float SVGSVGElement::CurrentScale() const { return mCurrentScale; }
 
 #define CURRENT_SCALE_MAX 16.0f
 #define CURRENT_SCALE_MIN 0.0625f
 
 void SVGSVGElement::SetCurrentScale(float aCurrentScale) {
-  SetCurrentScaleTranslate(aCurrentScale, mCurrentTranslate.GetX(),
-                           mCurrentTranslate.GetY());
+  // Prevent bizarre behaviour and maxing out of CPU and memory by clamping
+  aCurrentScale = clamped(aCurrentScale, CURRENT_SCALE_MIN, CURRENT_SCALE_MAX);
+
+  if (aCurrentScale == mCurrentScale) {
+    return;
+  }
+  mCurrentScale = aCurrentScale;
+
+  if (IsRootSVGSVGElement()) {
+    InvalidateTransformNotifyFrame();
+  }
 }
 
-already_AddRefed<nsISVGPoint> SVGSVGElement::CurrentTranslate() {
-  nsCOMPtr<nsISVGPoint> point =
-      new DOMSVGTranslatePoint(&mCurrentTranslate, this);
-  return point.forget();
+already_AddRefed<DOMSVGPoint> SVGSVGElement::CurrentTranslate() {
+  return DOMSVGPoint::GetTranslateTearOff(&mCurrentTranslate, this);
 }
 
 uint32_t SVGSVGElement::SuspendRedraw(uint32_t max_wait_milliseconds) {
@@ -267,7 +226,7 @@ already_AddRefed<DOMSVGAngle> SVGSVGElement::CreateSVGAngle() {
   return do_AddRef(new DOMSVGAngle(this));
 }
 
-already_AddRefed<nsISVGPoint> SVGSVGElement::CreateSVGPoint() {
+already_AddRefed<DOMSVGPoint> SVGSVGElement::CreateSVGPoint() {
   return do_AddRef(new DOMSVGPoint(Point(0, 0)));
 }
 
@@ -288,60 +247,22 @@ already_AddRefed<DOMSVGTransform> SVGSVGElement::CreateSVGTransformFromMatrix(
   return do_AddRef(new DOMSVGTransform(matrix, rv));
 }
 
-//----------------------------------------------------------------------
-// helper method for implementing SetCurrentScale/Translate
-
-void SVGSVGElement::SetCurrentScaleTranslate(float s, float x, float y) {
-  if (s == mCurrentScale && x == mCurrentTranslate.GetX() &&
-      y == mCurrentTranslate.GetY()) {
-    return;
-  }
-
-  // Prevent bizarre behaviour and maxing out of CPU and memory by clamping
-  if (s < CURRENT_SCALE_MIN)
-    s = CURRENT_SCALE_MIN;
-  else if (s > CURRENT_SCALE_MAX)
-    s = CURRENT_SCALE_MAX;
-
-  // IMPORTANT: If either mCurrentTranslate *or* mCurrentScale is changed then
-  // mPreviousTranslate_x, mPreviousTranslate_y *and* mPreviousScale must all
-  // be updated otherwise SVGZoomEvents will end up with invalid data. I.e. an
-  // SVGZoomEvent's properties previousScale and previousTranslate must contain
-  // the state of currentScale and currentTranslate immediately before the
-  // change that caused the event's dispatch, which is *not* necessarily the
-  // same thing as the values of currentScale and currentTranslate prior to
-  // their own last change.
-  //
-  // XXX This comment is out-of-date due to removal of SVGZoomEvent.  Can we
-  // remove some of this code?
-  mPreviousScale = mCurrentScale;
-  mPreviousTranslate = mCurrentTranslate;
-
-  mCurrentScale = s;
-  mCurrentTranslate = SVGPoint(x, y);
-
-  // now dispatch the appropriate event if we are the root element
-  Document* doc = GetUncomposedDoc();
-  if (doc) {
+void SVGSVGElement::DidChangeTranslate() {
+  if (Document* doc = GetUncomposedDoc()) {
     RefPtr<PresShell> presShell = doc->GetPresShell();
-    if (presShell && IsRoot()) {
+    // now dispatch the appropriate event if we are the root element
+    if (presShell && IsRootSVGSVGElement()) {
       nsEventStatus status = nsEventStatus_eIgnore;
-      if (mPreviousScale == mCurrentScale) {
-        WidgetEvent svgScrollEvent(true, eSVGScroll);
-        presShell->HandleDOMEventWithTarget(this, &svgScrollEvent, &status);
-      }
+      WidgetEvent svgScrollEvent(true, eSVGScroll);
+      presShell->HandleDOMEventWithTarget(this, &svgScrollEvent, &status);
       InvalidateTransformNotifyFrame();
     }
   }
 }
 
-void SVGSVGElement::SetCurrentTranslate(float x, float y) {
-  SetCurrentScaleTranslate(mCurrentScale, x, y);
-}
-
 //----------------------------------------------------------------------
 // SVGZoomAndPanValues
-uint16_t SVGSVGElement::ZoomAndPan() {
+uint16_t SVGSVGElement::ZoomAndPan() const {
   return mEnumAttributes[ZOOMANDPAN].GetAnimValue();
 }
 
@@ -463,7 +384,7 @@ int32_t SVGSVGElement::GetIntrinsicWidth() {
   // know the length isn't a percentage so the context won't be used (and we
   // need to pass the element to be able to resolve em/ex units).
   float width = mLengthAttributes[ATTR_WIDTH].GetAnimValue(this);
-  return nsSVGUtils::ClampToInt(width);
+  return SVGUtils::ClampToInt(width);
 }
 
 int32_t SVGSVGElement::GetIntrinsicHeight() {
@@ -475,7 +396,7 @@ int32_t SVGSVGElement::GetIntrinsicHeight() {
   // know the length isn't a percentage so the context won't be used (and we
   // need to pass the element to be able to resolve em/ex units).
   float height = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(this);
-  return nsSVGUtils::ClampToInt(height);
+  return SVGUtils::ClampToInt(height);
 }
 
 void SVGSVGElement::FlushImageTransformInvalidation() {
@@ -498,7 +419,7 @@ bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent,
 
   while (parent && parent->IsSVGElement()) {
     if (parent->IsSVGElement(nsGkAtoms::foreignObject)) {
-      // SVG in a foreignObject must have its own <svg> (nsSVGOuterSVGFrame).
+      // SVG in a foreignObject must have its own <svg> (SVGOuterSVGFrame).
       return false;
     }
     if (parent->IsSVGElement(nsGkAtoms::svg)) {
@@ -511,11 +432,11 @@ bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent,
 }
 
 void SVGSVGElement::InvalidateTransformNotifyFrame() {
-  nsISVGSVGFrame* svgframe = do_QueryFrame(GetPrimaryFrame());
+  ISVGSVGFrame* svgframe = do_QueryFrame(GetPrimaryFrame());
   // might fail this check if we've failed conditional processing
   if (svgframe) {
     svgframe->NotifyViewportOrTransformChanged(
-        nsSVGDisplayableFrame::TRANSFORM_CHANGED);
+        ISVGDisplayableFrame::TRANSFORM_CHANGED);
   }
 }
 

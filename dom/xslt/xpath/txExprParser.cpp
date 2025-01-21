@@ -135,7 +135,7 @@ nsresult txExprParser::createAVT(const nsAString& aAttrValue,
   }
 
   if (!expr) {
-    expr = MakeUnique<txLiteralExpr>(EmptyString());
+    expr = MakeUnique<txLiteralExpr>(u""_ns);
   }
 
   *aResult = expr.release();
@@ -435,8 +435,7 @@ nsresult txExprParser::createFunctionCall(txExprLexer& lexer,
       rv = parseParameters(0, lexer, aContext);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      *aResult = new txLiteralExpr(tok->Value() +
-                                   NS_LITERAL_STRING(" not implemented."));
+      *aResult = new txLiteralExpr(tok->Value() + u" not implemented."_ns);
 
       return NS_OK;
     }

@@ -7,8 +7,7 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* ChromeMessageBroadcaster::WrapObject(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -17,5 +16,4 @@ JSObject* ChromeMessageBroadcaster::WrapObject(
   return ChromeMessageBroadcaster_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

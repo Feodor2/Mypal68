@@ -242,7 +242,7 @@ void HTMLFormElement::MaybeSubmit(Element* aSubmitter) {
     init.mSubmitter =
         aSubmitter ? nsGenericHTMLElement::FromNode(aSubmitter) : nullptr;
     RefPtr<SubmitEvent> event =
-        SubmitEvent::Constructor(this, NS_LITERAL_STRING("submit"), init);
+        SubmitEvent::Constructor(this, u"submit"_ns, init);
     event->SetTrusted(true);
     nsEventStatus status = nsEventStatus_eIgnore;
     presShell->HandleDOMEventWithTarget(this, event, &status);
@@ -968,8 +968,7 @@ nsresult HTMLFormElement::NotifySubmitObservers(nsIURI* aActionURL,
   bool defaultAction = true;
   nsresult rv = nsContentUtils::DispatchEventOnlyToChrome(
       OwnerDoc(), static_cast<nsINode*>(this),
-      aEarlyNotify ? NS_LITERAL_STRING("DOMFormBeforeSubmit")
-                   : NS_LITERAL_STRING("DOMFormSubmit"),
+      aEarlyNotify ? u"DOMFormBeforeSubmit"_ns : u"DOMFormSubmit"_ns,
       CanBubble::eYes, Cancelable::eYes, &defaultAction);
   *aCancelSubmit = !defaultAction;
   if (*aCancelSubmit) {
@@ -1010,7 +1009,7 @@ nsresult HTMLFormElement::ConstructEntryList(FormData* aFormData) {
     init.mCancelable = false;
     init.mFormData = aFormData;
     RefPtr<FormDataEvent> event =
-        FormDataEvent::Constructor(this, NS_LITERAL_STRING("formdata"), init);
+        FormDataEvent::Constructor(this, u"formdata"_ns, init);
     event->SetTrusted(true);
 
     EventDispatcher::DispatchDOMEvent(ToSupports(this), nullptr, event, nullptr,
@@ -1169,8 +1168,8 @@ void HTMLFormElement::PostPasswordEvent() {
   }
 
   mFormPasswordEventDispatcher =
-      new AsyncEventDispatcher(this, NS_LITERAL_STRING("DOMFormHasPassword"),
-                               CanBubble::eYes, ChromeOnlyDispatch::eYes);
+      new AsyncEventDispatcher(this, u"DOMFormHasPassword"_ns, CanBubble::eYes,
+                               ChromeOnlyDispatch::eYes);
   mFormPasswordEventDispatcher->PostDOMEvent();
 }
 
@@ -1704,8 +1703,8 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
         EmptyString(),  // aScriptSample
         0,              // aLineNumber
         0,              // aColumnNumber
-        nsIScriptError::warningFlag,
-        NS_LITERAL_CSTRING("upgradeInsecureRequest"), document->InnerWindowID(),
+        nsIScriptError::warningFlag, "upgradeInsecureRequest"_ns,
+        document->InnerWindowID(),
         !!document->NodePrincipal()->OriginAttributesRef().mPrivateBrowsingId);
   }
 
@@ -1820,9 +1819,8 @@ bool HTMLFormElement::CheckFormValidity(
       bool defaultAction = true;
       nsContentUtils::DispatchTrustedEvent(
           sortedControls[i]->OwnerDoc(),
-          static_cast<nsIContent*>(sortedControls[i]),
-          NS_LITERAL_STRING("invalid"), CanBubble::eNo, Cancelable::eYes,
-          &defaultAction);
+          static_cast<nsIContent*>(sortedControls[i]), u"invalid"_ns,
+          CanBubble::eNo, Cancelable::eYes, &defaultAction);
 
       // Add all unhandled invalid controls to aInvalidElements if the caller
       // requested them.
@@ -1919,7 +1917,7 @@ bool HTMLFormElement::CheckValidFormSubmission() {
 
   RefPtr<CustomEvent> event =
       NS_NewDOMCustomEvent(OwnerDoc(), nullptr, nullptr);
-  event->InitCustomEvent(jsapi.cx(), NS_LITERAL_STRING("MozInvalidForm"),
+  event->InitCustomEvent(jsapi.cx(), u"MozInvalidForm"_ns,
                          /* CanBubble */ true,
                          /* Cancelable */ true, detail);
   event->SetTrusted(true);

@@ -4,8 +4,8 @@
 
 /* representation of a dummy attribute targeted by <animateMotion> element */
 
-#ifndef MOZILLA_SVGMOTIONSMILATTR_H_
-#define MOZILLA_SVGMOTIONSMILATTR_H_
+#ifndef DOM_SVG_SVGMOTIONSMILATTR_H_
+#define DOM_SVG_SVGMOTIONSMILATTR_H_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILAttr.h"
@@ -51,4 +51,4 @@ class SVGMotionSMILAttr : public SMILAttr {
 
 }  // namespace mozilla
 
-#endif  // MOZILLA_SVGMOTIONSMILATTR_H_
+#endif  // DOM_SVG_SVGMOTIONSMILATTR_H_

@@ -11,8 +11,7 @@
 #include "mozilla/dom/DocumentType.h"
 #include "nsTextNode.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // QueryInterface implementation for DOMImplementation
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMImplementation)
@@ -86,7 +85,7 @@ nsresult DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
   rv = NS_NewDOMDocument(getter_AddRefs(doc), aNamespaceURI, aQualifiedName,
                          aDoctype, mDocumentURI, mBaseURI,
                          mOwner->NodePrincipal(), true, scriptHandlingObject,
-                         DocumentFlavorLegacyGuess);
+                         DocumentFlavorXML);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // When DOMImplementation's createDocument method is invoked with
@@ -94,11 +93,11 @@ nsresult DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
   // document to the new instance.
 
   if (aNamespaceURI.EqualsLiteral("http://www.w3.org/1999/xhtml")) {
-    doc->SetContentType(NS_LITERAL_STRING("application/xhtml+xml"));
+    doc->SetContentType(u"application/xhtml+xml"_ns);
   } else if (aNamespaceURI.EqualsLiteral("http://www.w3.org/2000/svg")) {
-    doc->SetContentType(NS_LITERAL_STRING("image/svg+xml"));
+    doc->SetContentType(u"image/svg+xml"_ns);
   } else {
-    doc->SetContentType(NS_LITERAL_STRING("application/xml"));
+    doc->SetContentType(u"application/xml"_ns);
   }
 
   doc->SetReadyStateInternal(Document::READYSTATE_COMPLETE);
@@ -126,8 +125,8 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   RefPtr<DocumentType> doctype =
       NS_NewDOMDocumentType(mOwner->NodeInfoManager(),
                             nsGkAtoms::html,  // aName
-                            EmptyString(),    // aPublicId
-                            EmptyString(),    // aSystemId
+                            u""_ns,           // aPublicId
+                            u""_ns,           // aSystemId
                             VoidString());    // aInternalSubset
 
   nsCOMPtr<nsIGlobalObject> scriptHandlingObject =
@@ -136,25 +135,25 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
 
   nsCOMPtr<Document> doc;
-  nsresult rv = NS_NewDOMDocument(
-      getter_AddRefs(doc), EmptyString(), EmptyString(), doctype, mDocumentURI,
-      mBaseURI, mOwner->NodePrincipal(), true, scriptHandlingObject,
-      DocumentFlavorLegacyGuess);
+  nsresult rv =
+      NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, doctype,
+                        mDocumentURI, mBaseURI, mOwner->NodePrincipal(), true,
+                        scriptHandlingObject, DocumentFlavorLegacyGuess);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<Element> root =
-      doc->CreateElem(NS_LITERAL_STRING("html"), nullptr, kNameSpaceID_XHTML);
+      doc->CreateElem(u"html"_ns, nullptr, kNameSpaceID_XHTML);
   rv = doc->AppendChildTo(root, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<Element> head =
-      doc->CreateElem(NS_LITERAL_STRING("head"), nullptr, kNameSpaceID_XHTML);
+      doc->CreateElem(u"head"_ns, nullptr, kNameSpaceID_XHTML);
   rv = root->AppendChildTo(head, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!DOMStringIsNull(aTitle)) {
-    nsCOMPtr<Element> title = doc->CreateElem(NS_LITERAL_STRING("title"),
-                                              nullptr, kNameSpaceID_XHTML);
+    nsCOMPtr<Element> title =
+        doc->CreateElem(u"title"_ns, nullptr, kNameSpaceID_XHTML);
     rv = head->AppendChildTo(title, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -167,7 +166,7 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   }
 
   nsCOMPtr<Element> body =
-      doc->CreateElem(NS_LITERAL_STRING("body"), nullptr, kNameSpaceID_XHTML);
+      doc->CreateElem(u"body"_ns, nullptr, kNameSpaceID_XHTML);
   rv = root->AppendChildTo(body, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -185,5 +184,4 @@ already_AddRefed<Document> DOMImplementation::CreateHTMLDocument(
   return document.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

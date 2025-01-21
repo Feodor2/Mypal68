@@ -244,7 +244,7 @@ var classifierTester = {
         }
         return null;
       case "denied":
-        return Ci.nsIObjectLoadingContent.PLUGIN_USER_DISABLED;
+        return Ci.nsIObjectLoadingContent.PLUGIN_DISABLED;
     }
     throw new Error("Invalid classification or flash setting");
   },

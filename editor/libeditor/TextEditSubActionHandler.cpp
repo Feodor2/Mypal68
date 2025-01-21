@@ -193,7 +193,7 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
   CANCEL_OPERATION_AND_RETURN_EDIT_ACTION_RESULT_IF_READONLY
 
   if (mMaxTextLength >= 0) {
-    nsAutoString insertionString(NS_LITERAL_STRING("\n"));
+    nsAutoString insertionString(u"\n"_ns);
     EditActionResult result =
         MaybeTruncateInsertionStringForMaxLength(insertionString);
     if (result.Failed()) {
@@ -247,8 +247,8 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
 
   // Insert a linefeed character.
   EditorRawDOMPoint pointAfterInsertedLineFeed;
-  rv = InsertTextWithTransaction(*document, NS_LITERAL_STRING("\n"),
-                                 pointToInsert, &pointAfterInsertedLineFeed);
+  rv = InsertTextWithTransaction(*document, u"\n"_ns, pointToInsert,
+                                 &pointAfterInsertedLineFeed);
   if (!pointAfterInsertedLineFeed.IsSet()) {
     NS_WARNING(
         "EditorBase::InsertTextWithTransaction(\\n) didn't return position of "

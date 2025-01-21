@@ -562,6 +562,7 @@ const listeners = {
     "PictureInPicture:Close": ["PictureInPicture"],
     "PictureInPicture:Playing": ["PictureInPicture"],
     "PictureInPicture:Paused": ["PictureInPicture"],
+    "PictureInPicture:OpenToggleContextMenu": ["PictureInPicture"],
     "Prompt:Open": ["RemotePrompt"],
     "Reader:FaviconRequest": ["ReaderParent"],
     "Reader:UpdateReaderButton": ["ReaderParent"],
@@ -1366,39 +1367,6 @@ BrowserGlue.prototype = {
     );
   },
 
-  _firstWindowTelemetry(aWindow) {
-    let scaling = aWindow.devicePixelRatio * 100;
-    try {
-      Services.telemetry.getHistogramById("DISPLAY_SCALING").add(scaling);
-    } catch (ex) {}
-  },
-
-  _collectStartupConditionsTelemetry() {
-    let nowSeconds = Math.round(Date.now() / 1000);
-    // Don't include cases where we don't have the pref. This rules out the first install
-    // as well as the first run of a build since this was introduced. These could by some
-    // definitions be referred to as "cold" startups, but probably not since we likely
-    // just wrote many of the files we use to disk. This way we should approximate a lower
-    // bound to the number of cold startups rather than an upper bound.
-    let lastCheckSeconds = Services.prefs.getIntPref(
-      "browser.startup.lastColdStartupCheck",
-      nowSeconds
-    );
-    Services.prefs.setIntPref(
-      "browser.startup.lastColdStartupCheck",
-      nowSeconds
-    );
-    try {
-      let secondsSinceLastOSRestart =
-        Services.startup.secondsSinceLastOSRestart;
-      let isColdStartup =
-        nowSeconds - secondsSinceLastOSRestart > lastCheckSeconds;
-      Services.telemetry.scalarSet("startup.is_cold", isColdStartup);
-    } catch (ex) {
-      Cu.reportError(ex);
-    }
-  },
-
   // the first browser window has finished initializing
   _onFirstWindowLoaded: function BG__onFirstWindowLoaded(aWindow) {
     TabCrashHandler.init();
@@ -1489,10 +1457,7 @@ BrowserGlue.prototype = {
 
     PageActions.init();
 
-    this._firstWindowTelemetry(aWindow);
     this._firstWindowLoaded();
-
-    this._collectStartupConditionsTelemetry();
 
     // Set the default favicon size for UI views that use the page-icon protocol.
     PlacesUtils.favicons.setDefaultIconURIPreferredSize(
@@ -1956,6 +1921,7 @@ BrowserGlue.prototype = {
 
     var windowcount = 0;
     var pagecount = 0;
+    const prfwrn = "browser.tabs.warnOnClose";
     for (let win of BrowserWindowTracker.orderedWindows) {
       if (win.closed) {
         continue;
@@ -1983,6 +1949,7 @@ BrowserGlue.prototype = {
     let sessionWillBeRestored =
       Services.prefs.getIntPref("browser.startup.page") == 3 ||
       Services.prefs.getBoolPref("browser.sessionstore.resume_session_once");
+
     // In the sessionWillBeRestored case, we only check the sessionstore-specific pref:
     if (sessionWillBeRestored) {
       if (
@@ -1991,8 +1958,9 @@ BrowserGlue.prototype = {
         return;
       }
       // Otherwise, we check browser.tabs.warnOnClose
-    } else if (Services.prefs.getIntPref("browser.tabs.warnOnClose") >= pagecount) {
-      return;
+    } else {
+      var p = Services.prefs.getIntPref(prfwrn);
+      if (p == 0 || p > pagecount) return;
     }
 
     let win = BrowserWindowTracker.getTopWindow();
@@ -2056,7 +2024,7 @@ BrowserGlue.prototype = {
     // If the user has unticked the box, and has confirmed closing, stop showing
     // the warning.
     if (!sessionWillBeRestored && buttonPressed == 0 && !warnOnClose.value) {
-      Services.prefs.setBoolPref("browser.tabs.warnOnClose", false);
+      Services.prefs.setIntPref(prfwrn, 0);
     }
     aCancelQuit.data = buttonPressed != 0;
   },
@@ -2545,22 +2513,11 @@ BrowserGlue.prototype = {
     }
   },
 
-  _migrateXULStoreForDocument(fromURL, toURL) {
-    Array.from(Services.xulStore.getIDsEnumerator(fromURL)).forEach((id) => {
-      Array.from(Services.xulStore.getAttributeEnumerator(fromURL, id)).forEach(
-        attr => {
-          let value = Services.xulStore.getValue(fromURL, id, attr);
-          Services.xulStore.setValue(toURL, id, attr, value);
-        }
-      );
-    });
-  },
-
   // eslint-disable-next-line complexity
   _migrateUI: function BG__migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 82;
+    const UI_VERSION = 81;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     let currentUIVersion;
@@ -2903,11 +2860,6 @@ BrowserGlue.prototype = {
           }
         }
       }
-    }
-
-    if (currentUIVersion < 82) {
-      this._migrateXULStoreForDocument("chrome://browser/content/browser.xul",
-                                       "chrome://browser/content/browser.xhtml");
     }
 
     // Update the migration version.

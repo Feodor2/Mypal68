@@ -31,7 +31,6 @@ const DEVTOOLS_ENABLED_PREF = "devtools.enabled";
 
 const DEVTOOLS_POLICY_DISABLED_PREF = "devtools.policy.disabled";
 const PROFILER_POPUP_ENABLED_PREF = "devtools.performance.popup.enabled";
-const WEBIDE_ENABLED_PREF = "devtools.webide.enabled";
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -213,20 +212,6 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
       id: "inspectorMac",
       shortcut: KeyShortcutsBundle.GetStringFromName("inspector.commandkey"),
       modifiers: "accel,shift",
-    });
-  }
-
-  // Only add the WebIDE shortcut if WebIDE is enabled.
-  const isWebIDEEnabled = Services.prefs.getBoolPref(
-    WEBIDE_ENABLED_PREF,
-    false
-  );
-  if (isWebIDEEnabled) {
-    // Open WebIDE window
-    shortcuts.push({
-      id: "webide",
-      shortcut: KeyShortcutsBundle.GetStringFromName("webide.commandkey"),
-      modifiers: "shift",
     });
   }
 

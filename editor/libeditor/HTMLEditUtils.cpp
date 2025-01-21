@@ -23,6 +23,7 @@
 #include "nsLiteralString.h"     // for NS_LITERAL_STRING
 #include "nsNameSpaceManager.h"  // for kNameSpaceID_None
 #include "nsString.h"            // for nsAutoString
+#include "nsStyledElement.h"
 
 namespace mozilla {
 
@@ -41,9 +42,21 @@ bool HTMLEditUtils::CanContentsBeJoined(const nsIContent& aLeftContent,
       !aLeftContent.IsHTMLElement(nsGkAtoms::span)) {
     return true;
   }
-  MOZ_DIAGNOSTIC_ASSERT(aRightContent.IsElement());
-  return CSSEditUtils::DoElementsHaveSameStyle(*aLeftContent.AsElement(),
-                                               *aRightContent.AsElement());
+  if (!aLeftContent.IsElement() || !aRightContent.IsElement()) {
+    return false;
+  }
+  nsStyledElement* leftStyledElement =
+      nsStyledElement::FromNode(const_cast<nsIContent*>(&aLeftContent));
+  if (!leftStyledElement) {
+    return false;
+  }
+  nsStyledElement* rightStyledElement =
+      nsStyledElement::FromNode(const_cast<nsIContent*>(&aRightContent));
+  if (!rightStyledElement) {
+    return false;
+  }
+  return CSSEditUtils::DoStyledElementsHaveSameStyle(*leftStyledElement,
+                                                     *rightStyledElement);
 }
 
 bool HTMLEditUtils::IsBlockElement(const nsIContent& aContent) {
@@ -255,8 +268,7 @@ bool HTMLEditUtils::IsMozDiv(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsHTMLElement(nsGkAtoms::div) &&
          aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                         NS_LITERAL_STRING("_moz"),
-                                         eIgnoreCase);
+                                         u"_moz"_ns, eIgnoreCase);
 }
 
 /**
@@ -268,14 +280,14 @@ bool HTMLEditUtils::IsMailCite(nsINode* aNode) {
   // don't ask me why, but our html mailcites are id'd by "type=cite"...
   if (aNode->IsElement() &&
       aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                      NS_LITERAL_STRING("cite"), eIgnoreCase)) {
+                                      u"cite"_ns, eIgnoreCase)) {
     return true;
   }
 
   // ... but our plaintext mailcites by "_moz_quote=true".  go figure.
   if (aNode->IsElement() &&
       aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozquote,
-                                      NS_LITERAL_STRING("true"), eIgnoreCase)) {
+                                      u"true"_ns, eIgnoreCase)) {
     return true;
   }
 

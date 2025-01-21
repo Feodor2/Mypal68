@@ -19,9 +19,6 @@
         // the width of the textfield.
         let DOMUtils = window.windowUtils;
         let textboxRect = DOMUtils.getBoundsWithoutFlushing(this.mInput);
-        let inputRect = DOMUtils.getBoundsWithoutFlushing(
-          this.mInput.inputField
-        );
 
         // Ensure the panel is wide enough to fit at least 3 engines.
         let minWidth = Math.max(
@@ -29,12 +26,6 @@
           this.oneOffButtons.buttonWidth * 3
         );
         this.style.minWidth = Math.round(minWidth) + "px";
-        // Alignment of the panel with the searchbar is obtained with negative
-        // margins.
-        this.style.marginLeft = textboxRect.left - inputRect.left + "px";
-        // This second margin is needed when the direction is reversed,
-        // eg. when using command+shift+X.
-        this.style.marginRight = inputRect.right - textboxRect.right + "px";
 
         // First handle deciding if we are showing the reduced version of the
         // popup containing only the preferences button. We do this if the
@@ -60,13 +51,6 @@
         this.updateHeader();
       });
 
-      this.addEventListener("popuphiding", event => {
-        this._isHiding = true;
-        Services.tm.dispatchToMainThread(() => {
-          this._isHiding = false;
-        });
-      });
-
       /**
        * This handles clicks on the topmost "Foo Search" header in the
        * popup (hbox.search-panel-header]).
@@ -83,14 +67,6 @@
         }
         this.oneOffButtons.handleSearchCommand(event, engine);
       });
-
-      /**
-       * Popup rollup is triggered by native events before the mousedown event
-       * reaches the DOM. The will be set to true by the popuphiding event and
-       * false after the mousedown event has been triggered to detect what
-       * caused rollup.
-       */
-      this._isHiding = false;
 
       this._bundle = null;
     }
@@ -247,10 +223,9 @@
           this.removeAttribute("src");
         }
 
-        let headerText = this.bundle.formatStringFromName(
-          "searchHeader",
-          [currentEngine.name]
-        );
+        let headerText = this.bundle.formatStringFromName("searchHeader", [
+          currentEngine.name,
+        ]);
         this.searchbarEngineName.setAttribute("value", headerText);
         this.searchbarEngine.engine = currentEngine;
       });

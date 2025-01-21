@@ -22,7 +22,6 @@ FINAL_TARGET_FILES.features['webcompat@mozilla.org']['about-compat'] += [
 
 FINAL_TARGET_FILES.features['webcompat@mozilla.org']['data'] += [
   'data/injections.js',
-  'data/picture_in_picture_overrides.js',
   'data/ua_overrides.js',
 ]
 
@@ -77,7 +76,6 @@ FINAL_TARGET_FILES.features['webcompat@mozilla.org']['lib'] += [
   'lib/injections.js',
   'lib/intervention_helpers.js',
   'lib/module_shim.js',
-  'lib/picture_in_picture_overrides.js',
   'lib/ua_overrides.js',
 ]
 

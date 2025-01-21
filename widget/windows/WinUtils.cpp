@@ -2259,66 +2259,8 @@ bool WinUtils::GetAppInitDLLs(nsAString& aOutput) {
   wchar_t* tokenContext = nullptr;
   wchar_t* token = wcstok_s(data.get(), kDelimiters, &tokenContext);
   while (token) {
-    nsAutoString cleanPath(token);
-    // Since these paths are short paths originating from the registry, we need
-    // to canonicalize them, lengthen them, and sanitize them before we can
-    // check them against the whitelist
-    if (PreparePathForTelemetry(cleanPath)) {
-      if (!aOutput.IsEmpty()) {
-        aOutput += L";";
-      }
-      aOutput += cleanPath;
-    }
     token = wcstok_s(nullptr, kDelimiters, &tokenContext);
   }
-  return true;
-}
-
-/* static */
-bool WinUtils::PreparePathForTelemetry(nsAString& aPath,
-                                       PathTransformFlags aFlags) {
-  if (aFlags & PathTransformFlags::Canonicalize) {
-    if (!CanonicalizePath(aPath)) {
-      return false;
-    }
-  }
-  if (aFlags & PathTransformFlags::Lengthen) {
-    if (!MakeLongPath(aPath)) {
-      return false;
-    }
-  }
-  if (aFlags & PathTransformFlags::UnexpandEnvVars) {
-    if (!UnexpandEnvVars(aPath)) {
-      return false;
-    }
-  }
-
-  const nsTArray<std::pair<nsString, nsDependentString>>& whitelistedPaths =
-      GetWhitelistedPaths();
-
-  for (uint32_t i = 0; i < whitelistedPaths.Length(); ++i) {
-    const nsString& testPath = whitelistedPaths[i].first;
-    const nsDependentString& substitution = whitelistedPaths[i].second;
-    if (StringBeginsWith(aPath, testPath,
-                         nsCaseInsensitiveStringComparator())) {
-      if (!substitution.IsVoid()) {
-        aPath.Replace(0, testPath.Length(), substitution);
-      }
-      return true;
-    }
-  }
-
-  // For non-whitelisted paths, we strip the path component and just leave
-  // the filename. We can't use nsLocalFile to do this because these paths may
-  // begin with environment variables, and nsLocalFile doesn't like
-  // non-absolute paths.
-  MOZ_ASSERT(aPath.Length() <= MAX_PATH);
-  wchar_t tmpPath[MAX_PATH + 1] = {0};
-  if (wcsncpy_s(tmpPath, ArrayLength(tmpPath),
-                (char16ptr_t)aPath.BeginReading(), aPath.Length())) {
-    return false;
-  }
-  aPath.Assign((char16ptr_t)::PathFindFileNameW(tmpPath));
   return true;
 }
 

@@ -48,7 +48,6 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/net/CaptivePortalService.h"
-#include "mozilla/net/NetworkConnectivityService.h"
 #include "mozilla/net/SocketProcessHost.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/SSLTokensCache.h"
@@ -289,10 +288,6 @@ nsresult nsIOService::InitializeCaptivePortalService() {
     return static_cast<CaptivePortalService*>(mCaptivePortalService.get())
         ->Initialize();
   }
-
-  RefPtr<NetworkConnectivityService> ncs =
-      NetworkConnectivityService::GetSingleton();
-  ncs->Init();
 
   return NS_OK;
 }

@@ -479,11 +479,6 @@ button {
   background-color: #dadada;
 }
 
-/* Only used on Android */
-.font-size-sample {
-  display: none;
-}
-
 .minus-button,
 .plus-button,
 .content-width-minus-button,

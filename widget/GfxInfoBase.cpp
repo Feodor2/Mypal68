@@ -761,7 +761,7 @@ int32_t GfxInfoBase::FindBlocklistedDeviceInList(
       for (uint32_t j = 0; j < info[i].mDevices->Length(); j++) {
         if ((*info[i].mDevices)[j].Equals(
                 adapterDeviceID[infoIndex],
-                nsCaseInsensitiveStringComparator())) {
+                nsCaseInsensitiveStringComparator)) {
           deviceMatches = true;
           break;
         }
@@ -867,9 +867,9 @@ int32_t GfxInfoBase::FindBlocklistedDeviceInList(
           (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA);
       const nsString nv310mDeviceId = NS_LITERAL_STRING("0x0A70");
       if (nvVendorID.Equals(adapterVendorID[1],
-                            nsCaseInsensitiveStringComparator()) &&
+                            nsCaseInsensitiveStringComparator) &&
           nv310mDeviceId.Equals(adapterDeviceID[1],
-                                nsCaseInsensitiveStringComparator())) {
+                                nsCaseInsensitiveStringComparator)) {
         status = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_D2D_NV310M_BLOCK";
       }
@@ -905,18 +905,18 @@ void GfxInfoBase::SetFeatureStatus(
 bool GfxInfoBase::DoesVendorMatch(const nsAString& aBlocklistVendor,
                                   const nsAString& aAdapterVendor) {
   return aBlocklistVendor.Equals(aAdapterVendor,
-                                 nsCaseInsensitiveStringComparator()) ||
+                                 nsCaseInsensitiveStringComparator) ||
          aBlocklistVendor.Equals(GfxDriverInfo::GetDeviceVendor(VendorAll),
-                                 nsCaseInsensitiveStringComparator());
+                                 nsCaseInsensitiveStringComparator);
 }
 
 bool GfxInfoBase::DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
                                         const nsAString& aDriverVendor) {
   return aBlocklistVendor.Equals(aDriverVendor,
-                                 nsCaseInsensitiveStringComparator()) ||
+                                 nsCaseInsensitiveStringComparator) ||
          aBlocklistVendor.Equals(
              GfxDriverInfo::GetDriverVendor(DriverVendorAll),
-             nsCaseInsensitiveStringComparator());
+             nsCaseInsensitiveStringComparator);
 }
 
 nsresult GfxInfoBase::GetFeatureStatusImpl(

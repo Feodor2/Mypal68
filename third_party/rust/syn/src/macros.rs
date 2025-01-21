@@ -4,15 +4,11 @@ macro_rules! ast_struct {
         struct $name:ident #full $($rest:tt)*
     ) => {
         #[cfg(feature = "full")]
-        #[cfg_attr(feature = "extra-traits", derive(Debug, Eq, PartialEq, Hash))]
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
         $($attrs_pub)* struct $name $($rest)*
 
         #[cfg(not(feature = "full"))]
-        #[cfg_attr(feature = "extra-traits", derive(Debug, Eq, PartialEq, Hash))]
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
         $($attrs_pub)* struct $name {
-            _noconstruct: (),
+            _noconstruct: ::std::marker::PhantomData<::proc_macro2::Span>,
         }
 
         #[cfg(all(not(feature = "full"), feature = "printing"))]
@@ -25,27 +21,8 @@ macro_rules! ast_struct {
 
     (
         [$($attrs_pub:tt)*]
-        struct $name:ident #manual_extra_traits $($rest:tt)*
-    ) => {
-        #[cfg_attr(feature = "extra-traits", derive(Debug))]
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
-        $($attrs_pub)* struct $name $($rest)*
-    };
-
-    (
-        [$($attrs_pub:tt)*]
-        struct $name:ident #manual_extra_traits_debug $($rest:tt)*
-    ) => {
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
-        $($attrs_pub)* struct $name $($rest)*
-    };
-
-    (
-        [$($attrs_pub:tt)*]
         struct $name:ident $($rest:tt)*
     ) => {
-        #[cfg_attr(feature = "extra-traits", derive(Debug, Eq, PartialEq, Hash))]
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
         $($attrs_pub)* struct $name $($rest)*
     };
 
@@ -65,19 +42,8 @@ macro_rules! ast_enum {
 
     (
         [$($attrs_pub:tt)*]
-        enum $name:ident #manual_extra_traits $($rest:tt)*
-    ) => (
-        #[cfg_attr(feature = "extra-traits", derive(Debug))]
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
-        $($attrs_pub)* enum $name $($rest)*
-    );
-
-    (
-        [$($attrs_pub:tt)*]
         enum $name:ident $($rest:tt)*
     ) => (
-        #[cfg_attr(feature = "extra-traits", derive(Debug, Eq, PartialEq, Hash))]
-        #[cfg_attr(feature = "clone-impls", derive(Clone))]
         $($attrs_pub)* enum $name $($rest)*
     );
 
@@ -111,7 +77,7 @@ macro_rules! ast_enum_of_structs_impl {
         $pub:ident $enum:ident $name:ident {
             $(
                 $(#[$variant_attr:meta])*
-                $variant:ident $( ($member:ident) )*,
+                $variant:ident $( ($($member:ident)::+) )*,
             )*
         }
 
@@ -120,22 +86,32 @@ macro_rules! ast_enum_of_structs_impl {
         check_keyword_matches!(pub $pub);
         check_keyword_matches!(enum $enum);
 
-        $(
-            $(
-                impl From<$member> for $name {
-                    fn from(e: $member) -> $name {
-                        $name::$variant(e)
-                    }
-                }
-            )*
-        )*
+        $($(
+            ast_enum_from_struct!($name::$variant, $($member)::+);
+        )*)*
 
         #[cfg(feature = "printing")]
         generate_to_tokens! {
             $($remaining)*
             ()
             tokens
-            $name { $($variant $($member)*,)* }
+            $name { $($variant $($($member)::+)*,)* }
+        }
+    };
+}
+
+macro_rules! ast_enum_from_struct {
+    // No From<TokenStream> for verbatim variants.
+    ($name:ident::Verbatim, $member:ident) => {};
+
+    // No From<TokenStream> for private variants.
+    ($name:ident::$variant:ident, crate::private) => {};
+
+    ($name:ident::$variant:ident, $member:ident) => {
+        impl From<$member> for $name {
+            fn from(e: $member) -> $name {
+                $name::$variant(e)
+            }
         }
     };
 }
@@ -158,7 +134,15 @@ macro_rules! generate_to_tokens {
         );
     };
 
+    (($($arms:tt)*) $tokens:ident $name:ident { $variant:ident crate::private, $($next:tt)*}) => {
+        generate_to_tokens!(
+            ($($arms)* $name::$variant(_) => unreachable!(),)
+            $tokens $name { $($next)* }
+        );
+    };
+
     (($($arms:tt)*) $tokens:ident $name:ident {}) => {
+        #[cfg_attr(doc_cfg, doc(cfg(feature = "printing")))]
         impl ::quote::ToTokens for $name {
             fn to_tokens(&self, $tokens: &mut ::proc_macro2::TokenStream) {
                 match self {

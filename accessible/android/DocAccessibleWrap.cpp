@@ -5,6 +5,7 @@
 #include "Accessible-inl.h"
 #include "DocAccessibleWrap.h"
 #include "nsIDocShell.h"
+#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "DocAccessibleChild.h"
 #include "nsAccessibilityService.h"
@@ -98,7 +99,7 @@ void DocAccessibleWrap::CacheViewportCallback(nsITimer* aTimer,
   nsRect scrollPort = sf ? sf->GetScrollPortRect() : rootFrame->GetRect();
 
   nsLayoutUtils::GetFramesForArea(
-      presShell->GetRootFrame(), scrollPort, frames,
+      RelativeTo{presShell->GetRootFrame()}, scrollPort, frames,
       nsLayoutUtils::FrameForPointOption::OnlyVisible);
   AccessibleHashtable inViewAccs;
   for (size_t i = 0; i < frames.Length(); i++) {

@@ -43,6 +43,7 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "nsWindow.h"
+#include "nsLayoutUtils.h"
 
 #ifdef MOZ_X11
 #  ifdef CAIRO_HAS_XLIB_SURFACE
@@ -1806,8 +1807,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
     case StyleAppearance::SpinnerTextfield:
-      // case StyleAppearance::Scrollbar:  (n/a for gtk)
-      // case StyleAppearance::ScrollbarSmall: (n/a for gtk)
     case StyleAppearance::ScrollbarbuttonUp:
     case StyleAppearance::ScrollbarbuttonDown:
     case StyleAppearance::ScrollbarbuttonLeft:

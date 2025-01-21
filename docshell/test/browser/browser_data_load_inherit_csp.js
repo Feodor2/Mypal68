@@ -21,8 +21,7 @@ function verifyCSP(aTestName, aBrowser, aDataURI) {
   }) {
     let channel = content.docShell.currentDocumentChannel;
     is(channel.URI.spec, aDataURI, "testing CSP for " + aTestName);
-    let principal = channel.loadInfo.triggeringPrincipal;
-    let cspJSON = principal.cspJSON;
+    let cspJSON = content.document.cspJSON;
     let cspOBJ = JSON.parse(cspJSON);
     let policies = cspOBJ["csp-policies"];
     is(policies.length, 1, "should be one policy");

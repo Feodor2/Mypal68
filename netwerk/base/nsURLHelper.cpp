@@ -795,7 +795,7 @@ static void net_ParseMediaType(const nsACString& aMediaTypeStr,
     // Common case here is that aContentType is empty
     bool eq = !aContentType.IsEmpty() &&
               aContentType.Equals(Substring(type, typeEnd),
-                                  nsCaseInsensitiveCStringComparator());
+                                  nsCaseInsensitiveCStringComparator);
     if (!eq) {
       aContentType.Assign(type, typeEnd - type);
       ToLowerCase(aContentType);

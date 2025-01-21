@@ -53,7 +53,6 @@ class ModuleLoadEvent {
     explicit ModuleInfo(const glue::ModuleLoadEvent::ModuleInfo&);
 
     bool PopulatePathInfo();
-    bool PrepForTelemetry();
 
     uintptr_t mBase;
     nsString mLdrName;

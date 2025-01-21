@@ -24,6 +24,7 @@ nsPrintSettings::nsPrintSettings()
       mPrintSilent(false),
       mShrinkToFit(true),
       mShowPrintProgress(true),
+      mShowMarginGuides(false),
       mPrintPageDelay(50),
       mPaperData(0),
       mPaperWidth(8.5),
@@ -563,6 +564,16 @@ NS_IMETHODIMP nsPrintSettings::SetShowPrintProgress(bool aShowPrintProgress) {
   return NS_OK;
 }
 
+NS_IMETHODIMP nsPrintSettings::GetShowMarginGuides(bool* aShowMarginGuides) {
+  NS_ENSURE_ARG_POINTER(aShowMarginGuides);
+  *aShowMarginGuides = mShowMarginGuides;
+  return NS_OK;
+}
+NS_IMETHODIMP nsPrintSettings::SetShowMarginGuides(bool aShowMarginGuides) {
+  mShowMarginGuides = aShowMarginGuides;
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsPrintSettings::GetPaperName(nsAString& aPaperName) {
   aPaperName = mPaperName;
   return NS_OK;
@@ -664,26 +675,12 @@ nsPrintSettings::SetUnwriteableMarginInTwips(nsIntMargin& aUnwriteableMargin) {
   return NS_OK;
 }
 
-/** ---------------------------------------------------
- *  See documentation in nsPrintSettingsService.h
- *	@update 6/21/00 dwc
- */
-NS_IMETHODIMP
-nsPrintSettings::GetMarginInTwips(nsIntMargin& aMargin) {
-  aMargin = mMargin;
-  return NS_OK;
-}
+nsIntMargin nsPrintSettings::GetMarginInTwips() { return mMargin; }
 
-NS_IMETHODIMP
-nsPrintSettings::GetEdgeInTwips(nsIntMargin& aEdge) {
-  aEdge = mEdge;
-  return NS_OK;
-}
+nsIntMargin nsPrintSettings::GetEdgeInTwips() { return mEdge; }
 
-NS_IMETHODIMP
-nsPrintSettings::GetUnwriteableMarginInTwips(nsIntMargin& aUnwriteableMargin) {
-  aUnwriteableMargin = mUnwriteableMargin;
-  return NS_OK;
+nsIntMargin nsPrintSettings::GetUnwriteableMarginInTwips() {
+  return mUnwriteableMargin;
 }
 
 /** ---------------------------------------------------

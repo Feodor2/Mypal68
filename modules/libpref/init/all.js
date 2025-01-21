@@ -398,6 +398,7 @@ pref("media.videocontrols.picture-in-picture.enabled", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.flyout-enabled", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.flyout-wait-ms", 5000);
+pref("media.videocontrols.picture-in-picture.video-toggle.always-show", false);
 
 #ifdef MOZ_WEBRTC
   pref("media.navigator.video.enabled", true);
@@ -2296,22 +2297,6 @@ pref("mousewheel.with_win.delta_multiplier_x", 100);
 pref("mousewheel.with_win.delta_multiplier_y", 100);
 pref("mousewheel.with_win.delta_multiplier_z", 100);
 
-// These define the smooth scroll behavior (min ms, max ms) for different triggers
-// Some triggers:
-// mouseWheel: Discrete mouse wheel events, Synaptics touchpads on windows (generate wheel events)
-// Lines:  Up/Down/Left/Right KB arrows
-// Pages:  Page up/down, Space
-// Scrollbars: Clicking scrollbars arrows, clicking scrollbars tracks
-// Note: Currently OS X trackpad and magic mouse don't use our smooth scrolling
-// Note: These are relevant only when "general.smoothScroll" is enabled
-pref("general.smoothScroll.scrollbars.durationMinMS", 150);
-pref("general.smoothScroll.scrollbars.durationMaxMS", 150);
-// Enable disable smooth scrolling for different triggers (when "general.smoothScroll" is enabled)
-pref("general.smoothScroll.pixels", true);
-pref("general.smoothScroll.lines", true);
-pref("general.smoothScroll.scrollbars", true);
-pref("general.smoothScroll.other", true);
-
 // We can show it anytime from menus
 pref("profile.manage_only_at_launch", false);
 
@@ -2344,14 +2329,6 @@ pref("bidi.numeral", 0);
 // to be exposed, and enables the directional caret hook. By default, only
 // expose it for bidi-associated system locales.
 pref("bidi.browser.ui", false);
-
-// used for double-click word selection behavior. Win will override.
-pref("layout.word_select.eat_space_to_next_word", false);
-pref("layout.word_select.stop_at_punctuation", true);
-
-// Whether underscore should be treated as a word-breaking character for
-// word selection/arrow-key movement purposes.
-pref("layout.word_select.stop_at_underscore", false);
 
 // Override DPI. A value of -1 means use the maximum of 96 and the system DPI.
 // A value of 0 means use the system DPI. A positive value is used as the DPI.
@@ -2899,9 +2876,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // The maximum size at which we will force GDI classic mode using
   // force_gdi_classic_for_families.
   pref("gfx.font_rendering.cleartype_params.force_gdi_classic_max_size", 15);
-
-  // override double-click word selection behavior.
-  pref("layout.word_select.eat_space_to_next_word", true);
 
   // Locate plugins by scanning the Adobe Acrobat installation directory with a minimum version
   pref("plugin.scan.Acrobat", "5.0");
@@ -3731,7 +3705,7 @@ pref("browser.formfill.prefixWeight",     5);
 
 // Zoom prefs
 pref("browser.zoom.full", false);
-pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2,2.4,3");
+pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2,2.4,3,4,5,7,8,9,10");
 
 //
 // Image-related prefs
@@ -3977,12 +3951,6 @@ pref("network.captive-portal-service.maxInterval", 1500000); // 25 minutes
 // Every 10 checks, the delay is increased by a factor of 5
 pref("network.captive-portal-service.backoffFactor", "5.0");
 pref("network.captive-portal-service.enabled", false);
-
-pref("network.connectivity-service.enabled", true);
-pref("network.connectivity-service.DNSv4.domain", "mozilla.org");
-pref("network.connectivity-service.DNSv6.domain", "mozilla.org");
-pref("network.connectivity-service.IPv4.url", "http://detectportal.firefox.com/success.txt?ipv4");
-pref("network.connectivity-service.IPv6.url", "http://detectportal.firefox.com/success.txt?ipv6");
 
 // DNS Trusted Recursive Resolver
 // 0 - default off, 1 - reserved/off, 2 - TRR first, 3 - TRR only, 4 - reserved/off, 5 off by choice

@@ -24,7 +24,6 @@
 
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Unused.h"
-#include "mozilla/intl/LocaleService.h"
 
 #include "nsIAppStartup.h"
 #include "nsIObserverService.h"
@@ -34,7 +33,7 @@
 #include "nsIXULRuntime.h"
 
 #define PACKAGE_OVERRIDE_BRANCH "chrome.override_package."
-#define SKIN NS_LITERAL_CSTRING("classic/1.0")
+#define SKIN "classic/1.0"_ns
 
 using namespace mozilla;
 using mozilla::dom::ContentParent;
@@ -130,10 +129,10 @@ nsChromeRegistryChrome::IsLocaleRTL(const nsACString& package, bool* aResult) {
   *aResult = false;
 
   nsAutoCString locale;
-  GetSelectedLocale(package, false, locale);
+  GetSelectedLocale(package, locale);
   if (locale.Length() < 2) return NS_OK;
 
-  *aResult = GetDirectionForLocale(locale);
+  *aResult = LocaleService::IsLocaleRTL(locale);
   return NS_OK;
 }
 
@@ -142,14 +141,13 @@ nsChromeRegistryChrome::IsLocaleRTL(const nsACString& package, bool* aResult) {
  * chrome packages.
  *
  * If you want to get the current application's UI locale, please use
- * LocaleService::GetAppLocaleAsLangTag.
+ * LocaleService::GetAppLocaleAsBCP47.
  */
 nsresult nsChromeRegistryChrome::GetSelectedLocale(const nsACString& aPackage,
-                                                   bool aAsBCP47,
                                                    nsACString& aLocale) {
   nsAutoCString reqLocale;
   if (aPackage.EqualsLiteral("global")) {
-    LocaleService::GetInstance()->GetAppLocaleAsLangTag(reqLocale);
+    LocaleService::GetInstance()->GetAppLocaleAsBCP47(reqLocale);
   } else {
     AutoTArray<nsCString, 10> requestedLocales;
     LocaleService::GetInstance()->GetRequestedLocales(requestedLocales);
@@ -165,17 +163,12 @@ nsresult nsChromeRegistryChrome::GetSelectedLocale(const nsACString& aPackage,
   aLocale = entry->locales.GetSelected(reqLocale, nsProviderArray::LOCALE);
   if (aLocale.IsEmpty()) return NS_ERROR_FAILURE;
 
-  if (aAsBCP47) {
-    SanitizeForBCP47(aLocale);
-  }
-
   return NS_OK;
 }
 
 nsresult nsChromeRegistryChrome::OverrideLocalePackage(
     const nsACString& aPackage, nsACString& aOverride) {
-  const nsACString& pref =
-      NS_LITERAL_CSTRING(PACKAGE_OVERRIDE_BRANCH) + aPackage;
+  const nsACString& pref = nsLiteralCString(PACKAGE_OVERRIDE_BRANCH) + aPackage;
   nsAutoCString override;
   nsresult rv = mozilla::Preferences::GetCString(PromiseFlatCString(pref).get(),
                                                  override);
@@ -273,7 +266,7 @@ void nsChromeRegistryChrome::SendRegisteredChrome(
   }
 
   nsAutoCString appLocale;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(appLocale);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
 
   if (aParent) {
     bool success = aParent->SendRegisterChrome(packages, resources, overrides,
@@ -298,7 +291,7 @@ void nsChromeRegistryChrome::ChromePackageFromPackageEntry(
     const nsACString& aPackageName, PackageEntry* aPackage,
     ChromePackage* aChromePackage, const nsCString& aSelectedSkin) {
   nsAutoCString appLocale;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(appLocale);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
 
   SerializeURI(aPackage->baseURI, aChromePackage->contentBaseURI);
   SerializeURI(aPackage->locales.GetBase(appLocale, nsProviderArray::LOCALE),
@@ -531,8 +524,7 @@ void nsChromeRegistryChrome::ManifestLocale(ManifestProcessingContext& cx,
   // registered. For most cases it will be "global", but for Fennec it will be
   // "browser".
   nsAutoCString mainPackage;
-  nsresult rv =
-      OverrideLocalePackage(NS_LITERAL_CSTRING("global"), mainPackage);
+  nsresult rv = OverrideLocalePackage("global"_ns, mainPackage);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -596,9 +588,8 @@ void nsChromeRegistryChrome::ManifestOverride(ManifestProcessingContext& cx,
       nsAutoCString chromePath, resolvedPath;
       chromeuri->GetPathQueryRef(chromePath);
       resolveduri->GetPathQueryRef(resolvedPath);
-      chromeSkinOnly =
-          StringBeginsWith(chromePath, NS_LITERAL_CSTRING("/skin/")) &&
-          StringBeginsWith(resolvedPath, NS_LITERAL_CSTRING("/skin/"));
+      chromeSkinOnly = StringBeginsWith(chromePath, "/skin/"_ns) &&
+                       StringBeginsWith(resolvedPath, "/skin/"_ns);
     }
     if (!chromeSkinOnly) {
       LogMessageWithContext(

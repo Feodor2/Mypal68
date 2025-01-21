@@ -167,6 +167,10 @@ var FullZoom = {
       return;
     }
 
+    if (this._isPDFViewer(browser)) {
+      return;
+    }
+
     let ctxt = this._loadContextFromBrowser(browser);
     let domain = this._cps2.extractDomain(browser.currentURI.spec);
     if (aGroup) {
@@ -268,6 +272,17 @@ var FullZoom = {
       return;
     }
 
+    // The PDF viewer zooming isn't handled by `ZoomManager`, ensure that the
+    // browser zoom level always gets reset on load.
+    if (this._isPDFViewer(browser)) {
+      this._applyPrefToZoom(
+        undefined,
+        browser,
+        this._notifyOnLocationChange.bind(this, browser)
+      );
+      return;
+    }
+
     // See if the zoom pref is cached.
     let ctxt = this._loadContextFromBrowser(browser);
     let pref = this._cps2.getCachedByDomainAndName(aURI.spec, this.name, ctxt);
@@ -312,23 +327,37 @@ var FullZoom = {
   // Setting & Pref Manipulation
 
   /**
-   * Reduces the zoom level of the page in the current browser.
+   * If browser in reader mode sends message to reader in order to decrease font size,
+   * Otherwise reduces the zoom level of the page in the current browser.
    */
   async reduce() {
-    ZoomManager.reduce();
     let browser = gBrowser.selectedBrowser;
-    this._ignorePendingZoomAccesses(browser);
-    await this._applyZoomToPref(browser);
+    if (browser.currentURI.spec.startsWith("about:reader")) {
+      browser.messageManager.sendAsyncMessage("Reader:ZoomOut");
+    } else if (this._isPDFViewer(browser)) {
+      browser.messageManager.sendAsyncMessage("PDFJS:ZoomOut");
+    } else {
+      ZoomManager.reduce();
+      this._ignorePendingZoomAccesses(browser);
+      await this._applyZoomToPref(browser);
+    }
   },
 
   /**
-   * Enlarges the zoom level of the page in the current browser.
+   * If browser in reader mode sends message to reader in order to increase font size,
+   * Otherwise enlarges the zoom level of the page in the current browser.
    */
   async enlarge() {
-    ZoomManager.enlarge();
     let browser = gBrowser.selectedBrowser;
-    this._ignorePendingZoomAccesses(browser);
-    await this._applyZoomToPref(browser);
+    if (browser.currentURI.spec.startsWith("about:reader")) {
+      browser.messageManager.sendAsyncMessage("Reader:ZoomIn");
+    } else if (this._isPDFViewer(browser)) {
+      browser.messageManager.sendAsyncMessage("PDFJS:ZoomIn");
+    } else {
+      ZoomManager.enlarge();
+      this._ignorePendingZoomAccesses(browser);
+      await this._applyZoomToPref(browser);
+    }
   },
 
   /**
@@ -336,6 +365,9 @@ var FullZoom = {
    * point value, where 1 is the default zoom level.
    */
   setZoom(value, browser = gBrowser.selectedBrowser) {
+    if (this._isPDFViewer(browser)) {
+      return;
+    }
     ZoomManager.setZoomForBrowser(browser, value);
     this._ignorePendingZoomAccesses(browser);
     this._applyZoomToPref(browser);
@@ -348,6 +380,11 @@ var FullZoom = {
    * @return A promise which resolves when the zoom reset has been applied.
    */
   reset: function FullZoom_reset(browser = gBrowser.selectedBrowser) {
+    if (browser.currentURI.spec.startsWith("about:reader")) {
+      browser.messageManager.sendAsyncMessage("Reader:ResetZoom");
+    } else if (this._isPDFViewer(browser)) {
+      browser.messageManager.sendAsyncMessage("PDFJS:ZoomReset");
+    }
     let token = this._getBrowserToken(browser);
     let result = this._getGlobalValue(browser).then(value => {
       if (token.isCurrent) {
@@ -617,5 +654,13 @@ var FullZoom = {
       return;
     }
     Services.tm.dispatchToMainThread(callback);
+  },
+
+  _isPDFViewer(browser) {
+    return !!(
+      browser.contentPrincipal &&
+      browser.contentPrincipal.URI &&
+      browser.contentPrincipal.URI.spec == "resource://pdf.js/web/viewer.html"
+    );
   },
 };

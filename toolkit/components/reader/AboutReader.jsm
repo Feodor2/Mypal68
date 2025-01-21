@@ -6,9 +6,6 @@
 
 var EXPORTED_SYMBOLS = ["AboutReader"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
 const { ReaderMode } = ChromeUtils.import(
   "resource://gre/modules/ReaderMode.jsm"
 );
@@ -39,14 +36,22 @@ var gStrings = Services.strings.createBundle(
   "chrome://global/locale/aboutReader.properties"
 );
 
-const gIsFirefoxDesktop =
-  Services.appinfo.ID == "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
+const zoomOnCtrl =
+  Services.prefs.getIntPref("mousewheel.with_control.action", 3) == 3;
+const zoomOnMeta =
+  Services.prefs.getIntPref("mousewheel.with_meta.action", 1) == 3;
 
 var AboutReader = function(mm, win, articlePromise) {
   let url = this._getOriginalUrl(win);
-  if (!(url.startsWith("http://") || url.startsWith("https://"))) {
+  if (
+    !(
+      url.startsWith("http://") ||
+      url.startsWith("https://") ||
+      url.startsWith("file://")
+    )
+  ) {
     let errorMsg =
-      "Only http:// and https:// URLs can be loaded in about:reader.";
+      "Only http://, https:// and file:// URLs can be loaded in about:reader.";
     if (Services.prefs.getBoolPref("reader.errors.includeURLs")) {
       errorMsg += " Tried to load: " + url + ".";
     }
@@ -62,6 +67,9 @@ var AboutReader = function(mm, win, articlePromise) {
   this._mm.addMessageListener("Reader:AddButton", this);
   this._mm.addMessageListener("Reader:RemoveButton", this);
   this._mm.addMessageListener("Reader:GetStoredArticleData", this);
+  this._mm.addMessageListener("Reader:ZoomIn", this);
+  this._mm.addMessageListener("Reader:ZoomOut", this);
+  this._mm.addMessageListener("Reader:ResetZoom", this);
 
   this._docRef = Cu.getWeakReference(doc);
   this._winRef = Cu.getWeakReference(win);
@@ -113,10 +121,9 @@ var AboutReader = function(mm, win, articlePromise) {
   win.addEventListener("pagehide", this);
   win.addEventListener("mozvisualscroll", this, { mozSystemGroup: true });
   win.addEventListener("resize", this);
+  win.addEventListener("wheel", this, { passive: false });
 
   Services.obs.addObserver(this, "inner-window-destroyed");
-
-  doc.addEventListener("visibilitychange", this);
 
   this._setupStyleDropdown();
   this._setupButton(
@@ -125,10 +132,8 @@ var AboutReader = function(mm, win, articlePromise) {
     "aboutReader.toolbar.close"
   );
 
-  if (gIsFirefoxDesktop) {
-    // we're ready for any external setup, send a signal for that.
-    this._mm.sendAsyncMessage("Reader:OnSetup");
-  }
+  // we're ready for any external setup, send a signal for that.
+  this._mm.sendAsyncMessage("Reader:OnSetup");
 
   let colorSchemeValues = JSON.parse(
     Services.prefs.getCharPref("reader.color_scheme.values")
@@ -220,7 +225,13 @@ AboutReader.prototype = {
     ".content .wp-caption img, " +
     ".content figure img",
 
-  PLATFORM_HAS_CACHE: AppConstants.platform == "android",
+  FONT_SIZE_MIN: 1,
+
+  FONT_SIZE_LEGACY_MAX: 9,
+
+  FONT_SIZE_MAX: 15,
+
+  FONT_SIZE_EXTENDED_VALUES: [32, 40, 56, 72, 96, 128],
 
   get _doc() {
     return this._docRef.get();
@@ -340,6 +351,19 @@ AboutReader.prototype = {
         this._mm.sendAsyncMessage("Reader:StoredArticleData", {
           article: this._article,
         });
+        break;
+      }
+      case "Reader:ZoomIn": {
+        this._changeFontSize(+1);
+        break;
+      }
+      case "Reader:ZoomOut": {
+        this._changeFontSize(-1);
+        break;
+      }
+      case "Reader:ResetZoom": {
+        this._resetFontSize();
+        break;
       }
     }
   },
@@ -394,12 +418,34 @@ AboutReader.prototype = {
         }
         break;
 
-      case "devicelight":
-        this._handleDeviceLight(aEvent.value);
-        break;
+      case "wheel":
+        let doZoom =
+          (aEvent.ctrlKey && zoomOnCtrl) || (aEvent.metaKey && zoomOnMeta);
+        if (!doZoom) {
+          return;
+        }
+        aEvent.preventDefault();
 
-      case "visibilitychange":
-        this._handleVisibilityChange();
+        // Throttle events to once per 150ms. This avoids excessively fast zooming.
+        if (aEvent.timeStamp <= this._zoomBackoffTime) {
+          return;
+        }
+        this._zoomBackoffTime = aEvent.timeStamp + 150;
+
+        // Determine the direction of the delta (we don't care about its size);
+        // This code is adapted from normalizeWheelEventDelta in
+        // toolkt/components/pdfjs/content/web/viewer.js
+        let delta = Math.abs(aEvent.deltaX) + Math.abs(aEvent.deltaY);
+        let angle = Math.atan2(aEvent.deltaY, aEvent.deltaX);
+        if (-0.25 * Math.PI < angle && angle < 0.75 * Math.PI) {
+          delta = -delta;
+        }
+
+        if (delta > 0) {
+          this._changeFontSize(+1);
+        } else if (delta < 0) {
+          this._changeFontSize(-1);
+        }
         break;
 
       case "pagehide":
@@ -410,6 +456,9 @@ AboutReader.prototype = {
         this._mm.removeMessageListener("Reader:AddButton", this);
         this._mm.removeMessageListener("Reader:RemoveButton", this);
         this._mm.removeMessageListener("Reader:GetStoredArticleData", this);
+        this._mm.removeMessageListener("Reader:ZoomIn", this);
+        this._mm.removeMessageListener("Reader:ZoomOut", this);
+        this._mm.removeMessageListener("Reader:ResetZoom", this);
         this._windowUnloaded = true;
         break;
     }
@@ -434,45 +483,38 @@ AboutReader.prototype = {
     ReaderMode.leaveReaderMode(this._mm.docShell, this._win);
   },
 
-  _setFontSize(newFontSize) {
-    this._fontSize = newFontSize;
-    let size = 10 + 2 * this._fontSize + "px";
+  async _resetFontSize() {
+    await AsyncPrefs.reset("reader.font_size");
+    let currentSize = Services.prefs.getIntPref("reader.font_size");
+    this._setFontSize(currentSize);
+  },
 
-    this._containerElement.style.setProperty("--font-size", size);
+  _setFontSize(newFontSize) {
+    this._fontSize = Math.min(
+      this.FONT_SIZE_MAX,
+      Math.max(this.FONT_SIZE_MIN, newFontSize)
+    );
+    let size;
+    if (this._fontSize > this.FONT_SIZE_LEGACY_MAX) {
+      // -1 because we're indexing into a 0-indexed array, so the first value
+      // over the legacy max should be 0, the next 1, etc.
+      let index = this._fontSize - this.FONT_SIZE_LEGACY_MAX - 1;
+      size = this.FONT_SIZE_EXTENDED_VALUES[index];
+    } else {
+      size = 10 + 2 * this._fontSize;
+    }
+
+    this._containerElement.style.setProperty("--font-size", size + "px");
     return AsyncPrefs.set("reader.font_size", this._fontSize);
   },
 
   _setupFontSizeButtons() {
-    const FONT_SIZE_MIN = 1;
-    const FONT_SIZE_MAX = 9;
-
-    // Sample text shown in Android UI.
-    let sampleText = this._doc.querySelector(".font-size-sample");
-    sampleText.textContent = gStrings.GetStringFromName(
-      "aboutReader.fontTypeSample"
-    );
-
-    let currentSize = Services.prefs.getIntPref("reader.font_size");
-    currentSize = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, currentSize));
-
     let plusButton = this._doc.querySelector(".plus-button");
     let minusButton = this._doc.querySelector(".minus-button");
 
-    function updateControls() {
-      if (currentSize === FONT_SIZE_MIN) {
-        minusButton.setAttribute("disabled", true);
-      } else {
-        minusButton.removeAttribute("disabled");
-      }
-      if (currentSize === FONT_SIZE_MAX) {
-        plusButton.setAttribute("disabled", true);
-      } else {
-        plusButton.removeAttribute("disabled");
-      }
-    }
-
-    updateControls();
+    let currentSize = Services.prefs.getIntPref("reader.font_size");
     this._setFontSize(currentSize);
+    this._updateFontSizeButtonControls();
 
     plusButton.addEventListener(
       "click",
@@ -481,14 +523,7 @@ AboutReader.prototype = {
           return;
         }
         event.stopPropagation();
-
-        if (currentSize >= FONT_SIZE_MAX) {
-          return;
-        }
-
-        currentSize++;
-        updateControls();
-        this._setFontSize(currentSize);
+        this._changeFontSize(+1);
       },
       true
     );
@@ -500,17 +535,35 @@ AboutReader.prototype = {
           return;
         }
         event.stopPropagation();
-
-        if (currentSize <= FONT_SIZE_MIN) {
-          return;
-        }
-
-        currentSize--;
-        updateControls();
-        this._setFontSize(currentSize);
+        this._changeFontSize(-1);
       },
       true
     );
+  },
+
+  _updateFontSizeButtonControls() {
+    let plusButton = this._doc.querySelector(".plus-button");
+    let minusButton = this._doc.querySelector(".minus-button");
+
+    let currentSize = Services.prefs.getIntPref("reader.font_size");
+
+    if (currentSize === this.FONT_SIZE_MIN) {
+      minusButton.setAttribute("disabled", true);
+    } else {
+      minusButton.removeAttribute("disabled");
+    }
+    if (currentSize === this.FONT_SIZE_MAX) {
+      plusButton.setAttribute("disabled", true);
+    } else {
+      plusButton.removeAttribute("disabled");
+    }
+  },
+
+  _changeFontSize(changeAmount) {
+    let currentSize =
+      Services.prefs.getIntPref("reader.font_size") + changeAmount;
+    this._setFontSize(currentSize);
+    this._updateFontSizeButtonControls();
   },
 
   _setContentWidth(newContentWidth) {
@@ -673,78 +726,6 @@ AboutReader.prototype = {
     );
   },
 
-  _handleDeviceLight(newLux) {
-    // Desired size of the this._luxValues array.
-    let luxValuesSize = 10;
-    // Add new lux value at the front of the array.
-    this._luxValues.unshift(newLux);
-    // Add new lux value to this._totalLux for averaging later.
-    this._totalLux += newLux;
-
-    // Don't update when length of array is less than luxValuesSize except when it is 1.
-    if (this._luxValues.length < luxValuesSize) {
-      // Use the first lux value to set the color scheme until our array equals luxValuesSize.
-      if (this._luxValues.length == 1) {
-        this._updateColorScheme(newLux);
-      }
-      return;
-    }
-    // Holds the average of the lux values collected in this._luxValues.
-    let averageLuxValue = this._totalLux / luxValuesSize;
-
-    this._updateColorScheme(averageLuxValue);
-    // Pop the oldest value off the array.
-    let oldLux = this._luxValues.pop();
-    // Subtract oldLux since it has been discarded from the array.
-    this._totalLux -= oldLux;
-  },
-
-  _handleVisibilityChange() {
-    let colorScheme = Services.prefs.getCharPref("reader.color_scheme");
-    if (colorScheme != "auto") {
-      return;
-    }
-
-    // Turn off the ambient light sensor if the page is hidden
-    this._enableAmbientLighting(!this._doc.hidden);
-  },
-
-  // Setup or teardown the ambient light tracking system.
-  _enableAmbientLighting(enable) {
-    if (enable) {
-      this._win.addEventListener("devicelight", this);
-      this._luxValues = [];
-      this._totalLux = 0;
-    } else {
-      this._win.removeEventListener("devicelight", this);
-      delete this._luxValues;
-      delete this._totalLux;
-    }
-  },
-
-  _updateColorScheme(luxValue) {
-    // Upper bound value for "dark" color scheme beyond which it changes to "light".
-    let upperBoundDark = 50;
-    // Lower bound value for "light" color scheme beyond which it changes to "dark".
-    let lowerBoundLight = 10;
-    // Threshold for color scheme change.
-    let colorChangeThreshold = 20;
-
-    // Ignore changes that are within a certain threshold of previous lux values.
-    if (
-      (this._colorScheme === "dark" && luxValue < upperBoundDark) ||
-      (this._colorScheme === "light" && luxValue > lowerBoundLight)
-    ) {
-      return;
-    }
-
-    if (luxValue < colorChangeThreshold) {
-      this._setColorScheme("dark");
-    } else {
-      this._setColorScheme("light");
-    }
-  },
-
   _setColorScheme(newColorScheme) {
     // "auto" is not a real color scheme
     if (this._colorScheme === newColorScheme || newColorScheme === "auto") {
@@ -761,10 +742,8 @@ AboutReader.prototype = {
     bodyClasses.add(this._colorScheme);
   },
 
-  // Pref values include "dark", "light", and "auto", which automatically switches
-  // between light and dark color schemes based on the ambient light level.
+  // Pref values include "dark", "light", and "sepia"
   _setColorSchemePref(colorSchemePref) {
-    this._enableAmbientLighting(colorSchemePref === "auto");
     this._setColorScheme(colorSchemePref);
 
     AsyncPrefs.set("reader.color_scheme", colorSchemePref);

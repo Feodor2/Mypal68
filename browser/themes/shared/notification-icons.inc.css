@@ -22,7 +22,6 @@
 .notification-anchor-icon:-moz-focusring {
   outline: var(--toolbarbutton-focus-outline);
   outline-offset: 4px;
-  -moz-outline-radius: var(--toolbarbutton-border-radius);
 }
 
 /* This class can be used alone or in combination with the class defining the

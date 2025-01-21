@@ -61,7 +61,6 @@ add_task(async function test_realHistoryCheck() {
         testData.output.URISpec = principal.URI.spec;
       }
       testData.output.originAttributes = principal.originAttributes;
-      testData.output.cspJSON = principal.cspJSON;
 
       tests.push(testData);
     }

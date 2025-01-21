@@ -181,7 +181,7 @@ NS_IMETHODIMP TextEditor::SetDocumentCharacterSet(
   }
 
   RefPtr<nsContentList> headElementList =
-      document->GetElementsByTagName(NS_LITERAL_STRING("head"));
+      document->GetElementsByTagName(u"head"_ns);
   if (NS_WARN_IF(!headElementList)) {
     return NS_OK;
   }
@@ -209,14 +209,13 @@ NS_IMETHODIMP TextEditor::SetDocumentCharacterSet(
   // not undoable, undo should undo CreateNodeWithTransaction().
   DebugOnly<nsresult> rvIgnored = NS_OK;
   rvIgnored = metaElement->SetAttr(kNameSpaceID_None, nsGkAtoms::httpEquiv,
-                                   NS_LITERAL_STRING("Content-Type"), true);
+                                   u"Content-Type"_ns, true);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                        "Element::SetAttr(nsGkAtoms::httpEquiv, Content-Type) "
                        "failed, but ignored");
-  rvIgnored = metaElement->SetAttr(kNameSpaceID_None, nsGkAtoms::content,
-                                   NS_LITERAL_STRING("text/html;charset=") +
-                                       NS_ConvertASCIItoUTF16(characterSet),
-                                   true);
+  rvIgnored = metaElement->SetAttr(
+      kNameSpaceID_None, nsGkAtoms::content,
+      u"text/html;charset="_ns + NS_ConvertASCIItoUTF16(characterSet), true);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
       "Element::SetAttr(nsGkAtoms::content) failed, but ignored");
@@ -227,7 +226,7 @@ bool TextEditor::UpdateMetaCharset(Document& aDocument,
                                    const nsACString& aCharacterSet) {
   // get a list of META tags
   RefPtr<nsContentList> metaElementList =
-      aDocument.GetElementsByTagName(NS_LITERAL_STRING("meta"));
+      aDocument.GetElementsByTagName(u"meta"_ns);
   if (NS_WARN_IF(!metaElementList)) {
     return false;
   }
@@ -239,19 +238,19 @@ bool TextEditor::UpdateMetaCharset(Document& aDocument,
     nsAutoString currentValue;
     metaElement->GetAttr(kNameSpaceID_None, nsGkAtoms::httpEquiv, currentValue);
 
-    if (!FindInReadable(NS_LITERAL_STRING("content-type"), currentValue,
-                        nsCaseInsensitiveStringComparator())) {
+    if (!FindInReadable(u"content-type"_ns, currentValue,
+                        nsCaseInsensitiveStringComparator)) {
       continue;
     }
 
     metaElement->GetAttr(kNameSpaceID_None, nsGkAtoms::content, currentValue);
 
-    NS_NAMED_LITERAL_STRING(charsetEquals, "charset=");
+    constexpr auto charsetEquals = u"charset="_ns;
     nsAString::const_iterator originalStart, start, end;
     originalStart = currentValue.BeginReading(start);
     currentValue.EndReading(end);
     if (!FindInReadable(charsetEquals, start, end,
-                        nsCaseInsensitiveStringComparator())) {
+                        nsCaseInsensitiveStringComparator)) {
       continue;
     }
 
@@ -338,7 +337,7 @@ nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
 
       // else we insert the tab straight through
       aKeyboardEvent->PreventDefault();
-      nsresult rv = OnInputText(NS_LITERAL_STRING("\t"));
+      nsresult rv = OnInputText(u"\t"_ns);
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                            "TextEditor::OnInputText(\\t) failed");
       return rv;
@@ -1088,7 +1087,7 @@ nsresult TextEditor::RedoAsAction(uint32_t aCount, nsIPrincipal* aPrincipal) {
       // XXX Looks like that this is too slow if there are a lot of nodes.
       //     Shouldn't we just scan children in the root?
       nsCOMPtr<nsIHTMLCollection> nodeList =
-          mRootElement->GetElementsByTagName(NS_LITERAL_STRING("br"));
+          mRootElement->GetElementsByTagName(u"br"_ns);
       MOZ_ASSERT(nodeList);
       Element* brElement =
           nodeList->Length() == 1 ? nodeList->Item(0) : nullptr;
@@ -1523,8 +1522,7 @@ nsresult TextEditor::SharedOutputString(uint32_t aFlags, bool* aIsCollapsed,
     aFlags |= nsIDocumentEncoder::OutputSelectionOnly;
   }
   // If the selection isn't collapsed, we'll use the whole document.
-  nsresult rv =
-      ComputeValueInternal(NS_LITERAL_STRING("text/plain"), aFlags, aResult);
+  nsresult rv = ComputeValueInternal(u"text/plain"_ns, aFlags, aResult);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "TextEditor::ComputeValueInternal(text/plain) failed");
   return rv;
@@ -1827,8 +1825,8 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP TextEditor::Notify(nsITimer* aTimer) {
     if (RefPtr<Element> target = GetInputEventTargetElement()) {
       RefPtr<Document> document = target->OwnerDoc();
       DebugOnly<nsresult> rvIgnored = nsContentUtils::DispatchTrustedEvent(
-          document, target, NS_LITERAL_STRING("MozLastInputMasked"),
-          CanBubble::eYes, Cancelable::eNo);
+          document, target, u"MozLastInputMasked"_ns, CanBubble::eYes,
+          Cancelable::eNo);
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                            "nsContentUtils::DispatchTrustedEvent("
                            "MozLastInputMasked) failed, but ignored");

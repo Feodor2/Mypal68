@@ -341,7 +341,7 @@ function enforceBoolean(aValue) {
  */
 function getBrowserLocale() {
   try {
-    return Services.locale.appLocaleAsLangTag;
+    return Services.locale.appLocaleAsBCP47;
   } catch (e) {
     return null;
   }

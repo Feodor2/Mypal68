@@ -395,7 +395,7 @@ pref("browser.tabs.insertRelatedAfterCurrent", true);
 // the value of browser.tabs.insertRelatedAfterCurrent.
 pref("browser.tabs.insertAfterCurrent", false);
 pref("browser.tabs.warnOnClose", 1);
-pref("browser.tabs.warnOnCloseOtherTabs", true);
+pref("browser.tabs.warnOnCloseOtherTabs", 1);
 pref("browser.tabs.warnOnOpen", true);
 pref("browser.tabs.maxOpenBeforeWarn", 15);
 pref("browser.tabs.loadInBackground", true);
@@ -530,13 +530,8 @@ pref("browser.gesture.swipe.left", "Browser:BackOrBackDuplicate");
 pref("browser.gesture.swipe.right", "Browser:ForwardOrForwardDuplicate");
 pref("browser.gesture.swipe.up", "cmd_scrollTop");
 pref("browser.gesture.swipe.down", "cmd_scrollBottom");
-#ifdef XP_MACOSX
-  pref("browser.gesture.pinch.latched", true);
-  pref("browser.gesture.pinch.threshold", 150);
-#else
-  pref("browser.gesture.pinch.latched", false);
-  pref("browser.gesture.pinch.threshold", 25);
-#endif
+pref("browser.gesture.pinch.latched", false);
+pref("browser.gesture.pinch.threshold", 25);
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   // Enabled for touch input display zoom.
   pref("browser.gesture.pinch.out", "cmd_fullZoomEnlarge");
@@ -1369,6 +1364,12 @@ pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked, 5=All Blocked
   pref("media.autoplay.block-webaudio", false);
 #endif
 
+// Picture-in-Picture is currently enabled by default on Windows.
+#if defined(XP_WIN)
+  pref("media.videocontrols.picture-in-picture.enabled", true);
+  pref("media.videocontrols.picture-in-picture.video-toggle.enabled", true);
+#endif
+
 pref("browser.translation.detectLanguage", false);
 pref("browser.translation.neverForLanguages", "");
 // Show the translation UI bits, like the info bar, notification icon and preferences.
@@ -1632,11 +1633,6 @@ pref("fission.frontend.simulate-messages", false);
 pref("toolkit.coverage.enabled", false);
 pref("toolkit.coverage.endpoint.base", "data:text/plain,");
 
-// Discovery prefs
-pref("browser.discovery.enabled", true);
-pref("browser.discovery.containers.enabled", true);
-pref("browser.discovery.sites", "addons.mozilla.org");
-
 pref("browser.engagement.recent_visited_origins.expiry", 86400); // 24 * 60 * 60 (24 hours in seconds)
 
 pref("browser.aboutConfig.showWarning", true);
@@ -1656,10 +1652,6 @@ pref("identity.fxaccounts.toolbar.accessed", false);
 #else
   pref("corroborator.enabled", true);
 #endif
-
-// Disable WebIDE and ConnectPage by default (Bug 1539451)
-pref("devtools.webide.enabled", false);
-pref("devtools.connectpage.enabled", false);
 
 // Toolbox preferences
 pref("devtools.toolbox.footer.height", 250);
@@ -2057,12 +2049,3 @@ pref("devtools.debugger.features.map-await-expression", true);
 // about:devtools-toolbox tabs unusable by mistake.
 pref("devtools.popup.disable_autohide", false);
 
-pref("devtools.webide.templatesURL", "https://code.cdn.mozilla.net/templates/list.json");
-pref("devtools.webide.autoinstallADBExtension", true);
-pref("devtools.webide.autoConnectRuntime", true);
-pref("devtools.webide.restoreLastProject", true);
-pref("devtools.webide.enableLocalRuntime", false);
-pref("devtools.webide.lastConnectedRuntime", "");
-pref("devtools.webide.lastSelectedProject", "");
-pref("devtools.webide.zoom", "1");
-pref("devtools.webide.busyTimeout", 10000);

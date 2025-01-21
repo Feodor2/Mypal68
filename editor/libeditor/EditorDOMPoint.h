@@ -16,6 +16,7 @@
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsINode.h"
+#include "nsStyledElement.h"
 
 namespace mozilla {
 
@@ -171,6 +172,10 @@ class EditorDOMPointBase final {
     MOZ_ASSERT(mParent);
     MOZ_ASSERT(mParent->IsElement());
     return mParent->AsElement();
+  }
+
+  nsStyledElement* GetContainerAsStyledElement() const {
+    return nsStyledElement::FromNodeOrNull(mParent);
   }
 
   dom::Text* GetContainerAsText() const {

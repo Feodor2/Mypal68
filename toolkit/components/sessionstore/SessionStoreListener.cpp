@@ -5,17 +5,25 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SessionStoreListener.h"
+#include "mozilla/dom/SessionStoreUtils.h"
+#include "mozilla/dom/SessionStoreUtilsBinding.h"
+#include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "nsGenericHTMLElement.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "nsDocShell.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsImportModule.h"
 #include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "nsITimer.h"
-#include "nsIXULBrowserWindow.h"
+#include "nsIXPConnect.h"
 #include "nsIXULWindow.h"
 #include "nsIWebProgress.h"
 #include "nsPresContext.h"
 #include "nsPrintfCString.h"
+#include "SessionStoreFunctions.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -36,6 +44,8 @@ ContentSessionStore::ContentSessionStore(nsIDocShell* aDocShell)
       mPrivateChanged(false),
       mIsPrivate(false),
       mScrollChanged(NO_CHANGE),
+      mFormDataChanged(NO_CHANGE),
+      mStorageStatus(NO_STORAGE),
       mDocCapChanged(false) {
   MOZ_ASSERT(mDocShell);
   // Check that value at startup as it might have
@@ -93,16 +103,34 @@ bool ContentSessionStore::GetPrivateModeEnabled() {
   return mIsPrivate;
 }
 
+void ContentSessionStore::SetFullStorageNeeded() {
+  // We need the entire session storage, reset the pending individual change
+  ResetStorageChanges();
+  mStorageStatus = FULLSTORAGE;
+}
+
+void ContentSessionStore::ResetStorageChanges() {
+  mOrigins.Clear();
+  mKeys.Clear();
+  mValues.Clear();
+}
+
 void ContentSessionStore::OnDocumentStart() {
   mScrollChanged = PAGELOADEDSTART;
+  mFormDataChanged = PAGELOADEDSTART;
   nsCString caps = CollectDocShellCapabilities();
   if (!mDocCaps.Equals(caps)) {
     mDocCaps = caps;
     mDocCapChanged = true;
   }
+
+  SetFullStorageNeeded();
 }
 
-void ContentSessionStore::OnDocumentEnd() { mScrollChanged = WITH_CHANGE; }
+void ContentSessionStore::OnDocumentEnd() {
+  mScrollChanged = WITH_CHANGE;
+  SetFullStorageNeeded();
+}
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TabListener)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEventListener)
@@ -124,10 +152,26 @@ TabListener::TabListener(nsIDocShell* aDocShell, Element* aElement)
       mProgressListenerRegistered(false),
       mEventListenerRegistered(false),
       mPrefObserverRegistered(false),
+      mStorageObserverRegistered(false),
+      mStorageChangeListenerRegistered(false),
       mUpdatedTimer(nullptr),
       mTimeoutDisabled(false),
-      mUpdateInterval(15000) {
+      mUpdateInterval(15000),
+      mEpoch(0) {
   MOZ_ASSERT(mDocShell);
+}
+
+EventTarget* TabListener::GetEventTarget() {
+  if (mOwnerContent) {
+    return mOwnerContent;
+  }
+
+  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(mDocShell);
+  if (window) {
+    return window->GetChromeEventHandler();
+  }
+
+  return nullptr;
 }
 
 nsresult TabListener::Init() {
@@ -149,22 +193,24 @@ nsresult TabListener::Init() {
     mPrefObserverRegistered = true;
   }
 
-  nsCOMPtr<EventTarget> eventTarget = nullptr;
-  if (mOwnerContent) {
-    eventTarget = mOwnerContent;
-  } else {
-    nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(mDocShell);
-    if (window) {
-      eventTarget = window->GetChromeEventHandler();
-    }
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  NS_WARNING_ASSERTION(obs, "no observer service");
+  if (obs) {
+    obs->AddObserver(this, "browser:purge-sessionStorage", true);
+    mStorageObserverRegistered = true;
   }
 
+  nsCOMPtr<EventTarget> eventTarget = GetEventTarget();
   if (!eventTarget) {
     return NS_OK;
   }
   eventTarget->AddSystemEventListener(NS_LITERAL_STRING("mozvisualscroll"),
                                       this, false);
+  eventTarget->AddSystemEventListener(NS_LITERAL_STRING("input"), this, false);
   mEventListenerRegistered = true;
+  eventTarget->AddSystemEventListener(
+      NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+  mStorageChangeListenerRegistered = true;
   return NS_OK;
 }
 
@@ -242,6 +288,7 @@ NS_IMETHODIMP TabListener::OnStateChange(nsIWebProgress* aWebProgress,
 
   if (aStateFlags & (nsIWebProgressListener::STATE_START)) {
     mSessionStore->OnDocumentStart();
+    ResetStorageChangeListener();
   } else if (aStateFlags & (nsIWebProgressListener::STATE_STOP)) {
     mSessionStore->OnDocumentEnd();
   }
@@ -281,7 +328,28 @@ TabListener::HandleEvent(Event* aEvent) {
   if (eventType.EqualsLiteral("mozvisualscroll")) {
     mSessionStore->SetScrollPositionChanged();
     AddTimerForUpdate();
+  } else if (eventType.EqualsLiteral("input")) {
+    mSessionStore->SetFormDataChanged();
+    AddTimerForUpdate();
+  } else if (eventType.EqualsLiteral("MozSessionStorageChanged")) {
+    auto event = static_cast<StorageEvent*>(aEvent);
+    RefPtr<Storage> changingStorage = event->GetStorageArea();
+    if (!changingStorage) {
+      return NS_OK;
+    }
+    // How much data does DOMSessionStorage contain?
+    int64_t storageUsage = changingStorage->GetOriginQuotaUsage();
+    if (storageUsage > StaticPrefs::browser_sessionstore_dom_storage_limit()) {
+      RemoveStorageChangeListener();
+      mSessionStore->ResetStorageChanges();
+      mSessionStore->ResetStorage();
+      return NS_OK;
+    }
+    if (mSessionStore->AppendSessionStorageChange(event)) {
+      AddTimerForUpdate();
+    }
   }
+
   return NS_OK;
 }
 
@@ -320,35 +388,42 @@ NS_IMETHODIMP TabListener::OnContentBlockingEvent(nsIWebProgress* aWebProgress,
 
 nsresult TabListener::Observe(nsISupports* aSubject, const char* aTopic,
                               const char16_t* aData) {
-  MOZ_ASSERT(!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID),
-             "unexpected topic!");
-
-  nsCOMPtr<nsIPrefBranch> prefBranch = do_QueryInterface(aSubject);
-
-  bool timeoutDisabled;
-  if (NS_SUCCEEDED(
-          prefBranch->GetBoolPref(kTimeOutDisable, &timeoutDisabled))) {
-    if (mTimeoutDisabled != timeoutDisabled) {
-      mTimeoutDisabled = timeoutDisabled;
-      if (mUpdatedTimer) {
-        StopTimerForUpdate();
-        AddTimerForUpdate();
-      }
-    }
+  if (!strcmp(aTopic, "browser:purge-sessionStorage")) {
+    mSessionStore->SetFullStorageNeeded();
+    AddTimerForUpdate();
+    return NS_OK;
   }
 
-  int32_t interval = 0;
-  if (NS_SUCCEEDED(prefBranch->GetIntPref(kPrefInterval, &interval))) {
-    if (mUpdateInterval != interval) {
-      mUpdateInterval = interval;
-      if (mUpdatedTimer) {
-        StopTimerForUpdate();
-        AddTimerForUpdate();
+  if (!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
+    nsCOMPtr<nsIPrefBranch> prefBranch = do_QueryInterface(aSubject);
+
+    bool timeoutDisabled;
+    if (NS_SUCCEEDED(
+            prefBranch->GetBoolPref(kTimeOutDisable, &timeoutDisabled))) {
+      if (mTimeoutDisabled != timeoutDisabled) {
+        mTimeoutDisabled = timeoutDisabled;
+        if (mUpdatedTimer) {
+          StopTimerForUpdate();
+          AddTimerForUpdate();
+        }
       }
     }
+
+    int32_t interval = 0;
+    if (NS_SUCCEEDED(prefBranch->GetIntPref(kPrefInterval, &interval))) {
+      if (mUpdateInterval != interval) {
+        mUpdateInterval = interval;
+        if (mUpdatedTimer) {
+          StopTimerForUpdate();
+          AddTimerForUpdate();
+        }
+      }
+    }
+    return NS_OK;
   }
 
-  return NS_OK;
+  NS_ERROR("Unexpected topic");
+  return NS_ERROR_UNEXPECTED;
 }
 
 nsCString CollectPosition(Document& aDocument) {
@@ -387,14 +462,13 @@ int CollectPositions(BrowsingContext* aBrowsingContext,
   /* Collect data from current frame */
   aPositions.AppendElement(CollectPosition(*document));
   aPositionDescendants.AppendElement(0);
-  int currentIdx = aPositions.Length() - 1;
+  unsigned long currentIdx = aPositions.Length() - 1;
 
   /* Collect data from all child frame */
-  nsTArray<RefPtr<BrowsingContext>> children;
-  aBrowsingContext->GetChildren(children);
-  for (uint32_t i = 0; i < children.Length(); i++) {
+  // This is not going to work for fission. Bug 1572084 for tracking it.
+  for (auto& child : aBrowsingContext->GetChildren()) {
     aPositionDescendants[currentIdx] +=
-        CollectPositions(children[i], aPositions, aPositionDescendants);
+        CollectPositions(child, aPositions, aPositionDescendants);
   }
 
   return aPositionDescendants[currentIdx] + 1;
@@ -410,6 +484,152 @@ void ContentSessionStore::GetScrollPositions(
                      aPositions, aPositionDescendants);
   }
   mScrollChanged = NO_CHANGE;
+}
+
+void CollectInput(Document& aDocument, InputFormData& aInput,
+                  nsTArray<CollectedInputDataValue>& aIdVals,
+                  nsTArray<CollectedInputDataValue>& aXPathVals) {
+  PresShell* presShell = aDocument.GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  uint16_t numXPath = 0;
+  uint16_t numId = 0;
+
+  // textarea element
+  SessionStoreUtils::CollectFromTextAreaElement(aDocument, numXPath, numId,
+                                                aXPathVals, aIdVals);
+  // input element
+  SessionStoreUtils::CollectFromInputElement(aDocument, numXPath, numId,
+                                             aXPathVals, aIdVals);
+  // select element
+  SessionStoreUtils::CollectFromSelectElement(aDocument, numXPath, numId,
+                                              aXPathVals, aIdVals);
+
+  Element* bodyElement = aDocument.GetBody();
+  if (aDocument.HasFlag(NODE_IS_EDITABLE) && bodyElement) {
+    bodyElement->GetInnerHTML(aInput.innerHTML, IgnoreErrors());
+  }
+  if (aInput.innerHTML.IsEmpty() && numXPath == 0 && numId == 0) {
+    return;
+  }
+
+  // Store the frame's current URL with its form data so that we can compare
+  // it when restoring data to not inject form data into the wrong document.
+  nsIURI* uri = aDocument.GetDocumentURI();
+  if (uri) {
+    uri->GetSpecIgnoringRef(aInput.url);
+  }
+  aInput.numId = numId;
+  aInput.numXPath = numXPath;
+}
+
+int CollectInputs(BrowsingContext* aBrowsingContext,
+                  nsTArray<InputFormData>& aInputs,
+                  nsTArray<CollectedInputDataValue>& aIdVals,
+                  nsTArray<CollectedInputDataValue>& aXPathVals) {
+  nsPIDOMWindowOuter* window = aBrowsingContext->GetDOMWindow();
+  if (!window) {
+    return 0;
+  }
+
+  nsIDocShell* docShell = window->GetDocShell();
+  if (!docShell || docShell->GetCreatedDynamically()) {
+    return 0;
+  }
+
+  Document* document = window->GetDoc();
+  if (!document) {
+    return 0;
+  }
+
+  /* Collect data from current frame */
+  InputFormData input;
+  input.descendants = 0;
+  input.numId = 0;
+  input.numXPath = 0;
+  CollectInput(*document, input, aIdVals, aXPathVals);
+  aInputs.AppendElement(input);
+  unsigned long currentIdx = aInputs.Length() - 1;
+
+  /* Collect data from all child frame */
+  // This is not going to work for fission. Bug 1572084 for tracking it.
+  for (auto& child : aBrowsingContext->GetChildren()) {
+    aInputs[currentIdx].descendants +=
+        CollectInputs(child, aInputs, aIdVals, aXPathVals);
+  }
+
+  return aInputs[currentIdx].descendants + 1;
+}
+
+nsTArray<InputFormData> ContentSessionStore::GetInputs(
+    nsTArray<CollectedInputDataValue>& aIdVals,
+    nsTArray<CollectedInputDataValue>& aXPathVals) {
+  nsTArray<InputFormData> inputs;
+  if (mFormDataChanged == PAGELOADEDSTART) {
+    mFormDataChanged = NO_CHANGE;
+    InputFormData input;
+    input.descendants = 0;
+    input.innerHTML = EmptyString();
+    input.url = EmptyCString();
+    input.numId = 0;
+    input.numXPath = 0;
+    inputs.AppendElement(input);
+  } else {
+    mFormDataChanged = NO_CHANGE;
+    CollectInputs(nsDocShell::Cast(mDocShell)->GetBrowsingContext(), inputs,
+                  aIdVals, aXPathVals);
+  }
+  return inputs;
+}
+
+bool ContentSessionStore::AppendSessionStorageChange(StorageEvent* aEvent) {
+  // We will collect the full SessionStore if mStorageStatus is FULLSTORAGE.
+  // These partial changes can be skipped in this case.
+  if (mStorageStatus == FULLSTORAGE) {
+    return false;
+  }
+
+  nsAutoString origin;
+  aEvent->GetUrl(origin);
+  nsCOMPtr<nsIURI> newUri;
+  nsresult rv =
+      NS_NewURI(getter_AddRefs(newUri), NS_ConvertUTF16toUTF8(origin));
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  newUri->GetPrePath(*mOrigins.AppendElement());
+  aEvent->GetKey(*mKeys.AppendElement());
+  aEvent->GetNewValue(*mValues.AppendElement());
+  mStorageStatus = STORAGECHANGE;
+  return true;
+}
+
+bool ContentSessionStore::GetAndClearStorageChanges(
+    nsTArray<nsCString>& aOrigins, nsTArray<nsString>& aKeys,
+    nsTArray<nsString>& aValues) {
+  MOZ_ASSERT(IsStorageUpdated());
+  bool isFullStorage = false;
+
+  if (mStorageStatus == RESET) {
+    isFullStorage = true;
+  } else if (mStorageStatus == FULLSTORAGE) {
+    MOZ_ASSERT(mDocShell);
+    SessionStoreUtils::CollectedSessionStorage(
+        nsDocShell::Cast(mDocShell)->GetBrowsingContext(), aOrigins, aKeys,
+        aValues);
+    isFullStorage = true;
+  } else if (mStorageStatus == STORAGECHANGE) {
+    aOrigins.SwapElements(mOrigins);
+    aKeys.SwapElements(mKeys);
+    aValues.SwapElements(mValues);
+  }
+
+  ResetStorageChanges();
+  mStorageStatus = NO_STORAGE;
+  return isFullStorage;
 }
 
 bool TabListener::ForceFlushFromParent(uint32_t aFlushId, bool aIsFinal) {
@@ -456,27 +676,103 @@ bool TabListener::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
     return false;
   }
 
-  nsCOMPtr<nsIXULBrowserWindow> xulBrowserWindow;
-  window->GetXULBrowserWindow(getter_AddRefs(xulBrowserWindow));
-  if (!xulBrowserWindow) {
-    return false;
-  }
-
+  UpdateSessionStoreData data;
   if (mSessionStore->IsDocCapChanged()) {
-    xulBrowserWindow->UpdateDocShellCaps(mSessionStore->GetDocShellCaps());
+    data.mDocShellCaps.Construct() = mSessionStore->GetDocShellCaps();
   }
   if (mSessionStore->IsPrivateChanged()) {
-    xulBrowserWindow->UpdateIsPrivate(mSessionStore->GetPrivateModeEnabled());
+    data.mIsPrivate.Construct() = mSessionStore->GetPrivateModeEnabled();
   }
   if (mSessionStore->IsScrollPositionChanged()) {
     nsTArray<nsCString> positions;
     nsTArray<int> descendants;
     mSessionStore->GetScrollPositions(positions, descendants);
-    xulBrowserWindow->UpdateScrollPositions(positions, descendants);
+    data.mPositions.Construct().Assign(std::move(positions));
+    data.mPositionDescendants.Construct().Assign(std::move(descendants));
   }
-  xulBrowserWindow->UpdateSessionStore(mOwnerContent, aFlushId, aIsFinal);
+  if (mSessionStore->IsFormDataChanged()) {
+    nsTArray<CollectedInputDataValue> dataWithId, dataWithXpath;
+    nsTArray<InputFormData> inputs =
+        mSessionStore->GetInputs(dataWithId, dataWithXpath);
+    nsTArray<int> descendants, numId, numXPath;
+    nsTArray<nsString> innerHTML;
+    nsTArray<nsCString> url;
+
+    if (dataWithId.Length() != 0) {
+      SessionStoreUtils::ComposeInputData(dataWithId, data.mId.Construct());
+    }
+    if (dataWithXpath.Length() != 0) {
+      SessionStoreUtils::ComposeInputData(dataWithXpath,
+                                          data.mXpath.Construct());
+    }
+
+    for (const InputFormData& input : inputs) {
+      descendants.AppendElement(input.descendants);
+      numId.AppendElement(input.numId);
+      numXPath.AppendElement(input.numXPath);
+      innerHTML.AppendElement(input.innerHTML);
+      url.AppendElement(input.url);
+    }
+    if (descendants.Length() != 0) {
+      data.mInputDescendants.Construct().Assign(std::move(descendants));
+      data.mNumId.Construct().Assign(std::move(numId));
+      data.mNumXPath.Construct().Assign(std::move(numXPath));
+      data.mInnerHTML.Construct().Assign(std::move(innerHTML));
+      data.mUrl.Construct().Assign(std::move(url));
+    }
+  }
+  if (mSessionStore->IsStorageUpdated()) {
+    nsTArray<nsCString> origins;
+    nsTArray<nsString> keys, values;
+    data.mIsFullStorage.Construct() =
+        mSessionStore->GetAndClearStorageChanges(origins, keys, values);
+    data.mStorageOrigins.Construct().Assign(std::move(origins));
+    data.mStorageKeys.Construct().Assign(std::move(keys));
+    data.mStorageValues.Construct().Assign(std::move(values));
+  }
+
+  nsCOMPtr<nsISessionStoreFunctions> funcs =
+      do_ImportModule("resource://gre/modules/SessionStoreFunctions.jsm");
+  NS_ENSURE_TRUE(funcs, false);
+  nsCOMPtr<nsIXPConnectWrappedJS> wrapped = do_QueryInterface(funcs);
+  AutoJSAPI jsapi;
+  MOZ_ALWAYS_TRUE(jsapi.Init(wrapped->GetJSObjectGlobal()));
+  JS::Rooted<JS::Value> dataVal(jsapi.cx());
+  bool ok = ToJSValue(jsapi.cx(), data, &dataVal);
+  NS_ENSURE_TRUE(ok, false);
+
+  nsresult rv = funcs->UpdateSessionStore(mOwnerContent, aFlushId, aIsFinal,
+                                          mEpoch, dataVal);
+  NS_ENSURE_SUCCESS(rv, false);
   StopTimerForUpdate();
   return true;
+}
+
+void TabListener::ResetStorageChangeListener() {
+  if (mStorageChangeListenerRegistered) {
+    return;
+  }
+
+  nsCOMPtr<EventTarget> eventTarget = GetEventTarget();
+  if (!eventTarget) {
+    return;
+  }
+  eventTarget->AddSystemEventListener(
+      NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+  mStorageChangeListenerRegistered = true;
+}
+
+void TabListener::RemoveStorageChangeListener() {
+  if (!mStorageChangeListenerRegistered) {
+    return;
+  }
+
+  nsCOMPtr<EventTarget> eventTarget = GetEventTarget();
+  if (eventTarget) {
+    eventTarget->RemoveSystemEventListener(
+        NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+    mStorageChangeListenerRegistered = false;
+  }
 }
 
 void TabListener::RemoveListeners() {
@@ -488,30 +784,37 @@ void TabListener::RemoveListeners() {
     }
   }
 
-  if (mEventListenerRegistered) {
-    nsCOMPtr<EventTarget> eventTarget = nullptr;
-    if (mOwnerContent) {
-      eventTarget = mOwnerContent;
-    } else {
-      nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(mDocShell);
-      if (window) {
-        eventTarget = window->GetChromeEventHandler();
-      }
-    }
-
+  if (mEventListenerRegistered || mStorageChangeListenerRegistered) {
+    nsCOMPtr<EventTarget> eventTarget = GetEventTarget();
     if (eventTarget) {
-      eventTarget->RemoveSystemEventListener(
-          NS_LITERAL_STRING("mozvisualscroll"), this, false);
-      mEventListenerRegistered = false;
+      if (mEventListenerRegistered) {
+        eventTarget->RemoveSystemEventListener(
+            NS_LITERAL_STRING("mozvisualscroll"), this, false);
+        eventTarget->RemoveSystemEventListener(NS_LITERAL_STRING("input"), this,
+                                               false);
+        mEventListenerRegistered = false;
+      }
+      if (mStorageChangeListenerRegistered) {
+        eventTarget->RemoveSystemEventListener(
+            NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+        mStorageChangeListenerRegistered = false;
+      }
     }
   }
 
-  if (mPrefObserverRegistered) {
+  if (mPrefObserverRegistered || mStorageObserverRegistered) {
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    if (obs) {
+    if (!obs) {
+      return;
+    }
+    if (mPrefObserverRegistered) {
       obs->RemoveObserver(this, kTimeOutDisable);
       obs->RemoveObserver(this, kPrefInterval);
       mPrefObserverRegistered = false;
+    }
+    if (mStorageObserverRegistered) {
+      obs->RemoveObserver(this, "browser:purge-sessionStorage");
+      mStorageObserverRegistered = false;
     }
   }
 }

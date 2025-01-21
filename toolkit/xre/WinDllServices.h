@@ -41,19 +41,6 @@ class DllServices : public mozilla::glue::DllServices {
   static const char* kTopicDllLoadedMainThread;
   static const char* kTopicDllLoadedNonMainThread;
 
-  /**
-   * Processes pending untrusted module evaluation / examination, and returns
-   * a copy of the total data we've gathered for use by the untrusted modules
-   * telemetry ping.
-   *
-   * This function should be called on a background thread, and can take a
-   * while.
-   *
-   * @param  aOut [out] Receives a copy of internally-stored data.
-   * @return true upon success.
-   */
-  bool GetUntrustedModuleTelemetryData(UntrustedModuleLoadTelemetryData& aOut);
-
  private:
   DllServices();
   ~DllServices() = default;

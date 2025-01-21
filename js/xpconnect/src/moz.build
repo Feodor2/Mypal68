@@ -59,7 +59,6 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/dom/bindings',
     '/dom/html',
-    '/dom/svg',
     '/layout/base',
     '/layout/style',
     '/xpcom/components',

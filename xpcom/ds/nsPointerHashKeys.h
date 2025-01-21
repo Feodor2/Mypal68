@@ -12,6 +12,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/HashFunctions.h"
 
+#include "PLDHashTable.h"
+
 /**
  * hashkey wrapper using T* KeyType
  *

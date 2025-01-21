@@ -23,7 +23,6 @@
 #include "mozilla/UniquePtr.h"
 #include "nsRefPtrHashtable.h"
 #include "nsIThreadPool.h"
-#include "mozilla/net/NetworkConnectivityService.h"
 
 class nsHostResolver;
 class nsResolveHostCallback;
@@ -548,7 +547,6 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   mozilla::TimeDuration mShortIdleTimeout;
 
   RefPtr<nsIThreadPool> mResolverThreads;
-  RefPtr<mozilla::net::NetworkConnectivityService> mNCS;
 
   mozilla::Atomic<bool> mShutdown;
   mozilla::Atomic<uint32_t> mNumIdleTasks;

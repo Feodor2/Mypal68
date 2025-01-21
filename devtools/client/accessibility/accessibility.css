@@ -124,7 +124,6 @@ body {
   outline-offset: -2px;
   box-shadow: 0 0 0 2px var(--accessibility-toolbar-focus-alpha30);
   border-radius: 2px;
-  -moz-outline-radius: 2px;
 }
 
 .devtools-toolbar {
@@ -164,7 +163,6 @@ body {
   box-shadow: 0 0 0 3px var(--accessibility-toolbar-focus-alpha30);
   border-radius: 2px;
   outline-offset: -1px;
-  -moz-outline-radius: 2px;
 }
 
 .devtools-toolbar .help:focus > .btn-content {
@@ -418,7 +416,6 @@ body {
   outline: 2px solid var(--accessibility-toolbar-focus);
   outline-offset: -2px;
   box-shadow: 0 0 0 2px var(--accessibility-toolbar-focus-alpha30);
-  -moz-outline-radius: 2px;
 }
 
 .treeTable:focus-within .treeRow.selected .badges .badge {
@@ -721,7 +718,6 @@ body {
   background-color: var(--accessible-label-background-color);
   color: var(--accessible-label-color);
   outline: 1px solid var(--accessible-label-border-color);
-  -moz-outline-radius: 3px;
   padding: 0px 2px;
   margin-inline-start: 6px;
   line-height: initial;

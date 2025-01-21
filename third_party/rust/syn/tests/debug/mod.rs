@@ -1,10 +1,13 @@
-extern crate proc_macro2;
-extern crate ref_cast;
+#![allow(
+    clippy::no_effect_underscore_binding,
+    clippy::too_many_lines,
+    clippy::used_underscore_binding
+)]
 
 mod gen;
 
-use self::proc_macro2::{Ident, Literal, TokenStream};
-use self::ref_cast::RefCast;
+use proc_macro2::{Ident, Literal, TokenStream};
+use ref_cast::RefCast;
 use std::fmt::{self, Debug};
 use std::ops::Deref;
 use syn::punctuated::Punctuated;
@@ -66,7 +69,15 @@ impl Debug for Lite<Literal> {
 
 impl Debug for Lite<TokenStream> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "`{}`", self.value)
+        let string = self.value.to_string();
+        if string.len() <= 80 {
+            write!(formatter, "TokenStream(`{}`)", self.value)
+        } else {
+            formatter
+                .debug_tuple("TokenStream")
+                .field(&format_args!("`{}`", string))
+                .finish()
+        }
     }
 }
 

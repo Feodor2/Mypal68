@@ -26,9 +26,6 @@
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/dom/Location.h"
-#include "nsIURIMutator.h"
-
-#include "unicode/uloc.h"
 
 nsChromeRegistry* nsChromeRegistry::gChromeRegistry;
 
@@ -376,16 +373,6 @@ nsChromeRegistry::MustLoadURLRemotely(nsIURI* aURI, bool* aResult) {
   return NS_OK;
 }
 
-bool nsChromeRegistry::GetDirectionForLocale(const nsACString& aLocale) {
-  int pref = mozilla::Preferences::GetInt("intl.uidirection", -1);
-  if (pref >= 0) {
-    return (pref > 0);
-  }
-  nsAutoCString locale(aLocale);
-  SanitizeForBCP47(locale);
-  return uloc_isRightToLeft(locale.get());
-}
-
 already_AddRefed<nsChromeRegistry> nsChromeRegistry::GetSingleton() {
   if (gChromeRegistry) {
     RefPtr<nsChromeRegistry> registry = gChromeRegistry;
@@ -401,21 +388,4 @@ already_AddRefed<nsChromeRegistry> nsChromeRegistry::GetSingleton() {
   if (NS_FAILED(cr->Init())) return nullptr;
 
   return cr.forget();
-}
-
-void nsChromeRegistry::SanitizeForBCP47(nsACString& aLocale) {
-  // Currently, the only locale code we use that's not BCP47-conformant is
-  // "ja-JP-mac" on OS X, but let's try to be more general than just
-  // hard-coding that here.
-  const int32_t LANG_TAG_CAPACITY = 128;
-  char langTag[LANG_TAG_CAPACITY];
-  nsAutoCString locale(aLocale);
-  UErrorCode err = U_ZERO_ERROR;
-  // This is a fail-safe method that will set langTag to "und" if it cannot
-  // match any part of the input locale code.
-  int32_t len =
-      uloc_toLanguageTag(locale.get(), langTag, LANG_TAG_CAPACITY, false, &err);
-  if (U_SUCCESS(err) && len > 0) {
-    aLocale.Assign(langTag, len);
-  }
 }

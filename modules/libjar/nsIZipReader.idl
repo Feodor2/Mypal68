@@ -101,11 +101,11 @@ interface nsIZipReader : nsISupports
     void close();
 
     /**
-     * Tests the integrity of the archive by performing a CRC check 
+     * Tests the integrity of the archive by performing a CRC check
      * on each item expanded into memory.  If an entry is specified
      * the integrity of only that item is tested.  If null (javascript)
-     * or EmptyCString() (c++) is passed in the integrity of all items 
-     * in the archive are tested.  
+     * or ""_ns (c++) is passed in the integrity of all items
+     * in the archive are tested.
      */
     void test(in AUTF8String aEntryName);
 
@@ -127,13 +127,13 @@ interface nsIZipReader : nsISupports
      * Checks whether the zipfile contains an entry specified by entryName.
      */
     boolean hasEntry(in AUTF8String zipEntry);
- 
+
     /**
      * Returns a string enumerator containing the matching entry names.
      *
      * @param aPattern
      *   A regular expression used to find matching entries in the zip file.
-     *   Set this parameter to null (javascript) or EmptyCString() (c++) or "*" 
+     *   Set this parameter to null (javascript) or ""_ns (c++) or "*"
      *   to get all entries; otherwise, use the
      *   following syntax:
      *

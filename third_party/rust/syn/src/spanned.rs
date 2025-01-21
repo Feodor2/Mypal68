@@ -1,7 +1,7 @@
 //! A trait that can provide the `Span` of the complete contents of a syntax
 //! tree node.
 //!
-//! *This module is available if Syn is built with both the `"parsing"` and
+//! *This module is available only if Syn is built with both the `"parsing"` and
 //! `"printing"` features.*
 //!
 //! <br>
@@ -13,8 +13,8 @@
 //! of a struct for which we are deriving a trait implementation, and we need to
 //! be able to pass a reference to one of those fields across threads.
 //!
-//! [`Type`]: ../enum.Type.html
-//! [`Sync`]: https://doc.rust-lang.org/std/marker/trait.Sync.html
+//! [`Type`]: crate::Type
+//! [`Sync`]: std::marker::Sync
 //!
 //! If the field type does *not* implement `Sync` as required, we want the
 //! compiler to report an error pointing out exactly which type it was.
@@ -97,7 +97,7 @@ use quote::spanned::Spanned as ToTokens;
 ///
 /// [module documentation]: self
 ///
-/// *This trait is available if Syn is built with both the `"parsing"` and
+/// *This trait is available only if Syn is built with both the `"parsing"` and
 /// `"printing"` features.*
 pub trait Spanned {
     /// Returns a `Span` covering the complete contents of this syntax tree

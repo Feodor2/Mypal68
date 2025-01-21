@@ -394,15 +394,6 @@ nsEventStatus PuppetWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
     return nsEventStatus_eIgnore;
   }
 
-  if (PresShell* presShell = mBrowserChild->GetTopLevelPresShell()) {
-    // Because the root resolution is conceptually at the parent/child process
-    // boundary, we need to apply that resolution here because we're sending
-    // the event from the child to the parent process.
-    LayoutDevicePoint pt(aEvent->mRefPoint);
-    pt = pt * presShell->GetResolution();
-    aEvent->mRefPoint = LayoutDeviceIntPoint::Round(pt);
-  }
-
   switch (aEvent->mClass) {
     case eWheelEventClass:
       Unused << mBrowserChild->SendDispatchWheelEvent(*aEvent->AsWheelEvent());
@@ -509,12 +500,7 @@ nsresult PuppetWidget::ClearNativeTouchSequence(nsIObserver* aObserver) {
 
 void PuppetWidget::SetConfirmedTargetAPZC(
     uint64_t aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-    const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-    const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-) const {
+    const nsTArray<ScrollableLayerGuid>& aTargets) const {
   if (mBrowserChild) {
     mBrowserChild->SetTargetAPZC(aInputBlockId, aTargets);
   }

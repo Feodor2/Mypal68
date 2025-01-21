@@ -396,6 +396,12 @@ class nsTArray_base {
   // @param aElemAlign The alignment in bytes of an array element.
   void ShrinkCapacity(size_type aElemSize, size_t aElemAlign);
 
+  // Resizes the storage to 0. This may only be called when Length() is already
+  // 0.
+  // @param aElemSize  The size of an array element.
+  // @param aElemAlign The alignment in bytes of an array element.
+  void ShrinkCapacityToZero(size_type aElemSize, size_t aElemAlign);
+
   // This method may be called to resize a "gap" in the array by shifting
   // elements around.  It updates mLength appropriately.  If the resulting
   // array has zero elements, then the array's memory is free'd.
@@ -450,6 +456,15 @@ class nsTArray_base {
   typename ActualAlloc::ResultTypeProxy SwapArrayElements(
       nsTArray_base<Allocator, RelocationStrategy>& aOther, size_type aElemSize,
       size_t aElemAlign);
+
+  template <class Allocator>
+  void MoveConstructNonAutoArray(
+      nsTArray_base<Allocator, RelocationStrategy>& aOther, size_type aElemSize,
+      size_t aElemAlign);
+
+  template <class Allocator>
+  void MoveInit(nsTArray_base<Allocator, RelocationStrategy>& aOther,
+                size_type aElemSize, size_t aElemAlign);
 
   // This is an RAII class used in SwapArrayElements.
   class IsAutoArrayRestorer {
@@ -947,8 +962,13 @@ class nsTArray_Impl
   // Initialize this array with an r-value.
   // Allow different types of allocators, since the allocator doesn't matter.
   template <typename Allocator>
-  explicit nsTArray_Impl(nsTArray_Impl<E, Allocator>&& aOther) {
-    SwapElements(aOther);
+  explicit nsTArray_Impl(nsTArray_Impl<E, Allocator>&& aOther) noexcept {
+    // We cannot be a (Copyable)AutoTArray because that overrides this ctor.
+    MOZ_ASSERT(!this->IsAutoArray());
+
+    // This does not use SwapArrayElements because that's unnecessarily complex.
+    this->MoveConstructNonAutoArray(aOther, sizeof(elem_type),
+                                    MOZ_ALIGNOF(elem_type));
   }
 
   // The array's copy-constructor performs a 'deep' copy of the given array.
@@ -999,7 +1019,7 @@ class nsTArray_Impl
   self_type& operator=(self_type&& aOther) {
     if (this != &aOther) {
       Clear();
-      SwapElements(aOther);
+      this->MoveInit(aOther, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
     }
     return *this;
   }
@@ -1046,7 +1066,7 @@ class nsTArray_Impl
   template <typename Allocator>
   self_type& operator=(nsTArray_Impl<E, Allocator>&& aOther) {
     Clear();
-    SwapElements(aOther);
+    this->MoveInit(aOther, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
     return *this;
   }
 
@@ -1361,7 +1381,7 @@ class nsTArray_Impl
   template <class Allocator>
   void Assign(nsTArray_Impl<E, Allocator>&& aOther) {
     Clear();
-    SwapElements(aOther);
+    this->MoveInit(aOther, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
   }
 
   // This method call the destructor on each element of the array, empties it,
@@ -1816,7 +1836,7 @@ class nsTArray_Impl
 
   void Clear() {
     ClearAndRetainStorage();
-    Compact();
+    base_type::ShrinkCapacityToZero(sizeof(elem_type), MOZ_ALIGNOF(elem_type));
   }
 
   // This method removes elements based on the return value of the
@@ -2446,7 +2466,10 @@ auto nsTArray_Impl<E, Alloc>::AppendElementsInternal(
     MOZ_ASSERT(&aArray != this, "argument must be different aArray");
   }
   if (Length() == 0) {
-    SwapElements(aArray);
+    // XXX This might still be optimized. If aArray uses auto-storage but we
+    // won't, we might better retain our storage if it's sufficiently large.
+    this->ShrinkCapacityToZero(sizeof(elem_type), MOZ_ALIGNOF(elem_type));
+    this->MoveInit(aArray, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
     return Elements();
   }
 
@@ -2554,6 +2577,9 @@ class nsTArray : public nsTArray_Impl<E, nsTArrayInfallibleAllocator> {
   }
   template <class Allocator>
   self_type& operator=(nsTArray_Impl<E, Allocator>&& aOther) {
+    // This is quite complex, since we don't know if we are an AutoTArray. While
+    // AutoTArray overrides this operator=, this might be called on a nsTArray&
+    // bound to an AutoTArray.
     base_type::operator=(std::move(aOther));
     return *this;
   }
@@ -2792,7 +2818,7 @@ class MOZ_NON_MEMMOVABLE AutoTArray : public nsTArray<E> {
 
   AutoTArray(self_type&& aOther) : nsTArray<E>() {
     Init();
-    this->SwapElements(aOther);
+    this->MoveInit(aOther, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
   }
 
   explicit AutoTArray(const base_type& aOther) : mAlign() {
@@ -2802,13 +2828,13 @@ class MOZ_NON_MEMMOVABLE AutoTArray : public nsTArray<E> {
 
   explicit AutoTArray(base_type&& aOther) : mAlign() {
     Init();
-    this->SwapElements(aOther);
+    this->MoveInit(aOther, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
   }
 
   template <typename Allocator>
   explicit AutoTArray(nsTArray_Impl<elem_type, Allocator>&& aOther) {
     Init();
-    this->SwapElements(aOther);
+    this->MoveInit(aOther, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
   }
 
   MOZ_IMPLICIT AutoTArray(std::initializer_list<E> aIL) : mAlign() {

@@ -413,7 +413,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   htmlEditor->SetComposerCommandsUpdater(mComposerCommandsUpdater);
 
   rv = htmlEditor->Init(*doc, nullptr /* root content */, nullptr, mEditorFlags,
-                        EmptyString());
+                        u""_ns);
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<Selection> selection = htmlEditor->GetSelection();
@@ -922,7 +922,7 @@ void nsEditingSession::TimerCallback(nsITimer* aTimer, void* aClosure) {
       LoadURIOptions loadURIOptions;
       loadURIOptions.mTriggeringPrincipal =
           nsContentUtils::GetSystemPrincipal();
-      webNav->LoadURI(NS_LITERAL_STRING("about:blank"), loadURIOptions);
+      webNav->LoadURI(u"about:blank"_ns, loadURIOptions);
     }
   }
 }

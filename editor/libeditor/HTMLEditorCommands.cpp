@@ -161,7 +161,7 @@ nsresult StyleUpdatingCommand::GetCurrentState(nsAtom* aTagName,
   bool allOfSelectionHasProp = false;
 
   nsresult rv = aHTMLEditor->GetInlineProperty(
-      aTagName, nullptr, EmptyString(), &firstOfSelectionHasProp,
+      aTagName, nullptr, u""_ns, &firstOfSelectionHasProp,
       &anyOfSelectionHasProp, &allOfSelectionHasProp);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::GetInlineProperty() failed");
@@ -208,8 +208,8 @@ nsresult StyleUpdatingCommand::ToggleState(nsStaticAtom& aTagName,
     return rv;
   }
 
-  nsresult rv = aHTMLEditor.SetInlinePropertyAsAction(
-      aTagName, nullptr, EmptyString(), aPrincipal);
+  nsresult rv = aHTMLEditor.SetInlinePropertyAsAction(aTagName, nullptr, u""_ns,
+                                                      aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::SetInlinePropertyAsAction() failed");
   return rv;
@@ -267,8 +267,7 @@ nsresult ListCommand::ToggleState(nsStaticAtom& aTagName,
   }
 
   rv = aHTMLEditor.MakeOrChangeListAsAction(
-      aTagName, EmptyString(), HTMLEditor::SelectAllOfCurrentList::No,
-      aPrincipal);
+      aTagName, u""_ns, HTMLEditor::SelectAllOfCurrentList::No, aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::MakeOrChangeListAsAction() failed");
   return rv;
@@ -391,7 +390,7 @@ nsresult RemoveListCommand::DoCommand(Command aCommand, TextEditor& aTextEditor,
   }
   // This removes any list type
   nsresult rv =
-      MOZ_KnownLive(htmlEditor)->RemoveListAsAction(EmptyString(), aPrincipal);
+      MOZ_KnownLive(htmlEditor)->RemoveListAsAction(u""_ns, aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::RemoveListAsAction() failed");
   return rv;
@@ -556,7 +555,7 @@ nsresult ParagraphStateCommand::GetCurrentState(
   aParams.SetBool(STATE_MIXED, state.IsMixed());
   if (NS_WARN_IF(!state.GetFirstParagraphStateAtSelection())) {
     // XXX This is odd behavior, we should fix this later.
-    aParams.SetCString(STATE_ATTRIBUTE, NS_LITERAL_CSTRING("x"));
+    aParams.SetCString(STATE_ATTRIBUTE, "x"_ns);
   } else {
     nsCString paragraphState;  // Don't use `nsAutoCString` for avoiding copy.
     state.GetFirstParagraphStateAtSelection()->ToUTF8String(paragraphState);
@@ -640,8 +639,8 @@ nsresult FontSizeStateCommand::GetCurrentState(HTMLEditor* aHTMLEditor,
   nsAutoString outStateString;
   bool firstHas, anyHas, allHas;
   nsresult rv = aHTMLEditor->GetInlinePropertyWithAttrValue(
-      nsGkAtoms::font, nsGkAtoms::size, EmptyString(), &firstHas, &anyHas,
-      &allHas, outStateString);
+      nsGkAtoms::font, nsGkAtoms::size, u""_ns, &firstHas, &anyHas, &allHas,
+      outStateString);
   if (NS_FAILED(rv)) {
     NS_WARNING(
         "HTMLEditor::GetInlinePropertyWithAttrValue(nsGkAtoms::font, "
@@ -858,7 +857,7 @@ nsresult AlignCommand::GetCurrentState(HTMLEditor* aHTMLEditor,
       // make sense.  Additionally, WPT loves our behavior.
       error.SuppressException();
       aParams.SetBool(STATE_MIXED, false);
-      aParams.SetCString(STATE_ATTRIBUTE, EmptyCString());
+      aParams.SetCString(STATE_ATTRIBUTE, ""_ns);
       return NS_OK;
     }
     NS_WARNING("AlignStateAtSelection failed");
@@ -910,15 +909,14 @@ nsresult AbsolutePositioningCommand::GetCurrentState(
 
   if (!aHTMLEditor->IsAbsolutePositionEditorEnabled()) {
     aParams.SetBool(STATE_MIXED, false);
-    aParams.SetCString(STATE_ATTRIBUTE, EmptyCString());
+    aParams.SetCString(STATE_ATTRIBUTE, ""_ns);
     return NS_OK;
   }
 
   RefPtr<Element> container =
       aHTMLEditor->GetAbsolutelyPositionedSelectionContainer();
   aParams.SetBool(STATE_MIXED, false);
-  aParams.SetCString(STATE_ATTRIBUTE, container ? NS_LITERAL_CSTRING("absolute")
-                                                : EmptyCString());
+  aParams.SetCString(STATE_ATTRIBUTE, container ? "absolute"_ns : ""_ns);
   return NS_OK;
 }
 
@@ -1168,7 +1166,7 @@ nsresult InsertHTMLCommand::DoCommand(Command aCommand, TextEditor& aTextEditor,
     return NS_ERROR_FAILURE;
   }
   nsresult rv =
-      MOZ_KnownLive(htmlEditor)->InsertHTMLAsAction(EmptyString(), aPrincipal);
+      MOZ_KnownLive(htmlEditor)->InsertHTMLAsAction(u""_ns, aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::InsertHTMLAsAction() failed");
   return rv;

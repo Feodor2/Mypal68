@@ -1,3 +1,11 @@
+//! [![github]](https://github.com/dtolnay/proc-macro2)&ensp;[![crates-io]](https://crates.io/crates/proc-macro2)&ensp;[![docs-rs]](crate)
+//!
+//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
+//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
+//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logoColor=white&logo=data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDUxMiA1MTIiPjxwYXRoIGZpbGw9IiNmNWY1ZjUiIGQ9Ik00ODguNiAyNTAuMkwzOTIgMjE0VjEwNS41YzAtMTUtOS4zLTI4LjQtMjMuNC0zMy43bC0xMDAtMzcuNWMtOC4xLTMuMS0xNy4xLTMuMS0yNS4zIDBsLTEwMCAzNy41Yy0xNC4xIDUuMy0yMy40IDE4LjctMjMuNCAzMy43VjIxNGwtOTYuNiAzNi4yQzkuMyAyNTUuNSAwIDI2OC45IDAgMjgzLjlWMzk0YzAgMTMuNiA3LjcgMjYuMSAxOS45IDMyLjJsMTAwIDUwYzEwLjEgNS4xIDIyLjEgNS4xIDMyLjIgMGwxMDMuOS01MiAxMDMuOSA1MmMxMC4xIDUuMSAyMi4xIDUuMSAzMi4yIDBsMTAwLTUwYzEyLjItNi4xIDE5LjktMTguNiAxOS45LTMyLjJWMjgzLjljMC0xNS05LjMtMjguNC0yMy40LTMzLjd6TTM1OCAyMTQuOGwtODUgMzEuOXYtNjguMmw4NS0zN3Y3My4zek0xNTQgMTA0LjFsMTAyLTM4LjIgMTAyIDM4LjJ2LjZsLTEwMiA0MS40LTEwMi00MS40di0uNnptODQgMjkxLjFsLTg1IDQyLjV2LTc5LjFsODUtMzguOHY3NS40em0wLTExMmwtMTAyIDQxLjQtMTAyLTQxLjR2LS42bDEwMi0zOC4yIDEwMiAzOC4ydi42em0yNDAgMTEybC04NSA0Mi41di03OS4xbDg1LTM4Ljh2NzUuNHptMC0xMTJsLTEwMiA0MS40LTEwMi00MS40di0uNmwxMDItMzguMiAxMDIgMzguMnYuNnoiPjwvcGF0aD48L3N2Zz4K
+//!
+//! <br>
+//!
 //! A wrapper around the procedural macro API of the compiler's [`proc_macro`]
 //! crate. This library serves two purposes:
 //!
@@ -78,33 +86,56 @@
 //! a different thread.
 
 // Proc-macro2 types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/proc-macro2/1.0.5")]
+#![doc(html_root_url = "https://docs.rs/proc-macro2/1.0.33")]
 #![cfg_attr(any(proc_macro_span, super_unstable), feature(proc_macro_span))]
-#![cfg_attr(super_unstable, feature(proc_macro_raw_ident, proc_macro_def_site))]
+#![cfg_attr(super_unstable, feature(proc_macro_def_site))]
+#![cfg_attr(doc_cfg, feature(doc_cfg))]
+#![allow(
+    clippy::cast_lossless,
+    clippy::cast_possible_truncation,
+    clippy::doc_markdown,
+    clippy::items_after_statements,
+    clippy::manual_assert,
+    clippy::must_use_candidate,
+    clippy::needless_doctest_main,
+    clippy::shadow_unrelated,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unnecessary_wraps,
+    clippy::unused_self,
+    clippy::used_underscore_binding,
+    clippy::vec_init_then_push
+)]
 
 #[cfg(use_proc_macro)]
 extern crate proc_macro;
 
-use std::cmp::Ordering;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
-use std::marker;
-use std::ops::RangeBounds;
-#[cfg(procmacro2_semver_exempt)]
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::str::FromStr;
+mod marker;
+mod parse;
 
-#[macro_use]
-mod strnom;
-mod fallback;
+#[cfg(wrap_proc_macro)]
+mod detection;
+
+// Public for proc_macro2::fallback::force() and unforce(), but those are quite
+// a niche use case so we omit it from rustdoc.
+#[doc(hidden)]
+pub mod fallback;
 
 #[cfg(not(wrap_proc_macro))]
 use crate::fallback as imp;
 #[path = "wrapper.rs"]
 #[cfg(wrap_proc_macro)]
 mod imp;
+
+use crate::marker::Marker;
+use std::cmp::Ordering;
+use std::error::Error;
+use std::fmt::{self, Debug, Display};
+use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
+use std::ops::RangeBounds;
+#[cfg(procmacro2_semver_exempt)]
+use std::path::PathBuf;
+use std::str::FromStr;
 
 /// An abstract stream of tokens, or more concretely a sequence of token trees.
 ///
@@ -116,27 +147,27 @@ mod imp;
 #[derive(Clone)]
 pub struct TokenStream {
     inner: imp::TokenStream,
-    _marker: marker::PhantomData<Rc<()>>,
+    _marker: Marker,
 }
 
 /// Error returned from `TokenStream::from_str`.
 pub struct LexError {
     inner: imp::LexError,
-    _marker: marker::PhantomData<Rc<()>>,
+    _marker: Marker,
 }
 
 impl TokenStream {
     fn _new(inner: imp::TokenStream) -> TokenStream {
         TokenStream {
             inner,
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
     fn _new_stable(inner: fallback::TokenStream) -> TokenStream {
         TokenStream {
             inner: inner.into(),
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
@@ -173,7 +204,7 @@ impl FromStr for TokenStream {
     fn from_str(src: &str) -> Result<TokenStream, LexError> {
         let e = src.parse().map_err(|e| LexError {
             inner: e,
-            _marker: marker::PhantomData,
+            _marker: Marker,
         })?;
         Ok(TokenStream::_new(e))
     }
@@ -201,14 +232,14 @@ impl From<TokenTree> for TokenStream {
 
 impl Extend<TokenTree> for TokenStream {
     fn extend<I: IntoIterator<Item = TokenTree>>(&mut self, streams: I) {
-        self.inner.extend(streams)
+        self.inner.extend(streams);
     }
 }
 
 impl Extend<TokenStream> for TokenStream {
     fn extend<I: IntoIterator<Item = TokenStream>>(&mut self, streams: I) {
         self.inner
-            .extend(streams.into_iter().map(|stream| stream.inner))
+            .extend(streams.into_iter().map(|stream| stream.inner));
     }
 }
 
@@ -228,33 +259,48 @@ impl FromIterator<TokenStream> for TokenStream {
 /// convertible back into the same token stream (modulo spans), except for
 /// possibly `TokenTree::Group`s with `Delimiter::None` delimiters and negative
 /// numeric literals.
-impl fmt::Display for TokenStream {
+impl Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Display::fmt(&self.inner, f)
     }
 }
 
 /// Prints token in a form convenient for debugging.
-impl fmt::Debug for TokenStream {
+impl Debug for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Debug::fmt(&self.inner, f)
     }
 }
 
-impl fmt::Debug for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+impl LexError {
+    pub fn span(&self) -> Span {
+        Span::_new(self.inner.span())
     }
 }
+
+impl Debug for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(&self.inner, f)
+    }
+}
+
+impl Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Display::fmt(&self.inner, f)
+    }
+}
+
+impl Error for LexError {}
 
 /// The source file of a given `Span`.
 ///
 /// This type is semver exempt and not exposed by default.
 #[cfg(procmacro2_semver_exempt)]
+#[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
 #[derive(Clone, PartialEq, Eq)]
 pub struct SourceFile {
     inner: imp::SourceFile,
-    _marker: marker::PhantomData<Rc<()>>,
+    _marker: Marker,
 }
 
 #[cfg(procmacro2_semver_exempt)]
@@ -262,7 +308,7 @@ impl SourceFile {
     fn _new(inner: imp::SourceFile) -> Self {
         SourceFile {
             inner,
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
@@ -291,9 +337,9 @@ impl SourceFile {
 }
 
 #[cfg(procmacro2_semver_exempt)]
-impl fmt::Debug for SourceFile {
+impl Debug for SourceFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Debug::fmt(&self.inner, f)
     }
 }
 
@@ -301,6 +347,7 @@ impl fmt::Debug for SourceFile {
 ///
 /// This type is semver exempt and not exposed by default.
 #[cfg(span_locations)]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "span-locations")))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LineColumn {
     /// The 1-indexed line in the source file on which the span starts or ends
@@ -311,25 +358,41 @@ pub struct LineColumn {
     pub column: usize,
 }
 
+#[cfg(span_locations)]
+impl Ord for LineColumn {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.line
+            .cmp(&other.line)
+            .then(self.column.cmp(&other.column))
+    }
+}
+
+#[cfg(span_locations)]
+impl PartialOrd for LineColumn {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// A region of source code, along with macro expansion information.
 #[derive(Copy, Clone)]
 pub struct Span {
     inner: imp::Span,
-    _marker: marker::PhantomData<Rc<()>>,
+    _marker: Marker,
 }
 
 impl Span {
     fn _new(inner: imp::Span) -> Span {
         Span {
             inner,
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
     fn _new_stable(inner: fallback::Span) -> Span {
         Span {
             inner: inner.into(),
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
@@ -342,28 +405,33 @@ impl Span {
         Span::_new(imp::Span::call_site())
     }
 
+    /// The span located at the invocation of the procedural macro, but with
+    /// local variables, labels, and `$crate` resolved at the definition site
+    /// of the macro. This is the same hygiene behavior as `macro_rules`.
+    ///
+    /// This function requires Rust 1.45 or later.
+    #[cfg(not(no_hygiene))]
+    pub fn mixed_site() -> Span {
+        Span::_new(imp::Span::mixed_site())
+    }
+
     /// A span that resolves at the macro definition site.
     ///
     /// This method is semver exempt and not exposed by default.
     #[cfg(procmacro2_semver_exempt)]
+    #[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
     pub fn def_site() -> Span {
         Span::_new(imp::Span::def_site())
     }
 
     /// Creates a new span with the same line/column information as `self` but
     /// that resolves symbols as though it were at `other`.
-    ///
-    /// This method is semver exempt and not exposed by default.
-    #[cfg(procmacro2_semver_exempt)]
     pub fn resolved_at(&self, other: Span) -> Span {
         Span::_new(self.inner.resolved_at(other.inner))
     }
 
     /// Creates a new span with the same name resolution behavior as `self` but
     /// with the line/column information of `other`.
-    ///
-    /// This method is semver exempt and not exposed by default.
-    #[cfg(procmacro2_semver_exempt)]
     pub fn located_at(&self, other: Span) -> Span {
         Span::_new(self.inner.located_at(other.inner))
     }
@@ -394,6 +462,7 @@ impl Span {
     ///
     /// This method is semver exempt and not exposed by default.
     #[cfg(procmacro2_semver_exempt)]
+    #[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
     pub fn source_file(&self) -> SourceFile {
         SourceFile::_new(self.inner.source_file())
     }
@@ -401,7 +470,14 @@ impl Span {
     /// Get the starting line/column in the source file for this span.
     ///
     /// This method requires the `"span-locations"` feature to be enabled.
+    ///
+    /// When executing in a procedural macro context, the returned line/column
+    /// are only meaningful if compiled with a nightly toolchain. The stable
+    /// toolchain does not have this information available. When executing
+    /// outside of a procedural macro, such as main.rs or build.rs, the
+    /// line/column are always meaningful regardless of toolchain.
     #[cfg(span_locations)]
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "span-locations")))]
     pub fn start(&self) -> LineColumn {
         let imp::LineColumn { line, column } = self.inner.start();
         LineColumn { line, column }
@@ -410,7 +486,14 @@ impl Span {
     /// Get the ending line/column in the source file for this span.
     ///
     /// This method requires the `"span-locations"` feature to be enabled.
+    ///
+    /// When executing in a procedural macro context, the returned line/column
+    /// are only meaningful if compiled with a nightly toolchain. The stable
+    /// toolchain does not have this information available. When executing
+    /// outside of a procedural macro, such as main.rs or build.rs, the
+    /// line/column are always meaningful regardless of toolchain.
     #[cfg(span_locations)]
+    #[cfg_attr(doc_cfg, doc(cfg(feature = "span-locations")))]
     pub fn end(&self) -> LineColumn {
         let imp::LineColumn { line, column } = self.inner.end();
         LineColumn { line, column }
@@ -433,15 +516,16 @@ impl Span {
     ///
     /// This method is semver exempt and not exposed by default.
     #[cfg(procmacro2_semver_exempt)]
+    #[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
     pub fn eq(&self, other: &Span) -> bool {
         self.inner.eq(&other.inner)
     }
 }
 
 /// Prints a span in a form convenient for debugging.
-impl fmt::Debug for Span {
+impl Debug for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Debug::fmt(&self.inner, f)
     }
 }
 
@@ -462,11 +546,11 @@ impl TokenTree {
     /// Returns the span of this tree, delegating to the `span` method of
     /// the contained token or a delimited stream.
     pub fn span(&self) -> Span {
-        match *self {
-            TokenTree::Group(ref t) => t.span(),
-            TokenTree::Ident(ref t) => t.span(),
-            TokenTree::Punct(ref t) => t.span(),
-            TokenTree::Literal(ref t) => t.span(),
+        match self {
+            TokenTree::Group(t) => t.span(),
+            TokenTree::Ident(t) => t.span(),
+            TokenTree::Punct(t) => t.span(),
+            TokenTree::Literal(t) => t.span(),
         }
     }
 
@@ -476,11 +560,11 @@ impl TokenTree {
     /// the span of each of the internal tokens, this will simply delegate to
     /// the `set_span` method of each variant.
     pub fn set_span(&mut self, span: Span) {
-        match *self {
-            TokenTree::Group(ref mut t) => t.set_span(span),
-            TokenTree::Ident(ref mut t) => t.set_span(span),
-            TokenTree::Punct(ref mut t) => t.set_span(span),
-            TokenTree::Literal(ref mut t) => t.set_span(span),
+        match self {
+            TokenTree::Group(t) => t.set_span(span),
+            TokenTree::Ident(t) => t.set_span(span),
+            TokenTree::Punct(t) => t.set_span(span),
+            TokenTree::Literal(t) => t.set_span(span),
         }
     }
 }
@@ -513,32 +597,32 @@ impl From<Literal> for TokenTree {
 /// convertible back into the same token tree (modulo spans), except for
 /// possibly `TokenTree::Group`s with `Delimiter::None` delimiters and negative
 /// numeric literals.
-impl fmt::Display for TokenTree {
+impl Display for TokenTree {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TokenTree::Group(ref t) => t.fmt(f),
-            TokenTree::Ident(ref t) => t.fmt(f),
-            TokenTree::Punct(ref t) => t.fmt(f),
-            TokenTree::Literal(ref t) => t.fmt(f),
+        match self {
+            TokenTree::Group(t) => Display::fmt(t, f),
+            TokenTree::Ident(t) => Display::fmt(t, f),
+            TokenTree::Punct(t) => Display::fmt(t, f),
+            TokenTree::Literal(t) => Display::fmt(t, f),
         }
     }
 }
 
 /// Prints token tree in a form convenient for debugging.
-impl fmt::Debug for TokenTree {
+impl Debug for TokenTree {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Each of these has the name in the struct type in the derived debug,
         // so don't bother with an extra layer of indirection
-        match *self {
-            TokenTree::Group(ref t) => t.fmt(f),
-            TokenTree::Ident(ref t) => {
+        match self {
+            TokenTree::Group(t) => Debug::fmt(t, f),
+            TokenTree::Ident(t) => {
                 let mut debug = f.debug_struct("Ident");
                 debug.field("sym", &format_args!("{}", t));
                 imp::debug_span_field_if_nontrivial(&mut debug, t.span().inner);
                 debug.finish()
             }
-            TokenTree::Punct(ref t) => t.fmt(f),
-            TokenTree::Literal(ref t) => t.fmt(f),
+            TokenTree::Punct(t) => Debug::fmt(t, f),
+            TokenTree::Literal(t) => Debug::fmt(t, f),
         }
     }
 }
@@ -644,37 +728,37 @@ impl Group {
     /// by this group, but rather it will only set the span of the delimiter
     /// tokens at the level of the `Group`.
     pub fn set_span(&mut self, span: Span) {
-        self.inner.set_span(span.inner)
+        self.inner.set_span(span.inner);
     }
 }
 
 /// Prints the group as a string that should be losslessly convertible back
 /// into the same group (modulo spans), except for possibly `TokenTree::Group`s
 /// with `Delimiter::None` delimiters.
-impl fmt::Display for Group {
+impl Display for Group {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.inner, formatter)
+        Display::fmt(&self.inner, formatter)
     }
 }
 
-impl fmt::Debug for Group {
+impl Debug for Group {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.inner, formatter)
+        Debug::fmt(&self.inner, formatter)
     }
 }
 
-/// An `Punct` is an single punctuation character like `+`, `-` or `#`.
+/// A `Punct` is a single punctuation character like `+`, `-` or `#`.
 ///
 /// Multicharacter operators like `+=` are represented as two instances of
 /// `Punct` with different forms of `Spacing` returned.
 #[derive(Clone)]
 pub struct Punct {
-    op: char,
+    ch: char,
     spacing: Spacing,
     span: Span,
 }
 
-/// Whether an `Punct` is followed immediately by another `Punct` or followed by
+/// Whether a `Punct` is followed immediately by another `Punct` or followed by
 /// another token or whitespace.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Spacing {
@@ -695,9 +779,9 @@ impl Punct {
     ///
     /// The returned `Punct` will have the default span of `Span::call_site()`
     /// which can be further configured with the `set_span` method below.
-    pub fn new(op: char, spacing: Spacing) -> Punct {
+    pub fn new(ch: char, spacing: Spacing) -> Punct {
         Punct {
-            op,
+            ch,
             spacing,
             span: Span::call_site(),
         }
@@ -705,7 +789,7 @@ impl Punct {
 
     /// Returns the value of this punctuation character as `char`.
     pub fn as_char(&self) -> char {
-        self.op
+        self.ch
     }
 
     /// Returns the spacing of this punctuation character, indicating whether
@@ -730,16 +814,16 @@ impl Punct {
 
 /// Prints the punctuation character as a string that should be losslessly
 /// convertible back into the same character.
-impl fmt::Display for Punct {
+impl Display for Punct {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.op.fmt(f)
+        Display::fmt(&self.ch, f)
     }
 }
 
-impl fmt::Debug for Punct {
+impl Debug for Punct {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = fmt.debug_struct("Punct");
-        debug.field("op", &self.op);
+        debug.field("char", &self.ch);
         debug.field("spacing", &self.spacing);
         imp::debug_span_field_if_nontrivial(&mut debug, self.span.inner);
         debug.finish()
@@ -813,14 +897,14 @@ impl fmt::Debug for Punct {
 #[derive(Clone)]
 pub struct Ident {
     inner: imp::Ident,
-    _marker: marker::PhantomData<Rc<()>>,
+    _marker: Marker,
 }
 
 impl Ident {
     fn _new(inner: imp::Ident) -> Ident {
         Ident {
             inner,
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
@@ -863,6 +947,7 @@ impl Ident {
     ///
     /// This method is semver exempt and not exposed by default.
     #[cfg(procmacro2_semver_exempt)]
+    #[cfg_attr(doc_cfg, doc(cfg(procmacro2_semver_exempt)))]
     pub fn new_raw(string: &str, span: Span) -> Ident {
         Ident::_new_raw(string, span)
     }
@@ -914,21 +999,21 @@ impl Ord for Ident {
 
 impl Hash for Ident {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        self.to_string().hash(hasher)
+        self.to_string().hash(hasher);
     }
 }
 
 /// Prints the identifier as a string that should be losslessly convertible back
 /// into the same identifier.
-impl fmt::Display for Ident {
+impl Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Display::fmt(&self.inner, f)
     }
 }
 
-impl fmt::Debug for Ident {
+impl Debug for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Debug::fmt(&self.inner, f)
     }
 }
 
@@ -941,7 +1026,7 @@ impl fmt::Debug for Ident {
 #[derive(Clone)]
 pub struct Literal {
     inner: imp::Literal,
-    _marker: marker::PhantomData<Rc<()>>,
+    _marker: Marker,
 }
 
 macro_rules! suffixed_int_literals {
@@ -951,7 +1036,7 @@ macro_rules! suffixed_int_literals {
         /// This function will create an integer like `1u32` where the integer
         /// value specified is the first part of the token and the integral is
         /// also suffixed at the end. Literals created from negative numbers may
-        /// not survive rountrips through `TokenStream` or strings and may be
+        /// not survive roundtrips through `TokenStream` or strings and may be
         /// broken into two tokens (`-` and positive literal).
         ///
         /// Literals created through this method have the `Span::call_site()`
@@ -972,7 +1057,7 @@ macro_rules! unsuffixed_int_literals {
         /// specified on this token, meaning that invocations like
         /// `Literal::i8_unsuffixed(1)` are equivalent to
         /// `Literal::u32_unsuffixed(1)`. Literals created from negative numbers
-        /// may not survive rountrips through `TokenStream` or strings and may
+        /// may not survive roundtrips through `TokenStream` or strings and may
         /// be broken into two tokens (`-` and positive literal).
         ///
         /// Literals created through this method have the `Span::call_site()`
@@ -988,14 +1073,14 @@ impl Literal {
     fn _new(inner: imp::Literal) -> Literal {
         Literal {
             inner,
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
     fn _new_stable(inner: fallback::Literal) -> Literal {
         Literal {
             inner: inner.into(),
-            _marker: marker::PhantomData,
+            _marker: Marker,
         }
     }
 
@@ -1140,26 +1225,36 @@ impl Literal {
     }
 }
 
-impl fmt::Debug for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+impl FromStr for Literal {
+    type Err = LexError;
+
+    fn from_str(repr: &str) -> Result<Self, LexError> {
+        repr.parse().map(Literal::_new).map_err(|inner| LexError {
+            inner,
+            _marker: Marker,
+        })
     }
 }
 
-impl fmt::Display for Literal {
+impl Debug for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        Debug::fmt(&self.inner, f)
+    }
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Display::fmt(&self.inner, f)
     }
 }
 
 /// Public implementation details for the `TokenStream` type, such as iterators.
 pub mod token_stream {
-    use std::fmt;
-    use std::marker;
-    use std::rc::Rc;
+    use crate::marker::Marker;
+    use crate::{imp, TokenTree};
+    use std::fmt::{self, Debug};
 
     pub use crate::TokenStream;
-    use crate::{imp, TokenTree};
 
     /// An iterator over `TokenStream`'s `TokenTree`s.
     ///
@@ -1168,7 +1263,7 @@ pub mod token_stream {
     #[derive(Clone)]
     pub struct IntoIter {
         inner: imp::TokenTreeIter,
-        _marker: marker::PhantomData<Rc<()>>,
+        _marker: Marker,
     }
 
     impl Iterator for IntoIter {
@@ -1179,9 +1274,9 @@ pub mod token_stream {
         }
     }
 
-    impl fmt::Debug for IntoIter {
+    impl Debug for IntoIter {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            self.inner.fmt(f)
+            Debug::fmt(&self.inner, f)
         }
     }
 
@@ -1192,7 +1287,7 @@ pub mod token_stream {
         fn into_iter(self) -> IntoIter {
             IntoIter {
                 inner: self.inner.into_iter(),
-                _marker: marker::PhantomData,
+                _marker: Marker,
             }
         }
     }

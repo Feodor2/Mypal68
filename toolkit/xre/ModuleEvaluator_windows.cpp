@@ -64,48 +64,6 @@ bool ModuleLoadEvent::ModuleInfo::PopulatePathInfo() {
   return NS_SUCCEEDED(NS_NewLocalFile(mLdrName, false, getter_AddRefs(mFile)));
 }
 
-bool ModuleLoadEvent::ModuleInfo::PrepForTelemetry() {
-  MOZ_ASSERT(!mLdrName.IsEmpty() && mFile);
-  if (mLdrName.IsEmpty() || !mFile) {
-    return false;
-  }
-
-  using PathTransformFlags = widget::WinUtils::PathTransformFlags;
-
-  if (!widget::WinUtils::PreparePathForTelemetry(
-          mLdrName,
-          PathTransformFlags::Default & ~PathTransformFlags::Canonicalize)) {
-    return false;
-  }
-
-  nsAutoString dllFullPath;
-  if (NS_FAILED(mFile->GetPath(dllFullPath))) {
-    return false;
-  }
-
-  if (!widget::WinUtils::MakeLongPath(dllFullPath)) {
-    return false;
-  }
-
-  // Replace mFile with the lengthened version
-  if (NS_FAILED(NS_NewLocalFile(dllFullPath, false, getter_AddRefs(mFile)))) {
-    return false;
-  }
-
-  nsAutoString sanitized(dllFullPath);
-
-  if (!widget::WinUtils::PreparePathForTelemetry(
-          sanitized,
-          PathTransformFlags::Default & ~(PathTransformFlags::Canonicalize |
-                                          PathTransformFlags::Lengthen))) {
-    return false;
-  }
-
-  mFilePathClean = std::move(sanitized);
-
-  return true;
-}
-
 ModuleLoadEvent::ModuleLoadEvent(const ModuleLoadEvent& aOther,
                                  CopyOption aOption)
     : mIsStartup(aOther.mIsStartup),

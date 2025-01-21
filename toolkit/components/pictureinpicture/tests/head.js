@@ -153,22 +153,30 @@ async function toggleOpacityReachesThreshold(
  * Note: This function will only work on pages that load the
  * click-event-helper.js script.
  *
- * @param {Element} browser The <xul:browser> that will receive the click
- * event.
+ * @param {Element} browser The <xul:browser> that will receive the mouse
+ * events.
  * @param {bool} isExpectingEvents True if we expect all of the normal
  * mouse button events to fire. False if we expect none of them to fire.
- *
+ * @param {bool} isExpectingClick True if the mouse events should include the
+ * "click" event, which is only included when the primary mouse button is pressed.
  * @return Promise
  * @resolves When the check has completed.
  */
-async function assertSawMouseEvents(browser, isExpectingEvents) {
+async function assertSawMouseEvents(
+  browser,
+  isExpectingEvents,
+  isExpectingClick = true
+) {
   const MOUSE_BUTTON_EVENTS = [
     "pointerdown",
     "mousedown",
     "pointerup",
     "mouseup",
-    "click",
   ];
+
+  if (isExpectingClick) {
+    MOUSE_BUTTON_EVENTS.push("click");
+  }
 
   let mouseEvents = await ContentTask.spawn(browser, null, async () => {
     return this.content.wrappedJSObject.getRecordedEvents();
@@ -262,18 +270,22 @@ async function prepareForToggleClick(browser, videoID) {
  * video and then clicking in the toggle region should open a
  * Picture-in-Picture window. If canToggle is false, we expect that a click
  * in this region will not result in the window opening.
+ * @param {async Function} prepFn An optional asynchronous function to run
+ * before running the toggle test. The function is passed the opened
+ * <xul:browser> as its only argument once the testURL has finished loading.
  *
  * @return Promise
  * @resolves When the test is complete and the tab with the loaded page is
  * removed.
  */
-async function testToggle(testURL, expectations) {
+async function testToggle(testURL, expectations, prepFn = async () => {}) {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
       url: testURL,
     },
     async browser => {
+      await prepFn(browser);
       await ensureVideosReady(browser);
 
       for (let [videoID, canToggle] of Object.entries(expectations)) {
@@ -336,6 +348,34 @@ async function testToggle(testURL, expectations) {
           videoID,
           HOVER_TOGGLE_OPACITY
         );
+
+        // First, ensure that a non-primary mouse click is ignored.
+        info("Right-clicking on toggle.");
+
+        await BrowserTestUtils.synthesizeMouseAtPoint(
+          toggleLeft,
+          toggleTop,
+          { button: 1 },
+          browser
+        );
+
+        // For videos without the built-in controls, we expect that all mouse events
+        // should have fired - otherwise, the events are all suppressed.
+        await assertSawMouseEvents(browser, !controls, false);
+
+        // The message to open the Picture-in-Picture window would normally be sent
+        // immediately before this Promise resolved, so the window should have opened
+        // by now if it was going to happen.
+        for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
+          if (!win.closed) {
+            ok(false, "Found a Picture-in-Picture window unexpectedly.");
+            return;
+          }
+        }
+
+        ok(true, "No Picture-in-Picture window found.");
+
+        // Okay, now test with the primary mouse button.
 
         if (canToggle) {
           info(

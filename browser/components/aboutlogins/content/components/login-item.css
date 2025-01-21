@@ -197,8 +197,5 @@ input[type="url"][readOnly]:hover:active {
   outline: 2px solid var(--in-content-border-active);
   /* offset outline to align with 1px border-width set for buttons/menulists above. */
   outline-offset: -1px;
-  /* Make outline-radius slightly bigger than the border-radius set above,
-   * to make the thicker outline corners look smooth */
-  -moz-outline-radius: 3px;
   box-shadow: 0 0 0 4px var(--in-content-border-active-shadow);
 }

@@ -2418,7 +2418,6 @@ XPCOMService_GetToolkitChromeRegistryService
 ?Init@hal@mozilla@@YAXXZ
 ?WakeLockInit@hal@mozilla@@YAXXZ
 ??4?$RefPtr@UISensor@@@@QAEAAV0@$$T@Z
-?XRE_Win32kCallsAllowed@@YA_NXZ
 ?Run@LSPAnnotationGatherer@crashreporter@mozilla@@UAG?AW4nsresult@@XZ
 ?XRE_UseNativeEventProcessing@@YA_NXZ
 ?EventWindowProc@nsAppShell@@KGJPAUHWND__@@IIJ@Z
@@ -8858,7 +8857,6 @@ RegisterWeakAsyncMemoryReporter
 ?GetHttpChannel@nsDocShell@@AAE?AW4nsresult@@PAVnsIChannel@@PAPAVnsIHttpChannel@@@Z
 ?Equals@nsSimpleURI@net@mozilla@@UAG?AW4nsresult@@PAVnsIURI@@PA_N@Z
 ?SetupReferrerInfoFromChannel@nsDocShell@@AAEXPAVnsIChannel@@@Z
-?GetForceCharset@nsDocumentViewer@@UAGPBVEncoding@mozilla@@XZ
 ?GetHintCharset@nsDocumentViewer@@UAGPBVEncoding@mozilla@@XZ
 ?GetHintCharacterSetSource@nsDocumentViewer@@UAG?AW4nsresult@@PAH@Z
 ?GetTextZoom@nsDocumentViewer@@UAG?AW4nsresult@@PAM@Z

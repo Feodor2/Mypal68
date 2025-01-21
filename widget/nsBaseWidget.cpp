@@ -916,25 +916,15 @@ void nsBaseWidget::ConfigureAPZCTreeManager() {
 
 void nsBaseWidget::ConfigureAPZControllerThread() {
   // By default the controller thread is the main thread.
-  APZThreadUtils::SetControllerThread(MessageLoop::current());
+  APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
 }
 
 void nsBaseWidget::SetConfirmedTargetAPZC(
     uint64_t aInputBlockId,
-#ifdef MOZ_BUILD_WEBRENDER
-    const nsTArray<SLGuidAndRenderRoot>& aTargets
-#else
-    const nsTArray<ScrollableLayerGuid>& aTargets
-#endif
-) const {
+    const nsTArray<ScrollableLayerGuid>& aTargets) const {
   APZThreadUtils::RunOnControllerThread(
-      NewRunnableMethod<uint64_t, StoreCopyPassByRRef<nsTArray<
-#ifdef MOZ_BUILD_WEBRENDER
-                                      SLGuidAndRenderRoot
-#else
-                                      ScrollableLayerGuid
-#endif
-                                      >>>(
+      NewRunnableMethod<uint64_t,
+                        StoreCopyPassByRRef<nsTArray<ScrollableLayerGuid>>>(
           "layers::IAPZCTreeManager::SetTargetAPZC", mAPZC,
           &IAPZCTreeManager::SetTargetAPZC, aInputBlockId, aTargets));
 }
@@ -961,13 +951,7 @@ void nsBaseWidget::UpdateZoomConstraints(
   }
   LayersId layersId = mCompositorSession->RootLayerTreeId();
   mAPZC->UpdateZoomConstraints(
-#ifdef MOZ_BUILD_WEBRENDER
-      SLGuidAndRenderRoot(layersId, aPresShellId, aViewId,
-                          wr::RenderRoot::Default),
-#else
-      ScrollableLayerGuid(layersId, aPresShellId, aViewId),
-#endif
-      aConstraints);
+      ScrollableLayerGuid(layersId, aPresShellId, aViewId), aConstraints);
 }
 
 bool nsBaseWidget::AsyncPanZoomEnabled() const { return !!mAPZC; }
@@ -979,17 +963,6 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
   uint64_t inputBlockId = aApzResult.mInputBlockId;
   InputAPZContext context(aApzResult.mTargetGuid, inputBlockId,
                           aApzResult.mStatus);
-
-  // If this is an event that the APZ has targeted to an APZC in the root
-  // process, apply that APZC's callback-transform before dispatching the
-  // event. If the event is instead targeted to an APZC in the child process,
-  // the transform will be applied in the child process before dispatching
-  // the event there (see e.g. BrowserChild::RecvRealTouchEvent()).
-  if (aApzResult.mTargetGuid.mLayersId ==
-      mCompositorSession->RootLayerTreeId()) {
-    APZCCallbackHelper::ApplyCallbackTransform(*aEvent, targetGuid,
-                                               GetDefaultScale());
-  }
 
   // Make a copy of the original event for the APZCCallbackHelper helpers that
   // we call later, because the event passed to DispatchEvent can get mutated in
@@ -1810,23 +1783,10 @@ void nsBaseWidget::ZoomToRect(const uint32_t& aPresShellId,
   }
   LayersId layerId = mCompositorSession->RootLayerTreeId();
   APZThreadUtils::RunOnControllerThread(
-      NewRunnableMethod<
-#ifdef MOZ_BUILD_WEBRENDER
-          SLGuidAndRenderRoot
-#else
-          ScrollableLayerGuid
-#endif
-          ,
-          CSSRect, uint32_t>("layers::IAPZCTreeManager::ZoomToRect", mAPZC,
-                             &IAPZCTreeManager::ZoomToRect,
-#ifdef MOZ_BUILD_WEBRENDER
-                             SLGuidAndRenderRoot(layerId, aPresShellId, aViewId,
-                                                 wr::RenderRoot::Default),
-#else
-                             ScrollableLayerGuid(layerId, aPresShellId,
-                                                 aViewId),
-#endif
-                             aRect, aFlags));
+      NewRunnableMethod<ScrollableLayerGuid, CSSRect, uint32_t>(
+          "layers::IAPZCTreeManager::ZoomToRect", mAPZC,
+          &IAPZCTreeManager::ZoomToRect,
+          ScrollableLayerGuid(layerId, aPresShellId, aViewId), aRect, aFlags));
 }
 
 #ifdef ACCESSIBILITY
@@ -1864,44 +1824,23 @@ void nsBaseWidget::StartAsyncScrollbarDrag(
   MOZ_ASSERT(XRE_IsParentProcess() && mCompositorSession);
 
   LayersId layersId = mCompositorSession->RootLayerTreeId();
-#ifdef MOZ_BUILD_WEBRENDER
-  SLGuidAndRenderRoot guid(layersId, aDragMetrics.mPresShellId,
-                           aDragMetrics.mViewId, wr::RenderRoot::Default);
-#else
   ScrollableLayerGuid guid(layersId, aDragMetrics.mPresShellId,
                            aDragMetrics.mViewId);
-#endif
 
-  APZThreadUtils::RunOnControllerThread(NewRunnableMethod<
-#ifdef MOZ_BUILD_WEBRENDER
-                                        SLGuidAndRenderRoot,
-#else
-                                        ScrollableLayerGuid,
-#endif
-                                        AsyncDragMetrics>(
-      "layers::IAPZCTreeManager::StartScrollbarDrag", mAPZC,
-      &IAPZCTreeManager::StartScrollbarDrag, guid, aDragMetrics));
+  APZThreadUtils::RunOnControllerThread(
+      NewRunnableMethod<ScrollableLayerGuid, AsyncDragMetrics>(
+          "layers::IAPZCTreeManager::StartScrollbarDrag", mAPZC,
+          &IAPZCTreeManager::StartScrollbarDrag, guid, aDragMetrics));
 }
 
 bool nsBaseWidget::StartAsyncAutoscroll(const ScreenPoint& aAnchorLocation,
-#ifdef MOZ_BUILD_WEBRENDER
-                                        const SLGuidAndRenderRoot& aGuid
-#else
-                                        const ScrollableLayerGuid& aGuid
-#endif
-) {
+                                        const ScrollableLayerGuid& aGuid) {
   MOZ_ASSERT(XRE_IsParentProcess() && AsyncPanZoomEnabled());
 
   return mAPZC->StartAutoscroll(aGuid, aAnchorLocation);
 }
 
-void nsBaseWidget::StopAsyncAutoscroll(
-#ifdef MOZ_BUILD_WEBRENDER
-    const SLGuidAndRenderRoot& aGuid
-#else
-    const ScrollableLayerGuid& aGuid
-#endif
-) {
+void nsBaseWidget::StopAsyncAutoscroll(const ScrollableLayerGuid& aGuid) {
   MOZ_ASSERT(XRE_IsParentProcess() && AsyncPanZoomEnabled());
 
   mAPZC->StopAutoscroll(aGuid);

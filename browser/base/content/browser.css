@@ -55,17 +55,13 @@
   min-width: -moz-fit-content;
 }
 
-.searchbar-textbox {
-  -moz-binding: url("chrome://browser/content/search/search.xml#searchbar-textbox");
-}
-
 .search-one-offs[compact=true] .search-setting-button,
 .search-one-offs:not([compact=true]) .search-setting-button-compact {
   display: none;
 }
 
 /* Prevent shrinking the page content to 0 height and width */
-.browserStack > browser {
+.browserStack {
   min-height: 25px;
   min-width: 25px;
 }

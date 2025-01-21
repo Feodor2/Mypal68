@@ -1180,7 +1180,7 @@ def milestone(build_env, build_project, version_path, _):
     # Only expose major milestone and alpha version in the symbolversion
     # string; as the name suggests, we use it for symbol versioning on Linux.
     return namespace(version=milestone,
-                     uaversion='78.0',
+                     uaversion='88.0',
                      symbolversion='%s%s' % (major_version, ab_patch),
                      is_nightly=is_nightly,
                      is_release_or_beta=is_release_or_beta,

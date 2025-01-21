@@ -8,9 +8,9 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SVGImageContext.h"
 #include "ImageRegion.h"
 #include "Orientation.h"
-#include "SVGImageContext.h"
 
 #include "mozilla/MemoryReporting.h"
 
@@ -110,9 +110,6 @@ Maybe<AspectRatio> DynamicImage::GetIntrinsicRatio() {
 
 NS_IMETHODIMP_(Orientation)
 DynamicImage::GetOrientation() { return Orientation(); }
-
-NS_IMETHODIMP_(bool)
-DynamicImage::HandledOrientation() { return false; }
 
 NS_IMETHODIMP
 DynamicImage::GetType(uint16_t* aType) {

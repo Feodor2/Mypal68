@@ -409,7 +409,8 @@
   value: 0.01f
   mirror: always
 
-- name: apz.frame_delay.enabled
+# new scrollbar code for desktop zooming
+- name: apz.force_disable_desktop_zooming_scrollbars
   type: RelaxedAtomicBool
   value: true
   mirror: always
@@ -1684,24 +1685,6 @@
   value: 0
   mirror: always
 
-# Don't use new input types.
-- name: dom.experimental_forms
-  type: bool
-  value: false
-  mirror: always
-
-# Enable <input type=color> by default. It will be turned off for remaining
-# platforms which don't have a color picker implemented yet.
-- name: dom.forms.color
-  type: bool
-  value: true
-  mirror: always
-# Is support for input type=date and type=time enabled?
-- name: dom.forms.datetime
-  type: bool
-  value: true
-  mirror: always
-
 # Support for input type=month, type=week and type=datetime-local. By default,
 # disabled.
 - name: dom.forms.datetime.others
@@ -2850,6 +2833,11 @@
   value: true
   mirror: always
 
+- name: dom.webidl.crosscontext_hasinstance.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NOT_NIGHTLY_BUILD@
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "editor"
 #---------------------------------------------------------------------------
@@ -3123,6 +3111,11 @@
   value: 200
   mirror: always
 
+- name: general.smoothScroll.lines
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 - name: general.smoothScroll.lines.durationMaxMS
   type: RelaxedAtomicInt32
   value: 150
@@ -3140,12 +3133,22 @@
 
 - name: general.smoothScroll.mouseWheel.durationMaxMS
   type: RelaxedAtomicInt32
-  value: 400
+  value: 200
   mirror: always
 
 - name: general.smoothScroll.mouseWheel.durationMinMS
   type: RelaxedAtomicInt32
-  value: 200
+  value: 50
+  mirror: always
+
+- name: general.smoothScroll.mouseWheel.migrationPercent
+  type: RelaxedAtomicInt32
+  value: 100
+  mirror: always
+
+- name: general.smoothScroll.other
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 - name: general.smoothScroll.other.durationMaxMS
@@ -3171,6 +3174,26 @@
 - name: general.smoothScroll.pages.durationMinMS
   type: RelaxedAtomicInt32
   value: 150
+  mirror: always
+
+- name: general.smoothScroll.scrollbars
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: general.smoothScroll.scrollbars.durationMaxMS
+  type: RelaxedAtomicInt32
+  value: 150
+  mirror: always
+
+- name: general.smoothScroll.scrollbars.durationMinMS
+  type: RelaxedAtomicInt32
+  value: 150
+  mirror: always
+
+- name: general.smoothScroll.pixels
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 - name: general.smoothScroll.pixels.durationMaxMS
@@ -3672,14 +3695,14 @@
   value: true
   mirror: always
 
-- name: gfx.webrender.split-render-roots
+- name: gfx.webrender.compositor
   type: bool
   value: false
   mirror: once
 
-- name: gfx.webrender.compositor
-  type: bool
-  value: false
+- name: gfx.webrender.max-partial-present-rects
+  type: uint32_t
+  value: 0
   mirror: once
 
 #ifdef NIGHTLY_BUILD
@@ -3853,22 +3876,6 @@
 # Whether we attempt to downscale images during decoding.
 - name: image.downscale-during-decode.enabled
   type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
-# Whether to honor orientation metadata (such as JPEG EXIF tags) by default.
-# When this pref is enabled, all images used by the platform will be correctly
-# re-oriented, except for content images (HTML <img> and CSS generated content
-# images) with image-orientation:none.
-- name: image.honor-orientation-metadata
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
-# Honor image orientation metadata in the naturalWidth and naturalHeight
-# APIs on HTMLImageElement.
-- name: image.honor_orientation_metadata.natural_size
-  type: bool
   value: true
   mirror: always
 
@@ -4883,10 +4890,30 @@
   value: 4096
   mirror: always
 
+# Whether non-standard caption-side values are enabled
+- name: layout.css.caption-side-non-standard.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
+# Whether @layer is enabled
+- name: layout.css.cascade-layers.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
 # Whether Constructable Stylesheets are enabled in script.
 - name: layout.css.constructable-stylesheets.enabled
   type: bool
   value: false
+  mirror: always
+
+# Should we look for counter ancestor scopes first?
+- name: layout.css.counter-ancestor-scope.enabled
+  type: bool
+  value: true
   mirror: always
 
 # Make `zoom` a `transform` + `transform-origin` alias.
@@ -4907,10 +4934,41 @@
   mirror: always
   rust: true
 
+# Whether the `:autofill` pseudo-class is exposed to content.
+- name: layout.css.autofill.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
+# Whether the `-moz-outline-radius` pseudo-class is exposed to content.
+- name: layout.css.moz-outline-radius.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
+# Whether the `-moz-control-character-visibility` property is exposed to
+# content.
+#
+# Only for testing purposes.
+- name: layout.css.moz-control-character-visibility.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
+# Whether the `accent-color` css property is enabled.
+- name: layout.css.accent-color.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
 # Whether the `aspect-ratio` in css-sizing-4 is enabled.
 - name: layout.css.aspect-ratio.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
   rust: true
 
@@ -4927,11 +4985,26 @@
   mirror: always
   rust: true
 
+# Is the image-set() function enabled?
+- name: layout.css.image-set.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
 # Are implicit tracks in computed grid templates serialized?
 - name: layout.css.serialize-grid-implicit-tracks
   type: RelaxedAtomicBool
-  value: @IS_NOT_NIGHTLY_BUILD@
+  value: true
   mirror: always
+
+# Whether the rule hash is applied to attribute names too, not
+# only classes / id / namespaces / etc.
+- name: layout.css.bucket-attribute-names.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
 
 # Set the number of device pixels per CSS pixel. A value <= 0 means choose
 # automatically based on user settings for the platform (e.g., "UI scale factor"
@@ -4940,30 +5013,6 @@
 - name: layout.css.devPixelsPerPx
   type: AtomicFloat
   value: -1.0f
-  mirror: always
-
-# text underline offset
-- name: layout.css.text-underline-offset.enabled
-  type: bool
-  value: true
-  mirror: always
-
-# text underline position
-- name: layout.css.text-underline-position.enabled
-  type: bool
-  value: @IS_NIGHTLY_BUILD@
-  mirror: always
-
-# text decoration thickness
-- name: layout.css.text-decoration-thickness.enabled
-  type: bool
-  value: true
-  mirror: always
-
-# text decoration skip ink
-- name: layout.css.text-decoration-skip-ink.enabled
-  type: bool
-  value: true
   mirror: always
 
 # Is support for CSS backdrop-filter enabled?
@@ -4984,6 +5033,12 @@
   type: bool
   value: @IS_NOT_RELEASE_OR_BETA@
   mirror: always
+
+- name: layout.css.cross-fade.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
 
 # Is support for DOMMatrix enabled?
 - name: layout.css.DOMMatrix.enabled
@@ -5008,6 +5063,13 @@
   type: bool
   value: false
   mirror: always
+
+# Is support for fit-content() enabled?
+- name: layout.css.fit-content-function.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
 
 # Is support for the font-display @font-face descriptor enabled?
 - name: layout.css.font-display.enabled
@@ -5045,7 +5107,7 @@
 # Is support for CSS masonry layout enabled?
 - name: layout.css.grid-template-masonry-value.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -5054,13 +5116,6 @@
   type: bool
   value: true
   mirror: always
-
-# Is the initial value for the image-orientation property 'from-image'?
-- name: layout.css.image-orientation.initial-from-image
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
 
 # Is support for CSS initial-letter property enabled?
 - name: layout.css.initial-letter.enabled
@@ -5094,13 +5149,6 @@
   value: false
   mirror: always
 
-# Expose the media query -moz-touch-enabled to web content.
-- name: layout.css.moz-touch-enabled.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
-
 # Pref to control whether the ::marker property restrictions defined in [1]
 # apply.
 #
@@ -5117,31 +5165,6 @@
   value: false
   mirror: always
   rust: true
-
-# Whether the ::-moz-focus-outer pseudo-class is parsed.
-- name: layout.css.moz-focus-outer.enabled
-  type: RelaxedAtomicBool
-  value: @IS_NOT_NIGHTLY_BUILD@
-  mirror: always
-  rust: true
-
-# Pref to control whether @-moz-document url-prefix() is parsed in content
-# pages. Only effective when layout.css.moz-document.content.enabled is false.
-- name: layout.css.moz-document.url-prefix-hack.enabled
-  type: RelaxedAtomicBool
-#ifdef EARLY_BETA_OR_EARLIER
-  value: false
-#else
-  value: true
-#endif
-  mirror: always
-  rust: true
-
-# Whether the offset-* logical property aliases are enabled.
-- name: layout.css.offset-logical-properties.enabled
-  type: bool
-  value: false
-  mirror: always
 
 # Is -moz-osx-font-smoothing enabled? (Only supported in OSX builds)
 - name: layout.css.osx-font-smoothing.enabled
@@ -5170,12 +5193,26 @@
   value: true
   mirror: always
 
+# Enables parsing size properties in page at-rules
+- name: layout.css.page-size.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
 # Dictates whether or not the prefers contrast media query will be
 # usable.
 #   true: prefers-contrast will toggle based on OS and browser settings.
 #   false: prefers-contrast will only parse and toggle in the browser
 #   chrome and ua.
 - name: layout.css.prefers-contrast.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
+# Dictates whether or not the forced-colors media query is enabled.
+- name: layout.css.forced-colors.enabled
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -5305,13 +5342,6 @@
   value: true
   mirror: always
 
-# Does arbitrary ::-webkit-* pseudo-element parsed?
-- name: layout.css.unknown-webkit-pseudo-element
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
-
 # Should the :visited selector ever match (otherwise :link matches instead)?
 - name: layout.css.visited_links_enabled
   type: bool
@@ -5327,14 +5357,6 @@
 # Pref to control whether display: -moz-box and display: -moz-inline-box are
 # parsed in content pages.
 - name: layout.css.xul-box-display-values.content.enabled
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-  rust: true
-
-# Pref to control whether XUL ::-tree-* pseudo-elements are parsed in content
-# pages.
-- name: layout.css.xul-tree-pseudos.content.enabled
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -5413,6 +5435,11 @@
 - name: layout.display-list.flatten-transform
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+
+- name: layout.display-list.improve-fragmentation
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 # Are dynamic reflow roots enabled?
@@ -5512,7 +5539,13 @@
 # Is layout of CSS outline-style:auto enabled?
 - name: layout.css.outline-style-auto.enabled
   type: bool
-  value: false
+  value: true
+  mirror: always
+
+# Whether outline should follow the border radius.
+- name: layout.css.outline-follows-border-radius.enabled
+  type: bool
+  value: true
   mirror: always
 
 # Pref to control enabling scroll anchoring.
@@ -5567,24 +5600,11 @@
   value: true
   mirror: always
 
-# Is support for CSS text-justify property enabled?
-- name: layout.css.text-justify.enabled
-  type: bool
-  value: true
-  mirror: always
-
 # Is support for -webkit-line-clamp enabled?
 - name: layout.css.webkit-line-clamp.enabled
   type: bool
   value: true
   mirror: always
-
-# Is support for the ::file-chooser-button pseudo-element enabled?
-- name: layout.css.file-chooser-button.enabled
-  type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
-  mirror: always
-  rust: true
 
 # Whether the computed value of line-height: normal returns the `normal`
 # keyword rather than a pixel value based on the first available font.
@@ -5659,6 +5679,28 @@
 - name: layout.viewport_contains_no_contents_area
   type: bool
   value: true
+  mirror: always
+
+# Controls double click and Alt+Arrow word selection behavior.
+- name: layout.word_select.eat_space_to_next_word
+  type: bool
+#ifdef XP_WIN
+  value: true
+#else
+  value: false
+#endif
+  mirror: always
+
+- name: layout.word_select.stop_at_punctuation
+  type: bool
+  value: true
+  mirror: always
+
+# Whether underscore should be treated as a word-breaking character for
+# word selection/arrow-key movement purposes.
+- name: layout.word_select.stop_at_underscore
+  type: bool
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -6445,7 +6487,6 @@
   value: false
   mirror: always
 
-# This affects whether events will be routed through APZ or not.
 - name: mousewheel.system_scroll_override_on_root_content.enabled
   type: RelaxedAtomicBool
 #ifdef XP_WIN
@@ -6958,6 +6999,12 @@
   value: true
   mirror: always
 
+# Whether we always print silently (without a print dialog).
+- name: print.always_print_silent
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "privacy."
 #---------------------------------------------------------------------------
@@ -7376,7 +7423,7 @@
 # keywords are currently not part of any spec, which is partly why we disable
 # them for web content.
 - name: svg.context-properties.content.enabled
-  type: bool
+  type: RelaxedAtomicBool
   value: false
   mirror: always
 
@@ -7843,11 +7890,7 @@
 
 - name: zoom.maxPercent
   type: uint32_t
-#ifdef ANDROID
-  value: 400
-#else
-  value: 300
-#endif
+  value: 1000
   mirror: always
 
 - name: zoom.minPercent

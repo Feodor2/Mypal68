@@ -359,12 +359,12 @@ bool GfxInfo::DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
                                     const nsAString& aDriverVendor) {
   if (mIsMesa &&
       aBlocklistVendor.Equals(GfxDriverInfo::GetDriverVendor(DriverMesaAll),
-                              nsCaseInsensitiveStringComparator())) {
+                              nsCaseInsensitiveStringComparator)) {
     return true;
   }
   if (!mIsMesa &&
       aBlocklistVendor.Equals(GfxDriverInfo::GetDriverVendor(DriverNonMesaAll),
-                              nsCaseInsensitiveStringComparator())) {
+                              nsCaseInsensitiveStringComparator)) {
     return true;
   }
   return GfxInfoBase::DoesDriverVendorMatch(aBlocklistVendor, aDriverVendor);

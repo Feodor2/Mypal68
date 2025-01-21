@@ -111,6 +111,9 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY toggleReaderMode.key "R">
 <!ENTITY toggleReaderMode.win.keycode "VK_F9">
 
+<!ENTITY togglePictureInPicture.key2 "}">
+<!ENTITY togglePictureInPicture.key "]"> <!-- } is above this key on many keyboards -->
+
 <!ENTITY fxaSignIn.label "Sign in to &syncBrand.shortName.label;">
 <!ENTITY fxaSignedIn.tooltip "Open &syncBrand.shortName.label; preferences">
 <!ENTITY fxaSignInError.label "Reconnect to &syncBrand.shortName.label;">
@@ -124,6 +127,9 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY fullScreenAutohide.accesskey "H">
 <!ENTITY fullScreenExit.label "Exit Full Screen Mode">
 <!ENTITY fullScreenExit.accesskey "F">
+
+<!ENTITY pictureInPictureHideToggle.label "Hide Picture-in-Picture Toggle">
+<!ENTITY pictureInPictureHideToggle.accesskey "H">
 
  <!-- LOCALIZATION NOTE (fxa.signin) Used to define the different labels
      for the Firefox Account toolbar signin menu screen. -->

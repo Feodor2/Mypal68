@@ -92,6 +92,8 @@ loader.lazyGetter(this, "FONT_VARIATIONS_ENABLED", () => {
   return Services.prefs.getBoolPref("layout.css.font-variations.enabled");
 });
 
+loader.lazyRequireGetter(this, "ChromeUtils");
+
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const FONT_PREVIEW_TEXT = "Abc";
 const FONT_PREVIEW_FONT_SIZE = 40;
@@ -735,16 +737,13 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
         return node.matches(":fullscreen");
       case ":cue":
         return node.nodeName == "VIDEO";
-      case ":file-chooser-button":
+      case ":file-selector-button":
         return node.nodeName == "INPUT" && node.type == "file";
       case ":placeholder":
       case ":-moz-placeholder":
         return this._nodeIsTextfieldLike(node);
       case ":-moz-focus-inner":
         return this._nodeIsButtonLike(node);
-      case ":-moz-math-anonymous":
-        // This one should be internal, really.
-        return false;
       case ":-moz-meter-bar":
         return node.nodeName == "METER";
       case ":-moz-progress-bar":
@@ -754,7 +753,6 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
       case ":-moz-range-progress":
       case ":-moz-range-thumb":
       case ":-moz-range-track":
-      case ":-moz-focus-outer":
         return node.nodeName == "INPUT" && node.type == "range";
       default:
         throw Error("Unhandled pseudo-element " + pseudo);
@@ -1385,6 +1383,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
       type: this.type,
       line: this.line || undefined,
       column: this.column,
+      ancestorData: [],
       traits: {
         // Whether the style rule actor implements the setRuleText
         // method.
@@ -1396,22 +1395,45 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
       form.parentRule = this.pageStyle._styleRef(
         this.rawRule.parentRule
       ).actorID;
+    }
 
-      // CSS rules that we call media rules are STYLE_RULES that are children
-      // of MEDIA_RULEs. We need to check the parentRule to check if a rule is
-      // a media rule so we do this here instead of in the switch statement
-      // below.
-      if (this.rawRule.parentRule.type === CSSRule.MEDIA_RULE) {
-        form.media = [];
-        for (let i = 0, n = this.rawRule.parentRule.media.length; i < n; i++) {
-          form.media.push(this.rawRule.parentRule.media.item(i));
-        }
+    // Go through all ancestor so we can build an array of all the media queries and
+    // layers this rule is in.
+    for (const ancestorRule of this.ancestorRules) {
+      if (
+        ancestorRule.type === CSSRule.MEDIA_RULE &&
+        ancestorRule.rawRule.media?.length
+      ) {
+        form.ancestorData.push({
+          type: "media",
+          value: Array.from(ancestorRule.rawRule.media).join(", "),
+        });
+      } else if (
+        ChromeUtils.getClassName(ancestorRule.rawRule) === "CSSLayerBlockRule"
+      ) {
+        form.ancestorData.push({
+          type: "layer",
+          value: ancestorRule.rawRule.name,
+        });
       }
     }
+
     if (this._parentSheet) {
       form.parentStyleSheet = this.pageStyle._sheetRef(
         this._parentSheet
       ).actorID;
+
+      // If the rule is in a imported stylesheet with a specified layer, put it at the top
+      // of the ancestor data array.
+      if (
+        this._parentSheet.ownerRule &&
+        this._parentSheet.ownerRule.layerName !== null
+      ) {
+        form.ancestorData.unshift({
+          type: "layer",
+          value: this._parentSheet.ownerRule.layerName,
+        });
+      }
     }
 
     // One tricky thing here is that other methods in this actor must

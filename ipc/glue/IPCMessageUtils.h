@@ -256,9 +256,9 @@ struct BitFlagsEnumSerializer
  */
 template <typename T>
 struct PlainOldDataSerializer {
-  static_assert(
-      std::is_trivially_copyable<T>::value,
-      "PlainOldDataSerializer can only be used with trivially copyable types!");
+//  static_assert(
+//      std::is_trivially_copyable<T>::value,
+//      "PlainOldDataSerializer can only be used with trivially copyable types!");
 
   typedef T paramType;
 

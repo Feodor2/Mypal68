@@ -207,7 +207,6 @@ toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-t
 toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-badge-stack {
   color: inherit;
   outline: var(--toolbarbutton-focus-outline);
-  -moz-outline-radius: var(--toolbarbutton-border-radius);
   outline-offset: unset;
 }
 
@@ -255,10 +254,6 @@ toolbar .toolbarbutton-1:-moz-focusring {
   padding: 8px;
   transition-property: box-shadow;
   transition-duration: var(--toolbarbutton-hover-transition-duration);
-}
-
-:root:not([uidensity=compact]) #back-button:-moz-focusring > .toolbarbutton-icon {
-  -moz-outline-radius: 10000px;
 }
 
 :root[uidensity=touch] #back-button:-moz-focusring > .toolbarbutton-icon {

@@ -156,8 +156,7 @@ nsresult HTMLEditorEventListener::ListenToMouseMoveEventForResizersOrGrabber(
 
   if (aListen) {
     eventListenerManager->AddEventListenerByType(
-        this, NS_LITERAL_STRING("mousemove"),
-        TrustedEventsAtSystemGroupBubble());
+        this, u"mousemove"_ns, TrustedEventsAtSystemGroupBubble());
     if (aForGrabber) {
       mListeningToMouseMoveEventForGrabber = true;
     } else {
@@ -167,7 +166,7 @@ nsresult HTMLEditorEventListener::ListenToMouseMoveEventForResizersOrGrabber(
   }
 
   eventListenerManager->RemoveEventListenerByType(
-      this, NS_LITERAL_STRING("mousemove"), TrustedEventsAtSystemGroupBubble());
+      this, u"mousemove"_ns, TrustedEventsAtSystemGroupBubble());
   if (aForGrabber) {
     mListeningToMouseMoveEventForGrabber = false;
   } else {
@@ -215,13 +214,13 @@ nsresult HTMLEditorEventListener::ListenToWindowResizeEvent(bool aListen) {
 
   if (aListen) {
     eventListenerManager->AddEventListenerByType(
-        this, NS_LITERAL_STRING("resize"), TrustedEventsAtSystemGroupBubble());
+        this, u"resize"_ns, TrustedEventsAtSystemGroupBubble());
     mListeningToResizeEvent = true;
     return NS_OK;
   }
 
   eventListenerManager->RemoveEventListenerByType(
-      this, NS_LITERAL_STRING("resize"), TrustedEventsAtSystemGroupBubble());
+      this, u"resize"_ns, TrustedEventsAtSystemGroupBubble());
   mListeningToResizeEvent = false;
   return NS_OK;
 }

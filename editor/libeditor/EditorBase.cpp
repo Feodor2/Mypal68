@@ -1347,8 +1347,8 @@ nsresult EditorBase::MarkElementDirty(Element& aElement) {
   if (!OutputsMozDirty()) {
     return NS_OK;
   }
-  DebugOnly<nsresult> rvIgnored = aElement.SetAttr(
-      kNameSpaceID_None, nsGkAtoms::mozdirty, EmptyString(), false);
+  DebugOnly<nsresult> rvIgnored =
+      aElement.SetAttr(kNameSpaceID_None, nsGkAtoms::mozdirty, u""_ns, false);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
       "Element::SetAttr(nsGkAtoms::mozdirty) failed, but ignored");
@@ -2378,7 +2378,7 @@ nsresult EditorBase::InsertTextWithTransaction(
     CheckedInt<int32_t> newOffset;
     if (!pointToInsert.IsInTextNode()) {
       // create a text node
-      RefPtr<nsTextNode> newNode = CreateTextNode(EmptyString());
+      RefPtr<nsTextNode> newNode = CreateTextNode(u""_ns);
       if (NS_WARN_IF(!newNode)) {
         return NS_ERROR_FAILURE;
       }
@@ -4589,8 +4589,7 @@ nsresult EditorBase::ToggleTextDirectionAsAction(nsIPrincipal* aPrincipal) {
   // but not canceled.
   TextDirection newDirection =
       IsRightToLeft() ? TextDirection::eLTR : TextDirection::eRTL;
-  editActionData.SetData(IsRightToLeft() ? NS_LITERAL_STRING("ltr")
-                                         : NS_LITERAL_STRING("rtl"));
+  editActionData.SetData(IsRightToLeft() ? u"ltr"_ns : u"rtl"_ns);
 
   // FYI: Oddly, Chrome does not dispatch beforeinput event in this case but
   //      dispatches input event.
@@ -4628,9 +4627,8 @@ void EditorBase::SwitchTextDirectionTo(TextDirection aTextDirection) {
     return;
   }
 
-  editActionData.SetData(aTextDirection == TextDirection::eLTR
-                             ? NS_LITERAL_STRING("ltr")
-                             : NS_LITERAL_STRING("rtl"));
+  editActionData.SetData(aTextDirection == TextDirection::eLTR ? u"ltr"_ns
+                                                               : u"rtl"_ns);
 
   // FYI: Oddly, Chrome does not dispatch beforeinput event in this case but
   //      dispatches input event.
@@ -4666,7 +4664,7 @@ nsresult EditorBase::SetTextDirectionTo(TextDirection aTextDirection) {
     mFlags &= ~nsIEditor::eEditorRightToLeft;
     mFlags |= nsIEditor::eEditorLeftToRight;
     nsresult rv = rootElement->SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
-                                       NS_LITERAL_STRING("ltr"), true);
+                                       u"ltr"_ns, true);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "Element::SetAttr(nsGkAtoms::dir, ltr) failed");
     return rv;
@@ -4677,7 +4675,7 @@ nsresult EditorBase::SetTextDirectionTo(TextDirection aTextDirection) {
     mFlags |= nsIEditor::eEditorRightToLeft;
     mFlags &= ~nsIEditor::eEditorLeftToRight;
     nsresult rv = rootElement->SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
-                                       NS_LITERAL_STRING("rtl"), true);
+                                       u"rtl"_ns, true);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "Element::SetAttr(nsGkAtoms::dir, rtl) failed");
     return rv;
@@ -5356,8 +5354,8 @@ void EditorBase::AutoEditActionDataSetter::SetColorData(
 
   if (aData.IsEmpty()) {
     // When removing color/background-color, let's use empty string.
-    MOZ_ASSERT(!EmptyString().IsVoid());
-    mData = EmptyString();
+    mData.Truncate();
+    MOZ_ASSERT(!mData.IsVoid());
     return;
   }
 

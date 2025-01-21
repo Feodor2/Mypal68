@@ -51,6 +51,7 @@
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsStringFwd.h"
+#include "nsStyledElement.h"
 #include "nsTArray.h"
 #include "nsTextNode.h"
 #include "nsThreadUtils.h"
@@ -1534,7 +1535,7 @@ EditActionResult HTMLEditor::HandleInsertText(
   // don't change my selection in subtransactions
   AutoTransactionsConserveSelection dontChangeMySelection(*this);
   int32_t pos = 0;
-  NS_NAMED_LITERAL_STRING(newlineStr, LFSTR);
+  constexpr auto newlineStr = NS_LITERAL_STRING_FROM_CSTRING(LFSTR);
 
   {
     AutoTrackDOMPoint tracker(RangeUpdaterRef(), &pointToInsert);
@@ -1607,8 +1608,8 @@ EditActionResult HTMLEditor::HandleInsertText(
         }
       }
     } else {
-      NS_NAMED_LITERAL_STRING(tabStr, "\t");
-      NS_NAMED_LITERAL_STRING(spacesStr, "    ");
+      constexpr auto tabStr = u"\t"_ns;
+      constexpr auto spacesStr = u"    "_ns;
       char specialChars[] = {TAB, nsCRT::LF, 0};
       nsAutoString insertionString(aInsertionString);  // For FindCharInSet().
       while (pos != -1 &&
@@ -6827,7 +6828,7 @@ nsresult HTMLEditor::CreateStyleForInsertText(
             *pointToPutCaret.ContainerAsContent())) {
       return NS_OK;
     }
-    RefPtr<Text> newEmptyTextNode = CreateTextNode(EmptyString());
+    RefPtr<Text> newEmptyTextNode = CreateTextNode(u""_ns);
     if (!newEmptyTextNode) {
       NS_WARNING("EditorBase::CreateTextNode() failed");
       return NS_ERROR_FAILURE;
@@ -7232,6 +7233,8 @@ nsresult HTMLEditor::AlignNodesAndDescendants(
     if (HTMLEditUtils::IsListItem(content) || HTMLEditUtils::IsList(content)) {
       Element* listOrListItemElement = content->AsElement();
       AutoEditorDOMPointOffsetInvalidator lockChild(atContent);
+      // MOZ_KnownLive(*listOrListItemElement): An element of aArrayOfContents
+      // which is array of OwningNonNull.
       nsresult rv = RemoveAlignFromDescendants(
           MOZ_KnownLive(*listOrListItemElement), aAlignType,
           EditTarget::OnlyDescendantsExceptTable);
@@ -7243,11 +7246,25 @@ nsresult HTMLEditor::AlignNodesAndDescendants(
       }
 
       if (useCSS) {
-        mCSSEditUtils->SetCSSEquivalentToHTMLStyle(
-            MOZ_KnownLive(listOrListItemElement), nullptr, nsGkAtoms::align,
-            &aAlignType, false);
-        if (NS_WARN_IF(Destroyed())) {
-          return NS_ERROR_EDITOR_DESTROYED;
+        if (nsStyledElement* styledListOrListItemElement =
+                nsStyledElement::FromNode(listOrListItemElement)) {
+          // MOZ_KnownLive(*styledListOrListItemElement): An element of
+          // aArrayOfContents which is array of OwningNonNull.
+          Result<int32_t, nsresult> result =
+              mCSSEditUtils->SetCSSEquivalentToHTMLStyleWithTransaction(
+                  MOZ_KnownLive(*styledListOrListItemElement), nullptr,
+                  nsGkAtoms::align, &aAlignType);
+          if (result.isErr()) {
+            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
+              NS_WARNING(
+                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
+                  "nsGkAtoms::align) destroyed the editor");
+              return NS_ERROR_EDITOR_DESTROYED;
+            }
+            NS_WARNING(
+                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
+                "nsGkAtoms::align) failed, but ignored");
+          }
         }
         createdDivElement = nullptr;
         continue;
@@ -7259,6 +7276,8 @@ nsresult HTMLEditor::AlignNodesAndDescendants(
         // XXX AlignContentsInAllTableCellsAndListItems() handles only list
         //     item elements and table cells.  Is it intentional?  Why don't
         //     we need to align contents in other type blocks?
+        // MOZ_KnownLive(*listOrListItemElement): An element of aArrayOfContents
+        // which is array of OwningNonNull.
         nsresult rv = AlignContentsInAllTableCellsAndListItems(
             MOZ_KnownLive(*listOrListItemElement), aAlignType);
         if (NS_FAILED(rv)) {
@@ -11259,16 +11278,21 @@ nsresult HTMLEditor::RemoveAlignFromDescendants(Element& aElement,
           return rv;
         }
       } else {
-        nsAutoString dummyCssValue;
-        nsresult rv = mCSSEditUtils->RemoveCSSInlineStyle(
-            blockOrHRElement, nsGkAtoms::textAlign, dummyCssValue);
-        if (NS_WARN_IF(Destroyed())) {
-          return NS_ERROR_EDITOR_DESTROYED;
+        nsStyledElement* styledBlockOrHRElement =
+            nsStyledElement::FromNode(blockOrHRElement);
+        if (NS_WARN_IF(!styledBlockOrHRElement)) {
+          return NS_ERROR_FAILURE;
         }
+        // MOZ_KnownLive(*styledBlockOrHRElement): It's `blockOrHRElement
+        // which is OwningNonNull.
+        nsAutoString dummyCssValue;
+        nsresult rv = mCSSEditUtils->RemoveCSSInlineStyleWithTransaction(
+            MOZ_KnownLive(*styledBlockOrHRElement), nsGkAtoms::textAlign,
+            dummyCssValue);
         if (NS_FAILED(rv)) {
           NS_WARNING(
-              "CSSEditUtils::RemoveCSSInlineStyle(nsGkAtoms::textAlign) "
-              "failed");
+              "CSSEditUtils::RemoveCSSInlineStyleWithTransaction(nsGkAtoms::"
+              "textAlign) failed");
           return rv;
         }
       }
@@ -11435,23 +11459,44 @@ nsresult HTMLEditor::ChangeMarginStart(Element& aElement,
   }
 
   if (0 < f) {
-    nsAutoString newValue;
-    newValue.AppendFloat(f);
-    newValue.Append(nsDependentAtomString(unit));
-    DebugOnly<nsresult> rvIgnored = mCSSEditUtils->SetCSSProperty(
-        aElement, MOZ_KnownLive(marginProperty), newValue);
-    if (NS_WARN_IF(Destroyed())) {
-      return NS_ERROR_EDITOR_DESTROYED;
+    if (nsStyledElement* styledElement = nsStyledElement::FromNode(&aElement)) {
+      nsAutoString newValue;
+      newValue.AppendFloat(f);
+      newValue.Append(nsDependentAtomString(unit));
+      // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
+      // be guaranteed by caller because of MOZ_CAN_RUN_SCRIPT method.
+      // MOZ_KnownLive(merginProperty): It's nsStaticAtom.
+      nsresult rv = mCSSEditUtils->SetCSSPropertyWithTransaction(
+          MOZ_KnownLive(*styledElement), MOZ_KnownLive(marginProperty),
+          newValue);
+      if (rv == NS_ERROR_EDITOR_DESTROYED) {
+        NS_WARNING(
+            "CSSEditUtils::SetCSSPropertyWithTransaction() destroyed the "
+            "editor");
+        return NS_ERROR_EDITOR_DESTROYED;
+      }
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "CSSEditUtils::SetCSSPropertyWithTransaction() failed, but ignored");
     }
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                         "CSSEditUtils::SetCSSProperty() failed, but ignored");
     return NS_OK;
   }
 
-  mCSSEditUtils->RemoveCSSProperty(aElement, MOZ_KnownLive(marginProperty),
-                                   value);
-  if (NS_WARN_IF(Destroyed())) {
-    return NS_ERROR_EDITOR_DESTROYED;
+  if (nsStyledElement* styledElement = nsStyledElement::FromNode(&aElement)) {
+    // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
+    // be guaranteed by caller because of MOZ_CAN_RUN_SCRIPT method.
+    // MOZ_KnownLive(merginProperty): It's nsStaticAtom.
+    nsresult rv = mCSSEditUtils->RemoveCSSPropertyWithTransaction(
+        MOZ_KnownLive(*styledElement), MOZ_KnownLive(marginProperty), value);
+    if (rv == NS_ERROR_EDITOR_DESTROYED) {
+      NS_WARNING(
+          "CSSEditUtils::RemoveCSSPropertyWithTransaction() destroyed the "
+          "editor");
+      return NS_ERROR_EDITOR_DESTROYED;
+    }
+    NS_WARNING_ASSERTION(
+        NS_SUCCEEDED(rv),
+        "CSSEditUtils::RemoveCSSPropertyWithTransaction() failed, but ignored");
   }
 
   // Remove unnecessary divs
@@ -12004,15 +12049,22 @@ EditActionResult HTMLEditor::AddZIndexAsSubAction(int32_t aChange) {
     return EditActionHandled(NS_ERROR_FAILURE);
   }
 
+  nsStyledElement* absolutelyPositionedStyledElement =
+      nsStyledElement::FromNode(absolutelyPositionedElement);
+  if (NS_WARN_IF(!absolutelyPositionedStyledElement)) {
+    return EditActionHandled(NS_ERROR_FAILURE);
+  }
+
   {
     AutoSelectionRestorer restoreSelectionLater(*this);
 
-    int32_t zIndex;
-    nsresult rv = RelativeChangeElementZIndex(*absolutelyPositionedElement,
-                                              aChange, &zIndex);
-    if (NS_FAILED(rv)) {
-      NS_WARNING("HTMLEditor::RelativeChangeElementZIndex() failed");
-      return EditActionHandled(rv);
+    // MOZ_KnownLive(*absolutelyPositionedStyledElement): It's
+    // absolutelyPositionedElement whose type is RefPtr.
+    Result<int32_t, nsresult> result = AddZIndexWithTransaction(
+        MOZ_KnownLive(*absolutelyPositionedStyledElement), aChange);
+    if (result.isErr()) {
+      NS_WARNING("HTMLEditor::AddZIndexWithTransaction() failed");
+      return EditActionHandled(result.unwrapErr());
     }
   }
 

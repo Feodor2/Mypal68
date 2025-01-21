@@ -2680,10 +2680,23 @@ void nsChildView::ReportSwipeStarted(uint64_t aInputBlockId, bool aStartSwipe) {
 }
 
 nsEventStatus nsChildView::DispatchAPZInputEvent(InputData& aEvent) {
+  APZEventResult result;
+
   if (mAPZC) {
-    return mAPZC->InputBridge()->ReceiveInputEvent(aEvent).mStatus;
+    result = mAPZC->InputBridge()->ReceiveInputEvent(aEvent);
   }
-  return nsEventStatus_eIgnore;
+
+  if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
+    return result.mStatus;
+  }
+
+  if (aEvent.mInputType == PINCHGESTURE_INPUT) {
+    PinchGestureInput& pinchEvent = aEvent.AsPinchGestureInput();
+    WidgetWheelEvent wheelEvent = pinchEvent.ToWidgetWheelEvent(this);
+    ProcessUntransformedAPZEvent(&wheelEvent, result);
+  }
+
+  return result.mStatus;
 }
 
 void nsChildView::DispatchAPZWheelInputEvent(InputData& aEvent, bool aCanTriggerSwipe) {
@@ -3097,7 +3110,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
     mDragService = nullptr;
 
     mGestureState = eGestureState_None;
-    mCumulativeMagnification = 0.0;
     mCumulativeRotation = 0.0;
 
     mNeedsGLUpdate = NO;
@@ -3853,116 +3865,48 @@ NSEvent* gLastDragMouseDownEvent = nil;
     return;
   }
 
-  // FIXME: bug 1525793 -- this may need to handle zooming or not on a per-document basis.
-  if (StaticPrefs::apz_allow_zooming()) {
-    NSPoint locationInWindow = nsCocoaUtils::EventLocationForWindow(anEvent, [self window]);
-    ScreenPoint position =
-        ViewAs<ScreenPixel>([self convertWindowCoordinatesRoundDown:locationInWindow],
+  NSPoint locationInWindow = nsCocoaUtils::EventLocationForWindow(anEvent, [self window]);
+  ScreenPoint position =
+      ViewAs<ScreenPixel>([self convertWindowCoordinatesRoundDown:locationInWindow],
+                          PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent);
+  ExternalPoint screenOffset =
+      ViewAs<ExternalPixel>(mGeckoChild->WidgetToScreenOffset(),
                             PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent);
-    ExternalPoint screenOffset =
-        ViewAs<ExternalPixel>(mGeckoChild->WidgetToScreenOffset(),
-                              PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent);
 
-    PRIntervalTime eventIntervalTime = PR_IntervalNow();
-    TimeStamp eventTimeStamp = nsCocoaUtils::GetEventTimeStamp([anEvent timestamp]);
-    NSEventPhase eventPhase = [anEvent phase];
-    PinchGestureInput::PinchGestureType pinchGestureType;
+  PRIntervalTime eventIntervalTime = PR_IntervalNow();
+  TimeStamp eventTimeStamp = nsCocoaUtils::GetEventTimeStamp([anEvent timestamp]);
+  NSEventPhase eventPhase = [anEvent phase];
+  PinchGestureInput::PinchGestureType pinchGestureType;
 
-    switch (eventPhase) {
-      case NSEventPhaseBegan: {
-        pinchGestureType = PinchGestureInput::PINCHGESTURE_START;
-        break;
-      }
-      case NSEventPhaseChanged: {
-        pinchGestureType = PinchGestureInput::PINCHGESTURE_SCALE;
-        break;
-      }
-      case NSEventPhaseEnded: {
-        pinchGestureType = PinchGestureInput::PINCHGESTURE_END;
-        break;
-      }
-      default: {
-        NS_WARNING("Unexpected phase for pinch gesture event.");
-        return;
-      }
+  switch (eventPhase) {
+    case NSEventPhaseBegan: {
+      pinchGestureType = PinchGestureInput::PINCHGESTURE_START;
+      break;
     }
-
-    PinchGestureInput event{pinchGestureType,
-                            eventIntervalTime,
-                            eventTimeStamp,
-                            screenOffset,
-                            position,
-                            100.0,
-                            100.0 * (1.0 - [anEvent magnification]),
-                            nsCocoaUtils::ModifiersForEvent(anEvent)};
-
-    if (pinchGestureType == PinchGestureInput::PINCHGESTURE_END) {
-      event.mFocusPoint = PinchGestureInput::BothFingersLifted<ScreenPixel>();
+    case NSEventPhaseChanged: {
+      pinchGestureType = PinchGestureInput::PINCHGESTURE_SCALE;
+      break;
     }
-
-    mGeckoChild->DispatchAPZInputEvent(event);
-  } else {
-    if (!anEvent || [self beginOrEndGestureForEventPhase:anEvent]) {
+    case NSEventPhaseEnded: {
+      pinchGestureType = PinchGestureInput::PINCHGESTURE_END;
+      break;
+    }
+    default: {
+      NS_WARNING("Unexpected phase for pinch gesture event.");
       return;
     }
-
-    nsAutoRetainCocoaObject kungFuDeathGrip(self);
-
-    float deltaZ = [anEvent deltaZ];
-
-    EventMessage msg;
-    switch (mGestureState) {
-      case eGestureState_StartGesture:
-        msg = eMagnifyGestureStart;
-        mGestureState = eGestureState_MagnifyGesture;
-        break;
-
-      case eGestureState_MagnifyGesture:
-        msg = eMagnifyGestureUpdate;
-        break;
-
-      case eGestureState_None:
-      case eGestureState_RotateGesture:
-      default:
-        return;
-    }
-
-    // This sends the pinch gesture value as a fake wheel event that has the
-    // control key pressed so that pages can implement custom pinch gesture
-    // handling. It may seem strange that this doesn't use a wheel event with
-    // the deltaZ property set, but this matches Chrome's behavior as described
-    // at https://code.google.com/p/chromium/issues/detail?id=289887
-    //
-    // The intent of the formula below is to produce numbers similar to Chrome's
-    // implementation of this feature. Chrome implements deltaY using the formula
-    // "-100 * log(1 + [event magnification])" which is unfortunately incorrect.
-    // All deltas for a single pinch gesture should sum to 0 if the start and end
-    // of a pinch gesture end up in the same place. This doesn't happen in Chrome
-    // because they followed Apple's misleading documentation, which implies that
-    // "1 + [event magnification]" is the scale factor. The scale factor is
-    // instead "pow(ratio, [event magnification])" so "[event magnification]" is
-    // already in log space.
-    //
-    // The multiplication by the backing scale factor below counteracts the
-    // division by the backing scale factor in WheelEvent.
-    WidgetWheelEvent geckoWheelEvent(true, EventMessage::eWheel, mGeckoChild);
-    [self convertCocoaMouseEvent:anEvent toGeckoEvent:&geckoWheelEvent];
-    double backingScale = mGeckoChild->BackingScaleFactor();
-    geckoWheelEvent.mDeltaY = -100.0 * [anEvent magnification] * backingScale;
-    geckoWheelEvent.mModifiers |= MODIFIER_CONTROL;
-    mGeckoChild->DispatchWindowEvent(geckoWheelEvent);
-
-    // If the fake wheel event wasn't stopped, then send a normal magnify event.
-    if (!geckoWheelEvent.mFlags.mDefaultPrevented) {
-      WidgetSimpleGestureEvent geckoEvent(true, msg, mGeckoChild);
-      geckoEvent.mDelta = deltaZ;
-      [self convertCocoaMouseEvent:anEvent toGeckoEvent:&geckoEvent];
-      mGeckoChild->DispatchWindowEvent(geckoEvent);
-
-      // Keep track of the cumulative magnification for the final "magnify" event.
-      mCumulativeMagnification += deltaZ;
-    }
   }
+
+  PinchGestureInput event{pinchGestureType,
+                          eventIntervalTime,
+                          eventTimeStamp,
+                          screenOffset,
+                          position,
+                          100.0,
+                          100.0 * (1.0 - [anEvent magnification]),
+                          nsCocoaUtils::ModifiersForEvent(anEvent)};
+
+  mGeckoChild->DispatchAPZInputEvent(event);
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
@@ -4074,7 +4018,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
   }
 
   mGestureState = eGestureState_StartGesture;
-  mCumulativeMagnification = 0;
   mCumulativeRotation = 0.0;
 }
 
@@ -4084,7 +4027,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
   if (!anEvent || !mGeckoChild) {
     // Clear the gestures state if we cannot send an event.
     mGestureState = eGestureState_None;
-    mCumulativeMagnification = 0.0;
     mCumulativeRotation = 0.0;
     return;
   }
@@ -4092,16 +4034,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
 
   switch (mGestureState) {
-    case eGestureState_MagnifyGesture: {
-      // Setup the "magnify" event.
-      WidgetSimpleGestureEvent geckoEvent(true, eMagnifyGesture, mGeckoChild);
-      geckoEvent.mDelta = mCumulativeMagnification;
-      [self convertCocoaMouseEvent:anEvent toGeckoEvent:&geckoEvent];
-
-      // Send the event.
-      mGeckoChild->DispatchWindowEvent(geckoEvent);
-    } break;
-
     case eGestureState_RotateGesture: {
       // Setup the "rotate" event.
       WidgetSimpleGestureEvent geckoEvent(true, eRotateGesture, mGeckoChild);
@@ -4117,6 +4049,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
       mGeckoChild->DispatchWindowEvent(geckoEvent);
     } break;
 
+    case eGestureState_MagnifyGesture:  // APZ handles sending the widget events
     case eGestureState_None:
     case eGestureState_StartGesture:
     default:
@@ -4125,7 +4058,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   // Clear the gestures state.
   mGestureState = eGestureState_None;
-  mCumulativeMagnification = 0.0;
   mCumulativeRotation = 0.0;
 
   NS_OBJC_END_TRY_ABORT_BLOCK;

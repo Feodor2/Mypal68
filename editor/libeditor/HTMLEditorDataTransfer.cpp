@@ -1018,7 +1018,7 @@ nsresult HTMLEditor::ParseCFHTML(nsCString& aCfhtml, char16_t** aStuffToPaste,
   // create context string
   nsAutoCString contextUTF8(
       Substring(aCfhtml, startHTML, startFragment - startHTML) +
-      NS_LITERAL_CSTRING("<!--" kInsertCookie "-->") +
+      "<!--" kInsertCookie "-->"_ns +
       Substring(aCfhtml, endFragment, endHTML - endFragment));
 
   // validate startFragment
@@ -1203,10 +1203,10 @@ nsresult HTMLEditor::BlobReader::OnResult(const nsACString& aResult) {
 nsresult HTMLEditor::BlobReader::OnError(const nsAString& aError) {
   AutoTArray<nsString, 1> error;
   error.AppendElement(aError);
-  nsContentUtils::ReportToConsole(
-      nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Editor"),
-      mPointToInsert.GetContainer()->OwnerDoc(),
-      nsContentUtils::eDOM_PROPERTIES, "EditorFileDropFailed", error);
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Editor"_ns,
+                                  mPointToInsert.GetContainer()->OwnerDoc(),
+                                  nsContentUtils::eDOM_PROPERTIES,
+                                  "EditorFileDropFailed", error);
   return NS_OK;
 }
 
@@ -1291,15 +1291,13 @@ nsresult HTMLEditor::SlurpBlob(Blob* aBlob, nsPIDOMWindowOuter* aWindow,
   RefPtr<SlurpBlobEventListener> eventListener =
       new SlurpBlobEventListener(aBlobReader);
 
-  nsresult rv =
-      reader->AddEventListener(NS_LITERAL_STRING("load"), eventListener, false);
+  nsresult rv = reader->AddEventListener(u"load"_ns, eventListener, false);
   if (NS_FAILED(rv)) {
     NS_WARNING("FileReader::AddEventListener(load) failed");
     return rv;
   }
 
-  rv = reader->AddEventListener(NS_LITERAL_STRING("error"), eventListener,
-                                false);
+  rv = reader->AddEventListener(u"error"_ns, eventListener, false);
   if (NS_FAILED(rv)) {
     NS_WARNING("FileReader::AddEventListener(error) failed");
     return rv;
@@ -2106,7 +2104,7 @@ nsresult HTMLEditor::PasteAsQuotationAsAction(int32_t aClipboardType,
     return NS_ERROR_FAILURE;
   }
   DebugOnly<nsresult> rvIgnored = newBlockquoteElement->SetAttr(
-      kNameSpaceID_None, nsGkAtoms::type, NS_LITERAL_STRING("cite"), true);
+      kNameSpaceID_None, nsGkAtoms::type, u"cite"_ns, true);
   if (NS_WARN_IF(Destroyed())) {
     return EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_DESTROYED);
   }
@@ -2511,9 +2509,8 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
   // but we'll fall through and try to insert the text anyway.
   if (newSpanElement) {
     // Add an attribute on the pre node so we'll know it's a quotation.
-    DebugOnly<nsresult> rvIgnored =
-        newSpanElement->SetAttr(kNameSpaceID_None, nsGkAtoms::mozquote,
-                                NS_LITERAL_STRING("true"), true);
+    DebugOnly<nsresult> rvIgnored = newSpanElement->SetAttr(
+        kNameSpaceID_None, nsGkAtoms::mozquote, u"true"_ns, true);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                          "Element::SetAttr(nsGkAtoms::mozquote, true) failed");
     // Allow wrapping on spans so long lines get wrapped to the screen.
@@ -2521,16 +2518,16 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
     if (parentNode && parentNode->IsHTMLElement(nsGkAtoms::body)) {
       DebugOnly<nsresult> rvIgnored = newSpanElement->SetAttr(
           kNameSpaceID_None, nsGkAtoms::style,
-          NS_LITERAL_STRING(
-              "white-space: pre-wrap; display: block; width: 98vw;"),
+          nsLiteralString(
+              u"white-space: pre-wrap; display: block; width: 98vw;"),
           true);
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rvIgnored),
           "Element::SetAttr(nsGkAtoms::style) failed, but ignored");
     } else {
-      DebugOnly<nsresult> rvIgnored = newSpanElement->SetAttr(
-          kNameSpaceID_None, nsGkAtoms::style,
-          NS_LITERAL_STRING("white-space: pre-wrap;"), true);
+      DebugOnly<nsresult> rvIgnored =
+          newSpanElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style,
+                                  u"white-space: pre-wrap;"_ns, true);
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rvIgnored),
           "Element::SetAttr(nsGkAtoms::style) failed, but ignored");
@@ -2761,7 +2758,7 @@ nsresult HTMLEditor::InsertAsCitedQuotationInternal(
 
   // Try to set type=cite.  Ignore it if this fails.
   DebugOnly<nsresult> rvIgnored = newBlockquoteElement->SetAttr(
-      kNameSpaceID_None, nsGkAtoms::type, NS_LITERAL_STRING("cite"), true);
+      kNameSpaceID_None, nsGkAtoms::type, u"cite"_ns, true);
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
@@ -3051,8 +3048,13 @@ nsresult HTMLEditor::ParseFragment(const nsAString& aFragStr,
                                    bool aTrustedInput) {
   nsAutoScriptBlockerSuppressNodeRemoved autoBlocker;
 
-  RefPtr<DocumentFragment> fragment = new (aTargetDocument->NodeInfoManager())
-      DocumentFragment(aTargetDocument->NodeInfoManager());
+  nsCOMPtr<Document> doc =
+      nsContentUtils::CreateInertHTMLDocument(aTargetDocument);
+  if (!doc) {
+    return NS_ERROR_FAILURE;
+  }
+  RefPtr<DocumentFragment> fragment =
+      new (doc->NodeInfoManager()) DocumentFragment(doc->NodeInfoManager());
   nsresult rv = nsContentUtils::ParseFragmentHTML(
       aFragStr, fragment,
       aContextLocalName ? aContextLocalName : nsGkAtoms::body,

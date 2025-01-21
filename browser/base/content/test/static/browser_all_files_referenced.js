@@ -55,7 +55,7 @@ if (AppConstants.platform == "macosx") {
 // referencing the whitelisted file in a way that the test can't detect, or a
 // bug number to remove or use the file if it is indeed currently unreferenced.
 var whitelist = [
-  // browser/extensions/pdfjs/content/PdfStreamConverter.jsm
+  // toolkt/components/pdfjs/content/PdfStreamConverter.jsm
   { file: "chrome://pdf.js/locale/chrome.properties" },
   { file: "chrome://pdf.js/locale/viewer.properties" },
 
@@ -145,7 +145,7 @@ var whitelist = [
     platforms: ["linux", "macosx"],
   },
 
-  // browser/extensions/pdfjs/content/web/viewer.js#7450
+  // toolkt/components/pdfjs/content/web/viewer.js#7450
   { file: "resource://pdf.js/web/debugger.js" },
 
   // resource://app/modules/translation/TranslationContentHandler.jsm
@@ -184,8 +184,6 @@ var whitelist = [
   { file: "chrome://global/content/test-ipc.xul" },
   // Bug 1378173 (warning: still used by devtools)
   { file: "resource://gre/modules/Promise.jsm" },
-  // Still used by WebIDE, which is going away but not entirely gone.
-  { file: "resource://gre/modules/ZipUtils.jsm" },
   // Bug 1494170
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
@@ -807,7 +805,6 @@ add_task(async function checkAllTheFiles() {
   // Keep only chrome:// files, and filter out either the devtools paths or
   // the non-devtools paths:
   let devtoolsPrefixes = [
-    "chrome://webide/",
     "chrome://devtools",
     "resource://devtools/",
     "resource://devtools-client-jsonview/",

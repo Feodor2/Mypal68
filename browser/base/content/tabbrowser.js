@@ -2938,12 +2938,10 @@
     },
 
     warnAboutClosingTabs(tabsToClose, aCloseTabs) {
-      var shouldPrompt;
-      if (aCloseTabs == this.closingTabsEnum.ALL) {
-        shouldPrompt = Services.prefs.getIntPref("browser.tabs.warnOnClose") <= tabsToClose;
-      } else {
-        shouldPrompt = Services.prefs.getBoolPref("browser.tabs.warnOnCloseOtherTabs");
-      }
+      const pref = aCloseTabs == this.closingTabsEnum.ALL ?
+        "browser.tabs.warnOnClose" : "browser.tabs.warnOnCloseOtherTabs";
+      var p = Services.prefs.getIntPref(pref);
+      var shouldPrompt = p > 0 && p <= tabsToClose;
       if (!shouldPrompt) {
         return true;
       }
@@ -3002,7 +3000,7 @@
         reallyClose &&
         !warnOnClose.value
       ) {
-        Services.prefs.setBoolPref(pref, false);
+        Services.prefs.setIntPref(pref, 0);
       }
 
       return reallyClose;

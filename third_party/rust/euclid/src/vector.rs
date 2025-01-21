@@ -8,31 +8,34 @@
 // except according to those terms.
 
 use super::UnknownUnit;
-use approxeq::ApproxEq;
-use length::Length;
+use crate::approxeq::ApproxEq;
+use crate::approxord::{max, min};
+use crate::length::Length;
+use crate::num::*;
+use crate::point::{point2, point3, Point2D, Point3D};
+use crate::scale::Scale;
+use crate::size::{size2, size3, Size2D, Size3D};
+use crate::transform2d::Transform2D;
+use crate::transform3d::Transform3D;
+use crate::trig::Trig;
+use crate::Angle;
+use core::cmp::{Eq, PartialEq};
+use core::fmt;
+use core::hash::Hash;
+use core::marker::PhantomData;
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[cfg(feature = "mint")]
 use mint;
-use point::{Point2D, Point3D, point2, point3};
-use size::{Size2D, size2};
-use scale::Scale;
-use transform2d::Transform2D;
-use transform3d::Transform3D;
-use trig::Trig;
-use Angle;
-use num::*;
 use num_traits::{Float, NumCast, Signed};
-use core::fmt;
-use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use core::marker::PhantomData;
-use core::cmp::{Eq, PartialEq};
-use core::hash::{Hash};
 #[cfg(feature = "serde")]
 use serde;
 
 /// A 2d Vector tagged with a unit.
 #[repr(C)]
 pub struct Vector2D<T, U> {
+    /// The `x` (traditionally, horizontal) coordinate.
     pub x: T,
+    /// The `y` (traditionally, vertical) coordinate.
     pub y: T,
     #[doc(hidden)]
     pub _unit: PhantomData<U>,
@@ -54,69 +57,73 @@ impl<T: Clone, U> Clone for Vector2D<T, U> {
 
 #[cfg(feature = "serde")]
 impl<'de, T, U> serde::Deserialize<'de> for Vector2D<T, U>
-    where T: serde::Deserialize<'de>
+where
+    T: serde::Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: serde::Deserializer<'de>
+    where
+        D: serde::Deserializer<'de>,
     {
-        let (x, y) = try!(serde::Deserialize::deserialize(deserializer));
-        Ok(Vector2D { x, y, _unit: PhantomData })
+        let (x, y) = serde::Deserialize::deserialize(deserializer)?;
+        Ok(Vector2D {
+            x,
+            y,
+            _unit: PhantomData,
+        })
     }
 }
 
 #[cfg(feature = "serde")]
 impl<T, U> serde::Serialize for Vector2D<T, U>
-    where T: serde::Serialize
+where
+    T: serde::Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: serde::Serializer
+    where
+        S: serde::Serializer,
     {
         (&self.x, &self.y).serialize(serializer)
     }
 }
 
-impl<T, U> Eq for Vector2D<T, U> where T: Eq {}
+impl<T: Eq, U> Eq for Vector2D<T, U> {}
 
-impl<T, U> PartialEq for Vector2D<T, U>
-    where T: PartialEq
-{
+impl<T: PartialEq, U> PartialEq for Vector2D<T, U> {
     fn eq(&self, other: &Self) -> bool {
         self.x == other.x && self.y == other.y
     }
 }
 
-impl<T, U> Hash for Vector2D<T, U>
-    where T: Hash
-{
-    fn hash<H: ::core::hash::Hasher>(&self, h: &mut H) {
+impl<T: Hash, U> Hash for Vector2D<T, U> {
+    fn hash<H: core::hash::Hasher>(&self, h: &mut H) {
         self.x.hash(h);
         self.y.hash(h);
     }
 }
 
-impl<T: Copy + Zero, U> Vector2D<T, U> {
+impl<T: Zero, U> Zero for Vector2D<T, U> {
     /// Constructor, setting all components to zero.
     #[inline]
-    pub fn zero() -> Self {
+    fn zero() -> Self {
         Vector2D::new(Zero::zero(), Zero::zero())
-    }
-
-    /// Convert into a 3d vector.
-    #[inline]
-    pub fn to_3d(&self) -> Vector3D<T, U> {
-        vec3(self.x, self.y, Zero::zero())
     }
 }
 
 impl<T: fmt::Debug, U> fmt::Debug for Vector2D<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({:?},{:?})", self.x, self.y)
+        f.debug_tuple("").field(&self.x).field(&self.y).finish()
     }
 }
 
 impl<T: fmt::Display, U> fmt::Display for Vector2D<T, U> {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "({},{})", self.x, self.y)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "(")?;
+        fmt::Display::fmt(&self.x, f)?;
+        write!(f, ",")?;
+        fmt::Display::fmt(&self.y, f)?;
+        write!(f, ")")?;
+
+        Ok(())
     }
 }
 
@@ -127,24 +134,92 @@ impl<T: Default, U> Default for Vector2D<T, U> {
 }
 
 impl<T, U> Vector2D<T, U> {
+    /// Constructor, setting all components to zero.
+    #[inline]
+    pub fn zero() -> Self
+    where
+        T: Zero,
+    {
+        Vector2D::new(Zero::zero(), Zero::zero())
+    }
+
     /// Constructor taking scalar values directly.
     #[inline]
-    pub fn new(x: T, y: T) -> Self {
+    pub const fn new(x: T, y: T) -> Self {
         Vector2D {
             x,
             y,
             _unit: PhantomData,
         }
     }
-}
 
-impl<T: Copy, U> Vector2D<T, U> {
+    /// Constructor taking angle and length
+    pub fn from_angle_and_length(angle: Angle<T>, length: T) -> Self
+    where
+        T: Trig + Mul<Output = T> + Copy,
+    {
+        vec2(length * angle.radians.cos(), length * angle.radians.sin())
+    }
+
     /// Constructor taking properly  Lengths instead of scalar values.
     #[inline]
     pub fn from_lengths(x: Length<T, U>, y: Length<T, U>) -> Self {
         vec2(x.0, y.0)
     }
 
+    /// Tag a unit-less value with units.
+    #[inline]
+    pub fn from_untyped(p: Vector2D<T, UnknownUnit>) -> Self {
+        vec2(p.x, p.y)
+    }
+
+    /// Computes the vector with absolute values of each component.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use std::{i32, f32};
+    /// # use euclid::vec2;
+    /// enum U {}
+    ///
+    /// assert_eq!(vec2::<_, U>(-1, 2).abs(), vec2(1, 2));
+    ///
+    /// let vec = vec2::<_, U>(f32::NAN, -f32::MAX).abs();
+    /// assert!(vec.x.is_nan());
+    /// assert_eq!(vec.y, f32::MAX);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// The behavior for each component follows the scalar type's implementation of
+    /// `num_traits::Signed::abs`.
+    pub fn abs(&self) -> Self
+    where
+        T: Signed,
+    {
+        vec2(self.x.abs(), self.y.abs())
+    }
+
+    /// Dot product.
+    #[inline]
+    pub fn dot(self, other: Self) -> T
+    where
+        T: Add<Output = T> + Mul<Output = T>,
+    {
+        self.x * other.x + self.y * other.y
+    }
+
+    /// Returns the norm of the cross product [self.x, self.y, 0] x [other.x, other.y, 0].
+    #[inline]
+    pub fn cross(self, other: Self) -> T
+    where
+        T: Sub<Output = T> + Mul<Output = T>,
+    {
+        self.x * other.y - self.y * other.x
+    }
+}
+
+impl<T: Copy, U> Vector2D<T, U> {
     /// Create a 3d vector from this one, using the specified z value.
     #[inline]
     pub fn extend(&self, z: T) -> Vector3D<T, U> {
@@ -181,87 +256,177 @@ impl<T: Copy, U> Vector2D<T, U> {
         vec2(self.x, self.y)
     }
 
-    /// Tag a unit-less value with units.
-    #[inline]
-    pub fn from_untyped(p: Vector2D<T, UnknownUnit>) -> Self {
-        vec2(p.x, p.y)
-    }
-
-    /// Cast the unit
+    /// Cast the unit.
     #[inline]
     pub fn cast_unit<V>(&self) -> Vector2D<T, V> {
         vec2(self.x, self.y)
     }
 
+    /// Cast into an array with x and y.
     #[inline]
     pub fn to_array(&self) -> [T; 2] {
         [self.x, self.y]
     }
 
+    /// Cast into a tuple with x and y.
     #[inline]
     pub fn to_tuple(&self) -> (T, T) {
         (self.x, self.y)
     }
-}
 
-impl<T, U> Vector2D<T, U>
-where
-    T: Copy
-        + Clone
-        + Add<T, Output = T>
-        + Mul<T, Output = T>
-        + Div<T, Output = T>
-        + Sub<T, Output = T>
-        + Trig
-        + PartialOrd
-        + One
-        + Zero {
+    /// Convert into a 3d vector with `z` coordinate equals to `T::zero()`.
     #[inline]
-    pub fn to_transform(&self) -> Transform2D<T, U, U> {
+    pub fn to_3d(&self) -> Vector3D<T, U>
+    where
+        T: Zero,
+    {
+        vec3(self.x, self.y, Zero::zero())
+    }
+
+    /// Rounds each component to the nearest integer value.
+    ///
+    /// This behavior is preserved for negative values (unlike the basic cast).
+    ///
+    /// ```rust
+    /// # use euclid::vec2;
+    /// enum Mm {}
+    ///
+    /// assert_eq!(vec2::<_, Mm>(-0.1, -0.8).round(), vec2::<_, Mm>(0.0, -1.0))
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn round(&self) -> Self
+    where
+        T: Round,
+    {
+        vec2(self.x.round(), self.y.round())
+    }
+
+    /// Rounds each component to the smallest integer equal or greater than the original value.
+    ///
+    /// This behavior is preserved for negative values (unlike the basic cast).
+    ///
+    /// ```rust
+    /// # use euclid::vec2;
+    /// enum Mm {}
+    ///
+    /// assert_eq!(vec2::<_, Mm>(-0.1, -0.8).ceil(), vec2::<_, Mm>(0.0, 0.0))
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn ceil(&self) -> Self
+    where
+        T: Ceil,
+    {
+        vec2(self.x.ceil(), self.y.ceil())
+    }
+
+    /// Rounds each component to the biggest integer equal or lower than the original value.
+    ///
+    /// This behavior is preserved for negative values (unlike the basic cast).
+    ///
+    /// ```rust
+    /// # use euclid::vec2;
+    /// enum Mm {}
+    ///
+    /// assert_eq!(vec2::<_, Mm>(-0.1, -0.8).floor(), vec2::<_, Mm>(-1.0, -1.0))
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn floor(&self) -> Self
+    where
+        T: Floor,
+    {
+        vec2(self.x.floor(), self.y.floor())
+    }
+
+    /// Returns the signed angle between this vector and the x axis.
+    /// Positive values counted counterclockwise, where 0 is `+x` axis, `PI/2`
+    /// is `+y` axis.
+    ///
+    /// The returned angle is between -PI and PI.
+    pub fn angle_from_x_axis(&self) -> Angle<T>
+    where
+        T: Trig,
+    {
+        Angle::radians(Trig::fast_atan2(self.y, self.x))
+    }
+
+    /// Creates translation by this vector in vector units.
+    #[inline]
+    pub fn to_transform(&self) -> Transform2D<T, U, U>
+    where
+        T: Zero + One,
+    {
         Transform2D::create_translation(self.x, self.y)
     }
 }
 
 impl<T, U> Vector2D<T, U>
 where
-    T: Trig + Copy + Sub<T, Output = T>,
+    T: Copy + Mul<T, Output = T> + Add<T, Output = T>,
 {
-    /// Returns the angle between this vector and the x axis between -PI and PI.
-    pub fn angle_from_x_axis(&self) -> Angle<T> {
-        Angle::radians(Trig::fast_atan2(self.y, self.x))
+    /// Returns the vector's length squared.
+    #[inline]
+    pub fn square_length(&self) -> T {
+        self.x * self.x + self.y * self.y
+    }
+
+    /// Returns this vector projected onto another one.
+    ///
+    /// Projecting onto a nil vector will cause a division by zero.
+    #[inline]
+    pub fn project_onto_vector(&self, onto: Self) -> Self
+    where
+        T: Sub<T, Output = T> + Div<T, Output = T>,
+    {
+        onto * (self.dot(onto) / onto.square_length())
+    }
+
+    /// Returns the signed angle between this vector and another vector.
+    ///
+    /// The returned angle is between -PI and PI.
+    pub fn angle_to(&self, other: Self) -> Angle<T>
+    where
+        T: Sub<Output = T> + Trig,
+    {
+        Angle::radians(Trig::fast_atan2(self.cross(other), self.dot(other)))
     }
 }
 
-impl<T, U> Vector2D<T, U>
-where
-    T: Copy + Mul<T, Output = T> + Add<T, Output = T> + Sub<T, Output = T>,
-{
-    /// Dot product.
+impl<T: Float, U> Vector2D<T, U> {
+    /// Returns the vector length.
     #[inline]
-    pub fn dot(self, other: Self) -> T {
-        self.x * other.x + self.y * other.y
+    pub fn length(&self) -> T {
+        self.square_length().sqrt()
     }
 
-    /// Returns the norm of the cross product [self.x, self.y, 0] x [other.x, other.y, 0]..
+    /// Returns the vector with length of one unit.
     #[inline]
-    pub fn cross(self, other: Self) -> T {
-        self.x * other.y - self.y * other.x
-    }
-
-    #[inline]
-    pub fn normalize(self) -> Self
-    where
-        T: Float,
-    {
+    #[must_use]
+    pub fn normalize(self) -> Self {
         self / self.length()
+    }
+
+    /// Returns the vector with length of one unit.
+    ///
+    /// Unlike [`Vector2D::normalize`](#method.normalize), this returns None in the case that the
+    /// length of the vector is zero.
+    #[inline]
+    #[must_use]
+    pub fn try_normalize(self) -> Option<Self> {
+        let len = self.length();
+        if len == T::zero() {
+            None
+        } else {
+            Some(self / len)
+        }
     }
 
     /// Return the normalized vector even if the length is larger than the max value of Float.
     #[inline]
-    pub fn robust_normalize(self) -> Self
-    where
-        T: Float,
-    {
+    #[must_use]
+    pub fn robust_normalize(self) -> Self {
         let length = self.length();
         if length.is_infinite() {
             let scaled = self / T::max_value();
@@ -271,17 +436,33 @@ where
         }
     }
 
+    /// Return this vector capped to a maximum length.
     #[inline]
-    pub fn square_length(&self) -> T {
-        self.x * self.x + self.y * self.y
+    pub fn with_max_length(&self, max_length: T) -> Self {
+        let square_length = self.square_length();
+        if square_length > max_length * max_length {
+            return (*self) * (max_length / square_length.sqrt());
+        }
+
+        *self
     }
 
+    /// Return this vector with a minimum length applied.
     #[inline]
-    pub fn length(&self) -> T
-    where
-        T: Float,
-    {
-        self.square_length().sqrt()
+    pub fn with_min_length(&self, min_length: T) -> Self {
+        let square_length = self.square_length();
+        if square_length < min_length * min_length {
+            return (*self) * (min_length / square_length.sqrt());
+        }
+
+        *self
+    }
+
+    /// Return this vector with minimum and maximum lengths applied.
+    #[inline]
+    pub fn clamp_length(&self, min: T, max: T) -> Self {
+        debug_assert!(min <= max);
+        self.with_min_length(min).with_max_length(max)
     }
 }
 
@@ -289,149 +470,98 @@ impl<T, U> Vector2D<T, U>
 where
     T: Copy + One + Add<Output = T> + Sub<Output = T> + Mul<Output = T>,
 {
-    /// Linearly interpolate between this vector and another vector.
+    /// Linearly interpolate each component between this vector and another vector.
     ///
-    /// `t` is expected to be between zero and one.
+    /// # Example
+    ///
+    /// ```rust
+    /// use euclid::vec2;
+    /// use euclid::default::Vector2D;
+    ///
+    /// let from: Vector2D<_> = vec2(0.0, 10.0);
+    /// let to:  Vector2D<_> = vec2(8.0, -4.0);
+    ///
+    /// assert_eq!(from.lerp(to, -1.0), vec2(-8.0,  24.0));
+    /// assert_eq!(from.lerp(to,  0.0), vec2( 0.0,  10.0));
+    /// assert_eq!(from.lerp(to,  0.5), vec2( 4.0,   3.0));
+    /// assert_eq!(from.lerp(to,  1.0), vec2( 8.0,  -4.0));
+    /// assert_eq!(from.lerp(to,  2.0), vec2(16.0, -18.0));
+    /// ```
     #[inline]
     pub fn lerp(&self, other: Self, t: T) -> Self {
         let one_t = T::one() - t;
         (*self) * one_t + other * t
     }
-}
 
-impl<T: Copy + Add<T, Output = T>, U> Add for Vector2D<T, U> {
-    type Output = Self;
-    fn add(self, other: Self) -> Self {
-        Vector2D::new(self.x + other.x, self.y + other.y)
-    }
-}
-
-impl<T: Copy + Add<T, Output = T>, U> AddAssign for Vector2D<T, U> {
+    /// Returns a reflection vector using an incident ray and a surface normal.
     #[inline]
-    fn add_assign(&mut self, other: Self) {
-        *self = *self + other
+    pub fn reflect(&self, normal: Self) -> Self {
+        let two = T::one() + T::one();
+        *self - normal * two * self.dot(normal)
     }
 }
 
-impl<T: Copy + Sub<T, Output = T>, U> SubAssign<Vector2D<T, U>> for Vector2D<T, U> {
-    #[inline]
-    fn sub_assign(&mut self, other: Self) {
-        *self = *self - other
-    }
-}
-
-impl<T: Copy + Sub<T, Output = T>, U> Sub for Vector2D<T, U> {
-    type Output = Self;
-    #[inline]
-    fn sub(self, other: Self) -> Self {
-        vec2(self.x - other.x, self.y - other.y)
-    }
-}
-
-impl<T: Copy + Neg<Output = T>, U> Neg for Vector2D<T, U> {
-    type Output = Self;
-    #[inline]
-    fn neg(self) -> Self {
-        vec2(-self.x, -self.y)
-    }
-}
-
-impl<T: Float, U> Vector2D<T, U> {
+impl<T: PartialOrd, U> Vector2D<T, U> {
+    /// Returns the vector each component of which are minimum of this vector and another.
     #[inline]
     pub fn min(self, other: Self) -> Self {
-        vec2(self.x.min(other.x), self.y.min(other.y))
+        vec2(min(self.x, other.x), min(self.y, other.y))
     }
 
+    /// Returns the vector each component of which are maximum of this vector and another.
     #[inline]
     pub fn max(self, other: Self) -> Self {
-        vec2(self.x.max(other.x), self.y.max(other.y))
+        vec2(max(self.x, other.x), max(self.y, other.y))
     }
 
+    /// Returns the vector each component of which is clamped by corresponding
+    /// components of `start` and `end`.
+    ///
+    /// Shortcut for `self.max(start).min(end)`.
     #[inline]
-    pub fn clamp(&self, start: Self, end: Self) -> Self {
+    pub fn clamp(&self, start: Self, end: Self) -> Self
+    where
+        T: Copy,
+    {
         self.max(start).min(end)
     }
-}
 
-impl<T: Copy + Mul<T, Output = T>, U> Mul<T> for Vector2D<T, U> {
-    type Output = Self;
+    /// Returns vector with results of "greater than" operation on each component.
     #[inline]
-    fn mul(self, scale: T) -> Self {
-        vec2(self.x * scale, self.y * scale)
+    pub fn greater_than(&self, other: Self) -> BoolVector2D {
+        BoolVector2D {
+            x: self.x > other.x,
+            y: self.y > other.y,
+        }
+    }
+
+    /// Returns vector with results of "lower than" operation on each component.
+    #[inline]
+    pub fn lower_than(&self, other: Self) -> BoolVector2D {
+        BoolVector2D {
+            x: self.x < other.x,
+            y: self.y < other.y,
+        }
     }
 }
 
-impl<T: Copy + Div<T, Output = T>, U> Div<T> for Vector2D<T, U> {
-    type Output = Self;
+impl<T: PartialEq, U> Vector2D<T, U> {
+    /// Returns vector with results of "equal" operation on each component.
     #[inline]
-    fn div(self, scale: T) -> Self {
-        vec2(self.x / scale, self.y / scale)
+    pub fn equal(&self, other: Self) -> BoolVector2D {
+        BoolVector2D {
+            x: self.x == other.x,
+            y: self.y == other.y,
+        }
     }
-}
 
-impl<T: Copy + Mul<T, Output = T>, U> MulAssign<T> for Vector2D<T, U> {
+    /// Returns vector with results of "not equal" operation on each component.
     #[inline]
-    fn mul_assign(&mut self, scale: T) {
-        *self = *self * scale
-    }
-}
-
-impl<T: Copy + Div<T, Output = T>, U> DivAssign<T> for Vector2D<T, U> {
-    #[inline]
-    fn div_assign(&mut self, scale: T) {
-        *self = *self / scale
-    }
-}
-
-impl<T: Copy + Mul<T, Output = T>, U1, U2> Mul<Scale<T, U1, U2>> for Vector2D<T, U1> {
-    type Output = Vector2D<T, U2>;
-    #[inline]
-    fn mul(self, scale: Scale<T, U1, U2>) -> Self::Output {
-        vec2(self.x * scale.get(), self.y * scale.get())
-    }
-}
-
-impl<T: Copy + Div<T, Output = T>, U1, U2> Div<Scale<T, U1, U2>> for Vector2D<T, U2> {
-    type Output = Vector2D<T, U1>;
-    #[inline]
-    fn div(self, scale: Scale<T, U1, U2>) -> Self::Output {
-        vec2(self.x / scale.get(), self.y / scale.get())
-    }
-}
-
-impl<T: Round, U> Vector2D<T, U> {
-    /// Rounds each component to the nearest integer value.
-    ///
-    /// This behavior is preserved for negative values (unlike the basic cast).
-    /// For example `{ -0.1, -0.8 }.round() == { 0.0, -1.0 }`.
-    #[inline]
-    #[must_use]
-    pub fn round(&self) -> Self {
-        vec2(self.x.round(), self.y.round())
-    }
-}
-
-impl<T: Ceil, U> Vector2D<T, U> {
-    /// Rounds each component to the smallest integer equal or greater than the original value.
-    ///
-    /// This behavior is preserved for negative values (unlike the basic cast).
-    /// For example `{ -0.1, -0.8 }.ceil() == { 0.0, 0.0 }`.
-    #[inline]
-    #[must_use]
-    pub fn ceil(&self) -> Self {
-        vec2(self.x.ceil(), self.y.ceil())
-    }
-}
-
-impl<T: Floor, U> Vector2D<T, U> {
-    /// Rounds each component to the biggest integer equal or lower than the original value.
-    ///
-    /// This behavior is preserved for negative values (unlike the basic cast).
-    /// For example `{ -0.1, -0.8 }.floor() == { -1.0, -1.0 }`.
-    #[inline]
-    #[must_use]
-    pub fn floor(&self) -> Self {
-        vec2(self.x.floor(), self.y.floor())
+    pub fn not_equal(&self, other: Self) -> BoolVector2D {
+        BoolVector2D {
+            x: self.x != other.x,
+            y: self.y != other.y,
+        }
     }
 }
 
@@ -442,7 +572,7 @@ impl<T: NumCast + Copy, U> Vector2D<T, U> {
     /// as one would expect from a simple cast, but this behavior does not always make sense
     /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
     #[inline]
-    pub fn cast<NewT: NumCast + Copy>(&self) -> Vector2D<NewT, U> {
+    pub fn cast<NewT: NumCast>(&self) -> Vector2D<NewT, U> {
         self.try_cast().unwrap()
     }
 
@@ -451,15 +581,14 @@ impl<T: NumCast + Copy, U> Vector2D<T, U> {
     /// When casting from floating vector to integer coordinates, the decimals are truncated
     /// as one would expect from a simple cast, but this behavior does not always make sense
     /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
-    #[inline]
-    pub fn try_cast<NewT: NumCast + Copy>(&self) -> Option<Vector2D<NewT, U>> {
+    pub fn try_cast<NewT: NumCast>(&self) -> Option<Vector2D<NewT, U>> {
         match (NumCast::from(self.x), NumCast::from(self.y)) {
             (Some(x), Some(y)) => Some(Vector2D::new(x, y)),
             _ => None,
         }
     }
 
-    // Convenience functions for common casts
+    // Convenience functions for common casts.
 
     /// Cast into an `f32` vector.
     #[inline]
@@ -514,15 +643,141 @@ impl<T: NumCast + Copy, U> Vector2D<T, U> {
     }
 }
 
-impl<T: Copy + ApproxEq<T>, U> ApproxEq<Vector2D<T, U>> for Vector2D<T, U> {
+impl<T: Neg, U> Neg for Vector2D<T, U> {
+    type Output = Vector2D<T::Output, U>;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        vec2(-self.x, -self.y)
+    }
+}
+
+impl<T: Add, U> Add for Vector2D<T, U> {
+    type Output = Vector2D<T::Output, U>;
+
+    #[inline]
+    fn add(self, other: Self) -> Self::Output {
+        Vector2D::new(self.x + other.x, self.y + other.y)
+    }
+}
+
+impl<T: Copy + Add<T, Output = T>, U> AddAssign for Vector2D<T, U> {
+    #[inline]
+    fn add_assign(&mut self, other: Self) {
+        *self = *self + other
+    }
+}
+
+impl<T: Sub, U> Sub for Vector2D<T, U> {
+    type Output = Vector2D<T::Output, U>;
+
+    #[inline]
+    fn sub(self, other: Self) -> Self::Output {
+        vec2(self.x - other.x, self.y - other.y)
+    }
+}
+
+impl<T: Copy + Sub<T, Output = T>, U> SubAssign<Vector2D<T, U>> for Vector2D<T, U> {
+    #[inline]
+    fn sub_assign(&mut self, other: Self) {
+        *self = *self - other
+    }
+}
+
+impl<T: Clone + Mul, U> Mul<T> for Vector2D<T, U> {
+    type Output = Vector2D<T::Output, U>;
+
+    #[inline]
+    fn mul(self, scale: T) -> Self::Output {
+        vec2(self.x * scale.clone(), self.y * scale)
+    }
+}
+
+impl<T: Copy + Mul<T, Output = T>, U> MulAssign<T> for Vector2D<T, U> {
+    #[inline]
+    fn mul_assign(&mut self, scale: T) {
+        *self = *self * scale
+    }
+}
+
+impl<T: Clone + Mul, U1, U2> Mul<Scale<T, U1, U2>> for Vector2D<T, U1> {
+    type Output = Vector2D<T::Output, U2>;
+
+    #[inline]
+    fn mul(self, scale: Scale<T, U1, U2>) -> Self::Output {
+        vec2(self.x * scale.0.clone(), self.y * scale.0)
+    }
+}
+
+impl<T: Clone + MulAssign, U> MulAssign<Scale<T, U, U>> for Vector2D<T, U> {
+    #[inline]
+    fn mul_assign(&mut self, scale: Scale<T, U, U>) {
+        self.x *= scale.0.clone();
+        self.y *= scale.0;
+    }
+}
+
+impl<T: Clone + Div, U> Div<T> for Vector2D<T, U> {
+    type Output = Vector2D<T::Output, U>;
+
+    #[inline]
+    fn div(self, scale: T) -> Self::Output {
+        vec2(self.x / scale.clone(), self.y / scale)
+    }
+}
+
+impl<T: Copy + Div<T, Output = T>, U> DivAssign<T> for Vector2D<T, U> {
+    #[inline]
+    fn div_assign(&mut self, scale: T) {
+        *self = *self / scale
+    }
+}
+
+impl<T: Clone + Div, U1, U2> Div<Scale<T, U1, U2>> for Vector2D<T, U2> {
+    type Output = Vector2D<T::Output, U1>;
+
+    #[inline]
+    fn div(self, scale: Scale<T, U1, U2>) -> Self::Output {
+        vec2(self.x / scale.0.clone(), self.y / scale.0)
+    }
+}
+
+impl<T: Clone + DivAssign, U> DivAssign<Scale<T, U, U>> for Vector2D<T, U> {
+    #[inline]
+    fn div_assign(&mut self, scale: Scale<T, U, U>) {
+        self.x /= scale.0.clone();
+        self.y /= scale.0;
+    }
+}
+
+impl<T: Round, U> Round for Vector2D<T, U> {
+    /// See [`Vector2D::round()`](#method.round)
+    #[inline]
+    fn round(self) -> Self {
+        (&self).round()
+    }
+}
+
+impl<T: Ceil, U> Ceil for Vector2D<T, U> {
+    /// See [`Vector2D::ceil()`](#method.ceil)
+    #[inline]
+    fn ceil(self) -> Self {
+        (&self).ceil()
+    }
+}
+
+impl<T: Floor, U> Floor for Vector2D<T, U> {
+    /// See [`Vector2D::floor()`](#method.floor)
+    #[inline]
+    fn floor(self) -> Self {
+        (&self).floor()
+    }
+}
+
+impl<T: ApproxEq<T>, U> ApproxEq<Vector2D<T, U>> for Vector2D<T, U> {
     #[inline]
     fn approx_epsilon() -> Self {
         vec2(T::approx_epsilon(), T::approx_epsilon())
-    }
-
-    #[inline]
-    fn approx_eq(&self, other: &Self) -> bool {
-        self.x.approx_eq(&other.x) && self.y.approx_eq(&other.y)
     }
 
     #[inline]
@@ -531,50 +786,44 @@ impl<T: Copy + ApproxEq<T>, U> ApproxEq<Vector2D<T, U>> for Vector2D<T, U> {
     }
 }
 
-impl<T: Copy, U> Into<[T; 2]> for Vector2D<T, U> {
+impl<T, U> Into<[T; 2]> for Vector2D<T, U> {
     fn into(self) -> [T; 2] {
-        self.to_array()
+        [self.x, self.y]
     }
 }
 
-impl<T: Copy, U> From<[T; 2]> for Vector2D<T, U> {
-    fn from(array: [T; 2]) -> Self {
-        vec2(array[0], array[1])
+impl<T, U> From<[T; 2]> for Vector2D<T, U> {
+    fn from([x, y]: [T; 2]) -> Self {
+        vec2(x, y)
     }
 }
 
-impl<T: Copy, U> Into<(T, T)> for Vector2D<T, U> {
+impl<T, U> Into<(T, T)> for Vector2D<T, U> {
     fn into(self) -> (T, T) {
-        self.to_tuple()
+        (self.x, self.y)
     }
 }
 
-impl<T: Copy, U> From<(T, T)> for Vector2D<T, U> {
+impl<T, U> From<(T, T)> for Vector2D<T, U> {
     fn from(tuple: (T, T)) -> Self {
         vec2(tuple.0, tuple.1)
     }
 }
 
-impl<T: Copy, U> From<Size2D<T, U>> for Vector2D<T, U> {
+impl<T, U> From<Size2D<T, U>> for Vector2D<T, U> {
     fn from(size: Size2D<T, U>) -> Self {
-        size.to_vector()
-    }
-}
-
-impl<T, U> Vector2D<T, U>
-where
-    T: Signed,
-{
-    pub fn abs(&self) -> Self {
-        vec2(self.x.abs(), self.y.abs())
+        vec2(size.width, size.height)
     }
 }
 
 /// A 3d Vector tagged with a unit.
 #[repr(C)]
 pub struct Vector3D<T, U> {
+    /// The `x` (traditionally, horizontal) coordinate.
     pub x: T,
+    /// The `y` (traditionally, vertical) coordinate.
     pub y: T,
+    /// The `z` (traditionally, depth) coordinate.
     pub z: T,
     #[doc(hidden)]
     pub _unit: PhantomData<U>,
@@ -597,74 +846,79 @@ impl<T: Clone, U> Clone for Vector3D<T, U> {
 
 #[cfg(feature = "serde")]
 impl<'de, T, U> serde::Deserialize<'de> for Vector3D<T, U>
-    where T: serde::Deserialize<'de>
+where
+    T: serde::Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: serde::Deserializer<'de>
+    where
+        D: serde::Deserializer<'de>,
     {
-        let (x, y, z) = try!(serde::Deserialize::deserialize(deserializer));
-        Ok(Vector3D { x, y, z, _unit: PhantomData })
+        let (x, y, z) = serde::Deserialize::deserialize(deserializer)?;
+        Ok(Vector3D {
+            x,
+            y,
+            z,
+            _unit: PhantomData,
+        })
     }
 }
 
 #[cfg(feature = "serde")]
 impl<T, U> serde::Serialize for Vector3D<T, U>
-    where T: serde::Serialize
+where
+    T: serde::Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: serde::Serializer
+    where
+        S: serde::Serializer,
     {
         (&self.x, &self.y, &self.z).serialize(serializer)
     }
 }
 
-impl<T, U> Eq for Vector3D<T, U> where T: Eq {}
+impl<T: Eq, U> Eq for Vector3D<T, U> {}
 
-impl<T, U> PartialEq for Vector3D<T, U>
-    where T: PartialEq
-{
+impl<T: PartialEq, U> PartialEq for Vector3D<T, U> {
     fn eq(&self, other: &Self) -> bool {
         self.x == other.x && self.y == other.y && self.z == other.z
     }
 }
 
-impl<T, U> Hash for Vector3D<T, U>
-    where T: Hash
-{
-    fn hash<H: ::core::hash::Hasher>(&self, h: &mut H) {
+impl<T: Hash, U> Hash for Vector3D<T, U> {
+    fn hash<H: core::hash::Hasher>(&self, h: &mut H) {
         self.x.hash(h);
         self.y.hash(h);
         self.z.hash(h);
     }
 }
 
-impl<T: Copy + Zero, U> Vector3D<T, U> {
+impl<T: Zero, U> Zero for Vector3D<T, U> {
     /// Constructor, setting all components to zero.
     #[inline]
-    pub fn zero() -> Self {
+    fn zero() -> Self {
         vec3(Zero::zero(), Zero::zero(), Zero::zero())
-    }
-
-    #[inline]
-    pub fn to_array_4d(&self) -> [T; 4] {
-        [self.x, self.y, self.z, Zero::zero()]
-    }
-
-    #[inline]
-    pub fn to_tuple_4d(&self) -> (T, T, T, T) {
-        (self.x, self.y, self.z, Zero::zero())
     }
 }
 
 impl<T: fmt::Debug, U> fmt::Debug for Vector3D<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({:?},{:?},{:?})", self.x, self.y, self.z)
+        f.debug_tuple("")
+            .field(&self.x)
+            .field(&self.y)
+            .field(&self.z)
+            .finish()
     }
 }
 
 impl<T: fmt::Display, U> fmt::Display for Vector3D<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({},{},{})", self.x, self.y, self.z)
+        write!(f, "(")?;
+        fmt::Display::fmt(&self.x, f)?;
+        write!(f, ",")?;
+        fmt::Display::fmt(&self.y, f)?;
+        write!(f, ",")?;
+        fmt::Display::fmt(&self.z, f)?;
+        write!(f, ")")
     }
 }
 
@@ -675,9 +929,18 @@ impl<T: Default, U> Default for Vector3D<T, U> {
 }
 
 impl<T, U> Vector3D<T, U> {
+    /// Constructor, setting all components to zero.
+    #[inline]
+    pub fn zero() -> Self
+    where
+        T: Zero,
+    {
+        vec3(Zero::zero(), Zero::zero(), Zero::zero())
+    }
+
     /// Constructor taking scalar values directly.
     #[inline]
-    pub fn new(x: T, y: T, z: T) -> Self {
+    pub const fn new(x: T, y: T, z: T) -> Self {
         Vector3D {
             x,
             y,
@@ -685,13 +948,69 @@ impl<T, U> Vector3D<T, U> {
             _unit: PhantomData,
         }
     }
-}
 
-impl<T: Copy, U> Vector3D<T, U> {
     /// Constructor taking properly  Lengths instead of scalar values.
     #[inline]
     pub fn from_lengths(x: Length<T, U>, y: Length<T, U>, z: Length<T, U>) -> Vector3D<T, U> {
         vec3(x.0, y.0, z.0)
+    }
+
+    /// Tag a unitless value with units.
+    #[inline]
+    pub fn from_untyped(p: Vector3D<T, UnknownUnit>) -> Self {
+        vec3(p.x, p.y, p.z)
+    }
+
+    /// Computes the vector with absolute values of each component.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use std::{i32, f32};
+    /// # use euclid::vec3;
+    /// enum U {}
+    ///
+    /// assert_eq!(vec3::<_, U>(-1, 0, 2).abs(), vec3(1, 0, 2));
+    ///
+    /// let vec = vec3::<_, U>(f32::NAN, 0.0, -f32::MAX).abs();
+    /// assert!(vec.x.is_nan());
+    /// assert_eq!(vec.y, 0.0);
+    /// assert_eq!(vec.z, f32::MAX);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// The behavior for each component follows the scalar type's implementation of
+    /// `num_traits::Signed::abs`.
+    pub fn abs(&self) -> Self
+    where
+        T: Signed,
+    {
+        vec3(self.x.abs(), self.y.abs(), self.z.abs())
+    }
+
+    /// Dot product.
+    #[inline]
+    pub fn dot(self, other: Self) -> T
+    where
+        T: Add<Output = T> + Mul<Output = T>,
+    {
+        self.x * other.x + self.y * other.y + self.z * other.z
+    }
+}
+
+impl<T: Copy, U> Vector3D<T, U> {
+    /// Cross product.
+    #[inline]
+    pub fn cross(self, other: Self) -> Self
+    where
+        T: Sub<Output = T> + Mul<Output = T>,
+    {
+        vec3(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x,
+        )
     }
 
     /// Cast this vector into a point.
@@ -720,14 +1039,34 @@ impl<T: Copy, U> Vector3D<T, U> {
         vec2(self.y, self.z)
     }
 
+    /// Cast into an array with x, y and z.
     #[inline]
     pub fn to_array(&self) -> [T; 3] {
         [self.x, self.y, self.z]
     }
 
+    /// Cast into an array with x, y, z and 0.
+    #[inline]
+    pub fn to_array_4d(&self) -> [T; 4]
+    where
+        T: Zero,
+    {
+        [self.x, self.y, self.z, Zero::zero()]
+    }
+
+    /// Cast into a tuple with x, y and z.
     #[inline]
     pub fn to_tuple(&self) -> (T, T, T) {
         (self.x, self.y, self.z)
+    }
+
+    /// Cast into a tuple with x, y, z and 0.
+    #[inline]
+    pub fn to_tuple_4d(&self) -> (T, T, T, T)
+    where
+        T: Zero,
+    {
+        (self.x, self.y, self.z, Zero::zero())
     }
 
     /// Drop the units, preserving only the numeric value.
@@ -736,10 +1075,10 @@ impl<T: Copy, U> Vector3D<T, U> {
         vec3(self.x, self.y, self.z)
     }
 
-    /// Tag a unitless value with units.
+    /// Cast the unit.
     #[inline]
-    pub fn from_untyped(p: Vector3D<T, UnknownUnit>) -> Self {
-        vec3(p.x, p.y, p.z)
+    pub fn cast_unit<V>(&self) -> Vector3D<T, V> {
+        vec3(self.x, self.y, self.z)
     }
 
     /// Convert into a 2d vector.
@@ -747,59 +1086,142 @@ impl<T: Copy, U> Vector3D<T, U> {
     pub fn to_2d(&self) -> Vector2D<T, U> {
         self.xy()
     }
-}
 
-impl<T, U> Vector3D<T, U>
-where
-    T: Copy
-        + Clone
-        + Add<T, Output = T>
-        + Mul<T, Output = T>
-        + Div<T, Output = T>
-        + Sub<T, Output = T>
-        + Trig
-        + PartialOrd
-        + One
-        + Zero
-        + Neg<Output = T> {
+    /// Rounds each component to the nearest integer value.
+    ///
+    /// This behavior is preserved for negative values (unlike the basic cast).
+    ///
+    /// ```rust
+    /// # use euclid::vec3;
+    /// enum Mm {}
+    ///
+    /// assert_eq!(vec3::<_, Mm>(-0.1, -0.8, 0.4).round(), vec3::<_, Mm>(0.0, -1.0, 0.0))
+    /// ```
     #[inline]
-    pub fn to_transform(&self) -> Transform3D<T, U, U> {
+    #[must_use]
+    pub fn round(&self) -> Self
+    where
+        T: Round,
+    {
+        vec3(self.x.round(), self.y.round(), self.z.round())
+    }
+
+    /// Rounds each component to the smallest integer equal or greater than the original value.
+    ///
+    /// This behavior is preserved for negative values (unlike the basic cast).
+    ///
+    /// ```rust
+    /// # use euclid::vec3;
+    /// enum Mm {}
+    ///
+    /// assert_eq!(vec3::<_, Mm>(-0.1, -0.8, 0.4).ceil(), vec3::<_, Mm>(0.0, 0.0, 1.0))
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn ceil(&self) -> Self
+    where
+        T: Ceil,
+    {
+        vec3(self.x.ceil(), self.y.ceil(), self.z.ceil())
+    }
+
+    /// Rounds each component to the biggest integer equal or lower than the original value.
+    ///
+    /// This behavior is preserved for negative values (unlike the basic cast).
+    ///
+    /// ```rust
+    /// # use euclid::vec3;
+    /// enum Mm {}
+    ///
+    /// assert_eq!(vec3::<_, Mm>(-0.1, -0.8, 0.4).floor(), vec3::<_, Mm>(-1.0, -1.0, 0.0))
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn floor(&self) -> Self
+    where
+        T: Floor,
+    {
+        vec3(self.x.floor(), self.y.floor(), self.z.floor())
+    }
+
+    /// Creates translation by this vector in vector units
+    #[inline]
+    pub fn to_transform(&self) -> Transform3D<T, U, U>
+    where
+        T: Zero + One,
+    {
         Transform3D::create_translation(self.x, self.y, self.z)
     }
 }
 
-impl<T: Mul<T, Output = T> + Add<T, Output = T> + Sub<T, Output = T> + Copy, U>
-    Vector3D<T, U> {
-    // Dot product.
+impl<T, U> Vector3D<T, U>
+where
+    T: Copy + Mul<T, Output = T> + Add<T, Output = T>,
+{
+    /// Returns the vector's length squared.
     #[inline]
-    pub fn dot(self, other: Self) -> T {
-        self.x * other.x + self.y * other.y + self.z * other.z
+    pub fn square_length(&self) -> T {
+        self.x * self.x + self.y * self.y + self.z * self.z
     }
 
-    // Cross product.
+    /// Returns this vector projected onto another one.
+    ///
+    /// Projecting onto a nil vector will cause a division by zero.
     #[inline]
-    pub fn cross(self, other: Self) -> Self {
-        vec3(
-            self.y * other.z - self.z * other.y,
-            self.z * other.x - self.x * other.z,
-            self.x * other.y - self.y * other.x,
-        )
-    }
-
-    #[inline]
-    pub fn normalize(self) -> Self
+    pub fn project_onto_vector(&self, onto: Self) -> Self
     where
-        T: Float,
+        T: Sub<T, Output = T> + Div<T, Output = T>,
     {
+        onto * (self.dot(onto) / onto.square_length())
+    }
+}
+
+impl<T: Float, U> Vector3D<T, U> {
+    /// Returns the positive angle between this vector and another vector.
+    ///
+    /// The returned angle is between 0 and PI.
+    pub fn angle_to(&self, other: Self) -> Angle<T>
+    where
+        T: Trig,
+    {
+        Angle::radians(Trig::fast_atan2(
+            self.cross(other).length(),
+            self.dot(other),
+        ))
+    }
+
+    /// Returns the vector length.
+    #[inline]
+    pub fn length(&self) -> T {
+        self.square_length().sqrt()
+    }
+
+    /// Returns the vector with length of one unit
+    #[inline]
+    #[must_use]
+    pub fn normalize(self) -> Self {
         self / self.length()
+    }
+
+    /// Returns the vector with length of one unit.
+    ///
+    /// Unlike [`Vector2D::normalize`](#method.normalize), this returns None in the case that the
+    /// length of the vector is zero.
+    #[inline]
+    #[must_use]
+    pub fn try_normalize(self) -> Option<Self> {
+        let len = self.length();
+        if len == T::zero() {
+            None
+        } else {
+            Some(self / len)
+        }
     }
 
     /// Return the normalized vector even if the length is larger than the max value of Float.
     #[inline]
-    pub fn robust_normalize(self) -> Self
-    where
-        T: Float,
-    {
+    #[must_use]
+    pub fn robust_normalize(self) -> Self {
         let length = self.length();
         if length.is_infinite() {
             let scaled = self / T::max_value();
@@ -809,17 +1231,33 @@ impl<T: Mul<T, Output = T> + Add<T, Output = T> + Sub<T, Output = T> + Copy, U>
         }
     }
 
+    /// Return this vector capped to a maximum length.
     #[inline]
-    pub fn square_length(&self) -> T {
-        self.x * self.x + self.y * self.y + self.z * self.z
+    pub fn with_max_length(&self, max_length: T) -> Self {
+        let square_length = self.square_length();
+        if square_length > max_length * max_length {
+            return (*self) * (max_length / square_length.sqrt());
+        }
+
+        *self
     }
 
+    /// Return this vector with a minimum length applied.
     #[inline]
-    pub fn length(&self) -> T
-    where
-        T: Float,
-    {
-        self.square_length().sqrt()
+    pub fn with_min_length(&self, min_length: T) -> Self {
+        let square_length = self.square_length();
+        if square_length < min_length * min_length {
+            return (*self) * (min_length / square_length.sqrt());
+        }
+
+        *self
+    }
+
+    /// Return this vector with minimum and maximum lengths applied.
+    #[inline]
+    pub fn clamp_length(&self, min: T, max: T) -> Self {
+        debug_assert!(min <= max);
+        self.with_min_length(min).with_max_length(max)
     }
 }
 
@@ -827,155 +1265,110 @@ impl<T, U> Vector3D<T, U>
 where
     T: Copy + One + Add<Output = T> + Sub<Output = T> + Mul<Output = T>,
 {
-    /// Linearly interpolate between this vector and another vector.
+    /// Linearly interpolate each component between this vector and another vector.
     ///
-    /// `t` is expected to be between zero and one.
+    /// # Example
+    ///
+    /// ```rust
+    /// use euclid::vec3;
+    /// use euclid::default::Vector3D;
+    ///
+    /// let from: Vector3D<_> = vec3(0.0, 10.0, -1.0);
+    /// let to:  Vector3D<_> = vec3(8.0, -4.0,  0.0);
+    ///
+    /// assert_eq!(from.lerp(to, -1.0), vec3(-8.0,  24.0, -2.0));
+    /// assert_eq!(from.lerp(to,  0.0), vec3( 0.0,  10.0, -1.0));
+    /// assert_eq!(from.lerp(to,  0.5), vec3( 4.0,   3.0, -0.5));
+    /// assert_eq!(from.lerp(to,  1.0), vec3( 8.0,  -4.0,  0.0));
+    /// assert_eq!(from.lerp(to,  2.0), vec3(16.0, -18.0,  1.0));
+    /// ```
     #[inline]
     pub fn lerp(&self, other: Self, t: T) -> Self {
         let one_t = T::one() - t;
         (*self) * one_t + other * t
     }
-}
 
-impl<T: Copy + Add<T, Output = T>, U> Add for Vector3D<T, U> {
-    type Output = Self;
+    /// Returns a reflection vector using an incident ray and a surface normal.
     #[inline]
-    fn add(self, other: Self) -> Self {
-        vec3(self.x + other.x, self.y + other.y, self.z + other.z)
+    pub fn reflect(&self, normal: Self) -> Self {
+        let two = T::one() + T::one();
+        *self - normal * two * self.dot(normal)
     }
 }
 
-impl<T: Copy + Sub<T, Output = T>, U> Sub for Vector3D<T, U> {
-    type Output = Self;
-    #[inline]
-    fn sub(self, other: Self) -> Self {
-        vec3(self.x - other.x, self.y - other.y, self.z - other.z)
-    }
-}
-
-impl<T: Copy + Add<T, Output = T>, U> AddAssign for Vector3D<T, U> {
-    #[inline]
-    fn add_assign(&mut self, other: Self) {
-        *self = *self + other
-    }
-}
-
-impl<T: Copy + Sub<T, Output = T>, U> SubAssign<Vector3D<T, U>> for Vector3D<T, U> {
-    #[inline]
-    fn sub_assign(&mut self, other: Self) {
-        *self = *self - other
-    }
-}
-
-impl<T: Copy + Neg<Output = T>, U> Neg for Vector3D<T, U> {
-    type Output = Self;
-    #[inline]
-    fn neg(self) -> Self {
-        vec3(-self.x, -self.y, -self.z)
-    }
-}
-
-impl<T: Copy + Mul<T, Output = T>, U> Mul<T> for Vector3D<T, U> {
-    type Output = Self;
-    #[inline]
-    fn mul(self, scale: T) -> Self {
-        Self::new(self.x * scale, self.y * scale, self.z * scale)
-    }
-}
-
-impl<T: Copy + Div<T, Output = T>, U> Div<T> for Vector3D<T, U> {
-    type Output = Self;
-    #[inline]
-    fn div(self, scale: T) -> Self {
-        Self::new(self.x / scale, self.y / scale, self.z / scale)
-    }
-}
-
-impl<T: Copy + Mul<T, Output = T>, U> MulAssign<T> for Vector3D<T, U> {
-    #[inline]
-    fn mul_assign(&mut self, scale: T) {
-        *self = *self * scale
-    }
-}
-
-impl<T: Copy + Div<T, Output = T>, U> DivAssign<T> for Vector3D<T, U> {
-    #[inline]
-    fn div_assign(&mut self, scale: T) {
-        *self = *self / scale
-    }
-}
-
-impl<T: Float, U> Vector3D<T, U> {
+impl<T: PartialOrd, U> Vector3D<T, U> {
+    /// Returns the vector each component of which are minimum of this vector and another.
     #[inline]
     pub fn min(self, other: Self) -> Self {
         vec3(
-            self.x.min(other.x),
-            self.y.min(other.y),
-            self.z.min(other.z),
+            min(self.x, other.x),
+            min(self.y, other.y),
+            min(self.z, other.z),
         )
     }
 
+    /// Returns the vector each component of which are maximum of this vector and another.
     #[inline]
     pub fn max(self, other: Self) -> Self {
         vec3(
-            self.x.max(other.x),
-            self.y.max(other.y),
-            self.z.max(other.z),
+            max(self.x, other.x),
+            max(self.y, other.y),
+            max(self.z, other.z),
         )
     }
 
+    /// Returns the vector each component of which is clamped by corresponding
+    /// components of `start` and `end`.
+    ///
+    /// Shortcut for `self.max(start).min(end)`.
     #[inline]
-    pub fn clamp(&self, start: Self, end: Self) -> Self {
+    pub fn clamp(&self, start: Self, end: Self) -> Self
+    where
+        T: Copy,
+    {
         self.max(start).min(end)
     }
-}
 
-impl<T: Copy + Mul<T, Output = T>, U1, U2> Mul<Scale<T, U1, U2>> for Vector3D<T, U1> {
-    type Output = Vector3D<T, U2>;
+    /// Returns vector with results of "greater than" operation on each component.
     #[inline]
-    fn mul(self, scale: Scale<T, U1, U2>) -> Self::Output {
-        vec3(self.x * scale.get(), self.y * scale.get(), self.z * scale.get())
+    pub fn greater_than(&self, other: Self) -> BoolVector3D {
+        BoolVector3D {
+            x: self.x > other.x,
+            y: self.y > other.y,
+            z: self.z > other.z,
+        }
+    }
+
+    /// Returns vector with results of "lower than" operation on each component.
+    #[inline]
+    pub fn lower_than(&self, other: Self) -> BoolVector3D {
+        BoolVector3D {
+            x: self.x < other.x,
+            y: self.y < other.y,
+            z: self.z < other.z,
+        }
     }
 }
 
-impl<T: Copy + Div<T, Output = T>, U1, U2> Div<Scale<T, U1, U2>> for Vector3D<T, U2> {
-    type Output = Vector3D<T, U1>;
+impl<T: PartialEq, U> Vector3D<T, U> {
+    /// Returns vector with results of "equal" operation on each component.
     #[inline]
-    fn div(self, scale: Scale<T, U1, U2>) -> Self::Output {
-        vec3(self.x / scale.get(), self.y / scale.get(), self.z / scale.get())
+    pub fn equal(&self, other: Self) -> BoolVector3D {
+        BoolVector3D {
+            x: self.x == other.x,
+            y: self.y == other.y,
+            z: self.z == other.z,
+        }
     }
-}
 
-impl<T: Round, U> Vector3D<T, U> {
-    /// Rounds each component to the nearest integer value.
-    ///
-    /// This behavior is preserved for negative values (unlike the basic cast).
+    /// Returns vector with results of "not equal" operation on each component.
     #[inline]
-    #[must_use]
-    pub fn round(&self) -> Self {
-        vec3(self.x.round(), self.y.round(), self.z.round())
-    }
-}
-
-impl<T: Ceil, U> Vector3D<T, U> {
-    /// Rounds each component to the smallest integer equal or greater than the original value.
-    ///
-    /// This behavior is preserved for negative values (unlike the basic cast).
-    #[inline]
-    #[must_use]
-    pub fn ceil(&self) -> Self {
-        vec3(self.x.ceil(), self.y.ceil(), self.z.ceil())
-    }
-}
-
-impl<T: Floor, U> Vector3D<T, U> {
-    /// Rounds each component to the biggest integer equal or lower than the original value.
-    ///
-    /// This behavior is preserved for negative values (unlike the basic cast).
-    #[inline]
-    #[must_use]
-    pub fn floor(&self) -> Self {
-        vec3(self.x.floor(), self.y.floor(), self.z.floor())
+    pub fn not_equal(&self, other: Self) -> BoolVector3D {
+        BoolVector3D {
+            x: self.x != other.x,
+            y: self.y != other.y,
+            z: self.z != other.z,
+        }
     }
 }
 
@@ -986,7 +1379,7 @@ impl<T: NumCast + Copy, U> Vector3D<T, U> {
     /// as one would expect from a simple cast, but this behavior does not always make sense
     /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
     #[inline]
-    pub fn cast<NewT: NumCast + Copy>(&self) -> Vector3D<NewT, U> {
+    pub fn cast<NewT: NumCast>(&self) -> Vector3D<NewT, U> {
         self.try_cast().unwrap()
     }
 
@@ -995,8 +1388,7 @@ impl<T: NumCast + Copy, U> Vector3D<T, U> {
     /// When casting from floating vector to integer coordinates, the decimals are truncated
     /// as one would expect from a simple cast, but this behavior does not always make sense
     /// geometrically. Consider using `round()`, `ceil()` or `floor()` before casting.
-    #[inline]
-    pub fn try_cast<NewT: NumCast + Copy>(&self) -> Option<Vector3D<NewT, U>> {
+    pub fn try_cast<NewT: NumCast>(&self) -> Option<Vector3D<NewT, U>> {
         match (
             NumCast::from(self.x),
             NumCast::from(self.y),
@@ -1007,7 +1399,7 @@ impl<T: NumCast + Copy, U> Vector3D<T, U> {
         }
     }
 
-    // Convenience functions for common casts
+    // Convenience functions for common casts.
 
     /// Cast into an `f32` vector.
     #[inline]
@@ -1062,7 +1454,156 @@ impl<T: NumCast + Copy, U> Vector3D<T, U> {
     }
 }
 
-impl<T: Copy + ApproxEq<T>, U> ApproxEq<Vector3D<T, U>> for Vector3D<T, U> {
+impl<T: Neg, U> Neg for Vector3D<T, U> {
+    type Output = Vector3D<T::Output, U>;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        vec3(-self.x, -self.y, -self.z)
+    }
+}
+
+impl<T: Add, U> Add for Vector3D<T, U> {
+    type Output = Vector3D<T::Output, U>;
+
+    #[inline]
+    fn add(self, other: Self) -> Self::Output {
+        vec3(self.x + other.x, self.y + other.y, self.z + other.z)
+    }
+}
+
+impl<T: Copy + Add<T, Output = T>, U> AddAssign for Vector3D<T, U> {
+    #[inline]
+    fn add_assign(&mut self, other: Self) {
+        *self = *self + other
+    }
+}
+
+impl<T: Sub, U> Sub for Vector3D<T, U> {
+    type Output = Vector3D<T::Output, U>;
+
+    #[inline]
+    fn sub(self, other: Self) -> Self::Output {
+        vec3(self.x - other.x, self.y - other.y, self.z - other.z)
+    }
+}
+
+impl<T: Copy + Sub<T, Output = T>, U> SubAssign<Vector3D<T, U>> for Vector3D<T, U> {
+    #[inline]
+    fn sub_assign(&mut self, other: Self) {
+        *self = *self - other
+    }
+}
+
+impl<T: Clone + Mul, U> Mul<T> for Vector3D<T, U> {
+    type Output = Vector3D<T::Output, U>;
+
+    #[inline]
+    fn mul(self, scale: T) -> Self::Output {
+        vec3(
+            self.x * scale.clone(),
+            self.y * scale.clone(),
+            self.z * scale,
+        )
+    }
+}
+
+impl<T: Copy + Mul<T, Output = T>, U> MulAssign<T> for Vector3D<T, U> {
+    #[inline]
+    fn mul_assign(&mut self, scale: T) {
+        *self = *self * scale
+    }
+}
+
+impl<T: Clone + Mul, U1, U2> Mul<Scale<T, U1, U2>> for Vector3D<T, U1> {
+    type Output = Vector3D<T::Output, U2>;
+
+    #[inline]
+    fn mul(self, scale: Scale<T, U1, U2>) -> Self::Output {
+        vec3(
+            self.x * scale.0.clone(),
+            self.y * scale.0.clone(),
+            self.z * scale.0,
+        )
+    }
+}
+
+impl<T: Clone + MulAssign, U> MulAssign<Scale<T, U, U>> for Vector3D<T, U> {
+    #[inline]
+    fn mul_assign(&mut self, scale: Scale<T, U, U>) {
+        self.x *= scale.0.clone();
+        self.y *= scale.0.clone();
+        self.z *= scale.0;
+    }
+}
+
+impl<T: Clone + Div, U> Div<T> for Vector3D<T, U> {
+    type Output = Vector3D<T::Output, U>;
+
+    #[inline]
+    fn div(self, scale: T) -> Self::Output {
+        vec3(
+            self.x / scale.clone(),
+            self.y / scale.clone(),
+            self.z / scale,
+        )
+    }
+}
+
+impl<T: Copy + Div<T, Output = T>, U> DivAssign<T> for Vector3D<T, U> {
+    #[inline]
+    fn div_assign(&mut self, scale: T) {
+        *self = *self / scale
+    }
+}
+
+impl<T: Clone + Div, U1, U2> Div<Scale<T, U1, U2>> for Vector3D<T, U2> {
+    type Output = Vector3D<T::Output, U1>;
+
+    #[inline]
+    fn div(self, scale: Scale<T, U1, U2>) -> Self::Output {
+        vec3(
+            self.x / scale.0.clone(),
+            self.y / scale.0.clone(),
+            self.z / scale.0,
+        )
+    }
+}
+
+impl<T: Clone + DivAssign, U> DivAssign<Scale<T, U, U>> for Vector3D<T, U> {
+    #[inline]
+    fn div_assign(&mut self, scale: Scale<T, U, U>) {
+        self.x /= scale.0.clone();
+        self.y /= scale.0.clone();
+        self.z /= scale.0;
+    }
+}
+
+impl<T: Round, U> Round for Vector3D<T, U> {
+    /// See [`Vector3D::round()`](#method.round)
+    #[inline]
+    fn round(self) -> Self {
+        (&self).round()
+    }
+}
+
+impl<T: Ceil, U> Ceil for Vector3D<T, U> {
+    /// See [`Vector3D::ceil()`](#method.ceil)
+    #[inline]
+    fn ceil(self) -> Self {
+        (&self).ceil()
+    }
+}
+
+impl<T: Floor, U> Floor for Vector3D<T, U> {
+    /// See [`Vector3D::floor()`](#method.floor)
+    #[inline]
+    fn floor(self) -> Self {
+        (&self).floor()
+    }
+}
+
+impl<T: ApproxEq<T>, U> ApproxEq<Vector3D<T, U>> for Vector3D<T, U> {
     #[inline]
     fn approx_epsilon() -> Self {
         vec3(
@@ -1073,56 +1614,45 @@ impl<T: Copy + ApproxEq<T>, U> ApproxEq<Vector3D<T, U>> for Vector3D<T, U> {
     }
 
     #[inline]
-    fn approx_eq(&self, other: &Self) -> bool {
-        self.x.approx_eq(&other.x) && self.y.approx_eq(&other.y) && self.z.approx_eq(&other.z)
-    }
-
-    #[inline]
     fn approx_eq_eps(&self, other: &Self, eps: &Self) -> bool {
-        self.x.approx_eq_eps(&other.x, &eps.x) && self.y.approx_eq_eps(&other.y, &eps.y)
+        self.x.approx_eq_eps(&other.x, &eps.x)
+            && self.y.approx_eq_eps(&other.y, &eps.y)
             && self.z.approx_eq_eps(&other.z, &eps.z)
     }
 }
 
-impl<T: Copy, U> Into<[T; 3]> for Vector3D<T, U> {
+impl<T, U> Into<[T; 3]> for Vector3D<T, U> {
     fn into(self) -> [T; 3] {
-        self.to_array()
+        [self.x, self.y, self.z]
     }
 }
 
-impl<T: Copy, U> From<[T; 3]> for Vector3D<T, U> {
-    fn from(array: [T; 3]) -> Self {
-        vec3(array[0], array[1], array[2])
+impl<T, U> From<[T; 3]> for Vector3D<T, U> {
+    fn from([x, y, z]: [T; 3]) -> Self {
+        vec3(x, y, z)
     }
 }
 
-impl<T: Copy, U> Into<(T, T, T)> for Vector3D<T, U> {
+impl<T, U> Into<(T, T, T)> for Vector3D<T, U> {
     fn into(self) -> (T, T, T) {
-        self.to_tuple()
+        (self.x, self.y, self.z)
     }
 }
 
-impl<T: Copy, U> From<(T, T, T)> for Vector3D<T, U> {
+impl<T, U> From<(T, T, T)> for Vector3D<T, U> {
     fn from(tuple: (T, T, T)) -> Self {
         vec3(tuple.0, tuple.1, tuple.2)
     }
 }
 
-impl<T, U> Vector3D<T, U>
-where
-    T: Signed,
-{
-    pub fn abs(&self) -> Self {
-        vec3(self.x.abs(), self.y.abs(), self.z.abs())
-    }
-}
-
+/// A 2d vector of booleans, useful for component-wise logic operations.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BoolVector2D {
     pub x: bool,
     pub y: bool,
 }
 
+/// A 3d vector of booleans, useful for component-wise logic operations.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BoolVector3D {
     pub x: bool,
@@ -1131,21 +1661,25 @@ pub struct BoolVector3D {
 }
 
 impl BoolVector2D {
+    /// Returns `true` if all components are `true` and `false` otherwise.
     #[inline]
     pub fn all(&self) -> bool {
         self.x && self.y
     }
 
+    /// Returns `true` if any component are `true` and `false` otherwise.
     #[inline]
     pub fn any(&self) -> bool {
         self.x || self.y
     }
 
+    /// Returns `true` if all components are `false` and `false` otherwise. Negation of `any()`.
     #[inline]
     pub fn none(&self) -> bool {
         !self.any()
     }
 
+    /// Returns new vector with by-component AND operation applied.
     #[inline]
     pub fn and(&self, other: Self) -> Self {
         BoolVector2D {
@@ -1154,6 +1688,7 @@ impl BoolVector2D {
         }
     }
 
+    /// Returns new vector with by-component OR operation applied.
     #[inline]
     pub fn or(&self, other: Self) -> Self {
         BoolVector2D {
@@ -1162,6 +1697,7 @@ impl BoolVector2D {
         }
     }
 
+    /// Returns new vector with results of negation operation on each component.
     #[inline]
     pub fn not(&self) -> Self {
         BoolVector2D {
@@ -1170,24 +1706,30 @@ impl BoolVector2D {
         }
     }
 
+    /// Returns point, each component of which or from `a`, or from `b` depending on truly value
+    /// of corresponding vector component. `true` selects value from `a` and `false` from `b`.
     #[inline]
-    pub fn select_point<T: Copy, U>(&self, a: Point2D<T, U>, b: Point2D<T, U>) -> Point2D<T, U> {
+    pub fn select_point<T, U>(&self, a: Point2D<T, U>, b: Point2D<T, U>) -> Point2D<T, U> {
         point2(
             if self.x { a.x } else { b.x },
             if self.y { a.y } else { b.y },
         )
     }
 
+    /// Returns vector, each component of which or from `a`, or from `b` depending on truly value
+    /// of corresponding vector component. `true` selects value from `a` and `false` from `b`.
     #[inline]
-    pub fn select_vector<T: Copy, U>(&self, a: Vector2D<T, U>, b: Vector2D<T, U>) -> Vector2D<T, U> {
+    pub fn select_vector<T, U>(&self, a: Vector2D<T, U>, b: Vector2D<T, U>) -> Vector2D<T, U> {
         vec2(
             if self.x { a.x } else { b.x },
             if self.y { a.y } else { b.y },
         )
     }
 
+    /// Returns size, each component of which or from `a`, or from `b` depending on truly value
+    /// of corresponding vector component. `true` selects value from `a` and `false` from `b`.
     #[inline]
-    pub fn select_size<T: Copy, U>(&self, a: Size2D<T, U>, b: Size2D<T, U>) -> Size2D<T, U> {
+    pub fn select_size<T, U>(&self, a: Size2D<T, U>, b: Size2D<T, U>) -> Size2D<T, U> {
         size2(
             if self.x { a.width } else { b.width },
             if self.y { a.height } else { b.height },
@@ -1196,21 +1738,25 @@ impl BoolVector2D {
 }
 
 impl BoolVector3D {
+    /// Returns `true` if all components are `true` and `false` otherwise.
     #[inline]
     pub fn all(&self) -> bool {
         self.x && self.y && self.z
     }
 
+    /// Returns `true` if any component are `true` and `false` otherwise.
     #[inline]
     pub fn any(&self) -> bool {
         self.x || self.y || self.z
     }
 
+    /// Returns `true` if all components are `false` and `false` otherwise. Negation of `any()`.
     #[inline]
     pub fn none(&self) -> bool {
         !self.any()
     }
 
+    /// Returns new vector with by-component AND operation applied.
     #[inline]
     pub fn and(&self, other: Self) -> Self {
         BoolVector3D {
@@ -1220,6 +1766,7 @@ impl BoolVector3D {
         }
     }
 
+    /// Returns new vector with by-component OR operation applied.
     #[inline]
     pub fn or(&self, other: Self) -> Self {
         BoolVector3D {
@@ -1229,6 +1776,7 @@ impl BoolVector3D {
         }
     }
 
+    /// Returns new vector with results of negation operation on each component.
     #[inline]
     pub fn not(&self) -> Self {
         BoolVector3D {
@@ -1238,9 +1786,10 @@ impl BoolVector3D {
         }
     }
 
-
+    /// Returns point, each component of which or from `a`, or from `b` depending on truly value
+    /// of corresponding vector component. `true` selects value from `a` and `false` from `b`.
     #[inline]
-    pub fn select_point<T: Copy, U>(&self, a: Point3D<T, U>, b: Point3D<T, U>) -> Point3D<T, U> {
+    pub fn select_point<T, U>(&self, a: Point3D<T, U>, b: Point3D<T, U>) -> Point3D<T, U> {
         point3(
             if self.x { a.x } else { b.x },
             if self.y { a.y } else { b.y },
@@ -1248,8 +1797,10 @@ impl BoolVector3D {
         )
     }
 
+    /// Returns vector, each component of which or from `a`, or from `b` depending on truly value
+    /// of corresponding vector component. `true` selects value from `a` and `false` from `b`.
     #[inline]
-    pub fn select_vector<T: Copy, U>(&self, a: Vector3D<T, U>, b: Vector3D<T, U>) -> Vector3D<T, U> {
+    pub fn select_vector<T, U>(&self, a: Vector3D<T, U>, b: Vector3D<T, U>) -> Vector3D<T, U> {
         vec3(
             if self.x { a.x } else { b.x },
             if self.y { a.y } else { b.y },
@@ -1257,6 +1808,19 @@ impl BoolVector3D {
         )
     }
 
+    /// Returns size, each component of which or from `a`, or from `b` depending on truly value
+    /// of corresponding vector component. `true` selects value from `a` and `false` from `b`.
+    #[inline]
+    #[must_use]
+    pub fn select_size<T, U>(&self, a: Size3D<T, U>, b: Size3D<T, U>) -> Size3D<T, U> {
+        size3(
+            if self.x { a.width } else { b.width },
+            if self.y { a.height } else { b.height },
+            if self.z { a.depth } else { b.depth },
+        )
+    }
+
+    /// Returns a 2d vector using this vector's x and y coordinates.
     #[inline]
     pub fn xy(&self) -> BoolVector2D {
         BoolVector2D {
@@ -1265,6 +1829,7 @@ impl BoolVector3D {
         }
     }
 
+    /// Returns a 2d vector using this vector's x and z coordinates.
     #[inline]
     pub fn xz(&self) -> BoolVector2D {
         BoolVector2D {
@@ -1273,89 +1838,12 @@ impl BoolVector3D {
         }
     }
 
+    /// Returns a 2d vector using this vector's y and z coordinates.
     #[inline]
     pub fn yz(&self) -> BoolVector2D {
         BoolVector2D {
             x: self.y,
             y: self.z,
-        }
-    }
-}
-
-impl<T: PartialOrd, U> Vector2D<T, U> {
-    #[inline]
-    pub fn greater_than(&self, other: Self) -> BoolVector2D {
-        BoolVector2D {
-            x: self.x > other.x,
-            y: self.y > other.y,
-        }
-    }
-
-    #[inline]
-    pub fn lower_than(&self, other: Self) -> BoolVector2D {
-        BoolVector2D {
-            x: self.x < other.x,
-            y: self.y < other.y,
-        }
-    }
-}
-
-
-impl<T: PartialEq, U> Vector2D<T, U> {
-    #[inline]
-    pub fn equal(&self, other: Self) -> BoolVector2D {
-        BoolVector2D {
-            x: self.x == other.x,
-            y: self.y == other.y,
-        }
-    }
-
-    #[inline]
-    pub fn not_equal(&self, other: Self) -> BoolVector2D {
-        BoolVector2D {
-            x: self.x != other.x,
-            y: self.y != other.y,
-        }
-    }
-}
-
-impl<T: PartialOrd, U> Vector3D<T, U> {
-    #[inline]
-    pub fn greater_than(&self, other: Self) -> BoolVector3D {
-        BoolVector3D {
-            x: self.x > other.x,
-            y: self.y > other.y,
-            z: self.z > other.z,
-        }
-    }
-
-    #[inline]
-    pub fn lower_than(&self, other: Self) -> BoolVector3D {
-        BoolVector3D {
-            x: self.x < other.x,
-            y: self.y < other.y,
-            z: self.z < other.z,
-        }
-    }
-}
-
-
-impl<T: PartialEq, U> Vector3D<T, U> {
-    #[inline]
-    pub fn equal(&self, other: Self) -> BoolVector3D {
-        BoolVector3D {
-            x: self.x == other.x,
-            y: self.y == other.y,
-            z: self.z == other.z,
-        }
-    }
-
-    #[inline]
-    pub fn not_equal(&self, other: Self) -> BoolVector3D {
-        BoolVector3D {
-            x: self.x != other.x,
-            y: self.y != other.y,
-            z: self.z != other.z,
         }
     }
 }
@@ -1381,21 +1869,22 @@ pub fn vec3<T, U>(x: T, y: T, z: T) -> Vector3D<T, U> {
     }
 }
 
+/// Shorthand for `BoolVector2D { x, y }`.
 #[inline]
 pub fn bvec2(x: bool, y: bool) -> BoolVector2D {
     BoolVector2D { x, y }
 }
 
+/// Shorthand for `BoolVector3D { x, y, z }`.
 #[inline]
 pub fn bvec3(x: bool, y: bool, z: bool) -> BoolVector3D {
     BoolVector3D { x, y, z }
 }
 
-
 #[cfg(test)]
 mod vector2d {
-    use {default, vec2};
-    use scale::Scale;
+    use crate::scale::Scale;
+    use crate::{default, vec2};
 
     #[cfg(feature = "mint")]
     use mint;
@@ -1427,6 +1916,8 @@ mod vector2d {
 
     #[test]
     pub fn test_normalize() {
+        use std::f32;
+
         let p0: Vec2 = Vec2::zero();
         let p1: Vec2 = vec2(4.0, 0.0);
         let p2: Vec2 = vec2(3.0, -4.0);
@@ -1435,8 +1926,24 @@ mod vector2d {
         assert_eq!(p2.normalize(), vec2(0.6, -0.8));
 
         let p3: Vec2 = vec2(::std::f32::MAX, ::std::f32::MAX);
-        assert_ne!(p3.normalize(), vec2(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt()));
-        assert_eq!(p3.robust_normalize(), vec2(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt()));
+        assert_ne!(
+            p3.normalize(),
+            vec2(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt())
+        );
+        assert_eq!(
+            p3.robust_normalize(),
+            vec2(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt())
+        );
+
+        let p4: Vec2 = Vec2::zero();
+        assert!(p4.try_normalize().is_none());
+        let p5: Vec2 = Vec2::new(f32::MIN_POSITIVE, f32::MIN_POSITIVE);
+        assert!(p5.try_normalize().is_none());
+
+        let p6: Vec2 = vec2(4.0, 0.0);
+        let p7: Vec2 = vec2(3.0, -4.0);
+        assert_eq!(p6.try_normalize().unwrap(), vec2(1.0, 0.0));
+        assert_eq!(p7.try_normalize().unwrap(), vec2(0.6, -0.8));
     }
 
     #[test]
@@ -1458,10 +1965,11 @@ mod vector2d {
 
         assert_eq!(result, vec2(2.0, 3.0));
     }
+
     #[test]
     pub fn test_angle_from_x_axis() {
+        use crate::approxeq::ApproxEq;
         use core::f32::consts::FRAC_PI_2;
-        use approxeq::ApproxEq;
 
         let right: Vec2 = vec2(10.0, 0.0);
         let down: Vec2 = vec2(0.0, 4.0);
@@ -1470,6 +1978,72 @@ mod vector2d {
         assert!(right.angle_from_x_axis().get().approx_eq(&0.0));
         assert!(down.angle_from_x_axis().get().approx_eq(&FRAC_PI_2));
         assert!(up.angle_from_x_axis().get().approx_eq(&-FRAC_PI_2));
+    }
+
+    #[test]
+    pub fn test_angle_to() {
+        use crate::approxeq::ApproxEq;
+        use core::f32::consts::FRAC_PI_2;
+
+        let right: Vec2 = vec2(10.0, 0.0);
+        let right2: Vec2 = vec2(1.0, 0.0);
+        let up: Vec2 = vec2(0.0, -1.0);
+        let up_left: Vec2 = vec2(-1.0, -1.0);
+
+        assert!(right.angle_to(right2).get().approx_eq(&0.0));
+        assert!(right.angle_to(up).get().approx_eq(&-FRAC_PI_2));
+        assert!(up.angle_to(right).get().approx_eq(&FRAC_PI_2));
+        assert!(up_left
+            .angle_to(up)
+            .get()
+            .approx_eq_eps(&(0.5 * FRAC_PI_2), &0.0005));
+    }
+
+    #[test]
+    pub fn test_with_max_length() {
+        use crate::approxeq::ApproxEq;
+
+        let v1: Vec2 = vec2(0.5, 0.5);
+        let v2: Vec2 = vec2(1.0, 0.0);
+        let v3: Vec2 = vec2(0.1, 0.2);
+        let v4: Vec2 = vec2(2.0, -2.0);
+        let v5: Vec2 = vec2(1.0, 2.0);
+        let v6: Vec2 = vec2(-1.0, 3.0);
+
+        assert_eq!(v1.with_max_length(1.0), v1);
+        assert_eq!(v2.with_max_length(1.0), v2);
+        assert_eq!(v3.with_max_length(1.0), v3);
+        assert_eq!(v4.with_max_length(10.0), v4);
+        assert_eq!(v5.with_max_length(10.0), v5);
+        assert_eq!(v6.with_max_length(10.0), v6);
+
+        let v4_clamped = v4.with_max_length(1.0);
+        assert!(v4_clamped.length().approx_eq(&1.0));
+        assert!(v4_clamped.normalize().approx_eq(&v4.normalize()));
+
+        let v5_clamped = v5.with_max_length(1.5);
+        assert!(v5_clamped.length().approx_eq(&1.5));
+        assert!(v5_clamped.normalize().approx_eq(&v5.normalize()));
+
+        let v6_clamped = v6.with_max_length(2.5);
+        assert!(v6_clamped.length().approx_eq(&2.5));
+        assert!(v6_clamped.normalize().approx_eq(&v6.normalize()));
+    }
+
+    #[test]
+    pub fn test_project_onto_vector() {
+        use crate::approxeq::ApproxEq;
+
+        let v1: Vec2 = vec2(1.0, 2.0);
+        let x: Vec2 = vec2(1.0, 0.0);
+        let y: Vec2 = vec2(0.0, 1.0);
+
+        assert!(v1.project_onto_vector(x).approx_eq(&vec2(1.0, 0.0)));
+        assert!(v1.project_onto_vector(y).approx_eq(&vec2(0.0, 2.0)));
+        assert!(v1.project_onto_vector(-x).approx_eq(&vec2(1.0, 0.0)));
+        assert!(v1.project_onto_vector(x * 10.0).approx_eq(&vec2(1.0, 0.0)));
+        assert!(v1.project_onto_vector(v1 * 2.0).approx_eq(&v1));
+        assert!(v1.project_onto_vector(-v1).approx_eq(&v1));
     }
 
     #[cfg(feature = "mint")]
@@ -1521,14 +2095,25 @@ mod vector2d {
         let p: default::Vector2D<i32> = vec2(1, 2);
         assert_eq!(p.yx(), vec2(2, 1));
     }
+
+    #[test]
+    pub fn test_reflect() {
+        use crate::approxeq::ApproxEq;
+        let a: Vec2 = vec2(1.0, 3.0);
+        let n1: Vec2 = vec2(0.0, -1.0);
+        let n2: Vec2 = vec2(1.0, -1.0).normalize();
+
+        assert!(a.reflect(n1).approx_eq(&vec2(1.0, -3.0)));
+        assert!(a.reflect(n2).approx_eq(&vec2(3.0, 1.0)));
+    }
 }
 
 #[cfg(test)]
 mod vector3d {
+    use crate::scale::Scale;
+    use crate::{default, vec2, vec3};
     #[cfg(feature = "mint")]
     use mint;
-    use {default, vec2, vec3};
-    use scale::Scale;
 
     type Vec3 = default::Vector3D<f32>;
 
@@ -1549,6 +2134,8 @@ mod vector3d {
 
     #[test]
     pub fn test_normalize() {
+        use std::f32;
+
         let p0: Vec3 = Vec3::zero();
         let p1: Vec3 = vec3(0.0, -6.0, 0.0);
         let p2: Vec3 = vec3(1.0, 2.0, -2.0);
@@ -1559,8 +2146,24 @@ mod vector3d {
         assert_eq!(p2.normalize(), vec3(1.0 / 3.0, 2.0 / 3.0, -2.0 / 3.0));
 
         let p3: Vec3 = vec3(::std::f32::MAX, ::std::f32::MAX, 0.0);
-        assert_ne!(p3.normalize(), vec3(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt(), 0.0));
-        assert_eq!(p3.robust_normalize(), vec3(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt(), 0.0));
+        assert_ne!(
+            p3.normalize(),
+            vec3(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt(), 0.0)
+        );
+        assert_eq!(
+            p3.robust_normalize(),
+            vec3(1.0 / 2.0f32.sqrt(), 1.0 / 2.0f32.sqrt(), 0.0)
+        );
+
+        let p4: Vec3 = Vec3::zero();
+        assert!(p4.try_normalize().is_none());
+        let p5: Vec3 = Vec3::new(f32::MIN_POSITIVE, f32::MIN_POSITIVE, f32::MIN_POSITIVE);
+        assert!(p5.try_normalize().is_none());
+
+        let p6: Vec3 = vec3(4.0, 0.0, 3.0);
+        let p7: Vec3 = vec3(3.0, -4.0, 0.0);
+        assert_eq!(p6.try_normalize().unwrap(), vec3(0.8, 0.0, 0.6));
+        assert_eq!(p7.try_normalize().unwrap(), vec3(0.6, -0.8, 0.0));
     }
 
     #[test]
@@ -1624,18 +2227,98 @@ mod vector3d {
 
         assert_eq!(v1, v2);
     }
+
+    #[test]
+    pub fn test_reflect() {
+        use crate::approxeq::ApproxEq;
+        let a: Vec3 = vec3(1.0, 3.0, 2.0);
+        let n1: Vec3 = vec3(0.0, -1.0, 0.0);
+        let n2: Vec3 = vec3(0.0, 1.0, 1.0).normalize();
+
+        assert!(a.reflect(n1).approx_eq(&vec3(1.0, -3.0, 2.0)));
+        assert!(a.reflect(n2).approx_eq(&vec3(1.0, -2.0, -3.0)));
+    }
+
+    #[test]
+    pub fn test_angle_to() {
+        use crate::approxeq::ApproxEq;
+        use core::f32::consts::FRAC_PI_2;
+
+        let right: Vec3 = vec3(10.0, 0.0, 0.0);
+        let right2: Vec3 = vec3(1.0, 0.0, 0.0);
+        let up: Vec3 = vec3(0.0, -1.0, 0.0);
+        let up_left: Vec3 = vec3(-1.0, -1.0, 0.0);
+
+        assert!(right.angle_to(right2).get().approx_eq(&0.0));
+        assert!(right.angle_to(up).get().approx_eq(&FRAC_PI_2));
+        assert!(up.angle_to(right).get().approx_eq(&FRAC_PI_2));
+        assert!(up_left
+            .angle_to(up)
+            .get()
+            .approx_eq_eps(&(0.5 * FRAC_PI_2), &0.0005));
+    }
+
+    #[test]
+    pub fn test_with_max_length() {
+        use crate::approxeq::ApproxEq;
+
+        let v1: Vec3 = vec3(0.5, 0.5, 0.0);
+        let v2: Vec3 = vec3(1.0, 0.0, 0.0);
+        let v3: Vec3 = vec3(0.1, 0.2, 0.3);
+        let v4: Vec3 = vec3(2.0, -2.0, 2.0);
+        let v5: Vec3 = vec3(1.0, 2.0, -3.0);
+        let v6: Vec3 = vec3(-1.0, 3.0, 2.0);
+
+        assert_eq!(v1.with_max_length(1.0), v1);
+        assert_eq!(v2.with_max_length(1.0), v2);
+        assert_eq!(v3.with_max_length(1.0), v3);
+        assert_eq!(v4.with_max_length(10.0), v4);
+        assert_eq!(v5.with_max_length(10.0), v5);
+        assert_eq!(v6.with_max_length(10.0), v6);
+
+        let v4_clamped = v4.with_max_length(1.0);
+        assert!(v4_clamped.length().approx_eq(&1.0));
+        assert!(v4_clamped.normalize().approx_eq(&v4.normalize()));
+
+        let v5_clamped = v5.with_max_length(1.5);
+        assert!(v5_clamped.length().approx_eq(&1.5));
+        assert!(v5_clamped.normalize().approx_eq(&v5.normalize()));
+
+        let v6_clamped = v6.with_max_length(2.5);
+        assert!(v6_clamped.length().approx_eq(&2.5));
+        assert!(v6_clamped.normalize().approx_eq(&v6.normalize()));
+    }
+
+    #[test]
+    pub fn test_project_onto_vector() {
+        use crate::approxeq::ApproxEq;
+
+        let v1: Vec3 = vec3(1.0, 2.0, 3.0);
+        let x: Vec3 = vec3(1.0, 0.0, 0.0);
+        let y: Vec3 = vec3(0.0, 1.0, 0.0);
+        let z: Vec3 = vec3(0.0, 0.0, 1.0);
+
+        assert!(v1.project_onto_vector(x).approx_eq(&vec3(1.0, 0.0, 0.0)));
+        assert!(v1.project_onto_vector(y).approx_eq(&vec3(0.0, 2.0, 0.0)));
+        assert!(v1.project_onto_vector(z).approx_eq(&vec3(0.0, 0.0, 3.0)));
+        assert!(v1.project_onto_vector(-x).approx_eq(&vec3(1.0, 0.0, 0.0)));
+        assert!(v1
+            .project_onto_vector(x * 10.0)
+            .approx_eq(&vec3(1.0, 0.0, 0.0)));
+        assert!(v1.project_onto_vector(v1 * 2.0).approx_eq(&v1));
+        assert!(v1.project_onto_vector(-v1).approx_eq(&v1));
+    }
 }
 
 #[cfg(test)]
 mod bool_vector {
-    use default;
     use super::*;
+    use crate::default;
     type Vec2 = default::Vector2D<f32>;
     type Vec3 = default::Vector3D<f32>;
 
     #[test]
     fn test_bvec2() {
-
         assert_eq!(
             Vec2::new(1.0, 2.0).greater_than(Vec2::new(2.0, 1.0)),
             bvec2(false, true),
@@ -1667,7 +2350,10 @@ mod bool_vector {
         assert!(!bvec2(false, false).all());
 
         assert_eq!(bvec2(true, false).not(), bvec2(false, true));
-        assert_eq!(bvec2(true, false).and(bvec2(true, true)), bvec2(true, false));
+        assert_eq!(
+            bvec2(true, false).and(bvec2(true, true)),
+            bvec2(true, false)
+        );
         assert_eq!(bvec2(true, false).or(bvec2(true, true)), bvec2(true, true));
 
         assert_eq!(
@@ -1678,7 +2364,6 @@ mod bool_vector {
 
     #[test]
     fn test_bvec3() {
-
         assert_eq!(
             Vec3::new(1.0, 2.0, 3.0).greater_than(Vec3::new(3.0, 2.0, 1.0)),
             bvec3(false, false, true),
@@ -1710,11 +2395,18 @@ mod bool_vector {
         assert!(!bvec3(false, false, false).all());
 
         assert_eq!(bvec3(true, false, true).not(), bvec3(false, true, false));
-        assert_eq!(bvec3(true, false, true).and(bvec3(true, true, false)), bvec3(true, false, false));
-        assert_eq!(bvec3(true, false, false).or(bvec3(true, true, false)), bvec3(true, true, false));
+        assert_eq!(
+            bvec3(true, false, true).and(bvec3(true, true, false)),
+            bvec3(true, false, false)
+        );
+        assert_eq!(
+            bvec3(true, false, false).or(bvec3(true, true, false)),
+            bvec3(true, true, false)
+        );
 
         assert_eq!(
-            bvec3(true, false, true).select_vector(Vec3::new(1.0, 2.0, 3.0), Vec3::new(4.0, 5.0, 6.0)),
+            bvec3(true, false, true)
+                .select_vector(Vec3::new(1.0, 2.0, 3.0), Vec3::new(4.0, 5.0, 6.0)),
             Vec3::new(1.0, 5.0, 3.0),
         );
     }

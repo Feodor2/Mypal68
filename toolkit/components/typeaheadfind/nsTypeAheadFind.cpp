@@ -26,6 +26,7 @@
 #include "nsFrameTraversal.h"
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
+#include "nsIScrollableFrame.h"
 #include "nsTextFragment.h"
 #include "nsIEditor.h"
 
@@ -45,6 +46,7 @@
 #include "mozilla/dom/Link.h"
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/Selection.h"
+#include "nsLayoutUtils.h"
 #include "nsRange.h"
 #include "nsXBLBinding.h"
 
@@ -1422,7 +1424,7 @@ bool nsTypeAheadFind::IsRangeRendered(nsRange* aRange) {
              nsPresContext::CSSPixelsToAppUnits((float)rect->Height()));
     // Append visible frames to frames array.
     nsLayoutUtils::GetFramesForArea(
-        rootFrame, r, frames,
+        RelativeTo{rootFrame}, r, frames,
         {FrameForPointOption::IgnorePaintSuppression,
          FrameForPointOption::IgnoreRootScrollFrame,
          FrameForPointOption::OnlyVisible});

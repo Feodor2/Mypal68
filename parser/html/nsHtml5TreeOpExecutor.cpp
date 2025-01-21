@@ -816,18 +816,17 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutCharset(const char* aMsgId,
   mAlreadyComplainedAboutCharset = true;
   nsContentUtils::ReportToConsole(
       aError ? nsIScriptError::errorFlag : nsIScriptError::warningFlag,
-      NS_LITERAL_CSTRING("HTML parser"), mDocument,
-      nsContentUtils::eHTMLPARSER_PROPERTIES, aMsgId, nsTArray<nsString>(),
-      nullptr, EmptyString(), aLineNumber);
+      "HTML parser"_ns, mDocument, nsContentUtils::eHTMLPARSER_PROPERTIES,
+      aMsgId, nsTArray<nsString>(), nullptr, u""_ns, aLineNumber);
 }
 
 void nsHtml5TreeOpExecutor::ComplainAboutBogusProtocolCharset(Document* aDoc) {
   NS_ASSERTION(!mAlreadyComplainedAboutCharset,
                "How come we already managed to complain?");
   mAlreadyComplainedAboutCharset = true;
-  nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("HTML parser"), aDoc,
-      nsContentUtils::eHTMLPARSER_PROPERTIES, "EncProtocolUnsupported");
+  nsContentUtils::ReportToConsole(nsIScriptError::errorFlag, "HTML parser"_ns,
+                                  aDoc, nsContentUtils::eHTMLPARSER_PROPERTIES,
+                                  "EncProtocolUnsupported");
 }
 
 void nsHtml5TreeOpExecutor::MaybeComplainAboutDeepTree(uint32_t aLineNumber) {
@@ -836,9 +835,9 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutDeepTree(uint32_t aLineNumber) {
   }
   mAlreadyComplainedAboutDeepTree = true;
   nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("HTML parser"), mDocument,
+      nsIScriptError::errorFlag, "HTML parser"_ns, mDocument,
       nsContentUtils::eHTMLPARSER_PROPERTIES, "errDeepTree",
-      nsTArray<nsString>(), nullptr, EmptyString(), aLineNumber);
+      nsTArray<nsString>(), nullptr, u""_ns, aLineNumber);
 }
 
 nsHtml5Parser* nsHtml5TreeOpExecutor::GetParser() {

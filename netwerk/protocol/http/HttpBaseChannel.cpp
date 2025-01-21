@@ -690,6 +690,12 @@ HttpBaseChannel::SetContentDispositionFilename(
     const nsAString& aContentDispositionFilename) {
   mContentDispositionFilename =
       MakeUnique<nsString>(aContentDispositionFilename);
+
+  // For safety reasons ensure the filename doesn't contain null characters and
+  // replace them with underscores. We may later pass the extension to system
+  // MIME APIs that expect null terminated strings.
+  mContentDispositionFilename->ReplaceChar(char16_t(0), '_');
+
   return NS_OK;
 }
 
@@ -1391,7 +1397,7 @@ nsresult HttpBaseChannel::nsContentEncodings::PrepareForNext(void) {
   // At this point mCurStart and mCurEnd bracket the encoding string
   // we want.  Check that it's not "identity"
   if (Substring(mCurStart, mCurEnd)
-          .Equals("identity", nsCaseInsensitiveCStringComparator())) {
+          .Equals("identity", nsCaseInsensitiveCStringComparator)) {
     mCurEnd = mCurStart;
     return PrepareForNext();
   }

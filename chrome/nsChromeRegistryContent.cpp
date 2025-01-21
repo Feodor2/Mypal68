@@ -153,21 +153,7 @@ nsChromeRegistryContent::CheckForNewChrome() { CONTENT_NOT_IMPLEMENTED(); }
 NS_IMETHODIMP
 nsChromeRegistryContent::IsLocaleRTL(const nsACString& aPackage,
                                      bool* aResult) {
-  *aResult = GetDirectionForLocale(mLocale);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsChromeRegistryContent::GetSelectedLocale(const nsACString& aPackage,
-                                           bool aAsBCP47, nsACString& aLocale) {
-  if (aPackage != nsDependentCString("global")) {
-    NS_ERROR("Uh-oh, caller wanted something other than 'some local'");
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-  aLocale = mLocale;
-  if (aAsBCP47) {
-    SanitizeForBCP47(aLocale);
-  }
+  *aResult = mozilla::intl::LocaleService::IsLocaleRTL(mLocale);
   return NS_OK;
 }
 

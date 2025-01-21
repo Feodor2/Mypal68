@@ -588,22 +588,6 @@ class WinUtils {
     Default = 7,
   };
 
-  /**
-   * Given a path, transforms it in preparation to be reported via telemetry.
-   * That can include canonicalization, converting short to long paths,
-   * unexpanding environment strings, and removing potentially sensitive data
-   * from the path.
-   *
-   * @param  aPath  [in,out] The path to transform.
-   * @param  aFlags [in] Specifies which transformations to perform, allowing
-   *                the caller to skip operations they know have already been
-   *                performed.
-   * @return true on success, false on failure.
-   */
-  static bool PreparePathForTelemetry(
-      nsAString& aPath,
-      PathTransformFlags aFlags = PathTransformFlags::Default);
-
   typedef HRESULT (WINAPI * SHCreateItemFromParsingNamePtr)(PCWSTR pszPath,
                                                             IBindCtx *pbc,
                                                             REFIID riid,

@@ -444,6 +444,7 @@ STATIC_ATOMS = [
     Atom("footer", "footer"),
     Atom("_for", "for"),
     Atom("forEach", "for-each"),
+    Atom("forcedColors", "forced-colors"),
     Atom("forceOwnRefreshDriver", "forceOwnRefreshDriver"),
     Atom("form", "form"),
     Atom("formaction", "formaction"),
@@ -1065,7 +1066,6 @@ STATIC_ATOMS = [
     Atom("screenX", "screenX"),
     Atom("screenY", "screenY"),
     Atom("script", "script"),
-    Atom("scriptEnabledBeforePrintOrPreview", "scriptEnabledBeforePrintOrPreview"),
     Atom("scrollbar", "scrollbar"),
     Atom("scrollbarThumb", "scrollbar-thumb"),
     Atom("scrollamount", "scrollamount"),
@@ -2129,6 +2129,7 @@ STATIC_ATOMS = [
     Atom("labelMouseDownPtProperty", "LabelMouseDownPtProperty"),
     Atom("lockedStyleStates", "lockedStyleStates"),
     Atom("apzCallbackTransform", "apzCallbackTransform"),
+    Atom("apzDisabled", "ApzDisabled"),  # bool
     Atom("restylableAnonymousNode", "restylableAnonymousNode"),  # bool
     Atom("docLevelNativeAnonymousContent", "docLevelNativeAnonymousContent"),  # bool
     Atom("paintRequestTime", "PaintRequestTime"),
@@ -2228,7 +2229,6 @@ STATIC_ATOMS = [
     Atom("_moz_windows_classic", "-moz-windows-classic"),
     Atom("_moz_windows_glass", "-moz-windows-glass"),
     Atom("_moz_os_version", "-moz-os-version"),
-    Atom("_moz_touch_enabled", "-moz-touch-enabled"),
     Atom("_moz_menubar_drag", "-moz-menubar-drag"),
     Atom("_moz_device_pixel_ratio", "-moz-device-pixel-ratio"),
     Atom("_moz_device_orientation", "-moz-device-orientation"),
@@ -2265,22 +2265,6 @@ STATIC_ATOMS = [
     Atom("SendMail", "SendMail"),
     Atom("ForwardMail", "ForwardMail"),
     Atom("ReplyToMail", "ReplyToMail"),
-
-    # Scroll origins (these are used in various scrolling functions in
-    # nsIScrollableFrame and ScrollFrameHelper). These are divided into two lists
-    # - origins in the first one have smooth-scrolling prefs associated with them,
-    # under the "general.smoothScroll.<origin>.*" pref branch. Origins in the
-    # second one do not.
-    Atom("mouseWheel", "mouseWheel"),  # For discrete wheel events (e.g. not OSX magic mouse)
-    Atom("pixels",     "pixels"),
-    Atom("lines",      "lines"),
-    Atom("pages",      "pages"),
-    Atom("scrollbars", "scrollbars"),
-    # Atom("other",      "other"),  # "other" is present above
-    # Scroll origins without smooth-scrolling prefs
-    Atom("apz",        "apz"),
-    Atom("restore",    "restore"),
-    Atom("relative",    "relative"),
 
     Atom("alert", "alert"),
     Atom("alertdialog", "alertdialog"),
@@ -2457,8 +2441,6 @@ STATIC_ATOMS = [
     PseudoElementAtom("PseudoElement_firstLine", ":first-line"),
     PseudoElementAtom("PseudoElement_selection", ":selection"),
     PseudoElementAtom("PseudoElement_mozFocusInner", ":-moz-focus-inner"),
-    PseudoElementAtom("PseudoElement_mozFocusOuter", ":-moz-focus-outer"),
-    PseudoElementAtom("PseudoElement_mozMathAnonymous", ":-moz-math-anonymous"),
     PseudoElementAtom("PseudoElement_mozNumberWrapper", ":-moz-number-wrapper"),
     PseudoElementAtom("PseudoElement_mozNumberSpinBox", ":-moz-number-spin-box"),
     PseudoElementAtom("PseudoElement_mozNumberSpinUp", ":-moz-number-spin-up"),
@@ -2472,7 +2454,7 @@ STATIC_ATOMS = [
     PseudoElementAtom("PseudoElement_mozColorSwatch", ":-moz-color-swatch"),
     PseudoElementAtom("PseudoElement_mozTextControlEditingRoot", ":-moz-text-control-editing-root"),
     PseudoElementAtom("PseudoElement_mozTextControlPreview", ":-moz-text-control-preview"),
-    PseudoElementAtom("PseudoElement_fileChooserButton", ":file-chooser-button"),
+    PseudoElementAtom("PseudoElement_fileSelectorButton", ":file-selector-button"),
 
     # CSS anonymous boxes -- these must appear in the same order as
     # in nsCSSAnonBoxList.h
@@ -2482,7 +2464,10 @@ STATIC_ATOMS = [
     NonInheritingAnonBoxAtom("AnonBox_framesetBlank", ":-moz-frameset-blank"),
     NonInheritingAnonBoxAtom("AnonBox_tableColGroup", ":-moz-table-column-group"),
     NonInheritingAnonBoxAtom("AnonBox_tableCol", ":-moz-table-column"),
-    NonInheritingAnonBoxAtom("AnonBox_pageBreak", ":-moz-pagebreak"),
+    NonInheritingAnonBoxAtom("AnonBox_page", ":-moz-page"),
+    NonInheritingAnonBoxAtom("AnonBox_pageBreak", ":-moz-page-break"),
+    NonInheritingAnonBoxAtom("AnonBox_pageContent", ":-moz-page-content"),
+    NonInheritingAnonBoxAtom("AnonBox_printedSheet", ":-moz-printed-sheet"),
     NonInheritingAnonBoxAtom("AnonBox_columnSpanWrapper", ":-moz-column-span-wrapper"),
     InheritingAnonBoxAtom("AnonBox_mozText", ":-moz-text"),
     InheritingAnonBoxAtom("AnonBox_firstLetterContinuation", ":-moz-first-letter-continuation"),
@@ -2503,8 +2488,6 @@ STATIC_ATOMS = [
     InheritingAnonBoxAtom("AnonBox_tableRowGroup", ":-moz-table-row-group"),
     InheritingAnonBoxAtom("AnonBox_tableRow", ":-moz-table-row"),
     InheritingAnonBoxAtom("AnonBox_canvas", ":-moz-canvas"),
-    InheritingAnonBoxAtom("AnonBox_page", ":-moz-page"),
-    InheritingAnonBoxAtom("AnonBox_pageContent", ":-moz-pagecontent"),
     InheritingAnonBoxAtom("AnonBox_pageSequence", ":-moz-page-sequence"),
     InheritingAnonBoxAtom("AnonBox_scrolledContent", ":-moz-scrolled-content"),
     InheritingAnonBoxAtom("AnonBox_scrolledCanvas", ":-moz-scrolled-canvas"),
@@ -2575,11 +2558,11 @@ def generate_nsgkatomconsts_h(output, *ignore):
     pseudo_count = 0
     anon_box_count = 0
     for i, atom in enumerate(STATIC_ATOMS):
-        if atom.atom_type is "PseudoElementAtom":
+        if atom.atom_type == "PseudoElementAtom":
             if pseudo_index is None:
                 pseudo_index = i
             pseudo_count += 1
-        elif atom.atom_type is "NonInheritingAnonBoxAtom" or atom.atom_type is "InheritingAnonBoxAtom":
+        elif atom.atom_type == "NonInheritingAnonBoxAtom" or atom.atom_type == "InheritingAnonBoxAtom":
             if anon_box_index is None:
                 anon_box_index = i
             anon_box_count += 1

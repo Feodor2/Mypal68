@@ -1835,7 +1835,7 @@ class Extension extends ExtensionData {
   }
 
   get manifestCacheKey() {
-    return [this.id, this.version, Services.locale.appLocaleAsLangTag];
+    return [this.id, this.version, Services.locale.appLocaleAsBCP47];
   }
 
   get isPrivileged() {
@@ -2047,7 +2047,7 @@ class Extension extends ExtensionData {
       let locales = await this.promiseLocales();
 
       let matches = Services.locale.negotiateLanguages(
-        Services.locale.appLocalesAsLangTags,
+        Services.locale.appLocalesAsBCP47,
         Array.from(locales.keys()),
         this.defaultLocale
       );

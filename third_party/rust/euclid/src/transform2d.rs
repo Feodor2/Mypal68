@@ -12,17 +12,17 @@
 use super::{UnknownUnit, Angle};
 #[cfg(feature = "mint")]
 use mint;
-use num::{One, Zero};
-use point::{Point2D, point2};
-use vector::{Vector2D, vec2};
-use rect::Rect;
-use transform3d::Transform3D;
-use core::ops::{Add, Mul, Div, Sub, Neg};
+use crate::num::{One, Zero};
+use crate::point::{Point2D, point2};
+use crate::vector::{Vector2D, vec2};
+use crate::rect::Rect;
+use crate::transform3d::Transform3D;
+use core::ops::{Add, Mul, Div, Sub};
 use core::marker::PhantomData;
 use core::cmp::{Eq, PartialEq};
 use core::hash::{Hash};
-use approxeq::ApproxEq;
-use trig::Trig;
+use crate::approxeq::ApproxEq;
+use crate::trig::Trig;
 use core::fmt;
 use num_traits::NumCast;
 #[cfg(feature = "serde")]
@@ -79,7 +79,7 @@ impl<'de, T, Src, Dst> serde::Deserialize<'de> for Transform2D<T, Src, Dst>
             m11, m12,
             m21, m22,
             m31, m32,
-        ) = try!(serde::Deserialize::deserialize(deserializer));
+        ) = serde::Deserialize::deserialize(deserializer)?;
         Ok(Transform2D {
             m11, m12,
             m21, m22,
@@ -122,7 +122,7 @@ impl<T, Src, Dst> PartialEq for Transform2D<T, Src, Dst>
 impl<T, Src, Dst> Hash for Transform2D<T, Src, Dst>
     where T: Hash
 {
-    fn hash<H: ::core::hash::Hasher>(&self, h: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, h: &mut H) {
         self.m11.hash(h);
         self.m12.hash(h);
         self.m21.hash(h);
@@ -132,13 +132,14 @@ impl<T, Src, Dst> Hash for Transform2D<T, Src, Dst>
     }
 }
 
-impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
+
+impl<T, Src, Dst> Transform2D<T, Src, Dst> {
     /// Create a transform specifying its matrix elements in row-major order.
     ///
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), then please use `column_major`
-    pub fn row_major(m11: T, m12: T, m21: T, m22: T, m31: T, m32: T) -> Self {
+    pub const fn row_major(m11: T, m12: T, m21: T, m22: T, m31: T, m32: T) -> Self {
         Transform2D {
             m11, m12,
             m21, m22,
@@ -152,7 +153,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), then please use `row_major`
-    pub fn column_major(m11: T, m21: T, m31: T, m12: T, m22: T, m32: T) -> Self {
+    pub const fn column_major(m11: T, m21: T, m31: T, m12: T, m22: T, m32: T) -> Self {
         Transform2D {
             m11, m12,
             m21, m22,
@@ -161,12 +162,40 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
         }
     }
 
+
+    /// Returns true is this transform is approximately equal to the other one, using
+    /// T's default epsilon value.
+    ///
+    /// The same as [`ApproxEq::approx_eq()`] but available without importing trait.
+    ///
+    /// [`ApproxEq::approx_eq()`]: ./approxeq/trait.ApproxEq.html#method.approx_eq
+    #[inline]
+    pub fn approx_eq(&self, other: &Self) -> bool
+    where T : ApproxEq<T> {
+        <Self as ApproxEq<T>>::approx_eq(&self, &other)
+    }
+
+    /// Returns true is this transform is approximately equal to the other one, using
+    /// a provided epsilon value.
+    ///
+    /// The same as [`ApproxEq::approx_eq_eps()`] but available without importing trait.
+    ///
+    /// [`ApproxEq::approx_eq_eps()`]: ./approxeq/trait.ApproxEq.html#method.approx_eq_eps
+    #[inline]
+    pub fn approx_eq_eps(&self, other: &Self, eps: &T) -> bool
+    where T : ApproxEq<T> {
+        <Self as ApproxEq<T>>::approx_eq_eps(&self, &other, &eps)
+    }
+}
+
+impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Returns an array containing this transform's terms in row-major order (the order
     /// in which the transform is actually laid out in memory).
     ///
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), then please use `to_column_major_array`
+    #[inline]
     pub fn to_row_major_array(&self) -> [T; 6] {
         [
             self.m11, self.m12,
@@ -180,6 +209,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), then please use `to_row_major_array`
+    #[inline]
     pub fn to_column_major_array(&self) -> [T; 6] {
         [
             self.m11, self.m21, self.m31,
@@ -195,6 +225,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), this will return column major arrays.
+    #[inline]
     pub fn to_row_arrays(&self) -> [[T; 2]; 3] {
         [
             [self.m11, self.m12],
@@ -208,6 +239,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), please provide a column major array.
+    #[inline]
     pub fn from_row_major_array(array: [T; 6]) -> Self {
         Self::row_major(
             array[0], array[1],
@@ -221,6 +253,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Beware: This library is written with the assumption that row vectors
     /// are being used. If your matrices use column vectors (i.e. transforming a vector
     /// is `T * v`), please provide a column major array.
+    #[inline]
     pub fn from_row_arrays(array: [[T; 2]; 3]) -> Self {
         Self::row_major(
             array[0][0], array[0][1],
@@ -230,6 +263,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     }
 
     /// Drop the units, preserving only the numeric value.
+    #[inline]
     pub fn to_untyped(&self) -> Transform2D<T, UnknownUnit, UnknownUnit> {
         Transform2D::row_major(
             self.m11, self.m12,
@@ -239,6 +273,7 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
     }
 
     /// Tag a unitless value with units.
+    #[inline]
     pub fn from_untyped(p: &Transform2D<T, UnknownUnit, UnknownUnit>) -> Self {
         Transform2D::row_major(
             p.m11, p.m12,
@@ -246,16 +281,45 @@ impl<T: Copy, Src, Dst> Transform2D<T, Src, Dst> {
             p.m31, p.m32
         )
     }
+
+    /// Returns the same transform with a different source unit.
+    #[inline]
+    pub fn with_source<NewSrc>(&self) -> Transform2D<T, NewSrc, Dst> {
+        Transform2D::row_major(
+            self.m11, self.m12,
+            self.m21, self.m22,
+            self.m31, self.m32,
+        )
+    }
+
+    /// Returns the same transform with a different destination unit.
+    #[inline]
+    pub fn with_destination<NewDst>(&self) -> Transform2D<T, Src, NewDst> {
+        Transform2D::row_major(
+            self.m11, self.m12,
+            self.m21, self.m22,
+            self.m31, self.m32,
+        )
+    }
+
+    /// Create a 3D transform from the current transform
+    pub fn to_3d(&self) -> Transform3D<T, Src, Dst>
+    where
+        T: Zero + One,
+    {
+        Transform3D::row_major_2d(self.m11, self.m12, self.m21, self.m22, self.m31, self.m32)
+    }
 }
 
-impl<T0: NumCast + Copy, Src, Dst> Transform2D<T0, Src, Dst> {
+impl<T: NumCast + Copy, Src, Dst> Transform2D<T, Src, Dst> {
     /// Cast from one numeric representation to another, preserving the units.
-    pub fn cast<T1: NumCast + Copy>(&self) -> Transform2D<T1, Src, Dst> {
+    #[inline]
+    pub fn cast<NewT: NumCast>(&self) -> Transform2D<NewT, Src, Dst> {
         self.try_cast().unwrap()
     }
 
     /// Fallible cast from one numeric representation to another, preserving the units.
-    pub fn try_cast<T1: NumCast + Copy>(&self) -> Option<Transform2D<T1, Src, Dst>> {
+    pub fn try_cast<NewT: NumCast>(&self) -> Option<Transform2D<NewT, Src, Dst>> {
         match (NumCast::from(self.m11), NumCast::from(self.m12),
                NumCast::from(self.m21), NumCast::from(self.m22),
                NumCast::from(self.m31), NumCast::from(self.m32)) {
@@ -274,36 +338,38 @@ impl<T0: NumCast + Copy, Src, Dst> Transform2D<T0, Src, Dst> {
 }
 
 impl<T, Src, Dst> Transform2D<T, Src, Dst>
-where T: Copy +
-         PartialEq +
-         One + Zero {
+where
+    T: Zero + One,
+{
+    /// Create an identity matrix:
+    ///
+    /// ```text
+    /// 1 0
+    /// 0 1
+    /// 0 0
+    /// ```
+    #[inline]
     pub fn identity() -> Self {
-        let (_0, _1) = (Zero::zero(), One::one());
-        Transform2D::row_major(
-           _1, _0,
-           _0, _1,
-           _0, _0
-        )
+        Self::create_translation(T::zero(), T::zero())
     }
 
-    // Intentional not public, because it checks for exact equivalence
-    // while most consumers will probably want some sort of approximate
-    // equivalence to deal with floating-point errors.
-    fn is_identity(&self) -> bool {
-        *self == Transform2D::identity()
+    /// Intentional not public, because it checks for exact equivalence
+    /// while most consumers will probably want some sort of approximate
+    /// equivalence to deal with floating-point errors.
+    fn is_identity(&self) -> bool
+    where
+        T: PartialEq,
+    {
+        *self == Self::identity()
     }
 }
 
-impl<T, Src, Dst> Transform2D<T, Src, Dst>
-where T: Copy + Clone +
-         Add<T, Output=T> +
-         Mul<T, Output=T> +
-         Div<T, Output=T> +
-         Sub<T, Output=T> +
-         Trig +
-         PartialOrd +
-         One + Zero  {
 
+/// Methods for combining generic transformations
+impl<T, Src, Dst> Transform2D<T, Src, Dst>
+where
+    T: Copy + Add<Output = T> + Mul<Output = T>,
+{
     /// Returns the multiplication of the two matrices such that mat's transformation
     /// applies after self's transformation.
     ///
@@ -313,8 +379,10 @@ where T: Copy + Clone +
         Transform2D::row_major(
             self.m11 * mat.m11 + self.m12 * mat.m21,
             self.m11 * mat.m12 + self.m12 * mat.m22,
+
             self.m21 * mat.m11 + self.m22 * mat.m21,
             self.m21 * mat.m12 + self.m22 * mat.m22,
+
             self.m31 * mat.m11 + self.m32 * mat.m21 + mat.m31,
             self.m31 * mat.m12 + self.m32 * mat.m22 + mat.m32,
         )
@@ -329,60 +397,58 @@ where T: Copy + Clone +
     pub fn pre_transform<NewSrc>(&self, mat: &Transform2D<T, NewSrc, Src>) -> Transform2D<T, NewSrc, Dst> {
         mat.post_transform(self)
     }
+}
 
-    /// Returns a translation transform.
+/// Methods for creating and combining translation transformations
+impl<T, Src, Dst> Transform2D<T, Src, Dst>
+where
+    T: Zero + One,
+{
+    /// Create a 2d translation transform:
+    ///
+    /// ```text
+    /// 1 0
+    /// 0 1
+    /// x y
+    /// ```
     #[inline]
     pub fn create_translation(x: T, y: T) -> Self {
-         let (_0, _1): (T, T) = (Zero::zero(), One::one());
-         Transform2D::row_major(
-            _1, _0,
-            _0, _1,
-             x,  y
+        let _0 = || T::zero();
+        let _1 = || T::one();
+
+        Self::row_major(
+            _1(), _0(),
+            _0(), _1(),
+             x,    y,
         )
     }
 
     /// Applies a translation after self's transformation and returns the resulting transform.
     #[inline]
     #[must_use]
-    pub fn post_translate(&self, v: Vector2D<T, Dst>) -> Self {
+    pub fn post_translate(&self, v: Vector2D<T, Dst>) -> Self
+    where
+        T: Copy + Add<Output = T> + Mul<Output = T>,
+    {
         self.post_transform(&Transform2D::create_translation(v.x, v.y))
     }
 
     /// Applies a translation before self's transformation and returns the resulting transform.
     #[inline]
     #[must_use]
-    pub fn pre_translate(&self, v: Vector2D<T, Src>) -> Self {
+    pub fn pre_translate(&self, v: Vector2D<T, Src>) -> Self
+    where
+        T: Copy + Add<Output = T> + Mul<Output = T>,
+    {
         self.pre_transform(&Transform2D::create_translation(v.x, v.y))
     }
+}
 
-    /// Returns a scale transform.
-    pub fn create_scale(x: T, y: T) -> Self {
-        let _0 = Zero::zero();
-        Transform2D::row_major(
-             x, _0,
-            _0,  y,
-            _0, _0
-        )
-    }
-
-    /// Applies a scale after self's transformation and returns the resulting transform.
-    #[inline]
-    #[must_use]
-    pub fn post_scale(&self, x: T, y: T) -> Self {
-        self.post_transform(&Transform2D::create_scale(x, y))
-    }
-
-    /// Applies a scale before self's transformation and returns the resulting transform.
-    #[inline]
-    #[must_use]
-    pub fn pre_scale(&self, x: T, y: T) -> Self {
-        Transform2D::row_major(
-            self.m11 * x, self.m12,
-            self.m21,     self.m22 * y,
-            self.m31,     self.m32
-        )
-    }
-
+/// Methods for creating and combining rotation transformations
+impl<T, Src, Dst> Transform2D<T, Src, Dst>
+where
+    T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Zero + Trig,
+{
     /// Returns a rotation transform.
     #[inline]
     pub fn create_rotation(theta: Angle<T>) -> Self {
@@ -392,7 +458,7 @@ where T: Copy + Clone +
         Transform2D::row_major(
             cos, _0 - sin,
             sin, cos,
-             _0, _0
+            _0, _0
         )
     }
 
@@ -409,7 +475,61 @@ where T: Copy + Clone +
     pub fn pre_rotate(&self, theta: Angle<T>) -> Self {
         self.pre_transform(&Transform2D::create_rotation(theta))
     }
+}
 
+/// Methods for creating and combining scale transformations
+impl<T, Src, Dst> Transform2D<T, Src, Dst> {
+    /// Create a 2d scale transform:
+    ///
+    /// ```text
+    /// x 0
+    /// 0 y
+    /// 0 0
+    /// ```
+    #[inline]
+    pub fn create_scale(x: T, y: T) -> Self
+    where
+        T: Zero,
+    {
+        let _0 = || Zero::zero();
+
+        Self::row_major(
+             x,   _0(),
+            _0(),  y,
+            _0(), _0(),
+        )
+    }
+
+    /// Applies a scale after self's transformation and returns the resulting transform.
+    #[inline]
+    #[must_use]
+    pub fn post_scale(&self, x: T, y: T) -> Self
+    where
+        T: Copy + Add<Output = T> + Mul<Output = T> + Zero,
+    {
+        self.post_transform(&Transform2D::create_scale(x, y))
+    }
+
+    /// Applies a scale before self's transformation and returns the resulting transform.
+    #[inline]
+    #[must_use]
+    pub fn pre_scale(&self, x: T, y: T) -> Self
+    where
+        T: Copy + Mul<Output = T>,
+    {
+        Transform2D::row_major(
+            self.m11 * x, self.m12 * x,
+            self.m21 * y, self.m22 * y,
+            self.m31,     self.m32
+        )
+    }
+}
+
+/// Methods for apply transformations to objects
+impl<T, Src, Dst> Transform2D<T, Src, Dst>
+where
+    T: Copy + Add<Output = T> + Mul<Output = T>,
+{
     /// Returns the given point transformed by this transform.
     ///
     /// Assuming row vectors, this is equivalent to `p * self`
@@ -436,7 +556,10 @@ where T: Copy + Clone +
     /// transform.
     #[inline]
     #[must_use]
-    pub fn transform_rect(&self, rect: &Rect<T, Src>) -> Rect<T, Dst> {
+    pub fn transform_rect(&self, rect: &Rect<T, Src>) -> Rect<T, Dst>
+    where
+        T: Sub<Output = T> + Zero + PartialOrd,
+    {
         let min = rect.min();
         let max = rect.max();
         Rect::from_points(&[
@@ -446,10 +569,22 @@ where T: Copy + Clone +
             self.transform_point(point2(min.x, max.y)),
         ])
     }
+}
 
+
+impl<T, Src, Dst> Transform2D<T, Src, Dst>
+where
+    T: Copy + Sub<Output = T> + Mul<Output = T> + Div<Output = T> + PartialEq + Zero + One,
+{
     /// Computes and returns the determinant of this transform.
     pub fn determinant(&self) -> T {
         self.m11 * self.m22 - self.m12 * self.m21
+    }
+
+    /// Returns whether it is possible to compute the inverse transform.
+    #[inline]
+    pub fn is_invertible(&self) -> bool {
+        self.determinant() != Zero::zero()
     }
 
     /// Returns the inverse transform if possible.
@@ -474,62 +609,32 @@ where T: Copy + Clone +
             inv_det * (self.m31 * self.m12 - self.m11 * self.m32),
         ))
     }
-
-    /// Returns the same transform with a different destination unit.
-    #[inline]
-    pub fn with_destination<NewDst>(&self) -> Transform2D<T, Src, NewDst> {
-        Transform2D::row_major(
-            self.m11, self.m12,
-            self.m21, self.m22,
-            self.m31, self.m32,
-        )
-    }
-
-    /// Returns the same transform with a different source unit.
-    #[inline]
-    pub fn with_source<NewSrc>(&self) -> Transform2D<T, NewSrc, Dst> {
-        Transform2D::row_major(
-            self.m11, self.m12,
-            self.m21, self.m22,
-            self.m31, self.m32,
-        )
-    }
 }
 
-impl <T, Src, Dst> Transform2D<T, Src, Dst>
-where T: Copy + Clone +
-         Add<T, Output=T> +
-         Sub<T, Output=T> +
-         Mul<T, Output=T> +
-         Div<T, Output=T> +
-         Neg<Output=T> +
-         PartialOrd +
-         Trig +
-         One + Zero {
-    /// Create a 3D transform from the current transform
-    pub fn to_3d(&self) -> Transform3D<T, Src, Dst> {
-        Transform3D::row_major_2d(self.m11, self.m12, self.m21, self.m22, self.m31, self.m32)
-    }
-
-}
 
 impl <T, Src, Dst> Default for Transform2D<T, Src, Dst>
-    where T: Copy + PartialEq + One + Zero
+    where T: Zero + One
 {
+    /// Returns the [identity transform](#method.identity).
     fn default() -> Self {
         Self::identity()
     }
 }
 
-impl<T: ApproxEq<T>, Src, Dst> Transform2D<T, Src, Dst> {
-    pub fn approx_eq(&self, other: &Self) -> bool {
-        self.m11.approx_eq(&other.m11) && self.m12.approx_eq(&other.m12) &&
-        self.m21.approx_eq(&other.m21) && self.m22.approx_eq(&other.m22) &&
-        self.m31.approx_eq(&other.m31) && self.m32.approx_eq(&other.m32)
+impl<T: ApproxEq<T>, Src, Dst> ApproxEq<T> for Transform2D<T, Src, Dst> {
+    #[inline]
+    fn approx_epsilon() -> T { T::approx_epsilon() }
+
+    /// Returns true is this transform is approximately equal to the other one, using
+    /// a provided epsilon value.
+    fn approx_eq_eps(&self, other: &Self, eps: &T) -> bool {
+        self.m11.approx_eq_eps(&other.m11, eps) && self.m12.approx_eq_eps(&other.m12, eps) &&
+        self.m21.approx_eq_eps(&other.m21, eps) && self.m22.approx_eq_eps(&other.m22, eps) &&
+        self.m31.approx_eq_eps(&other.m31, eps) && self.m32.approx_eq_eps(&other.m32, eps)
     }
 }
 
-impl<T: Copy + fmt::Debug, Src, Dst> fmt::Debug for Transform2D<T, Src, Dst>
+impl<T, Src, Dst> fmt::Debug for Transform2D<T, Src, Dst>
 where T: Copy + fmt::Debug +
          PartialEq +
          One + Zero {
@@ -568,8 +673,8 @@ impl<T, Src, Dst> Into<mint::RowMatrix3x2<T>> for Transform2D<T, Src, Dst> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use default;
-    use approxeq::ApproxEq;
+    use crate::default;
+    use crate::approxeq::ApproxEq;
     #[cfg(feature = "mint")]
     use mint;
 
@@ -614,6 +719,15 @@ mod test {
         assert_eq!(s1, s3);
 
         assert!(s1.transform_point(Point2D::new(2.0, 2.0)).approx_eq(&Point2D::new(4.0, 6.0)));
+    }
+
+
+    #[test]
+    pub fn test_pre_post_scale() {
+        let m = Mat::create_rotation(rad(FRAC_PI_2)).post_translate(vec2(6.0, 7.0));
+        let s = Mat::create_scale(2.0, 3.0);
+        assert_eq!(m.post_transform(&s), m.post_scale(2.0, 3.0));
+        assert_eq!(m.pre_transform(&s), m.pre_scale(2.0, 3.0));
     }
 
     #[test]

@@ -58,6 +58,7 @@ class nsPrintSettings : public nsIPrintSettings {
   bool mPrintSilent;
   bool mShrinkToFit;
   bool mShowPrintProgress;
+  bool mShowMarginGuides;
   int32_t mPrintPageDelay;
 
   nsString mTitle;

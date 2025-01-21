@@ -25,7 +25,6 @@ DIRS += [
     'styleeditor',
     'themes',
     'webconsole',
-    'webide',
 ]
 
 if CONFIG['ACCESSIBILITY']:

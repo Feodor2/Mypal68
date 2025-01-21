@@ -24,18 +24,18 @@ let whitelist = [
   },
   // UA-only media features.
   {
-    sourceName: /\b(autocomplete-item|svg)\.css$/,
+    sourceName: /\b(autocomplete-item)\.css$/,
     errorMessage: /Expected media feature name but found \u2018-moz.*/i,
     isFromDevTools: false,
+    platforms: ["windows"],
   },
-
   {
     sourceName: /\b(contenteditable|EditorOverride|svg|forms|html|mathml|ua|pluginproblem)\.css$/i,
     errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(minimal-xul|html|mathml|ua|forms|svg)\.css$/i,
+    sourceName: /\b(minimal-xul|html|mathml|ua|forms|svg|manageDialog|autocomplete-item-shared|formautofill)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
@@ -50,13 +50,6 @@ let whitelist = [
     errorMessage: /Unknown property.*overflow-clip-box/i,
     isFromDevTools: false,
   },
-  // System colors reserved to UA / chrome sheets
-  {
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Expected color but found \u2018-moz.*/i,
-    platforms: ["linux"],
-    isFromDevTools: false,
-  },
   // These variables are declared somewhere else, and error when we load the
   // files directly. They're all marked intermittent because their appearance
   // in the error console seems to not be consistent.
@@ -66,41 +59,7 @@ let whitelist = [
     errorMessage: /Property contained reference to invalid variable.*color/i,
     isFromDevTools: true,
   },
-  {
-    sourceName: /webide\/skin\/logs\.css$/i,
-    intermittent: true,
-    errorMessage: /Property contained reference to invalid variable.*color/i,
-    isFromDevTools: true,
-  },
-  {
-    sourceName: /webide\/skin\/logs\.css$/i,
-    intermittent: true,
-    errorMessage: /Property contained reference to invalid variable.*background/i,
-    isFromDevTools: true,
-  },
 ];
-
-if (
-  !Services.prefs.getBoolPref(
-    "layout.css.xul-box-display-values.content.enabled"
-  )
-) {
-  // These are UA sheets which use non-content-exposed `display` values.
-  whitelist.push({
-    sourceName: /(skin\/shared\/Heartbeat|((?:res|gre-resources)\/(ua|html)))\.css$/i,
-    errorMessage: /Error in parsing value for .*\bdisplay\b/i,
-    isFromDevTools: false,
-  });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.file-chooser-button.enabled")) {
-  // Reserved to UA sheets, behind a pref for content.
-  whitelist.push({
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Unknown pseudo-.*file-chooser-button/i,
-    isFromDevTools: false,
-  });
-}
 
 if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
   whitelist.push({
@@ -393,7 +352,7 @@ add_task(async function checkAllTheCSS() {
 
   // filter out either the devtools paths or the non-devtools paths:
   let isDevtools = SimpleTest.harnessParameters.subsuite == "devtools";
-  let devtoolsPathBits = ["webide", "devtools"];
+  let devtoolsPathBits = ["devtools"];
   uris = uris.filter(
     uri => isDevtools == devtoolsPathBits.some(path => uri.spec.includes(path))
   );
@@ -500,9 +459,9 @@ add_task(async function checkAllTheCSS() {
   checkWhitelist(propNameWhitelist);
 
   // Clean up to avoid leaks:
-  iframe.remove();
   doc.head.innerHTML = "";
   doc = null;
+  iframe.remove();
   iframe = null;
   win = null;
   hiddenFrame.destroy();

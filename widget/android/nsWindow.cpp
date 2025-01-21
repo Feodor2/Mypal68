@@ -1965,7 +1965,6 @@ void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
     WidgetMouseEvent hittest(true, eMouseHitTest, this,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
-    hittest.mIgnoreRootScrollFrame = true;
     hittest.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
     nsEventStatus status;
     DispatchEvent(&hittest, status);
@@ -2159,7 +2158,8 @@ bool nsWindow::NeedsPaint() {
 }
 
 void nsWindow::ConfigureAPZControllerThread() {
-  APZThreadUtils::SetControllerThread(mozilla::GetAndroidUiThreadMessageLoop());
+  nsCOMPtr<nsISerialEventTarget> thread = mozilla::GetAndroidUiThread();
+  APZThreadUtils::SetControllerThread(thread);
 }
 
 already_AddRefed<GeckoContentController>

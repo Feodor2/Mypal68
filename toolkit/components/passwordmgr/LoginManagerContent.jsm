@@ -15,7 +15,7 @@ const EXPORTED_SYMBOLS = ["LoginManagerContent"];
 
 const PASSWORD_INPUT_ADDED_COALESCING_THRESHOLD_MS = 1;
 const AUTOCOMPLETE_AFTER_RIGHT_CLICK_THRESHOLD_MS = 400;
-const AUTOFILL_STATE = "-moz-autofill";
+const AUTOFILL_STATE = "autofill";
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"

@@ -1206,7 +1206,7 @@ nsresult FetchAndConvertUnsupportedPayloads::ConvertPayload(
 
   // Exclude invalid mime types.
   if (aPayload.Length() == 0 || !imgLoader::SupportImageWithMimeType(
-                                    PromiseFlatCString(aMimeType).get(),
+                                    aMimeType,
                                     AcceptedMimeTypes::IMAGES_AND_DOCUMENTS)) {
     return NS_ERROR_FAILURE;
   }

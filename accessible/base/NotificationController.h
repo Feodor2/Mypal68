@@ -10,7 +10,7 @@
 
 #include "mozilla/Tuple.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 
 #include <utility>
 

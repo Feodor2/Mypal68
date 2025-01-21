@@ -211,12 +211,14 @@ let LEGACY_ACTORS = {
       module: "resource://gre/actors/PictureInPictureChild.jsm",
       events: {
         MozTogglePictureInPicture: { capture: true },
+        MozStopPictureInPicture: { capture: true },
       },
 
       messages: [
         "PictureInPicture:SetupPlayer",
         "PictureInPicture:Play",
         "PictureInPicture:Pause",
+        "PictureInPicture:KeyToggle",
       ],
     },
   },
@@ -226,8 +228,8 @@ let LEGACY_ACTORS = {
       allFrames: true,
       module: "resource://gre/actors/PictureInPictureChild.jsm",
       events: {
-        canplay: { capture: true, mozSystemGroup: true },
-        pagehide: { capture: true },
+        UAWidgetSetupOrChange: {},
+        contextmenu: { capture: true },
       },
     },
   },

@@ -8,6 +8,7 @@
 #include "nsStyleConsts.h"
 #include "AndroidColors.h"
 #include "nsCSSRendering.h"
+#include "nsLayoutUtils.h"
 #include "PathHelpers.h"
 #include "mozilla/ClearOnShutdown.h"
 

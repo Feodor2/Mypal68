@@ -277,6 +277,10 @@ class nsWindow final : public nsWindowBase {
   bool TouchEventShouldStartDrag(mozilla::EventMessage aEventMessage,
                                  LayoutDeviceIntPoint aEventPoint);
 
+  static void SetIsRestoringSession(const bool aIsRestoringSession) {
+    sIsRestoringSession = aIsRestoringSession;
+  }
+
   /**
    * AssociateDefaultIMC() associates or disassociates the default IMC for
    * the window.
@@ -579,6 +583,7 @@ class nsWindow final : public nsWindowBase {
   static bool sJustGotActivate;
   static bool sIsInMouseCapture;
   static int sTrimOnMinimize;
+  static bool sIsRestoringSession;
 
   PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate;
 

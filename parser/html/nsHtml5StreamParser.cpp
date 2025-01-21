@@ -1749,9 +1749,9 @@ void nsHtml5StreamParser::ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer,
       mTokenizer->setLineNumber(speculation->GetStartLineNumber());
 
       nsContentUtils::ReportToConsole(
-          nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM Events"),
+          nsIScriptError::warningFlag, "DOM Events"_ns,
           mExecutor->GetDocument(), nsContentUtils::eDOM_PROPERTIES,
-          "SpeculationFailed", nsTArray<nsString>(), nullptr, EmptyString(),
+          "SpeculationFailed", nsTArray<nsString>(), nullptr, u""_ns,
           speculation->GetStartLineNumber());
 
       nsHtml5OwningUTF16Buffer* buffer = mFirstBuffer->next;

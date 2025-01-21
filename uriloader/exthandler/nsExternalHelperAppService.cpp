@@ -733,7 +733,7 @@ NS_IMETHODIMP nsExternalHelperAppService::DoContent(
   // Try to find a mime object by looking at the mime type/extension
   nsCOMPtr<nsIMIMEInfo> mimeInfo;
   if (aMimeContentType.Equals(APPLICATION_GUESS_FROM_EXT,
-                              nsCaseInsensitiveCStringComparator())) {
+                              nsCaseInsensitiveCStringComparator)) {
     nsAutoCString mimeType;
     if (!fileExtension.IsEmpty()) {
       mimeSvc->GetFromTypeAndExtension(EmptyCString(), fileExtension,
@@ -1166,6 +1166,7 @@ nsExternalAppHandler::nsExternalAppHandler(
                                  '_');
   mTempFileExtension.ReplaceChar(KNOWN_PATH_SEPARATORS FILE_ILLEGAL_CHARACTERS,
                                  '_');
+  mSuggestedFileName.ReplaceChar(char16_t(0), '_');
 
   // Remove unsafe bidi characters which might have spoofing implications (bug
   // 511521).
@@ -1309,7 +1310,7 @@ void nsExternalAppHandler::EnsureSuggestedFileName() {
 
     // Now, compare fileExt to mTempFileExtension.
     if (fileExt.Equals(mTempFileExtension,
-                       nsCaseInsensitiveStringComparator())) {
+                       nsCaseInsensitiveStringComparator)) {
       // Matches -> mTempFileExtension can be empty
       mTempFileExtension.Truncate();
     }
@@ -2439,6 +2440,8 @@ NS_IMETHODIMP nsExternalHelperAppService::GetFromTypeAndExtension(
     nsIMIMEInfo** _retval) {
   MOZ_ASSERT(!aMIMEType.IsEmpty() || !aFileExt.IsEmpty(),
              "Give me something to work with");
+  MOZ_DIAGNOSTIC_ASSERT(aFileExt.FindChar('\0') == kNotFound,
+                        "The extension should never contain null characters");
   LOG(("Getting mimeinfo from type '%s' ext '%s'\n",
        PromiseFlatCString(aMIMEType).get(),
        PromiseFlatCString(aFileExt).get()));
@@ -2510,7 +2513,7 @@ NS_IMETHODIMP nsExternalHelperAppService::GetFromTypeAndExtension(
     // as Binary file with exe, com or bin extension regardless the real
     // extension.
     if (!typeToUse.Equals(APPLICATION_OCTET_STREAM,
-                          nsCaseInsensitiveCStringComparator()))
+                          nsCaseInsensitiveCStringComparator))
       rv = FillMIMEInfoForMimeTypeFromExtras(typeToUse, *_retval);
     LOG(("Searched extras (by type), rv 0x%08" PRIX32 "\n",
          static_cast<uint32_t>(rv)));
@@ -2756,7 +2759,7 @@ bool nsExternalHelperAppService::GetTypeFromExtras(const nsACString& aExtension,
     while (start != end) {
       FindCharInReadable(',', iter, end);
       if (Substring(start, iter)
-              .Equals(aExtension, nsCaseInsensitiveCStringComparator())) {
+              .Equals(aExtension, nsCaseInsensitiveCStringComparator)) {
         aMIMEType = extraMimeEntries[index].mMimeType;
         return true;
       }

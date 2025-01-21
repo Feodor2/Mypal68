@@ -33,6 +33,7 @@
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsStringFwd.h"
+#include "nsStyledElement.h"
 #include "nsUnicharUtils.h"
 #include "nscore.h"
 #include "nsContentUtils.h"  // for nsAutoScriptBlocker
@@ -56,7 +57,7 @@ static int32_t GetCSSFloatValue(nsComputedDOMStyle* aComputedStyle,
   MOZ_ASSERT(aComputedStyle);
 
   // get the computed CSSValue of the property
-  nsAutoString value;
+  nsAutoCString value;
   nsresult rv = aComputedStyle->GetPropertyValue(aProperty, value);
   if (NS_FAILED(rv)) {
     NS_WARNING("nsComputedDOMStyle::GetPropertyValue() failed");
@@ -151,7 +152,7 @@ ManualNACPtr HTMLEditor::CreateAnonymousElement(nsAtom* aTag,
   // add the "hidden" class if needed
   if (aIsCreatedHidden) {
     nsresult rv = newElement->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
-                                      NS_LITERAL_STRING("hidden"), true);
+                                      u"hidden"_ns, true);
     if (NS_FAILED(rv)) {
       NS_WARNING("Element::SetAttr(nsGkAtoms::_class, hidden) failed");
       return nullptr;
@@ -534,21 +535,16 @@ nsresult HTMLEditor::GetPositionAndDimensions(Element& aElement, int32_t& aX,
       return NS_ERROR_FAILURE;
     }
 
-    aBorderLeft = GetCSSFloatValue(computedDOMStyle,
-                                   NS_LITERAL_CSTRING("border-left-width"));
-    aBorderTop = GetCSSFloatValue(computedDOMStyle,
-                                  NS_LITERAL_CSTRING("border-top-width"));
-    aMarginLeft =
-        GetCSSFloatValue(computedDOMStyle, NS_LITERAL_CSTRING("margin-left"));
-    aMarginTop =
-        GetCSSFloatValue(computedDOMStyle, NS_LITERAL_CSTRING("margin-top"));
+    aBorderLeft = GetCSSFloatValue(computedDOMStyle, "border-left-width"_ns);
+    aBorderTop = GetCSSFloatValue(computedDOMStyle, "border-top-width"_ns);
+    aMarginLeft = GetCSSFloatValue(computedDOMStyle, "margin-left"_ns);
+    aMarginTop = GetCSSFloatValue(computedDOMStyle, "margin-top"_ns);
 
-    aX = GetCSSFloatValue(computedDOMStyle, NS_LITERAL_CSTRING("left")) +
-         aMarginLeft + aBorderLeft;
-    aY = GetCSSFloatValue(computedDOMStyle, NS_LITERAL_CSTRING("top")) +
-         aMarginTop + aBorderTop;
-    aW = GetCSSFloatValue(computedDOMStyle, NS_LITERAL_CSTRING("width"));
-    aH = GetCSSFloatValue(computedDOMStyle, NS_LITERAL_CSTRING("height"));
+    aX = GetCSSFloatValue(computedDOMStyle, "left"_ns) + aMarginLeft +
+         aBorderLeft;
+    aY = GetCSSFloatValue(computedDOMStyle, "top"_ns) + aMarginTop + aBorderTop;
+    aW = GetCSSFloatValue(computedDOMStyle, "width"_ns);
+    aH = GetCSSFloatValue(computedDOMStyle, "height"_ns);
   } else {
     mResizedObjectIsAbsolutelyPositioned = false;
     RefPtr<nsGenericHTMLElement> htmlElement =
@@ -571,20 +567,35 @@ nsresult HTMLEditor::GetPositionAndDimensions(Element& aElement, int32_t& aX,
   return NS_OK;
 }
 
-// self-explanatory
-void HTMLEditor::SetAnonymousElementPosition(int32_t aX, int32_t aY,
-                                             Element* aElement) {
-  DebugOnly<nsresult> rvIgnored = NS_OK;
-  rvIgnored =
-      mCSSEditUtils->SetCSSPropertyPixels(*aElement, *nsGkAtoms::left, aX);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                       "CSSEditUtils::SetCSSPropertyPixels(nsGkAtoms::left) "
-                       "failed, but ignored");
-  rvIgnored =
-      mCSSEditUtils->SetCSSPropertyPixels(*aElement, *nsGkAtoms::top, aY);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                       "CSSEditUtils::SetCSSPropertyPixels(nsGkAtoms::top) "
-                       "failed, but ignored");
+nsresult HTMLEditor::SetAnonymousElementPositionWithTransaction(
+    nsStyledElement& aStyledElement, int32_t aX, int32_t aY) {
+  // XXX Why do we need to do this with transaction?
+  nsresult rv;
+  rv = mCSSEditUtils->SetCSSPropertyPixelsWithTransaction(aStyledElement,
+                                                          *nsGkAtoms::left, aX);
+  if (rv == NS_ERROR_EDITOR_DESTROYED) {
+    NS_WARNING(
+        "CSSEditUtils::SetCSSPropertyPixelsWithTransaction(nsGkAtoms::left) "
+        "destroyed the editor");
+    return NS_ERROR_EDITOR_DESTROYED;
+  }
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rv),
+      "CSSEditUtils::SetCSSPropertyPixelsWithTransaction(nsGkAtoms::left) "
+      "failed, but ignored");
+  rv = mCSSEditUtils->SetCSSPropertyPixelsWithTransaction(aStyledElement,
+                                                          *nsGkAtoms::top, aY);
+  if (rv == NS_ERROR_EDITOR_DESTROYED) {
+    NS_WARNING(
+        "CSSEditUtils::SetCSSPropertyPixelsWithTransaction(nsGkAtoms::top) "
+        "destroyed the editor");
+    return NS_ERROR_EDITOR_DESTROYED;
+  }
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rv),
+      "CSSEditUtils::SetCSSPropertyPixelsWithTransaction(nsGkAtoms::top) "
+      "failed, but ignored");
+  return NS_OK;
 }
 
 }  // namespace mozilla

@@ -30,6 +30,7 @@ const TOGGLE_ENABLED_PREF =
 const TOGGLE_TESTING_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.testing";
 const MOUSEMOVE_PROCESSING_DELAY_MS = 50;
+const TOGGLE_HIDING_TIMEOUT_MS = 2000;
 
 // A weak reference to the most recent <video> in this content
 // process that is being viewed in Picture-in-Picture.
@@ -57,7 +58,31 @@ class PictureInPictureToggleChild extends ActorChild {
     // itself.
     this.weakDocStates = new WeakMap();
     this.toggleEnabled = Services.prefs.getBoolPref(TOGGLE_ENABLED_PREF);
+
+    Services.prefs.addObserver(TOGGLE_ENABLED_PREF, this);
     this.toggleTesting = Services.prefs.getBoolPref(TOGGLE_TESTING_PREF, false);
+  }
+
+  cleanup() {
+    this.removeMouseButtonListeners();
+    Services.prefs.removeObserver(TOGGLE_ENABLED_PREF, this);
+  }
+
+  observe(subject, topic, data) {
+    if (topic == "nsPref:changed" && data == TOGGLE_ENABLED_PREF) {
+      this.toggleEnabled = Services.prefs.getBoolPref(TOGGLE_ENABLED_PREF);
+
+      if (this.toggleEnabled) {
+        // We have enabled the Picture-in-Picture toggle, so we need to make
+        // sure we register all of the videos that might already be on the page.
+        this.content.requestIdleCallback(() => {
+          let videos = this.content.document.querySelectorAll("video");
+          for (let video of videos) {
+            this.registerVideo(video);
+          }
+        });
+      }
+    }
   }
 
   /**
@@ -90,6 +115,9 @@ class PictureInPictureToggleChild extends ActorChild {
         // suppressed ("click" events don't fire if a "mouseup" occurs on a different
         // element from the "pointerdown" / "mousedown" event).
         clickedElement: null,
+        // This is a DeferredTask to hide the toggle after a period of mouse
+        // inactivity.
+        hideToggleDeferredTask: null,
       };
       this.weakDocStates.set(this.content.document, state);
     }
@@ -105,14 +133,19 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     switch (event.type) {
-      case "canplay": {
+      case "UAWidgetSetupOrChange": {
         if (
           this.toggleEnabled &&
           event.target instanceof this.content.HTMLVideoElement &&
-          !event.target.controls &&
           event.target.ownerDocument == this.content.document
         ) {
           this.registerVideo(event.target);
+        }
+        break;
+      }
+      case "contextmenu": {
+        if (this.toggleEnabled) {
+          this.checkContextMenu(event);
         }
         break;
       }
@@ -129,12 +162,6 @@ class PictureInPictureToggleChild extends ActorChild {
       }
       case "mousemove": {
         this.onMouseMove(event);
-        break;
-      }
-      case "pagehide": {
-        if (event.target.top == event.target) {
-          this.removeMouseButtonListeners();
-        }
         break;
       }
     }
@@ -331,6 +358,11 @@ class PictureInPictureToggleChild extends ActorChild {
    * @param {Event} event The mousemove event.
    */
   onPointerDown(event) {
+    // The toggle ignores non-primary mouse clicks.
+    if (event.button != 0) {
+      return;
+    }
+
     let state = this.docState;
 
     let video = state.weakOverVideo && state.weakOverVideo.get();
@@ -394,6 +426,11 @@ class PictureInPictureToggleChild extends ActorChild {
    * @param {Event} event A mousedown, pointerup, mouseup or click event.
    */
   onMouseButtonEvent(event) {
+    // The toggle ignores non-primary mouse clicks.
+    if (event.button != 0) {
+      return;
+    }
+
     let state = this.docState;
     if (state.isClickingToggle) {
       event.stopImmediatePropagation();
@@ -426,6 +463,12 @@ class PictureInPictureToggleChild extends ActorChild {
    */
   onMouseMove(event) {
     let state = this.docState;
+
+    if (state.hideToggleDeferredTask) {
+      state.hideToggleDeferredTask.disarm();
+      state.hideToggleDeferredTask.arm();
+    }
+
     state.lastMouseMoveEvent = event;
     state.mousemoveDeferredTask.arm();
   }
@@ -453,7 +496,7 @@ class PictureInPictureToggleChild extends ActorChild {
       1,
       true,
       false,
-      false
+      true
     );
 
     for (let element of elements) {
@@ -497,6 +540,21 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     let toggle = shadowRoot.getElementById("pictureInPictureToggleButton");
+    let controlsOverlay = shadowRoot.querySelector(".controlsOverlay");
+    controlsOverlay.removeAttribute("hidetoggle");
+
+    // The hideToggleDeferredTask we create here is for automatically hiding
+    // the toggle after a period of no mousemove activity for
+    // TOGGLE_HIDING_TIMEOUT_MS. If the mouse moves, then the DeferredTask
+    // timer is reset.
+    //
+    // We disable the toggle hiding timeout during testing to reduce
+    // non-determinism from timers when testing the toggle.
+    if (!state.hideToggleDeferredTask && !this.toggleTesting) {
+      state.hideToggleDeferredTask = new DeferredTask(() => {
+        controlsOverlay.setAttribute("hidetoggle", true);
+      }, TOGGLE_HIDING_TIMEOUT_MS);
+    }
 
     if (oldOverVideo) {
       if (oldOverVideo == video) {
@@ -512,7 +570,6 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     state.weakOverVideo = Cu.getWeakReference(video);
-    let controlsOverlay = shadowRoot.querySelector(".controlsOverlay");
     InspectorUtils.addPseudoClassLock(controlsOverlay, ":hover");
 
     // Now that we're hovering the video, we'll check to see if we're
@@ -554,6 +611,12 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     state.weakOverVideo = null;
+
+    if (!this.toggleTesting) {
+      state.hideToggleDeferredTask.disarm();
+    }
+
+    state.hideToggleDeferredTask = null;
   }
 
   /**
@@ -576,6 +639,39 @@ class PictureInPictureToggleChild extends ActorChild {
       clientY >= toggleRect.top &&
       clientY <= toggleRect.bottom
     );
+  }
+
+  /**
+   * Checks a contextmenu event to see if the mouse is currently over the
+   * Picture-in-Picture toggle. If so, sends a message to the parent process
+   * to open up the Picture-in-Picture toggle context menu.
+   *
+   * @param {MouseEvent} event A contextmenu event.
+   */
+  checkContextMenu(event) {
+    let state = this.docState;
+
+    let video = state.weakOverVideo && state.weakOverVideo.get();
+    if (!video) {
+      return;
+    }
+
+    let shadowRoot = video.openOrClosedShadowRoot;
+    if (!shadowRoot) {
+      return;
+    }
+
+    let toggle = shadowRoot.getElementById("pictureInPictureToggleButton");
+    if (this.isMouseOverToggle(toggle, event)) {
+      event.stopImmediatePropagation();
+      event.preventDefault();
+
+      this.mm.sendAsyncMessage("PictureInPicture:OpenToggleContextMenu", {
+        screenX: event.screenX,
+        screenY: event.screenY,
+        mozInputSource: event.mozInputSource,
+      });
+    }
   }
 
   /**
@@ -602,6 +698,12 @@ class PictureInPictureChild extends ActorChild {
       case "MozTogglePictureInPicture": {
         if (event.isTrusted) {
           this.togglePictureInPicture(event.target);
+        }
+        break;
+      }
+      case "MozStopPictureInPicture": {
+        if (event.isTrusted && event.target === this.weakVideo) {
+          this.closePictureInPicture({ reason: "video-el-remove" });
         }
         break;
       }
@@ -729,6 +831,10 @@ class PictureInPictureChild extends ActorChild {
         this.pause();
         break;
       }
+      case "PictureInPicture:KeyToggle": {
+        this.keyToggle();
+        break;
+      }
     }
   }
 
@@ -799,15 +905,13 @@ class PictureInPictureChild extends ActorChild {
     let doc = this.content.document;
     let playerVideo = doc.createElement("video");
 
+    doc.body.style.overflow = "hidden";
+    doc.body.style.margin = "0";
+
     // Force the player video to assume maximum height and width of the
     // containing window
     playerVideo.style.height = "100vh";
     playerVideo.style.width = "100vw";
-
-    // And now try to get rid of as much surrounding whitespace as possible.
-    playerVideo.style.margin = "0";
-    doc.body.style.overflow = "hidden";
-    doc.body.style.margin = "0";
 
     doc.body.appendChild(playerVideo);
 
@@ -840,6 +944,25 @@ class PictureInPictureChild extends ActorChild {
     let video = this.weakVideo;
     if (video) {
       video.pause();
+    }
+  }
+
+  /**
+   * The keyboard was used to attempt to open Picture-in-Picture. In this case,
+   * find the focused window, and open Picture-in-Picture for the first
+   * available video. We suspect this heuristic will handle most cases, though
+   * we might refine this later on.
+   */
+  keyToggle() {
+    let focusedWindow = Services.focus.focusedWindow;
+    if (focusedWindow) {
+      let doc = focusedWindow.document;
+      if (doc) {
+        let video = doc.querySelector("video");
+        if (video) {
+          this.togglePictureInPicture(video);
+        }
+      }
     }
   }
 }

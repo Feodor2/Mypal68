@@ -259,7 +259,7 @@ uint32_t ParseIDFromDeviceID(const nsAString& key, const char* prefix,
     id.Cut(0, start + strlen(prefix));
     id.Truncate(length);
   }
-  if (id.Equals(L"QCOM", nsCaseInsensitiveStringComparator())) {
+  if (id.Equals(L"QCOM", nsCaseInsensitiveStringComparator)) {
     // String format assumptions are broken, so use a Qualcomm PCI Vendor ID
     // for now. See also GfxDriverInfo::GetDeviceVendor.
     return 0x5143;
@@ -1740,19 +1740,19 @@ nsresult GfxInfo::GetFeatureStatusImpl(
 
     if (OnlyAllowFeatureOnWhitelistedVendor(aFeature) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorIntel),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorAMD),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorATI),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorMicrosoft),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorParallels),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorQualcomm),
-                                nsCaseInsensitiveStringComparator()) &&
+                                nsCaseInsensitiveStringComparator) &&
         // FIXME - these special hex values are currently used in xpcshell tests
         // introduced by bug 625160 patch 8/8. Maybe these tests need to be
         // adjusted now that we're only whitelisting intel/ati/nvidia.

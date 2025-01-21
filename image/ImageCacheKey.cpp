@@ -82,7 +82,7 @@ bool ImageCacheKey::operator==(const ImageCacheKey& aOther) const {
   // Don't share the image cache between two top-level documents of different
   // base domains.
   if (!mTopLevelBaseDomain.Equals(aOther.mTopLevelBaseDomain,
-                                  nsCaseInsensitiveCStringComparator())) {
+                                  nsCaseInsensitiveCStringComparator)) {
     return false;
   }
   // The origin attributes always have to match.

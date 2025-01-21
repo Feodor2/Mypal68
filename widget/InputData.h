@@ -15,7 +15,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 #include "mozilla/gfx/MatrixFwd.h"
-#include "mozilla/layers/APZUtils.h"
+#include "mozilla/layers/APZPublicUtils.h"
 #include "mozilla/layers/KeyboardScrollAction.h"
 
 template <class E>
@@ -408,6 +408,13 @@ class PinchGestureInput : public InputData {
     PinchGestureType, (
       PINCHGESTURE_START,
       PINCHGESTURE_SCALE,
+      // The FINGERLIFTED state is used when a touch-based pinch gesture is
+      // terminated by lifting one of the two fingers. The position of the
+      // finger that's still down is populated as the focus point.
+      PINCHGESTURE_FINGERLIFTED,
+      // The END state is used when the pinch gesture is completely terminated.
+      // In this state, the focus point should not be relied upon for having
+      // meaningful data.
       PINCHGESTURE_END
   ));
   // clang-format on
@@ -420,6 +427,8 @@ class PinchGestureInput : public InputData {
 
   bool TransformToLocal(const ScreenToParentLayerMatrix4x4& aTransform);
 
+  WidgetWheelEvent ToWidgetWheelEvent(nsIWidget* aWidget) const;
+
   // Warning, this class is serialized and sent over IPC. Any change to its
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
   PinchGestureType mType;
@@ -429,9 +438,10 @@ class PinchGestureInput : public InputData {
   // point is implementation-specific, but can for example be the midpoint
   // between the very first and very last touch. This is in device pixels and
   // are the coordinates on the screen of this midpoint.
-  // For PINCHGESTURE_END events, this instead will hold the coordinates of
-  // the remaining finger, if there is one. If there isn't one then it will
-  // store |BothFingersLifted()|.
+  // For PINCHGESTURE_END events, this may hold the last known focus point or
+  // just be empty; in any case for END events it should not be relied upon.
+  // For PINCHGESTURE_FINGERLIFTED events, this holds the point of the finger
+  // that is still down.
   ScreenPoint mFocusPoint;
 
   // The screen offset of the root widget. This can be changing along with
@@ -450,19 +460,7 @@ class PinchGestureInput : public InputData {
   // of this type then there must have been a history of spans.
   ScreenCoord mPreviousSpan;
 
-  // A special value for mFocusPoint used in PINCHGESTURE_END events to
-  // indicate that both fingers have been lifted. If only one finger has
-  // been lifted, the coordinates of the remaining finger are expected to
-  // be stored in mFocusPoint.
-  // For pinch events that were not triggered by touch gestures, the
-  // value of mFocusPoint in a PINCHGESTURE_END event is always expected
-  // to be this value.
-  // For convenience, we allow retrieving this value in any coordinate system.
-  // Since it's a special value, no conversion is needed.
-  template <typename Units = ParentLayerPixel>
-  static gfx::PointTyped<Units> BothFingersLifted() {
-    return gfx::PointTyped<Units>{-1, -1};
-  }
+  bool mHandledByAPZ;
 };
 
 /**

@@ -5,11 +5,20 @@ A browser for Windows XP based on Firefox 68.
 ![image](https://user-images.githubusercontent.com/19492771/152347482-f51058cd-2967-4bc5-80fd-5d269c328774.png)
 
 
-## WARNING
+## KNOWN PROBLEMS
 
-This browser does not run well on winxp SP2 and lower. If you do not want to install SP3, be ready for crashes and blue screens.
-If you are on SP2 and lower, there is no need to post a screenshot from blue_screen_view. And i suggest to apply postready updates of 2019.
-Some say that it runs fine on sp2 but it is no accurate data what to do.
+- 1.5gb memory limit on winxp, if the browser reaches the limit it crashes inevitably, singleporess mode crashes all,
+  multiprocess only this which reaches 1.5gb, so it better here.
+  I think this is OS limitation, nothing to do with this.
+
+- x64 does not run on winxp64, wont fix, there is an issue #35 about
+
+- Graphics error on some videocards, look further the issue #428
+
+- This browser does not run well on winxp SP2 and lower. If you do not want to install SP3, be ready for crashes and blue screens.
+  If you are on SP2 and lower, there is no need to post a screenshot from blue_screen_view. And i suggest to apply postready updates of 2019.
+  Some say that it runs fine on sp2 but it is no accurate data what to do.
+
 
 ## IF YOU GOT A BLUE SCREEN
 

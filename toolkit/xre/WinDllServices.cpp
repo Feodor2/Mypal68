@@ -130,133 +130,6 @@ class UntrustedModulesManager {
   }
 
   /**
-   * Run from a worker thread, this will process and move items from the
-   * mQueuedEvents into mProcessedEvents and mProcessedStacks
-   * @param aHasProcessedStartupModules [out] Receives the value of
-   *          mHasProcessedStartupModules. We grab this value during a lock, and
-   *          the caller will need it for subsequent calls, so passing it around
-   *          like this avoids at least one lock. The only risk with this is
-   *          that we could end up calling ProcessStartupModules() multiple
-   *          times, which is totally safe, and would be extremely rare.
-   */
-  void ProcessQueuedEvents(bool& aHasProcessedStartupModules) {
-    MOZ_ASSERT(!NS_IsMainThread());
-    MOZ_ASSERT(!!mEvaluator);
-
-    // Hold a reference to DllServices to ensure the object doesn't get deleted
-    // during this call.
-    RefPtr<DllServices> dllSvcRef(DllServices::Get());
-    if (!dllSvcRef) {
-      return;
-    }
-
-    Telemetry::BatchProcessedStackGenerator stackProcessor;
-
-    Vector<ModuleLoadEvent, 0, InfallibleAllocPolicy> queuedEvents;
-    aHasProcessedStartupModules = false;
-
-    {  // Scope for lock
-      // Lock mQueuedEvents to steal its contents, and
-      // mHasProcessedStartupModules to see if we can skip some steps.
-      // Only trivial (loader lock friendly) code allowed here!
-      MutexAutoLock lock(mMutex);
-      aHasProcessedStartupModules = mHasProcessedStartupModules;
-      mQueuedEvents.swap(queuedEvents);
-    }
-
-    if (!mEvaluator) {
-      return;
-    }
-
-    Vector<ModuleLoadEvent, 0, InfallibleAllocPolicy> processedEvents;
-    int errorModules = 0;
-
-    HashSet<uintptr_t, DefaultHasher<uintptr_t>, InfallibleAllocPolicy>
-        newTrustedModuleBases;
-
-    // Process queued events, weeding out trusted items as we go.
-    for (auto& e : queuedEvents) {
-      // Create a copy of the event without its modules; we'll then fill them
-      // in, filtering out any trusted modules we can ignore.
-      ModuleLoadEvent eventCopy(
-          e, ModuleLoadEvent::CopyOption::CopyWithoutModules);
-      for (auto& m : e.mModules) {
-        bool ok = m.PrepForTelemetry();
-        MOZ_ASSERT(ok);
-        if (!ok) {
-          continue;
-        }
-
-        Maybe<bool> maybeIsTrusted =
-            mEvaluator.IsModuleTrusted(m, eventCopy, dllSvcRef.get());
-
-        // Save xul.dll load timing for the ping payload.
-        if ((m.mTrustFlags & ModuleTrustFlags::Xul) &&
-            mXULLoadDurationMS.isNothing()) {
-          mXULLoadDurationMS = m.mLoadDurationMS;
-        }
-
-        if (maybeIsTrusted.isNothing()) {
-          // If there was an error, assume the DLL is trusted to avoid
-          // flooding the telemetry packet, but record that an error occurred.
-          errorModules++;
-        } else if (maybeIsTrusted.value()) {
-          // Module is trusted. If we haven't yet processed startup modules,
-          // we need to remember it.
-          if (!aHasProcessedStartupModules) {
-            Unused << newTrustedModuleBases.put(m.mBase);
-          }
-        } else {
-          // Module is untrusted; record it.
-          Unused << eventCopy.mModules.append(std::move(m));
-        }
-      }
-
-      if (eventCopy.mModules.empty()) {
-        continue;
-      }
-
-      Unused << processedEvents.emplaceBack(std::move(eventCopy));
-    }
-
-    // Process the stacks. processedStacks will be element-for-element
-    // in sync with processedEvents
-    Vector<Telemetry::ProcessedStack, 0, InfallibleAllocPolicy> processedStacks;
-    for (auto&& eventCopy : processedEvents) {
-      std::vector<uintptr_t> stdCopy;
-      for (auto&& f : eventCopy.mStack) {
-        stdCopy.emplace_back(std::move(f));
-      }
-      Unused << processedStacks.emplaceBack(
-          stackProcessor.GetStackAndModules(stdCopy));
-    }
-
-    {  // Scope for lock
-      // Lock mTrustedModuleHistory and mProcessedEvents in order to merge the
-      // data we just processed.
-      // Only trivial (loader lock friendly) code allowed here!
-      MutexAutoLock lock(mMutex);
-      for (auto it = newTrustedModuleBases.iter(); !it.done(); it.next()) {
-        Unused << mTrustedModuleHistory.put(it.get());
-      }
-
-      mErrorModules += errorModules;
-
-      for (size_t i = 0; i < processedEvents.length(); ++i) {
-        auto&& processedEvent = processedEvents[i];
-        size_t newIndex = mProcessedStacks.AddStack(processedStacks[i]);
-        // CombinedStacks is circular, so as its buffer rolls over, follow it
-        // to keep indices in sync.
-        if ((newIndex + 1) > mProcessedEvents.length()) {
-          Unused << mProcessedEvents.append(std::move(processedEvent));
-        } else {
-          mProcessedEvents[newIndex] = std::move(processedEvent);
-        }
-      }
-    }
-  }
-
-  /**
    * Looks at the currently-loaded module list, subtracts modules we've seen
    * before, and adds the remainder to the list of queued events. The idea is
    * to process modules that loaded before we started examining load events.
@@ -349,39 +222,6 @@ class UntrustedModulesManager {
     }
     return true;
   }
-
-  bool GetTelemetryData(UntrustedModuleLoadTelemetryData& aOut) {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    // Hold a reference to DllServices to ensure the object doesn't get deleted
-    // during this call.
-    RefPtr<DllServices> dllSvcRef(DllServices::Get());
-    if (!dllSvcRef) {
-      return false;
-    }
-    // Prevent static analysis build warnings about unused "kungFuDeathGrip"
-    Unused << dllSvcRef;
-
-    bool hasProcessedStartupModules = false;
-    ProcessQueuedEvents(hasProcessedStartupModules);
-    if (ProcessStartupModules(hasProcessedStartupModules)) {
-      // New events were added; process those too.
-      ProcessQueuedEvents(hasProcessedStartupModules);
-    }
-
-    aOut.mErrorModules = mErrorModules;
-    aOut.mXULLoadDurationMS = mXULLoadDurationMS;
-
-    // Lock mProcessedEvents and mProcessedStacks to make a copy for the caller.
-    // Only trivial (loader lock friendly) code allowed here!
-    MutexAutoLock lock(mMutex);
-
-    aOut.mStacks = mProcessedStacks;
-    for (auto& e : mProcessedEvents) {
-      Unused << aOut.mEvents.append(e);
-    }
-    return true;
-  }
 };
 
 const char* DllServices::kTopicDllLoadedMainThread = "dll-loaded-main-thread";
@@ -412,11 +252,6 @@ DllServices* DllServices::Get() {
 
 DllServices::DllServices()
     : mUntrustedModulesManager(new UntrustedModulesManager()) {}
-
-bool DllServices::GetUntrustedModuleTelemetryData(
-    UntrustedModuleLoadTelemetryData& aOut) {
-  return mUntrustedModulesManager->GetTelemetryData(aOut);
-}
 
 void DllServices::NotifyDllLoad(const bool aIsMainThread,
                                 const nsString& aDllName) {

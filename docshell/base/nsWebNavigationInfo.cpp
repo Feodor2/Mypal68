@@ -105,11 +105,10 @@ nsresult nsWebNavigationInfo::IsTypeSupportedInternal(const nsCString& aType,
       // XXXbz we only need this because images register for the same
       // contractid as documents, so we can't tell them apart based on
       // contractid.
-      if (imgLoader::SupportImageWithMimeType(aType.get())) {
+      if (imgLoader::SupportImageWithMimeType(aType)) {
         *aIsSupported = nsIWebNavigationInfo::IMAGE;
-      } else {
-        *aIsSupported = nsIWebNavigationInfo::OTHER;
       }
+      *aIsSupported = nsIWebNavigationInfo::OTHER;
       break;
   }
 

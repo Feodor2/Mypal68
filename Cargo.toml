@@ -7,9 +7,7 @@
 members = [
   "js/src",
   "js/src/rust",
-  "js/src/wasm/cranelift",
   "js/rust",
-  "testing/geckodriver",
   "toolkit/crashreporter/rust",
   "toolkit/library/gtest/rust",
   "toolkit/library/rust/",
@@ -58,10 +56,3 @@ codegen-units = 1
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
 packed_simd = { git = "https://github.com/hsivonen/packed_simd", branch = "rust_1_32" }
 
-[patch.crates-io.cranelift-codegen]
-git = "https://github.com/CraneStation/Cranelift"
-rev = "182414f15c18538dfebbe040469ec8001e93ecc5"
-
-[patch.crates-io.cranelift-wasm]
-git = "https://github.com/CraneStation/Cranelift"
-rev = "182414f15c18538dfebbe040469ec8001e93ecc5"

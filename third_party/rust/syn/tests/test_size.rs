@@ -1,9 +1,7 @@
 #![cfg(target_pointer_width = "64")]
 
-mod features;
-
 use std::mem;
-use syn::*;
+use syn::{Expr, Item, Lit, Pat, Type};
 
 #[test]
 fn test_expr_size() {

@@ -56,11 +56,6 @@ xul|radio[focused="true"] > .radio-check,
 xul|tab:-moz-focusring > .tab-middle > .tab-text {
   outline: 2px solid rgba(0,149,221,0.5);
   outline-offset: 1px;
-  -moz-outline-radius: 2px;
-}
-
-xul|radio[focused="true"] > .radio-check {
-  -moz-outline-radius: 100%;
 }
 
 textbox[is="search-textbox"] {

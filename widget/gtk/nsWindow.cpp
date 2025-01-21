@@ -68,6 +68,7 @@
 #include "mozilla/Preferences.h"
 #include "nsGfxCIID.h"
 #include "nsGtkUtils.h"
+#include "nsLayoutUtils.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "nsIIdleServiceInternal.h"
 #include "GLContext.h"

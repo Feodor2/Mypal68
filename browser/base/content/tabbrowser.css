@@ -11,7 +11,7 @@
 .tab-icon-image:not([src]):not([pinned]):not([crashed]):not([sharing]),
 .tab-icon-image[busy],
 .tab-throbber:not([busy]),
-.tab-icon-sound:not([soundplaying]):not([muted]):not([activemedia-blocked]),
+.tab-icon-sound:not([soundplaying]):not([muted]):not([activemedia-blocked]):not([pictureinpicture]),
 .tab-icon-sound[pinned],
 .tab-sharing-icon-overlay,
 .tab-icon-overlay {

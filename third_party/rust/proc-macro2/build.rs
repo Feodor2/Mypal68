@@ -14,6 +14,10 @@
 //     procmacro2_semver_exempt surface area is implemented by using the
 //     nightly-only proc_macro API.
 //
+// "hygiene"
+//    Enable Span::mixed_site() and non-dummy behavior of Span::resolved_at
+//    and Span::located_at. Enabled on Rust 1.45+.
+//
 // "proc_macro_span"
 //     Enable non-dummy behavior of Span::start and Span::end methods which
 //     requires an unstable compiler feature. Enabled when building with
@@ -29,8 +33,15 @@
 //     location of a token. Enabled by procmacro2_semver_exempt or the
 //     "span-locations" Cargo cfg. This is behind a cfg because tracking
 //     location inside spans is a performance hit.
+//
+// "is_available"
+//     Use proc_macro::is_available() to detect if the proc macro API is
+//     available or needs to be polyfilled instead of trying to use the proc
+//     macro API and catching a panic if it isn't available. Enabled on Rust
+//     1.57+.
 
 use std::env;
+use std::iter;
 use std::process::{self, Command};
 use std::str;
 
@@ -49,12 +60,40 @@ fn main() {
 
     let semver_exempt = cfg!(procmacro2_semver_exempt);
     if semver_exempt {
-        // https://github.com/alexcrichton/proc-macro2/issues/147
+        // https://github.com/dtolnay/proc-macro2/issues/147
         println!("cargo:rustc-cfg=procmacro2_semver_exempt");
     }
 
     if semver_exempt || cfg!(feature = "span-locations") {
         println!("cargo:rustc-cfg=span_locations");
+    }
+
+    if version.minor < 32 {
+        println!("cargo:rustc-cfg=no_libprocmacro_unwind_safe");
+    }
+
+    if version.minor < 39 {
+        println!("cargo:rustc-cfg=no_bind_by_move_pattern_guard");
+    }
+
+    if version.minor < 44 {
+        println!("cargo:rustc-cfg=no_lexerror_display");
+    }
+
+    if version.minor < 45 {
+        println!("cargo:rustc-cfg=no_hygiene");
+    }
+
+    if version.minor < 54 {
+        println!("cargo:rustc-cfg=no_literal_from_str");
+    }
+
+    if version.minor < 55 {
+        println!("cargo:rustc-cfg=no_group_open_close");
+    }
+
+    if version.minor < 57 {
+        println!("cargo:rustc-cfg=no_is_available");
     }
 
     let target = env::var("TARGET").unwrap();
@@ -112,15 +151,33 @@ fn feature_allowed(feature: &str) -> bool {
     //
     //     -Zallow-features=feature1,feature2
 
-    if let Some(rustflags) = env::var_os("RUSTFLAGS") {
-        for mut flag in rustflags.to_string_lossy().split(' ') {
-            if flag.starts_with("-Z") {
-                flag = &flag["-Z".len()..];
-            }
-            if flag.starts_with("allow-features=") {
-                flag = &flag["allow-features=".len()..];
-                return flag.split(',').any(|allowed| allowed == feature);
-            }
+    let flags_var;
+    let flags_var_string;
+    let mut flags_var_split;
+    let mut flags_none;
+    let flags: &mut dyn Iterator<Item = &str> =
+        if let Some(encoded_rustflags) = env::var_os("CARGO_ENCODED_RUSTFLAGS") {
+            flags_var = encoded_rustflags;
+            flags_var_string = flags_var.to_string_lossy();
+            flags_var_split = flags_var_string.split('\x1f');
+            &mut flags_var_split
+        } else if let Some(rustflags) = env::var_os("RUSTFLAGS") {
+            flags_var = rustflags;
+            flags_var_string = flags_var.to_string_lossy();
+            flags_var_split = flags_var_string.split(' ');
+            &mut flags_var_split
+        } else {
+            flags_none = iter::empty();
+            &mut flags_none
+        };
+
+    for mut flag in flags {
+        if flag.starts_with("-Z") {
+            flag = &flag["-Z".len()..];
+        }
+        if flag.starts_with("allow-features=") {
+            flag = &flag["allow-features=".len()..];
+            return flag.split(',').any(|allowed| allowed == feature);
         }
     }
 

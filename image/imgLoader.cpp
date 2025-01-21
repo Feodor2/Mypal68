@@ -326,7 +326,7 @@ class imgMemoryReporter final : public nsIMemoryReporter {
                           layers::SharedSurfacesMemoryReport& aSharedSurfaces
 #endif
   ) {
-    nsAutoCString pathPrefix(NS_LITERAL_CSTRING("explicit/"));
+    nsAutoCString pathPrefix("explicit/"_ns);
     pathPrefix.Append(aPathPrefix);
 
     switch (aCounter.Type()) {
@@ -2726,7 +2726,7 @@ nsresult imgLoader::LoadImageWithChannel(nsIChannel* channel,
   return rv;
 }
 
-bool imgLoader::SupportImageWithMimeType(const char* aMimeType,
+bool imgLoader::SupportImageWithMimeType(const nsACString& aMimeType,
                                          AcceptedMimeTypes aAccept
                                          /* = AcceptedMimeTypes::IMAGES */) {
   nsAutoCString mimeType(aMimeType);
@@ -2844,7 +2844,7 @@ ProxyListener::OnStartRequest(nsIRequest* aRequest) {
       nsAutoString type;
       timedChannel->GetInitiatorType(type);
       if (type.IsEmpty()) {
-        timedChannel->SetInitiatorType(NS_LITERAL_STRING("img"));
+        timedChannel->SetInitiatorType(u"img"_ns);
       }
     }
 
@@ -2856,7 +2856,7 @@ ProxyListener::OnStartRequest(nsIRequest* aRequest) {
          in the pipeline to handle the content and pass it along to our
          original listener.
        */
-      if (NS_LITERAL_CSTRING("multipart/x-mixed-replace").Equals(contentType)) {
+      if ("multipart/x-mixed-replace"_ns.Equals(contentType)) {
         nsCOMPtr<nsIStreamConverterService> convServ(
             do_GetService("@mozilla.org/streamConverters;1", &rv));
         if (NS_SUCCEEDED(rv)) {

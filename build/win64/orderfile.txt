@@ -2392,7 +2392,6 @@ XPCOMService_GetToolkitChromeRegistryService
 ?Init@hal@mozilla@@YAXXZ
 ?WakeLockInit@hal@mozilla@@YAXXZ
 ??4?$RefPtr@UISensor@@@@QEAAAEAV0@$$T@Z
-?XRE_Win32kCallsAllowed@@YA_NXZ
 ?Run@LSPAnnotationGatherer@crashreporter@mozilla@@UEAA?AW4nsresult@@XZ
 ?XRE_UseNativeEventProcessing@@YA_NXZ
 ?EventWindowProc@nsAppShell@@KA_JPEAUHWND__@@I_K_J@Z

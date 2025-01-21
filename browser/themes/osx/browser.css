@@ -245,7 +245,7 @@
 }
 
 #urlbar,
-.searchbar-textbox {
+#searchbar {
   font-size: 1.25em;
 }
 
@@ -256,7 +256,7 @@ html|input.urlbar-input {
 }
 
 #urlbar:not(.hidden-focus)[focused="true"],
-.searchbar-textbox[focused="true"] {
+#searchbar:focus-within {
   box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
               0 0 0 1px var(--toolbar-field-focus-border-color);
 }

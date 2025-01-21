@@ -1986,7 +1986,7 @@ nsContextMenu.prototype = {
       : this.linkTextStr;
 
     // Store searchTerms in context menu item so we know what to search onclick
-    menuItem.searchTerms = selectedText;
+    menuItem.searchTerms = '"' + selectedText.replace(/"/g, '') + '"';
     menuItem.principal = this.principal;
     menuItem.csp = this.csp;
 

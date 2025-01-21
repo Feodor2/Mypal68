@@ -312,8 +312,7 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext)
       mCharsetReloadState(eCharsetReloadInit),
       mOrientationLock(hal::eScreenOrientation_None),
       mParentCharsetSource(0),
-      mMarginWidth(-1),
-      mMarginHeight(-1),
+      mFrameMargins(-1, -1),
       mItemType(aBrowsingContext->IsContent() ? typeContent : typeChrome),
       mPreviousEntryIndex(-1),
       mLoadedEntryIndex(-1),
@@ -1934,34 +1933,6 @@ NS_IMETHODIMP
 nsDocShell::SetZoom(float aZoom) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
-nsDocShell::GetMarginWidth(int32_t* aWidth) {
-  NS_ENSURE_ARG_POINTER(aWidth);
-
-  *aWidth = mMarginWidth;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetMarginWidth(int32_t aWidth) {
-  mMarginWidth = aWidth;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::GetMarginHeight(int32_t* aHeight) {
-  NS_ENSURE_ARG_POINTER(aHeight);
-
-  *aHeight = mMarginHeight;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetMarginHeight(int32_t aHeight) {
-  mMarginHeight = aHeight;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsDocShell::GetBusyFlags(BusyFlags* aBusyFlags) {
   NS_ENSURE_ARG_POINTER(aBusyFlags);
 
@@ -2489,8 +2460,7 @@ void nsDocShell::MaybeCreateInitialClientSource(nsIPrincipal* aPrincipal) {
   }
 
   nsCOMPtr<nsIURI> uri;
-  MOZ_ALWAYS_SUCCEEDS(
-      NS_NewURI(getter_AddRefs(uri), NS_LITERAL_CSTRING("about:blank")));
+  MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), "about:blank"_ns));
 
   // We're done if there is no parent controller or if this docshell
   // is not permitted to control for some reason.
@@ -4237,7 +4207,7 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI* aURI,
     RefPtr<EventTarget> handler = mChromeEventHandler;
     if (handler) {
       nsCOMPtr<Element> element = do_QueryInterface(handler);
-      element->GetAttribute(NS_LITERAL_STRING("crashedPageTitle"), messageStr);
+      element->GetAttribute(u"crashedPageTitle"_ns, messageStr);
     }
 
     // DisplayLoadError requires a non-empty messageStr to proceed and call
@@ -6096,8 +6066,7 @@ nsDocShell::SetupRefreshURI(nsIChannel* aChannel) {
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(aChannel, &rv));
   if (NS_SUCCEEDED(rv)) {
     nsAutoCString refreshHeader;
-    rv = httpChannel->GetResponseHeader(NS_LITERAL_CSTRING("refresh"),
-                                        refreshHeader);
+    rv = httpChannel->GetResponseHeader("refresh"_ns, refreshHeader);
 
     if (!refreshHeader.IsEmpty()) {
       nsCOMPtr<nsIScriptSecurityManager> secMan =
@@ -7019,8 +6988,7 @@ nsresult nsDocShell::CreateAboutBlankContentViewer(
   mFiredUnloadEvent = false;
 
   nsCOMPtr<nsIDocumentLoaderFactory> docFactory =
-      nsContentUtils::FindInternalContentViewer(
-          NS_LITERAL_CSTRING("text/html"));
+      nsContentUtils::FindInternalContentViewer("text/html"_ns);
 
   if (docFactory) {
     nsCOMPtr<nsIPrincipal> principal, storagePrincipal;
@@ -8329,7 +8297,6 @@ nsresult nsDocShell::SetupNewViewer(nsIContentViewer* aNewViewer) {
                     NS_ERROR_FAILURE);
   nsCOMPtr<nsIDocShell> parent(do_QueryInterface(parentAsItem));
 
-  const Encoding* forceCharset = nullptr;
   const Encoding* hintCharset = nullptr;
   int32_t hintCharsetSource;
   float textZoom;
@@ -8364,7 +8331,6 @@ nsresult nsDocShell::SetupNewViewer(nsIContentViewer* aNewViewer) {
     if (oldCv) {
       newCv = aNewViewer;
       if (newCv) {
-        forceCharset = oldCv->GetForceCharset();
         hintCharset = oldCv->GetHintCharset();
         NS_ENSURE_SUCCESS(oldCv->GetHintCharacterSetSource(&hintCharsetSource),
                           NS_ERROR_FAILURE);
@@ -8431,7 +8397,6 @@ nsresult nsDocShell::SetupNewViewer(nsIContentViewer* aNewViewer) {
   // If we have old state to copy, set the old state onto the new content
   // viewer
   if (newCv) {
-    newCv->SetForceCharset(forceCharset);
     newCv->SetHintCharset(hintCharset);
     NS_ENSURE_SUCCESS(newCv->SetHintCharacterSetSource(hintCharsetSource),
                       NS_ERROR_FAILURE);
@@ -8572,7 +8537,7 @@ class InternalLoadEvent : public Runnable {
     // expect. By the time the event is fired, both window targeting and file
     // downloading have been handled, so we should never have an internal load
     // event that retargets or had a download.
-    mLoadState->SetTarget(EmptyString());
+    mLoadState->SetTarget(u""_ns);
     mLoadState->SetFileName(VoidString());
   }
 
@@ -8728,7 +8693,7 @@ nsresult nsDocShell::PerformRetargeting(nsDocShellLoadState* aLoadState,
 
     int16_t shouldLoad = nsIContentPolicy::ACCEPT;
     rv = NS_CheckContentLoadPolicy(aLoadState->URI(), secCheckLoadInfo,
-                                   EmptyCString(),  // mime guess
+                                   ""_ns,  // mime guess
                                    &shouldLoad);
 
     if (NS_FAILED(rv) || NS_CP_REJECTED(shouldLoad)) {
@@ -8840,7 +8805,7 @@ nsresult nsDocShell::PerformRetargeting(nsDocShellLoadState* aLoadState,
 
       rv = win->Open(NS_ConvertUTF8toUTF16(spec),
                      aLoadState->Target(),  // window name
-                     EmptyString(),         // Features
+                     u""_ns,                // Features
                      loadState,
                      true,  // aForceNoOpener
                      getter_AddRefs(newWin));
@@ -8850,7 +8815,7 @@ nsresult nsDocShell::PerformRetargeting(nsDocShellLoadState* aLoadState,
 
     rv = win->OpenNoNavigate(NS_ConvertUTF8toUTF16(spec),
                              aLoadState->Target(),  // window name
-                             EmptyString(),         // Features
+                             u""_ns,                // Features
                              getter_AddRefs(newWin));
 
     // In some cases the Open call doesn't actually result in a new
@@ -8876,7 +8841,7 @@ nsresult nsDocShell::PerformRetargeting(nsDocShellLoadState* aLoadState,
   //
   nsDocShell* docShell = nsDocShell::Cast(targetDocShell);
   // No window target
-  aLoadState->SetTarget(EmptyString());
+  aLoadState->SetTarget(u""_ns);
   // No forced download
   aLoadState->SetFileName(VoidString());
   rv = docShell->InternalLoad(aLoadState, aDocShell, aRequest);
@@ -10222,8 +10187,7 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
       }
 
       // we really need to have a content type associated with this stream!!
-      postChannel->SetUploadStream(aLoadState->PostDataStream(), EmptyCString(),
-                                   -1);
+      postChannel->SetUploadStream(aLoadState->PostDataStream(), ""_ns, -1);
     }
 
     /* If there is a valid postdata *and* it is a History Load,
@@ -10638,7 +10602,7 @@ nsresult nsDocShell::ScrollToAnchor(bool aCurHasRef, bool aNewHasRef,
     }
   } else {
     // Tell the shell it's at an anchor, without scrolling.
-    presShell->GoToAnchor(EmptyString(), false);
+    presShell->GoToAnchor(u""_ns, false);
 
     // An empty anchor was found, but if it's a load from history,
     // we don't have to jump to the top of the page. Scrollbar
@@ -11493,7 +11457,7 @@ nsresult nsDocShell::AddToSessionHistory(
 
   // Title is set in nsDocShell::SetTitle()
   entry->Create(aURI,                 // uri
-                EmptyString(),        // Title
+                u""_ns,               // Title
                 inputStream,          // Post data stream
                 nullptr,              // LayoutHistory state
                 cacheKey,             // CacheKey
@@ -11920,9 +11884,9 @@ void nsDocShell::ExtractLastVisit(nsIChannel* aChannel, nsIURI** aURI,
     return;
   }
 
-  nsresult rv = props->GetPropertyAsInterface(
-      NS_LITERAL_STRING("docshell.previousURI"), NS_GET_IID(nsIURI),
-      reinterpret_cast<void**>(aURI));
+  nsresult rv = props->GetPropertyAsInterface(u"docshell.previousURI"_ns,
+                                              NS_GET_IID(nsIURI),
+                                              reinterpret_cast<void**>(aURI));
 
   if (NS_FAILED(rv)) {
     // There is no last visit for this channel, so this must be the first
@@ -11930,7 +11894,7 @@ void nsDocShell::ExtractLastVisit(nsIChannel* aChannel, nsIURI** aURI,
     // Treat referrer as null if there is an error getting it.
     (void)NS_GetReferrerFromChannel(aChannel, aURI);
   } else {
-    rv = props->GetPropertyAsUint32(NS_LITERAL_STRING("docshell.previousFlags"),
+    rv = props->GetPropertyAsUint32(u"docshell.previousFlags"_ns,
                                     aChannelRedirectFlags);
 
     NS_WARNING_ASSERTION(
@@ -11946,9 +11910,8 @@ void nsDocShell::SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
     return;
   }
 
-  props->SetPropertyAsInterface(NS_LITERAL_STRING("docshell.previousURI"),
-                                aURI);
-  props->SetPropertyAsUint32(NS_LITERAL_STRING("docshell.previousFlags"),
+  props->SetPropertyAsInterface(u"docshell.previousURI"_ns, aURI);
+  props->SetPropertyAsUint32(u"docshell.previousFlags"_ns,
                              aChannelRedirectFlags);
 }
 
@@ -12076,7 +12039,7 @@ nsresult nsDocShell::ConfirmRepost(bool* aRepost) {
   // up the browser, see bug 1412559 for an example.
   if (nsCOMPtr<nsIWritablePropertyBag2> promptBag =
           do_QueryInterface(prompter)) {
-    promptBag->SetPropertyAsBool(NS_LITERAL_STRING("allowTabModal"), true);
+    promptBag->SetPropertyAsBool(u"allowTabModal"_ns, true);
   }
 
   int32_t buttonPressed;
@@ -12780,15 +12743,11 @@ nsresult nsDocShell::OnOverLink(nsIContent* aContent, nsIURI* aURI,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIWebBrowserChrome2> browserChrome2 = do_GetInterface(mTreeOwner);
   nsresult rv = NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIWebBrowserChrome> browserChrome;
-  if (!browserChrome2) {
-    browserChrome = do_GetInterface(mTreeOwner);
-    if (!browserChrome) {
-      return rv;
-    }
+  nsCOMPtr<nsIWebBrowserChrome> browserChrome = do_GetInterface(mTreeOwner);
+  if (!browserChrome) {
+    return rv;
   }
 
   nsCOMPtr<nsIURI> exposableURI = nsIOService::CreateExposableURI(aURI);
@@ -12801,12 +12760,7 @@ nsresult nsDocShell::OnOverLink(nsIContent* aContent, nsIURI* aURI,
   PredictorPredict(aURI, mCurrentURI, nsINetworkPredictor::PREDICT_LINK,
                    aContent->NodePrincipal()->OriginAttributesRef(), nullptr);
 
-  if (browserChrome2) {
-    rv = browserChrome2->SetStatusWithContext(nsIWebBrowserChrome::STATUS_LINK,
-                                              uStr, aContent);
-  } else {
-    rv = browserChrome->SetStatus(nsIWebBrowserChrome::STATUS_LINK, uStr.get());
-  }
+  rv = browserChrome->SetLinkStatus(uStr);
   return rv;
 }
 
@@ -12815,8 +12769,7 @@ nsresult nsDocShell::OnLeaveLink() {
   nsresult rv = NS_ERROR_FAILURE;
 
   if (browserChrome) {
-    rv = browserChrome->SetStatus(nsIWebBrowserChrome::STATUS_LINK,
-                                  EmptyString().get());
+    rv = browserChrome->SetLinkStatus(u""_ns);
   }
   return rv;
 }
@@ -12908,7 +12861,7 @@ nsDocShell::InitOrReusePrintPreviewViewer(nsIWebBrowserPrint** aPrintPreview) {
     nsCOMPtr<nsIPrincipal> principal =
         NullPrincipal::CreateWithInheritedAttributes(this);
     nsCOMPtr<nsIURI> uri;
-    NS_NewURI(getter_AddRefs(uri), NS_LITERAL_CSTRING("about:printpreview"));
+    NS_NewURI(getter_AddRefs(uri), "about:printpreview"_ns);
     // Reuse the null principal for the storage principal.
     // XXXehsan is that the right principal to use here?
     nsresult rv = CreateAboutBlankContentViewer(principal, principal,

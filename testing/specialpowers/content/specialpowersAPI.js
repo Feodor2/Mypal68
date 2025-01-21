@@ -1708,7 +1708,7 @@ SpecialPowersAPI.prototype = {
     return this._getMUDV(window).fullZoom;
   },
   getDeviceFullZoom(window) {
-    return this._getMUDV(window).deviceFullZoom;
+    return this._getMUDV(window).deviceFullZoomForTest;
   },
   setFullZoom(window, zoom) {
     this._getMUDV(window).fullZoom = zoom;

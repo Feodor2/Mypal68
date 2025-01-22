@@ -404,7 +404,7 @@ void RenderThread::UpdateAndRender(
 
   auto& renderer = it->second;
 
-  layers::CompositorThread()->Dispatch(
+  layers::CompositorThreadHolder::Loop()->PostTask(
       NewRunnableFunction("NotifyDidStartRenderRunnable", &NotifyDidStartRender,
                           renderer->GetCompositorBridge()));
 
@@ -422,7 +422,7 @@ void RenderThread::UpdateAndRender(
   TimeStamp end = TimeStamp::Now();
   RefPtr<const WebRenderPipelineInfo> info = renderer->FlushPipelineInfo();
 
-  layers::CompositorThread()->Dispatch(
+  layers::CompositorThreadHolder::Loop()->PostTask(
       NewRunnableFunction("NotifyDidRenderRunnable", &NotifyDidRender,
                           renderer->GetCompositorBridge(), info, aStartId,
                           aStartTime, start, end, aRender, stats));
@@ -803,7 +803,7 @@ void RenderThread::HandleWebRenderError(WebRenderError aError) {
     return;
   }
 
-  layers::CompositorThread()->Dispatch(NewRunnableFunction(
+  layers::CompositorThreadHolder::Loop()->PostTask(NewRunnableFunction(
       "DoNotifyWebRenderErrorRunnable", &DoNotifyWebRenderError, aError));
   {
     MutexAutoLock lock(mRenderTextureMapLock);
@@ -1025,7 +1025,7 @@ void wr_finished_scene_build(mozilla::wr::WrWindowId aWindowId,
     for (size_t i = 0; i < aDocumentIdsCount; ++i) {
       renderRoots[i] = wr::RenderRootFromId(aDocumentIds[i]);
     }
-    layers::CompositorThread()->Dispatch(NewRunnableFunction(
+    layers::CompositorThreadHolder::Loop()->PostTask(NewRunnableFunction(
         "NotifyDidSceneBuild", &NotifyDidSceneBuild, cbp, renderRoots, info));
   }
 }

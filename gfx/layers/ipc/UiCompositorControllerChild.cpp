@@ -25,7 +25,9 @@ static RefPtr<nsThread> GetUiThread() {
 }
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-static bool IsOnUiThread() { return GetUiThread()->IsOnCurrentThread(); }
+static bool IsOnUiThread() {
+  return GetUiThread()->SerialEventTarget()->IsOnCurrentThread();
+}
 
 namespace mozilla {
 namespace layers {
@@ -256,7 +258,8 @@ UiCompositorControllerChild::~UiCompositorControllerChild() = default;
 void UiCompositorControllerChild::OpenForSameProcess() {
   MOZ_ASSERT(IsOnUiThread());
 
-  mIsOpen = Open(mParent->GetIPCChannel(), mozilla::layers::CompositorThread(),
+  mIsOpen = Open(mParent->GetIPCChannel(),
+                 mozilla::layers::CompositorThreadHolder::Loop(),
                  mozilla::ipc::ChildSide);
 
   if (!mIsOpen) {

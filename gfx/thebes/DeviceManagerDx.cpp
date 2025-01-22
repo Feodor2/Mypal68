@@ -1250,7 +1250,8 @@ void DeviceManagerDx::GetCompositorDevices(
 
 /* static */
 void DeviceManagerDx::PreloadAttachmentsOnCompositorThread() {
-  if (!CompositorThread()) {
+  MessageLoop* loop = layers::CompositorThreadHolder::Loop();
+  if (!loop) {
     return;
   }
 
@@ -1269,7 +1270,7 @@ void DeviceManagerDx::PreloadAttachmentsOnCompositorThread() {
           }
         }
       });
-  CompositorThread()->Dispatch(task.forget());
+  loop->PostTask(task.forget());
 }
 
 }  // namespace gfx

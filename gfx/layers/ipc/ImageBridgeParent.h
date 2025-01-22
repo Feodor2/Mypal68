@@ -17,6 +17,12 @@
 #include "nsISupportsImpl.h"
 #include "nsTArrayForwardDeclare.h"  // for nsTArray
 
+class MessageLoop;
+
+namespace base {
+class Thread;
+}  // namespace base
+
 namespace mozilla {
 namespace ipc {
 class Shmem;
@@ -37,7 +43,7 @@ class ImageBridgeParent final : public PImageBridgeParent,
   typedef nsTArray<OpDestroy> OpDestroyArray;
 
  protected:
-  ImageBridgeParent(nsISerialEventTarget* aThread, ProcessId aChildProcessId);
+  ImageBridgeParent(MessageLoop* aLoop, ProcessId aChildProcessId);
 
  public:
   virtual ~ImageBridgeParent();
@@ -94,7 +100,7 @@ class ImageBridgeParent final : public PImageBridgeParent,
   // Shutdown step 1
   mozilla::ipc::IPCResult RecvWillClose();
 
-  nsISerialEventTarget* GetThread() const { return mThread; }
+  MessageLoop* GetMessageLoop() const { return mMessageLoop; }
 
   // ShmemAllocator
 
@@ -124,7 +130,7 @@ class ImageBridgeParent final : public PImageBridgeParent,
   static void ShutdownInternal();
 
   void DeferredDestroy();
-  nsCOMPtr<nsISerialEventTarget> mThread;
+  MessageLoop* mMessageLoop;
   // This keeps us alive until ActorDestroy(), at which point we do a
   // deferred destruction of ourselves.
   RefPtr<ImageBridgeParent> mSelfRef;

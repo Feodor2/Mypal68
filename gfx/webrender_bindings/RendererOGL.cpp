@@ -175,7 +175,7 @@ void RendererOGL::CheckGraphicsResetStatus() {
   if (gl->IsSupported(gl::GLFeature::robustness)) {
     GLenum resetStatus = gl->fGetGraphicsResetStatus();
     if (resetStatus == LOCAL_GL_PURGED_CONTEXT_RESET_NV) {
-      layers::CompositorThread()->Dispatch(
+      layers::CompositorThreadHolder::Loop()->PostTask(
           NewRunnableFunction("DoNotifyWebRenderContextPurgeRunnable",
                               &DoNotifyWebRenderContextPurge, mBridge));
     }

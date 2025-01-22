@@ -4,6 +4,7 @@
 
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "ClientLayerManager.h"  // for ClientLayerManager
+#include "base/message_loop.h"   // for MessageLoop
 #include "base/task.h"           // for NewRunnableMethod, etc
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/TabGroup.h"
@@ -39,6 +40,7 @@
 #include "nsDebug.h"                    // for NS_WARNING
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 #include "nsTArray.h"                   // for nsTArray, nsTArray_Impl
+#include "nsXULAppAPI.h"      // for XRE_GetIOMessageLoop, etc
 #if defined(XP_WIN)
 #  include "WinUtils.h"
 #endif
@@ -80,7 +82,7 @@ CompositorBridgeChild::CompositorBridgeChild(CompositorManagerChild* aManager)
       mCanSend(false),
       mActorDestroyed(false),
       mFwdTransactionId(0),
-      mThread(NS_GetCurrentThread()),
+      mMessageLoop(MessageLoop::current()),
       mProcessToken(0),
       mSectionAllocator(nullptr),
       mPaintLock("CompositorBridgeChild.mPaintLock"),
@@ -148,7 +150,7 @@ void CompositorBridgeChild::Destroy() {
     // We may have already called destroy but still have lingering references
     // or CompositorBridgeChild::ActorDestroy was called. Ensure that we do our
     // post destroy clean up no matter what. It is safe to call multiple times.
-    NS_GetCurrentThread()->Dispatch(
+    MessageLoop::current()->PostTask(
         NewRunnableMethod("CompositorBridgeChild::AfterDestroy", selfRef,
                           &CompositorBridgeChild::AfterDestroy));
     return;
@@ -201,12 +203,12 @@ void CompositorBridgeChild::Destroy() {
   // CompositorBridgeParent to the CompositorBridgeChild (e.g. caused by the
   // destruction of shared memory). We need to ensure this gets processed by the
   // CompositorBridgeChild before it gets destroyed. It suffices to ensure that
-  // events already in the thread get processed before the
-  // CompositorBridgeChild is destroyed, so we add a task to the thread to
+  // events already in the MessageLoop get processed before the
+  // CompositorBridgeChild is destroyed, so we add a task to the MessageLoop to
   // handle compositor destruction.
 
   // From now on we can't send any message message.
-  NS_GetCurrentThread()->Dispatch(
+  MessageLoop::current()->PostTask(
       NewRunnableMethod("CompositorBridgeChild::AfterDestroy", selfRef,
                         &CompositorBridgeChild::AfterDestroy));
 }
@@ -455,8 +457,8 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvUpdatePluginConfigurations(
 
 #if defined(XP_WIN)
 static void ScheduleSendAllPluginsCaptured(CompositorBridgeChild* aThis,
-                                           nsISerialEventTarget* aThread) {
-  aThread->Dispatch(NewNonOwningRunnableMethod(
+                                           MessageLoop* aLoop) {
+  aLoop->PostTask(NewNonOwningRunnableMethod(
       "CompositorBridgeChild::SendAllPluginsCaptured", aThis,
       &CompositorBridgeChild::SendAllPluginsCaptured));
 }
@@ -468,11 +470,12 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvCaptureAllPlugins(
   MOZ_ASSERT(NS_IsMainThread());
   nsIWidget::CaptureRegisteredPlugins(aParentWidget);
 
-  // Bounce the call to SendAllPluginsCaptured off the ImageBridgeChild thread,
+  // Bounce the call to SendAllPluginsCaptured off the ImageBridgeChild loop,
   // to make sure that the image updates on that thread have been processed.
-  ImageBridgeChild::GetSingleton()->GetThread()->Dispatch(NewRunnableFunction(
-      "ScheduleSendAllPluginsCapturedRunnable", &ScheduleSendAllPluginsCaptured,
-      this, NS_GetCurrentThread()));
+  ImageBridgeChild::GetSingleton()->GetMessageLoop()->PostTask(
+      NewRunnableFunction("ScheduleSendAllPluginsCapturedRunnable",
+                          &ScheduleSendAllPluginsCaptured, this,
+                          MessageLoop::current()));
   return IPC_OK();
 #else
   MOZ_ASSERT_UNREACHABLE(

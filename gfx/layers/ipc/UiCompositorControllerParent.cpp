@@ -47,7 +47,7 @@ RefPtr<UiCompositorControllerParent> UiCompositorControllerParent::Start(
       NewRunnableMethod<Endpoint<PUiCompositorControllerParent>&&>(
           "layers::UiCompositorControllerParent::Open", parent,
           &UiCompositorControllerParent::Open, std::move(aEndpoint));
-  CompositorThread()->Dispatch(task.forget());
+  CompositorThreadHolder::Loop()->PostTask(task.forget());
 
   return parent;
 }
@@ -174,7 +174,7 @@ void UiCompositorControllerParent::ToolbarAnimatorMessageFromCompositor(
     int32_t aMessage) {
   // This function can be call from ether compositor or controller thread.
   if (!CompositorThreadHolder::IsInCompositorThread()) {
-    CompositorThread()->Dispatch(NewRunnableMethod<int32_t>(
+    CompositorThreadHolder::Loop()->PostTask(NewRunnableMethod<int32_t>(
         "layers::UiCompositorControllerParent::"
         "ToolbarAnimatorMessageFromCompositor",
         this,
@@ -211,10 +211,11 @@ void UiCompositorControllerParent::NotifyUpdateScreenMetrics(
       aMetrics.GetZoom().ToScaleFactor(),
       PixelCastJustification::ScreenIsParentLayerForRoot);
   ScreenPoint scrollOffset = aMetrics.GetVisualScrollOffset() * scale;
-  CompositorThread()->Dispatch(NewRunnableMethod<ScreenPoint, CSSToScreenScale>(
-      "UiCompositorControllerParent::SendRootFrameMetrics", this,
-      &UiCompositorControllerParent::SendRootFrameMetrics, scrollOffset,
-      scale));
+  CompositorThreadHolder::Loop()->PostTask(
+      NewRunnableMethod<ScreenPoint, CSSToScreenScale>(
+          "UiCompositorControllerParent::SendRootFrameMetrics", this,
+          &UiCompositorControllerParent::SendRootFrameMetrics, scrollOffset,
+          scale));
 #endif
 }
 
@@ -241,7 +242,7 @@ void UiCompositorControllerParent::InitializeForSameProcess() {
     SynchronousTask task(
         "UiCompositorControllerParent::InitializeForSameProcess");
 
-    CompositorThread()->Dispatch(NS_NewRunnableFunction(
+    CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
         "UiCompositorControllerParent::InitializeForSameProcess", [&]() {
           AutoCompleteTask complete(&task);
           InitializeForSameProcess();

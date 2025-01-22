@@ -109,7 +109,7 @@ static void CheckTexturesForUnlock() {
 void TextureSync::DispatchCheckTexturesForUnlock() {
   RefPtr<Runnable> task =
       NS_NewRunnableFunction("CheckTexturesForUnlock", &CheckTexturesForUnlock);
-  CompositorThread()->Dispatch(task.forget());
+  CompositorThreadHolder::Loop()->PostTask(task.forget());
 }
 
 void TextureSync::HandleWaitForTexturesMessage(MachReceiveMessage* rmsg,

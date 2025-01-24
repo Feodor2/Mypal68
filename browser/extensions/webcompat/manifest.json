@@ -36,22 +36,6 @@
         "paths": [["experiments"]]
       }
     },
-    "pictureInPictureChild": {
-      "schema": "experiment-apis/pictureInPicture.json",
-      "child": {
-        "scopes": ["addon_child"],
-        "script": "experiment-apis/pictureInPicture.js",
-        "paths": [["pictureInPictureChild"]]
-      }
-    },
-    "pictureInPictureParent": {
-      "schema": "experiment-apis/pictureInPicture.json",
-      "parent": {
-        "scopes": ["addon_parent"],
-        "script": "experiment-apis/pictureInPicture.js",
-        "paths": [["pictureInPictureParent"]]
-      }
-    },
     "sharedPreferences": {
       "schema": "experiment-apis/sharedPreferences.json",
       "parent": {

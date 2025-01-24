@@ -325,13 +325,6 @@ const startupPhases = {
       close: 11,
     },
     {
-      // bug 1545167
-      path: "/etc/mime.types",
-      condition: LINUX,
-      read: 3,
-      close: 3,
-    },
-    {
       path: "UChrm:userChrome.css",
       condition: WIN,
       stat: 1,
@@ -468,13 +461,6 @@ const startupPhases = {
       path: "XREAppFeat:formautofill@mozilla.org.xpi",
       condition: !WIN,
       stat: 1,
-      close: 1,
-    },
-    {
-      // bug 1545167
-      path: "/etc/mime.types",
-      condition: LINUX,
-      read: 1,
       close: 1,
     },
     {

@@ -30,8 +30,6 @@ FINAL_TARGET_FILES.features['webcompat@mozilla.org']['experiment-apis'] += [
   'experiment-apis/aboutConfigPrefs.json',
   'experiment-apis/experiments.js',
   'experiment-apis/experiments.json',
-  'experiment-apis/pictureInPicture.js',
-  'experiment-apis/pictureInPicture.json',
   'experiment-apis/sharedPreferences.js',
   'experiment-apis/sharedPreferences.json',
   'experiment-apis/systemManufacturer.js',

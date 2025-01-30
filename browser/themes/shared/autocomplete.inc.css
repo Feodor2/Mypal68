@@ -47,6 +47,7 @@
 }
 
 #PopupAutoComplete > richlistbox > richlistitem > .two-line-wrapper > .ac-site-icon {
+  display: block;
   margin-inline: auto 4px;
 }
 

@@ -5367,6 +5367,14 @@
   mirror: always
   rust: true
 
+# Pref to control whether display: -moz-box and display: -moz-inline-box are
+# "blockified" to "-moz-box" (rather than to "block")
+- name: layout.css.xul-box-display-values.survive-blockification.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
 # Whether to block large cursors intersecting UI.
 - name: layout.cursor.block.enabled
   type: bool

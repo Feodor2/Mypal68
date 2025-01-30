@@ -450,6 +450,7 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
 }
 
 #customization-panelWrapper > .panel-arrowbox {
+  display: block;
   position: relative;
   height: 10px;
   margin-bottom: -1px;
@@ -627,6 +628,7 @@ toolbarpaletteitem[place=toolbar] > toolbarspring {
 #wp-player2,
 #wp-ball,
 #wp-score {
+  display: block;
   position: fixed;
 }
 

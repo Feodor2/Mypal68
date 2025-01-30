@@ -150,10 +150,10 @@
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent class="addon-installed-notification-content" orient="vertical">
-      <description id="addon-install-description" data-lazy-l10n-id="appmenu-addon-post-install-message">
-        <image data-l10n-name="addon-install-icon" class="addon-addon-icon"></image>
-        <image data-l10n-name="addon-menu-icon" class="addon-toolbar-icon"></image>
-      </description>
+      <hbox id="addon-install-description" data-lazy-l10n-id="appmenu-addon-post-install-message" style="display:flex">
+        <image data-l10n-name="addon-install-icon" class="addon-addon-icon" style="margin-inline:5px"></image>
+        <image data-l10n-name="addon-menu-icon" class="addon-toolbar-icon" style="margin-inline:5px"></image>
+      </hbox>
       <checkbox id="addon-incognito-checkbox"
                 data-lazy-l10n-id="appmenu-addon-post-install-incognito-checkbox"/>
     </popupnotificationcontent>

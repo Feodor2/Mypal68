@@ -118,6 +118,7 @@ panelview[mainview] > .panel-header {
 }
 
 .panel-viewcontainer.offscreen {
+  display: block;
   position: absolute;
 }
 
@@ -209,7 +210,7 @@ panelview[mainview] > .panel-header {
 
 #tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
   position: fixed !important;
-  display: block; /* position:fixed already does this (bug 579776), but let's be explicit */
+  display: block;
 }
 
 #tabbrowser-tabs[movingtab] > .tabbrowser-tab[selected],
@@ -472,6 +473,7 @@ toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-b
 }
 
 #PlacesToolbarDropIndicatorHolder {
+  display: block;
   position: absolute;
 }
 
@@ -901,6 +903,7 @@ browser[tabmodalPromptShowing] {
 /* Status panel */
 
 #statuspanel {
+  display: block;
   position: fixed;
   margin-top: -3em;
   max-width: calc(100% - 5px);

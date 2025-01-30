@@ -1641,8 +1641,8 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   if (prefBranch) {
     if (aCallerPrincipal) {
       nsCOMPtr<nsIURI> uri;
+      aCallerPrincipal->GetURI(getter_AddRefs(uri));
       if (uri) {
-        aCallerPrincipal->GetURI(getter_AddRefs(uri));
         MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
         rv = prefBranch->GetCharPref(host.get(), ua);
         if (NS_SUCCEEDED(rv)) {

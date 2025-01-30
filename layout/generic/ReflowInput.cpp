@@ -647,11 +647,6 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
     SetBResize(mCBReflowInput->IsBResizeForWM(wm));
     mFlags.mIsBResizeForPercentages =
         mCBReflowInput->IsBResizeForPercentagesForWM(wm);
-    if (mCBReflowInput && mFrame->IsTableRowGroupFrame() &&
-        mCBReflowInput->IsBResizeForWM(wm)) {
-      SetBResize(true);
-      mFlags.mIsBResizeForPercentages = true;
-    }
   } else if (ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
     // We have an 'auto' block-size.
     if (eCompatibility_NavQuirks == aPresContext->CompatibilityMode() &&
@@ -2110,6 +2105,11 @@ void ReflowInput::InitConstraints(
     nsPresContext* aPresContext, const Maybe<LogicalSize>& aContainingBlockSize,
     const Maybe<LogicalMargin>& aBorder, const Maybe<LogicalMargin>& aPadding,
     LayoutFrameType aFrameType) {
+  MOZ_ASSERT(
+      !IsFloating() || (mStyleDisplay->mDisplay != StyleDisplay::MozBox &&
+                        mStyleDisplay->mDisplay != StyleDisplay::MozInlineBox),
+      "Please don't try to float a -moz-box or a -moz-inline-box");
+
   WritingMode wm = GetWritingMode();
   LogicalSize cbSize = aContainingBlockSize.valueOr(
       LogicalSize(mWritingMode, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE));
@@ -2308,7 +2308,7 @@ void ReflowInput::InitConstraints(
     } else {
       AutoMaybeDisableFontInflation an(mFrame);
 
-      bool isBlock =
+      const bool isBlockLevel =
           ((!mStyleDisplay->IsInlineOutsideStyle() &&
             // internal table values on replaced elements behaves as inline
             // https://drafts.csswg.org/css-tables-3/#table-structure
@@ -2326,7 +2326,7 @@ void ReflowInput::InitConstraints(
           (!mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) ||
            mStyleDisplay->IsAbsolutelyPositionedStyle());
 
-      if (!isBlock) {
+      if (!isBlockLevel) {
         mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
       }
 
@@ -2353,7 +2353,7 @@ void ReflowInput::InitConstraints(
         }
       } else {
         // Shrink-wrap blocks that are orthogonal to their container.
-        if (isBlock && mCBReflowInput &&
+        if (isBlockLevel && mCBReflowInput &&
             mCBReflowInput->GetWritingMode().IsOrthogonalTo(mWritingMode)) {
           mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
         }
@@ -2387,7 +2387,7 @@ void ReflowInput::InitConstraints(
 
       // Exclude inline tables, side captions, outside ::markers, flex and grid
       // items from block margin calculations.
-      if (isBlock && !IsSideCaption(mFrame, mStyleDisplay, cbwm) &&
+      if (isBlockLevel && !IsSideCaption(mFrame, mStyleDisplay, cbwm) &&
           mStyleDisplay->mDisplay != StyleDisplay::InlineTable &&
           !mFrame->IsTableFrame() && !alignCB->IsFlexOrGridContainer() &&
           !(mFrame->Style()->GetPseudoType() == PseudoStyleType::marker &&

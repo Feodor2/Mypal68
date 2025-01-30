@@ -35,6 +35,10 @@
   border-right-style: none;
 }
 
+.urlbarView:not(.megabar):not([hidden]) {
+  display: block;
+}
+
 .urlbarView-body-inner {
   box-sizing: border-box;
 }

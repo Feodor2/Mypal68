@@ -30,6 +30,7 @@
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/Unused.h"
 #include "RetainedDisplayListBuilder.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsCSSPseudoElements.h"
@@ -5701,6 +5702,15 @@ void nsCSSFrameConstructor::ConstructFramesFromItem(
     nsContainerFrame* aParentFrame, nsFrameList& aFrameList) {
   FrameConstructionItem& item = aIter.item();
   ComputedStyle* computedStyle = item.mComputedStyle;
+
+  const auto* disp = computedStyle->StyleDisplay();
+  MOZ_ASSERT(!disp->IsAbsolutelyPositionedStyle() ||
+                 (disp->mDisplay != StyleDisplay::MozBox &&
+                  disp->mDisplay != StyleDisplay::MozInlineBox),
+             "This may be a frame that was previously blockified "
+             "but isn't any longer! It probably needs explicit "
+             "'display:block' to preserve behavior");
+  Unused << disp; // (unused in configs that define the assertion away)
 
   if (item.mIsText) {
     // If this is collapsible whitespace next to a line boundary,

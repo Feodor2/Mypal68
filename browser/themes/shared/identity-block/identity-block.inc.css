@@ -183,6 +183,7 @@
 }
 
 #tracking-protection-icon-box > #tracking-protection-icon-animatable-box {
+  display: block;
   position: absolute;
   overflow: hidden;
   margin-inline-start: 4px;

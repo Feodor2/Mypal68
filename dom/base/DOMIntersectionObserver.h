@@ -28,9 +28,9 @@ class DOMIntersectionObserverEntry final : public nsISupports,
                                double aIntersectionRatio)
       : mOwner(aOwner),
         mTime(aTime),
-        mRootBounds(aRootBounds),
-        mBoundingClientRect(aBoundingClientRect),
-        mIntersectionRect(aIntersectionRect),
+        mRootBounds(std::move(aRootBounds)),
+        mBoundingClientRect(std::move(aBoundingClientRect)),
+        mIntersectionRect(std::move(aIntersectionRect)),
         mIsIntersecting(aIsIntersecting),
         mTarget(aTarget),
         mIntersectionRatio(aIntersectionRatio) {}
@@ -104,7 +104,7 @@ class DOMIntersectionObserver final : public nsISupports,
 
   nsISupports* GetParentObject() const { return mOwner; }
 
-  Element* GetRoot() const { return mRoot; }
+  nsINode* GetRoot() const { return mRoot; }
 
   void GetRootMargin(nsACString&);
   bool SetRootMargin(const nsACString&);
@@ -128,12 +128,13 @@ class DOMIntersectionObserver final : public nsISupports,
                                       const Maybe<nsRect>& aRootRect,
                                       const nsRect& aTargetRect,
                                       const Maybe<nsRect>& aIntersectionRect,
+                                      bool aIsIntersecting,
                                       double aIntersectionRatio);
 
   nsCOMPtr<nsPIDOMWindowInner> mOwner;
   RefPtr<Document> mDocument;
   RefPtr<dom::IntersectionCallback> mCallback;
-  RefPtr<Element> mRoot;
+  RefPtr<nsINode> mRoot;
   StyleRect<LengthPercentage> mRootMargin;
   nsTArray<double> mThresholds;
 

@@ -33,7 +33,7 @@ interface IntersectionObserver {
               optional IntersectionObserverInit options = {});
 
   [Constant]
-  readonly attribute Element? root;
+  readonly attribute Node? root;
   [Constant]
   readonly attribute UTF8String rootMargin;
   [Constant,Cached]
@@ -56,7 +56,7 @@ dictionary IntersectionObserverEntryInit {
 };
 
 dictionary IntersectionObserverInit {
-  Element? root = null;
+  (Element or Document)?  root = null;
   UTF8String rootMargin = "0px";
   (double or sequence<double>) threshold = 0;
 };

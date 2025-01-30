@@ -5,8 +5,8 @@
 #include "SharedSurfacesChild.h"
 #include "SharedSurfacesParent.h"
 #include "CompositorManagerChild.h"
+#include "UnitTransforms.h"  //Mypal
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/image/RecyclingSourceSurface.h"
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
@@ -155,13 +155,8 @@ SourceSurfaceSharedData* SharedSurfacesChild::AsSourceSurfaceSharedData(
   MOZ_ASSERT(aSurface);
   switch (aSurface->GetType()) {
     case SurfaceType::DATA_SHARED:
+    case SurfaceType::DATA_RECYCLING_SHARED:
       return static_cast<SourceSurfaceSharedData*>(aSurface);
-    case SurfaceType::DATA_RECYCLING_SHARED: {
-      auto recycleSurface =
-          static_cast<image::RecyclingSourceSurface*>(aSurface);
-      auto childSurface = recycleSurface->GetChildSurface();
-      return static_cast<SourceSurfaceSharedData*>(childSurface);
-    }
     default:
       return nullptr;
   }
@@ -368,7 +363,7 @@ nsresult SharedSurfacesChild::Share(ImageContainer* aContainer,
 
   SharedSurfacesAnimation* anim = aContainer->GetSharedSurfacesAnimation();
   if (anim) {
-    return anim->UpdateKey(surface, sharedSurface, aManager, aResources, aKey);
+    return anim->UpdateKey(sharedSurface, aManager, aResources, aKey);
   }
 
   return Share(sharedSurface, aManager, aResources, aKey);
@@ -471,7 +466,7 @@ nsresult SharedSurfacesChild::UpdateAnimation(ImageContainer* aContainer,
   SharedSurfacesAnimation* anim = aContainer->EnsureSharedSurfacesAnimation();
   MOZ_ASSERT(anim);
 
-  return anim->SetCurrentFrame(aSurface, sharedSurface, aDirtyRect);
+  return anim->SetCurrentFrame(sharedSurface, aDirtyRect);
 }
 
 AnimationImageKeyData::AnimationImageKeyData(RenderRootStateManager* aManager,
@@ -520,19 +515,17 @@ void SharedSurfacesAnimation::Destroy() {
 }
 
 void SharedSurfacesAnimation::HoldSurfaceForRecycling(
-    AnimationImageKeyData& aEntry, SourceSurface* aParentSurface,
-    SourceSurfaceSharedData* aSurface) {
-  if (aParentSurface == static_cast<SourceSurface*>(aSurface)) {
+    AnimationImageKeyData& aEntry, SourceSurfaceSharedData* aSurface) {
+  if (aSurface->GetType() != SurfaceType::DATA_RECYCLING_SHARED) {
     return;
   }
 
   MOZ_ASSERT(StaticPrefs::image_animated_decode_on_demand_recycle_AtStartup());
-  aEntry.mPendingRelease.AppendElement(aParentSurface);
+  aEntry.mPendingRelease.AppendElement(aSurface);
 }
 
 nsresult SharedSurfacesAnimation::SetCurrentFrame(
-    SourceSurface* aParentSurface, SourceSurfaceSharedData* aSurface,
-    const gfx::IntRect& aDirtyRect) {
+    SourceSurfaceSharedData* aSurface, const gfx::IntRect& aDirtyRect) {
   MOZ_ASSERT(aSurface);
 
   SharedSurfacesChild::SharedUserData* data = nullptr;
@@ -553,7 +546,7 @@ nsresult SharedSurfacesAnimation::SetCurrentFrame(
     entry.MergeDirtyRect(Some(aDirtyRect));
     Maybe<IntRect> dirtyRect = entry.TakeDirtyRect();
     if (dirtyRect) {
-      HoldSurfaceForRecycling(entry, aParentSurface, aSurface);
+      HoldSurfaceForRecycling(entry, aSurface);
       auto& resourceUpdates = entry.mManager->AsyncResourceUpdates();
       resourceUpdates.UpdateExternalImage(mId, entry.mImageKey,
                                           ViewAs<ImagePixel>(dirtyRect.ref()));
@@ -564,9 +557,8 @@ nsresult SharedSurfacesAnimation::SetCurrentFrame(
 }
 
 nsresult SharedSurfacesAnimation::UpdateKey(
-    SourceSurface* aParentSurface, SourceSurfaceSharedData* aSurface,
-    RenderRootStateManager* aManager, wr::IpcResourceUpdateQueue& aResources,
-    wr::ImageKey& aKey) {
+    SourceSurfaceSharedData* aSurface, RenderRootStateManager* aManager,
+    wr::IpcResourceUpdateQueue& aResources, wr::ImageKey& aKey) {
   SharedSurfacesChild::SharedUserData* data = nullptr;
   nsresult rv = SharedSurfacesChild::ShareInternal(aSurface, &data);
   if (NS_FAILED(rv)) {
@@ -601,7 +593,7 @@ nsresult SharedSurfacesAnimation::UpdateKey(
       bool ownsKey = wrBridge->GetNamespace() == entry.mImageKey.mNamespace;
       if (!ownsKey) {
         entry.mImageKey = wrBridge->GetNextImageKey();
-        HoldSurfaceForRecycling(entry, aParentSurface, aSurface);
+        HoldSurfaceForRecycling(entry, aSurface);
         aResources.AddExternalImage(mId, entry.mImageKey);
       } else {
         MOZ_ASSERT(entry.mDirtyRect.isNothing());
@@ -620,7 +612,7 @@ nsresult SharedSurfacesAnimation::UpdateKey(
     }
 
     AnimationImageKeyData data(aManager, aKey);
-    HoldSurfaceForRecycling(data, aParentSurface, aSurface);
+    HoldSurfaceForRecycling(data, aSurface);
     mKeys.AppendElement(std::move(data));
     aResources.AddExternalImage(mId, aKey);
   }
@@ -640,12 +632,8 @@ void SharedSurfacesAnimation::ReleasePreviousFrame(
     if (entry.mManager == aManager) {
       size_t k;
       for (k = 0; k < entry.mPendingRelease.Length(); ++k) {
-        auto sharedSurface = SharedSurfacesChild::AsSourceSurfaceSharedData(
-            entry.mPendingRelease[k]);
-        MOZ_ASSERT(sharedSurface);
-
         Maybe<wr::ExternalImageId> extId =
-            SharedSurfacesChild::GetExternalId(sharedSurface);
+            SharedSurfacesChild::GetExternalId(entry.mPendingRelease[k]);
         if (extId && extId.ref() == aId) {
           break;
         }

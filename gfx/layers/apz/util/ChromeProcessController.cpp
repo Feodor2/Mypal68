@@ -5,6 +5,7 @@
 #include "ChromeProcessController.h"
 
 #include "MainThreadUtils.h"    // for NS_IsMainThread()
+#include "base/message_loop.h"  // for MessageLoop
 #include "base/task.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Element.h"
@@ -30,13 +31,13 @@ ChromeProcessController::ChromeProcessController(
     : mWidget(aWidget),
       mAPZEventState(aAPZEventState),
       mAPZCTreeManager(aAPZCTreeManager),
-      mUIThread(NS_GetCurrentThread()) {
-  // Otherwise we're initializing mUIThread incorrectly.
+      mUILoop(MessageLoop::current()) {
+  // Otherwise we're initializing mUILoop incorrectly.
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aAPZEventState);
   MOZ_ASSERT(aAPZCTreeManager);
 
-  mUIThread->Dispatch(
+  mUILoop->PostTask(
       NewRunnableMethod("layers::ChromeProcessController::InitializeRoot", this,
                         &ChromeProcessController::InitializeRoot));
 }
@@ -49,8 +50,8 @@ void ChromeProcessController::InitializeRoot() {
 
 void ChromeProcessController::NotifyLayerTransforms(
     nsTArray<MatrixMessage>&& aTransforms) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(
         NewRunnableMethod<StoreCopyPassByRRef<nsTArray<MatrixMessage>>>(
             "layers::ChromeProcessController::NotifyLayerTransforms", this,
             &ChromeProcessController::NotifyLayerTransforms,
@@ -72,6 +73,11 @@ void ChromeProcessController::RequestContentRepaint(
   }
 }
 
+void ChromeProcessController::PostDelayedTask(already_AddRefed<Runnable> aTask,
+                                              int aDelayMs) {
+  MessageLoop::current()->PostDelayedTask(std::move(aTask), aDelayMs);
+}
+
 bool ChromeProcessController::IsRepaintThread() { return NS_IsMainThread(); }
 
 void ChromeProcessController::DispatchToRepaintThread(
@@ -80,14 +86,14 @@ void ChromeProcessController::DispatchToRepaintThread(
 }
 
 void ChromeProcessController::Destroy() {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(
         NewRunnableMethod("layers::ChromeProcessController::Destroy", this,
                           &ChromeProcessController::Destroy));
     return;
   }
 
-  MOZ_ASSERT(mUIThread->IsOnCurrentThread());
+  MOZ_ASSERT(MessageLoop::current() == mUILoop);
   mWidget = nullptr;
   mAPZEventState = nullptr;
 }
@@ -126,7 +132,7 @@ dom::Document* ChromeProcessController::GetRootContentDocument(
 void ChromeProcessController::HandleDoubleTap(
     const mozilla::CSSPoint& aPoint, Modifiers aModifiers,
     const ScrollableLayerGuid& aGuid) {
-  MOZ_ASSERT(mUIThread->IsOnCurrentThread());
+  MOZ_ASSERT(MessageLoop::current() == mUILoop);
 
   RefPtr<dom::Document> document = GetRootContentDocument(aGuid.mScrollId);
   if (!document.get()) {
@@ -152,8 +158,8 @@ void ChromeProcessController::HandleTap(
     TapType aType, const mozilla::LayoutDevicePoint& aPoint,
     Modifiers aModifiers, const ScrollableLayerGuid& aGuid,
     uint64_t aInputBlockId) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(
         NewRunnableMethod<TapType, mozilla::LayoutDevicePoint, Modifiers,
                           ScrollableLayerGuid, uint64_t>(
             "layers::ChromeProcessController::HandleTap", this,
@@ -212,8 +218,8 @@ void ChromeProcessController::NotifyPinchGesture(
     PinchGestureInput::PinchGestureType aType, const ScrollableLayerGuid& aGuid,
     const LayoutDevicePoint& aFocusPoint, LayoutDeviceCoord aSpanChange,
     Modifiers aModifiers) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(
         NewRunnableMethod<PinchGestureInput::PinchGestureType,
                           ScrollableLayerGuid, LayoutDevicePoint,
                           LayoutDeviceCoord, Modifiers>(
@@ -228,7 +234,7 @@ void ChromeProcessController::NotifyPinchGesture(
     // thread so that it runs asynchronously from the current call. This is
     // because the call can run arbitrary JS code, which can also spin the event
     // loop and cause undesirable re-entrancy in APZ.
-    mUIThread->Dispatch(NewRunnableFunction(
+    mUILoop->PostTask(NewRunnableFunction(
         "layers::ChromeProcessController::NotifyPinchGestureAsync",
         &APZCCallbackHelper::NotifyPinchGesture, aType, aFocusPoint,
         aSpanChange, aModifiers, mWidget));
@@ -237,8 +243,8 @@ void ChromeProcessController::NotifyPinchGesture(
 
 void ChromeProcessController::NotifyAPZStateChange(
     const ScrollableLayerGuid& aGuid, APZStateChange aChange, int aArg) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(
         NewRunnableMethod<ScrollableLayerGuid, APZStateChange, int>(
             "layers::ChromeProcessController::NotifyAPZStateChange", this,
             &ChromeProcessController::NotifyAPZStateChange, aGuid, aChange,
@@ -255,12 +261,11 @@ void ChromeProcessController::NotifyAPZStateChange(
 
 void ChromeProcessController::NotifyMozMouseScrollEvent(
     const ScrollableLayerGuid::ViewID& aScrollId, const nsString& aEvent) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(
-        NewRunnableMethod<ScrollableLayerGuid::ViewID, nsString>(
-            "layers::ChromeProcessController::NotifyMozMouseScrollEvent", this,
-            &ChromeProcessController::NotifyMozMouseScrollEvent, aScrollId,
-            aEvent));
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(NewRunnableMethod<ScrollableLayerGuid::ViewID, nsString>(
+        "layers::ChromeProcessController::NotifyMozMouseScrollEvent", this,
+        &ChromeProcessController::NotifyMozMouseScrollEvent, aScrollId,
+        aEvent));
     return;
   }
 
@@ -276,9 +281,9 @@ void ChromeProcessController::NotifyFlushComplete() {
 void ChromeProcessController::NotifyAsyncScrollbarDragInitiated(
     uint64_t aDragBlockId, const ScrollableLayerGuid::ViewID& aScrollId,
     ScrollDirection aDirection) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<uint64_t, ScrollableLayerGuid::ViewID,
-                                          ScrollDirection>(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(NewRunnableMethod<uint64_t, ScrollableLayerGuid::ViewID,
+                                        ScrollDirection>(
         "layers::ChromeProcessController::NotifyAsyncScrollbarDragInitiated",
         this, &ChromeProcessController::NotifyAsyncScrollbarDragInitiated,
         aDragBlockId, aScrollId, aDirection));
@@ -291,8 +296,8 @@ void ChromeProcessController::NotifyAsyncScrollbarDragInitiated(
 
 void ChromeProcessController::NotifyAsyncScrollbarDragRejected(
     const ScrollableLayerGuid::ViewID& aScrollId) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
         "layers::ChromeProcessController::NotifyAsyncScrollbarDragRejected",
         this, &ChromeProcessController::NotifyAsyncScrollbarDragRejected,
         aScrollId));
@@ -304,8 +309,8 @@ void ChromeProcessController::NotifyAsyncScrollbarDragRejected(
 
 void ChromeProcessController::NotifyAsyncAutoscrollRejected(
     const ScrollableLayerGuid::ViewID& aScrollId) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
         "layers::ChromeProcessController::NotifyAsyncAutoscrollRejected", this,
         &ChromeProcessController::NotifyAsyncAutoscrollRejected, aScrollId));
     return;
@@ -316,8 +321,8 @@ void ChromeProcessController::NotifyAsyncAutoscrollRejected(
 
 void ChromeProcessController::CancelAutoscroll(
     const ScrollableLayerGuid& aGuid) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid>(
+  if (MessageLoop::current() != mUILoop) {
+    mUILoop->PostTask(NewRunnableMethod<ScrollableLayerGuid>(
         "layers::ChromeProcessController::CancelAutoscroll", this,
         &ChromeProcessController::CancelAutoscroll, aGuid));
     return;

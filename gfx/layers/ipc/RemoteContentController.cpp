@@ -4,6 +4,8 @@
 
 #include "mozilla/layers/RemoteContentController.h"
 
+#include "base/message_loop.h"
+#include "base/task.h"
 #include "MainThreadUtils.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
@@ -23,17 +25,15 @@ namespace layers {
 using namespace mozilla::gfx;
 
 RemoteContentController::RemoteContentController()
-    : mCompositorThread(NS_GetCurrentThread()), mCanSend(true) {
-  MOZ_ASSERT(CompositorThread()->IsOnCurrentThread());
-}
+    : mCompositorThread(MessageLoop::current()), mCanSend(true) {}
 
 RemoteContentController::~RemoteContentController() = default;
 
 void RemoteContentController::NotifyLayerTransforms(
     nsTArray<MatrixMessage>&& aTransforms) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
+  if (MessageLoop::current() != mCompositorThread) {
     // We have to send messages from the compositor thread
-    mCompositorThread->Dispatch(
+    mCompositorThread->PostTask(
         NewRunnableMethod<StoreCopyPassByRRef<nsTArray<MatrixMessage>>>(
             "layers::RemoteContentController::NotifyLayerTransforms", this,
             &RemoteContentController::NotifyLayerTransforms,
@@ -73,7 +73,7 @@ void RemoteContentController::HandleTapOnCompositorThread(
     TapType aTapType, LayoutDevicePoint aPoint, Modifiers aModifiers,
     ScrollableLayerGuid aGuid, uint64_t aInputBlockId) {
   MOZ_ASSERT(XRE_IsGPUProcess());
-  MOZ_ASSERT(mCompositorThread->IsOnCurrentThread());
+  MOZ_ASSERT(MessageLoop::current() == mCompositorThread);
 
   // The raw pointer to APZCTreeManagerParent is ok here because we are on the
   // compositor thread.
@@ -93,12 +93,12 @@ void RemoteContentController::HandleTap(TapType aTapType,
   APZThreadUtils::AssertOnControllerThread();
 
   if (XRE_GetProcessType() == GeckoProcessType_GPU) {
-    if (mCompositorThread->IsOnCurrentThread()) {
+    if (MessageLoop::current() == mCompositorThread) {
       HandleTapOnCompositorThread(aTapType, aPoint, aModifiers, aGuid,
                                   aInputBlockId);
     } else {
       // We have to send messages from the compositor thread
-      mCompositorThread->Dispatch(
+      mCompositorThread->PostTask(
           NewRunnableMethod<TapType, LayoutDevicePoint, Modifiers,
                             ScrollableLayerGuid, uint64_t>(
               "layers::RemoteContentController::HandleTapOnCompositorThread",
@@ -139,7 +139,7 @@ void RemoteContentController::NotifyPinchGestureOnCompositorThread(
     PinchGestureInput::PinchGestureType aType, const ScrollableLayerGuid& aGuid,
     const LayoutDevicePoint& aFocusPoint, LayoutDeviceCoord aSpanChange,
     Modifiers aModifiers) {
-  MOZ_ASSERT(mCompositorThread->IsOnCurrentThread());
+  MOZ_ASSERT(MessageLoop::current() == mCompositorThread);
 
   // The raw pointer to APZCTreeManagerParent is ok here because we are on the
   // compositor thread.
@@ -163,11 +163,11 @@ void RemoteContentController::NotifyPinchGesture(
   // If we're in the GPU process, try to find a handle to the parent process
   // and send it there.
   if (XRE_IsGPUProcess()) {
-    if (mCompositorThread->IsOnCurrentThread()) {
+    if (MessageLoop::current() == mCompositorThread) {
       NotifyPinchGestureOnCompositorThread(aType, aGuid, aFocusPoint,
                                            aSpanChange, aModifiers);
     } else {
-      mCompositorThread->Dispatch(
+      mCompositorThread->PostTask(
           NewRunnableMethod<PinchGestureInput::PinchGestureType,
                             ScrollableLayerGuid, LayoutDevicePoint,
                             LayoutDeviceCoord, Modifiers>(
@@ -195,20 +195,26 @@ void RemoteContentController::NotifyPinchGesture(
   }
 }
 
+void RemoteContentController::PostDelayedTask(already_AddRefed<Runnable> aTask,
+                                              int aDelayMs) {
+  (MessageLoop::current() ? MessageLoop::current() : mCompositorThread)
+      ->PostDelayedTask(std::move(aTask), aDelayMs);
+}
+
 bool RemoteContentController::IsRepaintThread() {
-  return mCompositorThread->IsOnCurrentThread();
+  return MessageLoop::current() == mCompositorThread;
 }
 
 void RemoteContentController::DispatchToRepaintThread(
     already_AddRefed<Runnable> aTask) {
-  mCompositorThread->Dispatch(std::move(aTask));
+  mCompositorThread->PostTask(std::move(aTask));
 }
 
 void RemoteContentController::NotifyAPZStateChange(
     const ScrollableLayerGuid& aGuid, APZStateChange aChange, int aArg) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
+  if (MessageLoop::current() != mCompositorThread) {
     // We have to send messages from the compositor thread
-    mCompositorThread->Dispatch(
+    mCompositorThread->PostTask(
         NewRunnableMethod<ScrollableLayerGuid, APZStateChange, int>(
             "layers::RemoteContentController::NotifyAPZStateChange", this,
             &RemoteContentController::NotifyAPZStateChange, aGuid, aChange,
@@ -223,8 +229,8 @@ void RemoteContentController::NotifyAPZStateChange(
 
 void RemoteContentController::UpdateOverscrollVelocity(float aX, float aY,
                                                        bool aIsRootContent) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
-    mCompositorThread->Dispatch(NewRunnableMethod<float, float, bool>(
+  if (MessageLoop::current() != mCompositorThread) {
+    mCompositorThread->PostTask(NewRunnableMethod<float, float, bool>(
         "layers::RemoteContentController::UpdateOverscrollVelocity", this,
         &RemoteContentController::UpdateOverscrollVelocity, aX, aY,
         aIsRootContent));
@@ -237,8 +243,8 @@ void RemoteContentController::UpdateOverscrollVelocity(float aX, float aY,
 
 void RemoteContentController::UpdateOverscrollOffset(float aX, float aY,
                                                      bool aIsRootContent) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
-    mCompositorThread->Dispatch(NewRunnableMethod<float, float, bool>(
+  if (MessageLoop::current() != mCompositorThread) {
+    mCompositorThread->PostTask(NewRunnableMethod<float, float, bool>(
         "layers::RemoteContentController::UpdateOverscrollOffset", this,
         &RemoteContentController::UpdateOverscrollOffset, aX, aY,
         aIsRootContent));
@@ -251,9 +257,9 @@ void RemoteContentController::UpdateOverscrollOffset(float aX, float aY,
 
 void RemoteContentController::NotifyMozMouseScrollEvent(
     const ScrollableLayerGuid::ViewID& aScrollId, const nsString& aEvent) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
+  if (MessageLoop::current() != mCompositorThread) {
     // We have to send messages from the compositor thread
-    mCompositorThread->Dispatch(
+    mCompositorThread->PostTask(
         NewRunnableMethod<ScrollableLayerGuid::ViewID, nsString>(
             "layers::RemoteContentController::NotifyMozMouseScrollEvent", this,
             &RemoteContentController::NotifyMozMouseScrollEvent, aScrollId,
@@ -277,9 +283,9 @@ void RemoteContentController::NotifyFlushComplete() {
 void RemoteContentController::NotifyAsyncScrollbarDragInitiated(
     uint64_t aDragBlockId, const ScrollableLayerGuid::ViewID& aScrollId,
     ScrollDirection aDirection) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
+  if (MessageLoop::current() != mCompositorThread) {
     // We have to send messages from the compositor thread
-    mCompositorThread->Dispatch(NewRunnableMethod<uint64_t,
+    mCompositorThread->PostTask(NewRunnableMethod<uint64_t,
                                                   ScrollableLayerGuid::ViewID,
                                                   ScrollDirection>(
         "layers::RemoteContentController::NotifyAsyncScrollbarDragInitiated",
@@ -296,9 +302,9 @@ void RemoteContentController::NotifyAsyncScrollbarDragInitiated(
 
 void RemoteContentController::NotifyAsyncScrollbarDragRejected(
     const ScrollableLayerGuid::ViewID& aScrollId) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
+  if (MessageLoop::current() != mCompositorThread) {
     // We have to send messages from the compositor thread
-    mCompositorThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
+    mCompositorThread->PostTask(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
         "layers::RemoteContentController::NotifyAsyncScrollbarDragRejected",
         this, &RemoteContentController::NotifyAsyncScrollbarDragRejected,
         aScrollId));
@@ -312,9 +318,9 @@ void RemoteContentController::NotifyAsyncScrollbarDragRejected(
 
 void RemoteContentController::NotifyAsyncAutoscrollRejected(
     const ScrollableLayerGuid::ViewID& aScrollId) {
-  if (!mCompositorThread->IsOnCurrentThread()) {
+  if (MessageLoop::current() != mCompositorThread) {
     // We have to send messages from the compositor thread
-    mCompositorThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
+    mCompositorThread->PostTask(NewRunnableMethod<ScrollableLayerGuid::ViewID>(
         "layers::RemoteContentController::NotifyAsyncAutoscrollRejected", this,
         &RemoteContentController::NotifyAsyncAutoscrollRejected, aScrollId));
     return;
@@ -352,8 +358,8 @@ void RemoteContentController::CancelAutoscrollCrossProcess(
     const ScrollableLayerGuid& aGuid) {
   MOZ_ASSERT(XRE_IsGPUProcess());
 
-  if (!mCompositorThread->IsOnCurrentThread()) {
-    mCompositorThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid>(
+  if (MessageLoop::current() != mCompositorThread) {
+    mCompositorThread->PostTask(NewRunnableMethod<ScrollableLayerGuid>(
         "layers::RemoteContentController::CancelAutoscrollCrossProcess", this,
         &RemoteContentController::CancelAutoscrollCrossProcess, aGuid));
     return;

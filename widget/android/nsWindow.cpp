@@ -2158,8 +2158,7 @@ bool nsWindow::NeedsPaint() {
 }
 
 void nsWindow::ConfigureAPZControllerThread() {
-  nsCOMPtr<nsISerialEventTarget> thread = mozilla::GetAndroidUiThread();
-  APZThreadUtils::SetControllerThread(thread);
+  APZThreadUtils::SetControllerThread(mozilla::GetAndroidUiThreadMessageLoop());
 }
 
 already_AddRefed<GeckoContentController>

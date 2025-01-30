@@ -2128,14 +2128,6 @@ class ScrollFrameActivityTracker final
 
 static ScrollFrameActivityTracker* gScrollFrameActivityTracker = nullptr;
 
-// There are situations when a scroll frame is destroyed and then re-created
-// for the same content element. In this case we want to increment the scroll
-// generation between the old and new scrollframes. If the new one knew about
-// the old one then it could steal the old generation counter and increment it
-// but it doesn't have that reference so instead we use a static global to
-// ensure the new one gets a fresh value.
-static uint32_t sScrollGenerationCounter = 0;
-
 ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter, bool aIsRoot)
     : mHScrollbarBox(nullptr),
       mVScrollbarBox(nullptr),
@@ -2146,8 +2138,7 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter, bool aIsRoot)
       mReferenceFrameDuringPainting(nullptr),
       mAsyncScroll(nullptr),
       mAsyncSmoothMSDScroll(nullptr),
-      mLastScrollOrigin(ScrollOrigin::Other),
-      mScrollGeneration(++sScrollGenerationCounter),
+      mLastScrollOrigin(ScrollOrigin::None),
       mDestination(0, 0),
       mRestorePos(-1, -1),
       mLastPos(-1, -1),
@@ -2197,8 +2188,7 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter, bool aIsRoot)
       mApzAnimationRequested(false),
       mReclampVVOffsetInReflowFinished(false),
       mVelocityQueue(aOuter->PresContext()) {
-  AppendScrollUpdate(
-      ScrollPositionUpdate::NewScrollframe(mScrollGeneration, nsPoint()));
+  AppendScrollUpdate(ScrollPositionUpdate::NewScrollframe(nsPoint()));
 
   if (LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0) {
     mScrollbarActivity = new ScrollbarActivity(do_QueryFrame(aOuter));
@@ -2881,18 +2871,16 @@ void ScrollFrameHelper::ScrollToImpl(nsPoint aPt, const nsRect& aRange,
     // mApzSmoothScrollDestination clause from this if statement, as that
     // may simplify this a bit and should be fine from the APZ side.
     if (mApzSmoothScrollDestination && aOrigin != ScrollOrigin::Clamp) {
-      mScrollGeneration = ++sScrollGenerationCounter;
       if (aOrigin == ScrollOrigin::Relative) {
-        AppendScrollUpdate(ScrollPositionUpdate::NewRelativeScroll(
-            mScrollGeneration, mApzScrollPos, pt));
+        AppendScrollUpdate(
+            ScrollPositionUpdate::NewRelativeScroll(mApzScrollPos, pt));
         mApzScrollPos = pt;
       } else if (aOrigin != ScrollOrigin::Apz) {
         ScrollOrigin origin =
             (mAllowScrollOriginDowngrade || !isScrollOriginDowngrade)
                 ? aOrigin
                 : mLastScrollOrigin;
-        AppendScrollUpdate(
-            ScrollPositionUpdate::NewScroll(mScrollGeneration, origin, pt));
+        AppendScrollUpdate(ScrollPositionUpdate::NewScroll(origin, pt));
       }
     }
     return;
@@ -2967,17 +2955,15 @@ void ScrollFrameHelper::ScrollToImpl(nsPoint aPt, const nsRect& aRange,
     mLastScrollOrigin = aOrigin;
     mAllowScrollOriginDowngrade = false;
   }
-  mScrollGeneration = ++sScrollGenerationCounter;
 
   if (aOrigin == ScrollOrigin::Relative) {
     MOZ_ASSERT(!isScrollOriginDowngrade);
     MOZ_ASSERT(mLastScrollOrigin == ScrollOrigin::Relative);
-    AppendScrollUpdate(ScrollPositionUpdate::NewRelativeScroll(
-        mScrollGeneration, mApzScrollPos, pt));
+    AppendScrollUpdate(
+        ScrollPositionUpdate::NewRelativeScroll(mApzScrollPos, pt));
     mApzScrollPos = pt;
   } else if (aOrigin != ScrollOrigin::Apz) {
-    AppendScrollUpdate(ScrollPositionUpdate::NewScroll(mScrollGeneration,
-                                                       mLastScrollOrigin, pt));
+    AppendScrollUpdate(ScrollPositionUpdate::NewScroll(mLastScrollOrigin, pt));
   }
 
   if (mLastScrollOrigin == ScrollOrigin::Apz) {
@@ -4468,10 +4454,8 @@ void ScrollFrameHelper::ScrollBy(nsIntPoint aDelta, ScrollUnit aUnit,
         NSCoordSaturatingNonnegativeMultiply(aDelta.x, deltaMultiplier.width),
         NSCoordSaturatingNonnegativeMultiply(aDelta.y, deltaMultiplier.height));
 
-    mScrollGeneration = ++sScrollGenerationCounter;
-
-    AppendScrollUpdate(ScrollPositionUpdate::NewPureRelativeScroll(
-        mScrollGeneration, aOrigin, aMode, delta));
+    AppendScrollUpdate(
+        ScrollPositionUpdate::NewPureRelativeScroll(aOrigin, aMode, delta));
 
     if (!DisplayPortUtils::HasDisplayPort(mOuter->GetContent())) {
       DisplayPortUtils::CalculateAndSetDisplayPortMargins(
@@ -6133,11 +6117,8 @@ bool ScrollFrameHelper::ReflowFinished() {
       //SCROLLRESTORE_LOG("%p: updating initial SPU to pos %s\n", this,
       //                  Stringify(currentScrollPos).c_str());
       mScrollUpdates.Clear();
-      // Scroll generation bump not strictly necessary, but good for
-      // consistency.
-      mScrollGeneration = ++sScrollGenerationCounter;
-      AppendScrollUpdate(ScrollPositionUpdate::NewScrollframe(
-          mScrollGeneration, currentScrollPos));
+      AppendScrollUpdate(
+          ScrollPositionUpdate::NewScrollframe(currentScrollPos));
     }
 
     mFirstReflow = false;
@@ -6916,10 +6897,10 @@ bool ScrollFrameHelper::IsScrollAnimating(
   return mApzAnimationRequested || mAsyncScroll || mAsyncSmoothMSDScroll;
 }
 
-void ScrollFrameHelper::ResetScrollInfoIfNeeded(uint32_t aGeneration,
-                                                bool aApzAnimationInProgress) {
+void ScrollFrameHelper::ResetScrollInfoIfNeeded(
+    const ScrollGeneration& aGeneration, bool aApzAnimationInProgress) {
   if (aGeneration == mScrollGeneration) {
-    mLastScrollOrigin = ScrollOrigin::NotSpecified;
+    mLastScrollOrigin = ScrollOrigin::None;
     mApzAnimationRequested = false;
   }
   // We can reset this regardless of scroll generation, as this is only set
@@ -7527,10 +7508,8 @@ void ScrollFrameHelper::ApzSmoothScrollTo(const nsPoint& aDestination,
   // animation for this scroll.
   MOZ_ASSERT(aOrigin != ScrollOrigin::None);
   mApzSmoothScrollDestination = Some(aDestination);
-  mScrollGeneration = ++sScrollGenerationCounter;
-
-  AppendScrollUpdate(ScrollPositionUpdate::NewSmoothScroll(
-      mScrollGeneration, aOrigin, aDestination));
+  AppendScrollUpdate(
+      ScrollPositionUpdate::NewSmoothScroll(aOrigin, aDestination));
 
   if (!DisplayPortUtils::HasDisplayPort(mOuter->GetContent())) {
     // If this frame doesn't have a displayport then there won't be an
@@ -7598,5 +7577,6 @@ nsTArray<ScrollPositionUpdate> ScrollFrameHelper::GetScrollUpdates() {
 
 void ScrollFrameHelper::AppendScrollUpdate(
     const ScrollPositionUpdate& aUpdate) {
+  mScrollGeneration = aUpdate.GetGeneration();
   mScrollUpdates.AppendElement(aUpdate);
 }

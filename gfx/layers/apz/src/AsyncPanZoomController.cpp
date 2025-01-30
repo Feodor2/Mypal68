@@ -4479,7 +4479,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     // case we'll update our scroll generation when processing the scroll update
     // array below. If there are no scroll updates, take the generation from the
     // incoming metrics. Bug 1662019 will simplify this later.
-    uint32_t oldScrollGeneration = Metrics().GetScrollGeneration();
+    ScrollGeneration oldScrollGeneration = Metrics().GetScrollGeneration();
     mScrollMetadata = aScrollMetadata;
     if (!aScrollMetadata.GetScrollUpdates().IsEmpty()) {
       Metrics().SetScrollGeneration(oldScrollGeneration);
@@ -4597,10 +4597,8 @@ void AsyncPanZoomController::NotifyLayersUpdated(
   for (const auto& scrollUpdate : aScrollMetadata.GetScrollUpdates()) {
     APZC_LOG("%p processing scroll update %s\n", this,
              Stringify(scrollUpdate).c_str());
-    if (scrollUpdate.GetGeneration() <= Metrics().GetScrollGeneration()) {
+    if (!(Metrics().GetScrollGeneration() < scrollUpdate.GetGeneration())) {
       // This is stale, let's ignore it
-      // XXX maybe use a 64-bit value for the scroll generation, or add some
-      // overflow detection heuristic here
       APZC_LOG("%p scrollupdate generation stale, dropping\n", this);
       continue;
     }

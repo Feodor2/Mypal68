@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Web Compat",
   "description": "Urgent post-release fixes for web compatibility.",
-  "version": "10.1.2",
+  "version": "12.0.0",
 
   "applications": {
     "gecko": {
@@ -36,6 +36,22 @@
         "paths": [["experiments"]]
       }
     },
+    "pictureInPictureChild": {
+      "schema": "experiment-apis/pictureInPicture.json",
+      "child": {
+        "scopes": ["addon_child"],
+        "script": "experiment-apis/pictureInPicture.js",
+        "paths": [["pictureInPictureChild"]]
+      }
+    },
+    "pictureInPictureParent": {
+      "schema": "experiment-apis/pictureInPicture.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "script": "experiment-apis/pictureInPicture.js",
+        "paths": [["pictureInPictureParent"]]
+      }
+    },
     "sharedPreferences": {
       "schema": "experiment-apis/sharedPreferences.json",
       "parent": {
@@ -63,10 +79,12 @@
       "lib/module_shim.js",
       "lib/intervention_helpers.js",
       "data/injections.js",
+      "data/picture_in_picture_overrides.js",
       "data/ua_overrides.js",
       "lib/about_compat_broker.js",
       "lib/custom_functions.js",
       "lib/injections.js",
+      "lib/picture_in_picture_overrides.js",
       "lib/ua_overrides.js",
       "run.js"
     ]

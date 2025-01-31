@@ -243,6 +243,22 @@ static BrowsingContextOrigin SimilarOrigin(const Element& aTarget,
                                     : BrowsingContextOrigin::Different;
 }
 
+// NOTE: This returns nullptr if |aDocument| is in a cross process.
+static Document* GetTopLevelDocument(const Document& aDocument) {
+  BrowsingContext* browsingContext = aDocument.GetBrowsingContext();
+  if (!browsingContext) {
+    return nullptr;
+  }
+
+  nsPIDOMWindowOuter* topWindow = browsingContext->Top()->GetDOMWindow();
+  if (!topWindow) {
+    // If we don't have a DOMWindow, We are not in same origin.
+    return nullptr;
+  }
+
+  return topWindow->GetExtantDoc();
+}
+
 // https://w3c.github.io/IntersectionObserver/#compute-the-intersection
 //
 // TODO(emilio): Proof of this being equivalent to the spec welcome, seems
@@ -364,25 +380,12 @@ void DOMIntersectionObserver::Update(Document* aDocument,
     }
   } else {
     MOZ_ASSERT(!mRoot || mRoot->IsDocument());
-    Document* rootDocument = mRoot->AsDocument();
+    Document* rootDocument =
+        mRoot ? mRoot->AsDocument() : GetTopLevelDocument(*aDocument);
     if (rootDocument) {
       if (PresShell* presShell = rootDocument->GetPresShell()) {
         rootFrame = presShell->GetRootScrollFrame();
         if (rootFrame) {
-          nsPresContext* presContext = rootFrame->PresContext();
-          while (!presContext->IsRootContentDocument()) {
-            presContext = presContext->GetParentPresContext();
-            if (!presContext) {
-              break;
-            }
-            nsIFrame* rootScrollFrame =
-                presContext->PresShell()->GetRootScrollFrame();
-            if (rootScrollFrame) {
-              rootFrame = rootScrollFrame;
-            } else {
-              break;
-            }
-          }
           root = rootFrame->GetContent()->AsElement();
           nsIScrollableFrame* scrollFrame = do_QueryFrame(rootFrame);
           rootRect = scrollFrame->GetScrollPortRect();
@@ -498,8 +501,8 @@ void DOMIntersectionObserver::Update(Document* aDocument,
       // entry's isIntersecting value.
       QueueIntersectionObserverEntry(
           target, time,
-          origin == BrowsingContextOrigin::Different ? Some(rootBounds)
-                                                     : Nothing(),
+          origin == BrowsingContextOrigin::Similar ? Some(rootBounds)
+                                                   : Nothing(),
           targetRect, intersectionRect, thresholdIndex > 0, intersectionRatio);
     }
   }

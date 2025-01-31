@@ -964,7 +964,7 @@ class Layer {
     if (mScrollMetadata.Length() != 1 ||
         mScrollMetadata[0] != aScrollMetadata) {
       MOZ_LAYERS_LOG_IF_SHADOWABLE(this,
-                                   ("Layer::Mutated(%p) FrameMetrics", this));
+                                   ("Layer::Mutated(%p) ScrollMetadata", this));
       mScrollMetadata.ReplaceElementsAt(0, mScrollMetadata.Length(),
                                         aScrollMetadata);
       ScrollMetadataChanged();
@@ -993,7 +993,7 @@ class Layer {
     Manager()->ClearPendingScrollInfoUpdate();
     if (mScrollMetadata != aMetadataArray) {
       MOZ_LAYERS_LOG_IF_SHADOWABLE(this,
-                                   ("Layer::Mutated(%p) FrameMetrics", this));
+                                   ("Layer::Mutated(%p) ScrollMetadata", this));
       mScrollMetadata = aMetadataArray;
       ScrollMetadataChanged();
       Mutated();

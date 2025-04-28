@@ -1176,6 +1176,47 @@ const float kBT2020NarrowYCbCrToRGB_RowMajor[16] = {
   }
 }
 
+// Translate from CICP values to the color spaces we support, or return
+// Nothing() if there is no appropriate match to let the caller choose
+// a default or generate an error.
+//
+// See Rec. ITU-T H.273 (12/2016) for details on CICP
+/* static */ Maybe<gfx::YUVColorSpace> gfxUtils::CicpToColorSpace(
+    const CICP::MatrixCoefficients aMatrixCoefficients,
+    const CICP::ColourPrimaries aColourPrimaries, LazyLogModule& aLogger) {
+  switch (aMatrixCoefficients) {
+    case CICP::MatrixCoefficients::MC_BT2020_NCL:
+    case CICP::MatrixCoefficients::MC_BT2020_CL:
+      return Some(gfx::YUVColorSpace::BT2020);
+    case CICP::MatrixCoefficients::MC_BT601:
+      return Some(gfx::YUVColorSpace::BT601);
+    case CICP::MatrixCoefficients::MC_BT709:
+      return Some(gfx::YUVColorSpace::BT709);
+    case CICP::MatrixCoefficients::MC_IDENTITY:
+      return Some(gfx::YUVColorSpace::Identity);
+    case CICP::MatrixCoefficients::MC_CHROMAT_NCL:
+    case CICP::MatrixCoefficients::MC_CHROMAT_CL:
+    case CICP::MatrixCoefficients::MC_UNSPECIFIED:
+      switch (aColourPrimaries) {
+        case CICP::ColourPrimaries::CP_BT601:
+          return Some(gfx::YUVColorSpace::BT601);
+        case CICP::ColourPrimaries::CP_BT709:
+          return Some(gfx::YUVColorSpace::BT709);
+        case CICP::ColourPrimaries::CP_BT2020:
+          return Some(gfx::YUVColorSpace::BT2020);
+        default:
+          MOZ_LOG(aLogger, LogLevel::Debug,
+                  ("Couldn't infer color matrix from primaries: %hhu",
+                   aColourPrimaries));
+          return {};
+      }
+    default:
+      MOZ_LOG(aLogger, LogLevel::Debug,
+              ("Unsupported color matrix value: %hhu", aMatrixCoefficients));
+      return {};
+  }
+}
+
 /* static */
 void gfxUtils::WriteAsPNG(SourceSurface* aSurface, const nsAString& aFile) {
   WriteAsPNG(aSurface, NS_ConvertUTF16toUTF8(aFile).get());

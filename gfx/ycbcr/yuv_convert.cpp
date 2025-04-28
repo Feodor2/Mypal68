@@ -12,6 +12,7 @@
 // YV12 is a full plane of Y and a half height, half width chroma planes
 // YV16 is a full plane of Y and a full height, half width chroma planes
 // YV24 is a full plane of Y and a full height, full width chroma planes
+// Y8   is a full plane of Y and no chroma planes (i.e., monochrome)
 //
 // ARGB pixel format is output, which on little endian is stored as BGRA.
 // The alpha is set to 255, allowing the application to use RGBA or RGB32.
@@ -24,6 +25,7 @@
 // Header for low level row functions.
 #include "yuv_row.h"
 #include "mozilla/SSE.h"
+#include "mozilla/IntegerRange.h"
 
 namespace mozilla {
 
@@ -33,6 +35,8 @@ namespace gfx {
 const int kFractionBits = 16;
 const int kFractionMax = 1 << kFractionBits;
 const int kFractionMask = ((1 << kFractionBits) - 1);
+
+// clang-format off
 
 YUVType TypeFromSize(int ywidth,
                      int yheight,
@@ -45,22 +49,43 @@ YUVType TypeFromSize(int ywidth,
   else if ((ywidth + 1) / 2 == cbcrwidth && yheight == cbcrheight) {
     return YV16;
   }
-  else {
+  else if ((ywidth + 1) / 2 == cbcrwidth && (yheight + 1) / 2 == cbcrheight) {
     return YV12;
+  }
+  else if (cbcrwidth == 0 && cbcrheight == 0) {
+    return Y8;
+  }
+  else {
+    MOZ_CRASH("Can't determine YUV type from size");
   }
 }
 
-libyuv::FourCC FourCCFromYUVType(YUVType aYUVType)
-{
-  if (aYUVType == YV24) {
-    return libyuv::FOURCC_I444;
-  } else if (aYUVType == YV16) {
-    return libyuv::FOURCC_I422;
-  } else if (aYUVType == YV12) {
-    return libyuv::FOURCC_I420;
-  } else {
-    return libyuv::FOURCC_ANY;
+libyuv::FourCC FourCCFromYUVType(YUVType aYUVType) {
+  switch (aYUVType) {
+    case YV24: return libyuv::FOURCC_I444;
+    case YV16: return libyuv::FOURCC_I422;
+    case YV12: return libyuv::FOURCC_I420;
+    case   Y8: return libyuv::FOURCC_I400;
+    default:   return libyuv::FOURCC_ANY;
   }
+}
+
+int GBRPlanarToARGB(const uint8_t* src_y, int y_pitch,
+                     const uint8_t* src_u, int u_pitch,
+                     const uint8_t* src_v, int v_pitch,
+                     uint8_t* rgb_buf, int rgb_pitch,
+                     int pic_width, int pic_height) {
+  // libyuv has no native conversion function for this
+  // fixme: replace with something less awful
+  for (const auto row : IntegerRange(pic_height)) {
+    for (const auto col : IntegerRange(pic_width)) {
+      rgb_buf[rgb_pitch * row + col * 4 + 0] = src_u[u_pitch * row + col];
+      rgb_buf[rgb_pitch * row + col * 4 + 1] = src_y[y_pitch * row + col];
+      rgb_buf[rgb_pitch * row + col * 4 + 2] = src_v[v_pitch * row + col];
+      rgb_buf[rgb_pitch * row + col * 4 + 3] = 255;
+    }
+  }
+  return 0;
 }
 
 // Convert a frame of YUV to 32 bit ARGB.
@@ -68,7 +93,8 @@ void ConvertYCbCrToRGB32(const uint8* y_buf, const uint8* u_buf,
                          const uint8* v_buf, uint8* rgb_buf, int pic_x,
                          int pic_y, int pic_width, int pic_height, int y_pitch,
                          int uv_pitch, int rgb_pitch, YUVType yuv_type,
-                         YUVColorSpace yuv_color_space) {
+                         YUVColorSpace yuv_color_space,
+                         ColorRange color_range) {
   // Deprecated function's conversion is accurate.
   // libyuv converion is a bit inaccurate to get performance. It dynamically
   // calculates RGB from YUV to use simd. In it, signed byte is used for
@@ -79,7 +105,8 @@ void ConvertYCbCrToRGB32(const uint8* y_buf, const uint8* u_buf,
   // See Bug 1256475.
   bool use_deprecated = StaticPrefs::gfx_ycbcr_accurate_conversion() ||
                         (supports_mmx() && supports_sse() && !supports_sse3() &&
-                         yuv_color_space == YUVColorSpace::BT601);
+                         yuv_color_space == YUVColorSpace::BT601 &&
+                         color_range == ColorRange::LIMITED);
   // The deprecated function only support BT601.
   // See Bug 1210357.
   if (yuv_color_space != YUVColorSpace::BT601) {
@@ -92,73 +119,99 @@ void ConvertYCbCrToRGB32(const uint8* y_buf, const uint8* u_buf,
     return;
   }
 
-  decltype(libyuv::U444ToARGB)* fConvertYUVToARGB = nullptr;
+  decltype(libyuv::I420ToARGBMatrix)* fConvertYUVToARGB = nullptr;
+  const uint8* src_y = nullptr;
+  const uint8* src_u = nullptr;
+  const uint8* src_v = nullptr;
+  const libyuv::YuvConstants* yuv_constant = nullptr;
+
+  switch (yuv_color_space) {
+    case YUVColorSpace::BT2020:
+      yuv_constant = color_range == ColorRange::LIMITED
+        ? &libyuv::kYuv2020Constants
+        : &libyuv::kYuvV2020Constants;
+      break;
+    case YUVColorSpace::BT709:
+      yuv_constant = color_range == ColorRange::LIMITED
+        ? &libyuv::kYuvH709Constants
+        : &libyuv::kYuvF709Constants;
+      break;
+    case YUVColorSpace::Identity:
+      MOZ_ASSERT(yuv_type == YV24, "Identity (aka RGB) with chroma subsampling is unsupported");
+      if (yuv_type == YV24) {
+        break;
+      }
+      [[fallthrough]]; // Assuming BT601 for unsupported input is better than crashing
+    default:
+      MOZ_FALLTHROUGH_ASSERT("Unsupported YUVColorSpace");
+    case YUVColorSpace::BT601:
+      yuv_constant = color_range == ColorRange::LIMITED
+        ? &libyuv::kYuvI601Constants
+        : &libyuv::kYuvJPEGConstants;
+      break;
+  }
+
   switch (yuv_type) {
     case YV24: {
-      const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
-      const uint8* src_u = u_buf + uv_pitch * pic_y + pic_x;
-      const uint8* src_v = v_buf + uv_pitch * pic_y + pic_x;
-      switch (yuv_color_space) {
-        case YUVColorSpace::BT2020:
-          fConvertYUVToARGB = libyuv::U444ToARGB;
-          break;
-        case YUVColorSpace::BT709:
-          fConvertYUVToARGB = libyuv::H444ToARGB;
-          break;
-        default:
-          fConvertYUVToARGB = libyuv::I444ToARGB;
-          break;
-      }
-      DebugOnly<int> err =
-          fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
+      src_y = y_buf + y_pitch * pic_y + pic_x;
+      src_u = u_buf + uv_pitch * pic_y + pic_x;
+      src_v = v_buf + uv_pitch * pic_y + pic_x;
+
+      if (yuv_color_space == YUVColorSpace::Identity) {
+        // Special case for RGB image
+        DebugOnly<int> err =
+          GBRPlanarToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
                             rgb_buf, rgb_pitch, pic_width, pic_height);
-      MOZ_ASSERT(!err);
+        MOZ_ASSERT(!err);
+        return;
+      }
+
+      fConvertYUVToARGB = libyuv::I444ToARGBMatrix;
       break;
     }
     case YV16: {
-      const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
-      const uint8* src_u = u_buf + uv_pitch * pic_y + pic_x / 2;
-      const uint8* src_v = v_buf + uv_pitch * pic_y + pic_x / 2;
-      switch (yuv_color_space) {
-        case YUVColorSpace::BT2020:
-          fConvertYUVToARGB = libyuv::U422ToARGB;
-          break;
-        case YUVColorSpace::BT709:
-          fConvertYUVToARGB = libyuv::H422ToARGB;
-          break;
-        default:
-          fConvertYUVToARGB = libyuv::I422ToARGB;
-          break;
-      }
-      DebugOnly<int> err =
-          fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
-                            rgb_buf, rgb_pitch, pic_width, pic_height);
-      MOZ_ASSERT(!err);
+      src_y = y_buf + y_pitch * pic_y + pic_x;
+      src_u = u_buf + uv_pitch * pic_y + pic_x / 2;
+      src_v = v_buf + uv_pitch * pic_y + pic_x / 2;
+
+      fConvertYUVToARGB = libyuv::I422ToARGBMatrix;
       break;
     }
-    default: {
-      MOZ_ASSERT(yuv_type == YV12);
-      const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
-      const uint8* src_u = u_buf + (uv_pitch * pic_y + pic_x) / 2;
-      const uint8* src_v = v_buf + (uv_pitch * pic_y + pic_x) / 2;
-      switch (yuv_color_space) {
-        case YUVColorSpace::BT2020:
-          fConvertYUVToARGB = libyuv::U420ToARGB;
-          break;
-        case YUVColorSpace::BT709:
-          fConvertYUVToARGB = libyuv::H420ToARGB;
-          break;
-        default:
-          fConvertYUVToARGB = libyuv::I420ToARGB;
-          break;
-      }
-      DebugOnly<int> err =
-          fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
-                            rgb_buf, rgb_pitch, pic_width, pic_height);
-      MOZ_ASSERT(!err);
+    case YV12: {
+      src_y = y_buf + y_pitch * pic_y + pic_x;
+      src_u = u_buf + (uv_pitch * pic_y + pic_x) / 2;
+      src_v = v_buf + (uv_pitch * pic_y + pic_x) / 2;
+
+      fConvertYUVToARGB = libyuv::I420ToARGBMatrix;
       break;
     }
+    case Y8: {
+      src_y = y_buf + y_pitch * pic_y + pic_x;
+      MOZ_ASSERT(u_buf == nullptr);
+      MOZ_ASSERT(v_buf == nullptr);
+
+      if (color_range == ColorRange::LIMITED) {
+        DebugOnly<int> err =
+            libyuv::I400ToARGB(src_y, y_pitch, rgb_buf, rgb_pitch, pic_width,
+                              pic_height);
+        MOZ_ASSERT(!err);
+      } else {
+        DebugOnly<int> err =
+            libyuv::J400ToARGB(src_y, y_pitch, rgb_buf, rgb_pitch, pic_width,
+                              pic_height);
+        MOZ_ASSERT(!err);
+      }
+
+      return;
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unsupported YUV type");
   }
+
+  DebugOnly<int> err =
+    fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
+                      rgb_buf, rgb_pitch, yuv_constant, pic_width, pic_height);
+  MOZ_ASSERT(!err);
 }
 
 // Convert a frame of YUV to 32 bit ARGB.
@@ -520,16 +573,16 @@ void ScaleYCbCrToRGB32_deprecated(const uint8* y_buf,
   if (has_mmx)
     EMMS();
 }
-void ConvertYCbCrAToARGB32(const uint8* y_buf,
-                           const uint8* u_buf,
-                           const uint8* v_buf,
-                           const uint8* a_buf,
-                           uint8* argb_buf,
-                           int pic_width,
-                           int pic_height,
-                           int ya_pitch,
-                           int uv_pitch,
-                           int argb_pitch) {
+void ConvertI420AlphaToARGB32(const uint8* y_buf,
+                              const uint8* u_buf,
+                              const uint8* v_buf,
+                              const uint8* a_buf,
+                              uint8* argb_buf,
+                              int pic_width,
+                              int pic_height,
+                              int ya_pitch,
+                              int uv_pitch,
+                              int argb_pitch) {
 
   // The downstream graphics stack expects an attenuated input, hence why the
   // attenuation parameter is set.

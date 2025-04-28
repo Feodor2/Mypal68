@@ -1,11 +1,12 @@
 [package]
 name = "mp4parse"
-version = "0.11.4"
+version = "0.11.5"
 authors = [
   "Ralph Giles <giles@mozilla.com>",
   "Matthew Gregan <kinetik@flim.org>",
   "Alfredo Yang <ayang@mozilla.com>",
   "Jon Bauman <jbauman@mozilla.com>",
+  "Bryce Seager van Dyk <bvandyk@mozilla.com>",
 ]
 
 description = "Parser for ISO base media file format (mp4)"
@@ -18,6 +19,7 @@ repository = "https://github.com/mozilla/mp4parse-rust"
 # Avoid complaints about trying to package test files.
 exclude = [
   "*.mp4",
+  "av1-avif/*"
 ]
 
 [badges]
@@ -26,11 +28,28 @@ travis-ci = { repository = "https://github.com/mozilla/mp4parse-rust" }
 [dependencies]
 byteorder = "1.2.1"
 bitreader = { version = "0.3.2" }
-num-traits = "0.2.0"
-mp4parse_fallible = { version = "0.0.3", optional = true }
+env_logger = "0.6.2"
+fallible_collections = { version = "0.4", features = ["std_io"] }
+num-traits = "0.2.10"
 log = "0.4"
 static_assertions = "1.1.0"
 
 [dev-dependencies]
 test-assembler = "0.1.2"
-env_logger = "0.7.1"
+walkdir = "2.3.1"
+criterion = "0.3"
+
+[features]
+missing-pixi-permitted = []
+3gpp = []
+meta-xml = []
+unstable-api = []
+mp4v = []
+
+[[bench]]
+name = "avif_benchmark"
+harness = false
+
+# See https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+[lib]
+bench = false

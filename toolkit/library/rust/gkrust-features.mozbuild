@@ -23,8 +23,8 @@ if CONFIG['MOZ_RUST_SIMD']:
 if ((CONFIG['OS_ARCH'] == 'Linux' and CONFIG['OS_TARGET'] != 'Android') or CONFIG['OS_ARCH'] == 'Darwin' or (CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CPU_ARCH'] != 'aarch64')) and CONFIG['MOZ_CUBEB_REMOTING']:
     gkrust_features += ['cubeb-remoting']
 
-if CONFIG['MOZ_MEMORY']:
-    gkrust_features += ['moz_memory']
+#if CONFIG['MOZ_MEMORY']:
+#    gkrust_features += ['moz_memory']
 
 if CONFIG['MOZ_PLACES']:
     gkrust_features += ['moz_places']

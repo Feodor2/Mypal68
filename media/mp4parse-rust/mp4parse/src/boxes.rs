@@ -3,11 +3,21 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 use std::fmt;
 
+// To ensure we don't use stdlib allocating types by accident
+#[allow(dead_code)]
+struct Vec;
+#[allow(dead_code)]
+struct Box;
+#[allow(dead_code)]
+struct HashMap;
+#[allow(dead_code)]
+struct String;
+
 macro_rules! box_database {
-    ($($boxenum:ident $boxtype:expr),*,) => {
+    ($($(#[$attr:meta])* $boxenum:ident $boxtype:expr),*,) => {
         #[derive(Clone, Copy, PartialEq)]
         pub enum BoxType {
-            $($boxenum),*,
+            $($(#[$attr])* $boxenum),*,
             UnknownBox(u32),
         }
 
@@ -15,51 +25,42 @@ macro_rules! box_database {
             fn from(t: u32) -> BoxType {
                 use self::BoxType::*;
                 match t {
-                    $($boxtype => $boxenum),*,
+                    $($(#[$attr])* $boxtype => $boxenum),*,
                     _ => UnknownBox(t),
                 }
             }
         }
 
-        impl Into<u32> for BoxType {
-            fn into(self) -> u32 {
+        impl From<BoxType> for u32 {
+            fn from(b: BoxType) -> u32 {
                 use self::BoxType::*;
-                match self {
-                    $($boxenum => $boxtype),*,
+                match b {
+                    $($(#[$attr])* $boxenum => $boxtype),*,
                     UnknownBox(t) => t,
                 }
             }
         }
 
-        impl fmt::Debug for BoxType {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let fourcc: FourCC = From::from(self.clone());
-                write!(f, "{}", fourcc)
-            }
-        }
     }
 }
 
-#[derive(Default, PartialEq, Clone)]
+impl fmt::Debug for BoxType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let fourcc: FourCC = From::from(*self);
+        fourcc.fmt(f)
+    }
+}
+
+#[derive(Default, Eq, Hash, PartialEq, Clone)]
 pub struct FourCC {
-    pub value: String,
+    pub value: [u8; 4],
 }
 
 impl From<u32> for FourCC {
     fn from(number: u32) -> FourCC {
-        let mut box_chars = Vec::new();
-        for x in 0..4 {
-            let c = (number >> (x * 8) & 0x0000_00FF) as u8;
-            box_chars.push(c);
+        FourCC {
+            value: number.to_be_bytes(),
         }
-        box_chars.reverse();
-
-        let box_string = match String::from_utf8(box_chars) {
-            Ok(t) => t,
-            _ => String::from("null"), // error to retrieve fourcc
-        };
-
-        FourCC { value: box_string }
     }
 }
 
@@ -70,23 +71,30 @@ impl From<BoxType> for FourCC {
     }
 }
 
-impl<'a> From<&'a str> for FourCC {
-    fn from(v: &'a str) -> FourCC {
-        FourCC {
-            value: v.to_owned(),
-        }
+impl From<[u8; 4]> for FourCC {
+    fn from(v: [u8; 4]) -> FourCC {
+        FourCC { value: v }
     }
 }
 
 impl fmt::Debug for FourCC {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.value)
+        match std::str::from_utf8(&self.value) {
+            Ok(s) => f.write_str(s),
+            Err(_) => self.value.fmt(f),
+        }
     }
 }
 
 impl fmt::Display for FourCC {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.value)
+        f.write_str(std::str::from_utf8(&self.value).unwrap_or("null"))
+    }
+}
+
+impl PartialEq<&[u8; 4]> for FourCC {
+    fn eq(&self, other: &&[u8; 4]) -> bool {
+        self.value.eq(*other)
     }
 }
 
@@ -107,6 +115,20 @@ box_database!(
     MediaHeaderBox                    0x6d64_6864, // "mdhd"
     HandlerBox                        0x6864_6c72, // "hdlr"
     MediaInformationBox               0x6d69_6e66, // "minf"
+    ItemReferenceBox                  0x6972_6566, // "iref"
+    ItemPropertiesBox                 0x6970_7270, // "iprp"
+    ItemPropertyContainerBox          0x6970_636f, // "ipco"
+    ItemPropertyAssociationBox        0x6970_6d61, // "ipma"
+    ColourInformationBox              0x636f_6c72, // "colr"
+    ImageSpatialExtentsProperty       0x6973_7065, // "ispe"
+    PixelInformationBox               0x7069_7869, // "pixi"
+    AuxiliaryTypeProperty             0x6175_7843, // "auxC"
+    CleanApertureBox                  0x636c_6170, // "clap"
+    ImageRotation                     0x6972_6f74, // "irot"
+    ImageMirror                       0x696d_6972, // "imir"
+    OperatingPointSelectorProperty    0x6131_6f70, // "a1op"
+    AV1LayeredImageIndexingProperty   0x6131_6c78, // "a1lx"
+    LayerSelectorProperty             0x6c73_656c, // "lsel"
     SampleTableBox                    0x7374_626c, // "stbl"
     SampleDescriptionBox              0x7374_7364, // "stsd"
     TimeToSampleBox                   0x7374_7473, // "stts"
@@ -118,8 +140,16 @@ box_database!(
     AVCSampleEntry                    0x6176_6331, // "avc1"
     AVC3SampleEntry                   0x6176_6333, // "avc3" - Need to check official name in spec.
     AVCConfigurationBox               0x6176_6343, // "avcC"
+    H263SampleEntry                   0x7332_3633, // "s263"
+    H263SpecificBox                   0x6432_3633, // "d263"
     MP4AudioSampleEntry               0x6d70_3461, // "mp4a"
     MP4VideoSampleEntry               0x6d70_3476, // "mp4v"
+    #[cfg(feature = "3gpp")]
+    AMRNBSampleEntry                  0x7361_6d72, // "samr" - AMR narrow-band
+    #[cfg(feature = "3gpp")]
+    AMRWBSampleEntry                  0x7361_7762, // "sawb" - AMR wide-band
+    #[cfg(feature = "3gpp")]
+    AMRSpecificBox                    0x6461_6d72, // "damr"
     ESDBox                            0x6573_6473, // "esds"
     VP8SampleEntry                    0x7670_3038, // "vp08"
     VP9SampleEntry                    0x7670_3039, // "vp09"
@@ -143,8 +173,8 @@ box_database!(
     SchemeTypeBox                     0x7363_686d, // "schm"
     MP3AudioSampleEntry               0x2e6d_7033, // ".mp3" - from F4V.
     CompositionOffsetBox              0x6374_7473, // "ctts"
-    LPCMAudioSampleEntry              0x6C70_636D, // "lpcm" - quicktime atom
-    ALACSpecificBox                   0x616C_6163, // "alac" - Also used by ALACSampleEntry
+    LPCMAudioSampleEntry              0x6c70_636d, // "lpcm" - quicktime atom
+    ALACSpecificBox                   0x616c_6163, // "alac" - Also used by ALACSampleEntry
     UuidBox                           0x7575_6964, // "uuid"
     MetadataBox                       0x6d65_7461, // "meta"
     MetadataHeaderBox                 0x6d68_6472, // "mhdr"
@@ -152,6 +182,10 @@ box_database!(
     MetadataItemListEntry             0x696c_7374, // "ilst"
     MetadataItemDataEntry             0x6461_7461, // "data"
     MetadataItemNameBox               0x6e61_6d65, // "name"
+    #[cfg(feature = "meta-xml")]
+    MetadataXMLBox                    0x786d_6c20, // "xml "
+    #[cfg(feature = "meta-xml")]
+    MetadataBXMLBox                   0x6278_6d6c, // "bxml"
     UserdataBox                       0x7564_7461, // "udta"
     AlbumEntry                        0xa961_6c62, // "©alb"
     ArtistEntry                       0xa941_5254, // "©ART"

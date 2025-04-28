@@ -178,6 +178,11 @@ class gfxUtils {
   static const float* YuvToRgbMatrix4x4ColumnMajor(
       mozilla::gfx::YUVColorSpace aYUVColorSpace);
 
+  static mozilla::Maybe<mozilla::gfx::YUVColorSpace> CicpToColorSpace(
+      const mozilla::gfx::CICP::MatrixCoefficients,
+      const mozilla::gfx::CICP::ColourPrimaries,
+      mozilla::LazyLogModule& aLogger);
+
   /**
    * Creates a copy of aSurface, but having the SurfaceFormat aFormat.
    *

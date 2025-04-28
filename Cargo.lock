@@ -7,6 +7,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e522997b529f05601e05166c07ed17789691f562762c7f3b987263d2dedee5c"
 
 [[package]]
+name = "ahash"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "739f4a8db6605981345c5654f3a85b056ce52f37a39d34da03f25bf2151ea16e"
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -947,6 +953,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible_collections"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ad9169582543d2cfe9961be1e9eaf4fc42f9aa3483f7c485717b8dde36466ea"
+dependencies = [
+ "hashbrown",
+]
+
+[[package]]
 name = "filetime_win"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1213,6 +1228,9 @@ name = "hashbrown"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+dependencies = [
+ "ahash",
+]
 
 [[package]]
 name = "hashglobe"
@@ -1708,12 +1726,13 @@ dependencies = [
 
 [[package]]
 name = "mp4parse"
-version = "0.11.4"
+version = "0.11.5"
 dependencies = [
  "bitreader",
  "byteorder",
+ "env_logger",
+ "fallible_collections",
  "log",
- "mp4parse_fallible",
  "num-traits",
  "static_assertions",
 ]
@@ -1724,19 +1743,14 @@ version = "0.1.0"
 
 [[package]]
 name = "mp4parse_capi"
-version = "0.11.2"
+version = "0.11.5"
 dependencies = [
  "byteorder",
+ "fallible_collections",
  "log",
  "mp4parse",
  "num-traits",
 ]
-
-[[package]]
-name = "mp4parse_fallible"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704f773471ac3e7110427b6bdf93184932b19319c9b7717688da5424e519b10a"
 
 [[package]]
 name = "murmurhash3"

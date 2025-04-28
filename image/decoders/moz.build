@@ -29,6 +29,11 @@ UNIFIED_SOURCES += [
     'nsWebPDecoder.cpp',
 ]
 
+if CONFIG["MOZ_AV1"]:
+    UNIFIED_SOURCES += [
+        "nsAVIFDecoder.cpp",
+    ]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
@@ -36,6 +41,8 @@ LOCAL_INCLUDES += [
     '/gfx/2d',
     # Decoders need ImageLib headers.
     '/image',
+    # for libyuv::ARGBAttenuate and ::ARGBUnattenuate
+    "/media/libyuv/libyuv/include",
 ]
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']

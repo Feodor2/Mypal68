@@ -1,4 +1,5 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef GFX_CHROMIUMTYPES_H
@@ -7,15 +8,6 @@
 #include <stdint.h>
 
 #include "libyuv/basic_types.h"
-
-typedef uint64_t uint64;
-typedef int64_t int64;
-typedef uint32_t uint32;
-typedef int32_t int32;
-typedef uint16_t uint16;
-typedef int16_t int16;
-typedef uint8_t uint8;
-typedef int8_t int8;
 
 // From Chromium build_config.h:
 // Processor architecture detection.  For more info on what's defined, see:

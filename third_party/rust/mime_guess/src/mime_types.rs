@@ -1343,6 +1343,7 @@ pub static MIME_TYPES: &[(&str, &[&str])] = &[
     ("webm", &["video/webm"]),
     ("webmanifest", &["application/manifest+json"]),
     ("webp", &["image/webp"]),
+    ("avif", &["image/avif"]),
     ("webtest", &["application/xml"]),
     ("wg", &["application/vnd.pmi.widget"]),
     ("wgt", &["application/widget"]),

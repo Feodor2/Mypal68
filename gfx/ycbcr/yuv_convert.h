@@ -2,11 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// clang-format off
+
 #ifndef MEDIA_BASE_YUV_CONVERT_H_
 #define MEDIA_BASE_YUV_CONVERT_H_
 
 #include "chromium_types.h"
 #include "mozilla/gfx/Types.h"
+#define int8 int8_t
+#define uint8 uint8_t
+#define int16 int16_t
+#define uint16 uint16_t
+#define int32 int32_t
+#define uint32 uint32_t
+#define int64 int64_t
 
 namespace mozilla {
 
@@ -17,7 +26,8 @@ namespace gfx {
 enum YUVType {
   YV12 = 0,           // YV12 is half width and half height chroma channels.
   YV16 = 1,           // YV16 is half width and full height chroma channels.
-  YV24 = 2            // YV24 is full width and full height chroma channels.
+  YV24 = 2,           // YV24 is full width and full height chroma channels.
+  Y8 = 3              // Y8 is monochrome: no chroma channels.
 };
 
 // Mirror means flip the image horizontally, as in looking in a mirror.
@@ -57,7 +67,8 @@ void ConvertYCbCrToRGB32(const uint8* yplane,
                          int uvstride,
                          int rgbstride,
                          YUVType yuv_type,
-                         YUVColorSpace yuv_color_space);
+                         YUVColorSpace yuv_color_space,
+                         ColorRange color_range);
 
 void ConvertYCbCrToRGB32_deprecated(const uint8* yplane,
                                     const uint8* uplane,
@@ -104,16 +115,16 @@ void ScaleYCbCrToRGB32_deprecated(const uint8* yplane,
                                   Rotate view_rotate,
                                   ScaleFilter filter);
 
-void ConvertYCbCrAToARGB32(const uint8* yplane,
-                           const uint8* uplane,
-                           const uint8* vplane,
-                           const uint8* aplane,
-                           uint8* argbframe,
-                           int pic_width,
-                           int pic_height,
-                           int yastride,
-                           int uvstride,
-                           int argbstride);
+void ConvertI420AlphaToARGB32(const uint8* yplane,
+                              const uint8* uplane,
+                              const uint8* vplane,
+                              const uint8* aplane,
+                              uint8* argbframe,
+                              int pic_width,
+                              int pic_height,
+                              int yastride,
+                              int uvstride,
+                              int argbstride);
 
 } // namespace gfx
 } // namespace mozilla

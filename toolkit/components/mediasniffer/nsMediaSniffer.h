@@ -32,6 +32,8 @@ struct nsMediaSnifferEntry {
   const char* mContentType;
 };
 
+bool MatchesMP4(const uint8_t* aData, const uint32_t aLength, nsACString& aSniffedType);
+
 class nsMediaSniffer final : public nsIContentSniffer {
  public:
   NS_DECL_ISUPPORTS

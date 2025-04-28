@@ -4026,6 +4026,32 @@
   value: true
   mirror: always
 
+# Whether we attempt to decode AVIF images or not.
+- name: image.avif.enabled
+  type: RelaxedAtomicBool
+#if defined(MOZ_AV1)
+  value: true
+#else
+  value: false
+#endif
+  mirror: always
+
+# How strict we are in accepting/rejecting AVIF inputs according to whether they
+# conform to the specification
+# 0 = Permissive: accept whatever we can simply, unambiguously interpret
+# 1 = Normal: reject violations of "shall" specification directives
+# 2 = Strict: reject violations of "should" specification directives
+- name: image.avif.compliance_strictness
+  type: RelaxedAtomicInt32
+  value: 1
+  mirror: always
+
+# Whether we apply container-level transforms like mirroring and rotation
+- name: image.avif.apply_transforms
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "intl."
 #---------------------------------------------------------------------------

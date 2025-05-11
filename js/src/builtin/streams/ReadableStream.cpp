@@ -529,6 +529,7 @@ static const JSFunctionSpec ReadableStream_methods[] = {
     JS_FN("getReader", ReadableStream_getReader, 0, JSPROP_ENUMERATE),
     // pipeTo is only conditionally supported right now, so it must be manually
     // added below if desired.
+    JS_FN("pipeTo", ReadableStream_pipeTo, 0, JSPROP_ENUMERATE),
     JS_FN("tee", ReadableStream_tee, 0, JSPROP_ENUMERATE), JS_FS_END};
 
 static const JSPropertySpec ReadableStream_properties[] = {

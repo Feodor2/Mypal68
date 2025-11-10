@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/"?>
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<link rel="localization" href="toolkit/about/aboutConfig.ftl"/>
+<link rel="localization" href="browser/newtab/newtab.ftl"/>
+<!--
+\browser\localization\ru\browser\newtab\newtab.ftl
+<link rel="localization" href="browser/newtab/newtab.ftl"/>
+newtab-topsites-save-button=Сохранить
+newtab-topsites-cancel-button=Отмена
+
+Mypal\omni.ja > \chrome\toolkit\content\global\config.xhtml
+\browser\localization\ru\browser\aboutConfig.ftl
+<link rel="localization" href="toolkit/about/aboutConfig.ftl"/>
+about-config-pref-save=Сохранить
+about-config-pref-edit=Изменить
+
+Mypal\browser\omni.ja > \chrome\browser\content\browser\aboutlogins\aboutLogins.html
+Mypal\browser\omni.ja > \localization\en-US\browser\aboutLogins.ftl
+<link rel="localization" href="preview/aboutLogins.ftl">
+login-item-save-new-button = Save
+login-item-cancel-button = Cancel
+
+\chrome\en-US\locale\en-US\devtools\client\responsive.properties
+chrome://devtools/locale/responsive.properties
+responsive.deviceAdderSave=Save
+responsive.deviceAdderCancel=Cancel
+-->
+<style>
+input {
+  margin-left: 0;
+}
+input[type="text"], textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+textarea {
+  resize: none;
+}
+</style>
+<!--
+chrome://global/content/config.js
+Mypal\omni.ja > chrome\toolkit\content\global\config.js
+-->
+<script src="NewPref.js"/>
+</head>
+<body>
+<div style="display:none;">
+ <label for="name" id="nameLabel" data-l10n-id="config-new-prompt"/><br/>
+ <input id="name" type="text"/>
+</div>
+<div>
+  <label for="number" id="valueLabel"/><br/>
+  <input id="number" type="number" style="display:none;"/>
+  <textarea id="text" style="display:none;"/>
+  <select id="bool" size="3" style="display:none;">
+    <option value="false">false</option>
+    <option value="true">true</option>
+  </select>
+</div>
+<div style="text-align:center; margin-top:8px;">
+  <button id="save" type="button" data-l10n-id="newtab-topsites-save-button"/>
+  <button id="cancel" type="button" data-l10n-id="newtab-topsites-cancel-button"/>
+</div>
+</body>
+</html>

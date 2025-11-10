@@ -710,38 +710,13 @@ function ResetSelected() {
 }
 
 async function NewPref(type) {
-  recordTelemetryOnce("CreateNew");
-  var result = { value: "" };
-  var dummy = { value: 0 };
-
-  let [newTitle, newPrompt] = await document.l10n.formatValues([
-    { id: "config-new-title", args: { type: gTypeStrs[type] } },
-    { id: "config-new-prompt" },
-  ]);
-
-  if (
-    Services.prompt.prompt(window, newTitle, newPrompt, result, null, dummy)
-  ) {
-    result.value = result.value.trim();
-    if (!result.value) {
-      return;
-    }
-
-    var pref;
-    if (result.value in gPrefHash) {
-      pref = gPrefHash[result.value];
-    } else {
-      pref = {
-        prefCol: result.value,
-        lockCol: PREF_IS_DEFAULT_VALUE,
-        typeCol: type,
-        valueCol: "",
-      };
-    }
-    if (ModifyPref(pref)) {
-      setTimeout(gotoPref, 0, result.value);
-    }
-  }
+  var pref = { prefCol: ""
+             , valueCol: ""
+             , typeCol: type
+             , lockCol: PREF_IS_DEFAULT_VALUE
+             };
+  if (ModifyPref(pref) && pref.prefCol)
+    setTimeout(gotoPref, 0, pref.prefCol);
 }
 
 function gotoPref(pref) {
@@ -757,58 +732,9 @@ function gotoPref(pref) {
 }
 
 async function ModifyPref(entry) {
-  if (entry.lockCol == PREF_IS_LOCKED) {
-    return false;
-  }
-
-  let [title] = await document.l10n.formatValues([
-    { id: "config-modify-title", args: { type: gTypeStrs[entry.typeCol] } },
-  ]);
-
-  if (entry.typeCol == nsIPrefBranch.PREF_BOOL) {
-    var check = { value: entry.valueCol == "false" };
-    if (
-      !entry.valueCol &&
-      !Services.prompt.select(
-        window,
-        title,
-        entry.prefCol,
-        [false, true],
-        check
-      )
-    ) {
-      return false;
-    }
-    gPrefBranch.setBoolPref(entry.prefCol, check.value);
-  } else {
-    var result = { value: entry.valueCol };
-    var dummy = { value: 0 };
-    if (
-      !Services.prompt.prompt(window, title, entry.prefCol, result, null, dummy)
-    ) {
-      return false;
-    }
-    if (entry.typeCol == nsIPrefBranch.PREF_INT) {
-      // | 0 converts to integer or 0; - 0 to float or NaN.
-      // Thus, this check should catch all cases.
-      var val = result.value | 0;
-      if (val != result.value - 0) {
-        const [err_title, err_text] = await document.l10n.formatValues([
-          { id: "config-nan-title" },
-          { id: "config-nan-text" },
-        ]);
-
-        Services.prompt.alert(window, err_title, err_text);
-        return false;
-      }
-      gPrefBranch.setIntPref(entry.prefCol, val);
-    } else {
-      gPrefBranch.setStringPref(entry.prefCol, result.value);
-    }
-  }
-
-  Services.prefs.savePrefFile(null);
-  return true;
+  return entry.lockCol != PREF_IS_LOCKED
+         && openDialog("chrome://global/content/NewPref.xhtml", "PrefEdit", "modal,centerscreen,resizable,width=300", entry)
+         && entry.prefCol;
 }
 
 function recordTelemetryOnce(categoryLabel) {

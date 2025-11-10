@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/"?>
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<link rel="localization" href="toolkit/about/aboutConfig.ftl"/>
+<link rel="localization" href="browser/newtab/newtab.ftl"/>
+<style>
+input {
+  margin-left: 0;
+}
+input[type="text"], textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+textarea {
+  resize: none;
+}
+</style>
+<script src="NewPref.js"/>
+</head>
+<body>
+<div style="display:none;">
+ <label for="name" id="nameLabel" data-l10n-id="config-new-prompt"/><br/>
+ <input id="name" type="text"/>
+</div>
+<div>
+  <label for="number" id="valueLabel"/><br/>
+  <input id="number" type="number" style="display:none;"/>
+  <textarea id="text" style="display:none;"/>
+  <select id="bool" size="3" style="display:none;">
+    <option value="false">false</option>
+    <option value="true">true</option>
+  </select>
+</div>
+<div style="text-align:center; margin-top:8px;">
+  <button id="save" type="button" data-l10n-id="newtab-topsites-save-button"/>
+  <button id="cancel" type="button" data-l10n-id="newtab-topsites-cancel-button"/>
+</div>
+</body>
+</html>

@@ -5,12 +5,15 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var params = window.arguments[0]
   , win = window.opener
   , prefs = Services.prefs
-  , nameTB, valueElem
+  , nameTB, valueElem, success = false;
   ;
 
 async function init() {
   document.getElementById('save').addEventListener("click", onSave);
   document.getElementById('cancel').addEventListener("click", () => window.close());
+
+  nameTB = document.getElementById("name");
+  nameTB.value = params.prefCol;
 
 /* params:
 .prefCol  - имя параметра
@@ -35,9 +38,6 @@ async function init() {
             "config-modify-title", { type: win.gTypeStrs[params.typeCol] }
           );
 
-  nameTB = document.getElementById("name");
-  nameTB.value = params.prefCol;
-
   if (params.prefCol) { // изменение существующего параметра
     document.title = params.prefCol;
     valueElem.value = params.valueCol;
@@ -47,7 +47,7 @@ async function init() {
       await document.l10n.formatValue(
               "config-new-title", { type: win.gTypeStrs[params.typeCol] }
             );
-    document.body.firstElementChild.style.display = "";
+    nameTB.parentElement.style.display = "";
     nameTB.focus();
   }
 
@@ -104,8 +104,8 @@ function onSave() {
       if (tailPos >=0) {
         nameTB.value = name.substring(0, tailPos).trim();
         valueElem.value = name.substring(tailPos + 1).trim();
+        return;
       }
-      return;
     }
 
     if (params.typeCol == prefs.PREF_INT) {
@@ -132,6 +132,7 @@ function onSave() {
   }
   prefs.savePrefFile(null);
   params.prefCol = name;
+  success = true;
   window.close();
 }
 

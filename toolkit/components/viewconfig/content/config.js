@@ -732,9 +732,18 @@ function gotoPref(pref) {
 }
 
 async function ModifyPref(entry) {
-  return entry.lockCol != PREF_IS_LOCKED
-         && openDialog("chrome://global/content/NewPref.xhtml", "PrefEdit", "modal,centerscreen,resizable,width=300", entry)
-         && entry.prefCol;
+  if (entry.lockCol == PREF_IS_LOCKED)
+    return false;
+
+  if (entry.prefCol && entry.typeCol == nsIPrefBranch.PREF_BOOL) {
+    switch (entry.valueCol) {
+      case "false":
+      case "true":
+        gPrefBranch.setBoolPref(entry.prefCol, entry.valueCol == "false");
+        return true;
+    }
+  }
+  return window.openDialog("chrome://global/content/NewPref.xhtml", "PrefEdit", "modal,centerscreen,resizable,width=300", entry).success;
 }
 
 function recordTelemetryOnce(categoryLabel) {

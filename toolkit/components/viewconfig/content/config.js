@@ -743,7 +743,7 @@ async function ModifyPref(entry) {
         return true;
     }
   }
-  return window.openDialog("chrome://global/content/NewPref.xhtml", "PrefEdit", "modal,centerscreen,resizable,width=300", entry).success;
+  return window.openDialog("chrome://global/content/PrefEdit.xhtml", "PrefEdit", "modal,centerscreen,resizable,width=300", entry).success;
 }
 
 function recordTelemetryOnce(categoryLabel) {

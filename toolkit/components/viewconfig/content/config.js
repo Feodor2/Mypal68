@@ -715,7 +715,7 @@ async function NewPref(type) {
              , typeCol: type
              , lockCol: PREF_IS_DEFAULT_VALUE
              };
-  if (ModifyPref(pref) && pref.prefCol)
+  if (ModifyPref(pref))
     setTimeout(gotoPref, 0, pref.prefCol);
 }
 

@@ -5,3 +5,5 @@
 toolkit.jar:
    content/global/config.xhtml            (content/config.xhtml)
    content/global/config.js               (content/config.js)
+   content/global/PrefEdit.xhtml          (content/PrefEdit.xhtml)
+   content/global/PrefEdit.js             (content/PrefEdit.js)

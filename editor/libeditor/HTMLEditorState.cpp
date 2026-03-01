@@ -36,6 +36,9 @@
 
 namespace mozilla {
 
+using EditorType = EditorUtils::EditorType;
+using WalkTreeOption = HTMLEditUtils::WalkTreeOption;
+
 /*****************************************************************************
  * ListElementSelectionState
  ****************************************************************************/
@@ -211,7 +214,7 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
   OwningNonNull<dom::Element> bodyOrDocumentElement = *aHTMLEditor.GetRoot();
   EditorRawDOMPoint atBodyOrDocumentElement(bodyOrDocumentElement);
 
-  const nsRange* firstRange = aHTMLEditor.SelectionRefPtr()->GetRangeAt(0);
+  const nsRange* firstRange = aHTMLEditor.SelectionRef().GetRangeAt(0);
   mFoundSelectionRanges = !!firstRange;
   if (!mFoundSelectionRanges) {
     NS_WARNING("There was no selection range");
@@ -227,7 +230,7 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
 
   nsIContent* editTargetContent = nullptr;
   // If selection is collapsed or in a text node, take the container.
-  if (aHTMLEditor.SelectionRefPtr()->IsCollapsed() ||
+  if (aHTMLEditor.SelectionRef().IsCollapsed() ||
       atStartOfSelection.IsInTextNode()) {
     editTargetContent = atStartOfSelection.GetContainerAsContent();
     if (NS_WARN_IF(!editTargetContent)) {
@@ -243,7 +246,9 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
   else if (atStartOfSelection.IsContainerHTMLElement(nsGkAtoms::html) &&
            atBodyOrDocumentElement.IsSet() &&
            atStartOfSelection.Offset() == atBodyOrDocumentElement.Offset()) {
-    editTargetContent = aHTMLEditor.GetNextEditableNode(atStartOfSelection);
+    editTargetContent = HTMLEditUtils::GetNextContent(
+        atStartOfSelection, {WalkTreeOption::IgnoreNonEditableNode},
+        aHTMLEditor.GetActiveEditingHost());
     if (NS_WARN_IF(!editTargetContent)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
@@ -279,22 +284,23 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
     editTargetContent = arrayOfContents[0];
   }
 
-  RefPtr<dom::Element> blockElementAtEditTarget =
-      HTMLEditUtils::GetInclusiveAncestorBlockElement(*editTargetContent);
-  if (NS_WARN_IF(!blockElementAtEditTarget)) {
+  const RefPtr<dom::Element> maybeNonEditableBlockElement =
+      HTMLEditUtils::GetInclusiveAncestorElement(
+          *editTargetContent, HTMLEditUtils::ClosestBlockElement);
+  if (NS_WARN_IF(!maybeNonEditableBlockElement)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
 
   if (aHTMLEditor.IsCSSEnabled() &&
-      CSSEditUtils::IsCSSEditableProperty(blockElementAtEditTarget, nullptr,
+      CSSEditUtils::IsCSSEditableProperty(maybeNonEditableBlockElement, nullptr,
                                           nsGkAtoms::align)) {
     // We are in CSS mode and we know how to align this element with CSS
     nsAutoString value;
     // Let's get the value(s) of text-align or margin-left/margin-right
     DebugOnly<nsresult> rvIgnored =
         CSSEditUtils::GetComputedCSSEquivalentToHTMLInlineStyleSet(
-            *blockElementAtEditTarget, nullptr, nsGkAtoms::align, value);
+            *maybeNonEditableBlockElement, nullptr, nsGkAtoms::align, value);
     if (NS_WARN_IF(aHTMLEditor.Destroyed())) {
       aRv.Throw(NS_ERROR_EDITOR_DESTROYED);
       return;
@@ -453,7 +459,7 @@ ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
   // and put that on the list
   if (arrayOfContents.IsEmpty()) {
     EditorRawDOMPoint atCaret(
-        EditorBase::GetStartPoint(*aHTMLEditor.SelectionRefPtr()));
+        EditorBase::GetStartPoint(aHTMLEditor.SelectionRef()));
     if (NS_WARN_IF(!atCaret.IsSet())) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;

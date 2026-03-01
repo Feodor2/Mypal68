@@ -71,6 +71,9 @@ class ChangeStyleTransaction final : public EditTransactionBase {
   static bool ValueIncludes(const nsACString& aValueList,
                             const nsACString& aValue);
 
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const ChangeStyleTransaction& aTransaction);
+
  private:
   virtual ~ChangeStyleTransaction() = default;
 

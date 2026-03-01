@@ -7,7 +7,9 @@
 #include "mozilla/EditorBase.h"      // for EditorBase
 #include "mozilla/EditorDOMPoint.h"  // for EditorDOMPoint
 #include "mozilla/HTMLEditor.h"      // for HTMLEditor
-#include "mozilla/TextEditor.h"      // for TextEditor
+#include "mozilla/Logging.h"
+#include "mozilla/TextEditor.h"  // for TextEditor
+#include "mozilla/ToString.h"
 
 #include "mozilla/dom/Selection.h"  // for Selection
 
@@ -52,6 +54,23 @@ InsertNodeTransaction::InsertNodeTransaction(
   Unused << mPointToInsert.GetChild();
 }
 
+std::ostream& operator<<(std::ostream& aStream,
+                         const InsertNodeTransaction& aTransaction) {
+  aStream << "{ mContentToInsert=" << aTransaction.mContentToInsert.get();
+  if (aTransaction.mContentToInsert) {
+    if (aTransaction.mContentToInsert->IsText()) {
+      nsAutoString data;
+      aTransaction.mContentToInsert->AsText()->GetData(data);
+      aStream << " (#text \"" << NS_ConvertUTF16toUTF8(data).get() << "\")";
+    } else {
+      aStream << " (" << *aTransaction.mContentToInsert << ")";
+    }
+  }
+  aStream << ", mPointToInsert=" << aTransaction.mPointToInsert
+          << ", mEditorBase=" << aTransaction.mEditorBase.get() << " }";
+  return aStream;
+}
+
 NS_IMPL_CYCLE_COLLECTION_INHERITED(InsertNodeTransaction, EditTransactionBase,
                                    mEditorBase, mContentToInsert,
                                    mPointToInsert)
@@ -62,10 +81,16 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(InsertNodeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
 NS_IMETHODIMP InsertNodeTransaction::DoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p InsertNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mContentToInsert) ||
       NS_WARN_IF(!mPointToInsert.IsSet())) {
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+  MOZ_ASSERT_IF(mEditorBase->IsTextEditor(), !mContentToInsert->IsText());
 
   if (!mPointToInsert.IsSetAndValid()) {
     // It seems that DOM tree has been changed after first DoTransaction()
@@ -113,18 +138,6 @@ NS_IMETHODIMP InsertNodeTransaction::DoTransaction() {
     return error.StealNSResult();
   }
 
-  if (!editorBase->AsHTMLEditor() && contentToInsert->IsText()) {
-    uint32_t length = contentToInsert->AsText()->TextLength();
-    if (length > 0) {
-      nsresult rv = MOZ_KnownLive(editorBase->AsTextEditor())
-                        ->DidInsertText(length, 0, length);
-      if (NS_FAILED(rv)) {
-        NS_WARNING("TextEditor::DidInsertText() failed");
-        return rv;
-      }
-    }
-  }
-
   if (!mEditorBase->AllowsTransactionsToChangeSelection()) {
     return NS_OK;
   }
@@ -147,15 +160,13 @@ NS_IMETHODIMP InsertNodeTransaction::DoTransaction() {
 }
 
 NS_IMETHODIMP InsertNodeTransaction::UndoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p InsertNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mContentToInsert) ||
       NS_WARN_IF(!mPointToInsert.IsSet())) {
     return NS_ERROR_NOT_INITIALIZED;
-  }
-  if (!mEditorBase->AsHTMLEditor() && mContentToInsert->IsText()) {
-    uint32_t length = mContentToInsert->TextLength();
-    if (length > 0) {
-      mEditorBase->AsTextEditor()->WillDeleteText(length, 0, length);
-    }
   }
   // XXX If the inserted node has been moved to different container node or
   //     just removed from the DOM tree, this always fails.
@@ -163,8 +174,15 @@ NS_IMETHODIMP InsertNodeTransaction::UndoTransaction() {
   OwningNonNull<nsIContent> contentToInsert = *mContentToInsert;
   ErrorResult error;
   container->RemoveChild(contentToInsert, error);
-  NS_WARNING("nsINode::RemoveChild() failed");
+  NS_WARNING_ASSERTION(!error.Failed(), "nsINode::RemoveChild() failed");
   return error.StealNSResult();
+}
+
+NS_IMETHODIMP InsertNodeTransaction::RedoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p InsertNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+  return DoTransaction();
 }
 
 }  // namespace mozilla

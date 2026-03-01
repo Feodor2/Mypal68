@@ -41,6 +41,7 @@
 namespace mozilla {
 
 using namespace dom;
+using EmptyCheckOption = HTMLEditUtils::EmptyCheckOption;
 
 /**
  * Stack based helper class for restoring selection after table edit.
@@ -76,6 +77,152 @@ class MOZ_STACK_CLASS AutoSelectionSetterAfterTableEdit final {
     mTable = nullptr;
   }
 };
+
+/******************************************************************************
+ * HTMLEditor::CellIndexes
+ ******************************************************************************/
+
+void HTMLEditor::CellIndexes::Update(HTMLEditor& aHTMLEditor,
+                                     Selection& aSelection, ErrorResult& aRv) {
+  MOZ_ASSERT(!aRv.Failed());
+
+  // Guarantee the life time of the cell element since Init() will access
+  // layout methods.
+  RefPtr<Element> cellElement =
+      aHTMLEditor.GetInclusiveAncestorByTagNameAtSelection(*nsGkAtoms::td);
+  if (!cellElement) {
+    NS_WARNING(
+        "HTMLEditor::GetInclusiveAncestorByTagNameAtSelection(nsGkAtoms::td) "
+        "failed");
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  RefPtr<PresShell> presShell{aHTMLEditor.GetPresShell()};
+  Update(*cellElement, presShell, aRv);
+  NS_WARNING_ASSERTION(!aRv.Failed(), "CellIndexes::Update() failed");
+}
+
+void HTMLEditor::CellIndexes::Update(Element& aCellElement,
+                                     PresShell* aPresShell, ErrorResult& aRv) {
+  MOZ_ASSERT(!aRv.Failed());
+
+  // If the table cell is created immediately before this call, e.g., using
+  // innerHTML, frames have not been created yet. Hence, flush layout to create
+  // them.
+  if (NS_WARN_IF(!aPresShell)) {
+    aRv.Throw(NS_ERROR_INVALID_ARG);
+    return;
+  }
+
+  aPresShell->FlushPendingNotifications(FlushType::Frames);
+
+  nsIFrame* frameOfCell = aCellElement.GetPrimaryFrame();
+  if (!frameOfCell) {
+    NS_WARNING("There was no layout information of aCellElement");
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  nsITableCellLayout* tableCellLayout = do_QueryFrame(frameOfCell);
+  if (!tableCellLayout) {
+    NS_WARNING("aCellElement was not a table cell");
+    aRv.Throw(NS_ERROR_FAILURE);  // not a cell element.
+    return;
+  }
+
+  aRv = tableCellLayout->GetCellIndexes(mRow, mColumn);
+  NS_WARNING_ASSERTION(!aRv.Failed(),
+                       "nsITableCellLayout::GetCellIndexes() failed");
+}
+
+/******************************************************************************
+ * HTMLEditor::CellData
+ ******************************************************************************/
+
+void HTMLEditor::CellData::Update(HTMLEditor& aHTMLEditor,
+                                  Element& aTableElement, ErrorResult& aRv) {
+  MOZ_ASSERT(!aRv.Failed());
+
+  mElement = nullptr;
+  mIsSelected = false;
+  mFirst.mRow = -1;
+  mFirst.mColumn = -1;
+  mRowSpan = -1;
+  mColSpan = -1;
+  mEffectiveRowSpan = -1;
+  mEffectiveColSpan = -1;
+
+  nsTableWrapperFrame* tableFrame = HTMLEditor::GetTableFrame(&aTableElement);
+  if (!tableFrame) {
+    NS_WARNING("There was no layout information of the table");
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  // If there is no cell at the indexes.  Don't return error.
+  // XXX If we have pending layout and that causes the cell frame hasn't been
+  //     created, we should return error, but how can we do it?
+  nsTableCellFrame* cellFrame =
+      tableFrame->GetCellFrameAt(mCurrent.mRow, mCurrent.mColumn);
+  if (!cellFrame) {
+    return;
+  }
+
+  mElement = cellFrame->GetContent()->AsElement();
+  if (!mElement) {
+    NS_WARNING("The cell frame didn't have cell element");
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+  mIsSelected = cellFrame->IsSelected();
+  mFirst.mRow = cellFrame->RowIndex();
+  mFirst.mColumn = cellFrame->ColIndex();
+  mRowSpan = cellFrame->GetRowSpan();
+  mColSpan = cellFrame->GetColSpan();
+  mEffectiveRowSpan =
+      tableFrame->GetEffectiveRowSpanAt(mCurrent.mRow, mCurrent.mColumn);
+  mEffectiveColSpan =
+      tableFrame->GetEffectiveColSpanAt(mCurrent.mRow, mCurrent.mColumn);
+}
+
+/******************************************************************************
+ * HTMLEditor::TableSize
+ ******************************************************************************/
+
+void HTMLEditor::TableSize::Update(HTMLEditor& aHTMLEditor,
+                                   Element& aTableOrElementInTable,
+                                   ErrorResult& aRv) {
+  MOZ_ASSERT(!aRv.Failed());
+
+  // Currently, nsTableWrapperFrame::GetRowCount() and
+  // nsTableWrapperFrame::GetColCount() are safe to use without grabbing
+  // <table> element.  However, editor developers may not watch layout API
+  // changes.  So, for keeping us safer, we should use RefPtr here.
+  RefPtr<Element> tableElement =
+      aHTMLEditor.GetInclusiveAncestorByTagNameInternal(*nsGkAtoms::table,
+                                                        aTableOrElementInTable);
+  if (!tableElement) {
+    NS_WARNING(
+        "HTMLEditor::GetInclusiveAncestorByTagNameInternal(nsGkAtoms::table) "
+        "failed");
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+  nsTableWrapperFrame* tableFrame =
+      do_QueryFrame(tableElement->GetPrimaryFrame());
+  if (!tableFrame) {
+    NS_WARNING("There was no layout information of the <table> element");
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+  mRowCount = tableFrame->GetRowCount();
+  mColumnCount = tableFrame->GetColCount();
+}
+
+/******************************************************************************
+ * HTMLEditor
+ ******************************************************************************/
 
 nsresult HTMLEditor::InsertCell(Element* aCell, int32_t aRowSpan,
                                 int32_t aColSpan, bool aAfter, bool aIsHeader,
@@ -906,12 +1053,12 @@ nsresult HTMLEditor::DeleteTableElementAndChildrenWithTransaction(
   // Block selectionchange event.  It's enough to dispatch selectionchange
   // event immediately after removing the table element.
   {
-    AutoHideSelectionChanges hideSelection(SelectionRefPtr());
+    AutoHideSelectionChanges hideSelection(SelectionRef());
 
     // Select the <table> element after clear current selection.
-    if (SelectionRefPtr()->RangeCount()) {
+    if (SelectionRef().RangeCount()) {
       ErrorResult error;
-      MOZ_KnownLive(SelectionRefPtr())->RemoveAllRanges(error);
+      SelectionRef().RemoveAllRanges(error);
       if (error.Failed()) {
         NS_WARNING("Selection::RemoveAllRanges() failed");
         return error.StealNSResult();
@@ -925,8 +1072,7 @@ nsresult HTMLEditor::DeleteTableElementAndChildrenWithTransaction(
       NS_WARNING("nsRange::SelectNode() failed");
       return error.StealNSResult();
     }
-    MOZ_KnownLive(SelectionRefPtr())
-        ->AddRangeAndSelectFramesAndNotifyListeners(*range, error);
+    SelectionRef().AddRangeAndSelectFramesAndNotifyListeners(*range, error);
     if (error.Failed()) {
       NS_WARNING(
           "Selection::AddRangeAndSelectFramesAndNotifyListeners() failed");
@@ -934,7 +1080,7 @@ nsresult HTMLEditor::DeleteTableElementAndChildrenWithTransaction(
     }
 
 #ifdef DEBUG
-    range = SelectionRefPtr()->GetRangeAt(0);
+    range = SelectionRef().GetRangeAt(0);
     MOZ_ASSERT(range);
     MOZ_ASSERT(range->GetStartContainer() == aTableElement.GetParent());
     MOZ_ASSERT(range->GetEndContainer() == aTableElement.GetParent());
@@ -1019,7 +1165,7 @@ nsresult HTMLEditor::DeleteTableCellWithTransaction(
     return NS_OK;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should we just return NS_OK?
   }
 
@@ -1036,9 +1182,9 @@ nsresult HTMLEditor::DeleteTableCellWithTransaction(
       !ignoredError.Failed(),
       "HTMLEditor::OnStartToHandleTopLevelEditSubAction() failed, but ignored");
 
-  MOZ_ASSERT(SelectionRefPtr()->RangeCount());
+  MOZ_ASSERT(SelectionRef().RangeCount());
 
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
+  SelectedTableCellScanner scanner(SelectionRef());
 
   ErrorResult error;
   TableSize tableSize(*this, *table, error);
@@ -1053,7 +1199,7 @@ nsresult HTMLEditor::DeleteTableCellWithTransaction(
   // starting from the first selected cell or a cell containing first
   // selection range.
   if (!scanner.IsInTableCellSelectionMode() ||
-      SelectionRefPtr()->RangeCount() == 1) {
+      SelectionRef().RangeCount() == 1) {
     for (int32_t i = 0; i < aNumberOfCellsToDelete; i++) {
       nsresult rv =
           GetCellContext(getter_AddRefs(table), getter_AddRefs(cell), nullptr,
@@ -1312,7 +1458,7 @@ nsresult HTMLEditor::DeleteTableCellContentsWithTransaction() {
     return NS_OK;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should we just return NS_OK?
   }
 
@@ -1332,7 +1478,7 @@ nsresult HTMLEditor::DeleteTableCellContentsWithTransaction() {
   // Don't let Rules System change the selection
   AutoTransactionsConserveSelection dontChangeSelection(*this);
 
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
+  SelectedTableCellScanner scanner(SelectionRef());
   if (scanner.IsInTableCellSelectionMode()) {
     const RefPtr<PresShell> presShell{GetPresShell()};
     // `MOZ_KnownLive(scanner.ElementsRef()[0])` is safe because scanner
@@ -1437,13 +1583,12 @@ nsresult HTMLEditor::DeleteSelectedTableColumnsWithTransaction(
     return rv;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should we just return NS_OK?
   }
 
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
-  if (scanner.IsInTableCellSelectionMode() &&
-      SelectionRefPtr()->RangeCount() > 1) {
+  SelectedTableCellScanner scanner(SelectionRef());
+  if (scanner.IsInTableCellSelectionMode() && SelectionRef().RangeCount() > 1) {
     const RefPtr<PresShell> presShell{GetPresShell()};
     // `MOZ_KnownLive(scanner.ElementsRef()[0])` is safe because `scanner`
     // grabs it until it's destroyed later.
@@ -1464,7 +1609,7 @@ nsresult HTMLEditor::DeleteSelectedTableColumnsWithTransaction(
   // If 2 or more cells are not selected, removing columns starting from
   // a column which contains first selection range.
   if (!scanner.IsInTableCellSelectionMode() ||
-      SelectionRefPtr()->RangeCount() == 1) {
+      SelectionRef().RangeCount() == 1) {
     int32_t columnCountToRemove = std::min(
         aNumberOfColumnsToDelete, tableSize.mColumnCount - startColIndex);
     for (int32_t i = 0; i < columnCountToRemove; i++) {
@@ -1523,6 +1668,7 @@ nsresult HTMLEditor::DeleteTableColumnWithTransaction(Element& aTableElement,
   // XXX Why don't this method remove proper <col> (and <colgroup>)?
   ErrorResult error;
   IgnoredErrorResult ignoredError;
+
   for (int32_t rowIndex = 0;; rowIndex++) {
     CellData cellData(*this, aTableElement, rowIndex, aColumnIndex,
                       ignoredError);
@@ -1621,7 +1767,8 @@ nsresult HTMLEditor::DeleteTableColumnWithTransaction(Element& aTableElement,
     // Note that we decrement rowIndex since a row was deleted.
     rowIndex--;
   }
-  return NS_OK;
+
+  // Not reached because for (;;) loop never breaks.
 }
 
 NS_IMETHODIMP HTMLEditor::DeleteTableRow(int32_t aNumberOfRowsToDelete) {
@@ -1692,13 +1839,12 @@ nsresult HTMLEditor::DeleteSelectedTableRowsWithTransaction(
     return rv;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should we just return NS_OK?
   }
 
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
-  if (scanner.IsInTableCellSelectionMode() &&
-      SelectionRefPtr()->RangeCount() > 1) {
+  SelectedTableCellScanner scanner(SelectionRef());
+  if (scanner.IsInTableCellSelectionMode() && SelectionRef().RangeCount() > 1) {
     // Fetch indexes again - may be different for selected cells
     const RefPtr<PresShell> presShell{GetPresShell()};
     // `MOZ_KnownLive(scanner.ElementsRef()[0])` is safe because `scanner`
@@ -1726,7 +1872,7 @@ nsresult HTMLEditor::DeleteSelectedTableRowsWithTransaction(
   // If 2 or more cells are not selected, removing rows starting from
   // a row which contains first selection range.
   if (!scanner.IsInTableCellSelectionMode() ||
-      SelectionRefPtr()->RangeCount() == 1) {
+      SelectionRef().RangeCount() == 1) {
     int32_t rowCountToRemove =
         std::min(aNumberOfRowsToDelete, tableSize.mRowCount - startRowIndex);
     for (int32_t i = 0; i < rowCountToRemove; i++) {
@@ -1933,12 +2079,12 @@ NS_IMETHODIMP HTMLEditor::SelectTable() {
 
   nsresult rv = ClearSelection();
   if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::ClearSelection() failed");
+    NS_WARNING("HTMLEditor::ClearSelection() failed");
     return EditorBase::ToGenericNSResult(rv);
   }
-  rv = AppendNodeToSelectionAsRange(table);
+  rv = AppendContentToSelectionAsRange(*table);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::AppendNodeToSelectionAsRange() failed");
+                       "HTMLEditor::AppendContentToSelectionAsRange() failed");
   return EditorBase::ToGenericNSResult(rv);
 }
 
@@ -1960,12 +2106,12 @@ NS_IMETHODIMP HTMLEditor::SelectTableCell() {
 
   nsresult rv = ClearSelection();
   if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::ClearSelection() failed");
+    NS_WARNING("HTMLEditor::ClearSelection() failed");
     return EditorBase::ToGenericNSResult(rv);
   }
-  rv = AppendNodeToSelectionAsRange(cell);
+  rv = AppendContentToSelectionAsRange(*cell);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::AppendNodeToSelectionAsRange() failed");
+                       "HTMLEditor::AppendContentToSelectionAsRange() failed");
   return EditorBase::ToGenericNSResult(rv);
 }
 
@@ -2006,14 +2152,18 @@ NS_IMETHODIMP HTMLEditor::SelectAllTableCells() {
 
   // Suppress nsISelectionListener notification
   // until all selection changes are finished
-  SelectionBatcher selectionBatcher(SelectionRefPtr());
+  SelectionBatcher selectionBatcher(SelectionRef());
 
   // It is now safe to clear the selection
   // BE SURE TO RESET IT BEFORE LEAVING!
   nsresult rv = ClearSelection();
+  if (rv == NS_ERROR_EDITOR_DESTROYED) {
+    NS_WARNING("HTMLEditor::ClearSelection() caused destroying the editor");
+    return EditorBase::ToGenericNSResult(rv);
+  }
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
-      "EditorBase::ClearSelection() failed, but might be ignored");
+      "HTMLEditor::ClearSelection() failed, but might be ignored");
 
   // Select all cells in the same column as current cell
   bool cellSelected = false;
@@ -2034,11 +2184,18 @@ NS_IMETHODIMP HTMLEditor::SelectAllTableCells() {
       // XXX So, we should distinguish whether CellData returns error or just
       //     not found later.
       if (cellData.mElement && !cellData.IsSpannedFromOtherRowOrColumn()) {
-        nsresult rv = AppendNodeToSelectionAsRange(cellData.mElement);
+        nsresult rv =
+            AppendContentToSelectionAsRange(MOZ_KnownLive(*cellData.mElement));
+        if (rv == NS_ERROR_EDITOR_DESTROYED) {
+          NS_WARNING(
+              "HTMLEditor::AppendContentToSelectionAsRange() caused destroying "
+              "the editor");
+          return EditorBase::ToGenericNSResult(rv);
+        }
         if (NS_FAILED(rv)) {
           NS_WARNING(
-              "EditorBase::AppendNodeToSelectionAsRange() failed, but might be "
-              "ignored");
+              "HTMLEditor::AppendContentToSelectionAsRange() failed, but might "
+              "be ignored");
           break;
         }
         cellSelected = true;
@@ -2051,15 +2208,16 @@ NS_IMETHODIMP HTMLEditor::SelectAllTableCells() {
   if (!cellSelected) {
     // XXX In this case, we ignore `NS_ERROR_FAILURE` set by above inner
     //     `for` loop.
-    nsresult rv = AppendNodeToSelectionAsRange(startCell);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "EditorBase::AppendNodeToSelectionAsRange() failed");
+    nsresult rv = AppendContentToSelectionAsRange(*startCell);
+    NS_WARNING_ASSERTION(
+        NS_SUCCEEDED(rv),
+        "HTMLEditor::AppendContentToSelectionAsRange() failed");
     return EditorBase::ToGenericNSResult(rv);
   }
 
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::ClearSelection() or CellData::Update() or "
-                       "EditorBase::AppendNodeToSelectionAsRange() failed");
+                       "HTMLEditor::ClearSelection() or CellData::Update() or "
+                       "HTMLEditor::AppendContentToSelectionAsRange() failed");
   return EditorBase::ToGenericNSResult(rv);
 }
 
@@ -2110,14 +2268,18 @@ NS_IMETHODIMP HTMLEditor::SelectTableRow() {
 
   // Suppress nsISelectionListener notification
   // until all selection changes are finished
-  SelectionBatcher selectionBatcher(SelectionRefPtr());
+  SelectionBatcher selectionBatcher(SelectionRef());
 
   // It is now safe to clear the selection
   // BE SURE TO RESET IT BEFORE LEAVING!
   rv = ClearSelection();
+  if (rv == NS_ERROR_EDITOR_DESTROYED) {
+    NS_WARNING("HTMLEditor::ClearSelection() caused destroying the editor");
+    return EditorBase::ToGenericNSResult(rv);
+  }
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
-      "EditorBase::ClearSelection() failed, but might be ignored");
+      "HTMLEditor::ClearSelection() failed, but might be ignored");
 
   // Select all cells in the same row as current cell
   bool cellSelected = false;
@@ -2137,10 +2299,17 @@ NS_IMETHODIMP HTMLEditor::SelectTableRow() {
     // XXX So, we should distinguish whether CellData returns error or just
     //     not found later.
     if (cellData.mElement && !cellData.IsSpannedFromOtherRowOrColumn()) {
-      rv = AppendNodeToSelectionAsRange(cellData.mElement);
+      rv = AppendContentToSelectionAsRange(MOZ_KnownLive(*cellData.mElement));
+      if (rv == NS_ERROR_EDITOR_DESTROYED) {
+        NS_WARNING(
+            "HTMLEditor::AppendContentToSelectionAsRange() caused destroying "
+            "the editor");
+        return EditorBase::ToGenericNSResult(rv);
+      }
       if (NS_FAILED(rv)) {
         NS_WARNING(
-            "EditorBase::AppendNodeToSelectionAsRange() failed, but ignored");
+            "HTMLEditor::AppendContentToSelectionAsRange() failed, but "
+            "ignored");
         break;
       }
       cellSelected = true;
@@ -2152,15 +2321,16 @@ NS_IMETHODIMP HTMLEditor::SelectTableRow() {
   if (!cellSelected) {
     // XXX In this case, we ignore `NS_ERROR_FAILURE` set by above inner
     //     `for` loop.
-    nsresult rv = AppendNodeToSelectionAsRange(startCell);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "EditorBase::AppendNodeToSelectionAsRange() failed");
+    nsresult rv = AppendContentToSelectionAsRange(*startCell);
+    NS_WARNING_ASSERTION(
+        NS_SUCCEEDED(rv),
+        "HTMLEditor::AppendContentToSelectionAsRange() failed");
     return EditorBase::ToGenericNSResult(rv);
   }
 
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::ClearSelection() or CellData::Update() or "
-                       "EditorBase::AppendNodeToSelectionAsRange() failed");
+                       "HTMLEditor::ClearSelection() or CellData::Update() or "
+                       "HTMLEditor::AppendContentToSelectionAsRange() failed");
   return EditorBase::ToGenericNSResult(rv);
 }
 
@@ -2207,14 +2377,18 @@ NS_IMETHODIMP HTMLEditor::SelectTableColumn() {
 
   // Suppress nsISelectionListener notification
   // until all selection changes are finished
-  SelectionBatcher selectionBatcher(SelectionRefPtr());
+  SelectionBatcher selectionBatcher(SelectionRef());
 
   // It is now safe to clear the selection
   // BE SURE TO RESET IT BEFORE LEAVING!
   rv = ClearSelection();
+  if (rv == NS_ERROR_EDITOR_DESTROYED) {
+    NS_WARNING("HTMLEditor::ClearSelection() caused destroying the editor");
+    return EditorBase::ToGenericNSResult(rv);
+  }
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
-      "EditorBase::ClearSelection() failed, but might be ignored");
+      "HTMLEditor::ClearSelection() failed, but might be ignored");
 
   // Select all cells in the same column as current cell
   bool cellSelected = false;
@@ -2234,10 +2408,17 @@ NS_IMETHODIMP HTMLEditor::SelectTableColumn() {
     // XXX So, we should distinguish whether CellData returns error or just
     //     not found later.
     if (cellData.mElement && !cellData.IsSpannedFromOtherRowOrColumn()) {
-      rv = AppendNodeToSelectionAsRange(cellData.mElement);
+      rv = AppendContentToSelectionAsRange(MOZ_KnownLive(*cellData.mElement));
+      if (rv == NS_ERROR_EDITOR_DESTROYED) {
+        NS_WARNING(
+            "HTMLEditor::AppendContentToSelectionAsRange() caused destroying "
+            "the editor");
+        return EditorBase::ToGenericNSResult(rv);
+      }
       if (NS_FAILED(rv)) {
         NS_WARNING(
-            "EditorBase::AppendNodeToSelectionAsRange() failed, but ignored");
+            "HTMLEditor::AppendContentToSelectionAsRange() failed, but "
+            "ignored");
         break;
       }
       cellSelected = true;
@@ -2247,15 +2428,16 @@ NS_IMETHODIMP HTMLEditor::SelectTableColumn() {
 
   // Safety code to select starting cell if nothing else was selected
   if (!cellSelected) {
-    nsresult rv = AppendNodeToSelectionAsRange(startCell);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "EditorBase::AppendNodeToSelectionAsRange() failed");
+    nsresult rv = AppendContentToSelectionAsRange(*startCell);
+    NS_WARNING_ASSERTION(
+        NS_SUCCEEDED(rv),
+        "HTMLEditor::AppendContentToSelectionAsRange() failed");
     return EditorBase::ToGenericNSResult(rv);
   }
 
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::ClearSelection() or CellData::Update() or "
-                       "EditorBase::AppendNodeToSelectionAsRange() failed");
+                       "HTMLEditor::ClearSelection() or CellData::Update() or "
+                       "HTMLEditor::AppendContentToSelectionAsRange() failed");
   return EditorBase::ToGenericNSResult(rv);
 }
 
@@ -2642,7 +2824,7 @@ NS_IMETHODIMP HTMLEditor::JoinTableCells(bool aMergeNonContiguousContents) {
     return NS_OK;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should we just return NS_OK?
   }
 
@@ -2655,7 +2837,7 @@ NS_IMETHODIMP HTMLEditor::JoinTableCells(bool aMergeNonContiguousContents) {
   // is retained after joining. This leaves the target cell selected
   // as well as the "non-contiguous" cells, so user can see what happened.
 
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
+  SelectedTableCellScanner scanner(SelectionRef());
 
   // If only one cell is selected, join with cell to the right
   if (scanner.ElementsRef().Length() > 1) {
@@ -2886,11 +3068,12 @@ NS_IMETHODIMP HTMLEditor::JoinTableCells(bool aMergeNonContiguousContents) {
       }
     }
     // Cleanup selection: remove ranges where cells were deleted
-    uint32_t rangeCount = SelectionRefPtr()->RangeCount();
+    uint32_t rangeCount = SelectionRef().RangeCount();
 
+    // TODO: Rewriting this with reversed ranged-loop may make it simpler.
     RefPtr<nsRange> range;
     for (uint32_t i = 0; i < rangeCount; i++) {
-      range = SelectionRefPtr()->GetRangeAt(i);
+      range = SelectionRef().GetRangeAt(i);
       if (NS_WARN_IF(!range)) {
         return NS_ERROR_FAILURE;
       }
@@ -2898,9 +3081,8 @@ NS_IMETHODIMP HTMLEditor::JoinTableCells(bool aMergeNonContiguousContents) {
       Element* deletedCell =
           HTMLEditUtils::GetTableCellElementIfOnlyOneSelected(*range);
       if (!deletedCell) {
-        MOZ_KnownLive(SelectionRefPtr())
-            ->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
-                                                             ignoredError);
+        SelectionRef().RemoveRangeAndUnselectFramesAndNotifyListeners(
+            *range, ignoredError);
         NS_WARNING_ASSERTION(
             !ignoredError.Failed(),
             "Selection::RemoveRangeAndUnselectFramesAndNotifyListeners() "
@@ -3410,7 +3592,7 @@ NS_IMETHODIMP HTMLEditor::GetCellIndexes(Element* aCellElement,
     // Use cell element which contains anchor of Selection when aCellElement is
     // nullptr.
     ErrorResult error;
-    CellIndexes cellIndexes(*this, MOZ_KnownLive(*SelectionRefPtr()), error);
+    CellIndexes cellIndexes(*this, SelectionRef(), error);
     if (error.Failed()) {
       return EditorBase::ToGenericNSResult(error.StealNSResult());
     }
@@ -3429,60 +3611,6 @@ NS_IMETHODIMP HTMLEditor::GetCellIndexes(Element* aCellElement,
   *aRowIndex = cellIndexes.mRow;
   *aColumnIndex = cellIndexes.mColumn;
   return NS_OK;
-}
-
-void HTMLEditor::CellIndexes::Update(HTMLEditor& aHTMLEditor,
-                                     Selection& aSelection, ErrorResult& aRv) {
-  MOZ_ASSERT(!aRv.Failed());
-
-  // Guarantee the life time of the cell element since Init() will access
-  // layout methods.
-  RefPtr<Element> cellElement =
-      aHTMLEditor.GetInclusiveAncestorByTagNameAtSelection(*nsGkAtoms::td);
-  if (!cellElement) {
-    NS_WARNING(
-        "HTMLEditor::GetInclusiveAncestorByTagNameAtSelection(nsGkAtoms::td) "
-        "failed");
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  RefPtr<PresShell> presShell{aHTMLEditor.GetPresShell()};
-  Update(*cellElement, presShell, aRv);
-  NS_WARNING_ASSERTION(!aRv.Failed(), "CellIndexes::Update() failed");
-}
-
-void HTMLEditor::CellIndexes::Update(Element& aCellElement,
-                                     PresShell* aPresShell, ErrorResult& aRv) {
-  MOZ_ASSERT(!aRv.Failed());
-
-  // If the table cell is created immediately before this call, e.g., using
-  // innerHTML, frames have not been created yet. Hence, flush layout to create
-  // them.
-  if (NS_WARN_IF(!aPresShell)) {
-    aRv.Throw(NS_ERROR_INVALID_ARG);
-    return;
-  }
-
-  aPresShell->FlushPendingNotifications(FlushType::Frames);
-
-  nsIFrame* frameOfCell = aCellElement.GetPrimaryFrame();
-  if (!frameOfCell) {
-    NS_WARNING("There was no layout information of aCellElement");
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  nsITableCellLayout* tableCellLayout = do_QueryFrame(frameOfCell);
-  if (!tableCellLayout) {
-    NS_WARNING("aCellElement was not a table cell");
-    aRv.Throw(NS_ERROR_FAILURE);  // not a cell element.
-    return;
-  }
-
-  aRv = tableCellLayout->GetCellIndexes(mRow, mColumn);
-  NS_WARNING_ASSERTION(!aRv.Failed(),
-                       "nsITableCellLayout::GetCellIndexes() failed");
 }
 
 // static
@@ -3564,36 +3692,6 @@ NS_IMETHODIMP HTMLEditor::GetTableSize(Element* aTableOrElementInTable,
   return NS_OK;
 }
 
-void HTMLEditor::TableSize::Update(HTMLEditor& aHTMLEditor,
-                                   Element& aTableOrElementInTable,
-                                   ErrorResult& aRv) {
-  MOZ_ASSERT(!aRv.Failed());
-
-  // Currently, nsTableWrapperFrame::GetRowCount() and
-  // nsTableWrapperFrame::GetColCount() are safe to use without grabbing
-  // <table> element.  However, editor developers may not watch layout API
-  // changes.  So, for keeping us safer, we should use RefPtr here.
-  RefPtr<Element> tableElement =
-      aHTMLEditor.GetInclusiveAncestorByTagNameInternal(*nsGkAtoms::table,
-                                                        aTableOrElementInTable);
-  if (!tableElement) {
-    NS_WARNING(
-        "HTMLEditor::GetInclusiveAncestorByTagNameInternal(nsGkAtoms::table) "
-        "failed");
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-  nsTableWrapperFrame* tableFrame =
-      do_QueryFrame(tableElement->GetPrimaryFrame());
-  if (!tableFrame) {
-    NS_WARNING("There was no layout information of the <table> element");
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-  mRowCount = tableFrame->GetRowCount();
-  mColumnCount = tableFrame->GetColCount();
-}
-
 NS_IMETHODIMP HTMLEditor::GetCellDataAt(
     Element* aTableElement, int32_t aRowIndex, int32_t aColumnIndex,
     Element** aCellElement, int32_t* aStartRowIndex, int32_t* aStartColumnIndex,
@@ -3650,52 +3748,6 @@ NS_IMETHODIMP HTMLEditor::GetCellDataAt(
   *aEffectiveRowSpan = cellData.mEffectiveRowSpan;
   *aEffectiveColSpan = cellData.mEffectiveColSpan;
   return NS_OK;
-}
-
-void HTMLEditor::CellData::Update(HTMLEditor& aHTMLEditor,
-                                  Element& aTableElement, ErrorResult& aRv) {
-  MOZ_ASSERT(!aRv.Failed());
-
-  mElement = nullptr;
-  mIsSelected = false;
-  mFirst.mRow = -1;
-  mFirst.mColumn = -1;
-  mRowSpan = -1;
-  mColSpan = -1;
-  mEffectiveRowSpan = -1;
-  mEffectiveColSpan = -1;
-
-  nsTableWrapperFrame* tableFrame = HTMLEditor::GetTableFrame(&aTableElement);
-  if (!tableFrame) {
-    NS_WARNING("There was no layout information of the table");
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  // If there is no cell at the indexes.  Don't return error.
-  // XXX If we have pending layout and that causes the cell frame hasn't been
-  //     created, we should return error, but how can we do it?
-  nsTableCellFrame* cellFrame =
-      tableFrame->GetCellFrameAt(mCurrent.mRow, mCurrent.mColumn);
-  if (!cellFrame) {
-    return;
-  }
-
-  mElement = cellFrame->GetContent()->AsElement();
-  if (!mElement) {
-    NS_WARNING("The cell frame didn't have cell element");
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-  mIsSelected = cellFrame->IsSelected();
-  mFirst.mRow = cellFrame->RowIndex();
-  mFirst.mColumn = cellFrame->ColIndex();
-  mRowSpan = cellFrame->GetRowSpan();
-  mColSpan = cellFrame->GetColSpan();
-  mEffectiveRowSpan =
-      tableFrame->GetEffectiveRowSpanAt(mCurrent.mRow, mCurrent.mColumn);
-  mEffectiveColSpan =
-      tableFrame->GetEffectiveColSpanAt(mCurrent.mRow, mCurrent.mColumn);
 }
 
 NS_IMETHODIMP HTMLEditor::GetCellAt(Element* aTableElement, int32_t aRowIndex,
@@ -3886,7 +3938,7 @@ NS_IMETHODIMP HTMLEditor::GetSelectedCells(
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
+  SelectedTableCellScanner scanner(SelectionRef());
   if (!scanner.IsInTableCellSelectionMode()) {
     return NS_OK;
   }
@@ -3911,7 +3963,7 @@ NS_IMETHODIMP HTMLEditor::GetFirstSelectedCellInTable(int32_t* aRowIndex,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should return NS_OK?
   }
 
@@ -3919,7 +3971,7 @@ NS_IMETHODIMP HTMLEditor::GetFirstSelectedCellInTable(int32_t* aRowIndex,
   *aColumnIndex = 0;
   *aCellElement = nullptr;
   RefPtr<Element> firstSelectedCellElement =
-      HTMLEditUtils::GetFirstSelectedTableCellElement(*SelectionRefPtr());
+      HTMLEditUtils::GetFirstSelectedTableCellElement(SelectionRef());
   if (!firstSelectedCellElement) {
     return NS_OK;
   }
@@ -4051,7 +4103,7 @@ NS_IMETHODIMP HTMLEditor::GetSelectedOrParentTableElement(
 
   if (isCellSelected) {
     aTagName.AssignLiteral("td");
-    *aSelectedCount = SelectionRefPtr()->RangeCount();
+    *aSelectedCount = SelectionRef().RangeCount();
     cellOrRowOrTableElement.forget(aCellOrRowOrTableElement);
     return NS_OK;
   }
@@ -4092,14 +4144,14 @@ already_AddRefed<Element> HTMLEditor::GetSelectedOrParentTableElement(
     *aIsCellSelected = false;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     aRv.Throw(NS_ERROR_FAILURE);  // XXX Shouldn't throw an exception?
     return nullptr;
   }
 
   // Try to get the first selected cell, first.
   RefPtr<Element> cellElement =
-      HTMLEditUtils::GetFirstSelectedTableCellElement(*SelectionRefPtr());
+      HTMLEditUtils::GetFirstSelectedTableCellElement(SelectionRef());
   if (cellElement) {
     if (aIsCellSelected) {
       *aIsCellSelected = true;
@@ -4107,7 +4159,7 @@ already_AddRefed<Element> HTMLEditor::GetSelectedOrParentTableElement(
     return cellElement.forget();
   }
 
-  const RangeBoundary& anchorRef = SelectionRefPtr()->AnchorRef();
+  const RangeBoundary& anchorRef = SelectionRef().AnchorRef();
   if (NS_WARN_IF(!anchorRef.IsSet())) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -4163,7 +4215,7 @@ NS_IMETHODIMP HTMLEditor::GetSelectedCellsType(Element* aElement,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  if (NS_WARN_IF(!SelectionRefPtr()->RangeCount())) {
+  if (NS_WARN_IF(!SelectionRef().RangeCount())) {
     return NS_ERROR_FAILURE;  // XXX Should we just return NS_OK?
   }
 
@@ -4196,7 +4248,7 @@ NS_IMETHODIMP HTMLEditor::GetSelectedCellsType(Element* aElement,
   }
 
   // Traverse all selected cells
-  SelectedTableCellScanner scanner(*SelectionRefPtr());
+  SelectedTableCellScanner scanner(SelectionRef());
   if (!scanner.IsInTableCellSelectionMode()) {
     return NS_OK;
   }
@@ -4367,7 +4419,8 @@ bool HTMLEditor::IsEmptyCell(dom::Element* aCell) {
   }
 
   // Or check if no real content
-  return IsEmptyNode(*cellChild, false, false);
+  return HTMLEditUtils::IsEmptyNode(
+      *cellChild, {EmptyCheckOption::TreatSingleBRElementAsVisible});
 }
 
 }  // namespace mozilla

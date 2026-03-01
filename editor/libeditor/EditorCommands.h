@@ -25,8 +25,8 @@ class nsStaticAtom;
 
 namespace mozilla {
 
+class EditorBase;
 class HTMLEditor;
-class TextEditor;
 
 /**
  * EditorCommandParamType tells you that EditorCommand subclasses refer
@@ -338,13 +338,13 @@ class EditorCommand : public nsIControllerCommand {
                         nsISupports* aCommandRefCon) final;
 
   MOZ_CAN_RUN_SCRIPT virtual bool IsCommandEnabled(
-      Command aCommand, TextEditor* aTextEditor) const = 0;
+      Command aCommand, EditorBase* aEditorBase) const = 0;
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommand(
-      Command aCommand, TextEditor& aTextEditor,
+      Command aCommand, EditorBase& aEditorBase,
       nsIPrincipal* aPrincipal) const = 0;
 
   /**
-   * @param aTextEditor         If the context is an editor, should be set to
+   * @param aEditorBase         If the context is an editor, should be set to
    *                            it.  Otherwise, nullptr.
    * @param aEditingSession     If the context is an editing session, should be
    *                            set to it.  This usually occurs if editor has
@@ -352,7 +352,7 @@ class EditorCommand : public nsIControllerCommand {
    *                            Otherwise, nullptr.
    */
   MOZ_CAN_RUN_SCRIPT virtual nsresult GetCommandStateParams(
-      Command aCommand, nsCommandParams& aParams, TextEditor* aTextEditor,
+      Command aCommand, nsCommandParams& aParams, EditorBase* aEditorBase,
       nsIEditingSession* aEditingSession) const = 0;
 
   /**
@@ -360,7 +360,7 @@ class EditorCommand : public nsIControllerCommand {
    * EditorCommandParamType::None.
    */
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(
-      Command aCommand, TextEditor& aTextEditor,
+      Command aCommand, EditorBase& aEditorBase,
       nsIPrincipal* aPrincipal) const {
     MOZ_ASSERT_UNREACHABLE("Wrong overload is called");
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -372,7 +372,7 @@ class EditorCommand : public nsIControllerCommand {
    * means that given param was nullptr.
    */
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(
-      Command aCommand, const Maybe<bool>& aBoolParam, TextEditor& aTextEditor,
+      Command aCommand, const Maybe<bool>& aBoolParam, EditorBase& aEditorBase,
       nsIPrincipal* aPrincipal) const {
     MOZ_ASSERT_UNREACHABLE("Wrong overload is called");
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -385,7 +385,7 @@ class EditorCommand : public nsIControllerCommand {
    */
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(
       Command aCommand, const nsACString& aCStringParam,
-      TextEditor& aTextEditor, nsIPrincipal* aPrincipal) const {
+      EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const {
     MOZ_ASSERT_UNREACHABLE("Wrong overload is called");
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -396,7 +396,7 @@ class EditorCommand : public nsIControllerCommand {
    * means that given param was nullptr.
    */
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(
-      Command aCommand, const nsAString& aStringParam, TextEditor& aTextEditor,
+      Command aCommand, const nsAString& aStringParam, EditorBase& aEditorBase,
       nsIPrincipal* aPrincipal) const {
     MOZ_ASSERT_UNREACHABLE("Wrong overload is called");
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -409,7 +409,7 @@ class EditorCommand : public nsIControllerCommand {
    */
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(
       Command aCommand, nsITransferable* aTransferableParam,
-      TextEditor& aTextEditor, nsIPrincipal* aPrincipal) const {
+      EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const {
     MOZ_ASSERT_UNREACHABLE("Wrong overload is called");
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -422,14 +422,14 @@ class EditorCommand : public nsIControllerCommand {
 #define NS_DECL_EDITOR_COMMAND_COMMON_METHODS                              \
  public:                                                                   \
   MOZ_CAN_RUN_SCRIPT virtual bool IsCommandEnabled(                        \
-      Command aCommand, TextEditor* aTextEditor) const final;              \
+      Command aCommand, EditorBase* aEditorBase) const final;              \
   using EditorCommand::IsCommandEnabled;                                   \
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommand(                           \
-      Command aCommand, TextEditor& aTextEditor, nsIPrincipal* aPrincipal) \
+      Command aCommand, EditorBase& aEditorBase, nsIPrincipal* aPrincipal) \
       const final;                                                         \
   using EditorCommand::DoCommand;                                          \
   MOZ_CAN_RUN_SCRIPT virtual nsresult GetCommandStateParams(               \
-      Command aCommand, nsCommandParams& aParams, TextEditor* aTextEditor, \
+      Command aCommand, nsCommandParams& aParams, EditorBase* aEditorBase, \
       nsIEditingSession* aEditingSession) const final;                     \
   using EditorCommand::GetCommandStateParams;                              \
   using EditorCommand::DoCommandParam;
@@ -437,34 +437,34 @@ class EditorCommand : public nsIControllerCommand {
 #define NS_DECL_DO_COMMAND_PARAM_DELEGATE_TO_DO_COMMAND                    \
  public:                                                                   \
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(                      \
-      Command aCommand, TextEditor& aTextEditor, nsIPrincipal* aPrincipal) \
+      Command aCommand, EditorBase& aEditorBase, nsIPrincipal* aPrincipal) \
       const final {                                                        \
-    return DoCommand(aCommand, aTextEditor, aPrincipal);                   \
+    return DoCommand(aCommand, aEditorBase, aPrincipal);                   \
   }
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_BOOL_PARAM        \
  public:                                               \
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(  \
       Command aCommand, const Maybe<bool>& aBoolParam, \
-      TextEditor& aTextEditor, nsIPrincipal* aPrincipal) const final;
+      EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_CSTRING_PARAM       \
  public:                                                 \
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(    \
       Command aCommand, const nsACString& aCStringParam, \
-      TextEditor& aTextEditor, nsIPrincipal* aPrincipal) const final;
+      EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_STRING_PARAM      \
  public:                                               \
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(  \
       Command aCommand, const nsAString& aStringParam, \
-      TextEditor& aTextEditor, nsIPrincipal* aPrincipal) const final;
+      EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_TRANSFERABLE_PARAM      \
  public:                                                     \
   MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(        \
       Command aCommand, nsITransferable* aTransferableParam, \
-      TextEditor& aTextEditor, nsIPrincipal* aPrincipal) const final;
+      EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_INLINE_DECL_EDITOR_COMMAND_MAKE_SINGLETON(_cmd) \
  public:                                                   \

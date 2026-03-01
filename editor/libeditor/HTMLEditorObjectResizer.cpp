@@ -247,7 +247,7 @@ nsresult HTMLEditor::SetAllResizersPosition() {
   return NS_OK;
 }
 
-NS_IMETHODIMP HTMLEditor::RefreshResizers() {
+nsresult HTMLEditor::RefreshResizers() {
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
@@ -260,6 +260,8 @@ NS_IMETHODIMP HTMLEditor::RefreshResizers() {
 }
 
 nsresult HTMLEditor::RefreshResizersInternal() {
+  MOZ_ASSERT(IsEditActionDataAvailable());
+
   // Don't warn even if resizers are not visible since script cannot check
   // if they are visible and this is non-virtual method.  So, the cost of
   // calling this can be ignored.
@@ -295,12 +297,14 @@ nsresult HTMLEditor::RefreshResizersInternal() {
   RefPtr<Element> resizingShadow = mResizingShadow.get();
   rv = SetShadowPosition(*resizingShadow, resizedObject, mResizedObjectX,
                          mResizedObjectY);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("HTMLEditor::SetShadowPosition() failed");
+    return rv;
+  }
   if (NS_WARN_IF(resizedObject != mResizedObject)) {
     return NS_ERROR_FAILURE;
   }
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "HTMLEditor::SetShadowPosition() failed");
-  return rv;
+  return NS_OK;
 }
 
 nsresult HTMLEditor::ShowResizersInternal(Element& aResizedElement) {
@@ -740,14 +744,15 @@ nsresult HTMLEditor::StartResizing(Element& aHandleElement) {
   return rv;
 }
 
-nsresult HTMLEditor::OnMouseDown(int32_t aClientX, int32_t aClientY,
-                                 Element* aTarget, Event* aEvent) {
-  if (NS_WARN_IF(!aTarget)) {
-    return NS_ERROR_INVALID_ARG;
-  }
+nsresult HTMLEditor::StartToDragResizerOrHandleDragGestureOnGrabber(
+    MouseEvent& aMouseDownEvent, Element& aEventTargetElement) {
+  MOZ_ASSERT(aMouseDownEvent.GetExplicitOriginalTarget() ==
+             &aEventTargetElement);
+  MOZ_ASSERT(!aMouseDownEvent.DefaultPrevented());
+  MOZ_ASSERT(aMouseDownEvent.WidgetEventPtr()->mMessage == eMouseDown);
 
   nsAutoString anonclass;
-  aTarget->GetAttr(nsGkAtoms::_moz_anonclass, anonclass);
+  aEventTargetElement.GetAttr(nsGkAtoms::_moz_anonclass, anonclass);
 
   if (anonclass.EqualsLiteral("mozResizer")) {
     AutoEditActionDataSetter editActionData(*this,
@@ -758,10 +763,10 @@ nsresult HTMLEditor::OnMouseDown(int32_t aClientX, int32_t aClientY,
 
     // If we have an anonymous element and that element is a resizer,
     // let's start resizing!
-    aEvent->PreventDefault();
-    mOriginalX = aClientX;
-    mOriginalY = aClientY;
-    nsresult rv = StartResizing(*aTarget);
+    aMouseDownEvent.PreventDefault();
+    mOriginalX = aMouseDownEvent.ClientX();
+    mOriginalY = aMouseDownEvent.ClientY();
+    nsresult rv = StartResizing(aEventTargetElement);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "HTMLEditor::StartResizing() failed");
     return EditorBase::ToGenericNSResult(rv);
@@ -775,8 +780,8 @@ nsresult HTMLEditor::OnMouseDown(int32_t aClientX, int32_t aClientY,
 
     // If we have an anonymous element and that element is a grabber,
     // let's start moving the element!
-    mOriginalX = aClientX;
-    mOriginalY = aClientY;
+    mOriginalX = aMouseDownEvent.ClientX();
+    mOriginalY = aMouseDownEvent.ClientY();
     nsresult rv = GrabberClicked();
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "HTMLEditor::GrabberClicked() failed");
@@ -786,7 +791,8 @@ nsresult HTMLEditor::OnMouseDown(int32_t aClientX, int32_t aClientY,
   return NS_OK;
 }
 
-nsresult HTMLEditor::OnMouseUp(int32_t aClientX, int32_t aClientY) {
+nsresult HTMLEditor::StopDraggingResizerOrGrabberAt(
+    const CSSIntPoint& aClientPoint) {
   if (mIsResizing) {
     AutoEditActionDataSetter editActionData(*this, EditAction::eResizeElement);
     if (NS_WARN_IF(!editActionData.CanHandle())) {
@@ -806,7 +812,7 @@ nsresult HTMLEditor::OnMouseUp(int32_t aClientX, int32_t aClientY) {
       return EditorBase::ToGenericNSResult(rv);
     }
 
-    rv = SetFinalSizeWithTransaction(aClientX, aClientY);
+    rv = SetFinalSizeWithTransaction(aClientPoint.x, aClientPoint.y);
     if (rv == NS_ERROR_EDITOR_DESTROYED) {
       NS_WARNING(
           "HTMLEditor::SetFinalSizeWithTransaction() destroyed the editor");
@@ -833,7 +839,7 @@ nsresult HTMLEditor::OnMouseUp(int32_t aClientX, int32_t aClientY) {
           NS_SUCCEEDED(rvIgnored),
           "Element::SetAttr(nsGkAtoms::_class, hidden) failed");
       if (rv != NS_ERROR_EDITOR_ACTION_CANCELED) {
-        SetFinalPosition(aClientX, aClientY);
+        SetFinalPosition(aClientPoint.x, aClientPoint.y);
       }
     }
     if (mGrabberClicked) {
@@ -1081,9 +1087,8 @@ int32_t HTMLEditor::GetNewResizingHeight(int32_t aX, int32_t aY) {
   return std::max(resized, 1);
 }
 
-nsresult HTMLEditor::OnMouseMove(MouseEvent* aMouseEvent) {
-  MOZ_ASSERT(aMouseEvent);
-
+nsresult HTMLEditor::UpdateResizerOrGrabberPositionTo(
+    const CSSIntPoint& aClientPoint) {
   if (mIsResizing) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eResizingElement);
@@ -1093,13 +1098,12 @@ nsresult HTMLEditor::OnMouseMove(MouseEvent* aMouseEvent) {
 
     // we are resizing and the mouse pointer's position has changed
     // we have to resdisplay the shadow
-    int32_t clientX = aMouseEvent->ClientX();
-    int32_t clientY = aMouseEvent->ClientY();
-
-    int32_t newX = GetNewResizingX(clientX, clientY);
-    int32_t newY = GetNewResizingY(clientX, clientY);
-    int32_t newWidth = GetNewResizingWidth(clientX, clientY);
-    int32_t newHeight = GetNewResizingHeight(clientX, clientY);
+    const int32_t newX = GetNewResizingX(aClientPoint.x, aClientPoint.y);
+    const int32_t newY = GetNewResizingY(aClientPoint.x, aClientPoint.y);
+    const int32_t newWidth =
+        GetNewResizingWidth(aClientPoint.x, aClientPoint.y);
+    const int32_t newHeight =
+        GetNewResizingHeight(aClientPoint.x, aClientPoint.y);
 
     if (RefPtr<nsStyledElement> resizingShadowStyledElement =
             nsStyledElement::FromNodeOrNull(mResizingShadow.get())) {
@@ -1166,16 +1170,13 @@ nsresult HTMLEditor::OnMouseMove(MouseEvent* aMouseEvent) {
   }
 
   if (mGrabberClicked) {
-    int32_t clientX = aMouseEvent->ClientX();
-    int32_t clientY = aMouseEvent->ClientY();
-
     int32_t xThreshold =
         LookAndFeel::GetInt(LookAndFeel::IntID::DragThresholdX, 1);
     int32_t yThreshold =
         LookAndFeel::GetInt(LookAndFeel::IntID::DragThresholdY, 1);
 
-    if (DeprecatedAbs(clientX - mOriginalX) * 2 >= xThreshold ||
-        DeprecatedAbs(clientY - mOriginalY) * 2 >= yThreshold) {
+    if (DeprecatedAbs(aClientPoint.x - mOriginalX) * 2 >= xThreshold ||
+        DeprecatedAbs(aClientPoint.y - mOriginalY) * 2 >= yThreshold) {
       mGrabberClicked = false;
       DebugOnly<nsresult> rvIgnored = StartMoving();
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
@@ -1183,12 +1184,10 @@ nsresult HTMLEditor::OnMouseMove(MouseEvent* aMouseEvent) {
     }
   }
   if (mIsMoving) {
-    int32_t clientX = aMouseEvent->ClientX();
-    int32_t clientY = aMouseEvent->ClientY();
+    int32_t newX = mPositionedObjectX + aClientPoint.x - mOriginalX;
+    int32_t newY = mPositionedObjectY + aClientPoint.y - mOriginalY;
 
-    int32_t newX = mPositionedObjectX + clientX - mOriginalX;
-    int32_t newY = mPositionedObjectY + clientY - mOriginalY;
-
+    // Maybe align newX and newY to the grid.
     SnapToGrid(newX, newY);
 
     if (RefPtr<nsStyledElement> positioningShadowStyledElement =
@@ -1291,8 +1290,7 @@ nsresult HTMLEditor::SetFinalSizeWithTransaction(int32_t aX, int32_t aY) {
       }
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rv),
-          "CSSEditUtils::SetCSSPropertyPixelsWithTransaction(nsGkAtoms::left)"
-          " "
+          "CSSEditUtils::SetCSSPropertyPixelsWithTransaction(nsGkAtoms::left) "
           "failed, but ignored");
     }
   }
@@ -1452,11 +1450,14 @@ nsresult HTMLEditor::SetFinalSizeWithTransaction(int32_t aX, int32_t aY) {
   mResizedObjectWidth = width;
   mResizedObjectHeight = height;
 
-  DebugOnly<nsresult> rvIgnored = RefreshResizersInternal();
+  nsresult rv = RefreshResizersInternal();
+  if (rv == NS_ERROR_EDITOR_DESTROYED) {
+    return NS_ERROR_EDITOR_DESTROYED;
+  }
   NS_WARNING_ASSERTION(
-      NS_SUCCEEDED(rvIgnored),
+      NS_SUCCEEDED(rv),
       "HTMLEditor::RefreshResizersInternal() failed, but ignored");
-  return NS_WARN_IF(Destroyed()) ? NS_ERROR_EDITOR_DESTROYED : NS_OK;
+  return NS_OK;
 }
 
 NS_IMETHODIMP HTMLEditor::GetObjectResizingEnabled(

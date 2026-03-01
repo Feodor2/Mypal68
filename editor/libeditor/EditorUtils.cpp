@@ -4,14 +4,16 @@
 
 #include "EditorUtils.h"
 
-#include "gfxFontUtils.h"
+#include "EditorDOMPoint.h"
+#include "HTMLEditHelpers.h"  // for MoveNodeResult
+#include "HTMLEditUtils.h"    // for HTMLEditUtils
+#include "TextEditor.h"
 #include "WSRunObject.h"
+
+#include "gfxFontUtils.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/ContentIterator.h"
-#include "mozilla/EditorDOMPoint.h"
-#include "mozilla/HTMLEditor.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/OwningNonNull.h"
-#include "mozilla/TextEditor.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
@@ -23,7 +25,9 @@
 #include "nsFrameSelection.h"
 #include "nsIContent.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsILoadContext.h"
 #include "nsINode.h"
+#include "nsITransferable.h"
 #include "nsRange.h"
 #include "nsStyleStruct.h"
 #include "nsTextFragment.h"
@@ -33,20 +37,6 @@ class nsISupports;
 namespace mozilla {
 
 using namespace dom;
-
-template void DOMIterator::AppendAllNodesToArray(
-    nsTArray<OwningNonNull<nsIContent>>& aArrayOfNodes) const;
-template void DOMIterator::AppendAllNodesToArray(
-    nsTArray<OwningNonNull<HTMLBRElement>>& aArrayOfNodes) const;
-template void DOMIterator::AppendNodesToArray(
-    BoolFunctor aFunctor, nsTArray<OwningNonNull<nsIContent>>& aArrayOfNodes,
-    void* aClosure) const;
-template void DOMIterator::AppendNodesToArray(
-    BoolFunctor aFunctor, nsTArray<OwningNonNull<Element>>& aArrayOfNodes,
-    void* aClosure) const;
-template void DOMIterator::AppendNodesToArray(
-    BoolFunctor aFunctor, nsTArray<OwningNonNull<Text>>& aArrayOfNodes,
-    void* aClosure) const;
 
 /******************************************************************************
  * mozilla::EditActionResult
@@ -84,6 +74,116 @@ EditActionResult& EditActionResult::operator|=(
  * mozilla::AutoRangeArray
  *****************************************************************************/
 
+// static
+bool AutoRangeArray::IsEditableRange(const dom::AbstractRange& aRange,
+                                     const Element& aEditingHost) {
+  // TODO: Perhaps, we should check whether the start/end boundaries are
+  //       first/last point of non-editable element.
+  //       See https://github.com/w3c/editing/issues/283#issuecomment-788654850
+  EditorRawDOMPoint atStart(aRange.StartRef());
+  const bool isStartEditable =
+      atStart.IsInContentNode() &&
+      EditorUtils::IsEditableContent(*atStart.ContainerAsContent(),
+                                     EditorUtils::EditorType::HTML) &&
+      !HTMLEditUtils::IsNonEditableReplacedContent(
+          *atStart.ContainerAsContent());
+  if (!isStartEditable) {
+    return false;
+  }
+
+  if (!aRange.Collapsed()) {
+    EditorRawDOMPoint atEnd(aRange.EndRef());
+    const bool isEndEditable =
+        atEnd.IsInContentNode() &&
+        EditorUtils::IsEditableContent(*atEnd.ContainerAsContent(),
+                                       EditorUtils::EditorType::HTML) &&
+        !HTMLEditUtils::IsNonEditableReplacedContent(
+            *atEnd.ContainerAsContent());
+    if (!isEndEditable) {
+      return false;
+    }
+
+    // Now, both start and end points are editable, but if they are in
+    // different editing host, we cannot edit the range.
+    if (atStart.ContainerAsContent() != atEnd.ContainerAsContent() &&
+        atStart.ContainerAsContent()->GetEditingHost() !=
+            atEnd.ContainerAsContent()->GetEditingHost()) {
+      return false;
+    }
+  }
+
+  // HTMLEditor does not support modifying outside `<body>` element for now.
+  nsINode* commonAncestor = aRange.GetClosestCommonInclusiveAncestor();
+  return commonAncestor && commonAncestor->IsContent() &&
+         commonAncestor->IsInclusiveDescendantOf(&aEditingHost);
+}
+
+void AutoRangeArray::EnsureOnlyEditableRanges(const Element& aEditingHost) {
+  for (size_t i = mRanges.Length(); i > 0; i--) {
+    const OwningNonNull<nsRange>& range = mRanges[i - 1];
+    if (!AutoRangeArray::IsEditableRange(range, aEditingHost)) {
+      mRanges.RemoveElementAt(i - 1);
+    }
+  }
+  mAnchorFocusRange = mRanges.IsEmpty() ? nullptr : mRanges.LastElement().get();
+}
+
+void AutoRangeArray::EnsureRangesInTextNode(const Text& aTextNode) {
+  auto GetOffsetInTextNode = [&aTextNode](const nsINode* aNode,
+                                          uint32_t aOffset) -> uint32_t {
+    MOZ_DIAGNOSTIC_ASSERT(aNode);
+    if (aNode == &aTextNode) {
+      return aOffset;
+    }
+    const nsIContent* anonymousDivElement = aTextNode.GetParent();
+    MOZ_DIAGNOSTIC_ASSERT(anonymousDivElement);
+    MOZ_DIAGNOSTIC_ASSERT(anonymousDivElement->IsHTMLElement(nsGkAtoms::div));
+    MOZ_DIAGNOSTIC_ASSERT(anonymousDivElement->GetFirstChild() == &aTextNode);
+    if (aNode == anonymousDivElement && aOffset == 0u) {
+      return 0u;  // Point before the text node so that use start of the text.
+    }
+    MOZ_DIAGNOSTIC_ASSERT(aNode->IsInclusiveDescendantOf(anonymousDivElement));
+    // Point after the text node so that use end of the text.
+    return aTextNode.TextDataLength();
+  };
+  for (uint32_t i : IntegerRange(mRanges.Length())) {
+    const OwningNonNull<nsRange>& range = mRanges[i];
+    if (MOZ_LIKELY(range->GetStartContainer() == &aTextNode &&
+                   range->GetEndContainer() == &aTextNode)) {
+      continue;
+    }
+    range->SetStartAndEnd(
+        const_cast<Text*>(&aTextNode),
+        GetOffsetInTextNode(range->GetStartContainer(), range->StartOffset()),
+        const_cast<Text*>(&aTextNode),
+        GetOffsetInTextNode(range->GetEndContainer(), range->EndOffset()));
+  }
+
+  if (MOZ_UNLIKELY(mRanges.Length() >= 2)) {
+    // For avoiding to handle same things in same range, we should drop and
+    // merge unnecessary ranges.  Note that the ranges never overlap
+    // because selection ranges are not allowed it so that we need to check only
+    // end offset vs start offset of next one.
+    for (uint32_t i : Reversed(IntegerRange(mRanges.Length() - 1u))) {
+      MOZ_ASSERT(mRanges[i]->EndOffset() < mRanges[i + 1]->StartOffset());
+      // XXX Should we delete collapsed range unless the index is 0?  Without
+      //     Selection API, such situation cannot happen so that `TextEditor`
+      //     may behave unexpectedly.
+      if (MOZ_UNLIKELY(mRanges[i]->EndOffset() >=
+                       mRanges[i + 1]->StartOffset())) {
+        const uint32_t newEndOffset = mRanges[i + 1]->EndOffset();
+        mRanges.RemoveElementAt(i + 1);
+        if (MOZ_UNLIKELY(NS_WARN_IF(newEndOffset > mRanges[i]->EndOffset()))) {
+          // So, this case shouldn't happen.
+          mRanges[i]->SetStartAndEnd(
+              const_cast<Text*>(&aTextNode), mRanges[i]->StartOffset(),
+              const_cast<Text*>(&aTextNode), newEndOffset);
+        }
+      }
+    }
+  }
+}
+
 Result<nsIEditor::EDirection, nsresult>
 AutoRangeArray::ExtendAnchorFocusRangeFor(
     const EditorBase& aEditorBase, nsIEditor::EDirection aDirectionAndAmount) {
@@ -98,21 +198,29 @@ AutoRangeArray::ExtendAnchorFocusRangeFor(
     return aDirectionAndAmount;
   }
 
-  const RefPtr<Selection>& selection = aEditorBase.SelectionRefPtr();
-  if (NS_WARN_IF(!selection->RangeCount())) {
+  if (NS_WARN_IF(!aEditorBase.SelectionRef().RangeCount())) {
     return Err(NS_ERROR_FAILURE);
   }
 
   // At this point, the anchor-focus ranges must match for bidi information.
   // See `EditorBase::AutoCaretBidiLevelManager`.
-  MOZ_ASSERT(selection->GetAnchorFocusRange()->StartRef() ==
+  MOZ_ASSERT(aEditorBase.SelectionRef().GetAnchorFocusRange()->StartRef() ==
              mAnchorFocusRange->StartRef());
-  MOZ_ASSERT(selection->GetAnchorFocusRange()->EndRef() ==
+  MOZ_ASSERT(aEditorBase.SelectionRef().GetAnchorFocusRange()->EndRef() ==
              mAnchorFocusRange->EndRef());
 
-  RefPtr<nsFrameSelection> frameSelection = selection->GetFrameSelection();
+  RefPtr<nsFrameSelection> frameSelection =
+      aEditorBase.SelectionRef().GetFrameSelection();
   if (NS_WARN_IF(!frameSelection)) {
     return Err(NS_ERROR_NOT_INITIALIZED);
+  }
+
+  RefPtr<Element> editingHost;
+  if (aEditorBase.IsHTMLEditor()) {
+    editingHost = aEditorBase.AsHTMLEditor()->GetActiveEditingHost();
+    if (!editingHost) {
+      return Err(NS_ERROR_FAILURE);
+    }
   }
 
   Result<RefPtr<nsRange>, nsresult> result(NS_ERROR_UNEXPECTED);
@@ -242,6 +350,12 @@ AutoRangeArray::ExtendAnchorFocusRangeFor(
     return directionAndAmountResult;
   }
 
+  // If the new range isn't editable, keep using the original range.
+  if (aEditorBase.IsHTMLEditor() &&
+      !AutoRangeArray::IsEditableRange(*extendedRange, *editingHost)) {
+    return aDirectionAndAmount;
+  }
+
   if (NS_WARN_IF(!frameSelection->IsValidSelectionPoint(
           extendedRange->GetStartContainer())) ||
       NS_WARN_IF(!frameSelection->IsValidSelectionPoint(
@@ -317,54 +431,6 @@ AutoRangeArray::ShrinkRangesIfStartFromOrEndAfterAtomicContent(
 }
 
 /******************************************************************************
- * some helper classes for iterating the dom tree
- *****************************************************************************/
-
-DOMIterator::DOMIterator(nsINode& aNode) : mIter(&mPostOrderIter) {
-  DebugOnly<nsresult> rv = mIter->Init(&aNode);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-}
-
-nsresult DOMIterator::Init(nsRange& aRange) { return mIter->Init(&aRange); }
-
-nsresult DOMIterator::Init(const RawRangeBoundary& aStartRef,
-                           const RawRangeBoundary& aEndRef) {
-  return mIter->Init(aStartRef, aEndRef);
-}
-
-DOMIterator::DOMIterator() : mIter(&mPostOrderIter) {}
-
-template <class NodeClass>
-void DOMIterator::AppendAllNodesToArray(
-    nsTArray<OwningNonNull<NodeClass>>& aArrayOfNodes) const {
-  for (; !mIter->IsDone(); mIter->Next()) {
-    if (NodeClass* node = NodeClass::FromNode(mIter->GetCurrentNode())) {
-      aArrayOfNodes.AppendElement(*node);
-    }
-  }
-}
-
-template <class NodeClass>
-void DOMIterator::AppendNodesToArray(
-    BoolFunctor aFunctor, nsTArray<OwningNonNull<NodeClass>>& aArrayOfNodes,
-    void* aClosure /* = nullptr */) const {
-  for (; !mIter->IsDone(); mIter->Next()) {
-    NodeClass* node = NodeClass::FromNode(mIter->GetCurrentNode());
-    if (node && aFunctor(*node, aClosure)) {
-      aArrayOfNodes.AppendElement(*node);
-    }
-  }
-}
-
-DOMSubtreeIterator::DOMSubtreeIterator() : DOMIterator() {
-  mIter = &mSubtreeIter;
-}
-
-nsresult DOMSubtreeIterator::Init(nsRange& aRange) {
-  return mIter->Init(&aRange);
-}
-
-/******************************************************************************
  * some general purpose editor utils
  *****************************************************************************/
 
@@ -411,15 +477,15 @@ bool EditorUtils::IsDescendantOf(const nsINode& aNode, const nsINode& aParent,
 }
 
 // static
-void EditorUtils::MaskString(nsString& aString, Text* aText,
+void EditorUtils::MaskString(nsString& aString, const Text& aTextNode,
                              uint32_t aStartOffsetInString,
                              uint32_t aStartOffsetInText) {
-  MOZ_ASSERT(aText->HasFlag(NS_MAYBE_MASKED));
+  MOZ_ASSERT(aTextNode.HasFlag(NS_MAYBE_MASKED));
   MOZ_ASSERT(aStartOffsetInString == 0 || aStartOffsetInText == 0);
 
   uint32_t unmaskStart = UINT32_MAX, unmaskLength = 0;
   TextEditor* textEditor =
-      nsContentUtils::GetTextEditorFromAnonymousNodeWithoutCreation(aText);
+      nsContentUtils::GetTextEditorFromAnonymousNodeWithoutCreation(&aTextNode);
   if (textEditor && textEditor->UnmaskedLength() > 0) {
     unmaskStart = textEditor->UnmaskedStart();
     unmaskLength = textEditor->UnmaskedLength();
@@ -467,7 +533,7 @@ void EditorUtils::MaskString(nsString& aString, Text* aText,
 }
 
 // static
-bool EditorUtils::IsContentPreformatted(nsIContent& aContent) {
+bool EditorUtils::IsWhiteSpacePreformatted(const nsIContent& aContent) {
   // Look at the node (and its parent if it's not an element), and grab its
   // ComputedStyle.
   Element* element = aContent.GetAsElementOrParentElement();
@@ -476,7 +542,7 @@ bool EditorUtils::IsContentPreformatted(nsIContent& aContent) {
   }
 
   RefPtr<ComputedStyle> elementStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(element, nullptr);
+      nsComputedDOMStyle::GetComputedStyleNoFlush(element);
   if (!elementStyle) {
     // Consider nodes without a ComputedStyle to be NOT preformatted:
     // For instance, this is true of JS tags inside the body (which show
@@ -485,6 +551,243 @@ bool EditorUtils::IsContentPreformatted(nsIContent& aContent) {
   }
 
   return elementStyle->StyleText()->WhiteSpaceIsSignificant();
+}
+
+// static
+bool EditorUtils::IsNewLinePreformatted(const nsIContent& aContent) {
+  // Look at the node (and its parent if it's not an element), and grab its
+  // ComputedStyle.
+  Element* element = aContent.GetAsElementOrParentElement();
+  if (!element) {
+    return false;
+  }
+
+  RefPtr<ComputedStyle> elementStyle =
+      nsComputedDOMStyle::GetComputedStyleNoFlush(element);
+  if (!elementStyle) {
+    // Consider nodes without a ComputedStyle to be NOT preformatted:
+    // For instance, this is true of JS tags inside the body (which show
+    // up as #text nodes but have no ComputedStyle).
+    return false;
+  }
+
+  return elementStyle->StyleText()->NewlineIsSignificantStyle();
+}
+
+// static
+bool EditorUtils::IsOnlyNewLinePreformatted(const nsIContent& aContent) {
+  // Look at the node (and its parent if it's not an element), and grab its
+  // ComputedStyle.
+  Element* element = aContent.GetAsElementOrParentElement();
+  if (!element) {
+    return false;
+  }
+
+  RefPtr<ComputedStyle> elementStyle =
+      nsComputedDOMStyle::GetComputedStyleNoFlush(element);
+  if (!elementStyle) {
+    // Consider nodes without a ComputedStyle to be NOT preformatted:
+    // For instance, this is true of JS tags inside the body (which show
+    // up as #text nodes but have no ComputedStyle).
+    return false;
+  }
+
+  return elementStyle->StyleText()->mWhiteSpace == StyleWhiteSpace::PreLine;
+}
+
+// static
+Result<nsCOMPtr<nsITransferable>, nsresult>
+EditorUtils::CreateTransferableForPlainText(const Document& aDocument) {
+  // Create generic Transferable for getting the data
+  nsresult rv;
+  nsCOMPtr<nsITransferable> transferable =
+      do_CreateInstance("@mozilla.org/widget/transferable;1", &rv);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("do_CreateInstance() failed to create nsITransferable instance");
+    return Err(rv);
+  }
+
+  if (!transferable) {
+    NS_WARNING("do_CreateInstance() returned nullptr, but ignored");
+    return nsCOMPtr<nsITransferable>();
+  }
+
+  DebugOnly<nsresult> rvIgnored =
+      transferable->Init(aDocument.GetLoadContext());
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
+                       "nsITransferable::Init() failed, but ignored");
+
+  rvIgnored = transferable->AddDataFlavor(kUnicodeMime);
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rvIgnored),
+      "nsITransferable::AddDataFlavor(kUnicodeMime) failed, but ignored");
+  rvIgnored = transferable->AddDataFlavor(kMozTextInternal);
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rvIgnored),
+      "nsITransferable::AddDataFlavor(kMozTextInternal) failed, but ignored");
+  return transferable;
+}
+
+/******************************************************************************
+ * mozilla::EditorDOMPointBase
+ *****************************************************************************/
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool,
+                                       IsCharCollapsibleASCIISpace() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsCharCollapsibleASCIISpace() const {
+  if (IsCharNewLine()) {
+    return !EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+  }
+  return IsCharASCIISpace() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool, IsCharCollapsibleNBSP() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsCharCollapsibleNBSP() const {
+  // TODO: Perhaps, we should return false if neither previous char nor
+  //       next char is collapsible white-space or NBSP.
+  return IsCharNBSP() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool, IsCharCollapsibleASCIISpaceOrNBSP()
+                                                 const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsCharCollapsibleASCIISpaceOrNBSP() const {
+  if (IsCharNewLine()) {
+    return !EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+  }
+  return IsCharASCIISpaceOrNBSP() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool,
+                                       IsPreviousCharCollapsibleASCIISpace()
+                                           const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsPreviousCharCollapsibleASCIISpace() const {
+  if (IsPreviousCharNewLine()) {
+    return !EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+  }
+  return IsPreviousCharASCIISpace() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool,
+                                       IsPreviousCharCollapsibleNBSP() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsPreviousCharCollapsibleNBSP() const {
+  return IsPreviousCharNBSP() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(
+    bool, IsPreviousCharCollapsibleASCIISpaceOrNBSP() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsPreviousCharCollapsibleASCIISpaceOrNBSP()
+    const {
+  if (IsPreviousCharNewLine()) {
+    return !EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+  }
+  return IsPreviousCharASCIISpaceOrNBSP() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool,
+                                       IsNextCharCollapsibleASCIISpace() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsNextCharCollapsibleASCIISpace() const {
+  if (IsNextCharNewLine()) {
+    return !EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+  }
+  return IsNextCharASCIISpace() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool, IsNextCharCollapsibleNBSP() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsNextCharCollapsibleNBSP() const {
+  return IsNextCharNBSP() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool,
+                                       IsNextCharCollapsibleASCIISpaceOrNBSP()
+                                           const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsNextCharCollapsibleASCIISpaceOrNBSP() const {
+  if (IsNextCharNewLine()) {
+    return !EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+  }
+  return IsNextCharASCIISpaceOrNBSP() &&
+         !EditorUtils::IsWhiteSpacePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool, IsCharPreformattedNewLine() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsCharPreformattedNewLine() const {
+  return IsCharNewLine() &&
+         EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(
+    bool, IsCharPreformattedNewLineCollapsedWithWhiteSpaces() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<
+    PT, CT>::IsCharPreformattedNewLineCollapsedWithWhiteSpaces() const {
+  return IsCharNewLine() &&
+         EditorUtils::IsOnlyNewLinePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool, IsPreviousCharPreformattedNewLine()
+                                                 const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsPreviousCharPreformattedNewLine() const {
+  return IsPreviousCharNewLine() &&
+         EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(
+    bool, IsPreviousCharPreformattedNewLineCollapsedWithWhiteSpaces() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<
+    PT, CT>::IsPreviousCharPreformattedNewLineCollapsedWithWhiteSpaces() const {
+  return IsPreviousCharNewLine() &&
+         EditorUtils::IsOnlyNewLinePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(bool,
+                                       IsNextCharPreformattedNewLine() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<PT, CT>::IsNextCharPreformattedNewLine() const {
+  return IsNextCharNewLine() &&
+         EditorUtils::IsNewLinePreformatted(*ContainerAsText());
+}
+
+NS_INSTANTIATE_EDITOR_DOM_POINT_METHOD(
+    bool, IsNextCharPreformattedNewLineCollapsedWithWhiteSpaces() const)
+
+template <typename PT, typename CT>
+bool EditorDOMPointBase<
+    PT, CT>::IsNextCharPreformattedNewLineCollapsedWithWhiteSpaces() const {
+  return IsNextCharNewLine() &&
+         EditorUtils::IsOnlyNewLinePreformatted(*ContainerAsText());
 }
 
 }  // namespace mozilla

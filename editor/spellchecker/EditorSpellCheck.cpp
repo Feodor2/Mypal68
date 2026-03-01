@@ -13,6 +13,7 @@
 #include "mozilla/intl/Locale.h"           // for mozilla::intl::Locale
 #include "mozilla/intl/LocaleService.h"    // for retrieving app locale
 #include "mozilla/intl/OSPreferences.h"    // for mozilla::intl::OSPreferences
+#include "mozilla/Logging.h"               // for mozilla::LazyLogModule
 #include "mozilla/mozalloc.h"              // for operator delete, etc
 #include "mozilla/mozSpellChecker.h"       // for mozSpellChecker
 #include "mozilla/Preferences.h"           // for Preferences
@@ -47,6 +48,8 @@ namespace mozilla {
 using namespace dom;
 using intl::LocaleService;
 using intl::OSPreferences;
+
+static mozilla::LazyLogModule sEditorSpellChecker("EditorSpellChecker");
 
 class UpdateDictionaryHolder {
  private:
@@ -408,6 +411,8 @@ EditorSpellCheck::InitSpellChecker(nsIEditor* aEditor,
 
 NS_IMETHODIMP
 EditorSpellCheck::GetNextMisspelledWord(nsAString& aNextMisspelledWord) {
+  MOZ_LOG(sEditorSpellChecker, LogLevel::Debug, ("%s", __FUNCTION__));
+
   NS_ENSURE_TRUE(mSpellChecker, NS_ERROR_NOT_INITIALIZED);
 
   DeleteSuggestedWordList();
@@ -621,8 +626,7 @@ EditorSpellCheck::UpdateCurrentDictionary(
 
   // Get language with html5 algorithm
   nsCOMPtr<nsIContent> rootContent;
-  HTMLEditor* htmlEditor = mEditor->AsHTMLEditor();
-  if (htmlEditor) {
+  if (HTMLEditor* htmlEditor = mEditor->GetAsHTMLEditor()) {
     if (flags & nsIEditor::eEditorMailMask) {
       // Always determine the root content for a mail editor,
       // even if not focused, to enable further processing below.

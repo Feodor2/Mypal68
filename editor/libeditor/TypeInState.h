@@ -6,6 +6,7 @@
 #define mozilla_TypeInState_h
 
 #include "mozilla/EditorDOMPoint.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
@@ -24,20 +25,30 @@ class nsAtom;
 class nsINode;
 
 namespace mozilla {
+class HTMLEditor;
 namespace dom {
+class MouseEvent;
 class Selection;
 }  // namespace dom
+
+enum class SpecifiedStyle : uint8_t { Preserve, Discard };
 
 struct PropItem {
   nsAtom* tag;
   nsAtom* attr;
   nsString value;
+  // Whether the class and style attribute should be perserved or discarded.
+  SpecifiedStyle specifiedStyle;
 
-  PropItem() : tag(nullptr), attr(nullptr) { MOZ_COUNT_CTOR(PropItem); }
+  PropItem()
+      : tag(nullptr), attr(nullptr), specifiedStyle(SpecifiedStyle::Preserve) {
+    MOZ_COUNT_CTOR(PropItem);
+  }
   PropItem(nsAtom* aTag, nsAtom* aAttr, const nsAString& aValue)
       : tag(aTag),
         attr(aAttr != nsGkAtoms::_empty ? aAttr : nullptr),
-        value(aValue) {
+        value(aValue),
+        specifiedStyle(SpecifiedStyle::Preserve) {
     MOZ_COUNT_CTOR(PropItem);
   }
   MOZ_COUNTED_DTOR(PropItem)
@@ -63,7 +74,7 @@ class StyleCache final {
 };
 
 class MOZ_STACK_CLASS AutoStyleCacheArray final
-    : public AutoTArray<StyleCache, 19> {
+    : public AutoTArray<StyleCache, 21> {
  public:
   index_type IndexOf(const nsStaticAtom* aTag,
                      const nsStaticAtom* aAttribute) const {
@@ -85,14 +96,28 @@ class TypeInState final {
   TypeInState();
   void Reset();
 
-  nsresult UpdateSelState(dom::Selection* aSelection);
+  nsresult UpdateSelState(dom::Selection& aSelection);
 
-  void OnSelectionChange(dom::Selection& aSelection, int16_t aReason);
+  /**
+   * PreHandleMouseEvent() is called when `HTMLEditorEventListener` receives
+   * "mousedown" and "mouseup" events.  Note that `aMouseDownOrUpEvent` may not
+   * be acceptable event for the `HTMLEditor`, but this is called even in
+   * the case because the event may cause a following `OnSelectionChange()`
+   * call.
+   */
+  void PreHandleMouseEvent(const dom::MouseEvent& aMouseDownOrUpEvent);
+
+  void PreHandleSelectionChangeCommand(Command aCommand);
+  void PostHandleSelectionChangeCommand(const HTMLEditor& aHTMLEditor,
+                                        Command aCommand);
+
+  void OnSelectionChange(const HTMLEditor& aHTMLEditor, int16_t aReason);
 
   void SetProp(nsAtom* aProp, nsAtom* aAttr, const nsAString& aValue);
 
   void ClearAllProps();
   void ClearProp(nsAtom* aProp, nsAtom* aAttr);
+  void ClearLinkPropAndDiscardItsSpecifiedStyle();
 
   /**
    * TakeClearProperty() hands back next property item on the clear list.
@@ -116,7 +141,8 @@ class TypeInState final {
                       nsAtom* aAttr = nullptr, nsString* outValue = nullptr);
 
   static bool FindPropInList(nsAtom* aProp, nsAtom* aAttr, nsAString* outValue,
-                             nsTArray<PropItem*>& aList, int32_t& outIndex);
+                             const nsTArray<PropItem*>& aList,
+                             int32_t& outIndex);
 
  protected:
   virtual ~TypeInState();
@@ -129,10 +155,34 @@ class TypeInState final {
   bool IsPropCleared(nsAtom* aProp, nsAtom* aAttr);
   bool IsPropCleared(nsAtom* aProp, nsAtom* aAttr, int32_t& outIndex);
 
+  bool IsLinkStyleSet() const {
+    int32_t unusedIndex = -1;
+    return FindPropInList(nsGkAtoms::a, nullptr, nullptr, mSetArray,
+                          unusedIndex);
+  }
+  bool IsExplicitlyLinkStyleCleared() const {
+    int32_t unusedIndex = -1;
+    return FindPropInList(nsGkAtoms::a, nullptr, nullptr, mClearedArray,
+                          unusedIndex);
+  }
+  bool IsOnlyLinkStyleCleared() const {
+    return mClearedArray.Length() == 1 && IsExplicitlyLinkStyleCleared();
+  }
+  bool AreAllStylesCleared() const {
+    int32_t unusedIndex = -1;
+    return FindPropInList(nullptr, nullptr, nullptr, mClearedArray,
+                          unusedIndex);
+  }
+  bool AreSomeStylesSet() const { return !mSetArray.IsEmpty(); }
+  bool AreSomeStylesCleared() const { return !mClearedArray.IsEmpty(); }
+
   nsTArray<PropItem*> mSetArray;
   nsTArray<PropItem*> mClearedArray;
   EditorDOMPoint mLastSelectionPoint;
   int32_t mRelativeFontSize;
+  Command mLastSelectionCommand;
+  bool mMouseDownFiredInLinkElement;
+  bool mMouseUpFiredInLinkElement;
 };
 
 }  // namespace mozilla

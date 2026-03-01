@@ -6,6 +6,8 @@
 
 #include "HTMLEditUtils.h"
 #include "mozilla/HTMLEditor.h"  // for HTMLEditor
+#include "mozilla/Logging.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/Text.h"
 #include "nsAString.h"
 #include "nsDebug.h"          // for NS_ASSERTION, etc.
@@ -37,6 +39,25 @@ JoinNodeTransaction::JoinNodeTransaction(HTMLEditor& aHTMLEditor,
       mRightContent(&aRightContent),
       mOffset(0) {}
 
+std::ostream& operator<<(std::ostream& aStream,
+                         const JoinNodeTransaction& aTransaction) {
+  aStream << "{ mLeftContent=" << aTransaction.mLeftContent.get();
+  if (aTransaction.mLeftContent) {
+    aStream << " (" << *aTransaction.mLeftContent << ")";
+  }
+  aStream << ", mRightContent=" << aTransaction.mRightContent.get();
+  if (aTransaction.mRightContent) {
+    aStream << " (" << *aTransaction.mRightContent << ")";
+  }
+  aStream << ", mParentNode=" << aTransaction.mParentNode.get();
+  if (aTransaction.mParentNode) {
+    aStream << " (" << *aTransaction.mParentNode << ")";
+  }
+  aStream << ", mOffset=" << aTransaction.mOffset
+          << ", mHTMLEditor=" << aTransaction.mHTMLEditor.get() << " }";
+  return aStream;
+}
+
 NS_IMPL_CYCLE_COLLECTION_INHERITED(JoinNodeTransaction, EditTransactionBase,
                                    mHTMLEditor, mLeftContent, mRightContent,
                                    mParentNode)
@@ -55,6 +76,10 @@ bool JoinNodeTransaction::CanDoIt() const {
 // After DoTransaction() and RedoTransaction(), the left node is removed from
 // the content tree and right node remains.
 NS_IMETHODIMP JoinNodeTransaction::DoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p JoinNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mHTMLEditor) || NS_WARN_IF(!mLeftContent) ||
       NS_WARN_IF(!mRightContent)) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -88,54 +113,31 @@ NS_IMETHODIMP JoinNodeTransaction::DoTransaction() {
 // XXX: What if instead of split, we just deleted the unneeded children of
 //     mRight and re-inserted mLeft?
 NS_IMETHODIMP JoinNodeTransaction::UndoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p JoinNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mParentNode) || NS_WARN_IF(!mLeftContent) ||
       NS_WARN_IF(!mRightContent) || NS_WARN_IF(!mHTMLEditor)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
+  OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
   OwningNonNull<nsIContent> leftContent = *mLeftContent;
-  OwningNonNull<nsIContent> rightContent = *mRightContent;
-  OwningNonNull<nsINode> parentNode = *mParentNode;
 
-  // First, massage the existing node so it is in its post-split state
-  ErrorResult error;
-  if (Text* rightTextNode = rightContent->GetAsText()) {
-    OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
-    htmlEditor->DoDeleteText(MOZ_KnownLive(*rightTextNode), 0, mOffset, error);
-    if (error.Failed()) {
-      NS_WARNING("EditorBase::DoDeleteText() failed");
-      return error.StealNSResult();
-    }
-  } else {
-    AutoTArray<OwningNonNull<nsIContent>, 24> movingChildren;
-    if (nsIContent* child = mRightContent->GetFirstChild()) {
-      movingChildren.AppendElement(*child);
-      for (uint32_t i = 0; i < mOffset; i++) {
-        child = child->GetNextSibling();
-        if (!child) {
-          break;
-        }
-        movingChildren.AppendElement(*child);
-      }
-    }
-    for (OwningNonNull<nsIContent>& child : movingChildren) {
-      leftContent->AppendChild(child, error);
-      if (error.Failed()) {
-        NS_WARNING("nsINode::AppendChild() failed");
-        return error.StealNSResult();
-      }
-    }
-  }
+  SplitNodeResult splitNodeResult = htmlEditor->DoSplitNode(
+      EditorDOMPoint(mRightContent, std::min(mOffset, mRightContent->Length())),
+      leftContent);
+  NS_WARNING_ASSERTION(splitNodeResult.Succeeded(),
+                       "HTMLEditor::DoSplitNode() failed");
+  return splitNodeResult.Rv();
+}
 
-  NS_WARNING_ASSERTION(!error.Failed(), "The previous error was ignored");
-
-  // Second, re-insert the left node into the tree
-  parentNode->InsertBefore(leftContent, rightContent, error);
-  // InsertBefore() may call MightThrowJSException() even if there is no
-  // error. We don't need the flag here.
-  error.WouldReportJSException();
-  NS_WARNING_ASSERTION(!error.Failed(), "nsINode::InsertBefore() failed");
-  return error.StealNSResult();
+NS_IMETHODIMP JoinNodeTransaction::RedoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p JoinNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+  return DoTransaction();
 }
 
 }  // namespace mozilla

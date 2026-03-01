@@ -23,14 +23,16 @@ interface nsIInlineSpellChecker : nsISupports
 
   void spellCheckRange(in Range aSelection);
 
-  Range getMisspelledWord(in Node aNode, in long aOffset);
+  Range getMisspelledWord(in Node aNode, in unsigned long aOffset);
   [can_run_script]
-  void replaceWord(in Node aNode, in long aOffset, in AString aNewword);
+  void replaceWord(in Node aNode,
+                   in unsigned long aOffset,
+                   in AString aNewword);
   void addWordToDictionary(in AString aWord);
   void removeWordFromDictionary(in AString aWord);
 
   void ignoreWord(in AString aWord);
-  void ignoreWords([array, size_is(aCount)] in wstring aWordsToIgnore, in unsigned long aCount);
+  void ignoreWords(in Array<AString> aWordsToIgnore);
   void updateCurrentDictionary();
 
   readonly attribute boolean spellCheckPending;

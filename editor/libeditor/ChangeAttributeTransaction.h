@@ -60,6 +60,9 @@ class ChangeAttributeTransaction final : public EditTransactionBase {
 
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD RedoTransaction() override;
 
+  friend std::ostream& operator<<(
+      std::ostream& aStream, const ChangeAttributeTransaction& aTransaction);
+
  private:
   virtual ~ChangeAttributeTransaction() = default;
 

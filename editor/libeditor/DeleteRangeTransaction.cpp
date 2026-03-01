@@ -6,15 +6,23 @@
 
 #include "DeleteNodeTransaction.h"
 #include "DeleteTextTransaction.h"
+#include "EditorUtils.h"
+#include "HTMLEditUtils.h"
+
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentIterator.h"
-#include "mozilla/dom/Selection.h"
 #include "mozilla/EditorBase.h"
+#include "mozilla/Logging.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/RangeBoundary.h"
+#include "mozilla/ToString.h"
+#include "mozilla/dom/Selection.h"
+
+#include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsError.h"
+#include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsAString.h"
@@ -22,6 +30,8 @@
 namespace mozilla {
 
 using namespace dom;
+
+using EditorType = EditorUtils::EditorType;
 
 DeleteRangeTransaction::DeleteRangeTransaction(EditorBase& aEditorBase,
                                                const nsRange& aRangeToDelete)
@@ -35,6 +45,12 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DeleteRangeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditAggregateTransaction)
 
 NS_IMETHODIMP DeleteRangeTransaction::DoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p DeleteRangeTransaction::%s this={ mName=%s } "
+           "Start==============================",
+           this, __FUNCTION__,
+           nsAtomCString(mName ? mName.get() : nsGkAtoms::_empty).get()));
+
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mRangeToDelete)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -89,6 +105,12 @@ NS_IMETHODIMP DeleteRangeTransaction::DoTransaction() {
     return rv;
   }
 
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p DeleteRangeTransaction::%s this={ mName=%s } "
+           "End==============================",
+           this, __FUNCTION__,
+           nsAtomCString(mName ? mName.get() : nsGkAtoms::_empty).get()));
+
   if (!mEditorBase->AllowsTransactionsToChangeSelection()) {
     return NS_OK;
   }
@@ -104,16 +126,40 @@ NS_IMETHODIMP DeleteRangeTransaction::DoTransaction() {
 }
 
 NS_IMETHODIMP DeleteRangeTransaction::UndoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p DeleteRangeTransaction::%s this={ mName=%s } "
+           "Start==============================",
+           this, __FUNCTION__,
+           nsAtomCString(mName ? mName.get() : nsGkAtoms::_empty).get()));
+
   nsresult rv = EditAggregateTransaction::UndoTransaction();
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "EditAggregateTransaction::UndoTransaction() failed");
+
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p DeleteRangeTransaction::%s this={ mName=%s } "
+           "End==============================",
+           this, __FUNCTION__,
+           nsAtomCString(mName ? mName.get() : nsGkAtoms::_empty).get()));
   return rv;
 }
 
 NS_IMETHODIMP DeleteRangeTransaction::RedoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p DeleteRangeTransaction::%s this={ mName=%s } "
+           "Start==============================",
+           this, __FUNCTION__,
+           nsAtomCString(mName ? mName.get() : nsGkAtoms::_empty).get()));
+
   nsresult rv = EditAggregateTransaction::RedoTransaction();
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "EditAggregateTransaction::RedoTransaction() failed");
+
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p DeleteRangeTransaction::%s this={ mName=%s } "
+           "End==============================",
+           this, __FUNCTION__,
+           nsAtomCString(mName ? mName.get() : nsGkAtoms::_empty).get()));
   return rv;
 }
 
@@ -131,21 +177,28 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteBetween(
 
   // see what kind of node we have
   if (Text* textNode = Text::FromNode(aStart.Container())) {
+    if (mEditorBase->IsHTMLEditor() &&
+        NS_WARN_IF(
+            !EditorUtils::IsEditableContent(*textNode, EditorType::HTML))) {
+      // Just ignore to append the transaction for non-editable node.
+      return NS_OK;
+    }
     // if the node is a chardata node, then delete chardata content
-    int32_t numToDel;
+    uint32_t textLengthToDelete;
     if (aStart == aEnd) {
-      numToDel = 1;
+      textLengthToDelete = 1;
     } else {
-      numToDel = *aEnd.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets) -
-                 *aStart.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets);
-      MOZ_DIAGNOSTIC_ASSERT(numToDel > 0);
+      textLengthToDelete =
+          *aEnd.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets) -
+          *aStart.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets);
+      MOZ_DIAGNOSTIC_ASSERT(textLengthToDelete > 0);
     }
 
     RefPtr<DeleteTextTransaction> deleteTextTransaction =
         DeleteTextTransaction::MaybeCreate(
             *mEditorBase, *textNode,
             *aStart.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets),
-            numToDel);
+            textLengthToDelete);
     // If the text node isn't editable, it should be never undone/redone.
     // So, the transaction shouldn't be recorded.
     if (!deleteTextTransaction) {
@@ -159,6 +212,8 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteBetween(
     return NS_OK;
   }
 
+  MOZ_ASSERT(mEditorBase->IsHTMLEditor());
+
   // Even if we detect invalid range, we should ignore it for removing
   // specified range's nodes as far as possible.
   // XXX This is super expensive.  Probably, we should make
@@ -166,12 +221,11 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteBetween(
   for (nsIContent* child = aStart.GetChildAtOffset();
        child && child != aEnd.GetChildAtOffset();
        child = child->GetNextSibling()) {
+    if (NS_WARN_IF(!HTMLEditUtils::IsRemovableNode(*child))) {
+      continue;  // Should we abort?
+    }
     RefPtr<DeleteNodeTransaction> deleteNodeTransaction =
         DeleteNodeTransaction::MaybeCreate(*mEditorBase, *child);
-    // XXX This is odd handling.  Even if some children are not editable,
-    //     editor should append transactions because they could be editable
-    //     at undoing/redoing.  Additionally, if the transaction needs to
-    //     delete/restore all nodes, it should at undoing/redoing.
     if (deleteNodeTransaction) {
       DebugOnly<nsresult> rvIgnored = AppendChild(deleteNodeTransaction);
       NS_WARNING_ASSERTION(
@@ -248,20 +302,17 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteNodesBetween(
       return NS_ERROR_FAILURE;
     }
 
+    if (NS_WARN_IF(!HTMLEditUtils::IsRemovableNode(*node->AsContent()))) {
+      continue;
+    }
     RefPtr<DeleteNodeTransaction> deleteNodeTransaction =
         DeleteNodeTransaction::MaybeCreate(*mEditorBase, *node->AsContent());
-    // XXX This is odd handling.  Even if some nodes in the range are not
-    //     editable, editor should append transactions because they could
-    //     at undoing/redoing.  Additionally, if the transaction needs to
-    //     delete/restore all nodes, it should at undoing/redoing.
-    if (!deleteNodeTransaction) {
-      NS_WARNING("DeleteNodeTransaction::MaybeCreate() failed");
-      return NS_ERROR_FAILURE;
+    if (deleteNodeTransaction) {
+      DebugOnly<nsresult> rvIgnored = AppendChild(deleteNodeTransaction);
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rvIgnored),
+          "DeleteRangeTransaction::AppendChild() failed, but ignored");
     }
-    DebugOnly<nsresult> rvIgnored = AppendChild(deleteNodeTransaction);
-    NS_WARNING_ASSERTION(
-        NS_SUCCEEDED(rvIgnored),
-        "DeleteRangeTransaction::AppendChild() failed, but ignored");
   }
   return NS_OK;
 }

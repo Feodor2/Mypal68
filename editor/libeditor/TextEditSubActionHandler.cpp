@@ -46,46 +46,10 @@ using namespace dom;
     return EditActionCanceled(NS_OK);                              \
   }
 
-nsresult TextEditor::InitEditorContentAndSelection() {
-  MOZ_ASSERT(IsEditActionDataAvailable());
-
-  nsresult rv = MaybeCreatePaddingBRElementForEmptyEditor();
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "EditorBase::MaybeCreatePaddingBRElementForEmptyEditor() failed");
-    return rv;
-  }
-
-  // If the selection hasn't been set up yet, set it up collapsed to the end of
-  // our editable content.
-  // XXX I think that this shouldn't do it in `HTMLEditor` because it maybe
-  //     removed by the web app and if they call `Selection::AddRange()`,
-  //     it may cause multiple selection ranges.
-  if (!SelectionRefPtr()->RangeCount()) {
-    nsresult rv = CollapseSelectionToEnd();
-    if (NS_FAILED(rv)) {
-      NS_WARNING("EditorBase::CollapseSelectionToEnd() failed");
-      return rv;
-    }
-  }
-
-  if (IsPlaintextEditor() && !IsSingleLineEditor()) {
-    nsresult rv = EnsurePaddingBRElementInMultilineEditor();
-    if (NS_FAILED(rv)) {
-      NS_WARNING(
-          "TextEditor::EnsurePaddingBRElementInMultilineEditor() failed");
-      return rv;
-    }
-  }
-
-  return NS_OK;
-}
-
 void TextEditor::OnStartToHandleTopLevelEditSubAction(
     EditSubAction aTopLevelEditSubAction,
     nsIEditor::EDirection aDirectionOfTopLevelEditSubAction, ErrorResult& aRv) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(!AsHTMLEditor());
   MOZ_ASSERT(!aRv.Failed());
 
   EditorBase::OnStartToHandleTopLevelEditSubAction(
@@ -116,8 +80,8 @@ void TextEditor::OnStartToHandleTopLevelEditSubAction(
     // For spell checker, previous selected node should be text node if
     // possible. If anchor is root of editor, it may become invalid offset
     // after inserting text.
-    EditorRawDOMPoint point = FindBetterInsertionPoint(
-        EditorRawDOMPoint(SelectionRefPtr()->AnchorRef()));
+    EditorRawDOMPoint point =
+        FindBetterInsertionPoint(EditorRawDOMPoint(SelectionRef().AnchorRef()));
     NS_WARNING_ASSERTION(
         point.IsSet(),
         "EditorBase::FindBetterInsertionPoint() failed, but ignored");
@@ -126,15 +90,13 @@ void TextEditor::OnStartToHandleTopLevelEditSubAction(
       return;
     }
   }
-  if (SelectionRefPtr()->AnchorRef().IsSet()) {
-    SetSpellCheckRestartPoint(
-        EditorRawDOMPoint(SelectionRefPtr()->AnchorRef()));
+  if (SelectionRef().AnchorRef().IsSet()) {
+    SetSpellCheckRestartPoint(EditorRawDOMPoint(SelectionRef().AnchorRef()));
   }
 }
 
 nsresult TextEditor::OnEndHandlingTopLevelEditSubAction() {
   MOZ_ASSERT(IsTopLevelEditSubActionDataAvailable());
-  MOZ_ASSERT(!AsHTMLEditor());
 
   nsresult rv;
   while (true) {
@@ -151,15 +113,10 @@ nsresult TextEditor::OnEndHandlingTopLevelEditSubAction() {
       break;
     }
 
-    if (NS_FAILED(rv = EnsurePaddingBRElementForEmptyEditor())) {
-      NS_WARNING("TextEditor::EnsurePaddingBRElementForEmptyEditor() failed");
-      break;
-    }
-
     if (!IsSingleLineEditor() &&
         NS_FAILED(rv = EnsurePaddingBRElementInMultilineEditor())) {
       NS_WARNING(
-          "TextEditor::EnsurePaddingBRElementInMultilineEditor() failed");
+          "EditorBase::EnsurePaddingBRElementInMultilineEditor() failed");
       break;
     }
 
@@ -183,9 +140,32 @@ nsresult TextEditor::OnEndHandlingTopLevelEditSubAction() {
   return rv;
 }
 
+nsresult TextEditor::InsertLineBreakAsSubAction() {
+  MOZ_ASSERT(IsEditActionDataAvailable());
+
+  if (NS_WARN_IF(!mInitSucceeded)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
+  IgnoredErrorResult ignoredError;
+  AutoEditSubActionNotifier startToHandleEditSubAction(
+      *this, EditSubAction::eInsertLineBreak, nsIEditor::eNext, ignoredError);
+  if (NS_WARN_IF(ignoredError.ErrorCodeIs(NS_ERROR_EDITOR_DESTROYED))) {
+    return ignoredError.StealNSResult();
+  }
+  NS_WARNING_ASSERTION(
+      !ignoredError.Failed(),
+      "TextEditor::OnStartToHandleTopLevelEditSubAction() failed, but ignored");
+
+  EditActionResult result = InsertLineFeedCharacterAtSelection();
+  NS_WARNING_ASSERTION(
+      result.Succeeded(),
+      "TextEditor::InsertLineFeedCharacterAtSelection() failed, but ignored");
+  return result.Rv();
+}
+
 EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsTextEditor());
   MOZ_ASSERT(!IsSingleLineEditor());
 
   UndefineCaretBidiLevel();
@@ -208,7 +188,7 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
   }
 
   // if the selection isn't collapsed, delete it.
-  if (!SelectionRefPtr()->IsCollapsed()) {
+  if (!SelectionRef().IsCollapsed()) {
     nsresult rv =
         DeleteSelectionAsSubAction(nsIEditor::eNone, nsIEditor::eNoStrip);
     if (NS_FAILED(rv)) {
@@ -218,14 +198,8 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
     }
   }
 
-  nsresult rv = EnsureNoPaddingBRElementForEmptyEditor();
-  if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::EnsureNoPaddingBRElementForEmptyEditor() failed");
-    return EditActionIgnored(rv);
-  }
-
   // get the (collapsed) selection location
-  const nsRange* firstRange = SelectionRefPtr()->GetRangeAt(0);
+  const nsRange* firstRange = SelectionRef().GetRangeAt(0);
   if (NS_WARN_IF(!firstRange)) {
     return EditActionIgnored(NS_ERROR_FAILURE);
   }
@@ -247,8 +221,8 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
 
   // Insert a linefeed character.
   EditorRawDOMPoint pointAfterInsertedLineFeed;
-  rv = InsertTextWithTransaction(*document, u"\n"_ns, pointToInsert,
-                                 &pointAfterInsertedLineFeed);
+  nsresult rv = InsertTextWithTransaction(*document, u"\n"_ns, pointToInsert,
+                                          &pointAfterInsertedLineFeed);
   if (!pointAfterInsertedLineFeed.IsSet()) {
     NS_WARNING(
         "EditorBase::InsertTextWithTransaction(\\n) didn't return position of "
@@ -265,8 +239,7 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
       !pointAfterInsertedLineFeed.GetChild(),
       "After inserting text into a text node, pointAfterInsertedLineFeed."
       "GetChild() should be nullptr");
-  rv = MOZ_KnownLive(SelectionRefPtr())
-           ->CollapseInLimiter(pointAfterInsertedLineFeed);
+  rv = SelectionRef().CollapseInLimiter(pointAfterInsertedLineFeed);
   if (NS_FAILED(rv)) {
     NS_WARNING("Selection::CollapseInLimiter() failed");
     return EditActionIgnored(rv);
@@ -275,14 +248,14 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
   // XXX I don't think we still need this.  This must have been required when
   //     `<textarea>` was implemented with text nodes and `<br>` elements.
   // see if we're at the end of the editor range
-  EditorRawDOMPoint endPoint(EditorBase::GetEndPoint(*SelectionRefPtr()));
+  EditorRawDOMPoint endPoint(EditorBase::GetEndPoint(SelectionRef()));
   if (endPoint == pointAfterInsertedLineFeed) {
     // SetInterlinePosition(true) means we want the caret to stick to the
     // content on the "right".  We want the caret to stick to whatever is
     // past the break.  This is because the break is on the same line we
     // were on, but the next content will be on the following line.
     IgnoredErrorResult ignoredError;
-    SelectionRefPtr()->SetInterlinePosition(true, ignoredError);
+    SelectionRef().SetInterlinePosition(true, ignoredError);
     NS_WARNING_ASSERTION(
         !ignoredError.Failed(),
         "Selection::SetInterlinePosition(true) failed, but ignored");
@@ -293,74 +266,30 @@ EditActionResult TextEditor::InsertLineFeedCharacterAtSelection() {
 
 nsresult TextEditor::EnsureCaretNotAtEndOfTextNode() {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsPlaintextEditor());
 
   // If there is no selection ranges, we should set to the end of the editor.
   // This is usually performed in InitEditorContentAndSelection(), however,
   // if the editor is reframed, this may be called by
   // OnEndHandlingTopLevelEditSubAction().
-  if (!SelectionRefPtr()->RangeCount()) {
-    DebugOnly<nsresult> rvIgnored = CollapseSelectionToEnd();
-    if (NS_WARN_IF(Destroyed())) {
-      return NS_ERROR_EDITOR_DESTROYED;
-    }
-    NS_WARNING_ASSERTION(
-        NS_SUCCEEDED(rvIgnored),
-        "EditorBase::CollapseSelectionToEnd() failed, but ignored");
-  }
-
-  // If we are at the end of the <textarea> element, we need to set the
-  // selection to stick to the padding <br> element for empty last line at the
-  // end of the <textarea>.
-  EditorRawDOMPoint selectionStartPoint(
-      EditorBase::GetStartPoint(*SelectionRefPtr()));
-  if (NS_WARN_IF(!selectionStartPoint.IsSet())) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // Nothing to do if we're not at the end of the text node.
-  if (!selectionStartPoint.IsInTextNode() ||
-      !selectionStartPoint.IsEndOfContainer()) {
+  if (SelectionRef().RangeCount()) {
     return NS_OK;
   }
 
-  Element* anonymousDivElement = GetRoot();
-  if (NS_WARN_IF(!anonymousDivElement)) {
-    return NS_ERROR_NULL_POINTER;
-  }
-  nsINode* parentNode = selectionStartPoint.GetContainer()->GetParentNode();
-  if (parentNode != anonymousDivElement) {
-    return NS_OK;
-  }
-
-  nsIContent* nextContent =
-      selectionStartPoint.GetContainer()->GetNextSibling();
-  if (!nextContent ||
-      !EditorUtils::IsPaddingBRElementForEmptyLastLine(*nextContent)) {
-    return NS_OK;
-  }
-
-  EditorRawDOMPoint afterStartContainer(
-      EditorRawDOMPoint::After(*selectionStartPoint.GetContainer()));
-  if (NS_WARN_IF(!afterStartContainer.IsSet())) {
-    return NS_ERROR_FAILURE;
-  }
-  IgnoredErrorResult ignoredError;
-  MOZ_KnownLive(SelectionRefPtr())
-      ->CollapseInLimiter(afterStartContainer, ignoredError);
+  DebugOnly<nsresult> rvIgnored = CollapseSelectionToEnd();
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
-  NS_WARNING_ASSERTION(!ignoredError.Failed(),
-                       "Selection::CollapseInLimiter() failed");
-  return ignoredError.StealNSResult();
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rvIgnored),
+      "EditorBase::CollapseSelectionToEnd() failed, but ignored");
+
+  return NS_OK;
 }
 
 void TextEditor::HandleNewLinesInStringForSingleLineEditor(
     nsString& aString) const {
   static const char16_t kLF = static_cast<char16_t>('\n');
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsPlaintextEditor());
   MOZ_ASSERT(aString.FindChar(static_cast<uint16_t>('\r')) == kNotFound);
 
   // First of all, check if aString contains '\n' since if the string
@@ -432,11 +361,13 @@ void TextEditor::HandleNewLinesInStringForSingleLineEditor(
 }
 
 EditActionResult TextEditor::HandleInsertText(
-    EditSubAction aEditSubAction, const nsAString& aInsertionString) {
+    EditSubAction aEditSubAction, const nsAString& aInsertionString,
+    SelectionHandling aSelectionHandling) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsTextEditor());
   MOZ_ASSERT(aEditSubAction == EditSubAction::eInsertText ||
              aEditSubAction == EditSubAction::eInsertTextComingFromIME);
+  MOZ_ASSERT_IF(aSelectionHandling == SelectionHandling::Ignore,
+                aEditSubAction == EditSubAction::eInsertTextComingFromIME);
 
   UndefineCaretBidiLevel();
 
@@ -473,13 +404,14 @@ EditActionResult TextEditor::HandleInsertText(
       start = GetComposition()->XPOffsetInTextNode();
     } else {
       uint32_t end = 0;
-      nsContentUtils::GetSelectionInTextControl(SelectionRefPtr(), GetRoot(),
+      nsContentUtils::GetSelectionInTextControl(&SelectionRef(), GetRoot(),
                                                 start, end);
     }
   }
 
   // if the selection isn't collapsed, delete it.
-  if (!SelectionRefPtr()->IsCollapsed()) {
+  if (!SelectionRef().IsCollapsed() &&
+      aSelectionHandling == SelectionHandling::Delete) {
     nsresult rv =
         DeleteSelectionAsSubAction(nsIEditor::eNone, nsIEditor::eNoStrip);
     if (NS_FAILED(rv)) {
@@ -493,12 +425,6 @@ EditActionResult TextEditor::HandleInsertText(
   CANCEL_OPERATION_AND_RETURN_EDIT_ACTION_RESULT_IF_READONLY
 
   MaybeDoAutoPasswordMasking();
-
-  nsresult rv = EnsureNoPaddingBRElementForEmptyEditor();
-  if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::EnsureNoPaddingBRElementForEmptyEditor() failed");
-    return EditActionHandled(rv);
-  }
 
   // People have lots of different ideas about what text fields
   // should do with multiline pastes.  See bugs 21032, 23485, 23485, 50935.
@@ -525,7 +451,7 @@ EditActionResult TextEditor::HandleInsertText(
   }
 
   // get the (collapsed) selection location
-  const nsRange* firstRange = SelectionRefPtr()->GetRangeAt(0);
+  const nsRange* firstRange = SelectionRef().GetRangeAt(0);
   if (NS_WARN_IF(!firstRange)) {
     return EditActionHandled(NS_ERROR_FAILURE);
   }
@@ -581,7 +507,7 @@ EditActionResult TextEditor::HandleInsertText(
       bool endsWithLF =
           !insertionString.IsEmpty() && insertionString.Last() == nsCRT::LF;
       IgnoredErrorResult ignoredError;
-      SelectionRefPtr()->SetInterlinePosition(endsWithLF, ignoredError);
+      SelectionRef().SetInterlinePosition(endsWithLF, ignoredError);
       NS_WARNING_ASSERTION(
           !ignoredError.Failed(),
           "Selection::SetInterlinePosition() failed, but ignored");
@@ -591,8 +517,7 @@ EditActionResult TextEditor::HandleInsertText(
           "After inserting text into a text node, pointAfterStringInserted."
           "GetChild() should be nullptr");
       ignoredError = IgnoredErrorResult();
-      MOZ_KnownLive(SelectionRefPtr())
-          ->CollapseInLimiter(pointAfterStringInserted, ignoredError);
+      SelectionRef().CollapseInLimiter(pointAfterStringInserted, ignoredError);
       if (NS_WARN_IF(Destroyed())) {
         return EditActionHandled(NS_ERROR_EDITOR_DESTROYED);
       }
@@ -617,8 +542,6 @@ EditActionResult TextEditor::HandleInsertText(
 EditActionResult TextEditor::SetTextWithoutTransaction(
     const nsAString& aValue) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(!AsHTMLEditor());
-  MOZ_ASSERT(IsPlaintextEditor());
   MOZ_ASSERT(!IsIMEComposing());
   MOZ_ASSERT(!IsUndoRedoEnabled());
   MOZ_ASSERT(GetEditAction() != EditAction::eReplaceText);
@@ -632,43 +555,23 @@ EditActionResult TextEditor::SetTextWithoutTransaction(
 
   MaybeDoAutoPasswordMasking();
 
-  nsresult rv = EnsureNoPaddingBRElementForEmptyEditor();
-  if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::EnsureNoPaddingBRElementForEmptyEditor() failed");
-    return EditActionResult(rv);
-  }
-
   RefPtr<Element> anonymousDivElement = GetRoot();
-  nsIContent* firstChild = anonymousDivElement->GetFirstChild();
+  RefPtr<Text> textNode =
+      Text::FromNodeOrNull(anonymousDivElement->GetFirstChild());
+  MOZ_ASSERT(textNode);
 
   // We can use this fast path only when:
   //  - we need to insert a text node.
   //  - we need to replace content of existing text node.
   // Additionally, for avoiding odd result, we should check whether we're in
   // usual condition.
-  if (IsSingleLineEditor()) {
-    // If we're a single line text editor, i.e., <input>, there is only padding
-    // <br> element.  Otherwise, there should be only one text node.  But note
-    // that even if there is a padding <br> element for empty editor, it's
-    // already been removed by `EnsureNoPaddingBRElementForEmptyEditor()`.  So,
-    // at here, there should be only one text node or no children.
-    if (firstChild && (!firstChild->IsText() || firstChild->GetNextSibling())) {
-      return EditActionIgnored();
-    }
-  } else {
+  if (!IsSingleLineEditor()) {
     // If we're a multiline text editor, i.e., <textarea>, there is a padding
     // <br> element for empty last line followed by scrollbar/resizer elements.
     // Otherwise, a text node is followed by them.
-    if (!firstChild) {
-      return EditActionIgnored();
-    }
-    if (firstChild->IsText()) {
-      if (!firstChild->GetNextSibling() ||
-          !EditorUtils::IsPaddingBRElementForEmptyLastLine(
-              *firstChild->GetNextSibling())) {
-        return EditActionIgnored();
-      }
-    } else if (!EditorUtils::IsPaddingBRElementForEmptyLastLine(*firstChild)) {
+    if (!textNode->GetNextSibling() ||
+        !EditorUtils::IsPaddingBRElementForEmptyLastLine(
+            *textNode->GetNextSibling())) {
       return EditActionIgnored();
     }
   }
@@ -680,60 +583,10 @@ EditActionResult TextEditor::SetTextWithoutTransaction(
     HandleNewLinesInStringForSingleLineEditor(sanitizedValue);
   }
 
-  if (!firstChild || !firstChild->IsText()) {
-    if (sanitizedValue.IsEmpty()) {
-      return EditActionHandled();
-    }
-    RefPtr<Document> document = GetDocument();
-    if (NS_WARN_IF(!document)) {
-      return EditActionIgnored();
-    }
-    RefPtr<nsTextNode> newTextNode = CreateTextNode(sanitizedValue);
-    if (!newTextNode) {
-      NS_WARNING("EditorBase::CreateTextNode() failed");
-      return EditActionIgnored();
-    }
-    nsresult rv = InsertNodeWithTransaction(
-        *newTextNode, EditorDOMPoint(anonymousDivElement, 0));
-    if (NS_WARN_IF(Destroyed())) {
-      return EditActionResult(NS_ERROR_EDITOR_DESTROYED);
-    }
-    if (NS_FAILED(rv)) {
-      NS_WARNING("EditorBase::InsertNodeWithTransaction() failed");
-      return EditActionResult(rv);
-    }
-    return EditActionHandled();
-  }
-
-  // TODO: If new value is empty string, we should only remove it.
-  RefPtr<Text> textNode = firstChild->GetAsText();
-  if (MOZ_UNLIKELY(!textNode)) {
-    NS_WARNING("The first child was not a text node");
-    return EditActionIgnored();
-  }
-  rv = SetTextNodeWithoutTransaction(sanitizedValue, *textNode);
+  nsresult rv = SetTextNodeWithoutTransaction(sanitizedValue, *textNode);
   if (NS_FAILED(rv)) {
     NS_WARNING("EditorBase::SetTextNodeWithoutTransaction() failed");
     return EditActionResult(rv);
-  }
-
-  // If we replaced non-empty value with empty string, we need to delete the
-  // text node.
-  if (sanitizedValue.IsEmpty() && !textNode->Length()) {
-    nsresult rv = DeleteNodeWithTransaction(*textNode);
-    if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
-      return EditActionResult(NS_ERROR_EDITOR_DESTROYED);
-    }
-    NS_WARNING_ASSERTION(
-        NS_SUCCEEDED(rv),
-        "EditorBase::DeleteNodeWithTransaction() failed, but ignored");
-    // XXX I don't think this is necessary because the anonymous `<div>`
-    //     element has now only padding `<br>` element even if there are
-    //     something.
-    IgnoredErrorResult ignoredError;
-    SelectionRefPtr()->SetInterlinePosition(true, ignoredError);
-    NS_WARNING_ASSERTION(!ignoredError.Failed(),
-                         "Selection::SetInterlinePoisition(true) failed");
   }
 
   return EditActionHandled();
@@ -743,16 +596,13 @@ EditActionResult TextEditor::HandleDeleteSelection(
     nsIEditor::EDirection aDirectionAndAmount,
     nsIEditor::EStripWrappers aStripWrappers) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsTextEditor());
   MOZ_ASSERT(aStripWrappers == nsIEditor::eNoStrip);
 
   UndefineCaretBidiLevel();
 
   CANCEL_OPERATION_AND_RETURN_EDIT_ACTION_RESULT_IF_READONLY
 
-  // if there is only padding <br> element for empty editor, cancel the
-  // operation.
-  if (mPaddingBRElementForEmptyEditor) {
+  if (IsEmpty()) {
     return EditActionCanceled();
   }
   EditActionResult result =
@@ -772,7 +622,6 @@ EditActionResult TextEditor::HandleDeleteSelectionInternal(
     nsIEditor::EDirection aDirectionAndAmount,
     nsIEditor::EStripWrappers aStripWrappers) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsTextEditor());
   MOZ_ASSERT(aStripWrappers == nsIEditor::eNoStrip);
 
   // If the current selection is empty (e.g the user presses backspace with
@@ -781,20 +630,20 @@ EditActionResult TextEditor::HandleDeleteSelectionInternal(
   // want to send a single selectionchange event to the document, so we
   // batch the selectionchange events, such that a single event fires after
   // the AutoHideSelectionChanges destructor has been run.
-  SelectionBatcher selectionBatcher(SelectionRefPtr());
-  AutoHideSelectionChanges hideSelection(SelectionRefPtr());
+  SelectionBatcher selectionBatcher(SelectionRef());
+  AutoHideSelectionChanges hideSelection(SelectionRef());
   nsAutoScriptBlocker scriptBlocker;
 
   if (IsPasswordEditor() && IsMaskingPassword()) {
     MaskAllCharacters();
   } else {
     EditorRawDOMPoint selectionStartPoint(
-        EditorBase::GetStartPoint(*SelectionRefPtr()));
+        EditorBase::GetStartPoint(SelectionRef()));
     if (NS_WARN_IF(!selectionStartPoint.IsSet())) {
       return EditActionResult(NS_ERROR_FAILURE);
     }
 
-    if (!SelectionRefPtr()->IsCollapsed()) {
+    if (!SelectionRef().IsCollapsed()) {
       nsresult rv = DeleteSelectionWithTransaction(aDirectionAndAmount,
                                                    nsIEditor::eNoStrip);
       NS_WARNING_ASSERTION(
@@ -816,12 +665,15 @@ EditActionResult TextEditor::HandleDeleteSelectionInternal(
     }
   }
 
-  AutoRangeArray rangesToDelete(*SelectionRefPtr());
+  AutoRangeArray rangesToDelete(SelectionRef());
   Result<nsIEditor::EDirection, nsresult> result =
       rangesToDelete.ExtendAnchorFocusRangeFor(*this, aDirectionAndAmount);
   if (result.isErr()) {
     NS_WARNING("AutoRangeArray::ExtendAnchorFocusRangeFor() failed");
     return EditActionResult(result.unwrapErr());
+  }
+  if (const Text* theTextNode = GetTextNode()) {
+    rangesToDelete.EnsureRangesInTextNode(*theTextNode);
   }
 
   nsresult rv = DeleteRangesWithTransaction(
@@ -832,23 +684,10 @@ EditActionResult TextEditor::HandleDeleteSelectionInternal(
   return EditActionHandled(rv);
 }
 
-EditActionResult TextEditor::ComputeValueFromTextNodeAndPaddingBRElement(
+EditActionResult TextEditor::ComputeValueFromTextNodeAndBRElement(
     nsAString& aValue) const {
   MOZ_ASSERT(IsEditActionDataAvailable());
-
-  // If there is a padding <br> element, there's no content.  So output empty
-  // string.
-  if (mPaddingBRElementForEmptyEditor) {
-    aValue.Truncate();
-    return EditActionHandled();
-  }
-
-  // If it's neither <input type="text"> nor <textarea>, e.g., an HTML editor
-  // which is in plaintext mode (e.g., plaintext email composer on Thunderbird),
-  // it should be handled by the expensive path.
-  if (AsHTMLEditor()) {
-    return EditActionIgnored();
-  }
+  MOZ_ASSERT(!IsHTMLEditor());
 
   Element* anonymousDivElement = GetRoot();
   if (!anonymousDivElement) {
@@ -857,36 +696,15 @@ EditActionResult TextEditor::ComputeValueFromTextNodeAndPaddingBRElement(
     return EditActionHandled();
   }
 
-  nsIContent* textNodeOrPaddingBRElement = anonymousDivElement->GetFirstChild();
-  if (!textNodeOrPaddingBRElement) {
+  Text* textNode = Text::FromNodeOrNull(anonymousDivElement->GetFirstChild());
+  MOZ_ASSERT(textNode);
+
+  if (!textNode->Length()) {
     aValue.Truncate();
     return EditActionHandled();
   }
 
-  // If it's an <input type="text"> element, the DOM tree should be:
-  // <div (::-moz-text-control-editing-root)>
-  //   #text
-  // </div>
-  //
-  // If it's a <textarea> element, the DOM tree should be:
-  // <div (::-moz-text-control-editing-root)>
-  //   #text (if there is)
-  //   <br type="_moz">
-  //   <scrollbar orient="horizontal">
-  //   ...
-  // </div>
-
-  Text* textNode = textNodeOrPaddingBRElement->GetAsText();
-  if (!textNode) {
-    // If there is no text node in the expected DOM tree, we can say that it's
-    // just empty.
-    aValue.Truncate();
-    return EditActionHandled();
-  }
-
-  nsIContent* firstChildExceptText =
-      textNode ? textNodeOrPaddingBRElement->GetNextSibling()
-               : textNodeOrPaddingBRElement;
+  nsIContent* firstChildExceptText = textNode->GetNextSibling();
   // If the DOM tree is unexpected, fall back to the expensive path.
   bool isInput = IsSingleLineEditor();
   bool isTextarea = !isInput;
@@ -904,61 +722,12 @@ EditActionResult TextEditor::ComputeValueFromTextNodeAndPaddingBRElement(
   return EditActionHandled();
 }
 
-nsresult TextEditor::EnsurePaddingBRElementInMultilineEditor() {
-  MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsPlaintextEditor());
-  MOZ_ASSERT(!IsSingleLineEditor());
-
-  Element* anonymousDivElement = GetRoot();
-  if (NS_WARN_IF(!anonymousDivElement)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // Assuming EditorBase::MaybeCreatePaddingBRElementForEmptyEditor() has been
-  // called first.
-  // XXX This assumption is wrong.  This method may be called alone.  Actually,
-  //     we see this warning in mochitest log.  So, we should fix this bug
-  //     later.
-  if (NS_WARN_IF(!anonymousDivElement->GetLastChild())) {
-    return NS_ERROR_FAILURE;
-  }
-
-  RefPtr<HTMLBRElement> brElement =
-      HTMLBRElement::FromNode(anonymousDivElement->GetLastChild());
-  if (!brElement) {
-    AutoTransactionsConserveSelection dontChangeMySelection(*this);
-    EditorDOMPoint endOfAnonymousDiv(
-        EditorDOMPoint::AtEndOf(*anonymousDivElement));
-    CreateElementResult createPaddingBRResult =
-        InsertPaddingBRElementForEmptyLastLineWithTransaction(
-            endOfAnonymousDiv);
-    NS_WARNING_ASSERTION(
-        createPaddingBRResult.Succeeded(),
-        "EditorBase::InsertPaddingBRElementForEmptyLastLineWithTransaction() "
-        "failed");
-    return createPaddingBRResult.Rv();
-  }
-
-  // Check to see if the trailing BR is a former padding <br> element for empty
-  // editor - this will have stuck around if we previously morphed a trailing
-  // node into a padding <br> element.
-  if (!brElement->IsPaddingForEmptyEditor()) {
-    return NS_OK;
-  }
-
-  // Morph it back to a padding <br> element for empty last line.
-  brElement->UnsetFlags(NS_PADDING_FOR_EMPTY_EDITOR);
-  brElement->SetFlags(NS_PADDING_FOR_EMPTY_LAST_LINE);
-
-  return NS_OK;
-}
-
 EditActionResult TextEditor::MaybeTruncateInsertionStringForMaxLength(
     nsAString& aInsertionString) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(mMaxTextLength >= 0);
 
-  if (!IsPlaintextEditor() || IsIMEComposing()) {
+  if (IsIMEComposing()) {
     return EditActionIgnored();
   }
 
@@ -982,7 +751,7 @@ EditActionResult TextEditor::MaybeTruncateInsertionStringForMaxLength(
       break;
   }
 
-  int32_t currentLength = INT32_MAX;
+  uint32_t currentLength = UINT32_MAX;
   nsresult rv = GetTextLength(&currentLength);
   if (NS_FAILED(rv)) {
     NS_WARNING("TextEditor::GetTextLength() failed");
@@ -990,7 +759,7 @@ EditActionResult TextEditor::MaybeTruncateInsertionStringForMaxLength(
   }
 
   uint32_t selectionStart, selectionEnd;
-  nsContentUtils::GetSelectionInTextControl(SelectionRefPtr(), GetRoot(),
+  nsContentUtils::GetSelectionInTextControl(&SelectionRef(), GetRoot(),
                                             selectionStart, selectionEnd);
 
   TextComposition* composition = GetComposition();
@@ -1003,13 +772,13 @@ EditActionResult TextEditor::MaybeTruncateInsertionStringForMaxLength(
   //     is part of kOldCompositionStringLength.
   const uint32_t kNewLength =
       currentLength - kSelectionLength - kOldCompositionStringLength;
-  if (kNewLength >= static_cast<uint32_t>(mMaxTextLength)) {
+  if (kNewLength >= AssertedCast<uint32_t>(mMaxTextLength)) {
     aInsertionString.Truncate();  // Too long, we cannot accept new character.
     return EditActionHandled();
   }
 
   if (aInsertionString.Length() + kNewLength <=
-      static_cast<uint32_t>(mMaxTextLength)) {
+      AssertedCast<uint32_t>(mMaxTextLength)) {
     return EditActionIgnored();  // Enough short string.
   }
 
@@ -1030,8 +799,7 @@ EditActionResult TextEditor::MaybeTruncateInsertionStringForMaxLength(
 }
 
 bool TextEditor::CanEchoPasswordNow() const {
-  if (!LookAndFeel::GetEchoPassword() ||
-      (mFlags & nsIEditor::eEditorDontEchoPassword)) {
+  if (!LookAndFeel::GetEchoPassword() || EchoingPasswordPrevented()) {
     return false;
   }
 

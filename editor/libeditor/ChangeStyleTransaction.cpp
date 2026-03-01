@@ -2,8 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ChangeStyleTransaction.h"
+#include "ChangeStyleTransaction.h"
 
+#include "HTMLEditUtils.h"
+#include "mozilla/Logging.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/Element.h"  // for Element
 #include "nsAString.h"            // for nsAString::Append, etc.
 #include "nsCRT.h"                // for nsCRT::IsAsciiSpace
@@ -52,6 +55,25 @@ ChangeStyleTransaction::ChangeStyleTransaction(nsStyledElement& aStyledElement,
       mUndoAttributeWasSet(false),
       mRedoAttributeWasSet(false) {
   CopyUTF16toUTF8(aValue, mValue);
+}
+
+std::ostream& operator<<(std::ostream& aStream,
+                         const ChangeStyleTransaction& aTransaction) {
+  aStream << "{ mStyledElement=" << aTransaction.mStyledElement.get();
+  if (aTransaction.mStyledElement) {
+    aStream << " (" << *aTransaction.mStyledElement << ")";
+  }
+  aStream << ", mProperty=" << nsAtomCString(aTransaction.mProperty).get()
+          << ", mValue=\"" << aTransaction.mValue.get() << "\", mUndoValue=\""
+          << aTransaction.mUndoValue.get()
+          << "\", mRedoValue=" << aTransaction.mRedoValue.get()
+          << ", mRemoveProperty="
+          << (aTransaction.mRemoveProperty ? "true" : "false")
+          << ", mUndoAttributeWasSet="
+          << (aTransaction.mUndoAttributeWasSet ? "true" : "false")
+          << ", mRedoAttributeWasSet="
+          << (aTransaction.mRedoAttributeWasSet ? "true" : "false") << " }";
+  return aStream;
 }
 
 #define kNullCh ('\0')
@@ -132,7 +154,7 @@ void ChangeStyleTransaction::RemoveValueFromListOfValues(
 
     if (start < end && !aRemoveValue.Equals(start)) {
       outString.Append(start);
-      outString.Append(' ');
+      outString.Append(HTMLEditUtils::kSpace);
     }
 
     start = ++end;
@@ -141,6 +163,10 @@ void ChangeStyleTransaction::RemoveValueFromListOfValues(
 }
 
 NS_IMETHODIMP ChangeStyleTransaction::DoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p ChangeStyleTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mStyledElement)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -277,6 +303,10 @@ nsresult ChangeStyleTransaction::SetStyle(bool aAttributeWasSet,
 }
 
 NS_IMETHODIMP ChangeStyleTransaction::UndoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p ChangeStyleTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   nsresult rv = SetStyle(mUndoAttributeWasSet, mUndoValue);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "ChangeStyleTransaction::SetStyle() failed");
@@ -284,6 +314,10 @@ NS_IMETHODIMP ChangeStyleTransaction::UndoTransaction() {
 }
 
 NS_IMETHODIMP ChangeStyleTransaction::RedoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p ChangeStyleTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   nsresult rv = SetStyle(mRedoAttributeWasSet, mRedoValue);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "ChangeStyleTransaction::SetStyle() failed");
@@ -302,7 +336,7 @@ void ChangeStyleTransaction::AddValueToMultivalueProperty(
     aValues.Assign(aNewValue);
   } else if (!ValueIncludes(aValues, aNewValue)) {
     // We already have another value but not this one; add it
-    aValues.Append(char16_t(' '));
+    aValues.Append(HTMLEditUtils::kSpace);
     aValues.Append(aNewValue);
   }
 }

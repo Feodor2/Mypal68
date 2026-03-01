@@ -4,8 +4,11 @@
 
 #include "SplitNodeTransaction.h"
 
+#include "HTMLEditUtils.h"
 #include "mozilla/EditorDOMPoint.h"  // for RangeBoundary, EditorRawDOMPoint
 #include "mozilla/HTMLEditor.h"      // for HTMLEditor
+#include "mozilla/Logging.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/Selection.h"
 #include "nsAString.h"
 #include "nsDebug.h"     // for NS_ASSERTION, etc.
@@ -37,6 +40,24 @@ SplitNodeTransaction::SplitNodeTransaction(
     const EditorDOMPointBase<PT, CT>& aStartOfRightContent)
     : mHTMLEditor(&aHTMLEditor), mStartOfRightContent(aStartOfRightContent) {
   MOZ_DIAGNOSTIC_ASSERT(aStartOfRightContent.IsInContentNode());
+  MOZ_DIAGNOSTIC_ASSERT(HTMLEditUtils::IsSplittableNode(
+      *aStartOfRightContent.ContainerAsContent()));
+}
+
+std::ostream& operator<<(std::ostream& aStream,
+                         const SplitNodeTransaction& aTransaction) {
+  aStream << "{ mStartOfRightContent=" << aTransaction.mStartOfRightContent;
+  aStream << ", mNewLeftContent=" << aTransaction.mNewLeftContent.get();
+  if (aTransaction.mNewLeftContent) {
+    aStream << " (" << *aTransaction.mNewLeftContent << ")";
+  }
+  aStream << ", mContainerParentNode="
+          << aTransaction.mContainerParentNode.get();
+  if (aTransaction.mContainerParentNode) {
+    aStream << " (" << *aTransaction.mContainerParentNode << ")";
+  }
+  aStream << ", mHTMLEditor=" << aTransaction.mHTMLEditor.get() << " }";
+  return aStream;
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(SplitNodeTransaction, EditTransactionBase,
@@ -49,6 +70,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SplitNodeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
 NS_IMETHODIMP SplitNodeTransaction::DoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p SplitNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mHTMLEditor) ||
       NS_WARN_IF(!mStartOfRightContent.IsInContentNode())) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -91,11 +116,11 @@ NS_IMETHODIMP SplitNodeTransaction::DoTransaction() {
                          "EditorBase::MarkElementDirty() failed, but ignored");
   }
 
-  // Insert the new node
-  htmlEditor->DoSplitNode(startOfRightContent, newLeftContent, error);
-  if (error.Failed()) {
+  SplitNodeResult splitNodeResult =
+      htmlEditor->DoSplitNode(startOfRightContent, newLeftContent);
+  if (splitNodeResult.Failed()) {
     NS_WARNING("HTMLEditor::DoSplitNode() failed");
-    return error.StealNSResult();
+    return splitNodeResult.Rv();
   }
 
   if (!htmlEditor->AllowsTransactionsToChangeSelection()) {
@@ -106,18 +131,19 @@ NS_IMETHODIMP SplitNodeTransaction::DoTransaction() {
       !htmlEditor->Destroyed(),
       "The editor has gone but SplitNodeTransaction keeps trying to modify "
       "Selection");
-  RefPtr<Selection> selection = htmlEditor->GetSelection();
-  if (NS_WARN_IF(!selection)) {
-    return NS_ERROR_FAILURE;
-  }
-  EditorRawDOMPoint atEndOfLeftNode(EditorRawDOMPoint::AtEndOf(newLeftContent));
-  selection->CollapseInLimiter(atEndOfLeftNode, error);
+  MOZ_DIAGNOSTIC_ASSERT(splitNodeResult.GetNewContent());
+  htmlEditor->CollapseSelectionTo(
+      EditorRawDOMPoint::AtEndOf(*splitNodeResult.GetNewContent()), error);
   NS_WARNING_ASSERTION(!error.Failed(),
                        "Selection::CollapseInLimiter() failed");
   return error.StealNSResult();
 }
 
 NS_IMETHODIMP SplitNodeTransaction::UndoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p SplitNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mHTMLEditor) || NS_WARN_IF(!mNewLeftContent) ||
       NS_WARN_IF(!mContainerParentNode) ||
       NS_WARN_IF(!mStartOfRightContent.IsInContentNode())) {
@@ -141,58 +167,40 @@ NS_IMETHODIMP SplitNodeTransaction::UndoTransaction() {
  * state.
  */
 NS_IMETHODIMP SplitNodeTransaction::RedoTransaction() {
-  if (NS_WARN_IF(!mNewLeftContent) || NS_WARN_IF(!mContainerParentNode) ||
-      NS_WARN_IF(!mStartOfRightContent.IsInContentNode()) ||
-      NS_WARN_IF(!mHTMLEditor)) {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p SplitNodeTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
+  if (MOZ_UNLIKELY(NS_WARN_IF(!mNewLeftContent) ||
+                   NS_WARN_IF(!mContainerParentNode) ||
+                   NS_WARN_IF(!mStartOfRightContent.IsInContentNode()) ||
+                   NS_WARN_IF(!mHTMLEditor))) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
-  OwningNonNull<nsINode> newLeftContent = *mNewLeftContent;
-  OwningNonNull<nsINode> containerParentNode = *mContainerParentNode;
+  const OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
+  const OwningNonNull<nsIContent> newLeftContent = *mNewLeftContent;
   EditorDOMPoint startOfRightContent(mStartOfRightContent);
 
-  // First, massage the existing node so it is in its post-split state
-  ErrorResult error;
-  if (startOfRightContent.IsInTextNode()) {
-    Text* rightTextNode = startOfRightContent.ContainerAsText();
-    htmlEditor->DoDeleteText(MOZ_KnownLive(*rightTextNode), 0,
-                             startOfRightContent.Offset(), error);
-    if (error.Failed()) {
-      NS_WARNING("EditorBase::DoDeleteText() failed");
-      return error.StealNSResult();
+  if (RefPtr<Element> existingElement =
+          mStartOfRightContent.GetContainerAsElement()) {
+    nsresult rv = htmlEditor->MarkElementDirty(*existingElement);
+    if (MOZ_UNLIKELY(NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED))) {
+      return EditorBase::ToGenericNSResult(rv);
     }
-  } else {
-    AutoTArray<OwningNonNull<nsIContent>, 24> movingChildren;
-    if (nsIContent* child =
-            startOfRightContent.GetContainer()->GetFirstChild()) {
-      movingChildren.AppendElement(*child);
-      for (uint32_t i = 0; i < startOfRightContent.Offset(); i++) {
-        child = child->GetNextSibling();
-        if (!child) {
-          break;
-        }
-        movingChildren.AppendElement(*child);
-      }
-    }
-    ErrorResult error;
-    for (OwningNonNull<nsIContent>& child : movingChildren) {
-      newLeftContent->AppendChild(child, error);
-      if (error.Failed()) {
-        NS_WARNING("nsINode::AppendChild() failed");
-        return error.StealNSResult();
-      }
-    }
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                         "EditorBase::MarkElementDirty() failed, but ignored");
   }
-  MOZ_ASSERT(!error.Failed());
-  // Second, re-insert the left node into the tree
-  containerParentNode->InsertBefore(newLeftContent,
-                                    startOfRightContent.GetContainer(), error);
-  // InsertBefore() may call MightThrowJSException() even if there is no
-  // error. We don't need the flag here.
-  error.WouldReportJSException();
-  NS_WARNING_ASSERTION(!error.Failed(), "nsINode::InsertBefore() failed");
-  return error.StealNSResult();
+
+  SplitNodeResult splitNodeResult = htmlEditor->DoSplitNode(
+      EditorDOMPoint(
+          startOfRightContent.ContainerAsContent(),
+          std::min(startOfRightContent.Offset(),
+                   startOfRightContent.ContainerAsContent()->Length())),
+      newLeftContent);
+  NS_WARNING_ASSERTION(splitNodeResult.Succeeded(),
+                       "HTMLEditor::DoSplitNode() failed");
+  return splitNodeResult.Rv();
 }
 
 }  // namespace mozilla

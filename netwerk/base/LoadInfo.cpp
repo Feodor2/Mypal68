@@ -15,7 +15,7 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
@@ -185,7 +185,7 @@ LoadInfo::LoadInfo(
 
       // Let's inherit the cookie behavior and permission from the parent
       // document.
-      mCookieSettings = aLoadingContext->OwnerDoc()->CookieSettings();
+      mCookieJarSettings = aLoadingContext->OwnerDoc()->CookieJarSettings();
     }
 
     mInnerWindowID = aLoadingContext->OwnerDoc()->InnerWindowID();
@@ -345,7 +345,7 @@ LoadInfo::LoadInfo(nsPIDOMWindowOuter* aOuterWindow,
   // Let's take the current cookie behavior and current cookie permission
   // for the documents' loadInfo. Note that for any other loadInfos,
   // cookieBehavior will be BEHAVIOR_REJECT for security reasons.
-  mCookieSettings = CookieSettings::Create();
+  mCookieJarSettings = CookieJarSettings::Create();
 }
 
 LoadInfo::LoadInfo(const LoadInfo& rhs)
@@ -356,7 +356,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mTopLevelPrincipal(rhs.mTopLevelPrincipal),
       mTopLevelStorageAreaPrincipal(rhs.mTopLevelStorageAreaPrincipal),
       mResultPrincipalURI(rhs.mResultPrincipalURI),
-      mCookieSettings(rhs.mCookieSettings),
+      mCookieJarSettings(rhs.mCookieJarSettings),
       mCspToInherit(rhs.mCspToInherit),
       mClientInfo(rhs.mClientInfo),
       // mReservedClientSource must be handled specially during redirect
@@ -419,7 +419,7 @@ LoadInfo::LoadInfo(
     nsIPrincipal* aPrincipalToInherit, nsIPrincipal* aSandboxedLoadingPrincipal,
     nsIPrincipal* aTopLevelPrincipal,
     nsIPrincipal* aTopLevelStorageAreaPrincipal, nsIURI* aResultPrincipalURI,
-    nsICookieSettings* aCookieSettings, nsIContentSecurityPolicy* aCspToInherit,
+    nsICookieJarSettings* aCookieJarSettings, nsIContentSecurityPolicy* aCspToInherit,
     const Maybe<ClientInfo>& aClientInfo,
     const Maybe<ClientInfo>& aReservedClientInfo,
     const Maybe<ClientInfo>& aInitialClientInfo,
@@ -454,7 +454,7 @@ LoadInfo::LoadInfo(
       mTopLevelPrincipal(aTopLevelPrincipal),
       mTopLevelStorageAreaPrincipal(aTopLevelStorageAreaPrincipal),
       mResultPrincipalURI(aResultPrincipalURI),
-      mCookieSettings(aCookieSettings),
+      mCookieJarSettings(aCookieJarSettings),
       mCspToInherit(aCspToInherit),
       mClientInfo(aClientInfo),
       mReservedClientInfo(aReservedClientInfo),
@@ -674,12 +674,12 @@ LoadInfo::GetSecurityFlags(nsSecurityFlags* aResult) {
 
 NS_IMETHODIMP
 LoadInfo::GetSecurityMode(uint32_t* aFlags) {
-  *aFlags =
-      (mSecurityFlags & (nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS |
-                         nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED |
-                         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS |
-                         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL |
-                         nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS));
+  *aFlags = (mSecurityFlags &
+             (nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT |
+              nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED |
+              nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT |
+              nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL |
+              nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT));
   return NS_OK;
 }
 
@@ -697,7 +697,7 @@ NS_IMETHODIMP
 LoadInfo::GetCookiePolicy(uint32_t* aResult) {
   uint32_t policy = mSecurityFlags & sCookiePolicyMask;
   if (policy == nsILoadInfo::SEC_COOKIES_DEFAULT) {
-    policy = (mSecurityFlags & SEC_REQUIRE_CORS_DATA_INHERITS)
+    policy = (mSecurityFlags & SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT)
                  ? nsILoadInfo::SEC_COOKIES_SAME_ORIGIN
                  : nsILoadInfo::SEC_COOKIES_INCLUDE;
   }
@@ -708,41 +708,41 @@ LoadInfo::GetCookiePolicy(uint32_t* aResult) {
 
 namespace {
 
-already_AddRefed<nsICookieSettings> CreateCookieSettings(
+already_AddRefed<nsICookieJarSettings> CreateCookieJarSettings(
     nsContentPolicyType aContentPolicyType) {
-  if (StaticPrefs::network_cookieSettings_unblocked_for_testing()) {
-    return CookieSettings::Create();
+  if (StaticPrefs::network_cookieJarSettings_unblocked_for_testing()) {
+    return CookieJarSettings::Create();
   }
 
-  // These contentPolictTypes require a real CookieSettings because favicon and
+  // These contentPolictTypes require a real CookieJarSettings because favicon and
   // save-as requests must send cookies. Anything else should not send/receive
   // cookies.
   if (aContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON ||
       aContentPolicyType == nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
-    return CookieSettings::Create();
+    return CookieJarSettings::Create();
   }
 
-  return CookieSettings::CreateBlockingAll();
+  return CookieJarSettings::CreateBlockingAll();
 }
 
 }  // namespace
 
 NS_IMETHODIMP
-LoadInfo::GetCookieSettings(nsICookieSettings** aCookieSettings) {
-  if (!mCookieSettings) {
-    mCookieSettings = CreateCookieSettings(mInternalContentPolicyType);
+LoadInfo::GetCookieJarSettings(nsICookieJarSettings** aCookieJarSettings) {
+  if (!mCookieJarSettings) {
+    mCookieJarSettings = CreateCookieJarSettings(mInternalContentPolicyType);
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings = mCookieSettings;
-  cookieSettings.forget(aCookieSettings);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings = mCookieJarSettings;
+  cookieJarSettings.forget(aCookieJarSettings);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-LoadInfo::SetCookieSettings(nsICookieSettings* aCookieSettings) {
-  MOZ_ASSERT(aCookieSettings);
-  // We allow the overwrite of CookieSettings.
-  mCookieSettings = aCookieSettings;
+LoadInfo::SetCookieJarSettings(nsICookieJarSettings* aCookieJarSettings) {
+  MOZ_ASSERT(aCookieJarSettings);
+  // We allow the overwrite of CookieJarSettings.
+  mCookieJarSettings = aCookieJarSettings;
   return NS_OK;
 }
 
@@ -986,6 +986,14 @@ LoadInfo::GetFrameBrowsingContextID(uint64_t* aResult) {
 }
 
 NS_IMETHODIMP
+LoadInfo::GetTargetBrowsingContextID(uint64_t* aResult) {
+  return (nsILoadInfo::GetExternalContentPolicyType() ==
+          ExtContentPolicy::TYPE_SUBDOCUMENT)
+             ? GetFrameBrowsingContextID(aResult)
+             : GetBrowsingContextID(aResult);
+}
+
+NS_IMETHODIMP
 LoadInfo::GetBrowsingContext(dom::BrowsingContext** aResult) {
   *aResult = BrowsingContext::Get(mBrowsingContextID).take();
   return NS_OK;
@@ -994,6 +1002,14 @@ LoadInfo::GetBrowsingContext(dom::BrowsingContext** aResult) {
 NS_IMETHODIMP
 LoadInfo::GetFrameBrowsingContext(dom::BrowsingContext** aResult) {
   *aResult = BrowsingContext::Get(mFrameBrowsingContextID).take();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetTargetBrowsingContext(dom::BrowsingContext** aResult) {
+  uint64_t targetBrowsingContextID = 0;
+  MOZ_ALWAYS_SUCCEEDS(GetTargetBrowsingContextID(&targetBrowsingContextID));
+  *aResult = BrowsingContext::Get(targetBrowsingContextID).take();
   return NS_OK;
 }
 
@@ -1137,7 +1153,8 @@ const nsTArray<uint64_t>& LoadInfo::AncestorOuterWindowIDs() {
 
 void LoadInfo::SetCorsPreflightInfo(const nsTArray<nsCString>& aHeaders,
                                     bool aForcePreflight) {
-  MOZ_ASSERT(GetSecurityMode() == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS);
+  MOZ_ASSERT(GetSecurityMode() ==
+             nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT);
   MOZ_ASSERT(!mInitialSecurityCheckDone);
   mCorsUnsafeHeaders = aHeaders;
   mForcePreflight = aForcePreflight;
@@ -1154,7 +1171,8 @@ LoadInfo::GetForcePreflight(bool* aForcePreflight) {
 }
 
 void LoadInfo::SetIsPreflight() {
-  MOZ_ASSERT(GetSecurityMode() == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS);
+  MOZ_ASSERT(GetSecurityMode() ==
+             nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT);
   MOZ_ASSERT(!mInitialSecurityCheckDone);
   mIsPreflight = true;
 }

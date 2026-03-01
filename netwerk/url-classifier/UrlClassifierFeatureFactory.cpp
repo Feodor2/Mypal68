@@ -120,7 +120,7 @@ struct BlockingErrorCode {
 static const BlockingErrorCode sBlockingErrorCodes[] = {
     {NS_ERROR_TRACKING_URI,
      nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT,
-     "TrackerUriBlocked", NS_LITERAL_CSTRING("Tracking Protection")},
+     "TrackerUriBlocked", "Tracking Protection"_ns},
 };
 
 }  // namespace

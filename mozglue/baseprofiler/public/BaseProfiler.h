@@ -159,20 +159,18 @@ class SpliceableJSONWriter;
                                                                                \
     MACRO(10, "threads", Threads, "Profile the registered secondary threads")  \
                                                                                \
-    MACRO(11, "jstracer", JSTracer, "Enable tracing of the JavaScript engine") \
-                                                                               \
-    MACRO(12, "jsallocations", JSAllocations,                                  \
+    MACRO(11, "jsallocations", JSAllocations,                                  \
           "Have the JavaScript engine track allocations")                      \
                                                                                \
-    MACRO(13, "nostacksampling", NoStackSampling,                              \
+    MACRO(12, "nostacksampling", NoStackSampling,                              \
           "Disable all stack sampling: Cancels \"js\", \"leaf\", "             \
           "\"stackwalk\" and labels")                                          \
                                                                                \
-    MACRO(14, "nativeallocations", NativeAllocations,                          \
+    MACRO(13, "nativeallocations", NativeAllocations,                          \
           "Collect the stacks from a smaller subset of all native "            \
           "allocations, biasing towards collecting larger allocations")        \
                                                                                \
-    MACRO(15, "ipcmessages", IPCMessages,                                      \
+    MACRO(14, "ipcmessages", IPCMessages,                                      \
           "Have the IPC layer track cross-process messages")
 
 struct ProfilerFeature {

@@ -6,7 +6,7 @@ add_task(async function() {
   registerCleanupFunction(async function() {
     BrowserTestUtils.removeTab(tab);
     Services.prefs.clearUserPref(PREF_TRIMURLS);
-    URLBarSetURI();
+    gURLBar.setURI();
   });
 
   Services.prefs.setBoolPref(PREF_TRIMURLS, true);
@@ -83,7 +83,7 @@ add_task(async function() {
 
   await testCopy("example.com", "http://example.com/");
 
-  SetPageProxyState("invalid");
+  gURLBar.setPageProxyState("invalid");
   gURLBar.valueIsTyped = true;
   await testCopy("example.com", "example.com");
 });

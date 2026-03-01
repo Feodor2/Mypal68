@@ -1084,7 +1084,9 @@ var SessionStoreInternal = {
             !browser.userTypedValue
           ) {
             browser.userTypedValue = tabData.userTypedValue;
-            win.URLBarSetURI();
+            if (tab.selected) {
+              win.gURLBar.setURI();
+            }
           }
 
           // Remove state we don't need any longer.
@@ -2602,13 +2604,7 @@ var SessionStoreInternal = {
     }
 
     // Check that the document has a corresponding BrowsingContext.
-    let browsingContext;
-    let cp = aChannel.loadInfo.externalContentPolicyType;
-    if (cp == Ci.nsIContentPolicy.TYPE_DOCUMENT) {
-      browsingContext = aChannel.loadInfo.browsingContext;
-    } else {
-      browsingContext = aChannel.loadInfo.frameBrowsingContext;
-    }
+    let browsingContext = aChannel.loadInfo.targetBrowsingContext;
 
     if (!browsingContext) {
       debug(`[process-switch]: no BrowsingContext - ignoring`);

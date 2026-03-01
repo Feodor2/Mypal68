@@ -31,7 +31,7 @@ var gExceptionPaths = [
   "resource://gre/defaults/pref/",
 
   // https://github.com/mozilla/activity-stream/issues/3053
-  "resource://activity-stream/data/content/tippytop/images/",
+  "chrome://activity-stream/content/data/content/tippytop/images/",
 
   // browser/extensions/pdfjs/content/build/pdf.js#1999
   "resource://pdf.js/web/images/",
@@ -165,15 +165,6 @@ var whitelist = [
   { file: "chrome://marionette/content/test.xhtml" },
   { file: "chrome://marionette/content/test_dialog.properties" },
   { file: "chrome://marionette/content/test_dialog.xhtml" },
-  // Bug 1348533
-  {
-    file: "chrome://mozapps/skin/downloads/buttons.png",
-    platforms: ["macosx"],
-  },
-  {
-    file: "chrome://mozapps/skin/downloads/downloadButtons.png",
-    platforms: ["linux", "win"],
-  },
   // Bug 1348559
   { file: "chrome://pippki/content/resetpassword.xhtml" },
   // Bug 1337345

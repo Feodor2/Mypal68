@@ -8,7 +8,7 @@
 <!-- The "global.css" stylesheet is imported first to allow other stylesheets to
      override rules using selectors with the same specificity. This applies to
      both "content" and "skin" packages, which bug 1385444 will unify later. -->
-<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
 
 <!-- While these stylesheets are defined in Toolkit, they are only used in the
      main browser window, so we can load them here. Bug 1474241 is on file to
@@ -36,31 +36,22 @@
 ]>
 
 <html id="main-window"
-        xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-        xmlns:svg="http://www.w3.org/2000/svg"
         xmlns:html="http://www.w3.org/1999/xhtml"
         xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns="http://www.w3.org/1999/xhtml"
-        title_normal="&mainWindow.title;"
 #ifdef XP_MACOSX
-        title_privatebrowsing="&mainWindow.title;&mainWindow.titlemodifiermenuseparator;&mainWindow.titlePrivateBrowsingSuffix;"
-        titledefault="&mainWindow.title;"
-        titlemodifier=""
-        titlemodifier_normal=""
-        titlemodifier_privatebrowsing="&mainWindow.titlePrivateBrowsingSuffix;"
+        data-l10n-id="browser-main-window-mac"
 #else
-        title_privatebrowsing="&mainWindow.titlemodifier; &mainWindow.titlePrivateBrowsingSuffix;"
-        titlemodifier="&mainWindow.titlemodifier;"
-        titlemodifier_normal="&mainWindow.titlemodifier;"
-        titlemodifier_privatebrowsing="&mainWindow.titlemodifier; &mainWindow.titlePrivateBrowsingSuffix;"
+        data-l10n-id="browser-main-window"
 #endif
+        data-l10n-args="{&quot;content-title&quot;:&quot;CONTENTTITLE&quot;}"
+        data-l10n-attrs="data-content-title-default, data-content-title-private, data-title-default, data-title-private"
 #ifdef XP_WIN
         chromemargin="0,2,2,2"
 #else
         chromemargin="0,-1,-1,-1"
 #endif
         tabsintitlebar="true"
-        titlemenuseparator="&mainWindow.titlemodifiermenuseparator;"
         windowtype="navigator:browser"
         macanimationtype="document"
         screenX="4" screenY="4"
@@ -81,8 +72,9 @@
   <link rel="localization" href="browser/menubar.ftl"/>
   <link rel="localization" href="browser/sidebarMenu.ftl"/>
   <link rel="localization" href="browser/allTabsMenu.ftl"/>
+  <link rel="localization" href="browser/places.ftl"/>
 
-  <title>&mainWindow.title;</title>
+  <title data-l10n-id="browser-main-window-title"></title>
 
 # All JS files which are needed by browser.xhtml and other top level windows to
 # support MacOS specific features *must* go into the global-scripts.inc file so
@@ -94,9 +86,6 @@
   Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-captivePortal.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-contentblocking.js", this);
-  if (AppConstants.MOZ_DATA_REPORTING) {
-    Services.scriptloader.loadSubScript("chrome://browser/content/browser-data-submission-info-bar.js", this);
-  }
   if (!AppConstants.MOZILLA_OFFICIAL) {
     Services.scriptloader.loadSubScript("chrome://browser/content/browser-development-helpers.js", this);
   }
@@ -480,47 +469,45 @@
       <hbox id="ctrlTab-showAll-container" pack="center"/>
     </panel>
 
-    <panel id="pageActionPanel"
-           class="cui-widget-panel panel-no-padding"
-           role="group"
-           type="arrow"
-           hidden="true"
-           flip="slide"
-           position="bottomcenter topright"
-           tabspecific="true"
-           noautofocus="true"
-           pinTab-title="&pinTab.label;"
-           unpinTab-title="&unpinTab.label;"
-           copyURL-title="&pageAction.copyLink.label;"
-           emailLink-title="&emailPageCmd.label;"
-           sendToDevice-notReadyTitle="&sendToDevice.syncNotReady.label;">
-      <panelmultiview id="pageActionPanelMultiView"
-                      mainViewId="pageActionPanelMainView"
-                      viewCacheId="appMenu-viewCache">
-        <panelview id="pageActionPanelMainView"
-                   context="pageActionContextMenu"
-                   class="PanelUI-subView">
-          <vbox class="panel-subview-body"/>
-        </panelview>
-      </panelmultiview>
-    </panel>
+    <html:template id="pageActionPanelTemplate">
+      <panel id="pageActionPanel"
+             class="cui-widget-panel panel-no-padding"
+             role="group"
+             type="arrow"
+             hidden="true"
+             flip="slide"
+             position="bottomcenter topright"
+             tabspecific="true"
+             noautofocus="true">
+        <panelmultiview id="pageActionPanelMultiView"
+                        mainViewId="pageActionPanelMainView"
+                        viewCacheId="appMenu-viewCache">
+          <panelview id="pageActionPanelMainView"
+                     context="pageActionContextMenu"
+                     class="PanelUI-subView">
+            <vbox class="panel-subview-body"/>
+          </panelview>
+        </panelmultiview>
+      </panel>
+    </html:template>
 
-    <panel id="confirmation-hint"
-           role="alert"
-           type="arrow"
-           hidden="true"
-           flip="slide"
-           position="bottomcenter topright"
-           tabspecific="true"
-           noautofocus="true">
-      <hbox id="confirmation-hint-checkmark-animation-container">
-       <image id="confirmation-hint-checkmark-image"/>
-      </hbox>
-      <vbox id="confirmation-hint-message-container">
-       <label id="confirmation-hint-message"/>
-       <label id="confirmation-hint-description"/>
-      </vbox>
-    </panel>
+    <html:template id="confirmation-hint-wrapper">
+      <panel id="confirmation-hint"
+             role="alert"
+             type="arrow"
+             flip="slide"
+             position="bottomcenter topright"
+             tabspecific="true"
+             noautofocus="true">
+        <hbox id="confirmation-hint-checkmark-animation-container">
+         <image id="confirmation-hint-checkmark-image"/>
+        </hbox>
+        <vbox id="confirmation-hint-message-container">
+         <label id="confirmation-hint-message"/>
+         <label id="confirmation-hint-description"/>
+        </vbox>
+      </panel>
+    </html:template>
 
     <menupopup id="pageActionContextMenu"
                onpopupshowing="BrowserPageActions.onContextMenuShowing(event, this);">
@@ -617,7 +604,7 @@
                 id="syncedTabsRefreshFilter"/>
     </menupopup>
 
-    <hbox id="statuspanel" inactive="true" renderroot="content">
+    <hbox id="statuspanel" inactive="true">
       <hbox id="statuspanel-inner">
         <label id="statuspanel-label"
                role="status"
@@ -697,7 +684,6 @@
                            ondrop="newTabButtonObserver.onDrop(event)"
                            ondragover="newTabButtonObserver.onDragOver(event)"
                            ondragenter="newTabButtonObserver.onDragOver(event)"
-                           ondragexit="newTabButtonObserver.onDragExit(event)"
                            cui-areatype="toolbar"
                            removable="true"/>
 
@@ -790,7 +776,6 @@
                        ondragover="homeButtonObserver.onDragOver(event)"
                        ondragenter="homeButtonObserver.onDragOver(event)"
                        ondrop="homeButtonObserver.onDrop(event)"
-                       ondragexit="homeButtonObserver.onDragExit(event)"
                        key="goHome"
                        onclick="BrowserHome(event);"
                        cui-areatype="toolbar"
@@ -1146,7 +1131,7 @@
       </toolbaritem>
     </toolbar>
 
-    <toolbarpalette id="BrowserToolbarPalette">
+    <html:template id="BrowserToolbarPalette">
 
       <toolbarbutton id="print-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
 #ifdef XP_MACOSX
@@ -1165,8 +1150,7 @@
                      tooltip="dynamic-shortcut-tooltip"
                      ondrop="newWindowButtonObserver.onDrop(event)"
                      ondragover="newWindowButtonObserver.onDragOver(event)"
-                     ondragenter="newWindowButtonObserver.onDragOver(event)"
-                     ondragexit="newWindowButtonObserver.onDragExit(event)"/>
+                     ondragenter="newWindowButtonObserver.onDragOver(event)"/>
 
       <toolbarbutton id="fullscreen-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
                      observes="View:FullScreen"
@@ -1278,13 +1262,13 @@
         <searchbar id="searchbar" flex="1"/>
         <toolbartabstop/>
       </toolbaritem>
-    </toolbarpalette>
+    </html:template>
   </toolbox>
   </box>
 
   <hbox id="fullscr-toggler" hidden="true"/>
 
-  <hbox flex="1" id="browser" renderroot="content">
+  <hbox flex="1" id="browser">
     <vbox id="browser-border-start" hidden="true" layer="true"/>
     <vbox id="sidebar-box" hidden="true" class="chromeclass-extrachrome">
       <box id="sidebar-header" align="center">
@@ -1317,41 +1301,43 @@
     <vbox id="browser-border-end" hidden="true" layer="true"/>
   </hbox>
 
-  <box id="customization-container" flex="1" renderroot="content" hidden="true"><![CDATA[
+  <box id="customization-container" flex="1" hidden="true"><![CDATA[
 #include ../../components/customizableui/content/customizeMode.inc.xhtml
   ]]></box>
 
-  <html:div id="fullscreen-warning" class="pointerlockfswarning" hidden="true" renderroot="content">
-    <html:div class="pointerlockfswarning-domain-text">
-      &fullscreenWarning.beforeDomain.label;
-      <html:span class="pointerlockfswarning-domain"/>
-      &fullscreenWarning.afterDomain.label;
-    </html:div>
-    <html:div class="pointerlockfswarning-generic-text">
-      &fullscreenWarning.generic.label;
-    </html:div>
-    <html:button id="fullscreen-exit-button"
-                 onclick="FullScreen.exitDomFullScreen();">
+  <html:div id="fullscreen-and-pointerlock-wrapper">
+    <html:div id="fullscreen-warning" class="pointerlockfswarning" hidden="true">
+      <html:div class="pointerlockfswarning-domain-text">
+        &fullscreenWarning.beforeDomain.label;
+        <html:span class="pointerlockfswarning-domain"/>
+        &fullscreenWarning.afterDomain.label;
+      </html:div>
+      <html:div class="pointerlockfswarning-generic-text">
+        &fullscreenWarning.generic.label;
+      </html:div>
+      <html:button id="fullscreen-exit-button"
+                   onclick="FullScreen.exitDomFullScreen();">
 #ifdef XP_MACOSX
-            &exitDOMFullscreenMac.button;
+              &exitDOMFullscreenMac.button;
 #else
-            &exitDOMFullscreen.button;
+              &exitDOMFullscreen.button;
 #endif
-    </html:button>
+      </html:button>
+    </html:div>
+
+    <html:div id="pointerlock-warning" class="pointerlockfswarning" hidden="true">
+      <html:div class="pointerlockfswarning-domain-text">
+        &pointerlockWarning.beforeDomain.label;
+        <html:span class="pointerlockfswarning-domain"/>
+        &pointerlockWarning.afterDomain.label;
+      </html:div>
+      <html:div class="pointerlockfswarning-generic-text">
+        &pointerlockWarning.generic.label;
+      </html:div>
+    </html:div>
   </html:div>
 
-  <html:div id="pointerlock-warning" class="pointerlockfswarning" hidden="true" renderroot="content">
-    <html:div class="pointerlockfswarning-domain-text">
-      &pointerlockWarning.beforeDomain.label;
-      <html:span class="pointerlockfswarning-domain"/>
-      &pointerlockWarning.afterDomain.label;
-    </html:div>
-    <html:div class="pointerlockfswarning-generic-text">
-      &pointerlockWarning.generic.label;
-    </html:div>
-  </html:div>
-
-  <vbox id="browser-bottombox" layer="true" renderroot="content">
+  <vbox id="browser-bottombox" layer="true">
     <!-- gNotificationBox will be added here lazily. -->
   </vbox>
 </html:body>

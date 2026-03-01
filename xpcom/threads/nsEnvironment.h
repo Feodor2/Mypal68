@@ -25,10 +25,8 @@ class nsEnvironment final : public nsIEnvironment {
   static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
  private:
-  nsEnvironment() : mLock("nsEnvironment.mLock") {}
-  ~nsEnvironment();
-
-  Lock mLock;
+  nsEnvironment() {}
+  ~nsEnvironment() = default;
 };
 
 #endif /* !nsEnvironment_h__ */

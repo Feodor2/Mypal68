@@ -22,6 +22,7 @@
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
+#include "nsIContentInlines.h"
 #include "nsIEditingSession.h"
 #include "nsIFrame.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -35,10 +36,10 @@
 #include "nsFocusManager.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/EditorBase.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/TextEditor.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/DocumentType.h"
@@ -231,8 +232,8 @@ uint64_t DocAccessible::NativeState() const {
     state |= states::INVISIBLE | states::OFFSCREEN;
   }
 
-  RefPtr<TextEditor> textEditor = GetEditor();
-  state |= textEditor ? states::EDITABLE : states::READONLY;
+  RefPtr<EditorBase> editorBase = GetEditor();
+  state |= editorBase ? states::EDITABLE : states::READONLY;
 
   return state;
 }
@@ -286,12 +287,13 @@ void DocAccessible::TakeFocus() const {
 }
 
 // HyperTextAccessible method
-already_AddRefed<TextEditor> DocAccessible::GetEditor() const {
+already_AddRefed<EditorBase> DocAccessible::GetEditor() const {
   // Check if document is editable (designMode="on" case). Otherwise check if
   // the html:body (for HTML document case) or document element is editable.
-  if (!mDocumentNode->HasFlag(NODE_IS_EDITABLE) &&
-      (!mContent || !mContent->HasFlag(NODE_IS_EDITABLE)))
+  if (!mDocumentNode->IsInDesignMode() &&
+      (!mContent || !mContent->HasFlag(NODE_IS_EDITABLE))) {
     return nullptr;
+  }
 
   nsCOMPtr<nsIDocShell> docShell = mDocumentNode->GetDocShell();
   if (!docShell) {
@@ -1105,6 +1107,10 @@ nsresult DocAccessible::HandleAccEvent(AccEvent* aEvent) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Public members
+
+nsPresContext* DocAccessible::PresContext() const {
+  return mPresShell->GetPresContext();
+}
 
 void* DocAccessible::GetNativeWindow() const {
   if (!mPresShell) {
@@ -2054,6 +2060,20 @@ void DocAccessible::ContentRemoved(nsIContent* aContentNode) {
   while (nsIContent* childNode = iter.GetNextChild()) {
     ContentRemoved(childNode);
   }
+
+  // If this node has a shadow root, remove its explicit children too.
+  // The host node may be removed after the shadow root was attached, and
+  // before we asynchronously prune the light DOM and construct the shadow DOM.
+  // If this is a case where the node does not have its own accessible, we will
+  // not recurse into its current children, so we need to use an
+  // ExplicitChildIterator in order to get its accessible children in the light
+  // DOM, since they are not accessible anymore via AllChildrenIterator.
+  if (aContentNode->GetShadowRoot()) {
+    dom::ExplicitChildIterator iter = dom::ExplicitChildIterator(aContentNode);
+    while (nsIContent* childNode = iter.GetNextChild()) {
+      ContentRemoved(childNode);
+    }
+  }
 }
 
 bool DocAccessible::RelocateARIAOwnedIfNeeded(nsIContent* aElement) {
@@ -2298,7 +2318,7 @@ bool DocAccessible::MoveChild(Accessible* aChild, Accessible* aNewParent,
 
   if (curParent == aNewParent) {
     MOZ_ASSERT(aChild->IndexInParent() != aIdxInParent, "No move case");
-    curParent->MoveChild(aIdxInParent, aChild);
+    curParent->RelocateChild(aIdxInParent, aChild);
 
 #ifdef A11Y_LOG
     logging::TreeInfo("move child: parent tree after", logging::eVerbose,

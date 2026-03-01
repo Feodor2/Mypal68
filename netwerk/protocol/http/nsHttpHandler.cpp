@@ -59,7 +59,7 @@
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/Unused.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/AntiTrackingRedirectHeuristic.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/SyncRunnable.h"
@@ -610,19 +610,31 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
   nsresult rv;
   nsAutoCString ua;
 
-  nsCOMPtr<nsIPrefBranch> prefBranch;
-  nsCOMPtr<nsIPrefService> prefService =
-      do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  prefService->GetBranch("general.useragent.override.",
-                         getter_AddRefs(prefBranch));
-
-  if (prefBranch) {
-    rv = prefBranch->GetCharPref(host.get(), ua);
-    if (!NS_SUCCEEDED(rv)) {
-      ua = UserAgent();
+  if (NS_IsMainThread()) {
+    nsCOMPtr<nsIPrefBranch> prefBranch;
+    nsCOMPtr<nsIPrefService> prefService =
+        do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+    prefService->GetBranch("general.useragent.override.",
+                           getter_AddRefs(prefBranch));
+    if (prefBranch) {
+      nsTArray<nsCString> prefNames;
+      rv = prefBranch->GetChildList("", prefNames);
+      if (NS_SUCCEEDED(rv)) {
+        for (auto& prefName : prefNames) {
+          if (FindInReadable(prefName, host)) {
+            prefBranch->GetCharPref(prefName.get(), ua);
+            goto ua_found;
+          }
+        }
+      }
     }
+    goto ua_default;
+  } else {
+  ua_default:
+    ua = UserAgent();
   }
+ua_found:
 
   // Add the "User-Agent" header
   rv = request->SetHeader(nsHttp::User_Agent, ua, false,
@@ -836,7 +848,7 @@ nsresult nsHttpHandler::AsyncOnChannelRedirect(
   newChan->GetURI(getter_AddRefs(newURI));
   MOZ_ASSERT(newURI);
 
-  AntiTrackingCommon::RedirectHeuristic(oldChan, oldURI, newChan, newURI);
+  AntiTrackingRedirectHeuristic(oldChan, oldURI, newChan, newURI);
 
   // TODO E10S This helper has to be initialized on the other process
   RefPtr<nsAsyncRedirectVerifyHelper> redirectCallbackHelper =

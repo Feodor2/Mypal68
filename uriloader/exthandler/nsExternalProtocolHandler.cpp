@@ -207,7 +207,7 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener* aListener) {
       mLoadInfo->GetSecurityMode() == 0 ||
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
-               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
+               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL &&
            mLoadInfo->GetLoadingPrincipal() &&
            mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
@@ -365,7 +365,7 @@ NS_IMETHODIMP nsExtProtocolChannel::CompleteRedirectSetup(
 //////////////////////////////////////////////////////////////////////
 
 NS_IMETHODIMP nsExtProtocolChannel::SetParentListener(
-    mozilla::net::HttpChannelParentListener* aListener) {
+    mozilla::net::ParentChannelListener* aListener) {
   // This is called as part of the connect parent operation from
   // ContentParent::RecvExtProtocolChannelConnectParent.  Setting
   // this flag tells this channel to not proceed and makes AsyncOpen

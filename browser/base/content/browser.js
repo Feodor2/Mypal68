@@ -465,7 +465,6 @@ customElements.setElementCreationCallback("translation-notification", () => {
 });
 
 var gBrowser;
-var gLastValidURLStr = "";
 var gInPrintPreviewMode = false;
 var gContextMenu = null; // nsContextMenu instance
 var gMultiProcessBrowser = window.docShell.QueryInterface(Ci.nsILoadContext)
@@ -991,13 +990,17 @@ var gPopupBlockerObserver = {
     //          nsGlobalWindow::CheckOpenAllow() was changed to also
     //          check if the top window's location is whitelisted.
     let browser = gBrowser.selectedBrowser;
-    var uri = browser.contentPrincipal.URI || browser.currentURI;
+    var uriOrPrincipal = browser.contentPrincipal.isCodebasePrincipal
+      ? browser.contentPrincipal
+      : browser.currentURI;
     var blockedPopupAllowSite = document.getElementById(
       "blockedPopupAllowSite"
     );
     try {
       blockedPopupAllowSite.removeAttribute("hidden");
-      let uriHost = uri.asciiHost ? uri.host : uri.spec;
+      let uriHost = uriOrPrincipal.asciiHost
+        ? uriOrPrincipal.host
+        : uriOrPrincipal.spec;
       var pm = Services.perms;
       if (
         pm.testPermissionFromPrincipal(browser.contentPrincipal, "popup") ==
@@ -1651,8 +1654,9 @@ var gBrowserInit = {
 
     BrowserWindowTracker.track(window);
 
-    gNavToolbox.palette = document.getElementById("BrowserToolbarPalette");
-    gNavToolbox.palette.remove();
+    gNavToolbox.palette = document.getElementById(
+      "BrowserToolbarPalette"
+    ).content;
     let areas = CustomizableUI.areas;
     areas.splice(areas.indexOf(CustomizableUI.AREA_FIXED_OVERFLOW_PANEL), 1);
     for (let area of areas) {
@@ -3069,129 +3073,6 @@ function BrowserPageInfo(
   );
 }
 
-/**
- * Sets the URI to display in the location bar.
- *
- * @param aURI [optional]
- *        nsIURI to set. If this is unspecified, the current URI will be used.
- * @param updatePopupNotifications [optional]
- *        Passed though to SetPageProxyState, indicates whether the
- *        PopupNotifications need updated.
- */
-function URLBarSetURI(aURI, updatePopupNotifications) {
-  var value = gBrowser.userTypedValue;
-  var valid = false;
-
-  // Explicitly check for nulled out value. We don't want to reset the URL
-  // bar if the user has deleted the URL and we'd just put the same URL
-  // back. See bug 304198.
-  if (value === null) {
-    let uri = aURI || gBrowser.currentURI;
-    // Strip off usernames and passwords for the location bar
-    try {
-      uri = Services.io.createExposableURI(uri);
-    } catch (e) {}
-
-    // Replace initial page URIs with an empty string
-    // only if there's no opener (bug 370555).
-    if (
-      isInitialPage(uri) &&
-      checkEmptyPageOrigin(gBrowser.selectedBrowser, uri)
-    ) {
-      value = "";
-    } else {
-      // We should deal with losslessDecodeURI throwing for exotic URIs
-      try {
-        value = losslessDecodeURI(uri);
-      } catch (ex) {
-        value = "about:blank";
-      }
-    }
-
-    valid = !isBlankPageURL(uri.spec) || uri.schemeIs("moz-extension");
-  } else if (
-    isInitialPage(value) &&
-    checkEmptyPageOrigin(gBrowser.selectedBrowser)
-  ) {
-    value = "";
-    valid = true;
-  }
-
-  let isDifferentValidValue = valid && value != gURLBar.value;
-  gURLBar.value = value;
-  gURLBar.valueIsTyped = !valid;
-  gURLBar.removeAttribute("usertyping");
-  if (isDifferentValidValue) {
-    // The selection is enforced only for new values, to avoid overriding the
-    // cursor position when the user switches windows while typing.
-    gURLBar.selectionStart = gURLBar.selectionEnd = 0;
-  }
-
-  SetPageProxyState(valid ? "valid" : "invalid", updatePopupNotifications);
-}
-
-function losslessDecodeURI(aURI) {
-  let scheme = aURI.scheme;
-  if (scheme == "moz-action") {
-    throw new Error("losslessDecodeURI should never get a moz-action URI");
-  }
-
-  var value = aURI.displaySpec;
-
-  let decodeASCIIOnly = !["https", "http", "file", "ftp"].includes(scheme);
-  // Try to decode as UTF-8 if there's no encoding sequence that we would break.
-  if (!/%25(?:3B|2F|3F|3A|40|26|3D|2B|24|2C|23)/i.test(value)) {
-    if (decodeASCIIOnly) {
-      // This only decodes ascii characters (hex) 20-7e, except 25 (%).
-      // This avoids both cases stipulated below (%-related issues, and \r, \n
-      // and \t, which would be %0d, %0a and %09, respectively) as well as any
-      // non-US-ascii characters.
-      value = value.replace(
-        /%(2[0-4]|2[6-9a-f]|[3-6][0-9a-f]|7[0-9a-e])/g,
-        decodeURI
-      );
-    } else {
-      try {
-        value = decodeURI(value)
-          // 1. decodeURI decodes %25 to %, which creates unintended
-          //    encoding sequences. Re-encode it, unless it's part of
-          //    a sequence that survived decodeURI, i.e. one for:
-          //    ';', '/', '?', ':', '@', '&', '=', '+', '$', ',', '#'
-          //    (RFC 3987 section 3.2)
-          // 2. Re-encode select whitespace so that it doesn't get eaten
-          //    away by the location bar (bug 410726). Re-encode all
-          //    adjacent whitespace, to prevent spoofing attempts where
-          //    invisible characters would push part of the URL to
-          //    overflow the location bar (bug 1395508).
-          .replace(
-            /%(?!3B|2F|3F|3A|40|26|3D|2B|24|2C|23)|[\r\n\t]|\s(?=\s)|\s$/gi,
-            encodeURIComponent
-          );
-      } catch (e) {}
-    }
-  }
-
-  // Encode invisible characters (C0/C1 control characters, U+007F [DEL],
-  // U+00A0 [no-break space], line and paragraph separator,
-  // object replacement character) (bug 452979, bug 909264)
-  value = value.replace(
-    // eslint-disable-next-line no-control-regex
-    /[\u0000-\u001f\u007f-\u00a0\u2028\u2029\ufffc]/g,
-    encodeURIComponent
-  );
-
-  // Encode default ignorable characters (bug 546013)
-  // except ZWNJ (U+200C) and ZWJ (U+200D) (bug 582186).
-  // This includes all bidirectional formatting characters.
-  // (RFC 3987 sections 3.2 and 4.1 paragraph 6)
-  value = value.replace(
-    // eslint-disable-next-line no-misleading-character-class
-    /[\u00ad\u034f\u061c\u115f-\u1160\u17b4-\u17b5\u180b-\u180d\u200b\u200e-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8]|\ud834[\udd73-\udd7a]|[\udb40-\udb43][\udc00-\udfff]/g,
-    encodeURIComponent
-  );
-  return value;
-}
-
 function UpdateUrlbarSearchSplitterState() {
   var splitter = document.getElementById("urlbar-search-splitter");
   var urlbar = document.getElementById("urlbar-container");
@@ -3238,53 +3119,6 @@ function UpdateUrlbarSearchSplitterState() {
   } else if (splitter) {
     splitter.remove();
   }
-}
-
-function UpdatePageProxyState() {
-  if (gURLBar && gURLBar.value != gLastValidURLStr) {
-    SetPageProxyState("invalid", true);
-  }
-}
-
-/**
- * Updates the user interface to indicate whether the URI in the location bar is
- * different than the loaded page, because it's being edited or because a search
- * result is currently selected and is displayed in the location bar.
- *
- * @param aState
- *        The string "valid" indicates that the security indicators and other
- *        related user interface elments should be shown because the URI in the
- *        location bar matches the loaded page. The string "invalid" indicates
- *        that the URI in the location bar is different than the loaded page.
- * @param updatePopupNotifications
- *        Boolean that indicates whether we should update the PopupNotifications
- *        visibility due to this change, otherwise avoid doing so as it is being
- *        handled somewhere else.
- */
-function SetPageProxyState(aState, updatePopupNotifications) {
-  if (!gURLBar) {
-    return;
-  }
-
-  let oldPageProxyState = gURLBar.getAttribute("pageproxystate");
-  gURLBar.setPageProxyState(aState);
-
-  // the page proxy state is set to valid via OnLocationChange, which
-  // gets called when we switch tabs.
-  if (aState == "valid") {
-    gLastValidURLStr = gURLBar.value;
-    gURLBar.addEventListener("input", UpdatePageProxyState);
-  } else if (aState == "invalid") {
-    gURLBar.removeEventListener("input", UpdatePageProxyState);
-  }
-
-  // After we've ensured that we've applied the listeners and updated the value
-  // of gLastValidURLStr, return early if the actual state hasn't changed.
-  if (oldPageProxyState == aState || !updatePopupNotifications) {
-    return;
-  }
-
-  UpdatePopupNotificationsVisibility();
 }
 
 function UpdatePopupNotificationsVisibility() {
@@ -4037,7 +3871,6 @@ var homeButtonObserver = {
     browserDragAndDrop.dragOver(aEvent);
     aEvent.dropEffect = "link";
   },
-  onDragExit(aEvent) {},
 };
 
 function openHomeDialog(aURL) {
@@ -4074,7 +3907,6 @@ var newTabButtonObserver = {
   onDragOver(aEvent) {
     browserDragAndDrop.dragOver(aEvent);
   },
-  onDragExit(aEvent) {},
   async onDrop(aEvent) {
     let shiftKey = aEvent.shiftKey;
     let links = browserDragAndDrop.dropLinks(aEvent);
@@ -4114,7 +3946,6 @@ var newWindowButtonObserver = {
   onDragOver(aEvent) {
     browserDragAndDrop.dragOver(aEvent);
   },
-  onDragExit(aEvent) {},
   async onDrop(aEvent) {
     let links = browserDragAndDrop.dropLinks(aEvent);
     let triggeringPrincipal = browserDragAndDrop.getTriggeringPrincipal(aEvent);
@@ -4278,10 +4109,12 @@ const BrowserSearch = {
   delayedStartupInit() {
     // Asynchronously initialize the search service if necessary, to get the
     // current engine for working out the placeholder.
-    Services.search.getDefault().then(defaultEngine => {
+    this._updateURLBarPlaceholderFromDefaultEngine(
+      this._usePrivateSettings,
       // Delay the update for this until so that we don't change it while
       // the user is looking at it / isn't expecting it.
-      this._updateURLBarPlaceholder(defaultEngine.name, true);
+      true
+    ).then(() => {
       this._searchInitComplete = true;
     });
   },
@@ -4313,11 +4146,29 @@ const BrowserSearch = {
         this._removeMaybeOfferedEngine(engineName);
         break;
       case "engine-default":
-        if (this._searchInitComplete) {
-          this._updateURLBarPlaceholder(engineName);
+        if (this._searchInitComplete && !this._usePrivateSettings) {
+          this._updateURLBarPlaceholder(engineName, false);
+        }
+        break;
+      case "engine-default-private":
+        if (this._searchInitComplete && this._usePrivateSettings) {
+          this._updateURLBarPlaceholder(engineName, true);
         }
         break;
     }
+  },
+
+  /**
+   * @returns True if we are using a separate default private engine, and
+   *          we are in a private window.
+   */
+  get _usePrivateSettings() {
+    return (
+      Services.prefs.getBoolPref(
+        "browser.search.separatePrivateDefault",
+        true
+      ) && PrivateBrowsingUtils.isWindowPrivate(window)
+    );
   },
 
   _addMaybeOfferedEngine(engineName) {
@@ -4375,14 +4226,34 @@ const BrowserSearch = {
    * placeholder is a string which doesn't have the engine name.
    */
   initPlaceHolder() {
-    let engineName = Services.prefs.getStringPref(
-      "browser.urlbar.placeholderName",
-      ""
-    );
+    const prefName =
+      "browser.urlbar.placeholderName" +
+      (this._usePrivateSettings ? ".private" : "");
+    let engineName = Services.prefs.getStringPref(prefName, "");
     if (engineName) {
       // We can do this directly, since we know we're at DOMContentLoaded.
       this._setURLBarPlaceholder(engineName);
     }
+  },
+
+  /**
+   * This is a wrapper around '_updateURLBarPlaceholder' that uses the
+   * appropriate default engine to get the engine name.
+   *
+   * @param {Boolean} isPrivate      Set to true if this is a private window.
+   * @param {Boolean} [delayUpdate]  Set to true, to delay update until the
+   *                                 placeholder is not displayed.
+   */
+  async _updateURLBarPlaceholderFromDefaultEngine(
+    isPrivate,
+    delayUpdate = false
+  ) {
+    const getDefault = isPrivate
+      ? Services.search.getDefaultPrivate
+      : Services.search.getDefault;
+    let defaultEngine = await getDefault();
+
+    this._updateURLBarPlaceholder(defaultEngine.name, isPrivate, delayUpdate);
   },
 
   /**
@@ -4394,24 +4265,24 @@ const BrowserSearch = {
    * know they should have short names.
    *
    * @param {String}  engineName     The search engine name to use for the update.
-   * @param {Boolean} delayUpdate    Set to true, to delay update until the
+   * @param {Boolean} isPrivate      Set to true if this is a private window.
+   * @param {Boolean} [delayUpdate]  Set to true, to delay update until the
    *                                 placeholder is not displayed.
    */
-  async _updateURLBarPlaceholder(engineName, delayUpdate = false) {
+  async _updateURLBarPlaceholder(engineName, isPrivate, delayUpdate = false) {
     if (!engineName) {
       throw new Error("Expected an engineName to be specified");
     }
 
     let defaultEngines = await Services.search.getDefaultEngines();
+    const prefName =
+      "browser.urlbar.placeholderName" + (isPrivate ? ".private" : "");
     if (
       defaultEngines.some(defaultEngine => defaultEngine.name == engineName)
     ) {
-      Services.prefs.setStringPref(
-        "browser.urlbar.placeholderName",
-        engineName
-      );
+      Services.prefs.setStringPref(prefName, engineName);
     } else {
-      Services.prefs.clearUserPref("browser.urlbar.placeholderName");
+      Services.prefs.clearUserPref(prefName);
       // Set the engine name to an empty string for non-default engines, which'll
       // make sure we display the default placeholder string.
       engineName = "";
@@ -4425,7 +4296,11 @@ const BrowserSearch = {
       // a tab switch to a tab which has a url loaded.
       let placeholderUpdateListener = () => {
         if (gURLBar.value) {
-          this._setURLBarPlaceholder(engineName);
+          // By the time the user has switched, they may have changed the engine
+          // again, so we need to call this function again but with the
+          // new engine name.
+          // No need to await for this to finish, we're in a listener here anyway.
+          this._updateURLBarPlaceholderFromDefaultEngine(isPrivate, false);
           gURLBar.removeEventListener("input", placeholderUpdateListener);
           gBrowser.tabContainer.removeEventListener(
             "TabSelect",
@@ -5450,7 +5325,8 @@ var XULBrowserWindow = {
 
     if (aWebProgress.isTopLevel) {
       if (
-        (location == "about:blank" && checkEmptyPageOrigin()) ||
+        (location == "about:blank" &&
+          BrowserUtils.checkEmptyPageOrigin(gBrowser.selectedBrowser)) ||
         location == ""
       ) {
         // Second condition is for new tabs, otherwise
@@ -5464,7 +5340,7 @@ var XULBrowserWindow = {
       // via simulated locationchange events such as switching between tabs, however
       // if this is a document navigation then PopupNotifications will be updated
       // via TabsProgressListener.onLocationChange and we do not want it called twice
-      URLBarSetURI(aLocationURI, aIsSimulated);
+      gURLBar.setURI(aLocationURI, aIsSimulated);
 
       BookmarkingUI.onLocationChange();
 
@@ -7745,7 +7621,7 @@ var CanvasPermissionPromptHelper = {
 
     let options = {
       checkbox,
-      name: principal.URI.host,
+      name: principal.host,
       learnMoreURL:
         Services.urlFormatter.formatURLPref("app.support.baseURL") +
         "fingerprint-permission",
@@ -8211,68 +8087,6 @@ function undoCloseWindow(aIndex) {
 }
 
 /**
- * Check whether a page can be considered as 'empty', that its URI
- * reflects its origin, and that if it's loaded in a tab, that tab
- * could be considered 'empty' (e.g. like the result of opening
- * a 'blank' new tab).
- *
- * We have to do more than just check the URI, because especially
- * for things like about:blank, it is possible that the opener or
- * some other page has control over the contents of the page.
- *
- * @param browser {Browser}
- *        The browser whose page we're checking (the selected browser
- *        in this window if omitted).
- * @param uri {nsIURI}
- *        The URI against which we're checking (the browser's currentURI
- *        if omitted).
- *
- * @return false if the page was opened by or is controlled by arbitrary web
- *         content, unless that content corresponds with the URI.
- *         true if the page is blank and controlled by a principal matching
- *         that URI (or the system principal if the principal has no URI)
- */
-function checkEmptyPageOrigin(
-  browser = gBrowser.selectedBrowser,
-  uri = browser.currentURI
-) {
-  // If another page opened this page with e.g. window.open, this page might
-  // be controlled by its opener - return false.
-  if (browser.hasContentOpener) {
-    return false;
-  }
-  let contentPrincipal = browser.contentPrincipal;
-  // Not all principals have URIs...
-  if (contentPrincipal.URI) {
-    // There are two special-cases involving about:blank. One is where
-    // the user has manually loaded it and it got created with a null
-    // principal. The other involves the case where we load
-    // some other empty page in a browser and the current page is the
-    // initial about:blank page (which has that as its principal, not
-    // just URI in which case it could be web-based). Especially in
-    // e10s, we need to tackle that case specifically to avoid race
-    // conditions when updating the URL bar.
-    //
-    // Note that we check the documentURI here, since the currentURI on
-    // the browser might have been set by SessionStore in order to
-    // support switch-to-tab without having actually loaded the content
-    // yet.
-    let uriToCheck = browser.documentURI || uri;
-    if (
-      (uriToCheck.spec == "about:blank" && contentPrincipal.isNullPrincipal) ||
-      contentPrincipal.URI.spec == "about:blank"
-    ) {
-      return true;
-    }
-    return contentPrincipal.URI.equals(uri);
-  }
-  // ... so for those that don't have them, enforce that the page has the
-  // system principal (this matches e.g. on about:newtab).
-
-  return contentPrincipal.isSystemPrincipal;
-}
-
-/**
  * Format a URL
  * eg:
  * echo formatURL("https://addons.mozilla.org/%LOCALE%/%APP%/%VERSION%/");
@@ -8395,12 +8209,6 @@ var gPrivateBrowsingUI = {
 
     // Adjust the window's title
     let docElement = document.documentElement;
-    if (!PrivateBrowsingUtils.permanentPrivateBrowsing) {
-      docElement.setAttribute(
-        "titlemodifier",
-        docElement.getAttribute("titlemodifier_privatebrowsing")
-      );
-    }
     docElement.setAttribute(
       "privatebrowsingmode",
       PrivateBrowsingUtils.permanentPrivateBrowsing ? "permanent" : "temporary"
@@ -9202,7 +9010,6 @@ var ConfirmationHint = {
       { once: true }
     );
 
-    this._panel.hidden = false;
     this._panel.openPopup(anchor, {
       position: "bottomcenter topleft",
       triggerEvent: options.event,
@@ -9210,11 +9017,12 @@ var ConfirmationHint = {
   },
 
   get _panel() {
-    delete this._panel;
-    return (this._panel = document.getElementById("confirmation-hint"));
+    this._ensurePanel();
+    return this.__panel;
   },
 
   get _animationBox() {
+    this._ensurePanel();
     delete this._animationBox;
     return (this._animationBox = document.getElementById(
       "confirmation-hint-checkmark-animation-container"
@@ -9222,6 +9030,7 @@ var ConfirmationHint = {
   },
 
   get _message() {
+    this._ensurePanel();
     delete this._message;
     return (this._message = document.getElementById(
       "confirmation-hint-message"
@@ -9229,9 +9038,18 @@ var ConfirmationHint = {
   },
 
   get _description() {
+    this._ensurePanel();
     delete this._description;
     return (this._description = document.getElementById(
       "confirmation-hint-description"
     ));
+  },
+
+  _ensurePanel() {
+    if (!this.__panel) {
+      let wrapper = document.getElementById("confirmation-hint-wrapper");
+      wrapper.replaceWith(wrapper.content);
+      this.__panel = document.getElementById("confirmation-hint");
+    }
   },
 };

@@ -421,7 +421,7 @@ void AddrHostRecord::ResolveComplete() {
   }
 
   if (mTRRUsed && !mTRRSuccess && mNativeSuccess && gTRRService) {
-    gTRRService->TRRBlacklist(nsCString(host), originSuffix, pb, true);
+    gTRRService->AddToBlocklist(nsCString(host), originSuffix, pb, true);
   }
 }
 
@@ -1691,12 +1691,12 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
         return LOOKUP_OK;
       }
 
-      if (gTRRService && gTRRService->WaitForAllResponses()) {
+      if (gTRRService && StaticPrefs::network_trr_wait_for_A_and_AAAA()) {
         LOG(("CompleteLookup: waiting for all responses!\n"));
         return LOOKUP_OK;
       }
 
-      if (addrRec->mTrrA && (!gTRRService || !gTRRService->EarlyAAAA())) {
+      if (addrRec->mTrrA && !StaticPrefs::network_trr_early_AAAA()) {
         // This is an early AAAA with a pending A response. Allowed
         // only by pref.
         LOG(("CompleteLookup: avoiding early use of TRR AAAA!\n"));

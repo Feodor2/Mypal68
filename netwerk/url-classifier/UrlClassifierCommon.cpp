@@ -5,9 +5,10 @@
 #include "mozilla/net/UrlClassifierCommon.h"
 
 #include "ClassifierDummyChannel.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentBlockingAllowList.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -64,7 +65,7 @@ void UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
   }
 
   nsCOMPtr<nsIURI> uriBeingLoaded =
-      AntiTrackingCommon::MaybeGetDocumentURIBeingLoaded(aChannel);
+      AntiTrackingUtils::MaybeGetDocumentURIBeingLoaded(aChannel);
   NotifyChannelBlocked(aChannel, uriBeingLoaded, aEvent);
 }
 
@@ -91,12 +92,17 @@ void UrlClassifierCommon::NotifyChannelBlocked(nsIChannel* aChannel,
 
   nsCOMPtr<nsIURI> uri;
   aChannel->GetURI(getter_AddRefs(uri));
-  pwin->NotifyContentBlockingEvent(aBlockedReason, aChannel, true, uri,
-                                   aChannel);
+  nsAutoCString trackingOrigin;
+  if (uri) {
+    Unused << nsContentUtils::GetASCIIOrigin(uri, trackingOrigin);
+  }
+  pwin->NotifyContentBlockingEvent(aBlockedReason, aChannel, true,
+                                   trackingOrigin, aChannel);
 }
 
 /* static */
-bool UrlClassifierCommon::ShouldEnableClassifier(nsIChannel* aChannel) {
+bool UrlClassifierCommon::ShouldEnableProtectionForChannel(
+    nsIChannel* aChannel) {
   MOZ_ASSERT(aChannel);
 
   nsCOMPtr<nsIURI> chanURI;
@@ -116,9 +122,12 @@ bool UrlClassifierCommon::ShouldEnableClassifier(nsIChannel* aChannel) {
     return false;
   }
 
-  rv = channel->GetTopWindowURI(getter_AddRefs(topWinURI));
-  if (NS_FAILED(rv)) {
-    // Skipping top-level load.
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  MOZ_ASSERT(loadInfo);
+
+  auto policyType = loadInfo->GetExternalContentPolicyType();
+  if (policyType == ExtContentPolicy::TYPE_DOCUMENT) {
+    UC_LOG(("nsChannelClassifier: Skipping top-level load"));
     return false;
   }
 
@@ -126,11 +135,15 @@ bool UrlClassifierCommon::ShouldEnableClassifier(nsIChannel* aChannel) {
   // the security state. If any channels are subsequently cancelled
   // (page elements blocked) the state will be then updated.
   if (UC_LOG_ENABLED()) {
+    nsCOMPtr<nsIURI> topWinURI;
+    Unused << UrlClassifierCommon::GetTopWindowURI(aChannel,
+                                                   getter_AddRefs(topWinURI));
+
     nsCString chanSpec = chanURI->GetSpecOrDefault();
     chanSpec.Truncate(
         std::min(chanSpec.Length(), UrlClassifierCommon::sMaxSpecLength));
-    nsCString topWinSpec = topWinURI ? topWinURI->GetSpecOrDefault()
-                                     : NS_LITERAL_CSTRING("(null)");
+    nsCString topWinSpec =
+        topWinURI ? topWinURI->GetSpecOrDefault() : "(null)"_ns;
     topWinSpec.Truncate(
         std::min(topWinSpec.Length(), UrlClassifierCommon::sMaxSpecLength));
     UC_LOG(
@@ -207,7 +220,7 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   }
 
   nsCOMPtr<nsIURI> uriBeingLoaded =
-      AntiTrackingCommon::MaybeGetDocumentURIBeingLoaded(channel);
+      AntiTrackingUtils::MaybeGetDocumentURIBeingLoaded(channel);
   nsCOMPtr<mozIDOMWindowProxy> win;
   rv = thirdPartyUtil->GetTopWindowForChannel(channel, uriBeingLoaded,
                                               getter_AddRefs(win));
@@ -241,13 +254,46 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
         ClassifierBlockingErrorCodeToConsoleMessage(aErrorCode, category);
   } else {
     message = "UnsafeUriBlocked";
-    category = NS_LITERAL_CSTRING("Safe Browsing");
+    category = "Safe Browsing"_ns;
   }
 
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, category, doc,
                                   nsContentUtils::eNECKO_PROPERTIES, message,
                                   params);
 
+  return NS_OK;
+}
+
+/* static */
+nsresult UrlClassifierCommon::GetTopWindowURI(nsIChannel* aChannel,
+                                              nsIURI** aURI) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aChannel);
+
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  MOZ_ASSERT(loadInfo);
+
+  RefPtr<dom::BrowsingContext> browsingContext;
+  nsresult rv =
+      loadInfo->GetTargetBrowsingContext(getter_AddRefs(browsingContext));
+  if (NS_WARN_IF(NS_FAILED(rv)) || !browsingContext) {
+    return NS_ERROR_FAILURE;
+  }
+
+  dom::CanonicalBrowsingContext* top =
+      static_cast<dom::CanonicalBrowsingContext*>(
+          browsingContext->Canonical()->Top());
+  dom::WindowGlobalParent* wgp = top->GetCurrentWindowGlobal();
+  if (!wgp) {
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<nsIURI> uri = wgp->GetDocumentURI();
+  if (!uri) {
+    return NS_ERROR_FAILURE;
+  }
+
+  uri.forget(aURI);
   return NS_OK;
 }
 
@@ -265,8 +311,31 @@ nsresult UrlClassifierCommon::CreatePairwiseWhiteListURI(nsIChannel* aChannel,
   }
 
   nsCOMPtr<nsIURI> topWinURI;
-  rv = chan->GetTopWindowURI(getter_AddRefs(topWinURI));
-  NS_ENSURE_SUCCESS(rv, rv);
+  rv =
+      UrlClassifierCommon::GetTopWindowURI(aChannel, getter_AddRefs(topWinURI));
+  if (NS_FAILED(rv) || !topWinURI) {
+    // SharedWorker and ServiceWorker don't have an associated window, use
+    // client's URI instead.
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    MOZ_ASSERT(loadInfo);
+
+    Maybe<dom::ClientInfo> clientInfo = loadInfo->GetClientInfo();
+    if (clientInfo.isSome()) {
+      if ((clientInfo->Type() == dom::ClientType::Sharedworker) ||
+          (clientInfo->Type() == dom::ClientType::Serviceworker)) {
+        UC_LOG(
+            ("CreatePairwiseWhiteListURI: Channel initiated by worker, get URI "
+             "from client"));
+        auto clientPrincipalOrErr = clientInfo->GetPrincipal();
+        if (clientPrincipalOrErr.isOk()) {
+          nsCOMPtr<nsIPrincipal> principal = clientPrincipalOrErr.unwrap();
+          auto* basePrin = BasePrincipal::Cast(principal);
+          rv = basePrin->GetURI(getter_AddRefs(topWinURI));
+          Unused << NS_WARN_IF(NS_FAILED(rv));
+        }
+      }
+    }
+  }
 
   if (!topWinURI) {
     if (UC_LOG_ENABLED()) {
@@ -281,6 +350,9 @@ nsresult UrlClassifierCommon::CreatePairwiseWhiteListURI(nsIChannel* aChannel,
       UC_LOG(("CreatePairwiseWhiteListURI: No window URI associated with %s",
               spec.get()));
     }
+
+    // Return success because we want to continue to look up even without
+    // whitelist.
     return NS_OK;
   }
 
@@ -295,12 +367,21 @@ nsresult UrlClassifierCommon::CreatePairwiseWhiteListURI(nsIChannel* aChannel,
   // Craft a whitelist URL like "toplevel.page/?resource=third.party.domain"
   nsAutoCString pageHostname, resourceDomain;
   rv = topWinURI->GetHost(pageHostname);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    // When the top-level page doesn't support GetHost, for example, about:home,
+    // we don't return an error here; instead, we return success to make sure
+    // that the lookup process calling this API continues to run.
+    UC_LOG(
+        ("CreatePairwiseWhiteListURI: Cannot get host from the top-level "
+         "(channel=%p)",
+         aChannel));
+    return NS_OK;
+  }
+
   rv = chanPrincipal->GetBaseDomain(resourceDomain);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsAutoCString whitelistEntry = NS_LITERAL_CSTRING("http://") + pageHostname +
-                                 NS_LITERAL_CSTRING("/?resource=") +
-                                 resourceDomain;
+  nsAutoCString whitelistEntry =
+      "http://"_ns + pageHostname + "/?resource="_ns + resourceDomain;
   UC_LOG(
       ("CreatePairwiseWhiteListURI: Looking for %s in the whitelist "
        "(channel=%p)",
@@ -454,8 +535,8 @@ bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
     }
 
     nsCOMPtr<nsIURI> uri;
-    rv = ios->NewURI(NS_LITERAL_CSTRING("http://allowlisted.example.com"),
-                     nullptr, nullptr, getter_AddRefs(uri));
+    rv = ios->NewURI("http://allowlisted.example.com"_ns, nullptr, nullptr,
+                     getter_AddRefs(uri));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return false;
     }
@@ -495,9 +576,8 @@ bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
 // static
 bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag) {
   if (StaticPrefs::privacy_annotate_channels_strict_list_enabled()) {
-    return (
-        aFlag & nsIClassifiedChannel::ClassificationFlags::
-                    CLASSIFIED_ANY_STRICT_TRACKING);
+    return (aFlag & nsIClassifiedChannel::ClassificationFlags::
+                        CLASSIFIED_ANY_STRICT_TRACKING);
   }
   return (
       aFlag &

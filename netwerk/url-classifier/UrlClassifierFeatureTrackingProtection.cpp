@@ -4,7 +4,6 @@
 
 #include "UrlClassifierFeatureTrackingProtection.h"
 
-#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "nsContentUtils.h"
 #include "nsILoadContext.h"
@@ -34,14 +33,14 @@ StaticRefPtr<UrlClassifierFeatureTrackingProtection> gFeatureTrackingProtection;
 
 UrlClassifierFeatureTrackingProtection::UrlClassifierFeatureTrackingProtection()
     : UrlClassifierFeatureBase(
-          NS_LITERAL_CSTRING(TRACKING_PROTECTION_FEATURE_NAME),
-          NS_LITERAL_CSTRING(URLCLASSIFIER_TRACKING_BLACKLIST),
-          NS_LITERAL_CSTRING(URLCLASSIFIER_TRACKING_WHITELIST),
-          NS_LITERAL_CSTRING(URLCLASSIFIER_TRACKING_BLACKLIST_TEST_ENTRIES),
-          NS_LITERAL_CSTRING(URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES),
-          NS_LITERAL_CSTRING(TABLE_TRACKING_BLACKLIST_PREF),
-          NS_LITERAL_CSTRING(TABLE_TRACKING_WHITELIST_PREF),
-          NS_LITERAL_CSTRING(URLCLASSIFIER_TRACKING_PROTECTION_SKIP_URLS)) {}
+          nsLiteralCString(TRACKING_PROTECTION_FEATURE_NAME),
+          nsLiteralCString(URLCLASSIFIER_TRACKING_BLACKLIST),
+          nsLiteralCString(URLCLASSIFIER_TRACKING_WHITELIST),
+          nsLiteralCString(URLCLASSIFIER_TRACKING_BLACKLIST_TEST_ENTRIES),
+          nsLiteralCString(URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES),
+          nsLiteralCString(TABLE_TRACKING_BLACKLIST_PREF),
+          nsLiteralCString(TABLE_TRACKING_WHITELIST_PREF),
+          nsLiteralCString(URLCLASSIFIER_TRACKING_PROTECTION_SKIP_URLS)) {}
 
 /* static */ const char* UrlClassifierFeatureTrackingProtection::Name() {
   return TRACKING_PROTECTION_FEATURE_NAME;
@@ -78,7 +77,15 @@ UrlClassifierFeatureTrackingProtection::MaybeCreate(nsIChannel* aChannel) {
 
   nsCOMPtr<nsILoadContext> loadContext;
   NS_QueryNotificationCallbacks(aChannel, loadContext);
-  if (!loadContext || !loadContext->UseTrackingProtection()) {
+  if (!loadContext) {
+    // Some channels don't have a loadcontext, check the global tracking
+    // protection preference.
+    if (!StaticPrefs::privacy_trackingprotection_enabled() &&
+        !(NS_UsePrivateBrowsing(aChannel) &&
+          StaticPrefs::privacy_trackingprotection_pbmode_enabled())) {
+      return nullptr;
+    }
+  } else if (!loadContext->UseTrackingProtection()) {
     return nullptr;
   }
 
@@ -105,7 +112,7 @@ UrlClassifierFeatureTrackingProtection::MaybeCreate(nsIChannel* aChannel) {
     return nullptr;
   }
 
-  if (!UrlClassifierCommon::ShouldEnableClassifier(aChannel)) {
+  if (!UrlClassifierCommon::ShouldEnableProtectionForChannel(aChannel)) {
     return nullptr;
   }
 

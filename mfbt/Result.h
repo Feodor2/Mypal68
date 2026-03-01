@@ -127,11 +127,21 @@ class ResultImplementationNullIsOkBase {
 
   constexpr const V& inspect() const { return *mValue.first().addr(); }
   constexpr V unwrap() { return std::move(*mValue.first().addr()); }
+  constexpr void updateAfterTracing(V&& aValue) {
+    MOZ_ASSERT(isOk());
+    if (!std::is_empty_v<V>) {
+      mValue.first().addr()->~V();
+      new (mValue.first().addr()) V(std::move(aValue));
+    }
+  }
 
   constexpr decltype(auto) inspectErr() const {
     return UnusedZero<E>::Inspect(mValue.second());
   }
   constexpr E unwrapErr() { return UnusedZero<E>::Unwrap(mValue.second()); }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    mValue.second() = UnusedZero<E>::Store(std::move(aErrorValue));
+  }
 };
 
 template <typename V, typename E,
@@ -173,6 +183,7 @@ template <typename V, typename E>
 class ResultImplementation<V, E, PackingStrategy::NullIsOk>
     : public ResultImplementationNullIsOk<V, E> {
  public:
+  static constexpr PackingStrategy Strategy = PackingStrategy::NullIsOk;
   using ResultImplementationNullIsOk<V, E>::ResultImplementationNullIsOk;
 };
 
@@ -211,6 +222,8 @@ class ResultImplementation<V, E, PackingStrategy::LowBitTagIsError> {
 #endif
 
  public:
+  static constexpr PackingStrategy Strategy = PackingStrategy::LowBitTagIsError;
+
   explicit constexpr ResultImplementation(V aValue) : mBits(0) {
     if constexpr (!std::is_empty_v<V>) {
       std::memcpy(&mBits, &aValue, sizeof(V));
@@ -245,17 +258,32 @@ class ResultImplementation<V, E, PackingStrategy::LowBitTagIsError> {
     return res;
   }
   constexpr E unwrapErr() { return inspectErr(); }
+
+  constexpr void updateAfterTracing(V&& aValue) {
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aValue));
+  }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aErrorValue));
+  }
 };
 
 // Return true if any of the struct can fit in a word.
 template <typename V, typename E>
 struct IsPackableVariant {
   struct VEbool {
+    explicit constexpr VEbool(V&& aValue) : v(std::move(aValue)), ok(true) {}
+    explicit constexpr VEbool(E&& aErrorValue)
+        : e(std::move(aErrorValue)), ok(false) {}
     V v;
     E e;
     bool ok;
   };
   struct EVbool {
+    explicit constexpr EVbool(V&& aValue) : v(std::move(aValue)), ok(true) {}
+    explicit constexpr EVbool(E&& aErrorValue)
+        : e(std::move(aErrorValue)), ok(false) {}
     E e;
     V v;
     bool ok;
@@ -277,14 +305,11 @@ class ResultImplementation<V, E, PackingStrategy::PackedVariant> {
   Impl data;
 
  public:
-  explicit constexpr ResultImplementation(V aValue) {
-    data.v = std::move(aValue);
-    data.ok = true;
-  }
-  explicit constexpr ResultImplementation(E aErrorValue) {
-    data.e = std::move(aErrorValue);
-    data.ok = false;
-  }
+  static constexpr PackingStrategy Strategy = PackingStrategy::PackedVariant;
+
+  explicit constexpr ResultImplementation(V aValue) : data(std::move(aValue)) {}
+  explicit constexpr ResultImplementation(E aErrorValue)
+      : data(std::move(aErrorValue)) {}
 
   constexpr bool isOk() const { return data.ok; }
 
@@ -293,6 +318,17 @@ class ResultImplementation<V, E, PackingStrategy::PackedVariant> {
 
   constexpr const E& inspectErr() const { return data.e; }
   constexpr E unwrapErr() { return std::move(data.e); }
+
+  constexpr void updateAfterTracing(V&& aValue) {
+    MOZ_ASSERT(data.ok);
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aValue));
+  }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    MOZ_ASSERT(!data.ok);
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aErrorValue));
+  }
 };
 
 // To use nullptr as a special value, we need the counter part to exclude zero
@@ -438,13 +474,19 @@ class MOZ_MUST_USE_TYPE Result final {
   using Impl = typename detail::SelectResultImpl<V, E>::Type;
 
   Impl mImpl;
+  // Are you getting this error?
+  // > error: implicit instantiation of undefined template
+  // > 'mozilla::detail::ResultImplementation<$V,$E,
+  // >                      mozilla::detail::PackingStrategy::Variant>'
+  // You need to include "ResultVariant.h"!
 
  public:
+  static constexpr detail::PackingStrategy Strategy = Impl::Strategy;
   using ok_type = V;
   using err_type = E;
 
   /** Create a success result. */
-  MOZ_IMPLICIT constexpr Result(V&& aValue) : mImpl(std::forward<V>(aValue)) {
+  MOZ_IMPLICIT constexpr Result(V&& aValue) : mImpl(std::move(aValue)) {
     MOZ_ASSERT(isOk());
   }
 
@@ -461,7 +503,10 @@ class MOZ_MUST_USE_TYPE Result final {
   }
 
   /** Create an error result. */
-  explicit constexpr Result(E aErrorValue) : mImpl(std::move(aErrorValue)) {
+  explicit constexpr Result(const E& aErrorValue) : mImpl(aErrorValue) {
+    MOZ_ASSERT(isErr());
+  }
+  explicit constexpr Result(E&& aErrorValue) : mImpl(std::move(aErrorValue)) {
     MOZ_ASSERT(isErr());
   }
 
@@ -526,6 +571,18 @@ class MOZ_MUST_USE_TYPE Result final {
   constexpr E unwrapErr() {
     MOZ_ASSERT(isErr());
     return mImpl.unwrapErr();
+  }
+
+  /** Used only for GC tracing. If used in Rooted<Result<...>>, V must have a
+   * GCPolicy for tracing it. */
+  constexpr void updateAfterTracing(V&& aValue) {
+    mImpl.updateAfterTracing(std::move(aValue));
+  }
+
+  /** Used only for GC tracing. If used in Rooted<Result<...>>, E must have a
+   * GCPolicy for tracing it. */
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    mImpl.updateErrorAfterTracing(std::move(aErrorValue));
   }
 
   /** See the success value from this Result, which must be a success result. */

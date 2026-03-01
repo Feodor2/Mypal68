@@ -5,6 +5,8 @@
 // 1) network.cookie.lifetimePolicy = 0 (expire naturally)
 // 2) network.cookie.lifetimePolicy = 2 (expire at end of session)
 
+"use strict";
+
 var test_generator = do_run_test();
 
 function run_test() {
@@ -49,7 +51,7 @@ function* do_run_test() {
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
   Services.prefs.setBoolPref("network.cookie.thirdparty.sessionOnly", false);
   Services.prefs.setBoolPref(
-    "network.cookieSettings.unblocked_for_testing",
+    "network.cookieJarSettings.unblocked_for_testing",
     true
   );
 

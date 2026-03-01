@@ -153,58 +153,50 @@ body {
   .icon.icon-bookmark-hollow {
     background-image: url("chrome://browser/skin/bookmark-hollow.svg"); }
   .icon.icon-clear-input {
-    background-image: url("../data/content/assets/glyph-cancel-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-cancel-16.svg"); }
   .icon.icon-delete {
-    background-image: url("../data/content/assets/glyph-delete-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-delete-16.svg"); }
   .icon.icon-search {
     background-image: url("chrome://browser/skin/search-glass.svg"); }
   .icon.icon-modal-delete {
     flex-shrink: 0;
-    background-image: url("../data/content/assets/glyph-modal-delete-32.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-modal-delete-32.svg");
     background-size: 32px;
     height: 32px;
     width: 32px; }
   .icon.icon-dismiss {
-    background-image: url("../data/content/assets/glyph-dismiss-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-dismiss-16.svg"); }
   .icon.icon-info {
-    background-image: url("../data/content/assets/glyph-info-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-info-16.svg"); }
   .icon.icon-new-window {
-    background-image: url("../data/content/assets/glyph-newWindow-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-newWindow-16.svg"); }
     .icon.icon-new-window:dir(rtl) {
       transform: scaleX(-1); }
   .icon.icon-new-window-private {
     background-image: url("chrome://browser/skin/privateBrowsing.svg"); }
   .icon.icon-settings {
-    background-image: url("chrome://browser/skin/settings.svg"); }
+    background-image: url("chrome://global/skin/icons/settings.svg"); }
   .icon.icon-pin {
-    background-image: url("../data/content/assets/glyph-pin-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-pin-16.svg"); }
     .icon.icon-pin:dir(rtl) {
       transform: scaleX(-1); }
   .icon.icon-unpin {
-    background-image: url("../data/content/assets/glyph-unpin-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-unpin-16.svg"); }
     .icon.icon-unpin:dir(rtl) {
       transform: scaleX(-1); }
   .icon.icon-edit {
-    background-image: url("../data/content/assets/glyph-edit-16.svg"); }
-  .icon.icon-pocket {
-    background-image: url("../data/content/assets/glyph-pocket-16.svg"); }
-  .icon.icon-pocket-save {
-    background-image: url("../data/content/assets/glyph-pocket-save-16.svg"); }
-  .icon.icon-pocket-delete {
-    background-image: url("../data/content/assets/glyph-pocket-delete-16.svg"); }
-  .icon.icon-pocket-archive {
-    background-image: url("../data/content/assets/glyph-pocket-archive-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-edit-16.svg"); }
   .icon.icon-history-item {
     background-image: url("chrome://browser/skin/history.svg"); }
   .icon.icon-trending {
-    background-image: url("../data/content/assets/glyph-trending-16.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-trending-16.svg");
     transform: translateY(2px); }
   .icon.icon-now {
     background-image: url("chrome://browser/skin/history.svg"); }
   .icon.icon-topsites {
-    background-image: url("../data/content/assets/glyph-topsites-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-topsites-16.svg"); }
   .icon.icon-pin-small {
-    background-image: url("../data/content/assets/glyph-pin-12.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-pin-12.svg");
     background-size: 12px;
     height: 12px;
     width: 12px; }
@@ -217,20 +209,20 @@ body {
   .icon.icon-copy {
     background-image: url("chrome://browser/skin/edit-copy.svg"); }
   .icon.icon-open-file {
-    background-image: url("../data/content/assets/glyph-open-file-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-open-file-16.svg"); }
   .icon.icon-webextension {
-    background-image: url("../data/content/assets/glyph-webextension-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-webextension-16.svg"); }
   .icon.icon-highlights {
-    background-image: url("../data/content/assets/glyph-highlights-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-highlights-16.svg"); }
   .icon.icon-arrowhead-down {
-    background-image: url("../data/content/assets/glyph-arrowhead-down-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-arrowhead-down-16.svg"); }
   .icon.icon-arrowhead-down-small {
-    background-image: url("../data/content/assets/glyph-arrowhead-down-12.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-arrowhead-down-12.svg");
     background-size: 12px;
     height: 12px;
     width: 12px; }
   .icon.icon-arrowhead-forward-small {
-    background-image: url("../data/content/assets/glyph-arrowhead-down-12.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-arrowhead-down-12.svg");
     background-size: 12px;
     height: 12px;
     transform: rotate(-90deg);
@@ -238,14 +230,14 @@ body {
     .icon.icon-arrowhead-forward-small:dir(rtl) {
       transform: rotate(90deg); }
   .icon.icon-arrowhead-up {
-    background-image: url("../data/content/assets/glyph-arrowhead-down-16.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-arrowhead-down-16.svg");
     transform: rotate(180deg); }
   .icon.icon-add {
-    background-image: url("../data/content/assets/glyph-add-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-add-16.svg"); }
   .icon.icon-minimize {
-    background-image: url("../data/content/assets/glyph-minimize-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-minimize-16.svg"); }
   .icon.icon-maximize {
-    background-image: url("../data/content/assets/glyph-maximize-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-maximize-16.svg"); }
 
 html {
   height: 100%; }
@@ -611,7 +603,7 @@ main {
     .top-site-outer .search-topsite[data-fallback]::before {
       content: attr(data-fallback); }
   .top-site-outer .search-topsite {
-    background-image: url("../data/content/assets/glyph-search-16.svg");
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-search-16.svg");
     background-size: 26px;
     background-color: #0060DF;
     border-radius: 42px;
@@ -651,7 +643,7 @@ main {
     .top-site-outer .title.pinned span {
       padding: 0 13px; }
   .top-site-outer .edit-button {
-    background-image: url("../data/content/assets/glyph-edit-16.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/glyph-edit-16.svg"); }
   .top-site-outer.placeholder .tile {
     box-shadow: inset 0 0 0 1px var(--newtab-inner-box-shadow-color); }
   .top-site-outer.placeholder .screenshot {
@@ -1791,7 +1783,7 @@ main {
   white-space: nowrap;
   line-height: 1.230769231; }
   .more-recommendations::after {
-    background: url("../data/content/assets/topic-show-more-12.svg") no-repeat center center;
+    background: url("chrome://activity-stream/content/data/content/assets/topic-show-more-12.svg") no-repeat center center;
     content: '';
     -moz-context-properties: fill;
     display: inline-block;
@@ -2807,7 +2799,7 @@ main {
       top: 50%;
       left: 50%;
       margin: -10px 0 0 -10px;
-      mask-image: url("../data/content/assets/spinner.svg");
+      mask-image: url("chrome://activity-stream/content/data/content/assets/spinner.svg");
       mask-size: 20px;
       background: var(--newtab-feed-button-spinner); }
     .section-empty-state .try-again-button.waiting {
@@ -3062,7 +3054,7 @@ body[lwt-newtab-brighttext] .scene2Icon .icon-light-theme {
     background-size: 292px 254px;
     background-position: center center;
     background-repeat: no-repeat;
-    background-image: url("resource://activity-stream/data/content/assets/gift-extension.svg"); }
+    background-image: url("chrome://activity-stream/content/data/content/assets/gift-extension.svg"); }
   .ReturnToAMOOverlay .icon-add,
   .amo + body.hide-main .icon-add {
     fill: #FFF;

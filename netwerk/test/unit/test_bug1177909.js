@@ -58,7 +58,7 @@ async function TestProxyType(chan, flags) {
     Ci.nsIProtocolProxyService.PROXYCONFIG_SYSTEM
   );
 
-  return await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     gProxyService.asyncResolve(chan, flags, {
       onProxyAvailable(req, uri, pi, status) {
         resolve(pi);
@@ -68,7 +68,7 @@ async function TestProxyType(chan, flags) {
 }
 
 async function TestProxyTypeByURI(uri) {
-  return await TestProxyType(makeChannel(uri), 0);
+  return TestProxyType(makeChannel(uri), 0);
 }
 
 add_task(async function testHttpProxy() {
@@ -120,7 +120,7 @@ add_task(async function testDirectProxy() {
     null,
     Services.scriptSecurityManager.getSystemPrincipal(),
     null,
-    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     Ci.nsIContentPolicy.TYPE_OTHER
   );
 
@@ -154,7 +154,7 @@ add_task(async function testWebSocketProxy() {
     null,
     Services.scriptSecurityManager.getSystemPrincipal(),
     null,
-    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     Ci.nsIContentPolicy.TYPE_OTHER
   );
 
@@ -181,7 +181,7 @@ add_task(async function testPreferHttpsProxy() {
     null,
     Services.scriptSecurityManager.getSystemPrincipal(),
     null,
-    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     Ci.nsIContentPolicy.TYPE_OTHER
   );
 

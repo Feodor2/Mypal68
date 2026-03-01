@@ -33,13 +33,7 @@ class TRRService : public nsIObserver,
   bool Enabled();
 
   uint32_t Mode() { return mMode; }
-  bool AllowRFC1918() { return mRfc1918; }
-  bool UseGET() { return mUseGET; }
-  bool EarlyAAAA() { return mEarlyAAAA; }
-  bool CheckIPv6Connectivity() { return mCheckIPv6Connectivity; }
-  bool WaitForAllResponses() { return mWaitForAllResponses; }
   bool DisableIPv6() { return mDisableIPv6; }
-  bool DisableECS() { return mDisableECS; }
   nsresult GetURI(nsCString& result);
   nsresult GetCredentials(nsCString& result);
   uint32_t GetRequestTimeout();
@@ -50,11 +44,11 @@ class TRRService : public nsIObserver,
   LookupStatus CompleteLookupByType(nsHostRecord*, nsresult,
                                     mozilla::net::TypeRecordResultType&,
                                     uint32_t, bool pb) override;
-  void TRRBlacklist(const nsACString& host, const nsACString& originSuffix,
-                    bool privateBrowsing, bool aParentsToo);
-  bool IsTRRBlacklisted(const nsACString& aHost,
-                        const nsACString& aOriginSuffix, bool aPrivateBrowsing,
-                        bool aParentsToo);
+  void AddToBlocklist(const nsACString& host, const nsACString& originSuffix,
+                      bool privateBrowsing, bool aParentsToo);
+  bool IsTemporarilyBlocked(const nsACString& aHost,
+                            const nsACString& aOriginSuffix,
+                            bool aPrivateBrowsing, bool aParentsToo);
   bool IsExcludedFromTRR(const nsACString& aHost);
 
   bool MaybeBootstrap(const nsACString& possible, nsACString& result);
@@ -72,9 +66,8 @@ class TRRService : public nsIObserver,
   void MaybeConfirm();
   void MaybeConfirm_locked();
 
-  bool IsDomainBlacklisted(const nsACString& aHost,
-                           const nsACString& aOriginSuffix,
-                           bool aPrivateBrowsing);
+  bool IsDomainBlocked(const nsACString& aHost, const nsACString& aOriginSuffix,
+                       bool aPrivateBrowsing);
   bool IsExcludedFromTRR_unlocked(const nsACString& aHost);
 
   void CheckVPNStatus(nsINetworkLinkService* aLinkService);
@@ -84,7 +77,7 @@ class TRRService : public nsIObserver,
 
   bool mInitialized;
   Atomic<uint32_t, Relaxed> mMode;
-  Atomic<uint32_t, Relaxed> mTRRBlacklistExpireTime;
+  Atomic<uint32_t, Relaxed> mTRRBlocklistExpireTime;
 
   Lock mLock;
 
@@ -93,23 +86,12 @@ class TRRService : public nsIObserver,
   nsCString mConfirmationNS;
   nsCString mBootstrapAddr;
 
-  Atomic<bool, Relaxed> mWaitForCaptive;  // wait for the captive portal to say
-                                          // OK before using TRR
   Atomic<bool, Relaxed>
-      mRfc1918;  // okay with local IP addresses in DOH responses?
-  Atomic<bool, Relaxed>
-      mCaptiveIsPassed;           // set when captive portal check is passed
-  Atomic<bool, Relaxed> mUseGET;  // do DOH using GET requests (instead of POST)
-  Atomic<bool, Relaxed> mEarlyAAAA;  // allow use of AAAA results before A is in
-  Atomic<bool, Relaxed> mCheckIPv6Connectivity;  // check IPv6 connectivity
-  Atomic<bool, Relaxed> mWaitForAllResponses;  // Don't notify until all are in
-  Atomic<bool, Relaxed> mDisableIPv6;          // don't even try
-  Atomic<bool, Relaxed> mDisableECS;  // disable EDNS Client Subnet in requests
-  Atomic<uint32_t, Relaxed>
-      mDisableAfterFails;  // this many fails in a row means failed TRR service
+      mCaptiveIsPassed;  // set when captive portal check is passed
   Atomic<bool, Relaxed> mVPNDetected;
+  Atomic<bool, Relaxed> mDisableIPv6;  // don't even try
 
-  // TRR Blacklist storage
+  // TRR Blocklist storage
   // mTRRBLStorage is only modified on the main thread, but we query whether it
   // is initialized or not off the main thread as well. Therefore we need to
   // lock while creating it and while accessing it off the main thread.

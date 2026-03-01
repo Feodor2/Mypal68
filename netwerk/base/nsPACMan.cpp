@@ -639,9 +639,9 @@ void nsPACMan::ContinueLoadingAfterPACUriKnown() {
         MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
         NS_NewChannel(getter_AddRefs(channel), pacURI,
                       nsContentUtils::GetSystemPrincipal(),
-                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                       nsIContentPolicy::TYPE_OTHER,
-                      nullptr,  // nsICookieSettings
+                      nullptr,  // nsICookieJarSettings
                       nullptr,  // PerformanceStorage
                       nullptr,  // aLoadGroup
                       nullptr,  // aCallbacks

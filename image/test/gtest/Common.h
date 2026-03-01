@@ -136,6 +136,12 @@ struct ImageTestCase {
     return self;
   }
 
+  ImageTestCase WithFlags(uint32_t aFlags) const {
+    ImageTestCase self = *this;
+    self.mFlags = aFlags;
+    return self;
+  }
+
   BGRAColor ChooseColor(const BGRAColor& aColor) const {
     if (mSurfaceFlags & SurfaceFlags::TO_SRGB_COLORSPACE) {
       return aColor.sRGBColor();
@@ -520,6 +526,10 @@ ImageTestCase PerfRgbAlphaLosslessWebPTestCase();
 ImageTestCase PerfRgbLossyWebPTestCase();
 ImageTestCase PerfRgbAlphaLossyWebPTestCase();
 ImageTestCase PerfRgbGIFTestCase();
+
+ImageTestCase ExifResolutionTestCase();
+
+RefPtr<Image> TestCaseToDecodedImage(const ImageTestCase&);
 
 }  // namespace image
 }  // namespace mozilla

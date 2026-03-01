@@ -287,7 +287,7 @@ mozilla::ipc::IPCResult
 SocketProcessChild::RecvOnHttpActivityDistributorActivated(
     const bool& aIsActivated) {
   if (nsCOMPtr<nsIHttpActivityObserver> distributor =
-          services::GetActivityDistributor()) {
+          services::GetHttpActivityDistributor()) {
     distributor->SetIsActive(aIsActivated);
   }
   return IPC_OK();

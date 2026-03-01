@@ -126,8 +126,7 @@ nsNSSDialogs::ConfirmDownloadCACert(nsIInterfaceRequestor* ctx,
     return rv;
   }
 
-  rv = retVals->GetPropertyAsBool(NS_LITERAL_STRING("importConfirmed"),
-                                  importConfirmed);
+  rv = retVals->GetPropertyAsBool(u"importConfirmed"_ns, importConfirmed);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -138,14 +137,12 @@ nsNSSDialogs::ConfirmDownloadCACert(nsIInterfaceRequestor* ctx,
   }
 
   bool trustForSSL = false;
-  rv = retVals->GetPropertyAsBool(NS_LITERAL_STRING("trustForSSL"),
-                                  &trustForSSL);
+  rv = retVals->GetPropertyAsBool(u"trustForSSL"_ns, &trustForSSL);
   if (NS_FAILED(rv)) {
     return rv;
   }
   bool trustForEmail = false;
-  rv = retVals->GetPropertyAsBool(NS_LITERAL_STRING("trustForEmail"),
-                                  &trustForEmail);
+  rv = retVals->GetPropertyAsBool(u"trustForEmail"_ns, &trustForEmail);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -233,20 +230,18 @@ nsNSSDialogs::ChooseCertificate(const nsACString& hostname, int32_t port,
     return rv;
   }
 
-  rv = retVals->GetPropertyAsBool(NS_LITERAL_STRING("rememberSelection"),
+  rv = retVals->GetPropertyAsBool(u"rememberSelection"_ns,
                                   rememberClientAuthCertificate);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  rv = retVals->GetPropertyAsBool(NS_LITERAL_STRING("certChosen"),
-                                  certificateChosen);
+  rv = retVals->GetPropertyAsBool(u"certChosen"_ns, certificateChosen);
   if (NS_FAILED(rv)) {
     return rv;
   }
   if (*certificateChosen) {
-    rv = retVals->GetPropertyAsUint32(NS_LITERAL_STRING("selectedIndex"),
-                                      selectedIndex);
+    rv = retVals->GetPropertyAsUint32(u"selectedIndex"_ns, selectedIndex);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -271,8 +266,7 @@ nsNSSDialogs::SetPKCS12FilePassword(nsIInterfaceRequestor* ctx,
     return rv;
   }
 
-  rv = retVals->GetPropertyAsBool(NS_LITERAL_STRING("confirmedPassword"),
-                                  confirmedPassword);
+  rv = retVals->GetPropertyAsBool(u"confirmedPassword"_ns, confirmedPassword);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -281,7 +275,7 @@ nsNSSDialogs::SetPKCS12FilePassword(nsIInterfaceRequestor* ctx,
     return NS_OK;
   }
 
-  return retVals->GetPropertyAsAString(NS_LITERAL_STRING("password"), password);
+  return retVals->GetPropertyAsAString(u"password"_ns, password);
 }
 
 NS_IMETHODIMP

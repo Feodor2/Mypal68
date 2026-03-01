@@ -51,9 +51,9 @@
 #include "nsThreadUtils.h"
 #include "GeckoProfiler.h"
 #include "nsIConsoleService.h"
-#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentBlocking.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -91,6 +91,7 @@
 #include "nsIX509Cert.h"
 #include "ScopedNSSTypes.h"
 #include "nsIDeprecationWarner.h"
+#include "nsIDNSRecord.h"
 #include "mozilla/dom/Document.h"
 #include "nsICompressConvStats.h"
 #include "nsCORSListenerProxy.h"
@@ -103,7 +104,7 @@
 #include "nsMixedContentBlocker.h"
 #include "CacheStorageService.h"
 #include "HttpChannelParent.h"
-#include "HttpChannelParentListener.h"
+#include "ParentChannelListener.h"
 #include "HttpTransactionParent.h"
 #include "InterceptedHttpChannel.h"
 #include "../../cache2/CacheFileUtils.h"
@@ -112,7 +113,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/net/AsyncUrlChannelClassifier.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
@@ -3247,8 +3248,7 @@ bool nsHttpChannel::IsIsolated() {
   }
   mIsIsolated = StaticPrefs::browser_cache_cache_isolation() ||
                 (IsThirdPartyTrackingResource() &&
-                 !AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-                     this, mURI, nullptr));
+                 !ContentBlocking::ShouldAllowAccessFor(this, mURI, nullptr));
   mHasBeenIsolatedChecked = true;
   return mIsIsolated;
 }
@@ -5686,7 +5686,7 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
       mLoadInfo->GetSecurityMode() == 0 ||
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
-               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
+               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL &&
            mLoadInfo->GetLoadingPrincipal() &&
            mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
@@ -6686,26 +6686,17 @@ nsresult nsHttpChannel::StartCrossProcessRedirect() {
   rv = CheckRedirectLimit(nsIChannelEventSink::REDIRECT_INTERNAL);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // We can't do QueryObject mCallbacks into HttpChannelParentListener, because
-  // the notification callbacks can be replaced with another object.
-  // Rather we do GetInterface for HttpChannelParent, which should always be
-  // there if the new callbacks properly forward to the original channel's
-  // callbacks, and get the listener from there using QueryObject.
   nsCOMPtr<nsIParentChannel> parentChannel;
   NS_QueryNotificationCallbacks(this, parentChannel);
   RefPtr<HttpChannelParent> httpParent = do_QueryObject(parentChannel);
   MOZ_ASSERT(httpParent);
   NS_ENSURE_TRUE(httpParent, NS_ERROR_UNEXPECTED);
 
-  RefPtr<HttpChannelParentListener> listener = httpParent->GetParentListener();
-  MOZ_ASSERT(listener);
-  NS_ENSURE_TRUE(listener, NS_ERROR_UNEXPECTED);
-
   nsCOMPtr<nsILoadInfo> redirectLoadInfo =
       CloneLoadInfoForRedirect(mURI, nsIChannelEventSink::REDIRECT_INTERNAL);
 
-  listener->TriggerCrossProcessRedirect(this, redirectLoadInfo,
-                                        mCrossProcessRedirectIdentifier);
+  httpParent->TriggerCrossProcessRedirect(this, redirectLoadInfo,
+                                          mCrossProcessRedirectIdentifier);
 
   // This will suspend the channel
   rv = WaitForRedirectCallback();
@@ -6863,12 +6854,8 @@ nsresult nsHttpChannel::ProcessCrossOriginHeader() {
   }
 
   RefPtr<mozilla::dom::BrowsingContext> ctx;
-  if (mLoadInfo->GetExternalContentPolicyType() ==
-      ExtContentPolicy::TYPE_DOCUMENT) {
-    mLoadInfo->GetBrowsingContext(getter_AddRefs(ctx));
-  } else {
-    mLoadInfo->GetFrameBrowsingContext(getter_AddRefs(ctx));
-  }
+  MOZ_ALWAYS_SUCCEEDS(mLoadInfo->GetTargetBrowsingContext(getter_AddRefs(ctx)));
+  MOZ_ASSERT(ctx);  // It shouldn't be possible.
 
   if (!ctx) {
     return NS_OK;
@@ -9363,12 +9350,12 @@ nsresult nsHttpChannel::RedirectToInterceptedChannel() {
 }
 
 void nsHttpChannel::ReEvaluateReferrerAfterTrackingStatusIsKnown() {
-  nsCOMPtr<nsICookieSettings> cs;
+  nsCOMPtr<nsICookieJarSettings> cs;
   if (mLoadInfo) {
-    Unused << mLoadInfo->GetCookieSettings(getter_AddRefs(cs));
+    Unused << mLoadInfo->GetCookieJarSettings(getter_AddRefs(cs));
   }
   if (!cs) {
-    cs = net::CookieSettings::Create();
+    cs = net::CookieJarSettings::Create();
   }
   if (cs->GetRejectThirdPartyTrackers()) {
     bool isPrivate = mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;

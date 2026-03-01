@@ -182,8 +182,15 @@ class UrlbarResult {
       // For display purposes we need to unescape the url.
       payloadInfo.displayUrl = [...payloadInfo.url];
       let url = payloadInfo.displayUrl[0];
-      if (UrlbarPrefs.get("trimURLs")) {
-        url = BrowserUtils.trimURL(url || "");
+      if (url && UrlbarPrefs.get("trimURLs")) {
+        if (UrlbarPrefs.get("view.stripHttps")) {
+          url = BrowserUtils.removeSingleTrailingSlashFromURL(url);
+          if (url.startsWith("https://")) {
+            url = url.substring(8);
+          }
+        } else {
+          url = BrowserUtils.trimURL(url);
+        }
       }
       payloadInfo.displayUrl[0] = Services.textToSubURI.unEscapeURIForUI(url);
     }

@@ -90,6 +90,37 @@ static void CheckDecoderResults(const ImageTestCase& aTestCase,
 }
 
 template <typename Func>
+void WithBadBufferDecode(const ImageTestCase& aTestCase,
+                         const Maybe<IntSize>& aOutputSize,
+                         Func aResultChecker) {
+  // Prepare a SourceBuffer with an error that will immediately move iterators
+  // to COMPLETE.
+  auto sourceBuffer = MakeNotNull<RefPtr<SourceBuffer>>();
+  sourceBuffer->ExpectLength(SIZE_MAX);
+
+  // Create a decoder.
+  DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
+  RefPtr<image::Decoder> decoder = DecoderFactory::CreateAnonymousDecoder(
+      decoderType, sourceBuffer, aOutputSize, DecoderFlags::FIRST_FRAME_ONLY,
+      aTestCase.mSurfaceFlags);
+  ASSERT_TRUE(decoder != nullptr);
+  RefPtr<IDecodingTask> task =
+      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ false);
+
+  // Run the full decoder synchronously on the main thread.
+  task->Run();
+
+  // Call the lambda to verify the expected results.
+  aResultChecker(decoder);
+}
+
+static void CheckDecoderBadBuffer(const ImageTestCase& aTestCase) {
+  WithBadBufferDecode(aTestCase, Nothing(), [&](image::Decoder* aDecoder) {
+    CheckDecoderResults(aTestCase, aDecoder);
+  });
+}
+
+template <typename Func>
 void WithSingleChunkDecode(const ImageTestCase& aTestCase,
                            const Maybe<IntSize>& aOutputSize,
                            Func aResultChecker) {
@@ -623,6 +654,11 @@ class ImageDecoders : public ::testing::Test {
   TEST_F(ImageDecoders, test_prefix##ForceSRGB) {                            \
     CheckDecoderSingleChunk(Green##test_prefix##TestCase().WithSurfaceFlags( \
         SurfaceFlags::TO_SRGB_COLORSPACE));                                  \
+  }                                                                          \
+                                                                             \
+  TEST_F(ImageDecoders, test_prefix##BadBuffer) {                            \
+    CheckDecoderBadBuffer(Green##test_prefix##TestCase().WithFlags(          \
+        TEST_CASE_HAS_ERROR | TEST_CASE_IGNORE_OUTPUT));                     \
   }
 
 IMAGE_GTEST_DECODER_BASE_F(PNG)
@@ -741,37 +777,11 @@ TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   // extra data shouldn't confuse the decoder or cause the decode to fail.
 
   // Create an image.
-  RefPtr<Image> image = ImageFactory::CreateAnonymousImage(
-      nsDependentCString(testCase.mMimeType));
-  ASSERT_TRUE(!image->HasError());
-
-  nsCOMPtr<nsIInputStream> inputStream = LoadFile(testCase.mPath);
-  ASSERT_TRUE(inputStream);
-
-  // Figure out how much data we have.
-  uint64_t length;
-  nsresult rv = inputStream->Available(&length);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
-
-  // Write the data into the image.
-  rv = image->OnImageDataAvailable(nullptr, nullptr, inputStream, 0,
-                                   static_cast<uint32_t>(length));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
-
-  // Let the image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
-
-  RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
-  tracker->SyncNotifyProgress(FLAG_LOAD_COMPLETE);
-
-  // Use GetFrame() to force a sync decode of the image.
-  RefPtr<SourceSurface> surface = image->GetFrame(
-      imgIContainer::FRAME_CURRENT, imgIContainer::FLAG_SYNC_DECODE);
+  RefPtr<Image> image = TestCaseToDecodedImage(testCase);
 
   // Ensure that the image's metadata meets our expectations.
   IntSize imageSize(0, 0);
-  rv = image->GetWidth(&imageSize.width);
+  nsresult rv = image->GetWidth(&imageSize.width);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
   rv = image->GetHeight(&imageSize.height);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
@@ -779,6 +789,7 @@ TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   EXPECT_EQ(testCase.mSize.width, imageSize.width);
   EXPECT_EQ(testCase.mSize.height, imageSize.height);
 
+  RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
   Progress imageProgress = tracker->GetProgress();
 
   EXPECT_TRUE(bool(imageProgress & FLAG_HAS_TRANSPARENCY) == false);
@@ -902,4 +913,9 @@ TEST_F(ImageDecoders, MultipleSizesICOSingleChunk) {
   for (int i = 0; i < 6; ++i) {
     EXPECT_EQ(expectedSizes[i], nativeSizes[i]);
   }
+}
+
+TEST_F(ImageDecoders, ExifResolutionEven) {
+  RefPtr<Image> image = TestCaseToDecodedImage(ExifResolutionTestCase());
+  EXPECT_EQ(image->GetResolution(), Resolution(2.0, 2.0));
 }

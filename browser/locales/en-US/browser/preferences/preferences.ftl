@@ -238,6 +238,19 @@ colors-settings =
     .label = Colors…
     .accesskey = C
 
+# Zoom is a noun, and the message is used as header for a group of options
+preferences-zoom-header = Zoom
+
+preferences-default-zoom = Default zoom
+    .accesskey = z
+
+preferences-default-zoom-value =
+    .label = { $percentage }%
+
+preferences-zoom-text-only =
+    .label = Zoom text only
+    .accesskey = t
+
 language-header = Language
 
 choose-language-description = Choose your preferred language for displaying pages
@@ -264,6 +277,11 @@ translate-attribution = Translations by <img data-l10n-name="logo"/>
 translate-exceptions =
     .label = Exceptions…
     .accesskey = x
+
+# Variables:
+#    $localeName (string) - Localized name of the locale to be used.
+use-system-locale =
+   .label = Use your operating system settings for “{ $localeName }” to format dates, times, numbers, and measurements.
 
 check-user-spelling =
     .label = Check your spelling as you type

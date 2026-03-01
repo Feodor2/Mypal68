@@ -323,9 +323,11 @@ nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
   // The data: inheritance flags should only apply to the initial load,
   // not to loads that it might have redirected to.
   if (loadInfo->RedirectChain().IsEmpty() &&
-      (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
-       securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
-       securityMode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS)) {
+      (securityMode ==
+           nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT ||
+       securityMode ==
+           nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT ||
+       securityMode == nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT)) {
     nsCOMPtr<nsIURI> uri;
     nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -396,7 +398,7 @@ NS_IMPL_ISUPPORTS(nsScriptSecurityManager, nsIScriptSecurityManager)
 ///////////////// Security Checks /////////////////
 
 bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
-    JSContext* cx, JS::HandleString aCode) {
+    JSContext* cx, JS::RuntimeCode aKind, JS::Handle<JSString*> aCode) {
   MOZ_ASSERT(cx == nsContentUtils::GetCurrentJSContext());
 
   // Get the window, if any, corresponding to the current global
@@ -419,30 +421,36 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
 
   bool evalOK = true;
   bool reportViolation = false;
-  nsresult rv = csp->GetAllowsEval(&reportViolation, &evalOK);
-
-  // A little convoluted. We want the scriptSample for a) reporting a violation
-  // or b) passing it to AssertEvalNotUsingSystemPrincipal. So do the work to
-  // get it if either of those cases is true.
   nsAutoJSString scriptSample;
-  nsCOMPtr<nsIPrincipal> subjectPrincipal = nsContentUtils::SubjectPrincipal();
-  if (reportViolation || subjectPrincipal->IsSystemPrincipal()) {
-    if (NS_WARN_IF(!scriptSample.init(cx, aCode))) {
-      JS_ClearPendingException(cx);
-      return false;
+  if (aKind == JS::RuntimeCode::JS) {
+    nsresult rv = csp->GetAllowsEval(&reportViolation, &evalOK);
+
+    // A little convoluted. We want the scriptSample for a) reporting a
+    // violation or b) passing it to AssertEvalNotUsingSystemPrincipal.
+    // So do the work to get it if either of those cases is true.
+    nsCOMPtr<nsIPrincipal> subjectPrincipal = nsContentUtils::SubjectPrincipal();
+    if (reportViolation || subjectPrincipal->IsSystemPrincipal()) {
+      if (NS_WARN_IF(!scriptSample.init(cx, aCode))) {
+        JS_ClearPendingException(cx);
+        return false;
+      }
     }
-  }
 
 #if !defined(ANDROID)
-  if (!nsContentSecurityUtils::IsEvalAllowed(
-          cx, subjectPrincipal->IsSystemPrincipal(), scriptSample)) {
-    return false;
-  }
+    if (!nsContentSecurityUtils::IsEvalAllowed(
+            cx, subjectPrincipal->IsSystemPrincipal(), scriptSample)) {
+      return false;
+    }
 #endif
 
-  if (NS_FAILED(rv)) {
-    NS_WARNING("CSP: failed to get allowsEval");
-    return true;  // fail open to not break sites.
+    if (NS_FAILED(rv)) {
+      NS_WARNING("CSP: failed to get allowsEval");
+      return true;  // fail open to not break sites.
+    }
+  } else {
+    if (NS_FAILED(csp->GetAllowsWasmEval(&reportViolation, &evalOK))) {
+      return false;
+    }
   }
 
   if (reportViolation) {
@@ -457,10 +465,15 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     } else {
       MOZ_ASSERT(!JS_IsExceptionPending(cx));
     }
-    csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL,
+
+    uint16_t violationType =
+        aKind == JS::RuntimeCode::JS
+            ? nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL
+            : nsIContentSecurityPolicy::VIOLATION_TYPE_WASM_EVAL;
+    csp->LogViolationDetails(violationType,
                              nullptr,  // triggering element
                              cspEventListener, fileName, scriptSample, lineNum,
-                             columnNum, EmptyString(), EmptyString());
+                             columnNum, u""_ns, u""_ns);
   }
 
   return evalOK;
@@ -643,12 +656,13 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   }
 
   // Check for uris that are only loadable by principals that subsume them
-  bool hasFlags;
-  rv = NS_URIChainHasFlags(
-      targetBaseURI, nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS, &hasFlags);
+  bool targetURIIsLoadableBySubsumers = false;
+  rv = NS_URIChainHasFlags(targetBaseURI,
+                           nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS,
+                           &targetURIIsLoadableBySubsumers);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (hasFlags) {
+  if (targetURIIsLoadableBySubsumers) {
     // check nothing else in the URI chain has flags that prevent
     // access:
     rv = CheckLoadURIFlags(
@@ -690,11 +704,14 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   }
 
   // Check for webextension
-  rv = NS_URIChainHasFlags(
-      aTargetURI, nsIProtocolHandler::URI_LOADABLE_BY_EXTENSIONS, &hasFlags);
+  bool targetURIIsLoadableByExtensions = false;
+  rv = NS_URIChainHasFlags(aTargetURI,
+                           nsIProtocolHandler::URI_LOADABLE_BY_EXTENSIONS,
+                           &targetURIIsLoadableByExtensions);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (hasFlags && BasePrincipal::Cast(aPrincipal)->AddonPolicy()) {
+  if (targetURIIsLoadableByExtensions &&
+      BasePrincipal::Cast(aPrincipal)->AddonPolicy()) {
     return NS_OK;
   }
 
@@ -851,27 +868,34 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
   }
 
   // Check for chrome target URI
-  bool hasFlags = false;
+  bool targetURIIsUIResource = false;
   rv = NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::URI_IS_UI_RESOURCE,
-                           &hasFlags);
+                           &targetURIIsUIResource);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (hasFlags) {
+  if (targetURIIsUIResource) {
+    // ALLOW_CHROME is a flag that we pass on all loads _except_ docshell
+    // loads (since docshell loads run the loaded content with its origin
+    // principal). We are effectively allowing resource:// and chrome://
+    // URIs to load as long as they are content accessible and as long
+    // they're not loading it as a document.
     if (aFlags & nsIScriptSecurityManager::ALLOW_CHROME) {
-      // Allow a URI_IS_UI_RESOURCE source to link to a URI_IS_UI_RESOURCE
-      // target if ALLOW_CHROME is set.
-      //
-      // ALLOW_CHROME is a flag that we pass on all loads _except_ docshell
-      // loads (since docshell loads run the loaded content with its origin
-      // principal). So we're effectively allowing resource://, chrome://,
-      // and moz-icon:// source URIs to load resource://, chrome://, and
-      // moz-icon:// files, so long as they're not loading it as a document.
-      bool sourceIsUIResource;
+      bool sourceIsUIResource = false;
       rv = NS_URIChainHasFlags(aSourceBaseURI,
                                nsIProtocolHandler::URI_IS_UI_RESOURCE,
                                &sourceIsUIResource);
       NS_ENSURE_SUCCESS(rv, rv);
       if (sourceIsUIResource) {
-        return NS_OK;
+        // TODO Bug 1654488: Remove pref in CheckLoadURIFlags which
+        // allows all UI resources to load
+        if (StaticPrefs::
+                security_caps_allow_uri_is_ui_resource_in_checkloaduriflags()) {
+          return NS_OK;
+        }
+        // Special case for moz-icon URIs loaded by a local resources like
+        // e.g. chrome: or resource:
+        if (targetScheme.EqualsLiteral("moz-icon")) {
+          return NS_OK;
+        }
       }
 
       if (targetScheme.EqualsLiteral("resource")) {
@@ -918,10 +942,11 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
   }
 
   // Check for target URI pointing to a file
+  bool targetURIIsLocalFile = false;
   rv = NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::URI_IS_LOCAL_FILE,
-                           &hasFlags);
+                           &targetURIIsLocalFile);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (hasFlags) {
+  if (targetURIIsLocalFile) {
     // Allow domains that were allowlisted in the prefs. In 99.9% of cases,
     // this array is empty.
     bool isAllowlisted;
@@ -943,38 +968,22 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
     return NS_ERROR_DOM_BAD_URI;
   }
 
-  // OK, everyone is allowed to load this, since unflagged handlers are
-  // deprecated but treated as URI_LOADABLE_BY_ANYONE.  But check whether we
-  // need to warn.  At some point we'll want to make this warning into an
-  // error and treat unflagged handlers as URI_DANGEROUS_TO_LOAD.
-  rv = NS_URIChainHasFlags(
-      aTargetBaseURI, nsIProtocolHandler::URI_LOADABLE_BY_ANYONE, &hasFlags);
-  NS_ENSURE_SUCCESS(rv, rv);
-  // NB: we also get here if the base URI is URI_LOADABLE_BY_SUBSUMERS,
-  // and none of the rest of the nested chain of URIs for aTargetURI
-  // prohibits the load, so avoid warning in that case:
-  bool hasSubsumersFlag = false;
-  rv = NS_URIChainHasFlags(aTargetBaseURI,
-                           nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS,
-                           &hasSubsumersFlag);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!hasFlags && !hasSubsumersFlag) {
-    nsCOMPtr<nsIStringBundle> bundle = BundleHelper::GetOrCreate();
-    if (bundle) {
-      nsAutoString message;
-      AutoTArray<nsString, 1> formatStrings;
-      CopyASCIItoUTF16(targetScheme, *formatStrings.AppendElement());
-      rv = bundle->FormatStringFromName("ProtocolFlagError", formatStrings,
-                                        message);
-      if (NS_SUCCEEDED(rv)) {
-        nsCOMPtr<nsIConsoleService> console(
-            do_GetService("@mozilla.org/consoleservice;1"));
-        NS_ENSURE_TRUE(console, NS_ERROR_FAILURE);
-
-        console->LogStringMessage(message.get());
-      }
-    }
+#ifdef DEBUG
+  {
+    // Everyone is allowed to load this. The case URI_LOADABLE_BY_SUBSUMERS
+    // is handled by the caller which is just delegating to us as a helper.
+    bool hasSubsumersFlag = false;
+    NS_URIChainHasFlags(aTargetBaseURI,
+                        nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS,
+                        &hasSubsumersFlag);
+    bool hasLoadableByAnyone = false;
+    NS_URIChainHasFlags(aTargetBaseURI,
+                        nsIProtocolHandler::URI_LOADABLE_BY_ANYONE,
+                        &hasLoadableByAnyone);
+    MOZ_ASSERT(hasLoadableByAnyone || hasSubsumersFlag,
+               "why do we get here and do not have any of the two flags set?");
   }
+#endif
 
   return NS_OK;
 }
@@ -1018,12 +1027,11 @@ nsresult nsScriptSecurityManager::ReportError(const char* aMessageTag,
   // using category of "SOP" so we can link to MDN
   if (aInnerWindowID != 0) {
     rv = error->InitWithWindowID(
-        message, EmptyString(), EmptyString(), 0, 0, nsIScriptError::errorFlag,
-        "SOP"_ns, aInnerWindowID, true /* From chrome context */);
+        message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag, "SOP"_ns,
+        aInnerWindowID, true /* From chrome context */);
   } else {
-    rv = error->Init(message, EmptyString(), EmptyString(), 0, 0,
-                     nsIScriptError::errorFlag, "SOP", aFromPrivateWindow,
-                     true /* From chrome context */);
+    rv = error->Init(message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag,
+                     "SOP", aFromPrivateWindow, true /* From chrome context */);
   }
   NS_ENSURE_SUCCESS(rv, rv);
   console->LogMessage(error);

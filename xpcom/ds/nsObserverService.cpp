@@ -4,6 +4,7 @@
 
 #include "mozilla/Logging.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIObserverService.h"
 #include "nsIObserver.h"
@@ -239,10 +240,6 @@ nsObserverService::RemoveObserver(nsIObserver* aObserver, const char* aTopic) {
     return NS_ERROR_FAILURE;
   }
 
-  /* This death grip is needed to protect against consumers who call
-   * RemoveObserver from their Destructor thus potentially thus causing
-   * infinite recursion, see bug 485834/bug 325392. */
-  nsCOMPtr<nsIObserver> kungFuDeathGrip(aObserver);
   return observerList->RemoveObserver(aObserver);
 }
 
@@ -313,5 +310,48 @@ nsObserverService::UnmarkGrayStrongObservers() {
     xpc_TryUnmarkWrappedGrayObject(strongObservers[i]);
   }
 
+  return NS_OK;
+}
+
+namespace {
+
+class NotifyWhenScriptSafeRunnable : public mozilla::Runnable {
+ public:
+  NotifyWhenScriptSafeRunnable(nsIObserverService* aObs, nsISupports* aSubject,
+                               const char* aTopic, const char16_t* aData)
+      : mozilla::Runnable("NotifyWhenScriptSafeRunnable"),
+        mObs(aObs),
+        mSubject(aSubject),
+        mTopic(aTopic) {
+    if (aData) {
+      mData.Assign(aData);
+    } else {
+      mData.SetIsVoid(true);
+    }
+  }
+
+  NS_IMETHOD Run() override {
+    const char16_t* data = mData.IsVoid() ? nullptr : mData.get();
+    return mObs->NotifyObservers(mSubject, mTopic.get(), data);
+  }
+
+ private:
+  nsCOMPtr<nsIObserverService> mObs;
+  nsCOMPtr<nsISupports> mSubject;
+  nsCString mTopic;
+  nsString mData;
+};
+
+}  // namespace
+
+nsresult nsIObserverService::NotifyWhenScriptSafe(nsISupports* aSubject,
+                                                  const char* aTopic,
+                                                  const char16_t* aData) {
+  if (nsContentUtils::IsSafeToRunScript()) {
+    return NotifyObservers(aSubject, aTopic, aData);
+  }
+
+  nsContentUtils::AddScriptRunner(MakeAndAddRef<NotifyWhenScriptSafeRunnable>(
+      this, aSubject, aTopic, aData));
   return NS_OK;
 }

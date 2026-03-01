@@ -637,8 +637,8 @@ nsRect Accessible::BoundsInAppUnits() const {
   unionRectTwips.MoveBy(-viewportOffset);
 
   // We need to take into account a non-1 resolution set on the presshell.
-  // This happens in mobile platforms with async pinch zooming. Here we
-  // scale the bounds before adding the screen-relative offset.
+  // This happens with async pinch zooming. Here we scale the bounds before
+  // adding the screen-relative offset.
   unionRectTwips.ScaleRoundOut(presShell->GetResolution());
   // We have the union of the rectangle, now we need to put it in absolute
   // screen coords.
@@ -1675,7 +1675,7 @@ Relation Accessible::RelationByType(RelationType aType) const {
         // HTML form controls implements nsIFormControl interface.
         nsCOMPtr<nsIFormControl> control(do_QueryInterface(mContent));
         if (control) {
-          if (dom::HTMLFormElement* form = control->GetFormElement()) {
+          if (dom::HTMLFormElement* form = control->GetForm()) {
             nsCOMPtr<nsIContent> formContent =
                 do_QueryInterface(form->GetDefaultSubmitElement());
             return Relation(mDoc, formContent);
@@ -2101,7 +2101,7 @@ bool Accessible::RemoveChild(Accessible* aChild) {
   return true;
 }
 
-void Accessible::MoveChild(uint32_t aNewIndex, Accessible* aChild) {
+void Accessible::RelocateChild(uint32_t aNewIndex, Accessible* aChild) {
   MOZ_DIAGNOSTIC_ASSERT(aChild, "No child was given");
   MOZ_DIAGNOSTIC_ASSERT(aChild->mParent == this,
                         "A child from different subtree was given");

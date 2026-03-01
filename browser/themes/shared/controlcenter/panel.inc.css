@@ -155,7 +155,7 @@
 
 .identity-popup-preferences-button {
   min-width: 32px;
-  background: url(chrome://browser/skin/settings.svg) center right 8px no-repeat;
+  background: url(chrome://global/skin/icons/settings.svg) center right 8px no-repeat;
   padding: 5px 8px !important;
   margin-bottom: 2px !important;
 }

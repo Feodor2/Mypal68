@@ -119,16 +119,16 @@
 }
 
 #urlbar[breakout][breakout-extend] {
-  top: 0;
-  left: -@urlbarMarginInline@;
-  width: calc(100% + 2 * @urlbarMarginInline@);
+  top: -@urlbarBreakoutExtend@;
+  left: calc(-@urlbarMarginInline@ - @urlbarBreakoutExtend@);
+  width: calc(100% + 2 * @urlbarMarginInline@ + 2 * @urlbarBreakoutExtend@);
   box-shadow: 0 5px 18px rgba(0, 0, 0, .2);
 }
 
 #urlbar[breakout][breakout-extend] > #urlbar-input-container {
-  height: var(--urlbar-toolbar-height);
-  padding-block: calc((var(--urlbar-toolbar-height) - var(--urlbar-height)) / 2);
-  padding-inline: @urlbarMarginInline@;
+  height: calc(var(--urlbar-toolbar-height) + 2 * @urlbarBreakoutExtend@);
+  padding-block: calc(@urlbarBreakoutExtend@ + (var(--urlbar-toolbar-height) - var(--urlbar-height)) / 2);
+  padding-inline: calc(@urlbarMarginInline@ + @urlbarBreakoutExtend@);
 }
 
 #urlbar[focused="true"]:-moz-lwtheme,

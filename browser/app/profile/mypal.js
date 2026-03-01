@@ -265,6 +265,7 @@ pref("browser.urlbar.usepreloadedtopurls.expire_days", 14);
 
 pref("browser.urlbar.update1", false);
 pref("browser.urlbar.update1.expandTextOnFocus", false);
+pref("browser.urlbar.view.stripHttps", true);
 
 pref("browser.urlbar.openViewOnFocus", false);
 
@@ -670,6 +671,8 @@ pref("browser.download.hide_plugins_without_extensions", false);
 #else
   pref("browser.backspace_action", 0);
 #endif
+
+pref("intl.regional_prefs.use_os_locales", false);
 
 // this will automatically enable inline spellchecking (if it is available) for
 // editable elements in HTML
@@ -1095,6 +1098,7 @@ pref("services.sync.prefs.sync.dom.event.contextmenu.enabled", true);
 pref("services.sync.prefs.sync.extensions.update.enabled", true);
 pref("services.sync.prefs.sync.extensions.activeThemeID", true);
 pref("services.sync.prefs.sync.intl.accept_languages", true);
+pref("services.sync.prefs.sync.intl.regional_prefs.use_os_locales", true);
 pref("services.sync.prefs.sync.layout.spellcheckDefault", true);
 pref("services.sync.prefs.sync.media.autoplay.default", true);
 pref("services.sync.prefs.sync.network.cookie.cookieBehavior", true);
@@ -1338,11 +1342,13 @@ pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked, 5=All Blocked
   pref("media.autoplay.block-webaudio", false);
 #endif
 
-// Picture-in-Picture is currently enabled by default on Windows.
-#if defined(XP_WIN)
-  pref("media.videocontrols.picture-in-picture.enabled", true);
-  pref("media.videocontrols.picture-in-picture.video-toggle.enabled", true);
-#endif
+pref("media.videocontrols.picture-in-picture.enabled", true);
+pref("media.videocontrols.picture-in-picture.video-toggle.enabled", true);
+// Enable keyboard controls for Picture-in-Picture.
+pref("media.videocontrols.picture-in-picture.keyboard-controls.enabled", true);
+
+// Show the audio toggle for Picture-in-Picture.
+pref("media.videocontrols.picture-in-picture.audio-toggle.enabled", false);
 
 pref("browser.translation.detectLanguage", false);
 pref("browser.translation.neverForLanguages", "");
@@ -1391,9 +1397,6 @@ pref("media.gmp-provider.enabled", true);
 #endif
 
 pref("dom.storage_access.enabled", true);
-
-// Define a set of default features for the Content Blocking UI.
-pref("browser.contentblocking.trackingprotection.control-center.ui.enabled", true);
 
 pref("browser.contentblocking.control-center.ui.showBlockedLabels", true);
 pref("browser.contentblocking.control-center.ui.showAllowedLabels", false);
@@ -1594,7 +1597,6 @@ pref("devtools.target-switching.enabled", false);
 pref("devtools.command-button-pick.enabled", true);
 pref("devtools.command-button-frames.enabled", true);
 pref("devtools.command-button-splitconsole.enabled", true);
-pref("devtools.command-button-paintflashing.enabled", false);
 pref("devtools.command-button-responsive.enabled", true);
 pref("devtools.command-button-screenshot.enabled", false);
 pref("devtools.command-button-rulers.enabled", false);
@@ -1747,11 +1749,11 @@ pref("devtools.netmonitor.visibleColumns",
 );
 pref("devtools.netmonitor.columnsData",
   '[{"name":"status","minWidth":30,"width":5}, {"name":"method","minWidth":30,"width":5}, {"name":"domain","minWidth":30,"width":10}, {"name":"file","minWidth":30,"width":25}, {"name":"url","minWidth":30,"width":25},{"name":"initiator","minWidth":30,"width":10},{"name":"type","minWidth":30,"width":5},{"name":"transferred","minWidth":30,"width":10},{"name":"contentSize","minWidth":30,"width":5},{"name":"waterfall","minWidth":150,"width":15}]');
-pref("devtools.netmonitor.ws.payload-preview-height", 128);
-pref("devtools.netmonitor.ws.visibleColumns",
+pref("devtools.netmonitor.msg.payload-preview-height", 128);
+pref("devtools.netmonitor.msg.visibleColumns",
   '["data", "time"]'
 );
-pref("devtools.netmonitor.ws.displayed-frames.limit", 500);
+pref("devtools.netmonitor.msg.displayed-messages.limit", 500);
 
 pref("devtools.netmonitor.response.ui.limit", 10240);
 
@@ -1769,12 +1771,10 @@ pref("devtools.netmonitor.har.forceExport", false);
 pref("devtools.netmonitor.har.pageLoadedTimeout", 1500);
 pref("devtools.netmonitor.har.enableAutoExportToFile", false);
 
-// Enable WebSocket monitoring in Nightly builds.
-#if defined(NIGHTLY_BUILD)
-  pref("devtools.netmonitor.features.webSockets", true);
-#else
-  pref("devtools.netmonitor.features.webSockets", false);
-#endif
+pref("devtools.netmonitor.features.webSockets", true);
+
+// Disable the EventSource Inspector.
+pref("devtools.netmonitor.features.serverSentEvents", false);
 
 // Enable the Storage Inspector
 pref("devtools.storage.enabled", true);
@@ -1812,11 +1812,7 @@ pref("devtools.webconsole.input.autocomplete",true);
 
 // Set to true to eagerly show the results of webconsole terminal evaluations
 // when they don't have side effects.
-#if defined(NIGHTLY_BUILD)
-  pref("devtools.webconsole.input.eagerEvaluation", true);
-#else
-  pref("devtools.webconsole.input.eagerEvaluation", false);
-#endif
+pref("devtools.webconsole.input.eagerEvaluation", true);
 
 // Browser console filters
 pref("devtools.browserconsole.filter.error", true);
@@ -1906,7 +1902,7 @@ pref("devtools.responsive.reloadNotification.enabled", true);
 pref("devtools.responsive.touchSimulation.enabled", false);
 // Whether or not meta viewport is enabled, if and only if touchSimulation
 // is also enabled.
-pref("devtools.responsive.metaViewport.enabled", false);
+pref("devtools.responsive.metaViewport.enabled", true);
 // The user agent of the viewport.
 pref("devtools.responsive.userAgent", "");
 // Whether or not the RDM UI is embedded in the browser.

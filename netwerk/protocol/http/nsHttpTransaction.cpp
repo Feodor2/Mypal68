@@ -30,6 +30,7 @@
 #include "nsIHttpActivityObserver.h"
 #include "nsIHttpAuthenticator.h"
 #include "nsIInputStream.h"
+#include "nsIInputStreamPriority.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsIOService.h"
 #include "nsIPipe.h"
@@ -264,7 +265,7 @@ nsresult nsHttpTransaction::Init(
   mTopLevelOuterContentWindowId = topLevelOuterContentWindowId;
   LOG(("  window-id = %" PRIx64, mTopLevelOuterContentWindowId));
 
-  mActivityDistributor = services::GetActivityDistributor();
+  mActivityDistributor = services::GetHttpActivityDistributor();
   if (!mActivityDistributor) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -1860,6 +1861,14 @@ nsresult nsHttpTransaction::HandleContent(char* buf, uint32_t count,
     }
   }
 
+  if (mConnInfo->GetIsTrrServiceChannel()) {
+    // For the TRR channel we want to increase priority so a DoH response
+    // isn't blocked by other main thread events.
+    nsCOMPtr<nsIInputStreamPriority> pri = do_QueryInterface(mPipeIn);
+    if (pri) {
+      pri->SetPriority(nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
+    }
+  }
   return NS_OK;
 }
 

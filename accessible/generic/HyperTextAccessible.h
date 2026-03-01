@@ -17,7 +17,7 @@ class nsRange;
 class nsIWidget;
 
 namespace mozilla {
-class TextEditor;
+class EditorBase;
 namespace dom {
 class Selection;
 }
@@ -415,7 +415,7 @@ class HyperTextAccessible : public AccessibleWrap {
    * Return the editor associated with the accessible.
    * The result may be either TextEditor or HTMLEditor.
    */
-  virtual already_AddRefed<TextEditor> GetEditor() const;
+  virtual already_AddRefed<EditorBase> GetEditor() const;
 
   /**
    * Return DOM selection object for the accessible.
@@ -549,7 +549,7 @@ class HyperTextAccessible : public AccessibleWrap {
    * @param aEndOffset        [in, out] the end offset
    * @param aAttributes       [out, optional] result attributes
    */
-  void GetSpellTextAttr(nsINode* aNode, int32_t aNodeOffset,
+  void GetSpellTextAttr(nsINode* aNode, uint32_t aNodeOffset,
                         uint32_t* aStartOffset, uint32_t* aEndOffset,
                         nsIPersistentProperties* aAttributes);
 

@@ -95,6 +95,7 @@ class UrlbarInput {
     this._actionOverrideKeyCount = 0;
     this._autofillPlaceholder = "";
     this._lastSearchString = "";
+    this._lastValidURLStr = "";
     this._valueOnLastSearch = "";
     this._resultForCurrentValue = null;
     this._suppressStartQuery = false;
@@ -218,20 +219,6 @@ class UrlbarInput {
   }
 
   /**
-   * Shortens the given value, usually by removing http:// and trailing slashes,
-   * such that calling nsIURIFixup::createFixupURI with the result will produce
-   * the same URI.
-   *
-   * @param {string} val
-   *   The string to be trimmed if it appears to be URI
-   * @returns {string}
-   *   The trimmed string
-   */
-  trimValue(val) {
-    return UrlbarPrefs.get("trimURLs") ? BrowserUtils.trimURL(val) : val;
-  }
-
-  /**
    * Applies styling to the text in the urlbar input, depending on the text.
    */
   formatValue() {
@@ -269,6 +256,73 @@ class UrlbarInput {
     this._suppressPrimaryAdjustment = true;
     this.inputField.select();
     this._suppressPrimaryAdjustment = false;
+  }
+
+  /**
+   * Sets the URI to display in the location bar.
+   *
+   * @param {nsIURI} [uri]
+   *        If this is unspecified, the current URI will be used.
+   * @param {boolean} [updatePopupNotifications]
+   *        Passed though to `setPageProxyState`.
+   */
+  setURI(uri, updatePopupNotifications) {
+    let value = this.window.gBrowser.userTypedValue;
+    let valid = false;
+
+    // Explicitly check for nulled out value. We don't want to reset the URL
+    // bar if the user has deleted the URL and we'd just put the same URL
+    // back. See bug 304198.
+    if (value === null) {
+      uri = uri || this.window.gBrowser.currentURI;
+      // Strip off usernames and passwords for the location bar
+      try {
+        uri = Services.io.createExposableURI(uri);
+      } catch (e) {}
+
+      // Replace initial page URIs with an empty string
+      // only if there's no opener (bug 370555).
+      if (
+        this.window.isInitialPage(uri) &&
+        BrowserUtils.checkEmptyPageOrigin(
+          this.window.gBrowser.selectedBrowser,
+          uri
+        )
+      ) {
+        value = "";
+      } else {
+        // We should deal with losslessDecodeURI throwing for exotic URIs
+        try {
+          value = losslessDecodeURI(uri);
+        } catch (ex) {
+          value = "about:blank";
+        }
+      }
+
+      valid =
+        !this.window.isBlankPageURL(uri.spec) || uri.schemeIs("moz-extension");
+    } else if (
+      this.window.isInitialPage(value) &&
+      BrowserUtils.checkEmptyPageOrigin(this.window.gBrowser.selectedBrowser)
+    ) {
+      value = "";
+      valid = true;
+    }
+
+    let isDifferentValidValue = valid && value != this.value;
+    this.value = value;
+    this.valueIsTyped = !valid;
+    this.removeAttribute("usertyping");
+    if (isDifferentValidValue) {
+      // The selection is enforced only for new values, to avoid overriding the
+      // cursor position when the user switches windows while typing.
+      this.selectionStart = this.selectionEnd = 0;
+    }
+
+    this.setPageProxyState(
+      valid ? "valid" : "invalid",
+      updatePopupNotifications
+    );
   }
 
   /**
@@ -391,10 +445,19 @@ class UrlbarInput {
     try {
       new URL(url);
     } catch (ex) {
+      // This is not a URL, so it must be a search or a keyword.
+
+      // TODO (Bug 1604927): If the urlbar results are restricted to a specific
+      // engine, here we must search with that specific engine; indeed the
+      // docshell wouldn't know about our engine restriction.
+      // Also remember to invoke this._recordSearch, after replacing url with
+      // the appropriate engine submission url.
+
       let browser = this.window.gBrowser.selectedBrowser;
       let lastLocationChange = browser.lastLocationChange;
-
       UrlbarUtils.getShortcutOrURIAndPostData(url).then(data => {
+        // Because this happens asynchronously, we must verify that the browser
+        // location did not change in the meanwhile.
         if (
           where != "current" ||
           browser.lastLocationChange == lastLocationChange
@@ -404,6 +467,7 @@ class UrlbarInput {
           this._loadURL(data.url, where, openParams, null, browser);
         }
       });
+      // Bail out, because we will handle the _loadURL call asynchronously.
       return;
     }
 
@@ -412,7 +476,7 @@ class UrlbarInput {
 
   handleRevert() {
     this.window.gBrowser.userTypedValue = null;
-    this.window.URLBarSetURI(null, true);
+    this.setURI(null, true);
     if (this.value && this.focused) {
       this.select();
     }
@@ -522,14 +586,9 @@ class UrlbarInput {
 
         if (
           result.heuristic &&
+          this.window.gKeywordURIFixup &&
           UrlbarUtils.looksLikeSingleWordHost(originalUntrimmedValue)
         ) {
-          // The docshell when fixes a single word to a search, also checks the
-          // dns and prompts the user whether they wanted to rather visit that
-          // as a host. On a positive answer, it adds to the domains whitelist
-          // that we use to make decisions. Because here we are directly asking
-          // for a search, bypassing the docshell, we must do it here.
-          // See URIFixupChild.jsm and keyword-uri-fixup.
           let flags =
             Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
             Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -756,6 +815,7 @@ class UrlbarInput {
         userContextId: this.window.gBrowser.selectedBrowser.getAttribute(
           "usercontextid"
         ),
+        currentPage: this.window.gBrowser.currentURI.spec,
       })
     );
   }
@@ -768,7 +828,7 @@ class UrlbarInput {
    *   use it as its query.
    */
   search(value) {
-    this.window.focusAndSelectUrlBar();
+    this.focus();
 
     // If the value is a restricted token, append a space.
     if (Object.values(UrlbarTokenizer.RESTRICT).includes(value)) {
@@ -891,10 +951,40 @@ class UrlbarInput {
     this._toolbar.removeAttribute("urlbar-exceeds-toolbar-bounds");
   }
 
-  setPageProxyState(state) {
+  /**
+   * Updates the user interface to indicate whether the URI in the address bar
+   * is different than the loaded page, because it's being edited or because a
+   * search result is currently selected and is displayed in the location bar.
+   *
+   * @param {string} state
+   *        The string "valid" indicates that the security indicators and other
+   *        related user interface elments should be shown because the URI in
+   *        the location bar matches the loaded page. The string "invalid"
+   *        indicates that the URI in the location bar is different than the
+   *        loaded page.
+   * @param {boolean} [updatePopupNotifications]
+   *        Indicates whether we should update the PopupNotifications
+   *        visibility due to this change, otherwise avoid doing so as it is
+   *        being handled somewhere else.
+   */
+  setPageProxyState(state, updatePopupNotifications) {
+    let prevState = this.getAttribute("pageproxystate");
+
     this.setAttribute("pageproxystate", state);
     this._inputContainer.setAttribute("pageproxystate", state);
     this._identityBox.setAttribute("pageproxystate", state);
+
+    if (state == "valid") {
+      this._lastValidURLStr = this.value;
+    }
+
+    if (
+      updatePopupNotifications &&
+      prevState != state &&
+      this.window.UpdatePopupNotificationsVisibility
+    ) {
+      this.window.UpdatePopupNotificationsVisibility();
+    }
   }
 
   /**
@@ -985,7 +1075,7 @@ class UrlbarInput {
       val = originalUrl.displaySpec;
     }
 
-    val = allowTrim ? this.trimValue(val) : val;
+    val = allowTrim ? this._trimValue(val) : val;
 
     this.valueIsTyped = false;
     this._resultForCurrentValue = null;
@@ -1017,7 +1107,7 @@ class UrlbarInput {
     try {
       let uri = Services.io.newURI(result.payload.url);
       if (uri) {
-        return this.window.losslessDecodeURI(uri);
+        return losslessDecodeURI(uri);
       }
     } catch (ex) {}
 
@@ -1168,10 +1258,10 @@ class UrlbarInput {
     // Just the beginning of the URL is selected, or we want a decoded
     // url. First check for a trimmed value.
     let spec = uri.displaySpec;
-    let trimmedSpec = this.trimValue(spec);
+    let trimmedSpec = this._trimValue(spec);
     if (spec != trimmedSpec) {
-      // Prepend the portion that trimValue removed from the beginning.
-      // This assumes trimValue will only truncate the URL at
+      // Prepend the portion that _trimValue removed from the beginning.
+      // This assumes _trimValue will only truncate the URL at
       // the beginning or end (or both).
       let trimmedSegments = spec.split(trimmedSpec);
       selectedVal = trimmedSegments[0] + selectedVal;
@@ -1210,6 +1300,20 @@ class UrlbarInput {
     this._actionOverrideKeyCount = 0;
     this.removeAttribute("actionoverride");
     this.view.panel.removeAttribute("actionoverride");
+  }
+
+  /**
+   * Shortens the given value, usually by removing http:// and trailing slashes,
+   * such that calling nsIURIFixup::createFixupURI with the result will produce
+   * the same URI.
+   *
+   * @param {string} val
+   *   The string to be trimmed if it appears to be URI
+   * @returns {string}
+   *   The trimmed string
+   */
+  _trimValue(val) {
+    return UrlbarPrefs.get("trimURLs") ? BrowserUtils.trimURL(val) : val;
   }
 
   /**
@@ -1546,7 +1650,10 @@ class UrlbarInput {
     }
 
     // We may have hidden popup notifications, show them again if necessary.
-    if (this.getAttribute("pageproxystate") != "valid") {
+    if (
+      this.getAttribute("pageproxystate") != "valid" &&
+      this.window.UpdatePopupNotificationsVisibility
+    ) {
       this.window.UpdatePopupNotificationsVisibility();
     }
   }
@@ -1586,7 +1693,10 @@ class UrlbarInput {
     this.formatValue();
 
     // Hide popup notifications, to reduce visual noise.
-    if (this.getAttribute("pageproxystate") != "valid") {
+    if (
+      this.getAttribute("pageproxystate") != "valid" &&
+      this.window.UpdatePopupNotificationsVisibility
+    ) {
       this.window.UpdatePopupNotificationsVisibility();
     }
   }
@@ -1685,10 +1795,17 @@ class UrlbarInput {
     }
     this.removeAttribute("actiontype");
 
-    if (!this.view.isOpen || !value) {
-      this.view.clear();
+    if (
+      this.getAttribute("pageproxystate") == "valid" &&
+      this.value != this._lastValidURLStr
+    ) {
+      this.setPageProxyState("invalid", true);
     }
-    if (this.view.isOpen && !value) {
+
+    if (!this.view.isOpen) {
+      this.view.clear();
+    } else if (!value && !this.openViewOnFocus) {
+      this.view.clear();
       this.view.close();
       return;
     }
@@ -1923,15 +2040,15 @@ class UrlbarInput {
     if (droppedURL && droppedURL !== this.window.gBrowser.currentURI.spec) {
       let principal = Services.droppedLinkHandler.getTriggeringPrincipal(event);
       this.value = droppedURL;
-      this.window.SetPageProxyState("invalid");
+      this.setPageProxyState("invalid");
       this.focus();
       this.handleCommand(null, undefined, undefined, principal);
       // For safety reasons, in the drop case we don't want to immediately show
       // the the dropped value, instead we want to keep showing the current page
       // url until an onLocationChange happens.
-      // See the handling in URLBarSetURI for further details.
+      // See the handling in `setURI` for further details.
       this.window.gBrowser.userTypedValue = null;
-      this.window.URLBarSetURI(null, true);
+      this.setURI(null, true);
     }
   }
 
@@ -2010,6 +2127,73 @@ function getDroppableData(event) {
   }
   // Handle as text.
   return event.dataTransfer.getData("text/unicode");
+}
+
+/**
+ * Decodes the given URI for displaying it in the address bar without losing
+ * information, such that hitting Enter again will load the same URI.
+ *
+ * @param {nsIURI} aURI
+ *   The URI to decode
+ * @returns {string}
+ *   The decoded URI
+ */
+function losslessDecodeURI(aURI) {
+  let scheme = aURI.scheme;
+  let value = aURI.displaySpec;
+
+  // Try to decode as UTF-8 if there's no encoding sequence that we would break.
+  if (!/%25(?:3B|2F|3F|3A|40|26|3D|2B|24|2C|23)/i.test(value)) {
+    let decodeASCIIOnly = !["https", "http", "file", "ftp"].includes(scheme);
+    if (decodeASCIIOnly) {
+      // This only decodes ascii characters (hex) 20-7e, except 25 (%).
+      // This avoids both cases stipulated below (%-related issues, and \r, \n
+      // and \t, which would be %0d, %0a and %09, respectively) as well as any
+      // non-US-ascii characters.
+      value = value.replace(
+        /%(2[0-4]|2[6-9a-f]|[3-6][0-9a-f]|7[0-9a-e])/g,
+        decodeURI
+      );
+    } else {
+      try {
+        value = decodeURI(value)
+          // 1. decodeURI decodes %25 to %, which creates unintended
+          //    encoding sequences. Re-encode it, unless it's part of
+          //    a sequence that survived decodeURI, i.e. one for:
+          //    ';', '/', '?', ':', '@', '&', '=', '+', '$', ',', '#'
+          //    (RFC 3987 section 3.2)
+          // 2. Re-encode select whitespace so that it doesn't get eaten
+          //    away by the location bar (bug 410726). Re-encode all
+          //    adjacent whitespace, to prevent spoofing attempts where
+          //    invisible characters would push part of the URL to
+          //    overflow the location bar (bug 1395508).
+          .replace(
+            /%(?!3B|2F|3F|3A|40|26|3D|2B|24|2C|23)|[\r\n\t]|\s(?=\s)|\s$/gi,
+            encodeURIComponent
+          );
+      } catch (e) {}
+    }
+  }
+
+  // Encode invisible characters (C0/C1 control characters, U+007F [DEL],
+  // U+00A0 [no-break space], line and paragraph separator,
+  // object replacement character) (bug 452979, bug 909264)
+  value = value.replace(
+    // eslint-disable-next-line no-control-regex
+    /[\u0000-\u001f\u007f-\u00a0\u2028\u2029\ufffc]/g,
+    encodeURIComponent
+  );
+
+  // Encode default ignorable characters (bug 546013)
+  // except ZWNJ (U+200C) and ZWJ (U+200D) (bug 582186).
+  // This includes all bidirectional formatting characters.
+  // (RFC 3987 sections 3.2 and 4.1 paragraph 6)
+  value = value.replace(
+    // eslint-disable-next-line no-misleading-character-class
+    /[\u00ad\u034f\u061c\u115f-\u1160\u17b4-\u17b5\u180b-\u180d\u200b\u200e-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8]|\ud834[\udd73-\udd7a]|[\udb40-\udb43][\udc00-\udfff]/g,
+    encodeURIComponent
+  );
+  return value;
 }
 
 /**

@@ -8,9 +8,8 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Promise.h"
 
-using namespace mozilla;
-using namespace mozilla::dom;
-using namespace mozilla::ipc;
+using mozilla::dom::ContentParent;
+using mozilla::dom::Promise;
 
 NS_IMPL_ISUPPORTS(nsCodeCoverage, nsICodeCoverage)
 
@@ -36,6 +35,8 @@ class ProcessCount final {
   uint32_t mCount;
 };
 
+namespace {
+
 nsresult Request(JSContext* cx, Promise** aPromise, RequestType requestType) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
@@ -45,7 +46,7 @@ nsresult Request(JSContext* cx, Promise** aPromise, RequestType requestType) {
     return NS_ERROR_FAILURE;
   }
 
-  ErrorResult result;
+  mozilla::ErrorResult result;
   RefPtr<Promise> promise = Promise::Create(global, result);
   if (NS_WARN_IF(result.Failed())) {
     return result.StealNSResult();
@@ -53,12 +54,12 @@ nsresult Request(JSContext* cx, Promise** aPromise, RequestType requestType) {
 
   uint32_t processCount = 0;
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-    Unused << cp;
+    mozilla::Unused << cp;
     ++processCount;
   }
 
   if (requestType == RequestType::Flush) {
-    CodeCoverageHandler::FlushCounters();
+    mozilla::CodeCoverageHandler::FlushCounters();
   }
 
   if (processCount == 0) {
@@ -72,7 +73,7 @@ nsresult Request(JSContext* cx, Promise** aPromise, RequestType requestType) {
       }
     };
 
-    auto reject = [promise](ResponseRejectReason&& aReason) {
+    auto reject = [promise](mozilla::ipc::ResponseRejectReason&& aReason) {
       promise->MaybeReject(NS_ERROR_FAILURE);
     };
 
@@ -86,6 +87,8 @@ nsresult Request(JSContext* cx, Promise** aPromise, RequestType requestType) {
   promise.forget(aPromise);
   return NS_OK;
 }
+
+}  // anonymous namespace
 
 NS_IMETHODIMP nsCodeCoverage::FlushCounters(JSContext* cx, Promise** aPromise) {
   return Request(cx, aPromise, RequestType::Flush);

@@ -5,8 +5,8 @@
 #ifndef mozilla_net_UrlClassifierCommon_h
 #define mozilla_net_UrlClassifierCommon_h
 
+#include "mozilla/Logging.h"
 #include "nsString.h"
-#include "mozilla/AntiTrackingCommon.h"
 
 class nsIChannel;
 class nsIURI;
@@ -28,7 +28,7 @@ class UrlClassifierCommon final {
   static void NotifyChannelClassifierProtectionDisabled(
       nsIChannel* aChannel, uint32_t aAcceptedReason);
 
-  static bool ShouldEnableClassifier(nsIChannel* aChannel);
+  static bool ShouldEnableProtectionForChannel(nsIChannel* aChannel);
 
   static nsresult SetBlockedContent(nsIChannel* channel, nsresult aErrorCode,
                                     const nsACString& aList,
@@ -76,6 +76,8 @@ class UrlClassifierCommon final {
 
   static uint32_t TableToClassificationFlag(
       const nsACString& aTable, const std::vector<ClassificationData>& aData);
+
+  static nsresult GetTopWindowURI(nsIChannel* aChannel, nsIURI** aURI);
 };
 
 }  // namespace net

@@ -9,9 +9,9 @@ const { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "URL"]);
 
 const TIPPYTOP_JSON_PATH =
-  "resource://activity-stream/data/content/tippytop/top_sites.json";
+  "chrome://activity-stream/content/data/content/tippytop/top_sites.json";
 const TIPPYTOP_URL_PREFIX =
-  "resource://activity-stream/data/content/tippytop/images/";
+  "chrome://activity-stream/content/data/content/tippytop/images/";
 
 function getDomain(url) {
   let domain;

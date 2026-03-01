@@ -195,6 +195,25 @@ pref("general.config.obscure_value", 13); // for MCD .cfg files
 
 pref("general.warnOnAboutConfig", true);
 
+// Whether middle button click with a modifier key starts to autoscroll or
+// does nothing.
+pref("general.autoscroll.prevent_to_start.shiftKey", true); // Shift
+pref("general.autoscroll.prevent_to_start.ctrlKey", false); // Control
+pref("general.autoscroll.prevent_to_start.altKey", false);  // Alt
+pref("general.autoscroll.prevent_to_start.metaKey", false); // Command on macOS
+pref("general.autoscroll.prevent_to_start.osKey", false);   // Windows key on Windows or Super key on Linux
+
+// When this pref is set to true, middle click on non-editable content keeps
+// selected range rather than collapsing selection at the clicked position.
+// This behavior is incompatible with Chrome, so enabling this could cause
+// breaking some web apps.
+// Note that this pref is ignored when "general.autoScroll" is set to false
+// or "middlemouse.paste" is set to true.  For the former case, there is no
+// reason do be incompatible with Chrome.  For the latter case, the selection
+// change is important for "paste" event listeners even if it's non-editable
+// content.
+pref("general.autoscroll.prevent_to_collapse_selection_by_middle_mouse_down", false);
+
 // maximum number of dated backups to keep at any time
 pref("browser.bookmarks.max_backups",       5);
 
@@ -276,8 +295,6 @@ pref("browser.sessionhistory.max_total_viewers", -1);
 // 0 = false, 1 = true, 2 = autodetect.
 pref("ui.android.mouse_as_touch", 1);
 
-// Duration of timeout of incremental search in menus (ms).  0 means infinite.
-pref("ui.menu.incremental_search.timeout", 1000);
 // If true, all popups won't hide automatically on blur
 pref("ui.popup.disable_autohide", false);
 
@@ -392,9 +409,8 @@ pref("media.decoder-doctor.new-issue-endpoint", "data:text/plain,");
 
 pref("media.videocontrols.picture-in-picture.enabled", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", false);
-pref("media.videocontrols.picture-in-picture.video-toggle.flyout-enabled", false);
-pref("media.videocontrols.picture-in-picture.video-toggle.flyout-wait-ms", 5000);
 pref("media.videocontrols.picture-in-picture.video-toggle.always-show", false);
+pref("media.videocontrols.picture-in-picture.video-toggle.min-video-secs", 45);
 
 #ifdef MOZ_WEBRTC
   pref("media.navigator.video.enabled", true);
@@ -465,7 +481,13 @@ pref("media.videocontrols.picture-in-picture.video-toggle.always-show", false);
   pref("media.peerconnection.ice.trickle_grace_period", 5000);
   pref("media.peerconnection.ice.no_host", false);
   pref("media.peerconnection.ice.default_address_only", false);
-  pref("media.peerconnection.ice.obfuscate_host_addresses", false);
+  // See Bug 1581947 for Android hostname obfuscation
+  #if defined(MOZ_WIDGET_ANDROID)
+    pref("media.peerconnection.ice.obfuscate_host_addresses", false);
+  #else
+    pref("media.peerconnection.ice.obfuscate_host_addresses", true);
+  #endif
+  pref("media.peerconnection.ice.obfuscate_host_addresses.whitelist", "");
   pref("media.peerconnection.ice.proxy_only_if_behind_proxy", false);
   pref("media.peerconnection.ice.proxy_only", false);
   pref("media.peerconnection.turn.disable", false);
@@ -675,6 +697,21 @@ pref("accessibility.browsewithcaret_shortcut.enabled", true);
   pref("ui.scrollToClick", 0);
 #endif
 
+// These are some selection-related colors which have no per platform
+// implementation.
+#if !defined(XP_MACOSX)
+pref("ui.textSelectBackgroundDisabled", "#b0b0b0");
+#endif
+// This makes the selection stand out when typeaheadfind is on.
+// Used with nsISelectionController::SELECTION_ATTENTION
+pref("ui.textSelectBackgroundAttention", "#38d878");
+// This makes the matched text stand out when findbar highlighting is on.
+// Used with nsISelectionController::SELECTION_FIND
+pref("ui.textHighlightBackground", "#ef0fff");
+// The foreground color for the matched text in findbar highlighting
+// Used with nsISelectionController::SELECTION_FIND
+pref("ui.textHighlightForeground", "#ffffff");
+
 // We want the ability to forcibly disable platform a11y, because
 // some non-a11y-related components attempt to bring it up.  See bug
 // 538530 for details about Windows; we have a pref here that allows it
@@ -704,7 +741,6 @@ pref("accessibility.force_disabled", 0);
 pref("focusmanager.testmode", false);
 
 pref("accessibility.usetexttospeech", "");
-pref("accessibility.mouse_focuses_formcontrol", false);
 
 // Type Ahead Find
 pref("accessibility.typeaheadfind", true);
@@ -804,11 +840,6 @@ pref("view_source.editor.args", "");
 // whether or not to draw images while dragging
 pref("nglayout.enable_drag_images", true);
 
-// enable/disable paint flashing --- useful for debugging
-// the first one applies to everything, the second one only to chrome
-pref("nglayout.debug.paint_flashing", false);
-pref("nglayout.debug.paint_flashing_chrome", false);
-
 // URI fixup prefs
 pref("browser.fixup.alternate.enabled", true);
 pref("browser.fixup.alternate.prefix", "www.");
@@ -867,11 +898,6 @@ pref("print.print_edge_bottom", 0);
 #else
   pref("print.print_via_parent", false);
 #endif
-
-// Pref used by the spellchecker extension to control the
-// maximum number of misspelled words that will be underlined
-// in a document.
-pref("extensions.spellcheck.inline.max-misspellings", 500);
 
 // Whether inserting <div> when typing Enter in a block element which can
 // contain <div>.  If false, inserts <br> instead.
@@ -1037,6 +1063,12 @@ pref("javascript.options.mem.gc_high_frequency_large_heap_growth", 150);
 
 // JSGC_LOW_FREQUENCY_HEAP_GROWTH
 pref("javascript.options.mem.gc_low_frequency_heap_growth", 150);
+
+// JSGC_BALANCED_HEAP_LIMITS_ENABLED
+pref("javascript.options.mem.gc_balanced_heap_limits", false);
+
+// JSGC_HEAP_GROWTH_FACTOR
+pref("javascript.options.mem.gc_heap_growth_factor", 40);
 
 // JSGC_ALLOCATION_THRESHOLD
 pref("javascript.options.mem.gc_allocation_threshold_mb", 27);
@@ -1828,12 +1860,7 @@ pref("intl.regional_prefs.use_os_locales",  false);
 // for ISO-8859-1
 pref("intl.fallbackCharsetList.ISO-8859-1", "windows-1252");
 pref("font.language.group",                 "chrome://global/locale/intl.properties");
-
-// If you use legacy Chinese IME which puts an ideographic space to composition
-// string as placeholder, this pref might be useful.  If this is true and when
-// web contents forcibly commits composition (e.g., moving focus), the
-// ideographic space will be ignored (i.e., commits with empty string).
-pref("intl.ime.remove_placeholder_character_at_commit", false);
+pref("font.cjk_pref_fallback_order",        "zh-cn,zh-hk,zh-tw,ja,ko");
 
 pref("intl.uidirection", -1); // -1 to set from locale; 0 for LTR; 1 for RTL
 
@@ -2166,7 +2193,7 @@ pref("middlemouse.scrollbarPosition", false);
 // Clipboard only supports text/plain
 pref("clipboard.plainTextOnly", false);
 
-#ifdef XP_WIN
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   // Setting false you can disable 4th button and/or 5th button of your mouse.
   // 4th button is typically mapped to "Back" and 5th button is typically mapped
   // to "Forward" button.
@@ -3018,65 +3045,69 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // enable NSPR logging for module fontInfoLog:5
   // canonical names immediately follow '(fontinit) family:' in the log
 
+  // For some scripts there is no commonly-installed monospace font, so we just use
+  // the same as serif/sans-serif, but we prefix the list with Menlo so that at least
+  // Latin text will be monospaced if it occurs when that lang code is in effect.
+
   pref("font.name-list.emoji", "Apple Color Emoji");
 
   pref("font.name-list.serif.ar", "Al Bayan");
   pref("font.name-list.sans-serif.ar", "Geeza Pro");
-  pref("font.name-list.monospace.ar", "Geeza Pro");
+  pref("font.name-list.monospace.ar", "Menlo, Geeza Pro");
   pref("font.name-list.cursive.ar", "DecoType Naskh");
   pref("font.name-list.fantasy.ar", "KufiStandardGK");
 
   pref("font.name-list.serif.el", "Times, Times New Roman");
   pref("font.name-list.sans-serif.el", "Helvetica, Lucida Grande");
-  pref("font.name-list.monospace.el", "Courier New, Lucida Grande");
+  pref("font.name-list.monospace.el", "Menlo");
   pref("font.name-list.cursive.el", "Lucida Grande, Times");
   pref("font.name-list.fantasy.el", "Lucida Grande, Times");
 
   pref("font.name-list.serif.he", "Times New Roman");
   pref("font.name-list.sans-serif.he", "Arial");
-  pref("font.name-list.monospace.he", "Courier New");
+  pref("font.name-list.monospace.he", "Menlo, Courier New");
   pref("font.name-list.cursive.he", "Times New Roman");
   pref("font.name-list.fantasy.he", "Times New Roman");
 
   pref("font.name-list.serif.ja", "Hiragino Mincho ProN, Hiragino Mincho Pro");
-  pref("font.name-list.sans-serif.ja", "Hiragino Kaku Gothic ProN, Hiragino Kaku Gothic Pro");
-  pref("font.name-list.monospace.ja", "Osaka-Mono");
+  pref("font.name-list.sans-serif.ja", "Hiragino Kaku Gothic ProN, Hiragino Kaku Gothic Pro, Hiragino Sans");
+  pref("font.name-list.monospace.ja", "Osaka-Mono, Hiragino Kaku Gothic ProN, Hiragino Sans");
 
   pref("font.name-list.serif.ko", "AppleMyungjo");
   pref("font.name-list.sans-serif.ko", "Apple SD Gothic Neo, AppleGothic");
-  pref("font.name-list.monospace.ko", "Apple SD Gothic Neo, AppleGothic");
+  pref("font.name-list.monospace.ko", "Menlo, Apple SD Gothic Neo, AppleGothic");
 
   pref("font.name-list.serif.th", "Thonburi");
   pref("font.name-list.sans-serif.th", "Thonburi");
-  pref("font.name-list.monospace.th", "Ayuthaya");
+  pref("font.name-list.monospace.th", "Menlo, Ayuthaya");
 
   pref("font.name-list.serif.x-armn", "Mshtakan");
   pref("font.name-list.sans-serif.x-armn", "Mshtakan");
-  pref("font.name-list.monospace.x-armn", "Mshtakan");
+  pref("font.name-list.monospace.x-armn", "Menlo, Mshtakan");
 
   // SolaimanLipi, Rupali http://ekushey.org/?page/mac_download
   pref("font.name-list.serif.x-beng", "Bangla MN");
   pref("font.name-list.sans-serif.x-beng", "Bangla Sangam MN");
-  pref("font.name-list.monospace.x-beng", "Bangla Sangam MN");
+  pref("font.name-list.monospace.x-beng", "Menlo, Bangla Sangam MN");
 
   pref("font.name-list.serif.x-cans", "Euphemia UCAS");
   pref("font.name-list.sans-serif.x-cans", "Euphemia UCAS");
-  pref("font.name-list.monospace.x-cans", "Euphemia UCAS");
+  pref("font.name-list.monospace.x-cans", "Menlo, Euphemia UCAS");
 
   pref("font.name-list.serif.x-cyrillic", "Times, Times New Roman");
   pref("font.name-list.sans-serif.x-cyrillic", "Helvetica, Arial");
-  pref("font.name-list.monospace.x-cyrillic", "Monaco, Courier New");
+  pref("font.name-list.monospace.x-cyrillic", "Menlo");
   pref("font.name-list.cursive.x-cyrillic", "Geneva");
   pref("font.name-list.fantasy.x-cyrillic", "Charcoal CY");
 
   pref("font.name-list.serif.x-devanagari", "Devanagari MT");
   pref("font.name-list.sans-serif.x-devanagari", "Devanagari Sangam MN, Devanagari MT");
-  pref("font.name-list.monospace.x-devanagari", "Devanagari Sangam MN, Devanagari MT");
+  pref("font.name-list.monospace.x-devanagari", "Menlo, Devanagari Sangam MN, Devanagari MT");
 
   // Abyssinica SIL http://scripts.sil.org/AbyssinicaSIL_Download
   pref("font.name-list.serif.x-ethi", "Kefa, Abyssinica SIL");
   pref("font.name-list.sans-serif.x-ethi", "Kefa, Abyssinica SIL");
-  pref("font.name-list.monospace.x-ethi", "Kefa, Abyssinica SIL");
+  pref("font.name-list.monospace.x-ethi", "Menlo, Kefa, Abyssinica SIL");
 
   // no suitable fonts for georgian ship with mac os x
   // however some can be freely downloaded
@@ -3084,76 +3115,76 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // Zuzumbo http://homepage.mac.com/rsiradze/FileSharing91.html
   pref("font.name-list.serif.x-geor", "TITUS Cyberbit Basic");
   pref("font.name-list.sans-serif.x-geor", "Zuzumbo");
-  pref("font.name-list.monospace.x-geor", "Zuzumbo");
+  pref("font.name-list.monospace.x-geor", "Menlo, Zuzumbo");
 
   pref("font.name-list.serif.x-gujr", "Gujarati MT");
   pref("font.name-list.sans-serif.x-gujr", "Gujarati Sangam MN, Gujarati MT");
-  pref("font.name-list.monospace.x-gujr", "Gujarati Sangam MN, Gujarati MT");
+  pref("font.name-list.monospace.x-gujr", "Menlo, Gujarati Sangam MN, Gujarati MT");
 
   pref("font.name-list.serif.x-guru", "Gurmukhi MT");
   pref("font.name-list.sans-serif.x-guru", "Gurmukhi MT");
-  pref("font.name-list.monospace.x-guru", "Gurmukhi MT");
+  pref("font.name-list.monospace.x-guru", "Menlo, Gurmukhi MT");
 
   pref("font.name-list.serif.x-khmr", "Khmer MN");
   pref("font.name-list.sans-serif.x-khmr", "Khmer Sangam MN");
-  pref("font.name-list.monospace.x-khmr", "Khmer Sangam MN");
+  pref("font.name-list.monospace.x-khmr", "Menlo, Khmer Sangam MN");
 
   pref("font.name-list.serif.x-mlym", "Malayalam MN");
   pref("font.name-list.sans-serif.x-mlym", "Malayalam Sangam MN");
-  pref("font.name-list.monospace.x-mlym", "Malayalam Sangam MN");
+  pref("font.name-list.monospace.x-mlym", "Menlo, Malayalam Sangam MN");
 
   pref("font.name-list.serif.x-orya", "Oriya MN");
   pref("font.name-list.sans-serif.x-orya", "Oriya Sangam MN");
-  pref("font.name-list.monospace.x-orya", "Oriya Sangam MN");
+  pref("font.name-list.monospace.x-orya", "Menlo, Oriya Sangam MN");
 
   // Pothana http://web.nickshanks.com/typography/telugu/
   pref("font.name-list.serif.x-telu", "Telugu MN, Pothana");
   pref("font.name-list.sans-serif.x-telu", "Telugu Sangam MN, Pothana");
-  pref("font.name-list.monospace.x-telu", "Telugu Sangam MN, Pothana");
+  pref("font.name-list.monospace.x-telu", "Menlo, Telugu Sangam MN, Pothana");
 
   // Kedage http://web.nickshanks.com/typography/kannada/
   pref("font.name-list.serif.x-knda", "Kannada MN, Kedage");
   pref("font.name-list.sans-serif.x-knda", "Kannada Sangam MN, Kedage");
-  pref("font.name-list.monospace.x-knda", "Kannada Sangam MN, Kedage");
+  pref("font.name-list.monospace.x-knda", "Menlo, Kannada Sangam MN, Kedage");
 
   pref("font.name-list.serif.x-sinh", "Sinhala MN");
   pref("font.name-list.sans-serif.x-sinh", "Sinhala Sangam MN");
-  pref("font.name-list.monospace.x-sinh", "Sinhala Sangam MN");
+  pref("font.name-list.monospace.x-sinh", "Menlo, Sinhala Sangam MN");
 
   pref("font.name-list.serif.x-tamil", "InaiMathi");
   pref("font.name-list.sans-serif.x-tamil", "InaiMathi");
-  pref("font.name-list.monospace.x-tamil", "InaiMathi");
+  pref("font.name-list.monospace.x-tamil", "Menlo, InaiMathi");
 
   // Kailasa ships with mac os x >= 10.5
   pref("font.name-list.serif.x-tibt", "Kailasa");
   pref("font.name-list.sans-serif.x-tibt", "Kailasa");
-  pref("font.name-list.monospace.x-tibt", "Kailasa");
+  pref("font.name-list.monospace.x-tibt", "Menlo, Kailasa");
 
   pref("font.name-list.serif.x-unicode", "Times");
   pref("font.name-list.sans-serif.x-unicode", "Helvetica");
-  pref("font.name-list.monospace.x-unicode", "Courier");
+  pref("font.name-list.monospace.x-unicode", "Menlo");
   pref("font.name-list.cursive.x-unicode", "Apple Chancery");
   pref("font.name-list.fantasy.x-unicode", "Papyrus");
 
   pref("font.name-list.serif.x-western", "Times, Times New Roman");
   pref("font.name-list.sans-serif.x-western", "Helvetica, Arial");
-  pref("font.name-list.monospace.x-western", "Courier, Courier New");
+  pref("font.name-list.monospace.x-western", "Menlo");
   pref("font.name-list.cursive.x-western", "Apple Chancery");
   pref("font.name-list.fantasy.x-western", "Papyrus");
 
-  pref("font.name-list.serif.zh-CN", "Times, Songti SC, STSong, Heiti SC");
-  pref("font.name-list.sans-serif.zh-CN", "Helvetica, PingFang SC, STHeiti, Heiti SC");
-  pref("font.name-list.monospace.zh-CN", "Courier, PingFang SC, STHeiti, Heiti SC");
+  pref("font.name-list.serif.zh-CN", "Times New Roman, Songti SC, STSong, Heiti SC");
+  pref("font.name-list.sans-serif.zh-CN", "Arial, PingFang SC, STHeiti, Heiti SC");
+  pref("font.name-list.monospace.zh-CN", "Menlo, PingFang SC, STHeiti, Heiti SC");
   pref("font.name-list.cursive.zh-CN", "Kaiti SC");
 
-  pref("font.name-list.serif.zh-TW", "Times, Songti TC, LiSong Pro, Heiti TC");
-  pref("font.name-list.sans-serif.zh-TW", "Helvetica, PingFang TC, Heiti TC, LiHei Pro");
-  pref("font.name-list.monospace.zh-TW", "Courier, PingFang TC, Heiti TC, LiHei Pro");
+  pref("font.name-list.serif.zh-TW", "Times New Roman, Songti TC, LiSong Pro, Heiti TC");
+  pref("font.name-list.sans-serif.zh-TW", "Arial, PingFang TC, Heiti TC, LiHei Pro");
+  pref("font.name-list.monospace.zh-TW", "Menlo, PingFang TC, Heiti TC, LiHei Pro");
   pref("font.name-list.cursive.zh-TW", "Kaiti TC");
 
-  pref("font.name-list.serif.zh-HK", "Times, Songti TC, LiSong Pro, Heiti TC");
-  pref("font.name-list.sans-serif.zh-HK", "Helvetica, PingFang TC, Heiti TC, LiHei Pro");
-  pref("font.name-list.monospace.zh-HK", "Courier, PingFang TC, Heiti TC, LiHei Pro");
+  pref("font.name-list.serif.zh-HK", "Times New Roman, Songti TC, LiSong Pro, Heiti TC");
+  pref("font.name-list.sans-serif.zh-HK", "Arial, PingFang TC, Heiti TC, LiHei Pro");
+  pref("font.name-list.monospace.zh-HK", "Menlo, PingFang TC, Heiti TC, LiHei Pro");
   pref("font.name-list.cursive.zh-HK", "Kaiti TC");
 
   // XP_MACOSX changes to default font sizes
@@ -3162,7 +3193,7 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // Apple's Symbol is Unicode so use it
   pref("font.name-list.serif.x-math", "Latin Modern Math, STIX Two Math, XITS Math, Cambria Math, Libertinus Math, DejaVu Math TeX Gyre, TeX Gyre Bonum Math, TeX Gyre Pagella Math, TeX Gyre Schola, TeX Gyre Termes Math, STIX Math, Asana Math, STIXGeneral, DejaVu Serif, DejaVu Sans, Symbol, Times");
   pref("font.name-list.sans-serif.x-math", "Helvetica");
-  pref("font.name-list.monospace.x-math", "Courier");
+  pref("font.name-list.monospace.x-math", "Menlo");
   pref("font.name-list.cursive.x-math", "Apple Chancery");
   pref("font.name-list.fantasy.x-math", "Papyrus");
 
@@ -3689,11 +3720,13 @@ pref("network.tcp.tcp_fastopen_http_check_for_stalls_only_if_idle_for", 10);
 pref("network.tcp.tcp_fastopen_http_stalls_limit", 3);
 pref("network.tcp.tcp_fastopen_http_stalls_timeout", 20);
 
-#ifdef MOZ_X11
-  #ifdef MOZ_WIDGET_GTK
-    pref("gfx.xrender.enabled",false);
-    pref("widget.content.allow-gtk-dark-theme", false);
-  #endif
+#ifdef MOZ_WIDGET_GTK
+  pref("gfx.xrender.enabled",false);
+  pref("widget.content.gtk-theme-override", "");
+#endif
+#ifdef MOZ_WAYLAND
+  pref("widget.wayland_vsync.enabled", false);
+  pref("widget.wayland.use-opaque-region", false);
 #endif
 
 // Timeout for outbound network geolocation provider XHR
@@ -3882,23 +3915,12 @@ pref("network.captive-portal-service.enabled", false);
 // 0 - default off, 1 - reserved/off, 2 - TRR first, 3 - TRR only, 4 - reserved/off, 5 off by choice
 pref("network.trr.mode", 0);
 // DNS-over-HTTP service to use, must be HTTPS://
-pref("network.trr.uri", "data:text/plain,");
+pref("network.trr.uri", "https://firefox.dns.nextdns.io/");
 // DNS-over-HTTP service options, must be HTTPS://
 pref("network.trr.resolvers", "[{ \"name\": \"NextDNS\", \"url\": \"https://firefox.dns.nextdns.io/\" }]");
 // credentials to pass to DOH end-point
 pref("network.trr.credentials", "");
 pref("network.trr.custom_uri", "");
-// Wait for captive portal confirmation before enabling TRR
-#if defined(ANDROID)
-  // On Android, the captive portal is handled by the OS itself
-  pref("network.trr.wait-for-portal", false);
-#else
-  pref("network.trr.wait-for-portal", false);
-#endif
-// Allow RFC1918 address in responses?
-pref("network.trr.allow-rfc1918", false);
-// Use GET (rather than POST)
-pref("network.trr.useGET", false);
 // Before TRR is widely used the NS record for this host is fetched
 // from the DOH end point to ensure proper configuration
 pref("network.trr.confirmationNS", "example.com");
@@ -3908,24 +3930,9 @@ pref("network.trr.bootstrapAddress", "");
 // TRR blacklist entry expire time (in seconds). Default is one minute.
 // Meant to survive basically a page load.
 pref("network.trr.blacklist-duration", 60);
-// Allow AAAA entries to be used "early", before the A results are in
-pref("network.trr.early-AAAA", false);
-// When true, it only sends AAAA when the system has IPv6 connectivity
-pref("network.trr.skip-AAAA-when-not-supported", true);
-// When true, the DNS request will wait for both A and AAAA responses
-// (if both have been requested) before notifying the listeners.
-// When true, it effectively cancels `network.trr.early-AAAA`
-pref("network.trr.wait-for-A-and-AAAA", true);
-// Explicitly disable ECS (EDNS Client Subnet, RFC 7871)
-pref("network.trr.disable-ECS", true);
-// After this many failed TRR requests in a row, consider TRR borked
-pref("network.trr.max-fails", 5);
 // Comma separated list of domains that we should not use TRR for
 pref("network.trr.excluded-domains", "");
 pref("network.trr.builtin-excluded-domains", "localhost,local");
-// When true, the DNS+TRR cache will be cleared when a relevant TRR pref
-// changes. (uri, bootstrapAddress, excluded-domains)
-pref("network.trr.clear-cache-on-pref-change", true);
 
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/success.txt");
 pref("captivedetect.canonicalContent", "success\n");
@@ -4173,13 +4180,6 @@ pref("narrate.rate", 0);
 pref("narrate.voice", " { \"default\": \"automatic\" }");
 // Only make voices that match content language available.
 pref("narrate.filter-voices", true);
-
-// Allow control characters appear in composition string.
-// When this is false, control characters except
-// CHARACTER TABULATION (horizontal tab) are removed from
-// both composition string and data attribute of compositionupdate
-// and compositionend events.
-pref("dom.compositionevent.allow_control_characters", false);
 
 pref("memory.report_concurrency", 10);
 
@@ -4490,6 +4490,8 @@ pref("devtools.errorconsole.deprecation_warnings", true);
   pref("devtools.debugger.remote-enabled", true, sticky);
 #endif
 
+pref("devtools.debugger.features.watchpoints", true);
+
 // Disable remote debugging protocol logging.
 pref("devtools.debugger.log", false);
 pref("devtools.debugger.log.verbose", false);
@@ -4506,8 +4508,8 @@ pref("devtools.debugger.force-local", true);
 pref("devtools.netmonitor.responseBodyLimit", 1048576);
 pref("devtools.netmonitor.requestBodyLimit", 1048576);
 
-// Limit for WebSocket frames (100 KB).
-pref("devtools.netmonitor.ws.messageDataLimit", 100000);
+// Limit for WebSocket/EventSource messages (100 KB).
+pref("devtools.netmonitor.msg.messageDataLimit", 100000);
 
 // DevTools default color unit.
 pref("devtools.defaultColorUnit", "authored");

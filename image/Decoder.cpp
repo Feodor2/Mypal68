@@ -93,7 +93,7 @@ void Decoder::SetSurfaceFlags(SurfaceFlags aSurfaceFlags) {
   MOZ_ASSERT(!mInitialized);
   mSurfaceFlags = aSurfaceFlags;
   if (mSurfaceFlags & SurfaceFlags::NO_COLORSPACE_CONVERSION) {
-    mCMSMode = eCMSMode_Off;
+    mCMSMode = CMSMode::Off;
   }
 }
 
@@ -443,13 +443,13 @@ nsresult Decoder::FinishWithErrorInternal() {
  */
 
 void Decoder::PostSize(int32_t aWidth, int32_t aHeight,
-                       Orientation aOrientation /* = Orientation()*/) {
+                       Orientation aOrientation, Resolution aResolution) {
   // Validate.
   MOZ_ASSERT(aWidth >= 0, "Width can't be negative!");
   MOZ_ASSERT(aHeight >= 0, "Height can't be negative!");
 
   // Set our intrinsic size.
-  mImageMetadata.SetSize(aWidth, aHeight, aOrientation);
+  mImageMetadata.SetSize(aWidth, aHeight, aOrientation, aResolution);
 
   // Verify it is the expected size, if given. Note that this is only used by
   // the ICO decoder for embedded image types, so only its subdecoders are

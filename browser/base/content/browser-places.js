@@ -277,6 +277,7 @@ var StarUI = {
   _createPanelIfNeeded() {
     // Lazy load the editBookmarkPanel the first time we need to display it.
     if (!this._element("editBookmarkPanel")) {
+      MozXULElement.insertFTLIfNeeded("browser/editBookmarkOverlay.ftl");
       let template = this._element("editBookmarkPanelTemplate");
       let clone = template.content.cloneNode(true);
       template.replaceWith(clone);
@@ -1052,6 +1053,7 @@ var PlacesMenuDNDHandler = {
    *          The DragOver event.
    */
   onDragOver: function PMDH_onDragOver(event) {
+    PlacesControllerDragHelper.currentDropTarget = event.target;
     let ip = new PlacesInsertionPoint({
       parentId: PlacesUtils.bookmarksMenuFolderId,
       parentGuid: PlacesUtils.bookmarks.menuGuid,
@@ -1744,11 +1746,20 @@ var BookmarkingUI = {
         // We assume that menuItemL10nId has a single attribute.
         let label = l10n[0].attributes[0].value;
 
-        // Update the title and the starred state for the page action panel.
-        PageActions.actionForID(PageActions.ACTION_ID_BOOKMARK).setTitle(
-          label,
-          window
+        // Update the label, tooltip, and the starred state for the
+        // page action panel.
+        let panelButton = BrowserPageActions.panelButtonNodeForActionID(
+          PageActions.ACTION_ID_BOOKMARK
         );
+        if (panelButton) {
+          panelButton.setAttribute("label", label);
+        }
+        let urlbarButton = BrowserPageActions.urlbarButtonNodeForActionID(
+          PageActions.ACTION_ID_BOOKMARK
+        );
+        if (urlbarButton) {
+          urlbarButton.setAttribute("tooltiptext", label);
+        }
       });
     }
   },

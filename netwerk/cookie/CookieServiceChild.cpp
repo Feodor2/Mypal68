@@ -8,7 +8,6 @@
 #include "CookieService.h"
 #include "mozilla/net/CookieServiceChild.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -241,13 +240,13 @@ uint32_t CookieServiceChild::CountCookiesFromHashTable(
     return false;
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings;
-  nsresult rv = aLoadInfo->GetCookieSettings(getter_AddRefs(cookieSettings));
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+  nsresult rv = aLoadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
 
-  uint32_t cookieBehavior = cookieSettings->GetCookieBehavior();
+  uint32_t cookieBehavior = cookieJarSettings->GetCookieBehavior();
   return cookieBehavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN ||
          cookieBehavior == nsICookieService::BEHAVIOR_LIMIT_FOREIGN ||
          cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
@@ -337,11 +336,11 @@ nsresult CookieServiceChild::SetCookieStringInternal(
   CookieCommons::GetBaseDomain(mTLDService, aHostURI, baseDomain,
                                requireHostMatch);
 
-  nsCOMPtr<nsICookieSettings> cookieSettings =
-      CookieService::GetCookieSettings(aChannel);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      CookieService::GetCookieJarSettings(aChannel);
 
   CookieStatus cookieStatus = CookieService::CheckPrefs(
-      cookieSettings, aHostURI, result.contains(ThirdPartyAnalysis::IsForeign),
+      cookieJarSettings, aHostURI, result.contains(ThirdPartyAnalysis::IsForeign),
       result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted),
       aCookieString, CountCookiesFromHashTable(baseDomain, attrs), attrs,

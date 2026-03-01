@@ -83,6 +83,8 @@
         "toolkit.cosmeticAnimations.enabled"
       );
 
+      document.querySelector("title").removeAttribute("data-l10n-id");
+
       this._setupEventListeners();
       this._initialized = true;
     },
@@ -167,6 +169,7 @@
       "characterSet",
       "fullZoom",
       "textZoom",
+      "tabHasCustomZoom",
       "webProgress",
       "addProgressListener",
       "removeProgressListener",
@@ -868,7 +871,7 @@
             null, // loadingNode
             Services.scriptSecurityManager.getSystemPrincipal(), // loadingPrincipal
             null, // triggeringPrincipal
-            Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL, // securityFlags
+            Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, // securityFlags
             Ci.nsIContentPolicy.TYPE_OTHER // contentPolicyType
           ).URI;
         return resolvedURI.schemeIs("jar") || resolvedURI.schemeIs("file");
@@ -953,59 +956,57 @@
     },
 
     getWindowTitleForBrowser(aBrowser) {
-      var newTitle = "";
-      var docElement = document.documentElement;
-      var sep = docElement.getAttribute("titlemenuseparator");
-      let tab = this.getTabForBrowser(aBrowser);
-      let docTitle;
-
-      if (tab._labelIsContentTitle) {
-        // Strip out any null bytes in the content title, since the
-        // underlying widget implementations of nsWindow::SetTitle pass
-        // null-terminated strings to system APIs.
-        docTitle = tab.getAttribute("label").replace(/\0/g, "");
-      }
-
-      if (!docTitle) {
-        docTitle = docElement.getAttribute("titledefault");
-      }
-
-      var modifier = docElement.getAttribute("titlemodifier");
-      if (docTitle) {
-        newTitle += docElement.getAttribute("titlepreface") || "";
-        newTitle += docTitle;
-        if (modifier) {
-          newTitle += sep;
-        }
-      }
-      newTitle += modifier;
+      let docElement = document.documentElement;
+      let title = "";
 
       // If location bar is hidden and the URL type supports a host,
       // add the scheme and host to the title to prevent spoofing.
       // XXX https://bugzilla.mozilla.org/show_bug.cgi?id=22183#c239
       try {
         if (docElement.getAttribute("chromehidden").includes("location")) {
-          const uri = Services.io.createExposableURI(aBrowser.currentURI);
-          if (uri.scheme === "about") {
-            newTitle = `${uri.spec}${sep}${newTitle}`;
-          } else if (uri.scheme === "moz-extension") {
+          const uri = Services.uriFixup.createExposableURI(aBrowser.currentURI);
+          let prefix = uri.prePath;
+          if (uri.scheme == "about") {
+            prefix = uri.spec;
+          } else if (uri.scheme == "moz-extension") {
             const ext = WebExtensionPolicy.getByHostname(uri.host);
             if (ext && ext.name) {
-              const prefix = document.querySelector("#urlbar-label-extension")
-                .value;
-              newTitle = `${prefix} (${ext.name})${sep}${newTitle}`;
-            } else {
-              newTitle = `${uri.prePath}${sep}${newTitle}`;
+              let extensionLabel = document.getElementById(
+                "urlbar-label-extension"
+              );
+              prefix = `${extensionLabel.value} (${ext.name})`;
             }
-          } else {
-            newTitle = `${uri.prePath}${sep}${newTitle}`;
           }
+          title = prefix + " - ";
         }
       } catch (e) {
         // ignored
       }
 
-      return newTitle;
+      if (docElement.hasAttribute("titlepreface")) {
+        title += docElement.getAttribute("titlepreface");
+      }
+
+      let tab = this.getTabForBrowser(aBrowser);
+      if (tab._labelIsContentTitle) {
+        // Strip out any null bytes in the content title, since the
+        // underlying widget implementations of nsWindow::SetTitle pass
+        // null-terminated strings to system APIs.
+        title += tab.getAttribute("label").replace(/\0/g, "");
+      }
+
+      let dataSuffix =
+        docElement.getAttribute("privatebrowsingmode") == "temporary"
+          ? "Private"
+          : "Default";
+      if (title) {
+        return docElement.dataset["contentTitle" + dataSuffix].replace(
+          "CONTENTTITLE",
+          () => title
+        );
+      }
+
+      return docElement.dataset["title" + dataSuffix];
     },
 
     updateTitlebar() {
@@ -1209,7 +1210,7 @@
 
         this._startMultiSelectChange();
         this._multiSelectChangeSelected = true;
-        this.clearMultiSelectedTabs(true);
+        this.clearMultiSelectedTabs({ isLastMultiSelectChange: true });
 
         if (oldBrowser != newBrowser && oldBrowser.getInPermitUnload) {
           oldBrowser.getInPermitUnload(inPermitUnload => {
@@ -2208,6 +2209,9 @@
           case "fullZoom":
           case "textZoom":
             getter = () => 1;
+            break;
+          case "tabHasCustomZoom":
+            getter = () => false;
             break;
           case "getTabBrowser":
             getter = () => () => this;
@@ -4307,7 +4311,7 @@
       return SessionStore.duplicateTab(window, aTab, 0, aRestoreTabImmediately);
     },
 
-    addToMultiSelectedTabs(aTab, multiSelectMayChangeMore) {
+    addToMultiSelectedTabs(aTab, { isLastMultiSelectChange = false } = {}) {
       if (aTab.multiselected) {
         return;
       }
@@ -4322,10 +4326,12 @@
         this._multiSelectChangeAdditions.add(aTab);
       }
 
-      if (!multiSelectMayChangeMore) {
+      if (isLastMultiSelectChange) {
         let { selectedTab } = this;
         if (!selectedTab.multiselected) {
-          this.addToMultiSelectedTabs(selectedTab, true);
+          this.addToMultiSelectedTabs(selectedTab, {
+            isLastMultiSelectChange: false,
+          });
         }
         this.tabContainer._setPositionalAttributes();
       }
@@ -4349,12 +4355,17 @@
           : [indexOfTab2, indexOfTab1];
 
       for (let i = lowerIndex; i <= higherIndex; i++) {
-        this.addToMultiSelectedTabs(tabs[i], true);
+        this.addToMultiSelectedTabs(tabs[i], {
+          isLastMultiSelectChange: false,
+        });
       }
       this.tabContainer._setPositionalAttributes();
     },
 
-    removeFromMultiSelectedTabs(aTab, isLastMultiSelectChange) {
+    removeFromMultiSelectedTabs(
+      aTab,
+      { isLastMultiSelectChange = false } = {}
+    ) {
       if (!aTab.multiselected) {
         return;
       }
@@ -4376,7 +4387,7 @@
       }
     },
 
-    clearMultiSelectedTabs(isLastMultiSelectChange) {
+    clearMultiSelectedTabs({ isLastMultiSelectChange = false } = {}) {
       if (this._clearMultiSelectionLocked) {
         if (this._clearMultiSelectionLockedOnce) {
           this._clearMultiSelectionLockedOnce = false;
@@ -4390,7 +4401,9 @@
       }
 
       for (let tab of this.selectedTabs) {
-        this.removeFromMultiSelectedTabs(tab, false);
+        this.removeFromMultiSelectedTabs(tab, {
+          isLastMultiSelectChange: false,
+        });
       }
       this._lastMultiSelectedTabRef = null;
       if (isLastMultiSelectChange) {
@@ -4451,7 +4464,7 @@
      */
     avoidSingleSelectedTab() {
       if (this.multiSelectedTabsCount == 1) {
-        this.clearMultiSelectedTabs();
+        this.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
       }
     },
 
@@ -4478,11 +4491,13 @@
     },
 
     set selectedTabs(tabs) {
-      this.clearMultiSelectedTabs(false);
+      this.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
       this.selectedTab = tabs[0];
       if (tabs.length > 1) {
         for (let tab of tabs) {
-          this.addToMultiSelectedTabs(tab, true);
+          this.addToMultiSelectedTabs(tab, {
+            isLastMultiSelectChange: false,
+          });
         }
       }
       this.tabContainer._setPositionalAttributes();
@@ -5698,8 +5713,8 @@
             this.mBrowser.userTypedValue = null;
 
             let isNavigating = this.mBrowser.isNavigating;
-            if (this.mTab.selected && gURLBar && !isNavigating) {
-              URLBarSetURI();
+            if (this.mTab.selected && !isNavigating) {
+              gURLBar.setURI();
             }
           } else if (isSuccessful) {
             this.mBrowser.urlbarChangeTracker.finishedLoad();

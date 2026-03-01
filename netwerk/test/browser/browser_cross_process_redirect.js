@@ -53,7 +53,7 @@ ProcessChooser.prototype = {
     }
 
     let redirects = aChannel.loadInfo.redirectChain;
-    if (redirects[redirects.length - 1].principal.URI.host != this.fromDomain) {
+    if (redirects[redirects.length - 1].principal.host != this.fromDomain) {
       info("didn't find redirect");
       return;
     }

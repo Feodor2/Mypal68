@@ -391,10 +391,10 @@ var SiteDataManager = {
       for (let perm of perms) {
         // Specialcase local file permissions.
         if (!host) {
-          if (perm.principal.URI.schemeIs("file")) {
+          if (perm.principal.schemeIs("file")) {
             Services.perms.removePermission(perm);
           }
-        } else if (Services.eTLD.hasRootDomain(perm.principal.URI.host, host)) {
+        } else if (Services.eTLD.hasRootDomain(perm.principal.host, host)) {
           Services.perms.removePermission(perm);
         }
       }
@@ -422,7 +422,7 @@ var SiteDataManager = {
       };
       let features = "centerscreen,chrome,modal,resizable=no";
       win.openDialog(
-        "chrome://browser/content/preferences/siteDataRemoveSelected.xhtml",
+        "chrome://browser/content/preferences/dialogs/siteDataRemoveSelected.xhtml",
         "",
         features,
         args

@@ -4,13 +4,13 @@
 
 #include "VectorImage.h"
 
+#include "AutoRestoreSVGState.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxDrawable.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "imgFrame.h"
-#include "mozilla/AutoRestore.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/SVGSVGElement.h"
@@ -34,10 +34,12 @@
 #include "LookupResult.h"
 #include "Orientation.h"
 #include "SVGDocumentWrapper.h"
+#include "SVGDrawingCallback.h"
 #include "SVGDrawingParameters.h"
 #include "nsIDOMEventListener.h"
 #include "SurfaceCache.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/image/Resolution.h"
 
 namespace mozilla {
 
@@ -231,26 +233,16 @@ class SVGLoadEventListener final : public nsIDOMEventListener {
 
 NS_IMPL_ISUPPORTS(SVGLoadEventListener, nsIDOMEventListener)
 
-// Helper-class: SVGDrawingCallback
-class SVGDrawingCallback : public gfxDrawingCallback {
- public:
-  SVGDrawingCallback(SVGDocumentWrapper* aSVGDocumentWrapper,
-                     const IntSize& aViewportSize, const IntSize& aSize,
-                     uint32_t aImageFlags)
-      : mSVGDocumentWrapper(aSVGDocumentWrapper),
-        mViewportSize(aViewportSize),
-        mSize(aSize),
-        mImageFlags(aImageFlags) {}
-  virtual bool operator()(gfxContext* aContext, const gfxRect& aFillRect,
-                          const SamplingFilter aSamplingFilter,
-                          const gfxMatrix& aTransform) override;
+SVGDrawingCallback::SVGDrawingCallback(SVGDocumentWrapper* aSVGDocumentWrapper,
+                                       const IntSize& aViewportSize,
+                                       const IntSize& aSize,
+                                       uint32_t aImageFlags)
+    : mSVGDocumentWrapper(aSVGDocumentWrapper),
+      mViewportSize(aViewportSize),
+      mSize(aSize),
+      mImageFlags(aImageFlags) {}
 
- private:
-  RefPtr<SVGDocumentWrapper> mSVGDocumentWrapper;
-  const IntSize mViewportSize;
-  const IntSize mSize;
-  uint32_t mImageFlags;
-};
+SVGDrawingCallback::~SVGDrawingCallback() = default;
 
 // Based loosely on SVGIntegrationUtils' PaintFrameCallback::operator()
 bool SVGDrawingCallback::operator()(gfxContext* aContext,
@@ -310,39 +302,6 @@ bool SVGDrawingCallback::operator()(gfxContext* aContext,
   return true;
 }
 
-class MOZ_STACK_CLASS AutoRestoreSVGState final {
- public:
-  AutoRestoreSVGState(const SVGDrawingParameters& aParams,
-                      SVGDocumentWrapper* aSVGDocumentWrapper, bool& aIsDrawing,
-                      bool aContextPaint)
-      : mIsDrawing(aIsDrawing)
-        // Apply any 'preserveAspectRatio' override (if specified) to the root
-        // element:
-        ,
-        mPAR(aParams.svgContext, aSVGDocumentWrapper->GetRootSVGElem())
-        // Set the animation time:
-        ,
-        mTime(aSVGDocumentWrapper->GetRootSVGElem(), aParams.animationTime) {
-    MOZ_ASSERT(!aIsDrawing);
-    MOZ_ASSERT(aSVGDocumentWrapper->GetDocument());
-
-    aIsDrawing = true;
-
-    // Set context paint (if specified) on the document:
-    if (aContextPaint) {
-      MOZ_ASSERT(aParams.svgContext->GetContextPaint());
-      mContextPaint.emplace(*aParams.svgContext->GetContextPaint(),
-                            *aSVGDocumentWrapper->GetDocument());
-    }
-  }
-
- private:
-  AutoRestore<bool> mIsDrawing;
-  AutoPreserveAspectRatioOverride mPAR;
-  AutoSVGTimeSetRestore mTime;
-  Maybe<AutoSetRestoreSVGContextPaint> mContextPaint;
-};
-
 // Implement VectorImage's nsISupports-inherited methods
 NS_IMPL_ISUPPORTS(VectorImage, imgIContainer, nsIStreamListener,
                   nsIRequestObserver)
@@ -356,7 +315,6 @@ VectorImage::VectorImage(nsIURI* aURI /* = nullptr */)
       mIsInitialized(false),
       mDiscardable(false),
       mIsFullyLoaded(false),
-      mIsDrawing(false),
       mHaveAnimations(false),
       mHasPendingInvalidation(false) {}
 
@@ -648,6 +606,9 @@ Maybe<AspectRatio> VectorImage::GetIntrinsicRatio() {
 NS_IMETHODIMP_(Orientation)
 VectorImage::GetOrientation() { return Orientation(); }
 
+NS_IMETHODIMP_(Resolution)
+VectorImage::GetResolution() { return {}; }
+
 //******************************************************************************
 NS_IMETHODIMP
 VectorImage::GetType(uint16_t* aType) {
@@ -760,11 +721,15 @@ VectorImage::GetFrameInternal(const IntSize& aSize,
                      std::move(sourceSurface));
   }
 
-  if (mIsDrawing) {
+  if (mSVGDocumentWrapper->IsDrawing()) {
     NS_WARNING("Refusing to make re-entrant call to VectorImage::Draw");
     return MakeTuple(ImgDrawResult::TEMPORARY_ERROR, decodeSize,
                      RefPtr<SourceSurface>());
   }
+
+  float animTime = (aWhichFrame == FRAME_FIRST)
+                       ? 0.0f
+                       : mSVGDocumentWrapper->GetCurrentTimeAsFloat();
 
   // By using a null gfxContext, we ensure that we will always attempt to
   // create a surface, even if we aren't capable of caching it (e.g. due to our
@@ -773,14 +738,12 @@ VectorImage::GetFrameInternal(const IntSize& aSize,
   // cannot cache.
   SVGDrawingParameters params(
       nullptr, decodeSize, aSize, ImageRegion::Create(decodeSize),
-      SamplingFilter::POINT, aSVGContext,
-      mSVGDocumentWrapper->GetCurrentTimeAsFloat(), aFlags, 1.0);
+      SamplingFilter::POINT, aSVGContext, animTime, aFlags, 1.0);
 
   bool didCache;  // Was the surface put into the cache?
   bool contextPaint = aSVGContext && aSVGContext->GetContextPaint();
 
-  AutoRestoreSVGState autoRestore(params, mSVGDocumentWrapper, mIsDrawing,
-                                  contextPaint);
+  AutoRestoreSVGState autoRestore(params, mSVGDocumentWrapper, contextPaint);
 
   RefPtr<gfxDrawable> svgDrawable = CreateSVGDrawable(params);
   RefPtr<SourceSurface> surface = CreateSurface(params, svgDrawable, didCache);
@@ -978,13 +941,12 @@ VectorImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
 
   // else, we need to paint the image:
 
-  if (mIsDrawing) {
+  if (mSVGDocumentWrapper->IsDrawing()) {
     NS_WARNING("Refusing to make re-entrant call to VectorImage::Draw");
     return ImgDrawResult::TEMPORARY_ERROR;
   }
 
-  AutoRestoreSVGState autoRestore(params, mSVGDocumentWrapper, mIsDrawing,
-                                  contextPaint);
+  AutoRestoreSVGState autoRestore(params, mSVGDocumentWrapper, contextPaint);
 
   bool didCache;  // Was the surface put into the cache?
   RefPtr<gfxDrawable> svgDrawable = CreateSVGDrawable(params);
@@ -1057,7 +1019,7 @@ Tuple<RefPtr<SourceSurface>, IntSize> VectorImage::LookupCachedSurface(
 already_AddRefed<SourceSurface> VectorImage::CreateSurface(
     const SVGDrawingParameters& aParams, gfxDrawable* aSVGDrawable,
     bool& aWillCache) {
-  MOZ_ASSERT(mIsDrawing);
+  MOZ_ASSERT(mSVGDocumentWrapper->IsDrawing());
 
   mSVGDocumentWrapper->UpdateViewportBounds(aParams.viewportSize);
   mSVGDocumentWrapper->FlushImageTransformInvalidation();

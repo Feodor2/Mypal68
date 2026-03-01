@@ -8,7 +8,6 @@
 #include "platform.h"
 #include "ThreadInfo.h"
 
-#include "js/TraceLoggerAPI.h"
 #include "jsapi.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIEventTarget.h"
@@ -225,9 +224,6 @@ class RegisteredThread final {
       if (mJSSampling == ACTIVE_REQUESTED) {
         mJSSampling = ACTIVE;
         js::EnableContextProfilingStack(mContext, true);
-        if (JSTracerEnabled()) {
-          JS::StartTraceLogger(mContext);
-        }
         if (JSAllocationsEnabled()) {
           // TODO - This probability should not be hardcoded. See Bug 1547284.
           JS::EnableRecordingAllocations(
@@ -239,9 +235,6 @@ class RegisteredThread final {
       } else if (mJSSampling == INACTIVE_REQUESTED) {
         mJSSampling = INACTIVE;
         js::EnableContextProfilingStack(mContext, false);
-        if (JSTracerEnabled()) {
-          JS::StopTraceLogger(mContext);
-        }
         if (JSAllocationsEnabled()) {
           JS::DisableRecordingAllocations(mContext);
         }
@@ -310,10 +303,6 @@ class RegisteredThread final {
   } mJSSampling;
 
   uint32_t mJSFlags;
-
-  bool JSTracerEnabled() {
-    return mJSFlags & uint32_t(JSInstrumentationFlags::TraceLogging);
-  }
 
   bool JSAllocationsEnabled() {
     return mJSFlags & uint32_t(JSInstrumentationFlags::Allocations);

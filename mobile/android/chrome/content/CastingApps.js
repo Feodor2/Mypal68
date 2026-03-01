@@ -356,9 +356,9 @@ var CastingApps = {
   _getContentTypeForURI: function(aURI, aElement, aCallback) {
     let channel;
     try {
-      let secFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
+      let secFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
       if (aElement.crossOrigin) {
-        secFlags = Ci.nsILoadInfo.SEC_REQUIRE_CORS_DATA_INHERITS;
+        secFlags = Ci.nsILoadInfo.SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT;
         if (aElement.crossOrigin === "use-credentials") {
           secFlags |= Ci.nsILoadInfo.SEC_COOKIES_INCLUDE;
         }

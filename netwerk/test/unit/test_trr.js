@@ -123,7 +123,6 @@ class DNSListener {
       } catch (e) {
         Assert.ok(expectEarlyFail);
         this.resolve([e]);
-        return;
       }
     }
   }

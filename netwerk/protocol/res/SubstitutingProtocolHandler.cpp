@@ -47,6 +47,15 @@ NS_IMPL_NSIURIMUTATOR_ISUPPORTS(SubstitutingURL::Mutator, nsIURISetters,
                                 nsIURLMutator, nsIFileURLMutator,
                                 nsISerializable)
 
+NS_IMPL_CLASSINFO(SubstitutingURL, nullptr, nsIClassInfo::THREADSAFE,
+                  NS_SUBSTITUTINGURL_CID)
+// Empty CI getter. We only need nsIClassInfo for Serialization
+NS_IMPL_CI_INTERFACE_GETTER0(SubstitutingURL)
+
+NS_IMPL_ADDREF_INHERITED(SubstitutingURL, nsStandardURL)
+NS_IMPL_RELEASE_INHERITED(SubstitutingURL, nsStandardURL)
+NS_IMPL_QUERY_INTERFACE_CI_INHERITED0(SubstitutingURL, nsStandardURL)
+
 nsresult SubstitutingURL::EnsureFile() {
   nsAutoCString ourScheme;
   nsresult rv = GetScheme(ourScheme);
@@ -84,12 +93,6 @@ nsresult SubstitutingURL::EnsureFile() {
 nsStandardURL* SubstitutingURL::StartClone() {
   SubstitutingURL* clone = new SubstitutingURL();
   return clone;
-}
-
-NS_IMETHODIMP
-SubstitutingURL::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
-  *aClassIDNoAlloc = kSubstitutingURLCID;
-  return NS_OK;
 }
 
 // SubstitutingJARURI
@@ -341,11 +344,11 @@ nsresult SubstitutingProtocolHandler::NewURI(const nsACString& aSpec,
 
   nsCOMPtr<nsIURI> base(aBaseURI);
   nsCOMPtr<nsIURL> uri;
-  rv = NS_MutateURI(new SubstitutingURL::Mutator())
-           .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
-                                   nsIStandardURL::URLTYPE_STANDARD, -1, spec,
-                                   aCharset, base, nullptr))
-           .Finalize(uri);
+  rv =
+      NS_MutateURI(new SubstitutingURL::Mutator())
+          .Apply(&nsIStandardURLMutator::Init, nsIStandardURL::URLTYPE_STANDARD,
+                 -1, spec, aCharset, base, nullptr)
+          .Finalize(uri);
   if (NS_FAILED(rv)) return rv;
 
   nsAutoCString host;

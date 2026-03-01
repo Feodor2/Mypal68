@@ -6,6 +6,8 @@
 //       but don't allow it for cross-origin sub-resources
 //   2 - allow the cross-origin authentication as well.
 
+"use strict";
+
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
@@ -124,7 +126,7 @@ function makeChan(loadingUrl, url, contentPolicy) {
   return NetUtil.newChannel({
     uri: url,
     loadingPrincipal: principal,
-    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
+    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
     contentPolicyType: contentPolicy,
   }).QueryInterface(Ci.nsIHttpChannel);
 }

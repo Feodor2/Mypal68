@@ -396,7 +396,7 @@ function test() {
       );
       is(
         gURLBar.value,
-        gURLBar.trimValue("http://example.com/"),
+        BrowserUtils.trimURL("http://example.com/"),
         "Address bar's value set after loading URI"
       );
       runNextTest();
@@ -426,13 +426,13 @@ function test() {
     if (tests.length) {
       waitForBrowserState(state, function() {
         gBrowser.selectedBrowser.userTypedValue = null;
-        URLBarSetURI();
+        gURLBar.setURI();
         tests.shift()();
       });
     } else {
       waitForBrowserState(originalState, function() {
         gBrowser.selectedBrowser.userTypedValue = null;
-        URLBarSetURI();
+        gURLBar.setURI();
         finish();
       });
     }

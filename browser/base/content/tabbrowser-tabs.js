@@ -27,7 +27,7 @@
       this.addEventListener("dragover", this);
       this.addEventListener("drop", this);
       this.addEventListener("dragend", this);
-      this.addEventListener("dragexit", this);
+      this.addEventListener("dragleave", this);
     }
 
     init() {
@@ -342,13 +342,13 @@
         case KeyEvent.DOM_VK_SPACE:
           if (visibleTabs[lastFocusedTabIndex].multiselected) {
             gBrowser.removeFromMultiSelectedTabs(
-              visibleTabs[lastFocusedTabIndex]
+              visibleTabs[lastFocusedTabIndex],
+              { isLastMultiSelectChange: false }
             );
           } else {
-            gBrowser.addToMultiSelectedTabs(
-              visibleTabs[lastFocusedTabIndex],
-              false
-            );
+            gBrowser.addToMultiSelectedTabs(visibleTabs[lastFocusedTabIndex], {
+              isLastMultiSelectChange: true,
+            });
           }
           break;
         default:
@@ -885,7 +885,7 @@
       event.stopPropagation();
     }
 
-    on_dragexit(event) {
+    on_dragleave(event) {
       this._dragTime = 0;
 
       // This does not work at all (see bug 458613)

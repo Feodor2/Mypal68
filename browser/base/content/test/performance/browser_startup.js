@@ -69,6 +69,7 @@ const startupPhases = {
         "resource://gre/modules/PlacesUtils.jsm",
         "resource://gre/modules/Promise.jsm", // imported by devtools during _delayedStartup
         "resource://gre/modules/Preferences.jsm",
+        "resource://gre/modules/Sqlite.jsm",
       ]),
       services: new Set(["@mozilla.org/browser/search-service;1"]),
     },
@@ -95,7 +96,6 @@ const startupPhases = {
         "resource://gre/modules/FxAccountsStorage.jsm",
         "resource://gre/modules/PlacesBackups.jsm",
         "resource://gre/modules/PlacesSyncUtils.jsm",
-        "resource://gre/modules/Sqlite.jsm",
       ]),
       services: new Set([
         "@mozilla.org/browser/annotation-service;1",

@@ -7,7 +7,6 @@
 
 #include "nsIJARURI.h"
 #include "nsISerializable.h"
-#include "nsIClassInfo.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsINestedURI.h"
@@ -36,7 +35,6 @@
 
 class nsJARURI final : public nsIJARURI,
                        public nsISerializable,
-                       public nsIClassInfo,
                        public nsINestedURI {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -44,7 +42,6 @@ class nsJARURI final : public nsIJARURI,
   NS_DECL_NSIURL
   NS_DECL_NSIJARURI
   NS_DECL_NSISERIALIZABLE
-  NS_DECL_NSICLASSINFO
   NS_DECL_NSINESTEDURI
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_THIS_JARURI_IMPL_CID)

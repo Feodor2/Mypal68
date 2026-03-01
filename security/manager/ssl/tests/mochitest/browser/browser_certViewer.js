@@ -16,7 +16,7 @@ var { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 add_task(async function testCAandTitle() {
   let cert = await readCertificate("ca.pem", "CTu,CTu,CTu");
   let win = await displayCertificate(cert);
-  checkUsages(win, [{ id: "verify-ssl-ca" }]);
+  checkUsages(win, [{ id: "verify-ssl-ca", args: null }]);
   checkDetailsPane(win, ["ca"]);
 
   // There's no real need to test the title for every cert, so we just test it
@@ -32,7 +32,7 @@ add_task(async function testCAandTitle() {
 add_task(async function testSSLEndEntity() {
   let cert = await readCertificate("ssl-ee.pem", ",,");
   let win = await displayCertificate(cert);
-  checkUsages(win, [{ id: "verify-ssl-server" }, { id: "verify-ssl-client" }]);
+  checkUsages(win, [{ id: "verify-ssl-server", args: null }, { id: "verify-ssl-client", args: null }]);
   checkDetailsPane(win, ["ca", "ssl-ee"]);
   await BrowserTestUtils.closeWindow(win);
 });
@@ -41,8 +41,8 @@ add_task(async function testEmailEndEntity() {
   let cert = await readCertificate("email-ee.pem", ",,");
   let win = await displayCertificate(cert);
   checkUsages(win, [
-    { id: "verify-email-recip" },
-    { id: "verify-email-signer" },
+    { id: "verify-email-recip", args: null },
+    { id: "verify-email-signer", args: null },
   ]);
   checkDetailsPane(win, ["ca", "email-ee"]);
   await BrowserTestUtils.closeWindow(win);
@@ -51,7 +51,7 @@ add_task(async function testEmailEndEntity() {
 add_task(async function testCodeSignEndEntity() {
   let cert = await readCertificate("code-ee.pem", ",,");
   let win = await displayCertificate(cert);
-  checkError(win, { id: "cert-not-verified-unknown" });
+  checkError(win, { id: "cert-not-verified-unknown", args: null });
   checkDetailsPane(win, ["code-ee"]);
   await BrowserTestUtils.closeWindow(win);
 });
@@ -59,7 +59,7 @@ add_task(async function testCodeSignEndEntity() {
 add_task(async function testExpired() {
   let cert = await readCertificate("expired-ca.pem", ",,");
   let win = await displayCertificate(cert);
-  checkError(win, { id: "cert-not-verified-cert-expired" });
+  checkError(win, { id: "cert-not-verified-cert-expired", args: null });
   checkDetailsPane(win, ["expired-ca"]);
   await BrowserTestUtils.closeWindow(win);
 
@@ -67,7 +67,7 @@ add_task(async function testExpired() {
   // same task.
   let eeCert = await readCertificate("ee-from-expired-ca.pem", ",,");
   let eeWin = await displayCertificate(eeCert);
-  checkError(eeWin, { id: "cert-not-verified-ca-invalid" });
+  checkError(eeWin, { id: "cert-not-verified-ca-invalid", args: null });
   checkDetailsPane(eeWin, ["ee-from-expired-ca"]);
   await BrowserTestUtils.closeWindow(eeWin);
 });
@@ -75,7 +75,7 @@ add_task(async function testExpired() {
 add_task(async function testUnknownIssuer() {
   let cert = await readCertificate("unknown-issuer.pem", ",,");
   let win = await displayCertificate(cert);
-  checkError(win, { id: "cert-not-verified-issuer-unknown" });
+  checkError(win, { id: "cert-not-verified-issuer-unknown", args: null });
   checkDetailsPane(win, ["unknown-issuer"]);
   await BrowserTestUtils.closeWindow(win);
 });
@@ -83,7 +83,7 @@ add_task(async function testUnknownIssuer() {
 add_task(async function testInsecureAlgo() {
   let cert = await readCertificate("md5-ee.pem", ",,");
   let win = await displayCertificate(cert);
-  checkError(win, { id: "cert-not-verified_algorithm-disabled" });
+  checkError(win, { id: "cert-not-verified_algorithm-disabled", args: null });
   checkDetailsPane(win, ["md5-ee"]);
   await BrowserTestUtils.closeWindow(win);
 });
@@ -91,7 +91,7 @@ add_task(async function testInsecureAlgo() {
 add_task(async function testUntrusted() {
   let cert = await readCertificate("untrusted-ca.pem", "p,p,p");
   let win = await displayCertificate(cert);
-  checkError(win, { id: "cert-not-verified-cert-not-trusted" });
+  checkError(win, { id: "cert-not-verified-cert-not-trusted", args: null });
   checkDetailsPane(win, ["untrusted-ca"]);
   await BrowserTestUtils.closeWindow(win);
 
@@ -99,7 +99,7 @@ add_task(async function testUntrusted() {
   // same task.
   let eeCert = await readCertificate("ee-from-untrusted-ca.pem", ",,");
   let eeWin = await displayCertificate(eeCert);
-  checkError(eeWin, { id: "cert-not-verified-issuer-not-trusted" });
+  checkError(eeWin, { id: "cert-not-verified-issuer-not-trusted", args: null });
   checkDetailsPane(eeWin, ["ee-from-untrusted-ca"]);
   await BrowserTestUtils.closeWindow(eeWin);
 });
@@ -143,9 +143,9 @@ add_task(async function testRevoked() {
   // this certificate will actually verify successfully for every end-entity
   // usage except TLS web server.
   checkUsages(win, [
-    { id: "verify-email-recip" },
-    { id: "verify-email-signer" },
-    { id: "verify-ssl-client" },
+    { id: "verify-email-recip", args: null },
+    { id: "verify-email-signer", args: null },
+    { id: "verify-ssl-client", args: null },
   ]);
   checkDetailsPane(win, ["ca", "revoked"]);
   await BrowserTestUtils.closeWindow(win);
@@ -158,7 +158,7 @@ add_task(async function testInvalid() {
   // message in this case.
   let cert = await readCertificate("invalid.pem", ",,");
   let win = await displayCertificate(cert);
-  checkError(win, { id: "cert-not-verified-unknown" });
+  checkError(win, { id: "cert-not-verified-unknown", args: null });
   checkDetailsPane(win, ["invalid"]);
   await BrowserTestUtils.closeWindow(win);
 });
@@ -255,7 +255,7 @@ function getError(win) {
 function checkUsages(win, usagesL10nIds) {
   Assert.deepEqual(
     getError(win),
-    { id: "cert-verified" },
+    { id: "cert-verified", args: null },
     "should have successful verification message"
   );
   let determinedUsages = getUsages(win);

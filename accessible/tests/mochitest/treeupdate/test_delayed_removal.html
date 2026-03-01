@@ -183,6 +183,36 @@
       ] });
     }
 
+    // Bug 1572829
+    async function removeShadowRootHost() {
+      info("removeShadowRootHost");
+      document.body.offsetTop; // Flush layout.
+
+      let event = waitForEvent(EVENT_REORDER, "c9", "removeShadowRootHost");
+      getNode("c9").firstElementChild.attachShadow({mode: "open"});
+      getNode("c9").firstElementChild.replaceWith("");
+
+      await event;
+    }
+
+    function listItemReframe() {
+      testAccessibleTree("li",{ LISTITEM: [
+        { LISTITEM_MARKER: [] },
+        { TEXT_LEAF: [] },
+      ] });
+
+      getNode("li").style.listStylePosition = "inside";
+      document.body.offsetTop; // Flush layout.
+      window.windowUtils.advanceTimeAndRefresh(100);
+
+      testAccessibleTree("li",{ LISTITEM: [
+        { LISTITEM_MARKER: [] },
+        { TEXT_LEAF: [] },
+      ] });
+
+      window.windowUtils.restoreNormalRefresh();
+    }
+
     async function doTest() {
       await hideDivFromInsideSpan();
 
@@ -199,6 +229,10 @@
       await intermediateNonAccessibleContainerBecomesAccessible();
 
       await removeRelocatedWhenDomAncestorHidden();
+
+      await removeShadowRootHost();
+
+      listItemReframe();
 
       SimpleTest.finish();
     }
@@ -247,6 +281,16 @@
     <div id="c8_owned_container">
       <div id="c8_owned" role="listbox"></div>
     </div>
+  </div>
+
+  <div id="c9">
+    <div><dir>a</dir></div>
+  </div>
+
+  <div id="c11">
+    <ul>
+        <li id="li">Test</li>
+    </ul>
   </div>
 
   <div id="eventdump"></div>

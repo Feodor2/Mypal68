@@ -302,7 +302,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // Called when a connection is done processing a transaction.  Callable
   // from any thread.
-  MOZ_MUST_USE nsresult ReclaimConnection(nsHttpConnection* conn) {
+  MOZ_MUST_USE nsresult ReclaimConnection(HttpConnectionBase* conn) {
     return mConnMgr->ReclaimConnection(conn);
   }
 

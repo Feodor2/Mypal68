@@ -10,7 +10,7 @@
 
 var path = require("path");
 
-const selfHostedRegex = /js\/src\/(?:builtin|shell)\/.*?\.js$/;
+const selfHostedRegex = /js\/src\/builtin\/.*?\.js$/;
 const macroRegex = /\s*\#(if|ifdef|else|elif|endif|include|define|undef).*/;
 
 module.exports = {
@@ -30,7 +30,9 @@ module.exports = {
       }
 
       for (; i < lines.length; i++) {
-        lines[i] = "// " + lines[i];
+        // The macro isn't correctly indented, so we need to instruct
+        // prettier to ignore them.
+        lines[i] = "// eslint-disable-line prettier/prettier -- " + lines[i];
 
         // If the line ends with a backslash (\), the next line
         // is also part of part of the macro.

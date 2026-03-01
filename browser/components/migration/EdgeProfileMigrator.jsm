@@ -163,7 +163,7 @@ EdgeTypedURLMigrator.prototype = {
       });
     }
 
-    if (pageInfos.length == 0) {
+    if (!pageInfos.length) {
       aCallback(typedURLs.size == 0);
       return;
     }
@@ -336,8 +336,8 @@ EdgeReadingListMigrator.prototype = {
 
   async _ensureReadingListFolder(parentGuid) {
     if (!this.__readingListFolderGuid) {
-      let folderTitle = MigrationUtils.getLocalizedString(
-        "importedEdgeReadingList"
+      let folderTitle = await MigrationUtils.getLocalizedString(
+        "imported-edge-reading-list"
       );
       let folderSpec = {
         type: PlacesUtils.bookmarks.TYPE_FOLDER,

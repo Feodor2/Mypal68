@@ -258,6 +258,9 @@ Maybe<AspectRatio> RasterImage::GetIntrinsicRatio() {
 NS_IMETHODIMP_(Orientation)
 RasterImage::GetOrientation() { return mOrientation; }
 
+NS_IMETHODIMP_(Resolution)
+RasterImage::GetResolution() { return mResolution; }
+
 //******************************************************************************
 NS_IMETHODIMP
 RasterImage::GetType(uint16_t* aType) {
@@ -707,6 +710,8 @@ bool RasterImage::SetMetadata(const ImageMetadata& aMetadata,
   if (mError) {
     return true;
   }
+
+  mResolution = aMetadata.GetResolution();
 
   if (aMetadata.HasSize()) {
     auto metadataSize = UnorientedIntSize::FromUnknownSize(aMetadata.GetSize());

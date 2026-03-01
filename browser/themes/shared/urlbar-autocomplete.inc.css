@@ -38,15 +38,18 @@
 .urlbarView.megabar {
   margin-inline: @urlbarViewMarginInline@;
   width: calc(100% - 2 * @urlbarViewMarginInline@);
+  /* Offsets the toolbar overlap so the view's top border aligns with the
+     toolbar. */
+  margin-block-start: -@urlbarBreakoutExtend@;
 }
 
-.urlbarView:not([hidden]) {
+.urlbarView {
   display: block;
 }
 
 .urlbarView.megabar .urlbarView-body-inner {
   width: 100%;
-  border-top: 1px solid var(--panel-separator-color);
+  border-top: 1px solid var(--urlbar-separator-color);
 }
 
 .urlbarView:not(.megabar) {
@@ -70,9 +73,14 @@
 }
 
 .urlbarView-row {
-  border-radius: 2px;
   fill: currentColor;
   fill-opacity: .6;
+  padding-block: 3px;
+}
+
+.urlbarView:not(.megabar) .urlbarView-row,
+.urlbarView.megabar .urlbarView-row-inner {
+  border-radius: 2px;
   padding-block: 6px;
   padding-inline-start: calc(@urlbarViewItemPaddingStart@);
 }
@@ -107,11 +115,13 @@
   direction: ltr !important;
 }
 
-.urlbarView-row:hover {
+.urlbarView:not(.megabar) .urlbarView-row:hover,
+.urlbarView.megabar .urlbarView-row:hover > .urlbarView-row-inner {
   background: var(--arrowpanel-dimmed);
 }
 
-.urlbarView-row[selected] {
+.urlbarView:not(.megabar) .urlbarView-row[selected],
+.urlbarView.megabar .urlbarView-row[selected] > .urlbarView-row-inner {
   background: var(--autocomplete-popup-highlight-background);
   color: var(--autocomplete-popup-highlight-color);
   fill-opacity: 1;
@@ -154,8 +164,8 @@
 
 .urlbarView-title-separator::before {
   content: "\2014";
-  color: var(--panel-disabled-color);
   margin: 0 .4em;
+  opacity: 0.6;
 }
 
 .urlbarView-title:empty + .urlbarView-tags:empty + .urlbarView-title-separator {
@@ -167,9 +177,10 @@
   font-size: .85em;
 }
 
-.urlbarView-title > strong,
-.urlbarView-url > strong,
-.urlbarView-tag > strong {
+/* The megabar uses full bold weight (700). */
+.urlbarView:not(.megabar) .urlbarView-title > strong,
+.urlbarView:not(.megabar) .urlbarView-url > strong,
+.urlbarView:not(.megabar) .urlbarView-tag > strong {
   font-weight: 600;
 }
 

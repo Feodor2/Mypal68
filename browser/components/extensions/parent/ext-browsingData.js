@@ -1,34 +1,22 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
-var { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Sanitizer",
-  "resource:///modules/Sanitizer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ServiceWorkerCleanUp",
-  "resource://gre/modules/ServiceWorkerCleanUp.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  Preferences: "resource://gre/modules/Preferences.jsm",
+  Sanitizer: "resource:///modules/Sanitizer.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
+  ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -118,22 +106,25 @@ const clearIndexedDB = async function(options) {
           principal.schemeIs("https") ||
           principal.schemeIs("file")
         ) {
-          promises.push(
-            new Promise((resolve, reject) => {
-              let clearRequest = quotaManagerService.clearStoragesForPrincipal(
-                principal,
-                null,
-                "idb"
-              );
-              clearRequest.callback = () => {
-                if (clearRequest.resultCode == Cr.NS_OK) {
-                  resolve();
-                } else {
-                  reject({ message: "Clear indexedDB failed" });
-                }
-              };
-            })
-          );
+          let host = principal.hostPort;
+          if (!options.hostnames || options.hostnames.includes(host)) {
+            promises.push(
+              new Promise((resolve, reject) => {
+                let clearRequest = quotaManagerService.clearStoragesForPrincipal(
+                  principal,
+                  null,
+                  "idb"
+                );
+                clearRequest.callback = () => {
+                  if (clearRequest.resultCode == Cr.NS_OK) {
+                    resolve();
+                  } else {
+                    reject({ message: "Clear indexedDB failed" });
+                  }
+                };
+              })
+            );
+          }
         }
       }
 
@@ -185,24 +176,34 @@ const clearLocalStorage = async function(options) {
           let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
             item.origin
           );
-          let host = principal.URI.hostPort;
-          if (!options.hostnames || options.hostnames.includes(host)) {
-            promises.push(
-              new Promise((resolve, reject) => {
-                let clearRequest = quotaManagerService.clearStoragesForPrincipal(
-                  principal,
-                  "default",
-                  "ls"
-                );
-                clearRequest.callback = () => {
-                  if (clearRequest.resultCode == Cr.NS_OK) {
-                    resolve();
-                  } else {
-                    reject({ message: "Clear localStorage failed" });
-                  }
-                };
-              })
-            );
+          // Consistently to removeIndexedDB and the API documentation for
+          // removeLocalStorage, we should only clear the data stored by
+          // regular websites, on the contrary we shouldn't clear data stored
+          // by browser components (like about:newtab) or other extensions.
+          if (
+            principal.schemeIs("http") ||
+            principal.schemeIs("https") ||
+            principal.schemeIs("file")
+          ) {
+            let host = principal.hostPort;
+            if (!options.hostnames || options.hostnames.includes(host)) {
+              promises.push(
+                new Promise((resolve, reject) => {
+                  let clearRequest = quotaManagerService.clearStoragesForPrincipal(
+                    principal,
+                    "default",
+                    "ls"
+                  );
+                  clearRequest.callback = () => {
+                    if (clearRequest.resultCode == Cr.NS_OK) {
+                      resolve();
+                    } else {
+                      reject({ message: "Clear localStorage failed" });
+                    }
+                  };
+                })
+              );
+            }
           }
         }
 
@@ -215,29 +216,34 @@ const clearLocalStorage = async function(options) {
 };
 
 const clearPasswords = async function(options) {
-  let loginManager = Services.logins;
   let yieldCounter = 0;
 
-  if (options.since) {
-    // Iterate through the logins and delete any updated after our cutoff.
-    let logins = loginManager.getAllLogins();
-    for (let login of logins) {
-      login.QueryInterface(Ci.nsILoginMetaInfo);
-      if (login.timePasswordChanged >= options.since) {
-        loginManager.removeLogin(login);
-        if (++yieldCounter % YIELD_PERIOD == 0) {
-          await new Promise(resolve => setTimeout(resolve, 0)); // Don't block the main thread too long.
-        }
+  // Iterate through the logins and delete any updated after our cutoff.
+  for (let login of await LoginHelper.getAllUserFacingLogins()) {
+    login.QueryInterface(Ci.nsILoginMetaInfo);
+    if (!options.since || login.timePasswordChanged >= options.since) {
+      Services.logins.removeLogin(login);
+      if (++yieldCounter % YIELD_PERIOD == 0) {
+        await new Promise(resolve => setTimeout(resolve, 0)); // Don't block the main thread too long.
       }
     }
-  } else {
-    // Remove everything.
-    loginManager.removeAllLogins();
   }
 };
 
 const clearPluginData = options => {
   return Sanitizer.items.pluginData.clear(makeRange(options));
+};
+
+const clearServiceWorkers = options => {
+  if (!options.hostnames) {
+    return ServiceWorkerCleanUp.removeAll();
+  }
+
+  return Promise.all(
+    options.hostnames.map(host => {
+      return ServiceWorkerCleanUp.removeFromHost(host);
+    })
+  );
 };
 
 const doRemoval = (options, dataToRemove, extension) => {
@@ -284,7 +290,7 @@ const doRemoval = (options, dataToRemove, extension) => {
           removalPromises.push(clearPluginData(options));
           break;
         case "serviceWorkers":
-          removalPromises.push(ServiceWorkerCleanUp.removeAll());
+          removalPromises.push(clearServiceWorkers(options));
           break;
         default:
           invalidDataTypes.push(dataType);

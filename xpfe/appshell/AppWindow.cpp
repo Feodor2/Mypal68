@@ -47,12 +47,15 @@
 #include "nsXULPopupManager.h"
 #include "nsFocusManager.h"
 #include "nsContentList.h"
+#include "nsServiceManagerUtils.h"
 
 #include "prenv.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/BarProps.h"
+#include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -82,6 +85,7 @@
 #define WIDTH_ATTRIBUTE u"width"_ns
 #define HEIGHT_ATTRIBUTE u"height"_ns
 #define MODE_ATTRIBUTE u"sizemode"_ns
+#define TILED_ATTRIBUTE u"gtktiledwindow"_ns
 #define ZLEVEL_ATTRIBUTE u"zlevel"_ns
 
 #define SIZE_PERSISTENCE_TIMEOUT 500  // msec
@@ -1487,7 +1491,7 @@ bool AppWindow::UpdateWindowStateFromMiscXULAttributes() {
   // If we are told to ignore the size mode attribute, force
   // normal sizemode.
   if (mIgnoreXULSizeMode) {
-    windowElement->SetAttribute(MODE_ATTRIBUTE, NS_LITERAL_STRING("normal"),
+    windowElement->SetAttribute(MODE_ATTRIBUTE, SIZEMODE_NORMAL,
                                 IgnoreErrors());
   } else {
     // Otherwise, read sizemode from DOM and, if the window is resizable,
@@ -1974,6 +1978,13 @@ NS_IMETHODIMP AppWindow::SavePersistentAttributes() {
         Unused << SetPersistentValue(nsGkAtoms::sizemode, sizeString);
       }
     }
+    bool tiled = mWindow->IsTiled();
+    if (tiled) {
+      sizeString.Assign(u"true"_ns);
+    } else {
+      sizeString.Assign(u"false"_ns);
+    }
+    docShellElement->SetAttribute(TILED_ATTRIBUTE, sizeString, rv);
     if (persistString.Find("zlevel") >= 0) {
       uint32_t zLevel;
       nsCOMPtr<nsIWindowMediator> mediator(

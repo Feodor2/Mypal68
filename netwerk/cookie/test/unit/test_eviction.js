@@ -21,9 +21,9 @@ async function test_basic_eviction(base_host) {
   Services.prefs.setIntPref("network.cookie.quotaPerHost", 2);
   Services.prefs.setIntPref("network.cookie.maxPerHost", 5);
 
-  // We don't want to have CookieSettings blocking this test.
+  // We don't want to have CookieJarSettings blocking this test.
   Services.prefs.setBoolPref(
-    "network.cookieSettings.unblocked_for_testing",
+    "network.cookieJarSettings.unblocked_for_testing",
     true
   );
 

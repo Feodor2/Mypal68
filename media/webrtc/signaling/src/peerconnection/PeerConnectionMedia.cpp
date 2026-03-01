@@ -284,6 +284,18 @@ nsresult PeerConnectionMedia::UpdateMediaPipelines() {
 }
 
 void PeerConnectionMedia::StartIceChecks(const JsepSession& aSession) {
+  ASSERT_ON_THREAD(mMainThread);
+
+  if (!mCanRegisterMDNSHostnamesDirectly) {
+    for (auto& pair : mMDNSHostnamesToRegister) {
+      mRegisteredMDNSHostnames.insert(pair.first);
+      mStunAddrsRequest->SendRegisterMDNSHostname(
+          nsCString(pair.first.c_str()), nsCString(pair.second.c_str()));
+    }
+    mMDNSHostnamesToRegister.clear();
+    mCanRegisterMDNSHostnamesDirectly = true;
+  }
+
   std::vector<std::string> attributes;
   if (aSession.RemoteIsIceLite()) {
     attributes.push_back("ice-lite");
@@ -324,6 +336,8 @@ bool PeerConnectionMedia::GetPrefObfuscateHostAddresses() const {
       "media.peerconnection.ice.obfuscate_host_addresses", false);
   obfuscate_host_addresses &=
       !MediaManager::Get()->IsActivelyCapturingOrHasAPermission(winId);
+  obfuscate_host_addresses &= XRE_IsContentProcess();
+
   return obfuscate_host_addresses;
 }
 
@@ -712,15 +726,20 @@ void PeerConnectionMedia::OnCandidateFound_m(
   if (mStunAddrsRequest && !aCandidateInfo.mMDNSAddress.empty()) {
     MOZ_ASSERT(!aCandidateInfo.mActualAddress.empty());
 
-    auto itor = mRegisteredMDNSHostnames.find(aCandidateInfo.mMDNSAddress);
+    if (mCanRegisterMDNSHostnamesDirectly) {
+      auto itor = mRegisteredMDNSHostnames.find(aCandidateInfo.mMDNSAddress);
 
-    // We'll see the address twice if we're generating both UDP and TCP
-    // candidates.
-    if (itor == mRegisteredMDNSHostnames.end()) {
-      mRegisteredMDNSHostnames.insert(aCandidateInfo.mMDNSAddress);
-      mStunAddrsRequest->SendRegisterMDNSHostname(
-          nsCString(aCandidateInfo.mMDNSAddress.c_str()),
-          nsCString(aCandidateInfo.mActualAddress.c_str()));
+      // We'll see the address twice if we're generating both UDP and TCP
+      // candidates.
+      if (itor == mRegisteredMDNSHostnames.end()) {
+        mRegisteredMDNSHostnames.insert(aCandidateInfo.mMDNSAddress);
+        mStunAddrsRequest->SendRegisterMDNSHostname(
+            nsCString(aCandidateInfo.mMDNSAddress.c_str()),
+            nsCString(aCandidateInfo.mActualAddress.c_str()));
+      }
+    } else {
+      mMDNSHostnamesToRegister.emplace(aCandidateInfo.mMDNSAddress,
+                                       aCandidateInfo.mActualAddress);
     }
   }
 

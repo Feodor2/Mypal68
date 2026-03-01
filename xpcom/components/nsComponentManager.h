@@ -16,7 +16,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Module.h"
-#include "mozilla/Mutex.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/UniquePtr.h"
 #include "nsXULAppAPI.h"
 #include "nsIFactory.h"
@@ -53,7 +53,6 @@ extern const mozilla::Module kXPCOMModule;
 
 namespace {
 class EntryWrapper;
-class MutexLock;
 }  // namespace
 
 namespace mozilla {
@@ -64,52 +63,6 @@ bool FastProcessSelectorMatches(Module::ProcessSelector aSelector);
 
 }  // namespace xpcom
 }  // namespace mozilla
-
-/**
- * This is a wrapper around mozilla::Mutex which provides runtime
- * checking for a deadlock where the same thread tries to lock a mutex while
- * it is already locked. This checking is present in both debug and release
- * builds.
- */
-class SafeMutex {
- public:
-  explicit SafeMutex(const char* aName)
-      : mMutex(aName), mOwnerThread(nullptr) {}
-
-  ~SafeMutex() = default;
-
-  void Lock() {
-    AssertNotCurrentThreadOwns();
-    mMutex.Lock();
-    MOZ_ASSERT(mOwnerThread == nullptr);
-    mOwnerThread = PR_GetCurrentThread();
-  }
-
-  void Unlock() {
-    MOZ_ASSERT(mOwnerThread == PR_GetCurrentThread());
-    mOwnerThread = nullptr;
-    mMutex.Unlock();
-  }
-
-  void AssertCurrentThreadOwns() const {
-    // This method is a debug-only check
-    MOZ_ASSERT(mOwnerThread == PR_GetCurrentThread());
-  }
-
-  MOZ_NEVER_INLINE void AssertNotCurrentThreadOwns() const {
-    // This method is a release-mode check
-    if (PR_GetCurrentThread() == mOwnerThread) {
-      MOZ_CRASH();
-    }
-  }
-
- private:
-  mozilla::Mutex mMutex;
-  mozilla::Atomic<PRThread*, mozilla::Relaxed> mOwnerThread;
-};
-
-typedef mozilla::BaseAutoLock<SafeMutex&> SafeMutexAutoLock;
-typedef mozilla::BaseAutoUnlock<SafeMutex&> SafeMutexAutoUnlock;
 
 class nsComponentManagerImpl final : public nsIComponentManager,
                                      public nsIServiceManager,
@@ -150,15 +103,16 @@ class nsComponentManagerImpl final : public nsIComponentManager,
   nsTHashMap<nsIDPointerHashKey, nsFactoryEntry*> mFactories;
   nsTHashMap<nsCStringHashKey, nsFactoryEntry*> mContractIDs;
 
-  SafeMutex mLock;
+  mozilla::Monitor2 mLock;
 
   mozilla::Maybe<EntryWrapper> LookupByCID(const nsID& aCID);
-  mozilla::Maybe<EntryWrapper> LookupByCID(const MutexLock&, const nsID& aCID);
+  mozilla::Maybe<EntryWrapper> LookupByCID(const mozilla::Monitor2AutoLock&,
+                                           const nsID& aCID);
 
   mozilla::Maybe<EntryWrapper> LookupByContractID(
       const nsACString& aContractID);
   mozilla::Maybe<EntryWrapper> LookupByContractID(
-      const MutexLock&, const nsACString& aContractID);
+      const mozilla::Monitor2AutoLock&, const nsACString& aContractID);
 
   nsresult GetService(mozilla::xpcom::ModuleID, const nsIID& aIID,
                       void** aResult);
@@ -275,7 +229,8 @@ class nsComponentManagerImpl final : public nsIComponentManager,
 
   inline PendingServiceInfo* AddPendingService(const nsCID& aServiceCID,
                                                PRThread* aThread);
-  inline void RemovePendingService(const nsCID& aServiceCID);
+  inline void RemovePendingService(mozilla::Monitor2AutoLock& aLock,
+                                   const nsCID& aServiceCID);
   inline PRThread* GetPendingServiceThread(const nsCID& aServiceCID) const;
 
   nsTArray<PendingServiceInfo> mPendingServices;
@@ -287,8 +242,9 @@ class nsComponentManagerImpl final : public nsIComponentManager,
  private:
   ~nsComponentManagerImpl();
 
-  nsresult GetServiceLocked(MutexLock& aLock, EntryWrapper& aEntry,
-                            const nsIID& aIID, void** aResult);
+  nsresult GetServiceLocked(mozilla::Maybe<mozilla::Monitor2AutoLock>& aLock,
+                            EntryWrapper& aEntry, const nsIID& aIID,
+                            void** aResult);
 };
 
 #define NS_MAX_FILENAME_LEN 1024
@@ -306,8 +262,7 @@ struct nsFactoryEntry {
 
   already_AddRefed<nsIFactory> GetFactory();
 
-  nsresult CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                          void** aResult);
+  nsresult CreateInstance(const nsIID& aIID, void** aResult);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 

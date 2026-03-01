@@ -183,7 +183,7 @@ ChromeProfileMigrator.prototype.getSourceProfiles = async function Chrome_getSou
   // Only list profiles from which any data can be imported
   this.__sourceProfiles = profileResources
     .filter(({ resources }) => {
-      return resources && resources.length > 0;
+      return resources && !!resources.length;
     }, this)
     .map(({ profile }) => profile);
   return this.__sourceProfiles;
@@ -218,10 +218,7 @@ async function GetBookmarksResource(aProfileFolder) {
         let roots = JSON.parse(bookmarkJSON).roots;
 
         // Importing bookmark bar items
-        if (
-          roots.bookmark_bar.children &&
-          roots.bookmark_bar.children.length > 0
-        ) {
+        if (roots.bookmark_bar.children && roots.bookmark_bar.children.length) {
           // Toolbar
           let parentGuid = PlacesUtils.bookmarks.toolbarGuid;
           let bookmarks = convertBookmarks(
@@ -241,7 +238,7 @@ async function GetBookmarksResource(aProfileFolder) {
         }
 
         // Importing bookmark menu items
-        if (roots.other.children && roots.other.children.length > 0) {
+        if (roots.other.children && roots.other.children.length) {
           // Bookmark menu
           let parentGuid = PlacesUtils.bookmarks.menuGuid;
           let bookmarks = convertBookmarks(roots.other.children, errorGatherer);
@@ -328,7 +325,7 @@ async function GetHistoryResource(aProfileFolder) {
           }
         }
 
-        if (pageInfos.length > 0) {
+        if (pageInfos.length) {
           await MigrationUtils.insertVisitsWrapper(pageInfos);
         }
       })().then(
@@ -491,7 +488,7 @@ async function GetWindowsPasswordsResource(aProfileFolder) {
         }
       }
       try {
-        if (logins.length > 0) {
+        if (logins.length) {
           await MigrationUtils.insertLoginsWrapper(logins);
         }
       } catch (e) {

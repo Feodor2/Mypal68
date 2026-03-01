@@ -65,12 +65,12 @@ nsChromeProtocolHandler::GetProtocolFlags(uint32_t* result) {
   // by standard URLs, so there is no "outer" given to CreateInstance
   nsresult rv;
   nsCOMPtr<nsIURI> surl;
-  nsCOMPtr<nsIURI> base(aBaseURI);
-  rv = NS_MutateURI(new mozilla::net::nsStandardURL::Mutator())
-           .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
-                                   nsIStandardURL::URLTYPE_STANDARD, -1,
-                                   nsCString(aSpec), aCharset, base, nullptr))
-           .Finalize(surl);
+  rv =
+      NS_MutateURI(new mozilla::net::nsStandardURL::Mutator())
+          .Apply(&nsIStandardURLMutator::Init, nsIStandardURL::URLTYPE_STANDARD,
+                 -1, aSpec, aCharset, aBaseURI, nullptr)
+
+          .Finalize(surl);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -117,8 +117,7 @@ nsChromeProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   if (!nsChromeRegistry::gChromeRegistry) {
     // We don't actually want this ref, we just want the service to
     // initialize if it hasn't already.
-    nsCOMPtr<nsIChromeRegistry> reg =
-        mozilla::services::GetChromeRegistryService();
+    nsCOMPtr<nsIChromeRegistry> reg = mozilla::services::GetChromeRegistry();
     NS_ENSURE_TRUE(nsChromeRegistry::gChromeRegistry, NS_ERROR_FAILURE);
   }
 

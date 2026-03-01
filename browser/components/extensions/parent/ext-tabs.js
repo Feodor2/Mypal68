@@ -770,7 +770,7 @@ this.tabs = class extends ExtensionAPI {
             if (active) {
               window.gBrowser.selectedTab = nativeTab;
               if (!createProperties.url) {
-                window.focusAndSelectUrlBar();
+                window.gURLBar.select();
               }
             }
 
@@ -841,7 +841,9 @@ this.tabs = class extends ExtensionAPI {
             }
             if (updateProperties.highlighted) {
               if (!nativeTab.selected && !nativeTab.multiselected) {
-                tabbrowser.addToMultiSelectedTabs(nativeTab, false);
+                tabbrowser.addToMultiSelectedTabs(nativeTab, {
+                  isLastMultiSelectChange: true,
+                });
                 // Select the highlighted tab unless active:false is provided.
                 // Note that Chrome selects it even in that case.
                 if (updateProperties.active !== false) {
@@ -850,7 +852,9 @@ this.tabs = class extends ExtensionAPI {
                 }
               }
             } else {
-              tabbrowser.removeFromMultiSelectedTabs(nativeTab, true);
+              tabbrowser.removeFromMultiSelectedTabs(nativeTab, {
+                isLastMultiSelectChange: true,
+              });
             }
           }
           if (updateProperties.muted !== null) {

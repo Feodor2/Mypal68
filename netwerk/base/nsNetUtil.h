@@ -32,7 +32,7 @@ class nsIAuthPrompt;
 class nsIAuthPrompt2;
 class nsIChannel;
 class nsIChannelPolicy;
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsIDownloadObserver;
 class nsIEventTarget;
 class nsIFileProtocolHandler;
@@ -158,7 +158,7 @@ nsresult NS_NewChannelInternal(
     const mozilla::Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
     const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
@@ -191,7 +191,7 @@ nsresult NS_NewChannelWithTriggeringPrincipal(
     nsIChannel** outChannel, nsIURI* aUri, nsIPrincipal* aLoadingPrincipal,
     nsIPrincipal* aTriggeringPrincipal, nsSecurityFlags aSecurityFlags,
     nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
@@ -205,7 +205,7 @@ nsresult NS_NewChannelWithTriggeringPrincipal(
     const mozilla::dom::ClientInfo& aLoadingClientInfo,
     const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
@@ -226,7 +226,7 @@ nsresult NS_NewChannel(
 nsresult NS_NewChannel(
     nsIChannel** outChannel, nsIURI* aUri, nsIPrincipal* aLoadingPrincipal,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
@@ -239,7 +239,7 @@ nsresult NS_NewChannel(
     const mozilla::dom::ClientInfo& aLoadingClientInfo,
     const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,

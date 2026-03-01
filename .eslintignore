@@ -1,5 +1,15 @@
+# Please DO NOT add more third party files to this file.
+# They should be added to tools/rewriting/ThirdPartyPaths.txt instead.
+# The remaining third-party paths will be removed in bug 1608799.
+
+# This file should only be used for exclusions where we have:
+# - preprocessed files
+# - generated files that are for some reason checked into source
+# - intentionally invalid files
+# - build directories and other items that we need to ignore
+
 # Always ignore node_modules.
-**/node_modules/**/*.*
+**/node_modules/
 
 # Always ignore crashtests - specially crafted files that originally caused a
 # crash.
@@ -41,7 +51,6 @@ browser/extensions/screenshots/
 # Kept in sync with browser/components/newtab/.eslintignore
 browser/components/newtab/data/
 browser/components/newtab/logs/
-browser/components/newtab/vendor/
 
 # The only file in browser/locales/ is pre-processed.
 browser/locales/
@@ -91,29 +100,7 @@ devtools/shared/css/generated/properties-db.js
 devtools/client/webconsole/test/node/fixtures/stubs/*.js
 !devtools/client/webconsole/test/node/fixtures/stubs/index.js
 
-# Ignore devtools third-party libs
-devtools/shared/jsbeautify/
-devtools/shared/acorn/
-devtools/shared/node-properties/
-devtools/shared/pretty-fast/
-devtools/shared/sourcemap/
-devtools/shared/sprintfjs/
-devtools/shared/storage/vendor/*
-devtools/shared/qrcode/decoder/
-devtools/shared/qrcode/encoder/
-devtools/client/inspector/markup/test/lib_*
-devtools/client/jsonview/lib/require.js
-devtools/client/shared/demangle.js
-devtools/client/shared/source-map/
-devtools/client/shared/vendor/
-devtools/client/shared/sourceeditor/codemirror/*.js
-devtools/client/shared/sourceeditor/codemirror/**/*.js
-devtools/client/shared/sourceeditor/test/cm_mode_ruby.js
-devtools/client/shared/sourceeditor/test/codemirror/
-devtools/server/actors/utils/automation-timeline.js
-
 # Ignore devtools files testing sourcemaps / code style
-devtools/client/debugger/test/mochitest/code_*.js
 devtools/client/framework/test/code_*
 devtools/client/inspector/markup/test/events_bundle.js
 devtools/client/netmonitor/test/xhr_bundle.js
@@ -128,11 +115,11 @@ devtools/client/webconsole/test/browser/test-syntaxerror-worklet.js
 # devtools specific format test file
 devtools/server/tests/xpcshell/xpcshell_debugging_script.js
 
-# Third-party
-dom/canvas/test/webgl-conf/
-dom/imptests/
-dom/media/webaudio/test/blink/
-dom/media/webvtt/
+# Generated
+dom/canvas/test/webgl-conf/generated/
+
+# Intentionally invalid/not parsable
+dom/html/test/test_bug677658.html
 dom/svg/test/test_nonAnimStrings.xhtml
 dom/svg/test/test_SVG_namespace_ids.html
 
@@ -141,10 +128,6 @@ dom/base/test/file_bug687859-16.js
 dom/encoding/test/test_utf16_files.html
 dom/encoding/test/file_utf16_be_bom.js
 dom/encoding/test/file_utf16_le_bom.js
-
-# Not parsable
-dom/tests/mochitest/general/test_focusrings.xul
-dom/html/test/test_bug677658.html
 
 # Service workers fixtures which require specific resource caching.
 dom/base/test/file_js_cache.js

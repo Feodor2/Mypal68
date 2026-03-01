@@ -31,7 +31,12 @@ add_task(async function url() {
 });
 
 add_task(async function userTyping() {
-  await promiseAutocompleteResultPopup("foo", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "foo",
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_ArrowDown");
   await UrlbarTestUtils.promiseSearchComplete(window);
@@ -45,7 +50,12 @@ add_task(async function userTyping() {
 });
 
 add_task(async function empty() {
-  await promiseAutocompleteResultPopup("", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "",
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_ArrowDown");
   await UrlbarTestUtils.promiseSearchComplete(window);

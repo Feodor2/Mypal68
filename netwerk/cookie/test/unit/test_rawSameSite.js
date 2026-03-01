@@ -45,7 +45,7 @@ add_task(async _ => {
   if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
     Services.prefs.setBoolPref(
-      "network.cookieSettings.unblocked_for_testing",
+      "network.cookieJarSettings.unblocked_for_testing",
       true
     );
     Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", true);
@@ -67,7 +67,7 @@ add_task(async _ => {
   let channel = NetUtil.newChannel({
     uri,
     loadingPrincipal: principal,
-    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
   });
 

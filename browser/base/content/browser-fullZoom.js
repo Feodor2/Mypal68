@@ -180,9 +180,6 @@ var FullZoom = {
       return;
     }
 
-    this._globalValue =
-      aValue === undefined ? aValue : this._ensureValid(aValue);
-
     // If the current page doesn't have a site-specific preference, then its
     // zoom should be set to the new global preference now that the global
     // preference has changed.
@@ -273,10 +270,11 @@ var FullZoom = {
     }
 
     // The PDF viewer zooming isn't handled by `ZoomManager`, ensure that the
-    // browser zoom level always gets reset on load.
+    // browser zoom level always gets reset to 100% on load (to prevent the
+    // UI elements of the PDF viewer from being zoomed in/out on load).
     if (this._isPDFViewer(browser)) {
       this._applyPrefToZoom(
-        undefined,
+        1,
         browser,
         this._notifyOnLocationChange.bind(this, browser)
       );
@@ -380,15 +378,19 @@ var FullZoom = {
    * @return A promise which resolves when the zoom reset has been applied.
    */
   reset: function FullZoom_reset(browser = gBrowser.selectedBrowser) {
+    let forceValue;
     if (browser.currentURI.spec.startsWith("about:reader")) {
       browser.messageManager.sendAsyncMessage("Reader:ResetZoom");
     } else if (this._isPDFViewer(browser)) {
       browser.messageManager.sendAsyncMessage("PDFJS:ZoomReset");
+      // Ensure that the UI elements of the PDF viewer won't be zoomed in/out
+      // on reset, even if/when browser default zoom value is not set to 100%.
+      forceValue = 1;
     }
     let token = this._getBrowserToken(browser);
-    let result = this._getGlobalValue(browser).then(value => {
+    let result = ZoomUI.getGlobalValue().then(value => {
       if (token.isCurrent) {
-        ZoomManager.setZoomForBrowser(browser, value === undefined ? 1 : value);
+        ZoomManager.setZoomForBrowser(browser, forceValue || value);
         this._ignorePendingZoomAccesses(browser);
       }
     });
@@ -424,7 +426,7 @@ var FullZoom = {
     aBrowser,
     aCallback
   ) {
-    if (!this.siteSpecific || gInPrintPreviewMode) {
+    if (gInPrintPreviewMode) {
       this._executeSoon(aCallback);
       return;
     }
@@ -432,25 +434,29 @@ var FullZoom = {
     // The browser is sometimes half-destroyed because this method is called
     // by content pref service callbacks, which themselves can be called at any
     // time, even after browsers are closed.
-    if (!aBrowser.mInitialized || aBrowser.isSyntheticDocument) {
+    if (
+      !aBrowser.mInitialized ||
+      aBrowser.isSyntheticDocument ||
+      (!this.siteSpecific && aBrowser.tabHasCustomZoom)
+    ) {
       this._executeSoon(aCallback);
       return;
     }
 
-    if (aValue !== undefined) {
+    if (aValue !== undefined && this.siteSpecific) {
       ZoomManager.setZoomForBrowser(aBrowser, this._ensureValid(aValue));
       this._ignorePendingZoomAccesses(aBrowser);
       this._executeSoon(aCallback);
       return;
     }
 
+    // Above, we check if site-specific zoom is enabled before setting
+    // the tab browser zoom, however global zoom should work independent
+    // of the site-specific pref, so we do no checks here.
     let token = this._getBrowserToken(aBrowser);
-    this._getGlobalValue(aBrowser).then(value => {
+    ZoomUI.getGlobalValue().then(value => {
       if (token.isCurrent) {
-        ZoomManager.setZoomForBrowser(
-          aBrowser,
-          value === undefined ? 1 : value
-        );
+        ZoomManager.setZoomForBrowser(aBrowser, value);
         this._ignorePendingZoomAccesses(aBrowser);
       }
       this._executeSoon(aCallback);
@@ -469,6 +475,10 @@ var FullZoom = {
       gInPrintPreviewMode ||
       browser.isSyntheticDocument
     ) {
+      // If site-specific zoom is disabled, we have called this function
+      // to adjust our tab's zoom level. It is now considered "custom"
+      // and we mark that here.
+      browser.tabHasCustomZoom = !this.siteSpecific;
       return null;
     }
 
@@ -599,35 +609,6 @@ var FullZoom = {
   },
 
   /**
-   * Gets the global browser.content.full-zoom content preference.
-   *
-   * @param browser   The browser pertaining to the zoom.
-   * @returns Promise<prefValue>
-   *                  Resolves to the preference value when done.
-   */
-  _getGlobalValue: function FullZoom__getGlobalValue(browser) {
-    // * !("_globalValue" in this) => global value not yet cached.
-    // * this._globalValue === undefined => global value known not to exist.
-    // * Otherwise, this._globalValue is a number, the global value.
-    return new Promise(resolve => {
-      if ("_globalValue" in this) {
-        resolve(this._globalValue);
-        return;
-      }
-      let value = undefined;
-      this._cps2.getGlobal(this.name, this._loadContextFromBrowser(browser), {
-        handleResult(pref) {
-          value = pref.value;
-        },
-        handleCompletion: reason => {
-          this._globalValue = this._ensureValid(value);
-          resolve(this._globalValue);
-        },
-      });
-    });
-  },
-
-  /**
    * Gets the load context from the given Browser.
    *
    * @param Browser  The Browser whose load context will be returned.
@@ -658,9 +639,7 @@ var FullZoom = {
 
   _isPDFViewer(browser) {
     return !!(
-      browser.contentPrincipal &&
-      browser.contentPrincipal.URI &&
-      browser.contentPrincipal.URI.spec == "resource://pdf.js/web/viewer.html"
+      browser.contentPrincipal.spec == "resource://pdf.js/web/viewer.html"
     );
   },
 };

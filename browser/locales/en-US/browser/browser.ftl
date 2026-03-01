@@ -2,6 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+browser-main-window =
+  .data-title-default = { -brand-full-name }
+  .data-title-private = { -brand-full-name } (Private Browsing)
+  .data-content-title-default = { $content-title } - { -brand-full-name }
+  .data-content-title-private = { $content-title } - { -brand-full-name } (Private Browsing)
+
+browser-main-window-mac =
+  .data-title-default = { -brand-full-name }
+  .data-title-private = { -brand-full-name } - (Private Browsing)
+  .data-content-title-default = { $content-title }
+  .data-content-title-private = { $content-title } - (Private Browsing)
+
+browser-main-window-title = { -brand-full-name }
+
 appmenuitem-customize-mode =
     .label = Customize…
 
@@ -92,6 +106,43 @@ page-action-manage-extension =
     .label = Manage Extension…
 page-action-remove-from-urlbar =
     .label = Remove from Address Bar
+
+## Page Action menu
+
+# Variables
+# $tabCount (integer) - Number of tabs selected
+page-action-send-tabs-panel =
+  .label = { $tabCount ->
+      [1] Send Tab to Device
+     *[other] Send { $tabCount } Tabs to Device
+  }
+page-action-send-tabs-urlbar =
+  .tooltiptext = { $tabCount ->
+      [1] Send Tab to Device
+     *[other] Send { $tabCount } Tabs to Device
+  }
+page-action-copy-url-panel =
+  .label = Copy Link
+page-action-copy-url-urlbar =
+  .tooltiptext = Copy Link
+page-action-email-link-panel =
+  .label = Email Link…
+page-action-email-link-urlbar =
+  .tooltiptext = Email Link…
+page-action-send-tab-not-ready =
+  .label = Syncing Devices…
+# "Pin" is being used as a metaphor for expressing the fact that these tabs
+# are "pinned" to the left edge of the tabstrip. Really we just want the
+# string to express the idea that this is a lightweight and reversible
+# action that keeps your tab where you can reach it easily.
+page-action-pin-tab-panel =
+  .label = Pin Tab
+page-action-pin-tab-urlbar =
+  .tooltiptext = Pin Tab
+page-action-unpin-tab-panel =
+  .label = Unpin Tab
+page-action-unpin-tab-urlbar =
+  .tooltiptext = Unpin Tab
 
 ## Auto-hide Context Menu
 

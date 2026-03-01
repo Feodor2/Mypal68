@@ -383,6 +383,10 @@ nsresult ExtensionProtocolHandler::GetFlagsForURI(nsIURI* aURI,
     if (!policy->PrivateBrowsingAllowed()) {
       flags |= URI_DISALLOW_IN_PRIVATE_CONTEXT;
     }
+  } else {
+    // In case there is no policy, then default to treating moz-extension URIs
+    // as unsafe and generally only allow chrome: to load such.
+    flags |= URI_DANGEROUS_TO_LOAD;
   }
 
   *aFlags = flags;
@@ -734,7 +738,7 @@ Result<nsCOMPtr<nsIInputStream>, nsresult> ExtensionProtocolHandler::NewStream(
   nsCOMPtr<nsIChannel> channel;
   MOZ_TRY(NS_NewChannel(getter_AddRefs(channel), resolvedURI,
                         nsContentUtils::GetSystemPrincipal(),
-                        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                         nsIContentPolicy::TYPE_OTHER));
 
   nsCOMPtr<nsIFileChannel> fileChannel = do_QueryInterface(channel, &rv);

@@ -8,35 +8,35 @@ with Files('**'):
 # export required interfaces, even if --disable-cookies has been given
 XPIDL_SOURCES += [
     'nsICookie.idl',
+    'nsICookieJarSettings.idl',
     'nsICookieManager.idl',
     'nsICookiePermission.idl',
     'nsICookieService.idl',
-    'nsICookieSettings.idl',
 ]
 
 XPIDL_MODULE = 'necko_cookie'
 
 
 EXPORTS.mozilla.net = [
+    'CookieJarSettings.h',
     'CookieKey.h',
     'CookiePersistentStorage.h',
     'CookiePrivateStorage.h',
     'CookieService.h',
     'CookieServiceChild.h',
     'CookieServiceParent.h',
-    'CookieSettings.h',
     'CookieStorage.h',
 ]
 UNIFIED_SOURCES += [
     'Cookie.cpp',
     'CookieCommons.cpp',
+    'CookieJarSettings.cpp',
     'CookieLogging.cpp',
     'CookiePersistentStorage.cpp',
     'CookiePrivateStorage.cpp',
     'CookieService.cpp',
     'CookieServiceChild.cpp',
     'CookieServiceParent.cpp',
-    'CookieSettings.cpp',
     'CookieStorage.cpp',
 ]
 XPCSHELL_TESTS_MANIFESTS += [
@@ -57,7 +57,6 @@ IPDL_SOURCES = [
 
 LOCAL_INCLUDES += [
     '/dom/base',
-    '/extensions/permissions',
     '/intl/uconv',
     '/netwerk/base',
     '/netwerk/protocol/http',

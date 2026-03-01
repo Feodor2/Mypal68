@@ -1,4 +1,7 @@
-#!/usr/bin/env python
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import buildconfig
 
 services = []
@@ -9,11 +12,15 @@ def service(name, iface, contractid):
     services.append((name, iface, contractid))
 
 
-service('ChromeRegistryService', 'nsIChromeRegistry',
+# The `name` parameter is derived from the `iface` by removing the `nsI`
+# prefix. (This often matches the `contractid`, but not always.) The only
+# exceptions are when that would result in a misleading name, e.g. for
+# "@mozilla.org/file/directory_service;1".
+service('ChromeRegistry', 'nsIChromeRegistry',
         "@mozilla.org/chrome/chrome-registry;1")
-service('ToolkitChromeRegistryService', 'nsIToolkitChromeRegistry',
+service('ToolkitChromeRegistry', 'nsIToolkitChromeRegistry',
         "@mozilla.org/chrome/chrome-registry;1")
-service('XULChromeRegistryService', 'nsIXULChromeRegistry',
+service('XULChromeRegistry', 'nsIXULChromeRegistry',
         "@mozilla.org/chrome/chrome-registry;1")
 service('DirectoryService', 'nsIProperties',
         "@mozilla.org/file/directory_service;1"),
@@ -25,11 +32,11 @@ service('StringBundleService', 'nsIStringBundleService',
         "@mozilla.org/intl/stringbundle;1")
 service('PermissionManager', 'nsIPermissionManager',
         "@mozilla.org/permissionmanager;1")
-service('PreferencesService', 'nsIPrefService',
+service('PrefService', 'nsIPrefService',
         "@mozilla.org/preferences-service;1")
 service('ServiceWorkerManager', 'nsIServiceWorkerManager',
         "@mozilla.org/serviceworkers/manager;1")
-service('AsyncShutdown', 'nsIAsyncShutdownService',
+service('AsyncShutdownService', 'nsIAsyncShutdownService',
         "@mozilla.org/async-shutdown-service;1")
 service('UUIDGenerator', 'nsIUUIDGenerator',
         "@mozilla.org/uuid-generator;1")
@@ -43,9 +50,9 @@ service('CacheStorageService', 'nsICacheStorageService',
         "@mozilla.org/netwerk/cache-storage-service;1")
 service('URIClassifier', 'nsIURIClassifier',
         "@mozilla.org/uriclassifierservice")
-service('ActivityDistributor', 'nsIHttpActivityDistributor',
+service('HttpActivityDistributor', 'nsIHttpActivityDistributor',
         "@mozilla.org/network/http-activity-distributor;1")
-service('HistoryService', 'mozilla::IHistory',
+service('History', 'mozilla::IHistory',
         "@mozilla.org/browser/history;1")
 service('ThirdPartyUtil', 'mozIThirdPartyUtil',
         "@mozilla.org/thirdpartyutil;1")
@@ -54,8 +61,19 @@ service('URIFixup', 'nsIURIFixup',
 if buildconfig.substs.get('MOZ_BITS_DOWNLOAD'):
     service('Bits', 'nsIBits',
             "@mozilla.org/bits;1")
-# NB: this should also expose nsIXULAppInfo, as does Services.jsm.
-service('AppInfoService', 'nsIXULRuntime',
+# If you want nsIXULAppInfo, as returned by Services.jsm, you need to call:
+#
+# nsCOMPtr<nsIXULRuntime> runtime = mozilla::services::GetXULRuntime();
+# nsCOMPtr<nsIXULAppInfo> appInfo = do_QueryInterface(runtime);
+#
+# for C++ or:
+#
+# let appInfo =
+#    get_XULRuntime().and_then(|p| p.query_interface::<nsIXULAppInfo>());
+#
+# for Rust.  Note that not all applications (e.g. xpcshell) implement
+# nsIXULAppInfo.
+service('XULRuntime', 'nsIXULRuntime',
         "@mozilla.org/xre/app-info;1")
 
 # The definition file needs access to the definitions of the particular

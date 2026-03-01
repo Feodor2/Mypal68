@@ -65,7 +65,7 @@ ProtocolHandler.prototype = {
   set contentLength(val) {
     throw Components.Exception(
       "Setting content length",
-      NS_ERROR_NOT_IMPLEMENTED
+      Cr.NS_ERROR_NOT_IMPLEMENTED
     );
   },
   open() {
@@ -116,7 +116,6 @@ ProtocolHandler.prototype = {
     }
     return this.QueryInterface(aIID);
   },
-  lockFactory() {},
 
   /** nsISupports */
   QueryInterface: ChromeUtils.generateQI([

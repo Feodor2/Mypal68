@@ -12,7 +12,7 @@
 #include "HttpLog.h"
 #include "LoadInfo.h"
 #include "mozIThirdPartyUtil.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ConsoleReportCollector.h"
@@ -648,6 +648,15 @@ HttpBaseChannel::SetContentCharset(const nsACString& aContentCharset) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetContentDisposition(uint32_t* aContentDisposition) {
+  // See bug 1658877. If mContentDispositionHint is already
+  // DISPOSITION_ATTACHMENT, it means this channel is created from a
+  // download attribute. In this case, we should prefer the value from the
+  // download attribute rather than the value in content disposition header.
+  if (mContentDispositionHint == nsIChannel::DISPOSITION_ATTACHMENT) {
+    *aContentDisposition = mContentDispositionHint;
+    return NS_OK;
+  }
+
   nsresult rv;
   nsCString header;
 
@@ -677,14 +686,23 @@ HttpBaseChannel::GetContentDispositionFilename(
   nsCString header;
 
   rv = GetContentDispositionHeader(header);
+  if (NS_SUCCEEDED(rv)) {
+    rv = NS_GetFilenameFromDisposition(aContentDispositionFilename, header);
+  }
+
+  // If we failed to get the filename from header, we should use
+  // mContentDispositionFilename, since mContentDispositionFilename is set from
+  // the download attribute.
   if (NS_FAILED(rv)) {
-    if (!mContentDispositionFilename) return rv;
+    if (!mContentDispositionFilename) {
+      return rv;
+    }
 
     aContentDispositionFilename = *mContentDispositionFilename;
     return NS_OK;
   }
 
-  return NS_GetFilenameFromDisposition(aContentDispositionFilename, header);
+  return rv;
 }
 
 NS_IMETHODIMP
@@ -1997,7 +2015,7 @@ HttpBaseChannel::SetTopWindowURIIfUnknown(nsIURI* aTopWindowURI) {
 NS_IMETHODIMP
 HttpBaseChannel::GetTopWindowURI(nsIURI** aTopWindowURI) {
   nsCOMPtr<nsIURI> uriBeingLoaded =
-      AntiTrackingCommon::MaybeGetDocumentURIBeingLoaded(this);
+      AntiTrackingUtils::MaybeGetDocumentURIBeingLoaded(this);
   return GetTopWindowURI(uriBeingLoaded, aTopWindowURI);
 }
 
@@ -2236,11 +2254,7 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
     return NS_OK;
   }
 
-  bool isPrivateWin = aLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-  bool isSameOrigin = false;
-  aLoadInfo->GetLoadingPrincipal()->IsSameOrigin(aURI, isPrivateWin,
-                                                 &isSameOrigin);
-  if (!isSameOrigin) {
+  if (!aLoadInfo->GetLoadingPrincipal()->IsSameOrigin(aURI)) {
     bool cors = false;
     nsAutoCString corsOrigin;
     nsresult rv = aResponseHead->GetHeader(
@@ -2252,12 +2266,7 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
         nsCOMPtr<nsIURI> corsOriginURI;
         rv = NS_NewURI(getter_AddRefs(corsOriginURI), corsOrigin);
         if (NS_SUCCEEDED(rv)) {
-          bool isPrivateWin =
-              aLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-          bool isSameOrigin = false;
-          aLoadInfo->GetLoadingPrincipal()->IsSameOrigin(
-              corsOriginURI, isPrivateWin, &isSameOrigin);
-          if (isSameOrigin) {
+          if (aLoadInfo->GetLoadingPrincipal()->IsSameOrigin(corsOriginURI)) {
             cors = true;
           }
         }

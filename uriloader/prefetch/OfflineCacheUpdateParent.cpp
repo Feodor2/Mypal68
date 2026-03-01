@@ -72,7 +72,7 @@ void OfflineCacheUpdateParent::ActorDestroy(ActorDestroyReason why) {
 nsresult OfflineCacheUpdateParent::Schedule(
     nsIURI* aManifestURI, nsIURI* aDocumentURI,
     const PrincipalInfo& aLoadingPrincipalInfo, const bool& stickDocument,
-    const CookieSettingsArgs& aCookieSettingsArgs) {
+    const CookieJarSettingsArgs& aCookieJarSettingsArgs) {
   LOG(("OfflineCacheUpdateParent::RecvSchedule [%p]", this));
 
   RefPtr<nsOfflineCacheUpdate> update;
@@ -127,7 +127,7 @@ nsresult OfflineCacheUpdateParent::Schedule(
                       nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    update->SetCookieSettingsArgs(aCookieSettingsArgs);
+    update->SetCookieJarSettingsArgs(aCookieJarSettingsArgs);
 
     // Must add before Schedule() call otherwise we would miss
     // oncheck event notification.

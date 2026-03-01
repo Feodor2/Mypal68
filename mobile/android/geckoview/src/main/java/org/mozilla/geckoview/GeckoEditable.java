@@ -1443,11 +1443,12 @@ import android.view.inputmethod.EditorInfo;
         // display the ime. We can display a widget for date and time types and, if the sdk version
         // is 11 or greater, for datetime/month/week as well.
         int state;
-        if (typeHint != null && (typeHint.equalsIgnoreCase("date") ||
-                                 typeHint.equalsIgnoreCase("time") ||
-                                 typeHint.equalsIgnoreCase("month") ||
-                                 typeHint.equalsIgnoreCase("week") ||
-                                 typeHint.equalsIgnoreCase("datetime-local"))) {
+        if ((typeHint != null && (typeHint.equalsIgnoreCase("date") ||
+                                  typeHint.equalsIgnoreCase("time") ||
+                                  typeHint.equalsIgnoreCase("month") ||
+                                  typeHint.equalsIgnoreCase("week") ||
+                                  typeHint.equalsIgnoreCase("datetime-local"))) ||
+            (modeHint != null && modeHint.equals("none"))) {
             state = SessionTextInput.EditableListener.IME_STATE_DISABLED;
         } else {
             state = originalState;
@@ -1535,6 +1536,13 @@ import android.view.inputmethod.EditorInfo;
         outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE;
         outAttrs.actionLabel = null;
 
+        if (modeHint.equals("none")) {
+            // inputmode=none hides VKB at force.
+            outAttrs.inputType = InputType.TYPE_NULL;
+            toggleSoftInput(/* force */ true, SessionTextInput.EditableListener.IME_STATE_DISABLED);
+            return;
+        }
+
         if (state == SessionTextInput.EditableListener.IME_STATE_DISABLED) {
             outAttrs.inputType = InputType.TYPE_NULL;
             toggleSoftInput(/* force */ false, state);
@@ -1549,7 +1557,7 @@ import android.view.inputmethod.EditorInfo;
                 "password".equalsIgnoreCase(typeHint)) {
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_PASSWORD;
         } else if (typeHint.equalsIgnoreCase("url") ||
-                typeHint.equalsIgnoreCase("mozAwesomebar")) {
+                modeHint.equals("mozAwesomebar")) {
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_URI;
         } else if (typeHint.equalsIgnoreCase("email")) {
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
@@ -1561,16 +1569,16 @@ import android.view.inputmethod.EditorInfo;
                                  InputType.TYPE_NUMBER_VARIATION_NORMAL;
         } else {
             // We look at modeHint
-            if (modeHint.equalsIgnoreCase("tel")) {
+            if (modeHint.equals("tel")) {
                 outAttrs.inputType = InputType.TYPE_CLASS_PHONE;
-            } else if (modeHint.equalsIgnoreCase("url")) {
+            } else if (modeHint.equals("url")) {
                 outAttrs.inputType = InputType.TYPE_TEXT_VARIATION_URI;
-            } else if (modeHint.equalsIgnoreCase("email")) {
+            } else if (modeHint.equals("email")) {
                 outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
-            } else if (modeHint.equalsIgnoreCase("numeric")) {
+            } else if (modeHint.equals("numeric")) {
                 outAttrs.inputType = InputType.TYPE_CLASS_NUMBER |
                                      InputType.TYPE_NUMBER_VARIATION_NORMAL;
-            } else if (modeHint.equalsIgnoreCase("decimal")) {
+            } else if (modeHint.equals("decimal")) {
                 outAttrs.inputType = InputType.TYPE_CLASS_NUMBER |
                                      InputType.TYPE_NUMBER_FLAG_DECIMAL;
             } else {

@@ -1043,7 +1043,13 @@ enum Role {
    */
   FORM_LANDMARK = 178,
 
-  LAST_ROLE = FORM_LANDMARK
+  /**
+   * Represents the marker associated with a list item. In unordered lists,
+   * this is a bullet, while in ordered lists this is a number.
+   */
+  LISTITEM_MARKER = 179,
+
+  LAST_ROLE = LISTITEM_MARKER
 };
 
 }  // namespace roles

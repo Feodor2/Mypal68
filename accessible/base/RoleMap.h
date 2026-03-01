@@ -1630,4 +1630,14 @@ ROLE(FORM_LANDMARK,
      IA2_ROLE_FORM,
      java::SessionAccessibility::CLASSNAME_VIEW,
      eNoNameRule)
+
+ROLE(LISTITEM_MARKER,
+     "list item marker",
+     ATK_ROLE_UNKNOWN,
+     @"AXListMarker",
+     NSAccessibilityUnknownSubrole,
+     ROLE_SYSTEM_STATICTEXT,
+     ROLE_SYSTEM_STATICTEXT,
+     java::SessionAccessibility::CLASSNAME_VIEW,
+     eNoNameRule)
 // clang-format on

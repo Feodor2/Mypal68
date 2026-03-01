@@ -18,7 +18,7 @@
 #include "nsNetCID.h"
 #include "nsIPrefBranch.h"
 #include "mozilla/Unused.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsIURI.h"
 
 using mozilla::Unused;
@@ -82,12 +82,12 @@ void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
                 nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
                 nsIContentPolicy::TYPE_OTHER);
 
-  nsCOMPtr<nsICookieSettings> cookieSettings =
-      aAllowed ? CookieSettings::Create() : CookieSettings::CreateBlockingAll();
-  MOZ_ASSERT(cookieSettings);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      aAllowed ? CookieJarSettings::Create() : CookieJarSettings::CreateBlockingAll();
+  MOZ_ASSERT(cookieJarSettings);
 
   nsCOMPtr<nsILoadInfo> loadInfo = dummyChannel->LoadInfo();
-  loadInfo->SetCookieSettings(cookieSettings);
+  loadInfo->SetCookieJarSettings(cookieJarSettings);
 
   nsresult rv = aCookieService->SetCookieStringFromHttp(
       uri, nsDependentCString(aCookieString), dummyChannel);
@@ -187,7 +187,7 @@ void InitPrefs(nsIPrefBranch* aPrefBranch) {
   aPrefBranch->SetIntPref(kPrefCookieQuotaPerHost, 49);
   // Set the base domain limit to 50 so we have a known value.
   aPrefBranch->SetIntPref(kCookiesMaxPerHost, 50);
-  Preferences::SetBool("network.cookieSettings.unblocked_for_testing", true);
+  Preferences::SetBool("network.cookieJarSettings.unblocked_for_testing", true);
 }
 
 TEST(TestCookie, TestCookieMain)
@@ -718,7 +718,7 @@ TEST(TestCookie, TestCookieMain)
 
   // *** leave-secure-alone tests
 
-  // testing items 0 & 1 for 3.1 of spec Deprecate modification of ’secure’
+  // testing items 0 & 1 for 3.1 of spec Deprecate modification of ???secure???
   // cookies from non-secure origins
   SetACookie(cookieService, "http://www.security.test/",
              "test=non-security; secure");
@@ -728,7 +728,7 @@ TEST(TestCookie, TestCookieMain)
              "test=security; secure; path=/path/");
   GetACookieNoHttp(cookieService, "https://www.security.test/path/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=security"));
-  // testing items 2 & 3 & 4 for 3.2 of spec Deprecate modification of ’secure’
+  // testing items 2 & 3 & 4 for 3.2 of spec Deprecate modification of ???secure???
   // cookies from non-secure origins
   // Secure site can modify cookie value
   SetACookie(cookieService, "https://www.security.test/path/",
@@ -911,7 +911,7 @@ TEST(TestCookie, TestCookieMain)
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
 
   // None of these cookies will be set because using
-  // CookieSettings::CreateBlockingAll().
+  // CookieJarSettings::CreateBlockingAll().
   SetACookieJarBlocked(cookieService, "http://samesite.test", "unset=yes");
   SetACookieJarBlocked(cookieService, "http://samesite.test",
                        "unspecified=yes; samesite");

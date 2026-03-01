@@ -33,7 +33,7 @@ function checkSorting(cookies) {
 
 add_task(async function() {
   Services.prefs.setBoolPref(
-    "network.cookieSettings.unblocked_for_testing",
+    "network.cookieJarSettings.unblocked_for_testing",
     true
   );
 

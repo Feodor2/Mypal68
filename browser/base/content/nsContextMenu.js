@@ -216,6 +216,7 @@ class nsContextMenu {
     this.onCTPPlugin = context.onCTPPlugin;
     this.onDRMMedia = context.onDRMMedia;
     this.onPiPVideo = context.onPiPVideo;
+    this.onMediaStreamVideo = context.onMediaStreamVideo;
     this.onEditable = context.onEditable;
     this.onImage = context.onImage;
     this.onKeywordField = context.onKeywordField;
@@ -833,6 +834,7 @@ class nsContextMenu {
           "media.videocontrols.picture-in-picture.enabled"
         ) &&
         this.onVideo &&
+        !this.onMediaStreamVideo &&
         !this.target.ownerDocument.fullscreen;
       this.showItem("context-video-pictureinpicture", shouldDisplay);
     }
@@ -1573,7 +1575,7 @@ class nsContextMenu {
       uri: makeURI(linkURL),
       loadingPrincipal: this.principal,
       contentPolicyType: Ci.nsIContentPolicy.TYPE_SAVEAS_DOWNLOAD,
-      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
+      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
     });
 
     if (linkDownload) {

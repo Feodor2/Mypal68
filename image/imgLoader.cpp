@@ -903,8 +903,8 @@ static nsresult NewImageChannel(
 
   nsSecurityFlags securityFlags =
       aCORSMode == imgIRequest::CORS_NONE
-          ? nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS
-          : nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+          ? nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT
+          : nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT;
   if (aCORSMode == imgIRequest::CORS_ANONYMOUS) {
     securityFlags |= nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
   } else if (aCORSMode == imgIRequest::CORS_USE_CREDENTIALS) {
@@ -947,7 +947,7 @@ static nsresult NewImageChannel(
     // requestingNode.
     rv = NS_NewChannel(aResult, aURI, nsContentUtils::GetSystemPrincipal(),
                        securityFlags, aPolicyType,
-                       nullptr,  // nsICookieSettings
+                       nullptr,  // nsICookieJarSettings
                        nullptr,  // PerformanceStorage
                        nullptr,  // loadGroup
                        callbacks, aLoadFlags);

@@ -4,11 +4,11 @@
 
 #include "Cookie.h"
 #include "CookieCommons.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/ContentBlockingNotifier.h" //MY
 #include "nsIChannel.h" //MY
 #include "nsICookiePermission.h"
 #include "nsICookieService.h"
-#include "nsICookieSettings.h" //MY
+#include "nsICookieJarSettings.h" //MY
 #include "nsIEffectiveTLDService.h"
 #include "nsIObserverService.h" //MY
 #include "nsScriptSecurityManager.h"
@@ -146,8 +146,8 @@ void CookieCommons::NotifyRejected(nsIURI* aHostURI, nsIChannel* aChannel,
     MOZ_ASSERT(aOperation == OPERATION_READ);
   }
 
-  AntiTrackingCommon::NotifyBlockingDecision(
-      aChannel, AntiTrackingCommon::BlockingDecision::eBlock, aRejectedReason);
+  ContentBlockingNotifier::OnDecision(
+      aChannel, ContentBlockingNotifier::BlockingDecision::eBlock, aRejectedReason);
 }
 
 bool CookieCommons::CheckPathSize(const CookieStruct& aCookieData) {
@@ -193,9 +193,9 @@ bool CookieCommons::CheckCookiePermission(nsIChannel* aChannel,
   }
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsCOMPtr<nsICookieSettings> cookieSettings;
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   nsresult rv =
-      loadInfo->GetCookieSettings(getter_AddRefs(cookieSettings));
+      loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return true;
   }
@@ -215,7 +215,7 @@ bool CookieCommons::CheckCookiePermission(nsIChannel* aChannel,
   }
 
   uint32_t cookiePermission = nsICookiePermission::ACCESS_DEFAULT;
-  rv = cookieSettings->CookiePermission(channelPrincipal, &cookiePermission);
+  rv = cookieJarSettings->CookiePermission(channelPrincipal, &cookiePermission);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return true;
   }

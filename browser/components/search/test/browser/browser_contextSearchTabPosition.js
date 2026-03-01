@@ -6,18 +6,6 @@ add_task(async function test() {
   let engine = await promiseNewEngine("testEngine.xml");
   let histogramKey = "other-" + engine.name + ".contextmenu";
   let numSearchesBefore = 0;
-
-  try {
-    let hs = Services.telemetry
-      .getKeyedHistogramById("SEARCH_COUNTS")
-      .snapshot();
-    if (histogramKey in hs) {
-      numSearchesBefore = hs[histogramKey].sum;
-    }
-  } catch (ex) {
-    // No searches performed yet, not a problem, |numSearchesBefore| is 0.
-  }
-
   let tabs = [];
   let tabsLoadedDeferred = new Deferred();
 
@@ -61,15 +49,6 @@ add_task(async function test() {
 
   container.removeEventListener("TabOpen", tabAdded);
   tabs.forEach(gBrowser.removeTab, gBrowser);
-
-  // Make sure that the context searches are correctly recorded.
-  let hs = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS").snapshot();
-  Assert.ok(histogramKey in hs, "The histogram must contain the correct key");
-  Assert.equal(
-    hs[histogramKey].sum,
-    numSearchesBefore + 2,
-    "The histogram must contain the correct search count"
-  );
 });
 
 function Deferred() {

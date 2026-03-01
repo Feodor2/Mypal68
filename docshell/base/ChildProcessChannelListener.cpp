@@ -20,19 +20,14 @@ void ChildProcessChannelListener::RegisterCallback(uint64_t aIdentifier,
   }
 }
 
-NS_IMETHODIMP ChildProcessChannelListener::OnChannelReady(
+void ChildProcessChannelListener::OnChannelReady(
     nsIChildChannel* aChannel, uint64_t aIdentifier) {
   if (auto callback = mCallbacks.Extract(aIdentifier)) {
     (*callback)(aChannel);
   } else {
     mChannels.InsertOrUpdate(aIdentifier, aChannel);
   }
-  return NS_OK;
 }
-
-ChildProcessChannelListener::ChildProcessChannelListener() = default;
-
-ChildProcessChannelListener::~ChildProcessChannelListener() = default;
 
 already_AddRefed<ChildProcessChannelListener>
 ChildProcessChannelListener::GetSingleton() {
@@ -43,8 +38,6 @@ ChildProcessChannelListener::GetSingleton() {
   RefPtr<ChildProcessChannelListener> cpcl = sCPCLSingleton;
   return cpcl.forget();
 }
-
-NS_IMPL_ISUPPORTS(ChildProcessChannelListener, nsIChildProcessChannelListener);
 
 }  // namespace dom
 }  // namespace mozilla

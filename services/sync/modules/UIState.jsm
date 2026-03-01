@@ -178,6 +178,7 @@ const UIStateInternal = {
   _populateWithProfile(state, profile) {
     state.displayName = profile.displayName;
     state.avatarURL = profile.avatar;
+    state.avatarIsDefault = profile.avatarDefault;
   },
 
   async _getUserData() {

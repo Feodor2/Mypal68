@@ -24,7 +24,7 @@
         "dragstart",
         "drop",
         "dragover",
-        "dragexit",
+        "dragleave",
         "dragend",
       ];
       for (let event_name of event_names) {
@@ -526,7 +526,7 @@
       event.stopPropagation();
     }
 
-    on_dragexit(event) {
+    on_dragleave(event) {
       PlacesControllerDragHelper.currentDropTarget = null;
       this.removeAttribute("dragover");
 

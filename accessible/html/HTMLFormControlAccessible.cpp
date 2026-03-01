@@ -21,6 +21,7 @@
 #include "nsNameSpaceManager.h"
 #include "mozilla/dom/ScriptSettings.h"
 
+#include "mozilla/EditorBase.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
@@ -81,11 +82,11 @@ void HTMLRadioButtonAccessible::GetPositionAndSizeInternal(int32_t* aPosInSet,
   RefPtr<nsContentList> inputElms;
 
   nsCOMPtr<nsIFormControl> formControlNode(do_QueryInterface(mContent));
-  dom::Element* formElm = formControlNode->GetFormElement();
-  if (formElm)
+  if (dom::Element* formElm = formControlNode->GetForm()) {
     inputElms = NS_GetContentList(formElm, namespaceId, tagName);
-  else
+  } else {
     inputElms = NS_GetContentList(mContent->OwnerDoc(), namespaceId, tagName);
+  }
   NS_ENSURE_TRUE_VOID(inputElms);
 
   uint32_t inputCount = inputElms->Length(false);
@@ -345,14 +346,15 @@ uint64_t HTMLTextFieldAccessible::NativeState() const {
                                    autocomplete);
 
     if (!autocomplete.LowerCaseEqualsLiteral("off")) {
-      Element* formElement = input->GetFormElement();
+      Element* formElement = input->GetForm();
       if (formElement) {
         formElement->GetAttr(kNameSpaceID_None, nsGkAtoms::autocomplete,
                              autocomplete);
       }
 
-      if (!formElement || !autocomplete.LowerCaseEqualsLiteral("off"))
+      if (!formElement || !autocomplete.LowerCaseEqualsLiteral("off")) {
         state |= states::SUPPORTS_AUTOCOMPLETION;
+      }
     }
   }
 
@@ -372,7 +374,7 @@ bool HTMLTextFieldAccessible::DoAction(uint8_t aIndex) const {
   return true;
 }
 
-already_AddRefed<TextEditor> HTMLTextFieldAccessible::GetEditor() const {
+already_AddRefed<EditorBase> HTMLTextFieldAccessible::GetEditor() const {
   RefPtr<TextControlElement> textControlElement =
       TextControlElement::FromNodeOrNull(mContent);
   if (!textControlElement) {

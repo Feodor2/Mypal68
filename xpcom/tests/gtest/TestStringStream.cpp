@@ -9,6 +9,9 @@
 #include "nsTArray.h"
 #include "nsIInputStream.h"
 #include "nsCOMPtr.h"
+#include "nsStreamUtils.h"
+#include "mozilla/Span.h"
+#include "nsISeekableStream.h"
 
 namespace {
 
@@ -55,3 +58,40 @@ TEST(StringStream, Simple_4k)
 
 TEST(StringStream, Clone_4k)
 { TestStringStreamClone(1024 * 4); }
+
+static nsresult CloseStreamThenRead(nsIInputStream* aInStr, void* aClosure,
+                                    const char* aBuffer, uint32_t aOffset,
+                                    uint32_t aCount, uint32_t* aCountWritten) {
+  // Closing the stream will free the data
+  nsresult rv = aInStr->Close();
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  // This will likely be allocated in the same slot as what we have in aBuffer
+  char* newAlloc = moz_xstrdup("abcd");
+
+  char* toBuf = static_cast<char*>(aClosure);
+  memcpy(&toBuf[aOffset], aBuffer, aCount);
+  *aCountWritten = aCount;
+  free(newAlloc);
+  return NS_OK;
+}
+
+TEST(StringStream, CancelInReadSegments)
+{
+  char* buffer = moz_xstrdup("test");
+  nsCOMPtr<nsIInputStream> stream;
+  nsresult rv = NS_NewByteInputStream(
+      getter_AddRefs(stream), mozilla::Span(buffer, 5), NS_ASSIGNMENT_ADOPT);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
+  char buf[100];
+  uint32_t count = 0;
+  uint64_t available = 0;
+  rv = stream->Available(&available);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  rv = stream->ReadSegments(CloseStreamThenRead, buf, available, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_TRUE(count == 5);
+  ASSERT_TRUE(!strcmp(buf, "test"));
+}

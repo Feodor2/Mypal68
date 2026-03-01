@@ -12,6 +12,8 @@
 #include "mozilla/Poison.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "nsIWidget.h"
 #include "nsViewManager.h"
 #include "nsIFrame.h"
@@ -341,15 +343,13 @@ void nsView::DoResetWidgetBounds(bool aMoveOnly, bool aInvalidateChangedSize) {
   DesktopRect deskRect = newBounds / scale;
   if (changedPos) {
     if (changedSize && !aMoveOnly) {
-      widget->ResizeClient(deskRect.X(), deskRect.Y(), deskRect.Width(),
-                           deskRect.Height(), aInvalidateChangedSize);
+      widget->ResizeClient(deskRect, aInvalidateChangedSize);
     } else {
-      widget->MoveClient(deskRect.X(), deskRect.Y());
+      widget->MoveClient(deskRect.TopLeft());
     }
   } else {
     if (changedSize && !aMoveOnly) {
-      widget->ResizeClient(deskRect.Width(), deskRect.Height(),
-                           aInvalidateChangedSize);
+      widget->ResizeClient(deskRect.Size(), aInvalidateChangedSize);
     }  // else do nothing!
   }
 
@@ -963,6 +963,40 @@ bool nsView::WindowResized(nsIWidget* aWidget, int32_t aWidth,
 
   return false;
 }
+
+#if defined(MOZ_WIDGET_ANDROID)
+static bool NotifyDynamicToolbarMaxHeightChanged(
+    dom::BrowserParent* aBrowserParent, void* aArg) {
+  ScreenIntCoord* height = static_cast<ScreenIntCoord*>(aArg);
+  aBrowserParent->DynamicToolbarMaxHeightChanged(*height);
+  return false;
+}
+
+void nsView::DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight) {
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "Should be only called for the browser parent process");
+  MOZ_ASSERT(this == mViewManager->GetRootView(),
+             "Should be called for the root view");
+
+  PresShell* presShell = mViewManager->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  dom::Document* document = presShell->GetDocument();
+  if (!document) {
+    return;
+  }
+
+  nsPIDOMWindowOuter* window = document->GetWindow();
+  if (!window) {
+    return;
+  }
+
+  nsContentUtils::CallOnAllRemoteChildren(
+      window, NotifyDynamicToolbarMaxHeightChanged, &aHeight);
+}
+#endif
 
 bool nsView::RequestWindowClose(nsIWidget* aWidget) {
   if (mFrame && IsPopupWidget(aWidget) && mFrame->IsMenuPopupFrame()) {

@@ -135,6 +135,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Whether the quantum bar displays design update 1.
   ["update1", false],
+
+  // If true, we strip https:// instead of http:// from URLs in the results view.
+  ["view.stripHttps", false],
 ]);
 const PREF_OTHER_DEFAULTS = new Map([
   ["keyword.enabled", true],

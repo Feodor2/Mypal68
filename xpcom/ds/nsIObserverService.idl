@@ -58,9 +58,27 @@ interface nsIObserverService : nsISupports
      * @param aTopic   : The notification topic or subject.
      * @param someData : Notification specific wide string.
      */
-    void notifyObservers( in nsISupports aSubject, 
-                          in string aTopic, 
+    void notifyObservers( in nsISupports aSubject,
+                          in string aTopic,
                           [optional] in wstring someData );
+
+    %{C++
+    /**
+     * notifyWhenScriptSafe
+     *
+     * Notifies all registered listeners of the given topic once it is safe to
+     * run script.
+     *
+     * Implemented in "nsObserverService.cpp".
+     *
+     * @param aSubject : Notification specific interface pointer.
+     * @param aTopic   : The notification topic or subject.
+     * @param someData : Notification specific wide string.
+     */
+    nsresult NotifyWhenScriptSafe(nsISupports* aSubject,
+                                  const char* aTopic,
+                                  const char16_t* aData = nullptr);
+    %}
 
     /**
      * enumerateObservers

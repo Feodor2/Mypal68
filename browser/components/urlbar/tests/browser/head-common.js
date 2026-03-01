@@ -68,27 +68,6 @@ async function withHttpServer(
   }
 }
 
-function promiseSearchComplete(win = window, dontAnimate = false) {
-  return UrlbarTestUtils.promiseSearchComplete(win, dontAnimate);
-}
-
-function promiseAutocompleteResultPopup(
-  value,
-  win = window,
-  fireInputEvent = false
-) {
-  return UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: win,
-    waitForFocus,
-    value,
-    fireInputEvent,
-  });
-}
-
-async function waitForAutocompleteResultAt(index) {
-  return UrlbarTestUtils.waitForAutocompleteResultAt(window, index);
-}
-
 function promiseSuggestionsPresent(msg = "") {
   return UrlbarTestUtils.promiseSuggestionsPresent(window, msg);
 }

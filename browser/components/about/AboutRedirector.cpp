@@ -58,9 +58,9 @@ static const RedirEntry kRedirMap[] = {
     {"tabcrashed", "chrome://browser/content/aboutTabCrashed.xhtml",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
-    {"policies", "chrome://browser/content/policies/aboutPolicies.xhtml",
+    {"policies", "chrome://browser/content/policies/aboutPolicies.html",
      nsIAboutModule::ALLOW_SCRIPT},
-    {"privatebrowsing", "chrome://browser/content/aboutPrivateBrowsing.xhtml",
+    {"privatebrowsing", "chrome://browser/content/aboutPrivateBrowsing.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT},
     {"rights", "chrome://global/content/aboutRights.xhtml",
@@ -77,8 +77,7 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGED_CHILD |
          nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
-    {"preferences",
-     "chrome://browser/content/preferences/in-content/preferences.xhtml",
+    {"preferences", "chrome://browser/content/preferences/preferences.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},
     {"downloads",
      "chrome://browser/content/downloads/contentAreaDownloadsView.xhtml",

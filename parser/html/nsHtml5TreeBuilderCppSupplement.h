@@ -594,7 +594,7 @@ void nsHtml5TreeBuilder::appendElement(nsIContentHandle* aChild,
   if (mBuilder) {
     nsresult rv = nsHtml5TreeOperation::Append(
         static_cast<nsIContent*>(aChild), static_cast<nsIContent*>(aParent),
-        mBuilder);
+        mozilla::dom::FROM_PARSER_FRAGMENT, mBuilder);
     if (NS_FAILED(rv)) {
       MarkAsBrokenAndRequestSuspensionWithBuilder(rv);
     }
@@ -606,7 +606,11 @@ void nsHtml5TreeBuilder::appendElement(nsIContentHandle* aChild,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  opAppend operation(aChild, aParent);
+
+  opAppend operation(aChild, aParent,
+                     (!!mSpeculativeLoadStage)
+                         ? mozilla::dom::FROM_PARSER_NETWORK
+                         : mozilla::dom::FROM_PARSER_DOCUMENT_WRITE);
   treeOp->Init(mozilla::AsVariant(operation));
 }
 

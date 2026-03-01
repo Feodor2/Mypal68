@@ -17,8 +17,8 @@ class nsIURI;
 class nsIDocShell;
 class nsIChildChannel;
 class nsIReferrerInfo;
-class OriginAttibutes;
 namespace mozilla {
+class OriginAttributes;  // MY
 namespace dom {
 class DocShellLoadStateInit;
 }  // namespace dom

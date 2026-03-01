@@ -19,7 +19,9 @@
 #include "nsIWebProgress.h"
 #include "prenv.h"
 #include "nsIDocShellTreeItem.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/Selection.h"
@@ -735,18 +737,16 @@ void logging::Node(const char* aDescr, nsINode* aNode) {
     return;
   }
 
-  nsINode* parentNode = aNode->GetParentNode();
-  int32_t idxInParent = parentNode ? parentNode->ComputeIndexOf(aNode) : -1;
-
+  Maybe<uint32_t> idxInParent = aNode->ComputeIndexInParentNode();
   if (aNode->IsText()) {
     printf("%s: %p, text node, idx in parent: %d\n", aDescr,
-           static_cast<void*>(aNode), idxInParent);
+           static_cast<void*>(aNode), oString(idxInParent).c_str());
     return;
   }
 
   if (!aNode->IsElement()) {
     printf("%s: %p, not accessible node type, idx in parent: %d\n", aDescr,
-           static_cast<void*>(aNode), idxInParent);
+           static_cast<void*>(aNode), oString(idxInParent).c_str());
     return;
   }
 

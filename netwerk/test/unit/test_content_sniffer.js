@@ -1,5 +1,7 @@
 // This file tests nsIContentSniffer, introduced in bug 324985
 
+"use strict";
+
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 const unknownType = "application/x-unknown-content-type";
@@ -18,27 +20,15 @@ var isNosniff = false;
  * is de-facto a service)
  */
 var sniffer = {
-  QueryInterface: function sniffer_qi(iid) {
-    if (
-      iid.equals(Ci.nsISupports) ||
-      iid.equals(Ci.nsIFactory) ||
-      iid.equals(Ci.nsIContentSniffer)
-    ) {
-      return this;
-    }
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIContentSniffer"]),
   createInstance: function sniffer_ci(outer, iid) {
     if (outer) {
-      throw Cr.NS_ERROR_NO_AGGREGATION;
+      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
     }
     return this.QueryInterface(iid);
   },
-  lockFactory: function sniffer_lockf(lock) {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-  },
 
-  getMIMETypeFromContent: function(request, data, length) {
+  getMIMETypeFromContent(request, data, length) {
     return sniffedType;
   },
 };
@@ -76,11 +66,11 @@ var listener = {
       do_throw("Unexpected exception: " + e);
     }
 
-    throw Cr.NS_ERROR_ABORT;
+    throw Components.Exception("", Cr.NS_ERROR_ABORT);
   },
 
   onDataAvailable: function test_ODA() {
-    throw Cr.NS_ERROR_UNEXPECTED;
+    throw Components.Exception("", Cr.NS_ERROR_UNEXPECTED);
   },
 
   onStopRequest: function test_onStopR(request, status) {

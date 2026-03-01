@@ -56,6 +56,7 @@
 #include "nsImageFrame.h"
 #include "nsINamed.h"
 #include "nsIObserverService.h"
+#include "nsMenuPopupFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPluginFrame.h"
 #include "nsTreeBodyFrame.h"
@@ -275,8 +276,8 @@ nsAccessibilityService::ListenersChanged(nsIArray* aEventChanges) {
 
     RefPtr<EventTarget> target;
     change->GetTarget(getter_AddRefs(target));
-    nsCOMPtr<nsIContent> node(do_QueryInterface(target));
-    if (!node || !node->IsHTMLElement()) {
+    nsIContent* content(nsIContent::FromEventTargetOrNull(target));
+    if (!content || !content->IsHTMLElement()) {
       continue;
     }
 
@@ -285,14 +286,14 @@ nsAccessibilityService::ListenersChanged(nsIArray* aEventChanges) {
     NS_ENSURE_SUCCESS(rv, rv);
 
     for (uint32_t i = 0; i < changeCount; i++) {
-      Document* ownerDoc = node->OwnerDoc();
+      Document* ownerDoc = content->OwnerDoc();
       DocAccessible* document = GetExistingDocAccessible(ownerDoc);
 
       // Create an accessible for a inaccessible element having click event
       // handler.
-      if (document && !document->HasAccessible(node) &&
+      if (document && !document->HasAccessible(content) &&
           nsCoreUtils::HasClickListener(node)) {
-        document->ContentInserted(node, node->GetNextSibling());
+        document->ContentInserted(content, content->GetNextSibling());
         break;
       }
     }
@@ -589,19 +590,6 @@ void nsAccessibilityService::RangeValueChanged(PresShell* aPresShell,
     if (accessible) {
       document->FireDelayedEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE,
                                  accessible);
-    }
-  }
-}
-
-void nsAccessibilityService::UpdateListBullet(PresShell* aPresShell,
-                                              nsIContent* aHTMLListItemContent,
-                                              bool aHasBullet) {
-  DocAccessible* document = GetDocAccessible(aPresShell);
-  if (document) {
-    Accessible* accessible = document->GetAccessible(aHTMLListItemContent);
-    if (accessible) {
-      HTMLLIAccessible* listItem = accessible->AsHTMLListItem();
-      if (listItem) listItem->UpdateBullet(aHasBullet);
     }
   }
 }
@@ -1150,6 +1138,13 @@ Accessible* nsAccessibilityService::CreateAccessible(nsINode* aNode,
                          nsGkAtoms::maligngroup_, nsGkAtoms::malignmark_,
                          nsGkAtoms::mspace_, nsGkAtoms::semantics_)) {
         newAcc = new HyperTextAccessible(content, document);
+      }
+    } else if (content->IsGeneratedContentContainerForMarker()) {
+      if (aContext->IsHTMLListItem()) {
+        newAcc = new HTMLListBulletAccessible(content, document);
+      }
+      if (aIsSubtreeHidden) {
+        *aIsSubtreeHidden = true;
       }
     }
   }

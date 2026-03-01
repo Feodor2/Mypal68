@@ -11,6 +11,7 @@
 #include "nsEscape.h"
 #include "nsHttpTransaction.h"
 #include "nsICancelable.h"
+#include "nsICachingChannel.h"
 #include "nsIHttpPushListener.h"
 #include "nsIProtocolProxyService2.h"
 #include "nsIOService.h"
@@ -203,7 +204,7 @@ nsresult TRRServiceChannel::ResolveProxy() {
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel), mURI,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER);
   if (NS_SUCCEEDED(rv)) {
     nsCOMPtr<nsIProtocolProxyService> pps =
@@ -411,7 +412,7 @@ nsresult TRRServiceChannel::BeginConnect() {
   if (mLoadFlags & LOAD_FRESH_CONNECTION) {
     // just the initial document resets the whole pool
     if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
-      //gHttpHandler->AltServiceCache()->ClearAltServiceMappings();
+      gHttpHandler->AltServiceCache()->ClearAltServiceMappings();
       rv = gHttpHandler->ConnMgr()->DoShiftReloadConnectionCleanup(
           mConnectionInfo);
       if (NS_FAILED(rv)) {
@@ -484,7 +485,6 @@ nsresult TRRServiceChannel::Connect() {
   }
 
   return mTransaction->AsyncRead(this, getter_AddRefs(mTransactionPump));
-return rv;
 }
 
 nsresult TRRServiceChannel::SetupTransaction() {

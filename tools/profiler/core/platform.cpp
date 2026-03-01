@@ -42,7 +42,6 @@
 #include "ThreadInfo.h"
 #include "VTuneProfiler.h"
 
-#include "js/TraceLoggerAPI.h"
 #include "js/ProfilingFrameIterator.h"
 #include "memory_hooks.h"
 #include "mozilla/ArrayUtils.h"
@@ -250,9 +249,7 @@ static uint32_t AvailableFeatures() {
   // The memory hooks are not available.
   ProfilerFeature::ClearNativeAllocations(features);
 #endif
-  if (!JS::TraceLoggerSupported()) {
-    ProfilerFeature::ClearJSTracer(features);
-  }
+
 
   return features;
 }
@@ -958,9 +955,7 @@ class ActivePS {
     uint32_t Flags = 0;
     Flags |=
         FeatureJS(aLock) ? uint32_t(JSInstrumentationFlags::StackSampling) : 0;
-    Flags |= FeatureJSTracer(aLock)
-                 ? uint32_t(JSInstrumentationFlags::TraceLogging)
-                 : 0;
+
     Flags |= FeatureJSAllocations(aLock)
                  ? uint32_t(JSInstrumentationFlags::Allocations)
                  : 0;
@@ -2566,7 +2561,7 @@ static void locked_profiler_stream_json_for_this_process(
       profiledThreadData->StreamJSON(
           buffer, cx, aWriter, CorePS::ProcessName(aLock),
           CorePS::ProcessStartTime(), aSinceTime,
-          ActivePS::FeatureJSTracer(aLock), aService);
+          aService);
     }
 
 #if defined(GP_OS_android)
@@ -2590,7 +2585,7 @@ static void locked_profiler_stream_json_for_this_process(
       profiledThreadData.StreamJSON(javaBuffer, nullptr, aWriter,
                                     CorePS::ProcessName(aLock),
                                     CorePS::ProcessStartTime(), aSinceTime,
-                                    ActivePS::FeatureJSTracer(aLock), nullptr);
+                                    nullptr);
     }
 #endif
 
@@ -2601,20 +2596,6 @@ static void locked_profiler_stream_json_for_this_process(
     }
   }
   aWriter.EndArray();
-
-  if (ActivePS::FeatureJSTracer(aLock)) {
-    aWriter.StartArrayProperty("jsTracerDictionary");
-    {
-      JS::AutoTraceLoggerLockGuard lockGuard;
-      // Collect Event Dictionary
-      JS::TraceLoggerDictionaryBuffer collectionBuffer(lockGuard);
-      while (collectionBuffer.NextChunk()) {
-        aWriter.StringElement(
-            MakeStringSpan(collectionBuffer.internalBuffer()));
-      }
-    }
-    aWriter.EndArray();
-  }
 
   aWriter.StartArrayProperty("pausedRanges");
   { buffer.StreamPausedRangesToJSON(aWriter, aSinceTime); }

@@ -3368,7 +3368,7 @@ nsDocShell::SetUseGlobalHistory(bool aUseGlobalHistory) {
     return NS_OK;
   }
 
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
   return history ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -6098,7 +6098,7 @@ nsDocShell::OnStateChange(nsIWebProgress* aProgress, nsIRequest* aRequest,
         nsCOMPtr<nsIWidget> mainWidget;
         GetMainWidget(getter_AddRefs(mainWidget));
         if (mainWidget) {
-          mainWidget->SetCursor(eCursor_spinning, nullptr, 0, 0);
+          mainWidget->SetCursor(nsIWidget::Cursor{eCursor_spinning});
         }
       }
     }
@@ -6114,10 +6114,11 @@ nsDocShell::OnStateChange(nsIWebProgress* aProgress, nsIRequest* aRequest,
       nsCOMPtr<nsIWidget> mainWidget;
       GetMainWidget(getter_AddRefs(mainWidget));
       if (mainWidget) {
-        mainWidget->SetCursor(eCursor_standard, nullptr, 0, 0);
+        mainWidget->SetCursor(nsIWidget::Cursor{eCursor_standard});
       }
     }
   }
+
   if ((~aStateFlags & (STATE_IS_DOCUMENT | STATE_STOP)) == 0) {
     nsCOMPtr<nsIWebProgress> webProgress =
         do_QueryInterface(GetAsSupports(this));
@@ -9561,15 +9562,12 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
         true,  // aInheritForAboutBlank
         isSrcdoc);
 
-    bool isURIUniqueOrigin =
-        StaticPrefs::security_data_uri_unique_opaque_origin() &&
-        SchemeIsData(aLoadState->URI());
-    inheritPrincipal = inheritAttrs && !isURIUniqueOrigin;
+    inheritPrincipal = inheritAttrs && !SchemeIsData(aLoadState->URI());
   }
 
   nsLoadFlags loadFlags = mDefaultLoadFlags;
   nsSecurityFlags securityFlags =
-      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
+      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL;
 
   if (aLoadState->FirstParty()) {
     // tag first party URL loads
@@ -10831,6 +10829,10 @@ nsresult nsDocShell::UpdateURLAndHistory(Document* aDocument, nsIURI* aNewURI,
     }
     newSHEntry->SetURI(aNewURI);
     newSHEntry->SetOriginalURI(aNewURI);
+    // Setting the resultPrincipalURI to nullptr is fine here: it will cause
+    // NS_GetFinalChannelURI to use the originalURI as the URI, which is aNewURI
+    // in our case.  We could also set it to aNewURI, with the same result.
+    newSHEntry->SetResultPrincipalURI(nullptr);
     newSHEntry->SetLoadReplace(false);
   }
 
@@ -11465,7 +11467,7 @@ nsDocShell::GetEditor(nsIEditor** aEditor) {
 
 NS_IMETHODIMP
 nsDocShell::SetEditor(nsIEditor* aEditor) {
-  HTMLEditor* htmlEditor = aEditor ? aEditor->AsHTMLEditor() : nullptr;
+  HTMLEditor* htmlEditor = aEditor ? aEditor->GetAsHTMLEditor() : nullptr;
   // If TextEditor comes, throw an error.
   if (aEditor && !htmlEditor) {
     return NS_ERROR_INVALID_ARG;
@@ -11582,7 +11584,7 @@ void nsDocShell::AddURIVisit(nsIURI* aURI, nsIURI* aPreviousURI,
     return;
   }
 
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
 
   if (history) {
     uint32_t visitURIFlags = 0;
@@ -12779,7 +12781,7 @@ void nsDocShell::UpdateGlobalHistoryTitle(nsIURI* aURI) {
     return;
   }
 
-  if (nsCOMPtr<IHistory> history = services::GetHistoryService()) {
+  if (nsCOMPtr<IHistory> history = services::GetHistory()) {
     history->SetURITitle(aURI, mTitle);
   }
 }

@@ -5,9 +5,10 @@
 #include "CookieCommons.h"
 #include "CookieLogging.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/CookiePersistentStorage.h"
 #include "mozilla/net/CookiePrivateStorage.h"
 #include "mozilla/net/CookieService.h"
@@ -386,21 +387,21 @@ CookieService::GetCookieStringFromHttp(nsIURI* aHostURI, nsIChannel* aChannel,
 }
 
 // static
-already_AddRefed<nsICookieSettings> CookieService::GetCookieSettings(
+already_AddRefed<nsICookieJarSettings> CookieService::GetCookieJarSettings(
     nsIChannel* aChannel) {
-  nsCOMPtr<nsICookieSettings> cookieSettings;
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   if (aChannel) {
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-    nsresult rv = loadInfo->GetCookieSettings(getter_AddRefs(cookieSettings));
+    nsresult rv = loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      cookieSettings = CookieSettings::CreateBlockingAll();
+      cookieJarSettings = CookieJarSettings::CreateBlockingAll();
     }
   } else {
-    cookieSettings = CookieSettings::Create();
+    cookieJarSettings = CookieJarSettings::Create();
   }
 
-  MOZ_ASSERT(cookieSettings);
-  return cookieSettings.forget();
+  MOZ_ASSERT(cookieJarSettings);
+  return cookieJarSettings.forget();
 }
 
 NS_IMETHODIMP
@@ -473,7 +474,7 @@ void CookieService::SetCookieStringInternal(
     return;
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings = GetCookieSettings(aChannel);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings = GetCookieJarSettings(aChannel);
 
   nsAutoCString hostFromURI;
   aHostURI->GetHost(hostFromURI);
@@ -491,7 +492,7 @@ void CookieService::SetCookieStringInternal(
   uint32_t rejectedReason = aRejectedReason;
 
   CookieStatus cookieStatus = CheckPrefs(
-      cookieSettings, aHostURI, aIsForeign, aIsThirdPartyTrackingResource,
+      cookieJarSettings, aHostURI, aIsForeign, aIsThirdPartyTrackingResource,
       aFirstPartyStorageAccessGranted,
       aCookieHeader, priorCookieCount, aOriginAttrs, &rejectedReason);
 
@@ -528,8 +529,8 @@ void CookieService::SetCookieStringInternal(
 }
 
 void CookieService::NotifyAccepted(nsIChannel* aChannel) {
-  AntiTrackingCommon::NotifyBlockingDecision(
-      aChannel, AntiTrackingCommon::BlockingDecision::eAllow, 0);
+  ContentBlockingNotifier::OnDecision(
+      aChannel, ContentBlockingNotifier::BlockingDecision::eAllow, 0);
 }
 
 /******************************************************************************
@@ -755,7 +756,7 @@ void CookieService::GetCookiesForURI(
     return;
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings = GetCookieSettings(aChannel);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings = GetCookieJarSettings(aChannel);
 
   nsAutoCString normalizedHostFromURI(hostFromURI);
   rv = NormalizeHost(normalizedHostFromURI);
@@ -772,7 +773,7 @@ void CookieService::GetCookiesForURI(
       baseDomainFromURI, aOriginAttrs.mPrivateBrowsingId);
 
   CookieStatus cookieStatus = CheckPrefs(
-      cookieSettings, aHostURI, aIsForeign, aIsThirdPartyTrackingResource,
+      cookieJarSettings, aHostURI, aIsForeign, aIsThirdPartyTrackingResource,
       aFirstPartyStorageAccessGranted,
       VoidCString(), priorCookieCount, aOriginAttrs, &rejectedReason);
 
@@ -1394,7 +1395,7 @@ static inline bool IsSubdomainOf(const nsACString& a, const nsACString& b) {
   return false;
 }
 
-CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
+CookieStatus CookieService::CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
                                        nsIURI* aHostURI, bool aIsForeign,
                                        bool aIsThirdPartyTrackingResource,
                                        bool aFirstPartyStorageAccessGranted,
@@ -1428,7 +1429,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
   // check the permission list first; if we find an entry, it overrides
   // default prefs. see bug 184059.
   uint32_t cookiePermission = nsICookiePermission::ACCESS_DEFAULT;
-  rv = aCookieSettings->CookiePermission(principal, &cookiePermission);
+  rv = aCookieJarSettings->CookiePermission(principal, &cookiePermission);
   if (NS_SUCCEEDED(rv)) {
     switch (cookiePermission) {
       case nsICookiePermission::ACCESS_DENY:
@@ -1451,7 +1452,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
   // access to the first-party cookie jar.
   if (aIsForeign && aIsThirdPartyTrackingResource &&
       !aFirstPartyStorageAccessGranted &&
-      aCookieSettings->GetRejectThirdPartyTrackers()) {
+      aCookieJarSettings->GetRejectThirdPartyTrackers()) {
     // Explicitly pass nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER
     // here to ensure that we are testing the partitioning configuration only
     // for the nsICookieService::BEHAVIOR_REJECT_TRACKER configuration.
@@ -1459,7 +1460,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
     // don't want to give a free pass to tracker cookies here!
     if (StoragePartitioningEnabled(
             nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER,
-            aCookieSettings)) {
+            aCookieJarSettings)) {
       MOZ_ASSERT(!aOriginAttrs.mFirstPartyDomain.IsEmpty(),
                  "We must have a StoragePrincipal here!");
       return STATUS_ACCEPTED;
@@ -1476,7 +1477,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
   // Check aFirstPartyStorageAccessGranted when checking aCookieBehavior
   // so that we take things such as the content blocking allow list into
   // account.
-  if (aCookieSettings->GetCookieBehavior() ==
+  if (aCookieJarSettings->GetCookieBehavior() ==
           nsICookieService::BEHAVIOR_REJECT &&
       !aFirstPartyStorageAccessGranted) {
     COOKIE_LOGFAILURE(aCookieHeader.IsVoid() ? GET_COOKIE : SET_COOKIE,
@@ -1487,7 +1488,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
 
   // check if cookie is foreign
   if (aIsForeign) {
-    if (aCookieSettings->GetCookieBehavior() ==
+    if (aCookieJarSettings->GetCookieBehavior() ==
             nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
         !aFirstPartyStorageAccessGranted) {
       COOKIE_LOGFAILURE(aCookieHeader.IsVoid() ? GET_COOKIE : SET_COOKIE,
@@ -1496,7 +1497,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieSettings* aCookieSettings,
       return STATUS_REJECTED;
     }
 
-    if (aCookieSettings->GetCookieBehavior() ==
+    if (aCookieJarSettings->GetCookieBehavior() ==
             nsICookieService::BEHAVIOR_LIMIT_FOREIGN &&
         !aFirstPartyStorageAccessGranted && aNumOfCookies == 0) {
       COOKIE_LOGFAILURE(aCookieHeader.IsVoid() ? GET_COOKIE : SET_COOKIE,

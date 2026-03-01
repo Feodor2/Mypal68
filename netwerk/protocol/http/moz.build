@@ -7,7 +7,6 @@ with Files('**'):
 
 XPIDL_SOURCES += [
     'nsIBackgroundChannelRegistrar.idl',
-    'nsIChildProcessChannelListener.idl',
     'nsIHttpActivityObserver.idl',
     'nsIHttpAuthenticableChannel.idl',
     'nsIHttpAuthenticator.idl',
@@ -86,7 +85,7 @@ UNIFIED_SOURCES += [
     'HttpBaseChannel.cpp',
     'HttpChannelChild.cpp',
     'HttpChannelParent.cpp',
-    'HttpChannelParentListener.cpp',
+    'HttpConnectionBase.cpp',
     'HttpConnectionMgrChild.cpp',
     'HttpConnectionMgrParent.cpp',
     'HttpInfo.cpp',
@@ -114,6 +113,7 @@ UNIFIED_SOURCES += [
     'nsServerTiming.cpp',
     'NullHttpChannel.cpp',
     'NullHttpTransaction.cpp',
+    'ParentChannelListener.cpp',
     'TRRServiceChannel.cpp',
     'TunnelUtils.cpp',
 ]

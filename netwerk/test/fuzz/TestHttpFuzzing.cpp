@@ -153,7 +153,7 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
                 nsIRequest::LOAD_FRESH_CONNECTION |
                 nsIChannel::LOAD_INITIAL_DOCUMENT_URI;
     nsSecurityFlags secFlags;
-    secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL |
+    secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL |
                nsILoadInfo::SEC_SANDBOXED;
 
     nsCOMPtr<nsIChannel> channel;
@@ -218,7 +218,7 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
       rv = NS_NewChannel(getter_AddRefs(channel), url,
                          nsContentUtils::GetSystemPrincipal(), secFlags,
                          nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST,
-                         nullptr,    // aCookieSettings
+                         nullptr,    // aCookieJarSettings
                          nullptr,    // aPerformanceStorage
                          nullptr,    // loadGroup
                          nullptr,    // aCallbacks

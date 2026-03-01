@@ -13,7 +13,7 @@ interface nsIFactory;
 interface nsIArray;
 interface nsIUTF8StringEnumerator;
 
-[scriptable, uuid(d604ffc3-1ba3-4f6c-b65f-1ed4199364c3)]
+[scriptable, builtinclass, uuid(d604ffc3-1ba3-4f6c-b65f-1ed4199364c3)]
 interface nsIComponentManager : nsISupports
 {
     /**
@@ -47,27 +47,25 @@ interface nsIComponentManager : nsISupports
      * Create an instance of the CID aClass and return the interface aIID.
      *
      * @param aClass : ClassID of object instance requested
-     * @param aDelegate : Used for aggregation
      * @param aIID : IID of interface requested
      */
-    void createInstance(in nsCIDRef aClass, 
-                        in nsISupports aDelegate,
-                        in nsIIDRef aIID, 
+    [noscript]
+    void createInstance(in nsCIDRef aClass,
+                        in nsIIDRef aIID,
                         [iid_is(aIID),retval] out nsQIResult result);
 
     /**
      * createInstanceByContractID
      *
      * Create an instance of the CID that implements aContractID and return the
-     * interface aIID. 
+     * interface aIID.
      *
      * @param aContractID : aContractID of object instance requested
-     * @param aDelegate : Used for aggregation
      * @param aIID : IID of interface requested
      */
+    [noscript]
     void createInstanceByContractID(in string aContractID,
-                                    in nsISupports aDelegate,
-                                    in nsIIDRef aIID, 
+                                    in nsIIDRef aIID,
                                     [iid_is(aIID),retval] out nsQIResult result);
 
     /**

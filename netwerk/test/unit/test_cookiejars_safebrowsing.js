@@ -23,6 +23,8 @@
  *    actually get stored in the correct jar).
  */
 
+"use strict";
+
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
@@ -100,7 +102,7 @@ function run_test() {
   if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
     Services.prefs.setBoolPref(
-      "network.cookieSettings.unblocked_for_testing",
+      "network.cookieJarSettings.unblocked_for_testing",
       true
     );
   }

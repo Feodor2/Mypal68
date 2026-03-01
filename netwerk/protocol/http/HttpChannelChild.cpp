@@ -7,7 +7,6 @@
 
 #include "nsHttp.h"
 #include "nsICacheEntry.h"
-#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentChild.h"
@@ -1726,7 +1725,7 @@ void HttpChannelChild::ProcessNotifyChannelClassifierProtectionDisabled(
   nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
   neckoTarget->Dispatch(
       NS_NewRunnableFunction(
-          "AntiTrackingCommon::NotifyChannelClassifierProtectionDisabled",
+          "UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled",
           [self, aAcceptedReason]() {
             UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
                 self, aAcceptedReason);
@@ -1742,10 +1741,10 @@ void HttpChannelChild::ProcessNotifyCookieAllowed() {
   nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
   neckoTarget->Dispatch(
       NS_NewRunnableFunction(
-          "UrlClassifierCommon::NotifyBlockingDecision",
+          "ContentBlockingNotifier::OnDecision",
           [self]() {
-            AntiTrackingCommon::NotifyBlockingDecision(
-                self, AntiTrackingCommon::BlockingDecision::eAllow, 0);
+            ContentBlockingNotifier::OnDecision(
+                self, ContentBlockingNotifier::BlockingDecision::eAllow, 0);
           }),
       NS_DISPATCH_NORMAL);
 }
@@ -1757,11 +1756,11 @@ void HttpChannelChild::ProcessNotifyCookieBlocked(uint32_t aRejectedReason) {
   RefPtr<HttpChannelChild> self = this;
   nsCOMPtr<nsIEventTarget> neckoTarget = GetNeckoTarget();
   neckoTarget->Dispatch(
-      NS_NewRunnableFunction("AntiTrackingCommon::NotifyBlockingDecision",
+      NS_NewRunnableFunction("ContentBlockingNotifier::OnDecision",
                              [self, aRejectedReason]() {
-                               AntiTrackingCommon::NotifyBlockingDecision(
+                               ContentBlockingNotifier::OnDecision(
                                    self,
-                                   AntiTrackingCommon::BlockingDecision::eBlock,
+                                   ContentBlockingNotifier::BlockingDecision::eBlock,
                                    aRejectedReason);
                              }),
       NS_DISPATCH_NORMAL);
@@ -2365,7 +2364,7 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
       mLoadInfo->GetSecurityMode() == 0 ||
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
-               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
+               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL &&
            mLoadInfo->GetLoadingPrincipal() &&
            mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
@@ -3323,8 +3322,9 @@ void HttpChannelChild::GetClientSetCorsPreflightParameters(
 }
 
 NS_IMETHODIMP
-HttpChannelChild::RemoveCorsPreflightCacheEntry(nsIURI* aURI,
-                                                nsIPrincipal* aPrincipal) {
+HttpChannelChild::RemoveCorsPreflightCacheEntry(
+    nsIURI* aURI, nsIPrincipal* aPrincipal,
+    const OriginAttributes& aOriginAttributes) {
   URIParams uri;
   SerializeURI(aURI, uri);
   PrincipalInfo principalInfo;
@@ -3336,7 +3336,8 @@ HttpChannelChild::RemoveCorsPreflightCacheEntry(nsIURI* aURI,
   // Be careful to not attempt to send a message to the parent after the
   // actor has been destroyed.
   if (CanSend()) {
-    result = SendRemoveCorsPreflightCacheEntry(uri, principalInfo);
+    result = SendRemoveCorsPreflightCacheEntry(uri, principalInfo,
+                                               aOriginAttributes);
   }
   return result ? NS_OK : NS_ERROR_FAILURE;
 }

@@ -147,7 +147,7 @@ var PermissionPromptPrototype = {
       return this.principal.addonPolicy.name;
     }
 
-    return this.principal.URI.hostPort;
+    return this.principal.hostPort;
   },
 
   /**
@@ -1061,15 +1061,11 @@ StorageAccessPermissionPrompt.prototype = {
     return "storage-access-" + this.principal.origin;
   },
 
-  prettifyHostPort(uri) {
-    try {
-      uri = Services.io.createExposableURI(uri);
-    } catch (e) {
-      // ignore, since we can't do anything better
-    }
-    let host = IDNService.convertToDisplayIDN(uri.host, {});
-    if (uri.port != -1) {
-      host += `:${uri.port}`;
+  prettifyHostPort(hostport) {
+    let [host, port] = hostport.split(":");
+    host = IDNService.convertToDisplayIDN(host, {});
+    if (port) {
+      return `${host}:${port}`;
     }
     return host;
   },
@@ -1081,8 +1077,8 @@ StorageAccessPermissionPrompt.prototype = {
     return {
       learnMoreURL,
       displayURI: false,
-      name: this.prettifyHostPort(this.principal.URI),
-      secondName: this.prettifyHostPort(this.topLevelPrincipal.URI),
+      name: this.prettifyHostPort(this.principal.hostPort),
+      secondName: this.prettifyHostPort(this.topLevelPrincipal.hostPort),
       escAction: "buttoncommand",
     };
   },
@@ -1126,18 +1122,6 @@ StorageAccessPermissionPrompt.prototype = {
         action: Ci.nsIPermissionManager.ALLOW_ACTION,
         callback(state) {
           self.allow({ "storage-access": "allow" });
-        },
-      },
-      {
-        label: gBrowserBundle.GetStringFromName(
-          "storageAccess.AllowOnAnySite.label"
-        ),
-        accessKey: gBrowserBundle.GetStringFromName(
-          "storageAccess.AllowOnAnySite.accesskey"
-        ),
-        action: Ci.nsIPermissionManager.ALLOW_ACTION,
-        callback(state) {
-          self.allow({ "storage-access": "allow-on-any-site" });
         },
       },
     ];

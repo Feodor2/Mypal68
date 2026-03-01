@@ -103,9 +103,9 @@ nsresult nsPrefetchNode::OpenChannel() {
 
   uint32_t securityFlags;
   if (corsMode == CORS_NONE) {
-    securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
+    securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
   } else {
-    securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+    securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT;
     if (corsMode == CORS_USE_CREDENTIALS) {
       securityFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
     }
@@ -114,7 +114,7 @@ nsresult nsPrefetchNode::OpenChannel() {
       getter_AddRefs(mChannel), mURI, source, source->NodePrincipal(),
       nullptr,  // aTriggeringPrincipal
       Maybe<ClientInfo>(), Maybe<ServiceWorkerDescriptor>(), securityFlags,
-      mPolicyType, source->OwnerDoc()->CookieSettings(),
+      mPolicyType, source->OwnerDoc()->CookieJarSettings(),
       nullptr,    // aPerformanceStorage
       loadGroup,  // aLoadGroup
       this,       // aCallbacks

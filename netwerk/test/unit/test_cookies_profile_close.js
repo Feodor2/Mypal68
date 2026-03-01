@@ -26,7 +26,7 @@ function* do_run_test() {
   // Allow all cookies.
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
   Services.prefs.setBoolPref(
-    "network.cookieSettings.unblocked_for_testing",
+    "network.cookieJarSettings.unblocked_for_testing",
     true
   );
 

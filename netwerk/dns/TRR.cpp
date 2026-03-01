@@ -21,6 +21,7 @@
 #include "nsURLHelper.h"
 #include "TRR.h"
 #include "TRRService.h"
+#include "TRRServiceChannel.h"
 #include "TRRLoadInfo.h"
 
 #include "mozilla/Base64.h"
@@ -158,11 +159,8 @@ nsresult TRR::DohEncode(nsCString& aBody, bool aDisableECS) {
 
 NS_IMETHODIMP
 TRR::Run() {
-  MOZ_ASSERT_IF(gTRRService && StaticPrefs::network_trr_fetch_off_main_thread(),
-                gTRRService->IsOnTRRThread());
-  MOZ_ASSERT_IF(
-      gTRRService && !StaticPrefs::network_trr_fetch_off_main_thread(),
-      NS_IsMainThread());
+  MOZ_ASSERT_IF(XRE_IsParentProcess() && gTRRService,
+                NS_IsMainThread() || gTRRService->IsOnTRRThread());
 
   if ((gTRRService == nullptr) || NS_FAILED(SendHTTPRequest())) {
     FailData(NS_ERROR_FAILURE);
@@ -193,14 +191,15 @@ nsresult TRR::CreateChannelHelper(nsIURI* aUri, nsIChannel** aResult) {
     nsCOMPtr<nsIIOService> ios(do_GetIOService(&rv));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    return NS_NewChannel(aResult, aUri, nsContentUtils::GetSystemPrincipal(),
-                         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                         nsIContentPolicy::TYPE_OTHER,
-                         nullptr,  // nsICookieJarSettings
-                         nullptr,  // PerformanceStorage
-                         nullptr,  // aLoadGroup
-                         nullptr,  // aCallbacks
-                         nsIRequest::LOAD_NORMAL, ios);
+    return NS_NewChannel(
+        aResult, aUri, nsContentUtils::GetSystemPrincipal(),
+        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+        nsIContentPolicy::TYPE_OTHER,
+        nullptr,  // nsICookieJarSettings
+        nullptr,  // PerformanceStorage
+        nullptr,  // aLoadGroup
+        nullptr,  // aCallbacks
+        nsIRequest::LOAD_NORMAL, ios);
   }
 
   // Unfortunately, we can only initialize gHttpHandler on main thread.
@@ -240,19 +239,20 @@ nsresult TRR::SendHTTPRequest() {
   }
 
   if ((mType == TRRTYPE_A) || (mType == TRRTYPE_AAAA)) {
-    // let NS resolves skip the blacklist check
+    // let NS resolves skip the blocklist check
     MOZ_ASSERT(mRec);
 
-    if (UseDefaultServer() &&  gTRRService->IsTRRBlacklisted(mHost, mOriginSuffix, mPB, true)) {
+    if (UseDefaultServer() &&
+        gTRRService->IsTemporarilyBlocked(mHost, mOriginSuffix, mPB, true)) {
       // not really an error but no TRR is issued
       return NS_ERROR_UNKNOWN_HOST;
     }
   }
 
-  bool useGet = gTRRService->UseGET();
+  bool useGet = StaticPrefs::network_trr_useGET();
   nsAutoCString body;
   nsCOMPtr<nsIURI> dnsURI;
-  bool disableECS = gTRRService->DisableECS();
+  bool disableECS = StaticPrefs::network_trr_disable_ECS();
   nsresult rv;
 
   LOG(("TRR::SendHTTPRequest resolve %s type %u\n", mHost.get(), mType));
@@ -359,7 +359,7 @@ nsresult TRR::SendHTTPRequest() {
   rv = internalChannel->SetIsTRRServiceChannel(true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mAllowRFC1918 = gTRRService->AllowRFC1918();
+  mAllowRFC1918 = StaticPrefs::network_trr_allow_rfc1918();
 
   if (useGet) {
     rv = httpChannel->SetRequestMethod("GET"_ns);
@@ -1404,7 +1404,8 @@ class ProxyCancel : public Runnable {
 };
 
 void TRR::Cancel() {
-  if (StaticPrefs::network_trr_fetch_off_main_thread()) {
+  RefPtr<TRRServiceChannel> trrServiceChannel = do_QueryObject(mChannel);
+  if (trrServiceChannel) {
     if (gTRRService) {
       nsCOMPtr<nsIThread> thread = gTRRService->TRRThread();
       if (thread && !thread->IsOnCurrentThread()) {

@@ -41,6 +41,11 @@ async function testScaledBounds(browser, accDoc, scale, id, type = "object") {
 async function runTests(browser, accDoc) {
   loadFrameScripts(browser, { name: "layout.js", dir: MOCHITESTS_DIR });
 
+  // The scrollbars get in the way of container bounds calculation.
+  await SpecialPowers.pushPrefEnv({
+    set: [["ui.useOverlayScrollbars", 1]],
+  });
+
   await testScaledBounds(browser, accDoc, 2.0, "p1");
   await testScaledBounds(browser, accDoc, 0.5, "p2");
   await testScaledBounds(browser, accDoc, 3.5, "b1");

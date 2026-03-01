@@ -24,8 +24,8 @@ const uint32_t kDefaultCacheLength = 128;
 
 namespace mozilla {
 
+class EditorBase;
 class PresShell;
-class TextEditor;
 
 namespace dom {
 class Document;
@@ -91,7 +91,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
   virtual nsRect RelativeBounds(nsIFrame** aRelativeFrame) const override;
 
   // HyperTextAccessible
-  virtual already_AddRefed<TextEditor> GetEditor() const override;
+  virtual already_AddRefed<EditorBase> GetEditor() const override;
 
   // DocAccessible
 
@@ -135,7 +135,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
   /**
    * Return the presentation shell's context.
    */
-  nsPresContext* PresContext() const { return mPresShell->GetPresContext(); }
+  nsPresContext* PresContext() const;
 
   /**
    * Return true if associated DOM document was loaded and isn't unloading.

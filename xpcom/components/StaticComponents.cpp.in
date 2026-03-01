@@ -164,12 +164,8 @@ static void CallUnloadFuncs() {
 //# @unload_funcs@
 }
 
-static nsresult CreateInstanceImpl(ModuleID aID, nsISupports* aOuter,
-                                   const nsIID& aIID, void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
+static nsresult CreateInstanceImpl(ModuleID aID, const nsIID& aIID,
+                                   void** aResult) {
   // The full set of constructors for all static modules.
   // This switch statement will be compiled to a relative address jump table
   // with no runtime relocations and a single indirect jump.
@@ -201,12 +197,10 @@ NS_IMPL_ISUPPORTS(StaticModuleFactory, nsIFactory)
 NS_IMETHODIMP StaticModuleFactory::CreateInstance(nsISupports* aOuter,
                                                   const nsIID& aIID,
                                                   void** aResult) {
-  return CreateInstanceImpl(mID, aOuter, aIID, aResult);
-}
-
-NS_IMETHODIMP StaticModuleFactory::LockFactory(bool aLock) {
-  MOZ_CRASH("LockFactory is no longer a thing");
-  return NS_ERROR_NOT_IMPLEMENTED;
+  if (aOuter) {
+    return NS_ERROR_NO_AGGREGATION;
+  }
+  return CreateInstanceImpl(mID, aIID, aResult);
 }
 
 }  // anonymous namespace
@@ -229,9 +223,8 @@ nsCString StaticModule::ContractID() const {
   return GetString(mContractID);
 }
 
-nsresult StaticModule::CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                                      void** aResult) const {
-  return CreateInstanceImpl(ID(), aOuter, aIID, aResult);
+nsresult StaticModule::CreateInstance(const nsIID& aIID, void** aResult) const {
+  return CreateInstanceImpl(ID(), aIID, aResult);
 }
 
 GetServiceHelper StaticModule::GetService() const {
@@ -351,7 +344,7 @@ nsresult CreateInstanceHelper::operator()(const nsIID& aIID,
     return SetResult(NS_ERROR_FACTORY_NOT_REGISTERED);
   }
 
-  nsresult rv = entry.CreateInstance(nullptr, aIID, aResult);
+  nsresult rv = entry.CreateInstance(aIID, aResult);
   return SetResult(rv);
 }
 

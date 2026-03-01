@@ -267,7 +267,7 @@ class UrlbarController {
 
     if (this.view.isOpen && executeAction && this._lastQueryContextWrapper) {
       let { queryContext } = this._lastQueryContextWrapper;
-      let handled = this.view.oneOffSearchButtons.handleKeyPress(
+      let handled = this.view.oneOffSearchButtons.handleKeyDown(
         event,
         this.view.visibleItemCount,
         this.view.allowEmptySelection,
@@ -407,7 +407,9 @@ class UrlbarController {
               UrlbarPrefs.get("suggest.searches") &&
               UrlbarPrefs.get("browser.search.suggest.enabled")
             ) {
-              let engine = Services.search.defaultEngine;
+              let engine = Services.search.getEngineByName(
+                result.payload.engine
+              );
               UrlbarUtils.setupSpeculativeConnection(
                 engine,
                 this.browserWindow

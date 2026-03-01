@@ -5,6 +5,7 @@
 #ifndef nsHttpConnectionMgr_h__
 #define nsHttpConnectionMgr_h__
 
+#include "HttpConnectionBase.h"
 #include "HttpConnectionMgrShell.h"
 #include "nsHttpConnection.h"
 #include "nsHttpTransaction.h"
@@ -89,7 +90,7 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   // into a wildcard (i.e. http2 proxy friendy) mapping
   void MoveToWildCardConnEntry(nsHttpConnectionInfo* specificCI,
                                nsHttpConnectionInfo* wildcardCI,
-                               nsHttpConnection* conn);
+                               HttpConnectionBase* conn);
 
   MOZ_MUST_USE bool ProcessPendingQForEntry(nsHttpConnectionInfo*);
 
@@ -171,7 +172,7 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
     // is initialized without a window.
     nsClassHashtable<nsUint64HashKey, nsTArray<RefPtr<PendingTransactionInfo>>>
         mPendingTransactionTable;
-    nsTArray<RefPtr<nsHttpConnection>> mActiveConns;  // active connections
+    nsTArray<RefPtr<HttpConnectionBase>> mActiveConns;  // active connections
     nsTArray<RefPtr<nsHttpConnection>>
         mIdleConns;                          // idle persistent connections
     nsTArray<nsHalfOpenSocket*> mHalfOpens;  // half open connections
@@ -265,8 +266,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   };
 
  public:
-  static nsAHttpConnection* MakeConnectionHandle(nsHttpConnection* aWrapped);
-  void RegisterOriginCoalescingKey(nsHttpConnection*, const nsACString& host,
+  static nsAHttpConnection* MakeConnectionHandle(HttpConnectionBase* aWrapped);
+  void RegisterOriginCoalescingKey(HttpConnectionBase*, const nsACString& host,
                                    int32_t port);
 
  private:
@@ -481,10 +482,11 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
       bool respectUrgency, bool* allUrgent = nullptr);
   MOZ_MUST_USE nsresult DispatchTransaction(nsConnectionEntry*,
                                             nsHttpTransaction*,
-                                            nsHttpConnection*);
+                                            HttpConnectionBase*);
   MOZ_MUST_USE nsresult DispatchAbstractTransaction(nsConnectionEntry*,
                                                     nsAHttpTransaction*,
-                                                    uint32_t, nsHttpConnection*,
+                                                    uint32_t,
+                                                    HttpConnectionBase*,
                                                     int32_t);
   bool RestrictConnections(nsConnectionEntry*);
   MOZ_MUST_USE nsresult ProcessNewTransaction(nsHttpTransaction*);
@@ -493,8 +495,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   MOZ_MUST_USE nsresult
   CreateTransport(nsConnectionEntry*, nsAHttpTransaction*, uint32_t, bool, bool,
                   bool, PendingTransactionInfo* pendingTransInfo);
-  void AddActiveConn(nsHttpConnection*, nsConnectionEntry*);
-  void DecrementActiveConnCount(nsHttpConnection*);
+  void AddActiveConn(HttpConnectionBase*, nsConnectionEntry*);
+  void DecrementActiveConnCount(HttpConnectionBase*);
   void StartedConnect();
   void RecvdConnect();
 
@@ -515,22 +517,22 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   MOZ_MUST_USE nsresult MakeNewConnection(
       nsConnectionEntry* ent, PendingTransactionInfo* pendingTransInfo);
 
-  // Manage h2 connection coalescing
-  // The hashtable contains arrays of weak pointers to nsHttpConnections
+  // Manage h2/3 connection coalescing
+  // The hashtable contains arrays of weak pointers to HttpConnectionBases
   nsClassHashtable<nsCStringHashKey, nsTArray<nsWeakPtr>> mCoalescingHash;
 
-  nsHttpConnection* FindCoalescableConnection(nsConnectionEntry* ent,
-                                              bool justKidding);
-  nsHttpConnection* FindCoalescableConnectionByHashKey(nsConnectionEntry* ent,
-                                                       const nsCString& key,
-                                                       bool justKidding);
-  void UpdateCoalescingForNewConn(nsHttpConnection* conn,
+  HttpConnectionBase* FindCoalescableConnection(nsConnectionEntry* ent,
+                                                bool justKidding);
+  HttpConnectionBase* FindCoalescableConnectionByHashKey(nsConnectionEntry* ent,
+                                                         const nsCString& key,
+                                                         bool justKidding);
+  void UpdateCoalescingForNewConn(HttpConnectionBase* conn,
                                   nsConnectionEntry* ent);
-  nsHttpConnection* GetSpdyActiveConn(nsConnectionEntry* ent);
+  HttpConnectionBase* GetSpdyActiveConn(nsConnectionEntry* ent);
 
   void ProcessSpdyPendingQ(nsConnectionEntry* ent);
   void DispatchSpdyPendingQ(nsTArray<RefPtr<PendingTransactionInfo>>& pendingQ,
-                            nsConnectionEntry* ent, nsHttpConnection* conn);
+                            nsConnectionEntry* ent, HttpConnectionBase* conn);
   // used to marshall events to the socket transport thread.
   MOZ_MUST_USE nsresult PostEvent(nsConnEventHandler handler,
                                   int32_t iparam = 0,
@@ -542,6 +544,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
       nsTArray<RefPtr<PendingTransactionInfo>>& pendingQ,
       const nsHttpConnectionInfo* ci, const nsConnectionEntry* ent,
       nsresult reason);
+
+  void OnMsgReclaimConnection(HttpConnectionBase*);
 
   // message handlers
   void OnMsgShutdown(int32_t, ARefBase*);
@@ -555,7 +559,6 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   void OnMsgProcessPendingQ(int32_t, ARefBase*);
   void OnMsgPruneDeadConnections(int32_t, ARefBase*);
   void OnMsgSpeculativeConnect(int32_t, ARefBase*);
-  void OnMsgReclaimConnection(int32_t, ARefBase*);
   void OnMsgCompleteUpgrade(int32_t, ARefBase*);
   void OnMsgUpdateParam(int32_t, ARefBase*);
   void OnMsgDoShiftReloadConnectionCleanup(int32_t, ARefBase*);
@@ -573,8 +576,9 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   // Total number of idle connections in all of the ConnectionEntry objects
   // that are accessed from mCT connection table.
   uint16_t mNumIdleConns;
-  // Total number of spdy connections which are a subset of the active conns
-  uint16_t mNumSpdyActiveConns;
+  // Total number of spdy or http3 connections which are a subset of the active
+  // conns
+  uint16_t mNumSpdyHttp3ActiveConns;
   // Total number of connections in mHalfOpens ConnectionEntry objects
   // that are accessed from mCT connection table
   uint32_t mNumHalfOpenConns;

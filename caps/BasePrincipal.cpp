@@ -23,8 +23,12 @@
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/Components.h"
 #include "mozilla/dom/StorageUtils.h"
+#include "mozilla/Components.h"
+#include "mozilla/ContentBlocking.h"
+#include "mozilla/StaticPrefs_permissions.h"
+#include "nsEffectiveTLDService.h"
+#include "nsPIDOMWindow.h"
 #include "nsIURIMutator.h"
 #include "nsIURL.h"
 
@@ -483,21 +487,32 @@ BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
   }
   return aPrin->IsThirdPartyURI(prinURI, aRes);
 }
+NS_IMETHODIMP
+BasePrincipal::IsThirdPartyChannel(nsIChannel* aChan, bool* aRes) {
+  nsCOMPtr<nsIURI> prinURI;
+  GetURI(getter_AddRefs(prinURI));
+  ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+  return thirdPartyUtil->IsThirdPartyChannel(aChan, prinURI, aRes);
+}
 
 NS_IMETHODIMP
-BasePrincipal::IsSameOrigin(nsIURI* aURI, bool aIsPrivateWin, bool* aRes) {
+BasePrincipal::IsSameOrigin(nsIURI* aURI, bool* aRes) {
   *aRes = false;
   nsCOMPtr<nsIURI> prinURI;
   nsresult rv = GetURI(getter_AddRefs(prinURI));
   if (NS_FAILED(rv) || !prinURI) {
+    // Note that expanded and system principals return here, because they have
+    // no URI.
     return NS_OK;
   }
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   if (!ssm) {
-    return NS_ERROR_UNEXPECTED;
+    return NS_OK;
   }
+  bool reportError = false;
+  bool isPrivateWindow = false;  // Only used for error reporting.
   *aRes = NS_SUCCEEDED(
-      ssm->CheckSameOriginURI(prinURI, aURI, false, aIsPrivateWin));
+      ssm->CheckSameOriginURI(prinURI, aURI, reportError, isPrivateWindow));
   return NS_OK;
 }
 
@@ -559,6 +574,7 @@ BasePrincipal::AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI, bool* aRes) {
 
 NS_IMETHODIMP
 BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
+                                    const OriginAttributes& aOriginAttributes,
                                     nsACString& _retval) {
   _retval.Truncate();
   constexpr auto space = " "_ns;
@@ -584,8 +600,30 @@ BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
   rv = aURI->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  _retval.Append(space + scheme + space + host + space + port + space + spec);
+  nsAutoCString originAttributesSuffix;
+  aOriginAttributes.CreateSuffix(originAttributesSuffix);
 
+  _retval.Append(space + scheme + space + host + space + port + space + spec +
+                 space + originAttributesSuffix);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::HasFirstpartyStorageAccess(mozIDOMWindow* aCheckWindow,
+                                          uint32_t* aRejectedReason,
+                                          bool* aOutAllowed) {
+  *aRejectedReason = 0;
+  *aOutAllowed = false;
+
+  nsPIDOMWindowInner* win = nsPIDOMWindowInner::From(aCheckWindow);
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  *aOutAllowed =
+      ContentBlocking::ShouldAllowAccessFor(win, uri, aRejectedReason);
   return NS_OK;
 }
 
@@ -616,6 +654,17 @@ BasePrincipal::GetAsciiSpec(nsACString& aSpec) {
     return NS_OK;
   }
   return prinURI->GetAsciiSpec(aSpec);
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetSpec(nsACString& aSpec) {
+  aSpec.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetSpec(aSpec);
 }
 
 NS_IMETHODIMP
@@ -652,9 +701,9 @@ BasePrincipal::GetExposableSpec(nsACString& aSpec) {
   }
   nsCOMPtr<nsIURI> clone;
   rv = NS_MutateURI(prinURI)
-           .SetQuery(EmptyCString())
-           .SetRef(EmptyCString())
-           .SetUserPass(EmptyCString())
+           .SetQuery(""_ns)
+           .SetRef(""_ns)
+           .SetUserPass(""_ns)
            .Finalize(clone);
   NS_ENSURE_SUCCESS(rv, rv);
   return clone->GetAsciiSpec(aSpec);
@@ -1040,11 +1089,53 @@ BasePrincipal::GetLocalStorageQuotaKey(nsACString& aKey) {
 
   return NS_OK;
 }
+NS_IMETHODIMP
+BasePrincipal::GetNextSubDomainPrincipal(
+    nsIPrincipal** aNextSubDomainPrincipal) {
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(rv) || !uri) {
+    return NS_OK;
+  }
+
+  nsAutoCString host;
+  rv = uri->GetHost(host);
+  if (NS_FAILED(rv) || host.IsEmpty()) {
+    return NS_OK;
+  }
+
+  nsCString subDomain;
+  rv = nsEffectiveTLDService::GetInstance()->GetNextSubDomain(host, subDomain);
+
+  if (NS_FAILED(rv) || subDomain.IsEmpty()) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIURI> subDomainURI;
+  rv = NS_MutateURI(uri).SetHost(subDomain).Finalize(subDomainURI);
+  if (NS_FAILED(rv) || !subDomainURI) {
+    return NS_OK;
+  }
+  // Copy the attributes over
+  mozilla::OriginAttributes attrs = OriginAttributesRef();
+
+  if (!StaticPrefs::permissions_isolateBy_userContext()) {
+    // Disable userContext for permissions.
+    attrs.StripAttributes(mozilla::OriginAttributes::STRIP_USER_CONTEXT_ID);
+  }
+  RefPtr<nsIPrincipal> principal =
+      mozilla::BasePrincipal::CreateCodebasePrincipal(subDomainURI, attrs);
+
+  if (!principal) {
+    return NS_OK;
+  }
+  principal.forget(aNextSubDomainPrincipal);
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 BasePrincipal::GetStorageOriginKey(nsACString& aOriginKey) {
   aOriginKey.Truncate();
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);

@@ -108,12 +108,12 @@ TRRLoadInfo::GetCookiePolicy(uint32_t* aResult) {
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::GetCookieSettings(nsICookieSettings** aCookieSettings) {
+TRRLoadInfo::GetCookieJarSettings(nsICookieJarSettings** aCookieJarSettings) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::SetCookieSettings(nsICookieSettings* aCookieSettings) {
+TRRLoadInfo::SetCookieJarSettings(nsICookieJarSettings* aCookieJarSettings) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -309,10 +309,10 @@ TRRLoadInfo::GetFrameBrowsingContextID(uint64_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-/*NS_IMETHODIMP
+NS_IMETHODIMP
 TRRLoadInfo::GetTargetBrowsingContextID(uint64_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}*/
+}
 
 NS_IMETHODIMP
 TRRLoadInfo::GetBrowsingContext(dom::BrowsingContext** aResult) {
@@ -324,10 +324,10 @@ TRRLoadInfo::GetFrameBrowsingContext(dom::BrowsingContext** aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-/*NS_IMETHODIMP
+NS_IMETHODIMP
 TRRLoadInfo::GetTargetBrowsingContext(dom::BrowsingContext** aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}*/
+}
 
 NS_IMETHODIMP
 TRRLoadInfo::GetScriptableOriginAttributes(

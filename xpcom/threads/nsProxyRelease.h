@@ -150,7 +150,7 @@ inline NS_HIDDEN_(void)
                                       bool aAlwaysProxy = false) {
   RefPtr<T> doomed = aDoomed;
   if (!doomed) {
-    return; // Nothing to do.
+    return;  // Nothing to do.
   }
 
   // NS_ProxyRelease treats a null event target as "the current thread".  So a
@@ -168,8 +168,7 @@ inline NS_HIDDEN_(void)
     }
   }
 
-  NS_ProxyRelease(aName, systemGroupEventTarget, doomed.forget(),
-                  aAlwaysProxy);
+  NS_ProxyRelease(aName, systemGroupEventTarget, doomed.forget(), aAlwaysProxy);
 }
 
 template <class T>
@@ -322,18 +321,11 @@ class MOZ_IS_SMARTPTR_TO_REFCOUNTED nsMainThreadPtrHandle {
   explicit nsMainThreadPtrHandle(
       already_AddRefed<nsMainThreadPtrHolder<T>> aHolder)
       : mPtr(aHolder) {}
-  nsMainThreadPtrHandle(const nsMainThreadPtrHandle& aOther)
-      : mPtr(aOther.mPtr) {}
-  nsMainThreadPtrHandle(nsMainThreadPtrHandle&& aOther)
-      : mPtr(std::move(aOther.mPtr)) {}
-  nsMainThreadPtrHandle& operator=(const nsMainThreadPtrHandle& aOther) {
-    mPtr = aOther.mPtr;
-    return *this;
-  }
-  nsMainThreadPtrHandle& operator=(nsMainThreadPtrHandle&& aOther) {
-    mPtr = std::move(aOther.mPtr);
-    return *this;
-  }
+  nsMainThreadPtrHandle(const nsMainThreadPtrHandle& aOther) = default;
+  nsMainThreadPtrHandle(nsMainThreadPtrHandle&& aOther) = default;
+  nsMainThreadPtrHandle& operator=(const nsMainThreadPtrHandle& aOther) =
+      default;
+  nsMainThreadPtrHandle& operator=(nsMainThreadPtrHandle&& aOther) = default;
   nsMainThreadPtrHandle& operator=(nsMainThreadPtrHolder<T>* aHolder) {
     mPtr = aHolder;
     return *this;

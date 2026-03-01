@@ -6,31 +6,28 @@
 #define mozilla_dom_ChildProcessChannelListener_h
 
 #include <functional>
-#include "nsCOMPtr.h"
+
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsTHashMap.h"
-#include "nsIChildProcessChannelListener.h"
 #include "nsIChildChannel.h"
-#include "mozilla/Variant.h"
 
 namespace mozilla {
 namespace dom {
 
-class ChildProcessChannelListener final
-    : public nsIChildProcessChannelListener {
- public:
+class ChildProcessChannelListener final {
+  NS_INLINE_DECL_REFCOUNTING(ChildProcessChannelListener)
+
   typedef std::function<void(nsIChildChannel*)> Callback;
 
-  ChildProcessChannelListener();
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSICHILDPROCESSCHANNELLISTENER
-
   void RegisterCallback(uint64_t aIdentifier, Callback&& aCallback);
+
+  void OnChannelReady(nsIChildChannel* aChannel, uint64_t aIdentifier);
 
   static already_AddRefed<ChildProcessChannelListener> GetSingleton();
 
  private:
-  virtual ~ChildProcessChannelListener();
+  ChildProcessChannelListener() = default;
+  ~ChildProcessChannelListener() = default;
 
   nsTHashMap<nsUint64HashKey, Callback> mCallbacks;
   nsTHashMap<nsUint64HashKey, nsCOMPtr<nsIChildChannel>> mChannels;

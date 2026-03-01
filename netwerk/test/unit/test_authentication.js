@@ -1,9 +1,9 @@
 // This file tests authentication prompt callbacks
 // TODO NIT use do_check_eq(expected, actual) consistently, not sometimes eq(actual, expected)
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+"use strict";
 
-Cu.importGlobalProperties(["XMLHttpRequest"]);
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 // Turn off the authentication dialog blocking for this test.
 var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
@@ -311,7 +311,7 @@ function makeChan(url, loadingUrl) {
   return NetUtil.newChannel({
     uri: url,
     loadingPrincipal: principal,
-    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+    securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
   });
 }
@@ -713,7 +713,6 @@ function authShortDigest(metadata, response) {
   // no header, send one
   response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
   response.setHeader("WWW-Authenticate", "Digest", false);
-  body = "failed, no header";
 }
 
 let buildLargePayload = (function() {

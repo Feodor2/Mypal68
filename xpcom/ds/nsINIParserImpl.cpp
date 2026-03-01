@@ -54,9 +54,6 @@ nsINIParserFactory::CreateInstance(nsISupports* aOuter, REFNSIID aIID,
   return QueryInterface(aIID, aResult);
 }
 
-NS_IMETHODIMP
-nsINIParserFactory::LockFactory(bool aLock) { return NS_OK; }
-
 NS_IMPL_ISUPPORTS(nsINIParserImpl, nsIINIParser, nsIINIParserWriter)
 
 bool nsINIParserImpl::ContainsNull(const nsACString& aStr) {

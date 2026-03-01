@@ -117,7 +117,6 @@ class CargoProvider(MachCommandBase):
         crates_and_roots = {
             'gkrust': 'toolkit/library/rust',
             'gkrust-gtest': 'toolkit/library/gtest/rust',
-            'baldrdash': 'js/src/wasm/cranelift',
             'geckodriver': 'testing/geckodriver',
         }
 

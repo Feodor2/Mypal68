@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var BrowserPageActions = {
+  _panelNode: null,
   /**
    * The main page action button in the urlbar (DOM node)
    */
@@ -15,8 +16,12 @@ var BrowserPageActions = {
    * The main page action panel DOM node (DOM node)
    */
   get panelNode() {
+    // Lazy load the page action panel the first time we need to display it
+    if (!this._panelNode) {
+      this.initializePanel();
+    }
     delete this.panelNode;
-    return (this.panelNode = document.getElementById("pageActionPanel"));
+    return (this.panelNode = this._panelNode);
   },
 
   /**
@@ -53,16 +58,12 @@ var BrowserPageActions = {
    * Inits.  Call to init.
    */
   init() {
-    this.placeAllActions();
+    this.placeAllActionsInUrlbar();
     this._onPanelShowing = this._onPanelShowing.bind(this);
-    this.panelNode.addEventListener("popupshowing", this._onPanelShowing);
-    this.panelNode.addEventListener("popuphiding", () => {
-      this.mainButtonNode.removeAttribute("open");
-    });
   },
 
   _onPanelShowing() {
-    this.placeLazyActionsInPanel();
+    this.initializePanel();
     for (let action of PageActions.actionsInPanel(window)) {
       let buttonNode = this.panelButtonNodeForActionID(action.id);
       action.onShowingInPanel(buttonNode);
@@ -82,17 +83,34 @@ var BrowserPageActions = {
   _actionsToLazilyPlaceInPanel: [],
 
   /**
-   * Places all registered actions.
+   * Places all registered actions in the urlbar.
    */
-  placeAllActions() {
-    let panelActions = PageActions.actionsInPanel(window);
-    for (let action of panelActions) {
-      this.placeActionInPanel(action);
-    }
+  placeAllActionsInUrlbar() {
     let urlbarActions = PageActions.actionsInUrlbar(window);
     for (let action of urlbarActions) {
       this.placeActionInUrlbar(action);
     }
+  },
+
+  /**
+   * Initializes the panel if necessary.
+   */
+  initializePanel() {
+    // Lazy load the page action panel the first time we need to display it
+    if (!this._panelNode) {
+      let template = document.getElementById("pageActionPanelTemplate");
+      template.replaceWith(template.content);
+      this._panelNode = document.getElementById("pageActionPanel");
+      this._panelNode.addEventListener("popupshowing", this._onPanelShowing);
+      this._panelNode.addEventListener("popuphiding", () => {
+        this.mainButtonNode.removeAttribute("open");
+      });
+    }
+
+    for (let action of PageActions.actionsInPanel(window)) {
+      this.placeActionInPanel(action);
+    }
+    this.placeLazyActionsInPanel();
   },
 
   /**
@@ -113,7 +131,7 @@ var BrowserPageActions = {
    *         The action to place.
    */
   placeActionInPanel(action) {
-    if (this.panelNode.state != "closed") {
+    if (this._panelNode && this.panelNode.state != "closed") {
       this._placeActionInPanelNow(action);
     } else {
       // Lazily place the action in the panel the next time it opens.
@@ -563,7 +581,7 @@ var BrowserPageActions = {
   _updateMethods: {
     disabled: "_updateActionDisabled",
     iconURL: "_updateActionIconURL",
-    title: "_updateActionTitle",
+    title: "_updateActionLabeling",
     tooltip: "_updateActionTooltip",
     wantsSubview: "_updateActionWantsSubview",
   },
@@ -612,21 +630,21 @@ var BrowserPageActions = {
     }
   },
 
-  _updateActionTitle(
+  _updateActionLabeling(
     action,
     panelNode,
     urlbarNode,
     title = action.getTitle(window)
   ) {
-    if (!title) {
-      // `title` is a required action property, but the bookmark action's is an
-      // empty string since its actual title is set via
-      // BookmarkingUI.updateBookmarkPageMenuItem().  The purpose of this early
-      // return is to ignore that empty title.
-      return;
-    }
+    let tabCount = gBrowser.selectedTabs.length;
     if (panelNode) {
-      panelNode.setAttribute("label", title);
+      if (action.panelFluentID) {
+        document.l10n.setAttributes(panelNode, action.panelFluentID, {
+          tabCount,
+        });
+      } else {
+        panelNode.setAttribute("label", title);
+      }
     }
     if (urlbarNode) {
       // Some actions (e.g. Save Page to Pocket) have a wrapper node with the
@@ -639,8 +657,14 @@ var BrowserPageActions = {
       }
       // tooltiptext falls back to the title, so update it too if necessary.
       let tooltip = action.getTooltip(window);
-      if (!tooltip && title) {
-        urlbarNode.setAttribute("tooltiptext", title);
+      if (!tooltip) {
+        if (action.urlbarFluentID) {
+          document.l10n.setAttributes(urlbarNode, action.urlbarFluentID, {
+            tabCount,
+          });
+        } else {
+          urlbarNode.setAttribute("tooltiptext", title);
+        }
       }
     }
   },
@@ -728,7 +752,9 @@ var BrowserPageActions = {
    * @param  node (DOM node, required)
    *         A button DOM node, either one that's shown in the page action panel
    *         or the urlbar.
-   * @return (PageAction.Action) The node's related action, or null if none.
+   * @return (PageAction.Action) If the node has a related action and the action
+   *         is not a separator, then the action is returned.  Otherwise null is
+   *         returned.
    */
   actionForNode(node) {
     if (!node) {
@@ -750,7 +776,7 @@ var BrowserPageActions = {
         action = PageActions.actionForID(actionID);
       }
     }
-    return action;
+    return action && !action.__isSeparator ? action : null;
   },
 
   /**
@@ -938,32 +964,9 @@ var BrowserPageActions = {
   _contextAction: null,
 
   /**
-   * Titles for a few of the built-in actions are defined in DTD, but the
-   * actions are created in JS.  So what we do is for each title, set an
-   * attribute in markup on the main page action panel whose value is the DTD
-   * string.  In gBuiltInActions, where the built-in actions are defined, we set
-   * the action's initial title to the name of this attribute.  Then when the
-   * action is set up, we get the action's current title, and then get the
-   * attribute on the main panel whose name is that title.  If the attribute
-   * exists, then its value is the actual title, and we update the action with
-   * this title.  Otherwise the action's title has already been set up in this
-   * manner.
-   *
-   * @param  action (PageActions.Action, required)
-   *         The action whose title you're setting.
-   */
-  takeActionTitleFromPanel(action) {
-    let titleOrAttrNameOnPanel = action.getTitle();
-    let attrValueOnPanel = this.panelNode.getAttribute(titleOrAttrNameOnPanel);
-    if (attrValueOnPanel) {
-      this.panelNode.removeAttribute(titleOrAttrNameOnPanel);
-      action.setTitle(attrValueOnPanel);
-    }
-  },
-
-  /**
-   * This is similar to takeActionTitleFromPanel, except it sets an attribute on
-   * a DOM node instead of setting the title on an action.  The point is to map
+   * We use this to set an attribute on the DOM node. If the attribute exists,
+   * then we get the panel node's attribute and set it on the DOM node. Otherwise,
+   * we get the title string and update the attribute with that value. The point is to map
    * attributes on the node to strings on the main panel.  Use this for DOM
    * nodes that don't correspond to actions, like buttons in subviews.
    *
@@ -1020,7 +1023,9 @@ function showBrowserPageActionFeedback(action, event = null, messageId = null) {
 // bookmark
 BrowserPageActions.bookmark = {
   onShowingInPanel(buttonNode) {
-    // Do nothing.
+    if (buttonNode.label == "null") {
+      BookmarkingUI.updateBookmarkPageMenuItem();
+    }
   },
 
   onCommand(event, buttonNode) {
@@ -1034,24 +1039,23 @@ BrowserPageActions.pinTab = {
   updateState() {
     let action = PageActions.actionForID("pinTab");
     let { pinned } = gBrowser.selectedTab;
+    let fluentID;
     if (pinned) {
-      action.setTitle(
-        BrowserPageActions.panelNode.getAttribute("unpinTab-title")
-      );
+      fluentID = "page-action-unpin-tab";
     } else {
-      action.setTitle(
-        BrowserPageActions.panelNode.getAttribute("pinTab-title")
-      );
+      fluentID = "page-action-pin-tab";
     }
 
     let panelButton = BrowserPageActions.panelButtonNodeForActionID(action.id);
     if (panelButton) {
+      document.l10n.setAttributes(panelButton, fluentID + "-panel");
       panelButton.toggleAttribute("pinned", pinned);
     }
     let urlbarButton = BrowserPageActions.urlbarButtonNodeForActionID(
       action.id
     );
     if (urlbarButton) {
+      document.l10n.setAttributes(urlbarButton, fluentID + "-urlbar");
       urlbarButton.toggleAttribute("pinned", pinned);
     }
   },
@@ -1067,11 +1071,6 @@ BrowserPageActions.pinTab = {
 
 // copy URL
 BrowserPageActions.copyURL = {
-  onBeforePlacedInWindow(browserWindow) {
-    let action = PageActions.actionForID("copyURL");
-    BrowserPageActions.takeActionTitleFromPanel(action);
-  },
-
   onCommand(event, buttonNode) {
     PanelMultiView.hidePopup(BrowserPageActions.panelNode);
     Cc["@mozilla.org/widget/clipboardhelper;1"]
@@ -1086,11 +1085,6 @@ BrowserPageActions.copyURL = {
 
 // email link
 BrowserPageActions.emailLink = {
-  onBeforePlacedInWindow(browserWindow) {
-    let action = PageActions.actionForID("emailLink");
-    BrowserPageActions.takeActionTitleFromPanel(action);
-  },
-
   onCommand(event, buttonNode) {
     PanelMultiView.hidePopup(BrowserPageActions.panelNode);
     MailIntegration.sendLinkForBrowser(gBrowser.selectedBrowser);
@@ -1110,12 +1104,22 @@ BrowserPageActions.sendToDevice = {
   // selected.
   _updateTitle() {
     let action = PageActions.actionForID("sendToDevice");
-    let string = gBrowserBundle.GetStringFromName(
-      "pageAction.sendTabsToDevice.label"
-    );
     let tabCount = gBrowser.selectedTabs.length;
-    let title = PluralForm.get(tabCount, string).replace("#1", tabCount);
-    action.setTitle(title, window);
+
+    let panelButton = BrowserPageActions.panelButtonNodeForActionID(action.id);
+    if (panelButton) {
+      document.l10n.setAttributes(panelButton, action.panelFluentID, {
+        tabCount,
+      });
+    }
+    let urlbarButton = BrowserPageActions.urlbarButtonNodeForActionID(
+      action.id
+    );
+    if (urlbarButton) {
+      document.l10n.setAttributes(urlbarButton, action.urlbarFluentID, {
+        tabCount,
+      });
+    }
   },
 
   onSubviewPlaced(panelViewNode) {
@@ -1126,7 +1130,7 @@ BrowserPageActions.sendToDevice = {
       "subviewbutton-iconic",
       "pageAction-sendToDevice-notReady"
     );
-    notReady.setAttribute("label", "sendToDevice-notReadyTitle");
+    document.l10n.setAttributes(notReady, "page-action-send-tab-not-ready");
     notReady.setAttribute("disabled", "true");
     bodyNode.appendChild(notReady);
     for (let node of bodyNode.children) {

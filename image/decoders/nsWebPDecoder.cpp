@@ -142,6 +142,14 @@ LexerResult nsWebPDecoder::UpdateBuffer(SourceBufferIterator& aIterator,
       mLength += aIterator.Length();
       return ReadData();
     case SourceBufferIterator::COMPLETE:
+      if (!mData) {
+        // We must have hit an error, such as an OOM, when buffering the
+        // first set of encoded data.
+        MOZ_LOG(
+            sWebPLog, LogLevel::Error,
+            ("[this=%p] nsWebPDecoder::DoDecode -- complete no data\n", this));
+        return LexerResult(TerminalState::FAILURE);
+      }
       return ReadData();
     default:
       MOZ_LOG(sWebPLog, LogLevel::Error,
@@ -287,8 +295,8 @@ void nsWebPDecoder::ApplyColorProfile(const char* aProfile, size_t aLength) {
   MOZ_ASSERT(!mGotColorProfile);
   mGotColorProfile = true;
 
-  if (mCMSMode == eCMSMode_Off || !GetCMSOutputProfile() ||
-      (mCMSMode == eCMSMode_TaggedOnly && !aProfile)) {
+  if (mCMSMode == CMSMode::Off || !GetCMSOutputProfile() ||
+      (mCMSMode == CMSMode::TaggedOnly && !aProfile)) {
     return;
   }
 

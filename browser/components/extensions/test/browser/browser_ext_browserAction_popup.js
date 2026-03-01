@@ -51,8 +51,12 @@ let scriptPage = url =>
 async function testInArea(area) {
   let extension = ExtensionTestUtils.loadExtension({
     background() {
-      browser.browserAction.onClicked.addListener(() => {
+      let middleClickShowPopup = false;
+      browser.browserAction.onClicked.addListener((tabs, info) => {
         browser.test.sendMessage("browserAction-onClicked");
+        if (info.button === 1 && middleClickShowPopup) {
+          browser.browserAction.openPopup();
+        }
       });
 
       browser.test.onMessage.addListener(async msg => {
@@ -70,6 +74,9 @@ async function testInArea(area) {
           }
           await browser.browserAction.setPopup(opts);
           browser.test.sendMessage("setBrowserActionPopup:done");
+        } else if (msg.type === "setMiddleClickShowPopup") {
+          middleClickShowPopup = msg.show;
+          browser.test.sendMessage("setMiddleClickShowPopup:done");
         }
       });
 
@@ -130,6 +137,11 @@ async function testInArea(area) {
     await extension.awaitMessage("setBrowserActionPopup:done");
   }
 
+  async function setShowPopupOnMiddleClick(show) {
+    extension.sendMessage({ type: "setMiddleClickShowPopup", show });
+    await extension.awaitMessage("setMiddleClickShowPopup:done");
+  }
+
   async function runTest({
     actionType,
     waitForPopupLoaded,
@@ -146,6 +158,12 @@ async function testInArea(area) {
       clickBrowserAction(extension);
     } else if (actionType === "trigger") {
       getBrowserAction(extension).triggerAction(window);
+    } else if (actionType === "middleClick") {
+      clickBrowserAction(extension, window, { button: 1 });
+    }
+
+    if (expectOnClicked) {
+      await extension.awaitMessage("browserAction-onClicked");
     }
 
     if (expectPopup) {
@@ -155,8 +173,6 @@ async function testInArea(area) {
         expectPopup,
         "expected popup opened"
       );
-    } else if (expectOnClicked) {
-      await extension.awaitMessage("browserAction-onClicked");
     }
 
     await oncePopupLoaded;
@@ -244,6 +260,30 @@ async function testInArea(area) {
 
       await runTest({
         actionType: "click",
+        expectPopup: "popup-b",
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(`Middle-click browser action, expect an event only.`);
+
+      await setShowPopupOnMiddleClick(false);
+
+      await runTest({
+        actionType: "middleClick",
+        expectOnClicked: true,
+      });
+    },
+    async () => {
+      info(
+        `Middle-click browser action again, expect a click event then a popup.`
+      );
+
+      await setShowPopupOnMiddleClick(true);
+
+      await runTest({
+        actionType: "middleClick",
+        expectOnClicked: true,
         expectPopup: "popup-b",
         closePopup: true,
       });

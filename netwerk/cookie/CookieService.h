@@ -16,7 +16,7 @@
 #include "nsIMemoryReporter.h"
 #include "mozilla/MemoryReporting.h"
 
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsIEffectiveTLDService;
 class nsIIDNService;
 class nsIURI;
@@ -83,7 +83,7 @@ class CookieService final : public nsICookieService,
                            bool aFromHttp, nsIChannel* aChannel,
                            bool& aSetCookie,
                            mozIThirdPartyUtil* aThirdPartyUtil);
-  static CookieStatus CheckPrefs(nsICookieSettings* aCookieSettings,
+  static CookieStatus CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
                                  nsIURI* aHostURI, bool aIsForeign,
                                  bool aIsThirdPartyTrackingResource,
                                  bool aFirstPartyStorageAccessGranted,
@@ -92,7 +92,7 @@ class CookieService final : public nsICookieService,
                                  const OriginAttributes& aOriginAttrs,
                                  uint32_t* aRejectedReason);
 
-  static already_AddRefed<nsICookieSettings> GetCookieSettings(
+  static already_AddRefed<nsICookieJarSettings> GetCookieJarSettings(
       nsIChannel* aChannel);
 
   void GetCookiesForURI(nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,

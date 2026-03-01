@@ -526,11 +526,6 @@ if [[ "$GXX" = yes ]]; then
         else
             CXXFLAGS="$OLD_CXXFLAGS"
         fi
-        case "${host}" in
-        *-*-solaris*)
-            CXXFLAGS="$OLD_CXXFLAGS"
-            ;;
-        esac
     fi
 fi
 

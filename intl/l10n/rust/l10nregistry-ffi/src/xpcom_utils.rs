@@ -50,7 +50,7 @@ impl<T: XpCom + 'static> Iterator for IterSimpleEnumerator<T> {
 }
 
 fn process_type() -> u32 {
-    if let Some(appinfo) = xpcom::services::get_AppInfoService() {
+    if let Some(appinfo) = xpcom::services::get_XULRuntime() {
         let mut process_type = nsIXULRuntime::PROCESS_TYPE_DEFAULT as u32;
         if unsafe { appinfo.GetProcessType(&mut process_type).succeeded() } {
             return process_type;

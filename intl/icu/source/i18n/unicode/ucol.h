@@ -389,15 +389,15 @@ typedef enum {
  * The UCollator pointer is used in all the calls to the Collation 
  * service. After finished, collator must be disposed of by calling
  * {@link #ucol_close }.
- * @param loc The locale containing the required collation rules. 
- *            Special values for locales can be passed in - 
+ * @param loc The locale containing the required collation rules.
+ *            Special values for locales can be passed in -
  *            if NULL is passed for the locale, the default locale
  *            collation rules will be used. If empty string ("") or
  *            "root" are passed, the root collator will be returned.
  * @param status A pointer to a UErrorCode to receive any errors
  * @return A pointer to a UCollator, or 0 if an error occurred.
  * @see ucol_openRules
- * @see ucol_safeClone
+ * @see ucol_clone
  * @see ucol_close
  * @stable ICU 2.0
  */
@@ -425,7 +425,7 @@ ucol_open(const char *loc, UErrorCode *status);
  * @return A pointer to a UCollator. It is not guaranteed that NULL be returned in case
  *         of error - please use status argument to check for errors.
  * @see ucol_open
- * @see ucol_safeClone
+ * @see ucol_clone
  * @see ucol_close
  * @stable ICU 2.0
  */
@@ -514,14 +514,14 @@ ucol_getContractionsAndExpansions( const UCollator *coll,
                   USet *contractions, USet *expansions,
                   UBool addPrefixes, UErrorCode *status);
 
-/** 
+/**
  * Close a UCollator.
  * Once closed, a UCollator should not be used. Every open collator should
  * be closed. Otherwise, a memory leak will result.
  * @param coll The UCollator to close.
  * @see ucol_open
  * @see ucol_openRules
- * @see ucol_safeClone
+ * @see ucol_clone
  * @stable ICU 2.0
  */
 U_CAPI void U_EXPORT2
@@ -985,7 +985,6 @@ ucol_getShortDefinitionString(const UCollator *coll,
  * 
  *  @deprecated ICU 54
  */
-
 U_DEPRECATED int32_t U_EXPORT2
 ucol_normalizeShortDefinitionString(const char *source,
                                     char *destination,
@@ -1306,40 +1305,53 @@ U_CAPI uint32_t U_EXPORT2 ucol_getVariableTop(const UCollator *coll, UErrorCode 
  * @see ucol_setVariableTop
  * @deprecated ICU 53 Call ucol_setMaxVariable() instead.
  */
-U_DEPRECATED void U_EXPORT2 
+U_DEPRECATED void U_EXPORT2
 ucol_restoreVariableTop(UCollator *coll, const uint32_t varTop, UErrorCode *status);
 #endif  /* U_HIDE_DEPRECATED_API */
 
 /**
  * Thread safe cloning operation. The result is a clone of a given collator.
  * @param coll collator to be cloned
- * @param stackBuffer <em>Deprecated functionality as of ICU 52, use NULL.</em><br>
- * user allocated space for the new clone. 
- * If NULL new memory will be allocated. 
- *  If buffer is not large enough, new memory will be allocated.
- *  Clients can use the U_COL_SAFECLONE_BUFFERSIZE.
- * @param pBufferSize <em>Deprecated functionality as of ICU 52, use NULL or 1.</em><br>
- *  pointer to size of allocated space. 
- *  If *pBufferSize == 0, a sufficient size for use in cloning will 
- *  be returned ('pre-flighting')
- *  If *pBufferSize is not enough for a stack-based safe clone, 
- *  new memory will be allocated.
  * @param status to indicate whether the operation went on smoothly or there were errors
- *    An informational status value, U_SAFECLONE_ALLOCATED_ERROR, is used if any
- * allocations were necessary.
  * @return pointer to the new clone
  * @see ucol_open
  * @see ucol_openRules
  * @see ucol_close
- * @stable ICU 2.0
+ * @stable ICU 71
  */
-U_CAPI UCollator* U_EXPORT2
+U_CAPI UCollator* U_EXPORT2 ucol_clone(const UCollator *coll, UErrorCode *status);
+
+#ifndef U_HIDE_DEPRECATED_API
+
+/**
+ * Thread safe cloning operation. The result is a clone of a given collator.
+ * @param coll collator to be cloned
+ * @param stackBuffer <em>Deprecated functionality as of ICU 52, use NULL.</em><br>
+ * user allocated space for the new clone.
+ * If NULL new memory will be allocated.
+ *  If buffer is not large enough, new memory will be allocated.
+ *  Clients can use the U_COL_SAFECLONE_BUFFERSIZE.
+ * @param pBufferSize <em>Deprecated functionality as of ICU 52, use NULL or 1.</em><br>
+ *  pointer to size of allocated space.
+ *  If *pBufferSize == 0, a sufficient size for use in cloning will
+ *  be returned ('pre-flighting')
+ *  If *pBufferSize is not enough for a stack-based safe clone,
+ *  new memory will be allocated.
+ * @param status to indicate whether the operation went on smoothly or there were errors
+ *    An informational status value, U_SAFECLONE_ALLOCATED_ERROR, is used
+ * if pBufferSize != NULL and any allocations were necessary
+ * @return pointer to the new clone
+ * @see ucol_open
+ * @see ucol_openRules
+ * @see ucol_close
+ * @deprecated ICU 71 Use ucol_clone() instead.
+ */
+U_DEPRECATED UCollator* U_EXPORT2
 ucol_safeClone(const UCollator *coll,
                void            *stackBuffer,
                int32_t         *pBufferSize,
                UErrorCode      *status);
 
-#ifndef U_HIDE_DEPRECATED_API
 
 /** default memory size for the new clone.
  * @deprecated ICU 52. Do not rely on ucol_safeClone() cloning into any provided buffer.

@@ -21,9 +21,10 @@
 #include "js/GCPolicyAPI.h"
 #include "js/GCTypeMacros.h"  // JS_FOR_EACH_PUBLIC_{,TAGGED_}GC_POINTER_TYPE
 #include "js/HashTable.h"
-#include "js/HeapAPI.h"
+#include "js/HeapAPI.h"  // StackKindCount
 #include "js/ProfilingStack.h"
 #include "js/Realm.h"
+#include "js/Stack.h"  // JS::NativeStackLimit
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
 
@@ -1026,7 +1027,7 @@ class RootingContext {
 
  public:
   /* Limit pointer for checking native stack consumption. */
-  uintptr_t nativeStackLimit[StackKindCount];
+  JS::NativeStackLimit nativeStackLimit[StackKindCount];
 
 #ifdef __wasi__
   // For WASI we can't catch call-stack overflows with stack-pointer checks, so
@@ -1567,6 +1568,27 @@ void CallTraceCallbackOnNonHeap(T* v, const TraceCallbacks& aCallbacks,
 }
 
 } /* namespace gc */
+
+template <typename Wrapper, typename T1, typename T2>
+class WrappedPtrOperations<std::pair<T1, T2>, Wrapper> {
+  const std::pair<T1, T2>& pair() const {
+    return static_cast<const Wrapper*>(this)->get();
+  }
+
+ public:
+  const T1& first() const { return pair().first; }
+  const T2& second() const { return pair().second; }
+};
+
+template <typename Wrapper, typename T1, typename T2>
+class MutableWrappedPtrOperations<std::pair<T1, T2>, Wrapper>
+    : public WrappedPtrOperations<std::pair<T1, T2>, Wrapper> {
+  std::pair<T1, T2>& pair() { return static_cast<Wrapper*>(this)->get(); }
+
+ public:
+  T1& first() { return pair().first; }
+  T2& second() { return pair().second; }
+};
 
 } /* namespace js */
 

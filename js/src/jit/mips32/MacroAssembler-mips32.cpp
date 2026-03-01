@@ -1815,7 +1815,7 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   bind(&catch_);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfTarget()), a0);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
-          BaselineFrameReg);
+          FramePointer);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
   jump(a0);
@@ -1828,7 +1828,7 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
 
   loadPtr(Address(sp, ResumeFromException::offsetOfTarget()), a0);
   loadPtr(Address(sp, ResumeFromException::offsetOfFramePointer()),
-          BaselineFrameReg);
+          FramePointer);
   loadPtr(Address(sp, ResumeFromException::offsetOfStackPointer()), sp);
 
   pushValue(exception);
@@ -1840,14 +1840,13 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   Label profilingInstrumentation;
   bind(&returnBaseline);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
-          BaselineFrameReg);
+          FramePointer);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
-  loadValue(
-      Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfReturnValue()),
-      JSReturnOperand);
-  ma_move(StackPointer, BaselineFrameReg);
-  pop(BaselineFrameReg);
+  loadValue(Address(FramePointer, BaselineFrame::reverseOffsetOfReturnValue()),
+            JSReturnOperand);
+  ma_move(StackPointer, FramePointer);
+  pop(FramePointer);
   jump(&profilingInstrumentation);
 
   // Return the given value to the caller.
@@ -1855,6 +1854,8 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   loadValue(Address(StackPointer, ResumeFromException::offsetOfException()),
             JSReturnOperand);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
+          FramePointer);
+  loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
 
   // If profiling is enabled, then update the lastProfilingFrame to refer to
@@ -1865,7 +1866,7 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
     Label skipProfilingInstrumentation;
     // Test if profiler enabled.
     AbsoluteAddress addressOfEnabled(
-        GetJitContext()->runtime->geckoProfiler().addressOfEnabled());
+        asMasm().runtime()->geckoProfiler().addressOfEnabled());
     asMasm().branch32(Assembler::Equal, addressOfEnabled, Imm32(0),
                       &skipProfilingInstrumentation);
     jump(profilerExitTail);
@@ -1937,7 +1938,7 @@ void MacroAssemblerMIPSCompat::profilerEnterFrame(Register framePtr,
 }
 
 void MacroAssemblerMIPSCompat::profilerExitFrame() {
-  jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
+  jump(asMasm().runtime()->jitRuntime()->getProfilerExitFrameTail());
 }
 
 void MacroAssembler::subFromStackPtr(Imm32 imm32) {

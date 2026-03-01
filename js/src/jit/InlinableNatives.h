@@ -143,7 +143,6 @@
   _(IntrinsicUnsafeGetObjectFromReservedSlot)      \
   _(IntrinsicUnsafeGetInt32FromReservedSlot)       \
   _(IntrinsicUnsafeGetStringFromReservedSlot)      \
-  _(IntrinsicUnsafeGetBooleanFromReservedSlot)     \
                                                    \
   _(IntrinsicIsCallable)                           \
   _(IntrinsicIsConstructor)                        \

@@ -419,6 +419,9 @@ extern bool DoCompareFallback(JSContext* cx, BaselineFrame* frame,
                               ICFallbackStub* stub, HandleValue lhs,
                               HandleValue rhs, MutableHandleValue ret);
 
+extern bool DoCloseIterFallback(JSContext* cx, BaselineFrame* frame,
+                                ICFallbackStub* stub, HandleObject iter);
+
 }  // namespace jit
 }  // namespace js
 

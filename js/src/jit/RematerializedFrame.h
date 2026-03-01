@@ -13,7 +13,6 @@
 
 #include "jstypes.h"
 
-#include "gc/Rooting.h"
 #include "jit/JitFrames.h"
 #include "jit/ScriptFromCalleeToken.h"
 #include "js/GCVector.h"
@@ -140,7 +139,7 @@ class RematerializedFrame {
   }
 
   [[nodiscard]] bool initFunctionEnvironmentObjects(JSContext* cx);
-  [[nodiscard]] bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  [[nodiscard]] bool pushVarEnvironment(JSContext* cx, Handle<Scope*> scope);
 
   bool hasInitialEnvironment() const { return hasInitialEnv_; }
   CallObject& callObj() const;

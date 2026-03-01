@@ -12,7 +12,7 @@
 #include <stdlib.h>  // getenv
 
 #include "jit/BaselineFrame.h"   // js::jit::BaselineFrame
-#include "jit/JitFrames.h"       // js::jit::EnsureBareExitFrame
+#include "jit/JitFrames.h"       // js::jit::EnsureUnwoundJitExitFrame
 #include "jit/JSJitFrameIter.h"  // js::jit::{FrameType,InlineFrameIterator,JSJitFrameIter,MaybeReadFallback,SnapshotIterator}
 #include "js/GCAPI.h"            // JS::AutoSuppressGCAnalysis
 #include "js/Principals.h"       // JSSubsumesOp
@@ -178,7 +178,7 @@ void JitFrameIter::settle() {
 
   if (isWasm()) {
     const wasm::WasmFrameIter& wasmFrame = asWasm();
-    if (!wasmFrame.unwoundIonCallerFP()) {
+    if (!wasmFrame.unwoundJitCallerFP()) {
       return;
     }
 
@@ -193,8 +193,8 @@ void JitFrameIter::settle() {
     // The wasm iterator has saved the previous jit frame pointer for us.
 
     MOZ_ASSERT(wasmFrame.done());
-    uint8_t* prevFP = wasmFrame.unwoundIonCallerFP();
-    jit::FrameType prevFrameType = wasmFrame.unwoundIonFrameType();
+    uint8_t* prevFP = wasmFrame.unwoundJitCallerFP();
+    jit::FrameType prevFrameType = wasmFrame.unwoundJitFrameType();
 
     if (mustUnwindActivation_) {
       act_->setJSExitFP(prevFP);
@@ -225,7 +225,7 @@ void JitFrameIter::operator++() {
       // don't see this frame when they use ScriptFrameIter, and (2)
       // ScriptFrameIter does not crash when accessing an IonScript
       // that's destroyed by the ionScript->decref call.
-      EnsureBareExitFrame(act_, prevFrame);
+      EnsureUnwoundJitExitFrame(act_, prevFrame);
     }
   } else if (isWasm()) {
     ++asWasm();

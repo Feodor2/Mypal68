@@ -19,6 +19,7 @@
 #include "vm/EqualityOperations.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
+#include "vm/RecordTupleShared.h"
 #include "vm/RecordType.h"
 #include "vm/SelfHosting.h"
 #include "vm/ToSource.h"
@@ -224,6 +225,31 @@ bool js::tuple_value_of(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+bool TupleType::copy(JSContext* cx, Handle<TupleType*> in,
+                     MutableHandle<TupleType*> out) {
+  out.set(TupleType::createUninitialized(cx, in->length()));
+  if (!out) {
+    return false;
+  }
+  RootedValue v(cx), vCopy(cx);
+  for (uint32_t i = 0; i < in->length(); i++) {
+    // Let v = in[i]
+    v.set(in->getDenseElement(i));
+
+    // Copy v
+    if (!CopyRecordTupleElement(cx, v, &vCopy)) {
+      return false;
+    }
+
+    // Set result[i] to v
+    if (!out->initializeNextElement(cx, vCopy)) {
+      return false;
+    }
+  }
+  out->finishInitialization(cx);
+  return true;
+}
+
 TupleType* TupleType::create(JSContext* cx, uint32_t length,
                              const Value* elements) {
   for (uint32_t index = 0; index < length; index++) {
@@ -246,7 +272,7 @@ TupleType* TupleType::create(JSContext* cx, uint32_t length,
 }
 
 static TupleType* allocate(JSContext* cx, gc::AllocKind allocKind) {
-  RootedShape shape(cx, TupleType::getInitialShape(cx));
+  Rooted<Shape*> shape(cx, TupleType::getInitialShape(cx));
   if (!shape) {
     return nullptr;
   }
@@ -489,7 +515,7 @@ bool TupleConstructor(JSContext* cx, unsigned argc, Value* vp) {
 \*===========================================================================*/
 
 static bool ArrayToTuple(JSContext* cx, const CallArgs& args) {
-  RootedArrayObject aObj(cx, &args.rval().toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> aObj(cx, &args.rval().toObject().as<ArrayObject>());
   TupleType* tup = TupleType::createUnchecked(cx, aObj);
 
   if (!tup) {
@@ -521,7 +547,8 @@ bool js::tuple_is_tuple(JSContext* cx, unsigned argc, Value* vp) {
   return IsTupleUnchecked(cx, args);
 }
 
-TupleType* TupleType::createUnchecked(JSContext* cx, HandleArrayObject aObj) {
+TupleType* TupleType::createUnchecked(JSContext* cx,
+                                      Handle<ArrayObject*> aObj) {
   size_t len = aObj->getDenseInitializedLength();
   MOZ_ASSERT(aObj->getElementsHeader()->numShiftedElements() == 0);
   TupleType* tup = createUninitialized(cx, len);

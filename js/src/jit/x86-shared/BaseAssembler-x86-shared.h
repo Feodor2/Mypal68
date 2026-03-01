@@ -2774,16 +2774,22 @@ class BaseAssembler : public GenericAssembler {
 
   void vcmpps_rr(uint8_t order, XMMRegisterID src1, XMMRegisterID src0,
                  XMMRegisterID dst) {
+    MOZ_ASSERT_IF(!useVEX_,
+                  order < uint8_t(X86Encoding::ConditionCmp_AVX_Enabled));
     twoByteOpImmSimd("vcmpps", VEX_PS, OP2_CMPPS_VpsWps, order, src1, src0,
                      dst);
   }
   void vcmpps_mr(uint8_t order, int32_t offset, RegisterID base,
                  XMMRegisterID src0, XMMRegisterID dst) {
+    MOZ_ASSERT_IF(!useVEX_,
+                  order < uint8_t(X86Encoding::ConditionCmp_AVX_Enabled));
     twoByteOpImmSimd("vcmpps", VEX_PS, OP2_CMPPS_VpsWps, order, offset, base,
                      src0, dst);
   }
   void vcmpps_mr(uint8_t order, const void* address, XMMRegisterID src0,
                  XMMRegisterID dst) {
+    MOZ_ASSERT_IF(!useVEX_,
+                  order < uint8_t(X86Encoding::ConditionCmp_AVX_Enabled));
     twoByteOpImmSimd("vcmpps", VEX_PS, OP2_CMPPS_VpsWps, order, address, src0,
                      dst);
   }
@@ -2808,6 +2814,11 @@ class BaseAssembler : public GenericAssembler {
   size_t vcmpleps_mr(const void* address, XMMRegisterID src0,
                      XMMRegisterID dst) {
     vcmpps_mr(X86Encoding::ConditionCmp_LE, address, src0, dst);
+    return CMPPS_MR_PATCH_OFFSET;
+  }
+  size_t vcmpgeps_mr(const void* address, XMMRegisterID src0,
+                     XMMRegisterID dst) {
+    vcmpps_mr(X86Encoding::ConditionCmp_GE, address, src0, dst);
     return CMPPS_MR_PATCH_OFFSET;
   }
 

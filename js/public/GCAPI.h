@@ -218,6 +218,35 @@ typedef enum JSGCParamKey {
   JSGC_LOW_FREQUENCY_HEAP_GROWTH = 16,
 
   /**
+   * Whether balanced heap limits are enabled.
+   *
+   * If this is set to true then heap limits are calculated in a way designed to
+   * balance memory usage optimally between many heaps.
+   *
+   * Otherwise, heap limits are set based on a linear multiple of the retained
+   * size after the last collection.
+   *
+   * Pref: javascript.options.mem.gc_balanced_heap_limits
+   * Default: BalancedHeapLimitsEnabled
+   */
+  JSGC_BALANCED_HEAP_LIMITS_ENABLED = 17,
+
+  /**
+   * Heap growth parameter for balanced heap limit calculation.
+   *
+   * This parameter trades off GC time for memory usage. Smaller values result
+   * in lower memory use and larger values result in less time spent collecting.
+   *
+   * Heap limits are set to the heap's retained size plus some extra space. The
+   * extra space is calculated based on several factors but is scaled
+   * proportionally to this parameter.
+   *
+   * Pref: javascript.options.mem.gc_heap_growth_factor
+   * Default: HeapGrowthFactor
+   */
+  JSGC_HEAP_GROWTH_FACTOR = 18,
+
+  /**
    * Lower limit for collecting a zone (MB).
    *
    * Zones smaller than this size will not normally be collected.

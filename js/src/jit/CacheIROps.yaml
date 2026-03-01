@@ -540,7 +540,7 @@
     obj: ObjId
     index: Int32Id
 
-- name: GuardIndexGreaterThanDenseInitLength
+- name: GuardIndexIsNotDenseElement
   shared: true
   transpile: true
   cost_estimate: 1
@@ -607,6 +607,15 @@
     obj: ObjId
     offset: RawInt32Field
     val: ValueField
+
+- name: LoadFixedSlot
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    result: ValId
+    obj: ObjId
+    offset: RawInt32Field
 
 - name: LoadDynamicSlot
   shared: true
@@ -2818,6 +2827,16 @@
   args:
     obj: ObjId
     shape: ShapeField
+
+- name: CloseIterScriptedResult
+  shared: false
+  transpile: true
+  cost_estimate: 5
+  args:
+    iter: ObjId
+    callee: ObjId
+    kind: CompletionKindImm
+    targetNargs: UInt32Imm
 
 - name: CallPrintString
   shared: true

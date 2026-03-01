@@ -899,12 +899,13 @@ void LIRGenerator::visitTest(MTest* test) {
       return;
     }
 
-    // Compare and branch Int32, Symbol or Object pointers.
+    // Compare and branch Int32, Symbol, Object, or RefOrNull pointers.
     if (comp->isInt32Comparison() ||
         comp->compareType() == MCompare::Compare_UInt32 ||
         comp->compareType() == MCompare::Compare_UIntPtr ||
         comp->compareType() == MCompare::Compare_Object ||
-        comp->compareType() == MCompare::Compare_Symbol) {
+        comp->compareType() == MCompare::Compare_Symbol ||
+        comp->compareType() == MCompare::Compare_RefOrNull) {
       JSOp op = ReorderComparison(comp->jsop(), &left, &right);
       LAllocation lhs = useRegister(left);
       LAllocation rhs;
@@ -4778,6 +4779,13 @@ void LIRGenerator::visitIteratorEnd(MIteratorEnd* ins) {
   add(lir, ins);
 }
 
+void LIRGenerator::visitCloseIterCache(MCloseIterCache* ins) {
+  LCloseIterCache* lir =
+      new (alloc()) LCloseIterCache(useRegister(ins->iter()), temp());
+  add(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
 void LIRGenerator::visitStringLength(MStringLength* ins) {
   MOZ_ASSERT(ins->string()->type() == MIRType::String);
   define(new (alloc()) LStringLength(useRegisterAtStart(ins->string())), ins);
@@ -5926,8 +5934,8 @@ void LIRGenerator::visitGuardInt32IsNonNegative(MGuardInt32IsNonNegative* ins) {
   redefine(ins, index);
 }
 
-void LIRGenerator::visitGuardIndexGreaterThanDenseInitLength(
-    MGuardIndexGreaterThanDenseInitLength* ins) {
+void LIRGenerator::visitGuardIndexIsNotDenseElement(
+    MGuardIndexIsNotDenseElement* ins) {
   MDefinition* object = ins->object();
   MOZ_ASSERT(object->type() == MIRType::Object);
 
@@ -5937,7 +5945,7 @@ void LIRGenerator::visitGuardIndexGreaterThanDenseInitLength(
   LDefinition spectreTemp =
       BoundsCheckNeedsSpectreTemp() ? temp() : LDefinition::BogusTemp();
 
-  auto* guard = new (alloc()) LGuardIndexGreaterThanDenseInitLength(
+  auto* guard = new (alloc()) LGuardIndexIsNotDenseElement(
       useRegister(object), useRegister(index), temp(), spectreTemp);
   assignSnapshot(guard, ins->bailoutKind());
   add(guard, ins);

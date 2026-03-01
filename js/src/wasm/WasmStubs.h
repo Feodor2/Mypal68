@@ -57,7 +57,6 @@ class ABIResult {
       case ValType::F64:
         MOZ_ASSERT(loc_ == Location::Fpr);
         break;
-      case ValType::Rtt:
       case ValType::Ref:
         MOZ_ASSERT(loc_ == Location::Gpr);
         break;

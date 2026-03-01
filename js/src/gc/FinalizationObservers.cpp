@@ -212,11 +212,12 @@ void FinalizationObservers::traceWeakFinalizationRegistryEdges(JSTracer* trc) {
 
     // Sweep finalization records, updating any pointers moved by the GC and
     // remove if necessary.
-    records.mutableEraseIf([&](HeapPtrObject& heapPtr) {
+    records.mutableEraseIf([&](HeapPtr<JSObject*>& heapPtr) {
       auto result = TraceWeakEdge(trc, &heapPtr, "FinalizationRecord");
       JSObject* obj =
           result.isLive() ? result.finalTarget() : result.initialTarget();
       FinalizationRecordObject* record = UnwrapFinalizationRecord(obj);
+      MOZ_ASSERT_IF(record, record->isInRecordMap());
 
       bool shouldRemove = !result.isLive() || shouldRemoveRecord(record);
       if (shouldRemove && record && record->isInRecordMap()) {
@@ -419,7 +420,7 @@ void FinalizationObservers::traceWeakWeakRefEdges(JSTracer* trc) {
 
 void FinalizationObservers::traceWeakWeakRefVector(
     JSTracer* trc, WeakRefHeapPtrVector& weakRefs, JSObject* target) {
-  weakRefs.mutableEraseIf([&](HeapPtrObject& obj) -> bool {
+  weakRefs.mutableEraseIf([&](HeapPtr<JSObject*>& obj) -> bool {
     auto result = TraceWeakEdge(trc, &obj, "WeakRef");
     if (result.isDead()) {
       JSObject* wrapper = result.initialTarget();
@@ -438,7 +439,7 @@ void FinalizationObservers::checkTables() const {
   for (auto r = recordMap.all(); !r.empty(); r.popFront()) {
     for (JSObject* object : r.front().value()) {
       FinalizationRecordObject* record = UnwrapFinalizationRecord(object);
-      if (record && record->zone() != zone) {
+      if (record && record->isInRecordMap() && record->zone() != zone) {
         MOZ_ASSERT(crossZoneRecords.has(object));
         recordCount++;
       }

@@ -25,7 +25,7 @@ LIRGraph::LIRGraph(MIRGraph* mir)
       nonCallSafepoints_(mir->alloc()),
       numVirtualRegisters_(0),
       numInstructions_(1),  // First id is 1.
-      localSlotCount_(0),
+      localSlotsSize_(0),
       argumentSlotCount_(0),
       mir_(*mir) {}
 
@@ -289,7 +289,6 @@ LSnapshot::LSnapshot(LRecoverInfo* recoverInfo, BailoutKind kind)
       recoverInfo_(recoverInfo),
       snapshotOffset_(INVALID_SNAPSHOT_OFFSET),
       numSlots_(TotalOperandCount(recoverInfo) * BOX_PIECES),
-      bailoutId_(INVALID_BAILOUT_ID),
       bailoutKind_(kind) {}
 
 bool LSnapshot::init(MIRGenerator* gen) {

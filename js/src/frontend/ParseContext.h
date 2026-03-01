@@ -319,9 +319,6 @@ class ParseContext : public Nestable<ParseContext> {
   };
 
  private:
-  // Trace logging of parsing time.
-  AutoFrontendTraceLog traceLog_;
-
   // Context shared between parsing and bytecode generation.
   SharedContext* sc_;
 

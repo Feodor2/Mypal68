@@ -223,6 +223,7 @@ JS_PUBLIC_API void JS::PrepareForFullGC(JSContext* cx) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
+  cx->runtime()->gc.fullGCRequested = true;
   for (ZonesIter zone(cx->runtime(), WithAtoms); !zone.done(); zone.next()) {
     zone->scheduleGC();
   }
@@ -261,6 +262,7 @@ JS_PUBLIC_API void JS::SkipZoneForGC(JSContext* cx, Zone* zone) {
   CHECK_THREAD(cx);
   MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
 
+  cx->runtime()->gc.fullGCRequested = false;
   zone->unscheduleGC();
 }
 
@@ -459,6 +461,33 @@ uint64_t js::gc::NextCellUniqueId(JSRuntime* rt) {
 }
 
 namespace js {
+
+static const struct GCParamInfo {
+  const char* name;
+  JSGCParamKey key;
+  bool writable;
+} GCParameters[] = {
+#define DEFINE_PARAM_INFO(name, key, writable) {name, key, writable},
+    FOR_EACH_GC_PARAM(DEFINE_PARAM_INFO)
+#undef DEFINE_PARAM_INFO
+};
+
+bool GetGCParameterInfo(const char* name, JSGCParamKey* keyOut,
+                        bool* writableOut) {
+  MOZ_ASSERT(keyOut);
+  MOZ_ASSERT(writableOut);
+
+  for (const GCParamInfo& info : GCParameters) {
+    if (strcmp(name, info.name) == 0) {
+      *keyOut = info.key;
+      *writableOut = info.writable;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 namespace gc {
 namespace MemInfo {
 

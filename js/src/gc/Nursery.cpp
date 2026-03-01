@@ -885,44 +885,49 @@ void js::Nursery::printCollectionProfile(JS::GCReason reason,
 
   TimeDuration ts = collectionStartTime() - stats().creationTime();
 
+  FILE* file = stats().profileFile();
   fprintf(
-      stderr, "MinorGC: %6zu %14p %10.6f %-20.20s %5.1f%% %6zu %6zu %6" PRIu32,
+      file, "MinorGC: %7zu %14p %10.6f %-20.20s %5.1f%% %6zu %6zu %6" PRIu32,
       size_t(getpid()), runtime(), ts.ToSeconds(), JS::ExplainGCReason(reason),
       promotionRate * 100, previousGC.nurseryCapacity / 1024, capacity() / 1024,
       stats().getStat(gcstats::STAT_STRINGS_DEDUPLICATED));
 
-  printProfileDurations(profileDurations_);
+  printProfileDurations(file, profileDurations_);
 }
 
-// static
 void js::Nursery::printProfileHeader() {
+  FILE* file = stats().profileFile();
   fprintf(
-      stderr,
-      "MinorGC: PID    Runtime        Timestamp  Reason               PRate  "
-      "OldSz  NewSz  Dedup ");
-#define PRINT_HEADER(name, text) fprintf(stderr, " %-6.6s", text);
+      file,
+      "MinorGC: PID     Runtime        Timestamp  Reason               PRate  "
+      "OldKB  NewKB  Dedup ");
+#define PRINT_HEADER(name, text) fprintf(file, " %-6.6s", text);
   FOR_EACH_NURSERY_PROFILE_TIME(PRINT_HEADER)
 #undef PRINT_HEADER
-  fprintf(stderr, "\n");
+  fprintf(file, "\n");
 }
 
 // static
-void js::Nursery::printProfileDurations(const ProfileDurations& times) {
+void js::Nursery::printProfileDurations(FILE* file,
+                                        const ProfileDurations& times) {
   for (auto time : times) {
-    fprintf(stderr, " %6" PRIi64, static_cast<int64_t>(time.ToMicroseconds()));
+    fprintf(file, " %6" PRIi64, static_cast<int64_t>(time.ToMicroseconds()));
   }
-  fprintf(stderr, "\n");
+  fprintf(file, "\n");
 }
 
 void js::Nursery::printTotalProfileTimes() {
-  if (enableProfiling_) {
-    fprintf(stderr,
-            "MinorGC: %6zu %14p TOTALS: %7" PRIu64
-            " collections:               %16" PRIu64,
-            size_t(getpid()), runtime(), gc->stringStats.deduplicatedStrings,
-            gc->minorGCCount());
-    printProfileDurations(totalDurations_);
+  if (!enableProfiling_) {
+    return;
   }
+
+  FILE* file = stats().profileFile();
+  fprintf(file,
+          "MinorGC: %7zu %14p TOTALS: %7" PRIu64
+          " collections:               %16" PRIu64,
+          size_t(getpid()), runtime(), gc->stringStats.deduplicatedStrings,
+          gc->minorGCCount());
+  printProfileDurations(file, totalDurations_);
 }
 
 void js::Nursery::maybeClearProfileDurations() {
@@ -1069,6 +1074,7 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
   previousGC.nurseryUsedBytes = usedSpace();
   previousGC.nurseryCapacity = capacity();
   previousGC.nurseryCommitted = committed();
+  previousGC.nurseryUsedChunkCount = currentChunk_ + 1;
   previousGC.tenuredBytes = 0;
   previousGC.tenuredCells = 0;
 
@@ -1078,10 +1084,16 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
   bool wasEmpty = isEmpty();
   if (!wasEmpty) {
     CollectionResult result = doCollection(reason);
-    MOZ_ASSERT(result.tenuredBytes <= previousGC.nurseryUsedBytes);
+    // Don't include chunk headers when calculating nursery space, since this
+    // space does not represent data that can be tenured
+    MOZ_ASSERT(result.tenuredBytes <=
+               (previousGC.nurseryUsedBytes -
+                (sizeof(ChunkBase) * previousGC.nurseryUsedChunkCount)));
+
     previousGC.reason = reason;
     previousGC.tenuredBytes = result.tenuredBytes;
     previousGC.tenuredCells = result.tenuredCells;
+    previousGC.nurseryUsedChunkCount = currentChunk_ + 1;
   }
 
   // Resize the nursery.
@@ -1164,7 +1176,7 @@ void js::Nursery::printDeduplicationData(js::StringStats& prev,
 js::Nursery::CollectionResult js::Nursery::doCollection(JS::GCReason reason) {
   JSRuntime* rt = runtime();
   AutoGCSession session(gc, JS::HeapState::MinorCollecting);
-  AutoSetThreadIsPerformingGC performingGC;
+  AutoSetThreadIsPerformingGC performingGC(rt->gcContext());
   AutoStopVerifyingBarriers av(rt, false);
   AutoDisableProxyCheck disableStrictProxyChecking;
   mozilla::DebugOnly<AutoEnterOOMUnsafeRegion> oomUnsafeRegion;
@@ -1387,6 +1399,11 @@ bool js::Nursery::registerMallocedBuffer(void* buffer, size_t nbytes) {
 }
 
 void js::Nursery::sweep() {
+  // It's important that the context's GCUse is not Finalizing at this point,
+  // otherwise we will miscount memory attached to nursery objects with
+  // CellAllocPolicy.
+  AutoSetThreadIsSweeping setThreadSweeping(runtime()->gcContext());
+
   MinorSweepingTracer trc(runtime());
 
   // Sweep unique IDs first before we sweep any tables that may be keyed based

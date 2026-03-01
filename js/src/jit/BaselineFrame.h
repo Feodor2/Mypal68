@@ -22,8 +22,7 @@ class JSJitFrameIter;
 // The stack looks like this, fp is the frame pointer:
 //
 // fp+y   arguments
-// fp+x   JitFrameLayout (frame header)
-// fp  => saved frame pointer
+// fp  => JitFrameLayout (frame header)
 // fp-x   BaselineFrame
 //        locals
 //        stack values
@@ -72,28 +71,19 @@ class BaselineFrame {
   uint32_t flags_;
 #ifdef DEBUG
   // Size of the frame. Stored in DEBUG builds when calling into C++. This is
-  // the saved frame pointer (FramePointerOffset) + BaselineFrame::Size() + the
-  // size of the local and expression stack Values.
+  // BaselineFrame::Size() + the size of the local and expression stack Values.
   //
   // We don't store this in release builds because it's redundant with the frame
-  // size stored in the frame descriptor (frame iterators can compute this value
-  // from the descriptor). In debug builds it's still useful for assertions.
+  // size computed from the frame pointers. In debug builds it's still useful
+  // for assertions.
   uint32_t debugFrameSize_;
 #else
   uint32_t unused_;
 #endif
   uint32_t loReturnValue_;  // If HAS_RVAL, the frame's return value.
   uint32_t hiReturnValue_;
-#if JS_BITS_PER_WORD == 32
-  // Ensure frame is 8-byte aligned, see static_assert below.
-  uint32_t padding_;
-#endif
 
  public:
-  // Distance between the frame pointer and the frame header (return address).
-  // This is the old frame pointer saved in the prologue.
-  static const uint32_t FramePointerOffset = sizeof(void*);
-
   [[nodiscard]] bool initForOsr(InterpreterFrame* fp, uint32_t numStackValues);
 
 #ifdef DEBUG
@@ -110,13 +100,9 @@ class BaselineFrame {
   inline void popOffEnvironmentChain();
   inline void replaceInnermostEnvironment(EnvironmentObject& env);
 
-  CalleeToken calleeToken() const {
-    uint8_t* pointer = (uint8_t*)this + Size() + offsetOfCalleeToken();
-    return *(CalleeToken*)pointer;
-  }
+  CalleeToken calleeToken() const { return framePrefix()->calleeToken(); }
   void replaceCalleeToken(CalleeToken token) {
-    uint8_t* pointer = (uint8_t*)this + Size() + offsetOfCalleeToken();
-    *(CalleeToken*)pointer = token;
+    framePrefix()->replaceCalleeToken(token);
   }
   bool isConstructing() const {
     return CalleeTokenIsConstructing(calleeToken());
@@ -128,9 +114,8 @@ class BaselineFrame {
   size_t numValueSlots(size_t frameSize) const {
     MOZ_ASSERT(frameSize == debugFrameSize());
 
-    MOZ_ASSERT(frameSize >=
-               BaselineFrame::FramePointerOffset + BaselineFrame::Size());
-    frameSize -= BaselineFrame::FramePointerOffset + BaselineFrame::Size();
+    MOZ_ASSERT(frameSize >= BaselineFrame::Size());
+    frameSize -= BaselineFrame::Size();
 
     MOZ_ASSERT((frameSize % sizeof(Value)) == 0);
     return frameSize / sizeof(Value);
@@ -146,8 +131,7 @@ class BaselineFrame {
   }
 
   static size_t frameSizeForNumValueSlots(size_t numValueSlots) {
-    return BaselineFrame::FramePointerOffset + BaselineFrame::Size() +
-           numValueSlots * sizeof(Value);
+    return BaselineFrame::Size() + numValueSlots * sizeof(Value);
   }
 
   Value& unaliasedFormal(
@@ -172,20 +156,13 @@ class BaselineFrame {
     return *valueSlot(i);
   }
 
-  unsigned numActualArgs() const {
-    return *(size_t*)(reinterpret_cast<const uint8_t*>(this) +
-                      BaselineFrame::Size() + offsetOfNumActualArgs());
-  }
+  unsigned numActualArgs() const { return framePrefix()->numActualArgs(); }
   unsigned numFormalArgs() const { return script()->function()->nargs(); }
   Value& thisArgument() const {
     MOZ_ASSERT(isFunctionFrame());
-    return *(Value*)(reinterpret_cast<const uint8_t*>(this) +
-                     BaselineFrame::Size() + offsetOfThis());
+    return framePrefix()->thisv();
   }
-  Value* argv() const {
-    return (Value*)(reinterpret_cast<const uint8_t*>(this) +
-                    BaselineFrame::Size() + offsetOfArg(0));
-  }
+  Value* argv() const { return framePrefix()->actualArgs(); }
 
   [[nodiscard]] bool saveGeneratorSlots(JSContext* cx, unsigned nslots,
                                         ArrayObject* dest) const;
@@ -292,7 +269,7 @@ class BaselineFrame {
   [[nodiscard]] bool initFunctionEnvironmentObjects(JSContext* cx);
   [[nodiscard]] bool pushClassBodyEnvironment(JSContext* cx,
                                               Handle<ClassBodyScope*> scope);
-  [[nodiscard]] bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  [[nodiscard]] bool pushVarEnvironment(JSContext* cx, Handle<Scope*> scope);
 
   void initArgsObjUnchecked(ArgumentsObject& argsobj) {
     flags_ |= HAS_ARGS_OBJ;
@@ -328,25 +305,10 @@ class BaselineFrame {
   bool isDebuggerEvalFrame() const { return false; }
 
   JitFrameLayout* framePrefix() const {
-    uint8_t* fp = (uint8_t*)this + Size() + FramePointerOffset;
+    uint8_t* fp = (uint8_t*)this + Size();
     return (JitFrameLayout*)fp;
   }
 
-  // Methods below are used by the compiler.
-  static size_t offsetOfCalleeToken() {
-    return FramePointerOffset + js::jit::JitFrameLayout::offsetOfCalleeToken();
-  }
-  static size_t offsetOfThis() {
-    return FramePointerOffset + js::jit::JitFrameLayout::offsetOfThis();
-  }
-  static size_t offsetOfArg(size_t index) {
-    return FramePointerOffset +
-           js::jit::JitFrameLayout::offsetOfActualArg(index);
-  }
-  static size_t offsetOfNumActualArgs() {
-    return FramePointerOffset +
-           js::jit::JitFrameLayout::offsetOfNumActualArgs();
-  }
   static size_t Size() { return sizeof(BaselineFrame); }
 
   // The reverseOffsetOf methods below compute the offset relative to the
@@ -401,9 +363,7 @@ class BaselineFrame {
 };
 
 // Ensure the frame is 8-byte aligned (required on ARM).
-static_assert(((sizeof(BaselineFrame) + BaselineFrame::FramePointerOffset) %
-               8) == 0,
-              "frame (including frame pointer) must be 8-byte aligned");
+static_assert((sizeof(BaselineFrame) % 8) == 0, "frame must be 8-byte aligned");
 
 }  // namespace jit
 }  // namespace js

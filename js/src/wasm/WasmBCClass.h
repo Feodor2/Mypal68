@@ -53,7 +53,7 @@ struct CatchInfo {
   explicit CatchInfo(uint32_t tagIndex_) : tagIndex(tagIndex_) {}
 };
 
-using CatchInfoVector = Vector<CatchInfo, 0, SystemAllocPolicy>;
+using CatchInfoVector = Vector<CatchInfo, 1, SystemAllocPolicy>;
 
 // Control node, representing labels and stack heights at join points.
 struct Control {
@@ -941,6 +941,10 @@ struct BaseCompiler final {
                     const Stk& indexVal, const FunctionCall& call,
                     CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
   CodeOffset callImport(unsigned globalDataOffset, const FunctionCall& call);
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+  void callRef(const Stk& calleeRef, const FunctionCall& call,
+               CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
+#endif
   CodeOffset builtinCall(SymbolicAddress builtin, const FunctionCall& call);
   CodeOffset builtinInstanceMethodCall(const SymbolicAddressSignature& builtin,
                                        const ABIArg& instanceArg,
@@ -1550,6 +1554,7 @@ struct BaseCompiler final {
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
   [[nodiscard]] bool emitRefAsNonNull();
   [[nodiscard]] bool emitBrOnNull();
+  [[nodiscard]] bool emitCallRef();
 #endif
 
   [[nodiscard]] bool emitAtomicCmpXchg(ValType type, Scalar::Type viewType);
@@ -1587,17 +1592,15 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitTableSetAnyRef(uint32_t tableIndex);
 
 #ifdef ENABLE_WASM_GC
-  [[nodiscard]] bool emitStructNewWithRtt();
-  [[nodiscard]] bool emitStructNewDefaultWithRtt();
+  [[nodiscard]] bool emitStructNew();
+  [[nodiscard]] bool emitStructNewDefault();
   [[nodiscard]] bool emitStructGet(FieldExtension extension);
   [[nodiscard]] bool emitStructSet();
-  [[nodiscard]] bool emitArrayNewWithRtt();
-  [[nodiscard]] bool emitArrayNewDefaultWithRtt();
+  [[nodiscard]] bool emitArrayNew();
+  [[nodiscard]] bool emitArrayNewDefault();
   [[nodiscard]] bool emitArrayGet(FieldExtension extension);
   [[nodiscard]] bool emitArraySet();
   [[nodiscard]] bool emitArrayLen();
-  [[nodiscard]] bool emitRttCanon();
-  [[nodiscard]] bool emitRttSub();
   [[nodiscard]] bool emitRefTest();
   [[nodiscard]] bool emitRefCast();
   [[nodiscard]] bool emitBrOnCast();

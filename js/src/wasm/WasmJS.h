@@ -42,7 +42,7 @@
 #include "wasm/WasmInstanceData.h"
 #include "wasm/WasmMemory.h"
 #include "wasm/WasmModuleTypes.h"
-#include "wasm/WasmTypeDecls.h"  // MutableHandleWasmInstanceObject
+#include "wasm/WasmTypeDecls.h"
 #include "wasm/WasmValType.h"
 #include "wasm/WasmValue.h"
 
@@ -60,10 +60,10 @@ namespace js {
 class ArrayBufferObject;
 class ArrayBufferObjectMaybeShared;
 class JSStringBuilder;
-class SharedArrayRawBuffer;
 class TypedArrayObject;
 class WasmFunctionScope;
 class WasmInstanceScope;
+class WasmSharedArrayRawBuffer;
 
 namespace wasm {
 
@@ -99,7 +99,6 @@ bool HasSupport(JSContext* cx);
 
 bool BaselineAvailable(JSContext* cx);
 bool IonAvailable(JSContext* cx);
-bool CraneliftAvailable(JSContext* cx);
 
 // Test all three.
 
@@ -127,8 +126,6 @@ bool BaselineDisabledByFeatures(JSContext* cx, bool* isDisabled,
                                 JSStringBuilder* reason = nullptr);
 bool IonDisabledByFeatures(JSContext* cx, bool* isDisabled,
                            JSStringBuilder* reason = nullptr);
-bool CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
-                                 JSStringBuilder* reason = nullptr);
 
 // Predicates for feature availability.
 //
@@ -147,19 +144,15 @@ bool CodeCachingAvailable(JSContext* cx);
 bool ThreadsAvailable(JSContext* cx);
 
 #define WASM_FEATURE(NAME, ...) bool NAME##Available(JSContext* cx);
-#ifdef ENABLE_WASM_SIMD
 JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
-#else
-JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE)
-#endif
 #undef WASM_FEATURE
 
 // Privileged content that can access experimental intrinsics
 bool IsSimdPrivilegedContext(JSContext* cx);
 
 #if defined(ENABLE_WASM_SIMD)
-// Very experimental SIMD operations.
-bool SimdWormholeAvailable(JSContext* cx);
+// SIMD operations.
+bool SimdAvailable(JSContext* cx);
 
 #  if defined(DEBUG)
 // Report the result of a Simd simplification to the testing infrastructure.
@@ -175,8 +168,8 @@ bool ExceptionsAvailable(JSContext* cx);
 // and links the module's imports with the given import object.
 
 [[nodiscard]] bool Eval(JSContext* cx, Handle<TypedArrayObject*> code,
-                        HandleObject importObj, HandleValue maybeOptions,
-                        MutableHandleWasmInstanceObject instanceObj);
+                        HandleObject importObj,
+                        MutableHandle<WasmInstanceObject*> instanceObj);
 
 // Extracts the various imports from the given import object into the given
 // ImportValues structure while checking the imports against the given module.
@@ -314,7 +307,7 @@ class WasmInstanceObject : public NativeObject {
   // objects on demand (instead up-front for all table elements) while
   // correctly preserving observable function object identity.
   using ExportMap = GCHashMap<uint32_t, HeapPtr<JSFunction*>,
-                              DefaultHasher<uint32_t>, ZoneAllocPolicy>;
+                              DefaultHasher<uint32_t>, CellAllocPolicy>;
   ExportMap& exports() const;
 
   // See the definition inside WasmJS.cpp.
@@ -334,7 +327,7 @@ class WasmInstanceObject : public NativeObject {
       JSContext* cx, RefPtr<const wasm::Code> code,
       const wasm::DataSegmentVector& dataSegments,
       const wasm::ElemSegmentVector& elemSegments, uint32_t globalDataLength,
-      HandleWasmMemoryObject memory,
+      Handle<WasmMemoryObject*> memory,
       Vector<RefPtr<wasm::Table>, 0, SystemAllocPolicy>&& tables,
       const JSFunctionVector& funcImports,
       const wasm::GlobalDescVector& globals,
@@ -348,19 +341,20 @@ class WasmInstanceObject : public NativeObject {
   JSObject& exportsObj() const;
 
   [[nodiscard]] static bool getExportedFunction(
-      JSContext* cx, HandleWasmInstanceObject instanceObj, uint32_t funcIndex,
-      MutableHandleFunction fun);
+      JSContext* cx, Handle<WasmInstanceObject*> instanceObj,
+      uint32_t funcIndex, MutableHandleFunction fun);
 
   const wasm::CodeRange& getExportedFunctionCodeRange(JSFunction* fun,
                                                       wasm::Tier tier);
 
   static WasmInstanceScope* getScope(JSContext* cx,
-                                     HandleWasmInstanceObject instanceObj);
+                                     Handle<WasmInstanceObject*> instanceObj);
   static WasmFunctionScope* getFunctionScope(
-      JSContext* cx, HandleWasmInstanceObject instanceObj, uint32_t funcIndex);
+      JSContext* cx, Handle<WasmInstanceObject*> instanceObj,
+      uint32_t funcIndex);
 
   using GlobalObjectVector =
-      GCVector<HeapPtr<WasmGlobalObject*>, 0, ZoneAllocPolicy>;
+      GCVector<HeapPtr<WasmGlobalObject*>, 0, CellAllocPolicy>;
   GlobalObjectVector& indirectGlobals() const;
 };
 
@@ -380,12 +374,11 @@ class WasmMemoryObject : public NativeObject {
   static bool type(JSContext* cx, unsigned argc, Value* vp);
   static bool growImpl(JSContext* cx, const CallArgs& args);
   static bool grow(JSContext* cx, unsigned argc, Value* vp);
-  static uint64_t growShared(HandleWasmMemoryObject memory, uint64_t delta);
+  static uint64_t growShared(Handle<WasmMemoryObject*> memory, uint64_t delta);
 
-  using InstanceSet =
-      JS::WeakCache<GCHashSet<WeakHeapPtrWasmInstanceObject,
-                              MovableCellHasher<WeakHeapPtrWasmInstanceObject>,
-                              ZoneAllocPolicy>>;
+  using InstanceSet = JS::WeakCache<GCHashSet<
+      WeakHeapPtr<WasmInstanceObject*>,
+      MovableCellHasher<WeakHeapPtr<WasmInstanceObject*>>, CellAllocPolicy>>;
   bool hasObservers() const;
   InstanceSet& observers() const;
   InstanceSet* getOrCreateObservers(JSContext* cx);
@@ -433,10 +426,10 @@ class WasmMemoryObject : public NativeObject {
   size_t boundsCheckLimit() const;
 
   // If isShared() is true then obtain the underlying buffer object.
-  SharedArrayRawBuffer* sharedArrayRawBuffer() const;
+  WasmSharedArrayRawBuffer* sharedArrayRawBuffer() const;
 
   bool addMovingGrowObserver(JSContext* cx, WasmInstanceObject* instance);
-  static uint64_t grow(HandleWasmMemoryObject memory, uint64_t delta,
+  static uint64_t grow(Handle<WasmMemoryObject*> memory, uint64_t delta,
                        JSContext* cx);
 };
 

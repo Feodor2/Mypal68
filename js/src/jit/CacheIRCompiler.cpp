@@ -1188,7 +1188,7 @@ void jit::TraceCacheIRStub(JSTracer* trc, T* stub,
         // shapes. Use TraceSameZoneCrossCompartmentEdge to not assert in the
         // GC. Note: CacheIRWriter::writeShapeField asserts we never store
         // cross-zone shapes.
-        GCPtrShape& shapeField =
+        GCPtr<Shape*>& shapeField =
             stubInfo->getStubField<T, Shape*>(stub, offset);
         TraceSameZoneCrossCompartmentEdge(trc, &shapeField, "cacheir-shape");
         break;
@@ -1941,6 +1941,9 @@ bool CacheIRCompiler::emitGuardClass(ObjOperandId objId, GuardClassKind kind) {
     case GuardClassKind::Array:
       clasp = &ArrayObject::class_;
       break;
+    case GuardClassKind::PlainObject:
+      clasp = &PlainObject::class_;
+      break;
     case GuardClassKind::ArrayBuffer:
       clasp = &ArrayBufferObject::class_;
       break;
@@ -1965,8 +1968,8 @@ bool CacheIRCompiler::emitGuardClass(ObjOperandId objId, GuardClassKind kind) {
     case GuardClassKind::Map:
       clasp = &MapObject::class_;
       break;
-    default:
-      MOZ_ASSERT_UNREACHABLE();
+    case GuardClassKind::JSFunction:
+      MOZ_CRASH("JSFunction handled before switch");
   }
   MOZ_ASSERT(clasp);
 
@@ -2115,6 +2118,22 @@ bool CacheIRCompiler::emitGuardDynamicSlotValue(ObjOperandId objId,
   BaseIndex slotVal(scratch1, scratch2, TimesOne);
   masm.branchTestValue(Assembler::NotEqual, slotVal, scratchVal,
                        failure->label());
+  return true;
+}
+
+bool CacheIRCompiler::emitLoadFixedSlot(ValOperandId resultId,
+                                        ObjOperandId objId,
+                                        uint32_t offsetOffset) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  ValueOperand output = allocator.defineValueRegister(masm, resultId);
+  Register obj = allocator.useRegister(masm, objId);
+  AutoScratchRegister scratch(allocator, masm);
+
+  StubFieldOffset slotIndex(offsetOffset, StubField::Type::RawInt32);
+  emitLoadStubField(slotIndex, scratch);
+
+  masm.loadValue(BaseIndex(obj, scratch, TimesOne), output);
   return true;
 }
 
@@ -3583,8 +3602,8 @@ bool CacheIRCompiler::emitGuardInt32IsNonNegative(Int32OperandId indexId) {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIndexGreaterThanDenseInitLength(
-    ObjOperandId objId, Int32OperandId indexId) {
+bool CacheIRCompiler::emitGuardIndexIsNotDenseElement(ObjOperandId objId,
+                                                      Int32OperandId indexId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, objId);
   Register index = allocator.useRegister(masm, indexId);
@@ -3599,13 +3618,17 @@ bool CacheIRCompiler::emitGuardIndexGreaterThanDenseInitLength(
   // Load obj->elements.
   masm.loadPtr(Address(obj, NativeObject::offsetOfElements()), scratch);
 
-  // Ensure index >= initLength.
-  Label outOfBounds;
+  // Ensure index >= initLength or the element is a hole.
+  Label notDense;
   Address capacity(scratch, ObjectElements::offsetOfInitializedLength());
-  masm.spectreBoundsCheck32(index, capacity, spectreScratch, &outOfBounds);
-  masm.jump(failure->label());
-  masm.bind(&outOfBounds);
+  masm.spectreBoundsCheck32(index, capacity, spectreScratch, &notDense);
 
+  BaseValueIndex element(scratch, index);
+  masm.branchTestMagic(Assembler::Equal, element, &notDense);
+
+  masm.jump(failure->label());
+
+  masm.bind(&notDense);
   return true;
 }
 
@@ -4380,7 +4403,7 @@ bool CacheIRCompiler::emitObjectCreateResult(uint32_t templateObjectOffset) {
   callvm.prepare();
   masm.Push(scratch);
 
-  using Fn = PlainObject* (*)(JSContext*, HandlePlainObject);
+  using Fn = PlainObject* (*)(JSContext*, Handle<PlainObject*>);
   callvm.call<Fn, ObjectCreateWithTemplate>();
   return true;
 }
@@ -4400,7 +4423,7 @@ bool CacheIRCompiler::emitNewArrayFromLengthResult(
   masm.Push(length);
   masm.Push(scratch);
 
-  using Fn = ArrayObject* (*)(JSContext*, HandleArrayObject, int32_t length);
+  using Fn = ArrayObject* (*)(JSContext*, Handle<ArrayObject*>, int32_t length);
   callvm.call<Fn, ArrayConstructorOneArg>();
   return true;
 }
@@ -4495,7 +4518,8 @@ bool CacheIRCompiler::emitAddSlotAndCallAddPropHook(ObjOperandId objId,
   masm.Push(rhs);
   masm.Push(obj);
 
-  using Fn = bool (*)(JSContext*, HandleNativeObject, HandleValue, HandleShape);
+  using Fn =
+      bool (*)(JSContext*, Handle<NativeObject*>, HandleValue, Handle<Shape*>);
   callvm.callNoResult<Fn, AddSlotAndCallAddPropHook>();
   return true;
 }
@@ -7482,7 +7506,7 @@ bool CacheIRCompiler::emitCallNativeGetElementResult(ObjOperandId objId,
   masm.Push(TypedOrValueRegister(MIRType::Object, AnyRegister(obj)));
   masm.Push(obj);
 
-  using Fn = bool (*)(JSContext*, HandleNativeObject, HandleValue, int32_t,
+  using Fn = bool (*)(JSContext*, Handle<NativeObject*>, HandleValue, int32_t,
                       MutableHandleValue);
   callvm.call<Fn, NativeGetElement>();
 
@@ -7542,7 +7566,7 @@ bool CacheIRCompiler::emitCallGetSparseElementResult(ObjOperandId objId,
   masm.Push(id);
   masm.Push(obj);
 
-  using Fn = bool (*)(JSContext * cx, HandleArrayObject obj, int32_t int_id,
+  using Fn = bool (*)(JSContext * cx, Handle<NativeObject*> obj, int32_t int_id,
                       MutableHandleValue result);
   callvm.call<Fn, GetSparseElementHelper>();
   return true;
@@ -8663,29 +8687,26 @@ void CacheIRCompiler::callVM(MacroAssembler& masm) {
 }
 
 void CacheIRCompiler::callVMInternal(MacroAssembler& masm, VMFunctionId id) {
+  MOZ_ASSERT(enteredStubFrame_);
   if (mode_ == Mode::Ion) {
-    MOZ_ASSERT(preparedForVMCall_);
     TrampolinePtr code = cx_->runtime()->jitRuntime()->getVMWrapper(id);
     const VMFunctionData& fun = GetVMFunction(id);
     uint32_t frameSize = fun.explicitStackSlots() * sizeof(void*);
-    uint32_t descriptor = MakeFrameDescriptor(frameSize, FrameType::IonICCall,
-                                              ExitFrameLayout::Size());
-    masm.Push(Imm32(descriptor));
+    masm.PushFrameDescriptor(FrameType::IonICCall);
     masm.callJit(code);
 
-    // Remove rest of the frame left on the stack. We remove the return address
-    // which is implicitly popped when returning.
-    int framePop = sizeof(ExitFrameLayout) - sizeof(void*);
-
-    // Pop arguments from framePushed.
+    // Pop rest of the exit frame and the arguments left on the stack.
+    int framePop =
+        sizeof(ExitFrameLayout) - ExitFrameLayout::bytesPoppedAfterCall();
     masm.implicitPop(frameSize + framePop);
-    masm.freeStack(IonICCallFrameLayout::Size());
+
+    // Pop IonICCallFrameLayout.
+    masm.Pop(FramePointer);
+    masm.freeStack(IonICCallFrameLayout::Size() - sizeof(void*));
     return;
   }
 
   MOZ_ASSERT(mode_ == Mode::Baseline);
-
-  MOZ_ASSERT(preparedForVMCall_);
 
   TrampolinePtr code = cx_->runtime()->jitRuntime()->getVMWrapper(id);
   MOZ_ASSERT(GetVMFunction(id).expectTailCall == NonTailCall);
@@ -8721,7 +8742,7 @@ void CacheIRCompiler::assertFloatRegisterAvailable(FloatRegister reg) {
 AutoCallVM::AutoCallVM(MacroAssembler& masm, CacheIRCompiler* compiler,
                        CacheRegisterAllocator& allocator)
     : masm_(masm), compiler_(compiler), allocator_(allocator) {
-  // Ion needs to `prepareVMCall` before it can callVM and it also needs to
+  // Ion needs to `enterStubFrame` before it can callVM and it also needs to
   // initialize AutoSaveLiveRegisters.
   if (compiler_->mode_ == CacheIRCompiler::Mode::Ion) {
     // Will need to use a downcast here as well, in order to pass the
@@ -8747,7 +8768,7 @@ void AutoCallVM::prepare() {
   allocator_.discardStack(masm_);
   MOZ_ASSERT(compiler_ != nullptr);
   if (compiler_->mode_ == CacheIRCompiler::Mode::Ion) {
-    compiler_->asIon()->prepareVMCall(masm_, *save_.ptr());
+    compiler_->asIon()->enterStubFrame(masm_, *save_.ptr());
     return;
   }
   MOZ_ASSERT(compiler_->mode_ == CacheIRCompiler::Mode::Baseline);

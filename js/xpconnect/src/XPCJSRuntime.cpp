@@ -49,7 +49,6 @@
 #include "js/MemoryMetrics.h"
 #include "js/Object.h"  // JS::GetClass
 #include "js/RealmIterators.h"
-#include "js/Stream.h"  // JS::AbortSignalIsAborted, JS::InitPipeToHandling
 #include "js/SliceBudget.h"
 #include "js/UbiNode.h"
 #include "js/UbiNodeUtils.h"
@@ -1915,10 +1914,6 @@ void ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats& rtStats,
                 rtStats.runtime.scriptData,
                 "The table holding script data shared in the runtime.");
 
-  RREPORT_BYTES(rtPath + "runtime/tracelogger"_ns, KIND_HEAP,
-                rtStats.runtime.tracelogger,
-                "The memory used for the tracelogger (per-runtime).");
-
   nsCString nonNotablePath =
       rtPath +
       nsPrintfCString(
@@ -2498,12 +2493,6 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
   REPORT_BYTES("explicit/xpconnect/js-component-loader"_ns, KIND_HEAP,
                jsComponentLoaderSize, "XPConnect's JS component loader.");
 
-  // Report tracelogger (global).
-
-  REPORT_BYTES(
-      "explicit/js-non-window/tracelogger"_ns, KIND_HEAP, gStats.tracelogger,
-      "The memory used for the tracelogger, including the graph and events.");
-
   // Report HelperThreadState.
 
   REPORT_BYTES("explicit/js-non-window/helper-thread/heap-other"_ns, KIND_HEAP,
@@ -2612,7 +2601,7 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
   nsCOMPtr<nsIChannel> scriptChannel;
   rv = NS_NewChannel(getter_AddRefs(scriptChannel), uri,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER);
   NS_ENSURE_SUCCESS(rv, rv);
 

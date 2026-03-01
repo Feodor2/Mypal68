@@ -90,7 +90,7 @@ ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
 
   AutoSetNewObjectMetadata metadata(cx);
   // Try to look up the shape in the NewProxyCache.
-  RootedShape shape(cx);
+  Rooted<Shape*> shape(cx);
   if (!realm->newProxyCache.lookup(clasp, proto, shape.address())) {
     shape = SharedShape::getInitialShape(cx, clasp, realm, proto,
                                          /* nfixed = */ 0);
@@ -198,7 +198,7 @@ void ProxyObject::nuke() {
 
 JS_PUBLIC_API void js::detail::SetValueInProxy(Value* slot,
                                                const Value& value) {
-  // Slots in proxies are not GCPtrValues, so do a cast whenever assigning
+  // Slots in proxies are not GCPtr<Value>s, so do a cast whenever assigning
   // values to them which might trigger a barrier.
-  *reinterpret_cast<GCPtrValue*>(slot) = value;
+  *reinterpret_cast<GCPtr<Value>*>(slot) = value;
 }

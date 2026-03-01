@@ -27,7 +27,7 @@ namespace js {
 class HashableValue {
   // This is used for map and set keys. We use OrderedHashTableRef to update all
   // nursery keys on minor GC, so a post barrier is not required here.
-  PreBarrieredValue value;
+  PreBarriered<Value> value;
 
  public:
   struct Hasher {
@@ -83,10 +83,10 @@ template <class T, class OrderedHashPolicy, class AllocPolicy>
 class OrderedHashSet;
 
 typedef OrderedHashMap<HashableValue, HeapPtr<Value>, HashableValue::Hasher,
-                       ZoneAllocPolicy>
+                       CellAllocPolicy>
     ValueMap;
 
-typedef OrderedHashSet<HashableValue, HashableValue::Hasher, ZoneAllocPolicy>
+typedef OrderedHashSet<HashableValue, HashableValue::Hasher, CellAllocPolicy>
     ValueSet;
 
 template <typename ObjectT>
@@ -137,8 +137,18 @@ class MapObject : public NativeObject {
   [[nodiscard]] static bool iterator(JSContext* cx, IteratorKind kind,
                                      HandleObject obj, MutableHandleValue iter);
 
+  // OrderedHashMap with the same memory layout as ValueMap but without wrappers
+  // that perform post barriers. Used when the owning JS object is in the
+  // nursery.
+  using PreBarrieredTable =
+      OrderedHashMap<HashableValue, PreBarriered<Value>, HashableValue::Hasher,
+                     CellAllocPolicy>;
+
+  // OrderedHashMap with the same memory layout as ValueMap but without any
+  // wrappers that perform barriers. Used when updating the nursery allocated
+  // keys map during minor GC.
   using UnbarrieredTable =
-      OrderedHashMap<Value, Value, UnbarrieredHashPolicy, ZoneAllocPolicy>;
+      OrderedHashMap<Value, Value, UnbarrieredHashPolicy, CellAllocPolicy>;
   friend class OrderedHashTableRef<MapObject>;
 
   static void sweepAfterMinorGC(JS::GCContext* gcx, MapObject* mapobj);
@@ -149,7 +159,7 @@ class MapObject : public NativeObject {
     return getFixedSlotOffset(DataSlot);
   }
 
-  ValueMap* getData() { return maybePtrFromReservedSlot<ValueMap>(DataSlot); }
+  const ValueMap* getData() { return getTableUnchecked(); }
 
   [[nodiscard]] static bool get(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool set(JSContext* cx, unsigned argc, Value* vp);
@@ -162,10 +172,26 @@ class MapObject : public NativeObject {
   static const JSFunctionSpec methods[];
   static const JSPropertySpec staticProperties[];
 
+  PreBarrieredTable* nurseryTable() {
+    MOZ_ASSERT(IsInsideNursery(this));
+    return maybePtrFromReservedSlot<PreBarrieredTable>(DataSlot);
+  }
+  ValueMap* tenuredTable() {
+    MOZ_ASSERT(!IsInsideNursery(this));
+    return getTableUnchecked();
+  }
+  ValueMap* getTableUnchecked() {
+    return maybePtrFromReservedSlot<ValueMap>(DataSlot);
+  }
+
+  static inline bool setWithHashableKey(JSContext* cx, MapObject* obj,
+                                        Handle<HashableValue> key,
+                                        Handle<Value> value);
+
   static bool finishInit(JSContext* cx, HandleObject ctor, HandleObject proto);
 
-  static ValueMap& extract(HandleObject o);
-  static ValueMap& extract(const CallArgs& args);
+  static const ValueMap& extract(HandleObject o);
+  static const ValueMap& extract(const CallArgs& args);
   static void trace(JSTracer* trc, JSObject* obj);
   static void finalize(JS::GCContext* gcx, JSObject* obj);
   [[nodiscard]] static bool construct(JSContext* cx, unsigned argc, Value* vp);
@@ -210,7 +236,7 @@ class MapIteratorObject : public NativeObject {
 
   static const JSFunctionSpec methods[];
   static MapIteratorObject* create(JSContext* cx, HandleObject mapobj,
-                                   ValueMap* data,
+                                   const ValueMap* data,
                                    MapObject::IteratorKind kind);
   static void finalize(JS::GCContext* gcx, JSObject* obj);
   static size_t objectMoved(JSObject* obj, JSObject* old);
@@ -271,7 +297,7 @@ class SetObject : public NativeObject {
                                     HandleValue key, bool* rval);
 
   using UnbarrieredTable =
-      OrderedHashSet<Value, UnbarrieredHashPolicy, ZoneAllocPolicy>;
+      OrderedHashSet<Value, UnbarrieredHashPolicy, CellAllocPolicy>;
   friend class OrderedHashTableRef<SetObject>;
 
   static void sweepAfterMinorGC(JS::GCContext* gcx, SetObject* setobj);
@@ -282,7 +308,7 @@ class SetObject : public NativeObject {
     return getFixedSlotOffset(DataSlot);
   }
 
-  ValueSet* getData() { return maybePtrFromReservedSlot<ValueSet>(DataSlot); }
+  ValueSet* getData() { return getTableUnchecked(); }
 
  private:
   static const ClassSpec classSpec_;
@@ -291,6 +317,10 @@ class SetObject : public NativeObject {
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSPropertySpec staticProperties[];
+
+  ValueSet* getTableUnchecked() {
+    return maybePtrFromReservedSlot<ValueSet>(DataSlot);
+  }
 
   static bool finishInit(JSContext* cx, HandleObject ctor, HandleObject proto);
 
@@ -379,7 +409,7 @@ template <SetInitGetPrototypeOp getPrototypeOp, SetInitIsBuiltinOp isBuiltinOp>
   }
 
   // Get the canonical prototype object.
-  RootedNativeObject setProto(cx, getPrototypeOp(cx, cx->global()));
+  Rooted<NativeObject*> setProto(cx, getPrototypeOp(cx, cx->global()));
   if (!setProto) {
     return false;
   }

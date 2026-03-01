@@ -49,9 +49,16 @@ bool NameOpEmitter::emitGet() {
       break;
     }
     case NameLocation::Kind::Intrinsic:
-      if (!bce_->emitAtomOp(JSOp::GetIntrinsic, name_)) {
-        //          [stack] VAL
-        return false;
+      if (name_ == TaggedParserAtomIndex::WellKnown::undefined()) {
+        if (!bce_->emit1(JSOp::Undefined)) {
+          //        [stack] Undefined
+          return false;
+        }
+      } else {
+        if (!bce_->emitAtomOp(JSOp::GetIntrinsic, name_)) {
+          //        [stack] VAL
+          return false;
+        }
       }
       break;
     case NameLocation::Kind::NamedLambdaCallee:
@@ -113,6 +120,7 @@ bool NameOpEmitter::emitGet() {
     switch (loc_.kind()) {
       case NameLocation::Kind::Dynamic:
       case NameLocation::Kind::Global:
+        MOZ_ASSERT(bce_->emitterMode != BytecodeEmitter::SelfHosting);
         if (bce_->needsImplicitThis() || bce_->sc->hasNonSyntacticScope()) {
           MOZ_ASSERT_IF(bce_->needsImplicitThis(),
                         loc_.kind() == NameLocation::Kind::Dynamic);
@@ -133,6 +141,12 @@ bool NameOpEmitter::emitGet() {
       case NameLocation::Kind::ArgumentSlot:
       case NameLocation::Kind::FrameSlot:
       case NameLocation::Kind::EnvironmentCoordinate:
+        if (bce_->emitterMode == BytecodeEmitter::SelfHosting) {
+          if (!bce_->emitDebugCheckSelfHosted()) {
+            //      [stack] CALLEE
+            return false;
+          }
+        }
         if (!bce_->emit1(JSOp::Undefined)) {
           //        [stack] CALLEE UNDEF
           return false;

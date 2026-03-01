@@ -64,6 +64,17 @@ inline bool JS::Compartment::wrap(JSContext* cx, JS::MutableHandleValue vp) {
     return true;
   }
 
+#ifdef ENABLE_RECORD_TUPLE
+  if (vp.isExtendedPrimitive()) {
+    JS::RootedObject extPrim(cx, &vp.toExtendedPrimitive());
+    if (!wrapExtendedPrimitive(cx, &extPrim)) {
+      return false;
+    }
+    vp.setExtendedPrimitive(*extPrim);
+    return true;
+  }
+#endif
+
   MOZ_ASSERT(vp.isObject());
 
   /*
@@ -265,14 +276,12 @@ template <class T>
                                                    int argIndex) {
   HandleValue val = args.get(argIndex);
   return UnwrapAndTypeCheckValue<T>(cx, val, [cx, val, methodName, argIndex] {
-    ToCStringBuf cbuf;
-    if (char* numStr = NumberToCString(cx, &cbuf, argIndex + 1, 10)) {
-      JS_ReportErrorNumberLatin1(
-          cx, GetErrorMessage, nullptr, JSMSG_WRONG_TYPE_ARG, numStr,
-          methodName, detail::ClassName<T>(), InformalValueTypeName(val));
-    } else {
-      ReportOutOfMemory(cx);
-    }
+    Int32ToCStringBuf cbuf;
+    char* numStr = Int32ToCString(&cbuf, argIndex + 1);
+    MOZ_ASSERT(numStr);
+    JS_ReportErrorNumberLatin1(
+        cx, GetErrorMessage, nullptr, JSMSG_WRONG_TYPE_ARG, numStr, methodName,
+        detail::ClassName<T>(), InformalValueTypeName(val));
   });
 }
 

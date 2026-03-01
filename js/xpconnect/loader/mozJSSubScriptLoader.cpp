@@ -211,9 +211,9 @@ bool mozJSSubScriptLoader::ReadStencil(
   nsresult rv;
   rv = NS_NewChannel(getter_AddRefs(chan), uri,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER,
-                     nullptr,  // nsICookieSettings
+                     nullptr,  // nsICookieJarSettings
                      nullptr,  // PerformanceStorage
                      nullptr,  // aLoadGroup
                      nullptr,  // aCallbacks
@@ -232,7 +232,7 @@ bool mozJSSubScriptLoader::ReadStencil(
   int64_t len = -1;
 
   rv = chan->GetContentLength(&len);
-  if (NS_FAILED(rv) || len == -1) {
+  if (NS_FAILED(rv)) {
     ReportError(cx, LOAD_ERROR_NOCONTENT, uri);
     return false;
   }
@@ -245,6 +245,21 @@ bool mozJSSubScriptLoader::ReadStencil(
   nsCString buf;
   rv = NS_ReadInputStreamToString(instream, buf, len);
   NS_ENSURE_SUCCESS(rv, false);
+
+  if (len < 0) {
+    len = buf.Length();
+  }
+
+#ifdef DEBUG
+  int64_t currentLength = -1;
+  // if getting content length succeeded above, it should not fail now
+  MOZ_ASSERT(chan->GetContentLength(&currentLength) == NS_OK);
+  // if content length was not known when GetContentLength() was called before,
+  // 'len' would be set to -1 until NS_ReadInputStreamToString() set its correct
+  // value. Every subsequent call to GetContentLength() should return the same
+  // length as that value.
+  MOZ_ASSERT(currentLength == len);
+#endif
 
   Maybe<JSAutoRealm> ar;
 

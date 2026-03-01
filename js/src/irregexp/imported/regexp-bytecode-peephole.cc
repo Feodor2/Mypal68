@@ -250,7 +250,7 @@ class RegExpBytecodePeephole {
 
 template <typename T>
 T GetValue(const byte* buffer, int pos) {
-  DCHECK(IsAligned(reinterpret_cast<v8::Address>(buffer + pos), alignof(T)));
+  DCHECK(IsAligned(reinterpret_cast<Address>(buffer + pos), alignof(T)));
   return *reinterpret_cast<const T*>(buffer + pos);
 }
 
@@ -258,13 +258,10 @@ int32_t GetArgumentValue(const byte* bytecode, int offset, int length) {
   switch (length) {
     case 1:
       return GetValue<byte>(bytecode, offset);
-      break;
     case 2:
       return GetValue<int16_t>(bytecode, offset);
-      break;
     case 4:
       return GetValue<int32_t>(bytecode, offset);
-      break;
     default:
       UNREACHABLE();
   }

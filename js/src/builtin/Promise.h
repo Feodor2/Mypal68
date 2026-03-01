@@ -24,7 +24,7 @@ class AsyncGeneratorObject;
 class PromiseObject;
 class SavedFrame;
 
-enum class CompletionKind;
+enum class CompletionKind : uint8_t;
 
 enum class PromiseHandler : uint32_t {
   Identity = 0,
@@ -254,6 +254,10 @@ struct PromiseReactionRecordBuilder {
     JSContext* cx, JS::Handle<AsyncGeneratorObject*> generator,
     JS::Handle<JS::Value> value, PromiseHandler onFulfilled,
     PromiseHandler onRejected);
+
+bool IsPromiseWithDefaultResolvingFunction(PromiseObject* promise);
+void SetAlreadyResolvedPromiseWithDefaultResolvingFunction(
+    PromiseObject* promise);
 
 }  // namespace js
 

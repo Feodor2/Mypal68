@@ -730,6 +730,7 @@ static mozilla::Atomic<bool> sPropertyErrorMessageFixEnabled(false);
 static mozilla::Atomic<bool> sWeakRefsEnabled(false);
 static mozilla::Atomic<bool> sWeakRefsExposeCleanupSome(false);
 static mozilla::Atomic<bool> sIteratorHelpersEnabled(false);
+static mozilla::Atomic<bool> sShadowRealmsEnabled(false);
 #ifdef NIGHTLY_BUILD
 static mozilla::Atomic<bool> sArrayGroupingEnabled(true);
 #endif
@@ -749,11 +750,10 @@ static JS::WeakRefSpecifier GetWeakRefsEnabled() {
 void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(sSharedMemoryEnabled)
-      .setWritableStreamsEnabled(
-          StaticPrefs::javascript_options_writable_streams())
       .setPropertyErrorMessageFixEnabled(sPropertyErrorMessageFixEnabled)
       .setWeakRefsEnabled(GetWeakRefsEnabled())
       .setIteratorHelpersEnabled(sIteratorHelpersEnabled)
+      .setShadowRealmsEnabled(sShadowRealmsEnabled)
 #ifdef NIGHTLY_BUILD
       .setArrayGroupingEnabled(sArrayGroupingEnabled)
 #endif
@@ -772,33 +772,14 @@ void xpc::SetPrefableContextOptions(JS::ContextOptions& options) {
       .setWasm(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm"))
       .setWasmForTrustedPrinciples(
           Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_trustedprincipals"))
-#ifdef ENABLE_WASM_CRANELIFT
-      .setWasmCranelift(
-          Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_optimizingjit"))
-      .setWasmIon(false)
-#else
-      .setWasmCranelift(false)
       .setWasmIon(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_optimizingjit"))
-#endif
       .setWasmBaseline(
           Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_baselinejit"))
 #define WASM_FEATURE(NAME, LOWER_NAME, COMPILE_PRED, COMPILER_PRED, FLAG_PRED, \
                      SHELL, PREF)                                              \
   .setWasm##NAME(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_" PREF))
-#ifdef ENABLE_WASM_SIMD
           JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
-else
-          JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE)
-#endif
 #undef WASM_FEATURE
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-#  ifdef EARLY_BETA_OR_EARLIER
-      .setWasmSimdWormhole(
-          Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_simd_wormhole"))
-#  else
-      .setWasmSimdWormhole(false)
-#  endif
-#endif
       .setWasmVerbose(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_verbose"))
       .setThrowOnAsmJSValidationFailure(Preferences::GetBool(
           JS_OPTIONS_DOT_STR "throw_on_asmjs_validation_failure"))
@@ -959,7 +940,8 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   sWeakRefsEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "weakrefs");
   sWeakRefsExposeCleanupSome = Preferences::GetBool(
       JS_OPTIONS_DOT_STR "experimental.weakrefs.expose_cleanupSome");
-
+  sShadowRealmsEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.shadow_realms");
 #ifdef NIGHTLY_BUILD
   sIteratorHelpersEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.iterator_helpers");

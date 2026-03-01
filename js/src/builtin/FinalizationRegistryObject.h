@@ -138,7 +138,7 @@ class FinalizationRecordObject : public NativeObject {
 
 // A vector of weakly-held FinalizationRecordObjects.
 using WeakFinalizationRecordVector =
-    GCVector<WeakHeapPtr<FinalizationRecordObject*>, 1, js::ZoneAllocPolicy>;
+    GCVector<WeakHeapPtr<FinalizationRecordObject*>, 1, js::CellAllocPolicy>;
 
 // A JS object containing a vector of weakly-held FinalizationRecordObjects,
 // which holds the records corresponding to the registrations for a particular
@@ -173,7 +173,7 @@ class FinalizationRegistrationsObject : public NativeObject {
 };
 
 using FinalizationRecordVector =
-    GCVector<HeapPtr<FinalizationRecordObject*>, 1, js::ZoneAllocPolicy>;
+    GCVector<HeapPtr<FinalizationRecordObject*>, 1, js::CellAllocPolicy>;
 
 // The JS FinalizationRegistry object itself.
 class FinalizationRegistryObject : public NativeObject {

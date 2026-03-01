@@ -1,10 +1,9 @@
-// |jit-test| test-also=--wasm-simd-wormhole; skip-if: !wasmSimdEnabled() || wasmCompileMode() != "ion"; skip-variant-if: --wasm-simd-wormhole, !getBuildConfiguration().x64 || getBuildConfiguration().simulator
+// |jit-test| skip-if: !wasmSimdEnabled() || wasmCompileMode() != "ion"
 
 // Testing _mm_maddubs_epi16 / vpmaddubsw behavoir for all platforms.
 //
 // Bug 1762413 adds specialization for emscripten's pattern to directly
-// emit PMADDUBSW machine code. The absense/presence of "--wasm-simd-wormhole"
-// shall not affect the logic.
+// emit PMADDUBSW machine code.
 
 const isX64 = getBuildConfiguration().x64 && !getBuildConfiguration().simulator;
 
@@ -152,12 +151,4 @@ if (hasDisassembler() && isX64) {
   assertEq(re.exec(output) == null, true);
   // No leftover PMULL, PSLLW, or PSRAW.
   assertEq(/pmullw|psllw|psraw/.test(output), false);
-}
-
-// Misc utils.
-function assertSame(got, expected) {
-  assertEq(got.length, expected.length);
-  for ( let i=0; i < got.length; i++ ) {
-      assertEq(got[i], expected[i]);
-  }
 }

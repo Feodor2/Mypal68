@@ -374,7 +374,7 @@ class ScopeStencil {
                      CompilationGCOutput& gcOutput,
                      BaseParserScopeData* baseScopeData) const;
   Scope* createScope(JSContext* cx, CompilationAtomCache& atomCache,
-                     HandleScope enclosingScope,
+                     Handle<Scope*> enclosingScope,
                      BaseParserScopeData* baseScopeData) const;
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
@@ -395,11 +395,11 @@ class ScopeStencil {
   template <typename SpecificEnvironmentType>
   [[nodiscard]] bool createSpecificShape(JSContext* cx, ScopeKind kind,
                                          BaseScopeData* scopeData,
-                                         MutableHandleShape shape) const;
+                                         MutableHandle<Shape*> shape) const;
 
   template <typename SpecificScopeType, typename SpecificEnvironmentType>
   Scope* createSpecificScope(JSContext* cx, CompilationAtomCache& atomCache,
-                             HandleScope enclosingScope,
+                             Handle<Scope*> enclosingScope,
                              BaseParserScopeData* baseData) const;
 
   template <typename ScopeT>
@@ -997,6 +997,13 @@ void DumpTaggedParserAtomIndexNoQuote(GenericPrinter& out,
 #endif
 
 } /* namespace frontend */
+
+#if defined(DEBUG) || defined(JS_JITSPEW)
+void DumpImmutableScriptFlags(js::JSONPrinter& json,
+                              ImmutableScriptFlags immutableFlags);
+void DumpFunctionFlagsItems(js::JSONPrinter& json, FunctionFlags functionFlags);
+#endif
+
 } /* namespace js */
 
 #endif /* frontend_Stencil_h */

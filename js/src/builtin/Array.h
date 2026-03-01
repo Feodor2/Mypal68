@@ -83,7 +83,7 @@ extern ArrayObject* NewDenseFullyAllocatedArrayWithTemplate(
     JSContext* cx, uint32_t length, ArrayObject* templateObject);
 
 extern ArrayObject* NewArrayWithShape(JSContext* cx, uint32_t length,
-                                      HandleShape shape);
+                                      Handle<Shape*> shape);
 
 extern bool ToLength(JSContext* cx, HandleValue v, uint64_t* out);
 
@@ -105,6 +105,8 @@ extern bool GetElements(JSContext* cx, HandleObject aobj, uint32_t length,
 
 extern bool intrinsic_ArrayNativeSort(JSContext* cx, unsigned argc,
                                       js::Value* vp);
+
+extern bool ArrayNativeSort(JSContext* cx, Handle<JSObject*> obj);
 
 extern bool array_includes(JSContext* cx, unsigned argc, js::Value* vp);
 extern bool array_indexOf(JSContext* cx, unsigned argc, js::Value* vp);
@@ -129,7 +131,7 @@ extern JSObject* ArgumentsSliceDense(JSContext* cx, HandleObject obj,
                                      int32_t begin, int32_t end,
                                      HandleObject result);
 
-extern bool intrinsic_newList(JSContext* cx, unsigned argc, js::Value* vp);
+extern ArrayObject* NewArrayWithNullProto(JSContext* cx);
 
 /*
  * Append the given (non-hole) value to the end of an array.  The array must be
@@ -141,7 +143,7 @@ extern bool intrinsic_newList(JSContext* cx, unsigned argc, js::Value* vp);
 extern bool NewbornArrayPush(JSContext* cx, HandleObject obj, const Value& v);
 
 extern ArrayObject* ArrayConstructorOneArg(JSContext* cx,
-                                           HandleArrayObject templateObject,
+                                           Handle<ArrayObject*> templateObject,
                                            int32_t lengthInt);
 
 #ifdef DEBUG

@@ -127,12 +127,6 @@ DefaultJitOptions::DefaultJitOptions() {
   // Whether the IonMonkey JIT is enabled.
   SET_DEFAULT(ion, true);
 
-  // Warp compile Async functions
-  SET_DEFAULT(warpAsync, true);
-
-  // Warp compile Generator functions
-  SET_DEFAULT(warpGenerator, true);
-
   // Whether the IonMonkey and Baseline JITs are enabled for Trusted Principals.
   // (Ignored if ion or baselineJit is set to true.)
   SET_DEFAULT(jitForTrustedPrincipals, false);
@@ -269,6 +263,25 @@ DefaultJitOptions::DefaultJitOptions() {
   // This is set to its actual value in InitializeJit.
   SET_DEFAULT(supportsUnalignedAccesses, false);
 
+  // To access local (non-argument) slots, it's more efficient to use the frame
+  // pointer (FP) instead of the stack pointer (SP) as base register on x86 and
+  // x64 (because instructions are one byte shorter, for example).
+  //
+  // However, because this requires a negative offset from FP, on ARM64 it can
+  // be more efficient to use SP-relative addresses for larger stack frames
+  // because the range for load/store immediate offsets is [-256, 4095] and
+  // offsets outside this range will require an extra instruction.
+  //
+  // We default to FP-relative addresses on x86/x64 and SP-relative on other
+  // platforms, but to improve fuzzing we allow changing this in the shell:
+  //
+  //   setJitCompilerOption("base-reg-for-locals", N); // 0 for SP, 1 for FP
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
+  baseRegForLocals = BaseRegForAddress::FP;
+#else
+  baseRegForLocals = BaseRegForAddress::SP;
+#endif
+
   // Toggles the optimization whereby offsets are folded into loads and not
   // included in the bounds check.
   SET_DEFAULT(wasmFoldOffsets, true);
@@ -282,20 +295,8 @@ DefaultJitOptions::DefaultJitOptions() {
   // Until which wasm bytecode size should we accumulate functions, in order
   // to compile efficiently on helper threads. Baseline code compiles much
   // faster than Ion code so use scaled thresholds (see also bug 1320374).
-  // Cranelift compiles at about half the speed of Ion, but is much more
-  // affected by malloc/free costs, so set its threshold relatively high, in
-  // order to reduce overall allocation costs.  See bug 1586791.
   SET_DEFAULT(wasmBatchBaselineThreshold, 10000);
   SET_DEFAULT(wasmBatchIonThreshold, 1100);
-  SET_DEFAULT(wasmBatchCraneliftThreshold, 5000);
-
-#ifdef JS_TRACE_LOGGING
-  // Toggles whether the traceLogger should be on or off.  In either case,
-  // some data structures will always be created and initialized such as
-  // the traceLoggerState.  However, unless this option is set to true
-  // the traceLogger will not be recording any events.
-  SET_DEFAULT(enableTraceLogger, false);
-#endif
 
   // Dumps a representation of parsed regexps to stderr
   SET_DEFAULT(traceRegExpParser, false);

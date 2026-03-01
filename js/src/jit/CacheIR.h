@@ -183,6 +183,7 @@ class TypedOperandId : public OperandId {
   _(ToPropertyKey)        \
   _(InstanceOf)           \
   _(GetIterator)          \
+  _(CloseIter)            \
   _(OptimizeSpreadCall)   \
   _(Compare)              \
   _(ToBool)               \
@@ -491,6 +492,7 @@ inline int32_t GetIndexOfArgument(ArgumentKind kind, CallFlags flags,
 // in the IR, to keep the IR compact and the same size on all platforms.
 enum class GuardClassKind : uint8_t {
   Array,
+  PlainObject,
   ArrayBuffer,
   SharedArrayBuffer,
   DataView,

@@ -38,7 +38,8 @@ namespace jit {
   _(BinaryArith)                               \
   _(Compare)                                   \
   _(GetProp)                                   \
-  _(GetPropSuper)
+  _(GetPropSuper)                              \
+  _(CloseIter)
 
 }  // namespace jit
 }  // namespace js

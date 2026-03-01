@@ -12,7 +12,6 @@ namespace gc {
 
 struct ClearEdgesTracer final : public GenericTracerImpl<ClearEdgesTracer> {
   explicit ClearEdgesTracer(JSRuntime* rt);
-  ClearEdgesTracer();
 
  private:
   template <typename T>

@@ -19,7 +19,6 @@
 #include "builtin/Array.h"
 #include "gc/AllocKind.h"
 #include "gc/GCContext.h"
-#include "gc/Rooting.h"
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/CharacterEncoding.h"
@@ -316,7 +315,7 @@ static ArrayObject* IterableToArray(JSContext* cx, HandleValue iterable) {
     return nullptr;
   }
 
-  RootedArrayObject array(cx, NewDenseEmptyArray(cx));
+  Rooted<ArrayObject*> array(cx, NewDenseEmptyArray(cx));
   if (!array) {
     return nullptr;
   }
@@ -368,7 +367,7 @@ static bool AggregateError(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 4.
 
-  RootedArrayObject errorsList(cx, IterableToArray(cx, args.get(0)));
+  Rooted<ArrayObject*> errorsList(cx, IterableToArray(cx, args.get(0)));
   if (!errorsList) {
     return false;
   }
@@ -712,7 +711,7 @@ bool js::ErrorObject::getStack_impl(JSContext* cx, const CallArgs& args) {
   if (cx->runtime()->stackFormat() == js::StackFormat::V8) {
     // When emulating V8 stack frames, we also need to prepend the
     // stringified Error to the stack string.
-    HandlePropertyName name = cx->names().ErrorToStringWithTrailingNewline;
+    Handle<PropertyName*> name = cx->names().ErrorToStringWithTrailingNewline;
     FixedInvokeArgs<0> args2(cx);
     RootedValue rval(cx);
     if (!CallSelfHostedFunction(cx, name, args.thisv(), args2, &rval)) {

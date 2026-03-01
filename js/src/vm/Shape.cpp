@@ -21,6 +21,7 @@
 #include "vm/ShapeZone.h"
 #include "vm/Watchtower.h"
 
+#include "gc/Zone-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -68,11 +69,12 @@ bool Shape::replaceShape(JSContext* cx, HandleObject obj,
 }
 
 /* static */
-bool js::NativeObject::toDictionaryMode(JSContext* cx, HandleNativeObject obj) {
+bool js::NativeObject::toDictionaryMode(JSContext* cx,
+                                        Handle<NativeObject*> obj) {
   MOZ_ASSERT(!obj->inDictionaryMode());
   MOZ_ASSERT(cx->isInsideCurrentCompartment(obj));
 
-  RootedShape shape(cx, obj->shape());
+  Rooted<Shape*> shape(cx, obj->shape());
   uint32_t span = obj->slotSpan();
 
   uint32_t mapLength = shape->propMapLength();
@@ -105,11 +107,11 @@ namespace js {
 
 class MOZ_RAII AutoCheckShapeConsistency {
 #ifdef DEBUG
-  HandleNativeObject obj_;
+  Handle<NativeObject*> obj_;
 #endif
 
  public:
-  explicit AutoCheckShapeConsistency(HandleNativeObject obj)
+  explicit AutoCheckShapeConsistency(Handle<NativeObject*> obj)
 #ifdef DEBUG
       : obj_(obj)
 #endif
@@ -125,7 +127,7 @@ class MOZ_RAII AutoCheckShapeConsistency {
 
 /* static */ MOZ_ALWAYS_INLINE bool
 NativeObject::maybeConvertToDictionaryForAdd(JSContext* cx,
-                                             HandleNativeObject obj) {
+                                             Handle<NativeObject*> obj) {
   if (obj->inDictionaryMode()) {
     return true;
   }
@@ -148,8 +150,9 @@ static void AssertValidCustomDataProp(NativeObject* obj, PropertyFlags flags) {
 }
 
 /* static */
-bool NativeObject::addCustomDataProperty(JSContext* cx, HandleNativeObject obj,
-                                         HandleId id, PropertyFlags flags) {
+bool NativeObject::addCustomDataProperty(JSContext* cx,
+                                         Handle<NativeObject*> obj, HandleId id,
+                                         PropertyFlags flags) {
   MOZ_ASSERT(!id.isVoid());
   MOZ_ASSERT(!id.isPrivateName());
   MOZ_ASSERT(!obj->containsPure(id));
@@ -264,7 +267,7 @@ static bool RegisterShapeCache(JSContext* cx, Shape* shape) {
 }
 
 /* static */
-bool NativeObject::addProperty(JSContext* cx, HandleNativeObject obj,
+bool NativeObject::addProperty(JSContext* cx, Handle<NativeObject*> obj,
                                HandleId id, PropertyFlags flags,
                                uint32_t* slot) {
   AutoCheckShapeConsistency check(obj);
@@ -377,7 +380,7 @@ bool NativeObject::addProperty(JSContext* cx, HandleNativeObject obj,
 
 /* static */
 bool NativeObject::addPropertyInReservedSlot(JSContext* cx,
-                                             HandleNativeObject obj,
+                                             Handle<NativeObject*> obj,
                                              HandleId id, uint32_t slot,
                                              PropertyFlags flags) {
   AutoCheckShapeConsistency check(obj);
@@ -458,7 +461,7 @@ static void AssertValidArrayIndex(NativeObject* obj, jsid id) {
 }
 
 /* static */
-bool NativeObject::changeProperty(JSContext* cx, HandleNativeObject obj,
+bool NativeObject::changeProperty(JSContext* cx, Handle<NativeObject*> obj,
                                   HandleId id, PropertyFlags flags,
                                   uint32_t* slotOut) {
   MOZ_ASSERT(!id.isVoid());
@@ -578,7 +581,7 @@ bool NativeObject::changeProperty(JSContext* cx, HandleNativeObject obj,
 
 /* static */
 bool NativeObject::changeCustomDataPropAttributes(JSContext* cx,
-                                                  HandleNativeObject obj,
+                                                  Handle<NativeObject*> obj,
                                                   HandleId id,
                                                   PropertyFlags flags) {
   MOZ_ASSERT(!id.isVoid());
@@ -662,8 +665,30 @@ bool NativeObject::changeCustomDataPropAttributes(JSContext* cx,
   return true;
 }
 
+void NativeObject::maybeFreeDictionaryPropSlots(JSContext* cx,
+                                                DictionaryPropMap* map,
+                                                uint32_t mapLength) {
+  // We can free all non-reserved slots if there are no properties left. We also
+  // handle the case where there's a single slotless property, to support arrays
+  // (array.length is a custom data property).
+
+  MOZ_ASSERT(shape()->dictionaryPropMap() == map);
+  MOZ_ASSERT(shape()->propMapLength() == mapLength);
+
+  if (mapLength > 1 || map->previous()) {
+    return;
+  }
+  if (mapLength == 1 && map->getPropertyInfo(0).hasSlot()) {
+    return;
+  }
+
+  uint32_t numReserved = JSCLASS_RESERVED_SLOTS(getClass());
+  MOZ_ALWAYS_TRUE(ensureSlotsForDictionaryObject(cx, numReserved));
+  map->setFreeList(SHAPE_INVALID_SLOT);
+}
+
 /* static */
-bool NativeObject::removeProperty(JSContext* cx, HandleNativeObject obj,
+bool NativeObject::removeProperty(JSContext* cx, Handle<NativeObject*> obj,
                                   HandleId id) {
   AutoCheckShapeConsistency check(obj);
 
@@ -768,12 +793,21 @@ bool NativeObject::removeProperty(JSContext* cx, HandleNativeObject obj,
 
   obj->shape()->updateNewDictionaryShape(obj->shape()->objectFlags(), dictMap,
                                          mapLength);
+
+  // If we just deleted the last property, consider shrinking the slots. We only
+  // do this if there are a lot of slots, to avoid allocating/freeing dynamic
+  // slots repeatedly.
+  static constexpr size_t MinSlotSpanForFree = 64;
+  if (obj->dictionaryModeSlotSpan() >= MinSlotSpanForFree) {
+    obj->maybeFreeDictionaryPropSlots(cx, dictMap, mapLength);
+  }
+
   return true;
 }
 
 /* static */
 bool NativeObject::densifySparseElements(JSContext* cx,
-                                         HandleNativeObject obj) {
+                                         Handle<NativeObject*> obj) {
   AutoCheckShapeConsistency check(obj);
   MOZ_ASSERT(obj->inDictionaryMode());
 
@@ -795,11 +829,15 @@ bool NativeObject::densifySparseElements(JSContext* cx,
   objectFlags.clearFlag(ObjectFlag::Indexed);
 
   obj->shape()->updateNewDictionaryShape(objectFlags, map, mapLength);
+
+  obj->maybeFreeDictionaryPropSlots(cx, map, mapLength);
+
   return true;
 }
 
 // static
-bool NativeObject::freezeOrSealProperties(JSContext* cx, HandleNativeObject obj,
+bool NativeObject::freezeOrSealProperties(JSContext* cx,
+                                          Handle<NativeObject*> obj,
                                           IntegrityLevel level) {
   AutoCheckShapeConsistency check(obj);
 
@@ -845,7 +883,7 @@ bool NativeObject::freezeOrSealProperties(JSContext* cx, HandleNativeObject obj,
 
 /* static */
 bool NativeObject::generateNewDictionaryShape(JSContext* cx,
-                                              HandleNativeObject obj) {
+                                              Handle<NativeObject*> obj) {
   // Clone the current dictionary shape to a new shape. This ensures ICs and
   // other shape guards are properly invalidated before we start mutating the
   // map or new shape.
@@ -904,15 +942,22 @@ bool JSObject::setProtoUnchecked(JSContext* cx, HandleObject obj,
     return false;
   }
 
-  if (proto.isObject()) {
+  if (proto.isObject() && !proto.toObject()->isUsedAsPrototype()) {
+    // Ensure the proto object has a unique id to prevent OOM crashes later on.
     RootedObject protoObj(cx, proto.toObject());
+    uint64_t unused;
+    if (!cx->zone()->getOrCreateUniqueId(protoObj, &unused)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+
     if (!JSObject::setIsUsedAsPrototype(cx, protoObj)) {
       return false;
     }
   }
 
   if (obj->is<NativeObject>() && obj->as<NativeObject>().inDictionaryMode()) {
-    HandleNativeObject nobj = obj.as<NativeObject>();
+    Handle<NativeObject*> nobj = obj.as<NativeObject>();
     Rooted<BaseShape*> nbase(
         cx, BaseShape::get(cx, nobj->getClass(), nobj->realm(), proto));
     if (!nbase) {
@@ -933,7 +978,7 @@ bool JSObject::setProtoUnchecked(JSContext* cx, HandleObject obj,
 
 /* static */
 bool NativeObject::changeNumFixedSlotsAfterSwap(JSContext* cx,
-                                                HandleNativeObject obj,
+                                                Handle<NativeObject*> obj,
                                                 uint32_t nfixed) {
   MOZ_ASSERT(nfixed != obj->shape()->numFixedSlots());
 
@@ -951,7 +996,9 @@ bool NativeObject::changeNumFixedSlotsAfterSwap(JSContext* cx,
 
 BaseShape::BaseShape(const JSClass* clasp, JS::Realm* realm, TaggedProto proto)
     : TenuredCellWithNonGCPointer(clasp), realm_(realm), proto_(proto) {
-  MOZ_ASSERT(JS::StringIsASCII(clasp->name));
+#ifdef DEBUG
+  AssertJSClassInvariants(clasp);
+#endif
 
   MOZ_ASSERT_IF(proto.isObject(),
                 compartment() == proto.toObject()->compartment());
@@ -1080,14 +1127,15 @@ Shape* SharedShape::getInitialShape(JSContext* cx, const JSClass* clasp,
         }
       }
     } else {
-      RootedObject protoObj(cx, proto.toObject());
-      if (!JSObject::setIsUsedAsPrototype(cx, protoObj)) {
-        return nullptr;
-      }
       // Ensure the proto object has a unique id to prevent OOM crashes below.
+      RootedObject protoObj(cx, proto.toObject());
       uint64_t unused;
       if (!cx->zone()->getOrCreateUniqueId(protoObj, &unused)) {
         ReportOutOfMemory(cx);
+        return nullptr;
+      }
+
+      if (!JSObject::setIsUsedAsPrototype(cx, protoObj)) {
         return nullptr;
       }
       proto = TaggedProto(protoObj);
@@ -1119,7 +1167,7 @@ Shape* SharedShape::getInitialShape(JSContext* cx, const JSClass* clasp,
     return nullptr;
   }
 
-  RootedShape shape(
+  Rooted<Shape*> shape(
       cx, SharedShape::new_(cx, nbase, objectFlags, nfixed, nullptr, 0));
   if (!shape) {
     return nullptr;
@@ -1168,7 +1216,7 @@ Shape* SharedShape::getPropMapShape(JSContext* cx, BaseShape* base,
   }
 
   Rooted<BaseShape*> baseRoot(cx, base);
-  RootedShape shape(
+  Rooted<Shape*> shape(
       cx, SharedShape::new_(cx, baseRoot, objectFlags, nfixed, map, mapLength));
   if (!shape) {
     return nullptr;
@@ -1206,7 +1254,7 @@ Shape* SharedShape::getInitialOrPropMapShape(
 }
 
 /* static */
-void SharedShape::insertInitialShape(JSContext* cx, HandleShape shape) {
+void SharedShape::insertInitialShape(JSContext* cx, Handle<Shape*> shape) {
   using Lookup = InitialShapeHasher::Lookup;
   Lookup lookup(shape->getObjectClass(), shape->realm(), shape->proto(),
                 shape->numFixedSlots(), shape->objectFlags());

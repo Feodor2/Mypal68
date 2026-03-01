@@ -2155,6 +2155,12 @@
   num_temps: 3
   mir_op: true
 
+- name: CloseIterCache
+  operands:
+    iter: WordSized
+  num_temps: 1
+  mir_op: true
+
 # Read the number of actual arguments.
 - name: ArgumentsLength
   result_type: WordSized
@@ -3100,7 +3106,7 @@
   operands:
     index: WordSized
 
-- name: GuardIndexGreaterThanDenseInitLength
+- name: GuardIndexIsNotDenseElement
   operands:
     object: WordSized
     index: WordSized

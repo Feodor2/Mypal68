@@ -17,7 +17,8 @@
 
 #include <chrono>
 
-#include "js/BuildId.h"                 // JS::BuildIdCharVector
+#include "jit/FlushICache.h"  // for FlushExecutionContextForAllThreads
+#include "js/BuildId.h"       // JS::BuildIdCharVector
 #include "js/experimental/TypedData.h"  // JS_NewUint8Array
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/Printf.h"                  // JS_smprintf
@@ -208,6 +209,14 @@ bool Module::finishTier2(const LinkData& linkData2,
       return false;
     }
 
+    // Initializing the code above will have flushed the icache for all cores.
+    // However, there could still be stale data in the execution pipeline of
+    // other cores on some platforms. Force an execution context flush on all
+    // threads to fix this before we commit the code.
+    //
+    // This is safe due to the check in `PlatformCanTier` in WasmCompile.cpp
+    jit::FlushExecutionContextForAllThreads();
+
     // Now that we can't fail or otherwise abort tier2, make it live.
 
     MOZ_ASSERT(!code().hasTier2());
@@ -258,6 +267,12 @@ void Module::testingBlockOnTier2Complete() const {
 /* virtual */
 JSObject* Module::createObject(JSContext* cx) const {
   if (!GlobalObject::ensureConstructor(cx, cx->global(), JSProto_WebAssembly)) {
+    return nullptr;
+  }
+
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CSP_BLOCKED_WASM, "WebAssembly.Module");
     return nullptr;
   }
 
@@ -325,7 +340,7 @@ void Module::addSizeOfMisc(MallocSizeOf mallocSizeOf,
 // segment/function body.
 bool Module::extractCode(JSContext* cx, Tier tier,
                          MutableHandleValue vp) const {
-  RootedPlainObject result(cx, NewPlainObject(cx));
+  Rooted<PlainObject*> result(cx, NewPlainObject(cx));
   if (!result) {
     return false;
   }
@@ -424,8 +439,9 @@ static bool AllSegmentsArePassive(const DataSegmentVector& vec) {
 }
 #endif
 
-bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
-                          HandleWasmMemoryObject memoryObj,
+bool Module::initSegments(JSContext* cx,
+                          Handle<WasmInstanceObject*> instanceObj,
+                          Handle<WasmMemoryObject*> memoryObj,
                           const ValVector& globalImportValues) const {
   MOZ_ASSERT_IF(!memoryObj, AllSegmentsArePassive(dataSegments_));
 
@@ -532,9 +548,11 @@ bool Module::instantiateFunctions(JSContext* cx,
 
     if (funcExport.funcType() != metadata(tier).funcImports[i].funcType()) {
       const Import& import = FindImportFunction(imports_, i);
+      UniqueChars importModuleName = import.module.toQuotedString(cx);
+      UniqueChars importFieldName = import.field.toQuotedString(cx);
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                               JSMSG_WASM_BAD_IMPORT_SIG, import.module.get(),
-                               import.field.get());
+                               JSMSG_WASM_BAD_IMPORT_SIG,
+                               importModuleName.get(), importFieldName.get());
       return false;
     }
   }
@@ -598,7 +616,7 @@ static bool CheckSharing(JSContext* cx, bool declaredShared, bool isShared) {
 // initialize the buffer if one is requested. Either way, the buffer is wrapped
 // in a WebAssembly.Memory object which is what the Instance stores.
 bool Module::instantiateMemory(JSContext* cx,
-                               MutableHandleWasmMemoryObject memory) const {
+                               MutableHandle<WasmMemoryObject*> memory) const {
   if (!metadata().usesMemory()) {
     MOZ_ASSERT(!memory);
     MOZ_ASSERT(AllSegmentsArePassive(dataSegments_));
@@ -671,8 +689,8 @@ bool Module::instantiateTags(JSContext* cx,
   RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmTag));
   for (const TagDesc& desc : metadata().tags) {
     if (tagIndex >= importedTagsLength) {
-      RootedWasmTagObject tagObj(cx,
-                                 WasmTagObject::create(cx, desc.type, proto));
+      Rooted<WasmTagObject*> tagObj(
+          cx, WasmTagObject::create(cx, desc.type, proto));
       if (!tagObj) {
         return false;
       }
@@ -731,7 +749,7 @@ bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
     }
     table = &tableObj->table();
   } else {
-    table = Table::create(cx, td, /* HandleWasmTableObject = */ nullptr);
+    table = Table::create(cx, td, /* Handle<WasmTableObject*> = */ nullptr);
     if (!table) {
       return false;
     }
@@ -797,7 +815,7 @@ static bool EnsureExportedGlobalObject(JSContext* cx,
   }
 
   RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmGlobal));
-  RootedWasmGlobalObject go(
+  Rooted<WasmGlobalObject*> go(
       cx, WasmGlobalObject::create(cx, val, global.isMutable(), proto));
   if (!go) {
     return false;
@@ -860,7 +878,7 @@ bool Module::instantiateGlobals(JSContext* cx,
 }
 
 static bool GetFunctionExport(JSContext* cx,
-                              HandleWasmInstanceObject instanceObj,
+                              Handle<WasmInstanceObject*> instanceObj,
                               const JSFunctionVector& funcImports,
                               uint32_t funcIndex, MutableHandleFunction func) {
   if (funcIndex < funcImports.length() &&
@@ -872,7 +890,8 @@ static bool GetFunctionExport(JSContext* cx,
   return instanceObj->getExportedFunction(cx, instanceObj, funcIndex, func);
 }
 
-static bool GetGlobalExport(JSContext* cx, HandleWasmInstanceObject instanceObj,
+static bool GetGlobalExport(JSContext* cx,
+                            Handle<WasmInstanceObject*> instanceObj,
                             const JSFunctionVector& funcImports,
                             const GlobalDesc& global, uint32_t globalIndex,
                             const ValVector& globalImportValues,
@@ -880,7 +899,7 @@ static bool GetGlobalExport(JSContext* cx, HandleWasmInstanceObject instanceObj,
                             MutableHandleValue val) {
   // A global object for this index is guaranteed to exist by
   // instantiateGlobals.
-  RootedWasmGlobalObject globalObj(cx, globalObjs[globalIndex]);
+  Rooted<WasmGlobalObject*> globalObj(cx, globalObjs[globalIndex]);
   val.setObject(*globalObj);
 
   // We are responsible to set the initial value of the global object here if
@@ -910,9 +929,9 @@ static bool GetGlobalExport(JSContext* cx, HandleWasmInstanceObject instanceObj,
 }
 
 static bool CreateExportObject(
-    JSContext* cx, HandleWasmInstanceObject instanceObj,
+    JSContext* cx, Handle<WasmInstanceObject*> instanceObj,
     const JSFunctionVector& funcImports, const WasmTableObjectVector& tableObjs,
-    HandleWasmMemoryObject memoryObj, const WasmTagObjectVector& tagObjs,
+    Handle<WasmMemoryObject*> memoryObj, const WasmTagObjectVector& tagObjs,
     const ValVector& globalImportValues,
     const WasmGlobalObjectVector& globalObjs, const ExportVector& exports) {
   const Instance& instance = instanceObj->instance();
@@ -920,7 +939,7 @@ static bool CreateExportObject(
   const GlobalDescVector& globals = metadata.globals;
 
   if (metadata.isAsmJS() && exports.length() == 1 &&
-      strlen(exports[0].fieldName()) == 0) {
+      exports[0].fieldName().isEmpty()) {
     RootedFunction func(cx);
     if (!GetFunctionExport(cx, instanceObj, funcImports, exports[0].funcIndex(),
                            &func)) {
@@ -944,8 +963,7 @@ static bool CreateExportObject(
   }
 
   for (const Export& exp : exports) {
-    JSAtom* atom =
-        AtomizeUTF8Chars(cx, exp.fieldName(), strlen(exp.fieldName()));
+    JSAtom* atom = exp.fieldName().toAtom(cx);
     if (!atom) {
       return false;
     }
@@ -1002,14 +1020,14 @@ static bool CreateExportObject(
 
 bool Module::instantiate(JSContext* cx, ImportValues& imports,
                          HandleObject instanceProto,
-                         MutableHandleWasmInstanceObject instance) const {
+                         MutableHandle<WasmInstanceObject*> instance) const {
   MOZ_RELEASE_ASSERT(cx->wasm().haveSignalHandlers);
 
   if (!instantiateFunctions(cx, imports.funcs)) {
     return false;
   }
 
-  RootedWasmMemoryObject memory(cx, imports.memory);
+  Rooted<WasmMemoryObject*> memory(cx, imports.memory);
   if (!instantiateMemory(cx, &memory)) {
     return false;
   }

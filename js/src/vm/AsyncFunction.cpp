@@ -14,6 +14,7 @@
 #include "vm/GeneratorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
+#include "vm/Modules.h"
 #include "vm/NativeObject.h"
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/Realm.h"
@@ -32,7 +33,7 @@ static JSObject* CreateAsyncFunction(JSContext* cx, JSProtoKey key) {
     return nullptr;
   }
 
-  HandlePropertyName name = cx->names().AsyncFunction;
+  Handle<PropertyName*> name = cx->names().AsyncFunction;
   return NewFunctionWithProto(cx, AsyncFunctionConstructor, 1,
                               FunctionFlags::NATIVE_CTOR, nullptr, name, proto,
                               gc::AllocKind::FUNCTION, TenuredObject);
@@ -141,9 +142,9 @@ static bool AsyncFunctionResume(JSContext* cx,
   //           suspended it.
   //
   // Execution context switching is handled in generator.
-  HandlePropertyName funName = kind == ResumeKind::Normal
-                                   ? cx->names().AsyncFunctionNext
-                                   : cx->names().AsyncFunctionThrow;
+  Handle<PropertyName*> funName = kind == ResumeKind::Normal
+                                      ? cx->names().AsyncFunctionNext
+                                      : cx->names().AsyncFunctionThrow;
   FixedInvokeArgs<1> args(cx);
   args[0].set(valueOrReason);
   RootedValue generatorOrValue(cx, ObjectValue(*generator));
@@ -277,8 +278,35 @@ JSFunction* NewHandler(JSContext* cx, Native handler,
   return handlerFun;
 }
 
+static bool AsyncModuleExecutionFulfilledHandler(JSContext* cx, unsigned argc,
+                                                 Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  JSFunction& func = args.callee().as<JSFunction>();
+
+  Rooted<ModuleObject*> module(
+      cx, &func.getExtendedSlot(FunctionExtended::MODULE_SLOT)
+               .toObject()
+               .as<ModuleObject>());
+  AsyncModuleExecutionFulfilled(cx, module);
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool AsyncModuleExecutionRejectedHandler(JSContext* cx, unsigned argc,
+                                                Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  JSFunction& func = args.callee().as<JSFunction>();
+  Rooted<ModuleObject*> module(
+      cx, &func.getExtendedSlot(FunctionExtended::MODULE_SLOT)
+               .toObject()
+               .as<ModuleObject>());
+  AsyncModuleExecutionRejected(cx, module, args.get(0));
+  args.rval().setUndefined();
+  return true;
+}
+
 AsyncFunctionGeneratorObject* AsyncFunctionGeneratorObject::create(
-    JSContext* cx, HandleModuleObject module) {
+    JSContext* cx, Handle<ModuleObject*> module) {
   // TODO: Module is currently hitching a ride with
   // AsyncFunctionGeneratorObject. The reason for this is we have some work in
   // the JITs that make use of this object when we hit AsyncAwait bytecode. At

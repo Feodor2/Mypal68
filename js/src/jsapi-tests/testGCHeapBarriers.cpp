@@ -251,7 +251,6 @@ bool TestHeapPostBarrierConstruction() {
 
     // Disable the check that GCPtrs are only destroyed by the GC. What happens
     // on destruction isn't relevant to the test.
-    gc::AutoSetThreadIsPerformingGC performingGC;
     gc::AutoSetThreadIsFinalizing threadIsFinalizing;
 
     js_delete(testStruct);
@@ -295,7 +294,6 @@ bool TestHeapPostBarrierUpdate() {
 
     // Disable the check that GCPtrs are only destroyed by the GC. What happens
     // on destruction isn't relevant to the test.
-    gc::AutoSetThreadIsPerformingGC performingGC;
     gc::AutoSetThreadIsFinalizing threadIsFinalizing;
 
     js_delete(testStruct);
@@ -778,11 +776,10 @@ bool TestGCPtrCopyConstruction(JSObject* obj) {
 
   {
     // Let us destroy GCPtrs ourselves for testing purposes.
-    gc::AutoSetThreadIsPerformingGC performingGC;
     gc::AutoSetThreadIsFinalizing threadIsFinalizing;
 
-    GCPtrObject wrapper1(obj);
-    GCPtrObject wrapper2(wrapper1);
+    GCPtr<JSObject*> wrapper1(obj);
+    GCPtr<JSObject*> wrapper2(wrapper1);
     CHECK(wrapper1 == obj);
     CHECK(wrapper2 == obj);
     CHECK(GetColor(obj) == gc::CellColor::White);
@@ -800,11 +797,10 @@ bool TestGCPtrAssignment(JSObject* obj1, JSObject* obj2) {
 
   {
     // Let us destroy GCPtrs ourselves for testing purposes.
-    gc::AutoSetThreadIsPerformingGC performingGC;
     gc::AutoSetThreadIsFinalizing threadIsFinalizing;
 
-    GCPtrObject wrapper1(obj1);
-    GCPtrObject wrapper2(obj2);
+    GCPtr<JSObject*> wrapper1(obj1);
+    GCPtr<JSObject*> wrapper2(obj2);
 
     wrapper2 = wrapper1;
 

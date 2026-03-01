@@ -70,16 +70,8 @@ class Tiers {
 // available under prefs.)
 
 struct FeatureOptions {
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  FeatureOptions() : simdWormhole(false), intrinsics(false) {}
-#else
   FeatureOptions() : intrinsics(false) {}
-#endif
 
-  // May be set if javascript.options.wasm_simd_wormhole==true.
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  bool simdWormhole;
-#endif
   // Enables intrinsic opcodes, only set in WasmIntrinsic.cpp.
   bool intrinsics;
 };
@@ -90,15 +82,11 @@ struct FeatureArgs {
   FeatureArgs()
       :
 #define WASM_FEATURE(NAME, LOWER_NAME, ...) LOWER_NAME(false),
-#ifdef ENABLE_WASM_SIMD
         JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
-#else
-        JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE)
-#endif
 #undef WASM_FEATURE
             sharedMemory(Shareable::False),
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-        simdWormhole(false),
+#ifdef ENABLE_WASM_SIMD
+        simd(false),
 #endif
         intrinsics(false) {
   }
@@ -109,16 +97,12 @@ struct FeatureArgs {
   static FeatureArgs build(JSContext* cx, const FeatureOptions& options);
 
 #define WASM_FEATURE(NAME, LOWER_NAME, ...) bool LOWER_NAME;
-#ifdef ENABLE_WASM_SIMD
   JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
-#else
-  JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE)
-#endif
 #undef WASM_FEATURE
 
   Shareable sharedMemory;
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  bool simdWormhole;
+#ifdef ENABLE_WASM_SIMD
+  bool simd;
 #endif
   bool intrinsics;
 };
@@ -152,7 +136,6 @@ struct CompileArgs : ShareableBase<CompileArgs> {
 
   bool baselineEnabled;
   bool ionEnabled;
-  bool craneliftEnabled;
   bool debugEnabled;
   bool forceTiering;
 
@@ -178,7 +161,6 @@ struct CompileArgs : ShareableBase<CompileArgs> {
       : scriptedCaller(std::move(scriptedCaller)),
         baselineEnabled(false),
         ionEnabled(false),
-        craneliftEnabled(false),
         debugEnabled(false),
         forceTiering(false) {}
 };

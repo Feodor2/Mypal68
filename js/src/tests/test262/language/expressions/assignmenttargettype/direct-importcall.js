@@ -18,6 +18,4 @@ info: |
 
 $DONOTEVALUATE();
 
-function _() {
-  import() = 1;
-}
+import() = 1;

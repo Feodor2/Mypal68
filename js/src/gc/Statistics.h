@@ -89,8 +89,6 @@ struct ZoneGCStats {
   /* Total number of compartments swept by this GC. */
   int sweptCompartmentCount = 0;
 
-  bool isFullCollection() const { return collectedZoneCount == zoneCount; }
-
   ZoneGCStats() = default;
 };
 
@@ -187,6 +185,8 @@ struct Statistics {
     }
   }
 
+  void measureInitialHeapSize();
+
   void nonincremental(GCAbortReason reason) {
     MOZ_ASSERT(reason != GCAbortReason::None);
     nonincrementalReason_ = reason;
@@ -276,11 +276,26 @@ struct Statistics {
 
   const SliceDataVector& slices() const { return slices_; }
 
+  const SliceData* lastSlice() const {
+    if (slices_.length() == 0) {
+      return nullptr;
+    }
+
+    return &slices_.back();
+  }
+
   TimeStamp start() const { return slices_[0].start; }
 
   TimeStamp end() const { return slices_.back().end; }
 
   TimeStamp creationTime() const { return creationTime_; }
+
+  TimeDuration totalGCTime() const { return totalGCTime_; }
+  size_t initialCollectedBytes() const { return preCollectedHeapBytes; }
+
+  // File to write profiling information to, either stderr or file specified
+  // with JS_GC_PROFILE_FILE.
+  FILE* profileFile() const { return gcProfileFile; }
 
   // Occasionally print header lines for profiling information.
   void maybePrintProfileHeaders();
@@ -319,6 +334,9 @@ struct Statistics {
   /* File used for JS_GC_DEBUG output. */
   FILE* gcDebugFile;
 
+  /* File used for JS_GC_PROFILE output. */
+  FILE* gcProfileFile;
+
   ZoneGCStats zoneStats;
 
   JS::GCOptions gcOptions;
@@ -341,8 +359,11 @@ struct Statistics {
   TimeStamp timedGCStart;
   TimeDuration timedGCTime;
 
-  /* Total time in a given phase for this GC. */
+  /* Total main thread time in a given phase for this GC. */
   PhaseTimes phaseTimes;
+
+  /* Total main thread time for this GC. */
+  TimeDuration totalGCTime_;
 
   /* Number of events of this type for this GC. */
   EnumeratedArray<Count, COUNT_LIMIT,
@@ -364,6 +385,9 @@ struct Statistics {
   /* Heap size before and after the GC ran. */
   size_t preHeapSize;
   size_t postHeapSize;
+
+  /* GC heap size for collected zones before GC ran. */
+  size_t preCollectedHeapBytes;
 
   /*
    * If a GC slice was triggered by exceeding some threshold, record the
@@ -455,7 +479,7 @@ struct Statistics {
   double computeMMU(TimeDuration resolution) const;
 
   void printSliceProfile();
-  static void printProfileTimes(const ProfileDurations& times);
+  void printProfileTimes(const ProfileDurations& times);
 };
 
 struct MOZ_RAII AutoGCSlice {

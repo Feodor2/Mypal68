@@ -78,10 +78,6 @@ enum class TypeCode {
   // Type constructor for non-nullable reference types.
   Ref = 0x6b,  // SLEB128(-0x15)
 
-  // Type constructors for rtt types.
-  RttWithDepth = 0x69,  // SLEB128(-0x17)
-  Rtt = 0x68,           // SLEB128(-0x18)
-
   // Type constructor for function types
   Func = 0x60,  // SLEB128(-0x20)
 
@@ -112,11 +108,6 @@ static constexpr TypeCode AbstractReferenceTypeCode = TypeCode::ExternRef;
 // is encoded with 'Ref' or 'NullableRef'.
 
 static constexpr TypeCode AbstractReferenceTypeIndexCode = TypeCode::Ref;
-
-// A type code used to represent (rtt depth? typeindex) whether or not the type
-// is encoded with 'Rtt' or 'RttWithDepth'.
-
-static constexpr TypeCode AbstractRttCode = TypeCode::Rtt;
 
 enum class TypeIdDescKind { None, Immediate, Global };
 
@@ -237,6 +228,7 @@ enum class Op {
   // Call operators
   Call = 0x10,
   CallIndirect = 0x11,
+  CallRef = 0x14,
 
   // Additional exception operators
   Delegate = 0x18,
@@ -454,30 +446,26 @@ inline bool IsPrefixByte(uint8_t b) { return b >= uint8_t(Op::FirstPrefix); }
 // Opcodes in the GC opcode space.
 enum class GcOp {
   // Structure operations
-  StructNewWithRtt = 0x1,
-  StructNewDefaultWithRtt = 0x2,
+  StructNew = 0x7,
+  StructNewDefault = 0x8,
   StructGet = 0x03,
   StructGetS = 0x04,
   StructGetU = 0x05,
   StructSet = 0x06,
 
   // Array operations
-  ArrayNewWithRtt = 0x11,
-  ArrayNewDefaultWithRtt = 0x12,
+  ArrayNew = 0x1b,
+  ArrayNewDefault = 0x1c,
   ArrayGet = 0x13,
   ArrayGetS = 0x14,
   ArrayGetU = 0x15,
   ArraySet = 0x16,
   ArrayLen = 0x17,
 
-  // Rtt operations
-  RttCanon = 0x30,
-  RttSub = 0x31,
-
   // Ref operations
-  RefTest = 0x40,
-  RefCast = 0x41,
-  BrOnCast = 0x42,
+  RefTest = 0x44,
+  RefCast = 0x45,
+  BrOnCast = 0x46,
 
   Limit
 };
@@ -765,72 +753,13 @@ enum class SimdOp {
   I16x8RelaxedQ15MulrS = 0x111,
   I16x8DotI8x16I7x16S = 0x112,
   I32x4DotI8x16I7x16AddS = 0x113,
-// bfloat16 dot product = 0x114
-// Reserved for Relaxed SIMD = 0x115-0x12f
+  // bfloat16 dot product = 0x114
+  // Reserved for Relaxed SIMD = 0x115-0x12f
 
-// Unused = 0x130 and up
+  // Unused = 0x130 and up
 
-// Mozilla extensions, highly experimental and platform-specific
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  // The wormhole is a mechanism for injecting experimental, possibly
-  // platform-dependent, opcodes into the generated code.  A wormhole op is
-  // expressed as a two-operation SIMD shuffle op with the pattern <31, 0, 30,
-  // 2, 29, 4, 28, 6, 27, 8, 26, 10, 25, 12, 24, X> where X is the opcode,
-  // 0..31, from the set below.  If an operation uses no operands, the operands
-  // to the shuffle opcode should be v128.const 0.  If an operation uses one
-  // operand, the operands to the shuffle opcode should both be that operand.
-  //
-  // The wormhole must be enabled by a flag (see below) and is only supported on
-  // x64 and x86 (though with both compilers).
-  //
-  // The benefit of this mechanism is that it allows experimental opcodes to be
-  // used without updating other tools (compilers, linkers, optimizers).
-  //
-  // Controlling the wormhole:
-  //
-  // - Under the correct circumstances, an options bag that is passed as an
-  //   additional and nonstandard argument to any function that validates or
-  //   compiles wasm will be inspected for carrying additional compilation
-  //   options. The options bag always follows any fixed and optional arguments
-  //   already in the signature.  The functions are: WA.validate, WA.compile,
-  //   WA.instantiate when called on a BufferSource, WA.compileStreaming,
-  //   WA.instantiateStreaming, and WA.Module.constructor.  If compiled code can
-  //   be cached, the presence of the options bag forces recompilation.
-  //
-  // - If the bag is inspected and contains the property `simdWormhole` and that
-  //   property has the boolean value `true` (and not just any truthy value),
-  //   then wasm SIMD will be enabled and the wormhole functionality will also
-  //   be enabled for the affected compilation only.
-  //
-  // - The options bag is parsed under these circumstances:
-  //
-  //   - In the shell, if the switch `--wasm-simd-wormhole` is set.
-  //
-  //   - In Nightly and early Beta browsers, if the flag
-  //     `j.o.wasm_simd_wormhole` is set.
-  //
-  //   - In all browsers, if the content passing the options bag is privileged
-  //     (in a way that is TBD).
-  //
-  // - As per normal, wasm SIMD can be enabled by setting `j.o.wasm_simd` to
-  //   true, but in that case the wormhole functionality will not be enabled.
-  //   Note that `j.o.wasm_simd_wormhole` does not enable the wormhole
-  //   functionality directly; it must be enabled by passing an options bag as
-  //   described above.
-
-  // These opcodes can be rearranged but the X values associated with them must
-  // remain fixed.
-
-  // X=0, selftest opcode.  No operands.  The result is an 8x16 hex value:
-  // DEADD00DCAFEBABE.
-  MozWHSELFTEST = 0x200,
-
-  // X=1, Intel SSE3 PMADDUBSW instruction. Two operands.
-  MozWHPMADDUBSW = 0x201,
-
-  // X=2, Intel SSE2 PMADDWD instruction. Two operands.
-  MozWHPMADDWD = 0x202,
-#endif
+  // Mozilla extensions
+  MozPMADDUBSW = 0x201,
 
   Limit
 };
@@ -1074,10 +1003,8 @@ static const unsigned MaxFunctionBytes = 7654321;
 // platform
 #ifdef JS_64BIT
 static const unsigned MaxTypeIndex = 1000000;
-static const unsigned MaxRttDepth = 1000;
 #else
 static const unsigned MaxTypeIndex = 15000;
-static const unsigned MaxRttDepth = 100;
 #endif
 
 static const unsigned MaxTags = 1000000;
@@ -1098,10 +1025,6 @@ static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
 
 static const unsigned MaxFrameSize = 512 * 1024;
 
-// A magic value of rtt depth to signify that it was not specified.
-
-static const uint32_t RttDepthNone = MaxRttDepth + 1;
-
 // Asserted by Decoder::readVarU32.
 
 static const unsigned MaxVarU32DecodedBytes = 5;
@@ -1110,7 +1033,6 @@ static const unsigned MaxVarU32DecodedBytes = 5;
 
 enum class OptimizedBackend {
   Ion,
-  Cranelift,
 };
 
 // The CompileMode controls how compilation of a module is performed (notably,

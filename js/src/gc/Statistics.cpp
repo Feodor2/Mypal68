@@ -23,6 +23,8 @@
 #include "vm/Runtime.h"
 #include "vm/Time.h"
 
+#include "gc/PrivateIterators-inl.h"
+
 using namespace js;
 using namespace js::gc;
 using namespace js::gcstats;
@@ -90,14 +92,14 @@ const char* js::gcstats::ExplainAbortReason(GCAbortReason reason) {
   }
 }
 
-static FILE* MaybeOpenFileFromEnv(const char* env) {
-  FILE* file;
+static FILE* MaybeOpenFileFromEnv(const char* env,
+                                  FILE* defaultFile = nullptr) {
   const char* value = getenv(env);
-
   if (!value) {
-    return nullptr;
+    return defaultFile;
   }
 
+  FILE* file;
   if (strcmp(value, "none") == 0) {
     file = nullptr;
   } else if (strcmp(value, "stdout") == 0) {
@@ -115,8 +117,8 @@ static FILE* MaybeOpenFileFromEnv(const char* env) {
     }
 
     file = fopen(value, "a");
-    if (!file) {
-      perror("opening log file");
+    if (!file || setvbuf(file, nullptr, _IOLBF, 256) != 0) {
+      perror("Error opening log file");
       MOZ_CRASH("Failed to open log file.");
     }
   }
@@ -754,6 +756,7 @@ Statistics::Statistics(GCRuntime* gc)
       allocsSinceMinorGC({0, 0}),
       preHeapSize(0),
       postHeapSize(0),
+      preCollectedHeapBytes(0),
       startingMinorGCNumber(0),
       startingMajorGCNumber(0),
       startingSliceNumber(0),
@@ -789,6 +792,7 @@ Statistics::Statistics(GCRuntime* gc)
 
   gcTimerFile = MaybeOpenFileFromEnv("MOZ_GCTIMER");
   gcDebugFile = MaybeOpenFileFromEnv("JS_GC_DEBUG");
+  gcProfileFile = MaybeOpenFileFromEnv("JS_GC_PROFILE_FILE", stderr);
 
   gc::ReadProfileEnv("JS_GC_PROFILE",
                      "Report major GCs taking more than N milliseconds for "
@@ -898,9 +902,20 @@ void Statistics::beginGC(JS::GCOptions options) {
   gcOptions = options;
   nonincrementalReason_ = GCAbortReason::None;
 
+  preCollectedHeapBytes = 0;
+
   preHeapSize = gc->heapSize.bytes();
   startingMajorGCNumber = gc->majorGCCount();
   startingSliceNumber = gc->gcNumber();
+
+  totalGCTime_ = TimeDuration();
+}
+
+void Statistics::measureInitialHeapSize() {
+  MOZ_ASSERT(preCollectedHeapBytes == 0);
+  for (GCZonesIter zone(gc); !zone.done(); zone.next()) {
+    preCollectedHeapBytes += zone->gcHeapSize.bytes();
+  }
 }
 
 void Statistics::endGC() {
@@ -959,10 +974,9 @@ void Statistics::beginSlice(const ZoneGCStats& zoneStats, JS::GCOptions options,
   }
 
   // Slice callbacks should only fire for the outermost level.
-  bool wasFullGC = zoneStats.isFullCollection();
   if (sliceCallback) {
     JSContext* cx = context();
-    JS::GCDescription desc(!wasFullGC, false, options, reason);
+    JS::GCDescription desc(!gc->fullGCRequested, false, options, reason);
     if (first) {
       (*sliceCallback)(cx, JS::GC_CYCLE_BEGIN, desc);
     }
@@ -985,6 +999,8 @@ void Statistics::endSlice() {
     log("end slice");
 
     sliceCount_++;
+
+    totalGCTime_ += slice.end - slice.start;
   }
 
   bool last = !gc->isIncrementalGCInProgress();
@@ -1006,10 +1022,9 @@ void Statistics::endSlice() {
 
   // Slice callbacks should only fire for the outermost level.
   if (!aborted) {
-    bool wasFullGC = zoneStats.isFullCollection();
     if (sliceCallback) {
       JSContext* cx = context();
-      JS::GCDescription desc(!wasFullGC, last, gcOptions,
+      JS::GCDescription desc(!gc->fullGCRequested, last, gcOptions,
                              slices_.back().reason);
       (*sliceCallback)(cx, JS::GC_SLICE_END, desc);
       if (last) {
@@ -1292,7 +1307,7 @@ void Statistics::maybePrintProfileHeaders() {
   if ((printedHeader++ % 200) == 0) {
     printProfileHeader();
     if (gc->nursery().enableProfiling()) {
-      Nursery::printProfileHeader();
+      gc->nursery().printProfileHeader();
     }
   }
 }
@@ -1302,23 +1317,24 @@ void Statistics::printProfileHeader() {
     return;
   }
 
+  FILE* file = profileFile();
   fprintf(
-      stderr,
-      "MajorGC: PID    Runtime        Timestamp  Reason               States "
-      "FSNR   budget total ");
-#define PRINT_PROFILE_HEADER(name, text, phase) \
-  fprintf(stderr, " %-6.6s", text);
+      file,
+      "MajorGC: PID     Runtime        Timestamp  Reason               States "
+      "FSNR   SizeKB budget total ");
+#define PRINT_PROFILE_HEADER(name, text, phase) fprintf(file, " %-6.6s", text);
   FOR_EACH_GC_PROFILE_TIME(PRINT_PROFILE_HEADER)
 #undef PRINT_PROFILE_HEADER
-  fprintf(stderr, "\n");
+  fprintf(file, "\n");
 }
 
 /* static */
 void Statistics::printProfileTimes(const ProfileDurations& times) {
+  FILE* file = profileFile();
   for (auto time : times) {
-    fprintf(stderr, " %6" PRIi64, static_cast<int64_t>(time.ToMilliseconds()));
+    fprintf(file, " %6" PRIi64, static_cast<int64_t>(time.ToMilliseconds()));
   }
-  fprintf(stderr, "\n");
+  fprintf(file, "\n");
 }
 
 void Statistics::printSliceProfile() {
@@ -1331,19 +1347,22 @@ void Statistics::printSliceProfile() {
   bool shrinking = gcOptions == JS::GCOptions::Shrink;
   bool reset = slice.resetReason != GCAbortReason::None;
   bool nonIncremental = nonincrementalReason_ != GCAbortReason::None;
-  bool full = zoneStats.isFullCollection();
+  bool full = gc->fullGCRequested;
+  size_t sizeKB = gc->heapSize.bytes() / 1024;
 
-  fprintf(
-      stderr, "MajorGC: %6zu %14p %10.6f %-20.20s %1d -> %1d %1s%1s%1s%1s  ",
-      size_t(getpid()), gc->rt, ts.ToSeconds(), ExplainGCReason(slice.reason),
-      int(slice.initialState), int(slice.finalState), full ? "F" : "",
-      shrinking ? "S" : "", nonIncremental ? "N" : "", reset ? "R" : "");
+  FILE* file = profileFile();
+  fprintf(file,
+          "MajorGC: %7zu %14p %10.6f %-20.20s %1d -> %1d %1s%1s%1s%1s   %6zu",
+          size_t(getpid()), gc->rt, ts.ToSeconds(),
+          ExplainGCReason(slice.reason), int(slice.initialState),
+          int(slice.finalState), full ? "F" : "", shrinking ? "S" : "",
+          nonIncremental ? "N" : "", reset ? "R" : "", sizeKB);
 
   if (!nonIncremental && !slice.budget.isUnlimited() &&
       slice.budget.isTimeBudget()) {
-    fprintf(stderr, " %6" PRIi64, slice.budget.timeBudget());
+    fprintf(file, " %6" PRIi64, slice.budget.timeBudget());
   } else {
-    fprintf(stderr, "       ");
+    fprintf(file, "       ");
   }
 
   ProfileDurations times;
@@ -1360,11 +1379,14 @@ void Statistics::printSliceProfile() {
 }
 
 void Statistics::printTotalProfileTimes() {
-  if (enableProfiling_) {
-    fprintf(stderr,
-            "MajorGC: %6zu %14p TOTALS: %7" PRIu64
-            " slices:                             ",
-            size_t(getpid()), gc->rt, sliceCount_);
-    printProfileTimes(totalTimes_);
+  if (!enableProfiling_) {
+    return;
   }
+
+  FILE* file = profileFile();
+  fprintf(file,
+          "MajorGC: %7zu %14p TOTALS: %7" PRIu64
+          " slices:                                    ",
+          size_t(getpid()), gc->rt, sliceCount_);
+  printProfileTimes(totalTimes_);
 }

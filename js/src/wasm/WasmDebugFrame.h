@@ -68,7 +68,6 @@ class DebugFrame {
 #ifdef ENABLE_WASM_SIMD
         case ValType::V128:
 #endif
-        case ValType::Rtt:
           return;
         case ValType::Ref:
           switch (type.refTypeKind()) {

@@ -8,6 +8,7 @@
 #include "mozilla/TimeStamp.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "gc/Nursery.h"
 #include "gc/RelocationOverlay.h"
@@ -18,7 +19,9 @@ using namespace js;
 using namespace js::gc;
 
 using mozilla::CheckedInt;
+using mozilla::Some;
 using mozilla::TimeDuration;
+using mozilla::TimeStamp;
 
 /*
  * We may start to collect a zone before its trigger threshold is reached if
@@ -53,8 +56,8 @@ GCSchedulingTunables::GCSchedulingTunables()
       highFrequencyLargeHeapGrowth_(
           TuningDefaults::HighFrequencyLargeHeapGrowth),
       lowFrequencyHeapGrowth_(TuningDefaults::LowFrequencyHeapGrowth),
-      minEmptyChunkCount_(TuningDefaults::MinEmptyChunkCount),
-      maxEmptyChunkCount_(TuningDefaults::MaxEmptyChunkCount),
+      balancedHeapLimitsEnabled_(TuningDefaults::BalancedHeapLimitsEnabled),
+      heapGrowthFactor_(TuningDefaults::HeapGrowthFactor),
       nurseryFreeThresholdForIdleCollection_(
           TuningDefaults::NurseryFreeThresholdForIdleCollection),
       nurseryFreeThresholdForIdleCollectionFraction_(
@@ -71,12 +74,10 @@ GCSchedulingTunables::GCSchedulingTunables()
       mallocThresholdBase_(TuningDefaults::MallocThresholdBase),
       urgentThresholdBytes_(TuningDefaults::UrgentThresholdBytes) {}
 
-bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
-                                        const AutoLockGC& lock) {
+bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value) {
   // Limit various parameters to reasonable levels to catch errors.
   const double MaxHeapGrowthFactor = 100;
   const size_t MaxNurseryBytesParam = 128 * 1024 * 1024;
-  const size_t MaxHeapBytesParam = 0xffffffff;  // ~4GB, must fit in 32bit word.
 
   switch (key) {
     case JSGC_MAX_BYTES:
@@ -107,7 +108,7 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
       break;
     case JSGC_SMALL_HEAP_SIZE_MAX: {
       size_t newLimit;
-      if (!megabytesToBytes(value, &newLimit) || newLimit > MaxHeapBytesParam) {
+      if (!megabytesToBytes(value, &newLimit)) {
         return false;
       }
       setSmallHeapSizeMaxBytes(newLimit);
@@ -115,8 +116,7 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
     }
     case JSGC_LARGE_HEAP_SIZE_MIN: {
       size_t newLimit;
-      if (!megabytesToBytes(value, &newLimit) || newLimit == 0 ||
-          newLimit > MaxHeapBytesParam) {
+      if (!megabytesToBytes(value, &newLimit) || newLimit == 0) {
         return false;
       }
       setLargeHeapSizeMinBytes(newLimit);
@@ -138,6 +138,10 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
       setHighFrequencyLargeHeapGrowth(newGrowth);
       break;
     }
+    case JSGC_BALANCED_HEAP_LIMITS_ENABLED: {
+      balancedHeapLimitsEnabled_ = bool(value);
+      break;
+    }
     case JSGC_LOW_FREQUENCY_HEAP_GROWTH: {
       double newGrowth = value / 100.0;
       if (newGrowth < MinHeapGrowthFactor || newGrowth > MaxHeapGrowthFactor) {
@@ -146,10 +150,13 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
       setLowFrequencyHeapGrowth(newGrowth);
       break;
     }
+    case JSGC_HEAP_GROWTH_FACTOR: {
+      setHeapGrowthFactor(double(value));
+      break;
+    }
     case JSGC_ALLOCATION_THRESHOLD: {
       size_t threshold;
-      if (!megabytesToBytes(value, &threshold) ||
-          threshold > MaxHeapBytesParam) {
+      if (!megabytesToBytes(value, &threshold)) {
         return false;
       }
       gcZoneAllocThresholdBase_ = threshold;
@@ -171,12 +178,6 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
       largeHeapIncrementalLimit_ = newFactor;
       break;
     }
-    case JSGC_MIN_EMPTY_CHUNK_COUNT:
-      setMinEmptyChunkCount(value);
-      break;
-    case JSGC_MAX_EMPTY_CHUNK_COUNT:
-      setMaxEmptyChunkCount(value);
-      break;
     case JSGC_NURSERY_FREE_THRESHOLD_FOR_IDLE_COLLECTION:
       if (value > gcMaxNurseryBytes()) {
         value = gcMaxNurseryBytes();
@@ -224,8 +225,7 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
       break;
     case JSGC_ZONE_ALLOC_DELAY_KB: {
       size_t delay;
-      if (!kilobytesToBytes(value, &delay) || delay == 0 ||
-          delay > MaxHeapBytesParam) {
+      if (!kilobytesToBytes(value, &delay) || delay == 0) {
         return false;
       }
       zoneAllocDelayBytes_ = delay;
@@ -233,8 +233,7 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
     }
     case JSGC_MALLOC_THRESHOLD_BASE: {
       size_t threshold;
-      if (!megabytesToBytes(value, &threshold) ||
-          threshold > MaxHeapBytesParam) {
+      if (!megabytesToBytes(value, &threshold)) {
         return false;
       }
       mallocThresholdBase_ = threshold;
@@ -242,8 +241,7 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
     }
     case JSGC_URGENT_THRESHOLD_MB: {
       size_t threshold;
-      if (!megabytesToBytes(value, &threshold) ||
-          threshold > MaxHeapBytesParam) {
+      if (!megabytesToBytes(value, &threshold)) {
         return false;
       }
       urgentThresholdBytes_ = threshold;
@@ -259,7 +257,10 @@ bool GCSchedulingTunables::setParameter(JSGCParamKey key, uint32_t value,
 /* static */
 bool GCSchedulingTunables::megabytesToBytes(uint32_t value, size_t* bytesOut) {
   MOZ_ASSERT(bytesOut);
-  CheckedInt<size_t> size = CheckedInt<size_t>(value) * 1024 * 1024;
+
+  // Parameters which represent heap sizes in bytes are restricted to values
+  // which can be represented on 32 bit platforms.
+  CheckedInt<uint32_t> size = CheckedInt<uint32_t>(value) * 1024 * 1024;
   if (!size.isValid()) {
     return false;
   }
@@ -319,24 +320,11 @@ void GCSchedulingTunables::setLowFrequencyHeapGrowth(double value) {
   MOZ_ASSERT(lowFrequencyHeapGrowth_ >= MinHeapGrowthFactor);
 }
 
-void GCSchedulingTunables::setMinEmptyChunkCount(uint32_t value) {
-  minEmptyChunkCount_ = value;
-  if (minEmptyChunkCount_ > maxEmptyChunkCount_) {
-    maxEmptyChunkCount_ = minEmptyChunkCount_;
-  }
-  MOZ_ASSERT(maxEmptyChunkCount_ >= minEmptyChunkCount_);
+void GCSchedulingTunables::setHeapGrowthFactor(double value) {
+  heapGrowthFactor_ = value;
 }
 
-void GCSchedulingTunables::setMaxEmptyChunkCount(uint32_t value) {
-  maxEmptyChunkCount_ = value;
-  if (minEmptyChunkCount_ > maxEmptyChunkCount_) {
-    minEmptyChunkCount_ = maxEmptyChunkCount_;
-  }
-  MOZ_ASSERT(maxEmptyChunkCount_ >= minEmptyChunkCount_);
-}
-
-void GCSchedulingTunables::resetParameter(JSGCParamKey key,
-                                          const AutoLockGC& lock) {
+void GCSchedulingTunables::resetParameter(JSGCParamKey key) {
   switch (key) {
     case JSGC_MAX_BYTES:
       gcMaxBytes_ = TuningDefaults::GCMaxBytes;
@@ -368,6 +356,12 @@ void GCSchedulingTunables::resetParameter(JSGCParamKey key,
     case JSGC_LOW_FREQUENCY_HEAP_GROWTH:
       setLowFrequencyHeapGrowth(TuningDefaults::LowFrequencyHeapGrowth);
       break;
+    case JSGC_BALANCED_HEAP_LIMITS_ENABLED:
+      balancedHeapLimitsEnabled_ = TuningDefaults::BalancedHeapLimitsEnabled;
+      break;
+    case JSGC_HEAP_GROWTH_FACTOR:
+      setHeapGrowthFactor(TuningDefaults::HeapGrowthFactor);
+      break;
     case JSGC_ALLOCATION_THRESHOLD:
       gcZoneAllocThresholdBase_ = TuningDefaults::GCZoneAllocThresholdBase;
       break;
@@ -376,12 +370,6 @@ void GCSchedulingTunables::resetParameter(JSGCParamKey key,
       break;
     case JSGC_LARGE_HEAP_INCREMENTAL_LIMIT:
       largeHeapIncrementalLimit_ = TuningDefaults::LargeHeapIncrementalLimit;
-      break;
-    case JSGC_MIN_EMPTY_CHUNK_COUNT:
-      setMinEmptyChunkCount(TuningDefaults::MinEmptyChunkCount);
-      break;
-    case JSGC_MAX_EMPTY_CHUNK_COUNT:
-      setMaxEmptyChunkCount(TuningDefaults::MaxEmptyChunkCount);
       break;
     case JSGC_NURSERY_FREE_THRESHOLD_FOR_IDLE_COLLECTION:
       nurseryFreeThresholdForIdleCollection_ =
@@ -438,6 +426,62 @@ void GCSchedulingState::updateHighFrequencyModeForReason(JS::GCReason reason) {
       reason == JS::GCReason::TOO_MUCH_MALLOC) {
     inHighFrequencyGCMode_ = true;
   }
+}
+
+static constexpr size_t BytesPerMB = 1024 * 1024;
+static constexpr double CollectionRateSmoothingFactor = 0.5;
+static constexpr double AllocationRateSmoothingFactor = 0.5;
+
+static double ExponentialMovingAverage(double prevAverage, double newData,
+                                       double smoothingFactor) {
+  MOZ_ASSERT(smoothingFactor > 0.0 && smoothingFactor <= 1.0);
+  return smoothingFactor * newData + (1.0 - smoothingFactor) * prevAverage;
+}
+
+void js::ZoneAllocator::updateCollectionRate(
+    mozilla::TimeDuration mainThreadGCTime, size_t initialBytesForAllZones) {
+  MOZ_ASSERT(initialBytesForAllZones != 0);
+  MOZ_ASSERT(gcHeapSize.initialBytes() <= initialBytesForAllZones);
+
+  double zoneFraction =
+      double(gcHeapSize.initialBytes()) / double(initialBytesForAllZones);
+  double zoneDuration = mainThreadGCTime.ToSeconds() * zoneFraction +
+                        perZoneGCTime.ref().ToSeconds();
+  double collectionRate =
+      double(gcHeapSize.initialBytes()) / (zoneDuration * BytesPerMB);
+
+  if (!smoothedCollectionRate.ref()) {
+    smoothedCollectionRate = Some(collectionRate);
+  } else {
+    double prevRate = smoothedCollectionRate.ref().value();
+    smoothedCollectionRate = Some(ExponentialMovingAverage(
+        prevRate, collectionRate, CollectionRateSmoothingFactor));
+  }
+}
+
+void js::ZoneAllocator::updateAllocationRate(TimeDuration mutatorTime) {
+  // To get the total size allocated since the last collection we have to
+  // take account of how much memory got freed in the meantime.
+  size_t freedBytes = gcHeapSize.freedBytes();
+
+  size_t sizeIncludingFreedBytes = gcHeapSize.bytes() + freedBytes;
+
+  MOZ_ASSERT(prevGCHeapSize <= sizeIncludingFreedBytes);
+  size_t allocatedBytes = sizeIncludingFreedBytes - prevGCHeapSize;
+
+  double allocationRate =
+      double(allocatedBytes) / (mutatorTime.ToSeconds() * BytesPerMB);
+
+  if (!smoothedAllocationRate.ref()) {
+    smoothedAllocationRate = Some(allocationRate);
+  } else {
+    double prevRate = smoothedAllocationRate.ref().value();
+    smoothedAllocationRate = Some(ExponentialMovingAverage(
+        prevRate, allocationRate, AllocationRateSmoothingFactor));
+  }
+
+  gcHeapSize.clearFreedBytes();
+  prevGCHeapSize = gcHeapSize.bytes();
 }
 
 // GC thresholds may exceed the range of size_t on 32-bit platforms, so these
@@ -564,8 +608,8 @@ double HeapThreshold::computeZoneHeapGrowthFactorForHeapSize(
 
 /* static */
 size_t GCHeapThreshold::computeZoneTriggerBytes(
-    double growthFactor, size_t lastBytes, const GCSchedulingTunables& tunables,
-    const AutoLockGC& lock) {
+    double growthFactor, size_t lastBytes,
+    const GCSchedulingTunables& tunables) {
   size_t base = std::max(lastBytes, tunables.gcZoneAllocThresholdBase());
   double trigger = double(base) * growthFactor;
   double triggerMax =
@@ -573,22 +617,65 @@ size_t GCHeapThreshold::computeZoneTriggerBytes(
   return ToClampedSize(std::min(triggerMax, trigger));
 }
 
-void GCHeapThreshold::updateStartThreshold(size_t lastBytes,
-                                           const GCSchedulingTunables& tunables,
-                                           const GCSchedulingState& state,
-                                           bool isAtomsZone,
-                                           const AutoLockGC& lock) {
-  double growthFactor =
-      computeZoneHeapGrowthFactorForHeapSize(lastBytes, tunables, state);
+// Parameters for balanced heap limits computation.
 
-  // Discourage collection of the atoms zone during page load as this can block
-  // off-thread parsing.
-  if (isAtomsZone && state.inPageLoad) {
-    growthFactor *= 1.5;
+// The W0 parameter. How much memory can be traversed in a chosen minimum
+// collection time.
+static constexpr double BalancedHeapBaseMB = 5.0;
+
+// The minimum heap limit. Do not constrain the heap to any less than this size.
+static constexpr double MinBalancedHeapLimitMB = 10.0;
+
+// The minimum amount of additional space to allow beyond the retained size.
+static constexpr double MinBalancedHeadroomMB = 3.0;
+
+// The default allocation rate in MB/s allocated by the mutator to use before we
+// have an estimate. Used to set the heap limit for zones that have not yet been
+// collected.
+static constexpr double DefaultAllocationRate = 0.0;
+
+// The s0 parameter. The default collection rate in MB/s to use before we have
+// an estimate. Used to set the heap limit for zones that have not yet been
+// collected.
+static constexpr double DefaultCollectionRate = 200.0;
+
+double GCHeapThreshold::computeBalancedHeapLimit(
+    size_t lastBytes, double allocationRate, double collectionRate,
+    const GCSchedulingTunables& tunables) {
+  MOZ_ASSERT(tunables.balancedHeapLimitsEnabled());
+
+  // Optimal heap limits as described in https://arxiv.org/abs/2204.10455
+
+  double W = double(lastBytes) / BytesPerMB;  // Retained size / MB.
+  double W0 = BalancedHeapBaseMB;
+  double d = tunables.heapGrowthFactor();  // Rearranged constant 'c'.
+  double g = allocationRate;
+  double s = collectionRate;
+  double M = W + d * sqrt((W + W0) * (g / s));
+  M = std::max({MinBalancedHeapLimitMB, W + MinBalancedHeadroomMB, M});
+
+  return M * double(BytesPerMB);
+}
+
+void GCHeapThreshold::updateStartThreshold(
+    size_t lastBytes, mozilla::Maybe<double> allocationRate,
+    mozilla::Maybe<double> collectionRate, const GCSchedulingTunables& tunables,
+    const GCSchedulingState& state, bool isAtomsZone) {
+  if (!tunables.balancedHeapLimitsEnabled()) {
+    double growthFactor =
+        computeZoneHeapGrowthFactorForHeapSize(lastBytes, tunables, state);
+
+    startBytes_ = computeZoneTriggerBytes(growthFactor, lastBytes, tunables);
+  } else {
+    double threshold = computeBalancedHeapLimit(
+        lastBytes, allocationRate.valueOr(DefaultAllocationRate),
+        collectionRate.valueOr(DefaultCollectionRate), tunables);
+
+    double triggerMax =
+        double(tunables.gcMaxBytes()) / tunables.largeHeapIncrementalLimit();
+
+    startBytes_ = ToClampedSize(uint64_t(std::min(triggerMax, threshold)));
   }
-
-  startBytes_ =
-      computeZoneTriggerBytes(growthFactor, lastBytes, tunables, lock);
 
   setIncrementalLimitFromStartBytes(lastBytes, tunables);
 }
@@ -596,50 +683,23 @@ void GCHeapThreshold::updateStartThreshold(size_t lastBytes,
 /* static */
 size_t MallocHeapThreshold::computeZoneTriggerBytes(double growthFactor,
                                                     size_t lastBytes,
-                                                    size_t baseBytes,
-                                                    const AutoLockGC& lock) {
+                                                    size_t baseBytes) {
   return ToClampedSize(double(std::max(lastBytes, baseBytes)) * growthFactor);
 }
 
 void MallocHeapThreshold::updateStartThreshold(
     size_t lastBytes, const GCSchedulingTunables& tunables,
-    const GCSchedulingState& state, const AutoLockGC& lock) {
+    const GCSchedulingState& state) {
   double growthFactor =
       computeZoneHeapGrowthFactorForHeapSize(lastBytes, tunables, state);
 
   startBytes_ = computeZoneTriggerBytes(growthFactor, lastBytes,
-                                        tunables.mallocThresholdBase(), lock);
+                                        tunables.mallocThresholdBase());
 
   setIncrementalLimitFromStartBytes(lastBytes, tunables);
 }
 
 #ifdef DEBUG
-
-void MemoryTracker::adopt(MemoryTracker& other) {
-  LockGuard<Mutex> lock(mutex);
-
-  AutoEnterOOMUnsafeRegion oomUnsafe;
-
-  for (auto r = other.gcMap.all(); !r.empty(); r.popFront()) {
-    if (!gcMap.put(r.front().key(), r.front().value())) {
-      oomUnsafe.crash("MemoryTracker::adopt");
-    }
-  }
-  other.gcMap.clear();
-
-  // There may still be ZoneAllocPolicies associated with the old zone since
-  // some are not destroyed until the zone itself dies. Instead check there is
-  // no memory associated with them and clear their zone pointer in debug builds
-  // to catch further memory association.
-  for (auto r = other.nonGCMap.all(); !r.empty(); r.popFront()) {
-    MOZ_ASSERT(r.front().value() == 0);
-    if (r.front().key().use() == MemoryUse::ZoneAllocPolicy) {
-      auto policy = static_cast<ZoneAllocPolicy*>(r.front().key().ptr());
-      policy->zone_ = nullptr;
-    }
-  }
-  other.nonGCMap.clear();
-}
 
 static const char* MemoryUseName(MemoryUse use) {
   switch (use) {
@@ -687,7 +747,7 @@ inline bool MemoryTracker::isGCMemoryUse(MemoryUse use) {
 
 /* static */
 inline bool MemoryTracker::isNonGCMemoryUse(MemoryUse use) {
-  return use == MemoryUse::ZoneAllocPolicy;
+  return use == MemoryUse::TrackedAllocPolicy;
 }
 
 /* static */

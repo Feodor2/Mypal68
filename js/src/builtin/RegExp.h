@@ -25,7 +25,7 @@ JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
  */
 [[nodiscard]] bool ExecuteRegExpLegacy(JSContext* cx, RegExpStatics* res,
                                        Handle<RegExpObject*> reobj,
-                                       HandleLinearString input,
+                                       Handle<JSLinearString*> input,
                                        size_t* lastIndex, bool test,
                                        MutableHandleValue rval);
 
@@ -104,8 +104,9 @@ JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
                                                        JSObject* proto);
 
 [[nodiscard]] extern bool RegExpGetSubstitution(
-    JSContext* cx, HandleArrayObject matchResult, HandleLinearString string,
-    size_t position, HandleLinearString replacement, size_t firstDollarIndex,
+    JSContext* cx, Handle<ArrayObject*> matchResult,
+    Handle<JSLinearString*> string, size_t position,
+    Handle<JSLinearString*> replacement, size_t firstDollarIndex,
     HandleValue namedCaptures, MutableHandleValue rval);
 
 [[nodiscard]] extern bool GetFirstDollarIndex(JSContext* cx, unsigned argc,

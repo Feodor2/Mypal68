@@ -534,7 +534,7 @@ bool js::SetIntegrityLevel(JSContext* cx, HandleObject obj,
   // Steps 6-9, loosely interpreted.
   if (obj->is<NativeObject>() && !obj->is<TypedArrayObject>() &&
       !obj->is<MappedArgumentsObject>()) {
-    HandleNativeObject nobj = obj.as<NativeObject>();
+    Handle<NativeObject*> nobj = obj.as<NativeObject>();
 
     // Use a fast path to seal/freeze properties. This has the benefit of
     // creating shared property maps if possible, whereas the slower/generic
@@ -608,7 +608,7 @@ bool js::SetIntegrityLevel(JSContext* cx, HandleObject obj,
   return true;
 }
 
-static bool ResolveLazyProperties(JSContext* cx, HandleNativeObject obj) {
+static bool ResolveLazyProperties(JSContext* cx, Handle<NativeObject*> obj) {
   const JSClass* clasp = obj->getClass();
   if (JSEnumerateOp enumerate = clasp->getEnumerate()) {
     if (!enumerate(cx, obj)) {
@@ -649,7 +649,7 @@ bool js::TestIntegrityLevel(JSContext* cx, HandleObject obj,
 
   // Fast path for native objects.
   if (obj->is<NativeObject>()) {
-    HandleNativeObject nobj = obj.as<NativeObject>();
+    Handle<NativeObject*> nobj = obj.as<NativeObject>();
 
     // Force lazy properties to be resolved.
     if (!ResolveLazyProperties(cx, nobj)) {
@@ -769,7 +769,7 @@ static MOZ_ALWAYS_INLINE NativeObject* NewObject(JSContext* cx,
     kind = ForegroundToBackgroundAllocKind(kind);
   }
 
-  RootedShape shape(
+  Rooted<Shape*> shape(
       cx, SharedShape::getInitialShape(cx, clasp, cx->realm(), proto, nfixed,
                                        ObjectFlags()));
   if (!shape) {
@@ -971,7 +971,7 @@ JS_PUBLIC_API bool JS_CopyOwnPropertiesAndPrivateFields(JSContext* cx,
 }
 
 static bool InitializePropertiesFromCompatibleNativeObject(
-    JSContext* cx, HandleNativeObject dst, HandleNativeObject src) {
+    JSContext* cx, Handle<NativeObject*> dst, Handle<NativeObject*> src) {
   cx->check(src, dst);
   MOZ_ASSERT(src->getClass() == dst->getClass());
   MOZ_ASSERT(dst->shape()->objectFlags().isEmpty());
@@ -994,7 +994,7 @@ static bool InitializePropertiesFromCompatibleNativeObject(
     return true;
   }
 
-  RootedShape shape(cx);
+  Rooted<Shape*> shape(cx);
   if (src->staticPrototype() == dst->staticPrototype()) {
     shape = src->shape();
   } else {
@@ -1098,7 +1098,7 @@ bool NativeObject::prepareForSwap(JSContext* cx,
 }
 
 /* static */
-bool NativeObject::fixupAfterSwap(JSContext* cx, HandleNativeObject obj,
+bool NativeObject::fixupAfterSwap(JSContext* cx, Handle<NativeObject*> obj,
                                   gc::AllocKind kind,
                                   HandleValueVector slotValues) {
   // This object has just been swapped with some other object, and its shape
@@ -1155,7 +1155,7 @@ bool NativeObject::fixupAfterSwap(JSContext* cx, HandleNativeObject obj,
     JSContext* cx, MutableHandleValueVector valuesOut) {
   MOZ_ASSERT(valuesOut.empty());
 
-  // Remove the GCPtrValues we're about to swap from the store buffer, to
+  // Remove the GCPtr<Value>s we're about to swap from the store buffer, to
   // ensure we don't trace bogus values.
   gc::StoreBuffer& sb = cx->runtime()->gc.storeBuffer();
 
@@ -1410,19 +1410,19 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
 }
 
 static NativeObject* DefineConstructorAndPrototype(
-    JSContext* cx, HandleObject obj, HandleAtom atom, HandleObject protoProto,
-    const JSClass* clasp, Native constructor, unsigned nargs,
-    const JSPropertySpec* ps, const JSFunctionSpec* fs,
+    JSContext* cx, HandleObject obj, Handle<JSAtom*> atom,
+    HandleObject protoProto, const JSClass* clasp, Native constructor,
+    unsigned nargs, const JSPropertySpec* ps, const JSFunctionSpec* fs,
     const JSPropertySpec* static_ps, const JSFunctionSpec* static_fs,
     NativeObject** ctorp) {
   // Create the prototype object.
-  RootedNativeObject proto(
+  Rooted<NativeObject*> proto(
       cx, GlobalObject::createBlankPrototypeInheriting(cx, clasp, protoProto));
   if (!proto) {
     return nullptr;
   }
 
-  RootedNativeObject ctor(cx);
+  Rooted<NativeObject*> ctor(cx);
   if (!constructor) {
     ctor = proto;
   } else {
@@ -1461,7 +1461,7 @@ NativeObject* js::InitClass(JSContext* cx, HandleObject obj,
                             const JSPropertySpec* static_ps,
                             const JSFunctionSpec* static_fs,
                             NativeObject** ctorp) {
-  RootedAtom atom(cx, Atomize(cx, clasp->name, strlen(clasp->name)));
+  Rooted<JSAtom*> atom(cx, Atomize(cx, clasp->name, strlen(clasp->name)));
   if (!atom) {
     return nullptr;
   }
@@ -1588,7 +1588,7 @@ bool js::LookupProperty(JSContext* cx, HandleObject obj, js::HandleId id,
                                            propp);
 }
 
-bool js::LookupName(JSContext* cx, HandlePropertyName name,
+bool js::LookupName(JSContext* cx, Handle<PropertyName*> name,
                     HandleObject envChain, MutableHandleObject objp,
                     MutableHandleObject pobjp, PropertyResult* propp) {
   RootedId id(cx, NameToId(name));
@@ -1633,7 +1633,7 @@ bool js::LookupNameNoGC(JSContext* cx, PropertyName* name, JSObject* envChain,
   return true;
 }
 
-bool js::LookupNameWithGlobalDefault(JSContext* cx, HandlePropertyName name,
+bool js::LookupNameWithGlobalDefault(JSContext* cx, Handle<PropertyName*> name,
                                      HandleObject envChain,
                                      MutableHandleObject objp) {
   RootedId id(cx, NameToId(name));
@@ -1655,7 +1655,7 @@ bool js::LookupNameWithGlobalDefault(JSContext* cx, HandlePropertyName name,
   return true;
 }
 
-bool js::LookupNameUnqualified(JSContext* cx, HandlePropertyName name,
+bool js::LookupNameUnqualified(JSContext* cx, Handle<PropertyName*> name,
                                HandleObject envChain,
                                MutableHandleObject objp) {
   RootedId id(cx, NameToId(name));
@@ -2024,7 +2024,7 @@ bool js::PreventExtensions(JSContext* cx, HandleObject obj,
 
   if (obj->is<NativeObject>()) {
     // Force lazy properties to be resolved.
-    HandleNativeObject nobj = obj.as<NativeObject>();
+    Handle<NativeObject*> nobj = obj.as<NativeObject>();
     if (!ResolveLazyProperties(cx, nobj)) {
       return false;
     }
@@ -2622,7 +2622,7 @@ JSObject* js::ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
 
 JSObject* js::ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
                                             int valIndex,
-                                            HandlePropertyName key) {
+                                            Handle<PropertyName*> key) {
   MOZ_ASSERT(!val.isMagic());
   MOZ_ASSERT(!val.isObject());
 
@@ -3267,10 +3267,6 @@ bool JSObject::isBackgroundFinalized() const {
   return js::gc::IsBackgroundFinalized(allocKindForTenure(nursery));
 }
 
-bool JSObject::canHaveFixedElements() const {
-  return (is<ArrayObject>() || IF_RECORD_TUPLE(is<TupleType>(), false));
-}
-
 js::gc::AllocKind JSObject::allocKindForTenure(
     const js::Nursery& nursery) const {
   using namespace js::gc;
@@ -3585,6 +3581,28 @@ bool js::Unbox(JSContext* cx, HandleObject obj, MutableHandleValue vp) {
 }
 
 #ifdef DEBUG
+void js::AssertJSClassInvariants(const JSClass* clasp) {
+  MOZ_ASSERT(JS::StringIsASCII(clasp->name));
+
+  // Native objects shouldn't use the property operation hooks in ObjectOps.
+  // Doing so could violate JIT invariants.
+  //
+  // Environment objects unfortunately use these hooks, but environment objects
+  // are not exposed directly to script so they're generally less of an issue.
+  if (clasp->isNativeObject() && clasp != &WithEnvironmentObject::class_ &&
+      clasp != &ModuleEnvironmentObject::class_ &&
+      clasp != &RuntimeLexicalErrorObject::class_) {
+    MOZ_ASSERT(!clasp->getOpsLookupProperty());
+    MOZ_ASSERT_IF(clasp != &MappedArgumentsObject::class_,
+                  !clasp->getOpsDefineProperty());
+    MOZ_ASSERT(!clasp->getOpsHasProperty());
+    MOZ_ASSERT(!clasp->getOpsGetProperty());
+    MOZ_ASSERT(!clasp->getOpsSetProperty());
+    MOZ_ASSERT(!clasp->getOpsGetOwnPropertyDescriptor());
+    MOZ_ASSERT(!clasp->getOpsDeleteProperty());
+  }
+}
+
 /* static */
 void JSObject::debugCheckNewObject(Shape* shape, js::gc::AllocKind allocKind,
                                    js::gc::InitialHeap heap) {

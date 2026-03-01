@@ -188,7 +188,8 @@ JSObject* CreateNativeObject(const ObjectConfig& config) {
   MOZ_ASSERT(config.isNative);
 
   NewObjectKind kind = config.nurseryAllocated ? GenericObject : TenuredObject;
-  RootedNativeObject obj(cx, NewBuiltinClassInstance(cx, config.clasp, kind));
+  Rooted<NativeObject*> obj(cx,
+                            NewBuiltinClassInstance(cx, config.clasp, kind));
   if (!obj) {
     return nullptr;
   }
@@ -333,7 +334,7 @@ bool CheckObject(HandleObject obj, const ObjectConfig& config, uint32_t id) {
   }
 
   if (config.isNative) {
-    RootedNativeObject nobj(cx, &obj->as<NativeObject>());
+    Rooted<NativeObject*> nobj(cx, &obj->as<NativeObject>());
     uint32_t propCount = GetPropertyCount(nobj);
 
     CHECK(propCount == config.native.propCount);

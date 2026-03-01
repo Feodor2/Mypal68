@@ -21,8 +21,10 @@
 #ifdef ENABLE_WASM_SIMD
 #define FOR_EACH_COMMON_PROPERTYNAME_(MACRO0, MACRO1, MACRO2, MACRO_)          \
   MACRO_(abort, abort, "abort")                                                \
+  IF_DECORATORS(MACRO_(accessor, accessor, "accessor"))                        \
   MACRO_(add, add, "add")                                                      \
   MACRO_(allowContentIter, allowContentIter, "allowContentIter")               \
+  MACRO_(ambiguous, ambiguous, "ambiguous")                                    \
   MACRO_(anonymous, anonymous, "anonymous")                                    \
   MACRO_(Any, Any, "Any")                                                      \
   MACRO_(apply, apply, "apply")                                                \
@@ -171,6 +173,8 @@
   MACRO_(finally, finally_, "finally")                                         \
   MACRO_(find, find, "find")                                                   \
   MACRO_(findIndex, findIndex, "findIndex")                                    \
+  MACRO_(findLast, findLast, "findLast")                                       \
+  MACRO_(findLastIndex, findLastIndex, "findLastIndex")                        \
   MACRO_(firstDayOfWeek, firstDayOfWeek, "firstDayOfWeek")                     \
   MACRO_(fix, fix, "fix")                                                      \
   MACRO_(flags, flags, "flags")                                                \
@@ -512,8 +516,6 @@
   MACRO_(unitDisplay, unitDisplay, "unitDisplay")                              \
   MACRO_(unknown, unknown, "unknown")                                          \
   MACRO_(unregister, unregister, "unregister")                                 \
-  MACRO_(UnsafeGetBooleanFromReservedSlot, UnsafeGetBooleanFromReservedSlot,   \
-         "UnsafeGetBooleanFromReservedSlot")                                   \
   MACRO_(UnsafeGetInt32FromReservedSlot, UnsafeGetInt32FromReservedSlot,       \
          "UnsafeGetInt32FromReservedSlot")                                     \
   MACRO_(UnsafeGetObjectFromReservedSlot, UnsafeGetObjectFromReservedSlot,     \
@@ -576,8 +578,10 @@
 #else
 #define FOR_EACH_COMMON_PROPERTYNAME_(MACRO0, MACRO1, MACRO2, MACRO_)          \
   MACRO_(abort, abort, "abort")                                                \
+  IF_DECORATORS(MACRO_(accessor, accessor, "accessor"))                        \
   MACRO_(add, add, "add")                                                      \
   MACRO_(allowContentIter, allowContentIter, "allowContentIter")               \
+  MACRO_(ambiguous, ambiguous, "ambiguous")                                    \
   MACRO_(anonymous, anonymous, "anonymous")                                    \
   MACRO_(Any, Any, "Any")                                                      \
   MACRO_(apply, apply, "apply")                                                \
@@ -730,6 +734,8 @@
   MACRO_(finally, finally_, "finally")                                         \
   MACRO_(find, find, "find")                                                   \
   MACRO_(findIndex, findIndex, "findIndex")                                    \
+  MACRO_(findLast, findLast, "findLast")                                       \
+  MACRO_(findLastIndex, findLastIndex, "findLastIndex")                        \
   MACRO_(firstDayOfWeek, firstDayOfWeek, "firstDayOfWeek")                     \
   MACRO_(fix, fix, "fix")                                                      \
   MACRO_(flags, flags, "flags")                                                \

@@ -89,7 +89,7 @@ bool EncodeIntrinsicBody(const Intrinsic& intrinsic, IntrinsicId id,
 bool wasm::CompileIntrinsicModule(JSContext* cx,
                                   const mozilla::Span<IntrinsicId> ids,
                                   Shareable sharedMemory,
-                                  MutableHandleWasmModuleObject result) {
+                                  MutableHandle<WasmModuleObject*> result) {
   // Create the options manually, enabling intrinsics
   FeatureOptions featureOptions;
   featureOptions.intrinsics = true;
@@ -109,10 +109,12 @@ bool wasm::CompileIntrinsicModule(JSContext* cx,
   ModuleEnvironment moduleEnv(compileArgs->features);
 
   // Add (import (memory 0))
-  UniqueChars emptyString = DuplicateString("");
-  UniqueChars memoryString = DuplicateString("memory");
-  if (!emptyString || !memoryString ||
-      !moduleEnv.imports.append(Import(std::move(emptyString),
+  CacheableName emptyString;
+  CacheableName memoryString;
+  if (!CacheableName::fromUTF8Chars("memory", &memoryString)) {
+    return false;
+  }
+  if (!moduleEnv.imports.append(Import(std::move(emptyString),
                                        std::move(memoryString),
                                        DefinitionKind::Memory))) {
     ReportOutOfMemory(cx);
@@ -156,9 +158,9 @@ bool wasm::CompileIntrinsicModule(JSContext* cx,
   for (uint32_t funcIndex = 0; funcIndex < ids.size(); funcIndex++) {
     const Intrinsic& intrinsic = Intrinsic::getFromId(ids[funcIndex]);
 
-    UniqueChars exportString = DuplicateString(intrinsic.exportName);
-    if (!exportString ||
-        !moduleEnv.exports.append(Export(std::move(exportString), funcIndex,
+    CacheableName exportName;
+    if (!CacheableName::fromUTF8Chars(intrinsic.exportName, &exportName) ||
+        !moduleEnv.exports.append(Export(std::move(exportName), funcIndex,
                                          DefinitionKind::Function))) {
       ReportOutOfMemory(cx);
       return false;

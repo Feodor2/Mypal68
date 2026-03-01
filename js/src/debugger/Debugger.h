@@ -26,8 +26,7 @@
 #include "debugger/DebugAPI.h"      // for DebugAPI
 #include "debugger/Object.h"        // for DebuggerObject
 #include "ds/TraceableFifo.h"       // for TraceableFifo
-#include "gc/Barrier.h"             // for WeakHeapPtrGlobalObject, HeapPtr
-#include "gc/Rooting.h"             // for HandleSavedFrame, HandleAtom
+#include "gc/Barrier.h"             //
 #include "gc/Tracer.h"              // for TraceNullableEdge, TraceEdge
 #include "gc/WeakMap.h"             // for WeakMap
 #include "gc/ZoneAllocator.h"       // for ZoneAllocPolicy
@@ -267,7 +266,7 @@ class Completion {
    * completion.
    */
   void toResumeMode(ResumeMode& resumeMode, MutableHandleValue value,
-                    MutableHandleSavedFrame exnStack) const;
+                    MutableHandle<SavedFrame*> exnStack) const;
   /*
    * Given a `ResumeMode` and value (typically derived from a resumption value
    * returned by a Debugger hook), update this completion as requested.
@@ -283,8 +282,8 @@ class Completion {
   Variant variant;
 };
 
-typedef HashSet<WeakHeapPtrGlobalObject,
-                MovableCellHasher<WeakHeapPtrGlobalObject>, ZoneAllocPolicy>
+typedef HashSet<WeakHeapPtr<GlobalObject*>,
+                MovableCellHasher<WeakHeapPtr<GlobalObject*>>, ZoneAllocPolicy>
     WeakGlobalObjectSet;
 
 #ifdef DEBUG
@@ -607,11 +606,11 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   };
 
  private:
-  HeapPtrNativeObject object; /* The Debugger object. Strong reference. */
+  HeapPtr<NativeObject*> object; /* The Debugger object. Strong reference. */
   WeakGlobalObjectSet
       debuggees; /* Debuggee globals. Cross-compartment weak references. */
   JS::ZoneSet debuggeeZones; /* Set of zones that we have debuggees in. */
-  HeapPtrObject uncaughtExceptionHook; /* Strong reference. */
+  HeapPtr<JSObject*> uncaughtExceptionHook; /* Strong reference. */
   bool allowUnobservedAsmJS;
   bool allowUnobservedWasm;
 
@@ -648,7 +647,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static const size_t DEFAULT_MAX_LOG_LENGTH = 5000;
 
   [[nodiscard]] bool appendAllocationSite(JSContext* cx, HandleObject obj,
-                                          HandleSavedFrame frame,
+                                          Handle<SavedFrame*> frame,
                                           mozilla::TimeStamp when);
 
   /*
@@ -775,15 +774,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   typedef DebuggerWeakMap<WasmInstanceObject, DebuggerSource>
       WasmInstanceSourceWeakMap;
   WasmInstanceSourceWeakMap wasmInstanceSources;
-
-  // Keep track of tracelogger last drained identifiers to know if there are
-  // lost events.
-#ifdef NIGHTLY_BUILD
-  uint32_t traceLoggerLastDrainedSize;
-  uint32_t traceLoggerLastDrainedIteration;
-#endif
-  uint32_t traceLoggerScriptedCallsLastDrainedSize;
-  uint32_t traceLoggerScriptedCallsLastDrainedIteration;
 
   class QueryBase;
   class ScriptQuery;
@@ -1108,8 +1098,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   Debugger(JSContext* cx, NativeObject* dbg);
   ~Debugger();
 
-  inline const js::HeapPtrNativeObject& toJSObject() const;
-  inline js::HeapPtrNativeObject& toJSObjectRef();
+  inline const js::HeapPtr<NativeObject*>& toJSObject() const;
+  inline js::HeapPtr<NativeObject*>& toJSObjectRef();
   static inline Debugger* fromJSObject(const JSObject* obj);
 
 #ifdef DEBUG
@@ -1148,8 +1138,9 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    */
   [[nodiscard]] bool wrapEnvironment(JSContext* cx, Handle<Env*> env,
                                      MutableHandleValue vp);
-  [[nodiscard]] bool wrapEnvironment(JSContext* cx, Handle<Env*> env,
-                                     MutableHandleDebuggerEnvironment result);
+  [[nodiscard]] bool wrapEnvironment(
+      JSContext* cx, Handle<Env*> env,
+      MutableHandle<DebuggerEnvironment*> result);
 
   /*
    * Like cx->compartment()->wrap(cx, vp), but for the debugger realm.
@@ -1173,9 +1164,9 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    */
   [[nodiscard]] bool wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp);
   [[nodiscard]] bool wrapDebuggeeObject(JSContext* cx, HandleObject obj,
-                                        MutableHandleDebuggerObject result);
+                                        MutableHandle<DebuggerObject*> result);
   [[nodiscard]] bool wrapNullableDebuggeeObject(
-      JSContext* cx, HandleObject obj, MutableHandleDebuggerObject result);
+      JSContext* cx, HandleObject obj, MutableHandle<DebuggerObject*> result);
 
   /*
    * Unwrap a Debug.Object, without rewrapping it for any particular debuggee
@@ -1219,12 +1210,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    */
   [[nodiscard]] bool getFrame(JSContext* cx, const FrameIter& iter,
                               MutableHandleValue vp);
-  [[nodiscard]] bool getFrame(JSContext* cx, MutableHandleDebuggerFrame result);
+  [[nodiscard]] bool getFrame(JSContext* cx,
+                              MutableHandle<DebuggerFrame*> result);
   [[nodiscard]] bool getFrame(JSContext* cx, const FrameIter& iter,
-                              MutableHandleDebuggerFrame result);
+                              MutableHandle<DebuggerFrame*> result);
   [[nodiscard]] bool getFrame(JSContext* cx,
                               Handle<AbstractGeneratorObject*> genObj,
-                              MutableHandleDebuggerFrame result);
+                              MutableHandle<DebuggerFrame*> result);
 
   /*
    * Return the Debugger.Script object for |script|, or create a new one if
@@ -1248,7 +1240,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    * must be a script source object in a debuggee realm.
    */
   DebuggerSource* wrapSource(JSContext* cx,
-                             js::HandleScriptSourceObject source);
+                             js::Handle<ScriptSourceObject*> source);
 
   /*
    * Return the Debugger.Source object for |wasmInstance| (the entire module),
@@ -1572,12 +1564,12 @@ Breakpoint* Debugger::firstBreakpoint() const {
   return &(*breakpoints.begin());
 }
 
-const js::HeapPtrNativeObject& Debugger::toJSObject() const {
+const js::HeapPtr<NativeObject*>& Debugger::toJSObject() const {
   MOZ_ASSERT(object);
   return object;
 }
 
-js::HeapPtrNativeObject& Debugger::toJSObjectRef() {
+js::HeapPtr<NativeObject*>& Debugger::toJSObjectRef() {
   MOZ_ASSERT(object);
   return object;
 }

@@ -80,10 +80,6 @@ class RttValue : public NativeObject {
   static void finalize(JS::GCContext* gcx, JSObject* obj);
 };
 
-using MutableHandleRttValue = MutableHandle<RttValue*>;
-using HandleRttValue = Handle<RttValue*>;
-using RootedRttValue = Rooted<RttValue*>;
-
 /* Base type for typed objects. */
 class TypedObject : public JSObject {
  protected:
@@ -138,12 +134,12 @@ class TypedObject : public JSObject {
  public:
   // Creates a new struct typed object initialized to zero. Reports if there
   // is an out of memory error.
-  static TypedObject* createStruct(JSContext* cx, HandleRttValue rtt,
+  static TypedObject* createStruct(JSContext* cx, Handle<RttValue*> rtt,
                                    gc::InitialHeap heap = gc::DefaultHeap);
 
   // Creates a new array typed object initialized to zero of specified length.
   // Reports an error if length is too large, or if there is an out of memory.
-  static TypedObject* createArray(JSContext* cx, HandleRttValue rtt,
+  static TypedObject* createArray(JSContext* cx, Handle<RttValue*> rtt,
                                   uint32_t elementsLength,
                                   gc::InitialHeap heap = gc::DefaultHeap);
 
@@ -163,9 +159,6 @@ class TypedObject : public JSObject {
                                              bool enumerableOnly);
 };
 
-using HandleTypedObject = Handle<TypedObject*>;
-using RootedTypedObject = Rooted<TypedObject*>;
-
 // Class for a typed object whose data is allocated in the malloc heap.
 class OutlineTypedObject : public TypedObject {
  public:
@@ -178,7 +171,7 @@ class OutlineTypedObject : public TypedObject {
  protected:
   friend class TypedObject;
 
-  static OutlineTypedObject* create(JSContext* cx, HandleRttValue rtt,
+  static OutlineTypedObject* create(JSContext* cx, Handle<RttValue*> rtt,
                                     size_t byteLength,
                                     gc::InitialHeap heap = gc::DefaultHeap);
 
@@ -208,9 +201,6 @@ class OutlineTypedObject : public TypedObject {
   static void obj_finalize(JS::GCContext* gcx, JSObject* object);
 };
 
-using HandleOutlineTypedObject = Handle<OutlineTypedObject*>;
-using RootedOutlineTypedObject = Rooted<OutlineTypedObject*>;
-
 // Helper to mark all locations that assume the type of the array length header
 // for a typed object.
 #define STATIC_ASSERT_ARRAYLENGTH_IS_U32 \
@@ -227,7 +217,7 @@ class InlineTypedObject : public TypedObject {
   static const size_t MaxInlineBytes =
       JSObject::MAX_BYTE_SIZE - sizeof(TypedObject);
 
-  static InlineTypedObject* create(JSContext* cx, HandleRttValue rtt,
+  static InlineTypedObject* create(JSContext* cx, Handle<RttValue*> rtt,
                                    gc::InitialHeap heap = gc::DefaultHeap);
 
   uint8_t* inlineTypedMem() const { return (uint8_t*)&data_; }
@@ -250,9 +240,6 @@ class InlineTypedObject : public TypedObject {
   static void obj_trace(JSTracer* trc, JSObject* object);
   static size_t obj_moved(JSObject* dst, JSObject* src);
 };
-
-using HandleInlineTypedObject = Handle<InlineTypedObject*>;
-using RootedInlineTypedObject = Rooted<InlineTypedObject*>;
 
 inline bool IsTypedObjectClass(const JSClass* class_) {
   return class_ == &OutlineTypedObject::class_ ||

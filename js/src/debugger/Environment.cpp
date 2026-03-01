@@ -15,7 +15,6 @@
 #include "debugger/Object.h"            // for DebuggerObject
 #include "debugger/Script.h"            // for DebuggerScript
 #include "frontend/BytecodeCompiler.h"  // for IsIdentifier
-#include "gc/Rooting.h"                 // for RootedDebuggerEnvironment
 #include "gc/Tracer.h"    // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "js/CallArgs.h"  // for CallArgs
 #include "js/friend/ErrorMessages.h"  // for GetErrorMessage, JSMSG_*
@@ -106,9 +105,10 @@ struct MOZ_STACK_CLASS DebuggerEnvironment::CallData {
   JSContext* cx;
   const CallArgs& args;
 
-  HandleDebuggerEnvironment environment;
+  Handle<DebuggerEnvironment*> environment;
 
-  CallData(JSContext* cx, const CallArgs& args, HandleDebuggerEnvironment env)
+  CallData(JSContext* cx, const CallArgs& args,
+           Handle<DebuggerEnvironment*> env)
       : cx(cx), args(args), environment(env) {}
 
   bool typeGetter();
@@ -136,7 +136,7 @@ bool DebuggerEnvironment::CallData::ToNative(JSContext* cx, unsigned argc,
                                              Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedDebuggerEnvironment environment(
+  Rooted<DebuggerEnvironment*> environment(
       cx, DebuggerEnvironment_checkThis(cx, args));
   if (!environment) {
     return false;
@@ -218,7 +218,7 @@ bool DebuggerEnvironment::CallData::parentGetter() {
     return false;
   }
 
-  RootedDebuggerEnvironment result(cx);
+  Rooted<DebuggerEnvironment*> result(cx);
   if (!environment->getParent(cx, &result)) {
     return false;
   }
@@ -238,7 +238,7 @@ bool DebuggerEnvironment::CallData::objectGetter() {
     return false;
   }
 
-  RootedDebuggerObject result(cx);
+  Rooted<DebuggerObject*> result(cx);
   if (!environment->getObject(cx, &result)) {
     return false;
   }
@@ -252,7 +252,7 @@ bool DebuggerEnvironment::CallData::calleeScriptGetter() {
     return false;
   }
 
-  RootedDebuggerScript result(cx);
+  Rooted<DebuggerScript*> result(cx);
   if (!environment->getCalleeScript(cx, &result)) {
     return false;
   }
@@ -304,7 +304,7 @@ bool DebuggerEnvironment::CallData::findMethod() {
     return false;
   }
 
-  RootedDebuggerEnvironment result(cx);
+  Rooted<DebuggerEnvironment*> result(cx);
   if (!DebuggerEnvironment::find(cx, environment, id, &result)) {
     return false;
   }
@@ -388,10 +388,9 @@ NativeObject* DebuggerEnvironment::initClass(JSContext* cx,
 }
 
 /* static */
-DebuggerEnvironment* DebuggerEnvironment::create(JSContext* cx,
-                                                 HandleObject proto,
-                                                 HandleObject referent,
-                                                 HandleNativeObject debugger) {
+DebuggerEnvironment* DebuggerEnvironment::create(
+    JSContext* cx, HandleObject proto, HandleObject referent,
+    Handle<NativeObject*> debugger) {
   DebuggerEnvironment* obj =
       IsInsideNursery(referent)
           ? NewObjectWithGivenProto<DebuggerEnvironment>(cx, proto)
@@ -429,7 +428,7 @@ mozilla::Maybe<ScopeKind> DebuggerEnvironment::scopeKind() const {
 }
 
 bool DebuggerEnvironment::getParent(
-    JSContext* cx, MutableHandleDebuggerEnvironment result) const {
+    JSContext* cx, MutableHandle<DebuggerEnvironment*> result) const {
   // Don't bother switching compartments just to get env's parent.
   Rooted<Env*> parent(cx, referent()->enclosingEnvironment());
   if (!parent) {
@@ -440,8 +439,8 @@ bool DebuggerEnvironment::getParent(
   return owner()->wrapEnvironment(cx, parent, result);
 }
 
-bool DebuggerEnvironment::getObject(JSContext* cx,
-                                    MutableHandleDebuggerObject result) const {
+bool DebuggerEnvironment::getObject(
+    JSContext* cx, MutableHandle<DebuggerObject*> result) const {
   MOZ_ASSERT(type() != DebuggerEnvironmentType::Declarative);
 
   // Don't bother switching compartments just to get env's object.
@@ -467,7 +466,7 @@ bool DebuggerEnvironment::getObject(JSContext* cx,
 }
 
 bool DebuggerEnvironment::getCalleeScript(
-    JSContext* cx, MutableHandleDebuggerScript result) const {
+    JSContext* cx, MutableHandle<DebuggerScript*> result) const {
   if (!referent()->is<DebugEnvironmentProxy>()) {
     result.set(nullptr);
     return true;
@@ -504,7 +503,7 @@ bool DebuggerEnvironment::isOptimized() const {
 
 /* static */
 bool DebuggerEnvironment::getNames(JSContext* cx,
-                                   HandleDebuggerEnvironment environment,
+                                   Handle<DebuggerEnvironment*> environment,
                                    MutableHandleIdVector result) {
   MOZ_ASSERT(environment->isDebuggee());
   MOZ_ASSERT(result.empty());
@@ -533,9 +532,9 @@ bool DebuggerEnvironment::getNames(JSContext* cx,
 
 /* static */
 bool DebuggerEnvironment::find(JSContext* cx,
-                               HandleDebuggerEnvironment environment,
+                               Handle<DebuggerEnvironment*> environment,
                                HandleId id,
-                               MutableHandleDebuggerEnvironment result) {
+                               MutableHandle<DebuggerEnvironment*> result) {
   MOZ_ASSERT(environment->isDebuggee());
 
   Rooted<Env*> env(cx, environment->referent());
@@ -570,7 +569,7 @@ bool DebuggerEnvironment::find(JSContext* cx,
 
 /* static */
 bool DebuggerEnvironment::getVariable(JSContext* cx,
-                                      HandleDebuggerEnvironment environment,
+                                      Handle<DebuggerEnvironment*> environment,
                                       HandleId id, MutableHandleValue result) {
   MOZ_ASSERT(environment->isDebuggee());
 
@@ -627,7 +626,7 @@ bool DebuggerEnvironment::getVariable(JSContext* cx,
 
 /* static */
 bool DebuggerEnvironment::setVariable(JSContext* cx,
-                                      HandleDebuggerEnvironment environment,
+                                      Handle<DebuggerEnvironment*> environment,
                                       HandleId id, HandleValue value_) {
   MOZ_ASSERT(environment->isDebuggee());
 

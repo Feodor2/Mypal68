@@ -11,6 +11,7 @@
 
 #include "jsfriendapi.h"
 
+#include "builtin/WrappedFunctionObject.h"
 #include "debugger/DebugAPI.h"
 #include "debugger/Debugger.h"
 #include "gc/Policy.h"
@@ -392,6 +393,7 @@ void Realm::fixupAfterMovingGC(JSTracer* trc) {
 void Realm::purge() {
   dtoaCache.purge();
   newProxyCache.purge();
+  newPlainObjectWithPropsCache.purge();
   objects_.iteratorCache.clearAndCompact();
   arraySpeciesLookup.purge();
   promiseLookup.purge();
@@ -698,9 +700,31 @@ JS_PUBLIC_API bool JS::InitRealmStandardClasses(JSContext* cx) {
   return GlobalObject::initStandardClasses(cx, cx->global());
 }
 
+JS_PUBLIC_API bool JS::MaybeFreezeCtorAndPrototype(JSContext* cx,
+                                                   HandleObject ctor,
+                                                   HandleObject maybeProto) {
+  if (MOZ_LIKELY(!cx->realm()->creationOptions().freezeBuiltins())) {
+    return true;
+  }
+  if (!SetIntegrityLevel(cx, ctor, IntegrityLevel::Frozen)) {
+    return false;
+  }
+  if (maybeProto) {
+    if (!SetIntegrityLevel(cx, maybeProto, IntegrityLevel::Sealed)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 JS_PUBLIC_API JSObject* JS::GetRealmObjectPrototype(JSContext* cx) {
   CHECK_THREAD(cx);
   return GlobalObject::getOrCreateObjectPrototype(cx, cx->global());
+}
+
+JS_PUBLIC_API JS::Handle<JSObject*> JS::GetRealmObjectPrototypeHandle(
+    JSContext* cx) {
+  return GlobalObject::getOrCreateObjectPrototypeHandle(cx, cx->global());
 }
 
 JS_PUBLIC_API JSObject* JS::GetRealmFunctionPrototype(JSContext* cx) {
@@ -722,6 +746,11 @@ JS_PUBLIC_API JSObject* JS::GetRealmErrorPrototype(JSContext* cx) {
 JS_PUBLIC_API JSObject* JS::GetRealmIteratorPrototype(JSContext* cx) {
   CHECK_THREAD(cx);
   return GlobalObject::getOrCreateIteratorPrototype(cx, cx->global());
+}
+
+JS_PUBLIC_API JSObject* JS::GetRealmAsyncIteratorPrototype(JSContext* cx) {
+  CHECK_THREAD(cx);
+  return GlobalObject::getOrCreateAsyncIteratorPrototype(cx, cx->global());
 }
 
 JS_PUBLIC_API JSObject* JS::GetRealmKeyObject(JSContext* cx) {
@@ -756,6 +785,12 @@ JS_PUBLIC_API Realm* JS::GetFunctionRealm(JSContext* cx, HandleObject objArg) {
 
       obj = fun->getBoundFunctionTarget();
       continue;
+    }
+
+    // WrappedFunctionObjects also have a [[Realm]] internal slot,
+    // which is the nonCCWRealm by construction.
+    if (obj->is<WrappedFunctionObject>()) {
+      return obj->nonCCWRealm();
     }
 
     // Step 4.

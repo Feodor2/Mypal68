@@ -45,8 +45,19 @@ extern JSObject* ValueToCallable(JSContext* cx, HandleValue v,
                                  int numToSkip = -1,
                                  MaybeConstruct construct = NO_CONSTRUCT);
 
-// Reasons why a call could be performed, for passing onto the debugger.
-enum class CallReason { Call, Getter, Setter };
+// Reasons why a call could be performed, for passing onto the debugger's
+// `onNativeCall` hook.
+// `onNativeCall` hook disabled all JITs, and this needs to be handled only in
+// the interpreter.
+enum class CallReason {
+  Call,
+  // callContentFunction or constructContentFunction in self-hosted JS.
+  CallContent,
+  // Function.prototype.call or Function.prototype.apply.
+  FunCall,
+  Getter,
+  Setter,
+};
 
 /*
  * Call or construct arguments that are stored in rooted memory.
@@ -134,7 +145,8 @@ inline bool Call(JSContext* cx, HandleValue fval, JSObject* thisObj,
 // This internal operation is intended only for use with arguments known to be
 // on the JS stack, or at least in carefully-rooted memory. The vast majority of
 // potential users should instead use InvokeArgs in concert with Call().
-extern bool CallFromStack(JSContext* cx, const CallArgs& args);
+extern bool CallFromStack(JSContext* cx, const CallArgs& args,
+                          CallReason reason = CallReason::Call);
 
 // ES6 7.3.13 Construct(F, argumentsList, newTarget).  All parameters are
 // required, hopefully forcing callers to be careful not to (say) blindly pass
@@ -160,7 +172,8 @@ extern bool Construct(JSContext* cx, HandleValue fval,
 // This internal operation is intended only for use with arguments known to be
 // on the JS stack, or at least in carefully-rooted memory. The vast majority of
 // potential users should instead use ConstructArgs in concert with Construct().
-extern bool ConstructFromStack(JSContext* cx, const CallArgs& args);
+extern bool ConstructFromStack(JSContext* cx, const CallArgs& args,
+                               CallReason reason = CallReason::Call);
 
 // Call Construct(fval, args, newTarget), but use the given |thisv| as |this|
 // during construction of |fval|.
@@ -495,7 +508,7 @@ bool HandleClosingGeneratorReturn(JSContext* cx, AbstractFramePtr frame,
 
 bool ThrowOperation(JSContext* cx, HandleValue v);
 
-bool GetProperty(JSContext* cx, HandleValue value, HandlePropertyName name,
+bool GetProperty(JSContext* cx, HandleValue value, Handle<PropertyName*> name,
                  MutableHandleValue vp);
 
 JSObject* Lambda(JSContext* cx, HandleFunction fun, HandleObject parent);
@@ -560,8 +573,8 @@ bool GreaterThanOrEqual(JSContext* cx, MutableHandleValue lhs,
 bool AtomicIsLockFree(JSContext* cx, HandleValue in, int* out);
 
 template <bool strict>
-bool DelPropOperation(JSContext* cx, HandleValue val, HandlePropertyName name,
-                      bool* res);
+bool DelPropOperation(JSContext* cx, HandleValue val,
+                      Handle<PropertyName*> name, bool* res);
 
 template <bool strict>
 bool DelElemOperation(JSContext* cx, HandleValue val, HandleValue index,
@@ -578,16 +591,16 @@ bool ThrowMsgOperation(JSContext* cx, const unsigned throwMsgKind);
 bool GetAndClearException(JSContext* cx, MutableHandleValue res);
 
 bool GetAndClearExceptionAndStack(JSContext* cx, MutableHandleValue res,
-                                  MutableHandleSavedFrame stack);
+                                  MutableHandle<SavedFrame*> stack);
 
-bool DeleteNameOperation(JSContext* cx, HandlePropertyName name,
+bool DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
                          HandleObject scopeObj, MutableHandleValue res);
 
 bool ImplicitThisOperation(JSContext* cx, HandleObject scopeObj,
-                           HandlePropertyName name, MutableHandleValue res);
+                           Handle<PropertyName*> name, MutableHandleValue res);
 
 bool InitPropGetterSetterOperation(JSContext* cx, jsbytecode* pc,
-                                   HandleObject obj, HandlePropertyName name,
+                                   HandleObject obj, Handle<PropertyName*> name,
                                    HandleObject val);
 
 unsigned GetInitDataPropAttrs(JSOp op);
@@ -612,11 +625,11 @@ ArrayObject* ArrayFromArgumentsObject(JSContext* cx,
 JSObject* NewObjectOperation(JSContext* cx, HandleScript script,
                              const jsbytecode* pc);
 
-JSObject* NewPlainObjectBaselineFallback(JSContext* cx, HandleShape shape,
+JSObject* NewPlainObjectBaselineFallback(JSContext* cx, Handle<Shape*> shape,
                                          gc::AllocKind allocKind,
                                          gc::AllocSite* site);
 
-JSObject* NewPlainObjectOptimizedFallback(JSContext* cx, HandleShape shape,
+JSObject* NewPlainObjectOptimizedFallback(JSContext* cx, Handle<Shape*> shape,
                                           gc::AllocKind allocKind,
                                           gc::InitialHeap initialHeap);
 
@@ -639,7 +652,7 @@ void ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
                                HandleId id);
 
 void ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
-                               HandlePropertyName name);
+                               Handle<PropertyName*> name);
 
 void ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
                                HandleScript script, jsbytecode* pc);
@@ -649,7 +662,7 @@ void ReportInNotObjectError(JSContext* cx, HandleValue lref, HandleValue rref);
 // The parser only reports redeclarations that occurs within a single
 // script. Due to the extensibility of the global lexical scope, we also check
 // for redeclarations during runtime in JSOp::GlobalOrEvalDeclInstantation.
-void ReportRuntimeRedeclaration(JSContext* cx, HandlePropertyName name,
+void ReportRuntimeRedeclaration(JSContext* cx, Handle<PropertyName*> name,
                                 const char* redeclKind);
 
 bool ThrowCheckIsObject(JSContext* cx, CheckIsObjectKind kind);
@@ -662,7 +675,7 @@ bool ThrowObjectCoercible(JSContext* cx, HandleValue value);
 
 bool DefaultClassConstructor(JSContext* cx, unsigned argc, Value* vp);
 
-bool Debug_CheckSelfHosted(JSContext* cx, HandleValue v);
+bool Debug_CheckSelfHosted(JSContext* cx, HandleValue funVal);
 
 bool CheckClassHeritageOperation(JSContext* cx, HandleValue heritage);
 
@@ -672,13 +685,16 @@ JSObject* FunWithProtoOperation(JSContext* cx, HandleFunction fun,
                                 HandleObject parent, HandleObject proto);
 
 bool SetPropertySuper(JSContext* cx, HandleValue lval, HandleValue receiver,
-                      HandlePropertyName name, HandleValue rval, bool strict);
+                      Handle<PropertyName*> name, HandleValue rval,
+                      bool strict);
 
 bool SetElementSuper(JSContext* cx, HandleValue lval, HandleValue receiver,
                      HandleValue index, HandleValue rval, bool strict);
 
 bool LoadAliasedDebugVar(JSContext* cx, JSObject* env, jsbytecode* pc,
                          MutableHandleValue result);
+
+bool CloseIterOperation(JSContext* cx, HandleObject iter, CompletionKind kind);
 } /* namespace js */
 
 #endif /* vm_Interpreter_h */

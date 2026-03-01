@@ -277,15 +277,16 @@ class MOZ_STACK_CLASS ComponentLoaderInfo {
   }
   nsresult EnsureScriptChannel() {
     BEGIN_ENSURE(ScriptChannel, IOService, URI);
-    return NS_NewChannel(getter_AddRefs(mScriptChannel), mURI,
-                         nsContentUtils::GetSystemPrincipal(),
-                         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                         nsIContentPolicy::TYPE_SCRIPT,
-                         nullptr,  // nsICookieSettings
-                         nullptr,  // aPerformanceStorage
-                         nullptr,  // aLoadGroup
-                         nullptr,  // aCallbacks
-                         nsIRequest::LOAD_NORMAL, mIOService);
+    return NS_NewChannel(
+        getter_AddRefs(mScriptChannel), mURI,
+        nsContentUtils::GetSystemPrincipal(),
+        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+        nsIContentPolicy::TYPE_SCRIPT,
+        nullptr,  // nsICookieJarSettings
+        nullptr,  // aPerformanceStorage
+        nullptr,  // aLoadGroup
+        nullptr,  // aCallbacks
+        nsIRequest::LOAD_NORMAL, mIOService);
   }
 
   nsIURI* ResolvedURI() {
@@ -587,7 +588,9 @@ void mozJSComponentLoader::CreateLoaderGlobal(JSContext* aCx,
   auto backstagePass = MakeRefPtr<BackstagePass>();
   RealmOptions options;
 
-  options.creationOptions().setNewCompartmentInSystemZone();
+  options.creationOptions()
+      .setFreezeBuiltins(true)
+      .setNewCompartmentInSystemZone();
   xpc::SetPrefableRealmOptions(options);
 
   // Defer firing OnNewGlobalObject until after the __URI__ property has

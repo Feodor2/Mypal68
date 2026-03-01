@@ -61,7 +61,7 @@ bool CallSelfHostedFunction(JSContext* cx, char const* name, HandleValue thisv,
 /*
  * Calls a self-hosted function by name.
  */
-bool CallSelfHostedFunction(JSContext* cx, HandlePropertyName name,
+bool CallSelfHostedFunction(JSContext* cx, Handle<PropertyName*> name,
                             HandleValue thisv, const AnyInvokeArgs& args,
                             MutableHandleValue rval);
 

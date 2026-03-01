@@ -245,7 +245,7 @@ bool js::intl_availableMeasurementUnits(JSContext* cx, unsigned argc,
     return false;
   }
 
-  RootedAtom unitAtom(cx);
+  Rooted<JSAtom*> unitAtom(cx);
   for (auto unit : units.unwrap()) {
     if (unit.isErr()) {
       intl::ReportInternalError(cx);
@@ -287,7 +287,7 @@ static UniqueChars NumberFormatLocale(JSContext* cx, HandleObject internals) {
 
   mozilla::intl::Locale tag;
   {
-    RootedLinearString locale(cx, value.toString()->ensureLinear(cx));
+    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
     if (!locale) {
       return nullptr;
     }
@@ -881,8 +881,8 @@ static bool FormattedNumberToParts(JSContext* cx, HandleString str,
   RootedObject singlePart(cx);
   RootedValue propVal(cx);
 
-  RootedArrayObject partsArray(cx,
-                               NewDenseFullyAllocatedArray(cx, parts.length()));
+  Rooted<ArrayObject*> partsArray(
+      cx, NewDenseFullyAllocatedArray(cx, parts.length()));
   if (!partsArray) {
     return false;
   }
@@ -974,8 +974,7 @@ static bool IsNonDecimalNumber(JSLinearString* str) {
                                : IsNonDecimalNumber(str->twoByteRange(nogc));
 }
 
-static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value,
-                                    double* numberApproximation = nullptr) {
+static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value) {
   if (!ToPrimitive(cx, JSTYPE_NUMBER, value)) {
     return false;
   }
@@ -1019,14 +1018,8 @@ static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value,
     return false;
   }
 
-  // Call StringToNumber to validate the input can be parsed as a number.
-  double number;
-  if (!StringToNumber(cx, str, &number)) {
-    return false;
-  }
-  if (numberApproximation) {
-    *numberApproximation = number;
-  }
+  // Parse the string as a number.
+  double number = LinearStringToNumber(str);
 
   bool exponentTooLarge = false;
   if (mozilla::IsNaN(number)) {
@@ -1254,207 +1247,6 @@ static JSLinearString* ToLinearString(JSContext* cx, HandleValue val) {
   return str ? str->ensureLinear(cx) : nullptr;
 };
 
-static bool ValidateNumberRange(JSContext* cx, MutableHandleValue start,
-                                double startApprox, MutableHandleValue end,
-                                double endApprox, bool formatToParts) {
-  static auto isSpecificDouble = [](const Value& val, auto fn) {
-    return val.isDouble() && fn(val.toDouble());
-  };
-
-  static auto isNaN = [](const Value& val) {
-    return isSpecificDouble(val, mozilla::IsNaN<double>);
-  };
-
-  static auto isPositiveInfinity = [](const Value& val) {
-    return isSpecificDouble(
-        val, [](double num) { return num > 0 && mozilla::IsInfinite(num); });
-  };
-
-  static auto isNegativeInfinity = [](const Value& val) {
-    return isSpecificDouble(
-        val, [](double num) { return num < 0 && mozilla::IsInfinite(num); });
-  };
-
-  static auto isNegativeZero = [](const Value& val) {
-    return isSpecificDouble(val, mozilla::IsNegativeZero<double>);
-  };
-
-  static auto isMathematicalValue = [](const Value& val) {
-    // |ToIntlMathematicalValue()| normalizes non-finite values and negative
-    // zero to Double values, so any string is guaranteed to be a mathematical
-    // value at this point.
-    if (!val.isDouble()) {
-      return true;
-    }
-    double num = val.toDouble();
-    return mozilla::IsFinite(num) && !mozilla::IsNegativeZero(num);
-  };
-
-  static auto isPositiveOrZero = [](const Value& val, double approx) {
-    MOZ_ASSERT(isMathematicalValue(val));
-
-    if (val.isNumber()) {
-      return val.toNumber() >= 0;
-    }
-    if (val.isBigInt()) {
-      return !val.toBigInt()->isNegative();
-    }
-    return approx >= 0;
-  };
-
-  auto throwRangeError = [&]() {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_START_AFTER_END_NUMBER,
-        "NumberFormat", formatToParts ? "formatRangeToParts" : "formatRange");
-    return false;
-  };
-
-  // PartitionNumberRangePattern, step 1.
-  if (isNaN(start)) {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "start",
-        formatToParts ? "formatRangeToParts" : "formatRange");
-    return false;
-  }
-  if (isNaN(end)) {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "end",
-        formatToParts ? "formatRangeToParts" : "formatRange");
-    return false;
-  }
-
-  // Make sure |start| and |end| can be correctly classified.
-  MOZ_ASSERT(isMathematicalValue(start) || isNegativeZero(start) ||
-             isNegativeInfinity(start) || isPositiveInfinity(start));
-  MOZ_ASSERT(isMathematicalValue(end) || isNegativeZero(end) ||
-             isNegativeInfinity(end) || isPositiveInfinity(end));
-
-  // PartitionNumberRangePattern, step 2.
-  if (isMathematicalValue(start)) {
-    // PartitionNumberRangePattern, step 2.a.
-    if (isMathematicalValue(end)) {
-      if (!start.isString() && !end.isString()) {
-        MOZ_ASSERT(start.isNumeric() && end.isNumeric());
-
-        bool isLessThan;
-        if (!LessThan(cx, end, start, &isLessThan)) {
-          return false;
-        }
-        if (isLessThan) {
-          return throwRangeError();
-        }
-      } else {
-        // |startApprox| and |endApprox| are only initially computed for string
-        // numbers.
-        if (start.isNumber()) {
-          startApprox = start.toNumber();
-        } else if (start.isBigInt()) {
-          startApprox = BigInt::numberValue(start.toBigInt());
-        }
-        if (end.isNumber()) {
-          endApprox = end.toNumber();
-        } else if (end.isBigInt()) {
-          endApprox = BigInt::numberValue(end.toBigInt());
-        }
-
-        // If the approximation is smaller, the actual value is definitely
-        // smaller, too.
-        if (endApprox < startApprox) {
-          return throwRangeError();
-        }
-
-        // If both approximations are equal to each other, we have to perform
-        // more work.
-        if (endApprox == startApprox) {
-          RootedLinearString strStart(cx, ToLinearString(cx, start));
-          if (!strStart) {
-            return false;
-          }
-
-          RootedLinearString strEnd(cx, ToLinearString(cx, end));
-          if (!strEnd) {
-            return false;
-          }
-
-          bool endLessThanStart;
-          {
-            JS::AutoCheckCannotGC nogc;
-
-            auto decStart = intl::DecimalNumber::from(strStart, nogc);
-            MOZ_ASSERT(decStart);
-
-            auto decEnd = intl::DecimalNumber::from(strEnd, nogc);
-            MOZ_ASSERT(decEnd);
-
-            endLessThanStart = decEnd->compareTo(*decStart) < 0;
-          }
-          if (endLessThanStart) {
-            return throwRangeError();
-          }
-
-          // If either value is a string, we end up passing both values as
-          // strings to the formatter. So let's save the string representation
-          // here, because then we don't have to recompute them later on.
-          start.setString(strStart);
-          end.setString(strEnd);
-        }
-      }
-    }
-
-    // PartitionNumberRangePattern, step 2.b.
-    else if (isNegativeInfinity(end)) {
-      return throwRangeError();
-    }
-
-    // PartitionNumberRangePattern, step 2.c.
-    else if (isNegativeZero(end)) {
-      if (isPositiveOrZero(start, startApprox)) {
-        return throwRangeError();
-      }
-    }
-
-    // No range restrictions when the end is positive infinity.
-    else {
-      MOZ_ASSERT(isPositiveInfinity(end));
-    }
-  }
-
-  // PartitionNumberRangePattern, step 3.
-  else if (isPositiveInfinity(start)) {
-    // PartitionNumberRangePattern, steps 3.a-c.
-    if (!isPositiveInfinity(end)) {
-      return throwRangeError();
-    }
-  }
-
-  // PartitionNumberRangePattern, step 4.
-  else if (isNegativeZero(start)) {
-    // PartitionNumberRangePattern, step 4.a.
-    if (isMathematicalValue(end)) {
-      if (!isPositiveOrZero(end, endApprox)) {
-        return throwRangeError();
-      }
-    }
-
-    // PartitionNumberRangePattern, step 4.b.
-    else if (isNegativeInfinity(end)) {
-      return throwRangeError();
-    }
-
-    // No range restrictions when the end is negative zero or positive infinity.
-    else {
-      MOZ_ASSERT(isNegativeZero(end) || isPositiveInfinity(end));
-    }
-  }
-
-  // No range restrictions when the start is negative infinity.
-  else {
-    MOZ_ASSERT(isNegativeInfinity(start));
-  }
-
-  return true;
-}
-
 bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 4);
@@ -1468,19 +1260,26 @@ bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
   bool formatToParts = args[3].toBoolean();
 
   RootedValue start(cx, args[1]);
-  double startApprox = mozilla::UnspecifiedNaN<double>();
-  if (!ToIntlMathematicalValue(cx, &start, &startApprox)) {
+  if (!ToIntlMathematicalValue(cx, &start)) {
     return false;
   }
 
   RootedValue end(cx, args[2]);
-  double endApprox = mozilla::UnspecifiedNaN<double>();
-  if (!ToIntlMathematicalValue(cx, &end, &endApprox)) {
+  if (!ToIntlMathematicalValue(cx, &end)) {
     return false;
   }
 
-  if (!ValidateNumberRange(cx, &start, startApprox, &end, endApprox,
-                           formatToParts)) {
+  // PartitionNumberRangePattern, step 1.
+  if (start.isDouble() && mozilla::IsNaN(start.toDouble())) {
+    JS_ReportErrorNumberASCII(
+        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "start",
+        "NumberFormat", formatToParts ? "formatRangeToParts" : "formatRange");
+    return false;
+  }
+  if (end.isDouble() && mozilla::IsNaN(end.toDouble())) {
+    JS_ReportErrorNumberASCII(
+        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "end",
+        "NumberFormat", formatToParts ? "formatRangeToParts" : "formatRange");
     return false;
   }
 
@@ -1523,12 +1322,12 @@ bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
       result = nf->format(numStart, numEnd);
     }
   } else {
-    RootedLinearString strStart(cx, ToLinearString(cx, start));
+    Rooted<JSLinearString*> strStart(cx, ToLinearString(cx, start));
     if (!strStart) {
       return false;
     }
 
-    RootedLinearString strEnd(cx, ToLinearString(cx, end));
+    Rooted<JSLinearString*> strEnd(cx, ToLinearString(cx, end));
     if (!strEnd) {
       return false;
     }

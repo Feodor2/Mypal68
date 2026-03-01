@@ -18,21 +18,6 @@ function testGetter(obj, name) {
   }, Error);
 }
 
-function testMethod(obj, name) {
-  // Check the method is defined on the instance, instead of prototype.
-  //   * raw ModuleObject's methods are defined on prototype
-  //   * ModuleObject wrapper's methods are defined on instance
-  const desc = Object.getOwnPropertyDescriptor(obj, name);
-  assertEq(typeof desc.value, "function");
-  assertEq(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(obj), name),
-           undefined);
-
-  // Check invalid this value.
-  assertThrowsInstanceOf(() => {
-    desc.value.call({});
-  }, Error);
-}
-
 // ==== namespace getter ====
 const a = registerModule('a', parseModule(`
 export const v = 10;
@@ -40,22 +25,22 @@ export const v = 10;
 const b = registerModule('b', parseModule(`
 import * as ns from 'a'
 `));
-b.declarationInstantiation();
-b.evaluation();
+moduleLink(b);
+moduleEvaluate(b);
 assertEq(a.namespace.v, 10);
 testGetter(a, "namespace");
 
 // ==== status getter ====
 const MODULE_STATUS_UNLINKED = 0;
 const MODULE_STATUS_LINKED = 2;
-const MODULE_STATUS_EVALUATED = 4;
+const MODULE_STATUS_EVALUATED = 5;
 
 const c = registerModule('c', parseModule(`
 `));
 assertEq(c.status, MODULE_STATUS_UNLINKED);
-c.declarationInstantiation();
+moduleLink(c);
 assertEq(c.status, MODULE_STATUS_LINKED);
-c.evaluation();
+moduleEvaluate(c);
 assertEq(c.status, MODULE_STATUS_EVALUATED);
 testGetter(c, "status");
 
@@ -63,9 +48,9 @@ testGetter(c, "status");
 const d = registerModule('d', parseModule(`
 f();
 `));
-d.declarationInstantiation();
+moduleLink(d);
 try {
-  await d.evaluation();
+  await moduleEvaluate(d);
 } catch (e) {
 }
 assertEq(d.evaluationError instanceof ReferenceError, true);
@@ -167,7 +152,7 @@ assertEq(k.dfsIndex, undefined);
 assertEq(k.dfsAncestorIndex, undefined);
 assertEq(l.dfsIndex, undefined);
 assertEq(l.dfsAncestorIndex, undefined);
-l.declarationInstantiation();
+moduleLink(l);
 assertEq(j.dfsIndex, 2);
 assertEq(j.dfsAncestorIndex, 1);
 assertEq(k.dfsIndex, 1);
@@ -178,56 +163,13 @@ assertEq(l.dfsAncestorIndex, 0);
 // ==== async and promises getters ====
 const m = parseModule(`
 `);
-assertEq(m.async, false);
+assertEq(m.hasTopLevelAwait, false);
 assertEq(m.topLevelCapability, undefined);
 assertEq(m.asyncEvaluatingPostOrder, undefined);
 assertEq(m.asyncParentModules[0], undefined);
 assertEq(m.pendingAsyncDependencies, undefined);
-testGetter(m, "async");
+testGetter(m, "hasTopLevelAwait");
 testGetter(m, "topLevelCapability");
 testGetter(m, "asyncEvaluatingPostOrder");
 testGetter(m, "asyncParentModules");
 testGetter(m, "pendingAsyncDependencies");
-
-// ==== getExportedNames method shouldn't be exposed ====
-const n = parseModule(``);
-assertEq(n.getExportedNames, undefined);
-
-// ==== resolveExport method shouldn't be exposed ====
-const o = parseModule(``);
-assertEq(o.resolveExport, undefined);
-
-// ==== declarationInstantiation and evaluationmethod methods ====
-const p = parseModule(``);
-p.declarationInstantiation();
-p.evaluation();
-testMethod(p, "declarationInstantiation");
-testMethod(p, "evaluation");
-
-const xdr = compileToStencilXDR(``, {module: true});
-const q = instantiateModuleStencilXDR(xdr);
-q.declarationInstantiation();
-q.evaluation();
-testMethod(q, "declarationInstantiation");
-testMethod(q, "evaluation");
-
-if (helperThreadCount() > 0) {
-  offThreadCompileModuleToStencil(``);
-  let stencil = finishOffThreadCompileModuleToStencil();
-  let r = instantiateModuleStencil(stencil);
-  r.declarationInstantiation();
-  r.evaluation();
-  testMethod(r, "declarationInstantiation");
-  testMethod(r, "evaluation");
-}
-
-const stencil = compileToStencil(``, {module: true});
-const t = instantiateModuleStencil(stencil);
-t.declarationInstantiation();
-t.evaluation();
-testMethod(t, "declarationInstantiation");
-testMethod(t, "evaluation");
-
-// ==== gatherAsyncParentCompletions method shouldn't be exposed ====
-const s = parseModule(``);
-assertEq(s.gatherAsyncParentCompletions, undefined);

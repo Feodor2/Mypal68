@@ -32,6 +32,7 @@ class AutoLockHelperThreadState;
 class FinalizationRegistryObject;
 class FinalizationRecordObject;
 class FinalizationQueueObject;
+class GlobalObject;
 class VerifyPreTracer;
 class WeakRefObject;
 class ZoneAllocator;
@@ -459,8 +460,6 @@ class GCRuntime {
   void removeBlackRootsTracer(JSTraceDataOp traceOp, void* data);
   void clearBlackAndGrayRootTracers();
 
-  void updateMemoryCountersOnGCStart();
-
   void setGCCallback(JSGCCallback callback, void* data);
   void callGCCallback(JSGCStatus status, JS::GCReason reason) const;
   void setObjectsTenuredCallback(JSObjectsTenuredCallback callback, void* data);
@@ -555,6 +554,12 @@ class GCRuntime {
   NonEmptyChunksIter allNonEmptyChunks(const AutoLockGC& lock) {
     return NonEmptyChunksIter(availableChunks(lock), fullChunks(lock));
   }
+  uint32_t minEmptyChunkCount(const AutoLockGC& lock) const {
+    return minEmptyChunkCount_;
+  }
+  uint32_t maxEmptyChunkCount(const AutoLockGC& lock) const {
+    return maxEmptyChunkCount_;
+  }
 #ifdef DEBUG
   void verifyAllChunks();
 #endif
@@ -629,6 +634,8 @@ class GCRuntime {
   JS::GCReason lastStartReason() const { return initialReason; }
 #endif
 
+  void updateAllocationRates();
+
  private:
   enum IncrementalResult { ResetIncremental = 0, Ok };
 
@@ -637,8 +644,9 @@ class GCRuntime {
   TriggerResult checkHeapThreshold(Zone* zone, const HeapSize& heapSize,
                                    const HeapThreshold& heapThreshold);
 
-  void updateGCThresholdsAfterCollection(const AutoLockGC& lock);
-  void updateAllGCStartThresholds(const AutoLockGC& lock);
+  void updateSchedulingStateOnGCStart();
+  void updateSchedulingStateAfterCollection(mozilla::TimeStamp currentTime);
+  void updateAllGCStartThresholds();
 
   // For ArenaLists::allocateFromArena()
   friend class ArenaLists;
@@ -663,6 +671,8 @@ class GCRuntime {
   ChunkPool expireEmptyChunkPool(const AutoLockGC& lock);
   void freeEmptyChunks(const AutoLockGC& lock);
   void prepareToFreeChunk(TenuredChunkInfo& info);
+  void setMinEmptyChunkCount(uint32_t value, const AutoLockGC& lock);
+  void setMaxEmptyChunkCount(uint32_t value, const AutoLockGC& lock);
 
   friend class BackgroundAllocTask;
   bool wantBackgroundAllocation(const AutoLockGC& lock) const;
@@ -934,6 +944,7 @@ class GCRuntime {
   /* GC scheduling state and parameters. */
   GCSchedulingTunables tunables;
   GCSchedulingState schedulingState;
+  MainThreadData<bool> fullGCRequested;
 
   // Helper thread configuration.
   MainThreadData<double> helperThreadRatio;
@@ -968,6 +979,18 @@ class GCRuntime {
   // When all arenas in a chunk are used, it is moved to the fullChunks pool
   // so as to reduce the cost of operations on the available lists.
   GCLockData<ChunkPool> fullChunks_;
+
+  /*
+   * JSGC_MIN_EMPTY_CHUNK_COUNT
+   * JSGC_MAX_EMPTY_CHUNK_COUNT
+   *
+   * Controls the number of empty chunks reserved for future allocation.
+   *
+   * They can be read off main thread by the background allocation task and the
+   * background decommit task.
+   */
+  GCLockData<uint32_t> minEmptyChunkCount_;
+  GCLockData<uint32_t> maxEmptyChunkCount_;
 
   MainThreadData<RootedValueMap> rootsHash;
 
@@ -1248,6 +1271,12 @@ class GCRuntime {
   MainThreadOrGCTaskData<gc::StoreBuffer> storeBuffer_;
 
   mozilla::TimeStamp lastLastDitchTime;
+
+  // The last time per-zone allocation rates were updated.
+  MainThreadData<mozilla::TimeStamp> lastAllocRateUpdateTime;
+
+  // Total collector time since per-zone allocation rates were last updated.
+  MainThreadData<mozilla::TimeDuration> collectorTimeSinceAllocRateUpdate;
 
   friend class MarkingValidator;
   friend class AutoEnterIteration;

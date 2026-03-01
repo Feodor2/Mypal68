@@ -18,6 +18,4 @@ info: |
 
 $DONOTEVALUATE();
 
-function _() {
-  x instanceof y = 1;
-}
+x instanceof y = 1;

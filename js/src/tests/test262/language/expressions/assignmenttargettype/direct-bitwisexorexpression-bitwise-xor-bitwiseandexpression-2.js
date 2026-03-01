@@ -18,6 +18,4 @@ info: |
 
 $DONOTEVALUATE();
 
-function _() {
-  true ^ false = 1;
-}
+true ^ false = 1;

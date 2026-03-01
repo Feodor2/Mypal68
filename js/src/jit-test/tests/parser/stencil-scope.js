@@ -1,18 +1,25 @@
 const optionsFull = {
     fileName: "compileToStencil-DATA.js",
     lineNumber: 1,
-    forceFullParse: true,
+    eagerDelazificationStrategy: "ParseEverythingEagerly",
 };
 
 const optionsLazy = {
     fileName: "compileToStencil-DATA.js",
     lineNumber: 1,
+    eagerDelazificationStrategy: "OnDemandOnly",
 };
 
 const optionsLazyCache = {
-  fileName: "compileToStencil-DATA.js",
-  lineNumber: 1,
-  fillRuntimeCache: true,
+    fileName: "compileToStencil-DATA.js",
+    lineNumber: 1,
+    eagerDelazificationStrategy: "ConcurrentDepthFirst",
+};
+
+const optionsLazyCache2 = {
+    fileName: "compileToStencil-DATA.js",
+    lineNumber: 1,
+    eagerDelazificationStrategy: "ConcurrentLargeFirst",
 };
 
 let result = 0;
@@ -29,19 +36,32 @@ function testMainThreadDelazifyAll(script_str) {
       // used while testing to incrementally delazify.
       return;
     }
-    const stencil = compileAndDelazifyAllToStencil(script_str, optionsLazy);
+    const stencil = compileToStencil(script_str, optionsLazy);
     result = evalStencil(stencil, optionsLazy);
     assertEq(result, 1);
 }
 
 function testMainThreadCacheAll(script_str) {
-  if (isLcovEnabled()) {
+  if (isLcovEnabled() || helperThreadCount() === 0) {
     // Code-coverage implies forceFullParse = true, and as such it cannot be
     // used while testing to incrementally delazify.
+    // Similarly, concurrent delazification requires off-threads processing.
     return;
   }
-  const stencil = compileAndDelazifyAllToStencil(script_str, optionsLazyCache);
-  result = evalStencil(stencil, optionsLazy);
+  const stencil = compileToStencil(script_str, optionsLazyCache);
+  result = evalStencil(stencil, optionsLazyCache);
+  assertEq(result, 1);
+}
+
+function testMainThreadCacheAll2(script_str) {
+  if (isLcovEnabled() || helperThreadCount() === 0) {
+    // Code-coverage implies forceFullParse = true, and as such it cannot be
+    // used while testing to incrementally delazify.
+    // Similarly, concurrent delazification requires off-threads processing.
+    return;
+  }
+  const stencil = compileToStencil(script_str, optionsLazyCache2);
+  result = evalStencil(stencil, optionsLazyCache2);
   assertEq(result, 1);
 }
 
@@ -107,6 +127,7 @@ for (let s = 0; s < 3000; s++) {
     testMainThread(code);
     testMainThreadDelazifyAll(code);
     testMainThreadCacheAll(code);
+    testMainThreadCacheAll2(code);
     if (helperThreadCount() > 0) {
         testOffThread(code);
     }

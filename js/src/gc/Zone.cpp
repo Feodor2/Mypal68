@@ -9,7 +9,6 @@
 
 #include "gc/FinalizationObservers.h"
 #include "gc/GCContext.h"
-#include "gc/GCLock.h"
 #include "gc/Policy.h"
 #include "gc/PublicIterators.h"
 #include "jit/BaselineIC.h"
@@ -35,9 +34,6 @@ Zone* const Zone::NotOnList = reinterpret_cast<Zone*>(1);
 
 ZoneAllocator::ZoneAllocator(JSRuntime* rt, Kind kind)
     : JS::shadow::Zone(rt, &rt->gc.barrierTracer, kind),
-      gcHeapSize(&rt->gc.heapSize),
-      mallocHeapSize(nullptr),
-      jitHeapSize(nullptr),
       jitHeapThreshold(jit::MaxCodeBytesPerProcess * 0.8) {}
 
 ZoneAllocator::~ZoneAllocator() {
@@ -55,18 +51,22 @@ void ZoneAllocator::fixupAfterMovingGC() {
 #endif
 }
 
-void js::ZoneAllocator::updateMemoryCountersOnGCStart() {
+void js::ZoneAllocator::updateSchedulingStateOnGCStart() {
   gcHeapSize.updateOnGCStart();
   mallocHeapSize.updateOnGCStart();
+  jitHeapSize.updateOnGCStart();
+  perZoneGCTime = mozilla::TimeDuration();
 }
 
-void js::ZoneAllocator::updateGCStartThresholds(GCRuntime& gc,
-                                                const js::AutoLockGC& lock) {
+void js::ZoneAllocator::updateGCStartThresholds(GCRuntime& gc) {
   bool isAtomsZone = JS::Zone::from(this)->isAtomsZone();
-  gcHeapThreshold.updateStartThreshold(gcHeapSize.retainedBytes(), gc.tunables,
-                                       gc.schedulingState, isAtomsZone, lock);
-  mallocHeapThreshold.updateStartThreshold(
-      mallocHeapSize.retainedBytes(), gc.tunables, gc.schedulingState, lock);
+  gcHeapThreshold.updateStartThreshold(
+      gcHeapSize.retainedBytes(), smoothedAllocationRate.ref(),
+      smoothedCollectionRate.ref(), gc.tunables, gc.schedulingState,
+      isAtomsZone);
+
+  mallocHeapThreshold.updateStartThreshold(mallocHeapSize.retainedBytes(),
+                                           gc.tunables, gc.schedulingState);
 }
 
 void js::ZoneAllocator::setGCSliceThresholds(GCRuntime& gc,
@@ -132,14 +132,24 @@ void ZoneAllocator::removeSharedMemory(void* mem, size_t nbytes,
   }
 }
 
-void ZoneAllocPolicy::decMemory(size_t nbytes) {
-  // Unfortunately we don't have enough context here to know whether we're being
-  // called on behalf of the collector so we have to do a TLS lookup to find
-  // out.
-  JS::GCContext* gcx = TlsGCContext.get();
-  zone_->decNonGCMemory(this, nbytes, MemoryUse::ZoneAllocPolicy,
-                        gcx->isCollecting());
+template <TrackingKind kind>
+void js::TrackedAllocPolicy<kind>::decMemory(size_t nbytes) {
+  bool updateRetainedSize = false;
+  if constexpr (kind == TrackingKind::Cell) {
+    // Only subtract freed cell memory from retained size for cell associations
+    // during sweeping.
+    JS::GCContext* gcx = TlsGCContext.get();
+    updateRetainedSize = gcx->isFinalizing();
+  }
+
+  zone_->decNonGCMemory(this, nbytes, MemoryUse::TrackedAllocPolicy,
+                        updateRetainedSize);
 }
+
+namespace js {
+template class TrackedAllocPolicy<TrackingKind::Zone>;
+template class TrackedAllocPolicy<TrackingKind::Cell>;
+}  // namespace js
 
 JS::Zone::Zone(JSRuntime* rt, Kind kind)
     : ZoneAllocator(rt, kind),
@@ -156,7 +166,6 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
       stringStats(this),
       pretenuring(this),
       uniqueIds_(this),
-      tenuredAllocsSinceMinorGC_(0),
       gcWeakMapList_(this),
       compartments_(),
       crossZoneStringWrappers_(this),
@@ -185,9 +194,7 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
              static_cast<JS::shadow::Zone*>(this));
   MOZ_ASSERT_IF(isAtomsZone(), !rt->unsafeAtomsZone());
 
-  // We can't call updateGCStartThresholds until the Zone has been constructed.
-  AutoLockGC lock(rt);
-  updateGCStartThresholds(rt->gc, lock);
+  updateGCStartThresholds(rt->gc);
 }
 
 Zone::~Zone() {
@@ -268,8 +275,8 @@ void Zone::sweepAfterMinorGC(JSTracer* trc) {
 }
 
 void Zone::sweepEphemeronTablesAfterMinorGC() {
-  for (EphemeronEdgeTable::Range r = gcNurseryEphemeronEdges().all();
-       !r.empty(); r.popFront()) {
+  for (auto r = gcNurseryEphemeronEdges().mutableAll(); !r.empty();
+       r.popFront()) {
     // Sweep gcNurseryEphemeronEdges to move live (forwarded) keys to
     // gcEphemeronEdges, scanning through all the entries for such keys to
     // update them.

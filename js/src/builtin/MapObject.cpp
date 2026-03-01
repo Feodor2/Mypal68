@@ -39,7 +39,7 @@ using mozilla::NumberEqualsInt32;
 
 /*** HashableValue **********************************************************/
 
-static PreBarrieredValue NormalizeDoubleValue(double d) {
+static PreBarriered<Value> NormalizeDoubleValue(double d) {
   int32_t i;
   if (NumberEqualsInt32(d, &i)) {
     // Normalize int32_t-valued doubles to int32_t for faster hashing and
@@ -136,8 +136,8 @@ HashNumber HashableValue::hash(const mozilla::HashCodeScrambler& hcs) const {
 }
 
 #ifdef ENABLE_RECORD_TUPLE
-inline bool SameExtendedPrimitiveType(const PreBarrieredValue& a,
-                                      const PreBarrieredValue& b) {
+inline bool SameExtendedPrimitiveType(const PreBarriered<Value>& a,
+                                      const PreBarriered<Value>& b) {
   return a.toExtendedPrimitive().getClass() ==
          b.toExtendedPrimitive().getClass();
 }
@@ -230,7 +230,7 @@ bool GlobalObject::initMapIteratorProto(JSContext* cx,
   if (!base) {
     return false;
   }
-  RootedPlainObject proto(
+  Rooted<PlainObject*> proto(
       cx, GlobalObject::createBlankPrototypeInheriting<PlainObject>(cx, base));
   if (!proto) {
     return false;
@@ -254,7 +254,7 @@ static inline void SetHasNurseryMemory(TableObject* t, bool b) {
 }
 
 MapIteratorObject* MapIteratorObject::create(JSContext* cx, HandleObject obj,
-                                             ValueMap* data,
+                                             const ValueMap* data,
                                              MapObject::IteratorKind kind) {
   Handle<MapObject*> mapobj(obj.as<MapObject>());
   Rooted<GlobalObject*> global(cx, &mapobj->global());
@@ -406,7 +406,7 @@ bool MapIteratorObject::next(MapIteratorObject* mapIterator,
 
 /* static */
 JSObject* MapIteratorObject::createResultPair(JSContext* cx) {
-  RootedArrayObject resultPairObj(
+  Rooted<ArrayObject*> resultPairObj(
       cx, NewDenseFullyAllocatedArray(cx, 2, TenuredObject));
   if (!resultPairObj) {
     return nullptr;
@@ -420,6 +420,26 @@ JSObject* MapIteratorObject::createResultPair(JSContext* cx) {
 }
 
 /*** Map ********************************************************************/
+
+struct js::UnbarrieredHashPolicy {
+  using Lookup = Value;
+  static HashNumber hash(const Lookup& v,
+                         const mozilla::HashCodeScrambler& hcs) {
+    return HashValue(v, hcs);
+  }
+  static bool match(const Value& k, const Lookup& l) { return k == l; }
+  static bool isEmpty(const Value& v) { return v.isMagic(JS_HASH_KEY_EMPTY); }
+  static void makeEmpty(Value* vp) { vp->setMagic(JS_HASH_KEY_EMPTY); }
+};
+
+// ValueMap, MapObject::UnbarrieredTable and MapObject::PreBarrieredTable must
+// all have the same memory layout.
+static_assert(sizeof(ValueMap) == sizeof(MapObject::UnbarrieredTable));
+static_assert(sizeof(ValueMap::Entry) ==
+              sizeof(MapObject::UnbarrieredTable::Entry));
+static_assert(sizeof(ValueMap) == sizeof(MapObject::PreBarrieredTable));
+static_assert(sizeof(ValueMap::Entry) ==
+              sizeof(MapObject::PreBarrieredTable::Entry));
 
 const JSClassOps MapObject::classOps_ = {
     nullptr,   // addProperty
@@ -482,7 +502,7 @@ const JSPropertySpec MapObject::staticProperties[] = {
 
 /* static */ bool MapObject::finishInit(JSContext* cx, HandleObject ctor,
                                         HandleObject proto) {
-  HandleNativeObject nativeProto = proto.as<NativeObject>();
+  Handle<NativeObject*> nativeProto = proto.as<NativeObject>();
 
   RootedValue entriesFn(cx);
   RootedId entriesId(cx, NameToId(cx->names().entries));
@@ -497,8 +517,8 @@ const JSPropertySpec MapObject::staticProperties[] = {
   return NativeDefineDataProperty(cx, nativeProto, iteratorId, entriesFn, 0);
 }
 
-template <class Range>
-static void TraceKey(Range& r, const HashableValue& key, JSTracer* trc) {
+template <class MutableRange>
+static void TraceKey(MutableRange& r, const HashableValue& key, JSTracer* trc) {
   HashableValue newKey = key.trace(trc);
 
   if (newKey.get() != key.get()) {
@@ -513,24 +533,13 @@ static void TraceKey(Range& r, const HashableValue& key, JSTracer* trc) {
 }
 
 void MapObject::trace(JSTracer* trc, JSObject* obj) {
-  if (ValueMap* map = obj->as<MapObject>().getData()) {
-    for (ValueMap::Range r = map->all(); !r.empty(); r.popFront()) {
+  if (ValueMap* map = obj->as<MapObject>().getTableUnchecked()) {
+    for (auto r = map->mutableAll(); !r.empty(); r.popFront()) {
       TraceKey(r, r.front().key, trc);
       TraceEdge(trc, &r.front().value, "value");
     }
   }
 }
-
-struct js::UnbarrieredHashPolicy {
-  using Lookup = Value;
-  static HashNumber hash(const Lookup& v,
-                         const mozilla::HashCodeScrambler& hcs) {
-    return HashValue(v, hcs);
-  }
-  static bool match(const Value& k, const Lookup& l) { return k == l; }
-  static bool isEmpty(const Value& v) { return v.isMagic(JS_HASH_KEY_EMPTY); }
-  static void makeEmpty(Value* vp) { vp->setMagic(JS_HASH_KEY_EMPTY); }
-};
 
 using NurseryKeysVector = mozilla::Vector<Value, 0, SystemAllocPolicy>;
 
@@ -571,17 +580,21 @@ class js::OrderedHashTableRef : public gc::BufferableRef {
 
   void trace(JSTracer* trc) override {
     MOZ_ASSERT(!IsInsideNursery(object));
-    auto realTable = object->getData();
+    auto realTable = object->getTableUnchecked();
     auto unbarrieredTable =
         reinterpret_cast<typename ObjectT::UnbarrieredTable*>(realTable);
     NurseryKeysVector* keys = GetNurseryKeys(object);
     MOZ_ASSERT(keys);
-    for (Value& key : *keys) {
-      Value prior = key;
+    for (Value key : *keys) {
       MOZ_ASSERT(unbarrieredTable->hash(key) ==
                  realTable->hash(*reinterpret_cast<HashableValue*>(&key)));
-      TraceManuallyBarrieredEdge(trc, &key, "ordered hash table key");
-      unbarrieredTable->rekeyOneEntry(prior, key);
+      // Note: we use a lambda to avoid tenuring keys that have been removed
+      // from the Map or Set.
+      unbarrieredTable->rekeyOneEntry(key, [trc](const Value& prior) {
+        Value key = prior;
+        TraceManuallyBarrieredEdge(trc, &key, "ordered hash table key");
+        return key;
+      });
     }
     DeleteNurseryKeys(object);
   }
@@ -592,10 +605,6 @@ template <typename ObjectT>
                                                       const Value& keyValue) {
   if (MOZ_LIKELY(!keyValue.hasObjectPayload() && !keyValue.isBigInt())) {
     MOZ_ASSERT_IF(keyValue.isGCThing(), !IsInsideNursery(keyValue.toGCThing()));
-    return true;
-  }
-
-  if (IsInsideNursery(obj)) {
     return true;
   }
 
@@ -619,17 +628,22 @@ template <typename ObjectT>
 
 [[nodiscard]] inline static bool PostWriteBarrier(MapObject* map,
                                                   const Value& key) {
+  MOZ_ASSERT(!IsInsideNursery(map));
   return PostWriteBarrierImpl(map, key);
 }
 
 [[nodiscard]] inline static bool PostWriteBarrier(SetObject* set,
                                                   const Value& key) {
+  if (IsInsideNursery(set)) {
+    return true;
+  }
+
   return PostWriteBarrierImpl(set, key);
 }
 
 bool MapObject::getKeysAndValuesInterleaved(
     HandleObject obj, JS::MutableHandle<GCVector<JS::Value>> entries) {
-  ValueMap* map = obj->as<MapObject>().getData();
+  const ValueMap* map = obj->as<MapObject>().getData();
   if (!map) {
     return false;
   }
@@ -646,20 +660,38 @@ bool MapObject::getKeysAndValuesInterleaved(
 
 bool MapObject::set(JSContext* cx, HandleObject obj, HandleValue k,
                     HandleValue v) {
-  ValueMap* map = obj->as<MapObject>().getData();
-  if (!map) {
-    return false;
-  }
-
+  MapObject* mapObject = &obj->as<MapObject>();
   Rooted<HashableValue> key(cx);
   if (!key.setValue(cx, k)) {
     return false;
   }
 
-  if (!PostWriteBarrier(&obj->as<MapObject>(), key.value()) ||
-      !map->put(key, v)) {
-    ReportOutOfMemory(cx);
+  return setWithHashableKey(cx, mapObject, key, v);
+}
+
+/* static */
+inline bool MapObject::setWithHashableKey(JSContext* cx, MapObject* obj,
+                                          Handle<HashableValue> key,
+                                          Handle<Value> value) {
+  ValueMap* table = obj->getTableUnchecked();
+  if (!table) {
     return false;
+  }
+
+  bool needsPostBarriers = obj->isTenured();
+  if (needsPostBarriers) {
+    // Use the ValueMap representation which has post barriers.
+    if (!PostWriteBarrier(obj, key.value()) || !table->put(key, value)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+  } else {
+    // Use the PreBarrieredTable representation which does not.
+    auto* preBarriedTable = reinterpret_cast<PreBarrieredTable*>(table);
+    if (!preBarriedTable->put(key, value)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
   }
 
   return true;
@@ -699,7 +731,7 @@ MapObject* MapObject::create(JSContext* cx,
 
 size_t MapObject::sizeOfData(mozilla::MallocSizeOf mallocSizeOf) {
   size_t size = 0;
-  if (ValueMap* map = getData()) {
+  if (const ValueMap* map = getData()) {
     size += map->sizeOfIncludingThis(mallocSizeOf);
   }
   if (NurseryKeysVector* nurseryKeys = GetNurseryKeys(this)) {
@@ -710,8 +742,19 @@ size_t MapObject::sizeOfData(mozilla::MallocSizeOf mallocSizeOf) {
 
 void MapObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   MOZ_ASSERT(gcx->onMainThread());
-  if (ValueMap* map = obj->as<MapObject>().getData()) {
-    gcx->delete_(obj, map, MemoryUse::MapObjectTable);
+  ValueMap* table = obj->as<MapObject>().getTableUnchecked();
+  if (!table) {
+    return;
+  }
+
+  bool needsPostBarriers = obj->isTenured();
+  if (needsPostBarriers) {
+    // Use the ValueMap representation which has post barriers.
+    gcx->delete_(obj, table, MemoryUse::MapObjectTable);
+  } else {
+    // Use the PreBarrieredTable representation which does not.
+    auto* preBarriedTable = reinterpret_cast<PreBarrieredTable*>(table);
+    gcx->delete_(obj, preBarriedTable, MemoryUse::MapObjectTable);
   }
 }
 
@@ -724,7 +767,7 @@ void MapObject::sweepAfterMinorGC(JS::GCContext* gcx, MapObject* mapobj) {
   }
 
   mapobj = MaybeForwarded(mapobj);
-  mapobj->getData()->destroyNurseryRanges();
+  mapobj->getTableUnchecked()->destroyNurseryRanges();
   SetHasNurseryMemory(mapobj, false);
 
   if (wasInsideNursery) {
@@ -778,19 +821,19 @@ bool MapObject::is(HandleObject o) {
   Rooted<HashableValue> key(cx); \
   if (args.length() > 0 && !key.setValue(cx, args[0])) return false
 
-ValueMap& MapObject::extract(HandleObject o) {
+const ValueMap& MapObject::extract(HandleObject o) {
   MOZ_ASSERT(o->hasClass(&MapObject::class_));
   return *o->as<MapObject>().getData();
 }
 
-ValueMap& MapObject::extract(const CallArgs& args) {
+const ValueMap& MapObject::extract(const CallArgs& args) {
   MOZ_ASSERT(args.thisv().isObject());
   MOZ_ASSERT(args.thisv().toObject().hasClass(&MapObject::class_));
   return *args.thisv().toObject().as<MapObject>().getData();
 }
 
 uint32_t MapObject::size(JSContext* cx, HandleObject obj) {
-  ValueMap& map = extract(obj);
+  const ValueMap& map = extract(obj);
   static_assert(sizeof(map.count()) <= sizeof(uint32_t),
                 "map count must be precisely representable as a JS number");
   return map.count();
@@ -809,14 +852,14 @@ bool MapObject::size(JSContext* cx, unsigned argc, Value* vp) {
 
 bool MapObject::get(JSContext* cx, HandleObject obj, HandleValue key,
                     MutableHandleValue rval) {
-  ValueMap& map = extract(obj);
+  const ValueMap& map = extract(obj);
   Rooted<HashableValue> k(cx);
 
   if (!k.setValue(cx, key)) {
     return false;
   }
 
-  if (ValueMap::Entry* p = map.get(k)) {
+  if (const ValueMap::Entry* p = map.get(k)) {
     rval.set(p->value);
   } else {
     rval.setUndefined();
@@ -837,7 +880,7 @@ bool MapObject::get(JSContext* cx, unsigned argc, Value* vp) {
 
 bool MapObject::has(JSContext* cx, HandleObject obj, HandleValue key,
                     bool* rval) {
-  ValueMap& map = extract(obj);
+  const ValueMap& map = extract(obj);
   Rooted<HashableValue> k(cx);
 
   if (!k.setValue(cx, key)) {
@@ -866,12 +909,9 @@ bool MapObject::has(JSContext* cx, unsigned argc, Value* vp) {
 bool MapObject::set_impl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(MapObject::is(args.thisv()));
 
-  ValueMap& map = extract(args);
+  MapObject* obj = &args.thisv().toObject().as<MapObject>();
   ARG0_KEY(cx, args, key);
-  if (!PostWriteBarrier(&args.thisv().toObject().as<MapObject>(),
-                        key.value()) ||
-      !map.put(key, args.get(1))) {
-    ReportOutOfMemory(cx);
+  if (!setWithHashableKey(cx, obj, key, args.get(1))) {
     return false;
   }
 
@@ -886,17 +926,25 @@ bool MapObject::set(JSContext* cx, unsigned argc, Value* vp) {
 
 bool MapObject::delete_(JSContext* cx, HandleObject obj, HandleValue key,
                         bool* rval) {
-  ValueMap& map = extract(obj);
+  MapObject* mapObject = &obj->as<MapObject>();
   Rooted<HashableValue> k(cx);
 
   if (!k.setValue(cx, key)) {
     return false;
   }
 
-  if (!map.remove(k, rval)) {
+  bool ok;
+  if (mapObject->isTenured()) {
+    ok = mapObject->tenuredTable()->remove(k, rval);
+  } else {
+    ok = mapObject->nurseryTable()->remove(k, rval);
+  }
+
+  if (!ok) {
     ReportOutOfMemory(cx);
     return false;
   }
+
   return true;
 }
 
@@ -911,14 +959,13 @@ bool MapObject::delete_impl(JSContext* cx, const CallArgs& args) {
   // of a ValueMap, Value() means HeapPtr<Value>(), which is the same as
   // HeapPtr<Value>(UndefinedValue()).
   MOZ_ASSERT(MapObject::is(args.thisv()));
+  RootedObject obj(cx, &args.thisv().toObject());
 
-  ValueMap& map = extract(args);
-  ARG0_KEY(cx, args, key);
   bool found;
-  if (!map.remove(key, &found)) {
-    ReportOutOfMemory(cx);
+  if (!delete_(cx, obj, args.get(0), &found)) {
     return false;
   }
+
   args.rval().setBoolean(found);
   return true;
 }
@@ -930,7 +977,7 @@ bool MapObject::delete_(JSContext* cx, unsigned argc, Value* vp) {
 
 bool MapObject::iterator(JSContext* cx, IteratorKind kind, HandleObject obj,
                          MutableHandleValue iter) {
-  ValueMap& map = extract(obj);
+  const ValueMap& map = extract(obj);
   Rooted<JSObject*> iterobj(cx, MapIteratorObject::create(cx, obj, &map, kind));
   if (!iterobj) {
     return false;
@@ -984,11 +1031,20 @@ bool MapObject::clear(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 bool MapObject::clear(JSContext* cx, HandleObject obj) {
-  ValueMap& map = extract(obj);
-  if (!map.clear()) {
+  MapObject* mapObject = &obj->as<MapObject>();
+
+  bool ok;
+  if (mapObject->isTenured()) {
+    ok = mapObject->tenuredTable()->clear();
+  } else {
+    ok = mapObject->nurseryTable()->clear();
+  }
+
+  if (!ok) {
     ReportOutOfMemory(cx);
     return false;
   }
+
   return true;
 }
 
@@ -1041,7 +1097,7 @@ bool GlobalObject::initSetIteratorProto(JSContext* cx,
   if (!base) {
     return false;
   }
-  RootedPlainObject proto(
+  Rooted<PlainObject*> proto(
       cx, GlobalObject::createBlankPrototypeInheriting<PlainObject>(cx, base));
   if (!proto) {
     return false;
@@ -1187,7 +1243,7 @@ bool SetIteratorObject::next(SetIteratorObject* setIterator,
 
 /* static */
 JSObject* SetIteratorObject::createResult(JSContext* cx) {
-  RootedArrayObject resultObj(
+  Rooted<ArrayObject*> resultObj(
       cx, NewDenseFullyAllocatedArray(cx, 1, TenuredObject));
   if (!resultObj) {
     return nullptr;
@@ -1272,7 +1328,7 @@ const JSPropertySpec SetObject::staticProperties[] = {
 
 /* static */ bool SetObject::finishInit(JSContext* cx, HandleObject ctor,
                                         HandleObject proto) {
-  HandleNativeObject nativeProto = proto.as<NativeObject>();
+  Handle<NativeObject*> nativeProto = proto.as<NativeObject>();
 
   RootedValue valuesFn(cx);
   RootedId valuesId(cx, NameToId(cx->names().values));
@@ -1362,7 +1418,7 @@ SetObject* SetObject::create(JSContext* cx,
 void SetObject::trace(JSTracer* trc, JSObject* obj) {
   SetObject* setobj = static_cast<SetObject*>(obj);
   if (ValueSet* set = setobj->getData()) {
-    for (ValueSet::Range r = set->all(); !r.empty(); r.popFront()) {
+    for (auto r = set->mutableAll(); !r.empty(); r.popFront()) {
       TraceKey(r, r.front(), trc);
     }
   }
@@ -1437,7 +1493,7 @@ bool SetObject::construct(JSContext* cx, unsigned argc, Value* vp) {
       RootedValue keyVal(cx);
       Rooted<HashableValue> key(cx);
       ValueSet* set = obj->getData();
-      RootedArrayObject array(cx, &iterable.toObject().as<ArrayObject>());
+      Rooted<ArrayObject*> array(cx, &iterable.toObject().as<ArrayObject>());
       for (uint32_t index = 0; index < array->getDenseInitializedLength();
            ++index) {
         keyVal.set(array->getDenseElement(index));

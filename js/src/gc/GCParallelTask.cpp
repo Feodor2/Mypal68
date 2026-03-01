@@ -12,7 +12,6 @@
 #include "gc/ParallelWork.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Runtime.h"
-#include "vm/TraceLogging.h"
 
 using namespace js;
 using namespace js::gc;
@@ -147,30 +146,44 @@ void js::GCParallelTask::runFromMainThread() {
   assertIdle();
   MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(gc->rt));
   AutoLockHelperThreadState lock;
-  runTask(lock);
+  runTask(gc->rt->gcContext(), lock);
 }
 
-void js::GCParallelTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
-  AutoTraceLog logCompile(logger, TraceLogger_GC);
+class MOZ_RAII AutoGCContext {
+  JS::GCContext context;
 
+ public:
+  explicit AutoGCContext(JSRuntime* runtime) : context(runtime) {
+    MOZ_RELEASE_ASSERT(TlsGCContext.init(),
+                       "Failed to initialize TLS for GC context");
+
+    MOZ_ASSERT(!TlsGCContext.get());
+    TlsGCContext.set(&context);
+  }
+
+  ~AutoGCContext() {
+    MOZ_ASSERT(TlsGCContext.get() == &context);
+    TlsGCContext.set(nullptr);
+  }
+
+  JS::GCContext* get() { return &context; }
+};
+
+void js::GCParallelTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
   setRunning(lock);
 
-  JS::GCContext gcx(gc->rt, false);
-  MOZ_RELEASE_ASSERT(TlsGCContext.init());
-  TlsGCContext.set(&gcx);
+  AutoGCContext gcContext(gc->rt);
 
-  runTask(lock);
-
-  TlsGCContext.set(nullptr);
+  runTask(gcContext.get(), lock);
 
   setFinished(lock);
 }
 
-void GCParallelTask::runTask(AutoLockHelperThreadState& lock) {
+void GCParallelTask::runTask(JS::GCContext* gcx,
+                             AutoLockHelperThreadState& lock) {
   // Run the task from either the main thread or a helper thread.
 
-  gc::AutoSetThreadIsPerformingGC performingGC;
+  AutoSetThreadGCUse setUse(gcx, use);
 
   // The hazard analysis can't tell what the call to func_ will do but it's not
   // allowed to GC.

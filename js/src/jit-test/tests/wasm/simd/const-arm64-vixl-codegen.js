@@ -86,26 +86,12 @@ ${suffix}
        (v128.store (i32.const 0) (call $f)))
     (func $f (export "f") (result v128)
       (v128.const ${bits})))`);
-    let output = wasmDis(ins.exports.f, "baseline", true);
+    let output = wasmDis(ins.exports.f, {tier:"baseline", asString:true});
     assertEq(output.match(new RegExp(expected)) != null, true);
     let mem = new Int8Array(ins.exports.mem.buffer);
     set(mem, 0, iota(16).map(x => -1-x));
     ins.exports.run();
     assertSame(get(mem, 0, 16), values);
-}
-
-function iota(len) {
-    let xs = [];
-    for ( let i=0 ; i < len ; i++ )
-        xs.push(i);
-    return xs;
-}
-
-function assertSame(got, expected) {
-    assertEq(got.length, expected.length);
-    for ( let i=0; i < got.length; i++ ) {
-        assertEq(got[i], expected[i]);
-    }
 }
 
 function get(arr, loc, len) {

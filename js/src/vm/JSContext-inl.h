@@ -294,21 +294,12 @@ inline void JSContext::enterRealm(JS::Realm* realm) {
 
 inline void JSContext::enterAtomsZone() {
   realm_ = nullptr;
-  setZone(runtime_->unsafeAtomsZone(), AtomsZone);
+  setZone(runtime_->unsafeAtomsZone());
 }
 
-inline void JSContext::setZone(js::Zone* zone,
-                               JSContext::IsAtomsZone isAtomsZone) {
+inline void JSContext::setZone(js::Zone* zone) {
   MOZ_ASSERT(!isHelperThreadContext());
-
-  if (zone_) {
-    zone_->addTenuredAllocsSinceMinorGC(allocsThisZoneSinceMinorGC_);
-  }
-
-  allocsThisZoneSinceMinorGC_ = 0;
-
   zone_ = zone;
-  freeLists_ = zone ? &zone_->arenas.freeLists() : nullptr;
 }
 
 inline void JSContext::enterRealmOf(JSObject* target) {
@@ -357,9 +348,9 @@ inline void JSContext::setRealm(JS::Realm* realm) {
     // This thread must have exclusive access to the zone.
     MOZ_ASSERT(CurrentThreadCanAccessZone(realm->zone()));
     MOZ_ASSERT(!realm->zone()->isAtomsZone());
-    setZone(realm->zone(), NotAtomsZone);
+    setZone(realm->zone());
   } else {
-    setZone(nullptr, NotAtomsZone);
+    setZone(nullptr);
   }
 }
 

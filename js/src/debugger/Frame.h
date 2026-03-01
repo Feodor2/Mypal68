@@ -15,7 +15,6 @@
 #include "debugger/DebugAPI.h"  // for ResumeMode
 #include "debugger/Debugger.h"  // for ResumeMode, Handler, Debugger
 #include "gc/Barrier.h"         // for HeapPtr
-#include "gc/Rooting.h"         // for HandleDebuggerFrame, HandleNativeObject
 #include "vm/FrameIter.h"       // for FrameIter
 #include "vm/JSObject.h"        // for JSObject
 #include "vm/NativeObject.h"    // for NativeObject
@@ -39,7 +38,7 @@ struct OnStepHandler : Handler {
    * return true, with `resumeMode` and `vp` set to a resumption value
    * specifiying how execution should continue.
    */
-  virtual bool onStep(JSContext* cx, HandleDebuggerFrame frame,
+  virtual bool onStep(JSContext* cx, Handle<DebuggerFrame*> frame,
                       ResumeMode& resumeMode, MutableHandleValue vp) = 0;
 };
 
@@ -51,7 +50,7 @@ class ScriptedOnStepHandler final : public OnStepHandler {
   virtual void drop(JS::GCContext* gcx, JSObject* owner) override;
   virtual void trace(JSTracer* tracer) override;
   virtual size_t allocSize() const override;
-  virtual bool onStep(JSContext* cx, HandleDebuggerFrame frame,
+  virtual bool onStep(JSContext* cx, Handle<DebuggerFrame*> frame,
                       ResumeMode& resumeMode, MutableHandleValue vp) override;
 
  private:
@@ -71,7 +70,7 @@ struct OnPopHandler : Handler {
    *
    * When this method returns false, it should set an exception on `cx`.
    */
-  virtual bool onPop(JSContext* cx, HandleDebuggerFrame frame,
+  virtual bool onPop(JSContext* cx, Handle<DebuggerFrame*> frame,
                      const Completion& completion, ResumeMode& resumeMode,
                      MutableHandleValue vp) = 0;
 };
@@ -84,7 +83,7 @@ class ScriptedOnPopHandler final : public OnPopHandler {
   virtual void drop(JS::GCContext* gcx, JSObject* owner) override;
   virtual void trace(JSTracer* tracer) override;
   virtual size_t allocSize() const override;
-  virtual bool onPop(JSContext* cx, HandleDebuggerFrame frame,
+  virtual bool onPop(JSContext* cx, Handle<DebuggerFrame*> frame,
                      const Completion& completion, ResumeMode& resumeMode,
                      MutableHandleValue vp) override;
 
@@ -101,7 +100,7 @@ class DebuggerArguments : public NativeObject {
   static const JSClass class_;
 
   static DebuggerArguments* create(JSContext* cx, HandleObject proto,
-                                   HandleDebuggerFrame frame);
+                                   Handle<DebuggerFrame*> frame);
 
  private:
   enum { FRAME_SLOT };
@@ -145,42 +144,45 @@ class DebuggerFrame : public NativeObject {
   static NativeObject* initClass(JSContext* cx, Handle<GlobalObject*> global,
                                  HandleObject dbgCtor);
   static DebuggerFrame* create(JSContext* cx, HandleObject proto,
-                               HandleNativeObject debugger,
+                               Handle<NativeObject*> debugger,
                                const FrameIter* maybeIter,
                                Handle<AbstractGeneratorObject*> maybeGenerator);
 
-  [[nodiscard]] static bool getArguments(JSContext* cx,
-                                         HandleDebuggerFrame frame,
-                                         MutableHandleDebuggerArguments result);
-  [[nodiscard]] static bool getCallee(JSContext* cx, HandleDebuggerFrame frame,
-                                      MutableHandleDebuggerObject result);
+  [[nodiscard]] static bool getArguments(
+      JSContext* cx, Handle<DebuggerFrame*> frame,
+      MutableHandle<DebuggerArguments*> result);
+  [[nodiscard]] static bool getCallee(JSContext* cx,
+                                      Handle<DebuggerFrame*> frame,
+                                      MutableHandle<DebuggerObject*> result);
   [[nodiscard]] static bool getIsConstructing(JSContext* cx,
-                                              HandleDebuggerFrame frame,
+                                              Handle<DebuggerFrame*> frame,
                                               bool& result);
   [[nodiscard]] static bool getEnvironment(
-      JSContext* cx, HandleDebuggerFrame frame,
-      MutableHandleDebuggerEnvironment result);
-  [[nodiscard]] static bool getOffset(JSContext* cx, HandleDebuggerFrame frame,
+      JSContext* cx, Handle<DebuggerFrame*> frame,
+      MutableHandle<DebuggerEnvironment*> result);
+  [[nodiscard]] static bool getOffset(JSContext* cx,
+                                      Handle<DebuggerFrame*> frame,
                                       size_t& result);
-  [[nodiscard]] static bool getOlder(JSContext* cx, HandleDebuggerFrame frame,
-                                     MutableHandleDebuggerFrame result);
-  [[nodiscard]] static bool getAsyncPromise(JSContext* cx,
-                                            HandleDebuggerFrame frame,
-                                            MutableHandleDebuggerObject result);
-  [[nodiscard]] static bool getOlderSavedFrame(JSContext* cx,
-                                               HandleDebuggerFrame frame,
-                                               MutableHandleSavedFrame result);
-  [[nodiscard]] static bool getThis(JSContext* cx, HandleDebuggerFrame frame,
+  [[nodiscard]] static bool getOlder(JSContext* cx,
+                                     Handle<DebuggerFrame*> frame,
+                                     MutableHandle<DebuggerFrame*> result);
+  [[nodiscard]] static bool getAsyncPromise(
+      JSContext* cx, Handle<DebuggerFrame*> frame,
+      MutableHandle<DebuggerObject*> result);
+  [[nodiscard]] static bool getOlderSavedFrame(
+      JSContext* cx, Handle<DebuggerFrame*> frame,
+      MutableHandle<SavedFrame*> result);
+  [[nodiscard]] static bool getThis(JSContext* cx, Handle<DebuggerFrame*> frame,
                                     MutableHandleValue result);
-  static DebuggerFrameType getType(HandleDebuggerFrame frame);
+  static DebuggerFrameType getType(Handle<DebuggerFrame*> frame);
   static DebuggerFrameImplementation getImplementation(
-      HandleDebuggerFrame frame);
+      Handle<DebuggerFrame*> frame);
   [[nodiscard]] static bool setOnStepHandler(JSContext* cx,
-                                             HandleDebuggerFrame frame,
+                                             Handle<DebuggerFrame*> frame,
                                              UniquePtr<OnStepHandler> handler);
 
   [[nodiscard]] static JS::Result<Completion> eval(
-      JSContext* cx, HandleDebuggerFrame frame,
+      JSContext* cx, Handle<DebuggerFrame*> frame,
       mozilla::Range<const char16_t> chars, HandleObject bindings,
       const EvalOptions& options);
 
@@ -222,7 +224,7 @@ class DebuggerFrame : public NativeObject {
    * to discern.
    */
   [[nodiscard]] static bool setGeneratorInfo(
-      JSContext* cx, HandleDebuggerFrame frame,
+      JSContext* cx, Handle<DebuggerFrame*> frame,
       Handle<AbstractGeneratorObject*> genObj);
 
   /*
@@ -261,9 +263,9 @@ class DebuggerFrame : public NativeObject {
 
   static void finalize(JS::GCContext* gcx, JSObject* obj);
 
-  static AbstractFramePtr getReferent(HandleDebuggerFrame frame);
+  static AbstractFramePtr getReferent(Handle<DebuggerFrame*> frame);
   [[nodiscard]] static bool requireScriptReferent(JSContext* cx,
-                                                  HandleDebuggerFrame frame);
+                                                  Handle<DebuggerFrame*> frame);
 
   [[nodiscard]] static bool construct(JSContext* cx, unsigned argc, Value* vp);
 

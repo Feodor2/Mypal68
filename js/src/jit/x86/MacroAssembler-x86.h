@@ -1052,6 +1052,8 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
                        FloatRegister dest);
   void vcmplepsSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
+  void vcmpgepsSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
   void vcmpeqpdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
   void vcmpneqpdSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1112,7 +1114,8 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
 
  public:
   // Used from within an Exit frame to handle a pending exception.
-  void handleFailureWithHandlerTail(Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail,
+                                    Label* bailoutTail);
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register framePtr, Register scratch);

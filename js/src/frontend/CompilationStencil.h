@@ -602,9 +602,9 @@ struct CompilationInput {
   }
 
   bool initForStandaloneFunctionInNonSyntacticScope(
-      JSContext* cx, HandleScope functionEnclosingScope);
+      JSContext* cx, Handle<Scope*> functionEnclosingScope);
 
-  bool initForEval(JSContext* cx, HandleScope evalEnclosingScope) {
+  bool initForEval(JSContext* cx, Handle<Scope*> evalEnclosingScope) {
     target = CompilationTarget::Eval;
     if (!initScriptSource(cx)) {
       return false;
@@ -1125,7 +1125,7 @@ struct CompilationStencil {
       JSContext* cx, CompilationInput& input);
   [[nodiscard]] JSFunction* instantiateSelfHostedLazyFunction(
       JSContext* cx, CompilationAtomCache& atomCache, ScriptIndex index,
-      HandleAtom name);
+      Handle<JSAtom*> name);
   [[nodiscard]] bool delazifySelfHostedFunction(JSContext* cx,
                                                 CompilationAtomCache& atomCache,
                                                 ScriptIndexRange range,

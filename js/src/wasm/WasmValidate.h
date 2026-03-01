@@ -89,19 +89,15 @@ struct ModuleEnvironment {
 
 #define WASM_FEATURE(NAME, SHORT_NAME, ...) \
   bool SHORT_NAME##Enabled() const { return features.SHORT_NAME; }
-#ifdef ENABLE_WASM_SIMD
   JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
-#else
-  JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE)
-#endif
 #undef WASM_FEATURE
   Shareable sharedMemoryEnabled() const { return features.sharedMemory; }
   bool hugeMemoryEnabled() const {
     return !isAsmJS() && usesMemory() &&
            IsHugeMemoryEnabled(memory->indexType());
   }
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  bool simdWormholeEnabled() const { return features.simdWormhole; }
+#ifdef ENABLE_WASM_SIMD
+  bool simdAvailable() const { return features.simd; }
 #endif
   bool intrinsicsEnabled() const { return features.intrinsics; }
 

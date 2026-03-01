@@ -16,7 +16,6 @@
 
 #include "builtin/AtomicsObject.h"
 #include "builtin/TestingFunctions.h"
-#include "ds/MemoryProtectionExceptionHandler.h"
 #include "gc/Statistics.h"
 #include "jit/Assembler.h"
 #include "jit/AtomicOperations.h"
@@ -33,7 +32,6 @@
 #include "vm/HelperThreads.h"
 #include "vm/Runtime.h"
 #include "vm/Time.h"
-#include "vm/TraceLogging.h"
 #ifdef MOZ_VTUNE
 #  include "vtune/VTuneWrapper.h"
 #endif
@@ -174,8 +172,6 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
 
   js::coverage::InitLCov();
 
-  RETURN_IF_FAIL(js::MemoryProtectionExceptionHandler::install());
-
   RETURN_IF_FAIL(js::jit::InitializeJit());
 
   RETURN_IF_FAIL(js::InitDateTimeState());
@@ -197,10 +193,6 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
 
 #ifdef JS_SIMULATOR
   RETURN_IF_FAIL(js::jit::SimulatorProcess::initialize());
-#endif
-
-#ifdef JS_TRACE_LOGGING
-  RETURN_IF_FAIL(JS::InitTraceLogger());
 #endif
 
 #ifndef JS_CODEGEN_NONE
@@ -269,13 +261,6 @@ JS_PUBLIC_API void JS_ShutDown(void) {
 #ifdef JS_SIMULATOR
   js::jit::SimulatorProcess::destroy();
 #endif
-
-#ifdef JS_TRACE_LOGGING
-  js::DestroyTraceLoggerThreadState();
-  js::DestroyTraceLoggerGraphState();
-#endif
-
-  js::MemoryProtectionExceptionHandler::uninstall();
 
   js::wasm::ShutDown();
 

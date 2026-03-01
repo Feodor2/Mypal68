@@ -115,8 +115,8 @@ struct CopyTo {
 };
 
 struct CopyToHeap {
-  GCPtrValue* dst;
-  explicit CopyToHeap(GCPtrValue* dst) : dst(dst) {}
+  GCPtr<Value>* dst;
+  explicit CopyToHeap(GCPtr<Value>* dst) : dst(dst) {}
   void operator()(const Value& src) {
     dst->init(src);
     ++dst;
@@ -447,7 +447,7 @@ inline bool AbstractFramePtr::initFunctionEnvironmentObjects(JSContext* cx) {
 }
 
 inline bool AbstractFramePtr::pushVarEnvironment(JSContext* cx,
-                                                 HandleScope scope) {
+                                                 Handle<Scope*> scope) {
   return js::PushVarEnvironmentObject(cx, scope, *this);
 }
 

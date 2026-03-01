@@ -18,6 +18,7 @@ UNIFIED_SOURCES += [
     "testAtomicOperations.cpp",
     "testAtomizeUtf8NonAsciiLatin1CodePoint.cpp",
     "testAtomizeWithoutActiveZone.cpp",
+    "testAvlTree.cpp",
     "testBigInt.cpp",
     "testBoundFunction.cpp",
     "testBug604087.cpp",
@@ -157,11 +158,6 @@ if not CONFIG["JS_CODEGEN_NONE"]:
         "testJitRegisterSet.cpp",
         "testJitRValueAlloc.cpp",
         "testsJit.cpp",
-    ]
-
-if not CONFIG["MOZ_DOM_STREAMS"]:
-    UNIFIED_SOURCES += [
-        "testReadableStream.cpp",
     ]
 
 if CONFIG["NIGHTLY_BUILD"]:

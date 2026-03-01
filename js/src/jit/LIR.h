@@ -70,7 +70,11 @@ class LAllocation : public TempObject {
   static const uintptr_t KIND_MASK = (1 << KIND_BITS) - 1;
 
  protected:
+#ifdef JS_64BIT
+  static const uintptr_t DATA_BITS = sizeof(uint32_t) * 8;
+#else
   static const uintptr_t DATA_BITS = (sizeof(uint32_t) * 8) - KIND_BITS;
+#endif
   static const uintptr_t DATA_SHIFT = KIND_SHIFT + KIND_BITS;
 
  public:
@@ -85,7 +89,7 @@ class LAllocation : public TempObject {
     ARGUMENT_SLOT  // Argument slot.
   };
 
-  static const uintptr_t DATA_MASK = (1 << DATA_BITS) - 1;
+  static const uintptr_t DATA_MASK = (uintptr_t(1) << DATA_BITS) - 1;
 
  protected:
   uint32_t data() const {
@@ -1341,7 +1345,6 @@ class LSnapshot : public TempObject {
   LRecoverInfo* recoverInfo_;
   SnapshotOffset snapshotOffset_;
   uint32_t numSlots_;
-  BailoutId bailoutId_;
   BailoutKind bailoutKind_;
 
   LSnapshot(LRecoverInfo* recover, BailoutKind kind);
@@ -1376,14 +1379,9 @@ class LSnapshot : public TempObject {
   LRecoverInfo* recoverInfo() const { return recoverInfo_; }
   MResumePoint* mir() const { return recoverInfo()->mir(); }
   SnapshotOffset snapshotOffset() const { return snapshotOffset_; }
-  BailoutId bailoutId() const { return bailoutId_; }
   void setSnapshotOffset(SnapshotOffset offset) {
     MOZ_ASSERT(snapshotOffset_ == INVALID_SNAPSHOT_OFFSET);
     snapshotOffset_ = offset;
-  }
-  void setBailoutId(BailoutId id) {
-    MOZ_ASSERT(bailoutId_ == INVALID_BAILOUT_ID);
-    bailoutId_ = id;
   }
   BailoutKind bailoutKind() const { return bailoutKind_; }
   void rewriteRecoveredInput(LUse input);
@@ -1853,9 +1851,9 @@ class LIRGraph {
   uint32_t numVirtualRegisters_;
   uint32_t numInstructions_;
 
-  // Number of stack slots needed for local spills.
-  uint32_t localSlotCount_;
-  // Number of stack slots needed for argument construction for calls.
+  // Size of stack slots needed for local spills.
+  uint32_t localSlotsSize_;
+  // Number of JS::Value stack slots needed for argument construction for calls.
   uint32_t argumentSlotCount_;
 
   MIRGraph& mir_;
@@ -1886,30 +1884,14 @@ class LIRGraph {
   }
   uint32_t getInstructionId() { return numInstructions_++; }
   uint32_t numInstructions() const { return numInstructions_; }
-  void setLocalSlotCount(uint32_t localSlotCount) {
-    localSlotCount_ = localSlotCount;
+  void setLocalSlotsSize(uint32_t localSlotsSize) {
+    localSlotsSize_ = localSlotsSize;
   }
-  uint32_t localSlotCount() const { return localSlotCount_; }
-  // Return the localSlotCount() value rounded up so that it satisfies the
-  // platform stack alignment requirement, and so that it's a multiple of
-  // the number of slots per Value.
-  uint32_t paddedLocalSlotCount() const {
-    // Round to JitStackAlignment, and implicitly to sizeof(Value) as
-    // JitStackAlignment is a multiple of sizeof(Value). These alignments
-    // are needed for spilling SIMD registers properly, and for
-    // StackOffsetOfPassedArg which rounds argument slots to 8-byte
-    // boundaries.
-    return AlignBytes(localSlotCount(), JitStackAlignment);
-  }
-  size_t paddedLocalSlotsSize() const { return paddedLocalSlotCount(); }
+  uint32_t localSlotsSize() const { return localSlotsSize_; }
   void setArgumentSlotCount(uint32_t argumentSlotCount) {
     argumentSlotCount_ = argumentSlotCount;
   }
   uint32_t argumentSlotCount() const { return argumentSlotCount_; }
-  size_t argumentsSize() const { return argumentSlotCount() * sizeof(Value); }
-  uint32_t totalSlotCount() const {
-    return paddedLocalSlotCount() + argumentsSize();
-  }
   [[nodiscard]] bool addConstantToPool(const Value& v, uint32_t* index);
   size_t numConstants() const { return constantPool_.length(); }
   Value* constantPool() { return &constantPool_[0]; }
@@ -1968,6 +1950,8 @@ AnyRegister LAllocation::toRegister() const {
 #    include "jit/mips64/LIR-mips64.h"
 #  endif
 #  include "jit/mips-shared/LIR-mips-shared.h"
+#elif defined(JS_CODEGEN_WASM32)
+#  include "jit/wasm32/LIR-wasm32.h"
 #elif defined(JS_CODEGEN_NONE)
 #  include "jit/none/LIR-none.h"
 #else

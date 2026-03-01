@@ -65,6 +65,9 @@ class MWasmBinarySimd128 : public MBinaryInstruction,
   }
   MDefinition* foldsTo(TempAllocator& alloc) override;
 
+  // Checks if pmaddubsw operation is supported.
+  bool canPmaddubsw();
+
   wasm::SimdOp simdOp() const { return simdOp_; }
 
   // Platform-dependent specialization.

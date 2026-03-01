@@ -53,15 +53,15 @@
 namespace JS {
 
 // Defines a policy for container types with non-GC, i.e. C storage. This
-// policy dispatches to the underlying struct for GC interactions.
+// policy dispatches to the underlying struct for GC interactions. Note that
+// currently a type can define only the subset of the methods (trace and/or
+// traceWeak) if it is never used in a context that requires the other.
 template <typename T>
 struct StructGCPolicy {
   static_assert(!std::is_pointer_v<T>,
                 "Pointer type not allowed for StructGCPolicy");
 
   static void trace(JSTracer* trc, T* tp, const char* name) { tp->trace(trc); }
-
-  static void sweep(T* tp) { return tp->sweep(); }
 
   static bool traceWeak(JSTracer* trc, T* tp) { return tp->traceWeak(trc); }
 
@@ -86,6 +86,8 @@ template <>
 struct GCPolicy<uint32_t> : public IgnoreGCPolicy<uint32_t> {};
 template <>
 struct GCPolicy<uint64_t> : public IgnoreGCPolicy<uint64_t> {};
+template <>
+struct GCPolicy<bool> : public IgnoreGCPolicy<bool> {};
 
 template <typename T>
 struct GCPointerPolicy {
@@ -163,7 +165,7 @@ template <>
 struct GCPolicy<mozilla::Nothing> : public IgnoreGCPolicy<mozilla::Nothing> {};
 
 // GCPolicy<Maybe<T>> forwards tracing/sweeping to GCPolicy<T*> if
-// when the Maybe<T> is full.
+// the Maybe<T> is filled and T* can be traced via GCPolicy<T*>.
 template <typename T>
 struct GCPolicy<mozilla::Maybe<T>> {
   static void trace(JSTracer* trc, mozilla::Maybe<T>* tp, const char* name) {
@@ -185,8 +187,46 @@ struct GCPolicy<mozilla::Maybe<T>> {
   }
 };
 
+template <typename T1, typename T2>
+struct GCPolicy<std::pair<T1, T2>> {
+  static void trace(JSTracer* trc, std::pair<T1, T2>* tp, const char* name) {
+    GCPolicy<T1>::trace(trc, &tp->first, name);
+    GCPolicy<T2>::trace(trc, &tp->second, name);
+  }
+  static bool traceWeak(JSTracer* trc, std::pair<T1, T2>* tp) {
+    return GCPolicy<T1>::traceWeak(trc, &tp->first) &&
+           GCPolicy<T2>::traceWeak(trc, &tp->second);
+  }
+  static bool isValid(const std::pair<T1, T2>& t) {
+    return GCPolicy<T1>::isValid(t.first) && GCPolicy<T2>::isValid(t.second);
+  }
+};
+
 template <>
 struct GCPolicy<JS::Realm*>;  // see Realm.h
+
+template <>
+struct GCPolicy<mozilla::Ok> : public IgnoreGCPolicy<mozilla::Ok> {};
+
+template <typename V, typename E>
+struct GCPolicy<mozilla::Result<V, E>> {
+  static void trace(JSTracer* trc, mozilla::Result<V, E>* tp,
+                    const char* name) {
+    if (tp->isOk()) {
+      V tmp = tp->unwrap();
+      JS::GCPolicy<V>::trace(trc, &tmp, "Result value");
+      tp->updateAfterTracing(std::move(tmp));
+    }
+
+    if (tp->isErr()) {
+      E tmp = tp->unwrapErr();
+      JS::GCPolicy<E>::trace(trc, &tmp, "Result error");
+      tp->updateErrorAfterTracing(std::move(tmp));
+    }
+  }
+
+  static bool isValid(const mozilla::Result<V, E>& t) { return true; }
+};
 
 }  // namespace JS
 

@@ -190,6 +190,11 @@ static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
 static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
 static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 
+// Registers used for ref calls.
+static constexpr Register WasmCallRefCallScratchReg0 = ABINonArgReg0;
+static constexpr Register WasmCallRefCallScratchReg1 = ABINonArgReg1;
+static constexpr Register WasmCallRefReg = ABINonArgReg3;
+
 // Register used as a scratch along the return path in the fast js -> wasm stub
 // code.  This must not overlap ReturnReg, JSReturnOperand, or InstanceReg.
 // It must be a volatile register.
@@ -1250,10 +1255,6 @@ class Assembler : public AssemblerShared {
 #endif
   }
 
-  // We need to wait until an AutoJitContextAlloc is created by the
-  // MacroAssembler, before allocating any space.
-  void initWithAllocator() { m_buffer.initWithAllocator(); }
-
   void setUnlimitedBuffer() { m_buffer.setUnlimited(); }
 
   static Condition InvertCondition(Condition cond);
@@ -1874,8 +1875,6 @@ class Assembler : public AssemblerShared {
   // Toggle a jmp or cmp emitted by toggledJump().
   static void ToggleToJmp(CodeLocationLabel inst_);
   static void ToggleToCmp(CodeLocationLabel inst_);
-
-  static uint8_t* BailoutTableStart(uint8_t* code);
 
   static size_t ToggledCallSize(uint8_t* code);
   static void ToggleCall(CodeLocationLabel inst_, bool enabled);

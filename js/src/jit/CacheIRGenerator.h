@@ -13,7 +13,6 @@
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
-#include "gc/Rooting.h"
 #include "jit/CacheIR.h"
 #include "jit/CacheIRWriter.h"
 #include "jit/ICState.h"
@@ -62,6 +61,9 @@ class MOZ_RAII IRGenerator {
   CacheKind cacheKind_;
   ICState::Mode mode_;
   bool isFirstStub_;
+#ifdef JS_ION_PERF
+  UniqueChars stubName_;
+#endif
 
   IRGenerator(const IRGenerator&) = delete;
   IRGenerator& operator=(const IRGenerator&) = delete;
@@ -83,6 +85,8 @@ class MOZ_RAII IRGenerator {
 
   StringOperandId emitToStringGuard(ValOperandId id, const Value& v);
 
+  void emitCalleeGuard(ObjOperandId calleeId, JSFunction* callee);
+
   friend class CacheIRSpewer;
 
  public:
@@ -91,6 +95,13 @@ class MOZ_RAII IRGenerator {
 
   const CacheIRWriter& writerRef() const { return writer; }
   CacheKind cacheKind() const { return cacheKind_; }
+  const char* stubName() const {
+#ifdef JS_ION_PERF
+    return stubName_.get();
+#else
+    return nullptr;
+#endif
+  }
 
   static constexpr char* NotAttached = nullptr;
 };
@@ -214,7 +225,7 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
 // GetNameIRGenerator generates CacheIR for a GetName IC.
 class MOZ_RAII GetNameIRGenerator : public IRGenerator {
   HandleObject env_;
-  HandlePropertyName name_;
+  Handle<PropertyName*> name_;
 
   AttachDecision tryAttachGlobalNameValue(ObjOperandId objId, HandleId id);
   AttachDecision tryAttachGlobalNameGetter(ObjOperandId objId, HandleId id);
@@ -224,7 +235,8 @@ class MOZ_RAII GetNameIRGenerator : public IRGenerator {
 
  public:
   GetNameIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                     ICState state, HandleObject env, HandlePropertyName name);
+                     ICState state, HandleObject env,
+                     Handle<PropertyName*> name);
 
   AttachDecision tryAttachStub();
 };
@@ -232,7 +244,7 @@ class MOZ_RAII GetNameIRGenerator : public IRGenerator {
 // BindNameIRGenerator generates CacheIR for a BindName IC.
 class MOZ_RAII BindNameIRGenerator : public IRGenerator {
   HandleObject env_;
-  HandlePropertyName name_;
+  Handle<PropertyName*> name_;
 
   AttachDecision tryAttachGlobalName(ObjOperandId objId, HandleId id);
   AttachDecision tryAttachEnvironmentName(ObjOperandId objId, HandleId id);
@@ -241,7 +253,8 @@ class MOZ_RAII BindNameIRGenerator : public IRGenerator {
 
  public:
   BindNameIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                      ICState state, HandleObject env, HandlePropertyName name);
+                      ICState state, HandleObject env,
+                      Handle<PropertyName*> name);
 
   AttachDecision tryAttachStub();
 };
@@ -333,7 +346,7 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator {
                      HandleValue idVal, HandleValue rhsVal);
 
   AttachDecision tryAttachStub();
-  AttachDecision tryAttachAddSlotStub(HandleShape oldShape);
+  AttachDecision tryAttachAddSlotStub(Handle<Shape*> oldShape);
   void trackAttached(const char* name);
 
   DeferType deferType() const { return deferType_; }
@@ -474,9 +487,8 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   friend class InlinableNativeIRGenerator;
 
   ScriptedThisResult getThisShapeForScripted(HandleFunction calleeFunc,
-                                             MutableHandleShape result);
+                                             MutableHandle<Shape*> result);
 
-  void emitCalleeGuard(ObjOperandId calleeId, JSFunction* callee);
   ObjOperandId emitFunCallGuard(Int32OperandId argcId);
 
   AttachDecision tryAttachFunCall(HandleFunction calleeFunc);
@@ -839,6 +851,21 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
 inline bool BytecodeOpCanHaveAllocSite(JSOp op) {
   return op == JSOp::NewArray || op == JSOp::NewObject || op == JSOp::NewInit;
 }
+
+class MOZ_RAII CloseIterIRGenerator : public IRGenerator {
+  HandleObject iter_;
+  CompletionKind kind_;
+
+  void trackAttached(const char* name);
+
+ public:
+  CloseIterIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,
+                       ICState state, HandleObject iter, CompletionKind kind);
+
+  AttachDecision tryAttachStub();
+  AttachDecision tryAttachNoReturnMethod();
+  AttachDecision tryAttachScriptedReturn();
+};
 
 // Retrieve Xray JIT info set by the embedder.
 extern JS::XrayJitInfo* GetXrayJitInfo();

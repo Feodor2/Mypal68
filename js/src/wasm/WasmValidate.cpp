@@ -16,6 +16,7 @@
 #include "wasm/WasmValidate.h"
 
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Span.h"
 #include "mozilla/Utf8.h"
 
 #include "js/Printf.h"
@@ -219,6 +220,16 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
         CHECK(iter.readCallIndirect(&unusedIndex, &unusedIndex2, &nothing,
                                     &unusedArgs));
       }
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+      case uint16_t(Op::CallRef): {
+        if (!env.functionReferencesEnabled()) {
+          return iter.unrecognizedOpcode(&op);
+        }
+        const FuncType* unusedType;
+        NothingVector unusedArgs{};
+        CHECK(iter.readCallRef(&unusedType, &nothing, &unusedArgs));
+      }
+#endif
       case uint16_t(Op::I32Const): {
         int32_t unused;
         CHECK(iter.readI32Const(&unused));
@@ -541,15 +552,14 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
           return iter.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
-          case uint32_t(GcOp::StructNewWithRtt): {
+          case uint32_t(GcOp::StructNew): {
             uint32_t unusedUint;
             NothingVector unusedArgs{};
-            CHECK(
-                iter.readStructNewWithRtt(&unusedUint, &nothing, &unusedArgs));
+            CHECK(iter.readStructNew(&unusedUint, &unusedArgs));
           }
-          case uint32_t(GcOp::StructNewDefaultWithRtt): {
+          case uint32_t(GcOp::StructNewDefault): {
             uint32_t unusedUint;
-            CHECK(iter.readStructNewDefaultWithRtt(&unusedUint, &nothing));
+            CHECK(iter.readStructNewDefault(&unusedUint));
           }
           case uint32_t(GcOp::StructGet): {
             uint32_t unusedUint1, unusedUint2;
@@ -571,15 +581,13 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             CHECK(iter.readStructSet(&unusedUint1, &unusedUint2, &nothing,
                                      &nothing));
           }
-          case uint32_t(GcOp::ArrayNewWithRtt): {
+          case uint32_t(GcOp::ArrayNew): {
             uint32_t unusedUint;
-            CHECK(iter.readArrayNewWithRtt(&unusedUint, &nothing, &nothing,
-                                           &nothing));
+            CHECK(iter.readArrayNew(&unusedUint, &nothing, &nothing));
           }
-          case uint32_t(GcOp::ArrayNewDefaultWithRtt): {
+          case uint32_t(GcOp::ArrayNewDefault): {
             uint32_t unusedUint;
-            CHECK(iter.readArrayNewDefaultWithRtt(&unusedUint, &nothing,
-                                                  &nothing));
+            CHECK(iter.readArrayNewDefault(&unusedUint, &nothing));
           }
           case uint32_t(GcOp::ArrayGet): {
             uint32_t unusedUint1;
@@ -605,32 +613,18 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             uint32_t unusedUint1;
             CHECK(iter.readArrayLen(&unusedUint1, &nothing));
           }
-          case uint16_t(GcOp::RttCanon): {
-            ValType unusedTy;
-            CHECK(iter.readRttCanon(&unusedTy));
-          }
-          case uint16_t(GcOp::RttSub): {
-            uint32_t unusedRttTypeIndex;
-            CHECK(iter.readRttSub(&nothing, &unusedRttTypeIndex));
-          }
           case uint16_t(GcOp::RefTest): {
-            uint32_t unusedRttTypeIndex;
-            uint32_t unusedRttDepth;
-            CHECK(iter.readRefTest(&nothing, &unusedRttTypeIndex,
-                                   &unusedRttDepth, &nothing));
+            uint32_t typeIndex;
+            CHECK(iter.readRefTest(&typeIndex, &nothing));
           }
           case uint16_t(GcOp::RefCast): {
-            uint32_t unusedRttTypeIndex;
-            uint32_t unusedRttDepth;
-            CHECK(iter.readRefCast(&nothing, &unusedRttTypeIndex,
-                                   &unusedRttDepth, &nothing));
+            uint32_t typeIndex;
+            CHECK(iter.readRefCast(&typeIndex, &nothing));
           }
           case uint16_t(GcOp::BrOnCast): {
             uint32_t unusedRelativeDepth;
-            uint32_t unusedRttTypeIndex;
-            uint32_t unusedRttDepth;
-            CHECK(iter.readBrOnCast(&unusedRelativeDepth, &nothing,
-                                    &unusedRttTypeIndex, &unusedRttDepth,
+            uint32_t typeIndex;
+            CHECK(iter.readBrOnCast(&unusedRelativeDepth, &typeIndex,
                                     &unusedType, &nothings));
           }
           default:
@@ -642,7 +636,7 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
 
 #ifdef ENABLE_WASM_SIMD
       case uint16_t(Op::SimdPrefix): {
-        if (!env.v128Enabled()) {
+        if (!env.simdAvailable()) {
           return iter.unrecognizedOpcode(&op);
         }
         uint32_t noIndex;
@@ -1681,34 +1675,33 @@ static bool DecodeTypeSection(Decoder& d, ModuleEnvironment* env) {
   return d.finishSection(*range, "type");
 }
 
-static UniqueChars DecodeName(Decoder& d) {
+[[nodiscard]] static bool DecodeName(Decoder& d, CacheableName* name) {
   uint32_t numBytes;
   if (!d.readVarU32(&numBytes)) {
-    return nullptr;
+    return false;
   }
 
   if (numBytes > MaxStringBytes) {
-    return nullptr;
+    return false;
   }
 
   const uint8_t* bytes;
   if (!d.readBytes(numBytes, &bytes)) {
-    return nullptr;
+    return false;
   }
 
   if (!IsUtf8(AsChars(Span(bytes, numBytes)))) {
-    return nullptr;
+    return false;
   }
 
-  UniqueChars name(js_pod_malloc<char>(numBytes + 1));
-  if (!name) {
-    return nullptr;
+  UTF8Bytes utf8Bytes;
+  if (!utf8Bytes.resizeUninitialized(numBytes)) {
+    return false;
   }
+  memcpy(utf8Bytes.begin(), bytes, numBytes);
 
-  memcpy(name.get(), bytes, numBytes);
-  name[numBytes] = '\0';
-
-  return name;
+  *name = CacheableName(std::move(utf8Bytes));
+  return true;
 }
 
 static bool DecodeFuncTypeIndex(Decoder& d, const SharedTypeContext& types,
@@ -1967,14 +1960,14 @@ static bool DecodeTag(Decoder& d, ModuleEnvironment* env, TagKind* tagKind,
 }
 
 static bool DecodeImport(Decoder& d, ModuleEnvironment* env) {
-  UniqueChars moduleName = DecodeName(d);
-  if (!moduleName) {
+  CacheableName moduleName;
+  if (!DecodeName(d, &moduleName)) {
     return d.fail("expected valid import module name");
   }
 
-  UniqueChars funcName = DecodeName(d);
-  if (!funcName) {
-    return d.fail("expected valid import func name");
+  CacheableName funcName;
+  if (!DecodeName(d, &funcName)) {
+    return d.fail("expected valid import field name");
   }
 
   uint8_t rawImportKind;
@@ -2286,33 +2279,27 @@ static bool DecodeTagSection(Decoder& d, ModuleEnvironment* env) {
   return d.finishSection(*range, "tag");
 }
 
-using CStringSet =
-    HashSet<const char*, mozilla::CStringHasher, SystemAllocPolicy>;
+using NameSet = HashSet<Span<char>, NameHasher, SystemAllocPolicy>;
 
-static UniqueChars DecodeExportName(Decoder& d, CStringSet* dupSet) {
-  UniqueChars exportName = DecodeName(d);
-  if (!exportName) {
+[[nodiscard]] static bool DecodeExportName(Decoder& d, NameSet* dupSet,
+                                           CacheableName* exportName) {
+  if (!DecodeName(d, exportName)) {
     d.fail("expected valid export name");
-    return nullptr;
+    return false;
   }
 
-  CStringSet::AddPtr p = dupSet->lookupForAdd(exportName.get());
+  NameSet::AddPtr p = dupSet->lookupForAdd(exportName->utf8Bytes());
   if (p) {
     d.fail("duplicate export");
-    return nullptr;
+    return false;
   }
 
-  if (!dupSet->add(p, exportName.get())) {
-    return nullptr;
-  }
-
-  return exportName;
+  return dupSet->add(p, exportName->utf8Bytes());
 }
 
-static bool DecodeExport(Decoder& d, ModuleEnvironment* env,
-                         CStringSet* dupSet) {
-  UniqueChars fieldName = DecodeExportName(d, dupSet);
-  if (!fieldName) {
+static bool DecodeExport(Decoder& d, ModuleEnvironment* env, NameSet* dupSet) {
+  CacheableName fieldName;
+  if (!DecodeExportName(d, dupSet, &fieldName)) {
     return false;
   }
 
@@ -2422,7 +2409,7 @@ static bool DecodeExportSection(Decoder& d, ModuleEnvironment* env) {
     return true;
   }
 
-  CStringSet dupSet;
+  NameSet dupSet;
 
   uint32_t numExports;
   if (!d.readVarU32(&numExports)) {

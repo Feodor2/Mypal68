@@ -45,6 +45,9 @@ class RecordType final : public js::NativeObject {
   bool finishInitialization(JSContext* cx);
   static js::Shape* getInitialShape(JSContext* cx);
 
+  static bool copy(JSContext* cx, Handle<RecordType*> in,
+                   MutableHandle<RecordType*> out);
+
   bool getOwnProperty(JSContext* cx, HandleId id, MutableHandleValue vp) const;
 
   static bool sameValueZero(JSContext* cx, RecordType* lhs, RecordType* rhs,

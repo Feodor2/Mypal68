@@ -5,6 +5,8 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerTypeTraits.h"
 
+#include <iterator>
+
 #include "jit/ABIFunctions.h"
 #include "jit/IonAnalysis.h"
 #include "jit/Linker.h"
@@ -579,10 +581,10 @@ struct DefineCheckArgs<Res (*)(Args...)> {
         {ArgsFillBits::table, ArgsFillBits::size, CheckArgsFillBits},
     };
     const Test* tests = testsWithoutBoolArgs;
-    size_t numTests = sizeof(testsWithoutBoolArgs) / sizeof(Test);
+    size_t numTests = std::size(testsWithoutBoolArgs);
     if (AnyBool_v<Args...>) {
       tests = testsWithBoolArgs;
-      numTests = sizeof(testsWithBoolArgs) / sizeof(Test);
+      numTests = std::size(testsWithBoolArgs);
     }
 
     for (size_t i = 0; i < numTests; i++) {
@@ -630,7 +632,9 @@ class JitABICall final : public JSAPITest, public DefineCheckArgs<Sig> {
     bool result = true;
     this->set_instance(this, &result);
 
-    StackMacroAssembler masm(cx);
+    TempAllocator temp(&cx->tempLifoAlloc());
+    JitContext jcx(cx);
+    StackMacroAssembler masm(cx, temp);
     AutoCreatedBy acb(masm, __func__);
     PrepareJit(masm);
 

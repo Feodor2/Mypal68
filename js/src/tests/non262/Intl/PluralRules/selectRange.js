@@ -2,7 +2,7 @@
 
 // Any combination returns "other" for "en-US".
 {
-  let numbers = [0, 0.5, 1.2, 1.5, 1.7, -1, 1, "1", 123456789.123456789];
+  let numbers = [0, 0.5, 1.2, 1.5, 1.7, -1, 1, "1", 123456789.123456789, Infinity, -Infinity];
 
   const weirdCases = [
     NaN,
@@ -15,30 +15,14 @@
     let pr = new Intl.PluralRules("en-US", {type});
     for (let start of numbers) {
       for (let end of numbers) {
-        if (start <= end) {
-          assertEq(pr.selectRange(start, end), "other");
-        } else {
-          assertThrowsInstanceOf(() => pr.selectRange(start, end), RangeError);
-        }
+        assertEq(pr.selectRange(start, end), "other");
       }
     }
 
-    {
-      assertThrowsInstanceOf(() => pr.selectRange(Infinity, 0), RangeError);
-      assertEq(pr.selectRange(0, Infinity), "other");
-      assertEq(pr.selectRange(Infinity, Infinity), "other");
-    }
-
-    {
-      assertEq(pr.selectRange(-Infinity, 0), "other");
-      assertThrowsInstanceOf(() => pr.selectRange(0, -Infinity), RangeError);
-      assertEq(pr.selectRange(-Infinity, -Infinity), "other");
-    }
-
     for (let c of weirdCases) {
-      assertEq(pr.selectRange(c, 0), "other");
-      assertEq(pr.selectRange(0, c), "other");
-      assertEq(pr.selectRange(c, c), "other");
+      assertThrowsInstanceOf(() => pr.selectRange(c, 0), RangeError);
+      assertThrowsInstanceOf(() => pr.selectRange(0, c), RangeError);
+      assertThrowsInstanceOf(() => pr.selectRange(c, c), RangeError);
     }
   }
 }

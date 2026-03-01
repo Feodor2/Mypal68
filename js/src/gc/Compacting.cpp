@@ -676,7 +676,8 @@ void GCRuntime::updateCellPointers(Zone* zone, AllocKinds kinds) {
 
   AutoRunParallelWork bgTasks(this, UpdateArenaListSegmentPointers,
                               gcstats::PhaseKind::COMPACT_UPDATE_CELLS,
-                              bgArenas, SliceBudget::unlimited(), lock);
+                              GCUse::Unspecified, bgArenas,
+                              SliceBudget::unlimited(), lock);
 
   AutoUnlockHelperThreadState unlock(lock);
 
@@ -877,11 +878,15 @@ void GCRuntime::clearRelocatedArenasWithoutUnlocking(Arena* arenaList,
                  JS_MOVED_TENURED_PATTERN, arena->getThingsSpan(),
                  MemCheckKind::MakeNoAccess);
 
-    // Don't count arenas as being freed by the GC if we purposely moved
-    // everything to new arenas, as that will already have allocated a similar
-    // number of arenas. This only happens for collections triggered by GC zeal.
+    // Don't count emptied arenas as being freed by the current GC:
+    //  - if we purposely moved everything to new arenas, as that will already
+    //    have allocated a similar number of arenas. (This only happens for
+    //    collections triggered by GC zeal.)
+    //  - if they were allocated since the start of the GC.
     bool allArenasRelocated = ShouldRelocateAllArenas(reason);
-    arena->zone->gcHeapSize.removeBytes(ArenaSize, !allArenasRelocated);
+    bool updateRetainedSize = !allArenasRelocated && !arena->isNewlyCreated();
+    arena->zone->gcHeapSize.removeBytes(ArenaSize, updateRetainedSize,
+                                        heapSize);
 
     // Release the arena but don't return it to the chunk yet.
     arena->release(lock);

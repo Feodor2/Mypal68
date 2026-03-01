@@ -45,7 +45,7 @@ class ErrorReportMixin : public StrictModeGetter {
   virtual const JS::ReadOnlyCompileOptions& options() const = 0;
 
   // Returns the current context.
-  virtual JSContext* getContext() const = 0;
+  virtual ErrorContext* getContext() const = 0;
 
   // A variant class for the offset of the error or warning.
   struct Current {};

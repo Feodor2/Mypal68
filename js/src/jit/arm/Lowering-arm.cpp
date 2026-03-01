@@ -1177,6 +1177,8 @@ bool MWasmTernarySimd128::specializeBitselectConstantMaskAsShuffle(
 }
 bool MWasmTernarySimd128::canRelaxBitselect() { return false; }
 
+bool MWasmBinarySimd128::canPmaddubsw() { return false; }
+
 bool MWasmBinarySimd128::specializeForConstantRhs() {
   // Probably many we want to do here
   return false;

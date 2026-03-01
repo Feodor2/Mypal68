@@ -67,7 +67,7 @@ bool GenerateInterfaceHelp(JSContext* cx, HandleObject obj, const char* name) {
     }
     numEntries++;
 
-    if (!buf.append("  ", 2)) {
+    if (!buf.append("  ")) {
       return false;
     }
 
@@ -83,7 +83,7 @@ bool GenerateInterfaceHelp(JSContext* cx, HandleObject obj, const char* name) {
 
   buf.clear();
   if (!buf.append(name, strlen(name)) ||
-      !buf.append(" - interface object with ", 25)) {
+      !buf.append(" - interface object with ")) {
     return false;
   }
   char cbuf[100];

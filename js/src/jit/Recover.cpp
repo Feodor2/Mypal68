@@ -67,8 +67,10 @@ bool MResumePoint::writeRecoverData(CompactBufferWriter& writer) const {
 #ifdef DEBUG
   // Ensure that all snapshot which are encoded can safely be used for
   // bailouts.
+  uint32_t numIntermediate = NumIntermediateValues(mode());
   if (JSContext* cx = GetJitContext()->cx) {
-    if (!AssertBailoutStackDepth(cx, script, pc(), mode(), exprStack)) {
+    if (!AssertBailoutStackDepth(cx, script, pc(), mode(),
+                                 exprStack - numIntermediate)) {
       return false;
     }
   }
@@ -1539,7 +1541,7 @@ RNewPlainObject::RNewPlainObject(CompactBufferReader& reader) {
 }
 
 bool RNewPlainObject::recover(JSContext* cx, SnapshotIterator& iter) const {
-  RootedShape shape(cx, &iter.read().toGCCellPtr().as<Shape>());
+  Rooted<Shape*> shape(cx, &iter.read().toGCCellPtr().as<Shape>());
 
   // See CodeGenerator::visitNewPlainObject.
   JSObject* resultObject =
@@ -1628,7 +1630,7 @@ RNewArray::RNewArray(CompactBufferReader& reader) {
 bool RNewArray::recover(JSContext* cx, SnapshotIterator& iter) const {
   RootedObject templateObject(cx, &iter.read().toObject());
   RootedValue result(cx);
-  RootedShape shape(cx, templateObject->shape());
+  Rooted<Shape*> shape(cx, templateObject->shape());
 
   ArrayObject* resultObject = NewArrayWithShape(cx, count_, shape);
   if (!resultObject) {
@@ -1736,7 +1738,7 @@ RNewCallObject::RNewCallObject(CompactBufferReader& reader) {}
 bool RNewCallObject::recover(JSContext* cx, SnapshotIterator& iter) const {
   Rooted<CallObject*> templateObj(cx, &iter.read().toObject().as<CallObject>());
 
-  RootedShape shape(cx, templateObj->shape());
+  Rooted<Shape*> shape(cx, templateObj->shape());
 
   JSObject* resultObject = NewCallObject(cx, shape);
   if (!resultObject) {
@@ -1763,7 +1765,7 @@ RObjectState::RObjectState(CompactBufferReader& reader) {
 bool RObjectState::recover(JSContext* cx, SnapshotIterator& iter) const {
   RootedObject object(cx, &iter.read().toObject());
   RootedValue val(cx);
-  RootedNativeObject nativeObject(cx, &object->as<NativeObject>());
+  Rooted<NativeObject*> nativeObject(cx, &object->as<NativeObject>());
   MOZ_ASSERT(nativeObject->slotSpan() == numSlots());
 
   for (size_t i = 0; i < numSlots(); i++) {
@@ -1829,7 +1831,7 @@ RSetArrayLength::RSetArrayLength(CompactBufferReader& reader) {}
 
 bool RSetArrayLength::recover(JSContext* cx, SnapshotIterator& iter) const {
   RootedValue result(cx);
-  RootedArrayObject obj(cx, &iter.read().toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> obj(cx, &iter.read().toObject().as<ArrayObject>());
   RootedValue len(cx, iter.read());
 
   RootedId id(cx, NameToId(cx->names().length));
@@ -2038,7 +2040,7 @@ bool RRest::recover(JSContext* cx, SnapshotIterator& iter) const {
   uint32_t numFormals = numFormals_;
 
   uint32_t length = std::max(numActuals, numFormals) - numFormals;
-  Value* src = frame->argv() + numFormals + 1;  // +1 to skip |this|.
+  Value* src = frame->actualArgs() + numFormals;
   JSObject* rest = jit::InitRestParameter(cx, length, src, nullptr);
   if (!rest) {
     return false;

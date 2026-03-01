@@ -37,6 +37,7 @@
 #include "js/Interrupt.h"
 #include "js/MemoryMetrics.h"
 #include "js/SliceBudget.h"
+#include "js/Stack.h"  // JS::NativeStackLimitMin
 #include "js/Wrapper.h"
 #include "util/WindowsWrapper.h"
 #include "vm/DateTime.h"
@@ -44,9 +45,7 @@
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/PromiseObject.h"  // js::PromiseObject
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingGraph.h"
-#include "vm/Warnings.h"  // js::WarnNumberUC
+#include "vm/Warnings.h"       // js::WarnNumberUC
 #include "wasm/WasmSignalHandlers.h"
 
 #include "debugger/DebugAPI-inl.h"
@@ -156,6 +155,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       stackFormat_(parentRuntime ? js::StackFormat::Default
                                  : js::StackFormat::SpiderMonkey),
       wasmInstances(mutexid::WasmRuntimeInstances),
+      moduleAsyncEvaluatingPostOrder(ASYNC_EVALUATING_POST_ORDER_INIT),
       moduleResolveHook(),
       moduleMetadataHook(),
       moduleDynamicImportHook(),
@@ -330,12 +330,6 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
   rtSizes->temporary += cx->tempLifoAlloc().sizeOfExcludingThis(mallocSizeOf);
   rtSizes->interpreterStack +=
       cx->interpreterStack().sizeOfExcludingThis(mallocSizeOf);
-#ifdef JS_TRACE_LOGGING
-  if (cx->traceLogger) {
-    rtSizes->tracelogger += cx->traceLogger->sizeOfIncludingThis(mallocSizeOf);
-  }
-#endif
-
   rtSizes->uncompressedSourceCache +=
       caches().uncompressedSourceCache.sizeOfExcludingThis(mallocSizeOf);
 
@@ -443,7 +437,7 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
 
 void JSContext::requestInterrupt(InterruptReason reason) {
   interruptBits_ |= uint32_t(reason);
-  jitStackLimit = UINTPTR_MAX;
+  jitStackLimit = JS::NativeStackLimitMin;
 
   if (reason == InterruptReason::CallbackUrgent) {
     // If this interrupt is urgent (slow script dialog for instance), take
@@ -460,7 +454,7 @@ void JSContext::requestInterrupt(InterruptReason reason) {
 
 bool JSContext::handleInterrupt() {
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
-  if (hasAnyPendingInterrupt() || jitStackLimit == UINTPTR_MAX) {
+  if (hasAnyPendingInterrupt() || jitStackLimit == JS::NativeStackLimitMin) {
     bool invokeCallback =
         hasPendingInterrupt(InterruptReason::CallbackUrgent) ||
         hasPendingInterrupt(InterruptReason::CallbackCanWait);

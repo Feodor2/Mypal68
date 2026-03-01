@@ -87,9 +87,10 @@ static constexpr Register ReturnReg{Registers::x0};
 static constexpr Register64 ReturnReg64(ReturnReg);
 static constexpr Register JSReturnReg{Registers::x2};
 static constexpr Register FramePointer{Registers::fp};
+static constexpr ARMRegister FramePointer64{FramePointer, 64};
 static constexpr Register ZeroRegister{Registers::sp};
-static constexpr ARMRegister ZeroRegister64 = {Registers::sp, 64};
-static constexpr ARMRegister ZeroRegister32 = {Registers::sp, 32};
+static constexpr ARMRegister ZeroRegister64{Registers::sp, 64};
+static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 
 // [SMDOC] AArch64 Stack Pointer and Pseudo Stack Pointer conventions
 //
@@ -120,8 +121,9 @@ static constexpr ARMRegister ZeroRegister32 = {Registers::sp, 32};
 // of how the address is formed.
 //
 // In order to allow word-wise pushes and pops, some of our ARM64 jits
-// (JS-Baseline, JS-Ion, and Wasm-Ion, but not Wasm-Baseline or
-// Wasm-Cranelift) dedicate x28 to be used as a PseudoStackPointer (PSP).
+// (JS-Baseline, JS-Ion, and Wasm-Ion, but not Wasm-Baseline) dedicate x28 to
+// be used as a PseudoStackPointer (PSP).
+//
 // Initially the PSP will have the same value as the SP.  Code can, if it
 // wants, push a single word by subtracting 8 from the PSP, doing SP := PSP,
 // then storing the value at PSP+0.  Given other constraints on the alignment
@@ -330,8 +332,7 @@ static constexpr ARMRegister ZeroRegister32 = {Registers::sp, 32};
 //
 // * Wasm-Baseline does not use the PSP, but as Wasm-Ion code requires SP==PSP
 //   and tiered code can have Baseline->Ion calls, Baseline will set PSP=SP
-//   before a call to wasm code.  When the optimized tier is created by
-//   Cranelift this is not necessary.
+//   before a call to wasm code.
 //
 //                               ================
 
@@ -700,6 +701,11 @@ static constexpr Register WasmTableCallScratchReg0 = ABINonArgReg0;
 static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
 static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
 static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
+
+// Registers used for ref calls.
+static constexpr Register WasmCallRefCallScratchReg0 = ABINonArgReg0;
+static constexpr Register WasmCallRefCallScratchReg1 = ABINonArgReg1;
+static constexpr Register WasmCallRefReg = ABINonArgReg3;
 
 // Register used as a scratch along the return path in the fast js -> wasm stub
 // code.  This must not overlap ReturnReg, JSReturnOperand, or InstanceReg.

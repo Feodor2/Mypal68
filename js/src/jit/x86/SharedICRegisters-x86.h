@@ -12,9 +12,6 @@
 namespace js {
 namespace jit {
 
-static constexpr Register BaselineFrameReg = ebp;
-static constexpr Register BaselineStackReg = esp;
-
 // ValueOperands R0, R1, and R2
 static constexpr ValueOperand R0(ecx, edx);
 static constexpr ValueOperand R1(eax, ebx);

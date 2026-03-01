@@ -16,7 +16,6 @@
 
 #include "jstypes.h"
 
-#include "gc/Rooting.h"
 #include "irregexp/RegExpTypes.h"
 #include "vm/RegExpShared.h"
 
@@ -52,17 +51,18 @@ bool CheckPatternSyntax(JSContext* cx, frontend::TokenStreamAnyChars& ts,
                         mozilla::Maybe<uint32_t> line = mozilla::Nothing(),
                         mozilla::Maybe<uint32_t> column = mozilla::Nothing());
 bool CheckPatternSyntax(JSContext* cx, frontend::TokenStreamAnyChars& ts,
-                        HandleAtom pattern, JS::RegExpFlags flags);
+                        Handle<JSAtom*> pattern, JS::RegExpFlags flags);
 
 bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
-                    HandleLinearString input, RegExpShared::CodeKind codeKind);
+                    Handle<JSLinearString*> input,
+                    RegExpShared::CodeKind codeKind);
 
 RegExpRunStatus Execute(JSContext* cx, MutableHandleRegExpShared re,
-                        HandleLinearString input, size_t start,
+                        Handle<JSLinearString*> input, size_t start,
                         VectorMatchPairs* matches);
 
-RegExpRunStatus ExecuteForFuzzing(JSContext* cx, HandleAtom pattern,
-                                  HandleLinearString input,
+RegExpRunStatus ExecuteForFuzzing(JSContext* cx, Handle<JSAtom*> pattern,
+                                  Handle<JSLinearString*> input,
                                   JS::RegExpFlags flags, size_t startIndex,
                                   VectorMatchPairs* matches,
                                   RegExpShared::CodeKind codeKind);
@@ -75,7 +75,13 @@ uint32_t CaseInsensitiveCompareNonUnicode(const char16_t* substring1,
 uint32_t CaseInsensitiveCompareUnicode(const char16_t* substring1,
                                        const char16_t* substring2,
                                        size_t byteLength);
+bool IsCharacterInRangeArray(uint32_t c, ByteArrayData* ranges);
 
+#ifdef DEBUG
+bool IsolateShouldSimulateInterrupt(Isolate* isolate);
+void IsolateSetShouldSimulateInterrupt(Isolate* isolate);
+void IsolateClearShouldSimulateInterrupt(Isolate* isolate);
+#endif
 }  // namespace irregexp
 }  // namespace js
 

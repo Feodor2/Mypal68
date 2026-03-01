@@ -370,6 +370,8 @@ const JSClass* WarpCacheIRTranspiler::classForGuardClassKind(
   switch (kind) {
     case GuardClassKind::Array:
       return &ArrayObject::class_;
+    case GuardClassKind::PlainObject:
+      return &PlainObject::class_;
     case GuardClassKind::ArrayBuffer:
       return &ArrayBufferObject::class_;
     case GuardClassKind::SharedArrayBuffer:
@@ -386,9 +388,10 @@ const JSClass* WarpCacheIRTranspiler::classForGuardClassKind(
       return &SetObject::class_;
     case GuardClassKind::Map:
       return &MapObject::class_;
-    default:
-      MOZ_CRASH("not yet supported");
+    case GuardClassKind::JSFunction:
+      break;
   }
+  MOZ_CRASH("unexpected kind");
 }
 
 bool WarpCacheIRTranspiler::emitGuardAnyClass(ObjOperandId objId,
@@ -1193,12 +1196,12 @@ bool WarpCacheIRTranspiler::emitGuardInt32IsNonNegative(
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitGuardIndexGreaterThanDenseInitLength(
+bool WarpCacheIRTranspiler::emitGuardIndexIsNotDenseElement(
     ObjOperandId objId, Int32OperandId indexId) {
   MDefinition* obj = getOperand(objId);
   MDefinition* index = getOperand(indexId);
 
-  auto* ins = MGuardIndexGreaterThanDenseInitLength::New(alloc(), obj, index);
+  auto* ins = MGuardIndexIsNotDenseElement::New(alloc(), obj, index);
   add(ins);
   setOperand(indexId, ins);
   return true;
@@ -1494,6 +1497,20 @@ bool WarpCacheIRTranspiler::emitLoadDynamicSlotResult(ObjOperandId objId,
 
   pushResult(load);
   return true;
+}
+
+bool WarpCacheIRTranspiler::emitLoadFixedSlot(ValOperandId resultId,
+                                              ObjOperandId objId,
+                                              uint32_t offsetOffset) {
+  MDefinition* obj = getOperand(objId);
+
+  size_t offset = int32StubField(offsetOffset);
+  uint32_t slotIndex = NativeObject::getFixedSlotIndexFromOffset(offset);
+
+  auto* load = MLoadFixedSlot::New(alloc(), obj, slotIndex);
+  add(load);
+
+  return defineOperand(resultId, load);
 }
 
 bool WarpCacheIRTranspiler::emitLoadFixedSlotResult(ObjOperandId objId,
@@ -4923,7 +4940,6 @@ MDefinition* WarpCacheIRTranspiler::convertWasmArg(MDefinition* arg,
     case wasm::ValType::F64:
       conversion = MToDouble::New(alloc(), arg);
       break;
-    case wasm::ValType::Rtt:
 #ifdef ENABLE_WASM_SIMD
     case wasm::ValType::V128:
 #endif
@@ -5224,6 +5240,57 @@ bool WarpCacheIRTranspiler::emitNewArrayObjectResult(uint32_t length,
   add(obj);
 
   pushResult(obj);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitCloseIterScriptedResult(ObjOperandId iterId,
+                                                        ObjOperandId calleeId,
+                                                        CompletionKind kind,
+                                                        uint32_t calleeNargs) {
+  MDefinition* iter = getOperand(iterId);
+  MDefinition* callee = getOperand(calleeId);
+
+  WrappedFunction* wrappedTarget = maybeCallTarget(callee, CallKind::Scripted);
+  MOZ_ASSERT(wrappedTarget);
+  MOZ_ASSERT(wrappedTarget->nargs() == calleeNargs);
+  MOZ_ASSERT(wrappedTarget->hasJitEntry());
+
+  bool constructing = false;
+  bool ignoresRval = false;
+  bool needsThisCheck = false;
+  bool isDOMCall = false;
+  CallInfo callInfo(alloc(), constructing, ignoresRval);
+  callInfo.initForCloseIter(iter, callee);
+  MCall* call = makeCall(callInfo, needsThisCheck, wrappedTarget, isDOMCall);
+  if (!call) {
+    return false;
+  }
+  addEffectful(call);
+  if (kind == CompletionKind::Throw) {
+    return resumeAfter(call);
+  }
+
+  // If we bail out here, after the call but before the CheckIsObj, we
+  // can't simply resume in the baseline interpreter. If we resume
+  // after the CloseIter, we won't check the return value. If we
+  // resume at the CloseIter, we will call the |return| method twice.
+  // Instead, we use a special resume mode that captures the
+  // intermediate value, and then checks that it's an object while
+  // bailing out.
+  current->push(call);
+  MResumePoint* resumePoint =
+      MResumePoint::New(alloc(), current, loc_.toRawBytecode(),
+                        ResumeMode::ResumeAfterCheckIsObject);
+  if (!resumePoint) {
+    return false;
+  }
+  call->setResumePoint(resumePoint);
+  current->pop();
+
+  MCheckIsObj* check = MCheckIsObj::New(
+      alloc(), call, uint8_t(CheckIsObjectKind::IteratorReturn));
+  add(check);
+
   return true;
 }
 

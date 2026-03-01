@@ -410,12 +410,15 @@ class ElementSpecific {
                                    size_t offset = 0) {
     MOZ_ASSERT(target->type() == TypeIDOfType<T>::id,
                "target type and NativeType must match");
-    MOZ_ASSERT(!target->hasDetachedBuffer(), "target isn't detached");
     MOZ_ASSERT(!source->is<TypedArrayObject>(),
                "use setFromTypedArray instead of this method");
+    MOZ_ASSERT_IF(target->hasDetachedBuffer(), target->length() == 0);
+    MOZ_ASSERT_IF(!target->hasDetachedBuffer(), offset <= target->length());
+    MOZ_ASSERT_IF(!target->hasDetachedBuffer(),
+                  len <= target->length() - offset);
 
     size_t i = 0;
-    if (source->is<NativeObject>()) {
+    if (source->is<NativeObject>() && !target->hasDetachedBuffer()) {
       // Attempt fast-path infallible conversion of dense elements up to
       // the first potentially side-effectful lookup or conversion.
       size_t bound = std::min<size_t>(
@@ -457,10 +460,13 @@ class ElementSpecific {
         return false;
       }
 
-      len = std::min<size_t>(len, target->length());
-      if (i >= len) {
-        break;
+      // Ignore out-of-bounds writes, but still execute getElement/valueToNative
+      // because of observable side-effects.
+      if (offset + i >= target->length()) {
+        continue;
       }
+
+      MOZ_ASSERT(!target->hasDetachedBuffer());
 
       // Compute every iteration in case getElement/valueToNative
       // detaches the underlying array buffer or GC moves the data.
@@ -477,7 +483,7 @@ class ElementSpecific {
    */
   static bool initFromIterablePackedArray(JSContext* cx,
                                           Handle<TypedArrayObject*> target,
-                                          HandleArrayObject source) {
+                                          Handle<ArrayObject*> source) {
     MOZ_ASSERT(target->type() == TypeIDOfType<T>::id,
                "target type and NativeType must match");
     MOZ_ASSERT(!target->hasDetachedBuffer(), "target isn't detached");

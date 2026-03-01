@@ -244,8 +244,7 @@ void InitARMFlags() {
 
   FILE* fp = fopen("/proc/cpuinfo", "r");
   if (fp) {
-    char buf[1024];
-    memset(buf, 0, sizeof(buf));
+    char buf[1024] = {};
     size_t len = fread(buf, sizeof(char), sizeof(buf) - 1, fp);
     fclose(fp);
     buf[len] = '\0';
@@ -461,7 +460,7 @@ uint32_t FloatRegisters::ActualTotalPhys() {
   return 16;
 }
 
-void FlushICache(void* code, size_t size, bool codeIsThreadLocal) {
+void FlushICache(void* code, size_t size) {
 #if defined(JS_SIMULATOR_ARM)
   js::jit::SimulatorProcess::FlushICache(code, size);
 
@@ -504,6 +503,16 @@ void FlushICache(void* code, size_t size, bool codeIsThreadLocal) {
 
 #else
 #  error "Unexpected platform"
+#endif
+}
+
+void FlushExecutionContext() {
+#ifndef JS_SIMULATOR_ARM
+  // Ensure that any instructions already in the pipeline are discarded and
+  // reloaded from the icache.
+  asm volatile("isb\n" : : : "memory");
+#else
+  // We assume the icache flushing routines on other platforms take care of this
 #endif
 }
 

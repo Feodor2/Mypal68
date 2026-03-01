@@ -137,7 +137,7 @@ enum class GCAbortReason {
   _(FinalizationRegistryRecordVector)      \
   _(FinalizationRegistryRegistrations)     \
   _(FinalizationRecordVector)              \
-  _(ZoneAllocPolicy)                       \
+  _(TrackedAllocPolicy)                    \
   _(SharedArrayRawBuffer)                  \
   _(XDRBufferElements)                     \
   _(GlobalObjectData)                      \

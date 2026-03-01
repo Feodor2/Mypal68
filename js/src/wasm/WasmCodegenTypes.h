@@ -44,11 +44,6 @@ using mozilla::EnumeratedArray;
 struct TableDesc;
 struct V128;
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-bool IsWormholeTrigger(const V128& shuffleMask);
-jit::SimdConstant WormholeSignature();
-#endif
-
 // ArgTypeVector type.
 //
 // Functions usually receive one ABI argument per WebAssembly argument.  However
@@ -212,22 +207,6 @@ struct CallableOffsets : Offsets {
 
 WASM_DECLARE_CACHEABLE_POD(CallableOffsets);
 
-struct JitExitOffsets : CallableOffsets {
-  MOZ_IMPLICIT JitExitOffsets()
-      : CallableOffsets(), untrustedFPStart(0), untrustedFPEnd(0) {}
-
-  // There are a few instructions in the Jit exit where FP may be trash
-  // (because it may have been clobbered by the JS Jit), known as the
-  // untrusted FP zone.
-  uint32_t untrustedFPStart;
-  uint32_t untrustedFPEnd;
-
-  WASM_CHECK_CACHEABLE_POD_WITH_PARENT(CallableOffsets, untrustedFPStart,
-                                       untrustedFPEnd);
-};
-
-WASM_DECLARE_CACHEABLE_POD(JitExitOffsets);
-
 struct FuncOffsets : CallableOffsets {
   MOZ_IMPLICIT FuncOffsets()
       : CallableOffsets(), uncheckedCallEntry(0), tierEntry(0) {}
@@ -286,10 +265,6 @@ class CodeRange {
           uint8_t beginToUncheckedCallEntry_;
           uint8_t beginToTierEntry_;
         } func;
-        struct {
-          uint16_t beginToUntrustedFPStart_;
-          uint16_t beginToUntrustedFPEnd_;
-        } jitExit;
       };
     };
     Trap trap_;
@@ -299,9 +274,7 @@ class CodeRange {
   WASM_CHECK_CACHEABLE_POD(begin_, ret_, end_, u.funcIndex_,
                            u.func.lineOrBytecode_,
                            u.func.beginToUncheckedCallEntry_,
-                           u.func.beginToTierEntry_,
-                           u.jitExit.beginToUntrustedFPStart_,
-                           u.jitExit.beginToUntrustedFPEnd_, u.trap_, kind_);
+                           u.func.beginToTierEntry_, u.trap_, kind_);
 
  public:
   CodeRange() = default;
@@ -309,7 +282,6 @@ class CodeRange {
   CodeRange(Kind kind, uint32_t funcIndex, Offsets offsets);
   CodeRange(Kind kind, CallableOffsets offsets);
   CodeRange(Kind kind, uint32_t funcIndex, CallableOffsets);
-  CodeRange(uint32_t funcIndex, JitExitOffsets offsets);
   CodeRange(uint32_t funcIndex, uint32_t lineOrBytecode, FuncOffsets offsets);
 
   void offsetBy(uint32_t offset) {
@@ -340,12 +312,12 @@ class CodeRange {
   bool isDebugTrap() const { return kind() == DebugTrap; }
   bool isThunk() const { return kind() == FarJumpIsland; }
 
-  // Function, import exits and trap exits have standard callable prologues
-  // and epilogues. Asynchronous frame iteration needs to know the offset of
-  // the return instruction to calculate the frame pointer.
+  // Functions, import exits, trap exits and JitEntry stubs have standard
+  // callable prologues and epilogues. Asynchronous frame iteration needs to
+  // know the offset of the return instruction to calculate the frame pointer.
 
   bool hasReturn() const {
-    return isFunction() || isImportExit() || isDebugTrap();
+    return isFunction() || isImportExit() || isDebugTrap() || isJitEntry();
   }
   uint32_t ret() const {
     MOZ_ASSERT(hasReturn());
@@ -394,18 +366,6 @@ class CodeRange {
     return u.func.lineOrBytecode_;
   }
 
-  // ImportJitExit have a particular range where the value of FP can't be
-  // trusted for profiling and thus must be ignored.
-
-  uint32_t jitExitUntrustedFPStart() const {
-    MOZ_ASSERT(isImportJitExit());
-    return begin_ + u.jitExit.beginToUntrustedFPStart_;
-  }
-  uint32_t jitExitUntrustedFPEnd() const {
-    MOZ_ASSERT(isImportJitExit());
-    return begin_ + u.jitExit.beginToUntrustedFPEnd_;
-  }
-
   // A sorted array of CodeRanges can be looked up via BinarySearch and
   // OffsetInCode.
 
@@ -432,9 +392,9 @@ extern const CodeRange* LookupInSorted(const CodeRangeVector& codeRanges,
 // adds the function index of the callee.
 
 class CallSiteDesc {
-  static constexpr size_t LINE_OR_BYTECODE_BITS_SIZE = 29;
+  static constexpr size_t LINE_OR_BYTECODE_BITS_SIZE = 28;
   uint32_t lineOrBytecode_ : LINE_OR_BYTECODE_BITS_SIZE;
-  uint32_t kind_ : 3;
+  uint32_t kind_ : 4;
 
   WASM_CHECK_CACHEABLE_POD(lineOrBytecode_, kind_);
 
@@ -447,6 +407,8 @@ class CallSiteDesc {
     Import,        // wasm import call
     Indirect,      // dynamic callee called via register, context on stack
     IndirectFast,  // dynamically determined to be same-instance
+    FuncRef,       // call using direct function reference
+    FuncRefFast,   // call using direct function reference within same-instance
     Symbolic,      // call to a single symbolic callee
     EnterFrame,    // call to a enter frame handler
     LeaveFrame,    // call to a leave frame handler
@@ -465,10 +427,14 @@ class CallSiteDesc {
   Kind kind() const { return Kind(kind_); }
   bool isImportCall() const { return kind() == CallSiteDesc::Import; }
   bool isIndirectCall() const { return kind() == CallSiteDesc::Indirect; }
+  bool isFuncRefCall() const { return kind() == CallSiteDesc::FuncRef; }
   bool mightBeCrossInstance() const {
-    return isImportCall() || isIndirectCall();
+    return isImportCall() || isIndirectCall() || isFuncRefCall();
   }
 };
+
+static_assert(js::wasm::MaxFunctionBytes <=
+              CallSiteDesc::MAX_LINE_OR_BYTECODE_VALUE);
 
 WASM_DECLARE_CACHEABLE_POD(CallSiteDesc);
 
@@ -665,7 +631,10 @@ class CalleeDesc {
     Builtin,
 
     // Like Builtin, but automatically passes Instance* as first argument.
-    BuiltinInstanceMethod
+    BuiltinInstanceMethod,
+
+    // Calls a function reference.
+    FuncRef,
   };
 
  private:
@@ -698,6 +667,7 @@ class CalleeDesc {
   static CalleeDesc asmJSTable(const TableDesc& desc);
   static CalleeDesc builtin(SymbolicAddress callee);
   static CalleeDesc builtinInstanceMethod(SymbolicAddress callee);
+  static CalleeDesc wasmFuncRef();
   Which which() const { return which_; }
   uint32_t funcIndex() const {
     MOZ_ASSERT(which_ == Func);

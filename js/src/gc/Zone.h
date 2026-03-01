@@ -209,7 +209,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   js::ZoneOrGCTaskData<js::gc::UniqueIdMap> uniqueIds_;
 
   // Number of allocations since the most recent minor GC for this thread.
-  mozilla::Atomic<uint32_t, mozilla::Relaxed> tenuredAllocsSinceMinorGC_;
+  uint32_t tenuredAllocsSinceMinorGC_ = 0;
 
   // Live weakmaps in this zone.
   js::ZoneOrGCTaskData<mozilla::LinkedList<js::WeakMapBase>> gcWeakMapList_;
@@ -236,11 +236,12 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   // This is used by the GC to trace them all first when compacting, since the
   // TypedObject trace hook may access these objects.
   //
-  // (Although this uses HeapPtrObject, the set contains only tenured objects so no
-  // post-barrier is required, and these are weak references so no pre-barrier
-  // is required.)
+  // (Although this uses HeapPtr<JSObject*>, the set contains only tenured
+  // objects so no post-barrier is required, and these are weak references so no
+  // pre-barrier is required.)
   using RttValueObjectSet =
-      js::GCHashSet<js::HeapPtrObject, js::MovableCellHasher<js::HeapPtrObject>,
+      js::GCHashSet<js::HeapPtr<JSObject*>,
+                    js::MovableCellHasher<js::HeapPtr<JSObject*>>,
                     js::SystemAllocPolicy>;
 
   js::ZoneData<JS::WeakCache<RttValueObjectSet>> rttValueObjects_;
@@ -280,7 +281,8 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   friend class js::gc::ZoneList;
 
   using KeptAliveSet =
-      JS::GCHashSet<js::HeapPtrObject, js::MovableCellHasher<js::HeapPtrObject>,
+      JS::GCHashSet<js::HeapPtr<JSObject*>,
+                    js::MovableCellHasher<js::HeapPtr<JSObject*>>,
                     js::ZoneAllocPolicy>;
   friend class js::WeakRefObject;
   js::ZoneOrGCTaskData<KeptAliveSet> keptObjects;
@@ -408,12 +410,14 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   void notifyObservingDebuggers();
 
-  void addTenuredAllocsSinceMinorGC(uint32_t allocs) {
-    tenuredAllocsSinceMinorGC_ += allocs;
-  }
+  void noteTenuredAlloc() { tenuredAllocsSinceMinorGC_++; }
+
+  uint32_t* addressOfTenuredAllocCount() { return &tenuredAllocsSinceMinorGC_; }
 
   uint32_t getAndResetTenuredAllocsSinceMinorGC() {
-    return tenuredAllocsSinceMinorGC_.exchange(0);
+    uint32_t res = tenuredAllocsSinceMinorGC_;
+    tenuredAllocsSinceMinorGC_ = 0;
+    return res;
   }
 
   mozilla::LinkedList<js::WeakMapBase>& gcWeakMapList() {

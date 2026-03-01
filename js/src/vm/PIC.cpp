@@ -40,14 +40,14 @@ bool js::ForOfPIC::Chain::initialize(JSContext* cx) {
   MOZ_ASSERT(!initialized_);
 
   // Get the canonical Array.prototype
-  RootedNativeObject arrayProto(
+  Rooted<NativeObject*> arrayProto(
       cx, GlobalObject::getOrCreateArrayPrototype(cx, cx->global()));
   if (!arrayProto) {
     return false;
   }
 
   // Get the canonical ArrayIterator.prototype
-  RootedNativeObject arrayIteratorProto(
+  Rooted<NativeObject*> arrayIteratorProto(
       cx, GlobalObject::getOrCreateArrayIteratorPrototype(cx, cx->global()));
   if (!arrayIteratorProto) {
     return false;
@@ -110,7 +110,7 @@ bool js::ForOfPIC::Chain::initialize(JSContext* cx) {
 }
 
 bool js::ForOfPIC::Chain::tryOptimizeArray(JSContext* cx,
-                                           HandleArrayObject array,
+                                           Handle<ArrayObject*> array,
                                            bool* optimized) {
   MOZ_ASSERT(optimized);
 
@@ -164,7 +164,7 @@ bool js::ForOfPIC::Chain::tryOptimizeArray(JSContext* cx,
   }
 
   // Good to optimize now, create stub to add.
-  RootedShape shape(cx, array->shape());
+  Rooted<Shape*> shape(cx, array->shape());
   Stub* stub = cx->new_<Stub>(shape);
   if (!stub) {
     return false;

@@ -27,11 +27,8 @@
 #include "util/Memory.h"
 #include "util/Text.h"
 #include "vm/HelperThreads.h"
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingTypes.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
-#include "wasm/WasmCraneliftCompile.h"
 #include "wasm/WasmGC.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmStubs.h"
@@ -89,9 +86,7 @@ ModuleGenerator::ModuleGenerator(const CompileArgs& args,
       outstanding_(0),
       currentTask_(nullptr),
       batchedBytecode_(0),
-      finishedFuncDefs_(false) {
-  MOZ_ASSERT(IsCompilingWasm());
-}
+      finishedFuncDefs_(false) {}
 
 ModuleGenerator::~ModuleGenerator() {
   MOZ_ASSERT_IF(finishedFuncDefs_, !batchedBytecode_);
@@ -476,6 +471,8 @@ bool ModuleGenerator::linkCallSites() {
       case CallSiteDesc::Breakpoint:
       case CallSiteDesc::EnterFrame:
       case CallSiteDesc::LeaveFrame:
+      case CallSiteDesc::FuncRef:
+      case CallSiteDesc::FuncRefFast:
         break;
       case CallSiteDesc::Func: {
         if (funcIsCompiled(target.funcIndex())) {
@@ -612,6 +609,7 @@ static bool AppendForEach(Vec* dstVec, const Vec& srcVec, MutateOp mutateOp) {
 
 bool ModuleGenerator::linkCompiledCode(CompiledCode& code) {
   AutoCreatedBy acb(masm_, "ModuleGenerator::linkCompiledCode");
+  JitContext jcx;
 
   // Before merging in new code, if calls in a prior code range might go out of
   // range, insert far jumps to extend the range.
@@ -715,13 +713,6 @@ static bool ExecuteCompileTask(CompileTask* task, UniqueChars* error) {
   switch (task->compilerEnv.tier()) {
     case Tier::Optimized:
       switch (task->compilerEnv.optimizedBackend()) {
-        case OptimizedBackend::Cranelift: //1668373
-          /*if (!CraneliftCompileFunctions(task->moduleEnv, task->compilerEnv,
-                                         task->lifo, task->inputs,
-                                         &task->output, error)) {*/
-            return false;
-          //}
-          break;
         case OptimizedBackend::Ion:
           if (!IonCompileFunctions(task->moduleEnv, task->compilerEnv,
                                    task->lifo, task->inputs, &task->output,
@@ -747,9 +738,6 @@ static bool ExecuteCompileTask(CompileTask* task, UniqueChars* error) {
 }
 
 void CompileTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
-  AutoTraceLog logCompile(logger, TraceLogger_WasmCompilation);
-
   UniqueChars error;
   bool ok;
 
@@ -876,9 +864,6 @@ bool ModuleGenerator::compileFuncDef(uint32_t funcIndex,
       switch (compilerEnv_->optimizedBackend()) {
         case OptimizedBackend::Ion:
           threshold = JitOptions.wasmBatchIonThreshold;
-          break;
-        case OptimizedBackend::Cranelift:
-          threshold = JitOptions.wasmBatchCraneliftThreshold;
           break;
         default:
           MOZ_CRASH("Invalid optimizedBackend value");

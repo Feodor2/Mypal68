@@ -811,7 +811,6 @@ void BaseCompiler::saveRegisterReturnValues(const ResultType& resultType) {
       case ValType::F32:
         masm.storeFloat32(RegF32(result.fpr()), dest);
         break;
-      case ValType::Rtt:
       case ValType::Ref: {
         uint32_t flag =
             DebugFrame::hasSpilledRegisterRefResultBitMask(registerResultIdx);
@@ -862,7 +861,6 @@ void BaseCompiler::restoreRegisterReturnValues(const ResultType& resultType) {
       case ValType::F32:
         masm.loadFloat32(src, RegF32(result.fpr()));
         break;
-      case ValType::Rtt:
       case ValType::Ref:
         masm.loadPtr(src, RegRef(result.gpr()));
         break;
@@ -927,7 +925,6 @@ void BaseCompiler::popRegisterResults(ABIResultIter& iter) {
       case ValType::F64:
         popF64(RegF64(result.fpr()));
         break;
-      case ValType::Rtt:
       case ValType::Ref:
         popRef(RegRef(result.gpr()));
         break;
@@ -1190,7 +1187,6 @@ bool BaseCompiler::pushResults(ResultType type, StackHeight resultsBase) {
       case ValType::F64:
         pushF64(RegF64(result.fpr()));
         break;
-      case ValType::Rtt:
       case ValType::Ref:
         pushRef(RegRef(result.gpr()));
         break;
@@ -1518,7 +1514,6 @@ void BaseCompiler::passArg(ValType type, const Stk& arg, FunctionCall* call) {
       }
       break;
     }
-    case ValType::Rtt:
     case ValType::Ref: {
       ABIArg argLoc = call->abi.next(MIRType::RefOrNull);
       if (argLoc.kind() == ABIArg::Stack) {
@@ -1593,6 +1588,18 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                         mozilla::Nothing(), fastCallOffset, slowCallOffset);
   return true;
 }
+
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+void BaseCompiler::callRef(const Stk& calleeRef, const FunctionCall& call,
+                           CodeOffset* fastCallOffset,
+                           CodeOffset* slowCallOffset) {
+  CallSiteDesc desc(call.lineOrBytecode, CallSiteDesc::FuncRef);
+  CalleeDesc callee = CalleeDesc::wasmFuncRef();
+
+  loadRef(calleeRef, RegRef(WasmCallRefReg));
+  masm.wasmCallRef(desc, callee, fastCallOffset, slowCallOffset);
+}
+#endif
 
 // Precondition: sync()
 
@@ -4006,7 +4013,6 @@ bool BaseCompiler::emitCatch() {
         break;
       }
 #endif
-      case ValType::Rtt:
       case ValType::Ref: {
         // TODO/AnyRef-boxing: With boxed immediates and strings, this may need
         // to handle other kinds of values.
@@ -4357,7 +4363,6 @@ bool BaseCompiler::emitThrow() {
         break;
       }
 #endif
-      case ValType::Rtt:
       case ValType::Ref: {
         RegPtr valueAddr(PreBarrierReg);
         needPtr(valueAddr);
@@ -4730,6 +4735,66 @@ bool BaseCompiler::emitCallIndirect() {
   return pushCallResults(baselineCall, resultType, results);
 }
 
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+bool BaseCompiler::emitCallRef() {
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
+
+  const FuncType* funcType;
+  Nothing unused_callee;
+  BaseNothingVector unused_args{};
+  if (!iter_.readCallRef(&funcType, &unused_callee, &unused_args)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  sync();
+
+  // Stack: ... arg1 .. argn callee
+
+  uint32_t numArgs = funcType->args().length() + 1;
+  size_t stackArgBytes = stackConsumed(numArgs);
+
+  ResultType resultType(ResultType::Vector(funcType->results()));
+  StackResultsLoc results;
+  if (!pushStackResultsForCall(resultType, RegPtr(ABINonArgReg0), &results)) {
+    return false;
+  }
+
+  FunctionCall baselineCall(lineOrBytecode);
+  // State and realm are restored as needed by by callRef (really by
+  // MacroAssembler::wasmCallRef).
+  beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
+
+  if (!emitCallArgs(funcType->args(), results, &baselineCall,
+                    CalleeOnStack::True)) {
+    return false;
+  }
+
+  const Stk& callee = peek(results.count());
+  CodeOffset fastCallOffset;
+  CodeOffset slowCallOffset;
+  callRef(callee, baselineCall, &fastCallOffset, &slowCallOffset);
+  if (!createStackMap("emitCallRef", fastCallOffset)) {
+    return false;
+  }
+  if (!createStackMap("emitCallRef", slowCallOffset)) {
+    return false;
+  }
+
+  popStackResultsAfterCall(results, stackArgBytes);
+
+  endCall(baselineCall, stackArgBytes);
+
+  popValueStackBy(numArgs);
+
+  captureCallResultRegisters(resultType);
+  return pushCallResults(baselineCall, resultType, results);
+}
+#endif
+
 void BaseCompiler::emitRound(RoundingMode roundingMode, ValType operandType) {
   if (operandType == ValType::F32) {
     RegF32 f0 = popF32();
@@ -4975,7 +5040,6 @@ bool BaseCompiler::emitGetLocal() {
     case ValType::F32:
       pushLocalF32(slot);
       break;
-    case ValType::Rtt:
     case ValType::Ref:
       pushLocalRef(slot);
       break;
@@ -5049,7 +5113,6 @@ bool BaseCompiler::emitSetOrTeeLocal(uint32_t slot) {
       break;
     }
 #endif
-    case ValType::Rtt:
     case ValType::Ref: {
       RegRef rv = popRef();
       syncLocal(slot);
@@ -5154,7 +5217,6 @@ bool BaseCompiler::emitGetGlobal() {
       pushF64(rv);
       break;
     }
-    case ValType::Rtt:
     case ValType::Ref: {
       RegRef rv = needRef();
       ScratchPtr tmp(*this);
@@ -5220,7 +5282,6 @@ bool BaseCompiler::emitSetGlobal() {
       freeF64(rv);
       break;
     }
-    case ValType::Rtt:
     case ValType::Ref: {
       RegPtr valueAddr(PreBarrierReg);
       needPtr(valueAddr);
@@ -6445,13 +6506,12 @@ bool BaseCompiler::emitGcArraySet(RegRef object, RegPtr data, RegI32 index,
   return true;
 }
 
-bool BaseCompiler::emitStructNewWithRtt() {
+bool BaseCompiler::emitStructNew() {
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   uint32_t typeIndex;
-  Nothing rtt;
   BaseNothingVector args{};
-  if (!iter_.readStructNewWithRtt(&typeIndex, &rtt, &args)) {
+  if (!iter_.readStructNew(&typeIndex, &args)) {
     return false;
   }
 
@@ -6461,10 +6521,9 @@ bool BaseCompiler::emitStructNewWithRtt() {
 
   const StructType& structType = (*moduleEnv_.types)[typeIndex].structType();
 
-  // Allocate zeroed storage.  The parameter to StructNew is a rtt value that is
-  // guaranteed to be at the top of the stack by validation.
-  //
-  // Traps on OOM.
+  // Allocate a default initialized struct. This requires the rtt value for the
+  // struct to be pushed on the stack. This will trap on OOM.
+  emitGcCanon(typeIndex);
   if (!emitInstanceCall(lineOrBytecode, SASigStructNew)) {
     return false;
   }
@@ -6525,18 +6584,21 @@ bool BaseCompiler::emitStructNewWithRtt() {
   return true;
 }
 
-bool BaseCompiler::emitStructNewDefaultWithRtt() {
-  // Allocate zeroed storage.  The parameter to StructNew is a rtt value that is
-  // guaranteed to be at the top of the stack by validation.
-  //
-  // Traps on OOM.
+bool BaseCompiler::emitStructNewDefault() {
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
-  // (rtt) -> ref; the type index is just dropped on the floor
-  return emitInstanceCallOp(SASigStructNew, [this]() -> bool {
-    uint32_t unusedTypeIndex;
-    Nothing unusedRtt;
-    return iter_.readStructNewDefaultWithRtt(&unusedTypeIndex, &unusedRtt);
-  });
+  uint32_t typeIndex;
+  if (!iter_.readStructNewDefault(&typeIndex)) {
+    return false;
+  }
+  if (deadCode_) {
+    return true;
+  }
+
+  // Allocate a default initialized struct. This requires the rtt value for the
+  // struct to be pushed on the stack. This will trap on OOM.
+  emitGcCanon(typeIndex);
+  return emitInstanceCall(lineOrBytecode, SASigStructNew);
 }
 
 bool BaseCompiler::emitStructGet(FieldExtension extension) {
@@ -6657,12 +6719,12 @@ bool BaseCompiler::emitStructSet() {
   return true;
 }
 
-bool BaseCompiler::emitArrayNewWithRtt() {
+bool BaseCompiler::emitArrayNew() {
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   uint32_t typeIndex;
   Nothing nothing;
-  if (!iter_.readArrayNewWithRtt(&typeIndex, &nothing, &nothing, &nothing)) {
+  if (!iter_.readArrayNew(&typeIndex, &nothing, &nothing)) {
     return false;
   }
 
@@ -6672,10 +6734,9 @@ bool BaseCompiler::emitArrayNewWithRtt() {
 
   const ArrayType& arrayType = (*moduleEnv_.types)[typeIndex].arrayType();
 
-  // Allocate zeroed storage.  The parameter to ArrayNew is a rtt value and
-  // length that are guaranteed to be at the top of the stack by validation.
-  //
-  // Traps on OOM.
+  // Allocate a default initialized array. This requires the rtt value for the
+  // array to be pushed on the stack. This will trap on OOM.
+  emitGcCanon(typeIndex);
   if (!emitInstanceCall(lineOrBytecode, SASigArrayNew)) {
     return false;
   }
@@ -6729,19 +6790,23 @@ bool BaseCompiler::emitArrayNewWithRtt() {
   return true;
 }
 
-bool BaseCompiler::emitArrayNewDefaultWithRtt() {
-  // Allocate zeroed storage. The parameter to ArrayNew is a rtt value that is
-  // guaranteed to be at the top of the stack by validation.
-  //
-  // Traps on OOM.
+bool BaseCompiler::emitArrayNewDefault() {
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
-  // (rtt) -> ref; the type index is dropped on the floor.
-  return emitInstanceCallOp(SASigArrayNew, [this]() -> bool {
-    uint32_t unusedTypeIndex;
-    Nothing nothing;
-    return iter_.readArrayNewDefaultWithRtt(&unusedTypeIndex, &nothing,
-                                            &nothing);
-  });
+  uint32_t typeIndex;
+  Nothing nothing;
+  if (!iter_.readArrayNewDefault(&typeIndex, &nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  // Allocate a default initialized array. This requires the rtt value for the
+  // array to be pushed on the stack. This will trap on OOM.
+  emitGcCanon(typeIndex);
+  return emitInstanceCall(lineOrBytecode, SASigArrayNew);
 }
 
 bool BaseCompiler::emitArrayGet(FieldExtension extension) {
@@ -6883,26 +6948,12 @@ bool BaseCompiler::emitArrayLen() {
   return true;
 }
 
-bool BaseCompiler::emitRttCanon() {
-  ValType rttType;
-  if (!iter_.readRttCanon(&rttType)) {
-    return false;
-  }
-
-  if (deadCode_) {
-    return true;
-  }
-
-  emitGcCanon(rttType.typeIndex());
-  return true;
-}
-
-bool BaseCompiler::emitRttSub() {
+bool BaseCompiler::emitRefTest() {
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   Nothing nothing;
-  uint32_t rttSubTypeIndex;
-  if (!iter_.readRttSub(&nothing, &rttSubTypeIndex)) {
+  uint32_t typeIndex;
+  if (!iter_.readRefTest(&typeIndex, &nothing)) {
     return false;
   }
 
@@ -6910,36 +6961,16 @@ bool BaseCompiler::emitRttSub() {
     return true;
   }
 
-  // rtt.sub $t; [(rtt $t' _)] -> [(rtt $t _)]
-  // Push (rtt.canon $t) so that we can cache the result and yield the
-  // same rtt value for the same $t operand.
-  emitGcCanon(rttSubTypeIndex);
-
-  if (!emitInstanceCall(lineOrBytecode, SASigRttSub)) {
-    return false;
-  }
-  return true;
-}
-
-bool BaseCompiler::emitRefTest() {
-  // refTest builtin has same signature as ref.test instruction, stack is
-  // guaranteed to be in the right condition due to validation.
-  return emitInstanceCallOp(SASigRefTest, [this]() -> bool {
-    Nothing nothing;
-    uint32_t unusedRttTypeIndex;
-    uint32_t unusedRttDepth;
-    return iter_.readRefTest(&nothing, &unusedRttTypeIndex, &unusedRttDepth,
-                             &nothing);
-  });
+  emitGcCanon(typeIndex);
+  return emitInstanceCall(lineOrBytecode, SASigRefTest);
 }
 
 bool BaseCompiler::emitRefCast() {
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
   Nothing nothing;
-  uint32_t rttTypeIndex;
-  uint32_t rttDepth;
-  if (!iter_.readRefCast(&nothing, &rttTypeIndex, &rttDepth, &nothing)) {
+  uint32_t typeIndex;
+  if (!iter_.readRefCast(&typeIndex, &nothing)) {
     return false;
   }
 
@@ -6947,7 +6978,6 @@ bool BaseCompiler::emitRefCast() {
     return true;
   }
 
-  RegRef rttPtr = popRef();
   RegRef refPtr = popRef();
 
   // 1. duplicate and shuffle from [ref, rtt] to [ref, ref, rtt]
@@ -6955,7 +6985,7 @@ bool BaseCompiler::emitRefCast() {
   moveRef(refPtr, castedPtr);
   pushRef(castedPtr);
   pushRef(refPtr);
-  pushRef(rttPtr);
+  emitGcCanon(typeIndex);
 
   // 2. ref.test : [ref, rtt] -> [i32]
   if (!emitInstanceCall(lineOrBytecode, SASigRefTest)) {
@@ -6978,13 +7008,11 @@ bool BaseCompiler::emitBrOnCast() {
 
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
   uint32_t relativeDepth;
-  Nothing unused{};
   BaseNothingVector unused_values{};
-  uint32_t rttTypeIndex;
-  uint32_t rttDepth;
+  uint32_t typeIndex;
   ResultType branchTargetType;
-  if (!iter_.readBrOnCast(&relativeDepth, &unused, &rttTypeIndex, &rttDepth,
-                          &branchTargetType, &unused_values)) {
+  if (!iter_.readBrOnCast(&relativeDepth, &typeIndex, &branchTargetType,
+                          &unused_values)) {
     return false;
   }
 
@@ -6995,7 +7023,6 @@ bool BaseCompiler::emitBrOnCast() {
   Control& target = controlItem(relativeDepth);
   target.bceSafeOnExit &= bceSafe_;
 
-  RegRef rttPtr = popRef();
   RegRef refPtr = popRef();
 
   // 1. duplicate and shuffle from [T*, ref, rtt] to [T*, ref, ref, rtt]
@@ -7003,7 +7030,7 @@ bool BaseCompiler::emitBrOnCast() {
   moveRef(refPtr, castedPtr);
   pushRef(castedPtr);
   pushRef(refPtr);
-  pushRef(rttPtr);
+  emitGcCanon(typeIndex);
 
   // 2. ref.test : [ref, rtt] -> [i32]
   if (!emitInstanceCall(lineOrBytecode, SASigRefTest)) {
@@ -8192,32 +8219,7 @@ bool BaseCompiler::emitVectorShuffle() {
   RegV128 rd, rs;
   pop2xV128(&rd, &rs);
 
-  bool emitShuffle = true;
-
-#  ifdef ENABLE_WASM_SIMD_WORMHOLE
-  if (moduleEnv_.simdWormholeEnabled() && IsWormholeTrigger(shuffleMask)) {
-    emitShuffle = false;
-    switch (shuffleMask.bytes[15]) {
-      case 0:
-        masm.loadConstantSimd128(WormholeSignature(), rd);
-        break;
-#    if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-      case 1:
-        masm.vpmaddubsw(rs, rd, rd);
-        break;
-      case 2:
-        masm.vpmaddwd(Operand(rs), rd, rd);
-        break;
-#    endif
-      default:
-        return iter_.fail("Unrecognized wormhole opcode");
-    }
-  }
-#  endif
-
-  if (emitShuffle) {
-    masm.shuffleInt8x16(shuffleMask.bytes, rs, rd);
-  }
+  masm.shuffleInt8x16(shuffleMask.bytes, rs, rd);
 
   freeV128(rs);
   pushV128(rd);
@@ -8564,6 +8566,13 @@ bool BaseCompiler::emitBody() {
         CHECK_NEXT(emitCall());
       case uint16_t(Op::CallIndirect):
         CHECK_NEXT(emitCallIndirect());
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+      case uint16_t(Op::CallRef):
+        if (!moduleEnv_.functionReferencesEnabled()) {
+          return iter_.unrecognizedOpcode(&op);
+        }
+        CHECK_NEXT(emitCallRef());
+#endif
 
       // Locals and globals
       case uint16_t(Op::LocalGet):
@@ -9132,10 +9141,10 @@ bool BaseCompiler::emitBody() {
           return iter_.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
-          case uint32_t(GcOp::StructNewWithRtt):
-            CHECK_NEXT(emitStructNewWithRtt());
-          case uint32_t(GcOp::StructNewDefaultWithRtt):
-            CHECK_NEXT(emitStructNewDefaultWithRtt());
+          case uint32_t(GcOp::StructNew):
+            CHECK_NEXT(emitStructNew());
+          case uint32_t(GcOp::StructNewDefault):
+            CHECK_NEXT(emitStructNewDefault());
           case uint32_t(GcOp::StructGet):
             CHECK_NEXT(emitStructGet(FieldExtension::None));
           case uint32_t(GcOp::StructGetS):
@@ -9144,10 +9153,10 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitStructGet(FieldExtension::Unsigned));
           case uint32_t(GcOp::StructSet):
             CHECK_NEXT(emitStructSet());
-          case uint32_t(GcOp::ArrayNewWithRtt):
-            CHECK_NEXT(emitArrayNewWithRtt());
-          case uint32_t(GcOp::ArrayNewDefaultWithRtt):
-            CHECK_NEXT(emitArrayNewDefaultWithRtt());
+          case uint32_t(GcOp::ArrayNew):
+            CHECK_NEXT(emitArrayNew());
+          case uint32_t(GcOp::ArrayNewDefault):
+            CHECK_NEXT(emitArrayNewDefault());
           case uint32_t(GcOp::ArrayGet):
             CHECK_NEXT(emitArrayGet(FieldExtension::None));
           case uint32_t(GcOp::ArrayGetS):
@@ -9158,10 +9167,6 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitArraySet());
           case uint32_t(GcOp::ArrayLen):
             CHECK_NEXT(emitArrayLen());
-          case uint32_t(GcOp::RttCanon):
-            CHECK_NEXT(emitRttCanon());
-          case uint32_t(GcOp::RttSub):
-            CHECK_NEXT(emitRttSub());
           case uint32_t(GcOp::RefTest):
             CHECK_NEXT(emitRefTest());
           case uint32_t(GcOp::RefCast):
@@ -9179,7 +9184,7 @@ bool BaseCompiler::emitBody() {
       // SIMD operations
       case uint16_t(Op::SimdPrefix): {
         uint32_t laneIndex;
-        if (!moduleEnv_.v128Enabled()) {
+        if (!moduleEnv_.simdAvailable()) {
           return iter_.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -10149,7 +10154,6 @@ void BaseCompiler::assertResultRegistersAvailable(ResultType type) {
       case ValType::F64:
         MOZ_ASSERT(isAvailableF64(RegF64(result.fpr())));
         break;
-      case ValType::Rtt:
       case ValType::Ref:
         MOZ_ASSERT(isAvailableRef(RegRef(result.gpr())));
         break;
@@ -10382,7 +10386,7 @@ bool js::wasm::BaselineCompileFunctions(const ModuleEnvironment& moduleEnv,
   // The MacroAssembler will sometimes access the jitContext.
 
   TempAllocator alloc(&lifo);
-  JitContext jitContext(&alloc);
+  JitContext jitContext;
   MOZ_ASSERT(IsCompilingWasm());
   WasmMacroAssembler masm(alloc, moduleEnv);
 

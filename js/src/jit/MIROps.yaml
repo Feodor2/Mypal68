@@ -1871,6 +1871,13 @@
   operands:
     iterator: Object
 
+- name: CloseIterCache
+  operands:
+    iter: Object
+  arguments:
+    completionKind: uint8_t
+  possibly_calls: true
+
 - name: InCache
   gen_boilerplate: false
 
@@ -2274,9 +2281,9 @@
   folds_to: custom
   alias_set: none
 
-# Guard the input index is greater than the dense initialized length of an
-# object.
-- name: GuardIndexGreaterThanDenseInitLength
+# Guard the input index is either greater than the dense initialized length of
+# an object, or a hole element.
+- name: GuardIndexIsNotDenseElement
   operands:
     object: Object
     index: Int32
@@ -2298,9 +2305,9 @@
   congruent_to: if_operands_equal
   alias_set: custom
 
-# Add or update a sparse element of an array object. It's allowed for the
-# sparse element to be already present on the array. It may also be an accessor
-# property, so this instruction is always marked as effectful.
+# Add or update a sparse element of an ArrayObject or PlainObject. It's allowed
+# for the sparse element to be already present on the object. It may also be an
+# accessor property, so this instruction is always marked as effectful.
 - name: CallAddOrUpdateSparseElement
   operands:
     object: Object
@@ -2310,8 +2317,8 @@
     strict: bool
   possibly_calls: true
 
-# Get a sparse element from an array object, possibly by calling an accessor
-# property.
+# Get a sparse element from an ArrayObject or PlainObject, possibly by calling
+# an accessor property.
 - name: CallGetSparseElement
   operands:
     object: Object

@@ -29,6 +29,7 @@
 #include "util/CompleteFile.h"     // js::FileContents, js::ReadCompleteFile
 #include "util/StringBuffer.h"     // js::StringBuffer
 #include "vm/EnvironmentObject.h"  // js::CreateNonSyntacticEnvironmentChain
+#include "vm/ErrorReporting.h"     // js::MainThreadErrorContext
 #include "vm/FunctionFlags.h"      // js::FunctionFlags
 #include "vm/Interpreter.h"        // js::Execute
 #include "vm/JSContext.h"          // JSContext
@@ -65,7 +66,9 @@ static JSScript* CompileSourceBuffer(JSContext* cx,
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
-  return frontend::CompileGlobalScript(cx, options, srcBuf, scopeKind);
+  MainThreadErrorContext ec(cx);
+  return frontend::CompileGlobalScript(
+      cx, &ec, cx->stackLimitForCurrentPrincipal(), options, srcBuf, scopeKind);
 }
 
 JSScript* JS::Compile(JSContext* cx, const ReadOnlyCompileOptions& options,
@@ -89,10 +92,12 @@ static JSScript* CompileSourceBufferAndStartIncrementalEncoding(
   ScopeKind scopeKind =
       options.nonSyntacticScope ? ScopeKind::NonSyntactic : ScopeKind::Global;
 
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
   auto stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-      cx, input.get(), srcBuf, scopeKind);
+      cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf,
+      scopeKind);
   if (!stencil) {
     return nullptr;
   }
@@ -228,11 +233,13 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
     return false;
   }
 
+  MainThreadErrorContext ec(cx);
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
-  Parser<FullParseHandler, char16_t> parser(cx, options, chars.get(), length,
-                                            /* foldConstants = */ true,
-                                            compilationState,
-                                            /* syntaxParser = */ nullptr);
+  Parser<FullParseHandler, char16_t> parser(
+      cx, &ec, cx->stackLimitForCurrentPrincipal(), options, chars.get(),
+      length,
+      /* foldConstants = */ true, compilationState,
+      /* syntaxParser = */ nullptr);
   if (!parser.checkOptions() || !parser.parse()) {
     // We ran into an error. If it was because we ran out of source, we
     // return false so our caller knows to try to collect more buffered
@@ -250,7 +257,7 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
 class FunctionCompiler {
  private:
   JSContext* const cx_;
-  RootedAtom nameAtom_;
+  Rooted<JSAtom*> nameAtom_;
   StringBuffer funStr_;
 
   uint32_t parameterListEnd_ = 0;
@@ -309,9 +316,10 @@ class FunctionCompiler {
 
     // Remember the position of ")".
     parameterListEnd_ = funStr_.length();
-    MOZ_ASSERT(FunctionConstructorMedialSigils[0] == ')');
+    static_assert(FunctionConstructorMedialSigils[0] == ')');
 
-    return funStr_.append(FunctionConstructorMedialSigils);
+    return funStr_.append(FunctionConstructorMedialSigils.data(),
+                          FunctionConstructorMedialSigils.length());
   }
 
   template <typename Unit>
@@ -323,7 +331,8 @@ class FunctionCompiler {
                      const ReadOnlyCompileOptions& optionsArg) {
     using js::frontend::FunctionSyntaxKind;
 
-    if (!funStr_.append(FunctionConstructorFinalBrace)) {
+    if (!funStr_.append(FunctionConstructorFinalBrace.data(),
+                        FunctionConstructorFinalBrace.length())) {
       return nullptr;
     }
 
@@ -366,7 +375,7 @@ class FunctionCompiler {
     FunctionSyntaxKind syntaxKind = FunctionSyntaxKind::Statement;
     RootedFunction fun(cx_);
     if (kind == ScopeKind::NonSyntactic) {
-      RootedScope enclosingScope(
+      Rooted<Scope*> enclosingScope(
           cx_, GlobalScope::createEmpty(cx_, ScopeKind::NonSyntactic));
       if (!enclosingScope) {
         return nullptr;
@@ -448,7 +457,7 @@ JS_PUBLIC_API bool JS::UpdateDebugMetadata(
     JSContext* cx, Handle<JSScript*> script, const InstantiateOptions& options,
     HandleValue privateValue, HandleString elementAttributeName,
     HandleScript introScript, HandleScript scriptOrModule) {
-  RootedScriptSourceObject sso(cx, script->sourceObject());
+  Rooted<ScriptSourceObject*> sso(cx, script->sourceObject());
 
   if (!ScriptSourceObject::initElementProperties(cx, sso,
                                                  elementAttributeName)) {
@@ -560,8 +569,10 @@ static bool EvaluateSourceBuffer(JSContext* cx, ScopeKind scopeKind,
   options.setNonSyntacticScope(scopeKind == ScopeKind::NonSyntactic);
   options.setIsRunOnce(true);
 
-  RootedScript script(
-      cx, frontend::CompileGlobalScript(cx, options, srcBuf, scopeKind));
+  MainThreadErrorContext ec(cx);
+  RootedScript script(cx, frontend::CompileGlobalScript(
+                              cx, &ec, cx->stackLimitForCurrentPrincipal(),
+                              options, srcBuf, scopeKind));
   if (!script) {
     return false;
   }

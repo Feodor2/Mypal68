@@ -52,7 +52,6 @@ Val::Val(const LitVal& val) {
       cell_.v128_ = val.v128();
       return;
 #endif
-    case ValType::Rtt:
     case ValType::Ref:
       cell_.ref_ = val.ref();
       return;
@@ -64,7 +63,7 @@ void Val::writeToHeapLocation(void* loc) const {
   if (type_.isRefRepr()) {
     // TODO/AnyRef-boxing: With boxed immediates and strings, the write
     // barrier is going to have to be more complicated.
-    *((GCPtrObject*)loc) = cell_.ref_.asJSObject();
+    *((GCPtr<JSObject*>*)loc) = cell_.ref_.asJSObject();
     return;
   }
   memcpy(loc, &cell_, type_.size());
@@ -332,8 +331,6 @@ bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
     case FieldType::V128:
       break;
 #endif
-    case FieldType::Rtt:
-      break;
     case FieldType::Ref:
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
       if (!type.isNullable() && val.isNull()) {
@@ -451,8 +448,6 @@ bool wasm::ToJSValue(JSContext* cx, const void* src, FieldType type,
     case FieldType::V128:
       break;
 #endif
-    case FieldType::Rtt:
-      break;
     case FieldType::Ref:
       switch (type.refTypeKind()) {
         case RefType::Func:

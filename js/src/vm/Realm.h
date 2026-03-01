@@ -5,6 +5,7 @@
 #ifndef vm_Realm_h
 #define vm_Realm_h
 
+#include "mozilla/Array.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
@@ -123,6 +124,25 @@ class NewProxyCache {
     entries_[0].shape = shape;
   }
   void purge() { entries_.reset(); }
+};
+
+// Cache for NewPlainObjectWithProperties. When the list of properties matches
+// a recently created object's shape, we can use this shape directly.
+class NewPlainObjectWithPropsCache {
+  static const size_t NumEntries = 4;
+  mozilla::Array<Shape*, NumEntries> entries_;
+
+ public:
+  NewPlainObjectWithPropsCache() { purge(); }
+
+  Shape* lookup(IdValuePair* properties, size_t nproperties) const;
+  void add(Shape* shape);
+
+  void purge() {
+    for (size_t i = 0; i < NumEntries; i++) {
+      entries_[i] = nullptr;
+    }
+  }
 };
 
 // [SMDOC] Object MetadataBuilder API
@@ -304,7 +324,7 @@ class JS::Realm : public JS::shadow::Realm {
   JS::RealmBehaviors behaviors_;
 
   friend struct ::JSContext;
-  js::WeakHeapPtrGlobalObject global_;
+  js::WeakHeapPtr<js::GlobalObject*> global_;
 
   // Note: this is private to enforce use of ObjectRealm::get(obj).
   js::ObjectRealm objects_;
@@ -403,6 +423,7 @@ class JS::Realm : public JS::shadow::Realm {
 
   js::DtoaCache dtoaCache;
   js::NewProxyCache newProxyCache;
+  js::NewPlainObjectWithPropsCache newPlainObjectWithPropsCache;
   js::ArraySpeciesLookup arraySpeciesLookup;
   js::PromiseLookup promiseLookup;
 
@@ -429,6 +450,17 @@ class JS::Realm : public JS::shadow::Realm {
   // NukeCrossCompartmentWrappers is called with the NukeAllReferences option.
   // This prevents us from creating new wrappers for the compartment.
   bool nukedIncomingWrappers = false;
+
+  // Enable async stack capturing for this realm even if
+  // JS::ContextOptions::asyncStackCaptureDebuggeeOnly_ is true.
+  //
+  // No-op when JS::ContextOptions::asyncStack_ is false, or
+  // JS::ContextOptions::asyncStackCaptureDebuggeeOnly_ is false.
+  //
+  // This can be used as a lightweight alternative for making the global
+  // debuggee, if the async stack capturing is necessary but no other debugging
+  // features are used.
+  bool isAsyncStackCapturingEnabled = false;
 
  private:
   void updateDebuggerObservesFlag(unsigned flag);

@@ -39,7 +39,6 @@
   _(IonSpewer, 500)                   \
   _(PerfSpewer, 500)                  \
   _(CacheIRSpewer, 500)               \
-  _(TraceLoggerThreadState, 500)      \
   _(DateTimeInfoMutex, 500)           \
   _(ProcessExecutableRegion, 500)     \
   _(BufferStreamState, 500)           \
@@ -61,7 +60,6 @@
   _(IrregexpLazyStatic, 600)          \
   _(ThreadId, 600)                    \
   _(WasmCodeSegmentMap, 600)          \
-  _(TraceLoggerGraphState, 600)       \
   _(VTuneLock, 600)
 
 namespace js {

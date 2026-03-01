@@ -21,6 +21,4 @@ info: |
 
 $DONOTEVALUATE();
 
-function _() {
-  (--x) = 1;
-}
+(--x) = 1;

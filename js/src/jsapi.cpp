@@ -55,7 +55,7 @@
 #include "js/Proxy.h"
 #include "js/ScriptPrivate.h"
 #include "js/StableStringChars.h"
-#include "js/Stack.h"
+#include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimitMax
 #include "js/StreamConsumer.h"
 #include "js/String.h"  // JS::MaxStringLength
 #include "js/Symbol.h"
@@ -69,6 +69,7 @@
 #include "util/StringBuffer.h"
 #include "util/Text.h"
 #include "vm/EnvironmentObject.h"
+#include "vm/ErrorContext.h"
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/Interpreter.h"
@@ -399,21 +400,6 @@ JS_PUBLIC_API JSRuntime* JS_GetRuntime(JSContext* cx) { return cx->runtime(); }
 JS_PUBLIC_API JS::ContextOptions& JS::ContextOptionsRef(JSContext* cx) {
   return cx->options();
 }
-
-JS::ContextOptions& JS::ContextOptions::setWasmCranelift(bool flag) {
-#ifdef ENABLE_WASM_CRANELIFT
-  wasmCranelift_ = flag;
-#endif
-  return *this;
-}
-
-
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-JS::ContextOptions& JS::ContextOptions::setWasmSimdWormhole(bool flag) {
-  wasmSimdWormhole_ = flag;
-  return *this;
-}
-#endif
 
 JS::ContextOptions& JS::ContextOptions::setFuzzing(bool flag) {
 #ifdef FUZZING
@@ -1181,8 +1167,8 @@ JS_PUBLIC_API void JS::RemoveAssociatedMemory(JSObject* obj, size_t nbytes,
     return;
   }
 
-  JSRuntime* rt = obj->runtimeFromAnyThread();
-  rt->gcContext()->removeCellMemory(obj, nbytes, js::MemoryUse(use));
+  GCContext* gcx = obj->runtimeFromMainThread()->gcContext();
+  gcx->removeCellMemory(obj, nbytes, js::MemoryUse(use));
 }
 
 #undef JS_AddRoot
@@ -1376,8 +1362,8 @@ JS_GetExternalStringCallbacks(JSString* str) {
   return str->asExternal().callbacks();
 }
 
-static void SetNativeStackLimit(JSContext* cx, JS::StackKind kind,
-                                size_t stackSize) {
+static void SetNativeStackSize(JSContext* cx, JS::StackKind kind,
+                               JS::NativeStackSize stackSize) {
 #ifdef __wasi__
   // WASI makes this easy: we build with the "stack-first" wasm-ld option, so
   // the stack grows downward toward zero. Let's set a limit just a bit above
@@ -1386,14 +1372,14 @@ static void SetNativeStackLimit(JSContext* cx, JS::StackKind kind,
 #else  // __wasi__
 #  if JS_STACK_GROWTH_DIRECTION > 0
   if (stackSize == 0) {
-    cx->nativeStackLimit[kind] = UINTPTR_MAX;
+    cx->nativeStackLimit[kind] = JS::NativeStackLimitMax;
   } else {
     MOZ_ASSERT(cx->nativeStackBase() <= size_t(-1) - stackSize);
     cx->nativeStackLimit[kind] = cx->nativeStackBase() + stackSize - 1;
   }
 #  else   // stack grows up
   if (stackSize == 0) {
-    cx->nativeStackLimit[kind] = 0;
+    cx->nativeStackLimit[kind] = JS::NativeStackLimitMax;
   } else {
     MOZ_ASSERT(cx->nativeStackBase() >= stackSize);
     cx->nativeStackLimit[kind] = cx->nativeStackBase() - (stackSize - 1);
@@ -1402,10 +1388,10 @@ static void SetNativeStackLimit(JSContext* cx, JS::StackKind kind,
 #endif    // !__wasi__
 }
 
-JS_PUBLIC_API void JS_SetNativeStackQuota(JSContext* cx,
-                                          size_t systemCodeStackSize,
-                                          size_t trustedScriptStackSize,
-                                          size_t untrustedScriptStackSize) {
+JS_PUBLIC_API void JS_SetNativeStackQuota(
+    JSContext* cx, JS::NativeStackSize systemCodeStackSize,
+    JS::NativeStackSize trustedScriptStackSize,
+    JS::NativeStackSize untrustedScriptStackSize) {
   MOZ_ASSERT(!cx->activation());
 
   if (!trustedScriptStackSize) {
@@ -1420,10 +1406,9 @@ JS_PUBLIC_API void JS_SetNativeStackQuota(JSContext* cx,
     MOZ_ASSERT(untrustedScriptStackSize < trustedScriptStackSize);
   }
 
-  SetNativeStackLimit(cx, JS::StackForSystemCode, systemCodeStackSize);
-  SetNativeStackLimit(cx, JS::StackForTrustedScript, trustedScriptStackSize);
-  SetNativeStackLimit(cx, JS::StackForUntrustedScript,
-                      untrustedScriptStackSize);
+  SetNativeStackSize(cx, JS::StackForSystemCode, systemCodeStackSize);
+  SetNativeStackSize(cx, JS::StackForTrustedScript, trustedScriptStackSize);
+  SetNativeStackSize(cx, JS::StackForUntrustedScript, untrustedScriptStackSize);
 
   if (cx->isMainThreadContext()) {
     cx->initJitStackLimit();
@@ -1883,7 +1868,7 @@ JS_PUBLIC_API bool JS_DeepFreezeObject(JSContext* cx, HandleObject obj) {
 
   // Walk slots in obj and if any value is a non-null object, seal it.
   if (obj->is<NativeObject>()) {
-    RootedNativeObject nobj(cx, &obj->as<NativeObject>());
+    Rooted<NativeObject*> nobj(cx, &obj->as<NativeObject>());
     for (uint32_t i = 0, n = nobj->slotSpan(); i < n; ++i) {
       if (!DeepFreezeSlot(cx, nobj->getSlot(i))) {
         return false;
@@ -1905,7 +1890,8 @@ JS_PUBLIC_API bool JSPropertySpec::getValue(JSContext* cx,
 
   switch (u.value.type) {
     case ValueWrapper::Type::String: {
-      RootedAtom atom(cx, Atomize(cx, u.value.string, strlen(u.value.string)));
+      Rooted<JSAtom*> atom(cx,
+                           Atomize(cx, u.value.string, strlen(u.value.string)));
       if (!atom) {
         return false;
       }
@@ -2062,7 +2048,7 @@ JS_PUBLIC_API JSFunction* JS_NewFunction(JSContext* cx, JSNative native,
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
-  RootedAtom atom(cx);
+  Rooted<JSAtom*> atom(cx);
   if (name) {
     atom = Atomize(cx, name, strlen(name));
     if (!atom) {
@@ -2084,7 +2070,7 @@ JS_PUBLIC_API JSFunction* JS::GetSelfHostedFunction(JSContext* cx,
   CHECK_THREAD(cx);
   cx->check(id);
 
-  RootedAtom name(cx, IdToFunctionName(cx, id));
+  Rooted<JSAtom*> name(cx, IdToFunctionName(cx, id));
   if (!name) {
     return nullptr;
   }
@@ -2093,7 +2079,7 @@ JS_PUBLIC_API JSFunction* JS::GetSelfHostedFunction(JSContext* cx,
   if (!shAtom) {
     return nullptr;
   }
-  RootedPropertyName shName(cx, shAtom->asPropertyName());
+  Rooted<PropertyName*> shName(cx, shAtom->asPropertyName());
   RootedValue funVal(cx);
   if (!GlobalObject::getSelfHostedFunction(cx, cx->global(), shName, name,
                                            nargs, &funVal)) {
@@ -2130,8 +2116,8 @@ JS_PUBLIC_API JSFunction* JS::NewFunctionFromSpec(JSContext* cx,
     if (!shAtom) {
       return nullptr;
     }
-    RootedPropertyName shName(cx, shAtom->asPropertyName());
-    RootedAtom name(cx, IdToFunctionName(cx, id));
+    Rooted<PropertyName*> shName(cx, shAtom->asPropertyName());
+    Rooted<JSAtom*> name(cx, IdToFunctionName(cx, id));
     if (!name) {
       return nullptr;
     }
@@ -2143,7 +2129,7 @@ JS_PUBLIC_API JSFunction* JS::NewFunctionFromSpec(JSContext* cx,
     return &funVal.toObject().as<JSFunction>();
   }
 
-  RootedAtom atom(cx, IdToFunctionName(cx, id));
+  Rooted<JSAtom*> atom(cx, IdToFunctionName(cx, id));
   if (!atom) {
     return nullptr;
   }
@@ -3592,7 +3578,8 @@ JS_PUBLIC_API bool JS_ExpandErrorArgumentsASCII(JSContext* cx,
 
   AssertHeapIsIdle();
   va_start(ap, reportp);
-  ok = ExpandErrorArgumentsVA(cx, errorCallback, nullptr, errorNumber,
+  MainThreadErrorContext ec(cx);
+  ok = ExpandErrorArgumentsVA(&ec, errorCallback, nullptr, errorNumber,
                               ArgumentsAreASCII, reportp, ap);
   va_end(ap);
   return ok;
@@ -3777,7 +3764,8 @@ static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
   note->lineno = lineno;
   note->column = column;
 
-  if (!ExpandErrorArgumentsVA(cx, errorCallback, userRef, errorNumber, nullptr,
+  MainThreadErrorContext ec(cx);
+  if (!ExpandErrorArgumentsVA(&ec, errorCallback, userRef, errorNumber, nullptr,
                               argumentsType, note.get(), ap)) {
     return nullptr;
   }
@@ -4008,6 +3996,16 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
       }
       jit::JitOptions.frequentBailoutThreshold = value;
       break;
+    case JSJITCOMPILER_BASE_REG_FOR_LOCALS:
+      if (value == 0) {
+        jit::JitOptions.baseRegForLocals = jit::BaseRegForAddress::SP;
+      } else if (value == 1) {
+        jit::JitOptions.baseRegForLocals = jit::BaseRegForAddress::FP;
+      } else {
+        jit::DefaultJitOptions defaultValues;
+        jit::JitOptions.baseRegForLocals = defaultValues.baseRegForLocals;
+      }
+      break;
     case JSJITCOMPILER_BASELINE_INTERPRETER_ENABLE:
       if (value == 1) {
         jit::JitOptions.baselineInterpreter = true;
@@ -4081,13 +4079,7 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
       JS::ContextOptionsRef(cx).setWasmBaseline(!!value);
       break;
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
-#ifdef ENABLE_WASM_CRANELIFT
-      JS::ContextOptionsRef(cx).setWasmCranelift(!!value);
-      JS::ContextOptionsRef(cx).setWasmIon(!value);
-#else
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
-      JS::ContextOptionsRef(cx).setWasmCranelift(!value);
-#endif
       break;
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
@@ -4130,6 +4122,9 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_ION_FREQUENT_BAILOUT_THRESHOLD:
       *valueOut = jit::JitOptions.frequentBailoutThreshold;
       break;
+    case JSJITCOMPILER_BASE_REG_FOR_LOCALS:
+      *valueOut = uint32_t(jit::JitOptions.baseRegForLocals);
+      break;
     case JSJITCOMPILER_INLINING_BYTECODE_MAX_LENGTH:
       *valueOut = jit::JitOptions.smallFunctionMaxBytecodeLength;
       break;
@@ -4145,6 +4140,21 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_OFFTHREAD_COMPILATION_ENABLE:
       *valueOut = rt->canUseOffthreadIonCompilation();
       break;
+    case JSJITCOMPILER_SPECTRE_INDEX_MASKING:
+      *valueOut = jit::JitOptions.spectreIndexMasking ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_OBJECT_MITIGATIONS:
+      *valueOut = jit::JitOptions.spectreObjectMitigations ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_STRING_MITIGATIONS:
+      *valueOut = jit::JitOptions.spectreStringMitigations ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_VALUE_MASKING:
+      *valueOut = jit::JitOptions.spectreValueMasking ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_JIT_TO_CXX_CALLS:
+      *valueOut = jit::JitOptions.spectreJitToCxxCalls ? 1 : 0;
+      break;
     case JSJITCOMPILER_WATCHTOWER_MEGAMORPHIC:
       *valueOut = jit::JitOptions.enableWatchtowerMegamorphic ? 1 : 0;
       break;
@@ -4155,11 +4165,7 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
       *valueOut = JS::ContextOptionsRef(cx).wasmBaseline() ? 1 : 0;
       break;
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
-#  ifdef ENABLE_WASM_CRANELIFT
-      *valueOut = JS::ContextOptionsRef(cx).wasmCranelift() ? 1 : 0;
-#  else
       *valueOut = JS::ContextOptionsRef(cx).wasmIon() ? 1 : 0;
-#  endif
       break;
 #  ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
@@ -4173,6 +4179,25 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
   *valueOut = 0;
 #endif
   return true;
+}
+
+JS_PUBLIC_API void JS::DisableSpectreMitigationsAfterInit() {
+  // This is used to turn off Spectre mitigations in pre-allocated child
+  // processes used for isolated web content. Assert there's a single runtime
+  // and cancel off-thread compilations, to ensure we're not racing with any
+  // compilations.
+  JSContext* cx = TlsContext.get();
+  MOZ_RELEASE_ASSERT(cx);
+  MOZ_RELEASE_ASSERT(JSRuntime::hasSingleLiveRuntime());
+  MOZ_RELEASE_ASSERT(cx->runtime()->wasmInstances.lock()->empty());
+
+  CancelOffThreadIonCompile(cx->runtime());
+
+  jit::JitOptions.spectreIndexMasking = false;
+  jit::JitOptions.spectreObjectMitigations = false;
+  jit::JitOptions.spectreStringMitigations = false;
+  jit::JitOptions.spectreValueMasking = false;
+  jit::JitOptions.spectreJitToCxxCalls = false;
 }
 
 /************************************************************************/
@@ -4198,7 +4223,8 @@ JS_PUBLIC_API bool JS_IndexToId(JSContext* cx, uint32_t index,
 
 JS_PUBLIC_API bool JS_CharsToId(JSContext* cx, JS::TwoByteChars chars,
                                 MutableHandleId idp) {
-  RootedAtom atom(cx, AtomizeChars(cx, chars.begin().get(), chars.length()));
+  Rooted<JSAtom*> atom(cx,
+                       AtomizeChars(cx, chars.begin().get(), chars.length()));
   if (!atom) {
     return false;
   }
@@ -4497,6 +4523,16 @@ JS_PUBLIC_API void JS::SetOutOfMemoryCallback(JSContext* cx,
   cx->runtime()->oomCallbackData = data;
 }
 
+JS_PUBLIC_API void JS::SetShadowRealmInitializeGlobalCallback(
+    JSContext* cx, JS::GlobalInitializeCallback callback) {
+  cx->runtime()->shadowRealmInitializeGlobalCallback = callback;
+}
+
+JS_PUBLIC_API void JS::SetShadowRealmGlobalCreationCallback(
+    JSContext* cx, JS::GlobalCreationCallback callback) {
+  cx->runtime()->shadowRealmGlobalCreationCallback = callback;
+}
+
 JS::FirstSubsumedFrame::FirstSubsumedFrame(
     JSContext* cx, bool ignoreSelfHostedFrames /* = true */)
     : JS::FirstSubsumedFrame(cx, cx->realm()->principals(),
@@ -4523,8 +4559,12 @@ JS_PUBLIC_API bool JS::IsAsyncStackCaptureEnabledForRealm(JSContext* cx) {
     return false;
   }
 
-  return !cx->options().asyncStackCaptureDebuggeeOnly() ||
-         cx->realm()->isDebuggee();
+  if (!cx->options().asyncStackCaptureDebuggeeOnly() ||
+      cx->realm()->isDebuggee()) {
+    return true;
+  }
+
+  return cx->realm()->isAsyncStackCapturingEnabled;
 }
 
 JS_PUBLIC_API bool JS::CopyAsyncStack(JSContext* cx,

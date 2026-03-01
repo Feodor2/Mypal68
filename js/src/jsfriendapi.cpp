@@ -24,6 +24,7 @@
 #include "js/Object.h"                // JS::GetClass
 #include "js/PropertyAndElement.h"    // JS_DefineProperty
 #include "js/Proxy.h"
+#include "js/Stack.h"   // JS::NativeStackLimitMax
 #include "js/String.h"  // JS::detail::StringToLinearStringSlow
 #include "js/Wrapper.h"
 #include "proxy/DeadObjectProxy.h"
@@ -61,11 +62,13 @@ JS::RootingContext::RootingContext() : realm_(nullptr), zone_(nullptr) {
     listHead = nullptr;
   }
 
-  PodArrayZero(nativeStackLimit);
 #if JS_STACK_GROWTH_DIRECTION > 0
   for (int i = 0; i < StackKindCount; i++) {
-    nativeStackLimit[i] = UINTPTR_MAX;
+    nativeStackLimit[i] = JS::NativeStackLimitMax;
   }
+#else
+  static_assert(JS::NativeStackLimitMax == 0);
+  PodArrayZero(nativeStackLimit);
 #endif
 }
 
@@ -174,7 +177,7 @@ JS_PUBLIC_API void JS_TraceShapeCycleCollectorChildren(JS::CallbackTracer* trc,
 
 static bool DefineHelpProperty(JSContext* cx, HandleObject obj,
                                const char* prop, const char* value) {
-  RootedAtom atom(cx, Atomize(cx, value, strlen(value)));
+  Rooted<JSAtom*> atom(cx, Atomize(cx, value, strlen(value)));
   if (!atom) {
     return false;
   }
@@ -334,9 +337,9 @@ JS_PUBLIC_API bool js::IsObjectInContextCompartment(JSObject* obj,
   return obj->compartment() == cx->compartment();
 }
 
-JS_PUBLIC_API bool js::AutoCheckRecursionLimit::runningWithTrustedPrincipals(
-    JSContext* cx) const {
-  return cx->runningWithTrustedPrincipals();
+JS_PUBLIC_API JS::StackKind
+js::AutoCheckRecursionLimit::stackKindForCurrentPrincipal(JSContext* cx) const {
+  return cx->stackKindForCurrentPrincipal();
 }
 
 JS_PUBLIC_API JSFunction* js::DefineFunctionWithReserved(
@@ -364,7 +367,7 @@ JS_PUBLIC_API JSFunction* js::NewFunctionWithReserved(JSContext* cx,
 
   CHECK_THREAD(cx);
 
-  RootedAtom atom(cx);
+  Rooted<JSAtom*> atom(cx);
   if (name) {
     atom = Atomize(cx, name, strlen(name));
     if (!atom) {
@@ -386,7 +389,7 @@ JS_PUBLIC_API JSFunction* js::NewFunctionByIdWithReserved(
   CHECK_THREAD(cx);
   cx->check(id);
 
-  RootedAtom atom(cx, id.toAtom());
+  Rooted<JSAtom*> atom(cx, id.toAtom());
   return (flags & JSFUN_CONSTRUCTOR)
              ? NewNativeConstructor(cx, native, nargs, atom,
                                     gc::AllocKind::FUNCTION_EXTENDED)

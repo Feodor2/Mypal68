@@ -26,27 +26,6 @@ using mozilla::PodZero;
 using namespace js;
 using namespace js::wasm;
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-static const int8_t WormholeTrigger[] = {31, 0, 30, 2,  29, 4,  28, 6,
-                                         27, 8, 26, 10, 25, 12, 24};
-static_assert(sizeof(WormholeTrigger) == 15);
-
-static const int8_t WormholeSignatureBytes[16] = {0xD, 0xE, 0xA, 0xD, 0xD, 0x0,
-                                                  0x0, 0xD, 0xC, 0xA, 0xF, 0xE,
-                                                  0xB, 0xA, 0xB, 0xE};
-static_assert(sizeof(WormholeSignatureBytes) == 16);
-
-bool wasm::IsWormholeTrigger(const V128& shuffleMask) {
-  return memcmp(shuffleMask.bytes, WormholeTrigger, sizeof(WormholeTrigger)) ==
-         0;
-}
-
-jit::SimdConstant wasm::WormholeSignature() {
-  return jit::SimdConstant::CreateX16(WormholeSignatureBytes);
-}
-
-#endif
-
 ArgTypeVector::ArgTypeVector(const FuncType& funcType)
     : args_(funcType.args()),
       hasStackResults_(ABIResultIter::HasStackResults(
@@ -133,28 +112,13 @@ CodeRange::CodeRange(Kind kind, CallableOffsets offsets)
 
 CodeRange::CodeRange(Kind kind, uint32_t funcIndex, CallableOffsets offsets)
     : begin_(offsets.begin), ret_(offsets.ret), end_(offsets.end), kind_(kind) {
-  MOZ_ASSERT(isImportExit() && !isImportJitExit());
+  MOZ_ASSERT(isImportExit() || isJitEntry());
   MOZ_ASSERT(begin_ < ret_);
   MOZ_ASSERT(ret_ < end_);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = 0;
   u.func.beginToUncheckedCallEntry_ = 0;
   u.func.beginToTierEntry_ = 0;
-}
-
-CodeRange::CodeRange(uint32_t funcIndex, JitExitOffsets offsets)
-    : begin_(offsets.begin),
-      ret_(offsets.ret),
-      end_(offsets.end),
-      kind_(ImportJitExit) {
-  MOZ_ASSERT(isImportJitExit());
-  MOZ_ASSERT(begin_ < ret_);
-  MOZ_ASSERT(ret_ < end_);
-  u.funcIndex_ = funcIndex;
-  u.jitExit.beginToUntrustedFPStart_ = offsets.untrustedFPStart - begin_;
-  u.jitExit.beginToUntrustedFPEnd_ = offsets.untrustedFPEnd - begin_;
-  MOZ_ASSERT(jitExitUntrustedFPStart() == offsets.untrustedFPStart);
-  MOZ_ASSERT(jitExitUntrustedFPEnd() == offsets.untrustedFPEnd);
 }
 
 CodeRange::CodeRange(uint32_t funcIndex, uint32_t funcLineOrBytecode,
@@ -223,5 +187,10 @@ CalleeDesc CalleeDesc::builtinInstanceMethod(SymbolicAddress callee) {
   CalleeDesc c;
   c.which_ = BuiltinInstanceMethod;
   c.u.builtin_ = callee;
+  return c;
+}
+CalleeDesc CalleeDesc::wasmFuncRef() {
+  CalleeDesc c;
+  c.which_ = FuncRef;
   return c;
 }

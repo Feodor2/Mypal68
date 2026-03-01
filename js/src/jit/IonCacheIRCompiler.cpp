@@ -40,11 +40,11 @@ namespace js {
 namespace jit {
 
 // IonCacheIRCompiler compiles CacheIR to IonIC native code.
-IonCacheIRCompiler::IonCacheIRCompiler(JSContext* cx,
+IonCacheIRCompiler::IonCacheIRCompiler(JSContext* cx, TempAllocator& alloc,
                                        const CacheIRWriter& writer, IonIC* ic,
                                        IonScript* ionScript,
                                        uint32_t stubDataOffset)
-    : CacheIRCompiler(cx, writer, stubDataOffset, Mode::Ion,
+    : CacheIRCompiler(cx, alloc, writer, stubDataOffset, Mode::Ion,
                       StubFieldPolicy::Constant),
       writer_(writer),
       ic_(ic),
@@ -255,15 +255,17 @@ static void* GetReturnAddressToIonCode(JSContext* cx) {
 }
 
 // The AutoSaveLiveRegisters parameter is used to ensure registers were saved
-void IonCacheIRCompiler::prepareVMCall(MacroAssembler& masm,
-                                       const AutoSaveLiveRegisters&) {
-  uint32_t descriptor = MakeFrameDescriptor(
-      masm.framePushed(), FrameType::IonJS, IonICCallFrameLayout::Size());
+void IonCacheIRCompiler::enterStubFrame(MacroAssembler& masm,
+                                        const AutoSaveLiveRegisters&) {
+  MOZ_ASSERT(!enteredStubFrame_);
   pushStubCodePointer();
-  masm.Push(Imm32(descriptor));
+  masm.PushFrameDescriptor(FrameType::IonJS);
   masm.Push(ImmPtr(GetReturnAddressToIonCode(cx_)));
 
-  preparedForVMCall_ = true;
+  masm.Push(FramePointer);
+  masm.moveStackPtrTo(FramePointer);
+
+  enteredStubFrame_ = true;
 }
 
 bool IonCacheIRCompiler::init() {
@@ -513,6 +515,15 @@ bool IonCacheIRCompiler::init() {
       allocator.initInputLocation(1, ic->rhs());
       break;
     }
+    case CacheKind::CloseIter: {
+      IonCloseIterIC* ic = ic_->asCloseIterIC();
+
+      available.add(ic->temp());
+
+      liveRegs_.emplace(ic->liveRegs());
+      allocator.initInputLocation(0, ic->iter(), JSVAL_TYPE_OBJECT);
+      break;
+    }
     case CacheKind::Call:
     case CacheKind::TypeOf:
     case CacheKind::ToBool:
@@ -608,6 +619,7 @@ void IonCacheIRCompiler::assertFloatRegisterAvailable(FloatRegister reg) {
     case CacheKind::UnaryArith:
     case CacheKind::ToPropertyKey:
     case CacheKind::OptimizeSpreadCall:
+    case CacheKind::CloseIter:
       MOZ_CRASH("No float registers available");
     case CacheKind::SetProp:
     case CacheKind::SetElem:
@@ -855,12 +867,7 @@ bool IonCacheIRCompiler::emitCallScriptedGetterResult(
 
   uint32_t framePushedBefore = masm.framePushed();
 
-  // Construct IonICCallFrameLayout.
-  uint32_t descriptor = MakeFrameDescriptor(
-      masm.framePushed(), FrameType::IonJS, IonICCallFrameLayout::Size());
-  pushStubCodePointer();
-  masm.Push(Imm32(descriptor));
-  masm.Push(ImmPtr(GetReturnAddressToIonCode(cx_)));
+  enterStubFrame(masm, save);
 
   // The JitFrameLayout pushed below will be aligned to JitStackAlignment,
   // so we just have to make sure the stack is aligned after we push the
@@ -883,15 +890,13 @@ bool IonCacheIRCompiler::emitCallScriptedGetterResult(
 
   masm.movePtr(ImmGCPtr(target), scratch);
 
-  descriptor = MakeFrameDescriptor(argSize + padding, FrameType::IonICCall,
-                                   JitFrameLayout::Size());
-  masm.Push(Imm32(0));  // argc
   masm.Push(scratch);
-  masm.Push(Imm32(descriptor));
+  masm.PushFrameDescriptorForJitCall(FrameType::IonICCall, /* argc = */ 0);
 
-  // Check stack alignment. Add sizeof(uintptr_t) for the return address.
-  MOZ_ASSERT(((masm.framePushed() + sizeof(uintptr_t)) % JitStackAlignment) ==
-             0);
+  // Check stack alignment. Add 2 * sizeof(uintptr_t) for the return address and
+  // frame pointer pushed by the call/callee.
+  MOZ_ASSERT(
+      ((masm.framePushed() + 2 * sizeof(uintptr_t)) % JitStackAlignment) == 0);
 
   MOZ_ASSERT(target->hasJitEntry());
   masm.loadJitCodeRaw(scratch, scratch);
@@ -904,6 +909,9 @@ bool IonCacheIRCompiler::emitCallScriptedGetterResult(
   }
 
   masm.storeCallResultValue(output);
+
+  // Restore the frame pointer and stack pointer.
+  masm.loadPtr(Address(FramePointer, 0), FramePointer);
   masm.freeStack(masm.framePushed() - framePushedBefore);
   return true;
 }
@@ -1001,7 +1009,7 @@ bool IonCacheIRCompiler::emitCallDOMGetterResult(ObjOperandId objId,
   const JSJitInfo* info = rawPointerStubField<const JSJitInfo*>(jitInfoOffset);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(obj);
   masm.Push(ImmPtr(info));
@@ -1026,7 +1034,7 @@ bool IonCacheIRCompiler::emitCallDOMSetter(ObjOperandId objId,
   const JSJitInfo* info = rawPointerStubField<const JSJitInfo*>(jitInfoOffset);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(val);
   masm.Push(obj);
@@ -1178,7 +1186,7 @@ bool IonCacheIRCompiler::emitCompareStringResult(JSOp op, StringOperandId lhsId,
   masm.jump(&done);
   masm.bind(&slow);
 
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
   // - |left <= right| is implemented as |right >= left|.
@@ -1505,12 +1513,7 @@ bool IonCacheIRCompiler::emitCallScriptedSetter(ObjOperandId receiverId,
 
   uint32_t framePushedBefore = masm.framePushed();
 
-  // Construct IonICCallFrameLayout.
-  uint32_t descriptor = MakeFrameDescriptor(
-      masm.framePushed(), FrameType::IonJS, IonICCallFrameLayout::Size());
-  pushStubCodePointer();
-  masm.Push(Imm32(descriptor));
-  masm.Push(ImmPtr(GetReturnAddressToIonCode(cx_)));
+  enterStubFrame(masm, save);
 
   // The JitFrameLayout pushed below will be aligned to JitStackAlignment,
   // so we just have to make sure the stack is aligned after we push the
@@ -1535,15 +1538,13 @@ bool IonCacheIRCompiler::emitCallScriptedSetter(ObjOperandId receiverId,
 
   masm.movePtr(ImmGCPtr(target), scratch);
 
-  descriptor = MakeFrameDescriptor(argSize + padding, FrameType::IonICCall,
-                                   JitFrameLayout::Size());
-  masm.Push(Imm32(1));  // argc
   masm.Push(scratch);
-  masm.Push(Imm32(descriptor));
+  masm.PushFrameDescriptorForJitCall(FrameType::IonICCall, /* argc = */ 1);
 
-  // Check stack alignment. Add sizeof(uintptr_t) for the return address.
-  MOZ_ASSERT(((masm.framePushed() + sizeof(uintptr_t)) % JitStackAlignment) ==
-             0);
+  // Check stack alignment. Add 2 * sizeof(uintptr_t) for the return address and
+  // frame pointer pushed by the call/callee.
+  MOZ_ASSERT(
+      ((masm.framePushed() + 2 * sizeof(uintptr_t)) % JitStackAlignment) == 0);
 
   MOZ_ASSERT(target->hasJitEntry());
   masm.loadJitCodeRaw(scratch, scratch);
@@ -1553,6 +1554,8 @@ bool IonCacheIRCompiler::emitCallScriptedSetter(ObjOperandId receiverId,
     masm.switchToRealm(cx_->realm(), ReturnReg);
   }
 
+  // Restore the frame pointer and stack pointer.
+  masm.loadPtr(Address(FramePointer, 0), FramePointer);
   masm.freeStack(masm.framePushed() - framePushedBefore);
   return true;
 }
@@ -1572,7 +1575,7 @@ bool IonCacheIRCompiler::emitCallSetArrayLength(ObjOperandId objId, bool strict,
   ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(Imm32(strict));
   masm.Push(val);
@@ -1595,7 +1598,7 @@ bool IonCacheIRCompiler::emitProxySet(ObjOperandId objId, uint32_t idOffset,
   AutoScratchRegister scratch(allocator, masm);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(Imm32(strict));
   masm.Push(val);
@@ -1618,7 +1621,7 @@ bool IonCacheIRCompiler::emitProxySetByValue(ObjOperandId objId,
   ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(Imm32(strict));
   masm.Push(val);
@@ -1640,14 +1643,14 @@ bool IonCacheIRCompiler::emitCallAddOrUpdateSparseElementHelper(
   ValueOperand val = allocator.useValueRegister(masm, rhsId);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(Imm32(strict));
   masm.Push(val);
   masm.Push(id);
   masm.Push(obj);
 
-  using Fn = bool (*)(JSContext * cx, HandleArrayObject obj, int32_t int_id,
+  using Fn = bool (*)(JSContext * cx, Handle<NativeObject*> obj, int32_t int_id,
                       HandleValue v, bool strict);
   callVM<Fn, AddOrUpdateSparseElementHelper>(masm);
   return true;
@@ -1665,7 +1668,7 @@ bool IonCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
   ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
 
   allocator.discardStack(masm);
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
 
   masm.Push(Imm32(strict));
   masm.Push(TypedOrValueRegister(MIRType::Object, AnyRegister(obj)));
@@ -1722,9 +1725,14 @@ bool IonCacheIRCompiler::emitGuardAndGetIterator(ObjOperandId objId,
   // Ensure the iterator is reusable: see NativeIterator::isReusable.
   masm.branchIfNativeIteratorNotReusable(niScratch, failure->label());
 
-  // Pre-write barrier for store to 'objectBeingIterated_'.
+  // 'objectBeingIterated_' must be nullptr, so we don't need a pre-barrier.
   Address iterObjAddr(niScratch, NativeIterator::offsetOfObjectBeingIterated());
-  EmitPreBarrier(masm, iterObjAddr, MIRType::Object);
+#ifdef DEBUG
+  Label ok;
+  masm.branchPtr(Assembler::Equal, iterObjAddr, ImmPtr(nullptr), &ok);
+  masm.assumeUnreachable("iterator with non-null object");
+  masm.bind(&ok);
+#endif
 
   // Mark iterator as active.
   Address iterFlagsAddr(niScratch, NativeIterator::offsetOfFlagsAndCount());
@@ -1868,8 +1876,10 @@ void IonIC::attachCacheIRStub(JSContext* cx, const CacheIRWriter& writer,
       new (newStubMem) IonICStub(fallbackAddr(ionScript), stubInfo);
   writer.copyStubData(newStub->stubDataStart());
 
-  JitContext jctx(cx, nullptr);
-  IonCacheIRCompiler compiler(cx, writer, this, ionScript, stubDataOffset);
+  TempAllocator temp(&cx->tempLifoAlloc());
+  JitContext jctx(cx);
+  IonCacheIRCompiler compiler(cx, temp, writer, this, ionScript,
+                              stubDataOffset);
   if (!compiler.init()) {
     return;
   }
@@ -1894,7 +1904,7 @@ bool IonCacheIRCompiler::emitCallStringObjectConcatResult(ValOperandId lhsId,
 
   allocator.discardStack(masm);
 
-  prepareVMCall(masm, save);
+  enterStubFrame(masm, save);
   masm.Push(rhs);
   masm.Push(lhs);
 
@@ -1905,10 +1915,89 @@ bool IonCacheIRCompiler::emitCallStringObjectConcatResult(ValOperandId lhsId,
   return true;
 }
 
+bool IonCacheIRCompiler::emitCloseIterScriptedResult(ObjOperandId iterId,
+                                                     ObjOperandId calleeId,
+                                                     CompletionKind kind,
+                                                     uint32_t calleeNargs) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoSaveLiveRegisters save(*this);
+
+  Register iter = allocator.useRegister(masm, iterId);
+  Register callee = allocator.useRegister(masm, calleeId);
+
+  allocator.discardStack(masm);
+
+  uint32_t framePushedBefore = masm.framePushed();
+
+  // Construct IonICCallFrameLayout.
+  enterStubFrame(masm, save);
+
+  uint32_t stubFramePushed = masm.framePushed();
+
+  // The JitFrameLayout pushed below will be aligned to JitStackAlignment,
+  // so we just have to make sure the stack is aligned after we push |this|
+  // and |calleeNargs| undefined arguments.
+  uint32_t argSize = (calleeNargs + 1) * sizeof(Value);
+  uint32_t padding =
+      ComputeByteAlignment(masm.framePushed() + argSize, JitStackAlignment);
+  MOZ_ASSERT(padding % sizeof(uintptr_t) == 0);
+  MOZ_ASSERT(padding < JitStackAlignment);
+  masm.reserveStack(padding);
+
+  for (uint32_t i = 0; i < calleeNargs; i++) {
+    masm.Push(UndefinedValue());
+  }
+  masm.Push(TypedOrValueRegister(MIRType::Object, AnyRegister(iter)));
+
+  masm.Push(callee);
+  masm.PushFrameDescriptorForJitCall(FrameType::IonICCall, /* argc = */ 0);
+
+  masm.loadJitCodeRaw(callee, callee);
+  masm.callJit(callee);
+
+  if (kind != CompletionKind::Throw) {
+    // Verify that the return value is an object.
+    Label success;
+    masm.branchTestObject(Assembler::Equal, JSReturnOperand, &success);
+
+    // We can reuse the same stub frame, but we first have to pop the arguments
+    // from the previous call.
+    uint32_t framePushedAfterCall = masm.framePushed();
+    masm.freeStack(masm.framePushed() - stubFramePushed);
+
+    masm.push(Imm32(int32_t(CheckIsObjectKind::IteratorReturn)));
+    using Fn = bool (*)(JSContext*, CheckIsObjectKind);
+    callVM<Fn, ThrowCheckIsObject>(masm);
+
+    masm.bind(&success);
+    masm.setFramePushed(framePushedAfterCall);
+  }
+
+  // Restore the frame pointer and stack pointer.
+  masm.loadPtr(Address(FramePointer, 0), FramePointer);
+  masm.freeStack(masm.framePushed() - framePushedBefore);
+  return true;
+}
+
 bool IonCacheIRCompiler::emitGuardFunctionScript(ObjOperandId funId,
                                                  uint32_t expectedOffset,
                                                  uint32_t nargsAndFlagsOffset) {
-  MOZ_CRASH("Call ICs not used in ion");
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  Register fun = allocator.useRegister(masm, funId);
+  AutoScratchRegister scratch(allocator, masm);
+  BaseScript* expected = baseScriptStubField(expectedOffset);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  masm.loadPrivate(Address(fun, JSFunction::offsetOfJitInfoOrScript()),
+                   scratch);
+  masm.branchPtr(Assembler::NotEqual, scratch, ImmGCPtr(expected),
+                 failure->label());
+  return true;
 }
 
 bool IonCacheIRCompiler::emitCallScriptedFunction(ObjOperandId calleeId,

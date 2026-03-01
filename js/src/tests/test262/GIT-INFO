@@ -1,9 +1,13 @@
-commit 45a913c057892bdd26f7bc06a59a0c7420f2d3ec
-Author: Philip Chimento <pchimento@igalia.com>
-Date:   Wed Aug 11 12:31:23 2021 -0700
+commit e623dd7a1183b04d862baea22a4b133b1635cb95
+Author: Mathias Bynens <mathias@qiwi.be>
+Date:   Tue Jul 26 19:42:06 2022 +0200
 
-    Add branding tests from Temporal (#3138)
+    Add manually written tests for RegExp `v` flag proposal (#3614)
 
-    Closes: #3137
+    https://github.com/tc39/proposal-regexp-v-flag
 
-    Co-authored-by: Ms2ger <Ms2ger@igalia.com>
+    Issue: #3496, https://github.com/tc39/proposal-regexp-v-flag/issues/52
+
+    Add more tests for the new RegExp `v` flag
+
+    Add test for combination of `u` and `v` flag

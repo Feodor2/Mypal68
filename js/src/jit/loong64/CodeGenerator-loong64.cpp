@@ -16,7 +16,6 @@
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 #include "vm/Shape.h"
-#include "vm/TraceLogging.h"
 
 #include "jit/shared/CodeGenerator-shared-inl.h"
 #include "vm/JSScript-inl.h"
@@ -76,16 +75,6 @@ void CodeGeneratorLOONG64::branchToBlock(Assembler::FloatFormat fmt,
   }
 }
 
-FrameSizeClass FrameSizeClass::FromDepth(uint32_t frameDepth) {
-  return FrameSizeClass::None();
-}
-
-FrameSizeClass FrameSizeClass::ClassLimit() { return FrameSizeClass(0); }
-
-uint32_t FrameSizeClass::frameSize() const {
-  MOZ_CRASH("LA does not use frame size classes");
-}
-
 void OutOfLineBailout::accept(CodeGeneratorLOONG64* codegen) {
   codegen->visitOutOfLineBailout(this);
 }
@@ -111,13 +100,6 @@ void CodeGeneratorLOONG64::bailoutFrom(Label* label, LSnapshot* snapshot) {
 
   encode(snapshot);
 
-  // Though the assembler doesn't track all frame pushes, at least make sure
-  // the known value makes sense. We can't use bailout tables if the stack
-  // isn't properly aligned to the static frame size.
-  MOZ_ASSERT_IF(frameClass_ != FrameSizeClass::None(),
-                frameClass_.frameSize() == masm.framePushed());
-
-  // We don't use table bailouts because retargeting is easier this way.
   InlineScriptTree* tree = snapshot->mir()->block()->trackedTree();
   OutOfLineBailout* ool = new (alloc()) OutOfLineBailout(snapshot);
   addOutOfLineCode(ool,
@@ -481,7 +463,8 @@ void CodeGenerator::visitCompare(LCompare* comp) {
 
   if (mir->compareType() == MCompare::Compare_Object ||
       mir->compareType() == MCompare::Compare_Symbol ||
-      mir->compareType() == MCompare::Compare_UIntPtr) {
+      mir->compareType() == MCompare::Compare_UIntPtr ||
+      mir->compareType() == MCompare::Compare_RefOrNull) {
     if (right->isConstant()) {
       MOZ_ASSERT(mir->compareType() == MCompare::Compare_UIntPtr);
       masm.cmpPtrSet(cond, ToRegister(left), Imm32(ToInt32(right)),
@@ -516,12 +499,14 @@ void CodeGenerator::visitCompareAndBranch(LCompareAndBranch* comp) {
   const Assembler::Condition cond = JSOpToCondition(type, comp->jsop());
 
   if (type == MCompare::Compare_Object || type == MCompare::Compare_Symbol ||
-      type == MCompare::Compare_UIntPtr) {
+      type == MCompare::Compare_UIntPtr ||
+      type == MCompare::Compare_RefOrNull) {
     if (rhs->isConstant()) {
       emitBranch(ToRegister(lhs), Imm32(ToInt32(rhs)), cond, ifTrue, ifFalse);
     } else if (rhs->isGeneralReg()) {
       emitBranch(lhsReg, ToRegister(rhs), cond, ifTrue, ifFalse);
     } else {
+      MOZ_CRASH("NYI");
     }
     return;
   }

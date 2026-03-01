@@ -1045,12 +1045,9 @@ void MacroAssemblerMIPS64::ma_push(FloatRegister f) {
 }
 
 bool MacroAssemblerMIPS64Compat::buildOOLFakeExitFrame(void* fakeReturnAddr) {
-  uint32_t descriptor = MakeFrameDescriptor(
-      asMasm().framePushed(), FrameType::IonJS, ExitFrameLayout::Size());
-
-  asMasm().Push(Imm32(descriptor));  // descriptor_
+  asMasm().PushFrameDescriptor(FrameType::IonJS);  // descriptor_
   asMasm().Push(ImmPtr(fakeReturnAddr));
-
+  asMasm().Push(FramePointer);
   return true;
 }
 
@@ -1778,7 +1775,7 @@ void MacroAssemblerMIPS64Compat::checkStackAlignment() {
 }
 
 void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
-    Label* profilerExitTail) {
+    Label* profilerExitTail, Label* bailoutTail) {
   // Reserve space for exception information.
   int size = (sizeof(ResumeFromException) + ABIStackAlignment) &
              ~(ABIStackAlignment - 1);
@@ -1823,10 +1820,12 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
 
   breakpoint();  // Invalid kind.
 
-  // No exception handler. Load the error value, load the new stack pointer
-  // and return from the entry frame.
+  // No exception handler. Load the error value, restore state and return from
+  // the entry frame.
   bind(&entryFrame);
   asMasm().moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
+  loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
+          FramePointer);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
 
@@ -1840,7 +1839,7 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
   bind(&catch_);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfTarget()), a0);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
-          BaselineFrameReg);
+          FramePointer);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
   jump(a0);
@@ -1853,7 +1852,7 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
 
   loadPtr(Address(sp, ResumeFromException::offsetOfTarget()), a0);
   loadPtr(Address(sp, ResumeFromException::offsetOfFramePointer()),
-          BaselineFrameReg);
+          FramePointer);
   loadPtr(Address(sp, ResumeFromException::offsetOfStackPointer()), sp);
 
   pushValue(exception);
@@ -1865,14 +1864,11 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
   Label profilingInstrumentation;
   bind(&returnBaseline);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
-          BaselineFrameReg);
+          FramePointer);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
-  loadValue(
-      Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfReturnValue()),
-      JSReturnOperand);
-  ma_move(StackPointer, BaselineFrameReg);
-  pop(BaselineFrameReg);
+  loadValue(Address(FramePointer, BaselineFrame::reverseOffsetOfReturnValue()),
+            JSReturnOperand);
   jump(&profilingInstrumentation);
 
   // Return the given value to the caller.
@@ -1880,6 +1876,8 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
   loadValue(Address(StackPointer, ResumeFromException::offsetOfException()),
             JSReturnOperand);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
+          FramePointer);
+  loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
 
   // If profiling is enabled, then update the lastProfilingFrame to refer to
@@ -1890,22 +1888,25 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
     Label skipProfilingInstrumentation;
     // Test if profiler enabled.
     AbsoluteAddress addressOfEnabled(
-        GetJitContext()->runtime->geckoProfiler().addressOfEnabled());
+        asMasm().runtime()->geckoProfiler().addressOfEnabled());
     asMasm().branch32(Assembler::Equal, addressOfEnabled, Imm32(0),
                       &skipProfilingInstrumentation);
     jump(profilerExitTail);
     bind(&skipProfilingInstrumentation);
   }
 
+  ma_move(StackPointer, FramePointer);
+  pop(FramePointer);
   ret();
 
   // If we are bailing out to baseline to handle an exception, jump to
   // the bailout tail stub. Load 1 (true) in ReturnReg to indicate success.
   bind(&bailout);
   loadPtr(Address(sp, ResumeFromException::offsetOfBailoutInfo()), a2);
+  loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
+          StackPointer);
   ma_li(ReturnReg, Imm32(1));
-  loadPtr(Address(sp, ResumeFromException::offsetOfTarget()), a1);
-  jump(a1);
+  jump(bailoutTail);
 
   // If we are throwing and the innermost frame was a wasm frame, reset SP and
   // FP; SP is pointing to the unwound return address to the wasm entry, so
@@ -1962,7 +1963,7 @@ void MacroAssemblerMIPS64Compat::profilerEnterFrame(Register framePtr,
 }
 
 void MacroAssemblerMIPS64Compat::profilerExitFrame() {
-  jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
+  jump(asMasm().runtime()->jitRuntime()->getProfilerExitFrameTail());
 }
 
 void MacroAssembler::subFromStackPtr(Imm32 imm32) {

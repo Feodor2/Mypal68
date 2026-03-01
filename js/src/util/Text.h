@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -26,7 +25,6 @@
 
 #include "js/Utility.h"
 #include "util/Unicode.h"
-#include "vm/Printer.h"
 
 class JSLinearString;
 
@@ -49,11 +47,9 @@ static MOZ_ALWAYS_INLINE size_t js_strnlen(const CharT* s, size_t maxlen) {
   return maxlen;
 }
 
-extern int32_t js_fputs(const char16_t* s, FILE* f);
-
 namespace js {
 
-class StringBuffer;
+class GenericPrinter;
 
 template <typename CharT>
 constexpr uint8_t AsciiDigitToNumber(CharT c) {
@@ -71,7 +67,17 @@ static constexpr bool IsAsciiPrintable(CharT c) {
 
 template <typename Char1, typename Char2>
 inline bool EqualChars(const Char1* s1, const Char2* s2, size_t len) {
-  return mozilla::ArrayEqual(s1, s2, len);
+  // Cast |JS::Latin1Char| to |char| to ensure compilers emit std::memcmp for
+  // the comparison.
+  if constexpr (std::is_same_v<Char1, char> &&
+                std::is_same_v<Char2, JS::Latin1Char>) {
+    return mozilla::ArrayEqual(s1, reinterpret_cast<const char*>(s2), len);
+  } else if constexpr (std::is_same_v<Char1, JS::Latin1Char> &&
+                       std::is_same_v<Char2, char>) {
+    return mozilla::ArrayEqual(reinterpret_cast<const char*>(s1), s2, len);
+  } else {
+    return mozilla::ArrayEqual(s1, s2, len);
+  }
 }
 
 // Return less than, equal to, or greater than zero depending on whether
@@ -331,32 +337,6 @@ inline size_t PutEscapedString(char* buffer, size_t bufferSize,
 inline bool EscapedStringPrinter(GenericPrinter& out, JSLinearString* str,
                                  uint32_t quote) {
   return PutEscapedStringImpl(nullptr, 0, &out, str, quote) != size_t(-1);
-}
-
-inline bool EscapedStringPrinter(GenericPrinter& out, const char* chars,
-                                 size_t length, uint32_t quote) {
-  return PutEscapedStringImpl(nullptr, 0, &out, chars, length, quote) !=
-         size_t(-1);
-}
-
-/*
- * Write str into file escaping any non-printable or non-ASCII character.
- * If quote is not 0, it must be a single or double quote character that
- * will quote the output.
- */
-inline bool FileEscapedString(FILE* fp, JSLinearString* str, uint32_t quote) {
-  Fprinter out(fp);
-  bool res = EscapedStringPrinter(out, str, quote);
-  out.finish();
-  return res;
-}
-
-inline bool FileEscapedString(FILE* fp, const char* chars, size_t length,
-                              uint32_t quote) {
-  Fprinter out(fp);
-  bool res = EscapedStringPrinter(out, chars, length, quote);
-  out.finish();
-  return res;
 }
 
 JSString* EncodeURI(JSContext* cx, const char* chars, size_t length);

@@ -391,6 +391,16 @@ CoderResult CodeCacheableChars(Coder<mode>& coder, const CacheableChars* item) {
   return Ok();
 }
 
+// Code a CacheableName
+
+template <CoderMode mode>
+CoderResult CodeCacheableName(Coder<mode>& coder,
+                              CoderArg<mode, CacheableName> item) {
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::CacheableName, 40);
+  MOZ_TRY(CodePodVector(coder, &item->bytes_));
+  return Ok();
+}
+
 // Code a ShareableBytes. This function only needs to forward to the inner
 // bytes vector.
 template <CoderMode mode>
@@ -489,17 +499,17 @@ CoderResult CodeTypeDefWithId(Coder<mode>& coder,
 
 template <CoderMode mode>
 CoderResult CodeImport(Coder<mode>& coder, CoderArg<mode, Import> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Import, 24);
-  MOZ_TRY(CodeCacheableChars(coder, &item->module));
-  MOZ_TRY(CodeCacheableChars(coder, &item->field));
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Import, 88);
+  MOZ_TRY(CodeCacheableName(coder, &item->module));
+  MOZ_TRY(CodeCacheableName(coder, &item->field));
   MOZ_TRY(CodePod(coder, &item->kind));
   return Ok();
 }
 
 template <CoderMode mode>
 CoderResult CodeExport(Coder<mode>& coder, CoderArg<mode, Export> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Export, 16);
-  MOZ_TRY(CodeCacheableChars(coder, &item->fieldName_));
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Export, 48);
+  MOZ_TRY(CodeCacheableName(coder, &item->fieldName_));
   MOZ_TRY(CodePod(coder, &item->pod));
   return Ok();
 }
@@ -706,7 +716,7 @@ template <CoderMode mode>
 CoderResult CodeSymbolicLinkArray(
     Coder<mode>& coder,
     CoderArg<mode, wasm::LinkData::SymbolicLinkArray> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData::SymbolicLinkArray, 6984);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData::SymbolicLinkArray, 6912);
   for (SymbolicAddress address :
        mozilla::MakeEnumeratedRange(SymbolicAddress::Limit)) {
     MOZ_TRY(CodePodVector(coder, &(*item)[address]));
@@ -717,7 +727,7 @@ CoderResult CodeSymbolicLinkArray(
 template <CoderMode mode>
 CoderResult CodeLinkData(Coder<mode>& coder,
                          CoderArg<mode, wasm::LinkData> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 7032);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 6960);
   if constexpr (mode == MODE_ENCODE) {
     MOZ_ASSERT(item->tier == Tier::Serialized);
   }
@@ -802,9 +812,7 @@ CoderResult CodeMetadataTier(Coder<mode>& coder,
   MOZ_TRY((CodeVector<mode, FuncExport, CodeFuncExport<mode>>(
       coder, &item->funcExports)));
   MOZ_TRY(CodeStackMaps(coder, &item->stackMaps, codeStart));
-#ifdef ENABLE_WASM_EXCEPTIONS
   MOZ_TRY(CodePodVector(coder, &item->tryNotes));
-#endif
   return Ok();
 }
 
@@ -826,9 +834,7 @@ CoderResult CodeMetadata(Coder<mode>& coder,
   MOZ_TRY((CodeVector<mode, GlobalDesc, &CodeGlobalDesc<mode>>(
       coder, &item->globals)));
   MOZ_TRY(CodePodVector(coder, &item->tables));
-#ifdef ENABLE_WASM_EXCEPTIONS
   MOZ_TRY((CodeVector<mode, TagDesc, &CodeTagDesc<mode>>(coder, &item->tags)));
-#endif
   MOZ_TRY(CodePod(coder, &item->moduleName));
   MOZ_TRY(CodePodVector(coder, &item->funcNames));
   MOZ_TRY(CodeCacheableChars(coder, &item->filename));

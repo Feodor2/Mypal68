@@ -214,7 +214,7 @@ static void SendCodeRangesToProfiler(const ModuleSegment& ms,
                                      const CodeRangeVector& codeRanges) {
   bool enabled = false;
 #ifdef JS_ION_PERF
-  enabled |= PerfFuncEnabled();
+  enabled |= PerfEnabled();
 #endif
 #ifdef MOZ_VTUNE
   enabled |= vtune::IsProfilingActive();
@@ -241,7 +241,7 @@ static void SendCodeRangesToProfiler(const ModuleSegment& ms,
     (void)size;
 
 #ifdef JS_ION_PERF
-    if (PerfFuncEnabled()) {
+    if (PerfEnabled()) {
       const char* file = metadata.filename.get();
       if (codeRange.isFunction()) {
         if (!name.append('\0')) {
@@ -328,7 +328,7 @@ UniqueModuleSegment ModuleSegment::create(Tier tier, const Bytes& unlinkedBytes,
                                        linkData);
 }
 
-bool ModuleSegment::initialize(IsTier2 isTier2, const CodeTier& codeTier,
+bool ModuleSegment::initialize(const CodeTier& codeTier,
                                const LinkData& linkData,
                                const Metadata& metadata,
                                const MetadataTier& metadataTier) {
@@ -338,13 +338,9 @@ bool ModuleSegment::initialize(IsTier2 isTier2, const CodeTier& codeTier,
 
   // Optimized compilation finishes on a background thread, so we must make sure
   // to flush the icaches of all the executing threads.
-  FlushICacheSpec flushIcacheSpec = isTier2 == IsTier2::Tier2
-                                        ? FlushICacheSpec::AllThreads
-                                        : FlushICacheSpec::LocalThreadOnly;
-
   // Reprotect the whole region to avoid having separate RW and RX mappings.
   if (!ExecutableAllocator::makeExecutableAndFlushICache(
-          flushIcacheSpec, base(), RoundupCodeLength(length()))) {
+          base(), RoundupCodeLength(length()))) {
     return false;
   }
 
@@ -496,13 +492,12 @@ static constexpr unsigned LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE = 8 * 1024;
 
 bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
                                         const CodeTier& codeTier,
-                                        bool flushAllThreadsIcaches,
                                         size_t* stubSegmentIndex) {
   MOZ_ASSERT(funcExportIndices.length());
 
   LifoAlloc lifo(LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jitContext(&alloc);
+  JitContext jitContext;
   WasmMacroAssembler masm(alloc);
 
   if (funcExportIndices.length() == 1) {
@@ -576,13 +571,7 @@ bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
     Assembler::Bind(codePtr, label);
   }
 
-  // Optimized compilation finishes on a background thread, so we must make sure
-  // to flush the icaches of all the executing threads.
-  FlushICacheSpec flushIcacheSpec = flushAllThreadsIcaches
-                                        ? FlushICacheSpec::AllThreads
-                                        : FlushICacheSpec::LocalThreadOnly;
-  if (!ExecutableAllocator::makeExecutableAndFlushICache(flushIcacheSpec,
-                                                         codePtr, codeLength)) {
+  if (!ExecutableAllocator::makeExecutableAndFlushICache(codePtr, codeLength)) {
     return false;
   }
 
@@ -626,14 +615,8 @@ bool LazyStubTier::createOneEntryStub(uint32_t funcExportIndex,
     return false;
   }
 
-  // This happens on the executing thread (when createOneEntryStub is called
-  // from GetInterpEntryAndEnsureStubs), so no need to flush the icaches on all
-  // the threads.
-  bool flushAllThreadIcaches = false;
-
   size_t stubSegmentIndex;
-  if (!createManyEntryStubs(funcExportIndexes, codeTier, flushAllThreadIcaches,
-                            &stubSegmentIndex)) {
+  if (!createManyEntryStubs(funcExportIndexes, codeTier, &stubSegmentIndex)) {
     return false;
   }
 
@@ -664,13 +647,8 @@ bool LazyStubTier::createTier2(const Uint32Vector& funcExportIndices,
     return true;
   }
 
-  // This compilation happens on a background compiler thread, so the icache may
-  // need to be flushed on all the threads.
-  bool flushAllThreadIcaches = true;
-
   size_t stubSegmentIndex;
-  if (!createManyEntryStubs(funcExportIndices, codeTier, flushAllThreadIcaches,
-                            &stubSegmentIndex)) {
+  if (!createManyEntryStubs(funcExportIndices, codeTier, &stubSegmentIndex)) {
     return false;
   }
 
@@ -815,12 +793,14 @@ static bool AppendFunctionIndexName(uint32_t funcIndex, UTF8Bytes* bytes) {
   const char beforeFuncIndex[] = "wasm-function[";
   const char afterFuncIndex[] = "]";
 
-  ToCStringBuf cbuf;
-  const char* funcIndexStr = NumberToCString(nullptr, &cbuf, funcIndex);
+  Int32ToCStringBuf cbuf;
+  size_t funcIndexStrLen;
+  const char* funcIndexStr =
+      Uint32ToCString(&cbuf, funcIndex, &funcIndexStrLen);
   MOZ_ASSERT(funcIndexStr);
 
   return bytes->append(beforeFuncIndex, strlen(beforeFuncIndex)) &&
-         bytes->append(funcIndexStr, strlen(funcIndexStr)) &&
+         bytes->append(funcIndexStr, funcIndexStrLen) &&
          bytes->append(afterFuncIndex, strlen(afterFuncIndex));
 }
 
@@ -846,15 +826,15 @@ bool Metadata::getFuncName(NameContext ctx, uint32_t funcIndex,
   return AppendFunctionIndexName(funcIndex, name);
 }
 
-bool CodeTier::initialize(IsTier2 isTier2, const Code& code,
-                          const LinkData& linkData, const Metadata& metadata) {
+bool CodeTier::initialize(const Code& code, const LinkData& linkData,
+                          const Metadata& metadata) {
   MOZ_ASSERT(!initialized());
   code_ = &code;
 
   MOZ_ASSERT(lazyStubs_.readLock()->entryStubsEmpty());
 
   // See comments in CodeSegment::initialize() for why this must be last.
-  if (!segment_->initialize(isTier2, *this, linkData, metadata, *metadata_)) {
+  if (!segment_->initialize(*this, linkData, metadata, *metadata_)) {
     return false;
   }
 
@@ -943,7 +923,7 @@ Code::Code(UniqueCodeTier tier1, const Metadata& metadata,
 bool Code::initialize(const LinkData& linkData) {
   MOZ_ASSERT(!initialized());
 
-  if (!tier1_->initialize(IsTier2::NotTier2, *this, linkData, *metadata_)) {
+  if (!tier1_->initialize(*this, linkData, *metadata_)) {
     return false;
   }
 
@@ -957,7 +937,7 @@ bool Code::setAndBorrowTier2(UniqueCodeTier tier2, const LinkData& linkData,
   MOZ_RELEASE_ASSERT(tier2->tier() == Tier::Optimized &&
                      tier1_->tier() == Tier::Baseline);
 
-  if (!tier2->initialize(IsTier2::Tier2, *this, linkData, *metadata_)) {
+  if (!tier2->initialize(*this, linkData, *metadata_)) {
     return false;
   }
 
@@ -1154,9 +1134,10 @@ void Code::ensureProfilingLabels(bool profilingEnabled) const {
       continue;
     }
 
-    ToCStringBuf cbuf;
+    Int32ToCStringBuf cbuf;
+    size_t bytecodeStrLen;
     const char* bytecodeStr =
-        NumberToCString(nullptr, &cbuf, codeRange.funcLineOrBytecode());
+        Uint32ToCString(&cbuf, codeRange.funcLineOrBytecode(), &bytecodeStrLen);
     MOZ_ASSERT(bytecodeStr);
 
     UTF8Bytes name;
@@ -1177,7 +1158,7 @@ void Code::ensureProfilingLabels(bool profilingEnabled) const {
       }
     }
 
-    if (!name.append(':') || !name.append(bytecodeStr, strlen(bytecodeStr)) ||
+    if (!name.append(':') || !name.append(bytecodeStr, bytecodeStrLen) ||
         !name.append(")\0", 2)) {
       return;
     }

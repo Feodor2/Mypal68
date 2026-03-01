@@ -57,7 +57,7 @@ struct InstanceComparator {
 };
 
 bool wasm::Realm::registerInstance(JSContext* cx,
-                                   HandleWasmInstanceObject instanceObj) {
+                                   Handle<WasmInstanceObject*> instanceObj) {
   MOZ_ASSERT(runtime_ == cx->runtime());
 
   Instance& instance = instanceObj->instance();

@@ -482,7 +482,27 @@ bool FunctionScriptEmitter::emitEndBody() {
   //                [stack]
 
   if (funbox_->needsFinalYield()) {
-    // If we fall off the end of a generator, do a final yield.
+    // If we fall off the end of a generator or async function, we
+    // do a final yield with an |undefined| payload. We put all
+    // the code to do this in one place, both to reduce bytecode
+    // size and to prevent any OOM or debugger exception that occurs
+    // at this point from being caught inside the function.
+    if (!bce_->emit1(JSOp::Undefined)) {
+      //          [stack] UNDEF
+      return false;
+    }
+    if (!bce_->emit1(JSOp::SetRval)) {
+      //          [stack]
+      return false;
+    }
+
+    // Return statements in the body of the function will jump here
+    // with the return payload in rval.
+    if (!bce_->emitJumpTargetAndPatch(bce_->finalYields)) {
+      //          [stack]
+      return false;
+    }
+
     if (funbox_->needsIteratorResult()) {
       MOZ_ASSERT(!funbox_->needsPromiseResult());
       // Emit final yield bytecode for generators, for example:
@@ -492,8 +512,8 @@ bool FunctionScriptEmitter::emitEndBody() {
         return false;
       }
 
-      if (!bce_->emit1(JSOp::Undefined)) {
-        //          [stack] RESULT? UNDEF
+      if (!bce_->emit1(JSOp::GetRval)) {
+        //          [stack] RESULT RVAL
         return false;
       }
 
@@ -507,27 +527,22 @@ bool FunctionScriptEmitter::emitEndBody() {
         return false;
       }
 
-      if (!bce_->emitGetDotGeneratorInInnermostScope()) {
-        //          [stack] GEN
-        return false;
-      }
-
-      // No need to check for finally blocks, etc as in EmitReturn.
-      if (!bce_->emitYieldOp(JSOp::FinalYieldRval)) {
-        //          [stack]
-        return false;
-      }
     } else if (funbox_->needsPromiseResult()) {
       // Emit final yield bytecode for async functions, for example:
       // async function deferred() { ... }
-      if (!asyncEmitter_->emitEnd()) {
+      if (!bce_->emit1(JSOp::GetRval)) {
+        //          [stack] RVAL
         return false;
       }
-    } else {
-      // Emit final yield bytecode for async generators, for example:
-      // async function asyncgen * () { ... }
-      if (!bce_->emit1(JSOp::Undefined)) {
-        //          [stack] RESULT? UNDEF
+
+      if (!bce_->emitGetDotGeneratorInInnermostScope()) {
+        //          [stack] RVAL GEN
+        return false;
+      }
+
+      if (!bce_->emit2(JSOp::AsyncResolve,
+                       uint8_t(AsyncFunctionResolveKind::Fulfill))) {
+        //          [stack] PROMISE
         return false;
       }
 
@@ -535,18 +550,25 @@ bool FunctionScriptEmitter::emitEndBody() {
         //          [stack]
         return false;
       }
+    }
 
-      if (!bce_->emitGetDotGeneratorInInnermostScope()) {
-        //          [stack] GEN
-        return false;
-      }
+    // Emit the final yield.
+    if (!bce_->emitGetDotGeneratorInInnermostScope()) {
+      //          [stack] GEN
+      return false;
+    }
 
-      // No need to check for finally blocks, etc as in EmitReturn.
-      if (!bce_->emitYieldOp(JSOp::FinalYieldRval)) {
-        //          [stack]
+    if (!bce_->emitYieldOp(JSOp::FinalYieldRval)) {
+      return false;
+    }
+
+    if (funbox_->needsPromiseResult()) {
+      // Emit the reject catch block.
+      if (!asyncEmitter_->emitEndFunction()) {
         return false;
       }
     }
+
   } else {
     // Non-generator functions just return |undefined|. The
     // JSOp::RetRval emitted below will do that, except if the
@@ -607,12 +629,15 @@ bool FunctionScriptEmitter::emitEndBody() {
     }
   }
 
-  // Always end the script with a JSOp::RetRval. Some other parts of the
-  // codebase depend on this opcode,
-  // e.g. InterpreterRegs::setToEndOfScript.
-  if (!bce_->emitReturnRval()) {
-    //              [stack]
-    return false;
+  // Emit JSOp::RetRval except for sync arrow function with expression body
+  // which always ends with JSOp::Return. Other parts of the codebase depend
+  // on these opcodes being the last opcode.
+  // See JSScript::lastPC and BaselineCompiler::emitBody.
+  if (!funbox_->hasExprBody() || funbox_->isAsync()) {
+    if (!bce_->emitReturnRval()) {
+      //            [stack]
+      return false;
+    }
   }
 
   if (namedLambdaEmitterScope_) {

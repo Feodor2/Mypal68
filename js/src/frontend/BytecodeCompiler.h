@@ -11,10 +11,9 @@
 #include "NamespaceImports.h"
 
 #include "frontend/FunctionSyntaxKind.h"
-#include "gc/Rooting.h"
 #include "js/SourceText.h"
+#include "js/Stack.h"      // JS::NativeStackLimit
 #include "js/UniquePtr.h"  // js::UniquePtr
-#include "vm/TraceLogging.h"
 
 /*
  * Structure of all of the support classes.
@@ -103,6 +102,7 @@ namespace js {
 
 class ModuleObject;
 class ScriptSourceObject;
+class ErrorContext;
 
 namespace frontend {
 
@@ -116,26 +116,30 @@ class ParseNode;
 class TaggedParserAtomIndex;
 
 // Compile a module of the given source using the given options.
-ModuleObject* CompileModule(JSContext* cx,
+ModuleObject* CompileModule(JSContext* cx, ErrorContext* ec,
+                            JS::NativeStackLimit stackLimit,
                             const JS::ReadOnlyCompileOptions& options,
                             JS::SourceText<char16_t>& srcBuf);
-ModuleObject* CompileModule(JSContext* cx,
+ModuleObject* CompileModule(JSContext* cx, ErrorContext* ec,
+                            JS::NativeStackLimit stackLimit,
                             const JS::ReadOnlyCompileOptions& options,
                             JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 // Parse a module of the given source.  This is an internal API; if you want to
 // compile a module as a user, use CompileModule above.
 already_AddRefed<CompilationStencil> ParseModuleToStencil(
-    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
 already_AddRefed<CompilationStencil> ParseModuleToStencil(
-    JSContext* cx, CompilationInput& input,
-    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
-    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
 UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
-    JSContext* cx, CompilationInput& input,
-    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 //
 // Compile a single function. The source in srcBuf must match the ECMA-262
@@ -178,7 +182,7 @@ UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf,
     const mozilla::Maybe<uint32_t>& parameterListEnd,
-    frontend::FunctionSyntaxKind syntaxKind, HandleScope enclosingScope);
+    frontend::FunctionSyntaxKind syntaxKind, Handle<Scope*> enclosingScope);
 
 /*
  * True if str consists of an IdentifierStart character, followed by one or
@@ -210,25 +214,6 @@ bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length);
 
 /* True if str is a keyword. Defined in TokenStream.cpp. */
 bool IsKeyword(TaggedParserAtomIndex atom);
-
-class MOZ_STACK_CLASS AutoFrontendTraceLog {
-#ifdef JS_TRACE_LOGGING
-  TraceLoggerThread* logger_;
-  mozilla::Maybe<TraceLoggerEvent> frontendEvent_;
-  mozilla::Maybe<AutoTraceLog> frontendLog_;
-  mozilla::Maybe<AutoTraceLog> typeLog_;
-#endif
-
- public:
-  AutoFrontendTraceLog(JSContext* cx, const TraceLoggerTextId id,
-                       const ErrorReporter& reporter);
-
-  AutoFrontendTraceLog(JSContext* cx, const TraceLoggerTextId id,
-                       const ErrorReporter& reporter, FunctionBox* funbox);
-
-  AutoFrontendTraceLog(JSContext* cx, const TraceLoggerTextId id,
-                       const ErrorReporter& reporter, ParseNode* pn);
-};
 
 } /* namespace frontend */
 } /* namespace js */

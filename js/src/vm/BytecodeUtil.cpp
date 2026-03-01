@@ -1192,7 +1192,7 @@ static UniqueChars ToDisassemblySource(JSContext* cx, HandleValue v) {
   return QuoteString(cx, str);
 }
 
-static bool ToDisassemblySource(JSContext* cx, HandleScope scope,
+static bool ToDisassemblySource(JSContext* cx, Handle<Scope*> scope,
                                 UniqueChars* bytes) {
   UniqueChars source = JS_smprintf("%s {", ScopeKindString(scope->kind()));
   if (!source) {
@@ -1468,7 +1468,7 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
     }
 
     case JOF_SCOPE: {
-      RootedScope scope(cx, script->getScope(pc));
+      Rooted<Scope*> scope(cx, script->getScope(pc));
       UniqueChars bytes;
       if (!ToDisassemblySource(cx, scope, &bytes)) {
         return 0;
@@ -1878,7 +1878,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::GetProp:
     case JSOp::GetBoundName: {
       bool hasDelete = op == JSOp::DelProp || op == JSOp::StrictDelProp;
-      RootedAtom prop(cx, loadAtom(pc));
+      Rooted<JSAtom*> prop(cx, loadAtom(pc));
       MOZ_ASSERT(prop);
       return (hasDelete ? write("(delete ") : true) &&
              decompilePCForStackOperand(pc, -1) &&
@@ -1888,7 +1888,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
              (hasDelete ? write(")") : true);
     }
     case JSOp::GetPropSuper: {
-      RootedAtom prop(cx, loadAtom(pc));
+      Rooted<JSAtom*> prop(cx, loadAtom(pc));
       return write("super.") && quote(prop, '\0');
     }
     case JSOp::SetElem:
@@ -1946,8 +1946,10 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::NewTarget:
       return write("new.target");
     case JSOp::Call:
+    case JSOp::CallContent:
     case JSOp::CallIgnoresRv:
-    case JSOp::CallIter: {
+    case JSOp::CallIter:
+    case JSOp::CallContentIter: {
       uint16_t argc = GET_ARGC(pc);
       return decompilePCForStackOperand(pc, -int32_t(argc + 2)) &&
              write(argc ? "(...)" : "()");
@@ -1993,7 +1995,8 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::StrictSpreadEval:
       return write("eval(...)");
 
-    case JSOp::New: {
+    case JSOp::New:
+    case JSOp::NewContent: {
       uint16_t argc = GET_ARGC(pc);
       return write("(new ") &&
              decompilePCForStackOperand(pc, -int32_t(argc + 3)) &&
@@ -2538,7 +2541,8 @@ static bool DecompileArgumentFromStack(JSContext* cx, int formalIndex,
 
   /* Don't handle getters, setters or calls from fun.call/fun.apply. */
   JSOp op = JSOp(*current);
-  if (op != JSOp::Call && op != JSOp::CallIgnoresRv && op != JSOp::New) {
+  if (op != JSOp::Call && op != JSOp::CallContent &&
+      op != JSOp::CallIgnoresRv && op != JSOp::New && op != JSOp::NewContent) {
     return true;
   }
 
@@ -2552,7 +2556,7 @@ static bool DecompileArgumentFromStack(JSContext* cx, int formalIndex,
     return false;
   }
 
-  bool pushedNewTarget = op == JSOp::New;
+  bool pushedNewTarget = op == JSOp::New || op == JSOp::NewContent;
   int formalStackIndex = parser.stackDepthAtPC(current) - GET_ARGC(current) -
                          pushedNewTarget + formalIndex;
   MOZ_ASSERT(formalStackIndex >= 0);

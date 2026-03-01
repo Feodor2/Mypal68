@@ -13,6 +13,7 @@
 #include "jit/CacheIRWriter.h"
 #include "jit/JitOptions.h"
 #include "jit/MacroAssembler.h"
+#include "jit/PerfSpewer.h"
 #include "jit/SharedICRegisters.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 
@@ -740,7 +741,7 @@ class MOZ_RAII CacheIRCompiler {
 
   enum class Mode { Baseline, Ion };
 
-  bool preparedForVMCall_;
+  bool enteredStubFrame_;
 
   bool isBaseline();
   bool isIon();
@@ -771,11 +772,13 @@ class MOZ_RAII CacheIRCompiler {
 
   StubFieldPolicy stubFieldPolicy_;
 
-  CacheIRCompiler(JSContext* cx, const CacheIRWriter& writer,
-                  uint32_t stubDataOffset, Mode mode, StubFieldPolicy policy)
-      : preparedForVMCall_(false),
+  CacheIRCompiler(JSContext* cx, TempAllocator& alloc,
+                  const CacheIRWriter& writer, uint32_t stubDataOffset,
+                  Mode mode, StubFieldPolicy policy)
+      : enteredStubFrame_(false),
         cx_(cx),
         writer_(writer),
+        masm(cx, alloc),
         allocator(writer_),
         liveFloatRegs_(FloatRegisterSet::All()),
         mode_(mode),
@@ -917,6 +920,10 @@ class MOZ_RAII CacheIRCompiler {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
     return (JS::Compartment*)readStubWord(offset, StubField::Type::RawPointer);
   }
+  BaseScript* baseScriptStubField(uint32_t offset) {
+    MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
+    return (BaseScript*)readStubWord(offset, StubField::Type::BaseScript);
+  }
   const JSClass* classStubField(uintptr_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
     return (const JSClass*)readStubWord(offset, StubField::Type::RawPointer);
@@ -938,7 +945,15 @@ class MOZ_RAII CacheIRCompiler {
   void assertFloatRegisterAvailable(FloatRegister reg);
 #endif
 
+#if defined(JS_ION_PERF)
+  InlineCachePerfSpewer perfSpewer_;
+#endif
+
  public:
+#if defined(JS_ION_PERF)
+  InlineCachePerfSpewer& perfSpewer() { return perfSpewer_; }
+#endif
+
   void callVMInternal(MacroAssembler& masm, VMFunctionId id);
   template <typename Fn, Fn fn>
   void callVM(MacroAssembler& masm);
@@ -998,7 +1013,7 @@ class MOZ_RAII AutoStubFrame {
 
   void enter(MacroAssembler& masm, Register scratch,
              CallCanGC canGC = CallCanGC::CanGC);
-  void leave(MacroAssembler& masm, bool calledIntoIon = false);
+  void leave(MacroAssembler& masm);
 
 #ifdef DEBUG
   ~AutoStubFrame();

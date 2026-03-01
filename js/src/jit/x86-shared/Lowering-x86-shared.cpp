@@ -1116,8 +1116,7 @@ void LIRGenerator::visitWasmBinarySimd128(MWasmBinarySimd128* ins) {
     case wasm::SimdOp::F64x2RelaxedMax:
     case wasm::SimdOp::I16x8RelaxedQ15MulrS:
     case wasm::SimdOp::I16x8DotI8x16I7x16S:
-    case wasm::SimdOp::MozWHPMADDUBSW:
-    case wasm::SimdOp::MozWHPMADDWD:
+    case wasm::SimdOp::MozPMADDUBSW:
       if (isThreeOpAllowed()) {
         auto* lir = new (alloc())
             LWasmBinarySimd128(op, useRegisterAtStart(lhs),
@@ -1224,6 +1223,11 @@ bool MWasmTernarySimd128::canRelaxBitselect() {
       break;
   }
   return false;
+}
+
+bool MWasmBinarySimd128::canPmaddubsw() {
+  MOZ_ASSERT(Assembler::HasSSE3());
+  return true;
 }
 
 bool MWasmBinarySimd128::specializeForConstantRhs() {

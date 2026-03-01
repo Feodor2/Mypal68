@@ -21,6 +21,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Zone.h"
+#include "js/Stack.h"  // JS::NativeStackLimit
 #include "js/TypeDecls.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmExprType.h"   // for ResultType
@@ -90,14 +91,14 @@ class alignas(16) Instance {
   //   - Set by wasm::HandleThrow, unset by Instance::consumePendingException.
   //   - If the unwind target is a `try-delegate`, it is unset by the delegated
   //     try-catch block or function body block.
-  GCPtrObject pendingException_;
+  GCPtr<JSObject*> pendingException_;
   // The tag object of the pending exception.
-  GCPtrObject pendingExceptionTag_;
+  GCPtr<JSObject*> pendingExceptionTag_;
 
   // Usually equal to cx->stackLimitForJitCode(JS::StackForUntrustedScript),
   // but can be racily set to trigger immediate trap as an opportunity to
   // CheckForInterrupt without an additional branch.
-  Atomic<uintptr_t, mozilla::Relaxed> stackLimit_;
+  Atomic<JS::NativeStackLimit, mozilla::Relaxed> stackLimit_;
 
   // Set to 1 when wasm should call CheckForInterrupt.
   Atomic<uint32_t, mozilla::Relaxed> interrupt_;
@@ -140,13 +141,13 @@ class alignas(16) Instance {
   void* preBarrierCode_;
 
   // Weak pointer to WasmInstanceObject that owns this instance
-  WeakHeapPtrWasmInstanceObject object_;
+  WeakHeapPtr<WasmInstanceObject*> object_;
 
   // The wasm::Code for this instance
   const SharedCode code_;
 
   // The memory for this instance, if any
-  const GCPtrWasmMemoryObject memory_;
+  const GCPtr<WasmMemoryObject*> memory_;
 
   // The tables for this instance, if any
   const SharedTableVector tables_;
@@ -186,7 +187,7 @@ class alignas(16) Instance {
   const void** addressOfTypeId(const TypeIdDesc& typeId) const;
   FuncImportInstanceData& funcImportInstanceData(const FuncImport& fi);
   TableInstanceData& tableInstanceData(const TableDesc& td) const;
-  GCPtrWasmTagObject& tagInstanceData(const TagDesc& td) const;
+  GCPtr<WasmTagObject*>& tagInstanceData(const TagDesc& td) const;
 
   // Only WasmInstanceObject can call the private trace function.
   friend class js::WasmInstanceObject;
@@ -195,15 +196,15 @@ class alignas(16) Instance {
   bool callImport(JSContext* cx, uint32_t funcImportIndex, unsigned argc,
                   uint64_t* argv);
 
-  Instance(JSContext* cx, HandleWasmInstanceObject object, SharedCode code,
-           HandleWasmMemoryObject memory, SharedTableVector&& tables,
+  Instance(JSContext* cx, Handle<WasmInstanceObject*> object, SharedCode code,
+           Handle<WasmMemoryObject*> memory, SharedTableVector&& tables,
            UniqueDebugState maybeDebug);
   ~Instance();
 
  public:
-  static Instance* create(JSContext* cx, HandleWasmInstanceObject object,
+  static Instance* create(JSContext* cx, Handle<WasmInstanceObject*> object,
                           SharedCode code, uint32_t globalDataLength,
-                          HandleWasmMemoryObject memory,
+                          Handle<WasmMemoryObject*> memory,
                           SharedTableVector&& tables,
                           UniqueDebugState maybeDebug);
   static void destroy(Instance* instance);
@@ -335,11 +336,6 @@ class alignas(16) Instance {
 
   [[nodiscard]] bool constantRefFunc(uint32_t funcIndex,
                                      MutableHandleFuncRef result);
-  [[nodiscard]] bool constantRttCanon(JSContext* cx, uint32_t sourceTypeIndex,
-                                      MutableHandleRttValue result);
-  [[nodiscard]] bool constantRttSub(JSContext* cx, HandleRttValue parentRtt,
-                                    uint32_t sourceChildTypeIndex,
-                                    MutableHandleRttValue result);
 
   // Return the name associated with a given function index, or generate one
   // if none was given by the module.
@@ -451,8 +447,6 @@ class alignas(16) Instance {
   static int32_t throwException(Instance* instance, JSObject* exn);
   static void* arrayNew(Instance* instance, uint32_t length, void* arrayDescr);
   static int32_t refTest(Instance* instance, void* refPtr, void* rttPtr);
-  static void* rttSub(Instance* instance, void* rttParentPtr,
-                      void* rttSubCanonPtr);
   static int32_t intrI8VecMul(Instance* instance, uint32_t dest, uint32_t src1,
                               uint32_t src2, uint32_t len, uint8_t* memBase);
 };

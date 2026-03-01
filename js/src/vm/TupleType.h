@@ -24,11 +24,15 @@ class TupleType final : public js::NativeObject {
 
   static TupleType* createUninitialized(JSContext* cx, uint32_t initialLength);
 
-  static TupleType* createUnchecked(JSContext* cx, js::HandleArrayObject aObj);
+  static TupleType* createUnchecked(JSContext* cx,
+                                    Handle<js::ArrayObject*> aObj);
 
   bool initializeNextElement(JSContext* cx, HandleValue elt);
   void finishInitialization(JSContext* cx);
   static js::Shape* getInitialShape(JSContext* cx);
+
+  static bool copy(JSContext* cx, Handle<TupleType*> in,
+                   MutableHandle<TupleType*> out);
 
   bool getOwnProperty(HandleId id, MutableHandleValue vp) const;
   inline uint32_t length() const { return getElementsHeader()->length; }

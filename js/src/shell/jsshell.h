@@ -112,34 +112,22 @@ extern bool enableWasmBaseline;
 extern bool enableWasmOptimizing;
 
 #define WASM_FEATURE(NAME, ...) extern bool enableWasm##NAME;
-#ifdef ENABLE_WASM_SIMD
 JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
-#else
-JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE);
-#endif
 #undef WASM_FEATURE
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-extern bool enableWasmSimdWormhole;
-#endif
 extern bool enableWasmVerbose;
 extern bool enableTestWasmAwaitTier2;
 extern bool enableSourcePragmas;
 extern bool enableAsyncStacks;
 extern bool enableAsyncStackCaptureDebuggeeOnly;
-extern bool enableStreams;
-extern bool enableReadableByteStreams;
-extern bool enableBYOBStreamReaders;
-
-extern bool enableReadableStreamPipeTo;
 extern bool enableWeakRefs;
 extern bool enableToSource;
 extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
+extern bool enableShadowRealms;
 extern bool enableArrayGrouping;
 extern bool enablePrivateClassFields;
 extern bool enablePrivateClassMethods;
-extern bool enableErgonomicBrandChecks;
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 extern bool enableChangeArrayByCopy;
 #endif
@@ -184,10 +172,10 @@ bool CreateAlias(JSContext* cx, const char* dstName,
 enum class OffThreadJobKind { CompileScript, CompileModule, Decode };
 
 class NonshrinkingGCObjectVector
-    : public GCVector<HeapPtrObject, 0, SystemAllocPolicy> {
+    : public GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> {
  public:
   bool traceWeak(JSTracer* trc) {
-    for (HeapPtrObject& obj : *this) {
+    for (HeapPtr<JSObject*>& obj : *this) {
       TraceWeakEdge(trc, &obj, "NonshrinkingGCObjectVector element");
     }
     return true;

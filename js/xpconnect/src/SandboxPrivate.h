@@ -8,7 +8,7 @@
 #include "mozilla/WeakPtr.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StorageAccess.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
@@ -67,10 +67,10 @@ class SandboxPrivate : public nsIGlobalObject,
       // XXX: This is a hack to workaround bug 1732159 and is not intended
       return mozilla::StorageAccess::eAllow;
     }
-    nsCOMPtr<nsICookieSettings> cookieSettings =
-        mozilla::net::CookieSettings::Create();
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+        mozilla::net::CookieJarSettings::Create();
     return mozilla::StorageAllowedForServiceWorker(mPrincipal,
-                                                   cookieSettings);
+                                                   cookieJarSettings);
   }
 
   void ForgetGlobalObject(JSObject* obj) { ClearWrapper(obj); }

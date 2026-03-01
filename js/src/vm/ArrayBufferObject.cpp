@@ -24,6 +24,7 @@
 #  include <sys/mman.h>
 #endif
 #include <tuple>  // std::tuple
+#include <type_traits>
 #ifdef MOZ_VALGRIND
 #  include <valgrind/memcheck.h>
 #endif
@@ -720,6 +721,9 @@ void WasmArrayRawBuffer::Release(void* mem) {
   MOZ_RELEASE_ASSERT(header->mappedSize() <= SIZE_MAX - gc::SystemPageSize());
   size_t mappedSizeWithHeader = header->mappedSize() + gc::SystemPageSize();
 
+  static_assert(std::is_trivially_destructible_v<WasmArrayRawBuffer>,
+                "no need to call the destructor");
+
   UnmapBufferMemory(header->indexType(), header->basePointer(),
                     mappedSizeWithHeader);
 }
@@ -855,7 +859,8 @@ bool js::CreateWasmBuffer(JSContext* cx, const wasm::MemoryDesc& memory,
       return false;
     }
     return CreateSpecificWasmBuffer<SharedArrayBufferObject,
-                                    SharedArrayRawBuffer>(cx, memory, buffer);
+                                    WasmSharedArrayRawBuffer>(cx, memory,
+                                                              buffer);
   }
   return CreateSpecificWasmBuffer<ArrayBufferObject, WasmArrayRawBuffer>(
       cx, memory, buffer);
@@ -1236,9 +1241,9 @@ static ArrayBufferObject* NewArrayBufferObject(JSContext* cx,
   constexpr size_t nfixed = ArrayBufferObject::RESERVED_SLOTS;
   static_assert(nfixed <= NativeObject::MAX_FIXED_SLOTS);
 
-  RootedShape shape(cx, SharedShape::getInitialShape(cx, clasp, cx->realm(),
-                                                     AsTaggedProto(proto),
-                                                     nfixed, ObjectFlags()));
+  Rooted<Shape*> shape(cx, SharedShape::getInitialShape(cx, clasp, cx->realm(),
+                                                        AsTaggedProto(proto),
+                                                        nfixed, ObjectFlags()));
   if (!shape) {
     return nullptr;
   }
@@ -1894,7 +1899,6 @@ JS_PUBLIC_API JSObject* JS::NewExternalArrayBuffer(
   CHECK_THREAD(cx);
 
   MOZ_ASSERT(data);
-  MOZ_ASSERT(nbytes > 0);
 
   using BufferContents = ArrayBufferObject::BufferContents;
 

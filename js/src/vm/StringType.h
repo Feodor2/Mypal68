@@ -22,7 +22,6 @@
 #include "gc/MaybeRooted.h"
 #include "gc/Nursery.h"
 #include "gc/RelocationOverlay.h"
-#include "gc/Rooting.h"
 #include "js/CharacterEncoding.h"
 #include "js/RootingAPI.h"
 #include "js/shadow/String.h"  // JS::shadow::String
@@ -54,7 +53,9 @@ struct CompilationAtomCache;
 
 }  // namespace frontend
 
+class ArrayObject;
 class PropertyName;
+class StringBuffer;
 
 /* The buffer length required to contain any unsigned 32-bit integer. */
 static const size_t UINT32_CHAR_BUFFER_LENGTH = sizeof("4294967295") - 1;
@@ -563,7 +564,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   // Fills |array| with various strings that represent the different string
   // kinds and character encodings.
   static bool fillWithRepresentatives(JSContext* cx,
-                                      js::HandleArrayObject array);
+                                      JS::Handle<js::ArrayObject*> array);
 
   /* Only called by the GC for dependent strings. */
 

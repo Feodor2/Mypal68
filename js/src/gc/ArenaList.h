@@ -369,8 +369,7 @@ class ArenaLists {
 
   void initBackgroundSweep(AllocKind thingKind);
 
-  TenuredCell* refillFreeListAndAllocate(FreeLists& freeLists,
-                                         AllocKind thingKind,
+  TenuredCell* refillFreeListAndAllocate(AllocKind thingKind,
                                          ShouldCheckThresholds checkThresholds);
 
   friend class BackgroundUnmarkTask;

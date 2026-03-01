@@ -16,6 +16,14 @@
 
 namespace js {
 
+class ErrorContext;
+
+/**
+ * Use this type instead of JSContext when the object is only used for its
+ * ability to allocate memory (via its MallocProvider methods).
+ */
+using JSAllocator = JSContext;
+
 /**
  * Metadata for a compilation error (or warning) at a particular offset, or at
  * no offset (i.e. with respect to a script overall).
@@ -81,11 +89,11 @@ extern void CallWarningReporter(JSContext* cx, JSErrorReport* report);
  * Report a compile error during script processing prior to execution of the
  * script.
  */
-extern void ReportCompileErrorLatin1(JSContext* cx, ErrorMetadata&& metadata,
+extern void ReportCompileErrorLatin1(ErrorContext* ec, ErrorMetadata&& metadata,
                                      UniquePtr<JSErrorNotes> notes,
                                      unsigned errorNumber, va_list* args);
 
-extern void ReportCompileErrorUTF8(JSContext* cx, ErrorMetadata&& metadata,
+extern void ReportCompileErrorUTF8(ErrorContext* ec, ErrorMetadata&& metadata,
                                    UniquePtr<JSErrorNotes> notes,
                                    unsigned errorNumber, va_list* args);
 
@@ -94,7 +102,7 @@ extern void ReportCompileErrorUTF8(JSContext* cx, ErrorMetadata&& metadata,
  * script.  Returns true if the warning was successfully reported, false if an
  * error occurred.
  */
-[[nodiscard]] extern bool ReportCompileWarning(JSContext* cx,
+[[nodiscard]] extern bool ReportCompileWarning(ErrorContext* ec,
                                                ErrorMetadata&& metadata,
                                                UniquePtr<JSErrorNotes> notes,
                                                unsigned errorNumber,
@@ -143,13 +151,13 @@ extern bool ReportErrorNumberUTF8Array(JSContext* cx, IsWarning isWarning,
                                        const unsigned errorNumber,
                                        const char** args);
 
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+extern bool ExpandErrorArgumentsVA(ErrorContext* ec, JSErrorCallback callback,
                                    void* userRef, const unsigned errorNumber,
                                    const char16_t** messageArgs,
                                    ErrorArgumentsType argumentsType,
                                    JSErrorReport* reportp, va_list ap);
 
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+extern bool ExpandErrorArgumentsVA(ErrorContext* ec, JSErrorCallback callback,
                                    void* userRef, const unsigned errorNumber,
                                    const char** messageArgs,
                                    ErrorArgumentsType argumentsType,
@@ -158,12 +166,12 @@ extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
 /*
  * For cases when we do not have an arguments array.
  */
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+extern bool ExpandErrorArgumentsVA(ErrorContext* ec, JSErrorCallback callback,
                                    void* userRef, const unsigned errorNumber,
                                    ErrorArgumentsType argumentsType,
                                    JSErrorReport* reportp, va_list ap);
 
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+extern bool ExpandErrorArgumentsVA(ErrorContext* ec, JSErrorCallback callback,
                                    void* userRef, const unsigned errorNumber,
                                    const char16_t** messageArgs,
                                    ErrorArgumentsType argumentsType,

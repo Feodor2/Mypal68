@@ -317,7 +317,7 @@ class Nursery {
   void renderProfileJSON(JSONPrinter& json) const;
 
   // Print header line for profile times.
-  static void printProfileHeader();
+  void printProfileHeader();
 
   // Print total profile times on shutdown.
   void printTotalProfileTimes();
@@ -467,6 +467,7 @@ class Nursery {
     size_t nurseryCapacity = 0;
     size_t nurseryCommitted = 0;
     size_t nurseryUsedBytes = 0;
+    size_t nurseryUsedChunkCount = 0;
     size_t tenuredBytes = 0;
     size_t tenuredCells = 0;
     mozilla::TimeStamp endTime;
@@ -550,9 +551,9 @@ class Nursery {
 
       if (key->asLinear().hasLatin1Chars()) {
         MOZ_ASSERT(lookup->asLinear().hasLatin1Chars());
-        return mozilla::ArrayEqual(key->asLinear().latin1Chars(nogc),
-                                   lookup->asLinear().latin1Chars(nogc),
-                                   lookup->length());
+        return EqualChars(key->asLinear().latin1Chars(nogc),
+                          lookup->asLinear().latin1Chars(nogc),
+                          lookup->length());
       } else {
         MOZ_ASSERT(key->asLinear().hasTwoByteChars());
         MOZ_ASSERT(lookup->asLinear().hasTwoByteChars());
@@ -682,7 +683,7 @@ class Nursery {
   void maybeClearProfileDurations();
   void startProfile(ProfileKey key);
   void endProfile(ProfileKey key);
-  static void printProfileDurations(const ProfileDurations& times);
+  static void printProfileDurations(FILE* file, const ProfileDurations& times);
 
   mozilla::TimeStamp collectionStartTime() const;
   mozilla::TimeStamp lastCollectionEndTime() const;

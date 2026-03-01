@@ -179,8 +179,8 @@ void MacroAssemblerCompat::loadPrivate(const Address& src, Register dest) {
   loadPtr(src, dest);
 }
 
-void MacroAssemblerCompat::handleFailureWithHandlerTail(
-    Label* profilerExitTail) {
+void MacroAssemblerCompat::handleFailureWithHandlerTail(Label* profilerExitTail,
+                                                        Label* bailoutTail) {
   // Fail rather than silently create wrong code.
   MOZ_RELEASE_ASSERT(GetStackPointer64().Is(PseudoStackPointer64));
 
@@ -232,10 +232,13 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
 
   breakpoint();  // Invalid kind.
 
-  // No exception handler. Load the error value, load the new stack pointer,
-  // and return from the entry frame.
+  // No exception handler. Load the error value, restore state and return from
+  // the entry frame.
   bind(&entryFrame);
   moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
+  loadPtr(
+      Address(PseudoStackPointer, ResumeFromException::offsetOfFramePointer()),
+      FramePointer);
   loadPtr(
       Address(PseudoStackPointer, ResumeFromException::offsetOfStackPointer()),
       PseudoStackPointer);
@@ -260,7 +263,7 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
           r0);
   loadPtr(
       Address(PseudoStackPointer, ResumeFromException::offsetOfFramePointer()),
-      BaselineFrameReg);
+      FramePointer);
   loadPtr(
       Address(PseudoStackPointer, ResumeFromException::offsetOfStackPointer()),
       PseudoStackPointer);
@@ -275,7 +278,7 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
                             ResumeFromException::offsetOfException()));
   Ldr(x0,
       MemOperand(PseudoStackPointer64, ResumeFromException::offsetOfTarget()));
-  Ldr(ARMRegister(BaselineFrameReg, 64),
+  Ldr(ARMRegister(FramePointer, 64),
       MemOperand(PseudoStackPointer64,
                  ResumeFromException::offsetOfFramePointer()));
   Ldr(PseudoStackPointer64,
@@ -292,19 +295,15 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
   bind(&returnBaseline);
   loadPtr(
       Address(PseudoStackPointer, ResumeFromException::offsetOfFramePointer()),
-      BaselineFrameReg);
+      FramePointer);
   loadPtr(
       Address(PseudoStackPointer, ResumeFromException::offsetOfStackPointer()),
       PseudoStackPointer);
   // See comment further up beginning "`retn` does indeed sync the stack
   // pointer".  That comment applies here too.
   syncStackPtr();
-  loadValue(
-      Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfReturnValue()),
-      JSReturnOperand);
-  movePtr(BaselineFrameReg, PseudoStackPointer);
-  syncStackPtr();
-  vixl::MacroAssembler::Pop(ARMRegister(BaselineFrameReg, 64));
+  loadValue(Address(FramePointer, BaselineFrame::reverseOffsetOfReturnValue()),
+            JSReturnOperand);
   jump(&profilingInstrumentation);
 
   // Return the given value to the caller.
@@ -314,6 +313,9 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
       JSReturnOperand);
   loadPtr(
       Address(PseudoStackPointer, offsetof(ResumeFromException, framePointer)),
+      FramePointer);
+  loadPtr(
+      Address(PseudoStackPointer, offsetof(ResumeFromException, stackPointer)),
       PseudoStackPointer);
   syncStackPtr();
 
@@ -324,12 +326,16 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
   {
     Label skipProfilingInstrumentation;
     AbsoluteAddress addressOfEnabled(
-        GetJitContext()->runtime->geckoProfiler().addressOfEnabled());
+        asMasm().runtime()->geckoProfiler().addressOfEnabled());
     asMasm().branch32(Assembler::Equal, addressOfEnabled, Imm32(0),
                       &skipProfilingInstrumentation);
     jump(profilerExitTail);
     bind(&skipProfilingInstrumentation);
   }
+
+  movePtr(FramePointer, PseudoStackPointer);
+  syncStackPtr();
+  vixl::MacroAssembler::Pop(ARMRegister(FramePointer, 64));
 
   vixl::MacroAssembler::Pop(vixl::lr);
   syncStackPtr();
@@ -340,10 +346,12 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
   bind(&bailout);
   Ldr(x2, MemOperand(PseudoStackPointer64,
                      ResumeFromException::offsetOfBailoutInfo()));
-  Ldr(x1,
-      MemOperand(PseudoStackPointer64, ResumeFromException::offsetOfTarget()));
+  Ldr(PseudoStackPointer64,
+      MemOperand(PseudoStackPointer64,
+                 ResumeFromException::offsetOfStackPointer()));
+  syncStackPtr();
   Mov(x0, 1);
-  Br(x1);
+  jump(bailoutTail);
 
   // If we are throwing and the innermost frame was a wasm frame, reset SP and
   // FP; SP is pointing to the unwound return address to the wasm entry, so
@@ -375,26 +383,16 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
 
 void MacroAssemblerCompat::profilerEnterFrame(Register framePtr,
                                               Register scratch) {
-  profilerEnterFrame(RegisterOrSP(framePtr), scratch);
-}
-
-void MacroAssemblerCompat::profilerEnterFrame(RegisterOrSP framePtr,
-                                              Register scratch) {
   asMasm().loadJSContext(scratch);
   loadPtr(Address(scratch, offsetof(JSContext, profilingActivation_)), scratch);
-  if (IsHiddenSP(framePtr)) {
-    storeStackPtr(
-        Address(scratch, JitActivation::offsetOfLastProfilingFrame()));
-  } else {
-    storePtr(AsRegister(framePtr),
-             Address(scratch, JitActivation::offsetOfLastProfilingFrame()));
-  }
+  storePtr(framePtr,
+           Address(scratch, JitActivation::offsetOfLastProfilingFrame()));
   storePtr(ImmPtr(nullptr),
            Address(scratch, JitActivation::offsetOfLastProfilingCallSite()));
 }
 
 void MacroAssemblerCompat::profilerExitFrame() {
-  jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
+  jump(asMasm().runtime()->jitRuntime()->getProfilerExitFrameTail());
 }
 
 Assembler::Condition MacroAssemblerCompat::testStringTruthy(
@@ -1626,10 +1624,9 @@ uint32_t MacroAssembler::pushFakeReturnAddress(Register scratch) {
 }
 
 bool MacroAssemblerCompat::buildOOLFakeExitFrame(void* fakeReturnAddr) {
-  uint32_t descriptor = MakeFrameDescriptor(
-      asMasm().framePushed(), FrameType::IonJS, ExitFrameLayout::Size());
-  asMasm().Push(Imm32(descriptor));
+  asMasm().PushFrameDescriptor(FrameType::IonJS);
   asMasm().Push(ImmPtr(fakeReturnAddr));
+  asMasm().Push(FramePointer);
   return true;
 }
 
@@ -2120,20 +2117,17 @@ void MacroAssembler::wasmStoreI64(const wasm::MemoryAccessDesc& access,
 
 void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
                                                ExitFrameType type) {
-  // Wasm stubs use the native SP, not the PSP.  Setting up the fake exit
-  // frame leaves the SP mis-aligned, which is how we want it, but we must do
-  // that carefully.
+  // Wasm stubs use the native SP, not the PSP.
 
   linkExitFrame(cxreg, scratch);
 
   MOZ_RELEASE_ASSERT(sp.Is(GetStackPointer64()));
 
-  const ARMRegister tmp(scratch, 64);
-
-  vixl::UseScratchRegisterScope temps(this);
-  const ARMRegister tmp2 = temps.AcquireX();
-
-  Sub(sp, sp, 8);
+  // SP has to be 16-byte aligned when we do a load/store, so push |type| twice
+  // and then add 8 bytes to SP. This leaves SP unaligned.
+  move32(Imm32(int32_t(type)), scratch);
+  push(scratch, scratch);
+  Add(sp, sp, 8);
 
   // Despite the above assertion, it is possible for control to flow from here
   // to the code generated by
@@ -2143,10 +2137,6 @@ void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
   // for safety.  Note we can't use initPseudoStackPtr here as that would
   // generate no instructions.
   Mov(PseudoStackPointer64, sp);
-
-  Mov(tmp, sp);  // SP may be unaligned, can't use it for memory op
-  Mov(tmp2, int32_t(type));
-  Str(tmp2, vixl::MemOperand(tmp, 0));
 }
 
 void MacroAssembler::widenInt32(Register r) {

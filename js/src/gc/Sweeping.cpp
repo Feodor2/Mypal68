@@ -16,6 +16,7 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/TimeStamp.h"
 
 #include "builtin/FinalizationRegistryObject.h"
 #include "builtin/WeakRefObject.h"
@@ -35,7 +36,6 @@
 #include "proxy/DeadObjectProxy.h"
 #include "vm/HelperThreads.h"
 #include "vm/JSContext.h"
-#include "vm/TraceLogging.h"
 #include "vm/WrapperObject.h"
 
 #include "gc/PrivateIterators-inl.h"
@@ -48,6 +48,8 @@
 
 using namespace js;
 using namespace js::gc;
+
+using mozilla::TimeStamp;
 
 struct js::gc::FinalizePhase {
   gcstats::PhaseKind statsPhase;
@@ -132,12 +134,12 @@ inline size_t Arena::finalize(JS::GCContext* gcx, AllocKind thingKind,
   }
 
   if constexpr (std::is_same_v<T, JSObject>) {
-    if (isNewlyCreated) {
+    if (isNewlyCreated_) {
       zone->pretenuring.updateCellCountsInNewlyCreatedArenas(
           nmarked + nfinalized, nmarked);
     }
   }
-  isNewlyCreated = 0;
+  isNewlyCreated_ = 0;
 
   if (thingKind == AllocKind::STRING ||
       thingKind == AllocKind::FAT_INLINE_STRING) {
@@ -183,7 +185,7 @@ static inline bool FinalizeTypedArenas(JS::GCContext* gcx, ArenaList& src,
                                        SortedArenaList& dest,
                                        AllocKind thingKind,
                                        SliceBudget& budget) {
-  AutoSetThreadIsFinalizing setThreadUse;
+  MOZ_ASSERT(gcx->isFinalizing());
 
   size_t thingSize = Arena::thingSize(thingKind);
   size_t thingsPerArena = Arena::thingsPerArena(thingKind);
@@ -319,6 +321,7 @@ void GCRuntime::sweepBackgroundThings(ZoneList& zones) {
   }
 
   JS::GCContext* gcx = TlsGCContext.get();
+  MOZ_ASSERT(gcx->isFinalizing());
 
   // Sweep zones in order. The atoms zone must be finalized last as other
   // zones may have direct pointers into it.
@@ -326,9 +329,9 @@ void GCRuntime::sweepBackgroundThings(ZoneList& zones) {
     Zone* zone = zones.removeFront();
     MOZ_ASSERT(zone->isGCFinished());
 
-    Arena* emptyArenas = zone->arenas.takeSweptEmptyArenas();
+    TimeStamp startTime = ReallyNow();
 
-    AutoSetThreadIsSweeping threadIsSweeping(zone);
+    Arena* emptyArenas = zone->arenas.takeSweptEmptyArenas();
 
     // We must finalize thing kinds in the order specified by
     // BackgroundFinalizePhases.
@@ -358,6 +361,10 @@ void GCRuntime::sweepBackgroundThings(ZoneList& zones) {
         releaseArena(arena, lock);
       }
     }
+
+    // Record time spent sweeping this zone.
+    TimeStamp endTime = ReallyNow();
+    zone->perZoneGCTime += endTime - startTime;
   }
 }
 
@@ -395,12 +402,9 @@ void GCRuntime::queueZonesAndStartBackgroundSweep(ZoneList& zones) {
 }
 
 BackgroundSweepTask::BackgroundSweepTask(GCRuntime* gc)
-    : GCParallelTask(gc, gcstats::PhaseKind::SWEEP) {}
+    : GCParallelTask(gc, gcstats::PhaseKind::SWEEP, GCUse::Finalizing) {}
 
 void BackgroundSweepTask::run(AutoLockHelperThreadState& lock) {
-  AutoTraceLog logSweeping(TraceLoggerForCurrentThread(),
-                           TraceLogger_GCSweeping);
-
   gc->sweepFromBackgroundThread(lock);
 }
 
@@ -438,8 +442,6 @@ BackgroundFreeTask::BackgroundFreeTask(GCRuntime* gc)
 }
 
 void BackgroundFreeTask::run(AutoLockHelperThreadState& lock) {
-  AutoTraceLog logFreeing(TraceLoggerForCurrentThread(), TraceLogger_GCFree);
-
   gc->freeFromBackgroundThread(lock);
 }
 
@@ -1175,7 +1177,6 @@ void GCRuntime::updateAtomsBitmap() {
 
 void GCRuntime::sweepCCWrappers() {
   SweepingTracer trc(rt);
-  AutoSetThreadIsSweeping threadIsSweeping;  // This can touch all zones.
   for (SweepGroupZonesIter zone(this); !zone.done(); zone.next()) {
     zone->traceWeakCCWEdges(&trc);
   }
@@ -1210,7 +1211,6 @@ void GCRuntime::sweepCompressionTasks() {
 
 void GCRuntime::sweepWeakMaps() {
   SweepingTracer trc(rt);
-  AutoSetThreadIsSweeping threadIsSweeping;  // This may touch any zone.
   for (SweepGroupZonesIter zone(this); !zone.done(); zone.next()) {
     /* No need to look up any more weakmap keys from this sweep group. */
     AutoEnterOOMUnsafeRegion oomUnsafe;
@@ -1496,15 +1496,19 @@ IncrementalProgress GCRuntime::beginSweepingSweepGroup(JS::GCContext* gcx,
     AutoPhase ap(stats(), PhaseKind::SWEEP_COMPARTMENTS);
 
     AutoRunParallelTask sweepCCWrappers(this, &GCRuntime::sweepCCWrappers,
-                                        PhaseKind::SWEEP_CC_WRAPPER, lock);
+                                        PhaseKind::SWEEP_CC_WRAPPER,
+                                        GCUse::Sweeping, lock);
     AutoRunParallelTask sweepMisc(this, &GCRuntime::sweepMisc,
-                                  PhaseKind::SWEEP_MISC, lock);
+                                  PhaseKind::SWEEP_MISC, GCUse::Sweeping, lock);
     AutoRunParallelTask sweepCompTasks(this, &GCRuntime::sweepCompressionTasks,
-                                       PhaseKind::SWEEP_COMPRESSION, lock);
+                                       PhaseKind::SWEEP_COMPRESSION,
+                                       GCUse::Sweeping, lock);
     AutoRunParallelTask sweepWeakMaps(this, &GCRuntime::sweepWeakMaps,
-                                      PhaseKind::SWEEP_WEAKMAPS, lock);
+                                      PhaseKind::SWEEP_WEAKMAPS,
+                                      GCUse::Sweeping, lock);
     AutoRunParallelTask sweepUniqueIds(this, &GCRuntime::sweepUniqueIds,
-                                       PhaseKind::SWEEP_UNIQUEIDS, lock);
+                                       PhaseKind::SWEEP_UNIQUEIDS,
+                                       GCUse::Sweeping, lock);
 
     WeakCacheTaskVector sweepCacheTasks;
     bool canSweepWeakCachesOffThread =
@@ -1865,8 +1869,8 @@ IncrementalProgress GCRuntime::sweepWeakCaches(JS::GCContext* gcx,
 
   {
     AutoRunParallelWork runWork(this, IncrementalSweepWeakCache,
-                                gcstats::PhaseKind::SWEEP_WEAK_CACHES, work,
-                                budget, lock);
+                                gcstats::PhaseKind::SWEEP_WEAK_CACHES,
+                                GCUse::Sweeping, work, budget, lock);
     AutoUnlockHelperThreadState unlock(lock);
   }
 
@@ -1887,7 +1891,7 @@ IncrementalProgress GCRuntime::finalizeAllocKind(JS::GCContext* gcx,
   auto& sweepList = incrementalSweepList.ref();
   sweepList.setThingsPerArena(thingsPerArena);
 
-  AutoSetThreadIsSweeping threadIsSweeping(sweepZone);
+  AutoSetThreadIsFinalizing threadIsFinalizing(gcx);
 
   if (!foregroundFinalize(gcx, sweepZone, sweepAllocKind, budget, sweepList)) {
     return NotFinished;
@@ -2228,6 +2232,7 @@ IncrementalProgress GCRuntime::performSweepActions(SliceBudget& budget) {
   gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::SWEEP);
 
   JS::GCContext* gcx = rt->gcContext();
+  AutoSetThreadIsSweeping threadIsSweeping(gcx);
   AutoPoisonFreedJitCode pjc(gcx);
 
   // Don't trigger pre-barriers when finalizing.
@@ -2295,12 +2300,8 @@ void GCRuntime::endSweepPhase(bool destroyingRuntime) {
   {
     gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::DESTROY);
 
-    /*
-     * Sweep script filenames after sweeping functions in the generic loop
-     * above. In this way when a scripted function's finalizer destroys the
-     * script and calls rt->destroyScriptHook, the hook can still access the
-     * script's filename. See bug 323267.
-     */
+    // Sweep shared script bytecode now all zones have been swept and finalizers
+    // for BaseScripts have released their references.
     SweepScriptData(rt);
   }
 

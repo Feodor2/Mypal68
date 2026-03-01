@@ -23,6 +23,7 @@
 #include "js/Interrupt.h"
 #include "js/Promise.h"
 #include "js/Result.h"
+#include "js/Stack.h"  // JS::NativeStackBase, JS::NativeStackLimit
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "threading/ProtectedData.h"
@@ -177,14 +178,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   js::ContextData<JS::ContextOptions> options_;
 
-  // Free lists for allocating in the current zone.
-  js::ContextData<js::gc::FreeLists*> freeLists_;
-
-  // This is reset each time we switch zone, then added to the variable in the
-  // zone when we switch away from it.  This would be a js::ThreadData but we
-  // need to take its address.
-  uint32_t allocsThisZoneSinceMinorGC_;
-
   // Thread that the JSContext is currently running on, if in use.
   js::ThreadId currentThread_;
 
@@ -239,11 +232,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return kind_ == js::ContextKind::HelperThread;
   }
 
-  js::gc::FreeLists& freeLists() {
-    MOZ_ASSERT(freeLists_);
-    return *freeLists_;
-  }
-
   template <typename T>
   bool isInsideCurrentZone(T thing) const {
     return thing->zoneFromAnyThread() == zone_;
@@ -263,22 +251,12 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return runtime_->onOutOfMemory(allocFunc, arena, nbytes, reallocPtr, this);
   }
 
+  void onOverRecursed();
+
   /* Clear the pending exception (if any) due to OOM. */
   void recoverFromOutOfMemory();
 
   void reportAllocationOverflow() { js::ReportAllocationOverflow(this); }
-
-  void noteTenuredAlloc() { allocsThisZoneSinceMinorGC_++; }
-
-  uint32_t* addressOfTenuredAllocCount() {
-    return &allocsThisZoneSinceMinorGC_;
-  }
-
-  uint32_t getAndResetAllocsThisZoneSinceMinorGC() {
-    uint32_t allocs = allocsThisZoneSinceMinorGC_;
-    allocsThisZoneSinceMinorGC_ = 0;
-    return allocs;
-  }
 
   // Accessors for immutable runtime data.
   JSAtomState& names() { return *runtime_->commonNames; }
@@ -292,8 +270,12 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   }
   js::PropertyName* emptyString() { return runtime_->emptyString; }
   JS::GCContext* gcContext() { return runtime_->gcContext(); }
-  uintptr_t stackLimit(JS::StackKind kind) { return nativeStackLimit[kind]; }
-  uintptr_t stackLimitForJitCode(JS::StackKind kind);
+  JS::StackKind stackKindForCurrentPrincipal();
+  JS::NativeStackLimit stackLimitForCurrentPrincipal();
+  JS::NativeStackLimit stackLimit(JS::StackKind kind) {
+    return nativeStackLimit[kind];
+  }
+  JS::NativeStackLimit stackLimitForJitCode(JS::StackKind kind);
   size_t gcSystemPageSize() { return js::gc::SystemPageSize(); }
 
   /*
@@ -316,8 +298,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   inline void enterAtomsZone();
   inline void leaveAtomsZone(JS::Realm* oldRealm);
-  enum IsAtomsZone { AtomsZone, NotAtomsZone };
-  inline void setZone(js::Zone* zone, IsAtomsZone isAtomsZone);
+  inline void setZone(js::Zone* zone);
 
   friend class js::AutoAllocInAtomsZone;
   friend class js::AutoMaybeLeaveAtomsZone;
@@ -392,11 +373,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   }
 
   // Methods specific to any HelperThread for the context.
-  bool addPendingCompileError(js::CompileError** err);
   void addPendingOverRecursed();
   void addPendingOutOfMemory();
-
-  bool isCompileErrorPending() const;
 
   JSRuntime* runtime() { return runtime_; }
   const JSRuntime* runtime() const { return runtime_; }
@@ -482,10 +460,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
  private:
   // Base address of the native stack for the current thread.
-  mozilla::Maybe<uintptr_t> nativeStackBase_;
+  mozilla::Maybe<JS::NativeStackBase> nativeStackBase_;
 
  public:
-  uintptr_t nativeStackBase() const { return *nativeStackBase_; }
+  JS::NativeStackBase nativeStackBase() const { return *nativeStackBase_; }
 
  public:
   /* If non-null, report JavaScript entry points to this monitor. */
@@ -511,11 +489,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
  public:
   js::jit::Simulator* simulator() const;
-  uintptr_t* addressOfSimulatorStackLimit();
-#endif
-
-#ifdef JS_TRACE_LOGGING
-  js::UnprotectedData<js::TraceLoggerThread*> traceLogger;
+  JS::NativeStackLimit* addressOfSimulatorStackLimit();
 #endif
 
  public:
@@ -780,7 +754,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   bool isThrowingDebuggeeWouldRun();
   bool isClosingGenerator();
 
-  void setPendingException(JS::HandleValue v, js::HandleSavedFrame stack);
+  void setPendingException(JS::HandleValue v,
+                           JS::Handle<js::SavedFrame*> stack);
   void setPendingException(JS::HandleValue v,
                            js::ShouldCaptureStack captureStack);
 
@@ -814,6 +789,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    */
   inline bool runningWithTrustedPrincipals();
 
+  // Checks if the page's Content-Security-Policy (CSP) allows
+  // runtime code generation "unsafe-eval", or "wasm-unsafe-eval" for Wasm.
+  bool isRuntimeCodeGenEnabled(JS::RuntimeCode kind, js::HandleString code);
+
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -840,16 +819,16 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   // Any thread can call requestInterrupt() to request that this thread
   // stop running. To stop this thread, requestInterrupt sets two fields:
-  // interruptBits_ (a bitset of InterruptReasons) and jitStackLimit_ (set to
-  // UINTPTR_MAX). The JS engine must continually poll one of these fields
-  // and call handleInterrupt if either field has the interrupt value.
+  // interruptBits_ (a bitset of InterruptReasons) and jitStackLimit (set to
+  // JS::NativeStackLimitMin). The JS engine must continually poll one of these
+  // fields and call handleInterrupt if either field has the interrupt value.
   //
-  // The point of setting jitStackLimit_ to UINTPTR_MAX is that JIT code
-  // already needs to guard on jitStackLimit_ in every function prologue to
+  // The point of setting jitStackLimit to JS::NativeStackLimitMin is that JIT
+  // code already needs to guard on jitStackLimit in every function prologue to
   // avoid stack overflow, so we avoid a second branch on interruptBits_ by
-  // setting jitStackLimit_ to a value that is guaranteed to fail the guard.)
+  // setting jitStackLimit to a value that is guaranteed to fail the guard.)
   //
-  // Note that the writes to interruptBits_ and jitStackLimit_ use a Relaxed
+  // Note that the writes to interruptBits_ and jitStackLimit use a Relaxed
   // Atomic so, while the writes are guaranteed to eventually be visible to
   // this thread, it can happen in any order. handleInterrupt calls the
   // interrupt callback if either is set, so it really doesn't matter as long
@@ -891,10 +870,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // object.
   js::FutexThread fx;
 
-  mozilla::Atomic<uintptr_t, mozilla::Relaxed> jitStackLimit;
+  mozilla::Atomic<JS::NativeStackLimit, mozilla::Relaxed> jitStackLimit;
 
   // Like jitStackLimit, but not reset to trigger interrupts.
-  js::ContextData<uintptr_t> jitStackLimitNoInterrupt;
+  js::ContextData<JS::NativeStackLimit> jitStackLimitNoInterrupt;
 
   // Queue of pending jobs as described in ES2016 section 8.4.
   //
@@ -1018,7 +997,7 @@ extern void DestroyContext(JSContext* cx);
 extern void ReportUsageErrorASCII(JSContext* cx, HandleObject callee,
                                   const char* msg);
 
-extern void ReportIsNotDefined(JSContext* cx, HandlePropertyName name);
+extern void ReportIsNotDefined(JSContext* cx, Handle<PropertyName*> name);
 
 extern void ReportIsNotDefined(JSContext* cx, HandleId id);
 

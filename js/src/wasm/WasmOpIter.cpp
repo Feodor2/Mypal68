@@ -247,6 +247,8 @@ OpKind wasm::Classify(OpBytes op) {
       return OpKind::Call;
     case Op::CallIndirect:
       return OpKind::CallIndirect;
+    case Op::CallRef:
+      WASM_FUNCTION_REFERENCES_OP(OpKind::CallRef);
     case Op::Return:
     case Op::Limit:
       // Accept Limit, for use in decoding the end of a function after the body.
@@ -290,20 +292,20 @@ OpKind wasm::Classify(OpBytes op) {
         case GcOp::Limit:
           // Reject Limit for GcPrefix encoding
           break;
-        case GcOp::StructNewWithRtt:
-          WASM_GC_OP(OpKind::StructNewWithRtt);
-        case GcOp::StructNewDefaultWithRtt:
-          WASM_GC_OP(OpKind::StructNewDefaultWithRtt);
+        case GcOp::StructNew:
+          WASM_GC_OP(OpKind::StructNew);
+        case GcOp::StructNewDefault:
+          WASM_GC_OP(OpKind::StructNewDefault);
         case GcOp::StructGet:
         case GcOp::StructGetS:
         case GcOp::StructGetU:
           WASM_GC_OP(OpKind::StructGet);
         case GcOp::StructSet:
           WASM_GC_OP(OpKind::StructSet);
-        case GcOp::ArrayNewWithRtt:
-          WASM_GC_OP(OpKind::ArrayNewWithRtt);
-        case GcOp::ArrayNewDefaultWithRtt:
-          WASM_GC_OP(OpKind::ArrayNewDefaultWithRtt);
+        case GcOp::ArrayNew:
+          WASM_GC_OP(OpKind::ArrayNew);
+        case GcOp::ArrayNewDefault:
+          WASM_GC_OP(OpKind::ArrayNewDefault);
         case GcOp::ArrayGet:
         case GcOp::ArrayGetS:
         case GcOp::ArrayGetU:
@@ -312,10 +314,6 @@ OpKind wasm::Classify(OpBytes op) {
           WASM_GC_OP(OpKind::ArraySet);
         case GcOp::ArrayLen:
           WASM_GC_OP(OpKind::ArrayLen);
-        case GcOp::RttCanon:
-          WASM_GC_OP(OpKind::RttCanon);
-        case GcOp::RttSub:
-          WASM_GC_OP(OpKind::RttSub);
         case GcOp::RefTest:
           WASM_GC_OP(OpKind::RefTest);
         case GcOp::RefCast:
@@ -328,8 +326,9 @@ OpKind wasm::Classify(OpBytes op) {
 #ifdef ENABLE_WASM_SIMD
     case Op::SimdPrefix: {
       switch (SimdOp(op.b1)) {
+        case SimdOp::MozPMADDUBSW:
         case SimdOp::Limit:
-          // Reject Limit for SimdPrefix encoding
+          // Reject Limit and reserved codes for SimdPrefix encoding
           break;
         case SimdOp::I8x16ExtractLaneS:
         case SimdOp::I8x16ExtractLaneU:
@@ -601,12 +600,6 @@ OpKind wasm::Classify(OpBytes op) {
         case SimdOp::I64x2RelaxedLaneSelect:
         case SimdOp::I32x4DotI8x16I7x16AddS:
           WASM_SIMD_OP(OpKind::Ternary);
-#  ifdef ENABLE_WASM_SIMD_WORMHOLE
-        case SimdOp::MozWHSELFTEST:
-        case SimdOp::MozWHPMADDUBSW:
-        case SimdOp::MozWHPMADDWD:
-          MOZ_CRASH("Should not be seen");
-#  endif
       }
       break;
     }

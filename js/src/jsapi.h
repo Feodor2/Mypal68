@@ -814,6 +814,7 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(JIT_TRUSTEDPRINCIPALS_ENABLE, "jit_trustedprincipals.enable") \
   Register(ION_CHECK_RANGE_ANALYSIS, "ion.check-range-analysis") \
   Register(ION_FREQUENT_BAILOUT_THRESHOLD, "ion.frequent-bailout-threshold") \
+  Register(BASE_REG_FOR_LOCALS, "base-reg-for-locals") \
   Register(INLINING_BYTECODE_MAX_LENGTH, "inlining.bytecode-max-length") \
   Register(BASELINE_INTERPRETER_ENABLE, "blinterp.enable") \
   Register(BASELINE_ENABLE, "baseline.enable") \
@@ -849,6 +850,14 @@ extern JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
 extern JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
                                                         JSJitCompilerOption opt,
                                                         uint32_t* valueOut);
+
+namespace JS {
+
+// Disable all Spectre mitigations for this process after creating the initial
+// JSContext. Must be called on this context's thread.
+extern JS_PUBLIC_API void DisableSpectreMitigationsAfterInit();
+
+};
 
 /**
  * Convert a uint32_t index into a jsid.

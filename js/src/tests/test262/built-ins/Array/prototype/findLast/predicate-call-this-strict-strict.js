@@ -1,4 +1,3 @@
-// |reftest| skip -- array-find-from-last is not supported
 'use strict';
 // Copyright (C) 2021 Microsoft. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.

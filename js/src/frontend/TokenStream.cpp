@@ -488,10 +488,11 @@ SourceCoords::LineToken SourceCoords::lineToken(uint32_t offset) const {
   return LineToken(indexFromOffset(offset), offset);
 }
 
-TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx,
+TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx, ErrorContext* ec,
                                          const ReadOnlyCompileOptions& options,
                                          StrictModeGetter* smg)
     : cx(cx),
+      ec(ec),
       options_(options),
       strictModeGetter_(smg),
       filename_(options.filename()),
@@ -510,11 +511,11 @@ TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx,
 
 template <typename Unit>
 TokenStreamCharsBase<Unit>::TokenStreamCharsBase(JSContext* cx,
-                                                 ParserAtomsTable* pasrerAtoms,
+                                                 ParserAtomsTable* parserAtoms,
                                                  const Unit* units,
                                                  size_t length,
                                                  size_t startOffset)
-    : TokenStreamCharsShared(cx, pasrerAtoms),
+    : TokenStreamCharsShared(cx, parserAtoms),
       sourceUnits(units, length, startOffset) {}
 
 bool FillCharBufferFromSourceNormalizingAsciiLineBreaks(CharBuffer& charBuffer,
@@ -578,9 +579,9 @@ bool FillCharBufferFromSourceNormalizingAsciiLineBreaks(CharBuffer& charBuffer,
 
 template <typename Unit, class AnyCharsAccess>
 TokenStreamSpecific<Unit, AnyCharsAccess>::TokenStreamSpecific(
-    JSContext* cx, ParserAtomsTable* pasrerAtoms,
+    JSContext* cx, ParserAtomsTable* parserAtoms,
     const ReadOnlyCompileOptions& options, const Unit* units, size_t length)
-    : TokenStreamChars<Unit, AnyCharsAccess>(cx, pasrerAtoms, units, length,
+    : TokenStreamChars<Unit, AnyCharsAccess>(cx, parserAtoms, units, length,
                                              options.scriptSourceOffset) {}
 
 bool TokenStreamAnyChars::checkOptions() {
@@ -607,7 +608,7 @@ void TokenStreamAnyChars::reportErrorNoOffsetVA(unsigned errorNumber,
   ErrorMetadata metadata;
   computeErrorMetadataNoOffset(&metadata);
 
-  ReportCompileErrorLatin1(cx, std::move(metadata), nullptr, errorNumber, args);
+  ReportCompileErrorLatin1(ec, std::move(metadata), nullptr, errorNumber, args);
 }
 
 [[nodiscard]] MOZ_ALWAYS_INLINE bool
@@ -1037,7 +1038,7 @@ MOZ_COLD void TokenStreamChars<Utf8Unit, AnyCharsAccess>::internalEncodingError(
       break;
     }
 
-    ReportCompileErrorLatin1(anyChars.cx, std::move(err), std::move(notes),
+    ReportCompileErrorLatin1(anyChars.ec, std::move(err), std::move(notes),
                              errorNumber, &args);
   } while (false);
 
@@ -2509,12 +2510,8 @@ template <typename Unit, class AnyCharsAccess>
 
     ungetCodeUnit(unit);
 
-    // "0." and "0e..." numbers parse "." or "e..." here.  Neither range
-    // contains a number, so we can't use |FullStringToDouble|.  (Parse
-    // failures return 0.0, so we'll still get the right result.)
-    if (!GetDecimalNonInteger(anyCharsAccess().cx, numStart,
-                              this->sourceUnits.addressOfNextCodeUnit(),
-                              &dval)) {
+    if (!GetDecimal(anyCharsAccess().cx, numStart,
+                    this->sourceUnits.addressOfNextCodeUnit(), &dval)) {
       return false;
     }
   }
@@ -2985,11 +2982,9 @@ template <typename Unit, class AnyCharsAccess>
         return badToken();
       } else {
         // '0' not followed by [XxBbOo0-9_];  scan as a decimal number.
-        numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
-
-        // NOTE: |unit| may be EOF here.  (This is permitted by case #3
-        //       in TokenStream.h docs for this function.)
-        return decimalNumber(unit, start, numStart, modifier, ttp);
+        ungetCodeUnit(unit);
+        numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;  // The '0'.
+        return decimalNumber('0', start, numStart, modifier, ttp);
       }
 
       if (unit == 'n') {
@@ -3317,6 +3312,12 @@ template <typename Unit, class AnyCharsAccess>
               matchCodeUnit('=') ? TokenKind::SubAssign : TokenKind::Sub;
         }
         break;
+
+#ifdef ENABLE_DECORATORS
+      case '@':
+        simpleKind = TokenKind::At;
+        break;
+#endif
 
       default:
         // We consumed a bad ASCII code point/unit.  Put it back so the

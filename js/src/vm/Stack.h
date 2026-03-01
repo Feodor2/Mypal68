@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <type_traits>
 
-#include "gc/Rooting.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/RootingAPI.h"
@@ -184,7 +183,7 @@ class AbstractFramePtr {
   inline JSObject* environmentChain() const;
   inline CallObject& callObj() const;
   inline bool initFunctionEnvironmentObjects(JSContext* cx);
-  inline bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  inline bool pushVarEnvironment(JSContext* cx, Handle<Scope*> scope);
   template <typename SpecificEnvironment>
   inline void pushOnEnvironmentChain(SpecificEnvironment& env);
   template <typename SpecificEnvironment>
@@ -530,7 +529,7 @@ class InterpreterFrame {
 
   // Push a VarEnvironmentObject for function frames of functions that have
   // parameter expressions with closed over var bindings.
-  bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  bool pushVarEnvironment(JSContext* cx, Handle<Scope*> scope);
 
   /*
    * For lexical envs with aliased locals, these interfaces push and pop

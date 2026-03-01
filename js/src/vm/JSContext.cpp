@@ -46,7 +46,7 @@
 #include "js/MemoryCallbacks.h"
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_GetProperty
-#include "js/Stack.h"
+#include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimit, JS::NativeStackLimitMin
 #include "util/DiagnosticAssertions.h"
 #include "util/DifferentialTesting.h"
 #include "util/DoubleToString.h"
@@ -54,6 +54,7 @@
 #include "util/Text.h"
 #include "util/WindowsWrapper.h"
 #include "vm/BytecodeUtil.h"  // JSDVG_IGNORE_STACK
+#include "vm/ErrorContext.h"
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/HelperThreadState.h"
@@ -159,9 +160,11 @@ static void InitDefaultStackQuota(JSContext* cx) {
   // XPCJSContext::Initialize.
 
 #if defined(MOZ_ASAN) || (defined(DEBUG) && !defined(XP_WIN))
-  static constexpr size_t MaxStackSize = 2 * 128 * sizeof(size_t) * 1024;
+  static constexpr JS::NativeStackSize MaxStackSize =
+      2 * 128 * sizeof(size_t) * 1024;
 #else
-  static constexpr size_t MaxStackSize = 128 * sizeof(size_t) * 1024;
+  static constexpr JS::NativeStackSize MaxStackSize =
+      128 * sizeof(size_t) * 1024;
 #endif
   JS_SetNativeStackQuota(cx, MaxStackSize);
 }
@@ -305,7 +308,7 @@ JS_PUBLIC_API void js::ReportOutOfMemory(JSContext* cx) {
 #endif
 }
 
-JS_PUBLIC_API void js::ReportOverRecursed(JSContext* maybecx) {
+static void MaybeReportOverRecursedForDifferentialTesting() {
   /*
    * We cannot make stack depth deterministic across different
    * implementations (e.g. JIT vs. interpreter will differ in
@@ -317,26 +320,43 @@ JS_PUBLIC_API void js::ReportOverRecursed(JSContext* maybecx) {
   if (js::SupportDifferentialTesting()) {
     fprintf(stderr, "ReportOverRecursed called\n");
   }
+}
 
-  if (maybecx) {
-    if (maybecx->isHelperThreadContext()) {
-      maybecx->addPendingOverRecursed();
-    } else {
-      // Try to construct an over-recursed error and then update the exception
-      // status to `OverRecursed`. Creating the error can fail, so check there
-      // is a reasonable looking exception pending before updating status.
-      JS_ReportErrorNumberASCII(maybecx, GetErrorMessage, nullptr,
-                                JSMSG_OVER_RECURSED);
-      if (maybecx->isExceptionPending() && !maybecx->isThrowingOutOfMemory()) {
-        MOZ_ASSERT(maybecx->unwrappedException().isObject());
-        MOZ_ASSERT(maybecx->status == JS::ExceptionStatus::Throwing);
-        maybecx->status = JS::ExceptionStatus::OverRecursed;
-      }
+void JSContext::onOverRecursed() {
+  if (isHelperThreadContext()) {
+    addPendingOverRecursed();
+  } else {
+    // Try to construct an over-recursed error and then update the exception
+    // status to `OverRecursed`. Creating the error can fail, so check there
+    // is a reasonable looking exception pending before updating status.
+    JS_ReportErrorNumberASCII(this, GetErrorMessage, nullptr,
+                              JSMSG_OVER_RECURSED);
+    if (isExceptionPending() && !isThrowingOutOfMemory()) {
+      MOZ_ASSERT(unwrappedException().isObject());
+      MOZ_ASSERT(status == JS::ExceptionStatus::Throwing);
+      status = JS::ExceptionStatus::OverRecursed;
     }
-#ifdef DEBUG
-    maybecx->hadNondeterministicException_ = true;
-#endif
   }
+
+#ifdef DEBUG
+  hadNondeterministicException_ = true;
+#endif
+}
+
+JS_PUBLIC_API void js::ReportOverRecursed(JSContext* maybecx) {
+  MaybeReportOverRecursedForDifferentialTesting();
+
+  if (!maybecx) {
+    return;
+  }
+
+  maybecx->onOverRecursed();
+}
+
+JS_PUBLIC_API void js::ReportOverRecursed(ErrorContext* ec) {
+  MaybeReportOverRecursedForDifferentialTesting();
+
+  ec->onOverRecursed();
 }
 
 void js::ReportOversizedAllocation(JSContext* cx, const unsigned errorNumber) {
@@ -558,7 +578,7 @@ void js::ReportIsNotDefined(JSContext* cx, HandleId id) {
   }
 }
 
-void js::ReportIsNotDefined(JSContext* cx, HandlePropertyName name) {
+void js::ReportIsNotDefined(JSContext* cx, Handle<PropertyName*> name) {
   RootedId id(cx, NameToId(name));
   ReportIsNotDefined(cx, id);
 }
@@ -654,7 +674,7 @@ bool js::ReportValueError(JSContext* cx, const unsigned errorNumber,
 }
 
 JSObject* js::CreateErrorNotesArray(JSContext* cx, JSErrorReport* report) {
-  RootedArrayObject notesArray(cx, NewDenseEmptyArray(cx));
+  Rooted<ArrayObject*> notesArray(cx, NewDenseEmptyArray(cx));
   if (!notesArray) {
     return nullptr;
   }
@@ -664,7 +684,7 @@ JSObject* js::CreateErrorNotesArray(JSContext* cx, JSErrorReport* report) {
   }
 
   for (auto&& note : *report->notes) {
-    RootedPlainObject noteObj(cx, NewPlainObject(cx));
+    Rooted<PlainObject*> noteObj(cx, NewPlainObject(cx));
     if (!noteObj) {
       return nullptr;
     }
@@ -721,6 +741,15 @@ void JSContext::recoverFromOutOfMemory() {
   }
 }
 
+JS::StackKind JSContext::stackKindForCurrentPrincipal() {
+  return runningWithTrustedPrincipals() ? JS::StackForTrustedScript
+                                        : JS::StackForUntrustedScript;
+}
+
+JS::NativeStackLimit JSContext::stackLimitForCurrentPrincipal() {
+  return stackLimit(stackKindForCurrentPrincipal());
+}
+
 JS_PUBLIC_API bool js::UseInternalJobQueues(JSContext* cx) {
   // Internal job queue handling must be set up very early. Self-hosting
   // initialization is as good a marker for that as any.
@@ -744,7 +773,7 @@ JS_PUBLIC_API bool js::UseInternalJobQueues(JSContext* cx) {
 
 #ifdef DEBUG
 JSObject* InternalJobQueue::copyJobs(JSContext* cx) {
-  RootedArrayObject jobs(cx, NewDenseEmptyArray(cx));
+  Rooted<ArrayObject*> jobs(cx, NewDenseEmptyArray(cx));
   if (!jobs) {
     return nullptr;
   }
@@ -949,7 +978,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       kind_(ContextKind::Uninitialized),
       nurserySuppressions_(this),
       options_(this, options),
-      freeLists_(this, nullptr),
       freeUnusedMemory(false),
       jitActivation(this, nullptr),
       isolate(this, nullptr),
@@ -963,9 +991,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
 #endif
 #ifdef JS_SIMULATOR
       simulator_(this, nullptr),
-#endif
-#ifdef JS_TRACE_LOGGING
-      traceLogger(nullptr),
 #endif
       dtoaState(this, nullptr),
       suppressGC(this, 0),
@@ -1009,8 +1034,8 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       interruptCallbackDisabled(this, false),
       interruptBits_(0),
       inlinedICScript_(this, nullptr),
-      jitStackLimit(UINTPTR_MAX),
-      jitStackLimitNoInterrupt(this, UINTPTR_MAX),
+      jitStackLimit(JS::NativeStackLimitMin),
+      jitStackLimitNoInterrupt(this, JS::NativeStackLimitMin),
       jobQueue(this, nullptr),
       internalJobQueue(this),
       canSkipEnqueuingJobs(this, false),
@@ -1040,12 +1065,6 @@ JSContext::~JSContext() {
 
 #ifdef JS_SIMULATOR
   js::jit::Simulator::Destroy(simulator_);
-#endif
-
-#ifdef JS_TRACE_LOGGING
-  if (traceLogger) {
-    DestroyTraceLogger(traceLogger);
-  }
 #endif
 
   if (isolate) {
@@ -1095,7 +1114,7 @@ static bool IsOutOfMemoryException(JSContext* cx, const Value& v) {
 }
 #endif
 
-void JSContext::setPendingException(HandleValue v, HandleSavedFrame stack) {
+void JSContext::setPendingException(HandleValue v, Handle<SavedFrame*> stack) {
 #if defined(NIGHTLY_BUILD)
   do {
     // Do not intercept exceptions if we are already
@@ -1139,7 +1158,7 @@ void JSContext::setPendingException(HandleValue v, HandleSavedFrame stack) {
 
 void JSContext::setPendingException(HandleValue value,
                                     ShouldCaptureStack captureStack) {
-  RootedSavedFrame nstack(this);
+  Rooted<SavedFrame*> nstack(this);
   if (captureStack == ShouldCaptureStack::Always ||
       realm()->shouldCaptureStackForThrow()) {
     RootedObject stack(this);
@@ -1155,19 +1174,24 @@ void JSContext::setPendingException(HandleValue value,
 
 bool JSContext::getPendingException(MutableHandleValue rval) {
   MOZ_ASSERT(isExceptionPending());
-  rval.set(unwrappedException());
+
+  RootedValue exception(this, unwrappedException());
   if (zone()->isAtomsZone()) {
+    rval.set(exception);
     return true;
   }
-  RootedSavedFrame stack(this, unwrappedExceptionStack());
+
+  Rooted<SavedFrame*> stack(this, unwrappedExceptionStack());
   JS::ExceptionStatus prevStatus = status;
   clearPendingException();
-  if (!compartment()->wrap(this, rval)) {
+  if (!compartment()->wrap(this, &exception)) {
     return false;
   }
-  this->check(rval);
-  setPendingException(rval, stack);
+  this->check(exception);
+  setPendingException(exception, stack);
   status = prevStatus;
+
+  rval.set(exception);
   return true;
 }
 
@@ -1185,6 +1209,18 @@ bool JSContext::isThrowingDebuggeeWouldRun() {
          unwrappedException().toObject().is<ErrorObject>() &&
          unwrappedException().toObject().as<ErrorObject>().type() ==
              JSEXN_DEBUGGEEWOULDRUN;
+}
+
+bool JSContext::isRuntimeCodeGenEnabled(JS::RuntimeCode kind,
+                                        HandleString code) {
+  // Make sure that the CSP callback is installed and that it permits runtime
+  // code generation.
+  if (JSCSPEvalChecker allows =
+          runtime()->securityCallbacks->contentSecurityPolicyAllows) {
+    return allows(this, kind, code);
+  }
+
+  return true;
 }
 
 size_t JSContext::sizeOfExcludingThis(
@@ -1212,7 +1248,7 @@ void JSContext::trace(JSTracer* trc) {
   geckoProfiler().trace(trc);
 }
 
-uintptr_t JSContext::stackLimitForJitCode(JS::StackKind kind) {
+JS::NativeStackLimit JSContext::stackLimitForJitCode(JS::StackKind kind) {
 #ifdef JS_SIMULATOR
   return simulator()->stackLimit();
 #else
@@ -1312,3 +1348,27 @@ AutoUnsafeCallWithABI::~AutoUnsafeCallWithABI() {
   MOZ_ASSERT_IF(checkForPendingException_, !JS_IsExceptionPending(cx_));
 }
 #endif
+
+#ifdef __wasi__
+JS_PUBLIC_API void js::IncWasiRecursionDepth(JSContext* cx) {
+  ++JS::RootingContext::get(cx)->wasiRecursionDepth;
+}
+
+JS_PUBLIC_API void js::DecWasiRecursionDepth(JSContext* cx) {
+  MOZ_ASSERT(JS::RootingContext::get(cx)->wasiRecursionDepth > 0);
+  --JS::RootingContext::get(cx)->wasiRecursionDepth;
+}
+
+JS_PUBLIC_API bool js::CheckWasiRecursionLimit(JSContext* cx) {
+  // WASI has two limits:
+  // 1) The stack pointer in linear memory that grows to zero. See
+  //    --stack-first in js/src/shell/moz.build.
+  // 2) The JS::RootingContext::wasiRecursionDepth that counts recursion depth.
+  //    Here we should check both.
+  if (JS::RootingContext::get(cx)->wasiRecursionDepth >=
+      JS::RootingContext::wasiRecursionDepthLimit) {
+    return false;
+  }
+  return true;
+}
+#endif  // __wasi__

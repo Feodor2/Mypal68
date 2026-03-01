@@ -4,18 +4,12 @@ if (!wasmIsSupported())
 load(libdir + "asserts.js");
 
 // On 64-bit systems with explicit bounds checking, ion and baseline can handle
-// 65536 pages but cranelift can handle only 65534 pages; thus the presence of
-// cranelift forces the max for the system as a whole to 65534.  We will
-// probably fix this eventually.
+// 65536 pages.
 
 var PageSizeInBytes = 65536;
 var MaxBytesIn32BitMemory = 0;
 if (largeArrayBufferEnabled()) {
-    if (wasmCompilersPresent().indexOf("cranelift") != -1) {
-        MaxBytesIn32BitMemory = 65534*PageSizeInBytes;
-    } else {
-        MaxBytesIn32BitMemory = 65536*PageSizeInBytes;
-    }
+    MaxBytesIn32BitMemory = 65536*PageSizeInBytes;
 } else {
     // This is an overestimate twice: first, the max byte value is divisible by
     // the page size; second, it must be a valid bounds checking immediate.  But
@@ -24,15 +18,13 @@ if (largeArrayBufferEnabled()) {
 }
 var MaxPagesIn32BitMemory = Math.floor(MaxBytesIn32BitMemory / PageSizeInBytes);
 
-// "options" is an extension to facilitate the SIMD wormhole
-
-function wasmEvalText(str, imports, options) {
+function wasmEvalText(str, imports) {
     let binary = wasmTextToBinary(str);
-    let valid = WebAssembly.validate(binary, options);
+    let valid = WebAssembly.validate(binary);
 
     let m;
     try {
-        m = new WebAssembly.Module(binary, options);
+        m = new WebAssembly.Module(binary);
         assertEq(valid, true);
     } catch(e) {
         if (!e.toString().match(/out of memory/))
@@ -375,8 +367,7 @@ if (wasmGcEnabled()) {
       (module
         (type $s (struct))
         (func (export "newStruct") (result eqref)
-            rtt.canon $s
-            struct.new_with_rtt $s)
+            struct.new $s)
       )`).exports;
     WasmNonNullEqrefValues.push(newStruct());
     WasmEqrefValues.push(null, ...WasmNonNullEqrefValues);
@@ -402,3 +393,76 @@ let WasmNonNullExternrefValues = [
     ...WasmNonNullEqrefValues
 ];
 let WasmExternrefValues = [null, ...WasmNonNullExternrefValues];
+
+// Common array utilities
+
+// iota(n) creates an Array of length n with values 0..n-1
+function iota(len) {
+    let xs = [];
+    for ( let i=0 ; i < len ; i++ )
+        xs.push(i);
+    return xs;
+}
+
+// cross(A) where A is an array of length n creates an Array length n*n of
+// two-element Arrays representing all pairs of elements of A.
+function cross(xs) {
+    let results = [];
+    for ( let x of xs )
+        for ( let y of xs )
+            results.push([x,y]);
+    return results;
+}
+
+// Remove all values equal to v from an array xs, comparing equal for NaN.
+function remove(v, xs) {
+    let result = [];
+    for ( let w of xs ) {
+        if (v === w || isNaN(v) && isNaN(w))
+            continue;
+        result.push(w);
+    }
+    return result;
+}
+
+// permute(A) where A is an Array returns an Array of Arrays, each inner Array a
+// distinct permutation of the elements of A.  A is assumed not to have any
+// elements that are pairwise equal in the sense of remove().
+function permute(xs) {
+    if (xs.length == 1)
+        return [xs];
+    let results = [];
+    for (let v of xs)
+        for (let tail of permute(remove(v, xs)))
+            results.push([v, ...tail]);
+    return results;
+}
+
+// interleave([a,b,c,...],[0,1,2,...]) => [a,0,b,1,c,2,...]
+function interleave(xs, ys) {
+    assertEq(xs.length, ys.length);
+    let res = [];
+    for ( let i=0 ; i < xs.length; i++ ) {
+        res.push(xs[i]);
+        res.push(ys[i]);
+    }
+    return res;
+}
+
+// assertSame([a,...],[b,...]) asserts that the two arrays have the same length
+// and that they element-wise assertEq IGNORING Number/BigInt differences.  This
+// predicate is in this file because it is wasm-specific.
+function assertSame(got, expected) {
+    assertEq(got.length, expected.length);
+    for ( let i=0; i < got.length; i++ ) {
+        let g = got[i];
+        let e = expected[i];
+        if (typeof g != typeof e) {
+            if (typeof g == "bigint")
+                e = BigInt(e);
+            else if (typeof e == "bigint")
+                g = BigInt(g);
+        }
+        assertEq(g, e);
+    }
+}

@@ -28,11 +28,11 @@ namespace wasm {
 // A V128 value.
 #ifdef ENABLE_WASM_SIMD
 struct V128 {
-  uint8_t bytes[16];  // Little-endian
+  uint8_t bytes[16] = {};  // Little-endian
 
   WASM_CHECK_CACHEABLE_POD(bytes);
 
-  V128() { memset(bytes, 0, sizeof(bytes)); }
+  V128() = default;
 
   explicit V128(uint8_t splatValue) {
     memset(bytes, int(splatValue), sizeof(bytes));
@@ -329,9 +329,6 @@ class LitVal {
         cell_.ref_ = AnyRef::null();
         break;
       }
-      case ValType::Kind::Rtt: {
-        MOZ_CRASH("not defaultable");
-      }
 #ifndef ENABLE_WASM_SIMD
       default:
         MOZ_CRASH();
@@ -434,7 +431,6 @@ class MOZ_NON_PARAM Val : public LitVal {
       case ValType::V128:
         return cell_.v128_ == rhs.cell_.v128_;
 #endif
-      case ValType::Rtt:
       case ValType::Ref:
         return cell_.ref_ == rhs.cell_.ref_;
     }

@@ -18,9 +18,7 @@
 #include "debugger/Debugger.h"     // for DebuggerScriptReferent, Debugger
 #include "debugger/DebugScript.h"  // for DebugScript
 #include "debugger/Source.h"       // for DebuggerSource
-#include "gc/Barrier.h"            // for ImmutablePropertyNamePtr
 #include "gc/GC.h"                 // for MemoryUse, MemoryUse::Breakpoint
-#include "gc/Rooting.h"            // for RootedDebuggerScript
 #include "gc/Tracer.h"         // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "gc/Zone.h"           // for Zone
 #include "gc/ZoneAllocator.h"  // for AddCellMemory
@@ -31,6 +29,7 @@
 #include "js/Wrapper.h"               // for UncheckedUnwrap
 #include "vm/ArrayObject.h"           // for ArrayObject
 #include "vm/BytecodeUtil.h"          // for GET_JUMP_OFFSET
+#include "vm/EnvironmentObject.h"     // for EnvironmentCoordinateNameSlow
 #include "vm/GlobalObject.h"          // for GlobalObject
 #include "vm/JSContext.h"             // for JSContext, ReportValueError
 #include "vm/JSFunction.h"            // for JSFunction
@@ -103,7 +102,7 @@ NativeObject* DebuggerScript::initClass(JSContext* cx,
 /* static */
 DebuggerScript* DebuggerScript::create(JSContext* cx, HandleObject proto,
                                        Handle<DebuggerScriptReferent> referent,
-                                       HandleNativeObject debugger) {
+                                       Handle<NativeObject*> debugger) {
   DebuggerScript* scriptobj =
       NewTenuredObjectWithGivenProto<DebuggerScript>(cx, proto);
   if (!scriptobj) {
@@ -181,11 +180,11 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
   JSContext* cx;
   const CallArgs& args;
 
-  HandleDebuggerScript obj;
+  Handle<DebuggerScript*> obj;
   Rooted<DebuggerScriptReferent> referent;
   RootedScript script;
 
-  CallData(JSContext* cx, const CallArgs& args, HandleDebuggerScript obj)
+  CallData(JSContext* cx, const CallArgs& args, Handle<DebuggerScript*> obj)
       : cx(cx),
         args(args),
         obj(obj),
@@ -255,7 +254,7 @@ bool DebuggerScript::CallData::ToNative(JSContext* cx, unsigned argc,
                                         Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedDebuggerScript obj(cx, DebuggerScript::check(cx, args.thisv()));
+  Rooted<DebuggerScript*> obj(cx, DebuggerScript::check(cx, args.thisv()));
   if (!obj) {
     return false;
   }
@@ -424,7 +423,7 @@ class DebuggerScript::GetSourceMatcher {
   using ReturnType = DebuggerSource*;
 
   ReturnType match(Handle<BaseScript*> script) {
-    RootedScriptSourceObject source(cx_, script->sourceObject());
+    Rooted<ScriptSourceObject*> source(cx_, script->sourceObject());
     return dbg_->wrapSource(cx_, source);
   }
   ReturnType match(Handle<WasmInstanceObject*> wasmInstance) {
@@ -436,7 +435,7 @@ bool DebuggerScript::CallData::getSource() {
   Debugger* dbg = obj->owner();
 
   GetSourceMatcher matcher(cx, dbg);
-  RootedDebuggerSource sourceObject(cx, referent.match(matcher));
+  Rooted<DebuggerSource*> sourceObject(cx, referent.match(matcher));
   if (!sourceObject) {
     return false;
   }
@@ -579,6 +578,35 @@ static bool EnsureScriptOffsetIsValid(JSContext* cx, JSScript* script,
   return false;
 }
 
+static bool IsGeneratorSlotInitialization(JSScript* script, size_t offset,
+                                          JSContext* cx) {
+  jsbytecode* pc = script->offsetToPC(offset);
+  if (JSOp(*pc) != JSOp::SetAliasedVar) {
+    return false;
+  }
+
+  PropertyName* name = EnvironmentCoordinateNameSlow(script, pc);
+  return name == cx->names().dotGenerator;
+}
+
+static bool EnsureBreakpointIsAllowed(JSContext* cx, JSScript* script,
+                                      size_t offset) {
+  // Disallow breakpoint for `JSOp::SetAliasedVar` after `JSOp::Generator`.
+  // Those 2 instructions are supposed to be atomic, and nothing should happen
+  // in between them.
+  //
+  // Hitting a breakpoint there breaks the assumption around the existence of
+  // the frame's `GeneratorInfo`.
+  // (see `DebugAPI::slowPathOnNewGenerator` and `DebuggerFrame::create`)
+  if (IsGeneratorSlotInitialization(script, offset, cx)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_DEBUG_BREAKPOINT_NOT_ALLOWED);
+    return false;
+  }
+
+  return true;
+}
+
 template <bool OnlyOffsets>
 class DebuggerScript::GetPossibleBreakpointsMatcher {
   JSContext* cx_;
@@ -628,7 +656,7 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
       return true;
     }
 
-    RootedPlainObject entry(cx_, NewPlainObject(cx_));
+    Rooted<PlainObject*> entry(cx_, NewPlainObject(cx_));
     if (!entry) {
       return false;
     }
@@ -923,11 +951,11 @@ bool DebuggerScript::CallData::getPossibleBreakpointOffsets() {
 class DebuggerScript::GetOffsetMetadataMatcher {
   JSContext* cx_;
   size_t offset_;
-  MutableHandlePlainObject result_;
+  MutableHandle<PlainObject*> result_;
 
  public:
   explicit GetOffsetMetadataMatcher(JSContext* cx, size_t offset,
-                                    MutableHandlePlainObject result)
+                                    MutableHandle<PlainObject*> result)
       : cx_(cx), offset_(offset), result_(result) {}
   using ReturnType = bool;
   ReturnType match(Handle<BaseScript*> base) {
@@ -1026,7 +1054,7 @@ bool DebuggerScript::CallData::getOffsetMetadata() {
     return false;
   }
 
-  RootedPlainObject result(cx);
+  Rooted<PlainObject*> result(cx);
   GetOffsetMetadataMatcher matcher(cx, offset, &result);
   if (!referent.match(matcher)) {
     return false;
@@ -1206,11 +1234,11 @@ class FlowGraphSummary {
 class DebuggerScript::GetOffsetLocationMatcher {
   JSContext* cx_;
   size_t offset_;
-  MutableHandlePlainObject result_;
+  MutableHandle<PlainObject*> result_;
 
  public:
   explicit GetOffsetLocationMatcher(JSContext* cx, size_t offset,
-                                    MutableHandlePlainObject result)
+                                    MutableHandle<PlainObject*> result)
       : cx_(cx), offset_(offset), result_(result) {}
   using ReturnType = bool;
   ReturnType match(Handle<BaseScript*> base) {
@@ -1334,7 +1362,7 @@ bool DebuggerScript::CallData::getOffsetLocation() {
     return false;
   }
 
-  RootedPlainObject result(cx);
+  Rooted<PlainObject*> result(cx);
   GetOffsetLocationMatcher matcher(cx, offset, &result);
   if (!referent.match(matcher)) {
     return false;
@@ -1349,7 +1377,9 @@ bool DebuggerScript::CallData::getOffsetLocation() {
 // effectful if they only modify the current frame's state, modify objects
 // created by the current frame, or can potentially call other scripts or
 // natives which could have side effects.
-static bool BytecodeIsEffectful(JSOp op) {
+static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
+  jsbytecode* pc = script->offsetToPC(offset);
+  JSOp op = JSOp(*pc);
   switch (op) {
     case JSOp::SetProp:
     case JSOp::StrictSetProp:
@@ -1370,17 +1400,16 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::DelName:
     case JSOp::SetAliasedVar:
     case JSOp::InitHomeObject:
-    case JSOp::InitAliasedLexical:
     case JSOp::SetIntrinsic:
     case JSOp::InitGLexical:
     case JSOp::GlobalOrEvalDeclInstantiation:
     case JSOp::SetFunName:
     case JSOp::MutateProto:
     case JSOp::DynamicImport:
-      // Treat async functions as effectful so that microtask checkpoints
-      // won't run.
     case JSOp::InitialYield:
     case JSOp::Yield:
+    case JSOp::Await:
+    case JSOp::CanSkipAwait:
       return true;
 
     case JSOp::Nop:
@@ -1475,9 +1504,12 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::InitHiddenElemSetter:
     case JSOp::SpreadCall:
     case JSOp::Call:
+    case JSOp::CallContent:
     case JSOp::CallIgnoresRv:
     case JSOp::CallIter:
+    case JSOp::CallContentIter:
     case JSOp::New:
+    case JSOp::NewContent:
     case JSOp::Eval:
     case JSOp::StrictEval:
     case JSOp::Int8:
@@ -1528,6 +1560,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::MoreIter:
     case JSOp::IsNoIter:
     case JSOp::EndIter:
+    case JSOp::CloseIter:
     case JSOp::IsNullOrUndefined:
     case JSOp::In:
     case JSOp::HasOwn:
@@ -1568,8 +1601,6 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::Resume:
     case JSOp::CheckResumeKind:
     case JSOp::AfterYield:
-    case JSOp::Await:
-    case JSOp::CanSkipAwait:
     case JSOp::MaybeExtractAwaitValue:
     case JSOp::Generator:
     case JSOp::AsyncAwait:
@@ -1588,6 +1619,18 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::FinishTuple:
 #endif
       return false;
+
+    case JSOp::InitAliasedLexical: {
+      uint32_t hops = EnvironmentCoordinate(pc).hops();
+      if (hops == 0) {
+        // Initializing aliased lexical in the current scope is almost same
+        // as JSOp::InitLexical.
+        return false;
+      }
+
+      // Otherwise this can touch an environment outside of the current scope.
+      return true;
+    }
   }
 
   MOZ_ASSERT_UNREACHABLE("Invalid opcode");
@@ -1604,10 +1647,21 @@ bool DebuggerScript::CallData::getEffectfulOffsets() {
     return false;
   }
   for (BytecodeRange r(cx, script); !r.empty(); r.popFront()) {
-    if (BytecodeIsEffectful(r.frontOpcode())) {
-      if (!NewbornArrayPush(cx, result, NumberValue(r.frontOffset()))) {
-        return false;
-      }
+    size_t offset = r.frontOffset();
+    if (!BytecodeIsEffectful(script, offset)) {
+      continue;
+    }
+
+    if (IsGeneratorSlotInitialization(script, offset, cx)) {
+      // This is engine-internal operation and not visible outside the
+      // currently executing frame.
+      //
+      // Also this offset is not allowed for setting breakpoint.
+      continue;
+    }
+
+    if (!NewbornArrayPush(cx, result, NumberValue(offset))) {
+      return false;
     }
   }
 
@@ -1693,7 +1747,7 @@ class DebuggerScript::GetAllColumnOffsetsMatcher {
   MutableHandleObject result_;
 
   bool appendColumnOffsetEntry(size_t lineno, size_t column, size_t offset) {
-    RootedPlainObject entry(cx_, NewPlainObject(cx_));
+    Rooted<PlainObject*> entry(cx_, NewPlainObject(cx_));
     if (!entry) {
       return false;
     }
@@ -1942,6 +1996,10 @@ struct DebuggerScript::SetBreakpointMatcher {
     }
 
     if (!EnsureScriptOffsetIsValid(cx_, script, offset_)) {
+      return false;
+    }
+
+    if (!EnsureBreakpointIsAllowed(cx_, script, offset_)) {
       return false;
     }
 

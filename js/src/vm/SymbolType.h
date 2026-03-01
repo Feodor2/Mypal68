@@ -42,7 +42,7 @@ class Symbol
   void operator=(const Symbol&) = delete;
 
   static Symbol* newInternal(JSContext* cx, SymbolCode code,
-                             js::HashNumber hash, js::HandleAtom description);
+                             js::HashNumber hash, Handle<JSAtom*> description);
 
   static void staticAsserts() {
     static_assert(uint32_t(SymbolCode::WellKnownAPILimit) ==
@@ -58,7 +58,7 @@ class Symbol
   static Symbol* new_(JSContext* cx, SymbolCode code,
                       js::HandleString description);
   static Symbol* newWellKnown(JSContext* cx, SymbolCode code,
-                              js::HandlePropertyName description);
+                              Handle<js::PropertyName*> description);
   static Symbol* for_(JSContext* cx, js::HandleString description);
 
   SymbolCode code() const { return code_; }
@@ -133,7 +133,7 @@ struct HashSymbolsByDescription {
  * enumerating the symbol registry, querying its size, etc.
  */
 class SymbolRegistry
-    : public GCHashSet<WeakHeapPtrSymbol, HashSymbolsByDescription,
+    : public GCHashSet<WeakHeapPtr<JS::Symbol*>, HashSymbolsByDescription,
                        SystemAllocPolicy> {
  public:
   SymbolRegistry() = default;

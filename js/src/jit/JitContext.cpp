@@ -47,7 +47,10 @@ static JitContext* CurrentJitContext() {
   return TlsJitContext.get();
 }
 
-void jit::SetJitContext(JitContext* ctx) { TlsJitContext.set(ctx); }
+void jit::SetJitContext(JitContext* ctx) {
+  MOZ_ASSERT(!TlsJitContext.get());
+  TlsJitContext.set(ctx);
+}
 
 JitContext* jit::GetJitContext() {
   MOZ_ASSERT(CurrentJitContext());
@@ -56,35 +59,27 @@ JitContext* jit::GetJitContext() {
 
 JitContext* jit::MaybeGetJitContext() { return CurrentJitContext(); }
 
-JitContext::JitContext(CompileRuntime* rt, CompileRealm* realm,
-                       TempAllocator* temp)
-    : prev_(CurrentJitContext()), realm_(realm), temp(temp), runtime(rt) {
+JitContext::JitContext(CompileRuntime* rt) : runtime(rt) {
   MOZ_ASSERT(rt);
-  MOZ_ASSERT(realm);
-  MOZ_ASSERT(temp);
   SetJitContext(this);
 }
 
-JitContext::JitContext(JSContext* cx, TempAllocator* temp)
-    : prev_(CurrentJitContext()),
-      realm_(CompileRealm::get(cx->realm())),
-      cx(cx),
-      temp(temp),
-      runtime(CompileRuntime::get(cx->runtime())) {
+JitContext::JitContext(JSContext* cx)
+    : cx(cx), runtime(CompileRuntime::get(cx->runtime())) {
   SetJitContext(this);
 }
 
-JitContext::JitContext(TempAllocator* temp)
-    : prev_(CurrentJitContext()), temp(temp) {
+JitContext::JitContext() {
 #ifdef DEBUG
   isCompilingWasm_ = true;
 #endif
   SetJitContext(this);
 }
 
-JitContext::JitContext() : JitContext(nullptr) {}
-
-JitContext::~JitContext() { SetJitContext(prev_); }
+JitContext::~JitContext() {
+  MOZ_ASSERT(TlsJitContext.get() == this);
+  TlsJitContext.set(nullptr);
+}
 
 bool jit::InitializeJit() {
   if (!TlsJitContext.init()) {

@@ -45,8 +45,8 @@
 #  include "js/Proxy.h"  // For AutoEnterPolicy
 #endif
 #include "js/ScriptPrivate.h"
+#include "js/ShadowRealmCallbacks.h"
 #include "js/Stack.h"
-#include "js/Stream.h"  // JS::AbortSignalIsAborted
 #include "js/StreamConsumer.h"
 #include "js/Symbol.h"
 #include "js/UniquePtr.h"
@@ -79,9 +79,6 @@ namespace js {
 
 class AutoAssertNoContentJS;
 class EnterDebuggeeNoExecute;
-#ifdef JS_TRACE_LOGGING
-class TraceLoggerThread;
-#endif
 
 }  // namespace js
 
@@ -157,18 +154,18 @@ namespace js {
  * symbol is a permanent atom.
  */
 struct WellKnownSymbols {
-#define DECLARE_SYMBOL(name) js::ImmutableSymbolPtr name;
+#define DECLARE_SYMBOL(name) ImmutableTenuredPtr<JS::Symbol*> name;
   JS_FOR_EACH_WELL_KNOWN_SYMBOL(DECLARE_SYMBOL)
 #undef DECLARE_SYMBOL
 
-  const ImmutableSymbolPtr& get(size_t u) const {
+  const ImmutableTenuredPtr<JS::Symbol*>& get(size_t u) const {
     MOZ_ASSERT(u < JS::WellKnownSymbolLimit);
-    const ImmutableSymbolPtr* symbols =
-        reinterpret_cast<const ImmutableSymbolPtr*>(this);
+    const ImmutableTenuredPtr<JS::Symbol*>* symbols =
+        reinterpret_cast<const ImmutableTenuredPtr<JS::Symbol*>*>(this);
     return symbols[u];
   }
 
-  const ImmutableSymbolPtr& get(JS::SymbolCode code) const {
+  const ImmutableTenuredPtr<JS::Symbol*>& get(JS::SymbolCode code) const {
     return get(size_t(code));
   }
 
@@ -431,30 +428,6 @@ struct JSRuntime {
   void setWindowProxyClass(const JSClass* clasp) { windowProxyClass_ = clasp; }
 
  private:
-  js::WriteOnceData<const JSClass*> abortSignalClass_;
-  js::WriteOnceData<JS::AbortSignalIsAborted> abortSignalIsAborted_;
-
- public:
-  void initPipeToHandling(const JSClass* abortSignalClass,
-                          JS::AbortSignalIsAborted isAborted) {
-    MOZ_ASSERT(abortSignalClass != nullptr,
-               "doesn't make sense for an embedder to provide a null class "
-               "when specifying pipeTo handling");
-    MOZ_ASSERT(isAborted != nullptr, "must pass a valid function pointer");
-
-    abortSignalClass_ = abortSignalClass;
-    abortSignalIsAborted_ = isAborted;
-  }
-
-  const JSClass* maybeAbortSignalClass() const { return abortSignalClass_; }
-
-  bool abortSignalIsAborted(JSObject* obj) {
-    MOZ_ASSERT(abortSignalIsAborted_ != nullptr,
-               "must call initPipeToHandling first");
-    return abortSignalIsAborted_(obj);
-  }
-
- private:
   // List of non-ephemeron weak containers to sweep during
   // beginSweepingSweepGroup.
   js::MainThreadData<mozilla::LinkedList<JS::detail::WeakCacheBase>>
@@ -654,7 +627,8 @@ struct JSRuntime {
                                   js::Handle<JSFunction*> targetFun);
   bool getSelfHostedValue(JSContext* cx, js::Handle<js::PropertyName*> name,
                           js::MutableHandleValue vp);
-  void assertSelfHostedFunctionHasCanonicalName(js::HandlePropertyName name);
+  void assertSelfHostedFunctionHasCanonicalName(
+      JS::Handle<js::PropertyName*> name);
 
  private:
   void setSelfHostingStencil(
@@ -836,6 +810,7 @@ struct JSRuntime {
 
  public:
   static bool hasLiveRuntimes() { return liveRuntimesCount > 0; }
+  static bool hasSingleLiveRuntime() { return liveRuntimesCount == 1; }
 
   explicit JSRuntime(JSRuntime* parentRuntime);
   ~JSRuntime();
@@ -969,6 +944,15 @@ struct JSRuntime {
   // threads for purposes of wasm::InterruptRunningCode().
   js::ExclusiveData<js::wasm::InstanceVector> wasmInstances;
 
+  // A counter used when recording the order in which modules had their
+  // AsyncEvaluation field set to true. This is used to order queued
+  // evaluations. This is reset when the last module that was async evaluating
+  // is finished.
+  //
+  // See https://tc39.es/ecma262/#sec-async-module-execution-fulfilled step 10
+  // for use.
+  js::MainThreadData<uint32_t> moduleAsyncEvaluatingPostOrder;
+
   // The implementation-defined abstract operation HostResolveImportedModule.
   js::MainThreadData<JS::ModuleResolveHook> moduleResolveHook;
 
@@ -1022,6 +1006,21 @@ struct JSRuntime {
   };
   ErrorInterceptionSupport errorInterception;
 #endif  // defined(NIGHTLY_BUILD)
+
+ public:
+  JS::GlobalInitializeCallback getShadowRealmInitializeGlobalCallback() {
+    return shadowRealmInitializeGlobalCallback;
+  }
+
+  JS::GlobalCreationCallback getShadowRealmGlobalCreationCallback() {
+    return shadowRealmGlobalCreationCallback;
+  }
+
+  js::MainThreadData<JS::GlobalInitializeCallback>
+      shadowRealmInitializeGlobalCallback;
+
+  js::MainThreadData<JS::GlobalCreationCallback>
+      shadowRealmGlobalCreationCallback;
 };
 
 namespace js {

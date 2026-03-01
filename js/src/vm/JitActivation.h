@@ -82,7 +82,7 @@ class JitActivation : public Activation {
   // When profiling is enabled, these fields will be updated to reflect the
   // last pushed frame for this activation, and if that frame has been
   // left for a call, the native code site of the call.
-  mozilla::Atomic<void*, mozilla::Relaxed> lastProfilingFrame_;
+  mozilla::Atomic<JitFrameLayout*, mozilla::Relaxed> lastProfilingFrame_;
   mozilla::Atomic<void*, mozilla::Relaxed> lastProfilingCallSite_;
   static_assert(sizeof(mozilla::Atomic<void*, mozilla::Relaxed>) ==
                     sizeof(void*),
@@ -119,7 +119,7 @@ class JitActivation : public Activation {
   bool hasExitFP() const { return !!packedExitFP_; }
   uint8_t* jsOrWasmExitFP() const {
     if (hasWasmExitFP()) {
-      return wasm::Frame::toJitEntryCaller(packedExitFP_);
+      return wasm::Frame::untagExitFP(packedExitFP_);
     }
     return packedExitFP_;
   }
@@ -196,8 +196,8 @@ class JitActivation : public Activation {
   static size_t offsetOfLastProfilingFrame() {
     return offsetof(JitActivation, lastProfilingFrame_);
   }
-  void* lastProfilingFrame() { return lastProfilingFrame_; }
-  void setLastProfilingFrame(void* ptr) { lastProfilingFrame_ = ptr; }
+  JitFrameLayout* lastProfilingFrame() { return lastProfilingFrame_; }
+  void setLastProfilingFrame(JitFrameLayout* ptr) { lastProfilingFrame_ = ptr; }
 
   static size_t offsetOfLastProfilingCallSite() {
     return offsetof(JitActivation, lastProfilingCallSite_);
@@ -206,21 +206,19 @@ class JitActivation : public Activation {
   void setLastProfilingCallSite(void* ptr) { lastProfilingCallSite_ = ptr; }
 
   // WebAssembly specific attributes.
-  bool hasWasmExitFP() const {
-    return wasm::Frame::isExitOrJitEntryFP(packedExitFP_);
-  }
+  bool hasWasmExitFP() const { return wasm::Frame::isExitFP(packedExitFP_); }
   wasm::Frame* wasmExitFP() const {
     MOZ_ASSERT(hasWasmExitFP());
     return reinterpret_cast<wasm::Frame*>(
-        wasm::Frame::toJitEntryCaller(packedExitFP_));
+        wasm::Frame::untagExitFP(packedExitFP_));
   }
   wasm::Instance* wasmExitInstance() const {
     return wasm::GetNearestEffectiveInstance(wasmExitFP());
   }
   void setWasmExitFP(const wasm::Frame* fp) {
     if (fp) {
-      MOZ_ASSERT(!wasm::Frame::isExitOrJitEntryFP(fp));
-      packedExitFP_ = wasm::Frame::addExitOrJitEntryFPTag(fp);
+      MOZ_ASSERT(!wasm::Frame::isExitFP(fp));
+      packedExitFP_ = wasm::Frame::addExitFPTag(fp);
       MOZ_ASSERT(hasWasmExitFP());
     } else {
       packedExitFP_ = nullptr;

@@ -186,6 +186,7 @@ void TextEventDispatcher::OnDestroyWidget() {
   mPendingComposition.Clear();
   nsCOMPtr<TextEventDispatcherListener> listener = do_QueryReferent(mListener);
   mListener = nullptr;
+  mWritingMode.reset();
   mInputTransactionType = eNoInputTransaction;
   if (listener) {
     listener->OnRemovedFrom(this);
@@ -223,6 +224,33 @@ void TextEventDispatcher::InitEvent(WidgetGUIEvent& aEvent) const {
                "Native IME context shouldn't be invalid");
   }
 #endif  // #ifdef DEBUG
+}
+
+Maybe<WritingMode> TextEventDispatcher::MaybeWritingModeAtSelection() const {
+  if (mWritingMode.isSome()) {
+    return mWritingMode;
+  }
+
+  if (NS_WARN_IF(!mWidget)) {
+    return Nothing();
+  }
+
+  WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
+                                                 mWidget);
+  nsEventStatus status = nsEventStatus_eIgnore;
+  const_cast<TextEventDispatcher*>(this)->DispatchEvent(
+      mWidget, querySelectedTextEvent, status);
+  if (!querySelectedTextEvent.FoundSelection()) {
+    if (mHasFocus) {
+      mWritingMode.reset();
+    }
+    return Nothing();
+  }
+
+  if (mHasFocus) {
+    mWritingMode = Some(querySelectedTextEvent.mReply->mWritingMode);
+  }
+  return Some(querySelectedTextEvent.mReply->mWritingMode);
 }
 
 nsresult TextEventDispatcher::DispatchEvent(nsIWidget* aWidget,
@@ -369,10 +397,8 @@ nsresult TextEventDispatcher::CommitComposition(
     // editor requires non-void string even when it's empty.
     compositionCommitEvent.mData.SetIsVoid(false);
     // Don't send CRLF nor CR, replace it with LF here.
-    compositionCommitEvent.mData.ReplaceSubstring(NS_LITERAL_STRING("\r\n"),
-                                                  NS_LITERAL_STRING("\n"));
-    compositionCommitEvent.mData.ReplaceSubstring(NS_LITERAL_STRING("\r"),
-                                                  NS_LITERAL_STRING("\n"));
+    compositionCommitEvent.mData.ReplaceSubstring(u"\r\n"_ns, u"\n"_ns);
+    compositionCommitEvent.mData.ReplaceSubstring(u"\r"_ns, u"\n"_ns);
   }
   rv = DispatchEvent(widget, compositionCommitEvent, aStatus);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -389,6 +415,7 @@ nsresult TextEventDispatcher::NotifyIME(
   switch (aIMENotification.mMessage) {
     case NOTIFY_IME_OF_BLUR:
       mHasFocus = false;
+      mWritingMode.reset();
       ClearNotificationRequests();
       break;
     case NOTIFY_IME_OF_COMPOSITION_EVENT_HANDLED:
@@ -399,6 +426,12 @@ nsresult TextEventDispatcher::NotifyIME(
       // have been handled in the remote process.
       if (!IsComposing()) {
         mIsHandlingComposition = false;
+      }
+      break;
+    case NOTIFY_IME_OF_SELECTION_CHANGE:
+      if (mHasFocus) {
+        mWritingMode =
+            Some(aIMENotification.mSelectionChangeData.GetWritingMode());
       }
       break;
     default:
@@ -538,10 +571,28 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
   keyEvent.AssignKeyEventData(aKeyboardEvent, false);
   // Command arrays are not duplicated by AssignKeyEventData() due to
   // both performance and footprint reasons.  So, when TextInputProcessor
-  // emulates real text input, the arrays may be initialized all commands
-  // already.  If so, we need to duplicate the arrays here.
-  if (keyEvent.mIsSynthesizedByTIP) {
-    keyEvent.AssignCommands(aKeyboardEvent);
+  // emulates real text input or synthesizing keyboard events for tests,
+  // the arrays may be initialized all commands already.  If so, we need to
+  // duplicate the arrays here, but we should do this only when we're
+  // dispatching eKeyPress events because BrowserParent::SendRealKeyEvent()
+  // does this only for eKeyPress event.  Note that this is not required if
+  // we're in the main process because in the parent process, the edit commands
+  // will be initialized by `ExecuteEditCommands()` (when the event is handled
+  // by editor event listener) or `InitAllEditCommands()` (when the event is
+  // set to a content process).  We should test whether these pathes work or
+  // not too.
+  if (XRE_IsContentProcess() && keyEvent.mIsSynthesizedByTIP) {
+    if (aMessage == eKeyPress) {
+      keyEvent.AssignCommands(aKeyboardEvent);
+    } else {
+      // Prevent retriving native edit commands if we're in a content process
+      // because only `eKeyPress` events coming from the main process have
+      // edit commands (See `BrowserParent::SendRealKeyEvent`).  And also
+      // retriving edit commands from a content process requires synchonous
+      // IPC and that makes running tests slower.  Therefore, we should mark
+      // the `eKeyPress` event does not need to retrieve edit commands anymore.
+      keyEvent.PreventNativeKeyBindings();
+    }
   }
 
   if (aStatus == nsEventStatus_eConsumeNoDefault) {
@@ -807,8 +858,8 @@ void TextEventDispatcher::PendingComposition::ReplaceNativeLineBreakers() {
 
   nsAutoString nativeString(mString);
   // Don't expose CRLF nor CR to web contents, instead, use LF.
-  mString.ReplaceSubstring(NS_LITERAL_STRING("\r\n"), NS_LITERAL_STRING("\n"));
-  mString.ReplaceSubstring(NS_LITERAL_STRING("\r"), NS_LITERAL_STRING("\n"));
+  mString.ReplaceSubstring(u"\r\n"_ns, u"\n"_ns);
+  mString.ReplaceSubstring(u"\r"_ns, u"\n"_ns);
 
   // If the length isn't changed, we don't need to adjust any offset and length
   // of mClauses nor mCaret.
@@ -837,8 +888,7 @@ void TextEventDispatcher::PendingComposition::AdjustRange(
   //     composition string is usually short and separated as a few clauses.
   if (nativeRange.mStartOffset > 0) {
     nsAutoString preText(Substring(aNativeString, 0, nativeRange.mStartOffset));
-    preText.ReplaceSubstring(NS_LITERAL_STRING("\r\n"),
-                             NS_LITERAL_STRING("\n"));
+    preText.ReplaceSubstring(u"\r\n"_ns, u"\n"_ns);
     aRange.mStartOffset = preText.Length();
   }
   if (nativeRange.Length() == 0) {
@@ -846,7 +896,7 @@ void TextEventDispatcher::PendingComposition::AdjustRange(
   } else {
     nsAutoString clause(Substring(aNativeString, nativeRange.mStartOffset,
                                   nativeRange.Length()));
-    clause.ReplaceSubstring(NS_LITERAL_STRING("\r\n"), NS_LITERAL_STRING("\n"));
+    clause.ReplaceSubstring(u"\r\n"_ns, u"\n"_ns);
     aRange.mEndOffset = aRange.mStartOffset + clause.Length();
   }
 }

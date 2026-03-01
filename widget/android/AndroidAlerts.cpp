@@ -103,7 +103,7 @@ void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
 
   listener->Observe(nullptr, aTopic, aCookie);
 
-  if (NS_LITERAL_CSTRING("alertfinished").Equals(aTopic)) {
+  if ("alertfinished"_ns.Equals(aTopic)) {
     sListenerMap->Remove(aName);
   }
 }

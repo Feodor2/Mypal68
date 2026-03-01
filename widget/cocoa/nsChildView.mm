@@ -15,12 +15,15 @@
 #include "nsChildView.h"
 #include "nsCocoaWindow.h"
 
+#include "mozilla/Maybe.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
+#include "mozilla/WritingModes.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/SimpleGestureEventBinding.h"
@@ -618,7 +621,7 @@ void nsChildView::SetTransparencyMode(nsTransparencyMode aMode) {
 }
 
 bool nsChildView::IsVisible() const {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!mVisible) {
     return mVisible;
@@ -633,7 +636,7 @@ bool nsChildView::IsVisible() const {
   // then check native widget hierarchy visibility
   return ([mView window] != nil) && !NSIsEmptyRect([mView visibleRect]);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
 // Some NSView methods (e.g. setFrame and setHidden) invalidate the view's
@@ -755,24 +758,21 @@ void nsChildView::SetFocus(Raise) {
 }
 
 // Override to set the cursor on the mac
-void nsChildView::SetCursor(nsCursor aDefaultCursor, imgIContainer* aImageCursor,
-                            uint32_t aHotspotX, uint32_t aHotspotY) {
+void nsChildView::SetCursor(const Cursor& aCursor) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  if ([mView isDragInProgress]) return;  // Don't change the cursor during dragging.
-
-  if (aImageCursor) {
-    nsresult rv = [[nsCursorManager sharedInstance] setCursorWithImage:aImageCursor
-                                                              hotSpotX:aHotspotX
-                                                              hotSpotY:aHotspotY
-                                                           scaleFactor:BackingScaleFactor()];
-    if (NS_SUCCEEDED(rv)) {
-      return;
-    }
+  if ([mView isDragInProgress]) {
+    return;  // Don't change the cursor during dragging.
   }
 
-  nsBaseWidget::SetCursor(aDefaultCursor, nullptr, 0, 0);
-  [[nsCursorManager sharedInstance] setCursor:aDefaultCursor];
+  nsBaseWidget::SetCursor(aCursor);
+
+  if (NS_SUCCEEDED([[nsCursorManager sharedInstance] setCustomCursor:aCursor
+                                                   widgetScaleFactor:BackingScaleFactor()])) {
+    return;
+  }
+
+  [[nsCursorManager sharedInstance] setNonCustomCursor:aCursor];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
@@ -1132,37 +1132,6 @@ nsresult nsChildView::SynthesizeNativeTouchPoint(
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-// First argument has to be an NSMenu representing the application's top-level
-// menu bar. The returned item is *not* retained.
-static NSMenuItem* NativeMenuItemWithLocation(NSMenu* menubar, NSString* locationString) {
-  NSArray* indexes = [locationString componentsSeparatedByString:@"|"];
-  unsigned int indexCount = [indexes count];
-  if (indexCount == 0) return nil;
-
-  NSMenu* currentSubmenu = [NSApp mainMenu];
-  for (unsigned int i = 0; i < indexCount; i++) {
-    int targetIndex;
-    // We remove the application menu from consideration for the top-level menu
-    if (i == 0)
-      targetIndex = [[indexes objectAtIndex:i] intValue] + 1;
-    else
-      targetIndex = [[indexes objectAtIndex:i] intValue];
-    int itemCount = [currentSubmenu numberOfItems];
-    if (targetIndex < itemCount) {
-      NSMenuItem* menuItem = [currentSubmenu itemAtIndex:targetIndex];
-      // if this is the last index just return the menu item
-      if (i == (indexCount - 1)) return menuItem;
-      // if this is not the last index find the submenu and keep going
-      if ([menuItem hasSubmenu])
-        currentSubmenu = [menuItem submenu];
-      else
-        return nil;
-    }
-  }
-
-  return nil;
-}
-
 bool nsChildView::SendEventToNativeMenuSystem(NSEvent* aEvent) {
   bool handled = false;
   nsCocoaWindow* widget = GetAppWindowWidget();
@@ -1209,7 +1178,8 @@ nsresult nsChildView::ActivateNativeMenuItemAt(const nsAString& indexString) {
   NSString* locationString =
       [NSString stringWithCharacters:reinterpret_cast<const unichar*>(indexString.BeginReading())
                               length:indexString.Length()];
-  NSMenuItem* item = NativeMenuItemWithLocation([NSApp mainMenu], locationString);
+  NSMenuItem* item =
+      nsMenuUtilsX::NativeMenuItemWithLocation([NSApp mainMenu], locationString, true);
   // We can't perform an action on an item with a submenu, that will raise
   // an obj-c exception.
   if (item && ![item hasSubmenu]) {
@@ -1569,19 +1539,19 @@ void nsChildView::ReportSizeEvent() {
 #pragma mark -
 
 LayoutDeviceIntPoint nsChildView::GetClientOffset() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSPoint origin = [mView convertPoint:NSMakePoint(0, 0) toView:nil];
   origin.y = [[mView window] frame].size.height - origin.y;
   return CocoaPointsToDevPixels(origin);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
 }
 
 //    Return the offset between this child view and the screen.
 //    @return       -- widget origin in device-pixel coords
 LayoutDeviceIntPoint nsChildView::WidgetToScreenOffset() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSPoint origin = NSMakePoint(0, 0);
 
@@ -1599,7 +1569,7 @@ LayoutDeviceIntPoint nsChildView::WidgetToScreenOffset() {
   // convert to device pixels
   return CocoaPointsToDevPixels(origin);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
 }
 
 LayoutDeviceIntRegion nsChildView::GetOpaqueWidgetRegion() {
@@ -1706,19 +1676,19 @@ void nsChildView::SetInputContext(const InputContext& aContext, const InputConte
   // IMEInputHandler::IsEditableContent() too.
   mInputContext = aContext;
   switch (aContext.mIMEState.mEnabled) {
-    case IMEState::ENABLED:
-    case IMEState::PLUGIN:
+    case IMEEnabled::Enabled:
+    case IMEEnabled::Plugin:
       mTextInputHandler->SetASCIICapableOnly(false);
       mTextInputHandler->EnableIME(true);
       if (mInputContext.mIMEState.mOpen != IMEState::DONT_CHANGE_OPEN_STATE) {
         mTextInputHandler->SetIMEOpenState(mInputContext.mIMEState.mOpen == IMEState::OPEN);
       }
       break;
-    case IMEState::DISABLED:
+    case IMEEnabled::Disabled:
       mTextInputHandler->SetASCIICapableOnly(false);
       mTextInputHandler->EnableIME(false);
       break;
-    case IMEState::PASSWORD:
+    case IMEEnabled::Password:
       mTextInputHandler->SetASCIICapableOnly(true);
       mTextInputHandler->EnableIME(false);
       break;
@@ -1729,8 +1699,8 @@ void nsChildView::SetInputContext(const InputContext& aContext, const InputConte
 
 InputContext nsChildView::GetInputContext() {
   switch (mInputContext.mIMEState.mEnabled) {
-    case IMEState::ENABLED:
-    case IMEState::PLUGIN:
+    case IMEEnabled::Enabled:
+    case IMEEnabled::Plugin:
       if (mTextInputHandler) {
         mInputContext.mIMEState.mOpen =
             mTextInputHandler->IsIMEOpened() ? IMEState::OPEN : IMEState::CLOSED;
@@ -1757,33 +1727,6 @@ nsresult nsChildView::AttachNativeKeyEvent(mozilla::WidgetKeyboardEvent& aEvent)
   return mTextInputHandler->AttachNativeKeyEvent(aEvent);
 }
 
-void nsChildView::GetEditCommandsRemapped(NativeKeyBindingsType aType,
-                                          const WidgetKeyboardEvent& aEvent,
-                                          nsTArray<CommandInt>& aCommands, uint32_t aGeckoKeyCode,
-                                          uint32_t aCocoaKeyCode) {
-  NSEvent* originalEvent = reinterpret_cast<NSEvent*>(aEvent.mNativeKeyEvent);
-
-  WidgetKeyboardEvent modifiedEvent(aEvent);
-  modifiedEvent.mKeyCode = aGeckoKeyCode;
-
-  unichar ch = nsCocoaUtils::ConvertGeckoKeyCodeToMacCharCode(aGeckoKeyCode);
-  NSString* chars = [[[NSString alloc] initWithCharacters:&ch length:1] autorelease];
-
-  modifiedEvent.mNativeKeyEvent = [NSEvent keyEventWithType:[originalEvent type]
-                                                   location:[originalEvent locationInWindow]
-                                              modifierFlags:[originalEvent modifierFlags]
-                                                  timestamp:[originalEvent timestamp]
-                                               windowNumber:[originalEvent windowNumber]
-                                                    context:[originalEvent context]
-                                                 characters:chars
-                                charactersIgnoringModifiers:chars
-                                                  isARepeat:[originalEvent isARepeat]
-                                                    keyCode:aCocoaKeyCode];
-
-  NativeKeyBindings* keyBindings = NativeKeyBindings::GetInstance(aType);
-  keyBindings->GetEditCommands(modifiedEvent, aCommands);
-}
-
 bool nsChildView::GetEditCommands(NativeKeyBindingsType aType, const WidgetKeyboardEvent& aEvent,
                                   nsTArray<CommandInt>& aCommands) {
   // Validate the arguments.
@@ -1791,58 +1734,15 @@ bool nsChildView::GetEditCommands(NativeKeyBindingsType aType, const WidgetKeybo
     return false;
   }
 
-  // If the key is a cursor-movement arrow, and the current selection has
-  // vertical writing-mode, we'll remap so that the movement command
-  // generated (in terms of characters/lines) will be appropriate for
-  // the physical direction of the arrow.
-  if (aEvent.mKeyCode >= NS_VK_LEFT && aEvent.mKeyCode <= NS_VK_DOWN) {
-    // XXX This may be expensive. Should use the cache in TextInputHandler.
-    WidgetQueryContentEvent query(true, eQuerySelectedText, this);
-    DispatchWindowEvent(query);
-
-    if (query.mSucceeded && query.mReply.mWritingMode.IsVertical()) {
-      uint32_t geckoKey = 0;
-      uint32_t cocoaKey = 0;
-
-      switch (aEvent.mKeyCode) {
-        case NS_VK_LEFT:
-          if (query.mReply.mWritingMode.IsVerticalLR()) {
-            geckoKey = NS_VK_UP;
-            cocoaKey = kVK_UpArrow;
-          } else {
-            geckoKey = NS_VK_DOWN;
-            cocoaKey = kVK_DownArrow;
-          }
-          break;
-
-        case NS_VK_RIGHT:
-          if (query.mReply.mWritingMode.IsVerticalLR()) {
-            geckoKey = NS_VK_DOWN;
-            cocoaKey = kVK_DownArrow;
-          } else {
-            geckoKey = NS_VK_UP;
-            cocoaKey = kVK_UpArrow;
-          }
-          break;
-
-        case NS_VK_UP:
-          geckoKey = NS_VK_LEFT;
-          cocoaKey = kVK_LeftArrow;
-          break;
-
-        case NS_VK_DOWN:
-          geckoKey = NS_VK_RIGHT;
-          cocoaKey = kVK_RightArrow;
-          break;
-      }
-
-      GetEditCommandsRemapped(aType, aEvent, aCommands, geckoKey, cocoaKey);
-      return true;
+  Maybe<WritingMode> writingMode;
+  if (aEvent.NeedsToRemapNavigationKey()) {
+    if (RefPtr<TextEventDispatcher> dispatcher = GetTextEventDispatcher()) {
+      writingMode = dispatcher->MaybeWritingModeAtSelection();
     }
   }
 
   NativeKeyBindings* keyBindings = NativeKeyBindings::GetInstance(aType);
-  keyBindings->GetEditCommands(aEvent, aCommands);
+  keyBindings->GetEditCommands(aEvent, writingMode, aCommands);
   return true;
 }
 
@@ -1858,9 +1758,9 @@ NSView<mozView>* nsChildView::GetEditorView() {
   // need any layout information right now.
   queryContentState.mNeedsToFlushLayout = false;
   DispatchWindowEvent(queryContentState);
-  if (queryContentState.mSucceeded && queryContentState.mReply.mFocusedWidget) {
+  if (queryContentState.Succeeded() && queryContentState.mReply->mFocusedWidget) {
     NSView<mozView>* view = static_cast<NSView<mozView>*>(
-        queryContentState.mReply.mFocusedWidget->GetNativeData(NS_NATIVE_WIDGET));
+        queryContentState.mReply->mFocusedWidget->GetNativeData(NS_NATIVE_WIDGET));
     if (view) editorView = view;
   }
   return editorView;
@@ -2692,7 +2592,7 @@ nsEventStatus nsChildView::DispatchAPZInputEvent(InputData& aEvent) {
 
   if (aEvent.mInputType == PINCHGESTURE_INPUT) {
     PinchGestureInput& pinchEvent = aEvent.AsPinchGestureInput();
-    WidgetWheelEvent wheelEvent = pinchEvent.ToWidgetWheelEvent(this);
+    WidgetWheelEvent wheelEvent = pinchEvent.ToWidgetEvent(this);
     ProcessUntransformedAPZEvent(&wheelEvent, result);
   }
 
@@ -2724,7 +2624,7 @@ void nsChildView::DispatchAPZWheelInputEvent(InputData& aEvent, bool aCanTrigger
 
         PanGestureInput& panInput = aEvent.AsPanGestureInput();
 
-        event = panInput.ToWidgetWheelEvent(this);
+        event = panInput.ToWidgetEvent(this);
         if (aCanTriggerSwipe && panInput.mOverscrollBehaviorAllowsSwipe) {
           SwipeInfo swipeInfo = SendMayStartSwipe(panInput);
           event.mCanTriggerSwipe = swipeInfo.wantsSwipe;
@@ -2760,7 +2660,7 @@ void nsChildView::DispatchAPZWheelInputEvent(InputData& aEvent, bool aCanTrigger
         // that function has special handling (for delta multipliers etc.) that
         // we need to run. Using the InputData variant would bypass that and
         // go straight to the APZCTreeManager subclass.
-        event = aEvent.AsScrollWheelInput().ToWidgetWheelEvent(this);
+        event = aEvent.AsScrollWheelInput().ToWidgetEvent(this);
         result = mAPZC->InputBridge()->ReceiveInputEvent(event);
         if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
           return;
@@ -2795,7 +2695,7 @@ void nsChildView::DispatchAPZWheelInputEvent(InputData& aEvent, bool aCanTrigger
         return;
       }
 
-      event = panInput.ToWidgetWheelEvent(this);
+      event = panInput.ToWidgetEvent(this);
       if (aCanTriggerSwipe) {
         SwipeInfo swipeInfo = SendMayStartSwipe(panInput);
 
@@ -2825,7 +2725,7 @@ void nsChildView::DispatchAPZWheelInputEvent(InputData& aEvent, bool aCanTrigger
       break;
     }
     case SCROLLWHEEL_INPUT: {
-      event = aEvent.AsScrollWheelInput().ToWidgetWheelEvent(this);
+      event = aEvent.AsScrollWheelInput().ToWidgetEvent(this);
       break;
     }
     default:
@@ -2858,48 +2758,6 @@ void nsChildView::LookUpDictionary(const nsAString& aText,
   [mView showDefinitionForAttributedString:attrStr atPoint:pt];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
-}
-
-nsresult nsChildView::SetPrefersReducedMotionOverrideForTest(bool aValue) {
-  // Tell that the cache value we are going to set isn't cleared via
-  // nsPresContext::ThemeChangedInternal which is called right before
-  // we queue the media feature value change for this prefers-reduced-motion
-  // change.
-  LookAndFeel::SetShouldRetainCacheForTest(true);
-
-  LookAndFeelInt prefersReducedMotion;
-  prefersReducedMotion.id = LookAndFeel::eIntID_PrefersReducedMotion;
-  prefersReducedMotion.value = aValue ? 1 : 0;
-
-  AutoTArray<LookAndFeelInt, 1> lookAndFeelCache;
-  lookAndFeelCache.AppendElement(prefersReducedMotion);
-
-  // If we could have a way to modify
-  // NSWorkspace.accessibilityDisplayShouldReduceMotion, we could use it, but
-  // unfortunately there is no way, so we change the cache value instead as if
-  // it's set in the parent process.
-  LookAndFeel::SetIntCache(lookAndFeelCache);
-
-  if (nsCocoaFeatures::OnMojaveOrLater() &&
-      NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification) {
-    [[[NSWorkspace sharedWorkspace] notificationCenter]
-        postNotificationName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification
-                      object:nil];
-  } else if (nsCocoaFeatures::OnYosemiteOrLater() &&
-             NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification) {
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification
-                      object:nil];
-  } else {
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
-}
-
-nsresult nsChildView::ResetPrefersReducedMotionOverrideForTest() {
-  LookAndFeel::SetShouldRetainCacheForTest(false);
-  return NS_OK;
 }
 
 #ifdef ACCESSIBILITY
@@ -3760,7 +3618,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 // Returns true if the event should no longer be processed, false otherwise.
 // This does not return whether or not anything was rolled up.
 - (BOOL)maybeRollup:(NSEvent*)theEvent {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   BOOL consumeEvent = NO;
 
@@ -3820,7 +3678,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   return consumeEvent;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 - (void)swipeWithEvent:(NSEvent*)anEvent {
@@ -4740,7 +4598,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
 - (void)convertCocoaTabletPointerEvent:(NSEvent*)aPointerEvent
                           toGeckoEvent:(WidgetMouseEvent*)aOutGeckoEvent {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
   if (!aOutGeckoEvent || !sIsTabletPointerActivated) {
     return;
   }
@@ -4759,7 +4617,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 }
 
 - (void)tabletProximity:(NSEvent*)theEvent {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
   sIsTabletPointerActivated = [theEvent isEnteringProximity];
   NS_OBJC_END_TRY_ABORT_BLOCK
 }
@@ -4783,21 +4641,21 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 // NSTextInputClient implementation
 
 - (NSRange)markedRange {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NS_ENSURE_TRUE(mTextInputHandler, NSMakeRange(NSNotFound, 0));
   return mTextInputHandler->MarkedRange();
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSMakeRange(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSMakeRange(0, 0));
 }
 
 - (NSRange)selectedRange {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NS_ENSURE_TRUE(mTextInputHandler, NSMakeRange(NSNotFound, 0));
   return mTextInputHandler->SelectedRange();
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSMakeRange(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSMakeRange(0, 0));
 }
 
 - (BOOL)drawsVerticallyForCharacterAtIndex:(NSUInteger)charIndex {
@@ -4908,12 +4766,12 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 }
 
 - (NSInteger)windowLevel {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NS_ENSURE_TRUE(mTextInputHandler, [[self window] level]);
   return mTextInputHandler->GetWindowLevel();
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSNormalWindowLevel);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSNormalWindowLevel);
 }
 
 #pragma mark -
@@ -4962,8 +4820,8 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
         !TextInputHandler::IsSecureEventInputEnabled()) {
 #  define CRASH_MESSAGE "A password editor has focus, but not in secure input mode"
 
-      CrashReporter::AppendAppNotesToCrashReport(NS_LITERAL_CSTRING("\nBug 893973: ") +
-                                                 NS_LITERAL_CSTRING(CRASH_MESSAGE));
+      CrashReporter::AppendAppNotesToCrashReport("\nBug 893973: "_ns +
+                                                 nsLiteralCString(CRASH_MESSAGE));
       CrashReporter::AppendAppNotesToCrashReport(additionalInfo);
 
       MOZ_CRASH(CRASH_MESSAGE);
@@ -4972,8 +4830,8 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
                TextInputHandler::IsSecureEventInputEnabled()) {
 #  define CRASH_MESSAGE "A non-password editor has focus, but in secure input mode"
 
-      CrashReporter::AppendAppNotesToCrashReport(NS_LITERAL_CSTRING("\nBug 893973: ") +
-                                                 NS_LITERAL_CSTRING(CRASH_MESSAGE));
+      CrashReporter::AppendAppNotesToCrashReport("\nBug 893973: "_ns +
+                                                 nsLiteralCString(CRASH_MESSAGE));
       CrashReporter::AppendAppNotesToCrashReport(additionalInfo);
 
       MOZ_CRASH(CRASH_MESSAGE);
@@ -5288,12 +5146,12 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 }
 
 - (BOOL)isFirstResponder {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSResponder* resp = [[self window] firstResponder];
   return (resp == (NSResponder*)self);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 - (BOOL)isDragInProgress {
@@ -5316,11 +5174,11 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 // We must always call through to our superclass, even when mGeckoChild is
 // nil -- otherwise the keyboard focus can end up in the wrong NSView.
 - (BOOL)becomeFirstResponder {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return [super becomeFirstResponder];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(YES);
+  NS_OBJC_END_TRY_BLOCK_RETURN(YES);
 }
 
 - (void)viewsWindowDidBecomeKey {
@@ -5414,7 +5272,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 // to send events. It contains all of the logic needed for Gecko
 // dragging to work. Returns the appropriate cocoa drag operation code.
 - (NSDragOperation)doDragAction:(EventMessage)aMessage sender:(id)aSender {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!mGeckoChild) return NSDragOperationNone;
 
@@ -5522,12 +5380,12 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
   return NSDragOperationGeneric;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSDragOperationNone);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSDragOperationNone);
 }
 
 // NSDraggingDestination
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   MOZ_LOG(sCocoaLog, LogLevel::Info, ("ChildView draggingEntered: entered\n"));
 
@@ -5542,7 +5400,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
   return [self doDragAction:eDragEnter sender:sender];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSDragOperationNone);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSDragOperationNone);
 }
 
 // NSDraggingDestination
@@ -5854,7 +5712,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 }
 
 - (BOOL)writeSelectionToPasteboard:(NSPasteboard*)pboard types:(NSArray*)types {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
 
@@ -5906,7 +5764,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
   }
   return YES;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 // Called if the service wants us to replace the current selection.
@@ -6201,7 +6059,7 @@ void ChildViewMouseTracker::ReEvaluateMouseEnterState(NSEvent* aEvent, ChildView
     [oldView sendMouseEnterOrExitEvent:aEvent enter:NO exitFrom:exitFrom];
     // After the cursor exits the window set it to a visible regular arrow cursor.
     if (exitFrom == WidgetMouseEvent::eTopLevel) {
-      [[nsCursorManager sharedInstance] setCursor:eCursor_standard];
+      [[nsCursorManager sharedInstance] setNonCustomCursor:nsIWidget::Cursor{eCursor_standard}];
     }
     [sLastMouseEventView sendMouseEnterOrExitEvent:aEvent enter:YES exitFrom:exitFrom];
   }

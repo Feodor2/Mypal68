@@ -124,11 +124,8 @@ nsresult HeadlessLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
   return res;
 }
 
-nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
-  nsresult res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
-
+nsresult HeadlessLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
+  nsresult res = NS_OK;
   // These values should be sane defaults for headless mode under GTK.
   switch (aID) {
     case IntID::CaretBlinkTime:
@@ -215,7 +212,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = 0;
       res = NS_ERROR_FAILURE;
       break;
-    case IntID::TouchEnabled:
     case IntID::MacGraphiteTheme:
     case IntID::MacYosemiteTheme:
       aResult = 0;
@@ -240,7 +236,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = 0;
       break;
     case IntID::WindowsThemeIdentifier:
-    case IntID::OperatingSystemVersionIdentifier:
       aResult = 0;
       res = NS_ERROR_NOT_IMPLEMENTED;
       break;
@@ -287,7 +282,7 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       break;
     default:
       NS_WARNING(
-          "HeadlessLookAndFeel::GetIntImpl called with an unrecognized aID");
+          "HeadlessLookAndFeel::NativeGetInt called with an unrecognized aID");
       aResult = 0;
       res = NS_ERROR_FAILURE;
       break;
@@ -295,10 +290,8 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   return res;
 }
 
-nsresult HeadlessLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult res = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsresult HeadlessLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult res = NS_OK;
 
   // Hardcoded values for GTK.
   switch (aID) {
@@ -315,7 +308,8 @@ nsresult HeadlessLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
       break;
     default:
       NS_WARNING(
-          "HeadlessLookAndFeel::GetFloatImpl called with an unrecognized aID");
+          "HeadlessLookAndFeel::NativeGetFloat called with an unrecognized "
+          "aID");
       aResult = -1.0;
       res = NS_ERROR_FAILURE;
       break;
@@ -324,8 +318,8 @@ nsresult HeadlessLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
   return res;
 }
 
-bool HeadlessLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
-                                      gfxFontStyle& aFontStyle) {
+bool HeadlessLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
+                                        gfxFontStyle& aFontStyle) {
   // Default to san-serif for everything.
   aFontStyle.style = FontSlantStyle::Normal();
   aFontStyle.weight = FontWeight::Normal();

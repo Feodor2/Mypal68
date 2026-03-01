@@ -5,6 +5,9 @@
 SOURCES += [
     'mozwayland.c',
 ]
+EXPORTS.mozilla.widget += [
+    'mozwayland.h',
+]
 
 SharedLibrary('mozwayland')
 

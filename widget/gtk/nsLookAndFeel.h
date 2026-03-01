@@ -18,18 +18,18 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   virtual ~nsLookAndFeel();
 
   void NativeInit() final;
-  virtual void RefreshImpl() override;
-  virtual nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
-  virtual nsresult GetIntImpl(IntID aID, int32_t& aResult) override;
-  virtual nsresult GetFloatImpl(FloatID aID, float& aResult) override;
-  virtual bool GetFontImpl(FontID aID, nsString& aFontName,
-                           gfxFontStyle& aFontStyle) override;
+  void RefreshImpl() override;
+  nsresult NativeGetInt(IntID aID, int32_t& aResult) override;
+  nsresult NativeGetFloat(FloatID aID, float& aResult) override;
+  nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
+  bool NativeGetFont(FontID aID, nsString& aFontName,
+                     gfxFontStyle& aFontStyle) override;
 
-  virtual char16_t GetPasswordCharacterImpl() override;
-  virtual bool GetEchoPasswordImpl() override;
+  char16_t GetPasswordCharacterImpl() override;
+  bool GetEchoPasswordImpl() override;
 
-  virtual nsTArray<LookAndFeelInt> GetIntCacheImpl() override;
-  virtual void SetIntCacheImpl(
+  nsTArray<LookAndFeelInt> GetIntCacheImpl() override;
+  void SetIntCacheImpl(
       const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) override;
 
   bool IsCSDAvailable() const { return mCSDAvailable; }
@@ -86,6 +86,8 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   nscolor mTextSelectedBackground = kWhite;
   nscolor mMozScrollbar = kWhite;
   nscolor mInfoBarText = kBlack;
+  nscolor mMozColHeaderText = kBlack;
+  nscolor mMozColHeaderHoverText = kBlack;
   char16_t mInvisibleCharacter = 0;
   float mCaretRatio = 0.0f;
   int32_t mCaretBlinkTime = 0;
@@ -97,9 +99,12 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   bool mCSDCloseButton = false;
   bool mCSDReversedPlacement = false;
   bool mSystemUsesDarkTheme = false;
+  bool mPrefersReducedMotion = false;
+  bool mHighContrast = false;
   bool mInitialized = false;
 
   void EnsureInit();
+  void ConfigureContentGtkTheme();
 
  private:
   nsresult InitCellHighlightColors();

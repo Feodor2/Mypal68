@@ -48,9 +48,15 @@ using mozilla::StaticMutex;
 class nsAutoRetainCocoaObject {
  public:
   explicit nsAutoRetainCocoaObject(id anObject) {
-    mObject = NS_OBJC_TRY_EXPR_ABORT([anObject retain]);
+    NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+    mObject = [anObject retain];
+    NS_OBJC_END_TRY_ABORT_BLOCK;
   }
-  ~nsAutoRetainCocoaObject() { NS_OBJC_TRY_ABORT([mObject release]); }
+  ~nsAutoRetainCocoaObject() {
+    NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+    [mObject release];
+    NS_OBJC_END_TRY_ABORT_BLOCK;
+  }
 
  private:
   id mObject;  // [STRONG]

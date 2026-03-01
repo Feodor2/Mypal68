@@ -16,6 +16,7 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/ToString.h"
 #include "WritingModes.h"
 
 namespace mozilla {
@@ -25,21 +26,6 @@ LazyLogModule gGtkIMLog("nsGtkIMModuleWidgets");
 
 static inline const char* ToChar(bool aBool) {
   return aBool ? "true" : "false";
-}
-
-static const char* GetEnabledStateName(uint32_t aState) {
-  switch (aState) {
-    case IMEState::DISABLED:
-      return "DISABLED";
-    case IMEState::ENABLED:
-      return "ENABLED";
-    case IMEState::PASSWORD:
-      return "PASSWORD";
-    case IMEState::PLUGIN:
-      return "PLUG_IN";
-    default:
-      return "UNKNOWN ENABLED STATUS!!";
-  }
 }
 
 static const char* GetEventType(GdkEventKey* aKeyEvent) {
@@ -621,7 +607,7 @@ NS_IMETHODIMP_(IMENotificationRequests)
 IMContextWrapper::GetIMENotificationRequests() {
   // While a plugin has focus, IMContextWrapper doesn't need any
   // notifications.
-  if (mInputContext.mIMEState.mEnabled == IMEState::PLUGIN) {
+  if (mInputContext.mIMEState.mEnabled == IMEEnabled::Plugin) {
     return IMENotificationRequests();
   }
 
@@ -695,7 +681,7 @@ void IMContextWrapper::OnDestroyWindow(nsWindow* aWindow) {
 
   mOwnerWindow = nullptr;
   mLastFocusedWindow = nullptr;
-  mInputContext.mIMEState.mEnabled = IMEState::DISABLED;
+  mInputContext.mIMEState.mEnabled = IMEEnabled::Disabled;
   mPostingKeyEvents.Clear();
 
   MOZ_LOG(gGtkIMLog, LogLevel::Debug,
@@ -910,7 +896,7 @@ KeyHandlingState IMContextWrapper::OnKeyEvent(
         // <input type="password"> or |ime-mode: disabled;|.  However, in
         // some environments, not so actually.  Therefore, we need to check
         // the result of gtk_im_context_filter_keypress() later.
-        if (mInputContext.mIMEState.mEnabled == IMEState::PASSWORD) {
+        if (mInputContext.mIMEState.mEnabled == IMEEnabled::Password) {
           probablyHandledAsynchronously = false;
           maybeHandledAsynchronously = !isHandlingAsyncEvent;
           break;
@@ -1245,7 +1231,7 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
   MOZ_LOG(gGtkIMLog, LogLevel::Info,
           ("0x%p SetInputContext(aCaller=0x%p, aContext={ mIMEState={ "
            "mEnabled=%s }, mHTMLInputType=%s })",
-           this, aCaller, GetEnabledStateName(aContext->mIMEState.mEnabled),
+           this, aCaller, ToString(aContext->mIMEState.mEnabled).c_str(),
            NS_ConvertUTF16toUTF8(aContext->mHTMLInputType).get()));
 
   if (aCaller != mLastFocusedWindow) {
@@ -1286,8 +1272,7 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
   mInputContext = *aContext;
 
   if (changingEnabledState) {
-    static bool sInputPurposeSupported = !gtk_check_version(3, 6, 0);
-    if (sInputPurposeSupported && mInputContext.mIMEState.MaybeEditable()) {
+    if (mInputContext.mIMEState.MaybeEditable()) {
       GtkIMContext* currentContext = GetCurrentContext();
       if (currentContext) {
         GtkInputPurpose purpose = GTK_INPUT_PURPOSE_FREE_FORM;
@@ -1310,7 +1295,7 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
         // I.e., let's ignore tablet devices for now.  When somebody
         // reports actual trouble on tablet devices, we should try to
         // look for a way to solve actual problem.
-        if (mInputContext.mIMEState.mEnabled == IMEState::PASSWORD) {
+        if (mInputContext.mIMEState.mEnabled == IMEEnabled::Password) {
           purpose = GTK_INPUT_PURPOSE_PASSWORD;
         } else if (inputType.EqualsLiteral("email")) {
           purpose = GTK_INPUT_PURPOSE_EMAIL;
@@ -1373,7 +1358,7 @@ GtkIMContext* IMContextWrapper::GetCurrentContext() const {
   if (IsEnabled()) {
     return mContext;
   }
-  if (mInputContext.mIMEState.mEnabled == IMEState::PASSWORD) {
+  if (mInputContext.mIMEState.mEnabled == IMEEnabled::Password) {
     return mSimpleContext;
   }
   return mDummyContext;
@@ -1388,10 +1373,10 @@ bool IMContextWrapper::IsValidContext(GtkIMContext* aContext) const {
 }
 
 bool IMContextWrapper::IsEnabled() const {
-  return mInputContext.mIMEState.mEnabled == IMEState::ENABLED ||
-         mInputContext.mIMEState.mEnabled == IMEState::PLUGIN ||
+  return mInputContext.mIMEState.mEnabled == IMEEnabled::Enabled ||
+         mInputContext.mIMEState.mEnabled == IMEEnabled::Plugin ||
          (!sUseSimpleContext &&
-          mInputContext.mIMEState.mEnabled == IMEState::PASSWORD);
+          mInputContext.mIMEState.mEnabled == IMEEnabled::Password);
 }
 
 void IMContextWrapper::Focus() {
@@ -2768,25 +2753,27 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
     return;
   }
 
-  WidgetQueryContentEvent charRect(
+  WidgetQueryContentEvent queryCaretOrTextRectEvent(
       true, useCaret ? eQueryCaretRect : eQueryTextRect, mLastFocusedWindow);
   if (useCaret) {
-    charRect.InitForQueryCaretRect(mSelection.mOffset);
+    queryCaretOrTextRectEvent.InitForQueryCaretRect(mSelection.mOffset);
   } else {
     if (mSelection.mWritingMode.IsVertical()) {
       // For preventing the candidate window to overlap the target
       // clause, we should set fake (typically, very tall) caret rect.
       uint32_t length =
           mCompositionTargetRange.mLength ? mCompositionTargetRange.mLength : 1;
-      charRect.InitForQueryTextRect(mCompositionTargetRange.mOffset, length);
+      queryCaretOrTextRectEvent.InitForQueryTextRect(
+          mCompositionTargetRange.mOffset, length);
     } else {
-      charRect.InitForQueryTextRect(mCompositionTargetRange.mOffset, 1);
+      queryCaretOrTextRectEvent.InitForQueryTextRect(
+          mCompositionTargetRange.mOffset, 1);
     }
   }
-  InitEvent(charRect);
+  InitEvent(queryCaretOrTextRectEvent);
   nsEventStatus status;
-  mLastFocusedWindow->DispatchEvent(&charRect, status);
-  if (!charRect.mSucceeded) {
+  mLastFocusedWindow->DispatchEvent(&queryCaretOrTextRectEvent, status);
+  if (queryCaretOrTextRectEvent.Failed()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p   SetCursorPosition(), FAILED, %s was failed", this,
              useCaret ? "eQueryCaretRect" : "eQueryTextRect"));
@@ -2803,7 +2790,8 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
   LayoutDeviceIntPoint owner = mOwnerWindow->WidgetToScreenOffset();
 
   // Compute the caret position in the IM owner window.
-  LayoutDeviceIntRect rect = charRect.mReply.mRect + root - owner;
+  LayoutDeviceIntRect rect =
+      queryCaretOrTextRectEvent.mReply->mRect + root - owner;
   rect.width = 0;
   GdkRectangle area = rootWindow->DevicePixelsToGdkRectRoundOut(rect);
 
@@ -2866,20 +2854,22 @@ nsresult IMContextWrapper::GetCurrentParagraph(nsAString& aText,
                                                 mLastFocusedWindow);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
   mLastFocusedWindow->DispatchEvent(&queryTextContentEvent, status);
-  NS_ENSURE_TRUE(queryTextContentEvent.mSucceeded, NS_ERROR_FAILURE);
+  if (NS_WARN_IF(queryTextContentEvent.Failed())) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsAutoString textContent(queryTextContentEvent.mReply.mString);
-  if (selOffset + selLength > textContent.Length()) {
+  if (selOffset + selLength > queryTextContentEvent.mReply->DataLength()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p   GetCurrentParagraph(), FAILED, The selection is "
-             "invalid, textContent.Length()=%u",
-             this, textContent.Length()));
+             "invalid, queryTextContentEvent={ mReply=%s }",
+             this, ToString(queryTextContentEvent.mReply).c_str()));
     return NS_ERROR_FAILURE;
   }
 
   // Remove composing string and restore the selected string because
   // GtkEntry doesn't remove selected string until committing, however,
   // our editor does it.  We should emulate the behavior for IME.
+  nsAutoString textContent(queryTextContentEvent.mReply->DataRef());
   if (EditorHasCompositionString() &&
       mDispatchedCompositionString != mSelectedStringRemovedByComposition) {
     textContent.Replace(mCompositionStart,
@@ -2960,15 +2950,17 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
                                                 mLastFocusedWindow);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
   mLastFocusedWindow->DispatchEvent(&queryTextContentEvent, status);
-  NS_ENSURE_TRUE(queryTextContentEvent.mSucceeded, NS_ERROR_FAILURE);
-  if (queryTextContentEvent.mReply.mString.IsEmpty()) {
+  if (NS_WARN_IF(queryTextContentEvent.Failed())) {
+    return NS_ERROR_FAILURE;
+  }
+  if (queryTextContentEvent.mReply->IsDataEmpty()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p   DeleteText(), FAILED, there is no contents", this));
     return NS_ERROR_FAILURE;
   }
 
-  NS_ConvertUTF16toUTF8 utf8Str(
-      nsDependentSubstring(queryTextContentEvent.mReply.mString, 0, selOffset));
+  NS_ConvertUTF16toUTF8 utf8Str(nsDependentSubstring(
+      queryTextContentEvent.mReply->DataRef(), 0, selOffset));
   glong offsetInUTF8Characters =
       g_utf8_strlen(utf8Str.get(), utf8Str.Length()) + aOffset;
   if (offsetInUTF8Characters < 0) {
@@ -2980,7 +2972,7 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
   }
 
   AppendUTF16toUTF8(
-      nsDependentSubstring(queryTextContentEvent.mReply.mString, selOffset),
+      nsDependentSubstring(queryTextContentEvent.mReply->DataRef(), selOffset),
       utf8Str);
   glong countOfCharactersInUTF8 =
       g_utf8_strlen(utf8Str.get(), utf8Str.Length());
@@ -3100,11 +3092,11 @@ bool IMContextWrapper::EnsureToCacheSelection(nsAString* aSelectedString) {
   }
 
   nsEventStatus status;
-  WidgetQueryContentEvent selection(true, eQuerySelectedText,
-                                    mLastFocusedWindow);
-  InitEvent(selection);
-  mLastFocusedWindow->DispatchEvent(&selection, status);
-  if (NS_WARN_IF(!selection.mSucceeded)) {
+  WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
+                                                 mLastFocusedWindow);
+  InitEvent(querySelectedTextEvent);
+  mLastFocusedWindow->DispatchEvent(&querySelectedTextEvent, status);
+  if (NS_WARN_IF(querySelectedTextEvent.Failed())) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p EnsureToCacheSelection(), FAILED, due to "
              "failure of query selection event",
@@ -3112,7 +3104,7 @@ bool IMContextWrapper::EnsureToCacheSelection(nsAString* aSelectedString) {
     return false;
   }
 
-  mSelection.Assign(selection);
+  mSelection.Assign(querySelectedTextEvent);
   if (!mSelection.IsValid()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p EnsureToCacheSelection(), FAILED, due to "
@@ -3122,7 +3114,7 @@ bool IMContextWrapper::EnsureToCacheSelection(nsAString* aSelectedString) {
   }
 
   if (!mSelection.Collapsed() && aSelectedString) {
-    aSelectedString->Assign(selection.mReply.mString);
+    aSelectedString->Assign(querySelectedTextEvent.mReply->DataRef());
   }
 
   MOZ_LOG(gGtkIMLog, LogLevel::Debug,
@@ -3148,10 +3140,11 @@ void IMContextWrapper::Selection::Assign(
 void IMContextWrapper::Selection::Assign(
     const WidgetQueryContentEvent& aEvent) {
   MOZ_ASSERT(aEvent.mMessage == eQuerySelectedText);
-  MOZ_ASSERT(aEvent.mSucceeded);
-  mString = aEvent.mReply.mString.Length();
-  mOffset = aEvent.mReply.mOffset;
-  mWritingMode = aEvent.GetWritingMode();
+  MOZ_ASSERT(aEvent.Succeeded());
+  MOZ_ASSERT(aEvent.mReply->mOffsetAndData.isSome());
+  mString = aEvent.mReply->DataRef();
+  mOffset = aEvent.mReply->StartOffset();
+  mWritingMode = aEvent.mReply->WritingModeRef();
 }
 
 }  // namespace widget

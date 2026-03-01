@@ -9,6 +9,11 @@
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPtr.h"
+#ifdef MOZ_WAYLAND
+#  include <gdk/gdk.h>
+#  include <gdk/gdkx.h>
+#  include <gdk/gdkwayland.h>
+#endif /* MOZ_WAYLAND */
 
 static mozilla::LazyLogModule sScreenLog("WidgetScreen");
 
@@ -102,6 +107,15 @@ void ScreenManager::CopyScreensToAllRemotesIfIsParent() {
 NS_IMETHODIMP
 ScreenManager::ScreenForRect(int32_t aX, int32_t aY, int32_t aWidth,
                              int32_t aHeight, nsIScreen** aOutScreen) {
+#ifdef MOZ_WAYLAND
+  static bool inWayland = gdk_display_get_default() &&
+                          !GDK_IS_X11_DISPLAY(gdk_display_get_default());
+
+  if (inWayland) {
+    NS_WARNING("Getting screen in wayland, primary display will be returned.");
+  }
+#endif
+
   if (mScreenList.IsEmpty()) {
     MOZ_LOG(sScreenLog, LogLevel::Warning,
             ("No screen available. This can happen in xpcshell."));

@@ -506,7 +506,7 @@ class nsWindow::NPZCSupport final
     }
 
     PostInputEvent([input, result](nsWindow* window) {
-      WidgetWheelEvent wheelEvent = input.ToWidgetWheelEvent(window);
+      WidgetWheelEvent wheelEvent = input.ToWidgetEvent(window);
       window->ProcessUntransformedAPZEvent(&wheelEvent, result);
     });
 
@@ -618,7 +618,7 @@ class nsWindow::NPZCSupport final
     }
 
     PostInputEvent([input, result](nsWindow* window) {
-      WidgetMouseEvent mouseEvent = input.ToWidgetMouseEvent(window);
+      WidgetMouseEvent mouseEvent = input.ToWidgetEvent(window);
       window->ProcessUntransformedAPZEvent(&mouseEvent, result);
     });
 
@@ -925,6 +925,15 @@ class nsWindow::LayerViewSupport final
     mWindow->Resize(aLeft, aTop, aWidth, aHeight, /* repaint */ false);
   }
 
+  void SetDynamicToolbarMaxHeight(int32_t aHeight) {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (!mWindow) {
+      return;  // Already shut down.
+    }
+
+    mWindow->UpdateDynamicToolbarMaxHeight(ScreenIntCoord(aHeight));
+  }
+
   void SyncPauseCompositor() {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
@@ -1197,7 +1206,7 @@ void nsWindow::GeckoViewSupport::Open(
   } else {
     nsresult rv = Preferences::GetCString("toolkit.defaultChromeURI", url);
     if (NS_FAILED(rv)) {
-      url = NS_LITERAL_CSTRING("chrome://geckoview/content/geckoview.xul");
+      url = "chrome://geckoview/content/geckoview.xhtml"_ns;
     }
   }
 
@@ -1395,6 +1404,7 @@ nsWindow::nsWindow()
     : mScreenId(0),  // Use 0 (primary screen) as the default value.
       mIsVisible(false),
       mParent(nullptr),
+      mDynamicToolbarMaxHeight(0),
       mIsFullScreen(false)
 #ifdef MOZ_BUILD_WEBRENDER
       ,
@@ -2226,17 +2236,20 @@ void nsWindow::RecvScreenPixels(Shmem&& aMem, const ScreenIntSize& aSize) {
   }
 }
 
-nsresult nsWindow::SetPrefersReducedMotionOverrideForTest(bool aValue) {
-  nsXPLookAndFeel::GetInstance()->SetPrefersReducedMotionOverrideForTest(
-      aValue);
+void nsWindow::UpdateDynamicToolbarMaxHeight(ScreenIntCoord aHeight) {
+  if (mDynamicToolbarMaxHeight == aHeight) {
+    return;
+  }
 
-  java::GeckoSystemStateListener::NotifyPrefersReducedMotionChangedForTest();
-  return NS_OK;
-}
+  mDynamicToolbarMaxHeight = aHeight;
 
-nsresult nsWindow::ResetPrefersReducedMotionOverrideForTest() {
-  nsXPLookAndFeel::GetInstance()->ResetPrefersReducedMotionOverrideForTest();
-  return NS_OK;
+  if (mWidgetListener) {
+    mWidgetListener->DynamicToolbarMaxHeightChanged(aHeight);
+  }
+
+  if (mAttachedWidgetListener) {
+    mAttachedWidgetListener->DynamicToolbarMaxHeightChanged(aHeight);
+  }
 }
 
 already_AddRefed<nsIWidget> nsIWidget::CreateTopLevelWindow() {

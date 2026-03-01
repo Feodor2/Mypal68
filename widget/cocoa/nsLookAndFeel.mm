@@ -39,8 +39,6 @@ nsLookAndFeel::nsLookAndFeel()
       mUseOverlayScrollbarsCached(false),
       mAllowOverlayScrollbarsOverlap(-1),
       mAllowOverlayScrollbarsOverlapCached(false),
-      mPrefersReducedMotion(-1),
-      mPrefersReducedMotionCached(false),
       mSystemUsesDarkTheme(-1),
       mSystemUsesDarkThemeCached(false),
       mColorTextSelectBackground(0),
@@ -99,10 +97,6 @@ static nscolor GetColorFromNSColorWithAlpha(NSColor* aColor, float alpha) {
 void nsLookAndFeel::NativeInit() { EnsureInit(); }
 
 void nsLookAndFeel::RefreshImpl() {
-  if (mShouldRetainCacheForTest) {
-    return;
-  }
-
   nsXPLookAndFeel::RefreshImpl();
 
   // We should only clear the cache if we're in the main browser process.
@@ -340,6 +334,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     case ColorID::MozDialogtext:
     case ColorID::MozCellhighlighttext:
     case ColorID::MozHtmlCellhighlighttext:
+    case ColorID::MozColheadertext:
+    case ColorID::MozColheaderhovertext:
       aColor = mColorDialogText;
       break;
     case ColorID::MozDragtargetzone:
@@ -429,14 +425,19 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
   return res;
 }
 
-nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
+nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  nsresult res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+  nsresult res = NS_OK;
 
   switch (aID) {
+    case IntID::ScrollButtonLeftMouseButtonAction:
+      aResult = 0;
+      break;
+    case IntID::ScrollButtonMiddleMouseButtonAction:
+    case IntID::ScrollButtonRightMouseButtonAction:
+      aResult = 3;
+      break;
     case IntID::CaretBlinkTime:
       aResult = 567;
       break;
@@ -515,9 +516,7 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
     case IntID::DWMCompositor:
     case IntID::WindowsClassic:
     case IntID::WindowsDefaultTheme:
-    case IntID::TouchEnabled:
     case IntID::WindowsThemeIdentifier:
-    case IntID::OperatingSystemVersionIdentifier:
       aResult = 0;
       res = NS_ERROR_NOT_IMPLEMENTED;
       break;
@@ -595,10 +594,8 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult res = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult res = NS_OK;
 
   switch (aID) {
     case FloatID::IMEUnderlineRelativeSize:
@@ -633,8 +630,8 @@ bool nsLookAndFeel::SystemWantsDarkTheme() {
   return !![[NSUserDefaults standardUserDefaults] stringForKey:@"AppleInterfaceStyle"];
 }
 
-bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName, gfxFontStyle& aFontStyle) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName, gfxFontStyle& aFontStyle) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // hack for now
   if (aID == FontID::Window || aID == FontID::Document) {
@@ -654,7 +651,7 @@ bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName, gfxFontStyle& a
 
   return true;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
 nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {

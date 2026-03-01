@@ -159,8 +159,7 @@ nsresult GetTransferableFile(nsCOMPtr<nsITransferable>& pTransferable) {
 
   pTransferable = do_CreateInstance("@mozilla.org/widget/transferable;1");
   pTransferable->Init(nullptr);
-  rv = pTransferable->SetTransferData("application/x-moz-file", genericWrapper,
-                                      0);
+  rv = pTransferable->SetTransferData("application/x-moz-file", genericWrapper);
   return rv;
 }
 
@@ -176,8 +175,7 @@ nsresult GetTransferableText(nsCOMPtr<nsITransferable>& pTransferable) {
 
   pTransferable = do_CreateInstance("@mozilla.org/widget/transferable;1");
   pTransferable->Init(nullptr);
-  rv = pTransferable->SetTransferData("text/unicode", genericWrapper,
-                                      mozString.Length() * sizeof(char16_t));
+  rv = pTransferable->SetTransferData("text/unicode", genericWrappe);
   return rv;
 }
 
@@ -193,8 +191,7 @@ nsresult GetTransferableTextTwo(nsCOMPtr<nsITransferable>& pTransferable) {
 
   pTransferable = do_CreateInstance("@mozilla.org/widget/transferable;1");
   pTransferable->Init(nullptr);
-  rv = pTransferable->SetTransferData("text/unicode", genericWrapper,
-                                      mozString.Length() * sizeof(char16_t));
+  rv = pTransferable->SetTransferData("text/unicode", genericWrapper);
   return rv;
 }
 
@@ -210,7 +207,7 @@ nsresult GetTransferableURI(nsCOMPtr<nsITransferable>& pTransferable) {
 
   pTransferable = do_CreateInstance("@mozilla.org/widget/transferable;1");
   pTransferable->Init(nullptr);
-  rv = pTransferable->SetTransferData("text/x-moz-url", genericWrapper, 0);
+  rv = pTransferable->SetTransferData("text/x-moz-url", genericWrapper);
   return rv;
 }
 

@@ -8,6 +8,7 @@
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "nsIScrollableFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsNumberControlFrame.h"
 #include "nsPresContext.h"
 #include "nsString.h"
@@ -45,9 +46,13 @@ EventStates nsNativeTheme::GetContentState(nsIFrame* aFrame,
   bool isXULCheckboxRadio = (aAppearance == StyleAppearance::Checkbox ||
                              aAppearance == StyleAppearance::Radio) &&
                             aFrame->GetContent()->IsXULElement();
-  if (isXULCheckboxRadio) aFrame = aFrame->GetParent();
+  if (isXULCheckboxRadio) {
+    aFrame = aFrame->GetParent();
+  }
 
-  if (!aFrame->GetContent()) return EventStates();
+  if (!aFrame->GetContent()) {
+    return EventStates();
+  }
 
   nsIContent* frameContent = aFrame->GetContent();
   EventStates flags;
@@ -280,25 +285,10 @@ bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
     }
   }
 
-  if (aAppearance == StyleAppearance::SpinnerUpbutton ||
-      aAppearance == StyleAppearance::SpinnerDownbutton) {
-    nsNumberControlFrame* numberControlFrame =
-        nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
-    if (numberControlFrame) {
-      return !numberControlFrame->ShouldUseNativeStyleForSpinner();
-    }
-  }
-
-  return (aAppearance == StyleAppearance::NumberInput ||
-          aAppearance == StyleAppearance::Button ||
-          aAppearance == StyleAppearance::Textfield ||
-          aAppearance == StyleAppearance::Textarea ||
-          aAppearance == StyleAppearance::Listbox ||
-          aAppearance == StyleAppearance::Menulist ||
-          aAppearance == StyleAppearance::MenulistButton) &&
+  return nsLayoutUtils::AuthorSpecifiedBorderBackgroundDisablesTheming(
+             aAppearance) &&
          aFrame->GetContent()->IsHTMLElement() &&
-         aPresContext->HasAuthorSpecifiedRules(
-             aFrame, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND);
+         aFrame->Style()->HasAuthorSpecifiedBorderOrBackground();
 }
 
 bool nsNativeTheme::IsDisabled(nsIFrame* aFrame, EventStates aEventStates) {

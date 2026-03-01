@@ -6,37 +6,9 @@
 #define __nsXPLookAndFeel
 
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "nsTArray.h"
 
 class nsLookAndFeel;
-
-struct nsLookAndFeelIntPref {
-  const char* name;
-  mozilla::LookAndFeel::IntID id;
-  bool isSet;
-  int32_t intVar;
-};
-
-struct nsLookAndFeelFloatPref {
-  const char* name;
-  mozilla::LookAndFeel::FloatID id;
-  bool isSet;
-  float floatVar;
-};
-
-#define CACHE_BLOCK(x) (uint32_t(x) >> 5)
-#define CACHE_BIT(x) (1 << (uint32_t(x) & 31))
-
-#define COLOR_CACHE_SIZE (CACHE_BLOCK(uint32_t(LookAndFeel::ColorID::End)) + 1)
-#define IS_COLOR_CACHED(x) \
-  (CACHE_BIT(x) & nsXPLookAndFeel::sCachedColorBits[CACHE_BLOCK(x)])
-#define CLEAR_COLOR_CACHE(x)                       \
-  nsXPLookAndFeel::sCachedColors[uint32_t(x)] = 0; \
-  nsXPLookAndFeel::sCachedColorBits[CACHE_BLOCK(x)] &= ~(CACHE_BIT(x));
-#define CACHE_COLOR(x, y)                          \
-  nsXPLookAndFeel::sCachedColors[uint32_t(x)] = y; \
-  nsXPLookAndFeel::sCachedColorBits[CACHE_BLOCK(x)] |= CACHE_BIT(x);
 
 class nsXPLookAndFeel : public mozilla::LookAndFeel {
  public:
@@ -47,21 +19,27 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
 
   void Init();
 
+  // These functions will return a value specified by an override pref, if it
+  // exists, and otherwise will call into the NativeGetXxx function to get the
+  // platform-specific value.
   //
-  // All these routines will return NS_OK if they have a value,
-  // in which case the nsLookAndFeel should use that value;
-  // otherwise we'll return NS_ERROR_NOT_AVAILABLE, in which case, the
-  // platform-specific nsLookAndFeel should use its own values instead.
-  //
-  nsresult GetColorImpl(ColorID aID, bool aUseStandinsForNativeColors,
-                        nscolor& aResult);
-  virtual nsresult GetIntImpl(IntID aID, int32_t& aResult);
-  virtual nsresult GetFloatImpl(FloatID aID, float& aResult);
+  // NS_ERROR_NOT_AVAILABLE is returned if there is neither an override pref or
+  // a platform-specific value.
+  nsresult GetColorValue(ColorID aID, bool aUseStandinsForNativeColors,
+                         nscolor& aResult);
+  nsresult GetIntValue(IntID aID, int32_t& aResult);
+  nsresult GetFloatValue(FloatID aID, float& aResult);
+  // Same, but returns false if there is no platform-specific value.
+  // (There are no override prefs for font values.)
+  bool GetFontValue(FontID aID, nsString& aName, gfxFontStyle& aStyle) {
+    return NativeGetFont(aID, aName, aStyle);
+  }
 
-  // This one is different: there are no override prefs (fixme?), so
-  // there is no XP implementation, only per-system impls.
-  virtual bool GetFontImpl(FontID aID, nsString& aName,
-                           gfxFontStyle& aStyle) = 0;
+  virtual nsresult NativeGetInt(IntID aID, int32_t& aResult) = 0;
+  virtual nsresult NativeGetFloat(FloatID aID, float& aResult) = 0;
+  virtual nsresult NativeGetColor(ColorID aID, nscolor& aResult) = 0;
+  virtual bool NativeGetFont(FontID aID, nsString& aName,
+                             gfxFontStyle& aStyle) = 0;
 
   virtual void RefreshImpl();
 
@@ -74,57 +52,20 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
   virtual nsTArray<LookAndFeelInt> GetIntCacheImpl();
   virtual void SetIntCacheImpl(
       const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) {}
-  void SetShouldRetainCacheImplForTest(bool aValue) {
-    mShouldRetainCacheForTest = aValue;
-  }
 
   virtual void NativeInit() = 0;
 
-  void SetPrefersReducedMotionOverrideForTest(bool aValue) {
-    sIsInPrefersReducedMotionForTest = true;
-    sPrefersReducedMotionForTest = aValue;
-  }
-  void ResetPrefersReducedMotionOverrideForTest() {
-    sIsInPrefersReducedMotionForTest = false;
-    sPrefersReducedMotionForTest = false;
-  }
-
  protected:
-  nsXPLookAndFeel();
+  nsXPLookAndFeel() = default;
 
-  static void IntPrefChanged(nsLookAndFeelIntPref* data);
-  static void FloatPrefChanged(nsLookAndFeelFloatPref* data);
-  static void ColorPrefChanged(unsigned int index, const char* prefName);
-  static void NotifyPrefChanged();
-  void InitFromPref(nsLookAndFeelIntPref* aPref);
-  void InitFromPref(nsLookAndFeelFloatPref* aPref);
-  void InitColorFromPref(int32_t aIndex);
-  virtual nsresult NativeGetColor(ColorID aID, nscolor& aResult) = 0;
-  bool IsSpecialColor(ColorID aID, nscolor& aColor);
-  bool ColorIsNotCSSAccessible(ColorID aID);
-  nscolor GetStandinForNativeColor(ColorID aID);
+  static nscolor GetStandinForNativeColor(ColorID);
 
   static void OnPrefChanged(const char* aPref, void* aClosure);
 
   static bool sInitialized;
-  static nsLookAndFeelIntPref sIntPrefs[];
-  static nsLookAndFeelFloatPref sFloatPrefs[];
-  /* this length must not be shorter than the length of the longest string in
-   * the array see nsXPLookAndFeel.cpp
-   */
-  static const char sColorPrefs[][41];
-  static int32_t sCachedColors[size_t(LookAndFeel::ColorID::End)];
-  static int32_t sCachedColorBits[COLOR_CACHE_SIZE];
 
   static nsXPLookAndFeel* sInstance;
   static bool sShutdown;
-
-  static bool sIsInPrefersReducedMotionForTest;
-  static bool sPrefersReducedMotionForTest;
-
-  // True if we shouldn't clear the cache value in RefreshImpl().
-  // NOTE: This should be used only for testing.
-  bool mShouldRetainCacheForTest;
 };
 
 #endif

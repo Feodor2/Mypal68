@@ -24,6 +24,9 @@ MOZ_EXPORT struct wl_proxy* wl_proxy_marshal_constructor(
     struct wl_proxy* proxy, uint32_t opcode,
     const struct wl_interface* interface, ...);
 
+MOZ_EXPORT void* wl_proxy_create_wrapper(void* proxy);
+MOZ_EXPORT void wl_proxy_wrapper_destroy(void* proxy_wrapper);
+
 /* We need implement some missing functions from wayland-client-protocol.h
  */
 #ifndef WL_DATA_DEVICE_MANAGER_DND_ACTION_ENUM
@@ -102,6 +105,17 @@ static inline void wl_subsurface_destroy(struct wl_subsurface* wl_subsurface) {
   wl_proxy_marshal((struct wl_proxy*)wl_subsurface, WL_SUBSURFACE_DESTROY);
 
   wl_proxy_destroy((struct wl_proxy*)wl_subsurface);
+}
+#endif
+
+#ifndef WL_SURFACE_DAMAGE_BUFFER
+#  define WL_SURFACE_DAMAGE_BUFFER 9
+
+static inline void wl_surface_damage_buffer(struct wl_surface* wl_surface,
+                                            int32_t x, int32_t y, int32_t width,
+                                            int32_t height) {
+  wl_proxy_marshal((struct wl_proxy*)wl_surface, WL_SURFACE_DAMAGE_BUFFER, x, y,
+                   width, height);
 }
 #endif
 

@@ -11,14 +11,14 @@ with Files("*CompositorWidget*"):
 with Files("*WindowSurface*"):
     BUG_COMPONENT = ("Core", "Graphics")
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     DIRS += ['mozgtk']
 
 if CONFIG['MOZ_WAYLAND']:
     DIRS += ['wayland', 'mozwayland']
 
 EXPORTS += [
-    'mozcontainer.h',
+    'MozContainer.h',
     'nsGTKToolkit.h',
     'nsIImageToPixbuf.h',
 ]
@@ -29,7 +29,7 @@ EXPORTS.mozilla += [
 
 UNIFIED_SOURCES += [
     'IMContextWrapper.cpp',
-    'mozcontainer.cpp',
+    'MozContainer.cpp',
     'NativeKeyBindings.cpp',
     'nsAppShell.cpp',
     'nsBidiKeyboard.cpp',
@@ -53,6 +53,7 @@ UNIFIED_SOURCES += [
 SOURCES += [
     'MediaKeysEventSourceFactory.cpp',
     'nsWindow.cpp', # conflicts with X11 headers
+    'WaylandVsyncSource.cpp', # conflicts with X11 headers
 ]
 
 if CONFIG['MOZ_X11']:
@@ -96,12 +97,16 @@ if CONFIG['MOZ_X11']:
 
 if CONFIG['MOZ_WAYLAND']:
     UNIFIED_SOURCES += [
+        'MozContainerWayland.cpp',
         'nsClipboardWayland.cpp',
         'nsWaylandDisplay.cpp',
+        'WaylandDMABufSurface.cpp',
         'WindowSurfaceWayland.cpp',
     ]
     EXPORTS.mozilla.widget += [
-        'nsWaylandDisplayShutdown.h'
+        'MozContainerWayland.h',
+        'nsWaylandDisplay.h',
+        'WaylandDMABufSurface.h',
     ]
 
 if CONFIG['ACCESSIBILITY']:
@@ -153,6 +158,10 @@ if not (CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3' and CONFIG['MOZ_TREE_CAIRO']):
 
 CFLAGS += CONFIG['TK_CFLAGS']
 CXXFLAGS += CONFIG['TK_CFLAGS']
+
+if CONFIG['MOZ_WAYLAND']:
+    CFLAGS += CONFIG['MOZ_WAYLAND_CFLAGS']
+    CXXFLAGS += CONFIG['MOZ_WAYLAND_CFLAGS']
 
 if CONFIG['MOZ_ENABLE_DBUS']:
     CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']

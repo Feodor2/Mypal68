@@ -17,29 +17,6 @@
 using namespace mozilla;
 using namespace mozilla::widget;
 
-// static
-LookAndFeel::OperatingSystemVersion nsLookAndFeel::GetOperatingSystemVersion() {
-  static OperatingSystemVersion version = OperatingSystemVersion::Unknown;
-
-  if (version != OperatingSystemVersion::Unknown) {
-    return version;
-  }
-
-  if (IsWin10OrLater()) {
-    version = OperatingSystemVersion::Windows10;
-  } else if (IsWin8OrLater()) {
-    version = OperatingSystemVersion::Windows8;
-  } else if (IsWin7OrLater()) {
-    version = OperatingSystemVersion::Windows7;
-  } else if (IsVistaOrLater()) {
-    version = OperatingSystemVersion::WindowsVista;
-  } else {
-    version = OperatingSystemVersion::WindowsXP;
-  }
-
-  return version;
-}
-
 static nsresult GetColorFromTheme(nsUXThemeClass cls, int32_t aPart,
                                   int32_t aState, int32_t aPropId,
                                   nscolor& aColor) {
@@ -340,6 +317,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       break;
     case ColorID::MozDialogtext:
     case ColorID::MozCellhighlighttext:
+    case ColorID::MozColheadertext:
+    case ColorID::MozColheaderhovertext:
       idx = COLOR_WINDOWTEXT;
       break;
     case ColorID::MozDragtargetzone:
@@ -363,12 +342,17 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
   return res;
 }
 
-nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
-  nsresult res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
+  nsresult res = NS_OK;
 
   switch (aID) {
+    case IntID::ScrollButtonLeftMouseButtonAction:
+      aResult = 0;
+      break;
+    case IntID::ScrollButtonMiddleMouseButtonAction:
+    case IntID::ScrollButtonRightMouseButtonAction:
+      aResult = 3;
+      break;
     case IntID::CaretBlinkTime:
       // IntID::CaretBlinkTime is often called by updating editable text
       // that has focus. So it should be cached to improve performance.
@@ -449,9 +433,6 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
     case IntID::WindowsClassic:
       aResult = !IsAppThemed();
       break;
-    case IntID::TouchEnabled:
-      aResult = WinUtils::IsTouchDeviceSupportPresent();
-      break;
     case IntID::WindowsDefaultTheme:
       if (XRE_IsContentProcess()) {
         aResult = mUseDefaultTheme;
@@ -466,12 +447,6 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
         aResult = nsUXThemeData::GetNativeThemeId();
       }
       break;
-
-    case IntID::OperatingSystemVersionIdentifier: {
-      aResult = int32_t(GetOperatingSystemVersion());
-      break;
-    }
-
     case IntID::MacGraphiteTheme:
       aResult = 0;
       res = NS_ERROR_NOT_IMPLEMENTED;
@@ -608,10 +583,8 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   return res;
 }
 
-nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult res = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult res = NS_OK;
 
   switch (aID) {
     case FloatID::IMEUnderlineRelativeSize:
@@ -744,8 +717,8 @@ static bool GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
   return true;
 }
 
-bool nsLookAndFeel::GetFontImpl(FontID anID, nsString& aFontName,
-                                gfxFontStyle& aFontStyle) {
+bool nsLookAndFeel::NativeGetFont(FontID anID, nsString& aFontName,
+                                  gfxFontStyle& aFontStyle) {
   CachedSystemFont& cacheSlot = mSystemFontCache[size_t(anID)];
 
   bool status;

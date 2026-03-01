@@ -153,8 +153,7 @@ class nsWindow final : public nsWindowBase {
   virtual LayoutDeviceIntRect GetClientBounds() override;
   virtual LayoutDeviceIntPoint GetClientOffset() override;
   void SetBackgroundColor(const nscolor& aColor) override;
-  virtual void SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursorImage,
-                         uint32_t aHotspotX, uint32_t aHotspotY) override;
+  virtual void SetCursor(const Cursor&) override;
   virtual nsresult ConfigureChildren(
       const nsTArray<Configuration>& aConfigurations) override;
   virtual bool PrepareForFullscreenTransition(nsISupports** aData) override;
@@ -577,8 +576,7 @@ class nsWindow final : public nsWindowBase {
   static TriStateBool sCanQuit;
   static nsWindow* sCurrentWindow;
   static BOOL sIsOleInitialized;
-  static HCURSOR sHCursor;
-  static imgIContainer* sCursorImgContainer;
+  static Cursor sCurrentCursor;
   static bool sSwitchKeyboardLayout;
   static bool sJustGotDeactivate;
   static bool sJustGotActivate;

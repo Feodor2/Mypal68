@@ -262,7 +262,8 @@ MouseInput::MouseInput()
       mButtonType(NONE),
       mInputSource(0),
       mButtons(0),
-      mHandledByAPZ(false) {}
+      mHandledByAPZ(false),
+      mPreventClickEvent(false) {}
 
 MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
                        uint16_t aInputSource, int16_t aButtons,
@@ -274,7 +275,8 @@ MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
       mInputSource(aInputSource),
       mButtons(aButtons),
       mOrigin(aPoint),
-      mHandledByAPZ(false) {}
+      mHandledByAPZ(false),
+      mPreventClickEvent(false) {}
 
 MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
     : InputData(MOUSE_INPUT, aMouseEvent.mTime, aMouseEvent.mTimeStamp,
@@ -283,7 +285,9 @@ MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
       mButtonType(NONE),
       mInputSource(aMouseEvent.mInputSource),
       mButtons(aMouseEvent.mButtons),
-      mHandledByAPZ(aMouseEvent.mFlags.mHandledByAPZ) {
+      mHandledByAPZ(aMouseEvent.mFlags.mHandledByAPZ),
+      mPreventClickEvent(aMouseEvent.mClass == eMouseEventClass &&
+                         aMouseEvent.AsMouseEvent()->mClickEventPrevented) {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only copy from WidgetTouchEvent on main thread");
 
@@ -349,7 +353,7 @@ bool MouseInput::TransformToLocal(
   return true;
 }
 
-WidgetMouseEvent MouseInput::ToWidgetMouseEvent(nsIWidget* aWidget) const {
+WidgetMouseEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only convert To WidgetTouchEvent on main thread");
 
@@ -421,6 +425,7 @@ WidgetMouseEvent MouseInput::ToWidgetMouseEvent(nsIWidget* aWidget) const {
   event.mClickCount = clickCount;
   event.mInputSource = mInputSource;
   event.mFocusSequenceNumber = mFocusSequenceNumber;
+  event.mClickEventPrevented = mPreventClickEvent;
 
   return event;
 }
@@ -435,7 +440,8 @@ PanGestureInput::PanGestureInput()
       mHandledByAPZ(false),
       mFollowedByMomentum(false),
       mRequiresContentResponseIfCannotScrollHorizontallyInStartDirection(false),
-      mOverscrollBehaviorAllowsSwipe(false) {}
+      mOverscrollBehaviorAllowsSwipe(false),
+      mSimulateMomentum(false) {}
 
 PanGestureInput::PanGestureInput(PanGestureType aType, uint32_t aTime,
                                  TimeStamp aTimeStamp,
@@ -453,7 +459,8 @@ PanGestureInput::PanGestureInput(PanGestureType aType, uint32_t aTime,
       mHandledByAPZ(false),
       mFollowedByMomentum(false),
       mRequiresContentResponseIfCannotScrollHorizontallyInStartDirection(false),
-      mOverscrollBehaviorAllowsSwipe(false) {}
+      mOverscrollBehaviorAllowsSwipe(false),
+      mSimulateMomentum(false) {}
 
 bool PanGestureInput::IsMomentum() const {
   switch (mType) {
@@ -466,7 +473,7 @@ bool PanGestureInput::IsMomentum() const {
   }
 }
 
-WidgetWheelEvent PanGestureInput::ToWidgetWheelEvent(nsIWidget* aWidget) const {
+WidgetWheelEvent PanGestureInput::ToWidgetEvent(nsIWidget* aWidget) const {
   WidgetWheelEvent wheelEvent(true, eWheel, aWidget);
   wheelEvent.mModifiers = this->modifiers;
   wheelEvent.mTime = mTime;
@@ -475,7 +482,6 @@ WidgetWheelEvent PanGestureInput::ToWidgetWheelEvent(nsIWidget* aWidget) const {
       mPanStartPoint,
       PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent));
   wheelEvent.mButtons = 0;
-  wheelEvent.mDeltaMode = WheelEvent_Binding::DOM_DELTA_PIXEL;
   wheelEvent.mMayHaveMomentum = true;  // pan inputs may have momentum
   wheelEvent.mIsMomentum = IsMomentum();
   wheelEvent.mLineOrPageDeltaX = mLineOrPageDeltaX;
@@ -484,6 +490,16 @@ WidgetWheelEvent PanGestureInput::ToWidgetWheelEvent(nsIWidget* aWidget) const {
   wheelEvent.mDeltaY = mPanDisplacement.y;
   wheelEvent.mFlags.mHandledByAPZ = mHandledByAPZ;
   wheelEvent.mFocusSequenceNumber = mFocusSequenceNumber;
+  if (mDeltaType == PanGestureInput::PANDELTA_PAGE) {
+    // Emulate legacy widget/gtk behavior
+    wheelEvent.mDeltaMode = WheelEvent_Binding::DOM_DELTA_LINE;
+    wheelEvent.mIsNoLineOrPageDelta = true;
+    wheelEvent.mScrollType = WidgetWheelEvent::SCROLL_ASYNCHRONOUSELY;
+    wheelEvent.mDeltaX *= 3;
+    wheelEvent.mDeltaY *= 3;
+  } else {
+    wheelEvent.mDeltaMode = WheelEvent_Binding::DOM_DELTA_PIXEL;
+  }
   return wheelEvent;
 }
 
@@ -495,6 +511,14 @@ bool PanGestureInput::TransformToLocal(
     return false;
   }
   mLocalPanStartPoint = *panStartPoint;
+
+  if (mDeltaType == PanGestureInput::PANDELTA_PAGE) {
+    // Skip transforming the pan displacement because we want
+    // raw page proportion counts.
+    mLocalPanDisplacement.x = mPanDisplacement.x;
+    mLocalPanDisplacement.y = mPanDisplacement.y;
+    return true;
+  }
 
   Maybe<ParentLayerPoint> panDisplacement =
       UntransformVector(aTransform, mPanDisplacement, mPanStartPoint);
@@ -542,8 +566,7 @@ bool PinchGestureInput::TransformToLocal(
   return true;
 }
 
-WidgetWheelEvent PinchGestureInput::ToWidgetWheelEvent(
-    nsIWidget* aWidget) const {
+WidgetWheelEvent PinchGestureInput::ToWidgetEvent(nsIWidget* aWidget) const {
   WidgetWheelEvent wheelEvent(true, eWheel, aWidget);
   wheelEvent.mModifiers = this->modifiers | MODIFIER_CONTROL;
   wheelEvent.mTime = mTime;
@@ -745,8 +768,7 @@ ScrollUnit ScrollWheelInput::ScrollUnitForDeltaType(
   return ScrollUnit::LINES;
 }
 
-WidgetWheelEvent ScrollWheelInput::ToWidgetWheelEvent(
-    nsIWidget* aWidget) const {
+WidgetWheelEvent ScrollWheelInput::ToWidgetEvent(nsIWidget* aWidget) const {
   WidgetWheelEvent wheelEvent(true, eWheel, aWidget);
   wheelEvent.mModifiers = this->modifiers;
   wheelEvent.mTime = mTime;

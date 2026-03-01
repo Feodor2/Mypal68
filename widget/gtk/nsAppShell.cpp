@@ -41,6 +41,7 @@ LazyLogModule gWidgetFocusLog("WidgetFocus");
 LazyLogModule gWidgetDragLog("WidgetDrag");
 LazyLogModule gWidgetDrawLog("WidgetDraw");
 LazyLogModule gWidgetWaylandLog("WidgetWayland");
+LazyLogModule gWaylandDmabufLog("WaylandDmabuf");
 
 static GPollFunc sPollFunc;
 
@@ -55,23 +56,6 @@ static gint PollWrapper(GPollFD* ufds, guint nfsd, gint timeout_) {
   }
   mozilla::BackgroundHangMonitor().NotifyActivity();
   return result;
-}
-
-#ifdef MOZ_WIDGET_GTK
-// For bug 726483.
-static decltype(GtkContainerClass::check_resize) sReal_gtk_window_check_resize;
-
-static void wrap_gtk_window_check_resize(GtkContainer* container) {
-  GdkWindow* gdk_window = gtk_widget_get_window(&container->widget);
-  if (gdk_window) {
-    g_object_ref(gdk_window);
-  }
-
-  sReal_gtk_window_check_resize(container);
-
-  if (gdk_window) {
-    g_object_unref(gdk_window);
-  }
 }
 
 // Emit resume-events on GdkFrameClock if flush-events has not been
@@ -104,7 +88,6 @@ static void WrapGdkFrameClockDispose(GObject* object) {
 
   sRealGdkFrameClockDispose(object);
 }
-#endif
 
 /*static*/
 gboolean nsAppShell::EventProcessorCallback(GIOChannel* source,
@@ -178,17 +161,6 @@ nsresult nsAppShell::Init() {
     }
   }
 
-#ifdef MOZ_WIDGET_GTK
-  if (!sReal_gtk_window_check_resize &&
-      gtk_check_version(3, 8, 0) != nullptr) {  // GTK 3.0 to GTK 3.6.
-    // GtkWindow is a static class and so will leak anyway but this ref
-    // makes sure it isn't recreated.
-    gpointer gtk_plug_class = g_type_class_ref(GTK_TYPE_WINDOW);
-    auto check_resize = &GTK_CONTAINER_CLASS(gtk_plug_class)->check_resize;
-    sReal_gtk_window_check_resize = *check_resize;
-    *check_resize = wrap_gtk_window_check_resize;
-  }
-
   if (!sPendingResumeQuark &&
       gtk_check_version(3, 14, 7) != nullptr) {  // GTK 3.0 to GTK 3.14.7.
     // GTK 3.8 - 3.14 registered this type when creating the frame clock
@@ -208,10 +180,13 @@ nsresult nsAppShell::Init() {
   }
 
   // Workaround for bug 1209659 which is fixed by Gtk3.20
-  if (gtk_check_version(3, 20, 0) != nullptr) unsetenv("GTK_CSD");
-#endif
+  if (gtk_check_version(3, 20, 0) != nullptr) {
+    unsetenv("GTK_CSD");
+  }
 
-  if (PR_GetEnv("MOZ_DEBUG_PAINTS")) gdk_window_set_debug_updates(TRUE);
+  if (PR_GetEnv("MOZ_DEBUG_PAINTS")) {
+    gdk_window_set_debug_updates(TRUE);
+  }
 
   // Whitelist of only common, stable formats - see bugs 1197059 and 1203078
   GSList* pixbufFormats = gdk_pixbuf_get_formats();
@@ -269,7 +244,7 @@ void nsAppShell::ScheduleNativeEventCallback() {
 bool nsAppShell::ProcessNextNativeEvent(bool mayWait) {
   bool ret = g_main_context_iteration(nullptr, mayWait);
 #ifdef MOZ_WAYLAND
-  WaylandDispatchDisplays();
+  mozilla::widget::WaylandDispatchDisplays();
 #endif
   return ret;
 }

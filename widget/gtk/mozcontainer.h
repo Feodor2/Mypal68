@@ -5,6 +5,10 @@
 #ifndef __MOZ_CONTAINER_H__
 #define __MOZ_CONTAINER_H__
 
+#ifdef MOZ_WAYLAND
+#  include "MozContainerWayland.h"
+#endif
+
 #include <gtk/gtk.h>
 #include <functional>
 
@@ -54,32 +58,20 @@
 #define MOZ_CONTAINER_GET_CLASS(obj) \
   (G_TYPE_INSTANCE_GET_CLASS((obj), MOZ_CONTAINER_TYPE, MozContainerClass))
 
+// We need to shape only a few pixels of the titlebar as we care about
+// the corners only
+#define TITLEBAR_SHAPE_MASK_HEIGHT 10
+
 typedef struct _MozContainer MozContainer;
 typedef struct _MozContainerClass MozContainerClass;
-
-/* Workaround for bug at wayland-util.h,
- * present in wayland-devel < 1.12
- */
-#ifdef MOZ_WAYLAND
-struct wl_surface;
-struct wl_subsurface;
-#endif
 
 struct _MozContainer {
   GtkContainer container;
   GList* children;
-
-#ifdef MOZ_WAYLAND
-  struct wl_surface* surface;
-  struct wl_subsurface* subsurface;
-  struct wl_egl_window* eglwindow;
-  struct wl_callback* frame_callback_handler;
-  int frame_callback_handler_surface_id;
-  gboolean surface_needs_clear;
-  gboolean ready_to_draw;
-  std::function<void(void)> inital_draw_cb;
-#endif
   gboolean force_default_visual;
+#ifdef MOZ_WAYLAND
+  MozContainerWayland wl_container;
+#endif
 };
 
 struct _MozContainerClass {
@@ -91,17 +83,5 @@ GtkWidget* moz_container_new(void);
 void moz_container_put(MozContainer* container, GtkWidget* child_widget, gint x,
                        gint y);
 void moz_container_force_default_visual(MozContainer* container);
-
-#ifdef MOZ_WAYLAND
-struct wl_surface* moz_container_get_wl_surface(MozContainer* container);
-struct wl_egl_window* moz_container_get_wl_egl_window(MozContainer* container);
-
-gboolean moz_container_has_wl_egl_window(MozContainer* container);
-gboolean moz_container_surface_needs_clear(MozContainer* container);
-void moz_container_scale_changed(MozContainer* container,
-                                 GtkAllocation* aAllocation);
-void moz_container_set_initial_draw_callback(
-    MozContainer* container, std::function<void(void)> inital_draw_cb);
-#endif
 
 #endif /* __MOZ_CONTAINER_H__ */

@@ -68,7 +68,7 @@ nsCocoaUtils::PromiseArray nsCocoaUtils::sAudioCapturePromises;
 StaticMutex nsCocoaUtils::sMediaCaptureMutex;
 
 static float MenuBarScreenHeight() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSArray* allScreens = [NSScreen screens];
   if ([allScreens count]) {
@@ -77,7 +77,7 @@ static float MenuBarScreenHeight() {
 
   return 0.0;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(0.0);
+  NS_OBJC_END_TRY_BLOCK_RETURN(0.0);
 }
 
 float nsCocoaUtils::FlippedScreenY(float y) { return MenuBarScreenHeight() - y; }
@@ -120,7 +120,7 @@ LayoutDeviceIntRect nsCocoaUtils::CocoaRectToGeckoRectDevPix(const NSRect& aCoco
 }
 
 NSPoint nsCocoaUtils::ScreenLocationForEvent(NSEvent* anEvent) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // Don't trust mouse locations of mouse move events, see bug 443178.
   if (!anEvent || [anEvent type] == NSMouseMoved) return [NSEvent mouseLocation];
@@ -131,23 +131,23 @@ NSPoint nsCocoaUtils::ScreenLocationForEvent(NSEvent* anEvent) {
 
   return nsCocoaUtils::ConvertPointToScreen([anEvent window], [anEvent locationInWindow]);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSMakePoint(0.0, 0.0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSMakePoint(0.0, 0.0));
 }
 
 BOOL nsCocoaUtils::IsEventOverWindow(NSEvent* anEvent, NSWindow* aWindow) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return NSPointInRect(ScreenLocationForEvent(anEvent), [aWindow frame]);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 NSPoint nsCocoaUtils::EventLocationForWindow(NSEvent* anEvent, NSWindow* aWindow) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return nsCocoaUtils::ConvertPointFromScreen(aWindow, ScreenLocationForEvent(anEvent));
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NSMakePoint(0.0, 0.0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(NSMakePoint(0.0, 0.0));
 }
 
 @interface NSEvent (ScrollPhase)

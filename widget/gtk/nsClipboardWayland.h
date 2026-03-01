@@ -5,12 +5,14 @@
 #ifndef __nsClipboardWayland_h_
 #define __nsClipboardWayland_h_
 
-#include "mozwayland/mozwayland.h"
-#include "wayland/gtk-primary-selection-client-protocol.h"
-
 #include <gtk/gtk.h>
 #include <gdk/gdkwayland.h>
 #include <nsTArray.h>
+
+#include "nsClipboard.h"
+#include "nsWaylandDisplay.h"
+#include "mozwayland/mozwayland.h"
+#include "wayland/gtk-primary-selection-client-protocol.h"
 
 struct FastTrackClipboard;
 
@@ -129,7 +131,7 @@ class nsRetrievalContextWayland : public nsRetrievalContext {
 
  private:
   bool mInitialized;
-  nsWaylandDisplay* mDisplay;
+  mozilla::widget::nsWaylandDisplay* mDisplay;
 
   // Data offers provided by Wayland data device
   GHashTable* mActiveOffers;

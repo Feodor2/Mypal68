@@ -50,7 +50,7 @@ nsPrintSettingsX::~nsPrintSettingsX() {
 }
 
 nsPrintSettingsX& nsPrintSettingsX::operator=(const nsPrintSettingsX& rhs) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (this == &rhs) {
     return *this;
@@ -63,7 +63,7 @@ nsPrintSettingsX& nsPrintSettingsX::operator=(const nsPrintSettingsX& rhs) {
 
   return *this;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(*this);
+  NS_OBJC_END_TRY_BLOCK_RETURN(*this);
 }
 
 nsresult nsPrintSettingsX::Init() {

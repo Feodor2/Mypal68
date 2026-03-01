@@ -110,7 +110,8 @@ struct nsWidgetInitData {
         mSupportTranslucency(false),
         mMouseTransparent(false),
         mHasRemoteContent(false),
-        mAlwaysOnTop(false) {}
+        mAlwaysOnTop(false),
+        mPIPWindow(false) {}
 
   nsWindowType mWindowType;
   nsBorderStyle mBorderStyle;
@@ -136,6 +137,8 @@ struct nsWidgetInitData {
   bool mMouseTransparent;
   bool mHasRemoteContent;
   bool mAlwaysOnTop;
+  // Is PictureInPicture window
+  bool mPIPWindow;
 };
 
 #endif  // nsWidgetInitData_h__

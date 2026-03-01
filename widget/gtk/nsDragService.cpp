@@ -231,7 +231,7 @@ static void OnSourceGrabEventAfter(GtkWidget* widget, GdkEvent* event,
     // Update the cursor position.  The last of these recorded gets used for
     // the eDragEnd event.
     nsDragService* dragService = static_cast<nsDragService*>(user_data);
-    gint scale = ScreenHelperGTK::GetGTKMonitorScaleFactor();
+    gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
     auto p = LayoutDeviceIntPoint::Round(event->motion.x_root * scale,
                                          event->motion.y_root * scale);
     dragService->SetDragEndPoint(p);
@@ -394,11 +394,6 @@ bool nsDragService::SetAlphaPixmap(SourceSurface* aSurface,
 #ifdef cairo_image_surface_create
 #  error "Looks like we're including Mozilla's cairo instead of system cairo"
 #endif
-  // Prior to GTK 3.9.12, cairo surfaces passed into gtk_drag_set_icon_surface
-  // had their shape information derived from the alpha channel and used with
-  // the X SHAPE extension instead of being displayed as an ARGB window.
-  // See bug 1249604.
-  if (gtk_check_version(3, 9, 12)) return false;
 
   // TODO: grab X11 pixmap or image data instead of expensive readback.
   cairo_surface_t* surf = cairo_image_surface_create(
@@ -425,7 +420,7 @@ bool nsDragService::SetAlphaPixmap(SourceSurface* aSurface,
       (void (*)(cairo_surface_t*, double, double))dlsym(
           RTLD_DEFAULT, "cairo_surface_set_device_scale");
   if (sCairoSurfaceSetDeviceScalePtr) {
-    gint scale = ScreenHelperGTK::GetGTKMonitorScaleFactor();
+    gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
     sCairoSurfaceSetDeviceScalePtr(surf, scale, scale);
   }
 
@@ -1268,7 +1263,7 @@ void nsDragService::SourceEndDragSession(GdkDragContext* aContext,
     gint x, y;
     GdkDisplay* display = gdk_display_get_default();
     if (display) {
-      gint scale = ScreenHelperGTK::GetGTKMonitorScaleFactor();
+      gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
       gdk_display_get_pointer(display, nullptr, &x, &y, nullptr);
       SetDragEndPoint(LayoutDeviceIntPoint(x * scale, y * scale));
     }

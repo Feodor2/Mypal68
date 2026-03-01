@@ -86,14 +86,12 @@ PuppetWidget::PuppetWidget(BrowserChild* aBrowserChild)
       mDPI(-1),
       mRounding(1),
       mDefaultScale(-1),
-      mCursorHotspotX(0),
-      mCursorHotspotY(0),
       mEnabled(false),
       mVisible(false),
       mNeedIMEStateInit(false),
       mIgnoreCompositionEvents(false) {
   // Setting 'Unknown' means "not yet cached".
-  mInputContext.mIMEState.mEnabled = IMEState::UNKNOWN;
+  mInputContext.mIMEState.mEnabled = IMEEnabled::Unknown;
 }
 
 PuppetWidget::~PuppetWidget() { Destroy(); }
@@ -341,6 +339,7 @@ nsresult PuppetWidget::DispatchEvent(WidgetGUIEvent* aEvent,
     }
 #endif  // #ifdef DEBUG
     mNativeIMEContext = compositionEvent->mNativeIMEContext;
+    mContentCache.OnCompositionEvent(*compositionEvent);
   }
 
   // If the event is a composition event or a keyboard event, it should be
@@ -518,6 +517,7 @@ bool PuppetWidget::AsyncPanZoomEnabled() const {
 bool PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
                                    const WidgetKeyboardEvent& aEvent,
                                    nsTArray<CommandInt>& aCommands) {
+  MOZ_ASSERT(!aEvent.mFlags.mIsSynthesizedForTests);
   // Validate the arguments.
   if (NS_WARN_IF(!nsIWidget::GetEditCommands(aType, aEvent, aCommands))) {
     return false;
@@ -698,7 +698,7 @@ void PuppetWidget::DefaultProcOfPluginEvent(const WidgetPluginEvent& aEvent) {
 // When this widget caches input context and currently managed by
 // IMEStateManager, the cache is valid.
 bool PuppetWidget::HaveValidInputContextCache() const {
-  return (mInputContext.mIMEState.mEnabled != IMEState::UNKNOWN &&
+  return (mInputContext.mIMEState.mEnabled != IMEEnabled::Unknown &&
           IMEStateManager::GetWidgetForActiveInputContext() == this);
 }
 
@@ -761,7 +761,7 @@ nsresult PuppetWidget::NotifyIMEOfFocusChange(
 
   bool gotFocus = aIMENotification.mMessage == NOTIFY_IME_OF_FOCUS;
   if (gotFocus) {
-    if (mInputContext.mIMEState.mEnabled != IMEState::PLUGIN) {
+    if (mInputContext.mIMEState.mEnabled != IMEEnabled::Plugin) {
       // When IME gets focus, we should initalize all information of the
       // content.
       if (NS_WARN_IF(!mContentCache.CacheAll(this, &aIMENotification))) {
@@ -805,7 +805,7 @@ nsresult PuppetWidget::NotifyIMEOfCompositionUpdate(
     return NS_ERROR_FAILURE;
   }
 
-  if (mInputContext.mIMEState.mEnabled != IMEState::PLUGIN &&
+  if (mInputContext.mIMEState.mEnabled != IMEEnabled::Plugin &&
       NS_WARN_IF(!mContentCache.CacheSelection(this, &aIMENotification))) {
     return NS_ERROR_FAILURE;
   }
@@ -823,7 +823,7 @@ nsresult PuppetWidget::NotifyIMEOfTextChange(
   }
 
   // While a plugin has focus, text change notification shouldn't be available.
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEState::PLUGIN)) {
+  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEEnabled::Plugin)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -855,7 +855,7 @@ nsresult PuppetWidget::NotifyIMEOfSelectionChange(
 
   // While a plugin has focus, selection change notification shouldn't be
   // available.
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEState::PLUGIN)) {
+  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEEnabled::Plugin)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -880,7 +880,7 @@ nsresult PuppetWidget::NotifyIMEOfMouseButtonEvent(
 
   // While a plugin has focus, mouse button event notification shouldn't be
   // available.
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEState::PLUGIN)) {
+  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEEnabled::Plugin)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -904,7 +904,7 @@ nsresult PuppetWidget::NotifyIMEOfPositionChange(
   }
   // While a plugin has focus, selection range isn't available.  So, we don't
   // need to cache it at that time.
-  if (mInputContext.mIMEState.mEnabled != IMEState::PLUGIN &&
+  if (mInputContext.mIMEState.mEnabled != IMEEnabled::Plugin &&
       NS_WARN_IF(!mContentCache.CacheSelection(this, &aIMENotification))) {
     return NS_ERROR_FAILURE;
   }
@@ -921,21 +921,15 @@ struct CursorSurface {
   IntSize mSize;
 };
 
-void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
-                             uint32_t aHotspotX, uint32_t aHotspotY) {
+void PuppetWidget::SetCursor(const Cursor& aCursor) {
   if (!mBrowserChild) {
     return;
   }
 
-  // Don't cache on windows, Windowless flash breaks this via async cursor
-  // updates.
-#if !defined(XP_WIN)
-  if (!mUpdateCursor && mCursor == aCursor && mCustomCursor == aCursorImage &&
-      (!aCursorImage ||
-       (mCursorHotspotX == aHotspotX && mCursorHotspotY == aHotspotY))) {
+  const bool force = mUpdateCursor;
+  if (!force && mCursor == aCursor) {
     return;
   }
-#endif
 
   bool hasCustomCursor = false;
   UniquePtr<char[]> customCursorData;
@@ -943,12 +937,28 @@ void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
   IntSize customCursorSize;
   int32_t stride = 0;
   auto format = SurfaceFormat::B8G8R8A8;
-  bool force = mUpdateCursor;
-
-  if (aCursorImage) {
-    RefPtr<SourceSurface> surface = aCursorImage->GetFrame(
-        imgIContainer::FRAME_CURRENT,
-        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
+  ImageResolution resolution = aCursor.mResolution;
+  if (aCursor.IsCustom()) {
+    int32_t width = 0, height = 0;
+    aCursor.mContainer->GetWidth(&width);
+    aCursor.mContainer->GetHeight(&height);
+    const int32_t flags =
+        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY;
+    RefPtr<SourceSurface> surface;
+    if (width && height &&
+        aCursor.mContainer->GetType() == imgIContainer::TYPE_VECTOR) {
+      // For vector images, scale to device pixels.
+      resolution.ScaleBy(GetDefaultScale().scale);
+      resolution.ApplyInverseTo(width, height);
+      surface = aCursor.mContainer->GetFrameAtSize(
+          {width, height}, imgIContainer::FRAME_CURRENT, flags);
+    } else {
+      // NOTE(emilio): We get the frame at the full size, ignoring resolution,
+      // because we're going to rasterize it, and we'd effectively lose the
+      // extra pixels if we rasterized to CustomCursorSize.
+      surface =
+          aCursor.mContainer->GetFrame(imgIContainer::FRAME_CURRENT, flags);
+    }
     if (surface) {
       if (RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface()) {
         hasCustomCursor = true;
@@ -960,27 +970,17 @@ void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
     }
   }
 
-  mCustomCursor = nullptr;
-
   nsDependentCString cursorData(customCursorData ? customCursorData.get() : "",
                                 length);
-  if (!mBrowserChild->SendSetCursor(aCursor, hasCustomCursor, cursorData,
-                                    customCursorSize.width,
-                                    customCursorSize.height, stride, format,
-                                    aHotspotX, aHotspotY, force)) {
+  if (!mBrowserChild->SendSetCursor(
+          aCursor.mDefaultCursor, hasCustomCursor, cursorData,
+          customCursorSize.width, customCursorSize.height, resolution.mX,
+          resolution.mY, stride, format, aCursor.mHotspotX, aCursor.mHotspotY,
+          force)) {
     return;
   }
-
   mCursor = aCursor;
-  mCustomCursor = aCursorImage;
-  mCursorHotspotX = aHotspotX;
-  mCursorHotspotY = aHotspotY;
   mUpdateCursor = false;
-}
-
-void PuppetWidget::ClearCachedCursor() {
-  nsBaseWidget::ClearCachedCursor();
-  mCustomCursor = nullptr;
 }
 
 void PuppetWidget::SetChild(PuppetWidget* aChild) {
@@ -1229,8 +1229,8 @@ void PuppetWidget::EnableIMEForPlugin(bool aEnable) {
 
   // If current IME state isn't plugin, we ignore this call.
   if (NS_WARN_IF(HaveValidInputContextCache() &&
-                 mInputContext.mIMEState.mEnabled != IMEState::UNKNOWN &&
-                 mInputContext.mIMEState.mEnabled != IMEState::PLUGIN)) {
+                 mInputContext.mIMEState.mEnabled != IMEEnabled::Unknown &&
+                 mInputContext.mIMEState.mEnabled != IMEEnabled::Plugin)) {
     return;
   }
 
@@ -1346,7 +1346,7 @@ PuppetWidget::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
 
 NS_IMETHODIMP_(IMENotificationRequests)
 PuppetWidget::GetIMENotificationRequests() {
-  if (mInputContext.mIMEState.mEnabled == IMEState::PLUGIN) {
+  if (mInputContext.mIMEState.mEnabled == IMEEnabled::Plugin) {
     // If a plugin has focus, we cannot receive text nor selection change
     // in the plugin.  Therefore, PuppetWidget needs to receive only position
     // change event for updating the editor rect cache.
@@ -1387,28 +1387,6 @@ nsresult PuppetWidget::GetSystemFont(nsCString& aFontName) {
     return NS_ERROR_FAILURE;
   }
   mBrowserChild->SendGetSystemFont(&aFontName);
-  return NS_OK;
-}
-
-nsresult PuppetWidget::SetPrefersReducedMotionOverrideForTest(bool aValue) {
-  if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsXPLookAndFeel::GetInstance()->SetPrefersReducedMotionOverrideForTest(
-      aValue);
-
-  mBrowserChild->SendSetPrefersReducedMotionOverrideForTest(aValue);
-  return NS_OK;
-}
-
-nsresult PuppetWidget::ResetPrefersReducedMotionOverrideForTest() {
-  if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsXPLookAndFeel::GetInstance()->ResetPrefersReducedMotionOverrideForTest();
-  mBrowserChild->SendResetPrefersReducedMotionOverrideForTest();
   return NS_OK;
 }
 

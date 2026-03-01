@@ -1917,7 +1917,7 @@ function runCompositionTest()
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
                     "runCompositionTest", "#6-3") ||
-      !checkSelection(4, "\u6700", "runCompositionTest", "#6-3")) {
+      !checkSelection(4, "", "runCompositionTest", "#6-3")) {
     return;
   }
 
@@ -5631,6 +5631,115 @@ function runBug722639Test()
     }
     previousTop = currentLine.top;
   }
+}
+
+function runCompositionWithSelectionChange() {
+  function doTest(aEditor, aDescription) {
+    aEditor.focus();
+    const isHTMLEditor =
+      aEditor.nodeName.toLowerCase() != "input" && aEditor.nodeName.toLowerCase() != "textarea";
+    const win = isHTMLEditor ? windowOfContenteditable : window;
+    function getValue() {
+      return isHTMLEditor ? aEditor.innerHTML : aEditor.value;
+    }
+    function setSelection(aStart, aLength) {
+      if (isHTMLEditor) {
+        win.getSelection().setBaseAndExtent(aEditor.firstChild, aStart, aEditor.firstChild, aStart + aLength);
+      } else {
+        aEditor.setSelectionRange(aStart, aStart + aLength);
+      }
+    }
+
+    if (isHTMLEditor) {
+      aEditor.innerHTML = "abcxyz";
+    } else {
+      aEditor.value = "abcxyz";
+    }
+    setSelection("abc".length, 0);
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "1",
+        clauses: [{ length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 1, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc1xyz",
+      `${aDescription}: First composing character should be inserted middle of the text`);
+
+    aEditor.addEventListener("compositionupdate", () => {
+      setSelection("abc".length, "1".length);
+    }, {once: true});
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "12",
+        clauses: [{ length: 2, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 2, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc12xyz",
+      `${aDescription}: Only composition string should be updated even if selection range is updated by "compositionupdate" event listener`);
+
+    aEditor.addEventListener("compositionupdate", () => {
+      setSelection("abc1".length, "2d".length);
+    }, {once: true});
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "123",
+        clauses: [{ length: 3, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 3, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc123xyz",
+      `${aDescription}: Only composition string should be updated even if selection range wider than composition string is updated by "compositionupdate" event listener`);
+
+    aEditor.addEventListener("compositionupdate", () => {
+      setSelection("ab".length, "c123d".length);
+    }, {once: true});
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "456",
+        clauses: [{ length: 3, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 3, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc456xyz",
+      `${aDescription}: Only composition string should be updated even if selection range which covers all over the composition string is updated by "compositionupdate" event listener`);
+
+    aEditor.addEventListener("beforeinput", () => {
+      setSelection("abc456d".length, 0);
+    }, {once: true});
+
+    synthesizeComposition({ type: "compositioncommitasis" });
+
+    is(getValue(), "abc456xyz",
+      `${aDescription}: Only composition string should be updated when committing composition but selection is updated by "beforeinput" event listener`);
+    if (isHTMLEditor) {
+      is(win.getSelection().focusNode, aEditor.firstChild,
+        `${aDescription}: The focus node after composition should be the text node`);
+      is(win.getSelection().focusOffset, "abc456".length,
+        `${aDescription}: The focus offset after composition should be end of the composition string`);
+      is(win.getSelection().anchorNode, aEditor.firstChild,
+        `${aDescription}: The anchor node after composition should be the text node`);
+      is(win.getSelection().anchorOffset, "abc456".length,
+        `${aDescription}: The anchor offset after composition should be end of the composition string`);
+    } else {
+      is(aEditor.selectionStart, "abc456".length,
+        `${aDescription}: The selectionStart after composition should be end of the composition string`);
+      is(aEditor.selectionEnd, "abc456".length,
+        `${aDescription}: The selectionEnd after composition should be end of the composition string`);
+    }
+  }
+  doTest(textarea, "runCompositionWithSelectionChange(textarea)");
+  doTest(input, "runCompositionWithSelectionChange(input)");
+  doTest(contenteditable, "runCompositionWithSelectionChange(contenteditable)");
 }
 
 function runForceCommitTest()
@@ -9496,12 +9605,47 @@ async function runPasswordMaskDelayTest() {
                  "runPasswordMaskDelayTest(): committed string should be masked after a while");
 }
 
-async function runTest()
+async function runInputModeTest()
 {
-  await SpecialPowers.pushPrefEnv({
-    set: [["dom.input_events.beforeinput.enabled", true]],
+  await SpecialPowers.setBoolPref("dom.forms.inputmode", true);
+
+  let result = [];
+
+  function handler(aEvent)
+  {
+    result.push(aEvent);
+  }
+
+  textarea.inputMode = "text";
+  textarea.value = "";
+  textarea.focus();
+
+  textarea.addEventListener("compositionupdate", handler, true);
+  textarea.addEventListener("compositionend", handler, true);
+
+  synthesizeCompositionChange({
+    composition: {string: "a ", clauses: [{length: 2, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
   });
 
+  is(result[0].type, "compositionupdate", "Set initial composition for inputmode test");
+  result = [];
+
+  textarea.inputMode = "tel";
+  is(result.length, 0, "No compositonend event even if inputmode is updated");
+
+  // Clean up
+  synthesizeComposition({ type: "compositioncommitasis" });
+  textarea.inputMode = "";
+  textarea.value = "";
+  textarea.removeEventListener("compositionupdate", handler, true);
+  textarea.removeEventListener("compositionend", handler, true);
+
+  await SpecialPowers.clearUserPref("dom.forms.inputmode");
+}
+
+
+async function runTest()
+{
   window.addEventListener("unload", window.opener.wrappedJSObject.SimpleTest.finish, {once: true, capture: true});
 
   contenteditable = document.getElementById("iframe4").contentDocument.getElementById("contenteditable");
@@ -9518,6 +9662,7 @@ async function runTest()
   await runPanelTest();
   await runPasswordMaskDelayTest();
   await runBug1584901Test();
+  await runInputModeTest();
 
   runUndoRedoTest();
   runCompositionCommitAsIsTest();
@@ -9539,6 +9684,7 @@ async function runTest()
   runBug1530649Test();
   runBug1571375Test();
   runCommitCompositionWithSpaceKey();
+  runCompositionWithSelectionChange();
   runForceCommitTest();
   runNestedSettingValue();
   runBug811755Test();

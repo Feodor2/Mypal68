@@ -20,10 +20,6 @@ class PlatformCompositorWidgetDelegate : public CompositorWidgetDelegate {
   virtual void NotifyClientSizeChanged(
       const LayoutDeviceIntSize& aClientSize) = 0;
 
-#ifdef MOZ_WAYLAND
-  virtual void RequestsUpdatingEGLSurface() = 0;
-#endif
-
   // CompositorWidgetDelegate Overrides
 
   PlatformCompositorWidgetDelegate* AsPlatformSpecificDelegate() override {
@@ -64,23 +60,19 @@ class GtkCompositorWidget : public CompositorWidget,
   Window XWindow() const { return mXWindow; }
 
   EGLNativeWindowType GetEGLNativeWindow();
+#ifdef MOZ_WAYLAND
+  void SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
+#endif
 
   // PlatformCompositorWidgetDelegate Overrides
 
   void NotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize) override;
 
-#ifdef MOZ_WAYLAND
-  void RequestsUpdatingEGLSurface() override;
-  bool WaylandRequestsUpdatingEGLSurface();
-#endif
  protected:
   nsWindow* mWidget;
 
  private:
   LayoutDeviceIntSize mClientSize;
-#ifdef MOZ_WAYLAND
-  bool mWaylandRequestsUpdatingEGLSurface = false;
-#endif
 
   Display* mXDisplay;
   Window mXWindow;

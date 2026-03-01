@@ -199,6 +199,8 @@ nsresult nsLookAndFeel::NativeGetColor(const ColorID aID, nscolor& aResult) {
     case ColorID::MozDialogtext:
     case ColorID::MozCellhighlighttext:
     case ColorID::MozHtmlCellhighlighttext:
+    case ColorID::MozColheadertext:
+    case ColorID::MozColheaderhovertext:
       aResult = mColorDarkText;
       break;
     case ColorID::MozDragtargetzone:
@@ -256,12 +258,17 @@ nsresult nsLookAndFeel::NativeGetColor(const ColorID aID, nscolor& aResult) {
 }
 
 NS_IMETHODIMP
-nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
-  nsresult res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
+  nsresult res = NS_OK;
 
   switch (aID) {
+    case IntID::ScrollButtonLeftMouseButtonAction:
+      aResult = 0;
+      break;
+    case IntID::ScrollButtonMiddleMouseButtonAction:
+    case IntID::ScrollButtonRightMouseButtonAction:
+      aResult = 3;
+      break;
     case IntID::CaretBlinkTime:
       aResult = 567;
       break;
@@ -314,7 +321,6 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
     case IntID::DWMCompositor:
     case IntID::WindowsClassic:
     case IntID::WindowsDefaultTheme:
-    case IntID::TouchEnabled:
       aResult = 0;
       res = NS_ERROR_NOT_IMPLEMENTED;
       break;
@@ -351,10 +357,8 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
 }
 
 NS_IMETHODIMP
-nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult res = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult res = NS_OK;
 
   switch (aID) {
     case FloatID::IMEUnderlineRelativeSize:
@@ -371,7 +375,7 @@ nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
   return res;
 }
 
-bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName, gfxFontStyle& aFontStyle) {
+bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName, gfxFontStyle& aFontStyle) {
   // hack for now
   if (aID == FontID::Window || aID == FontID::Document) {
     aFontStyle.style = FontSlantStyle::Normal();

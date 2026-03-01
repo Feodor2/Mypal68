@@ -20,7 +20,7 @@
 #include "nsIDNSRecord.h"
 
 #include "mozilla/net/DNS.h"  // for NetAddr
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 
 #include "nsNetUtil.h"  // for NS_NewURI, NS_NewChannel, NS_NewStreamLoader
 
@@ -424,7 +424,7 @@ nsresult WebExecutorSupport::CreateStreamLoader(
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel), uri,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -432,11 +432,11 @@ nsresult WebExecutorSupport::CreateStreamLoader(
     channel->SetLoadFlags(nsIRequest::LOAD_ANONYMOUS);
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings = CookieSettings::Create();
-  MOZ_ASSERT(cookieSettings);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings = CookieJarSettings::Create();
+  MOZ_ASSERT(cookieJarSettings);
 
   nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-  loadInfo->SetCookieSettings(cookieSettings);
+  loadInfo->SetCookieJarSettings(cookieJarSettings);
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel, &rv));
   NS_ENSURE_SUCCESS(rv, rv);

@@ -47,9 +47,12 @@ class CompositorVsyncDispatcher final {
 
  public:
   CompositorVsyncDispatcher();
+  explicit CompositorVsyncDispatcher(RefPtr<gfx::VsyncSource> aVsyncSource);
 
   // Called on the vsync thread when a hardware vsync occurs
   void NotifyVsync(const VsyncEvent& aVsync);
+
+  void MoveToSource(const RefPtr<gfx::VsyncSource>& aVsyncSource);
 
   // Compositor vsync observers must be added/removed on the compositor thread
   void SetCompositorVsyncObserver(VsyncObserver* aVsyncObserver);
@@ -59,6 +62,7 @@ class CompositorVsyncDispatcher final {
   virtual ~CompositorVsyncDispatcher();
   void ObserveVsync(bool aEnable);
 
+  RefPtr<gfx::VsyncSource> mVsyncSource;
   Mutex mCompositorObserverLock;
   RefPtr<VsyncObserver> mCompositorVsyncObserver;
   bool mDidShutdown;
@@ -69,10 +73,12 @@ class RefreshTimerVsyncDispatcher final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefreshTimerVsyncDispatcher)
 
  public:
-  RefreshTimerVsyncDispatcher();
+  explicit RefreshTimerVsyncDispatcher(gfx::VsyncSource::Display* aDisplay);
 
   // Please check CompositorVsyncDispatcher::NotifyVsync().
   void NotifyVsync(const VsyncEvent& aVsync);
+
+  void MoveToDisplay(gfx::VsyncSource::Display* aDisplay);
 
   // Set chrome process's RefreshTimer to this dispatcher.
   // This function can be called from any thread.
@@ -90,6 +96,10 @@ class RefreshTimerVsyncDispatcher final {
   void UpdateVsyncStatus();
   bool NeedsVsync();
 
+  // We need to hold a weak ref to the display we belong to in order to notify
+  // it of our vsync requirement. The display holds a RefPtr to us, so we can't
+  // hold a RefPtr back without causing a cyclic dependency.
+  gfx::VsyncSource::Display* mDisplay;
   Mutex mRefreshTimersLock;
   RefPtr<VsyncObserver> mParentRefreshTimer;
   nsTArray<RefPtr<VsyncObserver>> mChildRefreshTimers;

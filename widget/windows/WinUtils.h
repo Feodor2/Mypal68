@@ -35,6 +35,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/Vector.h"
+#include "mozilla/gfx/2D.h"
 
 /**
  * NS_INLINE_DECL_IUNKNOWN_REFCOUNTING should be used for defining and
@@ -459,7 +461,7 @@ class WinUtils {
    * Returns true if the context or IME state is enabled.  Otherwise, false.
    */
   static bool IsIMEEnabled(const InputContext& aInputContext);
-  static bool IsIMEEnabled(IMEState::Enabled aIMEState);
+  static bool IsIMEEnabled(IMEEnabled aIMEState);
 
   /**
    * Returns modifier key array for aModifiers.  This is for

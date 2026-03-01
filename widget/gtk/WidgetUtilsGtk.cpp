@@ -11,7 +11,6 @@ namespace mozilla {
 namespace widget {
 
 int32_t WidgetUtilsGTK::IsTouchDeviceSupportPresent() {
-#if GTK_CHECK_VERSION(3, 4, 0)
   int32_t result = 0;
   GdkDisplay* display = gdk_display_get_default();
   if (!display) {
@@ -41,9 +40,6 @@ int32_t WidgetUtilsGTK::IsTouchDeviceSupportPresent() {
   }
 
   return result;
-#else
-  return 0;
-#endif
 }
 
 }  // namespace widget

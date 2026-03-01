@@ -240,8 +240,7 @@ bool nsWindow::sDropShadowEnabled = true;
 uint32_t nsWindow::sInstanceCount = 0;
 bool nsWindow::sSwitchKeyboardLayout = false;
 BOOL nsWindow::sIsOleInitialized = FALSE;
-HCURSOR nsWindow::sHCursor = nullptr;
-imgIContainer* nsWindow::sCursorImgContainer = nullptr;
+nsIWidget::Cursor nsWindow::sCurrentCursor = {};
 nsWindow* nsWindow::sCurrentWindow = nullptr;
 bool nsWindow::sJustGotDeactivate = false;
 bool nsWindow::sJustGotActivate = false;
@@ -682,7 +681,7 @@ nsWindow::~nsWindow() {
       InkCollector::sInkCollector = nullptr;
     }
     IMEHandler::Terminate();
-    NS_IF_RELEASE(sCursorImgContainer);
+    sCurrentCursor = {};
     if (sIsOleInitialized) {
       ::OleFlushClipboard();
       ::OleUninitialize();
@@ -1518,7 +1517,7 @@ void nsWindow::Show(bool bState) {
 
         // Set the cursor before showing the window to avoid the default wait
         // cursor.
-        SetCursor(eCursor_standard, nullptr, 0, 0);
+        SetCursor(Cursor{eCursor_standard});
 
         switch (mSizeMode) {
           case nsSizeMode_Fullscreen:
@@ -1870,8 +1869,10 @@ void nsWindow::Resize(double aWidth, double aHeight, bool aRepaint) {
 
     ClearThemeRegion();
     double oldScale = mDefaultScale;
+    mResizeState = RESIZING;
     VERIFY(
         ::SetWindowPos(mWnd, nullptr, 0, 0, width, GetHeight(height), flags));
+    mResizeState = NOT_RESIZING;
     if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
       ChangedDPI();
     }
@@ -1919,8 +1920,10 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
 
     ClearThemeRegion();
     double oldScale = mDefaultScale;
+    mResizeState = RESIZING;
     VERIFY(
         ::SetWindowPos(mWnd, nullptr, x, y, width, GetHeight(height), flags));
+    mResizeState = NOT_RESIZING;
     if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
       ChangedDPI();
     }
@@ -2852,34 +2855,29 @@ static HCURSOR CursorFor(nsCursor aCursor) {
   }
 }
 
-static HCURSOR CursorForImage(imgIContainer* aImageContainer,
-                              CSSIntPoint aHotspot,
+static HCURSOR CursorForImage(const nsIWidget::Cursor& aCursor,
                               CSSToLayoutDeviceScale aScale) {
-  if (!aImageContainer) {
+  if (!aCursor.IsCustom()) {
     return nullptr;
   }
 
-  int32_t width = 0;
-  int32_t height = 0;
-
-  if (NS_FAILED(aImageContainer->GetWidth(&width)) ||
-      NS_FAILED(aImageContainer->GetHeight(&height))) {
-    return nullptr;
-  }
+  nsIntSize size = nsIWidget::CustomCursorSize(aCursor);
 
   // Reject cursors greater than 128 pixels in either direction, to prevent
   // spoofing.
   // XXX ideally we should rescale. Also, we could modify the API to
   // allow trusted content to set larger cursors.
-  if (width > 128 || height > 128) {
+  if (size.width > 128 || size.height > 128) {
     return nullptr;
   }
 
-  LayoutDeviceIntSize size = RoundedToInt(CSSIntSize(width, height) * aScale);
-  LayoutDeviceIntPoint hotspot = RoundedToInt(aHotspot * aScale);
+  LayoutDeviceIntSize layoutSize =
+      RoundedToInt(CSSIntSize(size.width, size.height) * aScale);
+  LayoutDeviceIntPoint hotspot =
+      RoundedToInt(CSSIntPoint(aCursor.mHotspotX, aCursor.mHotspotY) * aScale);
   HCURSOR cursor;
-  nsresult rv =
-      nsWindowGfx::CreateIcon(aImageContainer, true, hotspot, size, &cursor);
+  nsresult rv = nsWindowGfx::CreateIcon(aCursor.mContainer, true, hotspot,
+                                        layoutSize, &cursor);
   if (NS_FAILED(rv)) {
     return nullptr;
   }
@@ -2887,46 +2885,45 @@ static HCURSOR CursorForImage(imgIContainer* aImageContainer,
   return cursor;
 }
 
-// Setting the actual cursor
-void nsWindow::SetCursor(nsCursor aDefaultCursor, imgIContainer* aImageCursor,
-                         uint32_t aHotspotX, uint32_t aHotspotY) {
-  if (aImageCursor && sCursorImgContainer == aImageCursor && sHCursor) {
-    ::SetCursor(sHCursor);
+void nsWindow::SetCursor(const Cursor& aCursor) {
+  static HCURSOR sCurrentHCursor = nullptr;
+  static bool sCurrentHCursorIsCustom = false;
+
+  mCursor = aCursor;
+
+  if (sCurrentCursor == aCursor && sCurrentHCursor && !mUpdateCursor) {
+    // Cursors in windows are global, so even if our mUpdateCursor flag is
+    // false we always need to make sure the Windows cursor is up-to-date,
+    // since stuff like native drag and drop / resizers code can mutate it
+    // outside of this method.
+    ::SetCursor(sCurrentHCursor);
     return;
   }
 
-  HCURSOR cursor = CursorForImage(
-      aImageCursor, CSSIntPoint(aHotspotX, aHotspotY), GetDefaultScale());
+  mUpdateCursor = false;
+
+  if (sCurrentHCursorIsCustom) {
+    ::DestroyIcon(sCurrentHCursor);
+  }
+  sCurrentHCursor = nullptr;
+  sCurrentHCursorIsCustom = false;
+  sCurrentCursor = aCursor;
+
+  HCURSOR cursor = CursorForImage(aCursor, GetDefaultScale());
+  bool custom = false;
   if (cursor) {
-    mCursor = eCursorInvalid;
-    ::SetCursor(cursor);
-
-    NS_IF_RELEASE(sCursorImgContainer);
-    sCursorImgContainer = aImageCursor;
-    NS_ADDREF(sCursorImgContainer);
-
-    if (sHCursor) {
-      ::DestroyIcon(sHCursor);
-    }
-    sHCursor = cursor;
-    return;
+    custom = true;
+  } else {
+    cursor = CursorFor(aCursor.mDefaultCursor);
   }
 
-  cursor = CursorFor(aDefaultCursor);
   if (!cursor) {
     return;
   }
 
-  mCursor = aDefaultCursor;
-  HCURSOR oldCursor = ::SetCursor(cursor);
-
-  if (sHCursor == oldCursor) {
-    NS_IF_RELEASE(sCursorImgContainer);
-    if (sHCursor) {
-      ::DestroyIcon(sHCursor);
-    }
-    sHCursor = nullptr;
-  }
+  sCurrentHCursor = cursor;
+  sCurrentHCursorIsCustom = custom;
+  ::SetCursor(cursor);
 }
 
 /**************************************************************
@@ -4159,7 +4156,7 @@ bool nsWindow::TouchEventShouldStartDrag(EventMessage aEventMessage,
     DispatchInputEvent(&hittest);
 
     if (EventTarget* target = hittest.GetDOMEventTarget()) {
-      if (nsCOMPtr<nsIContent> content = do_QueryInterface(target)) {
+      if (nsIContent* content = nsIContent::FromEventTarget(target)) {
         // Check if the element or any parent element has the
         // attribute we're looking for.
         for (Element* element = content->GetAsElementOrParentElement(); element;
@@ -5039,7 +5036,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       break;
 
     case WM_SYSCOLORCHANGE:
-      OnSysColorChanged();
+      NotifyThemeChanged();
       break;
 
     case WM_THEMECHANGED: {
@@ -5102,14 +5099,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       if (lParam) {
         auto lParamString = reinterpret_cast<const wchar_t*>(lParam);
         if (!wcscmp(lParamString, L"ImmersiveColorSet")) {
-          // This might be the Win10 dark mode setting; only way to tell
-          // is to actually force a theme change, since we don't get
-          // WM_THEMECHANGED or WM_SYSCOLORCHANGE when that happens.
-          if (IsWin10OrLater()) {
-            NotifyThemeChanged();
-          }
-          // WM_SYSCOLORCHANGE is not dispatched for accent color changes
-          OnSysColorChanged();
+          NotifyThemeChanged();
           break;
         }
         if (IsWin10OrLater() && mWindowType == eWindowType_invisible) {
@@ -7056,8 +7046,8 @@ void nsWindow::OnDestroy() {
   }
 
   // Destroy any custom cursor resources.
-  if (mCursor == eCursorInvalid) {
-    SetCursor(eCursor_standard, nullptr, 0, 0);
+  if (mCursor.IsCustom()) {
+    SetCursor(Cursor{eCursor_standard});
   }
 
   if (mCompositorWidgetDelegate) {
@@ -7144,20 +7134,6 @@ bool nsWindow::HasBogusPopupsDropShadowOnMultiMonitor() {
     }
   }
   return !!sHasBogusPopupsDropShadowOnMultiMonitor;
-}
-
-void nsWindow::OnSysColorChanged() {
-  if (mWindowType == eWindowType_invisible) {
-    ::EnumThreadWindows(GetCurrentThreadId(), nsWindow::BroadcastMsg,
-                        WM_SYSCOLORCHANGE);
-  } else {
-    // Note: This is sent for child windows as well as top-level windows.
-    // The Win32 toolkit normally only sends these events to top-level windows.
-    // But we cycle through all of the childwindows and send it to them as well
-    // so all presentations get notified properly.
-    // See nsWindow::GlobalMsgWindowProc.
-    NotifySysColorChanged();
-  }
 }
 
 void nsWindow::OnDPIChanged(int32_t x, int32_t y, int32_t width,
@@ -8122,7 +8098,7 @@ void nsWindow::DefaultProcOfPluginEvent(const WidgetPluginEvent& aEvent) {
 
 void nsWindow::EnableIMEForPlugin(bool aEnable) {
   // Current IME state isn't plugin, ignore this call
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled != IMEState::PLUGIN)) {
+  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled != IMEEnabled::Plugin)) {
     return;
   }
 

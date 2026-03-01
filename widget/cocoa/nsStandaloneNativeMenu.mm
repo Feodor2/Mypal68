@@ -19,7 +19,9 @@ NS_IMPL_ISUPPORTS_INHERITED(nsStandaloneNativeMenu, nsMenuGroupOwnerX, nsIMutati
 nsStandaloneNativeMenu::nsStandaloneNativeMenu() : mMenu(nullptr), mContainerStatusBarItem(nil) {}
 
 nsStandaloneNativeMenu::~nsStandaloneNativeMenu() {
-  if (mMenu) delete mMenu;
+  if (mMenu) {
+    delete mMenu;
+  }
 }
 
 NS_IMETHODIMP
@@ -28,10 +30,14 @@ nsStandaloneNativeMenu::Init(Element* aElement) {
 
   NS_ENSURE_ARG(aElement);
 
-  if (!aElement->IsAnyOfXULElements(nsGkAtoms::menu, nsGkAtoms::menupopup)) return NS_ERROR_FAILURE;
+  if (!aElement->IsAnyOfXULElements(nsGkAtoms::menu, nsGkAtoms::menupopup)) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsresult rv = nsMenuGroupOwnerX::Create(aElement);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   mMenu = new nsMenuX();
   rv = mMenu->Create(this, this, aElement);
@@ -77,48 +83,24 @@ nsStandaloneNativeMenu::GetNativeMenu(void** aVoidPointer) {
     *aVoidPointer = mMenu->NativeData();
     [[(NSObject*)(*aVoidPointer) retain] autorelease];
     return NS_OK;
-  } else {
-    *aVoidPointer = nullptr;
-    return NS_ERROR_NOT_INITIALIZED;
   }
-}
-
-static NSMenuItem* NativeMenuItemWithLocation(NSMenu* currentSubmenu, NSString* locationString) {
-  NSArray* indexes = [locationString componentsSeparatedByString:@"|"];
-  NSUInteger indexCount = [indexes count];
-  if (indexCount == 0) return nil;
-
-  for (NSUInteger i = 0; i < indexCount; i++) {
-    NSInteger targetIndex = [[indexes objectAtIndex:i] integerValue];
-    NSInteger itemCount = [currentSubmenu numberOfItems];
-    if (targetIndex < itemCount) {
-      NSMenuItem* menuItem = [currentSubmenu itemAtIndex:targetIndex];
-
-      // If this is the last index, just return the menu item.
-      if (i == (indexCount - 1)) return menuItem;
-
-      // If this is not the last index, find the submenu and keep going.
-      if ([menuItem hasSubmenu])
-        currentSubmenu = [menuItem submenu];
-      else
-        return nil;
-    }
-  }
-
-  return nil;
+  *aVoidPointer = nullptr;
+  return NS_ERROR_NOT_INITIALIZED;
 }
 
 NS_IMETHODIMP
 nsStandaloneNativeMenu::ActivateNativeMenuItemAt(const nsAString& indexString) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (!mMenu) return NS_ERROR_NOT_INITIALIZED;
+  if (!mMenu) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
   NSString* locationString =
       [NSString stringWithCharacters:reinterpret_cast<const unichar*>(indexString.BeginReading())
                               length:indexString.Length()];
   NSMenu* menu = static_cast<NSMenu*>(mMenu->NativeData());
-  NSMenuItem* item = NativeMenuItemWithLocation(menu, locationString);
+  NSMenuItem* item = nsMenuUtilsX::NativeMenuItemWithLocation(menu, locationString, false);
 
   // We can't perform an action on an item with a submenu, that will raise
   // an obj-c exception.
@@ -139,14 +121,18 @@ nsStandaloneNativeMenu::ActivateNativeMenuItemAt(const nsAString& indexString) {
 
 NS_IMETHODIMP
 nsStandaloneNativeMenu::ForceUpdateNativeMenuAt(const nsAString& indexString) {
-  if (!mMenu) return NS_ERROR_NOT_INITIALIZED;
+  if (!mMenu) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
   NSString* locationString =
       [NSString stringWithCharacters:reinterpret_cast<const unichar*>(indexString.BeginReading())
                               length:indexString.Length()];
   NSArray* indexes = [locationString componentsSeparatedByString:@"|"];
   unsigned int indexCount = [indexes count];
-  if (indexCount == 0) return NS_OK;
+  if (indexCount == 0) {
+    return NS_OK;
+  }
 
   nsMenuX* currentMenu = mMenu;
 
@@ -157,7 +143,9 @@ nsStandaloneNativeMenu::ForceUpdateNativeMenuAt(const nsAString& indexString) {
     uint32_t length = currentMenu->GetItemCount();
     for (unsigned int j = 0; j < length; j++) {
       nsMenuObjectX* targetMenu = currentMenu->GetItemAt(j);
-      if (!targetMenu) return NS_OK;
+      if (!targetMenu) {
+        return NS_OK;
+      }
       if (!nsMenuUtilsX::NodeIsHiddenOrCollapsed(targetMenu->Content())) {
         visible++;
         if (targetMenu->MenuObjectType() == eSubmenuObjectType && visible == (targetIndex + 1)) {

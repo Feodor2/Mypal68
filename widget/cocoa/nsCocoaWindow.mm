@@ -37,10 +37,12 @@
 
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/PresShell.h"
+#include "mozilla/WritingModes.h"
 #include <algorithm>
 
 namespace mozilla {
@@ -626,11 +628,11 @@ void* nsCocoaWindow::GetNativeData(uint32_t aDataType) {
 }
 
 bool nsCocoaWindow::IsVisible() const {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return (mWindow && ([mWindow isVisibleOrBeingShown] || mSheetNeedsShow));
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
 void nsCocoaWindow::SetModal(bool aState) {
@@ -1013,11 +1015,11 @@ LayerManager* nsCocoaWindow::GetLayerManager(PLayerTransactionChild* aShadowMana
 }
 
 nsTransparencyMode nsCocoaWindow::GetTransparencyMode() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return (!mWindow || [mWindow isOpaque]) ? eTransparencyOpaque : eTransparencyTransparent;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(eTransparencyOpaque);
+  NS_OBJC_END_TRY_BLOCK_RETURN(eTransparencyOpaque);
 }
 
 // This is called from nsMenuPopupFrame when making a popup transparent, or
@@ -1504,12 +1506,12 @@ NSRect nsCocoaWindow::GetClientCocoaRect() {
 }
 
 LayoutDeviceIntRect nsCocoaWindow::GetClientBounds() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   CGFloat scaleFactor = BackingScaleFactor();
   return nsCocoaUtils::CocoaRectToGeckoRectDevPix(GetClientCocoaRect(), scaleFactor);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntRect(0, 0, 0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntRect(0, 0, 0, 0));
 }
 
 void nsCocoaWindow::UpdateBounds() {
@@ -1525,7 +1527,7 @@ void nsCocoaWindow::UpdateBounds() {
 }
 
 LayoutDeviceIntRect nsCocoaWindow::GetScreenBounds() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
 #ifdef DEBUG
   LayoutDeviceIntRect r =
@@ -1535,7 +1537,7 @@ LayoutDeviceIntRect nsCocoaWindow::GetScreenBounds() {
 
   return mBounds;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntRect(0, 0, 0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntRect(0, 0, 0, 0));
 }
 
 double nsCocoaWindow::GetDefaultScaleInternal() { return BackingScaleFactor(); }
@@ -1636,10 +1638,10 @@ int32_t nsCocoaWindow::RoundsWidgetCoordinatesTo() {
   return 1;
 }
 
-void nsCocoaWindow::SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursorImage,
-                              uint32_t aHotspotX, uint32_t aHotspotY) {
-  if (mPopupContentView)
-    mPopupContentView->SetCursor(aDefaultCursor, aCursorImage, aHotspotX, aHotspotY);
+void nsCocoaWindow::SetCursor(const Cursor& aCursor) {
+  if (mPopupContentView) {
+    mPopupContentView->SetCursor(aCursor);
+  }
 }
 
 nsresult nsCocoaWindow::SetTitle(const nsAString& aTitle) {
@@ -1861,26 +1863,26 @@ void nsCocoaWindow::SetFocus(Raise aRaise) {
 }
 
 LayoutDeviceIntPoint nsCocoaWindow::WidgetToScreenOffset() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return nsCocoaUtils::CocoaRectToGeckoRectDevPix(GetClientCocoaRect(), BackingScaleFactor())
       .TopLeft();
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
 }
 
 LayoutDeviceIntPoint nsCocoaWindow::GetClientOffset() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   LayoutDeviceIntRect clientRect = GetClientBounds();
 
   return clientRect.TopLeft() - mBounds.TopLeft();
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
 }
 
 LayoutDeviceIntSize nsCocoaWindow::ClientToWindowSize(const LayoutDeviceIntSize& aClientSize) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!mWindow) return LayoutDeviceIntSize(0, 0);
 
@@ -1902,7 +1904,7 @@ LayoutDeviceIntSize nsCocoaWindow::ClientToWindowSize(const LayoutDeviceIntSize&
   r = nsCocoaUtils::CocoaRectToGeckoRectDevPix(inflatedRect, backingScale);
   return r.Size();
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(LayoutDeviceIntSize(0, 0));
+  NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntSize(0, 0));
 }
 
 nsMenuBarX* nsCocoaWindow::GetMenuBar() { return mMenuBar; }
@@ -2220,7 +2222,11 @@ bool nsCocoaWindow::GetEditCommands(NativeKeyBindingsType aType, const WidgetKey
   }
 
   NativeKeyBindings* keyBindings = NativeKeyBindings::GetInstance(aType);
-  keyBindings->GetEditCommands(aEvent, aCommands);
+  // When the keyboard event is fired from this widget, it must mean that no web content has focus
+  // because any web contents should be on `nsChildView`.  And in any locales, the system UI is
+  // always horizontal layout.  So, let's pass `Nothing()` for the writing mode here, it won't be
+  // treated as in a vertical content.
+  keyBindings->GetEditCommands(aEvent, Nothing(), aCommands);
   return true;
 }
 
@@ -3433,14 +3439,14 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
 // Command+w or Command+q).  This workaround is only needed for a window
 // that can become key.
 - (BOOL)performKeyEquivalent:(NSEvent*)theEvent {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSWindow* nativeWindow = [self retain];
   BOOL retval = [super performKeyEquivalent:theEvent];
   [nativeWindow release];
   return retval;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 - (void)sendEvent:(NSEvent*)anEvent {
@@ -3572,12 +3578,12 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
 // behavior here.  As best I can tell, the [NSWindow isVisible] method is an
 // accurate test of what Apple means by "visibility".
 - (BOOL)canBecomeMainWindow {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (![self isVisible]) return NO;
   return YES;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 // Retain and release "self" to avoid crashes when our widget (and its native
@@ -3585,14 +3591,14 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
 // Command+w or Command+q).  This workaround is only needed for a window
 // that can become key.
 - (BOOL)performKeyEquivalent:(NSEvent*)theEvent {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSWindow* nativeWindow = [self retain];
   BOOL retval = [super performKeyEquivalent:theEvent];
   [nativeWindow release];
   return retval;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 @end

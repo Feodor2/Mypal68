@@ -404,8 +404,7 @@ class nsChildView final : public nsBaseWidget {
   virtual bool WidgetTypeSupportsAcceleration() override;
   virtual bool ShouldUseOffMainThreadCompositing() override;
 
-  virtual void SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursor, uint32_t aHotspotX,
-                         uint32_t aHotspotY) override;
+  virtual void SetCursor(const Cursor&) override;
 
   virtual nsresult SetTitle(const nsAString& title) override;
 
@@ -425,13 +424,9 @@ class nsChildView final : public nsBaseWidget {
   virtual TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
   [[nodiscard]] virtual nsresult AttachNativeKeyEvent(
       mozilla::WidgetKeyboardEvent& aEvent) override;
-  virtual bool GetEditCommands(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands) override;
-  void GetEditCommandsRemapped(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands, uint32_t aGeckoKeyCode,
-                               uint32_t aCocoaKeyCode);
+  MOZ_CAN_RUN_SCRIPT virtual bool GetEditCommands(
+      NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
+      nsTArray<mozilla::CommandInt>& aCommands) override;
 
   virtual nsTransparencyMode GetTransparencyMode() override;
   virtual void SetTransparencyMode(nsTransparencyMode aMode) override;
@@ -567,9 +562,6 @@ class nsChildView final : public nsBaseWidget {
   nsEventStatus DispatchAPZInputEvent(mozilla::InputData& aEvent);
 
   void SwipeFinished();
-
-  nsresult SetPrefersReducedMotionOverrideForTest(bool aValue) override;
-  nsresult ResetPrefersReducedMotionOverrideForTest() override;
 
   // Called when the main thread enters a phase during which visual changes
   // are imminent and any layer updates on the compositor thread would interfere

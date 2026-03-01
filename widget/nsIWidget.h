@@ -22,6 +22,7 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/ZoomConstraints.h"
+#include "mozilla/image/Resolution.h"
 #include "mozilla/widget/IMEData.h"
 #include "nsCOMPtr.h"
 #include "nsColor.h"
@@ -371,6 +372,7 @@ class nsIWidget : public nsISupports {
   typedef mozilla::layers::PLayerTransactionChild PLayerTransactionChild;
   typedef mozilla::layers::ScrollableLayerGuid ScrollableLayerGuid;
   typedef mozilla::layers::ZoomConstraints ZoomConstraints;
+  typedef mozilla::widget::IMEEnabled IMEEnabled;
   typedef mozilla::widget::IMEMessage IMEMessage;
   typedef mozilla::widget::IMENotification IMENotification;
   typedef mozilla::widget::IMENotificationRequests IMENotificationRequests;
@@ -392,6 +394,9 @@ class nsIWidget : public nsISupports {
   typedef mozilla::ScreenPoint ScreenPoint;
   typedef mozilla::CSSToScreenScale CSSToScreenScale;
   typedef mozilla::DesktopIntRect DesktopIntRect;
+  typedef mozilla::DesktopPoint DesktopPoint;
+  typedef mozilla::DesktopRect DesktopRect;
+  typedef mozilla::DesktopSize DesktopSize;
   typedef mozilla::CSSPoint CSSPoint;
   typedef mozilla::CSSRect CSSRect;
 
@@ -740,16 +745,12 @@ class nsIWidget : public nsISupports {
   /**
    * Reposition this widget so that the client area has the given offset.
    *
-   * @param aX       the new x offset of the client area expressed as an
-   *                 offset from the origin of the client area of the parent
-   *                 widget (for root widgets and popup widgets it is in
-   *                 screen coordinates)
-   * @param aY       the new y offset of the client area expressed as an
+   * @param aOffset  the new offset of the client area expressed as an
    *                 offset from the origin of the client area of the parent
    *                 widget (for root widgets and popup widgets it is in
    *                 screen coordinates)
    **/
-  virtual void MoveClient(double aX, double aY) = 0;
+  virtual void MoveClient(const DesktopPoint& aOffset) = 0;
 
   /**
    * Resize this widget. Any size constraints set for the window by a
@@ -795,30 +796,22 @@ class nsIWidget : public nsISupports {
   /**
    * Resize the widget so that the inner client area has the given size.
    *
-   * @param aWidth   the new width of the client area.
-   * @param aHeight  the new height of the client area.
+   * @param aSize    the new size of the client area.
    * @param aRepaint whether the widget should be repainted
    */
-  virtual void ResizeClient(double aWidth, double aHeight, bool aRepaint) = 0;
+  virtual void ResizeClient(const DesktopSize& aSize, bool aRepaint) = 0;
 
   /**
    * Resize and reposition the widget so tht inner client area has the given
    * offset and size.
    *
-   * @param aX       the new x offset of the client area expressed as an
-   *                 offset from the origin of the client area of the parent
-   *                 widget (for root widgets and popup widgets it is in
-   *                 screen coordinates)
-   * @param aY       the new y offset of the client area expressed as an
-   *                 offset from the origin of the client area of the parent
-   *                 widget (for root widgets and popup widgets it is in
-   *                 screen coordinates)
-   * @param aWidth   the new width of the client area.
-   * @param aHeight  the new height of the client area.
+   * @param aRect    the new offset and size of the client area. The offset is
+   *                 expressed as an offset from the origin of the client area
+   *                 of the parent widget (for root widgets and popup widgets it
+   *                 is in screen coordinates).
    * @param aRepaint whether the widget should be repainted
    */
-  virtual void ResizeClient(double aX, double aY, double aWidth, double aHeight,
-                            bool aRepaint) = 0;
+  virtual void ResizeClient(const DesktopRect& aRect, bool aRepaint) = 0;
 
   /**
    * Sets the widget's z-index.
@@ -860,6 +853,11 @@ class nsIWidget : public nsISupports {
    * Returns a value from nsSizeMode (see nsIWidgetListener.h)
    */
   virtual nsSizeMode SizeMode() = 0;
+
+  /**
+   * Ask whether the window is tiled.
+   */
+  virtual bool IsTiled() const = 0;
 
   /**
    * Ask wether the widget is fully occluded
@@ -978,16 +976,35 @@ class nsIWidget : public nsISupports {
 
   virtual void ClearCachedCursor() = 0;
 
+  struct Cursor {
+    // The system cursor chosen by the page. This is used if there's no custom
+    // cursor, or if we fail to use the custom cursor in some way (if the image
+    // fails to load, for example).
+    nsCursor mDefaultCursor = eCursor_standard;
+    // May be null, to represent no custom cursor image.
+    nsCOMPtr<imgIContainer> mContainer;
+    uint32_t mHotspotX = 0;
+    uint32_t mHotspotY = 0;
+    mozilla::ImageResolution mResolution;
+
+    bool IsCustom() const { return !!mContainer; }
+
+    bool operator==(const Cursor& aOther) const {
+      return mDefaultCursor == aOther.mDefaultCursor &&
+             mContainer.get() == aOther.mContainer.get() &&
+             mHotspotX == aOther.mHotspotX && mHotspotY == aOther.mHotspotY &&
+             mResolution == aOther.mResolution;
+    }
+
+    bool operator!=(const Cursor& aOther) const { return !(*this == aOther); }
+  };
+
   /**
-   * Sets the cursor cursor for this widget.
-   *
-   * @param aDefaultCursor the default cursor to be set
-   * @param aCursorImage a custom cursor, maybe null.
-   * @param aX the X coordinate of the hotspot for aCursorImage (from left).
-   * @param aY the Y coordinate of the hotspot for aCursorImage (from top).
+   * Sets the cursor for this widget.
    */
-  virtual void SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursorImage,
-                         uint32_t aHotspotX, uint32_t aHotspotY) = 0;
+  virtual void SetCursor(const Cursor&) = 0;
+
+  static nsIntSize CustomCursorSize(const Cursor&);
 
   /**
    * Get the window type of this widget.
@@ -1725,12 +1742,23 @@ class nsIWidget : public nsISupports {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  virtual nsresult SetPrefersReducedMotionOverrideForTest(bool aValue) {
+  // Get rectangle of the screen where the window is placed.
+  // It's used to detect popup overflow under Wayland because
+  // Screenmanager does not work under it.
+#ifdef MOZ_WAYLAND
+  virtual nsresult GetScreenRect(LayoutDeviceIntRect* aRect) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
-  virtual nsresult ResetPrefersReducedMotionOverrideForTest() {
-    return NS_ERROR_NOT_IMPLEMENTED;
+  virtual nsRect GetPreferredPopupRect() {
+    NS_WARNING("GetPreferredPopupRect implemented only for wayland");
+    return nsRect(0, 0, 0, 0);
   }
+  virtual void FlushPreferredPopupRect() {
+    NS_WARNING("FlushPreferredPopupRect implemented only for wayland");
+    return;
+  }
+
+#endif
 
  private:
   class LongTapInfo {
@@ -1843,7 +1871,7 @@ class nsIWidget : public nsISupports {
    * Tell the plugin has focus.  It is unnecessary to use IPC
    */
   bool PluginHasFocus() {
-    return GetInputContext().mIMEState.mEnabled == IMEState::PLUGIN;
+    return GetInputContext().mIMEState.mEnabled == IMEEnabled::Plugin;
   }
 
   /**
@@ -1899,9 +1927,9 @@ class nsIWidget : public nsISupports {
     NativeKeyBindingsForMultiLineEditor,
     NativeKeyBindingsForRichTextEditor
   };
-  virtual bool GetEditCommands(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands);
+  MOZ_CAN_RUN_SCRIPT virtual bool GetEditCommands(
+      NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
+      nsTArray<mozilla::CommandInt>& aCommands);
 
   /*
    * Retrieves a reference to notification requests of IME.  Note that the
@@ -2022,6 +2050,19 @@ class nsIWidget : public nsISupports {
   virtual CompositorBridgeChild* GetRemoteRenderer() { return nullptr; }
 
   /**
+   * Clear WebRender resources
+   */
+#ifdef MOZ_BUILD_WEBRENDER
+  virtual void ClearCachedWebrenderResources() {}
+#endif
+
+  /**
+   * If this widget has its own vsync source, return it, otherwise return
+   * nullptr. An example of such local source would be Wayland frame callbacks.
+   */
+  virtual RefPtr<mozilla::gfx::VsyncSource> GetVsyncSource() { return nullptr; }
+
+  /**
    * Returns true if the widget requires synchronous repaints on resize,
    * false otherwise.
    */
@@ -2119,6 +2160,12 @@ class nsIWidget : public nsISupports {
    */
   virtual void RecvScreenPixels(mozilla::ipc::Shmem&& aMem,
                                 const ScreenIntSize& aSize) = 0;
+#  if defined(MOZ_WIDGET_ANDROID)
+  virtual void UpdateDynamicToolbarMaxHeight(mozilla::ScreenIntCoord aHeight) {}
+  virtual mozilla::ScreenIntCoord GetDynamicToolbarMaxHeight() const {
+    return 0;
+  }
+#  endif
 #endif
 
   static already_AddRefed<nsIBidiKeyboard> CreateBidiKeyboard();

@@ -18,6 +18,7 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/RelativeLuminanceUtils.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "ScreenHelperGTK.h"
 
 #include "gtkdrawing.h"
@@ -36,15 +37,22 @@
 using namespace mozilla;
 using mozilla::LookAndFeel;
 
+#undef LOG
+#ifdef MOZ_LOGGING
+#  include "mozilla/Logging.h"
+#  include "nsTArray.h"
+#  include "Units.h"
+extern mozilla::LazyLogModule gWidgetLog;
+#  define LOG(args) MOZ_LOG(gWidgetLog, mozilla::LogLevel::Debug, args)
+#else
+#  define LOG(args)
+#endif /* MOZ_LOGGING */
+
 #define GDK_COLOR_TO_NS_RGB(c) \
   ((nscolor)NS_RGB(c.red >> 8, c.green >> 8, c.blue >> 8))
 #define GDK_RGBA_TO_NS_RGBA(c)                                    \
   ((nscolor)NS_RGBA((int)((c).red * 255), (int)((c).green * 255), \
                     (int)((c).blue * 255), (int)((c).alpha * 255)))
-
-#if !GTK_CHECK_VERSION(3, 12, 0)
-#  define GTK_STATE_FLAG_LINK (static_cast<GtkStateFlags>(1 << 9))
-#endif
 
 nsLookAndFeel::nsLookAndFeel() = default;
 
@@ -264,20 +272,26 @@ nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {
   nsTArray<LookAndFeelInt> lookAndFeelIntCache =
       nsXPLookAndFeel::GetIntCacheImpl();
 
-  LookAndFeelInt lafInt;
-  lafInt.id = IntID::SystemUsesDarkTheme;
-  lafInt.value = GetInt(IntID::SystemUsesDarkTheme);
-  lookAndFeelIntCache.AppendElement(lafInt);
+  const IntID kIdsToCache[] = {IntID::SystemUsesDarkTheme,
+                               IntID::UseAccessibilityTheme};
+
+  for (IntID id : kIdsToCache) {
+    lookAndFeelIntCache.AppendElement(
+        LookAndFeelInt{.id = id, .value = GetInt(id)});
+  }
 
   return lookAndFeelIntCache;
 }
 
 void nsLookAndFeel::SetIntCacheImpl(
     const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) {
-  for (auto entry : aLookAndFeelIntCache) {
+  for (const auto& entry : aLookAndFeelIntCache) {
     switch (entry.id) {
       case IntID::SystemUsesDarkTheme:
         mSystemUsesDarkTheme = entry.value;
+        break;
+      case IntID::UseAccessibilityTheme:
+        mHighContrast = entry.value;
         break;
       default:
         MOZ_ASSERT_UNREACHABLE("Bogus Int ID in cache");
@@ -480,6 +494,12 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     case ColorID::MozGtkInfoBarText:
       aColor = mInfoBarText;
       break;
+    case ColorID::MozColheadertext:
+      aColor = mMozColHeaderText;
+      break;
+    case ColorID::MozColheaderhovertext:
+      aColor = mMozColHeaderHoverText;
+      break;
     default:
       /* default color is BLACK */
       aColor = 0;
@@ -511,27 +531,8 @@ static int32_t ConvertGTKStepperStyleToMozillaScrollArrowStyle(
                           mozilla::LookAndFeel::eScrollArrow_StartForward);
 }
 
-nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
+nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
   nsresult res = NS_OK;
-
-  // Set these before they can get overrided in the nsXPLookAndFeel.
-  switch (aID) {
-    case IntID::ScrollButtonLeftMouseButtonAction:
-      aResult = 0;
-      return NS_OK;
-    case IntID::ScrollButtonMiddleMouseButtonAction:
-      aResult = 1;
-      return NS_OK;
-    case IntID::ScrollButtonRightMouseButtonAction:
-      aResult = 2;
-      return NS_OK;
-    default:
-      break;
-  }
-
-  res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
 
   // We use delayed initialization by EnsureInit() here
   // to make sure mozilla::Preferences is available (Bug 115807).
@@ -539,6 +540,15 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   // are read, and so EnsureInit(), which depends on preference values,
   // is deliberately delayed until required.
   switch (aID) {
+    case IntID::ScrollButtonLeftMouseButtonAction:
+      aResult = 0;
+      break;
+    case IntID::ScrollButtonMiddleMouseButtonAction:
+      aResult = 1;
+      break;
+    case IntID::ScrollButtonRightMouseButtonAction:
+      aResult = 2;
+      break;
     case IntID::CaretBlinkTime:
       EnsureInit();
       aResult = mCaretBlinkTime;
@@ -641,12 +651,8 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
     case IntID::WindowsClassic:
     case IntID::WindowsDefaultTheme:
     case IntID::WindowsThemeIdentifier:
-    case IntID::OperatingSystemVersionIdentifier:
       aResult = 0;
       res = NS_ERROR_NOT_IMPLEMENTED;
-      break;
-    case IntID::TouchEnabled:
-      aResult = mozilla::widget::WidgetUtils::IsTouchDeviceSupportPresent();
       break;
     case IntID::MacGraphiteTheme:
       aResult = 0;
@@ -714,18 +720,17 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = mCSDReversedPlacement;
       break;
     case IntID::PrefersReducedMotion: {
-      GtkSettings* settings;
-      gboolean enableAnimations;
-
-      settings = gtk_settings_get_default();
-      g_object_get(settings, "gtk-enable-animations", &enableAnimations,
-                   nullptr);
-      aResult = enableAnimations ? 0 : 1;
+      aResult = mPrefersReducedMotion;
       break;
     }
     case IntID::SystemUsesDarkTheme: {
       EnsureInit();
       aResult = mSystemUsesDarkTheme;
+      break;
+    }
+    case IntID::UseAccessibilityTheme: {
+      EnsureInit();
+      aResult = mHighContrast;
       break;
     }
     default:
@@ -736,12 +741,8 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   return res;
 }
 
-nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult res = NS_OK;
-  res = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
-
+nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult rv = NS_OK;
   switch (aID) {
     case FloatID::IMEUnderlineRelativeSize:
       aResult = 1.0f;
@@ -755,9 +756,9 @@ nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
       break;
     default:
       aResult = -1.0;
-      res = NS_ERROR_FAILURE;
+      rv = NS_ERROR_FAILURE;
   }
-  return res;
+  return rv;
 }
 
 static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
@@ -796,8 +797,8 @@ static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
   pango_font_description_free(desc);
 }
 
-bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
-                                gfxFontStyle& aFontStyle) {
+bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
+                                  gfxFontStyle& aFontStyle) {
   switch (aID) {
     case FontID::Menu:          // css2
     case FontID::PullDownMenu:  // css3
@@ -892,18 +893,38 @@ static bool IsGtkThemeCompatibleWithHTMLColors() {
   return HasGoodContrastVisibility(backgroundColor, black);
 }
 
-static void ConfigureContentGtkTheme() {
+static nsCString GetGtkTheme() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+  nsCString ret;
   GtkSettings* settings = gtk_settings_get_for_screen(gdk_screen_get_default());
-  nsAutoCString contentThemeName;
+  char* themeName = nullptr;
+  g_object_get(settings, "gtk-theme-name", &themeName, nullptr);
+  if (themeName) {
+    ret.Assign(themeName);
+    g_free(themeName);
+  }
+  return ret;
+}
+
+void nsLookAndFeel::ConfigureContentGtkTheme() {
+  GtkSettings* settings = gtk_settings_get_for_screen(gdk_screen_get_default());
+
+  nsAutoCString themeOverride;
   mozilla::Preferences::GetCString("widget.content.gtk-theme-override",
-                                   contentThemeName);
-  if (!contentThemeName.IsEmpty()) {
-    g_object_set(settings, "gtk-theme-name", contentThemeName.get(), nullptr);
+                                   themeOverride);
+  if (!themeOverride.IsEmpty()) {
+      g_object_set(settings, "gtk-theme-name", themeOverride.get(),
+                   nullptr);
+    LOG(("ConfigureContentGtkTheme(%s)\n", themeOverride.get()));
+  } else {
+    LOG(("ConfigureContentGtkTheme(%s)\n", GetGtkTheme().get()));
   }
 
-  // Dark theme is active but user explicitly enables it so we're done now.
-  if (mozilla::Preferences::GetBool("widget.content.allow-gtk-dark-theme",
-                                    false)) {
+  // Dark theme is active but user explicitly enables it, or we're on
+  // high-contrast (in which case we prevent content to mess up with the colors
+  // of the page), so we're done now.
+  if (!themeOverride.IsEmpty() || mHighContrast ||
+      StaticPrefs::widget_content_allow_gtk_dark_theme()) {
     return;
   }
 
@@ -912,19 +933,18 @@ static void ConfigureContentGtkTheme() {
   gboolean darkThemeDefault;
   g_object_get(settings, dark_theme_setting, &darkThemeDefault, nullptr);
   if (darkThemeDefault) {
+    LOG(("    disabling gtk-application-prefer-dark-theme\n"));
     g_object_set(settings, dark_theme_setting, FALSE, nullptr);
   }
 
   // ...and use a default Gtk theme as a fallback.
-  if (contentThemeName.IsEmpty() && !IsGtkThemeCompatibleWithHTMLColors()) {
+  if (!IsGtkThemeCompatibleWithHTMLColors()) {
+    LOG(("    Non-compatible dark theme, default to Adwaita\n"));
     g_object_set(settings, "gtk-theme-name", "Adwaita", nullptr);
   }
 }
 
 void nsLookAndFeel::EnsureInit() {
-  GdkColor colorValue;
-  GdkColor* colorValuePtr;
-
   if (mInitialized) {
     return;
   }
@@ -951,6 +971,7 @@ void nsLookAndFeel::EnsureInit() {
   GtkStyleContext* style;
 
   if (XRE_IsContentProcess()) {
+    LOG(("nsLookAndFeel::EnsureInit() [%p] Content process\n", (void*)this));
     // Dark themes interacts poorly with widget styling (see bug 1216658).
     // We disable dark themes by default for web content
     // but allow user to overide it by prefs.
@@ -973,6 +994,14 @@ void nsLookAndFeel::EnsureInit() {
     mSystemUsesDarkTheme =
         (RelativeLuminanceUtils::Compute(GDK_RGBA_TO_NS_RGBA(bg)) <
          RelativeLuminanceUtils::Compute(GDK_RGBA_TO_NS_RGBA(fg)));
+
+    mHighContrast = StaticPrefs::widget_content_gtk_high_contrast_enabled() &&
+                    GetGtkTheme().Find(NS_LITERAL_CSTRING("HighContrast")) >= 0;
+
+    gboolean enableAnimations = false;
+    g_object_get(settings, "gtk-enable-animations", &enableAnimations,
+                 nullptr);
+    mPrefersReducedMotion = !enableAnimations;
   }
 
   // The label is not added to a parent widget, but shared for constructing
@@ -1135,6 +1164,13 @@ void nsLookAndFeel::EnsureInit() {
   mOddCellBackground = GDK_RGBA_TO_NS_RGBA(color);
   gtk_style_context_restore(style);
 
+  // Column header colors
+  style = GetStyleContext(MOZ_GTK_TREE_HEADER_CELL);
+  gtk_style_context_get_color(style, GTK_STATE_FLAG_NORMAL, &color);
+  mMozColHeaderText = GDK_RGBA_TO_NS_RGBA(color);
+  gtk_style_context_get_color(style, GTK_STATE_FLAG_PRELIGHT, &color);
+  mMozColHeaderHoverText = GDK_RGBA_TO_NS_RGBA(color);
+
   // Compute cell highlight colors
   InitCellHighlightColors();
 
@@ -1174,25 +1210,12 @@ void nsLookAndFeel::EnsureInit() {
   }
   mMenuSupportsDrag = supports_menubar_drag;
 
-  if (gtk_check_version(3, 12, 0) == nullptr) {
-    // TODO: It returns wrong color for themes which
-    // sets link color for GtkLabel only as we query
-    // GtkLinkButton style here.
-    style = gtk_widget_get_style_context(linkButton);
-    gtk_style_context_get_color(style, GTK_STATE_FLAG_LINK, &color);
-    mNativeHyperLinkText = GDK_RGBA_TO_NS_RGBA(color);
-  } else {
-    colorValuePtr = nullptr;
-    gtk_widget_style_get(linkButton, "link-color", &colorValuePtr, nullptr);
-    if (colorValuePtr) {
-      colorValue = *colorValuePtr;  // we can't pass deref pointers to
-                                    // GDK_COLOR_TO_NS_RGB
-      mNativeHyperLinkText = GDK_COLOR_TO_NS_RGB(colorValue);
-      gdk_color_free(colorValuePtr);
-    } else {
-      mNativeHyperLinkText = NS_RGB(0x00, 0x00, 0xEE);
-    }
-  }
+  // TODO: It returns wrong color for themes which
+  // sets link color for GtkLabel only as we query
+  // GtkLinkButton style here.
+  style = gtk_widget_get_style_context(linkButton);
+  gtk_style_context_get_color(style, GTK_STATE_FLAG_LINK, &color);
+  mNativeHyperLinkText = GDK_RGBA_TO_NS_RGBA(color);
 
   // invisible character styles
   guint value;

@@ -39,12 +39,13 @@ interface nsIDragSession : nsISupports
     * Get the number of items that were dropped
     */
   readonly attribute unsigned long numDropItems;
-  
+
   /**
     * The document where the drag was started, which will be null if the
     * drag originated outside the application. Useful for determining if a drop
     * originated in the same document.
     */
+  [infallible]
   readonly attribute Document sourceDocument;
 
   /**

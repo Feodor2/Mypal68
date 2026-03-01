@@ -14,11 +14,9 @@
 
 #define STATE_FLAG_DIR_LTR (1U << 7)
 #define STATE_FLAG_DIR_RTL (1U << 8)
-#if GTK_CHECK_VERSION(3, 8, 0)
 static_assert(GTK_STATE_FLAG_DIR_LTR == STATE_FLAG_DIR_LTR &&
                   GTK_STATE_FLAG_DIR_RTL == STATE_FLAG_DIR_RTL,
               "incorrect direction state flags");
-#endif
 
 static GtkWidget* sWidgetStorage[MOZ_GTK_WIDGET_NODE_COUNT];
 static GtkStyleContext* sStyleStorage[MOZ_GTK_WIDGET_NODE_COUNT];
@@ -437,8 +435,6 @@ static GtkWidget* CreateNotebookWidget() {
 }
 
 static void CreateHeaderBarWidget(WidgetNodeType aAppearance) {
-  MOZ_ASSERT(gtk_check_version(3, 10, 0) == nullptr,
-             "GtkHeaderBar is only available on GTK 3.10+.");
   MOZ_ASSERT(sWidgetStorage[aAppearance] == nullptr,
              "Header bar widget is already created!");
 
@@ -499,16 +495,8 @@ static void LoadWidgetIconPixbuf(GtkWidget* aWidgetIcon) {
   gtk_icon_size_lookup(gtkIconSize, &iconWidth, &iconHeight);
 
   /* Those are available since Gtk+ 3.10 as well as GtkHeaderBar */
-  static auto sGtkIconThemeLookupIconForScalePtr =
-      (GtkIconInfo *
-       (*)(GtkIconTheme*, const gchar*, gint, gint, GtkIconLookupFlags))
-          dlsym(RTLD_DEFAULT, "gtk_icon_theme_lookup_icon_for_scale");
-  static auto sGdkCairoSurfaceCreateFromPixbufPtr =
-      (cairo_surface_t * (*)(const GdkPixbuf*, int, GdkWindow*))
-          dlsym(RTLD_DEFAULT, "gdk_cairo_surface_create_from_pixbuf");
-
   for (int scale = 1; scale < ICON_SCALE_VARIANTS + 1; scale++) {
-    GtkIconInfo* gtkIconInfo = sGtkIconThemeLookupIconForScalePtr(
+    GtkIconInfo* gtkIconInfo = gtk_icon_theme_lookup_icon_for_scale(
         gtk_icon_theme_get_default(), iconName, iconWidth, scale,
         (GtkIconLookupFlags)0);
 
@@ -523,7 +511,7 @@ static void LoadWidgetIconPixbuf(GtkWidget* aWidgetIcon) {
     g_object_unref(G_OBJECT(gtkIconInfo));
 
     cairo_surface_t* iconSurface =
-        sGdkCairoSurfaceCreateFromPixbufPtr(iconPixbuf, scale, nullptr);
+        gdk_cairo_surface_create_from_pixbuf(iconPixbuf, scale, nullptr);
     g_object_unref(iconPixbuf);
 
     nsAutoCString surfaceName;
@@ -620,9 +608,6 @@ static bool IsToolbarButtonEnabled(WidgetNodeType* aButtonLayout,
 }
 
 static void CreateHeaderBarButtons() {
-  MOZ_ASSERT(gtk_check_version(3, 10, 0) == nullptr,
-             "GtkHeaderBar is only available on GTK 3.10+.");
-
   GtkWidget* headerBar = sWidgetStorage[MOZ_GTK_HEADER_BAR];
   MOZ_ASSERT(headerBar != nullptr, "We're missing header bar widget!");
 
@@ -1413,19 +1398,17 @@ GtkStyleContext* CreateStyleContextWithStates(WidgetNodeType aNodeType,
       GetStyleContext(aNodeType, aScale, aDirection, aStateFlags);
   GtkWidgetPath* path = gtk_widget_path_copy(gtk_style_context_get_path(style));
 
-  if (gtk_check_version(3, 14, 0) == nullptr) {
-    static auto sGtkWidgetPathIterGetState =
-        (GtkStateFlags(*)(const GtkWidgetPath*, gint))dlsym(
-            RTLD_DEFAULT, "gtk_widget_path_iter_get_state");
-    static auto sGtkWidgetPathIterSetState =
-        (void (*)(GtkWidgetPath*, gint, GtkStateFlags))dlsym(
-            RTLD_DEFAULT, "gtk_widget_path_iter_set_state");
+  static auto sGtkWidgetPathIterGetState =
+      (GtkStateFlags(*)(const GtkWidgetPath*, gint))dlsym(
+          RTLD_DEFAULT, "gtk_widget_path_iter_get_state");
+  static auto sGtkWidgetPathIterSetState =
+      (void (*)(GtkWidgetPath*, gint, GtkStateFlags))dlsym(
+          RTLD_DEFAULT, "gtk_widget_path_iter_set_state");
 
-    int pathLength = gtk_widget_path_length(path);
-    for (int i = 0; i < pathLength; i++) {
-      unsigned state = aStateFlags | sGtkWidgetPathIterGetState(path, i);
-      sGtkWidgetPathIterSetState(path, i, GtkStateFlags(state));
-    }
+  int pathLength = gtk_widget_path_length(path);
+  for (int i = 0; i < pathLength; i++) {
+    unsigned state = aStateFlags | sGtkWidgetPathIterGetState(path, i);
+    sGtkWidgetPathIterSetState(path, i, GtkStateFlags(state));
   }
 
   style = gtk_style_context_new();

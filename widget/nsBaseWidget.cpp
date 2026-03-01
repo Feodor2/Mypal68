@@ -160,12 +160,12 @@ nsBaseWidget::nsBaseWidget()
       mPreviouslyAttachedWidgetListener(nullptr),
       mLayerManager(nullptr),
       mCompositorVsyncDispatcher(nullptr),
-      mCursor(eCursor_standard),
       mBorderStyle(eBorderStyle_none),
       mBounds(0, 0, 0, 0),
       mOriginalBounds(nullptr),
       mClipRectCount(0),
       mSizeMode(nsSizeMode_Normal),
+      mIsTiled(false),
       mPopupLevel(ePopupLevelTop),
       mPopupType(ePopupTypeAny),
       mHasRemoteContent(false),
@@ -525,6 +525,16 @@ CSSToLayoutDeviceScale nsIWidget::GetDefaultScale() {
   return CSSToLayoutDeviceScale(devPixelsPerCSSPixel);
 }
 
+nsIntSize nsIWidget::CustomCursorSize(const Cursor& aCursor) {
+  MOZ_ASSERT(aCursor.IsCustom());
+  int32_t width = 0;
+  int32_t height = 0;
+  aCursor.mContainer->GetWidth(&width);
+  aCursor.mContainer->GetHeight(&height);
+  aCursor.mResolution.ApplyTo(width, height);
+  return {width, height};
+}
+
 //-------------------------------------------------------------------------
 //
 // Add a child to the list of children
@@ -648,11 +658,7 @@ void nsBaseWidget::SetSizeMode(nsSizeMode aMode) {
 //
 //-------------------------------------------------------------------------
 
-void nsBaseWidget::SetCursor(nsCursor aCursor, imgIContainer*, uint32_t,
-                             uint32_t) {
-  // We don't support the cursor image.
-  mCursor = aCursor;
-}
+void nsBaseWidget::SetCursor(const Cursor& aCursor) { mCursor = aCursor; }
 
 //-------------------------------------------------------------------------
 //
@@ -815,14 +821,6 @@ bool nsBaseWidget::IsSmallPopup() const {
 }
 
 bool nsBaseWidget::ComputeShouldAccelerate() {
-#ifdef MOZ_BUILD_WEBRENDER
-  if (gfx::gfxVars::UseWebRender() && !AllowWebRenderForThisWindow()) {
-    // If WebRender is enabled, non-WebRender widgets use the basic compositor
-    // (at least for now), even though they would get an accelerated compositor
-    // if WebRender wasn't enabled.
-    return false;
-  }
-#endif
   return gfx::gfxConfig::IsEnabled(gfx::Feature::HW_COMPOSITING) &&
          WidgetTypeSupportsAcceleration();
 }
@@ -834,15 +832,6 @@ bool nsBaseWidget::UseAPZ() {
            (WindowType() == eWindowType_popup && HasRemoteContent() &&
             StaticPrefs::apz_popups_enabled())));
 }
-
-#ifdef MOZ_BUILD_WEBRENDER
-bool nsBaseWidget::AllowWebRenderForThisWindow() {
-  return WindowType() == eWindowType_toplevel ||
-         WindowType() == eWindowType_child ||
-         WindowType() == eWindowType_dialog ||
-         (WindowType() == eWindowType_popup && HasRemoteContent());
-}
-#endif
 
 void nsBaseWidget::CreateCompositor() {
   LayoutDeviceIntRect rect = GetBounds();
@@ -1020,54 +1009,54 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
   return status;
 }
 
-class DispatchWheelEventOnMainThread : public Runnable {
+template <class InputType, class EventType>
+class DispatchEventOnMainThread : public Runnable {
  public:
-  DispatchWheelEventOnMainThread(const ScrollWheelInput& aWheelInput,
-                                 nsBaseWidget* aWidget,
-                                 const APZEventResult& aAPZResult)
-      : mozilla::Runnable("DispatchWheelEventOnMainThread"),
-        mWheelInput(aWheelInput),
+  DispatchEventOnMainThread(const InputType& aInput, nsBaseWidget* aWidget,
+                            const APZEventResult& aAPZResult)
+      : mozilla::Runnable("DispatchEventOnMainThread"),
+        mInput(aInput),
         mWidget(aWidget),
         mAPZResult(aAPZResult) {}
 
   NS_IMETHOD Run() override {
-    WidgetWheelEvent wheelEvent = mWheelInput.ToWidgetWheelEvent(mWidget);
-    mWidget->ProcessUntransformedAPZEvent(&wheelEvent, mAPZResult);
+    EventType event = mInput.ToWidgetEvent(mWidget);
+    mWidget->ProcessUntransformedAPZEvent(&event, mAPZResult);
     return NS_OK;
   }
 
  private:
-  ScrollWheelInput mWheelInput;
+  InputType mInput;
   nsBaseWidget* mWidget;
   APZEventResult mAPZResult;
 };
 
-class DispatchWheelInputOnControllerThread : public Runnable {
+template <class InputType, class EventType>
+class DispatchInputOnControllerThread : public Runnable {
  public:
-  DispatchWheelInputOnControllerThread(const WidgetWheelEvent& aWheelEvent,
-                                       IAPZCTreeManager* aAPZC,
-                                       nsBaseWidget* aWidget)
-      : mozilla::Runnable("DispatchWheelInputOnControllerThread"),
+  DispatchInputOnControllerThread(const EventType& aEvent,
+                                  IAPZCTreeManager* aAPZC,
+                                  nsBaseWidget* aWidget)
+      : mozilla::Runnable("DispatchInputOnControllerThread"),
         mMainMessageLoop(MessageLoop::current()),
-        mWheelInput(aWheelEvent),
+        mInput(aEvent),
         mAPZC(aAPZC),
         mWidget(aWidget) {}
 
   NS_IMETHOD Run() override {
-    APZEventResult result =
-        mAPZC->InputBridge()->ReceiveInputEvent(mWheelInput);
+    APZEventResult result = mAPZC->InputBridge()->ReceiveInputEvent(mInput);
     if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
       return NS_OK;
     }
-    RefPtr<Runnable> r =
-        new DispatchWheelEventOnMainThread(mWheelInput, mWidget, result);
+    RefPtr<Runnable> r = new DispatchEventOnMainThread<InputType, EventType>(
+        mInput, mWidget, result);
     mMainMessageLoop->PostTask(r.forget());
     return NS_OK;
   }
 
  private:
   MessageLoop* mMainMessageLoop;
-  ScrollWheelInput mWheelInput;
+  InputType mInput;
   RefPtr<IAPZCTreeManager> mAPZC;
   nsBaseWidget* mWidget;
 };
@@ -1092,6 +1081,43 @@ void nsBaseWidget::DispatchTouchInput(MultiTouchInput& aInput) {
   }
 }
 
+void nsBaseWidget::DispatchPanGestureInput(PanGestureInput& aInput) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mAPZC) {
+    MOZ_ASSERT(APZThreadUtils::IsControllerThread());
+
+    APZEventResult result = mAPZC->InputBridge()->ReceiveInputEvent(aInput);
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
+      return;
+    }
+
+    WidgetWheelEvent event = aInput.ToWidgetEvent(this);
+    ProcessUntransformedAPZEvent(&event, result);
+  } else {
+    WidgetWheelEvent event = aInput.ToWidgetEvent(this);
+    nsEventStatus status;
+    DispatchEvent(&event, status);
+  }
+}
+
+void nsBaseWidget::DispatchPinchGestureInput(PinchGestureInput& aInput) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mAPZC) {
+    MOZ_ASSERT(APZThreadUtils::IsControllerThread());
+    APZEventResult result = mAPZC->InputBridge()->ReceiveInputEvent(aInput);
+
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
+      return;
+    }
+    WidgetWheelEvent event = aInput.ToWidgetEvent(this);
+    ProcessUntransformedAPZEvent(&event, result);
+  } else {
+    WidgetWheelEvent event = aInput.ToWidgetEvent(this);
+    nsEventStatus status;
+    DispatchEvent(&event, status);
+  }
+}
+
 nsEventStatus nsBaseWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mAPZC) {
@@ -1102,10 +1128,18 @@ nsEventStatus nsBaseWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
       }
       return ProcessUntransformedAPZEvent(aEvent, result);
     }
-    WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent();
-    if (wheelEvent) {
+    if (WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent()) {
       RefPtr<Runnable> r =
-          new DispatchWheelInputOnControllerThread(*wheelEvent, mAPZC, this);
+          new DispatchInputOnControllerThread<ScrollWheelInput,
+                                              WidgetWheelEvent>(*wheelEvent,
+                                                                mAPZC, this);
+      APZThreadUtils::RunOnControllerThread(std::move(r));
+      return nsEventStatus_eConsumeDoDefault;
+    }
+    if (WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent()) {
+      RefPtr<Runnable> r =
+          new DispatchInputOnControllerThread<MouseInput, WidgetMouseEvent>(
+              *mouseEvent, mAPZC, this);
       APZThreadUtils::RunOnControllerThread(std::move(r));
       return nsEventStatus_eConsumeDoDefault;
     }
@@ -1145,7 +1179,9 @@ void nsBaseWidget::CreateCompositorVsyncDispatcher() {
           MakeUnique<Mutex>("mCompositorVsyncDispatcherLock");
     }
     MutexAutoLock lock(*mCompositorVsyncDispatcherLock.get());
-    mCompositorVsyncDispatcher = new CompositorVsyncDispatcher();
+    if (!mCompositorVsyncDispatcher) {
+      mCompositorVsyncDispatcher = new CompositorVsyncDispatcher();
+    }
   }
 }
 
@@ -1175,9 +1211,8 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
     // even when gfxVars::UseWebRender() is true. WebRender could coexist only
     // with BasicCompositor.
 #ifdef MOZ_BUILD_WEBRENDER
-    bool enableWR = gfx::gfxVars::UseWebRender() &&
-                    WidgetTypeSupportsAcceleration() &&
-                    AllowWebRenderForThisWindow();
+    bool enableWR =
+        gfx::gfxVars::UseWebRender() && WidgetTypeSupportsAcceleration();
 #endif
     bool enableAPZ = UseAPZ();
     CompositorOptions options(enableAPZ
@@ -1403,6 +1438,15 @@ CompositorBridgeChild* nsBaseWidget::GetRemoteRenderer() {
   return mCompositorBridgeChild;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
+void nsBaseWidget::ClearCachedWebrenderResources() {
+  if (!mLayerManager || !mLayerManager->AsWebRenderLayerManager()) {
+    return;
+  }
+  mLayerManager->ClearCachedResources();
+}
+#endif
+
 already_AddRefed<gfx::DrawTarget> nsBaseWidget::StartRemoteDrawing() {
   return nullptr;
 }
@@ -1427,22 +1471,23 @@ void nsBaseWidget::OnDestroy() {
   ReleaseContentController();
 }
 
-void nsBaseWidget::MoveClient(double aX, double aY) {
+void nsBaseWidget::MoveClient(const DesktopPoint& aOffset) {
   LayoutDeviceIntPoint clientOffset(GetClientOffset());
 
   // GetClientOffset returns device pixels; scale back to desktop pixels
   // if that's what this widget uses for the Move/Resize APIs
   if (BoundsUseDesktopPixels()) {
     DesktopPoint desktopOffset = clientOffset / GetDesktopToDeviceScale();
-    Move(aX - desktopOffset.x, aY - desktopOffset.y);
+    Move(aOffset.x - desktopOffset.x, aOffset.y - desktopOffset.y);
   } else {
-    Move(aX - clientOffset.x, aY - clientOffset.y);
+    LayoutDevicePoint layoutOffset = aOffset * GetDesktopToDeviceScale();
+    Move(layoutOffset.x - clientOffset.x, layoutOffset.y - clientOffset.y);
   }
 }
 
-void nsBaseWidget::ResizeClient(double aWidth, double aHeight, bool aRepaint) {
-  NS_ASSERTION((aWidth >= 0), "Negative width passed to ResizeClient");
-  NS_ASSERTION((aHeight >= 0), "Negative height passed to ResizeClient");
+void nsBaseWidget::ResizeClient(const DesktopSize& aSize, bool aRepaint) {
+  NS_ASSERTION((aSize.width >= 0), "Negative width passed to ResizeClient");
+  NS_ASSERTION((aSize.height >= 0), "Negative height passed to ResizeClient");
 
   LayoutDeviceIntRect clientBounds = GetClientBounds();
 
@@ -1453,36 +1498,39 @@ void nsBaseWidget::ResizeClient(double aWidth, double aHeight, bool aRepaint) {
         (LayoutDeviceIntSize(mBounds.Width(), mBounds.Height()) -
          clientBounds.Size()) /
         GetDesktopToDeviceScale();
-    Resize(aWidth + desktopDelta.width, aHeight + desktopDelta.height,
+    Resize(aSize.width + desktopDelta.width, aSize.height + desktopDelta.height,
            aRepaint);
   } else {
-    Resize(mBounds.Width() + (aWidth - clientBounds.Width()),
-           mBounds.Height() + (aHeight - clientBounds.Height()), aRepaint);
+    LayoutDeviceSize layoutSize = aSize * GetDesktopToDeviceScale();
+    Resize(mBounds.Width() + (layoutSize.width - clientBounds.Width()),
+           mBounds.Height() + (layoutSize.height - clientBounds.Height()),
+           aRepaint);
   }
 }
 
-void nsBaseWidget::ResizeClient(double aX, double aY, double aWidth,
-                                double aHeight, bool aRepaint) {
-  NS_ASSERTION((aWidth >= 0), "Negative width passed to ResizeClient");
-  NS_ASSERTION((aHeight >= 0), "Negative height passed to ResizeClient");
+void nsBaseWidget::ResizeClient(const DesktopRect& aRect, bool aRepaint) {
+  NS_ASSERTION((aRect.Width() >= 0), "Negative width passed to ResizeClient");
+  NS_ASSERTION((aRect.Height() >= 0), "Negative height passed to ResizeClient");
 
   LayoutDeviceIntRect clientBounds = GetClientBounds();
   LayoutDeviceIntPoint clientOffset = GetClientOffset();
+  DesktopToLayoutDeviceScale scale = GetDesktopToDeviceScale();
 
   if (BoundsUseDesktopPixels()) {
-    DesktopToLayoutDeviceScale scale = GetDesktopToDeviceScale();
     DesktopPoint desktopOffset = clientOffset / scale;
     DesktopSize desktopDelta =
         (LayoutDeviceIntSize(mBounds.Width(), mBounds.Height()) -
          clientBounds.Size()) /
         scale;
-    Resize(aX - desktopOffset.x, aY - desktopOffset.y,
-           aWidth + desktopDelta.width, aHeight + desktopDelta.height,
-           aRepaint);
+    Resize(aRect.X() - desktopOffset.x, aRect.Y() - desktopOffset.y,
+           aRect.Width() + desktopDelta.width,
+           aRect.Height() + desktopDelta.height, aRepaint);
   } else {
-    Resize(aX - clientOffset.x, aY - clientOffset.y,
-           aWidth + mBounds.Width() - clientBounds.Width(),
-           aHeight + mBounds.Height() - clientBounds.Height(), aRepaint);
+    LayoutDeviceRect layoutRect = aRect * scale;
+    Resize(layoutRect.X() - clientOffset.x, layoutRect.Y() - clientOffset.y,
+           layoutRect.Width() + mBounds.Width() - clientBounds.Width(),
+           layoutRect.Height() + mBounds.Height() - clientBounds.Height(),
+           aRepaint);
   }
 }
 
@@ -1667,15 +1715,6 @@ void nsBaseWidget::NotifySizeMoveDone() {
   }
   if (PresShell* presShell = mWidgetListener->GetPresShell()) {
     presShell->WindowSizeMoveDone();
-  }
-}
-
-void nsBaseWidget::NotifySysColorChanged() {
-  if (!mWidgetListener) {
-    return;
-  }
-  if (PresShell* presShell = mWidgetListener->GetPresShell()) {
-    presShell->SysColorChanged();
   }
 }
 
@@ -3121,9 +3160,7 @@ static PrefPair debug_PrefValues[] = {
     {"nglayout.debug.event_dumping", false},
     {"nglayout.debug.invalidate_dumping", false},
     {"nglayout.debug.motion_event_dumping", false},
-    {"nglayout.debug.paint_dumping", false},
-    {"nglayout.debug.paint_flashing", false},
-    {"nglayout.debug.paint_flashing_chrome", false}};
+    {"nglayout.debug.paint_dumping", false}};
 
 //////////////////////////////////////////////////////////////
 bool nsBaseWidget::debug_GetCachedBoolPref(const char* aPrefName) {
@@ -3203,11 +3240,6 @@ static int32_t _GetPrintCount() {
   static int32_t sCount = 0;
 
   return ++sCount;
-}
-//////////////////////////////////////////////////////////////
-/* static */
-bool nsBaseWidget::debug_WantPaintFlashing() {
-  return debug_GetCachedBoolPref("nglayout.debug.paint_flashing");
 }
 //////////////////////////////////////////////////////////////
 /* static */

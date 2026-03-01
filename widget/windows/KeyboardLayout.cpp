@@ -2144,7 +2144,7 @@ nsEventStatus NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
 
 void NativeKey::MaybeInitPluginEventOfKeyEvent(
     WidgetKeyboardEvent& aKeyEvent, const MSG& aMsgSentToPlugin) const {
-  if (mWidget->GetInputContext().mIMEState.mEnabled != IMEState::PLUGIN) {
+  if (mWidget->GetInputContext().mIMEState.mEnabled != IMEEnabled::Plugin) {
     return;
   }
   NPEvent pluginEvent;

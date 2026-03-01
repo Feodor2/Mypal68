@@ -74,9 +74,9 @@ nsresult nsDataObj::CStream::Init(nsIURI* pSourceURI,
   }
   nsresult rv;
   rv = NS_NewChannel(getter_AddRefs(mChannel), pSourceURI, aRequestingPrincipal,
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
                      aContentPolicyType,
-                     nullptr,  // nsICookieSettings
+                     nullptr,  // nsICookieJarSettings
                      nullptr,  // PerformanceStorage
                      nullptr,  // loadGroup
                      nullptr,  // aCallbacks

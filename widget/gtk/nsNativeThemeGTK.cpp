@@ -29,7 +29,6 @@
 
 #include <gdk/gdkprivate.h>
 #include <gtk/gtk.h>
-#include <gtk/gtkx.h>
 
 #include "gfxContext.h"
 #include "gfxPlatformGtk.h"
@@ -552,11 +551,7 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       aGtkWidgetType = MOZ_GTK_ENTRY;
       break;
     case StyleAppearance::Textarea:
-#ifdef MOZ_WIDGET_GTK
       aGtkWidgetType = MOZ_GTK_TEXT_VIEW;
-#else
-      aGtkWidgetType = MOZ_GTK_ENTRY;
-#endif
       break;
     case StyleAppearance::Listbox:
     case StyleAppearance::Treeview:
@@ -831,7 +826,7 @@ static void DrawThemeWithCairo(gfxContext* aContext, DrawTarget* aDrawTarget,
                                const nsIntSize& aDrawSize,
                                GdkRectangle& aGDKRect,
                                nsITheme::Transparency aTransparency) {
-  bool isX11Display = GDK_IS_X11_DISPLAY(gdk_display_get_default());
+  bool isX11Display = gfxPlatformGtk::GetPlatform()->IsX11Display();
   static auto sCairoSurfaceSetDeviceScalePtr =
       (void (*)(cairo_surface_t*, double, double))dlsym(
           RTLD_DEFAULT, "cairo_surface_set_device_scale");
@@ -1111,7 +1106,10 @@ nsNativeThemeGTK::DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
   // to provide crisper and faster drawing.
   // Don't snap if it's a non-unit scale factor. We're going to have to take
   // slow paths then in any case.
-  bool snapped = ctx->UserToDevicePixelSnapped(rect);
+  // We prioritize the size when snapping in order to avoid distorting widgets
+  // that should be square, which can occur if edges are snapped independently.
+  bool snapped = ctx->UserToDevicePixelSnapped(
+      rect, gfxContext::SnapOption::PrioritizeSize);
   if (snapped) {
     // Leave rect in device coords but make dirtyRect consistent.
     dirtyRect = ctx->UserToDevice(dirtyRect);
@@ -1170,7 +1168,7 @@ nsNativeThemeGTK::DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
   if (!safeState) {
     // gdk_flush() call from expose event crashes Gtk+ on Wayland
     // (Gnome BZ #773307)
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+    if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
       gdk_flush();
     }
     gLastGdkError = gdk_error_trap_pop();
@@ -1241,6 +1239,21 @@ WidgetNodeType nsNativeThemeGTK::NativeThemeToGtkTheme(
   return gtkWidgetType;
 }
 
+static void FixupForVerticalWritingMode(WritingMode aWritingMode,
+                                        LayoutDeviceIntMargin* aResult) {
+  if (aWritingMode.IsVertical()) {
+    bool rtl = aWritingMode.IsBidiRTL();
+    LogicalMargin logical(aWritingMode, aResult->top,
+                          rtl ? aResult->left : aResult->right, aResult->bottom,
+                          rtl ? aResult->right : aResult->left);
+    nsMargin physical = logical.GetPhysicalMargin(aWritingMode);
+    aResult->top = physical.top;
+    aResult->right = physical.right;
+    aResult->bottom = physical.bottom;
+    aResult->left = physical.left;
+  }
+}
+
 void nsNativeThemeGTK::GetCachedWidgetBorder(nsIFrame* aFrame,
                                              StyleAppearance aAppearance,
                                              GtkTextDirection aDirection,
@@ -1266,6 +1279,7 @@ void nsNativeThemeGTK::GetCachedWidgetBorder(nsIFrame* aFrame,
       }
     }
   }
+  FixupForVerticalWritingMode(aFrame->GetWritingMode(), aResult);
 }
 
 LayoutDeviceIntMargin nsNativeThemeGTK::GetWidgetBorder(
@@ -1534,8 +1548,9 @@ nsNativeThemeGTK::GetMinimumWidgetSize(nsPresContext* aPresContext,
     } break;
     case StyleAppearance::Checkbox:
     case StyleAppearance::Radio: {
-      const ToggleGTKMetrics* metrics =
-          GetToggleMetrics(aAppearance == StyleAppearance::Radio);
+      const ToggleGTKMetrics* metrics = GetToggleMetrics(
+          aAppearance == StyleAppearance::Radio ? MOZ_GTK_RADIOBUTTON
+                                                : MOZ_GTK_CHECKBUTTON);
       aResult->width = metrics->minSizeWithBorder.width;
       aResult->height = metrics->minSizeWithBorder.height;
     } break;
@@ -1595,12 +1610,40 @@ nsNativeThemeGTK::GetMinimumWidgetSize(nsPresContext* aPresContext,
       aResult->width += border.left + border.right;
       aResult->height += border.top + border.bottom;
     } break;
-#ifdef MOZ_WIDGET_GTK
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield: {
-      moz_gtk_get_entry_min_height(&aResult->height);
+      gint contentHeight = 0;
+      gint borderPaddingHeight = 0;
+      moz_gtk_get_entry_min_height(&contentHeight, &borderPaddingHeight);
+
+      // Scale the min content height proportionately with the font-size if it's
+      // smaller than the default one. This prevents <input type=text
+      // style="font-size: .5em"> from keeping a ridiculously large size, for
+      // example.
+      const gfxFloat fieldFontSizeInCSSPixels = [] {
+        gfxFontStyle fieldFontStyle;
+        nsAutoString unusedFontName;
+        DebugOnly<bool> result = LookAndFeel::GetFont(
+            LookAndFeel::FontID::Field, unusedFontName, fieldFontStyle);
+        MOZ_ASSERT(result, "GTK look and feel supports the field font");
+        // NOTE: GetFont returns font sizes in CSS pixels, and we want just
+        // that.
+        return fieldFontStyle.size;
+      }();
+
+      const gfxFloat fontSize = aFrame->StyleFont()->mFont.size.ToCSSPixels();
+      if (fieldFontSizeInCSSPixels > fontSize) {
+        contentHeight =
+            std::round(contentHeight * fontSize / fieldFontSizeInCSSPixels);
+      }
+
+      gint height = contentHeight + borderPaddingHeight;
+      if (aFrame->GetWritingMode().IsVertical()) {
+        aResult->width = height;
+      } else {
+        aResult->height = height;
+      }
     } break;
-#endif
     case StyleAppearance::Separator: {
       gint separator_width;
 
@@ -1836,11 +1879,7 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Splitter:
     case StyleAppearance::Window:
     case StyleAppearance::Dialog:
-#ifdef MOZ_WIDGET_GTK
     case StyleAppearance::MozGtkInfoBar:
-#endif
-      return !IsWidgetStyled(aPresContext, aFrame, aAppearance);
-
     case StyleAppearance::MozWindowButtonBox:
     case StyleAppearance::MozWindowButtonClose:
     case StyleAppearance::MozWindowButtonMinimize:
@@ -1848,10 +1887,7 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::MozWindowButtonRestore:
     case StyleAppearance::MozWindowTitlebar:
     case StyleAppearance::MozWindowTitlebarMaximized:
-      // GtkHeaderBar is available on GTK 3.10+, which is used for styling
-      // title bars and title buttons.
-      return gtk_check_version(3, 10, 0) == nullptr &&
-             !IsWidgetStyled(aPresContext, aFrame, aAppearance);
+      return !IsWidgetStyled(aPresContext, aFrame, aAppearance);
 
     case StyleAppearance::MozMenulistArrowButton:
       if (aFrame && aFrame->GetWritingMode().IsVertical()) {
@@ -1916,14 +1952,13 @@ nsITheme::Transparency nsNativeThemeGTK::GetWidgetTransparency(
       return eOpaque;
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::ScrollbarHorizontal:
-#ifdef MOZ_WIDGET_GTK
       // Make scrollbar tracks opaque on the window's scroll frame to prevent
       // leaf layers from overlapping. See bug 1179780.
       if (!(CheckBooleanAttr(aFrame, nsGkAtoms::root_) &&
             aFrame->PresContext()->IsRootContentDocument() &&
-            IsFrameContentNodeInNamespace(aFrame, kNameSpaceID_XUL)))
+            IsFrameContentNodeInNamespace(aFrame, kNameSpaceID_XUL))) {
         return eTransparent;
-#endif
+      }
       return eOpaque;
     // Tooltips use gtk_paint_flat_box() on Gtk2
     // but are shaped on Gtk3

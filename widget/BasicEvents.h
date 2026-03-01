@@ -465,7 +465,8 @@ class WidgetEvent : public WidgetEventTime {
         break;
       default:
         if (mMessage == eResize || mMessage == eMozVisualResize ||
-            mMessage == eMozVisualScroll || mMessage == eEditorInput) {
+            mMessage == eMozVisualScroll || mMessage == eEditorInput ||
+            mMessage == eFormSelect) {
           mFlags.mCancelable = false;
         } else {
           mFlags.mCancelable = true;

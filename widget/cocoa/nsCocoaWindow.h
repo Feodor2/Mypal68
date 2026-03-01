@@ -265,8 +265,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual LayoutDeviceIntRect GetScreenBounds() override;
   void ReportMoveEvent();
   void ReportSizeEvent();
-  virtual void SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursorImage, uint32_t aHotspotX,
-                         uint32_t aHotspotY) override;
+  virtual void SetCursor(const Cursor&) override;
 
   CGFloat BackingScaleFactor();
   void BackingScaleFactorChanged();
@@ -323,9 +322,9 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual void SetInputContext(const InputContext& aContext,
                                const InputContextAction& aAction) override;
   virtual InputContext GetInputContext() override { return mInputContext; }
-  virtual bool GetEditCommands(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands) override;
+  MOZ_CAN_RUN_SCRIPT virtual bool GetEditCommands(
+      NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
+      nsTArray<mozilla::CommandInt>& aCommands) override;
 
   void SetPopupWindowLevel();
 

@@ -2231,18 +2231,6 @@ bool nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
     return ok;
   }
   if (IsVistaOrLater()) {
-    if (aAppearance == StyleAppearance::NumberInput ||
-        aAppearance == StyleAppearance::Textfield ||
-        aAppearance == StyleAppearance::Textarea ||
-        aAppearance == StyleAppearance::MenulistButton ||
-        aAppearance == StyleAppearance::Menulist) {
-      // If we have author-specified padding for these elements, don't do the
-      // fixups below.
-      if (aFrame->PresContext()->HasAuthorSpecifiedRules(
-              aFrame, NS_AUTHOR_SPECIFIED_PADDING))
-        return false;
-    }
-
     /* textfields need extra pixels on all sides, otherwise they wrap their
      * content too tightly.  The actual border is drawn 1px inside the specified
      * rectangle, so Gecko will end up making the contents look too small.
@@ -3220,9 +3208,8 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(
         if (contentState.HasAllStates(NS_EVENT_STATE_ACTIVE |
                                       NS_EVENT_STATE_HOVER)) {
           aState |= DFCS_PUSHED;
-          const nsStyleUI* uiData = aFrame->StyleUI();
           // The down state is flat if the button is focusable
-          if (uiData->mUserFocus == StyleUserFocus::Normal) {
+          if (aFrame->StyleUI()->UserFocus() == StyleUserFocus::Normal) {
             if (!aFrame->GetContent()->IsHTMLElement()) aState |= DFCS_FLAT;
 
             aFocused = true;

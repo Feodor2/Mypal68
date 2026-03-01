@@ -43,7 +43,9 @@ nsMenuGroupOwnerX::~nsMenuGroupOwnerX() {
 }
 
 nsresult nsMenuGroupOwnerX::Create(mozilla::dom::Element* aContent) {
-  if (!aContent) return NS_ERROR_INVALID_ARG;
+  if (!aContent) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   mContent = aContent;
 
@@ -78,7 +80,9 @@ void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement, int32_t aNameSp
                                          const nsAttrValue* aOldValue) {
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(aElement);
-  if (obs) obs->ObserveAttributeChanged(aElement->OwnerDoc(), aElement, aAttribute);
+  if (obs) {
+    obs->ObserveAttributeChanged(aElement->OwnerDoc(), aElement, aAttribute);
+  }
 }
 
 void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
@@ -89,18 +93,19 @@ void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPrevious
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(container);
-  if (obs)
+  if (obs) {
     obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild, aPreviousSibling);
-  else if (container != mContent) {
+  } else if (container != mContent) {
     // We do a lookup on the parent container in case things were removed
     // under a "menupopup" item. That is basically a wrapper for the contents
     // of a "menu" node.
     nsCOMPtr<nsIContent> parent = container->GetParent();
     if (parent) {
       obs = LookupContentChangeObserver(parent);
-      if (obs)
+      if (obs) {
         obs->ObserveContentRemoved(aChild->OwnerDoc(), aChild->GetParent(), aChild,
                                    aPreviousSibling);
+      }
     }
   }
 }
@@ -113,16 +118,18 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild) {
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(container);
-  if (obs)
+  if (obs) {
     obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
-  else if (container != mContent) {
+  } else if (container != mContent) {
     // We do a lookup on the parent container in case things were removed
     // under a "menupopup" item. That is basically a wrapper for the contents
     // of a "menu" node.
     nsCOMPtr<nsIContent> parent = container->GetParent();
     if (parent) {
       obs = LookupContentChangeObserver(parent);
-      if (obs) obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
+      if (obs) {
+        obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
+      }
     }
   }
 }
@@ -150,10 +157,10 @@ void nsMenuGroupOwnerX::UnregisterForContentChanges(nsIContent* aContent) {
 
 nsChangeObserver* nsMenuGroupOwnerX::LookupContentChangeObserver(nsIContent* aContent) {
   nsChangeObserver* result;
-  if (mContentToObserverTable.Get(aContent, &result))
+  if (mContentToObserverTable.Get(aContent, &result)) {
     return result;
-  else
-    return nullptr;
+  }
+  return nullptr;
 }
 
 // Given a menu item, creates a unique 4-character command ID and
@@ -181,10 +188,10 @@ void nsMenuGroupOwnerX::UnregisterCommand(uint32_t inCommandID) {
 
 nsMenuItemX* nsMenuGroupOwnerX::GetMenuItemForCommandID(uint32_t inCommandID) {
   nsMenuItemX* result;
-  if (mCommandToMenuObjectTable.Get(inCommandID, &result))
+  if (mCommandToMenuObjectTable.Get(inCommandID, &result)) {
     return result;
-  else
-    return nullptr;
+  }
+  return nullptr;
 }
 
 void nsMenuGroupOwnerX::AddMenuItemInfoToSet(MenuItemInfo* info) { [mInfoSet addObject:info]; }

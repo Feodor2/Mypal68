@@ -9,7 +9,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Services.h"
 
-#include "mozcontainer.h"
+#include "MozContainer.h"
 #include "nsIPrintSettings.h"
 #include "nsIWidget.h"
 #include "nsPrintDialogGTK.h"
@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <gio/gunixfdlist.h>
+#include "gfxPlatformGtk.h"
 
 // for dlsym
 #include <dlfcn.h>
@@ -528,7 +529,7 @@ static void wayland_window_handle_exported(GdkWindow* window,
 static gboolean window_export_handle(GtkWindow* window,
                                      GtkWindowHandleExported callback,
                                      gpointer user_data) {
-  if (GDK_IS_X11_DISPLAY(gtk_widget_get_display(GTK_WIDGET(window)))) {
+  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
     GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window));
     char* handle_str;
     guint32 xid = (guint32)gdk_x11_window_get_xid(gdk_window);
@@ -683,7 +684,7 @@ void nsFlatpakPrintPortal::PreparePrint(GtkWindow* aWindow,
 
   // We need to remember GtkWindow to unexport window handle after it is
   // no longer needed by the portal dialog (apply only on non-X11 sessions).
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (gfxPlatformGtk::GetPlatform()->IsWaylandDisplay()) {
     mParentWindow = aWindow;
   }
 

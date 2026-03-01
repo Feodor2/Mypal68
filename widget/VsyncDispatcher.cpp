@@ -15,9 +15,24 @@ using namespace mozilla::layers;
 namespace mozilla {
 
 CompositorVsyncDispatcher::CompositorVsyncDispatcher()
-    : mCompositorObserverLock("CompositorObserverLock"), mDidShutdown(false) {
+    : mVsyncSource(gfxPlatform::GetPlatform()->GetHardwareVsync()),
+      mCompositorObserverLock("CompositorObserverLock"),
+      mDidShutdown(false) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
+
+  mVsyncSource->RegisterCompositorVsyncDispatcher(this);
+}
+
+CompositorVsyncDispatcher::CompositorVsyncDispatcher(
+    RefPtr<gfx::VsyncSource> aVsyncSource)
+    : mVsyncSource(std::move(aVsyncSource)),
+      mCompositorObserverLock("CompositorObserverLock"),
+      mDidShutdown(false) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mVsyncSource->RegisterCompositorVsyncDispatcher(this);
 }
 
 CompositorVsyncDispatcher::~CompositorVsyncDispatcher() {
@@ -36,6 +51,13 @@ void CompositorVsyncDispatcher::NotifyVsync(const VsyncEvent& aVsync) {
   }
 }
 
+void CompositorVsyncDispatcher::MoveToSource(
+    const RefPtr<gfx::VsyncSource>& aVsyncSource) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(XRE_IsParentProcess());
+  mVsyncSource = aVsyncSource;
+}
+
 void CompositorVsyncDispatcher::ObserveVsync(bool aEnable) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -44,13 +66,9 @@ void CompositorVsyncDispatcher::ObserveVsync(bool aEnable) {
   }
 
   if (aEnable) {
-    gfxPlatform::GetPlatform()
-        ->GetHardwareVsync()
-        ->AddCompositorVsyncDispatcher(this);
+    mVsyncSource->EnableCompositorVsyncDispatcher(this);
   } else {
-    gfxPlatform::GetPlatform()
-        ->GetHardwareVsync()
-        ->RemoveCompositorVsyncDispatcher(this);
+    mVsyncSource->DisableCompositorVsyncDispatcher(this);
   }
 }
 
@@ -80,16 +98,20 @@ void CompositorVsyncDispatcher::Shutdown() {
   // the nsBaseWidget shuts down and the CompositorBridgeParent shuts down.
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mDidShutdown);
   ObserveVsync(false);
   mDidShutdown = true;
   {  // scope lock
     MutexAutoLock lock(mCompositorObserverLock);
     mCompositorVsyncObserver = nullptr;
   }
+  mVsyncSource->DeregisterCompositorVsyncDispatcher(this);
+  mVsyncSource = nullptr;
 }
 
-RefreshTimerVsyncDispatcher::RefreshTimerVsyncDispatcher()
-    : mRefreshTimersLock("RefreshTimers lock") {
+RefreshTimerVsyncDispatcher::RefreshTimerVsyncDispatcher(
+    gfx::VsyncSource::Display* aDisplay)
+    : mDisplay(aDisplay), mRefreshTimersLock("RefreshTimers lock") {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
 }
@@ -97,6 +119,12 @@ RefreshTimerVsyncDispatcher::RefreshTimerVsyncDispatcher()
 RefreshTimerVsyncDispatcher::~RefreshTimerVsyncDispatcher() {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
+}
+
+void RefreshTimerVsyncDispatcher::MoveToDisplay(
+    gfx::VsyncSource::Display* aDisplay) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mDisplay = aDisplay;
 }
 
 void RefreshTimerVsyncDispatcher::NotifyVsync(const VsyncEvent& aVsync) {
@@ -155,9 +183,7 @@ void RefreshTimerVsyncDispatcher::UpdateVsyncStatus() {
     return;
   }
 
-  gfx::VsyncSource::Display& display =
-      gfxPlatform::GetPlatform()->GetHardwareVsync()->GetGlobalDisplay();
-  display.NotifyRefreshTimerVsyncStatus(NeedsVsync());
+  mDisplay->NotifyRefreshTimerVsyncStatus(NeedsVsync());
 }
 
 bool RefreshTimerVsyncDispatcher::NeedsVsync() {

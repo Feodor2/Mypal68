@@ -1248,7 +1248,7 @@ nsresult AsyncFaviconDataReady::OnFaviconDataNotAvailable(void) {
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel), mozIconURI,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_INTERNAL_IMAGE);
 
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1696,7 +1696,7 @@ bool WinUtils::IsIMEEnabled(const InputContext& aInputContext) {
   if (!IsIMEEnabled(aInputContext.mIMEState.mEnabled)) {
     return false;
   }
-  if (aInputContext.mIMEState.mEnabled == IMEState::PLUGIN &&
+  if (aInputContext.mIMEState.mEnabled == IMEEnabled::Plugin &&
       aInputContext.mHTMLInputType.EqualsLiteral("password")) {
     return false;
   }
@@ -1704,8 +1704,8 @@ bool WinUtils::IsIMEEnabled(const InputContext& aInputContext) {
 }
 
 /* static */
-bool WinUtils::IsIMEEnabled(IMEState::Enabled aIMEState) {
-  return (aIMEState == IMEState::ENABLED || aIMEState == IMEState::PLUGIN);
+bool WinUtils::IsIMEEnabled(IMEEnabled aIMEState) {
+  return (aIMEState == IMEEnabled::Enabled || aIMEState == IMEEnabled::Plugin);
 }
 
 /* static */

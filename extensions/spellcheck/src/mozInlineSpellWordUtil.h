@@ -5,9 +5,14 @@
 #ifndef mozInlineSpellWordUtil_h
 #define mozInlineSpellWordUtil_h
 
+#include <utility>
+
 #include "mozilla/Attributes.h"
-#include "nsCOMPtr.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/RangeBoundary.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/Document.h"
+#include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
@@ -17,7 +22,7 @@ class nsRange;
 class nsINode;
 
 namespace mozilla {
-class TextEditor;
+class EditorBase;
 
 namespace dom {
 class Document;
@@ -36,6 +41,8 @@ struct NodeOffset {
     return mNode == aOther.mNode && mOffset == aOther.mOffset;
   }
 
+  bool operator==(const mozilla::RangeBoundary& aRangeBoundary) const;
+
   bool operator!=(const NodeOffset& aOther) const { return !(*this == aOther); }
 
   nsINode* Node() const { return mNode.get(); }
@@ -46,18 +53,17 @@ class NodeOffsetRange {
  private:
   NodeOffset mBegin;
   NodeOffset mEnd;
-  bool mEmpty;
 
  public:
-  NodeOffsetRange() : mEmpty(true) {}
+  NodeOffsetRange() {}
   NodeOffsetRange(NodeOffset b, NodeOffset e)
-      : mBegin(b), mEnd(e), mEmpty(false) {}
+      : mBegin(std::move(b)), mEnd(std::move(e)) {}
 
-  NodeOffset Begin() const { return mBegin; }
+  bool operator==(const nsRange& aRange) const;
 
-  NodeOffset End() const { return mEnd; }
+  const NodeOffset& Begin() const { return mBegin; }
 
-  bool Empty() const { return mEmpty; }
+  const NodeOffset& End() const { return mEnd; }
 };
 
 /**
@@ -71,7 +77,7 @@ class NodeOffsetRange {
  *
  *    The basic operation is:
  *
- *    1. Call Init with the weak pointer to the editor that you're using.
+ *    1. Call Init with the editor that you're using.
  *    2. Call SetPositionAndEnd to to initialize the current position inside the
  *       previously given range and set where you want to stop spellchecking.
  *       We'll stop at the word boundary after that. If SetEnd is not called,
@@ -81,15 +87,8 @@ class NodeOffsetRange {
 
 class MOZ_STACK_CLASS mozInlineSpellWordUtil {
  public:
-  mozInlineSpellWordUtil()
-      : mIsContentEditableOrDesignMode(false),
-        mRootNode(nullptr),
-        mSoftBegin(nullptr, 0),
-        mSoftEnd(nullptr, 0),
-        mNextWordIndex(-1),
-        mSoftTextValid(false) {}
-
-  nsresult Init(mozilla::TextEditor* aTextEditor);
+  static mozilla::Maybe<mozInlineSpellWordUtil> Create(
+      const mozilla::EditorBase& aEditorBase);
 
   // sets the current position, this should be inside the range. If we are in
   // the middle of a word, we'll move to its start.
@@ -109,35 +108,30 @@ class MOZ_STACK_CLASS mozInlineSpellWordUtil {
                            nsRange** aRange);
 
   // Convenience functions, object must be initialized
-  nsresult MakeRange(NodeOffset aBegin, NodeOffset aEnd, nsRange** aRange);
+  nsresult MakeRange(NodeOffset aBegin, NodeOffset aEnd,
+                     nsRange** aRange) const;
   static already_AddRefed<nsRange> MakeRange(const NodeOffsetRange& aRange);
 
+  struct Word {
+    nsAutoString mText;
+    NodeOffsetRange mNodeOffsetRange;
+    bool mSkipChecking = false;
+  };
+
   // Moves to the the next word in the range, and retrieves it's text and range.
-  // An empty word and a nullptr range are returned when we are done checking.
-  // aSkipChecking will be set if the word is "special" and shouldn't be
+  // `false` is returned when we are done checking.
+  // mSkipChecking will be set if the word is "special" and shouldn't be
   // checked (e.g., an email address).
-  nsresult GetNextWord(nsAString& aText, NodeOffsetRange* aNodeOffsetRange,
-                       bool* aSkipChecking);
+  bool GetNextWord(Word& aWord);
 
   // Call to normalize some punctuation. This function takes an autostring
   // so we can access characters directly.
   static void NormalizeWord(nsAString& aWord);
 
   mozilla::dom::Document* GetDocument() const { return mDocument; }
-  nsINode* GetRootNode() { return mRootNode; }
+  const nsINode* GetRootNode() const { return mRootNode; }
 
  private:
-  // cached stuff for the editor, set by Init
-  RefPtr<mozilla::dom::Document> mDocument;
-  bool mIsContentEditableOrDesignMode;
-
-  // range to check, see SetPosition and SetEnd
-  nsINode* mRootNode;
-  NodeOffset mSoftBegin;
-  NodeOffset mSoftEnd;
-
-  // DOM text covering the soft range, with newlines added at block boundaries
-  nsString mSoftText;
   // A list of where we extracted text from, ordered by mSoftTextOffset. A given
   // DOM node appears at most once in this list.
   struct DOMTextMapping {
@@ -147,13 +141,57 @@ class MOZ_STACK_CLASS mozInlineSpellWordUtil {
 
     DOMTextMapping(NodeOffset aNodeOffset, int32_t aSoftTextOffset,
                    int32_t aLength)
-        : mNodeOffset(aNodeOffset),
+        : mNodeOffset(std::move(aNodeOffset)),
           mSoftTextOffset(aSoftTextOffset),
           mLength(aLength) {}
   };
-  nsTArray<DOMTextMapping> mSoftTextDOMMapping;
 
-  // A list of the "real words" in mSoftText, ordered by mSoftTextOffset
+  struct SoftText {
+    void AdjustBeginAndBuildText(NodeOffset aBegin, NodeOffset aEnd,
+                                 const nsINode* aRootNode);
+
+    void Invalidate() { mIsValid = false; }
+
+    const NodeOffset& GetBegin() const { return mBegin; }
+    const NodeOffset& GetEnd() const { return mEnd; }
+
+    const nsTArray<DOMTextMapping>& GetDOMMapping() const {
+      return mDOMMapping;
+    }
+
+    const nsString& GetValue() const { return mValue; }
+
+    bool mIsValid = false;
+
+   private:
+    NodeOffset mBegin = NodeOffset(nullptr, 0);
+    NodeOffset mEnd = NodeOffset(nullptr, 0);
+
+    nsTArray<DOMTextMapping> mDOMMapping;
+
+    // DOM text covering the soft range, with newlines added at block boundaries
+    nsString mValue;
+  };
+
+  SoftText mSoftText;
+
+  mozInlineSpellWordUtil(mozilla::dom::Document& aDocument,
+                         bool aIsContentEditableOrDesignMode, nsINode& aRootNode
+
+                         )
+      : mDocument(&aDocument),
+        mIsContentEditableOrDesignMode(aIsContentEditableOrDesignMode),
+        mRootNode(&aRootNode),
+        mNextWordIndex(-1) {}
+
+  // cached stuff for the editor
+  const RefPtr<mozilla::dom::Document> mDocument;
+  const bool mIsContentEditableOrDesignMode;
+
+  // range to check, see SetPosition and SetEnd
+  const nsINode* mRootNode;
+
+  // A list of the "real words" in mSoftText.mValue, ordered by mSoftTextOffset
   struct RealWord {
     int32_t mSoftTextOffset;
     uint32_t mLength : 31;
@@ -171,25 +209,27 @@ class MOZ_STACK_CLASS mozInlineSpellWordUtil {
 
     int32_t EndOffset() const { return mSoftTextOffset + mLength; }
   };
-  nsTArray<RealWord> mRealWords;
+  using RealWords = nsTArray<RealWord>;
+  RealWords mRealWords;
   int32_t mNextWordIndex;
 
-  bool mSoftTextValid;
+  nsresult EnsureWords(NodeOffset aSoftBegin, NodeOffset aSoftEnd);
 
-  void InvalidateWords() { mSoftTextValid = false; }
-  nsresult EnsureWords();
-
-  int32_t MapDOMPositionToSoftTextOffset(NodeOffset aNodeOffset);
-  // Map an offset into mSoftText to a DOM position. Note that two DOM positions
-  // can map to the same mSoftText offset, e.g. given nodes A=aaaa and B=bbbb
-  // forming aaaabbbb, (A,4) and (B,0) give the same string offset. So,
-  // aHintBefore controls which position we return ... if aHint is eEnd
-  // then the position indicates the END of a range so we return (A,4).
+  int32_t MapDOMPositionToSoftTextOffset(const NodeOffset& aNodeOffset) const;
+  // Map an offset into mSoftText.mValue to a DOM position. Note that two DOM
+  // positions can map to the same mSoftText.mValue offset, e.g. given nodes
+  // A=aaaa and B=bbbb forming aaaabbbb, (A,4) and (B,0) give the same string
+  // offset. So, aHintBefore controls which position we return ... if aHint is
+  // eEnd then the position indicates the END of a range so we return (A,4).
   // Otherwise the position indicates the START of a range so we return (B,0).
   enum DOMMapHint { HINT_BEGIN, HINT_END };
   NodeOffset MapSoftTextOffsetToDOMPosition(int32_t aSoftTextOffset,
-                                            DOMMapHint aHint);
-  // Finds the index of the real word containing aSoftTextOffset, or -1 if none
+                                            DOMMapHint aHint) const;
+
+  static void ToString(DOMMapHint aHint, nsACString& aResult);
+
+  // Finds the index of the real word containing aSoftTextOffset, or -1 if none.
+  //
   // If it's exactly between two words, then if aHint is HINT_BEGIN, return the
   // later word (favouring the assumption that it's the BEGINning of a word),
   // otherwise return the earlier word (assuming it's the END of a word).
@@ -197,16 +237,14 @@ class MOZ_STACK_CLASS mozInlineSpellWordUtil {
   // position, search forward until we do find a word and return that (if
   // found).
   int32_t FindRealWordContaining(int32_t aSoftTextOffset, DOMMapHint aHint,
-                                 bool aSearchForward);
+                                 bool aSearchForward) const;
 
-  // build mSoftText and mSoftTextDOMMapping
-  void BuildSoftText();
-  // Build mRealWords array
-  nsresult BuildRealWords();
+  mozilla::Result<RealWords, nsresult> BuildRealWords() const;
 
-  nsresult SplitDOMWord(int32_t aStart, int32_t aEnd);
+  nsresult SplitDOMWordAndAppendTo(int32_t aStart, int32_t aEnd,
+                                   nsTArray<RealWord>& aRealWords) const;
 
-  nsresult MakeRangeForWord(const RealWord& aWord, nsRange** aRange);
+  nsresult MakeRangeForWord(const RealWord& aWord, nsRange** aRange) const;
   void MakeNodeOffsetRangeForWord(const RealWord& aWord,
                                   NodeOffsetRange* aNodeOffsetRange);
 };

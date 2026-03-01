@@ -51,6 +51,7 @@ template struct StyleStrong<RawServoSupportsRule>;
 template struct StyleStrong<RawServoFontFeatureValuesRule>;
 template struct StyleStrong<RawServoFontFaceRule>;
 template struct StyleStrong<RawServoCounterStyleRule>;
+template struct StyleStrong<RawServoContainerRule>;
 
 template <typename T>
 inline void StyleOwnedSlice<T>::Clear() {
@@ -222,7 +223,7 @@ inline Span<const T> StyleArcSlice<T>::AsSpan() const {
 template <typename T>
 inline bool StyleArcSlice<T>::operator==(const StyleArcSlice& aOther) const {
   ASSERT_CANARY
-  return AsSpan() == aOther.AsSpan();
+  return _0.ptr == aOther._0.ptr || AsSpan() == aOther.AsSpan();
 }
 
 template <typename T>
@@ -231,7 +232,7 @@ inline bool StyleArcSlice<T>::operator!=(const StyleArcSlice& aOther) const {
 }
 
 template <typename T>
-inline StyleArcSlice<T>::~StyleArcSlice() {
+inline void StyleArcSlice<T>::Release() {
   ASSERT_CANARY
   if (MOZ_LIKELY(!_0.ptr->DecrementRef())) {
     return;
@@ -240,6 +241,37 @@ inline StyleArcSlice<T>::~StyleArcSlice() {
     elem.~T();
   }
   free(_0.ptr);  // Drop the allocation now.
+}
+
+template <typename T>
+inline StyleArcSlice<T>::~StyleArcSlice() {
+  Release();
+}
+
+template <typename T>
+inline StyleArcSlice<T>& StyleArcSlice<T>::operator=(StyleArcSlice&& aOther) {
+  ASSERT_CANARY
+  std::swap(_0.ptr, aOther._0.ptr);
+  ASSERT_CANARY
+  return *this;
+}
+
+template <typename T>
+inline StyleArcSlice<T>& StyleArcSlice<T>::operator=(
+    const StyleArcSlice& aOther) {
+  ASSERT_CANARY
+
+  if (_0.ptr == aOther._0.ptr) {
+    return *this;
+  }
+
+  Release();
+
+  _0.ptr = aOther._0.ptr;
+  _0.ptr->IncrementRef();
+
+  ASSERT_CANARY
+  return *this;
 }
 
 #undef ASSERT_CANARY
@@ -483,6 +515,10 @@ using BorderRadius = StyleBorderRadius;
 bool StyleCSSPixelLength::IsZero() const { return _0 == 0.0f; }
 
 void StyleCSSPixelLength::ScaleBy(float aScale) { _0 *= aScale; }
+
+StyleCSSPixelLength StyleCSSPixelLength::ScaledBy(float aScale) const {
+  return FromPixels(ToCSSPixels() * aScale);
+}
 
 nscoord StyleCSSPixelLength::ToAppUnits() const {
   // We want to resolve the length part of the calc() expression rounding 0.5
@@ -924,13 +960,20 @@ inline bool RestyleHint::DefinitelyRecascadesAllSubtree() const {
 }
 
 template <>
+ImageResolution StyleImage::GetResolution() const;
+
+template <>
 inline const StyleImage& StyleImage::FinalImage() const {
   if (!IsImageSet()) {
     return *this;
   }
   auto& set = AsImageSet();
-  return set->items.AsSpan()[set->selected_index].image.FinalImage();
+  auto& selectedItem = set->items.AsSpan()[set->selected_index];
+  return selectedItem.image.FinalImage();
 }
+
+template <>
+Maybe<CSSIntSize> StyleImage::GetIntrinsicSize() const;
 
 template <>
 inline bool StyleImage::IsImageRequestType() const {

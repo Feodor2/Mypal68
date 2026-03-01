@@ -15,6 +15,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DisplayPortUtils.h"
+#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/ImageTracker.h"
 #include "mozilla/dom/Selection.h"
@@ -22,6 +23,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/ResultExtensions.h"
@@ -439,9 +441,28 @@ void nsIFrame::FindCloserFrameForSelection(
 
 void nsIFrame::ContentStatesChanged(mozilla::EventStates aStates) {}
 
+void WeakFrame::Clear(mozilla::PresShell* aPresShell) {
+  if (aPresShell) {
+    aPresShell->RemoveWeakFrame(this);
+  }
+  mFrame = nullptr;
+}
+
 AutoWeakFrame::AutoWeakFrame(const WeakFrame& aOther)
     : mPrev(nullptr), mFrame(nullptr) {
   Init(aOther.GetFrame());
+}
+
+void AutoWeakFrame::Clear(mozilla::PresShell* aPresShell) {
+  if (aPresShell) {
+    aPresShell->RemoveAutoWeakFrame(this);
+  }
+  mFrame = nullptr;
+  mPrev = nullptr;
+}
+
+AutoWeakFrame::~AutoWeakFrame() {
+  Clear(mFrame ? mFrame->PresContext()->GetPresShell() : nullptr);
 }
 
 void AutoWeakFrame::Init(nsIFrame* aFrame) {
@@ -569,8 +590,6 @@ static bool IsFontSizeInflationContainer(nsIFrame* aFrame,
                    aFrame->IsBrFrame() ||
                    aFrame->IsFrameOfType(nsIFrame::eMathML),
                "line participants must not be containers");
-  NS_ASSERTION(!aFrame->IsBulletFrame() || isInline,
-               "bullets should not be containers");
   return !isInline;
 }
 
@@ -3035,9 +3054,8 @@ void nsIFrame::BuildDisplayListForStackingContext(
   // we're painting, and we're not animating opacity. Don't do this
   // if we're going to compute plugin geometry, since opacity-0 plugins
   // need to have display items built for them.
-  bool needHitTestInfo =
-      aBuilder->BuildCompositorHitTestInfo() &&
-      StyleUI()->GetEffectivePointerEvents(this) != StylePointerEvents::None;
+  bool needHitTestInfo = aBuilder->BuildCompositorHitTestInfo() &&
+                         Style()->PointerEvents() != StylePointerEvents::None;
   bool opacityItemForEventsAndPluginsOnly = false;
   if (effects->mOpacity == 0.0 && aBuilder->IsForPainting() &&
       !(disp->mWillChange.bits & StyleWillChangeBits::OPACITY) &&
@@ -4299,7 +4317,23 @@ nsresult nsIFrame::HandleEvent(nsPresContext* aPresContext,
     } else if (aEvent->mMessage == eMouseUp || aEvent->mMessage == eTouchEnd) {
       HandleRelease(aPresContext, aEvent, aEventStatus);
     }
+    return NS_OK;
   }
+
+  // When middle button is down, we need to just move selection and focus at
+  // the clicked point.  Note that even if middle click paste is not enabled,
+  // Chrome moves selection at middle mouse button down.  So, we should follow
+  // the behavior for the compatibility.
+  if (aEvent->mMessage == eMouseDown) {
+    WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
+    if (mouseEvent && mouseEvent->mButton == MouseButton::eMiddle) {
+      if (*aEventStatus == nsEventStatus_eConsumeNoDefault) {
+        return NS_OK;
+      }
+      return MoveCaretToEventPoint(aPresContext, mouseEvent, aEventStatus);
+    }
+  }
+
   return NS_OK;
 }
 
@@ -4397,9 +4431,12 @@ nsresult nsIFrame::GetDataForTableSelection(
   nsCOMPtr<nsIContent> parentContent = tableOrCellContent->GetParent();
   if (!parentContent) return NS_ERROR_FAILURE;
 
-  int32_t offset = parentContent->ComputeIndexOf(tableOrCellContent);
+  const int32_t offset =
+      parentContent->ComputeIndexOf_Deprecated(tableOrCellContent);
   // Not likely?
-  if (offset < 0) return NS_ERROR_FAILURE;
+  if (offset < 0) {
+    return NS_ERROR_FAILURE;
+  }
 
   // Everything is OK -- set the return values
   parentContent.forget(aParentContent);
@@ -4427,8 +4464,14 @@ static bool IsEditingHost(const nsIFrame* aFrame) {
   return element && element->IsEditableRoot();
 }
 
+static bool IsTopmostModalDialog(const nsIFrame* aFrame) {
+  auto* element = Element::FromNodeOrNull(aFrame->GetContent());
+  return element &&
+         element->State().HasState(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
+}
+
 static StyleUserSelect UsedUserSelect(const nsIFrame* aFrame) {
-  if (aFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT)) {
+  if (aFrame->IsGeneratedContentFrame()) {
     return StyleUserSelect::None;
   }
 
@@ -4446,15 +4489,19 @@ static StyleUserSelect UsedUserSelect(const nsIFrame* aFrame) {
   //
   // Also, we check for auto first to allow explicitly overriding the value for
   // the editing host.
-  auto style = aFrame->StyleUIReset()->mUserSelect;
+  auto style = aFrame->Style()->UserSelect();
   if (style != StyleUserSelect::Auto) {
     return style;
   }
 
-  if (aFrame->IsTextInputFrame() || IsEditingHost(aFrame)) {
+  if (aFrame->IsTextInputFrame() || IsEditingHost(aFrame) ||
+      IsTopmostModalDialog(aFrame)) {
     // We don't implement 'contain' itself, but we make 'text' behave as
     // 'contain' for contenteditable and <input> / <textarea> elements anyway so
     // this is ok.
+    //
+    // Topmost modal dialogs need to behave like `text` too, because they're
+    // supposed to be selectable even if their ancestors are inert.
     return StyleUserSelect::Text;
   }
 
@@ -4493,27 +4540,34 @@ nsIFrame::HandlePress(nsPresContext* aPresContext, WidgetGUIEvent* aEvent,
     return NS_OK;
   }
 
-  // We often get out of sync state issues with mousedown events that
-  // get interrupted by alerts/dialogs.
-  // Check with the ESM to see if we should process this one
-  if (!aPresContext->EventStateManager()->EventStatusOK(aEvent)) return NS_OK;
+  return MoveCaretToEventPoint(aPresContext, aEvent->AsMouseEvent(),
+                               aEventStatus);
+}
+
+nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
+                                         WidgetMouseEvent* aMouseEvent,
+                                         nsEventStatus* aEventStatus) {
+  MOZ_ASSERT(aPresContext);
+  MOZ_ASSERT(aMouseEvent);
+  MOZ_ASSERT(aMouseEvent->mMessage == eMouseDown);
+  MOZ_ASSERT(aMouseEvent->mButton == MouseButton::ePrimary ||
+             aMouseEvent->mButton == MouseButton::eMiddle);
+  MOZ_ASSERT(aEventStatus);
+  MOZ_ASSERT(nsEventStatus_eConsumeNoDefault != *aEventStatus);
 
   mozilla::PresShell* presShell = aPresContext->GetPresShell();
   if (!presShell) {
     return NS_ERROR_FAILURE;
   }
 
-  // if we are in Navigator and the click is in a draggable node, we don't want
-  // to start selection because we don't want to interfere with a potential
-  // drag of said node and steal all its glory.
-  int16_t isEditor = presShell->GetSelectionFlags();
-  // weaaak. only the editor can display frame selection not just text and
-  // images
-  isEditor = isEditor == nsISelectionDisplay::DISPLAY_ALL;
+  // We often get out of sync state issues with mousedown events that
+  // get interrupted by alerts/dialogs.
+  // Check with the ESM to see if we should process this one
+  if (!aPresContext->EventStateManager()->EventStatusOK(aMouseEvent)) {
+    return NS_OK;
+  }
 
-  WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
-
-  if (!mouseEvent->IsAlt()) {
+  if (!aMouseEvent->IsAlt()) {
     for (nsIContent* content = mContent; content;
          content = content->GetFlattenedTreeParent()) {
       if (nsContentUtils::ContentIsDraggable(content) &&
@@ -4521,12 +4575,22 @@ nsIFrame::HandlePress(nsPresContext* aPresContext, WidgetGUIEvent* aEvent,
         // coordinate stuff is the fix for bug #55921
         if ((mRect - GetPosition())
                 .Contains(nsLayoutUtils::GetEventCoordinatesRelativeTo(
-                    mouseEvent, RelativeTo{this}))) {
+                    aMouseEvent, RelativeTo{this}))) {
           return NS_OK;
         }
       }
     }
   }
+
+  // If we are in Navigator and the click is in a draggable node, we don't want
+  // to start selection because we don't want to interfere with a potential
+  // drag of said node and steal all its glory.
+  const bool isEditor =
+      presShell->GetSelectionFlags() == nsISelectionDisplay::DISPLAY_ALL;
+
+  // Don't do something if it's middle button down event.
+  const bool isPrimaryButtonDown =
+      aMouseEvent->mButton == MouseButton::ePrimary;
 
   // check whether style allows selection
   // if not, don't tell selection the mouse event even occurred.
@@ -4536,151 +4600,193 @@ nsIFrame::HandlePress(nsPresContext* aPresContext, WidgetGUIEvent* aEvent,
     return NS_OK;
   }
 
-  bool useFrameSelection = (selectStyle == StyleUserSelect::Text);
-
-  // If the mouse is dragged outside the nearest enclosing scrollable area
-  // while making a selection, the area will be scrolled. To do this, capture
-  // the mouse on the nearest scrollable frame. If there isn't a scrollable
-  // frame, or something else is already capturing the mouse, there's no
-  // reason to capture.
-  if (!PresShell::GetCapturingContent()) {
-    nsIScrollableFrame* scrollFrame = nsLayoutUtils::GetNearestScrollableFrame(
-        this, nsLayoutUtils::SCROLLABLE_SAME_DOC |
-                  nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
-    if (scrollFrame) {
-      nsIFrame* capturingFrame = do_QueryFrame(scrollFrame);
-      PresShell::SetCapturingContent(capturingFrame->GetContent(),
-                                     CaptureFlags::IgnoreAllowedState);
+  if (isPrimaryButtonDown) {
+    // If the mouse is dragged outside the nearest enclosing scrollable area
+    // while making a selection, the area will be scrolled. To do this, capture
+    // the mouse on the nearest scrollable frame. If there isn't a scrollable
+    // frame, or something else is already capturing the mouse, there's no
+    // reason to capture.
+    if (!PresShell::GetCapturingContent()) {
+      nsIScrollableFrame* scrollFrame =
+          nsLayoutUtils::GetNearestScrollableFrame(
+              this, nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                        nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+      if (scrollFrame) {
+        nsIFrame* capturingFrame = do_QueryFrame(scrollFrame);
+        PresShell::SetCapturingContent(capturingFrame->GetContent(),
+                                       CaptureFlags::IgnoreAllowedState);
+      }
     }
   }
 
   // XXX This is screwy; it really should use the selection frame, not the
   // event frame
-  const nsFrameSelection* frameselection = nullptr;
-  if (useFrameSelection)
-    frameselection = GetConstFrameSelection();
-  else
-    frameselection = presShell->ConstFrameSelection();
+  const nsFrameSelection* frameselection =
+      selectStyle == StyleUserSelect::Text ? GetConstFrameSelection()
+                                           : presShell->ConstFrameSelection();
 
   if (!frameselection || frameselection->GetDisplaySelection() ==
-                             nsISelectionController::SELECTION_OFF)
+                             nsISelectionController::SELECTION_OFF) {
     return NS_OK;  // nothing to do we cannot affect selection from here
+  }
 
 #ifdef XP_MACOSX
-  if (mouseEvent->IsControl())
-    return NS_OK;  // short circuit. hard coded for mac due to time restraints.
-  bool control = mouseEvent->IsMeta();
+  // If Control key is pressed on macOS, it should be treated as right click.
+  // So, don't change selection.
+  if (aMouseEvent->IsControl()) {
+    return NS_OK;
+  }
+  bool control = aMouseEvent->IsMeta();
 #else
-  bool control = mouseEvent->IsControl();
+  bool control = aMouseEvent->IsControl();
 #endif
 
   RefPtr<nsFrameSelection> fc = const_cast<nsFrameSelection*>(frameselection);
-  if (mouseEvent->mClickCount > 1) {
+  if (isPrimaryButtonDown && aMouseEvent->mClickCount > 1) {
     // These methods aren't const but can't actually delete anything,
     // so no need for AutoWeakFrame.
     fc->SetDragState(true);
-    return HandleMultiplePress(aPresContext, mouseEvent, aEventStatus, control);
+    return HandleMultiplePress(aPresContext, aMouseEvent, aEventStatus,
+                               control);
   }
 
-  nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(mouseEvent,
+  nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(aMouseEvent,
                                                             RelativeTo{this});
   ContentOffsets offsets = GetContentOffsetsFromPoint(pt, SKIP_HIDDEN);
 
-  if (!offsets.content) return NS_ERROR_FAILURE;
-
-  // Let Ctrl/Cmd+mouse down do table selection instead of drag initiation
-  nsCOMPtr<nsIContent> parentContent;
-  int32_t contentOffset;
-  TableSelectionMode target;
-  nsresult rv;
-  rv = GetDataForTableSelection(frameselection, presShell, mouseEvent,
-                                getter_AddRefs(parentContent), &contentOffset,
-                                &target);
-  if (NS_SUCCEEDED(rv) && parentContent) {
-    fc->SetDragState(true);
-    return fc->HandleTableSelection(parentContent, contentOffset, target,
-                                    mouseEvent);
+  if (!offsets.content) {
+    return NS_ERROR_FAILURE;
   }
 
-  fc->SetDelayedCaretData(0);
-
-  // Check if any part of this frame is selected, and if the
-  // user clicked inside the selected region. If so, we delay
-  // starting a new selection since the user may be trying to
-  // drag the selected region to some other app.
-
-  if (GetContent() && GetContent()->IsMaybeSelected()) {
-    bool inSelection = false;
-    UniquePtr<SelectionDetails> details = frameselection->LookUpSelection(
-        offsets.content, 0, offsets.EndOffset(), false);
-
-    //
-    // If there are any details, check to see if the user clicked
-    // within any selected region of the frame.
-    //
-
-    for (SelectionDetails* curDetail = details.get(); curDetail;
-         curDetail = curDetail->mNext.get()) {
-      //
-      // If the user clicked inside a selection, then just
-      // return without doing anything. We will handle placing
-      // the caret later on when the mouse is released. We ignore
-      // the spellcheck, find and url formatting selections.
-      //
-      if (curDetail->mSelectionType != SelectionType::eSpellCheck &&
-          curDetail->mSelectionType != SelectionType::eFind &&
-          curDetail->mSelectionType != SelectionType::eURLSecondary &&
-          curDetail->mSelectionType != SelectionType::eURLStrikeout &&
-          curDetail->mStart <= offsets.StartOffset() &&
-          offsets.EndOffset() <= curDetail->mEnd) {
-        inSelection = true;
-      }
-    }
-
-    if (inSelection) {
-      fc->SetDragState(false);
-      fc->SetDelayedCaretData(mouseEvent);
+  if (aMouseEvent->mMessage == eMouseDown &&
+      aMouseEvent->mButton == MouseButton::eMiddle &&
+      !offsets.content->IsEditable()) {
+    // However, some users don't like the Chrome compatible behavior of
+    // middle mouse click.  They want to keep selection after starting
+    // autoscroll.  However, the selection change is important for middle
+    // mouse past.  Therefore, we should allow users to take the traditional
+    // behavior back by themselves unless middle click paste is enabled or
+    // autoscrolling is disabled.
+    if (!Preferences::GetBool("middlemouse.paste", false) &&
+        Preferences::GetBool("general.autoScroll", false) &&
+        Preferences::GetBool("general.autoscroll.prevent_to_collapse_selection_"
+                             "by_middle_mouse_down",
+                             false)) {
       return NS_OK;
     }
   }
 
-  fc->SetDragState(true);
+  if (isPrimaryButtonDown) {
+    // Let Ctrl/Cmd + left mouse down do table selection instead of drag
+    // initiation.
+    nsCOMPtr<nsIContent> parentContent;
+    int32_t contentOffset;
+    TableSelectionMode target;
+    nsresult rv = GetDataForTableSelection(
+        frameselection, presShell, aMouseEvent, getter_AddRefs(parentContent),
+        &contentOffset, &target);
+    if (NS_SUCCEEDED(rv) && parentContent) {
+      fc->SetDragState(true);
+      return fc->HandleTableSelection(parentContent, contentOffset, target,
+                                      aMouseEvent);
+    }
+  }
+
+  fc->SetDelayedCaretData(0);
+
+  if (isPrimaryButtonDown) {
+    // Check if any part of this frame is selected, and if the user clicked
+    // inside the selected region, and if it's the left button. If so, we delay
+    // starting a new selection since the user may be trying to drag the
+    // selected region to some other app.
+
+    if (GetContent() && GetContent()->IsMaybeSelected()) {
+      bool inSelection = false;
+      UniquePtr<SelectionDetails> details = frameselection->LookUpSelection(
+          offsets.content, 0, offsets.EndOffset(), false);
+
+      //
+      // If there are any details, check to see if the user clicked
+      // within any selected region of the frame.
+      //
+
+      for (SelectionDetails* curDetail = details.get(); curDetail;
+           curDetail = curDetail->mNext.get()) {
+        //
+        // If the user clicked inside a selection, then just
+        // return without doing anything. We will handle placing
+        // the caret later on when the mouse is released. We ignore
+        // the spellcheck, find and url formatting selections.
+        //
+        if (curDetail->mSelectionType != SelectionType::eSpellCheck &&
+            curDetail->mSelectionType != SelectionType::eFind &&
+            curDetail->mSelectionType != SelectionType::eURLSecondary &&
+            curDetail->mSelectionType != SelectionType::eURLStrikeout &&
+            curDetail->mStart <= offsets.StartOffset() &&
+            offsets.EndOffset() <= curDetail->mEnd) {
+          inSelection = true;
+        }
+      }
+
+      if (inSelection) {
+        fc->SetDragState(false);
+        fc->SetDelayedCaretData(aMouseEvent);
+        return NS_OK;
+      }
+    }
+
+    fc->SetDragState(true);
+  }
 
   // Do not touch any nsFrame members after this point without adding
   // weakFrame checks.
   const nsFrameSelection::FocusMode focusMode = [&]() {
     // If "Shift" and "Ctrl" are both pressed, "Shift" is given precedence. This
     // mimics the old behaviour.
-    if (mouseEvent->IsShift()) {
+    if (aMouseEvent->IsShift()) {
+      // If clicked in a link when focused content is editable, we should
+      // collapse selection in the link for compatibility with Blink.
+      if (isEditor) {
+        nsCOMPtr<nsIURI> uri;
+        for (Element* element : mContent->InclusiveAncestorsOfType<Element>()) {
+          if (element->IsLink(getter_AddRefs(uri))) {
+            return nsFrameSelection::FocusMode::kCollapseToNewPoint;
+          }
+        }
+      }
       return nsFrameSelection::FocusMode::kExtendSelection;
     }
 
-    if (control) {
+    if (isPrimaryButtonDown && control) {
       return nsFrameSelection::FocusMode::kMultiRangeSelection;
     }
 
     return nsFrameSelection::FocusMode::kCollapseToNewPoint;
   }();
 
-  rv = fc->HandleClick(MOZ_KnownLive(offsets.content) /* bug 1636889 */,
-                       offsets.StartOffset(), offsets.EndOffset(), focusMode,
-                       offsets.associate);
+  nsresult rv = fc->HandleClick(
+      MOZ_KnownLive(offsets.content) /* bug 1636889 */, offsets.StartOffset(),
+      offsets.EndOffset(), focusMode, offsets.associate);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
-  if (NS_FAILED(rv)) return rv;
+  // We don't handle mouse button up if it's middle button.
+  if (isPrimaryButtonDown && offsets.offset != offsets.secondaryOffset) {
+    fc->MaintainSelection();
+  }
 
-  if (offsets.offset != offsets.secondaryOffset) fc->MaintainSelection();
-
-  if (isEditor && !mouseEvent->IsShift() &&
+  if (isPrimaryButtonDown && isEditor && !aMouseEvent->IsShift() &&
       (offsets.EndOffset() - offsets.StartOffset()) == 1) {
     // A single node is selected and we aren't extending an existing
     // selection, which means the user clicked directly on an object (either
-    // -moz-user-select: all or a non-text node without children).
+    // user-select: all or a non-text node without children).
     // Therefore, disable selection extension during mouse moves.
     // XXX This is a bit hacky; shouldn't editor be able to deal with this?
     fc->SetDragState(false);
   }
 
-  return rv;
+  return NS_OK;
 }
 
 nsresult nsIFrame::SelectByTypeAtPoint(nsPresContext* aPresContext,
@@ -5074,7 +5180,7 @@ static FrameContentRange GetRangeForFrame(const nsIFrame* aFrame) {
 
   if (type == LayoutFrameType::Br) {
     nsIContent* parent = content->GetParent();
-    int32_t beginOffset = parent->ComputeIndexOf(content);
+    const int32_t beginOffset = parent->ComputeIndexOf_Deprecated(content);
     return FrameContentRange(parent, beginOffset, beginOffset);
   }
 
@@ -5083,14 +5189,14 @@ static FrameContentRange GetRangeForFrame(const nsIFrame* aFrame) {
   }
 
   nsIContent* parent = content->GetParent();
-  if (aFrame->IsBlockFrameOrSubclass() || !parent) {
+  if (aFrame->IsBlockOutside() || !parent) {
     return FrameContentRange(content, 0, content->GetChildCount());
   }
 
   // TODO(emilio): Revise this in presence of Shadow DOM / display: contents,
   // it's likely that we don't want to just walk the light tree, and we need to
   // change the representation of FrameContentRange.
-  int32_t index = parent->ComputeIndexOf(content);
+  const int32_t index = parent->ComputeIndexOf_Deprecated(content);
   MOZ_ASSERT(index >= 0);
   return FrameContentRange(parent, index, index + 1);
 }
@@ -5122,7 +5228,7 @@ static bool SelfIsSelectable(nsIFrame* aFrame, uint32_t aFlags) {
     return false;
   }
   return !aFrame->IsGeneratedContentFrame() &&
-         aFrame->StyleUIReset()->mUserSelect != StyleUserSelect::None;
+         aFrame->Style()->UserSelect() != StyleUserSelect::None;
 }
 
 static bool SelectionDescendToKids(nsIFrame* aFrame) {
@@ -5150,7 +5256,7 @@ static bool SelectionDescendToKids(nsIFrame* aFrame) {
     return false;
   }
 
-  auto style = aFrame->StyleUIReset()->mUserSelect;
+  auto style = aFrame->Style()->UserSelect();
   return style != StyleUserSelect::All && style != StyleUserSelect::None;
 }
 
@@ -5416,7 +5522,7 @@ static nsIFrame* AdjustFrameForSelectionStyles(nsIFrame* aFrame) {
   for (nsIFrame* frame = aFrame; frame; frame = frame->GetParent()) {
     // These are the conditions that make all children not able to handle
     // a cursor.
-    StyleUserSelect userSelect = frame->StyleUIReset()->mUserSelect;
+    auto userSelect = frame->Style()->UserSelect();
     if (userSelect != StyleUserSelect::Auto &&
         userSelect != StyleUserSelect::All) {
       break;
@@ -5443,9 +5549,9 @@ nsIFrame::ContentOffsets nsIFrame::GetContentOffsetsFromPoint(
 
     adjustedFrame = AdjustFrameForSelectionStyles(this);
 
-    // -moz-user-select: all needs special handling, because clicking on it
+    // user-select: all needs special handling, because clicking on it
     // should lead to the whole frame being selected
-    if (adjustedFrame->StyleUIReset()->mUserSelect == StyleUserSelect::All) {
+    if (adjustedFrame->Style()->UserSelect() == StyleUserSelect::All) {
       nsPoint adjustedPoint = aPoint + this->GetOffsetTo(adjustedFrame);
       return OffsetsForSingleFrame(adjustedFrame, adjustedPoint);
     }
@@ -5526,7 +5632,7 @@ void nsIFrame::DisassociateImage(const StyleImage& aImage) {
 }
 
 Maybe<nsIFrame::Cursor> nsIFrame::GetCursor(const nsPoint&) {
-  StyleCursorKind kind = StyleUI()->mCursor.keyword;
+  StyleCursorKind kind = StyleUI()->Cursor().keyword;
   if (kind == StyleCursorKind::Auto) {
     // If this is editable, I-beam cursor is better for most elements.
     kind = (mContent && mContent->IsEditable()) ? StyleCursorKind::Text
@@ -6573,7 +6679,7 @@ void nsIFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
 bool nsIFrame::IsContentDisabled() const {
   // FIXME(emilio): Doing this via CSS means callers must ensure the style is up
   // to date, and they don't!
-  if (StyleUI()->mUserInput == StyleUserInput::None) {
+  if (StyleUI()->UserInput() == StyleUserInput::None) {
     return true;
   }
 
@@ -7701,18 +7807,11 @@ nsIFrame* nsIFrame::GetContainingBlock(
 
 #ifdef DEBUG_FRAME_DUMP
 
-int32_t nsIFrame::ContentIndexInContainer(const nsIFrame* aFrame) {
-  int32_t result = -1;
-
-  nsIContent* content = aFrame->GetContent();
-  if (content) {
-    nsIContent* parentContent = content->GetParent();
-    if (parentContent) {
-      result = parentContent->ComputeIndexOf(content);
-    }
+Maybe<uint32_t> nsIFrame::ContentIndexInContainer(const nsIFrame* aFrame) {
+  if (nsIContent* content = aFrame->GetContent()) {
+    return content->ComputeIndexInParentContent();
   }
-
-  return result;
+  return Nothing();
 }
 
 nsAutoCString nsIFrame::ListTag() const {
@@ -7854,6 +7953,20 @@ void nsIFrame::List(FILE* out, const char* aPrefix, ListFlags aFlags) const {
   fprintf_stderr(out, "%s\n", str.get());
 }
 
+void nsIFrame::ListTextRuns(FILE* out) const {
+  nsTHashtable<nsVoidPtrHashKey> seen;
+  ListTextRuns(out, seen);
+}
+
+void nsIFrame::ListTextRuns(FILE* out,
+                            nsTHashtable<nsVoidPtrHashKey>& aSeen) const {
+  for (const auto& childList : ChildLists()) {
+    for (const nsIFrame* kid : childList.mList) {
+      kid->ListTextRuns(out, aSeen);
+    }
+  }
+}
+
 void nsIFrame::ListMatchedRules(FILE* out, const char* aPrefix) const {
   nsTArray<const RawServoStyleRule*> rawRuleList;
   Servo_ComputedValues_GetStyleRuleList(mComputedStyle, &rawRuleList);
@@ -7894,7 +8007,12 @@ nsresult nsIFrame::MakeFrameName(const nsAString& aType,
     aResult.Append(')');
   }
   aResult.Append('(');
-  aResult.AppendInt(ContentIndexInContainer(this));
+  Maybe<uint32_t> index = ContentIndexInContainer(this);
+  if (index.isSome()) {
+    aResult.AppendInt(*index);
+  } else {
+    aResult.AppendInt(-1);
+  }
   aResult.Append(')');
   return NS_OK;
 }
@@ -7981,7 +8099,7 @@ nsresult nsIFrame::GetPointFromOffset(int32_t inOffset, nsPoint* outPoint) {
   if (mContent) {
     nsIContent* newContent = mContent->GetParent();
     if (newContent) {
-      int32_t newOffset = newContent->ComputeIndexOf(mContent);
+      const int32_t newOffset = newContent->ComputeIndexOf_Deprecated(mContent);
 
       // Find the direction of the frame from the EmbeddingLevelProperty,
       // which is the resolved bidi level set in
@@ -8197,7 +8315,8 @@ nsresult nsIFrame::GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
                 nsIContent* parent = content->GetParent();
                 if (parent) {
                   aPos->mResultContent = parent;
-                  aPos->mContentOffset = parent->ComputeIndexOf(content);
+                  aPos->mContentOffset =
+                      parent->ComputeIndexOf_Deprecated(content);
                   aPos->mAttach = CARET_ASSOCIATE_BEFORE;
                   if ((point.x - offset.x + tempRect.x) > tempRect.width) {
                     aPos->mContentOffset++;  // go to end of this frame
@@ -8348,9 +8467,10 @@ static nsContentAndOffset FindLineBreakingFrame(nsIFrame* aFrame,
     // content. This probably shouldn't ever happen, but since it sometimes
     // does, we want to avoid crashing here.
     NS_ASSERTION(result.mContent, "Unexpected orphan content");
-    if (result.mContent)
-      result.mOffset = result.mContent->ComputeIndexOf(content) +
+    if (result.mContent) {
+      result.mOffset = result.mContent->ComputeIndexOf_Deprecated(content) +
                        (aDirection == eDirPrevious ? 1 : 0);
+    }
     return result;
   }
 
@@ -9403,7 +9523,7 @@ static void ComputeAndIncludeOutlineArea(nsIFrame* aFrame,
     }
   }
 
-  // Keep this code in sync with GetOutlineInnerRect in nsCSSRendering.cpp.
+  // Keep this code in sync with nsDisplayOutline::GetInnerRect.
   SetOrUpdateRectValuedProperty(aFrame, nsIFrame::OutlineInnerRectProperty(),
                                 innerRect);
   const nscoord offset = outline->mOutlineOffset.ToAppUnits();
@@ -10088,8 +10208,8 @@ nsIFrame::Focusable nsIFrame::IsFocusable(bool aWithMouse) {
     return {};
   }
 
-  const nsStyleUI* ui = StyleUI();
-  if (ui->mInert == StyleInert::Inert) {
+  const nsStyleUI& ui = *StyleUI();
+  if (ui.IsInert()) {
     return {};
   }
 
@@ -10100,8 +10220,8 @@ nsIFrame::Focusable nsIFrame::IsFocusable(bool aWithMouse) {
   }
 
   int32_t tabIndex = -1;
-  if (ui->mUserFocus != StyleUserFocus::Ignore &&
-      ui->mUserFocus != StyleUserFocus::None) {
+  if (ui.UserFocus() != StyleUserFocus::Ignore &&
+      ui.UserFocus() != StyleUserFocus::None) {
     // Pass in default tabindex of -1 for nonfocusable and 0 for focusable
     tabIndex = 0;
   }
@@ -10449,14 +10569,6 @@ void nsIFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
                          nscoord aWidth, nscoord aHeight, bool aMoveFrame) {
   DO_GLOBAL_REFLOW_COUNT("nsBoxToBlockAdaptor");
 
-#ifdef DEBUG_REFLOW
-  nsAdaptorAddIndents();
-  printf("Reflowing: ");
-  mFrame->ListTag(stdout);
-  printf("\n");
-  gIndent2++;
-#endif
-
   nsBoxLayoutMetrics* metrics = BoxMetrics();
   if (MOZ_UNLIKELY(!metrics)) {
     // Can't proceed without BoxMetrics. This should only happen if something
@@ -10629,15 +10741,6 @@ void nsIFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
       reflowInput.SetVResize(true);
     }
 
-#ifdef DEBUG_REFLOW
-    nsAdaptorAddIndents();
-    printf("Size=(%d,%d)\n", reflowInput.ComputedWidth(),
-           reflowInput.ComputedHeight());
-    nsAdaptorAddIndents();
-    nsAdaptorPrintReason(reflowInput);
-    printf("\n");
-#endif
-
     // place the child and reflow
 
     Reflow(aPresContext, aDesiredSize, reflowInput, status);
@@ -10664,23 +10767,8 @@ void nsIFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
     aDesiredSize.SetBlockStartAscent(metrics->mBlockAscent);
   }
 
-#ifdef DEBUG_REFLOW
-  if (aHeight != NS_UNCONSTRAINEDSIZE && aDesiredSize.Height() != aHeight) {
-    nsAdaptorAddIndents();
-    printf("*****got taller!*****\n");
-  }
-  if (aWidth != NS_UNCONSTRAINEDSIZE && aDesiredSize.Width() != aWidth) {
-    nsAdaptorAddIndents();
-    printf("*****got wider!******\n");
-  }
-#endif
-
   metrics->mLastSize.width = aDesiredSize.Width();
   metrics->mLastSize.height = aDesiredSize.Height();
-
-#ifdef DEBUG_REFLOW
-  gIndent2--;
-#endif
 }
 
 nsBoxLayoutMetrics* nsIFrame::BoxMetrics() const {
@@ -11192,9 +11280,7 @@ CompositorHitTestInfo nsIFrame::GetCompositorHitTestInfo(
     // frames, are the event targets for any regions viewport frames may cover.
     return result;
   }
-  const StylePointerEvents pointerEvents =
-      StyleUI()->GetEffectivePointerEvents(this);
-  if (pointerEvents == StylePointerEvents::None) {
+  if (Style()->PointerEvents() == StylePointerEvents::None) {
     return result;
   }
   if (!StyleVisibility()->IsVisible()) {
@@ -11230,6 +11316,10 @@ CompositorHitTestInfo nsIFrame::GetCompositorHitTestInfo(
     if (pluginFrame && pluginFrame->WantsToHandleWheelEventAsDefaultAction()) {
       result += CompositorHitTestFlags::eApzAwareListeners;
     }
+  } else if (IsRangeFrame()) {
+    // Range frames handle touch events directly without having a touch listener
+    // so we need to let APZ know that this area cares about events.
+    result += CompositorHitTestFlags::eApzAwareListeners;
   }
 
   if (aBuilder->IsTouchEventPrefEnabledDoc()) {
@@ -11408,54 +11498,27 @@ nsIFrame::PhysicalAxes nsIFrame::ShouldApplyOverflowClipping(
   return clip ? PhysicalAxes::Both : PhysicalAxes::None;
 }
 
-// Box layout debugging
-#ifdef DEBUG_REFLOW
-int32_t gIndent2 = 0;
+void nsIFrame::AddPaintedPresShell(mozilla::PresShell* aPresShell) {
+  PaintedPresShellList()->AppendElement(do_GetWeakReference(aPresShell));
+}
 
-void nsAdaptorAddIndents() {
-  for (int32_t i = 0; i < gIndent2; i++) {
-    printf(" ");
+void nsIFrame::UpdatePaintCountForPaintedPresShells() {
+  for (nsWeakPtr& item : *PaintedPresShellList()) {
+    if (RefPtr<mozilla::PresShell> presShell = do_QueryReferent(item)) {
+      presShell->IncrementPaintCount();
+    }
   }
 }
 
-void nsAdaptorPrintReason(ReflowInput& aReflowInput) {
-  char* reflowReasonString;
-
-  switch (aReflowInput.reason) {
-    case eReflowReason_Initial:
-      reflowReasonString = "initial";
-      break;
-
-    case eReflowReason_Resize:
-      reflowReasonString = "resize";
-      break;
-    case eReflowReason_Dirty:
-      reflowReasonString = "dirty";
-      break;
-    case eReflowReason_StyleChange:
-      reflowReasonString = "stylechange";
-      break;
-    case eReflowReason_Incremental: {
-      switch (aReflowInput.reflowCommand->Type()) {
-        case eReflowType_StyleChanged:
-          reflowReasonString = "incremental (StyleChanged)";
-          break;
-        case eReflowType_ReflowDirty:
-          reflowReasonString = "incremental (ReflowDirty)";
-          break;
-        default:
-          reflowReasonString = "incremental (Unknown)";
-      }
-    } break;
-    default:
-      reflowReasonString = "unknown";
-      break;
+bool nsIFrame::DidPaintPresShell(mozilla::PresShell* aPresShell) {
+  for (nsWeakPtr& item : *PaintedPresShellList()) {
+    RefPtr<mozilla::PresShell> presShell = do_QueryReferent(item);
+    if (presShell == aPresShell) {
+      return true;
+    }
   }
-
-  printf("%s", reflowReasonString);
+  return false;
 }
-
-#endif
 
 #ifdef DEBUG
 static void GetTagName(nsIFrame* aFrame, nsIContent* aContent, int aResultSize,
@@ -11984,7 +12047,6 @@ DR_FrameTypeInfo* DR_State::GetFrameTypeInfo(char* aFrameName) {
 void DR_State::InitFrameTypeTable() {
   AddFrameTypeInfo(LayoutFrameType::Block, "block", "block");
   AddFrameTypeInfo(LayoutFrameType::Br, "br", "br");
-  AddFrameTypeInfo(LayoutFrameType::Bullet, "bullet", "bullet");
   AddFrameTypeInfo(LayoutFrameType::ColorControl, "color", "colorControl");
   AddFrameTypeInfo(LayoutFrameType::GfxButtonControl, "button",
                    "gfxButtonControl");

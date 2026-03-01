@@ -4,6 +4,7 @@
   <title>Test for scroll per page</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script type="text/javascript" src="/tests/gfx/layers/apz/test/mochitest/apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -16,22 +17,6 @@ addLoadEvent(() => {
 });
 
 async function doTests(aWindow) {
-  const IS_WIN = navigator.platform.includes("Win");
-  // On macOS and Linux, PageUp/PageDown requires native event to resolve
-  // default action of PageDown and PageUp. Although macOS widget has
-  // nsIWidget::AttachNativeKeyEvent(), we cannot use synthesizeKey() for the
-  // following tests.  So, use nsISelectionController.pageMove() instead on
-  // non-Windows platforms.
-  const kUseKeyboardEvent = IS_WIN;
-  let selectionController;
-  if (!kUseKeyboardEvent) {
-    selectionController = SpecialPowers.wrap(aWindow)
-                                       .docShell
-                                       .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-                                       .getInterface(SpecialPowers.Ci.nsISelectionDisplay)
-                                       .QueryInterface(SpecialPowers.Ci.nsISelectionController);
-  }
-
   await SpecialPowers.pushPrefEnv({"set": [["general.smoothScroll", false]]});
   await SimpleTest.promiseFocus(aWindow);
 
@@ -61,22 +46,27 @@ async function doTests(aWindow) {
     });
   }
 
+  function waitToClearOutAnyPotentialScrolls() {
+    return new Promise(resolve => {aWindow.requestAnimationFrame(() => { aWindow.requestAnimationFrame(() => { flushApzRepaints(() => { aWindow.requestAnimationFrame(() => { aWindow.requestAnimationFrame(resolve); } ); }, aWindow); }); }); });
+  }
+
+
   async function doPageDown() {
     let waitForScrolling = waitForScrollEvent();
-    if (kUseKeyboardEvent) {
+    if (!navigator.platform.includes("Mac")) {
       synthesizeKey("KEY_PageDown", {}, aWindow);
     } else {
-      selectionController.pageMove(true, false);
+      synthesizeKey("KEY_PageDown", { altKey: true }, aWindow);
     }
     await waitForScrolling;
   }
 
   async function doPageUp() {
     let waitForScrolling = waitForScrollEvent();
-    if (kUseKeyboardEvent) {
+    if (!navigator.platform.includes("Mac")) {
       synthesizeKey("KEY_PageUp", {}, aWindow);
     } else {
-      selectionController.pageMove(false, false);
+      synthesizeKey("KEY_PageUp", { altKey: true }, aWindow);
     }
     await waitForScrolling;
   }
@@ -97,6 +87,7 @@ async function doTests(aWindow) {
   container = doc.documentElement;
   let editor = doc.getElementById("editor");
   editor.focus();
+  await waitToClearOutAnyPotentialScrolls();
 
   let description = "PageDown in non-scrollable editing host: ";
   let previousScrollTop = container.scrollTop;
@@ -135,6 +126,7 @@ async function doTests(aWindow) {
   editor = doc.getElementById("editor");
   container = editor;
   editor.focus();
+  await waitToClearOutAnyPotentialScrolls();
 
   description = "PageDown in scrollable editing host: ";
   previousScrollTop = container.scrollTop;
@@ -165,6 +157,7 @@ async function doTests(aWindow) {
   editor = doc.getElementById("editor");
   container = doc.documentElement;
   editor.focus();
+  await waitToClearOutAnyPotentialScrolls();
 
   description = "PageDown in too large editing host: ";
   previousScrollTop = container.scrollTop;
@@ -176,6 +169,8 @@ async function doTests(aWindow) {
 
   selection.selectAllChildren(editor);
   selection.collapseToEnd();
+  await waitToClearOutAnyPotentialScrolls();
+
   description = "PageUp in too large editing host: ";
   container.scrollTop = container.scrollHeight;
   previousScrollTop = container.scrollTop;
@@ -188,6 +183,7 @@ async function doTests(aWindow) {
   editor = doc.getElementById("editor");
   container = editor;
   editor.focus();
+  await waitToClearOutAnyPotentialScrolls();
 
   description = "PageDown in scrollable editing host";
   previousScrollTop = container.scrollTop;
@@ -214,6 +210,7 @@ async function doTests(aWindow) {
   container = doc.documentElement;
   editor.focus();
   selection.collapse(editor.firstChild);
+  await waitToClearOutAnyPotentialScrolls();
 
   description = "PageDown in too high non-scrollable editing host";
   previousScrollTop = container.scrollTop;

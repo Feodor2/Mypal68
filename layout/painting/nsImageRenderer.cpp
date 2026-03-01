@@ -50,6 +50,7 @@ nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame, const StyleImage* aImage,
                                  uint32_t aFlags)
     : mForFrame(aForFrame),
       mImage(&aImage->FinalImage()),
+      mImageResolution(aImage->GetResolution()),
       mType(mImage->tag),
       mImageContainer(nullptr),
       mGradientData(nullptr),
@@ -197,14 +198,14 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
     case StyleImage::Tag::Url: {
       bool haveWidth, haveHeight;
       CSSIntSize imageIntSize;
-      nsLayoutUtils::ComputeSizeForDrawing(
-          mImageContainer, imageIntSize, result.mRatio, haveWidth, haveHeight);
+      nsLayoutUtils::ComputeSizeForDrawing(mImageContainer, mImageResolution,
+                                           imageIntSize, result.mRatio,
+                                           haveWidth, haveHeight);
       if (haveWidth) {
-        result.SetWidth(nsPresContext::CSSPixelsToAppUnits(imageIntSize.width));
+        result.SetWidth(CSSPixel::ToAppUnits(imageIntSize.width));
       }
       if (haveHeight) {
-        result.SetHeight(
-            nsPresContext::CSSPixelsToAppUnits(imageIntSize.height));
+        result.SetHeight(CSSPixel::ToAppUnits(imageIntSize.height));
       }
 
       // If we know the aspect ratio and one of the dimensions,
@@ -942,8 +943,7 @@ ImgDrawResult nsImageRenderer::DrawBorderImageComponent(
     if (!RequiresScaling(aFill, aHFill, aVFill, aUnitSize)) {
       ImgDrawResult result = nsLayoutUtils::DrawSingleImage(
           aRenderingContext, aPresContext, subImage, samplingFilter, aFill,
-          aDirtyRect,
-          /* no SVGImageContext */ Nothing(), drawFlags);
+          aDirtyRect, /* no SVGImageContext */ Nothing(), drawFlags);
 
       if (!mImage->IsComplete()) {
         result &= ImgDrawResult::SUCCESS_NOT_COMPLETE;
@@ -1012,7 +1012,7 @@ ImgDrawResult nsImageRenderer::DrawShapeImage(nsPresContext* aPresContext,
     // closest pixel in the image.
     return nsLayoutUtils::DrawSingleImage(
         aRenderingContext, aPresContext, mImageContainer, SamplingFilter::POINT,
-        dest, dest, Nothing(), drawFlags, nullptr, nullptr);
+        dest, dest, Nothing(), drawFlags);
   }
 
   if (mImage->IsGradient()) {

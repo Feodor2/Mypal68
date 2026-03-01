@@ -236,17 +236,21 @@ bool SVGImageFrame::GetIntrinsicImageDimensions(
     return false;
   }
 
+  ImageResolution resolution = mImageContainer->GetResolution();
+
   int32_t width, height;
   if (NS_FAILED(mImageContainer->GetWidth(&width))) {
     aSize.width = -1;
   } else {
     aSize.width = width;
+    resolution.ApplyXTo(aSize.width);
   }
 
   if (NS_FAILED(mImageContainer->GetHeight(&height))) {
     aSize.height = -1;
   } else {
     aSize.height = height;
+    resolution.ApplyYTo(aSize.height);
   }
 
   Maybe<AspectRatio> asp = mImageContainer->GetIntrinsicRatio();
@@ -267,6 +271,7 @@ bool SVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
         nativeWidth == 0 || nativeHeight == 0) {
       return false;
     }
+    mImageContainer->GetResolution().ApplyTo(nativeWidth, nativeHeight);
     imageTransform = GetRasterImageTransform(nativeWidth, nativeHeight) *
                      ToMatrix(aTransform);
 
@@ -448,6 +453,7 @@ nsIFrame* SVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint) {
           nativeWidth == 0 || nativeHeight == 0) {
         return nullptr;
       }
+      mImageContainer->GetResolution().ApplyTo(nativeWidth, nativeHeight);
       Matrix viewBoxTM = SVGContentUtils::GetViewBoxTransform(
           rect.width, rect.height, 0, 0, nativeWidth, nativeHeight,
           element->mPreserveAspectRatio);
@@ -539,7 +545,7 @@ void SVGImageFrame::ReflowCallbackCanceled() { mReflowCallbackPosted = false; }
 uint16_t SVGImageFrame::GetHitTestFlags() {
   uint16_t flags = 0;
 
-  switch (StyleUI()->mPointerEvents) {
+  switch (Style()->PointerEvents()) {
     case StylePointerEvents::None:
       break;
     case StylePointerEvents::Visiblepainted:

@@ -71,11 +71,17 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
 #endif
 
   /**
-   * Gets the image request to be loaded from the current style.
+   * Gets the image to be loaded from the current style. May be null if themed,
+   * or if not an url image.
    *
-   * May be null if themed.
+   * TODO(emilio): Maybe support list-style-image: linear-gradient() etc?
    */
-  imgRequestProxy* GetRequestFromStyle();
+  const mozilla::StyleImage* GetImageFromStyle(const ComputedStyle&) const;
+  const mozilla::StyleImage* GetImageFromStyle() const {
+    return GetImageFromStyle(*Style());
+  }
+
+  mozilla::ImageResolution GetImageResolution() const;
 
   /**
    * Update mUseSrcAttr from appropriate content attributes or from

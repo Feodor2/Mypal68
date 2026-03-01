@@ -19,10 +19,17 @@
 #include "mozilla/gfx/Types.h"
 #include "nsCoord.h"
 #include "nsColor.h"
+#include "nsStubMutationObserver.h"
 #include "nsStyleStruct.h"
 #include "mozilla/WritingModes.h"
 
+// XXX Avoid including this here by moving function bodies to the cpp file
+#include "mozilla/dom/Element.h"
+
 namespace mozilla {
+enum class FlushType : uint8_t;
+enum class PseudoStyleType : uint8_t;
+
 namespace dom {
 class DocGroup;
 class Element;
@@ -50,6 +57,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   using StyleGeometryBox = mozilla::StyleGeometryBox;
   using Element = mozilla::dom::Element;
   using Document = mozilla::dom::Document;
+  using PseudoStyleType = mozilla::PseudoStyleType;
   using LengthPercentage = mozilla::LengthPercentage;
   using LengthPercentageOrAuto = mozilla::LengthPercentageOrAuto;
   using ComputedStyle = mozilla::ComputedStyle;
@@ -69,29 +77,35 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   void IndexedGetter(uint32_t aIndex, bool& aFound,
                      nsACString& aPropName) final;
 
-  enum StyleType {
-    eDefaultOnly,  // Only includes UA and user sheets
-    eAll           // Includes all stylesheets
+  enum class StyleType : uint8_t {
+    DefaultOnly,  // Only includes UA and user sheets
+    All           // Includes all stylesheets
   };
 
-  nsComputedDOMStyle(Element* aElement, const nsAString& aPseudoElt,
-                     Document* aDocument, StyleType aStyleType);
+  // In some cases, for legacy reasons, we forcefully return an empty style.
+  enum class AlwaysReturnEmptyStyle : bool { No, Yes };
+
+  nsComputedDOMStyle(Element*, PseudoStyleType, Document*, StyleType,
+                     AlwaysReturnEmptyStyle = AlwaysReturnEmptyStyle::No);
 
   nsINode* GetAssociatedNode() const override { return mElement; }
   nsINode* GetParentObject() const override { return mElement; }
 
   static already_AddRefed<ComputedStyle> GetComputedStyle(
-      Element* aElement, nsAtom* aPseudo, StyleType aStyleType = eAll);
+      Element* aElement, PseudoStyleType = PseudoStyleType::NotPseudo,
+      StyleType = StyleType::All);
 
   static already_AddRefed<ComputedStyle> GetComputedStyleNoFlush(
-      const Element* aElement, nsAtom* aPseudo, StyleType aStyleType = eAll) {
+      const Element* aElement,
+      PseudoStyleType aPseudo = PseudoStyleType::NotPseudo,
+      StyleType aStyleType = StyleType::All) {
     return DoGetComputedStyleNoFlush(
         aElement, aPseudo, nsContentUtils::GetPresShellForContent(aElement),
         aStyleType);
   }
 
   static already_AddRefed<ComputedStyle> GetUnanimatedComputedStyleNoFlush(
-      Element* aElement, nsAtom* aPseudo);
+      Element*, PseudoStyleType = PseudoStyleType::NotPseudo);
 
   // Helper for nsDOMWindowUtils::GetVisitedDependentComputedStyle
   void SetExposeVisitedStyle(bool aExpose) {
@@ -150,8 +164,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   void SetFrameComputedStyle(ComputedStyle* aStyle, uint64_t aGeneration);
 
   static already_AddRefed<ComputedStyle> DoGetComputedStyleNoFlush(
-      const Element* aElement, nsAtom* aPseudo, mozilla::PresShell* aPresShell,
-      StyleType aStyleType);
+      const Element*, PseudoStyleType, mozilla::PresShell*, StyleType);
 
 #define STYLE_STRUCT(name_)                \
   const nsStyle##name_* Style##name_() {   \
@@ -332,7 +345,6 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
    * processed.
    */
   RefPtr<ComputedStyle> mComputedStyle;
-  RefPtr<nsAtom> mPseudo;
 
   /*
    * While computing style data, the primary frame for mContent --- named
@@ -352,10 +364,14 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
    */
   mozilla::PresShell* mPresShell;
 
-  /*
-   * The kind of styles we should be returning.
-   */
+  PseudoStyleType mPseudo;
+
+  /* The kind of styles we should be returning. */
   StyleType mStyleType;
+
+  /* Whether for legacy reasons we return an empty style (when an unknown
+   * pseudo-element is specified) */
+  AlwaysReturnEmptyStyle mAlwaysReturnEmpty;
 
   /**
    * The nsComputedDOMStyle generation at the time we last resolved a style
@@ -366,13 +382,13 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   uint32_t mPresShellId = 0;
 
-  bool mExposeVisitedStyle;
+  bool mExposeVisitedStyle = false;
 
   /**
    * Whether we resolved a ComputedStyle last time we called
    * UpdateCurrentStyleSources.  Initially false.
    */
-  bool mResolvedComputedStyle;
+  bool mResolvedComputedStyle = false;
 
 #ifdef DEBUG
   bool mFlushedPendingReflows = false;
@@ -382,8 +398,8 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 };
 
 already_AddRefed<nsComputedDOMStyle> NS_NewComputedDOMStyle(
-    mozilla::dom::Element* aElement, const nsAString& aPseudoElt,
-    mozilla::dom::Document* aDocument,
-    nsComputedDOMStyle::StyleType aStyleType = nsComputedDOMStyle::eAll);
+    mozilla::dom::Element*, const nsAString& aPseudoElt,
+    mozilla::dom::Document*, nsComputedDOMStyle::StyleType,
+    mozilla::ErrorResult&);
 
 #endif /* nsComputedDOMStyle_h__ */

@@ -4,7 +4,6 @@
 
 /* the features that media queries can test */
 
-#include "nsMediaFeatures.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
@@ -14,6 +13,7 @@
 #include "nsDeviceContext.h"
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
+#include "nsIPrintSettings.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIWidget.h"
@@ -25,11 +25,12 @@
 #include "mozilla/GeckoBindings.h"
 #include "PreferenceSheet.h"
 #include "nsGlobalWindowOuter.h"
+#ifdef XP_WIN
+#  include "mozilla/WindowsVersion.h"
+#endif
 
 using namespace mozilla;
 using mozilla::dom::Document;
-
-static nsTArray<const nsStaticAtom*>* sSystemMetrics = nullptr;
 
 // A helper for four features below
 static nsSize GetSize(const Document* aDocument) {
@@ -111,14 +112,38 @@ void Gecko_MediaFeatures_GetDeviceSize(const Document* aDocument,
   *aHeight = size.height;
 }
 
+uint32_t Gecko_MediaFeatures_GetMonochromeBitsPerPixel(
+    const Document* aDocument) {
+  // The default bits per pixel for a monochrome device. We could propagate this
+  // further to nsIPrintSettings, but Gecko doesn't actually know this value
+  // from the hardware, so it seems silly to do so.
+  static constexpr uint32_t kDefaultMonochromeBpp = 8;
+
+  nsPresContext* pc = aDocument->GetPresContext();
+  if (!pc) {
+    return 0;
+  }
+  nsIPrintSettings* ps = pc->GetPrintSettings();
+  if (!ps) {
+    return 0;
+  }
+  bool color = true;
+  ps->GetPrintInColor(&color);
+  return color ? 0 : kDefaultMonochromeBpp;
+}
+
 uint32_t Gecko_MediaFeatures_GetColorDepth(const Document* aDocument) {
+  if (Gecko_MediaFeatures_GetMonochromeBitsPerPixel(aDocument) != 0) {
+    // If we're a monochrome device, then the color depth is zero.
+    return 0;
+  }
+
   // Use depth of 24 when resisting fingerprinting, or when we're not being
   // rendered.
   uint32_t depth = 24;
 
   if (!nsContentUtils::ShouldResistFingerprinting(aDocument)) {
     if (nsDeviceContext* dx = GetDeviceContextFor(aDocument)) {
-      // FIXME: On a monochrome device, return 0!
       dx->GetDepth(depth);
     }
   }
@@ -188,46 +213,40 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
   return static_cast<StyleDisplayMode>(docShell->GetDisplayMode());
 }
 
-bool Gecko_MediaFeatures_HasSystemMetric(const Document* aDocument,
-                                         nsAtom* aMetric,
-                                         bool aIsAccessibleFromContent) {
-  if (aIsAccessibleFromContent &&
-      nsContentUtils::ShouldResistFingerprinting(aDocument)) {
-    return false;
-  }
-
-  nsMediaFeatures::InitSystemMetrics();
-  return sSystemMetrics->IndexOf(aMetric) != sSystemMetrics->NoIndex;
-}
-
-nsAtom* Gecko_MediaFeatures_GetOperatingSystemVersion(
-    const Document* aDocument) {
-  using OperatingSystemVersion = LookAndFeel::OperatingSystemVersion;
-
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
-    return nullptr;
-  }
-
-  int32_t metricResult;
-  if (NS_FAILED(LookAndFeel::GetInt(
-          LookAndFeel::IntID::OperatingSystemVersionIdentifier,
-          &metricResult))) {
-    return nullptr;
-  }
-
-  switch (OperatingSystemVersion(metricResult)) {
-    case OperatingSystemVersion::WindowsXP:
-      return nsGkAtoms::windows_xp;
-    case OperatingSystemVersion::WindowsVista:
-      return nsGkAtoms::windows_vista;
-    case OperatingSystemVersion::Windows7:
-      return nsGkAtoms::windows_win7;
-    case OperatingSystemVersion::Windows8:
-      return nsGkAtoms::windows_win8;
-    case OperatingSystemVersion::Windows10:
-      return nsGkAtoms::windows_win10;
+bool Gecko_MediaFeatures_MatchesPlatform(StylePlatform aPlatform) {
+  switch (aPlatform) {
+#if defined(XP_WIN)
+    case StylePlatform::WindowsXP:
+      return aPlatform == StylePlatform::WindowsXP;
+    case StylePlatform::WindowsVista:
+    case StylePlatform::WindowsWin10:
+    case StylePlatform::WindowsWin7:
+    case StylePlatform::WindowsWin8: {
+      if (IsWin10OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin10;
+      }
+      if (IsWin8OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin8;
+      }
+      if (IsWin7OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin7;
+      }
+      return aPlatform == StylePlatform::WindowsVista;
+    }
+#elif defined(ANDROID)
+    case StylePlatform::Android:
+      return true;
+#elif defined(MOZ_WIDGET_GTK)
+    case StylePlatform::Linux:
+      return true;
+#elif defined(XP_MACOSX)
+    case StylePlatform::Macos:
+      return true;
+#else
+#  error "Unknown platform?"
+#endif
     default:
-      return nullptr;
+      return false;
   }
 }
 
@@ -299,166 +318,3 @@ PointerCapabilities Gecko_MediaFeatures_AllPointerCapabilities(
   return GetPointerCapabilities(aDocument,
                                 LookAndFeel::IntID::AllPointerCapabilities);
 }
-
-/* static */
-void nsMediaFeatures::InitSystemMetrics() {
-  if (sSystemMetrics) return;
-
-  MOZ_ASSERT(NS_IsMainThread());
-
-  sSystemMetrics = new nsTArray<const nsStaticAtom*>;
-
-  /***************************************************************************
-   * ANY METRICS ADDED HERE SHOULD ALSO BE ADDED AS MEDIA QUERIES BELOW      *
-   ***************************************************************************/
-
-  int32_t metricResult =
-      LookAndFeel::GetInt(LookAndFeel::IntID::ScrollArrowStyle);
-  if (metricResult & LookAndFeel::eScrollArrow_StartBackward) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_scrollbar_start_backward);
-  }
-  if (metricResult & LookAndFeel::eScrollArrow_StartForward) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_scrollbar_start_forward);
-  }
-  if (metricResult & LookAndFeel::eScrollArrow_EndBackward) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_scrollbar_end_backward);
-  }
-  if (metricResult & LookAndFeel::eScrollArrow_EndForward) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_scrollbar_end_forward);
-  }
-
-  metricResult = LookAndFeel::GetInt(LookAndFeel::IntID::ScrollSliderStyle);
-  if (metricResult != LookAndFeel::eScrollThumbStyle_Normal) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_scrollbar_thumb_proportional);
-  }
-
-  metricResult = LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars);
-  if (metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_overlay_scrollbars);
-  }
-
-  metricResult = LookAndFeel::GetInt(LookAndFeel::IntID::MenuBarDrag);
-  if (metricResult) {
-    sSystemMetrics->AppendElement((nsStaticAtom*)nsGkAtoms::_moz_menubar_drag);
-  }
-
-  nsresult rv = LookAndFeel::GetInt(LookAndFeel::IntID::WindowsDefaultTheme,
-                                    &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_windows_default_theme);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::MacGraphiteTheme, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_mac_graphite_theme);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::MacYosemiteTheme, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_mac_yosemite_theme);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::WindowsAccentColorInTitlebar,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_windows_accent_color_in_titlebar);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::DWMCompositor, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_windows_compositor);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::WindowsGlass, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement((nsStaticAtom*)nsGkAtoms::_moz_windows_glass);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::WindowsClassic, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_windows_classic);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::SwipeAnimationEnabled,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_swipe_animation_enabled);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDAvailable, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_available);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDHideTitlebarByDefault,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_hide_titlebar_by_default);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDTransparentBackground,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_transparent_background);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDMinimizeButton,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_minimize_button);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDMaximizeButton,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_maximize_button);
-  }
-
-  rv =
-      LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDCloseButton, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_close_button);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::GTKCSDReversedPlacement,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_gtk_csd_reversed_placement);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::SystemUsesDarkTheme,
-                           &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_system_dark_theme);
-  }
-}
-
-/* static */
-void nsMediaFeatures::FreeSystemMetrics() {
-  delete sSystemMetrics;
-  sSystemMetrics = nullptr;
-}
-
-/* static */
-void nsMediaFeatures::Shutdown() { FreeSystemMetrics(); }

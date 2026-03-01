@@ -58,6 +58,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/PathHelpers.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZPublicUtils.h"  // for apz::CalculatePendingDisplayPort
 #include "mozilla/layers/CompositorBridgeChild.h"
@@ -79,6 +80,7 @@
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/SVGIntegrationUtils.h"
@@ -116,6 +118,7 @@
 #include "nsGkAtoms.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsIContent.h"
+#include "nsIContentInlines.h"
 #include "nsIContentViewer.h"
 #include "nsIDocShell.h"
 #include "nsIFrameInlines.h"
@@ -185,7 +188,8 @@ typedef nsStyleTransformMatrix::TransformReferenceBox TransformReferenceBox;
 static ViewID sScrollIdCounter = ScrollableLayerGuid::START_SCROLL_ID;
 
 typedef nsTHashMap<nsUint64HashKey, nsIContent*> ContentMap;
-static ContentMap* sContentMap = nullptr;
+static StaticAutoPtr<ContentMap> sContentMap;
+
 static ContentMap& GetContentMap() {
   if (!sContentMap) {
     sContentMap = new ContentMap();
@@ -882,6 +886,40 @@ nsIFrame* nsLayoutUtils::GetMarkerFrame(const nsIContent* aContent) {
   return pseudo ? pseudo->GetPrimaryFrame() : nullptr;
 }
 
+#ifdef ACCESSIBILITY
+void nsLayoutUtils::GetMarkerSpokenText(const nsIContent* aContent,
+                                        nsAString& aText) {
+  MOZ_ASSERT(aContent && aContent->IsGeneratedContentContainerForMarker());
+
+  aText.Truncate();
+
+  nsIFrame* frame = aContent->GetPrimaryFrame();
+  if (!frame) {
+    return;
+  }
+
+  if (frame->StyleContent()->ContentCount() > 0) {
+    for (nsIFrame* child : frame->PrincipalChildList()) {
+      nsIFrame::RenderedText text = child->GetRenderedText();
+      aText += text.mString;
+    }
+    return;
+  }
+
+  if (!frame->StyleList()->mListStyleImage.IsNone()) {
+    // ::marker is an image, so use default bullet character.
+    static const char16_t kDiscMarkerString[] = {0x2022, ' ', 0};
+    aText.AssignLiteral(kDiscMarkerString);
+    return;
+  }
+
+  frame->PresContext()
+      ->FrameConstructor()
+      ->CounterManager()
+      ->GetSpokenCounterText(frame, aText);
+}
+#endif
+
 // static
 nsIFrame* nsLayoutUtils::GetClosestFrameOfType(nsIFrame* aFrame,
                                                LayoutFrameType aFrameType,
@@ -1085,19 +1123,20 @@ int32_t nsLayoutUtils::DoCompareTreePosition(
     return 0;
   }
 
-  int32_t index1 = parent->ComputeIndexOf(content1Ancestor);
-  int32_t index2 = parent->ComputeIndexOf(content2Ancestor);
+  const Maybe<uint32_t> index1 = parent->ComputeIndexOf(content1Ancestor);
+  const Maybe<uint32_t> index2 = parent->ComputeIndexOf(content2Ancestor);
 
   // None of the nodes are anonymous, just do a regular comparison.
-  if (index1 >= 0 && index2 >= 0) {
-    return index1 - index2;
+  if (index1.isSome() && index2.isSome()) {
+    return static_cast<int32_t>(static_cast<int64_t>(*index1) - *index2);
   }
 
   // Otherwise handle pseudo-element and anonymous content ordering.
   //
   // ::marker -> ::before -> anon siblings -> regular siblings -> ::after
-  auto PseudoIndex = [](const nsINode* aNode, int32_t aNodeIndex) -> int32_t {
-    if (aNodeIndex >= 0) {
+  auto PseudoIndex = [](const nsINode* aNode,
+                        const Maybe<uint32_t>& aNodeIndex) -> int32_t {
+    if (aNodeIndex.isSome()) {
       return 1;  // Not a pseudo.
     }
     if (aNode->IsContent()) {
@@ -1371,25 +1410,21 @@ ScrollableLayerGuid::ViewID nsLayoutUtils::ScrollIdForRootScrollFrame(
 
 // static
 nsIScrollableFrame* nsLayoutUtils::GetNearestScrollableFrameForDirection(
-    nsIFrame* aFrame, ScrollableDirection aDirection) {
+    nsIFrame* aFrame, ScrollDirections aDirections) {
   NS_ASSERTION(
       aFrame, "GetNearestScrollableFrameForDirection expects a non-null frame");
   for (nsIFrame* f = aFrame; f; f = nsLayoutUtils::GetCrossDocParentFrame(f)) {
     nsIScrollableFrame* scrollableFrame = do_QueryFrame(f);
     if (scrollableFrame) {
-      ScrollStyles ss = scrollableFrame->GetScrollStyles();
-      uint32_t directions = scrollableFrame->GetAvailableScrollingDirections();
-      if (aDirection == ScrollableDirection::Vertical ||
-          aDirection == ScrollableDirection::Either) {
-        if (ss.mVertical != StyleOverflow::Hidden &&
-            (directions & nsIScrollableFrame::VERTICAL)) {
+      uint32_t directions =
+          scrollableFrame->GetAvailableScrollingDirectionsForUserInputEvents();
+      if (aDirections.contains(ScrollDirection::eVertical)) {
+        if (directions & nsIScrollableFrame::VERTICAL) {
           return scrollableFrame;
         }
       }
-      if (aDirection == ScrollableDirection::Horizontal ||
-          aDirection == ScrollableDirection::Either) {
-        if (ss.mHorizontal != StyleOverflow::Hidden &&
-            (directions & nsIScrollableFrame::HORIZONTAL)) {
+      if (aDirections.contains(ScrollDirection::eHorizontal)) {
+        if (directions & nsIScrollableFrame::HORIZONTAL) {
           return scrollableFrame;
         }
       }
@@ -2125,6 +2160,17 @@ const nsIFrame* nsLayoutUtils::FindNearestCommonAncestorFrameWithinBlock(
   return nullptr;
 }
 
+bool nsLayoutUtils::AuthorSpecifiedBorderBackgroundDisablesTheming(
+    StyleAppearance aAppearance) {
+  return aAppearance == StyleAppearance::NumberInput ||
+         aAppearance == StyleAppearance::Button ||
+         aAppearance == StyleAppearance::Textfield ||
+         aAppearance == StyleAppearance::Textarea ||
+         aAppearance == StyleAppearance::Listbox ||
+         aAppearance == StyleAppearance::Menulist ||
+         aAppearance == StyleAppearance::MenulistButton;
+}
+
 nsLayoutUtils::TransformResult nsLayoutUtils::TransformPoints(
     nsIFrame* aFromFrame, nsIFrame* aToFrame, uint32_t aPointCount,
     CSSPoint* aPoints) {
@@ -2677,6 +2723,7 @@ FrameMetrics nsLayoutUtils::CalculateBasicFrameMetrics(
   float resolution = 1.0f;
   bool isRcdRsf = aScrollFrame->IsRootScrollFrameOfDocument() &&
                   presContext->IsRootContentDocument();
+  metrics.SetIsRootContent(isRcdRsf);
   if (isRcdRsf) {
     // Only the root content document's root scrollable frame should pick up
     // the presShell's resolution. All the other frames are 1.0.
@@ -4035,14 +4082,18 @@ already_AddRefed<nsFontMetrics> nsLayoutUtils::GetFontMetricsForComputedStyle(
   // which would be lossy.  Fortunately, in such cases, aInflation is
   // guaranteed to be 1.0f.
   if (aInflation == 1.0f && aVariantWidth == NS_FONT_VARIANT_WIDTH_NORMAL) {
-    return aPresContext->DeviceContext()->GetMetricsFor(styleFont->mFont,
-                                                        params);
+    return aPresContext->GetMetricsFor(styleFont->mFont, params);
   }
 
   nsFont font = styleFont->mFont;
-  font.size = NSToCoordRound(font.size * aInflation);
+  MOZ_ASSERT(!IsNaN(float(font.size.ToCSSPixels())),
+             "Style font should never be NaN");
+  font.size.ScaleBy(aInflation);
+  if (MOZ_UNLIKELY(IsNaN(float(font.size.ToCSSPixels())))) {
+    font.size = {0};
+  }
   font.variantWidth = aVariantWidth;
-  return aPresContext->DeviceContext()->GetMetricsFor(font, params);
+  return aPresContext->GetMetricsFor(font, params);
 }
 
 nsIFrame* nsLayoutUtils::FindChildContainingDescendant(
@@ -5425,7 +5476,10 @@ gfxFloat nsLayoutUtils::GetSnappedBaselineY(nsIFrame* aFrame,
   gfxFloat appUnitsPerDevUnit = aFrame->PresContext()->AppUnitsPerDevPixel();
   gfxFloat baseline = gfxFloat(aY) + aAscent;
   gfxRect putativeRect(0, baseline / appUnitsPerDevUnit, 1, 1);
-  if (!aContext->UserToDevicePixelSnapped(putativeRect, true)) return baseline;
+  if (!aContext->UserToDevicePixelSnapped(
+          putativeRect, gfxContext::SnapOption::IgnoreScale)) {
+    return baseline;
+  }
   return aContext->DeviceToUser(putativeRect.TopLeft()).y * appUnitsPerDevUnit;
 }
 
@@ -5435,7 +5489,8 @@ gfxFloat nsLayoutUtils::GetSnappedBaselineX(nsIFrame* aFrame,
   gfxFloat appUnitsPerDevUnit = aFrame->PresContext()->AppUnitsPerDevPixel();
   gfxFloat baseline = gfxFloat(aX) + aAscent;
   gfxRect putativeRect(baseline / appUnitsPerDevUnit, 0, 1, 1);
-  if (!aContext->UserToDevicePixelSnapped(putativeRect, true)) {
+  if (!aContext->UserToDevicePixelSnapped(
+          putativeRect, gfxContext::SnapOption::IgnoreScale)) {
     return baseline;
   }
   return aContext->DeviceToUser(putativeRect.TopLeft()).x * appUnitsPerDevUnit;
@@ -6079,8 +6134,11 @@ static SnappedImageDrawingParameters ComputeSnappedImageDrawingParameters(
   // we have something that's not translation+scale, or if the scale flips in
   // the X or Y direction, because snapped image drawing can't handle that yet.
   if (!currentMatrix.HasNonAxisAlignedTransform() && currentMatrix._11 > 0.0 &&
-      currentMatrix._22 > 0.0 && aCtx->UserToDevicePixelSnapped(fill, true) &&
-      aCtx->UserToDevicePixelSnapped(dest, true)) {
+      currentMatrix._22 > 0.0 &&
+      aCtx->UserToDevicePixelSnapped(fill,
+                                     gfxContext::SnapOption::IgnoreScale) &&
+      aCtx->UserToDevicePixelSnapped(dest,
+                                     gfxContext::SnapOption::IgnoreScale)) {
     // We snapped. On this code path, |fill| and |dest| take into account
     // currentMatrix's transform.
     didSnap = true;
@@ -6309,6 +6367,8 @@ ImgDrawResult nsLayoutUtils::DrawSingleUnscaledImage(
   CSSIntSize imageSize;
   aImage->GetWidth(&imageSize.width);
   aImage->GetHeight(&imageSize.height);
+  aImage->GetResolution().ApplyTo(imageSize.width, imageSize.height);
+
   if (imageSize.width < 1 || imageSize.height < 1) {
     NS_WARNING("Image width or height is non-positive");
     return ImgDrawResult::TEMPORARY_ERROR;
@@ -6336,13 +6396,15 @@ ImgDrawResult nsLayoutUtils::DrawSingleUnscaledImage(
 /* static */
 ImgDrawResult nsLayoutUtils::DrawSingleImage(
     gfxContext& aContext, nsPresContext* aPresContext, imgIContainer* aImage,
-    const SamplingFilter aSamplingFilter, const nsRect& aDest,
-    const nsRect& aDirty, const Maybe<SVGImageContext>& aSVGContext,
-    uint32_t aImageFlags, const nsPoint* aAnchorPoint,
-    const nsRect* aSourceArea) {
+    SamplingFilter aSamplingFilter, const nsRect& aDest, const nsRect& aDirty,
+    const Maybe<SVGImageContext>& aSVGContext, uint32_t aImageFlags,
+    const nsPoint* aAnchorPoint, const nsRect* aSourceArea) {
   nscoord appUnitsPerCSSPixel = AppUnitsPerCSSPixel();
-  CSSIntSize pixelImageSize(
-      ComputeSizeForDrawingWithFallback(aImage, aDest.Size()));
+  // NOTE(emilio): We can hardcode resolution to 1 here, since we're interested
+  // in the actual image pixels, for snapping purposes, not on the adjusted
+  // size.
+  CSSIntSize pixelImageSize(ComputeSizeForDrawingWithFallback(
+      aImage, ImageResolution(), aDest.Size()));
   if (pixelImageSize.width < 1 || pixelImageSize.height < 1) {
     NS_ASSERTION(pixelImageSize.width >= 0 && pixelImageSize.height >= 0,
                  "Image width or height is negative");
@@ -6383,7 +6445,8 @@ ImgDrawResult nsLayoutUtils::DrawSingleImage(
 
 /* static */
 void nsLayoutUtils::ComputeSizeForDrawing(
-    imgIContainer* aImage, /* outparam */ CSSIntSize& aImageSize,
+    imgIContainer* aImage, const ImageResolution& aResolution,
+    /* outparam */ CSSIntSize& aImageSize,
     /* outparam */ AspectRatio& aIntrinsicRatio,
     /* outparam */ bool& aGotWidth,
     /* outparam */ bool& aGotHeight) {
@@ -6391,6 +6454,13 @@ void nsLayoutUtils::ComputeSizeForDrawing(
   aGotHeight = NS_SUCCEEDED(aImage->GetHeight(&aImageSize.height));
   Maybe<AspectRatio> intrinsicRatio = aImage->GetIntrinsicRatio();
   aIntrinsicRatio = intrinsicRatio.valueOr(AspectRatio());
+
+  if (aGotWidth) {
+    aResolution.ApplyXTo(aImageSize.width);
+  }
+  if (aGotHeight) {
+    aResolution.ApplyYTo(aImageSize.height);
+  }
 
   if (!(aGotWidth && aGotHeight) && intrinsicRatio.isNothing()) {
     // We hit an error (say, because the image failed to load or couldn't be
@@ -6402,11 +6472,13 @@ void nsLayoutUtils::ComputeSizeForDrawing(
 
 /* static */
 CSSIntSize nsLayoutUtils::ComputeSizeForDrawingWithFallback(
-    imgIContainer* aImage, const nsSize& aFallbackSize) {
+    imgIContainer* aImage, const ImageResolution& aResolution,
+    const nsSize& aFallbackSize) {
   CSSIntSize imageSize;
   AspectRatio imageRatio;
   bool gotHeight, gotWidth;
-  ComputeSizeForDrawing(aImage, imageSize, imageRatio, gotWidth, gotHeight);
+  ComputeSizeForDrawing(aImage, aResolution, imageSize, imageRatio, gotWidth,
+                        gotHeight);
 
   // If we didn't get both width and height, try to compute them using the
   // intrinsic ratio of the image.
@@ -6793,7 +6865,8 @@ nsIFrame* nsLayoutUtils::GetReferenceFrame(nsIFrame* aFrame) {
       result |= gfx::ShapedTextFlags::TEXT_OPTIMIZE_SPEED;
       break;
     case StyleTextRendering::Auto:
-      if (aStyleFont->mFont.size < aPresContext->GetAutoQualityMinFontSize()) {
+      if (aStyleFont->mFont.size.ToCSSPixels() <
+          aPresContext->GetAutoQualityMinFontSize()) {
         result |= gfx::ShapedTextFlags::TEXT_OPTIMIZE_SPEED;
       }
       break;
@@ -7204,7 +7277,7 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
 Element* nsLayoutUtils::GetEditableRootContentByContentEditable(
     Document* aDocument) {
   // If the document is in designMode we should return nullptr.
-  if (!aDocument || aDocument->HasFlag(NODE_IS_EDITABLE)) {
+  if (!aDocument || aDocument->IsInDesignMode()) {
     return nullptr;
   }
 
@@ -7480,7 +7553,6 @@ void nsLayoutUtils::Initialize() {
 /* static */
 void nsLayoutUtils::Shutdown() {
   if (sContentMap) {
-    delete sContentMap;
     sContentMap = nullptr;
   }
 
@@ -7659,7 +7731,7 @@ float nsLayoutUtils::FontSizeInflationInner(const nsIFrame* aFrame,
   // Note that line heights should be inflated by the same ratio as the
   // font size of the same text; thus we operate only on the font size
   // even when we're scaling a line height.
-  nscoord styleFontSize = aFrame->StyleFont()->mFont.size;
+  nscoord styleFontSize = aFrame->StyleFont()->mFont.size.ToAppUnits();
   if (styleFontSize <= 0) {
     // Never scale zero font size.
     return 1.0;
@@ -7887,6 +7959,21 @@ bool nsLayoutUtils::GetContentViewerSize(
 
   nsIntRect bounds;
   cv->GetBounds(bounds);
+
+#if defined(MOZ_WIDGET_ANDROID)
+  if (aSubtractDynamicToolbar == SubtractDynamicToolbar::Yes &&
+      aPresContext->HasDynamicToolbar() && !bounds.IsEmpty()) {
+    MOZ_ASSERT(aPresContext->IsRootContentDocument());
+    bounds.height -= aPresContext->GetDynamicToolbarMaxHeight();
+    // Collapse the size in the case the dynamic toolbar max height is greater
+    // than the content bound height so that hopefully embedders of GeckoView
+    // may notice they set wrong dynamic toolbar max height.
+    if (bounds.height < 0) {
+      bounds.height = 0;
+    }
+  }
+#endif
+
   aOutSize = LayoutDeviceIntRect::FromUnknownRect(bounds).Size();
   return true;
 }
@@ -8293,62 +8380,6 @@ bool nsLayoutUtils::HasDocumentLevelListenersForApzAwareEvents(
   return false;
 }
 
-static void MaybeReflowForInflationScreenSizeChange(
-    nsPresContext* aPresContext) {
-  if (aPresContext) {
-    PresShell* presShell = aPresContext->GetPresShell();
-    const bool fontInflationWasEnabled = presShell->FontSizeInflationEnabled();
-    presShell->RecomputeFontSizeInflationEnabled();
-    bool changed = false;
-    if (presShell->FontSizeInflationEnabled() &&
-        presShell->FontSizeInflationMinTwips() != 0) {
-      aPresContext->ScreenSizeInchesForFontInflation(&changed);
-    }
-
-    changed = changed ||
-              fontInflationWasEnabled != presShell->FontSizeInflationEnabled();
-    if (changed) {
-      nsCOMPtr<nsIDocShell> docShell = aPresContext->GetDocShell();
-      if (docShell) {
-        nsCOMPtr<nsIContentViewer> cv;
-        docShell->GetContentViewer(getter_AddRefs(cv));
-        if (cv) {
-          nsTArray<nsCOMPtr<nsIContentViewer>> array;
-          cv->AppendSubtree(array);
-          for (uint32_t i = 0, iEnd = array.Length(); i < iEnd; ++i) {
-            nsCOMPtr<nsIContentViewer> cv = array[i];
-            if (RefPtr<PresShell> descendantPresShell = cv->GetPresShell()) {
-              nsIFrame* rootFrame = descendantPresShell->GetRootFrame();
-              if (rootFrame) {
-                descendantPresShell->FrameNeedsReflow(
-                    rootFrame, IntrinsicDirty::StyleChange, NS_FRAME_IS_DIRTY);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/* static */
-void nsLayoutUtils::SetVisualViewportSize(PresShell* aPresShell,
-                                          CSSSize aSize) {
-  MOZ_ASSERT(aSize.width >= 0.0 && aSize.height >= 0.0);
-
-  aPresShell->SetVisualViewportSize(
-      nsPresContext::CSSPixelsToAppUnits(aSize.width),
-      nsPresContext::CSSPixelsToAppUnits(aSize.height));
-
-  // When the "font.size.inflation.minTwips" preference is set, the
-  // layout depends on the size of the screen.  Since when the size
-  // of the screen changes, the scroll position clamping scroll port
-  // size also changes, we hook in the needed updates here rather
-  // than adding a separate notification just for this change.
-  nsPresContext* presContext = aPresShell->GetPresContext();
-  MaybeReflowForInflationScreenSizeChange(presContext);
-}
-
 /* static */
 bool nsLayoutUtils::CanScrollOriginClobberApz(ScrollOrigin aScrollOrigin) {
   switch (aScrollOrigin) {
@@ -8443,7 +8474,9 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
         presShell->ScrollToVisual(presShell->GetVisualViewportOffset(),
                                   FrameMetrics::eRestore, ScrollMode::Instant);
       }
+    }
 
+    if (scrollableFrame->IsRootScrollFrameOfDocument()) {
       if (const Maybe<PresShell::VisualScrollUpdate>& visualUpdate =
               presShell->GetPendingVisualScrollUpdate()) {
         metrics.SetVisualDestination(
@@ -8451,6 +8484,23 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
         metrics.SetVisualScrollUpdateType(visualUpdate->mUpdateType);
         presShell->AcknowledgePendingVisualScrollUpdate();
       }
+    }
+
+    if (aIsRootContent) {
+      // Expand the layout viewport to the size including the area covered by
+      // the dynamic toolbar in the case where the dynamic toolbar is being
+      // used, otherwise when the dynamic toolbar transitions on the compositor,
+      // the layout viewport will be smaller than the visual viewport on the
+      // compositor, thus the layout viewport offset will be forced to be moved
+      // in FrameMetrics::KeepLayoutViewportEnclosingVisualViewport.
+#if defined(MOZ_WIDGET_ANDROID)
+      if (presContext->HasDynamicToolbar()) {
+        CSSRect viewport = metrics.GetLayoutViewport();
+        viewport.SizeTo(nsLayoutUtils::ExpandHeightForViewportUnits(
+            presContext, viewport.Size()));
+        metrics.SetLayoutViewport(viewport);
+      }
+#endif
     }
 
     metrics.SetScrollGeneration(scrollableFrame->CurrentScrollGeneration());
@@ -8876,9 +8926,10 @@ nsRect nsLayoutUtils::GetSelectionBoundingRect(const Selection* aSel) {
       res = TransformFrameRectToAncestor(frame, res, relativeTo);
     }
   } else {
-    int32_t rangeCount = aSel->RangeCount();
     RectAccumulator accumulator;
-    for (int32_t idx = 0; idx < rangeCount; ++idx) {
+    const uint32_t rangeCount = aSel->RangeCount();
+    for (const uint32_t idx : IntegerRange(rangeCount)) {
+      MOZ_ASSERT(aSel->RangeCount() == rangeCount);
       nsRange* range = aSel->GetRangeAt(idx);
       nsRange::CollectClientRectsAndText(
           &accumulator, nullptr, range, range->GetStartContainer(),
@@ -9335,7 +9386,7 @@ nsPoint nsLayoutUtils::ComputeOffsetToUserSpace(nsDisplayListBuilder* aBuilder,
 /* static */
 already_AddRefed<nsFontMetrics> nsLayoutUtils::GetMetricsFor(
     nsPresContext* aPresContext, bool aIsVertical,
-    const nsStyleFont* aStyleFont, nscoord aFontSize, bool aUseUserFontSet) {
+    const nsStyleFont* aStyleFont, Length aFontSize, bool aUseUserFontSet) {
   nsFont font = aStyleFont->mFont;
   font.size = aFontSize;
   gfxFont::Orientation orientation =
@@ -9348,28 +9399,50 @@ already_AddRefed<nsFontMetrics> nsLayoutUtils::GetMetricsFor(
       aUseUserFontSet ? aPresContext->GetUserFontSet() : nullptr;
   params.textPerf = aPresContext->GetTextPerfMetrics();
   params.featureValueLookup = aPresContext->GetFontFeatureValuesLookup();
-  return aPresContext->DeviceContext()->GetMetricsFor(font, params);
+  return aPresContext->GetMetricsFor(font, params);
 }
 
 /* static */
 void nsLayoutUtils::ComputeSystemFont(nsFont* aSystemFont,
                                       LookAndFeel::FontID aFontID,
-                                      const nsFont* aDefaultVariableFont) {
+                                      const nsFont& aDefaultVariableFont) {
   gfxFontStyle fontStyle;
   nsAutoString systemFontName;
   if (LookAndFeel::GetFont(aFontID, systemFontName, fontStyle)) {
     systemFontName.Trim("\"'");
-    aSystemFont->fontlist =
-        FontFamilyList(NS_ConvertUTF16toUTF8(systemFontName),
-                       StyleFontFamilyNameSyntax::Identifiers);
-    aSystemFont->fontlist.SetDefaultFontType(StyleGenericFontFamily::None);
+    NS_ConvertUTF16toUTF8 nameu8(systemFontName);
+    Servo_FontFamily_ForSystemFont(&nameu8, &aSystemFont->family);
     aSystemFont->style = fontStyle.style;
-    aSystemFont->systemFont = fontStyle.systemFont;
+    aSystemFont->family.is_system_font = fontStyle.systemFont;
     aSystemFont->weight = fontStyle.weight;
     aSystemFont->stretch = fontStyle.stretch;
-    aSystemFont->size = CSSPixel::ToAppUnits(fontStyle.size);
+    aSystemFont->size = Length::FromPixels(fontStyle.size);
     // aSystemFont->langGroup = fontStyle.langGroup;
-    aSystemFont->sizeAdjust = fontStyle.sizeAdjust;
+    switch (StyleFontSizeAdjust::Tag(fontStyle.sizeAdjustBasis)) {
+      case StyleFontSizeAdjust::Tag::None:
+        aSystemFont->sizeAdjust = StyleFontSizeAdjust::None();
+        break;
+      case StyleFontSizeAdjust::Tag::ExHeight:
+        aSystemFont->sizeAdjust =
+            StyleFontSizeAdjust::ExHeight(fontStyle.sizeAdjust);
+        break;
+      case StyleFontSizeAdjust::Tag::CapHeight:
+        aSystemFont->sizeAdjust =
+            StyleFontSizeAdjust::CapHeight(fontStyle.sizeAdjust);
+        break;
+      case StyleFontSizeAdjust::Tag::ChWidth:
+        aSystemFont->sizeAdjust =
+            StyleFontSizeAdjust::ChWidth(fontStyle.sizeAdjust);
+        break;
+      case StyleFontSizeAdjust::Tag::IcWidth:
+        aSystemFont->sizeAdjust =
+            StyleFontSizeAdjust::IcWidth(fontStyle.sizeAdjust);
+        break;
+      case StyleFontSizeAdjust::Tag::IcHeight:
+        aSystemFont->sizeAdjust =
+            StyleFontSizeAdjust::IcHeight(fontStyle.sizeAdjust);
+        break;
+    }
 
 #ifdef XP_WIN
     // XXXldb This platform-specific stuff should be in the
@@ -9391,9 +9464,9 @@ void nsLayoutUtils::ComputeSystemFont(nsFont* aSystemFont,
       //    always use 2 points smaller than what the browser has defined as
       //    the default proportional font.
       // Assumption: system defined font is proportional
-      aSystemFont->size = std::max(
-          aDefaultVariableFont->size - nsPresContext::CSSPointsToAppUnits(2),
-          0);
+      auto newSize =
+          aDefaultVariableFont.size.ToCSSPixels() - CSSPixel::FromPoints(2.0f);
+      aSystemFont->size = Length::FromPixels(std::max(float(newSize), 0.0f));
     }
 #endif
   }

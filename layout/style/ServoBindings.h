@@ -64,6 +64,7 @@ BASIC_RULE_FUNCS(LayerStatement)
 BASIC_RULE_FUNCS(FontFeatureValues)
 BASIC_RULE_FUNCS(FontFace)
 BASIC_RULE_FUNCS(CounterStyle)
+GROUP_RULE_FUNCS(Container)
 
 #undef GROUP_RULE_FUNCS
 #undef BASIC_RULE_FUNCS

@@ -792,12 +792,6 @@ nsresult nsDocumentViewer::InitInternal(nsIWidget* aParentWidget,
                                         bool aDoCreation,
                                         bool aNeedMakeCX /*= true*/,
                                         bool aForceSetNewDocument /* = true*/) {
-  if (mIsPageMode) {
-    // XXXbz should the InitInternal in SetPageModeForTesting just pass false
-    // here itself?
-    aForceSetNewDocument = false;
-  }
-
   // We don't want any scripts to run here. That can cause flushing,
   // which can cause reentry into initialization of this document viewer,
   // which would be disastrous.
@@ -2369,10 +2363,8 @@ nsView* nsDocumentViewer::FindContainerView() {
     return nullptr;
   }
 
-  // subdocFrame might not be a subdocument frame; the frame
-  // constructor can treat a <frame> as an inline in some XBL
-  // cases. Treat that as display:none, the document is not
-  // displayed.
+  // Check subdocFrame just to be safe. If this somehow fails we treat that as
+  // display:none, the document is not displayed.
   if (!subdocFrame->IsSubDocumentFrame()) {
     NS_WARNING_ASSERTION(subdocFrame->Type() == LayoutFrameType::None,
                          "Subdocument container has non-subdocument frame");
@@ -2961,8 +2953,10 @@ nsresult nsDocumentViewer::GetContentSizeInternal(int32_t* aWidth,
                      shellArea.height != NS_UNCONSTRAINEDSIZE,
                  NS_ERROR_FAILURE);
 
-  *aWidth = presContext->AppUnitsToDevPixels(shellArea.width);
-  *aHeight = presContext->AppUnitsToDevPixels(shellArea.height);
+  // Ceil instead of rounding here, so we can actually guarantee showing all the
+  // content.
+  *aWidth = std::ceil(presContext->AppUnitsToFloatDevPixels(shellArea.width));
+  *aHeight = std::ceil(presContext->AppUnitsToFloatDevPixels(shellArea.height));
 
   return NS_OK;
 }
@@ -3791,7 +3785,8 @@ NS_IMETHODIMP nsDocumentViewer::SetPageModeForTesting(
     nsresult rv = mPresContext->Init(mDeviceContext);
     NS_ENSURE_SUCCESS(rv, rv);
   }
-  NS_ENSURE_SUCCESS(InitInternal(mParentWidget, nullptr, mBounds, true, false),
+  NS_ENSURE_SUCCESS(InitInternal(mParentWidget, nullptr, mBounds, true,
+                                 false, false),
                     NS_ERROR_FAILURE);
 
   Show();

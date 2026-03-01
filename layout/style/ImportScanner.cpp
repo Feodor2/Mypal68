@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImportScanner.h"
-#include "nsICookieSettings.h" //MY
+#include "nsICookieJarSettings.h" //MY
 #include "nsContentUtils.h"
 
 namespace mozilla {

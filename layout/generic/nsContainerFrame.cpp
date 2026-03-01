@@ -33,7 +33,6 @@
 #include "nsBoxLayoutState.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsBlockFrame.h"
-#include "nsBulletFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "mozilla/AutoRestore.h"
 #include "nsIFrameInlines.h"
@@ -500,11 +499,9 @@ void nsContainerFrame::DisplaySelectionOverlay(nsDisplayListBuilder* aBuilder,
   nsIContent* newContent = mContent->GetParent();
 
   // check to see if we are anonymous content
-  int32_t offset = 0;
-  if (newContent) {
-    // XXXbz there has GOT to be a better way of determining this!
-    offset = newContent->ComputeIndexOf(mContent);
-  }
+  // XXXbz there has GOT to be a better way of determining this!
+  int32_t offset =
+      newContent ? newContent->ComputeIndexOf_Deprecated(mContent) : 0;
 
   // look up to see what selection(s) are on this frame
   UniquePtr<SelectionDetails> details =

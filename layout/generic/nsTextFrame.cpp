@@ -4627,7 +4627,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsContinuingTextFrame)
 nsTextFrame::~nsTextFrame() = default;
 
 Maybe<nsIFrame::Cursor> nsTextFrame::GetCursor(const nsPoint& aPoint) {
-  StyleCursorKind kind = StyleUI()->mCursor.keyword;
+  StyleCursorKind kind = StyleUI()->Cursor().keyword;
   if (kind == StyleCursorKind::Auto) {
     if (!IsSelectable(nullptr)) {
       kind = StyleCursorKind::Default;
@@ -5061,6 +5061,15 @@ void nsTextFrame::GetTextDecorations(
        fChild = f, f = nsLayoutUtils::GetParentOrPlaceholderFor(f)) {
     ComputedStyle* const context = f->Style();
     if (!context->HasTextDecorationLines()) {
+      break;
+    }
+
+    if (context->GetPseudoType() == PseudoStyleType::marker &&
+        (context->StyleList()->mListStylePosition ==
+             NS_STYLE_LIST_STYLE_POSITION_OUTSIDE ||
+         !context->StyleDisplay()->IsInlineOutsideStyle())) {
+      // Outside ::marker pseudos, and inside markers that aren't inlines, don't
+      // have text decorations.
       break;
     }
 
@@ -5690,13 +5699,14 @@ gfxFloat nsTextFrame::ComputeSelectionUnderlineHeight(
       // the default font size, we should use the actual font size because the
       // computed value from the default font size can be too thick for the
       // current font size.
-      nscoord defaultFontSize =
+      Length defaultFontSize =
           aPresContext->Document()
               ->GetFontPrefsForLang(nullptr)
               ->GetDefaultFont(StyleGenericFontFamily::None)
               ->size;
-      int32_t zoomedFontSize = aPresContext->AppUnitsToDevPixels(
-          nsStyleFont::ZoomText(*aPresContext->Document(), defaultFontSize));
+      int32_t zoomedFontSize = aPresContext->CSSPixelsToDevPixels(
+          nsStyleFont::ZoomText(*aPresContext->Document(), defaultFontSize)
+              .ToCSSPixels());
       gfxFloat fontSize =
           std::min(gfxFloat(zoomedFontSize), aFontMetrics.emHeight);
       fontSize = std::max(fontSize, 1.0);
@@ -10182,6 +10192,15 @@ void nsTextFrame::List(FILE* out, const char* aPrefix, ListFlags aFlags) const {
     str += " SELECTED";
   }
   fprintf_stderr(out, "%s\n", str.get());
+}
+
+void nsTextFrame::ListTextRuns(FILE* out,
+                               nsTHashtable<nsVoidPtrHashKey>& aSeen) const {
+  if (!mTextRun || aSeen.Contains(mTextRun)) {
+    return;
+  }
+  aSeen.PutEntry(mTextRun);
+  mTextRun->Dump(out);
 }
 #endif
 

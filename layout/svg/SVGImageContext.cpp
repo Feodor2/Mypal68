@@ -22,9 +22,9 @@ void SVGImageContext::MaybeStoreContextPaint(Maybe<SVGImageContext>& aContext,
 }
 
 /* static */
-void SVGImageContext::MaybeStoreContextPaint(Maybe<SVGImageContext>& aContext,
-                                             ComputedStyle* aFromComputedStyle,
-                                             imgIContainer* aImgContainer) {
+void SVGImageContext::MaybeStoreContextPaint(
+    Maybe<SVGImageContext>& aContext, const ComputedStyle* aFromComputedStyle,
+    imgIContainer* aImgContainer) {
   const nsStyleSVG* style = aFromComputedStyle->StyleSVG();
 
   if (!style->ExposesContextProperties()) {

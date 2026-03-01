@@ -92,10 +92,6 @@ static nscoord FontSizeInflationListMarginAdjustment(const nsIFrame* aFrame) {
     return margin;
   }
 
-  // NOTE(emilio): @counter-style can override some of the styles from this
-  // list, and we won't add margin to the counter.
-  //
-  // See https://github.com/w3c/csswg-drafts/issues/3584
   nsAtom* type = list->mCounterStyle.AsAtom();
   if (type != nsGkAtoms::none && type != nsGkAtoms::disc &&
       type != nsGkAtoms::circle && type != nsGkAtoms::square &&
@@ -1404,8 +1400,7 @@ void ReflowInput::CalculateHypotheticalPosition(
   // The specified offsets are relative to the absolute containing block's
   // padding edge and our current values are relative to the border edge, so
   // translate.
-  LogicalMargin border = aCBReflowInput->ComputedLogicalBorderPadding(wm) -
-                         aCBReflowInput->ComputedLogicalPadding(wm);
+  const LogicalMargin border = aCBReflowInput->ComputedLogicalBorder(wm);
   aHypotheticalPos.mIStart -= border.IStart(wm);
   aHypotheticalPos.mBStart -= border.BStart(wm);
 
@@ -2713,8 +2708,9 @@ static inline nscoord ComputeLineHeight(ComputedStyle* aComputedStyle,
     // For factor units the computed value of the line-height property
     // is found by multiplying the factor by the font's computed size
     // (adjusted for min-size prefs and text zoom).
-    return NSToCoordRound(lineHeight.number._0 * aFontSizeInflation *
-                          aComputedStyle->StyleFont()->mFont.size);
+    return aComputedStyle->StyleFont()
+        ->mFont.size.ScaledBy(lineHeight.AsNumber() * aFontSizeInflation)
+        .ToAppUnits();
   }
 
   MOZ_ASSERT(lineHeight.IsNormal() || lineHeight.IsMozBlockHeight());

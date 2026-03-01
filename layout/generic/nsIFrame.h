@@ -53,16 +53,18 @@
 #include "mozilla/layout/FrameChildList.h"
 #include "mozilla/AspectRatio.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/RelativeTo.h"
 #include "mozilla/Result.h"
 #include "mozilla/SmallPointerArray.h"
-#include "mozilla/PresShell.h"
 #include "mozilla/ToString.h"
 #include "mozilla/WritingModes.h"
 #include "nsDirection.h"
 #include "nsFrameList.h"
 #include "nsFrameState.h"
 #include "mozilla/ReflowInput.h"
+#include "nsIContent.h"
 #include "nsITheme.h"
 #include "nsQueryFrame.h"
 #include "mozilla/ComputedStyle.h"
@@ -71,10 +73,12 @@
 #include "nsChangeHint.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/EnumSet.h"
+#include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "nsDisplayItemTypes.h"
+#include "nsPresContext.h"
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/AccTypes.h"
@@ -102,6 +106,7 @@ class nsAtom;
 class nsView;
 class nsFrameSelection;
 class nsIWidget;
+class nsIScrollableFrame;
 class nsISelectionController;
 class nsBoxLayoutState;
 class nsBoxLayout;
@@ -119,6 +124,7 @@ class nsAbsoluteContainingBlock;
 class nsContainerFrame;
 class nsPlaceholderFrame;
 class nsStyleChangeList;
+class nsViewManager;
 class nsWindowSizes;
 
 struct nsBoxLayoutMetrics;
@@ -129,12 +135,14 @@ namespace mozilla {
 
 enum class PseudoStyleType : uint8_t;
 enum class TableSelectionMode : uint32_t;
-enum class ViewportType; //MY
-struct RelativeTo; //MY
 class EventStates;
 class ServoRestyleState;
 class DisplayItemData;
 class EffectSet;
+class LazyLogModule;
+class PresShell;
+class WidgetGUIEvent;
+class WidgetMouseEvent;
 
 namespace layers {
 class Layer;
@@ -1431,9 +1439,6 @@ class nsIFrame : public nsQueryFrame {
    * aFrameSize is used as the basis for percentage widths and heights.
    * aBorderArea is used for the adjustment of radii that might be too
    * large.
-   * FIXME: In the long run, we can probably get away with only one of
-   * these, especially if we change the way we handle outline-radius (by
-   * removing it and inflating the border radius)
    *
    * Return whether any radii are nonzero.
    */
@@ -2102,6 +2107,20 @@ class nsIFrame : public nsQueryFrame {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD
   HandlePress(nsPresContext* aPresContext, mozilla::WidgetGUIEvent* aEvent,
               nsEventStatus* aEventStatus);
+
+  /**
+   * MoveCaretToEventPoint() moves caret at the point of aMouseEvent.
+   *
+   * @param aPresContext        Must not be nullptr.
+   * @param aMouseEvent         Must not be nullptr, the message must be
+   *                            eMouseDown and its button must be primary or
+   *                            middle button.
+   * @param aEventStatus        [out] Must not be nullptr.  This method ignores
+   *                            its initial value, but callees may refer it.
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult MoveCaretToEventPoint(
+      nsPresContext* aPresContext, mozilla::WidgetMouseEvent* aMouseEvent,
+      nsEventStatus* aEventStatus);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD HandleMultiplePress(
       nsPresContext* aPresContext, mozilla::WidgetGUIEvent* aEvent,
@@ -3343,8 +3362,8 @@ class nsIFrame : public nsQueryFrame {
    * true.  Note that returning true here does not mean that the frame _can't_
    * have kids.  It could still have kids created via
    * nsIAnonymousContentCreator.  Returning true indicates that "normal"
-   * (non-anonymous, XBL-bound, CSS generated content, etc) children should not
-   * be constructed.
+   * (non-anonymous, CSS generated content, etc) children should not be
+   * constructed.
    */
   bool IsLeaf() const {
     MOZ_ASSERT(uint8_t(mClass) < mozilla::ArrayLength(sFrameClassBits));
@@ -4074,7 +4093,7 @@ class nsIFrame : public nsQueryFrame {
    * @return whether the frame correspods to generated content
    */
   bool IsGeneratedContentFrame() const {
-    return (mState & NS_FRAME_GENERATED_CONTENT) != 0;
+    return HasAnyStateBits(NS_FRAME_GENERATED_CONTENT);
   }
 
   /**
@@ -4412,34 +4431,18 @@ class nsIFrame : public nsQueryFrame {
    * Flag a child PresShell as painted so that it will get its paint count
    * incremented during empty transactions.
    */
-  void AddPaintedPresShell(mozilla::PresShell* aPresShell) {
-    PaintedPresShellList()->AppendElement(do_GetWeakReference(aPresShell));
-  }
+  void AddPaintedPresShell(mozilla::PresShell* aPresShell);
 
   /**
    * Increment the paint count of all child PresShells that were painted during
    * the last repaint.
    */
-  void UpdatePaintCountForPaintedPresShells() {
-    for (nsWeakPtr& item : *PaintedPresShellList()) {
-      if (RefPtr<mozilla::PresShell> presShell = do_QueryReferent(item)) {
-        presShell->IncrementPaintCount();
-      }
-    }
-  }
+  void UpdatePaintCountForPaintedPresShells();
 
   /**
    * @return true if we painted @aPresShell during the last repaint.
    */
-  bool DidPaintPresShell(mozilla::PresShell* aPresShell) {
-    for (nsWeakPtr& item : *PaintedPresShellList()) {
-      RefPtr<mozilla::PresShell> presShell = do_QueryReferent(item);
-      if (presShell == aPresShell) {
-        return true;
-      }
-    }
-    return false;
-  }
+  bool DidPaintPresShell(mozilla::PresShell* aPresShell);
 
   /**
    * Accessors for the absolute containing block.
@@ -5368,6 +5371,10 @@ class nsIFrame : public nsQueryFrame {
   virtual void List(FILE* out = stderr, const char* aPrefix = "",
                     ListFlags aFlags = ListFlags()) const;
 
+  void ListTextRuns(FILE* out = stderr) const;
+  virtual void ListTextRuns(FILE* out,
+                            nsTHashtable<nsVoidPtrHashKey>& aSeen) const;
+
   virtual void ListWithMatchedRules(FILE* out = stderr,
                                     const char* aPrefix = "") const;
   void ListMatchedRules(FILE* out, const char* aPrefix) const;
@@ -5391,8 +5398,10 @@ class nsIFrame : public nsQueryFrame {
   virtual nsresult GetFrameName(nsAString& aResult) const;
   nsresult MakeFrameName(const nsAString& aType, nsAString& aResult) const;
   // Helper function to return the index in parent of the frame's content
-  // object. Returns -1 on error or if the frame doesn't have a content object
-  static int32_t ContentIndexInContainer(const nsIFrame* aFrame);
+  // object. Returns Nothing on error or if the frame doesn't have a content
+  // object
+  static mozilla::Maybe<uint32_t> ContentIndexInContainer(
+      const nsIFrame* aFrame);
 #endif
 
 #ifdef DEBUG
@@ -5489,13 +5498,7 @@ class MOZ_NONHEAP_CLASS AutoWeakFrame {
 
   operator nsIFrame*() { return mFrame; }
 
-  void Clear(mozilla::PresShell* aPresShell) {
-    if (aPresShell) {
-      aPresShell->RemoveAutoWeakFrame(this);
-    }
-    mFrame = nullptr;
-    mPrev = nullptr;
-  }
+  void Clear(mozilla::PresShell* aPresShell);
 
   bool IsAlive() const { return !!mFrame; }
 
@@ -5505,9 +5508,7 @@ class MOZ_NONHEAP_CLASS AutoWeakFrame {
 
   void SetPreviousWeakFrame(AutoWeakFrame* aPrev) { mPrev = aPrev; }
 
-  ~AutoWeakFrame() {
-    Clear(mFrame ? mFrame->PresContext()->GetPresShell() : nullptr);
-  }
+  ~AutoWeakFrame();
 
  private:
   // Not available for the heap!
@@ -5561,12 +5562,7 @@ class MOZ_HEAP_CLASS WeakFrame {
   nsIFrame* operator->() { return mFrame; }
   operator nsIFrame*() { return mFrame; }
 
-  void Clear(mozilla::PresShell* aPresShell) {
-    if (aPresShell) {
-      aPresShell->RemoveWeakFrame(this);
-    }
-    mFrame = nullptr;
-  }
+  void Clear(mozilla::PresShell* aPresShell);
 
   bool IsAlive() const { return !!mFrame; }
   nsIFrame* GetFrame() const { return mFrame; }

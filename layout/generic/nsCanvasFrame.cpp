@@ -143,13 +143,13 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
       parent->RemoveChildNode(&anonContent->ContentNode(), false);
     }
 
-    mCustomContentContainer->AppendChildTo(&anonContent->ContentNode(), false);
+    mCustomContentContainer->AppendChildTo(&anonContent->ContentNode(), false,
+                                           IgnoreErrors());
   }
 
-  // Create a popupgroup element for chrome privileged top level non-XUL
-  // documents to support context menus and tooltips.
-  if (PresContext()->IsChrome() && PresContext()->IsRoot() &&
-      doc->AllowXULXBL()) {
+  // Create a popupgroup element for system privileged non-XUL documents to
+  // support context menus and tooltips.
+  if (XRE_IsParentProcess() && doc->NodePrincipal()->IsSystemPrincipal()) {
     nsNodeInfoManager* nodeInfoManager = doc->NodeInfoManager();
     RefPtr<NodeInfo> nodeInfo =
         nodeInfoManager->GetNodeInfo(nsGkAtoms::popupgroup, nullptr,
@@ -173,8 +173,8 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
 
     mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_default, u"true"_ns,
                              false);
-    // Set the page attribute so the XBL binding will find the text for the
-    // tooltip from the currently hovered element.
+    // Set the page attribute so XULTooltipElement::PostHandleEvent will find
+    // the text for the tooltip from the currently hovered element.
     mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::page, u"true"_ns,
                              false);
 

@@ -64,7 +64,6 @@ var FUNC_NEGATIVE = "cubic-bezier(0.25, -2, 0.75, 1)";
 var FUNC_OVERONE = "cubic-bezier(0.25, 0, 0.75, 3)";
 
 var supported_properties = {
-    "backdrop-filter" : [ test_filter_transition ],
     "border-bottom-left-radius": [ test_radius_transition ],
     "border-bottom-right-radius": [ test_radius_transition ],
     "border-top-left-radius": [ test_radius_transition ],
@@ -138,7 +137,8 @@ var supported_properties = {
                      test_currentcolor_transition,
                      test_auto_color_transition ],
     "clip": [ test_rect_transition ],
-    "clip-path": [ test_basic_shape_or_url_transition ],
+    "clip-path": [ test_basic_shape_or_url_transition,
+                   test_path_function ],
     "color": [ test_color_transition,
                test_currentcolor_transition ],
     "fill": [ test_color_transition,
@@ -353,10 +353,8 @@ var supported_properties = {
     ],
 };
 
-if (IsCSSPropertyPrefEnabled("layout.css.moz-outline-radius.enabled")) {
-  for (let corner of ["bottomleft", "bottomright", "topleft", "topright"]) {
-    supported_properties["-moz-outline-radius-" + corner] = [ test_radius_transition ];
-  }
+if (IsCSSPropertyPrefEnabled("layout.css.backdrop-filter.enabled") && IsWebRenderEnabled()) {
+  supported_properties["backdrop-filter"] = [ test_filter_transition ];
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
@@ -412,10 +410,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   // `auto` are already in wpt, so we don't test it here again.
   supported_properties["offset-anchor"] =
     [ test_background_position_transition ];
-}
-
-if (IsCSSPropertyPrefEnabled("layout.css.clip-path-path.enabled")) {
-  supported_properties["clip-path"].push(test_path_function);
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.font-variations.enabled")) {

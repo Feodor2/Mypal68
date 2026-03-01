@@ -10,7 +10,6 @@
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
-#include "nsCheckboxRadioFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsIContent.h"
 
@@ -23,7 +22,6 @@ class nsImageControlFrame final : public nsImageFrame,
                                nsPresContext* aPresContext);
   ~nsImageControlFrame() final;
 
-  void DestroyFrom(nsIFrame* aDestructRoot, PostDestroyData&) final;
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
             nsIFrame* aPrevInFlow) final;
 
@@ -57,14 +55,6 @@ nsImageControlFrame::nsImageControlFrame(ComputedStyle* aStyle,
     : nsImageFrame(aStyle, aPresContext, kClassID) {}
 
 nsImageControlFrame::~nsImageControlFrame() = default;
-
-void nsImageControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                      PostDestroyData& aPostDestroyData) {
-  if (!GetPrevInFlow()) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(this, false);
-  }
-  nsImageFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
-}
 
 nsIFrame* NS_NewImageControlFrame(PresShell* aPresShell,
                                   ComputedStyle* aStyle) {
@@ -107,9 +97,6 @@ void nsImageControlFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsImageControlFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
-  if (!GetPrevInFlow() && (mState & NS_FRAME_FIRST_REFLOW)) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(this, true);
-  }
   return nsImageFrame::Reflow(aPresContext, aDesiredSize, aReflowInput,
                               aStatus);
 }
@@ -149,7 +136,7 @@ nsresult nsImageControlFrame::HandleEvent(nsPresContext* aPresContext,
 void nsImageControlFrame::SetFocus(bool aOn, bool aRepaint) {}
 
 Maybe<nsIFrame::Cursor> nsImageControlFrame::GetCursor(const nsPoint&) {
-  StyleCursorKind kind = StyleUI()->mCursor.keyword;
+  StyleCursorKind kind = StyleUI()->Cursor().keyword;
   if (kind == StyleCursorKind::Auto) {
     kind = StyleCursorKind::Pointer;
   }

@@ -16,7 +16,6 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/PreferenceSheet.h"
 #include "mozilla/ScrollStyles.h"
-#include "mozilla/ServoStyleSet.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
@@ -24,24 +23,21 @@
 #include "nsCompatibility.h"
 #include "nsCoord.h"
 #include "nsCOMPtr.h"
+#include "nsFontMetrics.h"
+#include "nsHashKeys.h"
 #include "nsRect.h"
 #include "nsStringFwd.h"
-#include "gfxFontConstants.h"
 #include "nsAtom.h"
-#include "nsCRT.h"
 #include "nsIWidgetListener.h"  // for nsSizeMode
 #include "nsGkAtoms.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsChangeHint.h"
-#include <algorithm>
 #include "gfxTypes.h"
 #include "gfxRect.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
-#include "prclist.h"
 #include "nsThreadUtils.h"
 #include "Units.h"
-#include "prenv.h"
 
 class nsIPrintSettings;
 class nsDocShell;
@@ -62,6 +58,7 @@ class nsCSSFrameConstructor;
 class nsDisplayList;
 class nsDisplayListBuilder;
 class nsPluginFrame;
+class nsFontCache;
 class nsTransitionManager;
 class nsAnimationManager;
 class nsRefreshDriver;
@@ -117,10 +114,6 @@ enum class nsLayoutPhase : uint8_t {
 };
 #endif
 
-/* Used by nsPresContext::HasAuthorSpecifiedRules */
-#define NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND (1 << 0)
-#define NS_AUTHOR_SPECIFIED_PADDING (1 << 1)
-
 class nsRootPresContext;
 
 // An interface for presentation contexts. Presentation contexts are
@@ -152,6 +145,35 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * Initialize the presentation context from a particular device.
    */
   nsresult Init(nsDeviceContext* aDeviceContext);
+
+  /*
+   * Initialize the font cache if it hasn't been initialized yet.
+   * (Needed for stylo)
+   */
+  void InitFontCache();
+
+  void UpdateFontCacheUserFonts(gfxUserFontSet* aUserFontSet);
+
+  /**
+   * Get the nsFontMetrics that describe the properties of
+   * an nsFont.
+   * @param aFont font description to obtain metrics for
+   */
+  already_AddRefed<nsFontMetrics> GetMetricsFor(
+      const nsFont& aFont, const nsFontMetrics::Params& aParams);
+
+  /**
+   * Notification when a font metrics instance created for this context is
+   * about to be deleted
+   */
+  nsresult FontMetricsDeleted(const nsFontMetrics* aFontMetrics);
+
+  /**
+   * Attempt to free up resources by flushing out any fonts no longer
+   * referenced by anything other than the font cache itself.
+   * @return error status
+   */
+  nsresult FlushFontCache();
 
   /**
    * Set and detach presentation shell that this context is bound to.
@@ -368,17 +390,29 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * Set the currently visible area. The units for r are standard
    * nscoord units (as scaled by the device context).
    */
-  void SetVisibleArea(const nsRect& r) {
-    if (!r.IsEqualEdges(mVisibleArea)) {
-      mVisibleArea = r;
-      // Visible area does not affect media queries when paginated.
-      if (!IsPaginated()) {
-        MediaFeatureValuesChanged(
-            {mozilla::MediaFeatureChangeReason::ViewportChange});
-      }
-    }
+  void SetVisibleArea(const nsRect& r);
+#if defined(MOZ_WIDGET_ANDROID)
+  nsSize GetSizeForViewportUnits() const { return mSizeForViewportUnits; }
+
+  /**
+   * Set the maximum height of the dynamic toolbar in nscoord units.
+   */
+  MOZ_CAN_RUN_SCRIPT
+  void SetDynamicToolbarMaxHeight(mozilla::ScreenIntCoord aHeight);
+
+  mozilla::ScreenIntCoord GetDynamicToolbarMaxHeight() const {
+    MOZ_ASSERT(IsRootContentDocument());
+    return mDynamicToolbarMaxHeight;
   }
 
+  /**
+   * Returns true if we are using the dynamic toolbar.
+   */
+  bool HasDynamicToolbar() const {
+    MOZ_ASSERT(IsRootContentDocument());
+    return mDynamicToolbarMaxHeight > 0;
+  }
+#endif
   /**
    * Return true if this presentation context is a paginated
    * context.
@@ -510,8 +544,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   float GetOverrideDPPX() { return mOverrideDPPX; }
   void SetOverrideDPPX(float aDPPX);
 
-  nscoord GetAutoQualityMinFontSize() {
-    return DevPixelsToAppUnits(mAutoQualityMinFontSizePixelsPref);
+  mozilla::CSSCoord GetAutoQualityMinFontSize() const {
+    return DevPixelsToFloatCSSPixels(mAutoQualityMinFontSizePixelsPref);
   }
 
   /**
@@ -577,7 +611,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return AppUnitsToIntCSSPixels(DevPixelsToAppUnits(aPixels));
   }
 
-  float DevPixelsToFloatCSSPixels(int32_t aPixels) {
+  float DevPixelsToFloatCSSPixels(int32_t aPixels) const {
     return AppUnitsToFloatCSSPixels(DevPixelsToAppUnits(aPixels));
   }
 
@@ -766,11 +800,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    */
   void UIResolutionChangedSync();
 
-  /*
-   * Notify the pres context that a system color has changed
-   */
-  void SysColorChanged();
-
   /** Printing methods below should only be used for Medium() == print **/
   void SetPrintSettings(nsIPrintSettings* aPrintSettings);
 
@@ -818,20 +847,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   // Is this presentation in a chrome docshell?
   bool IsChrome() const;
-
-  // Public API for native theme code to get style internals.
-  bool HasAuthorSpecifiedRules(const nsIFrame* aFrame,
-                               uint32_t ruleTypeMask) const;
-
-  // Explicitly enable and disable paint flashing.
-  void SetPaintFlashing(bool aPaintFlashing) {
-    mPaintFlashing = aPaintFlashing;
-    mPaintFlashingInitialized = true;
-  }
-
-  // This method should be used instead of directly accessing mPaintFlashing,
-  // as that value may be out of date when mPaintFlashingInitialized is false.
-  bool GetPaintFlashing() const;
 
   bool SuppressingResizeReflow() const { return mSuppressResizeReflow; }
 
@@ -976,9 +991,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   bool HasEverBuiltInvisibleText() const { return mHasEverBuiltInvisibleText; }
   void SetBuiltInvisibleText() { mHasEverBuiltInvisibleText = true; }
 
-  bool UsesExChUnits() const { return mUsesExChUnits; }
+  bool UsesFontMetricDependentFontUnits() const {
+    return mUsesFontMetricDependentFontUnits;
+  }
 
-  void SetUsesExChUnits(bool aValue) { mUsesExChUnits = aValue; }
+  void SetUsesFontMetricDependentFontUnits(bool aValue) {
+    mUsesFontMetricDependentFontUnits = aValue;
+  }
 
   bool IsDeviceSizePageSize();
 
@@ -1007,7 +1026,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
  protected:
   friend class nsRunnableMethod<nsPresContext>;
   void ThemeChangedInternal();
-  void SysColorChangedInternal();
   void RefreshSystemMetrics();
 
   // update device context's resolution from the widget
@@ -1082,6 +1100,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   };
   TransactionInvalidations* GetInvalidations(TransactionId aTransactionId);
 
+  // This should be called only when we update mVisibleArea or
+  // mDynamicToolbarMaxHeight or `app units per device pixels` changes.
+  void AdjustSizeForViewportUnits();
+
   // IMPORTANT: The ownership implicit in the following member variables
   // has been explicitly checked.  If you add any members to this class,
   // please make the ownership explicit (pinkerton, scc).
@@ -1095,6 +1117,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
                                            // Cannot reintroduce cycles
                                            // since there is no dependency
                                            // from gfx back to layout.
+  RefPtr<nsFontCache> mFontCache;
   RefPtr<mozilla::EventStateManager> mEventManager;
   RefPtr<nsRefreshDriver> mRefreshDriver;
   RefPtr<mozilla::AnimationEventDispatcher> mAnimationEventDispatcher;
@@ -1130,6 +1153,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   mozilla::UniquePtr<gfxMissingFontRecorder> mMissingFonts;
 
   nsRect mVisibleArea;
+  // This value is used to resolve viewport units.
+  // On mobile this size is including the dynamic toolbar maximum height below.
+  // On desktops this size is pretty much the same as |mVisibleArea|.
+  nsSize mSizeForViewportUnits;
+  // The maximum height of the dynamic toolbar on mobile.
+#if defined(MOZ_WIDGET_ANDROID)
+  mozilla::ScreenIntCoord mDynamicToolbarMaxHeight;
+#endif
   nsSize mPageSize;
 
   // The computed page margins from the print settings.
@@ -1216,7 +1247,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   unsigned mIsRootPaginatedDocument : 1;
   unsigned mPrefBidiDirection : 1;
   unsigned mPrefScrollbarSide : 2;
-  unsigned mPendingSysColorChanged : 1;
   unsigned mPendingThemeChanged : 1;
   unsigned mPendingUIResolutionChanged : 1;
   unsigned mPrefChangePendingNeedsReflow : 1;
@@ -1229,7 +1259,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   //
   // TODO(emilio): It's a bit weird that this lives here but all the other
   // relevant bits live in Device on the rust side.
-  unsigned mUsesExChUnits : 1;
+  unsigned mUsesFontMetricDependentFontUnits : 1;
 
   // Is the current mCounterStyleManager valid?
   unsigned mCounterStylesDirty : 1;
@@ -1242,11 +1272,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   unsigned mSuppressResizeReflow : 1;
 
   unsigned mIsVisual : 1;
-
-  // Should we paint flash in this context? Do not use this variable directly.
-  // Use GetPaintFlashing() method instead.
-  mutable unsigned mPaintFlashing : 1;
-  mutable unsigned mPaintFlashingInitialized : 1;
 
   unsigned mHasWarnedAboutPositionedTableParts : 1;
 

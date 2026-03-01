@@ -630,7 +630,7 @@ void MathMLTextRunFactory::RebuildTextRun(
 
   // Get the correct gfxFontGroup that corresponds to the earlier font changes.
   if (length) {
-    font.size = NSToCoordRound(font.size * mFontInflation);
+    font.size = font.size.ScaledBy(mFontInflation);
     nsPresContext* pc = styles[0]->mPresContext;
     nsFontMetrics::Params params;
     params.language = styles[0]->mLanguage;
@@ -638,8 +638,7 @@ void MathMLTextRunFactory::RebuildTextRun(
     params.userFontSet = pc->GetUserFontSet();
     params.textPerf = pc->GetTextPerfMetrics();
     params.featureValueLookup = pc->GetFontFeatureValuesLookup();
-    RefPtr<nsFontMetrics> metrics =
-        pc->DeviceContext()->GetMetricsFor(font, params);
+    RefPtr<nsFontMetrics> metrics = pc->GetMetricsFor(font, params);
     newFontGroup = metrics->GetThebesFontGroup();
   }
 

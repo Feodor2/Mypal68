@@ -922,20 +922,19 @@ gfxRect SVGUtils::GetClipRectForFrame(nsIFrame* aFrame, float aX, float aY,
   const nsStyleDisplay* disp = aFrame->StyleDisplay();
   const nsStyleEffects* effects = aFrame->StyleEffects();
 
-  bool clipApplies =
-      disp->mOverflowX == StyleOverflow::Hidden ||
-      disp->mOverflowY == StyleOverflow::Hidden;
+  bool clipApplies = disp->mOverflowX == StyleOverflow::Hidden ||
+                     disp->mOverflowY == StyleOverflow::Hidden;
 
   if (!clipApplies || effects->mClip.IsAuto()) {
     return gfxRect(aX, aY, aWidth, aHeight);
   }
 
-  auto& rect = effects->mClip.AsRect();
+  const auto& rect = effects->mClip.AsRect();
   nsRect coordClipRect = rect.ToLayoutRect();
   nsIntRect clipPxRect = coordClipRect.ToOutsidePixels(
       aFrame->PresContext()->AppUnitsPerDevPixel());
-  gfxRect clipRect = gfxRect(clipPxRect.x, clipPxRect.y, clipPxRect.width,
-                             clipPxRect.height);
+  gfxRect clipRect =
+      gfxRect(clipPxRect.x, clipPxRect.y, clipPxRect.width, clipPxRect.height);
   if (rect.right.IsAuto()) {
     clipRect.width = aWidth - clipRect.X();
   }
@@ -1549,7 +1548,7 @@ void SVGUtils::SetupStrokeGeometry(nsIFrame* aFrame, gfxContext* aContext,
 uint16_t SVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
   uint16_t flags = 0;
 
-  switch (aFrame->StyleUI()->mPointerEvents) {
+  switch (aFrame->Style()->PointerEvents()) {
     case StylePointerEvents::None:
       break;
     case StylePointerEvents::Auto:

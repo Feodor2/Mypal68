@@ -12,7 +12,6 @@
 #include "nsContentCreatorFunctions.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
-#include "nsCheckboxRadioFrame.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
 #include "nsNameSpaceManager.h"
@@ -37,8 +36,6 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::image;
 
-NS_IMPL_ISUPPORTS(nsRangeFrame::DummyTouchListener, nsIDOMEventListener)
-
 nsIFrame* NS_NewRangeFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsRangeFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -55,32 +52,12 @@ NS_QUERYFRAME_HEAD(nsRangeFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
-void nsRangeFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
-                        nsIFrame* aPrevInFlow) {
-  // With APZ enabled, touch events may be handled directly by the APZC code
-  // if the APZ knows that there is no content interested in the touch event.
-  // The range input element *is* interested in touch events, but doesn't use
-  // the usual mechanism (i.e. registering an event listener) to handle touch
-  // input. Instead, we do it here so that the APZ finds out about it, and
-  // makes sure to wait for content to run handlers before handling the touch
-  // input itself.
-  if (!mDummyTouchListener) {
-    mDummyTouchListener = new DummyTouchListener();
-  }
-  aContent->AddEventListener(u"touchstart"_ns, mDummyTouchListener, false);
-
-  return nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
-}
-
 void nsRangeFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                PostDestroyData& aPostDestroyData) {
   NS_ASSERTION(!GetPrevContinuation() && !GetNextContinuation(),
                "nsRangeFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
 
-  mContent->RemoveEventListener(u"touchstart"_ns, mDummyTouchListener, false);
-
-  nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   aPostDestroyData.AddAnonymousContent(mTrackDiv.forget());
   aPostDestroyData.AddAnonymousContent(mProgressDiv.forget());
   aPostDestroyData.AddAnonymousContent(mThumbDiv.forget());
@@ -176,10 +153,6 @@ void nsRangeFrame::Reflow(nsPresContext* aPresContext,
   NS_ASSERTION(!GetPrevContinuation() && !GetNextContinuation(),
                "nsRangeFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
-
-  if (mState & NS_FRAME_FIRST_REFLOW) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(this, true);
-  }
 
   WritingMode wm = aReflowInput.GetWritingMode();
   nscoord computedBSize = aReflowInput.ComputedBSize();
@@ -334,10 +307,8 @@ a11y::AccType nsRangeFrame::AccessibleType() { return a11y::eHTMLRangeType; }
 
 double nsRangeFrame::GetValueAsFractionOfRange() {
   MOZ_ASSERT(mContent->IsHTMLElement(nsGkAtoms::input), "bad cast");
-  dom::HTMLInputElement* input =
-      static_cast<dom::HTMLInputElement*>(GetContent());
-
-  MOZ_ASSERT(input->ControlType() == NS_FORM_INPUT_RANGE);
+  auto* input = static_cast<dom::HTMLInputElement*>(GetContent());
+  MOZ_ASSERT(input->ControlType() == FormControlType::InputRange);
 
   Decimal value = input->GetValueAsDecimal();
   Decimal minimum = input->GetMinimum();
@@ -368,7 +339,7 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
   dom::HTMLInputElement* input =
       static_cast<dom::HTMLInputElement*>(GetContent());
 
-  MOZ_ASSERT(input->ControlType() == NS_FORM_INPUT_RANGE);
+  MOZ_ASSERT(input->ControlType() == FormControlType::InputRange);
 
   Decimal minimum = input->GetMinimum();
   Decimal maximum = input->GetMaximum();
@@ -592,7 +563,7 @@ nsresult nsRangeFrame::AttributeChanged(int32_t aNameSpaceID,
       MOZ_ASSERT(mContent->IsHTMLElement(nsGkAtoms::input), "bad cast");
       bool typeIsRange =
           static_cast<dom::HTMLInputElement*>(GetContent())->ControlType() ==
-          NS_FORM_INPUT_RANGE;
+          FormControlType::InputRange;
       // If script changed the <input>'s type before setting these attributes
       // then we don't need to do anything since we are going to be reframed.
       if (typeIsRange) {
@@ -607,7 +578,7 @@ nsresult nsRangeFrame::AttributeChanged(int32_t aNameSpaceID,
   return nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 }
 
-nscoord nsRangeFrame::AutoCrossSize(nscoord aEm) {
+nscoord nsRangeFrame::AutoCrossSize(Length aEm) {
   nscoord minCrossSize(0);
   if (IsThemed()) {
     bool unused;
@@ -618,7 +589,12 @@ nscoord nsRangeFrame::AutoCrossSize(nscoord aEm) {
     minCrossSize =
         pc->DevPixelsToAppUnits(IsHorizontal() ? size.height : size.width);
   }
-  return std::max(minCrossSize, NSToCoordRound(CROSS_AXIS_EM_SIZE * aEm));
+  return std::max(minCrossSize, aEm.ScaledBy(CROSS_AXIS_EM_SIZE).ToAppUnits());
+}
+
+static mozilla::Length OneEm(nsRangeFrame* aFrame) {
+  return aFrame->StyleFont()->mFont.size.ScaledBy(
+      nsLayoutUtils::FontSizeInflationFor(aFrame));
 }
 
 LogicalSize nsRangeFrame::ComputeAutoSize(
@@ -627,16 +603,16 @@ LogicalSize nsRangeFrame::ComputeAutoSize(
     const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   bool isInlineOriented = IsInlineOriented();
-  auto em = StyleFont()->mFont.size * nsLayoutUtils::FontSizeInflationFor(this);
+  auto em = OneEm(this);
 
   const WritingMode wm = GetWritingMode();
   LogicalSize autoSize(wm);
   if (isInlineOriented) {
-    autoSize.ISize(wm) = NSToCoordRound(MAIN_AXIS_EM_SIZE * em);
+    autoSize.ISize(wm) = em.ScaledBy(MAIN_AXIS_EM_SIZE).ToAppUnits();
     autoSize.BSize(wm) = AutoCrossSize(em);
   } else {
     autoSize.ISize(wm) = AutoCrossSize(em);
-    autoSize.BSize(wm) = NSToCoordRound(MAIN_AXIS_EM_SIZE * em);
+    autoSize.BSize(wm) = em.ScaledBy(MAIN_AXIS_EM_SIZE).ToAppUnits();
   }
 
   return autoSize.ConvertTo(aWM, wm);
@@ -655,9 +631,11 @@ nscoord nsRangeFrame::GetMinISize(gfxContext* aRenderingContext) {
 }
 
 nscoord nsRangeFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  bool isInline = IsInlineOriented();
-  auto em = StyleFont()->mFont.size * nsLayoutUtils::FontSizeInflationFor(this);
-  return isInline ? NSToCoordRound(em * MAIN_AXIS_EM_SIZE) : AutoCrossSize(em);
+  auto em = OneEm(this);
+  if (IsInlineOriented()) {
+    return em.ScaledBy(MAIN_AXIS_EM_SIZE).ToAppUnits();
+  }
+  return AutoCrossSize(em);
 }
 
 bool nsRangeFrame::IsHorizontal() const {
@@ -690,9 +668,6 @@ double nsRangeFrame::GetValue() const {
       .toDouble();
 }
 
-#define STYLES_DISABLING_NATIVE_THEMING \
-  NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND | NS_AUTHOR_SPECIFIED_PADDING
-
 bool nsRangeFrame::ShouldUseNativeStyle() const {
   nsIFrame* trackFrame = mTrackDiv->GetPrimaryFrame();
   nsIFrame* progressFrame = mProgressDiv->GetPrimaryFrame();
@@ -700,12 +675,9 @@ bool nsRangeFrame::ShouldUseNativeStyle() const {
 
   return StyleDisplay()->EffectiveAppearance() == StyleAppearance::Range &&
          trackFrame &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             trackFrame, STYLES_DISABLING_NATIVE_THEMING) &&
+         !trackFrame->Style()->HasAuthorSpecifiedBorderOrBackground() &&
          progressFrame &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             progressFrame, STYLES_DISABLING_NATIVE_THEMING) &&
+         !progressFrame->Style()->HasAuthorSpecifiedBorderOrBackground() &&
          thumbFrame &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             thumbFrame, STYLES_DISABLING_NATIVE_THEMING);
+         !thumbFrame->Style()->HasAuthorSpecifiedBorderOrBackground();
 }

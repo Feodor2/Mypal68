@@ -40,9 +40,6 @@ class nsRangeFrame final : public nsContainerFrame,
   NS_DECL_FRAMEARENA_HELPERS(nsRangeFrame)
 
   // nsIFrame overrides
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
-
   virtual void DestroyFrom(nsIFrame* aDestructRoot,
                            PostDestroyData& aPostDestroyData) override;
 
@@ -141,7 +138,7 @@ class nsRangeFrame final : public nsContainerFrame,
  private:
   // Return our preferred size in the cross-axis (the axis perpendicular
   // to the direction of movement of the thumb).
-  nscoord AutoCrossSize(nscoord aEm);
+  nscoord AutoCrossSize(mozilla::Length aEm);
 
   nsresult MakeAnonymousDiv(Element** aResult, PseudoStyleType aPseudoType,
                             nsTArray<ContentInfo>& aElements);
@@ -175,23 +172,6 @@ class nsRangeFrame final : public nsContainerFrame,
    * @see nsRangeFrame::CreateAnonymousContent
    */
   nsCOMPtr<Element> mThumbDiv;
-
-  class DummyTouchListener final : public nsIDOMEventListener {
-   private:
-    ~DummyTouchListener() = default;
-
-   public:
-    NS_DECL_ISUPPORTS
-
-    NS_IMETHOD HandleEvent(mozilla::dom::Event* aEvent) override {
-      return NS_OK;
-    }
-  };
-
-  /**
-   * A no-op touch-listener used for APZ purposes (see nsRangeFrame::Init).
-   */
-  RefPtr<DummyTouchListener> mDummyTouchListener;
 };
 
 #endif

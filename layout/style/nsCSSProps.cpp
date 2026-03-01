@@ -25,13 +25,15 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPtr.h"
 
 using namespace mozilla;
 
 static int32_t gPropertyTableRefCount;
-static nsStaticCaseInsensitiveNameTable* gFontDescTable;
-static nsStaticCaseInsensitiveNameTable* gCounterDescTable;
-static nsTHashMap<nsCStringHashKey, nsCSSPropertyID>* gPropertyIDLNameTable;
+static StaticAutoPtr<nsStaticCaseInsensitiveNameTable> gFontDescTable;
+static StaticAutoPtr<nsStaticCaseInsensitiveNameTable> gCounterDescTable;
+static StaticAutoPtr<nsTHashMap<nsCStringHashKey, nsCSSPropertyID>>
+    gPropertyIDLNameTable;
 
 static const char* const kCSSRawFontDescs[] = {
 #define CSS_FONT_DESC(name_, method_) #name_,
@@ -59,6 +61,15 @@ static nsStaticCaseInsensitiveNameTable* CreateStaticTable(
   return table;
 }
 
+void nsCSSProps::RecomputeEnabledState(const char* aPref, void*) {
+  for (const PropertyPref* pref = kPropertyPrefTable;
+       pref->mPropID != eCSSProperty_UNKNOWN; pref++) {
+    if (!aPref || !strcmp(aPref, pref->mPref)) {
+      gPropertyEnabled[pref->mPropID] = Preferences::GetBool(pref->mPref);
+    }
+  }
+}
+
 void nsCSSProps::AddRefTable(void) {
   if (0 == gPropertyTableRefCount++) {
     MOZ_ASSERT(!gFontDescTable, "pre existing array!");
@@ -83,11 +94,16 @@ void nsCSSProps::AddRefTable(void) {
       prefObserversInited = true;
       for (const PropertyPref* pref = kPropertyPrefTable;
            pref->mPropID != eCSSProperty_UNKNOWN; pref++) {
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1472523
+        // We need to use nsCString instead of substring because the preference
+        // callback code stores them. Using AssignLiteral prevents any
+        // unnecessary allocations.
         nsCString prefName;
         prefName.AssignLiteral(pref->mPref, strlen(pref->mPref));
-        bool* enabled = &gPropertyEnabled[pref->mPropID];
-        Preferences::AddBoolVarCache(enabled, prefName);
+        Preferences::RegisterCallback(nsCSSProps::RecomputeEnabledState,
+                                      prefName);
       }
+      RecomputeEnabledState(/* aPrefName = */ nullptr);
     }
   }
 }
@@ -96,13 +112,8 @@ void nsCSSProps::AddRefTable(void) {
 
 void nsCSSProps::ReleaseTable(void) {
   if (0 == --gPropertyTableRefCount) {
-    delete gFontDescTable;
     gFontDescTable = nullptr;
-
-    delete gCounterDescTable;
     gCounterDescTable = nullptr;
-
-    delete gPropertyIDLNameTable;
     gPropertyIDLNameTable = nullptr;
   }
 }

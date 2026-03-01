@@ -199,7 +199,7 @@ void FontFaceSet::RemoveDOMContentLoadedListener() {
 }
 
 void FontFaceSet::ParseFontShorthandForMatching(
-    const nsACString& aFont, RefPtr<SharedFontList>& aFamilyList,
+    const nsACString& aFont, StyleFontFamilyList& aFamilyList,
     FontWeight& aWeight, FontStretch& aStretch, FontSlantStyle& aStyle,
     ErrorResult& aRv) {
   auto style = StyleComputedFontStyleDescriptor::Normal();
@@ -250,7 +250,7 @@ void FontFaceSet::FindMatchingFontFaces(const nsACString& aFont,
                                         const nsAString& aText,
                                         nsTArray<FontFace*>& aFontFaces,
                                         ErrorResult& aRv) {
-  RefPtr<SharedFontList> familyList;
+  StyleFontFamilyList familyList;
   FontWeight weight;
   FontStretch stretch;
   FontSlantStyle italicStyle;
@@ -272,13 +272,14 @@ void FontFaceSet::FindMatchingFontFaces(const nsACString& aFont,
   // Set of FontFaces that we want to return.
   nsTHashSet<FontFace*> matchingFaces;
 
-  for (const FontFamilyName& fontFamilyName : familyList->mNames) {
-    if (!fontFamilyName.IsNamed()) {
+  for (const StyleSingleFontFamily& fontFamilyName : familyList.list.AsSpan()) {
+    if (!fontFamilyName.IsFamilyName()) {
       continue;
     }
 
+    const auto& name = fontFamilyName.AsFamilyName();
     RefPtr<gfxFontFamily> family =
-        mUserFontSet->LookupFamily(nsAtomCString(fontFamilyName.mName));
+        mUserFontSet->LookupFamily(nsAtomCString(name.name.AsAtom()));
 
     if (!family) {
       continue;
@@ -519,7 +520,11 @@ FontFace* FontFaceSet::GetFontFaceAt(uint32_t aIndex) {
   FlushUserFontSet();
 
   if (aIndex < mRuleFaces.Length()) {
-    return mRuleFaces[aIndex].mFontFace;
+    auto& entry = mRuleFaces[aIndex];
+    if (entry.mOrigin.value() != StyleOrigin::Author) {
+      return nullptr;
+    }
+    return entry.mFontFace;
   }
 
   aIndex -= mRuleFaces.Length();
@@ -531,6 +536,20 @@ FontFace* FontFaceSet::GetFontFaceAt(uint32_t aIndex) {
 }
 
 uint32_t FontFaceSet::Size() {
+  FlushUserFontSet();
+
+  // Web IDL objects can only expose array index properties up to INT32_MAX.
+
+  size_t total = mNonRuleFaces.Length();
+  for (const auto& entry : mRuleFaces) {
+    if (entry.mOrigin.value() == StyleOrigin::Author) {
+      ++total;
+    }
+  }
+  return std::min<size_t>(total, INT32_MAX);
+}
+
+uint32_t FontFaceSet::SizeIncludingNonAuthorOrigins() {
   FlushUserFontSet();
 
   // Web IDL objects can only expose array index properties up to INT32_MAX.
@@ -552,8 +571,13 @@ already_AddRefed<FontFaceSetIterator> FontFaceSet::Values() {
 void FontFaceSet::ForEach(JSContext* aCx, FontFaceSetForEachCallback& aCallback,
                           JS::Handle<JS::Value> aThisArg, ErrorResult& aRv) {
   JS::Rooted<JS::Value> thisArg(aCx, aThisArg);
-  for (size_t i = 0; i < Size(); i++) {
+  for (size_t i = 0; i < SizeIncludingNonAuthorOrigins(); i++) {
     RefPtr<FontFace> face = GetFontFaceAt(i);
+    if (!face) {
+      // The font at index |i| is a non-Author origin font, which we shouldn't
+      // expose per spec.
+      continue;
+    }
     aCallback.Call(thisArg, *face, *face, *this, aRv);
     if (aRv.Failed()) {
       return;
@@ -964,6 +988,10 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
 
   uint32_t languageOverride = NO_FONT_LANGUAGE_OVERRIDE;
   StyleFontDisplay fontDisplay = StyleFontDisplay::Auto;
+  float ascentOverride = -1.0;
+  float descentOverride = -1.0;
+  float lineGapOverride = -1.0;
+  float sizeAdjust = 1.0;
 
   gfxFontEntry::RangeFlags rangeFlags = gfxFontEntry::RangeFlags::eNoFlags;
 
@@ -982,6 +1010,22 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
   // set up font display
   if (Maybe<StyleFontDisplay> display = aFontFace->GetFontDisplay()) {
     fontDisplay = *display;
+  }
+
+  // set up font metrics overrides
+  if (Maybe<StylePercentage> ascent = aFontFace->GetAscentOverride()) {
+    ascentOverride = ascent->_0;
+  }
+  if (Maybe<StylePercentage> descent = aFontFace->GetDescentOverride()) {
+    descentOverride = descent->_0;
+  }
+  if (Maybe<StylePercentage> lineGap = aFontFace->GetLineGapOverride()) {
+    lineGapOverride = lineGap->_0;
+  }
+
+  // set up size-adjust scaling factor
+  if (Maybe<StylePercentage> percentage = aFontFace->GetSizeAdjust()) {
+    sizeAdjust = percentage->_0;
   }
 
   // set up font features
@@ -1007,7 +1051,8 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
     // rather than creating a new one.
     existingEntry->UpdateAttributes(
         weight, stretch, italicStyle, featureSettings, variationSettings,
-        languageOverride, unicodeRanges, fontDisplay, rangeFlags);
+        languageOverride, unicodeRanges, fontDisplay, rangeFlags,
+        ascentOverride, descentOverride, lineGapOverride, sizeAdjust);
     // If the family name has changed, remove the entry from its current family
     // and clear the mFamilyName field so it can be reset when added to a new
     // family.
@@ -1143,7 +1188,7 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
   RefPtr<gfxUserFontEntry> entry = set->mUserFontSet->FindOrCreateUserFontEntry(
       aFamilyName, srcArray, weight, stretch, italicStyle, featureSettings,
       variationSettings, languageOverride, unicodeRanges, fontDisplay,
-      rangeFlags);
+      rangeFlags, ascentOverride, descentOverride, lineGapOverride, sizeAdjust);
 
   return entry.forget();
 }
@@ -1358,12 +1403,12 @@ nsresult FontFaceSet::SyncLoadFontData(gfxUserFontEntry* aFontToLoad,
   // being loaded might have a different origin from the principal of the
   // stylesheet that initiated the font load.
   // Further, we only get here for data: loads, so it doesn't really matter
-  // whether we use SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS or not, to be more
-  // restrictive we use SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS.
+  // whether we use SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT or not, to be
+  // more restrictive we use SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT.
   rv = NS_NewChannelWithTriggeringPrincipal(
       getter_AddRefs(channel), aFontFaceSrc->mURI->get(), mDocument,
       principal ? principal->get() : nullptr,
-      nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS,
+      nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT,
       aFontFaceSrc->mUseOriginPrincipal ? nsIContentPolicy::TYPE_UA_FONT
                                         : nsIContentPolicy::TYPE_FONT);
 
@@ -1819,11 +1864,14 @@ FontFaceSet::UserFontSet::CreateUserFontEntry(
     const nsTArray<gfxFontFeature>& aFeatureSettings,
     const nsTArray<gfxFontVariation>& aVariationSettings,
     uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-    StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags) {
+    StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+    float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+    float aSizeAdjust) {
   RefPtr<gfxUserFontEntry> entry = new FontFace::Entry(
       this, aFontFaceSrcList, aWeight, aStretch, aStyle, aFeatureSettings,
       aVariationSettings, aLanguageOverride, aUnicodeRanges, aFontDisplay,
-      aRangeFlags);
+      aRangeFlags, aAscentOverride, aDescentOverride, aLineGapOverride,
+      aSizeAdjust);
   return entry.forget();
 }
 

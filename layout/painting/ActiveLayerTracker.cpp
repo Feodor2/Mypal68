@@ -6,10 +6,12 @@
 
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/EffectSet.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/StaticPtr.h"
 #include "gfx2DGlue.h"
 #include "nsExpirationTracker.h"
 #include "nsContainerFrame.h"
@@ -160,7 +162,7 @@ class LayerActivityTracker final
   bool mDestroying;
 };
 
-static LayerActivityTracker* gLayerActivityTracker = nullptr;
+static StaticAutoPtr<LayerActivityTracker> gLayerActivityTracker;
 
 LayerActivity::~LayerActivity() {
   if (mFrame || mContent) {
@@ -194,7 +196,11 @@ void LayerActivityTracker::NotifyExpired(LayerActivity* aObject) {
   if (f) {
     // The pres context might have been detached during the delay -
     // that's fine, just skip the paint.
-    if (f->PresContext()->GetContainerWeak()) {
+    if (f->PresContext()->GetContainerWeak()
+#ifdef MOZ_BUILD_WEBRENDER
+        && !gfxVars::UseWebRender()
+#endif
+    ) {
       f->SchedulePaint(nsIFrame::PAINT_DEFAULT, false);
     }
     f->RemoveStateBits(NS_FRAME_HAS_LAYER_ACTIVITY_PROPERTY);
@@ -238,8 +244,7 @@ void ActiveLayerTracker::TransferActivityToContent(nsIFrame* aFrame,
   if (!aFrame->HasAnyStateBits(NS_FRAME_HAS_LAYER_ACTIVITY_PROPERTY)) {
     return;
   }
-  LayerActivity* layerActivity =
-      aFrame->TakeProperty(LayerActivityProperty());
+  LayerActivity* layerActivity = aFrame->TakeProperty(LayerActivityProperty());
   aFrame->RemoveStateBits(NS_FRAME_HAS_LAYER_ACTIVITY_PROPERTY);
   if (!layerActivity) {
     return;
@@ -595,9 +600,6 @@ void ActiveLayerTracker::SetCurrentScrollHandlerFrame(nsIFrame* aFrame) {
 }
 
 /* static */
-void ActiveLayerTracker::Shutdown() {
-  delete gLayerActivityTracker;
-  gLayerActivityTracker = nullptr;
-}
+void ActiveLayerTracker::Shutdown() { gLayerActivityTracker = nullptr; }
 
 }  // namespace mozilla

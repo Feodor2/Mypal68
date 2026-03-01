@@ -2241,7 +2241,7 @@ Maybe<nsIFrame::Cursor> nsTreeBodyFrame::GetCursor(const nsPoint& aPoint) {
     if (child) {
       // Our scratch array is already prefilled.
       RefPtr<ComputedStyle> childContext = GetPseudoComputedStyle(child);
-      StyleCursorKind kind = childContext->StyleUI()->mCursor.keyword;
+      StyleCursorKind kind = childContext->StyleUI()->Cursor().keyword;
       if (kind == StyleCursorKind::Auto) {
         kind = StyleCursorKind::Default;
       }
@@ -3702,8 +3702,8 @@ ImgDrawResult nsTreeBodyFrame::PaintBackgroundLayer(
       aPresContext, aRenderingContext, this, aDirtyRect, aRect, *myBorder,
       mComputedStyle, PaintBorderFlags::SyncDecodeImages);
 
-  nsCSSRendering::PaintOutline(aPresContext, aRenderingContext, this,
-                               aDirtyRect, aRect, aComputedStyle);
+  nsCSSRendering::PaintNonThemedOutline(aPresContext, aRenderingContext, this,
+                                        aDirtyRect, aRect, aComputedStyle);
 
   return result;
 }

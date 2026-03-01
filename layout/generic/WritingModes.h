@@ -9,7 +9,6 @@
 
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/EnumeratedRange.h"
 
 #include "nsRect.h"

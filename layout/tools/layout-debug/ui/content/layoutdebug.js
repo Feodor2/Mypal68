@@ -25,7 +25,6 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const HELPER_URL = "chrome://layoutdebug/content/layoutdebug-helper.js";
 
 const FEATURES = {
-  paintFlashing: "nglayout.debug.paint_flashing",
   paintDumping: "nglayout.debug.paint_dumping",
   invalidateDumping: "nglayout.debug.invalidate_dumping",
   eventDumping: "nglayout.debug.event_dumping",
@@ -39,6 +38,7 @@ const COMMANDS = [
   "dumpContent",
   "dumpFrames",
   "dumpFramesInCSSPixels",
+  "dumpTextRuns",
   "dumpViews",
   "dumpStyleSheets",
   "dumpMatchedRules",
@@ -51,6 +51,7 @@ class Debugger {
     this._flags = new Map();
     this._visualDebugging = false;
     this._visualEventDebugging = false;
+    this._pagedMode = false;
     this._attached = false;
 
     for (let [name, pref] of Object.entries(FEATURES)) {
@@ -99,6 +100,20 @@ class Debugger {
     this._sendMessage("setVisualEventDebugging", v);
   }
 
+  get pagedMode() {
+    return this._pagedMode;
+  }
+
+  set pagedMode(v) {
+    v = !!v;
+    this._pagedMode = v;
+    this.setPagedMode(this._pagedMode);
+  }
+
+  setPagedMode(v) {
+    this._sendMessage("setPagedMode", v);
+  }
+
   _sendMessage(name, arg) {
     gBrowser.messageManager.sendAsyncMessage("LayoutDebug:Call", { name, arg });
   }
@@ -126,6 +141,32 @@ for (let name of COMMANDS) {
   Debugger.prototype[name] = function() {
     this._sendMessage(name);
   };
+}
+
+const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+
+function autoCloseIfNeeded(aCrash) {
+  if (!gArgs.autoclose) {
+    return;
+  }
+  setTimeout(function() {
+    if (aCrash) {
+      let browser = document.createElementNS(XUL_NS, "browser");
+      // FIXME(emilio): we could use gBrowser if we bothered get the process switches right.
+      //
+      // Doesn't seem worth for this particular case.
+      document.documentElement.appendChild(browser);
+      browser.loadURI("about:crashparent", {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      return;
+    }
+    if (gArgs.profile && Services.profiler) {
+      dumpProfile();
+    } else {
+      Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
+    }
+  }, gArgs.delay * 1000);
 }
 
 function nsLDBBrowserContentListener() {
@@ -161,19 +202,19 @@ nsLDBBrowserContentListener.prototype = {
       this.setButtonEnabled(this.mStopButton, false);
       this.mStatusText.value = gURLBar.value + " loaded";
       this.mLoading = false;
-      if (gArgs.autoclose && gBrowser.currentURI.spec != "about:blank") {
+
+      if (gDebugger.pagedMode) {
+        // Change to paged mode after the page is loaded.
+        gDebugger.setPagedMode(true);
+      }
+
+      if (gBrowser.currentURI.spec != "about:blank") {
         // We check for about:blank just to avoid one or two STATE_STOP
         // notifications that occur before the loadURI() call completes.
         // This does mean that --autoclose doesn't work when the URL on
         // the command line is about:blank (or not specified), but that's
         // not a big deal.
-        setTimeout(function() {
-          if (gArgs.profile && Services.profiler) {
-            dumpProfile();
-          } else {
-            Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
-          }
-        }, gArgs.delay * 1000);
+        autoCloseIfNeeded(false);
       }
     }
   },
@@ -223,6 +264,7 @@ function parseArguments() {
     url: null,
     autoclose: false,
     delay: 0,
+    paged: false,
   };
   if (window.arguments) {
     args.url = window.arguments[0];
@@ -234,6 +276,8 @@ function parseArguments() {
       } else if (/^profile=(.*)$/.test(arg)) {
         args.profile = true;
         args.profileFilename = RegExp.$1;
+      } else if (/^paged$/.test(arg)) {
+        args.paged = true;
       } else {
         throw `Unknown option ${arg}`;
       }
@@ -242,13 +286,30 @@ function parseArguments() {
   return args;
 }
 
+const TabCrashedObserver = {
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "ipc:content-shutdown":
+        subject.QueryInterface(Ci.nsIPropertyBag2);
+        if (!subject.get("abnormal")) {
+          return;
+        }
+        break;
+      case "oop-frameloader-crashed":
+        break;
+    }
+    autoCloseIfNeeded(true);
+  },
+};
+
 function OnLDBLoad() {
   gBrowser = document.getElementById("browser");
   gURLBar = document.getElementById("urlbar");
 
   gDebugger = new Debugger();
 
-  checkPersistentMenus();
+  Services.obs.addObserver(TabCrashedObserver, "ipc:content-shutdown");
+  Services.obs.addObserver(TabCrashedObserver, "oop-frameloader-crashed");
 
   // Pretend slightly to be like a normal browser, so that SessionStore.jsm
   // doesn't get too confused.  The effect is that we'll never switch process
@@ -277,14 +338,28 @@ function OnLDBLoad() {
         ["default"],
         ["GeckoMain", "Compositor", "Renderer", "RenderBackend", "StyleThread"]
       );
+      if (gArgs.url) {
+        // Switch to the right kind of content process, and wait a bit so that
+        // the profiler has had a chance to attach to it.
+        updateBrowserRemotenessByURL(gArgs.url);
+        setTimeout(() => loadURI(gArgs.url), 3000);
+        return;
+      }
     } else {
       dump("Cannot profile Layout Debugger; profiler was not compiled in.\n");
     }
   }
 
+  // The URI is not loaded yet. Just set the internal variable.
+  gDebugger._pagedMode = gArgs.paged;
+
   if (gArgs.url) {
     loadURI(gArgs.url);
   }
+
+  // Some command line arguments may toggle menu items. Call this after
+  // processing all the arguments.
+  checkPersistentMenus();
 }
 
 function checkPersistentMenu(item) {
@@ -294,13 +369,13 @@ function checkPersistentMenu(item) {
 
 function checkPersistentMenus() {
   // Restore the toggles that are stored in prefs.
-  checkPersistentMenu("paintFlashing");
   checkPersistentMenu("paintDumping");
   checkPersistentMenu("invalidateDumping");
   checkPersistentMenu("eventDumping");
   checkPersistentMenu("motionEventDumping");
   checkPersistentMenu("crossingEventDumping");
   checkPersistentMenu("reflowCounts");
+  checkPersistentMenu("pagedMode");
 }
 
 function dumpProfile() {
@@ -342,6 +417,8 @@ function OnLDBBeforeUnload(event) {
 
 function OnLDBUnload() {
   gDebugger.detachBrowser();
+  Services.obs.removeObserver(TabCrashedObserver, "ipc:content-shutdown");
+  Services.obs.removeObserver(TabCrashedObserver, "oop-frameloader-crashed");
 }
 
 function toggle(menuitem) {

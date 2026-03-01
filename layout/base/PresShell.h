@@ -11,7 +11,6 @@
 
 #include <stdio.h>  // for FILE definition
 #include "FrameMetrics.h"
-#include "GeckoProfiler.h"
 #include "TouchManager.h"
 #include "Units.h"
 #include "Visibility.h"
@@ -84,14 +83,16 @@ class ZoomConstraintsClient;
 
 struct nsCallbackEventRequest;
 
-enum class ScrollableDirection;
-
 namespace mozilla {
 class AccessibleCaretEventHub;
 class EventStates;
 class GeckoMVMContext;
 class OverflowChangedTracker;
 class StyleSheet;
+
+#ifdef MOZ_GECKO_PROFILER
+class ProfileChunkedBuffer;
+#endif
 
 #ifdef ACCESSIBILITY
 namespace a11y {
@@ -412,7 +413,7 @@ class PresShell final : public nsStubDocumentObserver,
    * scrollable in the specified direction.
    */
   nsIScrollableFrame* GetScrollableFrameToScrollForContent(
-      nsIContent* aContent, ScrollableDirection aDirection);
+      nsIContent* aContent, layers::ScrollDirections aDirections);
 
   /**
    * Gets nearest scrollable frame from current focused content or DOM
@@ -422,7 +423,7 @@ class PresShell final : public nsStubDocumentObserver,
    * the specified direction.
    */
   nsIScrollableFrame* GetScrollableFrameToScroll(
-      ScrollableDirection aDirection);
+      layers::ScrollDirections aDirections);
 
   /**
    * Returns the page sequence frame associated with the frame hierarchy.
@@ -1242,7 +1243,6 @@ class PresShell final : public nsStubDocumentObserver,
 
   // Widget notificiations
   void WindowSizeMoveDone();
-  void SysColorChanged() { mPresContext->SysColorChanged(); }
   void ThemeChanged() { mPresContext->ThemeChanged(); }
   void BackingScaleFactorChanged() { mPresContext->UIResolutionChangedSync(); }
 
@@ -1422,6 +1422,8 @@ class PresShell final : public nsStubDocumentObserver,
    * Calls FrameNeedsReflow on all fixed position children of the root frame.
    */
   void MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty);
+
+  void MaybeReflowForInflationScreenSizeChange();
 
   // This function handles all the work after VisualViewportSize is set
   // or reset.

@@ -41,7 +41,6 @@
 #include "nsTextFrame.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsTextFragment.h"
-#include "nsMediaFeatures.h"
 #include "nsCORSListenerProxy.h"
 #include "nsHTMLDNSPrefetch.h"
 #include "nsHtml5Module.h"
@@ -89,7 +88,7 @@
 #include "nsWindowMemoryReporter.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ProcessPriorityManager.h"
-#include "nsPermissionManager.h"
+#include "mozilla/PermissionManager.h"
 #include "nsApplicationCacheService.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/EventDispatcher.h"
@@ -177,7 +176,6 @@ nsresult nsLayoutStatics::Initialize() {
 
   nsCellMap::Init();
 
-  mozilla::SharedFontList::Initialize();
   StaticPresData::Init();
   nsCSSRendering::Init();
   css::ImageLoader::Init();
@@ -247,7 +245,7 @@ nsresult nsLayoutStatics::Initialize() {
 
   ProcessPriorityManager::Init();
 
-  nsPermissionManager::Startup();
+  PermissionManager::Startup();
 
   UIDirectionManager::Initialize();
 
@@ -325,7 +323,6 @@ void nsLayoutStatics::Shutdown() {
   IMEStateManager::Shutdown();
   EditorController::Shutdown();
   HTMLEditorController::Shutdown();
-  nsMediaFeatures::Shutdown();
   nsHTMLDNSPrefetch::Shutdown();
   nsCSSRendering::Shutdown();
   StaticPresData::Shutdown();
@@ -387,7 +384,6 @@ void nsLayoutStatics::Shutdown() {
   HTMLInputElement::DestroyUploadLastDir();
 
   nsLayoutUtils::Shutdown();
-  mozilla::SharedFontList::Shutdown();
 
   nsHyphenationManager::Shutdown();
   nsDOMMutationObserver::Shutdown();

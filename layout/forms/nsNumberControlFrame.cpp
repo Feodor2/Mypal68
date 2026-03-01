@@ -15,6 +15,7 @@
 #include "nsContentUtils.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsCSSPseudoElements.h"
+#include "nsLayoutUtils.h"
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/AccTypes.h"
@@ -41,28 +42,8 @@ nsNumberControlFrame::nsNumberControlFrame(ComputedStyle* aStyle,
 
 void nsNumberControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                        PostDestroyData& aPostDestroyData) {
-  aPostDestroyData.AddAnonymousContent(mOuterWrapper.forget());
+  aPostDestroyData.AddAnonymousContent(mSpinBox.forget());
   nsTextControlFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
-}
-
-already_AddRefed<Element> nsNumberControlFrame::MakeAnonymousElement(
-    Element* aParent, nsAtom* aTagName, PseudoStyleType aPseudoType) {
-  // Get the NodeInfoManager and tag necessary to create the anonymous divs.
-  Document* doc = mContent->GetComposedDoc();
-  RefPtr<Element> resultElement = doc->CreateHTMLElement(aTagName);
-  resultElement->SetPseudoElementType(aPseudoType);
-
-  if (aPseudoType == PseudoStyleType::mozNumberSpinDown ||
-      aPseudoType == PseudoStyleType::mozNumberSpinUp) {
-    resultElement->SetAttr(kNameSpaceID_None, nsGkAtoms::aria_hidden,
-                           u"true"_ns, false);
-  }
-
-  if (aParent) {
-    aParent->AppendChildTo(resultElement, false);
-  }
-
-  return resultElement.forget();
 }
 
 nsresult nsNumberControlFrame::CreateAnonymousContent(
@@ -71,105 +52,54 @@ nsresult nsNumberControlFrame::CreateAnonymousContent(
   // follows:
   //
   // input
-  //   div      - outer wrapper with "display:flex" by default
-  //     div    - editor root
-  //     div    - spin box wrapping up/down arrow buttons
-  //       div  - spin up (up arrow button)
-  //       div  - spin down (down arrow button)
-  //   div      - placeholder
-  //   div      - preview div
+  //   div    - placeholder
+  //   div    - preview div
+  //   div    - editor root
+  //   div    - spin box wrapping up/down arrow buttons
+  //     div  - spin up (up arrow button)
+  //     div  - spin down (down arrow button)
   //
-  // If you change this, be careful to change the destruction order in
-  // nsNumberControlFrame::DestroyFrom.
+  // If you change this, be careful to change the order of stuff returned in
+  // AppendAnonymousContentTo.
 
-  // Create the anonymous outer wrapper:
-  mOuterWrapper = MakeAnonymousElement(nullptr, nsGkAtoms::div,
-                                       PseudoStyleType::mozNumberWrapper);
+  nsTextControlFrame::CreateAnonymousContent(aElements);
 
-  // We want to do this now, rather than on the caller, so that the
-  // AppendChildTo calls below know that they are anonymous already. This is
-  // important for the NODE_IS_EDITABLE flag handling, for example.
-  mOuterWrapper->SetIsNativeAnonymousRoot();
+  // The author has elected to hide the spinner by setting this
+  // -moz-appearance. We will reframe if it changes.
+  if (StyleDisplay()->EffectiveAppearance() != StyleAppearance::Textfield) {
+    // Create the ::-moz-number-spin-box pseudo-element:
+    mSpinBox = MakeAnonElement(PseudoStyleType::mozNumberSpinBox);
 
-  aElements.AppendElement(mOuterWrapper);
+    // Create the ::-moz-number-spin-up pseudo-element:
+    mSpinUp = MakeAnonElement(PseudoStyleType::mozNumberSpinUp, mSpinBox);
 
-  nsTArray<ContentInfo> nestedContent;
-  nsTextControlFrame::CreateAnonymousContent(nestedContent);
-  for (auto& content : nestedContent) {
-    // The root goes inside the container.
-    if (content.mContent == mRootNode) {
-      mOuterWrapper->AppendChildTo(content.mContent, false);
-    } else {
-      // The rest (placeholder and preview), directly under us.
-      aElements.AppendElement(std::move(content));
-    }
+    // Create the ::-moz-number-spin-down pseudo-element:
+    mSpinDown = MakeAnonElement(PseudoStyleType::mozNumberSpinDown, mSpinBox);
+
+    aElements.AppendElement(mSpinBox);
   }
-
-  if (StyleDisplay()->EffectiveAppearance() == StyleAppearance::Textfield) {
-    // The author has elected to hide the spinner by setting this
-    // -moz-appearance. We will reframe if it changes.
-    return NS_OK;
-  }
-
-  // Create the ::-moz-number-spin-box pseudo-element:
-  mSpinBox = MakeAnonymousElement(mOuterWrapper, nsGkAtoms::div,
-                                  PseudoStyleType::mozNumberSpinBox);
-
-  // Create the ::-moz-number-spin-up pseudo-element:
-  mSpinUp = MakeAnonymousElement(mSpinBox, nsGkAtoms::div,
-                                 PseudoStyleType::mozNumberSpinUp);
-
-  // Create the ::-moz-number-spin-down pseudo-element:
-  mSpinDown = MakeAnonymousElement(mSpinBox, nsGkAtoms::div,
-                                   PseudoStyleType::mozNumberSpinDown);
 
   return NS_OK;
-}
-
-/* static */
-nsNumberControlFrame* nsNumberControlFrame::GetNumberControlFrameForTextField(
-    nsIFrame* aFrame) {
-  // If aFrame is the anon text field for an <input type=number> then we expect
-  // the frame of its mContent's grandparent to be that input's frame. We
-  // have to check for this via the content tree because we don't know whether
-  // extra frames will be wrapped around any of the elements between aFrame and
-  // the nsNumberControlFrame that we're looking for (e.g. flex wrappers).
-  nsIContent* content = aFrame->GetContent();
-  if (content->IsInNativeAnonymousSubtree() && content->GetParent() &&
-      content->GetParent()->GetParent()) {
-    nsIContent* grandparent = content->GetParent()->GetParent();
-    if (grandparent->IsHTMLElement(nsGkAtoms::input) &&
-        grandparent->AsElement()->AttrValueIs(
-            kNameSpaceID_None, nsGkAtoms::type, nsGkAtoms::number,
-            eCaseMatters)) {
-      return do_QueryFrame(grandparent->GetPrimaryFrame());
-    }
-  }
-  return nullptr;
 }
 
 /* static */
 nsNumberControlFrame* nsNumberControlFrame::GetNumberControlFrameForSpinButton(
     nsIFrame* aFrame) {
   // If aFrame is a spin button for an <input type=number> then we expect the
-  // frame of its mContent's great-grandparent to be that input's frame. We
-  // have to check for this via the content tree because we don't know whether
-  // extra frames will be wrapped around any of the elements between aFrame and
-  // the nsNumberControlFrame that we're looking for (e.g. flex wrappers).
+  // frame of the NAC root parent to be that input's frame. We have to check for
+  // this via the content tree because we don't know whether extra frames will
+  // be wrapped around any of the elements between aFrame and the
+  // nsNumberControlFrame that we're looking for (e.g. flex wrappers).
   nsIContent* content = aFrame->GetContent();
-  if (content->IsInNativeAnonymousSubtree() && content->GetParent() &&
-      content->GetParent()->GetParent() &&
-      content->GetParent()->GetParent()->GetParent()) {
-    nsIContent* greatgrandparent =
-        content->GetParent()->GetParent()->GetParent();
-    if (greatgrandparent->IsHTMLElement(nsGkAtoms::input) &&
-        greatgrandparent->AsElement()->AttrValueIs(
-            kNameSpaceID_None, nsGkAtoms::type, nsGkAtoms::number,
-            eCaseMatters)) {
-      return do_QueryFrame(greatgrandparent->GetPrimaryFrame());
-    }
+  auto* nacHost = content->GetClosestNativeAnonymousSubtreeRootParent();
+  if (!nacHost) {
+    return nullptr;
   }
-  return nullptr;
+  auto* input = HTMLInputElement::FromNode(nacHost);
+  if (!input || input->ControlType() != FormControlType::InputNumber) {
+    return nullptr;
+  }
+  return do_QueryFrame(input->GetPrimaryFrame());
 }
 
 int32_t nsNumberControlFrame::GetSpinButtonForPointerEvent(
@@ -229,38 +159,11 @@ bool nsNumberControlFrame::SpinnerDownButtonIsDepressed() const {
       ->NumberSpinnerDownButtonIsDepressed();
 }
 
-#define STYLES_DISABLING_NATIVE_THEMING \
-  NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND | NS_AUTHOR_SPECIFIED_PADDING
-
-bool nsNumberControlFrame::ShouldUseNativeStyleForSpinner() const {
-  MOZ_ASSERT(mSpinUp && mSpinDown,
-             "We should not be called when we have no spinner");
-
-  nsIFrame* spinUpFrame = mSpinUp->GetPrimaryFrame();
-  nsIFrame* spinDownFrame = mSpinDown->GetPrimaryFrame();
-
-  return spinUpFrame &&
-         spinUpFrame->StyleDisplay()->EffectiveAppearance() ==
-             StyleAppearance::SpinnerUpbutton &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             spinUpFrame, STYLES_DISABLING_NATIVE_THEMING) &&
-         spinDownFrame &&
-         spinDownFrame->StyleDisplay()->EffectiveAppearance() ==
-             StyleAppearance::SpinnerDownbutton &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             spinDownFrame, STYLES_DISABLING_NATIVE_THEMING);
-}
-
 void nsNumberControlFrame::AppendAnonymousContentTo(
     nsTArray<nsIContent*>& aElements, uint32_t aFilter) {
-  if (mOuterWrapper) {
-    aElements.AppendElement(mOuterWrapper);
-  }
-  if (mPlaceholderDiv) {
-    aElements.AppendElement(mPlaceholderDiv);
-  }
-  if (mPreviewDiv) {
-    aElements.AppendElement(mPreviewDiv);
+  nsTextControlFrame::AppendAnonymousContentTo(aElements, aFilter);
+  if (mSpinBox) {
+    aElements.AppendElement(mSpinBox);
   }
 }
 

@@ -8,7 +8,6 @@
 #define mozilla_dom_MediaList_h
 
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
 
@@ -17,6 +16,7 @@
 class nsMediaQueryResultCacheKey;
 
 namespace mozilla {
+class ErrorResult;
 class StyleSheet;
 
 namespace dom {

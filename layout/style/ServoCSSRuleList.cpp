@@ -13,6 +13,7 @@
 #include "mozilla/dom/CSSLayerBlockRule.h"
 #include "mozilla/dom/CSSLayerStatementRule.h"
 #include "mozilla/dom/CSSKeyframesRule.h"
+#include "mozilla/dom/CSSContainerRule.h"
 #include "mozilla/dom/CSSMediaRule.h"
 #include "mozilla/dom/CSSMozDocumentRule.h"
 #include "mozilla/dom/CSSNamespaceRule.h"
@@ -89,6 +90,7 @@ css::Rule* ServoCSSRuleList::GetRule(uint32_t aIndex) {
       CASE_RULE(CounterStyle, CounterStyle)
       CASE_RULE(LayerBlock, LayerBlock)
       CASE_RULE(LayerStatement, LayerStatement)
+      CASE_RULE(Container, Container)
 #undef CASE_RULE
       case StyleCssRuleType::Viewport:
         MOZ_ASSERT_UNREACHABLE("viewport is not implemented in Gecko");
@@ -242,6 +244,7 @@ void ServoCSSRuleList::SetRawAfterClone(RefPtr<ServoCssRules> aNewRules) {
       CASE_FOR(CounterStyle, CounterStyle)
       CASE_FOR(LayerBlock, LayerBlock)
       CASE_FOR(LayerStatement, LayerStatement)
+      CASE_FOR(Container, Container)
       case StyleCssRuleType::Keyframe:
         MOZ_ASSERT_UNREACHABLE("keyframe rule cannot be here");
         break;

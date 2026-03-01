@@ -1046,66 +1046,66 @@ fuzzy-if(skiaContent,0-1,0-60) == 427370-1.html 427370-1-ref.html
 == 428810-1a-ltr.html 428810-1-ltr-ref.html
 == 428810-1b-ltr.html 428810-1-ltr-ref.html
 == 428810-1c-ltr.html 428810-empty-ltr-ref.html
-fails == 428810-1d-ltr.html 428810-empty-ltr-ref.html # bug 179596
+== 428810-1d-ltr.html 428810-empty-ltr-ref.html
 != 428810-1-ltr-ref.html about:blank
 == 428810-2a-ltr.html 428810-2-ltr-ref.html
 == 428810-2b-ltr.html 428810-2-ltr-ref.html
-fails == 428810-2e-ltr.html 428810-empty-ltr-ref.html # bug 179596
+== 428810-2e-ltr.html 428810-empty-ltr-ref.html
 == 428810-2f-ltr.html 428810-empty-ltr-ref.html
 != 428810-2-ltr-ref.html about:blank
 == 428810-3a-ltr.html 428810-3-ltr-ref.html
 == 428810-3b-ltr.html 428810-3-ltr-ref.html
-fails == 428810-3e-ltr.html 428810-empty-ltr-ref.html # bug 179596
+== 428810-3e-ltr.html 428810-empty-ltr-ref.html
 == 428810-3f-ltr.html 428810-empty-ltr-ref.html
 != 428810-3-ltr-ref.html about:blank
 == 428810-1a-rtl.html 428810-1-rtl-ref.html
-== 428810-1b-rtl.html 428810-1-rtl-ref.html
+fails-if(winWidget||cocoaWidget) == 428810-1b-rtl.html 428810-1-rtl-ref.html # bug 179596
 == 428810-1c-rtl.html 428810-empty-rtl-ref.html
-fails == 428810-1d-rtl.html 428810-empty-rtl-ref.html # bug 179596
+== 428810-1d-rtl.html 428810-empty-rtl-ref.html
 != 428810-1-rtl-ref.html about:blank
 != 428810-1-rtl-ref.html 428810-1-ltr-ref.html
 == 428810-2a-rtl.html 428810-2-rtl-ref.html
-== 428810-2b-rtl.html 428810-2-rtl-ref.html
-fails == 428810-2e-rtl.html 428810-empty-rtl-ref.html # bug 179596
+fails-if(winWidget||cocoaWidget) == 428810-2b-rtl.html 428810-2-rtl-ref.html # bug 179596
+== 428810-2e-rtl.html 428810-empty-rtl-ref.html
 == 428810-2f-rtl.html 428810-empty-rtl-ref.html
 != 428810-2-rtl-ref.html about:blank
 != 428810-2-rtl-ref.html 428810-2-ltr-ref.html
 == 428810-3a-rtl.html 428810-3-rtl-ref.html
-== 428810-3b-rtl.html 428810-3-rtl-ref.html
-fails == 428810-3e-rtl.html 428810-empty-rtl-ref.html # bug 179596
+fails-if(winWidget||cocoaWidget) == 428810-3b-rtl.html 428810-3-rtl-ref.html # bug 179596
+== 428810-3e-rtl.html 428810-empty-rtl-ref.html
 == 428810-3f-rtl.html 428810-empty-rtl-ref.html
 != 428810-3-rtl-ref.html about:blank
 != 428810-3-rtl-ref.html 428810-3-ltr-ref.html
 == 428810-1a-ltr-insets.html 428810-1-ltr-insets-ref.html
-== 428810-1b-ltr-insets.html 428810-1-ltr-insets-ref.html
+fails-if(winWidget||cocoaWidget) == 428810-1b-ltr-insets.html 428810-1-ltr-insets-ref.html # bug 179596
 == 428810-1c-ltr-insets.html 428810-empty-ltr-insets-ref.html
-fails == 428810-1d-ltr-insets.html 428810-empty-ltr-insets-ref.html # bug 179596
+== 428810-1d-ltr-insets.html 428810-empty-ltr-insets-ref.html
 != 428810-1-ltr-insets-ref.html about:blank
 == 428810-2a-ltr-insets.html 428810-2-ltr-insets-ref.html
-== 428810-2b-ltr-insets.html 428810-2-ltr-insets-ref.html
-fails == 428810-2e-ltr-insets.html 428810-empty-ltr-insets-ref.html # bug 179596
+fails-if(winWidget||cocoaWidget) == 428810-2b-ltr-insets.html 428810-2-ltr-insets-ref.html # bug 179596
+== 428810-2e-ltr-insets.html 428810-empty-ltr-insets-ref.html
 == 428810-2f-ltr-insets.html 428810-empty-ltr-insets-ref.html
 != 428810-2-ltr-insets-ref.html about:blank
 == 428810-3a-ltr-insets.html 428810-3-ltr-insets-ref.html
-== 428810-3b-ltr-insets.html 428810-3-ltr-insets-ref.html
-fails == 428810-3e-ltr-insets.html 428810-empty-ltr-insets-ref.html # bug 179596
+fails-if(winWidget||cocoaWidget) == 428810-3b-ltr-insets.html 428810-3-ltr-insets-ref.html # bug 179596
+== 428810-3e-ltr-insets.html 428810-empty-ltr-insets-ref.html
 == 428810-3f-ltr-insets.html 428810-empty-ltr-insets-ref.html
 != 428810-3-ltr-insets-ref.html about:blank
 == 428810-1a-rtl-insets.html 428810-1-rtl-insets-ref.html
-== 428810-1b-rtl-insets.html 428810-1-rtl-insets-ref.html
+fails-if(winWidget||cocoaWidget) == 428810-1b-rtl-insets.html 428810-1-rtl-insets-ref.html # bug 179596
 == 428810-1c-rtl-insets.html 428810-empty-rtl-insets-ref.html
-fails == 428810-1d-rtl-insets.html 428810-empty-rtl-insets-ref.html # bug 179596
+== 428810-1d-rtl-insets.html 428810-empty-rtl-insets-ref.html
 != 428810-1-rtl-insets-ref.html about:blank
 != 428810-1-rtl-insets-ref.html 428810-1-ltr-insets-ref.html
 == 428810-2a-rtl-insets.html 428810-2-rtl-insets-ref.html
-== 428810-2b-rtl-insets.html 428810-2-rtl-insets-ref.html
-fails == 428810-2e-rtl-insets.html 428810-empty-rtl-insets-ref.html # bug 179596
+fails-if(winWidget||cocoaWidget) == 428810-2b-rtl-insets.html 428810-2-rtl-insets-ref.html # bug 179596
+== 428810-2e-rtl-insets.html 428810-empty-rtl-insets-ref.html
 == 428810-2f-rtl-insets.html 428810-empty-rtl-insets-ref.html
 != 428810-2-rtl-insets-ref.html about:blank
 != 428810-2-rtl-insets-ref.html 428810-2-ltr-insets-ref.html
 == 428810-3a-rtl-insets.html 428810-3-rtl-insets-ref.html
-== 428810-3b-rtl-insets.html 428810-3-rtl-insets-ref.html
-fails == 428810-3e-rtl-insets.html 428810-empty-rtl-insets-ref.html # bug 179596
+fails-if(winWidget||cocoaWidget) == 428810-3b-rtl-insets.html 428810-3-rtl-insets-ref.html # bug 179596
+== 428810-3e-rtl-insets.html 428810-empty-rtl-insets-ref.html
 == 428810-3f-rtl-insets.html 428810-empty-rtl-insets-ref.html
 != 428810-3-rtl-insets-ref.html about:blank
 != 428810-3-rtl-insets-ref.html 428810-3-ltr-insets-ref.html
@@ -1909,10 +1909,10 @@ pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-54,0-8) == 113
 pref(apz.allow_zooming,true) skip-if(!Android) != 1133905-ref-vh-rtl.html about:blank # make sure it doesn't render blank
 == 1149304-1-transform-change.html 1149304-1-transform-change-ref.html
 == chrome://reftest/content/bugs/1150021-1.xhtml chrome://reftest/content/bugs/1150021-1-ref.xhtml
-== 1151145-1.html 1151145-1-ref.html
+fuzzy-if(webrender,0-128,0-22) == 1151145-1.html 1151145-1-ref.html # bug 1646527 for WR fuzz
 == 1151306-1.html 1151306-1-ref.html
 == 1153845-1.html 1153845-1-ref.html
-== 1155828-1.html 1155828-1-ref.html
+fuzzy-if(webrender,0-128,0-22) == 1155828-1.html 1155828-1-ref.html # bug 1646527 for WR fuzz
 fuzzy-if(skiaContent,0-7,0-84) == 1156129-1.html 1156129-1-ref.html
 pref(dom.use_xbl_scopes_for_remote_xul,true) HTTP(..) == 1157127-1.html 1157127-1-ref.html
 fuzzy-if(Android,0-6,0-6) == 1169331-1.html 1169331-1-ref.html

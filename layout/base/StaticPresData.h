@@ -5,6 +5,7 @@
 #ifndef mozilla_StaticPresData_h
 #define mozilla_StaticPresData_h
 
+#include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCoord.h"
 #include "nsCOMPtr.h"
@@ -18,18 +19,18 @@ struct LangGroupFontPrefs {
   // Font sizes default to zero; they will be set in GetFontPreferences
   LangGroupFontPrefs()
       : mLangGroup(nullptr),
-        mMinimumFontSize(0),
-        mDefaultVariableFont(),
-        mDefaultSerifFont(StyleGenericFontFamily::Serif, 0),
-        mDefaultSansSerifFont(StyleGenericFontFamily::SansSerif, 0),
-        mDefaultMonospaceFont(StyleGenericFontFamily::Monospace, 0),
-        mDefaultCursiveFont(StyleGenericFontFamily::Cursive, 0),
-        mDefaultFantasyFont(StyleGenericFontFamily::Fantasy, 0) {
-    mDefaultVariableFont.fontlist.SetDefaultFontType(
-        StyleGenericFontFamily::Serif);
-    // We create mDefaultVariableFont.fontlist with defaultType as the
-    // fallback font, and not as part of the font list proper. This way,
-    // it can be overwritten should there be a language change.
+        mMinimumFontSize({0}),
+        mDefaultVariableFont(StyleGenericFontFamily::Serif, {0}),
+        mDefaultSerifFont(StyleGenericFontFamily::Serif, {0}),
+        mDefaultSansSerifFont(StyleGenericFontFamily::SansSerif, {0}),
+        mDefaultMonospaceFont(StyleGenericFontFamily::Monospace, {0}),
+        mDefaultCursiveFont(StyleGenericFontFamily::Cursive, {0}),
+        mDefaultFantasyFont(StyleGenericFontFamily::Fantasy, {0}),
+        mDefaultSystemUiFont(StyleGenericFontFamily::SystemUi, {0}) {
+  }
+
+  StyleGenericFontFamily GetDefaultGeneric() const {
+    return mDefaultVariableFont.family.families.list.AsSpan()[0].AsGeneric();
   }
 
   void Reset() {
@@ -70,21 +71,25 @@ struct LangGroupFontPrefs {
         return &mDefaultCursiveFont;
       case StyleGenericFontFamily::Fantasy:
         return &mDefaultFantasyFont;
+      case StyleGenericFontFamily::SystemUi:
+        return &mDefaultSystemUiFont;
+      case StyleGenericFontFamily::MozEmoji:
+        // This shouldn't appear in font family names.
         break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("invalid font id");
-        return nullptr;
     }
+    MOZ_ASSERT_UNREACHABLE("invalid font id");
+    return nullptr;
   }
 
   nsStaticAtom* mLangGroup;
-  nscoord mMinimumFontSize;
+  Length mMinimumFontSize;
   nsFont mDefaultVariableFont;
   nsFont mDefaultSerifFont;
   nsFont mDefaultSansSerifFont;
   nsFont mDefaultMonospaceFont;
   nsFont mDefaultCursiveFont;
   nsFont mDefaultFantasyFont;
+  nsFont mDefaultSystemUiFont;
   UniquePtr<LangGroupFontPrefs> mNext;
 };
 
@@ -154,8 +159,12 @@ class StaticPresData {
   void InvalidateFontPrefs() { mLangGroupFontPrefs.Reset(); }
 
  private:
+  // Private constructor/destructor, to prevent other code from inadvertently
+  // instantiating or deleting us. (Though we need to declare StaticAutoPtr as
+  // a friend to give it permission.)
   StaticPresData();
   ~StaticPresData() = default;
+  friend class StaticAutoPtr<StaticPresData>;
 
   nsLanguageAtomService* mLangService;
   LangGroupFontPrefs mLangGroupFontPrefs;

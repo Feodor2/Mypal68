@@ -18,6 +18,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/GeckoMVMContext.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/Likely.h"
@@ -646,6 +647,7 @@ StaticRefPtr<Element> PresShell::EventHandler::sLastKeyDownEventTargetElement;
 bool PresShell::sProcessInteractable = false;
 
 static bool gVerifyReflowEnabled;
+extern mozilla::LazyLogModule sApzMvmLog;
 
 bool PresShell::GetVerifyReflowEnable() {
 #ifdef DEBUG
@@ -947,7 +949,7 @@ void PresShell::Init(nsPresContext* aPresContext, nsViewManager* aViewManager) {
   const_cast<RefPtr<nsPresContext>&>(mPresContext) = aPresContext;
   mPresContext->AttachPresShell(this);
 
-  mPresContext->DeviceContext()->InitFontCache();
+  mPresContext->InitFontCache();
 
   // FIXME(emilio, bug 1544185): Some Android code somehow depends on the shell
   // being eagerly registered as a style flush observer. This shouldn't be
@@ -1001,7 +1003,7 @@ void PresShell::Init(nsPresContext* aPresContext, nsViewManager* aViewManager) {
         os->AddObserver(this, "sessionstore-one-or-no-tab-restored", false);
       }
       os->AddObserver(this, "font-info-updated", false);
-      os->AddObserver(this, "look-and-feel-pref-changed", false);
+      os->AddObserver(this, "look-and-feel-changed", false);
     }
   }
 
@@ -1241,7 +1243,7 @@ void PresShell::Destroy() {
         os->RemoveObserver(this, "sessionstore-one-or-no-tab-restored");
       }
       os->RemoveObserver(this, "font-info-updated");
-      os->RemoveObserver(this, "look-and-feel-pref-changed");
+      os->RemoveObserver(this, "look-and-feel-changed");
     }
   }
 
@@ -1863,12 +1865,13 @@ nsresult PresShell::ResizeReflow(nscoord aWidth, nscoord aHeight,
     // the ZCC to update itself.
     mZoomConstraintsClient->ScreenSizeChanged();
   }
-  if (mMobileViewportManager) {
-    // If we have a mobile viewport manager, request a reflow from it. It can
-    // recompute the final CSS viewport and trigger a call to
+  if (UsesMobileViewportSizing()) {
+    // If we are using mobile viewport sizing, request a reflow from the MVM.
+    // It can recompute the final CSS viewport and trigger a call to
     // ResizeReflowIgnoreOverride if it changed. We don't force adjusting
     // of resolution, because that is only necessary when we are destroying
     // the MVM.
+    MOZ_ASSERT(mMobileViewportManager);
     mMobileViewportManager->RequestReflow(false);
     return NS_OK;
   }
@@ -2247,11 +2250,10 @@ NS_IMETHODIMP
 PresShell::PageMove(bool aForward, bool aExtend) {
   nsIFrame* frame = nullptr;
   if (!aExtend) {
-    frame = do_QueryFrame(
-        GetScrollableFrameToScroll(ScrollableDirection::Vertical));
+    frame = do_QueryFrame(GetScrollableFrameToScroll(VerticalScollDirection));
     // If there is no scrollable frame, get the frame to move caret instead.
   }
-  if (!frame) {
+  if (!frame || frame->PresContext() != mPresContext) {
     frame = mSelection->GetFrameToPageSelect();
     if (!frame) {
       return NS_OK;
@@ -2268,7 +2270,7 @@ PresShell::PageMove(bool aForward, bool aExtend) {
 NS_IMETHODIMP
 PresShell::ScrollPage(bool aForward) {
   nsIScrollableFrame* scrollFrame =
-      GetScrollableFrameToScroll(ScrollableDirection::Vertical);
+      GetScrollableFrameToScroll(VerticalScollDirection);
   if (scrollFrame) {
     scrollFrame->ScrollBy(
         nsIntPoint(0, aForward ? 1 : -1), ScrollUnit::PAGES, ScrollMode::Smooth,
@@ -2281,7 +2283,7 @@ PresShell::ScrollPage(bool aForward) {
 NS_IMETHODIMP
 PresShell::ScrollLine(bool aForward) {
   nsIScrollableFrame* scrollFrame =
-      GetScrollableFrameToScroll(ScrollableDirection::Vertical);
+      GetScrollableFrameToScroll(VerticalScollDirection);
   if (scrollFrame) {
     int32_t lineCount =
         Preferences::GetInt("toolkit.scrollbox.verticalScrollDistance",
@@ -2297,7 +2299,7 @@ PresShell::ScrollLine(bool aForward) {
 NS_IMETHODIMP
 PresShell::ScrollCharacter(bool aRight) {
   nsIScrollableFrame* scrollFrame =
-      GetScrollableFrameToScroll(ScrollableDirection::Horizontal);
+      GetScrollableFrameToScroll(HorizontalScrollDirection);
   if (scrollFrame) {
     int32_t h =
         Preferences::GetInt("toolkit.scrollbox.horizontalScrollDistance",
@@ -2313,7 +2315,7 @@ PresShell::ScrollCharacter(bool aRight) {
 NS_IMETHODIMP
 PresShell::CompleteScroll(bool aForward) {
   nsIScrollableFrame* scrollFrame =
-      GetScrollableFrameToScroll(ScrollableDirection::Vertical);
+      GetScrollableFrameToScroll(VerticalScollDirection);
   if (scrollFrame) {
     scrollFrame->ScrollBy(
         nsIntPoint(0, aForward ? 1 : -1), ScrollUnit::WHOLE, ScrollMode::Smooth,
@@ -2777,7 +2779,7 @@ already_AddRefed<nsIContent> PresShell::GetSelectedContentForScrolling() const {
 }
 
 nsIScrollableFrame* PresShell::GetScrollableFrameToScrollForContent(
-    nsIContent* aContent, ScrollableDirection aDirection) {
+    nsIContent* aContent, ScrollDirections aDirections) {
   nsIScrollableFrame* scrollFrame = nullptr;
   if (aContent) {
     nsIFrame* startFrame = aContent->GetPrimaryFrame();
@@ -2787,7 +2789,7 @@ nsIScrollableFrame* PresShell::GetScrollableFrameToScrollForContent(
         startFrame = scrollFrame->GetScrolledFrame();
       }
       scrollFrame = nsLayoutUtils::GetNearestScrollableFrameForDirection(
-          startFrame, aDirection);
+          startFrame, aDirections);
     }
   }
   if (!scrollFrame) {
@@ -2796,15 +2798,15 @@ nsIScrollableFrame* PresShell::GetScrollableFrameToScrollForContent(
       return nullptr;
     }
     scrollFrame = nsLayoutUtils::GetNearestScrollableFrameForDirection(
-        scrollFrame->GetScrolledFrame(), aDirection);
+        scrollFrame->GetScrolledFrame(), aDirections);
   }
   return scrollFrame;
 }
 
 nsIScrollableFrame* PresShell::GetScrollableFrameToScroll(
-    ScrollableDirection aDirection) {
+    ScrollDirections aDirections) {
   nsCOMPtr<nsIContent> content = GetContentForScrolling();
-  return GetScrollableFrameToScrollForContent(content.get(), aDirection);
+  return GetScrollableFrameToScrollForContent(content.get(), aDirections);
 }
 
 void PresShell::CancelAllPendingReflows() {
@@ -4975,10 +4977,10 @@ already_AddRefed<SourceSurface> PresShell::RenderSelection(
   // iterate over each range and collect them into the rangeItems array.
   // This is done so that the size of selection can be determined so as
   // to allocate a surface area
-  uint32_t numRanges = aSelection->RangeCount();
-  NS_ASSERTION(numRanges > 0, "RenderSelection called with no selection");
-
-  for (uint32_t r = 0; r < numRanges; r++) {
+  const uint32_t rangeCount = aSelection->RangeCount();
+  NS_ASSERTION(rangeCount > 0, "RenderSelection called with no selection");
+  for (const uint32_t r : IntegerRange(rangeCount)) {
+    MOZ_ASSERT(aSelection->RangeCount() == rangeCount);
     RefPtr<nsRange> range = aSelection->GetRangeAt(r);
 
     UniquePtr<RangePaintInfo> info = CreateRangePaintInfo(range, area, true);
@@ -7881,16 +7883,6 @@ nsresult PresShell::EventHandler::DispatchEvent(
 
   nsContentUtils::SetIsHandlingKeyBoardEvent(wasHandlingKeyBoardEvent);
 
-  if (aEvent->mMessage == ePointerUp || aEvent->mMessage == ePointerCancel) {
-    // Implicitly releasing capture for given pointer.
-    // ePointerLostCapture should be send after ePointerUp or
-    // ePointerCancel.
-    WidgetPointerEvent* pointerEvent = aEvent->AsPointerEvent();
-    MOZ_ASSERT(pointerEvent);
-    PointerEventHandler::ReleasePointerCaptureById(pointerEvent->pointerId);
-    PointerEventHandler::CheckPointerCaptureState(pointerEvent);
-  }
-
   if (mPresShell->IsDestroying()) {
     return NS_OK;
   }
@@ -9044,6 +9036,10 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
     timeStart = TimeStamp::Now();
   }
 
+  if (mMobileViewportManager) {
+    mMobileViewportManager->UpdateSizesBeforeReflow();
+  }
+
   // Schedule a paint, but don't actually mark this frame as changed for
   // retained DL building purposes. If any child frames get moved, then
   // they will schedule paint again. We could probaby skip this, and just
@@ -9434,7 +9430,7 @@ PresShell::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
 
-  if (!nsCRT::strcmp(aTopic, "look-and-feel-pref-changed")) {
+  if (!nsCRT::strcmp(aTopic, "look-and-feel-changed")) {
     ThemeChanged();
     return NS_OK;
   }
@@ -10099,14 +10095,12 @@ void ReflowCountMgr::PaintCount(const char* aName,
 
       // We don't care about the document language or user fonts here;
       // just get a default Latin font.
-      nsFont font(StyleGenericFontFamily::Serif,
-                  nsPresContext::CSSPixelsToAppUnits(11));
+      nsFont font(StyleGenericFontFamily::Serif, Length::FromPixels(11));
       nsFontMetrics::Params params;
       params.language = nsGkAtoms::x_western;
       params.textPerf = aPresContext->GetTextPerfMetrics();
       params.featureValueLookup = aPresContext->GetFontFeatureValuesLookup();
-      RefPtr<nsFontMetrics> fm =
-          aPresContext->DeviceContext()->GetMetricsFor(font, params);
+      RefPtr<nsFontMetrics> fm = aPresContext->GetMetricsFor(font, params);
 
       char buf[16];
       int len = SprintfLiteral(buf, "%d", counter->mCount);
@@ -10433,72 +10427,96 @@ RefPtr<MobileViewportManager> PresShell::GetMobileViewportManager() const {
   return mMobileViewportManager;
 }
 
-bool UseMobileViewportManager(PresShell* aPresShell, Document* aDocument) {
+Maybe<MobileViewportManager::ManagerType> UseMobileViewportManager(
+    PresShell* aPresShell, Document* aDocument) {
   // If we're not using APZ, we won't be able to zoom, so there is no
   // point in having an MVM.
   if (nsPresContext* presContext = aPresShell->GetPresContext()) {
     if (nsIWidget* widget = presContext->GetNearestWidget()) {
       if (!widget->AsyncPanZoomEnabled()) {
-        return false;
+        return Nothing();
       }
     }
   }
-  return nsLayoutUtils::ShouldHandleMetaViewport(aDocument) ||
-         nsLayoutUtils::AllowZoomingForDocument(aDocument);
+  if (nsLayoutUtils::ShouldHandleMetaViewport(aDocument)) {
+    return Some(MobileViewportManager::ManagerType::VisualAndMetaViewport);
+  }
+  if (StaticPrefs::apz_mvm_force_enabled() ||
+      nsLayoutUtils::AllowZoomingForDocument(aDocument)) {
+    return Some(MobileViewportManager::ManagerType::VisualViewportOnly);
+  }
+  return Nothing();
 }
 
 void PresShell::UpdateViewportOverridden(bool aAfterInitialization) {
-  // Determine if we require a MobileViewportManager. We need one any
-  // time we allow resolution zooming for a document, and any time we
-  // want to obey <meta name="viewport"> tags for it.
-  bool needMVM = UseMobileViewportManager(this, mDocument);
+  // Determine if we require a MobileViewportManager, and what kind if so. We
+  // need one any time we allow resolution zooming for a document, and any time
+  // we want to obey <meta name="viewport"> tags for it.
+  Maybe<MobileViewportManager::ManagerType> mvmType =
+      UseMobileViewportManager(this, mDocument);
 
-  if (needMVM == !!mMobileViewportManager) {
-    // Either we've need one and we've already got it, or we don't need one
-    // and don't have it. Either way, we're done.
+  if (mvmType.isNothing() && !mMobileViewportManager) {
+    // We don't need one and don't have it. So we're done.
     return;
   }
+  if (mvmType && mMobileViewportManager &&
+      *mvmType == mMobileViewportManager->GetManagerType()) {
+    // We need one and we have one of the correct type, so we're done.
+  }
 
-  if (needMVM) {
+  if (mMobileViewportManager) {
+    // We have one, but we need to either destroy it completely to replace it
+    // with another one of the correct type. So either way, let's destroy the
+    // one we have.
+    mMobileViewportManager->Destroy();
+    mMobileViewportManager = nullptr;
+    mMVMContext = nullptr;
+
+    ResetVisualViewportSize();
+
+    // After we clear out the MVM and the MVMContext, also reset the
+    // resolution to its pre-MVM value.
+    SetResolutionAndScaleTo(mDocument->GetSavedResolutionBeforeMVM(),
+                            ResolutionChangeOrigin::MainThreadRestore);
+
+    if (aAfterInitialization) {
+      // Force a reflow to our correct size by going back to the docShell
+      // and asking it to reassert its size. This is necessary because
+      // everything underneath the docShell, like the ViewManager, has been
+      // altered by the MobileViewportManager in an irreversible way.
+      nsDocShell* docShell =
+          static_cast<nsDocShell*>(GetPresContext()->GetDocShell());
+      int32_t width, height;
+      docShell->GetSize(&width, &height);
+      docShell->SetSize(width, height, false);
+    }
+  }
+
+  if (mvmType) {
+    // Let's create the MVM of the type that we need. At this point we shouldn't
+    // have one.
+    MOZ_ASSERT(!mMobileViewportManager);
+
     if (mPresContext->IsRootContentDocument()) {
+      // Store the resolution so we can restore to this resolution when
+      // the MVM is destroyed.
+      mDocument->SetSavedResolutionBeforeMVM(mResolution.valueOr(1.0f));
+
       mMVMContext = new GeckoMVMContext(mDocument, this);
-      mMobileViewportManager = new MobileViewportManager(mMVMContext);
+      mMobileViewportManager = new MobileViewportManager(mMVMContext, *mvmType);
+      if (MOZ_UNLIKELY(MOZ_LOG_TEST(sApzMvmLog, LogLevel::Debug))) {
+        nsIURI* uri = mDocument->GetDocumentURI();
+        MOZ_LOG(sApzMvmLog, LogLevel::Debug,
+                ("Created MVM %p (type %d) for URI %s",
+                 mMobileViewportManager.get(), (int)*mvmType,
+                 uri ? uri->GetSpecOrDefault().get() : "(null)"));
+      }
 
       if (aAfterInitialization) {
         // Setting the initial viewport will trigger a reflow.
         mMobileViewportManager->SetInitialViewport();
       }
     }
-    return;
-  }
-
-  MOZ_ASSERT(mMobileViewportManager,
-             "Shouldn't reach this without a MobileViewportManager.");
-  // Before we get rid of our MVM, ask it to update the viewport while
-  // forcing resolution, which will undo any scaling it might have imposed.
-  // To do this correctly, we need to first null out mMobileViewportManager,
-  // because during reflow we will check PresShell::GetIsViewportOverriden(),
-  // which uses that value as a signifier.
-  RefPtr<MobileViewportManager> oldMVM;
-  mMobileViewportManager.swap(oldMVM);
-
-  oldMVM->RequestReflow(true);
-  ResetVisualViewportSize();
-
-  oldMVM->Destroy();
-  oldMVM = nullptr;
-  mMVMContext = nullptr;
-
-  if (aAfterInitialization) {
-    // Force a reflow to our correct size by going back to the docShell
-    // and asking it to reassert its size. This is necessary because
-    // everything underneath the docShell, like the ViewManager, has been
-    // altered by the MobileViewportManager in an irreversible way.
-    nsDocShell* docShell =
-        static_cast<nsDocShell*>(GetPresContext()->GetDocShell());
-    int32_t width, height;
-    docShell->GetSize(&width, &height);
-    docShell->SetSize(width, height, false);
   }
 }
 
@@ -10587,23 +10605,66 @@ void PresShell::MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty) {
   }
 }
 
-void PresShell::CompleteChangeToVisualViewportSize() {
-  if (nsIScrollableFrame* rootScrollFrame = GetRootScrollFrameAsScrollable()) {
-    rootScrollFrame->MarkScrollbarsDirtyForReflow();
+void PresShell::MaybeReflowForInflationScreenSizeChange() {
+  nsPresContext* pc = GetPresContext();
+  const bool fontInflationWasEnabled = FontSizeInflationEnabled();
+  RecomputeFontSizeInflationEnabled();
+  bool changed = false;
+  if (FontSizeInflationEnabled() && FontSizeInflationMinTwips() != 0) {
+    pc->ScreenSizeInchesForFontInflation(&changed);
   }
-  MarkFixedFramesForReflow(IntrinsicDirty::Resize);
+
+  changed = changed || fontInflationWasEnabled != FontSizeInflationEnabled();
+  if (!changed) {
+    return;
+  }
+  if (nsCOMPtr<nsIDocShell> docShell = pc->GetDocShell()) {
+    nsCOMPtr<nsIContentViewer> cv;
+    docShell->GetContentViewer(getter_AddRefs(cv));
+    if (!cv) {
+      return;
+    }
+    nsTArray<nsCOMPtr<nsIContentViewer>> array;
+    cv->AppendSubtree(array);
+    for (uint32_t i = 0, iEnd = array.Length(); i < iEnd; ++i) {
+      nsCOMPtr<nsIContentViewer> cv = array[i];
+      if (RefPtr<PresShell> descendantPresShell = cv->GetPresShell()) {
+        nsIFrame* rootFrame = descendantPresShell->GetRootFrame();
+        if (rootFrame) {
+          descendantPresShell->FrameNeedsReflow(
+              rootFrame, IntrinsicDirty::StyleChange, NS_FRAME_IS_DIRTY);
+        }
+      }
+    }
+  }
+}
+
+void PresShell::CompleteChangeToVisualViewportSize() {
+  // This can get called during reflow, if the caller wants to get the latest
+  // visual viewport size after scrollbars have been added/removed. In such a
+  // case, we don't need to mark things as dirty because the things that we
+  // would mark dirty either just got updated (the root scrollframe's
+  // scrollbars), or will be laid out later during this reflow cycle (fixed-pos
+  // items). Callers that update the visual viewport during a reflow are
+  // responsible for maintaining these invariants.
+  if (!mIsReflowing) {
+    if (nsIScrollableFrame* rootScrollFrame =
+            GetRootScrollFrameAsScrollable()) {
+      rootScrollFrame->MarkScrollbarsDirtyForReflow();
+    }
+    MarkFixedFramesForReflow(IntrinsicDirty::Resize);
+  }
+
+  MaybeReflowForInflationScreenSizeChange();
 
   if (auto* window = nsGlobalWindowInner::Cast(mDocument->GetInnerWindow())) {
     window->VisualViewport()->PostResizeEvent();
   }
-
-  if (nsIScrollableFrame* rootScrollFrame = GetRootScrollFrameAsScrollable()) {
-    ScrollAnchorContainer* container = rootScrollFrame->Anchor();
-    container->UserScrolled();
-  }
 }
 
 void PresShell::SetVisualViewportSize(nscoord aWidth, nscoord aHeight) {
+  MOZ_ASSERT(aWidth >= 0.0 && aHeight >= 0.0);
+
   if (!mVisualViewportSizeSet || mVisualViewportSize.width != aWidth ||
       mVisualViewportSize.height != aHeight) {
     mVisualViewportSizeSet = true;

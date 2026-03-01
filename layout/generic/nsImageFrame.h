@@ -101,6 +101,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   void SetupForContentURLRequest();
   bool ShouldShowBrokenImageIcon() const;
 
+  const mozilla::StyleImage* GetImageFromStyle() const;
+
 #ifdef ACCESSIBILITY
   mozilla::a11y::AccType AccessibleType() override;
 #endif
@@ -186,6 +188,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
     // For a child of a ::before / ::after pseudo-element that had an url() item
     // for the content property.
     ContentPropertyAtIndex,
+    // For a list-style-image ::marker.
+    ListStyleImage,
   };
 
   // Creates a suitable continuing frame for this frame.
@@ -198,6 +202,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
                                                       ComputedStyle*);
   friend nsIFrame* NS_NewImageFrameForGeneratedContentIndex(mozilla::PresShell*,
                                                             ComputedStyle*);
+  friend nsIFrame* NS_NewImageFrameForListStyleImage(mozilla::PresShell*,
+                                                     ComputedStyle*);
 
   nsImageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, Kind aKind)
       : nsImageFrame(aStyle, aPresContext, kClassID, aKind) {}
@@ -258,6 +264,11 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
    * painted.
    */
   void MaybeDecodeForPredictedSize();
+
+  /**
+   * Is this frame part of a ::marker pseudo?
+   */
+  bool IsForMarkerPseudo() const;
 
  protected:
   friend class nsImageListener;
@@ -350,7 +361,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
   RefPtr<nsImageListener> mListener;
 
-  // An image request created for content: url(..).
+  // An image request created for content: url(..) or list-style-image.
   RefPtr<imgRequestProxy> mContentURLRequest;
 
   nsCOMPtr<imgIContainer> mImage;
@@ -423,6 +434,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   static mozilla::StaticRefPtr<IconLoad> gIconLoad;
 
   friend class nsDisplayImage;
+  friend class nsDisplayGradient;
 };
 
 /**

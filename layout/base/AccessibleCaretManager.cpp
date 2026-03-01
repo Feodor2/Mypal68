@@ -116,7 +116,8 @@ nsresult AccessibleCaretManager::OnSelectionChanged(Document* aDoc,
   }
 
   // Move the cursor by JavaScript or unknown internal call.
-  if (aReason == nsISelectionListener::NO_REASON) {
+  if (aReason == nsISelectionListener::NO_REASON ||
+      aReason == nsISelectionListener::JS_REASON) {
     auto mode = static_cast<ScriptUpdateMode>(
         StaticPrefs::layout_accessiblecaret_script_change_update_mode());
     if (mode == kScriptAlwaysShow ||
@@ -1077,6 +1078,7 @@ nsIFrame* AccessibleCaretManager::GetFrameForFirstRangeStartOrLastRangeEnd(
     nodeOffset = range->StartOffset();
     hint = CARET_ASSOCIATE_AFTER;
   } else {
+    MOZ_ASSERT(selection->RangeCount() > 0);
     range = selection->GetRangeAt(selection->RangeCount() - 1);
     startNode = range->GetEndContainer();
     endNode = range->GetStartContainer();
@@ -1150,8 +1152,10 @@ bool AccessibleCaretManager::RestrictCaretDraggingOffsets(
 
   // Compare the active caret's new position (aOffsets) to the inactive caret's
   // position.
-  const Maybe<int32_t> cmpToInactiveCaretPos = nsContentUtils::ComparePoints(
-      aOffsets.content, aOffsets.StartOffset(), content, contentOffset);
+  NS_ASSERTION(contentOffset >= 0, "contentOffset should not be negative");
+  const Maybe<int32_t> cmpToInactiveCaretPos =
+      nsContentUtils::ComparePoints_AllowNegativeOffsets(
+          aOffsets.content, aOffsets.StartOffset(), content, contentOffset);
   if (NS_WARN_IF(!cmpToInactiveCaretPos)) {
     // Potentially handle this properly when Selection across Shadow DOM
     // boundary is implemented
@@ -1170,9 +1174,12 @@ bool AccessibleCaretManager::RestrictCaretDraggingOffsets(
   }
 
   // Compare the active caret's new position (aOffsets) to the limit.
+  NS_ASSERTION(limit.mContentOffset >= 0,
+               "limit.mContentOffset should not be negative");
   const Maybe<int32_t> cmpToLimit =
-      nsContentUtils::ComparePoints(aOffsets.content, aOffsets.StartOffset(),
-                                    limit.mResultContent, limit.mContentOffset);
+      nsContentUtils::ComparePoints_AllowNegativeOffsets(
+          aOffsets.content, aOffsets.StartOffset(), limit.mResultContent,
+          limit.mContentOffset);
   if (NS_WARN_IF(!cmpToLimit)) {
     // Potentially handle this properly when Selection across Shadow DOM
     // boundary is implemented
@@ -1464,12 +1471,6 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
   } else {
     init.mSelectionVisible = true;
   }
-
-  // The rect computed above is relative to rootFrame, which is the (layout)
-  // viewport frame. However, the consumers of this event expect the bounds
-  // of the selection relative to the screen (visual viewport origin), so
-  // translate between the two.
-  rect -= mPresShell->GetVisualViewportOffsetRelativeToLayoutViewport();
 
   domRect->SetLayoutRect(rect);
 

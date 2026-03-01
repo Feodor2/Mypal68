@@ -26,6 +26,7 @@
 #include "mozilla/dom/CSSFontFaceRule.h"
 #include "mozilla/dom/CSSFontFeatureValuesRule.h"
 #include "mozilla/dom/CSSImportRule.h"
+#include "mozilla/dom/CSSContainerRule.h"
 #include "mozilla/dom/CSSLayerBlockRule.h"
 #include "mozilla/dom/CSSLayerStatementRule.h"
 #include "mozilla/dom/CSSMediaRule.h"
@@ -47,7 +48,6 @@
 #include "nsIAnonymousContentCreator.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsMediaFeatures.h"
 #include "nsPrintfCString.h"
 #include "gfxUserFontSet.h"
 #include "nsWindowSizes.h"
@@ -216,12 +216,17 @@ RestyleHint ServoStyleSet::MediumFeaturesChanged(
     }
   });
 
-  bool mayAffectDefaultStyle =
+  const bool mayAffectDefaultStyle =
       bool(aReason & kMediaFeaturesAffectingDefaultStyle);
-
   const MediumFeaturesChangedResult result =
       Servo_StyleSet_MediumFeaturesChanged(mRawSet.get(), &nonDocumentStyles,
                                            mayAffectDefaultStyle);
+
+  const bool viewportChanged =
+      bool(aReason & MediaFeatureChangeReason::ViewportChange);
+  if (viewportChanged) {
+    InvalidateForViewportUnits(OnlyDynamic::No);
+  }
 
   const bool rulesChanged =
       result.mAffectsDocumentRules || result.mAffectsNonDocumentRules;
@@ -237,12 +242,6 @@ RestyleHint ServoStyleSet::MediumFeaturesChanged(
   if (rulesChanged) {
     // TODO(emilio): This could be more granular.
     return RestyleHint::RestyleSubtree();
-  }
-
-  const bool viewportChanged =
-      bool(aReason & MediaFeatureChangeReason::ViewportChange);
-  if (result.mUsesViewportUnits && viewportChanged) {
-    return RestyleHint::RecascadeSubtree();
   }
 
   return RestyleHint{0};
@@ -337,8 +336,6 @@ void ServoStyleSet::PreTraverseSync() {
 
   ResolveMappedAttrDeclarationBlocks();
 
-  nsMediaFeatures::InitSystemMetrics();
-
   LookAndFeel::NativeInit();
 
   mDocument->CacheAllKnownLangPrefs();
@@ -352,7 +349,7 @@ void ServoStyleSet::PreTraverseSync() {
     uint64_t generation = userFontSet->GetGeneration();
     if (generation != mUserFontSetUpdateGeneration) {
       mDocument->GetFonts()->CacheFontLoadability();
-      presContext->DeviceContext()->UpdateFontCacheUserFonts(userFontSet);
+      presContext->UpdateFontCacheUserFonts(userFontSet);
       mUserFontSetUpdateGeneration = generation;
     }
   }
@@ -677,20 +674,35 @@ bool ServoStyleSet::GeneratedContentPseudoExists(
     if (!aParentStyle.StyleDisplay()->IsListItem()) {
       return false;
     }
-    // display:none is equivalent to not having the pseudo-element at all.
+    const auto& content = aPseudoStyle.StyleContent()->mContent;
+    // ::marker does not exist if 'content' is 'none' (this trumps
+    // any 'list-style-type' or 'list-style-image' values).
+    if (content.IsNone()) {
+      return false;
+    }
+    // ::marker only exist if we have 'content' or at least one of
+    // 'list-style-type' or 'list-style-image'.
+    if (aPseudoStyle.StyleList()->mCounterStyle.IsNone() &&
+        aPseudoStyle.StyleList()->mListStyleImage.IsNone() &&
+        content.IsNormal()) {
+      return false;
+    }
+    // display:none is equivalent to not having a pseudo at all.
     if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
       return false;
     }
   }
 
-  // For :before and :after pseudo-elements, having display: none or no
-  // 'content' property is equivalent to not having the pseudo-element
-  // at all.
+  // For ::before and ::after pseudo-elements, no 'content' items is
+  // equivalent to not having the pseudo-element at all.
   if (type == PseudoStyleType::before || type == PseudoStyleType::after) {
-    if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
+    if (!aPseudoStyle.StyleContent()->mContent.IsItems()) {
       return false;
     }
-    if (!aPseudoStyle.StyleContent()->ContentCount()) {
+    MOZ_ASSERT(aPseudoStyle.StyleContent()->ContentCount() > 0,
+               "IsItems() implies we have at least one item");
+    // display:none is equivalent to not having a pseudo at all.
+    if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
       return false;
     }
   }
@@ -913,6 +925,7 @@ void ServoStyleSet::RuleChangedInternal(StyleSheet& aSheet, css::Rule& aRule,
     CASE_FOR(Supports, Supports)
     CASE_FOR(LayerBlock, LayerBlock)
     CASE_FOR(LayerStatement, LayerStatement)
+    CASE_FOR(Container, Container)
     // @namespace can only be inserted / removed when there are only other
     // @namespace and @import rules, and can't be mutated.
     case StyleCssRuleType::Namespace:
@@ -1280,6 +1293,16 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ReparentComputedStyle(
                              aNewParentIgnoringFirstLine, aNewLayoutParent,
                              aElement, mRawSet.get())
       .Consume();
+}
+
+void ServoStyleSet::InvalidateForViewportUnits(OnlyDynamic aOnlyDynamic) {
+  dom::Element* root = mDocument->GetRootElement();
+  if (!root) {
+    return;
+  }
+
+  Servo_InvalidateForViewportUnits(mRawSet.get(), root,
+                                   aOnlyDynamic == OnlyDynamic::Yes);
 }
 
 NS_IMPL_ISUPPORTS(UACacheReporter, nsIMemoryReporter)

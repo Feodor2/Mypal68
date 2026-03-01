@@ -383,7 +383,7 @@ nsresult nsScrollbarFrame::CreateAnonymousContent(
         nodeInfoManager->GetNodeInfo(nsGkAtoms::thumb, nullptr,
                                      kNameSpaceID_XUL, nsINode::ELEMENT_NODE));
     mThumb->SetAttr(kNameSpaceID_None, nsGkAtoms::orient, orient, false);
-    mSlider->AppendChildTo(mThumb, false);
+    mSlider->AppendChildTo(mThumb, false, IgnoreErrors());
   }
 
   {

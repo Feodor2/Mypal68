@@ -145,17 +145,6 @@ struct DeclarationBlockMutationClosure {
 struct MediumFeaturesChangedResult {
   bool mAffectsDocumentRules;
   bool mAffectsNonDocumentRules;
-  bool mUsesViewportUnits;
-};
-
-struct FontSizePrefs {
-  void CopyFrom(const mozilla::LangGroupFontPrefs&);
-  nscoord mDefaultVariableSize;
-  nscoord mDefaultSerifSize;
-  nscoord mDefaultSansSerifSize;
-  nscoord mDefaultMonospaceSize;
-  nscoord mDefaultCursiveSize;
-  nscoord mDefaultFantasySize;
 };
 
 }  // namespace mozilla

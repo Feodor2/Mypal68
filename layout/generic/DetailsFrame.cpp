@@ -102,7 +102,7 @@ nsresult DetailsFrame::CreateAnonymousContent(
   RefPtr<nsTextNode> description =
       new (nodeInfoManager) nsTextNode(nodeInfoManager);
   description->SetText(defaultSummaryText, false);
-  mDefaultSummary->AppendChildTo(description, false);
+  mDefaultSummary->AppendChildTo(description, false, IgnoreErrors());
 
   aElements.AppendElement(mDefaultSummary);
 

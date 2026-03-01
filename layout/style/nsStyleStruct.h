@@ -12,9 +12,8 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/StyleColorInlines.h"
 #include "mozilla/UniquePtr.h"
 #include "nsColor.h"
 #include "nsCoord.h"
@@ -24,28 +23,21 @@
 #include "nsStyleConsts.h"
 #include "nsChangeHint.h"
 #include "nsTimingFunction.h"
-#include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "nsCSSValue.h"
 #include "imgIContainer.h"
 #include "imgRequestProxy.h"
-#include "Orientation.h"
 #include "CounterStyleManager.h"
 #include <cstddef>  // offsetof()
-#include <utility>
 #include "X11UndefineNone.h"
 
 class nsIFrame;
 class nsIURI;
 class nsTextFrame;
-class nsPresContext;
 struct nsStyleDisplay;
 struct nsStyleVisibility;
 namespace mozilla {
 class ComputedStyle;
-namespace dom {
-class ImageTracker;
-}  // namespace dom
+
 }  // namespace mozilla
 
 namespace mozilla {
@@ -83,27 +75,28 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   nsChangeHint CalcDifference(const nsStyleFont& aNewData) const;
 
   /**
-   * Return aSize multiplied by the current text zoom factor (in aPresContext).
-   * aSize is allowed to be negative, but the caller is expected to deal with
-   * negative results.  The result is clamped to nscoord_MIN .. nscoord_MAX.
+   * Return a given size multiplied by the current text zoom factor (in
+   * aPresContext).
+   *
+   * The size is allowed to be negative, but the caller is expected to deal with
+   * negative results.
    */
-  static nscoord ZoomText(const mozilla::dom::Document&, nscoord aSize);
+  static mozilla::Length ZoomText(const mozilla::dom::Document&,
+                                  mozilla::Length);
 
   nsFont mFont;
-  nscoord mSize;  // Our "computed size". Can be different
-                  // from mFont.size which is our "actual size" and is
-                  // enforced to be >= the user's preferred min-size.
-                  // mFont.size should be used for display purposes
-                  // while mSize is the value to return in
-                  // getComputedStyle() for example.
+
+  // Our "computed size". Can be different from mFont.size which is our "actual
+  // size" and is enforced to be >= the user's preferred min-size.  mFont.size
+  // should be used for display purposes while mSize is the value to return in
+  // getComputedStyle() for example.
+  mozilla::NonNegativeLength mSize;
 
   // In stylo these three track whether the size is keyword-derived
   // and if so if it has been modified by a factor/offset
   float mFontSizeFactor;
-  nscoord mFontSizeOffset;
+  mozilla::Length mFontSizeOffset;
   mozilla::StyleFontSizeKeyword mFontSizeKeyword;
-
-  mozilla::StyleGenericFontFamily mGenericID;
 
   // MathML scriptlevel support
   int8_t mScriptLevel;
@@ -124,8 +117,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   bool mAllowZoomAndMinSize;
 
   // The value mSize would have had if scriptminsize had never been applied
-  nscoord mScriptUnconstrainedSize;
-  nscoord mScriptMinSize;  // length
+  mozilla::NonNegativeLength mScriptUnconstrainedSize;
+  mozilla::Length mScriptMinSize;
   float mScriptSizeMultiplier;
   RefPtr<nsAtom> mLanguage;
 };
@@ -625,8 +618,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleOutline {
 
   nsChangeHint CalcDifference(const nsStyleOutline& aNewData) const;
 
-  mozilla::StyleBorderRadius mOutlineRadius;
-
   // This is the specified value of outline-width, but with length values
   // computed to absolute.  mActualOutlineWidth stores the outline-width
   // value used by layout.  (We must store mOutlineWidth for the same
@@ -692,8 +683,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleList {
 
   // the rect to use within an image.
   mozilla::StyleClipRectOrAuto mImageRegion;
-  // true in an <ol reversed> scope.
-  mozilla::StyleMozListReversed mMozListReversed;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePage {
@@ -1180,8 +1169,6 @@ struct StyleAnimation {
 }  // namespace mozilla
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
-  typedef mozilla::StyleGeometryBox StyleGeometryBox;
-
   explicit nsStyleDisplay(const mozilla::dom::Document&);
   nsStyleDisplay(const nsStyleDisplay& aOther);
   ~nsStyleDisplay();
@@ -1211,7 +1198,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   uint32_t mAnimationPlayStateCount;
   uint32_t mAnimationIterationCountCount;
 
-  mozilla::StyleWillChange mWillChange;
   mozilla::StyleDisplay mDisplay;
   mozilla::StyleDisplay mOriginalDisplay;  // saved mDisplay for
                                            //         position:absolute/fixed
@@ -1219,6 +1205,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
                                            //         otherwise equal to
                                            //         mDisplay
   mozilla::StyleContain mContain;
+  mozilla::StyleContentVisibility mContentVisibility;
+  mozilla::StyleContainerType mContainerType;
 
  private:
   mozilla::StyleAppearance mAppearance;
@@ -1248,16 +1236,19 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleOverflowAnchor mOverflowAnchor;
   mozilla::StyleScrollSnapAlign mScrollSnapAlign;
   mozilla::StyleScrollSnapType mScrollSnapType;
-  uint32_t mLineClamp;
-
-  mozilla::StyleTransform mTransform;
-  mozilla::StyleRotate mRotate;
-  mozilla::StyleTranslate mTranslate;
-  mozilla::StyleScale mScale;
 
   mozilla::StyleBackfaceVisibility mBackfaceVisibility;
   mozilla::StyleTransformStyle mTransformStyle;
-  StyleGeometryBox mTransformBox;
+  mozilla::StyleGeometryBox mTransformBox;
+
+  mozilla::StyleTransform mTransform;
+  mozilla::StyleRotate mRotate;
+
+  mozilla::StyleTranslate mTranslate;
+  mozilla::StyleScale mScale;
+
+  mozilla::StyleContainerName mContainerName;
+  mozilla::StyleWillChange mWillChange;
 
   mozilla::StyleOffsetPath mOffsetPath;
   mozilla::LengthPercentage mOffsetDistance;
@@ -1269,6 +1260,16 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::Position mPerspectiveOrigin;
 
   mozilla::StyleVerticalAlign mVerticalAlign;
+
+  uint32_t mLineClamp;
+
+  // The threshold used for extracting a shape from shape-outside: <image>.
+  float mShapeImageThreshold = 0.0f;
+
+  // The margin around a shape-outside: <image>.
+  mozilla::NonNegativeLengthPercentage mShapeMargin;
+
+  mozilla::StyleShapeOutside mShapeOutside;
 
   nsCSSPropertyID GetTransitionProperty(uint32_t aIndex) const {
     return mTransitions[aIndex % mTransitionPropertyCount].GetProperty();
@@ -1318,14 +1319,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     return mAnimations[aIndex % mAnimationTimingFunctionCount]
         .GetTimingFunction();
   }
-
-  // The threshold used for extracting a shape from shape-outside: <image>.
-  float mShapeImageThreshold = 0.0f;
-
-  // The margin around a shape-outside: <image>.
-  mozilla::NonNegativeLengthPercentage mShapeMargin;
-
-  mozilla::StyleShapeOutside mShapeOutside;
 
   bool HasAppearance() const {
     return EffectiveAppearance() != mozilla::StyleAppearance::None;
@@ -1709,8 +1702,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
 
   mozilla::StyleContent mContent;
   mozilla::StyleCounterIncrement mCounterIncrement;
-  mozilla::StyleCounterSetOrReset mCounterReset;
-  mozilla::StyleCounterSetOrReset mCounterSet;
+  mozilla::StyleCounterReset mCounterReset;
+  mozilla::StyleCounterSet mCounterSet;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
@@ -1721,7 +1714,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
 
   nsChangeHint CalcDifference(const nsStyleUIReset& aNewData) const;
 
-  mozilla::StyleUserSelect mUserSelect;  // [reset](selection-style)
+ private:
+  mozilla::StyleUserSelect mUserSelect;  // Use ComputedStyle::UserSelect()
+
+ public:
+  mozilla::StyleUserSelect ComputedUserSelect() const { return mUserSelect; }
+
   mozilla::StyleScrollbarWidth mScrollbarWidth;
   uint8_t mMozForceBrokenImageIcon;  // (0 if not forcing, otherwise forcing)
   mozilla::StyleImeMode mIMEMode;
@@ -1743,19 +1741,43 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
   nsChangeHint CalcDifference(const nsStyleUI& aNewData) const;
 
   mozilla::StyleInert mInert;
-  mozilla::StyleUserInput mUserInput;
-  mozilla::StyleUserModify mUserModify;  // (modify-content)
-  mozilla::StyleUserFocus mUserFocus;    // (auto-select)
-  mozilla::StylePointerEvents mPointerEvents;
+  mozilla::StyleUserFocus mUserFocus;
 
+ private:
+  mozilla::StyleUserInput mUserInput;
+  mozilla::StyleUserModify mUserModify;
+  mozilla::StylePointerEvents mPointerEvents;
   mozilla::StyleCursor mCursor;
+
+ public:
+  bool IsInert() const { return mInert == mozilla::StyleInert::Inert; }
+
+  mozilla::StyleUserInput UserInput() const {
+    return IsInert() ? mozilla::StyleUserInput::None : mUserInput;
+  }
+
+  mozilla::StyleUserModify UserModify() const {
+    return IsInert() ? mozilla::StyleUserModify::ReadOnly : mUserModify;
+  }
+
+  mozilla::StyleUserFocus UserFocus() const {
+    return IsInert() ? mozilla::StyleUserFocus::None : mUserFocus;
+  }
+
+  // This is likely not the getter you want (you probably want
+  // ComputedStyle::PointerEvents().
+  mozilla::StylePointerEvents ComputedPointerEvents() const {
+    return mPointerEvents;
+  }
+
+  const mozilla::StyleCursor& Cursor() const {
+    static mozilla::StyleCursor sAuto{{}, mozilla::StyleCursorKind::Auto};
+    return IsInert() ? sAuto : mCursor;
+  }
 
   mozilla::StyleColorOrAuto mAccentColor;
   mozilla::StyleCaretColor mCaretColor;
   mozilla::StyleScrollbarColor mScrollbarColor;
-
-  inline mozilla::StylePointerEvents GetEffectivePointerEvents(
-      nsIFrame* aFrame) const;
 
   bool HasCustomScrollbars() const { return !mScrollbarColor.IsAuto(); }
 };

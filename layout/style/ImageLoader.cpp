@@ -23,6 +23,7 @@
 #include "imgINotificationObserver.h"
 #include "GeckoProfiler.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/SVGObserverUtils.h"
 #ifdef MOZ_BUILD_WEBRENDER
 #  include "mozilla/layers/WebRenderUserData.h"
@@ -72,7 +73,7 @@ using GlobalRequestTable =
 // We use the load id as the key since we can only access sImages on the
 // main thread, but LoadData objects might be destroyed from other threads,
 // and we don't want to leave dangling pointers around.
-static GlobalRequestTable* sImages = nullptr;
+static StaticAutoPtr<GlobalRequestTable> sImages;
 static StaticRefPtr<GlobalImageObserver> sImageObserver;
 
 /* static */
@@ -83,7 +84,10 @@ void ImageLoader::Init() {
 
 /* static */
 void ImageLoader::Shutdown() {
-  delete sImages;
+  for (const auto& entry : *sImages) {
+    entry.GetKey()->CancelAndForgetObserver(NS_BINDING_ABORTED);
+  }
+
   sImages = nullptr;
   sImageObserver = nullptr;
 }
@@ -479,6 +483,10 @@ already_AddRefed<imgRequestProxy> ImageLoader::LoadImage(
 void ImageLoader::UnloadImage(imgRequestProxy* aImage) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aImage);
+
+  if (MOZ_UNLIKELY(!sImages)) {
+    return;  // Shutdown() takes care of it.
+  }
 
   auto lookup = sImages->Lookup(aImage);
   MOZ_DIAGNOSTIC_ASSERT(lookup, "Unregistered image?");

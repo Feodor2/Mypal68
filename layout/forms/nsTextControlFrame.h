@@ -29,6 +29,8 @@ class nsTextControlFrame : public nsContainerFrame,
                            public nsIAnonymousContentCreator,
                            public nsITextControlFrame,
                            public nsIStatefulFrame {
+  using Element = mozilla::dom::Element;
+
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsTextControlFrame)
 
@@ -140,14 +142,16 @@ class nsTextControlFrame : public nsContainerFrame,
 
   //==== NSITEXTCONTROLFRAME
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD_(already_AddRefed<mozilla::TextEditor>)
-      GetTextEditor() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY already_AddRefed<mozilla::TextEditor>
+  GetTextEditor() override;
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD
   SetSelectionRange(uint32_t aSelectionStart, uint32_t aSelectionEnd,
                     SelectionDirection aDirection = eNone) override;
   NS_IMETHOD GetOwnedSelectionController(
       nsISelectionController** aSelCon) override;
   nsFrameSelection* GetOwnedFrameSelection() override;
+
+  void PlaceholderChanged(const nsAttrValue* aOld, const nsAttrValue* aNew);
 
   /**
    * Ensure mEditor is initialized with the proper flags and the default value.
@@ -189,18 +193,17 @@ class nsTextControlFrame : public nsContainerFrame,
   void ReflowTextControlChild(nsIFrame* aFrame, nsPresContext* aPresContext,
                               const ReflowInput& aReflowInput,
                               nsReflowStatus& aStatus,
-                              ReflowOutput& aParentDesiredSize);
+                              ReflowOutput& aParentDesiredSize,
+                              nscoord& aButtonBoxISize);
 
   void ComputeBaseline(const ReflowInput&, ReflowOutput&);
 
- public:  // for methods who access nsTextControlFrame directly
-  void SetValueChanged(bool aValueChanged);
+ public:
+  Element* GetRootNode() const { return mRootNode; }
 
-  mozilla::dom::Element* GetRootNode() const { return mRootNode; }
+  Element* GetPreviewNode() const { return mPreviewDiv; }
 
-  mozilla::dom::Element* GetPreviewNode() const { return mPreviewDiv; }
-
-  mozilla::dom::Element* GetPlaceholderNode() const { return mPlaceholderDiv; }
+  Element* GetPlaceholderNode() const { return mPlaceholderDiv; }
 
   // called by the focus listener
   nsresult MaybeBeginSecureKeyboardInput();
@@ -316,18 +319,20 @@ class nsTextControlFrame : public nsContainerFrame,
 
   nsresult CreateRootNode();
   void CreatePlaceholderIfNeeded();
+  void UpdatePlaceholderText(nsString&, bool aNotify);
   void CreatePreviewIfNeeded();
-  already_AddRefed<mozilla::dom::Element> CreateEmptyAnonymousDiv(
-      mozilla::PseudoStyleType) const;
-  already_AddRefed<mozilla::dom::Element> CreateEmptyAnonymousDivWithTextNode(
+  already_AddRefed<Element> MakeAnonElement(
+      mozilla::PseudoStyleType, Element* aParent = nullptr,
+      nsAtom* aTag = nsGkAtoms::div) const;
+  already_AddRefed<Element> MakeAnonDivWithTextNode(
       mozilla::PseudoStyleType) const;
 
   bool ShouldInitializeEagerly() const;
   void InitializeEagerlyIfNeeded();
 
-  RefPtr<mozilla::dom::Element> mRootNode;
-  RefPtr<mozilla::dom::Element> mPlaceholderDiv;
-  RefPtr<mozilla::dom::Element> mPreviewDiv;
+  RefPtr<Element> mRootNode;
+  RefPtr<Element> mPlaceholderDiv;
+  RefPtr<Element> mPreviewDiv;
   RefPtr<nsAnonDivObserver> mMutationObserver;
   // Cache of the |.value| of <input> or <textarea> element without hard-wrap.
   // If its IsVoid() returns true, it doesn't cache |.value|.

@@ -11,7 +11,6 @@
 #define mozilla_css_GroupRule_h__
 
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ServoCSSRuleList.h"
 #include "mozilla/css/Rule.h"
@@ -19,6 +18,7 @@
 
 namespace mozilla {
 
+class ErrorResult;
 class StyleSheet;
 
 namespace dom {

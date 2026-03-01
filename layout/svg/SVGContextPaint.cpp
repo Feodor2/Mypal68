@@ -187,7 +187,8 @@ SVGContextPaint* SVGContextPaint::GetContextPaint(nsIContent* aContent) {
     return nullptr;
   }
 
-  auto* contextPaint = ownerDoc->AsSVGDocument()->GetCurrentContextPaint();
+  const auto* contextPaint =
+      ownerDoc->AsSVGDocument()->GetCurrentContextPaint();
   MOZ_ASSERT_IF(contextPaint, ownerDoc->IsBeingUsedAsImage());
 
   // XXX The SVGContextPaint that SVGDocument keeps around is const. We could

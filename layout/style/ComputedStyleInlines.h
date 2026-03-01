@@ -13,9 +13,11 @@
 #define ComputedStyleInlines_h
 
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/ServoComputedDataInlines.h"
-#include "mozilla/ServoUtils.h"
-#include "nsPresContext.h"
+
+#include "MainThreadUtils.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Unused.h"
+#include "nsStyleStruct.h"
 
 namespace mozilla {
 
@@ -43,6 +45,25 @@ void ComputedStyle::StartImageLoads(dom::Document& aDocument,
       aDocument, aOldStyle, this);
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
+}
+
+StylePointerEvents ComputedStyle::PointerEvents() const {
+  if (IsRootElementStyle()) {
+    // The root frame is not allowed to have pointer-events: none, or else no
+    // frames could be hit test against and scrolling the viewport would not
+    // work.
+    return StylePointerEvents::Auto;
+  }
+  auto& ui = *StyleUI();
+  if (ui.IsInert()) {
+    return StylePointerEvents::None;
+  }
+  return ui.ComputedPointerEvents();
+}
+
+StyleUserSelect ComputedStyle::UserSelect() const {
+  return StyleUI()->IsInert() ? StyleUserSelect::None
+                              : StyleUIReset()->ComputedUserSelect();
 }
 
 }  // namespace mozilla

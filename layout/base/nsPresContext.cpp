@@ -40,7 +40,6 @@
 #include "nsViewManager.h"
 #include "mozilla/RestyleManager.h"
 #include "SurfaceCacheUtils.h"
-#include "nsMediaFeatures.h"
 #include "gfxPlatform.h"
 #include "nsFontFaceLoader.h"
 #include "mozilla/AnimationEventDispatcher.h"
@@ -67,7 +66,7 @@
 #include "LayerUserData.h"
 #include "ClientLayerManager.h"
 #include "mozilla/dom/NotifyPaintEvent.h"
-
+#include "nsFontCache.h"
 #include "nsFrameLoader.h"
 #include "nsContentUtils.h"
 #include "nsPIWindowRoot.h"
@@ -86,6 +85,7 @@
 #include "mozilla/dom/PerformancePaintTiming.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/dom/ImageTracker.h"
+#include "MobileViewportManager.h"
 
 // Needed for Start/Stop of Image Animation
 #include "imgIContainer.h"
@@ -132,9 +132,9 @@ bool nsPresContext::IsDOMPaintEventPending() {
 }
 
 void nsPresContext::ForceReflowForFontInfoUpdate() {
-  // Flush the device context's font cache, so that we won't risk getting
+  // Flush the font cache, so that we won't risk getting
   // stale nsFontMetrics objects from it.
-  DeviceContext()->FlushFontCache();
+  FlushFontCache();
 
   // If there's a user font set, discard any src:local() faces it may have
   // loaded because their font entries may no longer be valid.
@@ -164,6 +164,9 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mLastFontInflationScreenSize(gfxSize(-1.0, -1.0)),
       mCurAppUnitsPerDevPixel(0),
       mAutoQualityMinFontSizePixelsPref(0),
+#if defined(MOZ_WIDGET_ANDROID)
+      mDynamicToolbarMaxHeight(0),
+#endif
       mPageSize(-1, -1),
       mPageScale(0.0),
       mPPScale(1.0f),
@@ -193,19 +196,16 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mIsRootPaginatedDocument(false),
       mPrefBidiDirection(false),
       mPrefScrollbarSide(0),
-      mPendingSysColorChanged(false),
       mPendingThemeChanged(false),
       mPendingUIResolutionChanged(false),
       mPrefChangePendingNeedsReflow(false),
       mPostedPrefChangedRunnable(false),
       mIsGlyph(false),
-      mUsesExChUnits(false),
+      mUsesFontMetricDependentFontUnits(false),
       mCounterStylesDirty(true),
       mFontFeatureValuesDirty(true),
       mSuppressResizeReflow(false),
       mIsVisual(false),
-      mPaintFlashing(false),
-      mPaintFlashingInitialized(false),
       mHasWarnedAboutPositionedTableParts(false),
       mHasWarnedAboutTooLargeDashedOrDottedRadius(false),
       mQuirkSheetAdded(false),
@@ -250,14 +250,14 @@ static const char* gExactCallbackPrefs[] = {
     "dom.send_after_paint_to_content",
     "layout.css.dpi",
     "layout.css.devPixelsPerPx",
-    "nglayout.debug.paint_flashing",
-    "nglayout.debug.paint_flashing_chrome",
     "intl.accept_languages",
+    "dom.meta-viewport.enabled",
     nullptr,
 };
 
 static const char* gPrefixCallbackPrefs[] = {
-    "font.", "browser.display.", "bidi.", "gfx.font_rendering.", nullptr,
+    "font.", "browser.display.",    "browser.viewport.",
+    "bidi.", "gfx.font_rendering.", nullptr,
 };
 
 void nsPresContext::Destroy() {
@@ -266,6 +266,11 @@ void nsPresContext::Destroy() {
     mEventManager->NotifyDestroyPresContext(this);
     mEventManager->SetPresContext(nullptr);
     mEventManager = nullptr;
+  }
+
+  if (mFontCache) {
+    mFontCache->Destroy();
+    mFontCache = nullptr;
   }
 
   // Unregister preference callbacks
@@ -407,15 +412,19 @@ void nsPresContext::AppUnitsPerDevPixelChanged() {
 
   InvalidatePaintedLayers();
 
-  if (mDeviceContext) {
-    mDeviceContext->FlushFontCache();
-  }
+  FlushFontCache();
 
   MediaFeatureValuesChanged({RestyleHint::RecascadeSubtree(),
                              NS_STYLE_HINT_REFLOW,
                              MediaFeatureChangeReason::ResolutionChange});
 
   mCurAppUnitsPerDevPixel = mDeviceContext->AppUnitsPerDevPixel();
+
+  // Recompute the size for vh units since it's changed by the dynamic toolbar
+  // max height which is stored in screen coord.
+  if (IsRootContentDocument()) {
+    AdjustSizeForViewportUnits();
+  }
 
   // nsSubDocumentFrame uses a AppUnitsPerDevPixel difference between parent and
   // child document to determine if it needs to build a nsDisplayZoom item. So
@@ -475,6 +484,15 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
     }
     return;
   }
+
+  if (StringBeginsWith(prefName, "browser.viewport."_ns) ||
+      StringBeginsWith(prefName, "font.size.inflation."_ns) ||
+      prefName.EqualsLiteral("dom.meta-viewport.enabled")) {
+    if (mPresShell) {
+      mPresShell->MaybeReflowForInflationScreenSizeChange();
+    }
+  }
+
   // Changing any of these potentially changes the value of @media
   // (prefers-contrast).
   if (prefName.EqualsLiteral("layout.css.prefers-contrast.enabled") ||
@@ -532,11 +550,6 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
   PreferenceSheet::Refresh();
   DispatchPrefChangedRunnableIfNeeded();
 
-  if (prefName.EqualsLiteral("nglayout.debug.paint_flashing") ||
-      prefName.EqualsLiteral("nglayout.debug.paint_flashing_chrome")) {
-    mPaintFlashingInitialized = false;
-    return;
-  }
 }
 
 void nsPresContext::DispatchPrefChangedRunnableIfNeeded() {
@@ -574,7 +587,7 @@ void nsPresContext::UpdateAfterPreferencesChanged() {
   mPresShell->UpdatePreferenceStyles();
 
   InvalidatePaintedLayers();
-  mDeviceContext->FlushFontCache();
+  FlushFontCache();
 
   nsChangeHint hint = nsChangeHint(0);
 
@@ -606,7 +619,9 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
     RestyleManager::ClearServoDataFromSubtree(root);
   }
 
-  if (mDeviceContext->SetFullZoom(mFullZoom)) mDeviceContext->FlushFontCache();
+  if (mDeviceContext->SetFullZoom(mFullZoom)) {
+    FlushFontCache();
+  }
   mCurAppUnitsPerDevPixel = mDeviceContext->AppUnitsPerDevPixel();
 
   mEventManager = new mozilla::EventStateManager();
@@ -667,10 +682,52 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
 
   mEventManager->SetPresContext(this);
 
+#if defined(MOZ_WIDGET_ANDROID)
+  if (IsRootContentDocument()) {
+    if (BrowserChild* browserChild =
+            BrowserChild::GetFrom(mDocument->GetDocShell())) {
+      mDynamicToolbarMaxHeight = browserChild->GetDynamicToolbarMaxHeight();
+    }
+  }
+#endif
+
 #ifdef DEBUG
   mInitialized = true;
 #endif
 
+  return NS_OK;
+}
+
+void nsPresContext::InitFontCache() {
+  if (!mFontCache) {
+    mFontCache = new nsFontCache();
+    mFontCache->Init(this);
+  }
+}
+
+void nsPresContext::UpdateFontCacheUserFonts(gfxUserFontSet* aUserFontSet) {
+  if (mFontCache) {
+    mFontCache->UpdateUserFonts(aUserFontSet);
+  }
+}
+
+already_AddRefed<nsFontMetrics> nsPresContext::GetMetricsFor(
+    const nsFont& aFont, const nsFontMetrics::Params& aParams) {
+  InitFontCache();
+  return mFontCache->GetMetricsFor(aFont, aParams);
+}
+
+nsresult nsPresContext::FlushFontCache(void) {
+  if (mFontCache) {
+    mFontCache->Flush();
+  }
+  return NS_OK;
+}
+
+nsresult nsPresContext::FontMetricsDeleted(const nsFontMetrics* aFontMetrics) {
+  if (mFontCache) {
+    mFontCache->FontMetricsDeleted(aFontMetrics);
+  }
   return NS_OK;
 }
 
@@ -757,7 +814,7 @@ void nsPresContext::DetachPresShell() {
 
 void nsPresContext::DocumentCharSetChanged(NotNull<const Encoding*> aCharSet) {
   UpdateCharSet(aCharSet);
-  mDeviceContext->FlushFontCache();
+  FlushFontCache();
 
   // If a document contains one or more <script> elements, frame construction
   // might happen earlier than the UpdateCharSet(), so we need to restyle
@@ -1131,9 +1188,7 @@ bool nsPresContext::ElementWouldPropagateScrollStyles(const Element& aElement) {
   return GetPropagatedScrollStylesForViewport(this, &dummy) == &aElement;
 }
 
-nsISupports* nsPresContext::GetContainerWeak() const {
-  return mDocument->GetDocShell();
-}
+nsISupports* nsPresContext::GetContainerWeak() const { return GetDocShell(); }
 
 nsIDocShell* nsPresContext::GetDocShell() const {
   return mDocument->GetDocShell();
@@ -1283,9 +1338,6 @@ void nsPresContext::ThemeChangedInternal() {
     image::SurfaceCacheUtils::DiscardAll();
   }
 
-  RefreshSystemMetrics();
-  PreferenceSheet::Refresh();
-
   // Recursively notify all remote leaf descendants that the
   // system theme has changed.
   if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
@@ -1295,53 +1347,17 @@ void nsPresContext::ThemeChangedInternal() {
           return false;
         });
   }
-}
-
-void nsPresContext::SysColorChanged() {
-  if (!mPendingSysColorChanged) {
-    sLookAndFeelChanged = true;
-    nsCOMPtr<nsIRunnable> ev =
-        NewRunnableMethod("nsPresContext::SysColorChangedInternal", this,
-                          &nsPresContext::SysColorChangedInternal);
-    nsresult rv = Document()->Dispatch(TaskCategory::Other, ev.forget());
-    if (NS_SUCCEEDED(rv)) {
-      mPendingSysColorChanged = true;
-    }
-  }
-}
-
-void nsPresContext::SysColorChangedInternal() {
-  mPendingSysColorChanged = false;
-
-  if (sLookAndFeelChanged) {
-    // Don't use the cached values for the system colors
-    LookAndFeel::Refresh();
-    sLookAndFeelChanged = false;
-  }
-
-  // Invalidate cached '-moz-windows-accent-color-applies' media query:
-  RefreshSystemMetrics();
-
   // Reset default background and foreground colors for the document since they
-  // may be using system colors
+  // may be using system colors.
   PreferenceSheet::Refresh();
 
-  // The system color values are computed to colors in the style data,
-  // so normal style data comparison is sufficient here.
-  RebuildAllStyleData(nsChangeHint(0), RestyleHint{0});
-}
-
-void nsPresContext::RefreshSystemMetrics() {
-  // This will force the system metrics to be generated the next time they're
-  // used.
-  nsMediaFeatures::FreeSystemMetrics();
-
-  // Changes to system metrics can change media queries on them.
+  // Changes to system metrics and other look and feel values can change media
+  // queries on them.
   //
-  // Changes in theme can change system colors (whose changes are
-  // properly reflected in computed style data), system fonts (whose
-  // changes are not), and -moz-appearance (whose changes likewise are
-  // not), so we need to recascade for the first, and reflow for the rest.
+  // Changes in theme can change system colors (whose changes are properly
+  // reflected in computed style data), system fonts (whose changes are not),
+  // and -moz-appearance (whose changes likewise are not), so we need to
+  // recascade for the first, and reflow for the rest.
   MediaFeatureValuesChangedAllDocuments({
       RestyleHint::RecascadeSubtree(),
       NS_STYLE_HINT_REFLOW,
@@ -1500,7 +1516,7 @@ void nsPresContext::PostRebuildAllStyleDataEvent(
     return;
   }
   if (aRestyleHint.DefinitelyRecascadesAllSubtree()) {
-    mUsesExChUnits = false;
+    mUsesFontMetricDependentFontUnits = false;
   }
   RestyleManager()->RebuildAllStyleData(aExtraHint, aRestyleHint);
 }
@@ -1651,24 +1667,6 @@ void nsPresContext::CountReflows(const char* aName, nsIFrame* aFrame) {
 }
 #endif
 
-bool nsPresContext::HasAuthorSpecifiedRules(const nsIFrame* aFrame,
-                                            uint32_t aRuleTypeMask) const {
-  const bool padding = aRuleTypeMask & NS_AUTHOR_SPECIFIED_PADDING;
-  const bool borderBackground =
-      aRuleTypeMask & NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND;
-  const auto& style = *aFrame->Style();
-
-  if (padding && style.HasAuthorSpecifiedPadding()) {
-    return true;
-  }
-
-  if (borderBackground && style.HasAuthorSpecifiedBorderOrBackground()) {
-    return true;
-  }
-
-  return false;
-}
-
 gfxUserFontSet* nsPresContext::GetUserFontSet() {
   return mDocument->GetUserFontSet();
 }
@@ -1688,8 +1686,9 @@ void nsPresContext::UserFontSetUpdated(gfxUserFontEntry* aUpdatedFont) {
   // TODO(emilio): We could be more granular if we knew which families have
   // potentially changed.
   if (!aUpdatedFont) {
-    auto hint =
-        UsesExChUnits() ? RestyleHint::RecascadeSubtree() : RestyleHint{0};
+    auto hint = UsesFontMetricDependentFontUnits()
+                    ? RestyleHint::RecascadeSubtree()
+                    : RestyleHint{0};
     PostRebuildAllStyleDataEvent(NS_STYLE_HINT_REFLOW, hint);
     return;
   }
@@ -1841,19 +1840,26 @@ static bool MayHavePaintEventListener(nsPIDOMWindowInner* aInnerWindow) {
   }
 
   if (!node) {
-    node = do_QueryInterface(parentTarget);
+    node = nsINode::FromEventTarget(parentTarget);
   }
-  if (node)
+  if (node) {
     return MayHavePaintEventListener(node->OwnerDoc()->GetInnerWindow());
+  }
 
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(parentTarget);
-  if (window) return MayHavePaintEventListener(window);
+  if (nsCOMPtr<nsPIDOMWindowInner> window =
+          nsPIDOMWindowInner::FromEventTarget(parentTarget)) {
+    return MayHavePaintEventListener(window);
+  }
 
-  nsCOMPtr<nsPIWindowRoot> root = do_QueryInterface(parentTarget);
-  EventTarget* browserChildGlobal;
-  return root && (browserChildGlobal = root->GetParentTarget()) &&
-         (manager = browserChildGlobal->GetExistingListenerManager()) &&
-         manager->MayHavePaintEventListener();
+  if (nsCOMPtr<nsPIWindowRoot> root =
+          nsPIWindowRoot::FromEventTarget(parentTarget)) {
+    EventTarget* browserChildGlobal;
+    return root && (browserChildGlobal = root->GetParentTarget()) &&
+           (manager = browserChildGlobal->GetExistingListenerManager()) &&
+           manager->MayHavePaintEventListener();
+  }
+
+  return false;
 }
 
 bool nsPresContext::MayHavePaintEventListener() {
@@ -2388,18 +2394,6 @@ void nsPresContext::NotifyDOMContentFlushed() {
   }
 }
 
-bool nsPresContext::GetPaintFlashing() const {
-  if (!mPaintFlashingInitialized) {
-    bool pref = Preferences::GetBool("nglayout.debug.paint_flashing");
-    if (!pref && IsChrome()) {
-      pref = Preferences::GetBool("nglayout.debug.paint_flashing_chrome");
-    }
-    mPaintFlashing = pref;
-    mPaintFlashingInitialized = true;
-  }
-  return mPaintFlashing;
-}
-
 nscoord nsPresContext::GfxUnitsToAppUnits(gfxFloat aGfxUnits) const {
   return mDeviceContext->GfxUnitsToAppUnits(aGfxUnits);
 }
@@ -2452,6 +2446,74 @@ void nsPresContext::FlushFontFeatureValues() {
     mFontFeatureValuesLookup = styleSet->BuildFontFeatureValueSet();
     mFontFeatureValuesDirty = false;
   }
+}
+
+void nsPresContext::SetVisibleArea(const nsRect& r) {
+  if (!r.IsEqualEdges(mVisibleArea)) {
+    mVisibleArea = r;
+    mSizeForViewportUnits = mVisibleArea.Size();
+    if (IsRootContentDocument()) {
+      AdjustSizeForViewportUnits();
+    }
+    // Visible area does not affect media queries when paginated.
+    if (!IsPaginated()) {
+      MediaFeatureValuesChanged(
+          {mozilla::MediaFeatureChangeReason::ViewportChange});
+    }
+  }
+}
+
+#if defined(MOZ_WIDGET_ANDROID)
+void nsPresContext::SetDynamicToolbarMaxHeight(ScreenIntCoord aHeight) {
+  MOZ_ASSERT(IsRootContentDocument());
+
+  if (mDynamicToolbarMaxHeight == aHeight) {
+    return;
+  }
+  mDynamicToolbarMaxHeight = aHeight;
+
+  AdjustSizeForViewportUnits();
+
+  if (RefPtr<mozilla::PresShell> presShell = mPresShell) {
+    // Changing the max height of the dynamic toolbar changes the ICB size, we
+    // need to kick a reflow with the current window dimensions since the max
+    // height change doesn't change the window dimensions but
+    // PresShell::ResizeReflow ends up subtracting the new dynamic toolbar
+    // height from the window dimensions and kick a reflow with the proper ICB
+    // size.
+    nscoord currentWidth, currentHeight;
+    presShell->GetViewManager()->GetWindowDimensions(&currentWidth,
+                                                     &currentHeight);
+    presShell->ResizeReflow(currentWidth, currentHeight,
+                            ResizeReflowOptions::NoOption);
+  }
+}
+#endif
+
+void nsPresContext::AdjustSizeForViewportUnits() {
+  MOZ_ASSERT(IsRootContentDocument());
+  if (mVisibleArea.height == NS_UNCONSTRAINEDSIZE) {
+    // Ignore `NS_UNCONSTRAINEDSIZE` since it's a temporary state during a
+    // reflow. We will end up calling this function again with a proper size in
+    // the same reflow.
+    return;
+  }
+
+#if defined(MOZ_WIDGET_ANDROID)
+  if (MOZ_UNLIKELY(mVisibleArea.height +
+                       NSIntPixelsToAppUnits(mDynamicToolbarMaxHeight,
+                                             mCurAppUnitsPerDevPixel) >
+                   nscoord_MAX)) {
+    MOZ_ASSERT_UNREACHABLE("The dynamic toolbar max height is probably wrong");
+    return;
+  }
+
+  mSizeForViewportUnits.height =
+      mVisibleArea.height +
+      NSIntPixelsToAppUnits(mDynamicToolbarMaxHeight, mCurAppUnitsPerDevPixel);
+#else
+  mSizeForViewportUnits.height = mVisibleArea.height;
+#endif
 }
 
 #ifdef DEBUG

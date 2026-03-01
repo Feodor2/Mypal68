@@ -20,6 +20,7 @@ fuzzy-if(skiaContent,0-2,0-13) == show-value.html show-value-ref.html
 
 # disabled
 == number-disabled.html number-disabled-ref.html
+fails-if(Android&&nativeThemePref) != number-spinbox-disabled.html number-spinbox-disabled-notref.html
 
 # auto width:
 == number-auto-width-1.html number-auto-width-1-ref.html
@@ -36,6 +37,8 @@ skip-if(Android) == number-max-height-2.html number-max-height-2-ref.html
 
 # focus
 fuzzy-if(skiaContent,0-2,0-5) needs-focus == focus-handling.html focus-handling-ref.html
+== spinner-overflow.html spinner-overflow-ref.html
+== spinner-overflow-vertical.html spinner-overflow-vertical-ref.html
 
 # select
 fuzzy-if(skiaContent,0-1,0-1) == number-selected.html number-selected-ref.html
@@ -63,3 +66,7 @@ fuzzy(0-128,0-4) == number-reframe-anon-text-field.html number-reframe-anon-text
 == padding-002.html padding-002-ref.html
 
 == clipped-text.html clipped-text-ref.html
+
+fails-if(useDrawSnapshot) needs-focus != caret-right.html caret-right-notref.html
+fails-if(useDrawSnapshot) needs-focus != caret-left-rtl.html caret-left-rtl-notref.html
+fails-if(useDrawSnapshot) needs-focus != caret-right-vertical.html caret-right-vertical-notref.html

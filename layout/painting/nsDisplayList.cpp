@@ -453,6 +453,10 @@ nsDisplayListBuilder::AutoContainerASRTracker::AutoContainerASRTracker(
   mBuilder->mCurrentContainerASR = mBuilder->mCurrentActiveScrolledRoot;
 }
 
+nsPresContext* nsDisplayListBuilder::CurrentPresContext() {
+  return CurrentPresShellState()->mPresShell->GetPresContext();
+}
+
 /* static */
 nsRect nsDisplayListBuilder::OutOfFlowDisplayData::ComputeVisibleRectForFrame(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
@@ -590,6 +594,7 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mContainsBackdropFilter(false),
 #endif
       mIsRelativeToLayoutViewport(false),
+      mUseOverlayScrollbars(false),
       mHitTestArea(),
       mHitTestInfo(CompositorHitTestInvisibleToHit) {
   MOZ_COUNT_CTOR(nsDisplayListBuilder);
@@ -597,6 +602,9 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
   mBuildCompositorHitTestInfo = mAsyncPanZoomEnabled && IsForPainting();
 
   ShouldRebuildDisplayListDueToPrefChange();
+
+  mUseOverlayScrollbars =
+      (LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0);
 
   static_assert(
       static_cast<uint32_t>(DisplayItemType::TYPE_MAX) < (1 << TYPE_BITS),
@@ -823,8 +831,9 @@ void nsDisplayListBuilder::SetIsRelativeToLayoutViewport() {
 }
 
 void nsDisplayListBuilder::UpdateShouldBuildAsyncZoomContainer() {
-  Document* document = mReferenceFrame->PresContext()->Document();
+  const Document* document = mReferenceFrame->PresContext()->Document();
   mBuildAsyncZoomContainer = !mIsRelativeToLayoutViewport &&
+                             !document->Fullscreen() &&
                              nsLayoutUtils::AllowZoomingForDocument(document);
 }
 
@@ -837,7 +846,16 @@ bool nsDisplayListBuilder::ShouldRebuildDisplayListDueToPrefChange() {
   // (manually by the user, or during test setup).
   bool didBuildAsyncZoomContainer = mBuildAsyncZoomContainer;
   UpdateShouldBuildAsyncZoomContainer();
+
+  bool hadOverlayScrollbarsLastTime = mUseOverlayScrollbars;
+  mUseOverlayScrollbars =
+      (LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0);
+
   if (didBuildAsyncZoomContainer != mBuildAsyncZoomContainer) {
+    return true;
+  }
+
+  if (hadOverlayScrollbarsLastTime != mUseOverlayScrollbars) {
     return true;
   }
 
@@ -2610,8 +2628,7 @@ void nsDisplayList::DeleteAll(nsDisplayListBuilder* aBuilder) {
 }
 
 static bool IsFrameReceivingPointerEvents(nsIFrame* aFrame) {
-  return StylePointerEvents::None !=
-         aFrame->StyleUI()->GetEffectivePointerEvents(aFrame);
+  return aFrame->Style()->PointerEvents() != StylePointerEvents::None;
 }
 
 // A list of frames, and their z depth. Used for sorting
@@ -4494,6 +4511,14 @@ bool nsDisplayImageContainer::CanOptimizeToImageLayer(
   return true;
 }
 
+#if defined(MOZ_REFLOW_PERF_DSP) && defined(MOZ_REFLOW_PERF)
+void nsDisplayReflowCount::Paint(nsDisplayListBuilder* aBuilder,
+                                 gfxContext* aCtx) {
+  mFrame->PresShell()->PaintCount(mFrameName, aCtx, mFrame->PresContext(),
+                                  mFrame, ToReferenceFrame(), mColor);
+}
+#endif
+
 void nsDisplayBackgroundColor::ApplyOpacity(nsDisplayListBuilder* aBuilder,
                                             float aOpacity,
                                             const DisplayItemClipChain* aClip) {
@@ -4727,15 +4752,35 @@ nsRect nsDisplayOutline::GetBounds(nsDisplayListBuilder* aBuilder,
   return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
 }
 
+nsRect nsDisplayOutline::GetInnerRect() const {
+  nsRect* savedOutlineInnerRect =
+      mFrame->GetProperty(nsIFrame::OutlineInnerRectProperty());
+  if (savedOutlineInnerRect) {
+    return *savedOutlineInnerRect;
+  }
+
+  // FIXME bug 1221888
+  NS_ERROR("we should have saved a frame property");
+  return nsRect(nsPoint(), mFrame->GetSize());
+}
+
 void nsDisplayOutline::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   // TODO join outlines together
   MOZ_ASSERT(mFrame->StyleOutline()->ShouldPaintOutline(),
              "Should have not created a nsDisplayOutline!");
 
-  nsPoint offset = ToReferenceFrame();
-  nsCSSRendering::PaintOutline(
-      mFrame->PresContext(), *aCtx, mFrame, GetPaintRect(),
-      nsRect(offset, mFrame->GetSize()), mFrame->Style());
+  nsRect rect = GetInnerRect() + ToReferenceFrame();
+  nsPresContext* pc = mFrame->PresContext();
+#ifdef MOZ_BUILD_WEBRENDER
+  if (IsThemedOutline()) {
+    rect.Inflate(mFrame->StyleOutline()->mOutlineOffset.ToAppUnits());
+    pc->Theme()->DrawWidgetBackground(
+        aCtx, mFrame, StyleAppearance::FocusOutline, rect, GetPaintRect());
+    return;
+  }
+#endif
+  nsCSSRendering::PaintNonThemedOutline(pc, *aCtx, mFrame, GetPaintRect(), rect,
+                                        mFrame->Style());
 }
 
 #ifdef MOZ_BUILD_WEBRENDER
@@ -4757,16 +4802,19 @@ bool nsDisplayOutline::CreateWebRenderCommands(
     const StackingContextHelper& aSc,
     mozilla::layers::RenderRootStateManager* aManager,
     nsDisplayListBuilder* aDisplayListBuilder) {
+  nsPresContext* pc = mFrame->PresContext();
+  nsRect rect = GetInnerRect() + ToReferenceFrame();
   if (IsThemedOutline()) {
-    return false;
+    rect.Inflate(mFrame->StyleOutline()->mOutlineOffset.ToAppUnits());
+    return pc->Theme()->CreateWebRenderCommandsForWidget(
+        aBuilder, aResources, aSc, aManager, mFrame,
+        StyleAppearance::FocusOutline, rect);
   }
 
-  nsPoint offset = ToReferenceFrame();
-
-  mozilla::Maybe<nsCSSBorderRenderer> borderRenderer =
-      nsCSSRendering::CreateBorderRendererForOutline(
-          mFrame->PresContext(), nullptr, mFrame, GetPaintRect(),
-          nsRect(offset, mFrame->GetSize()), mFrame->Style());
+  Maybe<nsCSSBorderRenderer> borderRenderer =
+      nsCSSRendering::CreateBorderRendererForNonThemedOutline(
+          pc, /* aDrawTarget = */ nullptr, mFrame, GetPaintRect(), rect,
+          mFrame->Style());
 
   if (!borderRenderer) {
     // No border renderer means "there is no outline".
@@ -4780,10 +4828,7 @@ bool nsDisplayOutline::CreateWebRenderCommands(
 #endif
 
 bool nsDisplayOutline::HasRadius() const {
-  const auto& radius =
-      StaticPrefs::layout_css_outline_follows_border_radius_enabled()
-          ? mFrame->StyleBorder()->mBorderRadius
-          : mFrame->StyleOutline()->mOutlineRadius;
+  const auto& radius = mFrame->StyleBorder()->mBorderRadius;
   return !nsLayoutUtils::HasNonZeroCorner(radius);
 }
 

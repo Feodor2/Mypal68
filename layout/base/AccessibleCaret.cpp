@@ -214,7 +214,7 @@ already_AddRefed<Element> AccessibleCaret::CreateCaretElement(
       [aDocument, &parent](const nsLiteralString& aElementId) {
         RefPtr<Element> child = aDocument->CreateHTMLElement(nsGkAtoms::div);
         child->SetAttr(kNameSpaceID_None, nsGkAtoms::id, aElementId, true);
-        parent->AppendChildTo(child, false);
+        parent->AppendChildTo(child, false, IgnoreErrors());
       };
 
   CreateAndAppendChildElement(sTextOverlayElementId);
@@ -282,6 +282,10 @@ AccessibleCaret::PositionChangedResult AccessibleCaret::SetPosition(
 
   return isSamePosition ? PositionChangedResult::Zoom
                         : PositionChangedResult::Position;
+}
+
+nsIFrame* AccessibleCaret::RootFrame() const {
+  return mPresShell->GetRootFrame();
 }
 
 nsIFrame* AccessibleCaret::CustomContentContainerFrame() const {

@@ -7,6 +7,7 @@
 #include "gfxContext.h"
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
+#include "nsCSSValue.h"
 #include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
 #include "nsMathMLChar.h"
@@ -192,9 +193,11 @@ nscoord nsMathMLFrame::CalcLength(nsPresContext* aPresContext,
 
   if (eCSSUnit_EM == unit) {
     const nsStyleFont* font = aComputedStyle->StyleFont();
-    return NSToCoordRound(aCSSValue.GetFloatValue() * (float)font->mFont.size);
-  } else if (eCSSUnit_XHeight == unit) {
-    aPresContext->SetUsesExChUnits(true);
+    return font->mFont.size.ScaledBy(aCSSValue.GetFloatValue()).ToAppUnits();
+  }
+
+  if (eCSSUnit_XHeight == unit) {
+    aPresContext->SetUsesFontMetricDependentFontUnits(true);
     RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetFontMetricsForComputedStyle(
         aComputedStyle, aPresContext, aFontSizeInflation);
     nscoord xHeight = fm->XHeight();

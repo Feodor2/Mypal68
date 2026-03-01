@@ -753,8 +753,7 @@ void nsPageFrame::PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
   params.userFontSet = pc->GetUserFontSet();
   params.textPerf = pc->GetTextPerfMetrics();
   params.featureValueLookup = pc->GetFontFeatureValuesLookup();
-  RefPtr<nsFontMetrics> fontMet =
-      pc->DeviceContext()->GetMetricsFor(mPD->mHeadFootFont, params);
+  RefPtr<nsFontMetrics> fontMet = pc->GetMetricsFor(mPD->mHeadFootFont, params);
 
   nscoord ascent = fontMet->MaxAscent();
   nscoord visibleHeight = fontMet->MaxHeight();

@@ -24,8 +24,6 @@
 <!ENTITY ldb.visualDebugging.accesskey "V">
 <!ENTITY ldb.visualEventDebugging.label "Visual Event Debugging">
 <!ENTITY ldb.visualEventDebugging.accesskey "E">
-<!ENTITY ldb.paintFlashing.label "Paint Flashing">
-<!ENTITY ldb.paintFlashing.accesskey "F">
 <!ENTITY ldb.paintDumping.label "Paint Dumping">
 <!ENTITY ldb.paintDumping.accesskey "P">
 <!ENTITY ldb.invalidateDumping.label "Invalidate Dumping">
@@ -38,6 +36,8 @@
 <!ENTITY ldb.crossingEventDumping.accesskey "C">
 <!ENTITY ldb.reflowCounts.label "Reflow Counts">
 <!ENTITY ldb.reflowCounts.accesskey "R">
+<!ENTITY ldb.pagedMode.label "Paged Mode">
+<!ENTITY ldb.pagedMode.accesskey "G">
 
 <!ENTITY ldb.DumpMenu.label "Dump">
 <!ENTITY ldb.DumpMenu.accesskey "D">
@@ -50,6 +50,8 @@
 <!ENTITY ldb.dumpFrames.accesskey "F">
 <!ENTITY ldb.dumpFramesInCSSPixels.label "Frames (CSS pixels)">
 <!ENTITY ldb.dumpFramesInCSSPixels.accesskey "P">
+<!ENTITY ldb.dumpTextRuns.label "Text Runs">
+<!ENTITY ldb.dumpTextRuns.accesskey "T">
 <!ENTITY ldb.dumpViews.label "Views and Widgets">
 <!ENTITY ldb.dumpViews.accesskey "V">
 <!ENTITY ldb.dumpStyleSheets.label "Style Sheets">

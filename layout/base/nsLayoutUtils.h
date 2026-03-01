@@ -10,7 +10,6 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/ReflowOutput.h"
 #include "mozilla/RelativeTo.h"
 #include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/SurfaceFromElementResult.h"
@@ -18,18 +17,17 @@
 #include "mozilla/ToString.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WritingModes.h"
 #include "mozilla/layout/FrameChildList.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/gfx/2D.h"
-#include "gfx2DGlue.h"
+
 #include "gfxPoint.h"
 #include "nsBoundingMetrics.h"
 #include "nsCSSPropertyIDSet.h"
-#include "nsClassHashtable.h"
-#include "nsGkAtoms.h"
 #include "nsThreadUtils.h"
-#include "ImageContainer.h"  // for layers::Image
 #include "Units.h"
+#include "mozilla/layers/LayersTypes.h"
 #include <limits>
 #include <algorithm>
 
@@ -48,6 +46,7 @@ class nsDisplayListBuilder;
 enum class nsDisplayListBuilderMode : uint8_t;
 enum nsChangeHint : uint32_t;
 class nsDisplayItem;
+class nsDisplayList;
 class nsFontMetrics;
 class nsFontFaceList;
 class nsIImageLoadingContent;
@@ -69,6 +68,7 @@ class EventListenerManager;
 enum class LayoutFrameType : uint8_t;
 struct IntrinsicSize;
 struct ContainerLayerParameters;
+class ReflowOutput;
 class WritingMode;
 class DisplayItemClip;
 class EffectSet;
@@ -93,6 +93,9 @@ namespace gfx {
 struct RectCornerRadii;
 enum class ShapedTextFlags : uint16_t;
 }  // namespace gfx
+namespace image {
+struct Resolution;
+}
 namespace layers {
 struct FrameMetrics;
 struct ScrollMetadata;
@@ -101,6 +104,7 @@ class Image;
 class StackingContextHelper;
 #endif
 class Layer;
+
 }  // namespace layers
 }  // namespace mozilla
 
@@ -110,8 +114,6 @@ enum class DrawStringFlags {
   ForceHorizontal = 0x1  // Forces the text to be drawn horizontally.
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(DrawStringFlags)
-
-enum class ScrollableDirection { Horizontal, Vertical, Either };
 
 namespace mozilla {
 
@@ -263,6 +265,14 @@ class nsLayoutUtils {
    * aContent, if any.
    */
   static nsIFrame* GetMarkerFrame(const nsIContent* aContent);
+
+#ifdef ACCESSIBILITY
+  /**
+   * Set aText to the spoken text for the given ::marker content (aContent)
+   * if it has a frame, or the empty string otherwise.
+   */
+  static void GetMarkerSpokenText(const nsIContent* aContent, nsAString& aText);
+#endif
 
   /**
    * Given a frame, search up the frame tree until we find an
@@ -526,7 +536,7 @@ class nsLayoutUtils {
    * @return the nearest scrollable frame or nullptr if not found
    */
   static nsIScrollableFrame* GetNearestScrollableFrameForDirection(
-      nsIFrame* aFrame, ScrollableDirection aDirection);
+      nsIFrame* aFrame, mozilla::layers::ScrollDirections aDirections);
 
   enum {
     /**
@@ -889,6 +899,13 @@ class nsLayoutUtils {
    */
   static const nsIFrame* FindNearestCommonAncestorFrameWithinBlock(
       const nsTextFrame* aFrame1, const nsTextFrame* aFrame2);
+
+  /**
+   * Whether author-specified borders / backgrounds disable theming for a given
+   * appearance value.
+   */
+  static bool AuthorSpecifiedBorderBackgroundDisablesTheming(
+      mozilla::StyleAppearance);
 
   /**
    * Transforms a list of CSSPoints from aFromFrame to aToFrame, taking into
@@ -1859,9 +1876,9 @@ class nsLayoutUtils {
    */
   static ImgDrawResult DrawSingleImage(
       gfxContext& aContext, nsPresContext* aPresContext, imgIContainer* aImage,
-      const SamplingFilter aSamplingFilter, const nsRect& aDest,
-      const nsRect& aDirty, const mozilla::Maybe<SVGImageContext>& aSVGContext,
-      uint32_t aImageFlags, const nsPoint* aAnchorPoint = nullptr,
+      SamplingFilter aSamplingFilter, const nsRect& aDest, const nsRect& aDirty,
+      const mozilla::Maybe<SVGImageContext>& aSVGContext, uint32_t aImageFlags,
+      const nsPoint* aAnchorPoint = nullptr,
       const nsRect* aSourceArea = nullptr);
 
   /**
@@ -1879,8 +1896,16 @@ class nsLayoutUtils {
    * NOTE: This method is similar to ComputeSizeWithIntrinsicDimensions.  The
    * difference is that this one is simpler and is suited to places where we
    * have less information about the frame tree.
+   *
+   * @param aResolution The resolution specified by the author for the image, or
+   *                    its intrinsic resolution.
+   *
+   *                    This will affect the intrinsic size size of the image
+   *                    (so e.g., if resolution is 2, and the image is 100x100,
+   *                    the intrinsic size of the image will be 50x50).
    */
   static void ComputeSizeForDrawing(imgIContainer* aImage,
+                                    const mozilla::image::Resolution&,
                                     CSSIntSize& aImageSize,
                                     AspectRatio& aIntrinsicRatio,
                                     bool& aGotWidth, bool& aGotHeight);
@@ -1894,7 +1919,8 @@ class nsLayoutUtils {
    * dimensions, the corresponding dimension of aFallbackSize is used instead.
    */
   static CSSIntSize ComputeSizeForDrawingWithFallback(
-      imgIContainer* aImage, const nsSize& aFallbackSize);
+      imgIContainer* aImage, const mozilla::image::Resolution&,
+      const nsSize& aFallbackSize);
 
   /**
    * Given the image container, frame, and dest rect, determine the best fitting
@@ -2637,13 +2663,6 @@ class nsLayoutUtils {
   static bool HasDocumentLevelListenersForApzAwareEvents(PresShell* aPresShell);
 
   /**
-   * Set the viewport size for the purpose of clamping the scroll position
-   * for the root scroll frame of this document
-   * (see nsIDOMWindowUtils.setVisualViewportSize).
-   */
-  static void SetVisualViewportSize(PresShell* aPresShell, CSSSize aSize);
-
-  /**
    * Returns true if the given scroll origin is "higher priority" than APZ.
    * In general any content programmatic scrolls (e.g. scrollTo calls) are
    * higher priority, and take precedence over APZ scrolling. This function
@@ -2807,11 +2826,12 @@ class nsLayoutUtils {
   // aUseUserFontSet is true.
   static already_AddRefed<nsFontMetrics> GetMetricsFor(
       nsPresContext* aPresContext, bool aIsVertical,
-      const nsStyleFont* aStyleFont, nscoord aFontSize, bool aUseUserFontSet);
+      const nsStyleFont* aStyleFont, mozilla::Length aFontSize,
+      bool aUseUserFontSet);
 
   static void ComputeSystemFont(nsFont* aSystemFont,
                                 mozilla::LookAndFeel::FontID aFontID,
-                                const nsFont* aDefaultVariableFont);
+                                const nsFont& aDefaultVariableFont);
 
   static uint32_t ParseFontLanguageOverride(const nsAString& aLangTag);
 
@@ -2853,6 +2873,17 @@ class nsLayoutUtils {
    */
   static ComputedStyle* StyleForScrollbar(nsIFrame* aScrollbarPart);
 
+ #if defined(MOZ_WIDGET_ANDROID)
+  /**
+   * Expand the height of |aSize| to the size of `vh` units.
+   *
+   * With dynamic toolbar(s) the height for `vh` units is greater than the
+   * ICB height, we need to expand it in some places.
+   **/
+  template <typename SizeType>
+  static SizeType ExpandHeightForViewportUnits(nsPresContext* aPresContext,
+                                               const SizeType& aSize);
+#endif
  private:
   /**
    * Helper function for LogTestDataForPaint().
@@ -2907,6 +2938,25 @@ template <typename PointType, typename RectType, typename CoordType>
 
   return false;
 }
+
+#if defined(MOZ_WIDGET_ANDROID)
+template <typename SizeType>
+/* static */ SizeType nsLayoutUtils::ExpandHeightForViewportUnits(
+    nsPresContext* aPresContext, const SizeType& aSize) {
+  nsSize sizeForViewportUnits = aPresContext->GetSizeForViewportUnits();
+
+  // |aSize| might be the size expanded to the minimum-scale size whereas the
+  // size for viewport units is not scaled so that we need to expand the |aSize|
+  // height with the aspect ratio of the size for viewport units instead of just
+  // expanding to the size for viewport units.
+  float ratio = (float)sizeForViewportUnits.height / sizeForViewportUnits.width;
+
+  MOZ_ASSERT(aSize.height <=
+             NSCoordSaturatingNonnegativeMultiply(aSize.width, ratio));
+  return SizeType(aSize.width,
+                  NSCoordSaturatingNonnegativeMultiply(aSize.width, ratio));
+}
+#endif
 
 template <typename T>
 nsRect nsLayoutUtils::RoundGfxRectToAppRect(const T& aRect,

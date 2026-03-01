@@ -48,8 +48,8 @@ example 2:
 
    <rows>
       <row>
-         <text value="hello"/>
-         <text value="there"/>
+         <label value="hello"/>
+         <label value="there"/>
       </row>
    </rows>
 </grid>
@@ -60,14 +60,14 @@ example 3:
 
 <rows>
       <row>
-         <text value="hello"/>
-         <text value="there"/>
+         <label value="hello"/>
+         <label value="there"/>
       </row>
    </rows>
 
    <columns>
       <column>
-         <text value="Hey I'm in the column and I'm on top!"/>
+         <label value="Hey I'm in the column and I'm on top!"/>
       </column>
       <column/>
    </columns>

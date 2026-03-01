@@ -13,6 +13,7 @@
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "nsIOService.h"
 #include "nsIScriptGlobalObject.h"
@@ -1655,9 +1656,9 @@ nsresult nsPrintJob::UpdateSelectionAndShrinkPrintObject(
     selectionPS->RemoveAllRanges(IgnoreErrors());
   }
   if (selection && selectionPS) {
-    int32_t cnt = selection->RangeCount();
-    int32_t inx;
-    for (inx = 0; inx < cnt; ++inx) {
+    const uint32_t rangeCount = selection->RangeCount();
+    for (const uint32_t inx : IntegerRange(rangeCount)) {
+      MOZ_ASSERT(selection->RangeCount() == rangeCount);
       const RefPtr<nsRange> range{selection->GetRangeAt(inx)};
       selectionPS->AddRangeAndSelectFramesAndNotifyListeners(*range,
                                                              IgnoreErrors());
@@ -1989,19 +1990,21 @@ static nsINode* GetCorrespondingNodeInDocument(const nsINode* aNode,
     return nullptr;
   }
 
-  nsTArray<int32_t> indexArray;
+  AutoTArray<Maybe<uint32_t>, 32> indexArray;
   const nsINode* child = aNode;
   while (const nsINode* parent = child->GetParentNode()) {
-    int32_t index = parent->ComputeIndexOf(child);
-    MOZ_ASSERT(index >= 0);
-    indexArray.AppendElement(index);
+    Maybe<uint32_t> index = parent->ComputeIndexOf(child);
+    NS_ENSURE_TRUE(index.isSome(), nullptr);
+    indexArray.AppendElement(std::move(index));
     child = parent;
   }
   MOZ_ASSERT(child->IsDocument());
 
   nsINode* correspondingNode = aDoc;
-  for (int32_t i = indexArray.Length() - 1; i >= 0; --i) {
-    correspondingNode = correspondingNode->GetChildAt_Deprecated(indexArray[i]);
+//  for (int32_t i = indexArray.Length() - 1; i >= 0; --i) {
+//    correspondingNode = correspondingNode->GetChildAt_Deprecated(indexArray[i]);
+  for (const Maybe<uint32_t>& index : Reversed(indexArray)) {
+    correspondingNode = correspondingNode->GetChildAt_Deprecated(*index);
     NS_ENSURE_TRUE(correspondingNode, nullptr);
   }
 

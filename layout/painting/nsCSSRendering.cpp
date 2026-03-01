@@ -18,6 +18,7 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/SVGImageContext.h"
 #include "gfxFont.h"
 #include "ScaledFontBase.h"
@@ -430,7 +431,7 @@ struct InlineBackgroundData {
   }
 };
 
-static InlineBackgroundData* gInlineBGData = nullptr;
+static StaticAutoPtr<InlineBackgroundData> gInlineBGData;
 
 // Initialize any static variables used by nsCSSRendering.
 void nsCSSRendering::Init() {
@@ -439,10 +440,7 @@ void nsCSSRendering::Init() {
 }
 
 // Clean up any global variables used by nsCSSRendering.
-void nsCSSRendering::Shutdown() {
-  delete gInlineBGData;
-  gInlineBGData = nullptr;
-}
+void nsCSSRendering::Shutdown() { gInlineBGData = nullptr; }
 
 /**
  * Make a bevel color
@@ -948,65 +946,35 @@ nsCSSRendering::CreateNullBorderRendererWithStyleBorder(
   return Some(br);
 }
 
-static nsRect GetOutlineInnerRect(nsIFrame* aFrame) {
-  nsRect* savedOutlineInnerRect =
-      aFrame->GetProperty(nsIFrame::OutlineInnerRectProperty());
-  if (savedOutlineInnerRect) {
-    return *savedOutlineInnerRect;
-  }
-
-  // FIXME bug 1221888
-  NS_ERROR("we should have saved a frame property");
-  return nsRect(nsPoint(0, 0), aFrame->GetSize());
-}
-
-Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
-    nsPresContext* aPresContext, gfxContext* aRenderingContext,
-    nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
-    ComputedStyle* aStyle) {
+Maybe<nsCSSBorderRenderer>
+nsCSSRendering::CreateBorderRendererForNonThemedOutline(
+    nsPresContext* aPresContext, DrawTarget* aDrawTarget, nsIFrame* aForFrame,
+    const nsRect& aDirtyRect, const nsRect& aInnerRect, ComputedStyle* aStyle) {
   // Get our ComputedStyle's color struct.
   const nsStyleOutline* ourOutline = aStyle->StyleOutline();
-
   if (!ourOutline->ShouldPaintOutline()) {
     // Empty outline
     return Nothing();
   }
 
-  nsRect innerRect;
-  if (
-#ifdef MOZ_XUL
-      aStyle->GetPseudoType() == PseudoStyleType::XULTree
-#else
-      false
-#endif
-  ) {
-    innerRect = aBorderArea;
-  } else {
-    innerRect = GetOutlineInnerRect(aForFrame) + aBorderArea.TopLeft();
-  }
-  nscoord offset = ourOutline->mOutlineOffset.ToAppUnits();
+  const nscoord offset = ourOutline->mOutlineOffset.ToAppUnits();
+  nsRect innerRect = aInnerRect;
   innerRect.Inflate(offset);
+
   // If the dirty rect is completely inside the border area (e.g., only the
   // content is being painted), then we can skip out now
   // XXX this isn't exactly true for rounded borders, where the inside curves
   // may encroach into the content area.  A safer calculation would be to
   // shorten insideRect by the radius one each side before performing this test.
-  if (innerRect.Contains(aDirtyRect)) return Nothing();
+  if (innerRect.Contains(aDirtyRect)) {
+    return Nothing();
+  }
 
   nscoord width = ourOutline->GetOutlineWidth();
 
   StyleBorderStyle outlineStyle;
+  // Themed outlines are handled by our callers, if supported.
   if (ourOutline->mOutlineStyle.IsAuto()) {
-    if (StaticPrefs::layout_css_outline_style_auto_enabled()) {
-      nsITheme* theme = aPresContext->Theme();
-      if (theme->ThemeSupportsWidget(aPresContext, aForFrame,
-                                     StyleAppearance::FocusOutline)) {
-        theme->DrawWidgetBackground(aRenderingContext, aForFrame,
-                                    StyleAppearance::FocusOutline, innerRect,
-                                    aDirtyRect);
-        return Nothing();
-      }
-    }
     if (width == 0) {
       return Nothing();  // empty outline
     }
@@ -1032,21 +1000,15 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
   nscoord twipsRadii[8];
 
   // get the radius for our outline
-  if (StaticPrefs::layout_css_outline_follows_border_radius_enabled()) {
-    if (aForFrame->GetBorderRadii(twipsRadii)) {
-      RectCornerRadii innerRadii;
-      ComputePixelRadii(twipsRadii, oneDevPixel, &innerRadii);
+  if (aForFrame->GetBorderRadii(twipsRadii)) {
+    RectCornerRadii innerRadii;
+    ComputePixelRadii(twipsRadii, oneDevPixel, &innerRadii);
 
-      Float devPixelOffset = aPresContext->AppUnitsToFloatDevPixels(offset);
-      const Float widths[4] = {
-          outlineWidths[0] + devPixelOffset, outlineWidths[1] + devPixelOffset,
-          outlineWidths[2] + devPixelOffset, outlineWidths[3] + devPixelOffset};
-      nsCSSBorderRenderer::ComputeOuterRadii(innerRadii, widths, &outlineRadii);
-    }
-  } else {
-    nsIFrame::ComputeBorderRadii(ourOutline->mOutlineRadius, aBorderArea.Size(),
-                                 outerRect.Size(), Sides(), twipsRadii);
-    ComputePixelRadii(twipsRadii, oneDevPixel, &outlineRadii);
+    Float devPixelOffset = aPresContext->AppUnitsToFloatDevPixels(offset);
+    const Float widths[4] = {
+        outlineWidths[0] + devPixelOffset, outlineWidths[1] + devPixelOffset,
+        outlineWidths[2] + devPixelOffset, outlineWidths[3] + devPixelOffset};
+    nsCSSBorderRenderer::ComputeOuterRadii(innerRadii, widths, &outlineRadii);
   }
 
   StyleBorderStyle outlineStyles[4] = {outlineStyle, outlineStyle, outlineStyle,
@@ -1061,21 +1023,20 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
 
   Rect dirtyRect = NSRectToRect(aDirtyRect, oneDevPixel);
 
-  DrawTarget* dt =
-      aRenderingContext ? aRenderingContext->GetDrawTarget() : nullptr;
   return Some(nsCSSBorderRenderer(
-      aPresContext, dt, dirtyRect, oRect, outlineStyles, outlineWidths,
+      aPresContext, aDrawTarget, dirtyRect, oRect, outlineStyles, outlineWidths,
       outlineRadii, outlineColors, !aForFrame->BackfaceIsHidden(), Nothing()));
 }
 
-void nsCSSRendering::PaintOutline(nsPresContext* aPresContext,
-                                  gfxContext& aRenderingContext,
-                                  nsIFrame* aForFrame, const nsRect& aDirtyRect,
-                                  const nsRect& aBorderArea,
-                                  ComputedStyle* aStyle) {
-  Maybe<nsCSSBorderRenderer> br = CreateBorderRendererForOutline(
-      aPresContext, &aRenderingContext, aForFrame, aDirtyRect, aBorderArea,
-      aStyle);
+void nsCSSRendering::PaintNonThemedOutline(nsPresContext* aPresContext,
+                                           gfxContext& aRenderingContext,
+                                           nsIFrame* aForFrame,
+                                           const nsRect& aDirtyRect,
+                                           const nsRect& aInnerRect,
+                                           ComputedStyle* aStyle) {
+  Maybe<nsCSSBorderRenderer> br = CreateBorderRendererForNonThemedOutline(
+      aPresContext, aRenderingContext.GetDrawTarget(), aForFrame, aDirtyRect,
+      aInnerRect, aStyle);
   if (!br) {
     return;
   }

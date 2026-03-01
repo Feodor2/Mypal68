@@ -4,6 +4,7 @@
 
 #include "gfxContext.h"
 #include "mozilla/PresShell.h"
+#include "nsCSSValue.h"
 #include "nsMathMLmoFrame.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"

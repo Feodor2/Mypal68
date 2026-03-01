@@ -5,6 +5,7 @@
 #ifndef mozilla_SurfaceFromElementResult_h
 #define mozilla_SurfaceFromElementResult_h
 
+#include "ImageContainer.h"
 #include "gfxTypes.h"
 #include "mozilla/gfx/Point.h"
 #include "nsCOMPtr.h"
@@ -23,10 +24,6 @@ class CanvasRenderingContext2D;
 
 namespace gfx {
 class SourceSurface;
-}
-
-namespace layers {
-class Image;
 }
 
 struct DirectDrawInfo {

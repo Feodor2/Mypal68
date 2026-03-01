@@ -23,14 +23,6 @@ class nsLayoutDebuggingTools : public nsILayoutDebuggingTools {
   nsresult SetBoolPrefAndRefresh(const char* aPrefName, bool aNewValue);
 
   nsCOMPtr<nsIDocShell> mDocShell;
-
-  bool mPaintFlashing;
-  bool mPaintDumping;
-  bool mInvalidateDumping;
-  bool mEventDumping;
-  bool mMotionEventDumping;
-  bool mCrossingEventDumping;
-  bool mReflowCounts;
 };
 
 #endif

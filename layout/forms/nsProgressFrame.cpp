@@ -9,12 +9,12 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLProgressElement.h"
 #include "nsIContent.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsCheckboxRadioFrame.h"
 #include "nsFontMetrics.h"
 #include "nsCSSPseudoElements.h"
 #include "nsStyleConsts.h"
@@ -40,7 +40,6 @@ void nsProgressFrame::DestroyFrom(nsIFrame* aDestructRoot,
   NS_ASSERTION(!GetPrevContinuation(),
                "nsProgressFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
-  nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   aPostDestroyData.AddAnonymousContent(mBarDiv.forget());
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
@@ -95,10 +94,6 @@ void nsProgressFrame::Reflow(nsPresContext* aPresContext,
   NS_ASSERTION(!GetPrevContinuation(),
                "nsProgressFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
-
-  if (mState & NS_FRAME_FIRST_REFLOW) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(this, true);
-  }
 
   const auto wm = aReflowInput.GetWritingMode();
   aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
@@ -207,8 +202,9 @@ LogicalSize nsProgressFrame::ComputeAutoSize(
   const WritingMode wm = GetWritingMode();
   LogicalSize autoSize(wm);
   autoSize.BSize(wm) = autoSize.ISize(wm) =
-      NSToCoordRound(StyleFont()->mFont.size *
-                     nsLayoutUtils::FontSizeInflationFor(this));  // 1em
+      StyleFont()
+          ->mFont.size.ScaledBy(nsLayoutUtils::FontSizeInflationFor(this))
+          .ToAppUnits();  // 1em
 
   if (ResolvedOrientationIsVertical() == wm.IsVertical()) {
     autoSize.ISize(wm) *= 10;  // 10em
@@ -223,7 +219,7 @@ nscoord nsProgressFrame::GetMinISize(gfxContext* aRenderingContext) {
   RefPtr<nsFontMetrics> fontMet =
       nsLayoutUtils::GetFontMetricsForFrame(this, 1.0f);
 
-  nscoord minISize = fontMet->Font().size;  // 1em
+  nscoord minISize = fontMet->Font().size.ToAppUnits();  // 1em
 
   if (ResolvedOrientationIsVertical() == GetWritingMode().IsVertical()) {
     // The orientation is inline
@@ -246,11 +242,9 @@ bool nsProgressFrame::ShouldUseNativeStyle() const {
   //   background.
   return StyleDisplay()->EffectiveAppearance() ==
              StyleAppearance::ProgressBar &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             this, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND) &&
+         !Style()->HasAuthorSpecifiedBorderOrBackground() &&
          barFrame &&
          barFrame->StyleDisplay()->EffectiveAppearance() ==
              StyleAppearance::Progresschunk &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             barFrame, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND);
+         !barFrame->Style()->HasAuthorSpecifiedBorderOrBackground();
 }

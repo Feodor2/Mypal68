@@ -27,6 +27,8 @@
 class nsINode;
 class nsIPrincipal;
 namespace mozilla {
+class ErrorResult;
+
 namespace css {
 class Rule;
 }  // namespace css

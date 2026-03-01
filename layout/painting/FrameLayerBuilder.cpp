@@ -254,6 +254,19 @@ DisplayItemData::DisplayItemData(LayerManagerData* aParent, uint32_t aKey,
   }
 }
 
+void DisplayItemData::Destroy() {
+  // Get the pres context.
+  RefPtr<nsPresContext> presContext = mFrameList[0]->PresContext();
+
+  // Call our destructor.
+  this->~DisplayItemData();
+
+  // Don't let the memory be freed, since it will be recycled
+  // instead. Don't call the global operator delete.
+  presContext->PresShell()->FreeByObjectID(eArenaObjectID_DisplayItemData,
+                                           this);
+}
+
 void DisplayItemData::AddFrame(nsIFrame* aFrame) {
   MOZ_RELEASE_ASSERT(mLayer);
   MOZ_RELEASE_ASSERT(!mFrameList.Contains(aFrame));
@@ -426,6 +439,12 @@ DisplayItemData* DisplayItemData::AssertDisplayItemData(
                      sAliveDisplayItemDatas->Contains(aData));
   MOZ_RELEASE_ASSERT(aData->mLayer);
   return aData;
+}
+
+void* DisplayItemData::operator new(size_t sz, nsPresContext* aPresContext) {
+  // Check the recycle list first.
+  return aPresContext->PresShell()->AllocateByObjectID(
+      eArenaObjectID_DisplayItemData, sz);
 }
 
 /**
@@ -2059,14 +2078,6 @@ void FrameLayerBuilder::Init(nsDisplayListBuilder* aBuilder,
   mIsInactiveLayerManager = aIsInactiveLayerManager;
   mInactiveLayerClip = aInactiveLayerClip;
   aManager->SetUserData(&gLayerManagerLayerBuilder, this);
-}
-
-void FrameLayerBuilder::FlashPaint(gfxContext* aContext) {
-  float r = float(rand()) / float(RAND_MAX);
-  float g = float(rand()) / float(RAND_MAX);
-  float b = float(rand()) / float(RAND_MAX);
-  aContext->SetColor(Color(r, g, b, 0.4f));
-  aContext->Paint();
 }
 
 DisplayItemData* FrameLayerBuilder::GetDisplayItemData(nsIFrame* aFrame,
@@ -7210,16 +7221,6 @@ void FrameLayerBuilder::DrawPaintedLayer(PaintedLayer* aLayer,
   }
 
   bool isActiveLayerManager = !aLayer->Manager()->IsInactiveLayerManager();
-
-  if (presContext->GetPaintFlashing() && isActiveLayerManager) {
-    gfxContextAutoSaveRestore save(aContext);
-    if (shouldDrawRectsSeparately) {
-      if (aClip == DrawRegionClip::DRAW) {
-        gfxUtils::ClipToRegion(aContext, aRegionToDraw);
-      }
-    }
-    FlashPaint(aContext);
-  }
 
   if (presContext->GetDocShell() && isActiveLayerManager) {
     nsDocShell* docShell = static_cast<nsDocShell*>(presContext->GetDocShell());

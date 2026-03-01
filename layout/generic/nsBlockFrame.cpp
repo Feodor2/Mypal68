@@ -1023,9 +1023,7 @@ static LogicalSize CalculateContainingBlockSizeForAbsolutes(
 
   LogicalSize cbSize(aFrameSize);
   // Containing block is relative to the padding edge
-  const LogicalMargin& border =
-      LogicalMargin(aWM, aReflowInput.ComputedPhysicalBorderPadding() -
-                             aReflowInput.ComputedPhysicalPadding());
+  const LogicalMargin border = aReflowInput.ComputedLogicalBorder(aWM);
   cbSize.ISize(aWM) -= border.IStartEnd(aWM);
   cbSize.BSize(aWM) -= border.BStartEnd(aWM);
 
@@ -7379,6 +7377,11 @@ void nsBlockFrame::SetMarkerFrameForListItem(nsIFrame* aMarkerFrame) {
     SetProperty(InsideMarkerProperty(), aMarkerFrame);
     AddStateBits(NS_BLOCK_FRAME_HAS_INSIDE_MARKER);
   } else {
+    if (nsBlockFrame* marker = do_QueryFrame(aMarkerFrame)) {
+      // An outside ::marker needs to be an independent formatting context
+      // to avoid being influenced by the float manager etc.
+      marker->AddStateBits(NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS);
+    }
     SetProperty(OutsideMarkerProperty(),
                 new (PresShell()) nsFrameList(aMarkerFrame, aMarkerFrame));
     AddStateBits(NS_BLOCK_FRAME_HAS_OUTSIDE_MARKER);
@@ -7391,8 +7394,9 @@ bool nsBlockFrame::MarkerIsEmpty() const {
                "should only care when we have an outside ::marker");
   nsIFrame* marker = GetMarker();
   const nsStyleList* list = marker->StyleList();
-  return list->mCounterStyle.IsNone() && list->mListStyleImage.IsNone() &&
-         marker->StyleContent()->ContentCount() == 0;
+  return marker->StyleContent()->mContent.IsNone() ||
+         (list->mCounterStyle.IsNone() && list->mListStyleImage.IsNone() &&
+          marker->StyleContent()->ContentCount() == 0);
 }
 
 void nsBlockFrame::ReflowOutsideMarker(nsIFrame* aMarkerFrame,

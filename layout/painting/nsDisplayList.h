@@ -23,7 +23,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/TemplateLib.h"  // mozilla::tl::Max
 #include "nsCOMPtr.h"
-#include "nsClassHashtable.h" //MY
 #include "nsContainerFrame.h"
 #include "nsPoint.h"
 #include "nsRect.h"
@@ -49,6 +48,7 @@
 #include "RetainedDisplayListHelpers.h"
 
 #include <stdint.h>
+#include "nsClassHashtable.h"
 #include "nsTHashSet.h"
 #include "nsTHashMap.h"
 
@@ -525,7 +525,9 @@ class nsDisplayListBuilder {
   const nsIFrame* FindReferenceFrameFor(const nsIFrame* aFrame,
                                         nsPoint* aOffset = nullptr) const;
 
-  const Maybe<nsPoint>& AdditionalOffset() const { return mAdditionalOffset; }
+  const mozilla::Maybe<nsPoint>& AdditionalOffset() const {
+    return mAdditionalOffset;
+  }
 
   /**
    * @return the root of the display list's frame (sub)tree, whose origin
@@ -1554,9 +1556,7 @@ class nsDisplayListBuilder {
     return aFrame->GetParent()->GetProperty(OutOfFlowDisplayDataProperty());
   }
 
-  nsPresContext* CurrentPresContext() {
-    return CurrentPresShellState()->mPresShell->GetPresContext();
-  }
+  nsPresContext* CurrentPresContext();
 
   OutOfFlowDisplayData* GetCurrentFixedBackgroundDisplayData() {
     auto& displayData = CurrentPresShellState()->mFixedBackgroundDisplayData;
@@ -2030,6 +2030,7 @@ class nsDisplayListBuilder {
   bool mContainsBackdropFilter;
 #endif
   bool mIsRelativeToLayoutViewport;
+  bool mUseOverlayScrollbars;
 
   mozilla::Maybe<float> mVisibleThreshold;
   nsRect mHitTestArea;
@@ -3205,9 +3206,6 @@ class nsPaintedDisplayItem : public nsDisplayItem {
   nsPaintedDisplayItem(nsDisplayListBuilder* aBuilder,
                        const nsPaintedDisplayItem& aOther)
       : nsDisplayItem(aBuilder, aOther) {}
-
- protected:
-  mozilla::Maybe<uint16_t> mCacheIndex;
 };
 
 /**
@@ -4144,10 +4142,7 @@ class nsDisplayReflowCount : public nsPaintedDisplayItem {
 
   NS_DISPLAY_DECL_NAME("nsDisplayReflowCount", TYPE_REFLOW_COUNT)
 
-  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
-    mFrame->PresShell()->PaintCount(mFrameName, aCtx, mFrame->PresContext(),
-                                    mFrame, ToReferenceFrame(), mColor);
-  }
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 
  protected:
   const char* mFrameName;
@@ -5169,6 +5164,7 @@ class nsDisplayOutline final : public nsPaintedDisplayItem {
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 
  private:
+  nsRect GetInnerRect() const;
 #ifdef MOZ_BUILD_WEBRENDER
   bool IsThemedOutline() const;
 #endif
@@ -6957,7 +6953,7 @@ class nsDisplayTransform : public nsDisplayHitTestInfoBase {
         const mozilla::StyleTranslate& aTranslate,
         const mozilla::StyleRotate& aRotate, const mozilla::StyleScale& aScale,
         const mozilla::StyleTransform& aTransform,
-        const Maybe<mozilla::ResolvedMotionPathData>& aMotion,
+        const mozilla::Maybe<mozilla::ResolvedMotionPathData>& aMotion,
         const Point3D& aToTransformOrigin)
         : mFrame(nullptr),
           mTranslate(aTranslate),

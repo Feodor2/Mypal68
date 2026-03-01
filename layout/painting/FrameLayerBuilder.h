@@ -94,11 +94,7 @@ class DisplayItemData final {
 
   static DisplayItemData* AssertDisplayItemData(DisplayItemData* aData);
 
-  void* operator new(size_t sz, nsPresContext* aPresContext) {
-    // Check the recycle list first.
-    return aPresContext->PresShell()->AllocateByObjectID(
-        eArenaObjectID_DisplayItemData, sz);
-  }
+  void* operator new(size_t sz, nsPresContext* aPresContext);
 
   nsrefcnt AddRef() {
     if (mRefCnt == UINT32_MAX) {
@@ -137,18 +133,7 @@ class DisplayItemData final {
    */
   ~DisplayItemData();
 
-  void Destroy() {
-    // Get the pres context.
-    RefPtr<nsPresContext> presContext = mFrameList[0]->PresContext();
-
-    // Call our destructor.
-    this->~DisplayItemData();
-
-    // Don't let the memory be freed, since it will be recycled
-    // instead. Don't call the global operator delete.
-    presContext->PresShell()->FreeByObjectID(eArenaObjectID_DisplayItemData,
-                                             this);
-  }
+  void Destroy();
 
   /**
    * Associates this DisplayItemData with a frame, and adds it
@@ -643,9 +628,6 @@ class FrameLayerBuilder : public layers::LayerUserData {
 
  protected:
   friend class LayerManagerData;
-
-  // Flash the area within the context clip if paint flashing is enabled.
-  static void FlashPaint(gfxContext* aContext);
 
   /*
    * Get the DisplayItemData array associated with this frame, or null if one

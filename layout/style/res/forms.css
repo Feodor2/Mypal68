@@ -141,6 +141,7 @@ textarea > scrollbar {
 ::-moz-text-control-preview {
   overflow: auto;
   border: 0;
+  /* This is necessary to make overflow-clip-box work */
   padding: inherit;
   margin: 0;
   text-decoration: inherit;
@@ -150,6 +151,13 @@ textarea > scrollbar {
   scrollbar-width: inherit;
   -moz-control-character-visibility: visible;
   overflow-clip-box: inherit;
+  visibility: hidden;
+}
+
+::-moz-text-control-editing-root,
+:placeholder-shown:not(:autofill)::placeholder,
+:autofill::-moz-text-control-preview {
+  visibility: inherit;
 }
 
 input::-moz-text-control-editing-root,
@@ -191,10 +199,12 @@ textarea::-moz-text-control-editing-root {
   overflow: hidden;
 
   /*
-   * The placeholder or preview should be ignored by pointer otherwise, we might have some
-   * unexpected behavior like the resize handle not being selectable.
+   * The placeholder or preview should be ignored by pointer / selection / etc.
+   * Otherwise, we might have some unexpected behavior like the resize handle
+   * not being selectable.
    */
   pointer-events: none;
+  user-select: none;
 }
 
 ::placeholder {
@@ -734,8 +744,11 @@ progress {
 }
 
 ::-moz-progress-bar {
-  display: inline-block;
-
+  /* Prevent styling that would change the type of frame we construct. */
+  display: inline-block !important;
+  float: none !important;
+  position: static !important;
+  overflow: visible !important;
   box-sizing: border-box !important;
 
   appearance: auto;
@@ -756,7 +769,11 @@ meter {
 }
 
 ::-moz-meter-bar {
-  display: inline-block;
+  /* Block styles that would change the type of frame we construct. */
+  display: inline-block !important;
+  float: none !important;
+  position: static !important;
+  overflow: visible !important;
 
   appearance: auto;
   -moz-default-appearance: meterchunk;
@@ -799,7 +816,12 @@ input[type=range] {
  * set the width/height of this pseudo-element.
  */
 input[type=range]::-moz-range-track {
-  display: block;
+  /* Prevent styling that would change the type of frame we construct. */
+  display: block !important;
+  float: none !important;
+  position: static !important;
+  writing-mode: unset !important;
+  direction: unset !important;
   block-size: 0.2em; /* same as inline-size below */
   /* Prevent nsIFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
@@ -819,7 +841,12 @@ input[type=range][orient=vertical]::-moz-range-track {
  * is ignored.
  */
 input[type=range]::-moz-range-progress {
-  display: block;
+  /* Prevent styling that would change the type of frame we construct. */
+  display: block !important;
+  float: none !important;
+  position: static !important;
+  writing-mode: unset !important;
+  direction: unset !important;
   /* Since one of width/height will be ignored, this just sets the "other"
      dimension.
    */
@@ -841,7 +868,12 @@ input[type=range]::-moz-range-thumb {
    */
   appearance: auto !important;
   -moz-default-appearance: range-thumb !important;
-  display: block;
+  /* Prevent styling that would change the type of frame we construct. */
+  display: block !important;
+  float: none !important;
+  position: static !important;
+  writing-mode: unset !important;
+  direction: unset !important;
 
   width: 1em;
   height: 1em;
@@ -857,51 +889,28 @@ input[type=number] {
   -moz-default-appearance: number-input;
 }
 
-input[type=number]::-moz-number-wrapper {
-  display: flex;
-  block-size: 100%;
-  /* The align-self: center bit below allows the editor to be potentially
-   * bigger than us. Clip it to match other text fields. */
-  overflow: clip;
-}
-
-input[type=number]::-moz-text-control-editing-root {
-  display: block; /* Flex items must be block-level. Normally we do fixup in
-                     the style system to ensure this, but that fixup is disabled
-                     inside of form controls. So, we hardcode display here. */
-  flex: 1;
-  min-inline-size: 0;
-  /* This makes it overflow into the flex container padding if needed, instead
-   * of getting squashed or pushed down by it */
-  align-self: center;
-  /* This prevents double-applying the padding, which our flex container gets
-   * via the override in nsTextControlFrame::ReflowTextControlChild */
-  padding: 0;
-}
-
 input[type=number]::-moz-number-spin-box {
   writing-mode: horizontal-tb;
   display: flex;
   flex-direction: column;
-%ifdef XP_WIN
-  /* The Window's Theme's spin buttons have a very narrow minimum width, so
-   * make it something reasonable:
-   */
-  width: 16px;
-%endif
-  /* If the spin-box has auto height, it ends up enlarging the default height
-   * of the control, so we limit it to 1em here. The height doesn't affect
-   * the rendering of the spinner-buttons; it's only for layout purposes.
-   *
-   * This is a temporary hack until we implement better positioning for the
-   * spin-box in vertical mode; it works OK at default size but less well
-   * if the font-size is made substantially larger or smaller. (Bug 1175074.)
-   */
-  height: 1em;
-  max-height: 1em;
+  width: max-content;
   align-self: center;
   justify-content: center;
+  /* Don't allow the spin buttons to create overflow */
+  max-height: 100%;
+  max-width: 100%;
+  overflow: clip;
 }
+
+%ifdef XP_WIN
+@media not (-moz-non-native-content-theme) {
+  input[type=number]::-moz-number-spin-box {
+    /* The Window's Theme's spin buttons have a very narrow minimum width, so
+     * make it something reasonable. */
+    width: 16px;
+  }
+}
+%endif
 
 input[type=number]::-moz-number-spin-up {
   writing-mode: horizontal-tb;
@@ -944,6 +953,21 @@ input[type=number] > div > div > div:hover {
   background-color: lightblue;
 }
 
+input[type=search]::-moz-search-clear-button {
+  display: block;
+  cursor: default;
+  width: 1em;
+  height: 1em;
+  max-height: 100%;
+  max-width: 100%;
+  margin-inline-start: 1px;
+  align-self: center;
+  background-image: url(chrome://global/skin/icons/searchfield-cancel.svg);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
 input:is([type=date], [type=time]) {
   overflow: hidden !important;
   font-family: -moz-fixed;
@@ -954,7 +978,7 @@ input:is([type=date], [type=time]):is(:disabled, :read-only) {
   color: GrayText;
 }
 
-input:autofill, input:-moz-autofill-preview {
+input:autofill {
   filter: grayscale(21%) brightness(88%) contrast(161%) invert(10%) sepia(40%) saturate(206%);
 }
 

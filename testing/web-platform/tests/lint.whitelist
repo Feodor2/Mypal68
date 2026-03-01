@@ -543,6 +543,7 @@ CSS-COLLIDING-SUPPORT-NAME: css/*/LOCK
 # These are all the current "merge mismatch" errors the build system produces
 CSS-COLLIDING-SUPPORT-NAME: css/css-flexbox/support/200x200-green.png
 CSS-COLLIDING-SUPPORT-NAME: css/css-grid/grid-items/support/200x200-green.png
+CSS-COLLIDING-SUPPORT-NAME: css/css-scroll-snap/support/common.css
 CSS-COLLIDING-SUPPORT-NAME: css/css-regions/contentEditable/support/common.css
 CSS-COLLIDING-SUPPORT-NAME: css/css-regions/interactivity/full-screen/support/common.css
 CSS-COLLIDING-SUPPORT-NAME: css/css-writing-modes/support/pattern-gg-gr-100x100.png
@@ -660,21 +661,13 @@ CSS-COLLIDING-REF-NAME: css/CSS2/visufx/overflow-applies-to-001-ref.xht
 CSS-COLLIDING-REF-NAME: css/CSS2/ui/overflow-applies-to-001-ref.xht
 CSS-COLLIDING-REF-NAME: css/CSS2/visuren/inline-formatting-context-001-ref.xht
 CSS-COLLIDING-REF-NAME: css/CSS2/linebox/inline-formatting-context-001-ref.xht
-CSS-COLLIDING-REF-NAME: css/css-transforms/individual-transform/individual-transform-1-ref.html
-CSS-COLLIDING-REF-NAME: css/vendor-imports/mozilla/mozilla-central-reftests/transforms/individual-transform-1-ref.html
 CSS-COLLIDING-REF-NAME: css/css-flexbox/reference/percentage-size-subitems-001-ref.html
 CSS-COLLIDING-REF-NAME: css/css-grid/grid-items/percentage-size-subitems-001-ref.html
-CSS-COLLIDING-REF-NAME: css/css-contain/reference/contain-size-button-001-ref.html
-CSS-COLLIDING-REF-NAME: css/vendor-imports/mozilla/mozilla-central-reftests/contain/contain-size-button-001-ref.html
-CSS-COLLIDING-REF-NAME: css/css-contain/reference/contain-size-grid-001-ref.html
-CSS-COLLIDING-REF-NAME: css/vendor-imports/mozilla/mozilla-central-reftests/contain/contain-size-grid-001-ref.html
 CSS-COLLIDING-SUPPORT-NAME: css/css-backgrounds/support/red.png
-CSS-COLLIDING-REF-NAME: css/css-contain/reference/contain-size-fieldset-001-ref.html
-CSS-COLLIDING-REF-NAME: css/vendor-imports/mozilla/mozilla-central-reftests/contain/contain-size-fieldset-001-ref.html
 CSS-COLLIDING-SUPPORT-NAME: css/compositing/mix-blend-mode/support/red.png
 CSS-COLLIDING-SUPPORT-NAME: css/compositing/background-blending/support/red.png
 CSS-COLLIDING-SUPPORT-NAME: css/CSS2/normal-flow/support/replaced-min-max-3.png
-CSS-COLLIDING-SUPPORT-NAME: css/vendor-imports/mozilla/mozilla-central-reftests/ui3/support/replaced-min-max-3.png
+CSS-COLLIDING-SUPPORT-NAME: css/css-sizing/support/replaced-min-max-3.png
 CSS-COLLIDING-SUPPORT-NAME: css/css-backgrounds/background-size/support/50x50-green.png
 CSS-COLLIDING-SUPPORT-NAME: css/css-backgrounds/support/50x50-green.png
 CSS-COLLIDING-SUPPORT-NAME: css/css-grid/grid-items/support/50x50-green.png
@@ -684,8 +677,10 @@ CSS-COLLIDING-SUPPORT-NAME: css/CSS2/backgrounds/support/animated.gif
 CSS-COLLIDING-SUPPORT-NAME: css/css-shapes/shape-outside/shape-image/support/animated.gif
 CSS-COLLIDING-SUPPORT-NAME: css/css-display/support/util.js
 CSS-COLLIDING-SUPPORT-NAME: css/CSS2/normal-flow/support/replaced-min-max-1.png
-CSS-COLLIDING-SUPPORT-NAME: css/vendor-imports/mozilla/mozilla-central-reftests/ui3/support/replaced-min-max-1.png
+CSS-COLLIDING-SUPPORT-NAME: css/css-sizing/support/replaced-min-max-1.png
 
+CSS-COLLIDING-TEST-NAME: css/css-contain/inheritance.html
+CSS-COLLIDING-TEST-NAME: css/css-contain/content-visibility/inheritance.html
 CSS-COLLIDING-TEST-NAME: css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-invalid.html
 CSS-COLLIDING-TEST-NAME: css/css-sizing/aspect-ratio/parsing/contain-intrinsic-size-invalid.html
 CSS-COLLIDING-TEST-NAME: css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-computed.html
@@ -702,61 +697,6 @@ MISSING-LINK: css/css-fonts/variations/font-parse-numeric-stretch-style-weight.h
 MISSING-LINK: css/css-fonts/variations/variable-box-font.html
 MISSING-LINK: css/css-fonts/variations/variable-gpos-m2b.html
 MISSING-LINK: css/css-fonts/variations/variable-gsub.html
-MISSING-LINK: css/css-paint-api/background-image-alpha.https.html
-MISSING-LINK: css/css-paint-api/background-image-multiple.https.html
-MISSING-LINK: css/css-paint-api/background-image-tiled.https.html
-MISSING-LINK: css/css-paint-api/geometry-background-image-001.https.html
-MISSING-LINK: css/css-paint-api/geometry-background-image-002.https.html
-MISSING-LINK: css/css-paint-api/geometry-background-image-tiled-001.https.html
-MISSING-LINK: css/css-paint-api/geometry-background-image-tiled-002.https.html
-MISSING-LINK: css/css-paint-api/geometry-background-image-tiled-003.https.html
-MISSING-LINK: css/css-paint-api/geometry-border-image-001.https.html
-MISSING-LINK: css/css-paint-api/geometry-border-image-002.https.html
-MISSING-LINK: css/css-paint-api/geometry-border-image-003.https.html
-MISSING-LINK: css/css-paint-api/geometry-border-image-004.https.html
-MISSING-LINK: css/css-paint-api/invalid-image-constructor-error.https.html
-MISSING-LINK: css/css-paint-api/invalid-image-paint-error.https.html
-MISSING-LINK: css/css-paint-api/invalid-image-pending-script.https.html
-MISSING-LINK: css/css-paint-api/overdraw.https.html
-MISSING-LINK: css/css-paint-api/paint-arguments.https.html
-MISSING-LINK: css/css-paint-api/paint-function-arguments.https.html
-MISSING-LINK: css/css-paint-api/paint2d-composite.https.html
-MISSING-LINK: css/css-paint-api/paint2d-filter.https.html
-MISSING-LINK: css/css-paint-api/paint2d-gradient.https.html
-MISSING-LINK: css/css-paint-api/paint2d-image.https.html
-MISSING-LINK: css/css-paint-api/paint2d-paths.https.html
-MISSING-LINK: css/css-paint-api/paint2d-rects.https.html
-MISSING-LINK: css/css-paint-api/paint2d-shadows.https.html
-MISSING-LINK: css/css-paint-api/paint2d-transform.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-001.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-002.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-003.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-004.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-005.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-006.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-007.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-008.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-009.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-010.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-011.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-012.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-013.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-014.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-015.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-016.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-017.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-018.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-019.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-020.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-021.https.html
-MISSING-LINK: css/css-paint-api/parse-input-arguments-022.https.html
-MISSING-LINK: css/css-paint-api/registered-properties-in-custom-paint.https.html
-MISSING-LINK: css/css-paint-api/style-background-image.https.html
-MISSING-LINK: css/css-paint-api/style-before-pseudo.https.html
-MISSING-LINK: css/css-paint-api/style-first-letter-pseudo.https.html
-MISSING-LINK: css/css-paint-api/valid-image-after-load.https.html
-MISSING-LINK: css/css-paint-api/valid-image-before-load.https.html
-MISSING-LINK: css/css-paint-api/hidpi/device-pixel-ratio.https.html
 MISSING-LINK: css/css-scroll-anchoring/abspos-containing-block-outside-scroller.html
 MISSING-LINK: css/css-scroll-anchoring/abspos-contributes-to-static-parent-bounds.html
 MISSING-LINK: css/css-scroll-anchoring/ancestor-change-heuristic.html
@@ -840,6 +780,11 @@ MISSING DEPENDENCY: contacts/resources/helpers.js
 AHEM SYSTEM FONT: acid/acid3/test.html
 AHEM SYSTEM FONT: resource-timing/resources/all_resource_types.htm
 AHEM SYSTEM FONT: resource-timing/resources/iframe-reload-TAO.sub.html
+AHEM SYSTEM FONT: css/css-font-loading/fontface-override-descriptors.html
+AHEM SYSTEM FONT: css/css-font-loading/fontface-size-adjust-descriptor.html
+AHEM SYSTEM FONT: css/css-font-loading/fontface-size-adjust-descriptor-ref.html
+AHEM SYSTEM FONT: css/css-fonts/ascent-descent-override.html
+AHEM SYSTEM FONT: css/css-fonts/line-gap-override.html
 
 # The following are imported from mozilla-central and can't be modified in WPT.
 # They do load Ahem as a web font, but they use their own copy which trips the

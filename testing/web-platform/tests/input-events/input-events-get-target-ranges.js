@@ -1,5 +1,7 @@
 "use strict";
 
+// TODO: extend `EditorTestUtils` in editing/include/edit-test-utils.mjs
+
 const kBackspaceKey = "\uE003";
 const kDeleteKey = "\uE017";
 const kArrowRight = "\uE014";
@@ -13,29 +15,63 @@ const kKeyA = "a";
 const kImgSrc =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR42mNgaGD4D8YwBgAw9AX9Y9zBwwAAAABJRU5ErkJggg==";
 
-let gSelection = getSelection();
-let gEditor = document.querySelector("div[contenteditable]");
-let gBeforeinput = [];
-let gInput = [];
-gEditor.addEventListener("beforeinput", e => {
-  // NOTE: Blink makes `getTargetRanges()` return empty range after propagation,
-  //       but this test wants to check the result during propagation.
-  //       Therefore, we need to cache the result, but will assert if
-  //       `getTargetRanges()` returns different ranges after checking the
-  //       cached ranges.
-  e.cachedRanges = e.getTargetRanges();
-  gBeforeinput.push(e);
-});
-gEditor.addEventListener("input", e => {
-  e.cachedRanges = e.getTargetRanges();
-  gInput.push(e);
-});
+let gSelection, gEditor, gBeforeinput, gInput;
 
 function initializeTest(aInnerHTML) {
-  gEditor.innerHTML = aInnerHTML;
-  gEditor.focus();
+  function onBeforeinput(event) {
+    // NOTE: Blink makes `getTargetRanges()` return empty range after
+    //       propagation, but this test wants to check the result during
+    //       propagation.  Therefore, we need to cache the result, but will
+    //       assert if `getTargetRanges()` returns different ranges after
+    //       checking the cached ranges.
+    event.cachedRanges = event.getTargetRanges();
+    gBeforeinput.push(event);
+  }
+  function onInput(event) {
+    event.cachedRanges = event.getTargetRanges();
+    gInput.push(event);
+  }
+  if (gEditor !== document.querySelector("div[contenteditable]")) {
+    if (gEditor) {
+      gEditor.isListeningToInputEvents = false;
+      gEditor.removeEventListener("beforeinput", onBeforeinput);
+      gEditor.removeEventListener("input", onInput);
+    }
+    gEditor = document.querySelector("div[contenteditable]");
+  }
+  gSelection = getSelection();
   gBeforeinput = [];
   gInput = [];
+  if (!gEditor.isListeningToInputEvents) {
+    gEditor.isListeningToInputEvents = true;
+    gEditor.addEventListener("beforeinput", onBeforeinput);
+    gEditor.addEventListener("input", onInput);
+  }
+
+  setupEditor(aInnerHTML);
+  gBeforeinput = [];
+  gInput = [];
+}
+
+function getArrayOfRangesDescription(arrayOfRanges) {
+  if (arrayOfRanges === null) {
+    return "null";
+  }
+  if (arrayOfRanges === undefined) {
+    return "undefined";
+  }
+  if (!Array.isArray(arrayOfRanges)) {
+    return "Unknown Object";
+  }
+  if (arrayOfRanges.length === 0) {
+    return "[]";
+  }
+  let result = "[";
+  for (let range of arrayOfRanges) {
+    result += `{${getRangeDescription(range)}},`;
+  }
+  result += "]";
+  return result;
 }
 
 function getRangeDescription(range) {
@@ -66,27 +102,6 @@ function getRangeDescription(range) {
     : `(${getNodeDescription(range.startContainer)}, ${
         range.startOffset
       }) - (${getNodeDescription(range.endContainer)}, ${range.endOffset})`;
-}
-
-function getArrayOfRangesDescription(arrayOfRanges) {
-  if (arrayOfRanges === null) {
-    return "null";
-  }
-  if (arrayOfRanges === undefined) {
-    return "undefined";
-  }
-  if (!Array.isArray(arrayOfRanges)) {
-    return "Unknown Object";
-  }
-  if (arrayOfRanges.length === 0) {
-    return "[]";
-  }
-  let result = "[";
-  for (let range of arrayOfRanges) {
-    result += `{${getRangeDescription(range)}},`;
-  }
-  result += "]";
-  return result;
 }
 
 function sendDeleteKey(modifier) {
@@ -140,46 +155,39 @@ function sendArrowRightKey() {
     .send();
 }
 
-function checkGetTargetRangesKeepReturningSameValue(event) {
-  // https://github.com/w3c/input-events/issues/114
-  assert_equals(
-    getArrayOfRangesDescription(event.getTargetRanges()),
-    getArrayOfRangesDescription(event.cachedRanges),
-    `${event.type}.getTargetRanges() should keep returning the same array of ranges even after its propagation finished`
-  );
-}
-
-function checkGetTargetRangesOfBeforeinputOnDeleteSomething(expectedRange) {
+function checkGetTargetRangesOfBeforeinputOnDeleteSomething(expectedRanges) {
   assert_equals(
     gBeforeinput.length,
     1,
-    "One beforeinput event should be fired if the key operation deletes something"
+    "One beforeinput event should be fired if the key operation tries to delete something"
   );
   assert_true(
     Array.isArray(gBeforeinput[0].cachedRanges),
-    "gBeforeinput[0].getTargetRanges() should return an array of StaticRange instances during propagation"
+    "gBeforeinput[0].getTargetRanges() should return an array of StaticRange instances at least during propagation"
   );
-  // Before checking the length of array of ranges, we should check the first
-  // range first because the first range data is more important than whether
-  // there are additional unexpected ranges.
-  if (gBeforeinput[0].cachedRanges.length > 0) {
+  let arrayOfExpectedRanges = Array.isArray(expectedRanges)
+    ? expectedRanges
+    : [expectedRanges];
+  // Before checking the length of array of ranges, we should check the given
+  // range first because the ranges are more important than whether there are
+  // redundant additional unexpected ranges.
+  for (
+    let i = 0;
+    i <
+    Math.max(arrayOfExpectedRanges.length, gBeforeinput[0].cachedRanges.length);
+    i++
+  ) {
     assert_equals(
-      getRangeDescription(gBeforeinput[0].cachedRanges[0]),
-      getRangeDescription(expectedRange),
-      `gBeforeinput[0].getTargetRanges() should return expected range (inputType is "${gBeforeinput[0].inputType}")`
-    );
-    assert_equals(
-      gBeforeinput[0].cachedRanges.length,
-      1,
-      "gBeforeinput[0].getTargetRanges() should return one range within an array"
+      getRangeDescription(gBeforeinput[0].cachedRanges[i]),
+      getRangeDescription(arrayOfExpectedRanges[i]),
+      `gBeforeinput[0].getTargetRanges()[${i}] should return expected range (inputType is "${gBeforeinput[0].inputType}")`
     );
   }
   assert_equals(
     gBeforeinput[0].cachedRanges.length,
-    1,
-    "One range should be returned from getTargetRanges() when the key operation deletes something"
+    arrayOfExpectedRanges.length,
+    `getTargetRanges() of beforeinput event should return ${arrayOfExpectedRanges.length} ranges`
   );
-  checkGetTargetRangesKeepReturningSameValue(gBeforeinput[0]);
 }
 
 function checkGetTargetRangesOfInputOnDeleteSomething() {
@@ -191,14 +199,13 @@ function checkGetTargetRangesOfInputOnDeleteSomething() {
   // https://github.com/w3c/input-events/issues/113
   assert_true(
     Array.isArray(gInput[0].cachedRanges),
-    "gInput[0].getTargetRanges() should return an array of StaticRange instances during propagation"
+    "gInput[0].getTargetRanges() should return an array of StaticRange instances at least during propagation"
   );
   assert_equals(
     gInput[0].cachedRanges.length,
     0,
     "gInput[0].getTargetRanges() should return empty array during propagation"
   );
-  checkGetTargetRangesKeepReturningSameValue(gInput[0]);
 }
 
 function checkGetTargetRangesOfInputOnDoNothing() {
@@ -220,4 +227,292 @@ function checkBeforeinputAndInputEventsOnNOOP() {
     0,
     "input event shouldn't be fired when the key operation does not cause modifying the DOM tree"
   );
+}
+
+function checkEditorContentResultAsSubTest(
+  expectedResult,
+  description,
+  options = {}
+) {
+  test(() => {
+    if (Array.isArray(expectedResult)) {
+      assert_in_array(
+        options.ignoreWhiteSpaceDifference
+          ? gEditor.innerHTML.replace(/&nbsp;/g, " ")
+          : gEditor.innerHTML,
+        expectedResult
+      );
+    } else {
+      assert_equals(
+        options.ignoreWhiteSpaceDifference
+          ? gEditor.innerHTML.replace(/&nbsp;/g, " ")
+          : gEditor.innerHTML,
+        expectedResult
+      );
+    }
+  }, `${description} - comparing innerHTML`);
+}
+
+// Similar to `setupDiv` in editing/include/tests.js, this method sets
+// innerHTML value of gEditor, and sets multiple selection ranges specified
+// with the markers.
+// - `[` specifies start boundary in a text node
+// - `{` specifies start boundary before a node
+// - `]` specifies end boundary in a text node
+// - `}` specifies end boundary after a node
+function setupEditor(innerHTMLWithRangeMarkers) {
+  const startBoundaries = innerHTMLWithRangeMarkers.match(/\{|\[/g) || [];
+  const endBoundaries = innerHTMLWithRangeMarkers.match(/\}|\]/g) || [];
+  if (startBoundaries.length !== endBoundaries.length) {
+    throw "Should match number of open/close markers";
+  }
+
+  gEditor.innerHTML = innerHTMLWithRangeMarkers;
+  gEditor.focus();
+
+  if (startBoundaries.length === 0) {
+    // Don't remove the range for now since some tests may assume that
+    // setting innerHTML does not remove all selection ranges.
+    return;
+  }
+
+  function getNextRangeAndDeleteMarker(startNode) {
+    function getNextLeafNode(node) {
+      function inclusiveDeepestFirstChildNode(container) {
+        while (container.firstChild) {
+          container = container.firstChild;
+        }
+        return container;
+      }
+      if (node.hasChildNodes()) {
+        return inclusiveDeepestFirstChildNode(node);
+      }
+      if (node.nextSibling) {
+        return inclusiveDeepestFirstChildNode(node.nextSibling);
+      }
+      let nextSibling = (function nextSiblingOfAncestorElement(child) {
+        for (
+          let parent = child.parentElement;
+          parent && parent != gEditor;
+          parent = parent.parentElement
+        ) {
+          if (parent.nextSibling) {
+            return parent.nextSibling;
+          }
+        }
+        return null;
+      })(node);
+      if (!nextSibling) {
+        return null;
+      }
+      return inclusiveDeepestFirstChildNode(nextSibling);
+    }
+    function scanMarkerInTextNode(textNode, offset) {
+      return /[\{\[\]\}]/.exec(textNode.data.substr(offset));
+    }
+    let startMarker = (function scanNextStartMaker(
+      startContainer,
+      startOffset
+    ) {
+      function scanStartMakerInTextNode(textNode, offset) {
+        let scanResult = scanMarkerInTextNode(textNode, offset);
+        if (scanResult === null) {
+          return null;
+        }
+        if (scanResult[0] === "}" || scanResult[0] === "]") {
+          throw "An end marker is found before a start marker";
+        }
+        return {
+          marker: scanResult[0],
+          container: textNode,
+          offset: scanResult.index + offset
+        };
+      }
+      if (startContainer.nodeType === Node.TEXT_NODE) {
+        let scanResult = scanStartMakerInTextNode(startContainer, startOffset);
+        if (scanResult !== null) {
+          return scanResult;
+        }
+      }
+      let nextNode = startContainer;
+      while ((nextNode = getNextLeafNode(nextNode))) {
+        if (nextNode.nodeType === Node.TEXT_NODE) {
+          let scanResult = scanStartMakerInTextNode(nextNode, 0);
+          if (scanResult !== null) {
+            return scanResult;
+          }
+          continue;
+        }
+      }
+      return null;
+    })(startNode, 0);
+    if (startMarker === null) {
+      return null;
+    }
+    let endMarker = (function scanNextEndMarker(startContainer, startOffset) {
+      function scanEndMarkerInTextNode(textNode, offset) {
+        let scanResult = scanMarkerInTextNode(textNode, offset);
+        if (scanResult === null) {
+          return null;
+        }
+        if (scanResult[0] === "{" || scanResult[0] === "[") {
+          throw "A start marker is found before an end marker";
+        }
+        return {
+          marker: scanResult[0],
+          container: textNode,
+          offset: scanResult.index + offset
+        };
+      }
+      if (startContainer.nodeType === Node.TEXT_NODE) {
+        let scanResult = scanEndMarkerInTextNode(startContainer, startOffset);
+        if (scanResult !== null) {
+          return scanResult;
+        }
+      }
+      let nextNode = startContainer;
+      while ((nextNode = getNextLeafNode(nextNode))) {
+        if (nextNode.nodeType === Node.TEXT_NODE) {
+          let scanResult = scanEndMarkerInTextNode(nextNode, 0);
+          if (scanResult !== null) {
+            return scanResult;
+          }
+          continue;
+        }
+      }
+      return null;
+    })(startMarker.container, startMarker.offset + 1);
+    if (endMarker === null) {
+      throw "Found an open marker, but not found corresponding close marker";
+    }
+    function indexOfContainer(container, child) {
+      let offset = 0;
+      for (let node = container.firstChild; node; node = node.nextSibling) {
+        if (node == child) {
+          return offset;
+        }
+        offset++;
+      }
+      throw "child must be a child node of container";
+    }
+    (function deleteFoundMarkers() {
+      function removeNode(node) {
+        let container = node.parentElement;
+        let offset = indexOfContainer(container, node);
+        node.remove();
+        return { container, offset };
+      }
+      if (startMarker.container == endMarker.container) {
+        // If the text node becomes empty, remove it and set collapsed range
+        // to the position where there is the text node.
+        if (startMarker.container.length === 2) {
+          if (!/[\[\{][\]\}]/.test(startMarker.container.data)) {
+            throw `Unexpected text node (data: "${startMarker.container.data}")`;
+          }
+          let { container, offset } = removeNode(startMarker.container);
+          startMarker.container = endMarker.container = container;
+          startMarker.offset = endMarker.offset = offset;
+          startMarker.marker = endMarker.marker = "";
+          return;
+        }
+        startMarker.container.data = `${startMarker.container.data.substring(
+          0,
+          startMarker.offset
+        )}${startMarker.container.data.substring(
+          startMarker.offset + 1,
+          endMarker.offset
+        )}${startMarker.container.data.substring(endMarker.offset + 1)}`;
+        if (startMarker.offset >= startMarker.container.length) {
+          startMarker.offset = endMarker.offset = startMarker.container.length;
+          return;
+        }
+        endMarker.offset--; // remove the start marker's length
+        if (endMarker.offset > endMarker.container.length) {
+          endMarker.offset = endMarker.container.length;
+        }
+        return;
+      }
+      if (startMarker.container.length === 1) {
+        let { container, offset } = removeNode(startMarker.container);
+        startMarker.container = container;
+        startMarker.offset = offset;
+        startMarker.marker = "";
+      } else {
+        startMarker.container.data = `${startMarker.container.data.substring(
+          0,
+          startMarker.offset
+        )}${startMarker.container.data.substring(startMarker.offset + 1)}`;
+      }
+      if (endMarker.container.length === 1) {
+        let { container, offset } = removeNode(endMarker.container);
+        endMarker.container = container;
+        endMarker.offset = offset;
+        endMarker.marker = "";
+      } else {
+        endMarker.container.data = `${endMarker.container.data.substring(
+          0,
+          endMarker.offset
+        )}${endMarker.container.data.substring(endMarker.offset + 1)}`;
+      }
+    })();
+    (function handleNodeSelectMarker() {
+      if (startMarker.marker === "{") {
+        if (startMarker.offset === 0) {
+          // The range start with the text node.
+          let container = startMarker.container.parentElement;
+          startMarker.offset = indexOfContainer(
+            container,
+            startMarker.container
+          );
+          startMarker.container = container;
+        } else if (startMarker.offset === startMarker.container.data.length) {
+          // The range start after the text node.
+          let container = startMarker.container.parentElement;
+          startMarker.offset =
+            indexOfContainer(container, startMarker.container) + 1;
+          startMarker.container = container;
+        } else {
+          throw 'Start marker "{" is allowed start or end of a text node';
+        }
+      }
+      if (endMarker.marker === "}") {
+        if (endMarker.offset === 0) {
+          // The range ends before the text node.
+          let container = endMarker.container.parentElement;
+          endMarker.offset = indexOfContainer(container, endMarker.container);
+          endMarker.container = container;
+        } else if (endMarker.offset === endMarker.container.data.length) {
+          // The range ends with the text node.
+          let container = endMarker.container.parentElement;
+          endMarker.offset =
+            indexOfContainer(container, endMarker.container) + 1;
+          endMarker.container = container;
+        } else {
+          throw 'End marker "}" is allowed start or end of a text node';
+        }
+      }
+    })();
+    let range = document.createRange();
+    range.setStart(startMarker.container, startMarker.offset);
+    range.setEnd(endMarker.container, endMarker.offset);
+    return range;
+  }
+
+  let ranges = [];
+  for (
+    let range = getNextRangeAndDeleteMarker(gEditor.firstChild);
+    range;
+    range = getNextRangeAndDeleteMarker(range.endContainer)
+  ) {
+    ranges.push(range);
+  }
+
+  gSelection.removeAllRanges();
+  for (let range of ranges) {
+    gSelection.addRange(range);
+  }
+
+  if (gSelection.rangeCount != ranges.length) {
+    throw `Failed to set selection to the given ranges whose length is ${ranges.length}, but only ${gSelection.rangeCount} ranges are added`;
+  }
 }

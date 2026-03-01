@@ -762,6 +762,10 @@ SpecialPowersAPI.prototype = {
     return wrapPrivileged(this.getFullComponents().results);
   },
 
+  get isHeadless() {
+    return Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).isHeadless;
+  },
+
   getDOMWindowUtils(aWindow) {
     if (aWindow == this.window.get() && this.DOMWindowUtils != null) {
       return this.DOMWindowUtils;

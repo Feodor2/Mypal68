@@ -1581,7 +1581,11 @@ interface ElementInternals {
   boolean reportValidity();
 
   readonly attribute NodeList labels;
+
+  readonly attribute ShadowRoot? shadowRoot;
 };
+
+ElementInternals includes ARIAMixin;
 
 dictionary ValidityStateFlags {
   boolean valueMissing = false;

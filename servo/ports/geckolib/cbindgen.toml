@@ -80,6 +80,7 @@ include = [
   "BorderStyle",
   "OutlineStyle",
   "CaptionSide",
+  "FontSizeAdjust",
   "ComputedFontStretchRange",
   "ComputedFontStyleDescriptor",
   "ComputedFontWeightRange",
@@ -89,6 +90,7 @@ include = [
   "DisplayOutside",
   "DisplayInside",
   "DisplayMode",
+  "Platform",
   "PrefersColorScheme",
   "PrefersContrast",
   "FillRule",
@@ -96,6 +98,7 @@ include = [
   "FontFaceSourceListComponent",
   "FontLanguageOverride",
   "GenericFontFamily",
+  "FontFamily",
   "FontFamilyNameSyntax",
   "OverflowWrap",
   "TimingFunction",
@@ -142,6 +145,9 @@ include = [
   "LineBreak",
   "WordBreak",
   "Contain",
+  "ContainerType",
+  "ContainerName",
+  "ContentVisibility",
   "Origin",
   "RestyleHint",
   "TouchAction",
@@ -153,7 +159,6 @@ include = [
   "TextOverflow",
   "MozControlCharacterVisibility",
   "RubyPosition",
-  "MozListReversed",
   "Owned",
   "OwnedOrNull",
   "Strong",
@@ -196,7 +201,8 @@ include = [
   "PaintOrder",
   "SVGPaintOrder",
   "ClipRectOrAuto",
-  "CounterSetOrReset",
+  "CounterReset",
+  "CounterSet",
   "CounterIncrement",
   "WritingMode",
   "Content",
@@ -223,6 +229,7 @@ include = [
   "TextAlignLast",
   "FontSizeKeyword",
   "AspectRatio",
+  "DefaultFontSizes",
   "RuleChangeKind",
   "PageSize",
 ]
@@ -236,7 +243,6 @@ renaming_overrides_prefixing = true
 "nsIURI" = "nsIURI"
 "imgRequestProxy" = "imgRequestProxy"
 "nsCompatibility" = "nsCompatibility"
-"SharedFontList" = "SharedFontList"
 "nsSimpleContentList" = "nsSimpleContentList"
 "nsACString" = "nsACString"
 "nsAString" = "nsAString"
@@ -281,10 +287,14 @@ renaming_overrides_prefixing = true
 
 [export.body]
 "CSSPixelLength" = """
+  static StyleCSSPixelLength FromPixels(CSSCoord aCoord) { return {aCoord}; }
+  static StyleCSSPixelLength Zero() { return FromPixels(0.0f); }
+
   inline nscoord ToAppUnits() const;
   inline bool IsZero() const;
   CSSCoord ToCSSPixels() const { return _0; }
   inline void ScaleBy(float);
+  inline StyleCSSPixelLength ScaledBy(float) const;
 """
 
 "GenericCalcNode" = """
@@ -487,6 +497,7 @@ renaming_overrides_prefixing = true
 """
 
 "GenericColor" = """
+  static inline StyleGenericColor CurrentColor();
   static inline StyleGenericColor FromColor(nscolor);
   static inline StyleGenericColor Black();
   static inline StyleGenericColor White();
@@ -517,7 +528,7 @@ renaming_overrides_prefixing = true
 """
 
 "OwnedSlice" = """
-  StyleOwnedSlice() :
+  constexpr StyleOwnedSlice() :
     ptr((T*)alignof(T)),
     len(0) {}
 
@@ -564,11 +575,13 @@ renaming_overrides_prefixing = true
   inline StyleArcSlice();
   inline StyleArcSlice(const StyleArcSlice& aOther);
 
-  // Should be easily implementable if wanted, but the default implementation would leak.
-  StyleArcSlice& operator=(const StyleArcSlice&) = delete;
-  StyleArcSlice& operator=(StyleArcSlice&&) = delete;
+  inline StyleArcSlice& operator=(const StyleArcSlice&);
+  inline StyleArcSlice& operator=(StyleArcSlice&&);
 
   inline explicit StyleArcSlice(const StyleForgottenArcSlicePtr<T>& aPtr);
+ private:
+  inline void Release();
+ public:
   inline ~StyleArcSlice();
   inline Span<const T> AsSpan() const;
   inline size_t Length() const;
@@ -781,6 +794,16 @@ renaming_overrides_prefixing = true
 
 "GenericImage" = """
  public:
+  // Returns the intrinsic resolution of the image.
+  //
+  // The resolution is in dppx, and should be used to impact the intrinsic
+  // size of the image.
+  ImageResolution GetResolution() const;
+
+  // Returns the intrinsic size of the image, if there's one, accounting for
+  // resolution as needed.
+  Maybe<CSSIntSize> GetIntrinsicSize() const;
+
   // If this is an image-set(), the final image we've selected, otherwise it
   // returns *this.
   const StyleGenericImage& FinalImage() const;
@@ -835,4 +858,16 @@ renaming_overrides_prefixing = true
   static StyleGenericAspectRatio Auto() {
     return {true, StylePreferredRatio<N>::None()};
   }
+"""
+
+"FontFamilyList" = """
+  static StyleFontFamilyList WithOneUnquotedFamily(const nsACString&);
+  // Constructs a font family list with a list of names.
+  static StyleFontFamilyList WithNames(nsTArray<StyleSingleFontFamily>&&);
+"""
+
+"SingleFontFamily" = """
+  static StyleSingleFontFamily Parse(const nsACString& aName);
+  void AppendToString(nsACString& aFamily, bool aIncludeQuotes = true) const;
+  bool IsNamedFamily(const nsAString&) const;
 """

@@ -5,6 +5,7 @@
 //! `<length>` computed values, and related ones.
 
 use super::{Context, Number, ToComputedValue};
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::values::animated::ToAnimatedValue;
 use crate::values::computed::NonNegativeNumber;
 use crate::values::generics::length as generics;
@@ -36,7 +37,10 @@ impl ToComputedValue for specified::NoCalcLength {
                 length.to_computed_value(context, FontBaseSize::CurrentStyle)
             },
             specified::NoCalcLength::ViewportPercentage(length) => {
-                length.to_computed_value(context.viewport_size_for_viewport_unit_resolution())
+                context
+                    .builder
+                    .add_flags(ComputedValueFlags::USES_VIEWPORT_UNITS);
+                length.to_computed_value(context)
             },
             specified::NoCalcLength::ServoCharacterWidth(length) => {
                 length.to_computed_value(context.style().get_font().clone_font_size().size())
@@ -189,7 +193,7 @@ impl Size {
             GenericSize::MaxContent |
             GenericSize::FitContent |
             GenericSize::MozAvailable |
-            GenericSize::FitContentFunction(_) => false
+            GenericSize::FitContentFunction(_) => false,
         }
     }
 }
@@ -232,6 +236,12 @@ impl CSSPixelLength {
     #[inline]
     pub fn normalized(self) -> Self {
         Self::new(crate::values::normalize(self.0))
+    }
+
+    /// Scale the length by a given amount.
+    #[inline]
+    pub fn scale_by(self, scale: CSSFloat) -> Self {
+        CSSPixelLength(self.0 * scale)
     }
 
     /// Return the containing pixel value.

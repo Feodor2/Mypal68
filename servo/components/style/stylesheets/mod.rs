@@ -12,6 +12,7 @@ pub mod font_feature_values_rule;
 pub mod import_rule;
 pub mod keyframes_rule;
 pub mod layer_rule;
+pub mod container_rule;
 mod loader;
 mod media_rule;
 mod namespace_rule;
@@ -52,6 +53,7 @@ pub use self::import_rule::ImportRule;
 pub use self::keyframes_rule::KeyframesRule;
 pub use self::layer_rule::{LayerBlockRule, LayerStatementRule};
 pub use self::loader::StylesheetLoader;
+pub use self::container_rule::ContainerRule;
 pub use self::media_rule::MediaRule;
 pub use self::namespace_rule::NamespaceRule;
 pub use self::origin::{Origin, OriginSet, OriginSetIterator, PerOrigin, PerOriginIter};
@@ -251,6 +253,7 @@ pub enum CssRule {
     Import(Arc<Locked<ImportRule>>),
     Style(Arc<Locked<StyleRule>>),
     Media(Arc<Locked<MediaRule>>),
+    Container(Arc<Locked<ContainerRule>>),
     FontFace(Arc<Locked<FontFaceRule>>),
     FontFeatureValues(Arc<Locked<FontFeatureValuesRule>>),
     CounterStyle(Arc<Locked<CounterStyleRule>>),
@@ -281,6 +284,10 @@ impl CssRule {
             },
 
             CssRule::Media(ref lock) => {
+                lock.unconditional_shallow_size_of(ops) + lock.read_with(guard).size_of(guard, ops)
+            },
+
+            CssRule::Container(ref lock) => {
                 lock.unconditional_shallow_size_of(ops) + lock.read_with(guard).size_of(guard, ops)
             },
 
@@ -340,6 +347,7 @@ pub enum CssRuleType {
     // a constant somewhere.
     LayerBlock = 16,
     LayerStatement = 17,
+    Container = 18,
 }
 
 #[allow(missing_docs)]
@@ -368,6 +376,7 @@ impl CssRule {
             CssRule::Document(_) => CssRuleType::Document,
             CssRule::LayerBlock(_) => CssRuleType::LayerBlock,
             CssRule::LayerStatement(_) => CssRuleType::LayerStatement,
+            CssRule::Container(_) => CssRuleType::Container,
         }
     }
 
@@ -454,6 +463,12 @@ impl DeepCloneWithLock for CssRule {
                     lock.wrap(rule.deep_clone_with_lock(lock, guard, params)),
                 ))
             },
+            CssRule::Container(ref arc) => {
+                let rule = arc.read_with(guard);
+                CssRule::Container(Arc::new(
+                    lock.wrap(rule.deep_clone_with_lock(lock, guard, params)),
+                ))
+            },
             CssRule::Media(ref arc) => {
                 let rule = arc.read_with(guard);
                 CssRule::Media(Arc::new(
@@ -534,6 +549,7 @@ impl ToCssWithGuard for CssRule {
             CssRule::Document(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::LayerBlock(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::LayerStatement(ref lock) => lock.read_with(guard).to_css(guard, dest),
+            CssRule::Container(ref lock) => lock.read_with(guard).to_css(guard, dest),
         }
     }
 }

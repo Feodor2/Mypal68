@@ -10,9 +10,11 @@ use crate::font_face::parse_font_face_block;
 use crate::media_queries::MediaList;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::parse_property_declaration_list;
+use crate::queries::FeatureType;
 use crate::selector_parser::{SelectorImpl, SelectorParser};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::str::starts_with_ignore_ascii_case;
+use crate::stylesheets::container_rule::{ContainerRule, ContainerCondition};
 use crate::stylesheets::document_rule::DocumentCondition;
 use crate::stylesheets::font_feature_values_rule::parse_family_name_list;
 use crate::stylesheets::keyframes_rule::parse_keyframe_list;
@@ -27,6 +29,7 @@ use crate::stylesheets::{CssRule, CssRuleType, CssRules, RulesMutateError, Style
 use crate::stylesheets::{NamespaceRule, PageRule, StyleRule, SupportsRule, ViewportRule};
 use crate::values::computed::font::FamilyName;
 use crate::values::{CssUrl, CustomIdent, KeyframesName};
+use crate::values::specified::ContainerName;
 use crate::{Namespace, Prefix};
 use cssparser::{AtRuleParser, Parser, QualifiedRuleParser, RuleListParser};
 use cssparser::{BasicParseError, BasicParseErrorKind, CowRcStr, ParserState, SourcePosition};
@@ -159,6 +162,8 @@ pub enum AtRulePrelude {
     CounterStyle(CustomIdent),
     /// A @media rule prelude, with its media queries.
     Media(Arc<Locked<MediaList>>),
+    /// A @container rule prelude.
+    Container(ContainerName, ContainerCondition),
     /// An @supports rule, with its conditional
     Supports(SupportsCondition),
     /// A @viewport rule prelude.
@@ -423,6 +428,15 @@ impl<'a, 'b, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'b> {
             "font-face" => {
                 AtRulePrelude::FontFace
             },
+            "container" if static_prefs::pref!("layout.css.container-queries.enabled") => {
+                // FIXME: This is a bit ambiguous:
+                // https://github.com/w3c/csswg-drafts/issues/7203
+                let name = input.try_parse(|input| {
+                    ContainerName::parse(self.context, input)
+                }).ok().unwrap_or_else(ContainerName::none);
+                let condition = ContainerCondition::parse(self.context, input, FeatureType::Container)?;
+                AtRulePrelude::Container(name, condition)
+            },
             "layer" if static_prefs::pref!("layout.css.cascade-layers.enabled") => {
                 let names = input.try_parse(|input| {
                     input.parse_comma_separated(|input| {
@@ -589,6 +603,16 @@ impl<'a, 'b, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'b> {
                     DocumentRule {
                         condition,
                         rules: self.parse_nested_rules(input, CssRuleType::Document),
+                        source_location: start.source_location(),
+                    },
+                ))))
+            },
+            AtRulePrelude::Container(name, condition) => {
+                Ok(CssRule::Container(Arc::new(self.shared_lock.wrap(
+                    ContainerRule {
+                        name,
+                        condition,
+                        rules: self.parse_nested_rules(input, CssRuleType::Container),
                         source_location: start.source_location(),
                     },
                 ))))

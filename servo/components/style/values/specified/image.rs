@@ -77,16 +77,6 @@ fn cross_fade_enabled() -> bool {
     false
 }
 
-#[cfg(feature = "gecko")]
-fn image_set_enabled() -> bool {
-    static_prefs::pref!("layout.css.image-set.enabled")
-}
-
-#[cfg(feature = "servo")]
-fn image_set_enabled() -> bool {
-    false
-}
-
 impl SpecifiedValueInfo for Gradient {
     const SUPPORTED_TYPES: u8 = CssType::GRADIENT;
 
@@ -130,9 +120,7 @@ impl<Image, Resolution> SpecifiedValueInfo for generic::ImageSet<Image, Resoluti
     const SUPPORTED_TYPES: u8 = 0;
 
     fn collect_completion_keywords(f: KeywordsCollectFn) {
-        if image_set_enabled() {
-            f(&["image-set"]);
-        }
+        f(&["image-set"]);
     }
 }
 
@@ -201,10 +189,8 @@ impl Image {
             return Ok(generic::Image::Url(url));
         }
 
-        if image_set_enabled() {
-            if let Ok(is) = input.try_parse(|input| ImageSet::parse(context, input, cors_mode, only_url)) {
-                return Ok(generic::Image::ImageSet(Box::new(is)));
-            }
+        if let Ok(is) = input.try_parse(|input| ImageSet::parse(context, input, cors_mode, only_url)) {
+            return Ok(generic::Image::ImageSet(Box::new(is)));
         }
 
         if only_url {
@@ -363,7 +349,14 @@ impl ImageSet {
         cors_mode: CorsMode,
         only_url: bool,
     ) -> Result<Self, ParseError<'i>> {
-        input.expect_function_matching("image-set")?;
+        let function = input.expect_function()?;
+        match_ignore_ascii_case! { &function,
+            "-webkit-image-set" | "image-set" => {},
+            _ => {
+                let func = function.clone();
+                return Err(input.new_custom_error(StyleParseErrorKind::UnexpectedFunction(func)));
+            }
+        }
         let items = input.parse_nested_block(|input| {
             input.parse_comma_separated(|input| ImageSetItem::parse(context, input, cors_mode, only_url))
         })?;

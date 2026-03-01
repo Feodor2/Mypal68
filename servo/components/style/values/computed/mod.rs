@@ -42,15 +42,15 @@ pub use self::basic_shape::FillRule;
 pub use self::border::{BorderCornerRadius, BorderRadius, BorderSpacing};
 pub use self::border::{BorderImageRepeat, BorderImageSideWidth};
 pub use self::border::{BorderImageSlice, BorderImageWidth};
-pub use self::box_::{AnimationIterationCount, AnimationName, Contain};
-pub use self::box_::{Appearance, BreakBetween, BreakWithin, Clear, Float};
+pub use self::box_::{AnimationIterationCount, AnimationName, Contain, ContainerName, ContainerType};
+pub use self::box_::{Appearance, BreakBetween, BreakWithin, Clear, ContentVisibility, Float};
 pub use self::box_::{Display, Overflow, OverflowAnchor, TransitionProperty};
 pub use self::box_::{OverflowClipBox, OverscrollBehavior, Perspective, Resize};
 pub use self::box_::{ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness, ScrollSnapType};
 pub use self::box_::{TouchAction, VerticalAlign, WillChange};
 pub use self::color::{Color, ColorOrAuto, ColorPropertyValue};
 pub use self::column::ColumnCount;
-pub use self::counters::{Content, ContentItem, CounterIncrement, CounterSetOrReset};
+pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, CounterSet};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
@@ -67,11 +67,10 @@ pub use self::length::{LengthOrAuto, LengthPercentageOrAuto, MaxSize, Size};
 pub use self::length::{NonNegativeLengthPercentage, NonNegativeLengthPercentageOrAuto};
 #[cfg(feature = "gecko")]
 pub use self::list::ListStyleType;
-pub use self::list::MozListReversed;
 pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
-pub use self::page::{Orientation, PageSize, PaperSize};
+pub use self::page::{PageOrientation, PageSize, PaperSize};
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::AspectRatio;
 pub use self::position::{
@@ -95,6 +94,7 @@ pub use self::transform::{TransformOrigin, TransformStyle, Translate};
 pub use self::ui::CursorImage;
 pub use self::ui::{Cursor, MozForceBrokenImageIcon, UserSelect};
 pub use super::specified::TextTransform;
+pub use super::specified::ViewportVariant;
 pub use super::specified::{BorderStyle, TextDecorationLine};
 pub use super::{Auto, Either, None_};
 pub use app_units::Au;
@@ -214,10 +214,13 @@ impl<'a> Context<'a> {
     }
 
     /// The current viewport size, used to resolve viewport units.
-    pub fn viewport_size_for_viewport_unit_resolution(&self) -> default::Size2D<Au> {
+    pub fn viewport_size_for_viewport_unit_resolution(
+        &self,
+        variant: ViewportVariant,
+    ) -> default::Size2D<Au> {
         self.builder
             .device
-            .au_viewport_size_for_viewport_unit_resolution()
+            .au_viewport_size_for_viewport_unit_resolution(variant)
     }
 
     /// The default computed style we're getting our reset style from.
@@ -237,7 +240,7 @@ impl<'a> Context<'a> {
         // -x-text-zoom property, which leads to a false value
         // in mAllowZoomAndMinSize
         if self.style().get_font().gecko.mAllowZoomAndMinSize {
-            self.device().zoom_text(Au::from(size)).into()
+            self.device().zoom_text(size)
         } else {
             size
         }

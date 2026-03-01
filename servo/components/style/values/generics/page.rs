@@ -63,7 +63,7 @@ pub enum PaperSize {
     ToShmem,
 )]
 #[repr(u8)]
-pub enum Orientation {
+pub enum PageOrientation {
     /// Portrait orientation
     Portrait,
     /// Landscape orientation
@@ -92,9 +92,9 @@ pub enum GenericPageSize<S> {
     /// Paper size with no orientation.
     PaperSize(PaperSize),
     /// An orientation with no size.
-    Orientation(Orientation),
+    Orientation(PageOrientation),
     /// Paper size by name, with an orientation.
-    PaperSizeAndOrientation(PaperSize, Orientation),
+    PaperSizeAndOrientation(PaperSize, PageOrientation),
     /// `auto` value.
     Auto,
 }

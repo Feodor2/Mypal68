@@ -22,7 +22,6 @@ use crate::gecko_bindings::bindings::Gecko_CopyConstruct_${style_struct.gecko_ff
 use crate::gecko_bindings::bindings::Gecko_Destroy_${style_struct.gecko_ffi_name};
 % endfor
 use crate::gecko_bindings::bindings::Gecko_CopyCounterStyle;
-use crate::gecko_bindings::bindings::Gecko_CopyFontFamilyFrom;
 use crate::gecko_bindings::bindings::Gecko_EnsureImageLayersLength;
 use crate::gecko_bindings::bindings::Gecko_nsStyleFont_SetLang;
 use crate::gecko_bindings::bindings::Gecko_nsStyleFont_CopyLangFrom;
@@ -376,18 +375,6 @@ def set_gecko_property(ffi_name, expr):
 <%call expr="impl_simple_clone(ident, gecko_ffi_name)"></%call>
 </%def>
 
-<%def name="impl_absolute_length(ident, gecko_ffi_name)">
-    #[allow(non_snake_case)]
-    pub fn set_${ident}(&mut self, v: longhands::${ident}::computed_value::T) {
-        ${set_gecko_property(gecko_ffi_name, "v.to_i32_au()")}
-    }
-    <%call expr="impl_simple_copy(ident, gecko_ffi_name)"></%call>
-    #[allow(non_snake_case)]
-    pub fn clone_${ident}(&self) -> longhands::${ident}::computed_value::T {
-        Au(self.gecko.${gecko_ffi_name}).into()
-    }
-</%def>
-
 <%def name="impl_non_negative_length(ident, gecko_ffi_name, inherit_from=None,
                                      round_to_pixels=False)">
     #[allow(non_snake_case)]
@@ -593,11 +580,6 @@ impl Clone for ${style_struct.gecko_struct_name} {
     longhands = [x for x in style_struct.longhands
                 if not (skip_longhands == "*" or x.name in skip_longhands.split())]
 
-    # Types used with predefined_type()-defined properties that we can auto-generate.
-    predefined_types = {
-        "MozScriptMinSize": impl_absolute_length,
-    }
-
     def longhand_method(longhand):
         args = dict(ident=longhand.ident, gecko_ffi_name=longhand.gecko_ffi_name)
 
@@ -610,8 +592,6 @@ impl Clone for ${style_struct.gecko_struct_name} {
             args.update(keyword=longhand.keyword)
             if "font" in longhand.ident:
                 args.update(cast_type=longhand.cast_type)
-        elif longhand.predefined_type in predefined_types:
-            method = predefined_types[longhand.predefined_type]
         else:
             method = impl_simple
 
@@ -818,11 +798,8 @@ fn static_assert() {
     ${impl_simple_type_with_conversion("masonry_auto_flow", "mMasonryAutoFlow")}
 </%self:impl_trait>
 
-<% skip_outline_longhands = " ".join("outline-style outline-width".split() +
-                                     ["-moz-outline-radius-{0}".format(x.replace("_", ""))
-                                      for x in CORNERS]) %>
 <%self:impl_trait style_struct_name="Outline"
-                  skip_longhands="${skip_outline_longhands}">
+                  skip_longhands="outline-style outline-width">
 
     pub fn set_outline_style(&mut self, v: longhands::outline_style::computed_value::T) {
         self.gecko.mOutlineStyle = v;
@@ -850,12 +827,6 @@ fn static_assert() {
                                 inherit_from="mOutlineWidth",
                                 round_to_pixels=True) %>
 
-    % for corner in CORNERS:
-    <% impl_corner_style_coord("_moz_outline_radius_%s" % corner.replace("_", ""),
-                               "mOutlineRadius",
-                               corner) %>
-    % endfor
-
     pub fn outline_has_nonzero_width(&self) -> bool {
         self.gecko.mActualOutlineWidth != 0
     }
@@ -876,56 +847,11 @@ fn static_assert() {
     <% impl_font_settings("font_feature_settings", "gfxFontFeature", "FeatureTagValue", "i32", "u32") %>
     <% impl_font_settings("font_variation_settings", "gfxFontVariation", "VariationValue", "f32", "f32") %>
 
-    pub fn set_font_family(&mut self, v: longhands::font_family::computed_value::T) {
-        use crate::values::computed::font::GenericFontFamily;
-
-        let is_system_font = v.is_system_font;
-        self.gecko.mFont.systemFont = is_system_font;
-        self.gecko.mGenericID = if is_system_font {
-            GenericFontFamily::None
-        } else {
-            v.families.single_generic().unwrap_or(GenericFontFamily::None)
-        };
-        self.gecko.mFont.fontlist.mFontlist.mBasePtr.set_move(
-            v.families.shared_font_list().clone()
-        );
-        // Fixed-up if needed in Cascade::fixup_font_stuff.
-        self.gecko.mFont.fontlist.mDefaultFontType = GenericFontFamily::None;
-    }
-
-    pub fn copy_font_family_from(&mut self, other: &Self) {
-        unsafe { Gecko_CopyFontFamilyFrom(&mut self.gecko.mFont, &other.gecko.mFont); }
-        self.gecko.mGenericID = other.gecko.mGenericID;
-        self.gecko.mFont.systemFont = other.gecko.mFont.systemFont;
-    }
-
-    pub fn reset_font_family(&mut self, other: &Self) {
-        self.copy_font_family_from(other)
-    }
-
-    pub fn clone_font_family(&self) -> longhands::font_family::computed_value::T {
-        use crate::values::computed::font::{FontFamily, SingleFontFamily, FontFamilyList};
-
-        let fontlist = &self.gecko.mFont.fontlist;
-        let shared_fontlist = unsafe { fontlist.mFontlist.mBasePtr.to_safe() };
-
-        let families = if shared_fontlist.mNames.is_empty() {
-            let default = SingleFontFamily::Generic(fontlist.mDefaultFontType);
-            FontFamilyList::new(Box::new([default]))
-        } else {
-            FontFamilyList::SharedFontList(shared_fontlist)
-        };
-
-        FontFamily {
-            families,
-            is_system_font: self.gecko.mFont.systemFont,
-        }
-    }
-
     pub fn unzoom_fonts(&mut self, device: &Device) {
-        self.gecko.mSize = device.unzoom_text(Au(self.gecko.mSize)).0;
-        self.gecko.mScriptUnconstrainedSize = device.unzoom_text(Au(self.gecko.mScriptUnconstrainedSize)).0;
-        self.gecko.mFont.size = device.unzoom_text(Au(self.gecko.mFont.size)).0;
+        use crate::values::generics::NonNegative;
+        self.gecko.mSize = NonNegative(device.unzoom_text(self.gecko.mSize.0));
+        self.gecko.mScriptUnconstrainedSize = NonNegative(device.unzoom_text(self.gecko.mScriptUnconstrainedSize.0));
+        self.gecko.mFont.size = NonNegative(device.unzoom_text(self.gecko.mFont.size.0));
     }
 
     pub fn copy_font_size_from(&mut self, other: &Self) {
@@ -945,25 +871,27 @@ fn static_assert() {
     }
 
     pub fn set_font_size(&mut self, v: FontSize) {
-        let size = Au::from(v.size());
-        self.gecko.mScriptUnconstrainedSize = size.0;
+        let size = v.size;
+        self.gecko.mScriptUnconstrainedSize = size;
 
         // These two may be changed from Cascade::fixup_font_stuff.
-        self.gecko.mSize = size.0;
-        self.gecko.mFont.size = size.0;
+        self.gecko.mSize = size;
+        self.gecko.mFont.size = size;
+
         self.gecko.mFontSizeKeyword = v.keyword_info.kw;
         self.gecko.mFontSizeFactor = v.keyword_info.factor;
-        self.gecko.mFontSizeOffset = v.keyword_info.offset.to_i32_au();
+        self.gecko.mFontSizeOffset = v.keyword_info.offset;
     }
 
     pub fn clone_font_size(&self) -> FontSize {
         use crate::values::specified::font::KeywordInfo;
+
         FontSize {
-            size: Au(self.gecko.mSize).into(),
+            size: self.gecko.mSize,
             keyword_info: KeywordInfo {
                 kw: self.gecko.mFontSizeKeyword,
                 factor: self.gecko.mFontSizeFactor,
-                offset: Au(self.gecko.mFontSizeOffset).into()
+                offset: self.gecko.mFontSizeOffset,
             }
         }
     }
@@ -1024,26 +952,9 @@ fn static_assert() {
 
     ${impl_simple("font_variant_alternates", "mFont.variantAlternates")}
 
-    pub fn set_font_size_adjust(&mut self, v: longhands::font_size_adjust::computed_value::T) {
-        use crate::properties::longhands::font_size_adjust::computed_value::T;
-        match v {
-            T::None => self.gecko.mFont.sizeAdjust = -1.0 as f32,
-            T::Number(n) => self.gecko.mFont.sizeAdjust = n,
-        }
-    }
+    ${impl_simple("font_size_adjust", "mFont.sizeAdjust")}
 
-    pub fn copy_font_size_adjust_from(&mut self, other: &Self) {
-        self.gecko.mFont.sizeAdjust = other.gecko.mFont.sizeAdjust;
-    }
-
-    pub fn reset_font_size_adjust(&mut self, other: &Self) {
-        self.copy_font_size_adjust_from(other)
-    }
-
-    pub fn clone_font_size_adjust(&self) -> longhands::font_size_adjust::computed_value::T {
-        use crate::properties::longhands::font_size_adjust::computed_value::T;
-        T::from_gecko_adjust(self.gecko.mFont.sizeAdjust)
-    }
+    ${impl_simple("font_family", "mFont.family")}
 
     #[allow(non_snake_case)]
     pub fn set__x_lang(&mut self, v: longhands::_x_lang::computed_value::T) {

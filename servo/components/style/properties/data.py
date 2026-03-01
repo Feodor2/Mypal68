@@ -340,13 +340,14 @@ class Longhand(Property):
         assert (
             has_effect_on_gecko_scrollbars in [None, False, True]
             and not style_struct.inherited
-            or (gecko_pref is None) == (has_effect_on_gecko_scrollbars is None)
+            or (gecko_pref is None and enabled_in != "")
+            == (has_effect_on_gecko_scrollbars is None)
         ), (
             "Property "
             + name
             + ": has_effect_on_gecko_scrollbars must be "
             + "specified, and must have a value of True or False, iff a "
-            + "property is inherited and is behind a Gecko pref"
+            + "property is inherited and is behind a Gecko pref or internal"
         )
         self.need_index = need_index
         self.gecko_ffi_name = gecko_ffi_name or "m" + self.camel_case
@@ -461,6 +462,8 @@ class Longhand(Property):
                 "Clear",
                 "ColumnCount",
                 "Contain",
+                "ContentVisibility",
+                "ContainerType",
                 "Display",
                 "FillRule",
                 "Float",
@@ -484,7 +487,6 @@ class Longhand(Property):
                 "MasonryAutoFlow",
                 "MozForceBrokenImageIcon",
                 "text::MozControlCharacterVisibility",
-                "MozListReversed",
                 "MozScriptLevel",
                 "MozScriptMinSize",
                 "MozScriptSizeMultiplier",
@@ -876,6 +878,7 @@ class PropertyRestrictions:
     def marker(data):
         return set(
             [
+                "white-space",
                 "color",
                 "text-combine-upright",
                 "text-transform",

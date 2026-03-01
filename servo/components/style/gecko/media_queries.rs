@@ -12,14 +12,16 @@ use crate::gecko_bindings::structs;
 use crate::media_queries::MediaType;
 use crate::properties::ComputedValues;
 use crate::string_cache::Atom;
+use crate::values::computed::Length;
 use crate::values::specified::font::FONT_MEDIUM_PX;
+use crate::values::specified::ViewportVariant;
 use crate::values::{CustomIdent, KeyframesName};
 use app_units::{Au, AU_PER_PX};
 use cssparser::RGBA;
 use euclid::default::Size2D;
 use euclid::Scale;
 use servo_arc::Arc;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::{cmp, fmt};
 use style_traits::viewport::ViewportConstraints;
 use style_traits::{CSSPixel, DevicePixel};
@@ -31,15 +33,16 @@ pub struct Device {
     /// `Device`, so having a raw document pointer here is fine.
     document: *const structs::Document,
     default_values: Arc<ComputedValues>,
-    /// The font size of the root element
-    /// This is set when computing the style of the root
-    /// element, and used for rem units in other elements.
+    /// The font size of the root element.
     ///
-    /// When computing the style of the root element, there can't be any
-    /// other style being computed at the same time, given we need the style of
-    /// the parent to compute everything else. So it is correct to just use
-    /// a relaxed atomic here.
-    root_font_size: AtomicIsize,
+    /// This is set when computing the style of the root element, and used for
+    /// rem units in other elements.
+    ///
+    /// When computing the style of the root element, there can't be any other
+    /// style being computed at the same time, given we need the style of the
+    /// parent to compute everything else. So it is correct to just use a
+    /// relaxed atomic here.
+    root_font_size: AtomicU32,
     /// The body text color, stored as an `nscolor`, used for the "tables
     /// inherit from body" quirk.
     ///
@@ -51,6 +54,9 @@ pub struct Device {
     /// Whether any styles computed in the document relied on the viewport size
     /// by using vw/vh/vmin/vmax units.
     used_viewport_size: AtomicBool,
+    /// Whether any styles computed in the document relied on the viewport size
+    /// by using dvw/dvh/dvmin/dvmax units.
+    used_dynamic_viewport_size: AtomicBool,
     /// The CssEnvironment object responsible of getting CSS environment
     /// variables.
     environment: CssEnvironment,
@@ -86,11 +92,11 @@ impl Device {
         Device {
             document,
             default_values: ComputedValues::default_values(doc),
-            // FIXME(bz): Seems dubious?
-            root_font_size: AtomicIsize::new(Au::from_px(FONT_MEDIUM_PX as i32).0 as isize),
+            root_font_size: AtomicU32::new(FONT_MEDIUM_PX.to_bits()),
             body_text_color: AtomicUsize::new(prefs.mDefaultColor as usize),
             used_root_font_size: AtomicBool::new(false),
             used_viewport_size: AtomicBool::new(false),
+            used_dynamic_viewport_size: AtomicBool::new(false),
             environment: CssEnvironment,
         }
     }
@@ -132,15 +138,15 @@ impl Device {
     }
 
     /// Get the font size of the root element (for rem)
-    pub fn root_font_size(&self) -> Au {
+    pub fn root_font_size(&self) -> Length {
         self.used_root_font_size.store(true, Ordering::Relaxed);
-        Au::new(self.root_font_size.load(Ordering::Relaxed) as i32)
+        Length::new(f32::from_bits(self.root_font_size.load(Ordering::Relaxed)))
     }
 
     /// Set the font size of the root element (for rem)
-    pub fn set_root_font_size(&self, size: Au) {
+    pub fn set_root_font_size(&self, size: Length) {
         self.root_font_size
-            .store(size.0 as isize, Ordering::Relaxed)
+            .store(size.px().to_bits(), Ordering::Relaxed)
     }
 
     /// The quirks mode of the document.
@@ -196,6 +202,8 @@ impl Device {
         self.reset_computed_values();
         self.used_root_font_size.store(false, Ordering::Relaxed);
         self.used_viewport_size.store(false, Ordering::Relaxed);
+        self.used_dynamic_viewport_size
+            .store(false, Ordering::Relaxed);
     }
 
     /// Returns whether we ever looked up the root font size of the Device.
@@ -257,14 +265,50 @@ impl Device {
 
     /// Returns the current viewport size in app units, recording that it's been
     /// used for viewport unit resolution.
-    pub fn au_viewport_size_for_viewport_unit_resolution(&self) -> Size2D<Au> {
+    pub fn au_viewport_size_for_viewport_unit_resolution(
+        &self,
+        variant: ViewportVariant,
+    ) -> Size2D<Au> {
         self.used_viewport_size.store(true, Ordering::Relaxed);
-        self.au_viewport_size()
+        let pc = match self.pres_context() {
+            Some(pc) => pc,
+            None => return Size2D::new(Au(0), Au(0)),
+        };
+
+        if pc.mIsRootPaginatedDocument() != 0 {
+            return self.page_size_minus_default_margin(pc);
+        }
+
+        match variant {
+            ViewportVariant::UADefault => {
+                let size = &pc.mSizeForViewportUnits;
+                Size2D::new(Au(size.width), Au(size.height))
+            },
+            ViewportVariant::Small => {
+                let size = &pc.mVisibleArea;
+                Size2D::new(Au(size.width), Au(size.height))
+            },
+            ViewportVariant::Large => {
+                let size = &pc.mVisibleArea;
+                Size2D::new(Au(size.width), Au(size.height))
+            },
+            ViewportVariant::Dynamic => {
+                self.used_dynamic_viewport_size
+                    .store(true, Ordering::Relaxed);
+                let size = &pc.mVisibleArea;
+                Size2D::new(Au(size.width), Au(size.height))
+            },
+        }
     }
 
     /// Returns whether we ever looked up the viewport size of the Device.
     pub fn used_viewport_size(&self) -> bool {
         self.used_viewport_size.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether we ever looked up the dynamic viewport size of the Device.
+    pub fn used_dynamic_viewport_size(&self) -> bool {
+        self.used_dynamic_viewport_size.load(Ordering::Relaxed)
     }
 
     /// Returns the device pixel ratio.
@@ -316,13 +360,13 @@ impl Device {
 
     /// Applies text zoom to a font-size or line-height value (see nsStyleFont::ZoomText).
     #[inline]
-    pub fn zoom_text(&self, size: Au) -> Au {
+    pub fn zoom_text(&self, size: Length) -> Length {
         size.scale_by(self.effective_text_zoom())
     }
 
     /// Un-apply text zoom.
     #[inline]
-    pub fn unzoom_text(&self, size: Au) -> Au {
+    pub fn unzoom_text(&self, size: Length) -> Length {
         size.scale_by(1. / self.effective_text_zoom())
     }
 

@@ -598,6 +598,36 @@ ${helpers.predefined_type(
 )}
 
 ${helpers.predefined_type(
+    "content-visibility",
+    "ContentVisibility",
+    "computed::ContentVisibility::Visible",
+    engines="gecko",
+    spec="https://drafts.csswg.org/css-contain/#content-visibility",
+    gecko_pref="layout.css.content-visibility.enabled",
+    animation_value_type="none",
+)}
+
+${helpers.predefined_type(
+    "container-type",
+    "ContainerType",
+    "computed::ContainerType::NONE",
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.container-queries.enabled",
+    spec="https://drafts.csswg.org/css-contain-3/#container-type",
+)}
+
+${helpers.predefined_type(
+    "container-name",
+    "ContainerName",
+    "computed::ContainerName::none()",
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.container-queries.enabled",
+    spec="https://drafts.csswg.org/css-contain-3/#container-name",
+)}
+
+${helpers.predefined_type(
     "appearance",
     "Appearance",
     "computed::Appearance::None",

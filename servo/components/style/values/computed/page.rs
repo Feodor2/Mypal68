@@ -8,7 +8,7 @@ use crate::values::computed::length::NonNegativeLength;
 use crate::values::generics;
 use crate::values::generics::size::Size2D;
 
-pub use generics::page::Orientation;
+pub use generics::page::PageOrientation;
 pub use generics::page::PaperSize;
 /// Computed value of the @page size descriptor
 pub type PageSize = generics::page::GenericPageSize<Size2D<NonNegativeLength>>;

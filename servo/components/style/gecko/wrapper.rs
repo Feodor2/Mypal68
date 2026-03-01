@@ -73,7 +73,6 @@ use crate::values::specified::length::FontBaseSize;
 use crate::values::{AtomIdent, AtomString};
 use crate::CaseSensitivityExt;
 use crate::LocalName;
-use app_units::Au;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
@@ -415,9 +414,11 @@ impl<'ln> TNode for GeckoNode<'ln> {
     #[inline]
     fn prev_sibling(&self) -> Option<Self> {
         unsafe {
-            bindings::Gecko_GetPreviousSibling(self.0)
-                .as_ref()
-                .map(GeckoNode)
+            let prev_or_last = GeckoNode::from_content(self.0.mPreviousOrLastSibling.as_ref()?);
+            if prev_or_last.0.mNextSibling.raw::<nsIContent>().is_null() {
+                return None;
+            }
+            Some(prev_or_last)
         }
     }
 
@@ -941,14 +942,12 @@ fn get_animation_rule(
 #[derive(Debug)]
 /// Gecko font metrics provider
 pub struct GeckoFontMetricsProvider {
-    /// Cache of base font sizes for each language
+    /// Cache of base font sizes for each language. Usually will have 1 element.
     ///
-    /// Usually will have 1 element.
-    ///
-    // This may be slow on pages using more languages, might be worth optimizing
-    // by caching lang->group mapping separately and/or using a hashmap on larger
-    // loads.
-    pub font_size_cache: RefCell<Vec<(Atom, crate::gecko_bindings::structs::FontSizePrefs)>>,
+    /// This may be slow on pages using more languages, might be worth
+    /// optimizing by caching lang->group mapping separately and/or using a
+    /// hashmap on larger loads.
+    pub font_size_cache: RefCell<Vec<(Atom, DefaultFontSizes)>>,
 }
 
 impl GeckoFontMetricsProvider {
@@ -971,8 +970,9 @@ impl FontMetricsProvider for GeckoFontMetricsProvider {
             return sizes.1.size_for_generic(font_family);
         }
         let sizes = unsafe { bindings::Gecko_GetBaseSize(font_name.as_ptr()) };
+        let size = sizes.size_for_generic(font_family);
         cache.push((font_name.clone(), sizes));
-        sizes.size_for_generic(font_family)
+        size
     }
 
     fn query(
@@ -986,7 +986,7 @@ impl FontMetricsProvider for GeckoFontMetricsProvider {
             None => return Default::default(),
         };
 
-        let size = Au::from(base_size.resolve(context));
+        let size = base_size.resolve(context);
         let style = context.style();
 
         let (wm, font) = match base_size {
@@ -998,7 +998,8 @@ impl FontMetricsProvider for GeckoFontMetricsProvider {
         };
 
         let vertical_metrics = match orientation {
-            FontMetricsOrientation::MatchContext => wm.is_vertical() && wm.is_upright(),
+            FontMetricsOrientation::MatchContextPreferHorizontal => wm.is_vertical() && wm.is_upright(),
+            FontMetricsOrientation::MatchContextPreferVertical => wm.is_vertical() && !wm.is_sideways(),
             FontMetricsOrientation::Horizontal => false,
         };
         let gecko_metrics = unsafe {
@@ -1006,36 +1007,60 @@ impl FontMetricsProvider for GeckoFontMetricsProvider {
                 pc,
                 vertical_metrics,
                 font.gecko(),
-                size.0,
+                size,
                 // we don't use the user font set in a media query
                 !context.in_media_query,
             )
         };
         FontMetrics {
-            x_height: Some(Au(gecko_metrics.mXSize).into()),
-            zero_advance_measure: if gecko_metrics.mChSize >= 0 {
-                Some(Au(gecko_metrics.mChSize).into())
+            x_height: Some(gecko_metrics.mXSize),
+            zero_advance_measure: if gecko_metrics.mChSize.px() >= 0. {
+                Some(gecko_metrics.mChSize)
             } else {
                 None
             },
+            cap_height: if gecko_metrics.mCapHeight.px() >= 0. {
+                Some(gecko_metrics.mCapHeight)
+            } else {
+                None
+            },
+            ic_width: if gecko_metrics.mIcWidth.px() >= 0. {
+                Some(gecko_metrics.mIcWidth)
+            } else {
+                None
+            },
+            ascent: gecko_metrics.mAscent,
         }
     }
 }
 
-impl structs::FontSizePrefs {
+/// The default font sizes for generic families for a given language group.
+#[derive(Debug)]
+#[repr(C)]
+pub struct DefaultFontSizes {
+    variable: Length,
+    serif: Length,
+    sans_serif: Length,
+    monospace: Length,
+    cursive: Length,
+    fantasy: Length,
+    system_ui: Length,
+}
+
+impl DefaultFontSizes {
     fn size_for_generic(&self, font_family: GenericFontFamily) -> Length {
-        Au(match font_family {
-            GenericFontFamily::None => self.mDefaultVariableSize,
-            GenericFontFamily::Serif => self.mDefaultSerifSize,
-            GenericFontFamily::SansSerif => self.mDefaultSansSerifSize,
-            GenericFontFamily::Monospace => self.mDefaultMonospaceSize,
-            GenericFontFamily::Cursive => self.mDefaultCursiveSize,
-            GenericFontFamily::Fantasy => self.mDefaultFantasySize,
+        match font_family {
+            GenericFontFamily::None => self.variable,
+            GenericFontFamily::Serif => self.serif,
+            GenericFontFamily::SansSerif => self.sans_serif,
+            GenericFontFamily::Monospace => self.monospace,
+            GenericFontFamily::Cursive => self.cursive,
+            GenericFontFamily::Fantasy => self.fantasy,
+            GenericFontFamily::SystemUi => self.system_ui,
             GenericFontFamily::MozEmoji => unreachable!(
                 "Should never get here, since this doesn't (yet) appear on font family"
             ),
-        })
-        .into()
+        }
     }
 }
 

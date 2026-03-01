@@ -393,13 +393,15 @@ where
 type DeclarationsToApplyUnlessOverriden = SmallVec<[PropertyDeclaration; 2]>;
 
 fn tweak_when_ignoring_colors(
-    builder: &StyleBuilder,
+    context: &computed::Context,
     longhand_id: LonghandId,
     origin: Origin,
     declaration: &mut Cow<PropertyDeclaration>,
     declarations_to_apply_unless_overriden: &mut DeclarationsToApplyUnlessOverriden,
 ) {
     use crate::values::specified::Color;
+    use crate::values::computed::ToComputedValue;
+    use cssparser::RGBA;
 
     if !longhand_id.ignored_when_document_colors_disabled() {
         return;
@@ -413,34 +415,16 @@ fn tweak_when_ignoring_colors(
     // Don't override background-color on ::-moz-color-swatch. It is set as an
     // author style (via the style attribute), but it's pretty important for it
     // to show up for obvious reasons :)
-    if builder.pseudo.map_or(false, |p| p.is_color_swatch()) &&
+    if context.builder.pseudo.map_or(false, |p| p.is_color_swatch()) &&
         longhand_id == LonghandId::BackgroundColor
     {
         return;
     }
 
-    fn alpha_channel(color: &Color) -> u8 {
-        match *color {
-            // Seems safe enough to assume that the default color and system
-            // colors are opaque in HCM, though maybe we shouldn't asume the
-            // later?
-            #[cfg(feature = "gecko")]
-            Color::InheritFromBodyQuirk | Color::System(..) => 255,
-            // We don't have the actual color here, but since except for color:
-            // transparent we force opaque text colors, it seems sane to do
-            // this. You can technically fool this bit of code with:
-            //
-            //   color: transparent; background-color: currentcolor;
-            //
-            // but this is best-effort, and that seems unlikely to happen in
-            // practice.
-            Color::CurrentColor => 255,
-            // Complex colors are results of interpolation only and probably
-            // shouldn't show up around here in HCM, but we've always treated
-            // them as opaque effectively so keep doing it.
-            Color::Complex { .. } => 255,
-            Color::Numeric { ref parsed, .. } => parsed.alpha,
-        }
+    fn alpha_channel(color: &Color, context: &computed::Context) -> u8 {
+        // We assume here currentColor is opaque.
+        let color = color.to_computed_value(context).to_rgba(RGBA::new(0, 0, 0, 255));
+        color.alpha
     }
 
     // A few special-cases ahead.
@@ -457,25 +441,25 @@ fn tweak_when_ignoring_colors(
             // broken in other applications as well, and not honoring
             // transparent makes stuff uglier or break unconditionally
             // (bug 1666059, bug 1755713).
-            let alpha = alpha_channel(color);
+            let alpha = alpha_channel(color, context);
             if alpha == 0 {
                 return;
             }
-            let mut color = builder.device.default_background_color();
+            let mut color = context.builder.device.default_background_color();
             color.alpha = alpha;
             declarations_to_apply_unless_overriden
                 .push(PropertyDeclaration::BackgroundColor(color.into()))
         },
         PropertyDeclaration::Color(ref color) => {
             // We honor color: transparent, and "revert-or-initial" otherwise.
-            if alpha_channel(&color.0) == 0 {
+            if alpha_channel(&color.0, context) == 0 {
                 return;
             }
             // If the inherited color would be transparent, but we would
             // override this with a non-transparent color, then override it with
             // the default color. Otherwise just let it inherit through.
-            if builder.get_parent_inherited_text().clone_color().alpha == 0 {
-                let color = builder.device.default_color();
+            if context.builder.get_parent_inherited_text().clone_color().alpha == 0 {
+                let color = context.builder.device.default_color();
                 declarations_to_apply_unless_overriden.push(PropertyDeclaration::Color(
                     specified::ColorPropertyValue(color.into()),
                 ))
@@ -653,7 +637,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             // properties that are marked as ignored in that mode.
             if ignore_colors {
                 tweak_when_ignoring_colors(
-                    &self.context.builder,
+                    &self.context,
                     longhand_id,
                     origin,
                     &mut declaration,
@@ -810,11 +794,33 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         {
             builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND);
         }
+
         if self
             .author_specified
-            .contains_any(LonghandIdSet::padding_properties())
+            .contains(LonghandId::FontFamily)
         {
-            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_PADDING);
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_FAMILY);
+        }
+
+        if self
+            .author_specified
+            .contains(LonghandId::LetterSpacing)
+        {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_LETTER_SPACING);
+        }
+
+        if self
+            .author_specified
+            .contains(LonghandId::WordSpacing)
+        {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_WORD_SPACING);
+        }
+
+        if self
+            .author_specified
+            .contains(LonghandId::FontSynthesis)
+        {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS);
         }
 
         #[cfg(feature = "servo")]
@@ -846,81 +852,101 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         // We're using the same reset style as another element, and we'll skip
         // applying the relevant properties. So we need to do the relevant
-        // bookkeeping here to keep these two bits correct.
+        // bookkeeping here to keep these bits correct.
         //
-        // Note that all the properties involved are non-inherited, so we don't
-        // need to do anything else other than just copying the bits over.
-        let reset_props_bits = ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND |
-            ComputedValueFlags::HAS_AUTHOR_SPECIFIED_PADDING;
-        builder.add_flags(cached_style.flags & reset_props_bits);
+        // Note that the border/background properties are non-inherited, so we
+        // don't need to do anything else other than just copying the bits over.
+        //
+        // When using this optimization, we also need to copy whether the old
+        // style specified viewport units / used font-relative lengths, this one
+        // would as well.  It matches the same rules, so it is the right thing
+        // to do anyways, even if it's only used on inherited properties.
+        let bits_to_copy = ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND |
+            ComputedValueFlags::DEPENDS_ON_SELF_FONT_METRICS |
+            ComputedValueFlags::DEPENDS_ON_INHERITED_FONT_METRICS |
+            ComputedValueFlags::USES_VIEWPORT_UNITS;
+        builder.add_flags(cached_style.flags & bits_to_copy);
 
         true
     }
 
-    /// The default font type (which is stored in FontFamilyList's
-    /// `mDefaultFontType`) depends on the current lang group and generic font
-    /// family, so we may need to recompute it if or the family changed.
-    ///
-    /// Also, we prioritize non-document fonts here if we need to (see the pref
-    /// `browser.display.use_document_fonts`).
+    /// The initial font depends on the current lang group so we may need to
+    /// recompute it if the language changed.
     #[inline]
     #[cfg(feature = "gecko")]
-    fn recompute_default_font_family_type_if_needed(&mut self) {
+    fn recompute_initial_font_family_if_needed(&mut self) {
         use crate::gecko_bindings::bindings;
-        use crate::values::computed::font::GenericFontFamily;
+        use crate::values::computed::font::FontFamily;
 
-        if !self.seen.contains(LonghandId::XLang) && !self.seen.contains(LonghandId::FontFamily) {
+        if !self.seen.contains(LonghandId::XLang) {
             return;
         }
 
-        let use_document_fonts = static_prefs::pref!("browser.display.use_document_fonts") != 0;
         let builder = &mut self.context.builder;
-        let (default_font_type, prioritize_user_fonts) = {
+        let default_font_type = {
             let font = builder.get_font().gecko();
 
-            // System fonts are all right, and should have the default font type
-            // set to none already, so bail out early.
-            if font.mFont.systemFont {
-                debug_assert_eq!(
-                    font.mFont.fontlist.mDefaultFontType,
-                    GenericFontFamily::None
-                );
+            if !font.mFont.family.is_initial {
                 return;
             }
 
             let default_font_type = unsafe {
-                bindings::Gecko_nsStyleFont_ComputeDefaultFontType(
+                bindings::Gecko_nsStyleFont_ComputeFallbackFontTypeForLanguage(
                     builder.device.document(),
-                    font.mGenericID,
                     font.mLanguage.mRawPtr,
                 )
             };
 
-            // We prioritize user fonts over document fonts if the pref is set,
-            // and we don't have a generic family already (or we're using
-            // cursive or fantasy, since they're ignored, see bug 789788), and
-            // we have a generic family to actually replace it with.
-            let prioritize_user_fonts = !use_document_fonts &&
-                matches!(
-                    font.mGenericID,
-                    GenericFontFamily::None |
-                        GenericFontFamily::Fantasy |
-                        GenericFontFamily::Cursive
-                ) &&
-                default_font_type != GenericFontFamily::None;
-
-            if !prioritize_user_fonts && default_font_type == font.mFont.fontlist.mDefaultFontType {
-                // Nothing to do.
+            let initial_generic = font.mFont.family.families.single_generic();
+            debug_assert!(initial_generic.is_some(), "Initial font should be just one generic font");
+            if initial_generic == Some(default_font_type) {
                 return;
             }
-            (default_font_type, prioritize_user_fonts)
+
+            default_font_type
         };
 
         let font = builder.mutate_font().gecko_mut();
-        font.mFont.fontlist.mDefaultFontType = default_font_type;
-        if prioritize_user_fonts {
-            unsafe { bindings::Gecko_nsStyleFont_PrioritizeUserFonts(font, default_font_type) }
+        // NOTE: Leaves is_initial untouched.
+        font.mFont.family.families = FontFamily::generic(default_font_type).families.clone();
+    }
+
+    /// Prioritize user fonts if needed by pref.
+    #[inline]
+    #[cfg(feature = "gecko")]
+    fn prioritize_user_fonts_if_needed(&mut self) {
+        use crate::gecko_bindings::bindings;
+
+        if !self.seen.contains(LonghandId::FontFamily) {
+            return;
         }
+
+        if static_prefs::pref!("browser.display.use_document_fonts") != 0 {
+            return;
+        }
+
+        let builder = &mut self.context.builder;
+        let default_font_type = {
+            let font = builder.get_font().gecko();
+
+            if font.mFont.family.is_system_font {
+                return;
+            }
+
+            if !font.mFont.family.families.needs_user_font_prioritization() {
+                return;
+            }
+
+            unsafe {
+                bindings::Gecko_nsStyleFont_ComputeFallbackFontTypeForLanguage(
+                    builder.device.document(),
+                    font.mLanguage.mRawPtr,
+                )
+            }
+        };
+
+        let font = builder.mutate_font().gecko_mut();
+        font.mFont.family.families.prioritize_first_generic_or_prepend(default_font_type);
     }
 
     /// Some keyword sizes depend on the font family and language.
@@ -928,7 +954,6 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn recompute_keyword_font_size_if_needed(&mut self) {
         use crate::values::computed::ToComputedValue;
         use crate::values::specified;
-        use app_units::Au;
 
         if !self.seen.contains(LonghandId::XLang) && !self.seen.contains(LonghandId::FontFamily) {
             return;
@@ -945,7 +970,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 },
             };
 
-            if font.gecko().mScriptUnconstrainedSize == Au::from(new_size.size()).0 {
+            if font.gecko().mScriptUnconstrainedSize == new_size.size {
                 return;
             }
 
@@ -960,6 +985,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     #[cfg(feature = "gecko")]
     fn constrain_font_size_if_needed(&mut self) {
         use crate::gecko_bindings::bindings;
+        use crate::values::generics::NonNegative;
 
         if !self.seen.contains(LonghandId::XLang) &&
             !self.seen.contains(LonghandId::FontFamily) &&
@@ -976,11 +1002,11 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 bindings::Gecko_nsStyleFont_ComputeMinSize(font, builder.device.document())
             };
 
-            if font.mFont.size >= min_font_size {
+            if font.mFont.size.0 >= min_font_size {
                 return;
             }
 
-            min_font_size
+            NonNegative(min_font_size)
         };
 
         builder.mutate_font().gecko_mut().mFont.size = min_font_size;
@@ -1022,8 +1048,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     /// not clear to me. For now just pretend those don't exist here.
     #[cfg(feature = "gecko")]
     fn handle_mathml_scriptlevel_if_needed(&mut self) {
-        use app_units::Au;
-        use std::cmp;
+        use crate::values::generics::NonNegative;
 
         if !self.seen.contains(LonghandId::MozScriptLevel) &&
            !self.seen.contains(LonghandId::MozScriptMinSize) &&
@@ -1048,14 +1073,14 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 return;
             }
 
-            let mut min = Au(parent_font.mScriptMinSize);
+            let mut min = parent_font.mScriptMinSize;
             if font.mAllowZoomAndMinSize {
                 min = builder.device.zoom_text(min);
             }
 
             let scale = (parent_font.mScriptSizeMultiplier as f32).powi(delta as i32);
-            let parent_size = Au(parent_font.mSize);
-            let parent_unconstrained_size = Au(parent_font.mScriptUnconstrainedSize);
+            let parent_size = parent_font.mSize.0;
+            let parent_unconstrained_size = parent_font.mScriptUnconstrainedSize.0;
             let new_size = parent_size.scale_by(scale);
             let new_unconstrained_size = parent_unconstrained_size.scale_by(scale);
 
@@ -1067,7 +1092,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 if parent_size <= min {
                     (parent_size, new_unconstrained_size)
                 } else {
-                    (cmp::max(min, new_size), new_unconstrained_size)
+                    (min.max(new_size), new_unconstrained_size)
                 }
             } else {
                 // If the new unconstrained size is larger than the min size,
@@ -1076,15 +1101,15 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 // However, if the new size is even larger (perhaps due to usage
                 // of em units), use that instead.
                 (
-                    cmp::min(new_size, cmp::max(new_unconstrained_size, min)),
+                    new_size.min(new_unconstrained_size.max(min)),
                     new_unconstrained_size
                 )
             }
         };
         let font = builder.mutate_font().gecko_mut();
-        font.mFont.size = new_size.0;
-        font.mSize = new_size.0;
-        font.mScriptUnconstrainedSize = new_unconstrained_size.0;
+        font.mFont.size = NonNegative(new_size);
+        font.mSize = NonNegative(new_size);
+        font.mScriptUnconstrainedSize = NonNegative(new_unconstrained_size);
     }
 
     /// Various properties affect how font-size and font-family are computed.
@@ -1095,7 +1120,8 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         #[cfg(feature = "gecko")]
         {
             self.unzoom_fonts_if_needed();
-            self.recompute_default_font_family_type_if_needed();
+            self.recompute_initial_font_family_if_needed();
+            self.prioritize_user_fonts_if_needed();
             self.recompute_keyword_font_size_if_needed();
             self.handle_mathml_scriptlevel_if_needed();
             self.constrain_font_size_if_needed()

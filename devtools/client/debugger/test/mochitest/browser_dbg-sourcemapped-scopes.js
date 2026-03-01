@@ -1,5 +1,6 @@
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // This test can be really slow on debug platforms and should be split.
 requestLongerTimeout(30);
@@ -260,7 +261,7 @@ async function testForOf(dbg) {
       ["x", "1"],
       "Block",
       ["arguments", "Arguments"],
-      "doThing()",
+      "class doThing",
       "Block",
       "mod",
       ...webpackModule(target, "for-of", true /* optimizedOut */),
@@ -320,12 +321,12 @@ async function testShadowedVars(dbg) {
         "Block",
         ["aConst", '"const2"'],
         ["aLet", '"let2"'],
-        "Outer()",
+        "class Outer",
 
         "Block",
         ["aConst", '"const1"'],
         ["aLet", '"let1"'],
-        "Outer()",
+        "class Outer",
 
         "Block",
         ["arguments", "Arguments"],
@@ -374,7 +375,11 @@ async function testShadowedVars(dbg) {
         "Function Body",
         ["aConst", rollupOptimized || '"const1"'],
         ["aLet", rollupOptimized || '"let1"'],
-        rollupOptimized ? ["Outer", rollupOptimized] : "Outer()",
+        rollupOptimized
+          ? ["Outer", rollupOptimized]
+          : isParcel
+          ? "class Outer"
+          : "Outer()",
         "default",
         ["aVar", rollupOptimized || '"var3"'],
       ]
@@ -635,7 +640,7 @@ async function testClasses(dbg) {
           ? ["Thing", "(optimized away)"]
           : "Thing()",
         "Function Body",
-        "Another()",
+        target === "webpack3-babel6" ? "Another()" : "class Another",
         "one",
         target === "rollup" || isParcel
           ? ["Thing", "(optimized away)"]
@@ -655,11 +660,11 @@ async function testClasses(dbg) {
         ["three", rollupOptimized || "3"],
         ["two", rollupOptimized || "2"],
         "Class",
-        "Another()",
+        target === "webpack3-babel6" ? "Another()" : "class Another",
         "Function Body",
-        "Another()",
+        target === "webpack3-babel6" ? "Another()" : "class Another",
         ["one", "1"],
-        "Thing()",
+        target === "webpack3-babel6" ? "Thing()" : "class Thing",
         "Module",
         "root()",
       ]
@@ -988,7 +993,7 @@ async function testLexAndNonlex(dbg) {
         ["<this>", "undefined"],
         ["arguments", "Arguments"],
         "Block",
-        "Thing()",
+        "class Thing",
         "Block",
         ["arguments", "(unavailable)"],
         ["someHelper", "(optimized away)"],
@@ -1023,7 +1028,7 @@ async function testLexAndNonlex(dbg) {
       { line: 3, column: maybeLineStart(4) },
       [
         "Function Body",
-        "Thing()",
+        target === "rollup" || target === "parcel" ? "class Thing" : "Thing()",
         "root",
         target === "rollup" || isParcel
           ? ["someHelper", "(optimized away)"]

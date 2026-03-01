@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
+    'AccessibilityPrefs.js',
     'AccessibilityRow.js',
     'AccessibilityRowValue.js',
     'AccessibilityTree.js',
@@ -21,5 +22,7 @@ DevToolsModules(
     'LearnMoreLink.js',
     'MainFrame.js',
     'RightSidebar.js',
+    'TextLabelBadge.js',
+    'TextLabelCheck.js',
     'Toolbar.js'
 )

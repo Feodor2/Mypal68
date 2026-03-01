@@ -38,7 +38,7 @@ class Declaration extends PureComponent {
     this.valueSpanRef = createRef();
 
     this.onComputedExpanderClick = this.onComputedExpanderClick.bind(this);
-    this.onToggleDeclarationClick = this.onToggleDeclarationClick.bind(this);
+    this.onToggleDeclarationChange = this.onToggleDeclarationChange.bind(this);
   }
 
   componentDidMount() {
@@ -90,7 +90,7 @@ class Declaration extends PureComponent {
     });
   }
 
-  onToggleDeclarationClick(event) {
+  onToggleDeclarationChange(event) {
     event.stopPropagation();
     const { id, ruleId } = this.props.declaration;
     this.props.onToggleDeclaration(ruleId, id);
@@ -214,6 +214,7 @@ class Declaration extends PureComponent {
 
   render() {
     const {
+      id,
       isEnabled,
       isKnownProperty,
       isOverridden,
@@ -233,20 +234,25 @@ class Declaration extends PureComponent {
     }
 
     return dom.li(
-      { className: declarationClassName },
+      {
+        className: declarationClassName,
+        "data-declaration-id": id,
+      },
       dom.div(
         { className: "ruleview-propertycontainer" },
-        dom.div({
-          className:
-            "ruleview-enableproperty theme-checkbox" +
-            (isEnabled ? " checked" : ""),
-          onClick: this.onToggleDeclarationClick,
-          tabIndex: -1,
+        dom.input({
+          "aria-labelledby": id,
+          className: "ruleview-enableproperty",
+          checked: isEnabled,
+          onChange: this.onToggleDeclarationChange,
+          tabIndex: "-1",
+          type: "checkbox",
         }),
         dom.span(
           { className: "ruleview-namecontainer" },
           dom.span(
             {
+              id,
               className: "ruleview-propertyname theme-fg-color3",
               ref: this.nameSpanRef,
               tabIndex: 0,

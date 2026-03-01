@@ -5,17 +5,18 @@
  /*
 * Global styles
 */
-@import "resource://devtools/client/application/src/base.css";
+@import "chrome://devtools/content/application/src/base.css";
+
 
 /*
 * Components
 */
-@import "resource://devtools/client/application/src/components/App.css";
-@import "resource://devtools/client/application/src/components/service-workers/Worker.css";
-@import "resource://devtools/client/application/src/components/service-workers/WorkerList.css";
-@import "resource://devtools/client/application/src/components/service-workers/WorkerListEmpty.css";
-@import "resource://devtools/client/application/src/components/service-workers/WorkersPage.css";
-@import "resource://devtools/client/application/src/components/ui/UIButton.css";
+@import "chrome://devtools/content/application/src/components/App.css";
+@import "chrome://devtools/content/application/src/components/service-workers/Worker.css";
+@import "chrome://devtools/content/application/src/components/service-workers/WorkerList.css";
+@import "chrome://devtools/content/application/src/components/service-workers/WorkerListEmpty.css";
+@import "chrome://devtools/content/application/src/components/service-workers/WorkersPage.css";
+@import "chrome://devtools/content/application/src/components/ui/UIButton.css";
 
 html,
 body,

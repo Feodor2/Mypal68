@@ -8,13 +8,13 @@ window._snapshots = {
     type: "div",
     props: {
       role: "presentation",
-      className: "accessibility-color-contrast-check",
+      className: "accessibility-check",
     },
     children: [
       {
         type: "h3",
         props: {
-          className: "accessibility-color-contrast-header",
+          className: "accessibility-check-header",
         },
         children: ["Color and Contrast"],
       },
@@ -41,13 +41,13 @@ window._snapshots = {
     type: "div",
     props: {
       role: "presentation",
-      className: "accessibility-color-contrast-check",
+      className: "accessibility-check",
     },
     children: [
       {
         type: "h3",
         props: {
-          className: "accessibility-color-contrast-header",
+          className: "accessibility-check-header",
         },
         children: ["Color and Contrast"],
       },
@@ -75,7 +75,7 @@ window._snapshots = {
       {
         type: "p",
         props: {
-          className: "accessibility-color-contrast-annotation",
+          className: "accessibility-check-annotation",
         },
         children: [
           "Does not meet WCAG standards for accessible text. ",
@@ -102,13 +102,13 @@ window._snapshots = {
     type: "div",
     props: {
       role: "presentation",
-      className: "accessibility-color-contrast-check",
+      className: "accessibility-check",
     },
     children: [
       {
         type: "h3",
         props: {
-          className: "accessibility-color-contrast-header",
+          className: "accessibility-check-header",
         },
         children: ["Color and Contrast"],
       },
@@ -156,7 +156,7 @@ window._snapshots = {
       {
         type: "p",
         props: {
-          className: "accessibility-color-contrast-annotation",
+          className: "accessibility-check-annotation",
         },
         children: [
           "Does not meet WCAG standards for accessible text. ",
@@ -183,13 +183,13 @@ window._snapshots = {
     type: "div",
     props: {
       role: "presentation",
-      className: "accessibility-color-contrast-check",
+      className: "accessibility-check",
     },
     children: [
       {
         type: "h3",
         props: {
-          className: "accessibility-color-contrast-header",
+          className: "accessibility-check-header",
         },
         children: ["Color and Contrast"],
       },
@@ -227,7 +227,7 @@ window._snapshots = {
       {
         type: "p",
         props: {
-          className: "accessibility-color-contrast-annotation",
+          className: "accessibility-check-annotation",
         },
         children: [
           "Meets WCAG AA standards for accessible text. ",

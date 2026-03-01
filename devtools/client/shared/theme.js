@@ -4,14 +4,9 @@
 
 "use strict";
 
-/**
- * Colors for themes taken from:
- * https://developer.mozilla.org/en-US/docs/Tools/DevToolsColors
- */
-
 const Services = require("Services");
 
-const variableFileContents = require("theme-loader!devtools/client/themes/variables.css");
+const variableFileContents = require("raw!chrome://devtools/skin/variables.css");
 
 const THEME_SELECTOR_STRINGS = {
   light: ":root.theme-light {",

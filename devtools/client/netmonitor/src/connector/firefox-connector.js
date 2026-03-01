@@ -163,6 +163,26 @@ class FirefoxConnector {
       }
     }
 
+    // Support for EventSource monitoring is currently hidden behind this pref.
+    if (
+      Services.prefs.getBoolPref(
+        "devtools.netmonitor.features.serverSentEvents"
+      )
+    ) {
+      const eventSourceFront = await this.tabTarget.getFront("eventSource");
+      eventSourceFront.startListening();
+
+      eventSourceFront.on(
+        "eventSourceConnectionOpened",
+        this.dataProvider.onEventSourceConnectionOpened
+      );
+      eventSourceFront.on(
+        "eventSourceConnectionClosed",
+        this.dataProvider.onEventSourceConnectionClosed
+      );
+      eventSourceFront.on("eventReceived", this.dataProvider.onEventReceived);
+    }
+
     // The console actor supports listening to document events like
     // DOMContentLoaded and load.
     await this.webConsoleFront.startListeners(["DocumentEvents"]);
@@ -185,6 +205,18 @@ class FirefoxConnector {
           this.dataProvider.onFrameReceived
         );
         this.webSocketFront.off("frameSent", this.dataProvider.onFrameSent);
+      }
+      const eventSourceFront = this.tabTarget.getCachedFront("eventSource");
+      if (eventSourceFront) {
+        eventSourceFront.off(
+          "eventSourceConnectionOpened",
+          this.dataProvider.onEventSourceConnectionOpened
+        );
+        eventSourceFront.off(
+          "eventSourceConnectionClosed",
+          this.dataProvider.onEventSourceConnectionClosed
+        );
+        eventSourceFront.off("eventReceived", this.dataProvider.onEventReceived);
       }
     }
     if (this.webConsoleFront) {

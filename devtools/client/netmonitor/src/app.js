@@ -48,7 +48,7 @@ NetMonitorApp.prototype = {
       const iframe = parentDoc.getElementById(
         "toolbox-panel-iframe-netmonitor"
       );
-      const top = iframe.ownerDocument.defaultView.top;
+      const { top } = iframe.ownerDocument.defaultView;
       top.openWebLinkIn(link, "tab");
     };
 
@@ -70,6 +70,7 @@ NetMonitorApp.prototype = {
       openLink,
       openSplitConsole,
       sourceMapService,
+      toolboxDoc: toolbox.doc,
     });
 
     // Render the root Application component.

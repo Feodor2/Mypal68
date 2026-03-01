@@ -7,6 +7,5 @@ DIRS += [
 ]
 
 DevToolsModules(
-    'reps.css',
     'reps.js',
 )

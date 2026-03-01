@@ -9,25 +9,32 @@ const {
   AUDIT_PROGRESS,
   AUDITING,
   FILTER_TOGGLE,
+  FILTERS,
 } = require("../constants");
+const {
+  accessibility: { AUDIT_TYPE },
+} = require("devtools/shared/constants");
 
 exports.filterToggle = filter => dispatch =>
   dispatch({ filter, type: FILTER_TOGGLE });
 
-exports.auditing = filter => dispatch =>
-  dispatch({ auditing: filter, type: AUDITING });
+exports.auditing = filter => dispatch => {
+  const auditing = filter === FILTERS.ALL ? Object.values(FILTERS) : [filter];
+  return dispatch({ auditing, type: AUDITING });
+};
 
-exports.audit = (walker, filter) => dispatch =>
+exports.audit = (accessibilityWalker, filter) => dispatch =>
   new Promise(resolve => {
+    const types = filter === FILTERS.ALL ? Object.values(AUDIT_TYPE) : [filter];
     const auditEventHandler = ({ type, ancestries, progress }) => {
       switch (type) {
         case "error":
-          walker.off("audit-event", auditEventHandler);
+          accessibilityWalker.off("audit-event", auditEventHandler);
           dispatch({ type: AUDIT, error: true });
           resolve();
           break;
         case "completed":
-          walker.off("audit-event", auditEventHandler);
+          accessibilityWalker.off("audit-event", auditEventHandler);
           dispatch({ type: AUDIT, response: ancestries });
           resolve();
           break;
@@ -39,6 +46,6 @@ exports.audit = (walker, filter) => dispatch =>
       }
     };
 
-    walker.on("audit-event", auditEventHandler);
-    walker.startAudit();
+    accessibilityWalker.on("audit-event", auditEventHandler);
+    accessibilityWalker.startAudit({ types });
   });

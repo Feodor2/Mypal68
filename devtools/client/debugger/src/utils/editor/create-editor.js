@@ -35,6 +35,7 @@ export function createEditor(): SourceEditor {
       "Cmd-G": false,
       "Ctrl-G": false,
     },
+    cursorBlinkRate: prefs.cursorBlinkRate,
   });
 }
 

@@ -36,19 +36,24 @@ const EXPECTED_REQUESTS = [
   },
   {
     method: "GET",
+    url: EXAMPLE_URL + "img_srcset_request",
+    causeType: "imageset",
+    causeUri: INITIATOR_URL,
+    stack: false,
+  },
+  {
+    method: "GET",
     url: EXAMPLE_URL + "xhr_request",
     causeType: "xhr",
     causeUri: INITIATOR_URL,
-    stack: [
-      { fn: "performXhrRequestCallback", file: INITIATOR_FILE_NAME, line: 26 },
-    ],
+    stack: [{ fn: "performXhrRequestCallback", file: INITIATOR_URL, line: 30 }],
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "fetch_request",
     causeType: "fetch",
     causeUri: INITIATOR_URL,
-    stack: [{ fn: "performFetchRequest", file: INITIATOR_FILE_NAME, line: 31 }],
+    stack: [{ fn: "performFetchRequest", file: INITIATOR_URL, line: 35 }],
   },
   {
     method: "GET",
@@ -58,13 +63,13 @@ const EXPECTED_REQUESTS = [
     stack: [
       {
         fn: "performPromiseFetchRequestCallback",
-        file: INITIATOR_FILE_NAME,
-        line: 37,
+        file: INITIATOR_URL,
+        line: 41,
       },
       {
         fn: "performPromiseFetchRequest",
-        file: INITIATOR_FILE_NAME,
-        line: 36,
+        file: INITIATOR_URL,
+        line: 40,
         asyncCause: "promise callback",
       },
     ],
@@ -77,25 +82,53 @@ const EXPECTED_REQUESTS = [
     stack: [
       {
         fn: "performTimeoutFetchRequestCallback2",
-        file: INITIATOR_FILE_NAME,
-        line: 44,
+        file: INITIATOR_URL,
+        line: 48,
       },
       {
         fn: "performTimeoutFetchRequestCallback1",
-        file: INITIATOR_FILE_NAME,
-        line: 43,
+        file: INITIATOR_URL,
+        line: 47,
         asyncCause: "setTimeout handler",
       },
     ],
+  },
+  {
+    method: "GET",
+    url: EXAMPLE_URL + "favicon_request",
+    causeType: "img",
+    causeUri: INITIATOR_URL,
+    // the favicon request is triggered in FaviconLoader.jsm module, it should
+    // NOT be shown in the stack (bug 1280266).  For now we intentionally
+    // specify the file and the line number to be properly sorted.
+    // NOTE: The line number can be an arbitrary number greater than 0.
+    stack: [
+      {
+        file: "resource:///modules/FaviconLoader.jsm",
+        line: Number.MAX_SAFE_INTEGER,
+      },
+    ],
+  },
+  {
+    method: "GET",
+    url: EXAMPLE_URL + "lazy_img_request",
+    causeType: "lazy-img",
+    causeUri: INITIATOR_URL,
+    stack: false,
+  },
+  {
+    method: "GET",
+    url: EXAMPLE_URL + "lazy_img_srcset_request",
+    causeType: "lazy-imageset",
+    causeUri: INITIATOR_URL,
+    stack: false,
   },
   {
     method: "POST",
     url: EXAMPLE_URL + "beacon_request",
     causeType: "beacon",
     causeUri: INITIATOR_URL,
-    stack: [
-      { fn: "performBeaconRequest", file: INITIATOR_FILE_NAME, line: 50 },
-    ],
+    stack: [{ fn: "performBeaconRequest", file: INITIATOR_URL, line: 80 }],
   },
 ];
 
@@ -111,7 +144,9 @@ add_task(async function() {
   // all the requests the page is making, not only the XHRs.
   // We can't use about:blank here, because initNetMonitor checks that the
   // page has actually made at least one request.
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL, {
+    requestCount: 1,
+  });
 
   const { document, store, windowRequire } = monitor.panelWin;
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
@@ -123,6 +158,9 @@ add_task(async function() {
 
   const wait = waitForNetworkEvents(monitor, EXPECTED_REQUESTS.length);
   BrowserTestUtils.loadURI(tab.linkedBrowser, INITIATOR_URL);
+
+  registerFaviconNotifier(tab.linkedBrowser);
+
   await wait;
 
   // For all expected requests
@@ -161,26 +199,35 @@ add_task(async function() {
 
   const expectedOrder = EXPECTED_REQUESTS.sort(initiatorSortPredicate).map(
     r => {
+      let isChromeFrames = false;
       const lastFrameExists = !!r.stack;
       let initiator = "";
       let lineNumber = "";
       if (lastFrameExists) {
-        const { filename, line: _lineNumber } = r.stack[0];
-        initiator = getUrlBaseName(filename);
+        const { file, line: _lineNumber } = r.stack[0];
+        initiator = getUrlBaseName(file);
         lineNumber = ":" + _lineNumber;
+        isChromeFrames = file.startsWith("resource:///");
       }
       const causeStr = lastFrameExists ? " (" + r.causeType + ")" : r.causeType;
-      return initiator + lineNumber + causeStr;
+      return {
+        initiatorStr: initiator + lineNumber + causeStr,
+        isChromeFrames,
+      };
     }
   );
 
   expectedOrder.forEach((expectedInitiator, i) => {
     const request = getSortedRequests(store.getState())[i];
     let initiator;
-    if (request.cause.stacktraceAvailable) {
-      const { fileName, lineNumber } = request.cause.lastFrame;
+    // In cases of chrome frames, we shouldn't have stack.
+    if (
+      request.cause.stacktraceAvailable &&
+      !expectedInitiator.isChromeFrames
+    ) {
+      const { filename, lineNumber } = request.cause.lastFrame;
       initiator =
-        getUrlBaseName(fileName) +
+        getUrlBaseName(filename) +
         ":" +
         lineNumber +
         " (" +
@@ -189,11 +236,20 @@ add_task(async function() {
     } else {
       initiator = request.cause.type;
     }
-    is(
-      initiator,
-      expectedInitiator,
-      `The request #${i} has the expected initiator after sorting`
-    );
+
+    if (expectedInitiator.isChromeFrames) {
+      todo_is(
+        initiator,
+        expectedInitiator.initiatorStr,
+        `The request #${i} has the expected initiator after sorting`
+      );
+    } else {
+      is(
+        initiator,
+        expectedInitiator.initiatorStr,
+        `The request #${i} has the expected initiator after sorting`
+      );
+    }
   });
 
   await teardown(monitor);

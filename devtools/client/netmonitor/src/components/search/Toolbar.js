@@ -42,6 +42,7 @@ class Toolbar extends Component {
       caseSensitive: PropTypes.bool.isRequired,
       toggleCaseSensitiveSearch: PropTypes.func.isRequired,
       connector: PropTypes.object.isRequired,
+      query: PropTypes.string,
     };
   }
 
@@ -69,16 +70,6 @@ class Toolbar extends Component {
         this.props.search(connector, event.target.value);
         break;
     }
-  }
-
-  renderCloseButton() {
-    const { closeSearch } = this.props;
-    return button({
-      id: "devtools-network-search-close",
-      className: "devtools-button",
-      title: L10N.getStr("netmonitor.search.toolbar.close"),
-      onClick: () => closeSearch(),
-    });
   }
 
   renderModifiers() {
@@ -126,6 +117,7 @@ class Toolbar extends Component {
       addSearchQuery,
       clearSearchResultAndCancel,
       connector,
+      query,
     } = this.props;
     return SearchBox({
       keyShortcut: "CmdOrCtrl+Shift+F",
@@ -133,8 +125,9 @@ class Toolbar extends Component {
       type: "search",
       delay: FILTER_SEARCH_DELAY,
       ref: this.props.searchboxRef,
+      value: query,
       onClearButtonClick: () => clearSearchResultAndCancel(),
-      onChange: query => addSearchQuery(query),
+      onChange: newQuery => addSearchQuery(newQuery),
       onKeyDown: event => this.onKeyDown(event, connector),
     });
   }
@@ -146,8 +139,7 @@ class Toolbar extends Component {
         className: "devtools-toolbar devtools-input-toolbar",
       },
       this.renderFilterBox(),
-      this.renderModifiers(),
-      this.renderCloseButton()
+      this.renderModifiers()
     );
   }
 }
@@ -155,6 +147,7 @@ class Toolbar extends Component {
 module.exports = connect(
   state => ({
     caseSensitive: state.search.caseSensitive,
+    query: state.search.query,
   }),
   dispatch => ({
     closeSearch: () => dispatch(Actions.closeSearch()),

@@ -15,8 +15,8 @@ Services.scriptloader.loadSubScript(
 );
 
 var { Toolbox } = require("devtools/client/framework/toolbox");
-var { Task } = require("devtools/shared/task");
-var asyncStorage = require("devtools/shared/async-storage");
+const { Task } = require("devtools/shared/task");
+const asyncStorage = require("devtools/shared/async-storage");
 
 const {
   getSelectedLocation,
@@ -319,6 +319,10 @@ function getVisibleSelectedFrameLine(dbg) {
   return frame && frame.location.line;
 }
 
+function waitForPausedLine(dbg, line) {
+  return waitForState(dbg, () => getVisibleSelectedFrameLine(dbg) == line);
+}
+
 /**
  * Assert that the debugger is paused at the correct location.
  *
@@ -390,6 +394,7 @@ function assertDebugLine(dbg, line, column) {
 
     ok(classMatch, "expression is highlighted as paused");
   }
+  info(`Paused on line ${line}`);
 }
 
 /**
@@ -575,11 +580,13 @@ async function clearDebuggerPreferences(prefs = []) {
   Services.prefs.clearUserPref("devtools.debugger.ignore-caught-exceptions");
   Services.prefs.clearUserPref("devtools.debugger.pending-selected-location");
   Services.prefs.clearUserPref("devtools.debugger.expressions");
+  Services.prefs.clearUserPref("devtools.debugger.breakpoints-visible");
   Services.prefs.clearUserPref("devtools.debugger.call-stack-visible");
   Services.prefs.clearUserPref("devtools.debugger.scopes-visible");
   Services.prefs.clearUserPref("devtools.debugger.skip-pausing");
   Services.prefs.clearUserPref("devtools.debugger.map-scopes-enabled");
   await pushPref("devtools.debugger.log-actions", true);
+
   for (const pref of prefs) {
     await pushPref(...pref);
   }
@@ -1436,8 +1443,8 @@ function clickElementWithSelector(dbg, selector) {
   clickDOMElement(dbg, findElementWithSelector(dbg, selector));
 }
 
-function clickDOMElement(dbg, element) {
-  EventUtils.synthesizeMouseAtCenter(element, {}, dbg.win);
+function clickDOMElement(dbg, element, options = {}) {
+  EventUtils.synthesizeMouseAtCenter(element, options, dbg.win);
 }
 
 function dblClickElement(dbg, elementName, ...args) {
@@ -1481,6 +1488,11 @@ function rightClickEl(dbg, el) {
 async function clickGutter(dbg, line) {
   const el = await codeMirrorGutterElement(dbg, line);
   clickDOMElement(dbg, el);
+}
+
+async function cmdClickGutter(dbg, line) {
+  const el = await codeMirrorGutterElement(dbg, line);
+  clickDOMElement(dbg, el, cmdOrCtrl);
 }
 
 function findContextMenu(dbg, selector) {
@@ -1963,6 +1975,30 @@ function evaluateExpressionInConsole(hud, expression) {
 
 function waitForInspectorPanelChange(dbg) {
   return dbg.toolbox.getPanelWhenReady("inspector");
+}
+
+function getEagerEvaluationElement(hud) {
+  return hud.ui.outputNode.querySelector(".eager-evaluation-result");
+}
+
+async function waitForEagerEvaluationResult(hud, text) {
+  await waitUntil(() => {
+    const elem = getEagerEvaluationElement(hud);
+    if (elem) {
+      if (text instanceof RegExp) {
+        return text.test(elem.innerText);
+      }
+      return elem.innerText == text;
+    }
+    return false;
+  });
+  ok(true, `Got eager evaluation result ${text}`);
+}
+
+function setInputValue(hud, value) {
+  const onValueSet = hud.jsterm.once("set-input-value");
+  hud.jsterm._setValue(value);
+  return onValueSet;
 }
 
 const { PromiseTestUtils } = ChromeUtils.import(

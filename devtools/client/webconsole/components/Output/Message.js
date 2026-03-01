@@ -58,6 +58,7 @@ class Message extends Component {
       level: PropTypes.string.isRequired,
       indent: PropTypes.number.isRequired,
       inWarningGroup: PropTypes.bool,
+      isBlockedNetworkMessage: PropTypes.bool,
       topLevelClasses: PropTypes.array.isRequired,
       messageBody: PropTypes.any.isRequired,
       repeat: PropTypes.any,
@@ -165,10 +166,14 @@ class Message extends Component {
   }
 
   renderIcon() {
-   const { level, inWarningGroup, type } = this.props;
+    const { level, inWarningGroup, isBlockedNetworkMessage, type } = this.props;
 
     if (inWarningGroup) {
       return undefined;
+    }
+
+    if (isBlockedNetworkMessage) {
+      return MessageIcon({ type: "blockedReason" });
     }
 
     return MessageIcon({
@@ -223,7 +228,7 @@ class Message extends Component {
                       this.props.message,
                       function(key, value) {
                         // The message can hold one or multiple fronts that we need to serialize
-                        if (value && value.getGrip) {
+                        if (value?.getGrip) {
                           return value.getGrip();
                         }
                         return value;

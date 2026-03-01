@@ -36,7 +36,11 @@ function onUpdateDetails(state, action) {
   const { accessible, response, error } = action;
   if (error) {
     if (accessible.actorID) {
-      console.warn(`Error fetching accessible details: `, accessible, error);
+      console.warn(
+        `Error fetching accessible details: `,
+        accessible.actorID,
+        error
+      );
     }
 
     return getInitialState();

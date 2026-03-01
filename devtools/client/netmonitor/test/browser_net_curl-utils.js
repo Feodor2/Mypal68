@@ -10,7 +10,9 @@
 const { Curl, CurlUtils } = require("devtools/client/shared/curl");
 
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(CURL_UTILS_URL);
+  const { tab, monitor } = await initNetMonitor(CURL_UTILS_URL, {
+    requestCount: 1,
+  });
   info("Starting test... ");
 
   const { store, windowRequire, connector } = monitor.panelWin;
@@ -86,7 +88,7 @@ function testIsMultipartRequest(data) {
 }
 
 function testFindHeader(data) {
-  const headers = data.headers;
+  const { headers } = data;
   const hostName = CurlUtils.findHeader(headers, "Host");
   const requestedWithLowerCased = CurlUtils.findHeader(
     headers,
@@ -108,7 +110,7 @@ function testFindHeader(data) {
 }
 
 function testMultiPartHeaders(data) {
-  const headers = data.headers;
+  const { headers } = data;
   const contentType = CurlUtils.findHeader(headers, "Content-Type");
 
   ok(

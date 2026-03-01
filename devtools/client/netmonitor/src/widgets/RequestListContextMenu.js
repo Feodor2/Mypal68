@@ -43,7 +43,7 @@ class RequestListContextMenu {
     this.props = props;
   }
 
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   open(event, clickedRequest, requests, blockedUrls) {
     const {
       id,

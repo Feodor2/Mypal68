@@ -13,9 +13,3 @@ CompiledModules(
     'SourcesTree.js',
     'SourcesTreeItem.js',
 )
-
-DevToolsModules(
-    'Outline.css',
-    'OutlineFilter.css',
-    'Sources.css',
-)

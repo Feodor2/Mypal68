@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { ThreadStateTypes } = require("devtools/shared/client/constants");
+const { ThreadStateTypes } = require("devtools/client/constants");
 const {
   FrontClassWithSpec,
   registerFront,
@@ -86,7 +86,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    *        step, or finish) per the remote debugging protocol specification.
    *        Use null to specify no limit.
    */
-  async _doResume(resumeLimit) {
+  async _doResume(resumeLimit, frameActorID) {
     this._assertPaused("resume");
 
     // Put the client in a tentative "resuming" state so we can prevent
@@ -94,7 +94,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
     this._previousState = this._state;
     this._state = "resuming";
     try {
-      await super.resume(resumeLimit);
+      await super.resume(resumeLimit, frameActorID);
     } catch (e) {
       if (this._state == "resuming") {
         // There was an error resuming, update the state to the new one
@@ -129,22 +129,22 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
   /**
    * Step over a function call.
    */
-  stepOver() {
-    return this._doResume({ type: "next" });
+  stepOver(frameActorID) {
+    return this._doResume({ type: "next" }, frameActorID);
   }
 
   /**
    * Step into a function call.
    */
-  stepIn() {
-    return this._doResume({ type: "step" });
+  stepIn(frameActorID) {
+    return this._doResume({ type: "step" }, frameActorID);
   }
 
   /**
    * Step out of a function call.
    */
-  stepOut() {
-    return this._doResume({ type: "finish" });
+  stepOut(frameActorID) {
+    return this._doResume({ type: "finish" }, frameActorID);
   }
 
   /**

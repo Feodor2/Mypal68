@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* global gToolbox */
-
 // React & Redux
 const {
   Component,
@@ -17,6 +15,10 @@ const {
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 const { reset } = require("../actions/ui");
+
+// Localization
+const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const LocalizationProvider = createFactory(FluentReact.LocalizationProvider);
 
 // Constants
 const { SIDEBAR_WIDTH, PORTRAIT_MODE_WIDTH } = require("../constants");
@@ -39,10 +41,12 @@ class MainFrame extends Component {
   static get propTypes() {
     return {
       accessibility: PropTypes.object.isRequired,
-      walker: PropTypes.object.isRequired,
+      fluentBundles: PropTypes.array.isRequired,
+      accessibilityWalker: PropTypes.object.isRequired,
       enabled: PropTypes.bool.isRequired,
       dispatch: PropTypes.func.isRequired,
-      auditing: PropTypes.string,
+      auditing: PropTypes.array.isRequired,
+      supports: PropTypes.object,
     };
   }
 
@@ -56,7 +60,10 @@ class MainFrame extends Component {
   componentWillMount() {
     this.props.accessibility.on("init", this.resetAccessibility);
     this.props.accessibility.on("shutdown", this.resetAccessibility);
-    this.props.walker.on("document-ready", this.resetAccessibility);
+    this.props.accessibilityWalker.on(
+      "document-ready",
+      this.resetAccessibility
+    );
 
     window.addEventListener("resize", this.onPanelWindowResize, true);
   }
@@ -70,14 +77,17 @@ class MainFrame extends Component {
   componentWillUnmount() {
     this.props.accessibility.off("init", this.resetAccessibility);
     this.props.accessibility.off("shutdown", this.resetAccessibility);
-    this.props.walker.off("document-ready", this.resetAccessibility);
+    this.props.accessibilityWalker.off(
+      "document-ready",
+      this.resetAccessibility
+    );
 
     window.removeEventListener("resize", this.onPanelWindowResize, true);
   }
 
   resetAccessibility() {
-    const { dispatch, accessibility } = this.props;
-    dispatch(reset(accessibility));
+    const { dispatch, accessibility, supports } = this.props;
+    dispatch(reset(accessibility, supports));
   }
 
   get useLandscapeMode() {
@@ -99,46 +109,62 @@ class MainFrame extends Component {
    * Render Accessibility panel content
    */
   render() {
-    const { accessibility, walker, enabled, auditing } = this.props;
+    const {
+      accessibility,
+      accessibilityWalker,
+      fluentBundles,
+      enabled,
+      auditing,
+    } = this.props;
 
     if (!enabled) {
       return Description({ accessibility });
     }
 
-    return div(
-      { className: "mainFrame", role: "presentation" },
-      Toolbar({ accessibility, walker }),
-      auditing && AuditProgressOverlay(),
-      span(
-        {
-          "aria-hidden": !!auditing,
-          role: "presentation",
-          style: { display: "contents" },
-        },
-        SplitBox({
-          ref: "splitBox",
-          initialSize: SIDEBAR_WIDTH,
-          minSize: "10px",
-          maxSize: "80%",
-          splitterSize: 1,
-          endPanelControl: true,
-          startPanel: div(
-            {
-              className: "main-panel",
-              role: "presentation",
-            },
-            AccessibilityTree({ walker })
-          ),
-          endPanel: RightSidebar({ walker }),
-          vert: this.useLandscapeMode,
-        })
+    // Audit is currently running.
+    const isAuditing = auditing.length > 0;
+
+    return LocalizationProvider(
+      { bundles: fluentBundles },
+      div(
+        { className: "mainFrame", role: "presentation" },
+        Toolbar({ accessibility, accessibilityWalker }),
+        isAuditing && AuditProgressOverlay(),
+        span(
+          {
+            "aria-hidden": isAuditing,
+            role: "presentation",
+            style: { display: "contents" },
+          },
+          SplitBox({
+            ref: "splitBox",
+            initialSize: SIDEBAR_WIDTH,
+            minSize: "10px",
+            maxSize: "80%",
+            splitterSize: 1,
+            endPanelControl: true,
+            startPanel: div(
+              {
+                className: "main-panel",
+                role: "presentation",
+              },
+              AccessibilityTree({ accessibilityWalker })
+            ),
+            endPanel: RightSidebar({ accessibilityWalker }),
+            vert: this.useLandscapeMode,
+          })
+        )
       )
     );
   }
 }
 
-const mapStateToProps = ({ ui, audit: { auditing } }) => ({
-  enabled: ui.enabled,
+const mapStateToProps = ({
+  ui: { enabled, supports },
+  audit: { auditing },
+}) => ({
+  enabled,
+  supports,
   auditing,
 });
 

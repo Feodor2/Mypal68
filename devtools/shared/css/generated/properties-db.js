@@ -2977,6 +2977,9 @@ exports.CSS_PROPERTIES = {
       "transform-style",
       "transform-origin",
       "contain",
+      "content-visibility",
+      "container-type",
+      "container-name",
       "appearance",
       "-moz-orient",
       "will-change",
@@ -3108,10 +3111,6 @@ exports.CSS_PROPERTIES = {
       "outline-color",
       "outline-style",
       "outline-width",
-      "-moz-outline-radius-topleft",
-      "-moz-outline-radius-topright",
-      "-moz-outline-radius-bottomright",
-      "-moz-outline-radius-bottomleft",
       "outline-offset",
       "size",
       "padding-top",
@@ -6578,6 +6577,10 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
+      "cap-height",
+      "ch-width",
+      "ic-height",
+      "ic-width",
       "inherit",
       "initial",
       "none",
@@ -6635,8 +6638,10 @@ exports.CSS_PROPERTIES = {
     "values": [
       "inherit",
       "initial",
+      "none",
       "revert",
       "revert-layer",
+      "small-caps",
       "style",
       "unset",
       "weight"
@@ -11367,23 +11372,23 @@ exports.CSS_PROPERTIES = {
  * A list of the pseudo elements.
  */
 exports.PSEUDO_ELEMENTS = [
-  ":after",
-  ":before",
-  ":marker",
-  ":backdrop",
-  ":cue",
-  ":first-letter",
-  ":first-line",
-  ":selection",
-  ":-moz-focus-inner",
-  ":-moz-progress-bar",
-  ":-moz-range-track",
-  ":-moz-range-progress",
-  ":-moz-range-thumb",
-  ":-moz-meter-bar",
-  ":placeholder",
-  ":-moz-color-swatch",
-  ":file-selector-button"
+  "::after",
+  "::before",
+  "::marker",
+  "::backdrop",
+  "::cue",
+  "::first-letter",
+  "::first-line",
+  "::selection",
+  "::-moz-focus-inner",
+  "::-moz-progress-bar",
+  "::-moz-range-track",
+  "::-moz-range-progress",
+  "::-moz-range-thumb",
+  "::-moz-meter-bar",
+  "::placeholder",
+  "::-moz-color-swatch",
+  "::file-selector-button"
 ];
 
 /**
@@ -11394,6 +11399,14 @@ exports.PREFERENCES = [
   [
     "aspect-ratio",
     "layout.css.aspect-ratio.enabled"
+  ],
+  [
+    "container-type",
+    "layout.css.container-queries.enabled"
+  ],
+  [
+    "content-visibility",
+    "layout.css.content-visibility.enabled"
   ],
   [
     "font-optical-sizing",
@@ -11480,6 +11493,10 @@ exports.PREFERENCES = [
     "layout.css.backdrop-filter.enabled"
   ],
   [
+    "container-name",
+    "layout.css.container-queries.enabled"
+  ],
+  [
     "font-variation-settings",
     "layout.css.font-variations.enabled"
   ],
@@ -11520,22 +11537,6 @@ exports.PREFERENCES = [
     "layout.css.motion-path.enabled"
   ],
   [
-    "-moz-outline-radius-bottomleft",
-    "layout.css.moz-outline-radius.enabled"
-  ],
-  [
-    "-moz-outline-radius-bottomright",
-    "layout.css.moz-outline-radius.enabled"
-  ],
-  [
-    "-moz-outline-radius-topleft",
-    "layout.css.moz-outline-radius.enabled"
-  ],
-  [
-    "-moz-outline-radius-topright",
-    "layout.css.moz-outline-radius.enabled"
-  ],
-  [
     "overflow-clip-box",
     "layout.css.overflow-clip-box.enabled"
   ],
@@ -11544,16 +11545,16 @@ exports.PREFERENCES = [
     "layout.css.overscroll-behavior.enabled"
   ],
   [
+    "container",
+    "layout.css.container-queries.enabled"
+  ],
+  [
     "offset",
     "layout.css.motion-path.enabled"
   ],
   [
     "zoom",
     "layout.css.zoom-transform-hack.enabled"
-  ],
-  [
-    "-moz-outline-radius",
-    "layout.css.moz-outline-radius.enabled"
   ],
   [
     "-moz-transition-duration",

@@ -11,13 +11,15 @@ add_task(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["devtools.netmonitor.features.webSockets", true]],
   });
-  const { tab, monitor } = await initNetMonitor(WS_PAGE_URL);
+  const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
+    requestCount: 1,
+  });
   info("Starting test... ");
 
   const { document, store, windowRequire } = monitor.panelWin;
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
-  const { getDisplayedFrames } = windowRequire(
-    "devtools/client/netmonitor/src/selectors/web-sockets"
+  const { getDisplayedMessages } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/messages"
   );
 
   store.dispatch(Actions.batchEnable(false));
@@ -34,7 +36,7 @@ add_task(async function() {
   // Wait for all sent/received messages to be displayed in DevTools
   const wait = waitForDOM(
     document,
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item",
+    "#messages-panel .message-list-table .message-list-item",
     6
   );
 
@@ -50,7 +52,7 @@ add_task(async function() {
 
   // Get all messages present in the "Messages" panel
   const frames = document.querySelectorAll(
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item"
+    "#messages-panel .message-list-table .message-list-item"
   );
 
   // Check expected results
@@ -69,10 +71,10 @@ add_task(async function() {
   type("Payload 2");
 
   // Wait till the text filter is applied.
-  await waitUntil(() => getDisplayedFrames(store.getState()).length == 2);
+  await waitUntil(() => getDisplayedMessages(store.getState()).length == 2);
 
   const filteredFrames = document.querySelectorAll(
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item"
+    "#messages-panel .message-list-table .message-list-item"
   );
   is(filteredFrames.length, 2, "There should be two frames");
 
@@ -82,11 +84,11 @@ add_task(async function() {
   await waitUntil(
     () =>
       document.querySelectorAll(
-        "#messages-panel .ws-frames-list-table .ws-frame-list-item"
+        "#messages-panel .message-list-table .message-list-item"
       ).length == 2
   );
   const secondRequestFrames = document.querySelectorAll(
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item"
+    "#messages-panel .message-list-table .message-list-item"
   );
   is(secondRequestFrames.length, 2, "There should be two frames");
   is(filterInput.value, "", "The filter input is cleared");

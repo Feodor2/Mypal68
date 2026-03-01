@@ -347,7 +347,7 @@ class SourceTreeItem extends Component<Props, State> {
       return <AccessibleImage className="folder" />;
     }
 
-    if (source && source.isBlackBoxed) {
+    if (source?.isBlackBoxed) {
       return <AccessibleImage className="blackBox" />;
     }
 

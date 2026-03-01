@@ -136,11 +136,10 @@ function onExpressionEvaluated(response) {
 
 function handleHelperResult(response) {
   return async ({ dispatch, hud, webConsoleUI }) => {
-    const result = response.result;
-    const helperResult = response.helperResult;
-    const helperHasRawOutput = !!(helperResult || {}).rawOutput;
+    const { result, helperResult } = response;
+    const helperHasRawOutput = !!helperResult?.rawOutput;
 
-    if (helperResult && helperResult.type) {
+    if (helperResult?.type) {
       switch (helperResult.type) {
         case "clearOutput":
           dispatch(messagesActions.messagesClear());
@@ -264,10 +263,7 @@ function terminalInputChanged(expression) {
 function getEagerEvaluationResult(response) {
   const result = response.exception || response.result;
   // Don't show syntax errors results to the user.
-  if (
-    (result && result.isSyntaxError) ||
-    (result && result.type == "undefined")
-  ) {
+  if (result?.isSyntaxError || (result && result.type == "undefined")) {
     return null;
   }
 

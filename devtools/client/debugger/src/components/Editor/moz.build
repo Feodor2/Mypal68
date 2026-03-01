@@ -27,15 +27,3 @@ CompiledModules(
     'Tab.js',
     'Tabs.js',
 )
-
-DevToolsModules(
-    'Breakpoints.css',
-    'ConditionalPanel.css',
-    'Editor.css',
-    'Footer.css',
-    'Highlight.css',
-    'InlinePreview.css',
-    'Preview.css',
-    'SearchBar.css',
-    'Tabs.css',
-)

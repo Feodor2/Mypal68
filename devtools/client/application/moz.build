@@ -7,7 +7,6 @@ DIRS += [
 ]
 
 DevToolsModules(
-    'application.css',
     'initializer.js',
     'panel.js'
 )
@@ -15,3 +14,4 @@ DevToolsModules(
 BROWSER_CHROME_MANIFESTS += [
     'test/browser/browser.ini'
 ]
+

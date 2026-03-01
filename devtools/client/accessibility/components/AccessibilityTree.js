@@ -35,7 +35,7 @@ const { scrollIntoView } = require("devtools/client/shared/scroll");
 class AccessibilityTree extends Component {
   static get propTypes() {
     return {
-      walker: PropTypes.object,
+      accessibilityWalker: PropTypes.object,
       dispatch: PropTypes.func.isRequired,
       accessibles: PropTypes.object,
       expanded: PropTypes.object,
@@ -60,10 +60,10 @@ class AccessibilityTree extends Component {
    * and updates.
    */
   componentWillMount() {
-    const { walker } = this.props;
-    walker.on("reorder", this.onReorder);
-    walker.on("name-change", this.onNameChange);
-    walker.on("text-change", this.onTextChange);
+    const { accessibilityWalker } = this.props;
+    accessibilityWalker.on("reorder", this.onReorder);
+    accessibilityWalker.on("name-change", this.onNameChange);
+    accessibilityWalker.on("text-change", this.onTextChange);
     return null;
   }
 
@@ -84,10 +84,10 @@ class AccessibilityTree extends Component {
    * Remove accessible walker front event listeners.
    */
   componentWillUnmount() {
-    const { walker } = this.props;
-    walker.off("reorder", this.onReorder);
-    walker.off("name-change", this.onNameChange);
-    walker.off("text-change", this.onTextChange);
+    const { accessibilityWalker } = this.props;
+    accessibilityWalker.off("reorder", this.onReorder);
+    accessibilityWalker.off("name-change", this.onNameChange);
+    accessibilityWalker.off("text-change", this.onTextChange);
   }
 
   /**
@@ -114,8 +114,8 @@ class AccessibilityTree extends Component {
    *                            accessible walker as a parent.
    */
   onNameChange(accessible, parent) {
-    const { accessibles, walker, dispatch } = this.props;
-    parent = parent || walker;
+    const { accessibles, accessibilityWalker, dispatch } = this.props;
+    parent = parent || accessibilityWalker;
 
     if (
       accessibles.has(accessible.actorID) ||
@@ -166,7 +166,7 @@ class AccessibilityTree extends Component {
       selected,
       highlighted: highlightedItem,
       supports,
-      walker,
+      accessibilityWalker,
       filtered,
     } = this.props;
 
@@ -179,7 +179,7 @@ class AccessibilityTree extends Component {
       const highlighted = object === highlightedItem;
       return AccessibilityRow(
         Object.assign({}, rowProps, {
-          walker,
+          accessibilityWalker,
           hasContextMenu,
           highlighted,
           decorator: {
@@ -193,7 +193,7 @@ class AccessibilityTree extends Component {
     const className = filtered ? "filtered" : undefined;
 
     return TreeView({
-      object: walker,
+      object: accessibilityWalker,
       mode: MODE.SHORT,
       provider: new Provider(accessibles, filtered, dispatch),
       columns: columns,

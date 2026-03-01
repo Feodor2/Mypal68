@@ -5,7 +5,6 @@
 // @flow
 
 import * as firefox from "./firefox";
-import * as chrome from "./chrome";
 
 import { asyncStore, verifyPrefSchema } from "../utils/prefs";
 import { setupHelper } from "../utils/dbg";
@@ -17,6 +16,7 @@ import {
 } from "../utils/bootstrap";
 
 import { initialBreakpointsState } from "../reducers/breakpoints";
+import { initialSourcesState } from "../reducers/sources";
 
 import type { Panel } from "./firefox/types";
 
@@ -44,22 +44,22 @@ async function loadInitialState() {
   const pendingBreakpoints = await asyncStore.pendingBreakpoints;
   const tabs = { tabs: await asyncStore.tabs };
   const xhrBreakpoints = await asyncStore.xhrBreakpoints;
+  const tabsBlackBoxed = await asyncStore.tabsBlackBoxed;
   const eventListenerBreakpoints = await asyncStore.eventListenerBreakpoints;
   const breakpoints = initialBreakpointsState(xhrBreakpoints);
+  const sources = initialSourcesState({ tabsBlackBoxed });
 
   return {
     pendingBreakpoints,
     tabs,
     breakpoints,
     eventListenerBreakpoints,
+    sources,
   };
 }
 
 function getClient(connection: any) {
-  const {
-    tab: { clientType },
-  } = connection;
-  return clientType == "firefox" ? firefox : chrome;
+  return firefox;
 }
 
 export async function onConnect(

@@ -70,11 +70,13 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
 
     form() {
       const registration = this._registration;
+      const evaluatingWorker = this._evaluatingWorker.form();
       const installingWorker = this._installingWorker.form();
       const waitingWorker = this._waitingWorker.form();
       const activeWorker = this._activeWorker.form();
 
-      const newestWorker = activeWorker || waitingWorker || installingWorker;
+      const newestWorker =
+        activeWorker || waitingWorker || installingWorker || evaluatingWorker;
 
       const isNewE10sImplementation = swm.isParentInterceptEnabled();
       const isMultiE10sWithOldImplementation =
@@ -83,6 +85,7 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
         actor: this.actorID,
         scope: registration.scope,
         url: registration.scriptSpec,
+        evaluatingWorker,
         installingWorker,
         waitingWorker,
         activeWorker,
@@ -116,6 +119,7 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
 
       this._destroyServiceWorkerActors();
 
+      this._evaluatingWorker = null;
       this._installingWorker = null;
       this._waitingWorker = null;
       this._activeWorker = null;
@@ -212,6 +216,7 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
     },
 
     _destroyServiceWorkerActors() {
+      this._evaluatingWorker.destroy();
       this._installingWorker.destroy();
       this._waitingWorker.destroy();
       this._activeWorker.destroy();
@@ -219,11 +224,16 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
 
     _createServiceWorkerActors() {
       const {
+        evaluatingWorker,
         installingWorker,
         waitingWorker,
         activeWorker,
       } = this._registration;
 
+      this._evaluatingWorker = new ServiceWorkerActor(
+        this._conn,
+        evaluatingWorker
+      );
       this._installingWorker = new ServiceWorkerActor(
         this._conn,
         installingWorker
@@ -233,6 +243,7 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
 
       // Add the ServiceWorker actors as children of this ServiceWorkerRegistration actor,
       // assigning them valid actorIDs.
+      this.manage(this._evaluatingWorker);
       this.manage(this._installingWorker);
       this.manage(this._waitingWorker);
       this.manage(this._activeWorker);

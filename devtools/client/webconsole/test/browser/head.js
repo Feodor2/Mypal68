@@ -4,12 +4,7 @@
 
 "use strict";
 
-// Import helpers registering the test-actor in remote targets
-/* globals getTestActor, Task, openToolboxForTab, gBrowser */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/test-actor-registry.js",
-  this
-);
+/* globals Task, openToolboxForTab, gBrowser */
 
 // shared-head.js handles imports, constants, and utility functions
 // Load the shared-head file first.
@@ -369,12 +364,30 @@ function loadDocument(url, browser = gBrowser.selectedBrowser) {
   return BrowserTestUtils.browserLoaded(browser);
 }
 
-async function toggleConsoleSetting(hud, node) {
+async function toggleConsoleSetting(hud, selector) {
   const toolbox = hud.toolbox;
   const doc = toolbox ? toolbox.doc : hud.chromeWindow.document;
 
-  const menuItem = doc.querySelector(node);
+  const menuItem = doc.querySelector(selector);
   menuItem.click();
+}
+
+function getConsoleSettingElement(hud, selector) {
+  const toolbox = hud.toolbox;
+  const doc = toolbox ? toolbox.doc : hud.chromeWindow.document;
+
+  return doc.querySelector(selector);
+}
+
+function checkConsoleSettingState(hud, selector, enabled) {
+  const el = getConsoleSettingElement(hud, selector);
+  const checked = el.getAttribute("aria-checked") === "true";
+
+  if (enabled) {
+    ok(checked, "setting is enabled");
+  } else {
+    ok(!checked, "setting is disabled");
+  }
 }
 
 /**
@@ -573,12 +586,26 @@ async function setInputValueForAutocompletion(
 ) {
   const { jsterm } = hud;
 
+  const initialPromises = [];
+  if (jsterm.autocompletePopup.isOpen) {
+    initialPromises.push(jsterm.autocompletePopup.once("popup-closed"));
+  }
   setInputValue(hud, "");
+  await Promise.all(initialPromises);
+
+  // Wait for next tick. Tooltip tests sometimes fail to successively hide and
+  // show tooltips on Win32 debug.
+  await waitForTick();
+
   jsterm.focus();
 
   const updated = jsterm.once("autocomplete-updated");
-  EventUtils.sendString(value);
+  EventUtils.sendString(value, hud.iframeWindow);
   await updated;
+
+  // Wait for next tick. Tooltip tests sometimes fail to successively hide and
+  // show tooltips on Win32 debug.
+  await waitForTick();
 
   if (caretPosition < 0) {
     caretPosition = value.length + caretPosition;
@@ -661,6 +688,7 @@ function checkInputValueAndCursorPosition(
 
   const inputValue = expectedStringWithCursor.replace("|", "");
   const { jsterm } = hud;
+
   is(getInputValue(hud), inputValue, "console input has expected value");
   const lines = expectedStringWithCursor.split("\n");
   const lineWithCursor = lines.findIndex(line => line.includes("|"));
@@ -678,6 +706,19 @@ function checkInputValueAndCursorPosition(
 function getInputCompletionValue(hud) {
   const { jsterm } = hud;
   return jsterm.editor.getAutoCompletionText();
+}
+
+function closeAutocompletePopup(hud) {
+  const { jsterm } = hud;
+
+  if (!jsterm.autocompletePopup.isOpen) {
+    return Promise.resolve();
+  }
+
+  const onPopupClosed = jsterm.autocompletePopup.once("popup-closed");
+  const onAutocompleteUpdated = jsterm.once("autocomplete-updated");
+  EventUtils.synthesizeKey("KEY_Escape");
+  return Promise.all([onPopupClosed, onAutocompleteUpdated]);
 }
 
 /**
@@ -989,11 +1030,8 @@ async function getFilterState(hud) {
   const result = {};
 
   for (const button of buttons) {
-    const classes = new Set(button.classList.values());
-    classes.delete("devtools-togglebutton");
-    const category = classes.values().next().value;
-
-    result[category] = button.getAttribute("aria-pressed") === "true";
+    result[button.dataset.category] =
+      button.getAttribute("aria-pressed") === "true";
   }
 
   return result;
@@ -1033,7 +1071,7 @@ async function setFilterState(hud, settings) {
 
   for (const category in settings) {
     const value = settings[category];
-    const button = filterBar.querySelector(`.${category}`);
+    const button = filterBar.querySelector(`[data-category="${category}"]`);
 
     if (category === "text") {
       const filterInput = getFilterInput(hud);

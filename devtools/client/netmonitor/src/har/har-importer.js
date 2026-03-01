@@ -60,60 +60,73 @@ HarImporter.prototype = {
       );
 
       // Update request
-      this.actions.updateRequest(
-        requestId,
-        {
-          requestHeaders: {
-            headers: entry.request.headers,
-            headersSize: entry.request.headersSize,
-            rawHeaders: "",
-          },
-          responseHeaders: {
-            headers: entry.response.headers,
-            headersSize: entry.response.headersSize,
-            rawHeaders: "",
-          },
-          requestCookies: entry.request.cookies,
-          responseCookies: entry.response.cookies,
-          requestPostData: {
-            postData: entry.request.postData || {},
-            postDataDiscarded: false,
-          },
-          responseContent: {
-            content: entry.response.content,
-            contentDiscarded: false,
-          },
-          eventTimings: {
-            timings: entry.timings,
-          },
-          totalTime: TIMING_KEYS.reduce((sum, type) => {
-            const time = entry.timings[type];
-            return time != -1 ? sum + time : sum;
-          }, 0),
-
-          httpVersion: entry.request.httpVersion,
-          contentSize: entry.response.content.size,
-          mimeType: entry.response.content.mimeType,
-          remoteAddress: entry.serverIPAddress,
-          remotePort: entry.connection,
-          status: entry.response.status,
-          statusText: entry.response.statusText,
-          transferredSize: entry.response.bodySize,
-          securityState: entry._securityState,
-
-          // Avoid auto-fetching data from the backend
-          eventTimingsAvailable: false,
-          requestCookiesAvailable: false,
-          requestHeadersAvailable: false,
-          responseContentAvailable: false,
-          responseStartAvailable: false,
-          responseCookiesAvailable: false,
-          responseHeadersAvailable: false,
-          securityInfoAvailable: false,
-          requestPostDataAvailable: false,
+      const data = {
+        requestHeaders: {
+          headers: entry.request.headers,
+          headersSize: entry.request.headersSize,
+          rawHeaders: "",
         },
-        false
-      );
+        responseHeaders: {
+          headers: entry.response.headers,
+          headersSize: entry.response.headersSize,
+          rawHeaders: "",
+        },
+        requestCookies: entry.request.cookies,
+        responseCookies: entry.response.cookies,
+        requestPostData: {
+          postData: entry.request.postData || {},
+          postDataDiscarded: false,
+        },
+        responseContent: {
+          content: entry.response.content,
+          contentDiscarded: false,
+        },
+        eventTimings: {
+          timings: entry.timings,
+        },
+        totalTime: TIMING_KEYS.reduce((sum, type) => {
+          const time = entry.timings[type];
+          return time != -1 ? sum + time : sum;
+        }, 0),
+
+        httpVersion: entry.request.httpVersion,
+        contentSize: entry.response.content.size,
+        mimeType: entry.response.content.mimeType,
+        remoteAddress: entry.serverIPAddress,
+        remotePort: entry.connection,
+        status: entry.response.status,
+        statusText: entry.response.statusText,
+        transferredSize: entry.response.bodySize,
+        securityState: entry._securityState,
+
+        // Avoid auto-fetching data from the backend
+        eventTimingsAvailable: false,
+        requestCookiesAvailable: false,
+        requestHeadersAvailable: false,
+        responseContentAvailable: false,
+        responseStartAvailable: false,
+        responseCookiesAvailable: false,
+        responseHeadersAvailable: false,
+        securityInfoAvailable: false,
+        requestPostDataAvailable: false,
+      };
+
+      if (entry.cache.afterRequest) {
+        const { afterRequest } = entry.cache;
+        data.responseCache = {
+          cache: {
+            expires: afterRequest.expires,
+            fetchCount: afterRequest.fetchCount,
+            lastFetched: afterRequest.lastFetched,
+            eTag: afterRequest.eTag,
+            _dataSize: afterRequest._dataSize,
+            _lastModified: afterRequest._lastModified,
+            _device: afterRequest._device,
+          },
+        };
+      }
+
+      this.actions.updateRequest(requestId, data, false);
 
       // Page timing markers
       const pageTimings = pages.get(entry.pageref).pageTimings;

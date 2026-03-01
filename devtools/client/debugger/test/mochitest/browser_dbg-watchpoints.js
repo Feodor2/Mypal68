@@ -30,6 +30,7 @@ add_task(async function() {
   await waitForPaused(dbg);
   await waitForState(dbg, () => dbg.selectors.getSelectedInlinePreviews());
   assertPausedAtSourceAndLine(dbg, sourceId, 17);
+  is(await getScopeValue(dbg, 5), "3");
 
   info("Resume and wait to pause at the access to b in the first `obj.b;`");
   resume(dbg);
@@ -98,3 +99,7 @@ add_task(async function() {
   assertPausedAtSourceAndLine(dbg, sourceId, 25);
   await waitForRequestsToSettle(dbg);
 });
+
+async function getScopeValue(dbg, index) {
+  return (await waitForElement(dbg, "scopeValue", index)).innerText;
+}

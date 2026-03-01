@@ -8,7 +8,7 @@
  */
 
 add_task(async function() {
-  let { monitor } = await initNetMonitor(SIMPLE_URL);
+  let { monitor } = await initNetMonitor(SIMPLE_URL, { requestCount: 1 });
   const Actions = monitor.panelWin.windowRequire(
     "devtools/client/netmonitor/src/actions/index"
   );
@@ -99,8 +99,7 @@ add_task(async function() {
       }
 
       const currentValue = getPrefs()[name];
-      const firstValue = prefsToCheck[name].firstValue;
-      const validateValue = prefsToCheck[name].validateValue;
+      const { firstValue, validateValue } = prefsToCheck[name];
 
       is(
         firstValue.toString(),
@@ -127,9 +126,7 @@ add_task(async function() {
       }
 
       const currentValue = getPrefs()[name];
-      const firstValue = prefsToCheck[name].firstValue;
-      const newValue = prefsToCheck[name].newValue;
-      const validateValue = prefsToCheck[name].validateValue;
+      const { firstValue, newValue, validateValue } = prefsToCheck[name];
       const modFrontend = prefsToCheck[name].modifyFrontend;
 
       modFrontend(newValue);
@@ -171,9 +168,7 @@ add_task(async function() {
       }
 
       const currentValue = getPrefs()[name];
-      const firstValue = prefsToCheck[name].firstValue;
-      const newValue = prefsToCheck[name].newValue;
-      const validateValue = prefsToCheck[name].validateValue;
+      const { firstValue, newValue, validateValue } = prefsToCheck[name];
 
       isnot(
         firstValue.toString(),
@@ -205,9 +200,7 @@ add_task(async function() {
       }
 
       const currentValue = getPrefs()[name];
-      const firstValue = prefsToCheck[name].firstValue;
-      const newValue = prefsToCheck[name].newValue;
-      const validateValue = prefsToCheck[name].validateValue;
+      const { firstValue, newValue, validateValue } = prefsToCheck[name];
       const modFrontend = prefsToCheck[name].modifyFrontend;
 
       modFrontend(firstValue);
@@ -238,7 +231,7 @@ add_task(async function() {
   }
 
   async function restartNetMonitorAndSetupEnv() {
-    const newMonitor = await restartNetMonitor(monitor);
+    const newMonitor = await restartNetMonitor(monitor, { requestCount: 1 });
     monitor = newMonitor.monitor;
 
     const networkEvent = waitForNetworkEvents(monitor, 1);

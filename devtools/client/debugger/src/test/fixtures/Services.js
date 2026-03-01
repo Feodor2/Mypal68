@@ -6,4 +6,6 @@
 
 module.exports = {
   appinfo: "",
+  prefs: { getBoolPref: () => {}, addObserver: () => {} },
+  obs: { addObserver: () => {} },
 };

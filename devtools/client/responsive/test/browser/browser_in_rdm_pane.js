@@ -8,29 +8,18 @@
 
 const TEST_URL = "http://example.com/";
 
-add_task(async function() {
-  const tab = await addTab(TEST_URL);
-  const browser = tab.linkedBrowser;
+addRDMTask(
+  TEST_URL,
+  async function({ ui }) {
+    const viewportBrowser = ui.getViewportBrowser();
 
-  const browserUIFlags = [false, true];
-  for (const flag in browserUIFlags) {
-    info("Setting devtools.responsive.browserUI.enabled to " + flag + ".");
-    await SpecialPowers.pushPrefEnv({
-      set: [["devtools.responsive.browserUI.enabled", flag]],
-    });
-
-    // Start RDM on the tab.
-    const { ui } = await openRDM(tab);
-
-    const contentBrowser = flag ? browser : ui.getViewportBrowser();
-
-    const contentURL = await ContentTask.spawn(contentBrowser, {}, function() {
+    const contentURL = await ContentTask.spawn(viewportBrowser, {}, function() {
       return content.document.URL;
     });
     info("content URL is " + contentURL);
 
     const contentInRDMPane = await ContentTask.spawn(
-      contentBrowser,
+      viewportBrowser,
       {},
       function() {
         return content.docShell.browsingContext.inRDMPane;
@@ -41,12 +30,6 @@ add_task(async function() {
       contentInRDMPane,
       "After RDM is opened, document should have inRDMPane set to true."
     );
-
-    // Leave RDM.
-    await closeRDM(tab);
-
-    await SpecialPowers.popPrefEnv();
-  }
-
-  await removeTab(tab);
-});
+  },
+  true
+);

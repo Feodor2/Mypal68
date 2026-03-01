@@ -68,6 +68,7 @@ class MonitorPanel extends Component {
       isEmpty: PropTypes.bool.isRequired,
       networkDetailsOpen: PropTypes.bool.isRequired,
       openNetworkDetails: PropTypes.func.isRequired,
+      toolboxDoc: PropTypes.object.isRequired,
       // Callback for opening split console.
       openSplitConsole: PropTypes.func,
       onNetworkDetailsResized: PropTypes.func.isRequired,
@@ -76,7 +77,7 @@ class MonitorPanel extends Component {
       sourceMapService: PropTypes.object,
       openLink: PropTypes.func,
       updateRequest: PropTypes.func.isRequired,
-      panelOpen: PropTypes.bool.isRequired,
+      networkActionOpen: PropTypes.bool.isRequired,
     };
   }
 
@@ -169,7 +170,7 @@ class MonitorPanel extends Component {
   }
 
   renderActionBar() {
-    const { connector, isEmpty, panelOpen } = this.props;
+    const { connector, isEmpty, networkActionOpen } = this.props;
 
     const initialWidth = Services.prefs.getIntPref(
       "devtools.netmonitor.panes-search-width"
@@ -184,9 +185,9 @@ class MonitorPanel extends Component {
       initialHeight,
       minSize: "50px",
       maxSize: "80%",
-      splitterSize: panelOpen ? 1 : 0,
+      splitterSize: networkActionOpen ? 1 : 0,
       startPanel:
-        panelOpen &&
+        networkActionOpen &&
         NetworkActionBar({
           ref: "actionBar",
           connector,
@@ -205,6 +206,7 @@ class MonitorPanel extends Component {
       openLink,
       openSplitConsole,
       sourceMapService,
+      toolboxDoc,
     } = this.props;
 
     const initialWidth = Services.prefs.getIntPref(
@@ -222,6 +224,7 @@ class MonitorPanel extends Component {
         connector,
         openSplitConsole,
         singleRow: this.state.isSingleRow,
+        toolboxDoc,
       }),
       SplitBox({
         className: "devtools-responsive-container",
@@ -252,7 +255,7 @@ module.exports = connect(
   state => ({
     isEmpty: state.requests.requests.length == 0,
     networkDetailsOpen: state.ui.networkDetailsOpen,
-    panelOpen: state.search.panelOpen,
+    networkActionOpen: state.ui.networkActionOpen,
     request: getSelectedRequest(state),
     selectedRequestVisible: isSelectedRequestVisible(state),
   }),

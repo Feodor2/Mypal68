@@ -2597,18 +2597,17 @@ module.exports = {
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function initialState(overrides) {
+function initialOIState(overrides) {
   return {
     expandedPaths: new Set(),
     loadedProperties: new Map(),
     evaluations: new Map(),
-    actors: new Set(),
     watchpoints: new Map(),
     ...overrides
   };
 }
 
-function reducer(state = initialState(), action = {}) {
+function reducer(state = initialOIState(), action = {}) {
   const {
     type,
     data
@@ -2662,13 +2661,8 @@ function reducer(state = initialState(), action = {}) {
 
   if (type === "NODE_PROPERTIES_LOADED") {
     return cloneState({
-      actors: data.actor ? new Set(state.actors || []).add(data.actor) : state.actors,
       loadedProperties: new Map(state.loadedProperties).set(data.node.path, action.data.properties)
     });
-  }
-
-  if (type === "RELEASED_ACTORS") {
-    return onReleasedActorsAction(state, action);
   }
 
   if (type === "ROOTS_CHANGED") {
@@ -2677,7 +2671,6 @@ function reducer(state = initialState(), action = {}) {
 
   if (type === "GETTER_INVOKED") {
     return cloneState({
-      actors: data.actor ? new Set(state.actors || []).add(data.result.from) : state.actors,
       evaluations: new Map(state.evaluations).set(data.node.path, {
         getterValue: data.result && data.result.value && (data.result.value.throw || data.result.value.return)
       })
@@ -2687,34 +2680,12 @@ function reducer(state = initialState(), action = {}) {
 
 
   if (type === "RESUME" || type == "NAVIGATE") {
-    return initialState({
+    return initialOIState({
       watchpoints: state.watchpoints
     });
   }
 
   return state;
-}
-/**
- * Reducer function for the "RELEASED_ACTORS" action.
- */
-
-
-function onReleasedActorsAction(state, action) {
-  const {
-    data
-  } = action;
-
-  if (state.actors && state.actors.size > 0 && data.actors.length > 0) {
-    return state;
-  }
-
-  for (const actor of data.actors) {
-    state.actors.delete(actor);
-  }
-
-  return { ...state,
-    actors: new Set(state.actors || [])
-  };
 }
 
 function updateObject(obj, property, watchpoint) {
@@ -2739,10 +2710,6 @@ function getExpandedPathKeys(state) {
   return [...getExpandedPaths(state).keys()];
 }
 
-function getActors(state) {
-  return getObjectInspectorState(state).actors;
-}
-
 function getWatchpoints(state) {
   return getObjectInspectorState(state).watchpoints;
 }
@@ -2760,7 +2727,6 @@ function getEvaluations(state) {
 }
 
 const selectors = {
-  getActors,
   getWatchpoints,
   getEvaluations,
   getExpandedPathKeys,
@@ -2771,7 +2737,9 @@ const selectors = {
 Object.defineProperty(module.exports, "__esModule", {
   value: true
 });
-module.exports = selectors;
+module.exports = { ...selectors,
+  initialOIState
+};
 module.exports.default = reducer;
 
 /***/ }),
@@ -2948,16 +2916,29 @@ function FunctionRep(props) {
     });
   }
 
-  return span({
+  const elProps = {
     "data-link-actor-id": grip.actor,
     className: "objectBox objectBox-function",
-    // Set dir="ltr" to prevent function parentheses from
+    // Set dir="ltr" to prevent parentheses from
     // appearing in the wrong direction
     dir: "ltr"
-  }, getTitle(grip, props), getFunctionName(grip, props), "(", ...renderParams(grip), ")", jumpToDefinitionButton);
+  };
+  const parameterNames = (grip.parameterNames || []).filter(param => param);
+
+  if (grip.isClassConstructor) {
+    return span(elProps, getClassTitle(grip, props), getFunctionName(grip, props), ...getClassBody(parameterNames, props), jumpToDefinitionButton);
+  }
+
+  return span(elProps, getFunctionTitle(grip, props), getFunctionName(grip, props), "(", ...getParams(parameterNames), ")", jumpToDefinitionButton);
 }
 
-function getTitle(grip, props) {
+function getClassTitle(grip) {
+  return span({
+    className: "objectTitle"
+  }, "class ");
+}
+
+function getFunctionTitle(grip, props) {
   const {
     mode
   } = props;
@@ -3033,23 +3014,34 @@ function cleanFunctionName(name) {
   return name;
 }
 
-function renderParams(grip) {
+function getClassBody(constructorParams, props) {
   const {
-    parameterNames = []
-  } = grip;
-  return parameterNames.filter(param => param).reduce((res, param, index, arr) => {
-    res.push(span({
+    mode
+  } = props;
+
+  if (mode === MODE.TINY) {
+    return [];
+  }
+
+  return [" {", ...getClassConstructor(constructorParams), "}"];
+}
+
+function getClassConstructor(parameterNames) {
+  if (parameterNames.length === 0) {
+    return [];
+  }
+
+  return [" constructor(", ...getParams(parameterNames), ") "];
+}
+
+function getParams(parameterNames) {
+  return parameterNames.flatMap((param, index, arr) => {
+    return [span({
       className: "param"
-    }, param));
-
-    if (index < arr.length - 1) {
-      res.push(span({
-        className: "delimiter"
-      }, ", "));
-    }
-
-    return res;
-  }, []);
+    }, param), index === arr.length - 1 ? "" : span({
+      className: "delimiter"
+    }, ", ")];
+  });
 } // Registration
 
 
@@ -3250,7 +3242,7 @@ function ErrorRep(props) {
   return span({
     "data-link-actor-id": object.actor,
     className: `objectBox-stackTrace ${customFormat ? "reps-custom-format" : ""}`
-  }, content);
+  }, ...content);
 }
 /**
  * Returns a React element reprensenting the Error stacktrace, i.e.
@@ -7762,7 +7754,7 @@ class ObjectInspector extends Component {
       this.activeItem = nextProps.activeItem;
 
       if (this.props.rootsChanged) {
-        this.props.rootsChanged();
+        this.props.rootsChanged(this.roots);
       }
     }
   }
@@ -7810,7 +7802,7 @@ class ObjectInspector extends Component {
   }
 
   componentWillUnmount() {
-    this.props.closeObjectInspector();
+    this.props.closeObjectInspector(this.props.roots);
   }
 
   getItemChildren(item) {
@@ -8026,12 +8018,12 @@ const {
   getParentFront,
   getParentGripValue,
   getValue,
-  nodeIsBucket
+  nodeIsBucket,
+  getFront
 } = __webpack_require__(114);
 
 const {
   getLoadedProperties,
-  getActors,
   getWatchpoints
 } = __webpack_require__(115);
 
@@ -8181,12 +8173,21 @@ function removeWatchpoint(item) {
   };
 }
 
-function closeObjectInspector() {
+function getActorIDs(roots) {
+  return (roots || []).reduce((ids, root) => {
+    const front = getFront(root);
+    return front ? ids.concat(front.actorID) : ids;
+  }, []);
+}
+
+function closeObjectInspector(roots) {
   return ({
     dispatch,
     getState,
     client
-  }) => releaseActors(getState(), client, dispatch);
+  }) => {
+    releaseActors(roots, client, dispatch);
+  };
 }
 /*
  * This action is dispatched when the `roots` prop, provided by a consumer of
@@ -8198,40 +8199,27 @@ function closeObjectInspector() {
  */
 
 
-function rootsChanged(props) {
+function rootsChanged(roots) {
   return ({
     dispatch,
     client,
     getState
   }) => {
-    releaseActors(getState(), client, dispatch);
+    releaseActors(roots, client, dispatch);
     dispatch({
       type: "ROOTS_CHANGED",
-      data: props
+      data: roots
     });
   };
 }
 
-async function releaseActors(state, client, dispatch) {
-  const actors = getActors(state);
-
-  if (!client || !client.releaseActor || actors.size === 0) {
+async function releaseActors(roots, client, dispatch) {
+  if (!client || !client.releaseActor) {
     return;
   }
 
-  let promises = [];
-
-  for (const actor of actors) {
-    promises.push(client.releaseActor(actor));
-  }
-
-  await Promise.all(promises);
-  dispatch({
-    type: "RELEASED_ACTORS",
-    data: {
-      actors
-    }
-  });
+  const actors = getActorIDs(roots);
+  await Promise.all(actors.map(client.releaseActor));
 }
 
 function invokeGetter(node, receiverId) {

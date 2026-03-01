@@ -71,17 +71,24 @@ const URL_ROOT_SSL = CHROME_URL_ROOT.replace(
 // Force devtools to be initialized so menu items and keyboard shortcuts get installed
 require("devtools/client/framework/devtools-browser");
 
-// Register the test actor in all content processes.
-// test-actor.js contains the definition for the TestActor, the TestSpec and the
-// TestFront, as well as the registration code.
-
 /**
  * Observer code to register the test actor in every DevTools server which
  * starts registering its own actors.
+ *
+ * We require immediately the test actor file, because it will force to load and
+ * register the front and the spec for TestActor. Normally specs and fronts are
+ * in separate files registered in specs/index.js. But here to simplify the
+ * setup everything is in the same file and we force to load it here.
+ *
  * DevToolsServer will emit "devtools-server-initialized" after finishing its
  * initialization. We watch this observable to add our custom actor.
+ *
  * As a single test may create several DevTools servers, we keep the observer
- * alive until the loader is destroyed.
+ * alive until the test ends.
+ *
+ * To avoid leaks, the observer needs to be removed at the end of each test.
+ * The test cleanup will send the async message "remove-devtools-testactor-observer",
+ * we listen to this message to cleanup the observer.
  */
 function testActorBootstrap() {
   const TEST_ACTOR_URL =
@@ -102,22 +109,25 @@ function testActorBootstrap() {
       type: { target: true },
     });
   };
-
   Services.obs.addObserver(
     actorRegistryObserver,
     "devtools-server-initialized"
   );
 
-  const unloadObserver = function(subject) {
-    if (subject.wrappedJSObject == _require("@loader/unload")) {
-      Services.prefs.removeObserver(
-        "devtools-server-initialized",
-        actorRegistryObserver
-      );
-      Services.obs.removeObserver(unloadObserver, "devtools:loader:destroy");
-    }
+  const unloadListener = () => {
+    Services.cpmm.removeMessageListener(
+      "remove-devtools-testactor-observer",
+      unloadListener
+    );
+    Services.obs.removeObserver(
+      actorRegistryObserver,
+      "devtools-server-initialized"
+    );
   };
-  Services.obs.addObserver(unloadObserver, "devtools:loader:destroy");
+  Services.cpmm.addMessageListener(
+    "remove-devtools-testactor-observer",
+    unloadListener
+  );
 }
 
 const testActorBootstrapScript = "data:,(" + testActorBootstrap + ")()";
@@ -128,8 +138,31 @@ Services.ppmm.loadProcessScript(
 );
 
 registerCleanupFunction(() => {
+  Services.ppmm.broadcastAsyncMessage("remove-devtools-testactor-observer");
   Services.ppmm.removeDelayedProcessScript(testActorBootstrapScript);
 });
+
+// Spawn an instance of the test actor for the given toolbox
+async function getTestActor(toolbox) {
+  return toolbox.target.getFront("test");
+}
+
+// Sometimes, we need the test actor before opening or without a toolbox then just
+// create a front for the given `tab`
+async function getTestActorWithoutToolbox(tab) {
+  const { DevToolsServer } = require("devtools/server/devtools-server");
+  const { DevToolsClient } = require("devtools/client/devtools-client");
+
+  // We need to spawn a client instance,
+  // but for that we have to first ensure a server is running
+  DevToolsServer.init();
+  DevToolsServer.registerAllActors();
+  const client = new DevToolsClient(DevToolsServer.connectPipe());
+  await client.connect();
+
+  const targetFront = await client.mainRoot.getTab({ tab });
+  return targetFront.getFront("test");
+}
 
 // All test are asynchronous
 waitForExplicitFinish();

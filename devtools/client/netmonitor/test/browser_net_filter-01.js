@@ -197,7 +197,7 @@ const EXPECTED_REQUESTS = [
   },
   {
     method: "GET",
-    url: WS_CONTENT_TYPE_SJS + "?fmt=ws",
+    url: WS_WS_CONTENT_TYPE_SJS + "?fmt=ws",
     data: {
       fuzzyUrl: true,
       status: 101,
@@ -207,7 +207,7 @@ const EXPECTED_REQUESTS = [
 ];
 
 add_task(async function() {
-  const { monitor } = await initNetMonitor(FILTERING_URL);
+  const { monitor } = await initNetMonitor(FILTERING_URL, { requestCount: 1 });
   const { document, store, windowRequire } = monitor.panelWin;
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
   const {

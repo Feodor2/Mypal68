@@ -332,6 +332,7 @@ class FilterBar extends Component {
   renderSettingsButton() {
     const {
       dispatch,
+      eagerEvaluation,
       groupWarnings,
       hidePersistLogsCheckbox,
       hideShowContentMessagesCheckbox,
@@ -344,6 +345,7 @@ class FilterBar extends Component {
 
     return ConsoleSettings({
       dispatch,
+      eagerEvaluation,
       groupWarnings,
       hidePersistLogsCheckbox,
       hideShowContentMessagesCheckbox,

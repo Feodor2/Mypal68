@@ -141,6 +141,7 @@
   /* Icon colors */
   --theme-icon-color: rgba(12, 12, 13, 0.8);
   --theme-icon-dimmed-color: rgba(135, 135, 137, 0.9);
+  --theme-icon-extreme-dimmed-color: var(--grey-30);
   --theme-icon-checked-color: var(--blue-60);
   --theme-icon-error-color: var(--red-60);
   --theme-icon-warning-color: var(--yellow-65);
@@ -204,7 +205,8 @@
   --theme-warning-color: var(--yellow-80);
 
   /* Flashing colors used to highlight updates */
-  --theme-contrast-background: #fff697;
+  --theme-contrast-background: #fff699; /* = Yellow 50-a40 on white */
+  --theme-contrast-background-alpha: rgba(255, 233, 0, 0.4); /* Yellow 50-a40 */
   --theme-contrast-color: black;
   --theme-contrast-border: var(--yellow-60);
 }
@@ -244,7 +246,7 @@
 
   /* Selection */
   --theme-selection-background: #204e8a;
-  --theme-selection-background-hover: #303844;
+  --theme-selection-background-hover: #353b48;
   --theme-selection-focus-background: var(--grey-60);
   --theme-selection-focus-color: var(--grey-30);
   --theme-selection-color: #ffffff;
@@ -257,6 +259,7 @@
   /* Icon colors */
   --theme-icon-color: rgba(249, 249, 250, 0.7);
   --theme-icon-dimmed-color: rgba(147, 147, 149, 0.9);
+  --theme-icon-extreme-dimmed-color: var(--grey-50);
   --theme-icon-checked-color: var(--blue-30);
   --theme-icon-error-color: var(--red-40);
   --theme-icon-warning-color: var(--yellow-60);
@@ -320,7 +323,8 @@
   --theme-warning-color: hsl(43, 94%, 81%);
 
   /* Flashing colors used to highlight updates */
-  --theme-contrast-background: #605913; /* slightly desaturated Yellow 80 */
+  --theme-contrast-background: #4f4b1f; /* = Yellow 50-a20 on body background */
+  --theme-contrast-background-alpha: rgba(255, 233, 0, 0.15); /* Yellow 50-a15 */
   --theme-contrast-color: white;
   --theme-contrast-border: var(--yellow-65);
 }

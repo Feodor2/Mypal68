@@ -83,6 +83,64 @@ loader.lazyRequireGetter(
   true
 );
 
+const PROMISE_REACTIONS = new WeakMap();
+function cacheReactionsForFrame(frame) {
+  if (frame.asyncPromise) {
+    const reactions = frame.asyncPromise.getPromiseReactions();
+    const existingReactions = PROMISE_REACTIONS.get(frame.asyncPromise);
+    if (
+      reactions.length > 0 &&
+      (!existingReactions || reactions.length > existingReactions.length)
+    ) {
+      PROMISE_REACTIONS.set(frame.asyncPromise, reactions);
+    }
+  }
+}
+
+function createStepForReactionTracking(onStep) {
+  return function() {
+    cacheReactionsForFrame(this);
+    return onStep ? onStep.apply(this, arguments) : undefined;
+  };
+}
+
+const getAsyncParentFrame = frame => {
+  if (!frame.asyncPromise) {
+    return null;
+  }
+
+  // We support returning Frame actors for frames that are suspended
+  // at an 'await', and here we want to walk upward to look for the first
+  // frame that will be resumed when the current frame's promise resolves.
+  let reactions =
+    PROMISE_REACTIONS.get(frame.asyncPromise) ||
+    frame.asyncPromise.getPromiseReactions();
+
+  while (true) {
+    // We loop here because we may have code like:
+    //
+    //   async function inner(){ debugger; }
+    //
+    //   async function outer() {
+    //     await Promise.resolve().then(() => inner());
+    //   }
+    //
+    // where we can see that when `inner` resolves, we will resume from
+    // `outer`, even though there is a layer of promises between, and
+    // that layer could be any number of promises deep.
+    if (!(reactions[0] instanceof Debugger.Object)) {
+      break;
+    }
+
+    reactions = reactions[0].getPromiseReactions();
+  }
+
+  if (reactions[0] instanceof Debugger.Frame) {
+    return reactions[0];
+  }
+  return null;
+};
+
 /**
  * JSD2 actors.
  */
@@ -241,7 +299,10 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   },
 
   get skipBreakpoints() {
-    return this._options.skipBreakpoints;
+    return (
+      this._options.skipBreakpoints ||
+      (this.insideClientEvaluation && this.insideClientEvaluation.eager)
+    );
   },
 
   /**
@@ -779,18 +840,11 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
         return undefined;
       }
 
-      const {
-        sourceActor,
-        line,
-        column,
-      } = this.sources.getFrameLocation(frame);
+      const { sourceActor, line, column } = this.sources.getFrameLocation(
+        frame
+      );
 
       packet.why = reason;
-
-      if (this.suspendedFrame) {
-        this.suspendedFrame.waitingOnStep = false;
-        this.suspendedFrame = undefined;
-      }
 
       if (!sourceActor) {
         // If the frame location is in a source that not pass the 'isHiddenSource'
@@ -846,13 +900,12 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     };
   },
 
-  _makeOnPop: function({ pauseAndRespond, steppingType, rewinding }) {
+  _makeOnPop: function({ pauseAndRespond, steppingType }) {
     const thread = this;
     return function(completion) {
       // onPop is called when we temporarily leave an async/generator
-      if (completion.await || completion.yield) {
+      if (steppingType != "finish" && (completion.await || completion.yield)) {
         thread.suspendedFrame = this;
-        this.waitingOnStep = true;
         thread.dbg.onEnterFrame = undefined;
         return undefined;
       }
@@ -861,27 +914,17 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       // subsequent step events on its caller.
       this.reportedPop = true;
 
+      // Cache the frame so that the onPop and onStep hooks are cleared
+      // on the next pause.
+      thread.suspendedFrame = this;
+
       if (steppingType != "finish" && !thread.sources.isFrameBlackBoxed(this)) {
         return pauseAndRespond(this, packet =>
           thread.createCompletionGrip(packet, completion)
         );
       }
 
-      const parentFrame = thread._getNextStepFrame(this);
-      if (parentFrame && parentFrame.script) {
-        const { onStep, onPop } = thread._makeSteppingHooks({
-          steppingType: "next",
-          completion,
-        });
-        parentFrame.onStep = onStep;
-
-        // We need the onPop alongside the onStep because it is possible that
-        // the parent frame won't have any steppable offsets, and we want to
-        // make sure that we always pause in the parent _somewhere_.
-        parentFrame.onPop = onPop;
-        return undefined;
-      }
-
+      thread._attachSteppingHooks(this, "next", completion);
       return undefined;
     };
   },
@@ -915,16 +958,6 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   }) {
     const thread = this;
     return function() {
-      // onStep is called with 'this' set to the current frame.
-      // NOTE: we need to clear the stepping hooks when we are
-      // no longer waiting for an async step to occur.
-      if (this.hasOwnProperty("waitingOnStep") && !this.waitingOnStep) {
-        delete this.waitingOnStep;
-        this.onStep = undefined;
-        this.onPop = undefined;
-        return undefined;
-      }
-
       if (thread._validFrameStepOffset(this, startFrame, this.offset)) {
         return pauseAndRespond(this, packet =>
           thread.createCompletionGrip(packet, completion)
@@ -984,7 +1017,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Define the JS hook functions for stepping.
    */
-  _makeSteppingHooks: function({ steppingType, rewinding, completion }) {
+  _makeSteppingHooks: function({ steppingType, startFrame, completion }) {
     // Bind these methods and state because some of the hooks are called
     // with 'this' set to the current frame. Rather than repeating the
     // binding in each _makeOnX method, just do it once here and pass it
@@ -992,7 +1025,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     const steppingHookState = {
       pauseAndRespond: (frame, onPacket = k => k) =>
         this._pauseAndRespond(frame, { type: "resumeLimit" }, onPacket),
-      startFrame: this.youngestFrame,
+      startFrame: startFrame || this.youngestFrame,
       steppingType,
       completion,
     };
@@ -1008,54 +1041,69 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * Handle attaching the various stepping hooks we need to attach when we
    * receive a resume request with a resumeLimit property.
    *
-   * @param Object { rewind, resumeLimit }
+   * @param Object { resumeLimit }
    *        The values received over the RDP.
    * @returns A promise that resolves to true once the hooks are attached, or is
    *          rejected with an error packet.
    */
-  _handleResumeLimit: async function({rewind, resumeLimit}) {
-    let steppingType = resumeLimit.type;
-    if (!["break", "step", "next", "finish", "warp"].includes(steppingType)) {
+  _handleResumeLimit: async function({ resumeLimit, frameActorID }) {
+    const steppingType = resumeLimit.type;
+    if (!["break", "step", "next", "finish"].includes(steppingType)) {
       return Promise.reject({
         error: "badParameterType",
         message: "Unknown resumeLimit type",
       });
     }
 
-    if (steppingType == "warp") {
-      // Time warp resume limits are handled by the caller.
-      return true;
+    let frame = this.youngestFrame;
+
+    if (frameActorID) {
+      frame = this._framesPool.get(frameActorID).frame;
+      if (!frame) {
+        throw new Error("Frame should exist in the frames pool.");
+      }
     }
 
+    return this._attachSteppingHooks(frame, steppingType, undefined);
+  },
+
+  _attachSteppingHooks: function(frame, steppingType, completion) {
     // If we are stepping out of the onPop handler, we want to use "next" mode
     // so that the parent frame's handlers behave consistently.
-    if (steppingType === "finish" && this.youngestFrame.reportedPop) {
+    if (steppingType === "finish" && frame.reportedPop) {
       steppingType = "next";
+    }
+
+    // If there are no more frames on the stack, use "step" mode so that we will
+    // pause on the next script to execute.
+    const stepFrame = this._getNextStepFrame(frame);
+    if (!stepFrame) {
+      steppingType = "step";
     }
 
     const { onEnterFrame, onPop, onStep } = this._makeSteppingHooks({
       steppingType,
+      completion,
+      startFrame: frame,
     });
 
-    // Make sure there is still a frame on the stack if we are to continue
-    // stepping.
-    const stepFrame = this._getNextStepFrame(this.youngestFrame);
+    if (steppingType === "step") {
+      this.dbg.onEnterFrame = onEnterFrame;
+    }
+
     if (stepFrame) {
       switch (steppingType) {
         case "step":
-          this.dbg.onEnterFrame = onEnterFrame;
-        // Fall through.
         case "break":
         case "next":
           if (stepFrame.script) {
-            stepFrame.waitingOnStep = true;
             if (!this.sources.isFrameBlackBoxed(stepFrame)) {
               stepFrame.onStep = onStep;
             }
           }
-            stepFrame.onPop = onPop;
         // Fall through.
         case "finish":
+          stepFrame.onStep = createStepForReactionTracking(stepFrame.onStep);
           stepFrame.onPop = onPop;
           break;
       }
@@ -1068,6 +1116,12 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * Clear the onStep and onPop hooks for all frames on the stack.
    */
   _clearSteppingHooks: function() {
+    if (this.suspendedFrame) {
+      this.suspendedFrame.onStep = undefined;
+      this.suspendedFrame.onPop = undefined;
+      this.suspendedFrame = undefined;
+    }
+
     let frame = this.youngestFrame;
     if (frame?.onStack) {
       while (frame) {
@@ -1081,7 +1135,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Handle a protocol request to resume execution of the debuggee.
    */
-  onResume: async function({resumeLimit, rewind}) {
+  onResume: async function({ resumeLimit, frameActorID }) {
     if (this._state !== "paused") {
       return {
         error: "wrongState",
@@ -1109,7 +1163,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
 
     try {
       if (resumeLimit) {
-        await this._handleResumeLimit({ resumeLimit });
+        await this._handleResumeLimit({ resumeLimit, frameActorID });
       } else {
         this._clearSteppingHooks();
       }
@@ -1117,14 +1171,14 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       this.doResume({ resumeLimit });
       return {};
     } catch (error) {
-        return error instanceof Error
-          ? {
-              error: "unknownError",
-              message: DevToolsUtils.safeErrorString(error),
-            }
-          : // It is a known error, and the promise was rejected with an error
-            // packet.
-            error;
+      return error instanceof Error
+        ? {
+            error: "unknownError",
+            message: DevToolsUtils.safeErrorString(error),
+          }
+        : // It is a known error, and the promise was rejected with an error
+          // packet.
+          error;
     }
   },
 
@@ -1204,7 +1258,9 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    */
   _getNextStepFrame: function(frame) {
     const endOfFrame = frame.reportedPop;
-    const stepFrame = endOfFrame ? frame.older : frame;
+    const stepFrame = endOfFrame
+      ? frame.older || getAsyncParentFrame(frame)
+      : frame;
     if (!stepFrame || !stepFrame.script) {
       return null;
     }
@@ -1247,31 +1303,9 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
         this._options.shouldIncludeAsyncLiveFrames &&
         currentFrame.asyncPromise
       ) {
-        // We support returning Frame actors for frames that are suspended
-        // at an 'await', and here we want to walk upward to look for the first
-        // frame that will be resumed when the current frame's promise resolves.
-        let reactions = currentFrame.asyncPromise.getPromiseReactions();
-        while (true) {
-          // We loop here because we may have code like:
-          //
-          //   async function inner(){ debugger; }
-          //
-          //   async function outer() {
-          //     await Promise.resolve().then(() => inner());
-          //   }
-          //
-          // where we can see that when `inner` resolves, we will resume from
-          // `outer`, even though there is a layer of promises between, and
-          // that layer could be any number of promises deep.
-          if (!(reactions[0] instanceof Debugger.Object)) {
-            break;
-          }
-
-          reactions = reactions[0].getPromiseReactions();
-        }
-
-        if (reactions[0] instanceof Debugger.Frame) {
-          frame = reactions[0];
+        const asyncFrame = getAsyncParentFrame(currentFrame);
+        if (asyncFrame) {
+          frame = asyncFrame;
         }
       }
     };

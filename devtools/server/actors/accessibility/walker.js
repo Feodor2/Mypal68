@@ -187,13 +187,16 @@ function isStale(accessible) {
  *
  * @param {Object} acc
  *        AccessibileActor to be used as the root for the audit.
+ * @param {Object} options
+ *        Options for running audit, may include:
+ *        - types: Array of audit types to be performed during audit.
  * @param {Map} report
  *        An accumulator map to be used to store audit information.
  * @param {Object} progress
  *        An audit project object that is used to track the progress of the
  *        audit and send progress "audit-event" events to the client.
  */
-function getAudit(acc, report, progress) {
+function getAudit(acc, options, report, progress) {
   if (acc.isDefunct) {
     return;
   }
@@ -201,14 +204,14 @@ function getAudit(acc, report, progress) {
   // Audit returns a promise, save the actual value in the report.
   report.set(
     acc,
-    acc.audit().then(result => {
+    acc.audit(options).then(result => {
       report.set(acc, result);
       progress.increment();
     })
   );
 
   for (const child of acc.children()) {
-    getAudit(child, report, progress);
+    getAudit(child, options, report, progress);
   }
 }
 
@@ -521,15 +524,19 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    * Run accessibility audit and return relevant ancestries for AccessibleActors
    * that have non-empty audit checks.
    *
+   * @param  {Object} options
+   *         Options for running audit, may include:
+   *         - types: Array of audit types to be performed during audit.
+   *
    * @return {Promise}
    *         A promise that resolves when the audit is complete and all relevant
    *         ancestries are calculated.
    */
-  async audit() {
+  async audit(options) {
     const doc = await this.getDocument();
     const report = new Map();
     this._auditProgress = new AuditProgress(this);
-    getAudit(doc, report, this._auditProgress);
+    getAudit(doc, options, report, this._auditProgress);
     this._auditProgress.setTotal(report.size);
     await Promise.all(report.values());
 
@@ -556,14 +563,18 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    * Start accessibility audit. The result of this function will not be an audit
    * report. Instead, an "audit-event" event will be fired when the audit is
    * completed or fails.
+   *
+   * @param {Object} options
+   *        Options for running audit, may include:
+   *        - types: Array of audit types to be performed during audit.
    */
-  startAudit() {
+  startAudit(options) {
     // Audit is already running, wait for the "audit-event" event.
     if (this._auditing) {
       return;
     }
 
-    this._auditing = this.audit()
+    this._auditing = this.audit(options)
       // We do not want to block on audit request, instead fire "audit-event"
       // event when internal audit is finished or failed.
       .then(ancestries =>

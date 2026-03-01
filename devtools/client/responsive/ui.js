@@ -14,7 +14,7 @@ const {
 loader.lazyRequireGetter(
   this,
   "DevToolsClient",
-  "devtools/shared/client/devtools-client",
+  "devtools/client/devtools-client",
   true
 );
 loader.lazyRequireGetter(
@@ -187,13 +187,15 @@ class ResponsiveUI {
     const fullZoom = rdmContent.fullZoom;
     const textZoom = rdmContent.textZoom;
 
-    if (!this.isBrowserUIEnabled) {
+    // Listen to FullZoomChange events coming from the browser window,
+    // so that we can zoom the size of the viewport by the same amount.
+    if (this.isBrowserUIEnabled) {
+      this.browserWindow.addEventListener("FullZoomChange", this);
+    } else {
       this.docShell.contentViewer.fullZoom = 1;
       this.docShell.contentViewer.textZoom = 1;
 
-      // Listen to FullZoomChange events coming from the linkedBrowser,
-      // so that we can zoom the size of the viewport by the same amount.
-      rdmContent.addEventListener("FullZoomChange", this);
+      this.tab.linkedBrowser.addEventListener("FullZoomChange", this);
     }
 
     this.tab.addEventListener("BeforeTabRemotenessChange", this);
@@ -258,8 +260,8 @@ class ResponsiveUI {
 
     this.browserContainerEl.classList.add("responsive-mode");
 
-    // Prepend the RDM iframe inside of the current tab's browser container.
-    this.browserContainerEl.prepend(rdmFrame);
+    // Prepend the RDM iframe inside of the current tab's browser stack.
+    this.browserStackEl.prepend(rdmFrame);
 
     // Wait for the frame script to be loaded.
     message.wait(rdmFrame.contentWindow, "script-init").then(async () => {
@@ -326,6 +328,7 @@ class ResponsiveUI {
       this.tab.linkedBrowser.removeEventListener("FullZoomChange", this);
       this.toolWindow.removeEventListener("message", this);
     } else {
+      this.browserWindow.removeEventListener("FullZoomChange", this);
       this.rdmFrame.contentWindow.removeEventListener("message", this);
       this.rdmFrame.remove();
 
@@ -422,8 +425,18 @@ class ResponsiveUI {
         this.handleMessage(event);
         break;
       case "FullZoomChange":
-        const zoom = tab.linkedBrowser.fullZoom;
-        toolWindow.setViewportZoom(zoom);
+        if (this.isBrowserUIEnabled) {
+          // Get the current device size and update to that size, which
+          // will pick up changes to the zoom.
+          const {
+            width,
+            height,
+          } = this.rdmFrame.contentWindow.getViewportSize();
+          this.updateViewportSize(width, height);
+        } else {
+          const zoom = tab.linkedBrowser.fullZoom;
+          toolWindow.setViewportZoom(zoom);
+        }
         break;
       case "BeforeTabRemotenessChange":
       case "TabClose":
@@ -473,6 +486,12 @@ class ResponsiveUI {
         break;
       case "screenshot":
         this.onScreenshot();
+        break;
+      case "toggle-left-alignment":
+        this.onToggleLeftAlignment(event);
+        break;
+      case "update-device-modal":
+        this.onUpdateDeviceModal(event);
     }
   }
 
@@ -591,10 +610,31 @@ class ResponsiveUI {
     }
   }
 
+  onToggleLeftAlignment(event) {
+    this.updateUIAlignment(event.data.leftAlignmentEnabled);
+  }
+
+  onUpdateDeviceModal(event) {
+    this.browserStackEl.classList.toggle(
+      "device-modal-opened",
+      event.data.isOpen
+    );
+  }
+
   /**
    * Restores the previous state of RDM.
    */
   async restoreState() {
+    // Restore UI alignment.
+    if (this.isBrowserUIEnabled) {
+      const leftAlignmentEnabled = Services.prefs.getBoolPref(
+        "devtools.responsive.leftAlignViewport.enabled",
+        false
+      );
+
+      this.updateUIAlignment(leftAlignmentEnabled);
+    }
+
     const deviceState = await asyncStorage.getItem(
       "devtools.responsive.deviceState"
     );
@@ -772,6 +812,19 @@ class ResponsiveUI {
   }
 
   /**
+   * Sets whether or not the RDM UI should be left-aligned.
+   *
+   * @param {Boolean} leftAlignmentEnabled
+   *        Whether or not the UI is left-aligned.
+   */
+  updateUIAlignment(leftAlignmentEnabled) {
+    this.browserContainerEl.classList.toggle(
+      "left-aligned",
+      leftAlignmentEnabled
+    );
+  }
+
+  /**
    * Sets the browser element to be the given width and height.
    *
    * @param {Number} width
@@ -784,17 +837,26 @@ class ResponsiveUI {
       return;
     }
 
+    const zoom = this.tab.linkedBrowser.fullZoom;
+
+    const scaledWidth = width * zoom;
+    const scaledHeight = height * zoom;
+
     // Setting this with a variable on the stack instead of directly as width/height
     // on the <browser> because we'll need to use this for the alert dialog as well.
-    this.browserStackEl.style.setProperty("--rdm-width", `${width}px`);
-    this.browserStackEl.style.setProperty("--rdm-height", `${height}px`);
+    this.browserStackEl.style.setProperty("--rdm-width", `${scaledWidth}px`);
+    this.browserStackEl.style.setProperty("--rdm-height", `${scaledHeight}px`);
   }
 
   /**
    * Helper for tests. Assumes a single viewport for now.
    */
   getViewportSize() {
-    return this.toolWindow.getViewportSize();
+    if (!this.isBrowserUIEnabled) {
+      return this.toolWindow.getViewportSize();
+    }
+
+    return this.rdmFrame.contentWindow.getViewportSize();
   }
 
   /**
@@ -802,14 +864,24 @@ class ResponsiveUI {
    */
   async setViewportSize(size) {
     await this.initialized;
-    this.toolWindow.setViewportSize(size);
+    if (!this.isBrowserUIEnabled) {
+      this.toolWindow.setViewportSize(size);
+      return;
+    }
+
+    const { width, height } = size;
+    this.updateViewportSize(width, height);
   }
 
   /**
    * Helper for tests/reloading the viewport. Assumes a single viewport for now.
    */
   getViewportBrowser() {
-    return this.toolWindow.getViewportBrowser();
+    if (!this.isBrowserUIEnabled) {
+      return this.toolWindow.getViewportBrowser();
+    }
+
+    return this.tab.linkedBrowser;
   }
 
   /**

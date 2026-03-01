@@ -157,11 +157,12 @@ const AVAILABLE_BREAKPOINTS = [
   {
     name: "Keyboard",
     items: [
+      generalEvent("keyboard", "beforeinput"),
+      generalEvent("keyboard", "input"),
       generalEvent("keyboard", "keydown"),
       generalEvent("keyboard", "keyup"),
       generalEvent("keyboard", "keypress"),
-      generalEvent("keyboard", "input"),
-    ],
+    ].filter(Boolean),
   },
   {
     name: "Load",

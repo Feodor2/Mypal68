@@ -4,7 +4,31 @@
 "use strict";
 
 const {
-  accessibility: { AUDIT_TYPE },
+  accessibility: {
+    AUDIT_TYPE,
+    ISSUE_TYPE: {
+      [AUDIT_TYPE.TEXT_LABEL]: {
+        AREA_NO_NAME_FROM_ALT,
+        DIALOG_NO_NAME,
+        DOCUMENT_NO_TITLE,
+        EMBED_NO_NAME,
+        FIGURE_NO_NAME,
+        FORM_FIELDSET_NO_NAME,
+        FORM_FIELDSET_NO_NAME_FROM_LEGEND,
+        FORM_NO_NAME,
+        FORM_NO_VISIBLE_NAME,
+        FORM_OPTGROUP_NO_NAME_FROM_LABEL,
+        FRAME_NO_NAME,
+        HEADING_NO_CONTENT,
+        HEADING_NO_NAME,
+        IFRAME_NO_NAME_FROM_TITLE,
+        IMAGE_NO_NAME,
+        INTERACTIVE_NO_NAME,
+        MATHML_GLYPH_NO_NAME,
+        TOOLBAR_NO_NAME,
+      },
+    },
+  },
 } = require("devtools/shared/constants");
 
 // Used in accessible component for properties tree rendering.
@@ -33,6 +57,7 @@ exports.ENABLE = "ENABLE";
 exports.DISABLE = "DISABLE";
 exports.UPDATE_CAN_BE_DISABLED = "UPDATE_CAN_BE_DISABLED";
 exports.UPDATE_CAN_BE_ENABLED = "UPDATE_CAN_BE_ENABLED";
+exports.UPDATE_PREF = "UPDATE_PREF";
 exports.FILTER_TOGGLE = "FILTER_TOGGLE";
 exports.AUDIT = "AUDIT";
 exports.AUDITING = "AUDITING";
@@ -40,7 +65,10 @@ exports.AUDIT_PROGRESS = "AUDIT_PROGRESS";
 
 // List of filters for accessibility checks.
 exports.FILTERS = {
+  NONE: "NONE",
+  ALL: "ALL",
   [AUDIT_TYPE.CONTRAST]: "CONTRAST",
+  [AUDIT_TYPE.TEXT_LABEL]: "TEXT_LABEL",
 };
 
 // Ordered accessible properties to be displayed by the accessible component.
@@ -80,3 +108,51 @@ exports.A11Y_LEARN_MORE_LINK =
 exports.A11Y_CONTRAST_LEARN_MORE_LINK =
   "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Perceivable/" +
   "Color_contrast?utm_source=devtools&utm_medium=a11y-panel-checks-color-contrast";
+
+const A11Y_TEXT_LABEL_LINK_BASE =
+  "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Text_labels_and_names" +
+  "?utm_source=devtools&utm_medium=a11y-panel-checks-text-label";
+
+const A11Y_TEXT_LABEL_LINK_IDS = {
+  [AREA_NO_NAME_FROM_ALT]:
+    "Use_alt_attribute_to_label_<area>_elements_that_have_the_href_attribute",
+  [DIALOG_NO_NAME]: "Dialogs_should_be_labeled",
+  [DOCUMENT_NO_TITLE]: "Documents_must_have_a_<title>",
+  [EMBED_NO_NAME]: "Embedded_content_must_be_labeled",
+  [FIGURE_NO_NAME]: "Figures_with_optional_captions_should_be_labeled",
+  [FORM_FIELDSET_NO_NAME]: "<fieldset>_elements_must_be_labeled",
+  [FORM_FIELDSET_NO_NAME_FROM_LEGEND]:
+    "Use_<legend>_element_to_label_<fieldset>_elements",
+  [FORM_NO_NAME]: "Form_elements_must_be_labeled",
+  [FORM_NO_VISIBLE_NAME]: "Form_elements_should_have_a_visible_text_label",
+  [FORM_OPTGROUP_NO_NAME_FROM_LABEL]:
+    "Use_label_attribute_to_label_<optgroup>_elements",
+  [FRAME_NO_NAME]: "<frame>_elements_must_be_labeled",
+  [HEADING_NO_NAME]: "Headings_must_be_labeled",
+  [HEADING_NO_CONTENT]: "Headings_should_have_visible_text_content",
+  [IFRAME_NO_NAME_FROM_TITLE]:
+    "Use_title_attribute_to_describe_<iframe>_content",
+  [IMAGE_NO_NAME]: "Content_with_images_must_be_labeled",
+  [INTERACTIVE_NO_NAME]: "Interactive_elements_must_be_labeled",
+  [MATHML_GLYPH_NO_NAME]: "Use_alt_attribute_to_label_<mglyph>_elements",
+  [TOOLBAR_NO_NAME]:
+    "Toolbars_must_be_labeled_when_there_is_more_than_one_toolbar",
+};
+
+const A11Y_TEXT_LABEL_LINKS = {};
+for (const key in A11Y_TEXT_LABEL_LINK_IDS) {
+  A11Y_TEXT_LABEL_LINKS[key] = `${A11Y_TEXT_LABEL_LINK_BASE}#${
+    A11Y_TEXT_LABEL_LINK_IDS[key]
+  }`;
+}
+exports.A11Y_TEXT_LABEL_LINKS = A11Y_TEXT_LABEL_LINKS;
+
+// Lists of preference names and keys.
+const PREFS = {
+  SCROLL_INTO_VIEW: "SCROLL_INTO_VIEW",
+};
+
+exports.PREFS = PREFS;
+exports.PREF_KEYS = {
+  [PREFS.SCROLL_INTO_VIEW]: "devtools.accessibility.scroll-into-view",
+};

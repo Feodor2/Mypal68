@@ -42,7 +42,7 @@ const { DevToolsServer } = require("devtools/server/devtools-server");
 const { DevToolsServer: WorkerDevToolsServer } = worker.require(
   "devtools/server/devtools-server"
 );
-const { DevToolsClient } = require("devtools/shared/client/devtools-client");
+const { DevToolsClient } = require("devtools/client/devtools-client");
 const { ObjectFront } = require("devtools/client/fronts/object");
 const { LongStringFront } = require("devtools/client/fronts/string");
 const { TargetFactory } = require("devtools/client/framework/target");
@@ -208,6 +208,15 @@ function attachThread(targetFront, options = {}) {
 function resume(threadFront) {
   dump("Resuming thread.\n");
   return threadFront.resume();
+}
+
+async function addWatchpoint(threadFront, frame, variable, property, type) {
+  const path = `${variable}.${property}`;
+  info(`Add an ${path} ${type} watchpoint`);
+  const environment = await frame.getEnvironment();
+  const obj = environment.bindings.variables[variable];
+  const objFront = threadFront.pauseGrip(obj.value);
+  return objFront.addWatchpoint(property, path, type);
 }
 
 function getSources(threadFront) {
@@ -626,9 +635,10 @@ function stepIn(threadFront) {
  * @param ThreadFront threadFront
  * @returns Promise
  */
-function stepOver(threadFront) {
+async function stepOver(threadFront, frameActor) {
   dumpn("Stepping over.");
-  return threadFront.stepOver().then(() => waitForPause(threadFront));
+  await threadFront.stepOver(frameActor);
+  return waitForPause(threadFront);
 }
 
 /**
@@ -639,9 +649,10 @@ function stepOver(threadFront) {
  * @param ThreadFront threadFront
  * @returns Promise
  */
-function stepOut(threadFront) {
+async function stepOut(threadFront, frameActor) {
   dumpn("Stepping out.");
-  return threadFront.stepOut().then(() => waitForPause(threadFront));
+  await threadFront.stepOut(frameActor);
+  return waitForPause(threadFront);
 }
 
 /**

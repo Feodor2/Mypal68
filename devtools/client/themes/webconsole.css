@@ -56,17 +56,6 @@
 
 /* General output styles */
 
-a {
-  -moz-user-focus: normal;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-/* Workaround for Bug 575675 - FindChildWithRules aRelevantLinkVisited
- * assertion when loading HTML page with links in XUL iframe */
-*:visited {
-}
-
 * {
   box-sizing: border-box;
 }
@@ -128,20 +117,6 @@ a {
  * it when scrolling console content), so remove the last item's border. */
 .webconsole-app:not(.jsterm-editor) .message:last-child {
   border-bottom-width: 0;
-}
-
-/*
- * Show a blue border on the left side of rows on hover. Avoid using border
- * properties because the top/bottom borders would not span the full width.
- */
-.message:hover::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  bottom: 0;
-  background: var(--theme-highlight-blue);
-  width: 3px;
 }
 
 /*
@@ -237,10 +212,6 @@ a {
   fill: currentColor;
 }
 
-.eager-evaluation-result > .icon {
-  margin: 3px 8px 0 10px;
-}
-
 /* Icon on unindented row should be centered within the left gutter */
 .message > .indent[data-indent="0"] + .icon {
   width: 24px;
@@ -253,8 +224,7 @@ a {
   background-image: url(chrome://devtools/skin/images/webconsole/input.svg);
 }
 
-.message.result > .icon,
-.eager-evaluation-result > .icon {
+.message.result > .icon {
   color: var(--theme-icon-dimmed-color);
   background-image: url(chrome://devtools/skin/images/webconsole/return.svg);
 }
@@ -280,8 +250,13 @@ a {
 }
 
 .message > .icon.logpoint {
-  background-image: url(resource://devtools/client/debugger/images/webconsole-logpoint.svg);
+  background-image: url(chrome://devtools/content/debugger/images/webconsole-logpoint.svg);
   color: var(--theme-graphs-purple);
+}
+
+.message.network-message-blocked > .icon {
+  color: var(--theme-icon-error-color);
+  background-image: url(chrome://devtools/skin/images/blocked.svg);
 }
 
 .message > .message-body-wrapper {
@@ -469,26 +444,8 @@ html #webconsole-notificationbox {
   fill: var(--theme-icon-checked-color);
 }
 
-.eager-evaluation-result {
-  display: flex;
-  background-color: var(--console-input-background);
-  line-height: 20px;
-  overflow-y: hidden;
-  flex-grow: 1;
-  flex-shrink: 0;
-  padding-bottom: 5px;
-  min-height: 25px;
-}
-
-/* Style the reps result */
-.eager-evaluation-result :last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: pre !important;
-}
-
 .webconsole-app .cm-auto-complete-shadow-text::after {
-  content: attr(title);
+  content: attr(data-completion);
   color: var(--theme-comment);
   /* This is important for the completion text not to move while the user is typing */
   /* See Bugs 1491776 & 1558248 */
@@ -510,7 +467,7 @@ html #webconsole-notificationbox {
   padding-inline-start: 16px;
 }
 
-.message.open .stacktrace {
+.message.open .stacktrace:not(:empty) {
   display: block;
 }
 
@@ -530,14 +487,6 @@ html #webconsole-notificationbox {
   display: flex;
   height: 1.25em;
   line-height: 1.25em;
-}
-
-/* Do not mirror the twisty because container force to ltr
- * (theme-twisty still used in network request details)
- */
-.message .theme-twisty:dir(rtl),
-.message .theme-twisty:-moz-locale-dir(rtl) {
-  transform: none;
 }
 
 .cm-s-mozilla a[class] {
@@ -736,6 +685,12 @@ a.learn-more-link.webconsole-learn-more-link {
 
 /* Network Messages */
 
+.webconsole-app .message.network.network-message-blocked .method,
+.webconsole-app .message.network.network-message-blocked .message-flex-body .message-body .url,
+.webconsole-app .message.network.network-message-blocked .status {
+  color: var(--timing-blocked-color);
+}
+
 .webconsole-app .message.network .method {
   margin-inline-end: 1ch;
 }
@@ -758,15 +713,28 @@ a.learn-more-link.webconsole-learn-more-link {
   font-style: inherit;
 }
 
+.webconsole-app .message.network .network-monitor .empty-notice {
+  font-size: 16px;
+}
+
+/* For 4XX and 5XX requests, display the text in the "error" color */
+.webconsole-app .message.network.error .message-flex-body .message-body .url,
+.webconsole-app .message.network.error .message-flex-body .message-body .status {
+  color: currentColor;
+}
+
 .network.message .network-info {
   display: none;
-  margin-block-start: 6px;
-  margin-block-end: 2px;
+  margin-block: 6px 2px;
   border: solid 1px var(--theme-splitter-color);
 }
 
 .network.message.open .network-info {
   display: block;
+}
+
+:root:dir(rtl) .network.message.open .network-info {
+  direction: rtl;
 }
 
 .network.message .network-info .panels {
@@ -859,7 +827,7 @@ a.learn-more-link.webconsole-learn-more-link {
   flex: none;
   align-self: flex-start;
   margin-block-start: calc(var(--console-output-vertical-padding) - 1px);
-  margin-inline-start: -2px;
+  margin-inline-start: -4px;
   padding: 3px;
   border: none;
   color: var(--theme-icon-dimmed-color);
@@ -879,6 +847,11 @@ a.learn-more-link.webconsole-learn-more-link {
   fill: currentColor;
 }
 
+/* Align console.group messages with the border they create for their "children" messages */
+.indent[data-indent]:not([data-indent="0"]) ~ .collapse-button {
+  margin-inline-start: 3px;
+}
+
 .collapse-button[aria-expanded="true"]::before {
   transform: rotate(0);
 }
@@ -888,7 +861,7 @@ a.learn-more-link.webconsole-learn-more-link {
 }
 
 /* Hide the icon, so that we can use the collapse-button in its place */
-.message.network > .icon,
+.message.network:not(.network-message-blocked) > .icon,
 .message.startGroup > .icon,
 .message.startGroupCollapsed > .icon {
   display: none;
@@ -926,6 +899,11 @@ a.learn-more-link.webconsole-learn-more-link {
   margin-top: -1px;
   -moz-context-properties: fill;
   fill: var(--theme-icon-dimmed-color);
+}
+
+.webconsole-app .tree .arrow:dir(rtl),
+.webconsole-app .object-inspector .tree-node .arrow:dir(rtl) {
+  transform: rotate(-90deg);
 }
 
 .webconsole-app .tree .arrow.expanded,

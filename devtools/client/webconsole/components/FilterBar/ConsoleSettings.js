@@ -33,6 +33,7 @@ class ConsoleSettings extends Component {
   static get propTypes() {
     return {
       dispatch: PropTypes.func.isRequired,
+      eagerEvaluation: PropTypes.bool.isRequired,
       groupWarnings: PropTypes.bool.isRequired,
       hidePersistLogsCheckbox: PropTypes.bool.isRequired,
       hideShowContentMessagesCheckbox: PropTypes.bool.isRequired,
@@ -46,6 +47,7 @@ class ConsoleSettings extends Component {
   renderMenuItems() {
     const {
       dispatch,
+      eagerEvaluation,
       groupWarnings,
       hidePersistLogsCheckbox,
       hideShowContentMessagesCheckbox,
@@ -125,18 +127,35 @@ class ConsoleSettings extends Component {
       })
     );
 
+    // Eager Evaluation
+    items.push(
+      MenuItem({
+        key: "webconsole-console-settings-menu-item-eager-evaluation",
+        checked: eagerEvaluation,
+        className:
+          "menu-item webconsole-console-settings-menu-item-eager-evaluation",
+        label: l10n.getStr(
+          "webconsole.console.settings.menu.item.instantEvaluation.label"
+        ),
+        tooltip: l10n.getStr(
+          "webconsole.console.settings.menu.item.instantEvaluation.tooltip"
+        ),
+        onClick: () => dispatch(actions.eagerEvaluationToggle()),
+      })
+    );
+
     return MenuList({ id: "webconsole-console-settings-menu-list" }, items);
   }
 
   render() {
     const { webConsoleUI } = this.props;
     const doc = webConsoleUI.document;
-    const toolbox = webConsoleUI.wrapper.toolbox;
+    const { toolbox } = webConsoleUI.wrapper;
 
     return MenuButton(
       {
         menuId: "webconsole-console-settings-menu-button",
-        doc: toolbox ? toolbox.doc : doc,
+        toolboxDoc: toolbox ? toolbox.doc : doc,
         className: "devtools-button webconsole-console-settings-menu-button",
         title: l10n.getStr("webconsole.console.settings.menu.button.tooltip"),
       },

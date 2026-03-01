@@ -56,7 +56,7 @@ describe("AuditProgressOverlay component:", () => {
 
   it("render auditing initializing", () => {
     const store = setupStore({
-      preloadedState: { audit: { auditing: AUDIT_TYPE.CONTRAST } },
+      preloadedState: { audit: { auditing: [AUDIT_TYPE.CONTRAST] } },
     });
 
     testTextProgressBar(store, "accessibility.progress.initializing");
@@ -66,7 +66,7 @@ describe("AuditProgressOverlay component:", () => {
     const store = setupStore({
       preloadedState: {
         audit: {
-          auditing: AUDIT_TYPE.CONTRAST,
+          auditing: [AUDIT_TYPE.CONTRAST],
           progress: { total: 5, percentage: 0 },
         },
       },
@@ -111,7 +111,7 @@ describe("AuditProgressOverlay component:", () => {
     const store = setupStore({
       preloadedState: {
         audit: {
-          auditing: AUDIT_TYPE.CONTRAST,
+          auditing: [AUDIT_TYPE.CONTRAST],
           progress: { total: 5, percentage: 100 },
         },
       },

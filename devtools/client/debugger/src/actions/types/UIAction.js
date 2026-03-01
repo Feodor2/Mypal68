@@ -35,6 +35,14 @@ export type UIAction =
       +value: boolean,
     |}
   | {|
+      +type: "TOGGLE_SOURCE_MAPS_ENABLED",
+      +value: boolean,
+    |}
+  | {|
+      +type: "TOGGLE_JAVASCRIPT_ENABLED",
+      +value: boolean,
+    |}
+  | {|
       +type: "SHOW_SOURCE",
       +source: Source,
     |}

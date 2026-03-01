@@ -358,7 +358,7 @@ HarCollector.prototype = {
     file.requestPostData = response;
 
     // Resolve long string
-    const text = response.postData.text;
+    const { text } = response.postData;
     if (typeof text == "object") {
       this.getString(text).then(value => {
         response.postData.text = value;
@@ -403,7 +403,7 @@ HarCollector.prototype = {
     file.responseContent = response;
 
     // Resolve long string
-    const text = response.content.text;
+    const { text } = response.content;
     if (typeof text == "object") {
       this.getString(text).then(value => {
         response.content.text = value;

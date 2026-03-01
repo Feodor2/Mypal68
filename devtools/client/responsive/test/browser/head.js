@@ -17,12 +17,6 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Import helpers registering the test-actor in remote targets
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/test-actor-registry.js",
-  this
-);
-
 // Import helpers for the inspector that are also shared with others
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
@@ -129,30 +123,114 @@ var closeRDM = async function(tab, options) {
 };
 
 /**
- * Adds a new test task that adds a tab with the given URL, opens responsive
- * design mode, runs the given generator, closes responsive design mode, and
- * removes the tab.
+ * Adds a new test task that adds a tab with the given URL, awaits the
+ * rdmPreTask (if provided), opens responsive design mode, awaits the rdmTask,
+ * closes responsive design mode, awaits the rdmPostTask (if provided), and
+ * removes the tab. If includeBrowserEmbeddedUI is truthy, the sequence will
+ * be repeated with the devtools.responsive.browserUI.enabled pref set.
  *
  * Example usage:
  *
- *   addRDMTask(TEST_URL, async function ({ ui, manager }) {
- *     // Your tests go here...
- *   });
+ *   addRDMTaskWithPreAndPost(
+ *     TEST_URL,
+ *     async function preTask({ browser, usingBrowserUI }) {
+ *       // Your pre-task goes here...
+ *     },
+ *     async function task({ ui, manager, browser, usingBrowserUI }) {
+ *       // Your task goes here...
+ *     },
+ *     async function postTask({ browser, usingBrowserUI }) {
+ *       // Your post-task goes here...
+ *     },
+ *     true
+ *   );
  */
-function addRDMTask(url, task) {
-  add_task(async function() {
-    const tab = await addTab(url);
-    const results = await openRDM(tab);
+function addRDMTaskWithPreAndPost(
+  rdmURL,
+  rdmPreTask,
+  rdmTask,
+  rdmPostTask,
+  includeBrowserEmbeddedUI
+) {
+  // Define a task setup function that can work with our without the
+  // browser embedded UI.
+  function taskSetup(url, preTask, task, postTask) {
+    add_task(async function() {
+      const usingBrowserUI = Services.prefs.getBoolPref(
+        "devtools.responsive.browserUI.enabled"
+      );
+      const tab = await addTab(url);
+      const browser = tab.linkedBrowser;
+      if (preTask) {
+        await preTask({ browser, usingBrowserUI });
+      }
+      const { ui, manager } = await openRDM(tab);
+      try {
+        await task({ ui, manager, browser, usingBrowserUI });
+      } catch (err) {
+        ok(
+          false,
+          "Got an error with usingBrowserUI " +
+            usingBrowserUI +
+            ": " +
+            DevToolsUtils.safeErrorString(err)
+        );
+      }
 
-    try {
-      await task(results);
-    } catch (err) {
-      ok(false, "Got an error: " + DevToolsUtils.safeErrorString(err));
-    }
+      await closeRDM(tab);
+      if (postTask) {
+        await postTask({ browser, usingBrowserUI });
+      }
+      await removeTab(tab);
+    });
+  }
 
-    await closeRDM(tab);
-    await removeTab(tab);
-  });
+  // Call the task setup function without using the browser UI pref.
+  const oldPrefValue = Services.prefs.getBoolPref(
+    "devtools.responsive.browserUI.enabled"
+  );
+  Services.prefs.setBoolPref("devtools.responsive.browserUI.enabled", false);
+
+  taskSetup(rdmURL, rdmPreTask, rdmTask, rdmPostTask);
+
+  if (includeBrowserEmbeddedUI) {
+    // Set the pref and then call the task setup function again.
+    Services.prefs.setBoolPref("devtools.responsive.browserUI.enabled", true);
+
+    taskSetup(rdmURL, rdmPreTask, rdmTask, rdmPostTask);
+  }
+
+  Services.prefs.setBoolPref(
+    "devtools.responsive.browserUI.enabled",
+    oldPrefValue
+  );
+}
+
+/**
+ * This is a simplified version of addRDMTaskWithPreAndPost. Adds a new test
+ * task that adds a tab with the given URL, opens responsive design mode,
+ * closes responsive design mode, and removes the tab. If
+ * includeBrowserEmbeddedUI is truthy, the sequence will be repeated with the
+ * devtools.responsive.browserUI.enabled pref set.
+ *
+ * Example usage:
+ *
+ *   addRDMTask(
+ *     TEST_URL,
+ *     async function task({ ui, manager, browser, usingBrowserUI }) {
+ *       // Your task goes here...
+ *     },
+ *     true
+ *   );
+ */
+function addRDMTask(rdmURL, rdmTask, includeBrowserEmbeddedUI) {
+  addRDMTaskWithPreAndPost(
+    rdmURL,
+    undefined,
+    rdmTask,
+    undefined,
+    includeBrowserEmbeddedUI
+  );
 }
 
 async function spawnViewportTask(ui, args, task) {
@@ -628,7 +706,7 @@ function addDeviceInModal(ui, device) {
   return saved;
 }
 
-function editDeviceInModal(ui, device, newDevice) {
+async function editDeviceInModal(ui, device, newDevice) {
   const { Simulate } = ui.toolWindow.require(
     "devtools/client/shared/vendor/react-dom-test-utils"
   );
@@ -671,7 +749,15 @@ function editDeviceInModal(ui, device, newDevice) {
       state.devices.custom.find(({ name }) => name == newDevice.name) &&
       !state.devices.custom.find(({ name }) => name == device.name)
   );
+
+  // Editing a custom device triggers a "device-change" message.
+  // Wait for the `device-changed` event to avoid unfinished requests during the
+  // tests.
+  const onDeviceChanged = ui.once("device-changed");
+
   Simulate.click(formSave);
+
+  await onDeviceChanged;
   return saved;
 }
 
@@ -764,14 +850,13 @@ function promiseRDMZoom(ui, browser, zoom) {
       return;
     }
 
+    const zoomComplete = BrowserTestUtils.waitForEvent(
+      browser,
+      "PostFullZoomChange"
+    );
     ZoomManager.setZoomForBrowser(browser, zoom);
 
     // Await the zoom complete event, then reflow.
-    BrowserTestUtils.waitForContentEvent(
-      ui.getViewportBrowser(),
-      "ZoomComplete"
-    )
-      .then(promiseContentReflow(ui))
-      .then(resolve);
+    zoomComplete.then(promiseContentReflow(ui)).then(resolve);
   });
 }

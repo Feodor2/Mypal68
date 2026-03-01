@@ -14,9 +14,9 @@ const {
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
-loader.lazyGetter(this, "AutocompletePopup", function() {
+loader.lazyGetter(this, "SearchBoxAutocompletePopup", function() {
   return createFactory(
-    require("devtools/client/shared/components/AutoCompletePopup")
+    require("devtools/client/shared/components/SearchBoxAutocompletePopup")
   );
 });
 loader.lazyGetter(this, "MDNLink", function() {
@@ -46,6 +46,7 @@ class SearchBox extends PureComponent {
       summary: PropTypes.string,
       summaryTooltip: PropTypes.string,
       type: PropTypes.string,
+      value: PropTypes.string,
     };
   }
 
@@ -53,7 +54,7 @@ class SearchBox extends PureComponent {
     super(props);
 
     this.state = {
-      value: "",
+      value: props.value || "",
       focused: false,
     };
 
@@ -239,7 +240,7 @@ class SearchBox extends PureComponent {
         onClick: this.onClearButtonClick,
       }),
       showAutocomplete &&
-        AutocompletePopup({
+        SearchBoxAutocompletePopup({
           autocompleteProvider,
           filter: value,
           onItemSelected: itemValue => this.onChange(itemValue),

@@ -82,6 +82,7 @@ exports.NetworkEventMessage = function(props) {
       securityInfo: null,
       requestHeadersFromUploadStream: null,
       private: false,
+      blockedReason: null,
     },
     props
   );

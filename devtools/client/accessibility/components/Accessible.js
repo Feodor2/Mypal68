@@ -107,7 +107,7 @@ class Accessible extends Component {
       parents: PropTypes.object,
       relations: PropTypes.object,
       supports: PropTypes.object,
-      walker: PropTypes.object.isRequired,
+      accessibilityWalker: PropTypes.object.isRequired,
     };
   }
 
@@ -166,13 +166,16 @@ class Accessible extends Component {
     }
   }
 
-  update() {
+  async update() {
     const { dispatch, accessible, supports } = this.props;
-    if (!gToolbox || !accessible.actorID) {
+    if (!accessible.actorID) {
       return;
     }
 
-    dispatch(updateDetails(gToolbox.walker, accessible, supports));
+    const domWalker = (await accessible.targetFront.getFront("inspector"))
+      .walker;
+
+    dispatch(updateDetails(domWalker, accessible, supports));
   }
 
   setExpanded(item, isExpanded) {
@@ -206,14 +209,14 @@ class Accessible extends Component {
   }
 
   showAccessibleHighlighter(accessible) {
-    const { walker, dispatch } = this.props;
+    const { accessibilityWalker, dispatch } = this.props;
     dispatch(unhighlight());
 
-    if (!accessible || !walker) {
+    if (!accessible || !accessibilityWalker) {
       return;
     }
 
-    walker.highlightAccessible(accessible).catch(error => {
+    accessibilityWalker.highlightAccessible(accessible).catch(error => {
       // Only report an error where there's still a toolbox. Ignore cases where toolbox is
       // already destroyed.
       if (gToolbox) {
@@ -223,14 +226,14 @@ class Accessible extends Component {
   }
 
   hideAccessibleHighlighter() {
-    const { walker, dispatch } = this.props;
+    const { accessibilityWalker, dispatch } = this.props;
     dispatch(unhighlight());
 
-    if (!walker) {
+    if (!accessibilityWalker) {
       return;
     }
 
-    walker.unhighlight().catch(error => {
+    accessibilityWalker.unhighlight().catch(error => {
       // Only report an error where there's still a toolbox. Ignore cases where toolbox is
       // already destroyed.
       if (gToolbox) {
@@ -250,12 +253,12 @@ class Accessible extends Component {
   }
 
   async selectAccessible(accessible) {
-    const { walker, dispatch } = this.props;
-    if (!walker) {
+    const { accessibilityWalker, dispatch } = this.props;
+    if (!accessibilityWalker) {
       return;
     }
 
-    await dispatch(select(walker, accessible));
+    await dispatch(select(accessibilityWalker, accessible));
 
     const { props } = this.refs;
     if (props) {

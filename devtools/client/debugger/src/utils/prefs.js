@@ -72,7 +72,9 @@ if (isDevelopment()) {
   pref("devtools.debugger.features.log-points", true);
   pref("devtools.debugger.features.inline-preview", true);
   pref("devtools.debugger.features.overlay-step-buttons", true);
-  pref("devtools.debugger.features.watchpoints", false);
+  pref("devtools.debugger.features.watchpoints", true);
+  pref("devtools.debugger.features.frame-step", true);
+  pref("devtools.editor.tabsize", 2);
 }
 
 export const prefs = new PrefsHelper("devtools", {
@@ -102,7 +104,6 @@ export const prefs = new PrefsHelper("devtools", {
   startPanelSize: ["Int", "debugger.start-panel-size"],
   endPanelSize: ["Int", "debugger.end-panel-size"],
   frameworkGroupingOn: ["Bool", "debugger.ui.framework-grouping-on"],
-  tabsBlackBoxed: ["Json", "debugger.tabsBlackBoxed", []],
   pendingSelectedLocation: ["Json", "debugger.pending-selected-location", {}],
   expressions: ["Json", "debugger.expressions", []],
   fileSearchCaseSensitive: ["Bool", "debugger.file-search-case-sensitive"],
@@ -114,7 +115,10 @@ export const prefs = new PrefsHelper("devtools", {
   mapScopes: ["Bool", "debugger.map-scopes-enabled"],
   logActions: ["Bool", "debugger.log-actions"],
   logEventBreakpoints: ["Bool", "debugger.log-event-breakpoints"],
+  indentSize: ["Int", "editor.tabsize"],
 });
+
+prefs.cursorBlinkRate = Services.prefs.getIntPref("ui.caretBlinkTime", 530);
 
 export const features = new PrefsHelper("devtools.debugger.features", {
   asyncStepping: ["Bool", "async-stepping"],
@@ -142,6 +146,7 @@ export const features = new PrefsHelper("devtools.debugger.features", {
   inlinePreview: ["Bool", "inline-preview"],
   watchpoints: ["Bool", "watchpoints"],
   windowlessServiceWorkers: ["Bool", "windowless-service-workers"],
+  frameStep: ["Bool", "frame-step"],
 });
 
 export const asyncStore = asyncStoreHelper("debugger", {
@@ -149,6 +154,7 @@ export const asyncStore = asyncStoreHelper("debugger", {
   tabs: ["tabs", []],
   xhrBreakpoints: ["xhr-breakpoints", []],
   eventListenerBreakpoints: ["event-listener-breakpoints", undefined],
+  tabsBlackBoxed: ["tabsBlackBoxed", []],
 });
 
 export function resetSchemaVersion(): void {

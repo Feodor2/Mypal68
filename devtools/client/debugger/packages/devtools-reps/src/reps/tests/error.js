@@ -473,7 +473,7 @@ describe("Error - stacktrace location click", () => {
 
     expect(locations.first().prop("title")).toBe(
       "View source in debugger ??? " +
-        "resource://devtools/shared/client/devtools-client.js:856:9"
+        "resource://devtools/client/debugger-client.js:856:9"
     );
     locations.first().simulate("click", {
       type: "click",
@@ -483,7 +483,7 @@ describe("Error - stacktrace location click", () => {
     expect(onViewSourceInDebugger.mock.calls).toHaveLength(1);
     let mockCall = onViewSourceInDebugger.mock.calls[0][0];
     expect(mockCall.url).toEqual(
-      "resource://devtools/shared/client/devtools-client.js"
+      "resource://devtools/client/debugger-client.js"
     );
     expect(mockCall.line).toEqual(856);
     expect(mockCall.column).toEqual(9);

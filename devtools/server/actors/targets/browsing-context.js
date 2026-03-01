@@ -1176,12 +1176,6 @@ const browsingContextTargetPrototype = {
       this._setCacheDisabled(options.cacheDisabled);
     }
     if (
-      typeof options.paintFlashing !== "undefined" &&
-      options.PaintFlashing !== this._getPaintFlashing()
-    ) {
-      this._setPaintFlashingEnabled(options.paintFlashing);
-    }
-    if (
       typeof options.serviceWorkersTestingEnabled !== "undefined" &&
       options.serviceWorkersTestingEnabled !==
         this._getServiceWorkersTestingEnabled()

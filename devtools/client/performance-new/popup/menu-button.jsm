@@ -99,25 +99,30 @@ function initialize() {
         "chrome://devtools/content/performance-new/popup/popup.xhtml";
 
       panelview.appendChild(iframe);
+      const contentWindow = iframe.contentWindow;
 
       // Provide a mechanism for the iframe to close the popup.
-      iframe.contentWindow.gClosePopup = () => {
+      contentWindow.gClosePopup = () => {
         CustomizableUI.hidePanelForNode(iframe);
       };
 
       // Provide a mechanism for the iframe to resize the popup.
-      iframe.contentWindow.gResizePopup = height => {
+      contentWindow.gResizePopup = height => {
         iframe.style.height = `${Math.min(600, height)}px`;
       };
+
+      contentWindow.gIsDarkMode = document.documentElement.hasAttribute(
+        "lwt-popup-brighttext"
+      );
 
       // The popup has an annoying rendering "blip" when first rendering the react
       // components. This adds a blocker until the content is ready to show.
       event.detail.addBlocker(
         new Promise(resolve => {
-          iframe.contentWindow.gReportReady = () => {
+          contentWindow.gReportReady = () => {
             // Delete the function gReportReady so we don't leave any dangling
             // references between windows.
-            delete iframe.contentWindow.gReportReady;
+            delete contentWindow.gReportReady;
             // Now resolve this promise to open the window.
             resolve();
           };

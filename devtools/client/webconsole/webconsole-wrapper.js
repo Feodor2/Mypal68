@@ -301,7 +301,7 @@ class WebConsoleWrapper {
 
         store.dispatch(actions.messagesAdd(this.queuedMessageAdds));
 
-        const length = this.queuedMessageAdds.length;
+        const { length } = this.queuedMessageAdds;
 
         this.queuedMessageAdds = [];
 

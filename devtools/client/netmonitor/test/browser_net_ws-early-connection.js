@@ -13,7 +13,7 @@ add_task(async function() {
     set: [["devtools.netmonitor.features.webSockets", true]],
   });
 
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL, { requestCount: 1 });
 
   info("Starting test... ");
 
@@ -52,13 +52,13 @@ add_task(async function() {
   // Wait for two frames to be displayed in the panel
   await waitForDOMIfNeeded(
     document,
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item",
-    4
+    "#messages-panel .message-list-table .message-list-item",
+    2
   );
 
   // Check the payload of the first frame.
   const firstFramePayload = document.querySelector(
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item .ws-frames-list-payload"
+    "#messages-panel .message-list-table .message-list-item .message-list-payload"
   );
   is(firstFramePayload.textContent.trim(), "readyState:loading");
 

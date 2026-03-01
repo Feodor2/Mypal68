@@ -138,6 +138,7 @@ RuleEditor.prototype = {
   _create: function() {
     this.element = this.doc.createElement("div");
     this.element.className = "ruleview-rule devtools-monospace";
+    this.element.dataset.ruleId = this.rule.domRule.actorID;
     this.element.setAttribute("uneditable", !this.isEditable);
     this.element.setAttribute("unmatched", this.rule.isUnmatched);
     this.element._ruleEditor = this;
@@ -284,7 +285,7 @@ RuleEditor.prototype = {
         this._ruleViewIsEditing = this.ruleView.isEditing;
       });
 
-      code.addEventListener("click", () => {
+      code.addEventListener("click", event => {
         const selection = this.doc.defaultView.getSelection();
         if (selection.isCollapsed && !this._ruleViewIsEditing) {
           this.newProperty();

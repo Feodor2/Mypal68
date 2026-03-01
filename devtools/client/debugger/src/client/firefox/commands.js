@@ -141,20 +141,20 @@ function forEachThread(iteratee) {
   return Promise.all(promises);
 }
 
-function resume(thread: string): Promise<*> {
+function resume(thread: string, frameId: ?FrameId): Promise<*> {
   return lookupThreadFront(thread).resume();
 }
 
-function stepIn(thread: string): Promise<*> {
-  return lookupThreadFront(thread).stepIn();
+function stepIn(thread: string, frameId: ?FrameId): Promise<*> {
+  return lookupThreadFront(thread).stepIn(frameId);
 }
 
-function stepOver(thread: string): Promise<*> {
-  return lookupThreadFront(thread).stepOver();
+function stepOver(thread: string, frameId: ?FrameId): Promise<*> {
+  return lookupThreadFront(thread).stepOver(frameId);
 }
 
-function stepOut(thread: string): Promise<*> {
-  return lookupThreadFront(thread).stepOut();
+function stepOut(thread: string, frameId: ?FrameId): Promise<*> {
+  return lookupThreadFront(thread).stepOut(frameId);
 }
 
 function breakOnNext(thread: string): Promise<*> {
@@ -177,6 +177,14 @@ function setXHRBreakpoint(path: string, method: string) {
 
 function removeXHRBreakpoint(path: string, method: string) {
   return currentThreadFront.removeXHRBreakpoint(path, method);
+}
+
+export function toggleJavaScriptEnabled(enabled: Boolean) {
+  return currentTarget.reconfigure({
+    options: {
+      javascriptEnabled: enabled,
+    },
+  });
 }
 
 function addWatchpoint(
@@ -549,6 +557,7 @@ const clientCommands = {
   getEventListenerBreakpointTypes,
   lookupTarget,
   getFrontByID,
+  toggleJavaScriptEnabled,
 };
 
 export { setupCommands, clientCommands };

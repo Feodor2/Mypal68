@@ -25,12 +25,16 @@ Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-mocks.js", this);
 // Make sure the ADB addon is removed and ADB is stopped when the test ends.
 registerCleanupFunction(async function() {
   try {
-    const { adbAddon } = require("devtools/shared/adb/adb-addon");
+    const {
+      adbAddon,
+    } = require("devtools/client/shared/remote-debugging/adb/adb-addon");
     await adbAddon.uninstall();
   } catch (e) {
     // Will throw if the addon is already uninstalled, ignore exceptions here.
   }
-  const { adbProcess } = require("devtools/shared/adb/adb-process");
+  const {
+    adbProcess,
+  } = require("devtools/client/shared/remote-debugging/adb/adb-process");
   await adbProcess.kill();
 
   const {

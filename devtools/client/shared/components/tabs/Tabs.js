@@ -220,6 +220,13 @@ define(function(require, exports, module) {
       }
     }
 
+    onMouseDown(event) {
+      // Prevents click-dragging the tab headers
+      if (event) {
+        event.preventDefault();
+      }
+    }
+
     // API
 
     setActive(index) {
@@ -310,6 +317,7 @@ define(function(require, exports, module) {
                 "aria-selected": isTabSelected,
                 role: "tab",
                 onClick: this.onClickTab.bind(this, index),
+                onMouseDown: this.onMouseDown.bind(this),
               },
               title,
               badge && !isTabSelected && showBadge()

@@ -84,7 +84,7 @@ function GripMessageBody(props) {
   if (
     typeof grip === "string" ||
     (grip && grip.type === "longString") ||
-    (grip && grip.getGrip && grip.getGrip().type === "longString")
+    (grip?.getGrip && grip.getGrip().type === "longString")
   ) {
     Object.assign(objectInspectorProps, {
       useQuotes,

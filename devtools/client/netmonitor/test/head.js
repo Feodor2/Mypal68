@@ -6,7 +6,7 @@
    verifyRequestItemTarget, waitFor, waitForDispatch, testFilterButtons,
    performRequestsInContent, waitForNetworkEvents, selectIndexAndWaitForSourceEditor,
    testColumnsAlignment, hideColumn, showColumn, performRequests, waitForRequestData,
-   toggleBlockedUrl */
+   toggleBlockedUrl, registerFaviconNotifier */
 
 "use strict";
 
@@ -14,6 +14,10 @@
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
   this
+);
+
+const { LinkHandlerParent } = ChromeUtils.import(
+  "resource:///actors/LinkHandlerParent.jsm"
 );
 
 const {
@@ -103,6 +107,7 @@ const SIMPLE_UNSORTED_COOKIES_SJS =
   EXAMPLE_URL + "sjs_simple-unsorted-cookies-test-server.sjs";
 const CONTENT_TYPE_SJS = EXAMPLE_URL + "sjs_content-type-test-server.sjs";
 const WS_CONTENT_TYPE_SJS = WS_HTTP_URL + "sjs_content-type-test-server.sjs";
+const WS_WS_CONTENT_TYPE_SJS = WS_URL + "sjs_content-type-test-server.sjs";
 const HTTPS_CONTENT_TYPE_SJS =
   HTTPS_EXAMPLE_URL + "sjs_content-type-test-server.sjs";
 const SERVER_TIMINGS_TYPE_SJS =
@@ -124,6 +129,13 @@ const HSTS_PAGE_URL = CUSTOM_GET_URL;
 const TEST_IMAGE = EXAMPLE_URL + "test-image.png";
 const TEST_IMAGE_DATA_URI =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==";
+
+const SETTINGS_MENU_ITEMS = {
+  "persist-logs": ".netmonitor-settings-persist-item",
+  "import-har": ".netmonitor-settings-import-har-item",
+  "save-har": ".netmonitor-settings-import-save-item",
+  "copy-har": ".netmonitor-settings-import-copy-item",
+};
 
 /* eslint-enable no-unused-vars, max-len */
 
@@ -224,64 +236,6 @@ function waitForTimelineMarkers(monitor) {
   });
 }
 
-/**
- * Start monitoring all incoming update events about network requests and wait until
- * a complete info about all requests is received. (We wait for the timings info
- * explicitly, because that's always the last piece of information that is received.)
- *
- * This method is designed to wait for network requests that are issued during a page
- * load, when retrieving page resources (scripts, styles, images). It has certain
- * assumptions that can make it unsuitable for other types of network communication:
- * - it waits for at least one network request to start and finish before returning
- * - it waits only for request that were issued after it was called. Requests that are
- *   already in mid-flight will be ignored.
- * - the request start and end times are overlapping. If a new request starts a moment
- *   after the previous one was finished, the wait will be ended in the "interim"
- *   period.
- * @returns a promise that resolves when the wait is done.
- */
-function waitForAllRequestsFinished(monitor) {
-  const window = monitor.panelWin;
-  const { connector } = window;
-  const { getNetworkRequest } = connector;
-
-  return new Promise(resolve => {
-    // Key is the request id, value is a boolean - is request finished or not?
-    const requests = new Map();
-
-    function onRequest(id) {
-      const networkInfo = getNetworkRequest(id);
-      const { url } = networkInfo.request;
-      info(`Request ${id} for ${url} not yet done, keep waiting...`);
-      requests.set(id, false);
-    }
-
-    function onTimings(id) {
-      const networkInfo = getNetworkRequest(id);
-      const { url } = networkInfo.request;
-      info(`Request ${id} for ${url} done`);
-      requests.set(id, true);
-      maybeResolve();
-    }
-
-    function maybeResolve() {
-      // Have all the requests in the map finished yet?
-      if (![...requests.values()].every(finished => finished)) {
-        return;
-      }
-
-      // All requests are done - unsubscribe from events and resolve!
-      window.api.off(TEST_EVENTS.NETWORK_EVENT, onRequest);
-      window.api.off(EVENTS.PAYLOAD_READY, onTimings);
-      info("All requests finished");
-      resolve();
-    }
-
-    window.api.on(TEST_EVENTS.NETWORK_EVENT, onRequest);
-    window.api.on(EVENTS.PAYLOAD_READY, onTimings);
-  });
-}
-
 let finishedQueue = {};
 const updatingTypes = [
   "NetMonitor:NetworkEventUpdating:RequestCookies",
@@ -337,8 +291,15 @@ async function waitForAllNetworkUpdateEvents() {
   finishedQueue = {};
 }
 
-function initNetMonitor(url, enableCache) {
+function initNetMonitor(url, { requestCount, enableCache = false }) {
   info("Initializing a network monitor pane.");
+
+  if (!requestCount) {
+    ok(
+      false,
+      "initNetMonitor should be given a number of requests the page will perform"
+    );
+  }
 
   return (async function() {
     const tab = await addTab(url);
@@ -361,7 +322,8 @@ function initNetMonitor(url, enableCache) {
       );
 
       info("Disabling cache and reloading page.");
-      const requestsDone = waitForAllRequestsFinished(monitor);
+
+      const requestsDone = waitForNetworkEvents(monitor, requestCount);
       const markersDone = waitForTimelineMarkers(monitor);
       await toggleCache(target, true);
       await Promise.all([requestsDone, markersDone]);
@@ -389,12 +351,12 @@ function initNetMonitor(url, enableCache) {
   })();
 }
 
-function restartNetMonitor(monitor, newUrl) {
+function restartNetMonitor(monitor, { requestCount }) {
   info("Restarting the specified network monitor.");
 
   return (async function() {
     const tab = monitor.toolbox.target.localTab;
-    const url = newUrl || tab.linkedBrowser.currentURI.spec;
+    const url = tab.linkedBrowser.currentURI.spec;
 
     await waitForAllNetworkUpdateEvents();
     info("All pending requests finished.");
@@ -403,7 +365,7 @@ function restartNetMonitor(monitor, newUrl) {
     await removeTab(tab);
     await onDestroyed;
 
-    return initNetMonitor(url);
+    return initNetMonitor(url, { requestCount });
   })();
 }
 
@@ -421,12 +383,22 @@ function teardown(monitor) {
   })();
 }
 
+function isFiltering(monitor) {
+  const doc = monitor.panelWin.document;
+  return !!doc.querySelector(
+    ".requests-list-filter-buttons button[aria-pressed]"
+  );
+}
+
 function waitForNetworkEvents(monitor, getRequests) {
   return new Promise(resolve => {
     const panel = monitor.panelWin;
     const { getNetworkRequest } = panel.connector;
     let networkEvent = 0;
+    let nonBlockedNetworkEvent = 0;
     let payloadReady = 0;
+    let eventTimings = 0;
+    const filtering = isFiltering(monitor);
 
     function onNetworkEvent(actor) {
       const networkInfo = getNetworkRequest(actor);
@@ -436,6 +408,9 @@ function waitForNetworkEvents(monitor, getRequests) {
         return;
       }
       networkEvent++;
+      if (!networkInfo.blockedReason) {
+        nonBlockedNetworkEvent++;
+      }
       maybeResolve(TEST_EVENTS.NETWORK_EVENT, actor, networkInfo);
     }
 
@@ -450,6 +425,17 @@ function waitForNetworkEvents(monitor, getRequests) {
       maybeResolve(EVENTS.PAYLOAD_READY, actor, networkInfo);
     }
 
+    function onEventTimings(actor) {
+      const networkInfo = getNetworkRequest(actor);
+      if (!networkInfo) {
+        // Must have been related to reloading document to disable cache.
+        // Ignore the event.
+        return;
+      }
+      eventTimings++;
+      maybeResolve(EVENTS.RECEIVED_EVENT_TIMINGS, actor, networkInfo);
+    }
+
     function maybeResolve(event, actor, networkInfo) {
       info(
         "> Network event progress: " +
@@ -462,6 +448,10 @@ function waitForNetworkEvents(monitor, getRequests) {
           payloadReady +
           "/" +
           getRequests +
+          "EventTimings: " +
+          eventTimings +
+          "/" +
+          getRequests +
           ", " +
           "got " +
           event +
@@ -469,16 +459,29 @@ function waitForNetworkEvents(monitor, getRequests) {
           actor
       );
 
-      // Wait until networkEvent & payloadReady finish for each request.
-      if (networkEvent >= getRequests && payloadReady >= getRequests) {
+      const { document } = monitor.panelWin;
+      // Wait until networkEvent, payloadReady and event timings finish for each request.
+      // The UI won't fetch timings when:
+      // * hidden in background,
+      // * for any blocked request,
+      // * when filtering.
+      if (
+        networkEvent >= getRequests &&
+        payloadReady >= getRequests &&
+        (eventTimings >= nonBlockedNetworkEvent ||
+          document.visibilityState == "hidden" ||
+          filtering)
+      ) {
         panel.api.off(TEST_EVENTS.NETWORK_EVENT, onNetworkEvent);
         panel.api.off(EVENTS.PAYLOAD_READY, onPayloadReady);
+        panel.api.off(EVENTS.RECEIVED_EVENT_TIMINGS, onEventTimings);
         executeSoon(resolve);
       }
     }
 
     panel.api.on(TEST_EVENTS.NETWORK_EVENT, onNetworkEvent);
     panel.api.on(EVENTS.PAYLOAD_READY, onPayloadReady);
+    panel.api.on(EVENTS.RECEIVED_EVENT_TIMINGS, onEventTimings);
   });
 }
 
@@ -968,7 +971,7 @@ async function showColumn(monitor, column) {
  * @param {Number} index The request index to be selected
  */
 async function selectIndexAndWaitForSourceEditor(monitor, index) {
-  const document = monitor.panelWin.document;
+  const { document } = monitor.panelWin;
   const onResponseContent = monitor.panelWin.api.once(
     TEST_EVENTS.RECEIVED_RESPONSE_CONTENT
   );
@@ -1005,8 +1008,31 @@ async function performRequests(monitor, tab, count) {
  * Helper function for retrieving `.CodeMirror` content
  */
 function getCodeMirrorValue(monitor) {
-  const document = monitor.panelWin.document;
+  const { document } = monitor.panelWin;
   return document.querySelector(".CodeMirror").CodeMirror.getValue();
+}
+
+/**
+ * Helper function opening the options menu
+ */
+function openSettingsMenu(monitor) {
+  const { document } = monitor.panelWin;
+  document.querySelector(".netmonitor-settings-menu-button").click();
+}
+
+function clickSettingsMenuItem(monitor, itemKey) {
+  openSettingsMenu(monitor);
+  const node = getSettingsMenuItem(monitor, itemKey);
+  node.click();
+}
+
+function getSettingsMenuItem(monitor, itemKey) {
+  // The settings menu is injected into the toolbox document,
+  // so we must use the panelWin parent to query for items
+  const { parent } = monitor.panelWin;
+  const { document } = parent;
+
+  return document.querySelector(SETTINGS_MENU_ITEMS[itemKey]);
 }
 
 /**
@@ -1056,7 +1082,7 @@ function validateRequests(requests, monitor) {
       { cause: { type: causeType, loadingDocumentUri: causeUri } }
     );
 
-    const stacktrace = requestItem.stacktrace;
+    const { stacktrace } = requestItem;
     const stackLen = stacktrace ? stacktrace.length : 0;
 
     if (stack) {
@@ -1069,26 +1095,33 @@ function validateRequests(requests, monitor) {
       // if "stack" is array, check the details about the top stack frames
       if (Array.isArray(stack)) {
         stack.forEach((frame, j) => {
-          is(
-            stacktrace[j].functionName,
-            frame.fn,
-            `Request #${i} has the correct function on JS stack frame #${j}`
-          );
-          is(
-            stacktrace[j].filename.split("/").pop(),
-            frame.file,
-            `Request #${i} has the correct file on JS stack frame #${j}`
-          );
-          is(
-            stacktrace[j].lineNumber,
-            frame.line,
-            `Request #${i} has the correct line number on JS stack frame #${j}`
-          );
-          is(
-            stacktrace[j].asyncCause,
-            frame.asyncCause,
-            `Request #${i} has the correct async cause on JS stack frame #${j}`
-          );
+          // If the `fn` is "*", it means the request is triggered from chrome
+          // resources, e.g. `resource:///modules/XX.jsm`, so we skip checking
+          // the function name for now (bug 1280266).
+          if (frame.file.startsWith("resource:///")) {
+            todo(false, "Requests from chrome resource should not be included");
+          } else {
+            is(
+              stacktrace[j].functionName,
+              frame.fn,
+              `Request #${i} has the correct function on JS stack frame #${j}`
+            );
+            is(
+              stacktrace[j].filename.split("/").pop(),
+              frame.file.split("/").pop(),
+              `Request #${i} has the correct file on JS stack frame #${j}`
+            );
+            is(
+              stacktrace[j].lineNumber,
+              frame.line,
+              `Request #${i} has the correct line number on JS stack frame #${j}`
+            );
+            is(
+              stacktrace[j].asyncCause,
+              frame.asyncCause,
+              `Request #${i} has the correct async cause on JS stack frame #${j}`
+            );
+          }
         });
       }
     } else {
@@ -1148,6 +1181,27 @@ async function toggleBlockedUrl(element, monitor, store, action = "block") {
   info(`Wait for selected request to be ${action}ed`);
   await onRequestComplete;
   info(`Selected request is now ${action}ed`);
+}
+
+/**
+ * Register a listener to be notified when a favicon finished loading and
+ * dispatch a "devtools:test:favicon" event to the favicon's link element.
+ *
+ * @param {Browser} browser
+ *        Target browser to observe the favicon load.
+ */
+function registerFaviconNotifier(browser) {
+  const listener = async (name, data) => {
+    if (name == "SetIcon" || name == "SetFailedIcon") {
+      await SpecialPowers.spawn(browser, [], async () => {
+        content.document
+          .querySelector("link[rel='icon']")
+          .dispatchEvent(new content.CustomEvent("devtools:test:favicon"));
+      });
+      LinkHandlerParent.removeListenerForTests(listener);
+    }
+  };
+  LinkHandlerParent.addListenerForTests(listener);
 }
 
 /**

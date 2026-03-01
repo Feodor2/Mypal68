@@ -91,7 +91,7 @@ export type PauseState = {
   shouldPauseOnCaughtExceptions: boolean,
 };
 
-function createPauseState(thread: ThreadId = "UnknownThread") {
+export function initialPauseState(thread: ThreadId = "UnknownThread") {
   return {
     cx: {
       navigateCounter: 0,
@@ -140,7 +140,7 @@ function getThreadPauseState(state: PauseState, thread: ThreadId) {
 }
 
 function update(
-  state: PauseState = createPauseState(),
+  state: PauseState = initialPauseState(),
   action: Action
 ): PauseState {
   // Actions need to specify any thread they are operating on. These helpers
@@ -269,7 +269,7 @@ function update(
 
     case "CONNECT":
       return {
-        ...createPauseState(action.mainThread.actor),
+        ...initialPauseState(action.mainThread.actor),
       };
 
     case "PAUSE_ON_EXCEPTIONS": {
@@ -610,9 +610,15 @@ export function getSelectedFrameId(state: State, thread: ThreadId) {
   return getThreadPauseState(state.pause, thread).selectedFrameId;
 }
 
+export function isTopFrameSelected(state: State, thread: ThreadId) {
+  const selectedFrameId = getSelectedFrameId(state, thread);
+  const topFrame = getTopFrame(state, thread);
+  return selectedFrameId == topFrame?.id;
+}
+
 export function getTopFrame(state: State, thread: ThreadId) {
   const frames = getFrames(state, thread);
-  return frames && frames[0];
+  return frames?.[0];
 }
 
 export function getSkipPausing(state: State) {

@@ -131,7 +131,7 @@ function transformConsoleAPICallPacket(packet) {
   let type = message.level;
   let level = getLevelFromType(type);
   let messageText = null;
-  const timer = message.timer;
+  const { timer } = message;
 
   // Special per-type conversion.
   switch (type) {
@@ -253,7 +253,7 @@ function transformConsoleAPICallPacket(packet) {
       }
     : null;
 
-  if (type === "logPointError" || type === "logPoint") {
+  if (frame && (type === "logPointError" || type === "logPoint")) {
     frame.options = { logPoint: true };
   }
 
@@ -360,6 +360,7 @@ function transformNetworkEventPacket(packet) {
     private: networkEvent.private,
     securityState: networkEvent.securityState,
     chromeContext: networkEvent.chromeContext,
+    blockedReason: networkEvent.blockedReason,
   });
 }
 
@@ -724,6 +725,14 @@ function getDescriptorValue(descriptor) {
   return descriptor;
 }
 
+function isMessageNetworkError(message) {
+  return (
+    message.source === MESSAGE_SOURCE.NETWORK &&
+    message?.response?.status &&
+    message.response.status.toString().match(/^[4,5]\d\d$/)
+  );
+}
+
 module.exports = {
   createWarningGroupMessage,
   getArrayTypeNames,
@@ -733,6 +742,7 @@ module.exports = {
   getWarningGroupType,
   isContentBlockingMessage,
   isGroupType,
+  isMessageNetworkError,
   isPacketPrivate,
   isWarningGroup,
   l10n,

@@ -201,10 +201,11 @@ export type Target = {
   isContentProcess: boolean,
   isWorkerTarget: boolean,
   traits: Object,
-  chrome: Boolean,
+  chrome: boolean,
   url: URL,
-  isAddon: Boolean,
+  isAddon: boolean,
   isServiceWorker: boolean,
+  reconfigure: Object,
 
   // Property installed by the debugger itself.
   debuggerServiceWorkerStatus: string,
@@ -409,4 +410,5 @@ export type Panel = {|
   highlightDomElement: (grip: Object) => void,
   unHighlightDomElement: (grip: Object) => void,
   getToolboxStore: () => any,
+  panelWin: Object,
 |};

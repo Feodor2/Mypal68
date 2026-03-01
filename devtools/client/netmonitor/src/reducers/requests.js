@@ -176,7 +176,7 @@ function addRequest(state, action) {
 function updateRequest(state, action) {
   const { requests, lastEndedMs } = state;
 
-  const id = action.id;
+  const { id } = action;
   const index = requests.findIndex(needle => needle.id === id);
   if (index === -1) {
     return state;
@@ -221,6 +221,7 @@ function cloneRequest(state, id) {
     requestHeaders: clonedRequest.requestHeaders,
     requestPostData: clonedRequest.requestPostData,
     requestPostDataAvailable: clonedRequest.requestPostDataAvailable,
+    requestHeadersAvailable: clonedRequest.requestHeadersAvailable,
     isCustom: true,
   };
 

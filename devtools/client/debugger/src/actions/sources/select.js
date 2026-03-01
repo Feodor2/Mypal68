@@ -159,7 +159,7 @@ export function selectLocation(
       source = getSourceFromId(getState(), location.sourceId);
     }
 
-    if (tabExists(getState(), source.id)) {
+    if (!tabExists(getState(), source.id)) {
       dispatch(addTab(source));
     }
 

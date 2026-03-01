@@ -292,7 +292,7 @@ CssComputedView.prototype = {
 
   get contextMenu() {
     if (!this._contextMenu) {
-      this._contextMenu = new StyleInspectorMenu(this, { isRuleView: false });
+      this._contextMenu = new StyleInspectorMenu(this);
     }
 
     return this._contextMenu;
@@ -374,6 +374,7 @@ CssComputedView.prototype = {
    * - value {Object} Depends on the type of the node
    * returns null if the node isn't anything we care about
    */
+  // eslint-disable-next-line complexity
   getNodeInfo: function(node) {
     if (!node) {
       return null;

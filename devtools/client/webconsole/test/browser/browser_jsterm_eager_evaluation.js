@@ -14,6 +14,7 @@ function zzyzx2() {
   x = 10;
 }
 var obj = {propA: "A", propB: "B"};
+var array = [1, 2, 3];
 </script>
 `;
 
@@ -23,7 +24,6 @@ const EAGER_EVALUATION_PREF = "devtools.webconsole.input.eagerEvaluation";
 // eagerly evaluated should show their results, and expressions with side
 // effects should not perform those side effects.
 add_task(async function() {
-  await pushPref(EAGER_EVALUATION_PREF, true);
   const hud = await openNewTabAndConsole(TEST_URI);
 
   // Do an evaluation to populate $_
@@ -222,13 +222,27 @@ add_task(async function() {
   setInputValue(hud, "Reflect.setPrototypeOf({}, null)");
   await waitForNoEagerEvaluationResult(hud);
 
+  setInputValue(hud, "[] instanceof Array");
+  await waitForEagerEvaluationResult(hud, "true");
+
+  setInputValue(hud, "Int8Array.from({length: 1})[0]");
+  await waitForEagerEvaluationResult(hud, "0");
+
+  setInputValue(hud, "Float64Array.of(1)[0]");
+  await waitForEagerEvaluationResult(hud, "1");
+
+  setInputValue(hud, "array.fill()");
+  await waitForNoEagerEvaluationResult(hud);
+
+  setInputValue(hud, "array");
+  await waitForEagerEvaluationResult(hud, "Array(3) [ 1, 2, 3 ]");
+
   // go back to inline layout.
   await toggleLayout(hud);
 });
 
 // Test that the currently selected autocomplete result is eagerly evaluated.
 add_task(async function() {
-  await pushPref(EAGER_EVALUATION_PREF, true);
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
 
@@ -281,12 +295,6 @@ add_task(async function() {
 
 // Test that the setting works as expected.
 add_task(async function() {
-  // Settings is only enabled on Nightly at the moment.
-  if (!AppConstants.NIGHTLY_BUILD) {
-    ok(true);
-    return;
-  }
-
   // start with the pref off.
   await pushPref(EAGER_EVALUATION_PREF, false);
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -298,16 +306,18 @@ add_task(async function() {
     false
   );
 
+  // Wait for the autocomplete popup to be displayed so we know the eager evaluation could
+  // have occured.
+  const onPopupOpen = hud.jsterm.autocompletePopup.once("popup-opened");
+  await setInputValueForAutocompletion(hud, "x + y");
+  await onPopupOpen;
+
   is(
     getEagerEvaluationElement(hud),
     null,
     "There's no eager evaluation element"
   );
-
-  // Wait for the autocomplete popup to be displayed so we know the eager evaluation could
-  // have occured.
-  await setInputValueForAutocompletion(hud, "x + y");
-  ok(true, "Eager evaluation is disabled");
+  hud.jsterm.autocompletePopup.hidePopup();
 
   info("Turn on the eager evaluation");
   toggleConsoleSetting(

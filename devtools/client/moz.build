@@ -39,6 +39,8 @@ DevToolsModulesP(
 )
 
 DevToolsModules(
+    'constants.js',
+    'devtools-client.js',
     'menus.js',
 )
 

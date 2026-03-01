@@ -260,12 +260,9 @@ function Toolbox(
   this.selectTool = this.selectTool.bind(this);
   this.toggleSplitConsole = this.toggleSplitConsole.bind(this);
   this.toggleOptions = this.toggleOptions.bind(this);
-  this.togglePaintFlashing = this.togglePaintFlashing.bind(this);
   this.toggleDragging = this.toggleDragging.bind(this);
   this._onPausedState = this._onPausedState.bind(this);
   this._onResumedState = this._onResumedState.bind(this);
-  this.isPaintFlashing = false;
-
   if (!selectedTool) {
     selectedTool = Services.prefs.getCharPref(this._prefs.LAST_TOOL);
   }
@@ -1847,27 +1844,10 @@ Toolbox.prototype = {
       inspectorFront &&
       (inspectorFront.hasHighlighter("RulersHighlighter") ||
         inspectorFront.hasHighlighter("MeasuringToolHighlighter"));
-    if (hasHighlighters || this.isPaintFlashing) {
-      if (this.isPaintFlashing) {
-        this.togglePaintFlashing();
-      }
-      if (hasHighlighters) {
-        inspectorFront.destroyHighlighters();
-      }
+    if (hasHighlighters) {
+      inspectorFront.destroyHighlighters();
       this.component.setToolboxButtons(this.toolbarButtons);
     }
-  },
-
-  /**
-   * Set paintflashing to enabled or disabled for this toolbox's tab.
-   */
-  togglePaintFlashing: function() {
-    this.isPaintFlashing = !this.isPaintFlashing;
-    return this.target.reconfigure({
-      options: {
-        paintFlashing: this.isPaintFlashing,
-      },
-    });
   },
 
   /**
@@ -3167,8 +3147,9 @@ Toolbox.prototype = {
   },
 
   inspectObjectActor: async function(objectActor, inspectFromAnnotation) {
-    const objectGrip =
-      objectActor && objectActor.getGrip ? objectActor.getGrip() : objectActor;
+    const objectGrip = objectActor?.getGrip
+      ? objectActor.getGrip()
+      : objectActor;
 
     if (
       objectGrip.preview &&

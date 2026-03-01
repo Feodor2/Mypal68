@@ -7,8 +7,7 @@
 #include "gfx2DGlue.h"
 #include "GLContext.h"
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 using namespace mozilla::gfx;
 
@@ -85,5 +84,4 @@ SurfaceFormat X11TextureSourceOGL::ContentTypeToSurfaceFormat(
   }
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

@@ -28,6 +28,7 @@
 #include "gfxGraphiteShaper.h"
 #include "gfxHarfBuzzShaper.h"
 #include "gfxUserFontSet.h"
+#include "nsCRT.h" //MY
 #include "nsSpecialCasingData.h"
 #include "nsTextRunTransformations.h"
 #include "nsUGenCategory.h"
@@ -783,12 +784,11 @@ void gfxFont::RunMetrics::CombineWith(const RunMetrics& aOther,
 
 gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
                  gfxFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
-                 AntialiasOption anAAOption, cairo_scaled_font_t* aScaledFont)
-    : mScaledFont(aScaledFont),
-      mFontEntry(aFontEntry),
+                 AntialiasOption anAAOption)
+    : mFontEntry(aFontEntry),
       mUnscaledFont(aUnscaledFont),
       mStyle(*aFontStyle),
-      mAdjustedSize(0.0),
+      mAdjustedSize(-1.0),  // negative to indicate "not yet initialized"
       mFUnitsConvFactor(-1.0f),  // negative to indicate "not yet initialized"
       mAntialiasOption(anAAOption),
       mIsValid(true),
@@ -798,6 +798,10 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
 #ifdef DEBUG_TEXT_RUN_STORAGE_METRICS
   ++gFontCount;
 #endif
+
+  if (MOZ_UNLIKELY(StaticPrefs::gfx_text_disable_aa_AtStartup())) {
+    mAntialiasOption = kAntialiasNone;
+  }
 
   // Turn off AA for Ahem for testing purposes when requested.
   if (MOZ_UNLIKELY(StaticPrefs::gfx_font_rendering_ahem_antialias_none() &&
@@ -828,96 +832,45 @@ gfxFont::~gfxFont() {
 //
 gfxFont::RoundingFlags gfxFont::GetRoundOffsetsToPixels(
     DrawTarget* aDrawTarget) {
-  RoundingFlags result = RoundingFlags(0);
-
   // Could do something fancy here for ScaleFactors of
   // AxisAlignedTransforms, but we leave things simple.
   // Not much point rounding if a matrix will mess things up anyway.
-  // Also return false for non-cairo contexts.
-  if (aDrawTarget->GetTransform().HasNonTranslation()) {
-    return result;
+  // Also check if the font already knows hint metrics is off...
+  if (aDrawTarget->GetTransform().HasNonTranslation() || !ShouldHintMetrics()) {
+    return RoundingFlags(0);
   }
 
-  // All raster backends snap glyphs to pixels vertically.
-  // Print backends set CAIRO_HINT_METRICS_OFF.
-  result |= RoundingFlags::kRoundY;
+  cairo_t* cr = static_cast<cairo_t*>(
+      aDrawTarget->GetNativeSurface(NativeSurfaceType::CAIRO_CONTEXT));
+  if (cr) {
+    cairo_surface_t* target = cairo_get_target(cr);
 
-  // If we can't set up the cairo font, bail out.
-  if (!SetupCairoFont(aDrawTarget)) {
-    return result;
+    // Check whether the cairo surface's font options hint metrics.
+    cairo_font_options_t* fontOptions = cairo_font_options_create();
+    cairo_surface_get_font_options(target, fontOptions);
+    cairo_hint_metrics_t hintMetrics =
+        cairo_font_options_get_hint_metrics(fontOptions);
+    cairo_font_options_destroy(fontOptions);
+
+    switch (hintMetrics) {
+      case CAIRO_HINT_METRICS_OFF:
+        return RoundingFlags(0);
+      case CAIRO_HINT_METRICS_ON:
+        return RoundingFlags::kRoundX | RoundingFlags::kRoundY;
+      default:
+        break;
+    }
   }
 
-  cairo_t* cr = gfxFont::RefCairo(aDrawTarget);
-  cairo_scaled_font_t* scaled_font = cairo_get_scaled_font(cr);
-
-  // bug 1198921 - this sometimes fails under Windows for whatver reason
-  NS_ASSERTION(scaled_font,
-               "null cairo scaled font should never be returned "
-               "by cairo_get_scaled_font");
-  if (!scaled_font) {
-    result |= RoundingFlags::kRoundX;  // default to the same as the fallback
-                                       // path below
-    return result;
+  if (ShouldRoundXOffset(cr)) {
+    return RoundingFlags::kRoundX | RoundingFlags::kRoundY;
+  } else {
+    return RoundingFlags::kRoundY;
   }
-
-  // Sometimes hint metrics gets set for us, most notably for printing.
-#ifdef MOZ_TREE_CAIRO
-  cairo_hint_metrics_t hint_metrics =
-      cairo_scaled_font_get_hint_metrics(scaled_font);
-#else
-  cairo_font_options_t* font_options = cairo_font_options_create();
-  cairo_scaled_font_get_font_options(scaled_font, font_options);
-  cairo_hint_metrics_t hint_metrics =
-      cairo_font_options_get_hint_metrics(font_options);
-  cairo_font_options_destroy(font_options);
-#endif
-
-  switch (hint_metrics) {
-    case CAIRO_HINT_METRICS_OFF:
-      result &= ~RoundingFlags::kRoundY;
-      return result;
-    case CAIRO_HINT_METRICS_DEFAULT:
-      // Here we mimic what cairo surface/font backends do.  Printing
-      // surfaces have already been handled by hint_metrics.  The
-      // fallback show_glyphs implementation composites pixel-aligned
-      // glyph surfaces, so we just pick surface/font combinations that
-      // override this.
-      switch (cairo_scaled_font_get_type(scaled_font)) {
-#if CAIRO_HAS_DWRITE_FONT  // dwrite backend is not in std cairo releases yet
-        case CAIRO_FONT_TYPE_DWRITE:
-          // show_glyphs is implemented on the font and so is used for
-          // all surface types; however, it may pixel-snap depending on
-          // the dwrite rendering mode
-          if (!cairo_dwrite_scaled_font_get_force_GDI_classic(scaled_font) &&
-              gfxWindowsPlatform::GetPlatform()->DWriteMeasuringMode() ==
-                  DWRITE_MEASURING_MODE_NATURAL) {
-            return result;
-          }
-          [[fallthrough]];
-#endif
-        case CAIRO_FONT_TYPE_QUARTZ:
-          // Quartz surfaces implement show_glyphs for Quartz fonts
-          if (cairo_surface_get_type(cairo_get_target(cr)) ==
-              CAIRO_SURFACE_TYPE_QUARTZ) {
-            return result;
-          }
-          break;
-        default:
-          break;
-      }
-      break;
-    case CAIRO_HINT_METRICS_ON:
-      break;
-  }
-  result |= RoundingFlags::kRoundX;
-  return result;
 }
 
-gfxFloat gfxFont::GetGlyphHAdvance(DrawTarget* aDrawTarget, uint16_t aGID) {
-  if (!SetupCairoFont(aDrawTarget)) {
-    return 0;
-  }
-  if (ProvidesGlyphWidths()) {
+gfxFloat gfxFont::GetGlyphAdvance(uint16_t aGID, bool aVertical) {
+  if (!aVertical && ProvidesGlyphWidths()) {
     return GetGlyphWidth(aGID) / 65536.0;
   }
   if (mFUnitsConvFactor < 0.0f) {
@@ -933,7 +886,30 @@ gfxFloat gfxFont::GetGlyphHAdvance(DrawTarget* aDrawTarget, uint16_t aGID) {
   if (!shaper->Initialize()) {
     return 0;
   }
-  return shaper->GetGlyphHAdvance(aGID) / 65536.0;
+  return (aVertical ? shaper->GetGlyphVAdvance(aGID)
+                    : shaper->GetGlyphHAdvance(aGID)) /
+         65536.0;
+}
+
+gfxFloat gfxFont::GetCharAdvance(uint32_t aUnicode, bool aVertical) {
+  uint32_t gid = 0;
+  if (ProvidesGetGlyph()) {
+    gid = GetGlyph(aUnicode, 0);
+  } else {
+    if (!mHarfBuzzShaper) {
+      mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
+    }
+    gfxHarfBuzzShaper* shaper =
+        static_cast<gfxHarfBuzzShaper*>(mHarfBuzzShaper.get());
+    if (!shaper->Initialize()) {
+      return -1.0;
+    }
+    gid = shaper->GetNominalGlyph(aUnicode);
+  }
+  if (!gid) {
+    return -1.0;
+  }
+  return GetGlyphAdvance(gid, aVertical);
 }
 
 static void CollectLookupsByFeature(hb_face_t* aFace, hb_tag_t aTableTag,
@@ -2588,8 +2564,7 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
   gfxGlyphExtents* extents =
       ((aBoundingBoxType == LOOSE_INK_EXTENTS && !needsGlyphExtents &&
         !aTextRun->HasDetailedGlyphs()) ||
-       (MOZ_UNLIKELY(GetStyle()->sizeAdjust == 0.0)) ||
-       (MOZ_UNLIKELY(GetStyle()->size == 0)))
+       MOZ_UNLIKELY(GetStyle()->AdjustedSizeMustBeZero()))
           ? nullptr
           : GetOrCreateGlyphExtents(aTextRun->GetAppUnitsPerDevUnit());
   double x = 0;
@@ -2771,9 +2746,9 @@ static char16_t IsBoundarySpace(char16_t aChar, char16_t aNextChar) {
 template <typename T>
 gfxShapedWord* gfxFont::GetShapedWord(
     DrawTarget* aDrawTarget, const T* aText, uint32_t aLength, uint32_t aHash,
-    Script aRunScript, bool aVertical, int32_t aAppUnitsPerDevUnit,
-    gfx::ShapedTextFlags aFlags, RoundingFlags aRounding,
-    gfxTextPerfMetrics* aTextPerf GFX_MAYBE_UNUSED) {
+    Script aRunScript, nsAtom* aLanguage, bool aVertical,
+    int32_t aAppUnitsPerDevUnit, gfx::ShapedTextFlags aFlags,
+    RoundingFlags aRounding, gfxTextPerfMetrics* aTextPerf GFX_MAYBE_UNUSED) {
   // if the cache is getting too big, flush it and start over
   uint32_t wordCacheMaxEntries =
       gfxPlatform::GetPlatform()->WordCacheMaxEntries();
@@ -2783,8 +2758,8 @@ gfxShapedWord* gfxFont::GetShapedWord(
   }
 
   // if there's a cached entry for this word, just return it
-  CacheHashKey key(aText, aLength, aHash, aRunScript, aAppUnitsPerDevUnit,
-                   aFlags, aRounding);
+  CacheHashKey key(aText, aLength, aHash, aRunScript, aLanguage,
+                   aAppUnitsPerDevUnit, aFlags, aRounding);
 
   CacheHashEntry* entry = mWordCache->PutEntry(key, fallible);
   if (!entry) {
@@ -2809,8 +2784,8 @@ gfxShapedWord* gfxFont::GetShapedWord(
   }
 #endif
 
-  sw = gfxShapedWord::Create(aText, aLength, aRunScript, aAppUnitsPerDevUnit,
-                             aFlags, aRounding);
+  sw = gfxShapedWord::Create(aText, aLength, aRunScript, aLanguage,
+                             aAppUnitsPerDevUnit, aFlags, aRounding);
   entry->mShapedWord.reset(sw);
   if (!sw) {
     NS_WARNING("failed to create gfxShapedWord - expect missing text");
@@ -2818,7 +2793,7 @@ gfxShapedWord* gfxFont::GetShapedWord(
   }
 
   DebugOnly<bool> ok = ShapeText(aDrawTarget, aText, 0, aLength, aRunScript,
-                                 aVertical, aRounding, sw);
+                                 aLanguage, aVertical, aRounding, sw);
 
   NS_WARNING_ASSERTION(ok, "failed to shape word - expect garbled text");
 
@@ -2827,7 +2802,7 @@ gfxShapedWord* gfxFont::GetShapedWord(
 
 template gfxShapedWord* gfxFont::GetShapedWord(
     DrawTarget* aDrawTarget, const uint8_t* aText, uint32_t aLength,
-    uint32_t aHash, Script aRunScript, bool aVertical,
+    uint32_t aHash, Script aRunScript, nsAtom* aLanguage, bool aVertical,
     int32_t aAppUnitsPerDevUnit, gfx::ShapedTextFlags aFlags,
     RoundingFlags aRounding, gfxTextPerfMetrics* aTextPerf);
 
@@ -2839,7 +2814,8 @@ bool gfxFont::CacheHashEntry::KeyEquals(const KeyTypePointer aKey) const {
   if (sw->GetLength() != aKey->mLength || sw->GetFlags() != aKey->mFlags ||
       sw->GetRounding() != aKey->mRounding ||
       sw->GetAppUnitsPerDevUnit() != aKey->mAppUnitsPerDevUnit ||
-      sw->GetScript() != aKey->mScript) {
+      sw->GetScript() != aKey->mScript ||
+      sw->GetLanguage() != aKey->mLanguage) {
     return false;
   }
   if (sw->TextIs8Bit()) {
@@ -2869,8 +2845,8 @@ bool gfxFont::CacheHashEntry::KeyEquals(const KeyTypePointer aKey) const {
 
 bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const uint8_t* aText,
                         uint32_t aOffset, uint32_t aLength, Script aScript,
-                        bool aVertical, RoundingFlags aRounding,
-                        gfxShapedText* aShapedText) {
+                        nsAtom* aLanguage, bool aVertical,
+                        RoundingFlags aRounding, gfxShapedText* aShapedText) {
   nsDependentCSubstring ascii((const char*)aText, aLength);
   nsAutoString utf16;
   AppendASCIItoUTF16(ascii, utf16);
@@ -2878,13 +2854,13 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const uint8_t* aText,
     return false;
   }
   return ShapeText(aDrawTarget, utf16.BeginReading(), aOffset, aLength, aScript,
-                   aVertical, aRounding, aShapedText);
+                   aLanguage, aVertical, aRounding, aShapedText);
 }
 
 bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                         uint32_t aOffset, uint32_t aLength, Script aScript,
-                        bool aVertical, RoundingFlags aRounding,
-                        gfxShapedText* aShapedText) {
+                        nsAtom* aLanguage, bool aVertical,
+                        RoundingFlags aRounding, gfxShapedText* aShapedText) {
   // XXX Currently, we do all vertical shaping through harfbuzz.
   // Vertical graphite support may be wanted as a future enhancement.
   if (FontCanSupportGraphite() && !aVertical) {
@@ -2894,7 +2870,7 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
         Telemetry::ScalarAdd(Telemetry::ScalarID::BROWSER_USAGE_GRAPHITE, 1);
       }
       if (mGraphiteShaper->ShapeText(aDrawTarget, aText, aOffset, aLength,
-                                     aScript, aVertical, aRounding,
+                                     aScript, aLanguage, aVertical, aRounding,
                                      aShapedText)) {
         PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
                          aShapedText);
@@ -2907,7 +2883,8 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
     mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
   }
   if (mHarfBuzzShaper->ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
-                                 aVertical, aRounding, aShapedText)) {
+                                 aLanguage, aVertical, aRounding,
+                                 aShapedText)) {
     PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
                      aShapedText);
     if (GetFontEntry()->HasTrackingTable()) {
@@ -2956,7 +2933,7 @@ template <typename T>
 bool gfxFont::ShapeFragmentWithoutWordCache(DrawTarget* aDrawTarget,
                                             const T* aText, uint32_t aOffset,
                                             uint32_t aLength, Script aScript,
-                                            bool aVertical,
+                                            nsAtom* aLanguage, bool aVertical,
                                             RoundingFlags aRounding,
                                             gfxTextRun* aTextRun) {
   aTextRun->SetupClusterBoundaries(aOffset, aText, aLength);
@@ -2991,8 +2968,8 @@ bool gfxFont::ShapeFragmentWithoutWordCache(DrawTarget* aDrawTarget,
       }
     }
 
-    ok = ShapeText(aDrawTarget, aText, aOffset, fragLen, aScript, aVertical,
-                   aRounding, aTextRun);
+    ok = ShapeText(aDrawTarget, aText, aOffset, fragLen, aScript, aLanguage,
+                   aVertical, aRounding, aTextRun);
 
     aText += fragLen;
     aOffset += fragLen;
@@ -3014,8 +2991,8 @@ static bool IsInvalidControlChar(uint32_t aCh) {
 template <typename T>
 bool gfxFont::ShapeTextWithoutWordCache(DrawTarget* aDrawTarget, const T* aText,
                                         uint32_t aOffset, uint32_t aLength,
-                                        Script aScript, bool aVertical,
-                                        RoundingFlags aRounding,
+                                        Script aScript, nsAtom* aLanguage,
+                                        bool aVertical, RoundingFlags aRounding,
                                         gfxTextRun* aTextRun) {
   uint32_t fragStart = 0;
   bool ok = true;
@@ -3031,9 +3008,9 @@ bool gfxFont::ShapeTextWithoutWordCache(DrawTarget* aDrawTarget, const T* aText,
     }
 
     if (length > 0) {
-      ok = ShapeFragmentWithoutWordCache(aDrawTarget, aText + fragStart,
-                                         aOffset + fragStart, length, aScript,
-                                         aVertical, aRounding, aTextRun);
+      ok = ShapeFragmentWithoutWordCache(
+          aDrawTarget, aText + fragStart, aOffset + fragStart, length, aScript,
+          aLanguage, aVertical, aRounding, aTextRun);
     }
 
     if (i == aLength) {
@@ -3054,7 +3031,8 @@ bool gfxFont::ShapeTextWithoutWordCache(DrawTarget* aDrawTarget, const T* aText,
                  gfx::ShapedTextFlags::TEXT_HIDE_CONTROL_CHARACTERS)) {
       if (GetFontEntry()->IsUserFont() && HasCharacter(ch)) {
         ShapeFragmentWithoutWordCache(aDrawTarget, aText + i, aOffset + i, 1,
-                                      aScript, aVertical, aRounding, aTextRun);
+                                      aScript, aLanguage, aVertical, aRounding,
+                                      aTextRun);
       } else {
         aTextRun->SetMissingGlyph(aOffset + i, ch, this);
       }
@@ -3093,7 +3071,8 @@ bool gfxFont::SplitAndInitTextRun(
     DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
     const T* aString,    // text for this font run
     uint32_t aRunStart,  // position in the textrun
-    uint32_t aRunLength, Script aRunScript, ShapedTextFlags aOrientation) {
+    uint32_t aRunLength, Script aRunScript, nsAtom* aLanguage,
+    ShapedTextFlags aOrientation) {
   if (aRunLength == 0) {
     return true;
   }
@@ -3129,8 +3108,8 @@ bool gfxFont::SplitAndInitTextRun(
     if (aRunLength > wordCacheCharLimit || HasSpaces(aString, aRunLength)) {
       TEXT_PERF_INCR(tp, wordCacheSpaceRules);
       return ShapeTextWithoutWordCache(aDrawTarget, aString, aRunStart,
-                                       aRunLength, aRunScript, vertical,
-                                       rounding, aTextRun);
+                                       aRunLength, aRunScript, aLanguage,
+                                       vertical, rounding, aTextRun);
     }
   }
 
@@ -3179,7 +3158,7 @@ bool gfxFont::SplitAndInitTextRun(
       TEXT_PERF_INCR(tp, wordCacheLong);
       bool ok = ShapeFragmentWithoutWordCache(
           aDrawTarget, aString + wordStart, aRunStart + wordStart, length,
-          aRunScript, vertical, rounding, aTextRun);
+          aRunScript, aLanguage, vertical, rounding, aTextRun);
       if (!ok) {
         return false;
       }
@@ -3194,8 +3173,8 @@ bool gfxFont::SplitAndInitTextRun(
         }
       }
       gfxShapedWord* sw = GetShapedWord(
-          aDrawTarget, aString + wordStart, length, hash, aRunScript, vertical,
-          appUnitsPerDevUnit, wordFlags, rounding, tp);
+          aDrawTarget, aString + wordStart, length, hash, aRunScript, aLanguage,
+          vertical, appUnitsPerDevUnit, wordFlags, rounding, tp);
       if (sw) {
         aTextRun->CopyGlyphDataFrom(sw, aRunStart + wordStart);
       } else {
@@ -3218,7 +3197,7 @@ bool gfxFont::SplitAndInitTextRun(
         NS_ASSERTION(boundary16 < 256, "unexpected boundary!");
         gfxShapedWord* sw = GetShapedWord(
             aDrawTarget, &boundary, 1, gfxShapedWord::HashMix(0, boundary),
-            aRunScript, vertical, appUnitsPerDevUnit,
+            aRunScript, aLanguage, vertical, appUnitsPerDevUnit,
             flags | gfx::ShapedTextFlags::TEXT_IS_8BIT, rounding, tp);
         if (sw) {
           aTextRun->CopyGlyphDataFrom(sw, aRunStart + i);
@@ -3255,8 +3234,8 @@ bool gfxFont::SplitAndInitTextRun(
                  gfx::ShapedTextFlags::TEXT_HIDE_CONTROL_CHARACTERS)) {
       if (GetFontEntry()->IsUserFont() && HasCharacter(ch)) {
         ShapeFragmentWithoutWordCache(aDrawTarget, aString + i, aRunStart + i,
-                                      1, aRunScript, vertical, rounding,
-                                      aTextRun);
+                                      1, aRunScript, aLanguage, vertical,
+                                      rounding, aTextRun);
       } else {
         aTextRun->SetMissingGlyph(aRunStart + i, ch, this);
       }
@@ -3274,11 +3253,11 @@ bool gfxFont::SplitAndInitTextRun(
 template bool gfxFont::SplitAndInitTextRun(
     DrawTarget* aDrawTarget, gfxTextRun* aTextRun, const uint8_t* aString,
     uint32_t aRunStart, uint32_t aRunLength, Script aRunScript,
-    ShapedTextFlags aOrientation);
+    nsAtom* aLanguage, ShapedTextFlags aOrientation);
 template bool gfxFont::SplitAndInitTextRun(
     DrawTarget* aDrawTarget, gfxTextRun* aTextRun, const char16_t* aString,
     uint32_t aRunStart, uint32_t aRunLength, Script aRunScript,
-    ShapedTextFlags aOrientation);
+    nsAtom* aLanguage, ShapedTextFlags aOrientation);
 
 template <>
 bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
@@ -3286,8 +3265,8 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
                                    uint32_t aOffset, uint32_t aLength,
                                    FontMatchType aMatchType,
                                    gfx::ShapedTextFlags aOrientation,
-                                   Script aScript, bool aSyntheticLower,
-                                   bool aSyntheticUpper) {
+                                   Script aScript, nsAtom* aLanguage,
+                                   bool aSyntheticLower, bool aSyntheticUpper) {
   bool ok = true;
 
   RefPtr<gfxFont> smallCapsFont = GetSmallCapsFont();
@@ -3327,7 +3306,7 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
         } else if (ch != ToLowerCase(ch)) {
           // ch is upper case
           chAction = (aSyntheticUpper ? kUppercaseReduce : kNoChange);
-          if (mStyle.explicitLanguage && mStyle.language == nsGkAtoms::el) {
+          if (aLanguage == nsGkAtoms::el) {
             // In Greek, check for characters that will be modified by
             // the GreekUpperCase mapping - this catches accented
             // capitals where the accent is to be removed (bug 307039).
@@ -3360,7 +3339,7 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
                                 aOrientation, isCJK);
           if (!f->SplitAndInitTextRun(aDrawTarget, aTextRun, aText + runStart,
                                       aOffset + runStart, runLength, aScript,
-                                      aOrientation)) {
+                                      aLanguage, aOrientation)) {
             ok = false;
           }
           break;
@@ -3379,9 +3358,8 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
 
           bool mergeNeeded = nsCaseTransformTextRunFactory::TransformString(
               origString, convertedString, /* aAllUppercase = */ true,
-              /* aCaseTransformsOnly = */ false,
-              mStyle.explicitLanguage ? mStyle.language.get() : nullptr,
-              charsToMergeArray, deletedCharsArray);
+              /* aCaseTransformsOnly = */ false, aLanguage, charsToMergeArray,
+              deletedCharsArray);
 
           if (mergeNeeded) {
             // This is the hard case: the transformation caused chars
@@ -3395,9 +3373,10 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
                 &params, convertedString.Length(), aTextRun->GetFontGroup(),
                 gfx::ShapedTextFlags(), nsTextFrameUtils::Flags()));
             tempRun->AddGlyphRun(f, aMatchType, 0, true, aOrientation, isCJK);
-            if (!f->SplitAndInitTextRun(
-                    aDrawTarget, tempRun.get(), convertedString.BeginReading(),
-                    0, convertedString.Length(), aScript, aOrientation)) {
+            if (!f->SplitAndInitTextRun(aDrawTarget, tempRun.get(),
+                                        convertedString.BeginReading(), 0,
+                                        convertedString.Length(), aScript,
+                                        aLanguage, aOrientation)) {
               ok = false;
             } else {
               RefPtr<gfxTextRun> mergedRun(gfxTextRun::Create(
@@ -3413,9 +3392,10 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
           } else {
             aTextRun->AddGlyphRun(f, aMatchType, aOffset + runStart, true,
                                   aOrientation, isCJK);
-            if (!f->SplitAndInitTextRun(
-                    aDrawTarget, aTextRun, convertedString.BeginReading(),
-                    aOffset + runStart, runLength, aScript, aOrientation)) {
+            if (!f->SplitAndInitTextRun(aDrawTarget, aTextRun,
+                                        convertedString.BeginReading(),
+                                        aOffset + runStart, runLength, aScript,
+                                        aLanguage, aOrientation)) {
               ok = false;
             }
           }
@@ -3440,14 +3420,14 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
                                    uint32_t aOffset, uint32_t aLength,
                                    FontMatchType aMatchType,
                                    gfx::ShapedTextFlags aOrientation,
-                                   Script aScript, bool aSyntheticLower,
-                                   bool aSyntheticUpper) {
+                                   Script aScript, nsAtom* aLanguage,
+                                   bool aSyntheticLower, bool aSyntheticUpper) {
   NS_ConvertASCIItoUTF16 unicodeString(reinterpret_cast<const char*>(aText),
                                        aLength);
-  return InitFakeSmallCapsRun(aDrawTarget, aTextRun,
-                              static_cast<const char16_t*>(unicodeString.get()),
-                              aOffset, aLength, aMatchType, aOrientation,
-                              aScript, aSyntheticLower, aSyntheticUpper);
+  return InitFakeSmallCapsRun(
+      aDrawTarget, aTextRun, static_cast<const char16_t*>(unicodeString.get()),
+      aOffset, aLength, aMatchType, aOrientation, aScript, aLanguage,
+      aSyntheticLower, aSyntheticUpper);
 }
 
 gfxFont* gfxFont::GetSmallCapsFont() {
@@ -3463,38 +3443,6 @@ gfxFont* gfxFont::GetSubSuperscriptFont(int32_t aAppUnitsPerDevPixel) {
   style.AdjustForSubSuperscript(aAppUnitsPerDevPixel);
   gfxFontEntry* fe = GetFontEntry();
   return fe->FindOrMakeFont(&style, mUnicodeRangeMap);
-}
-
-static void DestroyRefCairo(void* aData) {
-  cairo_t* refCairo = static_cast<cairo_t*>(aData);
-  MOZ_ASSERT(refCairo);
-  cairo_destroy(refCairo);
-}
-
-/* static */
-cairo_t* gfxFont::RefCairo(DrawTarget* aDT) {
-  // DrawTargets that don't use a Cairo backend can be given a 1x1 "reference"
-  // |cairo_t*|, stored in the DrawTarget's user data, for doing font-related
-  // operations.
-  static UserDataKey sRefCairo;
-
-  cairo_t* refCairo = nullptr;
-  if (aDT->GetBackendType() == BackendType::CAIRO) {
-    refCairo = static_cast<cairo_t*>(
-        aDT->GetNativeSurface(NativeSurfaceType::CAIRO_CONTEXT));
-    if (refCairo) {
-      return refCairo;
-    }
-  }
-
-  refCairo = static_cast<cairo_t*>(aDT->GetUserData(&sRefCairo));
-  if (!refCairo) {
-    refCairo = cairo_create(
-        gfxPlatform::GetPlatform()->ScreenReferenceSurface()->CairoSurface());
-    aDT->AddUserData(&sRefCairo, refCairo, DestroyRefCairo);
-  }
-
-  return refCairo;
 }
 
 gfxGlyphExtents* gfxFont::GetOrCreateGlyphExtents(int32_t aAppUnitsPerDevUnit) {
@@ -3526,22 +3474,15 @@ void gfxFont::SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
     return;
   }
 
-  RefPtr<ScaledFont> sf = GetScaledFont(aDrawTarget);
-  uint16_t glyphIndex = aGlyphID;
-  GlyphMetrics metrics;
-  if (mAntialiasOption == kAntialiasNone) {
-    sf->GetGlyphDesignMetrics(&glyphIndex, 1, &metrics);
-  } else {
-    aDrawTarget->GetGlyphRasterizationMetrics(sf, &glyphIndex, 1, &metrics);
-  }
+  gfxRect bounds;
+  GetGlyphBounds(aGlyphID, &bounds, mAntialiasOption == kAntialiasNone);
 
   const Metrics& fontMetrics = GetMetrics(nsFontMetrics::eHorizontal);
   int32_t appUnitsPerDevUnit = aExtents->GetAppUnitsPerDevUnit();
-  if (!aNeedTight && metrics.mXBearing >= 0.0 &&
-      metrics.mYBearing >= -fontMetrics.maxAscent &&
-      metrics.mHeight + metrics.mYBearing <= fontMetrics.maxDescent) {
-    uint32_t appUnitsWidth = uint32_t(
-        ceil((metrics.mXBearing + metrics.mWidth) * appUnitsPerDevUnit));
+  if (!aNeedTight && bounds.x >= 0.0 && bounds.y >= -fontMetrics.maxAscent &&
+      bounds.height + bounds.y <= fontMetrics.maxDescent) {
+    uint32_t appUnitsWidth =
+        uint32_t(ceil((bounds.x + bounds.width) * appUnitsPerDevUnit));
     if (appUnitsWidth < gfxGlyphExtents::INVALID_WIDTH) {
       aExtents->SetContainedGlyphWidthAppUnits(aGlyphID,
                                                uint16_t(appUnitsWidth));
@@ -3555,9 +3496,9 @@ void gfxFont::SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
 #endif
 
   gfxFloat d2a = appUnitsPerDevUnit;
-  gfxRect bounds(metrics.mXBearing * d2a, metrics.mYBearing * d2a,
-                 metrics.mWidth * d2a, metrics.mHeight * d2a);
-  aExtents->SetTightGlyphExtents(aGlyphID, bounds);
+  aExtents->SetTightGlyphExtents(
+      aGlyphID, gfxRect(bounds.x * d2a, bounds.y * d2a, bounds.width * d2a,
+                        bounds.height * d2a));
 }
 
 // Try to initialize font metrics by reading sfnt tables directly;
@@ -3725,9 +3666,28 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
   // Even if this font size is zero, this font is created with non-zero size.
   // However, for layout and others, we should return the metrics of zero size
   // font.
-  if (mStyle.size == 0.0 || mStyle.sizeAdjust == 0.0) {
+  if (mStyle.AdjustedSizeMustBeZero()) {
     memset(aMetrics, 0, sizeof(gfxFont::Metrics));
     return;
+  }
+
+  // If the font entry has ascent/descent/lineGap-override values,
+  // replace the metrics from the font with the overrides.
+  gfxFloat adjustedSize = GetAdjustedSize();
+  if (mFontEntry->mAscentOverride >= 0.0) {
+    aMetrics->maxAscent = mFontEntry->mAscentOverride * adjustedSize;
+    aMetrics->maxHeight = aMetrics->maxAscent + aMetrics->maxDescent;
+    aMetrics->internalLeading =
+        std::max(0.0, aMetrics->maxHeight - aMetrics->emHeight);
+  }
+  if (mFontEntry->mDescentOverride >= 0.0) {
+    aMetrics->maxDescent = mFontEntry->mDescentOverride * adjustedSize;
+    aMetrics->maxHeight = aMetrics->maxAscent + aMetrics->maxDescent;
+    aMetrics->internalLeading =
+        std::max(0.0, aMetrics->maxHeight - aMetrics->emHeight);
+  }
+  if (mFontEntry->mLineGapOverride >= 0.0) {
+    aMetrics->externalLeading = mFontEntry->mLineGapOverride * adjustedSize;
   }
 
   aMetrics->underlineSize = std::max(1.0, aMetrics->underlineSize);
@@ -3809,15 +3769,16 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
 // usual font tables (which can happen in the case of a legacy bitmap or Type1
 // font for which the platform-specific backend used platform APIs instead of
 // sfnt tables to create the horizontal metrics).
-UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
+void gfxFont::CreateVerticalMetrics() {
   const uint32_t kHheaTableTag = TRUETYPE_TAG('h', 'h', 'e', 'a');
   const uint32_t kVheaTableTag = TRUETYPE_TAG('v', 'h', 'e', 'a');
   const uint32_t kPostTableTag = TRUETYPE_TAG('p', 'o', 's', 't');
   const uint32_t kOS_2TableTag = TRUETYPE_TAG('O', 'S', '/', '2');
   uint32_t len;
 
-  UniquePtr<Metrics> metrics = MakeUnique<Metrics>();
-  ::memset(metrics.get(), 0, sizeof(Metrics));
+  mVerticalMetrics = MakeUnique<Metrics>();
+  auto* metrics = mVerticalMetrics.get();
+  ::memset(metrics, 0, sizeof(Metrics));
 
   // Some basic defaults, in case the font lacks any real metrics tables.
   // TODO: consider what rounding (if any) we should apply to these.
@@ -3882,6 +3843,7 @@ UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
   }
 
   // Read real vertical metrics if available.
+  metrics->ideographicWidth = -1.0;
   gfxFontEntry::AutoTable vheaTable(mFontEntry, kVheaTableTag);
   if (vheaTable && mFUnitsConvFactor >= 0.0) {
     const MetricsHeader* vhea = reinterpret_cast<const MetricsHeader*>(
@@ -3901,6 +3863,7 @@ UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
         metrics->maxDescent = halfExtent;
         SET_SIGNED(externalLeading, vhea->lineGap);
       }
+      metrics->ideographicWidth = GetCharAdvance(kWaterIdeograph, true);
     }
   }
 
@@ -3961,8 +3924,6 @@ UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
   metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
   metrics->xHeight = metrics->emHeight / 2;
   metrics->capHeight = metrics->maxAscent;
-
-  return std::move(metrics);
 }
 
 gfxFloat gfxFont::SynthesizeSpaceWidth(uint32_t aCh) {
@@ -4033,9 +3994,8 @@ void gfxFont::RemoveGlyphChangeObserver(GlyphChangeObserver* aObserver) {
 #define DEFAULT_PIXEL_FONT_SIZE 16.0f
 
 gfxFontStyle::gfxFontStyle()
-    : language(nsGkAtoms::x_western),
-      size(DEFAULT_PIXEL_FONT_SIZE),
-      sizeAdjust(-1.0f),
+    : size(DEFAULT_PIXEL_FONT_SIZE),
+      sizeAdjust(0.0f),
       baselineOffset(0.0f),
       languageOverride(NO_FONT_LANGUAGE_OVERRIDE),
       fontSmoothingBackgroundColor(NS_RGBA(0, 0, 0, 0)),
@@ -4044,24 +4004,23 @@ gfxFontStyle::gfxFontStyle()
       style(FontSlantStyle::Normal()),
       variantCaps(NS_FONT_VARIANT_CAPS_NORMAL),
       variantSubSuper(NS_FONT_VARIANT_POSITION_NORMAL),
+      sizeAdjustBasis(uint8_t(FontSizeAdjust::Tag::None)),
       systemFont(true),
       printerFont(false),
       useGrayscaleAntialiasing(false),
       allowSyntheticWeight(true),
       allowSyntheticStyle(true),
-      noFallbackVariantFeatures(true),
-      explicitLanguage(false) {}
+      allowSyntheticSmallCaps(true),
+      noFallbackVariantFeatures(true) {}
 
 gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
                            FontStretch aStretch, gfxFloat aSize,
-                           nsAtom* aLanguage, bool aExplicitLanguage,
-                           float aSizeAdjust, bool aSystemFont,
+                           const FontSizeAdjust& aSizeAdjust, bool aSystemFont,
                            bool aPrinterFont, bool aAllowWeightSynthesis,
                            bool aAllowStyleSynthesis,
+                           bool aAllowSmallCapsSynthesis,
                            uint32_t aLanguageOverride)
-    : language(aLanguage),
-      size(aSize),
-      sizeAdjust(aSizeAdjust),
+    : size(aSize),
       baselineOffset(0.0f),
       languageOverride(aLanguageOverride),
       fontSmoothingBackgroundColor(NS_RGBA(0, 0, 0, 0)),
@@ -4075,29 +4034,52 @@ gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
       useGrayscaleAntialiasing(false),
       allowSyntheticWeight(aAllowWeightSynthesis),
       allowSyntheticStyle(aAllowStyleSynthesis),
-      noFallbackVariantFeatures(true),
-      explicitLanguage(aExplicitLanguage) {
+      allowSyntheticSmallCaps(aAllowSmallCapsSynthesis),
+      noFallbackVariantFeatures(true) {
   MOZ_ASSERT(!mozilla::IsNaN(size));
+
+  switch (aSizeAdjust.tag) {
+    case FontSizeAdjust::Tag::None:
+      sizeAdjust = 0.0f;
+      break;
+    case FontSizeAdjust::Tag::ExHeight:
+      sizeAdjust = aSizeAdjust.AsExHeight();
+      break;
+    case FontSizeAdjust::Tag::CapHeight:
+      sizeAdjust = aSizeAdjust.AsCapHeight();
+      break;
+    case FontSizeAdjust::Tag::ChWidth:
+      sizeAdjust = aSizeAdjust.AsChWidth();
+      break;
+    case FontSizeAdjust::Tag::IcWidth:
+      sizeAdjust = aSizeAdjust.AsIcWidth();
+      break;
+    case FontSizeAdjust::Tag::IcHeight:
+      sizeAdjust = aSizeAdjust.AsIcHeight();
+      break;
+  }
   MOZ_ASSERT(!mozilla::IsNaN(sizeAdjust));
 
-  if (weight > FontWeight(900)) {
-    weight = FontWeight(900);
+  sizeAdjustBasis = uint8_t(aSizeAdjust.tag);
+  // sizeAdjustBasis is currently a small bitfield, so let's assert that the
+  // tag value was not truncated.
+  MOZ_ASSERT(FontSizeAdjust::Tag(sizeAdjustBasis) == aSizeAdjust.tag,
+             "gfxFontStyle.sizeAdjustBasis too small?");
+
+  if (weight > FontWeight(1000)) {
+    weight = FontWeight(1000);
   }
-  if (weight < FontWeight(100)) {
-    weight = FontWeight(100);
+  if (weight < FontWeight(1)) {
+    weight = FontWeight(1);
   }
 
   if (size >= FONT_MAX_SIZE) {
     size = FONT_MAX_SIZE;
-    sizeAdjust = -1.0f;
+    sizeAdjust = 0.0f;
+    sizeAdjustBasis = uint8_t(FontSizeAdjust::Tag::None);
   } else if (size < 0.0) {
     NS_WARNING("negative font size");
     size = 0.0;
-  }
-
-  if (!language) {
-    NS_WARNING("null language");
-    language = nsGkAtoms::x_western;
   }
 }
 
@@ -4109,8 +4091,7 @@ PLDHashNumber gfxFontStyle::Hash() const {
                                                sizeof(gfxFontVariation));
   return mozilla::AddToHash(hash, systemFont, style.ForHash(),
                             stretch.ForHash(), weight.ForHash(), size,
-                            int32_t(sizeAdjust * 1000.0f),
-                            nsRefPtrHashKey<nsAtom>::HashKey(language));
+                            int32_t(sizeAdjust * 1000.0f));
 }
 
 void gfxFontStyle::AdjustForSubSuperscript(int32_t aAppUnitsPerDevPixel) {
@@ -4157,29 +4138,3 @@ bool gfxFont::TryGetMathTable() {
 
   return !!mMathTable;
 }
-
-/* static */
-void SharedFontList::Initialize() {
-  sEmpty = new SharedFontList();
-
-  for (auto i : IntegerRange(ArrayLength(sSingleGenerics))) {
-    auto type = static_cast<StyleGenericFontFamily>(i);
-    if (type != StyleGenericFontFamily::None) {
-      sSingleGenerics[i] = new SharedFontList(type);
-    }
-  }
-}
-
-/* static */
-void SharedFontList::Shutdown() {
-  sEmpty = nullptr;
-
-  for (auto& sharedFontList : sSingleGenerics) {
-    sharedFontList = nullptr;
-  }
-}
-
-StaticRefPtr<SharedFontList> SharedFontList::sEmpty;
-
-StaticRefPtr<SharedFontList>
-    SharedFontList::sSingleGenerics[size_t(StyleGenericFontFamily::MozEmoji)];

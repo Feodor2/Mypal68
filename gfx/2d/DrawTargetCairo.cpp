@@ -7,7 +7,6 @@
 #include "SourceSurfaceCairo.h"
 #include "PathCairo.h"
 #include "HelpersCairo.h"
-#include "ScaledFontBase.h"
 #include "BorrowedContext.h"
 #include "FilterNodeSoftware.h"
 #include "mozilla/Scoped.h"
@@ -1194,7 +1193,7 @@ bool DrawTargetCairo::IsCurrentGroupOpaque() {
   return cairo_surface_get_content(surf) == CAIRO_CONTENT_COLOR;
 }
 
-void DrawTargetCairo::SetFontOptions() {
+void DrawTargetCairo::SetFontOptions(cairo_antialias_t aAAMode) {
   //   This will attempt to detect if the currently set scaled font on the
   // context has enabled subpixel AA. If it is not permitted, then it will
   // downgrade to grayscale AA.
@@ -1210,7 +1209,7 @@ void DrawTargetCairo::SetFontOptions() {
   // cairo_surface_set_subpixel_antialiasing extension.
 
   // If allowing subpixel AA, then leave Cairo's default AA state.
-  if (mPermitSubpixelAA) {
+  if (mPermitSubpixelAA && aAAMode == CAIRO_ANTIALIAS_DEFAULT) {
     return;
   }
 
@@ -1222,12 +1221,22 @@ void DrawTargetCairo::SetFontOptions() {
     }
   }
 
+  cairo_get_font_options(mContext, mFontOptions);
+  cairo_antialias_t oldAA = cairo_font_options_get_antialias(mFontOptions);
+  cairo_antialias_t newAA =
+      aAAMode == CAIRO_ANTIALIAS_DEFAULT ? oldAA : aAAMode;
+  // Nothing to change if switching to default AA.
+  if (newAA == CAIRO_ANTIALIAS_DEFAULT) {
+    return;
+  }
   // If the current font requests subpixel AA, force it to gray since we don't
   // allow subpixel AA.
-  cairo_get_font_options(mContext, mFontOptions);
-  cairo_antialias_t antialias = cairo_font_options_get_antialias(mFontOptions);
-  if (antialias == CAIRO_ANTIALIAS_SUBPIXEL) {
-    cairo_font_options_set_antialias(mFontOptions, CAIRO_ANTIALIAS_GRAY);
+  if (!mPermitSubpixelAA && newAA == CAIRO_ANTIALIAS_SUBPIXEL) {
+    newAA = CAIRO_ANTIALIAS_GRAY;
+  }
+  // Only override old AA with lower levels of AA.
+  if (oldAA == CAIRO_ANTIALIAS_DEFAULT || (int)newAA < (int)oldAA) {
+    cairo_font_options_set_antialias(mFontOptions, newAA);
     cairo_set_font_options(mContext, mFontOptions);
   }
 }
@@ -1265,7 +1274,9 @@ void DrawTargetCairo::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
     return;
   }
 
-  if (!aFont) {
+  cairo_scaled_font_t* cairoScaledFont =
+      aFont ? aFont->GetCairoScaledFont() : nullptr;
+  if (!cairoScaledFont) {
     gfxDevCrash(LogReason::InvalidFont) << "Invalid scaled font";
     return;
   }
@@ -1273,8 +1284,7 @@ void DrawTargetCairo::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
   AutoPrepareForDrawing prep(this, mContext);
   AutoClearDeviceOffset clear(aPattern);
 
-  ScaledFontBase* scaledFont = static_cast<ScaledFontBase*>(aFont);
-  cairo_set_scaled_font(mContext, scaledFont->GetCairoScaledFont());
+  cairo_set_scaled_font(mContext, cairoScaledFont);
 
   cairo_pattern_t* pat =
       GfxPatternToCairoPattern(aPattern, aOptions.mAlpha, GetTransform());
@@ -1283,11 +1293,11 @@ void DrawTargetCairo::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
   cairo_set_source(mContext, pat);
   cairo_pattern_destroy(pat);
 
-  cairo_set_antialias(mContext,
-                      GfxAntialiasToCairoAntialias(aOptions.mAntialiasMode));
+  cairo_antialias_t aa = GfxAntialiasToCairoAntialias(aOptions.mAntialiasMode);
+  cairo_set_antialias(mContext, aa);
 
   // Override any font-specific options as necessary.
-  SetFontOptions();
+  SetFontOptions(aa);
 
   // Convert our GlyphBuffer into a vector of Cairo glyphs. This code can
   // execute millions of times in short periods, so we want to avoid heap
@@ -1577,26 +1587,6 @@ already_AddRefed<GradientStops> DrawTargetCairo::CreateGradientStops(
 
 already_AddRefed<FilterNode> DrawTargetCairo::CreateFilter(FilterType aType) {
   return FilterNodeSoftware::Create(aType);
-}
-
-void DrawTargetCairo::GetGlyphRasterizationMetrics(
-    ScaledFont* aScaledFont, const uint16_t* aGlyphIndices, uint32_t aNumGlyphs,
-    GlyphMetrics* aGlyphMetrics) {
-  for (uint32_t i = 0; i < aNumGlyphs; i++) {
-    cairo_glyph_t glyph;
-    cairo_text_extents_t extents;
-    glyph.index = aGlyphIndices[i];
-    glyph.x = 0;
-    glyph.y = 0;
-    cairo_glyph_extents(mContext, &glyph, 1, &extents);
-
-    aGlyphMetrics[i].mXBearing = extents.x_bearing;
-    aGlyphMetrics[i].mXAdvance = extents.x_advance;
-    aGlyphMetrics[i].mYBearing = extents.y_bearing;
-    aGlyphMetrics[i].mYAdvance = extents.y_advance;
-    aGlyphMetrics[i].mWidth = extents.width;
-    aGlyphMetrics[i].mHeight = extents.height;
-  }
 }
 
 already_AddRefed<SourceSurface> DrawTargetCairo::CreateSourceSurfaceFromData(

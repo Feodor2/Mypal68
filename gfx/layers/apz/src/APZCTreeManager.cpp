@@ -37,6 +37,7 @@
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/ToString.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/EventStateManager.h"  // for WheelPrefs
 #ifdef MOZ_BUILD_WEBRENDER
@@ -53,17 +54,11 @@
 #include "GestureEventListener.h"  // for GestureEventListener::setLongTapEnabled
 #include "UnitTransforms.h"        // for ViewAs
 
-#define ENABLE_APZCTM_LOGGING 0
-// #define ENABLE_APZCTM_LOGGING 1
+static mozilla::LazyLogModule sApzMgrLog("apz.manager");
+#define APZCTM_LOG(...) MOZ_LOG(sApzMgrLog, LogLevel::Debug, (__VA_ARGS__))
 
-#if ENABLE_APZCTM_LOGGING
-#  define APZCTM_LOG(...) printf_stderr("APZCTM: " __VA_ARGS__)
-#else
-#  define APZCTM_LOG(...)
-#endif
-
-// #define APZ_KEY_LOG(...) printf_stderr("APZKEY: " __VA_ARGS__)
-#define APZ_KEY_LOG(...)
+static mozilla::LazyLogModule sApzKeyLog("apz.key");
+#define APZ_KEY_LOG(...) MOZ_LOG(sApzKeyLog, LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 namespace layers {
@@ -631,13 +626,10 @@ APZCTreeManager::UpdateHitTestingTreeImpl(const ScrollNode& aRoot,
     state.mNodesToDestroy[i]->Destroy();
   }
 
-#if ENABLE_APZCTM_LOGGING
-  // Make the hit-test tree line up with the layer dump
-  printf_stderr("APZCTreeManager (%p)\n", this);
-  if (mRootNode) {
+  APZCTM_LOG("APZCTreeManager (%p)\n", this);
+  if (mRootNode && MOZ_LOG_TEST(sApzMgrLog, LogLevel::Debug)) {
     mRootNode->Dump("  ");
   }
-#endif
   SendSubtreeTransformsToChromeMainThread(nullptr);
 }
 
@@ -831,7 +823,9 @@ template <class ScrollNode>
 void APZCTreeManager::PrintAPZCInfo(const ScrollNode& aLayer,
                                     const AsyncPanZoomController* apzc) {
   const FrameMetrics& metrics = aLayer.Metrics();
-  mApzcTreeLog << "APZC " << apzc->GetGuid()
+  std::stringstream guidStr;
+  guidStr << apzc->GetGuid();
+  mApzcTreeLog << "APZC " << guidStr.str()
                << "\tcb=" << metrics.GetCompositionBounds()
                << "\tsr=" << metrics.GetScrollableRect()
                << (metrics.IsScrollInfoLayer() ? "\tscrollinfo" : "")
@@ -1285,7 +1279,7 @@ static bool WillHandleInput(const PanGestureOrScrollWheelInput& aPanInput) {
     return true;
   }
 
-  WidgetWheelEvent wheelEvent = aPanInput.ToWidgetWheelEvent(nullptr);
+  WidgetWheelEvent wheelEvent = aPanInput.ToWidgetEvent(nullptr);
   return APZInputBridge::ActionForWheelEvent(&wheelEvent).isSome();
 }
 
@@ -1499,7 +1493,7 @@ APZEventResult APZCTreeManager::ReceiveInputEvent(InputData& aEvent) {
       // GetUserPrefsForWheelEvent in IAPZCTreeManager.cpp for why these fields
       // are stored separately.
       MOZ_ASSERT(NS_IsMainThread());
-      WidgetWheelEvent wheelEvent = panInput.ToWidgetWheelEvent(nullptr);
+      WidgetWheelEvent wheelEvent = panInput.ToWidgetEvent(nullptr);
       EventStateManager::GetUserPrefsForWheelEvent(
           &wheelEvent, &panInput.mUserDeltaMultiplierX,
           &panInput.mUserDeltaMultiplierY);
@@ -1762,7 +1756,8 @@ APZCTreeManager::HitTestResult APZCTreeManager::GetTouchInputBlockAPZC(
           ConvertToTouchBehavior(hit2.mHitResult));
     }
     hit.mTargetApzc = GetZoomableTarget(hit.mTargetApzc, hit2.mTargetApzc);
-    APZCTM_LOG("Using APZC %p as the root APZC for multi-touch\n", apzc.get());
+    APZCTM_LOG("Using APZC %p as the root APZC for multi-touch\n",
+               hit.mTargetApzc.get());
     // A multi-touch gesture will not be a scrollbar drag, even if the
     // first touch point happened to hit a scrollbar.
     hit.mScrollbarNode.Clear();
@@ -2281,10 +2276,10 @@ void APZCTreeManager::UpdateZoomConstraints(
   if (aConstraints) {
     APZCTM_LOG("Recording constraints %s for guid %s\n",
                Stringify(aConstraints.value()).c_str(),
-               Stringify(aGuid).c_str());
+               ToString(aGuid).c_str());
     mZoomConstraints[aGuid] = aConstraints.ref();
   } else {
-    APZCTM_LOG("Removing constraints for guid %s\n", Stringify(aGuid).c_str());
+    APZCTM_LOG("Removing constraints for guid %s\n", ToString(aGuid).c_str());
     mZoomConstraints.erase(aGuid);
   }
   if (node && aConstraints) {
@@ -2661,8 +2656,8 @@ APZCTreeManager::HitTestResult APZCTreeManager::GetAPZCAtPointWR(
       hitInfo += CompositorHitTestFlags::eApzAwareListeners;
     }
   }
-  APZCTM_LOG("Successfully matched APZC %p (hit result 0x%x)\n", result.get(),
-             hitInfo.serialize());
+  APZCTM_LOG("Successfully matched APZC %p (hit result 0x%x)\n",
+             hit.mTargetApzc.get(), hitInfo.serialize());
   if (!hit.mTargetApzc) {
     // It falls back to the root
     MOZ_ASSERT(scrollId == ScrollableLayerGuid::NULL_SCROLL_ID);
@@ -2896,10 +2891,10 @@ APZCTreeManager::HitTestResult APZCTreeManager::GetAPZCAtPoint(
     if (!hit.mTargetApzc) {
       hit.mTargetApzc = FindRootApzcForLayersId(resultNode->GetLayersId());
       MOZ_ASSERT(hit.mTargetApzc);
-      APZCTM_LOG("Found target %p using root lookup\n", result);
+      APZCTM_LOG("Found target %p using root lookup\n", hit.mTargetApzc.get());
     }
     APZCTM_LOG("Successfully matched APZC %p via node %p (hit result 0x%x)\n",
-               result, resultNode, aOutHitResult->serialize());
+               hit.mTargetApzc.get(), resultNode, hit.mHitResult.serialize());
     hit.mLayersId = resultNode->GetLayersId();
 
     return hit;

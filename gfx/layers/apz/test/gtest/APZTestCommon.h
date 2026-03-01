@@ -264,7 +264,7 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
         mWaitForMainThread(false),
         mcc(aMcc) {}
 
-  APZEventResult ReceiveInputEvent(const InputData& aEvent) {
+  APZEventResult ReceiveInputEvent(InputData& aEvent) {
     // This is a function whose signature matches exactly the ReceiveInputEvent
     // on APZCTreeManager. This allows us to templates for functions like
     // TouchDown, TouchUp, etc so that we can reuse the code for dispatching
@@ -855,30 +855,29 @@ void APZCTesterBase::PinchWithPinchInput(
   const TimeDuration TIME_BETWEEN_PINCH_INPUT =
       TimeDuration::FromMilliseconds(50);
 
-  nsEventStatus actualStatus = aTarget->ReceiveInputEvent(
-      CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_START, aFocus,
-                              10.0, 10.0, mcc->Time()),
-      nullptr);
+  auto event = CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_START,
+                                       aFocus, 10.0, 10.0, mcc->Time());
+  nsEventStatus actual = aTarget->ReceiveInputEvent(event, nullptr);
   if (aOutEventStatuses) {
-    (*aOutEventStatuses)[0] = actualStatus;
+    (*aOutEventStatuses)[0] = actual;
   }
   mcc->AdvanceBy(TIME_BETWEEN_PINCH_INPUT);
 
-  actualStatus = aTarget->ReceiveInputEvent(
+  event =
       CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_SCALE,
-                              aSecondFocus, 10.0 * aScale, 10.0, mcc->Time()),
-      nullptr);
+                              aSecondFocus, 10.0 * aScale, 10.0, mcc->Time());
+  actual = aTarget->ReceiveInputEvent(event, nullptr);
   if (aOutEventStatuses) {
-    (*aOutEventStatuses)[1] = actualStatus;
+    (*aOutEventStatuses)[1] = actual;
   }
   mcc->AdvanceBy(TIME_BETWEEN_PINCH_INPUT);
 
-  actualStatus = aTarget->ReceiveInputEvent(
+  event =
       CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_END, aSecondFocus,
-                              10.0 * aScale, 10.0 * aScale, mcc->Time()),
-      nullptr);
+                              10.0 * aScale, 10.0 * aScale, mcc->Time());
+  actual = aTarget->ReceiveInputEvent(event, nullptr);
   if (aOutEventStatuses) {
-    (*aOutEventStatuses)[2] = actualStatus;
+    (*aOutEventStatuses)[2] = actual;
   }
 }
 

@@ -261,15 +261,43 @@ function synthesizeNativeWheelAndWaitForWheelEvent(
   aDeltaY,
   aCallback
 ) {
-  var targetWindow = windowForTarget(aTarget);
-  targetWindow.addEventListener(
-    "wheel",
-    function(e) {
-      setTimeout(aCallback, 0);
-    },
-    { once: true }
+  let p = promiseNativeWheelAndWaitForWheelEvent(
+    aTarget,
+    aX,
+    aY,
+    aDeltaX,
+    aDeltaY
   );
-  return synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+  if (aCallback) {
+    p.then(aCallback);
+  }
+  return true;
+}
+
+// Same as synthesizeNativeWheelAndWaitForWheelEvent, except returns a promise
+// instead of taking a callback
+function promiseNativeWheelAndWaitForWheelEvent(
+  aTarget,
+  aX,
+  aY,
+  aDeltaX,
+  aDeltaY
+) {
+  return new Promise((resolve, reject) => {
+    var targetWindow = windowForTarget(aTarget);
+    targetWindow.addEventListener(
+      "wheel",
+      function(e) {
+        setTimeout(resolve, 0);
+      },
+      { once: true }
+    );
+    try {
+      synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+    } catch (e) {
+      reject();
+    }
+  });
 }
 
 // Synthesizes a native mousewheel event and invokes the callback once the
@@ -285,15 +313,40 @@ function synthesizeNativeWheelAndWaitForScrollEvent(
   aDeltaY,
   aCallback
 ) {
-  var targetWindow = windowForTarget(aTarget);
-  targetWindow.addEventListener(
-    "scroll",
-    function() {
-      setTimeout(aCallback, 0);
-    },
-    { capture: true, once: true }
-  ); // scroll events don't always bubble
-  return synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+  promiseNativeWheelAndWaitForScrollEvent(
+    aTarget,
+    aX,
+    aY,
+    aDeltaX,
+    aDeltaY
+  ).then(aCallback);
+  return true;
+}
+
+// Same as synthesizeNativeWheelAndWaitForScrollEvent, but returns a promise
+// instead of taking a callback
+function promiseNativeWheelAndWaitForScrollEvent(
+  aTarget,
+  aX,
+  aY,
+  aDeltaX,
+  aDeltaY
+) {
+  return new Promise((resolve, reject) => {
+    var targetWindow = windowForTarget(aTarget);
+    targetWindow.addEventListener(
+      "scroll",
+      function() {
+        setTimeout(resolve, 0);
+      },
+      { capture: true, once: true }
+    ); // scroll events don't always bubble
+    try {
+      synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+    } catch (e) {
+      reject();
+    }
+  });
 }
 
 // Synthesizes a native mouse move event and returns immediately.
@@ -317,15 +370,28 @@ function synthesizeNativeMouseMoveAndWaitForMoveEvent(
   aY,
   aCallback
 ) {
-  var targetWindow = windowForTarget(aTarget);
-  targetWindow.addEventListener(
-    "mousemove",
-    function(e) {
-      setTimeout(aCallback, 0);
-    },
-    { once: true }
-  );
-  return synthesizeNativeMouseMove(aTarget, aX, aY);
+  promiseNativeMouseMoveAndWaitForMoveEvent(aTarget, aX, aY).then(aCallback);
+  return true;
+}
+
+// Same as synthesizeNativeMouseMoveAndWaitForMoveEvent but returns a promise
+// instead of taking a callback.
+function promiseNativeMouseMoveAndWaitForMoveEvent(aTarget, aX, aY) {
+  return new Promise((resolve, reject) => {
+    var targetWindow = windowForTarget(aTarget);
+    targetWindow.addEventListener(
+      "mousemove",
+      function(e) {
+        setTimeout(resolve, 0);
+      },
+      { once: true }
+    );
+    try {
+      synthesizeNativeMouseMove(aTarget, aX, aY);
+    } catch (e) {
+      reject();
+    }
+  });
 }
 
 // Synthesizes a native touch event and dispatches it. aX and aY in CSS pixels
@@ -506,6 +572,13 @@ function synthesizeNativeMouseEvent(aElement, aX, aY, aType, aObserver = null) {
   return true;
 }
 
+// Promise-returning variant of synthesizeNativeMouseEvent
+function promiseNativeMouseEvent(aTarget, aX, aY, aType) {
+  return new Promise(resolve => {
+    synthesizeNativeMouseEvent(aTarget, aX, aY, aType, resolve);
+  });
+}
+
 function synthesizeNativeClick(aElement, aX, aY, aObserver = null) {
   var pt = coordinatesRelativeToScreen(aX, aY, aElement);
   var utils = SpecialPowers.getDOMWindowUtils(
@@ -568,34 +641,39 @@ function moveMouseAndScrollWheelOver(
   dx,
   dy,
   testDriver,
-  waitForScroll = true
+  waitForScroll = true,
+  scrollDelta = 10
 ) {
-  return synthesizeNativeMouseMoveAndWaitForMoveEvent(
+  promiseMoveMouseAndScrollWheelOver(
     target,
     dx,
     dy,
-    function() {
-      if (waitForScroll) {
-        synthesizeNativeWheelAndWaitForScrollEvent(
-          target,
-          dx,
-          dy,
-          0,
-          -10,
-          testDriver
-        );
-      } else {
-        synthesizeNativeWheelAndWaitForWheelEvent(
-          target,
-          dx,
-          dy,
-          0,
-          -10,
-          testDriver
-        );
-      }
-    }
-  );
+    waitForScroll,
+    scrollDelta
+  ).then(testDriver);
+  return true;
+}
+
+// Same as moveMouseAndScrollWheelOver, but returns a promise instead of taking
+// a callback function.
+function promiseMoveMouseAndScrollWheelOver(
+  target,
+  dx,
+  dy,
+  waitForScroll = true,
+  scrollDelta = 10
+) {
+  let p = promiseNativeMouseMoveAndWaitForMoveEvent(target, dx, dy);
+  if (waitForScroll) {
+    p = p.then(() =>
+      promiseNativeWheelAndWaitForScrollEvent(target, dx, dy, 0, -scrollDelta)
+    );
+  } else {
+    p = p.then(() =>
+      promiseNativeWheelAndWaitForWheelEvent(target, dx, dy, 0, -scrollDelta)
+    );
+  }
+  return p;
 }
 
 // Synthesizes events to drag |element|'s vertical scrollbar by the distance
@@ -681,6 +759,75 @@ function* dragVerticalScrollbar(
   };
 }
 
+// Synthesizes a native mouse drag, starting at offset (mouseX, mouseY) from
+// the given target. The drag occurs in the given number of steps, to a final
+// destination of (mouseX + distanceX, mouseY + distanceY) from the target.
+// Returns a promise (wrapped in a function, so it doesn't execute immediately)
+// that should be awaited after the mousemoves have been processed by the widget
+// code, to end the drag. This is important otherwise the OS can sometimes
+// reorder the events and the drag doesn't have the intended effect (see
+// bug 1368603).
+// Example usage:
+//   let dragFinisher = await promiseNativeMouseDrag(myElement, 0, 0);
+//   await myIndicationThatDragHadAnEffect;
+//   await dragFinisher();
+async function promiseNativeMouseDrag(
+  target,
+  mouseX,
+  mouseY,
+  distanceX = 20,
+  distanceY = 20,
+  steps = 20
+) {
+  var targetElement = elementForTarget(target);
+  dump(
+    "Starting drag at " +
+      mouseX +
+      ", " +
+      mouseY +
+      " from top-left of #" +
+      targetElement.id +
+      "\n"
+  );
+
+  // Move the mouse to the target position
+  await promiseNativeMouseEvent(
+    target,
+    mouseX,
+    mouseY,
+    nativeMouseMoveEventMsg()
+  );
+  // mouse down
+  await promiseNativeMouseEvent(
+    target,
+    mouseX,
+    mouseY,
+    nativeMouseDownEventMsg()
+  );
+  // drag vertically by |increment| until we reach the specified distance
+  for (var s = 1; s <= steps; s++) {
+    let dx = distanceX * (s / steps);
+    let dy = distanceY * (s / steps);
+    dump(`Dragging to ${mouseX + dx}, ${mouseY + dy} from target\n`);
+    await promiseNativeMouseEvent(
+      target,
+      mouseX + dx,
+      mouseY + dy,
+      nativeMouseMoveEventMsg()
+    );
+  }
+
+  // and return a function-wrapped promise to call afterwards to finish the drag
+  return function() {
+    return promiseNativeMouseEvent(
+      target,
+      mouseX + distanceX,
+      mouseY + distanceY,
+      nativeMouseUpEventMsg()
+    );
+  };
+}
+
 // Synthesizes a native touch sequence of events corresponding to a pinch-zoom-in
 // at the given focus point.
 function* pinchZoomInTouchSequence(focusX, focusY) {
@@ -717,6 +864,11 @@ function promiseTopic(aTopic) {
     },
     aTopic);
   });
+}
+
+// Returns a promise that is resolved when a APZ transform ends.
+function promiseTransformEnd() {
+  return promiseTopic("APZ:TransformEnd");
 }
 
 // This generates a touch-based pinch zoom-in gesture that is expected

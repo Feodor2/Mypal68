@@ -150,10 +150,6 @@ class DrawTargetCairo final : public DrawTarget {
 
   virtual already_AddRefed<FilterNode> CreateFilter(FilterType aType) override;
 
-  virtual void GetGlyphRasterizationMetrics(
-      ScaledFont* aScaledFont, const uint16_t* aGlyphIndices,
-      uint32_t aNumGlyphs, GlyphMetrics* aGlyphMetrics) override;
-
   virtual void* GetNativeSurface(NativeSurfaceType aType) override;
 
   bool Init(cairo_surface_t* aSurface, const IntSize& aSize,
@@ -205,7 +201,7 @@ class DrawTargetCairo final : public DrawTarget {
 
   // Set the Cairo context font options according to the current draw target
   // font state.
-  void SetFontOptions();
+  void SetFontOptions(cairo_antialias_t aAAMode = CAIRO_ANTIALIAS_DEFAULT);
 
  private:  // data
   cairo_t* mContext;

@@ -29,8 +29,7 @@ using namespace mozilla::gfx;
 using namespace mozilla::layers;
 using namespace mozilla::gl;
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 static StaticRefPtr<VRManager> sVRManagerSingleton;
 
@@ -805,5 +804,4 @@ bool VRManager::IsPresenting() {
   return false;
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

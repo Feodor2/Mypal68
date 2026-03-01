@@ -18,11 +18,13 @@
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/widget/AndroidCompositorWidget.h"
 #  include "GeneratedJNIWrappers.h"
+#  include <android/native_window.h>
+#  include <android/native_window_jni.h>
 #endif
 
-namespace mozilla {
-namespace wr {
+namespace mozilla::wr {
 
 /* static */
 UniquePtr<RenderCompositor> RenderCompositorEGL::Create(
@@ -63,35 +65,19 @@ RenderCompositorEGL::~RenderCompositorEGL() {
 
 bool RenderCompositorEGL::BeginFrame() {
 #ifdef MOZ_WAYLAND
-  bool newSurface =
-      mWidget->AsX11() && mWidget->AsX11()->WaylandRequestsUpdatingEGLSurface();
-  if (newSurface) {
-    // Destroy EGLSurface if it exists and create a new one. We will set the
-    // swap interval after MakeCurrent() has been called.
-    DestroyEGLSurface();
-    mEGLSurface = CreateEGLSurface();
-    if (mEGLSurface == EGL_NO_SURFACE) {
-      RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
-    }
+  if (mEGLSurface == EGL_NO_SURFACE) {
+    gfxCriticalNote
+        << "We don't have EGLSurface to draw into. Called too early?";
+    return false;
+  }
+  if (mWidget->AsX11()) {
+    mWidget->AsX11()->SetEGLNativeWindowSize(GetBufferSize());
   }
 #endif
   if (!MakeCurrent()) {
     gfxCriticalNote << "Failed to make render context current, can't draw.";
     return false;
   }
-
-#ifdef MOZ_WAYLAND
-  if (newSurface) {
-    // We have a new EGL surface, which on wayland needs to be configured for
-    // non-blocking buffer swaps. We need MakeCurrent() to set our current EGL
-    // context before we call eglSwapInterval, which is why we do it here rather
-    // than where the surface was created.
-    const auto& gle = gl::GLContextEGL::Cast(gl());
-    const auto& egl = gle->mEgl;
-    // Make eglSwapBuffers() non-blocking on wayland.
-    egl->fSwapInterval(egl->Display(), 0);
-  }
-#endif
 
 #ifdef MOZ_WIDGET_ANDROID
   java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
@@ -114,8 +100,8 @@ void RenderCompositorEGL::Pause() {
 #ifdef MOZ_WIDGET_ANDROID
   java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
   java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)gl());
-  DestroyEGLSurface();
 #endif
+  DestroyEGLSurface();
 }
 
 bool RenderCompositorEGL::Resume() {
@@ -124,6 +110,36 @@ bool RenderCompositorEGL::Resume() {
   DestroyEGLSurface();
   mEGLSurface = CreateEGLSurface();
   gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(mEGLSurface);
+
+  // Query the new surface size as this may have changed. We cannot use
+  // mWidget->GetClientSize() due to a race condition between nsWindow::Resize()
+  // being called and the frame being rendered after the surface is resized.
+  EGLNativeWindowType window = mWidget->AsAndroid()->GetEGLNativeWindow();
+  JNIEnv* const env = jni::GetEnvForThread();
+  ANativeWindow* const nativeWindow =
+      ANativeWindow_fromSurface(env, reinterpret_cast<jobject>(window));
+  const int32_t width = ANativeWindow_getWidth(nativeWindow);
+  const int32_t height = ANativeWindow_getHeight(nativeWindow);
+  mEGLSurfaceSize = LayoutDeviceIntSize(width, height);
+  ANativeWindow_release(nativeWindow);
+#elif defined(MOZ_WAYLAND)
+  // Destroy EGLSurface if it exists and create a new one. We will set the
+  // swap interval after MakeCurrent() has been called.
+  DestroyEGLSurface();
+  mEGLSurface = CreateEGLSurface();
+  if (mEGLSurface != EGL_NO_SURFACE) {
+    // We have a new EGL surface, which on wayland needs to be configured for
+    // non-blocking buffer swaps. We need MakeCurrent() to set our current EGL
+    // context before we call eglSwapInterval, which is why we do it here rather
+    // than where the surface was created.
+    const auto& gle = gl::GLContextEGL::Cast(gl());
+    const auto& egl = gle->mEgl;
+    MakeCurrent();
+    // Make eglSwapBuffers() non-blocking on wayland.
+    egl->fSwapInterval(egl->Display(), 0);
+  } else {
+    RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
+  }
 #endif
   return true;
 }
@@ -150,8 +166,11 @@ void RenderCompositorEGL::DestroyEGLSurface() {
 }
 
 LayoutDeviceIntSize RenderCompositorEGL::GetBufferSize() {
+#ifdef MOZ_WIDGET_ANDROID
+  return mEGLSurfaceSize;
+#else
   return mWidget->GetClientSize();
+#endif
 }
 
-}  // namespace wr
-}  // namespace mozilla
+}  // namespace mozilla::wr

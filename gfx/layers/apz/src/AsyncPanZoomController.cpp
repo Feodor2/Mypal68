@@ -95,22 +95,15 @@
 #  include "AndroidAPZ.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-#define ENABLE_APZC_LOGGING 0
-// #define ENABLE_APZC_LOGGING 1
-
-#if ENABLE_APZC_LOGGING
-#  define APZC_LOG(...) printf_stderr("APZC: " __VA_ARGS__)
-#  define APZC_LOG_FM(fm, prefix, ...)                  \
-    {                                                   \
-      std::stringstream ss;                             \
-      ss << nsPrintfCString(prefix, __VA_ARGS__).get(); \
-      AppendToString(ss, fm, ":", "", true);            \
-      APZC_LOG("%s\n", ss.str().c_str());               \
-    }
-#else
-#  define APZC_LOG(...)
-#  define APZC_LOG_FM(fm, prefix, ...)
-#endif
+static mozilla::LazyLogModule sApzCtlLog("apz.controller");
+#define APZC_LOG(...) MOZ_LOG(sApzCtlLog, LogLevel::Debug, (__VA_ARGS__))
+#define APZC_LOG_FM(fm, prefix, ...)                  \
+  if (MOZ_LOG_TEST(sApzCtlLog, LogLevel::Debug)) {    \
+    std::stringstream ss;                             \
+    ss << nsPrintfCString(prefix, __VA_ARGS__).get(); \
+    AppendToString(ss, fm, ":", "", true);            \
+    APZC_LOG("%s\n", ss.str().c_str());               \
+  }
 
 namespace mozilla {
 namespace layers {
@@ -135,7 +128,7 @@ typedef PlatformSpecificStateBase
  * \page APZCPrefs APZ preferences
  *
  * The following prefs are used to control the behaviour of the APZC.
- * The default values are provided in StaticPrefs.yaml.
+ * The default values are provided in StaticPrefList.yaml.
  *
  * \li\b apz.allow_double_tap_zooming
  * Pref that allows or disallows double tap to zoom
@@ -1692,8 +1685,8 @@ nsEventStatus AsyncPanZoomController::OnScaleEnd(
 }
 
 nsEventStatus AsyncPanZoomController::HandleEndOfPan() {
-  MOZ_ASSERT(GetCurrentTouchBlock());
-  GetCurrentTouchBlock()->GetOverscrollHandoffChain()->FlushRepaints();
+  MOZ_ASSERT(GetCurrentTouchBlock() || GetCurrentPanGestureBlock());
+  GetCurrentInputBlock()->GetOverscrollHandoffChain()->FlushRepaints();
   ParentLayerPoint flingVelocity = GetVelocityVector();
 
   // Clear our velocities; if DispatchFling() gives the fling to us,
@@ -1715,7 +1708,7 @@ nsEventStatus AsyncPanZoomController::HandleEndOfPan() {
       StaticPrefs::apz_fling_min_velocity_threshold()) {
     // Relieve overscroll now if needed, since we will not transition to a fling
     // animation and then an overscroll animation, and relieve it then.
-    GetCurrentTouchBlock()
+    GetCurrentInputBlock()
         ->GetOverscrollHandoffChain()
         ->SnapBackOverscrolledApzc(this);
     return nsEventStatus_eConsumeNoDefault;
@@ -1726,8 +1719,8 @@ nsEventStatus AsyncPanZoomController::HandleEndOfPan() {
   // which nulls out mTreeManager, could be called concurrently.
   if (APZCTreeManager* treeManagerLocal = GetApzcTreeManager()) {
     const FlingHandoffState handoffState{
-        flingVelocity, GetCurrentTouchBlock()->GetOverscrollHandoffChain(),
-        false /* not handoff */, GetCurrentTouchBlock()->GetScrolledApzc()};
+        flingVelocity, GetCurrentInputBlock()->GetOverscrollHandoffChain(),
+        false /* not handoff */, GetCurrentInputBlock()->GetScrolledApzc()};
     treeManagerLocal->DispatchFling(this, handoffState);
   }
   return nsEventStatus_eConsumeNoDefault;
@@ -2413,6 +2406,35 @@ nsEventStatus AsyncPanZoomController::OnPan(const PanGestureInput& aEvent,
   ScreenPoint physicalPanDisplacement = aEvent.mPanDisplacement;
   ParentLayerPoint logicalPanDisplacement =
       aEvent.UserMultipliedLocalPanDisplacement();
+  if (aEvent.mDeltaType == PanGestureInput::PANDELTA_PAGE) {
+    // Pan events with page units are used by Gtk, so this replicates Gtk:
+    // https://gitlab.gnome.org/GNOME/gtk/blob/c734c7e9188b56f56c3a504abee05fa40c5475ac/gtk/gtkrange.c#L3065-3073
+    CSSSize pageScrollSize;
+    CSSToParentLayerScale2D zoom;
+    {
+      // Grab the lock to access the frame metrics.
+      RecursiveMutexAutoLock lock(mRecursiveMutex);
+      pageScrollSize = mScrollMetadata.GetPageScrollAmount() /
+                       Metrics().GetDevPixelsPerCSSPixel();
+      zoom = Metrics().GetZoom();
+    }
+    // scrollUnit* is in units of "ParentLayer pixels per page proportion"...
+    auto scrollUnitWidth = std::min(std::pow(pageScrollSize.width, 2.0 / 3.0),
+                                    pageScrollSize.width / 2.0) *
+                           zoom.xScale;
+    auto scrollUnitHeight = std::min(std::pow(pageScrollSize.height, 2.0 / 3.0),
+                                     pageScrollSize.height / 2.0) *
+                            zoom.yScale;
+    // ... and pan displacements are in units of "page proportion count"
+    // here, so the products of them and scrollUnit* are in ParentLayer pixels
+    ParentLayerPoint physicalPanDisplacementPL(
+        physicalPanDisplacement.x * scrollUnitWidth,
+        physicalPanDisplacement.y * scrollUnitHeight);
+    physicalPanDisplacement = ToScreenCoordinates(physicalPanDisplacementPL,
+        aEvent.mLocalPanStartPoint);
+    logicalPanDisplacement.x *= scrollUnitWidth;
+    logicalPanDisplacement.y *= scrollUnitHeight;
+  }
 
   MOZ_ASSERT(GetCurrentPanGestureBlock());
   AdjustDeltaForAllowedScrollDirections(
@@ -2464,6 +2486,12 @@ nsEventStatus AsyncPanZoomController::OnPanEnd(const PanGestureInput& aEvent) {
   OnPan(aEvent, true);
 
   EndTouch(aEvent.mTimeStamp);
+
+  // Use HandleEndOfPan for fling on platforms that don't
+  // emit momentum events (Gtk).
+  if (aEvent.mSimulateMomentum) {
+    return HandleEndOfPan();
+  }
 
   // Drop any velocity on axes where we don't have room to scroll anyways
   // (in this APZC, or an APZC further in the handoff chain).

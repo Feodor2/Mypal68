@@ -21,6 +21,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
+#include "mozilla/LookAndFeel.h" //MY
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
@@ -138,6 +139,8 @@ static const char* kObservedPrefs[] = {"font.", "font.name-list.",
                                        nullptr};
 
 static const char kFontSystemWhitelistPref[] = "font.system.whitelist";
+
+static const char kCJKFallbackOrderPref[] = "font.cjk_pref_fallback_order";
 
 // xxx - this can probably be eliminated by reworking pref font handling code
 static const char* gPrefLangNames[] = {
@@ -1051,7 +1054,7 @@ gfxFontFamily* gfxPlatformFontList::CheckFamily(gfxFontFamily* aFamily) {
 bool gfxPlatformFontList::FindAndAddFamilies(
     StyleGenericFontFamily aGeneric, const nsACString& aFamily,
     nsTArray<FamilyAndGeneric>* aOutput, FindFamiliesFlags aFlags,
-    gfxFontStyle* aStyle, gfxFloat aDevToCssSize) {
+    gfxFontStyle* aStyle, nsAtom* aLanguage, gfxFloat aDevToCssSize) {
   nsAutoCString key;
   GenerateFontListKey(aFamily, key);
 
@@ -1178,13 +1181,13 @@ bool gfxPlatformFontList::FindAndAddFamilies(
 
 fontlist::Family* gfxPlatformFontList::FindSharedFamily(
     const nsACString& aFamily, FindFamiliesFlags aFlags, gfxFontStyle* aStyle,
-    gfxFloat aDevToCss) {
+    nsAtom* aLanguage, gfxFloat aDevToCss) {
   if (!SharedFontList()) {
     return nullptr;
   }
   AutoTArray<FamilyAndGeneric, 1> families;
   if (!FindAndAddFamilies(StyleGenericFontFamily::None, aFamily, &families,
-                          aFlags, aStyle, aDevToCss) ||
+                          aFlags, aStyle, aLanguage, aDevToCss) ||
       !families[0].mFamily.mIsShared) {
     return nullptr;
   }
@@ -1426,6 +1429,20 @@ void gfxPlatformFontList::RemoveCmap(const gfxCharacterMap* aCharMap) {
   }
 }
 
+static void GetSystemUIFontFamilies([[maybe_unused]] nsAtom* aLangGroup,
+                                    nsTArray<nsCString>& aFamilies) {
+  // TODO: On macOS, use CTCreateUIFontForLanguage or such thing (though the
+  // code below ends up using [NSFont systemFontOfSize: 0.0].
+  nsFont systemFont;
+  gfxFontStyle fontStyle;
+  nsAutoString systemFontName;
+  if (!LookAndFeel::GetFont(LookAndFeel::FontID::Menu, systemFontName, fontStyle)) {
+    return;
+  }
+  systemFontName.Trim("\"'");
+  CopyUTF16toUTF8(systemFontName, *aFamilies.AppendElement());
+}
+
 void gfxPlatformFontList::ResolveGenericFontNames(
     StyleGenericFontFamily aGenericType, eFontPrefLang aPrefLang,
     PrefFontList* aGenericFamilies) {
@@ -1447,7 +1464,11 @@ void gfxPlatformFontList::ResolveGenericFontNames(
                                     genericFamilies);
 
   nsAtom* langGroup = GetLangGroupForPrefLang(aPrefLang);
-  NS_ASSERTION(langGroup, "null lang group for pref lang");
+  MOZ_ASSERT(langGroup, "null lang group for pref lang");
+
+  if (aGenericType == StyleGenericFontFamily::SystemUi) {
+    GetSystemUIFontFamilies(langGroup, genericFamilies);
+  }
 
   GetFontFamiliesFromGenericFamilies(aGenericType, genericFamilies, langGroup,
                                      aGenericFamilies);
@@ -1483,12 +1504,9 @@ void gfxPlatformFontList::GetFontFamiliesFromGenericFamilies(
     PrefFontList* aGenericFamilies) {
   // lookup and add platform fonts uniquely
   for (const nsCString& genericFamily : aGenericNameFamilies) {
-    gfxFontStyle style;
-    style.language = aLangGroup;
-    style.systemFont = false;
     AutoTArray<FamilyAndGeneric, 10> families;
     FindAndAddFamilies(aGenericType, genericFamily, &families,
-                       FindFamiliesFlags(0), &style);
+                       FindFamiliesFlags(0), nullptr, aLangGroup);
     for (const FamilyAndGeneric& f : families) {
       if (!aGenericFamilies->Contains(f.mFamily)) {
         aGenericFamilies->AppendElement(f.mFamily);
@@ -1499,7 +1517,8 @@ void gfxPlatformFontList::GetFontFamiliesFromGenericFamilies(
 
 gfxPlatformFontList::PrefFontList* gfxPlatformFontList::GetPrefFontsLangGroup(
     StyleGenericFontFamily aGenericType, eFontPrefLang aPrefLang) {
-  if (aGenericType == StyleGenericFontFamily::MozEmoji) {
+  if (aGenericType == StyleGenericFontFamily::MozEmoji ||
+      aPrefLang == eFontPrefLang_Emoji) {
     // Emoji font has no lang
     PrefFontList* prefFonts = mEmojiPrefFont.get();
     if (MOZ_UNLIKELY(!prefFonts)) {
@@ -1826,12 +1845,34 @@ void gfxPlatformFontList::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[],
       }
     }
 
-    // last resort... (the order is same as old gfx.)
-    AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_Japanese);
-    AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_Korean);
+    // Last resort... set up CJK font prefs in the order listed by the user-
+    // configurable ordering pref.
+    gfxFontUtils::GetPrefsFontList(kCJKFallbackOrderPref, list);
+    for (const auto& item : list) {
+      eFontPrefLang fpl = GetFontPrefLangFor(item.get());
+      switch (fpl) {
+        case eFontPrefLang_Japanese:
+        case eFontPrefLang_Korean:
+        case eFontPrefLang_ChineseCN:
+        case eFontPrefLang_ChineseHK:
+        case eFontPrefLang_ChineseTW:
+          AppendPrefLang(tempPrefLangs, tempLen, fpl);
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Truly-last resort... try Chinese font prefs before Japanese because
+    // they tend to have more complete character coverage, and therefore less
+    // risk of "ransom-note" effects.
+    // (If the kCJKFallbackOrderPref was fully populated, as it is by default,
+    // this will do nothing as all these values are already present.)
     AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_ChineseCN);
     AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_ChineseHK);
     AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_ChineseTW);
+    AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_Japanese);
+    AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_Korean);
 
     // copy into the cached array
     for (const auto lang : Span<eFontPrefLang>(tempPrefLangs, tempLen)) {
@@ -1943,29 +1984,28 @@ nsAtom* gfxPlatformFontList::GetLangGroup(nsAtom* aLanguage) {
 
 /* static */ const char* gfxPlatformFontList::GetGenericName(
     StyleGenericFontFamily aGenericType) {
-  static const char kGeneric_serif[] = "serif";
-  static const char kGeneric_sans_serif[] = "sans-serif";
-  static const char kGeneric_monospace[] = "monospace";
-  static const char kGeneric_cursive[] = "cursive";
-  static const char kGeneric_fantasy[] = "fantasy";
-
   // type should be standard generic type at this point
   // map generic type to string
   switch (aGenericType) {
     case StyleGenericFontFamily::Serif:
-      return kGeneric_serif;
+      return "serif";
     case StyleGenericFontFamily::SansSerif:
-      return kGeneric_sans_serif;
+      return "sans-serif";
     case StyleGenericFontFamily::Monospace:
-      return kGeneric_monospace;
+      return "monospace";
     case StyleGenericFontFamily::Cursive:
-      return kGeneric_cursive;
+      return "cursive";
     case StyleGenericFontFamily::Fantasy:
-      return kGeneric_fantasy;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unknown generic");
-      return nullptr;
+      return "fantasy";
+    case StyleGenericFontFamily::SystemUi:
+      return "system-ui";
+    case StyleGenericFontFamily::MozEmoji:
+      return "-moz-emoji";
+    case StyleGenericFontFamily::None:
+      break;
   }
+  MOZ_ASSERT_UNREACHABLE("Unknown generic");
+  return nullptr;
 }
 
 void gfxPlatformFontList::InitLoader() {

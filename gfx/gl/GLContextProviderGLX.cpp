@@ -45,8 +45,7 @@
 #  include "gfxPlatformGtk.h"
 #endif
 
-namespace mozilla {
-namespace gl {
+namespace mozilla::gl {
 
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
@@ -1096,5 +1095,4 @@ GLContext* GLContextProviderGLX::GetGlobalContext() {
 /*static*/
 void GLContextProviderGLX::Shutdown() {}
 
-} /* namespace gl */
-} /* namespace mozilla */
+}  // namespace mozilla::gl

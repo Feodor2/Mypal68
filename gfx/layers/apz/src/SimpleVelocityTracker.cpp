@@ -6,10 +6,10 @@
 
 #include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
 #include "mozilla/StaticPrefs_apz.h"
-#include "mozilla/StaticPtr.h"               // for StaticAutoPtr
+#include "mozilla/StaticPtr.h"  // for StaticAutoPtr
 
-#define SVT_LOG(...)
-// #define SVT_LOG(...) printf_stderr("SimpleVelocityTracker: " __VA_ARGS__)
+static mozilla::LazyLogModule sApzSvtLog("apz.simplevelocitytracker");
+#define SVT_LOG(...) MOZ_LOG(sApzSvtLog, LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 namespace layers {
@@ -41,7 +41,7 @@ Maybe<float> SimpleVelocityTracker::AddPosition(ParentLayerCoord aPos,
     // eventually when we do get an event with the required time delta we use
     // the corresponding distance delta as well.
     SVT_LOG("%p|%s skipping velocity computation for small time delta %f ms\n",
-            mAxis->mAsyncPanZoomController, mAxis->Name(),
+            mAxis->OpaqueApzcPointer(), mAxis->Name(),
             (aTimestamp - mVelocitySampleTime).ToMilliseconds());
     return Nothing();
   }
@@ -53,7 +53,7 @@ Maybe<float> SimpleVelocityTracker::AddPosition(ParentLayerCoord aPos,
   newVelocity = ApplyFlingCurveToVelocity(newVelocity);
 
   SVT_LOG("%p|%s updating velocity to %f with touch\n",
-          mAxis->mAsyncPanZoomController, mAxis->Name(), newVelocity);
+          mAxis->OpaqueApzcPointer(), mAxis->Name(), newVelocity);
   mVelocitySampleTime = aTimestamp;
   mVelocitySamplePos = aPos;
 
@@ -115,7 +115,7 @@ float SimpleVelocityTracker::ApplyFlingCurveToVelocity(float aVelocity) const {
             funcInput, ComputedTimingFunction::BeforeFlag::Unset);
         float curvedVelocity = (funcOutput * scale) + curveThreshold;
         SVT_LOG("%p|%s curving up velocity from %f to %f\n",
-                mAxis->mAsyncPanZoomController, mAxis->Name(), newVelocity,
+                mAxis->OpaqueApzcPointer(), mAxis->Name(), newVelocity,
                 curvedVelocity);
         newVelocity = curvedVelocity;
       }

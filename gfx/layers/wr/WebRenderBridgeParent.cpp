@@ -2106,19 +2106,18 @@ void WebRenderBridgeParent::FlushRendering(bool aWaitForPresent) {
 
 void WebRenderBridgeParent::Pause() {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
-#ifdef MOZ_WIDGET_ANDROID
+
   if (!IsRootWebRenderBridgeParent() || mDestroyed) {
     return;
   }
 
   mApi->Pause();
-#endif
   mPaused = true;
 }
 
 bool WebRenderBridgeParent::Resume() {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
-#ifdef MOZ_WIDGET_ANDROID
+
   if (!IsRootWebRenderBridgeParent() || mDestroyed) {
     return false;
   }
@@ -2126,7 +2125,10 @@ bool WebRenderBridgeParent::Resume() {
   if (!mApi->Resume()) {
     return false;
   }
-#endif
+
+  // Ensure we generate and render a frame immediately.
+  ScheduleForcedGenerateFrame();
+
   mPaused = false;
   return true;
 }

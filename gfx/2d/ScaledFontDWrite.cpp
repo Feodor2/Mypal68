@@ -170,6 +170,16 @@ SkTypeface* ScaledFontDWrite::CreateSkTypeface() {
   return SkCreateTypefaceFromDWriteFont(factory, mFontFace, mStyle,
                                         mRenderingMode, gamma, contrast);
 }
+
+void ScaledFontDWrite::SetupSkFontDrawOptions(SkFont& aFont) {
+  if (ForceGDIMode()) {
+    aFont.setEmbeddedBitmaps(true);
+    aFont.setSubpixel(false);
+  } else {
+    aFont.setEmbeddedBitmaps(UseEmbeddedBitmaps());
+    aFont.setSubpixel(true);
+  }
+}
 #endif
 
 void ScaledFontDWrite::CopyGlyphsToBuilder(const GlyphBuffer& aBuffer,
@@ -196,34 +206,6 @@ void ScaledFontDWrite::CopyGlyphsToBuilder(const GlyphBuffer& aBuffer,
   }
 
   CopyGlyphsToSink(aBuffer, pathBuilderD2D->GetSink());
-}
-
-void ScaledFontDWrite::GetGlyphDesignMetrics(const uint16_t* aGlyphs,
-                                             uint32_t aNumGlyphs,
-                                             GlyphMetrics* aGlyphMetrics) {
-  DWRITE_FONT_METRICS fontMetrics;
-  mFontFace->GetMetrics(&fontMetrics);
-
-  std::vector<DWRITE_GLYPH_METRICS> metrics(aNumGlyphs);
-  mFontFace->GetDesignGlyphMetrics(aGlyphs, aNumGlyphs, &metrics.front());
-
-  Float scaleFactor = mSize / fontMetrics.designUnitsPerEm;
-
-  for (uint32_t i = 0; i < aNumGlyphs; i++) {
-    aGlyphMetrics[i].mXBearing = metrics[i].leftSideBearing * scaleFactor;
-    aGlyphMetrics[i].mXAdvance = metrics[i].advanceWidth * scaleFactor;
-    aGlyphMetrics[i].mYBearing =
-        (metrics[i].topSideBearing - metrics[i].verticalOriginY) * scaleFactor;
-    aGlyphMetrics[i].mYAdvance = metrics[i].advanceHeight * scaleFactor;
-    aGlyphMetrics[i].mWidth =
-        (metrics[i].advanceWidth - metrics[i].leftSideBearing -
-         metrics[i].rightSideBearing) *
-        scaleFactor;
-    aGlyphMetrics[i].mHeight =
-        (metrics[i].advanceHeight - metrics[i].topSideBearing -
-         metrics[i].bottomSideBearing) *
-        scaleFactor;
-  }
 }
 
 void ScaledFontDWrite::CopyGlyphsToSink(const GlyphBuffer& aBuffer,
@@ -496,11 +478,6 @@ already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFont(
       instanceData.mRenderingMode, nullptr, instanceData.mGamma,
       instanceData.mContrast);
 
-  if (mNeedsCairo && !scaledFont->PopulateCairoScaledFont()) {
-    gfxWarning() << "Unable to create cairo scaled font DWrite font.";
-    return nullptr;
-  }
-
   return scaledFont.forget();
 }
 
@@ -527,12 +504,19 @@ AntialiasMode ScaledFontDWrite::GetDefaultAAMode() {
 }
 
 #ifdef USE_CAIRO_SCALED_FONT
-cairo_font_face_t* ScaledFontDWrite::GetCairoFontFace() {
+cairo_font_face_t* ScaledFontDWrite::CreateCairoFontFace(
+    cairo_font_options_t* aFontOptions) {
   if (!mFontFace) {
     return nullptr;
   }
 
   return cairo_dwrite_font_face_create_for_dwrite_fontface(nullptr, mFontFace);
+}
+
+void ScaledFontDWrite::PrepareCairoScaledFont(cairo_scaled_font_t* aFont) {
+  if (mRenderingMode == DWRITE_RENDERING_MODE_GDI_CLASSIC) {
+    cairo_dwrite_scaled_font_set_force_GDI_classic(aFont, true);
+  }
 }
 #endif
 

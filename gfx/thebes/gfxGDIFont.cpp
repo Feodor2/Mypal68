@@ -24,28 +24,12 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::unicode;
 
-static inline cairo_antialias_t GetCairoAntialiasOption(
-    gfxFont::AntialiasOption anAntialiasOption) {
-  switch (anAntialiasOption) {
-    default:
-    case gfxFont::kAntialiasDefault:
-      return CAIRO_ANTIALIAS_DEFAULT;
-    case gfxFont::kAntialiasNone:
-      return CAIRO_ANTIALIAS_NONE;
-    case gfxFont::kAntialiasGrayscale:
-      return CAIRO_ANTIALIAS_GRAY;
-    case gfxFont::kAntialiasSubpixel:
-      return CAIRO_ANTIALIAS_SUBPIXEL;
-  }
-}
-
 gfxGDIFont::gfxGDIFont(GDIFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
                        AntialiasOption anAAOption)
     : gfxFont(nullptr, aFontEntry, aFontStyle, anAAOption),
       mFont(nullptr),
-      mFontFace(nullptr),
       mMetrics(nullptr),
-      mSpaceGlyph(0),
+      mIsBitmap(false),
       mScriptCache(nullptr) {
   mNeedsSyntheticBold = aFontStyle->NeedsSyntheticBold(aFontEntry);
 
@@ -57,12 +41,6 @@ gfxGDIFont::gfxGDIFont(GDIFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
 }
 
 gfxGDIFont::~gfxGDIFont() {
-  if (mScaledFont) {
-    cairo_scaled_font_destroy(mScaledFont);
-  }
-  if (mFontFace) {
-    cairo_font_face_destroy(mFontFace);
-  }
   if (mFont) {
     ::DeleteObject(mFont);
   }
@@ -80,50 +58,27 @@ UniquePtr<gfxFont> gfxGDIFont::CopyWithAntialiasOption(
 
 bool gfxGDIFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                            uint32_t aOffset, uint32_t aLength, Script aScript,
-                           bool aVertical, RoundingFlags aRounding,
+                           nsAtom* aLanguage, bool aVertical,
+                           RoundingFlags aRounding,
                            gfxShapedText* aShapedText) {
   if (!mIsValid) {
     NS_WARNING("invalid font! expect incorrect text rendering");
     return false;
   }
 
-  // Ensure the cairo font is set up, so there's no risk it'll fall back to
-  // creating a "toy" font internally (see bug 544617).
-  // We must check that this succeeded, otherwise we risk cairo creating the
-  // wrong kind of font internally as a fallback (bug 744480).
-  if (!SetupCairoFont(aDrawTarget)) {
-    return false;
-  }
-
   return gfxFont::ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
-                            aVertical, aRounding, aShapedText);
+                            aLanguage, aVertical, aRounding, aShapedText);
 }
 
 const gfxFont::Metrics& gfxGDIFont::GetHorizontalMetrics() { return *mMetrics; }
 
-uint32_t gfxGDIFont::GetSpaceGlyph() { return mSpaceGlyph; }
-
-bool gfxGDIFont::SetupCairoFont(DrawTarget* aDrawTarget) {
-  if (!mScaledFont ||
-      cairo_scaled_font_status(mScaledFont) != CAIRO_STATUS_SUCCESS) {
-    // Don't cairo_set_scaled_font as that would propagate the error to
-    // the cairo_t, precluding any further drawing.
-    return false;
-  }
-  cairo_set_scaled_font(gfxFont::RefCairo(aDrawTarget), mScaledFont);
-  return true;
-}
-
 already_AddRefed<ScaledFont> gfxGDIFont::GetScaledFont(DrawTarget* aTarget) {
   if (!mAzureScaledFont) {
-    NativeFont nativeFont;
-    nativeFont.mType = NativeFontType::GDI_LOGFONT;
     LOGFONT lf;
     GetObject(GetHFONT(), sizeof(LOGFONT), &lf);
-    nativeFont.mFont = &lf;
 
-    mAzureScaledFont = Factory::CreateScaledFontForNativeFont(
-        nativeFont, GetUnscaledFont(), GetAdjustedSize(), GetCairoScaledFont());
+    mAzureScaledFont = Factory::CreateScaledFontForGDIFont(
+        &lf, GetUnscaledFont(), GetAdjustedSize());
     InitializeScaledFont();
   }
 
@@ -161,31 +116,64 @@ void gfxGDIFont::Initialize() {
 
   LOGFONTW logFont;
 
-  if (mAdjustedSize == 0.0) {
-    mAdjustedSize = mStyle.size;
-    if (mStyle.sizeAdjust > 0.0 && mAdjustedSize > 0.0) {
-      // to implement font-size-adjust, we first create the "unadjusted" font
-      FillLogFont(logFont, mAdjustedSize);
-      mFont = ::CreateFontIndirectW(&logFont);
+  if (mAdjustedSize == -1.0) {
+    mAdjustedSize = GetAdjustedSize();
+    if (FontSizeAdjust::Tag(mStyle.sizeAdjustBasis) !=
+        FontSizeAdjust::Tag::None) {
+      if (mStyle.sizeAdjust > 0.0 && mAdjustedSize > 0.0) {
+        // to implement font-size-adjust, we first create the "unadjusted" font
+        FillLogFont(logFont, mAdjustedSize);
+        mFont = ::CreateFontIndirectW(&logFont);
 
-      // initialize its metrics so we can calculate size adjustment
-      Initialize();
+        // initialize its metrics so we can calculate size adjustment
+        Initialize();
 
-      // Unless the font was so small that GDI metrics rounded to zero,
-      // calculate the properly adjusted size, and then proceed
-      // to recreate mFont and recalculate metrics
-      if (mMetrics->xHeight > 0.0 && mMetrics->emHeight > 0.0) {
-        gfxFloat aspect = mMetrics->xHeight / mMetrics->emHeight;
-        mAdjustedSize = mStyle.GetAdjustedSize(aspect);
+        // Unless the font was so small that GDI metrics rounded to zero,
+        // calculate the properly adjusted size, and then proceed
+        // to recreate mFont and recalculate metrics
+        if (mMetrics->emHeight > 0.0) {
+          gfxFloat aspect;
+          switch (FontSizeAdjust::Tag(mStyle.sizeAdjustBasis)) {
+            default:
+              MOZ_ASSERT_UNREACHABLE("unhandled sizeAdjustBasis?");
+              aspect = 0.0;
+              break;
+            case FontSizeAdjust::Tag::ExHeight:
+              aspect = mMetrics->xHeight / mMetrics->emHeight;
+              break;
+            case FontSizeAdjust::Tag::CapHeight:
+              aspect = mMetrics->capHeight / mMetrics->emHeight;
+              break;
+            case FontSizeAdjust::Tag::ChWidth: {
+              gfxFloat advance = GetCharAdvance('0');
+              aspect = advance > 0.0 ? advance / mMetrics->emHeight : 0.5;
+              break;
+            }
+            case FontSizeAdjust::Tag::IcWidth:
+            case FontSizeAdjust::Tag::IcHeight: {
+              bool vertical = FontSizeAdjust::Tag(mStyle.sizeAdjustBasis) ==
+                              FontSizeAdjust::Tag::IcHeight;
+              gfxFloat advance = GetCharAdvance(kWaterIdeograph, vertical);
+              aspect = advance > 0.0 ? advance / mMetrics->emHeight : 1.0;
+              break;
+            }
+          }
+          if (aspect > 0.0) {
+            // If we created a shaper above (to measure glyphs), discard it so
+            // we get a new one for the adjusted scaling.
+            mHarfBuzzShaper = nullptr;
+            mAdjustedSize = mStyle.GetAdjustedSize(aspect);
+          }
+        }
+
+        // delete the temporary font and metrics
+        ::DeleteObject(mFont);
+        mFont = nullptr;
+        delete mMetrics;
+        mMetrics = nullptr;
+      } else {
+        mAdjustedSize = 0.0;
       }
-
-      // delete the temporary font and metrics
-      ::DeleteObject(mFont);
-      mFont = nullptr;
-      delete mMetrics;
-      mMetrics = nullptr;
-    } else if (mStyle.sizeAdjust == 0.0) {
-      mAdjustedSize = 0.0;
     }
   }
 
@@ -293,6 +281,8 @@ void gfxGDIFont::Initialize() {
       mMetrics->maxAdvance = mMetrics->aveCharWidth;
     }
 
+    mIsBitmap = !(metrics.tmPitchAndFamily & TMPF_VECTOR);
+
     // For fonts with USE_TYPO_METRICS set in the fsSelection field,
     // let the OS/2 sTypo* metrics override the previous values.
     // (see http://www.microsoft.com/typography/otspec/os2.htm#fss)
@@ -359,6 +349,16 @@ void gfxGDIFont::Initialize() {
       mMetrics->zeroWidth = -1.0;  // indicates not found
     }
 
+    wchar_t ch = kWaterIdeograph;
+    ret = GetGlyphIndicesW(dc.GetDC(), &ch, 1, &glyph,
+                           GGI_MARK_NONEXISTING_GLYPHS);
+    if (ret != GDI_ERROR && glyph != 0xFFFF) {
+      GetTextExtentPoint32W(dc.GetDC(), &ch, 1, &size);
+      mMetrics->ideographicWidth = ROUND(size.cx);
+    } else {
+      mMetrics->ideographicWidth = -1.0;
+    }
+
     SanitizeMetrics(mMetrics, GetFontEntry()->mIsBadUnderlineFont);
   } else {
     mFUnitsConvFactor = 0.0;  // zero-sized font: all values scale to zero
@@ -367,35 +367,6 @@ void gfxGDIFont::Initialize() {
   if (IsSyntheticBold()) {
     mMetrics->aveCharWidth += GetSyntheticBoldOffset();
     mMetrics->maxAdvance += GetSyntheticBoldOffset();
-  }
-
-  mFontFace = cairo_win32_font_face_create_for_logfontw_hfont(&logFont, mFont);
-
-  cairo_matrix_t sizeMatrix, ctm;
-  cairo_matrix_init_identity(&ctm);
-  cairo_matrix_init_scale(&sizeMatrix, mAdjustedSize, mAdjustedSize);
-
-  cairo_font_options_t* fontOptions = cairo_font_options_create();
-  if (mAntialiasOption != kAntialiasDefault) {
-    cairo_font_options_set_antialias(fontOptions,
-                                     GetCairoAntialiasOption(mAntialiasOption));
-  }
-  mScaledFont =
-      cairo_scaled_font_create(mFontFace, &sizeMatrix, &ctm, fontOptions);
-  cairo_font_options_destroy(fontOptions);
-
-  if (!mScaledFont ||
-      cairo_scaled_font_status(mScaledFont) != CAIRO_STATUS_SUCCESS) {
-#ifdef DEBUG
-    char warnBuf[1024];
-    SprintfLiteral(warnBuf, "Failed to create scaled font: %s status: %d",
-                   mFontEntry->Name().get(),
-                   mScaledFont ? cairo_scaled_font_status(mScaledFont) : 0);
-    NS_WARNING(warnBuf);
-#endif
-    mIsValid = false;
-  } else {
-    mIsValid = true;
   }
 
 #if 0
@@ -503,6 +474,50 @@ int32_t gfxGDIFont::GetGlyphWidth(uint16_t aGID) {
     }
     return *entry;
   });
+}
+
+bool gfxGDIFont::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds, bool aTight) {
+  DCForMetrics dc;
+  AutoSelectFont fs(dc, GetHFONT());
+
+  if (mIsBitmap) {
+    int devWidth;
+    if (!GetCharWidthI(dc, aGID, 1, nullptr, &devWidth)) {
+      return false;
+    }
+    devWidth = std::min(std::max(0, devWidth), 0x7fff);
+
+    *aBounds = gfxRect(0, -mMetrics->maxAscent, devWidth,
+                       mMetrics->maxAscent + mMetrics->maxDescent);
+    return true;
+  }
+
+  const MAT2 kIdentityMatrix = {{0, 1}, {0, 0}, {0, 0}, {0, 1}};
+  GLYPHMETRICS gm;
+  if (GetGlyphOutlineW(dc, aGID, GGO_METRICS | GGO_GLYPH_INDEX, &gm, 0, nullptr,
+                       &kIdentityMatrix) == GDI_ERROR) {
+    return false;
+  }
+
+  if (gm.gmBlackBoxX == 1 && gm.gmBlackBoxY == 1 &&
+      !GetGlyphOutlineW(dc, aGID, GGO_NATIVE | GGO_GLYPH_INDEX, &gm, 0, nullptr,
+                        &kIdentityMatrix)) {
+    // Workaround for GetGlyphOutline returning 1x1 bounding box
+    // for <space> glyph that is in fact empty.
+    gm.gmBlackBoxX = 0;
+    gm.gmBlackBoxY = 0;
+  } else if (gm.gmBlackBoxX > 0 && !aTight) {
+    // The bounding box reported by Windows supposedly contains the glyph's
+    // "black" area; however, antialiasing (especially with ClearType) means
+    // that the actual image that needs to be rendered may "bleed" into the
+    // adjacent pixels, mainly on the right side.
+    gm.gmptGlyphOrigin.x -= 1;
+    gm.gmBlackBoxX += 3;
+  }
+
+  *aBounds = gfxRect(gm.gmptGlyphOrigin.x, -gm.gmptGlyphOrigin.y,
+                     gm.gmBlackBoxX, gm.gmBlackBoxY);
+  return true;
 }
 
 void gfxGDIFont::AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,

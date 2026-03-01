@@ -24,7 +24,7 @@
 class gfxMacPlatformFontList;
 
 // a single member of a font family (i.e. a single face, such as Times Italic)
-class MacOSFontEntry : public gfxFontEntry {
+class MacOSFontEntry final : public gfxFontEntry {
  public:
   friend class gfxMacPlatformFontList;
   friend class gfxMacFont;
@@ -102,7 +102,7 @@ class MacOSFontEntry : public gfxFontEntry {
   mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontMac> mUnscaledFont;
 };
 
-class gfxMacPlatformFontList : public gfxPlatformFontList {
+class gfxMacPlatformFontList final : public gfxPlatformFontList {
   using FontFamilyListEntry = mozilla::dom::SystemFontListEntry;
 
  public:
@@ -132,6 +132,7 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
+                          nsAtom* aLanguage = nullptr,
                           gfxFloat aDevToCssSize = 1.0) override;
 
   // lookup the system font for a particular system font type and set
@@ -149,7 +150,8 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
   void ReadSystemFontList(nsTArray<FontFamilyListEntry>* aList);
 
  protected:
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
  private:
   friend class gfxPlatformMac;

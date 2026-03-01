@@ -71,8 +71,7 @@
 #endif
 #include "nsAppRunner.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 using namespace ipc;
 using namespace layers;
@@ -583,5 +582,4 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
   XRE_ShutdownChildProcess();
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

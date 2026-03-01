@@ -5,6 +5,7 @@
 include protocol PCompositorBridge;
 include LayersSurfaces;
 include "mozilla/GfxMessageUtils.h";
+include "mozilla/layers/LayersMessageUtils.h"; //MY
 #ifdef MOZ_BUILD_WEBRENDER
 include "mozilla/layers/WebRenderMessageUtils.h";
 #endif

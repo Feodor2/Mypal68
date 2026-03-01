@@ -4,8 +4,7 @@
 
 #include "TextureHostOGL.h"
 
-#include "EGLUtils.h"
-#include "GLContext.h"     // for GLContext, etc
+#include "GLContextEGL.h"  // for GLContext, etc
 #include "GLLibraryEGL.h"  // for GLLibraryEGL
 #include "GLUploadHelpers.h"
 #include "GLReadTexImageHelper.h"
@@ -30,6 +29,10 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/webrender/RenderAndroidSurfaceTextureHostOGL.h"
+#endif
+
+#ifdef MOZ_WAYLAND
+#  include "mozilla/layers/WaylandDMABUFTextureHostOGL.h"
 #endif
 
 using namespace mozilla::gl;
@@ -77,6 +80,13 @@ already_AddRefed<TextureHost> CreateTextureHostOGL(
                                        desc.hasAlpha());
       break;
     }
+
+#ifdef MOZ_WAYLAND
+    case SurfaceDescriptor::TSurfaceDescriptorDMABuf: {
+      result = new WaylandDMABUFTextureHostOGL(aFlags, aDesc);
+      break;
+    }
+#endif
 
 #ifdef XP_MACOSX
     case SurfaceDescriptor::TSurfaceDescriptorMacIOSurface: {
@@ -713,8 +723,17 @@ void EGLImageTextureSource::BindTexture(GLenum aTextureUnit,
     return;
   }
 
-  MOZ_ASSERT(DoesEGLContextSupportSharingWithEGLImage(gl),
+#ifdef DEBUG
+  const bool supportsEglImage = [&]() {
+    const auto& gle = GLContextEGL::Cast(gl);
+    const auto& egl = gle->mEgl;
+
+    return egl->HasKHRImageBase() && egl->HasKHRImageTexture2D() &&
+           gl->IsExtensionSupported(GLContext::OES_EGL_image);
+  }();
+  MOZ_ASSERT(supportsEglImage,
              "EGLImage not supported or disabled in runtime");
+#endif
 
   GLuint tex = mCompositor->GetTemporaryTexture(mTextureTarget, aTextureUnit);
 

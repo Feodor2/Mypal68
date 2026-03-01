@@ -6,8 +6,8 @@
 #define GFX_FT2FONTLIST_H
 
 #include "mozilla/MemoryReporting.h"
+#include "gfxFT2FontBase.h"
 #include "gfxPlatformFontList.h"
-#include "mozilla/gfx/UnscaledFontFreeType.h"
 #include "nsTHashSet.h"
 
 namespace mozilla {
@@ -20,18 +20,16 @@ class FontNameCache;
 typedef struct FT_FaceRec_* FT_Face;
 class nsZipArchive;
 class WillShutdownObserver;
+class FTUserFontData;
 
-class FT2FontEntry : public gfxFontEntry {
+class FT2FontEntry final : public gfxFT2FontEntryBase {
   friend class gfxFT2FontList;
 
   using FontListEntry = mozilla::dom::SystemFontListEntry;
 
  public:
   explicit FT2FontEntry(const nsACString& aFaceName)
-      : gfxFontEntry(aFaceName),
-        mFTFace(nullptr),
-        mFontFace(nullptr),
-        mFTFontIndex(0) {}
+      : gfxFT2FontEntryBase(aFaceName), mFTFontIndex(0) {}
 
   ~FT2FontEntry();
 
@@ -54,22 +52,10 @@ class FT2FontEntry : public gfxFontEntry {
   // aFontData (if non-nullptr) is NS_Malloc'ed data that aFace depends on,
   // to be freed after the face is destroyed.
   // aLength is the length of aFontData.
-  static FT2FontEntry* CreateFontEntry(FT_Face aFace, const char* aFilename,
-                                       uint8_t aIndex, const nsACString& aName,
-                                       const uint8_t* aFontData = nullptr,
-                                       uint32_t aLength = 0);
+  static FT2FontEntry* CreateFontEntry(FT_Face, const char* aFilename,
+                                       uint8_t aIndex, const nsACString& aName);
 
-  gfxFont* CreateFontInstance(const gfxFontStyle* aFontStyle) override;
-
-  // Create (if necessary) and return the cairo_font_face for this font.
-  // This may fail and return null, so caller must be prepared to handle this.
-  // If a style is passed, any variationSettings in the style will be applied
-  // to the resulting font face.
-  cairo_font_face_t* CairoFontFace(const gfxFontStyle* aStyle = nullptr);
-
-  // Create a cairo_scaled_font for this face, with the given style.
-  // This may fail and return null, so caller must be prepared to handle this.
-  cairo_scaled_font_t* CreateScaledFont(const gfxFontStyle* aStyle);
+  gfxFont* CreateFontInstance(const gfxFontStyle* aStyle) override;
 
   nsresult ReadCMAP(FontInfoData* aFontInfoData = nullptr) override;
 
@@ -89,6 +75,9 @@ class FT2FontEntry : public gfxFontEntry {
   void CheckForBrokenFont(gfxFontFamily* aFamily);
   void CheckForBrokenFont(const nsACString& aFamilyKey);
 
+  already_AddRefed<mozilla::gfx::SharedFTFace> GetFTFace(bool aCommit = false);
+  FTUserFontData* GetUserFontData();
+
   FT_MM_Var* GetMMVar() override;
 
   /**
@@ -107,8 +96,7 @@ class FT2FontEntry : public gfxFontEntry {
   void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                               FontListSizes* aSizes) const override;
 
-  FT_Face mFTFace;
-  cairo_font_face_t* mFontFace;
+  RefPtr<mozilla::gfx::SharedFTFace> mFTFace;
 
   FT_MM_Var* mMMVar = nullptr;
 
@@ -122,7 +110,7 @@ class FT2FontEntry : public gfxFontEntry {
   bool mMMVarInitialized = false;
 };
 
-class FT2FontFamily : public gfxFontFamily {
+class FT2FontFamily final : public gfxFontFamily {
   using FontListEntry = mozilla::dom::SystemFontListEntry;
 
  public:
@@ -133,7 +121,7 @@ class FT2FontFamily : public gfxFontFamily {
   void AddFacesToFontList(nsTArray<FontListEntry>* aFontList);
 };
 
-class gfxFT2FontList : public gfxPlatformFontList {
+class gfxFT2FontList final : public gfxPlatformFontList {
   using FontListEntry = mozilla::dom::SystemFontListEntry;
 
  public:
@@ -222,7 +210,8 @@ class gfxFT2FontList : public gfxPlatformFontList {
 
   void FindFontsInDir(const nsCString& aDir, FontNameCache* aFNC);
 
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
   nsTHashSet<nsCString> mSkipSpaceLookupCheckFamilies;
 

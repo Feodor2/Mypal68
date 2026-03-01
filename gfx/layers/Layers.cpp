@@ -185,6 +185,16 @@ Layer::Layer(LayerManager* aManager, void* aImplData)
 
 Layer::~Layer() = default;
 
+void Layer::SetEventRegions(const EventRegions& aRegions) {
+  if (mEventRegions != aRegions) {
+    MOZ_LAYERS_LOG_IF_SHADOWABLE(
+        this, ("Layer::Mutated(%p) eventregions were %s, now %s", this,
+               mEventRegions.ToString().get(), aRegions.ToString().get()));
+    mEventRegions = aRegions;
+    Mutated();
+  }
+}
+
 void Layer::SetCompositorAnimations(
     const CompositorAnimations& aCompositorAnimations) {
   MOZ_LAYERS_LOG_IF_SHADOWABLE(
@@ -2095,7 +2105,8 @@ void ReadbackLayer::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   Layer::PrintInfo(aStream, aPrefix);
   AppendToString(aStream, mSize, " [size=", "]");
   if (mBackgroundLayer) {
-    AppendToString(aStream, mBackgroundLayer, " [backgroundLayer=", "]");
+    aStream << " [backgroundLayer="
+            << nsPrintfCString("%p", mBackgroundLayer).get() << "]";
     AppendToString(aStream, mBackgroundLayerOffset, " [backgroundOffset=", "]");
   } else if (mBackgroundColor.a == 1.f) {
     AppendToString(aStream, mBackgroundColor, " [backgroundColor=", "]");

@@ -17,6 +17,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_ui.h"
+#include "mozilla/ToString.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BrowserChild.h"
@@ -36,8 +37,8 @@
 #include "nsLayoutUtils.h"
 #include "nsQueryFrame.h"
 
-#define APZES_LOG(...)
-// #define APZES_LOG(...) printf_stderr("APZES: " __VA_ARGS__)
+static mozilla::LazyLogModule sApzEvtLog("apz.eventstate");
+#define APZES_LOG(...) MOZ_LOG(sApzEvtLog, LogLevel::Debug, (__VA_ARGS__))
 
 // Static helper functions
 namespace {
@@ -353,7 +354,7 @@ void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
         sentContentResponse = true;
       } else {
         APZES_LOG("Event not prevented; pending response for %" PRIu64 " %s\n",
-                  aInputBlockId, Stringify(aGuid).c_str());
+                  aInputBlockId, ToString(aGuid).c_str());
         mPendingTouchPreventedResponse = true;
         mPendingTouchPreventedGuid = aGuid;
         mPendingTouchPreventedBlockId = aInputBlockId;
@@ -478,7 +479,7 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
 bool APZEventState::SendPendingTouchPreventedResponse(bool aPreventDefault) {
   if (mPendingTouchPreventedResponse) {
     APZES_LOG("Sending response %d for pending guid: %s\n", aPreventDefault,
-              Stringify(mPendingTouchPreventedGuid).c_str());
+              ToString(mPendingTouchPreventedGuid).c_str());
     mContentReceivedInputBlockCallback(mPendingTouchPreventedBlockId,
                                        aPreventDefault);
     mPendingTouchPreventedResponse = false;

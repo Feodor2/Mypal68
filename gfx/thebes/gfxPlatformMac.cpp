@@ -127,14 +127,6 @@ already_AddRefed<gfxASurface> gfxPlatformMac::CreateOffscreenSurface(
   return newSurface.forget();
 }
 
-gfxFontGroup* gfxPlatformMac::CreateFontGroup(
-    const FontFamilyList& aFontFamilyList, const gfxFontStyle* aStyle,
-    gfxTextPerfMetrics* aTextPerf, gfxUserFontSet* aUserFontSet,
-    gfxFloat aDevToCssSize) {
-  return new gfxFontGroup(aFontFamilyList, aStyle, aTextPerf, aUserFontSet,
-                          aDevToCssSize);
-}
-
 bool gfxPlatformMac::IsFontFormatSupported(uint32_t aFormatFlags) {
   if (gfxPlatform::IsFontFormatSupported(aFormatFlags)) {
     return true;
@@ -159,6 +151,7 @@ static const char kFontGeneva[] = "Geneva";
 static const char kFontGeezaPro[] = "Geeza Pro";
 static const char kFontGujaratiSangamMN[] = "Gujarati Sangam MN";
 static const char kFontGurmukhiMN[] = "Gurmukhi MN";
+static const char kFontHelvetica[] = "Helvetica";
 static const char kFontHiraginoKakuGothic[] = "Hiragino Kaku Gothic ProN";
 static const char kFontHiraginoSansGB[] = "Hiragino Sans GB";
 static const char kFontKefa[] = "Kefa";
@@ -230,6 +223,7 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
         aFontList.AppendElement(kFontSongtiSC);
         break;
       case 0x10:
+        aFontList.AppendElement(kFontHelvetica);
         aFontList.AppendElement(kFontMenlo);
         aFontList.AppendElement(kFontMyanmarMN);
         break;

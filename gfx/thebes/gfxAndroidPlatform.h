@@ -17,7 +17,7 @@ class FontListEntry;
 };  // namespace mozilla
 using mozilla::dom::FontListEntry;
 
-class gfxAndroidPlatform : public gfxPlatform {
+class gfxAndroidPlatform final : public gfxPlatform {
  public:
   gfxAndroidPlatform();
   virtual ~gfxAndroidPlatform();
@@ -40,16 +40,8 @@ class gfxAndroidPlatform : public gfxPlatform {
   void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh, Script aRunScript,
                               nsTArray<const char*>& aFontList) override;
 
-  gfxFontGroup* CreateFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
-                                const gfxFontStyle* aStyle,
-                                gfxTextPerfMetrics* aTextPerf,
-                                gfxUserFontSet* aUserFontSet,
-                                gfxFloat aDevToCssSize) override;
-
   bool FontHintingEnabled() override;
   bool RequiresLinearZoom() override;
-
-  FT_Library GetFTLibrary() override;
 
   already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
       override;

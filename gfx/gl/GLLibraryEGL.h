@@ -545,6 +545,8 @@ class GLLibraryEGL final {
   static StaticRefPtr<GLLibraryEGL> sEGLLibrary;
 };
 
+bool DoesEGLContextSupportSharingWithEGLImage(GLContext* gl);
+
 } /* namespace gl */
 } /* namespace mozilla */
 

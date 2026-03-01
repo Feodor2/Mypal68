@@ -20,12 +20,8 @@ class UnscaledFontDWrite final : public UnscaledFont {
   UnscaledFontDWrite(
       const RefPtr<IDWriteFontFace>& aFontFace,
       const RefPtr<IDWriteFont>& aFont,
-      DWRITE_FONT_SIMULATIONS aSimulations = DWRITE_FONT_SIMULATIONS_NONE,
-      bool aNeedsCairo = false)
-      : mFontFace(aFontFace),
-        mFont(aFont),
-        mSimulations(aSimulations),
-        mNeedsCairo(aNeedsCairo) {}
+      DWRITE_FONT_SIMULATIONS aSimulations = DWRITE_FONT_SIMULATIONS_NONE)
+      : mFontFace(aFontFace), mFont(aFont), mSimulations(aSimulations) {}
 
   FontType GetType() const override { return FontType::DWRITE; }
 
@@ -53,7 +49,6 @@ class UnscaledFontDWrite final : public UnscaledFont {
   RefPtr<IDWriteFontFace> mFontFace;
   RefPtr<IDWriteFont> mFont;
   DWRITE_FONT_SIMULATIONS mSimulations;
-  bool mNeedsCairo;
 };
 
 }  // namespace gfx

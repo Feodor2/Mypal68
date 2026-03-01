@@ -8,6 +8,7 @@
 #include "cairo-quartz.h"
 #include "mozilla/gfx/HelpersCairo.h"
 #include "nsObjCExceptions.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace gfx {

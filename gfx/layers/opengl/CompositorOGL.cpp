@@ -52,7 +52,9 @@
 #include "HeapCopyOfStackArray.h"
 #include "GLBlitHelper.h"
 #include "mozilla/gfx/Swizzle.h"
-
+#ifdef MOZ_WAYLAND
+#  include "mozilla/widget/GtkCompositorWidget.h"
+#endif
 #if MOZ_WIDGET_ANDROID
 #  include "GeneratedJNIWrappers.h"
 #endif
@@ -1001,6 +1003,11 @@ Maybe<IntRect> CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
     MakeCurrent(ForceMakeCurrent);
 
     mWidgetSize = LayoutDeviceIntSize::FromUnknownSize(rect.Size());
+#ifdef MOZ_WAYLAND
+    if (mWidget && mWidget->AsX11()) {
+      mWidget->AsX11()->SetEGLNativeWindowSize(mWidgetSize);
+    }
+#endif
   } else {
     MakeCurrent();
   }
@@ -2147,11 +2154,15 @@ void CompositorOGL::Pause() {
   java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)mGLContext.get());
   // ReleaseSurface internally calls MakeCurrent
   gl()->ReleaseSurface();
+#elif defined(MOZ_WAYLAND)
+  // ReleaseSurface internally calls MakeCurrent
+  gl()->ReleaseSurface();
 #endif
 }
 
 bool CompositorOGL::Resume() {
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT) || \
+    defined(MOZ_WAYLAND)
   if (!gl() || gl()->IsDestroyed()) return false;
 
   // RenewSurface internally calls MakeCurrent.

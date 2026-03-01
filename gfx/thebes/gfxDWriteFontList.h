@@ -27,7 +27,7 @@
  * the user's system.  It holds each gfxDWriteFontEntry (maps more directly to
  * a font face) which holds font type, charset info and character map info.
  */
-class gfxDWriteFontFamily : public gfxFontFamily {
+class gfxDWriteFontFamily final : public gfxFontFamily {
  public:
   typedef mozilla::FontStretch FontStretch;
   typedef mozilla::FontSlantStyle FontSlantStyle;
@@ -82,7 +82,7 @@ class gfxDWriteFontFamily : public gfxFontFamily {
 /**
  * \brief Class representing DirectWrite FontEntry (a unique font style/family)
  */
-class gfxDWriteFontEntry : public gfxFontEntry {
+class gfxDWriteFontEntry final : public gfxFontEntry {
  public:
   /**
    * Constructs a font entry.
@@ -336,7 +336,7 @@ class DWriteFontFallbackRenderer final : public IDWriteTextRenderer {
   nsCString mFamilyName;
 };
 
-class gfxDWriteFontList : public gfxPlatformFontList {
+class gfxDWriteFontList final : public gfxPlatformFontList {
  public:
   gfxDWriteFontList();
 
@@ -389,6 +389,7 @@ class gfxDWriteFontList : public gfxPlatformFontList {
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
+                          nsAtom* aLanguage = nullptr,
                           gfxFloat aDevToCssSize = 1.0) override;
 
   gfxFloat GetForceGDIClassicMaxFontSize() {
@@ -401,7 +402,8 @@ class gfxDWriteFontList : public gfxPlatformFontList {
                                       FontListSizes* aSizes) const;
 
  protected:
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
   // attempt to use platform-specific fallback for the given character,
   // return null if no usable result found

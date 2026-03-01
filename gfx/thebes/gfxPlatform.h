@@ -40,7 +40,7 @@ class gfxTextPerfMetrics;
 typedef struct FT_LibraryRec_* FT_Library;
 
 namespace mozilla {
-class FontFamilyList;
+struct StyleFontFamilyList;
 class LogModule;
 namespace layers {
 class FrameStats;
@@ -71,11 +71,11 @@ class SystemFontListEntry;
     }                                             \
   } while (0)
 
-enum eCMSMode {
-  eCMSMode_Off = 0,         // No color management
-  eCMSMode_All = 1,         // Color manage everything
-  eCMSMode_TaggedOnly = 2,  // Color manage tagged Images Only
-  eCMSMode_AllCount = 3
+enum class CMSMode : int32_t {
+  Off = 0,         // No color management
+  All = 1,         // Color manage everything
+  TaggedOnly = 2,  // Color manage tagged Images Only
+  AllCount = 3
 };
 
 enum eGfxLog {
@@ -363,12 +363,13 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
                                    const nsACString& aGenericFamily);
 
   /**
-   * Create the appropriate platform font group
+   * Create a gfxFontGroup based on the given family list and style.
    */
-  virtual gfxFontGroup* CreateFontGroup(
-      const mozilla::FontFamilyList& aFontFamilyList,
-      const gfxFontStyle* aStyle, gfxTextPerfMetrics* aTextPerf,
-      gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize) = 0;
+  gfxFontGroup* CreateFontGroup(
+      const mozilla::StyleFontFamilyList& aFontFamilyList,
+      const gfxFontStyle* aStyle, nsAtom* aLanguage, bool aExplicitLanguage,
+      gfxTextPerfMetrics* aTextPerf, gfxUserFontSet* aUserFontSet,
+      gfxFloat aDevToCssSize) const;
 
   /**
    * Look up a local platform font using the full font face name.
@@ -496,7 +497,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   /**
    * Are we going to try color management?
    */
-  static eCMSMode GetCMSMode();
+  static CMSMode GetCMSMode() {
+    EnsureCMSInitialized();
+    return gCMSMode;
+  }
 
   /**
    * Determines the rendering intent for color management.
@@ -521,32 +525,50 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   /**
    * Return the output device ICC profile.
    */
-  static qcms_profile* GetCMSOutputProfile();
+  static qcms_profile* GetCMSOutputProfile() {
+    EnsureCMSInitialized();
+    return gCMSOutputProfile;
+  }
 
   /**
    * Return the sRGB ICC profile.
    */
-  static qcms_profile* GetCMSsRGBProfile();
+  static qcms_profile* GetCMSsRGBProfile() {
+    EnsureCMSInitialized();
+    return gCMSsRGBProfile;
+  }
 
   /**
    * Return sRGB -> output device transform.
    */
-  static qcms_transform* GetCMSRGBTransform();
+  static qcms_transform* GetCMSRGBTransform() {
+    EnsureCMSInitialized();
+    return gCMSRGBTransform;
+  }
 
   /**
    * Return output -> sRGB device transform.
    */
-  static qcms_transform* GetCMSInverseRGBTransform();
+  static qcms_transform* GetCMSInverseRGBTransform() {
+    MOZ_ASSERT(gCMSInitialized);
+    return gCMSInverseRGBTransform;
+  }
 
   /**
    * Return sRGBA -> output device transform.
    */
-  static qcms_transform* GetCMSRGBATransform();
+  static qcms_transform* GetCMSRGBATransform() {
+    MOZ_ASSERT(gCMSInitialized);
+    return gCMSRGBATransform;
+  }
 
   /**
    * Return sBGRA -> output device transform.
    */
-  static qcms_transform* GetCMSBGRATransform();
+  static qcms_transform* GetCMSBGRATransform() {
+    MOZ_ASSERT(gCMSInitialized);
+    return gCMSBGRATransform;
+  }
 
   /**
    * Return OS RGBA -> output device transform.
@@ -730,8 +752,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   virtual void ImportGPUDeviceData(const mozilla::gfx::GPUDeviceData& aData);
 
-  virtual FT_Library GetFTLibrary() { return nullptr; }
-
   bool HasVariationFontSupport() const { return mHasVariationFontSupport; }
 
   bool HasNativeColrFontSupport() const { return mHasNativeColrFontSupport; }
@@ -878,7 +898,28 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void Init();
 
   static void InitOpenGLConfig();
-  static void CreateCMSOutputProfile();
+
+  static mozilla::Atomic<bool, mozilla::MemoryOrdering::ReleaseAcquire>
+      gCMSInitialized;
+  static CMSMode gCMSMode;
+
+  // These two may point to the same profile
+  static qcms_profile* gCMSOutputProfile;
+  static qcms_profile* gCMSsRGBProfile;
+
+  static qcms_transform* gCMSRGBTransform;
+  static qcms_transform* gCMSInverseRGBTransform;
+  static qcms_transform* gCMSRGBATransform;
+  static qcms_transform* gCMSBGRATransform;
+
+  inline static void EnsureCMSInitialized() {
+    if (MOZ_UNLIKELY(!gCMSInitialized)) {
+      InitializeCMS();
+    }
+  }
+
+  static void InitializeCMS();
+  static void ShutdownCMS();
 
   static nsTArray<uint8_t> GetCMSOutputProfileData();
 
@@ -901,6 +942,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   void InitCompositorAccelerationPrefs();
   void InitGPUProcessPrefs();
+  virtual void InitPlatformGPUProcessPrefs() {}
   void InitOMTPConfig();
 
   static bool IsDXInterop2Blocked();
@@ -909,7 +951,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool IsDXP016Blocked();
 
   RefPtr<gfxASurface> mScreenReferenceSurface;
-  nsCOMPtr<nsIObserver> mSRGBOverrideObserver;
   RefPtr<mozilla::layers::MemoryPressureObserver> mMemoryPressureObserver;
 
   // The preferred draw target backend to use for canvas

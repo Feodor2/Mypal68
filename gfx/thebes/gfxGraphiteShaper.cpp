@@ -77,13 +77,9 @@ static void AddFeature(const uint32_t& aTag, uint32_t& aValue, void* aUserArg) {
 bool gfxGraphiteShaper::ShapeText(DrawTarget* aDrawTarget,
                                   const char16_t* aText, uint32_t aOffset,
                                   uint32_t aLength, Script aScript,
-                                  bool aVertical, RoundingFlags aRounding,
+                                  nsAtom* aLanguage, bool aVertical,
+                                  RoundingFlags aRounding,
                                   gfxShapedText* aShapedText) {
-  // some font back-ends require this in order to get proper hinted metrics
-  if (!mFont->SetupCairoFont(aDrawTarget)) {
-    return false;
-  }
-
   const gfxFontStyle* style = mFont->GetStyle();
 
   if (!mGrFont) {
@@ -127,9 +123,9 @@ bool gfxGraphiteShaper::ShapeText(DrawTarget* aDrawTarget,
     grLang = MakeGraphiteLangTag(style->languageOverride);
   } else if (entry->mLanguageOverride) {
     grLang = MakeGraphiteLangTag(entry->mLanguageOverride);
-  } else if (style->explicitLanguage) {
+  } else if (aLanguage) {
     nsAutoCString langString;
-    style->language->ToUTF8String(langString);
+    aLanguage->ToUTF8String(langString);
     grLang = GetGraphiteTagForLang(langString);
   }
   gr_feature_val* grFeatures = gr_face_featureval_for_lang(mGrFace, grLang);

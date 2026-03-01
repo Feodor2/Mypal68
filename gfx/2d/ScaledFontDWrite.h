@@ -46,9 +46,6 @@ class ScaledFontDWrite final : public ScaledFontBase {
   void CopyGlyphsToSink(const GlyphBuffer& aBuffer,
                         ID2D1SimplifiedGeometrySink* aSink);
 
-  void GetGlyphDesignMetrics(const uint16_t* aGlyphIndices, uint32_t aNumGlyphs,
-                             GlyphMetrics* aGlyphMetrics) override;
-
   bool CanSerialize() override { return true; }
 
   bool GetFontInstanceData(FontInstanceDataOutput aCb, void* aBaton) override;
@@ -70,6 +67,7 @@ class ScaledFontDWrite final : public ScaledFontBase {
 
 #ifdef USE_SKIA
   SkTypeface* CreateSkTypeface() override;
+  void SetupSkFontDrawOptions(SkFont& aFont) override;
   SkFontStyle mStyle;
 #endif
 
@@ -86,9 +84,10 @@ class ScaledFontDWrite final : public ScaledFontBase {
   Float mGamma;
   Float mContrast;
 
- protected:
 #ifdef USE_CAIRO_SCALED_FONT
-  cairo_font_face_t* GetCairoFontFace() override;
+  cairo_font_face_t* CreateCairoFontFace(
+      cairo_font_options_t* aFontOptions) override;
+  void PrepareCairoScaledFont(cairo_scaled_font_t* aFont) override;
 #endif
 
  private:

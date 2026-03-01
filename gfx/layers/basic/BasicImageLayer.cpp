@@ -18,8 +18,7 @@
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 class BasicImageLayer : public ImageLayer, public BasicImplData {
  public:
@@ -104,5 +103,4 @@ already_AddRefed<ImageLayer> BasicLayerManager::CreateImageLayer() {
   return layer.forget();
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

@@ -13,16 +13,13 @@ namespace mozilla::gfx {
 
 PrintTargetSkPDF::PrintTargetSkPDF(const IntSize& aSize,
                                    UniquePtr<SkWStream> aStream)
-  : PrintTarget(/* not using cairo_surface_t */ nullptr, aSize)
-  , mOStream(std::move(aStream))
-  , mPageCanvas(nullptr)
-  , mRefCanvas(nullptr)
-{
-}
+    : PrintTarget(/* not using cairo_surface_t */ nullptr, aSize),
+      mOStream(std::move(aStream)),
+      mPageCanvas(nullptr),
+      mRefCanvas(nullptr) {}
 
-PrintTargetSkPDF::~PrintTargetSkPDF()
-{
-  Finish(); // ensure stream is flushed
+PrintTargetSkPDF::~PrintTargetSkPDF() {
+  Finish();  // ensure stream is flushed
 
   // Make sure mPDFDoc and mRefPDFDoc are destroyed before our member streams
   // (which they wrap) are destroyed:
@@ -30,19 +27,14 @@ PrintTargetSkPDF::~PrintTargetSkPDF()
   mRefPDFDoc = nullptr;
 }
 
-/* static */ already_AddRefed<PrintTargetSkPDF>
-PrintTargetSkPDF::CreateOrNull(UniquePtr<SkWStream> aStream,
-                               const IntSize& aSizeInPoints)
-{
+/* static */ already_AddRefed<PrintTargetSkPDF> PrintTargetSkPDF::CreateOrNull(
+    UniquePtr<SkWStream> aStream, const IntSize& aSizeInPoints) {
   return do_AddRef(new PrintTargetSkPDF(aSizeInPoints, std::move(aStream)));
 }
 
-nsresult
-PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
-                                const nsAString& aPrintToFileName,
-                                int32_t aStartPage,
-                                int32_t aEndPage)
-{
+nsresult PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
+                                         const nsAString& aPrintToFileName,
+                                         int32_t aStartPage, int32_t aEndPage) {
   // We need to create the SkPDFDocument here rather than in CreateOrNull
   // because it's only now that we are given aTitle which we want for the
   // PDF metadata.
@@ -61,25 +53,19 @@ PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
   return mPDFDoc ? NS_OK : NS_ERROR_FAILURE;
 }
 
-nsresult
-PrintTargetSkPDF::BeginPage()
-{
+nsresult PrintTargetSkPDF::BeginPage() {
   mPageCanvas = mPDFDoc->beginPage(mSize.width, mSize.height);
 
   return !mPageCanvas ? NS_ERROR_FAILURE : PrintTarget::BeginPage();
 }
 
-nsresult
-PrintTargetSkPDF::EndPage()
-{
+nsresult PrintTargetSkPDF::EndPage() {
   mPageCanvas = nullptr;
   mPageDT = nullptr;
   return PrintTarget::EndPage();
 }
 
-nsresult
-PrintTargetSkPDF::EndPrinting()
-{
+nsresult PrintTargetSkPDF::EndPrinting() {
   mPDFDoc->close();
   if (mRefPDFDoc) {
     mRefPDFDoc->close();
@@ -89,9 +75,7 @@ PrintTargetSkPDF::EndPrinting()
   return NS_OK;
 }
 
-void
-PrintTargetSkPDF::Finish()
-{
+void PrintTargetSkPDF::Finish() {
   if (mIsFinished) {
     return;
   }
@@ -99,14 +83,12 @@ PrintTargetSkPDF::Finish()
   PrintTarget::Finish();
 }
 
-already_AddRefed<DrawTarget>
-PrintTargetSkPDF::MakeDrawTarget(const IntSize& aSize,
-                                 DrawEventRecorder* aRecorder)
-{
+already_AddRefed<DrawTarget> PrintTargetSkPDF::MakeDrawTarget(
+    const IntSize& aSize, DrawEventRecorder* aRecorder) {
   if (aRecorder) {
     return PrintTarget::MakeDrawTarget(aSize, aRecorder);
   }
-  //MOZ_ASSERT(aSize == mSize, "Should mPageCanvas size match?");
+  // MOZ_ASSERT(aSize == mSize, "Should mPageCanvas size match?");
   if (!mPageCanvas) {
     return nullptr;
   }
@@ -118,9 +100,7 @@ PrintTargetSkPDF::MakeDrawTarget(const IntSize& aSize,
   return do_AddRef(mPageDT);
 }
 
-already_AddRefed<DrawTarget>
-PrintTargetSkPDF::GetReferenceDrawTarget()
-{
+already_AddRefed<DrawTarget> PrintTargetSkPDF::GetReferenceDrawTarget() {
   if (!mRefDT) {
     SkPDF::Metadata metadata;
     // SkDocument stores a non-owning raw pointer to aStream

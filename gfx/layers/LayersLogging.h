@@ -34,9 +34,6 @@ enum class ImageFormat;
 namespace layers {
 struct ZoomConstraints;
 
-void AppendToString(std::stringstream& aStream, const void* p,
-                    const char* pfx = "", const char* sfx = "");
-
 void AppendToString(std::stringstream& aStream, ScrollableLayerGuid::ViewID n,
                     const char* pfx = "", const char* sfx = "");
 
@@ -179,9 +176,6 @@ void AppendToString(std::stringstream& aStream, const ScrollMetadata& m,
 void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
                     const char* pfx = "", const char* sfx = "",
                     bool detailed = false);
-
-void AppendToString(std::stringstream& aStream, const ScrollableLayerGuid& s,
-                    const char* pfx = "", const char* sfx = "");
 
 void AppendToString(std::stringstream& aStream, const ZoomConstraints& z,
                     const char* pfx = "", const char* sfx = "");

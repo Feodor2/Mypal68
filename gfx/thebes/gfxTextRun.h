@@ -14,6 +14,7 @@
 #include "gfxSkipChars.h"
 #include "gfxPlatform.h"
 #include "gfxPlatformFontList.h"
+#include "gfxUserFontSet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
@@ -24,16 +25,15 @@
 #include "DrawMode.h"
 #include "harfbuzz/hb.h"
 #include "nsColor.h"
+#include "nsFrameList.h"
 #include "X11UndefineNone.h"
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 #  include <stdio.h>
 #endif
 
 class gfxContext;
 class gfxFontGroup;
-class gfxUserFontEntry;
-class gfxUserFontSet;
 class nsAtom;
 class nsLanguageAtomService;
 class gfxMissingFontRecorder;
@@ -757,8 +757,8 @@ class gfxTextRun : public gfxShapedText {
     return advance;
   }
 
-#ifdef DEBUG
-  void Dump(FILE* aOutput);
+#ifdef DEBUG_FRAME_DUMP
+  void Dump(FILE* aOutput = stderr);
 #endif
 
  protected:
@@ -899,8 +899,9 @@ class gfxFontGroup final : public gfxTextRunFactory {
   static void
   Shutdown();  // platform must call this to release the languageAtomService
 
-  gfxFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
-               const gfxFontStyle* aStyle, gfxTextPerfMetrics* aTextPerf,
+  gfxFontGroup(const mozilla::StyleFontFamilyList& aFontFamilyList,
+               const gfxFontStyle* aStyle, nsAtom* aLanguage,
+               bool aExplicitLanguage, gfxTextPerfMetrics* aTextPerf,
                gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize);
 
   virtual ~gfxFontGroup();
@@ -1014,7 +1015,7 @@ class gfxFontGroup final : public gfxTextRunFactory {
   uint64_t GetRebuildGeneration();
 
   // used when logging text performance
-  gfxTextPerfMetrics* GetTextPerfMetrics() { return mTextPerf; }
+  gfxTextPerfMetrics* GetTextPerfMetrics() const { return mTextPerf; }
 
   // This will call UpdateUserFonts() if the user font set is changed.
   void SetUserFontSet(gfxUserFontSet* aUserFontSet);
@@ -1058,6 +1059,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
       BuildFontList();
     }
   }
+
+  nsAtom* Language() const { return mLanguage.get(); }
 
  protected:
   friend class mozilla::PostTraversalTask;
@@ -1280,6 +1283,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
     bool CheckForFallbackFaces() const { return mCheckForFallbackFaces; }
     void SetCheckForFallbackFaces() { mCheckForFallbackFaces = true; }
 
+    // Return true if we're currently loading (or waiting for) a resource that
+    // may support the given character.
+    bool IsLoadingFor(uint32_t aCh) {
+      if (!IsLoading()) {
+        return false;
+      }
+      MOZ_ASSERT(IsUserFontContainer());
+      return static_cast<gfxUserFontEntry*>(FontEntry())
+          ->CharacterInUnicodeRange(aCh);
+    }
+
     void SetFont(gfxFont* aFont) {
       NS_ASSERTION(aFont, "font pointer must not be null");
       NS_ADDREF(aFont);
@@ -1320,7 +1334,7 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // List of font families, either named or generic.
   // Generic names map to system pref fonts based on language.
-  mozilla::FontFamilyList mFamilyList;
+  mozilla::StyleFontFamilyList mFamilyList;
 
   // Fontlist containing a font entry for each family found. gfxFont objects
   // are created as needed and userfont loads are initiated when needed.
@@ -1329,6 +1343,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   RefPtr<gfxFont> mDefaultFont;
   gfxFontStyle mStyle;
+
+  RefPtr<nsAtom> mLanguage;
 
   gfxFloat mUnderlineOffset;
   gfxFloat mHyphenWidth;
@@ -1356,6 +1372,12 @@ class gfxFontGroup final : public gfxTextRunFactory {
                       // download to complete (or fallback
                       // timer to fire)
 
+  bool mExplicitLanguage;  // Does mLanguage come from an explicit attribute?
+
+  // Generic font family used to select among font prefs during fallback.
+  mozilla::StyleGenericFontFamily mFallbackGeneric =
+      mozilla::StyleGenericFontFamily::None;
+
   uint32_t mFontListGeneration = 0;  // platform font list generation for this
                                      // fontgroup
 
@@ -1371,21 +1393,29 @@ class gfxFontGroup final : public gfxTextRunFactory {
       const Parameters* aParams, mozilla::gfx::ShapedTextFlags aFlags,
       nsTextFrameUtils::Flags aFlags2);
 
+  template <typename T>
   already_AddRefed<gfxTextRun> MakeBlankTextRun(
-      uint32_t aLength, const Parameters* aParams,
+      const T* aString, uint32_t aLength, const Parameters* aParams,
       mozilla::gfx::ShapedTextFlags aFlags, nsTextFrameUtils::Flags aFlags2);
 
   // Initialize the list of fonts
   void BuildFontList();
 
-  // Get the font at index i within the fontlist.
+  // Get the font at index i within the fontlist, for character aCh (in case
+  // of fonts with multiple resources and unicode-range partitioning).
   // Will initiate userfont load if not already loaded.
-  // May return null if userfont not loaded or if font invalid
-  gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20);
+  // May return null if userfont not loaded or if font invalid.
+  // If *aLoading is true, a relevant resource is already being loaded so no
+  // new download will be initiated; if a download is started, *aLoading will
+  // be set to true on return.
+  gfxFont* GetFontAt(int32_t i, uint32_t aCh, bool* aLoading);
 
-  // Whether there's a font loading for a given family in the fontlist
-  // for a given character
-  bool FontLoadingForFamily(const FamilyFace& aFamily, uint32_t aCh) const;
+  // Simplified version of GetFontAt() for use where we just need a font for
+  // metrics, math layout tables, etc.
+  gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20) {
+    bool loading = false;
+    return GetFontAt(i, aCh, &loading);
+  }
 
   // will always return a font or force a shutdown
   gfxFont* GetDefaultFont();

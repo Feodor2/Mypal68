@@ -48,6 +48,12 @@
 #  include "mozilla/layers/TextureClientX11.h"
 #  include "GLXLibrary.h"
 #endif
+#ifdef MOZ_WAYLAND
+#  include <gtk/gtkx.h>
+#  include "mozilla/widget/nsWaylandDisplay.h"
+#  include "mozilla/layers/WaylandDMABUFTextureClientOGL.h"
+#  include "gfxPlatformGtk.h"
+#endif
 
 #ifdef XP_MACOSX
 #  include "mozilla/layers/MacIOSurfaceTextureClientOGL.h"
@@ -61,8 +67,7 @@
     } while (0)
 #endif
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 using namespace mozilla::ipc;
 using namespace mozilla::gl;
@@ -1085,6 +1090,15 @@ already_AddRefed<TextureClient> TextureClient::CreateForDrawing(
   }
 #endif
 
+#ifdef MOZ_WAYLAND
+  if ((aLayersBackend == LayersBackend::LAYERS_OPENGL ||
+       aLayersBackend == LayersBackend::LAYERS_WR) &&
+      gfxPlatformGtk::GetPlatform()->UseWaylandDMABufTextures() &&
+      aFormat != SurfaceFormat::A8) {
+    data = WaylandDMABUFTextureData::Create(aSize, aFormat, moz2DBackend);
+  }
+#endif
+
 #ifdef MOZ_X11
   gfxSurfaceType type =
       gfxPlatform::GetPlatform()->ScreenReferenceSurface()->GetType();
@@ -1800,5 +1814,4 @@ bool MappedYCbCrChannelData::CopyInto(MappedYCbCrChannelData& aDst) {
   return true;
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

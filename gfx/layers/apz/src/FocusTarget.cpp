@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/FocusTarget.h"
-
 #include "mozilla/dom/BrowserBridgeChild.h"  // for BrowserBridgeChild
 #include "mozilla/dom/EventTarget.h"         // for EventTarget
 #include "mozilla/dom/BrowserParent.h"       // for BrowserParent
@@ -14,16 +13,8 @@
 #include "nsIContentInlines.h"  // for nsINode::IsEditable()
 #include "nsLayoutUtils.h"      // for nsLayoutUtils
 
-#define ENABLE_FT_LOGGING 0
-// #define ENABLE_FT_LOGGING 1
-
-#if ENABLE_FT_LOGGING
-#  define FT_LOG(FMT, ...)         \
-    printf_stderr("FT (%s): " FMT, \
-                  XRE_IsParentProcess() ? "chrome" : "content", __VA_ARGS__)
-#else
-#  define FT_LOG(...)
-#endif
+static mozilla::LazyLogModule sApzFtgLog("apz.focustarget");
+#define FT_LOG(...) MOZ_LOG(sApzFtgLog, LogLevel::Debug, (__VA_ARGS__))
 
 using namespace mozilla::dom;
 using namespace mozilla::layout;
@@ -164,7 +155,7 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
       FT_LOG("Creating reflayer target with seq=%" PRIu64 ", kl=%d, lt=%" PRIu64
              "\n",
              aFocusSequenceNumber, mFocusHasKeyEventListeners,
-             rf->GetLayersId());
+             rf->GetLayersId().mId);
 
       mData = AsVariant<LayersId>(rf->GetLayersId());
       return;
@@ -208,10 +199,10 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
   // for this scroll target
   nsIScrollableFrame* horizontal =
       presShell->GetScrollableFrameToScrollForContent(
-          selectedContent.get(), ScrollableDirection::Horizontal);
+          selectedContent.get(), HorizontalScrollDirection);
   nsIScrollableFrame* vertical =
-      presShell->GetScrollableFrameToScrollForContent(
-          selectedContent.get(), ScrollableDirection::Vertical);
+      presShell->GetScrollableFrameToScrollForContent(selectedContent.get(),
+                                                      VerticalScollDirection);
 
   // We might have the globally focused element for scrolling. Gather a ViewID
   // for the horizontal and vertical scroll targets of this element.

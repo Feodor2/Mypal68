@@ -12,7 +12,6 @@
 #include "nsTHashMap.h"
 #include "nsHashKeys.h"
 
-#include "cairo.h"
 #include "usp10.h"
 
 class gfxGDIFont : public gfxFont {
@@ -23,13 +22,6 @@ class gfxGDIFont : public gfxFont {
   virtual ~gfxGDIFont();
 
   HFONT GetHFONT() { return mFont; }
-
-  cairo_font_face_t* CairoFontFace() { return mFontFace; }
-
-  /* overrides for the pure virtual methods in gfxFont */
-  uint32_t GetSpaceGlyph() override;
-
-  bool SetupCairoFont(DrawTarget* aDrawTarget) override;
 
   already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
       DrawTarget* aTarget) override;
@@ -56,6 +48,8 @@ class gfxGDIFont : public gfxFont {
   // get hinted glyph width in pixels as 16.16 fixed-point value
   int32_t GetGlyphWidth(uint16_t aGID) override;
 
+  bool GetGlyphBounds(uint16_t aGID, gfxRect* aBounds, bool aTight) override;
+
   void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                               FontCacheSizes* aSizes) const;
   void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
@@ -66,10 +60,9 @@ class gfxGDIFont : public gfxFont {
  protected:
   const Metrics& GetHorizontalMetrics() override;
 
-  /* override to ensure the cairo font is set up properly */
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,
-                 bool aVertical, RoundingFlags aRounding,
+                 nsAtom* aLanguage, bool aVertical, RoundingFlags aRounding,
                  gfxShapedText* aShapedText) override;
 
   void Initialize();  // creates metrics and Cairo fonts
@@ -81,10 +74,9 @@ class gfxGDIFont : public gfxFont {
   void FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize);
 
   HFONT mFont;
-  cairo_font_face_t* mFontFace;
 
   Metrics* mMetrics;
-  uint32_t mSpaceGlyph;
+  bool mIsBitmap;
 
   bool mNeedsSyntheticBold;
 

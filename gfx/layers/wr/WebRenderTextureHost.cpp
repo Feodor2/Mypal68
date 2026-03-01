@@ -13,8 +13,7 @@
 #  include "mozilla/layers/TextureHostOGL.h"
 #endif
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 class ScheduleNofityForUse : public wr::NotificationHandler {
  public:
@@ -256,5 +255,4 @@ void WebRenderTextureHost::MaybeNofityForUse(wr::TransactionBuilder& aTxn) {
 #endif
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

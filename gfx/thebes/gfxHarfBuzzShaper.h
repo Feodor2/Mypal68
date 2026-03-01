@@ -28,7 +28,7 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
 
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,
-                 bool aVertical, RoundingFlags aRounding,
+                 nsAtom* aLanguage, bool aVertical, RoundingFlags aRounding,
                  gfxShapedText* aShapedText) override;
 
   // get a given font table in harfbuzz blob form
@@ -42,7 +42,7 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
   // get harfbuzz glyph advance, in font design units
   hb_position_t GetGlyphHAdvance(hb_codepoint_t glyph) const;
 
-  hb_position_t GetGlyphVAdvance(hb_codepoint_t glyph) const;
+  hb_position_t GetGlyphVAdvance(hb_codepoint_t glyph);
 
   void GetGlyphVOrigin(hb_codepoint_t aGlyph, hb_position_t* aX,
                        hb_position_t* aY) const;

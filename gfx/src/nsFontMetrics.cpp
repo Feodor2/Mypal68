@@ -12,11 +12,12 @@
 #include "gfxRect.h"             // for gfxRect
 #include "gfxTextRun.h"          // for gfxFontGroup
 #include "gfxTypes.h"            // for gfxFloat
+#include "nsAtom.h"              // for nsAtom
 #include "nsBoundingMetrics.h"   // for nsBoundingMetrics
 #include "nsDebug.h"             // for NS_ERROR
 #include "nsDeviceContext.h"     // for nsDeviceContext
-#include "nsAtom.h"              // for nsAtom
 #include "nsMathUtils.h"         // for NS_round
+#include "nsPresContext.h"       // for nsPresContext
 #include "nsString.h"            // for nsString
 #include "nsStyleConsts.h"       // for StyleHyphens::None
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT
@@ -107,21 +108,24 @@ class StubPropertyProvider final : public gfxTextRun::PropertyProvider {
 }  // namespace
 
 nsFontMetrics::nsFontMetrics(const nsFont& aFont, const Params& aParams,
-                             nsDeviceContext* aContext)
+                             nsPresContext* aContext)
     : mFont(aFont),
       mLanguage(aParams.language),
-      mDeviceContext(aContext),
-      mP2A(aContext->AppUnitsPerDevPixel()),
+      mPresContext(aContext),
+      mP2A(aContext->DeviceContext()->AppUnitsPerDevPixel()),
       mOrientation(aParams.orientation),
+      mExplicitLanguage(aParams.explicitLanguage),
       mTextRunRTL(false),
       mVertical(false),
       mTextOrientation(mozilla::StyleTextOrientation::Mixed) {
-  gfxFontStyle style(
-      aFont.style, aFont.weight, aFont.stretch, gfxFloat(aFont.size) / mP2A,
-      aParams.language, aParams.explicitLanguage, aFont.sizeAdjust,
-      aFont.systemFont, mDeviceContext->IsPrinterContext(),
-      aFont.synthesis & NS_FONT_SYNTHESIS_WEIGHT,
-      aFont.synthesis & NS_FONT_SYNTHESIS_STYLE, aFont.languageOverride);
+  gfxFontStyle style(aFont.style, aFont.weight, aFont.stretch,
+                     gfxFloat(aFont.size.ToAppUnits()) / mP2A, aFont.sizeAdjust,
+                     aFont.family.is_system_font,
+                     aContext->DeviceContext()->IsPrinterContext(),
+                     aFont.synthesis & NS_FONT_SYNTHESIS_WEIGHT,
+                     aFont.synthesis & NS_FONT_SYNTHESIS_STYLE,
+                     aFont.synthesis & NS_FONT_SYNTHESIS_SMALL_CAPS,
+                     aFont.languageOverride);
 
   aFont.AddFontFeaturesToStyle(&style, mOrientation == eVertical);
   style.featureValueLookup = aParams.featureValueLookup;
@@ -130,19 +134,19 @@ nsFontMetrics::nsFontMetrics(const nsFont& aFont, const Params& aParams,
 
   gfxFloat devToCssSize = gfxFloat(mP2A) / gfxFloat(AppUnitsPerCSSPixel());
   mFontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(
-      aFont.fontlist, &style, aParams.textPerf, aParams.userFontSet,
-      devToCssSize);
+      aFont.family.families, &style, mLanguage, mExplicitLanguage,
+      aParams.textPerf, aParams.userFontSet, devToCssSize);
 }
 
 nsFontMetrics::~nsFontMetrics() {
   // Should not be dropped by stylo
   MOZ_ASSERT(NS_IsMainThread());
-  if (mDeviceContext) {
-    mDeviceContext->FontMetricsDeleted(this);
+  if (mPresContext) {
+    mPresContext->FontMetricsDeleted(this);
   }
 }
 
-void nsFontMetrics::Destroy() { mDeviceContext = nullptr; }
+void nsFontMetrics::Destroy() { mPresContext = nullptr; }
 
 // XXXTODO get rid of this macro
 #define ROUND_TO_TWIPS(x) (nscoord) floor(((x)*mP2A) + 0.5)

@@ -52,7 +52,7 @@ class InputQueue {
    */
   nsEventStatus ReceiveInputEvent(
       const RefPtr<AsyncPanZoomController>& aTarget,
-      TargetConfirmationFlags aFlags, const InputData& aEvent,
+      TargetConfirmationFlags aFlags, InputData& aEvent,
       uint64_t* aOutInputBlockId,
       const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors = Nothing());
   /**
@@ -181,7 +181,7 @@ class InputQueue {
       const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors);
   nsEventStatus ReceiveMouseInput(const RefPtr<AsyncPanZoomController>& aTarget,
                                   TargetConfirmationFlags aFlags,
-                                  const MouseInput& aEvent,
+                                  MouseInput& aEvent,
                                   uint64_t* aOutInputBlockId);
   nsEventStatus ReceiveScrollWheelInput(
       const RefPtr<AsyncPanZoomController>& aTarget,

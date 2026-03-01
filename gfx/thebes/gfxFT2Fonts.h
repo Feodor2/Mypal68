@@ -6,7 +6,6 @@
 #define GFX_FT2FONTS_H
 
 #include "mozilla/MemoryReporting.h"
-#include "cairo.h"
 #include "gfxTypes.h"
 #include "gfxFont.h"
 #include "gfxFT2FontBase.h"
@@ -19,14 +18,17 @@ class FT2FontEntry;
 class gfxFT2Font : public gfxFT2FontBase {
  public:  // new functions
   gfxFT2Font(const RefPtr<mozilla::gfx::UnscaledFontFreeType>& aUnscaledFont,
-             cairo_scaled_font_t* aCairoFont, FT_Face aFTFace,
-             FT2FontEntry* aFontEntry, const gfxFontStyle* aFontStyle);
+             RefPtr<mozilla::gfx::SharedFTFace>&& aFTFace,
+             FT2FontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
+             int aLoadFlags);
   virtual ~gfxFT2Font();
 
   FT2FontEntry* GetFontEntry();
 
   already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
       DrawTarget* aTarget) override;
+
+  bool ShouldHintMetrics() const override;
 
   void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                               FontCacheSizes* aSizes) const override;
@@ -60,7 +62,7 @@ class gfxFT2Font : public gfxFT2FontBase {
 
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,
-                 bool aVertical, RoundingFlags aRounding,
+                 nsAtom* aLanguage, bool aVertical, RoundingFlags aRounding,
                  gfxShapedText* aShapedText) override;
 
   void FillGlyphDataForChar(FT_Face face, uint32_t ch, CachedGlyphData* gd);
@@ -72,7 +74,6 @@ class gfxFT2Font : public gfxFT2FontBase {
       CharGlyphMapEntryType;
   typedef nsTHashtable<CharGlyphMapEntryType> CharGlyphMap;
   CharGlyphMap mCharGlyphCache;
-  FT_Face mFTFace;
 };
 
 #endif /* GFX_FT2FONTS_H */

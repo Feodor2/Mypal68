@@ -5,8 +5,6 @@
 #ifndef GFXFCPLATFORMFONTLIST_H_
 #define GFXFCPLATFORMFONTLIST_H_
 
-#include "gfxFont.h"
-#include "gfxFontEntry.h"
 #include "gfxFT2FontBase.h"
 #include "gfxPlatformFontList.h"
 #include "mozilla/FontPropertyTypes.h"
@@ -21,8 +19,6 @@
 #include FT_FREETYPE_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_MULTIPLE_MASTERS_H
-#include <cairo.h>
-#include <cairo-ft.h>
 
 #if defined(MOZ_SANDBOX) && defined(XP_LINUX)
 #  include "mozilla/SandboxBroker.h"
@@ -61,39 +57,11 @@ class DefaultDelete<FcObjectSet> {
 
 };  // namespace mozilla
 
-// Helper classes used for clearning out user font data when cairo font
-// face is destroyed. Since multiple faces may use the same data, be
-// careful to assure that the data is only cleared out when all uses
-// expire. The font entry object contains a refptr to FTUserFontData and
-// each cairo font created from that font entry contains a
-// FTUserFontDataRef with a refptr to that same FTUserFontData object.
-
-class FTUserFontData final {
- public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FTUserFontData)
-
-  explicit FTUserFontData(FT_Face aFace, const uint8_t* aData)
-      : mFace(aFace), mFontData(aData) {}
-
-  const uint8_t* FontData() const { return mFontData; }
-
- private:
-  ~FTUserFontData() {
-    mozilla::gfx::Factory::ReleaseFTFace(mFace);
-    if (mFontData) {
-      free((void*)mFontData);
-    }
-  }
-
-  FT_Face mFace;
-  const uint8_t* mFontData;
-};
-
 // The names for the font entry and font classes should really
 // the common 'Fc' abbreviation but the gfxPangoFontGroup code already
 // defines versions of these, so use the verbose name for now.
 
-class gfxFontconfigFontEntry : public gfxFontEntry {
+class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
   friend class gfxFcPlatformFontList;
 
  public:
@@ -106,8 +74,8 @@ class gfxFontconfigFontEntry : public gfxFontEntry {
   // of the font data and the FT_Face
   explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
                                   WeightRange aWeight, StretchRange aStretch,
-                                  SlantStyleRange aStyle, const uint8_t* aData,
-                                  uint32_t aLength, FT_Face aFace);
+                                  SlantStyleRange aStyle,
+                                  RefPtr<mozilla::gfx::SharedFTFace>&& aFace);
 
   // used for @font-face local system fonts with explicit patterns
   explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
@@ -122,7 +90,8 @@ class gfxFontconfigFontEntry : public gfxFontEntry {
   nsresult ReadCMAP(FontInfoData* aFontInfoData = nullptr) override;
   bool TestCharacterMap(uint32_t aCh) override;
 
-  FT_Face GetFTFace();
+  const RefPtr<mozilla::gfx::SharedFTFace>& GetFTFace();
+  FTUserFontData* GetUserFontData();
 
   FT_MM_Var* GetMMVar() override;
 
@@ -136,34 +105,22 @@ class gfxFontconfigFontEntry : public gfxFontEntry {
   void ForgetHBFace() override;
   void ReleaseGrFace(gr_face* aFace) override;
 
-  double GetAspect();
+  double GetAspect(uint8_t aSizeAdjustBasis);
 
  protected:
   virtual ~gfxFontconfigFontEntry();
 
   gfxFont* CreateFontInstance(const gfxFontStyle* aFontStyle) override;
 
-  // helper method for creating cairo font from pattern
-  cairo_scaled_font_t* CreateScaledFont(FcPattern* aRenderPattern,
-                                        gfxFloat aAdjustedSize,
-                                        const gfxFontStyle* aStyle,
-                                        FT_Face aFTFace);
-
   // override to pull data from FTFace
   virtual nsresult CopyFontTable(uint32_t aTableTag,
                                  nsTArray<uint8_t>& aBuffer) override;
 
-  // if HB or GR faces are gone, close down the FT_Face
-  void MaybeReleaseFTFace();
-
   // pattern for a single face of a family
   RefPtr<FcPattern> mFontPattern;
 
-  // user font data, when needed
-  RefPtr<FTUserFontData> mUserFontData;
-
   // FTFace - initialized when needed
-  FT_Face mFTFace;
+  RefPtr<mozilla::gfx::SharedFTFace> mFTFace;
   bool mFTFaceInitialized;
 
   // Whether TestCharacterMap should check the actual cmap rather than asking
@@ -180,16 +137,10 @@ class gfxFontconfigFontEntry : public gfxFontEntry {
   bool mHasVariations;
   bool mHasVariationsInitialized;
 
-  double mAspect;
-
-  // data font
-  const uint8_t* mFontData;
-  uint32_t mLength;
-
   class UnscaledFontCache {
    public:
     already_AddRefed<mozilla::gfx::UnscaledFontFontconfig> Lookup(
-        const char* aFile, uint32_t aIndex);
+        const std::string& aFile, uint32_t aIndex);
 
     void Add(
         const RefPtr<mozilla::gfx::UnscaledFontFontconfig>& aUnscaledFont) {
@@ -213,7 +164,7 @@ class gfxFontconfigFontEntry : public gfxFontEntry {
   bool mMMVarInitialized = false;
 };
 
-class gfxFontconfigFontFamily : public gfxFontFamily {
+class gfxFontconfigFontFamily final : public gfxFontFamily {
  public:
   gfxFontconfigFontFamily(const nsACString& aName, FontVisibility aVisibility)
       : gfxFontFamily(aName, aVisibility),
@@ -256,19 +207,21 @@ class gfxFontconfigFontFamily : public gfxFontFamily {
   bool mForceScalable;
 };
 
-class gfxFontconfigFont : public gfxFT2FontBase {
+class gfxFontconfigFont final : public gfxFT2FontBase {
  public:
   gfxFontconfigFont(
       const RefPtr<mozilla::gfx::UnscaledFontFontconfig>& aUnscaledFont,
-      cairo_scaled_font_t* aScaledFont, FcPattern* aPattern,
+      RefPtr<mozilla::gfx::SharedFTFace>&& aFTFace, FcPattern* aPattern,
       gfxFloat aAdjustedSize, gfxFontEntry* aFontEntry,
-      const gfxFontStyle* aFontStyle);
+      const gfxFontStyle* aFontStyle, int aLoadFlags, bool aEmbolden);
 
   FontType GetType() const override { return FONT_TYPE_FONTCONFIG; }
-  virtual FcPattern* GetPattern() const { return mPattern; }
+  FcPattern* GetPattern() const { return mPattern; }
 
-  virtual already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
+  already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
       DrawTarget* aTarget) override;
+
+  bool ShouldHintMetrics() const override;
 
  private:
   virtual ~gfxFontconfigFont();
@@ -276,7 +229,7 @@ class gfxFontconfigFont : public gfxFT2FontBase {
   RefPtr<FcPattern> mPattern;
 };
 
-class gfxFcPlatformFontList : public gfxPlatformFontList {
+class gfxFcPlatformFontList final : public gfxPlatformFontList {
   using FontPatternListEntry = mozilla::dom::SystemFontListEntry;
 
  public:
@@ -316,6 +269,7 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
+                          nsAtom* aLanguage = nullptr,
                           gfxFloat aDevToCssSize = 1.0) override;
 
   bool GetStandardFamilyName(const nsCString& aFontName,
@@ -338,8 +292,6 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
   // thread use (except by stylo traversal, which does the necessary locking)
   void GetSampleLangForGroup(nsAtom* aLanguage, nsACString& aLangStr,
                              bool aForFontEnumerationThread = false);
-
-  static FT_Library GetFTLibrary();
 
  protected:
   virtual ~gfxFcPlatformFontList();
@@ -372,7 +324,8 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
 
   static void CheckFontUpdates(nsITimer* aTimer, void* aThis);
 
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
   enum class DistroID : int8_t {
     Unknown = 0,
@@ -423,7 +376,7 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
   // Note: langGroup == x-math is handled separately
   bool mAlwaysUseFontconfigGenerics;
 
-  static FT_Library sCairoFTLibrary;
+  static FT_Library sFTLibrary;
 };
 
 #endif /* GFXPLATFORMFONTLIST_H_ */

@@ -7,8 +7,7 @@
 #include "cairo.h"
 #include "cairo-ps.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 static cairo_status_t write_func(void* closure, const unsigned char* data,
                                  unsigned int length) {
@@ -93,5 +92,4 @@ void PrintTargetPS::Finish() {
   mStream->Close();
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

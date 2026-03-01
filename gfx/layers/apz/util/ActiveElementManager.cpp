@@ -12,8 +12,8 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Document.h"
 
-#define AEM_LOG(...)
-// #define AEM_LOG(...) printf_stderr("AEM: " __VA_ARGS__)
+static mozilla::LazyLogModule sApzAemLog("apz.activeelement");
+#define AEM_LOG(...) MOZ_LOG(sApzAemLog, LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 namespace layers {
@@ -33,7 +33,7 @@ void ActiveElementManager::SetTargetElement(dom::EventTarget* aTarget) {
     return;
   }
 
-  mTarget = do_QueryInterface(aTarget);
+  mTarget = dom::Element::FromEventTargetOrNull(aTarget);
   AEM_LOG("Setting target element to %p\n", mTarget.get());
   TriggerElementActivation();
 }
@@ -78,7 +78,7 @@ void ActiveElementManager::TriggerElementActivation() {
     mSetActiveTask = task;
     MessageLoop::current()->PostDelayedTask(
         task.forget(), StaticPrefs::ui_touch_activation_delay_ms());
-    AEM_LOG("Scheduling mSetActiveTask %p\n", mSetActiveTask);
+    AEM_LOG("Scheduling mSetActiveTask %p\n", mSetActiveTask.get());
   }
 }
 
@@ -156,7 +156,7 @@ void ActiveElementManager::ResetTouchBlockState() {
 
 void ActiveElementManager::SetActiveTask(
     const nsCOMPtr<dom::Element>& aTarget) {
-  AEM_LOG("mSetActiveTask %p running\n", mSetActiveTask);
+  AEM_LOG("mSetActiveTask %p running\n", mSetActiveTask.get());
 
   // This gets called from mSetActiveTask's Run() method. The message loop
   // deletes the task right after running it, so we need to null out
@@ -166,7 +166,7 @@ void ActiveElementManager::SetActiveTask(
 }
 
 void ActiveElementManager::CancelTask() {
-  AEM_LOG("Cancelling task %p\n", mSetActiveTask);
+  AEM_LOG("Cancelling task %p\n", mSetActiveTask.get());
 
   if (mSetActiveTask) {
     mSetActiveTask->Cancel();

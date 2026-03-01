@@ -9,13 +9,14 @@
 #include "InputBlockState.h"
 #include "LayersLogging.h"
 #include "mozilla/layers/APZThreadUtils.h"
+#include "mozilla/ToString.h"
 #include "OverscrollHandoffState.h"
 #include "QueuedInput.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_layout.h"
 
-#define INPQ_LOG(...)
-// #define INPQ_LOG(...) printf_stderr("INPQ: " __VA_ARGS__)
+static mozilla::LazyLogModule sApzInpLog("apz.inputqueue");
+#define INPQ_LOG(...) MOZ_LOG(sApzInpLog, LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 namespace layers {
@@ -26,7 +27,7 @@ InputQueue::~InputQueue() { mQueuedInputs.Clear(); }
 
 nsEventStatus InputQueue::ReceiveInputEvent(
     const RefPtr<AsyncPanZoomController>& aTarget,
-    TargetConfirmationFlags aFlags, const InputData& aEvent,
+    TargetConfirmationFlags aFlags, InputData& aEvent,
     uint64_t* aOutInputBlockId,
     const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors) {
   APZThreadUtils::AssertOnControllerThread();
@@ -56,7 +57,7 @@ nsEventStatus InputQueue::ReceiveInputEvent(
     }
 
     case MOUSE_INPUT: {
-      const MouseInput& event = aEvent.AsMouseInput();
+      MouseInput& event = aEvent.AsMouseInput();
       return ReceiveMouseInput(aTarget, aFlags, event, aOutInputBlockId);
     }
 
@@ -184,7 +185,7 @@ nsEventStatus InputQueue::ReceiveTouchInput(
 
 nsEventStatus InputQueue::ReceiveMouseInput(
     const RefPtr<AsyncPanZoomController>& aTarget,
-    TargetConfirmationFlags aFlags, const MouseInput& aEvent,
+    TargetConfirmationFlags aFlags, MouseInput& aEvent,
     uint64_t* aOutInputBlockId) {
   // On a new mouse down we can have a new target so we must force a new block
   // with a new target.
@@ -226,6 +227,15 @@ nsEventStatus InputQueue::ReceiveMouseInput(
     mActiveDragBlock = block;
 
     if (aFlags.mHitScrollThumb || !aFlags.mHitScrollbar) {
+      // If we're running autoscroll, we'll always cancel it during the
+      // following call of CancelAnimationsForNewBlock.  At this time,
+      // we don't want to fire `click` event on the web content for web-compat
+      // with Chrome.  Therefore, we notify widget of it with the flag.
+      if ((aEvent.mType == MouseInput::MOUSE_DOWN ||
+           aEvent.mType == MouseInput::MOUSE_UP) &&
+          block->GetOverscrollHandoffChain()->HasAutoscrollApzc()) {
+        aEvent.mPreventClickEvent = true;
+      }
       CancelAnimationsForNewBlock(block);
     }
     MaybeRequestContentResponse(aTarget, block);
@@ -726,7 +736,7 @@ void InputQueue::SetConfirmedTargetApzc(
   APZThreadUtils::AssertOnControllerThread();
 
   INPQ_LOG("got a target apzc; block=%" PRIu64 " guid=%s\n", aInputBlockId,
-           aTargetApzc ? Stringify(aTargetApzc->GetGuid()).c_str() : "");
+           aTargetApzc ? ToString(aTargetApzc->GetGuid()).c_str() : "");
   bool success = false;
   InputData* firstInput = nullptr;
   InputBlockState* inputBlock = FindBlockForId(aInputBlockId, &firstInput);
@@ -757,7 +767,7 @@ void InputQueue::ConfirmDragBlock(
   INPQ_LOG("got a target apzc; block=%" PRIu64 " guid=%s dragtarget=%" PRIu64
            "\n",
            aInputBlockId,
-           aTargetApzc ? Stringify(aTargetApzc->GetGuid()).c_str() : "",
+           aTargetApzc ? ToString(aTargetApzc->GetGuid()).c_str() : "",
            aDragMetrics.mViewId);
   bool success = false;
   InputData* firstInput = nullptr;

@@ -6,17 +6,14 @@
 #define GFX_LAYERSTYPES_H
 
 #include <stdint.h>  // for uint32_t
+#include <stdio.h>   // FILE
 
 #include "Units.h"
-#include "mozilla/DefineEnum.h"  // for MOZ_DEFINE_ENUM
-#include "mozilla/gfx/Point.h"   // for IntPoint
+#include "mozilla/DefineEnum.h"  // for MOZ_DEFINE_ENUM_CLASS_WITH_BASE
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"  // for TimeStamp
-#include "mozilla/TypedEnumBits.h"
 #include "nsRegion.h"
-
-#include <stdio.h>            // FILE
-#include "mozilla/Logging.h"  // for PR_LOG
+#include "mozilla/EnumSet.h"
 
 #ifndef MOZ_LAYERS_HAVE_LOG
 #  define MOZ_LAYERS_HAVE_LOG
@@ -204,10 +201,9 @@ struct EventRegions {
   // EventRegions are going to be deprecated anyways.
   bool mDTCRequiresTargetConfirmation;
 
-  EventRegions() : mDTCRequiresTargetConfirmation(false) {}
+  EventRegions();
 
-  explicit EventRegions(nsIntRegion aHitRegion)
-      : mHitRegion(aHitRegion), mDTCRequiresTargetConfirmation(false) {}
+  explicit EventRegions(nsIntRegion aHitRegion);
 
   // This constructor takes the maybe-hit region and uses it to update the
   // hit region and dispatch-to-content region. It is useful from converting
@@ -220,83 +216,18 @@ struct EventRegions {
                const nsIntRegion& aVerticalPanRegion,
                bool aDTCRequiresTargetConfirmation);
 
-  bool operator==(const EventRegions& aRegions) const {
-    return mHitRegion == aRegions.mHitRegion &&
-           mDispatchToContentHitRegion ==
-               aRegions.mDispatchToContentHitRegion &&
-           mNoActionRegion == aRegions.mNoActionRegion &&
-           mHorizontalPanRegion == aRegions.mHorizontalPanRegion &&
-           mVerticalPanRegion == aRegions.mVerticalPanRegion &&
-           mDTCRequiresTargetConfirmation ==
-               aRegions.mDTCRequiresTargetConfirmation;
-  }
-  bool operator!=(const EventRegions& aRegions) const {
-    return !(*this == aRegions);
-  }
+  bool operator==(const EventRegions& aRegions) const;
+  bool operator!=(const EventRegions& aRegions) const;
 
   void ApplyTranslationAndScale(float aXTrans, float aYTrans, float aXScale,
-                                float aYScale) {
-    mHitRegion.ScaleRoundOut(aXScale, aYScale);
-    mDispatchToContentHitRegion.ScaleRoundOut(aXScale, aYScale);
-    mNoActionRegion.ScaleRoundOut(aXScale, aYScale);
-    mHorizontalPanRegion.ScaleRoundOut(aXScale, aYScale);
-    mVerticalPanRegion.ScaleRoundOut(aXScale, aYScale);
+                                float aYScale);
+  void Transform(const gfx::Matrix4x4& aTransform);
+  void OrWith(const EventRegions& aOther);
 
-    mHitRegion.MoveBy(aXTrans, aYTrans);
-    mDispatchToContentHitRegion.MoveBy(aXTrans, aYTrans);
-    mNoActionRegion.MoveBy(aXTrans, aYTrans);
-    mHorizontalPanRegion.MoveBy(aXTrans, aYTrans);
-    mVerticalPanRegion.MoveBy(aXTrans, aYTrans);
-  }
+  bool IsEmpty() const;
+  void SetEmpty();
 
-  void Transform(const gfx::Matrix4x4& aTransform) {
-    mHitRegion.Transform(aTransform);
-    mDispatchToContentHitRegion.Transform(aTransform);
-    mNoActionRegion.Transform(aTransform);
-    mHorizontalPanRegion.Transform(aTransform);
-    mVerticalPanRegion.Transform(aTransform);
-  }
-
-  void OrWith(const EventRegions& aOther) {
-    mHitRegion.OrWith(aOther.mHitRegion);
-    mDispatchToContentHitRegion.OrWith(aOther.mDispatchToContentHitRegion);
-    // See the comment in nsDisplayList::AddFrame, where the touch action
-    // regions are handled. The same thing applies here.
-    bool alreadyHadRegions = !mNoActionRegion.IsEmpty() ||
-                             !mHorizontalPanRegion.IsEmpty() ||
-                             !mVerticalPanRegion.IsEmpty();
-    mNoActionRegion.OrWith(aOther.mNoActionRegion);
-    mHorizontalPanRegion.OrWith(aOther.mHorizontalPanRegion);
-    mVerticalPanRegion.OrWith(aOther.mVerticalPanRegion);
-    if (alreadyHadRegions) {
-      nsIntRegion combinedActionRegions;
-      combinedActionRegions.Or(mHorizontalPanRegion, mVerticalPanRegion);
-      combinedActionRegions.OrWith(mNoActionRegion);
-      mDispatchToContentHitRegion.OrWith(combinedActionRegions);
-    }
-    mDTCRequiresTargetConfirmation |= aOther.mDTCRequiresTargetConfirmation;
-  }
-
-  bool IsEmpty() const {
-    return mHitRegion.IsEmpty() && mDispatchToContentHitRegion.IsEmpty() &&
-           mNoActionRegion.IsEmpty() && mHorizontalPanRegion.IsEmpty() &&
-           mVerticalPanRegion.IsEmpty();
-  }
-
-  void SetEmpty() {
-    mHitRegion.SetEmpty();
-    mDispatchToContentHitRegion.SetEmpty();
-    mNoActionRegion.SetEmpty();
-    mHorizontalPanRegion.SetEmpty();
-    mVerticalPanRegion.SetEmpty();
-  }
-
-  nsCString ToString() const {
-    nsCString result = mHitRegion.ToString();
-    result.AppendLiteral(";dispatchToContent=");
-    result.Append(mDispatchToContentHitRegion.ToString());
-    return result;
-  }
+  nsCString ToString() const;
 };
 
 // Bit flags that go on a RefLayer and override the
@@ -408,10 +339,37 @@ MOZ_DEFINE_ENUM_CLASS_WITH_BASE(ScrollDirection, uint32_t, (
   eHorizontal
 ));
 
+typedef EnumSet<ScrollDirection> ScrollDirections;
+
+constexpr ScrollDirections EitherScrollDirection(ScrollDirection::eVertical,ScrollDirection::eHorizontal);
+constexpr ScrollDirections HorizontalScrollDirection(ScrollDirection::eHorizontal);
+constexpr ScrollDirections VerticalScollDirection(ScrollDirection::eVertical);
+
+
 MOZ_DEFINE_ENUM_CLASS_WITH_BASE(CompositionPayloadType, uint8_t, (
+  /**
+   * A |CompositionPayload| with this type indicates a key press happened
+   * before composition and will be used to determine latency between key press
+   * and presentation in |mozilla::Telemetry::KEYPRESS_PRESENT_LATENCY|
+   */
   eKeyPress,
+
+  /**
+   * A |CompositionPayload| with this type indicates that an APZ scroll event
+   * occurred that will be included in the composition.
+   */
   eAPZScroll,
+
+  /**
+   * A |CompositionPayload| with this type indicates that an APZ pinch-to-zoom
+   * event occurred that will be included in the composition.
+   */
   eAPZPinchZoom,
+
+  /**
+   * A |CompositionPayload| with this type indicates that content was painted
+   * that will be included in the composition.
+   */
   eContentPaint
 ));
 // clang-format on

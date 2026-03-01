@@ -236,16 +236,6 @@ void gfxAndroidPlatform::ReadSystemFontList(
   gfxFT2FontList::PlatformFontList()->ReadSystemFontList(aFontList);
 }
 
-gfxFontGroup* gfxAndroidPlatform::CreateFontGroup(
-    const FontFamilyList& aFontFamilyList, const gfxFontStyle* aStyle,
-    gfxTextPerfMetrics* aTextPerf, gfxUserFontSet* aUserFontSet,
-    gfxFloat aDevToCssSize) {
-  return new gfxFontGroup(aFontFamilyList, aStyle, aTextPerf, aUserFontSet,
-                          aDevToCssSize);
-}
-
-FT_Library gfxAndroidPlatform::GetFTLibrary() { return gPlatformFTLibrary; }
-
 bool gfxAndroidPlatform::FontHintingEnabled() {
   // In "mobile" builds, we sometimes use non-reflow-zoom, so we
   // might not want hinting.  Let's see.

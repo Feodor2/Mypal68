@@ -66,6 +66,20 @@ struct SurfaceDescriptorMacIOSurface {
   YUVColorSpace yUVColorSpace;
 };
 
+struct SurfaceDescriptorDMABuf {
+  uint32_t bufferType;
+  uint64_t modifier;
+  uint32_t flags;
+  FileDescriptor[] fds;
+  uint32_t[] width;
+  uint32_t[] height;
+  uint32_t[] format;
+  uint32_t[] strides;
+  uint32_t[] offsets;
+  YUVColorSpace yUVColorSpace;
+  FileDescriptor[] fence;
+};
+
 struct SurfaceTextureDescriptor {
   uint64_t handle;
   IntSize size;
@@ -93,6 +107,7 @@ struct SurfaceDescriptorSharedGLTexture {
 union GPUVideoSubDescriptor {
   SurfaceDescriptorD3D10;
   SurfaceDescriptorDXGIYCbCr;
+  SurfaceDescriptorDMABuf;
   null_t;
 };
 
@@ -154,6 +169,7 @@ union SurfaceDescriptor {
   SurfaceDescriptorFileMapping;
   SurfaceDescriptorDXGIYCbCr;
   SurfaceDescriptorX11;
+  SurfaceDescriptorDMABuf;
   SurfaceTextureDescriptor;
   EGLImageDescriptor;
   SurfaceDescriptorMacIOSurface;

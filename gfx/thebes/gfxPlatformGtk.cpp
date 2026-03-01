@@ -53,6 +53,7 @@
 
 #  ifdef MOZ_WAYLAND
 #    include <gdk/gdkwayland.h>
+#    include "mozilla/widget/nsWaylandDisplay.h"
 #  endif
 
 #endif /* MOZ_X11 */
@@ -69,7 +70,10 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::unicode;
+using namespace mozilla::widget;
 using mozilla::dom::SystemFontListEntry;
+
+static FT_Library gPlatformFTLibrary = nullptr;
 
 gfxPlatformGtk::gfxPlatformGtk() {
   if (!gfxPlatform::IsHeadless()) {
@@ -77,33 +81,30 @@ gfxPlatformGtk::gfxPlatformGtk() {
   }
 
   mMaxGenericSubstitutions = UNINITIALIZED_VALUE;
-
+  mIsX11Display = gfxPlatform::IsHeadless()
+                      ? false
+                      : GDK_IS_X11_DISPLAY(gdk_display_get_default());
 #ifdef MOZ_X11
-  if (!gfxPlatform::IsHeadless() && XRE_IsParentProcess()) {
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()) &&
-        mozilla::Preferences::GetBool("gfx.xrender.enabled")) {
-      gfxVars::SetUseXRender(true);
-    }
+  if (mIsX11Display && XRE_IsParentProcess() &&
+      mozilla::Preferences::GetBool("gfx.xrender.enabled")) {
+    gfxVars::SetUseXRender(true);
   }
 #endif
 
   InitBackendPrefs(GetBackendPrefs());
 
 #ifdef MOZ_X11
-  if (gfxPlatform::IsHeadless() &&
-      GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (mIsX11Display) {
     mCompositorDisplay = XOpenDisplay(nullptr);
     MOZ_ASSERT(mCompositorDisplay, "Failed to create compositor display!");
   } else {
     mCompositorDisplay = nullptr;
   }
 #endif  // MOZ_X11
-#ifdef MOZ_WAYLAND
-  // Wayland compositors use g_get_monotonic_time() to get timestamps.
-  mWaylandLastVsyncTimestamp = (g_get_monotonic_time() / 1000);
-  // Set default display fps to 60
-  mWaylandFrameDelay = 1000 / 60;
-#endif
+
+  gPlatformFTLibrary = Factory::NewFTLibrary();
+  MOZ_ASSERT(gPlatformFTLibrary);
+  Factory::SetFTLibrary(gPlatformFTLibrary);
 }
 
 gfxPlatformGtk::~gfxPlatformGtk() {
@@ -112,12 +113,26 @@ gfxPlatformGtk::~gfxPlatformGtk() {
     XCloseDisplay(mCompositorDisplay);
   }
 #endif  // MOZ_X11
+
+  Factory::ReleaseFTLibrary(gPlatformFTLibrary);
+  gPlatformFTLibrary = nullptr;
 }
 
 void gfxPlatformGtk::FlushContentDrawing() {
   if (gfxVars::UseXRender()) {
     XFlush(DefaultXDisplay());
   }
+}
+
+void gfxPlatformGtk::InitPlatformGPUProcessPrefs() {
+#ifdef MOZ_WAYLAND
+  if (IsWaylandDisplay()) {
+    FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
+    gpuProc.ForceDisable(FeatureStatus::Blocked,
+                         "Wayland does not work in the GPU process",
+                         NS_LITERAL_CSTRING("FEATURE_FAILURE_WAYLAND"));
+  }
+#endif
 }
 
 already_AddRefed<gfxASurface> gfxPlatformGtk::CreateOffscreenSurface(
@@ -244,43 +259,35 @@ gfxPlatformFontList* gfxPlatformGtk::CreatePlatformFontList() {
   return nullptr;
 }
 
-gfxFontGroup* gfxPlatformGtk::CreateFontGroup(
-    const FontFamilyList& aFontFamilyList, const gfxFontStyle* aStyle,
-    gfxTextPerfMetrics* aTextPerf, gfxUserFontSet* aUserFontSet,
-    gfxFloat aDevToCssSize) {
-  return new gfxFontGroup(aFontFamilyList, aStyle, aTextPerf, aUserFontSet,
-                          aDevToCssSize);
-}
-
-FT_Library gfxPlatformGtk::GetFTLibrary() {
-  return gfxFcPlatformFontList::GetFTLibrary();
-}
-
-static int32_t sDPI = 0;
-
 int32_t gfxPlatformGtk::GetFontScaleDPI() {
-  if (!sDPI) {
-    // Make sure init is run so we have a resolution
-    GdkScreen* screen = gdk_screen_get_default();
-    gtk_settings_get_for_screen(screen);
-    sDPI = int32_t(round(gdk_screen_get_resolution(screen)));
-    if (sDPI <= 0) {
-      // Fall back to something sane
-      sDPI = 96;
-    }
+  GdkScreen* screen = gdk_screen_get_default();
+  gtk_settings_get_for_screen(screen);
+  int32_t dpi = int32_t(round(gdk_screen_get_resolution(screen)));
+  if (dpi <= 0) {
+    // Fall back to something sane
+    dpi = 96;
   }
-  return sDPI;
+  return dpi;
 }
 
 double gfxPlatformGtk::GetFontScaleFactor() {
-  // Integer scale factors work well with GTK window scaling, image scaling,
-  // and pixel alignment, but there is a range where 1 is too small and 2 is
-  // too big.  An additional step of 1.5 is added because this is common
-  // scale on WINNT and at this ratio the advantages of larger rendering
-  // outweigh the disadvantages from scaling and pixel mis-alignment.
+  // Integer scale factors work well with GTK window scaling, image scaling, and
+  // pixel alignment, but there is a range where 1 is too small and 2 is too
+  // big.
+  //
+  // An additional step of 1.5 is added because this is common scale on WINNT
+  // and at this ratio the advantages of larger rendering outweigh the
+  // disadvantages from scaling and pixel mis-alignment.
+  //
+  // A similar step for 1.25 is added as well, because this is the scale that
+  // "Large text" settings use in gnome, and it seems worth to allow, especially
+  // on already-hidpi environments.
   int32_t dpi = GetFontScaleDPI();
-  if (dpi < 132) {
+  if (dpi < 120) {
     return 1.0;
+  }
+  if (dpi < 132) {
+    return 1.25;
   }
   if (dpi < 168) {
     return 1.5;
@@ -463,7 +470,7 @@ bool gfxPlatformGtk::CheckVariationFontSupport() {
   // in older versions, it seems too incomplete/unstable for us to use
   // until at least 2.7.1.
   FT_Int major, minor, patch;
-  FT_Library_Version(GetFTLibrary(), &major, &minor, &patch);
+  FT_Library_Version(Factory::GetFTLibrary(), &major, &minor, &patch);
   return major * 1000000 + minor * 1000 + patch >= 2007001;
 }
 
@@ -491,13 +498,7 @@ class GtkVsyncSource final : public VsyncSource {
           mVsyncThread("GLXVsyncThread"),
           mVsyncTask(nullptr),
           mVsyncEnabledLock("GLXVsyncEnabledLock"),
-          mVsyncEnabled(false)
-#  ifdef MOZ_WAYLAND
-          ,
-          mIsWaylandDisplay(false)
-#  endif
-    {
-    }
+          mVsyncEnabled(false) {}
 
     // Sets up the display's GL context on a worker thread.
     // Required as GLContexts may only be used by the creating thread.
@@ -515,15 +516,6 @@ class GtkVsyncSource final : public VsyncSource {
       lock.Wait();
       return mGLContext != nullptr;
     }
-
-#  ifdef MOZ_WAYLAND
-    bool SetupWayland() {
-      MonitorAutoLock lock(mSetupLock);
-      MOZ_ASSERT(NS_IsMainThread());
-      mIsWaylandDisplay = true;
-      return mVsyncThread.Start();
-    }
-#  endif
 
     // Called on the Vsync thread to setup the GL context.
     void SetupGLContext() {
@@ -575,9 +567,7 @@ class GtkVsyncSource final : public VsyncSource {
 
     virtual void EnableVsync() override {
       MOZ_ASSERT(NS_IsMainThread());
-#  if !defined(MOZ_WAYLAND)
       MOZ_ASSERT(mGLContext, "GLContext not setup!");
-#  endif
 
       MonitorAutoLock lock(mVsyncEnabledLock);
       if (mVsyncEnabled) {
@@ -588,12 +578,8 @@ class GtkVsyncSource final : public VsyncSource {
       // If the task has not nulled itself out, it hasn't yet realized
       // that vsync was disabled earlier, so continue its execution.
       if (!mVsyncTask) {
-        mVsyncTask =
-            NewRunnableMethod("GtkVsyncSource::GLXDisplay::RunVsync", this,
-#  if defined(MOZ_WAYLAND)
-                              mIsWaylandDisplay ? &GLXDisplay::RunVsyncWayland :
-#  endif
-                                                &GLXDisplay::RunVsync);
+        mVsyncTask = NewRunnableMethod("GtkVsyncSource::GLXDisplay::RunVsync",
+                                       this, &GLXDisplay::RunVsync);
         RefPtr<Runnable> addrefedTask = mVsyncTask;
         mVsyncThread.message_loop()->PostTask(addrefedTask.forget());
       }
@@ -673,41 +659,6 @@ class GtkVsyncSource final : public VsyncSource {
       }
     }
 
-#  ifdef MOZ_WAYLAND
-    /* VSync on Wayland is tricky as we can get only "last VSync" event signal.
-     * That means we should draw next frame at "last Vsync + frame delay" time.
-     */
-    void RunVsyncWayland() {
-      MOZ_ASSERT(!NS_IsMainThread());
-
-      for (;;) {
-        {
-          MonitorAutoLock lock(mVsyncEnabledLock);
-          if (!mVsyncEnabled) {
-            mVsyncTask = nullptr;
-            return;
-          }
-        }
-
-        gint64 lastVsync = gfxPlatformGtk::GetPlatform()->GetWaylandLastVsync();
-        gint64 currTime = (g_get_monotonic_time() / 1000);
-
-        gint64 remaining =
-            gfxPlatformGtk::GetPlatform()->GetWaylandFrameDelay() -
-            (currTime - lastVsync);
-        if (remaining > 0) {
-          PlatformThread::Sleep(remaining);
-        } else {
-          // Time from last HW Vsync is longer than our frame delay,
-          // use our approximation then.
-          gfxPlatformGtk::GetPlatform()->SetWaylandLastVsync(currTime);
-        }
-
-        NotifyVsync(TimeStamp::Now());
-      }
-    }
-#  endif
-
     void Cleanup() {
       MOZ_ASSERT(!NS_IsMainThread());
 
@@ -723,9 +674,6 @@ class GtkVsyncSource final : public VsyncSource {
     RefPtr<Runnable> mVsyncTask;
     Monitor2 mVsyncEnabledLock;
     bool mVsyncEnabled;
-#  ifdef MOZ_WAYLAND
-    bool mIsWaylandDisplay;
-#  endif
   };
 
  private:
@@ -735,11 +683,10 @@ class GtkVsyncSource final : public VsyncSource {
 
 already_AddRefed<gfx::VsyncSource> gfxPlatformGtk::CreateHardwareVsyncSource() {
 #  ifdef MOZ_WAYLAND
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-    RefPtr<VsyncSource> vsyncSource = new GtkVsyncSource();
-    VsyncSource::Display& display = vsyncSource->GetGlobalDisplay();
-    static_cast<GtkVsyncSource::GLXDisplay&>(display).SetupWayland();
-    return vsyncSource.forget();
+  if (IsWaylandDisplay()) {
+    // For wayland, we simply return the standard software vsync for now.
+    // This powers refresh drivers and the likes.
+    return gfxPlatform::CreateHardwareVsyncSource();
   }
 #  endif
 
@@ -762,4 +709,17 @@ already_AddRefed<gfx::VsyncSource> gfxPlatformGtk::CreateHardwareVsyncSource() {
   return gfxPlatform::CreateHardwareVsyncSource();
 }
 
+#endif
+
+#ifdef MOZ_WAYLAND
+bool gfxPlatformGtk::UseWaylandDMABufTextures() {
+  return IsWaylandDisplay() && nsWaylandDisplay::IsDMABufTexturesEnabled();
+}
+bool gfxPlatformGtk::UseWaylandDMABufWebGL() {
+  return IsWaylandDisplay() && nsWaylandDisplay::IsDMABufWebGLEnabled();
+}
+bool gfxPlatformGtk::UseWaylandHardwareVideoDecoding() {
+  return IsWaylandDisplay() && nsWaylandDisplay::IsDMABufVAAPIEnabled() &&
+         gfxPlatform::CanUseHardwareVideoDecoding();
+}
 #endif

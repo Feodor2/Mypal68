@@ -3112,9 +3112,7 @@ inline bool RecordedFontData::PlayEvent(Translator* aTranslator) const {
   }
 
   RefPtr<NativeFontResource> fontResource = Factory::CreateNativeFontResource(
-      mData, mFontDetails.size,
-      aTranslator->GetReferenceDrawTarget()->GetBackendType(), mType,
-      aTranslator->GetFontContext());
+      mData, mFontDetails.size, mType, aTranslator->GetFontContext());
   if (!fontResource) {
     return false;
   }
@@ -3315,6 +3313,7 @@ inline bool RecordedScaledFontCreation::PlayEvent(
   RefPtr<ScaledFont> scaledFont = unscaledFont->CreateScaledFont(
       mGlyphSize, mInstanceData.data(), mInstanceData.size(),
       mVariations.data(), mVariations.size());
+
   aTranslator->AddScaledFont(mRefPtr, scaledFont);
   return true;
 }

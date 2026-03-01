@@ -5,6 +5,15 @@
 const { PictureInPicture } = ChromeUtils.import(
   "resource://gre/modules/PictureInPicture.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+
+const AUDIO_TOGGLE_ENABLED_PREF =
+  "media.videocontrols.picture-in-picture.audio-toggle.enabled";
+const KEYBOARD_CONTROLS_ENABLED_PREF =
+  "media.videocontrols.picture-in-picture.keyboard-controls.enabled";
 
 // Time to fade the Picture-in-Picture video controls after first opening.
 const CONTROLS_FADE_TIMEOUT = 3000;
@@ -13,8 +22,6 @@ const CONTROLS_FADE_TIMEOUT = 3000;
  * Public function to be called from PictureInPicture.jsm. This is the main
  * entrypoint for initializing the player window.
  *
- * @param id (Number)
- *   A unique numeric ID for the window, used for Telemetry Events.
  * @param originatingBrowser (xul:browser)
  *   The <xul:browser> that the Picture-in-Picture video is coming from.
  */
@@ -34,19 +41,29 @@ function setIsPlayingState(isPlaying) {
 }
 
 /**
+ * Public function to be called from PictureInPicture.jsm. This update the
+ * controls based on whether or not the video is muted.
+ *
+ * @param isMuted (Boolean)
+ *   True if the Picture-in-Picture video is muted.
+ */
+function setIsMutedState(isMuted) {
+  Player.isMuted = isMuted;
+}
+
+/**
  * The Player object handles initializing the player, holds state, and handles
  * events for updating state.
  */
 let Player = {
-  WINDOW_EVENTS: ["click", "keydown", "unload"],
+  WINDOW_EVENTS: [
+    "click",
+    "contextmenu",
+    "dblclick",
+    "keydown",
+    "unload",
+  ],
   mm: null,
-  /**
-   * Used for window movement Telemetry to determine if the player window has
-   * moved since the last time we checked.
-   */
-  lastScreenX: -1,
-  lastScreenY: -1,
-  id: -1,
 
   /**
    * When set to a non-null value, a timer is scheduled to hide the controls
@@ -57,8 +74,6 @@ let Player = {
   /**
    * Initializes the player browser, and sets up the initial state.
    *
-   * @param id (Number)
-   *   A unique numeric ID for the window, used for Telemetry Events.
    * @param originatingBrowser (xul:browser)
    *   The <xul:browser> that the Picture-in-Picture video is coming from.
    */
@@ -86,6 +101,13 @@ let Player = {
     browser.addEventListener("oop-browser-crashed", this);
 
     this.revealControls(false);
+
+    if (Services.prefs.getBoolPref(AUDIO_TOGGLE_ENABLED_PREF, false)) {
+      const audioButton = document.getElementById("audio");
+      audioButton.hidden = false;
+      audioButton.previousElementSibling.hidden = false;
+    }
+    this.computeAndSetMinimumSize(window.outerWidth, window.outerHeight);
   },
 
   uninit() {
@@ -100,12 +122,39 @@ let Player = {
         break;
       }
 
+      case "contextmenu": {
+        event.preventDefault();
+        break;
+      }
+
+      case "dblclick": {
+        this.onDblClick(event);
+        break;
+      }
+
       case "keydown": {
         if (event.keyCode == KeyEvent.DOM_VK_TAB) {
           this.controls.setAttribute("keying", true);
-        } else if (event.keyCode == KeyEvent.DOM_VK_ESCAPE) {
+        } else if (
+          event.keyCode == KeyEvent.DOM_VK_ESCAPE &&
+          this.controls.hasAttribute("keying")
+        ) {
           this.controls.removeAttribute("keying");
+
+          // We preventDefault to avoid exiting fullscreen if we happen
+          // to be in it.
+          event.preventDefault();
+        } else if (
+          Services.prefs.getBoolPref(KEYBOARD_CONTROLS_ENABLED_PREF, false) &&
+          !this.controls.hasAttribute("keying") &&
+          (event.keyCode != KeyEvent.DOM_VK_SPACE || !event.target.id)
+        ) {
+          // Pressing "space" fires a "keydown" event which can also trigger a control
+          // button's "click" event. Handle the "keydown" event only when the event did
+          // not originate from a control button and it is not a "space" keypress.
+          this.onKeyDown(event);
         }
+
         break;
       }
 
@@ -121,9 +170,30 @@ let Player = {
     }
   },
 
+  onDblClick(event) {
+    if (event.target.id == "controls") {
+      if (document.fullscreenElement == document.body) {
+        document.exitFullscreen();
+      } else {
+        document.body.requestFullscreen();
+      }
+      event.preventDefault();
+    }
+  },
+
   onClick(event) {
     switch (event.target.id) {
+      case "audio": {
+        if (this.isMuted) {
+          this.mm.sendAsyncMessage("PictureInPicture:Unmute");
+        } else {
+          this.mm.sendAsyncMessage("PictureInPicture:Mute");
+        }
+        break;
+      }
+
       case "close": {
+        this.mm.sendAsyncMessage("PictureInPicture:Pause");
         window.close();
         break;
       }
@@ -145,6 +215,16 @@ let Player = {
         break;
       }
     }
+  },
+
+  onKeyDown(event) {
+    this.mm.sendAsyncMessage("PictureInPicture:KeyDown", {
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      keyCode: event.keyCode,
+    });
   },
 
   get controls() {
@@ -171,6 +251,25 @@ let Player = {
     this.controls.classList.toggle("playing", isPlaying);
   },
 
+  _isMuted: false,
+  /**
+   * isMuted returns true if the video is currently muted.
+   *
+   * @return Boolean
+   */
+  get isMuted() {
+    return this._isMuted;
+  },
+
+  /**
+   * Set isMuted to true if the video is muted, false otherwise. This will
+   * update the internal state and displayed controls.
+   */
+  set isMuted(isMuted) {
+    this._isMuted = isMuted;
+    this.controls.classList.toggle("muted", isMuted);
+  },
+
   /**
    * Makes the player controls visible.
    *
@@ -190,5 +289,34 @@ let Player = {
         this.controls.removeAttribute("showing");
       }, CONTROLS_FADE_TIMEOUT);
     }
+  },
+
+  computeAndSetMinimumSize(width, height) {
+    if (!AppConstants.MOZ_WIDGET_GTK) {
+      return;
+    }
+
+    // Using inspection, these seem to be the right minimums for each dimension
+    // so that the controls don't get too crowded.
+    const MIN_WIDTH = 120;
+    const MIN_HEIGHT = 80;
+
+    let resultWidth = width;
+    let resultHeight = height;
+    let aspectRatio = width / height;
+
+    // Take the smaller of the two dimensions, and set it to the minimum.
+    // Then calculate the other dimension using the aspect ratio to get
+    // both minimums.
+    if (width < height) {
+      resultWidth = MIN_WIDTH;
+      resultHeight = Math.round(MIN_WIDTH / aspectRatio);
+    } else {
+      resultHeight = MIN_HEIGHT;
+      resultWidth = Math.round(MIN_HEIGHT * aspectRatio);
+    }
+
+    document.documentElement.style.minWidth = resultWidth + "px";
+    document.documentElement.style.minHeight = resultHeight + "px";
   },
 };

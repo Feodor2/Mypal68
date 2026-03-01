@@ -114,16 +114,12 @@ ExtensionPreferencesManager.addSetting(CONTAINERS_ENABLED_SETTING_NAME, {
 
   setCallback(value) {
     if (value !== true) {
-      return Object.assign(CONTAINER_PREF_INSTALL_DEFAULTS, {
+      return {
+        ...CONTAINER_PREF_INSTALL_DEFAULTS,
         "privacy.userContext.extension": value,
-      });
+      };
     }
-
-    let prefs = {};
-    for (let pref of this.prefNames) {
-      prefs[pref] = undefined;
-    }
-    return prefs;
+    return {};
   },
 });
 

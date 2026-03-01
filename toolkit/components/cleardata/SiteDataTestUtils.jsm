@@ -94,7 +94,7 @@ var SiteDataTestUtils = {
       origin
     );
     Services.cookies.add(
-      principal.URI.host,
+      principal.host,
       principal.URI.pathQueryRef,
       name,
       value,
@@ -148,7 +148,7 @@ var SiteDataTestUtils = {
           principal.originAttributes,
           cookie.originAttributes
         ) &&
-        cookie.host.includes(principal.URI.host)
+        cookie.host.includes(principal.host)
       ) {
         return true;
       }
@@ -253,7 +253,7 @@ var SiteDataTestUtils = {
     return new Promise(resolve => {
       let listener = {
         onRegister: registration => {
-          if (registration.principal.URI.host != url.host) {
+          if (registration.principal.host != url.host) {
             return;
           }
           swm.removeListener(listener);
@@ -280,7 +280,7 @@ var SiteDataTestUtils = {
     return new Promise(resolve => {
       let listener = {
         onUnregister: registration => {
-          if (registration.principal.URI.host != url.host) {
+          if (registration.principal.host != url.host) {
             return;
           }
           swm.removeListener(listener);

@@ -400,6 +400,8 @@ PopupNotifications.prototype = {
    *                - "menucommand" if a menu was activated.
    *          - [optional] dismiss (boolean): If this is true, the notification
    *            will be dismissed instead of removed after running the callback.
+   *          - [optional] disabled (boolean): If this is true, the button
+   *            will be disabled.
    *          - [optional] disableHighlight (boolean): If this is true, the button
    *            will not apply the default highlight style.
    *        If null, the notification will have a default "OK" action button
@@ -1115,7 +1117,8 @@ PopupNotifications.prototype = {
         }
       } else {
         popupnotification.checkboxState = null;
-        popupnotification.setAttribute("warninghidden", "true");
+        // Reset the UI state to avoid previous state bleeding into this prompt.
+        this._setNotificationUIState(popupnotification);
       }
 
       this.panel.appendChild(popupnotification);
@@ -1130,7 +1133,9 @@ PopupNotifications.prototype = {
   },
 
   _setNotificationUIState(notification, state = {}) {
+    let mainAction = notification.notification.mainAction;
     if (
+      (mainAction && mainAction.disabled) ||
       state.disableMainAction ||
       notification.hasAttribute("invalidselection")
     ) {
@@ -1761,18 +1766,21 @@ PopupNotifications.prototype = {
     let notificationEl = getNotificationFromElement(event.target);
 
     let notification = notificationEl.notification;
-    if (notification.options.checkbox) {
-      if (notificationEl.checkbox.checked) {
-        this._setNotificationUIState(
-          notificationEl,
-          notification.options.checkbox.checkedState
-        );
-      } else {
-        this._setNotificationUIState(
-          notificationEl,
-          notification.options.checkbox.uncheckedState
-        );
-      }
+    if (!notification.options.checkbox) {
+      this._setNotificationUIState(notificationEl);
+      return;
+    }
+
+    if (notificationEl.checkbox.checked) {
+      this._setNotificationUIState(
+        notificationEl,
+        notification.options.checkbox.checkedState
+      );
+    } else {
+      this._setNotificationUIState(
+        notificationEl,
+        notification.options.checkbox.uncheckedState
+      );
     }
   },
 

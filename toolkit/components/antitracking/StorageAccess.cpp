@@ -5,31 +5,38 @@
 #include "StorageAccess.h"
 
 #include "mozilla/dom/Document.h"
-#include "mozilla/net/CookieSettings.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/ContentBlocking.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StorageAccess.h"
+#include "nsContentUtils.h"
+#include "nsICookiePermission.h"
 #include "nsICookieService.h"
-#include "nsICookieSettings.h"
+#include "nsICookieJarSettings.h"
+#include "nsIPermission.h"
 #include "nsIWebProgressListener.h"
+#include "nsSandboxFlags.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
 
 /**
- * Gets the cookie lifetime policy for a given cookieSettings and a given
+ * Gets the cookie lifetime policy for a given cookieJarSettings and a given
  * principal by checking the permission value.
  *
  * Used in the implementation of InternalStorageAllowedCheck.
  */
-static void GetCookieLifetimePolicyFromCookieSettings(
-    nsICookieSettings* aCookieSettings, nsIPrincipal* aPrincipal,
+static void GetCookieLifetimePolicyFromCookieJarSettings(
+    nsICookieJarSettings* aCookieJarSettings, nsIPrincipal* aPrincipal,
     uint32_t* aLifetimePolicy) {
   *aLifetimePolicy = StaticPrefs::network_cookie_lifetimePolicy();
 
-  if (aCookieSettings) {
+  if (aCookieJarSettings) {
     uint32_t cookiePermission = 0;
     nsresult rv =
-        aCookieSettings->CookiePermission(aPrincipal, &cookiePermission);
+        aCookieJarSettings->CookiePermission(aPrincipal, &cookiePermission);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }
@@ -62,7 +69,7 @@ static void GetCookieLifetimePolicyFromCookieSettings(
  */
 static StorageAccess InternalStorageAllowedCheck(
     nsIPrincipal* aPrincipal, nsPIDOMWindowInner* aWindow, nsIURI* aURI,
-    nsIChannel* aChannel, nsICookieSettings* aCookieSettings,
+    nsIChannel* aChannel, nsICookieJarSettings* aCookieJarSettings,
     uint32_t& aRejectedReason) {
   MOZ_ASSERT(aPrincipal);
 
@@ -98,7 +105,7 @@ static StorageAccess InternalStorageAllowedCheck(
   if (policy) {
     lifetimePolicy = nsICookieService::ACCEPT_NORMALLY;
   } else {
-    GetCookieLifetimePolicyFromCookieSettings(aCookieSettings, aPrincipal,
+    GetCookieLifetimePolicyFromCookieJarSettings(aCookieJarSettings, aPrincipal,
                                               &lifetimePolicy);
   }
 
@@ -160,15 +167,14 @@ static StorageAccess InternalStorageAllowedCheck(
 
 static bool StorageDisabledByAntiTrackingInternal(
     nsPIDOMWindowInner* aWindow, nsIChannel* aChannel, nsIPrincipal* aPrincipal,
-    nsIURI* aURI, nsICookieSettings* aCookieSettings,
+    nsIURI* aURI, nsICookieJarSettings* aCookieJarSettings,
     uint32_t& aRejectedReason) {
   MOZ_ASSERT(aWindow || aChannel || aPrincipal);
 
   if (aWindow) {
     nsIURI* documentURI = aURI ? aURI : aWindow->GetDocumentURI();
-    return !documentURI ||
-           !AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-               aWindow, documentURI, &aRejectedReason);
+    return !documentURI || !ContentBlocking::ShouldAllowAccessFor(
+                               aWindow, documentURI, &aRejectedReason);
   }
 
   if (aChannel) {
@@ -178,13 +184,12 @@ static bool StorageDisabledByAntiTrackingInternal(
       return false;
     }
 
-    return !AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-        aChannel, uri, &aRejectedReason);
+    return !ContentBlocking::ShouldAllowAccessFor(aChannel, uri,
+                                                  &aRejectedReason);
   }
 
   MOZ_ASSERT(aPrincipal);
-  return !AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-      aPrincipal, aCookieSettings);
+  return !ContentBlocking::ShouldAllowAccessFor(aPrincipal, aCookieJarSettings);
 }
 
 namespace mozilla {
@@ -205,7 +210,7 @@ StorageAccess StorageAllowedForWindow(nsPIDOMWindowInner* aWindow,
     // will only fail to notify the UI in case storage gets blocked.
     nsIChannel* channel = document->GetChannel();
     return InternalStorageAllowedCheck(principal, aWindow, nullptr, channel,
-                                       document->CookieSettings(),
+                                       document->CookieJarSettings(),
                                        *aRejectedReason);
   }
 
@@ -226,7 +231,7 @@ StorageAccess StorageAllowedForDocument(const Document* aDoc) {
     uint32_t rejectedReason = 0;
     return InternalStorageAllowedCheck(
         principal, inner, nullptr, channel,
-        const_cast<Document*>(aDoc)->CookieSettings(), rejectedReason);
+        const_cast<Document*>(aDoc)->CookieJarSettings(), rejectedReason);
   }
 
   return StorageAccess::eDeny;
@@ -239,11 +244,11 @@ StorageAccess StorageAllowedForNewWindow(nsIPrincipal* aPrincipal, nsIURI* aURI,
   // parent may be nullptr
 
   uint32_t rejectedReason = 0;
-  nsCOMPtr<nsICookieSettings> cs;
+  nsCOMPtr<nsICookieJarSettings> cs;
   if (aParent && aParent->GetExtantDoc()) {
-    cs = aParent->GetExtantDoc()->CookieSettings();
+    cs = aParent->GetExtantDoc()->CookieJarSettings();
   } else {
-    cs = net::CookieSettings::Create();
+    cs = net::CookieJarSettings::Create();
   }
   return InternalStorageAllowedCheck(aPrincipal, aParent, aURI, nullptr, cs,
                                      rejectedReason);
@@ -259,57 +264,55 @@ StorageAccess StorageAllowedForChannel(nsIChannel* aChannel) {
   NS_ENSURE_TRUE(principal, StorageAccess::eDeny);
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsCOMPtr<nsICookieSettings> cookieSettings;
-  nsresult rv = loadInfo->GetCookieSettings(getter_AddRefs(cookieSettings));
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+  nsresult rv = loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   NS_ENSURE_SUCCESS(rv, StorageAccess::eDeny);
 
   uint32_t rejectedReason = 0;
   StorageAccess result = InternalStorageAllowedCheck(
-      principal, nullptr, nullptr, aChannel, cookieSettings, rejectedReason);
+      principal, nullptr, nullptr, aChannel, cookieJarSettings, rejectedReason);
 
   return result;
 }
 
 StorageAccess StorageAllowedForServiceWorker(
-    nsIPrincipal* aPrincipal, nsICookieSettings* aCookieSettings) {
+    nsIPrincipal* aPrincipal, nsICookieJarSettings* aCookieJarSettings) {
   uint32_t rejectedReason = 0;
   return InternalStorageAllowedCheck(aPrincipal, nullptr, nullptr, nullptr,
-                                     aCookieSettings, rejectedReason);
+                                     aCookieJarSettings, rejectedReason);
 }
 
 bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
                                    nsIChannel* aChannel,
                                    nsIPrincipal* aPrincipal, nsIURI* aURI,
                                    uint32_t& aRejectedReason) {
-  nsCOMPtr<nsICookieSettings> cookieSettings;
+  MOZ_ASSERT(aWindow || aChannel || aPrincipal);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   if (aWindow) {
     if (aWindow->GetExtantDoc()) {
-      cookieSettings = aWindow->GetExtantDoc()->CookieSettings();
+      cookieJarSettings = aWindow->GetExtantDoc()->CookieJarSettings();
     }
   } else if (aChannel) {
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-    Unused << loadInfo->GetCookieSettings(getter_AddRefs(cookieSettings));
+    Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   }
-  if (!cookieSettings) {
-    cookieSettings = net::CookieSettings::Create();
+  if (!cookieJarSettings) {
+    cookieJarSettings = net::CookieJarSettings::Create();
   }
   bool disabled = StorageDisabledByAntiTrackingInternal(
-      aWindow, aChannel, aPrincipal, aURI, cookieSettings, aRejectedReason);
-  if (StaticPrefs::
-          browser_contentblocking_rejecttrackers_control_center_ui_enabled()) {
-    if (aWindow) {
-      AntiTrackingCommon::NotifyBlockingDecision(
-          aWindow,
-          disabled ? AntiTrackingCommon::BlockingDecision::eBlock
-                   : AntiTrackingCommon::BlockingDecision::eAllow,
-          aRejectedReason);
-    } else if (aChannel) {
-      AntiTrackingCommon::NotifyBlockingDecision(
-          aChannel,
-          disabled ? AntiTrackingCommon::BlockingDecision::eBlock
-                   : AntiTrackingCommon::BlockingDecision::eAllow,
-          aRejectedReason);
-    }
+      aWindow, aChannel, aPrincipal, aURI, cookieJarSettings, aRejectedReason);
+  if (aWindow) {
+    ContentBlockingNotifier::OnDecision(
+        aWindow,
+        disabled ? ContentBlockingNotifier::BlockingDecision::eBlock
+                 : ContentBlockingNotifier::BlockingDecision::eAllow,
+        aRejectedReason);
+  } else if (aChannel) {
+    ContentBlockingNotifier::OnDecision(
+        aChannel,
+        disabled ? ContentBlockingNotifier::BlockingDecision::eBlock
+                 : ContentBlockingNotifier::BlockingDecision::eAllow,
+        aRejectedReason);
   }
   return disabled;
 }
@@ -337,30 +340,30 @@ bool ShouldPartitionStorage(uint32_t aRejectedReason) {
 }
 
 bool StoragePartitioningEnabled(StorageAccess aAccess,
-                                nsICookieSettings* aCookieSettings) {
+                                nsICookieJarSettings* aCookieJarSettings) {
   if (aAccess == StorageAccess::ePartitionTrackersOrDeny) {
-    return aCookieSettings->GetCookieBehavior() ==
+    return aCookieJarSettings->GetCookieBehavior() ==
                nsICookieService::BEHAVIOR_REJECT_TRACKER &&
            StaticPrefs::privacy_storagePrincipal_enabledForTrackers();
   }
   if (aAccess == StorageAccess::ePartitionForeignOrDeny) {
-    return aCookieSettings->GetCookieBehavior() ==
+    return aCookieJarSettings->GetCookieBehavior() ==
            nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
   }
   return false;
 }
 
 bool StoragePartitioningEnabled(uint32_t aRejectedReason,
-                                nsICookieSettings* aCookieSettings) {
+                                nsICookieJarSettings* aCookieJarSettings) {
   if (aRejectedReason ==
       nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER) {
-    return aCookieSettings->GetCookieBehavior() ==
+    return aCookieJarSettings->GetCookieBehavior() ==
                nsICookieService::BEHAVIOR_REJECT_TRACKER &&
            StaticPrefs::privacy_storagePrincipal_enabledForTrackers();
   }
   if (aRejectedReason ==
       nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) {
-    return aCookieSettings->GetCookieBehavior() ==
+    return aCookieJarSettings->GetCookieBehavior() ==
            nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
   }
   return false;

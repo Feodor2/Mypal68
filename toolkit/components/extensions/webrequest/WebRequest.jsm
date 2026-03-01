@@ -325,7 +325,7 @@ var ChannelEventSink = {
   // nsIFactory implementation
   createInstance(outer, iid) {
     if (outer) {
-      throw Cr.NS_ERROR_NO_AGGREGATION;
+      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
     }
     return this.QueryInterface(iid);
   },
@@ -349,7 +349,7 @@ class AuthRequestor {
     try {
       return this.notificationCallbacks.getInterface(iid);
     } catch (e) {}
-    throw Cr.NS_ERROR_NO_INTERFACE;
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   }
 
   _getForwardedInterface(iid) {
@@ -398,7 +398,7 @@ class AuthRequestor {
         return callbacks.getInterface(Ci.nsIAuthPrompt2);
       } catch (e) {}
     }
-    throw Cr.NS_ERROR_NO_INTERFACE;
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   }
 
   // nsIAuthPrompt2 asyncPromptAuth

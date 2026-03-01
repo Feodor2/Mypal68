@@ -111,8 +111,9 @@ this.VideoControlsWidget = class {
    * toggle. Those requirements currently are:
    *
    * 1. The video must be 45 seconds in length or longer.
-   * 2. Neither the width or the height of the video can be less than 160px.
+   * 2. Neither the width or the height of the video can be less than 140px.
    * 3. The video must have audio.
+   * 4. The video must not a MediaStream video (Bug 1592539)
    *
    * This can be overridden via the
    * media.videocontrols.picture-in-picture.video-toggle.always-show pref, which
@@ -129,12 +130,16 @@ this.VideoControlsWidget = class {
       return true;
     }
 
-    const MIN_VIDEO_LENGTH = 45; // seconds
+    const MIN_VIDEO_LENGTH =
+      prefs[
+        "media.videocontrols.picture-in-picture.video-toggle.min-video-secs"
+      ];
+
     if (someVideo.duration < MIN_VIDEO_LENGTH) {
       return false;
     }
 
-    const MIN_VIDEO_DIMENSION = 160; // pixels
+    const MIN_VIDEO_DIMENSION = 140; // pixels
     if (
       someVideo.videoWidth < MIN_VIDEO_DIMENSION ||
       someVideo.videoHeight < MIN_VIDEO_DIMENSION
@@ -143,6 +148,15 @@ this.VideoControlsWidget = class {
     }
 
     if (!someVideo.mozHasAudio) {
+      return false;
+    }
+
+    // Bug 1592539 - It's possible to confuse the underlying visual
+    // cloning mechanism by switching which video stream a <video> is
+    // rendering. We try to head that case off for now by hiding the
+    // Picture-in-Picture capability on <video> elements that have
+    // srcObject != null.
+    if (someVideo.srcObject) {
       return false;
     }
 
@@ -206,6 +220,7 @@ this.VideoControlsImplWidget = class {
         "stalled",
         "mozvideoonlyseekbegin",
         "mozvideoonlyseekcompleted",
+        "durationchange",
       ],
 
       showHours: false,
@@ -693,6 +708,9 @@ this.VideoControlsImplWidget = class {
               this.muteButton.setAttribute("disabled", "true");
             }
             this.adjustControlSize();
+            this.updatePictureInPictureToggleDisplay();
+            break;
+          case "durationchange":
             this.updatePictureInPictureToggleDisplay();
             break;
           case "loadeddata":
@@ -2917,6 +2935,8 @@ this.NoControlsDesktopImplWidget = class {
             }
             break;
           }
+          case "durationchange":
+          // Intentional fall-through
           case "loadedmetadata": {
             this.updatePictureInPictureToggleDisplay();
             break;
@@ -2973,6 +2993,7 @@ this.NoControlsDesktopImplWidget = class {
         });
 
         this.video.addEventListener("loadedmetadata", this);
+        this.video.addEventListener("durationchange", this);
       },
 
       terminate() {
@@ -2981,6 +3002,7 @@ this.NoControlsDesktopImplWidget = class {
         });
 
         this.video.removeEventListener("loadedmetadata", this);
+        this.video.removeEventListener("durationchange", this);
       },
 
       get pipToggleEnabled() {

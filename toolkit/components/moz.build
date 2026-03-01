@@ -2,110 +2,112 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-with Files('**'):
-    BUG_COMPONENT = ('Toolkit', 'General')
+with Files("**"):
+    BUG_COMPONENT = ("Toolkit", "General")
 
 # These component dirs are built for all apps (including suite)
-if CONFIG['MOZ_HAS_REMOTE']:
-    DIRS += ['remote']
+if CONFIG["MOZ_HAS_REMOTE"]:
+    DIRS += ["remote"]
 
 DIRS += [
-    'aboutcheckerboard',
-    'aboutmemory',
-    'aboutperformance',
-    'alerts',
-    'antitracking',
-    'apppicker',
-    'asyncshutdown',
-    'backgroundhangmonitor',
-    'bitsdownload',
-    'browser',
-    'certviewer',
-    'cleardata',
-    'clearsitedata',
-    'cloudstorage',
-    'commandlines',
-    'contentprefs',
-    'contextualidentity',
-    'crashes',
-    'crashmonitor',
-    'downloads',
-    'enterprisepolicies',
-    'extensions',
-    'filewatcher',
-    'finalizationwitness',
-    'find',
-    'fuzzyfox',
-    'jsoncpp/src/lib_json',
-    'kvstore',
-    'lz4',
-    'mediasniffer',
-    'mozintl',
-    'mozprotocol',
-    'osfile',
-    'parentalcontrols',
-    'passwordmgr',
-    'pdfjs',
-    'perfmonitoring',
-    'pictureinpicture',
-    'places',
-    'processsingleton',
-    'promiseworker',
-    'prompts',
-    'protobuf',
-    'reader',
-    'remotebrowserutils',
-    'remotepagemanager',
-    'reflect',
-    'resistfingerprinting',
-    'search',
-    'sessionstore',
-    'shell',
-    'startup',
-    'statusfilter',
-    'telemetry',
-    'thumbnails',
-    'timermanager',
-    'tooltiptext',
-    'typeaheadfind',
-    'utils',
-    'url-classifier',
-    'urlformatter',
-    'viewconfig',
-    'viewsource',
-    'windowcreator',
-    'windowwatcher',
-    'workerloader',
-    'xulstore',
+    "aboutcheckerboard",
+    "aboutmemory",
+    "aboutperformance",
+    "alerts",
+    "antitracking",
+    "apppicker",
+    "asyncshutdown",
+    "backgroundhangmonitor",
+    "bitsdownload",
+    "browser",
+    "certviewer",
+    "cleardata",
+    "clearsitedata",
+    "cloudstorage",
+    "commandlines",
+    "contentprefs",
+    "contextualidentity",
+    "crashes",
+    "crashmonitor",
+    "downloads",
+    "enterprisepolicies",
+    "extensions",
+    "finalizationwitness",
+    "find",
+    "forgetaboutsite",
+    "fuzzyfox",
+    "jsoncpp/src/lib_json",
+    "kvstore",
+    "lz4",
+    "mediasniffer",
+    "mozintl",
+    "mozprotocol",
+    "osfile",
+    "parentalcontrols",
+    "passwordmgr",
+    "pdfjs",
+    "perfmonitoring",
+    "pictureinpicture",
+    "places",
+    "processsingleton",
+    "promiseworker",
+    "prompts",
+    "protobuf",
+    "remotebrowserutils",
+    "remotepagemanager",
+    "reflect",
+    "resistfingerprinting",
+    "search",
+    "sessionstore",
+    "shell",
+    "startup",
+    "statusfilter",
+    "telemetry",
+    "thumbnails",
+    "timermanager",
+    "tooltiptext",
+    "typeaheadfind",
+    "utils",
+    "url-classifier",
+    "urlformatter",
+    "viewconfig",
+    "viewsource",
+    "windowcreator",
+    "windowwatcher",
+    "workerloader",
+    "xulstore",
 ]
 
-if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
-    DIRS += ['narrate'];
+if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
+    DIRS += [
+        "narrate",
+        "reader",
+    ]
 
-    if CONFIG['NS_PRINTING']:
-        DIRS += ['printing']
+    if CONFIG["NS_PRINTING"]:
+        DIRS += ["printing"]
 
-if CONFIG['BUILD_CTYPES']:
-    DIRS += ['ctypes']
+if CONFIG["BUILD_CTYPES"]:
+    DIRS += ["ctypes"]
 
-if CONFIG['MOZ_XUL']:
-    DIRS += ['autocomplete', 'printingui', 'satchel']
+if CONFIG["MOZ_XUL"]:
+    DIRS += ["autocomplete", "printingui", "satchel"]
 
-DIRS += ['captivedetect']
+DIRS += ["captivedetect"]
 
-if CONFIG['OS_TARGET'] != 'Android':
-    DIRS += ['terminator']
+if CONFIG["OS_TARGET"] != "Android":
+    DIRS += ["terminator"]
 
-DIRS += ['build']
+DIRS += ["build"]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
-    DIRS += ['gfx']
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+    DIRS += ["gfx"]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
+if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     EXTRA_JS_MODULES += [
-        'DefaultCLH.jsm',
+        "DefaultCLH.jsm",
     ]
 
     XPCOM_MANIFESTS += [
-        'components.conf',
+        "components.conf",
     ]

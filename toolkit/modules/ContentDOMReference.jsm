@@ -71,11 +71,13 @@ var ContentDOMReference = {
    */
   get(element) {
     if (!element) {
-      throw new Error("Can't create a ContentDOMReference identifier for " +
-                      "non-existant nodes.");
+      throw new Error(
+        "Can't create a ContentDOMReference identifier for " +
+          "non-existant nodes."
+      );
     }
 
-    let browsingContext = element.ownerGlobal.getWindowGlobalChild().browsingContext;
+    let browsingContext = element.ownerGlobal.windowGlobalChild.browsingContext;
     let mappings = gRegistry.get(browsingContext);
     if (!mappings) {
       mappings = {

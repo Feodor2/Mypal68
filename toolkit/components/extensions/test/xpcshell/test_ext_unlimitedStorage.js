@@ -118,8 +118,8 @@ add_task(async function test_unlimitedStorage_removed_on_update() {
   const newPrincipal = newPolicy.extension.principal;
 
   equal(
-    principal.URI.spec,
-    newPrincipal.URI.spec,
+    principal.spec,
+    newPrincipal.spec,
     "upgraded extension has the expected principal"
   );
 

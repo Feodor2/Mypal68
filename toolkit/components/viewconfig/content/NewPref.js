@@ -15,12 +15,6 @@ async function init() {
   nameTB = document.getElementById("name");
   nameTB.value = params.prefCol;
 
-/* params:
-.prefCol  - имя параметра
-.typeCol  - тип параметра
-.valueCol - значение
-.lockCol  - PREF_IS_*
-*/
   switch (params.typeCol) {
     case prefs.PREF_BOOL:
       valueElem = document.getElementById("bool");
@@ -38,11 +32,11 @@ async function init() {
             "config-modify-title", { type: win.gTypeStrs[params.typeCol] }
           );
 
-  if (params.prefCol) { // изменение существующего параметра
+  if (params.prefCol) {
     document.title = params.prefCol;
     valueElem.value = params.valueCol;
     valueElem.focus();
-  } else { // создание нового параметра
+  } else {
     document.title =
       await document.l10n.formatValue(
               "config-new-title", { type: win.gTypeStrs[params.typeCol] }
@@ -60,11 +54,9 @@ function onSave() {
   var name = nameTB.value.trim(), value, tailPos;
 
   if (params.typeCol == prefs.PREF_BOOL) {
-    // строки для ввода значения здесь нет, поэтому при отсутствии имени возврат в диалог
     if (!name) return;
 
     if (valueElem.selectedIndex < 0) {
-      // значение из списка не выбрано, поэтому попытаться использовать его из хвоста имени и вернуться в диалог
       tailPos = name.lastIndexOf(";");
       if (tailPos >=0) {
         switch (name.substring(tailPos + 1).trim().toLowerCase()) {
@@ -75,26 +67,23 @@ function onSave() {
           case "true":
             valueElem.selectedIndex = 1;
             nameTB.value = name.substring(0, tailPos).trim();
-//        default:  ничего не менять
+          default:
         }
       }
       return;
     }
 
-    // сохранить, только если тип совпадает (изменение) или параметра нет (создание)
     switch (prefs.getPrefType(name)) {
-      case prefs.PREF_BOOL:  // параметр существует
-        if (!params.prefCol) // вызывали создание нового параметра -
-          break;             // вывалиться без сохранения
-      case prefs.PREF_INVALID: // параметр ещё не существует
+      case prefs.PREF_BOOL:
+        if (!params.prefCol)
+          break;
+      case prefs.PREF_INVALID:
         prefs.setBoolPref(name, valueElem.selectedIndex);
     }
-  } else { // PREF_INT, PREF_STRING
+  } else {
     value = valueElem.value.trim();
-    // проверить заполненность хотя бы одного из полей
-    if (!(name || value)) return; // если нет - вернуться в диалог
+    if (!(name || value)) return;
 
-    // если заполнено только одно из полей, попытаться разбить содержимое другого поля по последней ";"
     if (!name) {
       name = value;
       value = "";
@@ -109,23 +98,21 @@ function onSave() {
     }
 
     if (params.typeCol == prefs.PREF_INT) {
-      if (!valueElem.reportValidity()) return; // значение - не целое число
+      if (!valueElem.reportValidity()) return;
 
-      // сохранить, только если тип совпадает (изменение) или параметра нет (создание)
       switch (prefs.getPrefType(name)) {
-        case prefs.PREF_INT:  // параметр существует
-          if (!params.prefCol) // вызывали создание нового параметра -
-            break;             // вывалиться без сохранения
-        case prefs.PREF_INVALID: // параметр ещё не существует
+        case prefs.PREF_INT:
+          if (!params.prefCol)
+            break;
+        case prefs.PREF_INVALID:
           prefs.setIntPref(name, parseInt(value));
       }
-    } else { // PREF_STRING
-      // сохранить, только если тип совпадает (изменение) или параметра нет (создание)
+    } else {
       switch (prefs.getPrefType(name)) {
-        case prefs.PREF_STRING:  // параметр существует
-          if (!params.prefCol) // вызывали создание нового параметра -
-            break;             // вывалиться без сохранения
-        case prefs.PREF_INVALID: // параметр ещё не существует
+        case prefs.PREF_STRING:
+          if (!params.prefCol)
+            break;
+        case prefs.PREF_INVALID:
           prefs.setCharPref(name, value);
       }
     }

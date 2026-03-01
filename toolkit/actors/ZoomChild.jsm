@@ -17,6 +17,8 @@ class ZoomChild extends ActorChild {
       fullZoom: NaN,
       textZoom: NaN,
     };
+
+    this._resolutionBeforeFullZoomChange = 0;
   }
 
   get fullZoom() {
@@ -76,11 +78,35 @@ class ZoomChild extends ActorChild {
   }
 
   handleEvent(event) {
+    if (event.type == "PreFullZoomChange") {
+      if (this._resolutionBeforeFullZoomChange == 0) {
+        this._resolutionBeforeFullZoomChange = this.content.windowUtils.getResolution();
+      }
+
+      this.mm.sendAsyncMessage("PreFullZoomChange", {});
+      return;
+    }
+
     if (event.type == "FullZoomChange") {
       if (this.refreshFullZoom()) {
         this.mm.sendAsyncMessage("FullZoomChange", { value: this.fullZoom });
       }
-    } else if (event.type == "TextZoomChange") {
+      return;
+    }
+
+    if (event.type == "mozupdatedremoteframedimensions") {
+      if (this._resolutionBeforeFullZoomChange != 0) {
+        this.content.windowUtils.setResolutionAndScaleTo(
+          this._resolutionBeforeFullZoomChange
+        );
+        this._resolutionBeforeFullZoomChange = 0;
+      }
+
+      this.mm.sendAsyncMessage("PostFullZoomChange", {});
+      return;
+    }
+
+    if (event.type == "TextZoomChange") {
       if (this.refreshTextZoom()) {
         this.mm.sendAsyncMessage("TextZoomChange", { value: this.textZoom });
       }

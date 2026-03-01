@@ -7,9 +7,17 @@
 var EXPORTED_SYMBOLS = ["PictureInPicture"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 const PLAYER_URI = "chrome://global/content/pictureinpicture/player.xhtml";
-const PLAYER_FEATURES = `chrome,titlebar=no,alwaysontop,lockaspectratio,resizable`;
+var PLAYER_FEATURES =
+  "chrome,titlebar=no,alwaysontop,lockaspectratio,resizable";
+/* Don't use dialog on Gtk as it adds extra border and titlebar to PIP window */
+if (!AppConstants.MOZ_WIDGET_GTK) {
+  PLAYER_FEATURES += ",dialog";
+}
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
 const TOGGLE_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.enabled";
@@ -30,6 +38,11 @@ var PictureInPicture = {
         this.handlePictureInPictureRequest(browser, videoData);
         break;
       }
+      case "PictureInPicture:Resize": {
+        let videoData = aMessage.data;
+        this.resizePictureInPictureWindow(videoData);
+        break;
+      }
       case "PictureInPicture:Close": {
         /**
          * Content has requested that its Picture in Picture window go away.
@@ -38,16 +51,30 @@ var PictureInPicture = {
         break;
       }
       case "PictureInPicture:Playing": {
-        let player = this.weakPipPlayer && this.weakPipPlayer.get();
+        let player = this.getWeakPipPlayer();
         if (player) {
           player.setIsPlayingState(true);
         }
         break;
       }
       case "PictureInPicture:Paused": {
-        let player = this.weakPipPlayer && this.weakPipPlayer.get();
+        let player = this.getWeakPipPlayer();
         if (player) {
           player.setIsPlayingState(false);
+        }
+        break;
+      }
+      case "PictureInPicture:Muting": {
+        let player = PictureInPicture.getWeakPipPlayer();
+        if (player) {
+          player.setIsMutedState(true);
+        }
+        break;
+      }
+      case "PictureInPicture:Unmuting": {
+        let player = PictureInPicture.getWeakPipPlayer();
+        if (player) {
+          player.setIsMutedState(false);
         }
         break;
       }
@@ -57,6 +84,32 @@ var PictureInPicture = {
         break;
       }
     }
+  },
+
+  /**
+   * Returns the player window if one exists and if it hasn't yet been closed.
+   *
+   * @return {DOM Window} the player window if it exists and is not in the
+   * process of being closed. Returns null otherwise.
+   */
+  getWeakPipPlayer() {
+    let weakRef = this._weakPipPlayer;
+    if (weakRef) {
+      let playerWin;
+
+      // Bug 800957 - Accessing weakrefs at the wrong time can cause us to
+      // throw NS_ERROR_XPC_BAD_CONVERT_NATIVE
+      try {
+        playerWin = weakRef.get();
+      } catch (e) {
+        return null;
+      }
+
+      if (!playerWin.closed) {
+        return playerWin;
+      }
+    }
+    return null;
   },
 
   /**
@@ -132,8 +185,9 @@ var PictureInPicture = {
     let parentWin = browser.ownerGlobal;
     this.browser = browser;
     let win = await this.openPipWindow(parentWin, videoData);
-    this.weakPipPlayer = Cu.getWeakReference(win);
+    this._weakPipPlayer = Cu.getWeakReference(win);
     win.setIsPlayingState(videoData.playing);
+    win.setIsMutedState(videoData.isMuted);
 
     // set attribute which shows pip icon in tab
     let tab = parentWin.gBrowser.getTabForBrowser(browser);
@@ -147,7 +201,7 @@ var PictureInPicture = {
    */
   unload() {
     this.clearPipTabIcon();
-    delete this.weakPipPlayer;
+    delete this._weakPipPlayer;
     delete this.browser;
   },
 
@@ -172,79 +226,11 @@ var PictureInPicture = {
    *   Resolves once the window has opened and loaded the player component.
    */
   async openPipWindow(parentWin, videoData) {
-    let { videoHeight, videoWidth } = videoData;
+    let { top, left, width, height } = this.fitToScreen(parentWin, videoData);
 
-    // The Picture in Picture window will open on the same display as the
-    // originating window, and anchor to the bottom right.
-    let screenManager = Cc["@mozilla.org/gfx/screenmanager;1"].getService(
-      Ci.nsIScreenManager
-    );
-    let screen = screenManager.screenForRect(
-      parentWin.screenX,
-      parentWin.screenY,
-      1,
-      1
-    );
-
-    // Now that we have the right screen, let's see how much available
-    // real-estate there is for us to work with.
-    let screenLeft = {},
-      screenTop = {},
-      screenWidth = {},
-      screenHeight = {};
-    screen.GetAvailRectDisplayPix(
-      screenLeft,
-      screenTop,
-      screenWidth,
-      screenHeight
-    );
-
-    // We have to divide these dimensions by the CSS scale factor for the
-    // display in order for the video to be positioned correctly on displays
-    // that are not at a 1.0 scaling.
-    screenWidth.value = screenWidth.value / screen.defaultCSSScaleFactor;
-    screenHeight.value = screenHeight.value / screen.defaultCSSScaleFactor;
-
-    // For now, the Picture in Picture window will be a maximum of a quarter
-    // of the screen height, and a third of the screen width.
-    const MAX_HEIGHT = screenHeight.value / 4;
-    const MAX_WIDTH = screenWidth.value / 3;
-
-    let resultWidth = videoWidth;
-    let resultHeight = videoHeight;
-
-    if (videoHeight > MAX_HEIGHT || videoWidth > MAX_WIDTH) {
-      let aspectRatio = videoWidth / videoHeight;
-      // We're bigger than the max - take the largest dimension and clamp
-      // it to the associated max. Recalculate the other dimension to maintain
-      // aspect ratio.
-      if (videoWidth >= videoHeight) {
-        // We're clamping the width, so the height must be adjusted to match
-        // the original aspect ratio. Since aspect ratio is width over height,
-        // that means we need to _divide_ the MAX_WIDTH by the aspect ratio to
-        // calculate the appropriate height.
-        resultWidth = MAX_WIDTH;
-        resultHeight = Math.round(MAX_WIDTH / aspectRatio);
-      } else {
-        // We're clamping the height, so the width must be adjusted to match
-        // the original aspect ratio. Since aspect ratio is width over height,
-        // this means we need to _multiply_ the MAX_HEIGHT by the aspect ratio
-        // to calculate the appropriate width.
-        resultHeight = MAX_HEIGHT;
-        resultWidth = Math.round(MAX_HEIGHT * aspectRatio);
-      }
-    }
-
-    // Now that we have the dimensions of the video, we need to figure out how
-    // to position it in the bottom right corner. Since we know the width of the
-    // available rect, we need to subtract the dimensions of the window we're
-    // opening to get the top left coordinates that openWindow expects.
-    let isRTL = Services.locale.isAppLocaleRTL;
-    let pipLeft = isRTL ? 0 : screenWidth.value - resultWidth;
-    let pipTop = screenHeight.value - resultHeight;
     let features =
-      `${PLAYER_FEATURES},top=${pipTop},left=${pipLeft},` +
-      `outerWidth=${resultWidth},outerHeight=${resultHeight}`;
+      `${PLAYER_FEATURES},top=${top},left=${left},` +
+      `outerWidth=${width},outerHeight=${height}`;
 
     let pipWindow = Services.ww.openWindow(
       parentWin,
@@ -263,6 +249,162 @@ var PictureInPicture = {
         { once: true }
       );
     });
+  },
+
+  /**
+   * Calculate the desired size and position for a Picture in Picture window
+   * for the provided window and videoData.
+   *
+   * @param windowOrPlayer (chrome window|player window)
+   *   The window hosting the browser that requested the Picture in
+   *   Picture window. If this is an existing player window then the returned
+   *   player size and position will be determined based on the existing
+   *   player window's size and position.
+   *
+   * @param videoData (object)
+   *   An object containing the following properties:
+   *
+   *   videoHeight (int):
+   *     The preferred height of the video.
+   *
+   *   videoWidth (int):
+   *     The preferred width of the video.
+   *
+   * @returns object
+   *   The size and position for the player window.
+   *
+   *   top (int):
+   *     The top position for the player window.
+   *
+   *   left (int):
+   *     The left position for the player window.
+   *
+   *   width (int):
+   *     The width of the player window.
+   *
+   *   height (int):
+   *     The height of the player window.
+   */
+  fitToScreen(windowOrPlayer, videoData) {
+    let { videoHeight, videoWidth } = videoData;
+    let isPlayerWindow = windowOrPlayer == this.getWeakPipPlayer();
+
+    // The Picture in Picture window will open on the same display as the
+    // originating window, and anchor to the bottom right.
+    let screenManager = Cc["@mozilla.org/gfx/screenmanager;1"].getService(
+      Ci.nsIScreenManager
+    );
+    let screen = screenManager.screenForRect(
+      windowOrPlayer.screenX,
+      windowOrPlayer.screenY,
+      1,
+      1
+    );
+
+    // Now that we have the right screen, let's see how much available
+    // real-estate there is for us to work with.
+    let screenLeft = {},
+      screenTop = {},
+      screenWidth = {},
+      screenHeight = {};
+    screen.GetAvailRectDisplayPix(
+      screenLeft,
+      screenTop,
+      screenWidth,
+      screenHeight
+    );
+    let fullLeft = {},
+      fullTop = {},
+      fullWidth = {},
+      fullHeight = {};
+    screen.GetRectDisplayPix(fullLeft, fullTop, fullWidth, fullHeight);
+
+    // We have to divide these dimensions by the CSS scale factor for the
+    // display in order for the video to be positioned correctly on displays
+    // that are not at a 1.0 scaling.
+    let scaleFactor = screen.contentsScaleFactor / screen.defaultCSSScaleFactor;
+    screenWidth.value *= scaleFactor;
+    screenHeight.value *= scaleFactor;
+    screenLeft.value =
+      (screenLeft.value - fullLeft.value) * scaleFactor + fullLeft.value;
+    screenTop.value =
+      (screenTop.value - fullTop.value) * scaleFactor + fullTop.value;
+
+    // If we have a player window, maintain the previous player window's size by
+    // clamping the new video's largest dimension to the player window's
+    // largest dimension.
+    //
+    // Otherwise the Picture in Picture window will be a maximum of a quarter of
+    // the screen height, and a third of the screen width.
+    let preferredSize;
+    if (isPlayerWindow) {
+      let prevWidth = windowOrPlayer.innerWidth;
+      let prevHeight = windowOrPlayer.innerHeight;
+      preferredSize = prevWidth >= prevHeight ? prevWidth : prevHeight;
+    }
+    const MAX_HEIGHT = preferredSize || screenHeight.value / 4;
+    const MAX_WIDTH = preferredSize || screenWidth.value / 3;
+
+    let width = videoWidth;
+    let height = videoHeight;
+    let aspectRatio = videoWidth / videoHeight;
+
+    if (
+      videoHeight > MAX_HEIGHT ||
+      videoWidth > MAX_WIDTH ||
+      (isPlayerWindow && videoHeight < MAX_HEIGHT && videoWidth < MAX_WIDTH)
+    ) {
+      // We're bigger than the max, or smaller than the previous player window.
+      // Take the largest dimension and clamp it to the associated max.
+      // Recalculate the other dimension to maintain aspect ratio.
+      if (videoWidth >= videoHeight) {
+        // We're clamping the width, so the height must be adjusted to match
+        // the original aspect ratio. Since aspect ratio is width over height,
+        // that means we need to _divide_ the MAX_WIDTH by the aspect ratio to
+        // calculate the appropriate height.
+        width = MAX_WIDTH;
+        height = Math.round(MAX_WIDTH / aspectRatio);
+      } else {
+        // We're clamping the height, so the width must be adjusted to match
+        // the original aspect ratio. Since aspect ratio is width over height,
+        // this means we need to _multiply_ the MAX_HEIGHT by the aspect ratio
+        // to calculate the appropriate width.
+        height = MAX_HEIGHT;
+        width = Math.round(MAX_HEIGHT * aspectRatio);
+      }
+    }
+
+    // Now that we have the dimensions of the video, we need to figure out how
+    // to position it in the bottom right corner. Since we know the width of the
+    // available rect, we need to subtract the dimensions of the window we're
+    // opening to get the top left coordinates that openWindow expects.
+    //
+    // In event that the user has multiple displays connected, we have to
+    // calculate the top-left coordinate of the new window in absolute
+    // coordinates that span the entire display space, since this is what the
+    // openWindow expects for its top and left feature values.
+    //
+    // The screenWidth and screenHeight values only tell us the available
+    // dimensions on the screen that the parent window is on. We add these to
+    // the screenLeft and screenTop values, which tell us where this screen is
+    // located relative to the "origin" in absolute coordinates.
+    let isRTL = Services.locale.isAppLocaleRTL;
+    let left = isRTL
+      ? screenLeft.value
+      : screenLeft.value + screenWidth.value - width;
+    let top = screenTop.value + screenHeight.value - height;
+
+    return { top, left, width, height };
+  },
+
+  resizePictureInPictureWindow(videoData) {
+    let win = this.getWeakPipPlayer();
+    if (!win) {
+      return;
+    }
+
+    let { width, height } = this.fitToScreen(win, videoData);
+    win.resizeTo(width, height);
   },
 
   openToggleContextMenu(window, data) {

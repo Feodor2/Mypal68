@@ -21,11 +21,6 @@
 #include "nsTArray.h"
 #include "nsCycleCollectionParticipant.h"
 
-// X.h defines KeyPress
-#ifdef KeyPress
-#  undef KeyPress
-#endif
-
 class nsFormHistory;
 class nsINode;
 class nsPIDOMWindowOuter;
@@ -56,7 +51,6 @@ class nsFormFillController final : public nsIFormFillController,
 
   MOZ_CAN_RUN_SCRIPT nsresult Focus(mozilla::dom::Event* aEvent);
   MOZ_CAN_RUN_SCRIPT nsresult KeyDown(mozilla::dom::Event* aKeyEvent);
-  MOZ_CAN_RUN_SCRIPT nsresult KeyPress(mozilla::dom::Event* aKeyEvent);
   MOZ_CAN_RUN_SCRIPT nsresult MouseDown(mozilla::dom::Event* aMouseEvent);
 
   nsFormFillController();
@@ -66,9 +60,6 @@ class nsFormFillController final : public nsIFormFillController,
 
   void AddWindowListeners(nsPIDOMWindowOuter* aWindow);
   MOZ_CAN_RUN_SCRIPT void RemoveWindowListeners(nsPIDOMWindowOuter* aWindow);
-
-  void AddKeyListener(nsINode* aInput);
-  void RemoveKeyListener();
 
   MOZ_CAN_RUN_SCRIPT
   void StartControllingInput(mozilla::dom::HTMLInputElement* aInput);

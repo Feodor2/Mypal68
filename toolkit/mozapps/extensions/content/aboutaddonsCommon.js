@@ -6,9 +6,9 @@
 "use strict";
 
 /* exported attachUpdateHandler, gBrowser, getBrowserElement,
- *          installAddonsFromFilePicker,
  *          isPending, loadReleaseNotes, openOptionsInTab, promiseEvent,
- *          shouldShowPermissionsPrompt, showPermissionsPrompt */
+ *          shouldShowPermissionsPrompt, showPermissionsPrompt,
+ *          PREF_UI_LASTCATEGORY */
 
 const { AddonSettings } = ChromeUtils.import(
   "resource://gre/modules/addons/AddonSettings.jsm"
@@ -32,6 +32,15 @@ ChromeUtils.defineModuleGetter(
   "Extension",
   "resource://gre/modules/Extension.jsm"
 );
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "XPINSTALL_ENABLED",
+  "xpinstall.enabled",
+  true
+);
+
+const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
 
 function getBrowserElement() {
   return window.docShell.chromeEventHandler;
@@ -71,7 +80,7 @@ function attachUpdateHandler(install) {
           info: {
             type: "update",
             addon: info.addon,
-            icon: info.addon.icon,
+            icon: info.addon.iconURL,
             permissions: difference,
             resolve,
             reject,
@@ -221,4 +230,9 @@ async function installAddonsFromFilePicker() {
       resolve(installs);
     });
   });
+}
+
+function isPending(addon, action) {
+  const amAction = AddonManager["PENDING_" + action.toUpperCase()];
+  return !!(addon.pendingOperations & amAction);
 }

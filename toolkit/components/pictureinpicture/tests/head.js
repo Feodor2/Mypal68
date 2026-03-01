@@ -46,6 +46,7 @@ async function triggerPictureInPicture(browser, videoID) {
   });
   let win = await domWindowOpened;
   await BrowserTestUtils.waitForEvent(win, "load");
+  await win.promiseDocumentFlushed(() => {});
   await videoReady;
   return win;
 }
@@ -288,146 +289,225 @@ async function testToggle(testURL, expectations, prepFn = async () => {}) {
       await prepFn(browser);
       await ensureVideosReady(browser);
 
-      for (let [videoID, canToggle] of Object.entries(expectations)) {
+      for (let [videoID, { canToggle }] of Object.entries(expectations)) {
         await SimpleTest.promiseFocus(browser);
         info(`Testing video with id: ${videoID}`);
 
-        let { toggleClientRect, controls } = await prepareForToggleClick(
-          browser,
-          videoID
-        );
-
-        // Hover the mouse over the video to reveal the toggle.
-        await BrowserTestUtils.synthesizeMouseAtCenter(
-          `#${videoID}`,
-          {
-            type: "mousemove",
-          },
-          browser
-        );
-        await BrowserTestUtils.synthesizeMouseAtCenter(
-          `#${videoID}`,
-          {
-            type: "mouseover",
-          },
-          browser
-        );
-
-        info("Waiting for toggle to become visible");
-        await toggleOpacityReachesThreshold(
-          browser,
-          videoID,
-          HOVER_VIDEO_OPACITY
-        );
-
-        info("Hovering the toggle rect now.");
-        // The toggle center, because of how it slides out, is actually outside
-        // of the bounds of a click event. For now, we move the mouse in by a
-        // hard-coded 2 pixels along the x and y axis to achieve the hover.
-        let toggleLeft = toggleClientRect.left + 2;
-        let toggleTop = toggleClientRect.top + 2;
-        await BrowserTestUtils.synthesizeMouseAtPoint(
-          toggleLeft,
-          toggleTop,
-          {
-            type: "mousemove",
-          },
-          browser
-        );
-        await BrowserTestUtils.synthesizeMouseAtPoint(
-          toggleLeft,
-          toggleTop,
-          {
-            type: "mouseover",
-          },
-          browser
-        );
-
-        await toggleOpacityReachesThreshold(
-          browser,
-          videoID,
-          HOVER_TOGGLE_OPACITY
-        );
-
-        // First, ensure that a non-primary mouse click is ignored.
-        info("Right-clicking on toggle.");
-
-        await BrowserTestUtils.synthesizeMouseAtPoint(
-          toggleLeft,
-          toggleTop,
-          { button: 1 },
-          browser
-        );
-
-        // For videos without the built-in controls, we expect that all mouse events
-        // should have fired - otherwise, the events are all suppressed.
-        await assertSawMouseEvents(browser, !controls, false);
-
-        // The message to open the Picture-in-Picture window would normally be sent
-        // immediately before this Promise resolved, so the window should have opened
-        // by now if it was going to happen.
-        for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
-          if (!win.closed) {
-            ok(false, "Found a Picture-in-Picture window unexpectedly.");
-            return;
-          }
-        }
-
-        ok(true, "No Picture-in-Picture window found.");
-
-        // Okay, now test with the primary mouse button.
-
-        if (canToggle) {
-          info(
-            "Clicking on toggle, and expecting a Picture-in-Picture window to open"
-          );
-          let domWindowOpened = BrowserTestUtils.domWindowOpened(null);
-          await BrowserTestUtils.synthesizeMouseAtPoint(
-            toggleLeft,
-            toggleTop,
-            {},
-            browser
-          );
-          let win = await domWindowOpened;
-          ok(win, "A Picture-in-Picture window opened.");
-          await BrowserTestUtils.closeWindow(win);
-
-          // Make sure that clicking on the toggle resulted in no mouse button events
-          // being fired in content.
-          await assertSawMouseEvents(browser, false);
-        } else {
-          info(
-            "Clicking on toggle, and expecting no Picture-in-Picture window opens"
-          );
-          await BrowserTestUtils.synthesizeMouseAtPoint(
-            toggleLeft,
-            toggleTop,
-            {},
-            browser
-          );
-
-          // For videos without the built-in controls, we expect that all mouse events
-          // should have fired - otherwise, the events are all suppressed.
-          await assertSawMouseEvents(browser, !controls);
-
-          // The message to open the Picture-in-Picture window would normally be sent
-          // immediately before this Promise resolved, so the window should have opened
-          // by now if it was going to happen.
-          for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
-            if (!win.closed) {
-              ok(false, "Found a Picture-in-Picture window unexpectedly.");
-              return;
-            }
-          }
-
-          ok(true, "No Picture-in-Picture window found.");
-        }
-
-        // Click on the very top-left pixel of the document and ensure that we
-        // see all of the mouse events for it.
-        await BrowserTestUtils.synthesizeMouseAtPoint(1, 1, {}, browser);
-        assertSawMouseEvents(browser, true);
+        await testToggleHelper(browser, videoID, canToggle);
       }
     }
   );
+}
+
+/**
+ * Test helper for the Picture-in-Picture toggle. Given a loaded page with some
+ * videos on it, tests that the toggle behaves as expected when interacted
+ * with by the mouse.
+ *
+ * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
+ * @param {String} videoID The ID of the video that has the toggle.
+ * @param {Boolean} canToggle True if we expect the toggle to be visible and
+ * clickable by the mouse for the associated video.
+ *
+ * @return Promise
+ * @resolves When the check for the toggle is complete.
+ */
+async function testToggleHelper(browser, videoID, canToggle) {
+  let { toggleClientRect, controls } = await prepareForToggleClick(
+    browser,
+    videoID
+  );
+
+  // Hover the mouse over the video to reveal the toggle.
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    `#${videoID}`,
+    {
+      type: "mousemove",
+    },
+    browser
+  );
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    `#${videoID}`,
+    {
+      type: "mouseover",
+    },
+    browser
+  );
+
+  if (canToggle) {
+    info("Waiting for toggle to become visible");
+    await toggleOpacityReachesThreshold(browser, videoID, HOVER_VIDEO_OPACITY);
+  }
+
+  info("Hovering the toggle rect now.");
+  // The toggle center, because of how it slides out, is actually outside
+  // of the bounds of a click event. For now, we move the mouse in by a
+  // hard-coded 2 pixels along the x and y axis to achieve the hover.
+  let toggleLeft = toggleClientRect.left + 2;
+  let toggleTop = toggleClientRect.top + 2;
+  await BrowserTestUtils.synthesizeMouseAtPoint(
+    toggleLeft,
+    toggleTop,
+    {
+      type: "mousemove",
+    },
+    browser
+  );
+  await BrowserTestUtils.synthesizeMouseAtPoint(
+    toggleLeft,
+    toggleTop,
+    {
+      type: "mouseover",
+    },
+    browser
+  );
+
+  if (canToggle) {
+    info("Waiting for toggle to reach full opacity");
+    await toggleOpacityReachesThreshold(browser, videoID, HOVER_TOGGLE_OPACITY);
+  }
+
+  // First, ensure that a non-primary mouse click is ignored.
+  info("Right-clicking on toggle.");
+
+  await BrowserTestUtils.synthesizeMouseAtPoint(
+    toggleLeft,
+    toggleTop,
+    { button: 2 },
+    browser
+  );
+
+  if (canToggle) {
+    // For videos without the built-in controls, we expect that all mouse events
+    // should have fired - otherwise, the events are all suppressed.
+    // Note that the right-click does not result in a "click" event firing.
+    await assertSawMouseEvents(browser, !controls, false);
+  } else {
+    // If we aren't showing the toggle, we expect all mouse events to be seen.
+    // Note that the right-click does not result in a "click" event firing.
+    await assertSawMouseEvents(browser, true, false);
+  }
+
+  // The message to open the Picture-in-Picture window would normally be sent
+  // immediately before this Promise resolved, so the window should have opened
+  // by now if it was going to happen.
+  for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
+    if (!win.closed) {
+      ok(false, "Found a Picture-in-Picture window unexpectedly.");
+      return;
+    }
+  }
+
+  ok(true, "No Picture-in-Picture window found.");
+
+  // Okay, now test with the primary mouse button.
+
+  if (canToggle) {
+    info(
+      "Clicking on toggle, and expecting a Picture-in-Picture window to open"
+    );
+    let domWindowOpened = BrowserTestUtils.domWindowOpened(null);
+    await BrowserTestUtils.synthesizeMouseAtPoint(
+      toggleLeft,
+      toggleTop,
+      {},
+      browser
+    );
+    let win = await domWindowOpened;
+    ok(win, "A Picture-in-Picture window opened.");
+    await BrowserTestUtils.closeWindow(win);
+
+    // Make sure that clicking on the toggle resulted in no mouse button events
+    // being fired in content.
+    await assertSawMouseEvents(browser, false);
+  } else {
+    info(
+      "Clicking on toggle, and expecting no Picture-in-Picture window opens"
+    );
+    await BrowserTestUtils.synthesizeMouseAtPoint(
+      toggleLeft,
+      toggleTop,
+      {},
+      browser
+    );
+
+    // If we aren't showing the toggle, we expect all mouse events to be seen.
+    await assertSawMouseEvents(browser, true);
+
+    // The message to open the Picture-in-Picture window would normally be sent
+    // immediately before this Promise resolved, so the window should have opened
+    // by now if it was going to happen.
+    for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
+      if (!win.closed) {
+        ok(false, "Found a Picture-in-Picture window unexpectedly.");
+        return;
+      }
+    }
+
+    ok(true, "No Picture-in-Picture window found.");
+  }
+
+  // Click on the very top-left pixel of the document and ensure that we
+  // see all of the mouse events for it.
+  await BrowserTestUtils.synthesizeMouseAtPoint(1, 1, {}, browser);
+  assertSawMouseEvents(browser, true);
+}
+
+/**
+ * Helper function that ensures that a provided async function
+ * causes a window to fully enter fullscreen mode.
+ *
+ * @param window (DOM Window)
+ *   The window that is expected to enter fullscreen mode.
+ * @param asyncFn (Async Function)
+ *   The async function to run to trigger the fullscreen switch.
+ * @return Promise
+ * @resolves When the fullscreen entering transition completes.
+ */
+async function promiseFullscreenEntered(window, asyncFn) {
+  let entered = BrowserTestUtils.waitForEvent(
+    window,
+    "MozDOMFullscreen:Entered"
+  );
+
+  await asyncFn();
+
+  await entered;
+
+  await BrowserTestUtils.waitForCondition(() => {
+    return !TelemetryStopwatch.running("FULLSCREEN_CHANGE_MS");
+  });
+}
+
+/**
+ * Helper function that ensures that a provided async function
+ * causes a window to fully exit fullscreen mode.
+ *
+ * @param window (DOM Window)
+ *   The window that is expected to exit fullscreen mode.
+ * @param asyncFn (Async Function)
+ *   The async function to run to trigger the fullscreen switch.
+ * @return Promise
+ * @resolves When the fullscreen exiting transition completes.
+ */
+async function promiseFullscreenExited(window, asyncFn) {
+  let exited = BrowserTestUtils.waitForEvent(window, "MozDOMFullscreen:Exited");
+
+  await asyncFn();
+
+  await exited;
+
+  await BrowserTestUtils.waitForCondition(() => {
+    return !TelemetryStopwatch.running("FULLSCREEN_CHANGE_MS");
+  });
+
+  if (AppConstants.platform == "macosx") {
+    // On macOS, the fullscreen transition takes some extra time
+    // to complete, and we don't receive events for it. We need to
+    // wait for it to complete or else input events in the next test
+    // might get eaten up. This is the best we can currently do.
+    //
+    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
 }

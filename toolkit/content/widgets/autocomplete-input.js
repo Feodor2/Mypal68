@@ -10,6 +10,9 @@
   const { AppConstants } = ChromeUtils.import(
     "resource://gre/modules/AppConstants.jsm"
   );
+  const { XPCOMUtils } = ChromeUtils.import(
+    "resource://gre/modules/XPCOMUtils.jsm"
+  );
 
   class AutocompleteInput extends HTMLInputElement {
     constructor() {
@@ -21,14 +24,18 @@
         "resource://gre/modules/PrivateBrowsingUtils.jsm"
       );
 
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "disablePopupAutohide",
+        "ui.popup.disable_autohide",
+        false
+      );
+
       this.addEventListener("input", event => {
         this.onInput(event);
       });
 
-      this.addEventListener("keypress", event => this.handleKeyPress(event), {
-        capture: true,
-        mozSystemGroup: true,
-      });
+      this.addEventListener("keydown", event => this.handleKeyDown(event));
 
       this.addEventListener(
         "compositionstart",
@@ -84,6 +91,7 @@
               this.mController.handleEnter(true);
             }
             if (!this.ignoreBlurWhileSearching) {
+              this._dontClosePopup = this.disablePopupAutohide;
               this.detachController();
             }
           }
@@ -456,6 +464,10 @@
     }
 
     closePopup() {
+      if (this._dontClosePopup) {
+        delete this._dontClosePopup;
+        return;
+      }
       this.popup.closePopup();
     }
 
@@ -485,10 +497,17 @@
       }
     }
 
-    handleKeyPress(aEvent) {
+    handleKeyDown(aEvent) {
       // Re: urlbarDeferred, see the comment in urlbarBindings.xml.
       if (aEvent.defaultPrevented && !aEvent.urlbarDeferred) {
         return false;
+      }
+
+      if (
+        typeof this.onBeforeHandleKeyDown == "function" &&
+        this.onBeforeHandleKeyDown(aEvent)
+      ) {
+        return true;
       }
 
       const isMac = AppConstants.platform == "macosx";

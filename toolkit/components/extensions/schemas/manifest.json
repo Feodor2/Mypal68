@@ -480,7 +480,8 @@
             "type": "string",
             "optional": true
           }
-        }
+        },
+        "additionalProperties": { "type": "any" }
       },
       {
         "id": "MatchPattern",

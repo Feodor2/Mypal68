@@ -30,6 +30,19 @@ class AutoScrollController {
     );
     let content = node.ownerGlobal;
 
+    // If the node is in editable document or content, we don't want to start
+    // autoscroll.
+    if (mmPaste) {
+      if (node.ownerDocument?.designMode == "on") {
+        return true;
+      }
+      const element =
+        node.nodeType === content.Node.ELEMENT_NODE ? node : node.parentElement;
+      if (element.isContentEditable) {
+        return true;
+      }
+    }
+
     while (node) {
       if (
         (node instanceof content.HTMLAnchorElement ||
@@ -216,9 +229,9 @@ class AutoScrollController {
     }
 
     Services.els.addSystemEventListener(this._global, "mousemove", this, true);
+    Services.els.addSystemEventListener(this._global, "mouseup", this, true);
     this._global.addEventListener("pagehide", this, true);
 
-    this._ignoreMouseEvents = true;
     this._startX = event.screenX;
     this._startY = event.screenY;
     this._screenX = event.screenX;
@@ -253,6 +266,12 @@ class AutoScrollController {
       Services.els.removeSystemEventListener(
         this._global,
         "mousemove",
+        this,
+        true
+      );
+      Services.els.removeSystemEventListener(
+        this._global,
+        "mouseup",
         this,
         true
       );
@@ -323,24 +342,61 @@ class AutoScrollController {
     this._scrollable.ownerGlobal.requestAnimationFrame(this.autoscrollLoop);
   }
 
-  handleEvent(event) {
-    if (event.type == "mousemove") {
-      this._screenX = event.screenX;
-      this._screenY = event.screenY;
-    } else if (event.type == "mousedown") {
+  canStartAutoScrollWith(event) {
+    if (event.defaultPrevented) {
+      return false;
+    }
+
+    for (const modifier of ["shift", "alt", "ctrl", "meta"]) {
       if (
-        !this._scrollable &&
-        !this.isAutoscrollBlocker(event.originalTarget)
+        event[modifier + "Key"] &&
+        Services.prefs.getBoolPref(
+          `general.autoscroll.prevent_to_start.${modifier}Key`,
+          false
+        )
       ) {
-        this.startScroll(event);
+        return false;
       }
-    } else if (event.type == "pagehide") {
-      if (this._scrollable) {
-        var doc = this._scrollable.ownerDocument || this._scrollable.document;
-        if (doc == event.target) {
-          this._global.sendAsyncMessage("Autoscroll:Cancel");
+    }
+    if (
+      event.getModifierState("OS") &&
+      Services.prefs.getBoolPref("general.autoscroll.prevent_to_start.osKey")
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  handleEvent(event) {
+    switch (event.type) {
+      case "mousemove":
+        this._screenX = event.screenX;
+        this._screenY = event.screenY;
+        break;
+      case "mousedown":
+        if (
+          this.canStartAutoScrollWith(event) &&
+          !this._scrollable &&
+          !this.isAutoscrollBlocker(event.originalTarget)
+        ) {
+          this.startScroll(event);
         }
-      }
+      // fallthrough
+      case "mouseup":
+        if (this._scrollable) {
+          // Middle mouse click event shouldn't be fired in web content for
+          // compatibility with Chrome.
+          event.preventClickEvent();
+        }
+        break;
+      case "pagehide":
+        if (this._scrollable) {
+          var doc = this._scrollable.ownerDocument || this._scrollable.document;
+          if (doc == event.target) {
+            this._global.sendAsyncMessage("Autoscroll:Cancel");
+          }
+        }
+        break;
     }
   }
 

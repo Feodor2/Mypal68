@@ -952,12 +952,6 @@ nsUpdateProcessor::FixUpdateDirectoryPerms(bool aShouldUseService) {
         mStartServiceArgCount = mInstallPath ? 3 : 2;
         mStartServiceArgs =
             mozilla::MakeUnique<LPCWSTR[]>(mStartServiceArgCount);
-        if (!mStartServiceArgs) {
-          LOG(
-              ("Error: Unable to allocate memory for argument pointers. Cannot "
-               "fix permissions.\n"));
-          return NS_ERROR_FAILURE;
-        }
         mStartServiceArgs[0] = L"MozillaMaintenance";
         mStartServiceArgs[1] = L"fix-update-directory-perms";
         if (mInstallPath) {

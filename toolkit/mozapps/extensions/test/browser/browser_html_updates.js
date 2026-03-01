@@ -6,7 +6,25 @@ const { AddonTestUtils } = ChromeUtils.import(
 
 AddonTestUtils.initMochitest(this);
 
+const server = AddonTestUtils.createHttpServer();
+
+const initialAutoUpdate = AddonManager.autoUpdateDefault;
+registerCleanupFunction(() => {
+  AddonManager.autoUpdateDefault = initialAutoUpdate;
+});
+
 add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.checkUpdateSecurity", false]],
+  });
+
+  registerCleanupFunction(() => {
+    const { ExtensionsUI } = ChromeUtils.import(
+      "resource:///modules/ExtensionsUI.jsm"
+    );
+    info("Cleanup any pending notification before exiting the test");
+    ExtensionsUI.pendingNotifications.delete(window);
+  });
 });
 
 function loadDetailView(win, id) {
@@ -106,17 +124,45 @@ add_task(async function testChangeAutoUpdates() {
   await extension.unload();
 });
 
-async function setupExtensionWithUpdate(id, { releaseNotes } = {}) {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.checkUpdateSecurity", false]],
+function promisePermissionPrompt(addonId) {
+  return BrowserUtils.promiseObserved(
+    "webextension-permission-prompt",
+    subject => {
+      const { info } = subject.wrappedJSObject || {};
+      return !addonId || (info.addon && info.addon.id === addonId);
+    }
+  ).then(({ subject }) => {
+    return subject.wrappedJSObject.info;
   });
+}
 
-  let server = AddonTestUtils.createHttpServer();
+async function handlePermissionPrompt({ addonId, reject = false } = {}) {
+  const info = await promisePermissionPrompt(addonId);
+  // Assert that info.addon and info.icon are defined as expected.
+  is(
+    info.addon && info.addon.id,
+    addonId,
+    "Got the AddonWrapper in the permission prompt info"
+  );
+  ok(info.icon != null, "Got an addon icon in the permission prompt info");
+
+  if (reject) {
+    info.reject();
+  } else {
+    info.resolve();
+  }
+}
+
+async function setupExtensionWithUpdate(
+  id,
+  { releaseNotes, cancelUpdate } = {}
+) {
   let serverHost = `http://localhost:${server.identity.primaryPort}`;
   let updatesPath = `/ext-updates-${id}.json`;
 
   let baseManifest = {
     name: "Updates",
+    icons: { "48": "an-icon.png" },
     applications: {
       gecko: {
         id,
@@ -129,6 +175,11 @@ async function setupExtensionWithUpdate(id, { releaseNotes } = {}) {
     manifest: {
       ...baseManifest,
       version: "2",
+      // Include a permission in the updated extension, to make
+      // sure that we trigger the permission prompt as expected
+      // (and that we can accept or cancel the update by observing
+      // the underlying observerService notification).
+      permissions: ["http://*.example.com/*"],
     },
   });
 
@@ -163,6 +214,8 @@ async function setupExtensionWithUpdate(id, { releaseNotes } = {}) {
       },
     },
   });
+
+  handlePermissionPrompt({ addonId: id, reject: cancelUpdate });
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -202,6 +255,16 @@ function installUpdate(card, expected) {
   let updated = BrowserTestUtils.waitForEvent(card, "update");
   card.querySelector('panel-item[action="install-update"]').click();
   return Promise.all([updateInstalled, updated]);
+}
+
+async function findUpdatesForAddonId(id) {
+  let addon = await AddonManager.getAddonByID(id);
+  await new Promise(resolve => {
+    addon.findUpdates(
+      { onUpdateAvailable: resolve },
+      AddonManager.UPDATE_WHEN_USER_REQUESTED
+    );
+  });
 }
 
 function assertUpdateState({
@@ -350,7 +413,7 @@ add_task(async function testReleaseNotesLoad() {
 
   info("Switch away and back to release notes");
   // Load details view.
-  let detailsBtn = tabGroup.querySelector('named-deck-button[name="details"]');
+  let detailsBtn = tabGroup.querySelector('.tab-button[name="details"]');
   let viewChanged = BrowserTestUtils.waitForEvent(deck, "view-changed");
   detailsBtn.click();
   await viewChanged;
@@ -418,7 +481,7 @@ add_task(async function testReleaseNotesError() {
 
   info("Switch away and back to release notes");
   // Load details view.
-  let detailsBtn = tabGroup.querySelector('named-deck-button[name="details"]');
+  let detailsBtn = tabGroup.querySelector('.tab-button[name="details"]');
   let viewChanged = BrowserTestUtils.waitForEvent(deck, "view-changed");
   detailsBtn.click();
   await viewChanged;
@@ -442,7 +505,7 @@ add_task(async function testReleaseNotesError() {
 
 add_task(async function testUpdateCancelled() {
   let id = "update@mochi.test";
-  let extension = await setupExtensionWithUpdate(id);
+  let extension = await setupExtensionWithUpdate(id, { cancelUpdate: true });
 
   let win = await loadInitialView("extension");
   let doc = win.document;
@@ -464,7 +527,6 @@ add_task(async function testUpdateCancelled() {
   // Force the install to be cancelled.
   let install = card.updateInstall;
   ok(install, "There was an install found");
-  install.promptHandler = Promise.reject().catch(() => {});
 
   await installUpdate(card, "update-cancelled");
 
@@ -488,9 +550,9 @@ add_task(async function testAvailableUpdates() {
 
   let win = await loadInitialView("extension");
   let doc = win.document;
+  let categoryUtils = new CategoryUtilities(win.managerWindow);
 
-  let { gCategories } = win.managerWindow;
-  let availableCat = gCategories.get("addons://updates/available");
+  let availableCat = categoryUtils.get("available-updates");
 
   ok(availableCat.hidden, "Available updates is hidden");
   is(availableCat.badgeCount, 0, "There are no updates");
@@ -524,7 +586,7 @@ add_task(async function testAvailableUpdates() {
   // Check the detail page for the first add-on.
   await loadDetailView(win, ids[0]);
   is(
-    gCategories.selected,
+    categoryUtils.getSelectedViewId(),
     "addons://list/extension",
     "The extensions category is selected"
   );
@@ -536,7 +598,7 @@ add_task(async function testAvailableUpdates() {
 
   // We're back on the updates view.
   is(
-    gCategories.selected,
+    categoryUtils.getSelectedViewId(),
     "addons://updates/available",
     "The available updates category is selected"
   );
@@ -576,4 +638,114 @@ add_task(async function testAvailableUpdates() {
 
   await closeView(win);
   await Promise.all(addons.map(addon => addon.unload()));
+});
+
+add_task(async function testUpdatesShownOnLoad() {
+  let id = "has-update@mochi.test";
+  let addon = await setupExtensionWithUpdate(id);
+
+  // Find the update for our addon.
+  AddonManager.autoUpdateDefault = false;
+  await findUpdatesForAddonId(id);
+
+  let win = await loadInitialView("extension");
+  let categoryUtils = new CategoryUtilities(win.managerWindow);
+  let updatesButton = categoryUtils.get("available-updates");
+
+  ok(!updatesButton.hidden, "The updates button is shown");
+  is(updatesButton.badgeCount, 1, "There is an update");
+
+  let loaded = waitForViewLoad(win);
+  updatesButton.click();
+  await loaded;
+
+  let cards = win.document.querySelectorAll("addon-card");
+
+  is(cards.length, 1, "There is one update card");
+
+  let card = cards[0];
+  is(card.addon.id, id, "The update is for the expected add-on");
+
+  await installUpdate(card, "update-installed");
+
+  ok(!updatesButton.hidden, "The updates button is still shown");
+  is(updatesButton.badgeCount, 0, "There are no more updates");
+
+  info("Check that the updates section is hidden when re-opened");
+  await closeView(win);
+  win = await loadInitialView("extension");
+  categoryUtils = new CategoryUtilities(win.managerWindow);
+  updatesButton = categoryUtils.get("available-updates");
+
+  ok(updatesButton.hidden, "Available updates is hidden");
+  is(updatesButton.badgeCount, 0, "There are no updates");
+
+  AddonManager.autoUpdateDefault = true;
+  await closeView(win);
+  await addon.unload();
+});
+
+add_task(async function testPromptOnBackgroundUpdateCheck() {
+  const id = "test-prompt-on-background-check@mochi.test";
+  const extension = await setupExtensionWithUpdate(id);
+
+  AddonManager.autoUpdateDefault = false;
+
+  const addon = await AddonManager.getAddonByID(id);
+  await AddonTestUtils.promiseFindAddonUpdates(
+    addon,
+    AddonManager.UPDATE_WHEN_PERIODIC_UPDATE
+  );
+  let win = await loadInitialView("extension");
+
+  let card = getAddonCard(win, id);
+
+  const promisePromptInfo = promisePermissionPrompt(id);
+  await installUpdate(card, "update-installed");
+  const promptInfo = await promisePromptInfo;
+  ok(promptInfo, "Got a permission prompt as expected");
+
+  AddonManager.autoUpdateDefault = true;
+
+  await closeView(win);
+  await extension.unload();
+});
+
+add_task(async function testNoUpdateAvailableOnUnrelatedAddonCards() {
+  let idNoUpdate = "no-update@mochi.test";
+
+  let extensionNoUpdate = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      name: "TestAddonNoUpdate",
+      applications: { gecko: { id: idNoUpdate } },
+    },
+  });
+  await extensionNoUpdate.startup();
+
+  let win = await loadInitialView("extension");
+
+  let cardNoUpdate = getAddonCard(win, idNoUpdate);
+  ok(cardNoUpdate, `Got AddonCard for ${idNoUpdate}`);
+
+  // Assert that there is not an update badge
+  assertUpdateState({ card: cardNoUpdate, shown: false, expanded: false });
+
+  // Trigger a onNewInstall event by install another unrelated addon.
+  const XPI_URL = `${SECURE_TESTROOT}../xpinstall/amosigned.xpi`;
+  let install = await AddonManager.getInstallForURL(XPI_URL);
+  await AddonManager.installAddonFromAOM(
+    gBrowser.selectedBrowser,
+    win.document.documentURIObject,
+    install
+  );
+
+  // Cancel the install used to trigger the onNewInstall install event.
+  await install.cancel();
+  // Assert that the previously installed addon isn't marked with the
+  // update available badge after installing an unrelated addon.
+  assertUpdateState({ card: cardNoUpdate, shown: false, expanded: false });
+
+  await closeView(win);
+  await extensionNoUpdate.unload();
 });

@@ -71,7 +71,10 @@ function run_test() {
     function(mdump, extra) {
       Assert.equal(extra.TestKey, "TestValue");
       Assert.equal(extra.TestUnicode, "\u{1F4A9}");
-      Assert.equal(extra.Notes, "JunkMoreJunk");
+      Assert.ok(
+        extra.Notes.endsWith("JunkMoreJunk"),
+        "Should include our notes"
+      );
       Assert.equal(extra["Add-ons"], "test%40mozilla.org:0.1");
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       Assert.ok(

@@ -24,6 +24,8 @@ class ContentBlockingAllowList final {
   static nsresult Check(nsIPrincipal* aContentBlockingAllowListPrincipal,
                         bool aIsPrivateBrowsing, bool& aIsAllowListed);
 
+  static bool Check(nsIHttpChannel* aChannel);
+
   // Computes the principal used to check the content blocking allow list for a
   // top-level document based on the document principal.  This function is used
   // right after setting up the document principal.
@@ -39,12 +41,11 @@ class ContentBlockingAllowList final {
   // Check().
   static ContentBlockingAllowListCache& Cache();
 
-  // Utility APIs for AntiTrackingCommon.
+  // Utility APIs for ContentBlocking.
   static bool Check(nsIPrincipal* aTopWinPrincipal, bool aIsPrivateBrowsing);
   static bool Check(nsPIDOMWindowInner* aWindow);
-  static bool Check(nsIHttpChannel* aChannel);
 
-  friend class AntiTrackingCommon;
+  friend class ContentBlocking;
 };
 
 }  // namespace mozilla

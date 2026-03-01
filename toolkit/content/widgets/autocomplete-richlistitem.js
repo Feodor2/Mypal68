@@ -62,7 +62,7 @@
       }
 
       this.textContent = "";
-      this.appendChild(MozXULElement.parseXULToFragment(this._markup));
+      this.appendChild(this.constructor.fragment);
       this.initializeAttributeInheritance();
 
       this._boundaryCutoff = null;
@@ -83,7 +83,7 @@
       };
     }
 
-    get _markup() {
+    static get markup() {
       return `
       <image class="ac-type-icon"/>
       <image class="ac-site-icon"/>
@@ -588,7 +588,7 @@
       };
     }
 
-    get _markup() {
+    static get markup() {
       return `
       <image class="ac-type-icon"/>
       <image class="ac-site-icon"/>
@@ -659,7 +659,7 @@
       }
 
       this.textContent = "";
-      this.appendChild(MozXULElement.parseXULToFragment(this._markup));
+      this.appendChild(this.constructor.fragment);
       this.initializeAttributeInheritance();
       this._adjustAcItem();
     }
@@ -673,7 +673,7 @@
       };
     }
 
-    get _markup() {
+    static get markup() {
       return `
       <div xmlns="http://www.w3.org/1999/xhtml"
            xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"

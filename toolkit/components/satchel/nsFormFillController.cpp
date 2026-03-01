@@ -17,6 +17,7 @@
 #include "mozilla/dom/PageTransitionEvent.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
+#include "nsCRT.h"
 #include "nsIFormAutoComplete.h"
 #include "nsIInputListAutoComplete.h"
 #include "nsIAutoCompleteSimpleResult.h"
@@ -664,7 +665,7 @@ NS_IMETHODIMP
 nsFormFillController::GetNoRollupOnEmptySearch(bool* aNoRollupOnEmptySearch) {
   if (mFocusedInput &&
       (mPwmgrInputs.Get(mFocusedInput) ||
-       mFocusedInput->ControlType() == NS_FORM_INPUT_PASSWORD)) {
+       mFocusedInput->ControlType() == FormControlType::InputPassword)) {
     // Don't close the login popup when the field is cleared (bug 1534896).
     *aNoRollupOnEmptySearch = true;
   } else {
@@ -697,7 +698,7 @@ nsFormFillController::StartSearch(const nsAString& aSearchString,
   // focused node.
   if (mFocusedInput &&
       (mPwmgrInputs.Get(mFocusedInput) ||
-       mFocusedInput->ControlType() == NS_FORM_INPUT_PASSWORD)) {
+       mFocusedInput->ControlType() == FormControlType::InputPassword)) {
     MOZ_LOG(sLogger, LogLevel::Debug, ("StartSearch: login field"));
 
     // Handle the case where a password field is focused but
@@ -836,8 +837,6 @@ nsFormFillController::HandleEvent(Event* aEvent) {
       return MouseDown(aEvent);
     case eKeyDown:
       return KeyDown(aEvent);
-    case eKeyPress:
-      return KeyPress(aEvent);
     case eEditorInput: {
       nsCOMPtr<nsINode> input = do_QueryInterface(aEvent->GetComposedTarget());
       if (!IsTextControl(input)) {
@@ -952,7 +951,7 @@ void nsFormFillController::MaybeStartControllingInput(
 
   bool isPwmgrInput = false;
   if (mPwmgrInputs.Get(aInput) ||
-      aInput->ControlType() == NS_FORM_INPUT_PASSWORD) {
+      aInput->ControlType() == FormControlType::InputPassword) {
     isPwmgrInput = true;
   }
 
@@ -983,7 +982,7 @@ nsresult nsFormFillController::HandleFocus(HTMLInputElement* aInput) {
   // multiple input forms and the fact that a mousedown into an already focused
   // field does not trigger another focus.
 
-  if (mFocusedInput->ControlType() != NS_FORM_INPUT_PASSWORD) {
+  if (mFocusedInput->ControlType() != FormControlType::InputPassword) {
     return NS_OK;
   }
 
@@ -1025,6 +1024,8 @@ nsresult nsFormFillController::KeyDown(Event* aEvent) {
   }
 
   bool cancel = false;
+  bool unused = false;
+
   uint32_t k = keyEvent->KeyCode();
   switch (k) {
     case KeyboardEvent_Binding::DOM_VK_RETURN: {
@@ -1032,40 +1033,6 @@ nsresult nsFormFillController::KeyDown(Event* aEvent) {
       controller->HandleEnter(false, aEvent, &cancel);
       break;
     }
-  }
-
-  if (cancel) {
-    aEvent->PreventDefault();
-    // Don't let the page see the RETURN event when the popup is open
-    // (indicated by cancel=true) so sites don't manually submit forms
-    // (e.g. via submit.click()) without the autocompleted value being filled.
-    // Bug 286933 will fix this for other key events.
-    if (k == KeyboardEvent_Binding::DOM_VK_RETURN) {
-      aEvent->StopPropagation();
-    }
-  }
-  return NS_OK;
-}
-
-nsresult nsFormFillController::KeyPress(Event* aEvent) {
-  NS_ASSERTION(mController, "should have a controller!");
-
-  mPasswordPopupAutomaticallyOpened = false;
-
-  if (!IsFocusedInputControlled()) {
-    return NS_OK;
-  }
-
-  RefPtr<KeyboardEvent> keyEvent = aEvent->AsKeyboardEvent();
-  if (!keyEvent) {
-    return NS_ERROR_FAILURE;
-  }
-
-  bool cancel = false;
-  bool unused = false;
-
-  uint32_t k = keyEvent->KeyCode();
-  switch (k) {
     case KeyboardEvent_Binding::DOM_VK_DELETE:
 #ifndef XP_MACOSX
     {
@@ -1147,6 +1114,13 @@ nsresult nsFormFillController::KeyPress(Event* aEvent) {
 
   if (cancel) {
     aEvent->PreventDefault();
+    // Don't let the page see the RETURN event when the popup is open
+    // (indicated by cancel=true) so sites don't manually submit forms
+    // (e.g. via submit.click()) without the autocompleted value being filled.
+    // Bug 286933 will fix this for other key events.
+    if (k == KeyboardEvent_Binding::DOM_VK_RETURN) {
+      aEvent->StopPropagation();
+    }
   }
 
   return NS_OK;

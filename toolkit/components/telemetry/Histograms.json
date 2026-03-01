@@ -6727,15 +6727,6 @@
     "kind": "boolean",
     "description": "Deleted or to-be-reused innerwindow which has had mutation event listeners."
   },
-  "INNERWINDOWS_WITH_TEXT_EVENT_LISTENERS": {
-    "record_in_processes": ["content"],
-    "alert_emails": ["mnakano@mozilla.com"],
-    "bug_numbers": [1506434,1288640],
-    "expires_in_version": "67",
-    "kind": "boolean",
-    "releaseChannelCollection": "opt-out",
-    "description": "Deleted or to-be-reused innerwindow which has had text event listeners in the default group."
-  },
   "ENCODING_OVERRIDE_SITUATION": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["hsivonen@mozilla.com"],
@@ -9084,15 +9075,6 @@
     "description": "Number of times the DevTools DOM Inspector has been opened.",
     "releaseChannelCollection": "opt-out"
   },
-  "DEVTOOLS_PAINTFLASHING_OPENED_COUNT": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dev-developer-tools@lists.mozilla.org"],
-    "expires_in_version": "never",
-    "kind": "count",
-    "bug_numbers": [1247985],
-    "description": "Number of times the DevTools Paint Flashing has been opened via the toolbox button.",
-    "releaseChannelCollection": "opt-out"
-  },
   "DEVTOOLS_RESPONSIVE_OPENED_COUNT": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["dev-developer-tools@lists.mozilla.org"],
@@ -9421,17 +9403,6 @@
     "alert_emails": ["dev-developer-tools@lists.mozilla.org", "jryans@mozilla.com"],
     "releaseChannelCollection": "opt-out",
     "description": "How long has the DOM inspector been active (seconds)"
-  },
-  "DEVTOOLS_PAINTFLASHING_TIME_ACTIVE_SECONDS": {
-    "record_in_processes": ["main", "content"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000000,
-    "n_buckets": 100,
-    "bug_numbers": [1446496],
-    "alert_emails": ["dev-developer-tools@lists.mozilla.org", "jryans@mozilla.com"],
-    "releaseChannelCollection": "opt-out",
-    "description": "How long has paint flashing been active (seconds)"
   },
   "DEVTOOLS_RESPONSIVE_TIME_ACTIVE_SECONDS": {
     "record_in_processes": ["main", "content"],
@@ -11490,21 +11461,6 @@
     "kind": "flag",
     "description": "Tracks situations when the user opts for auto-detecting the language of a page"
   },
-  "PERMISSIONS_REMIGRATION_COMPARISON": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["nika@thelayzells.com"],
-    "expires_in_version": "44",
-    "kind": "enumerated",
-    "n_values": 10,
-    "description": "Reports a comparison between row count of original and re-migration of the v7 permissions DB. 0=New == 0, 1=New < Old, 2=New == Old, 3=New > Old"
-  },
-  "PERMISSIONS_MIGRATION_7_ERROR": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["nika@thelayzells.com"],
-    "expires_in_version": "44",
-    "kind": "boolean",
-    "description": "Was there an error while performing the v7 permissions DB migration?"
-  },
   "VIDEO_EME_REQUEST_SUCCESS_LATENCY_MS": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["jya@mozilla.com", "drno@ohlmeier.org"],
@@ -13218,19 +13174,6 @@
     "labels": ["NeverBlocked", "AllowedAfterBlocked", "NeverAllowed"],
     "bug_numbers": [1512277],
     "description": "The number of times an AudioContext is allowed to start after being blocked, or the number of AudioContexts attempting to start which were never blocked or never allowed.",
-    "releaseChannelCollection": "opt-out"
-  },
-  "AUTOPLAY_SITES_SETTING_CHANGE": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": [
-      "alwu@mozilla.com",
-      "cpearce@mozilla.com"
-    ],
-    "expires_in_version": "71",
-    "kind": "categorical",
-    "labels": ["AddAllow", "RemoveAllow", "AddBlock", "RemoveBlock"],
-    "bug_numbers": [1520361],
-    "description": "The number of times the user adds a site to the allow list, removes a site from the allow list, adds a site to the block list and removes a site from the block list.",
     "releaseChannelCollection": "opt-out"
   },
   "MEDIA_PLAYED_TIME_AFTER_AUTOPLAY_BLOCKED": {

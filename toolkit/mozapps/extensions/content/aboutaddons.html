@@ -30,13 +30,27 @@
     <script defer src="chrome://mozapps/content/extensions/aboutaddons.js"></script>
   </head>
   <body>
-    <addon-page-header id="page-header" page-options-id="page-options"></addon-page-header>
-    <addon-page-options id="page-options"></addon-page-options>
+    <div id="full">
+      <div id="sidebar">
+        <categories-box id="categories" orientation="vertical">
+          <button is="category-button" viewid="addons://list/extension" class="category" role="tab" name="extension"></button>
+          <button is="category-button" viewid="addons://list/theme" class="category" role="tab" name="theme"></button>
+          <button is="category-button" viewid="addons://list/plugin" class="category" role="tab" name="plugin"></button>
+          <button is="category-button" viewid="addons://list/dictionary" class="category" role="tab" name="dictionary" hidden default-hidden></button>
+          <button is="category-button" viewid="addons://list/locale" class="category" role="tab" name="locale" hidden default-hidden></button>
+          <button is="category-button" viewid="addons://updates/available" class="category" role="tab" name="available-updates" hidden default-hidden></button>
+          <button is="category-button" viewid="addons://updates/recent" class="category" role="tab" name="recent-updates" hidden default-hidden></button>
+        </categories-box>
+        <div class="spacer"></div>
+        <sidebar-footer></sidebar-footer>
+      </div>
+      <div id="content">
+        <addon-page-header id="page-header" page-options-id="page-options"></addon-page-header>
+        <addon-page-options id="page-options"></addon-page-options>
 
-    <message-bar-stack id="xz-reports-messages" reverse max-message-bar-count="3">
-    </message-bar-stack>
-
-    <div id="main"></div>
+        <div id="main"></div>
+      </div>
+    </div>
 
     <!-- Include helpers for the inline options browser select and context menus. -->
     <content-select-dropdown></content-select-dropdown>
@@ -45,7 +59,7 @@
     <template name="addon-page-header">
       <div class="sticky-container">
         <div class="main-heading">
-          <button class="back-button" action="go-back" data-l10n-id="go-back-button" hidden></button>
+          <button class="back-button" action="go-back" data-l10n-id="header-back-button" hidden></button>
           <h1 class="header-name"></h1>
           <div class="spacer"></div>
           <addon-updates-message id="updates-message" hidden></addon-updates-message>
@@ -126,14 +140,12 @@
     </template>
 
     <template name="addon-details">
-      <div class="deck-tab-group">
-        <named-deck-button-group>
-          <named-deck-button deck="details-deck" name="details" data-l10n-id="details-addon-button"></named-deck-button>
-          <named-deck-button deck="details-deck" name="preferences" data-l10n-id="preferences-addon-button"></named-deck-button>
-          <named-deck-button deck="details-deck" name="permissions" data-l10n-id="permissions-addon-button"></named-deck-button>
-          <named-deck-button deck="details-deck" name="release-notes" data-l10n-id="release-notes-addon-button"></named-deck-button>
-        </named-deck-button-group>
-      </div>
+      <button-group class="tab-group">
+        <button is="named-deck-button" deck="details-deck" name="details" data-l10n-id="details-addon-button" class="tab-button"></button>
+        <button is="named-deck-button" deck="details-deck" name="preferences" data-l10n-id="preferences-addon-button" class="tab-button"></button>
+        <button is="named-deck-button" deck="details-deck" name="permissions" data-l10n-id="permissions-addon-button" class="tab-button"></button>
+        <button is="named-deck-button" deck="details-deck" name="release-notes" data-l10n-id="release-notes-addon-button" class="tab-button"></button>
+      </button-group>
       <named-deck id="details-deck">
         <section name="details">
           <div class="addon-detail-description"></div>

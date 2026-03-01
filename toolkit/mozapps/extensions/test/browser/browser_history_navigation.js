@@ -60,9 +60,10 @@ function check_state(canGoBack, canGoForward) {
 
 function is_in_list(aManager, view, canGoBack, canGoForward) {
   var doc = aManager.document;
+  var categoryUtils = new CategoryUtilities(aManager);
 
   is(
-    doc.getElementById("categories").selectedItem.value,
+    categoryUtils.getSelectedViewId(),
     view,
     "Should be on the right category"
   );
@@ -83,9 +84,10 @@ function is_in_list(aManager, view, canGoBack, canGoForward) {
 
 function is_in_detail(aManager, view, canGoBack, canGoForward) {
   var doc = aManager.document;
+  var categoryUtils = new CategoryUtilities(aManager);
 
   is(
-    doc.getElementById("categories").selectedItem.value,
+    categoryUtils.getSelectedViewId(),
     view,
     "Should be on the right category"
   );
@@ -134,14 +136,11 @@ function wait_for_page_show(browser) {
 // category is selected
 add_task(async function test_navigate_history() {
   let aManager = await open_manager("addons://list/extension");
+  let categoryUtils = new CategoryUtilities(aManager);
   info("Part 1");
   is_in_list(aManager, "addons://list/extension", false, false);
 
-  EventUtils.synthesizeMouseAtCenter(
-    aManager.document.getElementById("category-plugin"),
-    {},
-    aManager
-  );
+  EventUtils.synthesizeMouseAtCenter(categoryUtils.get("plugin"), {}, aManager);
 
   aManager = await wait_for_view_load(aManager);
   info("Part 2");
@@ -253,14 +252,11 @@ add_task(async function test_keyboard_history_navigation() {
   }
 
   let aManager = await open_manager("addons://list/extension");
+  let categoryUtils = new CategoryUtilities(aManager);
   info("Part 1");
   is_in_list(aManager, "addons://list/extension", false, false);
 
-  EventUtils.synthesizeMouseAtCenter(
-    aManager.document.getElementById("category-plugin"),
-    {},
-    aManager
-  );
+  EventUtils.synthesizeMouseAtCenter(categoryUtils.get("plugin"), {}, aManager);
 
   aManager = await wait_for_view_load(aManager);
   info("Part 2");
@@ -302,11 +298,12 @@ add_task(async function test_keyboard_history_navigation() {
 // Tests that opening a custom first view only stores a single history entry
 add_task(async function test_single_history_entry() {
   let aManager = await open_manager("addons://list/plugin");
+  let categoryUtils = new CategoryUtilities(aManager);
   info("Part 1");
   is_in_list(aManager, "addons://list/plugin", false, false);
 
   EventUtils.synthesizeMouseAtCenter(
-    aManager.document.getElementById("category-extension"),
+    categoryUtils.get("extension"),
     {},
     aManager
   );
@@ -425,14 +422,11 @@ add_task(async function test_navigate_back_from_website() {
 // Tests that refreshing a list view does not affect the history
 add_task(async function test_refresh_listview_donot_add_history_entries() {
   let aManager = await open_manager("addons://list/extension");
+  let categoryUtils = new CategoryUtilities(aManager);
   info("Part 1");
   is_in_list(aManager, "addons://list/extension", false, false);
 
-  EventUtils.synthesizeMouseAtCenter(
-    aManager.document.getElementById("category-plugin"),
-    {},
-    aManager
-  );
+  EventUtils.synthesizeMouseAtCenter(categoryUtils.get("plugin"), {}, aManager);
 
   aManager = await wait_for_view_load(aManager);
   info("Part 2");

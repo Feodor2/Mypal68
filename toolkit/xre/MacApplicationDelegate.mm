@@ -121,7 +121,7 @@ void ProcessPendingGetURLAppleEvents() {
 @implementation MacApplicationDelegate
 
 - (id)init {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if ((self = [super init])) {
     NSAppleEventManager* aeMgr = [NSAppleEventManager sharedAppleEventManager];
@@ -151,7 +151,7 @@ void ProcessPendingGetURLAppleEvents() {
   }
   return self;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(nil);
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (void)dealloc {
@@ -184,7 +184,7 @@ void ProcessPendingGetURLAppleEvents() {
 // The method that NSApplication calls when documents are requested to be opened.
 // It will be called once for each selected document.
 - (BOOL)application:(NSApplication*)theApplication openFile:(NSString*)filename {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSURL* url = [NSURL fileURLWithPath:filename];
   if (!url) return NO;
@@ -220,7 +220,7 @@ void ProcessPendingGetURLAppleEvents() {
 
   return NO;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 // The method that NSApplication calls when documents are requested to be printed

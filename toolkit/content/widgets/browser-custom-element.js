@@ -1499,6 +1499,12 @@
         case "DOMTitleChanged":
           this._contentTitle = data.title;
           break;
+        case "PreFullZoomChange": {
+          let event = document.createEvent("Events");
+          event.initEvent("PreFullZoomChange", true, false);
+          this.dispatchEvent(event);
+          break;
+        }
 
         case "FullZoomChange": {
           this._fullZoom = data.value;
@@ -1507,6 +1513,13 @@
           this.dispatchEvent(event);
           break;
         }
+
+        case "PostFullZoomChange": {
+          let event = document.createEvent("Events");
+          event.initEvent("PostFullZoomChange", true, false);
+          this.dispatchEvent(event);
+          break;
+      }
 
         case "TextZoomChange": {
           this._textZoom = data.value;
@@ -1828,6 +1841,10 @@
           }
           case "mouseup":
           case "mousedown":
+            // The following mouse click/auxclick event on the autoscroller
+            // shouldn't be fired in web content for compatibility with Chrome.
+            aEvent.preventClickEvent();
+          // fallthrough
           case "contextmenu": {
             if (!this._ignoreMouseEvents) {
               // Use a timeout to prevent the mousedown from opening the popup again.
@@ -1844,6 +1861,9 @@
             break;
           }
           case "popuphidden": {
+            // TODO: When the autoscroller is closed by clicking outside of it,
+            //       we need to prevent following click event for compatibility
+            //       with Chrome.  However, there is no way to do that for now.
             this._autoScrollPopup.removeEventListener(
               "popuphidden",
               this,

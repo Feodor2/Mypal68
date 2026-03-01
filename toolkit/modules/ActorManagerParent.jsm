@@ -353,11 +353,16 @@ let LEGACY_ACTORS = {
     child: {
       module: "resource://gre/actors/ZoomChild.jsm",
       events: {
+        PreFullZoomChange: {},
         FullZoomChange: {},
         TextZoomChange: {},
         ZoomChangeUsingMouseWheel: {},
+        mozupdatedremoteframedimensions: {
+          capture: true,
+          mozSystemGroup: true,
+        },
       },
-      messages: ["FullZoom", "TextZoom"],
+      messages: ["PreFullZoomChange", "FullZoom", "TextZoom", "PostFullZoomChange"],
     },
   },
 };

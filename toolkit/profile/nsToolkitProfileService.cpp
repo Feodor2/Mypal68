@@ -285,7 +285,6 @@ nsToolkitProfile::Lock(nsIProfileUnlocker** aUnlocker,
   }
 
   RefPtr<nsToolkitProfileLock> lock = new nsToolkitProfileLock();
-  if (!lock) return NS_ERROR_OUT_OF_MEMORY;
 
   nsresult rv = lock->Init(this, aUnlocker);
   if (NS_FAILED(rv)) return rv;
@@ -877,7 +876,6 @@ nsresult nsToolkitProfileService::Init() {
     }
 
     currentProfile = new nsToolkitProfile(name, rootDir, localDir, true);
-    NS_ENSURE_TRUE(currentProfile, NS_ERROR_OUT_OF_MEMORY);
 
     // If a user has modified the ini file path it may make for a valid profile
     // path but not match what we would have serialised and so may not match
@@ -956,7 +954,6 @@ nsToolkitProfileService::GetStartWithLastProfile(bool* aResult) {
 NS_IMETHODIMP
 nsToolkitProfileService::GetProfiles(nsISimpleEnumerator** aResult) {
   *aResult = new ProfileEnumerator(mProfiles.getFirst());
-  if (!*aResult) return NS_ERROR_OUT_OF_MEMORY;
 
   NS_ADDREF(*aResult);
   return NS_OK;
@@ -1684,7 +1681,6 @@ nsresult NS_LockProfilePath(nsIFile* aPath, nsIFile* aTempPath,
                             nsIProfileUnlocker** aUnlocker,
                             nsIProfileLock** aResult) {
   RefPtr<nsToolkitProfileLock> lock = new nsToolkitProfileLock();
-  if (!lock) return NS_ERROR_OUT_OF_MEMORY;
 
   nsresult rv = lock->Init(aPath, aTempPath, aUnlocker);
   if (NS_FAILED(rv)) return rv;
@@ -1811,7 +1807,6 @@ nsToolkitProfileService::CreateProfile(nsIFile* aRootDir,
 
   nsCOMPtr<nsIToolkitProfile> profile =
       new nsToolkitProfile(aName, rootDir, localDir, false);
-  if (!profile) return NS_ERROR_OUT_OF_MEMORY;
 
   if (aName.Equals(DEV_EDITION_NAME)) {
     mDevEditionDefault = profile;
@@ -2023,12 +2018,8 @@ nsToolkitProfileFactory::CreateInstance(nsISupports* aOuter, const nsID& aIID,
   return profileService->QueryInterface(aIID, aResult);
 }
 
-NS_IMETHODIMP
-nsToolkitProfileFactory::LockFactory(bool aVal) { return NS_OK; }
-
 nsresult NS_NewToolkitProfileFactory(nsIFactory** aResult) {
   *aResult = new nsToolkitProfileFactory();
-  if (!*aResult) return NS_ERROR_OUT_OF_MEMORY;
 
   NS_ADDREF(*aResult);
   return NS_OK;
@@ -2036,7 +2027,6 @@ nsresult NS_NewToolkitProfileFactory(nsIFactory** aResult) {
 
 nsresult NS_NewToolkitProfileService(nsToolkitProfileService** aResult) {
   nsToolkitProfileService* profileService = new nsToolkitProfileService();
-  if (!profileService) return NS_ERROR_OUT_OF_MEMORY;
   nsresult rv = profileService->Init();
   if (NS_FAILED(rv)) {
     NS_ERROR("nsToolkitProfileService::Init failed!");

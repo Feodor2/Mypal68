@@ -123,9 +123,11 @@ var SearchUtils = {
 
   /**
    * Wrapper function for nsIIOService::newChannel.
+   *
    * @param {string|nsIURI} url
-   *        The URL string from which to create an nsIChannel.
-   * @returns an nsIChannel object, or null if the url is invalid.
+   *   The URL string from which to create an nsIChannel.
+   * @returns {nsIChannel}
+   *   an nsIChannel object, or null if the url is invalid.
    */
   makeChannel(url) {
     try {
@@ -135,7 +137,7 @@ var SearchUtils = {
         null /* loadingNode */,
         Services.scriptSecurityManager.getSystemPrincipal(),
         null /* triggeringPrincipal */,
-        Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+        Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
         Ci.nsIContentPolicy.TYPE_OTHER
       );
     } catch (ex) {}

@@ -219,7 +219,7 @@ add_task(async function testCardRerender() {
   card = doc.querySelector("addon-card");
 
   let browserAdded = waitOptionsBrowserInserted();
-  card.querySelector('named-deck-button[name="preferences"]').click();
+  card.querySelector('.tab-button[name="preferences"]').click();
   await browserAdded;
 
   is(
@@ -245,7 +245,7 @@ add_task(async function testCardRerender() {
 
   // Load the permissions tab again.
   browserAdded = waitOptionsBrowserInserted();
-  card.querySelector('named-deck-button[name="preferences"]').click();
+  card.querySelector('.tab-button[name="preferences"]').click();
   await browserAdded;
 
   // Switching to preferences will create a new browser element.
@@ -408,7 +408,7 @@ add_task(async function testUpgradeTemporary() {
 
   card = doc.querySelector("addon-card");
   let browserAdded = waitOptionsBrowserInserted();
-  card.querySelector('named-deck-button[name="preferences"]').click();
+  card.querySelector('.tab-button[name="preferences"]').click();
   await browserAdded;
 
   await firstExtension.awaitMessage("options-loaded");
@@ -470,7 +470,7 @@ add_task(async function testReloadExtension() {
   is(deck.selectedViewName, "details", "Details load first");
 
   let browserAdded = waitOptionsBrowserInserted();
-  card.querySelector('named-deck-button[name="preferences"]').click();
+  card.querySelector('.tab-button[name="preferences"]').click();
   await browserAdded;
 
   is(deck.selectedViewName, "preferences", "Preferences are shown");

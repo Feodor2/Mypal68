@@ -52,6 +52,7 @@ toolkit.jar:
   skin/classic/global/pictureinpicture/pause.svg           (../../shared/pictureinpicture/pause.svg)
   skin/classic/global/pictureinpicture/play.svg            (../../shared/pictureinpicture/play.svg)
   skin/classic/global/icons/resizer.svg                    (../../shared/icons/resizer.svg)
+  skin/classic/global/icons/settings.svg                   (../../shared/icons/settings.svg)
   skin/classic/global/icons/shortcut.svg                   (../../shared/icons/shortcut.svg)
   skin/classic/global/icons/spinner-arrow-down.svg         (../../shared/icons/spinner-arrow-down.svg)
   skin/classic/global/icons/spinner-arrow-up.svg           (../../shared/icons/spinner-arrow-up.svg)
@@ -118,3 +119,5 @@ toolkit.jar:
   skin/classic/global/plugins/contentPluginStripe.png       (../../shared/plugins/contentPluginStripe.png)
   skin/classic/global/pictureinpicture/player.css           (../../shared/pictureinpicture/player.css)
   skin/classic/global/media/pictureinpicture.svg            (../../shared/media/pictureinpicture.svg)
+  skin/classic/global/pictureinpicture/audio.svg            (../../shared/pictureinpicture/audio.svg)
+  skin/classic/global/pictureinpicture/audio-mute.svg       (../../shared/pictureinpicture/audio-mute.svg)

@@ -1060,9 +1060,6 @@ nsSingletonFactory::CreateInstance(nsISupports* aOuter, const nsIID& aIID,
   return mSingleton->QueryInterface(aIID, aResult);
 }
 
-NS_IMETHODIMP
-nsSingletonFactory::LockFactory(bool) { return NS_OK; }
-
 /**
  * Set our windowcreator on the WindowWatcher service.
  */
@@ -2249,16 +2246,6 @@ static void MOZ_gdk_display_close(GdkDisplay* display) {
     g_free(theme_name);
   }
 
-#    ifdef MOZ_WIDGET_GTK
-  // A workaround for https://bugzilla.gnome.org/show_bug.cgi?id=703257
-  if (gtk_check_version(3, 9, 8) != NULL) skip_display_close = true;
-#    endif
-
-  // Get a (new) Pango context that holds a reference to the fontmap that
-  // GTK has been using.  gdk_pango_context_get() must be called while GTK
-  // has a default display.
-  PangoContext* pangoContext = gdk_pango_context_get();
-
   bool buggyCairoShutdown = cairo_version() < CAIRO_VERSION_ENCODE(1, 4, 0);
 
   if (!buggyCairoShutdown) {
@@ -2268,26 +2255,6 @@ static void MOZ_gdk_display_close(GdkDisplay* display) {
     // references to Display objects (see bug 469831).
     if (!skip_display_close) gdk_display_close(display);
   }
-
-  // Clean up PangoCairo's default fontmap.
-  // This pango_fc_font_map_shutdown call (and the associated code to
-  // get the font map) really shouldn't be needed anymore, except that
-  // it's needed to avoid having cairo_debug_reset_static_data fatally
-  // assert if we've leaked other things that hold on to the fontmap,
-  // which is something that currently happens in mochitest-plugins.
-  // Even if it didn't happen in mochitest-plugins, we probably want to
-  // avoid the crash-on-leak problem since it makes it harder to use
-  // many of our leak tools to debug leaks.
-
-  // This doesn't take a reference.
-  PangoFontMap* fontmap = pango_context_get_font_map(pangoContext);
-  // Do some shutdown of the fontmap, which releases the fonts, clearing a
-  // bunch of circular references from the fontmap through the fonts back to
-  // itself.  The shutdown that this does is much less than what's done by
-  // the fontmap's finalize, though.
-  if (PANGO_IS_FC_FONT_MAP(fontmap))
-    pango_fc_font_map_shutdown(PANGO_FC_FONT_MAP(fontmap));
-  g_object_unref(pangoContext);
 
   // Tell PangoCairo to release its default fontmap.
   pango_cairo_font_map_set_default(nullptr);
@@ -4148,7 +4115,6 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   // XRE_mainRun wants to initialize the JSContext after reading user prefs.
 
   mScopedXPCOM = MakeUnique<ScopedXPCOMStartup>();
-  if (!mScopedXPCOM) return 1;
 
   rv = mScopedXPCOM->Initialize(/* aInitJSContext = */ false);
   NS_ENSURE_SUCCESS(rv, 1);

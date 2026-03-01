@@ -395,9 +395,6 @@ inline UniquePtr<wchar_t[]> MakeCommandLine(int argc, wchar_t** argv,
   }
 
   auto s = MakeUnique<wchar_t[]>(len);
-  if (!s) {
-    return s;
-  }
 
   int totalArgc = argc + aArgcExtra;
 

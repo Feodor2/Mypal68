@@ -325,7 +325,7 @@ ifndef MOZ_PACKAGER_FORMAT
 endif
 
 ifneq (android,$(MOZ_WIDGET_TOOLKIT))
-  JAR_COMPRESSION ?= none
+  #JAR_COMPRESSION ?= none
 endif
 
 # A js binary is needed to perform verification of JavaScript minification.

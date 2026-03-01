@@ -26,6 +26,7 @@
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
 #include "nsGlobalWindowOuter.h"
+#include "nsIContentInlines.h"
 #include "nsIDocShell.h"
 #include "nsIFormControl.h"
 #include "nsIScrollableFrame.h"
@@ -609,13 +610,13 @@ void SessionStoreUtils::CollectFromInputElement(Document& aDocument,
     nsCOMPtr<nsIFormControl> formControl =
         do_QueryInterface(inputlist->Item(i));
     if (formControl) {
-      uint8_t controlType = formControl->ControlType();
-      if (controlType == NS_FORM_INPUT_PASSWORD ||
-          controlType == NS_FORM_INPUT_HIDDEN ||
-          controlType == NS_FORM_INPUT_BUTTON ||
-          controlType == NS_FORM_INPUT_IMAGE ||
-          controlType == NS_FORM_INPUT_SUBMIT ||
-          controlType == NS_FORM_INPUT_RESET) {
+      auto controlType = formControl->ControlType();
+      if (controlType == FormControlType::InputPassword ||
+          controlType == FormControlType::InputHidden ||
+          controlType == FormControlType::InputButton ||
+          controlType == FormControlType::InputImage ||
+          controlType == FormControlType::InputSubmit ||
+          controlType == FormControlType::InputReset) {
         continue;
       }
     }
@@ -635,15 +636,15 @@ void SessionStoreUtils::CollectFromInputElement(Document& aDocument,
       continue;
     }
 
-    if (input->ControlType() == NS_FORM_INPUT_CHECKBOX ||
-        input->ControlType() == NS_FORM_INPUT_RADIO) {
+    if (input->ControlType() == FormControlType::InputCheckbox ||
+        input->ControlType() == FormControlType::InputRadio) {
       bool checked = input->Checked();
       if (checked == input->DefaultChecked()) {
         continue;
       }
       AppendValueToCollectedData(input, id, checked, aGeneratedCount,
                                  std::forward<ArgsT>(args)...);
-    } else if (input->ControlType() == NS_FORM_INPUT_FILE) {
+    } else if (input->ControlType() == FormControlType::InputFile) {
       IgnoredErrorResult rv;
       nsTArray<nsString> result;
       input->MozGetFileNameArray(result, rv);
@@ -752,7 +753,7 @@ static void CollectCurrentFormData(JSContext* aCx, Document& aDocument,
                                               aRetVal);
 
   Element* bodyElement = aDocument.GetBody();
-  if (aDocument.HasFlag(NODE_IS_EDITABLE) && bodyElement) {
+  if (bodyElement && bodyElement->IsInDesignMode()) {
     bodyElement->GetInnerHTML(aRetVal.SetValue().mInnerHTML.Construct(),
                               IgnoreErrors());
   }
@@ -881,7 +882,7 @@ static void SetElementAsObject(JSContext* aCx, Element* aElement,
                                JS::Handle<JS::Value> aObject) {
   RefPtr<HTMLInputElement> input = HTMLInputElement::FromNode(aElement);
   if (input) {
-    if (input->ControlType() == NS_FORM_INPUT_FILE) {
+    if (input->ControlType() == FormControlType::InputFile) {
       CollectedFileListValue value;
       if (value.Init(aCx, aObject)) {
         SetElementAsFiles(input, value);
@@ -951,7 +952,7 @@ static void SetRestoreData(JSContext* aCx, Element* aElement,
 MOZ_CAN_RUN_SCRIPT
 static void SetInnerHTML(Document& aDocument, const CollectedData& aData) {
   RefPtr<Element> bodyElement = aDocument.GetBody();
-  if (aDocument.HasFlag(NODE_IS_EDITABLE) && bodyElement) {
+  if (bodyElement && bodyElement->IsInDesignMode()) {
     IgnoredErrorResult rv;
     bodyElement->SetInnerHTML(aData.mInnerHTML.Value(),
                               aDocument.NodePrincipal(), rv);

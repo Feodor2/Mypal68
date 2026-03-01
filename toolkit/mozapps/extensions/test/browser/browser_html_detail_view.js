@@ -75,7 +75,7 @@ function checkOptions(doc, options, expectedOptions) {
     is(input.checked, expected.checked, "The checked property is correct");
     Assert.deepEqual(
       doc.l10n.getAttributes(text),
-      { id: expected.label },
+      { id: expected.label, args: null },
       "The label has the right text"
     );
   }
@@ -83,7 +83,7 @@ function checkOptions(doc, options, expectedOptions) {
 
 function assertDeckHeadingHidden(group) {
   ok(group.hidden, "The tab group is hidden");
-  let buttons = group.querySelectorAll("named-deck-button");
+  let buttons = group.querySelectorAll(".tab-button");
   for (let button of buttons) {
     ok(button.offsetHeight == 0, `The ${button.name} is hidden`);
   }
@@ -91,7 +91,7 @@ function assertDeckHeadingHidden(group) {
 
 function assertDeckHeadingButtons(group, visibleButtons) {
   ok(!group.hidden, "The tab group is shown");
-  let buttons = group.querySelectorAll("named-deck-button");
+  let buttons = group.querySelectorAll(".tab-button");
   ok(
     buttons.length >= visibleButtons.length,
     `There should be at least ${visibleButtons.length} buttons`
@@ -289,7 +289,7 @@ add_task(async function testDetailOperations() {
   // Check toggling disabled.
   let name = card.addonNameEl;
   is(name.textContent, "Test", "The name is set when enabled");
-  is(doc.l10n.getAttributes(name).id, "", "There is no l10n name");
+  is(doc.l10n.getAttributes(name).id, null, "There is no l10n name");
 
   // Disable the extension.
   let disableToggled = BrowserTestUtils.waitForEvent(card, "update");
@@ -311,7 +311,7 @@ add_task(async function testDetailOperations() {
 
   // Name is just the add-on name again.
   is(name.textContent, "Test", "The name is reset when enabled");
-  is(doc.l10n.getAttributes(name).id, "", "There is no l10n name");
+  is(doc.l10n.getAttributes(name).id, null, "There is no l10n name");
 
   // Remove but cancel.
   let cancelled = BrowserTestUtils.waitForEvent(card, "remove-cancelled");
@@ -737,6 +737,7 @@ add_task(async function testExternalUninstall() {
 
   // Verify the list view was loaded and the card is gone.
   let list = doc.querySelector("addon-list");
+  ok(list, "Moved to a list page");
   is(list.type, "extension", "We're on the extension list page");
   card = list.querySelector(`addon-card[addon-id="${id}"]`);
   ok(!card, "The card has been removed");
@@ -774,6 +775,7 @@ add_task(async function testExternalThemeUninstall() {
 
   // Verify the list view was loaded and the card is gone.
   let list = doc.querySelector("addon-list");
+  ok(list, "Moved to a list page");
   is(list.type, "theme", "We're on the theme list page");
   card = list.querySelector(`addon-card[addon-id="${id}"]`);
   ok(!card, "The card has been removed");

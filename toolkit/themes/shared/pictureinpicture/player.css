@@ -55,7 +55,7 @@ browser {
   width: 100%;
 }
 
-#gap {
+.gap {
   flex: 0.1;
   max-width: 50px;
 }
@@ -113,6 +113,14 @@ browser {
 
 #controls:not(.playing) #playpause {
   background-image: url("chrome://global/skin/pictureinpicture/play.svg");
+}
+
+#controls.muted #audio {
+  background-image: url("chrome://global/skin/pictureinpicture/audio-mute.svg");
+}
+
+#controls:not(.muted) #audio {
+  background-image: url("chrome://global/skin/pictureinpicture/audio.svg");
 }
 
 #unpip {

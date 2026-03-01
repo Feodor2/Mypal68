@@ -109,8 +109,8 @@ LoginManagerPromptFactory.prototype = {
   classID: Components.ID("{749e62f4-60ae-4569-a8a2-de78b649660e}"),
   QueryInterface: ChromeUtils.generateQI([
     "nsIPromptFactory",
-    "nnsIObserver",
-    "nnsISupportsWeakReference",
+    "nsIObserver",
+    "nsISupportsWeakReference",
   ]),
 
   _asyncPrompts: {},
@@ -1845,7 +1845,7 @@ LoginManagerPrompter.prototype = {
 
   _newAsyncPromptConsumer(aCallback, aContext) {
     return {
-      QueryInterface: ChromeUtils.generateQI(["nsICancelable"),
+      QueryInterface: ChromeUtils.generateQI(["nsICancelable"]),
       callback: aCallback,
       context: aContext,
       cancel() {

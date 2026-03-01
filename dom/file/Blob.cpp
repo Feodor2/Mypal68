@@ -317,7 +317,7 @@ class BlobBodyStreamHolder final : public BodyStreamHolder {
   RefPtr<ReadableStream> mStream;
 
  protected:
-  virtual ~BlobBodyStreamHolder() { NullifyStream(); }
+  ~BlobBodyStreamHolder() override { NullifyStream(); }
 };
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(BlobBodyStreamHolder)

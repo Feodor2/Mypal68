@@ -11,7 +11,6 @@
 #include "nsIFormControl.h"
 #include "nsGkAtoms.h"
 #include "nsContentCreatorFunctions.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
@@ -25,12 +24,13 @@ class nsIURI;
 struct nsSize;
 
 namespace mozilla {
+class EditorBase;
+class ErrorResult;
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 class EventChainVisitor;
 class EventListenerManager;
 class EventStates;
-class TextEditor;
 class PresState;
 namespace dom {
 class ElementInternals;
@@ -150,6 +150,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     }
   }
 
+  /** Returns whether a form control should be default-focusable. */
+  bool IsFormControlDefaultFocusable(bool aWithMouse) const;
+
   /**
    * Returns the count of descendants (inclusive of this node) in
    * the uncomposed document that are explicitly set as editable.
@@ -174,12 +177,12 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void SetInputMode(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::inputmode, aValue, aRv);
   }
-  virtual void GetAutocapitalize(nsAString& aValue);
+  virtual void GetAutocapitalize(nsAString& aValue) const;
   void SetAutocapitalize(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::autocapitalize, aValue, aRv);
   }
 
-  void GetEnterKeyHint(nsAString& aValue) {
+  void GetEnterKeyHint(nsAString& aValue) const {
     GetEnumAttr(nsGkAtoms::enterkeyhint, nullptr, aValue);
   }
   void SetEnterKeyHint(const nsAString& aValue, ErrorResult& aRv) {
@@ -514,6 +517,17 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   static void MapImageSizeAttributesInto(const nsMappedAttributes*,
                                          mozilla::MappedDeclarations&,
                                          MapAspectRatio = MapAspectRatio::No);
+  /**
+   * Helper to map the width and height attributes into the aspect-ratio
+   * property.
+   *
+   * If you also map the width/height attributes to width/height (as you should
+   * for any HTML element that isn't <canvas>) then you should use
+   * MapImageSizeAttributesInto instead, passing MapAspectRatio::Yes instead, as
+   * that'd be faster.
+   */
+  static void MapAspectRatioInto(const nsMappedAttributes*,
+                                 mozilla::MappedDeclarations&);
 
   /**
    * Helper to map `width` attribute into a style struct.
@@ -573,12 +587,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    */
   static void MapScrollingAttributeInto(const nsMappedAttributes* aAttributes,
                                         mozilla::MappedDeclarations&);
-  /**
-   * Get the presentation context for this content node.
-   * @return the presentation context
-   */
-  enum PresContextFor { eForComposedDoc, eForUncomposedDoc };
-  nsPresContext* GetPresContext(PresContextFor aFor);
 
   // Form Helper Routines
   /**
@@ -696,11 +704,13 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   virtual mozilla::EventListenerManager* GetEventListenerManagerForAttr(
       nsAtom* aAttrName, bool* aDefer) override;
 
-  /**
-   * Dispatch a simulated mouse click by keyboard to the given element.
-   */
-  nsresult DispatchSimulatedClick(nsGenericHTMLElement* aElement,
-                                  bool aIsTrusted, nsPresContext* aPresContext);
+  /** Handles dispatching a simulated click on `this` on space or enter. */
+  void HandleKeyboardActivation(mozilla::EventChainPostVisitor&);
+
+  /** Dispatch a simulated mouse click by keyboard to the given element. */
+  static nsresult DispatchSimulatedClick(nsGenericHTMLElement* aElement,
+                                         bool aIsTrusted,
+                                         nsPresContext* aPresContext);
 
   /**
    * Create a URI for the given aURISpec string.
@@ -831,14 +841,14 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   }
 
   /**
-   * Locates the TextEditor associated with this node.  In general this is
+   * Locates the EditorBase associated with this node.  In general this is
    * equivalent to GetEditorInternal(), but for designmode or contenteditable,
    * this may need to get an editor that's not actually on this element's
    * associated TextControlFrame.  This is used by the spellchecking routines
    * to get the editor affected by changing the spellcheck attribute on this
    * node.
    */
-  virtual already_AddRefed<mozilla::TextEditor> GetAssociatedEditor();
+  virtual already_AddRefed<mozilla::EditorBase> GetAssociatedEditor();
 
   /**
    * Get the frame's offset information for offsetTop/Left/Width/Height.
@@ -900,8 +910,23 @@ class HTMLFieldSetElement;
 }  // namespace dom
 }  // namespace mozilla
 
-#define FORM_ELEMENT_FLAG_BIT(n_) \
+#define HTML_ELEMENT_FLAG_BIT(n_) \
   NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
+
+// HTMLElement specific bits
+enum {
+  // Used to handle keyboard activation.
+  HTML_ELEMENT_ACTIVE_FOR_KEYBOARD = HTML_ELEMENT_FLAG_BIT(0),
+
+  // Remaining bits are type specific.
+  HTML_ELEMENT_TYPE_SPECIFIC_BITS_OFFSET =
+      ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 1,
+};
+
+ASSERT_NODE_FLAGS_SPACE(HTML_ELEMENT_TYPE_SPECIFIC_BITS_OFFSET);
+
+#define FORM_ELEMENT_FLAG_BIT(n_) \
+  NODE_FLAG_BIT(HTML_ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
 // Form element specific bits
 enum {
@@ -926,7 +951,7 @@ enum {
 // MAYBE_ORPHAN_FORM_ELEMENT set at the same time, so if it becomes an issue we
 // can probably merge them into the same bit.  --bz
 
-ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 3);
+ASSERT_NODE_FLAGS_SPACE(HTML_ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 3);
 
 #undef FORM_ELEMENT_FLAG_BIT
 
@@ -937,7 +962,7 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
                                  public nsIFormControl {
  public:
   nsGenericHTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-                           uint8_t aType);
+                           FormControlType);
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -948,8 +973,9 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
 
   // nsIFormControl
   virtual mozilla::dom::HTMLFieldSetElement* GetFieldSet() override;
-  virtual mozilla::dom::HTMLFormElement* GetFormElement() override;
-  mozilla::dom::HTMLFormElement* GetForm() const { return mForm; }
+  virtual mozilla::dom::HTMLFormElement* GetForm() const override {
+    return mForm;
+  }
   virtual void SetForm(mozilla::dom::HTMLFormElement* aForm) override;
   virtual void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete) override;
 
@@ -1021,7 +1047,7 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
   void GetFormAction(nsString& aValue);
 
   // autocapitalize attribute support
-  virtual void GetAutocapitalize(nsAString& aValue) override;
+  virtual void GetAutocapitalize(nsAString& aValue) const override;
   bool IsAutocapitalizeInheriting() const;
 
  protected:
@@ -1106,7 +1132,7 @@ class nsGenericHTMLFormElementWithState : public nsGenericHTMLFormElement {
  public:
   nsGenericHTMLFormElementWithState(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-      mozilla::dom::FromParser aFromParser, uint8_t aType);
+      mozilla::dom::FromParser aFromParser, FormControlType);
 
   /**
    * Get the presentation state for a piece of content, or create it if it does

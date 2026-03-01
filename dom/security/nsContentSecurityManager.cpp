@@ -214,11 +214,13 @@ static nsresult ValidateSecurityFlags(nsILoadInfo* aLoadInfo) {
   // SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK, because that is only used for
   // temporary loadInfos used for explicit nsIContentPolicy checks, but never be
   // set as a security flag on an actual channel.
-  if (securityMode != nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS &&
+  if (securityMode !=
+          nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT &&
       securityMode != nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED &&
-      securityMode != nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS &&
-      securityMode != nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-      securityMode != nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) {
+      securityMode !=
+          nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT &&
+      securityMode != nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL &&
+      securityMode != nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) {
     MOZ_ASSERT(
         false,
         "need one securityflag from nsILoadInfo to perform security checks");
@@ -630,16 +632,16 @@ static void LogSecurityFlags(nsSecurityFlags securityFlags) {
   static const DebugSecFlagType secTypes[] = {
       {nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
        "SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK"},
-      {nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS,
-       "SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS"},
+      {nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT,
+       "SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT"},
       {nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
        "SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED"},
-      {nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
-       "SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS"},
-      {nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-       "SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL"},
-      {nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS,
-       "SEC_REQUIRE_CORS_DATA_INHERITS"},
+      {nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
+       "SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT"},
+      {nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+       "SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL"},
+      {nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT,
+       "SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT"},
       {nsILoadInfo::SEC_COOKIES_DEFAULT, "SEC_COOKIES_DEFAULT"},
       {nsILoadInfo::SEC_COOKIES_INCLUDE, "SEC_COOKIES_INCLUDE"},
       {nsILoadInfo::SEC_COOKIES_SAME_ORIGIN, "SEC_COOKIES_SAME_ORIGIN"},
@@ -819,6 +821,57 @@ nsresult nsContentSecurityManager::CheckAllowLoadInSystemPrivilegedContext(
 }
 
 /*
+ * Every protocol handler must set one of the five security flags
+ * defined in nsIProtocolHandler - if not - deny the load.
+ */
+nsresult nsContentSecurityManager::CheckChannelHasProtocolSecurityFlag(
+    nsIChannel* aChannel) {
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoCString scheme;
+  rv = uri->GetScheme(scheme);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIIOService> ios = do_GetIOService(&rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIProtocolHandler> handler;
+  rv = ios->GetProtocolHandler(scheme.get(), getter_AddRefs(handler));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  uint32_t flags;
+  rv = handler->DoGetProtocolFlags(uri, &flags);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  uint32_t securityFlagsSet = 0;
+  if (flags & nsIProtocolHandler::URI_LOADABLE_BY_ANYONE) {
+    securityFlagsSet += 1;
+  }
+  if (flags & nsIProtocolHandler::URI_DANGEROUS_TO_LOAD) {
+    securityFlagsSet += 1;
+  }
+  if (flags & nsIProtocolHandler::URI_IS_UI_RESOURCE) {
+    securityFlagsSet += 1;
+  }
+  if (flags & nsIProtocolHandler::URI_IS_LOCAL_FILE) {
+    securityFlagsSet += 1;
+  }
+  if (flags & nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS) {
+    securityFlagsSet += 1;
+  }
+
+  // Ensure that only "1" valid security flags is set.
+  if (securityFlagsSet == 1) {
+    return NS_OK;
+  }
+
+  MOZ_ASSERT(false, "protocol must use one valid security flag");
+  return NS_ERROR_CONTENT_BLOCKED;
+}
+
+/*
  * Based on the security flags provided in the loadInfo of the channel,
  * doContentSecurityCheck() performs the following content security checks
  * before opening the channel:
@@ -847,6 +900,9 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
   nsresult rv = CheckAllowLoadInSystemPrivilegedContext(aChannel);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  rv = CheckChannelHasProtocolSecurityFlag(aChannel);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   // if dealing with a redirected channel then we have already installed
   // streamlistener and redirect proxies and so we are done.
   if (loadInfo->GetInitialSecurityCheckDone()) {
@@ -859,7 +915,7 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (loadInfo->GetSecurityMode() ==
-      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) {
+      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) {
     rv = DoCORSChecks(aChannel, loadInfo, aInAndOutListener);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -962,7 +1018,7 @@ nsresult nsContentSecurityManager::CheckChannel(nsIChannel* aChannel) {
   nsSecurityFlags securityMode = loadInfo->GetSecurityMode();
 
   // CORS mode is handled by nsCORSListenerProxy
-  if (securityMode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) {
+  if (securityMode == nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) {
     if (NS_HasBeenCrossOrigin(aChannel)) {
       loadInfo->MaybeIncreaseTainting(LoadTainting::CORS);
     }
@@ -979,22 +1035,25 @@ nsresult nsContentSecurityManager::CheckChannel(nsIChannel* aChannel) {
   }
 
   // if none of the REQUIRE_SAME_ORIGIN flags are set, then SOP does not apply
-  if ((securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS) ||
+  if ((securityMode ==
+       nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT) ||
       (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED)) {
     rv = DoSOPChecks(uri, loadInfo, aChannel);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  if ((securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS) ||
-      (securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL)) {
+  if ((securityMode ==
+       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT) ||
+      (securityMode ==
+       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL)) {
     if (NS_HasBeenCrossOrigin(aChannel)) {
       NS_ENSURE_FALSE(loadInfo->GetDontFollowRedirects(), NS_ERROR_DOM_BAD_URI);
       loadInfo->MaybeIncreaseTainting(LoadTainting::Opaque);
     }
     // Please note that DoCheckLoadURIChecks should only be enforced for
-    // cross origin requests. If the flag SEC_REQUIRE_CORS_DATA_INHERITS is set
-    // within the loadInfo, then then CheckLoadURIWithPrincipal is performed
-    // within nsCorsListenerProxy
+    // cross origin requests. If the flag SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT
+    // is set within the loadInfo, then then CheckLoadURIWithPrincipal is
+    // performed within nsCorsListenerProxy
     rv = DoCheckLoadURIChecks(uri, loadInfo);
     NS_ENSURE_SUCCESS(rv, rv);
     // TODO: Bug 1371237

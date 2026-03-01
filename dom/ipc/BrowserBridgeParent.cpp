@@ -21,8 +21,7 @@ BrowserBridgeParent::BrowserBridgeParent() : mIPCOpen(false) {}
 
 BrowserBridgeParent::~BrowserBridgeParent() { Destroy(); }
 
-nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
-                                   const nsCString& aRemoteType,
+nsresult BrowserBridgeParent::Init(const nsCString& aRemoteType,
                                    CanonicalBrowsingContext* aBrowsingContext,
                                    const uint32_t& aChromeFlags) {
   mIPCOpen = true;
@@ -33,8 +32,7 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
   attrs.SyncAttributesWithPrivateBrowsing(false);
   uint32_t maxTouchPoints = Manager()->GetMaxTouchPoints();
   MutableTabContext tabContext;
-  tabContext.SetTabContext(0, UIStateChangeType_Set, attrs,
-                           aPresentationURL, maxTouchPoints);
+  tabContext.SetTabContext(0, UIStateChangeType_Set, attrs, maxTouchPoints);
 
   ProcessPriority initialPriority = PROCESS_PRIORITY_FOREGROUND;
 

@@ -14,7 +14,7 @@
 
 TEST(DOM_Base_ContentUtils, StringifyJSON_EmptyValue)
 {
-  JS::RootedObject globalObject(
+  JS::Rooted<JSObject*> globalObject(
       mozilla::dom::RootingCx(),
       mozilla::dom::SimpleGlobalObject::Create(
           mozilla::dom::SimpleGlobalObject::GlobalType::BindingDetail));
@@ -23,7 +23,7 @@ TEST(DOM_Base_ContentUtils, StringifyJSON_EmptyValue)
   JSContext* cx = jsAPI.cx();
   nsAutoString serializedValue;
 
-  JS::RootedValue jsValue(cx);
+  JS::Rooted<JS::Value> jsValue(cx);
   ASSERT_TRUE(nsContentUtils::StringifyJSON(cx, &jsValue, serializedValue));
 
   ASSERT_TRUE(serializedValue.EqualsLiteral("null"));
@@ -31,7 +31,7 @@ TEST(DOM_Base_ContentUtils, StringifyJSON_EmptyValue)
 
 TEST(DOM_Base_ContentUtils, StringifyJSON_Object)
 {
-  JS::RootedObject globalObject(
+  JS::Rooted<JSObject*> globalObject(
       mozilla::dom::RootingCx(),
       mozilla::dom::SimpleGlobalObject::Create(
           mozilla::dom::SimpleGlobalObject::GlobalType::BindingDetail));
@@ -40,10 +40,10 @@ TEST(DOM_Base_ContentUtils, StringifyJSON_Object)
   JSContext* cx = jsAPI.cx();
   nsAutoString serializedValue;
 
-  JS::RootedObject jsObj(cx, JS_NewPlainObject(cx));
-  JS::RootedString valueStr(cx, JS_NewStringCopyZ(cx, "Hello World!"));
+  JS::Rooted<JSObject*> jsObj(cx, JS_NewPlainObject(cx));
+  JS::Rooted<JSString*> valueStr(cx, JS_NewStringCopyZ(cx, "Hello World!"));
   ASSERT_TRUE(JS_DefineProperty(cx, jsObj, "key1", valueStr, JSPROP_ENUMERATE));
-  JS::RootedValue jsValue(cx, JS::ObjectValue(*jsObj));
+  JS::Rooted<JS::Value> jsValue(cx, JS::ObjectValue(*jsObj));
 
   ASSERT_TRUE(nsContentUtils::StringifyJSON(cx, &jsValue, serializedValue));
 

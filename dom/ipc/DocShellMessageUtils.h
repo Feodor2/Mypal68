@@ -12,6 +12,8 @@
 namespace mozilla {
 namespace ipc {
 
+class IProtocol; //MY
+
 template <>
 struct IPDLParamTraits<nsDocShellLoadState*> {
   static void Write(IPC::Message* aMsg, IProtocol* aActor,

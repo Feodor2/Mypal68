@@ -848,20 +848,21 @@ bool nsCSPKeywordSrc::allows(enum CSPKeyword aKeyword,
        mInvalidated ? "yes" : "false"));
 
   if (mInvalidated) {
-    // only 'self' and 'unsafe-inline' are keywords that can be ignored. Please
-    // note that the parser already translates 'self' into a uri (see assertion
-    // in constructor).
-    MOZ_ASSERT(mKeyword == CSP_UNSAFE_INLINE,
+    // only 'self', 'report-sample' and 'unsafe-inline' are keywords that can be
+    // ignored. Please note that the parser already translates 'self' into a uri
+    // (see assertion in constructor).
+    MOZ_ASSERT(mKeyword == CSP_UNSAFE_INLINE || mKeyword == CSP_REPORT_SAMPLE,
                "should only invalidate unsafe-inline");
     return false;
   }
   // either the keyword allows the load or the policy contains 'strict-dynamic',
   // in which case we have to make sure the script is not parser created before
-  // allowing the load and also eval should be blocked even if 'strict-dynamic'
-  // is present. Should be allowed only if 'unsafe-eval' is present.
+  // allowing the load and also eval & wasm-eval should be blocked even if
+  // 'strict-dynamic' is present. Should be allowed only if 'unsafe-eval' is
+  // present.
   return ((mKeyword == aKeyword) ||
           ((mKeyword == CSP_STRICT_DYNAMIC) && !aParserCreated &&
-           aKeyword != CSP_UNSAFE_EVAL));
+           aKeyword != CSP_UNSAFE_EVAL && aKeyword != CSP_WASM_UNSAFE_EVAL));
 }
 
 bool nsCSPKeywordSrc::visit(nsCSPSrcVisitor* aVisitor) const {

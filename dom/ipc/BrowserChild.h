@@ -270,7 +270,11 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvChildToParentMatrix(
       const mozilla::Maybe<mozilla::gfx::Matrix4x4>& aMatrix);
-
+#if defined(MOZ_WIDGET_ANDROID)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvDynamicToolbarMaxHeightChanged(
+      const mozilla::ScreenIntCoord& aHeight);
+#endif
   mozilla::ipc::IPCResult RecvActivate();
 
   mozilla::ipc::IPCResult RecvDeactivate();
@@ -509,7 +513,11 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   LayoutDeviceIntPoint GetClientOffset() const { return mClientOffset; }
   LayoutDeviceIntPoint GetChromeOffset() const { return mChromeOffset; };
-
+#if defined(MOZ_WIDGET_ANDROID)
+  ScreenIntCoord GetDynamicToolbarMaxHeight() const {
+    return mDynamicToolbarMaxHeight;
+  };
+#endif
   bool IPCOpen() const { return mIPCOpen; }
 
   bool ParentIsActive() const { return mParentIsActive; }
@@ -690,14 +698,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   void HandleDoubleTap(const CSSPoint& aPoint, const Modifiers& aModifiers,
                        const ScrollableLayerGuid& aGuid);
 
-  // Notify others that our TabContext has been updated.
-  //
-  // You should call this after calling TabContext::SetTabContext().  We also
-  // call this during Init().
-  //
-  // @param aIsPreallocated  true if this is called for Preallocated Tab.
-  void NotifyTabContextUpdated(bool aIsPreallocated);
-
   void ActorDestroy(ActorDestroyReason why) override;
 
   bool InitBrowserChildMessageManager();
@@ -786,6 +786,9 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   LayoutDeviceIntPoint mClientOffset;
   // Position of tab, relative to parent widget (typically the window)
   LayoutDeviceIntPoint mChromeOffset;
+#if defined(MOZ_WIDGET_ANDROID)
+  ScreenIntCoord mDynamicToolbarMaxHeight;
+#endif
   TabId mUniqueId;
 
   // Whether or not this tab has siblings (other tabs in the same window).

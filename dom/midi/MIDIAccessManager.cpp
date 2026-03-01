@@ -26,7 +26,7 @@ StaticRefPtr<MIDIAccessManager> gMIDIAccessManager;
 
 MIDIAccessManager::MIDIAccessManager() : mHasPortList(false), mChild(nullptr) {}
 
-MIDIAccessManager::~MIDIAccessManager() {}
+MIDIAccessManager::~MIDIAccessManager() = default;
 
 // static
 MIDIAccessManager* MIDIAccessManager::Get() {

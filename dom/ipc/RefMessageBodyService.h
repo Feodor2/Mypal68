@@ -79,7 +79,7 @@ class RefMessageBody final {
   const nsID& PortID() const { return mPortID; }
 
   void Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
-            ErrorResult& aRv);
+            const JS::CloneDataPolicy& aCloneDataPolicy, ErrorResult& aRv);
 
   // This method can be called only if the RefMessageBody is not supposed to be
   // ref-counted (see mMaxCount).

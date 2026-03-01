@@ -10,7 +10,9 @@
 #include "nsPIDOMWindow.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/BodyStream.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchBinding.h"
 #include "mozilla/dom/ResponseBinding.h"
 #include "mozilla/dom/Headers.h"
@@ -61,14 +63,14 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Response)
 NS_INTERFACE_MAP_END_INHERITING(FetchBody<Response>)
 
 Response::Response(nsIGlobalObject* aGlobal,
-                   InternalResponse* aInternalResponse,
+                   SafeRefPtr<InternalResponse> aInternalResponse,
                    AbortSignalImpl* aSignalImpl)
     : FetchBody<Response>(aGlobal),
-      mInternalResponse(aInternalResponse),
+      mInternalResponse(std::move(aInternalResponse)),
       mSignalImpl(aSignalImpl) {
   MOZ_ASSERT(
-      aInternalResponse->Headers()->Guard() == HeadersGuardEnum::Immutable ||
-      aInternalResponse->Headers()->Guard() == HeadersGuardEnum::Response);
+      mInternalResponse->Headers()->Guard() == HeadersGuardEnum::Immutable ||
+      mInternalResponse->Headers()->Guard() == HeadersGuardEnum::Response);
 
   mozilla::HoldJSObjects(this);
 }
@@ -78,9 +80,8 @@ Response::~Response() { mozilla::DropJSObjects(this); }
 /* static */
 already_AddRefed<Response> Response::Error(const GlobalObject& aGlobal) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  RefPtr<InternalResponse> error =
-      InternalResponse::NetworkError(NS_ERROR_FAILURE);
-  RefPtr<Response> r = new Response(global, error, nullptr);
+  RefPtr<Response> r = new Response(
+      global, InternalResponse::NetworkError(NS_ERROR_FAILURE), nullptr);
   return r.forget();
 }
 
@@ -196,8 +197,8 @@ already_AddRefed<Response> Response::Constructor(
     return nullptr;
   }
 
-  RefPtr<InternalResponse> internalResponse =
-      new InternalResponse(aInit.mStatus, aInit.mStatusText);
+  SafeRefPtr<InternalResponse> internalResponse =
+      MakeSafeRefPtr<InternalResponse>(aInit.mStatus, aInit.mStatusText);
 
   UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo;
 
@@ -244,7 +245,8 @@ already_AddRefed<Response> Response::Constructor(
 
   internalResponse->SetPrincipalInfo(std::move(principalInfo));
 
-  RefPtr<Response> r = new Response(global, internalResponse, nullptr);
+  RefPtr<Response> r =
+      new Response(global, internalResponse.clonePtr(), nullptr);
 
   if (aInit.mHeaders.WasPassed()) {
     internalResponse->Headers()->Clear();
@@ -370,11 +372,12 @@ already_AddRefed<Response> Response::Clone(JSContext* aCx, ErrorResult& aRv) {
   MOZ_ASSERT_IF(body, streamReader);
   MOZ_ASSERT_IF(body, inputStream);
 
-  RefPtr<InternalResponse> ir =
+  SafeRefPtr<InternalResponse> ir =
       mInternalResponse->Clone(body ? InternalResponse::eDontCloneInputStream
                                     : InternalResponse::eCloneInputStream);
 
-  RefPtr<Response> response = new Response(mOwner, ir, GetSignalImpl());
+  RefPtr<Response> response =
+      new Response(mOwner, ir.clonePtr(), GetSignalImpl());
 
   if (body) {
     // Maybe we have a body, but we receive null from MaybeTeeReadableStreamBody
@@ -410,12 +413,12 @@ already_AddRefed<Response> Response::CloneUnfiltered(JSContext* aCx,
   MOZ_ASSERT_IF(body, streamReader);
   MOZ_ASSERT_IF(body, inputStream);
 
-  RefPtr<InternalResponse> clone =
+  SafeRefPtr<InternalResponse> clone =
       mInternalResponse->Clone(body ? InternalResponse::eDontCloneInputStream
                                     : InternalResponse::eCloneInputStream);
 
-  RefPtr<InternalResponse> ir = clone->Unfiltered();
-  RefPtr<Response> ref = new Response(mOwner, ir, GetSignalImpl());
+  SafeRefPtr<InternalResponse> ir = clone->Unfiltered();
+  RefPtr<Response> ref = new Response(mOwner, ir.clonePtr(), GetSignalImpl());
 
   if (body) {
     // Maybe we have a body, but we receive null from MaybeTeeReadableStreamBody
@@ -435,9 +438,8 @@ void Response::SetBody(nsIInputStream* aBody, int64_t aBodySize) {
   mInternalResponse->SetBody(aBody, aBodySize);
 }
 
-already_AddRefed<InternalResponse> Response::GetInternalResponse() const {
-  RefPtr<InternalResponse> ref = mInternalResponse;
-  return ref.forget();
+SafeRefPtr<InternalResponse> Response::GetInternalResponse() const {
+  return mInternalResponse.clonePtr();
 }
 
 Headers* Response::Headers_() {

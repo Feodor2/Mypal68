@@ -39,7 +39,7 @@ class GraphRunner final : public Runnable {
   /**
    * Runs mGraph until it shuts down.
    */
-  NS_IMETHOD Run();
+  NS_IMETHOD Run() override;
 
   /**
    * Returns true if called on mThread.

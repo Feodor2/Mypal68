@@ -16,7 +16,7 @@
 #include "nsILoadInfo.h"
 #include "nsIReferrerInfo.h"
 
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsIInputStream;
 class nsILoadGroup;
 class nsIStreamListener;
@@ -49,7 +49,7 @@ class nsSyncLoadService {
   static nsresult LoadDocument(
       nsIURI* aURI, nsContentPolicyType aContentPolicyType,
       nsIPrincipal* aLoaderPrincipal, nsSecurityFlags aSecurityFlags,
-      nsILoadGroup* aLoadGroup, nsICookieSettings* aCookieSettings,
+      nsILoadGroup* aLoadGroup, nsICookieJarSettings* aCookieJarSettings,
       bool aForceToXML, mozilla::dom::ReferrerPolicy aReferrerPolicy,
       mozilla::dom::Document** aResult);
 

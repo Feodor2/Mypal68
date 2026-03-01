@@ -14,6 +14,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsIClipboard.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsITransferable.h"
 #include "nsArrayUtils.h"
@@ -39,7 +40,7 @@ already_AddRefed<Promise> Clipboard::ReadHelper(
   // We want to disable security check for automated tests that have the pref
   //  dom.events.testing.asyncClipboard set to true
   if (!IsTestingPrefEnabled() &&
-      !nsContentUtils::PrincipalHasPermission(&aSubjectPrincipal,
+      !nsContentUtils::PrincipalHasPermission(aSubjectPrincipal,
                                               nsGkAtoms::clipboardRead)) {
     MOZ_LOG(GetClipboardLog(), LogLevel::Debug,
             ("Clipboard, ReadHelper, "
@@ -107,7 +108,7 @@ already_AddRefed<Promise> Clipboard::Write(DataTransfer& aData,
   // We want to disable security check for automated tests that have the pref
   //  dom.events.testing.asyncClipboard set to true
   if (!IsTestingPrefEnabled() &&
-      !nsContentUtils::IsCutCopyAllowed(&aSubjectPrincipal)) {
+      !nsContentUtils::IsCutCopyAllowed(aSubjectPrincipal)) {
     MOZ_LOG(GetClipboardLog(), LogLevel::Debug,
             ("Clipboard, Write, Not allowed to write to clipboard\n"));
     p->MaybeRejectWithUndefined();

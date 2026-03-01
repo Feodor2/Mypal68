@@ -301,6 +301,13 @@ class CustomElementReactionsStack {
     MOZ_ASSERT_IF(!mRecursionDepth, mReactionsStack.IsEmpty());
   }
 
+  bool IsElementQueuePushedForCurrentRecursionDepth() {
+    MOZ_ASSERT_IF(mIsElementQueuePushedForCurrentRecursionDepth,
+                  !mReactionsStack.IsEmpty() &&
+                      !mReactionsStack.LastElement()->IsEmpty());
+    return mIsElementQueuePushedForCurrentRecursionDepth;
+  }
+
  private:
   ~CustomElementReactionsStack() = default;
   ;

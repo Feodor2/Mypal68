@@ -17,7 +17,7 @@
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIStreamLoader.h"
@@ -545,7 +545,8 @@ class CompareManager final : public PromiseNativeHandler {
       return rv;
     }
 
-    RefPtr<InternalResponse> ir = new InternalResponse(200, "OK"_ns);
+    SafeRefPtr<InternalResponse> ir =
+        MakeSafeRefPtr<InternalResponse>(200, "OK"_ns);
     ir->SetBody(body, aCN->Buffer().Length());
     ir->SetURLList(aCN->URLList());
 
@@ -559,7 +560,7 @@ class CompareManager final : public PromiseNativeHandler {
     ir->Headers()->Fill(*(internalHeaders.get()), IgnoreErrors());
 
     RefPtr<Response> response =
-        new Response(aCache->GetGlobalObject(), ir, nullptr);
+        new Response(aCache->GetGlobalObject(), std::move(ir), nullptr);
 
     RequestOrUSVString request;
     request.SetAsUSVString().ShareOrDependUpon(aCN->URL());
@@ -653,23 +654,23 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
 
   // Different settings are needed for fetching imported scripts, since they
   // might be cross-origin scripts.
-  uint32_t secFlags = mIsMainScript
-                          ? nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED
-                          : nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
+  uint32_t secFlags =
+      mIsMainScript ? nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED
+                    : nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
 
   nsContentPolicyType contentPolicyType =
       mIsMainScript ? nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER
                     : nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS;
 
-  // Create a new cookieSettings.
-  nsCOMPtr<nsICookieSettings> cookieSettings =
-      mozilla::net::CookieSettings::Create();
+  // Create a new cookieJarSettings.
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      mozilla::net::CookieJarSettings::Create();
 
   // Note that because there is no "serviceworker" RequestContext type, we can
   // use the TYPE_INTERNAL_SCRIPT content policy types when loading a service
   // worker.
   rv = NS_NewChannel(getter_AddRefs(mChannel), uri, aPrincipal, secFlags,
-                     contentPolicyType, cookieSettings,
+                     contentPolicyType, cookieJarSettings,
                      nullptr /* aPerformanceStorage */, loadGroup,
                      nullptr /* aCallbacks */, mLoadFlags);
   if (NS_WARN_IF(NS_FAILED(rv))) {

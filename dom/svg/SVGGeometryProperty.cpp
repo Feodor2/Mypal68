@@ -8,6 +8,8 @@
 #include "SVGForeignObjectElement.h"
 #include "SVGImageElement.h"
 #include "SVGRectElement.h"
+#include "SVGUseElement.h"
+#include "nsCSSValue.h"
 
 namespace mozilla {
 namespace dom {
@@ -68,6 +70,9 @@ nsCSSPropertyID AttrEnumToCSSPropId(const SVGElement* aElement,
   if (aElement->IsSVGElement(nsGkAtoms::foreignObject)) {
     return SVGForeignObjectElement::GetCSSPropertyIdForAttrEnum(aAttrEnum);
   }
+  if (aElement->IsSVGElement(nsGkAtoms::use)) {
+    return SVGUseElement::GetCSSPropertyIdForAttrEnum(aAttrEnum);
+  }
   return eCSSProperty_UNKNOWN;
 }
 
@@ -78,11 +83,9 @@ bool IsNonNegativeGeometryProperty(nsCSSPropertyID aProp) {
 }
 
 bool ElementMapsLengthsToStyle(SVGElement const* aElement) {
-  return aElement->IsSVGElement(nsGkAtoms::rect) ||
-         aElement->IsSVGElement(nsGkAtoms::circle) ||
-         aElement->IsSVGElement(nsGkAtoms::ellipse) ||
-         aElement->IsSVGElement(nsGkAtoms::image) ||
-         aElement->IsSVGElement(nsGkAtoms::foreignObject);
+  return aElement->IsAnyOfSVGElements(nsGkAtoms::rect, nsGkAtoms::circle,
+                                      nsGkAtoms::ellipse, nsGkAtoms::image,
+                                      nsGkAtoms::foreignObject, nsGkAtoms::use);
 }
 
 }  // namespace SVGGeometryProperty

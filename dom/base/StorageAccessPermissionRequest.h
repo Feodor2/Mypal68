@@ -24,32 +24,28 @@ class StorageAccessPermissionRequest final
 
   // nsIContentPermissionRequest
   NS_IMETHOD Cancel(void) override;
-  NS_IMETHOD Allow(JS::HandleValue choices) override;
+  NS_IMETHOD Allow(JS::Handle<JS::Value> choices) override;
 
-  typedef std::function<void()> AllowCallback;
-  typedef std::function<void()> AllowAnySiteCallback;
-  typedef std::function<void()> CancelCallback;
+  using AllowCallback = std::function<void()>;
+  using CancelCallback = std::function<void()>;
 
   static already_AddRefed<StorageAccessPermissionRequest> Create(
       nsPIDOMWindowInner* aWindow, AllowCallback&& aAllowCallback,
-      AllowAnySiteCallback&& aAllowAnySiteCallback,
       CancelCallback&& aCancelCallback);
 
-  typedef MozPromise<bool, bool, true> AutoGrantDelayPromise;
+  using AutoGrantDelayPromise = MozPromise<bool, bool, true>;
   RefPtr<AutoGrantDelayPromise> MaybeDelayAutomaticGrants();
 
  private:
   StorageAccessPermissionRequest(nsPIDOMWindowInner* aWindow,
                                  nsIPrincipal* aNodePrincipal,
                                  AllowCallback&& aAllowCallback,
-                                 AllowAnySiteCallback&& aAllowAnySiteCallback,
                                  CancelCallback&& aCancelCallback);
-  ~StorageAccessPermissionRequest();
+  ~StorageAccessPermissionRequest() = default;
 
   unsigned CalculateSimulatedDelay();
 
   AllowCallback mAllowCallback;
-  AllowAnySiteCallback mAllowAnySiteCallback;
   CancelCallback mCancelCallback;
   nsTArray<PermissionRequest> mPermissionRequests;
   bool mCallbackCalled;

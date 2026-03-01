@@ -8,8 +8,7 @@
 #include "nsFrameMessageManager.h"
 #include "mozilla/ErrorResult.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * Base class for implementing the WebIDL MessageManagerGlobal class.
@@ -112,7 +111,6 @@ class MessageManagerGlobal {
   RefPtr<nsFrameMessageManager> mMessageManager;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MessageManagerGlobal_h

@@ -39,12 +39,6 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  Element* GetFormElement() const {
-    nsCOMPtr<nsIFormControl> fieldsetControl = do_QueryInterface(GetFieldSet());
-
-    return fieldsetControl ? fieldsetControl->GetFormElement() : nullptr;
-  }
-
   enum class LegendAlignValue : uint8_t {
     Left,
     Right,
@@ -68,7 +62,7 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
    * WebIDL Interface
    */
 
-  already_AddRefed<HTMLFormElement> GetForm();
+  HTMLFormElement* GetForm() const;
 
   void GetAlign(DOMString& aAlign) { GetHTMLAttr(nsGkAtoms::align, aAlign); }
 
@@ -77,7 +71,7 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
   }
 
   nsINode* GetScopeChainParent() const override {
-    Element* form = GetFormElement();
+    Element* form = GetForm();
     return form ? form : nsGenericHTMLElement::GetScopeChainParent();
   }
 

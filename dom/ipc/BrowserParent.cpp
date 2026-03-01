@@ -47,6 +47,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ProcessHangMonitor.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtr.h"
@@ -208,11 +209,6 @@ BrowserParent::BrowserParent(ContentParent* aManager, const TabId& aTabId,
       mCreatingWindow(false),
       mDelayedURL{},
       mDelayedFrameScripts{},
-      mCursor(eCursorInvalid),
-      mCustomCursor{},
-      mCustomCursorHotspotX(0),
-      mCustomCursorHotspotY(0),
-      mVerifyDropLinks{},
       mDocShellIsActive(false),
       mMarkedDestroying(false),
       mIsDestroyed(false),
@@ -925,6 +921,15 @@ void BrowserParent::InitRendering() {
   Unused << SendInitRendering(textureFactoryIdentifier, layersId,
                               mRemoteLayerTreeOwner.GetCompositorOptions(),
                               mRemoteLayerTreeOwner.IsLayersConnected());
+#if defined(MOZ_WIDGET_ANDROID)
+  if (XRE_IsParentProcess()) {
+    RefPtr<nsIWidget> widget = GetTopLevelWidget();
+    MOZ_ASSERT(widget);
+
+    Unused << SendDynamicToolbarMaxHeightChanged(
+        widget->GetDynamicToolbarMaxHeight());
+  }
+#endif
 }
 
 void BrowserParent::MaybeShowFrame() {
@@ -1128,6 +1133,14 @@ void BrowserParent::ThemeChanged() {
   }
 }
 
+#if defined(MOZ_WIDGET_ANDROID)
+void BrowserParent::DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight) {
+  if (!mIsDestroyed) {
+    Unused << SendDynamicToolbarMaxHeightChanged(aHeight);
+  }
+}
+#endif
+
 void BrowserParent::HandleAccessKey(const WidgetKeyboardEvent& aEvent,
                                     nsTArray<uint32_t>& aCharCodes) {
   if (!mIsDestroyed) {
@@ -1296,18 +1309,17 @@ bool BrowserParent::DeallocPWindowGlobalParent(PWindowGlobalParent* aActor) {
 }
 
 IPCResult BrowserParent::RecvPBrowserBridgeConstructor(
-    PBrowserBridgeParent* aActor, const nsString& aName,
-    const nsCString& aRemoteType, BrowsingContext* aBrowsingContext,
-    const uint32_t& aChromeFlags) {
+    PBrowserBridgeParent* aActor, const nsCString& aRemoteType,
+    BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags) {
   static_cast<BrowserBridgeParent*>(aActor)->Init(
-      aName, aRemoteType, CanonicalBrowsingContext::Cast(aBrowsingContext),
+      aRemoteType, CanonicalBrowsingContext::Cast(aBrowsingContext),
       aChromeFlags);
   return IPC_OK();
 }
 
 already_AddRefed<PBrowserBridgeParent> BrowserParent::AllocPBrowserBridgeParent(
-    const nsString& aName, const nsCString& aRemoteType,
-    BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags) {
+    const nsCString& aRemoteType, BrowsingContext* aBrowsingContext,
+    const uint32_t& aChromeFlags) {
   return do_AddRef(new BrowserBridgeParent());
 }
 
@@ -1332,10 +1344,7 @@ void BrowserParent::SendRealMouseEvent(WidgetMouseEvent& aEvent) {
     // become the current cursor.  When we mouseexit, we stop.
     if (eMouseEnterIntoWidget == aEvent.mMessage) {
       mTabSetsCursor = true;
-      if (mCursor != eCursorInvalid) {
-        widget->SetCursor(mCursor, mCustomCursor, mCustomCursorHotspotX,
-                          mCustomCursorHotspotY);
-      }
+      widget->SetCursor(mCursor);
     } else if (eMouseExitFromWidget == aEvent.mMessage) {
       mTabSetsCursor = false;
     }
@@ -1581,7 +1590,12 @@ mozilla::ipc::IPCResult BrowserParent::RecvRequestNativeKeyBindings(
     return IPC_OK();
   }
 
-  if (localEvent.InitEditCommandsFor(keyBindingsType)) {
+  Maybe<WritingMode> writingMode;
+  if (RefPtr<widget::TextEventDispatcher> dispatcher =
+          widget->GetTextEventDispatcher()) {
+    writingMode = dispatcher->MaybeWritingModeAtSelection();
+  }
+  if (localEvent.InitEditCommandsFor(keyBindingsType, writingMode)) {
     *aCommands = localEvent.EditCommandsConstRef(keyBindingsType);
   }
 
@@ -1735,34 +1749,26 @@ mozilla::ipc::IPCResult BrowserParent::RecvClearNativeTouchSequence(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-BrowserParent::RecvSetPrefersReducedMotionOverrideForTest(const bool& aValue) {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (widget) {
-    widget->SetPrefersReducedMotionOverrideForTest(aValue);
-  }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult
-BrowserParent::RecvResetPrefersReducedMotionOverrideForTest() {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (widget) {
-    widget->ResetPrefersReducedMotionOverrideForTest();
-  }
-  return IPC_OK();
-}
-
 void BrowserParent::SendRealKeyEvent(WidgetKeyboardEvent& aEvent) {
   if (mIsDestroyed || !mIsReadyToHandleInputEvents) {
     return;
   }
   aEvent.mRefPoint = TransformParentToChild(aEvent.mRefPoint);
 
+  // NOTE: If you call `InitAllEditCommands()` for the other messages too,
+  //       you also need to update
+  //       TextEventDispatcher::DispatchKeyboardEventInternal().
   if (aEvent.mMessage == eKeyPress) {
     // XXX Should we do this only when input context indicates an editor having
     //     focus and the key event won't cause inputting text?
-    aEvent.InitAllEditCommands();
+    Maybe<WritingMode> writingMode;
+    if (aEvent.mWidget) {
+      if (RefPtr<widget::TextEventDispatcher> dispatcher =
+              aEvent.mWidget->GetTextEventDispatcher()) {
+        writingMode = dispatcher->MaybeWritingModeAtSelection();
+      }
+    }
+    aEvent.InitAllEditCommands(writingMode);
   } else {
     aEvent.PreventNativeKeyBindings();
   }
@@ -1896,7 +1902,8 @@ mozilla::ipc::IPCResult BrowserParent::RecvAsyncMessage(
 mozilla::ipc::IPCResult BrowserParent::RecvSetCursor(
     const nsCursor& aCursor, const bool& aHasCustomCursor,
     const nsCString& aCursorData, const uint32_t& aWidth,
-    const uint32_t& aHeight, const uint32_t& aStride,
+    const uint32_t& aHeight, const float& aResolutionX,
+    const float& aResolutionY, const uint32_t& aStride,
     const gfx::SurfaceFormat& aFormat, const uint32_t& aHotspotX,
     const uint32_t& aHotspotY, const bool& aForce) {
   nsCOMPtr<nsIWidget> widget = GetWidget();
@@ -1929,12 +1936,12 @@ mozilla::ipc::IPCResult BrowserParent::RecvSetCursor(
     cursorImage = image::ImageOps::CreateFromDrawable(drawable);
   }
 
-  widget->SetCursor(aCursor, cursorImage, aHotspotX, aHotspotY);
-  mCursor = aCursor;
-  mCustomCursor = cursorImage;
-  mCustomCursorHotspotX = aHotspotX;
-  mCustomCursorHotspotY = aHotspotY;
-
+  widget->SetCursor(mCursor);
+  mCursor = nsIWidget::Cursor{aCursor,
+                              std::move(cursorImage),
+                              aHotspotX,
+                              aHotspotY,
+                              {aResolutionX, aResolutionY}};
   return IPC_OK();
 }
 
@@ -2760,7 +2767,7 @@ bool BrowserParent::HandleQueryContentEvent(WidgetQueryContentEvent& aEvent) {
   }
   if (NS_WARN_IF(!mContentCache.HandleQueryContentEvent(
           aEvent, textInputHandlingWidget)) ||
-      NS_WARN_IF(!aEvent.mSucceeded)) {
+      NS_WARN_IF(aEvent.Failed())) {
     return true;
   }
   switch (aEvent.mMessage) {
@@ -2769,10 +2776,10 @@ bool BrowserParent::HandleQueryContentEvent(WidgetQueryContentEvent& aEvent) {
     case eQueryEditorRect: {
       nsCOMPtr<nsIWidget> browserWidget = GetWidget();
       if (browserWidget != textInputHandlingWidget) {
-        aEvent.mReply.mRect += nsLayoutUtils::WidgetToWidgetOffset(
+        aEvent.mReply->mRect += nsLayoutUtils::WidgetToWidgetOffset(
             browserWidget, textInputHandlingWidget);
       }
-      aEvent.mReply.mRect = TransformChildToParent(aEvent.mReply.mRect);
+      aEvent.mReply->mRect = TransformChildToParent(aEvent.mReply->mRect);
       break;
     }
     default:
@@ -2985,7 +2992,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvGetInputContext(
     widget::IMEState* aState) {
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) {
-    *aState = widget::IMEState(IMEState::DISABLED,
+    *aState = widget::IMEState(IMEEnabled::Disabled,
                                IMEState::OPEN_STATE_NOT_SUPPORTED);
     return IPC_OK();
   }
@@ -3955,7 +3962,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(nsIURI* aURI,
   if (NS_WARN_IF(!widget)) {
     return IPC_OK();
   }
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
   if (history) {
     Unused << history->VisitURI(widget, aURI, aLastVisitedURI, aFlags);
   }
@@ -3965,7 +3972,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(nsIURI* aURI,
 mozilla::ipc::IPCResult BrowserParent::RecvQueryVisitedState(
     const nsTArray<RefPtr<nsIURI>>&& aURIs) {
 #ifdef MOZ_ANDROID_HISTORY
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
   if (NS_WARN_IF(!history)) {
     return IPC_OK();
   }

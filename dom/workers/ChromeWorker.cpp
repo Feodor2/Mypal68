@@ -6,7 +6,7 @@
 
 #include "mozilla/dom/BindingUtils.h" //MY
 #include "mozilla/dom/WorkerBinding.h"
-#include "nsICookieSettings.h" //MY
+#include "nsICookieJarSettings.h" //MY
 #include "nsContentUtils.h"
 #include "WorkerPrivate.h"
 

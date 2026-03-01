@@ -63,12 +63,12 @@ struct DummyCallbacks final : public TraceCallbacks {
 
 TEST(NativeThenHandler, TraceValue)
 {
-  auto onResolve = [](JSContext*, JS::HandleValue, ErrorResult&,
-                      JS::HandleValue) -> already_AddRefed<Promise> {
+  auto onResolve = [](JSContext*, JS::Handle<JS::Value>, ErrorResult&,
+                      JS::Handle<JS::Value>) -> already_AddRefed<Promise> {
     return nullptr;
   };
-  auto onReject = [](JSContext*, JS::HandleValue, ErrorResult&,
-                     JS::HandleValue) -> already_AddRefed<Promise> {
+  auto onReject = [](JSContext*, JS::Handle<JS::Value>, ErrorResult&,
+                     JS::Handle<JS::Value>) -> already_AddRefed<Promise> {
     return nullptr;
   };
 
@@ -89,19 +89,19 @@ TEST(NativeThenHandler, TraceValue)
 
 TEST(NativeThenHandler, TraceObject)
 {
-  auto onResolve = [](JSContext*, JS::HandleValue, ErrorResult&,
-                      JS::HandleObject) -> already_AddRefed<Promise> {
+  auto onResolve = [](JSContext*, JS::Handle<JS::Value>, ErrorResult&,
+                      JS::Handle<JSObject*>) -> already_AddRefed<Promise> {
     return nullptr;
   };
-  auto onReject = [](JSContext*, JS::HandleValue, ErrorResult&,
-                     JS::HandleObject) -> already_AddRefed<Promise> {
+  auto onReject = [](JSContext*, JS::Handle<JS::Value>, ErrorResult&,
+                     JS::Handle<JSObject*>) -> already_AddRefed<Promise> {
     return nullptr;
   };
 
   AutoJSAPI jsapi;
   MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
   JSContext* cx = jsapi.cx();
-  JS::RootedObject obj(cx, JS_NewPlainObject(cx));
+  JS::Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
 
   // Explicit type for backward compatibility with clang<7 / gcc<8
   using HandlerType =
@@ -120,14 +120,14 @@ TEST(NativeThenHandler, TraceObject)
 
 TEST(NativeThenHandler, TraceMixed)
 {
-  auto onResolve = [](JSContext*, JS::HandleValue, ErrorResult&,
-                      nsIGlobalObject*, Promise*, JS::HandleValue,
-                      JS::HandleObject) -> already_AddRefed<Promise> {
+  auto onResolve = [](JSContext*, JS::Handle<JS::Value>, ErrorResult&,
+                      nsIGlobalObject*, Promise*, JS::Handle<JS::Value>,
+                      JS::Handle<JSObject*>) -> already_AddRefed<Promise> {
     return nullptr;
   };
-  auto onReject = [](JSContext*, JS::HandleValue, ErrorResult&,
-                     nsIGlobalObject*, Promise*, JS::HandleValue,
-                     JS::HandleObject) -> already_AddRefed<Promise> {
+  auto onReject = [](JSContext*, JS::Handle<JS::Value>, ErrorResult&,
+                     nsIGlobalObject*, Promise*, JS::Handle<JS::Value>,
+                     JS::Handle<JSObject*>) -> already_AddRefed<Promise> {
     return nullptr;
   };
 
@@ -135,7 +135,7 @@ TEST(NativeThenHandler, TraceMixed)
   MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
   JSContext* cx = jsapi.cx();
   nsCOMPtr<nsIGlobalObject> global = xpc::CurrentNativeGlobal(cx);
-  JS::RootedObject obj(cx, JS_NewPlainObject(cx));
+  JS::Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
 
   RefPtr<Promise> promise = Promise::Create(global, IgnoreErrors());
 

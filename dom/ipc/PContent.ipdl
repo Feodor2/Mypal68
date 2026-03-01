@@ -338,6 +338,12 @@ struct PostMessageData
     bool isFromPrivateWindow;
 };
 
+union BlobURLDataRequestResult
+{
+  IPCBlob;
+  nsresult;
+};
+
 /**
  * The PContent protocol is a top-level protocol between the UI process
  * and a content process. There is exactly one PContentParent/PContentChild pair
@@ -1066,7 +1072,7 @@ parent:
      */
     async POfflineCacheUpdate(nsIURI manifestURI, nsIURI documentURI,
                               PrincipalInfo loadingPrincipal, bool stickDocument,
-                              CookieSettingsArgs cookieSettings);
+                              CookieJarSettingsArgs cookieJarSettings);
 
     /**
      * Sets "offline-app" permission for the principal.  Called when we hit
@@ -1409,6 +1415,8 @@ parent:
     * notify chrome process in order to which tab is audible.
     */
     async NotifyMediaAudibleChanged(BrowsingContext aContext, bool aAudible);
+
+    async BlobURLDataRequest(nsCString aBlobURL, nsIPrincipal aTriggeringPrincipal, nsIPrincipal aLoadingPrincipal, OriginAttributes aOriginAttributes) returns (BlobURLDataRequestResult aResult);
 
 both:
     async CommitBrowsingContextTransaction(BrowsingContext aContext,

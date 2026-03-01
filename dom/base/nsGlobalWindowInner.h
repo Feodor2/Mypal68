@@ -186,13 +186,13 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 #endif
                                                                            {
  public:
-  typedef mozilla::dom::BrowsingContext RemoteProxy;
+  using RemoteProxy = mozilla::dom::BrowsingContext;
 
-  typedef mozilla::TimeStamp TimeStamp;
-  typedef mozilla::TimeDuration TimeDuration;
+  using TimeStamp = mozilla::TimeStamp;
+  using TimeDuration = mozilla::TimeDuration;
 
-  typedef nsTHashMap<nsUint64HashKey, nsGlobalWindowInner*>
-      InnerWindowByIdTable;
+  using InnerWindowByIdTable =
+      nsTHashMap<nsUint64HashKey, nsGlobalWindowInner*>;
 
   static void AssertIsOnMainThread()
 #ifdef DEBUG
@@ -201,6 +201,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   {
   }
 #endif
+
+  bool IsInnerWindow() const final { return true; }  // Overriding EventTarget
 
   static nsGlobalWindowInner* Cast(nsPIDOMWindowInner* aPIWin) {
     return static_cast<nsGlobalWindowInner*>(aPIWin);
@@ -1252,7 +1254,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void SuspendIdleRequests();
   void ResumeIdleRequests();
 
-  typedef mozilla::LinkedList<RefPtr<mozilla::dom::IdleRequest>> IdleRequests;
+  using IdleRequests = mozilla::LinkedList<RefPtr<mozilla::dom::IdleRequest>>;
   void RemoveIdleCallback(mozilla::dom::IdleRequest* aRequest);
 
   void SetActiveLoadingState(bool aIsLoading) override;

@@ -40,6 +40,7 @@ using mozilla::gfx::MaybeMatrix4x4 from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
+using mozilla::ScreenIntCoord from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
@@ -209,8 +210,8 @@ parent:
     /**
      * Construct a new Remote iframe actor.
      */
-    async PBrowserBridge(nsString aPresentationURL, nsCString aRemoteType,
-                         BrowsingContext aBrowsingContext, uint32_t aChromeFlags);
+    async PBrowserBridge(nsCString aRemoteType, BrowsingContext aBrowsingContext, 
+                         uint32_t aChromeFlags);
 
     /**
      * Sends an NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW to be adopted by the
@@ -428,6 +429,10 @@ parent:
      *   Width of the image.
      * @param height
      *   Height of the image.
+     * @param resolutionX
+     *   Resolution of the image X axis in dppx units.
+     * @param resolutionY
+     *   Resolution of the image Y axis in dppx units.
      * @param stride
      *   Stride used in the image data.
      * @param format
@@ -444,6 +449,7 @@ parent:
                     bool hasCustomCursor,
                     nsCString customCursorData,
                     uint32_t width, uint32_t height,
+                    float resolutionX, float resolutionY,
                     uint32_t stride, SurfaceFormat format,
                     uint32_t hotspotX, uint32_t hotspotY, bool force);
 
@@ -682,9 +688,6 @@ parent:
     sync SetSystemFont(nsCString aFontName);
     sync GetSystemFont() returns (nsCString retval);
 
-    sync SetPrefersReducedMotionOverrideForTest(bool aValue);
-    sync ResetPrefersReducedMotionOverrideForTest();
-
 child:
     /**
      * Notify the remote browser that it has been Show()n on this side. This
@@ -710,7 +713,9 @@ child:
     async ChildToParentMatrix(MaybeMatrix4x4 aMatrix);
 
     async SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
-
+#if defined(MOZ_WIDGET_ANDROID)
+    async DynamicToolbarMaxHeightChanged(ScreenIntCoord height);
+#endif
     async ParentActivated(bool aActivated);
 
     async SetKeyboardIndicators(UIStateChangeType showFocusRings);

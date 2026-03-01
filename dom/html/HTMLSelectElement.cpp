@@ -16,6 +16,7 @@
 #include "mozilla/dom/HTMLSelectElementBinding.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/MappedDeclarations.h"
+#include "mozilla/Maybe.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentList.h"
 #include "nsError.h"
@@ -109,7 +110,7 @@ HTMLSelectElement::HTMLSelectElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     FromParser aFromParser)
     : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), aFromParser,
-                                        NS_FORM_SELECT),
+                                        FormControlType::Select),
       mOptions(new HTMLOptionsCollection(this)),
       mAutocompleteAttrState(nsContentUtils::eAutocompleteAttrState_Unknown),
       mAutocompleteInfoState(nsContentUtils::eAutocompleteAttrState_Unknown),
@@ -177,22 +178,22 @@ void HTMLSelectElement::GetAutocompleteInfo(AutocompleteInfo& aInfo) {
       attributeVal, aInfo, mAutocompleteInfoState, true);
 }
 
-nsresult HTMLSelectElement::InsertChildBefore(nsIContent* aKid,
-                                              nsIContent* aBeforeThis,
-                                              bool aNotify) {
-  int32_t index = aBeforeThis ? ComputeIndexOf(aBeforeThis) : GetChildCount();
+void HTMLSelectElement::InsertChildBefore(nsIContent* aKid,
+                                          nsIContent* aBeforeThis, bool aNotify,
+                                          ErrorResult& aRv) {
+  const uint32_t index =
+      aBeforeThis ? *ComputeIndexOf(aBeforeThis) : GetChildCount();
   SafeOptionListMutation safeMutation(this, this, aKid, index, aNotify);
-  nsresult rv = nsGenericHTMLFormElementWithState::InsertChildBefore(
-      aKid, aBeforeThis, aNotify);
-  if (NS_FAILED(rv)) {
+  nsGenericHTMLFormElementWithState::InsertChildBefore(aKid, aBeforeThis,
+                                                       aNotify, aRv);
+  if (aRv.Failed()) {
     safeMutation.MutationFailed();
   }
-  return rv;
 }
 
 void HTMLSelectElement::RemoveChildNode(nsIContent* aKid, bool aNotify) {
-  SafeOptionListMutation safeMutation(this, this, nullptr, ComputeIndexOf(aKid),
-                                      aNotify);
+  SafeOptionListMutation safeMutation(this, this, nullptr,
+                                      *ComputeIndexOf(aKid), aNotify);
   nsGenericHTMLFormElementWithState::RemoveChildNode(aKid, aNotify);
 }
 
@@ -448,8 +449,8 @@ int32_t HTMLSelectElement::GetOptionIndexAfter(nsIContent* aOptions) {
   nsCOMPtr<nsIContent> parent = aOptions->GetParent();
 
   if (parent) {
-    int32_t index = parent->ComputeIndexOf(aOptions);
-    int32_t count = parent->GetChildCount();
+    const int32_t index = parent->ComputeIndexOf_Deprecated(aOptions);
+    const int32_t count = static_cast<int32_t>(parent->GetChildCount());
 
     retval = GetFirstChildOptionIndex(parent, index + 1, count);
 

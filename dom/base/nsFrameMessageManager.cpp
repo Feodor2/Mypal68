@@ -428,8 +428,8 @@ bool nsFrameMessageManager::GetParamsForMessage(JSContext* aCx,
                                                 const JS::Value& aTransfer,
                                                 StructuredCloneData& aData) {
   // First try to use structured clone on the whole thing.
-  JS::RootedValue v(aCx, aValue);
-  JS::RootedValue t(aCx, aTransfer);
+  JS::Rooted<JS::Value> v(aCx, aValue);
+  JS::Rooted<JS::Value> t(aCx, aTransfer);
   ErrorResult rv;
   aData.Write(aCx, v, t, rv);
   if (!rv.Failed()) {
@@ -895,7 +895,7 @@ void nsFrameMessageManager::Disconnect(bool aRemoveFromParent) {
 }
 
 void nsFrameMessageManager::SetInitialProcessData(
-    JS::HandleValue aInitialData) {
+    JS::Handle<JS::Value> aInitialData) {
   MOZ_ASSERT(!mChrome);
   MOZ_ASSERT(mIsProcessManager);
   MOZ_ASSERT(aInitialData.isObject());
@@ -908,14 +908,14 @@ void nsFrameMessageManager::GetInitialProcessData(
   MOZ_ASSERT(mIsProcessManager);
   MOZ_ASSERT_IF(mChrome, IsBroadcaster());
 
-  JS::RootedValue init(aCx, mInitialProcessData);
+  JS::Rooted<JS::Value> init(aCx, mInitialProcessData);
   if (mChrome && init.isUndefined()) {
     // We create the initial object in the junk scope. If we created it in a
     // normal realm, that realm would leak until shutdown.
-    JS::RootedObject global(aCx, xpc::PrivilegedJunkScope());
+    JS::Rooted<JSObject*> global(aCx, xpc::PrivilegedJunkScope());
     JSAutoRealm ar(aCx, global);
 
-    JS::RootedObject obj(aCx, JS_NewPlainObject(aCx));
+    JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
     if (!obj) {
       aError.NoteJSContextException(aCx);
       return;
@@ -1217,7 +1217,7 @@ void nsMessageManagerScriptExecutor::LoadScriptInternal(
           mAnonymousGlobalScopes.AppendElement(scope);
         }
       } else {
-        JS::RootedValue rval(cx);
+        JS::Rooted<JS::Value> rval(cx);
         JS::RootedVector<JSObject*> envChain(cx);
         if (!envChain.append(aMessageManager)) {
           return;
@@ -1288,7 +1288,7 @@ nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
     nsCOMPtr<nsIChannel> channel;
     NS_NewChannel(getter_AddRefs(channel), uri,
                   nsContentUtils::GetSystemPrincipal(),
-                  nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                  nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                   nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT);
 
     if (!channel) {

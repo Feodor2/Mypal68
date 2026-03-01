@@ -324,6 +324,9 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mIgnoreKeyPressEvent(false),
       mHasValidInnerSize(false),
       mDestroyed(false),
+#if defined(MOZ_WIDGET_ANDROID)
+      mDynamicToolbarMaxHeight(0),
+#endif
       mUniqueId(aTabId),
       mHasSiblings(false),
       mIsTransparent(false),
@@ -471,9 +474,6 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
   mWebNav = do_QueryInterface(webBrowser);
   NS_ASSERTION(mWebNav, "nsWebBrowser doesn't implement nsIWebNavigation?");
 
-  // Set the tab context attributes then pass to docShell
-  NotifyTabContextUpdated(false);
-
   // IPC uses a WebBrowser object for which DNS prefetching is turned off
   // by default. But here we really want it, so enable it explicitly
   mWebBrowser->SetAllowDNSPrefetch(true);
@@ -550,24 +550,6 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
   NS_ENSURE_SUCCESS(rv, rv);
 #endif
   return NS_OK;
-}
-
-void BrowserChild::NotifyTabContextUpdated(bool aIsPreallocated) {
-  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
-  MOZ_ASSERT(docShell);
-
-  if (!docShell) {
-    return;
-  }
-
-  if (aIsPreallocated) {
-    nsDocShell::Cast(docShell)->SetOriginAttributes(OriginAttributesRef());
-  }
-
-  // Set SANDBOXED_AUXILIARY_NAVIGATION flag if this is a receiver page.
-  if (!PresentationURL().IsEmpty()) {
-    docShell->SetSandboxFlags(SANDBOXED_AUXILIARY_NAVIGATION);
-  }
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(BrowserChild)
@@ -1203,6 +1185,23 @@ mozilla::ipc::IPCResult BrowserChild::RecvSetIsUnderHiddenEmbedderElement(
   }
   return IPC_OK();
 }
+
+#if defined(MOZ_WIDGET_ANDROID)
+mozilla::ipc::IPCResult BrowserChild::RecvDynamicToolbarMaxHeightChanged(
+    const ScreenIntCoord& aHeight) {
+  mDynamicToolbarMaxHeight = aHeight;
+
+  RefPtr<Document> document = GetTopLevelDocument();
+  if (!document) {
+    return IPC_OK();
+  }
+
+  if (RefPtr<nsPresContext> presContext = document->GetPresContext()) {
+    presContext->SetDynamicToolbarMaxHeight(aHeight);
+  }
+  return IPC_OK();
+}
+#endif
 
 mozilla::ipc::IPCResult BrowserChild::RecvSuppressDisplayport(
     const bool& aEnabled) {

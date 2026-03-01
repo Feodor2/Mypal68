@@ -376,7 +376,7 @@ bool nsPlainTextSerializer::IsIgnorableRubyAnnotation(
 // Return true if aElement has 'display:none' or if we just don't know.
 static bool IsDisplayNone(Element* aElement) {
   RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
+      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement);
   return !computedStyle ||
          computedStyle->StyleDisplay()->mDisplay == StyleDisplay::None;
 }
@@ -428,7 +428,7 @@ nsPlainTextSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
 
   // Mask the text if the text node is in a password field.
   if (content->HasFlag(NS_MAYBE_MASKED)) {
-    EditorUtils::MaskString(textstr, content->AsText(), 0, aStartOffset);
+    EditorUtils::MaskString(textstr, *content->AsText(), 0, aStartOffset);
   }
 
   // We have to split the string across newlines
@@ -1688,7 +1688,7 @@ bool nsPlainTextSerializer::IsElementPreformatted() const {
 
 bool nsPlainTextSerializer::IsElementPreformatted(Element* aElement) {
   RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
+      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement);
   if (computedStyle) {
     const nsStyleText* textStyle = computedStyle->StyleText();
     return textStyle->WhiteSpaceOrNewlineIsSignificant();
@@ -1699,7 +1699,7 @@ bool nsPlainTextSerializer::IsElementPreformatted(Element* aElement) {
 
 bool nsPlainTextSerializer::IsCssBlockLevelElement(Element* aElement) {
   RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
+      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement);
   if (computedStyle) {
     const nsStyleDisplay* displayStyle = computedStyle->StyleDisplay();
     return displayStyle->IsBlockOutsideStyle();

@@ -8,6 +8,8 @@
 #include "nsCRT.h"
 #include "nsError.h"
 #include "nsIAsyncInputStream.h"
+#include "nsIHttpChannel.h"
+#include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "mozilla/dom/Document.h"
@@ -255,14 +257,13 @@ class WorkerStreamOwner final {
       nsIAsyncInputStream* aStream, WorkerPrivate* aWorker) {
     RefPtr<WorkerStreamOwner> self = new WorkerStreamOwner(aStream);
 
-    self->mWorkerRef = WeakWorkerRef::Create(aWorker, [self]() {
+    self->mWorkerRef = StrongWorkerRef::Create(aWorker, "JSStreamConsumer", [self]() {
       if (self->mStream) {
         // If this Close() calls JSStreamConsumer::OnInputStreamReady and drops
         // the last reference to the JSStreamConsumer, 'this' will not be
         // destroyed since ~JSStreamConsumer() only enqueues a Destroyer.
         self->mStream->Close();
         self->mStream = nullptr;
-        self->mWorkerRef = nullptr;
       }
     });
 
@@ -295,7 +296,7 @@ class WorkerStreamOwner final {
   // Read from any thread but only set/cleared on the worker thread. The
   // lifecycle of WorkerStreamOwner prevents concurrent read/clear.
   nsCOMPtr<nsIAsyncInputStream> mStream;
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mWorkerRef;
 };
 
 class JSStreamConsumer final : public nsIInputStreamCallback {
@@ -520,7 +521,7 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
       break;
   }
 
-  RefPtr<InternalResponse> ir = response->GetInternalResponse();
+  SafeRefPtr<InternalResponse> ir = response->GetInternalResponse();
   if (NS_WARN_IF(!ir)) {
     return ThrowException(aCx, JSMSG_OUT_OF_MEMORY);
   }

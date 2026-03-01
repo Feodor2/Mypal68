@@ -29,6 +29,7 @@
 #include "nsIPrincipal.h"
 #include "nsIUUIDGenerator.h"
 #include "nsNetUtil.h"
+#include "nsReadableUtils.h"
 
 #define RELEASING_TIMER 5000
 
@@ -459,7 +460,7 @@ class ReleasingTimerHolder final : public Runnable,
   explicit ReleasingTimerHolder(const nsACString& aURI)
       : Runnable("ReleasingTimerHolder"), mURI(aURI) {}
 
-  ~ReleasingTimerHolder() = default;
+  ~ReleasingTimerHolder() override = default;
 
   void RevokeURI() {
     // Remove the shutting down blocker
@@ -497,7 +498,7 @@ class ReleasingTimerHolder final : public Runnable,
   }
 
   static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownPhase() {
-    nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdown();
+    nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
     NS_ENSURE_TRUE(!!svc, nullptr);
 
     nsCOMPtr<nsIAsyncShutdownClient> phase;
@@ -697,14 +698,14 @@ nsresult BlobURLProtocolHandler::GenerateURIString(nsIPrincipal* aPrincipal,
 
 /* static */
 nsIPrincipal* BlobURLProtocolHandler::GetDataEntryPrincipal(
-    const nsACString& aUri) {
+    const nsACString& aUri, bool aAlsoIfRevoked) {
   MOZ_ASSERT(NS_IsMainThread(),
              "without locking gDataTable is main-thread only");
   if (!gDataTable) {
     return nullptr;
   }
 
-  DataInfo* res = GetDataInfo(aUri);
+  DataInfo* res = GetDataInfo(aUri, aAlsoIfRevoked);
 
   if (!res) {
     return nullptr;
@@ -781,59 +782,17 @@ BlobURLProtocolHandler::GetFlagsForURI(nsIURI* aURI, uint32_t* aResult) {
 
   return NS_MutateURI(new BlobURL::Mutator())
       .SetSpec(aSpec)
-      .Apply(NS_MutatorMethod(&nsIBlobURLMutator::SetRevoked, revoked))
+      .Apply(&nsIBlobURLMutator::SetRevoked, revoked)
       .Finalize(aResult);
 }
 
 NS_IMETHODIMP
 BlobURLProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
                                    nsIChannel** aResult) {
-  RefPtr<BlobURLChannel> channel = new BlobURLChannel(aURI, aLoadInfo);
-
-  auto raii = MakeScopeExit([&] {
-    channel->InitFailed();
-    channel.forget(aResult);
-  });
-
-  RefPtr<BlobURL> blobURL;
-  nsresult rv =
-      aURI->QueryInterface(kHOSTOBJECTURICID, getter_AddRefs(blobURL));
-  if (NS_FAILED(rv) || !blobURL) {
-    return NS_OK;
+  auto channel = MakeRefPtr<BlobURLChannel>(aURI, aLoadInfo);
+  if (!channel) {
+    return NS_ERROR_NOT_INITIALIZED;
   }
-
-  MOZ_ASSERT(NS_IsMainThread(),
-             "without locking gDataTable is main-thread only");
-  DataInfo* info = GetDataInfoFromURI(aURI, true /*aAlsoIfRevoked */);
-  if (!info || info->mObjectType != DataInfo::eBlobImpl || !info->mBlobImpl) {
-    return NS_OK;
-  }
-
-  if (blobURL->Revoked()) {
-    return NS_OK;
-  }
-
-  // We want to be sure that we stop the creation of the channel if the blob URL
-  // is copy-and-pasted on a different context (ex. private browsing or
-  // containers).
-  //
-  // We also allow the system principal to create the channel regardless of the
-  // OriginAttributes.  This is primarily for the benefit of mechanisms like
-  // the Download API that explicitly create a channel with the system
-  // principal and which is never mutated to have a non-zero mPrivateBrowsingId
-  // or container.
-  if (aLoadInfo &&
-      (!aLoadInfo->GetLoadingPrincipal() ||
-       !aLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()) &&
-      !ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
-          aLoadInfo->GetOriginAttributes(),
-          BasePrincipal::Cast(info->mPrincipal)->OriginAttributesRef())) {
-    return NS_OK;
-  }
-
-  raii.release();
-
-  channel->Initialize(info->mBlobImpl);
   channel.forget(aResult);
   return NS_OK;
 }
@@ -906,14 +865,16 @@ nsresult NS_GetBlobForBlobURI(nsIURI* aURI, mozilla::dom::BlobImpl** aBlob) {
 }
 
 nsresult NS_GetBlobForBlobURISpec(const nsACString& aSpec,
-                                  mozilla::dom::BlobImpl** aBlob) {
+                                  mozilla::dom::BlobImpl** aBlob,
+                                  bool aAlsoIfRevoked) {
   *aBlob = nullptr;
   MOZ_ASSERT(NS_IsMainThread(),
              "without locking gDataTable is main-thread only");
 
   mozilla::dom::DataInfo* info =
-      mozilla::dom::GetDataInfo(aSpec);
-  if (!info || info->mObjectType != mozilla::dom::DataInfo::eBlobImpl) {
+      mozilla::dom::GetDataInfo(aSpec, aAlsoIfRevoked);
+  if (!info || info->mObjectType != mozilla::dom::DataInfo::eBlobImpl ||
+      !info->mBlobImpl) {
     return NS_ERROR_DOM_BAD_URI;
   }
 
@@ -953,6 +914,11 @@ bool IsType(nsIURI* aUri, mozilla::dom::DataInfo::ObjectType aType) {
 
 bool IsBlobURI(nsIURI* aUri) {
   return IsType(aUri, mozilla::dom::DataInfo::eBlobImpl);
+}
+
+bool BlobURLSchemeIsHTTPOrHTTPS(const nsACString& aUri) {
+  return (StringBeginsWith(aUri, "blob:http://"_ns) ||
+          StringBeginsWith(aUri, "blob:https://"_ns));
 }
 
 bool IsMediaSourceURI(nsIURI* aUri) {

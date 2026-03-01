@@ -18,8 +18,12 @@ dictionary FontFaceDescriptors {
   UTF8String unicodeRange = "U+0-10FFFF";
   UTF8String variant = "normal";
   UTF8String featureSettings = "normal";
-  UTF8String variationSettings = "normal";
-  UTF8String display = "auto";
+  [Pref="layout.css.font-variations.enabled"] UTF8String variationSettings = "normal";
+  [Pref="layout.css.font-display.enabled"] UTF8String display = "auto";
+  [Pref="layout.css.font-metrics-overrides.enabled"] UTF8String ascentOverride = "normal";
+  [Pref="layout.css.font-metrics-overrides.enabled"] UTF8String descentOverride = "normal";
+  [Pref="layout.css.font-metrics-overrides.enabled"] UTF8String lineGapOverride = "normal";
+  [Pref="layout.css.size-adjust.enabled"] UTF8String sizeAdjust = "100%";
 };
 
 enum FontFaceLoadStatus { "unloaded", "loading", "loaded", "error" };
@@ -43,6 +47,10 @@ interface FontFace {
   [SetterThrows] attribute UTF8String featureSettings;
   [SetterThrows, Pref="layout.css.font-variations.enabled"] attribute UTF8String variationSettings;
   [SetterThrows, Pref="layout.css.font-display.enabled"] attribute UTF8String display;
+  [SetterThrows, Pref="layout.css.font-metrics-overrides.enabled"] attribute UTF8String ascentOverride;
+  [SetterThrows, Pref="layout.css.font-metrics-overrides.enabled"] attribute UTF8String descentOverride;
+  [SetterThrows, Pref="layout.css.font-metrics-overrides.enabled"] attribute UTF8String lineGapOverride;
+  [SetterThrows, Pref="layout.css.size-adjust.enabled"] attribute UTF8String sizeAdjust;
 
   readonly attribute FontFaceLoadStatus status;
 

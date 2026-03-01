@@ -227,7 +227,8 @@ nsresult PluginDocument::CreateSyntheticPluginDocument() {
 
   // nsHTML(Shared)ObjectElement does not kick off a load on BindToTree if it is
   // to a PluginDocument
-  body->AppendChildTo(mPluginContent, false);
+  IgnoredErrorResult error;
+  body->AppendChildTo(mPluginContent, false, error);
 
   return NS_OK;
 }

@@ -6,6 +6,7 @@
 #include "mozilla/AnimationComparator.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/dom/AnimatableBinding.h"
 #include "mozilla/dom/Document.h"
@@ -302,7 +303,7 @@ Element* DocumentOrShadowRoot::GetPointerLockElement() {
              : nullptr;
 }
 
-Element* DocumentOrShadowRoot::GetFullscreenElement() {
+Element* DocumentOrShadowRoot::GetFullscreenElement() const {
   if (!AsNode().IsInComposedDoc()) {
     return nullptr;
   }

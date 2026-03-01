@@ -24,7 +24,7 @@
 #include "nsContentUtils.h"
 
 #include "nsIBFCacheEntry.h"
-#include "nsICookieSettings.h"
+#include "nsICookieJarSettings.h"
 #include "mozilla/dom/Document.h"
 
 #ifdef XP_WIN
@@ -244,7 +244,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
 
   StorageAccess storageAccess;
 
-  nsCOMPtr<nsICookieSettings> cs;
+  nsCOMPtr<nsICookieJarSettings> cs;
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
     if (NS_WARN_IF(!window)) {
@@ -290,7 +290,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
 
     Document* doc = window->GetExtantDoc();
     if (doc) {
-      cs = doc->CookieSettings();
+      cs = doc->CookieJarSettings();
     }
   } else {
     JSContext* cx = aGlobal.Context();
@@ -319,7 +319,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
     storageAccess = workerPrivate->StorageAccess();
     bc->mWorkerRef = workerRef;
 
-    cs = workerPrivate->CookieSettings();
+    cs = workerPrivate->CookieJarSettings();
   }
 
   // We want to allow opaque origins.

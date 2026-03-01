@@ -254,7 +254,7 @@ nsresult IDBFactory::AllowedForWindowInternal(
 
   if (ShouldPartitionStorage(access) &&
       !StoragePartitioningEnabled(access,
-                                  aWindow->GetExtantDoc()->CookieSettings())) {
+                                  aWindow->GetExtantDoc()->CookieJarSettings())) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 

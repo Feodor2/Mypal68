@@ -84,11 +84,10 @@ void HTMLLegendElement::Focus(const FocusOptions& aOptions,
   }
 
   RefPtr<Element> result;
-  aError = fm->MoveFocus(
-      nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
-      nsIFocusManager::FLAG_NOPARENTFRAME |
-          nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions),
-      getter_AddRefs(result));
+  aError = fm->MoveFocus(nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
+                         nsIFocusManager::FLAG_NOPARENTFRAME |
+                             nsFocusManager::ProgrammaticFocusFlags(aOptions),
+                         getter_AddRefs(result));
 }
 
 bool HTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
@@ -120,11 +119,9 @@ HTMLLegendElement::LegendAlignValue HTMLLegendElement::LogicalAlign(
   }
 }
 
-already_AddRefed<HTMLFormElement> HTMLLegendElement::GetForm() {
-  Element* form = GetFormElement();
-  MOZ_ASSERT_IF(form, form->IsHTMLElement(nsGkAtoms::form));
-  RefPtr<HTMLFormElement> ret = static_cast<HTMLFormElement*>(form);
-  return ret.forget();
+HTMLFormElement* HTMLLegendElement::GetForm() const {
+  nsCOMPtr<nsIFormControl> fieldsetControl = do_QueryInterface(GetFieldSet());
+  return fieldsetControl ? fieldsetControl->GetForm() : nullptr;
 }
 
 JSObject* HTMLLegendElement::WrapNode(JSContext* aCx,

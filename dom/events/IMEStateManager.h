@@ -165,9 +165,14 @@ class IMEStateManager {
   // XXX Changing this to MOZ_CAN_RUN_SCRIPT requires too many callers to be
   //     marked too.  Probably, we should initialize IMEContentObserver
   //     asynchronously.
+  enum class UpdateIMEStateOption {
+    ForceUpdate,
+    DontCommitComposition,
+  };
+  using UpdateIMEStateOptions = EnumSet<UpdateIMEStateOption, uint32_t>;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY static void UpdateIMEState(
       const IMEState& aNewIMEState, nsIContent* aContent,
-      EditorBase* aEditorBase);
+      EditorBase* aEditorBase, const UpdateIMEStateOptions& aOptions = {});
 
   // This method is called when user operates mouse button in focused editor
   // and before the editor handles it.
@@ -260,8 +265,8 @@ class IMEStateManager {
   static nsresult NotifyIME(IMEMessage aMessage, nsPresContext* aPresContext,
                             BrowserParent* aBrowserParent = nullptr);
 
-  static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
-                                      nsIContent* aContent);
+  static nsINode* GetRootEditableNode(const nsPresContext* aPresContext,
+                                      const nsIContent* aContent);
 
   /**
    * Returns active IMEContentObserver but may be nullptr if focused content
@@ -289,7 +294,14 @@ class IMEStateManager {
   //     marked too.  Probably, we should initialize IMEContentObserver
   //     asynchronously.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY static void CreateIMEContentObserver(
-      EditorBase* aEditorBase);
+      EditorBase* aEditorBase, nsIContent* aFocusedContent);
+
+  /**
+   * Check whether the content matches or does not match with focus information
+   * which is previously notified via OnChangeFocus();
+   */
+  static bool IsFocusedContent(const nsPresContext* aPresContext,
+                               const nsIContent* aFocusedContent);
 
   static void DestroyIMEContentObserver();
 

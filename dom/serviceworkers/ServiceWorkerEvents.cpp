@@ -234,7 +234,7 @@ NS_IMPL_ISUPPORTS(BodyCopyHandle, nsIInterceptedBodyCallback)
 
 class StartResponse final : public Runnable {
   nsMainThreadPtrHandle<nsIInterceptedChannel> mChannel;
-  RefPtr<InternalResponse> mInternalResponse;
+  SafeRefPtr<InternalResponse> mInternalResponse;
   ChannelInfo mWorkerChannelInfo;
   const nsCString mScriptSpec;
   const nsCString mResponseURLSpec;
@@ -242,14 +242,14 @@ class StartResponse final : public Runnable {
 
  public:
   StartResponse(nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
-                InternalResponse* aInternalResponse,
+                SafeRefPtr<InternalResponse> aInternalResponse,
                 const ChannelInfo& aWorkerChannelInfo,
                 const nsACString& aScriptSpec,
                 const nsACString& aResponseURLSpec,
                 UniquePtr<RespondWithClosure>&& aClosure)
       : Runnable("dom::StartResponse"),
         mChannel(aChannel),
-        mInternalResponse(aInternalResponse),
+        mInternalResponse(std::move(aInternalResponse)),
         mWorkerChannelInfo(aWorkerChannelInfo),
         mScriptSpec(aScriptSpec),
         mResponseURLSpec(aResponseURLSpec),
@@ -644,7 +644,7 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
     }
   }
 
-  RefPtr<InternalResponse> ir = response->GetInternalResponse();
+  SafeRefPtr<InternalResponse> ir = response->GetInternalResponse();
   if (NS_WARN_IF(!ir)) {
     return;
   }
@@ -693,9 +693,9 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
       mInterceptedChannel, mRegistration, mRequestURL, mRespondWithScriptSpec,
       mRespondWithLineNumber, mRespondWithColumnNumber));
 
-  nsCOMPtr<nsIRunnable> startRunnable =
-      new StartResponse(mInterceptedChannel, ir, worker->GetChannelInfo(),
-                        mScriptSpec, responseURL, std::move(closure));
+  nsCOMPtr<nsIRunnable> startRunnable = new StartResponse(
+      mInterceptedChannel, ir.clonePtr(), worker->GetChannelInfo(), mScriptSpec,
+      responseURL, std::move(closure));
 
   nsCOMPtr<nsIInputStream> body;
   ir->GetUnfilteredBody(getter_AddRefs(body));

@@ -94,10 +94,10 @@ static bool IsEventTargetChrome(EventTarget* aEventTarget,
   }
 
   Document* doc = nullptr;
-  if (nsCOMPtr<nsINode> node = do_QueryInterface(aEventTarget)) {
+  if (nsINode* node = nsINode::FromEventTargetOrNull(aEventTarget)) {
     doc = node->OwnerDoc();
-  } else if (nsCOMPtr<nsPIDOMWindowInner> window =
-                 do_QueryInterface(aEventTarget)) {
+  } else if (nsPIDOMWindowInner* window =
+                 nsPIDOMWindowInner::FromEventTargetOrNull(aEventTarget)) {
     doc = window->GetExtantDoc();
   }
 
@@ -373,7 +373,7 @@ class EventTargetChainItem {
     bool mIsChromeHandler : 1;
 
    private:
-    typedef uint32_t RawFlags;
+    using RawFlags = uint32_t;
     void SetRawFlags(RawFlags aRawFlags) {
       static_assert(
           sizeof(EventTargetChainFlags) <= sizeof(RawFlags),
@@ -680,16 +680,18 @@ EventTargetChainItem* EventTargetChainItemForChromeTarget(
 }
 
 static bool ShouldClearTargets(WidgetEvent* aEvent) {
-  nsCOMPtr<nsIContent> finalTarget;
-  nsCOMPtr<nsIContent> finalRelatedTarget;
-  if ((finalTarget = do_QueryInterface(aEvent->mTarget)) &&
-      finalTarget->SubtreeRoot()->IsShadowRoot()) {
-    return true;
+  if (nsIContent* finalTarget =
+          nsIContent::FromEventTargetOrNull(aEvent->mTarget)) {
+    if (finalTarget->SubtreeRoot()->IsShadowRoot()) {
+      return true;
+    }
   }
 
-  if ((finalRelatedTarget = do_QueryInterface(aEvent->mRelatedTarget)) &&
-      finalRelatedTarget->SubtreeRoot()->IsShadowRoot()) {
-    return true;
+  if (nsIContent* finalRelatedTarget =
+          nsIContent::FromEventTargetOrNull(aEvent->mRelatedTarget)) {
+    if (finalRelatedTarget->SubtreeRoot()->IsShadowRoot()) {
+      return true;
+    }
   }
   // XXXsmaug Check also all the touch objects.
 
@@ -735,7 +737,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
   bool retargeted = false;
 
   if (aEvent->mFlags.mRetargetToNonNativeAnonymous) {
-    nsCOMPtr<nsIContent> content = do_QueryInterface(target);
+    nsIContent* content = nsIContent::FromEventTargetOrNull(target);
     if (content && content->IsInNativeAnonymousSubtree()) {
       nsCOMPtr<EventTarget> newTarget =
           content->FindFirstNonChromeOnlyAccessContent();
@@ -858,17 +860,18 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
 
   bool clearTargets = false;
 
-  nsCOMPtr<nsIContent> content = do_QueryInterface(aEvent->mOriginalTarget);
+  nsCOMPtr<nsIContent> content =
+      nsIContent::FromEventTargetOrNull(aEvent->mOriginalTarget);
   bool isInAnon = content && content->IsInNativeAnonymousSubtree();
 
   aEvent->mFlags.mIsBeingDispatched = true;
 
   // Create visitor object and start event dispatching.
   // GetEventTargetParent for the original target.
-  nsEventStatus status =
-      aDOMEvent && aDOMEvent->DefaultPrevented()
-          ? nsEventStatus_eConsumeNoDefault
-          : aEventStatus ? *aEventStatus : nsEventStatus_eIgnore;
+  nsEventStatus status = aDOMEvent && aDOMEvent->DefaultPrevented()
+                             ? nsEventStatus_eConsumeNoDefault
+                         : aEventStatus ? *aEventStatus
+                                        : nsEventStatus_eIgnore;
   nsCOMPtr<EventTarget> targetForPreVisitor = aEvent->mTarget;
   EventChainPreVisitor preVisitor(aPresContext, aEvent, aDOMEvent, status,
                                   isInAnon, targetForPreVisitor);
@@ -941,7 +944,8 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
         topEtci = parentEtci;
       } else {
         bool ignoreBecauseOfShadowDOM = preVisitor.mIgnoreBecauseOfShadowDOM;
-        nsCOMPtr<nsINode> disabledTarget = do_QueryInterface(parentTarget);
+        nsCOMPtr<nsINode> disabledTarget =
+            nsINode::FromEventTargetOrNull(parentTarget);
         parentEtci = MayRetargetToChromeIfCanNotHandleEvent(
             chain, preVisitor, parentEtci, topEtci, disabledTarget);
         if (parentEtci && preVisitor.mCanHandle) {

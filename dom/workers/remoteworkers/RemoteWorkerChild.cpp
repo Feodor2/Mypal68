@@ -18,7 +18,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsCOMPtr.h"
 #include "nsIConsoleReportCollector.h"
 #include "nsIPrincipal.h"
@@ -225,12 +225,14 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   info.mStorageAccess = aData.storageAccess();
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
-  info.mCookieSettings = net::CookieSettings::Create();
+  info.mCookieJarSettings = net::CookieJarSettings::Create();
 
   // Default CSP permissions for now.  These will be overrided if necessary
   // based on the script CSP headers during load in ScriptLoader.
   info.mEvalAllowed = true;
-  info.mReportCSPViolations = false;
+  info.mReportEvalCSPViolations = false;
+  info.mWasmEvalAllowed = true;
+  info.mReportWasmEvalCSPViolations = false;
   info.mSecureContext = aData.isSecureContext()
                             ? WorkerLoadInfo::eSecureContext
                             : WorkerLoadInfo::eInsecureContext;
@@ -273,7 +275,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
       info.mResolvedScriptURI, clientInfo,
       aData.isSharedWorker() ? nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER
                              : nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER,
-      info.mCookieSettings, info.mReferrerInfo, getter_AddRefs(info.mChannel));
+      info.mCookieJarSettings, info.mReferrerInfo, getter_AddRefs(info.mChannel));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

@@ -29,6 +29,7 @@
 #include "nsDebugImpl.h"
 #include "nsExceptionHandler.h"
 #include "nsIFile.h"
+#include "nsPrintfCString.h" //MY
 #include "nsXULAppAPI.h"
 #include "prio.h"
 #ifdef XP_WIN

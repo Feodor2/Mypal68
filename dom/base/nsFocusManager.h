@@ -15,9 +15,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"
 
-#define FOCUSMETHOD_MASK 0xF000
-#define FOCUSMETHODANDRING_MASK 0xF0F000
-
 #define FOCUSMANAGER_CONTRACTID "@mozilla.org/focus-manager;1"
 
 class nsIContent;
@@ -42,8 +39,8 @@ struct nsDelayedBlurOrFocusEvent;
 class nsFocusManager final : public nsIFocusManager,
                              public nsIObserver,
                              public nsSupportsWeakReference {
-  typedef mozilla::widget::InputContextAction InputContextAction;
-  typedef mozilla::dom::Document Document;
+  using InputContextAction = mozilla::widget::InputContextAction;
+  using Document = mozilla::dom::Document;
 
  public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsFocusManager, nsIFocusManager)
@@ -216,7 +213,7 @@ class nsFocusManager final : public nsIFocusManager,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
   FocusPlugin(mozilla::dom::Element* aPlugin);
 
-  static uint32_t FocusOptionsToFocusManagerFlags(
+  static uint32_t ProgrammaticFocusFlags(
       const mozilla::dom::FocusOptions& aOptions);
 
   /**
@@ -235,8 +232,6 @@ class nsFocusManager final : public nsIFocusManager,
    * Returns an InputContextAction cause for aFlags.
    */
   static InputContextAction::Cause GetFocusMoveActionCause(uint32_t aFlags);
-
-  static bool sMouseFocusesFormControl;
 
   static void MarkUncollectableForCCGeneration(uint32_t aGeneration);
 
@@ -394,16 +389,14 @@ class nsFocusManager final : public nsIFocusManager,
    * event queue if the document is suppressing events.
    *
    * aEventMessage should be either eFocus or eBlur.
-   * For blur events, aFocusMethod should normally be non-zero.
    *
    * aWindowRaised should only be true if called from WindowRaised.
    */
   void SendFocusOrBlurEvent(
       mozilla::EventMessage aEventMessage, mozilla::PresShell* aPresShell,
-      Document* aDocument, nsISupports* aTarget, uint32_t aFocusMethod,
+      Document* aDocument, nsISupports* aTarget,
       bool aWindowRaised, bool aIsRefocus = false,
       mozilla::dom::EventTarget* aRelatedTarget = nullptr);
-
   /**
    * Fire a focus or blur event at aTarget.
    *

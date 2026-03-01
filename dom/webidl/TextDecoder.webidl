@@ -4,10 +4,16 @@
  *
  * The origin of this IDL file is
  * http://encoding.spec.whatwg.org/#interface-textdecoder
- *
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
  */
+
+interface mixin TextDecoderCommon {
+  [Constant]
+  readonly attribute DOMString encoding;
+  [Constant]
+  readonly attribute boolean fatal;
+  [Constant]
+  readonly attribute boolean ignoreBOM;
+};
 
 [Exposed=(Window,Worker)]
 interface TextDecoder {
@@ -15,15 +21,10 @@ interface TextDecoder {
   constructor(optional DOMString label = "utf-8",
               optional TextDecoderOptions options = {});
 
-  [Constant]
-  readonly attribute DOMString encoding;
-  [Constant]
-  readonly attribute boolean fatal;
-  [Constant]
-  readonly attribute boolean ignoreBOM;
   [Throws]
   USVString decode(optional BufferSource input, optional TextDecodeOptions options = {});
 };
+TextDecoder includes TextDecoderCommon;
 
 dictionary TextDecoderOptions {
   boolean fatal = false;
@@ -33,4 +34,3 @@ dictionary TextDecoderOptions {
 dictionary TextDecodeOptions {
   boolean stream = false;
 };
-

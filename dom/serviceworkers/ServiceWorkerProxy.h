@@ -11,6 +11,7 @@
 namespace mozilla {
 namespace dom {
 
+class ClientState;
 class ServiceWorkerCloneData;
 class ServiceWorkerInfo;
 class ServiceWorkerParent;

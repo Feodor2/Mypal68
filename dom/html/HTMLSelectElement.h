@@ -128,9 +128,6 @@ class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
   void SetDisabled(bool aVal, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aVal, aRv);
   }
-  HTMLFormElement* GetForm() const {
-    return nsGenericHTMLFormElementWithState::GetForm();
-  }
   bool Multiple() const { return GetBoolAttr(nsGkAtoms::multiple); }
   void SetMultiple(bool aVal, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::multiple, aVal, aRv);
@@ -197,8 +194,8 @@ class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
 
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex) override;
-  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                                     bool aNotify) override;
+  virtual void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                 bool aNotify, ErrorResult& aRv) override;
   virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
 
   // Overriden nsIFormControl methods

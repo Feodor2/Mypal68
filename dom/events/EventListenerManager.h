@@ -36,8 +36,8 @@ class EventTarget;
 class Element;
 }  // namespace dom
 
-typedef dom::CallbackObjectHolder<dom::EventListener, nsIDOMEventListener>
-    EventListenerHolder;
+using EventListenerHolder =
+    dom::CallbackObjectHolder<dom::EventListener, nsIDOMEventListener>;
 
 struct EventListenerFlags {
   friend class EventListenerManager;
@@ -155,9 +155,10 @@ class EventListenerManagerBase {
   uint16_t mMayHaveKeyEventListener : 1;
   uint16_t mMayHaveInputOrCompositionEventListener : 1;
   uint16_t mMayHaveSelectionChangeEventListener : 1;
+  uint16_t mMayHaveFormSelectEventListener : 1;
   uint16_t mClearingListeners : 1;
   uint16_t mIsMainThreadELM : 1;
-  // uint16_t mUnused : 4;
+  // uint16_t mUnused : 3;
 };
 
 /*
@@ -442,36 +443,39 @@ class EventListenerManager final : public EventListenerManagerBase {
    * Returns true if there may be a paint event listener registered,
    * false if there definitely isn't.
    */
-  bool MayHavePaintEventListener() { return mMayHavePaintEventListener; }
+  bool MayHavePaintEventListener() const { return mMayHavePaintEventListener; }
 
   /**
    * Returns true if there may be a touch event listener registered,
    * false if there definitely isn't.
    */
-  bool MayHaveTouchEventListener() { return mMayHaveTouchEventListener; }
+  bool MayHaveTouchEventListener() const { return mMayHaveTouchEventListener; }
 
-  bool MayHaveMouseEnterLeaveEventListener() {
+  bool MayHaveMouseEnterLeaveEventListener() const {
     return mMayHaveMouseEnterLeaveEventListener;
   }
-  bool MayHavePointerEnterLeaveEventListener() {
+  bool MayHavePointerEnterLeaveEventListener() const {
     return mMayHavePointerEnterLeaveEventListener;
   }
-  bool MayHaveSelectionChangeEventListener() {
+  bool MayHaveSelectionChangeEventListener() const {
     return mMayHaveSelectionChangeEventListener;
+  }
+  bool MayHaveFormSelectEventListener() const {
+    return mMayHaveFormSelectEventListener;
   }
 
   /**
    * Returns true if there may be a key event listener (keydown, keypress,
    * or keyup) registered, or false if there definitely isn't.
    */
-  bool MayHaveKeyEventListener() { return mMayHaveKeyEventListener; }
+  bool MayHaveKeyEventListener() const { return mMayHaveKeyEventListener; }
 
   /**
    * Returns true if there may be an advanced input event listener (input,
    * compositionstart, compositionupdate, or compositionend) registered,
    * or false if there definitely isn't.
    */
-  bool MayHaveInputOrCompositionEventListener() {
+  bool MayHaveInputOrCompositionEventListener() const {
     return mMayHaveInputOrCompositionEventListener;
   }
 

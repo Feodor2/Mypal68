@@ -356,7 +356,7 @@ nsXMLContentSink::OnTransformDone(nsresult aResult, Document* aResultDocument) {
   // documentElement?
   nsIContent* rootElement = mDocument->GetRootElement();
   if (rootElement) {
-    NS_ASSERTION(mDocument->ComputeIndexOf(rootElement) != -1,
+    NS_ASSERTION(mDocument->ComputeIndexOf(rootElement).isSome(),
                  "rootElement not in doc?");
     mDocument->BeginUpdate();
     MutationObservers::NotifyContentInserted(mDocument, rootElement);
@@ -590,13 +590,15 @@ nsresult nsXMLContentSink::AddContentAsLeaf(nsIContent* aContent) {
     if (mXSLTProcessor) {
       mDocumentChildren.AppendElement(aContent);
     } else {
-      mDocument->AppendChildTo(aContent, false);
+      mDocument->AppendChildTo(aContent, false, IgnoreErrors());
     }
   } else {
     nsCOMPtr<nsIContent> parent = GetCurrentContent();
 
     if (parent) {
-      result = parent->AppendChildTo(aContent, false);
+      ErrorResult rv;
+      parent->AppendChildTo(aContent, false, rv);
+      result = rv.StealNSResult();
     }
   }
   return result;
@@ -830,7 +832,7 @@ bool nsXMLContentSink::SetDocElement(int32_t aNameSpaceID, nsAtom* aTagName,
 
   if (!mDocumentChildren.IsEmpty()) {
     for (nsIContent* child : mDocumentChildren) {
-      mDocument->AppendChildTo(child, false);
+      mDocument->AppendChildTo(child, false, IgnoreErrors());
     }
     mDocumentChildren.Clear();
   }
@@ -850,8 +852,9 @@ bool nsXMLContentSink::SetDocElement(int32_t aNameSpaceID, nsAtom* aTagName,
     }
   }
 
-  nsresult rv = mDocument->AppendChildTo(mDocElement, NotifyForDocElement());
-  if (NS_FAILED(rv)) {
+  IgnoredErrorResult rv;
+  mDocument->AppendChildTo(mDocElement, NotifyForDocElement(), rv);
+  if (rv.Failed()) {
     // If we return false here, the caller will bail out because it won't
     // find a parent content node to append to, which is fine.
     return false;
@@ -930,7 +933,7 @@ nsresult nsXMLContentSink::HandleStartElement(
     if (!SetDocElement(nameSpaceID, localName, content) && appendContent) {
       NS_ENSURE_TRUE(parent, NS_ERROR_UNEXPECTED);
 
-      parent->AppendChildTo(content, false);
+      parent->AppendChildTo(content, false, IgnoreErrors());
     }
   }
 

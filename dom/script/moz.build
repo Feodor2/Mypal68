@@ -24,6 +24,7 @@ EXPORTS.mozilla.dom += [
     "ScriptLoader.h",
     "ScriptSettings.h",
     "ScriptTrace.h",
+    "ShadowRealmGlobalScope.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -35,6 +36,7 @@ UNIFIED_SOURCES += [
     "ScriptLoader.cpp",
     "ScriptLoadHandler.cpp",
     "ScriptSettings.cpp",
+    "ShadowRealmGlobalScope.cpp",
 ]
 
 LOCAL_INCLUDES += [

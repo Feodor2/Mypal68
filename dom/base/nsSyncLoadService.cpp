@@ -279,12 +279,12 @@ nsSyncLoader::GetInterface(const nsIID& aIID, void** aResult) {
 nsresult nsSyncLoadService::LoadDocument(
     nsIURI* aURI, nsContentPolicyType aContentPolicyType,
     nsIPrincipal* aLoaderPrincipal, nsSecurityFlags aSecurityFlags,
-    nsILoadGroup* aLoadGroup, nsICookieSettings* aCookieSettings,
+    nsILoadGroup* aLoadGroup, nsICookieJarSettings* aCookieJarSettings,
     bool aForceToXML, ReferrerPolicy aReferrerPolicy, Document** aResult) {
   nsCOMPtr<nsIChannel> channel;
   nsresult rv =
       NS_NewChannel(getter_AddRefs(channel), aURI, aLoaderPrincipal,
-                    aSecurityFlags, aContentPolicyType, aCookieSettings,
+                    aSecurityFlags, aContentPolicyType, aCookieJarSettings,
                     nullptr,  // PerformanceStorage
                     aLoadGroup);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -295,7 +295,7 @@ nsresult nsSyncLoadService::LoadDocument(
 
   // if the load needs to enforce CORS, then force the load to be async
   bool isSync =
-      !(aSecurityFlags & nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) &&
+      !(aSecurityFlags & nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) &&
       (aURI->SchemeIs("chrome") || aURI->SchemeIs("resource"));
   RefPtr<nsSyncLoader> loader = new nsSyncLoader();
   return loader->LoadDocument(channel, isSync, aForceToXML, aReferrerPolicy,

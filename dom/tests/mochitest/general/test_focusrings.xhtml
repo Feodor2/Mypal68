@@ -18,6 +18,8 @@
 
 SimpleTest.waitForExplicitFinish();
 
+const kIsMac = navigator.platform.includes("Mac");
+
 function snapShot(element) {
   var rect = element.getBoundingClientRect();
   adjustedRect = { left: rect.left - 6, top: rect.top - 6,
@@ -25,14 +27,25 @@ function snapShot(element) {
   return SpecialPowers.snapshotRect(window, adjustedRect, "transparent");
 }
 
-function initTest()
-{
-  SpecialPowers.pushPrefEnv({"set": [['accessibility.tabfocus', 7]]}, runTest);
+async function initTest() {
+  if (kIsMac) {
+    // FIXME: Historically this pref was only respected on mac,
+    // and the test uses that assumption.
+    //
+    // Ideally it should be refactored to test with the different
+    // values of the pref, independently of the platform.
+    await SpecialPowers.pushPrefEnv({
+      "set": [
+        ['accessibility.mouse_focuses_formcontrol', 0],
+      ]
+    });
+  }
+
+  runTest();
 }
 
 function runTest()
 {
-  var isMac = (navigator.platform.includes("Mac"));
   var isWinOrLinux = navigator.platform.includes("Win") || navigator.platform.includes("Linux");
 
   function checkFocus(element, visible, testid)
@@ -42,7 +55,7 @@ function runTest()
   }
 
   // make sure that a focus ring appears on the focused button
-  if (isMac) {
+  if (kIsMac) {
     var focusedButton = $("b3");
     ok(compareSnapshots(snapShot(focusedButton), snapShot($("b2")), true)[0], "unfocused shows no ring");
     focusedButton.focus();
@@ -57,7 +70,7 @@ function runTest()
   // the test regardless of which user input last occurred.
   $("l1").focus();
   var expectedVisible = (!isWinOrLinux || getComputedStyle($("l1"), "").outlineWidth == "2px");
-  testHTMLElements(htmlElements, isMac, isWinOrLinux && !expectedVisible);
+  testHTMLElements(htmlElements, isWinOrLinux && !expectedVisible);
 
   $("l1").focus();
   checkFocus($("l1"), expectedVisible, "appearance on list after focus() with :moz-focusring");
@@ -79,15 +92,15 @@ function runTest()
   }
 
   synthesizeMouse($("b2"), 4, 4, { });
-  checkFocus($("b2"), !isMac, "appearance on button after mouse focus with :focus");
+  checkFocus($("b2"), !kIsMac, "appearance on button after mouse focus with :focus");
 
   // after a key is pressed, the focus ring will always be visible
   $("l2").focus();
   synthesizeKey("KEY_Tab");
   checkFocus($("l3"), true, "appearance on list after tab focus");
 
-  if (isMac) {
-    SpecialPowers.pushPrefEnv({"set": [['accessibility.mouse_focuses_formcontrol', true]]}, testMacFocusesFormControl);
+  if (kIsMac) {
+    SpecialPowers.pushPrefEnv({"set": [['accessibility.mouse_focuses_formcontrol', 1]]}, testMacFocusesFormControl);
   }
   else {
     SimpleTest.finish();
@@ -96,7 +109,7 @@ function runTest()
 
 function testMacFocusesFormControl()
 {
-  testHTMLElements(htmlElementsMacPrefSet, true, false);
+  testHTMLElements(htmlElementsMacPrefSet, false);
   SimpleTest.finish();
 }
 
@@ -125,8 +138,7 @@ function createElement(str) {
   return doc.body.firstChild;
 }
 
-function testHTMLElements(list, isMac, expectedNoRingsOnWin)
-{
+function testHTMLElements(list, expectedNoRingsOnWin) {
   var childwin = frames[0];
   var childdoc = childwin.document;
   var container = childdoc.getElementById("container");
@@ -136,7 +148,7 @@ function testHTMLElements(list, isMac, expectedNoRingsOnWin)
     var elem = childdoc.adoptNode(createElement(list[e]));
     container.appendChild(elem);
 
-    var shouldFocus = !isMac || (elem.className == "canfocus");
+    var shouldFocus = !kIsMac || (elem.className == "canfocus");
     var ringSize = (shouldFocus ? (expectedNoRingsOnWin ? 2 : 1) : 0) + "px";
 
     var expectedMatchWithMouse = shouldFocus && !expectedNoRingsOnWin;
@@ -155,7 +167,7 @@ function testHTMLElements(list, isMac, expectedNoRingsOnWin)
 
     if (elem.localName == "a") {
       mouseRingSize = ringSize = "0px";
-      expectedMatchWithMouse = expectedMatchWithMouse && !isMac;
+      expectedMatchWithMouse = expectedMatchWithMouse && !kIsMac;
     }
 
     synthesizeMouse(elem, 8, 8, { }, childwin);
@@ -167,7 +179,7 @@ function testHTMLElements(list, isMac, expectedNoRingsOnWin)
       childdoc.activeElement.blur();
 
     ringSize = mouseRingSize;
-    if (isMac && !shouldFocus && elem.localName != "a") {
+    if (kIsMac && !shouldFocus && elem.localName != "a") {
       ringSize = "1px";
     }
 
@@ -185,7 +197,7 @@ function testHTMLElements(list, isMac, expectedNoRingsOnWin)
   }
 }
 
-SimpleTest.waitForFocus(runTest);
+SimpleTest.waitForFocus(initTest);
 
 ]]>
 </script>

@@ -33,6 +33,7 @@ class SVGViewportElement;
 
 class UserSpaceMetrics {
  public:
+  static bool ResolveAbsoluteUnit(uint8_t aUnitType, float& aRes);
   virtual ~UserSpaceMetrics() = default;
 
   virtual float GetEmLength() const = 0;
@@ -148,6 +149,8 @@ class SVGAnimatedLength {
   // If this returns false, the animated value is still valid, that is,
   // usable, and represents the default base value of the attribute.
   bool IsExplicitlySet() const { return mIsAnimated || mIsBaseSet; }
+
+  bool IsAnimated() const { return mIsAnimated; }
 
   already_AddRefed<dom::DOMSVGAnimatedLength> ToDOMAnimatedLength(
       SVGElement* aSVGElement);

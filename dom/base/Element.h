@@ -647,19 +647,21 @@ class Element : public FragmentOrElement {
   // These will handle setting up script blockers when they notify, so no need
   // to do it in the callers unless desired.  States passed here must only be
   // those in EXTERNALLY_MANAGED_STATES.
-  virtual void AddStates(EventStates aStates) {
+  void AddStates(EventStates aStates) {
     MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(INTRINSIC_STATES),
                "Should only be adding externally-managed states here");
+    EventStates old = mState;
     AddStatesSilently(aStates);
-    NotifyStateChange(aStates);
+    NotifyStateChange(old ^ mState);
   }
-  virtual void RemoveStates(EventStates aStates) {
+  void RemoveStates(EventStates aStates) {
     MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(INTRINSIC_STATES),
                "Should only be removing externally-managed states here");
+    EventStates old = mState;
     RemoveStatesSilently(aStates);
-    NotifyStateChange(aStates);
+    NotifyStateChange(old ^ mState);
   }
-  virtual void ToggleStates(EventStates aStates, bool aNotify) {
+  void ToggleStates(EventStates aStates, bool aNotify) {
     MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(INTRINSIC_STATES),
                "Should only be removing externally-managed states here");
     mState ^= aStates;
@@ -1560,6 +1562,27 @@ class Element : public FragmentOrElement {
   already_AddRefed<nsIDOMXULSelectControlItemElement> AsXULSelectControlItem();
   already_AddRefed<nsIBrowser> AsBrowser();
   already_AddRefed<nsIAutoCompletePopup> AsAutoCompletePopup();
+
+  /**
+   * Get the presentation context for this content node.
+   * @return the presentation context
+   */
+  enum PresContextFor { eForComposedDoc, eForUncomposedDoc };
+  nsPresContext* GetPresContext(PresContextFor aFor);
+
+  /**
+   * The method focuses (or activates) element that accesskey is bound to. It is
+   * called when accesskey is activated.
+   *
+   * @param aKeyCausesActivation - if true then element should be activated
+   * @param aIsTrustedEvent - if true then event that is cause of accesskey
+   *                          execution is trusted.
+   * @return true if the focus was changed.
+   */
+  MOZ_CAN_RUN_SCRIPT virtual bool PerformAccesskey(bool aKeyCausesActivation,
+                                                   bool aIsTrustedEvent) {
+    return false;
+  }
 
  protected:
   /*

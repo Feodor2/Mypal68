@@ -10,7 +10,6 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamController.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
@@ -303,7 +302,12 @@ void ReadableStreamDefaultControllerEnqueue(
             aCx, "ReadableStreamDefaultController.enqueue")) {
       JS::Rooted<JS::Value> errorValue(aCx);
 
-      JS_GetPendingException(aCx, &errorValue);
+      if (!JS_GetPendingException(aCx, &errorValue)) {
+        // Uncatchable exception; we should mark aRv and return.
+        aRv.StealExceptionFromJSContext(aCx);
+        return;
+      }
+      JS_ClearPendingException(aCx);
 
       // Step 4.5.1
       ReadableStreamDefaultControllerError(aCx, aController, errorValue, aRv);
@@ -501,7 +505,8 @@ void SetUpReadableStreamDefaultController(
   }
 
   // Step 10.
-  RefPtr<Promise> startPromise = Promise::Create(GetIncumbentGlobal(), aRv);
+  RefPtr<Promise> startPromise =
+      Promise::Create(aStream->GetParentObject(), aRv);
   if (aRv.Failed()) {
     return;
   }

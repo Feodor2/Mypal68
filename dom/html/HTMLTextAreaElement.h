@@ -66,6 +66,8 @@ class HTMLTextAreaElement final : public TextControlElement,
 
   virtual EventStates IntrinsicState() const override;
 
+  void SetLastValueChangeWasInteractive(bool);
+
   // TextControlElement
   virtual nsresult SetValueChanged(bool aValueChanged) override;
   virtual bool IsSingleLineTextControl() const override;
@@ -88,9 +90,6 @@ class HTMLTextAreaElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT virtual void UnbindFromFrame(
       nsTextControlFrame* aFrame) override;
   MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() override;
-  virtual void UpdateOverlayTextVisibility(bool aNotify) override;
-  virtual bool GetPlaceholderVisibility() override;
-  virtual bool GetPreviewVisibility() override;
   virtual void SetPreviewValue(const nsAString& aValue) override;
   virtual void GetPreviewValue(nsAString& aValue) override;
   virtual void EnablePreview() override;
@@ -247,7 +246,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   // via bindings.
   void SetCustomValidity(const nsAString& aError);
 
-  void Select();
+  MOZ_CAN_RUN_SCRIPT void Select();
   Nullable<uint32_t> GetSelectionStart(ErrorResult& aError);
   MOZ_CAN_RUN_SCRIPT void SetSelectionStart(
       const Nullable<uint32_t>& aSelectionStart, ErrorResult& aError);

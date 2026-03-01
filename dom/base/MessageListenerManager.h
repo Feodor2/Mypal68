@@ -9,8 +9,7 @@
 #include "nsFrameMessageManager.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MessageBroadcaster;
 
@@ -46,7 +45,6 @@ class MessageListenerManager : public nsFrameMessageManager,
   RefPtr<MessageBroadcaster> mParentManager;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MessageListenerManager_h

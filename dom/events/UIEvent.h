@@ -17,8 +17,7 @@
 
 class nsINode;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class UIEvent : public Event {
  public:
@@ -83,7 +82,7 @@ class UIEvent : public Event {
    * nullptr, you should use GetRangeParentContent() instead.
    */
   MOZ_CAN_RUN_SCRIPT already_AddRefed<nsIContent>
-  GetRangeParentContentAndOffset(int32_t* aOffset);
+  GetRangeParentContentAndOffset(int32_t* aOffset) const;
 
   /**
    * If you also need to compute range parent in C++ code, you should use
@@ -113,8 +112,7 @@ class UIEvent : public Event {
   void InitModifiers(const EventModifierInit& aParam);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<mozilla::dom::UIEvent> NS_NewDOMUIEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,

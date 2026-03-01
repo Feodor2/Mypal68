@@ -42,8 +42,10 @@ void TextDecoder::InitWithEncoding(NotNull<const Encoding*> aEncoding,
   }
 }
 
-void TextDecoder::Decode(Span<const uint8_t> aInput, const bool aStream,
-                         nsAString& aOutDecodedString, ErrorResult& aRv) {
+void TextDecoderCommon::DecodeNative(Span<const uint8_t> aInput,
+                                     const bool aStream,
+                                     nsAString& aOutDecodedString,
+                                     ErrorResult& aRv) {
   aOutDecodedString.Truncate();
 
   CheckedInt<size_t> needed = mDecoder->MaxUTF16BufferLength(aInput.Length());
@@ -93,7 +95,7 @@ void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
                          const TextDecodeOptions& aOptions,
                          nsAString& aOutDecodedString, ErrorResult& aRv) {
   if (!aBuffer.WasPassed()) {
-    Decode(nullptr, aOptions.mStream, aOutDecodedString, aRv);
+    DecodeNative(nullptr, aOptions.mStream, aOutDecodedString, aRv);
     return;
   }
   const ArrayBufferViewOrArrayBuffer& buf = aBuffer.Value();
@@ -109,10 +111,10 @@ void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
     data = buf.GetAsArrayBuffer().Data();
     length = buf.GetAsArrayBuffer().Length();
   }
-  Decode(Span(data, length), aOptions.mStream, aOutDecodedString, aRv);
+  DecodeNative(Span(data, length), aOptions.mStream, aOutDecodedString, aRv);
 }
 
-void TextDecoder::GetEncoding(nsAString& aEncoding) {
+void TextDecoderCommon::GetEncoding(nsAString& aEncoding) {
   CopyASCIItoUTF16(mEncoding, aEncoding);
   nsContentUtils::ASCIIToLower(aEncoding);
 }

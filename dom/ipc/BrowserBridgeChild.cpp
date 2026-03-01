@@ -64,7 +64,7 @@ already_AddRefed<BrowserBridgeChild> BrowserBridgeChild::Create(
   RefPtr<BrowserBridgeChild> browserBridge =
       new BrowserBridgeChild(aFrameLoader, aBrowsingContext);
   browserChild->SendPBrowserBridgeConstructor(
-      browserBridge, PromiseFlatString(aContext.PresentationURL()), aRemoteType,
+      browserBridge, aRemoteType,
       aBrowsingContext, chromeFlags);
   browserBridge->mIPCOpen = true;
 

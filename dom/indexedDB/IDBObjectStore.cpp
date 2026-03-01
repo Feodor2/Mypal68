@@ -395,10 +395,10 @@ JSObject* WrapAsJSObject(JSContext* const aCx, T& aBaseObject) {
   return res ? static_cast<JSObject*>(result) : nullptr;
 }
 
-JSObject* CopyingStructuredCloneReadCallback(JSContext* aCx,
-                                             JSStructuredCloneReader* aReader,
-                                             uint32_t aTag, uint32_t aData,
-                                             void* aClosure) {
+JSObject* CopyingStructuredCloneReadCallback(
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, uint32_t aData,
+    void* aClosure) {
   MOZ_ASSERT(aTag != SCTAG_DOM_FILE_WITHOUT_LASTMODIFIEDDATE);
 
   if (aTag == SCTAG_DOM_BLOB || aTag == SCTAG_DOM_FILE ||
@@ -646,7 +646,7 @@ bool IDBObjectStore::DeserializeValue(
   return JS_ReadStructuredClone(
       aCx, aCloneReadInfo.Data(), JS_STRUCTURED_CLONE_VERSION,
       JS::StructuredCloneScope::DifferentProcessForIndexedDB, aValue,
-      &callbacks, &aCloneReadInfo);
+      JS::CloneDataPolicy(), &callbacks, &aCloneReadInfo);
 }
 
 #ifdef DEBUG

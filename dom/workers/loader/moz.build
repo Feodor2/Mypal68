@@ -1,0 +1,26 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Workers")
+
+# Public stuff.
+EXPORTS.mozilla.dom += [
+    "ScriptLoadInfo.h",
+]
+
+# Private stuff.
+EXPORTS.mozilla.dom.workerinternals += [
+    "CacheLoadHandler.h",
+    "NetworkLoadHandler.h",
+]
+
+UNIFIED_SOURCES += [
+    "CacheLoadHandler.cpp",
+    "NetworkLoadHandler.cpp",
+]
+
+include("/ipc/chromium/chromium-config.mozbuild")
+
+FINAL_LIBRARY = "xul"

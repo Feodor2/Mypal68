@@ -99,16 +99,15 @@ nsresult nsXULPopupListener::HandleEvent(Event* aEvent) {
   }
 
   // Get the node that was clicked on.
-  EventTarget* target = mouseEvent->GetTarget();
-  nsCOMPtr<nsIContent> targetContent = do_QueryInterface(target);
+  nsCOMPtr<nsIContent> targetContent =
+      nsIContent::FromEventTargetOrNull(mouseEvent->GetTarget());
   if (!targetContent) {
     return NS_OK;
   }
 
-  {
-    EventTarget* originalTarget = mouseEvent->GetOriginalTarget();
-    nsCOMPtr<nsIContent> content = do_QueryInterface(originalTarget);
-    if (content && EventStateManager::IsRemoteTarget(content)) {
+  if (nsIContent* content =
+          nsIContent::FromEventTargetOrNull(mouseEvent->GetOriginalTarget())) {
+    if (EventStateManager::IsRemoteTarget(content)) {
       return NS_OK;
     }
   }
@@ -192,8 +191,8 @@ nsresult nsXULPopupListener::FireFocusOnTargetContent(
   nsIFrame* targetFrame = aTargetContent->GetPrimaryFrame();
   if (!targetFrame) return NS_ERROR_FAILURE;
 
-  const nsStyleUI* ui = targetFrame->StyleUI();
-  bool suppressBlur = (ui->mUserFocus == StyleUserFocus::Ignore);
+  const bool suppressBlur =
+      targetFrame->StyleUI()->UserFocus() == StyleUserFocus::Ignore;
 
   RefPtr<Element> newFocusElement;
 

@@ -95,3 +95,46 @@ interface TestInterfaceIterableDoubleUnion {
   iterable<DOMString, (DOMString or long)>;
 };
 
+dictionary TestInterfaceAsyncIterableSingleOptions {
+  boolean failToInit = false;
+};
+
+[Pref="dom.expose_test_interfaces",
+ Exposed=Window]
+interface TestInterfaceAsyncIterableSingle {
+  [Throws]
+  constructor(optional TestInterfaceAsyncIterableSingleOptions options = {});
+
+  async iterable<long>;
+};
+
+dictionary TestInterfaceAsyncIteratorOptions {
+  unsigned long multiplier = 1;
+};
+
+[Pref="dom.expose_test_interfaces",
+ Exposed=Window]
+interface TestInterfaceAsyncIterableSingleWithArgs {
+  [Throws]
+  constructor();
+
+  async iterable<long>(optional TestInterfaceAsyncIteratorOptions options = {});
+};
+
+[Pref="dom.expose_test_interfaces",
+ Exposed=Window]
+interface TestInterfaceAsyncIterableDouble {
+  [Throws]
+  constructor();
+
+  async iterable<DOMString, DOMString>;
+};
+
+[Pref="dom.expose_test_interfaces",
+ Exposed=Window]
+interface TestInterfaceAsyncIterableDoubleUnion {
+  [Throws]
+  constructor();
+
+  async iterable<DOMString, (DOMString or long)>;
+};

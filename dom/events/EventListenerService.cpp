@@ -361,7 +361,7 @@ void EventListenerService::NotifyAboutMainThreadListenerChangeInternal(
                           &EventListenerService::NotifyPendingChanges);
     if (nsCOMPtr<nsIGlobalObject> global = aTarget->GetOwnerGlobal()) {
       global->Dispatch(TaskCategory::Other, runnable.forget());
-    } else if (nsCOMPtr<nsINode> node = do_QueryInterface(aTarget)) {
+    } else if (nsINode* node = nsINode::FromEventTarget(aTarget)) {
       node->OwnerDoc()->Dispatch(TaskCategory::Other, runnable.forget());
     } else {
       NS_DispatchToCurrentThread(runnable);

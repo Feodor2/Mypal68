@@ -3,8 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MemoryBlobImpl.h"
+#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/SHA1.h"
+#include "nsIMemoryReporter.h"
 #include "nsMemory.h"
 #include "nsPrintfCString.h"
 #include "nsRFPService.h"
@@ -12,19 +14,6 @@
 #include "prtime.h"
 
 namespace mozilla::dom {
-
-NS_IMPL_ADDREF(MemoryBlobImpl::DataOwnerAdapter)
-NS_IMPL_RELEASE(MemoryBlobImpl::DataOwnerAdapter)
-
-NS_INTERFACE_MAP_BEGIN(MemoryBlobImpl::DataOwnerAdapter)
-  NS_INTERFACE_MAP_ENTRY(nsIInputStream)
-  NS_INTERFACE_MAP_ENTRY(nsISeekableStream)
-  NS_INTERFACE_MAP_ENTRY(nsITellableStream)
-  NS_INTERFACE_MAP_ENTRY(nsICloneableInputStream)
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIIPCSerializableInputStream,
-                                     mSerializableInputStream)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInputStream)
-NS_INTERFACE_MAP_END
 
 // static
 already_AddRefed<MemoryBlobImpl> MemoryBlobImpl::CreateWithCustomLastModified(
@@ -46,24 +35,12 @@ already_AddRefed<MemoryBlobImpl> MemoryBlobImpl::CreateWithLastModifiedNow(
 }
 
 nsresult MemoryBlobImpl::DataOwnerAdapter::Create(DataOwner* aDataOwner,
-                                                  uint32_t aStart,
-                                                  uint32_t aLength,
+                                                  size_t aStart, size_t aLength,
                                                   nsIInputStream** _retval) {
-  nsresult rv;
   MOZ_ASSERT(aDataOwner, "Uh ...");
-
-  nsCOMPtr<nsIInputStream> stream;
-
-  rv = NS_NewByteInputStream(
-      getter_AddRefs(stream),
-      Span(static_cast<const char*>(aDataOwner->mData) + aStart, aLength),
-      NS_ASSIGNMENT_DEPEND);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  NS_ADDREF(*_retval =
-                new MemoryBlobImpl::DataOwnerAdapter(aDataOwner, stream));
-
-  return NS_OK;
+  Span data{static_cast<const char*>(aDataOwner->mData) + aStart, aLength};
+  RefPtr adapter = new MemoryBlobImpl::DataOwnerAdapter(aDataOwner, data);
+  return NS_NewByteInputStream(_retval, adapter);
 }
 
 already_AddRefed<BlobImpl> MemoryBlobImpl::CreateSlice(
@@ -104,7 +81,7 @@ class MemoryBlobImplDataOwnerMemoryReporter final : public nsIMemoryReporter {
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
                             nsISupports* aData, bool aAnonymize) override {
-    typedef MemoryBlobImpl::DataOwner DataOwner;
+    using DataOwner = MemoryBlobImpl::DataOwner;
 
     StaticMutexAutoLock lock(DataOwner::sDataOwnerMutex);
 

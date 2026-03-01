@@ -27,6 +27,7 @@
 #include "mozilla/ProcessHangMonitorIPC.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TelemetryIPC.h"
 #include "mozilla/Unused.h"
@@ -37,6 +38,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/ChildProcessMessageManager.h"
+#include "mozilla/dom/ChildProcessChannelListener.h"
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/ClientOpenWindowOpActors.h"
 #include "mozilla/dom/ContentParent.h"
@@ -93,7 +95,6 @@
 #include "mozilla/widget/WidgetMessageUtils.h"
 #include "nsBaseDragService.h"
 #include "nsGeolocation.h"
-#include "nsIChildProcessChannelListener.h"
 #include "nsIStringBundle.h"
 #include "nsQueryObject.h"
 
@@ -183,8 +184,8 @@
 #  include "signaling/src/peerconnection/WebrtcGlobalChild.h"
 #endif
 
-#include "nsPermission.h"
-#include "nsPermissionManager.h"
+#include "mozilla/Permission.h"
+#include "mozilla/PermissionManager.h"
 
 #include "PermissionMessageUtils.h"
 
@@ -2103,7 +2104,7 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyAlertsObserver(
 // touch pages. See GetSpecificMessageEventTarget.
 mozilla::ipc::IPCResult ContentChild::RecvNotifyVisited(
     nsTArray<VisitedQueryResult>&& aURIs) {
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
   if (!history) {
     return IPC_OK();
   }
@@ -2245,8 +2246,8 @@ mozilla::ipc::IPCResult ContentChild::RecvAddPermission(
     const IPC::Permission& permission) {
   nsCOMPtr<nsIPermissionManager> permissionManagerIface =
       services::GetPermissionManager();
-  nsPermissionManager* permissionManager =
-      static_cast<nsPermissionManager*>(permissionManagerIface.get());
+  PermissionManager* permissionManager =
+      static_cast<PermissionManager*>(permissionManagerIface.get());
   MOZ_ASSERT(permissionManager,
              "We have no permissionManager in the Content process !");
 
@@ -2270,7 +2271,7 @@ mozilla::ipc::IPCResult ContentChild::RecvAddPermission(
   permissionManager->AddInternal(
       principal, nsCString(permission.type), permission.capability, 0,
       permission.expireType, permission.expireTime, modificationTime,
-      nsPermissionManager::eNotify, nsPermissionManager::eNoDBOperation);
+      PermissionManager::eNotify, PermissionManager::eNoDBOperation);
 
   return IPC_OK();
 }
@@ -2278,8 +2279,8 @@ mozilla::ipc::IPCResult ContentChild::RecvAddPermission(
 mozilla::ipc::IPCResult ContentChild::RecvRemoveAllPermissions() {
   nsCOMPtr<nsIPermissionManager> permissionManagerIface =
       services::GetPermissionManager();
-  nsPermissionManager* permissionManager =
-      static_cast<nsPermissionManager*>(permissionManagerIface.get());
+  PermissionManager* permissionManager =
+      static_cast<PermissionManager*>(permissionManagerIface.get());
   MOZ_ASSERT(permissionManager,
              "We have no permissionManager in the Content process !");
 
@@ -2380,6 +2381,11 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
     SetProcessName(u"Privileged Content"_ns);
   } else if (aRemoteType == LARGE_ALLOCATION_REMOTE_TYPE) {
     SetProcessName(u"Large Allocation Web Content"_ns);
+  }
+
+  // Turn off Spectre mitigations in isolated web content processes.
+  if (StaticPrefs::javascript_options_spectre_disable_for_isolated_content()) {
+    JS::DisableSpectreMitigationsAfterInit();
   }
 
   return IPC_OK();
@@ -3119,7 +3125,7 @@ nsresult ContentChild::AsyncOpenAnonymousTemporaryFile(
 
 mozilla::ipc::IPCResult ContentChild::RecvSetPermissionsWithKey(
     const nsCString& aPermissionKey, nsTArray<IPC::Permission>&& aPerms) {
-  RefPtr<nsPermissionManager> permManager = nsPermissionManager::GetInstance();
+  RefPtr<PermissionManager> permManager = PermissionManager::GetInstance();
   if (permManager) {
     permManager->SetPermissionsWithKey(aPermissionKey, aPerms);
   }
@@ -3264,13 +3270,10 @@ mozilla::ipc::IPCResult ContentChild::RecvCrossProcessRedirect(
     return IPC_OK();
   }
 
-  nsCOMPtr<nsIChildProcessChannelListener> processListener =
-      do_GetService("@mozilla.org/network/childProcessChannelListener;1");
+  RefPtr<ChildProcessChannelListener> processListener =
+      ChildProcessChannelListener::GetSingleton();
   // The listener will call completeRedirectSetup on the channel.
-  rv = processListener->OnChannelReady(httpChild, aIdentifier);
-  if (NS_FAILED(rv)) {
-    return IPC_OK();
-  }
+  processListener->OnChannelReady(httpChild, aIdentifier);
 
   // scopeExit will call CrossProcessRedirectFinished(rv) here
   return IPC_OK();

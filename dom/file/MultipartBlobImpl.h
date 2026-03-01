@@ -87,7 +87,7 @@ class MultipartBlobImpl final : public BaseBlobImpl {
       : BaseBlobImpl(aContentType, MULTIPARTBLOBIMPL_UNKNOWN_LENGTH),
         mBlobImpls(std::move(aBlobImpls)) {}
 
-  ~MultipartBlobImpl() = default;
+  ~MultipartBlobImpl() override = default;
 
   void SetLengthAndModifiedDate(ErrorResult& aRv);
 

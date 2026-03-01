@@ -400,7 +400,8 @@ nsCSPHostSrc* nsCSPParser::host() {
   return new nsCSPHostSrc(mCurValue);
 }
 
-// keyword-source = "'self'" / "'unsafe-inline'" / "'unsafe-eval'"
+// keyword-source = "'self'" / "'unsafe-inline'" / "'unsafe-eval'" /
+// "'wasm-unsafe-eval'"
 nsCSPBaseSrc* nsCSPParser::keywordSource() {
   CSPPARSERLOG(("nsCSPParser::keywordSource, mCurToken: %s, mCurValue: %s",
                 NS_ConvertUTF16toUTF8(mCurToken).get(),
@@ -417,10 +418,6 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
   }
 
   if (CSP_IsKeyword(mCurToken, CSP_STRICT_DYNAMIC)) {
-    // make sure strict dynamic is enabled
-    if (!StaticPrefs::security_csp_enableStrictDynamic()) {
-      return nullptr;
-    }
     if (!CSP_IsDirective(mCurDir[0],
                          nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE)) {
       // Todo: Enforce 'strict-dynamic' within default-src; see Bug 1313937
@@ -462,6 +459,12 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
     }
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
+
+  if (StaticPrefs::security_csp_wasm_unsafe_eval_enabled() &&
+      CSP_IsKeyword(mCurToken, CSP_WASM_UNSAFE_EVAL)) {
+    return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
+  }
+
   return nullptr;
 }
 

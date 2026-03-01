@@ -22,7 +22,7 @@ function testScript(script) {
           set: [
             ["dom.serviceWorkers.enabled", true],
             ["dom.serviceWorkers.testing.enabled", true],
-            ["dom.serviceWorkers.idle_timeout", 0],
+            ["dom.serviceWorkers.idle_timeout", 60000],
             ["dom.serviceWorkers.exemptFromPerDomainMax", true],
           ],
         },

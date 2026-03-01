@@ -30,6 +30,10 @@ class nsPIWindowRoot : public mozilla::dom::EventTarget {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IWINDOWROOT_IID)
 
+  bool IsRootWindow() const final { return true; }
+
+  NS_IMPL_FROMEVENTTARGET_HELPER(nsPIWindowRoot, IsRootWindow())
+
   virtual nsPIDOMWindowOuter* GetWindow() = 0;
 
   // get and set the node that is the context of a popup menu
@@ -62,7 +66,7 @@ class nsPIWindowRoot : public mozilla::dom::EventTarget {
   virtual void AddBrowser(mozilla::dom::BrowserParent* aBrowser) = 0;
   virtual void RemoveBrowser(mozilla::dom::BrowserParent* aBrowser) = 0;
 
-  typedef void (*BrowserEnumerator)(mozilla::dom::BrowserParent* aTab,
+  using BrowserEnumerator = void (*)(mozilla::dom::BrowserParent* aTab,
                                     void* aArg);
 
   // Enumerate all stored browsers that for which the weak reference is valid.
@@ -71,6 +75,28 @@ class nsPIWindowRoot : public mozilla::dom::EventTarget {
   virtual bool ShowFocusRings() = 0;
   virtual void SetShowFocusRings(bool aEnable) = 0;
 };
+
+namespace mozilla::dom {
+
+inline nsPIWindowRoot* EventTarget::GetAsWindowRoot() {
+  return IsRootWindow() ? static_cast<nsPIWindowRoot*>(this) : nullptr;
+}
+
+inline const nsPIWindowRoot* EventTarget::GetAsWindowRoot() const {
+  return IsRootWindow() ? static_cast<const nsPIWindowRoot*>(this) : nullptr;
+}
+
+inline nsPIWindowRoot* EventTarget::AsWindowRoot() {
+  MOZ_DIAGNOSTIC_ASSERT(IsRootWindow());
+  return static_cast<nsPIWindowRoot*>(this);
+}
+
+inline const nsPIWindowRoot* EventTarget::AsWindowRoot() const {
+  MOZ_DIAGNOSTIC_ASSERT(IsRootWindow());
+  return static_cast<const nsPIWindowRoot*>(this);
+}
+
+}  // namespace mozilla::dom
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsPIWindowRoot, NS_IWINDOWROOT_IID)
 

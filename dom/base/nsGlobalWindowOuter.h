@@ -168,8 +168,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
                                   public PRCListStr,
                                   public nsIObserver {
  public:
-  typedef nsTHashMap<nsUint64HashKey, nsGlobalWindowOuter*>
-      OuterWindowByIdTable;
+  using OuterWindowByIdTable =
+      nsTHashMap<nsUint64HashKey, nsGlobalWindowOuter*>;
 
   static void AssertIsOnMainThread()
 #ifdef DEBUG
@@ -188,6 +188,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   static nsGlobalWindowOuter* Cast(mozIDOMWindowProxy* aWin) {
     return Cast(nsPIDOMWindowOuter::From(aWin));
   }
+
+  bool IsOuterWindow() const final { return true; }  // Overriding EventTarget
 
   static nsGlobalWindowOuter* GetOuterWindowWithId(uint64_t aWindowID) {
     AssertIsOnMainThread();
@@ -461,10 +463,10 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
       const nsAString& aPopupWindowFeatures) override;
 
   virtual void NotifyContentBlockingEvent(
-      unsigned aEvent, nsIChannel* aChannel, bool aBlocked, nsIURI* aURIHint,
-      nsIChannel* aTrackingChannel,
+      unsigned aEvent, nsIChannel* aChannel, bool aBlocked,
+      const nsACString& aTrackingOrigin, nsIChannel* aTrackingChannel,
       const mozilla::Maybe<
-          mozilla::AntiTrackingCommon::StorageAccessGrantedReason>& aReason)
+          mozilla::ContentBlockingNotifier::StorageAccessGrantedReason>& aReason)
       override;
 
   void AddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const;
@@ -937,7 +939,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   // Helper for getComputedStyle and getDefaultComputedStyle
   already_AddRefed<nsICSSDeclaration> GetComputedStyleHelperOuter(
       mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
-      bool aDefaultStylesOnly);
+      bool aDefaultStylesOnly,
+      mozilla::ErrorResult& aRv);
 
   // Outer windows only.
   void PreloadLocalStorage();

@@ -40,6 +40,7 @@
 #include "nsContentUtils.h"
 #include "nsDOMCID.h"
 #include "nsError.h"
+#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsIContentSecurityPolicy.h"
@@ -108,6 +109,7 @@ EventListenerManagerBase::EventListenerManagerBase()
       mMayHaveKeyEventListener(false),
       mMayHaveInputOrCompositionEventListener(false),
       mMayHaveSelectionChangeEventListener(false),
+      mMayHaveFormSelectEventListener(false),
       mClearingListeners(false),
       mIsMainThreadELM(NS_IsMainThread()) {
   static_assert(sizeof(EventListenerManagerBase) == sizeof(uint32_t),
@@ -185,8 +187,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(EventListenerManager)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 nsPIDOMWindowInner* EventListenerManager::GetInnerWindowForTarget() {
-  nsCOMPtr<nsINode> node = do_QueryInterface(mTarget);
-  if (node) {
+  if (nsINode* node = nsINode::FromEventTargetOrNull(mTarget)) {
     // XXX sXBL/XBL2 issue -- do we really want the owner here?  What
     // if that's the XBL document?
     return node->OwnerDoc()->GetInnerWindow();
@@ -198,7 +199,8 @@ nsPIDOMWindowInner* EventListenerManager::GetInnerWindowForTarget() {
 
 already_AddRefed<nsPIDOMWindowInner>
 EventListenerManager::GetTargetAsInnerWindow() const {
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(mTarget);
+  nsCOMPtr<nsPIDOMWindowInner> window =
+      nsPIDOMWindowInner::FromEventTargetOrNull(mTarget);
   return window.forget();
 }
 
@@ -374,13 +376,10 @@ void EventListenerManager::AddEventListenerInternal(
     if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
       window->SetHasSelectionChangeEventListeners();
     }
-  } else if (aTypeAtom == nsGkAtoms::ontext) {
-    // Ignore event listeners in the system group since editor needs to
-    // listen "text" events in the system group.
-    if (!aFlags.mInSystemGroup) {
-      if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-        window->SetHasTextEventListenerInDefaultGroup();
-      }
+  } else if (aEventMessage == eFormSelect) {
+    mMayHaveFormSelectEventListener = true;
+    if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
+      window->SetHasFormSelectEventListeners();
     }
   }
 
@@ -399,17 +398,15 @@ void EventListenerManager::AddEventListenerInternal(
 }
 
 void EventListenerManager::ProcessApzAwareEventListenerAdd() {
+  Document* doc = nullptr;
+
   // Mark the node as having apz aware listeners
-  nsCOMPtr<nsINode> node = do_QueryInterface(mTarget);
-  if (node) {
+  if (nsINode* node = nsINode::FromEventTargetOrNull(mTarget)) {
     node->SetMayBeApzAware();
+    doc = node->OwnerDoc();
   }
 
   // Schedule a paint so event regions on the layer tree gets updated
-  Document* doc = nullptr;
-  if (node) {
-    doc = node->OwnerDoc();
-  }
   if (!doc) {
     if (nsCOMPtr<nsPIDOMWindowInner> window = GetTargetAsInnerWindow()) {
       doc = window->GetExtantDoc();
@@ -616,11 +613,14 @@ static bool IsDefaultPassiveWhenOnRoot(EventMessage aMessage) {
   return false;
 }
 
-static bool IsRootEventTaget(EventTarget* aTarget) {
-  if (nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(aTarget)) {
+static bool IsRootEventTarget(EventTarget* aTarget) {
+  if (!aTarget) {
+    return false;
+  }
+  if (aTarget->IsInnerWindow()) {
     return true;
   }
-  nsCOMPtr<nsINode> node = do_QueryInterface(aTarget);
+  const nsINode* node = nsINode::FromEventTarget(aTarget);
   if (!node) {
     return false;
   }
@@ -636,7 +636,7 @@ void EventListenerManager::MaybeMarkPassive(EventMessage aMessage,
   if (!IsDefaultPassiveWhenOnRoot(aMessage)) {
     return;
   }
-  if (!IsRootEventTaget(mTarget)) {
+  if (!IsRootEventTarget(mTarget)) {
     return;
   }
   aFlags.mPassive = true;
@@ -863,21 +863,15 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   // here. The alternative is to store the event handler string on
   // the JSEventHandler itself, and that still doesn't address
   // the arg names issue.
-  nsCOMPtr<Element> element = do_QueryInterface(mTarget);
+  RefPtr<Element> element = Element::FromEventTargetOrNull(mTarget);
   MOZ_ASSERT(element || aBody, "Where will we get our body?");
   nsAutoString handlerBody;
   const nsAString* body = aBody;
   if (!aBody) {
     if (aListener->mTypeAtom == nsGkAtoms::onSVGLoad) {
       attrName = nsGkAtoms::onload;
-    } else if (aListener->mTypeAtom == nsGkAtoms::onSVGUnload) {
-      attrName = nsGkAtoms::onunload;
-    } else if (aListener->mTypeAtom == nsGkAtoms::onSVGResize) {
-      attrName = nsGkAtoms::onresize;
     } else if (aListener->mTypeAtom == nsGkAtoms::onSVGScroll) {
       attrName = nsGkAtoms::onscroll;
-    } else if (aListener->mTypeAtom == nsGkAtoms::onSVGZoom) {
-      attrName = nsGkAtoms::onzoom;
     } else if (aListener->mTypeAtom == nsGkAtoms::onbeginEvent) {
       attrName = nsGkAtoms::onbegin;
     } else if (aListener->mTypeAtom == nsGkAtoms::onrepeatEvent) {
@@ -908,7 +902,8 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
     uri->GetSpec(url);
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(mTarget);
+  nsCOMPtr<nsPIDOMWindowInner> win =
+      nsPIDOMWindowInner::FromEventTargetOrNull(mTarget);
   uint32_t argCount;
   const char** argNames;
   nsContentUtils::GetEventArgNames(aElement->GetNameSpaceID(), typeAtom, win,
@@ -1716,31 +1711,26 @@ void EventListenerManager::RemoveAllListeners() {
 
 already_AddRefed<nsIScriptGlobalObject>
 EventListenerManager::GetScriptGlobalAndDocument(Document** aDoc) {
-  nsCOMPtr<nsINode> node(do_QueryInterface(mTarget));
   nsCOMPtr<Document> doc;
-  nsCOMPtr<nsIScriptGlobalObject> global;
-  if (node) {
+  nsCOMPtr<nsPIDOMWindowInner> win;
+  if (nsINode* node = nsINode::FromEventTargetOrNull(mTarget)) {
     // Try to get context from doc
-    // XXX sXBL/XBL2 issue -- do we really want the owner here?  What
-    // if that's the XBL document?
     doc = node->OwnerDoc();
     if (doc->IsLoadedAsData()) {
       return nullptr;
     }
 
-    // We want to allow compiling an event handler even in an unloaded
-    // document, so use GetScopeObject here, not GetScriptHandlingObject.
-    global = do_QueryInterface(doc->GetScopeObject());
-  } else {
-    if (nsCOMPtr<nsPIDOMWindowInner> win = GetTargetAsInnerWindow()) {
-      doc = win->GetExtantDoc();
-      global = do_QueryInterface(win);
-    } else {
-      global = do_QueryInterface(mTarget);
-    }
+    win = do_QueryInterface(doc->GetScopeObject());
+  } else if ((win = GetTargetAsInnerWindow())) {
+    doc = win->GetExtantDoc();
+  }
+
+  if (!win || !win->IsCurrentInnerWindow()) {
+    return nullptr;
   }
 
   doc.forget(aDoc);
+  nsCOMPtr<nsIScriptGlobalObject> global = do_QueryInterface(win);
   return global.forget();
 }
 

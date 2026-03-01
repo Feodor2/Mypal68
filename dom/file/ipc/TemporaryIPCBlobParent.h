@@ -22,7 +22,7 @@ class TemporaryIPCBlobParent final : public PTemporaryIPCBlobParent {
   mozilla::ipc::IPCResult CreateAndShareFile();
 
  private:
-  ~TemporaryIPCBlobParent();
+  ~TemporaryIPCBlobParent() override;
 
   mozilla::ipc::IPCResult RecvOperationFailed();
 

@@ -158,7 +158,8 @@ RefPtr<DOMStringList> CreateSortedDOMStringList(const nsTArray<E>& aArray,
 template <typename StructuredCloneReadInfoType>
 JSObject* StructuredCloneReadCallback(
     JSContext* const aCx, JSStructuredCloneReader* const aReader,
-    const uint32_t aTag, const uint32_t aData, void* const aClosure) {
+    const JS::CloneDataPolicy& aCloneDataPolicy, const uint32_t aTag,
+    const uint32_t aData, void* const aClosure) {
   auto* const database = [aClosure]() -> IDBDatabase* {
     if constexpr (std::is_same_v<StructuredCloneReadInfoType,
                                  StructuredCloneReadInfoChild>) {
@@ -168,7 +169,7 @@ JSObject* StructuredCloneReadCallback(
     return nullptr;
   }();
   return CommonStructuredCloneReadCallback(
-      aCx, aReader, aTag, aData,
+      aCx, aReader, aCloneDataPolicy, aTag, aData,
       static_cast<StructuredCloneReadInfoType*>(aClosure), database);
 }
 

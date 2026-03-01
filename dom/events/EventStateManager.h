@@ -31,6 +31,7 @@ class nsPresContext;
 
 namespace mozilla {
 
+class EditorBase;
 class EnterLeaveDispatcher;
 class EventStates;
 class IMEContentObserver;
@@ -171,7 +172,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   /**
    * Register accesskey on the given element. When accesskey is activated then
-   * the element will be notified via nsIContent::PerformAccesskey() method.
+   * the element will be notified via Element::PerformAccesskey() method.
    *
    * @param  aElement  the given element
    * @param  aKey      accesskey
@@ -236,7 +237,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   bool CheckIfEventMatchesAccessKey(WidgetKeyboardEvent* aEvent,
                                     nsPresContext* aPresContext);
 
-  nsresult SetCursor(StyleCursorKind aCursor, imgIContainer* aContainer,
+  nsresult SetCursor(StyleCursorKind, imgIContainer*, const ImageResolution&,
                      const Maybe<gfx::IntPoint>& aHotspot, nsIWidget* aWidget,
                      bool aLockCursor);
 
@@ -312,7 +313,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   /**
    * HandleMiddleClickPaste() handles middle mouse button event as pasting
-   * clipboard text.  Note that if aTextEditor is nullptr, this only
+   * clipboard text.  Note that if aEditorBase is nullptr, this only
    * dispatches ePaste event because it's necessary for some web apps which
    * want to implement their own editor and supports middle click paste.
    *
@@ -321,7 +322,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    * @param aMouseEvent             The eMouseClick event which caused the
    *                                paste.
    * @param aStatus                 The event status of aMouseEvent.
-   * @param aTextEditor             TextEditor which may be pasted the
+   * @param aEditorBase             EditorBase which may be pasted the
    *                                clipboard text by the middle click.
    *                                If there is no editor for aMouseEvent,
    *                                set nullptr.
@@ -330,7 +331,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   nsresult HandleMiddleClickPaste(PresShell* aPresShell,
                                   WidgetMouseEvent* aMouseEvent,
                                   nsEventStatus* aStatus,
-                                  TextEditor* aTextEditor);
+                                  EditorBase* aEditorBase);
 
  protected:
   /*
@@ -498,17 +499,17 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   /**
    * The phases of WalkESMTreeToHandleAccessKey processing. See below.
    */
-  typedef enum {
+  enum ProcessingAccessKeyState {
     eAccessKeyProcessingNormal = 0,
     eAccessKeyProcessingUp,
     eAccessKeyProcessingDown
-  } ProcessingAccessKeyState;
+  };
 
   /**
    * Walk EMS to look for access key and execute found access key when aExecute
    * is true.
-   * If there is registered content for the accesskey given by the key event
-   * and modifier mask then call content.PerformAccesskey(), otherwise call
+   * If there is registered element for the accesskey given by the key event
+   * and modifier mask then call element.PerformAccesskey(), otherwise call
    * WalkESMTreeToHandleAccessKey() recursively, on descendant docshells first,
    * then on the ancestor (with |aBubbledFrom| set to the docshell associated
    * with |this|), until something matches.
@@ -559,7 +560,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   // DocShell Focus Traversal Methods
   //---------------------------------------------
 
-  nsIContent* GetFocusedContent();
+  dom::Element* GetFocusedElement();
   bool IsShellVisible(nsIDocShell* aShell);
 
   // These functions are for mousewheel and pixel scrolling
@@ -1176,10 +1177,11 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   nsRefPtrHashtable<nsUint32HashKey, OverOutElementsWrapper>
       mPointersEnterLeaveHelper;
 
+  // Array for accesskey support
+  nsCOMArray<dom::Element> mAccessKeys;
+
  public:
   static nsresult UpdateUserActivityTimer(void);
-  // Array for accesskey support
-  nsCOMArray<nsIContent> mAccessKeys;
 
   static bool sNormalLMouseEventInProcess;
   static int16_t sCurrentMouseBtn;

@@ -68,9 +68,10 @@ class StructuredCloneHolderBase {
   // These methods should be implemented in order to clone data.
   // Read more documentation in js/public/StructuredClone.h.
 
-  virtual JSObject* CustomReadHandler(JSContext* aCx,
-                                      JSStructuredCloneReader* aReader,
-                                      uint32_t aTag, uint32_t aIndex) = 0;
+  virtual JSObject* CustomReadHandler(
+      JSContext* aCx, JSStructuredCloneReader* aReader,
+      const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
+      uint32_t aIndex) = 0;
 
   virtual bool CustomWriteHandler(JSContext* aCx,
                                   JSStructuredCloneWriter* aWriter,
@@ -122,6 +123,10 @@ class StructuredCloneHolderBase {
   // If Write() has been called, this method retrieves data and stores it into
   // aValue.
   bool Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue);
+
+  // Like Read() but it supports handling of clone policy.
+  bool Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+            const JS::CloneDataPolicy& aCloneDataPolicy);
 
   bool HasData() const { return !!mBuffer; }
 
@@ -255,9 +260,10 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // Implementations of the virtual methods to allow cloning of objects which
   // JS engine itself doesn't clone.
 
-  virtual JSObject* CustomReadHandler(JSContext* aCx,
-                                      JSStructuredCloneReader* aReader,
-                                      uint32_t aTag, uint32_t aIndex) override;
+  virtual JSObject* CustomReadHandler(
+      JSContext* aCx, JSStructuredCloneReader* aReader,
+      const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
+      uint32_t aIndex) override;
 
   virtual bool CustomWriteHandler(JSContext* aCx,
                                   JSStructuredCloneWriter* aWriter,
@@ -309,14 +315,20 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // and/or the PortIdentifiers.
   void ReadFromBuffer(nsIGlobalObject* aGlobal, JSContext* aCx,
                       JSStructuredCloneData& aBuffer,
-                      JS::MutableHandle<JS::Value> aValue, ErrorResult& aRv);
+                      JS::MutableHandle<JS::Value> aValue,
+                      const JS::CloneDataPolicy& aCloneDataPolicy,
+                      ErrorResult& aRv);
 
   void ReadFromBuffer(nsIGlobalObject* aGlobal, JSContext* aCx,
                       JSStructuredCloneData& aBuffer,
                       uint32_t aAlgorithmVersion,
-                      JS::MutableHandle<JS::Value> aValue, ErrorResult& aRv);
+                      JS::MutableHandle<JS::Value> aValue,
+                      const JS::CloneDataPolicy& aCloneDataPolicy,
+                      ErrorResult& aRv);
 
   void SameProcessScopeRequired(bool* aSameProcessScopeRequired);
+
+  already_AddRefed<MessagePort> ReceiveMessagePort(uint64_t aIndex);
 
   bool mSupportsCloning;
   bool mSupportsTransferring;

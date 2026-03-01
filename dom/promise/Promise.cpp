@@ -288,7 +288,8 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(PromiseNativeThenHandlerBase)
 
 Result<RefPtr<Promise>, nsresult> Promise::ThenWithoutCycleCollection(
     const std::function<already_AddRefed<Promise>(
-        JSContext* aCx, JS::HandleValue aValue, ErrorResult& aRv)>& aCallback) {
+        JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv)>&
+        aCallback) {
   return ThenWithCycleCollectedArgs(aCallback);
 }
 
@@ -530,7 +531,8 @@ void Promise::MaybeRejectWithUndefined() {
   MaybeSomething(JS::UndefinedHandleValue, &Promise::MaybeReject);
 }
 
-void Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise) {
+void Promise::ReportRejectedPromise(JSContext* aCx,
+                                    JS::Handle<JSObject*> aPromise) {
   MOZ_ASSERT(!js::IsWrapper(aPromise));
 
   MOZ_ASSERT(JS::GetPromiseState(aPromise) == JS::PromiseState::Rejected);
@@ -838,7 +840,8 @@ void PromiseWorkerProxy::CleanUp() {
 }
 
 JSObject* PromiseWorkerProxy::CustomReadHandler(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
     uint32_t aIndex) {
   if (NS_WARN_IF(!mCallbacks)) {
     return nullptr;
@@ -887,7 +890,7 @@ bool Promise::SetSettledPromiseIsHandled() {
   AutoAllowLegacyScriptExecution exemption;
   AutoEntryScript aes(mGlobal, "Set settled promise handled");
   JSContext* cx = aes.cx();
-  JS::RootedObject promiseObj(cx, mPromiseObj);
+  JS::Rooted<JSObject*> promiseObj(cx, mPromiseObj);
   return JS::SetSettledPromiseIsHandled(cx, promiseObj);
 }
 
@@ -895,7 +898,7 @@ bool Promise::SetAnyPromiseIsHandled() {
   AutoAllowLegacyScriptExecution exemption;
   AutoEntryScript aes(mGlobal, "Set any promise handled");
   JSContext* cx = aes.cx();
-  JS::RootedObject promiseObj(cx, mPromiseObj);
+  JS::Rooted<JSObject*> promiseObj(cx, mPromiseObj);
   return JS::SetAnyPromiseIsHandled(cx, promiseObj);
 }
 
@@ -907,6 +910,37 @@ already_AddRefed<Promise> Promise::CreateResolvedWithUndefined(
     return nullptr;
   }
   returnPromise->MaybeResolveWithUndefined();
+  return returnPromise.forget();
+}
+
+already_AddRefed<Promise> Promise::CreateRejected(
+    nsIGlobalObject* aGlobal, JS::Handle<JS::Value> aRejectionError,
+    ErrorResult& aRv) {
+  RefPtr<Promise> promise = Promise::Create(aGlobal, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  promise->MaybeReject(aRejectionError);
+  return promise.forget();
+}
+
+already_AddRefed<Promise> Promise::CreateRejectedWithTypeError(
+    nsIGlobalObject* aGlobal, const nsACString& aMessage, ErrorResult& aRv) {
+  RefPtr<Promise> returnPromise = Promise::Create(aGlobal, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  returnPromise->MaybeRejectWithTypeError(aMessage);
+  return returnPromise.forget();
+}
+
+already_AddRefed<Promise> Promise::CreateRejectedWithErrorResult(
+    nsIGlobalObject* aGlobal, ErrorResult& aRejectionError) {
+  RefPtr<Promise> returnPromise = Promise::Create(aGlobal, IgnoreErrors());
+  if (!returnPromise) {
+    return nullptr;
+  }
+  returnPromise->MaybeReject(std::move(aRejectionError));
   return returnPromise.forget();
 }
 

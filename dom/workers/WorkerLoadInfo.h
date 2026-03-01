@@ -21,7 +21,7 @@
 
 class nsIChannel;
 class nsIContentSecurityPolicy;
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsILoadGroup;
 class nsIPrincipal;
 class nsIReferrerInfo;
@@ -57,7 +57,7 @@ struct WorkerLoadInfoData {
   nsCOMPtr<nsIPrincipal> mStoragePrincipal;
 
   // Taken from the parent context.
-  nsCOMPtr<nsICookieSettings> mCookieSettings;
+  nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
 
   nsCOMPtr<nsIScriptContext> mScriptContext;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
@@ -123,7 +123,9 @@ struct WorkerLoadInfoData {
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   bool mFromWindow;
   bool mEvalAllowed;
-  bool mReportCSPViolations;
+  bool mReportEvalCSPViolations;
+  bool mWasmEvalAllowed;
+  bool mReportWasmEvalCSPViolations;
   bool mXHRParamsAllowed;
   bool mPrincipalIsSystem;
   bool mPrincipalIsAddonOrExpandedAddon;

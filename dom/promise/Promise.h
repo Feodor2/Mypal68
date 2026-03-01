@@ -273,9 +273,14 @@ class Promise : public SupportsWeakPtr {
   ThenResult<Callback, Args...> CatchWithCycleCollectedArgs(
       Callback&& aOnReject, Args&&... aArgs);
 
-  // Same as ThenCycleCollectedArgs but the arguments are gathered into an
-  // `std::tuple` and there is an additional `std::tuple` for JS arguments after
-  // that.
+  // Same as Then[Catch]CycleCollectedArgs but the arguments are gathered into
+  // an `std::tuple` and there is an additional `std::tuple` for JS arguments
+  // after that.
+  template <typename ResolveCallback, typename RejectCallback,
+            typename ArgsTuple, typename JSArgsTuple>
+  Result<RefPtr<Promise>, nsresult> ThenCatchWithCycleCollectedArgsJS(
+      ResolveCallback&& aOnResolve, RejectCallback&& aOnReject,
+      ArgsTuple&& aArgs, JSArgsTuple&& aJSArgs);
   template <typename Callback, typename ArgsTuple, typename JSArgsTuple>
   Result<RefPtr<Promise>, nsresult> ThenWithCycleCollectedArgsJS(
       Callback&& aOnResolve, ArgsTuple&& aArgs, JSArgsTuple&& aJSArgs);
@@ -314,7 +319,27 @@ class Promise : public SupportsWeakPtr {
   static already_AddRefed<Promise> CreateResolvedWithUndefined(
       nsIGlobalObject* aGlobal, ErrorResult& aRv);
 
+  static already_AddRefed<Promise> CreateRejected(
+      nsIGlobalObject* aGlobal, JS::Handle<JS::Value> aRejectionError,
+      ErrorResult& aRv);
+
+  static already_AddRefed<Promise> CreateRejectedWithTypeError(
+      nsIGlobalObject* aGlobal, const nsACString& aMessage, ErrorResult& aRv);
+
+  // The rejection error will be consumed if the promise is successfully
+  // created, else the error will remain and rv.Failed() will keep being true.
+  // This intentionally is not an overload of CreateRejected to prevent
+  // accidental omission of the second argument. (See also bug 1762233 about
+  // removing its third argument.)
+  static already_AddRefed<Promise> CreateRejectedWithErrorResult(
+      nsIGlobalObject* aGlobal, ErrorResult& aRejectionError);
+
  protected:
+  template <typename ResolveCallback, typename RejectCallback, typename... Args,
+            typename... JSArgs>
+  Result<RefPtr<Promise>, nsresult> ThenCatchWithCycleCollectedArgsJSImpl(
+      Maybe<ResolveCallback>&& aOnResolve, Maybe<RejectCallback>&& aOnReject,
+      std::tuple<Args...>&& aArgs, std::tuple<JSArgs...>&& aJSArgs);
   template <typename ResolveCallback, typename RejectCallback, typename... Args>
   ThenResult<ResolveCallback, Args...> ThenCatchWithCycleCollectedArgsImpl(
       Maybe<ResolveCallback>&& aOnResolve, Maybe<RejectCallback>&& aOnReject,

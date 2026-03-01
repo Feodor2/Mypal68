@@ -29,6 +29,7 @@
 #include "mozAutoDocUpdate.h"
 #include "nsAttrValueOrString.h"
 #include "nsCSSProps.h"
+#include "nsCSSValue.h"
 #include "nsContentUtils.h"
 #include "nsDOMCSSAttrDeclaration.h"
 #include "nsICSSDeclaration.h"
@@ -86,6 +87,11 @@ namespace dom {
 using namespace SVGUnitTypes_Binding;
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGElement)
+
+// Use the CC variant of this, even though this class does not define
+// a new CC participant, to make QIing to the CC interfaces faster.
+NS_IMPL_QUERY_INTERFACE_CYCLE_COLLECTION_INHERITED(SVGElement, SVGElementBase,
+                                                   SVGElement)
 
 SVGEnumMapping SVGElement::sSVGUnitTypesMap[] = {
     {nsGkAtoms::userSpaceOnUse, SVG_UNIT_TYPE_USERSPACEONUSE},
@@ -1375,10 +1381,7 @@ void SVGElement::MaybeSerializeAttrBeforeRemoval(nsAtom* aName, bool aNotify) {
 /* static */
 nsAtom* SVGElement::GetEventNameForAttr(nsAtom* aAttr) {
   if (aAttr == nsGkAtoms::onload) return nsGkAtoms::onSVGLoad;
-  if (aAttr == nsGkAtoms::onunload) return nsGkAtoms::onSVGUnload;
-  if (aAttr == nsGkAtoms::onresize) return nsGkAtoms::onSVGResize;
   if (aAttr == nsGkAtoms::onscroll) return nsGkAtoms::onSVGScroll;
-  if (aAttr == nsGkAtoms::onzoom) return nsGkAtoms::onSVGZoom;
   if (aAttr == nsGkAtoms::onbegin) return nsGkAtoms::onbeginEvent;
   if (aAttr == nsGkAtoms::onrepeat) return nsGkAtoms::onrepeatEvent;
   if (aAttr == nsGkAtoms::onend) return nsGkAtoms::onendEvent;
@@ -1451,9 +1454,13 @@ void SVGElement::DidAnimateLength(uint8_t aAttrEnum) {
     nsCSSPropertyID propId =
         SVGGeometryProperty::AttrEnumToCSSPropId(this, aAttrEnum);
 
-    SMILOverrideStyle()->SetSMILValue(propId,
-                                      GetLengthInfo().mLengths[aAttrEnum]);
-    return;
+    // We don't map use element width/height currently. We can remove this
+    // test when we do.
+    if (propId != eCSSProperty_UNKNOWN) {
+      SMILOverrideStyle()->SetSMILValue(propId,
+                                        GetLengthInfo().mLengths[aAttrEnum]);
+      return;
+    }
   }
 
   nsIFrame* frame = GetPrimaryFrame();
@@ -1464,6 +1471,15 @@ void SVGElement::DidAnimateLength(uint8_t aAttrEnum) {
                             info.mLengthInfo[aAttrEnum].mName,
                             MutationEvent_Binding::SMIL);
   }
+}
+
+SVGAnimatedLength* SVGElement::GetAnimatedLength(uint8_t aAttrEnum) {
+  LengthAttributesInfo info = GetLengthInfo();
+  if (aAttrEnum < info.mLengthCount) {
+    return &info.mLengths[aAttrEnum];
+  }
+  MOZ_ASSERT_UNREACHABLE("Bad attrEnum");
+  return nullptr;
 }
 
 SVGAnimatedLength* SVGElement::GetAnimatedLength(const nsAtom* aAttrName) {

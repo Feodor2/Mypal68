@@ -51,6 +51,9 @@ void CSP_LogMessage(const nsAString& aMessage, const nsAString& aSourceName,
   "violated base restriction: Inline Scripts will not execute"
 #define EVAL_VIOLATION_OBSERVER_TOPIC \
   "violated base restriction: Code will not be created from strings"
+#define WASM_EVAL_VIOLATION_OBSERVER_TOPIC                                \
+  "violated base restriction: WebAssembly code will not be created from " \
+  "dynamically"
 #define SCRIPT_NONCE_VIOLATION_OBSERVER_TOPIC "Inline Script had invalid nonce"
 #define STYLE_NONCE_VIOLATION_OBSERVER_TOPIC "Inline Style had invalid nonce"
 #define SCRIPT_HASH_VIOLATION_OBSERVER_TOPIC "Inline Script had invalid hash"
@@ -104,14 +107,15 @@ inline CSPDirective CSP_StringToCSPDirective(const nsAString& aDir) {
   return nsIContentSecurityPolicy::NO_DIRECTIVE;
 }
 
-#define FOR_EACH_CSP_KEYWORD(MACRO)           \
-  MACRO(CSP_SELF, "'self'")                   \
-  MACRO(CSP_UNSAFE_INLINE, "'unsafe-inline'") \
-  MACRO(CSP_UNSAFE_EVAL, "'unsafe-eval'")     \
-  MACRO(CSP_NONE, "'none'")                   \
-  MACRO(CSP_NONCE, "'nonce-")                 \
-  MACRO(CSP_REPORT_SAMPLE, "'report-sample'") \
-  MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'")
+#define FOR_EACH_CSP_KEYWORD(MACRO)             \
+  MACRO(CSP_SELF, "'self'")                     \
+  MACRO(CSP_UNSAFE_INLINE, "'unsafe-inline'")   \
+  MACRO(CSP_UNSAFE_EVAL, "'unsafe-eval'")       \
+  MACRO(CSP_NONE, "'none'")                     \
+  MACRO(CSP_NONCE, "'nonce-")                   \
+  MACRO(CSP_REPORT_SAMPLE, "'report-sample'")   \
+  MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'") \
+  MACRO(CSP_WASM_UNSAFE_EVAL, "'wasm-unsafe-eval'")
 
 enum CSPKeyword {
 #define KEYWORD_ENUM(id_, string_) id_,
@@ -314,7 +318,8 @@ class nsCSPKeywordSrc : public nsCSPBaseSrc {
 
   inline void invalidate() const override {
     // keywords that need to invalidated
-    if (mKeyword == CSP_SELF || mKeyword == CSP_UNSAFE_INLINE) {
+    if (mKeyword == CSP_SELF || mKeyword == CSP_UNSAFE_INLINE ||
+        mKeyword == CSP_REPORT_SAMPLE) {
       mInvalidated = true;
     }
   }

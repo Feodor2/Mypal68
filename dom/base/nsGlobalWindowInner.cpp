@@ -174,7 +174,7 @@
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsAtom.h"
 #include "nsBaseHashtable.h"
 #include "nsCCUncollectableMarker.h"
@@ -1067,14 +1067,11 @@ nsGlobalWindowInner::~nsGlobalWindowInner() {
         static_cast<void*>(ToCanonicalSupports(outer)), url.get());
   }
 #endif
-
   MOZ_LOG(gDOMLeakPRLogInner, LogLevel::Debug,
           ("DOMWINDOW %p destroyed", this));
 
   Telemetry::Accumulate(Telemetry::INNERWINDOWS_WITH_MUTATION_LISTENERS,
                         mMutationBits ? 1 : 0);
-  Telemetry::Accumulate(Telemetry::INNERWINDOWS_WITH_TEXT_EVENT_LISTENERS,
-                        mMayHaveTextEventListenerInDefaultGroup ? 1 : 0);
 
   // An inner window is destroyed, pull it out of the outer window's
   // list if inner windows.
@@ -1657,13 +1654,9 @@ void nsGlobalWindowInner::InitDocumentDependentState(JSContext* aCx) {
 
   Telemetry::Accumulate(Telemetry::INNERWINDOWS_WITH_MUTATION_LISTENERS,
                         mMutationBits ? 1 : 0);
-  Telemetry::Accumulate(Telemetry::INNERWINDOWS_WITH_TEXT_EVENT_LISTENERS,
-                        mMayHaveTextEventListenerInDefaultGroup ? 1 : 0);
 
   // Clear our mutation bitfield.
   mMutationBits = 0;
-
-  mMayHaveTextEventListenerInDefaultGroup = false;
 }
 
 nsresult nsGlobalWindowInner::EnsureClientSource() {
@@ -1893,11 +1886,10 @@ void nsGlobalWindowInner::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   aVisitor.mCanHandle = true;
   aVisitor.mForceContentDispatch = true;  // FIXME! Bug 329119
   if (msg == eResize && aVisitor.mEvent->IsTrusted()) {
-    // QIing to window so that we can keep the old behavior also in case
-    // a child window is handling resize.
-    nsCOMPtr<nsPIDOMWindowInner> window =
-        do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
-    if (window) {
+    // Checking whether the event target is an inner window or not, so we can
+    // keep the old behavior also in case a child window is handling resize.
+    if (aVisitor.mEvent->mOriginalTarget &&
+        aVisitor.mEvent->mOriginalTarget->IsInnerWindow()) {
       mIsHandlingResizeEvent = true;
     }
   } else if (msg == eMouseDown && aVisitor.mEvent->IsTrusted()) {
@@ -4111,7 +4103,7 @@ void nsGlobalWindowInner::SetFocusedElement(Element* aElement,
     UpdateCanvasFocus(false, aElement);
     mFocusedElement = aElement;
     // TODO: Maybe this should be set on refocus too?
-    mFocusMethod = aFocusMethod & FOCUSMETHOD_MASK;
+    mFocusMethod = aFocusMethod & nsIFocusManager::METHOD_MASK;
   }
 
   if (mFocusedElement) {
@@ -4153,7 +4145,9 @@ bool nsGlobalWindowInner::TakeFocus(bool aFocus, uint32_t aFocusMethod) {
     return false;
   }
 
-  if (aFocus) mFocusMethod = aFocusMethod & FOCUSMETHOD_MASK;
+  if (aFocus) {
+    mFocusMethod = aFocusMethod & nsIFocusManager::METHOD_MASK;
+  }
 
   if (mHasFocus != aFocus) {
     mHasFocus = aFocus;
@@ -4360,8 +4354,8 @@ already_AddRefed<nsICSSDeclaration> nsGlobalWindowInner::GetComputedStyleHelper(
     Element& aElt, const nsAString& aPseudoElt, bool aDefaultStylesOnly,
     ErrorResult& aError) {
   FORWARD_TO_OUTER_OR_THROW(GetComputedStyleHelperOuter,
-                            (aElt, aPseudoElt, aDefaultStylesOnly), aError,
-                            nullptr);
+                            (aElt, aPseudoElt, aDefaultStylesOnly, aError),
+                            aError, nullptr);
 }
 
 Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
@@ -4417,8 +4411,8 @@ Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
     // it may be okay to provide SessionStorage even when we receive a value of
     // eDeny.
     //
-    // AntiTrackingCommon::IsFirstPartyStorageAccessGranted will return false
-    // for 3 main reasons.
+    // ContentBlocking::ShouldAllowAccessFor will return false for 3 main
+    // reasons.
     //
     // 1. Cookies are entirely blocked due to a per-origin permission
     // (nsICookiePermission::ACCESS_DENY for the top-level principal or this
@@ -4511,7 +4505,7 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
   if (ShouldPartitionStorage(access)) {
     if (!mDoc) {
       access = StorageAccess::eDeny;
-    } else if (!StoragePartitioningEnabled(access, mDoc->CookieSettings())) {
+    } else if (!StoragePartitioningEnabled(access, mDoc->CookieJarSettings())) {
       static const char* kPrefName =
           "privacy.restrict3rdpartystorage.partitionedHosts";
 
@@ -4530,14 +4524,14 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
     return nullptr;
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings;
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   if (mDoc) {
-    cookieSettings = mDoc->CookieSettings();
+    cookieJarSettings = mDoc->CookieJarSettings();
   } else {
-    cookieSettings = net::CookieSettings::CreateBlockingAll();
+    cookieJarSettings = net::CookieJarSettings::CreateBlockingAll();
   }
 
-  bool partitioningEnabled = StoragePartitioningEnabled(access, cookieSettings);
+  bool partitioningEnabled = StoragePartitioningEnabled(access, cookieJarSettings);
   bool shouldPartition = ShouldPartitionStorage(access);
   bool partition = partitioningEnabled && shouldPartition;
 
@@ -5457,7 +5451,7 @@ nsGlobalWindowInner::CallState nsGlobalWindowInner::CallOnChildren(
     // This allows us to handle both void returning methods and methods
     // that return CallState explicitly.  For void returning methods we
     // assume CallState::Continue.
-    typedef decltype((inner->*aMethod)(aArgs...)) returnType;
+    using returnType = decltype((inner->*aMethod)(aArgs...));
     state = CallChild<returnType>(inner, aMethod, aArgs...);
 
     if (state == CallState::Stop) {
@@ -5646,7 +5640,7 @@ nsIPrincipal* nsGlobalWindowInner::GetTopLevelAntiTrackingPrincipal() {
     return nullptr;
   }
 
-  bool stopAtOurLevel = mDoc && mDoc->CookieSettings()->GetCookieBehavior() ==
+  bool stopAtOurLevel = mDoc && mDoc->CookieJarSettings()->GetCookieBehavior() ==
                                     nsICookieService::BEHAVIOR_REJECT_TRACKER;
 
   if (stopAtOurLevel && topLevelOuterWindow == outerWindow) {
@@ -7260,9 +7254,9 @@ nsPIDOMWindowInner::nsPIDOMWindowInner(nsPIDOMWindowOuter* aOuterWindow)
       mMayHavePaintEventListener(false),
       mMayHaveTouchEventListener(false),
       mMayHaveSelectionChangeEventListener(false),
+      mMayHaveFormSelectEventListener(false),
       mMayHaveMouseEnterLeaveEventListener(false),
       mMayHavePointerEnterLeaveEventListener(false),
-      mMayHaveTextEventListenerInDefaultGroup(false),
       mOuterWindow(aOuterWindow),
       // Make sure no actual window ends up with mWindowID == 0
       mWindowID(NextWindowID()),

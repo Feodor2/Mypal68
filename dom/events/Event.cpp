@@ -24,6 +24,9 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/SVGUtils.h"
+#include "mozilla/SVGOuterSVGFrame.h"
 #include "nsContentUtils.h"
 #include "nsCOMPtr.h"
 #include "nsDeviceContext.h"
@@ -407,16 +410,19 @@ void Event::PreventDefaultInternal(bool aCalledByDefaultHandler,
     return;
   }
 
-  nsCOMPtr<nsINode> node = do_QueryInterface(mEvent->mCurrentTarget);
-  if (!node) {
-    nsCOMPtr<nsPIDOMWindowOuter> win =
+  nsIPrincipal* principal = nullptr;
+  nsCOMPtr<nsINode> node =
+      nsINode::FromEventTargetOrNull(mEvent->mCurrentTarget);
+  if (node) {
+    principal = node->NodePrincipal();
+  } else {
+    nsCOMPtr<nsIScriptObjectPrincipal> sop =
         do_QueryInterface(mEvent->mCurrentTarget);
-    if (!win) {
-      return;
+    if (sop) {
+      principal = sop->GetPrincipal();
     }
-    node = win->GetExtantDoc();
   }
-  if (!nsContentUtils::IsChromeDoc(node->OwnerDoc())) {
+  if (principal && !principal->IsSystemPrincipal()) {
     dragEvent->mDefaultPreventedOnContent = true;
   }
 }
@@ -439,8 +445,7 @@ already_AddRefed<EventTarget> Event::EnsureWebAccessibleRelatedTarget(
     EventTarget* aRelatedTarget) {
   nsCOMPtr<EventTarget> relatedTarget = aRelatedTarget;
   if (relatedTarget) {
-    nsCOMPtr<nsIContent> content = do_QueryInterface(relatedTarget);
-
+    nsIContent* content = nsIContent::FromEventTarget(relatedTarget);
     if (content && content->ChromeOnlyAccess() &&
         !nsContentUtils::CanAccessNativeAnon()) {
       content = content->FindFirstNonChromeOnlyAccessContent();
@@ -622,22 +627,32 @@ CSSIntPoint Event::GetOffsetCoords(nsPresContext* aPresContext,
   if (!aEvent->mTarget) {
     return GetPageCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
   }
-  nsCOMPtr<nsIContent> content = do_QueryInterface(aEvent->mTarget);
+  nsCOMPtr<nsIContent> content = nsIContent::FromEventTarget(aEvent->mTarget);
   if (!content || !aPresContext) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
   }
   RefPtr<PresShell> presShell = aPresContext->GetPresShell();
   if (!presShell) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
   }
   presShell->FlushPendingNotifications(FlushType::Layout);
   nsIFrame* frame = content->GetPrimaryFrame();
   if (!frame) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
+  }
+  // For compat, see https://github.com/w3c/csswg-drafts/issues/1508. In SVG we
+  // just return the coordinates of the outer SVG box. This is all kinda
+  // unfortunate.
+  if (frame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT) &&
+      StaticPrefs::dom_events_offset_in_svg_relative_to_svg_root()) {
+    frame = SVGUtils::GetOuterSVGFrame(frame);
+    if (!frame) {
+      return CSSIntPoint();
+    }
   }
   nsIFrame* rootFrame = presShell->GetRootFrame();
   if (!rootFrame) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
   }
   CSSIntPoint clientCoords =
       GetClientCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
@@ -647,7 +662,7 @@ CSSIntPoint Event::GetOffsetCoords(nsPresContext* aPresContext,
     pt -= frame->GetPaddingRectRelativeToSelf().TopLeft();
     return CSSPixel::FromAppUnitsRounded(pt);
   }
-  return CSSIntPoint(0, 0);
+  return CSSIntPoint();
 }
 
 // To be called ONLY by Event::GetType (which has the additional

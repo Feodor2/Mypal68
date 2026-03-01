@@ -144,16 +144,11 @@ nsresult runTestSuite(const PolicyTest* aPolicies, uint32_t aPolicyCount,
                       uint32_t aExpectedPolicyCount) {
   nsresult rv;
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  bool experimentalEnabledCache = false;
-  bool strictDynamicEnabledCache = false;
+  bool wasmUnsafeEval = false;
   if (prefs) {
-    prefs->GetBoolPref("security.csp.experimentalEnabled",
-                       &experimentalEnabledCache);
-    prefs->SetBoolPref("security.csp.experimentalEnabled", true);
-
-    prefs->GetBoolPref("security.csp.enableStrictDynamic",
-                       &strictDynamicEnabledCache);
-    prefs->SetBoolPref("security.csp.enableStrictDynamic", true);
+    prefs->GetBoolPref("security.csp.wasm-unsafe-eval.enabled",
+                       &wasmUnsafeEval);
+    prefs->SetBoolPref("security.csp.wasm-unsafe-eval.enabled", true);
   }
 
   for (uint32_t i = 0; i < aPolicyCount; i++) {
@@ -163,10 +158,7 @@ nsresult runTestSuite(const PolicyTest* aPolicies, uint32_t aPolicyCount,
   }
 
   if (prefs) {
-    prefs->SetBoolPref("security.csp.experimentalEnabled",
-                       experimentalEnabledCache);
-    prefs->SetBoolPref("security.csp.enableStrictDynamic",
-                       strictDynamicEnabledCache);
+    prefs->SetBoolPref("security.csp.wasm-unsafe-eval.enabled", wasmUnsafeEval);
   }
 
   return NS_OK;
@@ -212,6 +204,8 @@ TEST(CSPParser, Directives)
       "script-src 'nonce-foo' 'unsafe-inline'" },
     { "script-src 'nonce-foo' 'strict-dynamic' 'unsafe-inline' https:  ",
       "script-src 'nonce-foo' 'strict-dynamic' 'unsafe-inline' https:" },
+    { "script-src 'nonce-foo' 'strict-dynamic' 'unsafe-inline' 'report-sample' https:  ",
+      "script-src 'nonce-foo' 'strict-dynamic' 'unsafe-inline' 'report-sample' https:" },
     { "default-src 'sha256-siVR8' 'strict-dynamic' 'unsafe-inline' https:  ",
       "default-src 'sha256-siVR8' 'unsafe-inline' https:" },
     { "worker-src https://example.com",
@@ -241,6 +235,8 @@ TEST(CSPParser, Keywords)
       "script-src 'unsafe-inline' 'unsafe-eval'" },
     { "script-src 'none'",
       "script-src 'none'" },
+    { "script-src 'wasm-unsafe-eval'",
+      "script-src 'wasm-unsafe-eval'" },
     { "img-src 'none'; script-src 'unsafe-eval' 'unsafe-inline'; default-src 'self'",
       "img-src 'none'; script-src 'unsafe-eval' 'unsafe-inline'; default-src 'self'" },
       // clang-format on

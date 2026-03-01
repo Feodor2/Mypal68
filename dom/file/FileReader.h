@@ -11,6 +11,7 @@
 #include "nsIAsyncInputStream.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsINamed.h"
+#include "nsITimer.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
@@ -25,6 +26,7 @@ namespace dom {
 
 class Blob;
 class DOMException;
+class OwningStringOrArrayBuffer;
 class StrongWorkerRef;
 class WeakWorkerRef;
 
@@ -63,8 +65,8 @@ class FileReader final : public DOMEventTargetHelper,
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(FileReader,
                                                          DOMEventTargetHelper)
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
   static already_AddRefed<FileReader> Constructor(const GlobalObject& aGlobal);
@@ -91,8 +93,7 @@ class FileReader final : public DOMEventTargetHelper,
 
   DOMException* GetError() const { return mError; }
 
-  void GetResult(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
-                 ErrorResult& aRv);
+  void GetResult(JSContext* aCx, Nullable<OwningStringOrArrayBuffer>& aResult);
 
   IMPL_EVENT_HANDLER(loadstart)
   IMPL_EVENT_HANDLER(progress)
@@ -115,8 +116,10 @@ class FileReader final : public DOMEventTargetHelper,
   eDataFormat DataFormat() const { return mDataFormat; }
   const nsString& Result() const { return mResult; }
 
+  void InitialAsyncWait();
+
  private:
-  virtual ~FileReader();
+  ~FileReader() override;
 
   // This must be in sync with dom/webidl/FileReader.webidl
   enum eReadyState { EMPTY = 0, LOADING = 1, DONE = 2 };
@@ -151,6 +154,7 @@ class FileReader final : public DOMEventTargetHelper,
   nsresult IncreaseBusyCounter();
   void DecreaseBusyCounter();
 
+  void Cleanup();
   void Shutdown();
 
   char* mFileData;
@@ -189,6 +193,10 @@ class FileReader final : public DOMEventTargetHelper,
   // This value is set when the reading starts in order to keep the worker alive
   // during the process.
   RefPtr<StrongWorkerRef> mStrongWorkerRef;
+
+  // Runnable to start the reading asynchronous.
+  class AsyncWaitRunnable;
+  RefPtr<AsyncWaitRunnable> mAsyncWaitRunnable;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(FileReader, FILEREADER_ID)

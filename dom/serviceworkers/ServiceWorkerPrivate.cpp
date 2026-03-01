@@ -39,7 +39,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
@@ -431,7 +431,7 @@ class ExtendableEventWorkerRunnable : public WorkerRunnable {
       return NS_ERROR_FAILURE;
     }
 
-    // [[ If e’s extend lifetime promises is empty, unset e’s extensions allowed
+    // [[ If e???s extend lifetime promises is empty, unset e???s extensions allowed
     //    flag and abort these steps. ]]
     keepAliveHandler->MaybeDone();
 
@@ -1432,9 +1432,9 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     /*
      * https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
      *
-     * "If request is a non-subresource request and request’s
-     * destination is not "report", initialize e’s resultingClientId attribute
-     * to reservedClient’s [resultingClient's] id, and to the empty string
+     * "If request is a non-subresource request and request???s
+     * destination is not "report", initialize e???s resultingClientId attribute
+     * to reservedClient???s [resultingClient's] id, and to the empty string
      * otherwise." (Step 18.8)
      */
     if (!mResultingClientId.IsEmpty() && mIsNonSubresourceRequest &&
@@ -1664,11 +1664,11 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   // moment, ServiceWorkers are not exposed in partitioned contexts.
   info.mStoragePrincipal = info.mPrincipal;
 
-  info.mCookieSettings = mozilla::net::CookieSettings::Create();
-  MOZ_ASSERT(info.mCookieSettings);
+  info.mCookieJarSettings = mozilla::net::CookieJarSettings::Create();
+  MOZ_ASSERT(info.mCookieJarSettings);
 
   info.mStorageAccess =
-      StorageAllowedForServiceWorker(info.mPrincipal, info.mCookieSettings);
+      StorageAllowedForServiceWorker(info.mPrincipal, info.mCookieJarSettings);
 
   info.mOriginAttributes = mInfo->GetOriginAttributes();
 
@@ -1685,7 +1685,9 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   // Default CSP permissions for now.  These will be overrided if necessary
   // based on the script CSP headers during load in ScriptLoader.
   info.mEvalAllowed = true;
-  info.mReportCSPViolations = false;
+  info.mReportEvalCSPViolations = false;
+  info.mWasmEvalAllowed = true;
+  info.mReportWasmEvalCSPViolations = false;
 
   WorkerPrivate::OverrideLoadInfoLoadGroup(info, info.mPrincipal);
 

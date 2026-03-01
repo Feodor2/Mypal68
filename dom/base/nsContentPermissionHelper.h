@@ -11,7 +11,7 @@
 #include "nsIWeakReferenceUtils.h" //MY
 #include "mozilla/dom/PContentPermissionRequestChild.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "PermissionDelegateHandler.h"
+#include "mozilla/PermissionDelegateHandler.h"
 
 // Microsoft's API Name hackery sucks
 // XXXbz Doing this in a header is a gigantic footgun. See
@@ -104,7 +104,7 @@ class nsContentPermissionRequester final
 };
 
 nsresult TranslateChoices(
-    JS::HandleValue aChoices,
+    JS::Handle<JS::Value> aChoices,
     const nsTArray<PermissionRequest>& aPermissionRequests,
     nsTArray<PermissionChoice>& aTranslatedChoices);
 
@@ -248,7 +248,7 @@ class RemotePermissionRequest final
   virtual ~RemotePermissionRequest();
 
   MOZ_CAN_RUN_SCRIPT
-  void DoAllow(JS::HandleValue aChoices);
+  void DoAllow(JS::Handle<JS::Value> aChoices);
   MOZ_CAN_RUN_SCRIPT
   void DoCancel();
 

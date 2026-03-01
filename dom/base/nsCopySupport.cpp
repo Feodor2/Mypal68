@@ -644,8 +644,8 @@ static nsresult AppendImagePromise(nsITransferable* aTransferable,
     mimeInfo->GetPrimaryExtension(primaryExtension);
     if (!primaryExtension.IsEmpty()) {
       rv = NS_MutateURI(imgUri)
-               .Apply(NS_MutatorMethod(&nsIURLMutator::SetFileExtension,
-                                       primaryExtension, nullptr))
+               .Apply(&nsIURLMutator::SetFileExtension, primaryExtension,
+                      nullptr)
                .Finalize(imgUrl);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -713,6 +713,7 @@ static bool IsInsideRuby(nsINode* aNode) {
 static bool IsSelectionInsideRuby(Selection* aSelection) {
   uint32_t rangeCount = aSelection->RangeCount();
   for (auto i : IntegerRange(rangeCount)) {
+    MOZ_ASSERT(aSelection->RangeCount() == rangeCount);
     const nsRange* range = aSelection->GetRangeAt(i);
     if (!IsInsideRuby(range->GetClosestCommonInclusiveAncestor())) {
       return false;

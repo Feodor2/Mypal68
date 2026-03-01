@@ -4,6 +4,7 @@
 
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/dom/HTMLOptGroupElement.h"
 #include "mozilla/dom/HTMLOptGroupElementBinding.h"
 #include "mozilla/dom/HTMLSelectElement.h"  // SafeOptionListMutation
@@ -37,7 +38,7 @@ void HTMLOptGroupElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   if (nsIFrame* frame = GetPrimaryFrame()) {
     // FIXME(emilio): This poking at the style of the frame is broken unless we
     // flush before every event handling, which we don't really want to.
-    if (frame->StyleUI()->mUserInput == StyleUserInput::None) {
+    if (frame->StyleUI()->UserInput() == StyleUserInput::None) {
       return;
     }
   }
@@ -53,22 +54,21 @@ Element* HTMLOptGroupElement::GetSelect() {
   return parent;
 }
 
-nsresult HTMLOptGroupElement::InsertChildBefore(nsIContent* aKid,
-                                                nsIContent* aBeforeThis,
-                                                bool aNotify) {
-  int32_t index = aBeforeThis ? ComputeIndexOf(aBeforeThis) : GetChildCount();
+void HTMLOptGroupElement::InsertChildBefore(nsIContent* aKid,
+                                            nsIContent* aBeforeThis,
+                                            bool aNotify, ErrorResult& aRv) {
+  const uint32_t index =
+      aBeforeThis ? *ComputeIndexOf(aBeforeThis) : GetChildCount();
   SafeOptionListMutation safeMutation(GetSelect(), this, aKid, index, aNotify);
-  nsresult rv =
-      nsGenericHTMLElement::InsertChildBefore(aKid, aBeforeThis, aNotify);
-  if (NS_FAILED(rv)) {
+  nsGenericHTMLElement::InsertChildBefore(aKid, aBeforeThis, aNotify, aRv);
+  if (aRv.Failed()) {
     safeMutation.MutationFailed();
   }
-  return rv;
 }
 
 void HTMLOptGroupElement::RemoveChildNode(nsIContent* aKid, bool aNotify) {
   SafeOptionListMutation safeMutation(GetSelect(), this, nullptr,
-                                      ComputeIndexOf(aKid), aNotify);
+                                      *ComputeIndexOf(aKid), aNotify);
   nsGenericHTMLElement::RemoveChildNode(aKid, aNotify);
 }
 

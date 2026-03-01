@@ -50,7 +50,7 @@ void SMILCompositor::ComposeAttribute(bool& aMightHavePendingStyleUpdates) {
   RefPtr<ComputedStyle> baseComputedStyle;
   if (MightNeedBaseStyle()) {
     baseComputedStyle = nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(
-        mKey.mElement, nullptr);
+        mKey.mElement, PseudoStyleType::NotPseudo);
   }
 
   // FIRST: Get the SMILAttr (to grab base value from, and to eventually

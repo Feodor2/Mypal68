@@ -10,8 +10,7 @@
 #include "nsIWeakReferenceUtils.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PlacesWeakCallbackWrapper final : public nsWrapperCache,
                                         public SupportsWeakPtr {
@@ -37,7 +36,6 @@ class PlacesWeakCallbackWrapper final : public nsWrapperCache,
   RefPtr<PlacesEventCallback> mCallback;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PlacesWeakCallbackWrapper_h

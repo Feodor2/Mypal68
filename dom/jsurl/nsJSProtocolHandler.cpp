@@ -14,6 +14,7 @@
 #include "nsStringStream.h"
 #include "nsNetUtil.h"
 
+#include "nsIClassInfoImpl.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsIScriptContext.h"
@@ -1123,7 +1124,7 @@ nsJSProtocolHandler::GetProtocolFlags(uint32_t* result) {
 
   NS_MutateURI mutator(new nsJSURI::Mutator());
   nsCOMPtr<nsIURI> base(aBaseURI);
-  mutator.Apply(NS_MutatorMethod(&nsIJSURIMutator::SetBase, base));
+  mutator.Apply(&nsIJSURIMutator::SetBase, base);
   if (!aCharset || !nsCRT::strcasecmp("UTF-8", aCharset)) {
     mutator.SetSpec(aSpec);
   } else {
@@ -1185,6 +1186,10 @@ static NS_DEFINE_CID(kThisSimpleURIImplementationCID,
 NS_IMPL_ADDREF_INHERITED(nsJSURI, mozilla::net::nsSimpleURI)
 NS_IMPL_RELEASE_INHERITED(nsJSURI, mozilla::net::nsSimpleURI)
 
+NS_IMPL_CLASSINFO(nsJSURI, nullptr, nsIClassInfo::THREADSAFE, NS_JSURI_CID);
+// Empty CI getter. We only need nsIClassInfo for Serialization
+NS_IMPL_CI_INTERFACE_GETTER0(nsJSURI)
+
 NS_INTERFACE_MAP_BEGIN(nsJSURI)
   if (aIID.Equals(kJSURICID))
     foundInterface = static_cast<nsIURI*>(this);
@@ -1195,6 +1200,7 @@ NS_INTERFACE_MAP_BEGIN(nsJSURI)
     *aInstancePtr = nullptr;
     return NS_NOINTERFACE;
   } else
+    NS_IMPL_QUERY_CLASSINFO(nsJSURI)
 NS_INTERFACE_MAP_END_INHERITING(mozilla::net::nsSimpleURI)
 
 // nsISerializable methods:
@@ -1330,11 +1336,5 @@ nsresult nsJSURI::EqualsInternal(
   }
 
   *aResult = !otherBaseURI;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsJSURI::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
-  *aClassIDNoAlloc = kJSURICID;
   return NS_OK;
 }

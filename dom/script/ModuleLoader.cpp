@@ -91,9 +91,9 @@ nsresult ModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
   // scripts and always use CORS. Only exception: Non linkable about: pages
   // which load local module scripts.
   if (GetScriptLoader()->IsAboutPageLoadingChromeURI(aRequest)) {
-    securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
+    securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL;
   } else {
-    securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+    securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT;
     if (aRequest->CORSMode() == CORS_NONE ||
         aRequest->CORSMode() == CORS_ANONYMOUS) {
       securityFlags |= nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;

@@ -113,6 +113,7 @@ class nsCSPContext : public nsIContentSecurityPolicy {
     eInline,
     eEval,
     eSelf,
+    eWasmEval,
   };
 
   nsresult AsyncReportViolation(

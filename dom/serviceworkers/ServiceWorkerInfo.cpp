@@ -4,6 +4,7 @@
 
 #include "ServiceWorkerInfo.h"
 
+#include "ServiceWorkerUtils.h"
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerScriptCache.h"
 #include "mozilla/dom/ClientIPCTypes.h"
@@ -81,6 +82,11 @@ NS_IMETHODIMP
 ServiceWorkerInfo::GetHandlesFetchEvents(bool* aValue) {
   MOZ_ASSERT(aValue);
   MOZ_ASSERT(NS_IsMainThread());
+
+  if (mHandlesFetch == Unknown) {
+    return NS_ERROR_FAILURE;
+  }
+
   *aValue = HandlesFetch();
   return NS_OK;
 }

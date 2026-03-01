@@ -9,6 +9,7 @@
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
+class ErrorResult;
 namespace dom {
 
 class HTMLPictureElement final : public nsGenericHTMLElement {
@@ -21,8 +22,8 @@ class HTMLPictureElement final : public nsGenericHTMLElement {
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
-  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                                     bool aNotify) override;
+  virtual void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                 bool aNotify, ErrorResult& aRv) override;
 
  protected:
   virtual ~HTMLPictureElement();

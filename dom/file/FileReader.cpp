@@ -15,16 +15,19 @@
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileReaderBinding.h"
 #include "mozilla/dom/ProgressEvent.h"
+#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "nsAlgorithm.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDOMJSUtils.h"
 #include "nsError.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
+#include "nsThreadUtils.h"
 #include "xpcpublic.h"
 #include "nsReadableUtils.h"
 
@@ -79,6 +82,28 @@ class MOZ_RAII FileReaderDecreaseBusyCounter {
       : mFileReader(aFileReader) {}
 
   ~FileReaderDecreaseBusyCounter() { mFileReader->DecreaseBusyCounter(); }
+};
+
+class FileReader::AsyncWaitRunnable final : public CancelableRunnable {
+ public:
+  explicit AsyncWaitRunnable(FileReader* aReader)
+      : CancelableRunnable("FileReader::AsyncWaitRunnable"), mReader(aReader) {}
+
+  NS_IMETHOD
+  Run() override {
+    if (mReader) {
+      mReader->InitialAsyncWait();
+    }
+    return NS_OK;
+  }
+
+  nsresult Cancel() override {
+    mReader = nullptr;
+    return NS_OK;
+  }
+
+ public:
+  RefPtr<FileReader> mReader;
 };
 
 void FileReader::RootResultArrayBuffer() { mozilla::HoldJSObjects(this); }
@@ -140,31 +165,25 @@ FileReader::GetInterface(const nsIID& aIID, void** aResult) {
   return QueryInterface(aIID, aResult);
 }
 
-void FileReader::GetResult(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
-                           ErrorResult& aRv) {
+void FileReader::GetResult(JSContext* aCx,
+                           Nullable<OwningStringOrArrayBuffer>& aResult) {
   JS::Rooted<JS::Value> result(aCx);
 
   if (mDataFormat == FILE_AS_ARRAYBUFFER) {
-    if (mReadyState == DONE && mResultArrayBuffer) {
-      result.setObject(*mResultArrayBuffer);
-    } else {
-      result.setNull();
+    if (mReadyState != DONE || !mResultArrayBuffer ||
+        !aResult.SetValue().SetAsArrayBuffer().Init(mResultArrayBuffer)) {
+      aResult.SetNull();
     }
 
-    if (!JS_WrapValue(aCx, &result)) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-
-    aResult.set(result);
     return;
   }
 
-  nsString tmpResult = mResult;
-  if (!xpc::StringToJsval(aCx, tmpResult, aResult)) {
-    aRv.Throw(NS_ERROR_FAILURE);
+  if (mReadyState != DONE || mResult.IsVoid()) {
+    aResult.SetNull();
     return;
   }
+
+  aResult.SetValue().SetAsString() = mResult;
 }
 
 void FileReader::OnLoadEndArrayBuffer() {
@@ -406,7 +425,8 @@ void FileReader::ReadFileContent(Blob& aBlob, const nsAString& aCharset,
     }
   }
 
-  aRv = DoAsyncWait();
+  mAsyncWaitRunnable = new AsyncWaitRunnable(this);
+  aRv = NS_DispatchToCurrentThread(mAsyncWaitRunnable);
   if (NS_WARN_IF(aRv.Failed())) {
     FreeFileData();
     return;
@@ -414,6 +434,18 @@ void FileReader::ReadFileContent(Blob& aBlob, const nsAString& aCharset,
 
   // FileReader should be in loading state here
   mReadyState = LOADING;
+}
+
+void FileReader::InitialAsyncWait() {
+  mAsyncWaitRunnable = nullptr;
+
+  nsresult rv = DoAsyncWait();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    mReadyState = EMPTY;
+    FreeFileData();
+    return;
+  }
+
   DispatchProgressEvent(nsLiteralString(LOADSTART_STR));
 }
 
@@ -583,14 +615,14 @@ FileReader::Notify(nsITimer* aTimer) {
 // InputStreamCallback
 NS_IMETHODIMP
 FileReader::OnInputStreamReady(nsIAsyncInputStream* aStream) {
-  if (mReadyState != LOADING || aStream != mAsyncStream) {
-    return NS_OK;
-  }
-
   // We use this class to decrease the busy counter at the end of this method.
   // In theory we can do it immediatelly but, for debugging reasons, we want to
   // be 100% sure we have a workerRef when OnLoadEnd() is called.
   FileReaderDecreaseBusyCounter RAII(this);
+
+  if (mReadyState != LOADING || aStream != mAsyncStream) {
+    return NS_OK;
+  }
 
   uint64_t count;
   nsresult rv = aStream->Available(&count);
@@ -690,9 +722,7 @@ void FileReader::Abort() {
 
   MOZ_ASSERT(mReadyState == LOADING);
 
-  ClearProgressEventTimer();
-
-  mReadyState = DONE;
+  Cleanup();
 
   // XXX The spec doesn't say this
   mError = DOMException::Create(NS_ERROR_DOM_ABORT_ERR);
@@ -701,16 +731,12 @@ void FileReader::Abort() {
   SetDOMStringToNull(mResult);
   mResultArrayBuffer = nullptr;
 
-  mAsyncStream = nullptr;
   mBlob = nullptr;
-
-  // Clean up memory buffer
-  FreeFileData();
 
   // Dispatch the events
   DispatchProgressEvent(nsLiteralString(ABORT_STR));
   DispatchProgressEvent(nsLiteralString(LOADEND_STR));
-}  // namespace dom
+}
 
 nsresult FileReader::IncreaseBusyCounter() {
   if (mWeakWorkerRef && mBusyCount++ == 0) {
@@ -740,21 +766,28 @@ void FileReader::DecreaseBusyCounter() {
   }
 }
 
-void FileReader::Shutdown() {
+void FileReader::Cleanup() {
   mReadyState = DONE;
+
+  if (mAsyncWaitRunnable) {
+    mAsyncWaitRunnable->Cancel();
+    mAsyncWaitRunnable = nullptr;
+  }
 
   if (mAsyncStream) {
     mAsyncStream->Close();
     mAsyncStream = nullptr;
   }
 
+  ClearProgressEventTimer();
   FreeFileData();
   mResultArrayBuffer = nullptr;
+}
 
-  if (mWeakWorkerRef && mBusyCount != 0) {
-    mStrongWorkerRef = nullptr;
+void FileReader::Shutdown() {
+  Cleanup();
+  if (mWeakWorkerRef) {
     mWeakWorkerRef = nullptr;
-    mBusyCount = 0;
   }
 }
 

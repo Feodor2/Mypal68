@@ -62,6 +62,7 @@ class InProcessBrowserChildMessageManager;
 class MessageSender;
 class ProcessMessageManager;
 class BrowserParent;
+class PBrowserParent; //MY
 class MutableTabContext;
 class BrowserBridgeChild;
 struct RemotenessOptions;
@@ -94,11 +95,11 @@ class nsFrameLoader final : public nsStubMutationObserver,
                             public nsWrapperCache {
   friend class AutoResetInShow;
   friend class AutoResetInFrameSwap;
-  typedef mozilla::dom::PBrowserParent PBrowserParent;
-  typedef mozilla::dom::Document Document;
-  typedef mozilla::dom::BrowserParent BrowserParent;
-  typedef mozilla::dom::BrowsingContext BrowsingContext;
-  typedef mozilla::layout::RenderFrame RenderFrame;
+  using PBrowserParent = mozilla::dom::PBrowserParent;
+  using Document = mozilla::dom::Document;
+  using BrowserParent = mozilla::dom::BrowserParent;
+  using BrowsingContext = mozilla::dom::BrowsingContext;
+  using RenderFrame = mozilla::layout::RenderFrame;
 
  public:
   // Called by Frame Elements to create a new FrameLoader.

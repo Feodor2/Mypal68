@@ -571,6 +571,26 @@ nsChangeHint HTMLCanvasElement::GetAttributeChangeHint(const nsAtom* aAttribute,
   return retval;
 }
 
+void HTMLCanvasElement::MapAttributesIntoRule(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  MapAspectRatioInto(aAttributes, aDecls);
+  MapCommonAttributesInto(aAttributes, aDecls);
+}
+
+nsMapRuleToAttributesFunc HTMLCanvasElement::GetAttributeMappingFunction()
+    const {
+  return &MapAttributesIntoRule;
+}
+
+NS_IMETHODIMP_(bool)
+HTMLCanvasElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  static const MappedAttributeEntry attributes[] = {
+      {nsGkAtoms::width}, {nsGkAtoms::height}, {nullptr}};
+  static const MappedAttributeEntry* const map[] = {attributes,
+                                                    sCommonAttributeMap};
+  return FindAttributeDependence(aAttribute, map);
+}
+
 bool HTMLCanvasElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                        const nsAString& aValue,
                                        nsIPrincipal* aMaybeScriptedPrincipal,
@@ -976,7 +996,7 @@ bool HTMLCanvasElement::CallerCanRead(JSContext* aCx) {
     return true;
   }
 
-  return nsContentUtils::PrincipalHasPermission(prin,
+  return nsContentUtils::PrincipalHasPermission(*prin,
                                                 nsGkAtoms::all_urlsPermission);
 }
 

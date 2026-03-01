@@ -52,7 +52,7 @@
 #include "nsIMIMEInfo.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSharedElement.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Printf.h"
 #include "ReferrerInfo.h"
@@ -1315,16 +1315,16 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
     loadFlags |= nsIRequest::LOAD_FROM_CACHE;
   }
 
-  // Create a new cookieSettings for this download in order to send cookies
+  // Create a new cookieJarSettings for this download in order to send cookies
   // based on the current state of the prefs/permissions.
-  nsCOMPtr<nsICookieSettings> cookieSettings =
-      mozilla::net::CookieSettings::Create();
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      mozilla::net::CookieJarSettings::Create();
 
   // Open a channel to the URI
   nsCOMPtr<nsIChannel> inputChannel;
   rv = NS_NewChannel(getter_AddRefs(inputChannel), aURI, aTriggeringPrincipal,
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     aContentPolicyType, cookieSettings,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+                     aContentPolicyType, cookieJarSettings,
                      nullptr,  // aPerformanceStorage
                      nullptr,  // aLoadGroup
                      static_cast<nsIInterfaceRequestor*>(this), loadFlags);
@@ -1975,11 +1975,11 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
 
       // Resync the URI with the file after the extension has been appended
       return NS_MutateURI(aURI)
-          .Apply(NS_MutatorMethod(&nsIFileURLMutator::SetFile, localFile))
+          .Apply(&nsIFileURLMutator::SetFile, localFile)
           .Finalize(aOutURI);
     }
     return NS_MutateURI(url)
-        .Apply(NS_MutatorMethod(&nsIURLMutator::SetFileName, filename, nullptr))
+        .Apply(&nsIURLMutator::SetFileName, filename, nullptr)
         .Finalize(aOutURI);
   }
 
@@ -2128,12 +2128,11 @@ nsresult nsWebBrowserPersist::CalculateAndAppendFileExt(
 
           // Resync the URI with the file after the extension has been appended
           return NS_MutateURI(url)
-              .Apply(NS_MutatorMethod(&nsIFileURLMutator::SetFile, localFile))
+              .Apply(&nsIFileURLMutator::SetFile, localFile)
               .Finalize(aOutURI);
         }
         return NS_MutateURI(url)
-            .Apply(NS_MutatorMethod(&nsIURLMutator::SetFileName, newFileName,
-                                    nullptr))
+            .Apply(&nsIURLMutator::SetFileName, newFileName, nullptr)
             .Finalize(aOutURI);
       }
     }
@@ -2580,7 +2579,7 @@ nsresult nsWebBrowserPersist::CreateChannelFromURI(nsIURI* aURI,
   *aChannel = nullptr;
 
   rv = NS_NewChannel(aChannel, aURI, nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER);
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_ARG_POINTER(*aChannel);

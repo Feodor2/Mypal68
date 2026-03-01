@@ -29,11 +29,11 @@ class TemporaryFileBlobImpl final : public FileBlobImpl {
                          ErrorResult& aRv) override;
 
   void GetBlobImplType(nsAString& aBlobImplType) const override {
-    aBlobImplType = NS_LITERAL_STRING("TemporaryFileBlobImpl");
+    aBlobImplType = u"TemporaryFileBlobImpl"_ns;
   }
 
  protected:
-  ~TemporaryFileBlobImpl();
+  ~TemporaryFileBlobImpl() override;
 
  private:
   already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart, uint64_t aLength,

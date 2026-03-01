@@ -127,7 +127,7 @@ nsTextFragment& nsTextFragment::operator=(const nsTextFragment& aOther) {
 
 static inline int32_t FirstNon8BitUnvectorized(const char16_t* str,
                                                const char16_t* end) {
-  typedef Non8BitParameters<sizeof(size_t)> p;
+  using p = Non8BitParameters<sizeof(size_t)>;
   const size_t mask = p::mask();
   const uint32_t alignMask = p::alignMask();
   const uint32_t numUnicharsPerWord = p::numUnicharsPerWord();
@@ -194,6 +194,10 @@ static inline int32_t FirstNon8Bit(const char16_t* str, const char16_t* end) {
 
 bool nsTextFragment::SetTo(const char16_t* aBuffer, uint32_t aLength,
                            bool aUpdateBidi, bool aForce2b) {
+  if (MOZ_UNLIKELY(aLength > NS_MAX_TEXT_FRAGMENT_LENGTH)) {
+    return false;
+  }
+
   if (aForce2b && mState.mIs2b && !m2b->IsReadonly()) {
     uint32_t storageSize = m2b->StorageSize();
     uint32_t neededSize = aLength * sizeof(char16_t);

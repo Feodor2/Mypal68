@@ -473,51 +473,46 @@ static RefPtr<const webgl::LinkedProgramInfo> QueryProgramInfo(
 
   {
     const auto& fragShader = prog->FragShader();
-    MOZ_RELEASE_ASSERT(fragShader);
-    MOZ_RELEASE_ASSERT(fragShader->Validator());
-    const auto& handle = fragShader->Validator()->mHandle;
-    const auto version = sh::GetShaderVersion(handle);
+    const auto& compileResults = fragShader->CompileResults();
+    const auto version = compileResults->mShaderVersion;
 
     const auto fnAddInfo = [&](const webgl::FragOutputInfo& x) {
       info->fragOutputs.insert({x.loc, x});
     };
 
     if (version == 300) {
-      const auto& fragOutputs = sh::GetOutputVariables(handle);
-      if (fragOutputs) {
-        for (const auto& cur : *fragOutputs) {
-          auto loc = cur.location;
-          if (loc == -1) loc = 0;
+      for (const auto& cur : compileResults->mOutputVariables) {
+        auto loc = cur.location;
+        if (loc == -1) loc = 0;
 
-          const auto info = webgl::FragOutputInfo{
-              uint8_t(loc), nsCString(cur.name.c_str()),
-              nsCString(cur.mappedName.c_str()), FragOutputBaseType(cur.type)};
-          if (!cur.isArray()) {
-            fnAddInfo(info);
-            continue;
-          }
-          MOZ_ASSERT(cur.arraySizes.size() == 1);
-          for (uint32_t i = 0; i < cur.arraySizes[0]; ++i) {
-            const auto indexStr = nsPrintfCString("[%u]", i);
+        const auto info = webgl::FragOutputInfo{
+            uint8_t(loc), nsCString(cur.name.c_str()),
+            nsCString(cur.mappedName.c_str()), FragOutputBaseType(cur.type)};
+        if (!cur.isArray()) {
+          fnAddInfo(info);
+          continue;
+        }
+        MOZ_ASSERT(cur.arraySizes.size() == 1);
+        for (uint32_t i = 0; i < cur.arraySizes[0]; ++i) {
+          const auto indexStr = nsPrintfCString("[%u]", i);
 
-            auto userName = info.userName;
-            userName.Append(indexStr);
-            auto mappedName = info.mappedName;
-            mappedName.Append(indexStr);
+          auto userName = info.userName;
+          userName.Append(indexStr);
+          auto mappedName = info.mappedName;
+          mappedName.Append(indexStr);
 
-            const auto indexedInfo = webgl::FragOutputInfo{
-                uint8_t(info.loc + i), userName, mappedName, info.baseType};
-            fnAddInfo(indexedInfo);
-          }
+          const auto indexedInfo = webgl::FragOutputInfo{
+              uint8_t(info.loc + i), userName, mappedName, info.baseType};
+          fnAddInfo(indexedInfo);
         }
       }
     } else {
       // ANGLE's translator doesn't tell us about non-user frag outputs. :(
 
-      const auto& translatedSource = fragShader->TranslatedSource();
+      const auto& translatedSource = compileResults->mObjectCode;
       uint32_t drawBuffers = 1;
-      if (translatedSource.Find("(gl_FragData[1]") != -1 ||
-          translatedSource.Find("(webgl_FragData[1]") != -1) {
+      if (translatedSource.find("(gl_FragData[1]") != std::string::npos ||
+          translatedSource.find("(webgl_FragData[1]") != std::string::npos) {
         // The matching with the leading '(' prevents cleverly-named user vars
         // breaking this. Since ANGLE initializes all outputs, if this is an MRT
         // shader, FragData[1] will be present. FragData[0] is valid for non-MRT
@@ -598,6 +593,7 @@ webgl::LinkedProgramInfo::GetDrawFetchLimits() const {
   bool hasActiveAttrib = false;
   bool hasActiveDivisor0 = false;
   webgl::CachedDrawFetchLimits fetchLimits = {UINT64_MAX, UINT64_MAX};
+  fetchLimits.usedBuffers.reserve(this->attribs.size());
 
   for (const auto& progAttrib : this->attribs) {
     const auto& loc = progAttrib.mLoc;
@@ -610,13 +606,9 @@ webgl::LinkedProgramInfo::GetDrawFetchLimits() const {
     webgl::AttribBaseType attribDataBaseType;
     if (attribData.mEnabled) {
       MOZ_ASSERT(attribData.mBuf);
-      if (attribData.mBuf->IsBoundForTF()) {
-        webgl->ErrorInvalidOperation(
-            "Vertex attrib %u's buffer is bound for"
-            " transform feedback.",
-            loc);
-        return nullptr;
-      }
+      fetchLimits.usedBuffers.push_back(
+          {attribData.mBuf.get(), static_cast<uint32_t>(loc)});
+
       cacheDeps.push_back(&attribData.mBuf->mFetchInvalidator);
 
       attribDataBaseType = attribData.BaseType();
@@ -1143,13 +1135,15 @@ bool WebGLProgram::ValidateForLink() {
     mLinkLog.AssignLiteral("Must have a compiled vertex shader attached.");
     return false;
   }
+  const auto& vertInfo = *mVertShader->CompileResults();
 
   if (!mFragShader || !mFragShader->IsCompiled()) {
     mLinkLog.AssignLiteral("Must have an compiled fragment shader attached.");
     return false;
   }
+  const auto& fragInfo = *mFragShader->CompileResults();
 
-  if (!mFragShader->CanLinkTo(mVertShader, &mLinkLog)) return false;
+  if (!fragInfo.CanLinkTo(vertInfo, &mLinkLog)) return false;
 
   const auto& gl = mContext->gl;
 

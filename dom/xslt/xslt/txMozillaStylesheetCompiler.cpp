@@ -398,7 +398,8 @@ nsresult txCompileObserver::startLoad(nsIURI* aUri,
   nsresult rv = NS_NewChannelWithTriggeringPrincipal(
       getter_AddRefs(channel), aUri, mLoaderDocument,
       aReferrerPrincipal,  // triggeringPrincipal
-      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS, nsIContentPolicy::TYPE_XSLT,
+      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT,
+      nsIContentPolicy::TYPE_XSLT,
       nullptr,  // aPerformanceStorage
       loadGroup);
 
@@ -558,8 +559,8 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
 
   rv = nsSyncLoadService::LoadDocument(
       uri, nsIContentPolicy::TYPE_XSLT, referrerPrincipal,
-      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS, nullptr,
-      source ? source->OwnerDoc()->CookieSettings() : nullptr, false,
+      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT, nullptr,
+      source ? source->OwnerDoc()->CookieJarSettings() : nullptr, false,
       aReferrerPolicy, getter_AddRefs(document));
   NS_ENSURE_SUCCESS(rv, rv);
 

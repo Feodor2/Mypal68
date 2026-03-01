@@ -349,8 +349,8 @@ TOUCH_EVENT(touchcancel, eTouchCancel, EventNameType_All, eTouchEventClass)
 
 DOCUMENT_ONLY_EVENT(readystatechange, eReadyStateChange, EventNameType_HTMLXUL,
                     eBasicEventClass)
-DOCUMENT_ONLY_EVENT(selectionchange, eSelectionChange, EventNameType_HTMLXUL,
-                    eBasicEventClass)
+EVENT(selectionchange, eSelectionChange, EventNameType_HTMLXUL,
+      eBasicEventClass)
 DOCUMENT_ONLY_EVENT(visibilitychange, eVisibilityChange, EventNameType_HTMLXUL,
                     eBasicEventClass)
 
@@ -425,8 +425,6 @@ NON_IDL_EVENT(underflow, eScrollPortUnderflow, EventNameType_XUL,
 
 // Various SVG events
 NON_IDL_EVENT(SVGLoad, eSVGLoad, EventNameType_None, eBasicEventClass)
-NON_IDL_EVENT(SVGUnload, eSVGUnload, EventNameType_None, eBasicEventClass)
-NON_IDL_EVENT(SVGResize, eSVGResize, EventNameType_None, eBasicEventClass)
 NON_IDL_EVENT(SVGScroll, eSVGScroll, EventNameType_None, eBasicEventClass)
 
 // Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.

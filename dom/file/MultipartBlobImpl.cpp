@@ -7,6 +7,7 @@
 #include "mozilla/dom/BlobSet.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsReadableUtils.h"
 #include "nsRFPService.h"

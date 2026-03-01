@@ -10,7 +10,7 @@
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
-#include "nsICookieSettings.h"
+#include "nsICookieJarSettings.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIOfflineCacheUpdate.h"
 #include "nsContentUtils.h"
@@ -373,7 +373,7 @@ void nsDOMOfflineResourceList::MozAdd(const nsAString& aURI, ErrorResult& aRv) {
   }
 
   RefPtr<Document> doc = GetOwner()->GetExtantDoc();
-  nsCOMPtr<nsICookieSettings> cs = doc ? doc->CookieSettings() : nullptr;
+  nsCOMPtr<nsICookieJarSettings> cs = doc ? doc->CookieJarSettings() : nullptr;
 
   rv = update->InitPartial(mManifestURI, clientID, mDocumentURI,
                            mLoadingPrincipal, cs);

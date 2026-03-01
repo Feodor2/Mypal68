@@ -266,6 +266,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
 
  protected:
   JSObject* CustomReadHandler(JSContext* aCx, JSStructuredCloneReader* aReader,
+                              const JS::CloneDataPolicy& aCloneDataPolicy,
                               uint32_t aTag, uint32_t aIndex) override {
     AssertIsOnMainThread();
 

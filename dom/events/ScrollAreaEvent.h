@@ -11,8 +11,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ScrollAreaEvent : public UIEvent {
  public:
@@ -49,8 +48,7 @@ class ScrollAreaEvent : public UIEvent {
   RefPtr<DOMRect> mClientArea;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<mozilla::dom::ScrollAreaEvent> NS_NewDOMScrollAreaEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,

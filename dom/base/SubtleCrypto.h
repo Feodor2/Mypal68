@@ -11,8 +11,7 @@
 #include "mozilla/dom/CryptoKey.h"
 #include "js/TypeDecls.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ObjectOrString;
 class Promise;
@@ -105,7 +104,6 @@ class SubtleCrypto final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsIGlobalObject> mParent;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_SubtleCrypto_h

@@ -69,7 +69,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
 
   if (ShouldPartitionStorage(storageAllowed) &&
       !StoragePartitioningEnabled(storageAllowed,
-                                  window->GetExtantDoc()->CookieSettings())) {
+                                  window->GetExtantDoc()->CookieJarSettings())) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }

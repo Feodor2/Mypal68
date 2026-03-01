@@ -531,7 +531,7 @@ class GetUserMediaWindowListener {
         auto req = MakeRefPtr<GetUserMediaRequest>(
             globalWindow, VoidString(), VoidString(),
             UserActivation::IsHandlingUserInput());
-        obs->NotifyObservers(req, "recording-device-stopped", nullptr);
+        obs->NotifyWhenScriptSafe(req, "recording-device-stopped", nullptr);
       }
       return;
     }
@@ -593,7 +593,7 @@ class GetUserMediaWindowListener {
         auto req = MakeRefPtr<GetUserMediaRequest>(
             window, removedRawId, removedSourceType,
             UserActivation::IsHandlingUserInput());
-        obs->NotifyObservers(req, "recording-device-stopped", nullptr);
+        obs->NotifyWhenScriptSafe(req, "recording-device-stopped", nullptr);
       }
     }
 
@@ -620,7 +620,7 @@ class GetUserMediaWindowListener {
         auto req = MakeRefPtr<GetUserMediaRequest>(
             window, removedRawId, removedSourceType,
             UserActivation::IsHandlingUserInput());
-        obs->NotifyObservers(req, "recording-device-stopped", nullptr);
+        obs->NotifyWhenScriptSafe(req, "recording-device-stopped", nullptr);
       }
     }
     if (mInactiveListeners.Length() == 0 && mActiveListeners.Length() == 0) {
@@ -3475,7 +3475,7 @@ void MediaManager::RemoveWindowID(uint64_t aWindowId) {
   nsString data = NS_ConvertUTF8toUTF16(windowBuffer);
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-  obs->NotifyObservers(nullptr, "recording-window-ended", data.get());
+  obs->NotifyWhenScriptSafe(nullptr, "recording-window-ended", data.get());
   LOG("Sent recording-window-ended for window %" PRIu64 " (outer %" PRIu64 ")",
       aWindowId, outerID);
 }

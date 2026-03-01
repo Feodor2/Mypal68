@@ -255,7 +255,7 @@ already_AddRefed<nsIAsyncShutdownClient> IOUtils::GetShutdownBarrier() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
   if (!sBarrier) {
-    nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdown();
+    nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
     MOZ_ASSERT(svc);
 
     nsCOMPtr<nsIAsyncShutdownClient> barrier;

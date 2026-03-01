@@ -86,7 +86,9 @@ WorkerLoadInfoData::WorkerLoadInfoData()
       mReferrerInfo(new ReferrerInfo(nullptr)),
       mFromWindow(false),
       mEvalAllowed(false),
-      mReportCSPViolations(false),
+      mReportEvalCSPViolations(false),
+      mWasmEvalAllowed(false),
+      mReportWasmEvalCSPViolations(false),
       mXHRParamsAllowed(false),
       mPrincipalIsSystem(false),
       mPrincipalIsAddonOrExpandedAddon(false),
@@ -111,7 +113,8 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
   mCSP = aCsp;
 
   if (mCSP) {
-    mCSP->GetAllowsEval(&mReportCSPViolations, &mEvalAllowed);
+    mCSP->GetAllowsEval(&mReportEvalCSPViolations, &mEvalAllowed);
+    mCSP->GetAllowsWasmEval(&mReportWasmEvalCSPViolations, &mWasmEvalAllowed);
     mCSPInfo = MakeUnique<CSPInfo>();
     nsresult rv = CSPToCSPInfo(aCsp, mCSPInfo.get());
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -119,7 +122,9 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
     }
   } else {
     mEvalAllowed = true;
-    mReportCSPViolations = false;
+    mReportEvalCSPViolations = false;
+    mWasmEvalAllowed = true;
+    mReportWasmEvalCSPViolations = false;
   }
 
   mLoadGroup = aLoadGroup;
@@ -325,10 +330,7 @@ bool WorkerLoadInfo::PrincipalURIMatchesScriptURL() {
     return true;
   }
 
-  bool isSameOrigin = false;
-  rv = mPrincipal->IsSameOrigin(mBaseURI, false, &isSameOrigin);
-
-  if (NS_SUCCEEDED(rv) && isSameOrigin) {
+  if (mPrincipal->IsSameOrigin(mBaseURI)) {
     return true;
   }
 

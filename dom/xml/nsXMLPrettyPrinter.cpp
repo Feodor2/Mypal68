@@ -64,8 +64,8 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   nsCOMPtr<Document> xslDocument;
   rv = nsSyncLoadService::LoadDocument(
       xslUri, nsIContentPolicy::TYPE_XSLT, nsContentUtils::GetSystemPrincipal(),
-      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL, nullptr,
-      aDocument->CookieSettings(), true, ReferrerPolicy::_empty,
+      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nullptr,
+      aDocument->CookieJarSettings(), true, ReferrerPolicy::_empty,
       getter_AddRefs(xslDocument));
   NS_ENSURE_SUCCESS(rv, rv);
 

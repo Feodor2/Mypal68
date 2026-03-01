@@ -418,9 +418,11 @@ class BrowserParent final : public PBrowserParent,
 
   mozilla::ipc::IPCResult RecvSetCursor(
       const nsCursor& aValue, const bool& aHasCustomCursor,
-      const nsCString& aUri, const uint32_t& aWidth, const uint32_t& aHeight,
-      const uint32_t& aStride, const gfx::SurfaceFormat& aFormat,
-      const uint32_t& aHotspotX, const uint32_t& aHotspotY, const bool& aForce);
+      const nsCString& aCursorData, const uint32_t& aWidth,
+      const uint32_t& aHeight, const float& aResolutionX,
+      const float& aResolutionY, const uint32_t& aStride,
+      const gfx::SurfaceFormat& aFormat, const uint32_t& aHotspotX,
+      const uint32_t& aHotspotY, const bool& aForce);
 
   mozilla::ipc::IPCResult RecvSetLinkStatus(const nsString& aStatus);
 
@@ -473,13 +475,12 @@ class BrowserParent final : public PBrowserParent,
       PWindowGlobalParent* aActor, const WindowGlobalInit& aInit) override;
 
   already_AddRefed<PBrowserBridgeParent> AllocPBrowserBridgeParent(
-      const nsString& aPresentationURL, const nsCString& aRemoteType,
-      BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags);
+      const nsCString& aRemoteType, BrowsingContext* aBrowsingContext,
+      const uint32_t& aChromeFlags);
 
   virtual mozilla::ipc::IPCResult RecvPBrowserBridgeConstructor(
-      PBrowserBridgeParent* aActor, const nsString& aPresentationURL,
-      const nsCString& aRemoteType, BrowsingContext* aBrowsingContext,
-      const uint32_t& aChromeFlags) override;
+      PBrowserBridgeParent* aActor, const nsCString& aRemoteType,
+      BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags) override;
 
   void LoadURL(nsIURI* aURI);
 
@@ -507,7 +508,9 @@ class BrowserParent final : public PBrowserParent,
 
   void HandleAccessKey(const WidgetKeyboardEvent& aEvent,
                        nsTArray<uint32_t>& aCharCodes);
-
+#if defined(MOZ_WIDGET_ANDROID)
+  void DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight);
+#endif
   void Activate();
 
   void Deactivate(bool aWindowLowering);
@@ -519,9 +522,10 @@ class BrowserParent final : public PBrowserParent,
 
   LayoutDeviceToCSSScale GetLayoutDeviceToCSSScale();
 
-  mozilla::ipc::IPCResult RecvRequestNativeKeyBindings(
-      const uint32_t& aType, const mozilla::WidgetKeyboardEvent& aEvent,
-      nsTArray<mozilla::CommandInt>* aCommands);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult
+  RecvRequestNativeKeyBindings(const uint32_t& aType,
+                               const mozilla::WidgetKeyboardEvent& aEvent,
+                               nsTArray<mozilla::CommandInt>* aCommands);
 
   mozilla::ipc::IPCResult RecvSynthesizeNativeKeyEvent(
       const int32_t& aNativeKeyboardLayout, const int32_t& aNativeKeyCode,
@@ -553,10 +557,6 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvClearNativeTouchSequence(
       const uint64_t& aObserverId);
 
-  mozilla::ipc::IPCResult RecvSetPrefersReducedMotionOverrideForTest(
-      const bool& aValue);
-  mozilla::ipc::IPCResult RecvResetPrefersReducedMotionOverrideForTest();
-
   void SendMouseEvent(const nsAString& aType, float aX, float aY,
                       int32_t aButton, int32_t aClickCount, int32_t aModifiers);
 
@@ -572,7 +572,12 @@ class BrowserParent final : public PBrowserParent,
 
   void SendMouseWheelEvent(WidgetWheelEvent& aEvent);
 
-  void SendRealKeyEvent(WidgetKeyboardEvent& aEvent);
+  /**
+   * Only when the event is synthesized, retrieving writing mode may flush
+   * the layout.
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SendRealKeyEvent(
+      WidgetKeyboardEvent& aEvent);
 
   void SendRealTouchEvent(WidgetTouchEvent& aEvent);
 
@@ -867,9 +872,7 @@ class BrowserParent final : public PBrowserParent,
 
   // Cached cursor setting from BrowserChild.  When the cursor is over the tab,
   // it should take this appearance.
-  nsCursor mCursor;
-  nsCOMPtr<imgIContainer> mCustomCursor;
-  uint32_t mCustomCursorHotspotX, mCustomCursorHotspotY;
+  nsIWidget::Cursor mCursor;
 
   nsTArray<nsString> mVerifyDropLinks;
 

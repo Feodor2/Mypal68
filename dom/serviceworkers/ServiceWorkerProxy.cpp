@@ -3,7 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerProxy.h"
+#include "ServiceWorkerCloneData.h"
+#include "ServiceWorkerManager.h"
+#include "ServiceWorkerParent.h"
 
+#include "mozilla/dom/ClientState.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "ServiceWorkerInfo.h"
 

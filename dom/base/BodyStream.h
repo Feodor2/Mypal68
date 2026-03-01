@@ -6,7 +6,6 @@
 #define mozilla_dom_BodyStream_h
 
 #include "jsapi.h"
-#include "js/Stream.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -28,7 +27,7 @@ class ErrorResult;
 namespace dom {
 
 class BodyStream;
-class WeakWorkerRef;
+class StrongWorkerRef;
 class ReadableStream;
 class ReadableStreamController;
 
@@ -185,7 +184,8 @@ class BodyStream final : public nsIInputStreamCallback,
   nsCOMPtr<nsIInputStream> mOriginalInputStream;
   nsCOMPtr<nsIAsyncInputStream> mInputStream;
 
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mAsyncWaitWorkerRef;
 };
 
 }  // namespace dom

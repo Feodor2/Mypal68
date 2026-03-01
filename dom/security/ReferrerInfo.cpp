@@ -17,9 +17,9 @@
 #include "nsCharSeparatedTokenizer.h"
 #include "ReferrerInfo.h"
 
-#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/ContentBlocking.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -191,18 +191,17 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
   if (aChannel) {
     loadInfo = aChannel->LoadInfo();
   }
-  nsCOMPtr<nsICookieSettings> cs;
+  nsCOMPtr<nsICookieJarSettings> cs;
   if (loadInfo) {
-    Unused << loadInfo->GetCookieSettings(getter_AddRefs(cs));
+    Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cs));
   }
   if (!cs) {
-    cs = net::CookieSettings::Create();
+    cs = net::CookieJarSettings::Create();
   }
   if (aChannel && aURI && cs->GetRejectThirdPartyTrackers()) {
     uint32_t rejectedReason = 0;
     thirdPartyTrackerIsolated =
-        !AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-            aChannel, aURI, &rejectedReason);
+        !ContentBlocking::ShouldAllowAccessFor(aChannel, aURI, &rejectedReason);
     // Here we intentionally do not notify about the rejection reason, if any
     // in order to avoid this check to have any visible side-effects (e.g. a
     // web console report.)
@@ -486,14 +485,7 @@ bool ReferrerInfo::IsCrossOriginRequest(nsIHttpChannel* aChannel) {
     return true;
   }
 
-  bool isPrivateWin = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-  bool isSameOrigin = false;
-  rv = loadInfo->TriggeringPrincipal()->IsSameOrigin(uri, isPrivateWin,
-                                                     &isSameOrigin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return true;
-  }
-  return !isSameOrigin;
+  return !loadInfo->TriggeringPrincipal()->IsSameOrigin(uri);
 }
 
 ReferrerInfo::TrimmingPolicy ReferrerInfo::ComputeTrimmingPolicy(

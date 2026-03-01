@@ -7,7 +7,7 @@
 
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "mozilla/dom/Document.h"
-#include "nsICookieSettings.h"
+#include "nsICookieJarSettings.h"
 #include "nsIFile.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
@@ -323,14 +323,14 @@ NS_IMPL_ISUPPORTS(FetchDriver, nsIStreamListener, nsIChannelEventSink,
 FetchDriver::FetchDriver(SafeRefPtr<InternalRequest> aRequest,
                          nsIPrincipal* aPrincipal, nsILoadGroup* aLoadGroup,
                          nsIEventTarget* aMainThreadEventTarget,
-                         nsICookieSettings* aCookieSettings,
+                         nsICookieJarSettings* aCookieJarSettings,
                          PerformanceStorage* aPerformanceStorage,
                          bool aIsTrackingFetch)
     : mPrincipal(aPrincipal),
       mLoadGroup(aLoadGroup),
       mRequest(std::move(aRequest)),
       mMainThreadEventTarget(aMainThreadEventTarget),
-      mCookieSettings(aCookieSettings),
+      mCookieJarSettings(aCookieJarSettings),
       mPerformanceStorage(aPerformanceStorage),
       mNeedToObserveOnDataAvailable(false),
       mIsTrackingFetch(aIsTrackingFetch),
@@ -595,12 +595,12 @@ nsresult FetchDriver::HttpFetch(
 
   nsSecurityFlags secFlags = 0;
   if (mRequest->Mode() == RequestMode::Cors) {
-    secFlags |= nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+    secFlags |= nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT;
   } else if (mRequest->Mode() == RequestMode::Same_origin ||
              mRequest->Mode() == RequestMode::Navigate) {
-    secFlags |= nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS;
+    secFlags |= nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT;
   } else if (mRequest->Mode() == RequestMode::No_cors) {
-    secFlags |= nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
+    secFlags |= nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
   } else {
     MOZ_ASSERT_UNREACHABLE("Unexpected request mode!");
     return NS_ERROR_UNEXPECTED;
@@ -633,7 +633,7 @@ nsresult FetchDriver::HttpFetch(
   nsLoadFlags loadFlags = nsIRequest::LOAD_BACKGROUND | bypassFlag;
   if (mDocument) {
     MOZ_ASSERT(mDocument->NodePrincipal() == mPrincipal);
-    MOZ_ASSERT(mDocument->CookieSettings() == mCookieSettings);
+    MOZ_ASSERT(mDocument->CookieJarSettings() == mCookieJarSettings);
     rv = NS_NewChannel(getter_AddRefs(chan), uri, mDocument, secFlags,
                        mRequest->ContentPolicyType(),
                        nullptr,             /* aPerformanceStorage */
@@ -642,13 +642,13 @@ nsresult FetchDriver::HttpFetch(
   } else if (mClientInfo.isSome()) {
     rv = NS_NewChannel(getter_AddRefs(chan), uri, mPrincipal, mClientInfo.ref(),
                        mController, secFlags, mRequest->ContentPolicyType(),
-                       mCookieSettings, mPerformanceStorage, mLoadGroup,
+                       mCookieJarSettings, mPerformanceStorage, mLoadGroup,
                        nullptr, /* aCallbacks */
                        loadFlags, ios);
   } else {
     rv =
         NS_NewChannel(getter_AddRefs(chan), uri, mPrincipal, secFlags,
-                      mRequest->ContentPolicyType(), mCookieSettings,
+                      mRequest->ContentPolicyType(), mCookieJarSettings,
                       mPerformanceStorage, mLoadGroup, nullptr, /* aCallbacks */
                       loadFlags, ios);
   }
@@ -704,8 +704,8 @@ nsresult FetchDriver::HttpFetch(
       mRequest->SetReferrerPolicy(referrerPolicy);
     }
     // Step 6 of https://fetch.spec.whatwg.org/#main-fetch
-    // If request’s referrer policy is the empty string,
-    // then set request’s referrer policy to the user-set default policy.
+    // If request???s referrer policy is the empty string,
+    // then set request???s referrer policy to the user-set default policy.
     if (mRequest->ReferrerPolicy_() == ReferrerPolicy::_empty) {
       nsCOMPtr<nsILoadInfo> loadInfo = httpChan->LoadInfo();
       bool isPrivate = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
@@ -848,14 +848,15 @@ nsresult FetchDriver::HttpFetch(
   mChannel = chan;
   return NS_OK;
 }
-already_AddRefed<InternalResponse> FetchDriver::BeginAndGetFilteredResponse(
-    InternalResponse* aResponse, bool aFoundOpaqueRedirect) {
+
+SafeRefPtr<InternalResponse> FetchDriver::BeginAndGetFilteredResponse(
+    SafeRefPtr<InternalResponse> aResponse, bool aFoundOpaqueRedirect) {
   MOZ_ASSERT(aResponse);
   AutoTArray<nsCString, 4> reqURLList;
   mRequest->GetURLListWithoutFragment(reqURLList);
   MOZ_ASSERT(!reqURLList.IsEmpty());
   aResponse->SetURLList(reqURLList);
-  RefPtr<InternalResponse> filteredResponse;
+  SafeRefPtr<InternalResponse> filteredResponse;
   if (aFoundOpaqueRedirect) {
     filteredResponse = aResponse->OpaqueRedirectResponse();
   } else {
@@ -881,25 +882,25 @@ already_AddRefed<InternalResponse> FetchDriver::BeginAndGetFilteredResponse(
 
   MOZ_ASSERT(filteredResponse);
   MOZ_ASSERT(mObserver);
+  MOZ_ASSERT(filteredResponse);
   if (!ShouldCheckSRI(*mRequest, *filteredResponse)) {
     // Need to keep mObserver alive.
     RefPtr<FetchDriverObserver> observer = mObserver;
-    observer->OnResponseAvailable(filteredResponse);
+    observer->OnResponseAvailable(filteredResponse.clonePtr());
 #ifdef DEBUG
     mResponseAvailableCalled = true;
 #endif
   }
 
-  return filteredResponse.forget();
+  return filteredResponse;
 }
 
 void FetchDriver::FailWithNetworkError(nsresult rv) {
   AssertIsOnMainThread();
-  RefPtr<InternalResponse> error = InternalResponse::NetworkError(rv);
   if (mObserver) {
     // Need to keep mObserver alive.
     RefPtr<FetchDriverObserver> observer = mObserver;
-    observer->OnResponseAvailable(error);
+    observer->OnResponseAvailable(InternalResponse::NetworkError(rv));
 #ifdef DEBUG
     mResponseAvailableCalled = true;
 #endif
@@ -951,7 +952,7 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
 
   mNeedToObserveOnDataAvailable = mObserver->NeedOnDataAvailable();
 
-  RefPtr<InternalResponse> response;
+  SafeRefPtr<InternalResponse> response;
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
 
@@ -987,8 +988,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     rv = httpChannel->GetResponseStatusText(statusText);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-    response = new InternalResponse(responseStatus, statusText,
-                                    mRequest->GetCredentialsMode());
+    response = MakeSafeRefPtr<InternalResponse>(responseStatus, statusText,
+                                                mRequest->GetCredentialsMode());
 
     UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo(
         new mozilla::ipc::PrincipalInfo());
@@ -1014,8 +1015,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     }
     MOZ_ASSERT(!result.Failed());
   } else {
-    response =
-        new InternalResponse(200, "OK"_ns, mRequest->GetCredentialsMode());
+    response = MakeSafeRefPtr<InternalResponse>(200, "OK"_ns,
+                                                mRequest->GetCredentialsMode());
 
     if (!contentType.IsEmpty()) {
       nsAutoCString contentCharset;
@@ -1165,7 +1166,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
 
   // Resolves fetch() promise which may trigger code running in a worker.  Make
   // sure the Response is fully initialized before calling this.
-  mResponse = BeginAndGetFilteredResponse(response, foundOpaqueRedirect);
+  mResponse =
+      BeginAndGetFilteredResponse(std::move(response), foundOpaqueRedirect);
   if (NS_WARN_IF(!mResponse)) {
     // Fail to generate a paddingInfo for opaque response.
     MOZ_DIAGNOSTIC_ASSERT(mRequest->GetResponseTainting() ==
@@ -1425,7 +1427,7 @@ void FetchDriver::FinishOnStopRequest(
       MOZ_ASSERT(mResponse);
       // Need to keep mObserver alive.
       RefPtr<FetchDriverObserver> observer = mObserver;
-      observer->OnResponseAvailable(mResponse);
+      observer->OnResponseAvailable(mResponse.clonePtr());
 #ifdef DEBUG
       mResponseAvailableCalled = true;
 #endif
@@ -1491,7 +1493,7 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
   }
 
   // In redirect, httpChannel already took referrer-policy into account, so
-  // updates request’s associated referrer policy from channel.
+  // updates request???s associated referrer policy from channel.
   UpdateReferrerInfoFromNewChannel(aNewChannel);
 
   aCallback->OnRedirectVerifyCallback(NS_OK);

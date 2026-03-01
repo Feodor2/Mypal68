@@ -103,14 +103,14 @@ namespace GlobalNames {
 // interfaces, not of the global names used to refer to them in IDL [Exposed]
 // annotations.
 static const uint32_t Window = 1u << 0;
-static const uint32_t BackstagePass = 1u << 1;
-static const uint32_t DedicatedWorkerGlobalScope = 1u << 2;
-static const uint32_t SharedWorkerGlobalScope = 1u << 3;
-static const uint32_t ServiceWorkerGlobalScope = 1u << 4;
-static const uint32_t WorkerDebuggerGlobalScope = 1u << 5;
-static const uint32_t WorkletGlobalScope = 1u << 6;
-static const uint32_t AudioWorkletGlobalScope = 1u << 7;
-static const uint32_t PaintWorkletGlobalScope = 1u << 8;
+static const uint32_t DedicatedWorkerGlobalScope = 1u << 1;
+static const uint32_t SharedWorkerGlobalScope = 1u << 2;
+static const uint32_t ServiceWorkerGlobalScope = 1u << 3;
+static const uint32_t WorkerDebuggerGlobalScope = 1u << 4;
+static const uint32_t WorkletGlobalScope = 1u << 5;
+static const uint32_t AudioWorkletGlobalScope = 1u << 6;
+static const uint32_t PaintWorkletGlobalScope = 1u << 7;
+static const uint32_t ShadowRealmGlobalScope = 1u << 8;
 }  // namespace GlobalNames
 
 struct PrefableDisablers {
@@ -361,10 +361,6 @@ struct NativePropertyHooks {
   // has one. If it doesn't have one it will be set to
   // constructors::id::_ID_Count.
   constructors::ID mConstructorID;
-
-  // The NativePropertyHooks instance for the parent interface (for
-  // ShimInterfaceInfo).
-  const NativePropertyHooks* mProtoHooks;
 
   // The JSClass to use for expandos on our Xrays.  Can be null, in which case
   // Xrays will use a default class of their choice.

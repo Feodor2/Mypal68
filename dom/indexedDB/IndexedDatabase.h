@@ -222,8 +222,8 @@ struct StructuredCloneReadInfoParent
 template <typename StructuredCloneReadInfo>
 JSObject* CommonStructuredCloneReadCallback(
     JSContext* aCx, JSStructuredCloneReader* aReader,
-    uint32_t aTag, uint32_t aData, StructuredCloneReadInfo* aCloneReadInfo,
-    IDBDatabase* aDatabase);
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, uint32_t aData,
+    StructuredCloneReadInfo* aCloneReadInfo, IDBDatabase* aDatabase);
 
 template <typename StructuredCloneReadInfoType>
 JSObject* StructuredCloneReadCallback(

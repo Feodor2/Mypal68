@@ -10,6 +10,7 @@
 #include "nsString.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_webgl.h" //MY
 #include "mozilla/dom/BindingDeclarations.h"
 #include "AccessCheck.h"
 

@@ -3,14 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PermissionStatus.h"
+#include "mozilla/PermissionDelegateHandler.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/Permission.h"
 #include "mozilla/Services.h"
 #include "nsIPermissionManager.h"
 #include "PermissionObserver.h"
 #include "PermissionUtils.h"
-#include "nsPermission.h"
-#include "PermissionDelegateHandler.h"
 
 namespace mozilla {
 namespace dom {
@@ -103,7 +103,7 @@ already_AddRefed<nsIPrincipal> PermissionStatus::GetPrincipal() const {
   }
 
   nsCOMPtr<nsIPrincipal> principal =
-      nsPermission::ClonePrincipalForPermission(doc->NodePrincipal());
+      Permission::ClonePrincipalForPermission(doc->NodePrincipal());
   NS_ENSURE_TRUE(principal, nullptr);
 
   return principal.forget();

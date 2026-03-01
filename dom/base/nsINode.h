@@ -55,6 +55,8 @@ struct RawServoSelectorList;
 
 namespace mozilla {
 class EventListenerManager;
+template <typename T>
+class Maybe;
 class PresShell;
 class TextEditor;
 namespace dom {
@@ -283,18 +285,18 @@ class nsINode : public mozilla::dom::EventTarget {
   void AssertInvariantsOnNodeInfoChange();
 #endif
  public:
-  typedef mozilla::dom::BoxQuadOptions BoxQuadOptions;
-  typedef mozilla::dom::ConvertCoordinateOptions ConvertCoordinateOptions;
-  typedef mozilla::dom::DocGroup DocGroup;
-  typedef mozilla::dom::Document Document;
-  typedef mozilla::dom::DOMPoint DOMPoint;
-  typedef mozilla::dom::DOMPointInit DOMPointInit;
-  typedef mozilla::dom::DOMQuad DOMQuad;
-  typedef mozilla::dom::DOMRectReadOnly DOMRectReadOnly;
-  typedef mozilla::dom::OwningNodeOrString OwningNodeOrString;
-  typedef mozilla::dom::TextOrElementOrDocument TextOrElementOrDocument;
-  typedef mozilla::dom::CallerType CallerType;
-  typedef mozilla::ErrorResult ErrorResult;
+  using BoxQuadOptions = mozilla::dom::BoxQuadOptions;
+  using ConvertCoordinateOptions = mozilla::dom::ConvertCoordinateOptions;
+  using DocGroup = mozilla::dom::DocGroup;
+  using Document = mozilla::dom::Document;
+  using DOMPoint = mozilla::dom::DOMPoint;
+  using DOMPointInit = mozilla::dom::DOMPointInit;
+  using DOMQuad = mozilla::dom::DOMQuad;
+  using DOMRectReadOnly = mozilla::dom::DOMRectReadOnly;
+  using OwningNodeOrString = mozilla::dom::OwningNodeOrString;
+  using TextOrElementOrDocument = mozilla::dom::TextOrElementOrDocument;
+  using CallerType = mozilla::dom::CallerType;
+  using ErrorResult = mozilla::ErrorResult;
 
   // XXXbz Maybe we should codegen a class holding these constants and
   // inherit from it...
@@ -499,6 +501,10 @@ class nsINode : public mozilla::dom::EventTarget {
 
   MOZ_CAN_RUN_SCRIPT mozilla::dom::Element* GetParentFlexElement();
 
+  bool IsNode() const final { return true; }
+
+  NS_IMPL_FROMEVENTTARGET_HELPER(nsINode, IsNode())
+
   /**
    * Return whether the node is an Element node. Faster than using `NodeType()`.
    */
@@ -615,6 +621,35 @@ class nsINode : public mozilla::dom::EventTarget {
    * Get the index of a child within this content.
    *
    * @param aPossibleChild the child to get the index of.
+   * @return the index of the child, or Nothing if not a child. Be aware that
+   *         anonymous children (e.g. a <div> child of an <input> element) will
+   *         result in Nothing.
+   *
+   * If the return value is Some, then calling GetChildAt_Deprecated() with
+   * that value will return aPossibleChild.
+   */
+  mozilla::Maybe<uint32_t> ComputeIndexOf(const nsINode* aPossibleChild) const;
+
+  /**
+   * Get the index of this within parent node (ComputeIndexInParentNode) or
+   * parent content (nsIContent) node (ComputeIndexInParentContent).
+   *
+   * @return the index of this node in the parent, or Nothing there is no
+   *         parent (content) node or the parent does not have this node anymore
+   *         (e.g., being removed from the parent). Be aware that anonymous
+   *         children (e.g. a <div> child of an <input> element) will result in
+   *         Nothing.
+   *
+   * If the return value is Some, then calling GetChildAt_Deprecated() with
+   * that value will return this.
+   */
+  mozilla::Maybe<uint32_t> ComputeIndexInParentNode() const;
+  mozilla::Maybe<uint32_t> ComputeIndexInParentContent() const;
+
+  /**
+   * Get the index of a child within this content.
+   *
+   * @param aPossibleChild the child to get the index of.
    * @return the index of the child, or -1 if not a child. Be aware that
    *         anonymous children (e.g. a <div> child of an <input> element) will
    *         result in -1.
@@ -622,7 +657,7 @@ class nsINode : public mozilla::dom::EventTarget {
    * If the return value is not -1, then calling GetChildAt_Deprecated() with
    * that value will return aPossibleChild.
    */
-  virtual int32_t ComputeIndexOf(const nsINode* aPossibleChild) const;
+  int32_t ComputeIndexOf_Deprecated(const nsINode* aPossibleChild) const;
 
   /**
    * Returns the "node document" of this node.
@@ -824,17 +859,17 @@ class nsINode : public mozilla::dom::EventTarget {
    *        add aKid at the end.
    * @param aNotify whether to notify the document (current document for
    *        nsIContent, and |this| for Document) that the insert has occurred
-   *
-   * @throws NS_ERROR_DOM_HIERARCHY_REQUEST_ERR if one attempts to have more
-   * than one element node as a child of a document.  Doing this will also
-   * assert -- you shouldn't be doing it!  Check with Document::GetRootElement()
-   * first if you're not sure.  Apart from this one constraint, this doesn't do
-   * any checking on whether aKid is a valid child of |this|.
-   *
-   * @throws NS_ERROR_OUT_OF_MEMORY in some cases (from BindToTree).
+   * @param aRv The error, if any.
+   *        Throw NS_ERROR_DOM_HIERARCHY_REQUEST_ERR if one attempts to have
+   *        more than one element node as a child of a document.  Doing this
+   *        will also assert -- you shouldn't be doing it!  Check with
+   *        Document::GetRootElement() first if you're not sure.  Apart from
+   *        this one constraint, this doesn't do any checking on whether aKid is
+   *        a valid child of |this|.
+   *        Throw NS_ERROR_OUT_OF_MEMORY in some cases (from BindToTree).
    */
-  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                                     bool aNotify);
+  virtual void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                 bool aNotify, mozilla::ErrorResult& aRv);
 
   /**
    * Append a content node to the end of the child list.  This method handles
@@ -843,17 +878,18 @@ class nsINode : public mozilla::dom::EventTarget {
    * @param aKid the content to append
    * @param aNotify whether to notify the document (current document for
    *        nsIContent, and |this| for Document) that the append has occurred
-   *
-   * @throws NS_ERROR_DOM_HIERARCHY_REQUEST_ERR if one attempts to have more
-   * than one element node as a child of a document.  Doing this will also
-   * assert -- you shouldn't be doing it!  Check with Document::GetRootElement()
-   * first if you're not sure.  Apart from this one constraint, this doesn't do
-   * any checking on whether aKid is a valid child of |this|.
-   *
-   * @throws NS_ERROR_OUT_OF_MEMORY in some cases (from BindToTree).
+   * @param aRv The error, if any.
+   *        Throw NS_ERROR_DOM_HIERARCHY_REQUEST_ERR if one attempts to have
+   *        more than one element node as a child of a document.  Doing this
+   *        will also assert -- you shouldn't be doing it!  Check with
+   *        Document::GetRootElement() first if you're not sure.  Apart from
+   *        this one constraint, this doesn't do any checking on whether aKid is
+   *        a valid child of |this|.
+   *        Throw NS_ERROR_OUT_OF_MEMORY in some cases (from BindToTree).
    */
-  nsresult AppendChildTo(nsIContent* aKid, bool aNotify) {
-    return InsertChildBefore(aKid, nullptr, aNotify);
+  void AppendChildTo(nsIContent* aKid, bool aNotify,
+                     mozilla::ErrorResult& aRv) {
+    InsertChildBefore(aKid, nullptr, aNotify, aRv);
   }
 
   /**
@@ -1289,6 +1325,18 @@ class nsINode : public mozilla::dom::EventTarget {
   inline bool IsEditable() const;
 
   /**
+   * Check if this node is in design mode or not.  When this returns true and:
+   * - if this is a Document node, it's the design mode root.
+   * - if this is a content node, it's connected, it's not in a shadow tree
+   *   (except shadow tree for UI widget and native anonymous subtree) and its
+   *   uncomposed document is in design mode.
+   * Note that returning true does NOT mean the node or its children is
+   * editable.  E.g., when this node is in a shadow tree of a UA widget and its
+   * host is in design mode.
+   */
+  inline bool IsInDesignMode() const;
+
+  /**
    * Returns true if |this| or any of its ancestors is native anonymous.
    */
   bool IsInNativeAnonymousSubtree() const {
@@ -1533,6 +1581,17 @@ class nsINode : public mozilla::dom::EventTarget {
 
   nsIContent* GetNextSibling() const { return mNextSibling; }
   nsIContent* GetPreviousSibling() const;
+
+  /**
+   * Return true if the node is being removed from the parent, it means that
+   * the node still knows the container which it's disconnected from, but the
+   * node has already been removed from the child node chain of the container.
+   * I.e., Return true between a call of DisconnectChild of the parent and
+   * a call of UnbindFromTree of the node.
+   */
+  bool IsBeingRemoved() const {
+    return mParent && !mNextSibling && !mPreviousOrLastSibling;
+  }
 
   /**
    * Get the next node in the pre-order tree traversal of the DOM.  If
@@ -1965,9 +2024,9 @@ class nsINode : public mozilla::dom::EventTarget {
   bool HasChildNodes() const { return HasChildren(); }
 
   // See nsContentUtils::PositionIsBefore for aThisIndex and aOtherIndex usage.
-  uint16_t CompareDocumentPosition(nsINode& aOther,
-                                   int32_t* aThisIndex = nullptr,
-                                   int32_t* aOtherIndex = nullptr) const;
+  uint16_t CompareDocumentPosition(
+      nsINode& aOther, mozilla::Maybe<uint32_t>* aThisIndex = nullptr,
+      mozilla::Maybe<uint32_t>* aOtherIndex = nullptr) const;
   void GetNodeValue(nsAString& aNodeValue) { GetNodeValueInternal(aNodeValue); }
   void SetNodeValue(const nsAString& aNodeValue, mozilla::ErrorResult& aError) {
     SetNodeValueInternal(aNodeValue, aError);
@@ -2232,6 +2291,24 @@ class nsINode : public mozilla::dom::EventTarget {
   nsSlots* mSlots;
 };
 
+inline nsINode* mozilla::dom::EventTarget::GetAsNode() {
+  return IsNode() ? AsNode() : nullptr;
+}
+
+inline const nsINode* mozilla::dom::EventTarget::GetAsNode() const {
+  return const_cast<mozilla::dom::EventTarget*>(this)->GetAsNode();
+}
+
+inline nsINode* mozilla::dom::EventTarget::AsNode() {
+  MOZ_DIAGNOSTIC_ASSERT(IsNode());
+  return static_cast<nsINode*>(this);
+}
+
+inline const nsINode* mozilla::dom::EventTarget::AsNode() const {
+  MOZ_DIAGNOSTIC_ASSERT(IsNode());
+  return static_cast<const nsINode*>(this);
+}
+
 // Useful inline function for getting a node given an nsIContent and a Document.
 // Returns the first argument cast to nsINode if it is non-null, otherwise
 // returns the second (which may be null).  We use type variables instead of
@@ -2262,23 +2339,51 @@ inline nsISupports* ToSupports(nsINode* aPointer) { return aPointer; }
   template <typename T>                                                  \
   static _const _class* FromNodeOrNull(_const T* aNode) {                \
     return aNode ? FromNode(*aNode) : nullptr;                           \
+  }                                                                      \
+  template <typename T>                                                  \
+  static auto FromEventTarget(_const T& aEventTarget)                    \
+      ->decltype(static_cast<_const _class*>(&aEventTarget)) {           \
+    return aEventTarget.IsNode() && aEventTarget.AsNode()->_check        \
+               ? static_cast<_const _class*>(&aEventTarget)              \
+               : nullptr;                                                \
+  }                                                                      \
+  template <typename T>                                                  \
+  static _const _class* FromEventTarget(_const T* aEventTarget) {        \
+    return FromEventTarget(*aEventTarget);                               \
+  }                                                                      \
+  template <typename T>                                                  \
+  static _const _class* FromEventTargetOrNull(_const T* aEventTarget) {  \
+    return aEventTarget ? FromEventTarget(*aEventTarget) : nullptr;      \
   }
 
-#define NS_IMPL_FROMNODE_HELPER(_class, _check)                               \
-  NS_IMPL_FROMNODE_GENERIC(_class, _check, )                                  \
-  NS_IMPL_FROMNODE_GENERIC(_class, _check, const)                             \
-                                                                              \
-  template <typename T>                                                       \
-  static _class* FromNode(T&& aNode) {                                        \
-    /* We need the double-cast in case aNode is a smartptr.  Those */         \
-    /* can cast to superclasses of the type they're templated on, */          \
-    /* but not directly to subclasses.  */                                    \
-    return aNode->_check ? static_cast<_class*>(static_cast<nsINode*>(aNode)) \
-                         : nullptr;                                           \
-  }                                                                           \
-  template <typename T>                                                       \
-  static _class* FromNodeOrNull(T&& aNode) {                                  \
-    return aNode ? FromNode(aNode) : nullptr;                                 \
+#define NS_IMPL_FROMNODE_HELPER(_class, _check)                                \
+  NS_IMPL_FROMNODE_GENERIC(_class, _check, )                                   \
+  NS_IMPL_FROMNODE_GENERIC(_class, _check, const)                              \
+                                                                               \
+  template <typename T>                                                        \
+  static _class* FromNode(T&& aNode) {                                         \
+    /* We need the double-cast in case aNode is a smartptr.  Those */          \
+    /* can cast to superclasses of the type they're templated on, */           \
+    /* but not directly to subclasses.  */                                     \
+    return aNode->_check ? static_cast<_class*>(static_cast<nsINode*>(aNode))  \
+                         : nullptr;                                            \
+  }                                                                            \
+  template <typename T>                                                        \
+  static _class* FromNodeOrNull(T&& aNode) {                                   \
+    return aNode ? FromNode(aNode) : nullptr;                                  \
+  }                                                                            \
+  template <typename T>                                                        \
+  static _class* FromEventTarget(T&& aEventTarget) {                           \
+    /* We need the double-cast in case aEventTarget is a smartptr.  Those */   \
+    /* can cast to superclasses of the type they're templated on, */           \
+    /* but not directly to subclasses.  */                                     \
+    return aEventTarget->IsNode() && aEventTarget->AsNode()->_check            \
+               ? static_cast<_class*>(static_cast<EventTarget*>(aEventTarget)) \
+               : nullptr;                                                      \
+  }                                                                            \
+  template <typename T>                                                        \
+  static _class* FromEventTargetOrNull(T&& aEventTarget) {                     \
+    return aEventTarget ? FromEventTarget(aEventTarget) : nullptr;             \
   }
 
 #define NS_IMPL_FROMNODE(_class, _nsid) \

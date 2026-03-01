@@ -17,6 +17,7 @@ function testScript(script) {
         ["dom.serviceWorkers.enabled", true],
         ["dom.serviceWorkers.testing.enabled", true],
         ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+        ["dom.serviceWorkers.idle_timeout", 60000],
       ],
     },
     function() {

@@ -29,6 +29,7 @@ class ShadowRoot;
 class HTMLSlotElement;
 }  // namespace dom
 namespace widget {
+enum class IMEEnabled;
 struct IMEState;
 }  // namespace widget
 }  // namespace mozilla
@@ -54,6 +55,7 @@ enum nsLinkState {
  */
 class nsIContent : public nsINode {
  public:
+  using IMEEnabled = mozilla::widget::IMEEnabled;
   using IMEState = mozilla::widget::IMEState;
   using BindContext = mozilla::dom::BindContext;
 
@@ -305,34 +307,20 @@ class nsIContent : public nsINode {
   bool IsFocusable(int32_t* aTabIndex = nullptr, bool aWithMouse = false);
   virtual bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse);
 
-  /**
-   * The method focuses (or activates) element that accesskey is bound to. It is
-   * called when accesskey is activated.
-   *
-   * @param aKeyCausesActivation - if true then element should be activated
-   * @param aIsTrustedEvent - if true then event that is cause of accesskey
-   *                          execution is trusted.
-   * @return true if the focus was changed.
-   */
-  MOZ_CAN_RUN_SCRIPT virtual bool PerformAccesskey(bool aKeyCausesActivation,
-                                                   bool aIsTrustedEvent) {
-    return false;
-  }
-
   /*
    * Get desired IME state for the content.
    *
    * @return The desired IME status for the content.
    *         This is a combination of an IME enabled value and
    *         an IME open value of widget::IMEState.
-   *         If you return DISABLED, you should not set the OPEN and CLOSE
-   *         value.
-   *         PASSWORD should be returned only from password editor, this value
-   *         has a special meaning. It is used as alternative of DISABLED.
-   *         PLUGIN should be returned only when plug-in has focus.  When a
-   *         plug-in is focused content, we should send native events directly.
-   *         Because we don't process some native events, but they may be needed
-   *         by the plug-in.
+   *         If you return IMEEnabled::Disabled, you should not set the OPEN
+   *         nor CLOSE value.
+   *         IMEEnabled::Password should be returned only from password editor,
+   *         this value has a special meaning. It is used as alternative of
+   *         IMEEnabled::Disabled. IMEENabled::Plugin should be returned only
+   *         when plug-in has focus.  When a plug-in is focused content, we
+   *         should send native events directly. Because we don't process some
+   *         native events, but they may be needed by the plug-in.
    */
   virtual IMEState GetDesiredIMEState();
 

@@ -6,6 +6,7 @@
 #define WEBGL_SHADER_H_
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -20,7 +21,7 @@
 namespace mozilla {
 
 namespace webgl {
-class ShaderValidator;
+class ShaderValidatorResults;
 }  // namespace webgl
 
 class WebGLShader final : public nsWrapperCache,
@@ -45,7 +46,6 @@ class WebGLShader final : public nsWrapperCache,
   void ShaderSource(const nsAString& source);
 
   // Util funcs
-  bool CanLinkTo(const WebGLShader* prev, nsCString* const out_log) const;
   size_t CalcNumSamplerUniforms() const;
   size_t NumAttributes() const;
   bool FindAttribUserNameByMappedName(const nsACString& mappedName,
@@ -59,11 +59,8 @@ class WebGLShader final : public nsWrapperCache,
   bool UnmapUniformBlockName(const nsACString& baseMappedName,
                              nsCString* const out_baseUserName) const;
 
-  bool IsCompiled() const {
-    return mTranslationSuccessful && mCompilationSuccessful;
-  }
-  const auto* Validator() const { return mValidator.get(); }
-  const auto& TranslatedSource() const { return mTranslatedSource; }
+  bool IsCompiled() const { return mCompilationSuccessful; }
+  const auto& CompileResults() const { return mCompileResults; }
 
  private:
   void BindAttribLocation(GLuint prog, const std::string& userName,
@@ -93,12 +90,9 @@ class WebGLShader final : public nsWrapperCache,
   nsString mSource;
   nsCString mCleanSource;
 
-  UniquePtr<webgl::ShaderValidator> mValidator;
-  nsCString mValidationLog;
-  bool mTranslationSuccessful;
-  nsCString mTranslatedSource;
-
-  bool mCompilationSuccessful;
+  std::unique_ptr<const webgl::ShaderValidatorResults>
+      mCompileResults;  // Never null.
+  bool mCompilationSuccessful = false;
   nsCString mCompilationLog;
 };
 

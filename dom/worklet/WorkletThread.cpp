@@ -36,15 +36,15 @@ const uint32_t kWorkletStackSize = 256 * sizeof(size_t) * 1024;
 
 // Helper functions
 
-bool PreserveWrapper(JSContext* aCx, JS::HandleObject aObj) {
+bool PreserveWrapper(JSContext* aCx, JS::Handle<JSObject*> aObj) {
   MOZ_ASSERT(aCx);
   MOZ_ASSERT(aObj);
   MOZ_ASSERT(mozilla::dom::IsDOMObject(aObj));
   return mozilla::dom::TryPreserveWrapper(aObj);
 }
 
-JSObject* Wrap(JSContext* aCx, JS::HandleObject aExisting,
-               JS::HandleObject aObj) {
+JSObject* Wrap(JSContext* aCx, JS::Handle<JSObject*> aExisting,
+               JS::Handle<JSObject*> aObj) {
   if (aExisting) {
     js::Wrapper::Renew(aExisting, aObj,
                        &js::OpaqueCrossCompartmentWrapper::singleton);
@@ -157,7 +157,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 #endif
 
     JS::JobQueueMayNotBeEmpty(cx);
-    GetMicroTaskQueue().push(std::move(runnable));
+    GetMicroTaskQueue().push_back(std::move(runnable));
   }
 
   bool IsSystemCaller() const override {

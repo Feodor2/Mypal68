@@ -29,8 +29,7 @@
 
 class nsNodeInfoManager;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Document;
 
@@ -302,7 +301,6 @@ class NodeInfo final {
   nsString mLocalName;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_NodeInfo_h___ */

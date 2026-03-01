@@ -7,8 +7,7 @@
 
 #include "mozilla/TimeStamp.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Timeout;
 
@@ -25,7 +24,6 @@ class TimeoutBudgetManager {
   TimeStamp mStart;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_timeoutbudgetmanager_h

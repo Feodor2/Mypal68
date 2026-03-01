@@ -4,6 +4,7 @@
 
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/Storage.h"
+#include "mozilla/dom/StorageEventBinding.h"
 
 namespace mozilla::dom {
 

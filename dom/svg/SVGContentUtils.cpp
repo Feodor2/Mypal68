@@ -359,7 +359,7 @@ float SVGContentUtils::GetFontSize(Element* aElement) {
   }
 
   if (RefPtr<ComputedStyle> style =
-          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     return GetFontSize(style, pc);
   }
 
@@ -378,8 +378,7 @@ float SVGContentUtils::GetFontSize(ComputedStyle* aComputedStyle,
   MOZ_ASSERT(aComputedStyle);
   MOZ_ASSERT(aPresContext);
 
-  nscoord fontSize = aComputedStyle->StyleFont()->mSize;
-  return nsPresContext::AppUnitsToFloatCSSPixels(fontSize) /
+  return aComputedStyle->StyleFont()->mSize.ToCSSPixels() /
          aPresContext->EffectiveTextZoom();
 }
 
@@ -398,7 +397,7 @@ float SVGContentUtils::GetFontXHeight(Element* aElement) {
   }
 
   if (RefPtr<ComputedStyle> style =
-          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     return GetFontXHeight(style, pc);
   }
 
@@ -799,13 +798,14 @@ bool SVGContentUtils::ParseInteger(const nsAString& aString, int32_t& aValue) {
 }
 
 float SVGContentUtils::CoordToFloat(SVGElement* aContent,
-                                    const LengthPercentage& aLength) {
+                                    const LengthPercentage& aLength,
+                                    uint8_t aCtxType) {
   float result = aLength.ResolveToCSSPixelsWith([&] {
     SVGViewportElement* ctx = aContent->GetCtx();
-    return CSSCoord(ctx ? ctx->GetLength(SVGContentUtils::XY) : 0.0f);
+    return CSSCoord(ctx ? ctx->GetLength(aCtxType) : 0.0f);
   });
   if (aLength.IsCalc()) {
-    auto& calc = aLength.AsCalc();
+    const auto& calc = aLength.AsCalc();
     if (calc.clamping_mode == StyleAllowedNumericType::NonNegative) {
       result = std::max(result, 0.0f);
     } else {

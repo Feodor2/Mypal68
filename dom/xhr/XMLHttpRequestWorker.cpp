@@ -760,7 +760,7 @@ bool Proxy::Init() {
   mXHR = new XMLHttpRequestMainThread(ownerWindow ? ownerWindow->AsGlobal()
                                                   : nullptr);
   mXHR->Construct(mWorkerPrivate->GetPrincipal(),
-                  mWorkerPrivate->CookieSettings(), true,
+                  mWorkerPrivate->CookieJarSettings(), true,
                   mWorkerPrivate->GetBaseURI(), mWorkerPrivate->GetLoadGroup(),
                   mWorkerPrivate->GetPerformanceStorage(),
                   mWorkerPrivate->CSPEventListener());

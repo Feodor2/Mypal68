@@ -4,17 +4,26 @@
 
 #include "TransformerCallbackHelpers.h"
 
+#include "StreamUtils.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TransformStreamDefaultController.h"
 
 using namespace mozilla::dom;
 
-NS_IMPL_CYCLE_COLLECTION_WITH_JS_MEMBERS(TransformerAlgorithms,
-                                         (mGlobal, mTransformCallback,
-                                          mFlushCallback),
-                                         (mTransformer))
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(TransformerAlgorithms, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(TransformerAlgorithms, Release)
+NS_IMPL_CYCLE_COLLECTION(TransformerAlgorithmsBase)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(TransformerAlgorithmsBase)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(TransformerAlgorithmsBase)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TransformerAlgorithmsBase)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED_WITH_JS_MEMBERS(
+    TransformerAlgorithms, TransformerAlgorithmsBase,
+    (mGlobal, mTransformCallback, mFlushCallback), (mTransformer))
+NS_IMPL_ADDREF_INHERITED(TransformerAlgorithms, TransformerAlgorithmsBase)
+NS_IMPL_RELEASE_INHERITED(TransformerAlgorithms, TransformerAlgorithmsBase)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TransformerAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(TransformerAlgorithmsBase)
 
 // https://streams.spec.whatwg.org/#set-up-transform-stream-default-controller-from-transformer
 already_AddRefed<Promise> TransformerAlgorithms::TransformCallback(
@@ -36,13 +45,7 @@ already_AddRefed<Promise> TransformerAlgorithms::TransformCallback(
       }
       JS_ClearPendingException(aCx);
 
-      RefPtr<Promise> promise =
-          Promise::Create(aController.GetParentObject(), aRv);
-      if (aRv.Failed()) {
-        return nullptr;
-      }
-      promise->MaybeReject(error);
-      return promise.forget();
+      return Promise::CreateRejected(aController.GetParentObject(), error, aRv);
     }
 
     // Step 2.3. Otherwise, return a promise resolved with undefined.
@@ -78,4 +81,29 @@ already_AddRefed<Promise> TransformerAlgorithms::FlushCallback(
       ->Call(thisObj, aController, aRv,
              "TransformStreamDefaultController.[[flushAlgorithm]]",
              CallbackObject::eRethrowExceptions);
+}
+
+already_AddRefed<Promise> TransformerAlgorithmsWrapper::TransformCallback(
+    JSContext*, JS::Handle<JS::Value> aChunk,
+    TransformStreamDefaultController& aController, ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = aController.GetParentObject();
+  return PromisifyAlgorithm(
+      global,
+      [this, &aChunk, &aController](ErrorResult& aRv)
+          MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION {
+            return TransformCallbackImpl(aChunk, aController, aRv);
+          },
+      aRv);
+}
+
+already_AddRefed<Promise> TransformerAlgorithmsWrapper::FlushCallback(
+    JSContext*, TransformStreamDefaultController& aController,
+    ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = aController.GetParentObject();
+  return PromisifyAlgorithm(
+      global,
+      [this, &aController](ErrorResult& aRv) MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION {
+        return FlushCallbackImpl(aController, aRv);
+      },
+      aRv);
 }

@@ -137,7 +137,8 @@ class TimeoutManager final {
 
  private:
   struct Timeouts {
-    explicit Timeouts(const TimeoutManager& aManager) : mManager(aManager) {}
+    explicit Timeouts(const TimeoutManager& aManager)
+        : mManager(aManager), mTimeouts(new Timeout::TimeoutSet()) {}
 
     // Insert aTimeout into the list, before all timeouts that would
     // fire after it, but no earlier than the last Timeout with a
@@ -150,9 +151,18 @@ class TimeoutManager final {
     const Timeout* GetLast() const { return mTimeoutList.getLast(); }
     Timeout* GetLast() { return mTimeoutList.getLast(); }
     bool IsEmpty() const { return mTimeoutList.isEmpty(); }
-    void InsertFront(Timeout* aTimeout) { mTimeoutList.insertFront(aTimeout); }
-    void InsertBack(Timeout* aTimeout) { mTimeoutList.insertBack(aTimeout); }
-    void Clear() { mTimeoutList.clear(); }
+    void InsertFront(Timeout* aTimeout) {
+      aTimeout->SetTimeoutContainer(mTimeouts);
+      mTimeoutList.insertFront(aTimeout);
+    }
+    void InsertBack(Timeout* aTimeout) {
+      aTimeout->SetTimeoutContainer(mTimeouts);
+      mTimeoutList.insertBack(aTimeout);
+    }
+    void Clear() {
+      mTimeouts->Clear();
+      mTimeoutList.clear();
+    }
 
     template <class Callable>
     void ForEach(Callable c) {
@@ -174,16 +184,26 @@ class TimeoutManager final {
       return false;
     }
 
+    Timeout* GetTimeout(uint32_t aTimeoutId, Timeout::Reason aReason) {
+      Timeout::TimeoutIdAndReason key = {aTimeoutId, aReason};
+      return mTimeouts->Get(key);
+    }
+
    private:
     // The TimeoutManager that owns this Timeouts structure.  This is
     // mainly used to call state inspecting methods like IsValidFiringId().
     const TimeoutManager& mManager;
 
-    typedef mozilla::LinkedList<RefPtr<Timeout>> TimeoutList;
+    using TimeoutList = mozilla::LinkedList<RefPtr<Timeout>>;
 
     // mTimeoutList is generally sorted by mWhen, but new values are always
     // inserted after any Timeouts with a valid FiringId.
     TimeoutList mTimeoutList;
+
+    // mTimeouts is a set of all the timeouts in the mTimeoutList.
+    // It let's one to have O(1) check whether a timeout id/reason is in the
+    // list.
+    RefPtr<Timeout::TimeoutSet> mTimeouts;
   };
 
   // Each nsGlobalWindowInner object has a TimeoutManager member.  This

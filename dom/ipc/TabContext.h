@@ -49,12 +49,6 @@ class TabContext {
    */
   const OriginAttributes& OriginAttributesRef() const;
 
-  /**
-   * Returns the presentation URL associated with the tab if this tab is
-   * created for presented content
-   */
-  const nsAString& PresentationURL() const;
-
   UIStateChangeType ShowFocusRings() const;
 
   uint32_t MaxTouchPoints() const { return mMaxTouchPoints; }
@@ -84,7 +78,6 @@ class TabContext {
   bool SetTabContext(uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
-                     const nsAString& aPresentationURL,
                      uint32_t aMaxTouchPoints);
 
   /**
@@ -131,11 +124,6 @@ class TabContext {
   OriginAttributes mOriginAttributes;
 
   /**
-   * The requested presentation URL.
-   */
-  nsString mPresentationURL;
-
-  /**
    * Keyboard indicator state (focus rings).
    */
   UIStateChangeType mShowFocusRings;
@@ -160,11 +148,9 @@ class MutableTabContext : public TabContext {
   bool SetTabContext(uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
-                     const nsAString& aPresentationURL,
                      uint32_t aMaxTouchPoints) {
     return TabContext::SetTabContext(aChromeOuterWindowID, aShowFocusRings,
-                                     aOriginAttributes, aPresentationURL,
-                                     aMaxTouchPoints);
+                                     aOriginAttributes, aMaxTouchPoints);
   }
 
   bool SetTabContextForJSPluginFrame(uint32_t aJSPluginID) {

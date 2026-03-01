@@ -7,6 +7,7 @@ with Files("**"):
 
 EXPORTS.mozilla.dom += [
     'BlobURL.h',
+    'BlobURLInputStream.h',
     'BlobURLProtocolHandler.h',
     'FontTableURIProtocolHandler.h',
 ]
@@ -14,6 +15,7 @@ EXPORTS.mozilla.dom += [
 UNIFIED_SOURCES += [
     'BlobURL.cpp',
     'BlobURLChannel.cpp',
+    'BlobURLInputStream.cpp',
     'BlobURLProtocolHandler.cpp',
     'FontTableURIProtocolHandler.cpp',
 ]

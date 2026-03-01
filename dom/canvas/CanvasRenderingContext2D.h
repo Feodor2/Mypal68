@@ -21,7 +21,7 @@
 #include "mozilla/SurfaceFromElementResult.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/UniquePtr.h"
-#include "FilterSupport.h"
+#include "FilterDescription.h"
 #include "gfx2DGlue.h"
 #include "Layers.h"
 #include "nsICanvasRenderingContextInternal.h"

@@ -10,8 +10,7 @@
 class nsIInputStream;
 class nsIGlobalObject;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BodyExtractorBase {
  public:
@@ -36,7 +35,6 @@ class BodyExtractor final : public BodyExtractorBase {
                        nsACString& aCharset) const override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_BodyExtractor_h

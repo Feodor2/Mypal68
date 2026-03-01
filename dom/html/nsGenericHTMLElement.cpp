@@ -4,18 +4,24 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/EditorBase.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/IMEContentObserver.h"
+#include "mozilla/IMEStateManager.h"
 #include "mozilla/MappedDeclarations.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/TextEvents.h"
 #include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 
 #include "nscore.h"
 #include "nsGenericHTMLElement.h"
@@ -383,14 +389,14 @@ bool nsGenericHTMLElement::Spellcheck() {
   }
 
   // Is this a multiline plaintext input?
-  int32_t controlType = formControl->ControlType();
-  if (controlType == NS_FORM_TEXTAREA) {
+  auto controlType = formControl->ControlType();
+  if (controlType == FormControlType::Textarea) {
     return true;  // Spellchecked by default
   }
 
   // Is this anything other than an input text?
   // Other inputs are not spellchecked.
-  if (controlType != NS_FORM_INPUT_TEXT) {
+  if (controlType != FormControlType::InputText) {
     return false;  // Not spellchecked by default
   }
 
@@ -519,7 +525,7 @@ HTMLFormElement* nsGenericHTMLElement::FindAncestorForm(
         // anonymous.  Check for this the hard way.
         for (nsIContent* child = this; child != content;
              child = child->GetParent()) {
-          NS_ASSERTION(child->GetParent()->ComputeIndexOf(child) != -1,
+          NS_ASSERTION(child->ComputeIndexInParentContent().isSome(),
                        "Walked too far?");
         }
       }
@@ -723,6 +729,27 @@ nsresult nsGenericHTMLElement::AfterSetAttr(
         SetHasName();
         if (CanHaveName(NodeInfo()->NameAtom())) {
           AddToNameTable(aValue->GetAtomValue());
+        }
+      }
+    } else if ((aName == nsGkAtoms::inputmode &&
+                StaticPrefs::dom_forms_inputmode()) ||
+               (aName == nsGkAtoms::enterkeyhint &&
+                StaticPrefs::dom_forms_enterkeyhint())) {
+      nsPIDOMWindowOuter* window = OwnerDoc()->GetWindow();
+      if (window && window->GetFocusedElement() == this) {
+        IMEContentObserver* observer =
+            IMEStateManager::GetActiveContentObserver();
+        nsPresContext* presContext = GetPresContext(eForComposedDoc);
+        if (observer && observer->IsManaging(presContext, this)) {
+          if (RefPtr<EditorBase> editor =
+                  nsContentUtils::GetActiveEditor(window)) {
+            IMEState newState;
+            editor->GetPreferredIMEState(&newState);
+            IMEStateManager::UpdateIMEState(
+                newState, this, editor,
+                {IMEStateManager::UpdateIMEStateOption::ForceUpdate,
+                 IMEStateManager::UpdateIMEStateOption::DontCommitComposition});
+          }
         }
       }
     }
@@ -967,17 +994,6 @@ nsIFormControlFrame* nsGenericHTMLElement::GetFormControlFrame(
     if (nsIFormControlFrame* f = do_QueryFrame(kid)) {
       return f;
     }
-  }
-
-  return nullptr;
-}
-
-nsPresContext* nsGenericHTMLElement::GetPresContext(PresContextFor aFor) {
-  // Get the document
-  Document* doc =
-      (aFor == eForComposedDoc) ? GetComposedDoc() : GetUncomposedDoc();
-  if (doc) {
-    return doc->GetPresContext();
   }
 
   return nullptr;
@@ -1345,6 +1361,28 @@ void nsGenericHTMLElement::MapHeightAttributeInto(
   }
 }
 
+static void DoMapAspectRatio(const nsAttrValue& aWidth,
+                             const nsAttrValue& aHeight,
+                             MappedDeclarations& aDecls) {
+  Maybe<double> w;
+  if (aWidth.Type() == nsAttrValue::eInteger) {
+    w.emplace(aWidth.GetIntegerValue());
+  } else if (aWidth.Type() == nsAttrValue::eDoubleValue) {
+    w.emplace(aWidth.GetDoubleValue());
+  }
+
+  Maybe<double> h;
+  if (aHeight.Type() == nsAttrValue::eInteger) {
+    h.emplace(aHeight.GetIntegerValue());
+  } else if (aHeight.Type() == nsAttrValue::eDoubleValue) {
+    h.emplace(aHeight.GetDoubleValue());
+  }
+
+  if (w && h) {
+    aDecls.SetAspectRatio(*w, *h);
+  }
+}
+
 void nsGenericHTMLElement::MapImageSizeAttributesInto(
     const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls,
     MapAspectRatio aMapAspectRatio) {
@@ -1356,25 +1394,17 @@ void nsGenericHTMLElement::MapImageSizeAttributesInto(
   if (height) {
     MapDimensionAttributeInto(aDecls, eCSSProperty_height, *height);
   }
-  if (StaticPrefs::layout_css_width_and_height_map_to_aspect_ratio_enabled() &&
-      aMapAspectRatio == MapAspectRatio::Yes && width && height) {
-    Maybe<double> w;
-    if (width->Type() == nsAttrValue::eInteger) {
-      w.emplace(width->GetIntegerValue());
-    } else if (width->Type() == nsAttrValue::eDoubleValue) {
-      w.emplace(width->GetDoubleValue());
-    }
+  if (aMapAspectRatio == MapAspectRatio::Yes && width && height) {
+    DoMapAspectRatio(*width, *height, aDecls);
+  }
+}
 
-    Maybe<double> h;
-    if (height->Type() == nsAttrValue::eInteger) {
-      h.emplace(height->GetIntegerValue());
-    } else if (height->Type() == nsAttrValue::eDoubleValue) {
-      h.emplace(height->GetDoubleValue());
-    }
-
-    if (w && h && *w != 0 && *h != 0) {
-      aDecls.SetAspectRatio(*w, *h);
-    }
+void nsGenericHTMLElement::MapAspectRatioInto(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  auto* width = aAttributes->GetAttr(nsGkAtoms::width);
+  auto* height = aAttributes->GetAttr(nsGkAtoms::height);
+  if (width && height) {
+    DoMapAspectRatio(*width, *height, aDecls);
   }
 }
 
@@ -1601,10 +1631,25 @@ bool nsGenericHTMLElement::LegacyTouchAPIEnabled(JSContext* aCx,
   return TouchEvent::LegacyAPIEnabled(aCx, aGlobal);
 }
 
+bool nsGenericHTMLElement::IsFormControlDefaultFocusable(
+    bool aWithMouse) const {
+  if (!aWithMouse) {
+    return true;
+  }
+  switch (StaticPrefs::accessibility_mouse_focuses_formcontrol()) {
+    case 0:
+      return false;
+    case 1:
+      return true;
+    default:
+      return !IsInChromeDocument();
+  }
+}
+
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormElement::nsGenericHTMLFormElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, uint8_t aType)
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, FormControlType aType)
     : nsGenericHTMLElement(std::move(aNodeInfo)),
       nsIFormControl(aType),
       mForm(nullptr),
@@ -1688,8 +1733,6 @@ void nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm,
 
   AfterClearForm(aUnbindOrDelete);
 }
-
-HTMLFormElement* nsGenericHTMLFormElement::GetFormElement() { return mForm; }
 
 HTMLFieldSetElement* nsGenericHTMLFormElement::GetFieldSet() {
   return mFieldSet;
@@ -1918,43 +1961,43 @@ void nsGenericHTMLFormElement::ForgetFieldSet(nsIContent* aFieldset) {
 }
 
 bool nsGenericHTMLFormElement::CanBeDisabled() const {
-  int32_t type = ControlType();
+  auto type = ControlType();
   // It's easier to test the types that _cannot_ be disabled
-  return type != NS_FORM_OBJECT && type != NS_FORM_OUTPUT;
+  return type != FormControlType::Object && type != FormControlType::Output;
 }
 
 bool nsGenericHTMLFormElement::DoesReadOnlyApply() const {
-  int32_t type = ControlType();
-  if (!(type & NS_FORM_INPUT_ELEMENT) && type != NS_FORM_TEXTAREA) {
+  auto type = ControlType();
+  if (!IsInputElement(type) && type != FormControlType::Textarea) {
     return false;
   }
 
   switch (type) {
-    case NS_FORM_INPUT_HIDDEN:
-    case NS_FORM_INPUT_BUTTON:
-    case NS_FORM_INPUT_IMAGE:
-    case NS_FORM_INPUT_RESET:
-    case NS_FORM_INPUT_SUBMIT:
-    case NS_FORM_INPUT_RADIO:
-    case NS_FORM_INPUT_FILE:
-    case NS_FORM_INPUT_CHECKBOX:
-    case NS_FORM_INPUT_RANGE:
-    case NS_FORM_INPUT_COLOR:
+    case FormControlType::InputHidden:
+    case FormControlType::InputButton:
+    case FormControlType::InputImage:
+    case FormControlType::InputReset:
+    case FormControlType::InputSubmit:
+    case FormControlType::InputRadio:
+    case FormControlType::InputFile:
+    case FormControlType::InputCheckbox:
+    case FormControlType::InputRange:
+    case FormControlType::InputColor:
       return false;
 #ifdef DEBUG
-    case NS_FORM_TEXTAREA:
-    case NS_FORM_INPUT_TEXT:
-    case NS_FORM_INPUT_PASSWORD:
-    case NS_FORM_INPUT_SEARCH:
-    case NS_FORM_INPUT_TEL:
-    case NS_FORM_INPUT_EMAIL:
-    case NS_FORM_INPUT_URL:
-    case NS_FORM_INPUT_NUMBER:
-    case NS_FORM_INPUT_DATE:
-    case NS_FORM_INPUT_TIME:
-    case NS_FORM_INPUT_MONTH:
-    case NS_FORM_INPUT_WEEK:
-    case NS_FORM_INPUT_DATETIME_LOCAL:
+    case FormControlType::Textarea:
+    case FormControlType::InputText:
+    case FormControlType::InputPassword:
+    case FormControlType::InputSearch:
+    case FormControlType::InputTel:
+    case FormControlType::InputEmail:
+    case FormControlType::InputUrl:
+    case FormControlType::InputNumber:
+    case FormControlType::InputDate:
+    case FormControlType::InputTime:
+    case FormControlType::InputMonth:
+    case FormControlType::InputWeek:
+    case FormControlType::InputDatetimeLocal:
       return true;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected input type in DoesReadOnlyApply()");
@@ -1974,10 +2017,7 @@ bool nsGenericHTMLFormElement::IsHTMLFocusable(bool aWithMouse,
     return true;
   }
 
-#ifdef XP_MACOSX
-  *aIsFocusable = (!aWithMouse || nsFocusManager::sMouseFocusesFormControl) &&
-                  *aIsFocusable;
-#endif
+  *aIsFocusable = *aIsFocusable && IsFormControlDefaultFocusable(aWithMouse);
   return false;
 }
 
@@ -2088,6 +2128,7 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
     case eAnimationEnd:
     case eAnimationIteration:
     case eAnimationCancel:
+    case eFormChange:
     case eMouseMove:
     case eMouseOver:
     case eMouseOut:
@@ -2110,9 +2151,13 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
       break;
   }
 
+  if (aEvent->mSpecifiedEventType == nsGkAtoms::oninput) {
+    return false;
+  }
+
   // FIXME(emilio): This poking at the style of the frame is slightly bogus
   // unless we flush before every event, which we don't really want to do.
-  if (aFrame && aFrame->StyleUI()->mUserInput == StyleUserInput::None) {
+  if (aFrame && aFrame->StyleUI()->UserInput() == StyleUserInput::None) {
     return true;
   }
 
@@ -2257,15 +2302,14 @@ void nsGenericHTMLFormElement::UpdateDisabledState(bool aNotify) {
 void nsGenericHTMLFormElement::UpdateRequiredState(bool aIsRequired,
                                                    bool aNotify) {
 #ifdef DEBUG
-  int32_t type = ControlType();
+  auto type = ControlType();
 #endif
-  MOZ_ASSERT((type & NS_FORM_INPUT_ELEMENT) || type == NS_FORM_SELECT ||
-                 type == NS_FORM_TEXTAREA,
+  MOZ_ASSERT(IsInputElement(type) || type == FormControlType::Select ||
+                 type == FormControlType::Textarea,
              "This should be called only on types that @required applies");
 
 #ifdef DEBUG
-  HTMLInputElement* input = HTMLInputElement::FromNode(this);
-  if (input) {
+  if (HTMLInputElement* input = HTMLInputElement::FromNode(this)) {
     MOZ_ASSERT(
         input->DoesRequiredApply(),
         "This should be called only on input types that @required applies");
@@ -2292,15 +2336,15 @@ void nsGenericHTMLFormElement::FieldSetDisabledChanged(bool aNotify) {
 }
 
 bool nsGenericHTMLFormElement::IsLabelable() const {
-  uint32_t type = ControlType();
-  return (type & NS_FORM_INPUT_ELEMENT && type != NS_FORM_INPUT_HIDDEN) ||
-         type & NS_FORM_BUTTON_ELEMENT || type == NS_FORM_OUTPUT ||
-         type == NS_FORM_SELECT || type == NS_FORM_TEXTAREA;
+  auto type = ControlType();
+  return (IsInputElement(type) && type != FormControlType::InputHidden) ||
+         IsButtonElement(type) || type == FormControlType::Output ||
+         type == FormControlType::Select || type == FormControlType::Textarea;
 }
 
 void nsGenericHTMLFormElement::GetFormAction(nsString& aValue) {
-  uint32_t type = ControlType();
-  if (!(type & NS_FORM_INPUT_ELEMENT) && !(type & NS_FORM_BUTTON_ELEMENT)) {
+  auto type = ControlType();
+  if (!IsInputElement(type) && !IsButtonElement(type)) {
     return;
   }
 
@@ -2353,7 +2397,7 @@ void nsGenericHTMLElement::Click(CallerType aCallerType) {
 bool nsGenericHTMLElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                            int32_t* aTabIndex) {
   Document* doc = GetComposedDoc();
-  if (!doc || doc->HasFlag(NODE_IS_EDITABLE)) {
+  if (!doc || IsInDesignMode()) {
     // In designMode documents we only allow focusing the document.
     if (aTabIndex) {
       *aTabIndex = -1;
@@ -2437,11 +2481,8 @@ bool nsGenericHTMLElement::PerformAccesskey(bool aKeyCausesActivation,
     fm->SetFocus(this, nsIFocusManager::FLAG_BYKEY);
 
     // Return true if the element became the current focus within its window.
-    //
-    // FIXME(emilio): Shouldn't this check `window->GetFocusedElement() == this`
-    // based on the above comment?
     nsPIDOMWindowOuter* window = OwnerDoc()->GetWindow();
-    focused = window && window->GetFocusedElement();
+    focused = window && window->GetFocusedElement() == this;
   }
 
   if (aKeyCausesActivation) {
@@ -2454,6 +2495,57 @@ bool nsGenericHTMLElement::PerformAccesskey(bool aKeyCausesActivation,
   return focused;
 }
 
+void nsGenericHTMLElement::HandleKeyboardActivation(
+    EventChainPostVisitor& aVisitor) {
+  const auto message = aVisitor.mEvent->mMessage;
+  if (message != eKeyDown && message != eKeyUp && message != eKeyPress) {
+    return;
+  }
+
+  const WidgetKeyboardEvent* keyEvent = aVisitor.mEvent->AsKeyboardEvent();
+  if (nsEventStatus_eIgnore != aVisitor.mEventStatus) {
+    if (message == eKeyUp && keyEvent->mKeyCode == NS_VK_SPACE) {
+      // Unset the flag even if the event is default-prevented or something.
+      UnsetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+    }
+    return;
+  }
+
+  bool shouldActivate = false;
+  switch (message) {
+    case eKeyDown:
+      if (keyEvent->mKeyCode == NS_VK_SPACE) {
+        SetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+      }
+      return;
+    case eKeyPress:
+      shouldActivate = keyEvent->mKeyCode == NS_VK_RETURN;
+      if (keyEvent->mKeyCode == NS_VK_SPACE) {
+        // Consume 'space' key to prevent scrolling the page down.
+        aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+      }
+      break;
+    case eKeyUp:
+      shouldActivate = keyEvent->mKeyCode == NS_VK_SPACE &&
+                       HasFlag(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+      if (shouldActivate) {
+        UnsetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+      }
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("why didn't we bail out earlier?");
+      break;
+  }
+
+  if (!shouldActivate) {
+    return;
+  }
+
+  DispatchSimulatedClick(this, aVisitor.mEvent->IsTrusted(),
+                         aVisitor.mPresContext);
+  aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+}
+
 nsresult nsGenericHTMLElement::DispatchSimulatedClick(
     nsGenericHTMLElement* aElement, bool aIsTrusted,
     nsPresContext* aPresContext) {
@@ -2464,7 +2556,7 @@ nsresult nsGenericHTMLElement::DispatchSimulatedClick(
   return EventDispatcher::Dispatch(ToSupports(aElement), aPresContext, &event);
 }
 
-already_AddRefed<TextEditor> nsGenericHTMLElement::GetAssociatedEditor() {
+already_AddRefed<EditorBase> nsGenericHTMLElement::GetAssociatedEditor() {
   // If contenteditable is ever implemented, it might need to do something
   // different here?
 
@@ -2477,9 +2569,8 @@ void nsGenericHTMLElement::SyncEditorsOnSubtree(nsIContent* content) {
   /* Sync this node */
   nsGenericHTMLElement* element = FromNode(content);
   if (element) {
-    RefPtr<TextEditor> textEditor = element->GetAssociatedEditor();
-    if (textEditor) {
-      textEditor->SyncRealTimeSpell();
+    if (RefPtr<EditorBase> editorBase = element->GetAssociatedEditor()) {
+      editorBase->SyncRealTimeSpell();
     }
   }
 
@@ -2512,12 +2603,11 @@ void nsGenericHTMLElement::RecompileScriptEventListeners() {
 }
 
 bool nsGenericHTMLElement::IsEditableRoot() const {
-  Document* document = GetComposedDoc();
-  if (!document) {
+  if (!IsInComposedDoc()) {
     return false;
   }
 
-  if (document->HasFlag(NODE_IS_EDITABLE)) {
+  if (IsInDesignMode()) {
     return false;
   }
 
@@ -2530,8 +2620,7 @@ bool nsGenericHTMLElement::IsEditableRoot() const {
   return !parent || !parent->HasFlag(NODE_IS_EDITABLE);
 }
 
-static void MakeContentDescendantsEditable(nsIContent* aContent,
-                                           Document* aDocument) {
+static void MakeContentDescendantsEditable(nsIContent* aContent) {
   // If aContent is not an element, we just need to update its
   // internal editable state and don't need to notify anyone about
   // that.  For elements, we need to send a ContentStateChanged
@@ -2550,7 +2639,7 @@ static void MakeContentDescendantsEditable(nsIContent* aContent,
     if (!child->IsElement() ||
         !child->AsElement()->HasAttr(kNameSpaceID_None,
                                      nsGkAtoms::contenteditable)) {
-      MakeContentDescendantsEditable(child, aDocument);
+      MakeContentDescendantsEditable(child);
     }
   }
 }
@@ -2567,21 +2656,21 @@ void nsGenericHTMLElement::ChangeEditableState(int32_t aChange) {
     previousEditingState = document->GetEditingState();
   }
 
-  if (document->HasFlag(NODE_IS_EDITABLE)) {
-    document = nullptr;
-  }
-
   // MakeContentDescendantsEditable is going to call ContentStateChanged for
   // this element and all descendants if editable state has changed.
   // We might as well wrap it all in one script blocker.
   nsAutoScriptBlocker scriptBlocker;
-  MakeContentDescendantsEditable(this, document);
+  MakeContentDescendantsEditable(this);
 
   // If the document already had contenteditable and JS adds new
   // contenteditable, that might cause changing editing host to current editing
   // host's ancestor.  In such case, HTMLEditor needs to know that
   // synchronously to update selection limitter.
-  if (document && aChange > 0 &&
+  // Additionally, elements in shadow DOM is not editable in the normal cases,
+  // but if its content has `contenteditable`, only in it can be ediable.
+  // So we don't need to notify HTMLEditor of this change only when we're not
+  // in shadow DOM and the composed document is in design mode.
+  if (IsInDesignMode() && !IsInShadowTree() && aChange > 0 &&
       previousEditingState == Document::EditingState::eContentEditable) {
     if (HTMLEditor* htmlEditor =
             nsContentUtils::GetHTMLEditor(document->GetPresContext())) {
@@ -2594,7 +2683,7 @@ void nsGenericHTMLElement::ChangeEditableState(int32_t aChange) {
 
 nsGenericHTMLFormElementWithState::nsGenericHTMLFormElementWithState(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser, uint8_t aType)
+    FromParser aFromParser, FormControlType aType)
     : nsGenericHTMLFormElement(std::move(aNodeInfo), aType),
       mControlNumber(!!(aFromParser & FROM_PARSER_NETWORK)
                          ? OwnerDoc()->GetNextControlNumber()
@@ -2829,7 +2918,7 @@ void nsGenericHTMLElement::SetInnerText(const nsAString& aValue) {
         RefPtr<nsTextNode> textContent = new (NodeInfo()->NodeInfoManager())
             nsTextNode(NodeInfo()->NodeInfoManager());
         textContent->SetText(str, true);
-        AppendChildTo(textContent, true);
+        AppendChildTo(textContent, true, IgnoreErrors());
       }
       if (s == end) {
         break;
@@ -2840,7 +2929,7 @@ void nsGenericHTMLElement::SetInnerText(const nsAString& aValue) {
               nsGkAtoms::br, nullptr, kNameSpaceID_XHTML, ELEMENT_NODE);
       auto* nim = ni->NodeInfoManager();
       RefPtr<HTMLBRElement> br = new (nim) HTMLBRElement(ni.forget());
-      AppendChildTo(br, true);
+      AppendChildTo(br, true, IgnoreErrors());
     } else {
       str.Append(*s);
     }
@@ -2929,19 +3018,19 @@ already_AddRefed<ElementInternals> nsGenericHTMLElement::AttachInternals(
   return MakeAndAddRef<ElementInternals>(this);
 }
 
-void nsGenericHTMLElement::GetAutocapitalize(nsAString& aValue) {
+void nsGenericHTMLElement::GetAutocapitalize(nsAString& aValue) const {
   GetEnumAttr(nsGkAtoms::autocapitalize, nullptr, kDefaultAutocapitalize->tag,
               aValue);
 }
 
 bool nsGenericHTMLFormElement::IsAutocapitalizeInheriting() const {
-  uint32_t type = ControlType();
-  return (type & NS_FORM_INPUT_ELEMENT) || (type & NS_FORM_BUTTON_ELEMENT) ||
-         type == NS_FORM_FIELDSET || type == NS_FORM_OUTPUT ||
-         type == NS_FORM_SELECT || type == NS_FORM_TEXTAREA;
+  auto type = ControlType();
+  return IsInputElement(type) || IsButtonElement(type) ||
+         type == FormControlType::Fieldset || type == FormControlType::Output ||
+         type == FormControlType::Select || type == FormControlType::Textarea;
 }
 
-void nsGenericHTMLFormElement::GetAutocapitalize(nsAString& aValue) {
+void nsGenericHTMLFormElement::GetAutocapitalize(nsAString& aValue) const {
   if (nsContentUtils::HasNonEmptyAttr(this, kNameSpaceID_None,
                                       nsGkAtoms::autocapitalize)) {
     nsGenericHTMLElement::GetAutocapitalize(aValue);

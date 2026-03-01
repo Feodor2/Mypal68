@@ -159,7 +159,7 @@ bool ReadBlobOrFile(JSStructuredCloneReader* aReader, uint32_t aTag,
 }
 
 bool ReadWasmModule(JSStructuredCloneReader* aReader, WasmModuleData* aRetval) {
-  static_assert(SCTAG_DOM_WASM == 0xFFFF8006, "Update me!");
+  static_assert(SCTAG_DOM_WASM_MODULE == 0xFFFF8006, "Update me!");
   MOZ_ASSERT(aReader && aRetval);
 
   uint32_t bytecodeIndex;
@@ -357,18 +357,17 @@ class ValueDeserializationHelper<StructuredCloneFileChild>
 }  // namespace
 
 template <typename StructuredCloneReadInfo>
-JSObject* CommonStructuredCloneReadCallback(JSContext* aCx,
-                                            JSStructuredCloneReader* aReader,
-                                            uint32_t aTag, uint32_t aData,
-                                            StructuredCloneReadInfo* aCloneReadInfo,
-                                            IDBDatabase* aDatabase) {
+JSObject* CommonStructuredCloneReadCallback(
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, uint32_t aData,
+    StructuredCloneReadInfo* aCloneReadInfo, IDBDatabase* aDatabase) {
   // We need to statically assert that our tag values are what we expect
   // so that if people accidentally change them they notice.
   static_assert(SCTAG_DOM_BLOB == 0xffff8001 &&
                     SCTAG_DOM_FILE_WITHOUT_LASTMODIFIEDDATE == 0xffff8002 &&
                     SCTAG_DOM_MUTABLEFILE == 0xffff8004 &&
                     SCTAG_DOM_FILE == 0xffff8005 &&
-                    SCTAG_DOM_WASM == 0xffff8006,
+                    SCTAG_DOM_WASM_MODULE == 0xffff8006,
                 "You changed our structured clone tag values and just ate "
                 "everyone's IndexedDB data.  I hope you are happy.");
 
@@ -377,10 +376,10 @@ JSObject* CommonStructuredCloneReadCallback(JSContext* aCx,
 
   if (aTag == SCTAG_DOM_FILE_WITHOUT_LASTMODIFIEDDATE ||
       aTag == SCTAG_DOM_BLOB || aTag == SCTAG_DOM_FILE ||
-      aTag == SCTAG_DOM_MUTABLEFILE || aTag == SCTAG_DOM_WASM) {
+      aTag == SCTAG_DOM_MUTABLEFILE || aTag == SCTAG_DOM_WASM_MODULE) {
     JS::Rooted<JSObject*> result(aCx);
 
-    if (aTag == SCTAG_DOM_WASM) {
+    if (aTag == SCTAG_DOM_WASM_MODULE) {
       WasmModuleData data(aData);
       if (NS_WARN_IF(!ReadWasmModule(aReader, &data))) {
         return nullptr;
@@ -448,11 +447,11 @@ JSObject* CommonStructuredCloneReadCallback(JSContext* aCx,
 
 template JSObject* CommonStructuredCloneReadCallback(
     JSContext* aCx, JSStructuredCloneReader* aReader,
-    uint32_t aTag, uint32_t aData, StructuredCloneReadInfoChild* aCloneReadInfo,
-    IDBDatabase* aDatabase);
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, uint32_t aData,
+    StructuredCloneReadInfoChild* aCloneReadInfo, IDBDatabase* aDatabase);
 
 template JSObject* CommonStructuredCloneReadCallback(
     JSContext* aCx, JSStructuredCloneReader* aReader,
-    uint32_t aTag, uint32_t aData, StructuredCloneReadInfoParent* aCloneReadInfo,
-    IDBDatabase* aDatabase);
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, uint32_t aData,
+    StructuredCloneReadInfoParent* aCloneReadInfo, IDBDatabase* aDatabase);
 }  // namespace mozilla::dom::indexedDB

@@ -1739,7 +1739,7 @@ nsObjectLoadingContent::UpdateObjectParameters() {
     MOZ_ASSERT(thisContent, "should have content");
     if (updateIMEState && thisContent && fm && fm->IsFocused(thisContent)) {
       widget::IMEState state;
-      state.mEnabled = widget::IMEState::PLUGIN;
+      state.mEnabled = widget::IMEEnabled::Plugin;
       state.mOpen = widget::IMEState::DONT_CHANGE_OPEN_STATE;
       IMEStateManager::UpdateIMEState(state, thisContent, nullptr);
     }
@@ -2265,13 +2265,10 @@ nsresult nsObjectLoadingContent::OpenChannel() {
       true,    // aInheritForAboutBlank
       false);  // aForceInherit
   nsSecurityFlags securityFlags =
-      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
+      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL;
 
-  bool isURIUniqueOrigin =
-      StaticPrefs::security_data_uri_unique_opaque_origin() &&
-      mURI->SchemeIs("data");
 
-  if (inherit && !isURIUniqueOrigin) {
+  if (inherit && !mURI->SchemeIs("data")) {
     securityFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
   }
   if (isSandBoxed) {

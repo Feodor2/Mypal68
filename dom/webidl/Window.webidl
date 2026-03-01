@@ -124,10 +124,10 @@ partial interface Window {
   [Throws] Selection? getSelection();
 };
 
-// http://dev.w3.org/csswg/cssom/
+// https://drafts.csswg.org/cssom/#extensions-to-the-window-interface
 partial interface Window {
-  //[NewObject, Throws] CSSStyleDeclaration getComputedStyle(Element elt, optional DOMString pseudoElt = "");
-  [NewObject, Throws] CSSStyleDeclaration? getComputedStyle(Element elt, optional DOMString pseudoElt = "");
+  //[NewObject, Throws] CSSStyleDeclaration getComputedStyle(Element elt, optional DOMString? pseudoElt = "");
+  [NewObject, Throws] CSSStyleDeclaration? getComputedStyle(Element elt, optional DOMString? pseudoElt = "");
 };
 
 // http://dev.w3.org/csswg/cssom-view/
@@ -362,8 +362,8 @@ partial interface Window {
   [ChromeOnly]
   readonly attribute boolean hasOpenerForInitialContentBrowser;
 
-  [ChromeOnly]
-  WindowGlobalChild getWindowGlobalChild();
+  [Pure, ChromeOnly]
+  readonly attribute WindowGlobalChild? windowGlobalChild;
 };
 
 Window includes TouchEventHandlers;
@@ -381,8 +381,9 @@ partial interface Window {
 
 #ifdef HAVE_SIDEBAR
 // Mozilla extension
+// Sidebar is deprecated and it will be removed in the next cycles. See bug 1640138.
 partial interface Window {
-  [Replaceable, Throws, Pref="dom.sidebar.enabled"]
+  [Replaceable, Throws]
   readonly attribute (External or WindowProxy) sidebar;
 };
 #endif

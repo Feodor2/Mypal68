@@ -8,7 +8,6 @@
 #include "DOMSVGLength.h"
 #include "nsError.h"
 #include "SVGAnimatedLengthList.h"
-#include "nsCOMPtr.h"
 #include "mozilla/dom/SVGLengthListBinding.h"
 #include <algorithm>
 
@@ -63,6 +62,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGLengthList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMSVGLengthList)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLengthList)
+  NS_INTERFACE_MAP_ENTRY(DOMSVGLengthList)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
@@ -157,11 +157,7 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::Initialize(
   // prevent that from happening we have to do the clone here, if necessary.
 
   RefPtr<DOMSVGLength> domItem = &newItem;
-  if (!domItem) {
-    error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
-    return nullptr;
-  }
-  if (domItem->HasOwner() || domItem->IsReflectingAttribute()) {
+  if (domItem->HasOwner()) {
     domItem = domItem->Copy();
   }
 
@@ -207,11 +203,7 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
   }
 
   RefPtr<DOMSVGLength> domItem = &newItem;
-  if (!domItem) {
-    error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
-    return nullptr;
-  }
-  if (domItem->HasOwner() || domItem->IsReflectingAttribute()) {
+  if (domItem->HasOwner()) {
     domItem = domItem->Copy();  // must do this before changing anything!
   }
 
@@ -253,16 +245,13 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::ReplaceItem(
     return nullptr;
   }
 
-  RefPtr<DOMSVGLength> domItem = &newItem;
-  if (!domItem) {
-    error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
-    return nullptr;
-  }
   if (index >= LengthNoFlush()) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
   }
-  if (domItem->HasOwner() || domItem->IsReflectingAttribute()) {
+
+  RefPtr<DOMSVGLength> domItem = &newItem;
+  if (domItem->HasOwner()) {
     domItem = domItem->Copy();  // must do this before changing anything!
   }
 
@@ -302,7 +291,7 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::RemoveItem(
   MaybeRemoveItemFromAnimValListAt(index);
 
   // We have to return the removed item, so get it, creating it if necessary:
-  nsCOMPtr<DOMSVGLength> result = GetItemAt(index);
+  RefPtr<DOMSVGLength> result = GetItemAt(index);
 
   // Notify the DOM item of removal *before* modifying the lists so that the
   // DOM item can copy its *old* value:

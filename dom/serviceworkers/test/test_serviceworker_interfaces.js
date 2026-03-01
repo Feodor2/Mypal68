@@ -274,7 +274,11 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextDecoder",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TextDecoderStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextEncoder",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TextEncoderStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "TransformStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!

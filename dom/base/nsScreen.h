@@ -19,7 +19,7 @@ class nsDeviceContext;
 
 // Script "screen" object
 class nsScreen : public mozilla::DOMEventTargetHelper {
-  typedef mozilla::ErrorResult ErrorResult;
+  using ErrorResult = mozilla::ErrorResult;
 
  public:
   static already_AddRefed<nsScreen> Create(nsPIDOMWindowInner* aWindow);

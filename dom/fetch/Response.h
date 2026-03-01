@@ -29,7 +29,8 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
                                                          FetchBody<Response>)
 
  public:
-  Response(nsIGlobalObject* aGlobal, InternalResponse* aInternalResponse,
+  Response(nsIGlobalObject* aGlobal,
+           SafeRefPtr<InternalResponse> aInternalResponse,
            AbortSignalImpl* aSignalImpl);
 
   Response(const Response& aOther) = delete;
@@ -115,7 +116,7 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
 
   void SetBody(nsIInputStream* aBody, int64_t aBodySize);
 
-  already_AddRefed<InternalResponse> GetInternalResponse() const;
+  SafeRefPtr<InternalResponse> GetInternalResponse() const;
 
   AbortSignalImpl* GetSignalImpl() const override { return mSignalImpl; }
   AbortSignalImpl* GetSignalImplToConsumeBody() const final {
@@ -134,7 +135,7 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
  private:
   ~Response();
 
-  RefPtr<InternalResponse> mInternalResponse;
+  SafeRefPtr<InternalResponse> mInternalResponse;
   // Lazily created
   RefPtr<Headers> mHeaders;
   RefPtr<AbortSignalImpl> mSignalImpl;

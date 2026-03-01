@@ -7,19 +7,23 @@ with Files("**"):
 
 EXPORTS.mozilla.dom += [
     'FallbackEncoding.h',
-    'TextDecoder.h',
-    'TextEncoder.h',
+    "TextDecoder.h",
+    "TextDecoderStream.h",
+    "TextEncoder.h",
+    "TextEncoderStream.h",
 ]
 
 UNIFIED_SOURCES += [
     'FallbackEncoding.cpp',
-    'TextDecoder.cpp',
-    'TextEncoder.cpp',
+    "TextDecoder.cpp",
+    "TextDecoderStream.cpp",
+    "TextEncoder.cpp",
+    "TextEncoderStream.cpp",
 ]
 
-FINAL_LIBRARY = 'xul'
+FINAL_LIBRARY = "xul"
 LOCAL_INCLUDES += [
-    '/intl/locale',
+    "/intl/locale",
 ]
 
 props2arrays = 'encodings2arrays.py'
@@ -40,7 +44,7 @@ GeneratedFile(header, script='../../intl/locale/props2arrays.py',
               inputs=[input_file])
 
 MOCHITEST_MANIFESTS += [
-    'test/mochitest.ini',
+    "test/mochitest.ini",
 ]
-MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
-XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]

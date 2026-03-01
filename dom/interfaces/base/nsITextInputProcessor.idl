@@ -314,7 +314,7 @@ interface nsITextInputProcessor : nsISupports
    *                        Otherwise, returns false because it might be
    *                        canceled by the web application.
    */
-  [optional_argc]
+  [can_run_script, optional_argc]
     boolean startComposition([optional] in Event aKeyboardEvent,
                              [optional] in unsigned long aKeyFlags);
 
@@ -408,7 +408,7 @@ interface nsITextInputProcessor : nsISupports
    *                        automatically, e.g., canceled by web apps, returns
    *                        false.
    */
-  [optional_argc]
+  [can_run_script, optional_argc]
     boolean flushPendingComposition(
       [optional] in Event aKeyboardEvent,
       [optional] in unsigned long aKeyFlags);
@@ -427,7 +427,7 @@ interface nsITextInputProcessor : nsISupports
    *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    */
-  [optional_argc]
+  [can_run_script, optional_argc]
     void commitComposition([optional] in Event aKeyboardEvent,
                            [optional] in unsigned long aKeyFlags);
 
@@ -452,7 +452,7 @@ interface nsITextInputProcessor : nsISupports
    *                        automatically, e.g., canceled by web apps, returns
    *                        false.
    */
-  [optional_argc]
+  [can_run_script, optional_argc]
     boolean commitCompositionWith(in AString aCommitString,
                                   [optional] in Event aKeyboardEvent,
                                   [optional] in unsigned long aKeyFlags);
@@ -476,7 +476,7 @@ interface nsITextInputProcessor : nsISupports
    *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    */
-  [optional_argc]
+  [can_run_script, optional_argc]
     void cancelComposition([optional] in Event aKeyboardEvent,
                            [optional] in unsigned long aKeyFlags);
 
@@ -572,7 +572,7 @@ interface nsITextInputProcessor : nsISupports
    *                        native code for the printable keys (indicating the
    *                        default action has been taken).
    */
-  [optional_argc]
+  [can_run_script, optional_argc]
     unsigned long keydown(in Event aKeyboardEvent,
                           [optional] in unsigned long aKeyFlags);
 

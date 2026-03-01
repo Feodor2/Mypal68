@@ -12,6 +12,7 @@
 #include "mozilla/dom/ValidityState.h"
 
 namespace mozilla {
+class ErrorResult;
 class EventChainPreVisitor;
 namespace dom {
 
@@ -38,9 +39,8 @@ class HTMLFieldSetElement final : public nsGenericHTMLFormElement,
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
 
-  virtual nsresult InsertChildBefore(nsIContent* aChild,
-                                     nsIContent* aBeforeThis,
-                                     bool aNotify) override;
+  virtual void InsertChildBefore(nsIContent* aChild, nsIContent* aBeforeThis,
+                                 bool aNotify, ErrorResult& aRv) override;
   virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
 
   // nsIFormControl

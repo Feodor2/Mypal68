@@ -18,8 +18,7 @@
 
 class nsIPrincipal;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Storage;
 struct StorageEventInit;
@@ -79,7 +78,6 @@ class StorageEvent : public Event {
   nsIPrincipal* GetPrincipal() const { return mPrincipal; }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_StorageEvent_h

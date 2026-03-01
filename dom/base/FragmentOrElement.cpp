@@ -195,7 +195,7 @@ nsIContent::IMEState nsIContent::GetDesiredIMEState() {
     // have the editable flag set, but are readwrite (such as text controls).
     if (!IsElement() ||
         !AsElement()->State().HasState(NS_EVENT_STATE_READWRITE)) {
-      return IMEState(IMEState::DISABLED);
+      return IMEState(IMEEnabled::Disabled);
     }
   }
   // NOTE: The content for independent editors (e.g., input[type=text],
@@ -209,15 +209,15 @@ nsIContent::IMEState nsIContent::GetDesiredIMEState() {
   }
   Document* doc = GetComposedDoc();
   if (!doc) {
-    return IMEState(IMEState::DISABLED);
+    return IMEState(IMEEnabled::Disabled);
   }
   nsPresContext* pc = doc->GetPresContext();
   if (!pc) {
-    return IMEState(IMEState::DISABLED);
+    return IMEState(IMEEnabled::Disabled);
   }
   HTMLEditor* htmlEditor = nsContentUtils::GetHTMLEditor(pc);
   if (!htmlEditor) {
-    return IMEState(IMEState::DISABLED);
+    return IMEState(IMEEnabled::Disabled);
   }
   IMEState state;
   htmlEditor->GetPreferredIMEState(&state);
@@ -241,7 +241,7 @@ dom::Element* nsIContent::GetEditingHost() {
   }
 
   // If this is in designMode, we should return <body>
-  if (doc->HasFlag(NODE_IS_EDITABLE) && !IsInShadowTree()) {
+  if (IsInDesignMode() && !IsInShadowTree()) {
     return doc->GetBodyElement();
   }
 
@@ -410,7 +410,7 @@ nsIContent* nsAttrChildContentList::Item(uint32_t aIndex) {
 
 int32_t nsAttrChildContentList::IndexOf(nsIContent* aContent) {
   if (mNode) {
-    return mNode->ComputeIndexOf(aContent);
+    return mNode->ComputeIndexOf_Deprecated(aContent);
   }
 
   return -1;
@@ -735,7 +735,7 @@ static nsINode* FindChromeAccessOnlySubtreeOwner(nsINode* aNode) {
 
 already_AddRefed<nsINode> FindChromeAccessOnlySubtreeOwner(
     EventTarget* aTarget) {
-  nsCOMPtr<nsINode> node = do_QueryInterface(aTarget);
+  nsCOMPtr<nsINode> node = nsINode::FromEventTargetOrNull(aTarget);
   if (!node || !node->ChromeOnlyAccess()) {
     return node.forget();
   }
@@ -767,8 +767,8 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
       // a shadow root to a shadow root host.
       ((this == aVisitor.mEvent->mOriginalTarget && !ChromeOnlyAccess()) ||
        isAnonForEvents)) {
-    nsCOMPtr<nsIContent> relatedTarget =
-        do_QueryInterface(aVisitor.mEvent->AsMouseEvent()->mRelatedTarget);
+    nsCOMPtr<nsIContent> relatedTarget = nsIContent::FromEventTargetOrNull(
+        aVisitor.mEvent->AsMouseEvent()->mRelatedTarget);
     if (relatedTarget && relatedTarget->OwnerDoc() == OwnerDoc()) {
       // If current target is anonymous for events or we know that related
       // target is descendant of an element which is anonymous for events,
@@ -796,7 +796,8 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
             if (anonOwner == anonOwnerRelated) {
 #ifdef DEBUG_smaug
               nsCOMPtr<nsIContent> originalTarget =
-                  do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
+                  nsIContent::FromEventTargetOrNull(
+                      aVisitor.mEvent->mOriginalTarget);
               nsAutoString ot, ct, rt;
               if (originalTarget) {
                 originalTarget->NodeInfo()->NameAtom()->ToString(ot);
@@ -848,7 +849,7 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     // If a DOM event is explicitly dispatched using node.dispatchEvent(), then
     // all the events are allowed even in the native anonymous content..
     nsCOMPtr<nsIContent> t =
-        do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
+        nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mOriginalTarget);
     NS_ASSERTION(!t || !t->ChromeOnlyAccess() ||
                      aVisitor.mEvent->mClass != eMutationEventClass ||
                      aVisitor.mDOMEvent,
@@ -856,7 +857,8 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
 #endif
     aVisitor.mEventTargetAtParent = parent;
   } else if (parent && aVisitor.mOriginalTargetIsInAnon) {
-    nsCOMPtr<nsIContent> content(do_QueryInterface(aVisitor.mEvent->mTarget));
+    nsCOMPtr<nsIContent> content(
+        nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mTarget));
     if (content &&
         content->GetClosestNativeAnonymousSubtreeRootParent() == parent) {
       aVisitor.mEventTargetAtParent = parent;
@@ -905,7 +907,7 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
                 aVisitor.mEvent->mOriginalRelatedTarget);
         if (!originalTargetAsNode) {
           originalTargetAsNode =
-              do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
+              nsINode::FromEventTargetOrNull(aVisitor.mEvent->mOriginalTarget);
         }
 
         if (relatedTargetAsNode && originalTargetAsNode) {
@@ -991,7 +993,8 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
         Touch* touch = touches[i];
         EventTarget* originalTarget = touch->mOriginalTarget;
         EventTarget* touchTarget = originalTarget;
-        nsCOMPtr<nsINode> targetAsNode = do_QueryInterface(originalTarget);
+        nsCOMPtr<nsINode> targetAsNode =
+            nsINode::FromEventTargetOrNull(originalTarget);
         if (targetAsNode) {
           EventTarget* retargeted =
               nsContentUtils::Retarget(targetAsNode, this);

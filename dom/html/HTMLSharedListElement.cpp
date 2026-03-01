@@ -99,7 +99,7 @@ void HTMLSharedListElement::MapOLAttributesIntoRule(
       }
     }
     if (haveStart || haveReversed) {
-      aDecls.SetCounterResetListItem(start);
+      aDecls.SetCounterResetListItem(start, haveReversed);
     }
   }
 

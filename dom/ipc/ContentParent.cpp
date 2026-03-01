@@ -44,8 +44,9 @@
 #include "URIUtils.h"
 #include "gfxPlatform.h"
 #include "gfxPlatformFontList.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/ContentBlocking.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentBlockingUserInteraction.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/DataStorage.h"
@@ -78,6 +79,7 @@
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ChromeUtils.h" //MY
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/ClientOpenWindowOpActors.h"
 #include "mozilla/dom/ContentMediaController.h"
@@ -238,7 +240,7 @@
 #  include "gfxAndroidPlatform.h"
 #endif
 
-#include "nsPermissionManager.h"
+#include "mozilla/PermissionManager.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "AndroidBridge.h"
@@ -1245,7 +1247,7 @@ void ContentParent::Init() {
 
   // Ensure that the default set of permissions are avaliable in the content
   // process before we try to load any URIs in it.
-  EnsurePermissionsByKey(EmptyCString());
+  EnsurePermissionsByKey(EmptyCString(), EmptyCString());
 
   RefPtr<GeckoMediaPluginServiceParent> gmps(
       GeckoMediaPluginServiceParent::GetSingleton());
@@ -3510,7 +3512,7 @@ mozilla::ipc::IPCResult ContentParent::RecvPSpeechSynthesisConstructor(
 
 mozilla::ipc::IPCResult ContentParent::RecvStartVisitedQueries(
     const nsTArray<RefPtr<nsIURI>>& aUris) {
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
   if (!history) {
     return IPC_OK();
   }
@@ -3528,7 +3530,7 @@ mozilla::ipc::IPCResult ContentParent::RecvSetURITitle(nsIURI* uri,
   if (!uri) {
     return IPC_FAIL_NO_REASON(this);
   }
-  nsCOMPtr<IHistory> history = services::GetHistoryService();
+  nsCOMPtr<IHistory> history = services::GetHistory();
   if (history) {
     history->SetURITitle(uri, title);
   }
@@ -4161,7 +4163,7 @@ already_AddRefed<mozilla::docshell::POfflineCacheUpdateParent>
 ContentParent::AllocPOfflineCacheUpdateParent(
     nsIURI* aManifestURI, nsIURI* aDocumentURI,
     const PrincipalInfo& aLoadingPrincipalInfo, const bool& aStickDocument,
-    const CookieSettingsArgs& aCookieSettingsArgs) {
+    const CookieJarSettingsArgs& aCookieJarSettingsArgs) {
   RefPtr<mozilla::docshell::OfflineCacheUpdateParent> update =
       new mozilla::docshell::OfflineCacheUpdateParent();
   return update.forget();
@@ -4170,14 +4172,14 @@ ContentParent::AllocPOfflineCacheUpdateParent(
 mozilla::ipc::IPCResult ContentParent::RecvPOfflineCacheUpdateConstructor(
     POfflineCacheUpdateParent* aActor, nsIURI* aManifestURI,
     nsIURI* aDocumentURI, const PrincipalInfo& aLoadingPrincipal,
-    const bool& aStickDocument, const CookieSettingsArgs& aCookieSettingsArgs) {
+    const bool& aStickDocument, const CookieJarSettingsArgs& aCookieJarSettingsArgs) {
   MOZ_ASSERT(aActor);
 
   RefPtr<mozilla::docshell::OfflineCacheUpdateParent> update =
       static_cast<mozilla::docshell::OfflineCacheUpdateParent*>(aActor);
 
   nsresult rv = update->Schedule(aManifestURI, aDocumentURI, aLoadingPrincipal,
-                                 aStickDocument, aCookieSettingsArgs);
+                                 aStickDocument, aCookieJarSettingsArgs);
   if (NS_FAILED(rv) && IsAlive()) {
     // Inform the child of failure.
     Unused << update->SendFinish(false, false);
@@ -5058,11 +5060,11 @@ nsresult ContentParent::AboutToLoadHttpFtpDocumentForChild(
 nsresult ContentParent::TransmitPermissionsForPrincipal(
     nsIPrincipal* aPrincipal) {
   // Create the key, and send it down to the content process.
-  nsTArray<nsCString> keys =
-      nsPermissionManager::GetAllKeysForPrincipal(aPrincipal);
-  MOZ_ASSERT(keys.Length() >= 1);
-  for (auto& key : keys) {
-    EnsurePermissionsByKey(key);
+  nsTArray<std::pair<nsCString, nsCString>> pairs =
+      PermissionManager::GetAllKeysForPrincipal(aPrincipal);
+  MOZ_ASSERT(pairs.Length() >= 1);
+  for (auto& pair : pairs) {
+    EnsurePermissionsByKey(pair.first, pair.second);
   }
 
   return NS_OK;
@@ -5102,13 +5104,14 @@ void ContentParent::TransmitBlobURLsForPrincipal(nsIPrincipal* aPrincipal) {
   }
 }
 
-void ContentParent::EnsurePermissionsByKey(const nsCString& aKey) {
+void ContentParent::EnsurePermissionsByKey(const nsCString& aKey,
+                                           const nsCString& aOrigin) {
   // NOTE: Make sure to initialize the permission manager before updating the
   // mActivePermissionKeys list. If the permission manager is being initialized
   // by this call to GetPermissionManager, and we've added the key to
   // mActivePermissionKeys, then the permission manager will send down a
   // SendAddPermission before receiving the SendSetPermissionsWithKey message.
-  RefPtr<nsPermissionManager> permManager = nsPermissionManager::GetInstance();
+  RefPtr<PermissionManager> permManager = PermissionManager::GetInstance();
   if (!permManager) {
     return;
   }
@@ -5118,7 +5121,7 @@ void ContentParent::EnsurePermissionsByKey(const nsCString& aKey) {
   }
 
   nsTArray<IPC::Permission> perms;
-  if (permManager->GetPermissionsWithKey(aKey, perms)) {
+  if (permManager->GetPermissionsFromOriginOrKey(aOrigin, aKey, perms)) {
     Unused << SendSetPermissionsWithKey(aKey, perms);
   }
 }
@@ -5318,23 +5321,23 @@ ContentParent::RecvFirstPartyStorageAccessGrantedForOrigin(
     const Principal& aParentPrincipal, const Principal& aTrackingPrincipal,
     const nsCString& aTrackingOrigin, const int& aAllowMode,
     FirstPartyStorageAccessGrantedForOriginResolver&& aResolver) {
-  AntiTrackingCommon::
-      SaveFirstPartyStorageAccessGrantedForOriginOnParentProcess(
-          aParentPrincipal, aTrackingPrincipal, aTrackingOrigin, aAllowMode)
-          ->Then(GetCurrentSerialEventTarget(), __func__,
-                 [aResolver = std::move(aResolver)](
-                     AntiTrackingCommon::FirstPartyStorageAccessGrantPromise::
-                         ResolveOrRejectValue&& aValue) {
-                   bool success = aValue.IsResolve() &&
-                                  NS_SUCCEEDED(aValue.ResolveValue());
-                   aResolver(success);
-                 });
+  ContentBlocking::SaveAccessForOriginOnParentProcess(
+      aParentPrincipal, aTrackingPrincipal, aTrackingOrigin, aAllowMode)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [aResolver = std::move(aResolver)](
+              ContentBlocking::ParentAccessGrantPromise::ResolveOrRejectValue&&
+                  aValue) {
+            bool success =
+                aValue.IsResolve() && NS_SUCCEEDED(aValue.ResolveValue());
+            aResolver(success);
+          });
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvStoreUserInteractionAsPermission(
     const Principal& aPrincipal) {
-  AntiTrackingCommon::StoreUserInteractionFor(aPrincipal);
+  ContentBlockingUserInteraction::Observe(aPrincipal);
   return IPC_OK();
 }
 
@@ -5652,6 +5655,71 @@ PFileDescriptorSetParent* ContentParent::SendPFileDescriptorSetConstructor(
     const FileDescriptor& aFD) {
   MOZ_ASSERT(NS_IsMainThread());
   return PContentParent::SendPFileDescriptorSetConstructor(aFD);
+}
+
+mozilla::ipc::IPCResult ContentParent::RecvBlobURLDataRequest(
+    const nsCString& aBlobURL, nsIPrincipal* pTriggeringPrincipal,
+    nsIPrincipal* pLoadingPrincipal, const OriginAttributes& aOriginAttributes,
+    BlobURLDataRequestResolver&& aResolver) {
+  RefPtr<BlobImpl> blobImpl;
+  nsresult rv = NS_GetBlobForBlobURISpec(aBlobURL, getter_AddRefs(blobImpl),
+                                         true /* AlsoIfRevoked */);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aResolver(rv);
+    return IPC_OK();
+  }
+
+  if (NS_WARN_IF(!blobImpl)) {
+    aResolver(NS_ERROR_DOM_BAD_URI);
+    return IPC_OK();
+  }
+
+  // Since revoked blobs are also retrieved, it is possible that the blob no
+  // longer exists (due to the 5 second timeout) when execution reaches here
+  nsIPrincipal* const dataEntryPrincipal =
+      BlobURLProtocolHandler::GetDataEntryPrincipal(aBlobURL,
+                                                    true /* AlsoIfRevoked */);
+
+  if (!dataEntryPrincipal) {
+    aResolver(NS_ERROR_DOM_BAD_URI);
+    return IPC_OK();
+  }
+
+  // We want to be sure that we stop the creation of the channel if the blob
+  // URL is copy-and-pasted on a different context (ex. private browsing or
+  // containers).
+  //
+  // We also allow the system principal to create the channel regardless of
+  // the OriginAttributes.  This is primarily for the benefit of mechanisms
+  // like the Download API that explicitly create a channel with the system
+  // principal and which is never mutated to have a non-zero
+  // mPrivateBrowsingId or container.
+
+  if (NS_WARN_IF(!pLoadingPrincipal ||
+                 !pLoadingPrincipal->IsSystemPrincipal()) &&
+      NS_WARN_IF(!ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
+          aOriginAttributes,
+          BasePrincipal::Cast(dataEntryPrincipal)->OriginAttributesRef()))) {
+    aResolver(NS_ERROR_DOM_BAD_URI);
+    return IPC_OK();
+  }
+
+  if (!pTriggeringPrincipal->Subsumes(dataEntryPrincipal)) {
+    aResolver(NS_ERROR_DOM_BAD_URI);
+    return IPC_OK();
+  }
+
+  IPCBlob ipcBlob;
+  rv = IPCBlobUtils::Serialize(blobImpl, this, ipcBlob);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aResolver(rv);
+    return IPC_OK();
+  }
+
+  aResolver(ipcBlob);
+  return IPC_OK();
 }
 
 }  // namespace dom

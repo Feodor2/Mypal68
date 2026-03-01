@@ -27,11 +27,11 @@ class EmptyBlobImpl final : public BaseBlobImpl {
   bool IsMemoryFile() const override { return true; }
 
   void GetBlobImplType(nsAString& aBlobImplType) const override {
-    aBlobImplType = NS_LITERAL_STRING("EmptyBlobImpl");
+    aBlobImplType = u"EmptyBlobImpl"_ns;
   }
 
  private:
-  ~EmptyBlobImpl() = default;
+  ~EmptyBlobImpl() override = default;
 };
 
 }  // namespace dom

@@ -10,6 +10,8 @@
 #include "nsContentUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
+#include "nsJSUtils.h"
+#include "nsServiceManagerUtils.h"
 #include "AudioEventTimeline.h"
 
 namespace mozilla {

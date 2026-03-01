@@ -125,11 +125,8 @@ bool IsSameOrigin(nsIHttpChannel* aHTTPChannel) {
         ->AddonAllowsLoad(channelURI);
   }
 
-  bool isPrivateWin = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
   bool isSameOrigin = false;
-  nsresult rv = loadInfo->TriggeringPrincipal()->IsSameOrigin(
-      channelURI, isPrivateWin, &isSameOrigin);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  isSameOrigin = loadInfo->TriggeringPrincipal()->IsSameOrigin(channelURI);
 
   // if the initial request is not same-origin, we can return here
   // because we already know it's not a same-origin request
@@ -142,13 +139,8 @@ bool IsSameOrigin(nsIHttpChannel* aHTTPChannel) {
   nsCOMPtr<nsIPrincipal> redirectPrincipal;
   for (nsIRedirectHistoryEntry* entry : loadInfo->RedirectChain()) {
     entry->GetPrincipal(getter_AddRefs(redirectPrincipal));
-    if (redirectPrincipal) {
-      rv = redirectPrincipal->IsSameOrigin(channelURI, isPrivateWin,
-                                           &isSameOrigin);
-      mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
-      if (!isSameOrigin) {
-        return false;
-      }
+    if (redirectPrincipal && !redirectPrincipal->IsSameOrigin(channelURI)) {
+      return false;
     }
   }
 
@@ -272,17 +264,21 @@ void mozilla::dom::SecFetch::AddSecFetchMode(nsIHttpChannel* aHTTPChannel) {
   uint32_t securityMode = loadInfo->GetSecurityMode();
   ExtContentPolicyType externalType = loadInfo->GetExternalContentPolicyType();
 
-  if (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
+  if (securityMode ==
+          nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT ||
       securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED) {
     mode = "same-origin"_ns;
-  } else if (securityMode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) {
+  } else if (securityMode ==
+             nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) {
     mode = "cors"_ns;
   } else {
     // If it's not one of the security modes above, then we ensure it's
     // at least one of the others defined in nsILoadInfo
     MOZ_ASSERT(
-        securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
-            securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+        securityMode ==
+                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT ||
+            securityMode ==
+                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
         "unhandled security mode");
   }
 

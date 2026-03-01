@@ -9,7 +9,8 @@
 #include "nsIXULAppInfo.h"
 #include "nsPluginArray.h"
 #include "nsMimeTypeArray.h"
-#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/ContentBlocking.h"
+#include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/BodyExtractor.h"
 #include "mozilla/dom/FetchBinding.h"
@@ -484,23 +485,21 @@ bool Navigator::CookieEnabled() {
     return cookieEnabled;
   }
 
-  nsCOMPtr<nsIURI> contentURI;
-  BasePrincipal::Cast(doc->NodePrincipal())->GetURI(getter_AddRefs(contentURI));
-
-  if (!contentURI) {
+  uint32_t rejectedReason = 0;
+  bool granted = false;
+  nsresult rv = doc->NodePrincipal()->HasFirstpartyStorageAccess(
+      mWindow, &rejectedReason, &granted);
+  if (NS_FAILED(rv)) {
     // Not a content, so technically can't set cookies, but let's
     // just return the default value.
     return cookieEnabled;
   }
 
-  uint32_t rejectedReason = 0;
-  bool granted = AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-      mWindow, contentURI, &rejectedReason);
 
-  AntiTrackingCommon::NotifyBlockingDecision(
+  ContentBlockingNotifier::OnDecision(
       mWindow,
-      granted ? AntiTrackingCommon::BlockingDecision::eAllow
-              : AntiTrackingCommon::BlockingDecision::eBlock,
+      granted ? ContentBlockingNotifier::BlockingDecision::eAllow
+              : ContentBlockingNotifier::BlockingDecision::eBlock,
       rejectedReason);
   return granted;
 }
@@ -1095,8 +1094,8 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
   // No need to use CORS for sendBeacon unless it's a BLOB
   nsSecurityFlags securityFlags =
       aType == eBeaconTypeBlob
-          ? nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS
-          : nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
+          ? nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT
+          : nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
   securityFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
 
   nsCOMPtr<nsIChannel> channel;
@@ -1634,28 +1633,25 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   prefService->GetBranch("general.useragent.override.",
                          getter_AddRefs(prefBranch));
   if (prefBranch) {
+    nsCOMPtr<nsIURI> uri;
     if (aCallerPrincipal) {
-      nsCOMPtr<nsIURI> uri;
       aCallerPrincipal->GetURI(getter_AddRefs(uri));
-      if (uri) {
-        MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
-        rv = prefBranch->GetCharPref(host.get(), ua);
-        if (NS_SUCCEEDED(rv)) {
-          CopyASCIItoUTF16(ua, aUserAgent);
-          return NS_OK;
-        }
-      }
-    }
-
-    if (aWindow) {
-      nsIURI* uri;
+    } else if (aWindow) {
       nsCOMPtr<Document> doc = aWindow->GetDoc();
       if (doc) {
         uri = doc->GetDocumentURI();
-        if (uri) {
-           MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
-           rv = prefBranch->GetCharPref(host.get(), ua);
-          if (NS_SUCCEEDED(rv)) {
+      }
+    } else {
+      return NS_OK;
+    }
+    if (uri) {
+      MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
+      nsTArray<nsCString> prefNames;
+      rv = prefBranch->GetChildList("", prefNames);
+      if (NS_SUCCEEDED(rv)) {
+        for (auto& prefName : prefNames) {
+          if (FindInReadable(prefName, host)) {
+            prefBranch->GetCharPref(prefName.get(), ua);
             CopyASCIItoUTF16(ua, aUserAgent);
             return NS_OK;
           }
@@ -1676,7 +1672,6 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
       return NS_OK;
     }
   }
-
 
   // When the caller is content and 'privacy.resistFingerprinting' is true,
   // return a spoofed userAgent which reveals the platform but not the

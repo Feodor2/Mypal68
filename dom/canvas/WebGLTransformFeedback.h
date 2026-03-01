@@ -7,6 +7,7 @@
 
 #include "mozilla/LinkedList.h"
 #include "nsWrapperCache.h"
+#include "WebGLContext.h"
 #include "WebGLObjectModel.h"
 
 namespace mozilla {
@@ -58,8 +59,6 @@ class WebGLTransformFeedback final
   virtual JSObject* WrapObject(JSContext*, JS::Handle<JSObject*>) override;
 
   bool IsActiveAndNotPaused() const { return mIsActive && !mIsPaused; }
-
-  void AddBufferBindCounts(int8_t addVal) const;
 
   // GL Funcs
   void BeginTransformFeedback(GLenum primMode);

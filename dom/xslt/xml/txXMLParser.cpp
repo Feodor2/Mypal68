@@ -36,8 +36,8 @@ nsresult txParseDocumentFromURI(const nsAString& aHref,
   rv = nsSyncLoadService::LoadDocument(
       documentURI, nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST,
       loaderDocument->NodePrincipal(),
-      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS, loadGroup,
-      loaderDocument->CookieSettings(), true,
+      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT, loadGroup,
+      loaderDocument->CookieJarSettings(), true,
       loaderDocument->GetReferrerPolicy(), &theDocument);
 
   if (NS_FAILED(rv)) {

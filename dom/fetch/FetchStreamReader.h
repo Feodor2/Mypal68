@@ -13,12 +13,11 @@
 #include "nsIAsyncOutputStream.h"
 #include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ReadableStream;
 class ReadableStreamDefaultReader;
-class WeakWorkerRef;
+class StrongWorkerRef;
 
 class FetchStreamReader final : public nsIOutputStreamCallback {
  public:
@@ -65,7 +64,8 @@ class FetchStreamReader final : public nsIOutputStreamCallback {
 
   nsCOMPtr<nsIAsyncOutputStream> mPipeOut;
 
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mWorkerRef;
+  RefPtr<StrongWorkerRef> mAsyncWaitWorkerRef;
 
   RefPtr<ReadableStreamDefaultReader> mReader;
 
@@ -76,7 +76,6 @@ class FetchStreamReader final : public nsIOutputStreamCallback {
   bool mStreamClosed;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_FetchStreamReader_h

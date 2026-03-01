@@ -27,7 +27,7 @@ class TextEditor;
 class TextControlElement : public nsGenericHTMLFormElementWithState {
  public:
   TextControlElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo,
-                     dom::FromParser aFromParser, uint8_t aType)
+                     dom::FromParser aFromParser, FormControlType aType)
       : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), aFromParser,
                                           aType){};
 
@@ -168,22 +168,6 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
    * Initialize the keyboard event listeners.
    */
   virtual void InitializeKeyboardEventListeners() = 0;
-
-  /**
-   * Update the visibility of both the placholder and preview text based on the
-   * element's state.
-   */
-  virtual void UpdateOverlayTextVisibility(bool aNotify) = 0;
-
-  /**
-   * Returns the current expected placeholder visibility state.
-   */
-  virtual bool GetPlaceholderVisibility() = 0;
-
-  /**
-   * Returns the current expected preview visibility state.
-   */
-  virtual bool GetPreviewVisibility() = 0;
 
   enum class ValueChangeKind {
     Internal,

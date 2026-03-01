@@ -13,7 +13,7 @@ declTest("destroy actor by iframe remove", {
       content.document.body.appendChild(frame);
       await ContentTaskUtils.waitForEvent(frame, "load");
       is(content.window.frames.length, 1, "There should be an iframe.");
-      let child = frame.contentWindow.window.getWindowGlobalChild();
+      let child = frame.contentWindow.windowGlobalChild;
       let actorChild = child.getActor("Test");
       ok(actorChild, "JSWindowActorChild should have value.");
 
@@ -21,6 +21,7 @@ declTest("destroy actor by iframe remove", {
         const TOPIC = "test-js-window-actor-willdestroy";
         Services.obs.addObserver(function obs(subject, topic, data) {
           ok(data, "willDestroyCallback data should be true.");
+          is(subject, actorChild, "Should have this value");
 
           Services.obs.removeObserver(obs, TOPIC);
           resolve();
@@ -31,6 +32,7 @@ declTest("destroy actor by iframe remove", {
         const TOPIC = "test-js-window-actor-diddestroy";
         Services.obs.addObserver(function obs(subject, topic, data) {
           ok(data, "didDestroyCallback data should be true.");
+          is(subject, actorChild, "Should have this value");
 
           Services.obs.removeObserver(obs, TOPIC);
           resolve();
@@ -65,7 +67,7 @@ declTest("destroy actor by page navigates", {
     await ContentTask.spawn(browser, TEST_URL, async function(url) {
       let frame = content.document.querySelector("iframe");
       frame.contentWindow.location = url;
-      let child = frame.contentWindow.window.getWindowGlobalChild();
+      let child = frame.contentWindow.windowGlobalChild;
       let actorChild = child.getActor("Test");
       ok(actorChild, "JSWindowActorChild should have value.");
       await ContentTaskUtils.waitForEvent(frame, "load");

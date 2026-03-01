@@ -13,6 +13,7 @@ import math
 import string
 from collections import defaultdict, OrderedDict
 from itertools import chain
+import copy
 
 # Machinery
 
@@ -492,7 +493,7 @@ class IDLExposureMixins:
         # and add global interfaces and [Exposed] annotations to all those
         # tests.
         if len(scope.globalNames) != 0:
-            if len(self._exposureGlobalNames) == 0:
+            if len(self._exposureGlobalNames) == 0 and not self.isPseudoInterface():
                 raise WebIDLError(
                     (
                         "'%s' is not exposed anywhere even though we have "
@@ -528,6 +529,9 @@ class IDLExposureMixins:
         workerScopes = self.parentScope.globalNameMapping["Worker"]
         return len(workerScopes.difference(self.exposureSet)) > 0
 
+    def isExposedInShadowRealms(self):
+        return "ShadowRealmGlobalScope" in self.exposureSet
+
     def getWorkerExposureSet(self):
         workerScopes = self._globalScope.globalNameMapping["Worker"]
         return workerScopes.intersection(self.exposureSet)
@@ -556,6 +560,9 @@ class IDLExternalInterface(IDLObjectWithIdentifier):
         pass
 
     def isIteratorInterface(self):
+        return False
+
+    def isAsyncIteratorInterface(self):
         return False
 
     def isExternal(self):
@@ -959,6 +966,9 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
         self.interfacesBasedOnSelf = set([self])
         self._hasChildInterfaces = False
         self._isOnGlobalProtoChain = False
+        # Pseudo interfaces aren't exposed anywhere, and so shouldn't issue warnings
+        self._isPseudo = False
+
         # Tracking of the number of reserved slots we need for our
         # members and those of ancestor interfaces.
         self.totalMembersInSlots = 0
@@ -967,6 +977,7 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
         # If this is an iterator interface, we need to know what iterable
         # interface we're iterating for in order to get its nativeType.
         self.iterableInterface = None
+        self.asyncIterableInterface = None
         # True if we have cross-origin members.
         self.hasCrossOriginMembers = False
         # True if some descendant (including ourselves) has cross-origin members
@@ -994,8 +1005,17 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
             and self.maplikeOrSetlikeOrIterable.isIterable()
         )
 
+    def isAsyncIterable(self):
+        return (
+            self.maplikeOrSetlikeOrIterable
+            and self.maplikeOrSetlikeOrIterable.isAsyncIterable()
+        )
+
     def isIteratorInterface(self):
         return self.iterableInterface is not None
+
+    def isAsyncIteratorInterface(self):
+        return self.asyncIterableInterface is not None
 
     def getClassName(self):
         return self.identifier.name
@@ -1712,13 +1732,14 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
     def hasInterfaceObject(self):
         if self.isCallback():
             return self.hasConstants()
-        return not hasattr(self, "_noInterfaceObject")
+        return not hasattr(self, "_noInterfaceObject") and not self.isPseudoInterface()
 
     def hasInterfacePrototypeObject(self):
         return (
             not self.isCallback()
             and not self.isNamespace()
             and self.getUserData("hasConcreteDescendant", False)
+            and not self.isPseudoInterface()
         )
 
     def addIncludedMixin(self, includedMixin):
@@ -1781,6 +1802,9 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
 
     def isOnGlobalProtoChain(self):
         return self._isOnGlobalProtoChain
+
+    def isPseudoInterface(self):
+        return self._isPseudo
 
     def _getDependentObjects(self):
         deps = set(self.members)
@@ -4310,7 +4334,9 @@ class IDLUndefinedValue(IDLObject):
 
 class IDLInterfaceMember(IDLObjectWithIdentifier, IDLExposureMixins):
 
-    Tags = enum("Const", "Attr", "Method", "MaplikeOrSetlike", "Iterable")
+    Tags = enum(
+        "Const", "Attr", "Method", "MaplikeOrSetlike", "AsyncIterable", "Iterable"
+    )
 
     Special = enum("Static", "Stringifier")
 
@@ -4338,6 +4364,7 @@ class IDLInterfaceMember(IDLObjectWithIdentifier, IDLExposureMixins):
     def isMaplikeOrSetlikeOrIterable(self):
         return (
             self.tag == IDLInterfaceMember.Tags.MaplikeOrSetlike
+            or self.tag == IDLInterfaceMember.Tags.AsyncIterable
             or self.tag == IDLInterfaceMember.Tags.Iterable
         )
 
@@ -4441,7 +4468,7 @@ class IDLMaplikeOrSetlikeOrIterableBase(IDLInterfaceMember):
             assert isinstance(keyType, IDLType)
         else:
             assert valueType is not None
-        assert ifaceType in ["maplike", "setlike", "iterable"]
+        assert ifaceType in ["maplike", "setlike", "iterable", "asynciterable"]
         if valueType is not None:
             assert isinstance(valueType, IDLType)
         self.keyType = keyType
@@ -4458,6 +4485,9 @@ class IDLMaplikeOrSetlikeOrIterableBase(IDLInterfaceMember):
 
     def isIterable(self):
         return self.maplikeOrSetlikeOrIterableType == "iterable"
+
+    def isAsyncIterable(self):
+        return self.maplikeOrSetlikeOrIterableType == "asynciterable"
 
     def hasKeyType(self):
         return self.keyType is not None
@@ -4575,12 +4605,17 @@ class IDLMaplikeOrSetlikeOrIterableBase(IDLInterfaceMember):
                 [IDLExtendedAttribute(self.location, ("NewObject",))]
             )
         if isIteratorAlias:
-            method.addExtendedAttributes(
-                [IDLExtendedAttribute(self.location, ("Alias", "@@iterator"))]
-            )
+            if not self.isAsyncIterable():
+                method.addExtendedAttributes(
+                    [IDLExtendedAttribute(self.location, ("Alias", "@@iterator"))]
+                )
+            else:
+                method.addExtendedAttributes(
+                    [IDLExtendedAttribute(self.location, ("Alias", "@@asyncIterator"))]
+                )
         # Methods generated for iterables should be enumerable, but the ones for
         # maplike/setlike should not be.
-        if not self.isIterable():
+        if not self.isIterable() and not self.isAsyncIterable():
             method.addExtendedAttributes(
                 [IDLExtendedAttribute(self.location, ("NonEnumerable",))]
             )
@@ -4646,7 +4681,7 @@ class IDLMaplikeOrSetlikeOrIterableBase(IDLInterfaceMember):
 # Iterable adds ES6 iterator style functions and traits
 # (keys/values/entries/@@iterator) to an interface.
 class IDLIterable(IDLMaplikeOrSetlikeOrIterableBase):
-    def __init__(self, location, identifier, keyType, valueType=None, scope=None):
+    def __init__(self, location, identifier, keyType, valueType, scope):
         IDLMaplikeOrSetlikeOrIterableBase.__init__(
             self,
             location,
@@ -4711,6 +4746,89 @@ class IDLIterable(IDLMaplikeOrSetlikeOrIterableBase):
             False,
             BuiltinTypes[IDLBuiltinType.Types.void],
             self.getForEachArguments(),
+        )
+
+    def isValueIterator(self):
+        return not self.isPairIterator()
+
+    def isPairIterator(self):
+        return self.hasKeyType()
+
+
+class IDLAsyncIterable(IDLMaplikeOrSetlikeOrIterableBase):
+    def __init__(self, location, identifier, keyType, valueType, argList, scope):
+        for arg in argList:
+            if not arg.optional:
+                raise WebIDLError(
+                    "The arguments of the asynchronously iterable declaration on "
+                    "%s must all be optional arguments." % identifier,
+                    [arg.location],
+                )
+
+        IDLMaplikeOrSetlikeOrIterableBase.__init__(
+            self,
+            location,
+            identifier,
+            "asynciterable",
+            keyType,
+            valueType,
+            IDLInterfaceMember.Tags.AsyncIterable,
+        )
+        self.iteratorType = None
+        self.argList = argList
+
+    def __str__(self):
+        return "declared async iterable with key '%s' and value '%s'" % (
+            self.keyType,
+            self.valueType,
+        )
+
+    def expand(self, members):
+        """
+        In order to take advantage of all of the method machinery in Codegen,
+        we generate our functions as if they were part of the interface
+        specification during parsing.
+        """
+        # object values()
+        self.addMethod(
+            "values",
+            members,
+            False,
+            self.iteratorType,
+            self.argList,
+            affectsNothing=True,
+            newObject=True,
+            isIteratorAlias=(not self.isPairIterator()),
+        )
+
+        # We only need to add entries/keys here if we're a pair iterator.
+        if not self.isPairIterator():
+            return
+
+        # Methods can't share their IDLArguments, so we need to make copies here.
+        def copyArgList(argList):
+            return map(copy.copy, argList)
+
+        # object entries()
+        self.addMethod(
+            "entries",
+            members,
+            False,
+            self.iteratorType,
+            copyArgList(self.argList),
+            affectsNothing=True,
+            newObject=True,
+            isIteratorAlias=True,
+        )
+        # object keys()
+        self.addMethod(
+            "keys",
+            members,
+            False,
+            self.iteratorType,
+            copyArgList(self.argList),
+            affectsNothing=True,
+            newObject=True,
         )
 
     def isValueIterator(self):
@@ -7542,6 +7660,7 @@ class Parser(Tokenizer):
                                                          | Maplike
                                                          | Setlike
                                                          | Iterable
+                                                         | AsyncIterable
                                                          | Operation
         """
         p[0] = p[1]
@@ -7563,6 +7682,38 @@ class Parser(Tokenizer):
             valueType = p[3]
 
         p[0] = IDLIterable(location, identifier, keyType, valueType, self.globalScope())
+
+    def p_AsyncIterable(self, p):
+        """
+        AsyncIterable : ASYNC ITERABLE LT TypeWithExtendedAttributes GT SEMICOLON
+                      | ASYNC ITERABLE LT TypeWithExtendedAttributes COMMA TypeWithExtendedAttributes GT SEMICOLON
+                      | ASYNC ITERABLE LT TypeWithExtendedAttributes GT LPAREN ArgumentList RPAREN SEMICOLON
+                      | ASYNC ITERABLE LT TypeWithExtendedAttributes COMMA TypeWithExtendedAttributes GT LPAREN ArgumentList RPAREN SEMICOLON
+        """
+        location = self.getLocation(p, 2)
+        identifier = IDLUnresolvedIdentifier(
+            location, "__iterable", allowDoubleUnderscore=True
+        )
+        if len(p) == 12:
+            keyType = p[4]
+            valueType = p[6]
+            argList = p[9]
+        elif len(p) == 10:
+            keyType = None
+            valueType = p[4]
+            argList = p[7]
+        elif len(p) == 9:
+            keyType = p[4]
+            valueType = p[6]
+            argList = []
+        else:
+            keyType = None
+            valueType = p[4]
+            argList = []
+
+        p[0] = IDLAsyncIterable(
+            location, identifier, keyType, valueType, argList, self.globalScope()
+        )
 
     def p_Setlike(self, p):
         """
@@ -8653,25 +8804,38 @@ class Parser(Tokenizer):
             # means we have to loop through the members to see if we have an
             # iterable member.
             for m in iface.members:
-                if isinstance(m, IDLIterable):
+                if isinstance(m, (IDLIterable, IDLAsyncIterable)):
                     iterable = m
                     break
-            if iterable and iterable.isPairIterator():
+            if iterable and (iterable.isPairIterator() or iterable.isAsyncIterable()):
 
                 def simpleExtendedAttr(str):
                     return IDLExtendedAttribute(iface.location, (str,))
 
+                if isinstance(iterable, IDLAsyncIterable):
+                    nextReturnType = IDLPromiseType(
+                        iterable.location, BuiltinTypes[IDLBuiltinType.Types.any]
+                    )
+                else:
+                    nextReturnType = BuiltinTypes[IDLBuiltinType.Types.object]
                 nextMethod = IDLMethod(
                     iface.location,
                     IDLUnresolvedIdentifier(iface.location, "next"),
-                    BuiltinTypes[IDLBuiltinType.Types.object],
+                    nextReturnType,
                     [],
                 )
                 nextMethod.addExtendedAttributes([simpleExtendedAttr("Throws")])
+                if iterable.isIterable():
+                    itr_suffix = "Iterator"
+                else:
+                    itr_suffix = "AsyncIterator"
                 itr_ident = IDLUnresolvedIdentifier(
-                    iface.location, iface.identifier.name + "Iterator"
+                    iface.location, iface.identifier.name + itr_suffix
                 )
-                classNameOverride = iface.identifier.name + " Iterator"
+                if iterable.isIterable():
+                    classNameOverride = iface.identifier.name + " Iterator"
+                elif iterable.isAsyncIterable():
+                    classNameOverride = iface.identifier.name + " AsyncIterator"
                 itr_iface = IDLInterface(
                     iface.location,
                     self.globalScope(),
@@ -8692,7 +8856,10 @@ class Parser(Tokenizer):
                 # Always append generated iterable interfaces after the
                 # interface they're a member of, otherwise nativeType generation
                 # won't work correctly.
-                itr_iface.iterableInterface = iface
+                if iterable.isIterable():
+                    itr_iface.iterableInterface = iface
+                else:
+                    itr_iface.asyncIterableInterface = iface
                 self._productions.append(itr_iface)
                 iterable.iteratorType = IDLWrapperType(iface.location, itr_iface)
 

@@ -52,8 +52,12 @@ void SharedMessageBody::Read(JSContext* aCx,
                              ErrorResult& aRv) {
   MOZ_ASSERT(aRefMessageBodyService);
 
+  JS::CloneDataPolicy cloneDataPolicy;
+
   if (mCloneData) {
-    return mCloneData->Read(aCx, aValue, aRv);
+    // Use a default cloneDataPolicy here, because SharedArrayBuffers and WASM
+    // are not supported.
+    return mCloneData->Read(aCx, aValue, cloneDataPolicy, aRv);
   }
 
   MOZ_ASSERT(!mRefData);
@@ -70,7 +74,7 @@ void SharedMessageBody::Read(JSContext* aCx,
     return;
   }
 
-  mRefData->Read(aCx, aValue, aRv);
+  mRefData->Read(aCx, aValue, cloneDataPolicy, aRv);
 }
 
 bool SharedMessageBody::TakeTransferredPortsAsSequence(

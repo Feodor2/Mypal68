@@ -35,19 +35,19 @@ StructuredCloneBlob::~StructuredCloneBlob() {
 
 /* static */
 already_AddRefed<StructuredCloneBlob> StructuredCloneBlob::Constructor(
-    GlobalObject& aGlobal, JS::HandleValue aValue,
-    JS::HandleObject aTargetGlobal, ErrorResult& aRv) {
+    GlobalObject& aGlobal, JS::Handle<JS::Value> aValue,
+    JS::Handle<JSObject*> aTargetGlobal, ErrorResult& aRv) {
   JSContext* cx = aGlobal.Context();
 
   RefPtr<StructuredCloneBlob> holder = StructuredCloneBlob::Create();
 
   Maybe<JSAutoRealm> ar;
-  JS::RootedValue value(cx, aValue);
+  JS::Rooted<JS::Value> value(cx, aValue);
 
   if (aTargetGlobal) {
     // OK to unwrap if our caller (represented by cx's Realm) can do it.
-    JS::RootedObject targetGlobal(cx,
-                                  js::CheckedUnwrapDynamic(aTargetGlobal, cx));
+    JS::Rooted<JSObject*> targetGlobal(
+        cx, js::CheckedUnwrapDynamic(aTargetGlobal, cx));
     if (!targetGlobal) {
       js::ReportAccessDenied(cx);
       aRv.NoteJSContextException(cx);
@@ -62,7 +62,8 @@ already_AddRefed<StructuredCloneBlob> StructuredCloneBlob::Constructor(
     }
   } else if (value.isObject()) {
     // OK to unwrap if our caller (represented by cx's Realm) can do it.
-    JS::RootedObject obj(cx, js::CheckedUnwrapDynamic(&value.toObject(), cx));
+    JS::Rooted<JSObject*> obj(cx,
+                              js::CheckedUnwrapDynamic(&value.toObject(), cx));
     if (!obj) {
       js::ReportAccessDenied(cx);
       aRv.NoteJSContextException(cx);
@@ -82,12 +83,12 @@ already_AddRefed<StructuredCloneBlob> StructuredCloneBlob::Constructor(
 }
 
 void StructuredCloneBlob::Deserialize(JSContext* aCx,
-                                      JS::HandleObject aTargetScope,
+                                      JS::Handle<JSObject*> aTargetScope,
                                       bool aKeepData,
-                                      JS::MutableHandleValue aResult,
+                                      JS::MutableHandle<JS::Value> aResult,
                                       ErrorResult& aRv) {
   // OK to unwrap if our caller (represented by aCx's Realm) can do it.
-  JS::RootedObject scope(aCx, js::CheckedUnwrapDynamic(aTargetScope, aCx));
+  JS::Rooted<JSObject*> scope(aCx, js::CheckedUnwrapDynamic(aTargetScope, aCx));
   if (!scope) {
     js::ReportAccessDenied(aCx);
     aRv.NoteJSContextException(aCx);
@@ -122,7 +123,7 @@ void StructuredCloneBlob::Deserialize(JSContext* aCx,
 JSObject* StructuredCloneBlob::ReadStructuredClone(
     JSContext* aCx, JSStructuredCloneReader* aReader,
     StructuredCloneHolder* aHolder) {
-  JS::RootedObject obj(aCx);
+  JS::Rooted<JSObject*> obj(aCx);
   {
     RefPtr<StructuredCloneBlob> holder = StructuredCloneBlob::Create();
 
@@ -202,8 +203,8 @@ bool StructuredCloneBlob::Holder::WriteStructuredClone(
 }
 
 bool StructuredCloneBlob::WrapObject(JSContext* aCx,
-                                     JS::HandleObject aGivenProto,
-                                     JS::MutableHandleObject aResult) {
+                                     JS::Handle<JSObject*> aGivenProto,
+                                     JS::MutableHandle<JSObject*> aResult) {
   return StructuredCloneHolder_Binding::Wrap(aCx, this, aGivenProto, aResult);
 }
 

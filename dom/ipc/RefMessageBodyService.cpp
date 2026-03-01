@@ -142,9 +142,10 @@ RefMessageBody::RefMessageBody(const nsID& aPortID,
 RefMessageBody::~RefMessageBody() = default;
 
 void RefMessageBody::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+                          const JS::CloneDataPolicy& aCloneDataPolicy,
                           ErrorResult& aRv) {
   MutexAutoLock lock(mMutex);
-  mCloneData->Read(aCx, aValue, aRv);
+  mCloneData->Read(aCx, aValue, aCloneDataPolicy, aRv);
 }
 
 bool RefMessageBody::TakeTransferredPortsAsSequence(

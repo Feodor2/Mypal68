@@ -6,7 +6,7 @@
 #include "XMLHttpRequestMainThread.h"
 #include "XMLHttpRequestWorker.h"
 #include "mozilla/dom/ChromeUtilsBinding.h" //MY
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla {
@@ -26,7 +26,7 @@ already_AddRefed<XMLHttpRequest> XMLHttpRequest::Constructor(
       return nullptr;
     }
 
-    nsCOMPtr<nsICookieSettings> cookieSettings;
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
     if (window) {
       Document* document = window->GetExtantDoc();
@@ -35,14 +35,14 @@ already_AddRefed<XMLHttpRequest> XMLHttpRequest::Constructor(
         return nullptr;
       }
 
-      cookieSettings = document->CookieSettings();
+      cookieJarSettings = document->CookieJarSettings();
     } else {
       // We are here because this is a sandbox.
-      cookieSettings = net::CookieSettings::Create();
+      cookieJarSettings = net::CookieJarSettings::Create();
     }
 
     RefPtr<XMLHttpRequestMainThread> req = new XMLHttpRequestMainThread(global);
-    req->Construct(principal->GetPrincipal(), cookieSettings, false);
+    req->Construct(principal->GetPrincipal(), cookieJarSettings, false);
     req->InitParameters(aParams.mMozAnon, aParams.mMozSystem);
     return req.forget();
   }

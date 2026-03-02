@@ -240,6 +240,7 @@ bool nsWindow::sDropShadowEnabled = true;
 uint32_t nsWindow::sInstanceCount = 0;
 bool nsWindow::sSwitchKeyboardLayout = false;
 BOOL nsWindow::sIsOleInitialized = FALSE;
+HCURSOR nsWindow::sHCursor = nullptr;
 nsIWidget::Cursor nsWindow::sCurrentCursor = {};
 nsWindow* nsWindow::sCurrentWindow = nullptr;
 bool nsWindow::sJustGotDeactivate = false;
@@ -2885,45 +2886,40 @@ static HCURSOR CursorForImage(const nsIWidget::Cursor& aCursor,
   return cursor;
 }
 
+// Setting the actual cursor
 void nsWindow::SetCursor(const Cursor& aCursor) {
-  static HCURSOR sCurrentHCursor = nullptr;
-  static bool sCurrentHCursorIsCustom = false;
-
-  mCursor = aCursor;
-
-  if (sCurrentCursor == aCursor && sCurrentHCursor && !mUpdateCursor) {
-    // Cursors in windows are global, so even if our mUpdateCursor flag is
-    // false we always need to make sure the Windows cursor is up-to-date,
-    // since stuff like native drag and drop / resizers code can mutate it
-    // outside of this method.
-    ::SetCursor(sCurrentHCursor);
+  if (sCurrentCursor == aCursor && sHCursor) {
+    ::SetCursor(sHCursor);
     return;
   }
 
-  mUpdateCursor = false;
-
-  if (sCurrentHCursorIsCustom) {
-    ::DestroyIcon(sCurrentHCursor);
-  }
-  sCurrentHCursor = nullptr;
-  sCurrentHCursorIsCustom = false;
-  sCurrentCursor = aCursor;
+  mCursor = aCursor;
 
   HCURSOR cursor = CursorForImage(aCursor, GetDefaultScale());
-  bool custom = false;
   if (cursor) {
-    custom = true;
-  } else {
-    cursor = CursorFor(aCursor.mDefaultCursor);
+    ::SetCursor(cursor);
+    sCurrentCursor = aCursor;
+    if (sHCursor) {
+      ::DestroyIcon(sHCursor);
+    }
+    sHCursor = cursor;
+    return;
   }
 
+  cursor = CursorFor(aCursor.mDefaultCursor);
   if (!cursor) {
     return;
   }
 
-  sCurrentHCursor = cursor;
-  sCurrentHCursorIsCustom = custom;
-  ::SetCursor(cursor);
+  HCURSOR oldCursor = ::SetCursor(cursor);
+  sCurrentCursor = aCursor;
+
+  if (sHCursor == oldCursor) {
+    if (sHCursor) {
+      ::DestroyIcon(sHCursor);
+    }
+    sHCursor = nullptr;
+  }
 }
 
 /**************************************************************

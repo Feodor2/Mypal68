@@ -27,6 +27,10 @@ public:
 
   CmapCacheSlot* GetCmapCacheSlot(uint32_t aCharCode);
 
+  static bool FaceHasTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag);
+  static nsresult CopyFaceTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag,
+                                nsTArray<uint8_t>&);
+
  private:
   enum { kNumCmapCacheSlots = 256 };
 

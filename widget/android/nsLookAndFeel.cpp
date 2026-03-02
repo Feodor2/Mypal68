@@ -350,6 +350,10 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = eScrollThumbStyle_Proportional;
       break;
 
+    case IntID::TouchEnabled:
+      aResult = 1;
+      break;
+
     case IntID::WindowsDefaultTheme:
     case IntID::WindowsThemeIdentifier:
       aResult = 0;

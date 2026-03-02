@@ -55,6 +55,10 @@ enum EmojiPresentation { TextOnly = 0, TextDefault = 1, EmojiDefault = 2 };
 const uint32_t kVariationSelector15 = 0xFE0E;  // text presentation
 const uint32_t kVariationSelector16 = 0xFE0F;  // emoji presentation
 
+// Unicode values for EMOJI MODIFIER FITZPATRICK TYPE-*
+const uint32_t kEmojiSkinToneFirst = 0x1f3fb;
+const uint32_t kEmojiSkinToneLast = 0x1f3ff;
+
 extern const hb_unicode_general_category_t sICUtoHBcategory[];
 
 inline uint8_t GetGeneralCategory(uint32_t aCh) {

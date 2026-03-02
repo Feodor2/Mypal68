@@ -433,6 +433,9 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::WindowsClassic:
       aResult = !IsAppThemed();
       break;
+    case IntID::TouchEnabled:
+      aResult = WinUtils::IsTouchDeviceSupportPresent();
+      break;
     case IntID::WindowsDefaultTheme:
       if (XRE_IsContentProcess()) {
         aResult = mUseDefaultTheme;

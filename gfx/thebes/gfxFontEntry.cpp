@@ -78,9 +78,7 @@ gfxFontEntry::gfxFontEntry()
       mHasCmapTable(false),
       mGrFaceInitialized(false),
       mCheckedForColorGlyph(false),
-      mCheckedForVariationAxes(false),
-      mHasColorBitmapTable(false),
-      mCheckedForColorBitmapTables(false) {
+      mCheckedForVariationAxes(false) {
   memset(&mDefaultSubSpaceFeatures, 0, sizeof(mDefaultSubSpaceFeatures));
   memset(&mNonDefaultSubSpaceFeatures, 0, sizeof(mNonDefaultSubSpaceFeatures));
 }
@@ -110,9 +108,7 @@ gfxFontEntry::gfxFontEntry(const nsACString& aName, bool aIsStandardFace)
       mHasCmapTable(false),
       mGrFaceInitialized(false),
       mCheckedForColorGlyph(false),
-      mCheckedForVariationAxes(false),
-      mHasColorBitmapTable(false),
-      mCheckedForColorBitmapTables(false) {
+      mCheckedForVariationAxes(false) {
   memset(&mDefaultSubSpaceFeatures, 0, sizeof(mDefaultSubSpaceFeatures));
   memset(&mNonDefaultSubSpaceFeatures, 0, sizeof(mNonDefaultSubSpaceFeatures));
 }
@@ -1416,8 +1412,7 @@ static inline double WeightStyleStretchDistance(
   // weight/style/stretch priority: stretch >> style >> weight
   // so we multiply the stretch and style values to make them dominate
   // the result
-  return stretchDist * kStretchFactor + styleDist * kStyleFactor +
-         weightDist * kWeightFactor;
+  return stretchDist * 1.0e8 + styleDist * 1.0e4 + weightDist;
 }
 
 void gfxFontFamily::FindAllFontsForStyle(
@@ -1656,17 +1651,6 @@ void gfxFontFamily::FindFontForChar(GlobalFontMatch* aMatchData) {
 
       fe = e;
       distance = WeightStyleStretchDistance(fe, aMatchData->mStyle);
-      if (aMatchData->mPresentation != eFontPresentation::Any) {
-        RefPtr<gfxFont> font = fe->FindOrMakeFont(&aMatchData->mStyle);
-        if (!font) {
-          continue;
-        }
-        bool hasColorGlyph =
-            font->HasColorGlyphFor(aMatchData->mCh, aMatchData->mNextCh);
-        if (hasColorGlyph != PrefersColor(aMatchData->mPresentation)) {
-          distance += kPresentationMismatch;
-        }
-      }
       break;
     }
   }
@@ -1675,8 +1659,7 @@ void gfxFontFamily::FindFontForChar(GlobalFontMatch* aMatchData) {
     // If style/weight/stretch was not Normal, see if we can
     // fall back to a next-best face (e.g. Arial Black -> Bold,
     // or Arial Narrow -> Regular).
-    GlobalFontMatch data(aMatchData->mCh, aMatchData->mNextCh,
-                         aMatchData->mStyle, aMatchData->mPresentation);
+    GlobalFontMatch data(aMatchData->mCh, aMatchData->mStyle);
     SearchAllFontsForChar(&data);
     if (!data.mBestMatch) {
       return;
@@ -1704,17 +1687,6 @@ void gfxFontFamily::SearchAllFontsForChar(GlobalFontMatch* aMatchData) {
     gfxFontEntry* fe = mAvailableFonts[i];
     if (fe && fe->HasCharacter(aMatchData->mCh)) {
       float distance = WeightStyleStretchDistance(fe, aMatchData->mStyle);
-      if (aMatchData->mPresentation != eFontPresentation::Any) {
-        RefPtr<gfxFont> font = fe->FindOrMakeFont(&aMatchData->mStyle);
-        if (!font) {
-          continue;
-        }
-        bool hasColorGlyph =
-            font->HasColorGlyphFor(aMatchData->mCh, aMatchData->mNextCh);
-        if (hasColorGlyph != PrefersColor(aMatchData->mPresentation)) {
-          distance += kPresentationMismatch;
-        }
-      }
       if (distance < aMatchData->mMatchDistance ||
           (distance == aMatchData->mMatchDistance &&
            Compare(fe->Name(), aMatchData->mBestMatch->Name()) > 0)) {

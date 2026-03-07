@@ -335,11 +335,18 @@ class ScrollFrameHelper : public nsIReflowCallback {
   nsRect GetUnsnappedScrolledRectInternal(const nsRect& aScrolledOverflowArea,
                                           const nsSize& aScrollPortSize) const;
 
-  uint32_t GetAvailableScrollingDirectionsForUserInputEvents() const;
+  layers::ScrollDirections GetAvailableScrollingDirectionsForUserInputEvents()
+      const;
 
-  uint32_t GetScrollbarVisibility() const {
-    return (mHasVerticalScrollbar ? nsIScrollableFrame::VERTICAL : 0) |
-           (mHasHorizontalScrollbar ? nsIScrollableFrame::HORIZONTAL : 0);
+  layers::ScrollDirections GetScrollbarVisibility() const {
+    layers::ScrollDirections result;
+    if (mHasHorizontalScrollbar) {
+      result += layers::ScrollDirection::eHorizontal;
+    }
+    if (mHasVerticalScrollbar) {
+      result += layers::ScrollDirection::eVertical;
+    }
+    return result;
   }
   nsMargin GetActualScrollbarSizes(
       nsIScrollableFrame::ScrollbarSizesOptions aOptions =
@@ -367,13 +374,13 @@ class ScrollFrameHelper : public nsIReflowCallback {
 
  public:
   bool IsScrollbarOnRight() const;
-  bool IsScrollingActive(nsDisplayListBuilder* aBuilder) const;
+  bool IsScrollingActive() const;
   bool IsMaybeAsynchronouslyScrolled() const {
     // If this is true, then we'll build an ASR, and that's what we want
     // to know I think.
     return mWillBuildScrollableLayer;
   }
-  bool IsMaybeScrollingActive() const;
+
   void ResetScrollPositionForLayerPixelAlignment() {
     mScrollPosForLayerPixelAlignment = GetScrollPosition();
   }
@@ -898,10 +905,11 @@ class nsHTMLScrollFrame : public nsContainerFrame,
       const final {
     return mHelper.GetOverscrollBehaviorInfo();
   }
-  uint32_t GetAvailableScrollingDirectionsForUserInputEvents() const final {
+  mozilla::layers::ScrollDirections
+  GetAvailableScrollingDirectionsForUserInputEvents() const final {
     return mHelper.GetAvailableScrollingDirectionsForUserInputEvents();
   }
-  uint32_t GetScrollbarVisibility() const final {
+  mozilla::layers::ScrollDirections GetScrollbarVisibility() const final {
     return mHelper.GetScrollbarVisibility();
   }
   nsMargin GetActualScrollbarSizes(
@@ -1026,12 +1034,7 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     mHelper.PostScrolledAreaEvent();
     return NS_OK;
   }
-  bool IsScrollingActive(nsDisplayListBuilder* aBuilder) final {
-    return mHelper.IsScrollingActive(aBuilder);
-  }
-  bool IsMaybeScrollingActive() const final {
-    return mHelper.IsMaybeScrollingActive();
-  }
+  bool IsScrollingActive() final { return mHelper.IsScrollingActive(); }
   bool IsMaybeAsynchronouslyScrolled() final {
     return mHelper.IsMaybeAsynchronouslyScrolled();
   }
@@ -1377,10 +1380,11 @@ class nsXULScrollFrame final : public nsBoxFrame,
       const final {
     return mHelper.GetOverscrollBehaviorInfo();
   }
-  uint32_t GetAvailableScrollingDirectionsForUserInputEvents() const final {
+  mozilla::layers::ScrollDirections
+  GetAvailableScrollingDirectionsForUserInputEvents() const final {
     return mHelper.GetAvailableScrollingDirectionsForUserInputEvents();
   }
-  uint32_t GetScrollbarVisibility() const final {
+  mozilla::layers::ScrollDirections GetScrollbarVisibility() const final {
     return mHelper.GetScrollbarVisibility();
   }
   nsMargin GetActualScrollbarSizes(
@@ -1501,12 +1505,7 @@ class nsXULScrollFrame final : public nsBoxFrame,
     mHelper.PostScrolledAreaEvent();
     return NS_OK;
   }
-  bool IsScrollingActive(nsDisplayListBuilder* aBuilder) final {
-    return mHelper.IsScrollingActive(aBuilder);
-  }
-  bool IsMaybeScrollingActive() const final {
-    return mHelper.IsMaybeScrollingActive();
-  }
+  bool IsScrollingActive() final { return mHelper.IsScrollingActive(); }
   bool IsMaybeAsynchronouslyScrolled() final {
     return mHelper.IsMaybeAsynchronouslyScrolled();
   }

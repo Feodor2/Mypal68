@@ -182,7 +182,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mType(aType),
       mInflationDisabledForShrinkWrap(false),
       mInteractionTimeEnabled(true),
-      mChangeHintForPrefChange(nsChangeHint(0)),
       mHasPendingInterrupt(false),
       mHasEverBuiltInvisibleText(false),
       mPendingInterruptFromTest(false),
@@ -199,6 +198,7 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mPrefScrollbarSide(0),
       mPendingThemeChanged(false),
       mPendingUIResolutionChanged(false),
+      mPrefChangePendingNeedsReflow(false),
       mPostedPrefChangedRunnable(false),
       mIsGlyph(false),
       mUsesFontMetricDependentFontUnits(false),
@@ -507,7 +507,7 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
       if (!mMissingFonts) {
         mMissingFonts = MakeUnique<gfxMissingFontRecorder>();
         // trigger reflow to detect missing fonts on the current page
-        mChangeHintForPrefChange |= NS_STYLE_HINT_REFLOW;
+        mPrefChangePendingNeedsReflow = true;
       }
     } else {
       if (mMissingFonts) {
@@ -516,18 +516,28 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
       mMissingFonts = nullptr;
     }
   }
-  if (prefName.EqualsLiteral("font.internaluseonly.changed")) {
-    mChangeHintForPrefChange |= nsChangeHint_ReconstructFrame;
-  } else if (StringBeginsWith(prefName, "font."_ns) ||
-      // Changes to font family preferences don't change anything in the
-      // computed style data, so the style system won't generate a reflow
-      // hint for us.  We need to do that manually.
-      prefName.EqualsLiteral("intl.accept_languages") ||
-      // Changes to bidi prefs need to trigger a reflow (see bug 443629)
-      StringBeginsWith(prefName, "bidi."_ns) ||
-      // Changes to font_rendering prefs need to trigger a reflow
-      StringBeginsWith(prefName, "gfx.font_rendering."_ns)) {
-    mChangeHintForPrefChange |= NS_STYLE_HINT_REFLOW;
+  if (StringBeginsWith(prefName, "font."_ns) ||
+      prefName.EqualsLiteral("intl.accept_languages")) {
+    // Changes to font family preferences don't change anything in the
+    // computed style data, so the style system won't generate a reflow
+    // hint for us.  We need to do that manually.
+
+    // FIXME We could probably also handle changes to
+    // browser.display.auto_quality_min_font_size here, but that
+    // probably also requires clearing the text run cache, so don't
+    // bother (yet, anyway).
+    mPrefChangePendingNeedsReflow = true;
+  }
+  if (StringBeginsWith(prefName, "bidi."_ns)) {
+    // Changes to bidi prefs need to trigger a reflow (see bug 443629)
+    mPrefChangePendingNeedsReflow = true;
+
+    // Changes to bidi.numeral also needs to empty the text run cache.
+    // This is handled in gfxTextRunWordCache.cpp.
+  }
+  if (StringBeginsWith(prefName, "gfx.font_rendering."_ns)) {
+    // Changes to font_rendering prefs need to trigger a reflow
+    mPrefChangePendingNeedsReflow = true;
   }
 
   // We will end up calling InvalidatePreferenceSheets one from each pres
@@ -579,10 +589,15 @@ void nsPresContext::UpdateAfterPreferencesChanged() {
   InvalidatePaintedLayers();
   FlushFontCache();
 
+  nsChangeHint hint = nsChangeHint(0);
+
+  if (mPrefChangePendingNeedsReflow) {
+    hint |= NS_STYLE_HINT_REFLOW;
+  }
+
   // Preferences require rerunning selector matching because we rebuild
   // the pref style sheet for some preference changes.
-  RebuildAllStyleData(mChangeHintForPrefChange, RestyleHint::RestyleSubtree());
-  mChangeHintForPrefChange = nsChangeHint(0);
+  RebuildAllStyleData(hint, RestyleHint::RestyleSubtree());
 }
 
 nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {

@@ -1262,6 +1262,13 @@ static nsIContent* NextSiblingWhichMayHaveFrame(nsIContent* aContent) {
   return nullptr;
 }
 
+// If |aFrame| is dirty or has dirty children, then we can skip updating
+// overflows since that will happen when it's reflowed.
+static inline bool CanSkipOverflowUpdates(const nsIFrame* aFrame) {
+  return aFrame->HasAnyStateBits(
+      NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN);
+}
+
 void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "Someone forgot a script blocker");
@@ -1668,10 +1675,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
             // the outer svg's anonymous child frame (instead of to the
             // anonymous child's children).
 
-            // If |hintFrame| is dirty or has dirty children, we don't bother
-            // updating overflows since that will happen when it's reflowed.
-            if (!hintFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
-                                            NS_FRAME_HAS_DIRTY_CHILDREN)) {
+            if (!CanSkipOverflowUpdates(hintFrame)) {
               mOverflowChangedTracker.AddFrame(
                   hintFrame, OverflowChangedTracker::CHILDREN_CHANGED);
             }
@@ -1682,10 +1686,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
             for (; childFrame; childFrame = childFrame->GetNextSibling()) {
               MOZ_ASSERT(childFrame->IsFrameOfType(nsIFrame::eSVG),
                          "Not expecting non-SVG children");
-              // If |childFrame| is dirty or has dirty children, we don't bother
-              // updating overflows since that will happen when it's reflowed.
-              if (!childFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
-                                               NS_FRAME_HAS_DIRTY_CHILDREN)) {
+              if (!CanSkipOverflowUpdates(childFrame)) {
                 mOverflowChangedTracker.AddFrame(
                     childFrame, OverflowChangedTracker::CHILDREN_CHANGED);
               }
@@ -1699,10 +1700,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
             }
           }
         }
-        // If |frame| is dirty or has dirty children, we don't bother updating
-        // overflows since that will happen when it's reflowed.
-        if (!frame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
-                                    NS_FRAME_HAS_DIRTY_CHILDREN)) {
+        if (!CanSkipOverflowUpdates(frame)) {
           if (hint & (nsChangeHint_UpdateOverflow |
                       nsChangeHint_UpdatePostTransformOverflow)) {
             OverflowChangedTracker::ChangeKind changeKind;

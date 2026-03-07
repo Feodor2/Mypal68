@@ -221,12 +221,12 @@ void nsGridRowLeafLayout::ComputeChildSizes(
         // to call that while we're reflowing the contents of the scrollframe,
         // which we are here.
         nsMargin scrollbarSizes = scrollable->GetDesiredScrollbarSizes(&aState);
-        uint32_t visible = scrollable->GetScrollbarVisibility();
+        layers::ScrollDirections visible = scrollable->GetScrollbarVisibility();
 
-        if (isHorizontal && (visible & nsIScrollableFrame::VERTICAL)) {
+        if (isHorizontal && (visible.contains(layers::ScrollDirection::eVertical))) {
           diff += scrollbarSizes.left + scrollbarSizes.right;
         } else if (!isHorizontal &&
-                   (visible & nsIScrollableFrame::HORIZONTAL)) {
+                   (visible.contains(layers::ScrollDirection::eHorizontal))) {
           diff += scrollbarSizes.top + scrollbarSizes.bottom;
         }
       }

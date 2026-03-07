@@ -357,27 +357,6 @@ class nsReflowStatus final {
 // Convert nsReflowStatus to a human-readable string.
 std::ostream& operator<<(std::ostream& aStream, const nsReflowStatus& aStatus);
 
-//----------------------------------------------------------------------
-
-/**
- * When there is no scrollable overflow rect, the ink overflow rect
- * may be stored as four 1-byte deltas each strictly LESS THAN 0xff, for
- * the four edges of the rectangle, or the four bytes may be read as a
- * single 32-bit "overflow-rect type" value including at least one 0xff
- * byte as an indicator that the value does NOT represent four deltas.
- * If all four deltas are zero, this means that no overflow rect has
- * actually been set (this is the initial state of newly-created frames).
- */
-
-// max delta we can store
-#define NS_FRAME_OVERFLOW_DELTA_MAX 0xfe
-
-// there are no overflow rects; code relies on this being the all-zero value
-#define NS_FRAME_OVERFLOW_NONE 0x00000000
-
-// overflow is stored as a separate rect property
-#define NS_FRAME_OVERFLOW_LARGE 0x000000ff
-
 namespace mozilla {
 
 // https://drafts.csswg.org/css-align-3/#baseline-sharing-group
@@ -1101,8 +1080,8 @@ class nsIFrame : public nsQueryFrame {
     if (aRect == mRect) {
       return;
     }
-    if (mOverflow.mType != NS_FRAME_OVERFLOW_LARGE &&
-        mOverflow.mType != NS_FRAME_OVERFLOW_NONE) {
+    if (mOverflow.mType != OverflowStorageType::Large &&
+        mOverflow.mType != OverflowStorageType::None) {
       mozilla::OverflowAreas overflow = GetOverflowAreas();
       mRect = aRect;
       SetOverflowAreas(overflow);
@@ -3599,6 +3578,14 @@ class nsIFrame : public nsQueryFrame {
   mozilla::OverflowAreas GetOverflowAreasRelativeToSelf() const;
 
   /**
+   * Same as GetOverflowAreas, except relative to the parent frame.
+   *
+   * @return the overflow area relative to the parent frame, in the parent
+   * frame's coordinate system
+   */
+  mozilla::OverflowAreas GetOverflowAreasRelativeToParent() const;
+
+  /**
    * Same as ScrollableOverflowRect, except relative to the parent
    * frame.
    *
@@ -3642,8 +3629,8 @@ class nsIFrame : public nsQueryFrame {
   nsRect PreEffectsInkOverflowRect() const;
 
   /**
-   * Store the overflow area in the frame's mOverflow.mVisualDeltas
-   * fields or as a frame property in the frame manager so that it can
+   * Store the overflow area in the frame's mOverflow.mInkOverflowDeltas
+   * fields or as a frame property in OverflowAreasProperty() so that it can
    * be retrieved later without reflowing the frame. Returns true if either of
    * the overflow areas changed.
    */
@@ -3663,7 +3650,7 @@ class nsIFrame : public nsQueryFrame {
    * its border-box.
    */
   bool HasOverflowAreas() const {
-    return mOverflow.mType != NS_FRAME_OVERFLOW_NONE;
+    return mOverflow.mType != OverflowStorageType::None;
   }
 
   /**
@@ -4998,31 +4985,44 @@ class nsIFrame : public nsQueryFrame {
    */
   FrameProperties mProperties;
 
-  // When there is an overflow area only slightly larger than mRect,
-  // we store a set of four 1-byte deltas from the edges of mRect
-  // rather than allocating a whole separate rectangle property.
-  // Note that these are unsigned values, all measured "outwards"
-  // from the edges of mRect, so /mLeft/ and /mTop/ are reversed from
-  // our normal coordinate system.
-  // If mOverflow.mType == NS_FRAME_OVERFLOW_LARGE, then the
-  // delta values are not meaningful and the overflow area is stored
-  // as a separate rect property.
-  struct VisualDeltas {
+  // When there is no scrollable overflow area, and the ink overflow area only
+  // slightly larger than mRect, the ink overflow area may be stored a set of
+  // four 1-byte deltas from the edges of mRect rather than allocating a whole
+  // separate rectangle property. If all four deltas are zero, this means that
+  // no overflow area has actually been set (this is the initial state of
+  // newly-created frames).
+  //
+  // Note that these are unsigned values, all measured "outwards" from the edges
+  // of mRect, so mLeft and mTop are reversed from our normal coordinate system.
+  struct InkOverflowDeltas {
+    // The maximum delta value we can store in any of the four edges.
+    static constexpr uint8_t kMax = 0xfe;
+
     uint8_t mLeft;
     uint8_t mTop;
     uint8_t mRight;
     uint8_t mBottom;
-    bool operator==(const VisualDeltas& aOther) const {
+    bool operator==(const InkOverflowDeltas& aOther) const {
       return mLeft == aOther.mLeft && mTop == aOther.mTop &&
              mRight == aOther.mRight && mBottom == aOther.mBottom;
     }
-    bool operator!=(const VisualDeltas& aOther) const {
+    bool operator!=(const InkOverflowDeltas& aOther) const {
       return !(*this == aOther);
     }
   };
+  enum class OverflowStorageType : uint32_t {
+    // No overflow area; code relies on this being an all-zero value.
+    None = 0x00000000u,
+
+    // Ink overflow is too large to stored in InkOverflowDeltas.
+    Large = 0x000000ffu,
+  };
+  // If mOverflow.mType is OverflowStorageType::Large, then the delta values are
+  // not meaningful and the overflow area is stored in OverflowAreasProperty()
+  // instead.
   union {
-    uint32_t mType;
-    VisualDeltas mVisualDeltas;
+    OverflowStorageType mType;
+    InkOverflowDeltas mInkOverflowDeltas;
   } mOverflow;
 
   /** @see GetWritingMode() */
@@ -5289,28 +5289,32 @@ class nsIFrame : public nsQueryFrame {
  private:
   // Get a pointer to the overflow areas property attached to the frame.
   mozilla::OverflowAreas* GetOverflowAreasProperty() const {
-    MOZ_ASSERT(mOverflow.mType == NS_FRAME_OVERFLOW_LARGE);
+    MOZ_ASSERT(mOverflow.mType == OverflowStorageType::Large);
     mozilla::OverflowAreas* overflow = GetProperty(OverflowAreasProperty());
     MOZ_ASSERT(overflow);
     return overflow;
   }
 
   nsRect InkOverflowFromDeltas() const {
-    MOZ_ASSERT(mOverflow.mType != NS_FRAME_OVERFLOW_LARGE,
+    MOZ_ASSERT(mOverflow.mType != OverflowStorageType::Large,
                "should not be called when overflow is in a property");
     // Calculate the rect using deltas from the frame's border rect.
-    // Note that the mOverflow.mDeltas fields are unsigned, but we will often
-    // need to return negative values for the left and top, so take care
-    // to cast away the unsigned-ness.
-    return nsRect(-(int32_t)mOverflow.mVisualDeltas.mLeft,
-                  -(int32_t)mOverflow.mVisualDeltas.mTop,
-                  mRect.Width() + mOverflow.mVisualDeltas.mRight +
-                      mOverflow.mVisualDeltas.mLeft,
-                  mRect.Height() + mOverflow.mVisualDeltas.mBottom +
-                      mOverflow.mVisualDeltas.mTop);
+    // Note that the mOverflow.mInkOverflowDeltas fields are unsigned, but we
+    // will often need to return negative values for the left and top, so take
+    // care to cast away the unsigned-ness.
+    return nsRect(-(int32_t)mOverflow.mInkOverflowDeltas.mLeft,
+                  -(int32_t)mOverflow.mInkOverflowDeltas.mTop,
+                  mRect.Width() + mOverflow.mInkOverflowDeltas.mRight +
+                      mOverflow.mInkOverflowDeltas.mLeft,
+                  mRect.Height() + mOverflow.mInkOverflowDeltas.mBottom +
+                      mOverflow.mInkOverflowDeltas.mTop);
   }
+
   /**
-   * Returns true if any overflow changed.
+   * Set the OverflowArea rect, storing it as deltas or a separate rect
+   * depending on its size in relation to the primary frame rect.
+   *
+   * @return true if any overflow changed.
    */
   bool SetOverflowAreas(const mozilla::OverflowAreas& aOverflowAreas);
 

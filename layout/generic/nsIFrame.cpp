@@ -2729,7 +2729,7 @@ static void DisplayDebugBorders(nsDisplayListBuilder* aBuilder,
 
 static bool IsScrollFrameActive(nsDisplayListBuilder* aBuilder,
                                 nsIScrollableFrame* aScrollableFrame) {
-  return aScrollableFrame && aScrollableFrame->IsScrollingActive(aBuilder);
+  return aScrollableFrame && aScrollableFrame->IsScrollingActive();
 }
 
 /**
@@ -7554,13 +7554,14 @@ nsRect nsIFrame::GetOverflowRect(OverflowType aType) const {
   // areas will invalidate the appropriate area, so any (mis)uses of
   // this method will be fixed up.
 
-  if (mOverflow.mType == NS_FRAME_OVERFLOW_LARGE) {
+  if (mOverflow.mType == OverflowStorageType::Large) {
     // there is an overflow rect, and it's not stored as deltas but as
     // a separately-allocated rect
     return GetOverflowAreasProperty()->Overflow(aType);
   }
 
-  if (aType == OverflowType::Ink && mOverflow.mType != NS_FRAME_OVERFLOW_NONE) {
+  if (aType == OverflowType::Ink &&
+      mOverflow.mType != OverflowStorageType::None) {
     return InkOverflowFromDeltas();
   }
 
@@ -7568,7 +7569,7 @@ nsRect nsIFrame::GetOverflowRect(OverflowType aType) const {
 }
 
 OverflowAreas nsIFrame::GetOverflowAreas() const {
-  if (mOverflow.mType == NS_FRAME_OVERFLOW_LARGE) {
+  if (mOverflow.mType == OverflowStorageType::Large) {
     // there is an overflow rect, and it's not stored as deltas but as
     // a separately-allocated rect
     return *GetOverflowAreasProperty();
@@ -7588,6 +7589,10 @@ OverflowAreas nsIFrame::GetOverflowAreasRelativeToSelf() const {
     }
   }
   return OverflowAreas(InkOverflowRect(), ScrollableOverflowRect());
+}
+
+OverflowAreas nsIFrame::GetOverflowAreasRelativeToParent() const {
+  return GetOverflowAreas() + mRect.TopLeft();
 }
 
 nsRect nsIFrame::ScrollableOverflowRectRelativeToParent() const {
@@ -9263,21 +9268,18 @@ a11y::AccType nsIFrame::AccessibleType() {
 #endif
 
 bool nsIFrame::ClearOverflowRects() {
-  if (mOverflow.mType == NS_FRAME_OVERFLOW_NONE) {
+  if (mOverflow.mType == OverflowStorageType::None) {
     return false;
   }
-  if (mOverflow.mType == NS_FRAME_OVERFLOW_LARGE) {
+  if (mOverflow.mType == OverflowStorageType::Large) {
     RemoveProperty(OverflowAreasProperty());
   }
-  mOverflow.mType = NS_FRAME_OVERFLOW_NONE;
+  mOverflow.mType = OverflowStorageType::None;
   return true;
 }
 
-/** Set the overflowArea rect, storing it as deltas or a separate rect
- * depending on its size in relation to the primary frame rect.
- */
 bool nsIFrame::SetOverflowAreas(const OverflowAreas& aOverflowAreas) {
-  if (mOverflow.mType == NS_FRAME_OVERFLOW_LARGE) {
+  if (mOverflow.mType == OverflowStorageType::Large) {
     OverflowAreas* overflow = GetOverflowAreasProperty();
     bool changed = *overflow != aOverflowAreas;
     *overflow = aOverflowAreas;
@@ -9294,8 +9296,8 @@ bool nsIFrame::SetOverflowAreas(const OverflowAreas& aOverflowAreas) {
       b = vis.YMost() - mRect.height;  // bottom: positive is downwards
   if (aOverflowAreas.ScrollableOverflow().IsEqualEdges(
           nsRect(nsPoint(0, 0), GetSize())) &&
-      l <= NS_FRAME_OVERFLOW_DELTA_MAX && t <= NS_FRAME_OVERFLOW_DELTA_MAX &&
-      r <= NS_FRAME_OVERFLOW_DELTA_MAX && b <= NS_FRAME_OVERFLOW_DELTA_MAX &&
+      l <= InkOverflowDeltas::kMax && t <= InkOverflowDeltas::kMax &&
+      r <= InkOverflowDeltas::kMax && b <= InkOverflowDeltas::kMax &&
       // we have to check these against zero because we *never* want to
       // set a frame as having no overflow in this function.  This is
       // because FinishAndStoreOverflow calls this function prior to
@@ -9305,17 +9307,17 @@ bool nsIFrame::SetOverflowAreas(const OverflowAreas& aOverflowAreas) {
       // so that our eventual SetRect/SetSize will know that it has to
       // reset our overflow areas.
       (l | t | r | b) != 0) {
-    VisualDeltas oldDeltas = mOverflow.mVisualDeltas;
+    InkOverflowDeltas oldDeltas = mOverflow.mInkOverflowDeltas;
     // It's a "small" overflow area so we store the deltas for each edge
     // directly in the frame, rather than allocating a separate rect.
     // If they're all zero, that's fine; we're setting things to
     // no-overflow.
-    mOverflow.mVisualDeltas.mLeft = l;
-    mOverflow.mVisualDeltas.mTop = t;
-    mOverflow.mVisualDeltas.mRight = r;
-    mOverflow.mVisualDeltas.mBottom = b;
+    mOverflow.mInkOverflowDeltas.mLeft = l;
+    mOverflow.mInkOverflowDeltas.mTop = t;
+    mOverflow.mInkOverflowDeltas.mRight = r;
+    mOverflow.mInkOverflowDeltas.mBottom = b;
     // There was no scrollable overflow before, and there isn't now.
-    return oldDeltas != mOverflow.mVisualDeltas;
+    return oldDeltas != mOverflow.mInkOverflowDeltas;
   } else {
     bool changed =
         !aOverflowAreas.ScrollableOverflow().IsEqualEdges(
@@ -9323,7 +9325,7 @@ bool nsIFrame::SetOverflowAreas(const OverflowAreas& aOverflowAreas) {
         !aOverflowAreas.InkOverflow().IsEqualEdges(InkOverflowFromDeltas());
 
     // it's a large overflow area that we need to store as a property
-    mOverflow.mType = NS_FRAME_OVERFLOW_LARGE;
+    mOverflow.mType = OverflowStorageType::Large;
     AddProperty(OverflowAreasProperty(), new OverflowAreas(aOverflowAreas));
     return changed;
   }

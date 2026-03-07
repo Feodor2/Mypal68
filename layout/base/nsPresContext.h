@@ -1232,8 +1232,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   bool mInflationDisabledForShrinkWrap;
 
  protected:
-  nsChangeHint mChangeHintForPrefChange;
-
   unsigned mInteractionTimeEnabled : 1;
   unsigned mHasPendingInterrupt : 1;
   unsigned mHasEverBuiltInvisibleText : 1;
@@ -1251,6 +1249,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   unsigned mPrefScrollbarSide : 2;
   unsigned mPendingThemeChanged : 1;
   unsigned mPendingUIResolutionChanged : 1;
+  unsigned mPrefChangePendingNeedsReflow : 1;
   unsigned mPostedPrefChangedRunnable : 1;
 
   // Are we currently drawing an SVG glyph?

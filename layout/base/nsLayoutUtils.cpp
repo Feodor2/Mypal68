@@ -561,9 +561,7 @@ void nsLayoutUtils::UnionChildOverflow(nsIFrame* aFrame,
       continue;
     }
     for (nsIFrame* child : list) {
-      OverflowAreas childOverflow =
-          child->GetOverflowAreas() + child->GetPosition();
-      aOverflowAreas.UnionWith(childOverflow);
+      aOverflowAreas.UnionWith(child->GetOverflowAreasRelativeToParent());
     }
   }
 }
@@ -1416,15 +1414,15 @@ nsIScrollableFrame* nsLayoutUtils::GetNearestScrollableFrameForDirection(
   for (nsIFrame* f = aFrame; f; f = nsLayoutUtils::GetCrossDocParentFrame(f)) {
     nsIScrollableFrame* scrollableFrame = do_QueryFrame(f);
     if (scrollableFrame) {
-      uint32_t directions =
+      ScrollDirections directions =
           scrollableFrame->GetAvailableScrollingDirectionsForUserInputEvents();
       if (aDirections.contains(ScrollDirection::eVertical)) {
-        if (directions & nsIScrollableFrame::VERTICAL) {
+        if (directions.contains(ScrollDirection::eVertical)) {
           return scrollableFrame;
         }
       }
       if (aDirections.contains(ScrollDirection::eHorizontal)) {
-        if (directions & nsIScrollableFrame::HORIZONTAL) {
+        if (directions.contains(ScrollDirection::eHorizontal)) {
           return scrollableFrame;
         }
       }

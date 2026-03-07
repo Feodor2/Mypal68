@@ -5,5 +5,3 @@
 toolkit.jar:
    content/global/config.xhtml            (content/config.xhtml)
    content/global/config.js               (content/config.js)
-   content/global/NewPref.xhtml           (content/NewPref.xhtml)
-   content/global/NewPref.js              (content/NewPref.js)

@@ -585,7 +585,9 @@ get_token_objects_for_cache(
         PRUint32 j;
         for (j = 0; j < i; j++) {
             /* sigh */
-            nssToken_AddRef(cache->objects[objectType][j]->object->token);
+            //nssToken_AddRef(cache->objects[objectType][j]->object->token);
+// xz vzyato s PM
+            cache->objects[objectType][j]->object->token = NULL;
             nssArena_Destroy(cache->objects[objectType][j]->arena);
         }
         nss_ZFreeIf(cache->objects[objectType]);

@@ -10,7 +10,6 @@
 #include <utility>
 #include "gfxFontUtils.h"
 #include "gfxFontVariations.h"
-#include "gfxPlatform.h"
 #include "gfxRect.h"
 #include "gfxTypes.h"
 #include "harfbuzz/hb.h"
@@ -265,19 +264,6 @@ class gfxFontEntry {
                           const mozilla::gfx::Color& aDefaultColor,
                           nsTArray<uint16_t>& layerGlyphs,
                           nsTArray<mozilla::gfx::Color>& layerColors);
-  bool HasColorLayersForGlyph(uint32_t aGlyphId) {
-    MOZ_ASSERT(mCOLR);
-    return gfxFontUtils::HasColorLayersForGlyph(mCOLR, aGlyphId);
-  }
-
-  bool HasColorBitmapTable() {
-    if (!mCheckedForColorBitmapTables) {
-      mHasColorBitmapTable = HasFontTable(TRUETYPE_TAG('C', 'B', 'D', 'T')) ||
-                             HasFontTable(TRUETYPE_TAG('s', 'b', 'i', 'x'));
-      mCheckedForColorBitmapTables = true;
-    }
-    return mHasColorBitmapTable;
-  }
 
   // Access to raw font table data (needed for Harfbuzz):
   // returns a pointer to data owned by the fontEntry or the OS,
@@ -514,6 +500,9 @@ class gfxFontEntry {
   };
   RangeFlags mRangeFlags = RangeFlags::eNoFlags;
 
+  // NOTE that there are currently exactly 24 one-bit flags defined here,
+  // so together with the 8-bit RangeFlags above, this packs neatly to a
+  // 32-bit boundary. Worth considering if further flags are wanted.
   bool mFixedPitch : 1;
   bool mIsBadUnderlineFont : 1;
   bool mIsUserFontContainer : 1;  // userfont entry
@@ -538,12 +527,13 @@ class gfxFontEntry {
   bool mGrFaceInitialized : 1;
   bool mCheckedForColorGlyph : 1;
   bool mCheckedForVariationAxes : 1;
-  bool mHasColorBitmapTable : 1;
-  bool mCheckedForColorBitmapTables : 1;
 
  protected:
   friend class gfxPlatformFontList;
+  friend class gfxMacPlatformFontList;
+  friend class gfxUserFcFontEntry;
   friend class gfxFontFamily;
+  friend class gfxSingleFaceMacFontFamily;
   friend class gfxUserFontEntry;
 
   gfxFontEntry();
@@ -761,23 +751,17 @@ inline bool gfxFontEntry::SupportsBold() {
 
 // used when iterating over all fonts looking for a match for a given character
 struct GlobalFontMatch {
-  GlobalFontMatch(uint32_t aCharacter, uint32_t aNextCh,
-                  const gfxFontStyle& aStyle, eFontPresentation aPresentation)
-      : mStyle(aStyle),
-        mCh(aCharacter),
-        mNextCh(aNextCh),
-        mPresentation(aPresentation) {}
+  GlobalFontMatch(const uint32_t aCharacter, const gfxFontStyle& aStyle)
+      : mStyle(aStyle), mCh(aCharacter) {}
 
   RefPtr<gfxFontEntry> mBestMatch;       // current best match
   RefPtr<gfxFontFamily> mMatchedFamily;  // the family it belongs to
   mozilla::fontlist::Family* mMatchedSharedFamily = nullptr;
-  const gfxFontStyle& mStyle;  // style to match
-  const uint32_t mCh;          // codepoint to be matched
-  const uint32_t mNextCh;      // following codepoint (or zero)
-  eFontPresentation mPresentation;
-  uint32_t mCount = 0;               // number of fonts matched
-  uint32_t mCmapsTested = 0;         // number of cmaps tested
-  double mMatchDistance = INFINITY;  // metric indicating closest match
+  const gfxFontStyle& mStyle;       // style to match
+  const uint32_t mCh;               // codepoint to be matched
+  uint32_t mCount = 0;              // number of fonts matched
+  uint32_t mCmapsTested = 0;        // number of cmaps tested
+  float mMatchDistance = INFINITY;  // metric indicating closest match
 };
 
 // Installation status (base system / langpack / user-installed) may determine

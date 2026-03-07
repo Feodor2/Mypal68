@@ -83,6 +83,11 @@ class HTMLEditorEventListener final : public EditorEventListener {
   nsresult ListenToMouseMoveEventForResizersOrGrabber(bool aListen,
                                                       bool aForGrabber);
 
+  MOZ_CAN_RUN_SCRIPT nsresult HandlePrimaryMouseButtonDown(
+      HTMLEditor& aHTMLEditor, MouseEvent& aMouseEvent);
+  MOZ_CAN_RUN_SCRIPT nsresult HandleSecondaryMouseButtonDown(
+      HTMLEditor& aHTMLEditor, MouseEvent& aMouseEvent);
+
   bool mListeningToMouseMoveEventForResizers;
   bool mListeningToMouseMoveEventForGrabber;
   bool mListeningToResizeEvent;

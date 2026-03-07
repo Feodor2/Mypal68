@@ -753,11 +753,17 @@ static const char kFontUtsaah[] = "Utsaah";
 static const char kFontYuGothic[] = "Yu Gothic";
 
 void gfxWindowsPlatform::GetCommonFallbackFonts(
-    uint32_t aCh, Script aRunScript, eFontPresentation aPresentation,
+    uint32_t aCh, uint32_t aNextCh, Script aRunScript,
     nsTArray<const char*>& aFontList) {
-  if (PrefersColor(aPresentation)) {
-    aFontList.AppendElement(kFontSegoeUIEmoji);
-    aFontList.AppendElement(kFontTwemojiMozilla);
+  EmojiPresentation emoji = GetEmojiPresentation(aCh);
+  if (emoji != EmojiPresentation::TextOnly) {
+    if (aNextCh == kVariationSelector16 ||
+        (aNextCh != kVariationSelector15 &&
+         emoji == EmojiPresentation::EmojiDefault)) {
+      // if char is followed by VS16, try for a color emoji glyph
+      aFontList.AppendElement(kFontSegoeUIEmoji);
+      aFontList.AppendElement(kFontTwemojiMozilla);
+    }
   }
 
   // Arial is used as the default fallback for system fallback

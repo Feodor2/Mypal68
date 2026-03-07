@@ -113,16 +113,16 @@ using namespace mozilla::layers;
 using namespace mozilla::layout;
 using nsStyleTransformMatrix::TransformReferenceBox;
 
-static uint32_t GetOverflowChange(const nsRect& aCurScrolledRect,
-                                  const nsRect& aPrevScrolledRect) {
-  uint32_t result = 0;
+static ScrollDirections GetOverflowChange(const nsRect& aCurScrolledRect,
+                                          const nsRect& aPrevScrolledRect) {
+  ScrollDirections result;
   if (aPrevScrolledRect.x != aCurScrolledRect.x ||
       aPrevScrolledRect.width != aCurScrolledRect.width) {
-    result |= nsIScrollableFrame::HORIZONTAL;
+    result += ScrollDirection::eHorizontal;
   }
   if (aPrevScrolledRect.y != aCurScrolledRect.y ||
       aPrevScrolledRect.height != aCurScrolledRect.height) {
-    result |= nsIScrollableFrame::VERTICAL;
+    result += ScrollDirection::eVertical;
   }
   return result;
 }
@@ -3313,7 +3313,7 @@ void ScrollFrameHelper::AppendScrollPartsTo(nsDisplayListBuilder* aBuilder,
   // This means that we will build scroll bar layers for out of budget
   // will-change: scroll position.
   const mozilla::layers::ScrollableLayerGuid::ViewID scrollTargetId =
-      IsMaybeScrollingActive()
+      IsScrollingActive()
           ? nsLayoutUtils::FindOrCreateIDFor(mScrolledFrame->GetContent())
           : mozilla::layers::ScrollableLayerGuid::NULL_SCROLL_ID;
 
@@ -3321,9 +3321,8 @@ void ScrollFrameHelper::AppendScrollPartsTo(nsDisplayListBuilder* aBuilder,
 
   DisplayListClipState::AutoSaveRestore clipState(aBuilder);
   // Don't let scrollparts extent outside our frame's border-box, if these are
-  // viewport scrollbars. They would create layerization problems. This
-  // wouldn't normally be an issue but themes can add overflow areas to
-  // scrollbar parts.
+  // viewport scrollbars. They would create layerization problems. This wouldn't
+  // normally be an issue but themes can add overflow areas to scrollbar parts.
   if (mIsRoot) {
     nsRect scrollPartsClip(aBuilder->ToReferenceFrame(mOuter), TrueOuterSize());
     clipState.ClipContentDescendants(scrollPartsClip);
@@ -3513,7 +3512,11 @@ void ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   mOuter->DisplayBorderBackgroundOutline(aBuilder, aLists);
 
   if (aBuilder->IsPaintingToWindow()) {
-    if (IsMaybeScrollingActive()) {
+    if (IsScrollingActive()
+#ifdef MOZ_BUILD_WEBRENDER
+        && !gfxVars::UseWebRender()
+#endif
+    ) {
       if (mScrollPosForLayerPixelAlignment == nsPoint(-1, -1)) {
         mScrollPosForLayerPixelAlignment = GetScrollPosition();
       }
@@ -5762,23 +5765,9 @@ bool ScrollFrameHelper::IsScrollbarOnRight() const {
   }
 }
 
-bool ScrollFrameHelper::IsMaybeScrollingActive() const {
+bool ScrollFrameHelper::IsScrollingActive() const {
   const nsStyleDisplay* disp = mOuter->StyleDisplay();
   if (disp->mWillChange.bits & StyleWillChangeBits::SCROLL) {
-    return true;
-  }
-
-  nsIContent* content = mOuter->GetContent();
-  return mHasBeenScrolledRecently || IsAlwaysActive() ||
-         DisplayPortUtils::HasDisplayPort(content) ||
-         nsContentUtils::HasScrollgrab(content);
-}
-
-bool ScrollFrameHelper::IsScrollingActive(
-    nsDisplayListBuilder* aBuilder) const {
-  const nsStyleDisplay* disp = mOuter->StyleDisplay();
-  if (disp->mWillChange.bits & StyleWillChangeBits::SCROLL &&
-      aBuilder->IsInWillChangeBudget(mOuter, GetVisualViewportSize())) {
     return true;
   }
 
@@ -6330,17 +6319,18 @@ bool ScrollFrameHelper::ComputeCustomOverflow(OverflowAreas& aOverflowAreas) {
   // changing or might require repositioning the scrolled content due to
   // reduced extents.
   nsRect scrolledRect = GetScrolledRect();
-  uint32_t overflowChange = GetOverflowChange(scrolledRect, mPrevScrolledRect);
+  ScrollDirections overflowChange =
+      GetOverflowChange(scrolledRect, mPrevScrolledRect);
   mPrevScrolledRect = scrolledRect;
 
   bool needReflow = false;
   nsPoint scrollPosition = GetScrollPosition();
-  if (overflowChange & nsIScrollableFrame::HORIZONTAL) {
+  if (overflowChange.contains(ScrollDirection::eHorizontal)) {
     if (ss.mHorizontal != StyleOverflow::Hidden || scrollPosition.x) {
       needReflow = true;
     }
   }
-  if (overflowChange & nsIScrollableFrame::VERTICAL) {
+  if (overflowChange.contains(ScrollDirection::eVertical)) {
     if (ss.mVertical != StyleOverflow::Hidden || scrollPosition.y) {
       needReflow = true;
     }
@@ -7088,16 +7078,16 @@ void ScrollFrameHelper::FireScrolledAreaEvent() {
   }
 }
 
-uint32_t nsIScrollableFrame::GetAvailableScrollingDirections() const {
+ScrollDirections nsIScrollableFrame::GetAvailableScrollingDirections() const {
   nscoord oneDevPixel =
       GetScrolledFrame()->PresContext()->AppUnitsPerDevPixel();
-  uint32_t directions = 0;
+  ScrollDirections directions;
   nsRect scrollRange = GetScrollRange();
   if (scrollRange.width >= oneDevPixel) {
-    directions |= HORIZONTAL;
+    directions += ScrollDirection::eHorizontal;
   }
   if (scrollRange.height >= oneDevPixel) {
-    directions |= VERTICAL;
+    directions += ScrollDirection::eVertical;
   }
   return directions;
 }
@@ -7134,25 +7124,25 @@ nsRect ScrollFrameHelper::GetScrollRangeForUserInputEvents() const {
   return scrollRange;
 }
 
-uint32_t ScrollFrameHelper::GetAvailableScrollingDirectionsForUserInputEvents()
-    const {
+ScrollDirections
+ScrollFrameHelper::GetAvailableScrollingDirectionsForUserInputEvents() const {
   nsRect scrollRange = GetScrollRangeForUserInputEvents();
 
-  // We check if there is at least one half of a screen pixel of scroll range
-  // to roughly match what apz does when it checks if the change in scroll
-  // position in screen pixels round to zero or not.
+  // We check if there is at least one half of a screen pixel of scroll range to
+  // roughly match what apz does when it checks if the change in scroll position
+  // in screen pixels round to zero or not.
   // (https://searchfox.org/mozilla-central/rev/2f09184ec781a2667feec87499d4b81b32b6c48e/gfx/layers/apz/src/AsyncPanZoomController.cpp#3210)
   // This isn't quite half a screen pixel, it doesn't take into account CSS
   // transforms, but should be good enough.
   float halfScreenPixel =
       GetScrolledFrame()->PresContext()->AppUnitsPerDevPixel() /
       (mOuter->PresShell()->GetCumulativeResolution() * 2.f);
-  uint32_t directions = 0;
+  ScrollDirections directions;
   if (scrollRange.width >= halfScreenPixel) {
-    directions |= nsIScrollableFrame::HORIZONTAL;
+    directions += ScrollDirection::eHorizontal;
   }
   if (scrollRange.height >= halfScreenPixel) {
-    directions |= nsIScrollableFrame::VERTICAL;
+    directions += ScrollDirection::eVertical;
   }
   return directions;
 }

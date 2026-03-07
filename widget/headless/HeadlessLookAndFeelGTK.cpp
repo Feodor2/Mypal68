@@ -212,7 +212,6 @@ nsresult HeadlessLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = 0;
       res = NS_ERROR_FAILURE;
       break;
-    case IntID::TouchEnabled:
     case IntID::MacGraphiteTheme:
     case IntID::MacYosemiteTheme:
       aResult = 0;

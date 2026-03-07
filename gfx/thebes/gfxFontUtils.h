@@ -972,8 +972,7 @@ class gfxFontUtils {
                                             gfxSparseBitSet& aCharacterMap);
 
   static nsresult ReadCMAPTableFormat4(const uint8_t* aBuf, uint32_t aLength,
-                                       gfxSparseBitSet& aCharacterMap,
-                                       bool aIsSymbolFont);
+                                       gfxSparseBitSet& aCharacterMap);
 
   static nsresult ReadCMAPTableFormat14(const uint8_t* aBuf, uint32_t aLength,
                                         mozilla::UniquePtr<uint8_t[]>& aTable);
@@ -981,8 +980,7 @@ class gfxFontUtils {
   static uint32_t FindPreferredSubtable(const uint8_t* aBuf,
                                         uint32_t aBufLength,
                                         uint32_t* aTableOffset,
-                                        uint32_t* aUVSTableOffset,
-                                        bool* aIsSymbolFont);
+                                        uint32_t* aUVSTableOffset);
 
   static nsresult ReadCMAP(const uint8_t* aBuf, uint32_t aBufLength,
                            gfxSparseBitSet& aCharacterMap,
@@ -1008,12 +1006,6 @@ class gfxFontUtils {
 
   static uint32_t MapCharToGlyph(const uint8_t* aCmapBuf, uint32_t aBufLength,
                                  uint32_t aUnicode, uint32_t aVarSelector = 0);
-
-  // For legacy MS Symbol fonts, we try mapping 8-bit character codes to the
-  // Private Use range at U+F0xx used by the cmaps in these fonts.
-  static MOZ_ALWAYS_INLINE uint32_t MapLegacySymbolFontCharToPUA(uint32_t aCh) {
-    return aCh >= 0x20 && aCh <= 0xff ? 0xf000 + aCh : 0;
-  }
 
 #ifdef XP_WIN
   // determine whether a font (which has already been sanitized, so is known
@@ -1178,7 +1170,6 @@ class gfxFontUtils {
                                   const mozilla::gfx::Color& aDefaultColor,
                                   nsTArray<uint16_t>& aGlyphs,
                                   nsTArray<mozilla::gfx::Color>& aColors);
-  static bool HasColorLayersForGlyph(hb_blob_t* aCOLR, uint32_t aGlyphId);
 
   // Helper used to implement gfxFontEntry::GetVariationInstances for
   // platforms where the native font APIs don't provide the info we want
@@ -1222,16 +1213,6 @@ class gfxFontUtils {
   static const mozilla::Encoding* gISOFontNameCharsets[];
   static const mozilla::Encoding* gMSFontNameCharsets[];
 };
-
-// Factors used to weight the distances between the available and target font
-// properties during font-matching. These ensure that we respect the CSS-fonts
-// requirement that font-stretch >> font-style >> font-weight; and in addition,
-// a mismatch between the desired and actual glyph presentation (emoji vs text)
-// will take precedence over any of the style attributes.
-constexpr double kPresentationMismatch = 1.0e12;
-constexpr double kStretchFactor = 1.0e8;
-constexpr double kStyleFactor = 1.0e4;
-constexpr double kWeightFactor = 1.0e0;
 
 // style distance ==> [0,500]
 static inline double StyleDistance(const mozilla::SlantStyleRange& aRange,

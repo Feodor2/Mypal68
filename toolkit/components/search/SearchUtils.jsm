@@ -16,6 +16,13 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
+XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
+  return console.createInstance({
+    prefix: "SearchUtils",
+    maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
+  });
+});
+
 const BROWSER_SEARCH_PREF = "browser.search.";
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -26,8 +33,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 var SearchUtils = {
-  APP_SEARCH_PREFIX: "resource://search-plugins/",
-
   BROWSER_SEARCH_PREF,
 
   /**
@@ -63,6 +68,9 @@ var SearchUtils = {
   // resolution causes windows-1252 to be actually used.
   DEFAULT_QUERY_CHARSET: "ISO-8859-1",
 
+  // A tag to denote when we are using the "default_locale" of an engine.
+  DEFAULT_TAG: "default",
+
   /**
    * Notifies watchers of SEARCH_ENGINE_TOPIC about changes to an engine or to
    * the state of the search service.
@@ -76,35 +84,9 @@ var SearchUtils = {
    */
   notifyAction(engine, verb) {
     if (Services.search.isInitialized) {
-      this.log('NOTIFY: Engine: "' + engine.name + '"; Verb: "' + verb + '"');
+      logConsole.debug("NOTIFY: Engine:", engine.name, "Verb:", verb);
       Services.obs.notifyObservers(engine, this.TOPIC_ENGINE_MODIFIED, verb);
     }
-  },
-
-  /**
-   * Outputs text to the JavaScript console as well as to stdout.
-   *
-   * @param {string} text
-   *   The message to log.
-   */
-  log(text) {
-    if (loggingEnabled) {
-      dump("*** Search: " + text + "\n");
-      Services.console.logStringMessage(text);
-    }
-  },
-
-  /**
-   * Logs the failure message (if browser.search.log is enabled) and throws.
-   * @param {string} message
-   *   A message to display
-   * @param {number} resultCode
-   *   The NS_ERROR_* value to throw.
-   * @throws resultCode or NS_ERROR_INVALID_ARG if resultCode isn't specified.
-   */
-  fail(message, resultCode) {
-    this.log(message);
-    throw Components.Exception(message, resultCode || Cr.NS_ERROR_INVALID_ARG);
   },
 
   /**

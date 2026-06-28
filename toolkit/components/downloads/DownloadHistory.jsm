@@ -126,23 +126,12 @@ var DownloadHistory = {
     if (download.succeeded) {
       state = METADATA_STATE_FINISHED;
     } else if (download.error) {
-      if (download.error.becauseBlockedByParentalControls) {
-        state = METADATA_STATE_BLOCKED_PARENTAL;
-      } else if (download.error.becauseBlockedByReputationCheck) {
-        state = METADATA_STATE_DIRTY;
-      } else {
-        state = METADATA_STATE_FAILED;
-      }
+      state = METADATA_STATE_FAILED;
     }
 
     let metaData = { state, endTime: download.endTime };
     if (download.succeeded) {
       metaData.fileSize = download.target.size;
-    }
-
-    // The verdict may still be present even if the download succeeded.
-    if (download.error && download.error.reputationCheckVerdict) {
-      metaData.reputationCheckVerdict = download.error.reputationCheckVerdict;
     }
 
     // This should be executed before any async parts, to ensure the cache is
@@ -402,13 +391,6 @@ HistoryDownload.prototype = {
       // Recreate partial error information from the state saved in history.
       if (metaData.state == METADATA_STATE_FAILED) {
         this.error = { message: "History download failed." };
-      } else if (metaData.state == METADATA_STATE_BLOCKED_PARENTAL) {
-        this.error = { becauseBlockedByParentalControls: true };
-      } else if (metaData.state == METADATA_STATE_DIRTY) {
-        this.error = {
-          becauseBlockedByReputationCheck: true,
-          reputationCheckVerdict: metaData.reputationCheckVerdict || "",
-        };
       } else {
         this.error = null;
       }

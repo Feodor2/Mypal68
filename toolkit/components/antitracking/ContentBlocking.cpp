@@ -7,6 +7,7 @@
 #include "AntiTrackingUtils.h"
 #include "TemporaryAccessGrantObserver.h"
 
+#include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/ContentBlockingUserInteraction.h"
 #include "mozilla/dom/ContentChild.h"
@@ -22,6 +23,7 @@
 #include "nsIPermission.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
+#include "nsIOService.h"
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsScriptSecurityManager.h"
@@ -35,6 +37,7 @@ LazyLogModule gAntiTrackingLog("AntiTracking");
 using namespace mozilla;
 using mozilla::dom::ContentChild;
 using mozilla::dom::Document;
+using mozilla::net::CookieJarSettings;
 
 namespace {
 
@@ -264,7 +267,7 @@ ContentBlocking::AllowAccessFor(
   }
   int32_t behavior = parentDoc->CookieJarSettings()->GetCookieBehavior();
 
-  if (!parentDoc->CookieJarSettings()->GetRejectThirdPartyTrackers()) {
+  if (!parentDoc->CookieJarSettings()->GetRejectThirdPartyContexts()) {
     LOG(
         ("Disabled by network.cookie.cookieBehavior pref (%d), bailing out "
          "early",
@@ -273,6 +276,7 @@ ContentBlocking::AllowAccessFor(
   }
 
   MOZ_ASSERT(
+      CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior) ||
       behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
       behavior ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
@@ -330,9 +334,10 @@ ContentBlocking::AllowAccessFor(
     if (!isThirdParty) {
       if (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
         LOG(("Our window isn't a third-party tracking window"));
-      } else if (behavior ==
-                 nsICookieService::
-                     BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+      } else if (CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior) ||
+                  behavior ==
+                      nsICookieService::
+                          BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
         LOG(("Our window isn't a third-party window"));
       }
       return StorageAccessGrantPromise::CreateAndReject(false, __func__);
@@ -381,13 +386,10 @@ ContentBlocking::AllowAccessFor(
   // user-interaction state, because it could be that the current process has
   // just sent the request to store the user-interaction permission into the
   // parent, without having received the permission itself yet.
-  //
-  // We define this as an enum, since without that MSVC fails to capturing this
-  // name inside the lambda without the explicit capture and clang warns if
-  // there is an explicit capture with -Wunused-lambda-capture.
-  enum : uint32_t {
-    blockReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER
-  };
+  uint32_t blockReason = CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior)
+            ? nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN
+            : nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
+
   bool isInPrefList = false;
   trackingPrincipal->IsURIInPrefList(
       "privacy.restrict3rdpartystorage."
@@ -414,8 +416,8 @@ ContentBlocking::AllowAccessFor(
 
   auto storePermission =
       [pwin, parentWindow, trackingOrigin, trackingPrincipal, topInnerWindow,
-       topLevelStoragePrincipal,
-       aReason](int aAllowMode) -> RefPtr<StorageAccessGrantPromise> {
+       topLevelStoragePrincipal, aReason,
+       blockReason](int aAllowMode) -> RefPtr<StorageAccessGrantPromise> {
     nsAutoCString permissionKey;
     AntiTrackingUtils::CreateStoragePermissionKey(trackingOrigin,
                                                   permissionKey);
@@ -661,7 +663,8 @@ bool ContentBlocking::ShouldAllowAccessFor(nsPIDOMWindowInner* aWindow,
     }
   }
 
-  if (behavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN ||
+  if ((behavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
+       !CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior)) ||
       behavior == nsICookieService::BEHAVIOR_LIMIT_FOREIGN) {
     // XXX For non-cookie forms of storage, we handle BEHAVIOR_LIMIT_FOREIGN by
     // simply rejecting the request to use the storage. In the future, if we
@@ -673,6 +676,7 @@ bool ContentBlocking::ShouldAllowAccessFor(nsPIDOMWindowInner* aWindow,
   }
 
   MOZ_ASSERT(
+      CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior) ||
       behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
       behavior ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
@@ -685,9 +689,8 @@ bool ContentBlocking::ShouldAllowAccessFor(nsPIDOMWindowInner* aWindow,
       LOG(("Our window isn't a third-party tracking window"));
       return true;
     }
-  } else {
-    MOZ_ASSERT(behavior ==
-               nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+  } else if (behavior ==
+             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
     if (nsContentUtils::IsThirdPartyTrackingResourceWindow(aWindow)) {
       // fall through
     } else if (nsContentUtils::IsThirdPartyWindowOrChannel(aWindow, nullptr,
@@ -699,10 +702,14 @@ bool ContentBlocking::ShouldAllowAccessFor(nsPIDOMWindowInner* aWindow,
       LOG(("Our window isn't a third-party window, storage is allowed"));
       return true;
     }
+  } else {
+    MOZ_ASSERT(CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior));
+    blockedReason = nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN;
   }
 
 #ifdef DEBUG
-  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+      components::ThirdPartyUtil::Service();
   if (thirdPartyUtil) {
     bool thirdParty = false;
     nsresult rv = thirdPartyUtil->IsThirdPartyWindow(aWindow->GetOuterWindow(),
@@ -836,8 +843,7 @@ bool ContentBlocking::ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
   }
 
   nsCOMPtr<nsIPrincipal> channelPrincipal;
-  rv = ssm->GetChannelResultPrincipal(aChannel,
-                                      getter_AddRefs(channelPrincipal));
+  rv = ssm->GetChannelURIPrincipal(aChannel, getter_AddRefs(channelPrincipal));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     LOG(("No channel principal, bail out early"));
     return false;
@@ -882,7 +888,8 @@ bool ContentBlocking::ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
     return false;
   }
 
-  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+      components::ThirdPartyUtil::Service();
   if (!thirdPartyUtil) {
     LOG(("No thirdPartyUtil, bail out early"));
     return true;
@@ -899,7 +906,8 @@ bool ContentBlocking::ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
     return true;
   }
 
-  if (behavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN ||
+  if ((behavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
+       !CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior)) ||
       behavior == nsICookieService::BEHAVIOR_LIMIT_FOREIGN) {
     // XXX For non-cookie forms of storage, we handle BEHAVIOR_LIMIT_FOREIGN by
     // simply rejecting the request to use the storage. In the future, if we
@@ -911,6 +919,7 @@ bool ContentBlocking::ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
   }
 
   MOZ_ASSERT(
+      CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior) ||
       behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
       behavior ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
@@ -927,9 +936,8 @@ bool ContentBlocking::ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
       LOG(("Our channel isn't a third-party tracking channel"));
       return true;
     }
-  } else {
-    MOZ_ASSERT(behavior ==
-               nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+  } else if (behavior ==
+             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
     if (classifiedChannel &&
         classifiedChannel->IsThirdPartyTrackingResource()) {
       // fall through
@@ -942,6 +950,9 @@ bool ContentBlocking::ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
       LOG(("Our channel isn't a third-party channel, storage is allowed"));
       return true;
     }
+  } else {
+    MOZ_ASSERT(CookieJarSettings::IsRejectThirdPartyWithExceptions(behavior));
+    blockedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN;
   }
 
   // Only use the "top-level storage area principal" behaviour for reject
@@ -1041,7 +1052,7 @@ bool ContentBlocking::ApproximateAllowAccessForWithoutChannel(
     return false;
   }
 
-  if (!parentDocument->CookieJarSettings()->GetRejectThirdPartyTrackers()) {
+  if (!parentDocument->CookieJarSettings()->GetRejectThirdPartyContexts()) {
     LOG(("Disabled by the pref (%d), bail out early",
          parentDocument->CookieJarSettings()->GetCookieBehavior()));
     return true;

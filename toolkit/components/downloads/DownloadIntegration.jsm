@@ -105,15 +105,6 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/RuntimePermissions.jsm"
 );
 
-XPCOMUtils.defineLazyGetter(this, "gParentalControlsService", function() {
-  if ("@mozilla.org/parental-controls-service;1" in Cc) {
-    return Cc["@mozilla.org/parental-controls-service;1"].createInstance(
-      Ci.nsIParentalControlsService
-    );
-  }
-  return null;
-});
-
 // We have to use the gCombinedDownloadIntegration identifier because, in this
 // module only, the DownloadIntegration identifier refers to the base version.
 /* global gCombinedDownloadIntegration:false */
@@ -381,35 +372,6 @@ var DownloadIntegration = {
       directoryPath = this._getDirectory("TmpD");
     }
     return directoryPath;
-  },
-
-  /**
-   * Checks to determine whether to block downloads for parental controls.
-   *
-   * aParam aDownload
-   *        The download object.
-   *
-   * @return {Promise}
-   * @resolves The boolean indicates to block downloads or not.
-   */
-  shouldBlockForParentalControls(aDownload) {
-    let isEnabled =
-      gParentalControlsService &&
-      gParentalControlsService.parentalControlsEnabled;
-    let shouldBlock =
-      isEnabled && gParentalControlsService.blockFileDownloadsEnabled;
-
-    // Log the event if required by parental controls settings.
-    if (isEnabled && gParentalControlsService.loggingEnabled) {
-      gParentalControlsService.log(
-        gParentalControlsService.ePCLog_FileDownload,
-        shouldBlock,
-        NetUtil.newURI(aDownload.source.url),
-        null
-      );
-    }
-
-    return Promise.resolve(shouldBlock);
   },
 
   /**

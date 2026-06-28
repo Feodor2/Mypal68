@@ -329,7 +329,6 @@ var ExtensionAddonObserver = {
         principal,
         "WebExtensions-unlimitedStorage"
       );
-      Services.perms.removeFromPrincipal(principal, "indexedDB");
       Services.perms.removeFromPrincipal(principal, "persistent-storage");
     }
 
@@ -1140,6 +1139,11 @@ class ExtensionData {
     }
 
     return null;
+  }
+
+  // Returns true if an addon is builtin to Firefox.
+  get isAppProvided() {
+    return this.addonData.builtIn || this.addonData.isSystem;
   }
 
   // Normalizes a Chrome-compatible locale code to the appropriate
@@ -2091,11 +2095,6 @@ class Extension extends ExtensionData {
       );
       Services.perms.addFromPrincipal(
         principal,
-        "indexedDB",
-        Services.perms.ALLOW_ACTION
-      );
-      Services.perms.addFromPrincipal(
-        principal,
         "persistent-storage",
         Services.perms.ALLOW_ACTION
       );
@@ -2113,14 +2112,12 @@ class Extension extends ExtensionData {
           principal,
           "WebExtensions-unlimitedStorage"
         );
-        Services.perms.removeFromPrincipal(principal, "indexedDB");
         Services.perms.removeFromPrincipal(principal, "persistent-storage");
       }
     } else if (
       reason === "APP_STARTUP" &&
       this.hasPermission("unlimitedStorage") &&
-      (testPermission("indexedDB") !== Services.perms.ALLOW_ACTION ||
-        testPermission("persistent-storage") !== Services.perms.ALLOW_ACTION)
+      testPermission("persistent-storage") !== Services.perms.ALLOW_ACTION
     ) {
       // If the extension does have the unlimitedStorage permission, but the
       // expected site permissions are missing during the app startup, then

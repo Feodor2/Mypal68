@@ -170,9 +170,6 @@ class nsRFPService final : public nsIObserver {
   static uint32_t GetSpoofedPresentedFrames(double aTime, uint32_t aWidth,
                                             uint32_t aHeight);
 
-  // This method generates the spoofed value of User Agent.
-  static void GetSpoofedUserAgent(nsACString& userAgent, bool isForHTTPHeader);
-
   /**
    * This method for getting spoofed modifier states for the given keyboard
    * event.

@@ -4,8 +4,10 @@
 
 #include "places_test_harness.h"
 #include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "nsString.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsNetUtil.h"
 
@@ -20,12 +22,12 @@ using namespace mozilla::dom;
 ////////////////////////////////////////////////////////////////////////////////
 //// Helper Methods
 
-void expect_visit(nsLinkState aState) {
-  do_check_true(aState == eLinkState_Visited);
+void expect_visit(Link::State aState) {
+  do_check_true(aState == Link::State::Visited);
 }
 
-void expect_no_visit(nsLinkState aState) {
-  do_check_true(aState == eLinkState_Unvisited);
+void expect_no_visit(Link::State aState) {
+  do_check_true(aState == Link::State::Unvisited);
 }
 
 already_AddRefed<nsIURI> new_test_uri() {

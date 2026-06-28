@@ -20,6 +20,7 @@
 
 #include "mozilla/Encoding.h"
 #include "nsIEventTarget.h"
+#include "nsIThread.h" //MY
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Scoped.h"

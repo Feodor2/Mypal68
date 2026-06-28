@@ -97,10 +97,6 @@ nsresult AnnotateCrashReport(Annotation key, const nsACString& data);
 nsresult RemoveCrashReportAnnotation(Annotation key);
 nsresult AppendAppNotesToCrashReport(const nsACString& data);
 
-// Called after the crash reporter client has been created in a content
-// process, allowing annotations to be processed.
-void NotifyCrashReporterClientCreated();
-
 void AnnotateOOMAllocationSize(size_t size);
 void AnnotateTexturesSize(size_t size);
 nsresult SetGarbageCollecting(bool collecting);
@@ -181,28 +177,34 @@ bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
  *
  * @param aChildPid The pid of the crashed child process
  * @param aType The type of the crashed process
+ * @param aDumpId A string that will be filled with the dump ID
  */
-bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType);
+MOZ_MUST_USE bool FinalizeOrphanedMinidump(uint32_t aChildPid,
+                                           GeckoProcessType aType,
+                                           nsString* aDumpId = nullptr);
 
 #if defined(XP_WIN)
 typedef HANDLE ProcessHandle;
 typedef DWORD ProcessId;
 typedef DWORD ThreadId;
 typedef HANDLE FileHandle;
+const FileHandle kInvalidFileHandle = INVALID_HANDLE_VALUE;
 #elif defined(XP_MACOSX)
 typedef task_t ProcessHandle;
 typedef pid_t ProcessId;
 typedef mach_port_t ThreadId;
 typedef int FileHandle;
+const FileHandle kInvalidFileHandle = -1;
 #else
 typedef int ProcessHandle;
 typedef pid_t ProcessId;
 typedef int ThreadId;
 typedef int FileHandle;
+const FileHandle kInvalidFileHandle = -1;
 #endif
 
 #if !defined(XP_WIN)
-int GetAnnotationTimeCrashFd();
+FileHandle GetAnnotationTimeCrashFd();
 #endif
 void RegisterChildCrashAnnotationFileDescriptor(ProcessId aProcess,
                                                 PRFileDesc* aFd);
@@ -279,15 +281,6 @@ class InjectorCrashCallback {
 void InjectCrashReporterIntoProcess(DWORD processID, InjectorCrashCallback* cb);
 void UnregisterInjectorCallback(DWORD processID);
 #  endif
-
-// Child-side API
-#  if defined(XP_WIN)
-bool SetRemoteExceptionHandler(const nsACString& crashPipe,
-                               uintptr_t aCrashTimeAnnotationFile);
-#  else
-bool SetRemoteExceptionHandler(const nsACString& crashPipe);
-#  endif
-
 #else
 // Parent-side API for children
 
@@ -301,11 +294,11 @@ bool SetRemoteExceptionHandler(const nsACString& crashPipe);
 // and |true| will be returned.
 bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd);
 
-// Child-side API
-bool SetRemoteExceptionHandler();
-
 #endif  // XP_WIN
 
+// Child-side API
+bool SetRemoteExceptionHandler(const char* aCrashPipe = nullptr,
+                               uintptr_t aCrashTimeAnnotationFile = 0);
 bool UnsetRemoteExceptionHandler();
 
 #if defined(MOZ_WIDGET_ANDROID)

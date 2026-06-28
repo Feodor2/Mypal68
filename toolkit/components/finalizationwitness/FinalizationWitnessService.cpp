@@ -11,6 +11,7 @@
 #include "js/PropertyAndElement.h"  // JS_DefineFunctions
 #include "js/PropertySpec.h"
 #include "mozJSComponentLoader.h"
+#include "nsIThread.h"
 #include "nsZipArchive.h"
 
 #include "mozilla/Scoped.h"

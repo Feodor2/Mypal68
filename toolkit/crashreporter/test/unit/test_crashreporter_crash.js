@@ -1,4 +1,4 @@
-function run_test() {
+add_task(async function run_test() {
   var is_win7_or_newer = false;
   var is_windows = false;
   var ph = Cc["@mozilla.org/network/protocol;1?name=http"].getService(
@@ -17,7 +17,7 @@ function run_test() {
   }
 
   // try a basic crash
-  do_crash(null, function(mdump, extra) {
+  await do_crash(null, function(mdump, extra) {
     Assert.ok(mdump.exists());
     Assert.ok(mdump.fileSize > 0);
     Assert.ok("StartupTime" in extra);
@@ -51,11 +51,14 @@ function run_test() {
   });
 
   // check setting some basic data
-  do_crash(
+  await do_crash(
     function() {
       // Add various annotations
       crashReporter.annotateCrashReport("TestKey", "TestValue");
-      crashReporter.annotateCrashReport("TestUnicode", "\u{1F4A9}");
+      crashReporter.annotateCrashReport(
+        "TestUnicode",
+        "\u{1F4A9}\n\u{0000}Escape"
+      );
       crashReporter.annotateCrashReport("Add-ons", "test%40mozilla.org:0.1");
       crashReporter.appendAppNotesToCrashReport("Junk");
       crashReporter.appendAppNotesToCrashReport("MoreJunk");
@@ -70,7 +73,7 @@ function run_test() {
     },
     function(mdump, extra) {
       Assert.equal(extra.TestKey, "TestValue");
-      Assert.equal(extra.TestUnicode, "\u{1F4A9}");
+      Assert.equal(extra.TestUnicode, "\u{1F4A9}\n\u{0000}Escape");
       Assert.ok(
         extra.Notes.endsWith("JunkMoreJunk"),
         "Should include our notes"
@@ -96,7 +99,7 @@ function run_test() {
     }
   );
 
-  do_crash(
+  await do_crash(
     function() {
       // Enable the FHR, official policy bypass (since we're in a test) and
       // specify a telemetry server & client ID.
@@ -149,7 +152,7 @@ function run_test() {
     }
   );
 
-  do_crash(
+  await do_crash(
     function() {
       // Disable the FHR upload, no telemetry annotations should be present.
       Services.prefs.setBoolPref(
@@ -183,7 +186,7 @@ function run_test() {
     }
   );
 
-  do_crash(
+  await do_crash(
     function() {
       // No telemetry annotations should be present if the user has not been
       // notified yet
@@ -217,4 +220,4 @@ function run_test() {
       );
     }
   );
-}
+});

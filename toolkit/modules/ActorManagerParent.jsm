@@ -102,13 +102,6 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { DefaultMap } = ExtensionUtils;
 
 let ACTORS = {
-  SidebarSearch: {
-    parent: {
-      moduleURI: "resource://gre/actors/SidebarSearchParent.jsm",
-    },
-
-    allFrames: true,
-  },
 };
 
 let LEGACY_ACTORS = {
@@ -206,7 +199,6 @@ let LEGACY_ACTORS = {
     child: {
       module: "resource://gre/modules/ManifestMessagesChild.jsm",
       messages: [
-        "DOM:Manifest:FireAppInstalledEvent",
         "DOM:ManifestObtainer:Obtain",
         "DOM:WebManifest:fetchIcon",
         "DOM:WebManifest:hasManifestLink",

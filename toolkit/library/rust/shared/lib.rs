@@ -13,6 +13,7 @@ extern crate authenticator;
 extern crate bitsdownload;
 #[cfg(feature = "moz_places")]
 extern crate bookmark_sync;
+extern crate shift_or_euc_c;
 #[cfg(feature = "new_cert_storage")]
 extern crate cert_storage;
 extern crate cosec;

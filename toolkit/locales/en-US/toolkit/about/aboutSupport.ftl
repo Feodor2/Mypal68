@@ -55,9 +55,6 @@ app-basics-launcher-process-status = Launcher Process
 app-basics-multi-process-support = Multiprocess Windows
 app-basics-remote-processes-count = Remote Processes
 app-basics-enterprise-policies = Enterprise Policies
-app-basics-location-service-key-google = Google Location Service Key
-app-basics-safebrowsing-key-google = Google Safebrowsing Key
-app-basics-key-mozilla = Mozilla Location Service Key
 app-basics-safe-mode = Safe Mode
 show-dir-label =
     { PLATFORM() ->

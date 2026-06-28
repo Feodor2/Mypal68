@@ -296,6 +296,8 @@
 
       this._mayEnableCharacterEncodingMenu = null;
 
+      this._charsetAutodetected = false;
+
       this._contentPrincipal = null;
 
       this._contentStoragePrincipal = null;
@@ -715,6 +717,18 @@
     set mayEnableCharacterEncodingMenu(aMayEnable) {
       if (this.isRemoteBrowser) {
         this._mayEnableCharacterEncodingMenu = aMayEnable;
+      }
+    }
+
+    get charsetAutodetected() {
+      return this.isRemoteBrowser
+        ? this._charsetAutodetected
+        : this.docShell.charsetAutodetected;
+    }
+
+    set charsetAutodetected(aAutodetected) {
+      if (this.isRemoteBrowser) {
+        this._charsetAutodetected = aAutodetected;
       }
     }
 
@@ -1976,6 +1990,7 @@
             "_contentTitle",
             "_characterSet",
             "_mayEnableCharacterEncodingMenu",
+            "_charsetAutodetected",
             "_contentPrincipal",
             "_contentStoragePrincipal",
             "_contentBlockingAllowListPrincipal",

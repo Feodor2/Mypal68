@@ -30,7 +30,8 @@ onmessage = function(e) {
     // block third-party trackers, since otherwise we won't obtain storage
     // access by default, which is what this data is used for in tests.
     window.allowListed = parts[0] === "true" &&
-                         (SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER);
+       (SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN &&
+        SpecialPowers.Services.prefs.getBoolPref("network.cookie.rejectForeignWithExceptions.enabled")));
     data = parts[1];
   }
   let runnableStr = `(() => {return (${data});})();`;

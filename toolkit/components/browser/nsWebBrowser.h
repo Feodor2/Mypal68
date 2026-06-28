@@ -105,11 +105,10 @@ class nsWebBrowser final : public nsIWebBrowser,
 
  protected:
   virtual ~nsWebBrowser();
-  NS_IMETHOD InternalDestroy();
+  void InternalDestroy();
 
-  // XXXbz why are these NS_IMETHOD?  They're not interface methods!
-  NS_IMETHOD SetDocShell(nsIDocShell* aDocShell);
-  NS_IMETHOD EnsureDocShellTreeOwner();
+  void SetDocShell(nsDocShell* aDocShell);
+  void EnsureDocShellTreeOwner();
   NS_IMETHOD EnableGlobalHistory(bool aEnable);
 
   nsIWidget* EnsureWidget();
@@ -124,10 +123,7 @@ class nsWebBrowser final : public nsIWebBrowser,
 
  protected:
   RefPtr<nsDocShellTreeOwner> mDocShellTreeOwner;
-  nsCOMPtr<nsIDocShell> mDocShell;
-  nsCOMPtr<nsIInterfaceRequestor> mDocShellAsReq;
-  nsCOMPtr<nsIBaseWindow> mDocShellAsWin;
-  nsCOMPtr<nsIWebNavigation> mDocShellAsNav;
+  RefPtr<nsDocShell> mDocShell;
   mozilla::OriginAttributes mOriginAttributes;
 
   nsCOMPtr<nsIWidget> mInternalWidget;
@@ -136,7 +132,6 @@ class nsWebBrowser final : public nsIWebBrowser,
   bool mShouldEnableHistory;
   nativeWindow mParentNativeWindow;
   nsIWebProgressListener* mProgressListener;
-  nsCOMPtr<nsIWebProgress> mWebProgress;
 
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
 

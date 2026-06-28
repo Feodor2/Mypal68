@@ -5,6 +5,7 @@
 #include "Classifier.h"
 #include "LookupCacheV4.h"
 #include "nsIFile.h"
+#include "nsIThread.h" //MY
 #include "nsNetCID.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"

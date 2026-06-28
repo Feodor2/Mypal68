@@ -554,7 +554,7 @@ function addTestEngine(basename, httpServer = undefined) {
     }, "browser-search-engine-modified");
 
     info("Adding engine from URL: " + dataUrl + basename);
-    Services.search.addEngine(dataUrl + basename, null, false);
+    Services.search.addOpenSearchEngine(dataUrl + basename, null);
   });
 }
 

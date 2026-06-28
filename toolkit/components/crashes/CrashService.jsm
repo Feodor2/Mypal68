@@ -10,9 +10,6 @@ const { AppConstants } = ChromeUtils.import(
 const { AsyncShutdown } = ChromeUtils.import(
   "resource://gre/modules/AsyncShutdown.jsm"
 );
-const { parseKeyValuePairs } = ChromeUtils.import(
-  "resource://gre/modules/KeyValueParser.jsm"
-);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
@@ -40,13 +37,6 @@ function runMinidumpAnalyzer(minidumpPath, allThreads) {
       const exeName = "minidump-analyzer" + binSuffix;
 
       let exe = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-
-      if (AppConstants.platform === "macosx") {
-        exe.append("crashreporter.app");
-        exe.append("Contents");
-        exe.append("MacOS");
-      }
-
       exe.append(exeName);
 
       let args = [minidumpPath];
@@ -132,19 +122,8 @@ function processExtraFile(extraPath) {
     try {
       let decoder = new TextDecoder();
       let extraData = await OS.File.read(extraPath);
-      let keyValuePairs = parseKeyValuePairs(decoder.decode(extraData));
 
-      // When reading from an .extra file literal '\\n' sequences are
-      // automatically unescaped to two backslashes plus a newline, so we need
-      // to re-escape them into '\\n' again so that the fields holding JSON
-      // strings are valid.
-      ["TelemetryEnvironment", "StackTraces"].forEach(field => {
-        if (field in keyValuePairs) {
-          keyValuePairs[field] = keyValuePairs[field].replace(/\n/g, "n");
-        }
-      });
-
-      return keyValuePairs;
+      return JSON.parse(decoder.decode(extraData));
     } catch (e) {
       Cu.reportError(e);
       return {};

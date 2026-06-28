@@ -17,6 +17,9 @@ var { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 var { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
+const { ExtensionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/ExtensionXPCShellUtils.jsm"
+);
 
 const PREF_SEARCH_URL = "geoSpecificDefaults.url";
 const NS_APP_SEARCH_DIR = "SrchPlugns";
@@ -145,28 +148,6 @@ function removeCacheFile() {
   return false;
 }
 
-/**
- * isUSTimezone taken from nsSearchService.js
- *
- * @returns {boolean}
- */
-function isUSTimezone() {
-  // Timezone assumptions! We assume that if the system clock's timezone is
-  // between Newfoundland and Hawaii, that the user is in North America.
-
-  // This includes all of South America as well, but we have relatively few
-  // en-US users there, so that's OK.
-
-  // 150 minutes = 2.5 hours (UTC-2.5), which is
-  // Newfoundland Daylight Time (http://www.timeanddate.com/time/zones/ndt)
-
-  // 600 minutes = 10 hours (UTC-10), which is
-  // Hawaii-Aleutian Standard Time (http://www.timeanddate.com/time/zones/hast)
-
-  let UTCOffset = new Date().getTimezoneOffset();
-  return UTCOffset >= 150 && UTCOffset <= 600;
-}
-
 const kDefaultenginenamePref = "browser.search.defaultenginename";
 const kTestEngineName = "Test search engine";
 const TOPIC_LOCALES_CHANGE = "intl:app-locales-changed";
@@ -181,7 +162,7 @@ function getDefaultEngineName(isUS) {
   let defaultEngineName = searchSettings.default.searchDefault;
 
   if (isUS === undefined) {
-    isUS = Services.locale.requestedLocale == "en-US" && isUSTimezone();
+    isUS = Services.locale.requestedLocale == "en-US";
   }
 
   if (
@@ -203,7 +184,7 @@ function getDefaultEngineList(isUS) {
   let visibleDefaultEngines = json.default.visibleDefaultEngines;
 
   if (isUS === undefined) {
-    isUS = Services.locale.requestedLocale == "en-US" && isUSTimezone();
+    isUS = Services.locale.requestedLocale == "en-US";
   }
 
   if (isUS) {
@@ -279,13 +260,18 @@ function readJSONFile(aFile) {
 function isSubObjectOf(expectedObj, actualObj) {
   for (let prop in expectedObj) {
     if (expectedObj[prop] instanceof Object) {
-      Assert.equal(expectedObj[prop].length, actualObj[prop].length);
+      Assert.equal(
+        actualObj[prop].length,
+        expectedObj[prop].length,
+        `Should have the correct length for property ${prop}`
+      );
       isSubObjectOf(expectedObj[prop], actualObj[prop]);
     } else {
-      if (expectedObj[prop] != actualObj[prop]) {
-        info("comparing property " + prop);
-      }
-      Assert.equal(expectedObj[prop], actualObj[prop]);
+      Assert.equal(
+        actualObj[prop],
+        expectedObj[prop],
+        `Should have the correct value for property ${prop}`
+      );
     }
   }
 }
@@ -461,9 +447,9 @@ var addTestEngines = async function(aItems) {
       }, "browser-search-engine-modified");
 
       if (item.xmlFileName) {
-        Services.search.addEngine(gDataUrl + item.xmlFileName, null, false);
+        Services.search.addOpenSearchEngine(gDataUrl + item.xmlFileName, null);
       } else {
-        Services.search.addEngineWithDetails(item.name, ...item.details);
+        Services.search.addEngineWithDetails(item.name, item.details);
       }
     });
   }

@@ -7,6 +7,7 @@
 #include "nsThreadUtils.h"
 #include "nsUrlClassifierUtils.h"
 #include "mozilla/Components.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 
 using namespace mozilla;

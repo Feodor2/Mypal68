@@ -89,15 +89,15 @@ async function test_addCrashBase(crashId, allThreads) {
   Assert.ok(crash.metadata.StackTraces, "The StackTraces field is present.\n");
 
   try {
-    let stackTraces = JSON.parse(crash.metadata.StackTraces);
+    let stackTraces = crash.metadata.StackTraces;
     Assert.equal(stackTraces.status, "OK");
     Assert.ok(stackTraces.crash_info, "The crash_info field is populated.");
     Assert.ok(
-      stackTraces.modules && stackTraces.modules.length > 0,
+      stackTraces.modules && !!stackTraces.modules.length,
       "The module list is populated."
     );
     Assert.ok(
-      stackTraces.threads && stackTraces.threads.length > 0,
+      stackTraces.threads && !!stackTraces.threads.length,
       "The thread list is populated."
     );
 
@@ -114,7 +114,7 @@ async function test_addCrashBase(crashId, allThreads) {
     }
 
     let frames = stackTraces.threads[0].frames;
-    Assert.ok(frames && frames.length > 0, "The stack trace is present.\n");
+    Assert.ok(frames && !!frames.length, "The stack trace is present.\n");
   } catch (e) {
     Assert.ok(false, "StackTraces does not contain valid JSON.");
   }
@@ -125,7 +125,7 @@ async function test_addCrashBase(crashId, allThreads) {
   } catch (e) {
     Assert.ok(
       false,
-      "TelemetryEnvironment contents were not properly re-escaped\n"
+      "TelemetryEnvironment contents were not properly escaped\n"
     );
   }
 

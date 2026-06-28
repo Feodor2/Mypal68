@@ -75,6 +75,6 @@ add_task(async function test_notifications() {
     let search_observer = create_search_observer(resolve);
     Services.obs.addObserver(search_observer, "browser-search-engine-modified");
 
-    Services.search.addEngine(gDataUrl + "engine.xml", null, false);
+    Services.search.addOpenSearchEngine(gDataUrl + "engine.xml", null);
   });
 });

@@ -1153,7 +1153,9 @@ function defineAddonWrapperProperty(name, getter) {
 
 ["installDate", "updateDate"].forEach(function(aProp) {
   defineAddonWrapperProperty(aProp, function() {
-    return new Date(addonFor(this)[aProp]);
+    let addon = addonFor(this);
+    // installDate is always set, updateDate is sometimes missing.
+    return new Date(addon[aProp] ?? addon.installDate);
   });
 });
 

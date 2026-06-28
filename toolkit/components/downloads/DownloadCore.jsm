@@ -363,14 +363,6 @@ Download.prototype = {
       );
     }
 
-    if (this.error && this.error.becauseBlockedByReputationCheck) {
-      return Promise.reject(
-        new DownloadError({
-          message: "Cannot start after being blocked by a reputation check.",
-        })
-      );
-    }
-
     // Initialize all the status properties for a new or restarted download.
     this.stopped = false;
     this.canceled = false;
@@ -460,12 +452,6 @@ Download.prototype = {
               becauseTargetFailed: true,
             });
           }
-
-          // Disallow download if parental controls service restricts it.
-          if (await DownloadIntegration.shouldBlockForParentalControls(this)) {
-            throw new DownloadError({ becauseBlockedByParentalControls: true });
-          }
-
           // Disallow download if needed runtime permissions have not been granted
           // by user.
           if (await DownloadIntegration.shouldBlockForRuntimePermissions()) {
@@ -533,15 +519,6 @@ Download.prototype = {
           // download was canceled or failed because of other reasons.
           if (this._promiseCanceled) {
             throw new DownloadError({ message: "Download canceled." });
-          }
-
-          // An HTTP 450 error code is used by Windows to indicate that a uri is
-          // blocked by parental controls. This will prevent the download from
-          // occuring, so an error needs to be raised. This is not performed
-          // during the parental controls check above as it requires the request
-          // to start.
-          if (this._blockedByParentalControls) {
-            ex = new DownloadError({ becauseBlockedByParentalControls: true });
           }
 
           // Update the download error, unless a new attempt already started. The
@@ -1620,8 +1597,6 @@ var DownloadError = function(aProperties) {
     this.message = aProperties.message;
   } else if (
     aProperties.becauseBlocked ||
-    aProperties.becauseBlockedByParentalControls ||
-    aProperties.becauseBlockedByReputationCheck ||
     aProperties.becauseBlockedByRuntimePermissions
   ) {
     this.message = "Download blocked.";
@@ -1643,14 +1618,7 @@ var DownloadError = function(aProperties) {
     }
   }
 
-  if (aProperties.becauseBlockedByParentalControls) {
-    this.becauseBlocked = true;
-    this.becauseBlockedByParentalControls = true;
-  } else if (aProperties.becauseBlockedByReputationCheck) {
-    this.becauseBlocked = true;
-    this.becauseBlockedByReputationCheck = true;
-    this.reputationCheckVerdict = aProperties.reputationCheckVerdict || "";
-  } else if (aProperties.becauseBlockedByRuntimePermissions) {
+  if (aProperties.becauseBlockedByRuntimePermissions) {
     this.becauseBlocked = true;
     this.becauseBlockedByRuntimePermissions = true;
   } else if (aProperties.becauseBlocked) {
@@ -1663,16 +1631,6 @@ var DownloadError = function(aProperties) {
 
   this.stack = new Error().stack;
 };
-
-/**
- * These constants are used by the reputationCheckVerdict property and indicate
- * the detailed reason why a download is blocked.
- *
- * @note These values should not be changed because they can be serialized.
- */
-DownloadError.BLOCK_VERDICT_MALWARE = "Malware";
-DownloadError.BLOCK_VERDICT_POTENTIALLY_UNWANTED = "PotentiallyUnwanted";
-DownloadError.BLOCK_VERDICT_UNCOMMON = "Uncommon";
 
 DownloadError.prototype = {
   __proto__: Error.prototype,
@@ -1699,18 +1657,6 @@ DownloadError.prototype = {
   becauseBlocked: false,
 
   /**
-   * Indicates the download was blocked because downloads are globally
-   * disallowed by the Parental Controls or Family Safety features on Windows.
-   */
-  becauseBlockedByParentalControls: false,
-
-  /**
-   * Indicates the download was blocked because it failed the reputation check
-   * and may be malware.
-   */
-  becauseBlockedByReputationCheck: false,
-
-  /**
    * Indicates the download was blocked because a runtime permission required to
    * download files was not granted.
    *
@@ -1718,15 +1664,6 @@ DownloadError.prototype = {
    * a needed runtime permission (storage) has not been granted by the user.
    */
   becauseBlockedByRuntimePermissions: false,
-
-  /**
-   * If becauseBlockedByReputationCheck is true, indicates the detailed reason
-   * why the download was blocked, according to the "BLOCK_VERDICT_" constants.
-   *
-   * If the download was not blocked or the reason for the block is unknown,
-   * this will be an empty string.
-   */
-  reputationCheckVerdict: "",
 
   /**
    * If this DownloadError was caused by an exception this property will
@@ -1747,11 +1684,8 @@ DownloadError.prototype = {
       becauseSourceFailed: this.becauseSourceFailed,
       becauseTargetFailed: this.becauseTargetFailed,
       becauseBlocked: this.becauseBlocked,
-      becauseBlockedByParentalControls: this.becauseBlockedByParentalControls,
-      becauseBlockedByReputationCheck: this.becauseBlockedByReputationCheck,
       becauseBlockedByRuntimePermissions: this
         .becauseBlockedByRuntimePermissions,
-      reputationCheckVerdict: this.reputationCheckVerdict,
     };
 
     serializeUnknownProperties(this, serializable);
@@ -1778,10 +1712,7 @@ DownloadError.fromSerializable = function(aSerializable) {
       property != "becauseSourceFailed" &&
       property != "becauseTargetFailed" &&
       property != "becauseBlocked" &&
-      property != "becauseBlockedByParentalControls" &&
-      property != "becauseBlockedByReputationCheck" &&
-      property != "becauseBlockedByRuntimePermissions" &&
-      property != "reputationCheckVerdict"
+      property != "becauseBlockedByRuntimePermissions"
   );
 
   return e;
@@ -2128,7 +2059,6 @@ DownloadCopySaver.prototype = {
           ) {
             // Set a flag that can be retrieved later when handling the
             // cancellation so that the proper error can be thrown.
-            this.download._blockedByParentalControls = true;
             aRequest.cancel(Cr.NS_BINDING_ABORTED);
             return;
           }

@@ -91,14 +91,6 @@ class TestView {
         if (testDownload.error.becauseSourceFailed) {
           Assert.equal(download.error.message, "History download failed.");
         }
-        Assert.equal(
-          download.error.becauseBlockedByParentalControls,
-          testDownload.error.becauseBlockedByParentalControls
-        );
-        Assert.equal(
-          download.error.becauseBlockedByReputationCheck,
-          testDownload.error.becauseBlockedByReputationCheck
-        );
       }
     }
     this.resolveWhenExpected();
@@ -127,8 +119,6 @@ add_task(async function test_DownloadHistory() {
     { offset: 10, canceled: true },
     { offset: 20, succeeded: true },
     { offset: 30, error: { becauseSourceFailed: true } },
-    { offset: 40, error: { becauseBlockedByParentalControls: true } },
-    { offset: 50, error: { becauseBlockedByReputationCheck: true } },
     // Session downloads should show up after all the history download, in the
     // same order as they were added.
     { offset: 45, canceled: true, inSession: true },

@@ -26,7 +26,7 @@ audioipc-client = { path = "../../../../media/audioipc/client", optional = true 
 audioipc-server = { path = "../../../../media/audioipc/server", optional = true }
 authenticator = "0.2.6"
 gkrust_utils = { path = "../../../../xpcom/rust/gkrust_utils" }
-rsdparsa_capi = { path = "../../../../media/webrtc/signaling/src/sdp/rsdparsa_capi" }
+rsdparsa_capi = { path = "../../../../dom/media/webrtc/sdp/rsdparsa_capi" }
 xulstore = { path = "../../../components/xulstore", optional = true }
 # We have these to enforce common feature sets for said crates.
 log = {version = "0.4", features = ["release_max_level_info"]}
@@ -37,7 +37,8 @@ cert_storage = { path = "../../../../security/manager/ssl/cert_storage", optiona
 bitsdownload = { path = "../../../components/bitsdownload", optional = true }
 storage = { path = "../../../../storage/rust" }
 bookmark_sync = { path = "../../../components/places/bookmark_sync", optional = true }
-mdns_service = { path="../../../../media/mtransport/mdns_service", optional = true }
+shift_or_euc_c = "0.1.0"
+mdns_service = { path="../../../../dom/media/webrtc/transport/mdns_service", optional = true }
 mapped_hyph = { path = "../../../../third_party/rust/mapped_hyph"  }
 
 unic-langid = { version = "0.9", features = ["likelysubtags"] }
@@ -45,11 +46,11 @@ unic-langid-ffi = { path = "../../../../intl/locale/rust/unic-langid-ffi" }
 fluent-langneg = { version = "0.13", features = ["cldr"] }
 fluent-langneg-ffi = { path = "../../../../intl/locale/rust/fluent-langneg-ffi" }
 
-fluent = { version = "0.16", features = ["fluent-pseudo"] }
+fluent = { version = "0.16.0", features = ["fluent-pseudo"] }
 fluent-ffi = { path = "../../../../intl/l10n/rust/fluent-ffi" }
 l10nregistry-ffi = { path = "../../../../intl/l10n/rust/l10nregistry-ffi" }
-l10nregistry = { git = "https://github.com/mozilla/l10nregistry-rs", rev = "fd02134161505f978e132114cbabdac057ce3b71" }
-fluent-fallback = "0.5"
+l10nregistry = { git = "https://github.com/mozilla/l10nregistry-rs.git", rev = "9da98c6e5325a5f2997191727eaa82c0ebc2004c" }
+fluent-fallback = "0.6.0"
 localization-ffi = { path = "../../../../intl/l10n/rust/localization-ffi" }
 
 [features]

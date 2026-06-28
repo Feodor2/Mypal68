@@ -382,6 +382,12 @@ bool ExceptionHandler::WriteMinidumpWithException(
           exception_code,
           exception_subcode,
           thread_name);
+
+      if (callback_) {
+        result = callback_(dump_path_c_, next_minidump_id_c_, callback_context_,
+                           result);
+      }
+
       if (result && exit_after_write) {
         _exit(exception_type);
       }

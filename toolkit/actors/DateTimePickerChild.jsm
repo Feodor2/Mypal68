@@ -92,7 +92,7 @@ class DateTimePickerChild extends ActorChild {
    * relative to the left/top of the content area.
    */
   getBoundingContentRect(aElement) {
-    return BrowserUtils.getElementBoundingRect(aElement);
+    return BrowserUtils.getElementBoundingScreenRect(aElement);
   }
 
   getTimePickerPref() {

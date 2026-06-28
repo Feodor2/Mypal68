@@ -75,7 +75,7 @@ this.StoragePrincipalHelper = {
               is(
                 ifr.contentWindow.document.effectiveStoragePrincipal
                   .originAttributes.firstPartyDomain,
-                "example.net",
+                "(http,example.net)",
                 "We have first-party set on storagePrincipal"
               );
               info("Sending code to the 3rd party content");

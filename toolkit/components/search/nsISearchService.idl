@@ -154,6 +154,13 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString identifier;
 
   /**
+   * Whether or not this extension is provided by the application, e.g. it is
+   * in the list of configured search engines, or provided by a distribution
+   * set-up.
+   */
+  readonly attribute boolean isAppProvided;
+
+  /**
    * Gets a string representing the hostname from which search results for a
    * given responseType are returned.  This can be specified as an url attribute
    * in the engine description file, but will default to host from the <Url>'s
@@ -249,27 +256,7 @@ interface nsISearchService : nsISupports
   Promise resetToOriginalDefaultEngine();
 
   /**
-   * Checks if an EngineURL of type URLTYPE_SEARCH_HTML exists for
-   * any engine, with a matching method, template URL, and query params.
-   *
-   * @param method
-   *        The HTTP request method used when submitting a search query.
-   *        Must be a case insensitive value of either "get" or "post".
-   *
-   * @param url
-   *        The URL to which search queries should be sent.
-   *        Must not be null.
-   *
-   * @param formData
-   *        The un-sorted form data used as query params.
-   */
-  boolean hasEngineWithURL(in AString method, in AString url, in jsval formData);
-
-  /**
-   * Adds a new search engine from the file at the supplied URI, optionally
-   * asking the user for confirmation first.  If a confirmation dialog is
-   * shown, it will offer the option to begin using the newly added engine
-   * right away.
+   * Adds a new Open Search engine from the file at the supplied URI.
    *
    * @param engineURL
    *        The URL to the search engine's description file.
@@ -279,20 +266,10 @@ interface nsISearchService : nsISupports
    *        icon. This value may be overridden by an icon specified in the
    *        engine description file.
    *
-   * @param confirm
-   *        A boolean value indicating whether the user should be asked for
-   *        confirmation before this engine is added to the list.  If this
-   *        value is false, the engine will be added to the list upon successful
-   *        load, but it will not be selected as the current engine.
-   *
-   * @param extensionID [optional]
-   *        Optional: The correct extensionID if called by an add-on.
-   *
    * @throws NS_ERROR_FAILURE if the description file cannot be successfully
    *         loaded.
    */
-  Promise addEngine(in AString engineURL, in AString iconURL, in boolean confirm,
-                    [optional] in AString extensionID);
+  Promise addOpenSearchEngine(in AString engineURL, in AString iconURL);
 
   /**
    * Adds a new search engine, without asking the user for confirmation and
@@ -373,6 +350,7 @@ interface nsISearchService : nsISupports
 
   /**
    * Returns an array of all installed search engines.
+   * The array is sorted either to the user requirements or the default order.
    *
    * @returns an array of nsISearchEngine objects.
    */
@@ -381,6 +359,7 @@ interface nsISearchService : nsISupports
   /**
    * Returns an array of all installed search engines whose hidden attribute is
    * false.
+   * The array is sorted either to the user requirements or the default order.
    *
    * @returns an array of nsISearchEngine objects.
    */
@@ -389,6 +368,7 @@ interface nsISearchService : nsISupports
   /**
    * Returns an array of all default search engines. This includes all loaded
    * engines that aren't in the user's profile directory.
+   * The array is sorted to the default order.
    *
    * @returns an array of nsISearchEngine objects.
    */
@@ -477,42 +457,3 @@ interface nsISearchService : nsISupports
    */
   nsISearchParseSubmissionResult parseSubmissionURL(in AString url);
 };
-
-%{ C++
-/**
- * The observer topic to listen to for actions performed on installed
- * search engines.
- */
-#define SEARCH_ENGINE_TOPIC "browser-search-engine-modified"
-
-/**
- * Sent when an engine is removed from the data store.
- */
-#define SEARCH_ENGINE_REMOVED      "engine-removed"
-
-/**
- * Sent when an engine is changed. This includes when the engine's "hidden"
- * property is changed.
- */
-#define SEARCH_ENGINE_CHANGED      "engine-changed"
-
-/**
- * Sent when an engine is added to the list of available engines.
- */
-#define SEARCH_ENGINE_ADDED        "engine-added"
-
-/**
- * Sent when a search engine being installed from a remote plugin description
- * file is completely loaded. This is used internally by the search service as
- * an indication of when the engine can be added to the internal store, and
- * therefore should not be used to detect engine availability. It is always
- * followed by an "added" notification.
- */
-#define SEARCH_ENGINE_LOADED       "engine-loaded"
-
-/**
- * Sent when the "default" engine is changed.
- */
-#define SEARCH_ENGINE_DEFAULT      "engine-default";
-
-%}

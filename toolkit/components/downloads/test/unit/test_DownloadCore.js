@@ -131,7 +131,6 @@ add_task(function test_DownloadError() {
   Assert.ok(!error.becauseSourceFailed);
   Assert.ok(!error.becauseTargetFailed);
   Assert.ok(!error.becauseBlocked);
-  Assert.ok(!error.becauseBlockedByParentalControls);
 
   error = new DownloadError({ message: "Unknown error." });
   Assert.equal(error.result, Cr.NS_ERROR_FAILURE);
@@ -158,7 +157,6 @@ add_task(function test_DownloadError() {
   Assert.ok(error.becauseSourceFailed);
   Assert.ok(!error.becauseTargetFailed);
   Assert.ok(!error.becauseBlocked);
-  Assert.ok(!error.becauseBlockedByParentalControls);
 
   // This test does not set inferCause, so becauseSourceFailed will not be set.
   error = new DownloadError({ result: Cr.NS_ERROR_MALFORMED_URI });
@@ -173,19 +171,16 @@ add_task(function test_DownloadError() {
   Assert.ok(!error.becauseSourceFailed);
   Assert.ok(error.becauseTargetFailed);
   Assert.ok(!error.becauseBlocked);
-  Assert.ok(!error.becauseBlockedByParentalControls);
 
   error = new DownloadError({ becauseBlocked: true });
   Assert.equal(error.message, "Download blocked.");
   Assert.ok(!error.becauseSourceFailed);
   Assert.ok(!error.becauseTargetFailed);
   Assert.ok(error.becauseBlocked);
-  Assert.ok(!error.becauseBlockedByParentalControls);
 
   error = new DownloadError({ becauseBlockedByParentalControls: true });
   Assert.equal(error.message, "Download blocked.");
   Assert.ok(!error.becauseSourceFailed);
   Assert.ok(!error.becauseTargetFailed);
   Assert.ok(error.becauseBlocked);
-  Assert.ok(error.becauseBlockedByParentalControls);
 });

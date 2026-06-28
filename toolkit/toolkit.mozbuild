@@ -6,6 +6,7 @@ include('/js/app.mozbuild')
 
 PYTHON_UNITTEST_MANIFESTS += [
     '/layout/tools/reftest/selftest/python.ini',
+    '/testing/condprofile/condprof/tests/python.ini',
     '/testing/marionette/harness/marionette_harness/tests/harness_unit/python.ini',
     '/testing/mochitest/tests/python/python.ini',
     '/testing/raptor/test/python.ini',
@@ -89,7 +90,7 @@ DIRS += [
 if CONFIG['MOZ_WEBRTC'] and CONFIG['COMPILE_ENVIRONMENT']:
     DIRS += [
         '/media/webrtc',
-        '/media/mtransport',
+        '/dom/media/webrtc/transport',
     ]
 
 if CONFIG['ENABLE_TESTS']:
@@ -185,16 +186,12 @@ if CONFIG['ENABLE_TESTS']:
         '/testing/extensions',
     ]
 
-    # The file id utility requires breakpad libraries.
-    if CONFIG['MOZ_CRASHREPORTER']:
-        DIRS += ['/testing/tools/fileid']
-
     if CONFIG['MOZ_MEMORY']:
         DIRS += ['/memory/gtest']
 
     if CONFIG['MOZ_WEBRTC']:
         DIRS += [
-            '/media/mtransport/test',
+            '/dom/media/webrtc/transport/test',
         ]
 
 if CONFIG['FUZZING']:

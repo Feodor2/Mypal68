@@ -39,6 +39,7 @@ add_task(async function test_builtin_location() {
   notEqual(addon, null, "Addon is installed");
   ok(addon.isActive, "Addon is active");
   ok(addon.isPrivileged, "Addon is privileged");
+  ok(wrapper.extension.isAppProvided, "Addon is app provided");
   ok(!addon.hidden, "Addon is not hidden");
 
   // After a restart, the extension should start up normally.
@@ -91,6 +92,7 @@ add_task(async function test_builtin_location_hidden() {
   notEqual(addon, null, "Addon is installed");
   ok(addon.isActive, "Addon is active");
   ok(addon.isPrivileged, "Addon is privileged");
+  ok(wrapper.extension.isAppProvided, "Addon is app provided");
   ok(addon.hidden, "Addon is hidden");
 
   await wrapper.unload();

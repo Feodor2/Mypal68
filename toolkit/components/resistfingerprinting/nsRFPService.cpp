@@ -528,58 +528,6 @@ uint32_t nsRFPService::GetSpoofedPresentedFrames(double aTime, uint32_t aWidth,
                       ((100 - boundedDroppedRatio) / 100.0));
 }
 
-static uint32_t GetSpoofedVersion() {
-  // If we can't get the current Firefox version, use a hard-coded ESR version.
-  const uint32_t kKnownEsrVersion = 60;
-
-  nsresult rv;
-  nsCOMPtr<nsIXULAppInfo> appInfo =
-      do_GetService("@mozilla.org/xre/app-info;1", &rv);
-  NS_ENSURE_SUCCESS(rv, kKnownEsrVersion);
-
-  nsAutoCString appVersion;
-  rv = appInfo->GetVersion(appVersion);
-  NS_ENSURE_SUCCESS(rv, kKnownEsrVersion);
-
-  // The browser version will be spoofed as the last ESR version.
-  // By doing so, the anonymity group will cover more versions instead of one
-  // version.
-  uint32_t firefoxVersion = appVersion.ToInteger(&rv);
-  NS_ENSURE_SUCCESS(rv, kKnownEsrVersion);
-
-#ifdef DEBUG
-  // If we are running in Firefox ESR, determine whether the formula of ESR
-  // version has changed.  Once changed, we must update the formula in this
-  // function.
-  if (!strcmp(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL), "esr")) {
-    MOZ_ASSERT(((firefoxVersion % 8) == 4),
-               "Please update ESR version formula in nsRFPService.cpp");
-  }
-#endif  // DEBUG
-
-  // Starting with Firefox 52, a new ESR version will be released every
-  // eight Firefox versions: 52, 60, 68, ...
-  // We infer the last and closest ESR version based on this rule.
-  return firefoxVersion - ((firefoxVersion - 4) % 8);
-}
-
-/* static */
-void nsRFPService::GetSpoofedUserAgent(nsACString& userAgent,
-                                       bool isForHTTPHeader) {
-  // This function generates the spoofed value of User Agent.
-  // We spoof the values of the platform and Firefox version, which could be
-  // used as fingerprinting sources to identify individuals.
-  // Reference of the format of User Agent:
-  // https://developer.mozilla.org/en-US/docs/Web/API/NavigatorID/userAgent
-  // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
-
-  uint32_t spoofedVersion = GetSpoofedVersion();
-  const char* spoofedOS = isForHTTPHeader ? SPOOFED_HTTP_UA_OS : SPOOFED_UA_OS;
-  userAgent.Assign(nsPrintfCString(
-      "Mozilla/5.0 (%s; rv:%d.0) Gecko/%s Firefox/%d.0", spoofedOS,
-      spoofedVersion, LEGACY_UA_GECKO_TRAIL, spoofedVersion));
-}
-
 static const char* gCallbackPrefs[] = {
     RESIST_FINGERPRINTING_PREF,   RFP_TIMER_PREF,
     RFP_TIMER_UNCONDITIONAL_PREF, RFP_TIMER_VALUE_PREF,

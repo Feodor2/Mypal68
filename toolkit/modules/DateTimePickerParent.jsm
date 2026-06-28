@@ -115,19 +115,6 @@ var DateTimePickerParent = {
     let type = aData.type;
     let detail = aData.detail;
 
-    this._anchor = aBrowser.popupAnchor;
-    if (!this._anchor) {
-      throw new Error(
-        "No popup anchor for this browser, cannot show date picker"
-      );
-    }
-
-    this._anchor.style.left = rect.left + "px";
-    this._anchor.style.top = rect.top + "px";
-    this._anchor.style.width = rect.width + "px";
-    this._anchor.style.height = rect.height + "px";
-    this._anchor.hidden = false;
-
     debug("Opening picker with details: " + JSON.stringify(detail));
 
     let window = aBrowser.ownerGlobal;
@@ -147,9 +134,7 @@ var DateTimePickerParent = {
       return;
     }
     this.picker = new DateTimePickerPanel(aBrowser.dateTimePicker);
-    // The arrow panel needs an anchor to work. The popupAnchor (this._anchor)
-    // is a transparent div that the arrow can point to.
-    this.picker.openPicker(type, this._anchor, detail);
+    this.picker.openPicker(type, rect, detail);
 
     this.addPickerListeners();
   },
@@ -159,7 +144,6 @@ var DateTimePickerParent = {
     this.removePickerListeners();
     this.picker = null;
     this.weakBrowser = null;
-    this._anchor.hidden = true;
   },
 
   // Listen to picker's event.

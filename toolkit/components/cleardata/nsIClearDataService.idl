@@ -219,9 +219,14 @@ interface nsIClearDataService : nsISupports
   const uint32_t CLEAR_CERT_EXCEPTIONS = 1 << 21;
 
   /**
+   * Clear the CORS preflight cache.
+   */
+  const uint32_t CLEAR_PREFLIGHT_CACHE = 1 << 22;
+
+  /**
    * Use this value to delete all the data.
    */
-  const uint32_t CLEAR_ALL = 0xFFFFFF;
+  const uint32_t CLEAR_ALL = 0xFFFFFFFF;
 
   /**************************************************************************
    * The following flags are helpers: they combine some of the previous flags
@@ -231,7 +236,8 @@ interface nsIClearDataService : nsISupports
   /**
    * Delete all the possible caches.
    */
-  const uint32_t CLEAR_ALL_CACHES = CLEAR_NETWORK_CACHE | CLEAR_IMAGE_CACHE;
+  const uint32_t CLEAR_ALL_CACHES = CLEAR_NETWORK_CACHE | CLEAR_IMAGE_CACHE |
+    CLEAR_PREFLIGHT_CACHE;
 
   /**
    * Delete all DOM storages

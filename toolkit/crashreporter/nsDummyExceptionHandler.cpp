@@ -36,8 +36,6 @@ nsresult SetupExtraData(nsIFile* aAppDataDirectory,
 
 nsresult UnsetExceptionHandler() { return NS_ERROR_NOT_IMPLEMENTED; }
 
-void NotifyCrashReporterClientCreated() {}
-
 nsresult AnnotateCrashReport(Annotation key, bool data) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -178,31 +176,26 @@ void UnregisterInjectorCallback(DWORD processID) {}
 
 bool GetLastRunCrashID(nsAString& id) { return false; }
 
-#if defined(XP_WIN)
-bool SetRemoteExceptionHandler(const nsACString& crashPipe,
-                               uintptr_t aCrashTimeAnnotationFile) {
-  return false;
-}
-
-#elif defined(XP_MACOSX)
-
-bool SetRemoteExceptionHandler(const nsACString& crashPipe) { return false; }
-
-#else
+#if !defined(XP_WIN) && !defined(XP_MACOSX)
 
 bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd) {
   return false;
 }
 
-bool SetRemoteExceptionHandler() { return false; }
-#endif  // XP_WIN
+#endif  // !defined(XP_WIN) && !defined(XP_MACOSX)
+
+bool SetRemoteExceptionHandler(const char* aCrashPipe,
+                               uintptr_t aCrashTimeAnnotationFile) {
+  return false;
+}
 
 bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
                           AnnotationTable& aAnnotations, uint32_t* aSequence) {
   return false;
 }
 
-bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType) {
+bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType,
+                              nsString* aDumpId) {
   return false;
 }
 

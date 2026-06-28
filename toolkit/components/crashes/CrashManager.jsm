@@ -6,9 +6,6 @@
 
 const myScope = this;
 
-const { parseKeyValuePairsFromLines } = ChromeUtils.import(
-  "resource://gre/modules/KeyValueParser.jsm"
-);
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { PromiseUtils } = ChromeUtils.import(
@@ -55,10 +52,7 @@ function getAndRemoveField(obj, field) {
   let value = null;
 
   if (field in obj) {
-    // We split extra files on LF characters but Windows-generated ones might
-    // contain trailing CR characters so trim them here.
-    value = obj[field].trim();
-
+    value = obj[field];
     delete obj[field];
   }
 
@@ -218,6 +212,8 @@ CrashManager.prototype = Object.freeze({
   EVENT_FILE_SUCCESS: "ok",
   // The event appears to be malformed.
   EVENT_FILE_ERROR_MALFORMED: "malformed",
+  // The event is obsolete.
+  EVENT_FILE_ERROR_OBSOLETE: "obsolete",
   // The type of event is unknown.
   EVENT_FILE_ERROR_UNKNOWN_EVENT: "unknown-event",
 
@@ -355,6 +351,7 @@ CrashManager.prototype = Object.freeze({
               // Fall through.
 
               case this.EVENT_FILE_ERROR_MALFORMED:
+              case this.EVENT_FILE_ERROR_OBSOLETE:
                 deletePaths.push(entry.path);
                 break;
 
@@ -684,7 +681,7 @@ CrashManager.prototype = Object.freeze({
       "TelemetryEnvironment"
     );
     let sessionId = getAndRemoveField(reportMeta, "TelemetrySessionId");
-    let stackTraces = parseAndRemoveField(reportMeta, "StackTraces");
+    let stackTraces = getAndRemoveField(reportMeta, "StackTraces");
     let minidumpSha256Hash = getAndRemoveField(
       reportMeta,
       "MinidumpSha256Hash"
@@ -724,16 +721,12 @@ CrashManager.prototype = Object.freeze({
 
     switch (type) {
       case "crash.main.1":
-        if (lines.length > 1) {
-          this._log.warn(
-            "Multiple lines unexpected in payload for " + entry.path
-          );
-          return this.EVENT_FILE_ERROR_MALFORMED;
-        }
-      // fall-through
       case "crash.main.2":
+        return this.EVENT_FILE_ERROR_OBSOLETE;
+
+      case "crash.main.3":
         let crashID = lines[0];
-        let metadata = parseKeyValuePairsFromLines(lines.slice(1));
+        let metadata = JSON.parse(lines[1]);
         store.addCrash(
           this.PROCESS_TYPE_MAIN,
           this.CRASH_TYPE_CRASH,

@@ -959,13 +959,7 @@ add_task(function test_common_initialize() {
     __proto__: base,
     loadPublicDownloadListFromStore: () => Promise.resolve(),
     shouldKeepBlockedData: () => Promise.resolve(false),
-    shouldBlockForParentalControls: () => Promise.resolve(false),
     shouldBlockForRuntimePermissions: () => Promise.resolve(false),
-    shouldBlockForReputationCheck: () =>
-      Promise.resolve({
-        shouldBlock: false,
-        verdict: "",
-      }),
     confirmLaunchExecutable: () => Promise.resolve(),
     launchFile: () => Promise.resolve(),
     showContainingDirectory: () => Promise.resolve(),

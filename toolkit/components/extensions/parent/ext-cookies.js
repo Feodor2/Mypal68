@@ -462,6 +462,15 @@ this.cookies = class extends ExtensionAPI {
 
           let sameSite = SAME_SITE_STATUSES.indexOf(details.sameSite);
 
+          let schemeType = Ci.nsICookie.SCHEME_UNSET;
+          if (uri.scheme === "https") {
+            schemeType = Ci.nsICookie.SCHEME_HTTPS;
+          } else if (uri.scheme === "http") {
+            schemeType = Ci.nsICookie.SCHEME_HTTP;
+          } else if (uri.scheme === "file") {
+            schemeType = Ci.nsICookie.SCHEME_FILE;
+          }
+
           // The permission check may have modified the domain, so use
           // the new value instead.
           Services.cookies.add(
@@ -474,7 +483,8 @@ this.cookies = class extends ExtensionAPI {
             isSession,
             expiry,
             originAttributes,
-            sameSite
+            sameSite,
+            schemeType
           );
 
           return self.cookies.get(details);

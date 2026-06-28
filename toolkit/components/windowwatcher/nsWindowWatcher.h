@@ -22,6 +22,7 @@
 #include "nsIRemoteTab.h"
 #include "nsPIWindowWatcher.h"
 #include "nsTArray.h"
+#include "mozilla/dom/WindowFeatures.h"  // mozilla::dom::WindowFeatures
 
 class nsIURI;
 class nsIDocShellTreeItem;
@@ -51,8 +52,7 @@ class nsWindowWatcher : public nsIWindowWatcher,
   static int32_t GetWindowOpenLocation(nsPIDOMWindowOuter* aParent,
                                        uint32_t aChromeFlags,
                                        bool aCalledFromJS,
-                                       bool aPositionSpecified,
-                                       bool aSizeSpecified);
+                                       bool aWidthSpecified);
 
  protected:
   virtual ~nsWindowWatcher();
@@ -89,18 +89,20 @@ class nsWindowWatcher : public nsIWindowWatcher,
   static nsresult URIfromURL(const char* aURL, mozIDOMWindowProxy* aParent,
                              nsIURI** aURI);
 
-  static uint32_t CalculateChromeFlagsForChild(const nsACString& aFeaturesStr);
+  static bool ShouldOpenPopup(const mozilla::dom::WindowFeatures& aFeatures,
+                              const SizeSpec& aSizeSpec);
 
-  static uint32_t CalculateChromeFlagsForParent(mozIDOMWindowProxy* aParent,
-                                                const nsACString& aFeaturesStr,
-                                                bool aDialog, bool aChromeURL,
-                                                bool aHasChromeParent,
-                                                bool aCalledFromJS);
+  static uint32_t CalculateChromeFlagsForChild(
+      const mozilla::dom::WindowFeatures& aFeatures, const SizeSpec& aSizeSpec);
 
-  static int32_t WinHasOption(const nsACString& aOptions, const char* aName,
-                              int32_t aDefault, bool* aPresenceFlag);
+  static uint32_t CalculateChromeFlagsForParent(
+      mozIDOMWindowProxy* aParent,
+      const mozilla::dom::WindowFeatures& aFeatures, const SizeSpec& aSizeSpec,
+      bool aDialog, bool aChromeURL, bool aHasChromeParent, bool aCalledFromJS);
+
   /* Compute the right SizeSpec based on aFeatures */
-  static void CalcSizeSpec(const nsACString& aFeatures, SizeSpec& aResult);
+  static void CalcSizeSpec(const mozilla::dom::WindowFeatures& aFeatures,
+                           bool aHasChromeParent, SizeSpec& aResult);
   static nsresult ReadyOpenedDocShellItem(nsIDocShellTreeItem* aOpenedItem,
                                           nsPIDOMWindowOuter* aParent,
                                           bool aWindowIsNew,
@@ -116,23 +118,20 @@ class nsWindowWatcher : public nsIWindowWatcher,
                                  nsIDocShellTreeOwner** aResult);
 
  private:
-  nsresult CreateChromeWindow(const nsACString& aFeatures,
-                              nsIWebBrowserChrome* aParentChrome,
+  nsresult CreateChromeWindow(nsIWebBrowserChrome* aParentChrome,
                               uint32_t aChromeFlags,
                               nsIRemoteTab* aOpeningBrowserParent,
                               mozIDOMWindowProxy* aOpener,
                               uint64_t aNextRemoteTabId,
                               nsIWebBrowserChrome** aResult);
 
-  void MaybeDisablePersistence(const nsACString& aFeatures,
+  void MaybeDisablePersistence(const SizeSpec& sizeSpec,
                                nsIDocShellTreeOwner* aTreeOwner);
 
-  static uint32_t CalculateChromeFlagsHelper(uint32_t aInitialFlags,
-                                             const nsACString& aFeatures,
-                                             bool& presenceFlag,
-                                             bool aDialog = false,
-                                             bool aHasChromeParent = false,
-                                             bool aChromeURL = false);
+  static uint32_t CalculateChromeFlagsHelper(
+      uint32_t aInitialFlags, const mozilla::dom::WindowFeatures& aFeatures,
+      const SizeSpec& aSizeSpec, bool* presenceFlag = nullptr,
+      bool aHasChromeParent = false);
   static uint32_t EnsureFlagsSafeForContent(uint32_t aChromeFlags,
                                             bool aChromeURL = false);
 

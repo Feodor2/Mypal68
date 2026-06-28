@@ -168,14 +168,29 @@ class DateTimeTestHelper {
    * ready for testing.
    *
    * @param  {String} pageUrl
+   * @param  {bool} inFrame true if input is in the first child frame
+   * @param  {String} openMethod "click" or "showPicker"
    */
-  async openPicker(pageUrl) {
+  async openPicker(pageUrl, inFrame, openMethod = "click") {
     this.tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
-    await BrowserTestUtils.synthesizeMouseAtCenter(
-      "input",
-      {},
-      gBrowser.selectedBrowser
-    );
+    let bc = gBrowser.selectedBrowser;
+    if (inFrame) {
+      await SpecialPowers.spawn(bc, [], async function() {
+        const iframe = content.document.querySelector("iframe");
+        // Ensure the iframe's position is correct before doing any
+        // other operations
+        iframe.getBoundingClientRect();
+      });
+      bc = bc.browsingContext.children[0];
+    }
+    if (openMethod === "click") {
+      await BrowserTestUtils.synthesizeMouseAtCenter("input", {}, bc);
+    } else if (openMethod === "showPicker") {
+      await SpecialPowers.spawn(bc, [], function() {
+        content.document.notifyUserGestureActivation();
+        content.document.querySelector("input").showPicker();
+      });
+    }
     this.frame = this.panel.querySelector("#dateTimePopupFrame");
     await this.waitForPickerReady();
   }

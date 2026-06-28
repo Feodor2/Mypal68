@@ -1933,10 +1933,6 @@ add_task(async function test_cancel_midway_restart_with_content_encoding() {
  * Download with parental controls enabled.
  */
 add_task(async function test_blocked_parental_controls() {
-  let blockFn = base => ({
-    shouldBlockForParentalControls: () => Promise.resolve(true),
-  });
-
   Integration.downloads.register(blockFn);
   function cleanup() {
     Integration.downloads.unregister(blockFn);
@@ -1963,8 +1959,6 @@ add_task(async function test_blocked_parental_controls() {
     if (!(ex instanceof Downloads.Error) || !ex.becauseBlocked) {
       throw ex;
     }
-    Assert.ok(ex.becauseBlockedByParentalControls);
-    Assert.ok(download.error.becauseBlockedByParentalControls);
   }
 
   // Now that the download stopped, the target file should not exist.
@@ -1994,8 +1988,6 @@ add_task(async function test_blocked_parental_controls_httpstatus450() {
     if (!(ex instanceof Downloads.Error) || !ex.becauseBlocked) {
       throw ex;
     }
-    Assert.ok(ex.becauseBlockedByParentalControls);
-    Assert.ok(download.error.becauseBlockedByParentalControls);
     Assert.ok(download.stopped);
   }
 
@@ -2061,73 +2053,6 @@ add_task(async function test_getSha256Hash() {
 });
 
 /**
- * Create a download which will be reputation blocked.
- *
- * @param options
- *        {
- *           keepPartialData: bool,
- *           keepBlockedData: bool,
- *        }
- * @return {Promise}
- * @resolves The reputation blocked download.
- * @rejects JavaScript exception.
- */
-var promiseBlockedDownload = async function(options) {
-  let blockFn = base => ({
-    shouldBlockForReputationCheck: () =>
-      Promise.resolve({
-        shouldBlock: true,
-        verdict: Downloads.Error.BLOCK_VERDICT_UNCOMMON,
-      }),
-    shouldKeepBlockedData: () => Promise.resolve(options.keepBlockedData),
-  });
-
-  Integration.downloads.register(blockFn);
-  function cleanup() {
-    Integration.downloads.unregister(blockFn);
-  }
-  registerCleanupFunction(cleanup);
-
-  let download;
-
-  try {
-    if (options.keepPartialData) {
-      download = await promiseStartDownload_tryToKeepPartialData();
-      continueResponses();
-    } else if (gUseLegacySaver) {
-      download = await promiseStartLegacyDownload();
-    } else {
-      download = await promiseNewDownload();
-      await download.start();
-      do_throw("The download should have blocked.");
-    }
-
-    await promiseDownloadStopped(download);
-    do_throw("The download should have blocked.");
-  } catch (ex) {
-    if (!(ex instanceof Downloads.Error) || !ex.becauseBlocked) {
-      throw ex;
-    }
-    Assert.ok(ex.becauseBlockedByReputationCheck);
-    Assert.equal(
-      ex.reputationCheckVerdict,
-      Downloads.Error.BLOCK_VERDICT_UNCOMMON
-    );
-    Assert.ok(download.error.becauseBlockedByReputationCheck);
-    Assert.equal(
-      download.error.reputationCheckVerdict,
-      Downloads.Error.BLOCK_VERDICT_UNCOMMON
-    );
-  }
-
-  Assert.ok(download.stopped);
-  Assert.ok(!download.succeeded);
-
-  cleanup();
-  return download;
-};
-
-/**
  * Checks that application reputation blocks the download and the target file
  * does not exist.
  */
@@ -2147,136 +2072,6 @@ add_task(async function test_blocked_applicationReputation() {
 });
 
 /**
- * Checks that if a download restarts while processing an application reputation
- * request, the status is handled correctly.
- */
-add_task(async function test_blocked_applicationReputation_race() {
-  let isFirstShouldBlockCall = true;
-
-  let blockFn = base => ({
-    shouldBlockForReputationCheck(download) {
-      if (isFirstShouldBlockCall) {
-        isFirstShouldBlockCall = false;
-
-        // 2. Cancel and restart the download before the first attempt has a
-        //    chance to finish.
-        download.cancel();
-        download.removePartialData();
-        download.start();
-
-        // 3. Allow the first attempt to finish with a blocked response.
-        return Promise.resolve({
-          shouldBlock: true,
-          verdict: Downloads.Error.BLOCK_VERDICT_UNCOMMON,
-        });
-      }
-
-      // 4/5. Don't block the download the second time. The race condition would
-      //      occur with the first attempt regardless of whether the second one
-      //      is blocked, but not blocking here makes the test simpler.
-      return Promise.resolve({
-        shouldBlock: false,
-        verdict: "",
-      });
-    },
-    shouldKeepBlockedData: () => Promise.resolve(true),
-  });
-
-  Integration.downloads.register(blockFn);
-  function cleanup() {
-    Integration.downloads.unregister(blockFn);
-  }
-  registerCleanupFunction(cleanup);
-
-  let download;
-
-  try {
-    // 1. Start the download and get a reference to the promise asociated with
-    //    the first attempt, before allowing the response to continue.
-    download = await promiseStartDownload_tryToKeepPartialData();
-    let firstAttempt = promiseDownloadStopped(download);
-    continueResponses();
-
-    // 4/5. Wait for the first attempt to be completed. The result of this
-    //      should appear as a cancellation.
-    await firstAttempt;
-
-    do_throw("The first attempt should have been canceled.");
-  } catch (ex) {
-    // The "becauseBlocked" property should be false.
-    if (!(ex instanceof Downloads.Error) || ex.becauseBlocked) {
-      throw ex;
-    }
-  }
-
-  // 6. Wait for the second attempt to be completed.
-  await promiseDownloadStopped(download);
-
-  // 7. At this point, "hasBlockedData" should be false.
-  Assert.ok(!download.hasBlockedData);
-
-  cleanup();
-});
-
-/**
- * Checks that application reputation blocks the download but maintains the
- * blocked data, which will be deleted when the block is confirmed.
- */
-add_task(async function test_blocked_applicationReputation_confirmBlock() {
-  let download = await promiseBlockedDownload({
-    keepPartialData: true,
-    keepBlockedData: true,
-  });
-
-  Assert.ok(download.hasBlockedData);
-  Assert.equal((await OS.File.stat(download.target.path)).size, 0);
-  Assert.ok(await OS.File.exists(download.target.partFilePath));
-
-  await download.confirmBlock();
-
-  // After confirming the block the download should be in a failed state and
-  // have no downloaded data left on disk.
-  Assert.ok(download.stopped);
-  Assert.ok(!download.succeeded);
-  Assert.ok(!download.hasBlockedData);
-  Assert.equal(false, await OS.File.exists(download.target.partFilePath));
-  Assert.equal(false, await OS.File.exists(download.target.path));
-  Assert.ok(!download.target.exists);
-  Assert.equal(download.target.size, 0);
-});
-
-/**
- * Checks that application reputation blocks the download but maintains the
- * blocked data, which will be used to complete the download when unblocking.
- */
-add_task(async function test_blocked_applicationReputation_unblock() {
-  let download = await promiseBlockedDownload({
-    keepPartialData: true,
-    keepBlockedData: true,
-  });
-
-  Assert.ok(download.hasBlockedData);
-  Assert.equal((await OS.File.stat(download.target.path)).size, 0);
-  Assert.ok(await OS.File.exists(download.target.partFilePath));
-
-  await download.unblock();
-
-  // After unblocking the download should have succeeded and be
-  // present at the final path.
-  Assert.ok(download.stopped);
-  Assert.ok(download.succeeded);
-  Assert.ok(!download.hasBlockedData);
-  Assert.equal(false, await OS.File.exists(download.target.partFilePath));
-  await promiseVerifyTarget(download.target, TEST_DATA_SHORT + TEST_DATA_SHORT);
-
-  // The only indication the download was previously blocked is the
-  // existence of the error, so we make sure it's still set.
-  Assert.ok(download.error instanceof Downloads.Error);
-  Assert.ok(download.error.becauseBlocked);
-  Assert.ok(download.error.becauseBlockedByReputationCheck);
-});
-
-/**
  * Check that calling cancel on a blocked download will not cause errors
  */
 add_task(async function test_blocked_applicationReputation_cancel() {
@@ -2290,7 +2085,6 @@ add_task(async function test_blocked_applicationReputation_cancel() {
 
   // Calling cancel should not have changed the current state, the download
   // should still be blocked.
-  Assert.ok(download.error.becauseBlockedByReputationCheck);
   Assert.ok(download.stopped);
   Assert.ok(!download.succeeded);
   Assert.ok(download.hasBlockedData);

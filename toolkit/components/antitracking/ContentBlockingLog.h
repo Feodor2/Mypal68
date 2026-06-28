@@ -9,6 +9,7 @@
 #include "mozilla/JSONWriter.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tuple.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIWebProgressListener.h"
@@ -78,11 +79,12 @@ class ContentBlockingLog final {
       const nsACString& aOrigin, uint32_t aType, bool aBlocked,
       const Maybe<ContentBlockingNotifier::StorageAccessGrantedReason>& aReason,
       const nsTArray<nsCString>& aTrackingFullHashes) {
-    DebugOnly<bool> isCookiesBlockedTracker =
-        aType == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
+    DebugOnly<bool> isCookiesBlocked =
+        (aType == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN &&
+         StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled());
     MOZ_ASSERT_IF(aBlocked, aReason.isNothing());
-    MOZ_ASSERT_IF(!isCookiesBlockedTracker, aReason.isNothing());
-    MOZ_ASSERT_IF(isCookiesBlockedTracker && !aBlocked, aReason.isSome());
+    MOZ_ASSERT_IF(!isCookiesBlocked, aReason.isNothing());
+    MOZ_ASSERT_IF(isCookiesBlocked && !aBlocked, aReason.isSome());
 
     if (aOrigin.IsVoid()) {
       return;
@@ -238,15 +240,16 @@ class ContentBlockingLog final {
   }
 
   void AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
-    aSizes.mDOMOtherSize +=
+    aSizes.mDOMSizes.mDOMOtherSize +=
         mLog.ShallowSizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
 
     // Now add the sizes of each origin log queue.
     for (const OriginEntry& entry : mLog) {
       if (entry.mData) {
-        aSizes.mDOMOtherSize += aSizes.mState.mMallocSizeOf(entry.mData.get()) +
-                                entry.mData->mLogs.ShallowSizeOfExcludingThis(
-                                    aSizes.mState.mMallocSizeOf);
+        aSizes.mDOMSizes.mDOMOtherSize +=
+            aSizes.mState.mMallocSizeOf(entry.mData.get()) +
+            entry.mData->mLogs.ShallowSizeOfExcludingThis(
+                aSizes.mState.mMallocSizeOf);
       }
     }
   }

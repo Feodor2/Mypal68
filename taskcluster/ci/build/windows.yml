@@ -7,6 +7,9 @@ job-defaults:
         using: mozharness
         use-caches: false
         tooltool-downloads: internal
+    fetches:
+        toolchain:
+            - win64-dump-syms
 
 win32/debug:
     description: "Win32 Debug"
@@ -14,6 +17,7 @@ win32/debug:
         product: firefox
         job-name: win32-debug
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
     treeherder:
         platform: windows2012-32/debug
@@ -24,6 +28,7 @@ win32/debug:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -50,6 +55,7 @@ win32/opt:
         product: firefox
         job-name: win32-opt
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
     treeherder:
         platform: windows2012-32/opt
@@ -87,6 +93,7 @@ win64/debug:
         product: firefox
         job-name: win64-debug
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
     treeherder:
         platform: windows2012-64/debug
@@ -97,6 +104,7 @@ win64/debug:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -197,6 +205,7 @@ win64/opt:
         product: firefox
         job-name: win64-opt
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
     treeherder:
         platform: windows2012-64/opt
@@ -264,6 +273,62 @@ win64-plain/opt:
             - win64-node
             - win64-cbindgen
 
+win64-cross/opt:
+    description: "Win64 Opt Cross"
+    index:
+        product: firefox
+        job-name: win64-cross-opt
+    treeherder:
+        platform: windows2012-64/opt
+        symbol: Bx
+        tier: 2
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian9-amd64-build}
+        max-run-time: 7200
+        env:
+            PERFHERDER_EXTRA_OPTIONS: cross
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+    run:
+        actions: [get-secrets, build]
+        options: [append-env-variables-from-configs]
+        script: mozharness/scripts/fx_desktop_build.py
+        secrets: true
+        config:
+            - builds/releng_base_firefox.py
+              builds/releng_base_linux_64_builds.py
+        extra-config:
+            disable_package_metrics: true
+            mozconfig_platform: win64
+            env:
+                # Setting LD_PRELOAD at the worker level would set it during
+                # fetch-content, which can fail randomly when a tar/unzip subprocess
+                # of fetch-content starts while the library is being extracted by
+                # another.
+                LD_PRELOAD: "/builds/worker/fetches/liblowercase/liblowercase.so"
+                LOWERCASE_DIRS: "/builds/worker/workspace/build/src/vs2017_15.8.4/"
+    run-on-projects: ['trunk', 'try']
+    dependencies:
+        win64-clang-cl: toolchain-win64-clang-cl
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust-cross-1.41
+            - linux64-nasm
+            - linux64-node
+            - linux64-cbindgen
+            - linux64-dump-syms
+            - linux64-wine
+            - linux64-liblowercase
+        fetch:
+            - nsis-3.01-win
+            - upx-3.95-win
+        win64-clang-cl:
+            - artifact: clang.tar.bz2
+              extract: true
+              dest: clang-cl
+
 win32-shippable/opt:
     description: "Win32 Opt Shippable"
     use-pgo: true
@@ -296,6 +361,7 @@ win32-shippable/opt:
         max-run-time: 10800
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -337,6 +403,7 @@ win64-shippable/opt:
         max-run-time: 10800
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -443,6 +510,7 @@ win64-noopt/debug:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -453,7 +521,7 @@ win64-noopt/debug:
             - builds/taskcluster_base_win64.py
             - builds/taskcluster_sub_win64/noopt_debug.py
         mozconfig-variant: noopt-debug
-    run-on-projects: ['trunk', 'try']
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -463,6 +531,10 @@ win64-noopt/debug:
             - win64-sccache
             - win64-nasm
             - win64-node
+            # `fix-stacks` is needed because xpcshell self tests run as part of
+            # the build step. Once bug 1614626 moves them to the xpcshell task,
+            # this dependency can be removed.
+            - win32-fix-stacks
 
 win32-noopt/debug:
     description: "Win32 No-optimize Debug"
@@ -478,6 +550,7 @@ win32-noopt/debug:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -488,7 +561,7 @@ win32-noopt/debug:
             - builds/taskcluster_base_win32.py
             - builds/taskcluster_sub_win32/noopt_debug.py
         mozconfig-variant: noopt-debug
-    run-on-projects: ['trunk', 'try']
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -498,6 +571,10 @@ win32-noopt/debug:
             - win64-sccache
             - win64-nasm
             - win64-node
+            # `fix-stacks` is needed because xpcshell self tests run as part of
+            # the build step. Once bug 1614626 moves them to the xpcshell task,
+            # this dependency can be removed.
+            - win32-fix-stacks
 
 win32-rusttests/opt:
     description: "Win32 Rust Tests Opt"
@@ -528,7 +605,7 @@ win32-rusttests/opt:
             build_targets: ['pre-export', 'export', 'recurse_rusttests']
             disable_package_metrics: true
         mozconfig-variant: rusttests
-    run-on-projects: ['trunk', 'try']
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -567,7 +644,7 @@ win32-rusttests/debug:
             build_targets: ['pre-export', 'export', 'recurse_rusttests']
             disable_package_metrics: true
         mozconfig-variant: rusttests-debug
-    run-on-projects: ['trunk', 'try']
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -603,7 +680,7 @@ win64-rusttests/opt:
             - builds/taskcluster_base_win64.py
             - builds/taskcluster_sub_win64/rusttests_opt.py
         mozconfig-variant: rusttests
-    run-on-projects: ['trunk', 'try']
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -654,6 +731,8 @@ win64-ccov/debug:
     index:
         product: firefox
         job-name: win64-ccov-debug
+    attributes:
+        enable-build-signing: true
     treeherder:
         platform: windows2012-64/ccov
         symbol: B
@@ -668,6 +747,7 @@ win64-ccov/debug:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
             RUSTC_BOOTSTRAP: '1'
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -724,6 +804,10 @@ win64-asan/debug:
             - win64-sccache
             - win64-nasm
             - win64-node
+            # `fix-stacks` is needed because xpcshell self tests run as part of
+            # the build step. Once bug 1614626 moves them to the xpcshell task,
+            # this dependency can be removed.
+            - win32-fix-stacks
 
 win64-asan/opt:
     description: "Win64 Opt ASAN"
@@ -740,6 +824,7 @@ win64-asan/opt:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
             PERFHERDER_EXTRA_OPTIONS: "opt asan"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -782,6 +867,7 @@ win64-asan-reporter-nightly/opt:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
             PERFHERDER_EXTRA_OPTIONS: "asan-reporter"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -844,8 +930,8 @@ win64-asan-fuzzing/opt:
             - win64-nasm
             - win64-node
 
-win32-devedition-nightly/opt:
-    description: "Win32 Dev Edition Nightly"
+win32-devedition/opt:
+    description: "Win32 Dev Edition (shippable)"
     use-pgo: win32-shippable/opt
     index:
         product: devedition
@@ -875,6 +961,7 @@ win32-devedition-nightly/opt:
         max-run-time: 10800
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         script: mozharness/scripts/fx_desktop_build.py
         secrets: true
@@ -897,8 +984,8 @@ win32-devedition-nightly/opt:
             - win64-nasm
             - win64-node
 
-win64-devedition-nightly/opt:
-    description: "Win64 Dev Edition Nightly"
+win64-devedition/opt:
+    description: "Win64 Dev Edition (shippable)"
     use-pgo: win64-shippable/opt
     index:
         product: devedition
@@ -918,6 +1005,7 @@ win64-devedition-nightly/opt:
         max-run-time: 10800
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -985,7 +1073,12 @@ win64-aarch64/opt:
         product: firefox
         job-name: win64-aarch64-opt
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
+        # We need to package tests in order for the win64-aarch64-eme artifact
+        # build to fetch them, even though no tests run against this task
+        # directly.
+        skip-verify-test-packaging: true
     treeherder:
         platform: windows2012-aarch64/opt
         symbol: B
@@ -996,6 +1089,7 @@ win64-aarch64/opt:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/aarch64.manifest"
             PERFHERDER_EXTRA_OPTIONS: aarch64
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]
@@ -1064,6 +1158,9 @@ win64-aarch64-shippable/opt:
     attributes:
         shippable: true
         enable-full-crashsymbols: true
+        # Skip the test packaging check because we copy test packages from
+        # another build task rather than generating them in this task.
+        skip-verify-test-packaging: true
     shipping-phase: build
     shipping-product: firefox
     treeherder:
@@ -1078,7 +1175,6 @@ win64-aarch64-shippable/opt:
             PERFHERDER_EXTRA_OPTIONS: aarch64
             MOZ_ARTIFACT_TASK: {task-reference: '<win64-aarch64-opt>'}
             MOZ_ARTIFACT_TASK_WIN32_OPT: {task-reference: '<win32-opt>'}
-            MOZ_AUTOMATION_PACKAGE_TESTS: '0'
             USE_ARTIFACT: '1'
     run:
         actions: [get-secrets, build]
@@ -1122,6 +1218,9 @@ win64-aarch64-shippable/opt:
             - artifact: target.raptor.tests.tar.gz
               extract: false
               dest: ../public/build
+            - artifact: target.condprof.tests.tar.gz
+              extract: false
+              dest: ../public/build
             - artifact: target.awsy.tests.tar.gz
               extract: false
               dest: ../public/build
@@ -1152,6 +1251,10 @@ win64-aarch64-shippable-no-eme/opt:
         type: shippable
     attributes:
         enable-full-crashsymbols: true
+        # We need to package tests in order for the actual
+        # win64-aarch64-shippable/opt build to copy them from this task, even
+        # though no tests run against this task directly.
+        skip-verify-test-packaging: true
     shipping-phase: build
     shipping-product: firefox
     treeherder:
@@ -1164,6 +1267,7 @@ win64-aarch64-shippable-no-eme/opt:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/aarch64.manifest"
             PERFHERDER_EXTRA_OPTIONS: aarch64-no-eme
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]
@@ -1187,8 +1291,8 @@ win64-aarch64-shippable-no-eme/opt:
             - win64-node
 
 
-win64-aarch64-devedition-nightly/opt:
-    description: "AArch64 Win64 MSVC Devedition Nightly"
+win64-aarch64-devedition/opt:
+    description: "AArch64 Win64 MSVC Devedition (shippable)"
     index:
         product: devedition
         job-name: win64-aarch64-opt
@@ -1208,6 +1312,7 @@ win64-aarch64-devedition-nightly/opt:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/aarch64.manifest"
             PERFHERDER_EXTRA_OPTIONS: aarch64-devedition
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]

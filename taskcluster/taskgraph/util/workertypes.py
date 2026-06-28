@@ -16,15 +16,10 @@ WORKER_TYPES = {
     'releng-hardware/gecko-1-b-win2012-gamma': ('generic-worker', 'windows'),
     'invalid/invalid': ('invalid', None),
     'invalid/always-optimized': ('always-optimized', None),
-    'scriptworker-k8s/gecko-1-balrog': ('balrog', None),
-    'scriptworker-k8s/gecko-3-balrog': ('balrog', None),
-    'scriptworker-k8s/gecko-3-beetmover': ('beetmover', None),
     'scriptworker-prov-v1/pushapk-v1': ('push-apk', None),
     "scriptworker-prov-v1/signing-linux-v1": ('scriptworker-signing', None),
     "scriptworker-k8s/gecko-3-shipit": ('shipit', None),
     "scriptworker-k8s/gecko-1-shipit": ('shipit', None),
-    "scriptworker-k8s/gecko-3-tree": ('treescript', None),
-    "scriptworker-k8s/gecko-1-tree": ('treescript', None),
     'releng-hardware/gecko-t-osx-1014': ('generic-worker', 'macosx'),
 }
 
@@ -77,7 +72,7 @@ def worker_type_implementation(graph_config, worker_type):
     OS represents the host system, not the target OS, in the case of
     cross-compiles."""
     worker_config = _get(graph_config, worker_type, '1', 'staging')
-    return worker_config['implementation'], worker_config['os']
+    return worker_config['implementation'], worker_config.get('os')
 
 
 def get_worker_type(graph_config, worker_type, level, release_level):

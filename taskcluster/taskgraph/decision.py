@@ -10,7 +10,10 @@ import json
 import logging
 import time
 import sys
+from collections import defaultdict
 
+import six
+from six import text_type
 from redo import retry
 import yaml
 
@@ -20,9 +23,9 @@ from .create import create_tasks
 from .generator import TaskGraphGenerator
 from .parameters import Parameters, get_version, get_app_version
 from .taskgraph import TaskGraph
+from taskgraph.util.python_path import find_object
 from .try_option_syntax import parse_message
 from .util.hg import get_hg_revision_branch, get_hg_commit_message
-from .util.keyed_by import evaluate_keyed_by
 from .util.partials import populate_release_history
 from .util.schema import validate_schema, Schema
 from .util.taskcluster import get_artifact
@@ -47,7 +50,7 @@ PER_PROJECT_PARAMETERS = {
     },
 
     'ash': {
-        'target_tasks_method': 'ash_tasks',
+        'target_tasks_method': 'default',
     },
 
     'cedar': {
@@ -118,15 +121,42 @@ PER_PROJECT_PARAMETERS = {
     }
 }
 
-try_task_config_schema = Schema({
-    Required('tasks'): [basestring],
-    Optional('templates'): {basestring: object},
-    Optional('disable-pgo'): bool,
+visual_metrics_jobs_schema = Schema({
+        Required('jobs'): [
+            {
+                Required('test_name'): str,
+                Required('json_location'): str,
+                Required('video_location'): str,
+            }
+        ]
 })
 
+try_task_config_schema = Schema({
+    Required('tasks'): [text_type],
+    Optional('browsertime'): bool,
+    Optional('chemspill-prio'): bool,
+    Optional('disable-pgo'): bool,
+    Optional('env'): {text_type: text_type},
+    Optional('gecko-profile'): bool,
+    Optional('rebuild'): int,
+    Optional('use-artifact-builds'): bool,
+    # Keep in sync with JOB_SCHEMA in taskcluster/docker/visual-metrics/run-visual-metrics.py.
+    Optional('visual-metrics-jobs'): visual_metrics_jobs_schema,
+    Optional(
+        "ubuntu-bionic",
+        description="Run linux desktop tests on Ubuntu 18.04 (bionic)."
+        ): bool,
+    Optional(
+        "worker-overrides",
+        description="Mapping of worker alias to worker pools to use for those aliases."
+    ): {text_type: text_type}
+})
+"""
+Schema for try_task_config.json files.
+"""
 
 try_task_config_schema_v2 = Schema({
-    Optional('parameters'): {basestring: object},
+    Optional('parameters'): {text_type: object},
 })
 
 
@@ -147,6 +177,17 @@ def full_task_graph_to_runnable_jobs(full_task_json):
         if th.get('machine', {}).get('platform'):
             runnable_jobs[label]['platform'] = th['machine']['platform']
     return runnable_jobs
+
+
+def full_task_graph_to_manifests_by_task(full_task_json):
+    manifests_by_task = defaultdict(list)
+    for label, node in full_task_json.iteritems():
+        manifests = node['attributes'].get('test_manifests')
+        if not manifests:
+            continue
+
+        manifests_by_task[label].extend(manifests)
+    return manifests_by_task
 
 
 def try_syntax_from_message(message):
@@ -172,7 +213,9 @@ def taskgraph_decision(options, parameters=None):
      * calling TaskCluster APIs to create the graph
     """
 
-    parameters = parameters or (lambda config: get_decision_parameters(config, options))
+    parameters = parameters or (
+        lambda graph_config: get_decision_parameters(graph_config, options)
+    )
 
     # create a TaskGraphGenerator instance
     tgg = TaskGraphGenerator(
@@ -192,6 +235,9 @@ def taskgraph_decision(options, parameters=None):
     # write out the public/runnable-jobs.json file
     write_artifact('runnable-jobs.json', full_task_graph_to_runnable_jobs(full_task_json))
 
+    # write out the public/manifests-by-task.json file
+    write_artifact('manifests-by-task.json', full_task_graph_to_manifests_by_task(full_task_json))
+
     # this is just a test to check whether the from_json() function is working
     _, _ = TaskGraph.from_json(full_task_json)
 
@@ -207,13 +253,13 @@ def taskgraph_decision(options, parameters=None):
     create_tasks(tgg.graph_config, tgg.morphed_task_graph, tgg.label_to_taskid, tgg.parameters)
 
 
-def get_decision_parameters(config, options):
+def get_decision_parameters(graph_config, options):
     """
     Load parameters from the command-line options for 'taskgraph decision'.
     This also applies per-project parameters, based on the given project.
 
     """
-    product_dir = config['product-dir']
+    product_dir = graph_config['product-dir']
 
     parameters = {n: options[n] for n in [
         'base_repository',
@@ -249,6 +295,8 @@ def get_decision_parameters(config, options):
     parameters['existing_tasks'] = {}
     parameters['do_not_optimize'] = []
     parameters['build_number'] = 1
+    parameters['version'] = get_version(product_dir)
+    parameters['app_version'] = get_app_version(product_dir)
     parameters['message'] = try_syntax_from_message(commit_message)
     parameters['hg_branch'] = get_hg_revision_branch(GECKO, revision=parameters['head_rev'])
     parameters['next_version'] = None
@@ -275,8 +323,8 @@ def get_decision_parameters(config, options):
     # use the pushdate as build_date if given, else use current time
     parameters['build_date'] = parameters['pushdate'] or int(time.time())
     # moz_build_date is the build identifier based on build_date
-    parameters['moz_build_date'] = time.strftime("%Y%m%d%H%M%S",
-                                                 time.gmtime(parameters['build_date']))
+    parameters['moz_build_date'] = six.ensure_text(
+        time.strftime("%Y%m%d%H%M%S", time.gmtime(parameters['build_date'])))
 
     project = parameters['project']
     try:
@@ -298,7 +346,7 @@ def get_decision_parameters(config, options):
         parameters['target_tasks_method'] = 'nothing'
 
     if options.get('include_push_tasks'):
-        get_existing_tasks(options.get('rebuild_kinds', []), parameters, config)
+        get_existing_tasks(options.get('rebuild_kinds', []), parameters, graph_config)
 
     # If the target method is nightly, we should build partials. This means
     # knowing what has been released previously.
@@ -320,14 +368,10 @@ def get_decision_parameters(config, options):
     if options.get('optimize_target_tasks') is not None:
         parameters['optimize_target_tasks'] = options['optimize_target_tasks']
 
-    version_directory = evaluate_keyed_by(
-        config.get('version-directory'),
-        'version-directory',
-        {'android-release-type': options.get('android_release_type')}
-    )
+    if 'decision-parameters' in graph_config['taskgraph']:
+        find_object(graph_config['taskgraph']['decision-parameters'])(graph_config,
+                                                                      parameters)
 
-    parameters['version'] = get_version(version_directory)
-    parameters['app_version'] = get_app_version(version_directory)
     result = Parameters(**parameters)
     result.check()
     return result

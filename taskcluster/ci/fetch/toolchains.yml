@@ -2,17 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-binutils-2.25.1:
-    description: binutils 2.25.1 source code
-    fetch:
-        type: static-url
-        url: ftp://ftp.gnu.org/gnu/binutils/binutils-2.25.1.tar.bz2
-        sha256: b5b14added7d78a8d1ca70b5cb75fef57ce2197264f4f5835326b0df22ac9f22
-        size: 24163561
-        gpg-signature:
-            sig-url: "{url}.sig"
-            key-path: build/unix/build-gcc/EAF1C276A747E9ED86210CBAC3126D3B4AE55E93.key
-
 binutils-2.27:
     description: binutils 2.27 source code
     fetch:
@@ -23,6 +12,9 @@ binutils-2.27:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/EAF1C276A747E9ED86210CBAC3126D3B4AE55E93.key
+        artifact-name: binutils-source.tar.zst
+        strip-components: 1
+        add-prefix: binutils-source/
 
 binutils-2.31.1:
     description: binutils 2.31.1 source code
@@ -34,14 +26,9 @@ binutils-2.31.1:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-binutils/3A24BC1E8FB409FA9F14371813FCEF89DD9E3C4F.key
-
-cloog-0.18.1:
-    description: cloog source code
-    fetch:
-        type: static-url
-        url: ftp://gcc.gnu.org/pub/gcc/infrastructure/cloog-0.18.1.tar.gz
-        sha256: 02500a4edd14875f94fe84cbeda4290425cb0c1c2474c6f75d75a303d64b4196
-        size: 3857324
+        artifact-name: binutils-source.tar.zst
+        strip-components: 1
+        add-prefix: binutils-source/
 
 gcc-6.4.0:
     description: GCC 6.4.0 source code
@@ -53,6 +40,9 @@ gcc-6.4.0:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/13975A70E63C361C73AE69EF6EEB81F8981C74C7.key
+        artifact-name: gcc-source.tar.zst
+        strip-components: 1
+        add-prefix: gcc-source/
 
 gcc-7.4.0:
     description: GCC 7.4.0 source code
@@ -64,6 +54,9 @@ gcc-7.4.0:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/13975A70E63C361C73AE69EF6EEB81F8981C74C7.key
+        artifact-name: gcc-source.tar.zst
+        strip-components: 1
+        add-prefix: gcc-source/
 
 gcc-8.3.0:
     description: GCC 8.3.0 source code
@@ -75,6 +68,9 @@ gcc-8.3.0:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/33C235A34C46AA3FFB293709A328C3A2C3C45C06.key
+        artifact-name: gcc-source.tar.zst
+        strip-components: 1
+        add-prefix: gcc-source/
 
 gcc-9.1.0:
     description: GCC 9.1.0 source code
@@ -86,6 +82,9 @@ gcc-9.1.0:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/33C235A34C46AA3FFB293709A328C3A2C3C45C06.key
+        artifact-name: gcc-source.tar.zst
+        strip-components: 1
+        add-prefix: gcc-source/
 
 gmp-5.1.3:
     description: GMP 5.1.3 source code
@@ -97,6 +96,9 @@ gmp-5.1.3:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/343C2FF0FBEE5EC2EDBEF399F3599FF828C67298.key
+        artifact-name: gmp-source.tar.zst
+        strip-components: 1
+        add-prefix: gmp-source/
 
 gmp-6.1.0:
     description: GMP 6.1.0 source code
@@ -108,14 +110,16 @@ gmp-6.1.0:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/343C2FF0FBEE5EC2EDBEF399F3599FF828C67298.key
+        artifact-name: gmp-source.tar.zst
+        strip-components: 1
+        add-prefix: gmp-source/
 
-isl-0.12.2:
-    description: ISL 0.12.2 source code
+iris-2.0:
+    description: Iris_Firefox source code
     fetch:
-        type: static-url
-        url: ftp://gcc.gnu.org/pub/gcc/infrastructure/isl-0.12.2.tar.bz2
-        sha256: f4b3dbee9712850006e44f0db2103441ab3d13b406f77996d1df19ee89d11fb4
-        size: 1319434
+        type: git
+        repo: https://github.com/mozilla/iris_firefox
+        revision: a91a1cb88a16b0ee4d30f0dfc165d2cacf48b10c
 
 isl-0.15:
     description: ISL 0.15 source code
@@ -124,6 +128,9 @@ isl-0.15:
         url: ftp://gcc.gnu.org/pub/gcc/infrastructure/isl-0.15.tar.bz2
         sha256: 8ceebbf4d9a81afa2b4449113cee4b7cb14a687d7a549a963deb5e2a41458b6b
         size: 1574964
+        artifact-name: isl-source.tar.zst
+        strip-components: 1
+        add-prefix: isl-source/
 
 isl-0.16.1:
     description: ISL 0.16.1 source code
@@ -132,6 +139,9 @@ isl-0.16.1:
         url: ftp://gcc.gnu.org/pub/gcc/infrastructure/isl-0.16.1.tar.bz2
         sha256: 412538bb65c799ac98e17e8cfcdacbb257a57362acfaaff254b0fcae970126d2
         size: 1626446
+        artifact-name: isl-source.tar.zst
+        strip-components: 1
+        add-prefix: isl-source/
 
 mpc-0.8.2:
     description: mpc 0.8.2 source code
@@ -143,6 +153,9 @@ mpc-0.8.2:
         gpg-signature:
             sig-url: "{url}.asc"
             key-path: build/unix/build-gcc/AD17A21EF8AED8F1CC02DBD9F7D5C9BF765C61E3.key
+        artifact-name: mpc-source.tar.zst
+        strip-components: 1
+        add-prefix: mpc-source/
 
 mpc-1.0.3:
     description: mpc 1.0.3 source code
@@ -154,6 +167,9 @@ mpc-1.0.3:
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/AD17A21EF8AED8F1CC02DBD9F7D5C9BF765C61E3.key
+        artifact-name: mpc-source.tar.zst
+        strip-components: 1
+        add-prefix: mpc-source/
 
 mpfr-3.1.4:
     description: mpfr 3.1.4 source code
@@ -165,6 +181,9 @@ mpfr-3.1.4:
         gpg-signature:
             sig-url: "{url}.asc"
             key-path: build/unix/build-gcc/07F3DBBECC1A39605078094D980C197698C3739D.key
+        artifact-name: mpfr-source.tar.zst
+        strip-components: 1
+        add-prefix: mpfr-source/
 
 mpfr-3.1.5:
     description: mpfr 3.1.5 source code
@@ -176,6 +195,9 @@ mpfr-3.1.5:
         gpg-signature:
             sig-url: "{url}.asc"
             key-path: build/unix/build-gcc/07F3DBBECC1A39605078094D980C197698C3739D.key
+        artifact-name: mpfr-source.tar.zst
+        strip-components: 1
+        add-prefix: mpfr-source/
 
 nasm-2.14.02:
     description: nasm 2.14.02 source code
@@ -193,15 +215,16 @@ nasm-2.13.02:
         sha256: 8ac3235f49a6838ff7a8d7ef7c19a4430d0deecc0c2d3e3e237b5e9f53291757
         size: 805744
 
-wix-3.1.1:
-    description: wix 3.1.1 binary release
+wix-3.14.0:
+    description: wix 3.14.0.2812 binary release
     # WIX doesn't use a wrapping toplevel DIR, so we should really repackage it when
     # Bug 1479533 and related code is ready.
     fetch:
         type: static-url
-        url: https://github.com/wixtoolset/wix3/releases/download/wix3111rtm/wix311-binaries.zip
-        sha256: 37f0a533b0978a454efb5dc3bd3598becf9660aaf4287e55bf68ca6b527d051d
-        size: 34358269
+        # This is a dev version of the toolset, upstream will purge over time...
+        url: http://wixtoolset.org/downloads/v3.14.0.2812/wix314-binaries.zip
+        sha256: 923892298f37514622c58cbbd9c2cadf2822d9bb53df8ee83aaeb05280777611
+        size: 34664320
 
 grcov-osx-x86_64:
     description: grcov binary release
@@ -229,6 +252,22 @@ nsis-3.01:
         url: https://downloads.sourceforge.net/project/nsis/NSIS%203/3.01/nsis-3.01-src.tar.bz2
         sha256: 604c011593be484e65b2141c50a018f1b28ab28c994268e4ecd377773f3ffba1
         size: 1649428
+
+nsis-3.01-win:
+    description: nsis 3.01 for windows
+    fetch:
+        type: static-url
+        url: https://hg.mozilla.org/mozilla-build/raw-file/3b8c537ca3c879551956ad47ca9f089583f647c5/nsis-3.01.zip
+        sha256: daa17556c8690a34fb13af25c87ced89c79a36a935bf6126253a9d9a5226367c
+        size: 2505205
+
+upx-3.95-win:
+    description: upx 3.95 for windows
+    fetch:
+        type: static-url
+        url: https://hg.mozilla.org/mozilla-build/raw-file/3b8c537ca3c879551956ad47ca9f089583f647c5/upx-3.95-win64.zip
+        sha256: 5c076f87ba64d82f11513f4af0ceb07246a3540aa3c72ca3ffc2d53971fa56e3
+        size: 462820
 
 wine-3.0.3:
     description: wine-3.0.3.tar.xz
@@ -318,16 +357,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.2.9 + some change
-        revision: 93475f3458f7776c37b08201ae0d83ecac4b8fa2
-
-openssl-1.1.0g:
-    description: openssl 1.1.0g source code
-    fetch:
-        type: static-url
-        url: https://www.openssl.org/source/openssl-1.1.0g.tar.gz
-        sha256: de4d501267da39310905cb6dc8c6121f7a2cad45a7707f76df828fe1b85073af
-        size: 5404748
+        # 0.2.12 release + a handful of fixes
+        revision: e59cc28cf37254e182ede79070384f8166b52f8e
 
 fxc2:
     description: fxc2 source code
@@ -348,14 +379,14 @@ libunwind:
     fetch:
         type: git
         repo: https://github.com/llvm-mirror/libunwind
-        revision: 6ee92fcc97350ae32db3172a269e9afcc2bab686
+        revision: efd17a11b0fae29d3414e11e99307e082d4ee949
 
 llvm-mingw:
     description: llvm-mingw source code
     fetch:
         type: git
         repo: https://github.com/mstorsjo/llvm-mingw
-        revision: c3a16814bd26aa6702e1e5b482a3d9044bb0f725
+        revision: 9f8e5cebd6dbbb7546e8917e6c59284699a48d26
 
 android-rs-glue:
     description: android-rs-glue source code
@@ -426,3 +457,17 @@ lucetc-source:
         type: git
         repo: https://github.com/PLSysSec/lucet_sandbox_compiler/
         revision: 5c22392b5b1aaa60e915c75e92b57391e1e61e6d
+
+dump-syms:
+    description: dump_syms source code
+    fetch:
+        type: git
+        repo: https://github.com/mozilla/dump_syms/
+        revision: fcd7b79fb791da50233d6317f79e2a4b80a7f7d8
+
+fix-stacks:
+    description: fix-stacks source code
+    fetch:
+        type: git
+        repo: https://github.com/mozilla/fix-stacks/
+        revision: b0abef037e6fd46a2debce83c1a7612c6f35c599

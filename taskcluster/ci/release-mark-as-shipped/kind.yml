@@ -35,17 +35,9 @@ job-defaults:
     shipping-phase: ship
 
 jobs:
-    fennec-beta:
-        name: release-fennec-beta_mark_as_shipped
+    fennec:
+        name: release-fennec_mark_as_shipped
         shipping-product: fennec
-        attributes:
-            release-type: beta
-
-    fennec-release:
-        name: release-fennec-release_mark_as_shipped
-        shipping-product: fennec
-        attributes:
-            release-type: release
 
     firefox:
         name: release-firefox_mark_as_shipped

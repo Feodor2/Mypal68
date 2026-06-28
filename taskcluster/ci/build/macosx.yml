@@ -15,9 +15,10 @@ macosx64/debug:
         tier: 1
     worker-type: b-linux
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -50,6 +51,7 @@ macosx64/opt:
         product: firefox
         job-name: macosx64-opt
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
     treeherder:
         platform: osx-cross/opt
@@ -95,7 +97,7 @@ macosx64-asan-fuzzing/opt:
         symbol: Bof
     worker-type: b-linux
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-fuzzing
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
@@ -137,7 +139,7 @@ macosx64-fuzzing/debug:
         symbol: Bf
     worker-type: b-linux
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
             PERFHERDER_EXTRA_OPTIONS: fuzzing
@@ -167,8 +169,9 @@ macosx64-fuzzing/debug:
             - linux64-nasm
             - linux64-node
 
-macosx64-devedition-nightly/opt:
-    description: "MacOS X Dev Edition x64 Nightly"
+macosx64-devedition/opt:
+    description: "MacOS X Dev Edition x64 (shippable)"
+    use-pgo: macosx64-shippable/opt
     attributes:
         nightly: true
         enable-full-crashsymbols: true
@@ -187,6 +190,7 @@ macosx64-devedition-nightly/opt:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -241,7 +245,7 @@ macosx64-noopt/debug:
         mozconfig-variant: cross-noopt-debug
         tooltool-downloads: internal
         keep-artifacts: false
-    run-on-projects: ['trunk', 'try']
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - linux64-binutils
@@ -300,6 +304,7 @@ macosx64-add-on-devel/opt:
 
 macosx64-shippable/opt:
     description: "MacOS X x64 Cross-compile"
+    use-pgo: true
     attributes:
         shippable: true
         enable-full-crashsymbols: true
@@ -311,13 +316,14 @@ macosx64-shippable/opt:
         type: shippable
     treeherder:
         platform: osx-shippable/opt
-        symbol: B
+        symbol: Bpgo(B)
         tier: 1
     worker-type: b-linux
     worker:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -342,13 +348,13 @@ macosx64-shippable/opt:
             - linux64-nasm
             - linux64-node
 
-macosx64-ccov/debug:
+macosx64-ccov/opt:
     description: "MacOS X x64 Cross-compile Code Coverage"
     index:
         product: firefox
-        job-name: macosx64-ccov-debug
+        job-name: macosx64-ccov-opt
     treeherder:
-        platform: osx-cross-ccov/debug
+        platform: osx-cross-ccov/opt
         symbol: B
         tier: 1
     worker-type: b-linux
@@ -357,6 +363,7 @@ macosx64-ccov/debug:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
             RUSTC_BOOTSTRAP: '1'
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -365,8 +372,8 @@ macosx64-ccov/debug:
             - builds/releng_base_mac_64_cross_builds.py
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
-        custom-build-variant-cfg: code-coverage-debug
-        mozconfig-variant: code-coverage-debug
+        custom-build-variant-cfg: code-coverage-opt
+        mozconfig-variant: code-coverage
         tooltool-downloads: internal
     run-on-projects: ['mozilla-central', 'try']
     fetches:
@@ -395,7 +402,7 @@ macosx64-gcp/debug:
         platform: osx-cross/debug
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         max-run-time: 3600
         env:
@@ -438,7 +445,7 @@ macosx64-gcp/opt:
         platform: osx-cross/opt
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:

@@ -6,8 +6,12 @@ job-defaults:
     suite: xpcshell
     variants:
         by-test-platform:
-            linux64/debug: ['serviceworker']
+            linux1804-64/debug: ['serviceworker']
             default: []
+    target:
+        by-test-platform:
+            android-em-7.*: geckoview-androidTest.apk
+            default: null
     mozharness:
         script:
             by-test-platform:
@@ -15,12 +19,9 @@ job-defaults:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-4.*:
-                    - android/android_common.py
-                    - android/androidarm_4_3.py
                 android-em-7.*:
                     - android/android_common.py
-                    - android/androidx86_7_0-old.py
+                    - android/androidx86_7_0.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py
@@ -44,45 +45,53 @@ xpcshell:
     run-on-projects:
         by-test-platform:
             windows10-64-asan/opt: []  # No XPCShell on ASAN yet
-            windows10-aarch64/opt: ['try', 'mozilla-central']
-            android-em-4.*/.*: ['try', 'mozilla-central']  # bug 1548659
+            windows10-aarch64/opt: ['try']
             default: built-projects
     chunks:
         by-test-platform:
-            .*-ccov/debug: 6
-            android-em-4.*\/debug: 12
-            android-em.4.*\/(?:opt|pgo)?: 8
+            .*-ccov/.*: 6
             android-em-7.*: 3
             macosx.*(?!-ccov)...../.*: 2
-            linux64(-qr)?/debug: 6
+            linux1804-64(-qr)?/debug: 6
             windows(7-32|10-64)(-shippable|-devedition|-asan|.*-qr)?/.*: 2
             windows10-aarch64/opt: 3
             default: 5
-    instance-size:
-        by-test-platform:
-            android-em.*: xlarge
-            default: default
     max-run-time:
         by-test-platform:
-            android-em-4.*\/debug: 7200
-            default: 5400
-            android-em-7.*: 5400
+            macosx.*(?!-ccov)...../.*: 5400
+            windows10-aarch64/.*: 3600
+            windows(7-32|10-64)(-shippable)?/opt: 5400
+            .*-ccov/.*: 5400
+            default: 2700
     allow-software-gl-layers: false
     tier:
         by-test-platform:
             windows10-64-asan.*: 3
-            android-em-4.*: 2
             windows10-aarch64.*: 2
+            linux64-ccov/opt: 3
             default: default
     fetches:
         toolchain:
             by-test-platform:
                 linux.*:
                     - linux64-node
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
                 macosx.*:
                     - macosx64-node
-                win.*64.*:
+                    - macosx64-minidump-stackwalk
+                    - macosx64-fix-stacks
+                win.*aarch64.*:
+                    - win32-node
+                    - win32-minidump-stackwalk
+                win.*-64.*:
                     - win64-node
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
                 win.*32.*:
                     - win32-node
-                android-em-7.*: []
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
+                android-em-7.*:
+                    - linux64-node
+                    - linux64-minidump-stackwalk

@@ -43,7 +43,7 @@ up to date.
 
 ==Example Taskcluster Task==
 
-https://tools.taskcluster.net/tasks/create
+https://firefox-ci-tc.services.mozilla.com/tasks/create/
 
 ```yaml
 provisionerId: aws-provisioner-v1
@@ -81,7 +81,7 @@ metadata:
   name: Periodic updates testing
   description: Produce diffs for HSTS and HPKP in-tree files.
   owner: sfraser@mozilla.com
-  source: 'https://tools.taskcluster.net/task-creator/'
+  source: 'https://firefox-ci-tc.services.mozilla.com/tasks/create'
 tags: {}
 extra:
   treeherder:

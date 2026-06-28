@@ -11,6 +11,7 @@ cd /setup
 
 apt_packages=()
 apt_packages+=('curl')
+apt_packages+=('iproute2')
 apt_packages+=('locales')
 apt_packages+=('git')
 apt_packages+=('python')
@@ -82,7 +83,7 @@ mv fzf /usr/local/bin
 
 cd /setup
 
-pip install --require-hashes -r /tmp/flake8_requirements.txt
+pip3 install --require-hashes -r /tmp/flake8_requirements.txt
 
 ###
 # codespell Setup
@@ -90,7 +91,7 @@ pip install --require-hashes -r /tmp/flake8_requirements.txt
 
 cd /setup
 
-pip install --require-hashes -r /tmp/codespell_requirements.txt
+pip3 install --require-hashes -r /tmp/codespell_requirements.txt
 
 ###
 # tox Setup
@@ -98,7 +99,7 @@ pip install --require-hashes -r /tmp/codespell_requirements.txt
 
 cd /setup
 
-pip install --require-hashes -r /tmp/tox_requirements.txt
+pip3 install --require-hashes -r /tmp/tox_requirements.txt
 
 ###
 # rustfmt

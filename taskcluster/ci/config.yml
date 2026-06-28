@@ -15,11 +15,29 @@ treeherder:
         'py3': 'Python 3 unit tests'
         'A': 'Android Gradle tests'
         'Bpgo': 'Profile-guided optimization builds'
+        'Btime': 'Browsertime performance tests on Firefox'
+        'Btime-1proc': 'Browsertime performance tests on Firefox without e10s'
+        'Btime-fis': 'Browsertime performance tests on Firefox with fission enabled'
+        'Btime-Prof': 'Browsertime performance tests on Firefox with Gecko Profiling'
+        'Btime-Prof-1proc': 'Browsertime performance tests on Firefox with Gecko Profiling and without e10s'
+        'Btime-ChR': 'Raptor performance tests on Google Chrome Release'
+        'Btime-Cr': 'Browsertime performance tests on Google Chromium'
+        'Btime-P': 'Browsertime power tests on Firefox'
+        'Btime-P-1proc': 'Browsertime power tests on Firefox without e10s'
+        'Btime-fenix': 'Browsertime performance tests on Fenix'
+        'Btime-fennec': 'Browsertime performance tests on Fennec'
+        'Btime-fennec-1proc': 'Browsertime performance tests on Fennec without e10s'
+        'Btime-refbrow': 'Browsertime performance tests on the reference browser'
+        'Btime-Prof-fenix': 'Browsertime performance tests on Fenix with Gecko Profiling'
+        'Btime-Prof-fennec': 'Browsertime performance tests on Fennec with Gecko Profiling'
+        'Btime-Prof-fennec-1proc': 'Browsertime performance tests on Fennec without e10s with Gecko Profiling'
+        'Btime-Prof-refbrow': 'Browsertime performance tests on the reference browser with Gecko Profiling'
         'Fetch': 'Fetch and store content'
         'Fxfn-l': 'Firefox functional tests (local)'
         'Fxfn-l-1proc': 'Firefox functional tests (local) without e10s'
         'Fxfn-r': 'Firefox functional tests (remote)'
         'Fxfn-r-1proc': 'Firefox functional tests (remote) without e10s'
+        'iris': 'Iris testing suite'
         'l10n-bump': 'L10n Bumper'
         'M': 'Mochitests'
         'M-1proc': 'Mochitests without e10s'
@@ -38,8 +56,7 @@ treeherder:
         'Rap-1proc': 'Raptor performance tests on Firefox without e10s'
         'Rap-Prof': 'Raptor performance tests on Firefox with Gecko Profiling'
         'Rap-Prof-1proc': 'Raptor performance tests on Firefox with Gecko Profiling and without e10s'
-        'Rap-ChC': 'Raptor performance tests on Google Chrome Canary'
-        'Rap-ChD': 'Raptor performance tests on Google Chrome Dev'
+        'Rap-ChR': 'Raptor performance tests on Google Chrome Release'
         'Rap-Cr': 'Raptor performance tests on Google Chromium'
         'Rap-P': 'Raptor power tests on Firefox'
         'Rap-P-1proc': 'Raptor power tests on Firefox without e10s'
@@ -49,6 +66,8 @@ treeherder:
         'Rap-refbrow': 'Raptor performance tests on the reference browser'
         'T': 'Talos performance tests'
         'T-1proc': 'Talos performance tests without e10s'
+        'T-Prof': 'Talos performance tests on Firefox with Gecko Profiling'
+        'T-Prof-1proc': 'Talos performance tests on Firefox with Gecko Profiling and without e10s'
         'Tsd': 'Talos performance tests with e10s, Stylo disabled'
         'Tsd-1proc': 'Talos performance tests with Stylo disabled without e10s'
         'Tss': 'Talos performance tests with e10s, Stylo sequential'
@@ -57,7 +76,6 @@ treeherder:
         'tt-1proc': 'Telemetry tests without e10s'
         'SY': 'Are we slim yet tests by TaskCluster'
         'SYsd': 'Are we slim yet tests by TaskCluster, Stylo disabled'
-        'SYss': 'Are we slim yet tests by TaskCluster, Stylo sequential'
         'VP': 'VideoPuppeteer tests'
         'W': 'Web platform tests'
         'W-1proc': 'Web platform tests without e10s'
@@ -86,6 +104,7 @@ treeherder:
         'Nexus 5-L': 'Nexus 5-L Device Image'
         'I': 'Docker Image Builds'
         'TL': 'Toolchain builds for Linux 64-bits'
+        'TL32': 'Toolchain builds for Linux 32-bits'
         'TM': 'Toolchain builds for OSX'
         'TMW': 'Toolchain builds for Windows MinGW'
         'TW32': 'Toolchain builds for Windows 32-bits'
@@ -104,11 +123,23 @@ treeherder:
         'langpack': 'Langpack sigatures and uploads'
         'TPS': 'Sync tests'
         'UV': 'Update verify'
-        'pipfu': 'pipfile update'
+        'pydep': 'python dependency update'
         'WR': 'WebRender standalone'
+        'Wgpu': 'WebGPU standalone'
         'Gd': 'Geckodriver'
-        'clang': 'Clang Tidy & Format'
-        'coverity': 'Coverity Static Analysis'
+        'cpp': 'C/C++ checks'
+        'pedantic': 'pedantic checks'
+        'text': 'Check on texts'
+        'misc': 'Misc checks'
+        'js': 'JavaScript checks'
+        'py': 'Python checks'
+        'java': 'Java checks'
+        'Static-Analysis': 'Full tree static-analysis'
+        'SS': 'Shadow scheduler'
+        'vismet': 'Visual Metrics Analysis'
+        'condprof': 'Conditioned Profile Builder'
+        'doc': 'Documentation'
+        'GhS': 'GitHub Synchronization'
 
 index:
     products:
@@ -203,29 +234,6 @@ release-promotion:
 scriptworker:
     # See additional configuration in taskcluster/taskgraph/util/scriptworker.py
     scope-prefix: 'project:releng'
-    worker-types:
-        'linux-signing':
-            - 'project:releng:signing:cert:release-signing'
-            - 'project:releng:signing:cert:nightly-signing'
-        'linux-depsigning':
-            - 'project:releng:signing:cert:dep-signing'
-        'scriptworker-k8s/gecko-3-beetmover':
-            - 'project:releng:beetmover:bucket:release'
-            - 'project:releng:beetmover:bucket:nightly'
-            - 'project:releng:beetmover:bucket:partner'
-            - 'project:releng:beetmover:bucket:maven-production'
-        'scriptworker-k8s/gecko-1-beetmover':
-            - 'project:releng:beetmover:bucket:dep'
-            - 'project:releng:beetmover:bucket:dep-partner'
-            - 'project:releng:beetmover:bucket:maven-staging'
-        'scriptworker-k8s/gecko-3-balrog':
-            - 'project:releng:balrog:server:nightly'
-            - 'project:releng:balrog:server:aurora'
-            - 'project:releng:balrog:server:beta'
-            - 'project:releng:balrog:server:release'
-            - 'project:releng:balrog:server:esr'
-        'scriptworker-k8s/gecko-1-balrog':
-            - 'project:releng:balrog:server:dep'
 
 partner-urls:
     release-partner-repack:
@@ -264,12 +272,7 @@ task-priority:
         'mozilla-inbound': 'low'
         'default': 'very-low'
 
-version-directory:
-    by-android-release-type:
-        nightly: mobile/android/config/version-files/nightly/
-        beta: mobile/android/config/version-files/beta/
-        release: mobile/android/config/version-files/release/
-        default: browser/config/
+taskgraph: {}
 
 workers:
     aliases:
@@ -288,6 +291,14 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: '{alias}'
+        balrog:
+            provisioner: scriptworker-k8s
+            implementation: balrog
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-balrog
+                    staging: gecko-1-balrog
         bouncer:
             provisioner: scriptworker-k8s
             # Note that this implementation doesn't correspond with an
@@ -298,6 +309,14 @@ workers:
                 by-release-level:
                     production: gecko-3-bouncer
                     staging: gecko-1-bouncer
+        beetmover:
+            provisioner: scriptworker-k8s
+            implementation: beetmover
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-beetmover
+                    staging: gecko-1-beetmover
         linux-depsigning:
             provisioner: scriptworker-k8s
             implementation: scriptworker-signing
@@ -307,17 +326,36 @@ workers:
             provisioner: scriptworker-k8s
             implementation: scriptworker-signing
             os: linux
-            worker-type: gecko-3-signing
+            worker-type:
+                by-release-level:
+                    production: gecko-3-signing
+                    staging: gecko-t-signing
         mac-depsigning:
             provisioner: scriptworker-prov-v1
-            implementation: scriptworker-iscript
+            implementation: scriptworker-signing
             os: macosx
             worker-type: depsigning-mac-v1
+        mac-notarization-poller:
+            provisioner: scriptworker-prov-v1
+            implementation: notarization-poller
+            os: macosx
+            worker-type: mac-notarization-poller
         mac-signing:
             provisioner: scriptworker-prov-v1
-            implementation: scriptworker-iscript
+            implementation: scriptworker-signing
             os: macosx
-            worker-type: signing-mac-v1
+            worker-type:
+                by-release-level:
+                    production: signing-mac-v1
+                    staging: depsigning-mac-v1
+        tree:
+            provisioner: scriptworker-k8s
+            implementation: treescript
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-tree
+                    staging: gecko-1-tree
         t-ap.*:
             provisioner: proj-autophone
             implementation: script-engine-autophone
@@ -344,6 +382,11 @@ workers:
             os: macosx
             worker-type: 'gecko-{alias}'
         t-osx-1014:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: macosx
+            worker-type: 'gecko-{alias}'
+        t-osx-1014-power:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
@@ -397,14 +440,20 @@ workers:
             implementation: succeed
             os: none
             worker-type: succeed
+        misc:
+            provisioner: gecko-t
+            implementation: docker-worker
+            os: linux
+            worker-type: misc
+
 
 mac-notarization:
     mac-behavior:
-        by-release-type:
-            nightly.*: mac_notarize
-            beta.*: mac_notarize
-            esr.*: mac_notarize
-            release.*: mac_notarize
+        by-project:
+            mozilla-(central|beta|release|esr.*):
+                by-shippable:
+                    "true": mac_notarize
+                    default: mac_sign_and_pkg
             default: mac_sign_and_pkg
     mac-entitlements:
         by-platform:

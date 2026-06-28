@@ -19,6 +19,7 @@ RUN apt-get update && \
       curl \
       file \
       gnupg \
+      jq \
       less \
       openssh-client \
       procps \
@@ -32,6 +33,7 @@ RUN apt-get update && \
       tar \
       unzip \
       uuid \
+      valgrind \
       vim \
       wget \
       yasm \

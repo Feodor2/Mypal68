@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import os
+from six import text_type
 import sys
 import traceback
 import re
@@ -59,6 +60,8 @@ class ShowTaskGraphSubCommand(SubCommand):
                                  "or their dependencies."),
             CommandArgument('-F', '--fast', dest='fast', default=False, action='store_true',
                             help="enable fast task generation for local debugging."),
+            CommandArgument('-o', '--output-file', default=None,
+                            help="file path to store generated output."),
 
         ]
         for arg in args:
@@ -124,51 +127,39 @@ class MachCommands(MachCommandBase):
 
     @SubCommand('taskgraph', 'decision',
                 description="Run the decision task")
-    @CommandArgument('--root', '-r',
+    @CommandArgument('--root', '-r', type=text_type,
                      help="root of the taskgraph definition relative to topsrcdir")
-    @CommandArgument('--base-repository',
-                     required=True,
+    @CommandArgument('--base-repository', type=text_type, required=True,
                      help='URL for "base" repository to clone')
-    @CommandArgument('--head-repository',
-                     required=True,
+    @CommandArgument('--head-repository', type=text_type, required=True,
                      help='URL for "head" repository to fetch revision from')
-    @CommandArgument('--head-ref',
-                     required=True,
+    @CommandArgument('--head-ref', type=text_type, required=True,
                      help='Reference (this is same as rev usually for hg)')
-    @CommandArgument('--head-rev',
-                     required=True,
+    @CommandArgument('--head-rev', type=text_type, required=True,
                      help='Commit revision to use from head repository')
-    @CommandArgument('--comm-base-repository',
-                     required=False,
+    @CommandArgument('--comm-base-repository', type=text_type, required=False,
                      help='URL for "base" comm-* repository to clone')
-    @CommandArgument('--comm-head-repository',
-                     required=False,
+    @CommandArgument('--comm-head-repository', type=text_type, required=False,
                      help='URL for "head" comm-* repository to fetch revision from')
-    @CommandArgument('--comm-head-ref',
-                     required=False,
+    @CommandArgument('--comm-head-ref', type=text_type, required=False,
                      help='comm-* Reference (this is same as rev usually for hg)')
-    @CommandArgument('--comm-head-rev',
-                     required=False,
+    @CommandArgument('--comm-head-rev', type=text_type, required=False,
                      help='Commit revision to use from head comm-* repository')
-    @CommandArgument('--project',
-                     required=True,
-                     help='Project to use for creating task graph. Example: --project=try')
-    @CommandArgument('--pushlog-id',
-                     dest='pushlog_id',
-                     required=True,
-                     default=0)
+    @CommandArgument(
+        '--project', type=text_type, required=True,
+        help='Project to use for creating task graph. Example: --project=try')
+    @CommandArgument('--pushlog-id', type=text_type, dest='pushlog_id',
+                     required=True, default='0')
     @CommandArgument('--pushdate',
                      dest='pushdate',
                      required=True,
                      type=int,
                      default=0)
-    @CommandArgument('--owner',
-                     required=True,
+    @CommandArgument('--owner', type=text_type, required=True,
                      help='email address of who owns this graph')
-    @CommandArgument('--level',
-                     required=True,
+    @CommandArgument('--level', type=text_type, required=True,
                      help='SCM level of this repository')
-    @CommandArgument('--target-tasks-method',
+    @CommandArgument('--target-tasks-method', type=text_type,
                      help='method for selecting the target tasks to generate')
     @CommandArgument('--optimize-target-tasks',
                      type=lambda flag: bool(strtobool(flag)),
@@ -176,11 +167,10 @@ class MachCommands(MachCommandBase):
                      help='If specified, this indicates whether the target '
                           'tasks are eligible for optimization. Otherwise, '
                           'the default for the project is used.')
-    @CommandArgument('--try-task-config-file',
+    @CommandArgument('--try-task-config-file', type=text_type,
                      help='path to try task configuration file')
-    @CommandArgument('--tasks-for',
-                     help='the tasks_for value used to generate this task',
-                     required=True)
+    @CommandArgument('--tasks-for', type=text_type, required=True,
+                     help='the tasks_for value used to generate this task')
     @CommandArgument('--include-push-tasks',
                      action='store_true',
                      help='Whether tasks from the on-push graph should be re-used '
@@ -191,13 +181,6 @@ class MachCommands(MachCommandBase):
                      action='append',
                      default=argparse.SUPPRESS,
                      help='Kinds that should not be re-used from the on-push graph.')
-    @CommandArgument('--android-release-type',
-                     choices=('nightly', 'beta', 'release'),
-                     default=None,
-                     nargs='?',
-                     help='If specified, this indicates whether we intend to '
-                          'either a Fennec Nightly, a Fennec beta or a Fennec'
-                          'Release.')
     def taskgraph_decision(self, **options):
         """Run the decision task: generate a task graph and submit to
         TaskCluster.  This is only meant to be called within decision tasks,
@@ -383,18 +366,23 @@ class MachCommands(MachCommandBase):
 
             show_method = getattr(self, 'show_taskgraph_' + (options['format'] or 'labels'))
             tg = self.get_filtered_taskgraph(tg, options["tasks_regex"])
-            show_method(tg)
+
+            fh = options['output_file']
+            if fh:
+                fh = open(fh, 'w')
+            show_method(tg, file=fh)
         except Exception:
             traceback.print_exc()
             sys.exit(1)
 
-    def show_taskgraph_labels(self, taskgraph):
+    def show_taskgraph_labels(self, taskgraph, file=None):
         for index in taskgraph.graph.visit_postorder():
-            print(taskgraph.tasks[index].label)
+            print(taskgraph.tasks[index].label, file=file)
 
-    def show_taskgraph_json(self, taskgraph):
+    def show_taskgraph_json(self, taskgraph, file=None):
         print(json.dumps(taskgraph.to_json(),
-              sort_keys=True, indent=2, separators=(',', ': ')))
+              sort_keys=True, indent=2, separators=(',', ': ')),
+              file=file)
 
     def get_filtered_taskgraph(self, taskgraph, tasksregex):
         from taskgraph.graph import Graph

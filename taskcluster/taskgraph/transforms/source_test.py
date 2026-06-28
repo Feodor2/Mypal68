@@ -10,12 +10,15 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import copy
 import os
+import six
+from six import text_type
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.job import job_description_schema
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.schema import (
     resolve_keyed_by,
+    optionally_keyed_by,
 )
 from taskgraph.util.treeherder import join_symbol, split_symbol
 
@@ -35,7 +38,7 @@ source_test_description_schema = Schema({
     # The platform on which this task runs.  This will be used to set up attributes
     # (for try selection) and treeherder metadata (for display).  If given as a list,
     # the job will be "split" into multiple tasks, one with each platform.
-    Required('platform'): Any(basestring, [basestring]),
+    Required('platform'): Any(text_type, [text_type]),
 
     # Whether the job requires a build artifact or not. If True, the task will
     # depend on a build task and the installer url will be saved to the
@@ -45,15 +48,21 @@ source_test_description_schema = Schema({
 
     # These fields can be keyed by "platform", and are otherwise identical to
     # job descriptions.
-    Required('worker-type'): Any(
-        job_description_schema['worker-type'],
-        {'by-platform': {basestring: job_description_schema['worker-type']}},
-    ),
-    Required('worker'): Any(
-        job_description_schema['worker'],
-        {'by-platform': {basestring: job_description_schema['worker']}},
-    ),
+    Required('worker-type'): optionally_keyed_by(
+        'platform', job_description_schema['worker-type']),
+
+    Required('worker'): optionally_keyed_by(
+        'platform', job_description_schema['worker']),
+
     Optional('python-version'): [int],
+    # If true, the DECISION_TASK_ID env will be populated.
+    Optional('require-decision-task-id'): bool,
+
+    # A list of artifacts to install from 'fetch' tasks.
+    Optional('fetches'): {
+        text_type: optionally_keyed_by(
+            'platform', job_description_schema['fetches'][text_type]),
+    },
 })
 
 transforms = TransformSequence()
@@ -81,7 +90,7 @@ def set_job_name(config, jobs):
 @transforms.add
 def expand_platforms(config, jobs):
     for job in jobs:
-        if isinstance(job['platform'], basestring):
+        if isinstance(job['platform'], text_type):
             yield job
             continue
 
@@ -173,6 +182,7 @@ def handle_platform(config, jobs):
     try-related attributes.
     """
     fields = [
+        'fetches.toolchain',
         'worker-type',
         'worker',
     ]
@@ -212,4 +222,36 @@ def handle_shell(config, jobs):
             resolve_keyed_by(job, field, item_name=job['name'])
 
         del job['shell']
+        yield job
+
+
+@transforms.add
+def add_decision_task_id_to_env(config, jobs):
+    """
+    Creates the `DECISION_TASK_ID` environment variable in tasks that set the
+    `require-decision-task-id` config.
+    """
+    for job in jobs:
+        if not job.pop('require-decision-task-id', False):
+            yield job
+            continue
+
+        env = job['worker'].setdefault('env', {})
+        env['DECISION_TASK_ID'] = six.ensure_text(os.environ.get('TASK_ID', ''))
+        yield job
+
+
+@transforms.add
+def set_code_review_env(config, jobs):
+    """
+    Add a CODE_REVIEW environment variable when running in code-review bot mode
+    """
+    is_code_review = config.params['target_tasks_method'] == 'codereview'
+
+    for job in jobs:
+        attrs = job.get('attributes', {})
+        if is_code_review and attrs.get('code-review') is True:
+            env = job['worker'].setdefault('env', {})
+            env['CODE_REVIEW'] = '1'
+
         yield job

@@ -13,6 +13,7 @@ transforms:
 kind-dependencies:
     - fetch
     - toolchain
+    - build
 
 jobs-from:
     - clang.yml
@@ -23,11 +24,13 @@ jobs-from:
     - infer.yml
     - jsshell.yml
     - mozlint.yml
+    - mozlint-android.yml
     - node.yml
     - python.yml
+    - shadow-scheduler.yml
     - webidl.yml
-    - wpt-metadata.yml
     - wpt-manifest.yml
+    - wpt-metadata.yml
 
 job-defaults:
     attributes:

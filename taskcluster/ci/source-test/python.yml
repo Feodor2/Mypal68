@@ -40,6 +40,22 @@ taskgraph-tests:
             - 'taskcluster/**/*.py'
             - 'python/mach/**/*.py'
 
+mach:
+    description: python/mach unit tests
+    platform:
+        - linux64/opt
+        - macosx1010-64/opt
+        - windows10-64/opt
+    python-version: [2, 3]
+    treeherder:
+        symbol: mach
+    run:
+        using: python-test
+        subsuite: mach
+    when:
+        files-changed:
+            - 'python/mach/**'
+
 marionette-harness:
     description: testing/marionette/harness unit tests
     platform:
@@ -71,7 +87,7 @@ mochitest-harness:
     worker:
         by-platform:
             linux64.*:
-                docker-image: {in-tree: "desktop1604-test"}
+                docker-image: {in-tree: "ubuntu1804-test"}
                 max-run-time: 3600
     run:
         using: run-task
@@ -89,6 +105,8 @@ mochitest-harness:
               dest: tests
             - artifact: target.mochitest.tests.tar.gz
               dest: tests
+        toolchain:
+            - linux64-fix-stacks
     when:
         files-changed:
             - 'testing/mochitest/**'
@@ -134,9 +152,9 @@ mozlint:
         - linux64/opt
         - macosx1014-64/opt
         - windows10-64/opt
-    python-version: [2]
+    python-version: [3]
     treeherder:
-        symbol: ml
+        symbol: mozlint
     run:
         using: python-test
         subsuite: mozlint
@@ -188,8 +206,9 @@ raptor:
     description: testing/raptor unit tests
     platform:
         - linux64/opt
+        - macosx1014-64/opt
         - windows10-64/opt
-    python-version: [2]
+    python-version: [2, 3]
     treeherder:
         symbol: rap
     run:
@@ -212,7 +231,7 @@ reftest-harness:
     worker:
         by-platform:
             linux64.*:
-                docker-image: {in-tree: "desktop1604-test"}
+                docker-image: {in-tree: "ubuntu1804-test"}
                 max-run-time: 3600
     run:
         using: run-task
@@ -230,6 +249,8 @@ reftest-harness:
               dest: tests
             - artifact: target.reftest.tests.tar.gz
               dest: tests
+        toolchain:
+            - linux64-fix-stacks
     when:
         files-changed:
             - 'layout/tools/reftest/**'
@@ -288,3 +309,20 @@ mozbuild:
             - 'python/mozversioncontrol/**'
             - 'testing/mozbase/**'
             - 'testing/xpcshell/xpcshellcommandline.py'
+
+condprof:
+    description: testing/condprofile unit tests
+    platform:
+        - linux64/opt
+        - macosx1014-64/opt
+        - windows10-64/opt
+    python-version: [2]
+    treeherder:
+        symbol: condprof
+    run:
+        using: python-test
+        subsuite: condprof
+    when:
+        files-changed:
+            - 'testing/condprofile/condprof**'
+            - 'testing/condprofile/setup.py'

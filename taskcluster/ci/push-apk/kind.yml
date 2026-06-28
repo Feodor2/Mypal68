@@ -12,74 +12,46 @@ kind-dependencies:
     - build-signing
     - push-apk-checks
 
-job-defaults:
-    description: Publishes APK onto Google Play Store
-    attributes:
-        nightly: true
-    shipping-phase: ship
-    shipping-product: fennec
-    worker-type:
-        by-release-level:
-            production: scriptworker-k8s/gecko-3-pushapk
-            staging: scriptworker-k8s/gecko-1-pushapk
-    worker:
-        upstream-artifacts:  # see transforms
-        implementation: push-apk
-        commit:
-            by-release-level:
-                production: true
-                staging: false
-    scopes:  # see transforms
-    treeherder:
-        platform: Android/opt
-        tier: 2
-        kind: other
-    run-on-projects: ['try', 'mozilla-esr68']
-
 jobs:
-    push-apk-nightly/opt:
+    push-apk/opt:
+        label: 'push-apk/opt'
+        description: Publishes APK onto Google Play Store
         attributes:
-            release-type: nightly
+            build_platform: android-nightly
+            nightly: true
+        shipping-phase: ship
+        shipping-product: fennec
+        worker-type:
+            by-release-level:
+                production: scriptworker-prov-v1/pushapk-v1
+                staging: scriptworker-prov-v1/dep-pushapk
         worker:
+            upstream-artifacts:  # see transforms
             google-play-track:
+                # See https://github.com/mozilla-releng/pushapkscript#aurora-beta-release-vs-alpha-beta-production
+                by-release-type:
+                    nightly: 'beta'
+                    beta: 'rollout'
+                    release(-rc)?: 'rollout'
+                    default: 'internal'
+            implementation: push-apk
+            commit:
                 by-release-level:
-                    # See https://github.com/mozilla-releng/pushapkscript#aurora-beta-release-vs-alpha-beta-production
-                    production: beta
-                    staging: alpha
-        treeherder:
-            symbol: pub(gp-n)
-
-    push-apk-beta/opt:
-        attributes:
-            release-type: beta
-        worker:
-            google-play-track:
-                by-release-level:
-                    production: production
-                    staging: alpha
+                    production: true
+                    staging: false
             rollout-percentage:
-                by-release-level:
-                    # XXX Change this value if google-play-track becomes rollout
-                    production: null
-                    staging: null
+                by-release-type:
+                    # XXX Please make sure to change google-play-track above to
+                    # 'rollout' if you add a new supported project
+                    release: 10
+                    release-rc: 5
+                    beta: 10
+                    default: null
+        requires: all-resolved
+        scopes:  # see transforms
         treeherder:
-            symbol: pub(gp-b)
-
-    push-apk-release/opt:
-        attributes:
-            release-type: release
-        worker:
-            google-play-track:
-                by-release-level:
-                    production: rollout
-                    staging: alpha
-            rollout-percentage:
-                by-release-level:
-                    # XXX Change this value if google-play-track becomes rollout
-                    production:
-                        by-release-type:
-                            esr68-rc: 5
-                            default: 10
-                    staging: null
-        treeherder:
-            symbol: pub(gp-r)
+            symbol: pub(gp)
+            platform: Android/opt
+            tier: 2
+            kind: other
+        run-on-projects: ['mozilla-central', 'mozilla-beta', 'mozilla-release']

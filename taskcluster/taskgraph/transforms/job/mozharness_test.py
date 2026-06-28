@@ -4,7 +4,13 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import json
+import os
+
+import six
+from six import text_type
 from voluptuous import Required
+
 from taskgraph.util.taskcluster import get_artifact_url
 from taskgraph.transforms.job import (
     configure_taskdesc_for_run,
@@ -19,8 +25,6 @@ from taskgraph.transforms.tests import (
 from taskgraph.transforms.job.common import (
     support_vcs_checkout,
 )
-import json
-import os
 
 VARIANTS = [
     'nightly',
@@ -30,7 +34,6 @@ VARIANTS = [
     'asan',
     'stylo',
     'stylo-disabled',
-    'stylo-sequential',
     'qr',
     'ccov',
 ]
@@ -47,7 +50,7 @@ mozharness_test_run_schema = Schema({
     Required('using'): 'mozharness-test',
     Required('test'): test_description_schema,
     # Base work directory used to set up the task.
-    Required('workdir'): basestring,
+    Required('workdir'): text_type,
 })
 
 
@@ -110,32 +113,39 @@ def mozharness_test_on_docker(config, job, taskdesc):
         'NEED_PULSEAUDIO': 'true',
         'NEED_WINDOW_MANAGER': 'true',
         'NEED_COMPIZ': 'true',
-        'ENABLE_E10S': str(bool(test.get('e10s'))).lower(),
+        'ENABLE_E10S': text_type(bool(test.get('e10s'))).lower(),
         'WORKING_DIR': '/builds/worker',
     })
 
-    # by default, require compiz unless proven otherwise, hence a whitelist.
-    # See https://bugzilla.mozilla.org/show_bug.cgi?id=1552563
-    # if using regex this list can be shortened greatly.
-    suites_not_need_compiz = [
-        'mochitest-webgl1-core',
-        'mochitest-webgl1-ext',
-        'mochitest-plain-gpu',
-        'mochitest-browser-chrome-screenshots',
-        'gtest',
-        'cppunittest',
-        'jsreftest',
-        'crashtest',
-        'reftest',
-        'reftest-no-accel',
-        'web-platform-tests',
-        'web-platform-tests-reftests',
-        'xpcshell'
-    ]
-    if job['run']['test']['suite'] in suites_not_need_compiz or (
-            job['run']['test']['suite'] == 'mochitest-plain-chunked' and
-            job['run']['test']['try-name'] == 'mochitest-plain-headless'):
-        env['NEED_COMPIZ'] = 'false'
+    # remninder to remove this conditional and remove NEED_COMPIZ from tree
+    # once test are migrated over to Ubuntu 18.04/ubuntu1804.
+    if test['docker-image'] == 'ubuntu1804-test':
+        env.update({
+            'NEED_COMPIZ': 'false'
+        })
+    else:
+        # on Ubuntu1604, require compiz unless proven otherwise.
+        # See https://bugzilla.mozilla.org/show_bug.cgi?id=1552563
+        # if using regex this list can be shortened greatly.
+        suites_not_need_compiz = [
+            'mochitest-webgl1-core',
+            'mochitest-webgl1-ext',
+            'mochitest-plain-gpu',
+            'mochitest-browser-chrome-screenshots',
+            'gtest',
+            'cppunittest',
+            'jsreftest',
+            'crashtest',
+            'reftest',
+            'reftest-no-accel',
+            'web-platform-tests',
+            'web-platform-tests-reftests',
+            'xpcshell'
+        ]
+        if job['run']['test']['suite'] in suites_not_need_compiz or (
+                job['run']['test']['suite'] == 'mochitest-plain' and
+                job['run']['test']['try-name'] == 'mochitest-plain-headless'):
+            env['NEED_COMPIZ'] = 'false'
 
     if mozharness.get('mochitest-flavor'):
         env['MOCHITEST_FLAVOR'] = mozharness['mochitest-flavor']
@@ -168,24 +178,23 @@ def mozharness_test_on_docker(config, job, taskdesc):
         'installer_url': installer_url,
         'test_packages_url': test_packages_url(taskdesc),
     }
-    env['EXTRA_MOZHARNESS_CONFIG'] = {'task-reference': json.dumps(extra_config)}
+    env['EXTRA_MOZHARNESS_CONFIG'] = {
+        'task-reference': six.ensure_text(json.dumps(extra_config))
+    }
 
     command = [
         '{workdir}/bin/test-linux.sh'.format(**run),
     ]
     command.extend(mozharness.get('extra-options', []))
 
+    if test.get('test-manifests'):
+        env['MOZHARNESS_TEST_PATHS'] = six.ensure_text(
+            json.dumps({test['suite']: test['test-manifests']}))
+
     # TODO: remove the need for run['chunked']
-    if mozharness.get('chunked') or test['chunks'] > 1:
-        # Implement mozharness['chunking-args'], modifying command in place
-        if mozharness['chunking-args'] == 'this-chunk':
-            command.append('--total-chunk={}'.format(test['chunks']))
-            command.append('--this-chunk={}'.format(test['this-chunk']))
-        elif mozharness['chunking-args'] == 'test-suite-suffix':
-            suffix = mozharness['chunk-suffix'].replace('<CHUNK>', str(test['this-chunk']))
-            for i, c in enumerate(command):
-                if isinstance(c, basestring) and c.startswith('--test-suite'):
-                    command[i] += suffix
+    elif mozharness.get('chunked') or test['chunks'] > 1:
+        command.append('--total-chunk={}'.format(test['chunks']))
+        command.append('--this-chunk={}'.format(test['this-chunk']))
 
     if 'download-symbols' in mozharness:
         download_symbols = mozharness['download-symbols']
@@ -207,15 +216,7 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
     run = job['run']
     test = taskdesc['run']['test']
     mozharness = test['mozharness']
-
-    is_aarch64_laptop = taskdesc['worker-type'] == 't-win64-aarch64-laptop'
-
-    # Aarch64 laptops don't all have a working python 3 install, so we
-    # can't use run-task there. Bug 1557614.
-    if is_aarch64_laptop:
-        worker = taskdesc['worker']
-    else:
-        worker = taskdesc['worker'] = job['worker']
+    worker = taskdesc['worker'] = job['worker']
 
     bitbar_script = 'test-linux.sh'
 
@@ -284,6 +285,7 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
         raise Exception('reboot: {} not supported on generic-worker'.format(test['reboot']))
 
     worker['max-run-time'] = test['max-run-time']
+    worker['retry-exit-status'] = test['retry-exit-status']
     worker['artifacts'] = artifacts
 
     env = worker.setdefault('env', {})
@@ -325,7 +327,9 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
         'installer_url': installer_url,
         'test_packages_url': test_packages_url(taskdesc),
     }
-    env['EXTRA_MOZHARNESS_CONFIG'] = {'task-reference': json.dumps(extra_config)}
+    env['EXTRA_MOZHARNESS_CONFIG'] = {
+        'task-reference': six.ensure_text(json.dumps(extra_config))
+    }
 
     if is_windows:
         mh_command = [
@@ -362,25 +366,21 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
         mh_command.extend(['--cfg', cfg_path])
     mh_command.extend(mozharness.get('extra-options', []))
     if mozharness.get('download-symbols'):
-        if isinstance(mozharness['download-symbols'], basestring):
+        if isinstance(mozharness['download-symbols'], text_type):
             mh_command.extend(['--download-symbols', mozharness['download-symbols']])
         else:
             mh_command.extend(['--download-symbols', 'true'])
     if mozharness.get('include-blob-upload-branch'):
         mh_command.append('--blob-upload-branch=' + config.params['project'])
-    mh_command.extend(mozharness.get('extra-options', []))
+
+    if test.get('test-manifests'):
+        env['MOZHARNESS_TEST_PATHS'] = six.ensure_text(
+            json.dumps({test['suite']: test['test-manifests']}))
 
     # TODO: remove the need for run['chunked']
-    if mozharness.get('chunked') or test['chunks'] > 1:
-        # Implement mozharness['chunking-args'], modifying command in place
-        if mozharness['chunking-args'] == 'this-chunk':
-            mh_command.append('--total-chunk={}'.format(test['chunks']))
-            mh_command.append('--this-chunk={}'.format(test['this-chunk']))
-        elif mozharness['chunking-args'] == 'test-suite-suffix':
-            suffix = mozharness['chunk-suffix'].replace('<CHUNK>', str(test['this-chunk']))
-            for i, c in enumerate(mh_command):
-                if isinstance(c, basestring) and c.startswith('--test-suite'):
-                    mh_command[i] += suffix
+    elif mozharness.get('chunked') or test['chunks'] > 1:
+        mh_command.append('--total-chunk={}'.format(test['chunks']))
+        mh_command.append('--this-chunk={}'.format(test['this-chunk']))
 
     if config.params.is_try():
         env['TRY_COMMIT_MSG'] = config.params['message']
@@ -400,8 +400,8 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
         'format': 'zip'
     }]
     if is_bitbar:
-        a_url = '{}/raw-file/{}/taskcluster/scripts/tester/{}'.format(
-            config.params['head_repository'], config.params['head_rev'], bitbar_script
+        a_url = config.params.file_url(
+            'taskcluster/scripts/tester/{}'.format(bitbar_script),
         )
         worker['mounts'] = [{
             'file': bitbar_script,
@@ -409,10 +409,6 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
                 'url': a_url,
             },
         }]
-
-    if is_aarch64_laptop:
-        worker['command'] = [' '.join(mh_command)]
-        return
 
     job['run'] = {
         'workdir': run['workdir'],
@@ -423,6 +419,9 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
     }
     if is_bitbar:
         job['run']['run-as-root'] = True
+        # FIXME: The bitbar config incorrectly requests internal tooltool downloads
+        # so force it off here.
+        job['run']['tooltool-downloads'] = False
     configure_taskdesc_for_run(config, job, taskdesc, worker['implementation'])
 
 
@@ -488,11 +487,13 @@ def mozharness_test_on_script_engine_autophone(config, job, taskdesc):
         'installer_url': installer_url,
         'test_packages_url': test_packages_url(taskdesc),
     }
-    env['EXTRA_MOZHARNESS_CONFIG'] = {'task-reference': json.dumps(extra_config)}
+    env['EXTRA_MOZHARNESS_CONFIG'] = {
+        'task-reference': six.ensure_text(json.dumps(extra_config))
+    }
 
     script = 'test-linux.sh'
-    worker['context'] = '{}/raw-file/{}/taskcluster/scripts/tester/{}'.format(
-        config.params['head_repository'], config.params['head_rev'], script
+    worker['context'] = config.params.file_url(
+        'taskcluster/scripts/tester/{}'.format(script),
     )
 
     command = worker['command'] = ["./{}".format(script)]
@@ -500,17 +501,14 @@ def mozharness_test_on_script_engine_autophone(config, job, taskdesc):
         command.append('--blob-upload-branch=' + config.params['project'])
     command.extend(mozharness.get('extra-options', []))
 
+    if test.get('test-manifests'):
+        env['MOZHARNESS_TEST_PATHS'] = six.ensure_text(
+            json.dumps({test['suite']: test['test-manifests']}))
+
     # TODO: remove the need for run['chunked']
-    if mozharness.get('chunked') or test['chunks'] > 1:
-        # Implement mozharness['chunking-args'], modifying command in place
-        if mozharness['chunking-args'] == 'this-chunk':
-            command.append('--total-chunk={}'.format(test['chunks']))
-            command.append('--this-chunk={}'.format(test['this-chunk']))
-        elif mozharness['chunking-args'] == 'test-suite-suffix':
-            suffix = mozharness['chunk-suffix'].replace('<CHUNK>', str(test['this-chunk']))
-            for i, c in enumerate(command):
-                if isinstance(c, basestring) and c.startswith('--test-suite'):
-                    command[i] += suffix
+    elif mozharness.get('chunked') or test['chunks'] > 1:
+        command.append('--total-chunk={}'.format(test['chunks']))
+        command.append('--this-chunk={}'.format(test['this-chunk']))
 
     if 'download-symbols' in mozharness:
         download_symbols = mozharness['download-symbols']

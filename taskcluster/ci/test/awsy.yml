@@ -26,29 +26,28 @@ job-defaults:
         by-test-platform:
             windows10-aarch64.*: 2
             default: default
+    run-on-projects:
+        by-test-platform:
+            .*-devedition/.*: []  # don't run on devedition
+            windows10-aarch64/opt: ['try']
+            default: ['try', 'integration', 'mozilla-central', 'mozilla-beta', 'mozilla-release']
 
 awsy:
     description: "Are we slim yet"
     treeherder-symbol: SY(sy)
-    run-on-projects:
-        by-test-platform:
-            .*-devedition/.*: []  # don't run on devedition
-            windows10-aarch64/opt: ['try', 'mozilla-central']
-            default: built-projects
 
 awsy-tp6:
     description: "Are we slim yet - tp6 pageset"
     treeherder-symbol: SY(sy-tp6)
     run-on-projects:
         by-test-platform:
-            .*-devedition/.*: []  # don't run on devedition
             .*-ccov/.*: []  # don't run on coverage
-            windows10-aarch64/opt: ['try', 'mozilla-central']
-            default: built-projects
+            .*-devedition/.*: []  # don't run on devedition
+            windows10-aarch64/opt: ['try']
+            default: ['try', 'integration', 'mozilla-central', 'mozilla-beta', 'mozilla-release']
     mozharness:
         extra-options:
             - --tp6
-    tier: 3
 
 awsy-dmd:
     description: "Are we slim yet - dmd enabled"
@@ -61,11 +60,6 @@ awsy-dmd:
 awsy-base:
     description: "Are we slim yet - about:blank base case"
     treeherder-symbol: SY(ab)
-    run-on-projects:
-        by-test-platform:
-            .*-devedition/.*: []  # don't run on devedition
-            windows10-aarch64/opt: ['try', 'mozilla-central']
-            default: built-projects
     mozharness:
         extra-options:
             - --base
@@ -78,15 +72,3 @@ awsy-base-dmd:
         extra-options:
             - --base
             - --dmd
-
-awsy-stylo-sequential:
-    description: "Are we slim yet for Stylo sequential"
-    treeherder-symbol: SYss(sy)
-    run-on-projects:
-        by-test-platform:
-            .*-devedition/.*: []  # don't run on devedition
-            windows10-aarch64/opt: ['try', 'mozilla-central']
-            default: built-projects
-    mozharness:
-        extra-options:
-            - --single-stylo-traversal

@@ -42,7 +42,7 @@ run_task_schema = Schema({
 
     # The sparse checkout profile to use. Value is the filename relative to the
     # directory where sparse profiles are defined (build/sparse-profiles/).
-    Required('sparse-profile'): Any(basestring, None),
+    Required('sparse-profile'): Any(text_type, None),
 
     # if true, perform a checkout of a comm-central based branch inside the
     # gecko checkout
@@ -54,7 +54,7 @@ run_task_schema = Schema({
     Required('command'): Any([taskref_or_string], taskref_or_string),
 
     # Base work directory used to set up the task.
-    Required('workdir'): basestring,
+    Required('workdir'): text_type,
 
     # If not false, tooltool downloads will be enabled via relengAPIProxy
     # for either just public files, or all files. Only supported on
@@ -95,10 +95,9 @@ worker_defaults = {
 
 
 def script_url(config, script):
-    return '{}/raw-file/{}/taskcluster/scripts/{}'.format(
-                config.params['head_repository'],
-                config.params['head_rev'],
-                script)
+    return config.params.file_url(
+        'taskcluster/scripts/{}'.format(script),
+    )
 
 
 @run_job_using("docker-worker", "run-task", schema=run_task_schema, defaults=worker_defaults)
@@ -132,8 +131,8 @@ def docker_worker_run_task(config, job, taskdesc):
             )
         )
 
-    # dict is for the case of `{'task-reference': basestring}`.
-    if isinstance(run_command, (basestring, dict)):
+    # dict is for the case of `{'task-reference': text_type}`.
+    if isinstance(run_command, (text_type, dict)):
         run_command = ['bash', '-cx', run_command]
     if run['comm-checkout']:
         command.append('--comm-checkout={}/comm'.format(
@@ -164,7 +163,7 @@ def generic_worker_run_task(config, job, taskdesc):
         command = ['C:/mozilla-build/python3/python3.exe', 'run-task']
     elif is_mac:
         command = ['/tools/python37/bin/python3.7', 'run-task']
-        if job['worker-type'].endswith('1014'):
+        if job['worker-type'].endswith(('1014', '1014-pgo')):
             command = ['/usr/local/bin/python3', 'run-task']
     else:
         command = ['./run-task']
@@ -203,7 +202,7 @@ def generic_worker_run_task(config, job, taskdesc):
             )
         )
 
-    if isinstance(run_command, basestring):
+    if isinstance(run_command, text_type):
         if is_win:
             run_command = '"{}"'.format(run_command)
         run_command = ['bash', '-cx', run_command]

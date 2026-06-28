@@ -99,6 +99,7 @@ UNITTEST_ALIASES = {
     'web-platform-test': alias_prefix('web-platform-tests'),
     'web-platform-tests': alias_prefix('web-platform-tests'),
     'web-platform-tests-e10s': alias_prefix('web-platform-tests-e10s'),
+    'web-platform-tests-crashtests': alias_prefix('web-platform-tests-crashtests'),
     'web-platform-tests-reftests': alias_prefix('web-platform-tests-reftests'),
     'web-platform-tests-reftests-e10s': alias_prefix('web-platform-tests-reftests-e10s'),
     'web-platform-tests-wdspec': alias_prefix('web-platform-tests-wdspec'),
@@ -120,16 +121,12 @@ UNITTEST_PLATFORM_PRETTY_NAMES = {
     'Ubuntu': [
         'linux32',
         'linux64',
-        'linux64-asan',
-        'linux64-stylo-sequential'
+        'linux64-asan'
     ],
     'x64': [
         'linux64',
-        'linux64-asan',
-        'linux64-stylo-sequential'
+        'linux64-asan'
     ],
-    'Android 4.3 Emulator': ['android-em-4.3-arm7-api-16'],
-    'Android 4.3 Emulator PGO': ['android-em-4-3-armv7-api16-pgo'],
     'Android 7.0 Moto G5 32bit': ['android-hw-g5-7.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 32bit': ['android-hw-p2-8.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 64bit': ['android-hw-p2-8.0-android-aarch64'],

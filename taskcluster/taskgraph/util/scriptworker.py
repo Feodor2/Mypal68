@@ -72,27 +72,6 @@ SIGNING_CERT_SCOPES = {
     'default': 'signing:cert:dep-signing',
 }
 
-ANDROID_SIGNING_SCOPE_ALIAS_TO_PROJECT = [[
-    '68-release-train', set([
-        'mozilla-beta',
-        'mozilla-release',
-        'mozilla-esr68',
-    ])
-]]
-
-ANDROID_SIGNING_CERT_SCOPES = {
-    '68-release-train': {
-        'nightly': 'signing:cert:nightly-signing',
-        'beta': 'signing:cert:release-signing',
-        'release': 'signing:cert:release-signing',
-    },
-    'default': {
-        'nightly': 'signing:cert:dep-signing',
-        'beta': 'signing:cert:dep-signing',
-        'release': 'signing:cert:dep-signing',
-    }
-}
-
 DEVEDITION_SIGNING_SCOPE_ALIAS_TO_PROJECT = [[
     'beta', set([
         'mozilla-beta',
@@ -132,27 +111,6 @@ BEETMOVER_BUCKET_SCOPES = {
     'default': 'beetmover:bucket:dep',
 }
 
-ANDROID_BEETMOVER_SCOPE_ALIAS_TO_PROJECT = [[
-    '68-release-train', set([
-        'mozilla-beta',
-        'mozilla-release',
-        'mozilla-esr68',
-    ])
-]]
-
-ANDROID_BEETMOVER_BUCKET_SCOPES = {
-    '68-release-train': {
-        'nightly': 'beetmover:bucket:nightly',
-        'beta': 'beetmover:bucket:release',
-        'release': 'beetmover:bucket:release',
-    },
-    'default': {
-        'nightly': 'beetmover:bucket:dep',
-        'beta': 'beetmover:bucket:dep',
-        'release': 'beetmover:bucket:dep',
-    },
-}
-
 """Map the beetmover tasks aliases to the actual action scopes.
 """
 BEETMOVER_ACTION_SCOPES = {
@@ -161,13 +119,6 @@ BEETMOVER_ACTION_SCOPES = {
     'default': 'beetmover:action:push-to-candidates',
 }
 
-ANDROID_BEETMOVER_ACTION_SCOPES = {
-    'default': {
-        'nightly': 'beetmover:action:push-to-nightly',
-        'beta': 'beetmover:action:push-to-candidates',
-        'release': 'beetmover:action:push-to-candidates',
-    },
-}
 
 """Known balrog actions."""
 BALROG_ACTIONS = ('submit-locale', 'submit-toplevel', 'schedule')
@@ -217,25 +168,25 @@ BALROG_SERVER_SCOPES = {
 
 
 PUSH_APK_SCOPE_ALIAS_TO_PROJECT = [[
-    '68-release-train', set([
+    'central', set([
+        'mozilla-central',
+    ])
+], [
+    'beta', set([
         'mozilla-beta',
+    ])
+], [
+    'release', set([
         'mozilla-release',
-        'mozilla-esr68',
     ])
 ]]
 
 
 PUSH_APK_SCOPES = {
-    '68-release-train': {
-        'nightly': 'googleplay:aurora',
-        'beta': 'googleplay:beta',
-        'release': 'googleplay:release',
-    },
-    'default': {
-        'nightly': 'googleplay:dep',
-        'beta': 'googleplay:dep',
-        'release': 'googleplay:dep',
-    }
+    'central': 'googleplay:aurora',
+    'beta': 'googleplay:beta',
+    'release': 'googleplay:release',
+    'default': 'googleplay:dep',
 }
 
 
@@ -275,8 +226,8 @@ def with_scope_prefix(f):
         callable: the wrapped function
     """
     @functools.wraps(f)
-    def wrapper(config, *args, **kwargs):
-        scope_or_scopes = f(config, *args, **kwargs)
+    def wrapper(config, **kwargs):
+        scope_or_scopes = f(config, **kwargs)
         if isinstance(scope_or_scopes, list):
             return map(functools.partial(add_scope_prefix, config), scope_or_scopes)
         else:
@@ -303,16 +254,6 @@ def get_scope_from_project(config, alias_to_project_map, alias_to_scope_map):
         if config.params['project'] in projects and alias in alias_to_scope_map:
             return alias_to_scope_map[alias]
     return alias_to_scope_map['default']
-
-
-@with_scope_prefix
-def get_scope_from_project_and_job_release_type(
-    config, job_release_type, alias_to_project_map, alias_to_scope_map
-):
-    for alias, projects in alias_to_project_map:
-        if config.params['project'] in projects and alias in alias_to_scope_map:
-            return alias_to_scope_map[alias][job_release_type]
-    return alias_to_scope_map['default'][job_release_type]
 
 
 @with_scope_prefix
@@ -362,39 +303,21 @@ get_signing_cert_scope = functools.partial(
     alias_to_scope_map=SIGNING_CERT_SCOPES,
 )
 
-get_android_signing_cert_scope = functools.partial(
-    get_scope_from_project_and_job_release_type,
-    alias_to_project_map=ANDROID_SIGNING_SCOPE_ALIAS_TO_PROJECT,
-    alias_to_scope_map=ANDROID_SIGNING_CERT_SCOPES,
-)
-
 get_devedition_signing_cert_scope = functools.partial(
     get_scope_from_project,
     alias_to_project_map=DEVEDITION_SIGNING_SCOPE_ALIAS_TO_PROJECT,
     alias_to_scope_map=DEVEDITION_SIGNING_CERT_SCOPES,
 )
 
-get_beetmover_regular_bucket_scope = functools.partial(
+get_beetmover_bucket_scope = functools.partial(
     get_scope_from_project,
     alias_to_project_map=BEETMOVER_SCOPE_ALIAS_TO_PROJECT,
     alias_to_scope_map=BEETMOVER_BUCKET_SCOPES,
 )
 
-get_beetmover_regular_action_scope = functools.partial(
+get_beetmover_action_scope = functools.partial(
     get_scope_from_release_type,
     release_type_to_scope_map=BEETMOVER_ACTION_SCOPES,
-)
-
-get_beetmover_android_bucket_scope = functools.partial(
-    get_scope_from_project_and_job_release_type,
-    alias_to_project_map=ANDROID_BEETMOVER_SCOPE_ALIAS_TO_PROJECT,
-    alias_to_scope_map=ANDROID_BEETMOVER_BUCKET_SCOPES,
-)
-
-get_beetmover_android_action_scope = functools.partial(
-    get_scope_from_project_and_job_release_type,
-    alias_to_project_map=ANDROID_BEETMOVER_SCOPE_ALIAS_TO_PROJECT,
-    alias_to_scope_map=ANDROID_BEETMOVER_ACTION_SCOPES,
 )
 
 get_balrog_server_scope = functools.partial(
@@ -404,7 +327,7 @@ get_balrog_server_scope = functools.partial(
 )
 
 get_push_apk_scope = functools.partial(
-    get_scope_from_project_and_job_release_type,
+    get_scope_from_project,
     alias_to_project_map=PUSH_APK_SCOPE_ALIAS_TO_PROJECT,
     alias_to_scope_map=PUSH_APK_SCOPES,
 )
@@ -443,62 +366,21 @@ def get_release_config(config):
         if release_config['partial_versions'] == "{}":
             del release_config['partial_versions']
 
-    release_config['version'] = str(config.params['version'])
-    release_config['appVersion'] = str(config.params['app_version'])
+    release_config['version'] = config.params['version']
+    release_config['appVersion'] = config.params['app_version']
 
-    release_config['next_version'] = str(config.params['next_version'])
+    release_config['next_version'] = config.params['next_version']
     release_config['build_number'] = config.params['build_number']
     return release_config
 
 
-def get_signing_cert_scope_per_platform(build_platform, is_nightly, config, job_release_type=None):
-    if 'android' in build_platform and job_release_type is not None:
-        return get_android_signing_cert_scope(config, job_release_type)
+def get_signing_cert_scope_per_platform(build_platform, is_nightly, config):
     if 'devedition' in build_platform:
         return get_devedition_signing_cert_scope(config)
-    elif is_nightly or build_platform in ('firefox-source', 'fennec-source', 'thunderbird-source'):
+    elif is_nightly:
         return get_signing_cert_scope(config)
     else:
         return add_scope_prefix(config, 'signing:cert:dep-signing')
-
-
-def get_beetmover_bucket_scope(config, job_release_type=None):
-    if job_release_type:
-        return get_beetmover_android_bucket_scope(config, job_release_type)
-    else:
-        return get_beetmover_regular_bucket_scope(config)
-
-
-def get_beetmover_action_scope(config, job_release_type=None):
-    if job_release_type:
-        return get_beetmover_android_action_scope(config, job_release_type)
-    else:
-        return get_beetmover_regular_action_scope(config)
-
-
-def get_worker_type_for_scope(config, scope):
-    """Get the scriptworker type that will accept the given scope.
-
-    Args:
-        config (TransformConfig): The configuration for the kind being transformed.
-        scope (string): The scope being used.
-
-    Returns:
-        string: The worker-type to use.
-    """
-    for worker_type, scopes in config.graph_config['scriptworker']['worker-types'].items():
-        if scope in scopes:
-            return worker_type
-    raise RuntimeError(
-        "Unsupported scriptworker scope {scope}. (supported scopes: {available_scopes})".format(
-            scope=scope,
-            available_scopes=sorted(
-                scope
-                for scopes in config.graph_config['scriptworker']['worker-types'].values()
-                for scope in scopes
-            ),
-        )
-    )
 
 
 # generate_beetmover_upstream_artifacts {{{1
@@ -876,12 +758,3 @@ def generate_beetmover_partials_artifact_map(config, job, partials_info, **kwarg
         })
 
     return artifacts
-
-
-def should_use_artifact_map(platform):
-    """Return True if this task uses the beetmover artifact map.
-
-    This function exists solely for the beetmover artifact map
-    migration.
-    """
-    return 'devedition' not in platform

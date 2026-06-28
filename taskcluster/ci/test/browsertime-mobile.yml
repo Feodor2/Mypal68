@@ -1,0 +1,74 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+job-defaults:
+    max-run-time: 1800
+    suite: raptor
+    workdir: /builds/worker
+    run-on-projects:
+        by-app:
+            fenix: []
+            geckoview: ["mozilla-central", "try"]
+            refbrow: []
+    tier: 3
+    target:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw.*-aarch64.*/.*:
+                        index: project.mobile.fenix.v2.performance-test.latest
+                        name: build/arm64-v8a/geckoNightly/target.apk
+                    default:
+                        index: project.mobile.fenix.v2.performance-test.latest
+                        name: build/armeabi-v7a/geckoNightly/target.apk
+            geckoview: geckoview_example.apk
+            refbrow:
+                by-test-platform:
+                    android-hw.*-aarch64.*/.*:
+                        index: project.mobile.reference-browser.v2.raptor.latest.aarch64
+                        name: target.apk
+                    default:
+                        index: project.mobile.reference-browser.v2.raptor.latest.arm
+                        name: target.apk
+    e10s: true
+    virtualization: hardware
+    activity:
+        by-app:
+            fenix: org.mozilla.fenix.IntentReceiverActivity
+            geckoview: org.mozilla.geckoview_example.GeckoViewActivity
+            refbrow: org.mozilla.reference.browser.BrowserTestActivity
+    binary-path:
+        by-app:
+            fenix: org.mozilla.fenix.performancetest
+            geckoview: org.mozilla.geckoview_example
+            refbrow: org.mozilla.reference.browser.raptor
+    mozharness:
+        script: raptor_script.py
+        config:
+            - raptor/android_hw_config.py
+        extra-options:
+            - --browsertime
+
+browsertime-tp6m:
+    description: "Raptor (browsertime) tp6 page-load tests on android"
+    raptor-test: tp6m
+    raptor-subtests: ['amazon', 'youtube']
+    apps: ["geckoview", "fenix"]
+    pageload: cold
+    treeherder-symbol: Btime(tp6m)
+
+browsertime-tp6m-profiling:
+    description: "Raptor (browsertime) tp6 page-load tests on android with Gecko profiling"
+    raptor-test: tp6m
+    raptor-subtests: ['amazon', 'youtube']
+    apps: ["geckoview"]
+    pageload: cold
+    treeherder-symbol: Btime-Prof(tp6m)
+    mozharness:
+        script: raptor_script.py
+        config:
+            - raptor/android_hw_config.py
+        extra-options:
+            - --browsertime
+            - --gecko-profile

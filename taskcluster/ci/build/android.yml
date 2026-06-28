@@ -56,6 +56,7 @@ android-api-16/debug:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -109,7 +110,8 @@ android-x86-nightly/opt:
     attributes:
         enable-full-crashsymbols: true
         nightly: true
-        disable-build-signing: true
+        # Android nightlies don't run tests in gecko, but are needed for github projects
+        skip-verify-test-packaging: true
     shipping-phase: build
     shipping-product: fennec
     index:
@@ -122,6 +124,7 @@ android-x86-nightly/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build, multi-l10n]
         config:
@@ -142,6 +145,7 @@ android-api-16/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -164,6 +168,7 @@ android-api-16/pgo:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -175,7 +180,8 @@ android-api-16-nightly/opt:
     attributes:
         enable-full-crashsymbols: true
         nightly: true
-        disable-build-signing: true
+        # Android nightlies don't run tests in gecko, but are needed for github projects
+        skip-verify-test-packaging: true
     shipping-phase: build
     shipping-product: fennec
     index:
@@ -188,6 +194,7 @@ android-api-16-nightly/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build, multi-l10n]
         config:
@@ -208,6 +215,7 @@ android-aarch64/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -230,6 +238,7 @@ android-aarch64/pgo:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -248,6 +257,7 @@ android-aarch64/debug:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -262,7 +272,8 @@ android-aarch64-nightly/opt:
     attributes:
         enable-full-crashsymbols: true
         nightly: true
-        disable-build-signing: true
+        # Android nightlies don't run tests in gecko, but are needed for github projects
+        skip-verify-test-packaging: true
     shipping-phase: build
     shipping-product: fennec
     index:
@@ -275,6 +286,7 @@ android-aarch64-nightly/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build, multi-l10n]
         config:
@@ -295,6 +307,7 @@ android-x86_64/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -308,7 +321,8 @@ android-x86_64-nightly/opt:
     attributes:
         enable-full-crashsymbols: true
         nightly: true
-        disable-build-signing: true
+        # Android nightlies don't run tests in gecko, but are needed for github projects
+        skip-verify-test-packaging: true
     shipping-phase: build
     shipping-product: fennec
     index:
@@ -321,6 +335,7 @@ android-x86_64-nightly/opt:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build, multi-l10n]
         config:
@@ -341,6 +356,7 @@ android-x86_64/debug:
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         config: ["builds/releng_base_android_64_builds.py"]
@@ -360,7 +376,7 @@ android-api-16-gcp/debug:
         platform: android-4-0-armv7-api16/debug
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -384,7 +400,7 @@ android-x86-gcp/opt:
         platform: android-4-2-x86/opt
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -407,7 +423,7 @@ android-api-16-gcp/opt:
         platform: android-4-0-armv7-api16/opt
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -430,7 +446,7 @@ android-aarch64-gcp/opt:
         platform: android-5-0-aarch64/opt
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -453,7 +469,7 @@ android-aarch64-gcp/debug:
         platform: android-5-0-aarch64/debug
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -476,7 +492,7 @@ android-x86_64-gcp/opt:
         platform: android-5-0-x86_64/opt
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -499,7 +515,7 @@ android-x86_64-gcp/debug:
         platform: android-5-0-x86_64/debug
         symbol: Bg
         tier: 3
-    worker-type: gce/gecko-{level}-b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"

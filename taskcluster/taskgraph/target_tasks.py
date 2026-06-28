@@ -180,43 +180,6 @@ def target_tasks_default(full_task_graph, parameters, graph_config):
             and filter_out_nightly(t, parameters)]
 
 
-@_target_task('ash_tasks')
-def target_tasks_ash(full_task_graph, parameters, graph_config):
-    """Target tasks that only run on the ash branch."""
-    def filter(task):
-        platform = task.attributes.get('build_platform')
-        # Early return if platform is None
-        if not platform:
-            return False
-        # Only on Linux platforms
-        if 'linux' not in platform:
-            return False
-        # No random non-build jobs either. This is being purposely done as a
-        # blacklist so newly-added jobs aren't missed by default.
-        for p in ('nightly', 'haz', 'artifact', 'cov', 'add-on'):
-            if p in platform:
-                return False
-        for k in ('toolchain', 'l10n'):
-            if k in task.attributes['kind']:
-                return False
-        # and none of this linux64-asan/debug stuff
-        if platform == 'linux64-asan' and task.attributes['build_type'] == 'debug':
-            return False
-        # no non-e10s tests
-        if task.attributes.get('unittest_suite'):
-            if not task.attributes.get('e10s'):
-                return False
-        # don't upload symbols
-        if task.attributes['kind'] == 'upload-symbols':
-            return False
-        return True
-
-    return [l for l, t in full_task_graph.tasks.iteritems()
-            if filter(t)
-            and standard_filter(t, parameters)
-            and filter_out_nightly(t, parameters)]
-
-
 @_target_task('graphics_tasks')
 def target_tasks_graphics(full_task_graph, parameters, graph_config):
     """In addition to doing the filtering by project that the 'default'
@@ -393,9 +356,9 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
             return False
 
         if 'secondary' in task.kind:
-                return is_rc
+            return is_rc
         else:
-                return not is_rc
+            return not is_rc
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
@@ -424,22 +387,20 @@ def target_tasks_nightly_geckoview(full_task_graph, parameters, graph_config):
     maven.mozilla.org."""
 
     def filter(task):
-        # XXX Starting 69, we don't ship Fennec Nightly anymore. We just want geckoview and
-        # its symbols to be uploaded
+        # XXX Starting 69, we don't ship Fennec Nightly anymore. We just want geckoview to be
+        # uploaded
         return (
-            task.attributes.get('release-type') == 'beta' and
-            # XXX The shippable geckoview beta are flagged as "nightly"
-            task.attributes.get('nightly') is True and
+            task.attributes.get('shipping_product') == 'fennec' and
             task.kind in ('beetmover-geckoview', 'upload-symbols')
         )
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
-@_target_task('fennec_v64')
-def target_tasks_fennec_v64(full_task_graph, parameters, graph_config):
+@_target_task('fennec_v68')
+def target_tasks_fennec_v68(full_task_graph, parameters, graph_config):
     """
-    Select tasks required for running tp6m fennec v64 tests
+    Select tasks required for running tp6m fennec v68 tests
     """
     def filter(task):
         platform = task.attributes.get('build_platform')
@@ -449,33 +410,60 @@ def target_tasks_fennec_v64(full_task_graph, parameters, graph_config):
             return False
         if attributes.get('unittest_suite') != 'raptor':
             return False
-        if '-fennec64-' in attributes.get('raptor_try_name'):
+        if '-fennec68-' in attributes.get('raptor_try_name'):
             return True
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
-@_target_task('android_power')
-def target_tasks_android_power(full_task_graph, parameters, graph_config):
+@_target_task('general_perf_testing')
+def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config):
     """
-    Select tasks required for running android power tests
+    Select tasks required for running performance tests 3 times a week.
     """
     def filter(task):
         platform = task.attributes.get('build_platform')
         attributes = task.attributes
-
-        if platform and 'android' not in platform:
-            return False
         if attributes.get('unittest_suite') != 'raptor':
             return False
         try_name = attributes.get('raptor_try_name')
+
+        # Run chrome and chromium on all platforms available
+        if '-chrome' in try_name:
+            return True
+        if '-chromium' in try_name:
+            return True
+
+        # Run raptor scn-power-idle and speedometer for fenix and fennec68
+        if 'raptor-scn-power-idle' in try_name \
+                and 'pgo' in platform \
+                and ('-fenix' in try_name or '-fennec68' in try_name):
+            return True
+        if 'raptor-speedometer' in try_name \
+                and 'pgo' in platform \
+                and ('-fenix' in try_name or '-fennec68' in try_name):
+            return True
+
+        # Run the following tests on android geckoview
+        if platform and 'android' not in platform:
+            return False
         if 'geckoview' not in try_name:
             return False
-        if '-power' in try_name and 'pgo' in platform:
+
+        # Run cpu+memory, and power tests
+        cpu_n_memory_task = '-cpu' in try_name and '-memory' in try_name
+        power_task = '-power' in try_name
+        # Ignore cpu+memory+power tests
+        if power_task and cpu_n_memory_task:
+            return False
+        if power_task or cpu_n_memory_task:
+            if 'pgo' not in platform:
+                return False
             if '-speedometer-' in try_name:
                 return True
-            if '-scn-power-idle' in try_name:
+            if '-scn' in try_name and '-idle' in try_name:
                 return True
+        return False
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
@@ -616,13 +604,13 @@ def target_tasks_chromium_update(full_task_graph, parameters, graph_config):
             'fetch-mac-chromium']
 
 
-@_target_task('pipfile_update')
-def target_tasks_pipfile_update(full_task_graph, parameters, graph_config):
+@_target_task('python_dependency_update')
+def target_tasks_python_update(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform nightly in-tree pipfile updates
     """
     def filter(task):
         # For now any task in the repo-update kind is ok
-        return task.kind in ['pipfile-update']
+        return task.kind in ['python-dependency-update']
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
@@ -735,3 +723,46 @@ def target_tasks_codereview(full_task_graph, parameters, graph_config):
 def target_tasks_nothing(full_task_graph, parameters, graph_config):
     """Select nothing, for DONTBUILD pushes"""
     return []
+
+
+@_target_task('raptor_tp6m')
+def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
+    """
+    Select tasks required for running raptor cold page-load tests on fenix and refbrow
+    """
+    def filter(task):
+        platform = task.attributes.get('build_platform')
+        attributes = task.attributes
+
+        if platform and 'android' not in platform:
+            return False
+        if attributes.get('unittest_suite') != 'raptor':
+            return False
+        try_name = attributes.get('raptor_try_name')
+        if '-cold' in try_name and 'pgo' in platform:
+            if '-1-refbrow-' in try_name:
+                return True
+            if '-1-fenix-' in try_name:
+                return True
+
+    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
+@_target_task('condprof')
+def target_tasks_condprof(full_task_graph, parameters, graph_config):
+    """
+    Select tasks required for building conditioned profiles.
+    """
+    for name, task in full_task_graph.tasks.iteritems():
+        if task.kind == "condprof":
+            yield name
+
+
+@_target_task('system-symbols')
+def target_tasks_system_symbols(full_task_graph, parameters, graph_config):
+    """
+    Select tasks for uploading system-symbols.
+    """
+    for name, task in full_task_graph.tasks.iteritems():
+        if task.kind == "system-symbols-upload":
+            yield name

@@ -14,10 +14,7 @@ kind-dependencies:
 
 job-defaults:
     description: Update bouncer aliases job
-    worker-type:
-        by-release-level:
-            production: scriptworker-k8s/gecko-3-bouncer
-            staging: scriptworker-k8s/gecko-1-bouncer
+    worker-type: bouncer
     worker:
         implementation: bouncer-aliases
     scopes:
@@ -46,23 +43,21 @@ jobs:
         treeherder:
             platform: devedition-release/opt
 
-    fennec-beta:
+    fennec:
         bouncer-products-per-alias:
-            fennec-beta-latest: apk
+            by-project:
+                mozilla-beta:
+                    fennec-beta-latest: apk
+                mozilla-release:
+                    fennec-latest: apk
+                birch:
+                    fennec-latest: apk
+                maple:
+                    fennec-beta-latest: apk
+                default: {}
         shipping-product: fennec
         treeherder:
             platform: fennec-beta/opt
-        attributes:
-            release-type: beta
-
-    fennec-release:
-        bouncer-products-per-alias:
-            fennec-latest: apk
-        shipping-product: fennec
-        treeherder:
-            platform: fennec-release/opt
-        attributes:
-            release-type: release
 
     firefox:
         bouncer-products-per-alias:

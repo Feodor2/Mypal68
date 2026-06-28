@@ -7,19 +7,19 @@ Transform the repackage signing task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from six import text_type
 from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
 from taskgraph.util.scriptworker import (
     get_signing_cert_scope_per_platform,
-    get_worker_type_for_scope,
 )
 from taskgraph.transforms.task import task_description_schema
 from voluptuous import Required, Optional
 
 repackage_signing_description_schema = schema.extend({
-    Required('depname', default='geckodriver-repackage'): basestring,
-    Optional('label'): basestring,
+    Required('depname', default='geckodriver-repackage'): text_type,
+    Optional('label'): text_type,
     Optional('treeherder'): task_description_schema['treeherder'],
     Optional('shipping-phase'): task_description_schema['shipping-phase'],
 })
@@ -69,7 +69,7 @@ def make_repackage_signing_description(config, jobs):
         task = {
             'label': job['label'],
             'description': description,
-            'worker-type': get_worker_type_for_scope(config, signing_cert_scope),
+            'worker-type': 'linux-signing',
             'worker': {
                 'implementation': 'scriptworker-signing',
                 'upstream-artifacts': upstream_artifacts,
@@ -108,6 +108,9 @@ def _craft_upstream_artifacts(dependency_kind, build_platform):
         extension = 'zip'
     elif build_platform.startswith('linux'):
         signing_format = 'autograph_gpg'
+        extension = 'tar.gz'
+    elif build_platform.startswith('macosx'):
+        signing_format = 'mac_geckodriver'
         extension = 'tar.gz'
     else:
         raise ValueError('Unsupported build platform "{}"'.format(build_platform))

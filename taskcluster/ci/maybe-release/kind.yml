@@ -25,17 +25,16 @@ job-defaults:
                 - project:releng:ship-it:server:staging
                 - project:releng:ship-it:action:create-new-release
     run-on-projects: []
-    treeherder:
-        symbol: Rel(maybe-release)
-        tier: 1
-        kind: build
 
 jobs:
-    fennec:
-        name: maybe-release-fennec
-        shipping-product: fennec
+    firefox:
+        name: maybe-release-firefox
+        shipping-product: firefox
         worker:
-            phase: ship_fennec_beta
-            product-key: fennec_beta
-        treeherder:
-            platform: fennec-release/opt
+            phase: push_firefox
+
+    devedition:
+        name: maybe-release-devedition
+        shipping-product: devedition
+        worker:
+            phase: push_devedition

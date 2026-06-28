@@ -20,8 +20,8 @@ only-for-build-platforms:
     - win32-nightly/opt
     - win64-shippable/opt
     - win64-nightly/opt
-    - win32-devedition-nightly/opt
-    - win64-devedition-nightly/opt
+    - win32-devedition/opt
+    - win64-devedition/opt
 
 job-template:
     worker-type: 'b-win2012'
@@ -45,4 +45,4 @@ job-template:
     package-formats: [msi]
     fetches:
         fetch:
-            - wix-3.1.1
+            - wix-3.14.0

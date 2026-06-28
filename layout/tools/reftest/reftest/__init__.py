@@ -2,10 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import unicode_literals, absolute_import, print_function
 
+import io
 import os
 import re
+import six
 
 RE_COMMENT = re.compile(r'\s+#')
 RE_HTTP = re.compile(r'HTTP\((\.\.(\/\.\.)*)\)')
@@ -96,12 +98,14 @@ class ReftestManifest(object):
         if self.finder:
             lines = self.finder.get(path).read().splitlines()
         else:
-            with open(path, 'r') as fh:
+            with io.open(path, 'r', encoding='utf-8') as fh:
                 lines = fh.read().splitlines()
 
         urlprefix = ''
-        for line in lines:
-            line = line.decode('utf-8')
+        defaults = []
+        for i, line in enumerate(lines):
+            lineno = i + 1
+            line = six.ensure_text(line)
 
             # Entire line is a comment.
             if line.startswith('#'):
@@ -116,8 +120,12 @@ class ReftestManifest(object):
                 continue
 
             items = line.split()
-            annotations = []
+            if items[0] == "defaults":
+                defaults = items[1:]
+                continue
 
+            items = defaults + items
+            annotations = []
             for i in range(len(items)):
                 item = items[i]
 
@@ -134,11 +142,13 @@ class ReftestManifest(object):
                         mdir, m.group(1))))
                     continue
 
+                if i < len(defaults):
+                    raise ValueError("Error parsing manifest {}, line {}: "
+                                     "Invalid defaults token '{}'".format(
+                                        path, lineno, item))
+
                 if item == 'url-prefix':
                     urlprefix = items[i+1]
-                    break
-
-                if item == 'default-preferences':
                     break
 
                 if item == 'include':

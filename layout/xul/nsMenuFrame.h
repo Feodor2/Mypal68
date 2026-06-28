@@ -168,6 +168,9 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
   bool IsDisabled();
   void ToggleMenuState();
 
+  // Activate this menu item.
+  void ActivateItem(mozilla::Modifiers aModifiers);
+
   // indiciate that the menu's popup has just been opened, so that the menu
   // can update its open state. This method modifies the open attribute on
   // the menu, so the frames could be gone after this call.
@@ -238,10 +241,9 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
   bool SizeToPopup(nsBoxLayoutState& aState, nsSize& aSize);
 
   bool ShouldBlink();
-  void StartBlinking(mozilla::WidgetGUIEvent* aEvent, bool aFlipChecked);
+  void StartBlinking();
   void StopBlinking();
-  void CreateMenuCommandEvent(mozilla::WidgetGUIEvent* aEvent,
-                              bool aFlipChecked);
+  void CreateMenuCommandEvent(bool aIsTrusted, mozilla::Modifiers aModifiers);
   void PassMenuCommandEventToPopupManager();
 
  protected:

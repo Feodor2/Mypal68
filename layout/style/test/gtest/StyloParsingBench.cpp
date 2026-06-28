@@ -7,9 +7,10 @@
 #include "nsString.h"
 #include "ExampleStylesheet.h"
 #include "ServoBindings.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/Utf8.h"
-#include "mozilla/NullPrincipalURI.h"
+#include "mozilla/NullPrincipal.h"
 #include "mozilla/css/SheetParsingMode.h"
 #include "ReferrerInfo.h"
 #include "nsCSSValue.h"
@@ -33,7 +34,7 @@ static void ServoParsingBench() {
   cssStr.Append(css);
   ASSERT_EQ(Encoding::UTF8ValidUpTo(css), css.Length());
 
-  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
+  RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
       new URLExtraData(uri.forget(), referrerInfo.forget(),
@@ -53,7 +54,7 @@ static constexpr auto STYLE_RULE = StyleCssRuleType::Style;
 static void ServoSetPropertyByIdBench(const nsACString& css) {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
-  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
+  RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
       new URLExtraData(uri.forget(), referrerInfo.forget(),
@@ -72,7 +73,7 @@ static void ServoGetPropertyValueById() {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
 
-  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
+  RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
       new URLExtraData(uri.forget(), referrerInfo.forget(),

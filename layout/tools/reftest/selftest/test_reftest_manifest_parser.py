@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import mozunit
 import pytest
 
@@ -21,7 +23,7 @@ def parse(get_reftest, normalize):
 
     def inner(*manifests):
         assert len(manifests) > 0
-        manifests = {m: None for m in map(resolve, manifests)}
+        manifests = {m: (None, "id") for m in map(resolve, manifests)}
         return reftest.getActiveTests(manifests, options)
 
     return inner

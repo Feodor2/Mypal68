@@ -10,6 +10,7 @@
 #include "nsGkAtoms.h"
 
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ShadowRoot.h"
 #ifdef MOZ_BUILD_WEBRENDER
@@ -104,8 +105,7 @@ nsresult nsVideoFrame::CreateAnonymousContent(
     // image will always report its state as 0, so it will never be reframed
     // to show frames for loading or the broken image icon. This is important,
     // as the image is native anonymous, and so can't be reframed (currently).
-    nsCOMPtr<nsIImageLoadingContent> imgContent =
-        do_QueryInterface(mPosterImage);
+    HTMLImageElement* imgContent = HTMLImageElement::FromNode(mPosterImage);
     NS_ENSURE_TRUE(imgContent, NS_ERROR_FAILURE);
 
     imgContent->ForceImageState(true, 0);
@@ -520,6 +520,10 @@ void nsVideoFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DO_GLOBAL_REFLOW_COUNT_DSP("nsVideoFrame");
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  if (IsContentHidden()) {
+    return;
+  }
 
   const bool shouldDisplayPoster = ShouldDisplayPoster();
 

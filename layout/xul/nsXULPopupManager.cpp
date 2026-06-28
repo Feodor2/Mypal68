@@ -37,6 +37,8 @@
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/UIEvent.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/PopupPositionedEvent.h"
+#include "mozilla/dom/PopupPositionedEventBinding.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
@@ -441,7 +443,7 @@ void nsXULPopupManager::AdjustPopupsOnWindowChange(
   }
 
   for (int32_t l = list.Length() - 1; l >= 0; l--) {
-    list[l]->SetPopupPosition(nullptr, true, false, true);
+    list[l]->SetPopupPosition(nullptr, true, false);
   }
 }
 
@@ -487,7 +489,7 @@ void nsXULPopupManager::PopupMoved(nsIFrame* aFrame, nsIntPoint aPnt) {
   // the specified screen coordinates.
   if (menuPopupFrame->IsAnchored() &&
       menuPopupFrame->PopupLevel() == ePopupLevelParent) {
-    menuPopupFrame->SetPopupPosition(nullptr, true, false, true);
+    menuPopupFrame->SetPopupPosition(nullptr, true, false);
   } else {
     CSSPoint cssPos = LayoutDeviceIntPoint::FromUnknownPoint(aPnt) /
                       menuPopupFrame->PresContext()->CSSToDevPixelScale();
@@ -2572,55 +2574,100 @@ nsXULPopupHidingEvent::Run() {
   return NS_OK;
 }
 
-bool nsXULPopupPositionedEvent::DispatchIfNeeded(nsIContent* aPopup,
-                                                 bool aIsContextMenu,
-                                                 bool aSelectFirstItem) {
+bool nsXULPopupPositionedEvent::DispatchIfNeeded(nsIContent* aPopup) {
   // The popuppositioned event only fires on arrow panels for now.
   if (aPopup->IsElement() &&
       aPopup->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                        nsGkAtoms::arrow, eCaseMatters)) {
-    nsCOMPtr<nsIRunnable> event =
-        new nsXULPopupPositionedEvent(aPopup, aIsContextMenu, aSelectFirstItem);
+    nsCOMPtr<nsIRunnable> event = new nsXULPopupPositionedEvent(aPopup);
     aPopup->OwnerDoc()->Dispatch(TaskCategory::Other, event.forget());
-
     return true;
   }
 
   return false;
 }
 
+static void AlignmentPositionToString(nsMenuPopupFrame* aFrame,
+                                      nsAString& aString) {
+  aString.Truncate();
+  int8_t position = aFrame->GetAlignmentPosition();
+  switch (position) {
+    case POPUPPOSITION_AFTERSTART:
+      return aString.AssignLiteral("after_start");
+    case POPUPPOSITION_AFTEREND:
+      return aString.AssignLiteral("after_end");
+    case POPUPPOSITION_BEFORESTART:
+      return aString.AssignLiteral("before_start");
+    case POPUPPOSITION_BEFOREEND:
+      return aString.AssignLiteral("before_end");
+    case POPUPPOSITION_STARTBEFORE:
+      return aString.AssignLiteral("start_before");
+    case POPUPPOSITION_ENDBEFORE:
+      return aString.AssignLiteral("end_before");
+    case POPUPPOSITION_STARTAFTER:
+      return aString.AssignLiteral("start_after");
+    case POPUPPOSITION_ENDAFTER:
+      return aString.AssignLiteral("end_after");
+    case POPUPPOSITION_OVERLAP:
+      return aString.AssignLiteral("overlap");
+    case POPUPPOSITION_AFTERPOINTER:
+      return aString.AssignLiteral("after_pointer");
+    case POPUPPOSITION_SELECTION:
+      return aString.AssignLiteral("selection");
+    default:
+      // Leave as an empty string.
+      break;
+  }
+}
+
 NS_IMETHODIMP
 nsXULPopupPositionedEvent::Run() {
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-  if (pm) {
-    nsMenuPopupFrame* popupFrame = do_QueryFrame(mPopup->GetPrimaryFrame());
-    if (popupFrame) {
-      // At this point, hidePopup may have been called but it currently has no
-      // way to stop this event. However, if hidePopup was called, the popup
-      // will now be in the hiding or closed state. If we are in the shown or
-      // positioning state instead, we can assume that we are still clear to
-      // open/move the popup
-      nsPopupState state = popupFrame->PopupState();
-      if (state != ePopupPositioning && state != ePopupShown) {
-        return NS_OK;
-      }
-      nsEventStatus status = nsEventStatus_eIgnore;
-      WidgetMouseEvent event(true, eXULPopupPositioned, nullptr,
-                             WidgetMouseEvent::eReal);
-      EventDispatcher::Dispatch(mPopup, popupFrame->PresContext(), &event,
-                                nullptr, &status);
+  if (!pm) {
+    return NS_OK;
+  }
+  nsMenuPopupFrame* popupFrame = do_QueryFrame(mPopup->GetPrimaryFrame());
+  if (!popupFrame) {
+    return NS_OK;
+  }
 
-      // Get the popup frame and make sure it is still in the positioning
-      // state. If it isn't, someone may have tried to reshow or hide it
-      // during the popuppositioned event.
-      // Alternately, this event may have been fired in reponse to moving the
-      // popup rather than opening it. In that case, we are done.
-      nsMenuPopupFrame* popupFrame = do_QueryFrame(mPopup->GetPrimaryFrame());
-      if (popupFrame && popupFrame->PopupState() == ePopupPositioning) {
-        pm->ShowPopupCallback(mPopup, popupFrame, mIsContextMenu,
-                              mSelectFirstItem);
-      }
-    }
+  popupFrame->WillDispatchPopupPositioned();
+
+  // At this point, hidePopup may have been called but it currently has no
+  // way to stop this event. However, if hidePopup was called, the popup
+  // will now be in the hiding or closed state. If we are in the shown or
+  // positioning state instead, we can assume that we are still clear to
+  // open/move the popup
+  nsPopupState state = popupFrame->PopupState();
+  if (state != ePopupPositioning && state != ePopupShown) {
+    return NS_OK;
+  }
+
+  // Note that the offset might be along either the X or Y axis, but for the
+  // sake of simplicity we use a point with only the X axis set so we can
+  // use ToNearestPixels().
+  int32_t popupOffset = nsPoint(popupFrame->GetAlignmentOffset(), 0)
+                            .ToNearestPixels(AppUnitsPerCSSPixel())
+                            .x;
+
+  PopupPositionedEventInit init;
+  init.mComposed = true;
+  init.mAlignmentOffset = popupOffset;
+  AlignmentPositionToString(popupFrame, init.mAlignmentPosition);
+  RefPtr<PopupPositionedEvent> event =
+      PopupPositionedEvent::Constructor(mPopup, u"popuppositioned"_ns, init);
+  event->SetTrusted(true);
+
+  mPopup->DispatchEvent(*event);
+
+  // Get the popup frame and make sure it is still in the positioning
+  // state. If it isn't, someone may have tried to reshow or hide it
+  // during the popuppositioned event.
+  // Alternately, this event may have been fired in reponse to moving the
+  // popup rather than opening it. In that case, we are done.
+  popupFrame = do_QueryFrame(mPopup->GetPrimaryFrame());
+  if (popupFrame && popupFrame->PopupState() == ePopupPositioning) {
+    pm->ShowPopupCallback(mPopup, popupFrame, false, false);
   }
 
   return NS_OK;
@@ -2672,8 +2719,10 @@ nsXULMenuCommandEvent::Run() {
 
     AutoHandlingUserInputStatePusher userInpStatePusher(mUserInput);
     RefPtr<Element> menu = mMenu;
-    nsContentUtils::DispatchXULCommand(menu, mIsTrusted, nullptr, presShell,
-                                       mControl, mAlt, mShift, mMeta);
+    nsContentUtils::DispatchXULCommand(
+        menu, mIsTrusted, nullptr, presShell, mModifiers & MODIFIER_CONTROL,
+        mModifiers & MODIFIER_ALT, mModifiers & MODIFIER_SHIFT,
+        mModifiers & MODIFIER_META);
   }
 
   if (popup && mCloseMenuMode != CloseMenuMode_None)

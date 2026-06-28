@@ -1,7 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+from __future__ import print_function, absolute_import
+
 import os
 from optparse import OptionParser
 from subprocess import Popen, PIPE
@@ -30,11 +33,9 @@ import re
 # But for now, let's just import a few sets of tests.
 
 gSubtrees = [
-    os.path.join("css-namespaces"),
     os.path.join("css-conditional"),
     os.path.join("css-values"),
     os.path.join("css-writing-modes"),
-    os.path.join("selectors"),
 ]
 
 # Insert the properties which you want to add "-moz" prefix to
@@ -48,13 +49,13 @@ gPrefixedProperties = [
 gPrefixRegexp = (re.compile(r"([^-#]|^)(" + r"|".join(gPrefixedProperties) + r")\b")
                  if gPrefixedProperties else None)
 
-# Map of about:config prefs that need toggling, for a given test subdirectory.
+# Map of settings that need toggling for a given test subdirectory.
 # Entries should look like:
 #  "$SUBDIR_NAME": "pref($PREF_NAME, $PREF_VALUE)"
 #
-# For example, when "@supports" was behind a pref, gDefaultPreferences had:
+# For example, when "@supports" was behind a pref, gDefaults had:
 #  "css3-conditional": "pref(layout.css.supports-rule.enabled,true)"
-gDefaultPreferences = {
+gDefaults = {
 }
 
 gLog = None
@@ -329,6 +330,7 @@ def read_fail_list():
             pat = re.compile(fnmatch.translate(items.pop()))
             gFailList.append((pat, refpat, items, comment))
 
+
 def main():
     global gDestPath, gLog, gTestfiles, gTestFlags, gFailList
     read_options()
@@ -348,22 +350,20 @@ def main():
 # DO NOT EDIT!!!
 # To update the test expectations, please edit failures.list, and rerun
 # {0} locally on web platform tests repository against the
-# revision listed at the beginning of received/import.log.\n\n"""\
+# revision listed at the beginning of received/import.log.\n\n"""
         .format(os.path.basename(__file__)))
-    lastDefaultPreferences = None
+    lastDefaults = None
     for test in tests:
-        defaultPreferences = gDefaultPreferences.get(test[1].split("/")[0], None)
-        if defaultPreferences != lastDefaultPreferences:
-            if defaultPreferences is None:
-                listfile.write("\ndefault-preferences\n\n")
+        defaults = gDefaults.get(test[1].split("/")[0], None)
+        if defaults != lastDefaults:
+            if defaults is None:
+                listfile.write("\ndefaults\n\n")
             else:
-                listfile.write("\ndefault-preferences {0}\n\n".format(defaultPreferences))
-            lastDefaultPreferences = defaultPreferences
+                listfile.write("\ndefaults {0}\n\n".format(defaults))
+            lastDefaults = defaults
         key = 1
         while not test[key] in gTestFlags.keys() and key < len(test):
             key = key + 1
-        testType = test[key - 1]
-        testFlags = gTestFlags[test[key]]
         # Replace the Windows separators if any. Our internal strings
         # all use the system separator, however the failure/skip lists
         # and reftest.list always use '/' so we fix the paths here.
@@ -386,6 +386,7 @@ def main():
     listfile.close()
 
     gLog.close()
+
 
 if __name__ == '__main__':
     main()

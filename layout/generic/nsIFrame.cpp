@@ -3933,6 +3933,10 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
     return;
   }
 
+  if (IsContentHidden()) {
+    return;
+  }
+
   nsIFrame* child = aChild;
   auto* placeholder = child->IsPlaceholderFrame()
                           ? static_cast<nsPlaceholderFrame*>(child)
@@ -6685,6 +6689,28 @@ bool nsIFrame::IsContentDisabled() const {
 
   auto* element = nsGenericHTMLElement::FromNodeOrNull(GetContent());
   return element && element->IsDisabled();
+}
+
+bool nsIFrame::IsContentHidden() const {
+  if (!StyleDisplay()->IsContentVisibilityHidden()) {
+    return false;
+  }
+
+  return IsFrameOfType(nsIFrame::eReplaced) || !StyleDisplay()->IsInlineFlow();
+}
+
+bool nsIFrame::AncestorHidesContent() const {
+  if (!StaticPrefs::layout_css_content_visibility_enabled()) {
+    return false;
+  }
+
+  for (nsIFrame* cur = GetInFlowParent(); cur; cur = cur->GetInFlowParent()) {
+    if (cur->IsContentHidden()) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 nsresult nsIFrame::CharacterDataChanged(const CharacterDataChangeInfo&) {

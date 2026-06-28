@@ -1546,6 +1546,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
            !IsInnerTableStyle();
   }
 
+  bool IsContentVisibilityHidden() const {
+    return mContentVisibility == mozilla::StyleContentVisibility::Hidden;
+  }
+
   /* Returns whether the element has the transform property or a related
    * property. */
   bool HasTransformStyle() const {

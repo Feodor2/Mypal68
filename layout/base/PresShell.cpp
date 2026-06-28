@@ -3299,10 +3299,7 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
   const nsRect visibleRect(scrollPt,
                            aFrameAsScrollable->GetVisualViewportSize());
 
-  const nsMargin scrollPadding =
-      (aScrollFlags & ScrollFlags::IgnoreMarginAndPadding)
-      ? nsMargin()
-      : aFrameAsScrollable->GetScrollPadding();
+  const nsMargin scrollPadding = aFrameAsScrollable->GetScrollPadding();
 
   const nsRect rectToScrollIntoView = [&] {
     nsRect r(aRect);
@@ -3365,10 +3362,10 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
 
   ScrollMode scrollMode = ScrollMode::Instant;
   bool autoBehaviorIsSmooth = aFrameAsScrollable->IsSmoothScroll();
-  bool smoothScroll = (aScrollFlags & ScrollFlags::ScrollSmooth) ||
-                      ((aScrollFlags & ScrollFlags::ScrollSmoothAuto) &&
-                       autoBehaviorIsSmooth);
-  if (StaticPrefs::layout_css_scroll_behavior_enabled() && smoothScroll) {
+  bool smoothScroll =
+      (aScrollFlags & ScrollFlags::ScrollSmooth) ||
+      ((aScrollFlags & ScrollFlags::ScrollSmoothAuto) && autoBehaviorIsSmooth);
+  if (smoothScroll) {
     scrollMode = ScrollMode::SmoothMsd;
   }
   nsIFrame* frame = do_QueryFrame(aFrameAsScrollable);
@@ -3376,7 +3373,10 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
   aFrameAsScrollable->ScrollTo(scrollPt, scrollMode, &allowedRange,
                                aScrollFlags & ScrollFlags::ScrollSnap
                                    ? nsIScrollbarMediator::ENABLE_SNAP
-                                   : nsIScrollbarMediator::DISABLE_SNAP);
+                                   : nsIScrollbarMediator::DISABLE_SNAP,
+                               aScrollFlags & ScrollFlags::TriggeredByScript
+                                   ? ScrollTriggeredByScript::Yes
+                                   : ScrollTriggeredByScript::No);
   if (!weakFrame.IsAlive()) {
     return;
   }
@@ -3440,7 +3440,7 @@ void PresShell::DoScrollContentIntoView() {
   NS_ASSERTION(mDidInitialize, "should have done initial reflow by now");
 
   nsIFrame* frame = mContentToScrollTo->GetPrimaryFrame();
-  if (!frame) {
+  if (!frame || frame->AncestorHidesContent()) {
     mContentToScrollTo->RemoveProperty(nsGkAtoms::scrolling);
     mContentToScrollTo = nullptr;
     return;
@@ -3471,10 +3471,7 @@ void PresShell::DoScrollContentIntoView() {
 
   // Get the scroll-margin here since |frame| is going to be changed to iterate
   // over all continuation frames below.
-  nsMargin scrollMargin;
-  if (!(data->mContentToScrollToFlags & ScrollFlags::IgnoreMarginAndPadding)) {
-    scrollMargin = frame->StyleMargin()->GetScrollMargin();
-  }
+  const nsMargin scrollMargin = frame->StyleMargin()->GetScrollMargin();
 
   // This is a two-step process.
   // Step 1: Find the bounds of the rect we want to scroll into view.  For
@@ -3513,6 +3510,10 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
                                         ScrollAxis aVertical,
                                         ScrollAxis aHorizontal,
                                         ScrollFlags aScrollFlags) {
+  if (aFrame->AncestorHidesContent()) {
+    return false;
+  }
+
   bool didScroll = false;
   // This function needs to work even if rect has a width or height of 0.
   nsRect rect = aRect;
@@ -8505,8 +8506,7 @@ bool PresShell::EventHandler::PrepareToUseCaretPosition(
             ->ScrollContentIntoView(
                 content, ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
                 ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
-                ScrollFlags::ScrollOverflowHidden |
-                    ScrollFlags::IgnoreMarginAndPadding);
+                ScrollFlags::ScrollOverflowHidden);
     NS_ENSURE_SUCCESS(rv, false);
     frame = content->GetPrimaryFrame();
     NS_WARNING_ASSERTION(frame, "No frame for focused content?");
@@ -10698,7 +10698,14 @@ bool PresShell::SetVisualViewportOffset(const nsPoint& aScrollOffset,
     }
   }
 
-  nsPoint prevOffset = GetVisualViewportOffset();
+  // Careful here not to call GetVisualViewportOffset to get the previous visual
+  // viewport offset because if mVisualViewportOffset is nothing then we'll get
+  // the layout scroll position directly from the scroll frame and it has likely
+  // already been updated.
+  nsPoint prevOffset = aPrevLayoutScrollPos;
+  if (mVisualViewportOffset.isSome()) {
+    prevOffset = *mVisualViewportOffset;
+  }
   if (prevOffset == newOffset) {
     return false;
   }
@@ -10722,6 +10729,8 @@ bool PresShell::SetVisualViewportOffset(const nsPoint& aScrollOffset,
 
   return true;
 }
+
+void PresShell::ResetVisualViewportOffset() { mVisualViewportOffset.reset(); }
 
 void PresShell::ScrollToVisual(const nsPoint& aVisualViewportOffset,
                                FrameMetrics::ScrollOffsetUpdateType aUpdateType,

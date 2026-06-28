@@ -1,3 +1,5 @@
+from __future__ import absolute_import, print_function
+
 import argparse
 import os
 from collections import OrderedDict
@@ -260,6 +262,19 @@ class ReftestArgumentsParser(argparse.ArgumentParser):
                           default=False,
                           help="Enable the WebRender compositor in Gecko.")
 
+        self.add_argument("--headless",
+                          action="store_true",
+                          dest="headless",
+                          default=False,
+                          help="Run tests in headless mode.")
+
+        self.add_argument("--topsrcdir",
+                          action="store",
+                          type=str,
+                          dest="topsrcdir",
+                          default=None,
+                          help="Path to source directory")
+
         mozlog.commandline.add_logging_group(self)
 
     def get_ip(self):
@@ -346,6 +361,12 @@ class ReftestArgumentsParser(argparse.ArgumentParser):
             else:
                 # See bug 1404482.
                 options.leakThresholds["tab"] = 100
+
+        if options.topsrcdir is None:
+            if self.build_obj:
+                options.topsrcdir = self.build_obj.topsrcdir
+            else:
+                options.topsrcdir = os.getcwd()
 
 
 class DesktopArgumentsParser(ReftestArgumentsParser):
@@ -464,7 +485,15 @@ class RemoteArgumentsParser(ReftestArgumentsParser):
                           default=True,
                           help="Do not display verbose diagnostics about the remote device.")
 
-    def validate_remote(self, options, automation):
+        self.add_argument("--no-install",
+                          action="store_true",
+                          default=False,
+                          help="Skip the installation of the APK.")
+
+    def validate_remote(self, options):
+        DEFAULT_HTTP_PORT = 8888
+        DEFAULT_SSL_PORT = 4443
+
         if options.remoteWebServer is None:
             options.remoteWebServer = self.get_ip()
 
@@ -474,10 +503,10 @@ class RemoteArgumentsParser(ReftestArgumentsParser):
                        "Please provide the local ip in --remote-webserver")
 
         if not options.httpPort:
-            options.httpPort = automation.DEFAULT_HTTP_PORT
+            options.httpPort = DEFAULT_HTTP_PORT
 
         if not options.sslPort:
-            options.sslPort = automation.DEFAULT_SSL_PORT
+            options.sslPort = DEFAULT_SSL_PORT
 
         if options.xrePath is None:
             self.error(

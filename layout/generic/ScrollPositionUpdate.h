@@ -28,6 +28,8 @@ enum class ScrollUpdateType {
   PureRelative,
 };
 
+enum class ScrollTriggeredByScript : bool { No, Yes };
+
 struct ScrollGeneration {
  private:
   // Private constructor; use New() to get a new instance.
@@ -79,8 +81,9 @@ class ScrollPositionUpdate {
   // Create a ScrollPositionUpdate for a new absolute/smooth scroll, which
   // animates smoothly to the given destination from whatever the current
   // scroll position is in the receiver.
-  static ScrollPositionUpdate NewSmoothScroll(ScrollOrigin aOrigin,
-                                              nsPoint aDestination);
+  static ScrollPositionUpdate NewSmoothScroll(
+      ScrollOrigin aOrigin, nsPoint aDestination,
+      ScrollTriggeredByScript aTriggeredByScript);
   // Create a ScrollPositionUpdate for a new pure-relative scroll. The
   // aMode parameter controls whether or not this is a smooth animation or
   // instantaneous scroll.
@@ -102,6 +105,13 @@ class ScrollPositionUpdate {
   // GetDelta is only valid for the PureRelative type; it asserts otherwise.
   CSSPoint GetDelta() const;
 
+  ScrollTriggeredByScript GetScrollTriggeredByScript() const {
+    return mTriggeredByScript;
+  }
+  bool WasTriggeredByScript() const {
+    return mTriggeredByScript == ScrollTriggeredByScript::Yes;
+  }
+
   void AppendToString(std::stringstream& aStream) const;
 
  private:
@@ -117,6 +127,7 @@ class ScrollPositionUpdate {
   CSSPoint mSource;
   // mDelta is not populated when mType == Absolute || mType == Relative.
   CSSPoint mDelta;
+  ScrollTriggeredByScript mTriggeredByScript;
 };
 
 }  // namespace mozilla

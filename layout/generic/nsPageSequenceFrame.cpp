@@ -579,7 +579,7 @@ nsresult nsPageSequenceFrame::PrePrintNextPage(nsITimerCallback* aCallback,
           continue;
         }
 
-        nsICanvasRenderingContextInternal* ctx = canvas->GetContextAtIndex(0);
+        nsICanvasRenderingContextInternal* ctx = canvas->GetCurrentContext();
         if (!ctx) {
           continue;
         }

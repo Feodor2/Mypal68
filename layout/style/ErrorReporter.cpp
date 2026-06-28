@@ -10,7 +10,7 @@
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/SystemGroup.h"
 #include "nsIConsoleService.h"
 #include "mozilla/dom/Document.h"
@@ -89,7 +89,7 @@ void ErrorReporter::InitGlobals() {
     return;
   }
 
-  nsCOMPtr<nsIStringBundleService> sbs = services::GetStringBundleService();
+  nsCOMPtr<nsIStringBundleService> sbs = components::StringBundle::Service();
   if (!sbs) {
     return;
   }

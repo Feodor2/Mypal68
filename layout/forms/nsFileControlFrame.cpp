@@ -12,6 +12,7 @@
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/DirectoryBinding.h" //MY
 #include "mozilla/dom/DragEvent.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FileList.h"
@@ -398,8 +399,7 @@ nsFileControlFrame::DnDListener::HandleEvent(Event* aEvent) {
     } else {
       bool blinkFileSystemEnabled =
           StaticPrefs::dom_webkitBlink_filesystem_enabled();
-      bool dirPickerEnabled = StaticPrefs::dom_input_dirpicker();
-      if (blinkFileSystemEnabled || dirPickerEnabled) {
+      if (blinkFileSystemEnabled) {
         FileList* files = static_cast<FileList*>(fileList.get());
         if (files) {
           for (uint32_t i = 0; i < files->Length(); ++i) {
@@ -423,10 +423,6 @@ nsFileControlFrame::DnDListener::HandleEvent(Event* aEvent) {
         // FileOrDirectory array.
         inputElement->SetFiles(fileList, true);
         inputElement->UpdateEntries(array);
-      }
-      // Directory Upload API
-      else if (dirPickerEnabled) {
-        inputElement->SetFilesOrDirectories(array, true);
       }
       // Normal DnD
       else {

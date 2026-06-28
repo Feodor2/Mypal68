@@ -2505,17 +2505,10 @@ nsChangeHint nsStyleDisplay::CalcDifference(
       hint |= nsChangeHint_ScrollbarChange;
     } else if (isScrollable) {
       if (ScrollbarGenerationChanged(*this, aNewData)) {
-        // We need to reframe in the case of hidden -> non-hidden case though,
-        // since ScrollFrameHelper::CreateAnonymousContent avoids creating
-        // scrollbars altogether for overflow: hidden. That seems it could
-        // create some interesting perf cliffs...
-        //
-        // We reframe when non-hidden -> hidden too, for now.
-        //
-        // FIXME(bug 1590247): Seems we could avoid reframing once we've created
-        // scrollbars, which should get us the optimization for elements that
-        // have toggled scrollbars, but would prevent the cliff of toggling
-        // overflow causing jank.
+        // We might need to reframe in the case of hidden -> non-hidden case
+        // though, since ScrollFrameHelper::CreateAnonymousContent avoids
+        // creating scrollbars altogether for overflow: hidden. That seems it
+        // could create some interesting perf cliffs...
         hint |= nsChangeHint_ScrollbarChange;
       } else {
         // Otherwise, for changes where both overflow values are scrollable,
@@ -2534,7 +2527,7 @@ nsChangeHint nsStyleDisplay::CalcDifference(
   // FIXME(mrobinson): Depending on how this is implemented this may need a
   // different set of change hints. See bug 1758490.
   if (mContentVisibility != aNewData.mContentVisibility) {
-    hint |= nsChangeHint_NeedReflow;
+    hint |= nsChangeHint_RepaintFrame;
   }
 
   /* Note: When mScrollBehavior or mScrollSnapType are changed,

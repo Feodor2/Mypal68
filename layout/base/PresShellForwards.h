@@ -139,7 +139,7 @@ enum class ScrollFlags {
   ScrollSmooth = 1 << 3,
   ScrollSmoothAuto = 1 << 4,
   ScrollSnap = 1 << 5,
-  IgnoreMarginAndPadding = 1 << 6,
+  TriggeredByScript = 1 << 6,
   // ScrollOverflowHidden | ScrollNoParentFrames
   AnchorScrollFlags = (1 << 1) | (1 << 2),
 };

@@ -2727,19 +2727,14 @@ FrameMetrics nsLayoutUtils::CalculateBasicFrameMetrics(
     // the presShell's resolution. All the other frames are 1.0.
     resolution = presShell->GetResolution();
   }
-  // Note: unlike in ComputeFrameMetrics(), we don't know the full cumulative
-  // resolution including FrameMetrics::mExtraResolution, because layout hasn't
-  // chosen a resolution to paint at yet. However, the display port calculation
-  // divides out mExtraResolution anyways, so we get the correct result by
-  // setting the mCumulativeResolution to everything except the extra resolution
-  // and leaving mExtraResolution at 1.
   LayoutDeviceToLayerScale2D cumulativeResolution(
-      presShell->GetCumulativeResolution() *
-      nsLayoutUtils::GetTransformToAncestorScale(frame));
+      LayoutDeviceToLayerScale(presShell->GetCumulativeResolution()));
 
   LayerToParentLayerScale layerToParentLayerScale(1.0f);
   metrics.SetDevPixelsPerCSSPixel(deviceScale);
   metrics.SetPresShellResolution(resolution);
+  metrics.SetTransformToAncestorScale(ParentLayerToScreenScale2D(
+      nsLayoutUtils::GetTransformToAncestorScale(frame)));
   metrics.SetCumulativeResolution(cumulativeResolution);
   metrics.SetZoom(deviceScale * cumulativeResolution * layerToParentLayerScale);
 
@@ -2765,8 +2760,8 @@ FrameMetrics nsLayoutUtils::CalculateBasicFrameMetrics(
                                      presContext->AppUnitsPerDevPixel()) *
       compBoundsScale);
 
-  metrics.SetRootCompositionSize(
-      nsLayoutUtils::CalculateRootCompositionSize(frame, false, metrics));
+  metrics.SetBoundingCompositionSize(
+      nsLayoutUtils::CalculateBoundingCompositionSize(frame, false, metrics));
 
   metrics.SetLayoutViewport(
       CSSRect::FromAppUnits(nsRect(aScrollFrame->GetScrollPosition(),
@@ -8056,7 +8051,7 @@ nsSize nsLayoutUtils::CalculateCompositionSizeForFrame(
 }
 
 /* static */
-CSSSize nsLayoutUtils::CalculateRootCompositionSize(
+CSSSize nsLayoutUtils::CalculateBoundingCompositionSize(
     const nsIFrame* aFrame, bool aIsRootContentDocRootScrollFrame,
     const FrameMetrics& aMetrics) {
   if (aIsRootContentDocRootScrollFrame) {
@@ -8455,7 +8450,7 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
     CSSPoint layoutScrollOffset =
         CSSPoint::FromAppUnits(scrollableFrame->GetScrollPosition());
     CSSPoint visualScrollOffset =
-        aIsRootContent && presShell->IsVisualViewportOffsetSet()
+        aIsRootContent
             ? CSSPoint::FromAppUnits(presShell->GetVisualViewportOffset())
             : layoutScrollOffset;
     metrics.SetVisualScrollOffset(visualScrollOffset);
@@ -8609,12 +8604,11 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
           : LayoutDeviceToLayerScale2D(LayoutDeviceToLayerScale(
                 presShell->GetCumulativeResolution())));
 
-  LayoutDeviceToScreenScale2D resolutionToScreen(
-      presShell->GetCumulativeResolution() *
-      nsLayoutUtils::GetTransformToAncestorScale(aScrollFrame ? aScrollFrame
-                                                              : aForFrame));
-  metrics.SetExtraResolution(metrics.GetCumulativeResolution() /
-                             resolutionToScreen);
+  gfxSize transformToAncestorScale = nsLayoutUtils::GetTransformToAncestorScale(
+      aScrollFrame ? aScrollFrame : aForFrame);
+
+  metrics.SetTransformToAncestorScale(
+      ParentLayerToScreenScale2D(transformToAncestorScale));
 
   metrics.SetDevPixelsPerCSSPixel(presContext->CSSToDevPixelScale());
 
@@ -8678,9 +8672,10 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
 
   metrics.SetCompositionBounds(frameBounds);
 
-  metrics.SetRootCompositionSize(nsLayoutUtils::CalculateRootCompositionSize(
-      aScrollFrame ? aScrollFrame : aForFrame, isRootContentDocRootScrollFrame,
-      metrics));
+  metrics.SetBoundingCompositionSize(
+      nsLayoutUtils::CalculateBoundingCompositionSize(
+          aScrollFrame ? aScrollFrame : aForFrame,
+          isRootContentDocRootScrollFrame, metrics));
 
   if (StaticPrefs::apz_printtree() || StaticPrefs::apz_test_logging_enabled()) {
     if (const nsIContent* content =

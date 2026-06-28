@@ -32,6 +32,7 @@
 #include "nsColor.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
 #include "nsStyleUtil.h"
 #include "nsQueryObject.h"
 #include "mozilla/ServoBindings.h"
@@ -685,8 +686,8 @@ bool InspectorUtils::IsCustomElementName(GlobalObject&, const nsAString& aName,
   }
 
   int32_t namespaceID;
-  nsContentUtils::NameSpaceManager()->RegisterNameSpace(aNamespaceURI,
-                                                        namespaceID);
+  nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI,
+                                                       namespaceID);
 
   RefPtr<nsAtom> nameElt = NS_Atomize(aName);
   return nsContentUtils::IsCustomElementName(nameElt, namespaceID);

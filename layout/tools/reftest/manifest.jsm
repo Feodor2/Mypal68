@@ -18,19 +18,19 @@ const RE_PROTOCOL = /^\w+:/;
 const RE_PREF_ITEM = /^(|test-|ref-)pref\((.+?),(.*)\)$/;
 
 
-function ReadTopManifest(aFileURL, aFilter)
+function ReadTopManifest(aFileURL, aFilter, aManifestID)
 {
     var url = g.ioService.newURI(aFileURL);
     if (!url)
         throw "Expected a file or http URL for the manifest.";
 
     g.manifestsLoaded = {};
-    ReadManifest(url, aFilter);
+    ReadManifest(url, aFilter, aManifestID);
 }
 
 // Note: If you materially change the reftest manifest parsing,
-// please keep the parser in print-manifest-dirs.py in sync.
-function ReadManifest(aURL, aFilter)
+// please keep the parser in layout/tools/reftest/__init__.py in sync.
+function ReadManifest(aURL, aFilter, aManifestID)
 {
     // Ensure each manifest is only read once. This assumes that manifests that
     // are included with filters will be read via their include before they are
@@ -47,7 +47,8 @@ function ReadManifest(aURL, aFilter)
                      .getService(Ci.nsIScriptSecurityManager);
 
     var listURL = aURL;
-    var channel = NetUtil.newChannel({uri: aURL, loadUsingSystemPrincipal: true});
+    var channel = NetUtil.newChannel({uri: aURL,
+                                      loadUsingSystemPrincipal: true});
     var inputStream = channel.open();
     if (channel instanceof Ci.nsIHttpChannel
         && channel.responseStatus != 200) {
@@ -57,13 +58,22 @@ function ReadManifest(aURL, aFilter)
     inputStream.close();
     var lines = streamBuf.split(/\n|\r|\r\n/);
 
-    // Build the sandbox for fails-if(), etc., condition evaluation.
-    var sandbox = BuildConditionSandbox(aURL);
+    // The sandbox for fails-if(), etc., condition evaluation. This is not
+    // always required and so is created on demand.
+    var sandbox;
+    function GetOrCreateSandbox() {
+        if (!sandbox) {
+            sandbox = BuildConditionSandbox(aURL);
+        }
+        return sandbox;
+    }
+
     var lineNo = 0;
     var urlprefix = "";
+    var defaults = [];
     var defaultTestPrefSettings = [], defaultRefPrefSettings = [];
     if (g.compareRetainedDisplayLists) {
-        AddRetainedDisplayListTestPrefs(sandbox, defaultTestPrefSettings,
+        AddRetainedDisplayListTestPrefs(GetOrCreateSandbox(), defaultTestPrefSettings,
                                         defaultRefPrefSettings);
     }
     for (var str of lines) {
@@ -86,24 +96,9 @@ function ReadManifest(aURL, aFilter)
             continue;
         }
 
-        if (items[0] == "default-preferences") {
-            var m;
-            var item;
-            defaultTestPrefSettings = [];
-            defaultRefPrefSettings = [];
+        if (items[0] == "defaults") {
             items.shift();
-            while ((item = items.shift())) {
-                if (!(m = item.match(RE_PREF_ITEM))) {
-                    throw "Unexpected item in default-preferences list in manifest file " + aURL.spec + " line " + lineNo;
-                }
-                if (!AddPrefSettings(m[1], m[2], m[3], sandbox, defaultTestPrefSettings, defaultRefPrefSettings)) {
-                    throw "Error in pref value in manifest file " + aURL.spec + " line " + lineNo;
-                }
-            }
-            if (g.compareRetainedDisplayLists) {
-                AddRetainedDisplayListTestPrefs(sandbox, defaultTestPrefSettings,
-                                                defaultRefPrefSettings);
-            }
+            defaults = items;
             continue;
         }
 
@@ -122,6 +117,8 @@ function ReadManifest(aURL, aFilter)
         var nonSkipUsed = false;
         var noAutoFuzz = false;
 
+        var origLength = items.length;
+        items = defaults.concat(items);
         while (items[0].match(/^(fails|needs-focus|random|skip|asserts|slow|require-or|silentfail|pref|test-pref|ref-pref|fuzzy|chaos-mode|wr-capture|wr-capture-ref|noautofuzz)/)) {
             var item = items.shift();
             var stat;
@@ -130,7 +127,7 @@ function ReadManifest(aURL, aFilter)
             if (m) {
                 stat = m[1];
                 // Note: m[2] contains the parentheses, and we want them.
-                cond = Cu.evalInSandbox(m[2], sandbox);
+                cond = Cu.evalInSandbox(m[2], GetOrCreateSandbox());
             } else if (item.match(/^(fails|random|skip)$/)) {
                 stat = item;
                 cond = true;
@@ -144,7 +141,7 @@ function ReadManifest(aURL, aFilter)
                                                  : Number(m[2].substring(1));
             } else if ((m = item.match(/^asserts-if\((.*?),(\d+)(-\d+)?\)$/))) {
                 cond = false;
-                if (Cu.evalInSandbox("(" + m[1] + ")", sandbox)) {
+                if (Cu.evalInSandbox("(" + m[1] + ")", GetOrCreateSandbox())) {
                     minAsserts = Number(m[2]);
                     maxAsserts =
                       (m[3] == undefined) ? minAsserts
@@ -179,14 +176,15 @@ function ReadManifest(aURL, aFilter)
                 }
             } else if ((m = item.match(/^slow-if\((.*?)\)$/))) {
                 cond = false;
-                if (Cu.evalInSandbox("(" + m[1] + ")", sandbox))
+                if (Cu.evalInSandbox("(" + m[1] + ")", GetOrCreateSandbox()))
                     slow = true;
             } else if (item == "silentfail") {
                 cond = false;
                 allow_silent_fail = true;
             } else if ((m = item.match(RE_PREF_ITEM))) {
                 cond = false;
-                if (!AddPrefSettings(m[1], m[2], m[3], sandbox, testPrefSettings, refPrefSettings)) {
+                if (!AddPrefSettings(m[1], m[2], m[3], GetOrCreateSandbox(),
+                                     testPrefSettings, refPrefSettings)) {
                     throw "Error in pref value in manifest file " + aURL.spec + " line " + lineNo;
                 }
             } else if ((m = item.match(/^fuzzy\((\d+)-(\d+),(\d+)-(\d+)\)$/))) {
@@ -196,7 +194,7 @@ function ReadManifest(aURL, aFilter)
               fuzzy_pixels = ExtractRange(m, 3);
             } else if ((m = item.match(/^fuzzy-if\((.*?),(\d+)-(\d+),(\d+)-(\d+)\)$/))) {
               cond = false;
-              if (Cu.evalInSandbox("(" + m[1] + ")", sandbox)) {
+              if (Cu.evalInSandbox("(" + m[1] + ")", GetOrCreateSandbox())) {
                 expected_status = EXPECTED_FUZZY;
                 fuzzy_delta = ExtractRange(m, 2);
                 fuzzy_pixels = ExtractRange(m, 4);
@@ -232,6 +230,12 @@ function ReadManifest(aURL, aFilter)
                     allow_silent_fail = true;
                 }
             }
+        }
+
+        if (items.length > origLength) {
+            // Implies we broke out of the loop before we finished processing
+            // defaults. This means defaults contained an invalid token.
+            throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": invalid defaults token '" + items[0] + "'";
         }
 
         if (minAsserts > maxAsserts) {
@@ -291,7 +295,39 @@ function ReadManifest(aURL, aFilter)
                 var incURI = g.ioService.newURI(items[1], null, listURL);
                 secMan.checkLoadURIWithPrincipal(principal, incURI,
                                                  Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-                ReadManifest(incURI, aFilter);
+
+                // Cannot use nsIFile or similar to manipulate the manifest ID; although it appears
+                // path-like, it does not refer to an actual path in the filesystem.
+                var newManifestID = aManifestID;
+                var included = items[1];
+                // Remove included manifest file name.
+                // eg. dir1/dir2/reftest.list -> dir1/dir2
+                var pos = included.lastIndexOf("/");
+                if (pos <= 0) {
+                    included = "";
+                } else {
+                    included = included.substring(0, pos);
+                }
+                // Simplify references to parent directories.
+                // eg. dir1/dir2/../dir3 -> dir1/dir3
+                while (included.startsWith("../")) {
+                    pos = newManifestID.lastIndexOf("/");
+                    if (pos < 0) {
+                        pos = 0;
+                    }
+                    newManifestID = newManifestID.substring(0, pos);
+                    included = included.substring(3);
+                }
+                // Use a new manifest ID if the included manifest is in a different directory.
+                if (included.length > 0) {
+                    if (newManifestID.length > 0) {
+                        newManifestID = newManifestID + "/" + included;
+                    } else {
+                        // parent directory includes may refer to the topsrcdir
+                        newManifestID = included;
+                    }
+                }
+                ReadManifest(incURI, aFilter, newManifestID);
             }
         } else if (items[0] == TYPE_LOAD || items[0] == TYPE_SCRIPT) {
             var type = items[0];
@@ -319,7 +355,7 @@ function ReadManifest(aURL, aFilter)
                           url2: null,
                           chaosMode: chaosMode,
                           wrCapture: wrCapture,
-                          noAutoFuzz: noAutoFuzz }, aFilter);
+                          noAutoFuzz: noAutoFuzz }, aFilter, aManifestID);
         } else if (items[0] == TYPE_REFTEST_EQUAL || items[0] == TYPE_REFTEST_NOTEQUAL || items[0] == TYPE_PRINT) {
             if (items.length != 3)
                 throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to " + items[0];
@@ -368,7 +404,7 @@ function ReadManifest(aURL, aFilter)
                           url2: items[2],
                           chaosMode: chaosMode,
                           wrCapture: wrCapture,
-                          noAutoFuzz: noAutoFuzz }, aFilter);
+                          noAutoFuzz: noAutoFuzz }, aFilter, aManifestID);
         } else {
             throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unknown test type " + items[0];
         }
@@ -484,6 +520,9 @@ function BuildConditionSandbox(aURL) {
         // This is currently used to distinguish Android 4.0.3 (SDK version 15)
         // and later from Android 2.x
         sandbox.AndroidVersion = sysInfo.getPropertyAsInt32("version");
+
+        sandbox.emulator = readGfxInfo(gfxInfo, "adapterDeviceID").includes("Android Emulator");
+        sandbox.device = !sandbox.emulator;
     }
 
 #if MOZ_ASAN
@@ -498,9 +537,9 @@ function BuildConditionSandbox(aURL) {
     sandbox.webrtc = false;
 #endif
 
-let retainedDisplayListsEnabled = prefs.getBoolPref("layout.display-list.retain", false);
-sandbox.retainedDisplayLists = retainedDisplayListsEnabled && !g.compareRetainedDisplayLists;
-sandbox.compareRetainedDisplayLists = g.compareRetainedDisplayLists;
+    let retainedDisplayListsEnabled = prefs.getBoolPref("layout.display-list.retain", false);
+    sandbox.retainedDisplayLists = retainedDisplayListsEnabled && !g.compareRetainedDisplayLists;
+    sandbox.compareRetainedDisplayLists = g.compareRetainedDisplayLists;
 
     sandbox.skiaPdf = false;
 
@@ -680,9 +719,27 @@ function CreateUrls(test) {
     return test;
 }
 
-function AddTestItem(aTest, aFilter) {
+function TestIdentifier(aUrl, aManifestID) {
+    // Construct a platform-independent and location-independent test identifier for
+    // a url; normally the identifier looks like a posix-compliant relative file
+    // path.
+    // Test urls may be simple file names, chrome: urls with full paths, about:blank, etc.
+    if (aUrl.startsWith("about:") || aUrl.startsWith("data:")) {
+        return aUrl;
+    }
+    var pos = aUrl.lastIndexOf("/");
+    var url = (pos < 0) ? aUrl : aUrl.substring(pos + 1);
+    return (aManifestID + "/" + url);
+}
+
+function AddTestItem(aTest, aFilter, aManifestID) {
     if (!aFilter)
         aFilter = [null, [], false];
+
+    var identifier = TestIdentifier(aTest.url1, aManifestID);
+    if (aTest.url2 !== null) {
+        identifier = [identifier, aTest.type, TestIdentifier(aTest.url2, aManifestID)];
+    }
 
     var {url1, url2} = CreateUrls(Object.assign({}, aTest));
 
@@ -700,10 +757,7 @@ function AddTestItem(aTest, aFilter) {
         aTest.needsFocus)
         return;
 
-    if (url2 !== null)
-        aTest.identifier = [url1.spec, aTest.type, url2.spec];
-    else
-        aTest.identifier = url1.spec;
+    aTest.identifier = identifier;
     g.urls.push(aTest);
     // Periodically log progress to avoid no-output timeout on slow platforms.
     // No-output timeouts during manifest parsing have been a problem for

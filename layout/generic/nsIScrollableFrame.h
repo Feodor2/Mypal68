@@ -84,6 +84,12 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
   virtual bool IsForTextControlWithNoScrollbars() const = 0;
 
   /**
+   * Returns whether we already have anonymous content nodes for all our needed
+   * scrollbar parts (or a superset thereof).
+   */
+  virtual bool HasAllNeededScrollbars() const = 0;
+
+  /**
    * Get the overscroll-behavior styles.
    */
   virtual mozilla::layers::OverscrollBehaviorInfo GetOverscrollBehaviorInfo()
@@ -204,6 +210,17 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    */
   virtual nsPoint GetVisualViewportOffset() const = 0;
   /**
+   * Set the visual viewport offset associated with a root scroll frame. This is
+   * only valid when called on a root scroll frame and will assert otherwise.
+   * aRepaint indicates if we need to ask for a main thread paint if this
+   * changes scrollbar positions or not. For example, if the compositor has
+   * already put the scrollbars at this position then they don't need to move so
+   * we can skip the repaint. Returns true if the offset changed and the scroll
+   * frame is still alive after this call.
+   */
+  virtual bool SetVisualViewportOffset(const nsPoint& aOffset,
+                                       bool aRepaint) = 0;
+  /**
    * Get the area that must contain the visual viewport offset.
    */
   virtual nsRect GetVisualScrollRange() const = 0;
@@ -247,7 +264,9 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
   virtual void ScrollTo(nsPoint aScrollPosition, ScrollMode aMode,
                         const nsRect* aRange = nullptr,
                         nsIScrollbarMediator::ScrollSnapMode aSnap =
-                            nsIScrollbarMediator::DISABLE_SNAP) = 0;
+                            nsIScrollbarMediator::DISABLE_SNAP,
+                        mozilla::ScrollTriggeredByScript aTriggeredByScript =
+                            mozilla::ScrollTriggeredByScript::No) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Scrolls to a particular position in integer CSS pixels.
@@ -264,16 +283,9 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * range and / or moving in any direction; GetScrollPositionCSSPixels will be
    * exactly aScrollPosition at the end of the scroll animation unless the
    * SMOOTH_MSD animation is interrupted.
-   *
-   * FIXME: Drop |aSnap| argument once after we finished the migration to the
-   * Scroll Snap Module v1. We should alway use ENABLE_SNAP.
    */
-  virtual void ScrollToCSSPixels(
-      const CSSIntPoint& aScrollPosition,
-      ScrollMode aMode = ScrollMode::Instant,
-      nsIScrollbarMediator::ScrollSnapMode aSnap =
-          nsIScrollbarMediator::DEFAULT,
-      ScrollOrigin aOrigin = ScrollOrigin::NotSpecified) = 0;
+  virtual void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
+                                 ScrollMode aMode = ScrollMode::Instant) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Scrolls to a particular position in float CSS pixels.
@@ -308,15 +320,8 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
                         nsIScrollbarMediator::ScrollSnapMode aSnap =
                             nsIScrollbarMediator::DISABLE_SNAP) = 0;
 
-  /**
-   * FIXME: Drop |aSnap| argument once after we finished the migration to the
-   * Scroll Snap Module v1. We should alway use ENABLE_SNAP.
-   */
-  virtual void ScrollByCSSPixels(
-      const CSSIntPoint& aDelta, ScrollMode aMode = ScrollMode::Instant,
-      ScrollOrigin aOrigin = ScrollOrigin::NotSpecified,
-      nsIScrollbarMediator::ScrollSnapMode aSnap =
-          nsIScrollbarMediator::DEFAULT) = 0;
+  virtual void ScrollByCSSPixels(const CSSIntPoint& aDelta,
+                                 ScrollMode aMode = ScrollMode::Instant) = 0;
 
   /**
    * Perform scroll snapping, possibly resulting in a smooth scroll to
@@ -452,7 +457,7 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    */
   virtual void ResetScrollInfoIfNeeded(
       const mozilla::ScrollGeneration& aGeneration,
-      bool aApzAnimationInProgress) = 0;
+      mozilla::APZScrollAnimationType aAPZScrollAnimationType) = 0;
   /**
    * Determine whether it is desirable to be able to asynchronously scroll this
    * scroll frame.

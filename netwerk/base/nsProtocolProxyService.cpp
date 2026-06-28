@@ -1494,7 +1494,7 @@ class nsAsyncBridgeRequest final : public nsPACManCallback {
 
   friend class nsProtocolProxyService;
 
-  Lock mMutex;
+  Lock2 mMutex;
   ConditionVariable mCondVar;
 
   nsresult mStatus;

@@ -11,7 +11,10 @@
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "nsHttpHandler.h"
+#include "nsQueryObject.h"
+#include "nsSerializationHelper.h"
 #include "nsStreamUtils.h"
+#include "nsStringStream.h"
 
 namespace mozilla {
 namespace net {
@@ -73,7 +76,8 @@ HttpTransactionParent::HttpTransactionParent()
       mOnStopRequestCalled(false),
       mResolvedByTRR(false),
       mProxyConnectResponseCode(0),
-      mChannelId(0) {
+      mChannelId(0),
+      mRestarted(false) {
   LOG(("Creating HttpTransactionParent @%p\n", this));
 
   this->mSelfAddr.inet = {};
@@ -284,6 +288,12 @@ nsISupports* HttpTransactionParent::SecurityInfo() { return mSecurityInfo; }
 
 bool HttpTransactionParent::ProxyConnectFailed() { return mProxyConnectFailed; }
 
+bool HttpTransactionParent::TakeRestartedState() {
+  bool result = mRestarted;
+  mRestarted = false;
+  return result;
+}
+
 void HttpTransactionParent::DontReuseConnection() {
   MOZ_ASSERT(NS_IsMainThread());
   Unused << SendDontReuseConnection();
@@ -333,16 +343,16 @@ mozilla::ipc::IPCResult HttpTransactionParent::RecvOnStartRequest(
     const nsCString& aSecurityInfoSerialization,
     const bool& aProxyConnectFailed, const TimingStructArgs& aTimings,
     const int32_t& aProxyConnectResponseCode,
-    nsTArray<uint8_t>&& aDataForSniffer) {
+    nsTArray<uint8_t>&& aDataForSniffer, const bool& aRestarted) {
   mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
       this, [self = UnsafePtr<HttpTransactionParent>(this), aStatus,
              aResponseHead, aSecurityInfoSerialization, aProxyConnectFailed,
              aTimings, aProxyConnectResponseCode,
-             aDataForSniffer{std::move(aDataForSniffer)}]() mutable {
+             aDataForSniffer{std::move(aDataForSniffer)}, aRestarted]() mutable {
         self->DoOnStartRequest(aStatus, aResponseHead,
                                aSecurityInfoSerialization, aProxyConnectFailed,
                                aTimings, aProxyConnectResponseCode,
-                               std::move(aDataForSniffer));
+                               std::move(aDataForSniffer), aRestarted);
       }));
   return IPC_OK();
 }
@@ -370,7 +380,7 @@ void HttpTransactionParent::DoOnStartRequest(
     const nsCString& aSecurityInfoSerialization,
     const bool& aProxyConnectFailed, const TimingStructArgs& aTimings,
     const int32_t& aProxyConnectResponseCode,
-    nsTArray<uint8_t>&& aDataForSniffer) {
+    nsTArray<uint8_t>&& aDataForSniffer, const bool& aRestarted) {
   LOG(("HttpTransactionParent::DoOnStartRequest [this=%p aStatus=%" PRIx32
        "]\n",
        this, static_cast<uint32_t>(aStatus)));
@@ -396,6 +406,7 @@ void HttpTransactionParent::DoOnStartRequest(
 
   mProxyConnectResponseCode = aProxyConnectResponseCode;
   mDataForSniffer = std::move(aDataForSniffer);
+  mRestarted = aRestarted;
 
   AutoEventEnqueuer ensureSerialDispatch(mEventQ);
   nsresult rv = mChannel->OnStartRequest(this);
@@ -470,7 +481,8 @@ mozilla::ipc::IPCResult HttpTransactionParent::RecvOnStopRequest(
     const int64_t& aTransferSize, const TimingStructArgs& aTimings,
     const Maybe<nsHttpHeaderArray>& aResponseTrailers,
     const bool& aHasStickyConn,
-    Maybe<TransactionObserverResult>&& aTransactionObserverResult) {
+    Maybe<TransactionObserverResult>&& aTransactionObserverResult,
+    const int64_t& aRequestSize) {
   LOG(("HttpTransactionParent::RecvOnStopRequest [this=%p status=%" PRIx32
        "]\n",
        this, static_cast<uint32_t>(aStatus)));
@@ -478,11 +490,12 @@ mozilla::ipc::IPCResult HttpTransactionParent::RecvOnStopRequest(
       this, [self = UnsafePtr<HttpTransactionParent>(this), aStatus,
              aResponseIsComplete, aTransferSize, aTimings, aResponseTrailers,
              aHasStickyConn,
-             aTransactionObserverResult{
-                 std::move(aTransactionObserverResult)}]() mutable {
+             aTransactionObserverResult{std::move(aTransactionObserverResult)},
+             aRequestSize]() mutable {
         self->DoOnStopRequest(aStatus, aResponseIsComplete, aTransferSize,
                               aTimings, aResponseTrailers, aHasStickyConn,
-                              std::move(aTransactionObserverResult));
+                              std::move(aTransactionObserverResult),
+                              aRequestSize);
       }));
   return IPC_OK();
 }
@@ -492,7 +505,8 @@ void HttpTransactionParent::DoOnStopRequest(
     const int64_t& aTransferSize, const TimingStructArgs& aTimings,
     const Maybe<nsHttpHeaderArray>& aResponseTrailers,
     const bool& aHasStickyConn,
-    Maybe<TransactionObserverResult>&& aTransactionObserverResult) {
+    Maybe<TransactionObserverResult>&& aTransactionObserverResult,
+    const int64_t& aRequestSize) {
   LOG(("HttpTransactionParent::DoOnStopRequest [this=%p]\n", this));
   if (mCanceled) {
     return;
@@ -506,6 +520,7 @@ void HttpTransactionParent::DoOnStopRequest(
 
   mResponseIsComplete = aResponseIsComplete;
   mTransferSize = aTransferSize;
+  mRequestSize = aRequestSize;
   TimingStructArgsToTimingsStruct(aTimings, mTimings);
 
   if (aResponseTrailers.isSome()) {
@@ -665,6 +680,18 @@ HttpTransactionParent::GetLoadFlags(nsLoadFlags* aLoadFlags) {
 
 NS_IMETHODIMP
 HttpTransactionParent::SetLoadFlags(nsLoadFlags aLoadFlags) {
+  MOZ_ASSERT(false, "Should not be called.");
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+HttpTransactionParent::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  MOZ_ASSERT(false, "Should not be called.");
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+HttpTransactionParent::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
   MOZ_ASSERT(false, "Should not be called.");
   return NS_ERROR_NOT_IMPLEMENTED;
 }

@@ -60,6 +60,11 @@ class ClientInfo;
 class PerformanceStorage;
 class ServiceWorkerDescriptor;
 }  // namespace dom
+
+namespace ipc {
+class FileDescriptor;
+}  // namespace ipc
+
 }  // namespace mozilla
 
 template <class>
@@ -470,6 +475,9 @@ mozilla::Result<nsCOMPtr<nsIOutputStream>, nsresult>
 NS_NewLocalFileOutputStream(nsIFile* file, int32_t ioFlags = -1,
                             int32_t perm = -1, int32_t behaviorFlags = 0);
 
+nsresult NS_NewLocalFileOutputStream(nsIOutputStream** result,
+                                     const mozilla::ipc::FileDescriptor& fd);
+
 // returns a file output stream which can be QI'ed to nsISafeOutputStream.
 nsresult NS_NewAtomicFileOutputStream(nsIOutputStream** result, nsIFile* file,
                                       int32_t ioFlags = -1, int32_t perm = -1,
@@ -604,21 +612,9 @@ bool NS_UsePrivateBrowsing(nsIChannel* channel);
 bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport = false);
 
 /**
- * Returns true if the channel is a safe top-level navigation.
- */
-bool NS_IsSafeTopLevelNav(nsIChannel* aChannel);
-
-/**
  * Returns true if the channel has a safe method.
  */
 bool NS_IsSafeMethodNav(nsIChannel* aChannel);
-
-/**
- * Returns true if the channel is a foreign with respect to the host-uri.
- * For loads of TYPE_DOCUMENT, this function returns true if it's a
- * cross origin navigation.
- */
-bool NS_IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI);
 
 // Unique first-party domain for separating the safebrowsing cookie.
 // Note if this value is changed, code in test_cookiejars_safebrowsing.js and

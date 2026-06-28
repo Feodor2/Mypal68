@@ -50,8 +50,6 @@ class CookiePersistentStorage final : public CookieStorage {
   void CleanupCachedStatements();
   void CleanupDBConnection();
 
-  nsresult ImportCookies(nsIFile* aCookieFile);
-
   void Activate();
 
   void RebuildCorruptDB();
@@ -100,7 +98,6 @@ class CookiePersistentStorage final : public CookieStorage {
   OpenDBResult Read();
 
   nsresult CreateTableWorker(const char* aName);
-  nsresult CreateIndex();
   nsresult CreateTable();
   nsresult CreateTableForSchemaVersion6();
   nsresult CreateTableForSchemaVersion5();

@@ -705,10 +705,7 @@ nsSocketTransport::nsSocketTransport()
       mInputClosed(true),
       mOutputClosed(true),
       mResolving(false),
-      mDNSLookupStatus(NS_OK),
-      mDNSARequestFinished(0),
-      mEsniQueried(false),
-      mEsniUsed(false),
+      mEchConfigUsed(false),
       mResolvedByTRR(false),
       mNetAddrIsSet(false),
       mSelfAddrIsSet(false),
@@ -731,8 +728,7 @@ nsSocketTransport::nsSocketTransport()
       mFastOpenLayerHasBufferedData(false),
       mFastOpenStatus(TFO_NOT_SET),
       mFirstRetryError(NS_OK),
-      mDoNotRetryToConnect(false),
-      mSSLCallbackSet(false) {
+      mDoNotRetryToConnect(false) {
   this->mNetAddr.raw.family = 0;
   this->mNetAddr.inet = {};
   this->mSelfAddr.raw.family = 0;
@@ -1029,6 +1025,13 @@ nsresult nsSocketTransport::ResolveHost() {
   if (mConnectionFlags & nsSocketTransport::DISABLE_TRR)
     dnsFlags |= nsIDNSService::RESOLVE_DISABLE_TRR;
 
+  if (mConnectionFlags & nsSocketTransport::USE_IP_HINT_ADDRESS) {
+    dnsFlags |= nsIDNSService::RESOLVE_IP_HINT;
+  }
+
+  dnsFlags |= nsIDNSService::GetFlagsFromTRRMode(
+      nsISocketTransport::GetTRRModeFromFlags(mConnectionFlags));
+
   NS_ASSERTION(!(dnsFlags & nsIDNSService::RESOLVE_DISABLE_IPV6) ||
                    !(dnsFlags & nsIDNSService::RESOLVE_DISABLE_IPV4),
                "Setting both RESOLVE_DISABLE_IPV6 and RESOLVE_DISABLE_IPV4");
@@ -1039,39 +1042,10 @@ nsresult nsSocketTransport::ResolveHost() {
     SOCKET_LOG(("nsSocketTransport %p origin %s doing dns for %s\n", this,
                 mOriginHost.get(), SocketHost().get()));
   }
-  rv = dns->AsyncResolveNative(SocketHost(), dnsFlags, this,
-                               mSocketTransportService, mOriginAttributes,
-                               getter_AddRefs(mDNSRequest));
-  mEsniQueried = false;
-  if (mSocketTransportService->IsEsniEnabled() && NS_SUCCEEDED(rv) &&
-      !(mConnectionFlags & (DONT_TRY_ESNI | BE_CONSERVATIVE))) {
-    bool isSSL = false;
-    for (unsigned int i = 0; i < mTypes.Length(); ++i) {
-      if (mTypes[i].EqualsLiteral("ssl")) {
-        isSSL = true;
-        break;
-      }
-    }
-    if (isSSL) {
-      SOCKET_LOG((" look for esni txt record"));
-      nsAutoCString esniHost;
-      esniHost.Append("_esni.");
-      // This might end up being the SocketHost
-      // see https://github.com/ekr/draft-rescorla-tls-esni/issues/61
-      esniHost.Append(mOriginHost);
-      rv = dns->AsyncResolveByTypeNative(
-          esniHost, nsIDNSService::RESOLVE_TYPE_TXT, dnsFlags, this,
-          mSocketTransportService, mOriginAttributes,
-          getter_AddRefs(mDNSTxtRequest));
-      if (NS_FAILED(rv)) {
-        SOCKET_LOG(("  dns request by type failed."));
-        mDNSTxtRequest = nullptr;
-        rv = NS_OK;
-      } else {
-        mEsniQueried = true;
-      }
-    }
-  }
+  rv =
+      dns->AsyncResolveNative(SocketHost(), nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                              dnsFlags, nullptr, this, mSocketTransportService,
+                              mOriginAttributes, getter_AddRefs(mDNSRequest));
 
   if (NS_SUCCEEDED(rv)) {
     SOCKET_LOG(("  advancing to STATE_RESOLVING\n"));
@@ -1220,36 +1194,6 @@ nsresult nsSocketTransport::BuildSocket(PRFileDesc*& fd, bool& proxyTransparent,
   }
 
   return rv;
-}
-
-// static
-SECStatus nsSocketTransport::StoreResumptionToken(
-    PRFileDesc* fd, const PRUint8* resumptionToken, unsigned int len,
-    void* ctx) {
-  PRIntn val;
-  if (SSL_OptionGet(fd, SSL_ENABLE_SESSION_TICKETS, &val) != SECSuccess ||
-      val == 0) {
-    return SECFailure;
-  }
-
-  nsCOMPtr<nsISSLSocketControl> secCtrl =
-      do_QueryInterface(static_cast<nsSocketTransport*>(ctx)->mSecInfo);
-  if (!secCtrl) {
-    return SECFailure;
-  }
-  nsAutoCString peerId;
-  secCtrl->GetPeerId(peerId);
-
-  nsCOMPtr<nsITransportSecurityInfo> secInfo = do_QueryInterface(secCtrl);
-  if (!secInfo) {
-    return SECFailure;
-  }
-
-  if (NS_FAILED(SSLTokensCache::Put(peerId, resumptionToken, len, secInfo))) {
-    return SECFailure;
-  }
-
-  return SECSuccess;
 }
 
 nsresult nsSocketTransport::InitiateSocket() {
@@ -1508,15 +1452,16 @@ nsresult nsSocketTransport::InitiateSocket() {
   }
 #endif
 
-  if (!mDNSRecordTxt.IsEmpty() && mSecInfo) {
-    nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
-    if (secCtrl) {
-      SOCKET_LOG(("nsSocketTransport::InitiateSocket set esni keys."));
-      rv = secCtrl->SetEsniTxt(mDNSRecordTxt);
+  nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
+  if (secCtrl) {
+    if (!mEchConfig.IsEmpty() &&
+        !(mConnectionFlags & (DONT_TRY_ECH | BE_CONSERVATIVE))) {
+      SOCKET_LOG(("nsSocketTransport::InitiateSocket set echconfig."));
+      rv = secCtrl->SetEchConfig(mEchConfig);
       if (NS_FAILED(rv)) {
         return rv;
       }
-      mEsniUsed = true;
+      mEchConfigUsed = true;
     }
   }
 
@@ -1530,30 +1475,6 @@ nsresult nsSocketTransport::InitiateSocket() {
            "started [this=%p]\n",
            this));
     }
-  }
-
-  nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
-  if (usingSSL && secCtrl && SSLTokensCache::IsEnabled()) {
-    PRIntn val;
-    // If SSL_NO_CACHE option was set, we must not use the cache
-    if (SSL_OptionGet(fd, SSL_NO_CACHE, &val) == SECSuccess && val == 0) {
-      nsTArray<uint8_t> token;
-      nsAutoCString peerId;
-      secCtrl->GetPeerId(peerId);
-      nsresult rv2 = SSLTokensCache::Get(peerId, token);
-      if (NS_SUCCEEDED(rv2) && token.Length() != 0) {
-        SECStatus srv =
-            SSL_SetResumptionToken(fd, token.Elements(), token.Length());
-        if (srv == SECFailure) {
-          SOCKET_LOG(("Setting token failed with NSS error %d [id=%s]",
-                      PORT_GetError(), PromiseFlatCString(peerId).get()));
-          SSLTokensCache::Remove(peerId);
-        }
-      }
-    }
-
-    SSL_SetResumptionTokenCallback(fd, &StoreResumptionToken, this);
-    mSSLCallbackSet = true;
   }
 
   status = PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT);
@@ -2004,11 +1925,6 @@ void nsSocketTransport::ReleaseFD_Locked(PRFileDesc* fd) {
   NS_ASSERTION(mFD == fd, "wrong fd");
 
   if (--mFDref == 0) {
-    if (mSSLCallbackSet) {
-      SSL_SetResumptionTokenCallback(fd, nullptr, nullptr);
-      mSSLCallbackSet = false;
-    }
-
     if (gIOService->IsNetTearingDown() &&
         ((PR_IntervalNow() - gIOService->NetTearingDownStarted()) >
          gSocketTransportService->MaxTimeForPrClosePref())) {
@@ -2080,14 +1996,13 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
       break;
 
     case MSG_DNS_LOOKUP_COMPLETE:
-      if (mDNSRequest ||
-          mDNSTxtRequest) {  // only send this if we actually resolved anything
+      if (mDNSRequest) {  // only send this if we actually resolved anything
         SendStatus(NS_NET_STATUS_RESOLVED_HOST);
       }
 
       SOCKET_LOG(("  MSG_DNS_LOOKUP_COMPLETE\n"));
       mDNSRequest = nullptr;
-      mDNSTxtRequest = nullptr;
+
       if (mDNSRecord) {
         mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
         mDNSRecord->IsTRR(&mResolvedByTRR);
@@ -2319,11 +2234,6 @@ void nsSocketTransport::OnSocketDetached(PRFileDesc* fd) {
     if (mDNSRequest) {
       mDNSRequest->Cancel(NS_ERROR_ABORT);
       mDNSRequest = nullptr;
-    }
-
-    if (mDNSTxtRequest) {
-      mDNSTxtRequest->Cancel(NS_ERROR_ABORT);
-      mDNSTxtRequest = nullptr;
     }
 
     //
@@ -2846,61 +2756,21 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
               ".",
               this, static_cast<uint32_t>(status)));
 
-  if (request == mDNSTxtRequest) {
-    if (NS_SUCCEEDED(status)) {
-      nsCOMPtr<nsIDNSTXTRecord> txtResponse = do_QueryInterface(rec);
-      txtResponse->GetRecordsAsOneString(mDNSRecordTxt);
-      mDNSRecordTxt.Trim(" ");
-    }
-    Telemetry::Accumulate(Telemetry::ESNI_KEYS_RECORDS_FOUND,
-                          NS_SUCCEEDED(status));
-    // flag host lookup complete for the benefit of the ResolveHost method.
-    if (!mDNSRequest) {
-      mResolving = false;
-      MOZ_ASSERT(mDNSARequestFinished);
-      Telemetry::Accumulate(
-          Telemetry::ESNI_KEYS_RECORD_FETCH_DELAYS,
-          PR_IntervalToMilliseconds(PR_IntervalNow() - mDNSARequestFinished));
-
-      nsresult rv =
-          PostEvent(MSG_DNS_LOOKUP_COMPLETE, mDNSLookupStatus, nullptr);
-
-      // if posting a message fails, then we should assume that the socket
-      // transport has been shutdown.  this should never happen!  if it does
-      // it means that the socket transport service was shutdown before the
-      // DNS service.
-      if (NS_FAILED(rv)) {
-        NS_WARNING("unable to post DNS lookup complete message");
-      }
-    } else {
-      mDNSTxtRequest = nullptr;
-    }
-    return NS_OK;
-  }
-
-  if (NS_FAILED(status) && mDNSTxtRequest) {
-    mDNSTxtRequest->Cancel(NS_ERROR_ABORT);
-  } else if (NS_SUCCEEDED(status)) {
-    mDNSRecord = rec;
+  if (NS_SUCCEEDED(status)) {
+    mDNSRecord = do_QueryInterface(rec);
+    MOZ_ASSERT(mDNSRecord);
   }
 
   // flag host lookup complete for the benefit of the ResolveHost method.
-  if (!mDNSTxtRequest) {
-    mResolving = false;
-    nsresult rv = PostEvent(MSG_DNS_LOOKUP_COMPLETE, status, nullptr);
+  mResolving = false;
+  nsresult rv = PostEvent(MSG_DNS_LOOKUP_COMPLETE, status, nullptr);
 
-    // if posting a message fails, then we should assume that the socket
-    // transport has been shutdown.  this should never happen!  if it does
-    // it means that the socket transport service was shutdown before the
-    // DNS service.
-    if (NS_FAILED(rv)) {
-      NS_WARNING("unable to post DNS lookup complete message");
-    }
-  } else {
-    mDNSLookupStatus =
-        status;  // remember the status to send it when esni lookup is ready.
-    mDNSRequest = nullptr;
-    mDNSARequestFinished = PR_IntervalNow();
+  // if posting a message fails, then we should assume that the socket
+  // transport has been shutdown.  this should never happen!  if it does
+  // it means that the socket transport service was shutdown before the
+  // DNS service.
+  if (NS_FAILED(rv)) {
+    NS_WARNING("unable to post DNS lookup complete message");
   }
 
   return NS_OK;
@@ -2909,7 +2779,8 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
 // nsIInterfaceRequestor
 NS_IMETHODIMP
 nsSocketTransport::GetInterface(const nsIID& iid, void** result) {
-  if (iid.Equals(NS_GET_IID(nsIDNSRecord))) {
+  if (iid.Equals(NS_GET_IID(nsIDNSRecord)) ||
+      iid.Equals(NS_GET_IID(nsIDNSAddrRecord))) {
     return mDNSRecord ? mDNSRecord->QueryInterface(iid, result)
                       : NS_ERROR_NO_INTERFACE;
   }
@@ -3431,8 +3302,14 @@ nsSocketTransport::GetResetIPFamilyPreference(bool* aReset) {
 }
 
 NS_IMETHODIMP
-nsSocketTransport::GetEsniUsed(bool* aEsniUsed) {
-  *aEsniUsed = mEsniUsed;
+nsSocketTransport::GetEchConfigUsed(bool* aEchConfigUsed) {
+  *aEchConfigUsed = mEchConfigUsed;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetEchConfig(const nsACString& aEchConfig) {
+  mEchConfig = aEchConfig;
   return NS_OK;
 }
 

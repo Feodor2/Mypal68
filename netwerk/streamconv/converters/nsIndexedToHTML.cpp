@@ -186,7 +186,6 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
     nsCOMPtr<nsIFile> file;
     rv = fileUrl->GetFile(getter_AddRefs(file));
     if (NS_FAILED(rv)) return rv;
-    file->SetFollowLinks(true);
 
     nsAutoCString url;
     rv = net_GetURLSpecFromFile(file, url);

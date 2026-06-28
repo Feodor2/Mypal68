@@ -44,8 +44,8 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/Unused.h"
 #ifdef MOZ_PEERCONNECTION
-#  include "mtransport/runnable_utils.h"
-#  include "signaling/src/peerconnection/MediaTransportHandler.h"
+#  include "transport/runnable_utils.h"
+#  include "jsapi/MediaTransportHandler.h"
 #  include "mediapacket.h"
 #endif
 
@@ -221,7 +221,7 @@ class DataChannelRegistry : public nsIObserver {
 #ifdef MOZ_PEERCONNECTION
     usrsctp_init(0, DataChannelRegistry::SctpDtlsOutput, debug_printf);
 #else
-    MOZ_CRASH("Trying to use SCTP/DTLS without mtransport");
+    MOZ_CRASH("Trying to use SCTP/DTLS without dom/media/webrtc/transport");
 #endif
 
     // Set logging to SCTP:LogLevel::Debug to get SCTP debugs
@@ -736,6 +736,8 @@ void DataChannelConnection::SetSignals(const std::string& aTransportId) {
   mTransportId = aTransportId;
   mTransportHandler->SignalPacketReceived.connect(
       this, &DataChannelConnection::SctpDtlsInput);
+  mTransportHandler->SignalStateChange.connect(
+      this, &DataChannelConnection::TransportStateChange);
   // SignalStateChange() doesn't call you with the initial state
   if (mTransportHandler->GetState(mTransportId, false) ==
       TransportLayer::TS_OPEN) {
@@ -743,15 +745,21 @@ void DataChannelConnection::SetSignals(const std::string& aTransportId) {
     CompleteConnect();
   } else {
     DC_DEBUG(("Setting transport signals, dtls not open yet"));
-    mTransportHandler->SignalStateChange.connect(
-        this, &DataChannelConnection::TransportStateChange);
   }
 }
 
 void DataChannelConnection::TransportStateChange(
     const std::string& aTransportId, TransportLayer::State aState) {
-  if (aState == TransportLayer::TS_OPEN && aTransportId == mTransportId) {
-    CompleteConnect();
+  if (aTransportId == mTransportId) {
+    if (aState == TransportLayer::TS_OPEN) {
+      DC_DEBUG(("Transport is open!"));
+      CompleteConnect();
+    } else if (aState == TransportLayer::TS_CLOSED ||
+               aState == TransportLayer::TS_NONE ||
+               aState == TransportLayer::TS_ERROR) {
+      DC_DEBUG(("Transport is closed!"));
+      Stop();
+    }
   }
 }
 
@@ -837,16 +845,15 @@ void DataChannelConnection::ProcessQueuedOpens() {
 
   // Can't copy nsDeque's.  Move into temp array since any that fail will
   // go back to mPending
-  nsDeque<DataChannel> temp;
-  DataChannel* temp_channel;  // really already_AddRefed<>
+  nsRefPtrDeque<DataChannel> temp;
+  RefPtr<DataChannel> temp_channel;
   while (nullptr != (temp_channel = mPending.PopFront())) {
-    temp.Push(temp_channel);
+    temp.Push(temp_channel.forget());
   }
 
   RefPtr<DataChannel> channel;
-  // All these entries have an AddRef(); make that explicit now via the
-  // dont_AddRef()
-  while (nullptr != (channel = dont_AddRef(temp.PopFront()))) {
+
+  while (nullptr != (channel = temp.PopFront())) {
     if (channel->mFlags & DATA_CHANNEL_FLAGS_FINISH_OPEN) {
       DC_DEBUG(("Processing queued open for %p (%u)", channel.get(),
                 channel->mStream));
@@ -1229,10 +1236,10 @@ int DataChannelConnection::SendOpenRequestMessage(
   // careful - request struct include one char for the label
   const int req_size = sizeof(struct rtcweb_datachannel_open_request) - 1 +
                        label_len + proto_len;
-  struct rtcweb_datachannel_open_request* req =
-      (struct rtcweb_datachannel_open_request*)moz_xmalloc(req_size);
+  UniqueFreePtr<struct rtcweb_datachannel_open_request> req(
+      (struct rtcweb_datachannel_open_request*)moz_xmalloc(req_size));
 
-  memset(req, 0, req_size);
+  memset(req.get(), 0, req_size);
   req->msg_type = DATA_CHANNEL_OPEN_REQUEST;
   switch (prPolicy) {
     case SCTP_PR_SCTP_NONE:
@@ -1245,7 +1252,6 @@ int DataChannelConnection::SendOpenRequestMessage(
       req->channel_type = DATA_CHANNEL_PARTIAL_RELIABLE_REXMIT;
       break;
     default:
-      free(req);
       return EINVAL;
   }
   if (unordered) {
@@ -1262,9 +1268,7 @@ int DataChannelConnection::SendOpenRequestMessage(
   memcpy(&req->label[label_len], PromiseFlatCString(protocol).get(), proto_len);
 
   // TODO: req_size is an int... that looks hairy
-  int error = SendControlMessage((const uint8_t*)req, req_size, stream);
-
-  free(req);
+  int error = SendControlMessage((const uint8_t*)req.get(), req_size, stream);
   return error;
 }
 
@@ -2380,8 +2384,6 @@ already_AddRefed<DataChannel> DataChannelConnection::Open(
 
   if (aStream != INVALID_STREAM && mChannels.Get(aStream)) {
     DC_ERROR(("external negotiation of already-open channel %u", aStream));
-    // XXX How do we indicate this up to the application?  Probably the
-    // caller's job, but we may need to return an error code.
     return nullptr;
   }
 
@@ -2443,10 +2445,7 @@ already_AddRefed<DataChannel> DataChannelConnection::OpenFinish(
     DC_DEBUG(("Queuing channel %p (%u) to finish open", channel.get(), stream));
     // Also serves to mark we told the app
     channel->mFlags |= DATA_CHANNEL_FLAGS_FINISH_OPEN;
-    // we need a ref for the nsDeQue and one to return
-    DataChannel* rawChannel = channel;
-    rawChannel->AddRef();
-    mPending.Push(rawChannel);
+    mPending.Push(channel);
     return channel.forget();
   }
 
@@ -2984,7 +2983,7 @@ void DataChannelConnection::CloseAll() {
 
   // Clean up any pending opens for channels
   RefPtr<DataChannel> channel;
-  while (nullptr != (channel = dont_AddRef(mPending.PopFront()))) {
+  while (nullptr != (channel = mPending.PopFront())) {
     DC_DEBUG(("closing pending channel %p, stream %u", channel.get(),
               channel->mStream));
     channel->Close();  // also releases the ref on each iteration

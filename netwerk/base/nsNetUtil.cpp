@@ -8,6 +8,7 @@
 #include "nsNetUtil.h"
 
 #include "mozilla/Atomics.h"
+#include "mozilla/Components.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/LoadInfo.h"
@@ -107,7 +108,7 @@ using mozilla::dom::ServiceWorkerDescriptor;
 #define MAX_RECURSION_COUNT 50
 
 already_AddRefed<nsIIOService> do_GetIOService(nsresult* error /* = 0 */) {
-  nsCOMPtr<nsIIOService> io = mozilla::services::GetIOService();
+  nsCOMPtr<nsIIOService> io = mozilla::components::IO::Service();
   if (error) *error = io ? NS_OK : NS_ERROR_FAILURE;
   return io.forget();
 }
@@ -162,6 +163,22 @@ Result<nsCOMPtr<nsIOutputStream>, nsresult> NS_NewLocalFileOutputStream(
     return stream;
   }
   return Err(rv);
+}
+
+nsresult NS_NewLocalFileOutputStream(nsIOutputStream** result,
+                                     const mozilla::ipc::FileDescriptor& fd) {
+  nsCOMPtr<nsIFileOutputStream> out;
+  nsFileOutputStream::Create(nullptr, NS_GET_IID(nsIFileOutputStream),
+                             getter_AddRefs(out));
+
+  nsresult rv =
+      static_cast<nsFileOutputStream*>(out.get())->InitWithFileDescriptor(fd);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  out.forget(result);
+  return NS_OK;
 }
 
 nsresult net_EnsureIOService(nsIIOService** ios, nsCOMPtr<nsIIOService>& grip) {
@@ -1161,7 +1178,7 @@ void NS_GetReferrerFromChannel(nsIChannel* channel, nsIURI** referrer) {
 }
 
 already_AddRefed<nsINetUtil> do_GetNetUtil(nsresult* error /* = 0 */) {
-  nsCOMPtr<nsIIOService> io = mozilla::services::GetIOService();
+  nsCOMPtr<nsIIOService> io = mozilla::components::IO::Service();
   nsCOMPtr<nsINetUtil> util;
   if (io) util = do_QueryInterface(io);
 
@@ -2020,18 +2037,6 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
   return NS_FAILED(res);
 }
 
-bool NS_IsSafeTopLevelNav(nsIChannel* aChannel) {
-  if (!aChannel) {
-    return false;
-  }
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  if (loadInfo->GetExternalContentPolicyType() !=
-      ExtContentPolicy::TYPE_DOCUMENT) {
-    return false;
-  }
-  return NS_IsSafeMethodNav(aChannel);
-}
-
 bool NS_IsSafeMethodNav(nsIChannel* aChannel) {
   RefPtr<HttpBaseChannel> baseChan = do_QueryObject(aChannel);
   if (!baseChan) {
@@ -2042,76 +2047,6 @@ bool NS_IsSafeMethodNav(nsIChannel* aChannel) {
     return false;
   }
   return requestHead->IsSafeMethod();
-}
-
-bool NS_IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
-  if (!aChannel) {
-    return false;
-  }
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  // Do not treat loads triggered by web extensions as foreign
-  nsCOMPtr<nsIURI> channelURI;
-  NS_GetFinalChannelURI(aChannel, getter_AddRefs(channelURI));
-  RefPtr<BasePrincipal> triggeringPrincipal =
-      BasePrincipal::Cast(loadInfo->TriggeringPrincipal());
-  if (triggeringPrincipal->AddonPolicy() &&
-      triggeringPrincipal->AddonAllowsLoad(channelURI)) {
-    return false;
-  }
-
-  bool isForeign = true;
-  nsresult rv;
-  if (loadInfo->GetExternalContentPolicyType() ==
-      ExtContentPolicy::TYPE_DOCUMENT) {
-    // for loads of TYPE_DOCUMENT we query the hostURI from the
-    // triggeringPrincipal which returns the URI of the document that caused the
-    // navigation.
-    rv = triggeringPrincipal->IsThirdPartyChannel(aChannel,
-                                                              &isForeign);
-  } else {
-    nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
-        do_GetService(THIRDPARTYUTIL_CONTRACTID);
-    if (!thirdPartyUtil) {
-      return true;
-    }
-    rv = thirdPartyUtil->IsThirdPartyChannel(aChannel, aHostURI, &isForeign);
-  }
-  // if we are dealing with a cross origin request, we can return here
-  // because we already know the request is 'foreign'.
-  if (NS_FAILED(rv) || isForeign) {
-    return true;
-  }
-
-  // for loads of TYPE_SUBDOCUMENT we have to perform an additional test,
-  // because a cross-origin iframe might perform a navigation to a same-origin
-  // iframe which would send same-site cookies. Hence, if the iframe navigation
-  // was triggered by a cross-origin triggeringPrincipal, we treat the load as
-  // foreign.
-  if (loadInfo->GetExternalContentPolicyType() ==
-      ExtContentPolicy::TYPE_SUBDOCUMENT) {
-    rv = loadInfo->TriggeringPrincipal()->IsThirdPartyChannel(aChannel,
-                                                              &isForeign);
-    if (NS_FAILED(rv) || isForeign) {
-      return true;
-    }
-  }
-
-  // for the purpose of same-site cookies we have to treat any cross-origin
-  // redirects as foreign. E.g. cross-site to same-site redirect is a problem
-  // with regards to CSRF.
-
-  nsCOMPtr<nsIPrincipal> redirectPrincipal;
-  for (nsIRedirectHistoryEntry* entry : loadInfo->RedirectChain()) {
-    entry->GetPrincipal(getter_AddRefs(redirectPrincipal));
-    if (redirectPrincipal) {
-      rv = redirectPrincipal->IsThirdPartyChannel(aChannel, &isForeign);
-      // if at any point we encounter a cross-origin redirect we can return.
-      if (NS_FAILED(rv) || isForeign) {
-        return true;
-      }
-    }
-  }
-  return isForeign;
 }
 
 bool NS_ShouldCheckAppCache(nsIPrincipal* aPrincipal) {
@@ -2665,6 +2600,14 @@ nsresult NS_GetFilenameFromDisposition(nsAString& aFilename,
 }
 
 void net_EnsurePSMInit() {
+  if (XRE_IsSocketProcess()) {
+    EnsureNSSInitializedChromeOrContent();
+    return;
+  }
+
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
   nsCOMPtr<nsISupports> psm = do_GetService(PSM_COMPONENT_CONTRACTID, &rv);
   MOZ_ASSERT(NS_SUCCEEDED(rv));

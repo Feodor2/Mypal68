@@ -56,7 +56,8 @@ static nsresult ResolveHost(const nsACString& host,
   }
 
   nsCOMPtr<nsICancelable> tmpOutstanding;
-  return dns->AsyncResolveNative(host, 0, listener, nullptr, aOriginAttributes,
+  return dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0,
+                                 nullptr, listener, nullptr, aOriginAttributes,
                                  getter_AddRefs(tmpOutstanding));
 }
 
@@ -435,8 +436,7 @@ void nsUDPSocket::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
     return;
   }
 
-  NetAddr netAddr;
-  PRNetAddrToNetAddr(&prClientAddr, &netAddr);
+  NetAddr netAddr(&prClientAddr);
   nsCOMPtr<nsIUDPMessage> message =
       new UDPMessageProxy(&netAddr, pipeOut, std::move(data));
   mListener->OnPacketReceived(this, message);
@@ -930,13 +930,15 @@ class PendingSend : public nsIDNSListener {
 NS_IMPL_ISUPPORTS(PendingSend, nsIDNSListener)
 
 NS_IMETHODIMP
-PendingSend::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
+PendingSend::OnLookupComplete(nsICancelable* request, nsIDNSRecord* aRecord,
                               nsresult status) {
   if (NS_FAILED(status)) {
     NS_WARNING("Failed to send UDP packet due to DNS lookup failure");
     return NS_OK;
   }
 
+  nsCOMPtr<nsIDNSAddrRecord> rec = do_QueryInterface(aRecord);
+  MOZ_ASSERT(rec);
   NetAddr addr;
   if (NS_SUCCEEDED(rec->GetNextAddr(mPort, &addr))) {
     uint32_t count;
@@ -967,13 +969,15 @@ class PendingSendStream : public nsIDNSListener {
 NS_IMPL_ISUPPORTS(PendingSendStream, nsIDNSListener)
 
 NS_IMETHODIMP
-PendingSendStream::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
-                                    nsresult status) {
+PendingSendStream::OnLookupComplete(nsICancelable* request,
+                                    nsIDNSRecord* aRecord, nsresult status) {
   if (NS_FAILED(status)) {
     NS_WARNING("Failed to send UDP packet due to DNS lookup failure");
     return NS_OK;
   }
 
+  nsCOMPtr<nsIDNSAddrRecord> rec = do_QueryInterface(aRecord);
+  MOZ_ASSERT(rec);
   NetAddr addr;
   if (NS_SUCCEEDED(rec->GetNextAddr(mPort, &addr))) {
     nsresult rv = mSocket->SendBinaryStreamWithAddress(&addr, mStream);
@@ -1021,7 +1025,7 @@ nsUDPSocket::AsyncListen(nsIUDPSocketListener* aListener) {
       // PNecko usage
       mListener = new SocketListenerProxy(aListener);
     } else {
-      // PBackground usage from media/mtransport
+      // PBackground usage from dom/media/webrtc/transport
       mListener = new SocketListenerProxyBackground(aListener);
     }
   }

@@ -72,7 +72,7 @@ class HttpTransactionShell : public nsISupports {
   // @param topLevelOuterContentWindowId
   //        indicate the top level outer content window in which
   //        this transaction is being loaded.
-  MOZ_MUST_USE nsresult virtual Init(
+  [[nodiscard]] nsresult virtual Init(
       uint32_t caps, nsHttpConnectionInfo* connInfo,
       nsHttpRequestHead* reqHeaders, nsIInputStream* reqBody,
       uint64_t reqContentLength, bool reqBodyIncludesHeaders,
@@ -147,6 +147,8 @@ class HttpTransactionShell : public nsISupports {
 
   virtual nsHttpTransaction* AsHttpTransaction() = 0;
   virtual HttpTransactionParent* AsHttpTransactionParent() = 0;
+
+  virtual bool TakeRestartedState() = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionShell, HTTPTRANSACTIONSHELL_IID)
@@ -198,7 +200,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionShell, HTTPTRANSACTIONSHELL_IID)
   virtual bool ProxyConnectFailed() override;                                  \
   virtual int32_t GetProxyConnectResponseCode() override;                      \
   virtual nsHttpTransaction* AsHttpTransaction() override;                     \
-  virtual HttpTransactionParent* AsHttpTransactionParent() override;
+  virtual HttpTransactionParent* AsHttpTransactionParent() override;           \
+  virtual bool TakeRestartedState() override;
 }  // namespace net
 }  // namespace mozilla
 

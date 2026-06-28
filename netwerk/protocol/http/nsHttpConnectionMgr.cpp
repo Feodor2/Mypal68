@@ -16,7 +16,8 @@
 
 #include "NullHttpTransaction.h"
 #include "mozilla/ChaosMode.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/net/DashboardTypes.h"
@@ -24,7 +25,10 @@
 #include "nsHttpConnectionMgr.h"
 #include "nsHttpHandler.h"
 #include "nsIClassOfService.h"
+#include "nsIDNSByTypeRecord.h"
 #include "nsIDNSRecord.h"
+#include "nsIDNSListener.h"
+#include "nsIDNSService.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIRequestContext.h"
 #include "nsISocketTransport.h"
@@ -148,10 +152,10 @@ nsHttpConnectionMgr::~nsHttpConnectionMgr() {
 
 nsresult nsHttpConnectionMgr::EnsureSocketThreadTarget() {
   nsCOMPtr<nsIEventTarget> sts;
-  nsCOMPtr<nsIIOService> ioService = services::GetIOService();
+  nsCOMPtr<nsIIOService> ioService = components::IO::Service();
   if (ioService) {
     nsCOMPtr<nsISocketTransportService> realSTS =
-        services::GetSocketTransportService();
+        components::SocketTransport::Service();
     sts = do_QueryInterface(realSTS);
   }
 
@@ -449,12 +453,18 @@ nsresult nsHttpConnectionMgr::VerifyTraffic() {
   return PostEvent(&nsHttpConnectionMgr::OnMsgVerifyTraffic);
 }
 
-nsresult nsHttpConnectionMgr::DoShiftReloadConnectionCleanup(
+nsresult nsHttpConnectionMgr::DoShiftReloadConnectionCleanup() {
+  return PostEvent(&nsHttpConnectionMgr::OnMsgDoShiftReloadConnectionCleanup, 0,
+                   nullptr);
+}
+
+nsresult nsHttpConnectionMgr::DoShiftReloadConnectionCleanupWithConnInfo(
     nsHttpConnectionInfo* aCI) {
-  RefPtr<nsHttpConnectionInfo> ci;
-  if (aCI) {
-    ci = aCI->Clone();
+  if (!aCI) {
+    return NS_ERROR_INVALID_ARG;
   }
+
+  RefPtr<nsHttpConnectionInfo> ci = aCI->Clone();
   return PostEvent(&nsHttpConnectionMgr::OnMsgDoShiftReloadConnectionCleanup, 0,
                    ci);
 }
@@ -1646,6 +1656,12 @@ nsresult nsHttpConnectionMgr::TryDispatchTransaction(
   // step 3
   // consider pipelining scripts and revalidations
   // h1 pipelining has been removed
+
+  // Don't dispatch if this transaction is waiting for HTTPS RR.
+  // Note that this is only used in test currently.
+  if (caps & NS_HTTP_WAIT_HTTPSSVC_RESULT) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   // step 4
   if (!onlyReusedConnection) {
@@ -4092,9 +4108,8 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
   uint32_t tmpFlags = 0;
   if (mCaps & NS_HTTP_REFRESH_DNS) tmpFlags = nsISocketTransport::BYPASS_CACHE;
 
-  if (mCaps & NS_HTTP_DISABLE_TRR) {
-    tmpFlags = nsISocketTransport::DISABLE_TRR;
-  }
+  tmpFlags |= nsISocketTransport::GetFlagsFromTRRMode(
+      NS_HTTP_TRR_MODE_FROM_FLAGS(mCaps));
 
   if (mCaps & NS_HTTP_LOAD_ANONYMOUS)
     tmpFlags |= nsISocketTransport::ANONYMOUS_CONNECT;
@@ -4104,13 +4119,33 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
   }
 
   if (ci->GetLessThanTls13()) {
-    tmpFlags |= nsISocketTransport::DONT_TRY_ESNI;
+    tmpFlags |= nsISocketTransport::DONT_TRY_ECH;
   }
 
   if (((mCaps & NS_HTTP_BE_CONSERVATIVE) || ci->GetBeConservative()) &&
       gHttpHandler->ConnMgr()->BeConservativeIfProxied(ci->ProxyInfo())) {
     LOG(("Setting Socket to BE_CONSERVATIVE"));
     tmpFlags |= nsISocketTransport::BE_CONSERVATIVE;
+  }
+
+  if (ci->HasIPHintAddress()) {
+    nsCOMPtr<nsIDNSService> dns =
+        do_GetService("@mozilla.org/network/dns-service;1", &rv);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    // The spec says: "If A and AAAA records for TargetName are locally
+    // available, the client SHOULD ignore these hints.", so we check if the DNS
+    // record is in cache before setting USE_IP_HINT_ADDRESS.
+    nsCOMPtr<nsIDNSRecord> record;
+    rv = dns->ResolveNative(ci->GetRoutedHost(), nsIDNSService::RESOLVE_OFFLINE,
+                            mEnt->mConnInfo->GetOriginAttributes(),
+                            getter_AddRefs(record));
+    if (NS_FAILED(rv) || !record) {
+      LOG(("Setting Socket to use IP hint address"));
+      tmpFlags |= nsISocketTransport::USE_IP_HINT_ADDRESS;
+    }
   }
 
   if (mCaps & NS_HTTP_DISABLE_IPV4) {
@@ -4176,6 +4211,11 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
 
   rv = socketTransport->SetSecurityCallbacks(this);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (gHttpHandler->EchConfigEnabled()) {
+    rv = socketTransport->SetEchConfig(ci->GetEchConfig());
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   mEnt->mUsedForConnection = true;
 
@@ -5095,7 +5135,7 @@ nsHttpConnectionMgr::nsHalfOpenSocket::OnTransportStatus(nsITransport* trans,
       gHttpHandler->CoalesceSpdy() && mEnt && mEnt->mConnInfo &&
       mEnt->mConnInfo->EndToEndSSL() && mEnt->AllowSpdy() &&
       !mEnt->mConnInfo->UsingProxy() && mEnt->mCoalescingKeys.IsEmpty()) {
-    nsCOMPtr<nsIDNSRecord> dnsRecord(do_GetInterface(mSocketTransport));
+    nsCOMPtr<nsIDNSAddrRecord> dnsRecord(do_GetInterface(mSocketTransport));
     nsTArray<NetAddr> addressSet;
     nsresult rv = NS_ERROR_NOT_AVAILABLE;
     if (dnsRecord) {
@@ -5568,7 +5608,66 @@ void nsHttpConnectionMgr::MoveToWildCardConnEntry(
   }
 }
 
+bool nsHttpConnectionMgr::MoveTransToHTTPSSVCConnEntry(
+    nsHttpTransaction* aTrans, nsHttpConnectionInfo* aNewCI) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  LOG(("nsHttpConnectionMgr::MoveTransToHTTPSSVCConnEntry: trans=%p aNewCI=%s",
+       aTrans, aNewCI->HashKey().get()));
+
+  bool prohibitWildCard = !!aTrans->TunnelProvider();
+  // Step 1: Check if the new entry is the same as the old one.
+  nsConnectionEntry* oldEntry = GetOrCreateConnectionEntry(
+      aTrans->ConnectionInfo(), prohibitWildCard);
+
+  nsConnectionEntry* newEntry =
+      GetOrCreateConnectionEntry(aNewCI, prohibitWildCard);
+
+  if (oldEntry == newEntry) {
+    return true;
+  }
+
+  // Step 2: Try to find the undispatched transaction.
+  int32_t transIndex;
+  // We will abandon all half-open sockets belonging to the given
+  // transaction.
+  nsTArray<RefPtr<PendingTransactionInfo>>* infoArray =
+      GetTransactionPendingQHelper(oldEntry, aTrans);
+
+  RefPtr<PendingTransactionInfo> pendingTransInfo;
+  transIndex =
+      infoArray ? infoArray->IndexOf(aTrans, 0, PendingComparator()) : -1;
+  if (transIndex >= 0) {
+    pendingTransInfo = (*infoArray)[transIndex];
+    infoArray->RemoveElementAt(transIndex);
+  }
+
+  // It's fine we can't find the transaction. The transaction may not be added.
+  if (!pendingTransInfo) {
+    return false;
+  }
+
+  MOZ_ASSERT(pendingTransInfo->mTransaction == aTrans);
+
+  // Abandon all half-open sockets belonging to the given transaction.
+  RefPtr<nsHalfOpenSocket> half = do_QueryReferent(pendingTransInfo->mHalfOpen);
+  if (half) {
+    half->Abandon();
+  }
+  pendingTransInfo->mHalfOpen = nullptr;
+  pendingTransInfo->mActiveConn = nullptr;
+
+  // Step 3: Add the transaction to the new entry.
+  aTrans->UpdateConnectionInfo(aNewCI);
+  Unused << ProcessNewTransaction(aTrans);
+  return true;
+}
+
 nsHttpConnectionMgr* nsHttpConnectionMgr::AsHttpConnectionMgr() { return this; }
+
+HttpConnectionMgrParent* nsHttpConnectionMgr::AsHttpConnectionMgrParent() {
+  return nullptr;
+}
 
 }  // namespace net
 }  // namespace mozilla

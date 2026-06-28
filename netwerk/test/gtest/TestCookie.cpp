@@ -17,6 +17,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsNetCID.h"
 #include "nsIPrefBranch.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "nsIURI.h"
@@ -104,16 +105,6 @@ void SetACookie(nsICookieService* aCookieService, const char* aSpec,
   SetACookieInternal(aCookieService, aSpec, aCookieString, true);
 }
 
-void SetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
-                      const char* aCookieString) {
-  nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), aSpec);
-
-  nsresult rv = aCookieService->SetCookieString(
-      uri, nsDependentCString(aCookieString), nullptr);
-  EXPECT_TRUE(NS_SUCCEEDED(rv));
-}
-
 // The cookie string is returned via aCookie.
 void GetACookie(nsICookieService* aCookieService, const char* aSpec,
                 nsACString& aCookie) {
@@ -141,7 +132,18 @@ void GetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
       BasePrincipal::CreateContentPrincipal(uri, OriginAttributes());
   MOZ_ASSERT(principal);
 
-  Unused << aCookieService->GetCookieStringForPrincipal(principal, aCookie);
+  nsCOMPtr<mozilla::dom::Document> document;
+  nsresult rv = NS_NewDOMDocument(getter_AddRefs(document),
+                                  EmptyString(),  // aNamespaceURI
+                                  EmptyString(),  // aQualifiedName
+                                  nullptr,        // aDoctype
+                                  uri, uri, principal,
+                                  false,    // aLoadedAsData
+                                  nullptr,  // aEventObject
+                                  DocumentFlavorHTML);
+  Unused << NS_WARN_IF(NS_FAILED(rv));
+
+  Unused << aCookieService->GetCookieStringFromDocument(document, aCookie);
 }
 
 // some #defines for comparison rules
@@ -187,7 +189,14 @@ void InitPrefs(nsIPrefBranch* aPrefBranch) {
   aPrefBranch->SetIntPref(kPrefCookieQuotaPerHost, 49);
   // Set the base domain limit to 50 so we have a known value.
   aPrefBranch->SetIntPref(kCookiesMaxPerHost, 50);
+
+  // SameSite=none by default. We have other tests for lax-by-default.
+  // XXX: Bug 1617611 - Fix all the tests broken by "cookies sameSite=lax by
+  // default"
+  Preferences::SetBool("network.cookie.sameSite.laxByDefault", false);
   Preferences::SetBool("network.cookieJarSettings.unblocked_for_testing", true);
+  Preferences::SetBool("dom.securecontext.whitelist_onions", false);
+  Preferences::SetBool("network.cookie.sameSite.schemeful", false);
 }
 
 TEST(TestCookie, TestCookieMain)
@@ -617,52 +626,6 @@ TEST(TestCookie, TestCookieMain)
                           "test7=path; test6=path; test3=path; test1=path; "
                           "test5=path; test4=path; test2=path; test8=path"));
 
-  // *** httponly tests
-
-  // Since this cookie is NOT set via http, setting it fails
-  SetACookieNoHttp(cookieService, "http://httponly.test/",
-                   "test=httponly; httponly");
-  GetACookie(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
-  // Since this cookie is set via http, it can be retrieved
-  SetACookie(cookieService, "http://httponly.test/", "test=httponly; httponly");
-  GetACookie(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=httponly"));
-  // ... but not by web content
-  GetACookieNoHttp(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
-  // Non-Http cookies should not replace HttpOnly cookies
-  SetACookie(cookieService, "http://httponly.test/", "test=httponly; httponly");
-  SetACookieNoHttp(cookieService, "http://httponly.test/", "test=not-httponly");
-  GetACookie(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=httponly"));
-  // ... and, if an HttpOnly cookie already exists, should not be set at all
-  GetACookieNoHttp(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
-  // Non-Http cookies should not delete HttpOnly cookies
-  SetACookie(cookieService, "http://httponly.test/", "test=httponly; httponly");
-  SetACookieNoHttp(cookieService, "http://httponly.test/",
-                   "test=httponly; max-age=-1");
-  GetACookie(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=httponly"));
-  // ... but HttpOnly cookies should
-  SetACookie(cookieService, "http://httponly.test/",
-             "test=httponly; httponly; max-age=-1");
-  GetACookie(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
-  // Non-Httponly cookies can replace HttpOnly cookies when set over http
-  SetACookie(cookieService, "http://httponly.test/", "test=httponly; httponly");
-  SetACookie(cookieService, "http://httponly.test/", "test=not-httponly");
-  GetACookieNoHttp(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=not-httponly"));
-  // scripts should not be able to set httponly cookies by replacing an existing
-  // non-httponly cookie
-  SetACookie(cookieService, "http://httponly.test/", "test=not-httponly");
-  SetACookieNoHttp(cookieService, "http://httponly.test/",
-                   "test=httponly; httponly");
-  GetACookieNoHttp(cookieService, "http://httponly.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=not-httponly"));
-
   // *** Cookie prefix tests
 
   // prefixed cookies can't be set from insecure HTTP
@@ -760,6 +723,7 @@ TEST(TestCookie, TestCookieMain)
   GetACookieNoHttp(cookieService, "https://www.security.test/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL,
                           "test_modify_cookie=non-security-cookie"));
+
   // Test the non-security cookie can set when domain or path not same to secure
   // cookie of same name.
   SetACookie(cookieService, "https://www.security.test/", "test=security3");
@@ -769,6 +733,11 @@ TEST(TestCookie, TestCookieMain)
              "test=non-security2; domain=security.test");
   GetACookieNoHttp(cookieService, "http://www.security.test/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "test=non-security2"));
+
+  Preferences::SetBool("network.cookie.sameSite.schemeful", true);
+  GetACookieNoHttp(cookieService, "http://www.security.test/", cookie);
+  EXPECT_FALSE(CheckResult(cookie.get(), MUST_CONTAIN, "test=security3"));
+  Preferences::SetBool("network.cookie.sameSite.schemeful", false);
 
   // *** nsICookieManager interface tests
   nsCOMPtr<nsICookieManager> cookieMgr =
@@ -783,39 +752,39 @@ TEST(TestCookie, TestCookieMain)
   // first, ensure a clean slate
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
   // add some cookies
-  EXPECT_TRUE(NS_SUCCEEDED(
-      cookieMgr2->AddNative(NS_LITERAL_CSTRING("cookiemgr.test"),  // domain
-                            NS_LITERAL_CSTRING("/foo"),            // path
-                            NS_LITERAL_CSTRING("test1"),           // name
-                            NS_LITERAL_CSTRING("yes"),             // value
-                            false,                                 // is secure
-                            false,      // is httponly
-                            true,       // is session
-                            INT64_MAX,  // expiry time
-                            &attrs,     // originAttributes
-                            nsICookie::SAMESITE_NONE)));
-  EXPECT_TRUE(NS_SUCCEEDED(
-      cookieMgr2->AddNative(NS_LITERAL_CSTRING("cookiemgr.test"),  // domain
-                            NS_LITERAL_CSTRING("/foo"),            // path
-                            NS_LITERAL_CSTRING("test2"),           // name
-                            NS_LITERAL_CSTRING("yes"),             // value
-                            false,                                 // is secure
-                            true,                            // is httponly
-                            true,                            // is session
-                            PR_Now() / PR_USEC_PER_SEC + 2,  // expiry time
-                            &attrs,                          // originAttributes
-                            nsICookie::SAMESITE_NONE)));
-  EXPECT_TRUE(NS_SUCCEEDED(
-      cookieMgr2->AddNative(NS_LITERAL_CSTRING("new.domain"),  // domain
-                            NS_LITERAL_CSTRING("/rabbit"),     // path
-                            NS_LITERAL_CSTRING("test3"),       // name
-                            NS_LITERAL_CSTRING("yes"),         // value
-                            false,                             // is secure
-                            false,                             // is httponly
-                            true,                              // is session
-                            INT64_MAX,                         // expiry time
-                            &attrs,  // originAttributes
-                            nsICookie::SAMESITE_NONE)));
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative(
+      NS_LITERAL_CSTRING("cookiemgr.test"),  // domain
+      NS_LITERAL_CSTRING("/foo"),            // path
+      NS_LITERAL_CSTRING("test1"),           // name
+      NS_LITERAL_CSTRING("yes"),             // value
+      false,                                 // is secure
+      false,                                 // is httponly
+      true,                                  // is session
+      INT64_MAX,                             // expiry time
+      &attrs,                                // originAttributes
+      nsICookie::SAMESITE_NONE, nsICookie::SCHEME_HTTPS)));
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative(
+      NS_LITERAL_CSTRING("cookiemgr.test"),  // domain
+      NS_LITERAL_CSTRING("/foo"),            // path
+      NS_LITERAL_CSTRING("test2"),           // name
+      NS_LITERAL_CSTRING("yes"),             // value
+      false,                                 // is secure
+      true,                                  // is httponly
+      true,                                  // is session
+      PR_Now() / PR_USEC_PER_SEC + 2,        // expiry time
+      &attrs,                                // originAttributes
+      nsICookie::SAMESITE_NONE, nsICookie::SCHEME_HTTPS)));
+  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative(
+      NS_LITERAL_CSTRING("new.domain"),  // domain
+      NS_LITERAL_CSTRING("/rabbit"),     // path
+      NS_LITERAL_CSTRING("test3"),       // name
+      NS_LITERAL_CSTRING("yes"),         // value
+      false,                             // is secure
+      false,                             // is httponly
+      true,                              // is session
+      INT64_MAX,                         // expiry time
+      &attrs,                            // originAttributes
+      nsICookie::SAMESITE_NONE, nsICookie::SCHEME_HTTPS)));
   // confirm using enumerator
   nsTArray<RefPtr<nsICookie>> cookies;
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
@@ -1001,10 +970,44 @@ TEST(TestCookie, TestCookieMain)
     SetACookie(cookieService, secureURIs[i], "test=basic; secure");
     GetACookie(cookieService, secureURIs[i], cookie);
     EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=basic"));
+    SetACookie(cookieService, secureURIs[i], "test=basic1");
+    GetACookie(cookieService, secureURIs[i], cookie);
+    EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=basic1"));
   }
 
   // XXX the following are placeholders: add these tests please!
   // *** "noncompliant cookie" tests
   // *** IP address tests
   // *** speed tests
+}
+
+TEST(TestCookie, OnionSite)
+{
+  Preferences::SetBool("dom.securecontext.whitelist_onions", true);
+  Preferences::SetBool("network.cookie.sameSite.laxByDefault", false);
+
+  nsresult rv;
+  nsCString cookie;
+
+  nsCOMPtr<nsICookieService> cookieService =
+      do_GetService(kCookieServiceCID, &rv);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
+  // .onion secure cookie tests
+  SetACookie(cookieService, "http://123456789abcdef.onion/",
+             "test=onion-security; secure");
+  GetACookieNoHttp(cookieService, "https://123456789abcdef.onion/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=onion-security"));
+  SetACookie(cookieService, "http://123456789abcdef.onion/",
+             "test=onion-security2; secure");
+  GetACookieNoHttp(cookieService, "http://123456789abcdef.onion/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=onion-security2"));
+  SetACookie(cookieService, "https://123456789abcdef.onion/",
+             "test=onion-security3; secure");
+  GetACookieNoHttp(cookieService, "http://123456789abcdef.onion/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=onion-security3"));
+  SetACookie(cookieService, "http://123456789abcdef.onion/",
+             "test=onion-security4");
+  GetACookieNoHttp(cookieService, "http://123456789abcdef.onion/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=onion-security4"));
 }

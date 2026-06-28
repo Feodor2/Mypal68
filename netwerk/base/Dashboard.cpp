@@ -275,11 +275,11 @@ nsresult LookupHelper::ConstructAnswer(LookupArgument* aArgument) {
   dict.mAddress.Construct();
 
   Sequence<nsString>& addresses = dict.mAddress.Value();
-
-  if (NS_SUCCEEDED(mStatus)) {
+  nsCOMPtr<nsIDNSAddrRecord> record = do_QueryInterface(aRecord);
+  if (NS_SUCCEEDED(mStatus) && record) {
     dict.mAnswer = true;
     bool hasMore;
-    aRecord->HasMore(&hasMore);
+    record->HasMore(&hasMore);
     while (hasMore) {
       nsString* nextAddress = addresses.AppendElement(fallible);
       if (!nextAddress) {
@@ -287,9 +287,9 @@ nsresult LookupHelper::ConstructAnswer(LookupArgument* aArgument) {
       }
 
       nsCString nextAddressASCII;
-      aRecord->GetNextAddrAsString(nextAddressASCII);
+      record->GetNextAddrAsString(nextAddressASCII);
       CopyASCIItoUTF16(nextAddressASCII, *nextAddress);
-      aRecord->HasMore(&hasMore);
+      record->HasMore(&hasMore);
     }
   } else {
     dict.mAnswer = false;
@@ -701,9 +701,9 @@ Dashboard::RequestDNSLookup(const nsACString& aHost,
       "nsINetDashboardCallback", aCallback, true);
   helper->mEventTarget = GetCurrentEventTarget();
   OriginAttributes attrs;
-  rv = mDnsService->AsyncResolveNative(aHost, 0, helper.get(),
-                                       NS_GetCurrentThread(), attrs,
-                                       getter_AddRefs(helper->mCancel));
+  rv = mDnsService->AsyncResolveNative(
+      aHost, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0, nullptr, helper.get(),
+      NS_GetCurrentThread(), attrs, getter_AddRefs(helper->mCancel));
   return rv;
 }
 

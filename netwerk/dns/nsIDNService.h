@@ -10,6 +10,7 @@
 #include "nsWeakReference.h"
 
 #include "unicode/uidna.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
 #include "mozilla/net/IDNBlocklistUtils.h"
 #include "mozilla/intl/IDNA.h"
@@ -99,7 +100,7 @@ class nsIDNService final : public nsIIDNService,
   void prefsChanged(const char* pref);
 
   static void PrefChanged(const char* aPref, void* aSelf) {
-    auto self = static_cast<nsIDNService*>(aSelf);
+    auto* self = static_cast<nsIDNService*>(aSelf);
     AutoLock lock(self->mLock);
     self->prefsChanged(aPref);
   }
@@ -169,7 +170,7 @@ class nsIDNService final : public nsIIDNService,
   // These members can only be updated on the main thread and
   // read on any thread. Therefore, acquiring the mutex is required
   // only for threads other than the main thread.
-  Lock mLock;
+  Lock2 mLock;
 
   // guarded by mLock
   nsTArray<mozilla::net::BlocklistRange> mIDNBlocklist;

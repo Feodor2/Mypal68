@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsICookie.idl"
 
 %{ C++
 namespace mozilla {
@@ -11,9 +12,6 @@ class OriginAttributes;
 %}
 
 [ptr] native OriginAttributesPtr(mozilla::OriginAttributes);
-
-interface nsICookie;
-interface nsIFile;
 
 /**
  * An optional interface for accessing or removing the cookies
@@ -118,7 +116,8 @@ interface nsICookieManager : nsISupports
            in boolean     aIsSession,
            in int64_t     aExpiry,
            in jsval aOriginAttributes,
-           in int32_t aSameSite);
+           in int32_t aSameSite,
+           in nsICookie_schemeType aSchemeMap);
 
   [notxpcom]
   nsresult addNative(in AUTF8String aHost,
@@ -130,7 +129,8 @@ interface nsICookieManager : nsISupports
                      in boolean     aIsSession,
                      in int64_t     aExpiry,
                      in OriginAttributesPtr aOriginAttributes,
-                     in int32_t aSameSite);
+                     in int32_t aSameSite,
+                     in nsICookie_schemeType aSchemeMap);
 
   /**
    * Find whether a given cookie already exists.
@@ -195,15 +195,6 @@ interface nsICookieManager : nsISupports
   [implicit_jscontext]
   Array<nsICookie> getCookiesFromHost(in AUTF8String aHost,
                                       in jsval aOriginAttributes);
-
-  /**
-   * Import an old-style cookie file. Imported cookies will be added to the
-   * existing database. If the database contains any cookies the same as those
-   * being imported (i.e. domain, name, and path match), they will be replaced.
-   *
-   * @param aCookieFile the file to import, usually cookies.txt
-   */
-  void importCookies(in nsIFile aCookieFile);
 
   /**
    * Returns an array of all cookies whose origin attributes matches aPattern

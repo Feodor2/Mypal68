@@ -91,10 +91,6 @@ enum class SpdyVersion {
 // on ERROR_NET_RESET.
 #define NS_HTTP_CONNECTION_RESTARTABLE (1 << 13)
 
-// Disallow name resolutions for this transaction to use TRR - primarily
-// for use with TRR implementations themselves
-#define NS_HTTP_DISABLE_TRR (1 << 14)
-
 // Allow re-using a spdy/http2 connection with NS_HTTP_ALLOW_KEEPALIVE not set.
 // This is primarily used to allow connection sharing for websockets over http/2
 // without accidentally allowing it for websockets not over http/2
@@ -111,8 +107,20 @@ enum class SpdyVersion {
 // The connection should not use IPv6
 #define NS_HTTP_DISABLE_IPV6 (1 << 18)
 
+// Encodes the TRR mode.
+#define NS_HTTP_TRR_MODE_MASK ((1 << 19) | (1 << 20))
+
 // The connection could bring the peeked data for sniffing
 #define NS_HTTP_CALL_CONTENT_SNIFFER (1 << 21)
+
+// Force a transaction to stay in pending queue until the HTTPSSVC record is
+// available.
+#define NS_HTTP_WAIT_HTTPSSVC_RESULT (1 << 23)
+
+#define NS_HTTP_TRR_FLAGS_FROM_MODE(x) ((static_cast<uint32_t>(x) & 3) << 19)
+
+#define NS_HTTP_TRR_MODE_FROM_FLAGS(x) \
+  (static_cast<nsIRequest::TRRMode>((((x)&NS_HTTP_TRR_MODE_MASK) >> 19) & 3))
 
 //-----------------------------------------------------------------------------
 // some default values
@@ -325,6 +333,11 @@ void LogHeaders(const char* lineStart);
 // This function should be only used when we get a failed response to the
 // CONNECT method.
 nsresult HttpProxyResponseToErrorCode(uint32_t aStatusCode);
+
+// Given a list of alpn-id, this function returns a supported alpn-id. If both
+// h3 and h2 are enabled, h3 alpn is preferred. This function returns an empty
+// string if no supported alpn-id is found.
+nsCString SelectAlpnFromAlpnList(const nsACString& aAlpnList, bool aNoHttp2);
 
 }  // namespace net
 }  // namespace mozilla

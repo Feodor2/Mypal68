@@ -23,6 +23,7 @@
 #include "nsIPrefBranch.h"
 #include "nsIFile.h"
 #include "nsIOService.h"
+#include "nsIThread.h" //MY
 #include "nsDirectoryServiceDefs.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsThreadUtils.h"

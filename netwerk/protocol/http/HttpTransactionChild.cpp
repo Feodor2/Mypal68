@@ -14,6 +14,8 @@
 #include "nsHttpHandler.h"
 #include "nsProxyInfo.h"
 #include "nsProxyRelease.h"
+#include "nsQueryObject.h"
+#include "nsSerializationHelper.h"
 
 namespace mozilla {
 namespace net {
@@ -334,7 +336,8 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
   Unused << SendOnStartRequest(status, optionalHead, serializedSecurityInfoOut,
                                mTransaction->ProxyConnectFailed(),
                                ToTimingStructArgs(mTransaction->Timings()),
-                               proxyConnectResponseCode, dataForSniffer);
+                               proxyConnectResponseCode, dataForSniffer,
+                               mTransaction->TakeRestartedState());
   LOG(("HttpTransactionChild::OnStartRequest end [this=%p]\n", this));
   return NS_OK;
 }
@@ -361,11 +364,14 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     responseTrailers.emplace(*headerArray);
   }
 
-  Unused << SendOnStopRequest(
-      aStatus, mTransaction->ResponseIsComplete(),
-      mTransaction->GetTransferSize(),
-      ToTimingStructArgs(mTransaction->Timings()), responseTrailers,
-      mTransaction->HasStickyConnection(), mTransactionObserverResult);
+  int64_t requestSize = mTransaction->GetRequestSize();
+
+  Unused << SendOnStopRequest(aStatus, mTransaction->ResponseIsComplete(),
+                              mTransaction->GetTransferSize(),
+                              ToTimingStructArgs(mTransaction->Timings()),
+                              responseTrailers,
+                              mTransaction->HasStickyConnection(),
+                              mTransactionObserverResult, requestSize);
 
   return NS_OK;
 }

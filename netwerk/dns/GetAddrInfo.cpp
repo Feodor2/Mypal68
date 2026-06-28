@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GetAddrInfo.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/net/DNS.h"
 #include "prnetdb.h"
 #include "nsHostResolver.h"
@@ -12,6 +13,7 @@
 #include "prerror.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_network.h"
 
 #ifdef DNSQUERY_AVAILABLE
 // There is a bug in windns.h where the type of parameter ppQueryResultsSet for
@@ -162,7 +164,7 @@ _GetAddrInfo_Portable(const nsACString& aCanonHost, uint16_t aAddressFamily,
   RefPtr<AddrInfo> ai(new AddrInfo(aCanonHost, prai, disableIPv4,
                                    filterNameCollision, canonName));
   PR_FreeAddrInfo(prai);
-  if (ai->mAddresses.isEmpty()) {
+  if (ai->Addresses().IsEmpty()) {
     return NS_ERROR_UNKNOWN_HOST;
   }
 
@@ -189,6 +191,11 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
   if (NS_WARN_IF(aHost.IsEmpty()) || NS_WARN_IF(!aAddrInfo)) {
     return NS_ERROR_NULL_POINTER;
   }
+  *aAddrInfo = nullptr;
+
+  if (StaticPrefs::network_dns_disabled()) {
+    return NS_ERROR_UNKNOWN_HOST;
+  }
 
 #ifdef DNSQUERY_AVAILABLE
   // The GetTTLData needs the canonical name to function properly
@@ -204,16 +211,17 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
     aAddressFamily = PR_AF_INET;
   }
 
-  *aAddrInfo = nullptr;
-  nsresult rv = _GetAddrInfo_Portable(host, aAddressFamily, aFlags, aAddrInfo);
+  RefPtr<AddrInfo> info;
+  nsresult rv =
+      _GetAddrInfo_Portable(host, aAddressFamily, aFlags, getter_AddRefs(info));
 
 #ifdef DNSQUERY_AVAILABLE
   if (aGetTtl && NS_SUCCEEDED(rv)) {
     // Figure out the canonical name, or if that fails, just use the host name
     // we have.
     nsAutoCString name;
-    if (*aAddrInfo != nullptr && !(*aAddrInfo)->mCanonicalName.IsEmpty()) {
-      name = (*aAddrInfo)->mCanonicalName;
+    if (info && !info->CanonicalHostname().IsEmpty()) {
+      name = info->CanonicalHostname();
     } else {
       name = host;
     }
@@ -222,7 +230,9 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
     uint32_t ttl = 0;
     nsresult ttlRv = _GetTTLData_Windows(name, &ttl, aAddressFamily);
     if (NS_SUCCEEDED(ttlRv)) {
-      (*aAddrInfo)->ttl = ttl;
+      auto builder = info->Build();
+      builder.SetTTL(ttl);
+      info = builder.Finish();
       LOG("Got TTL %u for %s (name = %s).", ttl, host.get(), name.get());
     } else {
       LOG_WARNING("Could not get TTL for %s (cname = %s).", host.get(),
@@ -231,6 +241,7 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
   }
 #endif
 
+  info.forget(aAddrInfo);
   return rv;
 }
 

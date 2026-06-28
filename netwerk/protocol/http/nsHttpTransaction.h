@@ -12,6 +12,7 @@
 #include "EventTokenBucket.h"
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
+#include "nsIDNSListener.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsTHashMap.h"
@@ -49,13 +50,15 @@ class nsHttpTransaction final : public nsAHttpTransaction,
                                 public ATokenBucketEvent,
                                 public nsIInputStreamCallback,
                                 public nsIOutputStreamCallback,
-                                public ARefBase {
+                                public ARefBase,
+                                public nsIDNSListener {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSAHTTPTRANSACTION
   NS_DECL_HTTPTRANSACTIONSHELL
   NS_DECL_NSIINPUTSTREAMCALLBACK
   NS_DECL_NSIOUTPUTSTREAMCALLBACK
+  NS_DECL_NSIDNSLISTENER
 
   nsHttpTransaction();
 
@@ -73,6 +76,9 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   void EnableKeepAlive() { mCaps |= NS_HTTP_ALLOW_KEEPALIVE; }
   void MakeSticky() { mCaps |= NS_HTTP_STICKY_CONNECTION; }
+  void MakeNonSticky() override { mCaps &= ~NS_HTTP_STICKY_CONNECTION; }
+
+  void MakeDontWaitHTTPSSVC() { mCaps &= ~NS_HTTP_WAIT_HTTPSSVC_RESULT; }
 
   // SetPriority() may only be used by the connection manager.
   void SetPriority(int32_t priority) { mPriority = priority; }
@@ -114,16 +120,16 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   void SetResponseStart(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
   void SetResponseEnd(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
 
-  MOZ_MUST_USE bool Do0RTT() override;
-  MOZ_MUST_USE nsresult Finish0RTT(bool aRestart,
-                                   bool aAlpnChanged /* ignored */) override;
+  [[nodiscard]] bool Do0RTT() override;
+  [[nodiscard]] nsresult Finish0RTT(bool aRestart,
+                                    bool aAlpnChanged /* ignored */) override;
 
   // After Finish0RTT early data may have failed but the caller did not request
   // restart - this indicates that state for dev tools
   void Refused0RTT();
 
-  MOZ_MUST_USE bool CanDo0RTT() override;
-  MOZ_MUST_USE nsresult RestartOnFastOpenError() override;
+  [[nodiscard]] bool CanDo0RTT() override;
+  [[nodiscard]] nsresult RestartOnFastOpenError() override;
 
   uint64_t TopLevelOuterContentWindowId() override {
     return mTopLevelOuterContentWindowId;
@@ -144,28 +150,30 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // transaction.
   void OnPush(Http2PushedStreamWrapper* aStream);
 
+  void UpdateConnectionInfo(nsHttpConnectionInfo* aConnInfo);
+
  private:
   friend class DeleteHttpTransaction;
   virtual ~nsHttpTransaction();
 
-  MOZ_MUST_USE nsresult Restart();
+  [[nodiscard]] nsresult Restart();
   char* LocateHttpStart(char* buf, uint32_t len, bool aAllowPartialMatch);
-  MOZ_MUST_USE nsresult ParseLine(nsACString& line);
-  MOZ_MUST_USE nsresult ParseLineSegment(char* seg, uint32_t len);
-  MOZ_MUST_USE nsresult ParseHead(char*, uint32_t count, uint32_t* countRead);
-  MOZ_MUST_USE nsresult HandleContentStart();
-  MOZ_MUST_USE nsresult HandleContent(char*, uint32_t count,
-                                      uint32_t* contentRead,
-                                      uint32_t* contentRemaining);
-  MOZ_MUST_USE nsresult ProcessData(char*, uint32_t, uint32_t*);
+  [[nodiscard]] nsresult ParseLine(nsACString& line);
+  [[nodiscard]] nsresult ParseLineSegment(char* seg, uint32_t len);
+  [[nodiscard]] nsresult ParseHead(char*, uint32_t count, uint32_t* countRead);
+  [[nodiscard]] nsresult HandleContentStart();
+  [[nodiscard]] nsresult HandleContent(char*, uint32_t count,
+                                       uint32_t* contentRead,
+                                       uint32_t* contentRemaining);
+  [[nodiscard]] nsresult ProcessData(char*, uint32_t, uint32_t*);
   void DeleteSelfOnConsumerThread();
   void ReleaseBlockingTransaction();
 
-  static MOZ_MUST_USE nsresult ReadRequestSegment(nsIInputStream*, void*,
-                                                  const char*, uint32_t,
-                                                  uint32_t, uint32_t*);
-  static MOZ_MUST_USE nsresult WritePipeSegment(nsIOutputStream*, void*, char*,
-                                                uint32_t, uint32_t, uint32_t*);
+  [[nodiscard]] static nsresult ReadRequestSegment(nsIInputStream*, void*,
+                                                   const char*, uint32_t,
+                                                   uint32_t, uint32_t*);
+  [[nodiscard]] static nsresult WritePipeSegment(nsIOutputStream*, void*, char*,
+                                                 uint32_t, uint32_t, uint32_t*);
 
   bool TimingEnabled() const { return mCaps & NS_HTTP_TIMING_ENABLED; }
 
@@ -182,6 +190,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // connection from very start of the authentication process.
   void CheckForStickyAuthScheme();
   void CheckForStickyAuthSchemeAt(nsHttpAtom const& header);
+  bool IsStickyAuthSchemeAt(nsACString const& auth);
 
   // Called from WriteSegments.  Checks for conditions whether to throttle
   // reading the content.  When this returns true, WriteSegments returns
@@ -232,6 +241,10 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   RefPtr<nsAHttpConnection> mConnection;
   RefPtr<nsHttpConnectionInfo> mConnInfo;
+  // This is only set in UpdateConnectionInfo() when we have received a SVCB RR.
+  // When the SVCB connection is failed, this transaction will be restarted with
+  // this fallback connection info.
+  RefPtr<nsHttpConnectionInfo> mFallbackConnInfo;
   nsHttpRequestHead* mRequestHead;    // weak ref
   nsHttpResponseHead* mResponseHead;  // owning pointer
 
@@ -339,6 +352,10 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   UniquePtr<nsHttpHeaderArray> mForTakeResponseTrailers;
   bool mResponseTrailersTaken;
 
+  // Set when this transaction was restarted by call to Restart().  Used to tell
+  // the http channel to reset proxy authentication.
+  Atomic<bool> mRestarted;
+
   // The time when the transaction was submitted to the Connection Manager
   TimeStamp mPendingTime;
 
@@ -417,11 +434,12 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // H2 websocket support
   RefPtr<SpdyConnectTransaction> mH2WSTransaction;
 
-  bool mThroughCaptivePortal;
   int32_t mProxyConnectResponseCode;
 
   OnPushCallback mOnPushCallback;
   nsTHashMap<uint32_t, RefPtr<Http2PushedStreamWrapper>> mIDToStreamMap;
+
+  nsCOMPtr<nsICancelable> mDNSRequest;
 };
 
 }  // namespace net

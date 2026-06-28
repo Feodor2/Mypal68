@@ -56,17 +56,16 @@ class nsDNSService final : public nsPIDNSService,
                               nsIIDNService* aIDN, nsACString& aACE);
 
   nsresult AsyncResolveInternal(
-      const nsACString& aHostname, const nsACString& aTrrServer,
-      uint16_t type, uint32_t flags, nsIDNSListener* aListener,
+      const nsACString& aHostname, uint16_t type, uint32_t flags,
+      nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener,
       nsIEventTarget* target_,
       const mozilla::OriginAttributes& aOriginAttributes,
       nsICancelable** result);
 
   nsresult CancelAsyncResolveInternal(
-      const nsACString& aHostname, const nsACString& aTrrServer,
-      uint16_t aType, uint32_t aFlags, nsIDNSListener* aListener,
-      nsresult aReason,
-      const mozilla::OriginAttributes& aOriginAttributes);
+      const nsACString& aHostname, uint16_t aType, uint32_t aFlags,
+      nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener,
+      nsresult aReason, const mozilla::OriginAttributes& aOriginAttributes);
 
   nsresult ResolveInternal(const nsACString& aHostname, uint32_t flags,
                            const mozilla::OriginAttributes& aOriginAttributes,
@@ -78,7 +77,7 @@ class nsDNSService final : public nsPIDNSService,
   nsCOMPtr<nsIIDNService> mIDN;
 
   // mLock protects access to mResolver, mLocalDomains and mIPv4OnlyDomains
-  Lock mLock;
+  Lock2 mLock;
 
   // mIPv4OnlyDomains is a comma-separated list of domains for which only
   // IPv4 DNS lookups are performed. This allows the user to disable IPv6 on

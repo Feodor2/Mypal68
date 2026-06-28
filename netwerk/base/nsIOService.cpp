@@ -46,7 +46,6 @@
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/net/CaptivePortalService.h"
 #include "mozilla/net/SocketProcessHost.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/SSLTokensCache.h"
@@ -56,6 +55,8 @@
 #include "nsExceptionHandler.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "nsNSSComponent.h"
+#include "ssl.h"
 
 #ifdef MOZ_WIDGET_GTK
 #  include "nsGIOProtocolHandler.h"
@@ -78,7 +79,6 @@ using mozilla::dom::ServiceWorkerDescriptor;
 #define NECKO_BUFFER_CACHE_COUNT_PREF "network.buffer.cache.count"
 #define NECKO_BUFFER_CACHE_SIZE_PREF "network.buffer.cache.size"
 #define NETWORK_NOTIFY_CHANGED_PREF "network.notify.changed"
-#define NETWORK_CAPTIVE_PORTAL_PREF "network.captive-portal-service.enabled"
 #define WEBRTC_PREF_PREFIX "media.peerconnection."
 #define NETWORK_DNS_PREF "network.dns."
 
@@ -86,7 +86,6 @@ using mozilla::dom::ServiceWorkerDescriptor;
 
 nsIOService* gIOService;
 static bool gHasWarnedUploadChannel2;
-static bool gCaptivePortalEnabled = false;
 static LazyLogModule gIOServiceLog("nsIOService");
 #undef LOG
 #define LOG(args) MOZ_LOG(gIOServiceLog, LogLevel::Debug, args)
@@ -205,13 +204,38 @@ static const char* gCallbackPrefs[] = {
     NECKO_BUFFER_CACHE_COUNT_PREF,
     NECKO_BUFFER_CACHE_SIZE_PREF,
     NETWORK_NOTIFY_CHANGED_PREF,
-    NETWORK_CAPTIVE_PORTAL_PREF,
     nullptr,
 };
 
 static const char* gCallbackPrefsForSocketProcess[] = {
     WEBRTC_PREF_PREFIX,
     NETWORK_DNS_PREF,
+    "network.ssl_tokens_cache_enabled",
+    "network.trr.",
+    "network.dns.disableIPv6",
+    "network.dns.skipTRR-when-parental-control-enabled",
+    nullptr,
+};
+
+static const char* gCallbackSecurityPrefs[] = {
+    // Note the prefs listed below should be in sync with the code in
+    // HandleTLSPrefChange().
+    "security.tls.version.min",
+    "security.tls.version.max",
+    "security.tls.version.enable-deprecated",
+    "security.tls.hello_downgrade_check",
+    "security.ssl.require_safe_negotiation",
+    "security.ssl.enable_false_start",
+    "security.ssl.enable_alpn",
+    "security.tls.enable_0rtt_data",
+    "security.ssl.disable_session_identifiers",
+    "security.tls.enable_post_handshake_auth",
+    "security.tls.enable_delegated_credentials",
+    // Note the prefs listed below should be in sync with the code in
+    // SetValidationOptionsCommon().
+    "security.ssl.enable_ocsp_stapling",
+    "security.ssl.enable_ocsp_must_staple",
+    "security.pki.certificate_transparency.mode",
     nullptr,
 };
 
@@ -224,8 +248,6 @@ nsresult nsIOService::Init() {
 
   SSLTokensCache::Init();
 
-  InitializeCaptivePortalService();
-
   // setup our bad port list stuff
   for (int i = 0; gBadPortList[i]; i++)
     mRestrictedPortList.AppendElement(gBadPortList[i]);
@@ -235,18 +257,34 @@ nsresult nsIOService::Init() {
                                        gCallbackPrefs, this);
   PrefsChanged();
 
+  mSocketProcessTopicBlackList.PutEntry(
+      NS_LITERAL_CSTRING(NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID));
+  mSocketProcessTopicBlackList.PutEntry(
+      NS_LITERAL_CSTRING(NS_XPCOM_SHUTDOWN_OBSERVER_ID));
+  mSocketProcessTopicBlackList.PutEntry(
+      NS_LITERAL_CSTRING("xpcom-shutdown-threads"));
+  mSocketProcessTopicBlackList.PutEntry(
+      NS_LITERAL_CSTRING("profile-do-change"));
+
   // Register for profile change notifications
-  nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
-  if (observerService) {
-    observerService->AddObserver(this, kProfileChangeNetTeardownTopic, true);
-    observerService->AddObserver(this, kProfileChangeNetRestoreTopic, true);
-    observerService->AddObserver(this, kProfileDoChange, true);
-    observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
-    observerService->AddObserver(this, NS_NETWORK_LINK_TOPIC, true);
-    observerService->AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true);
-    observerService->AddObserver(this, NS_PREFSERVICE_READ_TOPIC_ID, true);
-  } else
-    NS_WARNING("failed to get observer service");
+  mObserverService = services::GetObserverService();
+  AddObserver(this, kProfileChangeNetTeardownTopic, true);
+  AddObserver(this, kProfileChangeNetRestoreTopic, true);
+  AddObserver(this, kProfileDoChange, true);
+  AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
+  AddObserver(this, NS_NETWORK_LINK_TOPIC, true);
+  AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true);
+
+  // Register observers for sending notifications to nsSocketTransportService
+  if (XRE_IsParentProcess()) {
+    AddObserver(this, "profile-initial-state", true);
+    AddObserver(this, NS_WIDGET_SLEEP_OBSERVER_TOPIC, true);
+  }
+
+  if (IsSocketProcessChild()) {
+    Preferences::RegisterCallbacks(nsIOService::OnTLSPrefChange,
+                                   gCallbackSecurityPrefs, this);
+  }
 
   gIOService = this;
 
@@ -258,6 +296,65 @@ nsresult nsIOService::Init() {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsIOService::AddObserver(nsIObserver* aObserver, const char* aTopic,
+                         bool aOwnsWeak) {
+  if (!mObserverService) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // Register for the origional observer.
+  nsresult rv = mObserverService->AddObserver(aObserver, aTopic, aOwnsWeak);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (!XRE_IsParentProcess()) {
+    return NS_OK;
+  }
+
+  if (!UseSocketProcess()) {
+    return NS_OK;
+  }
+
+  nsAutoCString topic(aTopic);
+  if (mSocketProcessTopicBlackList.Contains(topic)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // Avoid registering  duplicate topics.
+  if (mObserverTopicForSocketProcess.Contains(topic)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mObserverTopicForSocketProcess.PutEntry(topic);
+
+  // This happens when AddObserver() is called by nsIOService::Init(). We don't
+  // want to add nsIOService again.
+  if (SameCOMIdentity(aObserver, static_cast<nsIObserver*>(this))) {
+    return NS_OK;
+  }
+
+  return mObserverService->AddObserver(this, aTopic, true);
+}
+
+NS_IMETHODIMP
+nsIOService::RemoveObserver(nsIObserver* aObserver, const char* aTopic) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsIOService::EnumerateObservers(const char* aTopic,
+                                nsISimpleEnumerator** anEnumerator) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP nsIOService::NotifyObservers(nsISupports* aSubject,
+                                           const char* aTopic,
+                                           const char16_t* aSomeData) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 nsIOService::~nsIOService() {
   if (gIOService) {
     MOZ_ASSERT(gIOService == this);
@@ -265,19 +362,25 @@ nsIOService::~nsIOService() {
   }
 }
 
-nsresult nsIOService::InitializeCaptivePortalService() {
-  if (XRE_GetProcessType() != GeckoProcessType_Default) {
-    // We only initalize a captive portal service in the main process
-    return NS_OK;
+// static
+void nsIOService::OnTLSPrefChange(const char* aPref, void* aSelf) {
+  MOZ_ASSERT(IsSocketProcessChild());
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    LOG(("NSS not initialized."));
+    return;
   }
 
-  mCaptivePortalService = do_GetService(NS_CAPTIVEPORTAL_CID);
-  if (mCaptivePortalService) {
-    return static_cast<CaptivePortalService*>(mCaptivePortalService.get())
-        ->Initialize();
+  nsAutoCString pref(aPref);
+  // The preferences listed in gCallbackSecurityPrefs need to be in sync with
+  // the code in HandleTLSPrefChange() and SetValidationOptionsCommon().
+  if (HandleTLSPrefChange(pref)) {
+    LOG(("HandleTLSPrefChange done"));
+  } else if (pref.EqualsLiteral("security.ssl.enable_ocsp_stapling") ||
+             pref.EqualsLiteral("security.ssl.enable_ocsp_must_staple") ||
+             pref.EqualsLiteral("security.pki.certificate_transparency.mode")) {
+    SetValidationOptionsCommon();
   }
-
-  return NS_OK;
 }
 
 nsresult nsIOService::InitializeSocketTransportService() {
@@ -311,10 +414,11 @@ nsresult nsIOService::InitializeNetworkLinkService() {
   }
 
   // go into managed mode if we can, and chrome process
-  if (XRE_IsParentProcess()) {
-    mNetworkLinkService =
-        do_GetService(NS_NETWORK_LINK_SERVICE_CONTRACTID, &rv);
+  if (!XRE_IsParentProcess()) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
+
+  mNetworkLinkService = do_GetService(NS_NETWORK_LINK_SERVICE_CONTRACTID, &rv);
 
   if (mNetworkLinkService) {
     mNetworkLinkServiceInitialized = true;
@@ -379,11 +483,6 @@ nsresult nsIOService::LaunchSocketProcess() {
     return NS_OK;
   }
 
-  if (!XRE_IsE10sParentProcess()) {
-    LOG(("nsIOService skipping LaunchSocketProcess because e10s is disabled"));
-    return NS_OK;
-  }
-
   if (!Preferences::GetBool("network.process.enabled", true)) {
     LOG(("nsIOService skipping LaunchSocketProcess because of the pref"));
     return NS_OK;
@@ -428,15 +527,17 @@ bool nsIOService::SocketProcessReady() {
 static bool sUseSocketProcess = false;
 static bool sUseSocketProcessChecked = false;
 
-bool nsIOService::UseSocketProcess() {
-  if (sUseSocketProcessChecked) {
+// static
+bool nsIOService::UseSocketProcess(bool aCheckAgain) {
+  if (sUseSocketProcessChecked && !aCheckAgain) {
     return sUseSocketProcess;
   }
 
   sUseSocketProcessChecked = true;
-  if (Preferences::GetBool("network.process.enabled")) {
-    sUseSocketProcess = Preferences::GetBool(
-        "network.http.network_access_on_socket_process.enabled", true);
+  sUseSocketProcess = false;
+  if (StaticPrefs::network_process_enabled()) {
+    sUseSocketProcess =
+        StaticPrefs::network_http_network_access_on_socket_process_enabled();
   }
   return sUseSocketProcess;
 }
@@ -451,6 +552,10 @@ void nsIOService::NotifySocketProcessPrefsChanged(const char* aName) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!XRE_IsParentProcess()) {
+    return;
+  }
+
+  if (!StaticPrefs::network_process_enabled()) {
     return;
   }
 
@@ -490,6 +595,7 @@ void nsIOService::CallOrWaitForSocketProcess(
     aFunc();
   } else {
     mPendingEvents.AppendElement(aFunc);  // infallible
+    LaunchSocketProcess();
   }
 }
 
@@ -527,63 +633,14 @@ RefPtr<MemoryReportingProcess> nsIOService::GetSocketProcessMemoryReporter() {
 }
 
 NS_IMPL_ISUPPORTS(nsIOService, nsIIOService, nsINetUtil, nsISpeculativeConnect,
-                  nsIObserver, nsIIOServiceInternal, nsISupportsWeakReference)
+                  nsIObserver, nsIIOServiceInternal, nsISupportsWeakReference,
+                  nsIObserverService)
 
 ////////////////////////////////////////////////////////////////////////////////
-
-nsresult nsIOService::RecheckCaptivePortal() {
-  MOZ_ASSERT(NS_IsMainThread(), "Must be called on the main thread");
-  if (!mCaptivePortalService) {
-    return NS_OK;
-  }
-  nsCOMPtr<nsIRunnable> task = NewRunnableMethod(
-      "nsIOService::RecheckCaptivePortal", mCaptivePortalService,
-      &nsICaptivePortalService::RecheckCaptivePortal);
-  return NS_DispatchToMainThread(task);
-}
-
-nsresult nsIOService::RecheckCaptivePortalIfLocalRedirect(nsIChannel* newChan) {
-  nsresult rv;
-
-  if (!mCaptivePortalService) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIURI> uri;
-  rv = newChan->GetURI(getter_AddRefs(uri));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCString host;
-  rv = uri->GetHost(host);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  PRNetAddr prAddr;
-  if (PR_StringToNetAddr(host.BeginReading(), &prAddr) != PR_SUCCESS) {
-    // The redirect wasn't to an IP literal, so there's probably no need
-    // to trigger the captive portal detection right now. It can wait.
-    return NS_OK;
-  }
-
-  NetAddr netAddr;
-  PRNetAddrToNetAddr(&prAddr, &netAddr);
-  if (IsIPAddrLocal(&netAddr)) {
-    // Redirects to local IP addresses are probably captive portals
-    RecheckCaptivePortal();
-  }
-
-  return NS_OK;
-}
 
 nsresult nsIOService::AsyncOnChannelRedirect(
     nsIChannel* oldChan, nsIChannel* newChan, uint32_t flags,
     nsAsyncRedirectVerifyHelper* helper) {
-  // If a redirect to a local network address occurs, then chances are we
-  // are in a captive portal, so we trigger a recheck.
-  RecheckCaptivePortalIfLocalRedirect(newChan);
 
   // This is silly. I wish there was a simpler way to get at the global
   // reference of the contentSecurityManager. But it lives in the XPCOM
@@ -749,8 +806,7 @@ nsIOService::HostnameIsLocalIPAddress(nsIURI* aURI, bool* aResult) {
   PRNetAddr addr;
   PRStatus result = PR_StringToNetAddr(host.get(), &addr);
   if (result == PR_SUCCESS) {
-    NetAddr netAddr;
-    PRNetAddrToNetAddr(&addr, &netAddr);
+    NetAddr netAddr(&addr);
     if (IsIPAddrLocal(&netAddr)) {
       *aResult = true;
     }
@@ -1073,6 +1129,9 @@ nsIOService::SetOffline(bool offline) {
                                              NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC,
                                              offline ? u"true" : u"false");
     }
+    if (SocketProcessReady()) {
+      Unused << mSocketProcess->GetActor()->SendSetOffline(offline);
+    }
   }
 
   nsIIOService* subject = static_cast<nsIIOService*>(this);
@@ -1149,15 +1208,6 @@ nsresult nsIOService::SetConnectivityInternal(bool aConnectivity) {
     return NS_OK;
   }
   mConnectivity = aConnectivity;
-
-  if (mCaptivePortalService) {
-    if (aConnectivity && gCaptivePortalEnabled) {
-      // This will also trigger a captive portal check for the new network
-      static_cast<CaptivePortalService*>(mCaptivePortalService.get())->Start();
-    } else {
-      static_cast<CaptivePortalService*>(mCaptivePortalService.get())->Stop();
-    }
-  }
 
   nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
   if (!observerService) {
@@ -1284,19 +1334,6 @@ void nsIOService::PrefsChanged(const char* pref) {
       mNetworkNotifyChanged = allow;
     }
   }
-
-  if (!pref || strcmp(pref, NETWORK_CAPTIVE_PORTAL_PREF) == 0) {
-    nsresult rv = Preferences::GetBool(NETWORK_CAPTIVE_PORTAL_PREF,
-                                       &gCaptivePortalEnabled);
-    if (NS_SUCCEEDED(rv) && mCaptivePortalService) {
-      if (gCaptivePortalEnabled) {
-        static_cast<CaptivePortalService*>(mCaptivePortalService.get())
-            ->Start();
-      } else {
-        static_cast<CaptivePortalService*>(mCaptivePortalService.get())->Stop();
-      }
-    }
-  }
 }
 
 void nsIOService::ParsePortList(const char* pref, bool remove) {
@@ -1361,8 +1398,6 @@ nsIOService::NotifyWakeup() {
                                            (u"" NS_NETWORK_LINK_DATA_CHANGED));
   }
 
-  RecheckCaptivePortal();
-
   return NS_OK;
 }
 
@@ -1392,10 +1427,7 @@ nsIOService::Observe(nsISupports* subject, const char* topic,
       SetOffline(false);
     }
   } else if (!strcmp(topic, kProfileDoChange)) {
-    if (!data) {
-      return NS_OK;
-    }
-    if (NS_LITERAL_STRING("startup").Equals(data)) {
+    if (data && NS_LITERAL_STRING("startup").Equals(data)) {
       // Lazy initialization of network link service (see bug 620472)
       InitializeNetworkLinkService();
       // Set up the initilization flag regardless the actuall result.
@@ -1410,9 +1442,6 @@ nsIOService::Observe(nsISupports* subject, const char* topic,
       // before something calls into the cookie service.
       nsCOMPtr<nsISupports> cookieServ =
           do_GetService(NS_COOKIESERVICE_CONTRACTID);
-    } else if (NS_LITERAL_STRING("xpcshell-do-get-profile").Equals(data)) {
-      // xpcshell doesn't read user profile.
-      LaunchSocketProcess();
     }
   } else if (!strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
     // Remember we passed XPCOM shutdown notification to prevent any
@@ -1427,14 +1456,15 @@ nsIOService::Observe(nsISupports* subject, const char* topic,
 
     SetOffline(true);
 
-    if (mCaptivePortalService) {
-      static_cast<CaptivePortalService*>(mCaptivePortalService.get())->Stop();
-      mCaptivePortalService = nullptr;
-    }
-
     SSLTokensCache::Shutdown();
 
     DestroySocketProcess();
+
+    if (IsSocketProcessChild()) {
+      Preferences::UnregisterCallbacks(nsIOService::OnTLSPrefChange,
+                                       gCallbackSecurityPrefs, this);
+      NSSShutdownForSocketProcess();
+    }
   } else if (!strcmp(topic, NS_NETWORK_LINK_TOPIC)) {
     OnNetworkLinkEvent(NS_ConvertUTF16toUTF8(data).get());
   } else if (!strcmp(topic, NS_WIDGET_WAKE_OBSERVER_TOPIC)) {
@@ -1443,10 +1473,17 @@ nsIOService::Observe(nsISupports* subject, const char* topic,
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1152048#c19
     nsCOMPtr<nsIRunnable> wakeupNotifier = new nsWakeupNotifier(this);
     NS_DispatchToMainThread(wakeupNotifier);
-  } else if (!strcmp(topic, NS_PREFSERVICE_READ_TOPIC_ID)) {
-    // Launch socket process after we load user's pref. This is to make sure
-    // that socket process can get the latest prefs.
-    LaunchSocketProcess();
+  }
+
+  if (UseSocketProcess() &&
+      mObserverTopicForSocketProcess.Contains(nsDependentCString(topic))) {
+    nsCString topicStr(topic);
+    nsString dataStr(data);
+    auto sendObserver = [topicStr, dataStr]() {
+      Unused << gIOService->mSocketProcess->GetActor()->SendNotifyObserver(
+          topicStr, dataStr);
+    };
+    CallOrWaitForSocketProcess(sendObserver);
   }
 
   return NS_OK;
@@ -1580,9 +1617,6 @@ nsresult nsIOService::OnNetworkLinkEvent(const char* data) {
 
   bool isUp = true;
   if (!strcmp(data, NS_NETWORK_LINK_DATA_CHANGED)) {
-    // CHANGED means UP/DOWN didn't change
-    // but the status of the captive portal may have changed.
-    RecheckCaptivePortal();
     return NS_OK;
   }
   if (!strcmp(data, NS_NETWORK_LINK_DATA_DOWN)) {

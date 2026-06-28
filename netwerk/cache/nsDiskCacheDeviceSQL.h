@@ -250,7 +250,7 @@ class nsOfflineCacheDevice final : public nsCacheDevice, public nsISupports {
   int32_t mDeltaCounter;
   bool mAutoShutdown;
 
-  Lock mLock;
+  Lock2 mLock;
 
   nsInterfaceHashtable<nsCStringHashKey, nsIWeakReference> mCaches;
   nsClassHashtable<nsCStringHashKey, nsCString> mActiveCachesByGroup;

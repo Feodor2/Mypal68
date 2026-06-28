@@ -133,7 +133,7 @@ class nsCacheRequest : public PRCList {
   uint32_t mInfo;
   nsICacheListener* mListener;  // strong ref
   nsCOMPtr<nsIEventTarget> mEventTarget;
-  Lock mLock;
+  Lock2 mLock;
   ConditionVariable mCondVar;
   nsCOMPtr<nsIFile> mProfileDir;
 };

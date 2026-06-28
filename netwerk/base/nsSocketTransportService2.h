@@ -119,10 +119,6 @@ class nsSocketTransportService final : public nsPISocketTransportService,
 
   PRIntervalTime MaxTimeForPrClosePref() { return mMaxTimeForPrClosePref; }
 
-  bool IsEsniEnabled() {
-    return mEsniEnabled && !mTrustedMitmDetected && !mNotTrustedMitmDetected;
-  }
-
   void SetNotTrustedMitmDetected() { mNotTrustedMitmDetected = true; }
 
  protected:
@@ -316,8 +312,6 @@ class nsSocketTransportService final : public nsPISocketTransportService,
 
   void TryRepairPollableEvent();
 
-  bool mEsniEnabled;
-  bool mTrustedMitmDetected;
   bool mNotTrustedMitmDetected;
 };
 

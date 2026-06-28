@@ -65,7 +65,7 @@ class nsDeleteDir {
   nsresult RemoveDir(nsIFile* file, bool* stopDeleting);
 
   static nsDeleteDir* gInstance;
-  Lock mLock;
+  Lock2 mLock;
   ConditionVariable mCondVar;
   bool mNotified;
   nsCOMArray<nsITimer> mTimers;

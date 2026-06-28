@@ -1,6 +1,6 @@
 "use strict";
 
-const { NodeServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
   Ci.nsIDNSService
 );
@@ -74,7 +74,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.trr.excluded-domains");
   Services.prefs.clearUserPref("network.trr.builtin-excluded-domains");
   Services.prefs.clearUserPref("network.trr.clear-cache-on-pref-change");
-  Services.prefs.clearUserPref("captivedetect.canonicalURL");
 
   Services.prefs.clearUserPref("network.http.spdy.enabled");
   Services.prefs.clearUserPref("network.http.spdy.enabled.http2");
@@ -85,6 +84,15 @@ registerCleanupFunction(() => {
   );
 });
 
+// This is an IP that is local, so we don't crash when connecting to it,
+// but also connecting to it fails, so we attempt to retry with regular DNS.
+const BAD_IP = (() => {
+  if (mozinfo.os == "linux") {
+    return "127.9.9.9";
+  }
+  return "0.0.0.0";
+})();
+
 class DNSListener {
   constructor(
     name,
@@ -92,7 +100,8 @@ class DNSListener {
     expectedSuccess = true,
     delay,
     trrServer = "",
-    expectEarlyFail = false
+    expectEarlyFail = false,
+    flags = 0
   ) {
     this.name = name;
     this.expectedAnswer = expectedAnswer;
@@ -101,29 +110,23 @@ class DNSListener {
     this.promise = new Promise(resolve => {
       this.resolve = resolve;
     });
-    if (trrServer == "") {
+
+    let resolverInfo =
+      trrServer == "" ? null : dns.newTRRResolverInfo(trrServer);
+    try {
       this.request = dns.asyncResolve(
         name,
-        0,
+        Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+        flags,
+        resolverInfo,
         this,
         mainThread,
         defaultOriginAttributes
       );
-    } else {
-      try {
-        this.request = dns.asyncResolveWithTrrServer(
-          name,
-          trrServer,
-          0,
-          this,
-          mainThread,
-          defaultOriginAttributes
-        );
-        Assert.ok(!expectEarlyFail);
-      } catch (e) {
-        Assert.ok(expectEarlyFail);
-        this.resolve([e]);
-      }
+      Assert.ok(!expectEarlyFail);
+    } catch (e) {
+      Assert.ok(expectEarlyFail);
+      this.resolve([e]);
     }
   }
 
@@ -141,6 +144,7 @@ class DNSListener {
     }
 
     Assert.equal(inStatus, Cr.NS_OK, "Checking status");
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     let answer = inRecord.getNextAddrAsString();
     Assert.equal(
       answer,
@@ -192,26 +196,138 @@ class DNSListener {
     return this.promise.then.apply(this.promise, arguments);
   }
 }
-
-Cu.importGlobalProperties(["fetch"]);
-
 add_task(async function test0_nodeExecute() {
   // This test checks that moz-http2.js running in node is working.
   // This should always be the first test in this file (except for setup)
   // otherwise we may encounter random failures when the http2 server is down.
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let execPort = env.get("MOZNODE_EXEC_PORT");
-  await fetch(`http://127.0.0.1:${execPort}/test`)
-    .then(response => {
-      ok(true, "NodeServer is working");
-    })
-    .catch(e => {
-      ok(false, `There was an error ${e}`);
-    });
+  await NodeServer.execute("bad_id", `"hello"`)
+    .then(() => ok(false, "expecting to throw"))
+    .catch(e => equal(e.message, "Error: could not find id"));
 });
+
+function makeChan(url, mode) {
+  let chan = NetUtil.newChannel({
+    uri: url,
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
+  chan.setTRRMode(mode);
+  return chan;
+}
+
+add_task(
+  { skip_if: () => mozinfo.os == "mac" },
+  async function test_trr_flags() {
+    let httpserv = new HttpServer();
+    httpserv.registerPathHandler("/", function handler(metadata, response) {
+      let content = "ok";
+      response.setHeader("Content-Length", `${content.length}`);
+      response.bodyOutputStream.write(content, content.length);
+    });
+    httpserv.start(-1);
+    const URL = `http://example.com:${httpserv.identity.primaryPort}/`;
+
+    dns.clearCache(true);
+    Services.prefs.setCharPref(
+      "network.trr.uri",
+      `https://localhost:${h2Port}/doh?responseIP=${BAD_IP}`
+    );
+
+    Services.prefs.setIntPref("network.trr.mode", 0);
+    dns.clearCache(true);
+    let chan = makeChan(URL, Ci.nsIRequest.TRR_DEFAULT_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    equal(chan.getTRRMode(), Ci.nsIRequest.TRR_DEFAULT_MODE);
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DISABLED_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    equal(chan.getTRRMode(), Ci.nsIRequest.TRR_DISABLED_MODE);
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_FIRST_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    equal(chan.getTRRMode(), Ci.nsIRequest.TRR_FIRST_MODE);
+    dns.clearCache(true);
+    chan = makeChan(
+      `http://example.com:${httpserv.identity.primaryPort}/`,
+      Ci.nsIRequest.TRR_ONLY_MODE
+    );
+    // Should fail as it tries to connect to local but unavailable IP
+    await new Promise(resolve =>
+      chan.asyncOpen(new ChannelListener(resolve, null, CL_EXPECT_FAILURE))
+    );
+    equal(chan.getTRRMode(), Ci.nsIRequest.TRR_ONLY_MODE);
+
+    dns.clearCache(true);
+    Services.prefs.setCharPref(
+      "network.trr.uri",
+      `https://localhost:${h2Port}/doh?responseIP=${BAD_IP}`
+    );
+    Services.prefs.setIntPref("network.trr.mode", 2);
+
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DEFAULT_MODE);
+    // Does get the IP from TRR, but failure means it falls back to DNS.
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DISABLED_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    // Does get the IP from TRR, but failure means it falls back to DNS.
+    chan = makeChan(URL, Ci.nsIRequest.TRR_FIRST_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_ONLY_MODE);
+    await new Promise(resolve =>
+      chan.asyncOpen(new ChannelListener(resolve, null, CL_EXPECT_FAILURE))
+    );
+
+    dns.clearCache(true);
+    Services.prefs.setCharPref(
+      "network.trr.uri",
+      `https://localhost:${h2Port}/doh?responseIP=${BAD_IP}`
+    );
+    Services.prefs.setIntPref("network.trr.mode", 3);
+
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DEFAULT_MODE);
+    await new Promise(resolve =>
+      chan.asyncOpen(new ChannelListener(resolve, null, CL_EXPECT_FAILURE))
+    );
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DISABLED_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_FIRST_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_ONLY_MODE);
+    await new Promise(resolve =>
+      chan.asyncOpen(new ChannelListener(resolve, null, CL_EXPECT_FAILURE))
+    );
+
+    dns.clearCache(true);
+    Services.prefs.setIntPref("network.trr.mode", 5);
+    Services.prefs.setCharPref(
+      "network.trr.uri",
+      `https://localhost:${h2Port}/doh?responseIP=1.1.1.1`
+    );
+
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DEFAULT_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_DISABLED_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_FIRST_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+    dns.clearCache(true);
+    chan = makeChan(URL, Ci.nsIRequest.TRR_ONLY_MODE);
+    await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
+
+    await new Promise(resolve => httpserv.stop(resolve));
+  }
+);
 
 // verify basic A record
 add_task(async function test1() {
@@ -754,16 +870,21 @@ add_task(async function test24e() {
   await new DNSListener("bar.example.com", "127.0.0.1");
 });
 
-// TRR-first check that captivedetect.canonicalURL is resolved via native DNS
-add_task(async function test24f() {
-  dns.clearCache(true);
-  Services.prefs.setCharPref(
-    "captivedetect.canonicalURL",
-    "http://test.detectportal.com/success.txt"
-  );
-
-  await new DNSListener("test.detectportal.com", "127.0.0.1");
-});
+function observerPromise(topic) {
+  return new Promise(resolve => {
+    let observer = {
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
+      observe(aSubject, aTopic, aData) {
+        dump(`observe: ${aSubject}, ${aTopic}, ${aData} \n`);
+        if (aTopic == topic) {
+          Services.obs.removeObserver(observer, topic);
+          resolve(aData);
+        }
+      },
+    };
+    Services.obs.addObserver(observer, topic);
+  });
+}
 
 // TRR-first check that DNS result is used if domain is part of the builtin-excluded-domains pref
 add_task(async function test24h() {
@@ -861,22 +982,6 @@ add_task(async function test25d() {
   );
 
   await new DNSListener("domain.other", "127.0.0.1");
-});
-
-// TRR-only check that captivedetect.canonicalURL is resolved via native DNS
-add_task(async function test25e() {
-  dns.clearCache(true);
-  Services.prefs.setIntPref("network.trr.mode", 3); // TRR-only
-  Services.prefs.setCharPref(
-    "captivedetect.canonicalURL",
-    "http://test.detectportal.com/success.txt"
-  );
-  Services.prefs.setCharPref(
-    "network.trr.uri",
-    `https://foo.example.com:${h2Port}/doh?responseIP=192.192.192.192`
-  );
-
-  await new DNSListener("test.detectportal.com", "127.0.0.1");
 });
 
 // TRR-only check that localhost goes directly to native lookup when in the builtin-excluded-domains
@@ -1005,9 +1110,9 @@ add_task(async function test_connection_closed_no_bootstrap_localhost() {
 });
 
 add_task(async function test_connection_closed_no_bootstrap_no_excluded() {
-  // This test exists to document what happens when we're in TRR only mode
-  // and we don't set a bootstrap address. We use DNS to resolve the
-  // initial URI, but if the connection fails, we don't fallback to DNS
+  // This test makes sure that even in mode 3 without a bootstrap address
+  // we are able to restart the TRR connection if it drops - the TRR service
+  // channel will use regular DNS to resolve the TRR address.
   dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 3); // TRR-only
   Services.prefs.setCharPref("network.trr.excluded-domains", "");
@@ -1027,11 +1132,8 @@ add_task(async function test_connection_closed_no_bootstrap_no_excluded() {
     !Components.isSuccessCode(inStatus),
     `${inStatus} should be an error code`
   );
-  [, , inStatus] = await new DNSListener("bar2.example.com", undefined, false);
-  Assert.ok(
-    !Components.isSuccessCode(inStatus),
-    `${inStatus} should be an error code`
-  );
+  dns.clearCache(true);
+  await new DNSListener("bar2.example.com", "3.3.3.3");
 });
 
 add_task(async function test_connection_closed_trr_first() {
@@ -1185,13 +1287,15 @@ add_task(async function test_async_resolve_with_trr_server_5() {
   dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 5); // TRR-user-disabled
 
+  // When dns is resolved in socket process, we can't set |expectEarlyFail| to true.
+  let inSocketProcess = mozinfo.socketprocess_networking;
   let [_] = await new DNSListener(
     "bar_with_trr3.example.com",
     undefined,
     false,
     undefined,
     `https://foo.example.com:${h2Port}/doh?responseIP=3.3.3.3`,
-    true
+    !inSocketProcess
   );
 
   // Call normal AsyncOpen, it will return result from the native resolver.
@@ -1443,7 +1547,7 @@ add_task(async function test_resolve_not_confirmed() {
   Services.prefs.setIntPref("network.trr.mode", 2); // TRR-first
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${h2Port}/doh?responseIP=2::ffff`
+    `https://foo.example.com:${h2Port}/doh?responseIP=7.7.7.7`
   );
   Services.prefs.setCharPref(
     "network.trr.confirmationNS",
@@ -1452,5 +1556,147 @@ add_task(async function test_resolve_not_confirmed() {
 
   await new DNSListener("example.org", "127.0.0.1");
 
+  // Check that the confirmation eventually completes.
+  let count = 100;
+  while (count > 0) {
+    if (count == 50 || count == 10) {
+      // At these two points we do a longer timeout to account for a slow
+      // response on the server side. This is usually a problem on the Android
+      // because of the increased delay between the emulator and host.
+      await new Promise(resolve => do_timeout(100 * (100 / count), resolve));
+    }
+    let [inRequest, inRecord, inStatus] = await new DNSListener(
+      `ip${count}.example.org`,
+      undefined,
+      false
+    );
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
+    let responseIP = inRecord.getNextAddrAsString();
+    if (responseIP == "7.7.7.7") {
+      break;
+    }
+    count--;
+  }
+
+  Assert.greater(count, 0, "Finished confirmation before 100 iterations");
+
   Services.prefs.setCharPref("network.trr.confirmationNS", "skip");
+});
+
+// Tests that we handle FQDN encoding and decoding properly
+add_task(async function test_fqdn() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=9.8.7.6`
+  );
+  await new DNSListener("fqdn.example.org.", "9.8.7.6");
+});
+
+add_task(async function test_fqdn_get() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setBoolPref("network.trr.useGET", true);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=9.8.7.6`
+  );
+  await new DNSListener("fqdn_get.example.org.", "9.8.7.6");
+
+  Services.prefs.setBoolPref("network.trr.useGET", false);
+});
+
+add_task(async function test_async_resolve_with_trr_server_bad_port() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 2); // TRR-first
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=2.2.2.2`
+  );
+
+  let [, , inStatus] = await new DNSListener(
+    "only_once.example.com",
+    undefined,
+    false,
+    undefined,
+    `https://target.example.com:666/404`
+  );
+  Assert.ok(
+    !Components.isSuccessCode(inStatus),
+    `${inStatus} should be an error code`
+  );
+
+  // // MOZ_LOG=sync,timestamp,nsHostResolver:5 We should not keep resolving only_once.example.com
+  // // TODO: find a way of automating this
+  // await new Promise(resolve => {});
+});
+
+add_task(async function test_ipv6_trr_fallback() {
+  dns.clearCache(true);
+  let httpserver = new HttpServer();
+  httpserver.registerPathHandler("/content", (metadata, response) => {
+    response.setHeader("Content-Type", "text/plain");
+    response.setHeader("Cache-Control", "no-cache");
+
+    const responseBody = "anybody";
+    response.bodyOutputStream.write(responseBody, responseBody.length);
+  });
+  httpserver.start(-1);
+
+  let url = `http://127.0.0.1:666/doom_port_should_not_be_open`;
+  Services.prefs.setCharPref("network.connectivity-service.IPv6.url", url);
+  let ncs = Cc[
+    "@mozilla.org/network/network-connectivity-service;1"
+  ].getService(Ci.nsINetworkConnectivityService);
+
+  function promiseObserverNotification(topic, matchFunc) {
+    return new Promise((resolve, reject) => {
+      Services.obs.addObserver(function observe(subject, topic, data) {
+        let matches =
+          typeof matchFunc != "function" || matchFunc(subject, data);
+        if (!matches) {
+          return;
+        }
+        Services.obs.removeObserver(observe, topic);
+        resolve({ subject, data });
+      }, topic);
+    });
+  }
+
+  let checks = promiseObserverNotification(
+    "network:connectivity-service:ip-checks-complete"
+  );
+
+  ncs.recheckIPConnectivity();
+
+  await checks;
+  equal(
+    ncs.IPv6,
+    Ci.nsINetworkConnectivityService.NOT_AVAILABLE,
+    "Check IPv6 support (expect NOT_AVAILABLE)"
+  );
+
+  Services.prefs.setIntPref("network.trr.mode", 2);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=4.4.4.4`
+  );
+  const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
+    Ci.nsINativeDNSResolverOverride
+  );
+  override.addIPOverride("ipv6.host.com", "1:1::2");
+
+  await new DNSListener(
+    "ipv6.host.com",
+    "1:1::2",
+    true,
+    0,
+    "",
+    false,
+    Ci.nsIDNSService.RESOLVE_DISABLE_IPV4
+  );
+
+  override.clearOverrides();
+  await httpserver.stop();
 });

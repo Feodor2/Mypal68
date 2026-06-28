@@ -133,6 +133,15 @@ IPCResult HttpBackgroundChannelChild::RecvOnTransportAndData(
     return IPC_OK();
   }
 
+  // The HttpTransactionChild in socket process may not know that this request
+  // is cancelled or failed due to the IPC delay. In this case, we should not
+  // forward ODA to HttpChannelChild.
+  nsresult channelStatus;
+  mChannelChild->GetStatus(&channelStatus);
+  if (NS_FAILED(channelStatus)) {
+    return IPC_OK();
+  }
+
   if (IsWaitingOnStartRequest()) {
     LOG(("  > pending until OnStartRequest [offset=%" PRIu64 " count=%" PRIu32
          "]\n",

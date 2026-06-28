@@ -334,11 +334,13 @@ struct HttpConnectionInfoCloneArgs
   uint32_t tlsFlags;
   bool isolated;
   bool isTrrServiceChannel;
-  bool trrDisabled;
+  uint8_t trrMode;
   bool isIPv4Disabled;
   bool isIPv6Disabled;
   nsCString topWindowOrigin;
   bool isHttp3;
+  bool hasIPHintAddress;
+  nsCString echConfig;
   ProxyInfoCloneArgs[] proxyInfo;
 };
 
@@ -393,6 +395,7 @@ struct CookieStruct
   bool      isSecure;
   int32_t   sameSite;
   int32_t   rawSameSite;
+  uint8_t   schemeMap;
 };
 
 struct TimingStructArgs {
@@ -449,6 +452,13 @@ struct TransactionObserverResult
   bool versionOk;
   bool authOk;
   nsresult closeReason;
+};
+
+struct SpeculativeConnectionOverriderArgs {
+  uint32_t parallelSpeculativeConnectLimit;
+  bool ignoreIdle;
+  bool isFromPredictor;
+  bool allow1918;
 };
 
 } // namespace net

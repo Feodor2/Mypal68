@@ -25,7 +25,6 @@
 "use strict";
 
 const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
-const { NodeServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 let proxy_port;
 let filter;
@@ -328,6 +327,10 @@ add_task(async function setup() {
 
   Services.prefs.setBoolPref("network.http.spdy.enabled", true);
   Services.prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+
+  // Even with network state isolation active, we don't end up using the
+  // partitioned principal.
+  Services.prefs.setBoolPref("privacy.partition.network_state", true);
 
   // make all native resolve calls "secretly" resolve localhost instead
   Services.prefs.setBoolPref("network.dns.native-is-localhost", true);

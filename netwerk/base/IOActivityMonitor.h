@@ -5,6 +5,7 @@
 #ifndef IOActivityMonitor_h___
 #define IOActivityMonitor_h___
 
+#include "mozilla/Mutex.h"  //MY
 #include "mozilla/dom/ChromeUtilsBinding.h"
 #include "nsCOMPtr.h"
 #include "nscore.h"

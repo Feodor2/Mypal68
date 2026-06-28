@@ -268,11 +268,11 @@ class nsCacheService final : public nsICacheServiceInternal {
 
   nsCacheProfilePrefObserver* mObserver;
 
-  Lock mLock;
+  Lock2 mLock;
   ConditionVariable mCondVar;
   bool mNotified;
 
-  Lock mTimeStampLock;
+  Lock2 mTimeStampLock;
   mozilla::TimeStamp mLockAcquiredTimeStamp;
 
   nsCOMPtr<nsIThread> mCacheIOThread;

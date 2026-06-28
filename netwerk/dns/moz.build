@@ -13,6 +13,7 @@ XPIDL_SOURCES += [
     'nsIDNSByTypeRecord.idl',
     'nsIDNSListener.idl',
     'nsIDNSRecord.idl',
+    'nsIDNSResolverInfo.idl',
     'nsIDNSService.idl',
     'nsIEffectiveTLDService.idl',
     'nsIIDNService.idl',
@@ -30,11 +31,14 @@ EXPORTS.mozilla.net += [
     'DNS.h',
     'DNSByTypeRecord.h',
     'DNSListenerProxy.h',
+    'DNSRequestBase.h',
     'DNSRequestChild.h',
     'DNSRequestParent.h',
     'HTTPSSVC.h',
     'IDNBlocklistUtils.h',
     'TRRService.h',
+    'TRRServiceChild.h',
+    'TRRServiceParent.h',
 ]
 
 SOURCES += [
@@ -48,6 +52,7 @@ UNIFIED_SOURCES += [
     'DNSListenerProxy.cpp',
     'DNSRequestChild.cpp',
     'DNSRequestParent.cpp',
+    'DNSResolverInfo.cpp',
     'GetAddrInfo.cpp',
     'HTTPSSVC.cpp',
     'IDNBlocklistUtils.cpp',
@@ -56,11 +61,14 @@ UNIFIED_SOURCES += [
     'punycode.c',
     'TRR.cpp',
     'TRRService.cpp',
+    'TRRServiceChild.cpp',
+    'TRRServiceParent.cpp',
 ]
 
 IPDL_SOURCES = [
     'PDNSRequest.ipdl',
     'PDNSRequestParams.ipdlh',
+    'PTRRService.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -68,6 +76,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 GeneratedFile('etld_data.inc', script='prepare_tlds.py',
+              py2=True,
               inputs=['effective_tld_names.dat'])
 
 # need to include etld_data.inc

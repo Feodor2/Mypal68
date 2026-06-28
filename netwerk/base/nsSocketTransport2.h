@@ -19,6 +19,7 @@
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIDNSListener.h"
+#include "nsIDNSRecord.h"
 #include "nsIClassInfo.h"
 #include "TCPFastOpen.h"
 #include "mozilla/net/DNS.h"
@@ -168,10 +169,6 @@ class nsSocketTransport final : public nsASocketHandler,
   virtual ~nsSocketTransport();
 
  private:
-  static SECStatus StoreResumptionToken(PRFileDesc* fd,
-                                        const PRUint8* resumptionToken,
-                                        unsigned int len, void* ctx);
-
   // event types
   enum {
     MSG_ENSURE_CONNECT,
@@ -322,14 +319,10 @@ class nsSocketTransport final : public nsASocketHandler,
   bool mResolving;
 
   nsCOMPtr<nsICancelable> mDNSRequest;
-  nsCOMPtr<nsIDNSRecord> mDNSRecord;
+  nsCOMPtr<nsIDNSAddrRecord> mDNSRecord;
 
-  nsresult mDNSLookupStatus;
-  PRIntervalTime mDNSARequestFinished;
-  nsCOMPtr<nsICancelable> mDNSTxtRequest;
-  nsCString mDNSRecordTxt;
-  bool mEsniQueried;
-  bool mEsniUsed;
+  nsCString mEchConfig;
+  bool mEchConfigUsed = false;
   bool mResolvedByTRR;
 
   // mNetAddr/mSelfAddr is valid from GetPeerAddr()/GetSelfAddr() once we have
@@ -468,11 +461,6 @@ class nsSocketTransport final : public nsASocketHandler,
   nsresult mFirstRetryError;
 
   bool mDoNotRetryToConnect;
-
-  // True if SSL_SetResumptionTokenCallback was called. We need to clear the
-  // callback when mFD is nulled out to make sure the ssl layer cannot call
-  // the callback after nsSocketTransport is destroyed.
-  bool mSSLCallbackSet;
 };
 
 }  // namespace net

@@ -25,6 +25,7 @@
 #include "prnetdb.h"
 #include "nsITimer.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsServiceManagerUtils.h"
@@ -355,7 +356,7 @@ class PACResolver final : public nsIDNSListener,
   nsCOMPtr<nsIDNSRecord> mResponse;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-  Lock mMutex;
+  Lock2 mMutex;
 
  private:
   ~PACResolver() = default;
@@ -444,11 +445,19 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
   RefPtr<PACResolver> helper = new PACResolver(mMainThreadEventTarget);
   OriginAttributes attrs;
 
+  // When the PAC script attempts to resolve a domain, we must make sure we
+  // don't use TRR, otherwise the TRR channel might also attempt to resolve
+  // a name and we'll have a deadlock.
+  uint32_t flags =
+      nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
+      nsIDNSService::GetFlagsFromTRRMode(nsIRequest::TRR_DISABLED_MODE);
+
   if (NS_FAILED(dns->AsyncResolveNative(
-          aHostName, nsIDNSService::RESOLVE_PRIORITY_MEDIUM, helper,
-          GetCurrentEventTarget(), attrs,
-          getter_AddRefs(helper->mRequest))))
+          aHostName, nsIDNSService::RESOLVE_TYPE_DEFAULT, flags, nullptr,
+          helper, GetCurrentEventTarget(), attrs,
+          getter_AddRefs(helper->mRequest)))) {
     return false;
+  }
 
   if (aTimeout && helper->mRequest) {
     if (!mTimer) mTimer = NS_NewTimer();
@@ -474,9 +483,15 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
     return false;
   });
 
-  if (NS_FAILED(helper->mStatus) ||
-      NS_FAILED(helper->mResponse->GetNextAddr(0, aNetAddr)))
+  if (NS_FAILED(helper->mStatus)) {
     return false;
+  }
+
+  nsCOMPtr<nsIDNSAddrRecord> rec = do_QueryInterface(helper->mResponse);
+  if (!rec || NS_FAILED(rec->GetNextAddr(0, aNetAddr))) {
+    return false;
+  }
+
   return true;
 }
 

@@ -112,6 +112,13 @@ void CookieLogging::LogCookie(Cookie* aCookie) {
             ("is secure: %s\n", aCookie->IsSecure() ? "true" : "false"));
     MOZ_LOG(gCookieLog, LogLevel::Debug,
             ("is httpOnly: %s\n", aCookie->IsHttpOnly() ? "true" : "false"));
+    MOZ_LOG(
+        gCookieLog, LogLevel::Debug,
+        ("schemeMap %d (http: %s | https: %s | file: %s)\n",
+         aCookie->SchemeMap(),
+         (aCookie->SchemeMap() & nsICookie::SCHEME_HTTP ? "true" : "false"),
+         (aCookie->SchemeMap() & nsICookie::SCHEME_HTTPS ? "true" : "false"),
+         (aCookie->SchemeMap() & nsICookie::SCHEME_FILE ? "true" : "false")));
 
     nsAutoCString suffix;
     aCookie->OriginAttributesRef().CreateSuffix(suffix);

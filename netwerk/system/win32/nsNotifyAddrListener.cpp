@@ -24,6 +24,7 @@
 #include "mozilla/Logging.h"
 #include "nsThreadUtils.h"
 #include "nsIObserverService.h"
+#include "nsIThread.h" //MY
 #include "nsServiceManagerUtils.h"
 #include "nsNotifyAddrListener.h"
 #include "nsString.h"

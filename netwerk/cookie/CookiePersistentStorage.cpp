@@ -25,7 +25,7 @@
 // This is a hack to hide HttpOnly cookies from older browsers
 #define HTTP_ONLY_PREFIX "#HttpOnly_"
 
-constexpr auto COOKIES_SCHEMA_VERSION = 10;
+constexpr auto COOKIES_SCHEMA_VERSION = 12;
 
 // parameter indexes; see |Read|
 constexpr auto IDX_NAME = 0;
@@ -37,13 +37,12 @@ constexpr auto IDX_LAST_ACCESSED = 5;
 constexpr auto IDX_CREATION_TIME = 6;
 constexpr auto IDX_SECURE = 7;
 constexpr auto IDX_HTTPONLY = 8;
-constexpr auto IDX_BASE_DOMAIN = 9;
-constexpr auto IDX_ORIGIN_ATTRIBUTES = 10;
-constexpr auto IDX_SAME_SITE = 11;
-constexpr auto IDX_RAW_SAME_SITE = 12;
+constexpr auto IDX_ORIGIN_ATTRIBUTES = 9;
+constexpr auto IDX_SAME_SITE = 10;
+constexpr auto IDX_RAW_SAME_SITE = 11;
+constexpr auto IDX_SCHEME_MAP = 12;
 
 #define COOKIES_FILE "cookies.sqlite"
-#define OLD_COOKIE_FILE_NAME "cookies.txt"
 
 namespace mozilla {
 namespace net {
@@ -61,10 +60,6 @@ void BindCookieParameters(mozIStorageBindingParamsArray* aParamsArray,
   nsCOMPtr<mozIStorageBindingParams> params;
   DebugOnly<nsresult> rv =
       aParamsArray->NewBindingParams(getter_AddRefs(params));
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-  // Bind our values to params
-  rv = params->BindUTF8StringByName("baseDomain"_ns, aKey.mBaseDomain);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   nsAutoCString suffix;
@@ -103,6 +98,9 @@ void BindCookieParameters(mozIStorageBindingParamsArray* aParamsArray,
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   rv = params->BindInt32ByName("rawSameSite"_ns, aCookie->RawSameSite());
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  rv = params->BindInt32ByName("schemeMap"_ns, aCookie->SchemeMap());
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   // Bind the params to the array.
@@ -573,175 +571,6 @@ void CookiePersistentStorage::Close() {
 
   mInitialized = false;
   mInitializedDBConn = false;
-}
-
-nsresult CookiePersistentStorage::ImportCookies(nsIFile* aCookieFile) {
-  MOZ_ASSERT(aCookieFile);
-
-  nsresult rv;
-  nsCOMPtr<nsIInputStream> fileInputStream;
-  rv = NS_NewLocalFileInputStream(getter_AddRefs(fileInputStream), aCookieFile);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsILineInputStream> lineInputStream =
-      do_QueryInterface(fileInputStream, &rv);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  static const char kTrue[] = "TRUE";
-
-  nsAutoCString buffer;
-  nsAutoCString baseDomain;
-  bool isMore = true;
-  int32_t hostIndex;
-  int32_t isDomainIndex;
-  int32_t pathIndex;
-  int32_t secureIndex;
-  int32_t expiresIndex;
-  int32_t nameIndex;
-  int32_t cookieIndex;
-  int32_t numInts;
-  int64_t expires;
-  bool isDomain;
-  bool isHttpOnly = false;
-  uint32_t originalCookieCount = mCookieCount;
-
-  int64_t currentTimeInUsec = PR_Now();
-  int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
-  // we use lastAccessedCounter to keep cookies in recently-used order,
-  // so we start by initializing to currentTime (somewhat arbitrary)
-  int64_t lastAccessedCounter = currentTimeInUsec;
-
-  /* file format is:
-   *
-   * host \t isDomain \t path \t secure \t expires \t name \t cookie
-   *
-   * if this format isn't respected we move onto the next line in the file.
-   * isDomain is "TRUE" or "FALSE" (default to "FALSE")
-   * isSecure is "TRUE" or "FALSE" (default to "TRUE")
-   * expires is a int64_t integer
-   * note 1: cookie can contain tabs.
-   * note 2: cookies will be stored in order of lastAccessed time:
-   *         most-recently used come first; least-recently-used come last.
-   */
-
-  /*
-   * ...but due to bug 178933, we hide HttpOnly cookies from older code
-   * in a comment, so they don't expose HttpOnly cookies to JS.
-   *
-   * The format for HttpOnly cookies is
-   *
-   * #HttpOnly_host \t isDomain \t path \t secure \t expires \t name \t cookie
-   *
-   */
-
-  // We will likely be adding a bunch of cookies to the DB, so we use async
-  // batching with storage to make this super fast.
-  nsCOMPtr<mozIStorageBindingParamsArray> paramsArray;
-  if (originalCookieCount == 0 && mDBConn) {
-    mStmtInsert->NewBindingParamsArray(getter_AddRefs(paramsArray));
-  }
-
-  while (isMore && NS_SUCCEEDED(lineInputStream->ReadLine(buffer, &isMore))) {
-    if (StringBeginsWith(buffer, NS_LITERAL_CSTRING(HTTP_ONLY_PREFIX))) {
-      isHttpOnly = true;
-      hostIndex = sizeof(HTTP_ONLY_PREFIX) - 1;
-    } else if (buffer.IsEmpty() || buffer.First() == '#') {
-      continue;
-    } else {
-      isHttpOnly = false;
-      hostIndex = 0;
-    }
-
-    // this is a cheap, cheesy way of parsing a tab-delimited line into
-    // string indexes, which can be lopped off into substrings. just for
-    // purposes of obfuscation, it also checks that each token was found.
-    // todo: use iterators?
-    if ((isDomainIndex = buffer.FindChar('\t', hostIndex) + 1) == 0 ||
-        (pathIndex = buffer.FindChar('\t', isDomainIndex) + 1) == 0 ||
-        (secureIndex = buffer.FindChar('\t', pathIndex) + 1) == 0 ||
-        (expiresIndex = buffer.FindChar('\t', secureIndex) + 1) == 0 ||
-        (nameIndex = buffer.FindChar('\t', expiresIndex) + 1) == 0 ||
-        (cookieIndex = buffer.FindChar('\t', nameIndex) + 1) == 0) {
-      continue;
-    }
-
-    // check the expirytime first - if it's expired, ignore
-    // nullstomp the trailing tab, to avoid copying the string
-    auto iter = buffer.BeginWriting() + nameIndex - 1;
-    *iter = char(0);
-    numInts = PR_sscanf(buffer.get() + expiresIndex, "%lld", &expires);
-    if (numInts != 1 || expires < currentTime) {
-      continue;
-    }
-
-    isDomain = Substring(buffer, isDomainIndex, pathIndex - isDomainIndex - 1)
-                   .EqualsLiteral(kTrue);
-    const nsACString& host =
-        Substring(buffer, hostIndex, isDomainIndex - hostIndex - 1);
-    // check for bad legacy cookies (domain not starting with a dot, or
-    // containing a port), and discard
-    if ((isDomain && !host.IsEmpty() && host.First() != '.') ||
-        host.Contains(':')) {
-      continue;
-    }
-
-    // compute the baseDomain from the host
-    rv = CookieCommons::GetBaseDomainFromHost(mTLDService, host, baseDomain);
-    if (NS_FAILED(rv)) {
-      continue;
-    }
-
-    // pre-existing cookies have inIsolatedMozBrowser=false set by default
-    // constructor of OriginAttributes().
-
-    // Create a new Cookie and assign the data. We don't know the cookie
-    // creation time, so just use the current time to generate a unique one.
-    CookieStruct cookieData(
-        nsCString(Substring(buffer, nameIndex, cookieIndex - nameIndex - 1)),
-        nsCString(
-            Substring(buffer, cookieIndex, buffer.Length() - cookieIndex)),
-        nsCString(host),
-        nsCString(Substring(buffer, pathIndex, secureIndex - pathIndex - 1)),
-        expires, lastAccessedCounter,
-        Cookie::GenerateUniqueCreationTime(currentTimeInUsec), isHttpOnly,
-        false /* aIsSession */,
-        Substring(buffer, secureIndex, expiresIndex - secureIndex - 1)
-            .EqualsLiteral(kTrue),
-        nsICookie::SAMESITE_NONE, nsICookie::SAMESITE_NONE);
-
-    RefPtr<Cookie> newCookie = Cookie::Create(cookieData, OriginAttributes());
-    if (!newCookie) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    // trick: preserve the most-recently-used cookie ordering,
-    // by successively decrementing the lastAccessed time
-    lastAccessedCounter--;
-
-    if (originalCookieCount == 0) {
-      AddCookieToList(baseDomain, OriginAttributes(), newCookie);
-      if (!newCookie->IsSession() && mDBConn) {
-        CookieKey key(baseDomain, OriginAttributes());
-        BindCookieParameters(paramsArray, key, newCookie);
-      }
-    } else {
-      AddCookie(baseDomain, OriginAttributes(), newCookie, currentTimeInUsec,
-                nullptr, VoidCString(), true);
-    }
-  }
-
-  // If we need to write to disk, do so now.
-  MaybeStoreCookiesToDB(paramsArray);
-
-  COOKIE_LOGSTRING(
-      LogLevel::Debug,
-      ("ImportCookies(): %" PRIu32 " cookies imported", mCookieCount));
-
-  return NS_OK;
 }
 
 void CookiePersistentStorage::StoreCookie(
@@ -1419,7 +1248,9 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
         NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
 
         // Recreate our index.
-        rv = CreateIndex();
+        rv = mSyncConn->ExecuteSimpleSQL(
+            nsLiteralCString("CREATE INDEX moz_basedomain ON moz_cookies "
+                             "(baseDomain, originAttributes)"));
         NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
 
         COOKIE_LOGSTRING(LogLevel::Debug,
@@ -1451,6 +1282,92 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
 
         COOKIE_LOGSTRING(LogLevel::Debug,
                          ("Upgraded database to schema version 10"));
+      }
+        [[fallthrough]];
+
+      case 10: {
+        // Rename existing table
+        rv = mSyncConn->ExecuteSimpleSQL(nsLiteralCString(
+            "ALTER TABLE moz_cookies RENAME TO moz_cookies_old"));
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+
+        // Create a new moz_cookies table without the baseDomain field.
+        rv = mSyncConn->ExecuteSimpleSQL(
+            nsLiteralCString("CREATE TABLE new_moz_cookies("
+                             "id INTEGER PRIMARY KEY, "
+                             "baseDomain TEXT, "
+                             "originAttributes TEXT NOT NULL DEFAULT '', "
+                             "name TEXT, "
+                             "value TEXT, "
+                             "host TEXT, "
+                             "path TEXT, "
+                             "expiry INTEGER, "
+                             "lastAccessed INTEGER, "
+                             "creationTime INTEGER, "
+                             "isSecure INTEGER, "
+                             "isHttpOnly INTEGER, "
+                             "inBrowserElement INTEGER DEFAULT 0, "
+                             "CONSTRAINT moz_uniqueid UNIQUE (name, host, "
+                             "path, originAttributes)"
+                             ")"));
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+
+        // Move the data over.
+        rv = mSyncConn->ExecuteSimpleSQL(
+            nsLiteralCString("INSERT INTO new_moz_cookies ("
+                             "id, "
+                             "baseDomain, "
+                             "originAttributes, "
+                             "name, "
+                             "value, "
+                             "host, "
+                             "path, "
+                             "expiry, "
+                             "lastAccessed, "
+                             "creationTime, "
+                             "isSecure, "
+                             "isHttpOnly, "
+                             "inBrowserElement "
+                             ") SELECT "
+                             "id, "
+                             "baseDomain, "
+                             "originAttributes, "
+                             "name, "
+                             "value, "
+                             "host, "
+                             "path, "
+                             "expiry, "
+                             "lastAccessed, "
+                             "creationTime, "
+                             "isSecure, "
+                             "isHttpOnly, "
+                             "inBrowserElement "
+                             "FROM moz_cookies;"));
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+
+        // Drop the old table
+        rv = mSyncConn->ExecuteSimpleSQL("DROP TABLE moz_cookies;"_ns);
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+
+        // Drop the moz_basedomain index from the database (if it hasn't been
+        // removed already by removing the table).
+        rv = mSyncConn->ExecuteSimpleSQL(
+            "DROP INDEX IF EXISTS moz_basedomain;"_ns);
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+
+        COOKIE_LOGSTRING(LogLevel::Debug,
+                         ("Upgraded database to schema version 11"));
+      }
+        [[fallthrough]];
+
+      case 11: {
+        // Add the schemeMap column to the table.
+        rv = mSyncConn->ExecuteSimpleSQL(nsLiteralCString(
+            "ALTER TABLE moz_cookies ADD schemeMap INTEGER DEFAULT 0;"));
+        NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+
+        COOKIE_LOGSTRING(LogLevel::Debug,
+                         ("Upgraded database to schema version 12"));
 
         // No more upgrades. Update the schema version.
         rv = mSyncConn->SetSchemaVersion(COOKIES_SCHEMA_VERSION);
@@ -1486,7 +1403,6 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
         nsCOMPtr<mozIStorageStatement> stmt;
         rv = mSyncConn->CreateStatement(nsLiteralCString("SELECT "
                                                          "id, "
-                                                         "baseDomain, "
                                                          "originAttributes, "
                                                          "name, "
                                                          "value, "
@@ -1498,7 +1414,8 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
                                                          "isSecure, "
                                                          "isHttpOnly, "
                                                          "sameSite, "
-                                                         "rawSameSite "
+                                                         "rawSameSite, "
+                                                         "schemeMap "
                                                          "FROM moz_cookies"),
                                         getter_AddRefs(stmt));
         if (NS_SUCCEEDED(rv)) {
@@ -1524,27 +1441,6 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
   if (tableExists) {
     return Read();
   }
-
-  RefPtr<CookiePersistentStorage> self = this;
-  nsCOMPtr<nsIRunnable> runnable =
-      NS_NewRunnableFunction("TryInitDB.ImportCookies", [self] {
-        nsCOMPtr<nsIFile> oldCookieFile;
-        nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
-                                             getter_AddRefs(oldCookieFile));
-        if (NS_FAILED(rv)) {
-          return;
-        }
-
-        // Import cookies, and clean up the old file regardless of success or
-        // failure. Note that we have to switch out our CookieStorage
-        // temporarily, in case we're in private browsing mode; otherwise
-        // ImportCookies() won't be happy.
-        oldCookieFile->AppendNative(NS_LITERAL_CSTRING(OLD_COOKIE_FILE_NAME));
-        self->ImportCookies(oldCookieFile);
-        oldCookieFile->Remove(false);
-      });
-
-  NS_DispatchToMainThread(runnable);
 
   return RESULT_OK;
 }
@@ -1676,18 +1572,10 @@ void CookiePersistentStorage::HandleDBClosed() {
 CookiePersistentStorage::OpenDBResult CookiePersistentStorage::Read() {
   MOZ_ASSERT(NS_GetCurrentThread() == mThread);
 
-  // Set up a statement to delete any rows with a nullptr 'baseDomain'
-  // column. This takes care of any cookies set by browsers that don't
-  // understand the 'baseDomain' column, where the database schema version
-  // is from one that does. (This would occur when downgrading.)
-  nsresult rv = mSyncConn->ExecuteSimpleSQL(
-      nsLiteralCString("DELETE FROM moz_cookies WHERE baseDomain ISNULL"));
-  NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
-
   // Read in the data synchronously.
   // see IDX_NAME, etc. for parameter indexes
   nsCOMPtr<mozIStorageStatement> stmt;
-  rv = mSyncConn->CreateStatement(nsLiteralCString("SELECT "
+  nsresult rv = mSyncConn->CreateStatement(nsLiteralCString("SELECT "
                                                    "name, "
                                                    "value, "
                                                    "host, "
@@ -1697,12 +1585,11 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::Read() {
                                                    "creationTime, "
                                                    "isSecure, "
                                                    "isHttpOnly, "
-                                                   "baseDomain, "
                                                    "originAttributes, "
                                                    "sameSite, "
-                                                   "rawSameSite "
-                                                   "FROM moz_cookies "
-                                                   "WHERE baseDomain NOTNULL"),
+                                                   "rawSameSite, "
+                                                   "schemeMap "
+                                                   "FROM moz_cookies"),
                                            getter_AddRefs(stmt));
 
   NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
@@ -1729,8 +1616,6 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::Read() {
       break;
     }
 
-    // IDX_BASE_DOMAIN cannot be used, because updates to the public suffix list
-    // may invalidate the value of the stored baseDomain.
     stmt->GetUTF8String(IDX_HOST, host);
 
     rv = CookieCommons::GetBaseDomainFromHost(mTLDService, host, baseDomain);
@@ -1763,7 +1648,6 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::Read() {
 // Extract data from a single result row and create an Cookie.
 UniquePtr<CookieStruct> CookiePersistentStorage::GetCookieFromRow(
     mozIStorageStatement* aRow) {
-  // Skip reading 'baseDomain' -- up to the caller.
   nsCString name;
   nsCString value;
   nsCString host;
@@ -1784,11 +1668,13 @@ UniquePtr<CookieStruct> CookiePersistentStorage::GetCookieFromRow(
   bool isHttpOnly = 0 != aRow->AsInt32(IDX_HTTPONLY);
   int32_t sameSite = aRow->AsInt32(IDX_SAME_SITE);
   int32_t rawSameSite = aRow->AsInt32(IDX_RAW_SAME_SITE);
+  int32_t schemeMap = aRow->AsInt32(IDX_SCHEME_MAP);
 
   // Create a new constCookie and assign the data.
-  return MakeUnique<CookieStruct>(name, value, host, path, expiry, lastAccessed,
-                                  creationTime, isHttpOnly, false, isSecure,
-                                  sameSite, rawSameSite);
+  return MakeUnique<CookieStruct>(
+      name, value, host, path, expiry, lastAccessed, creationTime, isHttpOnly,
+      false, isSecure, sameSite, rawSameSite,
+      static_cast<nsICookie::schemeType>(schemeMap));
 }
 
 void CookiePersistentStorage::EnsureReadComplete() {
@@ -1881,7 +1767,6 @@ nsresult CookiePersistentStorage::InitDBConnInternal() {
   // cache frequently used statements (for insertion, deletion, and updating)
   rv =
       mDBConn->CreateAsyncStatement(nsLiteralCString("INSERT INTO moz_cookies ("
-                                                     "baseDomain, "
                                                      "originAttributes, "
                                                      "name, "
                                                      "value, "
@@ -1893,9 +1778,9 @@ nsresult CookiePersistentStorage::InitDBConnInternal() {
                                                      "isSecure, "
                                                      "isHttpOnly, "
                                                      "sameSite, "
-                                                     "rawSameSite "
+                                                     "rawSameSite, "
+                                                     "schemeMap "
                                                      ") VALUES ("
-                                                     ":baseDomain, "
                                                      ":originAttributes, "
                                                      ":name, "
                                                      ":value, "
@@ -1907,7 +1792,8 @@ nsresult CookiePersistentStorage::InitDBConnInternal() {
                                                      ":isSecure, "
                                                      ":isHttpOnly, "
                                                      ":sameSite, "
-                                                     ":rawSameSite "
+                                                     ":rawSameSite, "
+                                                     ":schemeMap "
                                                      ")"),
                                     getter_AddRefs(mStmtInsert));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1938,7 +1824,6 @@ nsresult CookiePersistentStorage::CreateTableWorker(const char* aName) {
   command.AppendLiteral(
       " ("
       "id INTEGER PRIMARY KEY, "
-      "baseDomain TEXT, "
       "originAttributes TEXT NOT NULL DEFAULT '', "
       "name TEXT, "
       "value TEXT, "
@@ -1952,6 +1837,7 @@ nsresult CookiePersistentStorage::CreateTableWorker(const char* aName) {
       "inBrowserElement INTEGER DEFAULT 0, "
       "sameSite INTEGER DEFAULT 0, "
       "rawSameSite INTEGER DEFAULT 0, "
+      "schemeMap INTEGER DEFAULT 0, "
       "CONSTRAINT moz_uniqueid UNIQUE (name, host, path, originAttributes)"
       ")");
   return mSyncConn->ExecuteSimpleSQL(command);
@@ -1970,14 +1856,7 @@ nsresult CookiePersistentStorage::CreateTable() {
     return rv;
   }
 
-  return CreateIndex();
-}
-
-nsresult CookiePersistentStorage::CreateIndex() {
-  // Create an index on baseDomain.
-  return mSyncConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
-      "CREATE INDEX moz_basedomain ON moz_cookies (baseDomain, "
-      "originAttributes)"));
+  return NS_OK;
 }
 
 // Sets the schema version and creates the moz_cookies table.

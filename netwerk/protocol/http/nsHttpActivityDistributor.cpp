@@ -8,8 +8,10 @@
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "nsHttpActivityDistributor.h"
+#include "nsHttpHandler.h"
 #include "nsCOMPtr.h"
 #include "nsIOService.h"
+#include "nsQueryObject.h"
 #include "nsThreadUtils.h"
 #include "NullHttpChannel.h"
 
@@ -149,13 +151,14 @@ nsHttpActivityDistributor::AddObserver(nsIHttpActivityObserver* aObserver) {
     mObservers.AppendElement(observer);
   }
 
-  if (gIOService->UseSocketProcess() && wasEmpty) {
-    SocketProcessParent* parent = SocketProcessParent::GetSingleton();
-    if (parent && parent->CanSend()) {
-      Unused << parent->SendOnHttpActivityDistributorActivated(true);
-    } else {
-      return NS_ERROR_FAILURE;
-    }
+  if (nsIOService::UseSocketProcess() && wasEmpty) {
+    auto task = []() {
+      SocketProcessParent* parent = SocketProcessParent::GetSingleton();
+      if (parent && parent->CanSend()) {
+        Unused << parent->SendOnHttpActivityDistributorActivated(true);
+      }
+    };
+    gIOService->CallOrWaitForSocketProcess(task);
   }
   return NS_OK;
 }
@@ -174,13 +177,14 @@ nsHttpActivityDistributor::RemoveObserver(nsIHttpActivityObserver* aObserver) {
     isEmpty = mObservers.IsEmpty();
   }
 
-  if (gIOService->UseSocketProcess() && isEmpty) {
-    SocketProcessParent* parent = SocketProcessParent::GetSingleton();
-    if (parent && parent->CanSend()) {
-      Unused << parent->SendOnHttpActivityDistributorActivated(false);
-    } else {
-      return NS_ERROR_FAILURE;
-    }
+  if (nsIOService::UseSocketProcess() && isEmpty) {
+    auto task = []() {
+      SocketProcessParent* parent = SocketProcessParent::GetSingleton();
+      if (parent && parent->CanSend()) {
+        Unused << parent->SendOnHttpActivityDistributorActivated(false);
+      }
+    };
+    gIOService->CallOrWaitForSocketProcess(task);
   }
   return NS_OK;
 }

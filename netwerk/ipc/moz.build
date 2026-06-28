@@ -11,6 +11,9 @@ EXPORTS.mozilla.net += [
     'NeckoMessageUtils.h',
     'NeckoParent.h',
     'NeckoTargetHolder.h',
+    'ProxyConfigLookup.h',
+    'ProxyConfigLookupChild.h',
+    'ProxyConfigLookupParent.h',
     'SocketProcessBridgeChild.h',
     'SocketProcessBridgeParent.h',
     'SocketProcessChild.h',
@@ -26,6 +29,9 @@ UNIFIED_SOURCES += [
     'NeckoChild.cpp',
     'NeckoParent.cpp',
     'NeckoTargetHolder.cpp',
+    'ProxyConfigLookup.cpp',
+    'ProxyConfigLookupChild.cpp',
+    'ProxyConfigLookupParent.cpp',
     'SocketProcessBridgeChild.cpp',
     'SocketProcessBridgeParent.cpp',
     'SocketProcessChild.cpp',
@@ -41,6 +47,7 @@ IPDL_SOURCES = [
     'PFileChannel.ipdl',
     'PInputChannelThrottleQueue.ipdl',
     'PNecko.ipdl',
+    'PProxyConfigLookup.ipdl',
     'PSimpleChannel.ipdl',
     'PSocketProcess.ipdl',
     'PSocketProcessBridge.ipdl'
@@ -49,13 +56,13 @@ IPDL_SOURCES = [
 # needed so --disable-webrtc builds work (yes, a bit messy)
 if not CONFIG['MOZ_WEBRTC']:
   IPDL_SOURCES += [
-      '../../media/mtransport/ipc/PStunAddrsRequest.ipdl',
-      '../../media/mtransport/ipc/PWebrtcTCPSocket.ipdl',
-      '../../media/mtransport/ipc/WebrtcProxyConfig.ipdlh',
+      '../../dom/media/webrtc/transport/ipc/PStunAddrsRequest.ipdl',
+      '../../dom/media/webrtc/transport/ipc/PWebrtcTCPSocket.ipdl',
+      '../../dom/media/webrtc/transport/ipc/WebrtcProxyConfig.ipdlh',
   ]
   EXPORTS.mozilla.net += [
-      '../../media/mtransport/ipc/NrIceStunAddrMessageUtils.h',
-      '../../media/mtransport/ipc/PStunAddrsParams.h',
+      '../../dom/media/webrtc/transport/ipc/NrIceStunAddrMessageUtils.h',
+      '../../dom/media/webrtc/transport/ipc/PStunAddrsParams.h',
   ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -65,11 +72,12 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '/caps',
     '/dom/base',
-    '/media/mtransport',
+    '/dom/media/webrtc/transport',
     '/media/webrtc',
     '/modules/libjar',
     '/netwerk/base',
     '/netwerk/protocol/http',
+    '/security/manager/ssl',
     '/xpcom/threads'
 ]
 

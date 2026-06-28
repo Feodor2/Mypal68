@@ -40,7 +40,7 @@
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
 #include "nsPrintfCString.h"
-#include "nsHTMLDNSPrefetch.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsEscape.h"
 #include "SerializedLoadContext.h"
 #include "nsAuthInformationHolder.h"
@@ -56,6 +56,7 @@ using mozilla::OriginAttributes;
 using mozilla::dom::BrowserParent;
 using mozilla::dom::ChromeUtils;
 using mozilla::dom::ContentParent;
+using mozilla::dom::HTMLDNSPrefetch;
 using mozilla::dom::ServiceWorkerManager;
 using mozilla::dom::TabContext;
 using mozilla::dom::TCPServerSocketParent;
@@ -486,7 +487,8 @@ bool NeckoParent::DeallocPUDPSocketParent(PUDPSocketParent* actor) {
 already_AddRefed<PDNSRequestParent> NeckoParent::AllocPDNSRequestParent(
     const nsCString& aHost, const nsCString& aTrrServer, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
-  RefPtr<DNSRequestParent> actor = new DNSRequestParent();
+  RefPtr<DNSRequestHandler> handler = new DNSRequestHandler();
+  RefPtr<DNSRequestParent> actor = new DNSRequestParent(handler);
   return actor.forget();
 }
 
@@ -494,8 +496,10 @@ mozilla::ipc::IPCResult NeckoParent::RecvPDNSRequestConstructor(
     PDNSRequestParent* aActor, const nsCString& aHost,
     const nsCString& aTrrServer, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
-  static_cast<DNSRequestParent*>(aActor)->DoAsyncResolve(
-      aHost, aTrrServer, aType, aOriginAttributes, aFlags);
+  RefPtr<DNSRequestParent> actor = static_cast<DNSRequestParent*>(aActor);
+  RefPtr<DNSRequestHandler> handler =
+      actor->GetDNSRequest()->AsDNSRequestHandler();
+  handler->DoAsyncResolve(aHost, aTrrServer, aType, aOriginAttributes, aFlags);
   return IPC_OK();
 }
 
@@ -518,17 +522,17 @@ mozilla::ipc::IPCResult NeckoParent::RecvSpeculativeConnect(
 
 mozilla::ipc::IPCResult NeckoParent::RecvHTMLDNSPrefetch(
     const nsString& hostname, const bool& isHttps,
-    const OriginAttributes& aOriginAttributes, const uint16_t& flags) {
-  nsHTMLDNSPrefetch::Prefetch(hostname, isHttps, aOriginAttributes, flags);
+    const OriginAttributes& aOriginAttributes, const uint32_t& flags) {
+  HTMLDNSPrefetch::Prefetch(hostname, isHttps, aOriginAttributes, flags);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvCancelHTMLDNSPrefetch(
     const nsString& hostname, const bool& isHttps,
-    const OriginAttributes& aOriginAttributes, const uint16_t& flags,
+    const OriginAttributes& aOriginAttributes, const uint32_t& flags,
     const nsresult& reason) {
-  nsHTMLDNSPrefetch::CancelPrefetch(hostname, isHttps, aOriginAttributes, flags,
-                                    reason);
+  HTMLDNSPrefetch::CancelPrefetch(hostname, isHttps, aOriginAttributes, flags,
+                                  reason);
   return IPC_OK();
 }
 

@@ -18,6 +18,7 @@ UNIFIED_SOURCES += [
     'TestReadStreamToString.cpp',
     'TestServerTimingHeader.cpp',
     'TestStandardURL.cpp',
+    'TestSupportAlpn.cpp',
     'TestUDPSocket.cpp',
 ]
 

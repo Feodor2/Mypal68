@@ -2,15 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "MainThreadUtils.h"
 #include "mozilla/Preferences.h"
 #include "nsIDNService.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
+#include "nsServiceManagerUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsUnicodeProperties.h"
 #include "harfbuzz/hb.h"
 #include "punycode.h"
 #include "mozilla/Casting.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/intl/FormatBuffer.h"
@@ -19,6 +22,7 @@
 
 #include "ICUUtils.h"
 
+using namespace mozilla;
 using namespace mozilla::intl;
 using namespace mozilla::unicode;
 using namespace mozilla::net;
@@ -82,9 +86,10 @@ nsresult nsIDNService::Init() {
   AutoLock lock(mLock);
 
   nsCOMPtr<nsIPrefService> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (prefs)
+  if (prefs) {
     prefs->GetBranch(NS_NET_PREF_IDNWHITELIST,
                      getter_AddRefs(mIDNWhitelistPrefBranch));
+  }
 
   Preferences::RegisterPrefixCallbacks(PrefChanged, gCallbackPrefs, this);
   prefsChanged(nullptr);
@@ -105,13 +110,15 @@ void nsIDNService::prefsChanged(const char* pref) {
   }
   if (!pref || nsLiteralCString(NS_NET_PREF_SHOWPUNYCODE).Equals(pref)) {
     bool val;
-    if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_SHOWPUNYCODE, &val)))
+    if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_SHOWPUNYCODE, &val))) {
       mShowPunycode = val;
+    }
   }
   if (!pref || nsLiteralCString(NS_NET_PREF_IDNUSEWHITELIST).Equals(pref)) {
     bool val;
-    if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_IDNUSEWHITELIST, &val)))
+    if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_IDNUSEWHITELIST, &val))) {
       mIDNUseWhitelist = val;
+    }
   }
   if (!pref || nsLiteralCString(NS_NET_PREF_IDNRESTRICTION).Equals(pref)) {
     nsAutoCString profile;
@@ -389,12 +396,12 @@ NS_IMETHODIMP nsIDNService::Normalize(const nsACString& input,
 namespace {
 
 class MOZ_STACK_CLASS MutexSettableAutoUnlock final {
-  Lock* mMutex;
+  Lock2* mMutex;
 
  public:
   MutexSettableAutoUnlock() : mMutex(nullptr) {}
 
-  void Acquire(Lock& aMutex) {
+  void Acquire(Lock2& aMutex) {
     MOZ_ASSERT(!mMutex);
     mMutex = &aMutex;
     mMutex->Acquire();
@@ -459,7 +466,9 @@ NS_IMETHODIMP nsIDNService::ConvertToDisplayIDN(const nsACString& input,
     } else {
       rv = Normalize(input, _retval);
     }
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
 
     if (mShowPunycode &&
         NS_SUCCEEDED(UTF8toACE(_retval, _retval, eStringPrepIgnoreErrors))) {
@@ -502,11 +511,14 @@ static nsresult utf16ToUcs4(const nsAString& in, uint32_t* out,
     if (start != end && NS_IS_SURROGATE_PAIR(curChar, *start)) {
       out[i] = SURROGATE_TO_UCS4(curChar, *start);
       ++start;
-    } else
+    } else {
       out[i] = curChar;
+    }
 
     i++;
-    if (i >= outBufLen) return NS_ERROR_MALFORMED_URI;
+    if (i >= outBufLen) {
+      return NS_ERROR_MALFORMED_URI;
+    }
   }
   out[i] = (uint32_t)'\0';
   *outLen = i;
@@ -528,8 +540,9 @@ static nsresult punycode(const nsAString& in, nsACString& out) {
   enum punycode_status status =
       punycode_encode(ucs4Len, ucs4Buf, nullptr, &encodedLength, encodedBuf);
 
-  if (punycode_success != status || encodedLength >= kEncodedBufSize)
+  if (punycode_success != status || encodedLength >= kEncodedBufSize) {
     return NS_ERROR_MALFORMED_URI;
+  }
 
   encodedBuf[encodedLength] = '\0';
   out.Assign(nsDependentCString(kACEPrefix) + nsDependentCString(encodedBuf));
@@ -687,13 +700,16 @@ bool nsIDNService::isInWhitelist(const nsACString& host) {
     // truncate trailing dots first
     tld.Trim(".");
     int32_t pos = tld.RFind(".");
-    if (pos == kNotFound) return false;
+    if (pos == kNotFound) {
+      return false;
+    }
 
     tld.Cut(0, pos + 1);
 
     bool safe;
-    if (NS_SUCCEEDED(mIDNWhitelistPrefBranch->GetBoolPref(tld.get(), &safe)))
+    if (NS_SUCCEEDED(mIDNWhitelistPrefBranch->GetBoolPref(tld.get(), &safe))) {
       return safe;
+    }
   }
 
   return false;

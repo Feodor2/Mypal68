@@ -296,6 +296,16 @@ ClassifierDummyChannel::GetLoadFlags(nsLoadFlags* aLoadFlags) {
 }
 
 NS_IMETHODIMP
+ClassifierDummyChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 ClassifierDummyChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -713,6 +723,10 @@ NS_IMETHODIMP ClassifierDummyChannel::IsThirdPartyTrackingResource(
 }
 
 void ClassifierDummyChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
+
+NS_IMETHODIMP ClassifierDummyChannel::SetWaitForHTTPSSVCRecord() {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 }  // namespace net
 }  // namespace mozilla

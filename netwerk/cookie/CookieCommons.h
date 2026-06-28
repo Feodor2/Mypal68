@@ -6,18 +6,40 @@
 #define mozilla_net_CookieCommons_h
 
 #include <cstdint>
+#include <functional>
 #include "prtime.h"
 #include "nsString.h"
+#include "nsICookie.h"
 
 class nsIChannel;
+class nsICookieJarSettings;
 class nsIEffectiveTLDService;
+class nsIPrincipal;
 class nsIURI;
+class mozIThirdPartyUtil; //MY
 
 namespace mozilla {
+
+namespace dom {
+class Document;
+}
+
 namespace net {
 
 // these constants represent an operation being performed on cookies
 enum CookieOperation { OPERATION_READ, OPERATION_WRITE };
+
+// these constants represent a decision about a cookie based on user prefs.
+enum CookieStatus {
+  STATUS_ACCEPTED,
+  STATUS_ACCEPT_SESSION,
+  STATUS_REJECTED,
+  // STATUS_REJECTED_WITH_ERROR indicates the cookie should be rejected because
+  // of an error (rather than something the user can control). this is used for
+  // notification purposes, since we only want to notify of rejections where
+  // the user can do something about it (e.g. whitelist the site).
+  STATUS_REJECTED_WITH_ERROR
+};
 
 class Cookie;
 
@@ -45,8 +67,11 @@ class CookieCommons final {
   static bool PathMatches(Cookie* aCookie, const nsACString& aPath);
 
   static nsresult GetBaseDomain(nsIEffectiveTLDService* aTLDService,
-                                nsIURI* aHostURI, nsCString& aBaseDomain,
+                                nsIURI* aHostURI, nsACString& aBaseDomain,
                                 bool& aRequireHostMatch);
+
+  static nsresult GetBaseDomain(nsIPrincipal* aPrincipal,
+                                nsACString& aBaseDomain);
 
   static nsresult GetBaseDomainFromHost(nsIEffectiveTLDService* aTLDService,
                                         const nsACString& aHost,
@@ -66,6 +91,45 @@ class CookieCommons final {
 
   static bool CheckCookiePermission(nsIChannel* aChannel,
                                     CookieStruct& aCookieData);
+
+  static bool CheckCookiePermission(nsIPrincipal* aPrincipal,
+                                    nsICookieJarSettings* aCookieJarSettings,
+                                    CookieStruct& aCookieData);
+
+  static already_AddRefed<Cookie> CreateCookieFromDocument(
+      dom::Document* aDocument, const nsACString& aCookieString,
+      int64_t currentTimeInUsec, nsIEffectiveTLDService* aTLDService,
+      mozIThirdPartyUtil* aThirdPartyUtil,
+      std::function<bool(const nsACString&, const OriginAttributes&)>&&
+          aHasExistingCookiesLambda,
+      nsIURI** aDocumentURI, nsACString& aBaseDomain, OriginAttributes& aAttrs);
+
+  static already_AddRefed<nsICookieJarSettings> GetCookieJarSettings(
+      nsIChannel* aChannel);
+
+  static bool ShouldIncludeCrossSiteCookieForDocument(Cookie* aCookie);
+
+  static bool MaybeCompareScheme(Cookie* aCookie,
+                                 nsICookie::schemeType aSchemeType);
+
+  static bool IsSchemeSupported(nsIPrincipal* aPrincipal);
+  static bool IsSchemeSupported(nsIURI* aURI);
+  static bool IsSchemeSupported(const nsACString& aScheme);
+
+  static nsICookie::schemeType URIToSchemeType(nsIURI* aURI);
+
+  static nsICookie::schemeType PrincipalToSchemeType(nsIPrincipal* aPrincipal);
+
+  static nsICookie::schemeType SchemeToSchemeType(const nsACString& aScheme);
+
+  // Returns true if the channel is a safe top-level navigation or if it's a
+  // download request
+  static bool IsSafeTopLevelNav(nsIChannel* aChannel);
+
+  // Returns true if the channel is a foreign with respect to the host-uri.
+  // For loads of TYPE_DOCUMENT, this function returns true if it's a cross
+  // origin navigation.
+  static bool IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI);
 };
 
 }  // namespace net

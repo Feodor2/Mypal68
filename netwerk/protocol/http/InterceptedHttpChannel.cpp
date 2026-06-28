@@ -56,7 +56,7 @@ void InterceptedHttpChannel::ReleaseListeners() {
   mPump = nullptr;
   mParentChannel = nullptr;
 
-  MOZ_DIAGNOSTIC_ASSERT(!mIsPending);
+  MOZ_DIAGNOSTIC_ASSERT(!LoadIsPending());
 }
 
 nsresult InterceptedHttpChannel::SetupReplacementChannel(
@@ -93,12 +93,12 @@ void InterceptedHttpChannel::AsyncOpenInternal() {
 
   // We should have pre-set the AsyncOpen time based on the original channel if
   // timings are enabled.
-  if (mTimingEnabled) {
+  if (LoadTimingEnabled()) {
     MOZ_DIAGNOSTIC_ASSERT(!mAsyncOpenTime.IsNull());
   }
 
-  mIsPending = true;
-  mResponseCouldBeSynthesized = true;
+  StoreIsPending(true);
+  StoreResponseCouldBeSynthesized(true);
 
   if (mLoadGroup) {
     mLoadGroup->AddRequest(this, nullptr);
@@ -940,8 +940,13 @@ InterceptedHttpChannel::OnRedirectVerifyCallback(nsresult rv) {
 
   MaybeCallBodyCallback();
 
-  mIsPending = false;
-  ReleaseListeners();
+  StoreIsPending(false);
+  // We can only release listeners after the redirected channel really owns
+  // mListener. Otherwise, the OnStart/OnStopRequest functions of mListener will
+  // not be called.
+  if (NS_SUCCEEDED(rv)) {
+    ReleaseListeners();
+  }
 
   return NS_OK;
 }
@@ -986,7 +991,7 @@ InterceptedHttpChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   // to the ReleaseListeners() call below.
   MaybeCallStatusAndProgress();
 
-  mIsPending = false;
+  StoreIsPending(false);
 
   // Register entry to the PerformanceStorage resource timing
   MaybeReportTimingData();

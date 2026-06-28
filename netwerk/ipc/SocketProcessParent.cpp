@@ -5,15 +5,22 @@
 #include "SocketProcessParent.h"
 #include "SocketProcessLogging.h"
 
+#include "AltServiceParent.h"
+#include "CachePushChecker.h"
 #include "HttpTransactionParent.h"
 #include "SocketProcessHost.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/FileDescriptorSetParent.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/PChildToParentStreamParent.h"
 #include "mozilla/ipc/PParentToChildStreamParent.h"
 #include "mozilla/net/DNSRequestParent.h"
+#include "mozilla/net/ProxyConfigLookupParent.h"
 #include "nsIHttpActivityObserver.h"
+#include "nsNSSIOLayer.h"
+#include "PSMIPCCommon.h"
+#include "secerr.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/ContentProcessManager.h"
 #  include "mozilla/dom/BrowserParent.h"
@@ -108,7 +115,8 @@ bool SocketProcessParent::DeallocPWebrtcTCPSocketParent(
 already_AddRefed<PDNSRequestParent> SocketProcessParent::AllocPDNSRequestParent(
     const nsCString& aHost, const nsCString& aTrrServer, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
-  RefPtr<DNSRequestParent> actor = new DNSRequestParent();
+  RefPtr<DNSRequestHandler> handler = new DNSRequestHandler();
+  RefPtr<DNSRequestParent> actor = new DNSRequestParent(handler);
   return actor.forget();
 }
 
@@ -116,8 +124,10 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvPDNSRequestConstructor(
     PDNSRequestParent* aActor, const nsCString& aHost,
     const nsCString& aTrrServer, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
-  static_cast<DNSRequestParent*>(aActor)->DoAsyncResolve(
-      aHost, aTrrServer, aType, aOriginAttributes, aFlags);
+  RefPtr<DNSRequestParent> actor = static_cast<DNSRequestParent*>(aActor);
+  RefPtr<DNSRequestHandler> handler =
+      actor->GetDNSRequest()->AsDNSRequestHandler();
+  handler->DoAsyncResolve(aHost, aTrrServer, aType, aOriginAttributes, aFlags);
   return IPC_OK();
 }
 
@@ -173,12 +183,114 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvObserveHttpActivity(
     const uint32_t& aActivitySubtype, const PRTime& aTimestamp,
     const uint64_t& aExtraSizeData, const nsCString& aExtraStringData) {
   nsCOMPtr<nsIHttpActivityDistributor> activityDistributor =
-      services::GetHttpActivityDistributor();
+      components::HttpActivityDistributor::Service();
   MOZ_ASSERT(activityDistributor);
 
   Unused << activityDistributor->ObserveActivityWithArgs(
       aArgs, aActivityType, aActivitySubtype, aTimestamp, aExtraSizeData,
       aExtraStringData);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvInitBackground(
+    Endpoint<PBackgroundParent>&& aEndpoint) {
+  LOG(("SocketProcessParent::RecvInitBackground\n"));
+  if (!ipc::BackgroundParent::Alloc(nullptr, std::move(aEndpoint))) {
+    return IPC_FAIL(this, "BackgroundParent::Alloc failed");
+  }
+
+  return IPC_OK();
+}
+
+already_AddRefed<PAltServiceParent>
+SocketProcessParent::AllocPAltServiceParent() {
+  RefPtr<AltServiceParent> actor = new AltServiceParent();
+  return actor.forget();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvGetTLSClientCert(
+    const nsCString& aHostName, const OriginAttributes& aOriginAttributes,
+    const int32_t& aPort, const uint32_t& aProviderFlags,
+    const uint32_t& aProviderTlsFlags, const ByteArray& aServerCert,
+    Maybe<ByteArray>&& aClientCert, nsTArray<ByteArray>&& aCollectedCANames,
+    bool* aSucceeded, ByteArray* aOutCert, ByteArray* aOutKey,
+    nsTArray<ByteArray>* aBuiltChain) {
+  *aSucceeded = false;
+
+  SECItem serverCertItem = {
+      siBuffer, const_cast<uint8_t*>(aServerCert.data().Elements()),
+      static_cast<unsigned int>(aServerCert.data().Length())};
+  UniqueCERTCertificate serverCert(CERT_NewTempCertificate(
+      CERT_GetDefaultCertDB(), &serverCertItem, nullptr, false, true));
+  if (!serverCert) {
+    return IPC_OK();
+  }
+
+  RefPtr<nsIX509Cert> clientCert;
+  if (aClientCert) {
+    clientCert = nsNSSCertificate::ConstructFromDER(
+        BitwiseCast<char*, uint8_t*>(aClientCert->data().Elements()),
+        aClientCert->data().Length());
+    if (!clientCert) {
+      return IPC_OK();
+    }
+  }
+
+  ClientAuthInfo info(aHostName, aOriginAttributes, aPort, aProviderFlags,
+                      aProviderTlsFlags, clientCert);
+  nsTArray<nsTArray<uint8_t>> collectedCANames;
+  for (auto& name : aCollectedCANames) {
+    collectedCANames.AppendElement(std::move(name.data()));
+  }
+
+  UniqueCERTCertificate cert;
+  UniqueSECKEYPrivateKey key;
+  UniqueCERTCertList builtChain;
+  SECStatus status =
+      DoGetClientAuthData(std::move(info), serverCert,
+                          std::move(collectedCANames), cert, key, builtChain);
+  if (status != SECSuccess) {
+    return IPC_OK();
+  }
+
+  SerializeClientCertAndKey(cert, key, *aOutCert, *aOutKey);
+
+  if (builtChain) {
+    for (CERTCertListNode* n = CERT_LIST_HEAD(builtChain);
+         !CERT_LIST_END(n, builtChain); n = CERT_LIST_NEXT(n)) {
+      ByteArray array;
+      array.data().AppendElements(n->cert->derCert.data, n->cert->derCert.len);
+      aBuiltChain->AppendElement(std::move(array));
+    }
+  }
+
+  *aSucceeded = true;
+  return IPC_OK();
+}
+
+already_AddRefed<PProxyConfigLookupParent>
+SocketProcessParent::AllocPProxyConfigLookupParent(
+    nsIURI* aURI, const uint32_t& aProxyResolveFlags) {
+  RefPtr<ProxyConfigLookupParent> actor =
+      new ProxyConfigLookupParent(aURI, aProxyResolveFlags);
+  return actor.forget();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvPProxyConfigLookupConstructor(
+    PProxyConfigLookupParent* aActor, nsIURI* aURI,
+    const uint32_t& aProxyResolveFlags) {
+  static_cast<ProxyConfigLookupParent*>(aActor)->DoProxyLookup();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvCachePushCheck(
+    nsIURI* aPushedURL, OriginAttributes&& aOriginAttributes,
+    nsCString&& aRequestString, CachePushCheckResolver&& aResolver) {
+  RefPtr<CachePushChecker> checker = new CachePushChecker(
+      aPushedURL, aOriginAttributes, aRequestString, aResolver);
+  if (NS_FAILED(checker->DoCheck())) {
+    aResolver(false);
+  }
   return IPC_OK();
 }
 

@@ -269,7 +269,7 @@ function socketAccepted(socket, transport) {
 }
 
 function stopListening(socket, status) {
-  if (do_throw) {
+  if (tests && tests.length !== 0 && do_throw) {
     do_throw("should never stop");
   }
 }

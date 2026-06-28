@@ -6,6 +6,7 @@
 
 %{ C++
 
+#include "mozilla/Maybe.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsStringFwd.h"
 
@@ -25,6 +26,9 @@ namespace net {
 
 [ref] native CStringArrayRef(nsTArray<nsCString>);
 native TypeResult(mozilla::net::TypeRecordResultType);
+
+native MaybePort(mozilla::Maybe<uint16_t>);
+native MaybeAlpn(mozilla::Maybe<nsCString>);
 
 [scriptable, uuid(5d13241b-9d46-448a-90d8-77c418491026)]
 interface nsIDNSByTypeRecord : nsIDNSRecord
@@ -73,8 +77,8 @@ interface nsISVCParamIPv4Hint : nsISupports {
 };
 
 [scriptable, uuid(1f31e41d-b6d8-4796-b12a-82ef8d2b0e43)]
-interface nsISVCParamEsniConfig : nsISupports {
-  readonly attribute ACString esniConfig;
+interface nsISVCParamEchConfig : nsISupports {
+  readonly attribute ACString echconfig;
 };
 
 [scriptable, uuid(5100bce4-9d3b-42e1-a3c9-0f386bbc9dad)]
@@ -82,10 +86,14 @@ interface nsISVCParamIPv6Hint : nsISupports {
   readonly attribute Array<nsINetAddr> ipv6Hint;
 };
 
-[scriptable, uuid(a4da5645-2160-4439-bd11-540a2d26c989)]
+[scriptable, builtinclass, uuid(a4da5645-2160-4439-bd11-540a2d26c989)]
 interface nsISVCBRecord : nsISupports {
   readonly attribute uint16_t priority;
   readonly attribute ACString name;
+  [noscript, nostdcall, notxpcom] readonly attribute MaybePort port;
+  [noscript, nostdcall, notxpcom] readonly attribute MaybeAlpn alpn;
+  readonly attribute ACString echConfig;
+  readonly attribute bool hasIPHintAddress;
   readonly attribute Array<nsISVCParam> values;
 };
 
@@ -93,4 +101,5 @@ interface nsISVCBRecord : nsISupports {
 interface nsIDNSHTTPSSVCRecord : nsISupports
 {
   readonly attribute Array<nsISVCBRecord> records;
+  nsISVCBRecord GetServiceModeRecord(in boolean aNoHttp2);
 };

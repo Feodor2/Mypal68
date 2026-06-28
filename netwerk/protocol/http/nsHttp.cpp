@@ -11,7 +11,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsCRT.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpResponseHead.h"
@@ -799,25 +799,14 @@ void LogCallingScriptLocation(void* instance) {
        col));
 }
 
-static bool sSanitize = true;
-
-static bool InitPreferences() {
-  Preferences::AddBoolVarCache(&sSanitize,
-                               "network.http.sanitize-headers-in-logs", true);
-  return true;
-}
-
 void LogHeaders(const char* lineStart) {
-  // The static bool assignment means that AddBoolVarCache is called just once.
-  static bool once = InitPreferences();
-  Unused << once;
-
   nsAutoCString buf;
   char* endOfLine;
   while ((endOfLine = PL_strstr(lineStart, "\r\n"))) {
     buf.Assign(lineStart, endOfLine - lineStart);
-    if (sSanitize && (PL_strcasestr(buf.get(), "authorization: ") ||
-                      PL_strcasestr(buf.get(), "proxy-authorization: "))) {
+    if (StaticPrefs::network_http_sanitize_headers_in_logs() &&
+        (PL_strcasestr(buf.get(), "authorization: ") ||
+         PL_strcasestr(buf.get(), "proxy-authorization: "))) {
       char* p = PL_strchr(buf.get(), ' ');
       while (p && *++p) {
         *p = '*';
@@ -962,6 +951,39 @@ nsresult HttpProxyResponseToErrorCode(uint32_t aStatusCode) {
   }
 
   return rv;
+}
+
+nsCString SelectAlpnFromAlpnList(const nsACString& aAlpnList, bool aNoHttp2) {
+  nsCString h2Value;
+  nsCString h1Value;
+  // aAlpnList is a list of alpn-id and use comma as a delimiter.
+  nsCCharSeparatedTokenizer tokenizer(aAlpnList, ',');
+  nsAutoCString npnStr;
+  while (tokenizer.hasMoreTokens()) {
+    const nsACString& npnToken(tokenizer.nextToken());
+
+    uint32_t spdyIndex;
+    SpdyInformation* spdyInfo = gHttpHandler->SpdyInfo();
+    if (NS_SUCCEEDED(spdyInfo->GetNPNIndex(npnToken, &spdyIndex)) &&
+        spdyInfo->ProtocolEnabled(spdyIndex) && h2Value.IsEmpty()) {
+      h2Value.Assign(npnToken);
+    }
+
+    if (npnToken.LowerCaseEqualsASCII("http/1.1") && h1Value.IsEmpty()) {
+      h1Value.Assign(npnToken);
+    }
+  }
+
+  if (!h2Value.IsEmpty() && gHttpHandler->IsSpdyEnabled() && !aNoHttp2) {
+    return h2Value;
+  }
+
+  if (!h1Value.IsEmpty()) {
+    return h1Value;
+  }
+
+  // If we are here, there is no supported alpn can be used.
+  return {};
 }
 
 }  // namespace net

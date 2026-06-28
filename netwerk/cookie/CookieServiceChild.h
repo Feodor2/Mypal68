@@ -50,13 +50,9 @@ class CookieServiceChild final : public PCookieServiceChild,
   ~CookieServiceChild();
   void MoveCookies();
 
-  nsresult SetCookieStringInternal(nsIURI* aHostURI, nsIChannel* aChannel,
-                                   const nsACString& aCookieString,
-                                   bool aFromHttp);
-
   void RecordDocumentCookie(Cookie* aCookie, const OriginAttributes& aAttrs);
 
-  uint32_t CountCookiesFromHashTable(const nsCString& aBaseDomain,
+  uint32_t CountCookiesFromHashTable(const nsACString& aBaseDomain,
                                      const OriginAttributes& aOriginAttrs);
 
   void PrefChanged(nsIPrefBranch* aPrefBranch);

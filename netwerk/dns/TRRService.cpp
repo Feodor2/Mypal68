@@ -2,9 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsICaptivePortalService.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsComponentManagerUtils.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserverService.h"
+#include "nsIOService.h"
 #include "nsNetUtil.h"
 #include "nsStandardURL.h"
 #include "TRR.h"
@@ -14,11 +16,9 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
 
-static const char kOpenCaptivePortalLoginEvent[] = "captive-portal-login";
 static const char kClearPrivateData[] = "clear-private-data";
 static const char kPurge[] = "browser:purge-session-history";
 static const char kDisableIpv6Pref[] = "network.dns.disableIPv6";
-static const char kCaptivedetectCanonicalURL[] = "captivedetect.canonicalURL";
 
 #define TRR_PREF_PREFIX "network.trr."
 #define TRR_PREF(x) TRR_PREF_PREFIX x
@@ -41,13 +41,29 @@ TRRService::TRRService()
       mTRRBlocklistExpireTime(72 * 3600),
       mLock("trrservice"),
       mConfirmationNS("example.com"_ns),
-      mCaptiveIsPassed(false),
       mVPNDetected(false),
       mClearTRRBLStorage(false),
       mConfirmationState(CONFIRM_INIT),
       mRetryConfirmInterval(1000),
       mTRRFailures(0) {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
+}
+
+// static
+void TRRService::AddObserver(nsIObserver* aObserver,
+                             nsIObserverService* aObserverService) {
+  nsCOMPtr<nsIObserverService> observerService;
+  if (aObserverService) {
+    observerService = aObserverService;
+  } else {
+    observerService = mozilla::services::GetObserverService();
+  }
+
+  if (observerService) {
+    observerService->AddObserver(aObserver, kClearPrivateData, true);
+    observerService->AddObserver(aObserver, kPurge, true);
+    observerService->AddObserver(aObserver, "xpcom-shutdown-threads", true);
+  }
 }
 
 nsresult TRRService::Init() {
@@ -57,56 +73,40 @@ nsresult TRRService::Init() {
   }
   mInitialized = true;
 
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-  if (observerService) {
-    observerService->AddObserver(this, NS_CAPTIVE_PORTAL_CONNECTIVITY, true);
-    observerService->AddObserver(this, kOpenCaptivePortalLoginEvent, true);
-    observerService->AddObserver(this, kClearPrivateData, true);
-    observerService->AddObserver(this, kPurge, true);
-    observerService->AddObserver(this, "xpcom-shutdown-threads", true);
-  }
+  AddObserver(this);
+
   nsCOMPtr<nsIPrefBranch> prefBranch;
   GetPrefBranch(getter_AddRefs(prefBranch));
   if (prefBranch) {
     prefBranch->AddObserver(TRR_PREF_PREFIX, this, true);
     prefBranch->AddObserver(kDisableIpv6Pref, this, true);
-    prefBranch->AddObserver(kCaptivedetectCanonicalURL, this, true);
-  }
-  nsCOMPtr<nsICaptivePortalService> captivePortalService =
-      do_GetService(NS_CAPTIVEPORTAL_CID);
-  if (captivePortalService) {
-    int32_t captiveState;
-    MOZ_ALWAYS_SUCCEEDS(captivePortalService->GetState(&captiveState));
-
-    if ((captiveState == nsICaptivePortalService::UNLOCKED_PORTAL) ||
-        (captiveState == nsICaptivePortalService::NOT_CAPTIVE)) {
-      mCaptiveIsPassed = true;
-    }
-    LOG(("TRRService::Init mCaptiveState=%d mCaptiveIsPassed=%d\n",
-         captiveState, (int)mCaptiveIsPassed));
   }
 
   ReadPrefs(nullptr);
 
   gTRRService = this;
 
-  nsCOMPtr<nsIThread> thread;
-  if (NS_FAILED(NS_NewNamedThread("TRR Background", getter_AddRefs(thread)))) {
-    NS_WARNING("NS_NewNamedThread failed!");
-    return NS_ERROR_FAILURE;
-  }
+  if (XRE_IsParentProcess()) {
+    nsCOMPtr<nsIThread> thread;
+    if (NS_FAILED(
+            NS_NewNamedThread("TRR Background", getter_AddRefs(thread)))) {
+      NS_WARNING("NS_NewNamedThread failed!");
+      return NS_ERROR_FAILURE;
+    }
 
-  sTRRBackgroundThread = thread;
+    sTRRBackgroundThread = thread;
+  }
 
   LOG(("Initialized TRRService\n"));
   return NS_OK;
 }
 
-bool TRRService::Enabled() {
+bool TRRService::Enabled(nsIRequest::TRRMode aMode) {
+  if (mMode == MODE_TRROFF) {
+    return false;
+  }
   if (mConfirmationState == CONFIRM_INIT &&
-      (!StaticPrefs::network_trr_wait_for_portal() || mCaptiveIsPassed ||
-       (mMode == MODE_TRRONLY))) {
+      (mMode == MODE_TRRONLY || aMode == nsIRequest::TRR_ONLY_MODE)) {
     LOG(("TRRService::Enabled => CONFIRM_TRYING\n"));
     mConfirmationState = CONFIRM_TRYING;
   }
@@ -114,11 +114,6 @@ bool TRRService::Enabled() {
   if (mConfirmationState == CONFIRM_TRYING) {
     LOG(("TRRService::Enabled MaybeConfirm()\n"));
     MaybeConfirm();
-  }
-
-  if (mConfirmationState != CONFIRM_OK) {
-    LOG(("TRRService::Enabled mConfirmationState=%d mCaptiveIsPassed=%d\n",
-         (int)mConfirmationState, (int)mCaptiveIsPassed));
   }
 
   return (mConfirmationState == CONFIRM_OK);
@@ -217,9 +212,11 @@ nsresult TRRService::ReadPrefs(const char* name) {
     nsAutoCString old(mConfirmationNS);
     Preferences::GetCString(TRR_PREF("confirmationNS"), mConfirmationNS);
     if (name && !old.IsEmpty() && !mConfirmationNS.Equals(old) &&
-        (mConfirmationState > CONFIRM_TRYING)) {
+        (mConfirmationState > CONFIRM_TRYING) &&
+        (mMode == MODE_TRRFIRST || mMode == MODE_TRRONLY)) {
       LOG(("TRR::ReadPrefs: restart confirmationNS state\n"));
       mConfirmationState = CONFIRM_TRYING;
+      MaybeConfirm_locked();
     }
   }
   if (!name || !strcmp(name, TRR_PREF("bootstrapAddress"))) {
@@ -242,8 +239,7 @@ nsresult TRRService::ReadPrefs(const char* name) {
     }
   }
   if (!name || !strcmp(name, TRR_PREF("excluded-domains")) ||
-      !strcmp(name, TRR_PREF("builtin-excluded-domains")) ||
-      !strcmp(name, kCaptivedetectCanonicalURL)) {
+      !strcmp(name, TRR_PREF("builtin-excluded-domains"))) {
     AutoLock lock(mLock);
     mExcludedDomains.Clear();
 
@@ -268,19 +264,6 @@ nsresult TRRService::ReadPrefs(const char* name) {
     parseExcludedDomains(TRR_PREF("excluded-domains"));
     parseExcludedDomains(TRR_PREF("builtin-excluded-domains"));
     clearEntireCache = true;
-
-    nsAutoCString canonicalSiteURL;
-    Preferences::GetCString(kCaptivedetectCanonicalURL, canonicalSiteURL);
-
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv = NS_NewURI(getter_AddRefs(uri), canonicalSiteURL,
-                            UTF_8_ENCODING, nullptr);
-    if (NS_SUCCEEDED(rv)) {
-      nsAutoCString host;
-      uri->GetHost(host);
-      LOG(("TRRService::ReadPrefs captive portal URL:[%s]\n", host.get()));
-      mExcludedDomains.Insert(host);
-    }
   }
 
   // if name is null, then we're just now initializing. In that case we don't
@@ -338,7 +321,8 @@ nsresult TRRService::DispatchTRRRequest(TRR* aTrrRequest) {
 nsresult TRRService::DispatchTRRRequestInternal(TRR* aTrrRequest,
                                                 bool aWithLock) {
   NS_ENSURE_ARG_POINTER(aTrrRequest);
-  if (!StaticPrefs::network_trr_fetch_off_main_thread()) {
+  if (!StaticPrefs::network_trr_fetch_off_main_thread() ||
+      XRE_IsSocketProcess()) {
     return NS_DispatchToMainThread(aTrrRequest);
   }
 
@@ -374,6 +358,33 @@ bool TRRService::IsOnTRRThread() {
   return thread->IsOnCurrentThread();
 }
 
+void TRRService::InitTRRBLStorage(DataStorage* aInitedStorage) {
+  if (mTRRBLStorage) {
+    return;
+  }
+
+  // We need a lock if we modify mTRRBLStorage variable because it is
+  // access off the main thread as well.
+  AutoLock lock(mLock);
+  if (aInitedStorage) {
+    mTRRBLStorage = aInitedStorage;
+  } else {
+    mTRRBLStorage = DataStorage::Get(DataStorageClass::TRRBlacklist);
+    if (mTRRBLStorage) {
+      if (NS_FAILED(mTRRBLStorage->Init(nullptr))) {
+        mTRRBLStorage = nullptr;
+      }
+    }
+  }
+
+  if (mClearTRRBLStorage) {
+    if (mTRRBLStorage) {
+      mTRRBLStorage->Clear();
+    }
+    mClearTRRBLStorage = false;
+  }
+}
+
 NS_IMETHODIMP
 TRRService::Observe(nsISupports* aSubject, const char* aTopic,
                     const char16_t* aData) {
@@ -389,42 +400,6 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
       mConfirmationState = CONFIRM_TRYING;
       MaybeConfirm_locked();
     }
-
-  } else if (!strcmp(aTopic, kOpenCaptivePortalLoginEvent)) {
-    // We are in a captive portal
-    LOG(("TRRservice in captive portal\n"));
-    mCaptiveIsPassed = false;
-  } else if (!strcmp(aTopic, NS_CAPTIVE_PORTAL_CONNECTIVITY)) {
-    nsAutoCString data = NS_ConvertUTF16toUTF8(aData);
-    LOG(("TRRservice captive portal was %s\n", data.get()));
-    if (!mTRRBLStorage) {
-      // We need a lock if we modify mTRRBLStorage variable because it is
-      // access off the main thread as well.
-      AutoLock lock(mLock);
-      mTRRBLStorage = DataStorage::Get(DataStorageClass::TRRBlacklist);
-      if (mTRRBLStorage) {
-        if (NS_FAILED(mTRRBLStorage->Init(nullptr))) {
-          mTRRBLStorage = nullptr;
-        }
-        if (mClearTRRBLStorage) {
-          if (mTRRBLStorage) {
-            mTRRBLStorage->Clear();
-          }
-          mClearTRRBLStorage = false;
-        }
-      }
-    }
-
-    if (!mCaptiveIsPassed) {
-      if (mConfirmationState != CONFIRM_OK) {
-        mConfirmationState = CONFIRM_TRYING;
-        MaybeConfirm();
-      }
-    } else {
-      LOG(("TRRservice CP clear when already up!\n"));
-    }
-
-    mCaptiveIsPassed = true;
 
   } else if (!strcmp(aTopic, kClearPrivateData) || !strcmp(aTopic, kPurge)) {
     // flush the TRR blocklist, both in-memory and on-disk
@@ -463,7 +438,7 @@ void TRRService::MaybeConfirm() {
 
 void TRRService::MaybeConfirm_locked() {
   mLock.AssertCurrentThreadOwns();
-  if (TRR_DISABLED(mMode) || mConfirmer ||
+  if (mMode == MODE_TRROFF || mConfirmer ||
       mConfirmationState != CONFIRM_TRYING) {
     LOG(
         ("TRRService:MaybeConfirm mode=%d, mConfirmer=%p "
@@ -487,7 +462,7 @@ void TRRService::MaybeConfirm_locked() {
 bool TRRService::MaybeBootstrap(const nsACString& aPossible,
                                 nsACString& aResult) {
   AutoLock lock(mLock);
-  if (TRR_DISABLED(mMode) || mBootstrapAddr.IsEmpty()) {
+  if (mMode == MODE_TRROFF || mBootstrapAddr.IsEmpty()) {
     return false;
   }
 
@@ -516,7 +491,7 @@ bool TRRService::MaybeBootstrap(const nsACString& aPossible,
 bool TRRService::IsDomainBlocked(const nsACString& aHost,
                                  const nsACString& aOriginSuffix,
                                  bool aPrivateBrowsing) {
-  if (!Enabled()) {
+  if (!Enabled(nsIRequest::TRR_DEFAULT_MODE)) {
     return true;
   }
 
@@ -743,6 +718,7 @@ TRRService::Notify(nsITimer* aTimer) {
 
 void TRRService::TRRIsOkay(enum TrrOkay aReason) {
   MOZ_ASSERT_IF(XRE_IsParentProcess(), NS_IsMainThread() || IsOnTRRThread());
+  MOZ_ASSERT_IF(XRE_IsSocketProcess(), NS_IsMainThread());
 
   if (aReason == OKAY_NORMAL) {
     mTRRFailures = 0;
@@ -766,6 +742,7 @@ AHostResolver::LookupStatus TRRService::CompleteLookup(
   // this is an NS check for the TRR blocklist or confirmationNS check
 
   MOZ_ASSERT_IF(XRE_IsParentProcess(), NS_IsMainThread() || IsOnTRRThread());
+  MOZ_ASSERT_IF(XRE_IsSocketProcess(), NS_IsMainThread());
   MOZ_ASSERT(!rec);
 
   RefPtr<AddrInfo> newRRSet(aNewRRSet);
@@ -805,10 +782,10 @@ AHostResolver::LookupStatus TRRService::CompleteLookup(
 
   // when called without a host record, this is a domain name check response.
   if (NS_SUCCEEDED(status)) {
-    LOG(("TRR verified %s to be fine!\n", newRRSet->mHostName.get()));
+    LOG(("TRR verified %s to be fine!\n", newRRSet->Hostname().get()));
   } else {
-    LOG(("TRR says %s doesn't resolve as NS!\n", newRRSet->mHostName.get()));
-    AddToBlocklist(newRRSet->mHostName, aOriginSuffix, pb, false);
+    LOG(("TRR says %s doesn't resolve as NS!\n", newRRSet->Hostname().get()));
+    AddToBlocklist(newRRSet->Hostname(), aOriginSuffix, pb, false);
   }
   return LOOKUP_OK;
 }

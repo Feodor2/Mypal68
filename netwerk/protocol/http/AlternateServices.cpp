@@ -11,14 +11,15 @@
 #include "nsHttpConnectionInfo.h"
 #include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
+#include "nsIOService.h"
 #include "nsThreadUtils.h"
 #include "nsHttpTransaction.h"
-#include "NullHttpTransaction.h"
 #include "nsISSLSocketControl.h"
 #include "nsIWellKnownOpportunisticUtils.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/net/AltSvcTransactionParent.h"
 
 /* RFC 7838 Alternative Services
    http://httpwg.org/http-extensions/opsec.html
@@ -58,9 +59,6 @@ void AltSvcMapping::ProcessHeader(
     const OriginAttributes& originAttributes) {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(("AltSvcMapping::ProcessHeader: %s\n", buf.get()));
-  if (!callbacks) {
-    return;
-  }
 
   if (StaticPrefs::network_http_altsvc_proxy_checks() &&
       !AcceptableProxy(proxyInfo)) {
@@ -444,124 +442,136 @@ AltSvcMapping::AltSvcMapping(DataStorage* storage, int32_t epoch,
   } while (false);
 }
 
-// This is the asynchronous null transaction used to validate
-// an alt-svc advertisement only for https://
-class AltSvcTransaction final : public NullHttpTransaction {
- public:
-  AltSvcTransaction(AltSvcMapping* map, nsHttpConnectionInfo* ci,
-                    nsIInterfaceRequestor* callbacks, uint32_t caps)
-      : NullHttpTransaction(ci, callbacks, caps & ~NS_HTTP_ALLOW_KEEPALIVE),
-        mMapping(map),
-        mRunning(true),
-        mTriedToValidate(false),
-        mTriedToWrite(false) {
-    LOG(("AltSvcTransaction ctor %p map %p [%s -> %s]", this, map,
-         map->OriginHost().get(), map->AlternateHost().get()));
-    MOZ_ASSERT(mMapping);
-    MOZ_ASSERT(mMapping->HTTPS());
+AltSvcMappingValidator::AltSvcMappingValidator(AltSvcMapping* aMap)
+    : mMapping(aMap) {
+  LOG(("AltSvcMappingValidator ctor %p map %p [%s -> %s]", this, aMap,
+       aMap->OriginHost().get(), aMap->AlternateHost().get()));
+  MOZ_ASSERT(mMapping);
+  MOZ_ASSERT(mMapping->HTTPS());  // http:// uses the .wk path
+}
+
+void AltSvcMappingValidator::OnTransactionDestroy(bool aValidateResult) {
+  mMapping->SetValidated(aValidateResult);
+  if (!mMapping->Validated()) {
+    // try again later
+    mMapping->SetExpiresAt(NowInSeconds() + 2);
+  }
+  LOG(
+      ("AltSvcMappingValidator::OnTransactionDestroy %p map %p validated %d "
+       "[%s]",
+       this, mMapping.get(), mMapping->Validated(), mMapping->HashKey().get()));
+}
+
+void AltSvcMappingValidator::OnTransactionClose(bool aValidateResult) {
+  mMapping->SetValidated(aValidateResult);
+  LOG(
+      ("AltSvcMappingValidator::OnTransactionClose %p map %p validated %d "
+       "[%s]",
+       this, mMapping.get(), mMapping->Validated(), mMapping->HashKey().get()));
+}
+
+template <class Validator>
+AltSvcTransaction<Validator>::AltSvcTransaction(
+    nsHttpConnectionInfo* ci, nsIInterfaceRequestor* callbacks, uint32_t caps,
+    Validator* aValidator)
+    : NullHttpTransaction(ci, callbacks, caps & ~NS_HTTP_ALLOW_KEEPALIVE),
+      mValidator(aValidator),
+      mRunning(true),
+      mTriedToValidate(false),
+      mTriedToWrite(false),
+      mValidatedResult(false) {
+  MOZ_ASSERT_IF(nsIOService::UseSocketProcess(), XRE_IsSocketProcess());
+  MOZ_ASSERT_IF(!nsIOService::UseSocketProcess(), XRE_IsParentProcess());
+}
+
+template <class Validator>
+AltSvcTransaction<Validator>::~AltSvcTransaction() {
+  LOG(("AltSvcTransaction dtor %p running %d", this, mRunning));
+
+  if (mRunning) {
+    mValidatedResult = MaybeValidate(NS_OK);
+    mValidator->OnTransactionDestroy(mValidatedResult);
+  }
+}
+
+template <class Validator>
+bool AltSvcTransaction<Validator>::MaybeValidate(nsresult reason) {
+  if (mTriedToValidate) {
+    return mValidatedResult;
+  }
+  mTriedToValidate = true;
+
+  LOG(("AltSvcTransaction::MaybeValidate() %p reason=%" PRIx32
+       " running=%d conn=%p write=%d",
+       this, static_cast<uint32_t>(reason), mRunning, mConnection.get(),
+       mTriedToWrite));
+
+  if (mTriedToWrite && reason == NS_BASE_STREAM_CLOSED) {
+    // The normal course of events is to cause the transaction to fail with
+    // CLOSED on a write - so that's a success that means the HTTP/2 session
+    // is setup.
+    reason = NS_OK;
   }
 
-  ~AltSvcTransaction() override {
-    LOG(("AltSvcTransaction dtor %p map %p running %d", this, mMapping.get(),
-         mRunning));
-
-    if (mRunning) {
-      MaybeValidate(NS_OK);
-    }
-    if (!mMapping->Validated()) {
-      // try again later
-      mMapping->SetExpiresAt(NowInSeconds() + 2);
-    }
-    LOG(("AltSvcTransaction dtor %p map %p validated %d [%s]", this,
-         mMapping.get(), mMapping->Validated(), mMapping->HashKey().get()));
+  if (NS_FAILED(reason) || !mRunning || !mConnection) {
+    LOG(("AltSvcTransaction::MaybeValidate %p Failed due to precondition",
+         this));
+    return false;
   }
 
- private:
-  // check on alternate route.
-  // also evaluate 'reasonable assurances' for opportunistic security
-  void MaybeValidate(nsresult reason) {
-    MOZ_ASSERT(mMapping->HTTPS());  // http:// uses the .wk path
+  // insist on >= http/2
+  HttpVersion version = mConnection->Version();
+  LOG(("AltSvcTransaction::MaybeValidate() %p version %d\n", this,
+       static_cast<int32_t>(version)));
+  if (version != HttpVersion::v2_0) {
+    LOG(("AltSvcTransaction::MaybeValidate %p Failed due to protocol version",
+         this));
+    return false;
+  }
 
-    if (mTriedToValidate) {
-      return;
-    }
-    mTriedToValidate = true;
+  nsCOMPtr<nsISupports> secInfo;
+  mConnection->GetSecurityInfo(getter_AddRefs(secInfo));
+  nsCOMPtr<nsISSLSocketControl> socketControl = do_QueryInterface(secInfo);
 
-    LOG(("AltSvcTransaction::MaybeValidate() %p reason=%" PRIx32
-         " running=%d conn=%p write=%d",
-         this, static_cast<uint32_t>(reason), mRunning, mConnection.get(),
-         mTriedToWrite));
+  LOG(("AltSvcTransaction::MaybeValidate() %p socketControl=%p\n", this,
+       socketControl.get()));
 
-    if (mTriedToWrite && reason == NS_BASE_STREAM_CLOSED) {
-      // The normal course of events is to cause the transaction to fail with
-      // CLOSED on a write - so that's a success that means the HTTP/2 session
-      // is setup.
-      reason = NS_OK;
-    }
-
-    if (NS_FAILED(reason) || !mRunning || !mConnection) {
-      LOG(("AltSvcTransaction::MaybeValidate %p Failed due to precondition",
-           this));
-      return;
-    }
-
-    // insist on >= http/2
-    HttpVersion version = mConnection->Version();
-    LOG(("AltSvcTransaction::MaybeValidate() %p version %d\n", this,
-         static_cast<int32_t>(version)));
-    if (version != HttpVersion::v2_0) {
-      LOG(("AltSvcTransaction::MaybeValidate %p Failed due to protocol version",
-           this));
-      return;
-    }
-
-    nsCOMPtr<nsISupports> secInfo;
-    mConnection->GetSecurityInfo(getter_AddRefs(secInfo));
-    nsCOMPtr<nsISSLSocketControl> socketControl = do_QueryInterface(secInfo);
-
-    LOG(("AltSvcTransaction::MaybeValidate() %p socketControl=%p\n", this,
-         socketControl.get()));
-
-    if (socketControl->GetFailedVerification()) {
-      LOG(
-          ("AltSvcTransaction::MaybeValidate() %p "
-           "not validated due to auth error",
-           this));
-      return;
-    }
-
+  if (socketControl->GetFailedVerification()) {
     LOG(
         ("AltSvcTransaction::MaybeValidate() %p "
-         "validating alternate service with successful auth check",
+         "not validated due to auth error",
          this));
-    mMapping->SetValidated(true);
+    return false;
   }
 
- public:
-  void Close(nsresult reason) override {
-    LOG(("AltSvcTransaction::Close() %p reason=%" PRIx32 " running %d", this,
-         static_cast<uint32_t>(reason), mRunning));
+  LOG(
+      ("AltSvcTransaction::MaybeValidate() %p "
+       "validating alternate service with successful auth check",
+       this));
 
-    MaybeValidate(reason);
-    if (!mMapping->Validated() && mConnection) {
-      mConnection->DontReuse();
-    }
-    NullHttpTransaction::Close(reason);
+  return true;
+}
+
+template <class Validator>
+void AltSvcTransaction<Validator>::Close(nsresult reason) {
+  LOG(("AltSvcTransaction::Close() %p reason=%" PRIx32 " running %d", this,
+       static_cast<uint32_t>(reason), mRunning));
+
+  mValidatedResult = MaybeValidate(reason);
+  mValidator->OnTransactionClose(mValidatedResult);
+  if (!mValidatedResult && mConnection) {
+    mConnection->DontReuse();
   }
+  NullHttpTransaction::Close(reason);
+}
 
-  nsresult ReadSegments(nsAHttpSegmentReader* reader, uint32_t count,
-                        uint32_t* countRead) override {
-    LOG(("AltSvcTransaction::ReadSegements() %p\n", this));
-    mTriedToWrite = true;
-    return NullHttpTransaction::ReadSegments(reader, count, countRead);
-  }
-
- private:
-  RefPtr<AltSvcMapping> mMapping;
-  uint32_t mRunning : 1;
-  uint32_t mTriedToValidate : 1;
-  uint32_t mTriedToWrite : 1;
-};
+template <class Validator>
+nsresult AltSvcTransaction<Validator>::ReadSegments(
+    nsAHttpSegmentReader* reader, uint32_t count, uint32_t* countRead) {
+  LOG(("AltSvcTransaction::ReadSegements() %p\n", this));
+  mTriedToWrite = true;
+  return NullHttpTransaction::ReadSegments(reader, count, countRead);
+}
 
 class WellKnownChecker {
  public:
@@ -973,10 +983,22 @@ void AltSvcCache::UpdateAltServiceMapping(
          this));
     // for https resources we only establish a connection
     nsCOMPtr<nsIInterfaceRequestor> callbacks = new AltSvcOverride(aCallbacks);
-    RefPtr<AltSvcTransaction> nullTransaction =
-        new AltSvcTransaction(map, ci, aCallbacks, caps);
-    nsresult rv = gHttpHandler->ConnMgr()->SpeculativeConnect(
-        ci, callbacks, caps, nullTransaction);
+    RefPtr<AltSvcMappingValidator> validator = new AltSvcMappingValidator(map);
+    RefPtr<NullHttpTransaction> nullTransaction;
+    if (nsIOService::UseSocketProcess()) {
+      RefPtr<AltSvcTransactionParent> parent =
+          new AltSvcTransactionParent(ci, aCallbacks, caps, validator);
+      if (!parent->Init()) {
+        return;
+      }
+      nullTransaction = parent;
+    } else {
+      nullTransaction = new AltSvcTransaction<AltSvcMappingValidator>(
+          ci, aCallbacks, caps, validator);
+    }
+
+    nsresult rv =
+        gHttpHandler->SpeculativeConnect(ci, callbacks, caps, nullTransaction);
     if (NS_FAILED(rv)) {
       LOG(
           ("AltSvcCache::UpdateAltServiceMapping %p "
@@ -1083,6 +1105,8 @@ class ProxyClearHostMapping : public Runnable {
 void AltSvcCache::ClearHostMapping(const nsACString& host, int32_t port,
                                    const OriginAttributes& originAttributes,
                                    const nsACString& topWindowOrigin) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
   if (!NS_IsMainThread()) {
     nsCOMPtr<nsIRunnable> event = new ProxyClearHostMapping(
         host, port, originAttributes, topWindowOrigin);
@@ -1127,7 +1151,7 @@ void AltSvcCache::ClearAltServiceMappings() {
 nsresult AltSvcCache::GetAltSvcCacheKeys(nsTArray<nsCString>& value) {
   MOZ_ASSERT(NS_IsMainThread());
   if (gHttpHandler->AllowAltSvc() && mStorage) {
-    nsTArray<mozilla::dom::DataStorageItem> items;
+    nsTArray<mozilla::psm::DataStorageItem> items;
     mStorage->GetAll(&items);
 
     for (const auto& item : items) {
@@ -1142,7 +1166,12 @@ AltSvcOverride::GetInterface(const nsIID& iid, void** result) {
   if (NS_SUCCEEDED(QueryInterface(iid, result)) && *result) {
     return NS_OK;
   }
-  return mCallbacks->GetInterface(iid, result);
+
+  if (mCallbacks) {
+    return mCallbacks->GetInterface(iid, result);
+  }
+
+  return NS_ERROR_NO_INTERFACE;
 }
 
 NS_IMETHODIMP

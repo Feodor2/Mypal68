@@ -15,11 +15,6 @@
 #define TLS_EARLY_DATA_AVAILABLE_BUT_NOT_USED 1
 #define TLS_EARLY_DATA_AVAILABLE_AND_USED 2
 
-#define ESNI_SUCCESSFUL 0
-#define ESNI_FAILED 1
-#define NO_ESNI_SUCCESSFUL 2
-#define NO_ESNI_FAILED 3
-
 #include "ASpdySession.h"
 #include "mozilla/ChaosMode.h"
 #include "nsHttpConnection.h"
@@ -32,10 +27,12 @@
 #include "nsSocketTransportService2.h"
 #include "nsISSLSocketControl.h"
 #include "nsISupportsPriority.h"
+#include "nsITransportSecurityInfo.h"
 #include "nsPreloadedStream.h"
 #include "nsProxyRelease.h"
 #include "nsSocketTransport2.h"
 #include "nsStringStream.h"
+#include "nsITransportSecurityInfo.h"
 #include "mozpkix/pkixnss.h"
 #include "sslt.h"
 #include "NSSErrorsService.h"
@@ -109,8 +106,6 @@ nsHttpConnection::nsHttpConnection()
   mIdleTimeout = (k5Sec < gHttpHandler->IdleTimeout())
                      ? k5Sec
                      : gHttpHandler->IdleTimeout();
-
-  mThroughCaptivePortal = gHttpHandler->GetThroughCaptivePortal();
 }
 
 nsHttpConnection::~nsHttpConnection() {
@@ -636,7 +631,7 @@ npnComplete:
   if (ssl) {
     // Telemetry for tls failure rate with and without esni;
     bool esni = false;
-    rv = mSocketTransport->GetEsniUsed(&esni);
+    rv = mSocketTransport->GetEchConfigUsed(&esni);
   }
 
   if (rv == psm::GetXPCOMFromNSSError(
@@ -942,7 +937,7 @@ void nsHttpConnection::Close(nsresult reason, bool aIsShutdown) {
     if (((reason == NS_ERROR_NET_RESET) ||
          (NS_ERROR_GET_MODULE(reason) == NS_ERROR_MODULE_SECURITY)) &&
         mConnInfo && !(mTransactionCaps & NS_HTTP_ERROR_SOFTLY)) {
-      gHttpHandler->AltServiceCache()->ClearHostMapping(mConnInfo);
+      gHttpHandler->ClearHostMapping(mConnInfo);
     }
 
     if (mSocketTransport) {

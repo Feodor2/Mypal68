@@ -106,17 +106,26 @@ CookieJarSettings::GetCookieBehavior(uint32_t* aCookieBehavior) {
 }
 
 NS_IMETHODIMP
-CookieJarSettings::GetRejectThirdPartyTrackers(bool* aRejectThirdPartyTrackers) {
-  *aRejectThirdPartyTrackers =
-      mCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
-      mCookieBehavior ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+CookieJarSettings::GetRejectThirdPartyContexts(
+    bool* aRejectThirdPartyContexts) {
+  *aRejectThirdPartyContexts =
+      CookieJarSettings::IsRejectThirdPartyContexts(mCookieBehavior);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookieJarSettings::GetLimitForeignContexts(bool* aLimitForeignContexts) {
+  *aLimitForeignContexts =
+      mCookieBehavior == nsICookieService::BEHAVIOR_LIMIT_FOREIGN ||
+      (StaticPrefs::privacy_dynamic_firstparty_limitForeign() &&
+       mCookieBehavior ==
+           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 CookieJarSettings::CookiePermission(nsIPrincipal* aPrincipal,
-                                 uint32_t* aCookiePermission) {
+                                    uint32_t* aCookiePermission) {
   MOZ_ASSERT(NS_IsMainThread());
   NS_ENSURE_ARG_POINTER(aPrincipal);
   NS_ENSURE_ARG_POINTER(aCookiePermission);
@@ -279,6 +288,21 @@ void CookieJarSettings::Merge(const CookieJarSettingsArgs& aData) {
       mCookiePermissions.AppendElement(permission);
     }
   }
+}
+
+// static
+bool CookieJarSettings::IsRejectThirdPartyContexts(uint32_t aCookieBehavior) {
+  return aCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+         aCookieBehavior ==
+             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN ||
+         IsRejectThirdPartyWithExceptions(aCookieBehavior);
+}
+
+// static
+bool CookieJarSettings::IsRejectThirdPartyWithExceptions(
+    uint32_t aCookieBehavior) {
+  return aCookieBehavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
+         StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled();
 }
 
 NS_IMPL_ISUPPORTS(CookieJarSettings, nsICookieJarSettings)

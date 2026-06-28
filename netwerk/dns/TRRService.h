@@ -14,9 +14,13 @@
 
 class nsIPrefBranch;
 class nsINetworkLinkService;
+class nsIObserverService;
 
 namespace mozilla {
 namespace net {
+
+class TRRServiceChild;
+class TRRServiceParent;
 
 class TRRService : public nsIObserver,
                    public nsITimerCallback,
@@ -30,7 +34,8 @@ class TRRService : public nsIObserver,
   TRRService();
   nsresult Init();
   nsresult Start();
-  bool Enabled();
+  bool Enabled(nsIRequest::TRRMode aMode);
+  bool IsConfirmed() { return mConfirmationState == CONFIRM_OK; }
 
   uint32_t Mode() { return mMode; }
   bool DisableIPv6() { return mDisableIPv6; }
@@ -61,6 +66,12 @@ class TRRService : public nsIObserver,
 
  private:
   virtual ~TRRService();
+
+  friend class TRRServiceChild;
+  friend class TRRServiceParent;
+  static void AddObserver(nsIObserver* aObserver,
+                          nsIObserverService* aObserverService = nullptr);
+
   nsresult ReadPrefs(const char* name);
   void GetPrefBranch(nsIPrefBranch** result);
   void MaybeConfirm();
@@ -74,20 +85,19 @@ class TRRService : public nsIObserver,
 
   nsresult DispatchTRRRequestInternal(TRR* aTrrRequest, bool aWithLock);
   already_AddRefed<nsIThread> TRRThread_locked();
+  void InitTRRBLStorage(DataStorage* aInitedStorage);
 
   bool mInitialized;
   Atomic<uint32_t, Relaxed> mMode;
   Atomic<uint32_t, Relaxed> mTRRBlocklistExpireTime;
 
-  Lock mLock;
+  Lock2 mLock;
 
   nsCString mPrivateURI;   // main thread only
   nsCString mPrivateCred;  // main thread only
   nsCString mConfirmationNS;
   nsCString mBootstrapAddr;
 
-  Atomic<bool, Relaxed>
-      mCaptiveIsPassed;  // set when captive portal check is passed
   Atomic<bool, Relaxed> mVPNDetected;
   Atomic<bool, Relaxed> mDisableIPv6;  // don't even try
 

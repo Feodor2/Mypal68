@@ -49,7 +49,7 @@ class HttpTransactionParent final : public PHttpTransactionParent,
       const nsCString& aSecurityInfoSerialization,
       const bool& aProxyConnectFailed, const TimingStructArgs& aTimings,
       const int32_t& aProxyConnectResponseCode,
-      nsTArray<uint8_t>&& aDataForSniffer);
+      nsTArray<uint8_t>&& aDataForSniffer, const bool& aRestarted);
   mozilla::ipc::IPCResult RecvOnTransportStatus(const nsresult& aStatus,
                                                 const int64_t& aProgress,
                                                 const int64_t& aProgressMax);
@@ -61,7 +61,8 @@ class HttpTransactionParent final : public PHttpTransactionParent,
       const int64_t& aTransferSize, const TimingStructArgs& aTimings,
       const Maybe<nsHttpHeaderArray>& responseTrailers,
       const bool& aHasStickyConn,
-      Maybe<TransactionObserverResult>&& aTransactionObserverResult);
+      Maybe<TransactionObserverResult>&& aTransactionObserverResult,
+      const int64_t& aRequestSize);
   mozilla::ipc::IPCResult RecvOnNetAddrUpdate(const NetAddr& aSelfAddr,
                                               const NetAddr& aPeerAddr,
                                               const bool& aResolvedByTRR);
@@ -82,13 +83,12 @@ class HttpTransactionParent final : public PHttpTransactionParent,
 
   void GetStructFromInfo(nsHttpConnectionInfo* aInfo,
                          HttpConnectionInfoCloneArgs& aArgs);
-  void DoOnStartRequest(const nsresult& aStatus,
-                        const Maybe<nsHttpResponseHead>& aResponseHead,
-                        const nsCString& aSecurityInfoSerialization,
-                        const bool& aProxyConnectFailed,
-                        const TimingStructArgs& aTimings,
-                        const int32_t& aProxyConnectResponseCode,
-                        nsTArray<uint8_t>&& aDataForSniffer);
+  void DoOnStartRequest(
+      const nsresult& aStatus, const Maybe<nsHttpResponseHead>& aResponseHead,
+      const nsCString& aSecurityInfoSerialization,
+      const bool& aProxyConnectFailed, const TimingStructArgs& aTimings,
+      const int32_t& aProxyConnectResponseCode,
+      nsTArray<uint8_t>&& aDataForSniffer, const bool& aRestarted);
   void DoOnTransportStatus(const nsresult& aStatus, const int64_t& aProgress,
                            const int64_t& aProgressMax);
   void DoOnDataAvailable(const nsCString& aData, const uint64_t& aOffset,
@@ -98,7 +98,8 @@ class HttpTransactionParent final : public PHttpTransactionParent,
       const int64_t& aTransferSize, const TimingStructArgs& aTimings,
       const Maybe<nsHttpHeaderArray>& responseTrailers,
       const bool& aHasStickyConn,
-      Maybe<TransactionObserverResult>&& aTransactionObserverResult);
+      Maybe<TransactionObserverResult>&& aTransactionObserverResult,
+      const int64_t& aRequestSize);
   void DoNotifyListener();
 
   nsCOMPtr<nsITransportEventSink> mEventsink;
@@ -124,6 +125,7 @@ class HttpTransactionParent final : public PHttpTransactionParent,
   bool mResolvedByTRR;
   int32_t mProxyConnectResponseCode;
   uint64_t mChannelId;
+  bool mRestarted;
 
   NetAddr mSelfAddr;
   NetAddr mPeerAddr;

@@ -13,6 +13,7 @@
 #include "TCPFastOpenLayer.h"
 #include "TunnelUtils.h"
 #include "base/basictypes.h"
+#include "mozilla/Components.h"
 #include "mozilla/Tokenizer.h"
 #include "nsCRT.h"
 #include "nsComponentManagerUtils.h"  // do_CreateInstance
@@ -26,6 +27,9 @@
 #include "nsHttpResponseHead.h"
 #include "nsICancelable.h"
 #include "nsIClassOfService.h"
+#include "nsIDNSByTypeRecord.h"
+#include "nsIDNSRecord.h"
+#include "nsIDNSService.h"
 #include "nsIEventTarget.h"
 #include "nsIHttpActivityObserver.h"
 #include "nsIHttpAuthenticator.h"
@@ -119,6 +123,7 @@ nsHttpTransaction::nsHttpTransaction()
       mResponseHeadTaken(false),
       mForTakeResponseTrailers(nullptr),
       mResponseTrailersTaken(false),
+      mRestarted(false),
       mTopLevelOuterContentWindowId(0),
       mSubmittedRatePacing(false),
       mPassedRatePacing(false),
@@ -140,8 +145,6 @@ nsHttpTransaction::nsHttpTransaction()
 #endif
   mSelfAddr.raw.family = PR_AF_UNSPEC;
   mPeerAddr.raw.family = PR_AF_UNSPEC;
-
-  mThroughCaptivePortal = gHttpHandler->GetThroughCaptivePortal();
 }
 
 void nsHttpTransaction::ResumeReading() {
@@ -265,7 +268,7 @@ nsresult nsHttpTransaction::Init(
   mTopLevelOuterContentWindowId = topLevelOuterContentWindowId;
   LOG(("  window-id = %" PRIx64, mTopLevelOuterContentWindowId));
 
-  mActivityDistributor = services::GetHttpActivityDistributor();
+  mActivityDistributor = components::HttpActivityDistributor::Service();
   if (!mActivityDistributor) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -436,6 +439,33 @@ nsresult nsHttpTransaction::Init(
     MOZ_ASSERT(trans);
     mPushedStream = trans->TakePushedStreamById(aPushedStreamId);
   }
+
+  if (gHttpHandler->UseHTTPSRRAsAltSvcEnabled()) {
+    nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
+    nsCOMPtr<nsIEventTarget> target;
+    Unused << gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
+    if (dns && target) {
+      uint32_t flags =
+          nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
+      if (mCaps & NS_HTTP_REFRESH_DNS) {
+        flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
+      }
+
+      nsCOMPtr<nsICancelable> dnsRequest;
+      rv = dns->AsyncResolveNative(
+          mConnInfo->GetOrigin(), nsIDNSService::RESOLVE_TYPE_HTTPSSVC, flags,
+          nullptr, this, target, mConnInfo->GetOriginAttributes(),
+          getter_AddRefs(dnsRequest));
+      if (NS_FAILED(rv) && (mCaps & NS_HTTP_WAIT_HTTPSSVC_RESULT)) {
+        return rv;
+      }
+
+      {
+        MutexAutoLock lock(mLock);
+        mDNSRequest.swap(dnsRequest);
+      }
+    }
+  }
   return NS_OK;
 }
 
@@ -532,6 +562,11 @@ void nsHttpTransaction::OnActivated() {
 
   if (mActivated) {
     return;
+  }
+
+  if (mDNSRequest) {
+    mDNSRequest->Cancel(NS_ERROR_ABORT);
+    mDNSRequest = nullptr;
   }
 
   if (mConnection && mRequestHead &&
@@ -1108,8 +1143,10 @@ void nsHttpTransaction::Close(nsresult reason) {
   // we must no longer reference the connection!  find out if the
   // connection was being reused before letting it go.
   bool connReused = false;
+  bool isHttp2 = false;
   if (mConnection) {
     connReused = mConnection->IsReused();
+    isHttp2 = mConnection->Version() >= HttpVersion::v2_0;
   }
   mConnected = false;
   mTunnelProvider = nullptr;
@@ -1144,7 +1181,8 @@ void nsHttpTransaction::Close(nsresult reason) {
   // the password mistakenly again from the user.
   if ((reason == NS_ERROR_NET_RESET || reason == NS_OK ||
        reason ==
-           psm::GetXPCOMFromNSSError(SSL_ERROR_DOWNGRADE_WITH_EARLY_DATA)) &&
+           psm::GetXPCOMFromNSSError(SSL_ERROR_DOWNGRADE_WITH_EARLY_DATA) ||
+       mFallbackConnInfo) &&
       (!(mCaps & NS_HTTP_STICKY_CONNECTION) ||
        (mCaps & NS_HTTP_CONNECTION_RESTARTABLE) ||
        (mEarlyDataDisposition == EARLY_425))) {
@@ -1174,15 +1212,36 @@ void nsHttpTransaction::Close(nsresult reason) {
     bool reallySentData =
         mSentData && (!mConnection || mConnection->BytesWritten());
 
+    // If this is true, it means we failed to use the HTTPSSVC connection info
+    // to connect to the server. We need to retry with the original connection
+    // info.
+    bool restartToFallbackConnInfo = !reallySentData && mFallbackConnInfo;
+
     if (reason ==
             psm::GetXPCOMFromNSSError(SSL_ERROR_DOWNGRADE_WITH_EARLY_DATA) ||
         (!mReceivedData && ((mRequestHead && mRequestHead->IsSafeMethod()) ||
-                            !reallySentData || connReused))) {
+                            !reallySentData || connReused)) ||
+        restartToFallbackConnInfo) {
+      if (restartToFallbackConnInfo) {
+        mConnInfo = nullptr;
+        mFallbackConnInfo.swap(mConnInfo);
+        LOG(
+            ("transaction will be restarted with the fallback connection info "
+             "key=%s",
+             mConnInfo->HashKey().get()));
+      }
+
       // if restarting fails, then we must proceed to close the pipe,
       // which will notify the channel that the transaction failed.
 
       if (NS_SUCCEEDED(Restart())) return;
     }
+  }
+
+  if (!mResponseIsComplete && NS_SUCCEEDED(reason) && isHttp2) {
+    // Responses without content-length header field are still complete if
+    // they are transfered over http2 and the stream is properly closed.
+    mResponseIsComplete = true;
   }
 
   if ((mChunkedDecoder || (mContentLength >= int64_t(0))) &&
@@ -1326,6 +1385,17 @@ nsresult nsHttpTransaction::Restart() {
   LOG(("restarting transaction @%p\n", this));
   mTunnelProvider = nullptr;
 
+  if (mRequestHead) {
+    // Dispatching on a new connection better w/o an ambient connection proxy
+    // auth request header to not confuse the proxy authenticator.
+    nsAutoCString proxyAuth;
+    if (NS_SUCCEEDED(
+            mRequestHead->GetHeader(nsHttp::Proxy_Authorization, proxyAuth)) &&
+        IsStickyAuthSchemeAt(proxyAuth)) {
+      Unused << mRequestHead->ClearHeader(nsHttp::Proxy_Authorization);
+    }
+  }
+
   // rewind streams in case we already wrote out the request
   nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mRequestStream);
   if (seekable) seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
@@ -1355,8 +1425,16 @@ nsresult nsHttpTransaction::Restart() {
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
   }
+  mRestarted = true;
 
   return gHttpHandler->InitiateTransaction(this, mPriority);
+}
+
+bool nsHttpTransaction::TakeRestartedState() {
+  // This return true if the transaction has been restarted internally.  Used to
+  // let the consuming nsHttpChannel reset proxy authentication.  The flag is
+  // reset to false by this method.
+  return mRestarted.exchange(false);
 }
 
 char* nsHttpTransaction::LocateHttpStart(char* buf, uint32_t len,
@@ -1690,10 +1768,15 @@ nsresult nsHttpTransaction::HandleContentStart() {
         break;
       case 421:
         LOG(("Misdirected Request.\n"));
-        gHttpHandler->AltServiceCache()->ClearHostMapping(mConnInfo);
+        gHttpHandler->ClearHostMapping(mConnInfo);
+        mCaps |= NS_HTTP_REFRESH_DNS;
 
         // retry on a new connection - just in case
-        if (!mRestartCount) {
+        // See bug 1609410, we can't restart the transaction when
+        // NS_HTTP_STICKY_CONNECTION is set. In the case that a connection
+        // already passed NTLM authentication, restarting the transaction will
+        // cause the connection to be closed.
+        if (!mRestartCount && !(mCaps & NS_HTTP_STICKY_CONNECTION)) {
           mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
           mForceRestart = true;  // force restart has built in loop protection
           return NS_ERROR_NET_RESET;
@@ -2050,6 +2133,15 @@ void nsHttpTransaction::CheckForStickyAuthSchemeAt(nsHttpAtom const& header) {
     return;
   }
 
+  if (IsStickyAuthSchemeAt(auth)) {
+    LOG(("  connection made sticky"));
+    // This is enough to make this transaction keep it's current connection,
+    // prevents the connection from being released back to the pool.
+    mCaps |= NS_HTTP_STICKY_CONNECTION;
+  }
+}
+
+bool nsHttpTransaction::IsStickyAuthSchemeAt(nsACString const& auth) {
   Tokenizer p(auth);
   nsAutoCString schema;
   while (p.ReadWord(schema)) {
@@ -2071,11 +2163,7 @@ void nsHttpTransaction::CheckForStickyAuthSchemeAt(nsHttpAtom const& header) {
       nsresult rv = authenticator->GetAuthFlags(&flags);
       if (NS_SUCCEEDED(rv) &&
           (flags & nsIHttpAuthenticator::CONNECTION_BASED)) {
-        LOG(("  connection made sticky, found %s auth shema", schema.get()));
-        // This is enough to make this transaction keep it's current connection,
-        // prevents the connection from being released back to the pool.
-        mCaps |= NS_HTTP_STICKY_CONNECTION;
-        break;
+        return true;
       }
     }
 
@@ -2083,6 +2171,8 @@ void nsHttpTransaction::CheckForStickyAuthSchemeAt(nsHttpAtom const& header) {
     p.SkipUntil(Tokenizer::Token::NewLine());
     p.SkipWhites(Tokenizer::INCLUDE_NEW_LINE);
   }
+
+  return false;
 }
 
 const TimingStruct nsHttpTransaction::Timings() {
@@ -2292,7 +2382,7 @@ nsHttpTransaction::Release() {
 }
 
 NS_IMPL_QUERY_INTERFACE(nsHttpTransaction, nsIInputStreamCallback,
-                        nsIOutputStreamCallback)
+                        nsIOutputStreamCallback, nsIDNSListener)
 
 //-----------------------------------------------------------------------------
 // nsHttpTransaction::nsIInputStreamCallback
@@ -2552,6 +2642,91 @@ void nsHttpTransaction::NotifyTransactionObserver(nsresult reason) {
   TransactionObserverFunc obs = nullptr;
   std::swap(obs, mTransactionObserver);
   obs(std::move(result));
+}
+
+void nsHttpTransaction::UpdateConnectionInfo(nsHttpConnectionInfo* aConnInfo) {
+  MOZ_ASSERT(aConnInfo);
+
+  if (mActivated) {
+    MOZ_ASSERT(false, "Should not update conn info after activated");
+    return;
+  }
+
+  mFallbackConnInfo = mConnInfo->Clone();
+  mConnInfo = aConnInfo;
+}
+
+NS_IMETHODIMP nsHttpTransaction::OnLookupComplete(nsICancelable* aRequest,
+                                                  nsIDNSRecord* aRecord,
+                                                  nsresult aStatus) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  LOG(("nsHttpTransaction::OnLookupComplete [this=%p] mActivated=%d", this,
+       mActivated));
+
+  nsCOMPtr<nsIDNSAddrRecord> addrRecord = do_QueryInterface(aRecord);
+  // nsHttpTransaction::OnLookupComplete will be called again when receving the
+  // result of speculatively loading the addr records of the target name. In
+  // this case, just return NS_OK.
+  if (addrRecord) {
+    return NS_OK;
+  }
+
+  {
+    MutexAutoLock lock(mLock);
+    mDNSRequest = nullptr;
+  }
+
+  MakeDontWaitHTTPSSVC();
+
+  if (mActivated) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIDNSHTTPSSVCRecord> record = do_QueryInterface(aRecord);
+  if (!record || NS_FAILED(aStatus)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsISVCBRecord> svcbRecord;
+  if (NS_FAILED(record->GetServiceModeRecord(mCaps & NS_HTTP_DISALLOW_SPDY,
+                                             getter_AddRefs(svcbRecord)))) {
+    LOG(("  no usable record!"));
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<nsHttpConnectionInfo> newInfo =
+      mConnInfo->CloneAndAdoptHTTPSSVCRecord(svcbRecord);
+  if (!gHttpHandler->ConnMgr()->MoveTransToHTTPSSVCConnEntry(this, newInfo)) {
+    // MoveTransToHTTPSSVCConnEntry() returning fail means this transaction is
+    // not in the connection entry's pending queue. This could happen if
+    // OnLookupComplete() is called before this transaction is added in the
+    // queue. We still need to update the connection info, so this transaction
+    // can be added to the right connection entry.
+    UpdateConnectionInfo(newInfo);
+  }
+
+  // Prefetch the A/AAAA records of the target name.
+  nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
+  if (dns) {
+    uint32_t flags =
+        nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
+    if (mCaps & NS_HTTP_REFRESH_DNS) {
+      flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
+    }
+
+    nsCOMPtr<nsICancelable> tmpOutstanding;
+    nsAutoCString targetName;
+    Unused << svcbRecord->GetName(targetName);
+
+    Unused << dns->AsyncResolveNative(
+        targetName, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+        flags | nsIDNSService::RESOLVE_SPECULATE, nullptr, this,
+        GetCurrentEventTarget(), mConnInfo->GetOriginAttributes(),
+        getter_AddRefs(tmpOutstanding));
+  }
+
+  return NS_OK;
 }
 
 }  // namespace net

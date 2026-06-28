@@ -1977,12 +1977,13 @@ nsresult CacheFileIOManager::WriteInternal(CacheFileHandle* aHandle,
       LOG(
           ("CacheFileIOManager::WriteInternal() - failing because cache size "
            "reached hard limit!"));
-      return NS_ERROR_FILE_DISK_FULL;
+      return NS_ERROR_FILE_NO_DEVICE_SPACE;
     }
 
-    int64_t freeSpace = -1;
+    int64_t freeSpace;
     rv = mCacheDirectory->GetDiskSpaceAvailable(&freeSpace);
     if (NS_WARN_IF(NS_FAILED(rv))) {
+      freeSpace = -1;
       LOG(
           ("CacheFileIOManager::WriteInternal() - GetDiskSpaceAvailable() "
            "failed! [rv=0x%08" PRIx32 "]",
@@ -1995,7 +1996,7 @@ nsresult CacheFileIOManager::WriteInternal(CacheFileHandle* aHandle,
             ("CacheFileIOManager::WriteInternal() - Low free space, refusing "
              "to write! [freeSpace=%" PRId64 "kB, limit=%ukB]",
              freeSpace, limit));
-        return NS_ERROR_FILE_DISK_FULL;
+        return NS_ERROR_FILE_NO_DEVICE_SPACE;
       }
     }
   }
@@ -2505,12 +2506,13 @@ nsresult CacheFileIOManager::TruncateSeekSetEOFInternal(
       LOG(
           ("CacheFileIOManager::TruncateSeekSetEOFInternal() - failing because "
            "cache size reached hard limit!"));
-      return NS_ERROR_FILE_DISK_FULL;
+      return NS_ERROR_FILE_NO_DEVICE_SPACE;
     }
 
-    int64_t freeSpace = -1;
+    int64_t freeSpace;
     rv = mCacheDirectory->GetDiskSpaceAvailable(&freeSpace);
     if (NS_WARN_IF(NS_FAILED(rv))) {
+      freeSpace = -1;
       LOG(
           ("CacheFileIOManager::TruncateSeekSetEOFInternal() - "
            "GetDiskSpaceAvailable() failed! [rv=0x%08" PRIx32 "]",
@@ -2523,7 +2525,7 @@ nsresult CacheFileIOManager::TruncateSeekSetEOFInternal(
             ("CacheFileIOManager::TruncateSeekSetEOFInternal() - Low free space"
              ", refusing to write! [freeSpace=%" PRId64 "kB, limit=%ukB]",
              freeSpace, limit));
-        return NS_ERROR_FILE_DISK_FULL;
+        return NS_ERROR_FILE_NO_DEVICE_SPACE;
       }
     }
   }
@@ -2753,9 +2755,11 @@ nsresult CacheFileIOManager::OverLimitEvictionInternal() {
   }
 
   while (true) {
-    int64_t freeSpace = -1;
+    int64_t freeSpace;
     rv = mCacheDirectory->GetDiskSpaceAvailable(&freeSpace);
     if (NS_WARN_IF(NS_FAILED(rv))) {
+      freeSpace = -1;
+
       // Do not change smart size.
       LOG(
           ("CacheFileIOManager::EvictIfOverLimitInternal() - "
@@ -2793,7 +2797,7 @@ nsresult CacheFileIOManager::OverLimitEvictionInternal() {
       } else {
         mCacheSizeOnHardLimit = false;
       }
-    } else if (freeSpace != 1 && freeSpace < freeSpaceLimit) {
+    } else if (freeSpace != -1 && freeSpace < freeSpaceLimit) {
       LOG(
           ("CacheFileIOManager::OverLimitEvictionInternal() - Free space under "
            "limit. [freeSpace=%" PRId64 "kB, freeSpaceLimit=%ukB]",

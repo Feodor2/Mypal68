@@ -160,6 +160,12 @@ interface nsISSLSocketControl : nsISupports {
      */
     attribute ACString esniTxt;
 
+    /*
+     * echConfig is defined for conveying the ECH configuration.
+     * This is encoded in base64.
+     */
+    attribute ACString echConfig;
+
     /**
      * True iff the connection was resumed using the resumption token.
      */

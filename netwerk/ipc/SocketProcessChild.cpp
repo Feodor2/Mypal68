@@ -10,21 +10,39 @@
 #include "HttpTransactionChild.h"
 #include "HttpConnectionMgrChild.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/FileDescriptorSetChild.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/net/AltSvcTransactionChild.h"
 #include "mozilla/net/DNSRequestChild.h"
+#include "mozilla/net/DNSRequestParent.h"
+#include "mozilla/net/TRRServiceChild.h"
 #include "mozilla/ipc/PChildToParentStreamChild.h"
 #include "mozilla/ipc/PParentToChildStreamChild.h"
 #include "mozilla/Preferences.h"
 #include "nsDebugImpl.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpHandler.h"
 #include "nsIDNSService.h"
 #include "nsIHttpActivityObserver.h"
+#include "nsNSSComponent.h"
 #include "nsThreadManager.h"
 #include "ProcessUtils.h"
 #include "SocketProcessBridgeParent.h"
+
+#if defined(XP_WIN)
+#  include <process.h>
+#else
+#  include <unistd.h>
+#endif
+
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+#  include "mozilla/Sandbox.h"
+#endif
 
 #ifdef MOZ_GECKO_PROFILER
 #  include "ChildProfilerController.h"
@@ -39,9 +57,9 @@ namespace net {
 
 using namespace ipc;
 
-static SocketProcessChild* sSocketProcessChild;
+SocketProcessChild* sSocketProcessChild;
 
-SocketProcessChild::SocketProcessChild() {
+SocketProcessChild::SocketProcessChild() : mShuttingDown(false) {
   LOG(("CONSTRUCT SocketProcessChild::SocketProcessChild\n"));
   nsDebugImpl::SetMultiprocessMode("Socket");
 
@@ -59,6 +77,12 @@ SocketProcessChild::~SocketProcessChild() {
 SocketProcessChild* SocketProcessChild::GetSingleton() {
   return sSocketProcessChild;
 }
+
+#if defined(XP_MACOSX)
+extern "C" {
+void CGSShutdownServerConnections();
+};
+#endif
 
 bool SocketProcessChild::Init(base::ProcessId aParentPid,
                               const char* aParentBuildID, MessageLoop* aIOLoop,
@@ -86,12 +110,21 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
     return false;
   }
 
+  BackgroundChild::Startup();
   SetThisProcessName("Socket Process");
+#if defined(XP_MACOSX)
+  // Close all current connections to the WindowServer. This ensures that the
+  // Activity Monitor will not label the socket process as "Not responding"
+  // because it's not running a native event loop. See bug 1384336.
+  CGSShutdownServerConnections();
+#endif  // XP_MACOSX
   return true;
 }
 
 void SocketProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   LOG(("SocketProcessChild::ActorDestroy\n"));
+
+  mShuttingDown = true;
 
   if (AbnormalShutdown == aWhy) {
     NS_WARNING("Shutting down Socket process early due to a crash!");
@@ -112,10 +145,9 @@ void SocketProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
 void SocketProcessChild::CleanUp() {
   LOG(("SocketProcessChild::CleanUp\n"));
 
-  for (auto iter = mSocketProcessBridgeParentMap.Iter(); !iter.Done();
-       iter.Next()) {
-    if (!iter.Data()->Closed()) {
-      iter.Data()->Close();
+  for (const auto& parent : mSocketProcessBridgeParentMap.Values()) {
+    if (!parent->Closed()) {
+      parent->Close();
     }
   }
   NS_ShutdownXPCOM(nullptr);
@@ -130,7 +162,7 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
     const bool& aMinimizeMemoryUsage,
     const Maybe<ipc::FileDescriptor>& aDMDFile) {
-  nsPrintfCString processName("SocketProcess");
+  nsPrintfCString processName("Socket (pid %u)", (unsigned)getpid());
 
   mozilla::dom::MemoryReportRequestClient::Start(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile, processName,
@@ -152,6 +184,18 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvSetOffline(
 
   io->SetOffline(aOffline);
 
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvInitLinuxSandbox(
+    const Maybe<ipc::FileDescriptor>& aBrokerFd) {
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  int fd = -1;
+  if (aBrokerFd.isSome()) {
+    fd = aBrokerFd.value().ClonePlatformHandle().release();
+  }
+  SetSocketProcessSandbox(fd);
+#endif  // XP_LINUX && MOZ_SANDBOX
   return IPC_OK();
 }
 
@@ -287,7 +331,7 @@ mozilla::ipc::IPCResult
 SocketProcessChild::RecvOnHttpActivityDistributorActivated(
     const bool& aIsActivated) {
   if (nsCOMPtr<nsIHttpActivityObserver> distributor =
-          services::GetHttpActivityDistributor()) {
+          components::HttpActivityDistributor::Service()) {
     distributor->SetIsActive(aIsActivated);
   }
   return IPC_OK();
@@ -299,6 +343,62 @@ SocketProcessChild::AllocPInputChannelThrottleQueueChild(
       new InputChannelThrottleQueueChild();
   p->Init(aMeanBytesPerSecond, aMaxBytesPerSecond);
   return p.forget();
+}
+
+already_AddRefed<PAltSvcTransactionChild>
+SocketProcessChild::AllocPAltSvcTransactionChild(
+    const HttpConnectionInfoCloneArgs& aConnInfo, const uint32_t& aCaps) {
+  RefPtr<nsHttpConnectionInfo> cinfo =
+      nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(aConnInfo);
+  RefPtr<AltSvcTransactionChild> child =
+      new AltSvcTransactionChild(cinfo, aCaps);
+  return child.forget();
+}
+
+already_AddRefed<PDNSRequestChild> SocketProcessChild::AllocPDNSRequestChild(
+    const nsCString& aHost, const nsCString& aTrrServer, const uint16_t& aType,
+    const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
+  RefPtr<DNSRequestHandler> handler = new DNSRequestHandler();
+  RefPtr<DNSRequestChild> actor = new DNSRequestChild(handler);
+  return actor.forget();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvPDNSRequestConstructor(
+    PDNSRequestChild* aActor, const nsCString& aHost,
+    const nsCString& aTrrServer, const uint16_t& aType,
+    const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
+  RefPtr<DNSRequestChild> actor = static_cast<DNSRequestChild*>(aActor);
+  RefPtr<DNSRequestHandler> handler =
+      actor->GetDNSRequest()->AsDNSRequestHandler();
+  handler->DoAsyncResolve(aHost, aTrrServer, aType, aOriginAttributes, aFlags);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvClearSessionCache() {
+  if (EnsureNSSInitializedChromeOrContent()) {
+    nsNSSComponent::DoClearSSLExternalAndInternalSessionCache();
+  }
+  return IPC_OK();
+}
+
+already_AddRefed<PTRRServiceChild> SocketProcessChild::AllocPTRRServiceChild() {
+  RefPtr<TRRServiceChild> actor = new TRRServiceChild();
+  return actor.forget();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvPTRRServiceConstructor(
+    PTRRServiceChild* aActor) {
+  static_cast<TRRServiceChild*>(aActor)->Init();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvNotifyObserver(
+    const nsCString& aTopic, const nsString& aData) {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers(nullptr, aTopic.get(), aData.get());
+  }
+  return IPC_OK();
 }
 
 }  // namespace net

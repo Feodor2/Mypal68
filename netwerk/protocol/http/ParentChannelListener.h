@@ -38,8 +38,8 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
   explicit ParentChannelListener(nsIStreamListener* aListener);
 
   // For channel diversion from child to parent.
-  MOZ_MUST_USE nsresult DivertTo(nsIStreamListener* aListener);
-  MOZ_MUST_USE nsresult SuspendForDiversion();
+  void DivertTo(nsIStreamListener* aListener);
+  [[nodiscard]] nsresult SuspendForDiversion();
 
   void SetupInterception(const nsHttpResponseHead& aResponseHead);
   void SetupInterceptionAfterRedirect(bool aShouldIntercept);
@@ -52,7 +52,7 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
   virtual ~ParentChannelListener();
 
   // Private partner function to SuspendForDiversion.
-  MOZ_MUST_USE nsresult ResumeForDiversion();
+  void ResumeForDiversion();
 
   // Can be the original HttpChannelParent that created this object (normal
   // case), a different {HTTP|FTP}ChannelParent that we've been redirected to,
@@ -72,7 +72,7 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
   // the interception takes place.
   bool mInterceptCanceled;
 
-  nsAutoPtr<nsHttpResponseHead> mSynthesizedResponseHead;
+  UniquePtr<nsHttpResponseHead> mSynthesizedResponseHead;
 
   // Handle to the channel wrapper if this channel has been intercepted.
   nsCOMPtr<nsIInterceptedChannel> mInterceptedChannel;

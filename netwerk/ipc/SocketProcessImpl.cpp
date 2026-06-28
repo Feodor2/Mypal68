@@ -11,6 +11,10 @@
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Preferences.h"
 
+#ifdef OS_POSIX
+#  include <unistd.h>  // For sleep().
+#endif
+
 using mozilla::ipc::IOThreadChild;
 
 namespace mozilla {

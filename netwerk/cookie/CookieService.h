@@ -11,11 +11,13 @@
 #include "nsWeakReference.h"
 
 #include "Cookie.h"
+#include "CookieCommons.h"
 
 #include "nsString.h"
 #include "nsIMemoryReporter.h"
 #include "mozilla/MemoryReporting.h"
 
+class nsIConsoleReportCollector;
 class nsICookieJarSettings;
 class nsIEffectiveTLDService;
 class nsIIDNService;
@@ -29,18 +31,6 @@ namespace net {
 class CookiePersistentStorage;
 class CookiePrivateStorage;
 class CookieStorage;
-
-// these constants represent a decision about a cookie based on user prefs.
-enum CookieStatus {
-  STATUS_ACCEPTED,
-  STATUS_ACCEPT_SESSION,
-  STATUS_REJECTED,
-  // STATUS_REJECTED_WITH_ERROR indicates the cookie should be rejected because
-  // of an error (rather than something the user can control). this is used for
-  // notification purposes, since we only want to notify of rejections where
-  // the user can do something about it (e.g. whitelist the site).
-  STATUS_REJECTED_WITH_ERROR
-};
 
 /******************************************************************************
  * CookieService:
@@ -76,13 +66,12 @@ class CookieService final : public nsICookieService,
    * (thus instantiating it, if necessary) and clear all the cookies for that
    * app.
    */
-  static nsAutoCString GetPathFromURI(nsIURI* aHostURI);
+
   static bool CanSetCookie(nsIURI* aHostURI, const nsACString& aBaseDomain,
                            CookieStruct& aCookieData, bool aRequireHostMatch,
                            CookieStatus aStatus, nsCString& aCookieHeader,
-                           bool aFromHttp, nsIChannel* aChannel,
-                           bool& aSetCookie,
-                           mozIThirdPartyUtil* aThirdPartyUtil);
+                           bool aFromHttp, bool aIsForeignAndNotAddon,
+                           nsIConsoleReportCollector* aCRC, bool& aSetCookie);
   static CookieStatus CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
                                  nsIURI* aHostURI, bool aIsForeign,
                                  bool aIsThirdPartyTrackingResource,
@@ -91,9 +80,6 @@ class CookieService final : public nsICookieService,
                                  const int aNumOfCookies,
                                  const OriginAttributes& aOriginAttrs,
                                  uint32_t* aRejectedReason);
-
-  static already_AddRefed<nsICookieJarSettings> GetCookieJarSettings(
-      nsIChannel* aChannel);
 
   void GetCookiesForURI(nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,
                         bool aIsThirdPartyTrackingResource,
@@ -125,35 +111,20 @@ class CookieService final : public nsICookieService,
 
   void EnsureReadComplete(bool aInitDBConn);
   nsresult NormalizeHost(nsCString& aHost);
-  nsresult SetCookieStringCommon(nsIURI* aHostURI,
-                                 const nsACString& aCookieHeader,
-                                 nsIChannel* aChannel, bool aFromHttp);
-  void SetCookieStringInternal(nsIURI* aHostURI, bool aIsForeign,
-                               bool aIsThirdPartyTrackingResource,
-                               bool aFirstPartyStorageAccessGranted,
-                               uint32_t aRejectedReason,
-                               nsCString& aCookieHeader, bool aFromHttp,
-                               const OriginAttributes& aOriginAttrs,
-                               nsIChannel* aChannel);
-  bool SetCookieInternal(CookieStorage* aStorage, nsIURI* aHostURI,
-                         const nsACString& aBaseDomain,
-                         const OriginAttributes& aOriginAttributes,
-                         bool aRequireHostMatch, CookieStatus aStatus,
-                         nsCString& aCookieHeader, bool aFromHttp,
-                         nsIChannel* aChannel);
   static bool GetTokenValue(nsACString::const_char_iterator& aIter,
                             nsACString::const_char_iterator& aEndIter,
                             nsDependentCSubstring& aTokenString,
                             nsDependentCSubstring& aTokenValue,
                             bool& aEqualsFound);
-  static bool ParseAttributes(nsCString& aCookieHeader,
+  static bool ParseAttributes(nsIConsoleReportCollector* aCRC, nsIURI* aHostURI,
+                              nsCString& aCookieHeader,
                               CookieStruct& aCookieData, nsACString& aExpires,
                               nsACString& aMaxage, bool& aAcceptedByParser);
-  bool RequireThirdPartyCheck();
   static bool CheckDomain(CookieStruct& aCookieData, nsIURI* aHostURI,
                           const nsACString& aBaseDomain,
                           bool aRequireHostMatch);
-  static bool CheckPath(CookieStruct& aCookieData, nsIURI* aHostURI);
+  static bool CheckPath(CookieStruct& aCookieData,
+                        nsIConsoleReportCollector* aCRC, nsIURI* aHostURI);
   static bool CheckPrefixes(CookieStruct& aCookieData, bool aSecureRequest);
   static bool GetExpiry(CookieStruct& aCookieData, const nsACString& aExpires,
                         const nsACString& aMaxage, int64_t aCurrentTime,

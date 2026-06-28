@@ -5,21 +5,7 @@
 
 "use strict";
 
-var test_generator = do_run_test();
-
-function run_test() {
-  do_test_pending();
-  test_generator.next();
-}
-
-function finish_test() {
-  executeSoon(function() {
-    test_generator.return();
-    do_test_finished();
-  });
-}
-
-function* do_run_test() {
+add_task(async () => {
   // Set up a profile.
   let profile = do_get_profile();
 
@@ -32,6 +18,8 @@ function* do_run_test() {
 
   // Start the cookieservice.
   Services.cookies;
+
+  CookieXPCShellUtils.createServer({ hosts: ["foo.com"] });
 
   // Set a cookie.
   let uri = NetUtil.newURI("http://foo.com");
@@ -46,7 +34,11 @@ function* do_run_test() {
     {}
   );
 
-  Services.cookies.setCookieString(uri, "oh=hai; max-age=1000", null);
+  await CookieXPCShellUtils.setCookieToDocument(
+    uri.spec,
+    "oh=hai; max-age=1000"
+  );
+
   let cookies = Services.cookiemgr.cookies;
   Assert.ok(cookies.length == 1);
   let cookie = cookies[0];
@@ -54,12 +46,23 @@ function* do_run_test() {
   // Fire 'profile-before-change'.
   do_close_profile();
 
+  let promise = new _promise_observer("cookie-db-closed");
+
   // Check that the APIs behave appropriately.
-  Assert.equal(Services.cookies.getCookieStringForPrincipal(principal), "");
+  Assert.equal(
+    await CookieXPCShellUtils.getCookieStringFromDocument("http://foo.com/"),
+    ""
+  );
+
   Assert.equal(Services.cookies.getCookieStringFromHttp(uri, channel), "");
-  Services.cookies.setCookieString(uri, "oh2=hai", null);
+
+  await CookieXPCShellUtils.setCookieToDocument(uri.spec, "oh2=hai");
+
   Services.cookies.setCookieStringFromHttp(uri, "oh3=hai", channel);
-  Assert.equal(Services.cookies.getCookieStringForPrincipal(principal), "");
+  Assert.equal(
+    await CookieXPCShellUtils.getCookieStringFromDocument("http://foo.com/"),
+    ""
+  );
 
   do_check_throws(function() {
     Services.cookiemgr.removeAll();
@@ -80,18 +83,13 @@ function* do_run_test() {
       false,
       0,
       {},
-      Ci.nsICookie.SAMESITE_NONE
+      Ci.nsICookie.SAMESITE_NONE,
+      Ci.nsICookie.SCHEME_HTTPS
     );
   }, Cr.NS_ERROR_NOT_AVAILABLE);
 
   do_check_throws(function() {
     Services.cookiemgr.remove("foo.com", "", "oh4", {});
-  }, Cr.NS_ERROR_NOT_AVAILABLE);
-
-  do_check_throws(function() {
-    let file = profile.clone();
-    file.append("cookies.txt");
-    Services.cookiemgr.importCookies(file);
   }, Cr.NS_ERROR_NOT_AVAILABLE);
 
   do_check_throws(function() {
@@ -107,14 +105,11 @@ function* do_run_test() {
   }, Cr.NS_ERROR_NOT_AVAILABLE);
 
   // Wait for the database to finish closing.
-  new _observer(test_generator, "cookie-db-closed");
-  yield;
+  await promise;
 
   // Load the profile and check that the API is available.
   do_load_profile();
   Assert.ok(
     Services.cookiemgr.cookieExists(cookie.host, cookie.path, cookie.name, {})
   );
-
-  finish_test();
-}
+});

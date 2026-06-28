@@ -83,8 +83,12 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
     return 0;
   }
 
+  // Returns the TRR mode encoded by the flags
+  nsIRequest::TRRMode TRRMode();
+
  protected:
   friend class nsHostResolver;
+  friend class mozilla::net::TRR;
 
   explicit nsHostRecord(const nsHostKey& key);
   virtual ~nsHostRecord() = default;
@@ -138,7 +142,12 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
   // but a request to refresh it will be made.
   mozilla::TimeStamp mGraceStart;
 
-  mozilla::net::ResolverMode mResolverMode;
+  // The computed TRR mode that is actually used by the request.
+  // It is set in nsHostResolver::NameLookup and is based on the mode of the
+  // default resolver and the TRRMode encoded in the flags.
+  // The mode into account if the TRR service is disabled,
+  // parental controls are on, domain matches exclusion list, etc.
+  nsIRequest::TRRMode mEffectiveTRRMode;
 
   uint16_t mResolving;  // counter of outstanding resolving calls
 
@@ -181,22 +190,21 @@ class AddrHostRecord final : public nsHostRecord {
    * the other threads just read it.  therefore the resolver worker
    * thread doesn't need to lock when reading |addr_info|.
    */
-  Lock addr_info_lock;
+  Lock2 addr_info_lock;
   int addr_info_gencnt; /* generation count of |addr_info| */
   RefPtr<mozilla::net::AddrInfo> addr_info;
   mozilla::UniquePtr<mozilla::net::NetAddr> addr;
 
   // hold addr_info_lock when calling the blacklist functions
-  bool Blacklisted(mozilla::net::NetAddr* query);
+  bool Blacklisted(const mozilla::net::NetAddr* query);
   void ResetBlacklist();
-  void ReportUnusable(mozilla::net::NetAddr* addr);
+  void ReportUnusable(const mozilla::net::NetAddr* aAddress);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const override;
 
-  bool IsTRR() { return mTRRUsed; }
-
  private:
   friend class nsHostResolver;
+  friend class mozilla::net::TRR;
 
   explicit AddrHostRecord(const nsHostKey& key);
   ~AddrHostRecord();
@@ -227,13 +235,13 @@ class AddrHostRecord final : public nsHostRecord {
   RefPtr<mozilla::net::AddrInfo> mFirstTRR;  // partial TRR storage
   nsresult mFirstTRRresult;
 
-  uint8_t mTRRSuccess;     // number of successful TRR responses
-  uint8_t mNativeSuccess;  // number of native lookup responses
+  mozilla::Atomic<bool> mTRRUsed;  // TRR was used on this record
+  uint8_t mTRRSuccess;             // number of successful TRR responses
+  uint8_t mNativeSuccess;          // number of native lookup responses
 
-  uint16_t mNative : 1;   // true if this record is being resolved "natively",
-                          // which means that it is either on the pending queue
-                          // or owned by one of the worker threads. */
-  uint16_t mTRRUsed : 1;  // TRR was used on this record
+  uint16_t mNative : 1;  // true if this record is being resolved "natively",
+                         // which means that it is either on the pending queue
+                         // or owned by one of the worker threads. */
   uint16_t mNativeUsed : 1;
   uint16_t onQueue : 1;         // true if pending and on the queue (not yet
                                 // given to getaddrinfo())
@@ -248,7 +256,7 @@ class AddrHostRecord final : public nsHostRecord {
 
   enum { INIT, STARTED, OK, FAILED } mTrrAUsed, mTrrAAAAUsed;
 
-  Lock mTrrLock;  // lock when accessing the mTrrA[AAA] pointers
+  Lock2 mTrrLock;  // lock when accessing the mTrrA[AAA] pointers
   RefPtr<mozilla::net::TRR> mTrrA;
   RefPtr<mozilla::net::TRR> mTrrAAAA;
 
@@ -274,7 +282,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(AddrHostRecord, ADDRHOSTRECORD_IID)
 
 class TypeHostRecord final : public nsHostRecord,
                              public nsIDNSTXTRecord,
-                             public nsIDNSHTTPSSVCRecord {
+                             public nsIDNSHTTPSSVCRecord,
+                             public mozilla::net::DNSHTTPSSVCRecordBase {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(TYPEHOSTRECORD_IID)
   NS_DECL_ISUPPORTS_INHERITED
@@ -298,11 +307,11 @@ class TypeHostRecord final : public nsHostRecord,
 
   bool HasUsableResult();
 
-  Lock mTrrLock;  // lock when accessing the mTrr pointer
+  Lock2 mTrrLock;  // lock when accessing the mTrr pointer
   RefPtr<mozilla::net::TRR> mTrr;
 
   mozilla::net::TypeRecordResultType mResults = AsVariant(mozilla::Nothing());
-  Lock mResultsLock;
+  Lock2 mResultsLock;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(TypeHostRecord, TYPEHOSTRECORD_IID)
@@ -384,6 +393,7 @@ class AHostResolver {
                                       mozilla::net::TRR* pushedTRR = nullptr) {
     return NS_ERROR_FAILURE;
   }
+  virtual void MaybeRenewHostRecord(nsHostRecord* aRec) {}
 };
 
 /**
@@ -399,7 +409,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   static nsresult Create(uint32_t maxCacheEntries,  // zero disables cache
                          uint32_t defaultCacheEntryLifetime,  // seconds
                          uint32_t defaultGracePeriod,         // seconds
-                         nsHostResolver** resolver);
+                         nsHostResolver** result);
 
   /**
    * Set (new) cache limits.
@@ -421,7 +431,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
    * host lookup cannot be canceled (cancelation can be layered above this by
    * having the callback implementation return without doing anything).
    */
-  nsresult ResolveHost(const nsACString& hostname, const nsACString& trrServer,
+  nsresult ResolveHost(const nsACString& aHost, const nsACString& trrServer,
                        uint16_t type,
                        const mozilla::OriginAttributes& aOriginAttributes,
                        uint16_t flags, uint16_t af,
@@ -470,7 +480,8 @@ class nsHostResolver : public nsISupports, public AHostResolver {
     // RES_DISABLE_IPv4 = nsIDNSService::RESOLVE_DISABLE_IPV4, // Not Used
     RES_ALLOW_NAME_COLLISION = nsIDNSService::RESOLVE_ALLOW_NAME_COLLISION,
     RES_DISABLE_TRR = nsIDNSService::RESOLVE_DISABLE_TRR,
-    RES_REFRESH_CACHE = nsIDNSService::RESOLVE_REFRESH_CACHE
+    RES_REFRESH_CACHE = nsIDNSService::RESOLVE_REFRESH_CACHE,
+    RES_IP_HINT = nsIDNSService::RESOLVE_IP_HINT
   };
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -493,6 +504,8 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   nsresult TrrLookup_unlocked(nsHostRecord*,
                               mozilla::net::TRR* pushedTRR = nullptr) override;
 
+  virtual void MaybeRenewHostRecord(nsHostRecord* aRec) override;
+
  private:
   explicit nsHostResolver(uint32_t maxCacheEntries,
                           uint32_t defaultCacheEntryLifetime,
@@ -508,7 +521,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
 
   // Kick-off a name resolve operation, using native resolver and/or TRR
   nsresult NameLookup(nsHostRecord*);
-  bool GetHostToLookup(AddrHostRecord** m);
+  bool GetHostToLookup(AddrHostRecord** result);
 
   // Removes the first element from the list and returns it AddRef-ed in aResult
   // Should not be called for an empty linked list.
@@ -543,7 +556,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   uint32_t mMaxCacheEntries;
   uint32_t mDefaultCacheLifetime;  // granularity seconds
   uint32_t mDefaultGracePeriod;    // granularity seconds
-  mutable Lock mLock;  // mutable so SizeOfIncludingThis can be const
+  mutable Lock2 mLock;  // mutable so SizeOfIncludingThis can be const
   ConditionVariable mIdleTaskCV;
   nsRefPtrHashtable<nsGenericHashKey<nsHostKey>, nsHostRecord> mRecordDB;
   mozilla::LinkedList<RefPtr<nsHostRecord>> mHighQ;

@@ -7,6 +7,8 @@
 
 #include "prsystem.h"
 
+#include "AltServiceChild.h"
+#include "nsCORSListenerProxy.h"
 #include "nsError.h"
 #include "nsHttp.h"
 #include "nsHttpHandler.h"
@@ -37,7 +39,6 @@
 #include "nsISiteSecurityService.h"
 #include "nsIStreamConverterService.h"
 #include "nsCRT.h"
-#include "nsIParentalControlsService.h"
 #include "nsPIDOMWindow.h"
 #include "nsHttpChannelAuthProvider.h"
 #include "nsINetworkLinkService.h"
@@ -227,7 +228,6 @@ nsHttpHandler::nsHttpHandler()
       mPromptTempRedirect(true),
       mEnablePersistentHttpsCaching(false),
       mSafeHintEnabled(false),
-      mParentalControlEnabled(false),
       mHandlerActive(false),
       mDebugObservations(false),
       mEnableSpdy(false),
@@ -282,8 +282,7 @@ nsHttpHandler::nsHttpHandler()
       mNextChannelId(1),
       mLastActiveTabLoadOptimizationLock(
           "nsHttpConnectionMgr::LastActiveTabLoadOptimization"),
-      mSpdyBlacklistLock("nsHttpHandler::SpdyBlacklist"),
-      mThroughCaptivePortal(false) {
+      mSpdyBlacklistLock("nsHttpHandler::SpdyBlacklist") {
   LOG(("Creating nsHttpHandler [this=%p].\n", this));
 
   mUserAgentOverride.SetIsVoid(true);
@@ -428,6 +427,8 @@ nsresult nsHttpHandler::Init() {
   mIOService = new nsMainThreadPtrHolder<nsIIOService>(
       "nsHttpHandler::mIOService", service);
 
+  gIOService->LaunchSocketProcess();
+
   if (IsNeckoChild()) NeckoChild::InitNeckoChild();
 
   InitUserAgentComponents();
@@ -462,9 +463,6 @@ nsresult nsHttpHandler::Init() {
   } else {
     mAppVersion.AssignLiteral(MOZ_APP_UA_VERSION);
   }
-
-  // Generate the spoofed User Agent for fingerprinting resistance.
-  nsRFPService::GetSpoofedUserAgent(mSpoofedUserAgent, true);
 
   mSessionStartTime = NowInSeconds();
   mHandlerActive = true;
@@ -504,7 +502,8 @@ nsresult nsHttpHandler::Init() {
       static_cast<nsISupports*>(static_cast<void*>(this)),
       NS_HTTP_STARTUP_TOPIC);
 
-  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  nsCOMPtr<nsIObserverService> obsService =
+      static_cast<nsIObserverService*>(gIOService);
   if (obsService) {
     // register the handler object as a weak callback as we don't need to worry
     // about shutdown ordering.
@@ -524,16 +523,10 @@ nsresult nsHttpHandler::Init() {
     obsService->AddObserver(this, "psm:user-certificate-deleted", true);
     obsService->AddObserver(this, "intl:app-locales-changed", true);
     obsService->AddObserver(this, "browser-delayed-startup-finished", true);
-    obsService->AddObserver(this, "network:captive-portal-connectivity", true);
 
     if (!IsNeckoChild()) {
       obsService->AddObserver(
           this, "net:current-toplevel-outer-content-windowid", true);
-    }
-
-    if (mFastOpenSupported) {
-      obsService->AddObserver(this, "captive-portal-login", true);
-      obsService->AddObserver(this, "captive-portal-login-success", true);
     }
 
     // disabled as its a nop right now
@@ -544,11 +537,6 @@ nsresult nsHttpHandler::Init() {
   mWifiTickler = new Tickler();
   if (NS_FAILED(mWifiTickler->Init())) mWifiTickler = nullptr;
 
-  nsCOMPtr<nsIParentalControlsService> pc =
-      do_CreateInstance("@mozilla.org/parental-controls-service;1");
-  if (pc) {
-    pc->GetParentalControlsEnabled(&mParentalControlEnabled);
-  }
   return NS_OK;
 }
 
@@ -577,22 +565,18 @@ nsresult nsHttpHandler::InitConnectionMgr() {
     return NS_OK;
   }
 
-  if (gIOService->UseSocketProcess() && XRE_IsParentProcess()) {
-    if (!gIOService->SocketProcessReady()) {
-      gIOService->CallOrWaitForSocketProcess(
-          []() { Unused << gHttpHandler->InitConnectionMgr(); });
-      return NS_OK;
-    }
-
-    RefPtr<HttpConnectionMgrParent> connMgr = new HttpConnectionMgrParent();
-    if (!SocketProcessParent::GetSingleton()->SendPHttpConnectionMgrConstructor(
-            connMgr)) {
-      return NS_ERROR_FAILURE;
-    }
-
-    mConnMgr = connMgr;
+  if (nsIOService::UseSocketProcess(true) && XRE_IsParentProcess()) {
+    mConnMgr = new HttpConnectionMgrParent();
+    RefPtr<nsHttpHandler> self = this;
+    auto task = [self]() {
+      HttpConnectionMgrParent* parent =
+          self->mConnMgr->AsHttpConnectionMgrParent();
+      Unused << SocketProcessParent::GetSingleton()
+                    ->SendPHttpConnectionMgrConstructor(parent);
+    };
+    gIOService->CallOrWaitForSocketProcess(std::move(task));
   } else {
-    MOZ_ASSERT(XRE_IsSocketProcess() || !gIOService->UseSocketProcess());
+    MOZ_ASSERT(XRE_IsSocketProcess() || !nsIOService::UseSocketProcess());
     mConnMgr = new nsHttpConnectionMgr();
   }
 
@@ -687,7 +671,7 @@ ua_found:
   if (NS_FAILED(rv)) return rv;
 
   // add the "Send Hint" header
-  if (mSafeHintEnabled || mParentalControlEnabled) {
+  if (mSafeHintEnabled) {
     rv = request->SetHeader(nsHttp::Prefer, "safe"_ns, false,
                             nsHttpHeaderArray::eVarietyRequestDefault);
     if (NS_FAILED(rv)) return rv;
@@ -938,16 +922,13 @@ void nsHttpHandler::BuildUserAgent() {
   mUserAgent += mProduct;
   mUserAgent += '/';
   mUserAgent += mProductSub;
+  mUserAgent += ' ';
 
-  bool isFirefox = mAppName.EqualsLiteral("Firefox");
-  if (isFirefox || mCompatFirefoxEnabled) {
+  if (mCompatFirefoxEnabled) {
     // "Firefox/x.y" (compatibility) app token
-    mUserAgent += ' ';
     mUserAgent += mCompatFirefox;
-  }
-  if (!isFirefox) {
+  } else {
     // App portion
-    mUserAgent += ' ';
     mUserAgent += mAppName;
     mUserAgent += '/';
     mUserAgent += mAppVersion;
@@ -955,7 +936,13 @@ void nsHttpHandler::BuildUserAgent() {
 }
 
 #ifdef XP_WIN
-#  define OSCPU_WINDOWS "Windows NT %ld.%ld"
+// Hardcode the reported Windows version to 10.0. This way, Microsoft doesn't
+// get to change Web compat-sensitive values without our veto. The compat-
+// sensitivity keeps going up as 10.0 stays as the current value for longer
+// and longer. If the system-reported version ever changes, we'll be able to
+// take our time to evaluate the Web compat impact instead of having to
+// scramble to react like happened with macOS changing from 10.x to 11.x.
+#  define OSCPU_WINDOWS "Windows NT 10.0"
 #  define OSCPU_WIN64 OSCPU_WINDOWS "; Win64; x64"
 #endif
 
@@ -1026,29 +1013,7 @@ void nsHttpHandler::InitUserAgentComponents() {
 #ifndef MOZ_UA_OS_AGNOSTIC
   // Gather OS/CPU.
 #  if defined(XP_WIN)
-  OSVERSIONINFO info = {sizeof(OSVERSIONINFO)};
-#    pragma warning(push)
-#    pragma warning(disable : 4996)
-  if (GetVersionEx(&info)) {
-#    pragma warning(pop)
-
-    const char* format;
-#    if defined _M_X64 || defined _M_AMD64
-    format = OSCPU_WIN64;
-#    else
-    BOOL isWow64 = FALSE;
-    if (!IsWow64Process(GetCurrentProcess(), &isWow64)) {
-      isWow64 = FALSE;
-    }
-    format = isWow64 ? OSCPU_WIN64 : OSCPU_WINDOWS;
-#    endif
-
-    SmprintfPointer buf =
-        mozilla::Smprintf(format, info.dwMajorVersion, info.dwMinorVersion);
-    if (buf) {
-      mOscpu = buf.get();
-    }
-  }
+  mOscpu.AssignLiteral(OSCPU_WIN64);
 #  elif defined(XP_MACOSX)
 #    if defined(__ppc__)
   mOscpu.AssignLiteral("PPC Mac OS X");
@@ -1125,7 +1090,7 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
   if (MULTI_PREF_CHANGED(SECURITY_PREFIX)) {
     LOG(("nsHttpHandler::PrefsChanged Security Pref Changed %s\n", pref));
     if (mConnMgr) {
-      rv = mConnMgr->DoShiftReloadConnectionCleanup(nullptr);
+      rv = mConnMgr->DoShiftReloadConnectionCleanup();
       if (NS_FAILED(rv)) {
         LOG(
             ("nsHttpHandler::PrefsChanged "
@@ -2226,7 +2191,7 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
     }
   } else if (!strcmp(topic, "net:prune-all-connections")) {
     if (mConnMgr) {
-      rv = mConnMgr->DoShiftReloadConnectionCleanup(nullptr);
+      rv = mConnMgr->DoShiftReloadConnectionCleanup();
       if (NS_FAILED(rv)) {
         LOG(("    DoShiftReloadConnectionCleanup failed (%08x)\n",
              static_cast<uint32_t>(rv)));
@@ -2251,9 +2216,9 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
   } else if (!strcmp(topic, "browser:purge-session-history")) {
     if (mConnMgr) {
       Unused << mConnMgr->ClearConnectionHistory();
-      if (mAltSvcCache) {
-        mAltSvcCache->ClearAltServiceMappings();
-      }
+    }
+    if (mAltSvcCache) {
+      mAltSvcCache->ClearAltServiceMappings();
     }
   } else if (!strcmp(topic, NS_NETWORK_LINK_TOPIC)) {
     nsAutoCString converted = NS_ConvertUTF16toUTF8(data);
@@ -2274,33 +2239,31 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
     // going to the background on android means we should close
     // down idle connections for power conservation
     if (mConnMgr) {
-      rv = mConnMgr->DoShiftReloadConnectionCleanup(nullptr);
+      rv = mConnMgr->DoShiftReloadConnectionCleanup();
       if (NS_FAILED(rv)) {
         LOG(("    DoShiftReloadConnectionCleanup failed (%08x)\n",
              static_cast<uint32_t>(rv)));
       }
     }
   } else if (!strcmp(topic, "net:current-toplevel-outer-content-windowid")) {
-    nsCOMPtr<nsISupportsPRUint64> wrapper = do_QueryInterface(subject);
-    MOZ_RELEASE_ASSERT(wrapper);
+    // The window id will be updated by HttpConnectionMgrParent.
+    if (XRE_IsParentProcess()) {
+      nsCOMPtr<nsISupportsPRUint64> wrapper = do_QueryInterface(subject);
+      MOZ_RELEASE_ASSERT(wrapper);
 
-    uint64_t windowId = 0;
-    wrapper->GetData(&windowId);
-    MOZ_ASSERT(windowId);
+      uint64_t windowId = 0;
+      wrapper->GetData(&windowId);
+      MOZ_ASSERT(windowId);
 
-    static uint64_t sCurrentTopLevelOuterContentWindowId = 0;
-    if (sCurrentTopLevelOuterContentWindowId != windowId) {
-      sCurrentTopLevelOuterContentWindowId = windowId;
-      if (mConnMgr) {
-        mConnMgr->UpdateCurrentTopLevelOuterContentWindowId(
-            sCurrentTopLevelOuterContentWindowId);
+      static uint64_t sCurrentTopLevelOuterContentWindowId = 0;
+      if (sCurrentTopLevelOuterContentWindowId != windowId) {
+        sCurrentTopLevelOuterContentWindowId = windowId;
+        if (mConnMgr) {
+          mConnMgr->UpdateCurrentTopLevelOuterContentWindowId(
+              sCurrentTopLevelOuterContentWindowId);
+        }
       }
     }
-  } else if (!strcmp(topic, "captive-portal-login") ||
-             !strcmp(topic, "captive-portal-login-success")) {
-    // We have detected a captive portal and we will reset the Fast Open
-    // failure counter.
-    ResetFastOpenConsecutiveFailureCounter();
   } else if (!strcmp(topic, "psm:user-certificate-added")) {
     // A user certificate has just been added.
     // We should immediately disable speculative connect
@@ -2314,9 +2277,6 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
     mAcceptLanguagesIsDirty = true;
   } else if (!strcmp(topic, "browser-delayed-startup-finished")) {
     MaybeEnableSpeculativeConnect();
-  } else if (!strcmp(topic, "network:captive-portal-connectivity")) {
-    nsAutoCString data8 = NS_ConvertUTF16toUTF8(data);
-    mThroughCaptivePortal = data8.EqualsLiteral("captive");
   }
 
   return NS_OK;
@@ -2352,8 +2312,8 @@ static bool CanEnableSpeculativeConnect() {
 void nsHttpHandler::MaybeEnableSpeculativeConnect() {
   MOZ_ASSERT(NS_IsMainThread(), "Main thread only");
 
-  // We don't need to and can't check this in the child process.
-  if (IsNeckoChild()) {
+  // We don't need to and can't check this in the child and socket process.
+  if (!XRE_IsParentProcess()) {
     return;
   }
 
@@ -2623,6 +2583,12 @@ nsHttpHandler::EnsureHSTSDataReady(JSContext* aCx, Promise** aPromise) {
   return EnsureHSTSDataReadyNative(wrapper);
 }
 
+NS_IMETHODIMP
+nsHttpHandler::ClearCORSPreflightCache() {
+  nsCORSListenerProxy::ClearCache();
+  return NS_OK;
+}
+
 void nsHttpHandler::ShutdownConnectionManager() {
   // ensure connection manager is shutdown
   if (mConnMgr) {
@@ -2748,9 +2714,27 @@ nsresult nsHttpHandler::CompleteUpgrade(
   return mConnMgr->CompleteUpgrade(aTrans, aUpgradeListener);
 }
 
-nsresult nsHttpHandler::DoShiftReloadConnectionCleanup(
+nsresult nsHttpHandler::DoShiftReloadConnectionCleanupWithConnInfo(
     nsHttpConnectionInfo* aCi) {
-  return mConnMgr->DoShiftReloadConnectionCleanup(aCi);
+  MOZ_ASSERT(aCi);
+  return mConnMgr->DoShiftReloadConnectionCleanupWithConnInfo(aCi);
+}
+
+void nsHttpHandler::ClearHostMapping(nsHttpConnectionInfo* aConnInfo) {
+  if (XRE_IsSocketProcess()) {
+    AltServiceChild::ClearHostMapping(aConnInfo);
+    return;
+  }
+
+  AltServiceCache()->ClearHostMapping(aConnInfo);
+}
+
+bool nsHttpHandler::UseHTTPSRRAsAltSvcEnabled() const {
+  return StaticPrefs::network_dns_use_https_rr_as_altsvc();
+}
+
+bool nsHttpHandler::EchConfigEnabled() const {
+  return StaticPrefs::network_dns_echconfig_enabled();
 }
 
 }  // namespace mozilla::net

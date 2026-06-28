@@ -27,6 +27,8 @@
 // origin and multiplex non tunneled transactions at the same time, so they have
 // a special wildcard CI that accepts all origins through that proxy.
 
+class nsISVCBRecord;
+
 namespace mozilla {
 namespace net {
 
@@ -80,6 +82,12 @@ class nsHttpConnectionInfo final : public ARefBase {
 
   // OK to treat these as an infalible allocation
   already_AddRefed<nsHttpConnectionInfo> Clone() const;
+  // This main prupose of this function is to clone this connection info, but
+  // replace mRoutedHost with SvcDomainName in the given SVCB record. Note that
+  // if SvcParamKeyPort and SvcParamKeyAlpn are presented in the SVCB record,
+  // mRoutedPort and mNPNToken will be replaced as well.
+  already_AddRefed<nsHttpConnectionInfo> CloneAndAdoptHTTPSSVCRecord(
+      nsISVCBRecord* aRecord) const;
   void CloneAsDirectRoute(nsHttpConnectionInfo** outParam);
   [[nodiscard]] nsresult CreateWildCard(nsHttpConnectionInfo** outParam);
 
@@ -153,10 +161,8 @@ class nsHttpConnectionInfo final : public ARefBase {
   }
   bool GetIsTrrServiceChannel() const { return mIsTrrServiceChannel; }
 
-  // SetTrrDisabled means don't use TRR to resolve host names for this
-  // connection
-  void SetTrrDisabled(bool aNoTrr);
-  bool GetTrrDisabled() const { return mTrrDisabled; }
+  void SetTRRMode(nsIRequest::TRRMode aTRRMode);
+  nsIRequest::TRRMode GetTRRMode() const { return mTRRMode; }
 
   void SetIPv4Disabled(bool aNoIPv4);
   bool GetIPv4Disabled() const { return mIPv4Disabled; }
@@ -198,6 +204,12 @@ class nsHttpConnectionInfo final : public ARefBase {
     mLessThanTls13 = aLessThanTls13;
   }
 
+  void SetHasIPHintAddress(bool aHasIPHint) { mHasIPHintAddress = aHasIPHint; }
+  bool HasIPHintAddress() const { return mHasIPHintAddress; }
+
+  void SetEchConfig(const nsACString& aEchConfig) { mEchConfig = aEchConfig; }
+  const nsCString& GetEchConfig() const { return mEchConfig; }
+
  private:
   // These constructor versions are intended to be used from Clone() and
   // DeserializeHttpConnectionInfoCloneArgs().
@@ -236,17 +248,20 @@ class nsHttpConnectionInfo final : public ARefBase {
   bool mUsingConnect;  // if will use CONNECT with http proxy
   nsCString mNPNToken;
   OriginAttributes mOriginAttributes;
+  nsIRequest::TRRMode mTRRMode;
 
   uint32_t mTlsFlags;
   uint16_t mIsolated : 1;
   uint16_t mIsTrrServiceChannel : 1;
-  uint16_t mTrrDisabled : 1;
   uint16_t mIPv4Disabled : 1;
   uint16_t mIPv6Disabled : 1;
 
   bool mLessThanTls13;  // This will be set to true if we negotiate less than
                         // tls1.3. If the tls version is till not know or it
                         // is 1.3 or greater the value will be false.
+
+  bool mHasIPHintAddress = false;
+  nsCString mEchConfig;
 
   // for RefPtr
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHttpConnectionInfo, override)

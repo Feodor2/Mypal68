@@ -5,6 +5,7 @@
 #include "SSLTokensCache.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Logging.h"
+#include "nsIOService.h"
 #include "nsNSSIOLayer.h"
 #include "TransportSecurityInfo.h"
 #include "ssl.h"
@@ -12,12 +13,6 @@
 
 namespace mozilla {
 namespace net {
-
-static bool const kDefaultEnabled = false;
-Atomic<bool, Relaxed> SSLTokensCache::sEnabled(kDefaultEnabled);
-
-static uint32_t const kDefaultCapacity = 2048;  // 2MB
-Atomic<uint32_t, Relaxed> SSLTokensCache::sCapacity(kDefaultCapacity);
 
 static LazyLogModule gSSLTokensCacheLog("SSLTokensCache");
 #undef LOG
@@ -66,14 +61,18 @@ NS_IMPL_ISUPPORTS(SSLTokensCache, nsIMemoryReporter)
 nsresult SSLTokensCache::Init() {
   StaticMutexAutoLock lock(sLock);
 
-  if (XRE_GetProcessType() != GeckoProcessType_Default) {
+  // SSLTokensCache should be only used in parent process and socket process.
+  // Ideally, parent process should not use this when socket process is enabled.
+  // However, some xpcsehll tests may need to create and use sockets directly,
+  // so we still allow to use this in parent process no matter socket process is
+  // enabled or not.
+  if (!(XRE_IsSocketProcess() || XRE_IsParentProcess())) {
     return NS_OK;
   }
 
   MOZ_ASSERT(!gInstance);
 
   gInstance = new SSLTokensCache();
-  gInstance->InitPrefs();
 
   RegisterWeakMemoryReporter(gInstance);
 
@@ -301,15 +300,9 @@ nsresult SSLTokensCache::RemoveLocked(const nsACString& aKey) {
   return NS_OK;
 }
 
-void SSLTokensCache::InitPrefs() {
-  Preferences::AddAtomicBoolVarCache(
-      &sEnabled, "network.ssl_tokens_cache_enabled", kDefaultEnabled);
-  Preferences::AddAtomicUintVarCache(
-      &sCapacity, "network.ssl_tokens_cache_capacity", kDefaultCapacity);
-}
-
 void SSLTokensCache::EvictIfNecessary() {
-  uint32_t capacity = sCapacity << 10;  // kilobytes to bytes
+  // kilobytes to bytes
+  uint32_t capacity = StaticPrefs::network_ssl_tokens_cache_capacity() << 10;
   if (mCacheSize <= capacity) {
     return;
   }
@@ -366,7 +359,7 @@ SSLTokensCache::CollectReports(nsIHandleReportCallback* aHandleReport,
 // static
 void SSLTokensCache::Clear() {
   LOG(("SSLTokensCache::Clear"));
-  if (!sEnabled) {
+  if (!StaticPrefs::network_ssl_tokens_cache_enabled()) {
     return;
   }
 

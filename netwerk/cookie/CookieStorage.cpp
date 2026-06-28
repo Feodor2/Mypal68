@@ -6,7 +6,7 @@
 #include "CookieCommons.h"
 #include "CookieLogging.h"
 #include "CookieStorage.h"
-
+#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "nsIMutableArray.h"
 #include "nsTPriorityQueue.h"
 #include "prprf.h"
@@ -406,9 +406,10 @@ void CookieStorage::AddCookie(const nsACString& aBaseDomain,
   foundCookie = FindCookie(aBaseDomain, aOriginAttributes, aCookie->Host(),
                            aCookie->Name(), aCookie->Path(), exactIter);
   bool foundSecureExact = foundCookie && exactIter.Cookie()->IsSecure();
-  bool isSecure = true;
+  bool potentiallyTrustworthy = true;
   if (aHostURI) {
-    isSecure = aHostURI->SchemeIs("https");
+    potentiallyTrustworthy =
+        nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aHostURI);
   }
   bool oldCookieIsSession = false;
   // Step1, call FindSecureCookie(). FindSecureCookie() would
@@ -424,7 +425,7 @@ void CookieStorage::AddCookie(const nsACString& aBaseDomain,
   if (!aCookie->IsSecure() &&
       (foundSecureExact ||
        FindSecureCookie(aBaseDomain, aOriginAttributes, aCookie)) &&
-      !isSecure) {
+      !potentiallyTrustworthy) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                       "cookie can't save because older cookie is secure "
                       "cookie but newer cookie is non-secure cookie");
@@ -479,6 +480,7 @@ void CookieStorage::AddCookie(const nsACString& aBaseDomain,
           oldCookie->IsSession() == aCookie->IsSession() &&
           oldCookie->IsHttpOnly() == aCookie->IsHttpOnly() &&
           oldCookie->SameSite() == aCookie->SameSite() &&
+          oldCookie->SchemeMap() == aCookie->SchemeMap() &&
           // We don't want to perform this optimization if the cookie is
           // considered stale, since in this case we would need to update the
           // database.
@@ -488,6 +490,10 @@ void CookieStorage::AddCookie(const nsACString& aBaseDomain,
         UpdateCookieOldestTime(oldCookie);
         return;
       }
+
+      // Merge the scheme map in case the old cookie and the new cookie are
+      // used with different schemes.
+      MergeCookieSchemeMap(oldCookie, aCookie);
 
       // Remove the old cookie.
       RemoveCookieFromList(exactIter);
@@ -585,6 +591,11 @@ void CookieStorage::UpdateCookieOldestTime(Cookie* aCookie) {
   if (aCookie->LastAccessed() < mCookieOldestTime) {
     mCookieOldestTime = aCookie->LastAccessed();
   }
+}
+
+void CookieStorage::MergeCookieSchemeMap(Cookie* aOldCookie,
+                                         Cookie* aNewCookie) {
+  aNewCookie->SetSchemeMap(aOldCookie->SchemeMap() | aNewCookie->SchemeMap());
 }
 
 void CookieStorage::AddCookieToList(const nsACString& aBaseDomain,

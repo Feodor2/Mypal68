@@ -12,7 +12,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/StaticPtr.h"
 
-
 namespace mozilla {
 namespace net {
 

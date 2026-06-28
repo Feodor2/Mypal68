@@ -14,6 +14,7 @@
 #include "nsIFile.h"
 #include "nsIMutableArray.h"
 #include "nsIPipe.h"
+#include "nsIThread.h" //MY
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
 #include "pk11pub.h"

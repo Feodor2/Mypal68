@@ -251,7 +251,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     return aPrivate ? &mPrivateAuthCache : &mAuthCache;
   }
   nsHttpConnectionMgr* ConnMgr() {
-    MOZ_ASSERT_IF(gIOService->UseSocketProcess(), XRE_IsSocketProcess());
+    MOZ_ASSERT_IF(nsIOService::UseSocketProcess(), XRE_IsSocketProcess());
     return mConnMgr->AsHttpConnectionMgr();
   }
 
@@ -259,6 +259,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     MOZ_ASSERT(XRE_IsParentProcess());
     return mAltSvcCache.get();
   }
+
+  void ClearHostMapping(nsHttpConnectionInfo* aConnInfo);
 
   // cache support
   uint32_t GenerateUniqueID() { return ++mLastUniqueID; }
@@ -324,6 +326,14 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     TickleWifi(callbacks);
     RefPtr<nsHttpConnectionInfo> clone = ci->Clone();
     return mConnMgr->SpeculativeConnect(clone, callbacks, caps);
+  }
+
+  MOZ_MUST_USE nsresult SpeculativeConnect(nsHttpConnectionInfo* ci,
+                                           nsIInterfaceRequestor* callbacks,
+                                           uint32_t caps,
+                                           NullHttpTransaction* aTrans) {
+    RefPtr<nsHttpConnectionInfo> clone = ci->Clone();
+    return mConnMgr->SpeculativeConnect(clone, callbacks, caps, aTrans);
   }
 
   // Alternate Services Maps are main thread only
@@ -453,19 +463,22 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   bool DumpHpackTables() { return mDumpHpackTables; }
 
-  bool GetThroughCaptivePortal() { return mThroughCaptivePortal; }
-
   nsresult CompleteUpgrade(HttpTransactionShell* aTrans,
                            nsIHttpUpgradeListener* aUpgradeListener);
 
-  nsresult DoShiftReloadConnectionCleanup(nsHttpConnectionInfo* aCI = nullptr);
+  nsresult DoShiftReloadConnectionCleanupWithConnInfo(
+      nsHttpConnectionInfo* aCI);
+
+  bool UseHTTPSRRAsAltSvcEnabled() const;
+
+  bool EchConfigEnabled() const;
 
  private:
   nsHttpHandler();
 
   virtual ~nsHttpHandler();
 
-  MOZ_MUST_USE nsresult Init();
+  [[nodiscard]] nsresult Init();
 
   //
   // Useragent/prefs helper methods
@@ -612,7 +625,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // for broadcasting safe hint;
   bool mSafeHintEnabled;
-  bool mParentalControlEnabled;
 
   // true in between init and shutdown states
   Atomic<bool, Relaxed> mHandlerActive;
@@ -784,8 +796,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
  private:
   nsTHashtable<nsCStringHashKey> mBlacklistedSpdyOrigins;
-
-  bool mThroughCaptivePortal;
 
   // The mapping of channel id and the weak pointer of nsHttpChannel.
   nsTHashMap<nsUint64HashKey, nsWeakPtr> mIDToHttpChannelMap;

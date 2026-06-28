@@ -12,6 +12,7 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIStreamListener.h"
 #include "nsHostResolver.h"
+#include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 
 namespace mozilla {
@@ -24,7 +25,7 @@ enum TrrType {
   TRRTYPE_CNAME = 5,
   TRRTYPE_AAAA = 28,
   TRRTYPE_TXT = 16,
-  TRRTYPE_HTTPSSVC = 65345,
+  TRRTYPE_HTTPSSVC = nsIDNSService::RESOLVE_TYPE_HTTPSSVC,  // 65
 };
 
 class DOHaddr : public LinkedListElement<DOHaddr> {
@@ -76,14 +77,11 @@ class TRR : public Runnable,
         mRec(aRec),
         mHostResolver(aResolver),
         mType(aType),
-        mBodySize(0),
-        mFailed(false),
-        mCnameLoop(kCnameChaseMax),
-        mAllowRFC1918(false),
         mOriginSuffix(aRec->originSuffix) {
     mHost = aRec->host;
     mPB = aRec->pb;
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
+                          "TRR must be in parent or socket process");
   }
 
   // when following CNAMEs
@@ -94,13 +92,11 @@ class TRR : public Runnable,
         mRec(aRec),
         mHostResolver(aResolver),
         mType(aType),
-        mBodySize(0),
-        mFailed(false),
         mPB(aPB),
         mCnameLoop(aLoopCount),
-        mAllowRFC1918(false),
         mOriginSuffix(aRec ? aRec->originSuffix : EmptyCString()) {
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
+                          "TRR must be in parent or socket process");
   }
 
   // used on push
@@ -108,12 +104,9 @@ class TRR : public Runnable,
       : mozilla::Runnable("TRR"),
         mHostResolver(aResolver),
         mType(TRRTYPE_A),
-        mBodySize(0),
-        mFailed(false),
-        mPB(aPB),
-        mCnameLoop(kCnameChaseMax),
-        mAllowRFC1918(false) {
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+        mPB(aPB) {
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
+                          "TRR must be in parent or socket process");
   }
 
   // to verify a domain
@@ -124,13 +117,10 @@ class TRR : public Runnable,
         mRec(nullptr),
         mHostResolver(aResolver),
         mType(aType),
-        mBodySize(0),
-        mFailed(false),
         mPB(aPB),
-        mCnameLoop(kCnameChaseMax),
-        mAllowRFC1918(false),
         mOriginSuffix(aOriginSuffix) {
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
+                          "TRR must be in parent or socket process");
   }
 
   NS_IMETHOD Run() override;
@@ -160,6 +150,7 @@ class TRR : public Runnable,
                           enum TrrType& type);
   nsresult ReceivePush(nsIHttpChannel* pushed, nsHostRecord* pushedRec);
   nsresult On200Response(nsIChannel* aChannel);
+  nsresult FollowCname(nsIChannel* aChannel);
 
   bool UseDefaultServer();
 
@@ -172,18 +163,19 @@ class TRR : public Runnable,
   nsresult ParseSvcParam(unsigned int svcbIndex, uint16_t key,
                          SvcFieldValue& field, uint16_t length);
 
+  void StoreIPHintAsDNSRecord(const struct SVCB& aSVCBRecord);
+
   nsCOMPtr<nsIChannel> mChannel;
   enum TrrType mType;
-  TimeStamp mStartTime;
-  unsigned char mResponse[kMaxSize];
-  unsigned int mBodySize;
-  bool mFailed;
+  unsigned char mResponse[kMaxSize]{};
+  unsigned int mBodySize = 0;
+  bool mFailed = false;
   bool mPB;
   DOHresp mDNS;
   nsCOMPtr<nsITimer> mTimeout;
   nsCString mCname;
-  uint32_t mCnameLoop;  // loop detection counter
-  bool mAllowRFC1918;
+  uint32_t mCnameLoop = kCnameChaseMax;  // loop detection counter
+  bool mAllowRFC1918 = false;
 
   uint32_t mTTL = UINT32_MAX;
   TypeRecordResultType mResult = mozilla::AsVariant(Nothing());
